@@ -200,6 +200,14 @@ app.add_middleware(
 )
 
 # ══════════════════════════════════════════════════
+#  Root redirect
+# ══════════════════════════════════════════════════
+@app.get("/")
+def root():
+    from fastapi.responses import RedirectResponse
+    return RedirectResponse("/app/")
+
+# ══════════════════════════════════════════════════
 #  Health
 # ══════════════════════════════════════════════════
 @app.get("/health")
