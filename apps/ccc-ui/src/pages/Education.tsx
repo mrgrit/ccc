@@ -147,7 +147,7 @@ export default function Education() {
               </div>
               <div style={{
                 background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 24,
-                fontSize: 14, color: '#e6edf3', lineHeight: 1.8, maxHeight: 'calc(100vh - 150px)', overflowY: 'auto',
+                fontSize: 14, color: '#c9d1d9', lineHeight: 1.6, maxHeight: 'calc(100vh - 150px)', overflowY: 'auto',
                 whiteSpace: 'pre-wrap',
               }} dangerouslySetInnerHTML={{ __html: markdownToHtml(lecture) }} />
             </div>
@@ -221,28 +221,28 @@ export default function Education() {
 function markdownToHtml(md: string): string {
   return md
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    // 코드블록 (먼저 처리)
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;font-size:12px;overflow-x:auto;color:#3fb950;margin:8px 0">$2</pre>')
-    // 제목
-    .replace(/^#### (.+)$/gm, '<h4 style="font-size:14px;color:#e6edf3;margin:16px 0 6px">$1</h4>')
-    .replace(/^### (.+)$/gm, '<h3 style="font-size:16px;color:#e6edf3;margin:20px 0 8px">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 style="font-size:18px;color:#e6edf3;margin:24px 0 10px;border-bottom:1px solid #30363d;padding-bottom:6px">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 style="font-size:22px;color:#f97316;margin:0 0 16px">$1</h1>')
-    // 인라인
-    .replace(/`([^`]+)`/g, '<code style="background:#21262d;padding:2px 6px;border-radius:3px;font-size:12px;color:#f0883e">$1</code>')
+    // 코드블록 — 폰트 14px, 줄간격 1.5
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:14px 16px;font-size:14px;line-height:1.5;overflow-x:auto;color:#3fb950;margin:10px 0;font-family:Consolas,Monaco,monospace">$2</pre>')
+    // 제목 — h1 크기 줄임
+    .replace(/^#### (.+)$/gm, '<h4 style="font-size:14px;color:#c9d1d9;margin:14px 0 6px;font-weight:600">$1</h4>')
+    .replace(/^### (.+)$/gm, '<h3 style="font-size:15px;color:#e6edf3;margin:18px 0 8px;font-weight:600">$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2 style="font-size:17px;color:#e6edf3;margin:22px 0 10px;border-bottom:1px solid #30363d;padding-bottom:6px;font-weight:700">$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1 style="font-size:19px;color:#f0883e;margin:0 0 14px;font-weight:700">$1</h1>')
+    // 인라인 코드 — 크기 13px, 색상 부드럽게
+    .replace(/`([^`]+)`/g, '<code style="background:#21262d;padding:2px 6px;border-radius:3px;font-size:13px;color:#d2a8ff;font-family:Consolas,Monaco,monospace">$1</code>')
     .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#e6edf3">$1</strong>')
     // 블록쿼트
-    .replace(/^&gt; (.+)$/gm, '<div style="border-left:3px solid #30363d;padding:4px 12px;margin:4px 0;color:#8b949e">$1</div>')
-    // 리스트
-    .replace(/^\- (.+)$/gm, '<div style="padding:2px 0 2px 16px">• $1</div>')
-    .replace(/^\d+\. (.+)$/gm, '<div style="padding:2px 0 2px 16px">$1</div>')
-    // 테이블: 구분선 제거 후 행 처리
+    .replace(/^&gt; (.+)$/gm, '<div style="border-left:3px solid #30363d;padding:4px 12px;margin:4px 0;color:#8b949e;font-size:13px">$1</div>')
+    // 리스트 — 줄간격 줄임
+    .replace(/^\- (.+)$/gm, '<div style="padding:1px 0 1px 16px;font-size:14px">• $1</div>')
+    .replace(/^\d+\. (.+)$/gm, '<div style="padding:1px 0 1px 16px;font-size:14px">$1</div>')
+    // 테이블
     .replace(/^\|[\s\-:|]+\|$/gm, '')
     .replace(/^\|(.+)\|$/gm, (_, row) => {
       const cells = row.split('|').map((c: string) => c.trim()).filter(Boolean)
-      return '<div style="display:flex;border-bottom:1px solid #21262d">' + cells.map((c: string) => `<span style="flex:1;padding:6px 10px;font-size:12px">${c}</span>`).join('') + '</div>'
+      return '<div style="display:flex;border-bottom:1px solid #21262d">' + cells.map((c: string) => `<span style="flex:1;padding:5px 10px;font-size:13px">${c}</span>`).join('') + '</div>'
     })
-    // 줄바꿈
-    .replace(/\n\n/g, '<br/><br/>')
+    // 줄바꿈 — 간격 줄임
+    .replace(/\n\n/g, '<div style="height:8px"></div>')
     .replace(/\n/g, '<br/>')
 }
