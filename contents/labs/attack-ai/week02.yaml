@@ -1,0 +1,194 @@
+lab_id: "attack-ai-week02"
+title: "포트스캐닝 심화 (Port Scanning) - AI 지원"
+version: "ai"
+course: "attack-ai"
+week: 2
+description: "AI 에이전트를 활용하여 다양한 포트 스캔 기법을 자동화하고, 스캔 결과를 AI가 분석하여 공격 표면을 체계적으로 도출한다. OpsClaw의 execute-plan으로 병렬 스캔을 수행한다."
+difficulty: "easy"
+duration_minutes: 120
+objectives:
+  - "OpsClaw를 통해 자동화된 포트 스캔 파이프라인을 구축한다"
+  - "AI가 스캔 결과를 분석하여 취약 서비스를 식별하는 과정을 학습한다"
+  - "스캔 전략을 AI가 자동 최적화하는 방법을 이해한다"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "OpsClaw 프로젝트를 생성하고, AI에게 SYN 스캔을 요청하라."
+    hint: "dispatch API로 nmap -sS 명령을 전달한다"
+    category: "recon"
+    points: 5
+    answer: "curl -s -X POST http://localhost:8000/projects -H 'Content-Type: application/json' -H 'X-API-Key: opsclaw-api-key-2026' -d '{\"name\":\"portscan-week02\",\"request_text\":\"포트스캐닝 심화\",\"master_mode\":\"external\"}' | python3 -m json.tool"
+    answer_detail: "AI 기반 포트 스캔 프로젝트를 생성하면 모든 스캔 활동과 결과가 자동으로 추적된다."
+    script: "opsclaw_project_create.py"
+    verify:
+      type: "output_contains"
+      expect: "project_id"
+      field: "stdout"
+  - order: 2
+    instruction: "AI에게 execute-plan을 사용하여 3개 호스트(secu, web, siem)에 대한 병렬 SYN 스캔을 수행하라."
+    hint: "tasks 배열에 각 호스트별 스캔 명령을 지정하고 subagent_url을 다르게 설정한다"
+    category: "recon"
+    points: 10
+    answer: "curl -s -X POST http://localhost:8000/projects/{id}/execute-plan -H 'Content-Type: application/json' -H 'X-API-Key: opsclaw-api-key-2026' -d '{\"tasks\":[{\"order\":1,\"instruction_prompt\":\"nmap -sS -T4 10.20.30.1\",\"risk_level\":\"low\",\"subagent_url\":\"http://localhost:8002\"},{\"order\":2,\"instruction_prompt\":\"nmap -sS -T4 10.20.30.80\",\"risk_level\":\"low\",\"subagent_url\":\"http://localhost:8002\"},{\"order\":3,\"instruction_prompt\":\"nmap -sS -T4 10.20.30.100\",\"risk_level\":\"low\",\"subagent_url\":\"http://localhost:8002\"}],\"subagent_url\":\"http://localhost:8002\"}'"
+    answer_detail: "execute-plan API로 여러 호스트를 병렬 스캔하면 시간을 대폭 절약할 수 있다. AI가 각 스캔 결과를 자동으로 수집하고 비교 분석한다."
+    script: "opsclaw_parallel_scan.py"
+    verify:
+      type: "output_contains"
+      expect: "task"
+      field: "stdout"
+  - order: 3
+    instruction: "AI에게 서비스 버전 탐지(-sV)를 수행하도록 요청하라. 10.20.30.80을 대상으로 하라."
+    hint: "dispatch API로 nmap -sV 명령을 실행한다"
+    category: "recon"
+    points: 10
+    answer: "curl -s -X POST http://localhost:8000/projects/{id}/dispatch -H 'Content-Type: application/json' -H 'X-API-Key: opsclaw-api-key-2026' -d '{\"command\":\"nmap -sV 10.20.30.80\",\"subagent_url\":\"http://localhost:8002\"}' | python3 -m json.tool"
+    answer_detail: "AI는 서비스 버전 정보를 수집한 후 자동으로 CVE 데이터베이스와 매칭하여 알려진 취약점을 식별한다."
+    script: "ai_service_version_scan.py"
+    verify:
+      type: "output_contains"
+      expect: "VERSION"
+      field: "stdout"
+  - order: 4
+    instruction: "AI에게 OS 핑거프린팅을 수행하도록 요청하라."
+    hint: "nmap -O 명령을 dispatch로 실행한다"
+    category: "recon"
+    points: 10
+    answer: "curl -s -X POST http://localhost:8000/projects/{id}/dispatch -H 'Content-Type: application/json' -H 'X-API-Key: opsclaw-api-key-2026' -d '{\"command\":\"nmap -O 10.20.30.80\",\"subagent_url\":\"http://localhost:8002\"}'"
+    answer_detail: "AI는 OS 핑거프린팅 결과를 해석하여 커널 버전에 적합한 익스플로잇을 자동으로 추천한다."
+    script: "ai_os_fingerprint.py"
+    verify:
+      type: "output_contains"
+      expect: "OS"
+      field: "stdout"
+  - order: 5
+    instruction: "AI에게 UDP 스캔을 수행하도록 요청하라. 상위 20개 UDP 포트를 스캔하라."
+    hint: "nmap -sU --top-ports 20 명령을 사용한다"
+    category: "recon"
+    points: 10
+    answer: "curl -s -X POST http://localhost:8000/projects/{id}/dispatch -H 'Content-Type: application/json' -H 'X-API-Key: opsclaw-api-key-2026' -d '{\"command\":\"nmap -sU --top-ports 20 10.20.30.80\",\"subagent_url\":\"http://localhost:8002\"}'"
+    answer_detail: "UDP 스캔은 시간이 오래 걸리므로 AI가 자동으로 타임아웃을 관리하고 결과를 파싱한다. DNS, SNMP 등 UDP 서비스의 발견은 추가 공격 벡터를 제공한다."
+    script: "ai_udp_scan.py"
+    verify:
+      type: "output_contains"
+      expect: "PORT"
+      field: "stdout"
+  - order: 6
+    instruction: "AI에게 NSE 스크립트(default + vuln)를 실행하도록 요청하라."
+    hint: "-sC --script vuln 옵션을 조합한다"
+    category: "recon"
+    points: 10
+    answer: "curl -s -X POST http://localhost:8000/projects/{id}/dispatch -H 'Content-Type: application/json' -H 'X-API-Key: opsclaw-api-key-2026' -d '{\"command\":\"nmap -sC --script vuln -p 22,80,3000 10.20.30.80\",\"subagent_url\":\"http://localhost:8002\"}'"
+    answer_detail: "AI는 NSE 스크립트 결과를 자동으로 파싱하여 발견된 취약점을 분류하고 CVSS 점수를 추정한다."
+    script: "ai_nse_vuln_scan.py"
+    verify:
+      type: "output_contains"
+      expect: "open"
+      field: "stdout"
+  - order: 7
+    instruction: "AI에게 http-enum 스크립트로 웹 디렉토리를 열거하도록 요청하라."
+    hint: "--script http-enum 옵션을 사용한다"
+    category: "recon"
+    points: 10
+    answer: "curl -s -X POST http://localhost:8000/projects/{id}/dispatch -H 'Content-Type: application/json' -H 'X-API-Key: opsclaw-api-key-2026' -d '{\"command\":\"nmap --script http-enum -p 3000 10.20.30.80\",\"subagent_url\":\"http://localhost:8002\"}'"
+    answer_detail: "http-enum 결과를 AI가 분석하면, 발견된 각 경로의 보안 위험도를 자동으로 평가하고 추가 탐색이 필요한 경로를 식별한다."
+    script: "ai_http_enum.py"
+    verify:
+      type: "output_contains"
+      expect: "3000"
+      field: "stdout"
+  - order: 8
+    instruction: "AI에게 방화벽 서버(10.20.30.1)에 대한 ACK 스캔으로 방화벽 규칙을 매핑하도록 요청하라."
+    hint: "nmap -sA 옵션을 사용한다"
+    category: "recon"
+    points: 10
+    answer: "curl -s -X POST http://localhost:8000/projects/{id}/dispatch -H 'Content-Type: application/json' -H 'X-API-Key: opsclaw-api-key-2026' -d '{\"command\":\"nmap -sA 10.20.30.1\",\"subagent_url\":\"http://localhost:8002\"}'"
+    answer_detail: "AI는 ACK 스캔 결과에서 filtered/unfiltered 상태를 분석하여 방화벽 규칙의 패턴을 자동으로 추론한다."
+    script: "ai_firewall_mapping.py"
+    verify:
+      type: "output_contains"
+      expect: "PORT"
+      field: "stdout"
+  - order: 9
+    instruction: "스캔 결과를 XML로 저장하고, AI에게 분석을 요청하라."
+    hint: "-oX 옵션으로 XML 출력 후 파싱한다"
+    category: "analysis"
+    points: 10
+    answer: "sudo nmap -sV -oX /tmp/ai_scan.xml 10.20.30.80 && echo 'XML scan saved' && python3 -c \"import xml.etree.ElementTree as ET; tree=ET.parse('/tmp/ai_scan.xml'); [print(f\\\"Port {p.get('portid')}: {p.find('service').get('name','')} {p.find('service').get('product','')}\\\") for h in tree.findall('.//host') for p in h.findall('.//port') if p.find('state').get('state')=='open']\""
+    answer_detail: "XML 형식의 스캔 결과는 프로그래밍적으로 파싱하기 용이하다. AI가 XML을 자동으로 처리하여 구조화된 보고서를 생성한다."
+    script: "ai_xml_scan_analysis.py"
+    verify:
+      type: "output_contains"
+      expect: "Port"
+      field: "stdout"
+  - order: 10
+    instruction: "AI에게 전체 네트워크의 빠른 스캔(-F)을 수행하도록 요청하라."
+    hint: "nmap -sS -F 10.20.30.0/24 명령을 dispatch한다"
+    category: "recon"
+    points: 10
+    answer: "curl -s -X POST http://localhost:8000/projects/{id}/dispatch -H 'Content-Type: application/json' -H 'X-API-Key: opsclaw-api-key-2026' -d '{\"command\":\"nmap -sS -F 10.20.30.0/24\",\"subagent_url\":\"http://localhost:8002\"}'"
+    answer_detail: "전체 네트워크 스캔 결과를 AI가 자동으로 파싱하면, 각 호스트의 서비스 프로파일을 비교하여 비정상적인 서비스나 잠재적 공격 대상을 즉시 식별한다."
+    script: "ai_full_network_scan.py"
+    verify:
+      type: "output_contains"
+      expect: "Nmap"
+      field: "stdout"
+  - order: 11
+    instruction: "AI에게 SIEM 서버의 특정 포트(443, 9400)가 열려 있는지 확인하도록 요청하라."
+    hint: "특정 포트를 지정하여 스캔한다"
+    category: "recon"
+    points: 10
+    answer: "curl -s -X POST http://localhost:8000/projects/{id}/dispatch -H 'Content-Type: application/json' -H 'X-API-Key: opsclaw-api-key-2026' -d '{\"command\":\"nmap -sT -p 443,9400 10.20.30.100\",\"subagent_url\":\"http://localhost:8002\"}'"
+    answer_detail: "특정 서비스 포트를 타겟팅한 스캔은 효율적이다. AI가 Wazuh(443)와 OpenCTI(9400)의 상태를 확인하고 접근 가능 여부를 판단한다."
+    script: "ai_targeted_scan.py"
+    verify:
+      type: "output_contains"
+      expect: "open"
+      field: "stdout"
+  - order: 12
+    instruction: "AI에게 SSL/TLS 설정을 분석하도록 요청하라. SIEM 서버(10.20.30.100:443)의 암호 스위트를 확인하라."
+    hint: "nmap --script ssl-enum-ciphers를 사용한다"
+    category: "analysis"
+    points: 10
+    answer: "curl -s -X POST http://localhost:8000/projects/{id}/dispatch -H 'Content-Type: application/json' -H 'X-API-Key: opsclaw-api-key-2026' -d '{\"command\":\"nmap --script ssl-enum-ciphers -p 443 10.20.30.100\",\"subagent_url\":\"http://localhost:8002\"}'"
+    answer_detail: "AI는 SSL/TLS 분석 결과에서 약한 암호 스위트, 취약한 프로토콜 버전, 인증서 문제를 자동으로 식별하고 보안 권고를 생성한다."
+    script: "ai_ssl_analysis.py"
+    verify:
+      type: "output_contains"
+      expect: "TLS"
+      field: "stdout"
+  - order: 13
+    instruction: "AI에게 스캔 결과를 종합 분석하도록 요청하라. evidence summary를 조회하고 공격 표면을 도출하라."
+    hint: "evidence/summary API로 전체 결과를 조회한다"
+    category: "analysis"
+    points: 15
+    answer: "curl -s -H 'X-API-Key: opsclaw-api-key-2026' http://localhost:8000/projects/{id}/evidence/summary | python3 -m json.tool"
+    answer_detail: "AI는 여러 스캔의 결과를 종합하여 각 호스트의 위험 프로파일을 생성한다. 서비스 간 상관관계, 네트워크 경로, 취약점 체인을 자동으로 분석한다."
+    script: "ai_comprehensive_analysis.py"
+    verify:
+      type: "output_contains"
+      expect: "evidence"
+      field: "stdout"
+  - order: 14
+    instruction: "PoW 블록과 보상을 조회하여 AI 에이전트의 작업 효율을 확인하라."
+    hint: "/pow/blocks와 /pow/leaderboard를 조회한다"
+    category: "analysis"
+    points: 10
+    answer: "echo '=== PoW Blocks ===' && curl -s -H 'X-API-Key: opsclaw-api-key-2026' 'http://localhost:8000/pow/blocks?agent_id=http://localhost:8002' | python3 -m json.tool | head -20 && echo '=== Leaderboard ===' && curl -s -H 'X-API-Key: opsclaw-api-key-2026' http://localhost:8000/pow/leaderboard | python3 -m json.tool"
+    answer_detail: "PoW 시스템은 각 AI 에이전트의 작업량과 품질을 객관적으로 추적한다. 보상 랭킹은 에이전트의 효율성을 비교하는 지표가 된다."
+    script: "opsclaw_pow_leaderboard.py"
+    verify:
+      type: "output_contains"
+      expect: "block"
+      field: "stdout"
+  - order: 15
+    instruction: "AI를 사용하여 포트 스캔 보고서를 자동 생성하라. OpsClaw completion-report API를 사용하라."
+    hint: "completion-report에 스캔 결과 요약을 포함한다"
+    category: "analysis"
+    points: 10
+    answer: "curl -s -X POST http://localhost:8000/projects/{id}/completion-report -H 'Content-Type: application/json' -H 'X-API-Key: opsclaw-api-key-2026' -d '{\"summary\":\"포트스캐닝 심화 완료 - 3개 호스트 스캔\",\"outcome\":\"success\",\"work_details\":[\"SYN/UDP/ACK 스캔 수행\",\"서비스 버전 및 OS 탐지\",\"NSE 취약점 스캔\",\"SSL/TLS 분석\",\"방화벽 규칙 매핑\"]}' | python3 -m json.tool"
+    answer_detail: "AI가 자동 생성한 포트 스캔 보고서는 발견된 서비스, 버전, 취약점, 방화벽 상태를 체계적으로 정리하며, PoW 증적과 연결된다."
+    script: "opsclaw_scan_report.py"
+    verify:
+      type: "output_contains"
+      expect: "summary"
+      field: "stdout"

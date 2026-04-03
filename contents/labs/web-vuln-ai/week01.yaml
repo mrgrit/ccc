@@ -1,0 +1,194 @@
+lab_id: "web-vuln-ai-week01"
+title: "HTTP 기초 실습"
+version: "ai"
+course: "web-vuln-ai"
+week: 1
+description: "HTTP 프로토콜의 구조, 요청/응답 메시지, 헤더 분석 등 웹 보안의 기초를 실습합니다."
+difficulty: "easy"
+duration_minutes: 120
+objectives:
+  - "HTTP 요청/응답 구조를 이해한다"
+  - "주요 HTTP 헤더의 보안 의미를 파악한다"
+  - "웹 서버 정보 수집 기법을 익힌다"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "curl을 사용하여 대상 웹 서버(http://10.20.30.80)에 GET 요청을 보내고 응답 헤더를 확인하시오."
+    hint: "curl -I 옵션을 사용하세요."
+    category: "http_basics"
+    points: 8
+    answer: "curl -I http://10.20.30.80"
+    answer_detail: "curl -I는 HEAD 요청으로 응답 헤더만 받습니다. Server, Content-Type, Set-Cookie 등 보안 관련 헤더를 확인합니다."
+    script: "ai_webvuln_analyze --week 1 --step 1 --target 10.20.30.80 --mode ai-assisted"
+    verify:
+      type: "output_contains"
+      expect: "HTTP/"
+      field: "stdout"
+  - order: 2
+    instruction: "HTTP 응답 코드 종류를 확인하시오: 존재하는 페이지와 존재하지 않는 페이지의 응답 코드 차이."
+    hint: "curl -o /dev/null -w '%{http_code}' 옵션을 사용하세요."
+    category: "http_basics"
+    points: 8
+    answer: "echo '존재하는 페이지:' && curl -o /dev/null -s -w '%{http_code}' http://10.20.30.80/ && echo '' && echo '존재하지 않는 페이지:' && curl -o /dev/null -s -w '%{http_code}' http://10.20.30.80/nonexistent && echo ''"
+    answer_detail: "200은 성공, 404는 페이지 없음, 301/302는 리다이렉트, 500은 서버 에러입니다."
+    script: "ai_webvuln_analyze --week 1 --step 2 --target 10.20.30.80 --mode ai-assisted"
+    verify:
+      type: "output_contains"
+      expect: "200"
+      field: "stdout"
+  - order: 3
+    instruction: "HTTP 요청 메서드(GET, POST, PUT, DELETE, OPTIONS)를 테스트하여 서버가 허용하는 메서드를 확인하시오."
+    hint: "curl -X OPTIONS를 사용하세요."
+    category: "http_basics"
+    points: 10
+    answer: "curl -s -X OPTIONS http://10.20.30.80/ -I 2>/dev/null | grep -i allow && echo 'OPTIONS 확인 완료'"
+    answer_detail: "OPTIONS 메서드로 서버가 허용하는 HTTP 메서드를 확인합니다. 불필요한 메서드(PUT, DELETE)는 비활성화해야 합니다."
+    script: "ai_webvuln_analyze --week 1 --step 3 --target 10.20.30.80 --mode ai-assisted"
+    verify:
+      type: "output_contains"
+      expect: "OPTIONS 확인 완료"
+      field: "stdout"
+  - order: 4
+    instruction: "응답 헤더에서 보안 헤더(X-Frame-Options, X-XSS-Protection, Content-Security-Policy 등)의 존재 여부를 확인하시오."
+    hint: "curl -I로 헤더를 분석하세요."
+    category: "security_headers"
+    points: 12
+    answer: "curl -sI http://10.20.30.80 | grep -iE '(x-frame|x-xss|content-security|strict-transport|x-content-type)' && echo '보안 헤더 분석 완료' || echo '보안 헤더 미설정 탐지'"
+    answer_detail: "보안 헤더 부재는 XSS, 클릭재킹, MIME 스니핑 등의 공격에 취약해집니다."
+    script: "ai_webvuln_analyze --week 1 --step 4 --target 10.20.30.80 --mode ai-assisted"
+    verify:
+      type: "output_contains"
+      expect: "보안 헤더"
+      field: "stdout"
+  - order: 5
+    instruction: "쿠키 속성(HttpOnly, Secure, SameSite)을 분석하시오."
+    hint: "curl -c 옵션으로 쿠키를 저장하세요."
+    category: "security_headers"
+    points: 10
+    answer: "curl -sI http://10.20.30.80 | grep -i 'set-cookie' && echo '쿠키 분석 완료' || echo '쿠키 없음'"
+    answer_detail: "HttpOnly는 JavaScript 접근 차단, Secure는 HTTPS만 전송, SameSite는 CSRF 방지 속성입니다."
+    script: "ai_webvuln_analyze --week 1 --step 5 --target 10.20.30.80 --mode ai-assisted"
+    verify:
+      type: "output_contains"
+      expect: "쿠키"
+      field: "stdout"
+  - order: 6
+    instruction: "서버 배너 정보를 수집하여 웹 서버 종류와 버전을 파악하시오."
+    hint: "Server 헤더와 에러 페이지를 분석하세요."
+    category: "fingerprinting"
+    points: 10
+    answer: "curl -sI http://10.20.30.80 | grep -i 'server' && echo '배너 수집 완료'"
+    answer_detail: "Server 헤더에서 웹 서버 종류(Apache, Nginx)와 버전을 파악하여 알려진 취약점을 매칭합니다."
+    script: "ai_webvuln_analyze --week 1 --step 6 --target 10.20.30.80 --mode ai-assisted"
+    verify:
+      type: "output_contains"
+      expect: "배너 수집 완료"
+      field: "stdout"
+  - order: 7
+    instruction: "robots.txt 파일을 확인하여 숨겨진 경로를 찾으시오."
+    hint: "http://10.20.30.80/robots.txt에 접근하세요."
+    category: "recon"
+    points: 10
+    answer: "curl -s http://10.20.30.80/robots.txt 2>/dev/null && echo 'robots.txt 확인 완료'"
+    answer_detail: "robots.txt에는 크롤러 접근을 제한하는 경로가 포함되며, 민감한 디렉터리 정보를 노출할 수 있습니다."
+    script: "ai_webvuln_analyze --week 1 --step 7 --target 10.20.30.80 --mode ai-assisted"
+    verify:
+      type: "output_contains"
+      expect: "robots.txt 확인 완료"
+      field: "stdout"
+  - order: 8
+    instruction: "HTTP 리다이렉트 동작을 분석하시오: HTTP에서 HTTPS로의 리다이렉트 여부."
+    hint: "curl -L -v 옵션을 사용하세요."
+    category: "http_basics"
+    points: 10
+    answer: "curl -sI -L http://10.20.30.80 2>&1 | grep -iE '(location|HTTP/)' && echo '리다이렉트 분석 완료'"
+    answer_detail: "HTTP→HTTPS 리다이렉트가 없으면 중간자 공격에 취약합니다."
+    script: "ai_webvuln_analyze --week 1 --step 8 --target 10.20.30.80 --mode ai-assisted"
+    verify:
+      type: "output_contains"
+      expect: "리다이렉트 분석 완료"
+      field: "stdout"
+  - order: 9
+    instruction: "POST 요청을 전송하고 요청/응답을 분석하시오."
+    hint: "curl -d 옵션으로 데이터를 전송하세요."
+    category: "http_basics"
+    points: 10
+    answer: "curl -s -X POST http://10.20.30.80/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"test@test.com\",\"password\":\"test\"}' 2>/dev/null | head -5 && echo 'POST 분석 완료'"
+    answer_detail: "POST 요청은 로그인, 폼 제출 등에 사용됩니다. 요청 본문과 응답 구조를 분석합니다."
+    script: "ai_webvuln_analyze --week 1 --step 9 --target 10.20.30.80 --mode ai-assisted"
+    verify:
+      type: "output_contains"
+      expect: "POST 분석 완료"
+      field: "stdout"
+  - order: 10
+    instruction: "웹 서버의 디렉터리 목록 노출(Directory Listing) 여부를 확인하시오."
+    hint: "다양한 경로에 접근해보세요."
+    category: "recon"
+    points: 10
+    answer: "curl -s http://10.20.30.80/ftp/ 2>/dev/null | head -20 && echo '디렉터리 리스팅 확인 완료'"
+    answer_detail: "디렉터리 리스팅이 활성화되면 파일 목록이 노출되어 민감 정보 유출 위험이 있습니다."
+    script: "ai_webvuln_analyze --week 1 --step 10 --target 10.20.30.80 --mode ai-assisted"
+    verify:
+      type: "output_contains"
+      expect: "디렉터리 리스팅 확인 완료"
+      field: "stdout"
+  - order: 11
+    instruction: "HTTP 요청에 사용자 정의 헤더를 추가하여 전송하시오."
+    hint: "curl -H 옵션을 사용하세요."
+    category: "http_basics"
+    points: 8
+    answer: "curl -s -H 'X-Custom-Header: SecurityTest' -H 'User-Agent: SecurityScanner/1.0' http://10.20.30.80 -o /dev/null -w '%{http_code}' && echo '' && echo '커스텀 헤더 테스트 완료'"
+    answer_detail: "커스텀 헤더는 WAF 우회, 인증 토큰 전달 등에 사용됩니다."
+    script: "ai_webvuln_analyze --week 1 --step 11 --target 10.20.30.80 --mode ai-assisted"
+    verify:
+      type: "output_contains"
+      expect: "커스텀 헤더 테스트 완료"
+      field: "stdout"
+  - order: 12
+    instruction: "HTTPS 연결의 TLS 인증서 정보를 확인하시오."
+    hint: "openssl s_client를 사용하세요."
+    category: "tls"
+    points: 10
+    answer: "echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | openssl x509 -text -noout 2>/dev/null | head -15 || echo 'TLS 인증서 확인 완료'"
+    answer_detail: "TLS 인증서의 유효기간, 발급자, CN/SAN을 확인하여 위조 인증서를 탐지합니다."
+    script: "ai_webvuln_analyze --week 1 --step 12 --target 10.20.30.80 --mode ai-assisted"
+    verify:
+      type: "output_contains"
+      expect: "인증서 확인 완료"
+      field: "stdout"
+  - order: 13
+    instruction: "웹 애플리케이션의 기술 스택을 식별하시오."
+    hint: "응답 헤더, HTML 소스, 쿠키 이름 등에서 단서를 찾으세요."
+    category: "fingerprinting"
+    points: 10
+    answer: "curl -sI http://10.20.30.80 | grep -iE '(server|x-powered|set-cookie)' && curl -s http://10.20.30.80 | grep -ioE '(angular|react|vue|jquery|express)' | sort -u && echo '기술 스택 식별 완료'"
+    answer_detail: "기술 스택 식별로 프레임워크별 알려진 취약점을 매칭할 수 있습니다."
+    script: "ai_webvuln_analyze --week 1 --step 13 --target 10.20.30.80 --mode ai-assisted"
+    verify:
+      type: "output_contains"
+      expect: "기술 스택 식별 완료"
+      field: "stdout"
+  - order: 14
+    instruction: "웹 서버의 에러 페이지를 분석하여 정보 누출 여부를 확인하시오."
+    hint: "잘못된 경로, 잘못된 파라미터로 에러를 유발하세요."
+    category: "recon"
+    points: 12
+    answer: "curl -s 'http://10.20.30.80/%00' 2>/dev/null | head -20 && curl -s 'http://10.20.30.80/api/error' 2>/dev/null | head -10 && echo '에러 페이지 분석 완료'"
+    answer_detail: "상세 에러 메시지는 서버 경로, 스택 트레이스, DB 정보 등을 노출할 수 있습니다."
+    script: "ai_webvuln_analyze --week 1 --step 14 --target 10.20.30.80 --mode ai-assisted"
+    verify:
+      type: "output_contains"
+      expect: "에러 페이지 분석 완료"
+      field: "stdout"
+  - order: 15
+    instruction: "HTTP 기초 분석 종합 보고서를 작성하시오."
+    hint: "서버 정보, 보안 헤더, 취약점 요약을 포함하세요."
+    category: "verification"
+    points: 12
+    answer: "echo '=== HTTP 기초 분석 보고서 ===' && echo '대상: http://10.20.30.80' && echo '[서버 정보]' && curl -sI http://10.20.30.80 | grep -i server && echo '[보안 헤더]' && curl -sI http://10.20.30.80 | grep -icE '(x-frame|x-xss|csp|hsts)' && echo '[응답 코드]' && curl -o /dev/null -s -w '%{http_code}' http://10.20.30.80 && echo '' && echo '=== 보고서 완료 ==='"
+    answer_detail: "HTTP 분석 결과를 체계적으로 정리하여 후속 취약점 진단의 기초 자료로 활용합니다."
+    script: "ai_webvuln_analyze --week 1 --step 15 --target 10.20.30.80 --mode ai-assisted"
+    verify:
+      type: "output_contains"
+      expect: "보고서 완료"
+      field: "stdout"
