@@ -182,6 +182,15 @@ app = FastAPI(
     lifespan=lifespan,
 )
 
+# /api prefix → 실제 경로로 리라이트 (UI에서 /api/xxx 호출)
+from starlette.middleware.base import BaseHTTPMiddleware
+class ApiPrefixMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        if request.url.path.startswith("/api/"):
+            request.scope["path"] = request.url.path[4:]  # strip /api
+        return await call_next(request)
+app.add_middleware(ApiPrefixMiddleware)
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -512,6 +521,9 @@ def create_battle(body: BattleRequest):
             )
             conn.commit()
             row = cur.fetchone()
+    # battle_engine에도 등록
+    from packages.battle_engine import create_battle as be_create
+    be_create(bid, body.challenger_id, body.defender_id or "", body.battle_type, body.mode, body.rules)
     return {"battle": dict(row)}
 
 @app.post("/battles/{bid}/start", dependencies=[Depends(verify_api_key)])
@@ -526,7 +538,69 @@ def start_battle(bid: str):
             row = cur.fetchone()
     if not row:
         raise HTTPException(404, "Battle not found or not pending")
+    from packages.battle_engine import start_battle as be_start
+    try:
+        be_start(bid)
+    except Exception:
+        pass
     return {"battle": dict(row)}
+
+class BattleEventInput(BaseModel):
+    event_type: str   # attack, defend, detect, block, exploit, alert
+    actor: str        # student_id
+    target: str = ""
+    description: str = ""
+    points: int = 0
+    detail: dict[str, Any] = {}
+
+@app.post("/battles/{bid}/event", dependencies=[Depends(verify_api_key)])
+def add_battle_event(bid: str, body: BattleEventInput):
+    """대전 이벤트 추가 (실시간 스트리밍)"""
+    from packages.battle_engine import add_event, BattleEvent, get_battle
+    event = BattleEvent(
+        event_type=body.event_type, actor=body.actor, target=body.target,
+        description=body.description, points=body.points, detail=body.detail,
+    )
+    try:
+        state = add_event(bid, event)
+    except ValueError:
+        raise HTTPException(404, "Battle not found in engine")
+    # DB에 결과 동기화
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute(
+                "UPDATE battles SET result=result || %s WHERE id=%s",
+                (Json({"last_event": body.event_type, "challenger_score": state.challenger_score, "defender_score": state.defender_score}), bid),
+            )
+            conn.commit()
+    return {"state": state.to_dict(), "event": event.to_dict()}
+
+@app.get("/battles/{bid}/events", dependencies=[Depends(verify_api_key)])
+def get_battle_events(bid: str, since: float = 0):
+    """대전 이벤트 목록 (실시간 폴링용)"""
+    from packages.battle_engine import get_events, get_battle
+    state = get_battle(bid)
+    events = get_events(bid, since)
+    return {
+        "battle": state.to_dict() if state else None,
+        "events": [e.to_dict() for e in events],
+        "total": len(events),
+    }
+
+@app.get("/battles/{bid}/stats", dependencies=[Depends(verify_api_key)])
+def get_battle_stats(bid: str):
+    """대전 통계"""
+    from packages.battle_engine import battle_stats
+    stats = battle_stats(bid)
+    if not stats:
+        raise HTTPException(404, "Battle not found")
+    return stats
+
+@app.get("/battles/active", dependencies=[Depends(verify_api_key)])
+def get_active_battles():
+    """진행 중인 대전 목록 (관전용)"""
+    from packages.battle_engine import get_active_battles
+    return {"battles": [b.to_dict() for b in get_active_battles()]}
 
 @app.post("/battles/{bid}/end", dependencies=[Depends(verify_api_key)])
 def end_battle(bid: str, result: dict[str, Any] = {}):
@@ -670,8 +744,29 @@ def list_blocks(agent_id: str | None = None, limit: int = 50):
             rows = cur.fetchall()
     return {"blocks": [dict(r) for r in rows]}
 
+@app.get("/blockchain/stats", dependencies=[Depends(verify_api_key)])
+def blockchain_stats():
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT count(*) as total_blocks, COALESCE(sum(reward_amount),0) as total_reward FROM pow_blocks")
+            row = cur.fetchone()
+            cur.execute("SELECT count(DISTINCT agent_id) as agents FROM pow_blocks")
+            agents = cur.fetchone()["agents"]
+    return {"total_blocks": row["total_blocks"], "total_reward": float(row["total_reward"]), "agents": agents}
+
+@app.get("/battles/events/recent", dependencies=[Depends(verify_api_key)])
+def recent_battle_events():
+    """최근 대전 이벤트 (UI용)"""
+    from packages.battle_engine import get_all_battles
+    events = []
+    for b in get_all_battles():
+        for e in b.events[-5:]:
+            events.append({**e.to_dict(), "battle_id": b.battle_id})
+    events.sort(key=lambda x: x["timestamp"], reverse=True)
+    return events[:20]
+
 # ══════════════════════════════════════════════════
-#  WebSocket (대전 실시간 — M10 stub)
+#  WebSocket (대전 실시간)
 # ══════════════════════════════════════════════════
 _battle_connections: dict[str, list[WebSocket]] = {}
 
@@ -700,7 +795,15 @@ def register_central(central_url: str = "http://localhost:7000"):
 import pathlib
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse
 
 _ui_dist = pathlib.Path(__file__).parent.parent.parent / "ccc-ui" / "dist"
 if _ui_dist.exists():
+    @app.get("/app/{path:path}")
+    def spa_fallback(path: str):
+        fpath = _ui_dist / path
+        if fpath.is_file():
+            return FileResponse(str(fpath))
+        return FileResponse(str(_ui_dist / "index.html"))
+
     app.mount("/app", StaticFiles(directory=str(_ui_dist), html=True), name="ui")
