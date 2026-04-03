@@ -44,8 +44,8 @@ export default function Labs() {
 
   const filtered = filter === 'all' ? labs : labs.filter(l => l.version === filter)
 
-  if (loading) return <div style={{ color: '#8b949e', padding: 40, textAlign: 'center' }}>Loading courses...</div>
-  if (error) return <div style={{ color: '#f85149', padding: 40, textAlign: 'center' }}>Error: {error}</div>
+  if (loading) return <div style={{ color: '#8b949e', padding: 40, textAlign: 'center' }}>Loading courses... (v2)</div>
+  if (error) return <div style={{ color: '#f85149', padding: 40, textAlign: 'center' }}>Error loading courses: {error}</div>
 
   // 교과목 선택 전: 교과목 카드 그리드
   if (!selectedCourse) {
