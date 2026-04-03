@@ -356,7 +356,8 @@ _COURSE_MAP = {
     "course9-autonomous-security": {"name": "autonomous", "title": "자율보안시스템", "group": "AI 보안", "group_color": "#bc8cff", "icon": "⚡", "description": "PoW 작업증명, 강화학습(RL), Experience 메모리, 자율 Red/Blue/Purple Team을 구축합니다."},
     "course10-ai-security-agent": {"name": "ai-agent", "title": "AI 보안 에이전트", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🕹️", "description": "AI 에이전트 기본부터 하네스 구축, 멀티에이전트, RAG, 에이전트 보안까지 실습합니다."},
 }
-_BATTLE_COURSE = {"name": "battle", "title": "공방전 (Cyber Battle)", "group": "실전", "group_color": "#f97316", "icon": "⚔️", "description": "인프라 간 공격/방어 대전 — 1v1, 팀전, 종합 시나리오, 리더보드"}
+_BATTLE_COURSE = {"name": "battle", "title": "공방전 기초 (Cyber Battle)", "group": "실전", "group_color": "#f97316", "icon": "⚔️", "description": "인프라 간 공격/방어 대전 기초 — 정찰, 취약점, 방화벽, IDS, 1v1, 팀전"}
+_BATTLE_ADV_COURSE = {"name": "battle-adv", "title": "공방전 심화 (Advanced Battle)", "group": "실전", "group_color": "#f97316", "icon": "🔥", "description": "APT 시나리오, 다단계 침투, 실시간 공방, AI vs AI 대전, 종합 레드/블루팀 운영"}
 _GROUP_ORDER = ["공격 기술", "방어 운영", "AI 보안", "실전"]
 
 @app.get("/education/courses", dependencies=[Depends(verify_api_key)])
@@ -383,23 +384,24 @@ def list_education_courses():
             "labs_nonai": lab_nonai,
             "labs_ai": lab_ai,
         })
-    # 공방전 (교안은 없지만 lab은 있음)
+    # 공방전 기초 + 심화 (교안은 없지만 lab은 있음)
     import glob as _glob2
-    battle_nonai = len(_glob2.glob(os.path.join(_LABS_DIR, "battle-nonai", "*.yaml")))
-    battle_ai = len(_glob2.glob(os.path.join(_LABS_DIR, "battle-ai", "*.yaml")))
-    if battle_nonai or battle_ai:
-        result.append({
-            "course_dir": "battle",
-            "course_id": "battle",
-            "title": _BATTLE_COURSE["title"],
-            "group": _BATTLE_COURSE["group"],
-            "group_color": _BATTLE_COURSE["group_color"],
-            "icon": _BATTLE_COURSE["icon"],
-            "description": _BATTLE_COURSE["description"],
-            "weeks": max(battle_nonai, battle_ai),
-            "labs_nonai": battle_nonai,
-            "labs_ai": battle_ai,
-        })
+    for bc in [_BATTLE_COURSE, _BATTLE_ADV_COURSE]:
+        bn = len(_glob2.glob(os.path.join(_LABS_DIR, f"{bc['name']}-nonai", "*.yaml")))
+        ba = len(_glob2.glob(os.path.join(_LABS_DIR, f"{bc['name']}-ai", "*.yaml")))
+        if bn or ba:
+            result.append({
+                "course_dir": bc["name"],
+                "course_id": bc["name"],
+                "title": bc["title"],
+                "group": bc["group"],
+                "group_color": bc["group_color"],
+                "icon": bc["icon"],
+                "description": bc["description"],
+                "weeks": max(bn, ba),
+                "labs_nonai": bn,
+                "labs_ai": ba,
+            })
     # 그룹별 정렬
     groups = []
     for gname in _GROUP_ORDER:

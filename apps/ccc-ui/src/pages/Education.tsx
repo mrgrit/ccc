@@ -13,6 +13,8 @@ export default function Education() {
   const [lectureTitle, setLectureTitle] = useState('')
   const [labDetail, setLabDetail] = useState<any>(null)
   const [showAnswers, setShowAnswers] = useState(false)
+  // 현재 보기 모드: none | lecture | lab
+  const [viewMode, setViewMode] = useState<'none' | 'lecture' | 'lab'>('none')
 
   useEffect(() => {
     api('/api/education/courses')
@@ -25,6 +27,7 @@ export default function Education() {
     setSelectedCourse(course)
     setLecture(null)
     setLabDetail(null)
+    setViewMode('none')
     setWeeksLoading(true)
     try {
       const d = await api(`/api/education/courses/${course.course_id}/weeks`)
@@ -35,6 +38,7 @@ export default function Education() {
 
   const openLecture = async (courseId: string, week: number, title: string) => {
     setLabDetail(null)
+    setViewMode('lecture')
     setLectureTitle(`Week ${week}: ${title}`)
     try {
       const d = await api(`/api/education/lecture/${courseId}/${week}`)
@@ -44,44 +48,45 @@ export default function Education() {
 
   const openLab = async (labId: string, admin = false) => {
     setLecture(null)
+    setViewMode('lab')
     try {
       const d = await api(`/api/labs/catalog/${labId}${admin ? '?admin=true' : ''}`)
       setLabDetail(d)
     } catch { setLabDetail(null) }
   }
 
-  if (loading) return <div style={{ color: '#8b949e', padding: 40, textAlign: 'center' }}>Loading courses...</div>
-  if (error) return <div style={{ color: '#f85149', padding: 40, textAlign: 'center' }}>Error: {error}</div>
+  if (loading) return <div style={{ color: '#8b949e', padding: 40, textAlign: 'center', fontSize: 15 }}>Loading courses...</div>
+  if (error) return <div style={{ color: '#f85149', padding: 40, textAlign: 'center', fontSize: 15 }}>Error: {error}</div>
 
   // ── 교과목 선택 전: 그룹별 카드 ──
   if (!selectedCourse) {
     return (
       <div>
-        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, color: '#e6edf3' }}>Education</h2>
-        <p style={{ fontSize: 13, color: '#8b949e', marginBottom: 24 }}>교과목을 선택하면 주차별 교안과 실습을 확인할 수 있습니다.</p>
+        <h2 style={{ fontSize: 26, fontWeight: 700, marginBottom: 8, color: '#e6edf3' }}>Education</h2>
+        <p style={{ fontSize: 15, color: '#8b949e', marginBottom: 28 }}>교과목을 선택하면 주차별 교안과 실습을 확인할 수 있습니다.</p>
         {groups.map(g => (
-          <div key={g.group} style={{ marginBottom: 32 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
-              <div style={{ width: 4, height: 24, borderRadius: 2, background: g.color }} />
-              <h3 style={{ fontSize: 18, fontWeight: 700, color: g.color }}>{g.group}</h3>
-              <span style={{ fontSize: 12, color: '#8b949e' }}>{g.courses.length}개 과목</span>
+          <div key={g.group} style={{ marginBottom: 36 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 16 }}>
+              <div style={{ width: 4, height: 28, borderRadius: 2, background: g.color }} />
+              <h3 style={{ fontSize: 20, fontWeight: 700, color: g.color }}>{g.group}</h3>
+              <span style={{ fontSize: 14, color: '#8b949e' }}>{g.courses.length}개 과목</span>
             </div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: 16 }}>
               {g.courses.map((c: any) => (
                 <div key={c.course_id} onClick={() => selectCourse(c)} style={{
-                  background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: 20, cursor: 'pointer',
-                  borderLeft: `4px solid ${g.color}`, transition: 'border-color 0.2s, transform 0.1s',
-                }} onMouseOver={e => { e.currentTarget.style.borderColor = g.color; e.currentTarget.style.transform = 'translateY(-2px)' }}
-                   onMouseOut={e => { e.currentTarget.style.borderColor = '#30363d'; e.currentTarget.style.borderLeftColor = g.color; e.currentTarget.style.transform = 'none' }}>
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-                    <span style={{ fontSize: 24 }}>{c.icon}</span>
-                    <div style={{ fontSize: 16, fontWeight: 700, color: '#e6edf3' }}>{c.title}</div>
+                  background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: 22, cursor: 'pointer',
+                  borderLeft: `4px solid ${g.color}`, transition: 'transform 0.1s',
+                }} onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-2px)' }}
+                   onMouseOut={e => { e.currentTarget.style.transform = 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+                    <span style={{ fontSize: 28 }}>{c.icon}</span>
+                    <div style={{ fontSize: 17, fontWeight: 700, color: '#e6edf3' }}>{c.title}</div>
                   </div>
-                  <div style={{ fontSize: 13, color: '#8b949e', marginBottom: 12, lineHeight: 1.5 }}>{c.description}</div>
-                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: 11 }}>
-                    <span style={{ padding: '2px 8px', borderRadius: 10, background: '#21262d', color: '#8b949e' }}>{c.weeks}주</span>
-                    {c.labs_nonai > 0 && <span style={{ padding: '2px 8px', borderRadius: 10, background: 'rgba(88,166,255,0.12)', color: '#58a6ff' }}>Non-AI {c.labs_nonai}</span>}
-                    {c.labs_ai > 0 && <span style={{ padding: '2px 8px', borderRadius: 10, background: 'rgba(249,115,22,0.12)', color: '#f97316' }}>AI {c.labs_ai}</span>}
+                  <div style={{ fontSize: 14, color: '#8b949e', marginBottom: 14, lineHeight: 1.6 }}>{c.description}</div>
+                  <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12 }}>
+                    <span style={{ padding: '3px 10px', borderRadius: 10, background: '#21262d', color: '#8b949e' }}>{c.weeks}주</span>
+                    {c.labs_nonai > 0 && <span style={{ padding: '3px 10px', borderRadius: 10, background: 'rgba(88,166,255,0.12)', color: '#58a6ff' }}>Non-AI {c.labs_nonai}</span>}
+                    {c.labs_ai > 0 && <span style={{ padding: '3px 10px', borderRadius: 10, background: 'rgba(249,115,22,0.12)', color: '#f97316' }}>AI {c.labs_ai}</span>}
                   </div>
                 </div>
               ))}
@@ -92,169 +97,150 @@ export default function Education() {
     )
   }
 
-  // ── 교과목 선택 후: 주차별 교안 + 실습 ──
-  return (
-    <div style={{ display: 'flex', gap: 24 }}>
-      {/* Left: 주차 목록 */}
-      <div style={{ width: (lecture || labDetail) ? 340 : '100%', flexShrink: 0, transition: 'width 0.2s' }}>
-        <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20 }}>
-          <button onClick={() => { setSelectedCourse(null); setLecture(null); setLabDetail(null) }} style={{
-            background: '#21262d', color: '#8b949e', border: '1px solid #30363d', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12,
-          }}>Back</button>
-          <div>
-            <span style={{ fontSize: 20, marginRight: 8 }}>{selectedCourse.icon}</span>
-            <span style={{ fontSize: 20, fontWeight: 700, color: '#e6edf3' }}>{selectedCourse.title}</span>
-          </div>
+  // ── 교과목 선택 후 ──
+  // 콘텐츠가 열렸으면 전체를 콘텐츠로 표시 (주차 목록은 상단 탭)
+  if (viewMode !== 'none') {
+    return (
+      <div>
+        {/* 상단 네비 */}
+        <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16 }}>
+          <button onClick={() => { setViewMode('none'); setLecture(null); setLabDetail(null) }} style={backBtn}>주차 목록</button>
+          <button onClick={() => { setSelectedCourse(null); setViewMode('none') }} style={backBtn}>과목 목록</button>
+          <span style={{ fontSize: 14, color: '#8b949e' }}>{selectedCourse.icon} {selectedCourse.title}</span>
+          <span style={{ fontSize: 16, fontWeight: 700, color: '#e6edf3', marginLeft: 8 }}>
+            {viewMode === 'lecture' ? lectureTitle : labDetail?.title}
+          </span>
+          {labDetail?.has_answers && viewMode === 'lab' && (
+            <button onClick={() => { setShowAnswers(!showAnswers); openLab(labDetail.lab_id, !showAnswers) }} style={{
+              marginLeft: 'auto', background: showAnswers ? '#f85149' : '#21262d', color: showAnswers ? '#fff' : '#8b949e',
+              border: '1px solid #30363d', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 12,
+            }}>{showAnswers ? 'Hide Answers' : 'Answers (Admin)'}</button>
+          )}
         </div>
 
-        {weeksLoading ? (
-          <div style={{ color: '#8b949e', padding: 40, textAlign: 'center' }}>Loading weeks...</div>
-        ) : (
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-            {weeks.map(w => (
-              <div key={w.week} style={{
-                background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 14,
-              }}>
-                <div style={{ fontSize: 11, color: '#8b949e', marginBottom: 4 }}>Week {w.week}</div>
-                <div style={{ fontSize: 14, fontWeight: 600, color: '#e6edf3', marginBottom: 10 }}>{w.title || `Week ${w.week}`}</div>
-                <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                  {w.has_lecture && (
-                    <button onClick={() => openLecture(selectedCourse.course_id, w.week, w.title)} style={{
-                      padding: '4px 12px', borderRadius: 6, fontSize: 11, cursor: 'pointer',
-                      background: lecture && lectureTitle.includes(`Week ${w.week}`) ? '#f97316' : '#21262d',
-                      color: lecture && lectureTitle.includes(`Week ${w.week}`) ? '#fff' : '#e6edf3',
-                      border: '1px solid #30363d',
-                    }}>📖 교안</button>
-                  )}
-                  <button onClick={() => openLab(w.lab_nonai_id)} style={{
-                    padding: '4px 12px', borderRadius: 6, fontSize: 11, cursor: 'pointer',
-                    background: labDetail?.lab_id === w.lab_nonai_id ? '#58a6ff' : '#21262d',
-                    color: labDetail?.lab_id === w.lab_nonai_id ? '#fff' : '#58a6ff',
-                    border: '1px solid #30363d',
-                  }}>📝 Non-AI</button>
-                  <button onClick={() => openLab(w.lab_ai_id)} style={{
-                    padding: '4px 12px', borderRadius: 6, fontSize: 11, cursor: 'pointer',
-                    background: labDetail?.lab_id === w.lab_ai_id ? '#f97316' : '#21262d',
-                    color: labDetail?.lab_id === w.lab_ai_id ? '#fff' : '#f97316',
-                    border: '1px solid #30363d',
-                  }}>🤖 AI</button>
+        {/* 교안 전체 화면 */}
+        {viewMode === 'lecture' && lecture && (
+          <div style={{
+            background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: '32px 36px',
+            fontSize: 15, color: '#c9d1d9', lineHeight: 1.7,
+          }} dangerouslySetInnerHTML={{ __html: markdownToHtml(lecture) }} />
+        )}
+
+        {/* 실습 전체 화면 */}
+        {viewMode === 'lab' && labDetail && (
+          <div>
+            <div style={{ display: 'flex', gap: 12, marginBottom: 16, flexWrap: 'wrap', fontSize: 13 }}>
+              <span style={{ padding: '4px 12px', borderRadius: 10, background: labDetail.version === 'ai' ? 'rgba(249,115,22,0.15)' : 'rgba(88,166,255,0.15)', color: labDetail.version === 'ai' ? '#f97316' : '#58a6ff', fontWeight: 600 }}>{labDetail.version === 'ai' ? 'AI' : 'Non-AI'}</span>
+              <span style={{ color: '#8b949e' }}>{labDetail.duration_minutes}min</span>
+              <span style={{ color: '#f97316', fontWeight: 600 }}>{labDetail.total_points}pts</span>
+            </div>
+            {labDetail.description && (
+              <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 16, marginBottom: 16, fontSize: 14, color: '#8b949e', lineHeight: 1.6 }}>{labDetail.description}</div>
+            )}
+            {labDetail.objectives?.length > 0 && (
+              <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 16, marginBottom: 16 }}>
+                <h4 style={{ fontSize: 15, color: '#e6edf3', marginBottom: 8 }}>Objectives</h4>
+                {labDetail.objectives.map((o: string, i: number) => (
+                  <div key={i} style={{ fontSize: 14, color: '#8b949e', padding: '3px 0' }}>- {o}</div>
+                ))}
+              </div>
+            )}
+            {labDetail.steps?.map((s: any, i: number) => (
+              <div key={i} style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 18, marginBottom: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    <span style={{ background: '#21262d', borderRadius: '50%', width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: '#f97316', fontWeight: 700 }}>{s.order}</span>
+                    {s.category && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#21262d', color: '#8b949e' }}>{s.category}</span>}
+                  </div>
+                  <span style={{ fontSize: 13, color: '#f97316', fontWeight: 600 }}>{s.points}pts</span>
                 </div>
+                <div style={{ fontSize: 15, color: '#e6edf3', marginBottom: 8, lineHeight: 1.6 }}>{s.instruction}</div>
+                {s.hint && <div style={{ fontSize: 14, color: '#58a6ff', background: '#0d1f3c', borderRadius: 6, padding: '8px 12px', marginBottom: 8 }}>Hint: {s.hint}</div>}
+                {s.script && <div style={{ fontSize: 14, fontFamily: 'Consolas,Monaco,monospace', color: '#3fb950', background: '#0d1f0d', borderRadius: 6, padding: '8px 12px', marginBottom: 8, whiteSpace: 'pre-wrap' as const }}>$ {s.script}</div>}
+                {s.verify && <div style={{ fontSize: 13, color: '#8b949e' }}>Verify: <code style={{ color: '#d29922' }}>{s.verify.type}</code> <code style={{ color: '#bc8cff' }}>"{s.verify.expect}"</code></div>}
+                {s.answer && (
+                  <div style={{ marginTop: 8, background: '#1a0a0a', border: '1px solid #f8514966', borderRadius: 6, padding: '10px 12px' }}>
+                    <div style={{ fontSize: 11, color: '#f85149', fontWeight: 600, marginBottom: 4 }}>Answer (Admin)</div>
+                    <div style={{ fontSize: 14, color: '#e6edf3', fontFamily: 'Consolas,Monaco,monospace', whiteSpace: 'pre-wrap' as const }}>{s.answer}</div>
+                    {s.answer_detail && <div style={{ fontSize: 13, color: '#8b949e', marginTop: 6 }}>{s.answer_detail}</div>}
+                  </div>
+                )}
               </div>
             ))}
           </div>
         )}
       </div>
+    )
+  }
 
-      {/* Right: 교안 또는 실습 상세 */}
-      {(lecture || labDetail) && (
-        <div style={{ flex: 1, minWidth: 0 }}>
-          {/* 교안 보기 */}
-          {lecture && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 16 }}>
-                <h3 style={{ fontSize: 18, fontWeight: 700, color: '#e6edf3' }}>{lectureTitle}</h3>
-                <button onClick={() => setLecture(null)} style={{
-                  background: '#21262d', color: '#8b949e', border: '1px solid #30363d', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 11,
-                }}>Close</button>
-              </div>
-              <div style={{
-                background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 24,
-                fontSize: 14, color: '#c9d1d9', lineHeight: 1.6, maxHeight: 'calc(100vh - 150px)', overflowY: 'auto',
-                whiteSpace: 'pre-wrap',
-              }} dangerouslySetInnerHTML={{ __html: markdownToHtml(lecture) }} />
-            </div>
-          )}
+  // ── 주차 목록 ──
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 24 }}>
+        <button onClick={() => { setSelectedCourse(null) }} style={backBtn}>Back</button>
+        <span style={{ fontSize: 24 }}>{selectedCourse.icon}</span>
+        <h2 style={{ fontSize: 22, fontWeight: 700, color: '#e6edf3' }}>{selectedCourse.title}</h2>
+      </div>
 
-          {/* 실습 상세 */}
-          {labDetail && (
-            <div>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 16 }}>
-                <div>
-                  <div style={{ fontSize: 12, color: '#8b949e', marginBottom: 4 }}>{labDetail.course} / Week {labDetail.week}</div>
-                  <h3 style={{ fontSize: 18, fontWeight: 700, color: '#e6edf3' }}>{labDetail.title}</h3>
-                </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {labDetail.has_answers && (
-                    <button onClick={() => { setShowAnswers(!showAnswers); openLab(labDetail.lab_id, !showAnswers) }} style={{
-                      background: showAnswers ? '#f85149' : '#21262d', color: showAnswers ? '#fff' : '#8b949e',
-                      border: '1px solid #30363d', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 11,
-                    }}>{showAnswers ? 'Hide Answers' : 'Answers (Admin)'}</button>
-                  )}
-                  <button onClick={() => { setLabDetail(null); setShowAnswers(false) }} style={{
-                    background: '#21262d', color: '#8b949e', border: '1px solid #30363d', borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 11,
-                  }}>Close</button>
-                </div>
-              </div>
-
-              <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap', fontSize: 12 }}>
-                <span style={{ padding: '3px 10px', borderRadius: 10, background: labDetail.version === 'ai' ? 'rgba(249,115,22,0.15)' : 'rgba(88,166,255,0.15)', color: labDetail.version === 'ai' ? '#f97316' : '#58a6ff', fontWeight: 600 }}>{labDetail.version === 'ai' ? 'AI' : 'Non-AI'}</span>
-                <span style={{ color: '#8b949e' }}>{labDetail.duration_minutes}min</span>
-                <span style={{ color: '#f97316', fontWeight: 600 }}>{labDetail.total_points}pts</span>
-                <span style={{ color: '#8b949e' }}>Pass: {Math.round(labDetail.pass_threshold * 100)}%</span>
-              </div>
-
-              {labDetail.description && (
-                <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 14, marginBottom: 12, fontSize: 13, color: '#8b949e', lineHeight: 1.6 }}>{labDetail.description}</div>
-              )}
-
-              <div style={{ maxHeight: 'calc(100vh - 280px)', overflowY: 'auto' }}>
-                {labDetail.steps?.map((s: any, i: number) => (
-                  <div key={i} style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 14, marginBottom: 8 }}>
-                    <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                        <span style={{ background: '#21262d', borderRadius: '50%', width: 22, height: 22, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 11, color: '#f97316', fontWeight: 700 }}>{s.order}</span>
-                        {s.category && <span style={{ fontSize: 10, padding: '1px 6px', borderRadius: 10, background: '#21262d', color: '#8b949e' }}>{s.category}</span>}
-                      </div>
-                      <span style={{ fontSize: 11, color: '#f97316', fontWeight: 600 }}>{s.points}pts</span>
-                    </div>
-                    <div style={{ fontSize: 13, color: '#e6edf3', marginBottom: 6, lineHeight: 1.5 }}>{s.instruction}</div>
-                    {s.hint && <div style={{ fontSize: 12, color: '#58a6ff', background: '#0d1f3c', borderRadius: 6, padding: '6px 10px', marginBottom: 6 }}>Hint: {s.hint}</div>}
-                    {s.script && <div style={{ fontSize: 12, fontFamily: 'monospace', color: '#3fb950', background: '#0d1f0d', borderRadius: 6, padding: '6px 10px', marginBottom: 6, whiteSpace: 'pre-wrap' as const }}>$ {s.script}</div>}
-                    {s.verify && <div style={{ fontSize: 11, color: '#8b949e' }}>Verify: <code style={{ color: '#d29922' }}>{s.verify.type}</code> <code style={{ color: '#bc8cff' }}>"{s.verify.expect}"</code></div>}
-                    {s.answer && (
-                      <div style={{ marginTop: 6, background: '#1a0a0a', border: '1px solid #f8514966', borderRadius: 6, padding: '8px 10px' }}>
-                        <div style={{ fontSize: 10, color: '#f85149', fontWeight: 600, marginBottom: 3 }}>Answer (Admin)</div>
-                        <div style={{ fontSize: 12, color: '#e6edf3', fontFamily: 'monospace', whiteSpace: 'pre-wrap' as const }}>{s.answer}</div>
-                        {s.answer_detail && <div style={{ fontSize: 11, color: '#8b949e', marginTop: 4 }}>{s.answer_detail}</div>}
-                      </div>
-                    )}
-                  </div>
-                ))}
+      {weeksLoading ? (
+        <div style={{ color: '#8b949e', padding: 40, textAlign: 'center', fontSize: 15 }}>Loading...</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          {weeks.map(w => (
+            <div key={w.week} style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 18 }}>
+              <div style={{ fontSize: 12, color: '#8b949e', marginBottom: 4 }}>Week {w.week}</div>
+              <div style={{ fontSize: 16, fontWeight: 600, color: '#e6edf3', marginBottom: 12 }}>{w.title || `Week ${w.week}`}</div>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+                {w.has_lecture && (
+                  <button onClick={() => openLecture(selectedCourse.course_id, w.week, w.title)} style={{ ...actionBtn, background: '#21262d', color: '#e6edf3' }}>📖 교안</button>
+                )}
+                <button onClick={() => openLab(w.lab_nonai_id)} style={{ ...actionBtn, color: '#58a6ff' }}>📝 Non-AI 실습</button>
+                <button onClick={() => openLab(w.lab_ai_id)} style={{ ...actionBtn, color: '#f97316' }}>🤖 AI 실습</button>
               </div>
             </div>
-          )}
+          ))}
         </div>
       )}
     </div>
   )
 }
 
-// 간이 markdown → HTML
+const backBtn: React.CSSProperties = {
+  background: '#21262d', color: '#8b949e', border: '1px solid #30363d',
+  borderRadius: 6, padding: '7px 14px', cursor: 'pointer', fontSize: 13,
+}
+const actionBtn: React.CSSProperties = {
+  padding: '6px 16px', borderRadius: 6, fontSize: 13, cursor: 'pointer',
+  background: '#21262d', border: '1px solid #30363d',
+}
+
+// ── Markdown → HTML ──
 function markdownToHtml(md: string): string {
   return md
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    // 코드블록 — 폰트 14px, 줄간격 1.5
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:14px 16px;font-size:14px;line-height:1.5;overflow-x:auto;color:#3fb950;margin:10px 0;font-family:Consolas,Monaco,monospace">$2</pre>')
-    // 제목 — h1 크기 줄임
-    .replace(/^#### (.+)$/gm, '<h4 style="font-size:14px;color:#c9d1d9;margin:14px 0 6px;font-weight:600">$1</h4>')
-    .replace(/^### (.+)$/gm, '<h3 style="font-size:15px;color:#e6edf3;margin:18px 0 8px;font-weight:600">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 style="font-size:17px;color:#e6edf3;margin:22px 0 10px;border-bottom:1px solid #30363d;padding-bottom:6px;font-weight:700">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 style="font-size:19px;color:#f0883e;margin:0 0 14px;font-weight:700">$1</h1>')
-    // 인라인 코드 — 크기 13px, 색상 부드럽게
-    .replace(/`([^`]+)`/g, '<code style="background:#21262d;padding:2px 6px;border-radius:3px;font-size:13px;color:#d2a8ff;font-family:Consolas,Monaco,monospace">$1</code>')
+    // 코드블록 — monospace, pre 유지 (도형/선 보존)
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px 20px;font-size:14px;line-height:1.6;overflow-x:auto;color:#3fb950;margin:12px 0;font-family:Consolas,Monaco,\'Courier New\',monospace;white-space:pre;tab-size:4">$2</pre>')
+    // 제목
+    .replace(/^#### (.+)$/gm, '<h4 style="font-size:16px;color:#c9d1d9;margin:18px 0 8px;font-weight:600">$1</h4>')
+    .replace(/^### (.+)$/gm, '<h3 style="font-size:17px;color:#e6edf3;margin:22px 0 10px;font-weight:600">$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2 style="font-size:19px;color:#e6edf3;margin:28px 0 12px;border-bottom:1px solid #30363d;padding-bottom:8px;font-weight:700">$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1 style="font-size:22px;color:#f0883e;margin:0 0 16px;font-weight:700">$1</h1>')
+    // 인라인 코드
+    .replace(/`([^`]+)`/g, '<code style="background:#21262d;padding:2px 7px;border-radius:4px;font-size:14px;color:#d2a8ff;font-family:Consolas,Monaco,monospace">$1</code>')
     .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#e6edf3">$1</strong>')
     // 블록쿼트
-    .replace(/^&gt; (.+)$/gm, '<div style="border-left:3px solid #30363d;padding:4px 12px;margin:4px 0;color:#8b949e;font-size:13px">$1</div>')
-    // 리스트 — 줄간격 줄임
-    .replace(/^\- (.+)$/gm, '<div style="padding:1px 0 1px 16px;font-size:14px">• $1</div>')
-    .replace(/^\d+\. (.+)$/gm, '<div style="padding:1px 0 1px 16px;font-size:14px">$1</div>')
-    // 테이블
+    .replace(/^&gt; (.+)$/gm, '<div style="border-left:3px solid #30363d;padding:6px 14px;margin:6px 0;color:#8b949e;font-size:14px">$1</div>')
+    // 리스트
+    .replace(/^\- (.+)$/gm, '<div style="padding:2px 0 2px 20px;font-size:15px">• $1</div>')
+    .replace(/^\d+\. (.+)$/gm, '<div style="padding:2px 0 2px 20px;font-size:15px">$1</div>')
+    // 테이블 구분선 제거
     .replace(/^\|[\s\-:|]+\|$/gm, '')
+    // 테이블 행
     .replace(/^\|(.+)\|$/gm, (_, row) => {
       const cells = row.split('|').map((c: string) => c.trim()).filter(Boolean)
-      return '<div style="display:flex;border-bottom:1px solid #21262d">' + cells.map((c: string) => `<span style="flex:1;padding:5px 10px;font-size:13px">${c}</span>`).join('') + '</div>'
+      return '<div style="display:flex;border-bottom:1px solid #21262d">' + cells.map((c: string) => `<span style="flex:1;padding:6px 12px;font-size:14px">${c}</span>`).join('') + '</div>'
     })
-    // 줄바꿈 — 간격 줄임
-    .replace(/\n\n/g, '<div style="height:8px"></div>')
+    // 줄바꿈
+    .replace(/\n\n/g, '<div style="height:10px"></div>')
     .replace(/\n/g, '<br/>')
 }
