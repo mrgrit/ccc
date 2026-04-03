@@ -219,7 +219,7 @@ function markdownToHtml(md: string): string {
   return md
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     // 코드블록 — monospace, pre 유지 (도형/선 보존)
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px 20px;font-size:15px;line-height:1.6;overflow-x:auto;color:#3fb950;margin:12px 0;font-family:Consolas,Monaco,\'Courier New\',monospace;white-space:pre;tab-size:4">$2</pre>')
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px 20px;font-size:15px;line-height:1.5;overflow-x:auto;color:#3fb950;margin:12px 0;font-family:\'D2Coding\',\'Nanum Gothic Coding\',Consolas,Monaco,\'Courier New\',monospace;white-space:pre;tab-size:4;letter-spacing:0">$2</pre>')
     // 제목
     .replace(/^#### (.+)$/gm, '<h4 style="font-size:17px;color:#c9d1d9;margin:18px 0 8px;font-weight:600">$1</h4>')
     .replace(/^### (.+)$/gm, '<h3 style="font-size:19px;color:#e6edf3;margin:22px 0 10px;font-weight:600">$1</h3>')
