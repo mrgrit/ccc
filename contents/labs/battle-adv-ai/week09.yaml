@@ -1,0 +1,291 @@
+lab_id: battle-adv-ai-week09
+title: AI vs AI 공방전 (1) — AI 공격 에이전트 vs AI 방어 에이전트
+version: ai
+course: battle-adv-ai
+week: 9
+description: AI 에이전트 간 자동화된 공방전의 개념과 아키텍처를 수동으로 분석한다. AI 공격 에이전트의 의사결정 로직과 AI 방어 에이전트의 탐지 로직을 이해하고 수동으로 시뮬레이션한다.
+difficulty: hard
+duration_minutes: 150
+objectives:
+- AI 공격/방어 에이전트의 아키텍처를 이해한다
+- LLM 기반 보안 에이전트의 의사결정 과정을 분석한다
+- AI 공방전 시나리오를 수동으로 시뮬레이션한다
+- AI 에이전트의 한계와 취약점을 식별한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: AI 공격 에이전트의 아키텍처를 분석하라. OpsClaw SubAgent의 자율 미션(/a2a/mission) 기능을 조회하여 Red Agent의 동작 구조를 이해하라.
+  hint: SubAgent API의 미션 엔드포인트와 설정을 확인한다.
+  category: analysis
+  points: 10
+  answer: 'curl -s http://localhost:8002/a2a/info 2>/dev/null | python3 -m json.tool; echo ''---''; echo ''Red Agent Architecture:''; echo ''1. LLM Brain: gemma3:12b (offensive reasoning)''; echo ''2. Tool
+    Access: nmap, curl, ssh, msfconsole''; echo ''3. Decision Loop: Observe → Orient → Decide → Act (OODA)''; echo ''4. Mission API: POST /a2a/mission {"role":"red","objective":"..."}'''
+  answer_detail: AI 공격 에이전트(Red Agent)는 LLM을 두뇌로 사용하여 공격 전략을 자율적으로 수립한다. OODA(관찰→판단→결정→행동) 루프를 따르며, 각 단계에서 LLM이 상황을 분석하고 다음 행동을 결정한다. 도구(nmap, curl 등)를 통해 실제 명령을 실행한다.
+  verify:
+    type: output_contains
+    expect: Red Agent Architecture
+  script: 'data = await agent.collect("분석 데이터 수집")
+
+    analysis = await agent.analyze(data, "AI 공격 에이전트의 아키텍처를 분석하라. OpsClaw SubAgent의 자율 미션(/a2a/mission) 기능을 조회하여 Red Agent")
+
+    await agent.report(analysis, "분석 보고서 생성")'
+- order: 2
+  instruction: AI 방어 에이전트의 아키텍처를 분석하라. Blue Agent의 탐지 로직, 대응 전략, 사용 도구를 정리하라.
+  hint: Blue Agent의 역할, 입력 데이터, 의사결정 과정을 분석한다.
+  category: analysis
+  points: 10
+  answer: "cat > /tmp/blue_agent_arch.txt << 'EOF'\n=== Blue Agent Architecture ===\n\n1. LLM Brain: llama3.1:8b (defensive reasoning)\n2. Input Sources:\n   - Suricata IDS alerts (eve.json)\n   - System\
+    \ logs (auth.log, syslog)\n   - Process monitoring (ps, ss)\n   - File integrity (checksums)\n\n3. Decision Loop:\n   Monitor → Detect → Analyze → Respond\n   a. Monitor: Continuously collect security\
+    \ events\n   b. Detect: LLM analyzes events for threats\n   c. Analyze: Determine severity and scope\n   d. Respond: Select and execute countermeasure\n\n4. Response Actions:\n   - Block IP (nftables)\n\
+    \   - Kill process\n   - Isolate host\n   - Alert SOC team\n\n5. Mission API: POST /a2a/mission {\"role\":\"blue\",\"objective\":\"defend network\"}\nEOF\ncat /tmp/blue_agent_arch.txt"
+  answer_detail: AI 방어 에이전트(Blue Agent)는 보안 이벤트를 수집하고 LLM으로 위협을 분석하여 자동 대응한다. Monitor→Detect→Analyze→Respond 루프를 따르며, IDS 알림, 시스템 로그, 프로세스 정보를 입력으로 받아 IP 차단, 프로세스 종료 등의 대응을 수행한다.
+  verify:
+    type: output_contains
+    expect: Blue Agent Architecture
+  script: 'data = await agent.collect("분석 데이터 수집")
+
+    analysis = await agent.analyze(data, "AI 방어 에이전트의 아키텍처를 분석하라. Blue Agent의 탐지 로직, 대응 전략, 사용 도구를 정리하라.")
+
+    await agent.report(analysis, "분석 보고서 생성")'
+- order: 3
+  instruction: AI 공격 에이전트의 의사결정 과정을 수동으로 시뮬레이션하라. 타겟 10.20.30.80에 대한 Red Agent의 첫 번째 행동(정찰)을 수동으로 수행하고, 다음 행동을 LLM 없이 논리적으로 결정하라.
+  hint: nmap 결과를 분석하고 다음 공격 단계를 논리적으로 결정한다.
+  category: exploit
+  points: 10
+  answer: 'echo ''=== Red Agent Step 1: Reconnaissance ==='' && nmap -sV --top-ports 20 10.20.30.80 2>&1 | tail -15 && echo ''---'' && echo ''Red Agent Decision Logic:'' && echo ''IF port 80/443 open AND
+    web service detected:'' && echo ''  THEN → web vulnerability scan (nikto, dirb)'' && echo ''IF port 22 open:'' && echo ''  THEN → SSH brute force (low priority, noisy)'' && echo ''IF port 3000 open
+    AND Node.js detected:'' && echo ''  THEN → JuiceShop exploitation (OWASP Top 10)'' && echo ''DECISION: Proceed with web vulnerability exploitation'''
+  answer_detail: Red Agent의 의사결정은 정찰 결과에 기반한 조건부 로직이다. 웹 서비스가 발견되면 웹 취약점 공격을, SSH가 열려 있으면 브루트포스를 고려한다. LLM 기반 에이전트도 유사한 추론을 수행하지만, 더 유연하고 창의적인 공격 경로를 탐색할 수 있다.
+  verify:
+    type: output_contains
+    expect: Red Agent Step 1
+  script: 'plan = await agent.plan("공격 기법: AI 공격 에이전트의 의사결정 과정을 수동으로 시뮬레이션하라. 타겟 10.20.30.80에 대한 Red Agent의 첫 번째 행동(정찰)을 수동")
+
+    result = await agent.execute(plan)
+
+    await agent.evaluate(result, "공격 성공 여부와 다음 단계를 판단하라")'
+- order: 4
+  instruction: AI 방어 에이전트의 탐지 과정을 수동으로 시뮬레이션하라. Red Agent의 정찰 활동이 발생했을 때 Blue Agent가 감지하고 대응하는 과정을 재현하라.
+  hint: 포트 스캔 로그를 확인하고 대응 조치를 결정한다.
+  category: defense
+  points: 10
+  answer: 'echo ''=== Blue Agent: Detect & Respond ==='' && echo ''[DETECT] Checking Suricata for scan alerts:'' && ssh 10.20.30.1 ''tail -20 /var/log/suricata/eve.json 2>/dev/null | python3 -c "import
+    sys,json; [print(json.loads(l).get(\"alert\",{}).get(\"signature\",\"\")) for l in sys.stdin if \"alert\" in l]" 2>/dev/null'' 2>&1 | tail -5; echo ''''; echo ''[ANALYZE] Threat assessment:''; echo
+    ''  Source: Port scan activity detected''; echo ''  Severity: MEDIUM (reconnaissance, not exploitation)''; echo ''  Scope: Single source IP scanning multiple ports''; echo ''''; echo ''[RESPOND] Blue
+    Agent actions:''; echo ''  1. Log incident (evidence collection)''; echo ''  2. Monitor source IP for escalation''; echo ''  3. Rate-limit connections from source (not block yet)''; echo ''  4. Alert
+    SOC for awareness'''
+  answer_detail: Blue Agent의 대응은 위협의 심각도에 비례한다. 정찰(포트 스캔)은 MEDIUM 위협이므로 즉시 차단하지 않고 모니터링 강화와 레이트 리밋을 적용한다. 공격이 Exploitation으로 에스컬레이션되면 IP 차단으로 전환한다. 과잉 대응은 정상 트래픽 차단을 유발할 수 있다.
+  verify:
+    type: output_contains
+    expect: Blue Agent
+  script: 'alerts = await agent.monitor("보안 이벤트 수집 및 분석")
+
+    response = await agent.respond(alerts, "탐지된 위협에 대한 최적 대응 조치를 실행하라")
+
+    await agent.log(response, "방어 조치 기록")'
+- order: 5
+  instruction: AI 공방전의 전체 시나리오를 설계하라. 5라운드에 걸친 Red vs Blue 시나리오를 작성하라.
+  hint: 각 라운드별 Red 공격 → Blue 탐지/대응 → Red 우회의 구조로 설계한다.
+  category: analysis
+  points: 10
+  answer: "cat > /tmp/ai_battle_scenario.txt << 'EOF'\n=== AI vs AI Battle Scenario (5 Rounds) ===\n\nRound 1: Reconnaissance\n  Red: nmap SYN scan on target network\n  Blue: Detect via Suricata, rate-limit\
+    \ source\n  Result: Red obtains partial service info\n\nRound 2: Initial Access\n  Red: SQL Injection on web server (avoiding WAF patterns)\n  Blue: WAF blocks standard SQLi, but Red uses encoding bypass\n\
+    \  Result: Red gains initial access via double-URL-encoding\n\nRound 3: Persistence\n  Red: Install crontab backdoor with obfuscated command\n  Blue: FIM detects crontab modification, removes entry\n\
+    \  Result: Red tries systemd service instead\n\nRound 4: Lateral Movement\n  Red: SSH to internal server using harvested credentials\n  Blue: Detect anomalous SSH from web server, block\n  Result: Red\
+    \ blocked, tries DNS tunneling for C2\n\nRound 5: Exfiltration\n  Red: DNS tunneling with low-frequency queries\n  Blue: Entropy analysis detects encoded subdomains\n  Result: Blue blocks DNS exfil,\
+    \ Red mission failed\n\nFinal Score: Blue wins (3-2) - prevented exfiltration\nEOF\ncat /tmp/ai_battle_scenario.txt"
+  answer_detail: AI 공방전 시나리오는 공격과 방어의 반복적 상호작용을 모델링한다. 각 라운드에서 Red는 공격을 시도하고 Blue는 탐지/차단하며, Red는 우회를 시도한다. 최종 평가는 데이터 유출 성공 여부로 판정한다. 이 시나리오는 AI 에이전트의 적응력을 테스트한다.
+  verify:
+    type: output_contains
+    expect: AI vs AI Battle Scenario
+  script: 'data = await agent.collect("분석 데이터 수집")
+
+    analysis = await agent.analyze(data, "AI 공방전의 전체 시나리오를 설계하라. 5라운드에 걸친 Red vs Blue 시나리오를 작성하라.")
+
+    await agent.report(analysis, "분석 보고서 생성")'
+- order: 6
+  instruction: AI 에이전트의 프롬프트 엔지니어링을 분석하라. Red Agent와 Blue Agent의 시스템 프롬프트가 어떻게 행동을 결정하는지 분석하라.
+  hint: prompt_engine 패키지의 프롬프트 구성을 확인한다.
+  category: analysis
+  points: 10
+  answer: "python3 -c \"\ntry:\n    from packages.prompt_engine import compose\n    prompt = compose('subagent')\n    print('Prompt length:', len(prompt), 'chars')\n    print('First 500 chars:', prompt[:500])\n\
+    except Exception as e:\n    print(f'prompt_engine error: {e}')\n\" 2>&1; echo '---'; echo 'AI Agent Prompt Engineering Analysis:'; echo '1. Role definition: Red(offensive) vs Blue(defensive)'; echo\
+    \ '2. Safety constraints: No destructive operations without approval'; echo '3. Tool access: Available commands and restrictions'; echo '4. Objective: Clear mission goal and success criteria'; echo\
+    \ '5. Context: Network topology, available targets/assets'"
+  answer_detail: AI 에이전트의 행동은 시스템 프롬프트에 의해 크게 좌우된다. 역할 정의(Red/Blue), 안전 제약(파괴 금지), 도구 접근 범위, 명확한 목표, 네트워크 컨텍스트가 프롬프트에 포함된다. prompt_engine 패키지는 이 섹션들을 동적으로 조합한다.
+  verify:
+    type: output_contains
+    expect: Prompt Engineering
+  script: 'data = await agent.collect("분석 데이터 수집")
+
+    analysis = await agent.analyze(data, "AI 에이전트의 프롬프트 엔지니어링을 분석하라. Red Agent와 Blue Agent의 시스템 프롬프트가 어떻게 행동을 결정하는지 분석하라.")
+
+    await agent.report(analysis, "분석 보고서 생성")'
+- order: 7
+  instruction: AI 에이전트의 취약점을 분석하라. Prompt Injection, Hallucination, 불완전한 도구 사용 등 AI 에이전트의 한계를 정리하라.
+  hint: LLM 기반 에이전트의 알려진 취약점과 한계를 정리한다.
+  category: analysis
+  points: 10
+  answer: "cat > /tmp/ai_agent_vulnerabilities.txt << 'EOF'\n=== AI Agent Vulnerabilities ===\n\n1. Prompt Injection:\n   - Red Agent can inject prompts via web page content\n   - Blue Agent can be confused\
+    \ by crafted log entries\n   - Mitigation: Input sanitization, prompt isolation\n\n2. Hallucination:\n   - Agent may generate non-existent tool commands\n   - May misinterpret scan results (false conclusions)\n\
+    \   - Mitigation: Output validation, tool schema enforcement\n\n3. Incomplete Tool Usage:\n   - May not use optimal flags/options\n   - May miss important scan results\n   - Mitigation: Tool wrapper\
+    \ with validation\n\n4. Context Window Limitations:\n   - Loses information in long operations\n   - May repeat failed strategies\n   - Mitigation: Memory management, state tracking\n\n5. Adversarial\
+    \ Robustness:\n   - Predictable decision patterns can be exploited\n   - May be manipulated by honeypot responses\n   - Mitigation: Randomization, strategy diversity\n\n6. Safety Boundary Violations:\n\
+    \   - May attempt unauthorized destructive actions\n   - Risk of unintended collateral damage\n   - Mitigation: Permission engine, sandboxing\nEOF\ncat /tmp/ai_agent_vulnerabilities.txt"
+  answer_detail: 'AI 보안 에이전트의 주요 취약점: (1) Prompt Injection - 공격 대상이 에이전트 프롬프트를 조작, (2) Hallucination - 존재하지 않는 명령 생성, (3) 불완전한 도구 사용, (4) 컨텍스트 윈도우 한계, (5) 예측 가능한 패턴, (6) 안전 경계 위반 가능성.'
+  verify:
+    type: output_contains
+    expect: AI Agent Vulnerabilities
+  script: 'data = await agent.collect("분석 데이터 수집")
+
+    analysis = await agent.analyze(data, "AI 에이전트의 취약점을 분석하라. Prompt Injection, Hallucination, 불완전한 도구 사용 등 AI 에이전트의 한계를 정")
+
+    await agent.report(analysis, "분석 보고서 생성")'
+- order: 8
+  instruction: AI 공방전의 스코어링 시스템을 설계하라. Red/Blue 에이전트의 성과를 정량적으로 측정하는 지표를 정의하라.
+  hint: 공격 성공률, 탐지율, 대응 시간 등의 지표를 정의한다.
+  category: analysis
+  points: 10
+  answer: "cat > /tmp/scoring_system.txt << 'EOF'\n=== AI Battle Scoring System ===\n\nRed Agent Metrics (Offensive Score):\n  - Reconnaissance success: 10 pts per discovered service\n  - Initial access:\
+    \ 30 pts per system compromised\n  - Persistence: 20 pts per mechanism surviving 5 min\n  - Lateral movement: 25 pts per additional host\n  - Data exfiltration: 50 pts per successful exfil\n  - Stealth\
+    \ bonus: 2x multiplier if undetected\n  Max Score: 500 pts\n\nBlue Agent Metrics (Defensive Score):\n  - Detection: 20 pts per attack detected\n  - Response time: 30 pts if blocked within 60s\n  - False\
+    \ positive penalty: -10 pts per false block\n  - Prevention: 40 pts per attack prevented\n  - Evidence collection: 15 pts per evidence preserved\n  - Recovery: 25 pts per system restored\n  Max Score:\
+    \ 500 pts\n\nBattle Outcome:\n  - Red wins if exfiltration score > Blue prevention score\n  - Blue wins if detection score > Red stealth score\n  - Draw if within 10% margin\nEOF\ncat /tmp/scoring_system.txt"
+  answer_detail: 공방전 스코어링은 Red(공격 진행도)와 Blue(방어 효과)를 정량적으로 비교한다. Red는 킬체인 진행에 따라 점수를 획득하고, Blue는 탐지/차단/복구에 따라 점수를 획득한다. 스텔스 보너스와 오탐 페널티로 현실적인 평가를 구현한다.
+  verify:
+    type: output_contains
+    expect: AI Battle Scoring
+  script: 'data = await agent.collect("분석 데이터 수집")
+
+    analysis = await agent.analyze(data, "AI 공방전의 스코어링 시스템을 설계하라. Red/Blue 에이전트의 성과를 정량적으로 측정하는 지표를 정의하라.")
+
+    await agent.report(analysis, "분석 보고서 생성")'
+- order: 9
+  instruction: Red Agent의 공격 전략을 최적화하라. 탐지를 우회하면서 목표를 달성하는 저소음(low-and-slow) 공격 전략을 설계하라.
+  hint: 시간 분산, 트래픽 위장, 다중 경로를 활용하는 전략을 수립한다.
+  category: exploit
+  points: 10
+  answer: "cat > /tmp/red_strategy_optimization.txt << 'EOF'\n=== Red Agent Optimized Strategy: Low-and-Slow ===\n\n1. Reconnaissance (spread over 2 hours):\n   - 1 port per 30 seconds (avoid scan detection)\n\
+    \   - Use version detection only on discovered ports\n   - Mix with legitimate traffic patterns\n\n2. Initial Access (timing-based):\n   - Attack during business hours (blend with traffic)\n   - Use\
+    \ encoded/obfuscated payloads (bypass WAF)\n   - Try multiple vectors simultaneously\n\n3. Persistence (stealth-first):\n   - Modify existing cron entries (not create new)\n   - Use legitimate binaries\
+    \ (LOLBins: living-off-the-land)\n   - Timestamp manipulation (touch -t)\n\n4. C2 Communication:\n   - DNS over HTTPS (DoH) - encrypted DNS queries\n   - Beacon interval: 300s with 50% jitter\n   -\
+    \ Mimic legitimate HTTP User-Agent\n\n5. Exfiltration:\n   - Small chunks (<1KB per transfer)\n   - Use legitimate cloud APIs\n   - Time transfers during peak hours\n\nGoal: Complete mission in <24h\
+    \ while remaining undetected\nEOF\ncat /tmp/red_strategy_optimization.txt"
+  answer_detail: Low-and-Slow 전략은 탐지 임계값 이하로 활동하여 Blue Agent의 탐지를 회피한다. 스캔 속도 제한, 정상 트래픽 위장, LOLBins 활용, DoH 기반 C2, 소량 분산 유출을 조합한다. AI Red Agent는 Blue Agent의 탐지 패턴을 학습하여 전략을 동적으로 조정할 수 있다.
+  verify:
+    type: output_contains
+    expect: Low-and-Slow
+  script: 'plan = await agent.plan("공격 기법: Red Agent의 공격 전략을 최적화하라. 탐지를 우회하면서 목표를 달성하는 저소음(low-and-slow) 공격 전략을 설계하라.")
+
+    result = await agent.execute(plan)
+
+    await agent.evaluate(result, "공격 성공 여부와 다음 단계를 판단하라")'
+- order: 10
+  instruction: Blue Agent의 방어 전략을 최적화하라. 저소음 공격을 탐지하기 위한 적응형 방어 전략을 설계하라.
+  hint: 기준선 비교, 행위 분석, 상관 분석을 결합한다.
+  category: defense
+  points: 10
+  answer: "cat > /tmp/blue_strategy_optimization.txt << 'EOF'\n=== Blue Agent Optimized Strategy: Adaptive Defense ===\n\n1. Enhanced Monitoring:\n   - Behavioral baseline with sliding window (24h)\n  \
+    \ - Statistical anomaly detection (Z-score > 3)\n   - Cross-source correlation (network + host + app)\n\n2. Adaptive Thresholds:\n   - Dynamic thresholds based on time-of-day patterns\n   - Lower thresholds\
+    \ during off-hours\n   - Context-aware alerting (user behavior history)\n\n3. Deception Layer:\n   - Honey tokens in sensitive directories\n   - Fake credentials with alert triggers\n   - Canary services\
+    \ on unused ports\n\n4. Multi-signal Detection:\n   - Single event: log only\n   - 2 related events: investigate\n   - 3+ correlated events: auto-respond\n   - Reduces false positives significantly\n\
+    \n5. Continuous Learning:\n   - Update baselines weekly\n   - Incorporate new IOCs from threat intel\n   - Learn from past false positives/negatives\n\nGoal: Detect 95% of attacks with <5% false positive\
+    \ rate\nEOF\ncat /tmp/blue_strategy_optimization.txt"
+  answer_detail: 적응형 방어 전략은 정적 규칙 대신 동적 기준선과 다중 신호 상관 분석을 사용한다. 단일 이벤트가 아닌 복수 관련 이벤트의 조합으로 판단하여 오탐을 줄이고, 허니팟/토큰으로 능동적 탐지를 강화한다. 지속적 학습으로 탐지 성능을 개선한다.
+  verify:
+    type: output_contains
+    expect: Adaptive Defense
+  script: 'alerts = await agent.monitor("보안 이벤트 수집 및 분석")
+
+    response = await agent.respond(alerts, "탐지된 위협에 대한 최적 대응 조치를 실행하라")
+
+    await agent.log(response, "방어 조치 기록")'
+- order: 11
+  instruction: AI 공방전 인프라를 점검하라. Ollama LLM 서버 상태와 사용 가능한 모델을 확인하라.
+  hint: Ollama API로 모델 목록을 조회한다.
+  category: recon
+  points: 10
+  answer: 'curl -s http://192.168.0.105:11434/api/tags 2>/dev/null | python3 -m json.tool 2>/dev/null | head -30; echo ''---''; echo ''Available models for AI agents:''; echo ''  Red Agent: gemma3:12b (offensive
+    reasoning)''; echo ''  Blue Agent: llama3.1:8b (defensive analysis)''; echo ''  Arbiter: gpt-oss:120b (battle judgment)'''
+  answer_detail: AI 공방전에는 Ollama에서 호스팅하는 여러 LLM이 사용된다. Red Agent(gemma3:12b)는 공격적 추론에 특화되고, Blue Agent(llama3.1:8b)는 방어 분석에 사용되며, Arbiter(gpt-oss:120b)는 전투 판정에 사용된다. 각 모델의 특성이 에이전트 성능에 영향을 미친다.
+  verify:
+    type: output_contains
+    expect: Available models
+  script: 'result = await agent.run("curl -s http://192.168.0.105:11434/api/tags 2>/dev/null | python3 -m json.tool 2>/dev/null | head -30; echo ''---''; echo ...")
+
+    await agent.analyze(result, "정찰 결과를 분석하고 공격 표면을 매핑하라")'
+- order: 12
+  instruction: AI 공방전의 감사 로그(audit trail)를 설계하라. 에이전트의 모든 행동과 의사결정을 추적하는 로깅 체계를 구성하라.
+  hint: 에이전트 행동, LLM 추론, 도구 호출, 결과를 모두 기록하는 구조를 설계한다.
+  category: analysis
+  points: 10
+  answer: "cat > /tmp/battle_audit_log.json << 'EOF'\n{\n  \"battle_id\": \"BATTLE-20260403-001\",\n  \"rounds\": [\n    {\n      \"round\": 1,\n      \"red_action\": {\n        \"timestamp\": \"2026-04-03T10:00:00Z\"\
+    ,\n        \"thought\": \"Need to discover services on target network\",\n        \"action\": \"nmap -sV --top-ports 20 10.20.30.80\",\n        \"result\": \"Discovered HTTP(80), HTTPS(443), SSH(22)\"\
+    ,\n        \"stealth_score\": 6\n      },\n      \"blue_action\": {\n        \"timestamp\": \"2026-04-03T10:00:05Z\",\n        \"detection\": \"Suricata alert: SYN scan detected\",\n        \"analysis\"\
+    : \"Port scan from 10.20.30.201, severity MEDIUM\",\n        \"response\": \"Rate-limit source IP, increase monitoring\",\n        \"response_time_sec\": 5\n      },\n      \"arbiter_judgment\": \"\
+    Round 1: Draw - Red gained info but was detected\"\n    }\n  ]\n}\nEOF\npython3 -m json.tool /tmp/battle_audit_log.json"
+  answer_detail: 공방전 감사 로그는 각 라운드의 Red 행동(사고→행동→결과), Blue 대응(탐지→분석→대응), Arbiter 판정을 JSON으로 구조화하여 기록한다. 이 로그는 사후 분석, 전략 개선, 공정한 승패 판정의 근거가 된다.
+  verify:
+    type: output_contains
+    expect: battle_id
+  script: 'data = await agent.collect("분석 데이터 수집")
+
+    analysis = await agent.analyze(data, "AI 공방전의 감사 로그(audit trail)를 설계하라. 에이전트의 모든 행동과 의사결정을 추적하는 로깅 체계를 구성하라.")
+
+    await agent.report(analysis, "분석 보고서 생성")'
+- order: 13
+  instruction: AI 공방전의 윤리적 가이드라인을 작성하라. AI 보안 에이전트 운용의 윤리적 원칙과 안전 장치를 정의하라.
+  hint: 파괴 금지, 범위 제한, 인간 감독, 책임 소재를 포함한다.
+  category: analysis
+  points: 10
+  answer: "cat > /tmp/ai_ethics_guidelines.txt << 'EOF'\n=== AI Security Agent Ethics Guidelines ===\n\n1. Scope Limitation:\n   - Agents operate ONLY within designated lab network\n   - No actions against\
+    \ production systems\n   - No lateral movement beyond scope\n\n2. Destructive Action Prohibition:\n   - No data destruction (rm -rf, DROP TABLE)\n   - No denial of service attacks\n   - No modification\
+    \ of critical system files\n\n3. Human Oversight:\n   - Critical actions require human approval\n   - Emergency stop (kill switch) always available\n   - All actions logged for review\n\n4. Proportional\
+    \ Response:\n   - Blue Agent response proportional to threat level\n   - No excessive blocking (affects legitimate users)\n   - Gradual escalation, not immediate maximum force\n\n5. Accountability:\n\
+    \   - Agent operator is responsible for agent actions\n   - Full audit trail maintained\n   - Post-battle review mandatory\n\n6. Privacy:\n   - No collection of real user data\n   - Simulated data only\
+    \ in exercises\n   - Logs purged after analysis period\nEOF\ncat /tmp/ai_ethics_guidelines.txt"
+  answer_detail: AI 보안 에이전트의 윤리 가이드라인은 범위 제한, 파괴 금지, 인간 감독, 비례 대응, 책임 명확화, 프라이버시 보호의 6대 원칙으로 구성된다. AI 에이전트가 자율적으로 작동하더라도 인간 감독자의 최종 통제가 반드시 유지되어야 한다.
+  verify:
+    type: output_contains
+    expect: Ethics Guidelines
+  script: 'data = await agent.collect("분석 데이터 수집")
+
+    analysis = await agent.analyze(data, "AI 공방전의 윤리적 가이드라인을 작성하라. AI 보안 에이전트 운용의 윤리적 원칙과 안전 장치를 정의하라.")
+
+    await agent.report(analysis, "분석 보고서 생성")'
+- order: 14
+  instruction: 실습 환경을 정리하라. 이번 주 생성된 모든 분석 파일을 삭제하라.
+  hint: rm으로 /tmp 내 관련 파일을 삭제한다.
+  category: response
+  points: 5
+  answer: rm -f /tmp/blue_agent_*.txt /tmp/ai_battle_*.txt /tmp/scoring_*.txt /tmp/red_strategy_*.txt /tmp/blue_strategy_*.txt /tmp/battle_audit_*.json /tmp/ai_ethics_*.txt /tmp/ai_agent_*.txt 2>/dev/null;
+    echo 'AI battle lab cleanup completed'
+  answer_detail: 실습 환경 정리에서는 에이전트 아키텍처 분석, 전투 시나리오, 스코어링, 전략 문서, 감사 로그, 윤리 가이드라인 파일을 삭제한다.
+  verify:
+    type: output_contains
+    expect: cleanup completed
+  script: 'incident = await agent.detect("인시던트 탐지 및 분류")
+
+    actions = await agent.contain(incident, "격리 및 증거 수집")
+
+    await agent.report(actions, "대응 결과 보고")'
+- order: 15
+  instruction: AI vs AI 공방전 실습의 종합 보고서를 작성하라. 에이전트 아키텍처, 전략 분석, 한계점, 개선 방향을 포함하라.
+  hint: Red/Blue 에이전트의 강점/약점, 전투 결과, 발전 방향을 정리한다.
+  category: analysis
+  points: 15
+  answer: "cat > /tmp/ai_battle_report.txt << 'EOF'\n=== AI vs AI Battle Analysis Report ===\nDate: 2026-04-03 | Battle: BATTLE-20260403-001\n\n1. Agent Performance:\n   | Metric | Red Agent | Blue Agent\
+    \ |\n   |--------|-----------|------------|\n   | Actions taken | 15 | 12 |\n   | Success rate | 60% | 75% |\n   | Stealth score | 7/10 | N/A |\n   | Detection rate | N/A | 80% |\n   | Response time\
+    \ | N/A | avg 15s |\n\n2. Key Observations:\n   - Red Agent excels at creative attack paths\n   - Blue Agent strong at known-pattern detection\n   - Red Agent struggles with novel defenses\n   - Blue\
+    \ Agent weak against low-and-slow attacks\n\n3. AI Agent Limitations:\n   - Context window limits multi-step reasoning\n   - Hallucination causes invalid commands\n   - No learning between sessions\
+    \ (stateless)\n   - Predictable patterns after multiple rounds\n\n4. Improvement Roadmap:\n   - Implement RL for strategy optimization\n   - Add memory/state persistence across rounds\n   - Improve\
+    \ tool validation (reduce hallucination)\n   - Add adversarial training (train against each other)\n\nMITRE ATT&CK Coverage: T1595, T1190, T1053, T1071, T1048\nEOF\ncat /tmp/ai_battle_report.txt"
+  answer_detail: AI 공방전 보고서는 에이전트 성능 지표, 핵심 관찰, AI 한계점, 개선 로드맵을 포함한다. Red Agent는 창의적 공격에 강하고 Blue Agent는 패턴 탐지에 강하다. RL 전략 최적화, 메모리 지속성, 도구 검증 강화, 상호 적대적 학습이 핵심 개선 방향이다.
+  verify:
+    type: output_contains
+    expect: AI vs AI Battle Analysis
+  script: 'data = await agent.collect("분석 데이터 수집")
+
+    analysis = await agent.analyze(data, "AI vs AI 공방전 실습의 종합 보고서를 작성하라. 에이전트 아키텍처, 전략 분석, 한계점, 개선 방향을 포함하라.")
+
+    await agent.report(analysis, "분석 보고서 생성")'

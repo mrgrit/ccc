@@ -1,0 +1,179 @@
+lab_id: "battle-adv-nonai-week08"
+title: "위협 헌팅 — Proactive Threat Hunting"
+version: "non-ai"
+course: "battle-adv-nonai"
+week: 8
+description: "능동적 위협 헌팅(Proactive Threat Hunting) 방법론을 실습한다. 가설 기반 헌팅, IOC 기반 헌팅, 이상 탐지를 통해 기존 보안 도구가 놓친 위협을 선제적으로 발견한다."
+difficulty: "hard"
+duration_minutes: 150
+objectives:
+  - "위협 헌팅의 방법론(가설 기반, IOC 기반)을 이해한다"
+  - "MITRE ATT&CK 기반 헌팅 쿼리를 작성한다"
+  - "Sigma 규칙을 활용한 로그 기반 헌팅을 실습한다"
+  - "이상 탐지(Anomaly Detection)를 통한 위협 발견을 수행한다"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "위협 헌팅 가설을 수립하라. 'APT 공격자가 DNS 터널링으로 C2 통신을 수행하고 있다'는 가설을 검증하기 위한 헌팅 계획을 작성하라."
+    hint: "가설→데이터 소스→분석 방법→탐지 기준의 구조로 계획을 수립한다."
+    category: "analysis"
+    points: 10
+    answer: "cat > /tmp/hunting_hypothesis.txt << 'EOF'\n=== Threat Hunting Plan ===\n\nHypothesis: An APT actor is using DNS tunneling for C2 communication\n\nData Sources:\n  1. DNS query logs (Suricata eve.json, /var/log/named/queries.log)\n  2. Network flow data (NetFlow/IPFIX)\n  3. Endpoint DNS resolver cache\n  4. Passive DNS database\n\nAnalysis Methods:\n  1. DNS query length distribution analysis\n  2. Shannon entropy of subdomain labels\n  3. Query frequency per unique domain\n  4. TXT record query ratio\n  5. NXDOMAIN response ratio\n\nDetection Criteria:\n  - Subdomain label length > 30 characters\n  - Shannon entropy > 3.5\n  - Query frequency > 100/hour to single domain\n  - TXT query ratio > 20% of total\n  - NXDOMAIN ratio > 50%\n\nExpected Outcome: Identify or rule out DNS tunneling C2\nEOF\ncat /tmp/hunting_hypothesis.txt"
+    answer_detail: "가설 기반 위협 헌팅은 구체적인 위협 가설을 세우고 데이터를 분석하여 검증한다. DNS 터널링 가설을 위해 DNS 로그를 수집하고, 쿼리 길이/엔트로피/빈도/레코드 타입을 분석한다. 헌팅의 결과는 '위협 확인' 또는 '위협 부재 확인' 모두 유효하다."
+    verify:
+      type: "output_contains"
+      expect: "Threat Hunting Plan"
+
+  - order: 2
+    instruction: "DNS 헌팅을 실행하라. 현재 네트워크의 DNS 쿼리를 분석하여 비정상 패턴을 식별하라."
+    hint: "tcpdump로 DNS 쿼리를 캡처하고 분석한다."
+    category: "analysis"
+    points: 10
+    answer: "echo '=== DNS Hunting Execution ===' && timeout 3 tcpdump -i any port 53 -nn -c 10 2>/dev/null; echo '---' && echo 'DNS query analysis from Suricata:' && ssh 10.20.30.1 'cat /var/log/suricata/eve.json 2>/dev/null | python3 -c \"import sys,json; [print(json.loads(l).get(\\\"dns\\\",{}).get(\\\"rrname\\\",\\\"\\\")) for l in sys.stdin if \\\"dns\\\" in l]\" 2>/dev/null | sort | uniq -c | sort -rn | head -10' 2>&1"
+    answer_detail: "DNS 헌팅 실행에서는 실제 DNS 트래픽을 캡처하고 분석한다. Suricata eve.json의 DNS 이벤트에서 도메인별 쿼리 빈도를 집계하면 비정상적으로 자주 조회되는 도메인을 발견할 수 있다. 이를 통해 C2 비컨이나 DNS 터널링을 식별한다."
+    verify:
+      type: "output_contains"
+      expect: "DNS Hunting"
+
+  - order: 3
+    instruction: "Sigma 규칙을 작성하여 의심스러운 프로세스 실행을 헌팅하라. base64 디코딩을 수행하는 프로세스를 탐지하는 Sigma 규칙을 작성하라."
+    hint: "Sigma YAML 형식으로 process_creation 이벤트를 탐지하는 규칙을 작성한다."
+    category: "analysis"
+    points: 10
+    answer: "cat > /tmp/sigma_hunting_rule.yaml << 'EOF'\ntitle: Suspicious Base64 Decode Execution\nid: hunt-001\nstatus: experimental\ndescription: Detects execution of base64 decode commands which may indicate C2 payload decoding\nauthor: Lab Student\ndate: 2026/04/03\nreferences:\n  - https://attack.mitre.org/techniques/T1140/\nlogsource:\n  category: process_creation\n  product: linux\ndetection:\n  selection_base64:\n    CommandLine|contains:\n      - 'base64 -d'\n      - 'base64 --decode'\n      - 'python3 -c \"import base64'\n  selection_eval:\n    CommandLine|contains:\n      - 'eval $(echo'\n      - 'bash -c \"$(echo'\n  condition: selection_base64 or selection_eval\nfalsepositives:\n  - Legitimate admin scripts\n  - Package manager operations\nlevel: medium\ntags:\n  - attack.defense_evasion\n  - attack.t1140\nEOF\ncat /tmp/sigma_hunting_rule.yaml"
+    answer_detail: "Sigma는 SIEM 비의존적 탐지 규칙 형식이다. process_creation 로그에서 base64 -d(디코딩) 또는 eval(동적 실행) 명령을 탐지한다. 이는 공격자가 인코딩된 페이로드를 디코딩하여 실행하는 Deobfuscate/Decode(T1140) 기법에 해당한다."
+    verify:
+      type: "output_contains"
+      expect: "Suspicious Base64"
+
+  - order: 4
+    instruction: "프로세스 기반 헌팅을 수행하라. 현재 시스템에서 비정상적인 부모-자식 프로세스 관계를 탐지하라."
+    hint: "ps auxf로 프로세스 트리를 분석하고, 웹 서버나 데이터베이스에서 쉘이 스폰된 것을 찾는다."
+    category: "analysis"
+    points: 10
+    answer: "echo '=== Process Tree Hunting ===' && ps auxf | grep -B2 -A2 -E 'sh$|bash$|python|perl|nc |ncat ' | grep -v grep | head -30 && echo '---' && echo 'Suspicious parent-child patterns:' && echo '  - www-data → bash/sh (web shell)' && echo '  - mysql → bash/sh (SQLi RCE)' && echo '  - cron → bash → network activity (C2 beacon)' && echo '  - sshd → bash → unusual child (lateral movement)'"
+    answer_detail: "프로세스 트리 분석은 비정상적인 부모-자식 관계를 발견한다. 웹 서버(www-data, nginx)가 쉘을 생성하면 웹 쉘이나 RCE, 데이터베이스가 쉘을 생성하면 SQLi RCE, cron이 네트워크 연결을 시도하면 Persistence C2를 의심한다."
+    verify:
+      type: "output_contains"
+      expect: "Process Tree Hunting"
+
+  - order: 5
+    instruction: "네트워크 기반 헌팅을 수행하라. 내부 호스트 간 비정상적인 통신 패턴을 식별하라. 통상적이지 않은 포트, 프로토콜, 데이터량을 찾아라."
+    hint: "ss 또는 netstat로 현재 연결을 분석하고, 비정상 패턴을 식별한다."
+    category: "analysis"
+    points: 10
+    answer: "echo '=== Network Hunting ===' && echo '[1] Unusual internal connections:' && ss -tn | awk '{print $4,$5}' | grep '10.20.30' | sort | uniq -c | sort -rn | head -10 && echo '' && echo '[2] Non-standard ports:' && ss -tn state established | awk '{print $5}' | grep -oP ':\\K[0-9]+' | sort -n | uniq -c | sort -rn | head -10 && echo '' && echo '[3] Long-lived connections:' && ss -tn -o | grep 'timer' | head -5 && echo '' && echo 'Hunting complete: Review results for anomalies'"
+    answer_detail: "네트워크 기반 헌팅에서는 내부 호스트 간 통신을 분석하여 측면 이동, C2 비컨, 데이터 유출을 탐지한다. 비표준 포트, 비정상적 연결 수, 장시간 유지 연결이 핵심 지표이다. 정상 통신 기준선(baseline)과 비교하여 이상을 판별한다."
+    verify:
+      type: "output_contains"
+      expect: "Network Hunting"
+
+  - order: 6
+    instruction: "파일 시스템 헌팅을 수행하라. 최근 생성된 실행 파일, 스크립트, 설정 변경을 조사하라."
+    hint: "find로 최근 생성/수정된 파일을 검색하고, 이상 항목을 필터링한다."
+    category: "analysis"
+    points: 10
+    answer: "echo '=== File System Hunting ===' && echo '[1] New executables (7 days):' && find /usr/local/bin /opt /home -type f -newer /etc/hostname -executable 2>/dev/null | head -10 && echo '' && echo '[2] World-writable files:' && find /etc /usr -type f -perm -o+w 2>/dev/null | head -10 && echo '' && echo '[3] Hidden files in unusual locations:' && find /tmp /var/tmp /dev/shm -name '.*' -type f 2>/dev/null | head -10 && echo '' && echo '[4] Recently modified configs:' && find /etc -name '*.conf' -mtime -7 2>/dev/null | head -10"
+    answer_detail: "파일 시스템 헌팅에서는 (1) 새로 생성된 실행 파일(악성 도구), (2) World-writable 파일(권한 오용), (3) 숨김 파일(.으로 시작, 특히 /tmp, /dev/shm), (4) 최근 수정된 설정 파일을 조사한다. 공격자는 /dev/shm(RAM 디스크)에 도구를 숨기는 경우가 많다."
+    verify:
+      type: "output_contains"
+      expect: "File System Hunting"
+
+  - order: 7
+    instruction: "사용자 행위 분석(UBA)을 수행하라. 인증 로그에서 비정상적인 로그인 패턴(시간, 위치, 빈도)을 식별하라."
+    hint: "auth.log에서 로그인 시간, 소스 IP, 사용자를 분석한다."
+    category: "analysis"
+    points: 10
+    answer: "echo '=== User Behavior Analysis ===' && echo '[1] Login time distribution:' && grep 'Accepted\\|session opened' /var/log/auth.log 2>/dev/null | awk '{print $1,$2,$3}' | cut -d: -f1 | sort | uniq -c | head -10 && echo '' && echo '[2] Login source IPs:' && grep 'Accepted' /var/log/auth.log 2>/dev/null | grep -oP 'from \\K[0-9.]+' | sort | uniq -c | sort -rn | head -10 && echo '' && echo '[3] Failed login patterns:' && grep 'Failed' /var/log/auth.log 2>/dev/null | grep -oP 'for \\K\\w+' | sort | uniq -c | sort -rn | head -10 && echo '' && echo 'UBA hunting complete'"
+    answer_detail: "사용자 행위 분석(UBA)은 로그인 시간(업무 외 시간), 소스 IP(비정상 위치), 실패 패턴(브루트포스, 스프레이)을 분석한다. 정상 사용자의 행동 패턴에서 벗어나는 활동을 탐지하여 계정 침해나 내부 위협을 발견한다."
+    verify:
+      type: "output_contains"
+      expect: "User Behavior Analysis"
+
+  - order: 8
+    instruction: "MITRE ATT&CK 기반 헌팅 매트릭스를 작성하라. 환경에서 가장 위험도가 높은 기법 5가지를 선정하고 각각의 헌팅 쿼리를 작성하라."
+    hint: "T1190, T1053, T1071, T1021, T1048에 대한 헌팅 쿼리를 작성한다."
+    category: "analysis"
+    points: 10
+    answer: "cat > /tmp/attack_hunting_matrix.txt << 'EOF'\n=== MITRE ATT&CK Hunting Matrix ===\n\n1. T1190 - Exploit Public-Facing Application\n   Query: grep -E 'UNION|SELECT.*FROM|<script>|\\.\\./' /var/log/nginx/access.log\n   Data Source: Web server logs\n   Priority: CRITICAL\n\n2. T1053.003 - Cron Persistence\n   Query: for u in $(cut -f1 -d: /etc/passwd); do crontab -u $u -l 2>/dev/null; done\n   Data Source: crontab, /var/spool/cron\n   Priority: HIGH\n\n3. T1071.004 - DNS C2\n   Query: Entropy analysis on DNS query logs (entropy > 3.5)\n   Data Source: Suricata eve.json (dns events)\n   Priority: HIGH\n\n4. T1021.004 - SSH Lateral Movement\n   Query: grep 'Accepted publickey' /var/log/auth.log | awk '{print $9,$11}'\n   Data Source: auth.log\n   Priority: MEDIUM\n\n5. T1048 - Data Exfiltration\n   Query: NetFlow analysis (bytes_out/bytes_in > 10, new external IPs)\n   Data Source: NetFlow, connection logs\n   Priority: HIGH\nEOF\ncat /tmp/attack_hunting_matrix.txt"
+    answer_detail: "ATT&CK 기반 헌팅 매트릭스는 환경에 가장 위험한 기법을 선정하고 각각에 대한 구체적인 헌팅 쿼리를 정의한다. 데이터 소스, 분석 방법, 우선순위를 명시하여 체계적인 헌팅을 수행한다. 이 매트릭스는 정기적으로 실행하여 새로운 위협을 선제적으로 발견한다."
+    verify:
+      type: "output_contains"
+      expect: "ATT&CK Hunting Matrix"
+
+  - order: 9
+    instruction: "이상 탐지(Anomaly Detection)를 위한 기준선(Baseline)을 수립하라. 정상 상태의 네트워크, 프로세스, 파일 시스템 기준선을 기록하라."
+    hint: "현재 시스템의 정상 상태를 baseline으로 기록한다."
+    category: "defense"
+    points: 10
+    answer: "python3 -c \"\nimport subprocess, json, time\n\ndef run(cmd):\n    try: return subprocess.check_output(cmd, shell=True, timeout=5).decode().strip()\n    except: return 'N/A'\n\nbaseline = {\n    'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ'),\n    'network': {\n        'established_connections': int(run('ss -tn state established | wc -l') or 0),\n        'listening_ports': run('ss -tln | tail -n+2 | awk \\'{print \\$4}\\' | sort').split('\\n')[:10],\n        'dns_queries_per_min': 'baseline_to_establish',\n    },\n    'processes': {\n        'total_count': int(run('ps aux | wc -l') or 0),\n        'unique_users': run('ps aux | awk \\'{print \\$1}\\' | sort -u').split('\\n')[:10],\n    },\n    'filesystem': {\n        'suid_count': int(run('find /usr -perm -4000 2>/dev/null | wc -l') or 0),\n        'tmp_file_count': int(run('find /tmp -type f 2>/dev/null | wc -l') or 0),\n    }\n}\nprint(json.dumps(baseline, indent=2))\n\""
+    answer_detail: "기준선(Baseline)은 정상 상태의 스냅샷으로, 이상 탐지의 기반이다. 네트워크(연결 수, 리스닝 포트), 프로세스(총 수, 사용자), 파일 시스템(SUID 수, 임시 파일 수)을 기록한다. 정기적으로 현재 상태를 기준선과 비교하여 이상을 탐지한다."
+    verify:
+      type: "output_contains"
+      expect: "timestamp"
+
+  - order: 10
+    instruction: "Wazuh SIEM을 활용한 중앙 집중식 헌팅을 수행하라. Wazuh API에서 최근 보안 알림을 조회하고 분석하라."
+    hint: "Wazuh API로 알림을 조회하거나 로그 파일을 직접 분석한다."
+    category: "analysis"
+    points: 10
+    answer: "echo '=== Wazuh SIEM Hunting ===' && ssh 10.20.30.100 'cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -20 | python3 -c \"import sys,json; [print(json.loads(l).get(\\\"rule\\\",{}).get(\\\"description\\\",\\\"\\\"), json.loads(l).get(\\\"rule\\\",{}).get(\\\"level\\\",0)) for l in sys.stdin]\" 2>/dev/null' 2>&1 | head -15; echo '---'; echo 'Wazuh hunting queries:'; echo '1. High severity alerts (level >= 10)'; echo '2. Repeated alerts from same agent'; echo '3. New alert types not seen before'; echo '4. Correlation between multiple agents'"
+    answer_detail: "Wazuh SIEM은 모든 에이전트의 보안 이벤트를 중앙 집중 수집하여 헌팅에 활용한다. 고위험 알림(level 10+), 반복 알림(동일 소스), 신규 알림 유형, 다중 에이전트 상관 분석을 통해 분산된 위협을 통합적으로 탐지한다."
+    verify:
+      type: "output_contains"
+      expect: "Wazuh SIEM Hunting"
+
+  - order: 11
+    instruction: "위협 인텔리전스 피드를 활용한 IOC 기반 헌팅을 수행하라. 알려진 악성 IP, 도메인, 해시를 시스템에서 검색하라."
+    hint: "위협 인텔리전스 IOC 목록을 생성하고 로그에서 매칭되는 항목을 검색한다."
+    category: "analysis"
+    points: 10
+    answer: "cat > /tmp/threat_intel_ioc.txt << 'EOF'\n198.51.100.1\n203.0.113.50\nevil-c2.com\nmalware-update.net\ne19ccf75ee54e06b06a5907af13cef42\nEOF\necho '=== IOC-based Hunting ===' && echo '[1] IP IOC search in connections:' && while read ioc; do ss -tn | grep -q \"$ioc\" && echo \"MATCH: $ioc found in active connections\"; done < /tmp/threat_intel_ioc.txt || echo 'No IP IOC matches in active connections' && echo '' && echo '[2] Domain IOC search in DNS logs:' && ssh 10.20.30.1 'grep -f /dev/stdin /var/log/suricata/eve.json 2>/dev/null' < /tmp/threat_intel_ioc.txt 2>&1 | head -5 || echo 'No domain IOC matches' && echo '' && echo 'IOC hunting completed'"
+    answer_detail: "IOC 기반 헌팅은 위협 인텔리전스 피드의 알려진 IOC(악성 IP, 도메인, 해시)를 로그와 매칭하여 침해 여부를 확인한다. 네트워크 연결에서 악성 IP, DNS 로그에서 악성 도메인, 파일 해시에서 악성코드를 검색한다."
+    verify:
+      type: "output_contains"
+      expect: "IOC-based Hunting"
+
+  - order: 12
+    instruction: "헌팅 결과를 문서화하라. 발견된 위협, 미발견 위협, 헌팅 효과를 정리하는 헌팅 리포트를 작성하라."
+    hint: "가설별 검증 결과, 발견 사항, 후속 조치를 기록한다."
+    category: "analysis"
+    points: 10
+    answer: "cat > /tmp/hunting_report.txt << 'EOF'\n=== Threat Hunting Report ===\nHunt ID: HUNT-20260403-001\nPeriod: 2026-04-03\nScope: 10.20.30.0/24\n\n1. Hypothesis Results:\n   | Hypothesis | Result | Evidence |\n   |-----------|--------|----------|\n   | DNS tunneling C2 | Not confirmed | No high-entropy DNS queries found |\n   | Unauthorized processes | Clean | No suspicious parent-child relationships |\n   | Lateral movement | Clean | No anomalous internal SMB/SSH |\n   | Data exfiltration | Not confirmed | Normal outbound traffic patterns |\n   | Persistence mechanisms | Clean | No unauthorized crontabs/services |\n\n2. New Findings:\n   [I-01] 3 world-writable files in /etc (misconfig, not malicious)\n   [I-02] Unused listening port 8888 (development leftover)\n\n3. Hunting Metrics:\n   - Hypotheses tested: 5\n   - Confirmed threats: 0\n   - New findings: 2 (informational)\n   - Data sources analyzed: 6\n   - Time spent: 2.5 hours\n\n4. Recommendations:\n   - Fix world-writable permissions in /etc\n   - Close unused port 8888\n   - Schedule monthly hunting cycles\nEOF\ncat /tmp/hunting_report.txt"
+    answer_detail: "헌팅 리포트는 각 가설의 검증 결과(확인/미확인/부정), 새로운 발견 사항, 헌팅 지표(테스트 수, 분석 소스, 소요 시간), 후속 조치를 기록한다. 위협이 발견되지 않은 것도 유효한 결과이며, 부수적으로 발견된 설정 오류도 기록한다."
+    verify:
+      type: "output_contains"
+      expect: "Threat Hunting Report"
+
+  - order: 13
+    instruction: "자동화된 헌팅 파이프라인을 설계하라. 정기적으로 헌팅 쿼리를 실행하고 결과를 수집하는 자동화 시스템을 구성하라."
+    hint: "cron + 스크립트로 주기적 헌팅을 자동화한다."
+    category: "defense"
+    points: 10
+    answer: "cat > /tmp/automated_hunting.sh << 'SCRIPT'\n#!/bin/bash\n# Automated Threat Hunting Pipeline\nDATE=$(date +%Y%m%d_%H%M)\nOUTPUT_DIR=\"/var/log/hunting\"\nmkdir -p $OUTPUT_DIR\n\necho \"=== Automated Hunt: $DATE ===\" > $OUTPUT_DIR/hunt_$DATE.txt\n\n# Hunt 1: DNS anomaly\necho \"[DNS]\" >> $OUTPUT_DIR/hunt_$DATE.txt\n# Run DNS entropy analysis\n\n# Hunt 2: Process anomaly\necho \"[PROCESS]\" >> $OUTPUT_DIR/hunt_$DATE.txt\nps auxf | grep -E 'www-data.*sh|mysql.*sh|cron.*nc' >> $OUTPUT_DIR/hunt_$DATE.txt 2>&1\n\n# Hunt 3: File system anomaly\necho \"[FILESYSTEM]\" >> $OUTPUT_DIR/hunt_$DATE.txt\nfind /tmp /dev/shm -name '.*' -type f >> $OUTPUT_DIR/hunt_$DATE.txt 2>&1\n\n# Hunt 4: Network anomaly\necho \"[NETWORK]\" >> $OUTPUT_DIR/hunt_$DATE.txt\nss -tn | awk '{print $5}' | grep -vE '10.20.30|127.0|^$' >> $OUTPUT_DIR/hunt_$DATE.txt 2>&1\n\n# Send summary\nALERTS=$(grep -c 'ALERT\\|SUSPICIOUS\\|MATCH' $OUTPUT_DIR/hunt_$DATE.txt)\necho \"Hunt $DATE completed: $ALERTS findings\"\nSCRIPT\necho 'Automated hunting pipeline created:' && cat /tmp/automated_hunting.sh | head -20 && echo '...'\necho 'Cron entry: 0 */4 * * * /opt/hunting/automated_hunting.sh'"
+    answer_detail: "자동화된 헌팅 파이프라인은 cron으로 주기적(4시간마다)으로 헌팅 쿼리를 실행한다. DNS 이상, 프로세스 이상, 파일 시스템 이상, 네트워크 이상을 자동 검사하고 결과를 기록한다. 발견 사항이 있으면 알림을 전송하여 분석가의 검토를 유도한다."
+    verify:
+      type: "output_contains"
+      expect: "Automated hunting pipeline"
+
+  - order: 14
+    instruction: "실습 환경을 정리하라. 헌팅 실습에서 생성된 모든 파일을 삭제하라."
+    hint: "rm으로 /tmp 내 헌팅 관련 파일을 삭제한다."
+    category: "response"
+    points: 5
+    answer: "rm -f /tmp/hunting_*.txt /tmp/sigma_*.yaml /tmp/attack_*.txt /tmp/threat_intel_*.txt /tmp/automated_hunting.sh 2>/dev/null; echo 'Threat hunting lab cleanup completed'"
+    answer_detail: "실습 환경 정리에서는 헌팅 계획, Sigma 규칙, ATT&CK 매트릭스, IOC 목록, 자동화 스크립트를 삭제한다. 실제 운영 환경에서는 이 파일들을 보존하여 지속적인 헌팅에 활용한다."
+    verify:
+      type: "output_contains"
+      expect: "cleanup completed"
+
+  - order: 15
+    instruction: "위협 헌팅 실습의 종합 평가를 작성하라. 헌팅 성숙도(Hunting Maturity Model) 관점에서 현재 수준을 평가하고 개선 방안을 제시하라."
+    hint: "HMM Level 0~4의 기준으로 현재 수준을 평가한다."
+    category: "analysis"
+    points: 15
+    answer: "cat > /tmp/hunting_maturity.txt << 'EOF'\n=== Hunting Maturity Assessment ===\n\nHunting Maturity Model (HMM) Evaluation:\n\n| Level | Description | Status |\n|-------|------------|--------|\n| HM0 | Initial - Rely on automated alerts only | PASSED |\n| HM1 | Minimal - Use threat intel IOC searches | PASSED |\n| HM2 | Procedural - Follow documented procedures | CURRENT |\n| HM3 | Innovative - Create custom analytics | PARTIAL |\n| HM4 | Leading - Automate hunting + generate TI | TARGET |\n\nCurrent Level: HM2 (Procedural)\n\nStrengths:\n- Documented hunting hypotheses and procedures\n- Sigma rule creation capability\n- Multiple data source analysis (logs, network, files)\n- IOC-based hunting operational\n\nGaps to HM3:\n- No ML-based anomaly detection\n- Limited automated hunting pipeline\n- No threat intelligence generation\n- Hunting results not shared externally\n\nRoadmap to HM4:\n1. Deploy ML anomaly detection (6 months)\n2. Fully automate hunting pipeline (3 months)\n3. Generate and share threat intelligence (12 months)\n4. Continuous hunting (24/7 operation)\n\nMITRE ATT&CK Coverage: 15/14 tactics covered by hunting queries\nEOF\ncat /tmp/hunting_maturity.txt"
+    answer_detail: "헌팅 성숙도 모델(HMM)은 Level 0(자동 알림 의존)부터 Level 4(자동화+TI 생성)까지 5단계로 평가한다. 현재 HM2(절차 기반) 수준이며, ML 이상 탐지, 자동화 파이프라인, 위협 인텔리전스 생성을 통해 HM3/HM4로 발전할 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "Hunting Maturity Assessment"

