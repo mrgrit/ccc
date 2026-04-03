@@ -11,9 +11,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-# ── Config ─────────────────────────────────────────
-DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://ccc:ccc@127.0.0.1:5434/ccc")
-API_KEY = os.getenv("CCC_API_KEY", "ccc-api-key-2026")
+# ── Config (Central 우선, 환경변수 폴백) ──────────
+def _cfg(key: str, fallback: str) -> str:
+    try:
+        from packages.opsclaw_common.config_client import get_config
+        return get_config(key, fallback=os.getenv(key.upper().replace(".", "_"), fallback))
+    except Exception:
+        return os.getenv(key.upper().replace(".", "_"), fallback)
+
+DATABASE_URL = os.getenv("DATABASE_URL", _cfg("db.ccc.url", "postgresql://opsclaw:opsclaw@127.0.0.1:5432/ccc"))
+API_KEY = os.getenv("CCC_API_KEY", _cfg("auth.ccc.api_key", "ccc-api-key-2026"))
 
 # ── Pydantic Models ────────────────────────────────
 
