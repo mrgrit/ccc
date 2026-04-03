@@ -5,7 +5,7 @@ const diffColor: Record<string, string> = { easy: '#3fb950', medium: '#d29922', 
 const catColor: Record<string, string> = { recon: '#58a6ff', exploit: '#f85149', defense: '#3fb950', analysis: '#d29922', response: '#bc8cff', config: '#a78bfa', monitor: '#d29922', audit: '#8b949e' }
 
 export default function Labs() {
-  const [courses, setCourses] = useState<any[]>([])
+  const [groups, setGroups] = useState<any[]>([])
   const [labs, setLabs] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [labsLoading, setLabsLoading] = useState(false)
@@ -15,10 +15,9 @@ export default function Labs() {
   const [selected, setSelected] = useState<any>(null)
   const [showAnswers, setShowAnswers] = useState(false)
 
-  // 교과목 목록 로드
   useEffect(() => {
-    api('/api/labs/courses')
-      .then(d => setCourses(d.courses || []))
+    api('/api/education/courses')
+      .then(d => setGroups(d.groups || []))
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [])
@@ -44,35 +43,44 @@ export default function Labs() {
 
   const filtered = filter === 'all' ? labs : labs.filter(l => l.version === filter)
 
-  if (loading) return <div style={{ color: '#8b949e', padding: 40, textAlign: 'center' }}>Loading courses... (v2)</div>
-  if (error) return <div style={{ color: '#f85149', padding: 40, textAlign: 'center' }}>Error loading courses: {error}</div>
+  if (loading) return <div style={{ color: '#8b949e', padding: 40, textAlign: 'center' }}>Loading...</div>
+  if (error) return <div style={{ color: '#f85149', padding: 40, textAlign: 'center' }}>Error: {error}</div>
 
-  // 교과목 선택 전: 교과목 카드 그리드
+  // 교과목 선택 전: 그룹별 카드
   if (!selectedCourse) {
     return (
       <div>
-        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24, color: '#e6edf3' }}>Courses ({courses.length})</h2>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 16 }}>
-          {courses.map(c => (
-            <div key={c.course} onClick={() => selectCourse(c.course)} style={{
-              background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 20, cursor: 'pointer',
-              transition: 'border-color 0.2s',
-            }} onMouseOver={e => (e.currentTarget.style.borderColor = '#f97316')} onMouseOut={e => (e.currentTarget.style.borderColor = '#30363d')}>
-              <div style={{ fontSize: 16, fontWeight: 600, color: '#e6edf3', marginBottom: 8 }}>{c.course}</div>
-              <div style={{ fontSize: 13, color: '#8b949e', marginBottom: 12 }}>{c.title}</div>
-              <div style={{ display: 'flex', gap: 8, fontSize: 12 }}>
-                {c.versions?.map((v: string) => (
-                  <span key={v} style={{
-                    padding: '2px 8px', borderRadius: 10, fontWeight: 600,
-                    background: v === 'ai' ? 'rgba(249,115,22,0.15)' : 'rgba(88,166,255,0.15)',
-                    color: v === 'ai' ? '#f97316' : '#58a6ff',
-                  }}>{v === 'ai' ? 'AI' : 'Non-AI'}</span>
-                ))}
-                <span style={{ color: '#8b949e', marginLeft: 'auto' }}>{c.total_labs} labs / {c.weeks} weeks</span>
-              </div>
+        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, color: '#e6edf3' }}>Labs</h2>
+        <p style={{ fontSize: 13, color: '#8b949e', marginBottom: 24 }}>교과목을 선택하면 주차별 실습 문제를 확인할 수 있습니다.</p>
+        {groups.map(g => (
+          <div key={g.group} style={{ marginBottom: 32 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <div style={{ width: 4, height: 24, borderRadius: 2, background: g.color }} />
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: g.color }}>{g.group}</h3>
+              <span style={{ fontSize: 12, color: '#8b949e' }}>{g.courses.length}개 과목</span>
             </div>
-          ))}
-        </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+              {g.courses.map((c: any) => (
+                <div key={c.course_id} onClick={() => selectCourse(c.course_id)} style={{
+                  background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: 20, cursor: 'pointer',
+                  borderLeft: `4px solid ${g.color}`, transition: 'border-color 0.2s, transform 0.1s',
+                }} onMouseOver={e => { e.currentTarget.style.borderColor = g.color; e.currentTarget.style.transform = 'translateY(-2px)' }}
+                   onMouseOut={e => { e.currentTarget.style.borderColor = '#30363d'; e.currentTarget.style.borderLeftColor = g.color; e.currentTarget.style.transform = 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                    <span style={{ fontSize: 24 }}>{c.icon}</span>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: '#e6edf3' }}>{c.title}</div>
+                  </div>
+                  <div style={{ fontSize: 13, color: '#8b949e', marginBottom: 12, lineHeight: 1.5 }}>{c.description}</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: 11 }}>
+                    <span style={{ padding: '2px 8px', borderRadius: 10, background: '#21262d', color: '#8b949e' }}>{c.weeks}주</span>
+                    {c.labs_nonai > 0 && <span style={{ padding: '2px 8px', borderRadius: 10, background: 'rgba(88,166,255,0.12)', color: '#58a6ff' }}>Non-AI {c.labs_nonai}</span>}
+                    {c.labs_ai > 0 && <span style={{ padding: '2px 8px', borderRadius: 10, background: 'rgba(249,115,22,0.12)', color: '#f97316' }}>AI {c.labs_ai}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     )
   }

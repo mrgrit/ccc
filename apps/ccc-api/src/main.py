@@ -343,20 +343,21 @@ import pathlib as _pathlib
 _EDUCATION_DIR = os.getenv("EDUCATION_DIR", "/home/opsclaw/opsclaw/contents/education")
 _LABS_DIR = str(_pathlib.Path(__file__).parent.parent.parent.parent / "contents" / "labs")
 
-# 과목 매핑 (opsclaw course dir → CCC lab course name)
+# 과목 매핑 (opsclaw course dir → CCC lab course name) + 그룹
 _COURSE_MAP = {
-    "course1-attack": {"name": "attack", "title": "공격기법 (Attack Techniques)", "icon": "🗡️", "description": "모의해킹, 정보수집, 취약점 분석, 침투 테스트"},
-    "course2-security-ops": {"name": "secops", "title": "보안운영 (Security Operations)", "icon": "🛡️", "description": "보안 솔루션 운영, 접근통제, 패치관리, 보안 자동화"},
-    "course3-web-vuln": {"name": "web-vuln", "title": "웹 취약점 (Web Vulnerability)", "icon": "🌐", "description": "SQL Injection, XSS, CSRF, SSRF, API 보안"},
-    "course4-compliance": {"name": "compliance", "title": "컴플라이언스 (Compliance)", "icon": "📋", "description": "개인정보보호법, ISMS-P, ISO27001, GDPR"},
-    "course5-soc": {"name": "soc", "title": "보안관제 (SOC)", "icon": "📡", "description": "SIEM, 로그분석, 위협탐지, 인시던트 대응"},
-    "course6-cloud-container": {"name": "cloud-container", "title": "클라우드/컨테이너 (Cloud & Container)", "icon": "☁️", "description": "Docker, K8s, AWS 보안, 서버리스"},
-    "course7-ai-security": {"name": "ai-security", "title": "AI 보안 (AI Security)", "icon": "🤖", "description": "적대적 공격, LLM 보안, 프롬프트 인젝션, AI 거버넌스"},
-    "course8-ai-safety": {"name": "ai-safety", "title": "AI 안전 (AI Safety)", "icon": "⚠️", "description": "편향/공정성, 투명성, 책임있는 AI, 규제"},
-    "course9-autonomous-security": {"name": "autonomous", "title": "자율보안 (Autonomous Security)", "icon": "🔄", "description": "자율 탐지/대응, SOAR, 에이전트 오케스트레이션"},
-    "course10-ai-security-agent": {"name": "ai-agent", "title": "AI 보안 에이전트 (AI Security Agent)", "icon": "🤖", "description": "LLM 에이전트 개발, 도구사용, 멀티에이전트, 블록체인"},
+    "course1-attack": {"name": "attack", "title": "사이버 공격/해킹/침투 테스트", "group": "공격 기술", "group_color": "#f85149", "icon": "⚔️", "description": "SQL Injection, XSS, 권한 상승, 네트워크 공격 등 실제 해킹 기법을 학습하고, MITRE ATT&CK 프레임워크에 매핑하여 체계적으로 이해합니다."},
+    "course2-security-ops": {"name": "secops", "title": "보안 솔루션 운영", "group": "방어 운영", "group_color": "#3fb950", "icon": "🛡️", "description": "nftables 방화벽, Suricata IPS, Wazuh SIEM, WAF 등 실제 보안 솔루션을 설치하고 운영합니다."},
+    "course3-web-vuln": {"name": "web-vuln", "title": "웹 취약점 점검", "group": "공격 기술", "group_color": "#f85149", "icon": "🕷️", "description": "OWASP Top 10 기반 웹 취약점을 체계적으로 점검하고, JuiceShop에서 실습합니다."},
+    "course4-compliance": {"name": "compliance", "title": "정보보안 컴플라이언스", "group": "방어 운영", "group_color": "#3fb950", "icon": "📋", "description": "개인정보보호법, ISMS-P, ISO27001, GDPR 등 법규와 인증 체계를 학습합니다."},
+    "course5-soc": {"name": "soc", "title": "보안관제 (SOC)", "group": "방어 운영", "group_color": "#3fb950", "icon": "📡", "description": "SOC 분석가의 업무 — 로그 분석, 경보 분류, 인시던트 대응, SIGMA 룰, 위협 인텔리전스를 실습합니다."},
+    "course6-cloud-container": {"name": "cloud-container", "title": "클라우드/컨테이너 보안", "group": "방어 운영", "group_color": "#3fb950", "icon": "☁️", "description": "Docker, Kubernetes, AWS 보안, 서버리스 보안을 학습합니다."},
+    "course7-ai-security": {"name": "ai-security", "title": "AI/LLM 보안", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🤖", "description": "OpsClaw를 활용한 보안 자동화 — Ollama LLM, 프롬프트 엔지니어링, 탐지 룰 자동 생성을 구축합니다."},
+    "course8-ai-safety": {"name": "ai-safety", "title": "AI Safety / Red Teaming", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🧠", "description": "LLM 탈옥, 프롬프트 인젝션, 가드레일, 적대적 입력, RAG 보안, AI Red Teaming을 학습합니다."},
+    "course9-autonomous-security": {"name": "autonomous", "title": "자율보안시스템", "group": "AI 보안", "group_color": "#bc8cff", "icon": "⚡", "description": "PoW 작업증명, 강화학습(RL), Experience 메모리, 자율 Red/Blue/Purple Team을 구축합니다."},
+    "course10-ai-security-agent": {"name": "ai-agent", "title": "AI 보안 에이전트", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🕹️", "description": "AI 에이전트 기본부터 하네스 구축, 멀티에이전트, RAG, 에이전트 보안까지 실습합니다."},
 }
-_BATTLE_COURSE = {"name": "battle", "title": "공방전 (Cyber Battle)", "icon": "⚔️", "description": "인프라 간 공격/방어 대전, 1v1, 팀전, 종합 시나리오"}
+_BATTLE_COURSE = {"name": "battle", "title": "공방전 (Cyber Battle)", "group": "실전", "group_color": "#f97316", "icon": "⚔️", "description": "인프라 간 공격/방어 대전 — 1v1, 팀전, 종합 시나리오, 리더보드"}
+_GROUP_ORDER = ["공격 기술", "방어 운영", "AI 보안", "실전"]
 
 @app.get("/education/courses", dependencies=[Depends(verify_api_key)])
 def list_education_courses():
@@ -374,6 +375,8 @@ def list_education_courses():
             "course_dir": dirname,
             "course_id": meta["name"],
             "title": meta["title"],
+            "group": meta.get("group", "기타"),
+            "group_color": meta.get("group_color", "#8b949e"),
             "icon": meta["icon"],
             "description": meta["description"],
             "weeks": weeks,
@@ -389,13 +392,21 @@ def list_education_courses():
             "course_dir": "battle",
             "course_id": "battle",
             "title": _BATTLE_COURSE["title"],
+            "group": _BATTLE_COURSE["group"],
+            "group_color": _BATTLE_COURSE["group_color"],
             "icon": _BATTLE_COURSE["icon"],
             "description": _BATTLE_COURSE["description"],
             "weeks": max(battle_nonai, battle_ai),
             "labs_nonai": battle_nonai,
             "labs_ai": battle_ai,
         })
-    return {"courses": result, "total": len(result)}
+    # 그룹별 정렬
+    groups = []
+    for gname in _GROUP_ORDER:
+        courses_in_group = [c for c in result if c.get("group") == gname]
+        if courses_in_group:
+            groups.append({"group": gname, "color": courses_in_group[0]["group_color"], "courses": courses_in_group})
+    return {"courses": result, "groups": groups, "total": len(result)}
 
 @app.get("/education/courses/{course_id}/weeks", dependencies=[Depends(verify_api_key)])
 def list_course_weeks(course_id: str):

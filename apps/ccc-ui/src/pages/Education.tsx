@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { api } from '../api.ts'
 
 export default function Education() {
+  const [groups, setGroups] = useState<any[]>([])
   const [courses, setCourses] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -15,7 +16,7 @@ export default function Education() {
 
   useEffect(() => {
     api('/api/education/courses')
-      .then(d => setCourses(d.courses || []))
+      .then(d => { setCourses(d.courses || []); setGroups(d.groups || []) })
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [])
@@ -52,30 +53,41 @@ export default function Education() {
   if (loading) return <div style={{ color: '#8b949e', padding: 40, textAlign: 'center' }}>Loading courses...</div>
   if (error) return <div style={{ color: '#f85149', padding: 40, textAlign: 'center' }}>Error: {error}</div>
 
-  // ── 교과목 선택 전: 카드 그리드 ──
+  // ── 교과목 선택 전: 그룹별 카드 ──
   if (!selectedCourse) {
     return (
       <div>
         <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, color: '#e6edf3' }}>Education</h2>
         <p style={{ fontSize: 13, color: '#8b949e', marginBottom: 24 }}>교과목을 선택하면 주차별 교안과 실습을 확인할 수 있습니다.</p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 16 }}>
-          {courses.map(c => (
-            <div key={c.course_id} onClick={() => selectCourse(c)} style={{
-              background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: 24, cursor: 'pointer',
-              transition: 'border-color 0.2s, transform 0.1s',
-            }} onMouseOver={e => { e.currentTarget.style.borderColor = '#f97316'; e.currentTarget.style.transform = 'translateY(-2px)' }}
-               onMouseOut={e => { e.currentTarget.style.borderColor = '#30363d'; e.currentTarget.style.transform = 'none' }}>
-              <div style={{ fontSize: 28, marginBottom: 12 }}>{c.icon}</div>
-              <div style={{ fontSize: 17, fontWeight: 700, color: '#e6edf3', marginBottom: 6 }}>{c.title}</div>
-              <div style={{ fontSize: 13, color: '#8b949e', marginBottom: 14, lineHeight: 1.5 }}>{c.description}</div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 11 }}>
-                <span style={{ padding: '3px 10px', borderRadius: 10, background: '#21262d', color: '#8b949e' }}>{c.weeks}주</span>
-                {c.labs_nonai > 0 && <span style={{ padding: '3px 10px', borderRadius: 10, background: 'rgba(88,166,255,0.15)', color: '#58a6ff' }}>Non-AI {c.labs_nonai}</span>}
-                {c.labs_ai > 0 && <span style={{ padding: '3px 10px', borderRadius: 10, background: 'rgba(249,115,22,0.15)', color: '#f97316' }}>AI {c.labs_ai}</span>}
-              </div>
+        {groups.map(g => (
+          <div key={g.group} style={{ marginBottom: 32 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+              <div style={{ width: 4, height: 24, borderRadius: 2, background: g.color }} />
+              <h3 style={{ fontSize: 18, fontWeight: 700, color: g.color }}>{g.group}</h3>
+              <span style={{ fontSize: 12, color: '#8b949e' }}>{g.courses.length}개 과목</span>
             </div>
-          ))}
-        </div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: 14 }}>
+              {g.courses.map((c: any) => (
+                <div key={c.course_id} onClick={() => selectCourse(c)} style={{
+                  background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: 20, cursor: 'pointer',
+                  borderLeft: `4px solid ${g.color}`, transition: 'border-color 0.2s, transform 0.1s',
+                }} onMouseOver={e => { e.currentTarget.style.borderColor = g.color; e.currentTarget.style.transform = 'translateY(-2px)' }}
+                   onMouseOut={e => { e.currentTarget.style.borderColor = '#30363d'; e.currentTarget.style.borderLeftColor = g.color; e.currentTarget.style.transform = 'none' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+                    <span style={{ fontSize: 24 }}>{c.icon}</span>
+                    <div style={{ fontSize: 16, fontWeight: 700, color: '#e6edf3' }}>{c.title}</div>
+                  </div>
+                  <div style={{ fontSize: 13, color: '#8b949e', marginBottom: 12, lineHeight: 1.5 }}>{c.description}</div>
+                  <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', fontSize: 11 }}>
+                    <span style={{ padding: '2px 8px', borderRadius: 10, background: '#21262d', color: '#8b949e' }}>{c.weeks}주</span>
+                    {c.labs_nonai > 0 && <span style={{ padding: '2px 8px', borderRadius: 10, background: 'rgba(88,166,255,0.12)', color: '#58a6ff' }}>Non-AI {c.labs_nonai}</span>}
+                    {c.labs_ai > 0 && <span style={{ padding: '2px 8px', borderRadius: 10, background: 'rgba(249,115,22,0.12)', color: '#f97316' }}>AI {c.labs_ai}</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        ))}
       </div>
     )
   }
