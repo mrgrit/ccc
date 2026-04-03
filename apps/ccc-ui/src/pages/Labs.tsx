@@ -48,17 +48,21 @@ export default function Labs() {
               background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 20,
               borderLeft: `3px solid ${lab.version === 'ai' ? '#f97316' : '#58a6ff'}`,
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
-                <h3 style={{ fontSize: 15, fontWeight: 600, color: '#e6edf3', flex: 1 }}>{lab.title}</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+                <span style={{ fontSize: 11, color: '#8b949e' }}>
+                  {lab.course} / Week {lab.week}
+                </span>
                 <span style={{
-                  fontSize: 11, padding: '2px 8px', borderRadius: 10, fontWeight: 600, marginLeft: 8, whiteSpace: 'nowrap' as const,
+                  fontSize: 11, padding: '2px 8px', borderRadius: 10, fontWeight: 600,
                   background: lab.version === 'ai' ? 'rgba(249,115,22,0.15)' : 'rgba(88,166,255,0.15)',
                   color: lab.version === 'ai' ? '#f97316' : '#58a6ff',
                 }}>{lab.version === 'ai' ? 'AI' : 'Non-AI'}</span>
               </div>
+              <h3 style={{ fontSize: 15, fontWeight: 600, color: '#e6edf3', marginBottom: 10 }}>{lab.title}</h3>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', fontSize: 12 }}>
                 <span style={{ padding: '2px 8px', borderRadius: 10, color: diffColor[lab.difficulty] || '#8b949e', background: `${diffColor[lab.difficulty] || '#484f58'}22` }}>{lab.difficulty}</span>
                 <span style={{ color: '#8b949e' }}>{lab.steps} steps</span>
+                <span style={{ color: lab.valid ? '#3fb950' : '#f85149', fontSize: 11 }}>{lab.valid ? 'valid' : 'errors'}</span>
                 <span style={{ color: '#f97316', fontWeight: 600, marginLeft: 'auto' }}>{lab.total_points} pts</span>
               </div>
             </div>
