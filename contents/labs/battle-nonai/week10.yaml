@@ -1,0 +1,80 @@
+lab_id: "battle-nonai-week10"
+title: "공방전 준비 — 인프라 강화"
+version: "non-ai"
+course: "battle-nonai"
+week: 10
+description: "공방전에 대비하여 서버 인프라를 체계적으로 강화한다. 서비스 하드닝, 불필요 포트 폐쇄, 패치 적용, 시스템 백업을 실습한다."
+difficulty: "medium"
+duration_minutes: 90
+objectives:
+  - "SSH 및 웹 서비스를 하드닝할 수 있다"
+  - "불필요한 서비스와 포트를 식별하고 폐쇄할 수 있다"
+  - "시스템 패치를 확인하고 적용할 수 있다"
+  - "백업 및 복구 계획을 수립할 수 있다"
+prerequisites:
+  - "Week 06-09 방어 기법 완료"
+  - "리눅스 서비스 관리 이해"
+infra_requirements:
+  - "defender VM (강화 대상 서버)"
+  - "attacker VM (강화 검증용)"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "SSH 서비스를 하드닝하라: root 로그인 비활성화, 패스워드 인증 비활성화(키 인증만 허용), 포트 변경, MaxAuthTries 설정."
+    hint: "/etc/ssh/sshd_config에서 PermitRootLogin no, PasswordAuthentication no, Port 2222, MaxAuthTries 3으로 수정 후 서비스를 재시작한다."
+    category: "defense"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "PermitRootLogin no"
+      field: "stdout"
+
+  - order: 2
+    instruction: "시스템에서 실행 중인 모든 서비스를 나열하고, 불필요한 서비스를 식별하여 비활성화하라."
+    hint: "systemctl list-units --type=service --state=running으로 확인하고, 불필요한 서비스는 systemctl disable --now 서비스명으로 비활성화한다."
+    category: "defense"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "disabled"
+      field: "stdout"
+
+  - order: 3
+    instruction: "열려 있는 포트를 확인하고, 방화벽 규칙으로 필수 포트(SSH, HTTP, HTTPS)만 허용하라."
+    hint: "ss -tulnp로 열린 포트를 확인하고, nftables 규칙을 업데이트한다."
+    category: "defense"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "accept"
+      field: "stdout"
+
+  - order: 4
+    instruction: "시스템 패키지를 최신 상태로 업데이트하고, 보안 패치 적용 여부를 확인하라."
+    hint: "apt update && apt list --upgradable로 확인한 뒤, apt upgrade -y로 패치를 적용한다."
+    category: "defense"
+    points: 10
+    verify:
+      type: "output_contains"
+      expect: "upgraded"
+      field: "stdout"
+
+  - order: 5
+    instruction: "주요 설정 파일과 데이터를 backup/ 디렉터리에 백업하라. /etc/ssh/, /etc/nftables.conf, /etc/suricata/ 등을 포함하라."
+    hint: "mkdir -p backup && cp -r /etc/ssh /etc/nftables.conf /etc/suricata backup/"
+    category: "defense"
+    points: 10
+    verify:
+      type: "file_exists"
+      expect: "backup/"
+      field: "filesystem"
+
+  - order: 6
+    instruction: "강화 체크리스트를 hardening_checklist.txt로 작성하라. 각 항목의 적용 여부를 기록하라."
+    hint: "SSH 하드닝, 방화벽, IDS, 패치, 백업 항목별로 [완료]/[미완료] 형태로 작성한다."
+    category: "analysis"
+    points: 10
+    verify:
+      type: "file_exists"
+      expect: "hardening_checklist.txt"
+      field: "filesystem"

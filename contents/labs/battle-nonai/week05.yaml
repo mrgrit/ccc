@@ -1,0 +1,69 @@
+lab_id: "battle-nonai-week05"
+title: "권한 상승 — Privilege Escalation"
+version: "non-ai"
+course: "battle-nonai"
+week: 5
+description: "일반 사용자 권한에서 root 권한을 획득하는 다양한 기법을 학습한다. SUID 바이너리 악용, sudo 설정 오류, 커널 취약점 확인 등을 실습한다."
+difficulty: "medium"
+duration_minutes: 90
+objectives:
+  - "SUID 비트가 설정된 바이너리를 탐색하고 악용할 수 있다"
+  - "sudo 설정 오류를 발견하고 권한 상승에 활용할 수 있다"
+  - "커널 버전 기반 취약점을 확인할 수 있다"
+prerequisites:
+  - "리눅스 파일 권한 체계 이해"
+  - "기본 셸 명령 능숙"
+infra_requirements:
+  - "attacker VM"
+  - "defender VM (일반 사용자 계정 제공, 의도적 취약 설정)"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "시스템 전체에서 SUID 비트가 설정된 바이너리를 검색하라."
+    hint: "find / -perm -4000 -type f 2>/dev/null 명령을 사용한다. GTFOBins에서 악용 가능한 바이너리를 확인한다."
+    category: "exploit"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "/usr/"
+      field: "stdout"
+
+  - order: 2
+    instruction: "현재 사용자의 sudo 권한을 확인하고, 설정 오류를 발견하여 권한 상승을 시도하라."
+    hint: "sudo -l 명령으로 허용된 명령을 확인한다. NOPASSWD로 허용된 편집기(vi, nano)나 셸 명령이 있으면 이를 통해 root 셸을 획득할 수 있다."
+    category: "exploit"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "root"
+      field: "stdout"
+
+  - order: 3
+    instruction: "현재 커널 버전을 확인하고, 알려진 커널 권한 상승 취약점이 있는지 조사하라."
+    hint: "uname -r로 커널 버전을 확인하고, searchsploit 또는 linux-exploit-suggester를 사용하여 해당 버전의 취약점을 검색한다."
+    category: "exploit"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "Linux"
+      field: "stdout"
+
+  - order: 4
+    instruction: "쓰기 가능한 cron job 파일이나 PATH 인젝션 가능 여부를 확인하여 추가 권한 상승 경로를 탐색하라."
+    hint: "cat /etc/crontab, ls -la /etc/cron.d/, echo $PATH를 확인한다. 쓰기 가능한 스크립트를 root cron이 실행하면 악용 가능하다."
+    category: "exploit"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "cron"
+      field: "stdout"
+
+  - order: 5
+    instruction: "발견한 모든 권한 상승 경로를 정리하여 privesc_findings.txt로 작성하라."
+    hint: "각 기법별로 발견 경로, 위험도(Critical/High/Medium), 권장 수정 방법을 기록한다."
+    category: "analysis"
+    points: 10
+    verify:
+      type: "file_exists"
+      expect: "privesc_findings.txt"
+      field: "filesystem"

@@ -1,0 +1,247 @@
+lab_id: "battle-ai-week15"
+title: "AI 공방전 분석 — 자동 보고서"
+version: "ai"
+course: "battle-ai"
+week: 15
+description: "AI 에이전트가 전체 공방전 결과를 자동으로 수집, 통계 생성, 종합 보고서를 작성한다."
+difficulty: "medium"
+duration_minutes: 90
+objectives:
+  - "AI가 전체 공방전 로그를 자동 수집한다"
+  - "AI가 공격/방어 통계를 자동 산출한다"
+  - "AI가 종합 보고서를 자동 생성한다"
+  - "AI가 보안 개선 권고사항을 도출한다"
+prerequisites:
+  - "Week 11~14 AI 공방전 전체 완료"
+infra_requirements:
+  - "attacker VM with bastion"
+  - "defender VM"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "AI가 전체 공방전 로그와 보고서를 자동 수집한다"
+    script: |
+      echo "=== AI 공방전 로그 자동 수집 ==="
+      REPORT_DIR="/tmp/battle_analysis"
+      mkdir -p "$REPORT_DIR"
+
+      echo "[기존 보고서 수집]"
+      for f in /tmp/battle_round1.txt /tmp/battle_round2.txt /tmp/team_battle_report.txt /tmp/full_battle_report.txt; do
+        if [ -f "$f" ]; then
+          cp "$f" "$REPORT_DIR/"
+          echo "  수집: $(basename $f)"
+        else
+          echo "  미존재: $(basename $f)"
+        fi
+      done
+      echo ""
+
+      echo "[시스템 로그 수집]"
+      cp /var/log/auth.log "$REPORT_DIR/auth.log" 2>/dev/null && echo "  auth.log 수집" || echo "  auth.log 없음"
+      cp /var/log/syslog "$REPORT_DIR/syslog" 2>/dev/null && echo "  syslog 수집" || echo "  syslog 없음"
+      cp /var/log/suricata/fast.log "$REPORT_DIR/suricata_fast.log" 2>/dev/null && echo "  suricata 수집" || echo "  suricata 없음"
+
+      echo ""
+      echo "[수집된 파일 목록]"
+      ls -la "$REPORT_DIR/"
+      echo ""
+      echo "로그 수집 완료"
+    category: "analysis"
+    risk_level: "low"
+    points: 10
+    verify:
+      type: "output_contains"
+      expect: "로그 수집 완료"
+      field: "stdout"
+
+  - order: 2
+    instruction: "AI가 공격 활동 통계를 자동 산출한다"
+    script: |
+      echo "=== 공격 활동 통계 ==="
+      REPORT_DIR="/tmp/battle_analysis"
+      STATS="$REPORT_DIR/attack_stats.txt"
+      echo "# 공격 활동 통계 - $(date)" > "$STATS"
+      echo "" >> "$STATS"
+
+      echo "[SSH 브루트포스 통계]" | tee -a "$STATS"
+      FAIL=$(grep -c "Failed password" "$REPORT_DIR/auth.log" 2>/dev/null || echo "0")
+      SUCCESS=$(grep -c "Accepted" "$REPORT_DIR/auth.log" 2>/dev/null || echo "0")
+      echo "  실패 시도: ${FAIL}건" | tee -a "$STATS"
+      echo "  성공 로그인: ${SUCCESS}건" | tee -a "$STATS"
+      echo "" | tee -a "$STATS"
+
+      echo "[공격자 IP 통계]" | tee -a "$STATS"
+      grep "Failed password" "$REPORT_DIR/auth.log" 2>/dev/null | \
+        grep -oP '\d+\.\d+\.\d+\.\d+' | sort | uniq -c | sort -rn | head -10 | tee -a "$STATS"
+      echo "" | tee -a "$STATS"
+
+      echo "[Suricata 탐지 통계]" | tee -a "$STATS"
+      if [ -f "$REPORT_DIR/suricata_fast.log" ]; then
+        TOTAL_ALERTS=$(wc -l < "$REPORT_DIR/suricata_fast.log")
+        echo "  총 알림: ${TOTAL_ALERTS}건" | tee -a "$STATS"
+        grep -oP '\[.*?\]' "$REPORT_DIR/suricata_fast.log" | sort | uniq -c | sort -rn | head -10 | tee -a "$STATS"
+      else
+        echo "  Suricata 로그 없음" | tee -a "$STATS"
+      fi
+      echo ""
+      echo "공격 통계 산출 완료"
+    category: "analysis"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "공격 통계 산출 완료"
+      field: "stdout"
+
+  - order: 3
+    instruction: "AI가 방어 활동 통계를 자동 산출한다"
+    script: |
+      echo "=== 방어 활동 통계 ==="
+      REPORT_DIR="/tmp/battle_analysis"
+      STATS="$REPORT_DIR/defense_stats.txt"
+      echo "# 방어 활동 통계 - $(date)" > "$STATS"
+      echo "" >> "$STATS"
+
+      echo "[방화벽 규칙 통계]" | tee -a "$STATS"
+      RULES=$(nft list ruleset 2>/dev/null | grep -c "rule")
+      echo "  현재 nftables 규칙: ${RULES}개" | tee -a "$STATS"
+      echo "" | tee -a "$STATS"
+
+      echo "[차단된 IP 목록]" | tee -a "$STATS"
+      nft list ruleset 2>/dev/null | grep "drop" | head -10 | tee -a "$STATS"
+      echo "" | tee -a "$STATS"
+
+      echo "[모니터링 에이전트 활동]" | tee -a "$STATS"
+      for logfile in /tmp/blue_team/net_alerts.log /tmp/blue_team/host_alerts.log /tmp/blue_team/web_alerts.log /tmp/blue_full/defense_events.log; do
+        if [ -f "$logfile" ]; then
+          EVENTS=$(wc -l < "$logfile")
+          echo "  $(basename $logfile): ${EVENTS}건" | tee -a "$STATS"
+        fi
+      done
+      echo "" | tee -a "$STATS"
+
+      echo "[파일 무결성 변경]" | tee -a "$STATS"
+      if [ -f /tmp/blue_full/baseline_files.md5 ] && [ -f /tmp/blue_full/current_files.md5 ]; then
+        CHANGED=$(diff /tmp/blue_full/baseline_files.md5 /tmp/blue_full/current_files.md5 2>/dev/null | grep -c "^>")
+        echo "  변경된 파일: ${CHANGED}개" | tee -a "$STATS"
+      else
+        echo "  베이스라인 데이터 없음" | tee -a "$STATS"
+      fi
+      echo ""
+      echo "방어 통계 산출 완료"
+    category: "analysis"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "방어 통계 산출 완료"
+      field: "stdout"
+
+  - order: 4
+    instruction: "AI가 종합 공방전 보고서를 자동 생성한다"
+    script: |
+      echo "=== 종합 공방전 보고서 자동 생성 ==="
+      REPORT="/tmp/battle_analysis/final_report.txt"
+
+      cat > "$REPORT" << 'HEADER'
+      ╔══════════════════════════════════════════════════════╗
+      ║     AI 공방전 (Cyber Battle AI) 종합 보고서         ║
+      ╚══════════════════════════════════════════════════════╝
+      HEADER
+
+      echo "" >> "$REPORT"
+      echo "생성 시간: $(date)" >> "$REPORT"
+      echo "생성자: AI 자동 분석 에이전트" >> "$REPORT"
+      echo "" >> "$REPORT"
+
+      echo "━━━ 1. 과정 개요 ━━━" >> "$REPORT"
+      echo "  Week 11: AI 1v1 공방전 (1) — 정찰 vs 탐지" >> "$REPORT"
+      echo "  Week 12: AI 1v1 공방전 (2) — 침투 vs 방어" >> "$REPORT"
+      echo "  Week 13: AI 팀 공방전 — 다중 에이전트" >> "$REPORT"
+      echo "  Week 14: AI 종합 공방전 — Full Auto" >> "$REPORT"
+      echo "" >> "$REPORT"
+
+      echo "━━━ 2. 공격 측 분석 ━━━" >> "$REPORT"
+      cat "$REPORT_DIR/attack_stats.txt" >> "$REPORT" 2>/dev/null || echo "  통계 없음" >> "$REPORT"
+      echo "" >> "$REPORT"
+
+      echo "━━━ 3. 방어 측 분석 ━━━" >> "$REPORT"
+      cat "$REPORT_DIR/defense_stats.txt" >> "$REPORT" 2>/dev/null || echo "  통계 없음" >> "$REPORT"
+      echo "" >> "$REPORT"
+
+      echo "━━━ 4. MITRE ATT&CK 매핑 ━━━" >> "$REPORT"
+      echo "  T1046 — Network Service Scanning (Week 11)" >> "$REPORT"
+      echo "  T1190 — Exploit Public-Facing Application (Week 12)" >> "$REPORT"
+      echo "  T1110 — Brute Force (Week 12)" >> "$REPORT"
+      echo "  T1548 — Abuse Elevation Control Mechanism (Week 14)" >> "$REPORT"
+      echo "  T1053 — Scheduled Task/Job (Week 14)" >> "$REPORT"
+      echo "" >> "$REPORT"
+
+      echo "━━━ 5. 핵심 교훈 ━━━" >> "$REPORT"
+      echo "  1. AI 자동화는 공격/방어 모두 속도와 범위를 크게 향상" >> "$REPORT"
+      echo "  2. 베이스라인 기반 이상 탐지가 자동 방어의 핵심" >> "$REPORT"
+      echo "  3. 다층 방어(Defense in Depth)가 단일 방어보다 효과적" >> "$REPORT"
+      echo "  4. 다중 에이전트 협조 시 정보 공유 메커니즘이 중요" >> "$REPORT"
+      echo "  5. 자동화된 대응은 오탐 관리 정책이 필수" >> "$REPORT"
+      echo "" >> "$REPORT"
+
+      echo "보고서 생성 완료: $REPORT"
+      echo ""
+      cat "$REPORT"
+    category: "analysis"
+    risk_level: "low"
+    points: 20
+    verify:
+      type: "file_exists"
+      expect: "/tmp/battle_analysis/final_report.txt"
+      field: "path"
+
+  - order: 5
+    instruction: "AI가 보안 개선 권고사항을 도출하고 최종 점수를 산출한다"
+    script: |
+      echo "=== 보안 개선 권고사항 ==="
+      RECOMMEND="/tmp/battle_analysis/recommendations.txt"
+
+      cat > "$RECOMMEND" << 'EOF'
+      ╔══════════════════════════════════════════════════════╗
+      ║         보안 개선 권고사항 (AI 자동 도출)           ║
+      ╚══════════════════════════════════════════════════════╝
+
+      [즉시 조치 (Critical)]
+      1. SSH root 로그인 비활성화 (PermitRootLogin no)
+      2. fail2ban 또는 동등한 브루트포스 방어 도입
+      3. 웹 애플리케이션 입력값 검증 강화 (SQLi/XSS 방어)
+      4. 불필요 포트 및 서비스 차단
+
+      [단기 조치 (1주 이내)]
+      5. Suricata IDS 규칙 최신화 및 커스텀 규칙 강화
+      6. 자동 로그 모니터링 및 알림 시스템 구축
+      7. 파일 무결성 모니터링(FIM) 상시 운영
+      8. 패스워드 정책 강화 (12자 이상, 복잡도)
+
+      [중기 조치 (1개월 이내)]
+      9. SIEM 통합 모니터링 구축
+      10. 자동 인시던트 대응 플레이북 작성
+      11. 정기 취약점 스캐닝 자동화
+      12. 네트워크 세그멘테이션 강화
+
+      [장기 조치 (분기별)]
+      13. AI 기반 지속적 보안 테스트(Continuous Security Testing)
+      14. 레드팀/블루팀 정기 훈련 자동화
+      15. 보안 메트릭 대시보드 구축 및 KPI 관리
+      EOF
+
+      cat "$RECOMMEND"
+      echo ""
+      echo "=== 과정 최종 점수 ==="
+      echo "보고서 파일:"
+      ls -la /tmp/battle_analysis/
+      echo ""
+      echo "AI 공방전 전체 분석 완료"
+    category: "analysis"
+    risk_level: "low"
+    points: 20
+    verify:
+      type: "file_exists"
+      expect: "/tmp/battle_analysis/recommendations.txt"
+      field: "path"

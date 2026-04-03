@@ -1,0 +1,70 @@
+lab_id: "battle-nonai-week11"
+title: "1v1 공방전 실전 (1) — 정찰 vs 탐지"
+version: "non-ai"
+course: "battle-nonai"
+week: 11
+description: "1대1 공방전의 첫 번째 실전이다. 공격자는 방어자의 네트워크를 정찰하고, 방어자는 스캔을 탐지하여 차단한다. 역할을 교대하여 양측 관점을 모두 경험한다."
+difficulty: "hard"
+duration_minutes: 90
+objectives:
+  - "공격자로서 탐지를 회피하면서 정찰을 수행할 수 있다"
+  - "방어자로서 실시간 스캔을 탐지하고 차단할 수 있다"
+  - "공격/방어 양측의 관점을 이해할 수 있다"
+prerequisites:
+  - "Week 01-02 정찰 기법"
+  - "Week 06-07 방화벽/IDS 운용"
+infra_requirements:
+  - "attacker VM (Nmap, 스캐닝 도구)"
+  - "defender VM (nftables + Suricata 구동)"
+  - "실시간 모니터링 환경"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "[공격자] 방어자의 네트워크를 스텔스 스캔하라. 탐지를 회피하기 위해 느린 스캔, 분산 스캔, 디코이 등의 기법을 사용하라."
+    hint: "nmap -sS -T1 (느린 스캔), nmap -D 디코이IP1,디코이IP2 (디코이), nmap --scan-delay 1s 등을 활용한다."
+    category: "recon"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "open"
+      field: "stdout"
+
+  - order: 2
+    instruction: "[방어자] Suricata fast.log와 시스템 로그를 실시간 모니터링하여 스캔 활동을 탐지하라. 탐지된 소스 IP를 기록하라."
+    hint: "tail -f /var/log/suricata/fast.log로 실시간 모니터링한다. eve.json에서 alert 이벤트를 jq로 필터링할 수도 있다."
+    category: "defense"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "alert"
+      field: "stdout"
+
+  - order: 3
+    instruction: "[방어자] 탐지된 공격 소스 IP를 nftables로 즉시 차단하라."
+    hint: "nft add rule inet filter input ip saddr 공격IP drop 명령으로 해당 IP를 차단한다."
+    category: "defense"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "drop"
+      field: "stdout"
+
+  - order: 4
+    instruction: "[공격자] IP가 차단된 것을 확인한 후, 다른 기법(IP 스푸핑, 다른 소스 활용)으로 정찰을 재시도하라."
+    hint: "차단 확인: nmap 재시도 시 filtered/timeout 결과. 다른 기법: proxychains, 또는 다른 VM에서 스캔 시도."
+    category: "recon"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "filtered"
+      field: "stdout"
+
+  - order: 5
+    instruction: "공방전 결과를 양측 관점에서 정리하여 battle_round1.txt에 작성하라. 공격 성공/실패 시도, 방어 탐지/차단 시점을 타임라인으로 기록하라."
+    hint: "시간 | 역할 | 행동 | 결과 형식으로 타임라인을 작성한다."
+    category: "analysis"
+    points: 10
+    verify:
+      type: "file_exists"
+      expect: "battle_round1.txt"
+      field: "filesystem"

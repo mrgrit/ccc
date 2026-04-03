@@ -313,6 +313,77 @@ def check_infra_health(iid: str):
     return {"infra_id": iid, "healthy": healthy, "subagent_url": infra["subagent_url"]}
 
 # ══════════════════════════════════════════════════
+#  Lab Catalog (lab_engine 연동)
+# ══════════════════════════════════════════════════
+import pathlib as _pathlib
+_LABS_DIR = str(_pathlib.Path(__file__).parent.parent.parent.parent / "contents" / "labs")
+
+@app.get("/labs/catalog", dependencies=[Depends(verify_api_key)])
+def lab_catalog(course: str | None = None, version: str | None = None):
+    """등록된 실습 YAML 목록"""
+    from packages.lab_engine import load_all_labs, lab_summary, validate_lab
+    labs = load_all_labs(_LABS_DIR)
+    if course:
+        labs = [l for l in labs if l.course == course]
+    if version:
+        labs = [l for l in labs if l.version == version]
+    result = []
+    for l in labs:
+        s = lab_summary(l)
+        errors = validate_lab(l)
+        s["valid"] = len(errors) == 0
+        s["errors"] = errors
+        result.append(s)
+    return {"labs": result, "total": len(result)}
+
+@app.get("/labs/catalog/{lab_id}", dependencies=[Depends(verify_api_key)])
+def get_lab_detail(lab_id: str):
+    """실습 상세 (steps 포함)"""
+    from packages.lab_engine import load_all_labs
+    labs = load_all_labs(_LABS_DIR)
+    for l in labs:
+        if l.lab_id == lab_id:
+            steps = []
+            for s in l.steps:
+                step_data = {
+                    "order": s.order, "instruction": s.instruction,
+                    "hint": s.hint, "category": s.category, "points": s.points,
+                }
+                if l.version == "ai" and s.script:
+                    step_data["script"] = s.script
+                    step_data["risk_level"] = s.risk_level
+                if s.verify:
+                    step_data["verify"] = {"type": s.verify.type, "expect": s.verify.expect, "field": s.verify.field}
+                steps.append(step_data)
+            return {
+                "lab_id": l.lab_id, "title": l.title, "version": l.version,
+                "course": l.course, "week": l.week, "description": l.description,
+                "objectives": l.objectives, "difficulty": l.difficulty,
+                "duration_minutes": l.duration_minutes, "total_points": l.total_points,
+                "pass_threshold": l.pass_threshold, "steps": steps,
+            }
+    raise HTTPException(404, "Lab not found")
+
+@app.post("/labs/evaluate", dependencies=[Depends(verify_api_key)])
+def evaluate_lab_submission(lab_id: str, student_id: str, submissions: list[dict[str, Any]] = []):
+    """실습 결과 평가 (lab_engine 검증)"""
+    from packages.lab_engine import load_all_labs, evaluate_lab
+    labs = load_all_labs(_LABS_DIR)
+    lab = next((l for l in labs if l.lab_id == lab_id), None)
+    if not lab:
+        raise HTTPException(404, "Lab not found")
+    result = evaluate_lab(lab, submissions, student_id)
+    return {
+        "lab_id": result.lab_id, "student_id": result.student_id,
+        "passed": result.passed, "total_points": result.total_points,
+        "earned_points": result.earned_points,
+        "step_results": [
+            {"order": sr.order, "passed": sr.passed, "points_earned": sr.points_earned, "message": sr.message}
+            for sr in result.step_results
+        ],
+    }
+
+# ══════════════════════════════════════════════════
 #  Labs (실습)
 # ══════════════════════════════════════════════════
 @app.post("/labs/start", dependencies=[Depends(verify_api_key)])

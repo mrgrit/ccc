@@ -1,0 +1,69 @@
+lab_id: "battle-nonai-week07"
+title: "IDS/IPS 구축 — Suricata 방어"
+version: "non-ai"
+course: "battle-nonai"
+week: 7
+description: "Suricata IDS/IPS를 설치하고 설정하는 방법을 학습한다. 커스텀 탐지 규칙을 작성하고, 공격 트래픽에 대한 알림을 확인하며, 로그를 분석한다."
+difficulty: "medium"
+duration_minutes: 90
+objectives:
+  - "Suricata를 설치하고 기본 설정을 구성할 수 있다"
+  - "커스텀 탐지 규칙을 작성할 수 있다"
+  - "알림 로그를 분석하여 공격을 식별할 수 있다"
+prerequisites:
+  - "네트워크 프로토콜 이해"
+  - "Week 06 방화벽 기초 완료"
+infra_requirements:
+  - "attacker VM (스캐닝/공격 도구)"
+  - "defender VM (Suricata 설치)"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "Suricata를 설치하고 인터페이스를 지정하여 기본 설정을 완료하라. suricata.yaml에서 HOME_NET을 실습 환경에 맞게 수정하라."
+    hint: "apt install suricata로 설치 후, /etc/suricata/suricata.yaml에서 HOME_NET과 af-packet 인터페이스를 수정한다."
+    category: "defense"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "Suricata"
+      field: "stdout"
+
+  - order: 2
+    instruction: "포트 스캔을 탐지하는 커스텀 Suricata 규칙을 /var/lib/suricata/rules/local.rules에 작성하라."
+    hint: "alert tcp any any -> $HOME_NET any (msg:\"Port Scan Detected\"; flags:S; threshold:type both, track by_src, count 20, seconds 5; sid:1000001; rev:1;)"
+    category: "defense"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Port Scan"
+      field: "stdout"
+
+  - order: 3
+    instruction: "Suricata를 재시작하고 규칙이 정상 로딩되었는지 확인하라."
+    hint: "systemctl restart suricata 후 suricata-update list-sources 또는 로그에서 rules loaded를 확인한다."
+    category: "defense"
+    points: 10
+    verify:
+      type: "output_contains"
+      expect: "rule"
+      field: "stdout"
+
+  - order: 4
+    instruction: "attacker VM에서 포트 스캔을 수행하고, defender VM에서 Suricata 알림 로그(eve.json 또는 fast.log)를 확인하여 탐지 여부를 검증하라."
+    hint: "공격자: nmap -sS 대상IP, 방어자: tail -f /var/log/suricata/fast.log 또는 jq . /var/log/suricata/eve.json | grep 'Port Scan'"
+    category: "defense"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "Port Scan Detected"
+      field: "stdout"
+
+  - order: 5
+    instruction: "Suricata eve.json 로그에서 최근 1시간의 알림을 추출하고 공격 유형별로 분류하여 ids_report.txt로 작성하라."
+    hint: "jq를 활용하여 event_type이 alert인 항목을 필터링하고, signature별로 그룹핑한다."
+    category: "analysis"
+    points: 10
+    verify:
+      type: "file_exists"
+      expect: "ids_report.txt"
+      field: "filesystem"

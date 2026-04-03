@@ -1,0 +1,181 @@
+lab_id: "battle-ai-week11"
+title: "AI 1v1 공방전 (1) — AI 정찰 vs AI 탐지"
+version: "ai"
+course: "battle-ai"
+week: 11
+description: "Red AI가 자동 정찰을 수행하고, Blue AI가 실시간으로 정찰 행위를 자동 탐지한다. 1v1 AI 공방전 첫 번째 시나리오."
+difficulty: "hard"
+duration_minutes: 90
+objectives:
+  - "Red AI가 다단계 자동 정찰을 수행한다"
+  - "Blue AI가 정찰 행위를 실시간 자동 탐지한다"
+  - "Red/Blue 결과를 비교하여 탐지율을 산출한다"
+  - "AI 공방전 결과를 분석한다"
+prerequisites:
+  - "Week 01~10 전체 완료"
+  - "공격/방어 양측 개념 이해"
+infra_requirements:
+  - "attacker VM with bastion"
+  - "defender VM"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "Blue AI가 방어 모니터링 환경을 준비한다 (탐지 로그 초기화)"
+    script: |
+      echo "=== Blue AI: 방어 모니터링 준비 ==="
+      BLUE_LOG="/tmp/blue_detection.log"
+      echo "# Blue AI 탐지 로그 - $(date)" > "$BLUE_LOG"
+      echo ""
+
+      echo "[Suricata 알림 초기화]"
+      echo "" > /var/log/suricata/fast.log 2>/dev/null || echo "  fast.log 초기화 시뮬레이션"
+
+      echo "[tcpdump 백그라운드 캡처 시작]"
+      timeout 120 tcpdump -i any -w /tmp/blue_capture.pcap -c 10000 2>/dev/null &
+      TCPDUMP_PID=$!
+      echo "  tcpdump PID: $TCPDUMP_PID"
+      echo "TCPDUMP_PID=$TCPDUMP_PID" > /tmp/blue_pids.txt
+
+      echo "[연결 베이스라인 기록]"
+      ss -tuna > /tmp/blue_baseline_connections.txt
+      echo "  베이스라인 연결: $(wc -l < /tmp/blue_baseline_connections.txt)개"
+      echo ""
+      echo "Blue AI 방어 준비 완료"
+    category: "defense"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "Blue AI 방어 준비 완료"
+      field: "stdout"
+
+  - order: 2
+    instruction: "Red AI가 스텔스 호스트 발견 스캔을 수행한다"
+    script: |
+      echo "=== Red AI: Phase 1 — 스텔스 호스트 발견 ==="
+      echo "[ARP 스캔]"
+      nmap -sn -PR 10.20.30.0/24 2>&1 | grep "Host is up" | head -10
+      echo ""
+      echo "[TCP ACK 스캔 (방화벽 우회)]"
+      nmap -sA -p 80,443 10.20.30.80 2>&1 | tail -10
+      echo ""
+      echo "[느린 타이밍 스캔 (IDS 회피)]"
+      nmap -sS -T1 -p 22,80 10.20.30.80 --max-retries 1 2>&1 | tail -10
+      echo ""
+      echo "Red AI Phase 1 완료"
+    category: "recon"
+    risk_level: "medium"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Red AI Phase 1 완료"
+      field: "stdout"
+
+  - order: 3
+    instruction: "Red AI가 서비스 및 OS 정밀 스캔을 수행한다"
+    script: |
+      echo "=== Red AI: Phase 2 — 서비스/OS 정밀 스캔 ==="
+      echo "[서비스 버전 탐지]"
+      nmap -sV --version-intensity 5 -p 22,80,443,3000,8080 10.20.30.80 2>&1 | tail -15
+      echo ""
+      echo "[OS 핑거프린팅]"
+      nmap -O --osscan-guess 10.20.30.80 2>&1 | grep -A3 "OS details" | head -5
+      echo ""
+      echo "[NSE 기본 스크립트]"
+      nmap -sC -p 80 10.20.30.80 2>&1 | tail -15
+      echo ""
+      echo "Red AI Phase 2 완료"
+    category: "recon"
+    risk_level: "medium"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Red AI Phase 2 완료"
+      field: "stdout"
+
+  - order: 4
+    instruction: "Blue AI가 정찰 행위를 탐지하고 분석한다"
+    script: |
+      echo "=== Blue AI: 정찰 행위 탐지 분석 ==="
+      BLUE_LOG="/tmp/blue_detection.log"
+
+      echo "[1. Suricata 알림 확인]"
+      if [ -f /var/log/suricata/fast.log ]; then
+        ALERTS=$(wc -l < /var/log/suricata/fast.log)
+        echo "  탐지된 알림: ${ALERTS}건"
+        tail -10 /var/log/suricata/fast.log
+        echo "SURICATA_ALERTS=$ALERTS" >> "$BLUE_LOG"
+      else
+        echo "  Suricata 로그 없음"
+      fi
+      echo ""
+
+      echo "[2. 새로운 연결 탐지]"
+      ss -tuna > /tmp/blue_current_connections.txt
+      diff /tmp/blue_baseline_connections.txt /tmp/blue_current_connections.txt 2>/dev/null | grep "^>" | head -10
+      NEW_CONN=$(diff /tmp/blue_baseline_connections.txt /tmp/blue_current_connections.txt 2>/dev/null | grep -c "^>")
+      echo "  새 연결: ${NEW_CONN}개"
+      echo "NEW_CONNECTIONS=$NEW_CONN" >> "$BLUE_LOG"
+      echo ""
+
+      echo "[3. auth.log 신규 이벤트]"
+      tail -20 /var/log/auth.log 2>/dev/null | head -10
+      echo ""
+
+      echo "[4. pcap 분석]"
+      kill $(cat /tmp/blue_pids.txt 2>/dev/null | grep TCPDUMP | cut -d= -f2) 2>/dev/null
+      if [ -f /tmp/blue_capture.pcap ]; then
+        PACKETS=$(tcpdump -r /tmp/blue_capture.pcap 2>/dev/null | wc -l)
+        echo "  캡처된 패킷: ${PACKETS}개"
+        echo "  SYN 패킷:"
+        tcpdump -r /tmp/blue_capture.pcap 'tcp[tcpflags] & tcp-syn != 0' 2>/dev/null | wc -l | xargs -I{} echo "    {}개"
+      else
+        echo "  pcap 파일 없음"
+      fi
+      echo ""
+      echo "Blue AI 탐지 분석 완료"
+    category: "defense"
+    risk_level: "low"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Blue AI 탐지 분석 완료"
+      field: "stdout"
+
+  - order: 5
+    instruction: "AI가 Red vs Blue 결과를 비교하여 탐지율을 산출한다"
+    script: |
+      echo "=== AI 1v1 공방전 결과 보고서 ===" > /tmp/battle_round1.txt
+      echo "라운드: Week 11 — 정찰 vs 탐지" >> /tmp/battle_round1.txt
+      echo "시간: $(date)" >> /tmp/battle_round1.txt
+      echo "" >> /tmp/battle_round1.txt
+
+      echo "[Red AI 활동]" >> /tmp/battle_round1.txt
+      echo "  - Phase 1: 스텔스 호스트 발견 (ARP/ACK/Slow)" >> /tmp/battle_round1.txt
+      echo "  - Phase 2: 서비스/OS 정밀 스캔" >> /tmp/battle_round1.txt
+      echo "  - Phase 3: NSE 스크립트 실행" >> /tmp/battle_round1.txt
+      echo "  총 공격 행위: 3 phases" >> /tmp/battle_round1.txt
+      echo "" >> /tmp/battle_round1.txt
+
+      echo "[Blue AI 탐지]" >> /tmp/battle_round1.txt
+      BLUE_LOG="/tmp/blue_detection.log"
+      if [ -f "$BLUE_LOG" ]; then
+        cat "$BLUE_LOG" >> /tmp/battle_round1.txt
+      fi
+      echo "" >> /tmp/battle_round1.txt
+
+      echo "[탐지율 분석]" >> /tmp/battle_round1.txt
+      echo "  Red 활동: 3 phases" >> /tmp/battle_round1.txt
+      echo "  Blue 탐지: Suricata + 연결 분석 + pcap" >> /tmp/battle_round1.txt
+      echo "  탐지율: 평가 중 (로그 기반 산출)" >> /tmp/battle_round1.txt
+      echo "" >> /tmp/battle_round1.txt
+      echo "[승리 판정]" >> /tmp/battle_round1.txt
+      echo "  결과는 탐지율과 스텔스 성공률에 따라 결정" >> /tmp/battle_round1.txt
+      cat /tmp/battle_round1.txt
+    category: "analysis"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "AI 1v1 공방전 결과 보고서"
+      field: "stdout"

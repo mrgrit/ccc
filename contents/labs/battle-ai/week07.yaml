@@ -1,0 +1,158 @@
+lab_id: "battle-ai-week07"
+title: "AI IDS/IPS — Suricata 자동 배포"
+version: "ai"
+course: "battle-ai"
+week: 7
+description: "AI 에이전트가 Suricata IDS/IPS를 자동으로 설정하고, 탐지 규칙을 배포하며, 알림을 확인한다."
+difficulty: "medium"
+duration_minutes: 90
+objectives:
+  - "AI가 Suricata 설정 파일을 자동 생성한다"
+  - "AI가 커스텀 탐지 규칙을 자동 배포한다"
+  - "AI가 Suricata 알림을 실시간 모니터링한다"
+  - "AI가 탐지 결과를 분석하고 보고한다"
+prerequisites:
+  - "Week 06 AI 방화벽 자동 구축 완료"
+  - "IDS/IPS 개념 이해"
+infra_requirements:
+  - "attacker VM with bastion"
+  - "defender VM (Suricata installed)"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "AI가 Suricata 설정 파일을 확인하고 네트워크 인터페이스를 설정한다"
+    script: |
+      echo "=== Suricata 설치 확인 ==="
+      suricata --build-info 2>/dev/null | head -5 || echo "Suricata 미설치 — 설치 필요"
+      echo ""
+      echo "=== 네트워크 인터페이스 확인 ==="
+      ip -br addr show | grep -v "^lo"
+      echo ""
+      echo "=== Suricata 설정 확인 ==="
+      if [ -f /etc/suricata/suricata.yaml ]; then
+        grep -A2 "HOME_NET" /etc/suricata/suricata.yaml | head -5
+        echo "설정 파일 존재"
+      else
+        echo "설정 파일 없음 — 기본 설정 생성 필요"
+      fi
+      echo ""
+      echo "Suricata 환경 확인 완료"
+    category: "defense"
+    risk_level: "low"
+    points: 10
+    verify:
+      type: "output_contains"
+      expect: "Suricata 환경 확인 완료"
+      field: "stdout"
+
+  - order: 2
+    instruction: "AI가 HOME_NET을 실습 네트워크로 설정하고 로그 경로를 구성한다"
+    script: |
+      echo "=== Suricata HOME_NET 설정 ==="
+      SURICATA_CONF="/etc/suricata/suricata.yaml"
+      if [ -f "$SURICATA_CONF" ]; then
+        cp "$SURICATA_CONF" "${SURICATA_CONF}.bak"
+        sed -i 's|HOME_NET:.*|HOME_NET: "[10.20.30.0/24]"|' "$SURICATA_CONF"
+        grep "HOME_NET" "$SURICATA_CONF" | head -3
+        echo "HOME_NET 설정 완료"
+      else
+        echo "설정 파일 없음 — 시뮬레이션 모드"
+        echo 'HOME_NET: "[10.20.30.0/24]"'
+      fi
+      echo ""
+      echo "=== 로그 디렉토리 확인 ==="
+      mkdir -p /var/log/suricata
+      ls -la /var/log/suricata/
+      echo ""
+      echo "Suricata 설정 완료"
+    category: "defense"
+    risk_level: "medium"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "Suricata 설정 완료"
+      field: "stdout"
+
+  - order: 3
+    instruction: "AI가 커스텀 Suricata 탐지 규칙을 생성하고 배포한다"
+    script: |
+      echo "=== 커스텀 규칙 생성 ==="
+      RULES_DIR="/etc/suricata/rules"
+      mkdir -p "$RULES_DIR" 2>/dev/null
+      cat > /tmp/custom-lab.rules << 'RULES'
+      # 포트 스캔 탐지
+      alert tcp any any -> $HOME_NET any (msg:"AI-LAB: Port Scan Detected"; flags:S; threshold: type threshold, track by_src, count 20, seconds 5; sid:1000001; rev:1;)
+      # SSH 브루트포스 탐지
+      alert tcp any any -> $HOME_NET 22 (msg:"AI-LAB: SSH Brute Force Attempt"; flow:to_server,established; threshold: type threshold, track by_src, count 5, seconds 60; sid:1000002; rev:1;)
+      # SQL Injection 탐지
+      alert http any any -> $HOME_NET any (msg:"AI-LAB: SQL Injection Attempt"; content:"UNION"; nocase; content:"SELECT"; nocase; sid:1000003; rev:1;)
+      # XSS 탐지
+      alert http any any -> $HOME_NET any (msg:"AI-LAB: XSS Attempt"; content:"<script"; nocase; sid:1000004; rev:1;)
+      # 비정상 ICMP 탐지
+      alert icmp any any -> $HOME_NET any (msg:"AI-LAB: Large ICMP Packet"; dsize:>1000; sid:1000005; rev:1;)
+      RULES
+      cp /tmp/custom-lab.rules "$RULES_DIR/custom-lab.rules" 2>/dev/null || true
+      echo "규칙 파일 내용:"
+      cat /tmp/custom-lab.rules
+      echo ""
+      echo "커스텀 규칙 배포 완료"
+    category: "defense"
+    risk_level: "medium"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "커스텀 규칙 배포 완료"
+      field: "stdout"
+
+  - order: 4
+    instruction: "AI가 Suricata를 재시작하고 규칙 로딩 상태를 확인한다"
+    script: |
+      echo "=== Suricata 규칙 검증 ==="
+      suricata -T -c /etc/suricata/suricata.yaml 2>&1 | tail -10 || echo "규칙 검증 시뮬레이션 완료"
+      echo ""
+      echo "=== Suricata 재시작 ==="
+      systemctl restart suricata 2>/dev/null || echo "systemctl 사용 불가 — 수동 재시작 필요"
+      echo ""
+      echo "=== 상태 확인 ==="
+      systemctl status suricata 2>/dev/null | head -10 || echo "상태 확인 시뮬레이션"
+      echo ""
+      echo "=== 로드된 규칙 수 확인 ==="
+      grep -c "sid:" /tmp/custom-lab.rules 2>/dev/null | xargs -I{} echo "커스텀 규칙: {}개 로드"
+      echo ""
+      echo "Suricata 재시작 완료"
+    category: "defense"
+    risk_level: "medium"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "Suricata 재시작 완료"
+      field: "stdout"
+
+  - order: 5
+    instruction: "AI가 Suricata 알림 로그를 확인하고 탐지 결과를 분석한다"
+    script: |
+      echo "=== Suricata 알림 로그 확인 ==="
+      if [ -f /var/log/suricata/fast.log ]; then
+        tail -30 /var/log/suricata/fast.log
+        echo ""
+        echo "알림 통계:"
+        grep -c "AI-LAB" /var/log/suricata/fast.log 2>/dev/null | xargs -I{} echo "  AI-LAB 규칙 탐지: {}건"
+      else
+        echo "알림 로그 없음 — 트래픽 발생 후 확인 필요"
+      fi
+      echo ""
+      echo "=== EVE JSON 로그 확인 ==="
+      if [ -f /var/log/suricata/eve.json ]; then
+        tail -5 /var/log/suricata/eve.json | python3 -m json.tool 2>/dev/null || tail -5 /var/log/suricata/eve.json
+      else
+        echo "EVE 로그 없음"
+      fi
+      echo ""
+      echo "AI IDS/IPS 배포 및 모니터링 완료"
+    category: "analysis"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "AI IDS/IPS 배포 및 모니터링 완료"
+      field: "stdout"

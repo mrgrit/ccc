@@ -1,0 +1,69 @@
+lab_id: "battle-nonai-week04"
+title: "패스워드 공격 — Brute Force / Dictionary"
+version: "non-ai"
+course: "battle-nonai"
+week: 4
+description: "Hydra를 이용한 온라인 Brute Force 공격, John the Ripper를 이용한 오프라인 해시 크래킹, 패스워드 정책 점검 방법을 학습한다."
+difficulty: "medium"
+duration_minutes: 90
+objectives:
+  - "Hydra를 이용하여 SSH 브루트포스 공격을 수행할 수 있다"
+  - "John the Ripper로 패스워드 해시를 크래킹할 수 있다"
+  - "안전한 패스워드 정책을 이해하고 점검할 수 있다"
+prerequisites:
+  - "리눅스 사용자 인증 구조 이해"
+  - "해시 함수 기초 개념"
+infra_requirements:
+  - "attacker VM (Hydra, John the Ripper 설치)"
+  - "defender VM (SSH 서비스 구동, 약한 패스워드 설정)"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "Hydra를 사용하여 대상 SSH 서비스에 대해 사전 파일 기반 브루트포스 공격을 수행하라."
+    hint: "hydra -l 사용자명 -P /usr/share/wordlists/rockyou.txt ssh://대상IP 형태로 실행한다. 소규모 사전 파일로 먼저 테스트하라."
+    category: "exploit"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "login:"
+      field: "stdout"
+
+  - order: 2
+    instruction: "대상 시스템에서 /etc/shadow 파일의 해시를 획득하고(또는 제공된 해시 파일을 이용), John the Ripper로 크래킹을 시도하라."
+    hint: "unshadow /etc/passwd /etc/shadow > hashes.txt 후 john hashes.txt로 크래킹한다."
+    category: "exploit"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Cracked"
+      field: "stdout"
+
+  - order: 3
+    instruction: "크래킹된 패스워드 목록을 확인하고 결과를 출력하라."
+    hint: "john --show hashes.txt 명령으로 크래킹된 결과를 확인할 수 있다."
+    category: "exploit"
+    points: 10
+    verify:
+      type: "output_regex"
+      expect: "\\d+ password hash(es)? cracked"
+      field: "stdout"
+
+  - order: 4
+    instruction: "대상 시스템의 패스워드 정책(최소 길이, 복잡성, 만료 기간)을 점검하라."
+    hint: "chage -l 사용자명으로 만료 정책을, /etc/pam.d/common-password 또는 /etc/security/pwquality.conf에서 복잡성 정책을 확인한다."
+    category: "analysis"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "Password"
+      field: "stdout"
+
+  - order: 5
+    instruction: "공격 결과와 권장 패스워드 정책을 password_audit.txt로 작성하라."
+    hint: "크래킹 소요 시간, 성공률, 권장 최소 길이/복잡성 등을 포함한다."
+    category: "analysis"
+    points: 10
+    verify:
+      type: "file_exists"
+      expect: "password_audit.txt"
+      field: "filesystem"

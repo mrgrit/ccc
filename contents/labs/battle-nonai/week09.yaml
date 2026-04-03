@@ -1,0 +1,70 @@
+lab_id: "battle-nonai-week09"
+title: "인시던트 대응 — 초동 조치"
+version: "non-ai"
+course: "battle-nonai"
+week: 9
+description: "보안 사고 발생 시 초동 조치를 수행하는 방법을 학습한다. 네트워크 격리, 악성 프로세스 종료, 증거 보존, 초동 대응 보고서 작성까지 실습한다."
+difficulty: "hard"
+duration_minutes: 90
+objectives:
+  - "침해된 시스템을 네트워크에서 격리할 수 있다"
+  - "악성 프로세스를 식별하고 종료할 수 있다"
+  - "디지털 증거를 보존할 수 있다"
+  - "초동 대응 보고서를 작성할 수 있다"
+prerequisites:
+  - "Week 08 로그 분석 완료"
+  - "프로세스 관리 기초"
+infra_requirements:
+  - "침해 시뮬레이션 VM (악성 프로세스 실행 중)"
+  - "증거 저장용 별도 디스크/디렉터리"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "침해된 시스템의 네트워크 인터페이스를 확인하고, 외부 통신을 차단하여 격리하라. 관리용 SSH 접속은 유지하라."
+    hint: "nftables 또는 iptables로 outbound를 차단하되 SSH(22)는 허용한다. 또는 ip link set 인터페이스 down으로 임시 격리 가능하다."
+    category: "response"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "drop"
+      field: "stdout"
+
+  - order: 2
+    instruction: "실행 중인 프로세스 목록에서 의심스러운 프로세스를 식별하고 종료하라. 종료 전 프로세스 정보를 기록하라."
+    hint: "ps aux로 프로세스 목록을 확인하고, 비정상 프로세스를 식별한다. kill 전에 /proc/PID/cmdline, /proc/PID/exe 등을 기록한다."
+    category: "response"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Killed"
+      field: "stdout"
+
+  - order: 3
+    instruction: "현재 시스템 상태를 증거로 보존하라: 네트워크 연결, 프로세스 목록, 열린 파일, 로그인 사용자 정보를 evidence/ 디렉터리에 저장하라."
+    hint: "mkdir -p evidence && netstat -tulnp > evidence/netstat.txt && ps aux > evidence/ps.txt && lsof > evidence/lsof.txt && w > evidence/users.txt"
+    category: "response"
+    points: 15
+    verify:
+      type: "file_exists"
+      expect: "evidence/netstat.txt"
+      field: "filesystem"
+
+  - order: 4
+    instruction: "의심 파일의 해시(MD5, SHA256)를 계산하여 evidence/file_hashes.txt에 저장하라."
+    hint: "md5sum과 sha256sum 명령으로 해시를 계산한다. 실행 파일, 설정 변경 파일 등을 대상으로 한다."
+    category: "response"
+    points: 15
+    verify:
+      type: "file_exists"
+      expect: "evidence/file_hashes.txt"
+      field: "filesystem"
+
+  - order: 5
+    instruction: "초동 대응 보고서(incident_response.txt)를 작성하라. 발견 시각, 조치 내용, 보존 증거 목록, 추가 조치 권고를 포함하라."
+    hint: "사고 개요, 타임라인, 수행 조치, 증거 목록, 후속 권고 순서로 작성한다."
+    category: "response"
+    points: 15
+    verify:
+      type: "file_exists"
+      expect: "incident_response.txt"
+      field: "filesystem"

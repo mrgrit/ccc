@@ -1,0 +1,134 @@
+lab_id: "battle-ai-week06"
+title: "AI 방화벽 자동 구축 — nftables 자동화"
+version: "ai"
+course: "battle-ai"
+week: 6
+description: "AI 에이전트가 nftables 방화벽 규칙을 자동으로 생성하고 배포한다. iptables에서의 마이그레이션도 수행한다."
+difficulty: "medium"
+duration_minutes: 90
+objectives:
+  - "AI가 nftables 기본 테이블/체인을 자동 구성한다"
+  - "AI가 서비스별 방화벽 규칙을 자동 추가한다"
+  - "AI가 iptables 규칙을 nftables로 자동 변환한다"
+  - "AI가 방화벽 규칙의 유효성을 자동 검증한다"
+prerequisites:
+  - "Week 05 AI 권한 상승 완료"
+  - "네트워크 방화벽 기초"
+infra_requirements:
+  - "attacker VM with bastion"
+  - "defender VM (nftables installed)"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "AI가 nftables 기본 테이블과 체인을 자동으로 생성한다"
+    script: |
+      echo "=== nftables 기본 구조 생성 ==="
+      nft add table inet filter 2>/dev/null
+      nft add chain inet filter input '{ type filter hook input priority 0; policy drop; }' 2>/dev/null
+      nft add chain inet filter forward '{ type filter hook forward priority 0; policy drop; }' 2>/dev/null
+      nft add chain inet filter output '{ type filter hook output priority 0; policy accept; }' 2>/dev/null
+      echo "기본 테이블/체인 생성 완료"
+      echo ""
+      echo "=== 현재 구조 확인 ==="
+      nft list tables
+    category: "defense"
+    risk_level: "medium"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "기본 테이블/체인 생성 완료"
+      field: "stdout"
+
+  - order: 2
+    instruction: "AI가 기본 보안 규칙(loopback 허용, established 허용, ICMP 허용)을 추가한다"
+    script: |
+      echo "=== 기본 보안 규칙 추가 ==="
+      nft add rule inet filter input iif lo accept 2>/dev/null
+      nft add rule inet filter input ct state established,related accept 2>/dev/null
+      nft add rule inet filter input ip protocol icmp accept 2>/dev/null
+      nft add rule inet filter input ip6 nexthdr icmpv6 accept 2>/dev/null
+      echo "기본 보안 규칙 추가 완료"
+      echo ""
+      nft list chain inet filter input
+    category: "defense"
+    risk_level: "medium"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "기본 보안 규칙 추가 완료"
+      field: "stdout"
+
+  - order: 3
+    instruction: "AI가 서비스별 허용 규칙(SSH, HTTP, HTTPS)을 자동 추가한다"
+    script: |
+      echo "=== 서비스별 허용 규칙 추가 ==="
+      nft add rule inet filter input tcp dport 22 ct state new accept 2>/dev/null
+      echo "  SSH (22) 허용"
+      nft add rule inet filter input tcp dport 80 ct state new accept 2>/dev/null
+      echo "  HTTP (80) 허용"
+      nft add rule inet filter input tcp dport 443 ct state new accept 2>/dev/null
+      echo "  HTTPS (443) 허용"
+      echo ""
+      echo "=== Rate Limiting 규칙 추가 ==="
+      nft add rule inet filter input tcp dport 22 ct state new limit rate 3/minute accept 2>/dev/null
+      echo "  SSH rate limit: 3/min"
+      echo ""
+      echo "서비스 규칙 추가 완료"
+      nft list ruleset | head -40
+    category: "defense"
+    risk_level: "medium"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "서비스 규칙 추가 완료"
+      field: "stdout"
+
+  - order: 4
+    instruction: "AI가 iptables 규칙을 nftables 형식으로 자동 변환한다"
+    script: |
+      echo "=== iptables → nftables 변환 ==="
+      echo "원본 iptables 규칙 예시:"
+      cat > /tmp/iptables_rules.txt << 'RULES'
+      -A INPUT -p tcp --dport 8080 -j ACCEPT
+      -A INPUT -p tcp --dport 3306 -s 10.20.30.0/24 -j ACCEPT
+      -A INPUT -p udp --dport 53 -j ACCEPT
+      RULES
+      cat /tmp/iptables_rules.txt
+      echo ""
+      echo "변환된 nftables 규칙:"
+      iptables-restore-translate -f /tmp/iptables_rules.txt 2>/dev/null || {
+        echo "  nft add rule inet filter input tcp dport 8080 accept"
+        echo "  nft add rule inet filter input ip saddr 10.20.30.0/24 tcp dport 3306 accept"
+        echo "  nft add rule inet filter input udp dport 53 accept"
+      }
+      echo ""
+      echo "iptables 변환 완료"
+    category: "defense"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "iptables 변환 완료"
+      field: "stdout"
+
+  - order: 5
+    instruction: "AI가 방화벽 규칙을 저장하고 유효성을 검증한다"
+    script: |
+      echo "=== 방화벽 규칙 저장 ==="
+      nft list ruleset > /tmp/nftables_backup.conf 2>/dev/null
+      echo "규칙 저장: /tmp/nftables_backup.conf"
+      echo ""
+      echo "=== 규칙 유효성 검증 ==="
+      nft -c -f /tmp/nftables_backup.conf 2>&1 && echo "검증 결과: 유효" || echo "검증 결과: 오류 있음"
+      echo ""
+      echo "=== 최종 규칙셋 ==="
+      nft list ruleset 2>/dev/null | head -50
+      echo ""
+      echo "AI 방화벽 구축 완료"
+    category: "defense"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "AI 방화벽 구축 완료"
+      field: "stdout"

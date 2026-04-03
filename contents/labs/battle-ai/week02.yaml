@@ -1,0 +1,93 @@
+lab_id: "battle-ai-week02"
+title: "AI 취약점 스캐닝 — 자동 약점 발견"
+version: "ai"
+course: "battle-ai"
+week: 2
+description: "AI 에이전트가 NSE 스크립트, nikto, 배너 그래빙을 활용하여 대상 시스템의 취약점을 자동으로 발견한다."
+difficulty: "easy"
+duration_minutes: 90
+objectives:
+  - "AI가 NSE 취약점 스크립트를 자동 실행한다"
+  - "AI가 웹 서버 취약점을 nikto로 자동 스캔한다"
+  - "AI가 배너 그래빙으로 서비스 정보를 수집한다"
+  - "AI가 취약점 결과를 분류하여 보고한다"
+prerequisites:
+  - "Week 01 AI 정찰 자동화 완료"
+  - "CVE 기본 이해"
+infra_requirements:
+  - "attacker VM with bastion"
+  - "defender VM"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "AI가 NSE vuln 스크립트로 대상 호스트의 알려진 취약점을 탐색한다"
+    script: "nmap --script vuln -p 80,443,8080 10.20.30.80 -oN /tmp/vuln_scan.txt && cat /tmp/vuln_scan.txt"
+    category: "recon"
+    risk_level: "medium"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "VULNERABLE"
+      field: "stdout"
+
+  - order: 2
+    instruction: "AI가 nikto로 웹 서버의 보안 문제를 자동 스캔한다"
+    script: "nikto -h http://10.20.30.80:8080 -o /tmp/nikto_result.txt -Format txt -Tuning 123 2>&1 | head -50 && cat /tmp/nikto_result.txt"
+    category: "recon"
+    risk_level: "medium"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "Server:"
+      field: "stdout"
+
+  - order: 3
+    instruction: "AI가 HTTP 배너 그래빙으로 웹 서버 정보를 수집한다"
+    script: |
+      echo "=== HTTP 배너 그래빙 ==="
+      curl -sI http://10.20.30.80:8080 | head -20
+      echo "=== SSH 배너 그래빙 ==="
+      echo "" | nc -w 3 10.20.30.80 22 2>/dev/null || echo "SSH 배너 수집 완료"
+      echo "=== SMTP 배너 체크 ==="
+      echo "" | nc -w 3 10.20.30.80 25 2>/dev/null || echo "SMTP 포트 없음"
+    category: "recon"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "배너 그래빙"
+      field: "stdout"
+
+  - order: 4
+    instruction: "AI가 SSL/TLS 설정 취약점을 점검한다"
+    script: "nmap --script ssl-enum-ciphers -p 443 10.20.30.80 -oN /tmp/ssl_scan.txt && cat /tmp/ssl_scan.txt"
+    category: "recon"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "ssl-enum-ciphers"
+      field: "stdout"
+
+  - order: 5
+    instruction: "AI가 발견된 취약점을 위험도별로 분류하여 보고서를 생성한다"
+    script: |
+      echo "=== AI 취약점 스캐닝 보고서 ===" > /tmp/vuln_report.txt
+      echo "스캔 시간: $(date)" >> /tmp/vuln_report.txt
+      echo "" >> /tmp/vuln_report.txt
+      echo "[CRITICAL/HIGH]" >> /tmp/vuln_report.txt
+      grep -i "VULNERABLE\|CVE-" /tmp/vuln_scan.txt >> /tmp/vuln_report.txt 2>/dev/null || echo "  없음" >> /tmp/vuln_report.txt
+      echo "" >> /tmp/vuln_report.txt
+      echo "[MEDIUM]" >> /tmp/vuln_report.txt
+      grep -i "OSVDB\|outdated" /tmp/nikto_result.txt >> /tmp/vuln_report.txt 2>/dev/null || echo "  없음" >> /tmp/vuln_report.txt
+      echo "" >> /tmp/vuln_report.txt
+      echo "[INFO]" >> /tmp/vuln_report.txt
+      grep -i "Server:" /tmp/nikto_result.txt >> /tmp/vuln_report.txt 2>/dev/null || echo "  없음" >> /tmp/vuln_report.txt
+      cat /tmp/vuln_report.txt
+    category: "analysis"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "AI 취약점 스캐닝 보고서"
+      field: "stdout"

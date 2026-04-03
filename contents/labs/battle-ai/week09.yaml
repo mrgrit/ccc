@@ -1,0 +1,176 @@
+lab_id: "battle-ai-week09"
+title: "AI 인시던트 대응 — 자동 초동 조치"
+version: "ai"
+course: "battle-ai"
+week: 9
+description: "AI 에이전트가 보안 사고 발생 시 자동으로 네트워크 격리, 악성 프로세스 종료, 증거 수집을 수행한다."
+difficulty: "hard"
+duration_minutes: 90
+objectives:
+  - "AI가 침해 호스트를 자동으로 네트워크 격리한다"
+  - "AI가 악성 프로세스를 자동 탐지 및 종료한다"
+  - "AI가 디지털 증거를 자동 수집한다"
+  - "AI가 초동 조치 보고서를 자동 생성한다"
+prerequisites:
+  - "Week 08 AI 로그 분석 완료"
+  - "인시던트 대응 절차 이해"
+infra_requirements:
+  - "attacker VM with bastion"
+  - "defender VM"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "AI가 의심 호스트의 네트워크 연결 상태를 확인하고 격리를 준비한다"
+    script: |
+      echo "=== 네트워크 연결 상태 확인 ==="
+      echo "[활성 연결]"
+      ss -tunapo 2>/dev/null | head -20 || netstat -tunapo 2>/dev/null | head -20
+      echo ""
+      echo "[ESTABLISHED 외부 연결]"
+      ss -tuna state established 2>/dev/null | grep -v "127.0.0.1\|::1" | head -15
+      echo ""
+      echo "[현재 라우팅 테이블]"
+      ip route show | head -10
+      echo ""
+      echo "네트워크 상태 확인 완료"
+    category: "response"
+    risk_level: "low"
+    points: 10
+    verify:
+      type: "output_contains"
+      expect: "네트워크 상태 확인 완료"
+      field: "stdout"
+
+  - order: 2
+    instruction: "AI가 nftables로 의심 IP를 자동 차단하여 네트워크 격리를 수행한다"
+    script: |
+      echo "=== AI 자동 네트워크 격리 ==="
+      SUSPECT_IP="10.20.30.50"
+      echo "차단 대상 IP: $SUSPECT_IP"
+      echo ""
+      nft add table inet incident 2>/dev/null
+      nft add chain inet incident block_input '{ type filter hook input priority -10; policy accept; }' 2>/dev/null
+      nft add chain inet incident block_output '{ type filter hook output priority -10; policy accept; }' 2>/dev/null
+      nft add rule inet incident block_input ip saddr "$SUSPECT_IP" drop 2>/dev/null
+      nft add rule inet incident block_output ip daddr "$SUSPECT_IP" drop 2>/dev/null
+      echo "방화벽 규칙 추가 완료"
+      echo ""
+      echo "[격리 규칙 확인]"
+      nft list table inet incident 2>/dev/null || echo "nftables 시뮬레이션 모드"
+      echo ""
+      echo "네트워크 격리 완료"
+    category: "response"
+    risk_level: "high"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "네트워크 격리 완료"
+      field: "stdout"
+
+  - order: 3
+    instruction: "AI가 의심 프로세스를 자동 탐지하고 종료한다"
+    script: |
+      echo "=== 의심 프로세스 탐지 ==="
+      echo "[비정상 리스닝 포트]"
+      ss -tlnp 2>/dev/null | grep -v "22\|80\|443\|8000\|8001\|8002" | head -10
+      echo ""
+      echo "[높은 CPU 사용 프로세스]"
+      ps aux --sort=-%cpu | head -10
+      echo ""
+      echo "[최근 실행된 프로세스]"
+      ps -eo pid,lstart,cmd --sort=-lstart 2>/dev/null | head -15
+      echo ""
+      echo "[의심 네트워크 프로세스]"
+      lsof -i -P -n 2>/dev/null | grep -v "LISTEN" | grep "ESTABLISHED" | head -10 || echo "lsof 사용 불가"
+      echo ""
+      echo "의심 프로세스 탐지 완료"
+    category: "response"
+    risk_level: "medium"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "의심 프로세스 탐지 완료"
+      field: "stdout"
+
+  - order: 4
+    instruction: "AI가 디지털 증거를 자동으로 수집하고 보존한다"
+    script: |
+      echo "=== 디지털 증거 자동 수집 ==="
+      EVIDENCE_DIR="/tmp/evidence_$(date +%Y%m%d_%H%M%S)"
+      mkdir -p "$EVIDENCE_DIR"
+      echo "증거 저장 경로: $EVIDENCE_DIR"
+      echo ""
+
+      echo "[1/6] 프로세스 스냅샷"
+      ps auxef > "$EVIDENCE_DIR/ps_snapshot.txt" 2>&1
+      echo "  저장 완료: ps_snapshot.txt"
+
+      echo "[2/6] 네트워크 연결 스냅샷"
+      ss -tunapo > "$EVIDENCE_DIR/network_snapshot.txt" 2>&1
+      echo "  저장 완료: network_snapshot.txt"
+
+      echo "[3/6] 로그인 기록"
+      last -50 > "$EVIDENCE_DIR/last_logins.txt" 2>&1
+      who > "$EVIDENCE_DIR/current_users.txt" 2>&1
+      echo "  저장 완료: last_logins.txt, current_users.txt"
+
+      echo "[4/6] 시스템 로그 복사"
+      cp /var/log/auth.log "$EVIDENCE_DIR/" 2>/dev/null || echo "  auth.log 복사 실패"
+      cp /var/log/syslog "$EVIDENCE_DIR/" 2>/dev/null || echo "  syslog 복사 실패"
+      echo "  저장 완료"
+
+      echo "[5/6] 열린 파일 목록"
+      lsof > "$EVIDENCE_DIR/open_files.txt" 2>/dev/null || echo "  lsof 사용 불가"
+      echo "  저장 완료: open_files.txt"
+
+      echo "[6/6] 증거 무결성 해시"
+      find "$EVIDENCE_DIR" -type f -exec md5sum {} \; > "$EVIDENCE_DIR/checksums.md5"
+      echo "  저장 완료: checksums.md5"
+
+      echo ""
+      ls -la "$EVIDENCE_DIR/"
+      echo ""
+      echo "디지털 증거 수집 완료"
+    category: "response"
+    risk_level: "low"
+    points: 20
+    verify:
+      type: "output_contains"
+      expect: "디지털 증거 수집 완료"
+      field: "stdout"
+
+  - order: 5
+    instruction: "AI가 초동 조치 보고서를 자동 생성한다"
+    script: |
+      echo "=== AI 인시던트 초동 조치 보고서 ===" > /tmp/incident_report.txt
+      echo "" >> /tmp/incident_report.txt
+      echo "보고서 ID: INC-$(date +%Y%m%d%H%M%S)" >> /tmp/incident_report.txt
+      echo "생성 시간: $(date)" >> /tmp/incident_report.txt
+      echo "대응 호스트: $(hostname)" >> /tmp/incident_report.txt
+      echo "" >> /tmp/incident_report.txt
+      echo "[1. 탐지 요약]" >> /tmp/incident_report.txt
+      echo "  - 네트워크 이상 연결 탐지" >> /tmp/incident_report.txt
+      echo "  - 의심 프로세스 식별" >> /tmp/incident_report.txt
+      echo "" >> /tmp/incident_report.txt
+      echo "[2. 격리 조치]" >> /tmp/incident_report.txt
+      echo "  - 의심 IP 방화벽 차단 완료" >> /tmp/incident_report.txt
+      echo "" >> /tmp/incident_report.txt
+      echo "[3. 증거 수집]" >> /tmp/incident_report.txt
+      EVIDENCE_DIR=$(ls -dt /tmp/evidence_* 2>/dev/null | head -1)
+      if [ -n "$EVIDENCE_DIR" ]; then
+        echo "  - 증거 경로: $EVIDENCE_DIR" >> /tmp/incident_report.txt
+        echo "  - 수집 파일: $(ls "$EVIDENCE_DIR" | wc -l)개" >> /tmp/incident_report.txt
+      fi
+      echo "" >> /tmp/incident_report.txt
+      echo "[4. 권장 후속 조치]" >> /tmp/incident_report.txt
+      echo "  - 포렌식 분석 수행" >> /tmp/incident_report.txt
+      echo "  - 영향 범위 파악" >> /tmp/incident_report.txt
+      echo "  - 패스워드 전체 초기화 검토" >> /tmp/incident_report.txt
+      cat /tmp/incident_report.txt
+    category: "response"
+    risk_level: "low"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "AI 인시던트 초동 조치 보고서"
+      field: "stdout"

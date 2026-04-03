@@ -1,0 +1,69 @@
+lab_id: "battle-nonai-week08"
+title: "로그 분석 — 침입 탐지"
+version: "non-ai"
+course: "battle-nonai"
+week: 8
+description: "시스템 및 인증 로그를 분석하여 침입 흔적을 탐지하는 방법을 학습한다. 실패한 로그인 탐지, 타임라인 구성, IOC(Indicators of Compromise) 추출을 실습한다."
+difficulty: "medium"
+duration_minutes: 90
+objectives:
+  - "auth.log에서 비정상 로그인 시도를 탐지할 수 있다"
+  - "로그 기반 공격 타임라인을 구성할 수 있다"
+  - "IOC(침해 지표)를 추출할 수 있다"
+prerequisites:
+  - "리눅스 로그 구조 이해"
+  - "정규표현식 기초"
+infra_requirements:
+  - "분석 VM (로그 파일 제공)"
+  - "사전 준비된 침해 로그 샘플"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "/var/log/auth.log에서 실패한 SSH 로그인 시도를 추출하고, 공격 소스 IP별로 시도 횟수를 집계하라."
+    hint: "grep 'Failed password' /var/log/auth.log | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn 형태로 집계한다."
+    category: "analysis"
+    points: 15
+    verify:
+      type: "output_regex"
+      expect: "\\d+\\s+\\d+\\.\\d+\\.\\d+\\.\\d+"
+      field: "stdout"
+
+  - order: 2
+    instruction: "성공한 로그인 중 비정상적인 시간대(새벽 2-5시)에 발생한 접속을 필터링하라."
+    hint: "grep 'Accepted' /var/log/auth.log | awk로 시간 필드를 추출하여 0[2-5]: 패턴으로 필터링한다."
+    category: "analysis"
+    points: 15
+    verify:
+      type: "output_regex"
+      expect: "0[2-5]:\\d{2}:\\d{2}"
+      field: "stdout"
+
+  - order: 3
+    instruction: "auth.log, syslog, kern.log를 종합하여 공격 타임라인을 시간순으로 구성하라. 최소 5개 이벤트를 포함하라."
+    hint: "각 로그에서 의심스러운 이벤트를 추출하고 타임스탬프 기준으로 정렬한다. sort -k1,3 옵션을 활용한다."
+    category: "analysis"
+    points: 20
+    verify:
+      type: "output_regex"
+      expect: "[A-Z][a-z]{2}\\s+\\d+\\s+\\d{2}:\\d{2}:\\d{2}"
+      field: "stdout"
+
+  - order: 4
+    instruction: "로그에서 IOC(침해 지표)를 추출하라: 공격 IP, 사용된 계정명, 접근 시도된 서비스, 의심 프로세스명 등."
+    hint: "grep -oP를 사용하여 IP 주소, 사용자명 등을 정규표현식으로 추출한다."
+    category: "analysis"
+    points: 15
+    verify:
+      type: "output_contains"
+      expect: "IOC"
+      field: "stdout"
+
+  - order: 5
+    instruction: "타임라인과 IOC를 종합하여 incident_timeline.txt 파일로 작성하라."
+    hint: "시간 | 이벤트 | 소스 | 심각도 형식으로 정리한다."
+    category: "analysis"
+    points: 10
+    verify:
+      type: "file_exists"
+      expect: "incident_timeline.txt"
+      field: "filesystem"
