@@ -1,148 +1,59 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api.ts'
 
-interface LeaderboardEntry {
-  rank: number
-  name: string
-  total_score: number
-  lab_score: number
-  ctf_score: number
-  battle_score: number
-}
-
-type Category = 'total' | 'lab' | 'ctf' | 'battle'
-
-const sortKey: Record<Category, keyof LeaderboardEntry> = {
-  total: 'total_score',
-  lab: 'lab_score',
-  ctf: 'ctf_score',
-  battle: 'battle_score',
-}
+const cats = ['total', 'lab', 'ctf', 'battle'] as const
 
 export default function Leaderboard() {
-  const [entries, setEntries] = useState<LeaderboardEntry[]>([])
+  const [rows, setRows] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
-  const [category, setCategory] = useState<Category>('total')
+  const [error, setError] = useState('')
+  const [cat, setCat] = useState('total')
 
   useEffect(() => {
-    api<LeaderboardEntry[]>('/api/leaderboard')
-      .then(setEntries)
-      .catch(() => setEntries([]))
+    setLoading(true)
+    api(`/api/leaderboard?category=${cat}`)
+      .then(d => setRows(d.leaderboard || []))
+      .catch(e => setError(e.message))
       .finally(() => setLoading(false))
-  }, [])
+  }, [cat])
 
-  const sorted = [...entries].sort((a, b) => {
-    const key = sortKey[category]
-    return (b[key] as number) - (a[key] as number)
-  })
-
-  const tabs: { key: Category; label: string }[] = [
-    { key: 'total', label: 'Total' },
-    { key: 'lab', label: 'Lab' },
-    { key: 'ctf', label: 'CTF' },
-    { key: 'battle', label: 'Battle' },
-  ]
+  if (error) return <div style={{ color: '#f85149', padding: 40 }}>Error: {error}</div>
 
   return (
     <div>
-      <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24, color: '#e6edf3' }}>
-        Leaderboard
-      </h2>
+      <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24, color: '#e6edf3' }}>Leaderboard</h2>
 
-      <div style={{ display: 'flex', gap: 4, marginBottom: 20 }}>
-        {tabs.map(t => (
-          <button
-            key={t.key}
-            onClick={() => setCategory(t.key)}
-            style={{
-              padding: '8px 20px',
-              borderRadius: 6,
-              border: '1px solid #30363d',
-              background: category === t.key ? '#f97316' : 'transparent',
-              color: category === t.key ? '#fff' : '#8b949e',
-              cursor: 'pointer',
-              fontSize: 13,
-              fontWeight: category === t.key ? 600 : 400,
-            }}
-          >
-            {t.label}
-          </button>
+      <div style={{ display: 'flex', gap: 6, marginBottom: 20 }}>
+        {cats.map(c => (
+          <button key={c} onClick={() => setCat(c)} style={{
+            padding: '6px 16px', borderRadius: 6, fontSize: 13, cursor: 'pointer',
+            background: cat === c ? '#f97316' : 'transparent', color: cat === c ? '#fff' : '#8b949e',
+            border: cat === c ? 'none' : '1px solid #30363d', fontWeight: cat === c ? 600 : 400,
+          }}>{c.toUpperCase()}</button>
         ))}
       </div>
 
       {loading ? (
         <div style={{ color: '#8b949e', padding: 40, textAlign: 'center' }}>Loading...</div>
-      ) : sorted.length === 0 ? (
-        <div style={{ color: '#8b949e', padding: 40, textAlign: 'center' }}>
-          No leaderboard data. Is the CCC API running on :9100?
-        </div>
+      ) : rows.length === 0 ? (
+        <div style={{ color: '#8b949e', background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 40, textAlign: 'center' }}>No leaderboard data</div>
       ) : (
-        <div style={{
-          background: '#161b22',
-          border: '1px solid #30363d',
-          borderRadius: 8,
-          overflow: 'hidden',
-        }}>
+        <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, overflow: 'hidden' }}>
           <table style={{ width: '100%', borderCollapse: 'collapse' }}>
-            <thead>
-              <tr style={{ borderBottom: '1px solid #30363d' }}>
-                {['Rank', 'Name', 'Total', 'Lab', 'CTF', 'Battle'].map(h => (
-                  <th key={h} style={{
-                    padding: '12px 16px',
-                    textAlign: h === 'Name' ? 'left' : 'center',
-                    fontSize: 12,
-                    fontWeight: 600,
-                    color: '#8b949e',
-                    textTransform: 'uppercase' as const,
-                    letterSpacing: 0.5,
-                  }}>
-                    {h}
-                  </th>
-                ))}
-              </tr>
-            </thead>
+            <thead><tr style={{ borderBottom: '1px solid #30363d' }}>
+              {['#', 'Name', 'ID', 'CTF', 'Lab', 'Battle'].map(h => (
+                <th key={h} style={{ textAlign: h === 'Name' || h === 'ID' ? 'left' : 'center', padding: '12px 16px', fontSize: 12, color: '#8b949e', fontWeight: 600 }}>{h}</th>
+              ))}
+            </tr></thead>
             <tbody>
-              {sorted.map((e, i) => (
-                <tr key={e.name} style={{
-                  borderBottom: i < sorted.length - 1 ? '1px solid #21262d' : 'none',
-                  background: i < 3 ? 'rgba(249,115,22,0.04)' : 'transparent',
-                }}>
-                  <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 700 }}>
-                    <span style={{
-                      color: i === 0 ? '#ffd700' : i === 1 ? '#c0c0c0' : i === 2 ? '#cd7f32' : '#8b949e',
-                      fontSize: 16,
-                    }}>
-                      {i + 1}
-                    </span>
-                  </td>
-                  <td style={{ padding: '12px 16px', fontWeight: 600, color: '#e6edf3' }}>{e.name}</td>
-                  <td style={{
-                    padding: '12px 16px', textAlign: 'center', fontWeight: 700,
-                    color: category === 'total' ? '#f97316' : '#e6edf3',
-                  }}>
-                    {e.total_score}
-                  </td>
-                  <td style={{
-                    padding: '12px 16px', textAlign: 'center',
-                    color: category === 'lab' ? '#f97316' : '#8b949e',
-                    fontWeight: category === 'lab' ? 700 : 400,
-                  }}>
-                    {e.lab_score}
-                  </td>
-                  <td style={{
-                    padding: '12px 16px', textAlign: 'center',
-                    color: category === 'ctf' ? '#f97316' : '#8b949e',
-                    fontWeight: category === 'ctf' ? 700 : 400,
-                  }}>
-                    {e.ctf_score}
-                  </td>
-                  <td style={{
-                    padding: '12px 16px', textAlign: 'center',
-                    color: category === 'battle' ? '#f97316' : '#8b949e',
-                    fontWeight: category === 'battle' ? 700 : 400,
-                  }}>
-                    {e.battle_score}
-                  </td>
+              {rows.map((r, i) => (
+                <tr key={i} style={{ borderBottom: '1px solid #21262d', background: i < 3 ? 'rgba(249,115,22,0.04)' : 'transparent' }}>
+                  <td style={{ padding: '12px 16px', textAlign: 'center', fontWeight: 700, color: i === 0 ? '#ffd700' : i === 1 ? '#c0c0c0' : i === 2 ? '#cd7f32' : '#8b949e' }}>#{i + 1}</td>
+                  <td style={{ padding: '12px 16px', fontWeight: 600 }}>{r.name}</td>
+                  <td style={{ padding: '12px 16px', fontSize: 12, color: '#8b949e' }}><code>{r.student_id}</code></td>
+                  <td style={{ padding: '12px 16px', textAlign: 'center', color: cat === 'ctf' ? '#f97316' : '#8b949e' }}>{r.ctf_score ?? r.score ?? 0}</td>
+                  <td style={{ padding: '12px 16px', textAlign: 'center', color: cat === 'lab' ? '#f97316' : '#8b949e' }}>{r.lab_score ?? r.score ?? 0}</td>
+                  <td style={{ padding: '12px 16px', textAlign: 'center', color: cat === 'battle' ? '#f97316' : '#8b949e' }}>{r.battle_score ?? r.score ?? 0}</td>
                 </tr>
               ))}
             </tbody>
