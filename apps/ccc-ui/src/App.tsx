@@ -1,17 +1,19 @@
 import React from 'react'
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import Dashboard from './pages/Dashboard.tsx'
+import Education from './pages/Education.tsx'
 import Labs from './pages/Labs.tsx'
 import Battle from './pages/Battle.tsx'
 import Leaderboard from './pages/Leaderboard.tsx'
 import Blockchain from './pages/Blockchain.tsx'
 
 const navItems = [
-  { to: '/dashboard', label: 'Dashboard', icon: '\u{1F4CA}' },
-  { to: '/labs', label: 'Labs', icon: '\u{1F52C}' },
-  { to: '/battle', label: 'Battle', icon: '\u2694\uFE0F' },
-  { to: '/leaderboard', label: 'Leaderboard', icon: '\u{1F3C6}' },
-  { to: '/blockchain', label: 'Blockchain', icon: '\u26D3\uFE0F' },
+  { to: '/dashboard', label: 'Dashboard', icon: '📊' },
+  { to: '/education', label: 'Education', icon: '📚' },
+  { to: '/labs', label: 'Labs', icon: '🔬' },
+  { to: '/battle', label: 'Battle', icon: '⚔️' },
+  { to: '/leaderboard', label: 'Leaderboard', icon: '🏆' },
+  { to: '/blockchain', label: 'Blockchain', icon: '⛓️' },
 ]
 
 export default function App() {
@@ -46,6 +48,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
+          <Route path="/education" element={<Education />} />
           <Route path="/labs" element={<Labs />} />
           <Route path="/battle" element={<Battle />} />
           <Route path="/leaderboard" element={<Leaderboard />} />

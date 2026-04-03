@@ -337,10 +337,126 @@ def check_infra_health(iid: str):
     return {"infra_id": iid, "healthy": healthy, "subagent_url": infra["subagent_url"]}
 
 # ══════════════════════════════════════════════════
-#  Lab Catalog (lab_engine 연동)
+#  Education (교안 — opsclaw 교육 콘텐츠)
 # ══════════════════════════════════════════════════
 import pathlib as _pathlib
+_EDUCATION_DIR = os.getenv("EDUCATION_DIR", "/home/opsclaw/opsclaw/contents/education")
 _LABS_DIR = str(_pathlib.Path(__file__).parent.parent.parent.parent / "contents" / "labs")
+
+# 과목 매핑 (opsclaw course dir → CCC lab course name)
+_COURSE_MAP = {
+    "course1-attack": {"name": "attack", "title": "공격기법 (Attack Techniques)", "icon": "🗡️", "description": "모의해킹, 정보수집, 취약점 분석, 침투 테스트"},
+    "course2-security-ops": {"name": "secops", "title": "보안운영 (Security Operations)", "icon": "🛡️", "description": "보안 솔루션 운영, 접근통제, 패치관리, 보안 자동화"},
+    "course3-web-vuln": {"name": "web-vuln", "title": "웹 취약점 (Web Vulnerability)", "icon": "🌐", "description": "SQL Injection, XSS, CSRF, SSRF, API 보안"},
+    "course4-compliance": {"name": "compliance", "title": "컴플라이언스 (Compliance)", "icon": "📋", "description": "개인정보보호법, ISMS-P, ISO27001, GDPR"},
+    "course5-soc": {"name": "soc", "title": "보안관제 (SOC)", "icon": "📡", "description": "SIEM, 로그분석, 위협탐지, 인시던트 대응"},
+    "course6-cloud-container": {"name": "cloud-container", "title": "클라우드/컨테이너 (Cloud & Container)", "icon": "☁️", "description": "Docker, K8s, AWS 보안, 서버리스"},
+    "course7-ai-security": {"name": "ai-security", "title": "AI 보안 (AI Security)", "icon": "🤖", "description": "적대적 공격, LLM 보안, 프롬프트 인젝션, AI 거버넌스"},
+    "course8-ai-safety": {"name": "ai-safety", "title": "AI 안전 (AI Safety)", "icon": "⚠️", "description": "편향/공정성, 투명성, 책임있는 AI, 규제"},
+    "course9-autonomous-security": {"name": "autonomous", "title": "자율보안 (Autonomous Security)", "icon": "🔄", "description": "자율 탐지/대응, SOAR, 에이전트 오케스트레이션"},
+    "course10-ai-security-agent": {"name": "ai-agent", "title": "AI 보안 에이전트 (AI Security Agent)", "icon": "🤖", "description": "LLM 에이전트 개발, 도구사용, 멀티에이전트, 블록체인"},
+}
+_BATTLE_COURSE = {"name": "battle", "title": "공방전 (Cyber Battle)", "icon": "⚔️", "description": "인프라 간 공격/방어 대전, 1v1, 팀전, 종합 시나리오"}
+
+@app.get("/education/courses", dependencies=[Depends(verify_api_key)])
+def list_education_courses():
+    """교과목 목록 (교안 + 실습 통합)"""
+    import glob as _glob
+    result = []
+    for course_dir in sorted(_glob.glob(os.path.join(_EDUCATION_DIR, "course*/"))):
+        dirname = os.path.basename(course_dir.rstrip("/"))
+        meta = _COURSE_MAP.get(dirname, {"name": dirname, "title": dirname, "icon": "📖", "description": ""})
+        weeks = len([d for d in os.listdir(course_dir) if d.startswith("week")])
+        # 대응하는 CCC lab 수
+        lab_nonai = len(_glob.glob(os.path.join(_LABS_DIR, f"{meta['name']}-nonai", "*.yaml")))
+        lab_ai = len(_glob.glob(os.path.join(_LABS_DIR, f"{meta['name']}-ai", "*.yaml")))
+        result.append({
+            "course_dir": dirname,
+            "course_id": meta["name"],
+            "title": meta["title"],
+            "icon": meta["icon"],
+            "description": meta["description"],
+            "weeks": weeks,
+            "labs_nonai": lab_nonai,
+            "labs_ai": lab_ai,
+        })
+    # 공방전 (교안은 없지만 lab은 있음)
+    import glob as _glob2
+    battle_nonai = len(_glob2.glob(os.path.join(_LABS_DIR, "battle-nonai", "*.yaml")))
+    battle_ai = len(_glob2.glob(os.path.join(_LABS_DIR, "battle-ai", "*.yaml")))
+    if battle_nonai or battle_ai:
+        result.append({
+            "course_dir": "battle",
+            "course_id": "battle",
+            "title": _BATTLE_COURSE["title"],
+            "icon": _BATTLE_COURSE["icon"],
+            "description": _BATTLE_COURSE["description"],
+            "weeks": max(battle_nonai, battle_ai),
+            "labs_nonai": battle_nonai,
+            "labs_ai": battle_ai,
+        })
+    return {"courses": result, "total": len(result)}
+
+@app.get("/education/courses/{course_id}/weeks", dependencies=[Depends(verify_api_key)])
+def list_course_weeks(course_id: str):
+    """과목의 주차별 목록 (교안 제목 + 실습 연결)"""
+    # 과목 디렉토리 찾기
+    course_dir = None
+    for k, v in _COURSE_MAP.items():
+        if v["name"] == course_id:
+            course_dir = os.path.join(_EDUCATION_DIR, k)
+            break
+    weeks = []
+    if course_dir and os.path.isdir(course_dir):
+        import glob as _g
+        for wd in sorted(_g.glob(os.path.join(course_dir, "week*/"))):
+            wname = os.path.basename(wd.rstrip("/"))
+            wnum = int(wname.replace("week", ""))
+            lecture_path = os.path.join(wd, "lecture.md")
+            title = ""
+            if os.path.isfile(lecture_path):
+                with open(lecture_path, "r", encoding="utf-8") as f:
+                    first_line = f.readline().strip()
+                    title = first_line.lstrip("# ").replace(f"Week {wnum:02d}: ", "").replace(f"Week {wnum}: ", "")
+            weeks.append({
+                "week": wnum,
+                "title": title,
+                "has_lecture": os.path.isfile(lecture_path),
+                "lab_nonai_id": f"{course_id}-nonai-week{wnum:02d}",
+                "lab_ai_id": f"{course_id}-ai-week{wnum:02d}",
+            })
+    else:
+        # 교안 없는 과목 (battle 등) — lab만
+        for w in range(1, 16):
+            weeks.append({
+                "week": w,
+                "title": f"Week {w}",
+                "has_lecture": False,
+                "lab_nonai_id": f"{course_id}-nonai-week{w:02d}",
+                "lab_ai_id": f"{course_id}-ai-week{w:02d}",
+            })
+    return {"course_id": course_id, "weeks": weeks}
+
+@app.get("/education/lecture/{course_id}/{week}", dependencies=[Depends(verify_api_key)])
+def get_lecture(course_id: str, week: int):
+    """교안 내용 (markdown)"""
+    course_dir = None
+    for k, v in _COURSE_MAP.items():
+        if v["name"] == course_id:
+            course_dir = os.path.join(_EDUCATION_DIR, k)
+            break
+    if not course_dir:
+        raise HTTPException(404, "Course not found")
+    lecture_path = os.path.join(course_dir, f"week{week:02d}", "lecture.md")
+    if not os.path.isfile(lecture_path):
+        raise HTTPException(404, "Lecture not found")
+    with open(lecture_path, "r", encoding="utf-8") as f:
+        content = f.read()
+    return {"course_id": course_id, "week": week, "content": content}
+
+# ══════════════════════════════════════════════════
+#  Lab Catalog (lab_engine 연동)
+# ══════════════════════════════════════════════════
 
 @app.get("/labs/courses", dependencies=[Depends(verify_api_key)])
 def lab_courses():
