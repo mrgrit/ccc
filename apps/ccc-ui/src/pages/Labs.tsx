@@ -70,7 +70,7 @@ export default function Labs() {
     return (
       <div>
         <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, color: '#e6edf3' }}>Labs</h2>
-        <p style={{ fontSize: 13, color: '#8b949e', marginBottom: 24 }}>실습 문제를 풀고 제출하면 자동 채점됩니다.</p>
+        <p style={{ fontSize: 15, color: '#8b949e', marginBottom: 24 }}>실습 문제를 풀고 제출하면 자동 채점됩니다.</p>
         {groups.map(g => (
           <div key={g.group} style={{ marginBottom: 32 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
@@ -88,7 +88,7 @@ export default function Labs() {
                     <span style={{ fontSize: 24 }}>{c.icon}</span>
                     <div style={{ fontSize: 16, fontWeight: 700, color: '#e6edf3' }}>{c.title}</div>
                   </div>
-                  <div style={{ fontSize: 13, color: '#8b949e', marginBottom: 12, lineHeight: 1.5 }}>{c.description}</div>
+                  <div style={{ fontSize: 15, color: '#8b949e', marginBottom: 12, lineHeight: 1.5 }}>{c.description}</div>
                   <div style={{ display: 'flex', gap: 6, fontSize: 11 }}>
                     {c.labs_nonai > 0 && <span style={{ padding: '2px 8px', borderRadius: 10, background: 'rgba(88,166,255,0.12)', color: '#58a6ff' }}>Non-AI {c.labs_nonai}</span>}
                     {c.labs_ai > 0 && <span style={{ padding: '2px 8px', borderRadius: 10, background: 'rgba(249,115,22,0.12)', color: '#f97316' }}>AI {c.labs_ai}</span>}
@@ -112,13 +112,13 @@ export default function Labs() {
             <span style={{ fontSize: 18, fontWeight: 700, color: '#e6edf3', marginLeft: 12 }}>{activeLab.title}</span>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-            <span style={{ fontSize: 12, color: '#8b949e' }}>{activeLab.steps?.length} 문제</span>
+            <span style={{ fontSize: 14, color: '#8b949e' }}>{activeLab.steps?.length} 문제</span>
             <span style={{ fontSize: 14, color: '#f97316', fontWeight: 700 }}>{activeLab.total_points}pts</span>
           </div>
         </div>
 
         {activeLab.description && (
-          <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 14, marginBottom: 16, fontSize: 13, color: '#8b949e' }}>{activeLab.description}</div>
+          <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 14, marginBottom: 16, fontSize: 15, color: '#8b949e' }}>{activeLab.description}</div>
         )}
 
         {/* 문제 목록 */}
@@ -136,13 +136,13 @@ export default function Labs() {
                       background: stepResult ? (stepResult.passed ? '#238636' : '#da3633') : '#21262d',
                       borderRadius: '50%', width: 26, height: 26,
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: 12, color: '#fff', fontWeight: 700,
+                      fontSize: 14, color: '#fff', fontWeight: 700,
                     }}>{stepResult ? (stepResult.passed ? '✓' : '✗') : s.order}</span>
-                    {s.category && <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#21262d', color: '#8b949e' }}>{s.category}</span>}
+                    {s.category && <span style={{ fontSize: 14, padding: '2px 8px', borderRadius: 10, background: '#21262d', color: '#8b949e' }}>{s.category}</span>}
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    {stepResult && <span style={{ fontSize: 12, color: stepResult.passed ? '#3fb950' : '#f85149' }}>{stepResult.points_earned}/{s.points}pts</span>}
-                    {!stepResult && <span style={{ fontSize: 12, color: '#f97316' }}>{s.points}pts</span>}
+                    {stepResult && <span style={{ fontSize: 14, color: stepResult.passed ? '#3fb950' : '#f85149' }}>{stepResult.points_earned}/{s.points}pts</span>}
+                    {!stepResult && <span style={{ fontSize: 14, color: '#f97316' }}>{s.points}pts</span>}
                   </div>
                 </div>
 
@@ -150,7 +150,7 @@ export default function Labs() {
                   <strong>Q{s.order}.</strong> {s.instruction}
                 </div>
 
-                {s.hint && <div style={{ fontSize: 12, color: '#58a6ff', marginBottom: 8 }}>Hint: {s.hint}</div>}
+                {s.hint && <div style={{ fontSize: 14, color: '#58a6ff', marginBottom: 8 }}>Hint: {s.hint}</div>}
 
                 {/* 답변 입력 */}
                 <textarea
@@ -161,14 +161,14 @@ export default function Labs() {
                   style={{
                     width: '100%', minHeight: 60, resize: 'vertical',
                     background: '#0d1117', color: '#e6edf3', border: '1px solid #30363d',
-                    borderRadius: 6, padding: '10px 12px', fontSize: 13,
+                    borderRadius: 6, padding: '10px 12px', fontSize: 15,
                     fontFamily: 'Consolas, Monaco, monospace',
                   }}
                 />
 
                 {/* 채점 결과 */}
                 {stepResult && (
-                  <div style={{ marginTop: 8, fontSize: 12, color: stepResult.passed ? '#3fb950' : '#f85149' }}>
+                  <div style={{ marginTop: 8, fontSize: 14, color: stepResult.passed ? '#3fb950' : '#f85149' }}>
                     {stepResult.message}
                   </div>
                 )}
@@ -195,13 +195,13 @@ export default function Labs() {
                 <div style={{ fontSize: 18, fontWeight: 700, color: result.passed ? '#3fb950' : '#f85149' }}>
                   {result.passed ? 'PASSED' : 'FAILED'}
                 </div>
-                <div style={{ fontSize: 13, color: '#8b949e' }}>
+                <div style={{ fontSize: 15, color: '#8b949e' }}>
                   {result.earned_points}/{result.total_points}pts ({Math.round(result.earned_points / result.total_points * 100)}%)
                 </div>
               </div>
               <button onClick={() => { setResult(null); setAnswers({}) }} style={{
                 padding: '8px 20px', borderRadius: 6, border: '1px solid #30363d',
-                background: '#21262d', color: '#e6edf3', cursor: 'pointer', fontSize: 13,
+                background: '#21262d', color: '#e6edf3', cursor: 'pointer', fontSize: 15,
               }}>Retry</button>
             </div>
           )}
@@ -221,7 +221,7 @@ export default function Labs() {
         <div style={{ display: 'flex', gap: 6 }}>
           {(['all', 'non-ai', 'ai'] as const).map(v => (
             <button key={v} onClick={() => setFilter(v)} style={{
-              padding: '5px 12px', borderRadius: 6, fontSize: 11, cursor: 'pointer', border: '1px solid #30363d',
+              padding: '5px 12px', borderRadius: 6, fontSize: 15, cursor: 'pointer', border: '1px solid #30363d',
               background: filter === v ? (v === 'ai' ? '#f97316' : v === 'non-ai' ? '#58a6ff' : '#30363d') : 'transparent',
               color: filter === v ? '#fff' : '#8b949e',
             }}>{v === 'all' ? 'All' : v === 'non-ai' ? 'Non-AI' : 'AI'}</button>
@@ -241,9 +241,9 @@ export default function Labs() {
             }} onMouseOver={e => { e.currentTarget.style.transform = 'translateY(-1px)' }}
                onMouseOut={e => { e.currentTarget.style.transform = 'none' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-                <span style={{ fontSize: 11, color: '#8b949e' }}>Week {lab.week}</span>
+                <span style={{ fontSize: 15, color: '#8b949e' }}>Week {lab.week}</span>
                 <span style={{
-                  fontSize: 10, padding: '1px 6px', borderRadius: 10, fontWeight: 600,
+                  fontSize: 14, padding: '1px 6px', borderRadius: 10, fontWeight: 600,
                   background: lab.version === 'ai' ? 'rgba(249,115,22,0.15)' : 'rgba(88,166,255,0.15)',
                   color: lab.version === 'ai' ? '#f97316' : '#58a6ff',
                 }}>{lab.version === 'ai' ? 'AI' : 'Non-AI'}</span>
@@ -264,5 +264,5 @@ export default function Labs() {
 
 const backBtn: React.CSSProperties = {
   background: '#21262d', color: '#8b949e', border: '1px solid #30363d',
-  borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 12,
+  borderRadius: 6, padding: '6px 12px', cursor: 'pointer', fontSize: 14,
 }

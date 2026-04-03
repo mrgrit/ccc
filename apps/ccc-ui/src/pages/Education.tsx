@@ -113,7 +113,7 @@ export default function Education() {
           {labDetail?.has_answers && viewMode === 'lab' && (
             <button onClick={() => { setShowAnswers(!showAnswers); openLab(labDetail.lab_id, !showAnswers) }} style={{
               marginLeft: 'auto', background: showAnswers ? '#f85149' : '#21262d', color: showAnswers ? '#fff' : '#8b949e',
-              border: '1px solid #30363d', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 12,
+              border: '1px solid #30363d', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14,
             }}>{showAnswers ? 'Hide Answers' : 'Answers (Admin)'}</button>
           )}
         </div>
@@ -122,7 +122,7 @@ export default function Education() {
         {viewMode === 'lecture' && lecture && (
           <div style={{
             background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: '32px 36px',
-            fontSize: 15, color: '#c9d1d9', lineHeight: 1.7,
+            fontSize: 16, color: '#c9d1d9', lineHeight: 1.7,
           }} dangerouslySetInnerHTML={{ __html: markdownToHtml(lecture) }} />
         )}
 
@@ -149,20 +149,20 @@ export default function Education() {
               <div key={i} style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 18, marginBottom: 10 }}>
                 <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 8 }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                    <span style={{ background: '#21262d', borderRadius: '50%', width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 13, color: '#f97316', fontWeight: 700 }}>{s.order}</span>
-                    {s.category && <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#21262d', color: '#8b949e' }}>{s.category}</span>}
+                    <span style={{ background: '#21262d', borderRadius: '50%', width: 26, height: 26, display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 15, color: '#f97316', fontWeight: 700 }}>{s.order}</span>
+                    {s.category && <span style={{ fontSize: 15, padding: '2px 8px', borderRadius: 10, background: '#21262d', color: '#8b949e' }}>{s.category}</span>}
                   </div>
-                  <span style={{ fontSize: 13, color: '#f97316', fontWeight: 600 }}>{s.points}pts</span>
+                  <span style={{ fontSize: 15, color: '#f97316', fontWeight: 600 }}>{s.points}pts</span>
                 </div>
                 <div style={{ fontSize: 15, color: '#e6edf3', marginBottom: 8, lineHeight: 1.6 }}>{s.instruction}</div>
                 {s.hint && <div style={{ fontSize: 14, color: '#58a6ff', background: '#0d1f3c', borderRadius: 6, padding: '8px 12px', marginBottom: 8 }}>Hint: {s.hint}</div>}
                 {s.script && <div style={{ fontSize: 14, fontFamily: 'Consolas,Monaco,monospace', color: '#3fb950', background: '#0d1f0d', borderRadius: 6, padding: '8px 12px', marginBottom: 8, whiteSpace: 'pre-wrap' as const }}>$ {s.script}</div>}
-                {s.verify && <div style={{ fontSize: 13, color: '#8b949e' }}>Verify: <code style={{ color: '#d29922' }}>{s.verify.type}</code> <code style={{ color: '#bc8cff' }}>"{s.verify.expect}"</code></div>}
+                {s.verify && <div style={{ fontSize: 15, color: '#8b949e' }}>Verify: <code style={{ color: '#d29922' }}>{s.verify.type}</code> <code style={{ color: '#bc8cff' }}>"{s.verify.expect}"</code></div>}
                 {s.answer && (
                   <div style={{ marginTop: 8, background: '#1a0a0a', border: '1px solid #f8514966', borderRadius: 6, padding: '10px 12px' }}>
-                    <div style={{ fontSize: 11, color: '#f85149', fontWeight: 600, marginBottom: 4 }}>Answer (Admin)</div>
+                    <div style={{ fontSize: 15, color: '#f85149', fontWeight: 600, marginBottom: 4 }}>Answer (Admin)</div>
                     <div style={{ fontSize: 14, color: '#e6edf3', fontFamily: 'Consolas,Monaco,monospace', whiteSpace: 'pre-wrap' as const }}>{s.answer}</div>
-                    {s.answer_detail && <div style={{ fontSize: 13, color: '#8b949e', marginTop: 6 }}>{s.answer_detail}</div>}
+                    {s.answer_detail && <div style={{ fontSize: 15, color: '#8b949e', marginTop: 6 }}>{s.answer_detail}</div>}
                   </div>
                 )}
               </div>
@@ -188,7 +188,7 @@ export default function Education() {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {weeks.map(w => (
             <div key={w.week} style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 18 }}>
-              <div style={{ fontSize: 12, color: '#8b949e', marginBottom: 4 }}>Week {w.week}</div>
+              <div style={{ fontSize: 14, color: '#8b949e', marginBottom: 4 }}>Week {w.week}</div>
               <div style={{ fontSize: 16, fontWeight: 600, color: '#e6edf3', marginBottom: 12 }}>{w.title || `Week ${w.week}`}</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {w.has_lecture && (
@@ -207,10 +207,10 @@ export default function Education() {
 
 const backBtn: React.CSSProperties = {
   background: '#21262d', color: '#8b949e', border: '1px solid #30363d',
-  borderRadius: 6, padding: '7px 14px', cursor: 'pointer', fontSize: 13,
+  borderRadius: 6, padding: '7px 14px', cursor: 'pointer', fontSize: 15,
 }
 const actionBtn: React.CSSProperties = {
-  padding: '6px 16px', borderRadius: 6, fontSize: 13, cursor: 'pointer',
+  padding: '6px 16px', borderRadius: 6, fontSize: 15, cursor: 'pointer',
   background: '#21262d', border: '1px solid #30363d',
 }
 
@@ -219,26 +219,26 @@ function markdownToHtml(md: string): string {
   return md
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
     // 코드블록 — monospace, pre 유지 (도형/선 보존)
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px 20px;font-size:14px;line-height:1.6;overflow-x:auto;color:#3fb950;margin:12px 0;font-family:Consolas,Monaco,\'Courier New\',monospace;white-space:pre;tab-size:4">$2</pre>')
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px 20px;font-size:15px;line-height:1.6;overflow-x:auto;color:#3fb950;margin:12px 0;font-family:Consolas,Monaco,\'Courier New\',monospace;white-space:pre;tab-size:4">$2</pre>')
     // 제목
-    .replace(/^#### (.+)$/gm, '<h4 style="font-size:16px;color:#c9d1d9;margin:18px 0 8px;font-weight:600">$1</h4>')
-    .replace(/^### (.+)$/gm, '<h3 style="font-size:17px;color:#e6edf3;margin:22px 0 10px;font-weight:600">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 style="font-size:19px;color:#e6edf3;margin:28px 0 12px;border-bottom:1px solid #30363d;padding-bottom:8px;font-weight:700">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 style="font-size:22px;color:#f0883e;margin:0 0 16px;font-weight:700">$1</h1>')
+    .replace(/^#### (.+)$/gm, '<h4 style="font-size:17px;color:#c9d1d9;margin:18px 0 8px;font-weight:600">$1</h4>')
+    .replace(/^### (.+)$/gm, '<h3 style="font-size:19px;color:#e6edf3;margin:22px 0 10px;font-weight:600">$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2 style="font-size:21px;color:#e6edf3;margin:28px 0 12px;border-bottom:1px solid #30363d;padding-bottom:8px;font-weight:700">$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1 style="font-size:24px;color:#f0883e;margin:0 0 16px;font-weight:700">$1</h1>')
     // 인라인 코드
-    .replace(/`([^`]+)`/g, '<code style="background:#21262d;padding:2px 7px;border-radius:4px;font-size:14px;color:#d2a8ff;font-family:Consolas,Monaco,monospace">$1</code>')
+    .replace(/`([^`]+)`/g, '<code style="background:#21262d;padding:2px 7px;border-radius:4px;font-size:15px;color:#d2a8ff;font-family:Consolas,Monaco,monospace">$1</code>')
     .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#e6edf3">$1</strong>')
     // 블록쿼트
-    .replace(/^&gt; (.+)$/gm, '<div style="border-left:3px solid #30363d;padding:6px 14px;margin:6px 0;color:#8b949e;font-size:14px">$1</div>')
+    .replace(/^&gt; (.+)$/gm, '<div style="border-left:3px solid #30363d;padding:6px 14px;margin:6px 0;color:#8b949e;font-size:15px">$1</div>')
     // 리스트
-    .replace(/^\- (.+)$/gm, '<div style="padding:2px 0 2px 20px;font-size:15px">• $1</div>')
-    .replace(/^\d+\. (.+)$/gm, '<div style="padding:2px 0 2px 20px;font-size:15px">$1</div>')
+    .replace(/^\- (.+)$/gm, '<div style="padding:2px 0 2px 20px;font-size:16px">• $1</div>')
+    .replace(/^\d+\. (.+)$/gm, '<div style="padding:2px 0 2px 20px;font-size:16px">$1</div>')
     // 테이블 구분선 제거
     .replace(/^\|[\s\-:|]+\|$/gm, '')
     // 테이블 행
     .replace(/^\|(.+)\|$/gm, (_, row) => {
       const cells = row.split('|').map((c: string) => c.trim()).filter(Boolean)
-      return '<div style="display:flex;border-bottom:1px solid #21262d">' + cells.map((c: string) => `<span style="flex:1;padding:6px 12px;font-size:14px">${c}</span>`).join('') + '</div>'
+      return '<div style="display:flex;border-bottom:1px solid #21262d">' + cells.map((c: string) => `<span style="flex:1;padding:6px 12px;font-size:15px">${c}</span>`).join('') + '</div>'
     })
     // 줄바꿈
     .replace(/\n\n/g, '<div style="height:10px"></div>')
