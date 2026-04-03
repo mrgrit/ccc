@@ -1,69 +1,199 @@
 lab_id: "battle-nonai-week08"
-title: "로그 분석 — 침입 탐지"
+title: "로그 분석 및 위협 헌팅 — 공격 흔적 추적"
 version: "non-ai"
 course: "battle-nonai"
 week: 8
-description: "시스템 및 인증 로그를 분석하여 침입 흔적을 탐지하는 방법을 학습한다. 실패한 로그인 탐지, 타임라인 구성, IOC(Indicators of Compromise) 추출을 실습한다."
+description: "시스템, 네트워크, 애플리케이션 로그를 분석하여 공격 흔적을 추적한다. auth.log, syslog, Apache 로그, Suricata eve.json을 분석하고, 타임라인 기반 위협 헌팅을 수행한다."
 difficulty: "medium"
-duration_minutes: 90
+duration_minutes: 120
 objectives:
-  - "auth.log에서 비정상 로그인 시도를 탐지할 수 있다"
-  - "로그 기반 공격 타임라인을 구성할 수 있다"
-  - "IOC(침해 지표)를 추출할 수 있다"
+  - "주요 로그 파일의 구조와 내용을 이해한다"
+  - "로그 분석으로 공격 흔적을 식별한다"
+  - "타임라인 기반 사고 재구성을 수행한다"
 prerequisites:
-  - "리눅스 로그 구조 이해"
-  - "정규표현식 기초"
+  - "Linux 로그 시스템 기초"
+  - "grep, awk, sort 등 텍스트 처리 도구"
 infra_requirements:
-  - "분석 VM (로그 파일 제공)"
-  - "사전 준비된 침해 로그 샘플"
+  - "Linux VM with log files (10.20.30.1)"
+  - "사전 준비된 공격 로그 샘플"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "/var/log/auth.log에서 실패한 SSH 로그인 시도를 추출하고, 공격 소스 IP별로 시도 횟수를 집계하라."
-    hint: "grep 'Failed password' /var/log/auth.log | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn 형태로 집계한다."
+    instruction: "auth.log에서 SSH 로그인 실패 기록을 검색하라."
+    hint: "grep으로 'Failed password'를 검색한다."
     category: "analysis"
-    points: 15
+    points: 10
+    answer: "grep 'Failed password' /var/log/auth.log | tail -20"
+    answer_detail: "auth.log는 인증 관련 이벤트를 기록한다. 'Failed password'는 SSH 로그인 실패를 나타내며, 반복 실패는 브루트포스 공격의 증거이다. 소스 IP, 대상 사용자명, 시각 정보를 확인한다."
     verify:
-      type: "output_regex"
-      expect: "\\d+\\s+\\d+\\.\\d+\\.\\d+\\.\\d+"
+      type: "output_contains"
+      expect: "Failed"
       field: "stdout"
 
   - order: 2
-    instruction: "성공한 로그인 중 비정상적인 시간대(새벽 2-5시)에 발생한 접속을 필터링하라."
-    hint: "grep 'Accepted' /var/log/auth.log | awk로 시간 필드를 추출하여 0[2-5]: 패턴으로 필터링한다."
+    instruction: "SSH 로그인 실패를 IP별로 집계하여 가장 많이 시도한 공격 IP를 식별하라."
+    hint: "awk와 sort를 조합한다."
     category: "analysis"
-    points: 15
+    points: 10
+    answer: "grep 'Failed password' /var/log/auth.log | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn | head -10"
+    answer_detail: "awk로 IP 필드를 추출하고 sort | uniq -c | sort -rn으로 빈도 내림차순 정렬한다. 상위 IP가 브루트포스 공격자이다. 이 정보로 방화벽 차단이나 fail2ban 설정에 활용한다."
     verify:
-      type: "output_regex"
-      expect: "0[2-5]:\\d{2}:\\d{2}"
+      type: "output_contains"
+      expect: "10."
       field: "stdout"
 
   - order: 3
-    instruction: "auth.log, syslog, kern.log를 종합하여 공격 타임라인을 시간순으로 구성하라. 최소 5개 이벤트를 포함하라."
-    hint: "각 로그에서 의심스러운 이벤트를 추출하고 타임스탬프 기준으로 정렬한다. sort -k1,3 옵션을 활용한다."
+    instruction: "SSH 로그인 성공 기록을 확인하여 비인가 접근이 있는지 확인하라."
+    hint: "grep 'Accepted'로 성공 로그인을 검색한다."
     category: "analysis"
-    points: 20
+    points: 10
+    answer: "grep 'Accepted' /var/log/auth.log | tail -20"
+    answer_detail: "'Accepted password' 또는 'Accepted publickey'는 성공적인 SSH 로그인이다. 비정상 시간대, 알 수 없는 IP, 휴면 계정의 로그인은 침해 지표(IoC)가 된다."
     verify:
-      type: "output_regex"
-      expect: "[A-Z][a-z]{2}\\s+\\d+\\s+\\d{2}:\\d{2}:\\d{2}"
+      type: "output_contains"
+      expect: "Accepted"
       field: "stdout"
 
   - order: 4
-    instruction: "로그에서 IOC(침해 지표)를 추출하라: 공격 IP, 사용된 계정명, 접근 시도된 서비스, 의심 프로세스명 등."
-    hint: "grep -oP를 사용하여 IP 주소, 사용자명 등을 정규표현식으로 추출한다."
+    instruction: "sudo 명령 실행 로그를 분석하여 권한 상승 시도를 확인하라."
+    hint: "auth.log에서 sudo 관련 로그를 검색한다."
     category: "analysis"
-    points: 15
+    points: 10
+    answer: "grep 'sudo' /var/log/auth.log | grep -v 'session' | tail -20"
+    answer_detail: "sudo 로그는 누가 어떤 명령을 어떤 권한으로 실행했는지 기록한다. 'COMMAND=' 필드에서 실행된 명령을, 'USER=' 필드에서 대상 사용자를 확인한다. 비정상적인 명령이나 실패한 시도는 공격 증거이다."
     verify:
       type: "output_contains"
-      expect: "IOC"
+      expect: "sudo"
       field: "stdout"
 
   - order: 5
-    instruction: "타임라인과 IOC를 종합하여 incident_timeline.txt 파일로 작성하라."
-    hint: "시간 | 이벤트 | 소스 | 심각도 형식으로 정리한다."
+    instruction: "Apache access.log에서 SQL Injection 시도를 탐색하라."
+    hint: "UNION, SELECT, OR 1=1 등의 패턴을 검색한다."
     category: "analysis"
     points: 10
+    answer: "grep -iE '(union|select|insert|update|delete|drop|or%201%3D1|\\x27)' /var/log/apache2/access.log | tail -20"
+    answer_detail: "Apache access.log는 모든 HTTP 요청을 기록한다. URL 인코딩된 SQL 키워드(UNION, SELECT)나 특수문자(%27=', %3D==)를 검색하여 SQL Injection 시도를 발견한다."
+    verify:
+      type: "output_contains"
+      expect: "union"
+      field: "stdout"
+
+  - order: 6
+    instruction: "Apache access.log에서 디렉토리 트래버설 공격 시도를 탐색하라."
+    hint: "../ 패턴을 검색한다."
+    category: "analysis"
+    points: 10
+    answer: "grep -E '(\\.\\./)|(\\.\\.\\\\)' /var/log/apache2/access.log | tail -20"
+    answer_detail: "디렉토리 트래버설은 ../를 사용하여 웹루트 외부의 파일에 접근하는 공격이다. /etc/passwd, /etc/shadow 등 민감 파일을 대상으로 한다. URL 인코딩(%2e%2e%2f)도 확인해야 한다."
+    verify:
+      type: "output_contains"
+      expect: ".."
+      field: "stdout"
+
+  - order: 7
+    instruction: "Apache access.log에서 HTTP 상태 코드별 요청 건수를 집계하라."
+    hint: "awk로 상태 코드 필드를 추출한다."
+    category: "analysis"
+    points: 10
+    answer: "awk '{print $9}' /var/log/apache2/access.log | sort | uniq -c | sort -rn"
+    answer_detail: "Apache 기본 로그 형식에서 9번째 필드가 HTTP 상태 코드이다. 404가 대량이면 디렉토리 브루트포스, 500이 많으면 애플리케이션 공격 가능성이 있다. 200과 함께 나타나는 공격 요청은 성공한 공격이다."
+    verify:
+      type: "output_contains"
+      expect: "200"
+      field: "stdout"
+
+  - order: 8
+    instruction: "Suricata eve.json에서 시간대별 경보 발생 추이를 분석하라."
+    hint: "jq로 timestamp를 추출하여 시간별 집계한다."
+    category: "analysis"
+    points: 10
+    answer: "cat /var/log/suricata/eve.json | jq -r 'select(.event_type==\"alert\") | .timestamp[:13]' | sort | uniq -c | sort -k2"
+    answer_detail: "timestamp의 앞 13자(YYYY-MM-DDTHH)를 추출하면 시간별 집계가 된다. 경보가 급증하는 시간대는 활발한 공격이 진행된 시점이다. 이 패턴으로 공격 캠페인의 시작과 종료를 파악한다."
+    verify:
+      type: "output_contains"
+      expect: "T"
+      field: "stdout"
+
+  - order: 9
+    instruction: "시스템 프로세스 생성 로그에서 의심스러운 프로세스를 확인하라."
+    hint: "syslog 또는 auditd 로그에서 프로세스 실행을 확인한다."
+    category: "analysis"
+    points: 10
+    answer: "grep -E '(nc |ncat|netcat|wget|curl|python|perl|ruby|bash -i)' /var/log/syslog | tail -20"
+    answer_detail: "nc, wget, curl, python 등은 정상 도구이지만 공격자가 자주 사용하는 Living off the Land(LotL) 바이너리이기도 하다. 비정상적인 사용자나 시간대에 실행되면 침해 지표가 된다."
+    verify:
+      type: "output_contains"
+      expect: "nc"
+      field: "stdout"
+
+  - order: 10
+    instruction: "last 명령으로 시스템 로그인 이력을 확인하고, 비정상 로그인을 식별하라."
+    hint: "last와 lastb 명령을 사용한다."
+    category: "analysis"
+    points: 10
+    answer: "last -20 && echo '=== Failed logins ===' && lastb -20 2>/dev/null"
+    answer_detail: "last는 /var/log/wtmp에서 성공한 로그인 기록을, lastb는 /var/log/btmp에서 실패한 로그인 기록을 표시한다. 심야 시간대 로그인, 알 수 없는 IP, 동시 다중 세션은 비정상 징후이다."
+    verify:
+      type: "output_contains"
+      expect: "pts"
+      field: "stdout"
+
+  - order: 11
+    instruction: "파일 시스템에서 최근 수정된 의심스러운 파일을 찾아라."
+    hint: "find -mtime -1로 최근 24시간 내 변경 파일을 검색한다."
+    category: "analysis"
+    points: 10
+    answer: "find /tmp /var/tmp /dev/shm -type f -mtime -1 2>/dev/null && find /etc -name '*.conf' -mtime -1 2>/dev/null"
+    answer_detail: "/tmp, /var/tmp, /dev/shm은 공격자가 도구를 업로드하는 대표적인 디렉토리이다. /etc의 설정 파일 변경은 백도어 설치의 증거일 수 있다. -mtime -1은 최근 24시간 이내 수정된 파일이다."
+    verify:
+      type: "output_contains"
+      expect: "tmp"
+      field: "stdout"
+
+  - order: 12
+    instruction: "네트워크 연결 상태를 확인하여 의심스러운 아웃바운드 연결을 식별하라."
+    hint: "ss 또는 netstat 명령을 사용한다."
+    category: "analysis"
+    points: 10
+    answer: "ss -tunapl | grep ESTAB"
+    answer_detail: "ss -tunapl은 모든 TCP/UDP 연결을 프로세스 정보와 함께 표시한다. ESTABLISHED 상태의 아웃바운드 연결 중 알 수 없는 외부 IP는 C2(Command & Control) 통신의 증거일 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "ESTAB"
+      field: "stdout"
+
+  - order: 13
+    instruction: "cron job 변경 이력을 확인하여 지속성(Persistence) 기법을 탐지하라."
+    hint: "cron.log 또는 syslog에서 cron 관련 로그를 검색한다."
+    category: "analysis"
+    points: 10
+    answer: "grep -i cron /var/log/syslog | tail -20 && cat /etc/crontab && ls -la /var/spool/cron/crontabs/"
+    answer_detail: "공격자는 cron job에 리버스 셸이나 백도어 실행 명령을 추가하여 지속성을 확보한다. 알 수 없는 cron 엔트리, 특히 /tmp나 /dev/shm의 스크립트를 실행하는 항목은 침해 증거이다."
+    verify:
+      type: "output_contains"
+      expect: "cron"
+      field: "stdout"
+
+  - order: 14
+    instruction: "수집한 로그를 시간순으로 정렬하여 공격 타임라인을 재구성하라."
+    hint: "각 로그의 타임스탬프를 기준으로 시간순 정렬한다."
+    category: "analysis"
+    points: 10
+    answer: "cat > /tmp/attack_timeline.txt << 'EOF'\n=== Attack Timeline ===\n\n[Phase 1: Reconnaissance]\n14:00 - Nmap SYN scan from 10.20.30.10\n14:02 - Service version detection\n14:05 - Web directory bruteforce (dirb)\n\n[Phase 2: Initial Access]\n14:10 - SQL Injection attempts on DVWA\n14:15 - Successful UNION SELECT extraction\n14:20 - PHP webshell uploaded\n\n[Phase 3: Lateral Movement]\n14:25 - SSH brute force (87 failed attempts)\n14:30 - Successful SSH login as msfadmin\n14:32 - sudo -l enumeration\n\n[Phase 4: Privilege Escalation]\n14:35 - SUID binary enumeration\n14:38 - nmap --interactive → root shell\n\n[Phase 5: Persistence]\n14:40 - New user added to /etc/passwd\n14:42 - Cron job backdoor installed\nEOF"
+    answer_detail: "공격 타임라인은 인시던트의 전체 흐름을 시간순으로 재구성한 것이다. MITRE ATT&CK 프레임워크의 단계(정찰→초기접근→실행→지속성→권한상승)에 맞춰 분류하면 체계적인 분석이 가능하다."
     verify:
       type: "file_exists"
-      expect: "incident_timeline.txt"
+      expect: "/tmp/attack_timeline.txt"
+      field: "filesystem"
+
+  - order: 15
+    instruction: "로그 분석 결과를 종합하여 위협 헌팅 보고서를 작성하라. IoC(침해 지표), 공격자 TTPs, 대응 권고사항을 포함하라."
+    hint: "MITRE ATT&CK 프레임워크를 참고한다."
+    category: "analysis"
+    points: 15
+    answer: "cat > /tmp/threat_hunting_report.txt << 'EOF'\n=== Threat Hunting Report ===\n\nIndicators of Compromise (IoC):\n- Attacker IP: 10.20.30.10\n- Webshell: /dvwa/hackable/uploads/shell.php\n- Backdoor user: hacker (UID 0)\n- Cron backdoor: /tmp/.backdoor.sh\n\nATT&CK TTPs:\n- T1046: Network Service Scanning\n- T1190: Exploit Public-Facing Application\n- T1059.004: Unix Shell Command Execution\n- T1110.001: Password Brute Force\n- T1548.001: SUID/SGID Abuse\n- T1136.001: Local Account Creation\n- T1053.003: Cron Persistence\n\nRecommendations:\n1. Block attacker IP at firewall\n2. Remove webshell and backdoor user\n3. Reset all compromised credentials\n4. Patch vsftpd and Apache vulnerabilities\n5. Implement centralized log management (SIEM)\n6. Enable auditd for process/file monitoring\nEOF"
+    answer_detail: "위협 헌팅 보고서는 발견된 침해 지표(IoC), 공격자의 전술/기술/절차(TTPs), 그리고 실행 가능한 대응 방안을 포함해야 한다. MITRE ATT&CK ID를 매핑하면 표준화된 분류가 가능하다."
+    verify:
+      type: "file_exists"
+      expect: "/tmp/threat_hunting_report.txt"
       field: "filesystem"

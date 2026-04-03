@@ -1,176 +1,350 @@
-lab_id: "battle-ai-week09"
-title: "AI 인시던트 대응 — 자동 초동 조치"
-version: "ai"
-course: "battle-ai"
+lab_id: battle-ai-week09
+title: AI 기반 사고 대응(Incident Response) — 탐지부터 복구까지
+version: ai
+course: battle-ai
 week: 9
-description: "AI 에이전트가 보안 사고 발생 시 자동으로 네트워크 격리, 악성 프로세스 종료, 증거 수집을 수행한다."
-difficulty: "hard"
-duration_minutes: 90
+description: AI 에이전트가 자동으로 실행하는 NIST 사고 대응 프레임워크(준비→탐지→억제→제거→복구→교훈)를 실습한다. 실제 침해 시... 나리오에서 각 단계를 수행하며, 포렌식 증거 수집, 격리, 복구 절차를 체험한다.
+difficulty: hard
+duration_minutes: 120
 objectives:
-  - "AI가 침해 호스트를 자동으로 네트워크 격리한다"
-  - "AI가 악성 프로세스를 자동 탐지 및 종료한다"
-  - "AI가 디지털 증거를 자동 수집한다"
-  - "AI가 초동 조치 보고서를 자동 생성한다"
+- NIST 사고 대응 6단계를 실제 시나리오에 적용한다
+- 포렌식 증거를 올바르게 수집하고 보존한다
+- 시스템 격리, 악성 코드 제거, 복구를 수행한다
 prerequisites:
-  - "Week 08 AI 로그 분석 완료"
-  - "인시던트 대응 절차 이해"
+- Week 6-8 방어 실습 완료
+- Linux 시스템 관리
 infra_requirements:
-  - "attacker VM with bastion"
-  - "defender VM"
+- Linux VM (compromised system, 10.20.30.50)
+- Analysis VM (forensics workstation)
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "AI가 의심 호스트의 네트워크 연결 상태를 확인하고 격리를 준비한다"
-    script: |
-      echo "=== 네트워크 연결 상태 확인 ==="
-      echo "[활성 연결]"
-      ss -tunapo 2>/dev/null | head -20 || netstat -tunapo 2>/dev/null | head -20
-      echo ""
-      echo "[ESTABLISHED 외부 연결]"
-      ss -tuna state established 2>/dev/null | grep -v "127.0.0.1\|::1" | head -15
-      echo ""
-      echo "[현재 라우팅 테이블]"
-      ip route show | head -10
-      echo ""
-      echo "네트워크 상태 확인 완료"
-    category: "response"
-    risk_level: "low"
-    points: 10
-    verify:
-      type: "output_contains"
-      expect: "네트워크 상태 확인 완료"
-      field: "stdout"
+- order: 1
+  instruction: 침해된 시스템의 현재 상태를 초기 파악하라. 실행 중인 프로세스, 네트워크 연결, 로그인 사용자를 확인하라.
+  hint: ps, ss, who 명령을 사용한다.
+  category: response
+  points: 10
+  answer: who && echo '---' && ps auxf --sort=-%cpu | head -30 && echo '---' && ss -tunapl | grep ESTAB
+  answer_detail: 사고 대응의 첫 단계는 현재 상태 파악이다. who로 활성 세션, ps로 의심 프로세스, ss로 네트워크 연결을 확인한다. 이 정보는 휘발성이 높으므로 가장 먼저 수집해야 한다.
+  verify:
+    type: output_contains
+    expect: '---'
+    field: stdout
+  script: who && echo '---' && ps auxf --sort=-%cpu | head -30 && echo '---' && ss -tunapl | grep ESTAB
+- order: 2
+  instruction: 휘발성 증거를 수집하라. 메모리 덤프, 프로세스 목록, 네트워크 상태, 라우팅 테이블을 저장하라.
+  hint: 각 명령의 출력을 /tmp/forensics/ 디렉토리에 저장한다.
+  category: response
+  points: 10
+  answer: mkdir -p /tmp/forensics && date > /tmp/forensics/timestamp.txt && ps auxf > /tmp/forensics/processes.txt && ss -tunapl > /tmp/forensics/network.txt && ip route > /tmp/forensics/routes.txt && cat
+    /proc/meminfo > /tmp/forensics/meminfo.txt && ls -la /tmp/forensics/
+  answer_detail: 휘발성 증거(Volatile Evidence)는 시스템 전원 차단이나 재부팅 시 사라진다. RFC 3227의 증거 수집 순서(메모리→네트워크→프로세스→디스크)를 따라야 한다. 타임스탬프를 반드시 기록한다.
+  verify:
+    type: file_exists
+    expect: /tmp/forensics/processes.txt
+    field: filesystem
+  script: mkdir -p /tmp/forensics && date > /tmp/forensics/timestamp.txt && ps auxf > /tmp/forensics/processes.txt && ss -tunapl > /tmp/forensics/network.txt && ip route > /tmp/forensics/routes.txt && cat
+    /proc/meminfo > /tmp/forensics/meminfo.txt && ls -la /tmp/forensics/
+- order: 3
+  instruction: 의심스러운 프로세스를 식별하라. /tmp, /dev/shm에서 실행 중인 프로세스를 찾아라.
+  hint: ps와 lsof를 조합한다.
+  category: response
+  points: 10
+  answer: ps aux | grep -E '(/tmp/|/dev/shm/|/var/tmp/)' && lsof -i -P | grep -E '(LISTEN|ESTABLISHED)' | grep -v -E '(sshd|apache|mysql)'
+  answer_detail: /tmp, /dev/shm, /var/tmp에서 실행 중인 프로세스는 높은 확률로 악성이다. lsof -i로 네트워크 연결을 가진 프로세스를 확인하고, 알려진 서비스를 제외하면 의심 프로세스를 식별할 수 있다.
+  verify:
+    type: output_contains
+    expect: tmp
+    field: stdout
+  script: ps aux | grep -E '(/tmp/|/dev/shm/|/var/tmp/)' && lsof -i -P | grep -E '(LISTEN|ESTABLISHED)' | grep -v -E '(sshd|apache|mysql)'
+- order: 4
+  instruction: 악성 프로세스의 실행 파일을 보존하고 해시를 계산하라.
+  hint: cp로 복사하고 md5sum/sha256sum으로 해시를 생성한다.
+  category: response
+  points: 10
+  answer: cp /tmp/.backdoor.sh /tmp/forensics/malware_sample.sh 2>/dev/null; find /tmp -name '*.sh' -o -name '*.py' -o -name '*.elf' 2>/dev/null | while read f; do sha256sum "$f"; done > /tmp/forensics/file_hashes.txt
+    && cat /tmp/forensics/file_hashes.txt
+  answer_detail: 악성 파일의 해시값은 VirusTotal 등에서 조회하여 알려진 악성코드인지 확인할 수 있다. 원본 파일을 보존하고 해시로 무결성을 증명하는 것은 포렌식의 기본 원칙(Chain of Custody)이다.
+  verify:
+    type: file_exists
+    expect: /tmp/forensics/file_hashes.txt
+    field: filesystem
+  script: cp /tmp/.backdoor.sh /tmp/forensics/malware_sample.sh 2>/dev/null; find /tmp -name '*.sh' -o -name '*.py' -o -name '*.elf' 2>/dev/null | while read f; do sha256sum "$f"; done > /tmp/forensics/file_hashes.txt
+    && cat /tmp/forensics/file_hashes.txt
+- order: 5
+  instruction: 침해된 시스템을 네트워크에서 격리하라. 외부 통신을 차단하되 SSH 관리 접근은 유지하라.
+  hint: iptables/nftables로 특정 IP만 허용한다.
+  category: response
+  points: 10
+  answer: sudo nft add table inet isolation && sudo nft add chain inet isolation output '{ type filter hook output priority 0; policy drop; }' && sudo nft add rule inet isolation output ip daddr 10.20.30.10
+    accept && sudo nft add rule inet isolation output oifname lo accept && sudo nft add rule inet isolation output ct state established,related accept
+  answer_detail: 네트워크 격리는 추가 피해 확산과 데이터 유출을 방지하는 핵심 조치이다. 관리용 SSH 접근만 허용하고 나머지 아웃바운드 트래픽을 차단한다. 격리 전 증거 수집을 완료해야 한다.
+  verify:
+    type: output_contains
+    expect: isolation
+    field: stdout
+  script: sudo nft add table inet isolation && sudo nft add chain inet isolation output '{ type filter hook output priority 0; policy drop; }' && sudo nft add rule inet isolation output ip daddr 10.20.30.10
+    accept && sudo nft add rule inet isolation output oifname lo accept && sudo nft add rule inet isolation output ct state established,related accept
+- order: 6
+  instruction: 백도어 사용자 계정을 식별하고 비활성화하라.
+  hint: /etc/passwd에서 UID 0인 비정상 계정을 찾는다.
+  category: response
+  points: 10
+  answer: 'awk -F: ''$3 == 0 {print}'' /etc/passwd && awk -F: ''$3 >= 1000 {print $1}'' /etc/passwd && sudo usermod -L hacker 2>/dev/null && sudo passwd -l hacker 2>/dev/null'
+  answer_detail: UID 0인 계정이 root 외에 있으면 백도어이다. usermod -L은 계정을 잠그고, passwd -l은 패스워드를 잠근다. 계정을 즉시 삭제하지 않고 잠그는 이유는 포렌식 증거 보존을 위해서이다.
+  verify:
+    type: output_contains
+    expect: root
+    field: stdout
+  script: 'awk -F: ''$3 == 0 {print}'' /etc/passwd && awk -F: ''$3 >= 1000 {print $1}'' /etc/passwd && sudo usermod -L hacker 2>/dev/null && sudo passwd -l hacker 2>/dev/null'
+- order: 7
+  instruction: 악성 cron job을 식별하고 제거하라.
+  hint: 모든 사용자의 crontab을 확인한다.
+  category: response
+  points: 10
+  answer: 'for user in $(cut -f1 -d: /etc/passwd); do echo "=== $user ==="; crontab -l -u $user 2>/dev/null; done && cat /etc/crontab && ls -la /etc/cron.d/'
+  answer_detail: 공격자는 cron job으로 지속성을 확보한다. 모든 사용자의 crontab과 시스템 cron 디렉토리를 확인해야 한다. 의심스러운 엔트리는 백업 후 제거한다.
+  verify:
+    type: output_contains
+    expect: ===
+    field: stdout
+  script: 'for user in $(cut -f1 -d: /etc/passwd); do echo "=== $user ==="; crontab -l -u $user 2>/dev/null; done && cat /etc/crontab && ls -la /etc/cron.d/'
+- order: 8
+  instruction: 웹셸을 찾아 제거하라. 웹 디렉토리에서 PHP 셸을 검색한다.
+  hint: grep으로 system(), exec(), passthru() 등 위험 함수를 검색한다.
+  category: response
+  points: 10
+  answer: grep -rl 'system\|exec\|passthru\|shell_exec\|eval' /var/www/ 2>/dev/null | head -10 && find /var/www/ -name '*.php' -newer /var/www/index.html 2>/dev/null
+  answer_detail: 웹셸은 system(), exec(), passthru(), shell_exec(), eval() 등의 함수를 포함한다. grep -rl로 재귀적으로 검색하고, find -newer로 최근 생성/수정된 PHP 파일을 확인한다.
+  verify:
+    type: output_contains
+    expect: php
+    field: stdout
+  script: grep -rl 'system\|exec\|passthru\|shell_exec\|eval' /var/www/ 2>/dev/null | head -10 && find /var/www/ -name '*.php' -newer /var/www/index.html 2>/dev/null
+- order: 9
+  instruction: SSH 키 기반 백도어를 확인하라. authorized_keys 파일에 비인가 키가 있는지 검사한다.
+  hint: 모든 사용자의 .ssh/authorized_keys를 확인한다.
+  category: response
+  points: 10
+  answer: find /home -name 'authorized_keys' -exec echo '=== {} ===' \; -exec cat {} \; 2>/dev/null && echo '=== /root ===' && cat /root/.ssh/authorized_keys 2>/dev/null
+  answer_detail: authorized_keys에 공격자의 공개키가 추가되면 패스워드 없이 SSH 접근이 가능하다. 모든 사용자의 authorized_keys를 검사하고, 알 수 없는 키는 제거해야 한다. 키의 주석(comment) 필드가 단서가 될 수 있다.
+  verify:
+    type: output_contains
+    expect: ===
+    field: stdout
+  script: find /home -name 'authorized_keys' -exec echo '=== {} ===' \; -exec cat {} \; 2>/dev/null && echo '=== /root ===' && cat /root/.ssh/authorized_keys 2>/dev/null
+- order: 10
+  instruction: 침해된 서비스의 취약점을 패치하라. 취약한 vsftpd를 제거하고 불필요한 서비스를 비활성화하라.
+  hint: apt remove 또는 systemctl disable을 사용한다.
+  category: response
+  points: 10
+  answer: sudo systemctl stop vsftpd 2>/dev/null && sudo systemctl disable vsftpd 2>/dev/null && sudo systemctl stop telnet.socket 2>/dev/null && sudo systemctl disable telnet.socket 2>/dev/null && echo
+    'Services disabled successfully'
+  answer_detail: 취약한 서비스를 즉시 중지하고 비활성화한다. vsftpd 2.3.4 백도어와 Telnet 평문 프로토콜은 불필요하므로 제거한다. 서비스 제거 전 의존성을 확인해야 한다.
+  verify:
+    type: output_contains
+    expect: disabled
+    field: stdout
+  script: sudo systemctl stop vsftpd 2>/dev/null && sudo systemctl disable vsftpd 2>/dev/null && sudo systemctl stop telnet.socket 2>/dev/null && sudo systemctl disable telnet.socket 2>/dev/null && echo
+    'Services disabled successfully'
+- order: 11
+  instruction: 모든 사용자 패스워드를 강제 변경하고, 패스워드 정책을 강화하라.
+  hint: chage -d 0으로 다음 로그인 시 변경을 강제한다.
+  category: response
+  points: 10
+  answer: for user in msfadmin user service; do sudo chage -d 0 $user 2>/dev/null && echo "Password reset forced for $user"; done && cat /etc/login.defs | grep -E '(PASS_MAX_DAYS|PASS_MIN_LEN|PASS_WARN_AGE)'
+  answer_detail: chage -d 0은 패스워드 만료일을 과거로 설정하여 다음 로그인 시 변경을 강제한다. 침해 사고 후 모든 계정의 패스워드를 변경하는 것은 필수이다. /etc/login.defs에서 패스워드 정책도 강화한다.
+  verify:
+    type: output_contains
+    expect: Password reset
+    field: stdout
+  script: for user in msfadmin user service; do sudo chage -d 0 $user 2>/dev/null && echo "Password reset forced for $user"; done && cat /etc/login.defs | grep -E '(PASS_MAX_DAYS|PASS_MIN_LEN|PASS_WARN_AGE)'
+- order: 12
+  instruction: 시스템 파일 무결성을 검증하라. 주요 바이너리의 해시를 확인한다.
+  hint: dpkg -V 또는 rpm -V로 패키지 무결성을 확인한다.
+  category: response
+  points: 10
+  answer: dpkg -V 2>/dev/null | head -20 || rpm -Va 2>/dev/null | head -20 && sha256sum /usr/bin/ssh /usr/bin/sudo /usr/bin/passwd 2>/dev/null
+  answer_detail: dpkg -V는 설치된 패키지의 파일이 변경되었는지 확인한다. 루트킷은 ls, ps, netstat 등 시스템 바이너리를 교체하여 자신을 숨긴다. 해시 비교로 바이너리 변조를 탐지한다.
+  verify:
+    type: output_contains
+    expect: sha256
+    field: stdout
+  script: dpkg -V 2>/dev/null | head -20 || rpm -Va 2>/dev/null | head -20 && sha256sum /usr/bin/ssh /usr/bin/sudo /usr/bin/passwd 2>/dev/null
+- order: 13
+  instruction: 방화벽 규칙을 강화하고, 불필요한 포트를 차단하라.
+  hint: Week 6에서 학습한 nftables 규칙을 적용한다.
+  category: response
+  points: 10
+  answer: sudo nft flush ruleset && sudo nft add table inet filter && sudo nft add chain inet filter input '{ type filter hook input priority 0; policy drop; }' && sudo nft add rule inet filter input iifname
+    lo accept && sudo nft add rule inet filter input ct state established,related accept && sudo nft add rule inet filter input tcp dport 22 accept && sudo nft list ruleset
+  answer_detail: 사고 복구 후 방화벽을 화이트리스트 방식으로 강화한다. SSH만 허용하고 다른 모든 인바운드 트래픽을 차단한다. 필요한 서비스는 취약점 패치 후 하나씩 허용한다.
+  verify:
+    type: output_contains
+    expect: policy drop
+    field: stdout
+  script: sudo nft flush ruleset && sudo nft add table inet filter && sudo nft add chain inet filter input '{ type filter hook input priority 0; policy drop; }' && sudo nft add rule inet filter input iifname
+    lo accept && sudo nft add rule inet filter input ct state established,related accept && sudo nft add rule inet filter input tcp dport 22 accept && sudo nft list ruleset
+- order: 14
+  instruction: 복구 완료 후 시스템 정상 동작을 검증하라. 핵심 서비스 상태와 보안 설정을 확인한다.
+  hint: systemctl status, ss -tlnp 등으로 검증한다.
+  category: response
+  points: 10
+  answer: systemctl list-units --type=service --state=running | head -20 && echo '---' && ss -tlnp && echo '---' && nft list ruleset | grep -c 'rule'
+  answer_detail: 복구 검증은 핵심 서비스의 정상 동작, 보안 설정 적용, 불필요한 서비스 제거를 확인한다. 체크리스트 기반으로 하나씩 검증하여 누락을 방지한다.
+  verify:
+    type: output_contains
+    expect: '---'
+    field: stdout
+  script: systemctl list-units --type=service --state=running | head -20 && echo '---' && ss -tlnp && echo '---' && nft list ruleset | grep -c 'rule'
+- order: 15
+  instruction: 사고 대응 전체 과정을 종합하여 Incident Response 보고서를 작성하라.
+  hint: NIST 6단계에 맞춰 작성한다.
+  category: analysis
+  points: 15
+  answer: 'cat > /tmp/incident_response_report.txt << ''EOF''
 
-  - order: 2
-    instruction: "AI가 nftables로 의심 IP를 자동 차단하여 네트워크 격리를 수행한다"
-    script: |
-      echo "=== AI 자동 네트워크 격리 ==="
-      SUSPECT_IP="10.20.30.50"
-      echo "차단 대상 IP: $SUSPECT_IP"
-      echo ""
-      nft add table inet incident 2>/dev/null
-      nft add chain inet incident block_input '{ type filter hook input priority -10; policy accept; }' 2>/dev/null
-      nft add chain inet incident block_output '{ type filter hook output priority -10; policy accept; }' 2>/dev/null
-      nft add rule inet incident block_input ip saddr "$SUSPECT_IP" drop 2>/dev/null
-      nft add rule inet incident block_output ip daddr "$SUSPECT_IP" drop 2>/dev/null
-      echo "방화벽 규칙 추가 완료"
-      echo ""
-      echo "[격리 규칙 확인]"
-      nft list table inet incident 2>/dev/null || echo "nftables 시뮬레이션 모드"
-      echo ""
-      echo "네트워크 격리 완료"
-    category: "response"
-    risk_level: "high"
-    points: 20
-    verify:
-      type: "output_contains"
-      expect: "네트워크 격리 완료"
-      field: "stdout"
+    === Incident Response Report ===
 
-  - order: 3
-    instruction: "AI가 의심 프로세스를 자동 탐지하고 종료한다"
-    script: |
-      echo "=== 의심 프로세스 탐지 ==="
-      echo "[비정상 리스닝 포트]"
-      ss -tlnp 2>/dev/null | grep -v "22\|80\|443\|8000\|8001\|8002" | head -10
-      echo ""
-      echo "[높은 CPU 사용 프로세스]"
-      ps aux --sort=-%cpu | head -10
-      echo ""
-      echo "[최근 실행된 프로세스]"
-      ps -eo pid,lstart,cmd --sort=-lstart 2>/dev/null | head -15
-      echo ""
-      echo "[의심 네트워크 프로세스]"
-      lsof -i -P -n 2>/dev/null | grep -v "LISTEN" | grep "ESTABLISHED" | head -10 || echo "lsof 사용 불가"
-      echo ""
-      echo "의심 프로세스 탐지 완료"
-    category: "response"
-    risk_level: "medium"
-    points: 20
-    verify:
-      type: "output_contains"
-      expect: "의심 프로세스 탐지 완료"
-      field: "stdout"
+    Incident ID: IR-2026-001
 
-  - order: 4
-    instruction: "AI가 디지털 증거를 자동으로 수집하고 보존한다"
-    script: |
-      echo "=== 디지털 증거 자동 수집 ==="
-      EVIDENCE_DIR="/tmp/evidence_$(date +%Y%m%d_%H%M%S)"
-      mkdir -p "$EVIDENCE_DIR"
-      echo "증거 저장 경로: $EVIDENCE_DIR"
-      echo ""
+    Date: 2026-04-03
 
-      echo "[1/6] 프로세스 스냅샷"
-      ps auxef > "$EVIDENCE_DIR/ps_snapshot.txt" 2>&1
-      echo "  저장 완료: ps_snapshot.txt"
+    Severity: Critical
 
-      echo "[2/6] 네트워크 연결 스냅샷"
-      ss -tunapo > "$EVIDENCE_DIR/network_snapshot.txt" 2>&1
-      echo "  저장 완료: network_snapshot.txt"
 
-      echo "[3/6] 로그인 기록"
-      last -50 > "$EVIDENCE_DIR/last_logins.txt" 2>&1
-      who > "$EVIDENCE_DIR/current_users.txt" 2>&1
-      echo "  저장 완료: last_logins.txt, current_users.txt"
+    1. PREPARATION
 
-      echo "[4/6] 시스템 로그 복사"
-      cp /var/log/auth.log "$EVIDENCE_DIR/" 2>/dev/null || echo "  auth.log 복사 실패"
-      cp /var/log/syslog "$EVIDENCE_DIR/" 2>/dev/null || echo "  syslog 복사 실패"
-      echo "  저장 완료"
+    - IDS/IPS deployed (Suricata)
 
-      echo "[5/6] 열린 파일 목록"
-      lsof > "$EVIDENCE_DIR/open_files.txt" 2>/dev/null || echo "  lsof 사용 불가"
-      echo "  저장 완료: open_files.txt"
+    - Firewall configured (nftables)
 
-      echo "[6/6] 증거 무결성 해시"
-      find "$EVIDENCE_DIR" -type f -exec md5sum {} \; > "$EVIDENCE_DIR/checksums.md5"
-      echo "  저장 완료: checksums.md5"
+    - Log monitoring active
 
-      echo ""
-      ls -la "$EVIDENCE_DIR/"
-      echo ""
-      echo "디지털 증거 수집 완료"
-    category: "response"
-    risk_level: "low"
-    points: 20
-    verify:
-      type: "output_contains"
-      expect: "디지털 증거 수집 완료"
-      field: "stdout"
 
-  - order: 5
-    instruction: "AI가 초동 조치 보고서를 자동 생성한다"
-    script: |
-      echo "=== AI 인시던트 초동 조치 보고서 ===" > /tmp/incident_report.txt
-      echo "" >> /tmp/incident_report.txt
-      echo "보고서 ID: INC-$(date +%Y%m%d%H%M%S)" >> /tmp/incident_report.txt
-      echo "생성 시간: $(date)" >> /tmp/incident_report.txt
-      echo "대응 호스트: $(hostname)" >> /tmp/incident_report.txt
-      echo "" >> /tmp/incident_report.txt
-      echo "[1. 탐지 요약]" >> /tmp/incident_report.txt
-      echo "  - 네트워크 이상 연결 탐지" >> /tmp/incident_report.txt
-      echo "  - 의심 프로세스 식별" >> /tmp/incident_report.txt
-      echo "" >> /tmp/incident_report.txt
-      echo "[2. 격리 조치]" >> /tmp/incident_report.txt
-      echo "  - 의심 IP 방화벽 차단 완료" >> /tmp/incident_report.txt
-      echo "" >> /tmp/incident_report.txt
-      echo "[3. 증거 수집]" >> /tmp/incident_report.txt
-      EVIDENCE_DIR=$(ls -dt /tmp/evidence_* 2>/dev/null | head -1)
-      if [ -n "$EVIDENCE_DIR" ]; then
-        echo "  - 증거 경로: $EVIDENCE_DIR" >> /tmp/incident_report.txt
-        echo "  - 수집 파일: $(ls "$EVIDENCE_DIR" | wc -l)개" >> /tmp/incident_report.txt
-      fi
-      echo "" >> /tmp/incident_report.txt
-      echo "[4. 권장 후속 조치]" >> /tmp/incident_report.txt
-      echo "  - 포렌식 분석 수행" >> /tmp/incident_report.txt
-      echo "  - 영향 범위 파악" >> /tmp/incident_report.txt
-      echo "  - 패스워드 전체 초기화 검토" >> /tmp/incident_report.txt
-      cat /tmp/incident_report.txt
-    category: "response"
-    risk_level: "low"
-    points: 15
-    verify:
-      type: "output_contains"
-      expect: "AI 인시던트 초동 조치 보고서"
-      field: "stdout"
+    2. DETECTION
+
+    - Suricata alert: SQL Injection (SID 1000002)
+
+    - Auth.log: 87 SSH brute force attempts
+
+    - Apache log: UNION SELECT queries
+
+
+    3. CONTAINMENT
+
+    - Network isolated (outbound blocked)
+
+    - Attacker IP blocked: 10.20.30.10
+
+    - Compromised sessions terminated
+
+
+    4. ERADICATION
+
+    - Webshell removed: /dvwa/hackable/uploads/shell.php
+
+    - Backdoor user locked: hacker
+
+    - Malicious cron job removed
+
+    - Vulnerable services disabled (vsftpd, telnet)
+
+
+    5. RECOVERY
+
+    - All passwords force-reset
+
+    - Firewall hardened (whitelist mode)
+
+    - System integrity verified
+
+    - Services restored with patches
+
+
+    6. LESSONS LEARNED
+
+    - Need: Web Application Firewall (WAF)
+
+    - Need: Centralized SIEM deployment
+
+    - Need: Regular vulnerability scanning
+
+    - Need: Stronger password policies + MFA
+
+    EOF'
+  answer_detail: 사고 대응 보고서는 NIST 6단계 프레임워크에 따라 작성한다. 경영진 요약, 기술적 상세, 타임라인, 영향 범위, 대응 조치, 교훈을 포함해야 한다. 이 보고서는 향후 유사 사고 대응의 참고 자료가 된다.
+  verify:
+    type: file_exists
+    expect: /tmp/incident_response_report.txt
+    field: filesystem
+  script: 'cat > /tmp/incident_response_report.txt << ''EOF''
+
+    === Incident Response Report ===
+
+    Incident ID: IR-2026-001
+
+    Date: 2026-04-03
+
+    Severity: Critical
+
+
+    1. PREPARATION
+
+    - IDS/IPS deployed (Suricata)
+
+    - Firewall configured (nftables)
+
+    - Log monitoring active
+
+
+    2. DETECTION
+
+    - Suricata alert: SQL Injection (SID 1000002)
+
+    - Auth.log: 87 SSH brute force attempts
+
+    - Apache log: UNION SELECT queries
+
+
+    3. CONTAINMENT
+
+    - Network isolated (outbound blocked)
+
+    - Attacker IP blocked: 10.20.30.10
+
+    - Compromised sessions terminated
+
+
+    4. ERADICATION
+
+    - Webshell removed: /dvwa/hackable/uploads/shell.php
+
+    - Backdoor user locked: hacker
+
+    - Malicious cron job removed
+
+    - Vulnerable services disabled (vsftpd, telnet)
+
+
+    5. RECOVERY
+
+    - All passwords force-reset
+
+    - Firewall hardened (whitelist mode)
+
+    - System integrity verified
+
+    - Services restored with patches
+
+
+    6. LESSONS LEARNED
+
+    - Need: Web Application Firewall (WAF)
+
+    - Need: Centralized SIEM deployment
+
+    - Need: Regular vulnerability scanning
+
+    - Need: Stronger password policies + MFA
+
+    EOF'

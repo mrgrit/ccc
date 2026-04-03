@@ -1,0 +1,179 @@
+lab_id: "secops-nonai-week02"
+title: "접근 통제 실습"
+version: "non-ai"
+course: "secops-nonai"
+week: 2
+description: "리눅스 시스템의 접근 통제 메커니즘을 이해하고 DAC, MAC, RBAC 기반 접근 제어를 구현합니다."
+difficulty: "easy"
+duration_minutes: 120
+objectives:
+  - "파일 퍼미션과 소유권 관리를 이해한다"
+  - "ACL을 활용한 세밀한 접근 제어를 구현한다"
+  - "SELinux/AppArmor 기반 MAC을 이해한다"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "10.20.30.1 서버에서 현재 사용자와 소속 그룹을 확인하시오."
+    hint: "id 명령을 사용하세요."
+    category: "access_control"
+    points: 5
+    answer: "id"
+    answer_detail: "id 명령은 현재 사용자의 UID, GID, 소속 그룹 목록을 표시합니다."
+    verify:
+      type: "output_contains"
+      expect: "uid="
+      field: "stdout"
+  - order: 2
+    instruction: "보안팀 그룹(secteam)을 생성하고 테스트 사용자(secuser1)를 해당 그룹에 추가하시오."
+    hint: "groupadd와 useradd 명령을 사용하세요."
+    category: "access_control"
+    points: 10
+    answer: "sudo groupadd secteam && sudo useradd -m -G secteam secuser1"
+    answer_detail: "groupadd로 그룹을 생성하고, useradd -G 옵션으로 사용자를 보조 그룹에 추가합니다. -m은 홈 디렉터리를 생성합니다."
+    verify:
+      type: "output_contains"
+      expect: "secteam"
+      field: "stdout"
+  - order: 3
+    instruction: "/opt/secure-data/ 디렉터리를 생성하고 secteam 그룹만 읽기/쓰기 가능하도록 설정하시오."
+    hint: "mkdir, chgrp, chmod 명령을 사용하세요."
+    category: "access_control"
+    points: 10
+    answer: "sudo mkdir -p /opt/secure-data && sudo chgrp secteam /opt/secure-data && sudo chmod 770 /opt/secure-data"
+    answer_detail: "chmod 770은 소유자와 그룹에 rwx, 기타 사용자에게 접근 불가를 설정합니다. chgrp로 그룹 소유권을 변경합니다."
+    verify:
+      type: "output_contains"
+      expect: "secteam"
+      field: "stdout"
+  - order: 4
+    instruction: "SGID 비트를 /opt/secure-data/에 설정하여 하위 파일이 자동으로 secteam 그룹을 상속하도록 하시오."
+    hint: "chmod g+s 옵션을 사용하세요."
+    category: "access_control"
+    points: 10
+    answer: "sudo chmod g+s /opt/secure-data && ls -ld /opt/secure-data"
+    answer_detail: "SGID 비트가 설정된 디렉터리에서 생성되는 파일은 부모 디렉터리의 그룹을 자동으로 상속받습니다."
+    verify:
+      type: "output_contains"
+      expect: "drwxrws"
+      field: "stdout"
+  - order: 5
+    instruction: "/opt/secure-data/에 Sticky bit를 추가하여 파일 소유자만 삭제할 수 있도록 하시오."
+    hint: "chmod +t 옵션을 사용하세요."
+    category: "access_control"
+    points: 10
+    answer: "sudo chmod +t /opt/secure-data && ls -ld /opt/secure-data"
+    answer_detail: "Sticky bit가 설정된 디렉터리에서는 파일의 소유자 또는 root만 해당 파일을 삭제할 수 있습니다. /tmp가 대표적인 예입니다."
+    verify:
+      type: "output_contains"
+      expect: "t"
+      field: "stdout"
+  - order: 6
+    instruction: "ACL을 사용하여 특정 사용자(secuser1)에게 /var/log/syslog 읽기 권한을 부여하시오."
+    hint: "setfacl 명령을 사용하세요."
+    category: "acl"
+    points: 12
+    answer: "sudo setfacl -m u:secuser1:r /var/log/syslog && getfacl /var/log/syslog"
+    answer_detail: "setfacl -m u:사용자:권한으로 ACL을 설정합니다. 기본 파일 퍼미션을 넘어서 세밀한 접근 제어가 가능합니다."
+    verify:
+      type: "output_contains"
+      expect: "secuser1"
+      field: "stdout"
+  - order: 7
+    instruction: "기본 ACL을 설정하여 /opt/secure-data/ 하위에 생성되는 파일에 자동으로 secteam 그룹 rw 권한이 적용되도록 하시오."
+    hint: "setfacl -d 옵션을 사용하세요."
+    category: "acl"
+    points: 12
+    answer: "sudo setfacl -d -m g:secteam:rw /opt/secure-data && getfacl /opt/secure-data"
+    answer_detail: "setfacl -d는 기본(default) ACL을 설정합니다. 해당 디렉터리에서 새로 생성되는 파일과 디렉터리에 자동 적용됩니다."
+    verify:
+      type: "output_contains"
+      expect: "default:group:secteam:rw"
+      field: "stdout"
+  - order: 8
+    instruction: "umask 값을 확인하고 0027로 설정하여 기본 파일 퍼미션을 제한하시오."
+    hint: "umask 명령을 사용하세요."
+    category: "access_control"
+    points: 8
+    answer: "umask 0027 && umask"
+    answer_detail: "umask 0027은 새 파일이 640(rw-r-----), 새 디렉터리가 750(rwxr-x---)으로 생성되도록 합니다."
+    verify:
+      type: "output_contains"
+      expect: "0027"
+      field: "stdout"
+  - order: 9
+    instruction: "PAM 설정에서 wheel 그룹만 su 명령을 사용할 수 있도록 제한하시오."
+    hint: "/etc/pam.d/su 파일을 수정하세요."
+    category: "access_control"
+    points: 12
+    answer: "sudo sed -i 's/^#.*pam_wheel.so/auth required pam_wheel.so/' /etc/pam.d/su"
+    answer_detail: "pam_wheel.so 모듈은 wheel 그룹에 속한 사용자만 su 명령으로 root 전환이 가능하도록 제한합니다."
+    verify:
+      type: "output_contains"
+      expect: "pam_wheel.so"
+      field: "stdout"
+  - order: 10
+    instruction: "sudoers 파일에서 secteam 그룹에 특정 명령만 실행 가능하도록 설정하시오."
+    hint: "visudo 또는 /etc/sudoers.d/를 사용하세요."
+    category: "access_control"
+    points: 12
+    answer: "echo '%secteam ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *, /usr/bin/journalctl' | sudo tee /etc/sudoers.d/secteam"
+    answer_detail: "sudoers.d에 별도 파일로 관리하면 유지보수가 용이합니다. 특정 명령만 허용하여 최소 권한 원칙을 적용합니다."
+    verify:
+      type: "output_contains"
+      expect: "secteam"
+      field: "stdout"
+  - order: 11
+    instruction: "TCP Wrappers를 사용하여 10.20.30.0/24 네트워크에서만 SSH 접근을 허용하시오."
+    hint: "/etc/hosts.allow와 /etc/hosts.deny를 설정하세요."
+    category: "network_access"
+    points: 10
+    answer: "echo 'sshd: 10.20.30.0/255.255.255.0' | sudo tee /etc/hosts.allow && echo 'sshd: ALL' | sudo tee -a /etc/hosts.deny"
+    answer_detail: "hosts.allow가 먼저 평가되고, 매치되지 않으면 hosts.deny가 적용됩니다. 허용 목록 + 전체 거부 전략입니다."
+    verify:
+      type: "output_contains"
+      expect: "10.20.30"
+      field: "stdout"
+  - order: 12
+    instruction: "AppArmor 상태를 확인하고 현재 적용된 프로파일 목록을 조회하시오."
+    hint: "aa-status 명령을 사용하세요."
+    category: "mac"
+    points: 8
+    answer: "sudo aa-status 2>/dev/null || echo 'AppArmor not available'"
+    answer_detail: "AppArmor는 리눅스 MAC(Mandatory Access Control) 시스템으로, 프로그램별로 접근 가능한 리소스를 제한합니다."
+    verify:
+      type: "output_contains"
+      expect: "profiles"
+      field: "stdout"
+  - order: 13
+    instruction: "특정 디렉터리에 immutable 속성을 설정하여 root도 수정 불가능하게 만드시오."
+    hint: "chattr +i 옵션을 사용하세요."
+    category: "access_control"
+    points: 10
+    answer: "sudo touch /opt/secure-data/critical.conf && sudo chattr +i /opt/secure-data/critical.conf && lsattr /opt/secure-data/critical.conf"
+    answer_detail: "chattr +i는 immutable 플래그를 설정합니다. 이 플래그가 설정된 파일은 root조차 수정, 삭제, 이름 변경이 불가능합니다."
+    verify:
+      type: "output_contains"
+      expect: "----i"
+      field: "stdout"
+  - order: 14
+    instruction: "현재 시스템에서 SUID 비트가 설정된 파일을 찾아 보안 위험을 평가하시오."
+    hint: "find 명령으로 SUID 파일을 검색하세요."
+    category: "verification"
+    points: 10
+    answer: "find / -perm -4000 -type f 2>/dev/null | head -20"
+    answer_detail: "SUID 비트가 설정된 파일은 실행 시 파일 소유자의 권한으로 동작합니다. 불필요한 SUID 파일은 권한 상승 공격에 악용될 수 있으므로 정기 점검이 필요합니다."
+    verify:
+      type: "output_contains"
+      expect: "/usr/bin/"
+      field: "stdout"
+  - order: 15
+    instruction: "접근 통제 설정을 종합 점검하는 보고서를 생성하시오."
+    hint: "퍼미션, ACL, 감사 규칙 등을 종합하여 확인하세요."
+    category: "verification"
+    points: 13
+    answer: "echo '=== 접근 통제 점검 보고서 ===' && echo '[그룹 목록]' && getent group secteam && echo '[디렉터리 퍼미션]' && ls -ld /opt/secure-data && echo '[ACL 설정]' && getfacl /opt/secure-data && echo '[sudoers]' && sudo cat /etc/sudoers.d/secteam && echo '=== 점검 완료 ==='"
+    answer_detail: "접근 통제 점검은 그룹/퍼미션/ACL/sudo 설정을 종합적으로 확인해야 합니다."
+    verify:
+      type: "output_contains"
+      expect: "점검 완료"
+      field: "stdout"

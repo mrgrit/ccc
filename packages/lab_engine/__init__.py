@@ -31,6 +31,9 @@ class LabStep:
     category: str = ""         # recon | exploit | defense | analysis | response
     points: int = 10
     verify: VerifyRule | None = None
+    # 정답 (admin만 볼 수 있음)
+    answer: str = ""           # 정답/풀이 (명령어, 설명, 예상 결과 등)
+    answer_detail: str = ""    # 상세 해설
     # AI 버전 전용
     script: str = ""           # Non-AI에는 비어 있어야 함
     risk_level: str = "low"
@@ -102,6 +105,8 @@ def load_lab(yaml_path: str) -> Lab:
             category=s.get("category", ""),
             points=s.get("points", 10),
             verify=verify,
+            answer=s.get("answer", ""),
+            answer_detail=s.get("answer_detail", ""),
             script=s.get("script", ""),
             risk_level=s.get("risk_level", "low"),
         ))
@@ -204,6 +209,134 @@ def evaluate_lab(lab: Lab, submissions: list[dict[str, Any]], student_id: str = 
             sr.points_earned = step.points if sr.passed else 0
             sr.message = "Evidence submitted" if sr.passed else "No evidence"
 
+        result.step_results.append(sr)
+
+    result.earned_points = sum(sr.points_earned for sr in result.step_results)
+    result.passed = (result.earned_points / max(result.total_points, 1)) >= lab.pass_threshold
+    return result
+
+
+# ── SubAgent 자동 검증 ─────────────────────────────
+
+def _run_on_subagent(subagent_url: str, command: str, timeout: int = 30) -> dict[str, Any]:
+    """SubAgent에서 명령 실행 후 결과 반환"""
+    import httpx
+    import uuid as _uuid
+    try:
+        r = httpx.post(
+            f"{subagent_url}/a2a/run_script",
+            json={
+                "project_id": f"lab-verify-{_uuid.uuid4().hex[:8]}",
+                "job_run_id": _uuid.uuid4().hex[:8],
+                "script": command,
+                "timeout_s": timeout,
+            },
+            timeout=float(timeout + 10),
+        )
+        r.raise_for_status()
+        raw = r.json()
+        data = raw.get("detail", raw)
+        return {
+            "stdout": data.get("stdout", ""),
+            "stderr": data.get("stderr", ""),
+            "exit_code": data.get("exit_code", -1),
+        }
+    except Exception as e:
+        return {"stdout": "", "stderr": str(e), "exit_code": -1}
+
+
+def _build_verify_command(step: LabStep) -> str | None:
+    """스텝의 verify 규칙을 검증할 수 있는 명령어 생성"""
+    if not step.verify:
+        return None
+
+    vr = step.verify
+
+    if vr.type == "output_contains" and step.answer:
+        # 정답 명령어를 실행하고 기대 출력이 있는지 확인
+        return step.answer
+
+    if vr.type == "exit_code" and step.answer:
+        return step.answer
+
+    if vr.type == "file_exists":
+        return f"test -f {vr.expect} && echo 'FILE_EXISTS_YES' || echo 'FILE_EXISTS_NO'"
+
+    if vr.type == "service_running":
+        return f"systemctl is-active {vr.expect} 2>/dev/null && echo 'SERVICE_RUNNING_YES' || echo 'SERVICE_RUNNING_NO'"
+
+    # fallback: answer가 있으면 그걸 실행
+    if step.answer:
+        return step.answer
+
+    return None
+
+
+def auto_verify_step(step: LabStep, subagent_url: str) -> StepResult:
+    """SubAgent에서 자동으로 스텝 검증 (학생 인프라에 직접 확인)"""
+    sr = StepResult(order=step.order)
+
+    cmd = _build_verify_command(step)
+    if not cmd:
+        sr.message = "No auto-verify command available"
+        return sr
+
+    result = _run_on_subagent(subagent_url, cmd)
+    sr.evidence = result
+
+    if not step.verify:
+        sr.passed = result.get("exit_code") == 0
+        sr.points_earned = step.points if sr.passed else 0
+        sr.message = f"exit_code={result.get('exit_code')}"
+        return sr
+
+    vr = step.verify
+    stdout = result.get("stdout", "")
+
+    if vr.type == "output_contains":
+        if vr.expect.lower() in stdout.lower():
+            sr.passed = True
+            sr.message = f"Auto-verified: '{vr.expect}' found"
+        else:
+            sr.passed = False
+            sr.message = f"Auto-verify failed: '{vr.expect}' not found in output"
+
+    elif vr.type == "output_regex":
+        if re.search(vr.expect, stdout, re.IGNORECASE | re.MULTILINE):
+            sr.passed = True
+            sr.message = f"Auto-verified: regex matched"
+        else:
+            sr.passed = False
+            sr.message = f"Auto-verify failed: regex not matched"
+
+    elif vr.type == "exit_code":
+        expected = int(vr.expect) if vr.expect else 0
+        actual = result.get("exit_code", -1)
+        sr.passed = actual == expected
+        sr.message = f"Auto-verified: exit_code={actual} (expected {expected})"
+
+    elif vr.type == "file_exists":
+        sr.passed = "FILE_EXISTS_YES" in stdout
+        sr.message = f"Auto-verified: file {'exists' if sr.passed else 'not found'}"
+
+    elif vr.type == "service_running":
+        sr.passed = "SERVICE_RUNNING_YES" in stdout
+        sr.message = f"Auto-verified: service {'running' if sr.passed else 'not running'}"
+
+    sr.points_earned = step.points if sr.passed else 0
+    return sr
+
+
+def auto_verify_lab(lab: Lab, subagent_url: str, student_id: str = "") -> LabResult:
+    """전체 실습을 SubAgent를 통해 자동 검증 (학생 인프라에 직접)"""
+    result = LabResult(
+        lab_id=lab.lab_id,
+        student_id=student_id,
+        total_points=lab.total_points,
+    )
+
+    for step in lab.steps:
+        sr = auto_verify_step(step, subagent_url)
         result.step_results.append(sr)
 
     result.earned_points = sum(sr.points_earned for sr in result.step_results)

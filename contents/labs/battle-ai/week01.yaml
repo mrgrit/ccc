@@ -1,81 +1,215 @@
 lab_id: "battle-ai-week01"
-title: "AI 정찰 자동화 — 자동 네트워크 스캐닝"
+title: "AI 기반 정찰(Reconnaissance) — 자동화된 네트워크 정보 수집"
 version: "ai"
 course: "battle-ai"
 week: 1
-description: "AI 에이전트가 nmap을 활용하여 대상 네트워크를 자동으로 스캐닝하고, 호스트 발견/서비스 탐지/OS 핑거프린팅을 수행한다."
+description: "AI 에이전트가 자동으로 정찰 명령을 실행하여 대상 네트워크와 호스트 정보를 수집한다. nmap, dig, netcat 등을 자동화하고 결과를 분석한다."
 difficulty: "easy"
-duration_minutes: 90
+duration_minutes: 120
 objectives:
-  - "AI가 네트워크 호스트를 자동 발견한다"
-  - "AI가 서비스 버전을 자동 탐지한다"
-  - "AI가 OS 핑거프린팅을 자동 수행한다"
-  - "AI가 스캔 결과를 구조화된 형태로 출력한다"
+  - "AI를 활용한 자동화 정찰 파이프라인을 구축한다"
+  - "정찰 결과를 AI가 자동으로 분석하고 요약한다"
+  - "Passive/Active 정찰을 체계적으로 자동화한다"
 prerequisites:
-  - "네트워크 기초 이해"
-  - "nmap 기본 사용법"
+  - "Linux 기본 명령어 사용"
+  - "TCP/IP 네트워크 기초"
 infra_requirements:
-  - "attacker VM with bastion"
-  - "defender VM"
+  - "Kali Linux VM (attacker)"
+  - "Metasploitable2 VM (target, 10.20.30.50)"
+  - "Internal network 10.20.30.0/24"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "AI가 대상 네트워크 대역에서 활성 호스트를 탐색한다 (Ping Sweep)"
-    script: "nmap -sn 10.20.30.0/24 -oG /tmp/ping_sweep.txt && cat /tmp/ping_sweep.txt"
+    instruction: "AI가 자신의 네트워크 인터페이스 정보를 자동으로 수집하도록 하라."
+    hint: "ip 명령어를 사용한다."
     category: "recon"
-    risk_level: "low"
-    points: 15
+    points: 5
+    answer: "ip addr show"
+    answer_detail: "ip addr show 명령은 모든 네트워크 인터페이스의 IP 주소, MAC 주소, 상태 정보를 출력한다. AI가 자체 네트워크 위치를 파악하는 첫 단계이다."
+    script: "ip addr show"
     verify:
       type: "output_contains"
-      expect: "Host:"
+      expect: "inet "
       field: "stdout"
 
   - order: 2
-    instruction: "AI가 발견된 호스트의 열린 포트를 스캔한다 (TCP SYN Scan)"
-    script: "nmap -sS -p 1-1024 10.20.30.1 10.20.30.80 10.20.30.100 -oN /tmp/port_scan.txt && cat /tmp/port_scan.txt"
+    instruction: "AI가 10.20.30.0/24 대역의 호스트 발견을 자동 수행하도록 하라."
+    hint: "nmap -sn으로 Ping Sweep을 수행한다."
     category: "recon"
-    risk_level: "low"
-    points: 15
+    points: 10
+    answer: "nmap -sn 10.20.30.0/24"
+    answer_detail: "nmap -sn은 포트 스캔 없이 호스트 발견만 수행하는 Ping Sweep이다. AI가 살아있는 호스트를 자동으로 식별하여 타겟 목록을 생성한다."
+    script: "nmap -sn 10.20.30.0/24"
+    verify:
+      type: "output_contains"
+      expect: "Host is up"
+      field: "stdout"
+
+  - order: 3
+    instruction: "AI가 발견된 호스트의 전체 포트 스캔을 자동 실행하도록 하라."
+    hint: "nmap -p- 옵션으로 65535개 전체 포트를 스캔한다."
+    category: "recon"
+    points: 10
+    answer: "nmap -p- -T4 10.20.30.50"
+    answer_detail: "-p- 옵션은 1~65535 전체 포트를 스캔한다. -T4는 타이밍 템플릿으로 속도를 높인다. AI가 모든 열린 포트를 자동으로 발견한다."
+    script: "nmap -p- -T4 10.20.30.50"
     verify:
       type: "output_contains"
       expect: "open"
       field: "stdout"
 
-  - order: 3
-    instruction: "AI가 서비스 버전 탐지를 수행한다 (Service Version Detection)"
-    script: "nmap -sV -p 22,80,443,8080 10.20.30.80 -oN /tmp/version_scan.txt && cat /tmp/version_scan.txt"
+  - order: 4
+    instruction: "AI가 열린 포트의 서비스 버전 탐지를 자동 실행하도록 하라."
+    hint: "nmap -sV 옵션을 사용한다."
     category: "recon"
-    risk_level: "low"
-    points: 20
+    points: 10
+    answer: "nmap -sV -p 21,22,23,25,80,139,445,3306 10.20.30.50"
+    answer_detail: "-sV 옵션은 각 열린 포트에 프로브를 보내 서비스 이름과 버전을 식별한다. AI가 취약점 탐색의 핵심 입력 데이터를 자동 수집한다."
+    script: "nmap -sV -p 21,22,23,25,80,139,445,3306 10.20.30.50"
     verify:
       type: "output_contains"
-      expect: "SERVICE VERSION"
+      expect: "VERSION"
       field: "stdout"
 
-  - order: 4
-    instruction: "AI가 OS 핑거프린팅을 수행한다"
-    script: "nmap -O --osscan-guess 10.20.30.80 -oN /tmp/os_scan.txt && cat /tmp/os_scan.txt"
+  - order: 5
+    instruction: "AI가 대상 호스트의 운영체제를 자동 탐지하도록 하라."
+    hint: "nmap -O 옵션은 root 권한이 필요하다."
     category: "recon"
-    risk_level: "low"
-    points: 20
+    points: 10
+    answer: "sudo nmap -O 10.20.30.50"
+    answer_detail: "-O 옵션은 TCP/IP 스택 핑거프린팅으로 OS를 추측한다. AI가 자동으로 OS 정보를 수집하여 익스플로잇 선택에 활용한다."
+    script: "sudo nmap -O 10.20.30.50"
     verify:
       type: "output_contains"
       expect: "OS details"
       field: "stdout"
 
-  - order: 5
-    instruction: "AI가 전체 스캔 결과를 XML로 저장하고 요약 보고서를 생성한다"
-    script: |
-      nmap -sV -O -p 1-1024 10.20.30.0/24 -oX /tmp/full_scan.xml -oN /tmp/full_scan.txt
-      echo "=== AI 정찰 요약 ==="
-      echo "스캔 완료 시간: $(date)"
-      grep -c "Up" /tmp/ping_sweep.txt | xargs -I{} echo "발견된 호스트: {}대"
-      grep "open" /tmp/full_scan.txt | wc -l | xargs -I{} echo "발견된 열린 포트: {}개"
-      cat /tmp/full_scan.txt
+  - order: 6
+    instruction: "AI가 SMB 공유 폴더를 자동으로 열거하도록 하라."
+    hint: "smb-enum-shares NSE 스크립트를 사용한다."
     category: "recon"
-    risk_level: "low"
-    points: 20
+    points: 10
+    answer: "nmap --script smb-enum-shares -p 445 10.20.30.50"
+    answer_detail: "NSE의 smb-enum-shares 스크립트는 SMB 공유 폴더 목록을 열거한다. AI가 익명 접근 가능한 공유를 자동 발견한다."
+    script: "nmap --script smb-enum-shares -p 445 10.20.30.50"
     verify:
       type: "output_contains"
-      expect: "AI 정찰 요약"
+      expect: "Account Used"
       field: "stdout"
+
+  - order: 7
+    instruction: "AI가 DNS 정보를 자동 조회하도록 하라."
+    hint: "dig 명령에 @DNS서버 옵션을 사용한다."
+    category: "recon"
+    points: 10
+    answer: "dig @10.20.30.50 target.lab.local ANY"
+    answer_detail: "dig는 DNS 질의 도구이다. ANY 타입으로 모든 레코드를 조회한다. AI가 DNS 정보를 자동 수집하여 공격 표면을 확장한다."
+    script: "dig @10.20.30.50 target.lab.local ANY"
+    verify:
+      type: "output_contains"
+      expect: "ANSWER"
+      field: "stdout"
+
+  - order: 8
+    instruction: "AI가 DNS Zone Transfer를 자동 시도하도록 하라."
+    hint: "dig axfr 명령을 사용한다."
+    category: "recon"
+    points: 10
+    answer: "dig @10.20.30.50 lab.local axfr"
+    answer_detail: "AXFR은 DNS Zone Transfer 요청이다. AI가 자동으로 시도하여 전체 DNS 레코드를 수집한다."
+    script: "dig @10.20.30.50 lab.local axfr"
+    verify:
+      type: "output_contains"
+      expect: "XFR"
+      field: "stdout"
+
+  - order: 9
+    instruction: "AI가 FTP 배너를 자동 수집하도록 하라."
+    hint: "nc -v 옵션으로 연결한다."
+    category: "recon"
+    points: 10
+    answer: "echo 'QUIT' | nc -w 3 -nv 10.20.30.50 21"
+    answer_detail: "Banner Grabbing은 서비스 연결 시 초기 응답 메시지를 수집하는 기법이다. AI가 자동으로 배너를 수집하여 CVE 검색에 활용한다."
+    script: "echo 'QUIT' | nc -w 3 -nv 10.20.30.50 21"
+    verify:
+      type: "output_contains"
+      expect: "FTP"
+      field: "stdout"
+
+  - order: 10
+    instruction: "AI가 HTTP 응답 헤더를 자동 수집하도록 하라."
+    hint: "curl -I로 HEAD 요청을 보낸다."
+    category: "recon"
+    points: 10
+    answer: "curl -I http://10.20.30.50/"
+    answer_detail: "curl -I는 HTTP HEAD 요청을 보내 응답 헤더만 받는다. AI가 Server, X-Powered-By 등 헤더에서 기술 스택을 자동 식별한다."
+    script: "curl -I http://10.20.30.50/"
+    verify:
+      type: "output_contains"
+      expect: "Server:"
+      field: "stdout"
+
+  - order: 11
+    instruction: "AI가 웹 기술 스택을 자동 식별하도록 하라."
+    hint: "whatweb 도구를 사용한다."
+    category: "recon"
+    points: 10
+    answer: "whatweb http://10.20.30.50/"
+    answer_detail: "whatweb은 웹사이트의 기술 스택을 자동 식별한다. AI가 CMS, 프레임워크, 서버 정보를 자동 수집한다."
+    script: "whatweb http://10.20.30.50/"
+    verify:
+      type: "output_contains"
+      expect: "http"
+      field: "stdout"
+
+  - order: 12
+    instruction: "AI가 NetBIOS/SMB 정보를 자동 열거하도록 하라."
+    hint: "enum4linux -a 옵션을 사용한다."
+    category: "recon"
+    points: 10
+    answer: "enum4linux -a 10.20.30.50"
+    answer_detail: "enum4linux는 Windows/Samba 시스템에서 사용자, 그룹, 공유, 정책 등을 열거한다. AI가 NULL 세션을 이용하여 자동 정보 수집한다."
+    script: "enum4linux -a 10.20.30.50"
+    verify:
+      type: "output_contains"
+      expect: "enum4linux"
+      field: "stdout"
+
+  - order: 13
+    instruction: "AI가 SNMP 시스템 정보를 자동 수집하도록 하라."
+    hint: "community string 'public'을 사용한다."
+    category: "recon"
+    points: 10
+    answer: "snmpwalk -v2c -c public 10.20.30.50"
+    answer_detail: "SNMP community string 'public'이 변경되지 않은 경우 시스템 전체 정보를 수집할 수 있다. AI가 자동으로 기본 커뮤니티 스트링을 시도한다."
+    script: "snmpwalk -v2c -c public 10.20.30.50"
+    verify:
+      type: "output_contains"
+      expect: "SNMPv2"
+      field: "stdout"
+
+  - order: 14
+    instruction: "AI가 정찰 결과를 XML 형식으로 자동 저장하도록 하라."
+    hint: "nmap -oX 옵션으로 XML 출력한다."
+    category: "recon"
+    points: 10
+    answer: "nmap -sV -O -oX /tmp/recon_week01.xml 10.20.30.50"
+    answer_detail: "-oX는 결과를 XML 형식으로 저장한다. AI가 구조화된 데이터로 후속 분석을 자동화한다."
+    script: "nmap -sV -O -oX /tmp/recon_week01.xml 10.20.30.50"
+    verify:
+      type: "file_exists"
+      expect: "/tmp/recon_week01.xml"
+      field: "filesystem"
+
+  - order: 15
+    instruction: "AI가 정찰 결과를 종합하여 공격 표면 요약 보고서를 자동 생성하도록 하라."
+    hint: "수집된 정보를 파일로 정리한다."
+    category: "recon"
+    points: 15
+    answer: "cat > /tmp/attack_surface.txt << 'EOF'\n=== Attack Surface Report (AI Generated) ===\nTarget: 10.20.30.50\nOS: Linux (Ubuntu)\n\nOpen Ports & Services:\n- 21/tcp: vsftpd 2.3.4\n- 22/tcp: OpenSSH 4.7p1\n- 23/tcp: telnetd\n- 25/tcp: Postfix smtpd\n- 80/tcp: Apache 2.2.8\n- 139/tcp: Samba 3.x\n- 445/tcp: Samba 3.x\n- 3306/tcp: MySQL 5.0.51a\n\nPotential Vulnerabilities:\n- vsftpd 2.3.4 backdoor (CVE-2011-2523)\n- Telnet cleartext protocol\n- Apache 2.2.8 multiple CVEs\n- SMB null session enumeration\nEOF"
+    answer_detail: "AI가 모든 정찰 결과를 종합하여 공격 표면 보고서를 자동 생성한다. 구조화된 보고서는 다음 단계(취약점 분석, 익스플로잇)의 입력이 된다."
+    script: "cat > /tmp/attack_surface.txt << 'EOF'\n=== Attack Surface Report (AI Generated) ===\nTarget: 10.20.30.50\nOS: Linux (Ubuntu)\n\nOpen Ports & Services:\n- 21/tcp: vsftpd 2.3.4\n- 22/tcp: OpenSSH 4.7p1\n- 23/tcp: telnetd\n- 25/tcp: Postfix smtpd\n- 80/tcp: Apache 2.2.8\n- 139/tcp: Samba 3.x\n- 445/tcp: Samba 3.x\n- 3306/tcp: MySQL 5.0.51a\n\nPotential Vulnerabilities:\n- vsftpd 2.3.4 backdoor (CVE-2011-2523)\n- Telnet cleartext protocol\n- Apache 2.2.8 multiple CVEs\n- SMB null session enumeration\nEOF"
+    verify:
+      type: "file_exists"
+      expect: "/tmp/attack_surface.txt"
+      field: "filesystem"

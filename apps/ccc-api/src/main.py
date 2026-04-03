@@ -342,13 +342,35 @@ def check_infra_health(iid: str):
 import pathlib as _pathlib
 _LABS_DIR = str(_pathlib.Path(__file__).parent.parent.parent.parent / "contents" / "labs")
 
+@app.get("/labs/courses", dependencies=[Depends(verify_api_key)])
+def lab_courses():
+    """교과목 그룹 목록 (로딩 최적화)"""
+    from packages.lab_engine import load_all_labs
+    labs = load_all_labs(_LABS_DIR)
+    groups: dict[str, dict] = {}
+    for l in labs:
+        base = l.course.replace("-nonai", "").replace("-ai", "")
+        if base not in groups:
+            groups[base] = {"course": base, "title": "", "versions": set(), "weeks": 0, "total_labs": 0}
+        groups[base]["versions"].add(l.version)
+        groups[base]["total_labs"] += 1
+        groups[base]["weeks"] = max(groups[base]["weeks"], l.week)
+        if not groups[base]["title"] and l.title:
+            # 첫 번째 제목에서 과목명 추출
+            groups[base]["title"] = l.title.split("—")[0].split("(")[0].strip() if "—" in l.title or "(" in l.title else l.title
+    result = []
+    for g in sorted(groups.values(), key=lambda x: x["course"]):
+        g["versions"] = sorted(g["versions"])
+        result.append(g)
+    return {"courses": result, "total": len(result)}
+
 @app.get("/labs/catalog", dependencies=[Depends(verify_api_key)])
 def lab_catalog(course: str | None = None, version: str | None = None):
-    """등록된 실습 YAML 목록"""
+    """등록된 실습 YAML 목록 (course 필터로 교과목별 로드)"""
     from packages.lab_engine import load_all_labs, lab_summary, validate_lab
     labs = load_all_labs(_LABS_DIR)
     if course:
-        labs = [l for l in labs if l.course == course]
+        labs = [l for l in labs if l.course == course or l.course.startswith(course)]
     if version:
         labs = [l for l in labs if l.version == version]
     result = []
@@ -361,9 +383,10 @@ def lab_catalog(course: str | None = None, version: str | None = None):
     return {"labs": result, "total": len(result)}
 
 @app.get("/labs/catalog/{lab_id}", dependencies=[Depends(verify_api_key)])
-def get_lab_detail(lab_id: str):
-    """실습 상세 (steps 포함)"""
+def get_lab_detail(lab_id: str, request: Request):
+    """실습 상세 (steps 포함). admin=true 쿼리파라미터 + API키로 정답 노출"""
     from packages.lab_engine import load_all_labs
+    is_admin = request.query_params.get("admin") == "true"
     labs = load_all_labs(_LABS_DIR)
     for l in labs:
         if l.lab_id == lab_id:
@@ -378,6 +401,12 @@ def get_lab_detail(lab_id: str):
                     step_data["risk_level"] = s.risk_level
                 if s.verify:
                     step_data["verify"] = {"type": s.verify.type, "expect": s.verify.expect, "field": s.verify.field}
+                # admin만 정답 노출
+                if is_admin:
+                    if s.answer:
+                        step_data["answer"] = s.answer
+                    if s.answer_detail:
+                        step_data["answer_detail"] = s.answer_detail
                 steps.append(step_data)
             return {
                 "lab_id": l.lab_id, "title": l.title, "version": l.version,
@@ -385,6 +414,7 @@ def get_lab_detail(lab_id: str):
                 "objectives": l.objectives, "difficulty": l.difficulty,
                 "duration_minutes": l.duration_minutes, "total_points": l.total_points,
                 "pass_threshold": l.pass_threshold, "steps": steps,
+                "has_answers": any(s.answer for s in l.steps),
             }
     raise HTTPException(404, "Lab not found")
 
@@ -403,6 +433,68 @@ def evaluate_lab_submission(lab_id: str, student_id: str, submissions: list[dict
         "earned_points": result.earned_points,
         "step_results": [
             {"order": sr.order, "passed": sr.passed, "points_earned": sr.points_earned, "message": sr.message}
+            for sr in result.step_results
+        ],
+    }
+
+class AutoVerifyRequest(BaseModel):
+    lab_id: str
+    student_id: str
+    subagent_url: str  # 학생 인프라의 SubAgent URL
+
+@app.post("/labs/auto-verify", dependencies=[Depends(verify_api_key)])
+def auto_verify_lab_endpoint(body: AutoVerifyRequest):
+    """SubAgent를 통해 학생 인프라에서 실습 완료 여부를 자동 검증.
+    학생이 제출한 evidence가 아니라, 실제 인프라 상태를 직접 확인한다."""
+    from packages.lab_engine import load_all_labs, auto_verify_lab
+    labs = load_all_labs(_LABS_DIR)
+    lab = next((l for l in labs if l.lab_id == body.lab_id), None)
+    if not lab:
+        raise HTTPException(404, "Lab not found")
+
+    result = auto_verify_lab(lab, body.subagent_url, body.student_id)
+
+    # 통과 시 DB에 기록 + PoW 블록 생성
+    if result.passed:
+        import hashlib as _hl
+        with _conn() as conn:
+            with conn.cursor(cursor_factory=RealDictCursor) as cur:
+                # lab_completion 기록
+                lid = str(uuid.uuid4())[:8]
+                cur.execute(
+                    """INSERT INTO lab_completions (id, student_id, lab_id, status, evidence, completed_at)
+                       VALUES (%s,%s,%s,'completed',%s,now())
+                       ON CONFLICT (student_id, lab_id) DO UPDATE SET status='completed', evidence=EXCLUDED.evidence, completed_at=now()""",
+                    (lid, body.student_id, body.lab_id,
+                     Json({"auto_verified": True, "subagent_url": body.subagent_url,
+                           "earned_points": result.earned_points, "total_points": result.total_points,
+                           "steps_passed": sum(1 for sr in result.step_results if sr.passed)})),
+                )
+                # PoW 블록
+                prev_hash = "0" * 64
+                cur.execute("SELECT block_hash FROM pow_blocks ORDER BY id DESC LIMIT 1")
+                prev = cur.fetchone()
+                if prev:
+                    prev_hash = prev["block_hash"]
+                block_data = f"auto-verify:{body.student_id}:{body.lab_id}:{prev_hash}:{result.earned_points}"
+                block_hash = _hl.sha256(block_data.encode()).hexdigest()
+                cur.execute(
+                    """INSERT INTO pow_blocks (agent_id, block_index, block_hash, prev_hash, nonce, context_type, context_id, reward_amount)
+                       VALUES (%s, (SELECT COALESCE(MAX(block_index),0)+1 FROM pow_blocks WHERE agent_id=%s), %s, %s, 0, 'lab-auto', %s, %s)""",
+                    (body.student_id, body.student_id, block_hash, prev_hash, body.lab_id, float(result.earned_points)),
+                )
+                conn.commit()
+        result.block_hash = block_hash
+
+    return {
+        "lab_id": result.lab_id, "student_id": result.student_id,
+        "passed": result.passed, "total_points": result.total_points,
+        "earned_points": result.earned_points,
+        "block_hash": result.block_hash,
+        "verification_method": "auto (SubAgent direct)",
+        "step_results": [
+            {"order": sr.order, "passed": sr.passed, "points_earned": sr.points_earned,
+             "message": sr.message, "evidence": {k: str(v)[:200] for k, v in sr.evidence.items()} if sr.evidence else {}}
             for sr in result.step_results
         ],
     }
