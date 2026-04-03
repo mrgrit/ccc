@@ -217,21 +217,32 @@ export default function Education() {
   )
 }
 
-// 간이 markdown → HTML (제목, 코드, 굵기, 리스트)
+// 간이 markdown → HTML
 function markdownToHtml(md: string): string {
   return md
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    // 코드블록 (먼저 처리)
+    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;font-size:12px;overflow-x:auto;color:#3fb950;margin:8px 0">$2</pre>')
+    // 제목
+    .replace(/^#### (.+)$/gm, '<h4 style="font-size:14px;color:#e6edf3;margin:16px 0 6px">$1</h4>')
     .replace(/^### (.+)$/gm, '<h3 style="font-size:16px;color:#e6edf3;margin:20px 0 8px">$1</h3>')
     .replace(/^## (.+)$/gm, '<h2 style="font-size:18px;color:#e6edf3;margin:24px 0 10px;border-bottom:1px solid #30363d;padding-bottom:6px">$1</h2>')
     .replace(/^# (.+)$/gm, '<h1 style="font-size:22px;color:#f97316;margin:0 0 16px">$1</h1>')
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:#0d1117;border:1px solid #30363d;border-radius:6px;padding:12px;font-size:12px;overflow-x:auto;color:#3fb950">$2</pre>')
+    // 인라인
     .replace(/`([^`]+)`/g, '<code style="background:#21262d;padding:2px 6px;border-radius:3px;font-size:12px;color:#f0883e">$1</code>')
     .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#e6edf3">$1</strong>')
+    // 블록쿼트
+    .replace(/^&gt; (.+)$/gm, '<div style="border-left:3px solid #30363d;padding:4px 12px;margin:4px 0;color:#8b949e">$1</div>')
+    // 리스트
     .replace(/^\- (.+)$/gm, '<div style="padding:2px 0 2px 16px">• $1</div>')
-    .replace(/^\| (.+)$/gm, (_, row) => {
+    .replace(/^\d+\. (.+)$/gm, '<div style="padding:2px 0 2px 16px">$1</div>')
+    // 테이블: 구분선 제거 후 행 처리
+    .replace(/^\|[\s\-:|]+\|$/gm, '')
+    .replace(/^\|(.+)\|$/gm, (_, row) => {
       const cells = row.split('|').map((c: string) => c.trim()).filter(Boolean)
-      return '<div style="display:flex;border-bottom:1px solid #21262d">' + cells.map((c: string) => `<span style="flex:1;padding:4px 8px;font-size:12px">${c}</span>`).join('') + '</div>'
+      return '<div style="display:flex;border-bottom:1px solid #21262d">' + cells.map((c: string) => `<span style="flex:1;padding:6px 10px;font-size:12px">${c}</span>`).join('') + '</div>'
     })
+    // 줄바꿈
     .replace(/\n\n/g, '<br/><br/>')
     .replace(/\n/g, '<br/>')
 }
