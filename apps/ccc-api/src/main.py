@@ -144,12 +144,38 @@ def _init_db():
                     metadata JSONB DEFAULT '{}',
                     created_at TIMESTAMPTZ DEFAULT now()
                 );
-                -- password_hash 컬럼 추가 (기존 테이블 호환)
+                -- 스키마 업그레이드
                 DO $$ BEGIN
                     ALTER TABLE students ADD COLUMN IF NOT EXISTS password_hash TEXT DEFAULT '';
-                    ALTER TABLE students ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'student';
+                    ALTER TABLE students ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'trainee';
+                    ALTER TABLE students ADD COLUMN IF NOT EXISTS rank TEXT DEFAULT 'rookie';
+                    ALTER TABLE students ADD COLUMN IF NOT EXISTS group_id TEXT;
+                    ALTER TABLE students ADD COLUMN IF NOT EXISTS total_blocks INT DEFAULT 0;
                 EXCEPTION WHEN others THEN NULL;
                 END $$;
+                -- 그룹
+                CREATE TABLE IF NOT EXISTS ccc_groups (
+                    id TEXT PRIMARY KEY,
+                    name TEXT UNIQUE NOT NULL,
+                    display_name TEXT DEFAULT '',
+                    description TEXT DEFAULT '',
+                    created_at TIMESTAMPTZ DEFAULT now()
+                );
+                -- 그룹별 과목 접근 권한
+                CREATE TABLE IF NOT EXISTS group_courses (
+                    group_id TEXT REFERENCES ccc_groups(id) ON DELETE CASCADE,
+                    course_id TEXT NOT NULL,
+                    PRIMARY KEY(group_id, course_id)
+                );
+                -- 승급 이력
+                CREATE TABLE IF NOT EXISTS rank_history (
+                    id SERIAL PRIMARY KEY,
+                    student_id TEXT REFERENCES students(id),
+                    old_rank TEXT,
+                    new_rank TEXT,
+                    reason TEXT DEFAULT '',
+                    created_at TIMESTAMPTZ DEFAULT now()
+                );
                 -- 학생 인프라
                 CREATE TABLE IF NOT EXISTS student_infras (
                     id TEXT PRIMARY KEY,
@@ -274,11 +300,38 @@ def _init_db():
             """)
             conn.commit()
 
+# ── 기본 그룹 시딩 ──────────────────────────────────
+DEFAULT_GROUPS = [
+    {"id": "commander", "name": "commander", "display_name": "Commander", "description": "전체 관리 (admin)"},
+    {"id": "trainer", "name": "trainer", "display_name": "Trainer", "description": "교관 (Instructor / Drill Leader / Chief Instructor)"},
+    {"id": "trainee", "name": "trainee", "display_name": "Trainee", "description": "교육생 (Rookie → Apprentice → Skilled → Expert → Elite)"},
+]
+
+# 승급 기준
+RANK_ORDER = ["rookie", "apprentice", "skilled", "expert", "elite"]
+RANK_REQUIREMENTS = {
+    "apprentice": {"labs_completed": 3, "total_blocks": 50},
+    "skilled": {"labs_completed": 16, "total_blocks": 200, "ctf_solved": 3},
+    "expert": {"labs_completed": 60, "total_blocks": 500, "battles": 5, "advanced_courses": 1},
+    "elite": {"labs_completed": 120, "total_blocks": 1000, "battles": 10, "ctf_solved": 20, "advanced_courses": 3},
+}
+
+def _seed_groups():
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            for g in DEFAULT_GROUPS:
+                cur.execute(
+                    "INSERT INTO ccc_groups (id, name, display_name, description) VALUES (%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                    (g["id"], g["name"], g["display_name"], g["description"]),
+                )
+            conn.commit()
+
 # ── Lifespan ───────────────────────────────────────
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     try:
         _init_db()
+        _seed_groups()
     except Exception as e:
         print(f"[CCC] DB init warning: {e}")
     yield
@@ -348,8 +401,8 @@ def register(body: RegisterBody):
             if cur.fetchone():
                 raise HTTPException(409, "이미 등록된 학번입니다")
             cur.execute(
-                """INSERT INTO students (id, student_id, name, email, password_hash, role, grp)
-                   VALUES (%s,%s,%s,%s,%s,'student',%s) RETURNING id, student_id, name, email, role, grp""",
+                """INSERT INTO students (id, student_id, name, email, password_hash, role, rank, group_id, grp)
+                   VALUES (%s,%s,%s,%s,%s,'trainee','rookie','trainee',%s) RETURNING id, student_id, name, email, role, rank, group_id, grp""",
                 (sid, body.student_id, body.name, body.email, pw_hash, body.group),
             )
             row = cur.fetchone()
@@ -406,6 +459,150 @@ def create_admin(body: RegisterBody):
             conn.commit()
     token = _jwt_encode({"sub": sid, "student_id": body.student_id, "name": body.name, "role": "admin", "exp": _time.time() + 86400 * 30})
     return {"user": dict(row), "token": token}
+
+# ══════════════════════════════════════════════════
+#  Groups (그룹 관리)
+# ══════════════════════════════════════════════════
+class GroupBody(BaseModel):
+    name: str
+    display_name: str = ""
+    description: str = ""
+
+@app.get("/groups", dependencies=[Depends(verify_api_key)])
+def list_groups():
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT g.*, count(s.id) as member_count,
+                       array_agg(DISTINCT gc.course_id) FILTER (WHERE gc.course_id IS NOT NULL) as courses
+                FROM ccc_groups g
+                LEFT JOIN students s ON s.group_id = g.id
+                LEFT JOIN group_courses gc ON gc.group_id = g.id
+                GROUP BY g.id ORDER BY g.created_at
+            """)
+            rows = cur.fetchall()
+    return {"groups": [dict(r) for r in rows]}
+
+@app.post("/groups", dependencies=[Depends(verify_api_key)])
+def create_group(body: GroupBody, request: Request):
+    user = get_current_user(request)
+    if user.get("role") not in ("admin", "commander"):
+        raise HTTPException(403, "Commander only")
+    gid = str(uuid.uuid4())[:8]
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("INSERT INTO ccc_groups (id, name, display_name, description) VALUES (%s,%s,%s,%s) RETURNING *",
+                        (gid, body.name, body.display_name or body.name, body.description))
+            row = cur.fetchone()
+            conn.commit()
+    return {"group": dict(row)}
+
+@app.delete("/groups/{gid}", dependencies=[Depends(verify_api_key)])
+def delete_group(gid: str, request: Request):
+    user = get_current_user(request)
+    if user.get("role") not in ("admin", "commander"):
+        raise HTTPException(403, "Commander only")
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE students SET group_id=NULL WHERE group_id=%s", (gid,))
+            cur.execute("DELETE FROM ccc_groups WHERE id=%s", (gid,))
+            conn.commit()
+    return {"deleted": gid}
+
+class GroupAssignBody(BaseModel):
+    student_id: str
+    group_id: str
+
+@app.post("/groups/assign", dependencies=[Depends(verify_api_key)])
+def assign_group(body: GroupAssignBody, request: Request):
+    user = get_current_user(request)
+    if user.get("role") not in ("admin", "commander", "trainer"):
+        raise HTTPException(403, "Commander/Trainer only")
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE students SET group_id=%s WHERE id=%s", (body.group_id, body.student_id))
+            conn.commit()
+    return {"assigned": body.student_id, "group": body.group_id}
+
+class GroupCourseBody(BaseModel):
+    course_ids: list[str]
+
+@app.put("/groups/{gid}/courses", dependencies=[Depends(verify_api_key)])
+def set_group_courses(gid: str, body: GroupCourseBody, request: Request):
+    user = get_current_user(request)
+    if user.get("role") not in ("admin", "commander"):
+        raise HTTPException(403, "Commander only")
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("DELETE FROM group_courses WHERE group_id=%s", (gid,))
+            for cid in body.course_ids:
+                cur.execute("INSERT INTO group_courses (group_id, course_id) VALUES (%s,%s) ON CONFLICT DO NOTHING", (gid, cid))
+            conn.commit()
+    return {"group_id": gid, "courses": body.course_ids}
+
+# ══════════════════════════════════════════════════
+#  Rank (승급)
+# ══════════════════════════════════════════════════
+@app.get("/rank/check/{student_id}", dependencies=[Depends(verify_api_key)])
+def check_rank(student_id: str):
+    """승급 가능 여부 확인"""
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM students WHERE id=%s", (student_id,))
+            student = cur.fetchone()
+            if not student:
+                raise HTTPException(404)
+            current = student.get("rank", "rookie")
+            idx = RANK_ORDER.index(current) if current in RANK_ORDER else 0
+            if idx >= len(RANK_ORDER) - 1:
+                return {"current_rank": current, "next_rank": None, "can_promote": False, "message": "최고 등급입니다"}
+            next_rank = RANK_ORDER[idx + 1]
+            req = RANK_REQUIREMENTS.get(next_rank, {})
+            # 현재 통계
+            cur.execute("SELECT count(*) as cnt FROM lab_completions WHERE student_id=%s AND status='completed'", (student_id,))
+            labs = cur.fetchone()["cnt"]
+            cur.execute("SELECT count(*) as cnt FROM ctf_submissions WHERE student_id=%s AND correct=true", (student_id,))
+            ctf = cur.fetchone()["cnt"]
+            cur.execute("SELECT count(*) as cnt FROM battles WHERE (red_id=%s OR blue_id=%s) AND status='completed'", (student_id, student_id))
+            battles = cur.fetchone()["cnt"]
+            blocks = student.get("total_blocks", 0)
+
+    met = {
+        "labs_completed": labs >= req.get("labs_completed", 0),
+        "total_blocks": blocks >= req.get("total_blocks", 0),
+        "ctf_solved": ctf >= req.get("ctf_solved", 0),
+        "battles": battles >= req.get("battles", 0),
+    }
+    can = all(met.values())
+    return {
+        "current_rank": current, "next_rank": next_rank, "can_promote": can,
+        "requirements": req, "current_stats": {"labs": labs, "blocks": blocks, "ctf": ctf, "battles": battles},
+        "met": met,
+    }
+
+@app.post("/rank/promote/{student_id}", dependencies=[Depends(verify_api_key)])
+def promote_rank(student_id: str, request: Request):
+    """승급 실행"""
+    check = check_rank(student_id)
+    if not check["can_promote"]:
+        raise HTTPException(400, f"승급 조건 미충족: {check['met']}")
+    new_rank = check["next_rank"]
+    old_rank = check["current_rank"]
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE students SET rank=%s WHERE id=%s", (new_rank, student_id))
+            cur.execute("INSERT INTO rank_history (student_id, old_rank, new_rank, reason) VALUES (%s,%s,%s,%s)",
+                        (student_id, old_rank, new_rank, f"Auto promotion: met all requirements"))
+            conn.commit()
+    return {"promoted": True, "old_rank": old_rank, "new_rank": new_rank}
+
+@app.get("/rank/history/{student_id}", dependencies=[Depends(verify_api_key)])
+def rank_history(student_id: str):
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM rank_history WHERE student_id=%s ORDER BY created_at DESC", (student_id,))
+            rows = cur.fetchall()
+    return {"history": [dict(r) for r in rows]}
 
 # ══════════════════════════════════════════════════
 #  Students (학생 관리)
