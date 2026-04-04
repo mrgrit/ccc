@@ -188,9 +188,17 @@ def _init_db():
                     id TEXT PRIMARY KEY,
                     battle_type TEXT DEFAULT '1v1',
                     mode TEXT DEFAULT 'manual',
-                    challenger_id TEXT REFERENCES students(id),
-                    defender_id TEXT REFERENCES students(id),
-                    status TEXT DEFAULT 'pending',
+                    scenario_id TEXT DEFAULT '',
+                    red_id TEXT,
+                    blue_id TEXT,
+                    challenger_id TEXT,
+                    defender_id TEXT,
+                    red_score INT DEFAULT 0,
+                    blue_score INT DEFAULT 0,
+                    red_ready BOOLEAN DEFAULT false,
+                    blue_ready BOOLEAN DEFAULT false,
+                    status TEXT DEFAULT 'waiting',
+                    time_limit INT DEFAULT 1800,
                     rules JSONB DEFAULT '{}',
                     result JSONB DEFAULT '{}',
                     block_hash TEXT,
@@ -198,6 +206,47 @@ def _init_db():
                     ended_at TIMESTAMPTZ,
                     created_at TIMESTAMPTZ DEFAULT now()
                 );
+                -- 대전 이벤트 (영속)
+                CREATE TABLE IF NOT EXISTS battle_events (
+                    id SERIAL PRIMARY KEY,
+                    battle_id TEXT NOT NULL,
+                    event_type TEXT NOT NULL,
+                    actor TEXT NOT NULL,
+                    team TEXT DEFAULT '',
+                    target TEXT DEFAULT '',
+                    description TEXT DEFAULT '',
+                    points INT DEFAULT 0,
+                    detail JSONB DEFAULT '{}',
+                    created_at TIMESTAMPTZ DEFAULT now()
+                );
+                -- 대전 미션 진행
+                CREATE TABLE IF NOT EXISTS battle_missions (
+                    id SERIAL PRIMARY KEY,
+                    battle_id TEXT NOT NULL,
+                    team TEXT NOT NULL,
+                    mission_order INT NOT NULL,
+                    instruction TEXT NOT NULL,
+                    hint TEXT DEFAULT '',
+                    points INT DEFAULT 10,
+                    verify_type TEXT DEFAULT '',
+                    verify_expect TEXT DEFAULT '',
+                    status TEXT DEFAULT 'pending',
+                    answer TEXT DEFAULT '',
+                    submitted_at TIMESTAMPTZ,
+                    UNIQUE(battle_id, team, mission_order)
+                );
+                -- 스키마 업그레이드
+                DO $$ BEGIN
+                    ALTER TABLE battles ADD COLUMN IF NOT EXISTS scenario_id TEXT DEFAULT '';
+                    ALTER TABLE battles ADD COLUMN IF NOT EXISTS red_id TEXT;
+                    ALTER TABLE battles ADD COLUMN IF NOT EXISTS blue_id TEXT;
+                    ALTER TABLE battles ADD COLUMN IF NOT EXISTS red_score INT DEFAULT 0;
+                    ALTER TABLE battles ADD COLUMN IF NOT EXISTS blue_score INT DEFAULT 0;
+                    ALTER TABLE battles ADD COLUMN IF NOT EXISTS red_ready BOOLEAN DEFAULT false;
+                    ALTER TABLE battles ADD COLUMN IF NOT EXISTS blue_ready BOOLEAN DEFAULT false;
+                    ALTER TABLE battles ADD COLUMN IF NOT EXISTS time_limit INT DEFAULT 1800;
+                EXCEPTION WHEN others THEN NULL;
+                END $$;
                 -- PoW 블록
                 CREATE TABLE IF NOT EXISTS pow_blocks (
                     id SERIAL PRIMARY KEY,
@@ -862,43 +911,233 @@ def ctf_scoreboard():
     return {"scoreboard": [dict(r) for r in rows]}
 
 # ══════════════════════════════════════════════════
+#  Battle Scenarios (시나리오 관리)
+# ══════════════════════════════════════════════════
+import yaml as _yaml
+_SCENARIOS_DIR = str(_pathlib.Path(__file__).parent.parent.parent.parent / "contents" / "battle-scenarios")
+
+@app.get("/battles/scenarios", dependencies=[Depends(verify_api_key)])
+def list_scenarios():
+    """사용 가능한 대전 시나리오 목록"""
+    import glob
+    scenarios = []
+    for f in sorted(glob.glob(os.path.join(_SCENARIOS_DIR, "*.yaml"))):
+        with open(f, encoding="utf-8") as fh:
+            d = _yaml.safe_load(fh)
+        scenarios.append({
+            "id": d["id"], "title": d["title"], "description": d.get("description", ""),
+            "difficulty": d.get("difficulty", "medium"), "time_limit": d.get("time_limit", 1800),
+            "red_missions": len(d.get("red_missions", [])), "blue_missions": len(d.get("blue_missions", [])),
+        })
+    return {"scenarios": scenarios}
+
+def _load_scenario(scenario_id: str) -> dict | None:
+    import glob
+    for f in glob.glob(os.path.join(_SCENARIOS_DIR, "*.yaml")):
+        with open(f, encoding="utf-8") as fh:
+            d = _yaml.safe_load(fh)
+        if d.get("id") == scenario_id:
+            return d
+    return None
+
+# ══════════════════════════════════════════════════
 #  Battles (대전)
 # ══════════════════════════════════════════════════
-@app.post("/battles", dependencies=[Depends(verify_api_key)])
-def create_battle(body: BattleRequest):
+class BattleCreateBody(BaseModel):
+    scenario_id: str
+    mode: str = "manual"
+    time_limit: int | None = None  # None이면 시나리오 기본값
+
+@app.post("/battles/create", dependencies=[Depends(verify_api_key)])
+def create_battle(body: BattleCreateBody, request: Request):
+    """대전 개설 (admin/instructor 또는 학생)"""
+    user = get_current_user(request)
+    scenario = _load_scenario(body.scenario_id)
+    if not scenario:
+        raise HTTPException(404, "Scenario not found")
     bid = str(uuid.uuid4())[:8]
+    tl = body.time_limit or scenario.get("time_limit", 1800)
     with _conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
-                """INSERT INTO battles (id, battle_type, mode, challenger_id, defender_id, rules, status)
-                   VALUES (%s,%s,%s,%s,%s,%s,'pending') RETURNING *""",
-                (bid, body.battle_type, body.mode, body.challenger_id, body.defender_id, Json(body.rules)),
+                """INSERT INTO battles (id, battle_type, mode, scenario_id, status, time_limit, rules)
+                   VALUES (%s, %s, %s, %s, 'waiting', %s, %s) RETURNING *""",
+                (bid, scenario.get("battle_type", "1v1"), body.mode, body.scenario_id, tl, Json({"created_by": user.get("sub", "")})),
             )
-            conn.commit()
             row = cur.fetchone()
-    # battle_engine에도 등록
-    from packages.battle_engine import create_battle as be_create
-    be_create(bid, body.challenger_id, body.defender_id or "", body.battle_type, body.mode, body.rules)
-    return {"battle": dict(row)}
+            conn.commit()
+    return {"battle": dict(row), "scenario": {"title": scenario["title"], "description": scenario.get("description", "")}}
+
+class BattleJoinBody(BaseModel):
+    team: str  # "red" or "blue"
+
+@app.post("/battles/{bid}/join", dependencies=[Depends(verify_api_key)])
+def join_battle(bid: str, body: BattleJoinBody, request: Request):
+    """대전 참가 (역할 선택: red/blue)"""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    team = body.team.lower()
+    if team not in ("red", "blue"):
+        raise HTTPException(400, "team must be 'red' or 'blue'")
+    col = "red_id" if team == "red" else "blue_id"
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM battles WHERE id=%s", (bid,))
+            battle = cur.fetchone()
+            if not battle:
+                raise HTTPException(404, "Battle not found")
+            if battle["status"] != "waiting":
+                raise HTTPException(400, "Battle is not waiting for players")
+            if battle.get(col):
+                raise HTTPException(400, f"{team} team already has a player")
+            cur.execute(f"UPDATE battles SET {col}=%s WHERE id=%s RETURNING *", (uid, bid))
+            row = cur.fetchone()
+            conn.commit()
+    return {"battle": dict(row), "joined_as": team}
+
+@app.post("/battles/{bid}/ready", dependencies=[Depends(verify_api_key)])
+def ready_battle(bid: str, request: Request):
+    """Ready 표시. 양측 모두 ready면 자동 시작 + 미션 로드."""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM battles WHERE id=%s", (bid,))
+            battle = cur.fetchone()
+            if not battle:
+                raise HTTPException(404)
+            # 어느 팀인지
+            if battle["red_id"] == uid:
+                cur.execute("UPDATE battles SET red_ready=true WHERE id=%s", (bid,))
+            elif battle["blue_id"] == uid:
+                cur.execute("UPDATE battles SET blue_ready=true WHERE id=%s", (bid,))
+            else:
+                raise HTTPException(403, "You are not in this battle")
+            conn.commit()
+            # 양측 모두 ready?
+            cur.execute("SELECT * FROM battles WHERE id=%s", (bid,))
+            battle = cur.fetchone()
+            if battle["red_ready"] and battle["blue_ready"] and battle["red_id"] and battle["blue_id"]:
+                # 시작! 미션 로드
+                cur.execute("UPDATE battles SET status='active', started_at=now() WHERE id=%s", (bid,))
+                # 시나리오 미션 DB에 삽입
+                scenario = _load_scenario(battle["scenario_id"])
+                if scenario:
+                    for m in scenario.get("red_missions", []):
+                        cur.execute(
+                            "INSERT INTO battle_missions (battle_id, team, mission_order, instruction, hint, points, verify_type, verify_expect) VALUES (%s,'red',%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                            (bid, m["order"], m["instruction"], m.get("hint",""), m.get("points",10), m.get("verify",{}).get("type",""), m.get("verify",{}).get("expect","")),
+                        )
+                    for m in scenario.get("blue_missions", []):
+                        cur.execute(
+                            "INSERT INTO battle_missions (battle_id, team, mission_order, instruction, hint, points, verify_type, verify_expect) VALUES (%s,'blue',%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                            (bid, m["order"], m["instruction"], m.get("hint",""), m.get("points",10), m.get("verify",{}).get("type",""), m.get("verify",{}).get("expect","")),
+                        )
+                conn.commit()
+                cur.execute("SELECT * FROM battles WHERE id=%s", (bid,))
+                battle = cur.fetchone()
+    started = battle["status"] == "active"
+    return {"battle": dict(battle), "started": started}
+
+@app.get("/battles/{bid}/my-missions", dependencies=[Depends(verify_api_key)])
+def get_my_missions(bid: str, request: Request):
+    """내 미션 목록 (진행 상태 포함)"""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM battles WHERE id=%s", (bid,))
+            battle = cur.fetchone()
+            if not battle:
+                raise HTTPException(404)
+            team = "red" if battle["red_id"] == uid else "blue" if battle["blue_id"] == uid else None
+            if not team:
+                raise HTTPException(403, "Not in this battle")
+            cur.execute("SELECT * FROM battle_missions WHERE battle_id=%s AND team=%s ORDER BY mission_order", (bid, team))
+            missions = cur.fetchall()
+            # 상대 점수
+            cur.execute("SELECT COALESCE(sum(points),0) as pts FROM battle_missions WHERE battle_id=%s AND team=%s AND status='completed'", (bid, "red"))
+            red_pts = cur.fetchone()["pts"]
+            cur.execute("SELECT COALESCE(sum(points),0) as pts FROM battle_missions WHERE battle_id=%s AND team=%s AND status='completed'", (bid, "blue"))
+            blue_pts = cur.fetchone()["pts"]
+    # 남은 시간
+    remaining = battle["time_limit"]
+    if battle["started_at"]:
+        import datetime
+        elapsed = (datetime.datetime.now(datetime.timezone.utc) - battle["started_at"].replace(tzinfo=datetime.timezone.utc)).total_seconds()
+        remaining = max(0, battle["time_limit"] - elapsed)
+    return {
+        "battle_id": bid, "team": team, "status": battle["status"],
+        "red_score": red_pts, "blue_score": blue_pts,
+        "time_remaining": round(remaining),
+        "missions": [dict(m) for m in missions],
+    }
+
+class MissionSubmitBody(BaseModel):
+    mission_order: int
+    answer: str
+
+@app.post("/battles/{bid}/submit-mission", dependencies=[Depends(verify_api_key)])
+def submit_mission(bid: str, body: MissionSubmitBody, request: Request):
+    """미션 답변 제출 + 검증"""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM battles WHERE id=%s", (bid,))
+            battle = cur.fetchone()
+            if not battle or battle["status"] != "active":
+                raise HTTPException(400, "Battle not active")
+            team = "red" if battle["red_id"] == uid else "blue" if battle["blue_id"] == uid else None
+            if not team:
+                raise HTTPException(403, "Not in this battle")
+            cur.execute("SELECT * FROM battle_missions WHERE battle_id=%s AND team=%s AND mission_order=%s", (bid, team, body.mission_order))
+            mission = cur.fetchone()
+            if not mission:
+                raise HTTPException(404, "Mission not found")
+            if mission["status"] == "completed":
+                return {"status": "already_completed", "points": mission["points"]}
+            # 검증
+            passed = False
+            msg = ""
+            if mission["verify_type"] == "output_contains":
+                if mission["verify_expect"].lower() in body.answer.lower():
+                    passed = True
+                    msg = f"Found '{mission['verify_expect']}'"
+                else:
+                    msg = f"'{mission['verify_expect']}' not found"
+            elif mission["verify_type"]:
+                # 기타 검증 타입은 일단 통과
+                passed = bool(body.answer.strip())
+                msg = "Answer submitted"
+            else:
+                passed = bool(body.answer.strip())
+                msg = "No verification rule"
+            if passed:
+                cur.execute("UPDATE battle_missions SET status='completed', answer=%s, submitted_at=now() WHERE id=%s", (body.answer, mission["id"]))
+                # 이벤트 기록
+                cur.execute(
+                    "INSERT INTO battle_events (battle_id, event_type, actor, team, description, points) VALUES (%s,'mission_complete',%s,%s,%s,%s)",
+                    (bid, uid, team, f"Mission {body.mission_order} completed", mission["points"]),
+                )
+                # 점수 갱신
+                score_col = "red_score" if team == "red" else "blue_score"
+                cur.execute(f"UPDATE battles SET {score_col}={score_col}+%s WHERE id=%s", (mission["points"], bid))
+            conn.commit()
+    return {"passed": passed, "message": msg, "points": mission["points"] if passed else 0}
 
 @app.post("/battles/{bid}/start", dependencies=[Depends(verify_api_key)])
-def start_battle(bid: str):
+def force_start_battle(bid: str, request: Request):
+    """관리자 강제 시작"""
+    user = get_current_user(request)
+    if user.get("role") not in ("admin", "instructor"):
+        raise HTTPException(403, "Admin only")
     with _conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute(
-                "UPDATE battles SET status='active', started_at=now() WHERE id=%s AND status='pending' RETURNING *",
-                (bid,),
-            )
-            conn.commit()
+            cur.execute("UPDATE battles SET status='active', started_at=now() WHERE id=%s RETURNING *", (bid,))
             row = cur.fetchone()
-    if not row:
-        raise HTTPException(404, "Battle not found or not pending")
-    from packages.battle_engine import start_battle as be_start
-    try:
-        be_start(bid)
-    except Exception:
-        pass
-    return {"battle": dict(row)}
+            conn.commit()
+    return {"battle": dict(row) if row else None}
 
 class BattleEventInput(BaseModel):
     event_type: str   # attack, defend, detect, block, exploit, alert
@@ -991,11 +1230,11 @@ def end_battle(bid: str, result: dict[str, Any] = {}):
 
 @app.get("/battles", dependencies=[Depends(verify_api_key)])
 def list_battles(status: str | None = None):
-    q = "SELECT * FROM battles"
+    q = "SELECT b.*, s1.name as red_name, s2.name as blue_name FROM battles b LEFT JOIN students s1 ON b.red_id=s1.id LEFT JOIN students s2 ON b.blue_id=s2.id"
     params: list = []
     if status:
-        q += " WHERE status=%s"; params.append(status)
-    q += " ORDER BY created_at DESC"
+        q += " WHERE b.status=%s"; params.append(status)
+    q += " ORDER BY b.created_at DESC"
     with _conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(q, params)
