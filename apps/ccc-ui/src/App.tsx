@@ -8,11 +8,13 @@ import Labs from './pages/Labs.tsx'
 import Battle from './pages/Battle.tsx'
 import Leaderboard from './pages/Leaderboard.tsx'
 import Blockchain from './pages/Blockchain.tsx'
+import MyInfra from './pages/MyInfra.tsx'
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: '📊' },
   { to: '/education', label: 'Education', icon: '📚' },
   { to: '/labs', label: 'Labs', icon: '🔬' },
+  { to: '/my-infra', label: 'My Infra', icon: '🖥️' },
   { to: '/battle', label: 'Battle', icon: '⚔️' },
   { to: '/leaderboard', label: 'Leaderboard', icon: '🏆' },
   { to: '/blockchain', label: 'Blockchain', icon: '⛓️' },
@@ -68,6 +70,7 @@ export default function App() {
           <Route path="/dashboard" element={<Dashboard />} />
           <Route path="/education" element={<Education />} />
           <Route path="/labs" element={<Labs />} />
+          <Route path="/my-infra" element={<MyInfra />} />
           <Route path="/battle" element={<Battle />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/blockchain" element={<Blockchain />} />

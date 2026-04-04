@@ -38,9 +38,15 @@ export default function Battle() {
     } catch (e: any) { alert(e.message) }
   }
 
-  // 참가
+  // 참가 (인프라 체크)
   const joinBattle = async (bid: string, team: string) => {
     try {
+      // 내 인프라 있는지 확인
+      const infras = await api(`/api/infras?student_id=${user?.id}`).then(d => d.infras || []).catch(() => [])
+      if (infras.length === 0) {
+        alert('인프라가 등록되어 있지 않습니다.\nMy Infra 메뉴에서 먼저 인프라를 등록하세요.')
+        return
+      }
       await api(`/api/battles/${bid}/join`, { method: 'POST', body: JSON.stringify({ team }) })
       loadLobby()
     } catch (e: any) { alert(e.message) }
