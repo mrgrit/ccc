@@ -12,7 +12,7 @@ import MyInfra from './pages/MyInfra.tsx'
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: '📊' },
-  { to: '/education', label: 'Education', icon: '📚' },
+  { to: '/training', label: 'Training', icon: '📚' },
   { to: '/labs', label: 'Labs', icon: '🔬' },
   { to: '/my-infra', label: 'My Infra', icon: '🖥️' },
   { to: '/battle', label: 'Battle', icon: '⚔️' },
@@ -68,7 +68,7 @@ export default function App() {
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
-          <Route path="/education" element={<Education />} />
+          <Route path="/training" element={<Education />} />
           <Route path="/labs" element={<Labs />} />
           <Route path="/my-infra" element={<MyInfra />} />
           <Route path="/battle" element={<Battle />} />

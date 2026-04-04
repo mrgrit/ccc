@@ -63,7 +63,7 @@ export default function Education() {
   if (!selectedCourse) {
     return (
       <div>
-        <h2 style={{ fontSize: 26, fontWeight: 700, marginBottom: 8, color: '#e6edf3' }}>Education</h2>
+        <h2 style={{ fontSize: 26, fontWeight: 700, marginBottom: 8, color: '#e6edf3' }}>Training</h2>
         <p style={{ fontSize: 15, color: '#8b949e', marginBottom: 28 }}>교과목을 선택하면 주차별 교안과 실습을 확인할 수 있습니다.</p>
         {groups.map(g => (
           <div key={g.group} style={{ marginBottom: 36 }}>
