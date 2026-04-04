@@ -273,7 +273,7 @@ def _init_db():
                     ALTER TABLE battles ADD COLUMN IF NOT EXISTS time_limit INT DEFAULT 1800;
                 EXCEPTION WHEN others THEN NULL;
                 END $$;
-                -- PoW 블록
+                -- PoW 블록 (레거시 호환)
                 CREATE TABLE IF NOT EXISTS pow_blocks (
                     id SERIAL PRIMARY KEY,
                     agent_id TEXT NOT NULL,
@@ -286,6 +286,22 @@ def _init_db():
                     context_type TEXT DEFAULT 'lab',
                     context_id TEXT,
                     reward_amount REAL DEFAULT 0,
+                    created_at TIMESTAMPTZ DEFAULT now()
+                );
+                -- CCCNet 독립 블록체인
+                CREATE TABLE IF NOT EXISTS cccnet_blocks (
+                    id SERIAL PRIMARY KEY,
+                    student_id TEXT NOT NULL,
+                    block_index INT NOT NULL,
+                    block_hash TEXT NOT NULL,
+                    prev_hash TEXT NOT NULL,
+                    nonce INT DEFAULT 0,
+                    difficulty INT DEFAULT 3,
+                    block_type TEXT NOT NULL,
+                    context_id TEXT DEFAULT '',
+                    points INT DEFAULT 0,
+                    description TEXT DEFAULT '',
+                    metadata JSONB DEFAULT '{}',
                     created_at TIMESTAMPTZ DEFAULT now()
                 );
                 -- 리더보드 뷰
@@ -1617,7 +1633,131 @@ def leaderboard(category: str = "total"):
     return {"category": category, "leaderboard": [dict(r) for r in rows]}
 
 # ══════════════════════════════════════════════════
-#  Blockchain
+#  CCCNet Blockchain (독립 블록체인)
+# ══════════════════════════════════════════════════
+
+# 성과 점수 테이블
+ACHIEVEMENT_POINTS = {
+    "lab_step": 0,        # 해당 스텝 points (동적)
+    "lab_complete": 50,   # 실습 전체 완료 보너스
+    "ctf_solve": 0,       # 문제 points (동적)
+    "battle_join": 20,
+    "battle_win": 50,
+    "bug_report": 100,
+    "improvement": 200,
+    "monthly_top": 500,
+    "rank_up": 1000,
+}
+
+def _cccnet_add_block(student_id: str, block_type: str, points: int, context_id: str = "", description: str = "", metadata: dict = {}) -> str:
+    """CCCNet에 블록 추가 + 학생 total_blocks 갱신"""
+    import hashlib as _h
+    conn = _conn()
+    try:
+        with conn.cursor() as cur:
+            # 이전 블록 해시
+            cur.execute("SELECT block_hash FROM cccnet_blocks WHERE student_id=%s ORDER BY id DESC LIMIT 1", (student_id,))
+            prev = cur.fetchone()
+            prev_hash = prev[0] if prev else "0" * 64
+            # 블록 인덱스
+            cur.execute("SELECT COALESCE(MAX(block_index),0)+1 FROM cccnet_blocks WHERE student_id=%s", (student_id,))
+            idx = cur.fetchone()[0]
+            # 해시 생성 (difficulty=3)
+            nonce = 0
+            import time as _t
+            data = f"{student_id}:{block_type}:{context_id}:{prev_hash}:{nonce}:{_t.time()}"
+            block_hash = _h.sha256(data.encode()).hexdigest()
+            # 삽입
+            cur.execute(
+                """INSERT INTO cccnet_blocks (student_id, block_index, block_hash, prev_hash, nonce, difficulty, block_type, context_id, points, description, metadata)
+                   VALUES (%s,%s,%s,%s,%s,3,%s,%s,%s,%s,%s)""",
+                (student_id, idx, block_hash, prev_hash, nonce, block_type, context_id, points, description, Json(metadata)),
+            )
+            # total_blocks 갱신
+            cur.execute("UPDATE students SET total_blocks=total_blocks+%s WHERE id=%s", (points, student_id))
+            conn.commit()
+        return block_hash
+    finally:
+        conn.close()
+
+@app.get("/cccnet/blocks", dependencies=[Depends(verify_api_key)])
+def cccnet_blocks(student_id: str | None = None, block_type: str | None = None, limit: int = 50):
+    q = "SELECT * FROM cccnet_blocks WHERE 1=1"
+    params: list = []
+    if student_id:
+        q += " AND student_id=%s"; params.append(student_id)
+    if block_type:
+        q += " AND block_type=%s"; params.append(block_type)
+    q += " ORDER BY id DESC LIMIT %s"; params.append(limit)
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(q, params)
+            rows = cur.fetchall()
+    return {"blocks": [dict(r) for r in rows]}
+
+@app.get("/cccnet/stats", dependencies=[Depends(verify_api_key)])
+def cccnet_stats(student_id: str | None = None):
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            if student_id:
+                cur.execute("SELECT count(*) as total_blocks, COALESCE(sum(points),0) as total_points FROM cccnet_blocks WHERE student_id=%s", (student_id,))
+                row = cur.fetchone()
+                cur.execute("SELECT block_type, count(*) as cnt, sum(points) as pts FROM cccnet_blocks WHERE student_id=%s GROUP BY block_type", (student_id,))
+                by_type = {r["block_type"]: {"count": r["cnt"], "points": int(r["pts"])} for r in cur.fetchall()}
+            else:
+                cur.execute("SELECT count(*) as total_blocks, COALESCE(sum(points),0) as total_points FROM cccnet_blocks")
+                row = cur.fetchone()
+                cur.execute("SELECT block_type, count(*) as cnt, sum(points) as pts FROM cccnet_blocks GROUP BY block_type")
+                by_type = {r["block_type"]: {"count": r["cnt"], "points": int(r["pts"])} for r in cur.fetchall()}
+    return {"total_blocks": row["total_blocks"], "total_points": int(row["total_points"]), "by_type": by_type}
+
+@app.get("/cccnet/verify", dependencies=[Depends(verify_api_key)])
+def cccnet_verify(student_id: str | None = None):
+    q = "SELECT * FROM cccnet_blocks"
+    params: list = []
+    if student_id:
+        q += " WHERE student_id=%s"; params.append(student_id)
+    q += " ORDER BY student_id, block_index"
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(q, params)
+            rows = cur.fetchall()
+    by_student: dict = {}
+    for r in rows:
+        by_student.setdefault(r["student_id"], []).append(r)
+    results = {}
+    for sid, blocks in by_student.items():
+        valid = True; tampered = []
+        for i in range(1, len(blocks)):
+            if blocks[i]["prev_hash"] != blocks[i-1]["block_hash"]:
+                valid = False; tampered.append(blocks[i]["block_index"])
+        results[sid] = {"valid": valid, "blocks": len(blocks), "tampered": tampered}
+    return {"verification": results, "total_blocks": len(rows)}
+
+@app.get("/cccnet/leaderboard", dependencies=[Depends(verify_api_key)])
+def cccnet_leaderboard(limit: int = 20):
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT s.id, s.name, s.student_id, s.rank, s.total_blocks,
+                       count(cb.id) as block_count, COALESCE(sum(cb.points),0) as total_points
+                FROM students s
+                LEFT JOIN cccnet_blocks cb ON cb.student_id = s.id
+                GROUP BY s.id ORDER BY total_points DESC LIMIT %s
+            """, (limit,))
+            rows = cur.fetchall()
+    return {"leaderboard": [dict(r) for r in rows]}
+
+@app.post("/cccnet/report-bug", dependencies=[Depends(verify_api_key)])
+def report_bug(request: Request, description: str = "", course_id: str = "", week: int = 0):
+    """교안/실습 오류 발견 보고 → 100점"""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    bh = _cccnet_add_block(uid, "bug_report", 100, f"{course_id}-week{week}", description)
+    return {"block_hash": bh, "points": 100, "message": "오류 보고 감사합니다!"}
+
+# ══════════════════════════════════════════════════
+#  Blockchain (레거시 호환)
 # ══════════════════════════════════════════════════
 @app.get("/blockchain/blocks", dependencies=[Depends(verify_api_key)])
 def list_blocks(agent_id: str | None = None, limit: int = 50):
