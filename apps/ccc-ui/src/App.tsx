@@ -9,6 +9,7 @@ import Battle from './pages/Battle.tsx'
 import Leaderboard from './pages/Leaderboard.tsx'
 import Blockchain from './pages/Blockchain.tsx'
 import MyInfra from './pages/MyInfra.tsx'
+import ChatBot from './components/ChatBot.tsx'
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: '📊' },
@@ -76,6 +77,7 @@ export default function App() {
           <Route path="/blockchain" element={<Blockchain />} />
         </Routes>
       </main>
+      <ChatBot />
     </div>
   )
 }

@@ -1673,6 +1673,53 @@ def leaderboard(category: str = "total"):
     return {"category": category, "leaderboard": [dict(r) for r in rows]}
 
 # ══════════════════════════════════════════════════
+#  ChatBot (AI 튜터)
+# ══════════════════════════════════════════════════
+class ChatBody(BaseModel):
+    message: str
+    context: dict[str, Any] = {}
+
+@app.post("/chat", dependencies=[Depends(verify_api_key)])
+def chat(body: ChatBody, request: Request):
+    """AI 튜터 챗봇 — 사용법, 학습 내용 질의응답"""
+    user = get_current_user(request)
+    import httpx as _hxc
+    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://192.168.0.105:11434")
+    model = os.getenv("CHAT_LLM_MODEL", "gpt-oss:120b")
+
+    system_prompt = f"""너는 CCC(Cyber Combat Commander) 사이버보안 교육 플랫폼의 AI 튜터다.
+학생의 질문에 친절하고 정확하게 답변한다.
+
+현재 사용자: {user.get('name', '학생')} (rank: {user.get('rank', 'rookie')})
+현재 페이지: {body.context.get('page', '')}
+
+CCC 시스템 안내:
+- Training: 15개 교과목의 교안과 실습 (공격/방어/AI/실전)
+- Labs: 문제 풀이 + 자동 채점
+- Battle: 공방전 (Red vs Blue)
+- My Infra: 학생 인프라 등록 (6대 VM)
+- CCCNet: 블록체인 성과 관리
+- CTF: AI 자동 출제 문제
+
+한국어로 답변. 간결하고 실용적으로."""
+
+    try:
+        r = _hxc.post(f"{ollama_url}/api/chat", json={
+            "model": model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": body.message},
+            ],
+            "stream": False,
+            "options": {"temperature": 0.5, "num_predict": 500},
+        }, timeout=60.0)
+        reply = r.json().get("message", {}).get("content", "응답 생성 실패")
+    except Exception as e:
+        reply = f"AI 서버 연결 실패: {str(e)[:100]}"
+
+    return {"reply": reply}
+
+# ══════════════════════════════════════════════════
 #  CTF (문제 관리 + 자동 출제 + 제출)
 # ══════════════════════════════════════════════════
 
