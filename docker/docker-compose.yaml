@@ -1,4 +1,5 @@
 version: "3.8"
+
 services:
   postgres:
     image: postgres:15
@@ -7,22 +8,29 @@ services:
       POSTGRES_PASSWORD: ccc
       POSTGRES_DB: ccc
     ports:
-      - "5434:5432"
+      - "${DB_PORT:-5434}:5432"
     volumes:
       - ccc-pgdata:/var/lib/postgresql/data
+    restart: unless-stopped
 
   ccc-api:
     build: ..
-    command: >
-      python -m uvicorn apps.ccc-api.src.main:app
-      --host 0.0.0.0 --port 9100
+    ports:
+      - "${CCC_PORT:-9100}:9100"
     environment:
       DATABASE_URL: postgresql://ccc:ccc@postgres:5432/ccc
-      CCC_API_KEY: ccc-api-key-2026
-    ports:
-      - "9100:9100"
+      CCC_API_KEY: ${CCC_API_KEY:-ccc-api-key-2026}
+      JWT_SECRET: ${JWT_SECRET:-ccc-jwt-secret-2026}
+      OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434}
+      EDUCATION_DIR: /app/education
+      BASTION_URL: ${BASTION_URL:-}
+      BASTION_API_KEY: ${BASTION_API_KEY:-}
+    volumes:
+      # 교안을 외부에서 마운트 가능
+      - ${EDUCATION_DIR:-../contents/education}:/app/education:ro
     depends_on:
       - postgres
+    restart: unless-stopped
 
 volumes:
   ccc-pgdata:
