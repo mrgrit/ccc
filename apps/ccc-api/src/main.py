@@ -502,6 +502,100 @@ def list_infras(student_id: str | None = None):
             rows = cur.fetchall()
     return {"infras": [dict(r) for r in rows]}
 
+class InfraSetupBody(BaseModel):
+    attacker_ip: str
+    secu_ip: str
+    web_ip: str
+    siem_ip: str
+    ssh_user: str = "opsclaw"
+    ssh_password: str = "1"
+    ollama_url: str = ""  # 비어있으면 dgx-spark 폴백
+
+@app.post("/infras/setup", dependencies=[Depends(verify_api_key)])
+def setup_infra(body: InfraSetupBody, request: Request):
+    """학생 인프라 4대 일괄 등록 + Bastion AI 온보딩 요청"""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    ollama = body.ollama_url or os.getenv("OLLAMA_FALLBACK_URL", "http://192.168.0.105:11434")
+
+    vms = [
+        {"role": "attacker", "name": f"{uid}-attacker", "ip": body.attacker_ip, "subagent": False},
+        {"role": "secu", "name": f"{uid}-secu", "ip": body.secu_ip, "subagent": True},
+        {"role": "web", "name": f"{uid}-web", "ip": body.web_ip, "subagent": True},
+        {"role": "siem", "name": f"{uid}-siem", "ip": body.siem_ip, "subagent": True},
+    ]
+
+    results = []
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # 기존 인프라 삭제 (재등록 지원)
+            cur.execute("DELETE FROM student_infras WHERE student_id=%s", (uid,))
+
+            for vm in vms:
+                iid = str(uuid.uuid4())[:8]
+                subagent_url = f"http://{vm['ip']}:8002" if vm["subagent"] else ""
+                cur.execute(
+                    """INSERT INTO student_infras (id, student_id, infra_name, ip, subagent_url, vm_config, status)
+                       VALUES (%s,%s,%s,%s,%s,%s,'registered')""",
+                    (iid, uid, vm["name"], vm["ip"], subagent_url,
+                     Json({"role": vm["role"], "ssh_user": body.ssh_user, "ollama_url": ollama})),
+                )
+                results.append({"id": iid, "role": vm["role"], "ip": vm["ip"], "subagent_url": subagent_url, "status": "registered"})
+            conn.commit()
+
+    # Bastion AI에 온보딩 요청 (SubAgent 설치)
+    import httpx as _hx
+    bastion_url = os.getenv("BASTION_URL", "http://localhost:9000")
+    bastion_key = os.getenv("BASTION_API_KEY", "bastion-api-key-2026")
+    onboard_results = []
+
+    for vm in vms:
+        if not vm["subagent"]:
+            onboard_results.append({"role": vm["role"], "status": "skip (attacker)"})
+            continue
+        try:
+            # Bastion에 자산 등록
+            r = _hx.post(f"{bastion_url}/assets", json={
+                "name": vm["name"], "ip": vm["ip"], "role": vm["role"],
+                "ssh_user": body.ssh_user,
+            }, headers={"X-API-Key": bastion_key}, timeout=10.0)
+            asset_id = r.json().get("asset", {}).get("id", "")
+
+            # 온보딩 (SubAgent 설치)
+            r2 = _hx.post(f"{bastion_url}/assets/{asset_id}/onboard", json={
+                "ssh_password": body.ssh_password, "auto_bootstrap": True,
+            }, headers={"X-API-Key": bastion_key}, timeout=30.0)
+            ob = r2.json()
+            status = ob.get("status", "error")
+            onboard_results.append({"role": vm["role"], "status": status, "asset_id": asset_id})
+
+            # CCC DB 상태 업데이트
+            with _conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE student_infras SET status=%s WHERE student_id=%s AND ip=%s",
+                                (status, uid, vm["ip"]))
+                    conn.commit()
+        except Exception as e:
+            onboard_results.append({"role": vm["role"], "status": f"error: {e}"})
+
+    return {
+        "infras": results,
+        "onboarding": onboard_results,
+        "ollama_url": ollama,
+        "message": "인프라 등록 완료. SubAgent 설치 상태를 확인하세요.",
+    }
+
+@app.get("/infras/my", dependencies=[Depends(verify_api_key)])
+def my_infra(request: Request):
+    """내 인프라 목록 (로그인 사용자)"""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM student_infras WHERE student_id=%s ORDER BY created_at", (uid,))
+            rows = cur.fetchall()
+    return {"infras": [dict(r) for r in rows]}
+
 @app.get("/infras/{iid}/health", dependencies=[Depends(verify_api_key)])
 def check_infra_health(iid: str):
     with _conn() as conn:
