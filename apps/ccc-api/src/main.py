@@ -1673,6 +1673,91 @@ def leaderboard(category: str = "total"):
     return {"category": category, "leaderboard": [dict(r) for r in rows]}
 
 # ══════════════════════════════════════════════════
+#  User Analytics + AI Feedback (V2)
+# ══════════════════════════════════════════════════
+@app.get("/user/stats", dependencies=[Depends(verify_api_key)])
+def user_stats(request: Request):
+    """내 학습 통계 종합"""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM students WHERE id=%s", (uid,))
+            student = cur.fetchone()
+            if not student:
+                raise HTTPException(404)
+            # Labs
+            cur.execute("SELECT count(*) as total, count(*) FILTER (WHERE status='completed') as done FROM lab_completions WHERE student_id=%s", (uid,))
+            labs = cur.fetchone()
+            cur.execute("SELECT lab_id, status, completed_at FROM lab_completions WHERE student_id=%s ORDER BY completed_at DESC LIMIT 10", (uid,))
+            recent_labs = cur.fetchall()
+            # CTF
+            cur.execute("SELECT count(*) FILTER (WHERE correct) as solved, count(*) as attempted, COALESCE(sum(points) FILTER (WHERE correct),0) as pts FROM ctf_submissions WHERE student_id=%s", (uid,))
+            ctf = cur.fetchone()
+            # Battles
+            cur.execute("SELECT count(*) as total FROM battles WHERE (red_id=%s OR blue_id=%s) AND status='completed'", (uid, uid))
+            battles = cur.fetchone()["total"]
+            cur.execute("SELECT count(*) as wins FROM battles WHERE status='completed' AND ((red_id=%s AND red_score>blue_score) OR (blue_id=%s AND blue_score>red_score))", (uid, uid))
+            wins = cur.fetchone()["wins"]
+            # CCCNet
+            cur.execute("SELECT block_type, count(*) as cnt, sum(points) as pts FROM cccnet_blocks WHERE student_id=%s GROUP BY block_type", (uid,))
+            blocks_by_type = {r["block_type"]: {"count": r["cnt"], "points": int(r["pts"])} for r in cur.fetchall()}
+            # 과목별 진도
+            cur.execute("""
+                SELECT split_part(lab_id, '-week', 1) as course, count(*) as done
+                FROM lab_completions WHERE student_id=%s AND status='completed'
+                GROUP BY course ORDER BY done DESC
+            """, (uid,))
+            course_progress = [dict(r) for r in cur.fetchall()]
+    return {
+        "student": {"name": student["name"], "student_id": student["student_id"], "rank": student.get("rank","rookie"), "total_blocks": student.get("total_blocks",0)},
+        "labs": {"total": labs["total"], "completed": labs["done"], "recent": [dict(r) for r in recent_labs]},
+        "ctf": {"solved": ctf["solved"], "attempted": ctf["attempted"], "points": int(ctf["pts"])},
+        "battles": {"total": battles, "wins": wins, "win_rate": round(wins/max(battles,1)*100)},
+        "blocks": blocks_by_type,
+        "course_progress": course_progress,
+    }
+
+@app.get("/user/ai-feedback", dependencies=[Depends(verify_api_key)])
+def ai_feedback(request: Request):
+    """AI 기반 학습 피드백"""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    # 통계 수집
+    stats = user_stats(request)
+    import httpx as _hxf
+    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://192.168.0.105:11434")
+    model = os.getenv("CHAT_LLM_MODEL", "gpt-oss:120b")
+    prompt = f"""다음 학생의 학습 데이터를 분석하고, 개인화된 피드백과 추천을 제공하세요.
+
+학생: {stats['student']['name']} (rank: {stats['student']['rank']})
+블록: {stats['student']['total_blocks']}
+
+Labs: {stats['labs']['completed']}/{stats['labs']['total']} 완료
+CTF: {stats['ctf']['solved']}/{stats['ctf']['attempted']} 해결 ({stats['ctf']['points']}pts)
+대전: {stats['battles']['total']}회 ({stats['battles']['wins']}승, 승률 {stats['battles']['win_rate']}%)
+
+과목별 진도: {stats['course_progress'][:10]}
+
+다음 항목으로 피드백 작성 (한국어, 간결하게):
+1. 강점 (잘하고 있는 부분)
+2. 약점 (보강 필요한 부분)
+3. 다음 추천 학습 (구체적 과목/주차)
+4. 승급 진행도 (현재 rank에서 다음 rank까지)
+5. 동기부여 한 마디"""
+
+    try:
+        r = _hxf.post(f"{ollama_url}/api/chat", json={
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False, "options": {"temperature": 0.5, "num_predict": 800},
+        }, timeout=90.0)
+        feedback = r.json().get("message", {}).get("content", "피드백 생성 실패")
+    except Exception as e:
+        feedback = f"AI 서버 연결 실패: {str(e)[:100]}"
+    return {"feedback": feedback, "stats": stats}
+
+# ══════════════════════════════════════════════════
 #  ChatBot (AI 튜터)
 # ══════════════════════════════════════════════════
 class ChatBody(BaseModel):
