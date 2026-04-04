@@ -3,10 +3,12 @@ import { api } from '../api.ts'
 import { getUser } from '../auth.ts'
 
 const ROLES = [
-  { role: 'attacker', label: 'Attacker (Kali)', icon: '🗡️', desc: '공격 도구 + Ollama LLM', needSubagent: false },
-  { role: 'secu', label: 'Security Gateway', icon: '🛡️', desc: 'nftables + Suricata IPS + SubAgent', needSubagent: true },
-  { role: 'web', label: 'Web Server', icon: '🌐', desc: 'Apache + JuiceShop + WAF + SubAgent', needSubagent: true },
-  { role: 'siem', label: 'SIEM', icon: '📡', desc: 'Wazuh + SubAgent', needSubagent: true },
+  { role: 'attacker', label: 'Attacker (Kali)', icon: '🗡️', desc: 'nmap, metasploit, hydra, sqlmap, burpsuite, impacket, bloodhound', needSubagent: true },
+  { role: 'secu', label: 'Security Gateway', icon: '🛡️', desc: 'nftables, suricata, sysmon, osquery, auditd', needSubagent: true },
+  { role: 'web', label: 'Web Server', icon: '🌐', desc: 'ModSecurity, JuiceShop, DVWA, WebGoat, sysmon, osquery', needSubagent: true },
+  { role: 'siem', label: 'SIEM', icon: '📡', desc: 'Wazuh, SIGMA, OpenCTI, sysmon, osquery, 로그 수집', needSubagent: true },
+  { role: 'windows', label: 'Windows (분석)', icon: '🪟', desc: 'Sysmon, osquery, Ghidra, x64dbg, Autopsy, FTK Imager', needSubagent: true },
+  { role: 'manager', label: 'Manager AI', icon: '🤖', desc: 'Ollama, gpt-oss:120b, bastion manager', needSubagent: true },
 ]
 
 const statusColor: Record<string, string> = {
@@ -22,6 +24,7 @@ export default function MyInfra() {
   const [form, setForm] = useState({
     attacker_ip: '', secu_ip: '', web_ip: '', siem_ip: '',
     ssh_user: 'opsclaw', ssh_password: '1', ollama_url: '',
+    windows_ip: '', manager_ip: '',
   })
 
   const load = () => {
@@ -168,7 +171,29 @@ export default function MyInfra() {
             </div>
             <input placeholder="IP (예: 10.20.30.100)" value={form.siem_ip}
               onChange={e => setForm({ ...form, siem_ip: e.target.value })} style={inputStyle} />
-            <div style={{ fontSize: 12, color: '#3fb950', marginTop: 6 }}>Wazuh + SubAgent 자동설치</div>
+            <div style={{ fontSize: 12, color: '#3fb950', marginTop: 6 }}>Wazuh + SIGMA + OpenCTI + SubAgent 자동설치</div>
+          </div>
+
+          {/* Windows */}
+          <div style={vmCard}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+              <span style={{ fontSize: 20 }}>🪟</span>
+              <span style={{ fontSize: 16, fontWeight: 600, color: '#e6edf3' }}>Windows (분석/포렌식)</span>
+            </div>
+            <input placeholder="IP (선택, 없으면 skip)" value={form.windows_ip}
+              onChange={e => setForm({ ...form, windows_ip: e.target.value })} style={inputStyle} />
+            <div style={{ fontSize: 12, color: '#8b949e', marginTop: 6 }}>Sysmon, Ghidra, x64dbg, Autopsy, FTK Imager</div>
+          </div>
+
+          {/* Manager AI */}
+          <div style={vmCard}>
+            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
+              <span style={{ fontSize: 20 }}>🤖</span>
+              <span style={{ fontSize: 16, fontWeight: 600, color: '#e6edf3' }}>Manager AI</span>
+            </div>
+            <input placeholder="IP (선택, 없으면 외부 GPU)" value={form.manager_ip}
+              onChange={e => setForm({ ...form, manager_ip: e.target.value })} style={inputStyle} />
+            <div style={{ fontSize: 12, color: '#8b949e', marginTop: 6 }}>Ollama + gpt-oss:120b (또는 외부 GPU 서버 연결)</div>
           </div>
         </div>
 

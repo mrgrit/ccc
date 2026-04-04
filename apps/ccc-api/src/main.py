@@ -715,28 +715,45 @@ def list_infras(student_id: str | None = None):
             rows = cur.fetchall()
     return {"infras": [dict(r) for r in rows]}
 
+# 각 VM에 설치할 소프트웨어 정의
+VM_SOFTWARE = {
+    "attacker": {"os": "Kali Linux", "packages": ["nmap","metasploit-framework","hydra","sqlmap","gobuster","impacket-scripts","bloodhound","crackmapexec","burpsuite","nikto","dirb","enum4linux","seclists"], "subagent": True},
+    "secu": {"os": "Ubuntu", "packages": ["nftables","suricata","sysmon-for-linux","osquery","auditd"], "subagent": True},
+    "web": {"os": "Ubuntu", "packages": ["sysmon-for-linux","osquery","auditd","libapache2-mod-security2","docker.io"], "apps": ["JuiceShop(:3000)","DVWA(:8081)","WebGoat(:8082)","HackableApp(:8083)"], "subagent": True},
+    "siem": {"os": "Ubuntu", "packages": ["sysmon-for-linux","osquery","auditd","wazuh-manager","wazuh-dashboard","sigma-cli"], "apps": ["Wazuh(:443)","OpenCTI(:9400)"], "subagent": True},
+    "windows": {"os": "Windows 10/11", "packages": ["sysmon","osquery","Ghidra","x64dbg","PEStudio","FLOSS","Autopsy","FTK-Imager","Wireshark","Process-Monitor"], "subagent": True},
+    "manager": {"os": "Ubuntu", "packages": ["ollama","bastion-manager"], "models": ["gpt-oss:120b"], "subagent": True},
+}
+
 class InfraSetupBody(BaseModel):
     attacker_ip: str
     secu_ip: str
     web_ip: str
     siem_ip: str
+    windows_ip: str = ""       # 선택 (없으면 skip)
+    manager_ip: str = ""       # 선택 (없으면 외부 GPU 사용)
     ssh_user: str = "opsclaw"
     ssh_password: str = "1"
-    ollama_url: str = ""  # 비어있으면 dgx-spark 폴백
+    ollama_url: str = ""       # manager 또는 학생 PC의 Ollama
+    gpu_type: str = "external" # external(dgx-spark) | local(학생PC) | manager(manager VM)
 
 @app.post("/infras/setup", dependencies=[Depends(verify_api_key)])
 def setup_infra(body: InfraSetupBody, request: Request):
-    """학생 인프라 4대 일괄 등록 + Bastion AI 온보딩 요청"""
+    """학생 인프라 6대 일괄 등록 + Bastion AI 온보딩 요청"""
     user = get_current_user(request)
     uid = user.get("sub", "")
     ollama = body.ollama_url or os.getenv("OLLAMA_FALLBACK_URL", "http://192.168.0.105:11434")
 
     vms = [
-        {"role": "attacker", "name": f"{uid}-attacker", "ip": body.attacker_ip, "subagent": False},
+        {"role": "attacker", "name": f"{uid}-attacker", "ip": body.attacker_ip, "subagent": True},
         {"role": "secu", "name": f"{uid}-secu", "ip": body.secu_ip, "subagent": True},
         {"role": "web", "name": f"{uid}-web", "ip": body.web_ip, "subagent": True},
         {"role": "siem", "name": f"{uid}-siem", "ip": body.siem_ip, "subagent": True},
     ]
+    if body.windows_ip:
+        vms.append({"role": "windows", "name": f"{uid}-windows", "ip": body.windows_ip, "subagent": True})
+    if body.manager_ip:
+        vms.append({"role": "manager", "name": f"{uid}-manager", "ip": body.manager_ip, "subagent": True})
 
     results = []
     with _conn() as conn:
@@ -807,7 +824,16 @@ def my_infra(request: Request):
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute("SELECT * FROM student_infras WHERE student_id=%s ORDER BY created_at", (uid,))
             rows = cur.fetchall()
-    return {"infras": [dict(r) for r in rows]}
+    # 소프트웨어 정보 추가
+    result = []
+    for r in rows:
+        d = dict(r)
+        cfg = d.get("vm_config", {}) or {}
+        role = cfg.get("role", "")
+        sw = VM_SOFTWARE.get(role, {})
+        d["software"] = sw
+        result.append(d)
+    return {"infras": result, "vm_specs": VM_SOFTWARE}
 
 @app.get("/infras/{iid}/health", dependencies=[Depends(verify_api_key)])
 def check_infra_health(iid: str):
