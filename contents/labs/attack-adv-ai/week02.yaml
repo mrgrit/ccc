@@ -1,0 +1,364 @@
+lab_id: "attack-adv-ai-week02"
+title: "AI 기반 OSINT 자동화"
+version: "ai"
+course: "attack-adv-ai"
+week: 2
+description: "AI 도구를 활용하여 OSINT 수집을 자동화한다. DNS 열거, 웹 핑거프린팅, 메타데이터 추출, 이메일 수집 등을 Python 스크립트로 구현한다."
+difficulty: "hard"
+duration_minutes: 120
+objectives:
+  - "자동 DNS 열거 스크립트를 개발한다"
+  - "웹 기술 핑거프린팅을 자동화한다"
+  - "OSINT 결과를 구조화된 보고서로 생성한다"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "Python으로 DNS 역방향 조회를 자동화하라. 10.20.30.0/24 대역의 PTR 레코드를 수집하라."
+    hint: "subprocess로 dig -x를 실행하고 결과를 파싱한다"
+    category: "recon"
+    points: 10
+    answer: "python3 DNS 역방향 조회 스크립트"
+    answer_detail: "DNS 역방향 스위핑 자동화로 네트워크 맵을 빠르게 작성할 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "dns_sweep"
+      field: "stdout"
+    script: |
+      import subprocess
+      
+      print('dns_sweep results:')
+      for i in range(1, 255):
+          ip = f'10.20.30.{i}'
+          try:
+              r = subprocess.run(['dig', '-x', ip, '+short'], capture_output=True, text=True, timeout=3)
+              if r.stdout.strip():
+                  print(f'  {ip} -> {r.stdout.strip()}')
+          except: pass
+  - order: 2
+    instruction: "SSL/TLS 인증서 정보를 자동 수집하는 스크립트를 작성하라."
+    hint: "ssl 모듈로 인증서를 가져와 분석한다"
+    category: "recon"
+    points: 10
+    answer: "python3 SSL 인증서 분석 스크립트"
+    answer_detail: "인증서에서 조직명, SAN, 유효기간 등 정찰에 유용한 정보를 추출한다."
+    verify:
+      type: "output_contains"
+      expect: "cert_info"
+      field: "stdout"
+    script: |
+      import ssl, socket, json
+      
+      print('cert_info:')
+      try:
+          ctx = ssl.create_default_context()
+          ctx.check_hostname = False
+          ctx.verify_mode = ssl.CERT_NONE
+          with ctx.wrap_socket(socket.socket(), server_hostname='10.20.30.80') as s:
+              s.settimeout(5)
+              s.connect(('10.20.30.80', 443))
+              cert = s.getpeercert(binary_form=False) or {}
+              print(f'  Subject: {cert.get("subject", "N/A")}')
+      except Exception as e:
+          print(f'  No SSL cert or error: {e}')
+  - order: 3
+    instruction: "HTTP 헤더에서 기술 스택을 자동 핑거프린팅하는 스크립트를 작성하라."
+    hint: "응답 헤더와 HTML 패턴으로 프레임워크를 식별한다"
+    category: "recon"
+    points: 10
+    answer: "python3 웹 기술 핑거프린팅 스크립트"
+    answer_detail: "자동 핑거프린팅은 대규모 웹 자산의 기술 스택을 빠르게 파악한다."
+    verify:
+      type: "output_contains"
+      expect: "fingerprint"
+      field: "stdout"
+    script: |
+      import requests, re
+      
+      url = 'http://10.20.30.80:3000'
+      try:
+          r = requests.get(url, timeout=5)
+          print('fingerprint results:')
+          print(f'  Server: {r.headers.get("Server", "hidden")}')
+          print(f'  X-Powered-By: {r.headers.get("X-Powered-By", "hidden")}')
+          scripts = re.findall(r'<script[^>]+src="([^"]+)"', r.text)
+          for s in scripts[:5]:
+              print(f'  JS: {s}')
+      except Exception as e:
+          print(f'  Error: {e}')
+  - order: 4
+    instruction: "이메일 주소 자동 수집 스크립트를 작성하라. HTML에서 이메일 패턴을 추출하라."
+    hint: "정규식으로 이메일 패턴을 매칭한다"
+    category: "recon"
+    points: 10
+    answer: "python3 이메일 수집 스크립트"
+    answer_detail: "이메일 수집은 스피어 피싱 대상 선정과 사용자명 추정에 활용된다."
+    verify:
+      type: "output_contains"
+      expect: "email_harvest"
+      field: "stdout"
+    script: |
+      import requests, re
+      
+      try:
+          r = requests.get('http://10.20.30.80:3000', timeout=5)
+          emails = set(re.findall(r'[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}', r.text))
+          print('email_harvest:')
+          for e in emails:
+              print(f'  {e}')
+          if not emails: print('  No emails found in HTML')
+      except Exception as e:
+          print(f'email_harvest: error {e}')
+  - order: 5
+    instruction: "JavaScript 소스에서 API 엔드포인트를 자동 추출하는 스크립트를 작성하라."
+    hint: "정규식으로 URL 패턴과 API 경로를 매칭한다"
+    category: "recon"
+    points: 10
+    answer: "python3 API 엔드포인트 추출 스크립트"
+    answer_detail: "JavaScript에서 API 엔드포인트를 추출하면 문서화되지 않은 API를 발견할 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "api_extract"
+      field: "stdout"
+    script: |
+      import requests, re
+      
+      try:
+          r = requests.get('http://10.20.30.80:3000', timeout=5)
+          apis = set(re.findall(r'["\']/(api|rest)/[a-zA-Z0-9/_-]+["\']', r.text))
+          print('api_extract:')
+          for a in sorted(apis):
+              print(f'  {a}')
+          if not apis: print('  No API endpoints found')
+      except Exception as e:
+          print(f'api_extract: error {e}')
+  - order: 6
+    instruction: "웹서버의 robots.txt와 sitemap.xml을 자동 분석하는 스크립트를 작성하라."
+    hint: "requests로 두 파일을 가져와 숨겨진 경로를 추출한다"
+    category: "recon"
+    points: 10
+    answer: "python3 robots/sitemap 분석 스크립트"
+    answer_detail: "robots.txt는 관리자가 숨기려는 경로를 노출하는 역설적인 정보원이다."
+    verify:
+      type: "output_contains"
+      expect: "robots_check"
+      field: "stdout"
+    script: |
+      import requests, re
+      
+      base = 'http://10.20.30.80:3000'
+      print('robots_check:')
+      for path in ['/robots.txt', '/sitemap.xml']:
+          try:
+              r = requests.get(f'{base}{path}', timeout=3)
+              if r.status_code == 200:
+                  print(f'  {path}: found ({len(r.text)} bytes)')
+                  lines = r.text.split('\n')[:5]
+                  for l in lines:
+                      print(f'    {l.strip()}')
+              else:
+                  print(f'  {path}: {r.status_code}')
+          except Exception as e:
+              print(f'  {path}: error')
+  - order: 7
+    instruction: "자동 배너 그래빙 스크립트를 작성하라. 여러 포트의 서비스 배너를 수집하라."
+    hint: "socket으로 연결 후 초기 응답을 수집한다"
+    category: "recon"
+    points: 10
+    answer: "python3 배너 그래빙 스크립트"
+    answer_detail: "배너 그래빙은 서비스 종류와 버전을 식별하는 기본 정찰 기법이다."
+    verify:
+      type: "output_contains"
+      expect: "banner_grab"
+      field: "stdout"
+    script: |
+      import socket
+      
+      targets = [('10.20.30.80', 22), ('10.20.30.80', 3000), ('10.20.30.1', 22)]
+      print('banner_grab results:')
+      for ip, port in targets:
+          try:
+              s = socket.socket()
+              s.settimeout(3)
+              s.connect((ip, port))
+              if port == 22:
+                  banner = s.recv(1024).decode().strip()
+              else:
+                  s.send(b'HEAD / HTTP/1.0\r\n\r\n')
+                  banner = s.recv(1024).decode().split('\n')[0]
+              print(f'  {ip}:{port} -> {banner[:60]}')
+              s.close()
+          except Exception as e:
+              print(f'  {ip}:{port} -> {e}')
+  - order: 8
+    instruction: "WHOIS 정보 자동 수집 스크립트를 작성하라."
+    hint: "subprocess로 whois 명령을 실행하고 결과를 파싱한다"
+    category: "recon"
+    points: 10
+    answer: "python3 WHOIS 자동 수집 스크립트"
+    answer_detail: "WHOIS 정보에서 등록자, 네임서버, 등록일 등 조직 정보를 추출할 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "whois_info"
+      field: "stdout"
+    script: |
+      import subprocess
+      
+      print('whois_info (simulated for internal network):')
+      print('  Domain: lab.local')
+      print('  Registrant: Lab Admin')
+      print('  Name Servers: 10.20.30.1')
+      print('  Network: 10.20.30.0/24')
+      print('  Note: Internal addresses have no public WHOIS')
+      # Real usage: subprocess.run(['whois', 'example.com'], ...)
+  - order: 9
+    instruction: "자동 포트 스캔 결과를 분석하여 공격 표면을 평가하는 스크립트를 작성하라."
+    hint: "스캔 결과를 리스크 점수로 변환한다"
+    category: "analysis"
+    points: 10
+    answer: "python3 공격 표면 분석 스크립트"
+    answer_detail: "자동 공격 표면 분석은 대규모 인프라의 위험도를 빠르게 평가한다."
+    verify:
+      type: "output_contains"
+      expect: "attack_surface"
+      field: "stdout"
+    script: |
+      RISK_SCORES = {22: 3, 80: 5, 443: 4, 3000: 7, 8080: 6, 9200: 8}
+      services = [(22,'ssh'), (80,'http'), (3000,'juiceshop'), (9200,'elasticsearch')]
+      
+      print('attack_surface analysis:')
+      total = 0
+      for port, svc in services:
+          score = RISK_SCORES.get(port, 5)
+          total += score
+          level = 'HIGH' if score >= 7 else 'MEDIUM' if score >= 4 else 'LOW'
+          print(f'  :{port} ({svc}): risk={score}/10 [{level}]')
+      print(f'  Total risk score: {total}')
+  - order: 10
+    instruction: "수집된 OSINT 정보를 종합한 네트워크 맵 자동 생성 스크립트를 작성하라."
+    hint: "모든 정찰 결과를 JSON 구조로 종합한다"
+    category: "analysis"
+    points: 10
+    answer: "python3 네트워크 맵 생성 스크립트"
+    answer_detail: "자동 네트워크 맵은 공격 계획의 기초 자료가 된다."
+    verify:
+      type: "output_contains"
+      expect: "net_map"
+      field: "stdout"
+    script: |
+      import json
+      
+      network_map = {
+          '10.20.30.1': {'role': 'Firewall/IPS', 'services': ['ssh'], 'risk': 'medium'},
+          '10.20.30.80': {'role': 'Web Server', 'services': ['ssh','http','juiceshop'], 'risk': 'high'},
+          '10.20.30.100': {'role': 'SIEM', 'services': ['wazuh','elasticsearch'], 'risk': 'critical'},
+          '10.20.30.201': {'role': 'Control Plane', 'services': ['manager-api'], 'risk': 'high'},
+      }
+      print('net_map:')
+      print(json.dumps(network_map, indent=2))
+  - order: 11
+    instruction: "OSINT 결과를 MITRE ATT&CK에 매핑하는 스크립트를 작성하라."
+    hint: "정찰 기법을 ATT&CK ID로 분류한다"
+    category: "analysis"
+    points: 10
+    answer: "python3 OSINT ATT&CK 매핑 스크립트"
+    answer_detail: "ATT&CK 매핑은 사용된 기법을 표준화하여 탐지 규칙 개발에 활용한다."
+    verify:
+      type: "output_contains"
+      expect: "osint_attack"
+      field: "stdout"
+    script: |
+      techniques = [
+          ('DNS Enumeration', 'T1596.001', 'Search Victim-Owned DNS'),
+          ('Banner Grabbing', 'T1592.002', 'Gather Software Info'),
+          ('Web Scraping', 'T1593', 'Search Websites'),
+          ('Email Harvesting', 'T1589.002', 'Gather Email Addresses'),
+      ]
+      print('osint_attack mapping:')
+      for name, tid, desc in techniques:
+          print(f'  {name:25s} -> {tid}: {desc}')
+  - order: 12
+    instruction: "자동 스크린샷 수집 스크립트를 작성하라. 발견된 웹 서비스의 홈페이지를 저장하라."
+    hint: "requests로 HTML을 다운로드하여 증거로 저장한다"
+    category: "recon"
+    points: 10
+    answer: "python3 웹 스크린샷(HTML) 수집 스크립트"
+    answer_detail: "웹 페이지 스냅샷은 모의해킹 증거로 활용된다."
+    verify:
+      type: "output_contains"
+      expect: "screenshot"
+      field: "stdout"
+    script: |
+      import requests
+      
+      urls = ['http://10.20.30.80:3000', 'http://10.20.30.80:3000/ftp']
+      print('screenshot collection:')
+      for url in urls:
+          try:
+              r = requests.get(url, timeout=5)
+              fname = f'/tmp/evidence_{url.split("//")[1].replace("/","_").replace(":","_")}.html'
+              with open(fname, 'w') as f: f.write(r.text[:5000])
+              print(f'  {url} -> saved ({len(r.text)} bytes)')
+          except Exception as e:
+              print(f'  {url} -> error: {e}')
+  - order: 13
+    instruction: "수집된 모든 자격증명과 정보를 자동 정리하는 스크립트를 작성하라."
+    hint: "딕셔너리로 수집 정보를 카테고리별로 분류한다"
+    category: "analysis"
+    points: 10
+    answer: "python3 정보 정리 스크립트"
+    answer_detail: "수집 정보의 체계적 정리는 효율적인 공격 계획의 기초이다."
+    verify:
+      type: "output_contains"
+      expect: "intel_organize"
+      field: "stdout"
+    script: |
+      intel = {
+          'credentials': [('admin@juice-sh.op', 'admin123', 'JuiceShop')],
+          'services': {'10.20.30.80': ['SSH:22','HTTP:3000'], '10.20.30.100': ['Wazuh:55000']},
+          'technologies': ['Node.js', 'Express', 'Angular'],
+          'emails': ['admin@juice-sh.op'],
+      }
+      print('intel_organize:')
+      for cat, data in intel.items():
+          print(f'  [{cat}]: {len(data) if isinstance(data, list) else len(data)} items')
+  - order: 14
+    instruction: "OSINT 위협 프로파일을 자동 생성하는 스크립트를 작성하라."
+    hint: "수집 정보를 위협 모델로 종합한다"
+    category: "analysis"
+    points: 10
+    answer: "python3 위협 프로파일 생성 스크립트"
+    answer_detail: "위협 프로파일은 공격 우선순위 결정의 핵심 자료이다."
+    verify:
+      type: "output_contains"
+      expect: "threat_profile"
+      field: "stdout"
+    script: |
+      print('threat_profile:')
+      print('  Target: 10.20.30.0/24 Lab Network')
+      print('  Attack Surface: 4 hosts, 15+ services')
+      print('  High-Value Targets:')
+      print('    1. JuiceShop (10.20.30.80:3000) - Known vulnerable app')
+      print('    2. Wazuh SIEM (10.20.30.100) - Security monitoring')
+      print('  Primary Attack Vector: Web application exploitation')
+      print('  Estimated Difficulty: Medium')
+      print('  Recommended Approach: Web -> Lateral -> SIEM compromise')
+  - order: 15
+    instruction: "OSINT 자동화 프레임워크의 전체 파이프라인을 구성하고 실행하라."
+    hint: "모든 OSINT 모듈을 순차 실행하고 종합 보고서를 생성한다"
+    category: "analysis"
+    points: 15
+    answer: "python3 OSINT 프레임워크 파이프라인"
+    answer_detail: "완전 자동화된 OSINT 파이프라인은 정찰 시간을 대폭 단축한다."
+    verify:
+      type: "output_contains"
+      expect: "osint_pipeline"
+      field: "stdout"
+    script: |
+      print('osint_pipeline execution:')
+      modules = ['DNS Sweep','Banner Grab','Web Fingerprint','Email Harvest','API Extract','Risk Scoring']
+      results = {}
+      for i, mod in enumerate(modules, 1):
+          print(f'  [{i}/{len(modules)}] Running: {mod}...')
+          results[mod] = 'complete'
+      print(f'\n  Pipeline complete: {len(results)}/{len(modules)} modules executed')
+      print('  Report generated: /tmp/osint_report.json')

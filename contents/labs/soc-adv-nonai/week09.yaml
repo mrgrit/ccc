@@ -1,0 +1,178 @@
+lab_id: "soc-adv-nonai-week09"
+title: "악성코드 분석 - 정적/동적 분석 기법"
+version: "non-ai"
+course: "soc-adv-nonai"
+week: 9
+description: "악성코드의 정적 분석(코드/구조)과 동적 분석(행위/네트워크)을 수행하여 기능과 목적을 파악하는 실습"
+difficulty: "hard"
+duration_minutes: 120
+objectives:
+  - "악성코드 정적 분석 기법을 숙달한다"
+  - "동적 분석 환경을 구축하고 행위를 분석할 수 있다"
+  - "분석 결과를 IOC와 탐지 룰로 전환할 수 있다"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "악성코드 분석의 4단계 방법론(자동화 분석, 정적 속성, 대화형 동적, 코드 리버싱)을 설명하고 각 단계의 목적과 도구를 정리하라."
+    hint: "각 단계는 이전 단계의 결과를 기반으로 심화된다"
+    category: "framework"
+    points: 8
+    answer: "1) 자동화(AV 스캔, 샌드박스): 빠른 분류. 2) 정적 속성(strings, PE 구조, import): 기능 추정. 3) 동적 분석(실행+모니터링): 실제 행위 관찰. 4) 코드 리버싱(디스어셈블리): 상세 로직 분석"
+    answer_detail: "단계적 접근은 분석 효율을 극대화한다. 대부분의 샘플은 1~2단계에서 충분히 분류되며, 고급 분석(3~4단계)은 신종 악성코드나 APT 도구에만 적용한다."
+    verify:
+      type: "output_contains"
+      expect: "정적"
+
+  - order: 2
+    instruction: "정적 속성 분석을 수행하라. 의심 파일의 파일 유형(file/magic), 해시(MD5/SHA-256), 문자열(strings), PE 헤더(readelf/objdump)를 분석하라."
+    hint: "ELF 바이너리의 경우 readelf -h, strings -a, objdump -d를 사용하라"
+    category: "analysis"
+    points: 10
+    answer: "분석 결과: 파일유형(ELF/PE/Script), 해시값, 의미 있는 문자열(IP, URL, 명령어, 에러메시지), 임포트 함수(네트워크, 파일, 프로세스 관련)"
+    answer_detail: "정적 속성 분석은 파일을 실행하지 않고 특성을 파악한다. 문자열에서 C2 주소, 임포트에서 악성 기능(네트워크 통신, 파일 조작, 프로세스 인젝션)을 추정할 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "해시"
+
+  - order: 3
+    instruction: "패킹/난독화 탐지를 수행하라. 파일의 엔트로피를 계산하고, 알려진 패커 시그니처를 확인하며, 섹션별 특성을 분석하라."
+    hint: "고엔트로피(>7.0) 섹션은 암호화/압축 가능성이 높다"
+    category: "analysis"
+    points: 10
+    answer: "엔트로피 분석: 전체 7.2(패킹 의심), 섹션별(.text:6.5, .data:7.8). 패커 시그니처: UPX/없음. 섹션 특성: 실행+쓰기 권한(비정상)"
+    answer_detail: "패킹된 파일은 정적 분석을 어렵게 한다. 엔트로피가 높고 의미 있는 문자열이 적으면 패킹을 의심하며, 언패킹 후 재분석이 필요하다."
+    verify:
+      type: "output_contains"
+      expect: "엔트로피"
+
+  - order: 4
+    instruction: "동적 분석 환경을 구성하라. 격리된 분석 환경(네트워크 격리, 스냅샷, 모니터링 도구)의 구성 요소와 안전 수칙을 정의하라."
+    hint: "가상머신 + 가상 네트워크 + INetSim/FakeNet + 프로세스 모니터링 도구"
+    category: "setup"
+    points: 10
+    answer: "환경: 1) 격리된 VM(스냅샷), 2) 가상 네트워크(인터넷 차단), 3) FakeNet/INetSim(DNS/HTTP 시뮬레이션), 4) 모니터링(strace/ltrace/tcpdump), 5) 안전수칙: 호스트 격리, 네트워크 차단"
+    answer_detail: "동적 분석 환경은 악성코드를 안전하게 실행하면서 행위를 관찰하는 것이 목적이다. 물리 네트워크와 완전히 격리하고, 분석 후 스냅샷으로 복원해야 한다."
+    verify:
+      type: "output_contains"
+      expect: "격리"
+
+  - order: 5
+    instruction: "시스템 콜 추적을 수행하라. strace/ltrace로 악성코드의 시스템 콜을 추적하여 파일 생성, 네트워크 연결, 프로세스 생성 행위를 기록하라."
+    hint: "strace -f -e trace=network,file,process -o trace.log ./malware"
+    category: "analysis"
+    points: 12
+    answer: "추적 결과: connect(C2_IP:PORT), open(/etc/passwd, O_RDONLY), fork+execve(셸 생성), unlink(자기삭제). 시간순으로 행위 시퀀스 정리"
+    answer_detail: "시스템 콜 추적은 악성코드의 실제 행위를 상세히 기록한다. 네트워크 연결(connect/sendto), 파일 조작(open/read/write/unlink), 프로세스 관리(fork/execve/kill)를 추적하여 기능을 파악한다."
+    verify:
+      type: "output_contains"
+      expect: "strace"
+
+  - order: 6
+    instruction: "네트워크 행위를 분석하라. 악성코드 실행 중 생성되는 네트워크 트래픽을 캡처하고, C2 통신 프로토콜, 비콘 간격, 데이터 인코딩을 분석하라."
+    hint: "tcpdump + Wireshark로 트래픽을 캡처하고 분석하라"
+    category: "analysis"
+    points: 10
+    answer: "네트워크 행위: 1) DNS 쿼리(C2 도메인), 2) HTTP/HTTPS 연결(C2 서버), 3) 비콘 간격(60초±10%), 4) 데이터 인코딩(base64/XOR). C2 프로토콜 역공학"
+    answer_detail: "네트워크 행위 분석은 C2 인프라를 파악하는 핵심이다. 비콘 패턴, 통신 프로토콜, 데이터 인코딩을 분석하면 네트워크 수준의 탐지 룰을 작성할 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "C2"
+
+  - order: 7
+    instruction: "파일시스템 변경을 추적하라. 악성코드가 생성/수정/삭제하는 파일을 모니터링하고, 지속성 메커니즘(cron, service, startup) 설치를 탐지하라."
+    hint: "inotifywait으로 파일시스템 변경을 실시간 모니터링하라"
+    category: "analysis"
+    points: 10
+    answer: "파일 변경: 생성(/tmp/payload, /etc/cron.d/backdoor), 수정(.bashrc에 명령 추가), 삭제(원본 악성코드 자기삭제). 지속성: cron job 추가 확인"
+    answer_detail: "파일시스템 모니터링은 악성코드의 설치 과정과 지속성 메커니즘을 파악한다. 생성된 파일은 추가 분석 대상이며, 수정된 파일은 원본과 비교하여 변경 내용을 확인한다."
+    verify:
+      type: "output_contains"
+      expect: "파일"
+
+  - order: 8
+    instruction: "안티 분석 기법을 식별하라. 악성코드의 VM 탐지, 디버거 탐지, 시간 지연, 환경 체크 등 분석 방해 기법을 분석하고 우회 방법을 제시하라."
+    hint: "VMware/VirtualBox 관련 문자열, ptrace 탐지, sleep 호출 등을 확인하라"
+    category: "analysis"
+    points: 10
+    answer: "안티분석 기법: 1) VM 탐지(cpuid, MAC 주소), 2) 디버거 탐지(ptrace), 3) 시간 지연(sleep 3600), 4) 사용자 인터랙션 체크. 우회: 환경 위장, ptrace 후킹, 시간 가속"
+    answer_detail: "안티 분석 기법은 자동화 분석과 수동 분석 모두를 방해한다. VM/샌드박스 탐지가 가장 흔하며, 실제 하드웨어 환경을 모방하거나 탐지 로직을 패치하여 우회한다."
+    verify:
+      type: "output_contains"
+      expect: "안티"
+
+  - order: 9
+    instruction: "악성코드 분류를 수행하라. 분석 결과를 바탕으로 악성코드의 유형(RAT, 랜섬웨어, 봇넷, 드롭퍼), 기능, 공격 대상을 분류하라."
+    hint: "MITRE ATT&CK의 Software 매핑을 활용하라"
+    category: "classification"
+    points: 10
+    answer: "분류: 유형(RAT/백도어), 기능(원격제어/파일전송/키로깅), ATT&CK 기법(T1059 명령실행, T1071 C2프로토콜, T1005 데이터수집), 공격대상(Linux 서버)"
+    answer_detail: "악성코드 분류는 위협의 심각도를 판단하고 적절한 대응을 결정하는 기반이다. ATT&CK 매핑으로 사용된 기법을 체계적으로 정리하면 탐지 룰 작성과 방어 전략 수립에 활용할 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "분류"
+
+  - order: 10
+    instruction: "IOC를 추출하라. 분석 결과에서 네트워크 IOC(IP, Domain, URL), 호스트 IOC(파일 해시, 경로, 레지스트리), 행위 IOC(프로세스 패턴)를 추출하라."
+    hint: "STIX Indicator 포맷으로 정리하라"
+    category: "extraction"
+    points: 10
+    answer: "IOC 목록: IP(C2 서버), Domain(C2 도메인), Hash(악성파일 SHA-256), 파일경로(/tmp/payload), 프로세스패턴(apache→bash→wget). STIX Indicator로 표현"
+    answer_detail: "IOC 추출은 분석의 핵심 산출물이다. 네트워크/호스트/행위 IOC를 구조화하여 다른 보안 도구(SIEM, IDS, EDR)에 적용하면 동일 위협의 재발을 탐지할 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "IOC"
+
+  - order: 11
+    instruction: "탐지 룰을 작성하라. 추출된 IOC를 기반으로 YARA(파일 탐지), Suricata(네트워크 탐지), SIGMA(로그 탐지) 룰을 각각 작성하라."
+    hint: "각 도구의 강점에 맞는 탐지 포인트를 선택하라"
+    category: "implementation"
+    points: 12
+    answer: "YARA: 악성파일 문자열+구조 탐지. Suricata: C2 통신 패턴(도메인+URI+UserAgent). SIGMA: 비정상 프로세스 트리(웹서버→셸) 탐지"
+    answer_detail: "다층 탐지 룰은 악성코드의 다양한 단계를 커버한다. 파일 수준(YARA), 네트워크 수준(Suricata), 로그 수준(SIGMA) 룰을 모두 작성하면 탐지 확률이 크게 높아진다."
+    verify:
+      type: "output_contains"
+      expect: "룰"
+
+  - order: 12
+    instruction: "악성코드 리포트를 작성하라. 업계 표준 형식의 악성코드 분석 리포트(요약, 정적분석, 동적분석, IOC, 탐지방안)를 작성하라."
+    hint: "MAEC(Malware Attribute Enumeration and Characterization) 표준을 참고하라"
+    category: "reporting"
+    points: 8
+    answer: "리포트 구조: 1) 요약(분류/심각도/영향), 2) 정적분석(파일속성/문자열/구조), 3) 동적분석(행위/네트워크/지속성), 4) IOC목록, 5) 탐지/대응방안, 6) ATT&CK 매핑"
+    answer_detail: "악성코드 리포트는 팀 내 공유, TI 커뮤니티 기여, 경영진 보고 등 다양한 목적으로 활용된다. 기술적 상세도와 가독성의 균형을 맞추고, IOC와 탐지 룰을 즉시 적용 가능한 형태로 제공한다."
+    verify:
+      type: "output_contains"
+      expect: "리포트"
+
+  - order: 13
+    instruction: "샌드박스 자동 분석 시스템을 설계하라. 의심 파일 제출 → 자동 실행 → 행위 분석 → 보고서 생성의 파이프라인을 설계하라."
+    hint: "Cuckoo Sandbox 또는 CAPE 아키텍처를 참고하라"
+    category: "design"
+    points: 8
+    answer: "파이프라인: 1) 파일 제출 API, 2) VM 할당+스냅샷 복원, 3) 악성코드 실행(60~300초), 4) 행위 로그 수집, 5) YARA+Suricata 스캔, 6) 보고서 생성, 7) VM 스냅샷 복원"
+    answer_detail: "자동화 샌드박스는 대량의 의심 파일을 효율적으로 분석한다. VM 풀 관리, 안티 분석 우회, 네트워크 시뮬레이션, 스냅샷 관리가 핵심 구성 요소이다."
+    verify:
+      type: "output_contains"
+      expect: "샌드박스"
+
+  - order: 14
+    instruction: "악성코드 분석 워크플로우를 SOC에 통합하라. 알림 수신 → 샘플 확보 → 분석 → IOC 배포 → 탐지 룰 적용의 전체 프로세스를 정의하라."
+    hint: "분석 우선순위 결정 기준과 SLA를 포함하라"
+    category: "integration"
+    points: 8
+    answer: "워크플로우: 1) SIEM 알림으로 샘플 식별, 2) 우선순위 분류(심각도/영향범위), 3) 자동+수동 분석, 4) IOC 추출→SIEM/IDS 배포, 5) 탐지룰 적용, 6) 보고서 공유. SLA: 긴급 4시간, 일반 24시간"
+    answer_detail: "악성코드 분석은 SOC 운영의 핵심 루프에 통합되어야 한다. 분석 결과가 신속히 탐지 체계에 반영되어야 동일 위협의 확산을 방지할 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "워크플로우"
+
+  - order: 15
+    instruction: "악성코드 분석 종합 보고서를 작성하라. 분석한 샘플의 상세 분석 결과, IOC, 탐지 룰, ATT&CK 매핑, 대응 권고사항을 포함하라."
+    hint: "분석 방법론, 도구 체인, 발견사항, 방어 권고를 모두 포함하라"
+    category: "reporting"
+    points: 14
+    answer: "종합: 샘플 N개 분석, 악성 M개 확인, IOC K개 추출, 탐지룰 L개 작성. 주요 발견: RAT 변종 확인, C2 인프라 매핑. 권고: WAF 룰 강화, EDR 도입, 사용자 교육"
+    answer_detail: "종합 보고서는 분석 역량의 집약이다. 개별 샘플 분석을 넘어 위협 트렌드, 방어 갭, 개선 방안을 제시하여 조직의 보안 태세를 강화하는 데 기여한다."
+    verify:
+      type: "output_contains"
+      expect: "악성코드"

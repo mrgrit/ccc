@@ -637,6 +637,9 @@ _COURSE_MAP = {
     "course10-ai-security-agent": {"name": "ai-agent", "title": "AI 보안 에이전트", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🕹️", "description": "AI 에이전트 기본부터 하네스 구축, 멀티에이전트, RAG, 에이전트 보안까지 실습합니다."},
     "course11-battle": {"name": "battle", "title": "공방전 기초 (Cyber Battle)", "group": "실전", "group_color": "#f97316", "icon": "⚔️", "description": "인프라 간 공격/방어 대전 기초 — 정찰, 취약점, 방화벽, IDS, 1v1, 팀전"},
     "course12-battle-advanced": {"name": "battle-adv", "title": "공방전 심화 (Advanced Battle)", "group": "실전", "group_color": "#f97316", "icon": "🔥", "description": "APT 시나리오, 다단계 침투, 실시간 공방, AI vs AI 대전, 종합 레드/블루팀 운영"},
+    "course13-attack-advanced": {"name": "attack-adv", "title": "사이버 공격 심화 (Advanced Attack)", "group": "공격 기술", "group_color": "#f85149", "icon": "💀", "description": "APT 킬체인, C2 인프라, 측면이동, 권한상승 체인, AD 공격, 공급망 공격, 안티포렌식"},
+    "course14-soc-advanced": {"name": "soc-adv", "title": "보안관제 심화 (Advanced SOC)", "group": "방어 운영", "group_color": "#3fb950", "icon": "🔍", "description": "고급 SIEM 상관분석, SIGMA/YARA, 위협헌팅, SOAR 자동화, 인시던트 포렌식, 악성코드 분석"},
+    "course15-ai-safety-advanced": {"name": "ai-safety-adv", "title": "AI Safety 심화 (Advanced AI Safety)", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🧪", "description": "LLM Red Teaming, 프롬프트 인젝션 심화, 가드레일 우회, AI 에이전트 보안, 모델 탈취/백도어"},
 }
 _GROUP_ORDER = ["공격 기술", "방어 운영", "AI 보안", "실전"]
 

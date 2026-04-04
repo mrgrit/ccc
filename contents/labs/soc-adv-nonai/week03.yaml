@@ -1,0 +1,178 @@
+lab_id: "soc-adv-nonai-week03"
+title: "SIGMA 룰 심화 - 탐지 엔지니어링"
+version: "non-ai"
+course: "soc-adv-nonai"
+week: 3
+description: "SIGMA 룰 언어를 활용한 플랫폼 독립적 탐지 로직 설계 및 다양한 SIEM 변환 실습"
+difficulty: "hard"
+duration_minutes: 120
+objectives:
+  - "SIGMA 룰 문법과 구조를 완전히 이해한다"
+  - "복잡한 탐지 로직을 SIGMA로 구현할 수 있다"
+  - "SIGMA를 다양한 SIEM 포맷으로 변환할 수 있다"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "SIGMA 룰의 핵심 구조를 분석하라. title, status, logsource, detection, condition, level, tags 각 필드의 역할과 문법을 정리하라."
+    hint: "SIGMA 공식 GitHub의 규격 문서를 참조하라"
+    category: "analysis"
+    points: 8
+    answer: "title: 룰 이름, status: experimental/test/stable, logsource(category/product/service): 로그 소스 추상화, detection(selection/filter/condition): 탐지 로직, level: informational~critical, tags: ATT&CK ID"
+    answer_detail: "SIGMA는 SIEM 독립적인 탐지 룰 포맷이다. logsource 추상화로 동일 룰을 여러 SIEM에 적용할 수 있으며, detection 섹션의 selection/condition 조합으로 복잡한 로직을 표현한다."
+    verify:
+      type: "output_contains"
+      expect: "logsource"
+
+  - order: 2
+    instruction: "Windows 프로세스 생성(Sysmon EventID 1) 기반 SIGMA 룰을 작성하라. Mimikatz 실행을 탐지하는 룰을 이미지명, 커맨드라인, 해시값 기준으로 작성하라."
+    hint: "selection에 여러 조건을 OR로 결합하라"
+    category: "implementation"
+    points: 10
+    answer: "logsource: category:process_creation, product:windows. detection: selection_img(Image|endswith: mimikatz.exe), selection_cmd(CommandLine|contains: sekurlsa), selection_hash(Hashes|contains: SHA256해시). condition: 1 of selection_*"
+    answer_detail: "Mimikatz 탐지는 이미지명(쉬움, 우회 가능), 커맨드라인(중간), 해시(정확하지만 버전별 다름) 등 다층 접근이 필요하다. '1 of selection_*' 조건으로 하나라도 매칭되면 탐지한다."
+    verify:
+      type: "output_contains"
+      expect: "mimikatz"
+
+  - order: 3
+    instruction: "SIGMA 파이프라인 수정자(modifier)를 실습하라. contains, endswith, startswith, re, base64, wide, all 수정자를 각각 사용하는 예제 룰을 작성하라."
+    hint: "fieldname|modifier: value 형태로 사용한다"
+    category: "implementation"
+    points: 10
+    answer: "contains: CommandLine|contains: 'powershell', endswith: Image|endswith: '.scr', re: CommandLine|re: '\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}\\.\\d{1,3}', base64: CommandLine|base64offset|contains: 'http://', all: CommandLine|all|contains: ['-enc', '-nop']"
+    answer_detail: "수정자는 SIGMA의 핵심 기능으로, 필드 값의 매칭 방식을 제어한다. base64 수정자는 인코딩된 페이로드를 탐지하고, all 수정자는 모든 값이 동시에 존재해야 매칭된다."
+    verify:
+      type: "output_contains"
+      expect: "modifier"
+
+  - order: 4
+    instruction: "네트워크 연결 기반 SIGMA 룰을 작성하라. 내부 호스트가 알려진 C2(Command & Control) 포트(4444, 5555, 8888)로 외부 연결하는 것을 탐지하라."
+    hint: "logsource: category: network_connection, detection에서 DestinationPort와 Initiated: 'true' 조건을 사용하라"
+    category: "implementation"
+    points: 10
+    answer: "logsource: category:network_connection, product:windows. detection: selection(Initiated:'true', DestinationPort:[4444,5555,8888]), filter(DestinationIp|startswith:['10.','172.16.','192.168.']). condition: selection and not filter"
+    answer_detail: "C2 통신 탐지는 알려진 악성 포트를 모니터링하는 기본적 접근이다. 내부→외부 방향만 탐지하고, 내부 IP 대역은 필터링하여 오탐을 줄인다. 실전에서는 동적 포트를 사용하는 C2도 많으므로 행위 기반 탐지도 병행해야 한다."
+    verify:
+      type: "output_contains"
+      expect: "C2"
+
+  - order: 5
+    instruction: "SIGMA 룰에 MITRE ATT&CK 태그를 올바르게 매핑하라. Lateral Movement - Remote Services(T1021) 탐지 룰을 작성하고 적절한 tags를 부여하라."
+    hint: "tags 형식: attack.lateral_movement, attack.t1021.001"
+    category: "implementation"
+    points: 10
+    answer: "tags: [attack.lateral_movement, attack.t1021.001]. logsource: category:network_connection. detection: RDP(DestinationPort:3389), SMB(DestinationPort:445), WinRM(DestinationPort:5985)"
+    answer_detail: "MITRE ATT&CK 태그는 SIGMA 룰의 전술적 맥락을 제공한다. 올바른 Tactic과 Technique ID를 매핑하면 탐지 커버리지 분석과 갭 식별이 용이해진다."
+    verify:
+      type: "output_contains"
+      expect: "ATT&CK"
+
+  - order: 6
+    instruction: "SIGMA 룰을 Wazuh 포맷으로 수동 변환하라. 작성한 Mimikatz 탐지 룰을 Wazuh XML 룰로 변환하고, 변환 시 주의사항을 기록하라."
+    hint: "SIGMA의 logsource→Wazuh의 decoded_as/program, detection→match/regex 매핑"
+    category: "implementation"
+    points: 10
+    answer: "SIGMA selection → Wazuh <match>/<regex>, condition OR → 별도 룰 + <if_sid>, level 매핑: critical→15, high→12, medium→8, low→4"
+    answer_detail: "수동 변환은 자동 변환 도구의 한계를 이해하는 데 필수적이다. SIGMA의 표현력이 대상 SIEM보다 풍부할 수 있으므로, 변환 시 로직 손실 여부를 반드시 검증해야 한다."
+    verify:
+      type: "output_contains"
+      expect: "변환"
+
+  - order: 7
+    instruction: "sigmac 또는 sigma-cli 도구를 활용하여 SIGMA 룰을 자동 변환하라. 동일 룰을 Splunk SPL, ElasticSearch Query, QRadar AQL 포맷으로 각각 변환하라."
+    hint: "sigma-cli convert --target splunk --pipeline splunk-windows rule.yml"
+    category: "implementation"
+    points: 10
+    answer: "Splunk: index=windows sourcetype=sysmon EventCode=1 Image=*mimikatz*, Elastic: process.name:mimikatz*, QRadar: SELECT * FROM events WHERE ... LIKE '%mimikatz%'"
+    answer_detail: "자동 변환 도구는 대량 룰 배포의 핵심이다. 각 SIEM별 파이프라인(pipeline)은 필드명 매핑을 정의하며, 변환 결과는 반드시 대상 SIEM에서 검증해야 한다."
+    verify:
+      type: "output_contains"
+      expect: "convert"
+
+  - order: 8
+    instruction: "SIGMA 룰의 false positive 섹션을 활용하라. 작성한 룰에 falsepositives 필드를 추가하고, 각 오탐 시나리오에 대한 필터 조건을 설계하라."
+    hint: "falsepositives는 문자열 리스트로 알려진 오탐 시나리오를 문서화한다"
+    category: "tuning"
+    points: 10
+    answer: "falsepositives: ['관리자의 정상적 보안 도구 사용', '보안 제품의 메모리 스캔', 'IT 자산관리 소프트웨어의 정상 동작']. 각 시나리오별 filter selection 추가"
+    answer_detail: "falsepositives 필드는 룰의 품질을 나타내는 중요한 메타데이터이다. 운영 환경에서 발생할 수 있는 정상 동작을 사전에 문서화하면 SOC 분석관의 판단을 돕고, 오탐 필터 설계의 가이드가 된다."
+    verify:
+      type: "output_contains"
+      expect: "falsepositives"
+
+  - order: 9
+    instruction: "SIGMA 룰 테스트 프레임워크를 구축하라. 샘플 이벤트 로그를 생성하고 SIGMA 룰이 올바르게 탐지하는지 검증하는 테스트 케이스를 작성하라."
+    hint: "Atomic Red Team의 테스트 로그를 활용하거나 직접 샘플 로그를 생성하라"
+    category: "testing"
+    points: 10
+    answer: "테스트 구조: 1) 양성(true positive) 샘플 로그, 2) 음성(true negative) 샘플 로그, 3) 오탐(false positive) 샘플 로그. 각각에 대해 SIGMA 룰 매칭 결과를 검증"
+    answer_detail: "탐지 룰 테스트는 TP/TN/FP/FN 4가지 케이스를 모두 검증해야 한다. 자동화된 테스트 파이프라인을 구축하면 룰 변경 시 회귀 테스트(regression test)가 가능하다."
+    verify:
+      type: "output_contains"
+      expect: "테스트"
+
+  - order: 10
+    instruction: "SIGMA 룰 저장소를 구성하라. 디렉토리 구조(tactic별/platform별), 명명 규칙, 메타데이터 표준을 정의하라."
+    hint: "SigmaHQ 공식 저장소의 디렉토리 구조를 참고하라"
+    category: "governance"
+    points: 8
+    answer: "구조: rules/{platform}/{tactic}/rule_name.yml. 명명: {tactic}_{technique}_{description}.yml. 메타데이터: author, date, modified, status, references 필수"
+    answer_detail: "체계적인 룰 저장소는 수백~수천 개의 룰을 효율적으로 관리하는 핵심이다. SigmaHQ의 구조를 따르면 커뮤니티 룰과의 호환성도 유지할 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "저장소"
+
+  - order: 11
+    instruction: "SIGMA 룰 커버리지 분석을 수행하라. 현재 보유한 룰을 MITRE ATT&CK Navigator에 매핑하고, 탐지 갭(미탐지 기법)을 식별하라."
+    hint: "ATT&CK Navigator의 layer 파일(JSON)로 히트맵을 생성하라"
+    category: "analysis"
+    points: 12
+    answer: "커버리지 히트맵 생성: Initial Access 40%, Execution 65%, Persistence 55%, Privilege Escalation 50%, Defense Evasion 25%, Credential Access 60%, Discovery 45%, Lateral Movement 35%, Collection 30%, C2 50%, Exfiltration 20%"
+    answer_detail: "ATT&CK Navigator 히트맵은 탐지 역량의 시각적 표현이다. 색상 강도로 커버리지를 표시하고, 빈 영역(갭)은 우선 개발 대상이다. Defense Evasion과 Exfiltration은 일반적으로 가장 큰 갭이다."
+    verify:
+      type: "output_contains"
+      expect: "Navigator"
+
+  - order: 12
+    instruction: "Linux 환경에 특화된 SIGMA 룰을 작성하라. auditd 로그를 기반으로 권한 상승 시도(sudo abuse, SUID exploitation)를 탐지하는 룰을 작성하라."
+    hint: "logsource: product:linux, service:auditd, category:process_creation"
+    category: "implementation"
+    points: 10
+    answer: "logsource: product:linux, service:auditd. detection: selection_sudo(CommandLine|contains:'sudo', User|not:'root'), selection_suid(CommandLine|contains:['find -perm','chmod +s']). condition: 1 of selection_*"
+    answer_detail: "Linux 환경의 SIGMA 룰은 Windows 대비 적은 편이다. auditd의 풍부한 로그(syscall, execve)를 활용하면 프로세스 생성, 파일 접근, 네트워크 연결 등 다양한 행위를 탐지할 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "auditd"
+
+  - order: 13
+    instruction: "Aggregation 조건을 사용하는 SIGMA 룰을 작성하라. 5분 내 동일 사용자가 10개 이상의 파일에 접근하면 데이터 수집(Collection) 시도로 탐지하는 룰을 작성하라."
+    hint: "detection 섹션에 condition: selection | count(TargetFilename) by User > 10 형태를 사용하라"
+    category: "implementation"
+    points: 12
+    answer: "detection: selection(EventType:FileAccess), condition: selection | count(TargetFilename) by SourceUser > 10, timeframe: 5m"
+    answer_detail: "Aggregation 조건은 빈도 기반 탐지에 사용된다. count, min, max, avg, sum 함수를 지원하며, by 절로 그룹핑 기준을 지정한다. 모든 SIEM이 완벽하게 지원하지는 않으므로 변환 시 확인이 필요하다."
+    verify:
+      type: "output_contains"
+      expect: "count"
+
+  - order: 14
+    instruction: "Correlation 룰(SIGMA 2.0)을 설계하라. 여러 개의 독립적인 SIGMA 룰의 탐지 결과를 조합하여 고신뢰도 알림을 생성하는 상관 룰을 작성하라."
+    hint: "type: correlation, rules 리스트, group-by, timespan 필드를 사용하라"
+    category: "design"
+    points: 12
+    answer: "type: correlation. rules: [정찰_룰_id, 초기침투_룰_id, 실행_룰_id]. group-by: source_ip. timespan: 1h. condition: >=2. → 킬체인 2단계 이상 탐지 시 고신뢰 알림"
+    answer_detail: "SIGMA Correlation은 개별 룰의 탐지 결과를 시간/엔티티 기준으로 상관분석한다. 킬체인의 여러 단계가 동일 엔티티에서 관찰되면 실제 공격의 확률이 크게 높아진다."
+    verify:
+      type: "output_contains"
+      expect: "correlation"
+
+  - order: 15
+    instruction: "SIGMA 탐지 엔지니어링 종합 보고서를 작성하라. 작성한 전체 룰셋의 목록, ATT&CK 커버리지, 변환 호환성, 테스트 결과, 운영 가이드를 포함하라."
+    hint: "각 룰의 status, level, 예상 오탐률, 변환 지원 현황을 표로 정리하라"
+    category: "reporting"
+    points: 18
+    answer: "총 N개 SIGMA 룰 작성, ATT&CK 커버리지 55%, Wazuh 변환 호환성 90%, 테스트 통과율 95%. 운영 가이드: 주간 룰 리뷰, 월간 커버리지 분석, 분기별 튜닝"
+    answer_detail: "탐지 엔지니어링 보고서는 룰셋의 현재 상태와 발전 방향을 종합적으로 제시한다. 단순한 룰 목록이 아니라, 각 룰의 효용성, 한계, 운영 부담을 분석하여 지속 가능한 탐지 체계를 구축하는 것이 목표이다."
+    verify:
+      type: "output_contains"
+      expect: "SIGMA"

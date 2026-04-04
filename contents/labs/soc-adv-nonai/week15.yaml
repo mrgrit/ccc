@@ -1,0 +1,178 @@
+lab_id: "soc-adv-nonai-week15"
+title: "종합 실전 - SOC 운영 시뮬레이션"
+version: "non-ai"
+course: "soc-adv-nonai"
+week: 15
+description: "14주간 학습한 모든 기술을 통합하여 실제 SOC 운영 환경에서의 종합 시뮬레이션을 수행하는 실습"
+difficulty: "hard"
+duration_minutes: 120
+objectives:
+  - "SOC 운영의 전체 프로세스를 독립적으로 수행할 수 있다"
+  - "다중 공격 시나리오에 대해 체계적으로 대응할 수 있다"
+  - "종합 보안 보고서를 작성할 수 있다"
+pass_threshold: 0.6
+steps:
+  - order: 1
+    instruction: "SOC 운영 체크리스트를 작성하라. 일일 점검 항목(SIEM 상태, 에이전트 상태, 룰 업데이트, TI 피드), 주간 항목(성능 리뷰, 룰 튜닝), 월간 항목(성숙도 평가, 보고서)을 정의하라."
+    hint: "각 항목의 담당자, 절차, 예상 소요 시간을 포함하라"
+    category: "planning"
+    points: 8
+    answer: "일일: SIEM 상태(5분), 에이전트 연결(5분), 신규 알림 리뷰(30분), TI 피드 업데이트(10분). 주간: 오탐 리뷰(1시간), 룰 튜닝(1시간). 월간: KPI 리포트(2시간), 성숙도 자가평가(1시간)"
+    answer_detail: "운영 체크리스트는 SOC의 일관된 운영 품질을 보장한다. 자동화할 수 있는 항목은 자동화하고, 인간의 판단이 필요한 항목만 수동으로 수행한다."
+    verify:
+      type: "output_contains"
+      expect: "체크리스트"
+
+  - order: 2
+    instruction: "환경 점검을 수행하라. 실습 환경의 모든 보안 도구(Wazuh, Suricata, nftables, BunkerWeb)의 상태를 확인하고 정상 동작을 검증하라."
+    hint: "각 도구의 프로세스 상태, 로그 수집 상태, 최종 업데이트 시간을 확인하라"
+    category: "operation"
+    points: 10
+    answer: "점검 결과: Wazuh Manager(정상/에이전트 N대 연결), Suricata(정상/룰 N개), nftables(정상/정책 적용), BunkerWeb(정상/모듈 활성화). 이상 발견 시 조치 기록"
+    answer_detail: "환경 점검은 SOC 운영의 기본이다. 보안 도구가 정상 동작하지 않으면 탐지가 불가능하므로, 매일 도구 상태를 확인하는 것이 첫 번째 임무이다."
+    verify:
+      type: "output_contains"
+      expect: "점검"
+
+  - order: 3
+    instruction: "시나리오 1: 외부에서 웹서버 공격이 감지되었다. Wazuh 알림을 분석하고, 공격 유형/소스/성공 여부를 판단하라."
+    hint: "Wazuh API에서 최근 알림을 조회하고 web 관련 알림을 필터링하라"
+    category: "detection"
+    points: 10
+    answer: "분석: 공격유형(SQLi/XSS/Directory Traversal), 소스IP, 공격 횟수, 성공여부(응답코드 기반), 타임라인, MITRE ATT&CK 매핑(T1190)"
+    answer_detail: "웹 공격 분석은 요청 URI, 파라미터, 응답 코드, 응답 크기를 종합적으로 분석한다. 200 OK이면서 응답 크기가 비정상적으로 크면 데이터 유출 가능성이 있다."
+    verify:
+      type: "output_contains"
+      expect: "공격"
+
+  - order: 4
+    instruction: "시나리오 1 대응: 공격 소스 IP를 차단하고, 취약점을 임시 완화하라. OpsClaw를 활용하여 대응 프로젝트를 생성하고 실행하라."
+    hint: "POST /projects로 프로젝트 생성, /dispatch로 차단 명령 실행"
+    category: "response"
+    points: 12
+    answer: "대응: 1) OpsClaw 프로젝트 생성, 2) nftables 차단 명령 dispatch(secu), 3) WAF 룰 강화 dispatch(web), 4) evidence로 모든 조치 기록"
+    answer_detail: "OpsClaw를 활용한 대응은 모든 조치를 evidence로 기록하므로 추후 감사와 보고에 활용할 수 있다. 차단 → 완화 → 검증의 순서로 실행한다."
+    verify:
+      type: "output_contains"
+      expect: "OpsClaw"
+
+  - order: 5
+    instruction: "시나리오 2: 내부 서버에서 비정상적인 아웃바운드 트래픽이 감지되었다. Suricata 알림과 nftables 로그를 분석하여 C2 통신 여부를 판단하라."
+    hint: "목적지 IP, 포트, 프로토콜, 통신 패턴(주기성)을 분석하라"
+    category: "detection"
+    points: 10
+    answer: "분석: 내부IP→외부IP:PORT, 통신 주기(60초 간격 비콘), 전송 데이터량, Suricata 시그니처 매칭, TI 피드 매칭(악성IP 여부)"
+    answer_detail: "아웃바운드 트래픽 이상은 침해의 핵심 지표이다. 주기적 통신은 C2 비콘, 대량 전송은 데이터 유출, 비정상 프로토콜은 터널링을 의심한다."
+    verify:
+      type: "output_contains"
+      expect: "아웃바운드"
+
+  - order: 6
+    instruction: "시나리오 2 대응: 감염 의심 서버를 네트워크 격리하고, 메모리 덤프를 수집하여 분석하라."
+    hint: "격리 → 증거 수집 → 분석의 순서를 따르라"
+    category: "response"
+    points: 12
+    answer: "대응: 1) nftables로 의심 서버 네트워크 격리, 2) 메모리 덤프 수집(LiME), 3) 프로세스/네트워크/파일 분석, 4) 악성코드 식별 및 IOC 추출"
+    answer_detail: "감염 서버 대응은 증거 보존과 확산 방지의 균형이 핵심이다. 네트워크 격리로 확산을 방지하면서, 격리 전에 활성 네트워크 연결 정보를 기록해야 한다."
+    verify:
+      type: "output_contains"
+      expect: "격리"
+
+  - order: 7
+    instruction: "시나리오 3: 대량 로그인 실패가 발생하고 있다. 브루트포스 공격과 Credential Stuffing을 구분하고. 적절한 대응을 실행하라."
+    hint: "동일 사용자+다수 비밀번호=브루트포스, 다수 사용자+각각 소수 비밀번호=Credential Stuffing"
+    category: "detection"
+    points: 10
+    answer: "구분: 사용자 수 vs 시도 수 비율 분석. 브루트포스: 1개 계정에 다수 시도 → 계정 잠금. Credential Stuffing: 다수 계정에 소수 시도 → 유출 DB 기반, IP 차단+MFA 강제"
+    answer_detail: "두 공격의 대응 전략이 다르다. 브루트포스는 계정 잠금이 효과적이지만, Credential Stuffing은 계정 잠금이 DoS를 초래할 수 있으므로 IP 기반 차단과 CAPTCHA가 적절하다."
+    verify:
+      type: "output_contains"
+      expect: "브루트포스"
+
+  - order: 8
+    instruction: "위협 헌팅을 수행하라. 현재 환경에서 지속성 메커니즘(cron, systemd, SSH keys)과 비정상 네트워크 활동을 능동적으로 탐색하라."
+    hint: "14주간 학습한 헌팅 기법을 종합 적용하라"
+    category: "hunting"
+    points: 10
+    answer: "헌팅 결과: 각 서버의 crontab/systemd/authorized_keys 점검, 비정상 아웃바운드 연결 확인, 숨겨진 프로세스/파일 탐색. 발견 사항과 조치 기록"
+    answer_detail: "능동적 헌팅은 알림이 발생하지 않은 잠복 위협을 찾는다. 모든 서버에 대해 체계적으로 점검하고, 이상 발견 시 즉시 분석과 대응을 수행한다."
+    verify:
+      type: "output_contains"
+      expect: "헌팅"
+
+  - order: 9
+    instruction: "IOC를 통합 관리하라. 오늘 대응 과정에서 수집된 모든 IOC를 정리하고, Wazuh CDB와 Suricata 룰에 반영하라."
+    hint: "IP, 도메인, 해시를 각각 적합한 탐지 도구에 배포하라"
+    category: "implementation"
+    points: 10
+    answer: "IOC 배포: 악성IP→nftables 차단+Wazuh CDB+Suricata 룰, 악성Domain→DNS 차단+Suricata 룰, 악성Hash→YARA 룰+Wazuh FIM"
+    answer_detail: "IOC 통합 관리는 대응의 효과를 극대화한다. 동일 IOC를 여러 탐지 도구에 동시에 적용하면 다층 방어가 완성되며, 향후 동일 위협의 재발을 자동으로 탐지한다."
+    verify:
+      type: "output_contains"
+      expect: "IOC"
+
+  - order: 10
+    instruction: "보안 도구 튜닝을 수행하라. 오늘 발생한 오탐을 분석하고, Wazuh 룰과 Suricata 룰을 튜닝하여 오탐을 줄이면서 탐지율을 유지하라."
+    hint: "오탐의 근본 원인을 파악하고, 예외 처리 또는 임계값 조정으로 해결하라"
+    category: "tuning"
+    points: 10
+    answer: "튜닝: 오탐 N건 분석, 원인별 분류(내부 스캐너, 모니터링 도구, 정상 사용자), 예외 룰 M개 추가, 임계값 조정 K건. 튜닝 후 오탐률 X%→Y% 감소"
+    answer_detail: "지속적 튜닝은 SOC 운영의 핵심이다. 오탐을 방치하면 분석관이 알림을 무시하게 되어 실제 공격도 놓치게 된다. 튜닝 이력을 문서화하여 향후 참조한다."
+    verify:
+      type: "output_contains"
+      expect: "튜닝"
+
+  - order: 11
+    instruction: "KPI를 측정하라. 오늘의 운영 결과를 기반으로 MTTD, MTTR, 처리 알림 수, 오탐률, 인시던트 수를 계산하라."
+    hint: "각 인시던트의 타임스탬프를 기반으로 MTTD/MTTR를 정밀 계산하라"
+    category: "measurement"
+    points: 8
+    answer: "KPI: MTTD 평균 X분, MTTR 평균 Y분, 처리 알림 N건, 오탐률 Z%, 인시던트 K건(P1:a, P2:b, P3:c)"
+    answer_detail: "KPI 측정은 SOC 운영의 성과를 객관적으로 보여준다. 시간에 따른 추이를 분석하면 개선 또는 악화 트렌드를 파악할 수 있으며, 벤치마크와 비교하여 목표를 설정한다."
+    verify:
+      type: "output_contains"
+      expect: "KPI"
+
+  - order: 12
+    instruction: "에스컬레이션 보고서를 작성하라. 오늘 발생한 P1/P2 인시던트에 대한 에스컬레이션 보고서를 작성하여 SOC Manager에게 보고하라."
+    hint: "인시던트 요약, 영향, 현재 상태, 조치 내역, 다음 단계를 포함하라"
+    category: "reporting"
+    points: 8
+    answer: "에스컬레이션 보고: [인시던트ID] 웹서버 SQLi 공격, 영향(DB 접근 의심), 현재(공격IP 차단+취약점 패치 완료), 조치(격리→분석→복구), 다음(데이터 유출 여부 확인)"
+    answer_detail: "에스컬레이션 보고서는 간결하고 정확해야 한다. 의사결정에 필요한 핵심 정보만 포함하고, 불확실한 부분은 명확히 표시한다."
+    verify:
+      type: "output_contains"
+      expect: "에스컬레이션"
+
+  - order: 13
+    instruction: "교훈과 개선점을 도출하라. 오늘 시뮬레이션에서 발견된 탐지 갭, 프로세스 병목, 도구 한계를 정리하고 개선안을 제시하라."
+    hint: "기술/프로세스/인력 3개 차원으로 분류하라"
+    category: "improvement"
+    points: 10
+    answer: "교훈: 기술(DNS 모니터링 강화 필요, YARA 실시간 스캔 미구축), 프로세스(인시던트 간 우선순위 충돌, 커뮤니케이션 지연), 인력(메모리 포렌식 숙련도 향상 필요)"
+    answer_detail: "시뮬레이션의 가장 큰 가치는 실전 투입 전에 약점을 발견하는 것이다. 각 교훈에 구체적 개선 액션과 담당자를 지정하여 실행을 보장한다."
+    verify:
+      type: "output_contains"
+      expect: "교훈"
+
+  - order: 14
+    instruction: "SOC 성숙도 재평가를 수행하라. Week 1에서 평가한 SOC-CMM 점수와 15주 학습 후의 점수를 비교하고, 성장을 정량화하라."
+    hint: "5개 도메인 각각의 개선 정도를 비교하라"
+    category: "assessment"
+    points: 10
+    answer: "재평가: Business(2→3), People(2→3), Process(2→4), Technology(3→4), Services(2→3). 평균 2.2→3.4(+1.2 향상). 최대 개선 영역: Process(+2)"
+    answer_detail: "성숙도 재평가는 교육의 효과를 입증한다. 15주간의 학습으로 기술과 프로세스 역량이 크게 향상되었으며, 특히 자동화(SOAR)와 탐지 엔지니어링(SIGMA/YARA) 영역에서 큰 진전이 있다."
+    verify:
+      type: "output_contains"
+      expect: "성숙도"
+
+  - order: 15
+    instruction: "최종 종합 보고서를 작성하라. 15주 과정의 전체 학습 성과, SOC 역량 향상, 구축된 탐지 체계, 향후 발전 계획을 포함한 최종 보고서를 작성하라."
+    hint: "경영진이 투자 효과를 판단할 수 있는 형태로 작성하라"
+    category: "reporting"
+    points: 16
+    answer: "최종: SOC 성숙도 2.2→3.4, 탐지 커버리지 40%→75%, MTTD 60분→15분, 신규 탐지 룰 50+개, SOAR 플레이북 5+개. 향후: AI 도입, 위협인텔 플랫폼 구축, 인력 확충"
+    answer_detail: "최종 보고서는 15주 여정의 집대성이다. 정량적 성과와 정성적 역량 향상을 모두 기록하고, 향후 발전 로드맵을 제시하여 지속적 투자와 개선의 근거를 제공한다."
+    verify:
+      type: "output_contains"
+      expect: "종합"
