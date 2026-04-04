@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api.ts'
+import { getUser, isAdmin } from '../auth.ts'
 
 const diffColor: Record<string, string> = { easy: '#3fb950', medium: '#d29922', hard: '#f85149' }
 
@@ -51,7 +52,8 @@ export default function Labs() {
       return { stdout: ans, user_answer: ans }
     })
     try {
-      const d = await api(`/api/labs/evaluate?lab_id=${activeLab.lab_id}&student_id=current`, {
+      const user = getUser()
+      const d = await api(`/api/labs/evaluate?lab_id=${activeLab.lab_id}&student_id=${user?.id || 'anonymous'}`, {
         method: 'POST',
         body: JSON.stringify(submissions),
       })

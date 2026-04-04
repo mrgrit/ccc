@@ -69,11 +69,56 @@ class AITaskRequest(BaseModel):
     instruction: str
     target_infra: str | None = None  # 대상 인프라 ID
 
-# ── Auth ───────────────────────────────────────────
+# ── Auth (JWT + API Key) ──────────────────────────
+import hashlib as _hl
+import json as _json
+import base64 as _b64
+import hmac as _hmac
+import time as _time
+
+JWT_SECRET = os.getenv("JWT_SECRET", "ccc-jwt-secret-2026")
+
+def _hash_pw(pw: str) -> str:
+    return _hl.sha256(f"ccc:{pw}:salt".encode()).hexdigest()
+
+def _jwt_encode(payload: dict) -> str:
+    header = _b64.urlsafe_b64encode(_json.dumps({"alg":"HS256","typ":"JWT"}).encode()).decode().rstrip("=")
+    body = _b64.urlsafe_b64encode(_json.dumps(payload).encode()).decode().rstrip("=")
+    sig = _hmac.new(JWT_SECRET.encode(), f"{header}.{body}".encode(), _hl.sha256).hexdigest()[:43]
+    return f"{header}.{body}.{sig}"
+
+def _jwt_decode(token: str) -> dict | None:
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+        body = parts[1] + "=" * (4 - len(parts[1]) % 4)
+        payload = _json.loads(_b64.urlsafe_b64decode(body))
+        if payload.get("exp", 0) < _time.time():
+            return None
+        return payload
+    except Exception:
+        return None
+
 def verify_api_key(request: Request):
+    """API 키 또는 JWT 토큰으로 인증"""
+    # JWT 먼저 체크
+    auth = request.headers.get("Authorization", "")
+    if auth.startswith("Bearer "):
+        payload = _jwt_decode(auth[7:])
+        if payload:
+            request.state.user = payload
+            return
+    # API 키 폴백
     key = request.headers.get("X-API-Key", "")
-    if key != API_KEY:
-        raise HTTPException(status_code=401, detail="Invalid API key")
+    if key == API_KEY:
+        request.state.user = {"sub": "api", "role": "admin"}
+        return
+    raise HTTPException(status_code=401, detail="Not authenticated")
+
+def get_current_user(request: Request) -> dict:
+    """현재 로그인 사용자 반환"""
+    return getattr(request.state, "user", {"sub": "anonymous", "role": "guest"})
 
 # ── DB ─────────────────────────────────────────────
 import psycopg2
@@ -86,17 +131,25 @@ def _init_db():
     with _conn() as conn:
         with conn.cursor() as cur:
             cur.execute("""
-                -- 학생
+                -- 학생 (인증 포함)
                 CREATE TABLE IF NOT EXISTS students (
                     id TEXT PRIMARY KEY,
                     student_id TEXT UNIQUE NOT NULL,
                     name TEXT NOT NULL,
                     email TEXT DEFAULT '',
+                    password_hash TEXT DEFAULT '',
+                    role TEXT DEFAULT 'student',
                     grp TEXT DEFAULT '',
                     score INT DEFAULT 0,
                     metadata JSONB DEFAULT '{}',
                     created_at TIMESTAMPTZ DEFAULT now()
                 );
+                -- password_hash 컬럼 추가 (기존 테이블 호환)
+                DO $$ BEGIN
+                    ALTER TABLE students ADD COLUMN IF NOT EXISTS password_hash TEXT DEFAULT '';
+                    ALTER TABLE students ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'student';
+                EXCEPTION WHEN others THEN NULL;
+                END $$;
                 -- 학생 인프라
                 CREATE TABLE IF NOT EXISTS student_infras (
                     id TEXT PRIMARY KEY,
@@ -220,6 +273,90 @@ def root():
 @app.get("/health")
 def health():
     return {"status": "ok", "service": "ccc-api", "version": "0.1.0"}
+
+# ══════════════════════════════════════════════════
+#  Auth (회원가입/로그인/프로필)
+# ══════════════════════════════════════════════════
+class RegisterBody(BaseModel):
+    student_id: str
+    name: str
+    password: str
+    email: str = ""
+    group: str = ""
+
+class LoginBody(BaseModel):
+    student_id: str
+    password: str
+
+@app.post("/auth/register")
+def register(body: RegisterBody):
+    """회원가입"""
+    sid = str(uuid.uuid4())[:8]
+    pw_hash = _hash_pw(body.password)
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT id FROM students WHERE student_id=%s", (body.student_id,))
+            if cur.fetchone():
+                raise HTTPException(409, "이미 등록된 학번입니다")
+            cur.execute(
+                """INSERT INTO students (id, student_id, name, email, password_hash, role, grp)
+                   VALUES (%s,%s,%s,%s,%s,'student',%s) RETURNING id, student_id, name, email, role, grp""",
+                (sid, body.student_id, body.name, body.email, pw_hash, body.group),
+            )
+            row = cur.fetchone()
+            conn.commit()
+    token = _jwt_encode({"sub": sid, "student_id": body.student_id, "name": body.name, "role": "student", "exp": _time.time() + 86400 * 7})
+    return {"user": dict(row), "token": token}
+
+@app.post("/auth/login")
+def login(body: LoginBody):
+    """로그인"""
+    pw_hash = _hash_pw(body.password)
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT id, student_id, name, email, role, grp, score FROM students WHERE student_id=%s AND password_hash=%s", (body.student_id, pw_hash))
+            row = cur.fetchone()
+    if not row:
+        raise HTTPException(401, "학번 또는 비밀번호가 잘못되었습니다")
+    token = _jwt_encode({"sub": row["id"], "student_id": row["student_id"], "name": row["name"], "role": row["role"], "exp": _time.time() + 86400 * 7})
+    return {"user": dict(row), "token": token}
+
+@app.get("/auth/me", dependencies=[Depends(verify_api_key)])
+def get_me(request: Request):
+    """내 프로필"""
+    user = get_current_user(request)
+    if user.get("sub") == "api":
+        return {"user": {"role": "admin", "name": "API Admin"}}
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT id, student_id, name, email, role, grp, score, created_at FROM students WHERE id=%s", (user["sub"],))
+            row = cur.fetchone()
+    if not row:
+        raise HTTPException(404, "User not found")
+    return {"user": dict(row)}
+
+@app.post("/auth/create-admin")
+def create_admin(body: RegisterBody):
+    """관리자 계정 생성 (첫 번째 관리자만 가능, 이후는 기존 관리자가 생성)"""
+    sid = str(uuid.uuid4())[:8]
+    pw_hash = _hash_pw(body.password)
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            # 관리자가 이미 있는지 확인
+            cur.execute("SELECT id FROM students WHERE role='admin' OR role='instructor'")
+            existing = cur.fetchone()
+            if existing:
+                # 기존 관리자가 있으면 API 키 필수
+                raise HTTPException(403, "관리자가 이미 존재합니다. API 키로 인증 후 생성하세요.")
+            cur.execute(
+                """INSERT INTO students (id, student_id, name, email, password_hash, role, grp)
+                   VALUES (%s,%s,%s,%s,%s,'admin',%s) RETURNING id, student_id, name, role""",
+                (sid, body.student_id, body.name, body.email, pw_hash, body.group),
+            )
+            row = cur.fetchone()
+            conn.commit()
+    token = _jwt_encode({"sub": sid, "student_id": body.student_id, "name": body.name, "role": "admin", "exp": _time.time() + 86400 * 30})
+    return {"user": dict(row), "token": token}
 
 # ══════════════════════════════════════════════════
 #  Students (학생 관리)

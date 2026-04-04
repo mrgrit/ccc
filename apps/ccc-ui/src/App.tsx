@@ -1,5 +1,7 @@
-import React from 'react'
+import React, { useState } from 'react'
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
+import { isLoggedIn, getUser, clearAuth, isAdmin } from './auth.ts'
+import Login from './pages/Login.tsx'
 import Dashboard from './pages/Dashboard.tsx'
 import Education from './pages/Education.tsx'
 import Labs from './pages/Labs.tsx'
@@ -17,6 +19,15 @@ const navItems = [
 ]
 
 export default function App() {
+  const [loggedIn, setLoggedIn] = useState(isLoggedIn())
+  const user = getUser()
+
+  if (!loggedIn) {
+    return <Login onLogin={() => setLoggedIn(true)} />
+  }
+
+  const logout = () => { clearAuth(); setLoggedIn(false) }
+
   return (
     <div style={{ display: 'flex', minHeight: '100vh' }}>
       <nav style={{
@@ -40,8 +51,15 @@ export default function App() {
             </NavLink>
           ))}
         </div>
-        <div style={{ padding: '12px 20px', fontSize: 11, color: '#484f58', borderTop: '1px solid #30363d' }}>
-          v0.1.0 — :9100
+        {/* 사용자 정보 */}
+        <div style={{ padding: '12px 20px', borderTop: '1px solid #30363d' }}>
+          <div style={{ fontSize: 14, color: '#e6edf3', fontWeight: 600 }}>{user?.name || 'User'}</div>
+          <div style={{ fontSize: 12, color: '#8b949e' }}>{user?.student_id} {user?.role === 'admin' && '(Admin)'}</div>
+          <button onClick={logout} style={{
+            marginTop: 8, width: '100%', padding: '6px 0', borderRadius: 6,
+            background: '#21262d', color: '#8b949e', border: '1px solid #30363d',
+            cursor: 'pointer', fontSize: 13,
+          }}>Logout</button>
         </div>
       </nav>
       <main style={{ flex: 1, padding: 32, overflow: 'auto' }}>

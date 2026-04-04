@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api.ts'
+import { isAdmin } from '../auth.ts'
 
 export default function Education() {
   const [groups, setGroups] = useState<any[]>([])
@@ -110,7 +111,7 @@ export default function Education() {
           <span style={{ fontSize: 16, fontWeight: 700, color: '#e6edf3', marginLeft: 8 }}>
             {viewMode === 'lecture' ? lectureTitle : labDetail?.title}
           </span>
-          {labDetail?.has_answers && viewMode === 'lab' && (
+          {labDetail?.has_answers && viewMode === 'lab' && isAdmin() && (
             <button onClick={() => { setShowAnswers(!showAnswers); openLab(labDetail.lab_id, !showAnswers) }} style={{
               marginLeft: 'auto', background: showAnswers ? '#f85149' : '#21262d', color: showAnswers ? '#fff' : '#8b949e',
               border: '1px solid #30363d', borderRadius: 6, padding: '6px 14px', cursor: 'pointer', fontSize: 14,
