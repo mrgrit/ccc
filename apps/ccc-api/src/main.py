@@ -199,6 +199,20 @@ def _init_db():
                     completed_at TIMESTAMPTZ,
                     UNIQUE(student_id, lab_id)
                 );
+                -- CTF 문제
+                CREATE TABLE IF NOT EXISTS ctf_challenges (
+                    id TEXT PRIMARY KEY,
+                    title TEXT NOT NULL,
+                    category TEXT DEFAULT 'misc',
+                    description TEXT DEFAULT '',
+                    flag TEXT NOT NULL,
+                    points INT DEFAULT 100,
+                    difficulty TEXT DEFAULT 'medium',
+                    hint TEXT DEFAULT '',
+                    min_blocks INT DEFAULT 0,
+                    courses JSONB DEFAULT '[]',
+                    created_at TIMESTAMPTZ DEFAULT now()
+                );
                 -- CTF 제출
                 CREATE TABLE IF NOT EXISTS ctf_submissions (
                     id TEXT PRIMARY KEY,
@@ -1657,6 +1671,148 @@ def leaderboard(category: str = "total"):
                 """)
             rows = cur.fetchall()
     return {"category": category, "leaderboard": [dict(r) for r in rows]}
+
+# ══════════════════════════════════════════════════
+#  CTF (문제 관리 + 자동 출제 + 제출)
+# ══════════════════════════════════════════════════
+
+class CTFGenerateBody(BaseModel):
+    courses: list[str]        # ["attack", "soc-adv"]
+    weeks: list[int] = []     # [1,2,3] or [] for all
+    count: int = 10           # 생성할 문제 수
+    difficulty: str = "medium"
+    min_blocks: int = 0       # 참가 자격 (최소 블록 수)
+
+@app.post("/ctf/generate", dependencies=[Depends(verify_api_key)])
+def generate_ctf(body: CTFGenerateBody, request: Request):
+    """AI 기반 CTF 문제 자동 생성"""
+    user = get_current_user(request)
+    if user.get("role") not in ("admin", "commander", "trainer"):
+        raise HTTPException(403, "Trainer+ only")
+
+    # 해당 과목 교안에서 키워드 추출
+    import glob as _g
+    keywords = []
+    for course in body.courses:
+        for k, v in _COURSE_MAP.items():
+            if v["name"] == course or v["name"] == course.replace("-adv", "-advanced"):
+                edu_dir = os.path.join(_EDUCATION_DIR, k)
+                if os.path.isdir(edu_dir):
+                    for wd in sorted(_g.glob(os.path.join(edu_dir, "week*/lecture.md"))):
+                        wnum = int(os.path.basename(os.path.dirname(wd)).replace("week", ""))
+                        if not body.weeks or wnum in body.weeks:
+                            with open(wd, encoding="utf-8") as f:
+                                content = f.read()[:2000]
+                            keywords.append(f"{course} week{wnum}: {content[:300]}")
+
+    # LLM으로 문제 생성
+    import httpx as _hx2
+    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://192.168.0.105:11434")
+    model = os.getenv("CTF_LLM_MODEL", "gpt-oss:120b")
+
+    prompt = f"""다음 교육 과정 내용을 바탕으로 CTF 문제 {body.count}개를 생성하세요.
+난이도: {body.difficulty}
+
+교육 내용 키워드:
+{chr(10).join(keywords[:10])}
+
+반드시 아래 JSON 형식으로만 응답:
+{{"challenges":[{{"title":"문제 제목","description":"문제 설명","flag":"flag{{정답}}","points":100,"category":"web|forensic|crypto|misc|network","hint":"힌트"}}]}}"""
+
+    challenges = []
+    try:
+        r = _hx2.post(f"{ollama_url}/api/chat", json={
+            "model": model,
+            "messages": [{"role": "user", "content": prompt}],
+            "stream": False, "options": {"temperature": 0.7},
+        }, timeout=120.0)
+        content = r.json().get("message", {}).get("content", "")
+        start = content.find("{"); end = content.rfind("}") + 1
+        if start >= 0 and end > start:
+            import json as _j
+            data = _j.loads(content[start:end])
+            challenges = data.get("challenges", [])
+    except Exception as e:
+        return {"error": f"LLM 생성 실패: {e}", "challenges": []}
+
+    # DB에 저장
+    saved = []
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            for ch in challenges[:body.count]:
+                cid = str(uuid.uuid4())[:8]
+                cur.execute(
+                    """INSERT INTO ctf_challenges (id, title, category, description, flag, points, difficulty, min_blocks, courses)
+                       VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) RETURNING id, title, category, points, difficulty""",
+                    (cid, ch.get("title",""), ch.get("category","misc"), ch.get("description",""),
+                     ch.get("flag","flag{unknown}"), ch.get("points",100), body.difficulty,
+                     body.min_blocks, Json(body.courses)),
+                )
+                row = cur.fetchone()
+                saved.append(dict(row))
+            conn.commit()
+    return {"generated": len(saved), "challenges": saved}
+
+@app.get("/ctf/challenges", dependencies=[Depends(verify_api_key)])
+def list_ctf_challenges(category: str | None = None):
+    q = "SELECT id, title, category, description, points, difficulty, min_blocks, created_at FROM ctf_challenges"
+    params: list = []
+    if category:
+        q += " WHERE category=%s"; params.append(category)
+    q += " ORDER BY created_at DESC"
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(q, params)
+            rows = cur.fetchall()
+    return {"challenges": [dict(r) for r in rows]}
+
+class CTFSubmitBody(BaseModel):
+    challenge_id: str
+    flag: str
+
+@app.post("/ctf/submit", dependencies=[Depends(verify_api_key)])
+def submit_ctf(body: CTFSubmitBody, request: Request):
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM ctf_challenges WHERE id=%s", (body.challenge_id,))
+            ch = cur.fetchone()
+            if not ch:
+                raise HTTPException(404, "Challenge not found")
+            # 참가 자격 확인
+            min_b = ch.get("min_blocks", 0)
+            if min_b > 0:
+                cur.execute("SELECT total_blocks FROM students WHERE id=%s", (uid,))
+                st = cur.fetchone()
+                if not st or (st.get("total_blocks", 0) or 0) < min_b:
+                    raise HTTPException(403, f"참가 자격 미달: {min_b} 블록 이상 필요")
+            correct = body.flag.strip() == ch["flag"].strip()
+            points = ch["points"] if correct else 0
+            sid = str(uuid.uuid4())[:8]
+            cur.execute(
+                "INSERT INTO ctf_submissions (id, student_id, challenge_id, flag, correct, points) VALUES (%s,%s,%s,%s,%s,%s)",
+                (sid, uid, body.challenge_id, body.flag, correct, points),
+            )
+            if correct:
+                _cccnet_add_block(uid, "ctf_solve", points, body.challenge_id, f"CTF solved: {ch['title']}")
+            conn.commit()
+    return {"correct": correct, "points": points, "challenge": ch["title"]}
+
+@app.get("/ctf/scoreboard", dependencies=[Depends(verify_api_key)])
+def ctf_scoreboard():
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("""
+                SELECT s.name, s.student_id, s.rank, sum(cs.points) as total_points,
+                       count(*) FILTER (WHERE cs.correct) as solved
+                FROM students s
+                LEFT JOIN ctf_submissions cs ON cs.student_id = s.id
+                GROUP BY s.id HAVING count(*) FILTER (WHERE cs.correct) > 0
+                ORDER BY total_points DESC
+            """)
+            rows = cur.fetchall()
+    return {"scoreboard": [dict(r) for r in rows]}
 
 # ══════════════════════════════════════════════════
 #  CCCNet Blockchain (독립 블록체인)
