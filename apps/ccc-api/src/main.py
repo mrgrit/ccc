@@ -1673,6 +1673,55 @@ def leaderboard(category: str = "total"):
     return {"category": category, "leaderboard": [dict(r) for r in rows]}
 
 # ══════════════════════════════════════════════════
+#  Manager AI (V5)
+# ══════════════════════════════════════════════════
+class ManagerTaskBody(BaseModel):
+    instruction: str
+    target_role: str = ""  # secu, web, siem, etc.
+
+@app.post("/manager/execute", dependencies=[Depends(verify_api_key)])
+def manager_execute(body: ManagerTaskBody, request: Request):
+    """Manager AI에 작업 지시 → 실행 계획 생성"""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    from packages.manager_ai import execute, compose_prompt
+
+    # 학생 인프라 정보 로드
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM students WHERE id=%s", (uid,))
+            student = cur.fetchone()
+            cur.execute("SELECT * FROM student_infras WHERE student_id=%s", (uid,))
+            infras = [dict(r) for r in cur.fetchall()]
+
+    student_info = {
+        "name": student["name"] if student else "?",
+        "student_id": student.get("student_id", ""),
+        "rank": student.get("rank", "rookie"),
+        "total_blocks": student.get("total_blocks", 0),
+        "infras": [{"role": i.get("vm_config", {}).get("role", ""), "ip": i["ip"], "subagent": i.get("subagent_url", "")} for i in infras],
+    }
+
+    result = execute(body.instruction, student_info)
+    return {"instruction": body.instruction, "plan": result.get("plan", []), "error": result.get("error", "")}
+
+@app.get("/manager/vm-setup/{role}", dependencies=[Depends(verify_api_key)])
+def get_vm_setup_commands(role: str):
+    """VM별 설치 명령어 목록"""
+    from packages.manager_ai import setup_vm
+    commands = setup_vm(role, "0.0.0.0")
+    return {"role": role, "commands": commands, "count": len(commands)}
+
+@app.get("/manager/prompt", dependencies=[Depends(verify_api_key)])
+def get_manager_prompt(request: Request):
+    """현재 Manager AI 시스템 프롬프트 확인 (디버그용)"""
+    user = get_current_user(request)
+    if user.get("role") not in ("admin", "commander"):
+        raise HTTPException(403)
+    from packages.manager_ai import compose_prompt
+    return {"prompt": compose_prompt()}
+
+# ══════════════════════════════════════════════════
 #  User Analytics + AI Feedback (V2)
 # ══════════════════════════════════════════════════
 @app.get("/user/stats", dependencies=[Depends(verify_api_key)])
