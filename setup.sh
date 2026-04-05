@@ -67,15 +67,29 @@ else
     echo "  .env 이미 존재"
 fi
 
-# 5. PostgreSQL (Docker)
-echo "[5/5] PostgreSQL..."
-if command -v docker &>/dev/null; then
-    docker compose -f docker/docker-compose.yaml up -d postgres
-    echo "  PostgreSQL 시작됨 (port ${DB_PORT:-5434})"
-else
-    echo "  Docker 미설치 — PostgreSQL을 수동으로 설정하세요"
-    echo "  DB URL: postgresql://ccc:ccc@127.0.0.1:5434/ccc"
+# 5. Docker + PostgreSQL
+echo "[5/5] Docker + PostgreSQL..."
+if ! command -v docker &>/dev/null; then
+    echo "  Docker 설치 중..."
+    if command -v apt-get &>/dev/null; then
+        sudo install -m 0755 -d /etc/apt/keyrings
+        sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+        sudo chmod a+r /etc/apt/keyrings/docker.asc
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+          https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+          sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+        sudo apt-get update -y
+        sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+    elif command -v dnf &>/dev/null; then
+        sudo dnf install -y docker docker-compose-plugin
+        sudo systemctl enable --now docker
+    fi
+    sudo usermod -aG docker "$(whoami)" 2>/dev/null || true
+    echo "  Docker 설치 완료"
 fi
+docker compose -f docker/docker-compose.yaml up -d postgres 2>/dev/null || \
+  docker-compose -f docker/docker-compose.yaml up -d postgres
+echo "  PostgreSQL 시작됨 (port ${DB_PORT:-5434})"
 
 echo ""
 echo "=== 설치 완료 ==="

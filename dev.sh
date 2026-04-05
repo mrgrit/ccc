@@ -11,14 +11,40 @@ export PYTHONIOENCODING=utf-8
 set -a; [ -f .env ] && source .env; set +a
 export PYTHONPATH="$(pwd)"
 
-# DB 자동 시작 + 준비 대기
-ensure_db() {
-  # docker 필수
-  if ! command -v docker &>/dev/null; then
-    echo "[CCC] ERROR: docker가 설치되어 있지 않습니다."
-    echo "  설치: https://docs.docker.com/get-docker/"
+# Docker 설치 확인/자동 설치
+ensure_docker() {
+  if command -v docker &>/dev/null; then
+    return 0
+  fi
+
+  echo "[CCC] Docker 미설치 — 자동 설치 중..."
+  if command -v apt-get &>/dev/null; then
+    sudo apt-get update -y
+    sudo apt-get install -y ca-certificates curl
+    sudo install -m 0755 -d /etc/apt/keyrings
+    sudo curl -fsSL https://download.docker.com/linux/ubuntu/gpg -o /etc/apt/keyrings/docker.asc
+    sudo chmod a+r /etc/apt/keyrings/docker.asc
+    echo "deb [arch=$(dpkg --print-architecture) signed-by=/etc/apt/keyrings/docker.asc] \
+      https://download.docker.com/linux/ubuntu $(. /etc/os-release && echo "$VERSION_CODENAME") stable" | \
+      sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+    sudo apt-get update -y
+    sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
+    sudo usermod -aG docker "$(whoami)" 2>/dev/null || true
+    echo "[CCC] Docker 설치 완료. 그룹 권한 적용을 위해 재로그인이 필요할 수 있습니다."
+  elif command -v dnf &>/dev/null; then
+    sudo dnf install -y docker docker-compose-plugin
+    sudo systemctl enable --now docker
+    sudo usermod -aG docker "$(whoami)" 2>/dev/null || true
+  else
+    echo "[CCC] ERROR: 패키지 매니저를 찾을 수 없습니다. Docker를 수동 설치하세요."
+    echo "  https://docs.docker.com/get-docker/"
     exit 1
   fi
+}
+
+# DB 자동 시작 + 준비 대기
+ensure_db() {
+  ensure_docker
 
   # postgres 컨테이너 시작
   if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q ccc.*postgres; then
@@ -28,8 +54,8 @@ ensure_db() {
   fi
 
   # DB 접속 가능할 때까지 대기 (최대 15초)
-  local db_host="${DATABASE_URL:-postgresql://ccc:ccc@127.0.0.1:5434/ccc}"
-  local db_port=$(echo "$db_host" | grep -oP ':\K[0-9]+(?=/)')
+  local db_port
+  db_port=$(echo "${DATABASE_URL:-postgresql://ccc:ccc@127.0.0.1:5434/ccc}" | grep -oP ':\K[0-9]+(?=/)')
   db_port="${db_port:-5434}"
 
   echo -n "[CCC] Waiting for PostgreSQL (port $db_port)..."
