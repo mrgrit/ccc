@@ -21,6 +21,7 @@ export default function MyInfra() {
   const [loading, setLoading] = useState(true)
   const [setting, setSetting] = useState(false)
   const [setupResult, setSetupResult] = useState<any>(null)
+  const [onboardLog, setOnboardLog] = useState<any[]>([])
   const [form, setForm] = useState({
     attacker_ip: '', secu_ip: '', web_ip: '', siem_ip: '',
     ssh_user: 'ccc', ssh_password: '1',
@@ -77,14 +78,46 @@ export default function MyInfra() {
     }
     setSetting(true)
     setSetupResult(null)
+    setOnboardLog([])
+
+    // 1단계: DB 등록
     try {
-      const d = await api('/api/infras/setup', {
+      await api('/api/infras/setup', { method: 'POST', body: JSON.stringify(form) })
+    } catch (e: any) { alert('등록 실패: ' + e.message); setSetting(false); return }
+
+    // 2단계: 온보딩 (SSE 스트리밍)
+    try {
+      const token = localStorage.getItem('ccc_token') || ''
+      const resp = await fetch('/api/infras/onboard', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': 'ccc-api-key-2026', 'Authorization': `Bearer ${token}` },
         body: JSON.stringify(form),
       })
-      setSetupResult(d)
-      load()
-    } catch (e: any) { alert('Setup failed: ' + e.message) }
+      const reader = resp.body?.getReader()
+      const decoder = new TextDecoder()
+      if (reader) {
+        let buf = ''
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+          const lines = buf.split('\n')
+          buf = lines.pop() || ''
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try {
+                const evt = JSON.parse(line.slice(6))
+                setOnboardLog(prev => [...prev, evt])
+              } catch {}
+            }
+          }
+        }
+      }
+    } catch (e: any) {
+      setOnboardLog(prev => [...prev, { event: 'error', role: 'system', message: e.message }])
+    }
+
+    load()
     setSetting(false)
   }
 
@@ -322,20 +355,44 @@ export default function MyInfra() {
 
         <button onClick={setup} disabled={setting} style={{
           width: '100%', padding: '14px 0', borderRadius: 8, border: 'none',
-          background: '#f97316', color: '#fff', fontSize: 17, fontWeight: 700, cursor: 'pointer',
-        }}>{setting ? 'Bastion AI가 SubAgent 설치 중...' : '자동 설정 시작'}</button>
+          background: setting ? '#21262d' : '#f97316', color: '#fff', fontSize: 17, fontWeight: 700, cursor: setting ? 'wait' : 'pointer',
+        }}>{setting ? '온보딩 진행 중...' : '자동 설정 시작'}</button>
       </div>
 
-      {/* 설정 결과 */}
-      {setupResult && (
-        <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: 20, marginTop: 20 }}>
-          <h3 style={{ fontSize: 16, marginBottom: 12, color: '#e6edf3' }}>설정 결과</h3>
-          {setupResult.onboarding?.map((o: any, i: number) => (
-            <div key={i} style={{ display: 'flex', gap: 10, padding: '6px 0', borderBottom: '1px solid #21262d', fontSize: 14 }}>
-              <span style={{ minWidth: 80, color: '#8b949e' }}>{o.role}</span>
-              <span style={{ color: o.status === 'healthy' || o.status === 'bootstrapped' ? '#3fb950' : o.status.startsWith('skip') ? '#8b949e' : '#d29922' }}>{o.status}</span>
-            </div>
-          ))}
+      {/* 온보딩 실시간 로그 */}
+      {onboardLog.length > 0 && (
+        <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 10, padding: 20, marginTop: 20, fontFamily: 'Consolas,Monaco,monospace', fontSize: 13 }}>
+          <h3 style={{ fontSize: 15, marginBottom: 12, color: '#e6edf3' }}>온보딩 진행상황</h3>
+          <div style={{ maxHeight: 400, overflowY: 'auto' }}>
+            {onboardLog.map((evt, i) => {
+              if (evt.event === 'start') return (
+                <div key={i} style={{ padding: '4px 0', color: '#f97316' }}>
+                  ▶ [{evt.progress}] {evt.role} ({evt.ip}) 설치 시작...
+                </div>
+              )
+              if (evt.event === 'step') return (
+                <div key={i} style={{ padding: '2px 0 2px 16px', color: evt.success ? '#3fb950' : '#f85149' }}>
+                  {evt.success ? '✓' : '✗'} {evt.step}
+                </div>
+              )
+              if (evt.event === 'done') return (
+                <div key={i} style={{ padding: '4px 0', color: evt.status === 'healthy' ? '#3fb950' : '#d29922', fontWeight: 600 }}>
+                  {evt.status === 'healthy' ? '✓' : '⚠'} [{evt.progress}] {evt.role}: {evt.status}
+                </div>
+              )
+              if (evt.event === 'error') return (
+                <div key={i} style={{ padding: '4px 0', color: '#f85149' }}>
+                  ✗ {evt.role}: {evt.message}
+                </div>
+              )
+              if (evt.event === 'complete') return (
+                <div key={i} style={{ padding: '8px 0 0', color: '#58a6ff', fontWeight: 600, borderTop: '1px solid #21262d', marginTop: 8 }}>
+                  ■ 온보딩 완료 ({evt.total}대)
+                </div>
+              )
+              return null
+            })}
+          </div>
         </div>
       )}
     </div>

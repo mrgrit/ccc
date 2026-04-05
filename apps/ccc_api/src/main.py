@@ -797,27 +797,60 @@ def setup_infra(body: InfraSetupBody, request: Request):
                 results.append({"id": iid, "role": vm["role"], "ip": vm["ip"], "subagent_url": subagent_url, "status": "registered"})
             conn.commit()
 
-    # Bastion 온보딩 (SubAgent 설치)
-    from packages.bastion import onboard_vm
-    onboard_results = []
-    for vm in vms:
-        try:
-            ob = onboard_vm(ip=vm["ip"], role=vm["role"], user=body.ssh_user, password=body.ssh_password)
-            status = "healthy" if ob.get("healthy") else "registered"
-            onboard_results.append({"role": vm["role"], "status": status})
-            with _conn() as conn:
-                with conn.cursor() as cur:
-                    cur.execute("UPDATE student_infras SET status=%s WHERE student_id=%s AND ip=%s",
-                                (status, uid, vm["ip"]))
-                    conn.commit()
-        except Exception as e:
-            onboard_results.append({"role": vm["role"], "status": f"error: {e}"})
-
     return {
         "infras": results,
-        "onboarding": onboard_results,
-        "message": "인프라 등록 + SubAgent 설치 완료.",
+        "message": "인프라 등록 완료. 온보딩은 /infras/onboard를 호출하세요.",
     }
+
+@app.post("/infras/onboard", dependencies=[Depends(verify_api_key)])
+def onboard_infra(body: InfraSetupBody, request: Request):
+    """인프라 온보딩 (SSE 스트리밍) — VM별 진행상황을 실시간 전송"""
+    from starlette.responses import StreamingResponse
+    from packages.bastion import onboard_vm
+    import json as _j
+
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+
+    vms = [
+        {"role": "attacker", "ip": body.attacker_ip},
+        {"role": "secu", "ip": body.secu_ip},
+        {"role": "web", "ip": body.web_ip},
+        {"role": "siem", "ip": body.siem_ip},
+        {"role": "manager", "ip": body.manager_ip},
+    ]
+    if body.windows_ip:
+        vms.append({"role": "windows", "ip": body.windows_ip})
+
+    def stream():
+        total = len(vms)
+        for i, vm in enumerate(vms):
+            # 시작 알림
+            yield f"data: {_j.dumps({'event': 'start', 'role': vm['role'], 'ip': vm['ip'], 'progress': f'{i+1}/{total}'}, ensure_ascii=False)}\n\n"
+
+            try:
+                ob = onboard_vm(ip=vm["ip"], role=vm["role"], user=body.ssh_user, password=body.ssh_password)
+                status = "healthy" if ob.get("healthy") else "error"
+
+                # DB 상태 업데이트
+                with _conn() as conn:
+                    with conn.cursor() as cur:
+                        cur.execute("UPDATE student_infras SET status=%s WHERE student_id=%s AND ip=%s",
+                                    (status, uid, vm["ip"]))
+                        conn.commit()
+
+                # 단계별 결과 전송
+                for step in ob.get("steps", []):
+                    yield f"data: {_j.dumps({'event': 'step', 'role': vm['role'], 'step': step.get('step',''), 'success': step.get('success', False)}, ensure_ascii=False)}\n\n"
+
+                yield f"data: {_j.dumps({'event': 'done', 'role': vm['role'], 'status': status, 'progress': f'{i+1}/{total}'}, ensure_ascii=False)}\n\n"
+
+            except Exception as e:
+                yield f"data: {_j.dumps({'event': 'error', 'role': vm['role'], 'message': str(e)[:200]}, ensure_ascii=False)}\n\n"
+
+        yield f"data: {_j.dumps({'event': 'complete', 'total': total}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
 
 @app.get("/infras/my", dependencies=[Depends(verify_api_key)])
 def my_infra(request: Request):
