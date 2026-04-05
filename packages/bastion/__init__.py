@@ -278,15 +278,31 @@ def onboard_vm(ip: str, role: str, user: str = "ccc", password: str = "1") -> di
     internal_ip = INTERNAL_IPS.get(role, "10.20.30.250")
     results = {"ip": ip, "internal_ip": internal_ip, "role": role, "steps": []}
 
+    # Windows는 별도 처리 (sudo/bash/systemd 없음)
+    if role == "windows":
+        results["steps"].append({
+            "step": "skip",
+            "success": True,
+            "stdout": "Windows VM은 수동 설정 필요:\n"
+                      "1. OpenSSH Server 활성화\n"
+                      "2. Python3 설치\n"
+                      "3. SubAgent 수동 실행: python agent.py",
+        })
+        health = health_check(ip)
+        results["healthy"] = health.get("status") == "healthy"
+        results["steps"].append({"step": "health_check", "success": results["healthy"], "detail": health})
+        return results
+
     # 1. SubAgent 설치 (외부 IP로 SSH — 인터넷 필요)
     install_script = SUBAGENT_INSTALL_SCRIPT.replace("{role}", role)
     r = ssh_run(ip, user, password, [install_script], timeout=120)
     results["steps"].append({"step": "subagent_install", **r})
 
-    # 2. 역할별 소프트웨어 설치 (인터넷 필요)
+    # 2. 역할별 소프트웨어 설치 (manager는 ollama 등 오래 걸림)
     role_cmds = ROLE_SETUP_SCRIPTS.get(role, [])
     if role_cmds:
-        r = ssh_run(ip, user, password, role_cmds)
+        t = 300 if role == "manager" else 120
+        r = ssh_run(ip, user, password, role_cmds, timeout=t)
         results["steps"].append({"step": "role_setup", **r})
 
     # 3. 내부 NIC IP 설정 — 단일 스크립트로 전달
