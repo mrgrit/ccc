@@ -829,7 +829,8 @@ def onboard_infra(body: InfraSetupBody, request: Request):
             yield f"data: {_j.dumps({'event': 'start', 'role': vm['role'], 'ip': vm['ip'], 'progress': f'{i+1}/{total}'}, ensure_ascii=False)}\n\n"
 
             try:
-                ob = onboard_vm(ip=vm["ip"], role=vm["role"], user=body.ssh_user, password=body.ssh_password)
+                ob = onboard_vm(ip=vm["ip"], role=vm["role"], user=body.ssh_user, password=body.ssh_password,
+                                gpu_url=body.gpu_url, manager_model=body.manager_model, subagent_model=body.subagent_model)
                 status = "healthy" if ob.get("healthy") else "error"
 
                 # DB 상태 업데이트

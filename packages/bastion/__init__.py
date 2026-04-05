@@ -123,19 +123,10 @@ ROLE_SETUP_SCRIPTS: dict[str, list[str]] = {
         "curl -sO https://packages.wazuh.com/4.x/wazuh-install.sh 2>/dev/null || true",
     ],
     "manager": [
-        "curl -fsSL https://ollama.ai/install.sh | sh",
-        f"ollama pull {LLM_MANAGER_MODEL}",
-        f"ollama pull {LLM_SUBAGENT_MODEL}",
-        # bastion 설치 (CCC 레포 clone + venv)
+        # bastion 설치만 (Ollama는 gpu_url에 따라 동적 결정)
         "apt-get update -y && apt-get install -y python3 python3-pip python3-venv git",
         "if [ ! -d /opt/ccc ]; then git clone https://github.com/mrgrit/ccc.git /opt/ccc; fi",
         "cd /opt/ccc && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt -q",
-        # bastion용 .env 생성
-        f"cat > /opt/ccc/.env << 'ENVEOF'\n"
-        f"LLM_BASE_URL=http://localhost:11434\n"
-        f"LLM_MANAGER_MODEL={LLM_MANAGER_MODEL}\n"
-        f"LLM_SUBAGENT_MODEL={LLM_SUBAGENT_MODEL}\n"
-        f"ENVEOF",
     ],
 }
 
@@ -267,7 +258,8 @@ INTERNAL_SUBNET = "10.20.30.0/24"
 SECU_GW = INTERNAL_IPS["secu"]  # Security Gateway = 기본 게이트웨이
 
 
-def onboard_vm(ip: str, role: str, user: str = "ccc", password: str = "1") -> dict:
+def onboard_vm(ip: str, role: str, user: str = "ccc", password: str = "1",
+               gpu_url: str = "", manager_model: str = "", subagent_model: str = "") -> dict:
     """VM 온보딩 (외부 IP로 SSH 접속)
     1. SubAgent 설치
     2. 역할별 소프트웨어 설치
@@ -298,10 +290,32 @@ def onboard_vm(ip: str, role: str, user: str = "ccc", password: str = "1") -> di
     r = ssh_run(ip, user, password, [install_script], timeout=120)
     results["steps"].append({"step": "subagent_install", **r})
 
-    # 2. 역할별 소프트웨어 설치 (manager는 ollama 등 오래 걸림)
-    role_cmds = ROLE_SETUP_SCRIPTS.get(role, [])
+    # 2. 역할별 소프트웨어 설치
+    role_cmds = list(ROLE_SETUP_SCRIPTS.get(role, []))
+
+    # manager: 외부 LLM 서버 있으면 Ollama 스킵, 없으면 로컬 설치
+    if role == "manager":
+        llm_url = gpu_url or f"http://localhost:11434"
+        m_model = manager_model or LLM_MANAGER_MODEL
+        s_model = subagent_model or LLM_SUBAGENT_MODEL
+
+        if not gpu_url:
+            # 외부 LLM 없음 → 로컬 Ollama 설치 + 모델 pull
+            role_cmds.insert(0, "curl -fsSL https://ollama.ai/install.sh | sh")
+            role_cmds.append(f"ollama pull {m_model}")
+            role_cmds.append(f"ollama pull {s_model}")
+
+        # bastion .env 생성
+        role_cmds.append(
+            f"cat > /opt/ccc/.env << ENVEOF\n"
+            f"LLM_BASE_URL={llm_url}\n"
+            f"LLM_MANAGER_MODEL={m_model}\n"
+            f"LLM_SUBAGENT_MODEL={s_model}\n"
+            f"ENVEOF"
+        )
+
     if role_cmds:
-        t = 300 if role == "manager" else 120
+        t = 300 if role == "manager" and not gpu_url else 120
         r = ssh_run(ip, user, password, role_cmds, timeout=t)
         results["steps"].append({"step": "role_setup", **r})
 
