@@ -100,7 +100,7 @@ def main():
     claude_path = os.popen("which claude 2>/dev/null").read().strip()
     if not claude_path:
         print("[bastion] Claude Code CLI 설치 중...")
-        subprocess.run(["npm", "install", "-g", "@anthropic-ai/claude-code"], check=True)
+        subprocess.run(["sudo", "npm", "install", "-g", "@anthropic-ai/claude-code"], check=True)
         claude_path = os.popen("which claude 2>/dev/null").read().strip()
         if not claude_path:
             print("[bastion] ERROR: claude CLI 설치 실패")
