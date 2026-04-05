@@ -53,7 +53,7 @@ def start_litellm():
     print(f"[bastion] 모델: ollama/{LLM_MODEL}")
 
     litellm_proc = subprocess.Popen(
-        [sys.executable, "-m", "litellm",
+        ["litellm",
          "--model", f"ollama/{LLM_MODEL}",
          "--api_base", LLM_BASE_URL,
          "--port", str(LITELLM_PORT),
@@ -92,9 +92,13 @@ def main():
     # litellm 설치 확인
     try:
         import litellm
-    except ImportError:
-        print("[bastion] litellm 설치 중...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "litellm", "-q"], check=True)
+        # proxy CLI가 있는지 확인
+        r = subprocess.run(["litellm", "--help"], capture_output=True, timeout=5)
+        if r.returncode != 0:
+            raise ImportError
+    except Exception:
+        print("[bastion] litellm[proxy] 설치 중...")
+        subprocess.run([sys.executable, "-m", "pip", "install", "litellm[proxy]", "-q"], check=True)
 
     # claude CLI 확인/설치
     claude_path = os.popen("which claude 2>/dev/null").read().strip()
