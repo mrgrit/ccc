@@ -861,6 +861,47 @@ def onboard_infra(body: InfraSetupBody, request: Request):
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
+class SingleOnboardBody(BaseModel):
+    ip: str
+    role: str
+    ssh_user: str = "ccc"
+    ssh_password: str = "1"
+    gpu_url: str = ""
+    manager_model: str = ""
+    subagent_model: str = ""
+
+@app.post("/infras/{iid}/onboard", dependencies=[Depends(verify_api_key)])
+def onboard_single(iid: str, body: SingleOnboardBody, request: Request):
+    """단일 VM 재온보딩"""
+    from starlette.responses import StreamingResponse
+    from packages.bastion import onboard_vm
+    import json as _j
+
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+
+    def stream():
+        yield f"data: {_j.dumps({'event': 'start', 'role': body.role, 'ip': body.ip, 'progress': '1/1'}, ensure_ascii=False)}\n\n"
+        try:
+            ob = onboard_vm(ip=body.ip, role=body.role, user=body.ssh_user, password=body.ssh_password,
+                            gpu_url=body.gpu_url, manager_model=body.manager_model, subagent_model=body.subagent_model)
+            status = "healthy" if ob.get("healthy") else "error"
+            with _conn() as conn:
+                with conn.cursor() as cur:
+                    cur.execute("UPDATE student_infras SET status=%s WHERE id=%s", (status, iid))
+                    conn.commit()
+            for step in ob.get("steps", []):
+                step_data = {'event': 'step', 'role': body.role, 'step': step.get('step', ''), 'success': step.get('success', False)}
+                if not step.get('success'):
+                    step_data['stderr'] = step.get('stderr', '')[:300]
+                yield f"data: {_j.dumps(step_data, ensure_ascii=False)}\n\n"
+            yield f"data: {_j.dumps({'event': 'done', 'role': body.role, 'status': status, 'progress': '1/1'}, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            yield f"data: {_j.dumps({'event': 'error', 'role': body.role, 'message': str(e)[:200]}, ensure_ascii=False)}\n\n"
+        yield f"data: {_j.dumps({'event': 'complete', 'total': 1}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
 @app.get("/infras/my", dependencies=[Depends(verify_api_key)])
 def my_infra(request: Request):
     """내 인프라 목록 (로그인 사용자)"""

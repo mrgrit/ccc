@@ -123,9 +123,44 @@ export default function MyInfra() {
 
   const checkHealth = async (iid: string) => {
     try {
-      const d = await api(`/api/infras/${iid}/health`)
+      await api(`/api/infras/${iid}/health`)
       load()
     } catch {}
+  }
+
+  const [onboardingId, setOnboardingId] = useState<string | null>(null)
+
+  const reonboard = async (infra: any) => {
+    const cfg = infra.vm_config || {}
+    setOnboardingId(infra.id)
+    setOnboardLog([])
+    try {
+      const token = localStorage.getItem('ccc_token') || ''
+      const resp = await fetch(`/api/infras/${infra.id}/onboard`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': 'ccc-api-key-2026', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ ip: infra.ip, role: cfg.role || '', ssh_user: form.ssh_user, ssh_password: form.ssh_password }),
+      })
+      const reader = resp.body?.getReader()
+      const decoder = new TextDecoder()
+      if (reader) {
+        let buf = ''
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+          const lines = buf.split('\n')
+          buf = lines.pop() || ''
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try { setOnboardLog(prev => [...prev, JSON.parse(line.slice(6))]) } catch {}
+            }
+          }
+        }
+      }
+    } catch {}
+    setOnboardingId(null)
+    load()
   }
 
   const hasInfra = infras.length >= 5
@@ -172,7 +207,12 @@ export default function MyInfra() {
                     </div>
                   )}
                   {roleMeta.needSubagent && (
-                    <button onClick={() => checkHealth(infra.id)} style={smallBtn}>Health Check</button>
+                    <div style={{ display: 'flex', gap: 8 }}>
+                      <button onClick={() => checkHealth(infra.id)} style={smallBtn}>Health Check</button>
+                      <button onClick={() => reonboard(infra)} disabled={onboardingId === infra.id} style={{
+                        ...smallBtn, background: onboardingId === infra.id ? '#21262d' : '#f97316', color: '#fff',
+                      }}>{onboardingId === infra.id ? '설치 중...' : '재온보딩'}</button>
+                    </div>
                   )}
                 </div>
               )
