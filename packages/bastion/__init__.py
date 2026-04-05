@@ -383,11 +383,76 @@ if ($Adapters.Count -ge 1) {{
 
 
 def _onboard_windows(ip: str, internal_ip: str, user: str, password: str, results: dict) -> dict:
-    """Windows VM 온보딩 — PowerShell 기반"""
+    """Windows VM 온보딩 — scp로 파일 직접 전송 + PowerShell 실행"""
+    import tempfile
+    ssh_opts = ["-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"]
 
-    # 1. SubAgent 설치
-    r = _win_ssh_run(ip, user, password, WIN_SUBAGENT_SCRIPT)
-    results["steps"].append({"step": "subagent_install", **r})
+    # 1. SubAgent 설치 — agent.py를 scp로 직접 전송
+    agent_py = '''import json, subprocess, os, platform
+from http.server import HTTPServer, BaseHTTPRequestHandler
+class H(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type","application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps({"status":"healthy","hostname":platform.node(),"role":"windows"}).encode())
+        else:
+            self.send_response(404); self.end_headers()
+    def do_POST(self):
+        if self.path == "/a2a/run_script":
+            n = int(self.headers.get("Content-Length",0))
+            b = json.loads(self.rfile.read(n)) if n else {}
+            try:
+                r = subprocess.run(b.get("script","echo ok"), shell=True, capture_output=True, text=True, timeout=b.get("timeout",60))
+                res = {"exit_code":r.returncode,"stdout":r.stdout[:10000],"stderr":r.stderr[:5000]}
+            except Exception as e:
+                res = {"exit_code":-1,"stdout":"","stderr":str(e)}
+            self.send_response(200)
+            self.send_header("Content-Type","application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(res).encode())
+        else:
+            self.send_response(404); self.end_headers()
+    def log_message(self, *a): pass
+if __name__ == "__main__":
+    print("CCC SubAgent listening on :8002")
+    HTTPServer(("0.0.0.0", 8002), H).serve_forever()
+'''
+    # agent.py 로컬에 만들어서 scp
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", delete=False, encoding="utf-8") as f:
+        f.write(agent_py)
+        local_agent = f.name
+
+    # setup.ps1도 scp
+    setup_ps1 = r'''
+$AgentDir = "C:\ccc-subagent"
+New-Item -ItemType Directory -Force -Path $AgentDir | Out-Null
+Move-Item -Force "$HOME\agent.py" "$AgentDir\agent.py"
+Get-Process python* -ErrorAction SilentlyContinue | Where-Object { $_.CommandLine -like "*agent.py*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 1
+Start-Process -FilePath "python" -ArgumentList "$AgentDir\agent.py" -WorkingDirectory $AgentDir -WindowStyle Hidden
+Start-Sleep -Seconds 2
+$StartupDir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
+"@echo off`nstart /B python $AgentDir\agent.py" | Out-File -Encoding ascii "$StartupDir\ccc-subagent.bat" -Force
+try { New-NetFirewallRule -DisplayName "CCC SubAgent" -Direction Inbound -Protocol TCP -LocalPort 8002 -Action Allow -ErrorAction SilentlyContinue | Out-Null } catch {}
+$listening = netstat -an | Select-String ":8002"
+if ($listening) { Write-Host "SubAgent running on :8002" } else { Write-Host "WARN: not listening" }
+'''
+    try:
+        # agent.py 전송
+        scp1 = subprocess.run(["sshpass", "-p", password, "scp", *ssh_opts, local_agent, f"{user}@{ip}:agent.py"],
+                              capture_output=True, text=True, timeout=30, errors="replace")
+        os.unlink(local_agent)
+        if scp1.returncode != 0:
+            results["steps"].append({"step": "subagent_install", "success": False, "stderr": f"scp agent.py failed: {scp1.stderr[:300]}"})
+            return results
+
+        # setup.ps1 실행
+        r = _win_ssh_run(ip, user, password, setup_ps1)
+        results["steps"].append({"step": "subagent_install", **r})
+    except Exception as e:
+        results["steps"].append({"step": "subagent_install", "success": False, "stderr": str(e)})
 
     # 2. 내부 IP 설정
     script = WIN_INTERNAL_IP_SCRIPT.format(internal_ip=internal_ip)
