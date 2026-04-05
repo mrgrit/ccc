@@ -258,6 +258,149 @@ INTERNAL_SUBNET = "10.20.30.0/24"
 SECU_GW = INTERNAL_IPS["secu"]  # Security Gateway = 기본 게이트웨이
 
 
+def _win_ssh_run(ip: str, user: str, password: str, ps_script: str, timeout: int = 120) -> dict:
+    """Windows SSH — PowerShell 스크립트를 scp 업로드 후 실행"""
+    import tempfile
+    ssh_opts = ["-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"]
+    try:
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".ps1", delete=False, encoding="utf-8") as f:
+            f.write(ps_script)
+            local_path = f.name
+
+        remote_path = "C:\\\\ccc_onboard.ps1"
+        scp_cmd = ["sshpass", "-p", password, "scp", *ssh_opts, local_path, f"{user}@{ip}:{remote_path}"]
+        scp_r = subprocess.run(scp_cmd, capture_output=True, text=True, timeout=30, errors="replace")
+        os.unlink(local_path)
+        if scp_r.returncode != 0:
+            return {"success": False, "stdout": "", "stderr": f"scp failed: {scp_r.stderr[:300]}"}
+
+        run_cmd = [
+            "sshpass", "-p", password, "ssh", *ssh_opts, f"{user}@{ip}",
+            f"powershell -ExecutionPolicy Bypass -File {remote_path}; del {remote_path}",
+        ]
+        r = subprocess.run(run_cmd, capture_output=True, text=True, timeout=timeout, errors="replace")
+        return {"success": r.returncode == 0, "stdout": r.stdout[:5000], "stderr": r.stderr[:2000]}
+    except subprocess.TimeoutExpired:
+        return {"success": False, "stdout": "", "stderr": f"SSH timeout ({timeout}s)"}
+    except Exception as e:
+        return {"success": False, "stdout": "", "stderr": str(e)}
+
+
+# Windows SubAgent (Python http.server 기반, 스케줄 작업으로 자동 시작)
+WIN_SUBAGENT_SCRIPT = r'''
+$AgentDir = "C:\ccc-subagent"
+New-Item -ItemType Directory -Force -Path $AgentDir | Out-Null
+
+# Python SubAgent 스크립트 생성
+$AgentCode = @"
+import json, subprocess, os
+from http.server import HTTPServer, BaseHTTPRequestHandler
+class H(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/health":
+            self.send_response(200)
+            self.send_header("Content-Type","application/json")
+            self.end_headers()
+            import platform
+            self.wfile.write(json.dumps({"status":"healthy","hostname":platform.node(),"role":"windows"}).encode())
+        else:
+            self.send_response(404); self.end_headers()
+    def do_POST(self):
+        if self.path == "/a2a/run_script":
+            n = int(self.headers.get("Content-Length",0))
+            b = json.loads(self.rfile.read(n)) if n else {}
+            try:
+                r = subprocess.run(b.get("script","echo ok"), shell=True, capture_output=True, text=True, timeout=b.get("timeout",60))
+                res = {"exit_code":r.returncode,"stdout":r.stdout[:10000],"stderr":r.stderr[:5000]}
+            except Exception as e:
+                res = {"exit_code":-1,"stdout":"","stderr":str(e)}
+            self.send_response(200)
+            self.send_header("Content-Type","application/json")
+            self.end_headers()
+            self.wfile.write(json.dumps(res).encode())
+        else:
+            self.send_response(404); self.end_headers()
+    def log_message(self, *a): pass
+print("CCC SubAgent listening on :8002")
+HTTPServer(("0.0.0.0", 8002), H).serve_forever()
+"@
+$AgentCode | Out-File -Encoding utf8 "$AgentDir\agent.py" -Force
+
+# 기존 프로세스 종료
+Get-Process python* | Where-Object { $_.CommandLine -like "*ccc-subagent*" } | Stop-Process -Force 2>$null
+
+# 스케줄 작업으로 자동 시작 등록
+$Action = New-ScheduledTaskAction -Execute "python" -Argument "$AgentDir\agent.py" -WorkingDirectory $AgentDir
+$Trigger = New-ScheduledTaskTrigger -AtStartup
+$Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
+Register-ScheduledTask -TaskName "CCC-SubAgent" -Action $Action -Trigger $Trigger -Settings $Settings -User "SYSTEM" -RunLevel Highest -Force | Out-Null
+
+# 즉시 시작
+Start-ScheduledTask -TaskName "CCC-SubAgent"
+Start-Sleep -Seconds 2
+
+# 방화벽 포트 열기
+New-NetFirewallRule -DisplayName "CCC SubAgent" -Direction Inbound -Protocol TCP -LocalPort 8002 -Action Allow -ErrorAction SilentlyContinue | Out-Null
+
+Write-Host "CCC SubAgent installed and started on :8002"
+'''
+
+WIN_INTERNAL_IP_SCRIPT = r'''
+# 두번째 NIC에 내부 IP 설정
+$Adapters = Get-NetAdapter | Where-Object {{ $_.Status -eq "Up" }} | Sort-Object ifIndex
+if ($Adapters.Count -ge 2) {{
+    $InternalNic = $Adapters[1]
+    New-NetIPAddress -InterfaceIndex $InternalNic.ifIndex -IPAddress "{internal_ip}" -PrefixLength 24 -ErrorAction SilentlyContinue | Out-Null
+    Write-Host "Internal NIC: $($InternalNic.Name) = {internal_ip}"
+}} else {{
+    Write-Host "WARN: second NIC not found"
+}}
+'''
+
+WIN_NAT_DISABLE_SCRIPT = r'''
+# 기본 게이트웨이를 Security GW로 변경
+$Adapters = Get-NetAdapter | Where-Object {{ $_.Status -eq "Up" }} | Sort-Object ifIndex
+if ($Adapters.Count -ge 1) {{
+    # 기존 기본 게이트웨이 삭제
+    Get-NetRoute -DestinationPrefix "0.0.0.0/0" -ErrorAction SilentlyContinue | Remove-NetRoute -Confirm:$false -ErrorAction SilentlyContinue
+    # Security GW를 기본 게이트웨이로
+    New-NetRoute -DestinationPrefix "0.0.0.0/0" -NextHop "{secu_gw}" -InterfaceIndex $Adapters[0].ifIndex -ErrorAction SilentlyContinue | Out-Null
+    Write-Host "Default gateway set to {secu_gw}"
+}}
+'''
+
+
+def _onboard_windows(ip: str, internal_ip: str, user: str, password: str, results: dict) -> dict:
+    """Windows VM 온보딩 — PowerShell 기반"""
+
+    # 1. SubAgent 설치
+    r = _win_ssh_run(ip, user, password, WIN_SUBAGENT_SCRIPT)
+    results["steps"].append({"step": "subagent_install", **r})
+
+    # 2. 내부 IP 설정
+    script = WIN_INTERNAL_IP_SCRIPT.format(internal_ip=internal_ip)
+    r = _win_ssh_run(ip, user, password, script)
+    results["steps"].append({"step": "internal_ip_setup", "ip": internal_ip, **r})
+
+    # 3. NAT disable + Security GW 경유
+    script = WIN_NAT_DISABLE_SCRIPT.format(secu_gw=SECU_GW)
+    r = _win_ssh_run(ip, user, password, script)
+    results["steps"].append({"step": "nat_disable_gw_route", "gateway": SECU_GW, **r})
+
+    # 4. 헬스체크
+    import time as _t
+    health = {"status": "unreachable"}
+    for _ in range(5):
+        _t.sleep(2)
+        health = health_check(ip)
+        if health.get("status") == "healthy":
+            break
+    results["healthy"] = health.get("status") == "healthy"
+    results["steps"].append({"step": "health_check", "success": results["healthy"], "detail": health})
+
+    return results
+
+
 def onboard_vm(ip: str, role: str, user: str = "ccc", password: str = "1",
                gpu_url: str = "", manager_model: str = "", subagent_model: str = "") -> dict:
     """VM 온보딩 (외부 IP로 SSH 접속)
@@ -270,20 +413,9 @@ def onboard_vm(ip: str, role: str, user: str = "ccc", password: str = "1",
     internal_ip = INTERNAL_IPS.get(role, "10.20.30.250")
     results = {"ip": ip, "internal_ip": internal_ip, "role": role, "steps": []}
 
-    # Windows는 별도 처리 (sudo/bash/systemd 없음)
+    # Windows — PowerShell 기반 온보딩
     if role == "windows":
-        results["steps"].append({
-            "step": "skip",
-            "success": True,
-            "stdout": "Windows VM은 수동 설정 필요:\n"
-                      "1. OpenSSH Server 활성화\n"
-                      "2. Python3 설치\n"
-                      "3. SubAgent 수동 실행: python agent.py",
-        })
-        health = health_check(ip)
-        results["healthy"] = health.get("status") == "healthy"
-        results["steps"].append({"step": "health_check", "success": results["healthy"], "detail": health})
-        return results
+        return _onboard_windows(ip, internal_ip, user, password, results)
 
     # 1. SubAgent 설치 (외부 IP로 SSH — 인터넷 필요)
     install_script = SUBAGENT_INSTALL_SCRIPT.replace("{role}", role)
