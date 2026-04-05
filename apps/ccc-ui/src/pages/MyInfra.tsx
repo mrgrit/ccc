@@ -25,8 +25,38 @@ export default function MyInfra() {
     attacker_ip: '', secu_ip: '', web_ip: '', siem_ip: '',
     ssh_user: 'ccc', ssh_password: '1',
     windows_ip: '', manager_ip: '', gpu_url: '',
-    manager_model: 'gpt-oss:120b', subagent_model: 'gemma3:4b',
+    manager_model: '', subagent_model: '',
   })
+  const [llmUrl, setLlmUrl] = useState('http://localhost:11434')
+  const [llmModels, setLlmModels] = useState<string[]>([])
+  const [llmConnected, setLlmConnected] = useState(false)
+  const [llmLoading, setLlmLoading] = useState(false)
+
+  const connectLlm = async () => {
+    setLlmLoading(true)
+    setLlmConnected(false)
+    setLlmModels([])
+    try {
+      const url = llmUrl.replace(/\/+$/, '')
+      const r = await fetch(`${url}/api/tags`)
+      const d = await r.json()
+      const models = (d.models || []).map((m: any) => m.name as string)
+      setLlmModels(models)
+      setLlmConnected(true)
+      setForm(f => ({ ...f, gpu_url: url }))
+      if (models.length > 0 && !form.manager_model) {
+        setForm(f => ({ ...f, manager_model: models[0] }))
+      }
+      if (models.length > 1 && !form.subagent_model) {
+        setForm(f => ({ ...f, subagent_model: models[models.length > 1 ? 1 : 0] }))
+      } else if (models.length === 1 && !form.subagent_model) {
+        setForm(f => ({ ...f, subagent_model: models[0] }))
+      }
+    } catch {
+      setLlmConnected(false)
+    }
+    setLlmLoading(false)
+  }
 
   const load = () => {
     api('/api/infras/my')
@@ -232,15 +262,43 @@ export default function MyInfra() {
             </div>
             <input placeholder="IP (예: 10.20.30.200)" value={form.manager_ip}
               onChange={e => setForm({ ...form, manager_ip: e.target.value })} style={inputStyle} />
-            <input placeholder="외부 GPU URL (선택, 예: http://dgx-spark:11434)" value={form.gpu_url}
-              onChange={e => setForm({ ...form, gpu_url: e.target.value })} style={{ ...inputStyle, marginTop: 8 }} />
-            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
-              <input placeholder="Manager 모델 (gpt-oss:120b)" value={form.manager_model}
-                onChange={e => setForm({ ...form, manager_model: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
-              <input placeholder="SubAgent 모델 (gemma3:4b)" value={form.subagent_model}
-                onChange={e => setForm({ ...form, subagent_model: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
+
+            {/* LLM 서버 연결 */}
+            <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+              <input placeholder="LLM 서버 URL (예: http://dgx-spark:11434)" value={llmUrl}
+                onChange={e => setLlmUrl(e.target.value)} style={{ ...inputStyle, flex: 1 }} />
+              <button onClick={connectLlm} disabled={llmLoading} style={{
+                padding: '8px 16px', borderRadius: 6, border: 'none', cursor: 'pointer', fontSize: 13, fontWeight: 600, whiteSpace: 'nowrap' as const,
+                background: llmConnected ? '#3fb950' : '#f97316', color: '#fff',
+              }}>{llmLoading ? '...' : llmConnected ? `✓ ${llmModels.length}개 모델` : '연결'}</button>
             </div>
-            <div style={{ fontSize: 12, color: '#3fb950', marginTop: 6 }}>Ollama + Bastion + 모델 자동설치, 학생이 자기 인프라를 직접 운영</div>
+
+            {/* 모델 선택 (연결 후 표시) */}
+            {llmConnected && llmModels.length > 0 && (
+              <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: '#8b949e', marginBottom: 4 }}>Manager 모델 (분석/피드백)</div>
+                  <select value={form.manager_model} onChange={e => setForm({ ...form, manager_model: e.target.value })}
+                    style={{ ...inputStyle, width: '100%', cursor: 'pointer' }}>
+                    {llmModels.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 11, color: '#8b949e', marginBottom: 4 }}>SubAgent 모델 (챗봇/경량)</div>
+                  <select value={form.subagent_model} onChange={e => setForm({ ...form, subagent_model: e.target.value })}
+                    style={{ ...inputStyle, width: '100%', cursor: 'pointer' }}>
+                    {llmModels.map(m => <option key={m} value={m}>{m}</option>)}
+                  </select>
+                </div>
+              </div>
+            )}
+            {llmConnected && llmModels.length === 0 && (
+              <div style={{ fontSize: 12, color: '#f85149', marginTop: 6 }}>모델이 없습니다. ollama pull로 모델을 설치하세요.</div>
+            )}
+            {!llmConnected && !llmLoading && (
+              <div style={{ fontSize: 12, color: '#8b949e', marginTop: 6 }}>LLM 서버 URL을 입력하고 연결 버튼을 클릭하세요</div>
+            )}
+            <div style={{ fontSize: 12, color: '#3fb950', marginTop: 6 }}>Ollama + Bastion 자동설치, 학생이 자기 인프라를 직접 운영</div>
           </div>
         </div>
 
