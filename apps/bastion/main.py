@@ -288,9 +288,18 @@ def execute_interactive(instruction: str):
         f"세션 경과: {context['session_duration']}초, 완료 작업: {context['tasks_completed']}건"
     )
 
-    messages = [
-        {"role": "system", "content": system},
-        {"role": "user", "content": f"""지시: {instruction}
+    # 대화 히스토리 포함 (최근 20턴, 토큰 절약을 위해 요약)
+    messages = [{"role": "system", "content": system}]
+    for msg in state.history[-20:]:
+        role = msg["role"]
+        content = msg["content"]
+        # 너무 긴 결과는 잘라서 전달
+        if len(content) > 500:
+            content = content[:500] + "...(truncated)"
+        messages.append({"role": role, "content": content})
+
+    # 현재 지시에 스킬 선택 안내 추가
+    messages.append({"role": "user", "content": f"""지시: {instruction}
 
 사용 가능한 스킬:
 {skill_list}
@@ -299,8 +308,7 @@ def execute_interactive(instruction: str):
 {{"skill": "스킬명", "params": {{...}}, "reason": "선택 이유"}}
 
 스킬 없이 직접 답변 가능하면:
-{{"skill": "none", "params": {{}}, "reason": "직접 답변", "answer": "답변 내용"}}"""},
-    ]
+{{"skill": "none", "params": {{}}, "reason": "직접 답변", "answer": "답변 내용"}}"""})
 
     # LLM 응답 (스킬 선택)
     with console.status("[bold]생각하는 중...", spinner="dots", spinner_style=ORANGE):
@@ -345,7 +353,12 @@ def execute_interactive(instruction: str):
 
     render_result(result)
     state.task_count += 1
-    state.add_message("assistant", json.dumps({"skill": skill_name, "result": "completed"}, ensure_ascii=False))
+
+    # 실행 결과를 히스토리에 저장 (LLM이 다음 대화에서 참조)
+    result_summary = json.dumps(result, ensure_ascii=False)
+    if len(result_summary) > 800:
+        result_summary = result_summary[:800] + "...(truncated)"
+    state.add_message("assistant", f"[{skill_name}] {reason}\n결과: {result_summary}")
 
     # 결과 요약 (복잡한 결과일 때)
     if skill_name in ("diagnose", "system_status"):
