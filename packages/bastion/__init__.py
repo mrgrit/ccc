@@ -287,13 +287,12 @@ def _win_ssh_run(ip: str, user: str, password: str, ps_script: str, timeout: int
         return {"success": False, "stdout": "", "stderr": str(e)}
 
 
-# Windows SubAgent (Python http.server 기반, 스케줄 작업으로 자동 시작)
+# Windows SubAgent (Python http.server 기반)
 WIN_SUBAGENT_SCRIPT = r'''
-# Python 확인 (사전 설치 필수)
+# Python 확인
 $v = & python -c "import sys; print(sys.version)" 2>$null
 if (-not $v -or $v -notmatch "\d+\.\d+") {
-    Write-Host "ERROR: Python이 설치되어 있지 않습니다."
-    Write-Host "Windows VM에 Python 3.x를 먼저 설치하세요: https://python.org/downloads/"
+    Write-Host "ERROR: Python not installed"
     exit 1
 }
 Write-Host "Python: $v"
@@ -301,9 +300,9 @@ Write-Host "Python: $v"
 $AgentDir = "C:\ccc-subagent"
 New-Item -ItemType Directory -Force -Path $AgentDir | Out-Null
 
-# Python SubAgent 스크립트 생성
-$AgentCode = @"
-import json, subprocess, os
+# SubAgent 스크립트 생성
+@"
+import json, subprocess, os, platform
 from http.server import HTTPServer, BaseHTTPRequestHandler
 class H(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -311,7 +310,6 @@ class H(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type","application/json")
             self.end_headers()
-            import platform
             self.wfile.write(json.dumps({"status":"healthy","hostname":platform.node(),"role":"windows"}).encode())
         else:
             self.send_response(404); self.end_headers()
@@ -331,28 +329,32 @@ class H(BaseHTTPRequestHandler):
         else:
             self.send_response(404); self.end_headers()
     def log_message(self, *a): pass
-print("CCC SubAgent listening on :8002")
-HTTPServer(("0.0.0.0", 8002), H).serve_forever()
-"@
-$AgentCode | Out-File -Encoding utf8 "$AgentDir\agent.py" -Force
+if __name__ == "__main__":
+    print("CCC SubAgent listening on :8002")
+    HTTPServer(("0.0.0.0", 8002), H).serve_forever()
+"@ | Out-File -Encoding utf8 "$AgentDir\agent.py" -Force
 
 # 기존 프로세스 종료
-Get-Process python* | Where-Object { $_.CommandLine -like "*ccc-subagent*" } | Stop-Process -Force 2>$null
+Get-Process python* -ErrorAction SilentlyContinue | Where-Object { $_.Path -and $_.CommandLine -like "*agent.py*" } | Stop-Process -Force -ErrorAction SilentlyContinue
+Start-Sleep -Seconds 1
 
-# 스케줄 작업으로 자동 시작 등록
-$Action = New-ScheduledTaskAction -Execute "python" -Argument "$AgentDir\agent.py" -WorkingDirectory $AgentDir
-$Trigger = New-ScheduledTaskTrigger -AtStartup
-$Settings = New-ScheduledTaskSettingsSet -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable -RestartCount 3 -RestartInterval (New-TimeSpan -Minutes 1)
-Register-ScheduledTask -TaskName "CCC-SubAgent" -Action $Action -Trigger $Trigger -Settings $Settings -User "SYSTEM" -RunLevel Highest -Force | Out-Null
-
-# 즉시 시작
-Start-ScheduledTask -TaskName "CCC-SubAgent"
+# 백그라운드로 즉시 실행
+Start-Process -FilePath "python" -ArgumentList "$AgentDir\agent.py" -WorkingDirectory $AgentDir -WindowStyle Hidden
 Start-Sleep -Seconds 2
 
-# 방화벽 포트 열기
-New-NetFirewallRule -DisplayName "CCC SubAgent" -Direction Inbound -Protocol TCP -LocalPort 8002 -Action Allow -ErrorAction SilentlyContinue | Out-Null
+# 시작 프로그램에 등록 (재부팅 시 자동 시작)
+$StartupDir = "$env:APPDATA\Microsoft\Windows\Start Menu\Programs\Startup"
+@"
+@echo off
+start /B python $AgentDir\agent.py
+"@ | Out-File -Encoding ascii "$StartupDir\ccc-subagent.bat" -Force
 
-Write-Host "CCC SubAgent installed and started on :8002"
+# 방화벽 포트 열기
+try { New-NetFirewallRule -DisplayName "CCC SubAgent" -Direction Inbound -Protocol TCP -LocalPort 8002 -Action Allow -ErrorAction SilentlyContinue | Out-Null } catch {}
+
+# 확인
+$listening = netstat -an | Select-String ":8002"
+if ($listening) { Write-Host "CCC SubAgent running on :8002" } else { Write-Host "WARN: SubAgent may not be listening yet" }
 '''
 
 WIN_INTERNAL_IP_SCRIPT = r'''
