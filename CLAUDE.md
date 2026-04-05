@@ -9,6 +9,7 @@
 | ccc-api | apps/ccc-api/ | :9100 | 메인 API (학생/실습/CTF/대전) |
 | ccc-ui | apps/ccc-ui/ | - | React 웹 UI |
 | ccc-cli | apps/cli/ | - | 학생용 CLI |
+| bastion | apps/bastion/ | - | 운영 관리 에이전트 (대화형 TUI) |
 
 ## 패키지
 
@@ -23,16 +24,18 @@
 ## 개발
 
 ```bash
-# PostgreSQL
-docker compose -f docker/docker-compose.yaml up -d
+# 초기 설치
+./setup.sh
 
 # API 서버
-cp .env.example .env
 ./dev.sh api
+
+# Bastion 에이전트 (대화형 TUI)
+./dev.sh bastion
 
 # CLI
 export PYTHONPATH=$(pwd)
-python -m apps.cli.main students
+python3 -m apps.cli.main students
 ```
 
 ## API 인증
