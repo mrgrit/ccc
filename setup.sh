@@ -4,13 +4,26 @@ cd "$(dirname "$0")"
 
 echo "=== CCC Setup ==="
 
-# 1. 시스템 패키지
+# 1. 시스템 패키지 + Node.js 22 LTS
 echo "[1/5] 시스템 패키지 설치..."
 if command -v apt-get &>/dev/null; then
     sudo apt-get update -y
-    sudo apt-get install -y python3 python3-pip python3-venv nodejs npm sshpass
+    sudo apt-get install -y python3 python3-pip python3-venv sshpass ca-certificates curl gnupg
+
+    # Node.js 22 LTS (Vite 8 요구: >=20.19 or >=22.12)
+    NODE_MAJOR=$(node --version 2>/dev/null | sed 's/v\([0-9]*\).*/\1/' || echo "0")
+    if [ "$NODE_MAJOR" -lt 22 ]; then
+        echo "  Node.js 22 LTS 설치 중 (현재: $(node --version 2>/dev/null || echo '없음'))..."
+        curl -fsSL https://deb.nodesource.com/setup_22.x | sudo -E bash -
+        sudo apt-get install -y nodejs
+        echo "  Node.js $(node --version) 설치 완료"
+    else
+        echo "  Node.js $(node --version) OK"
+    fi
 elif command -v dnf &>/dev/null; then
-    sudo dnf install -y python3 python3-pip python3-virtualenv nodejs npm sshpass
+    sudo dnf install -y python3 python3-pip python3-virtualenv sshpass
+    curl -fsSL https://rpm.nodesource.com/setup_22.x | sudo bash -
+    sudo dnf install -y nodejs
 fi
 
 # 2. Python venv + 의존성
