@@ -141,15 +141,12 @@ def _init_db():
                     metadata JSONB DEFAULT '{}',
                     created_at TIMESTAMPTZ DEFAULT now()
                 );
-                -- 스키마 업그레이드
-                DO $$ BEGIN
-                    ALTER TABLE students ADD COLUMN IF NOT EXISTS password_hash TEXT DEFAULT '';
-                    ALTER TABLE students ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'trainee';
-                    ALTER TABLE students ADD COLUMN IF NOT EXISTS rank TEXT DEFAULT 'rookie';
-                    ALTER TABLE students ADD COLUMN IF NOT EXISTS group_id TEXT;
-                    ALTER TABLE students ADD COLUMN IF NOT EXISTS total_blocks INT DEFAULT 0;
-                EXCEPTION WHEN others THEN NULL;
-                END $$;
+                -- 스키마 업그레이드 (각각 독립 실행 — 하나 실패해도 나머지 적용)
+                ALTER TABLE students ADD COLUMN IF NOT EXISTS password_hash TEXT DEFAULT '';
+                ALTER TABLE students ADD COLUMN IF NOT EXISTS role TEXT DEFAULT 'trainee';
+                ALTER TABLE students ADD COLUMN IF NOT EXISTS rank TEXT DEFAULT 'rookie';
+                ALTER TABLE students ADD COLUMN IF NOT EXISTS total_blocks INT DEFAULT 0;
+                ALTER TABLE students ADD COLUMN IF NOT EXISTS grp TEXT DEFAULT '';
                 -- 그룹
                 CREATE TABLE IF NOT EXISTS ccc_groups (
                     id TEXT PRIMARY KEY,
