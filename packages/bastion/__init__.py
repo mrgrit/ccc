@@ -490,9 +490,16 @@ def onboard_vm(ip: str, role: str, user: str = "ccc", password: str = "1",
     internal_ip = INTERNAL_IPS.get(role, "10.20.30.250")
     results = {"ip": ip, "internal_ip": internal_ip, "role": role, "steps": []}
 
-    # Windows — PowerShell 기반 온보딩
+    # Windows — 자동 온보딩 미지원
     if role == "windows":
-        return _onboard_windows(ip, internal_ip, user, password, results)
+        results["steps"].append({
+            "step": "skip", "success": True,
+            "stdout": "Windows는 수동 설정 필요. SubAgent를 직접 실행하세요.",
+        })
+        health = health_check(ip)
+        results["healthy"] = health.get("status") == "healthy"
+        results["steps"].append({"step": "health_check", "success": results["healthy"], "detail": health})
+        return results
 
     # 1. SubAgent 설치 (외부 IP로 SSH — 인터넷 필요)
     install_script = SUBAGENT_INSTALL_SCRIPT.replace("{role}", role)
