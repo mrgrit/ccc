@@ -228,7 +228,7 @@ def ssh_run(ip: str, user: str, password: str, commands: list[str], timeout: int
         f"echo '{password}' | sudo -S bash",
     ]
     try:
-        r = subprocess.run(cmd, input=script, capture_output=True, text=True, timeout=t)
+        r = subprocess.run(cmd, input=script, capture_output=True, text=True, timeout=t, errors='replace')
         stderr = "\n".join(l for l in r.stderr.splitlines()
                            if "password" not in l.lower() and "setlocale" not in l.lower())
         return {"success": r.returncode == 0, "stdout": r.stdout[:5000], "stderr": stderr[:2000]}
@@ -309,10 +309,16 @@ echo "NAT masquerade on $EXTERNAL"
         r = ssh_run(ip, user, password, [secu_script])
         results["steps"].append({"step": "secu_nat_forward", **r})
 
-    # 5. 헬스체크 (내부 IP로 확인)
-    health = health_check(internal_ip)
+    # 5. 헬스체크 — SubAgent 시작 대기 후 확인 (외부 IP 우선)
+    import time as _t
+    health = {"status": "unreachable"}
+    for attempt in range(5):
+        _t.sleep(2)
+        health = health_check(ip)  # 외부 IP로 확인
+        if health.get("status") == "healthy":
+            break
     if health.get("status") != "healthy":
-        health = health_check(ip)  # 내부 안되면 외부로 fallback
+        health = health_check(internal_ip)  # 외부 안되면 내부 시도
     results["healthy"] = health.get("status") == "healthy"
     results["steps"].append({"step": "health_check", "success": results["healthy"], "detail": health})
 
