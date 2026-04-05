@@ -1,6 +1,7 @@
-import React, { useState } from 'react'
+import React, { useState, useRef } from 'react'
 import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
 import { isLoggedIn, getUser, clearAuth, isAdmin } from './auth.ts'
+import { api } from './api.ts'
 import Login from './pages/Login.tsx'
 import Dashboard from './pages/Dashboard.tsx'
 import Education from './pages/Education.tsx'
@@ -23,7 +24,28 @@ const navItems = [
 
 export default function App() {
   const [loggedIn, setLoggedIn] = useState(isLoggedIn())
+  const [showPwChange, setShowPwChange] = useState(false)
+  const [pwMsg, setPwMsg] = useState('')
+  const curPwRef = useRef<HTMLInputElement>(null)
+  const newPwRef = useRef<HTMLInputElement>(null)
   const user = getUser()
+
+  const changePassword = async () => {
+    const cur = curPwRef.current?.value || ''
+    const nw = newPwRef.current?.value || ''
+    if (!cur || !nw) { setPwMsg('비밀번호를 입력하세요'); return }
+    if (nw.length < 4) { setPwMsg('새 비밀번호는 4자 이상'); return }
+    try {
+      await api('/auth/change-password', {
+        method: 'POST',
+        body: JSON.stringify({ current_password: cur, new_password: nw }),
+      })
+      setPwMsg('변경 완료')
+      setTimeout(() => { setShowPwChange(false); setPwMsg('') }, 1500)
+    } catch (e: any) {
+      try { setPwMsg(JSON.parse(e.message)?.detail || '변경 실패') } catch { setPwMsg('변경 실패') }
+    }
+  }
 
   if (!loggedIn) {
     return <Login onLogin={() => setLoggedIn(true)} />
@@ -58,8 +80,30 @@ export default function App() {
         <div style={{ padding: '12px 20px', borderTop: '1px solid #30363d' }}>
           <div style={{ fontSize: 14, color: '#e6edf3', fontWeight: 600 }}>{user?.name || 'User'}</div>
           <div style={{ fontSize: 12, color: '#8b949e' }}>{user?.student_id} {user?.role === 'admin' && '(Admin)'}</div>
-          <button onClick={logout} style={{
+          <button onClick={() => setShowPwChange(!showPwChange)} style={{
             marginTop: 8, width: '100%', padding: '6px 0', borderRadius: 6,
+            background: '#21262d', color: '#8b949e', border: '1px solid #30363d',
+            cursor: 'pointer', fontSize: 13,
+          }}>비밀번호 변경</button>
+          {showPwChange && (
+            <div style={{ marginTop: 8, display: 'flex', flexDirection: 'column', gap: 6 }}>
+              <input ref={curPwRef} type="password" placeholder="현재 비밀번호" style={{
+                background: '#0d1117', color: '#e6edf3', border: '1px solid #30363d',
+                borderRadius: 6, padding: '6px 10px', fontSize: 12,
+              }} />
+              <input ref={newPwRef} type="password" placeholder="새 비밀번호" style={{
+                background: '#0d1117', color: '#e6edf3', border: '1px solid #30363d',
+                borderRadius: 6, padding: '6px 10px', fontSize: 12,
+              }} onKeyDown={e => e.key === 'Enter' && changePassword()} />
+              <button onClick={changePassword} style={{
+                padding: '5px 0', borderRadius: 6, border: 'none',
+                background: '#f97316', color: '#fff', fontSize: 12, cursor: 'pointer',
+              }}>변경</button>
+              {pwMsg && <div style={{ fontSize: 11, color: pwMsg === '변경 완료' ? '#3fb950' : '#f85149' }}>{pwMsg}</div>}
+            </div>
+          )}
+          <button onClick={logout} style={{
+            marginTop: 6, width: '100%', padding: '6px 0', borderRadius: 6,
             background: '#21262d', color: '#8b949e', border: '1px solid #30363d',
             cursor: 'pointer', fontSize: 13,
           }}>Logout</button>

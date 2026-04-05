@@ -443,6 +443,26 @@ def get_me(request: Request):
         raise HTTPException(404, "User not found")
     return {"user": dict(row)}
 
+class ChangePasswordBody(BaseModel):
+    current_password: str
+    new_password: str
+
+@app.post("/auth/change-password", dependencies=[Depends(verify_api_key)])
+def change_password(body: ChangePasswordBody, request: Request):
+    """비밀번호 변경"""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    old_hash = _hash_pw(body.current_password)
+    new_hash = _hash_pw(body.new_password)
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT id FROM students WHERE id=%s AND password_hash=%s", (uid, old_hash))
+            if not cur.fetchone():
+                raise HTTPException(401, "현재 비밀번호가 일치하지 않습니다")
+            cur.execute("UPDATE students SET password_hash=%s WHERE id=%s", (new_hash, uid))
+            conn.commit()
+    return {"message": "비밀번호가 변경되었습니다"}
+
 @app.post("/auth/create-admin")
 def create_admin(body: RegisterBody):
     """관리자 계정 생성 (첫 번째 관리자만 가능, 이후는 기존 관리자가 생성)"""
