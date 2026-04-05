@@ -133,9 +133,11 @@ def _init_db():
                     name TEXT NOT NULL,
                     email TEXT DEFAULT '',
                     password_hash TEXT DEFAULT '',
-                    role TEXT DEFAULT 'student',
+                    role TEXT DEFAULT 'trainee',
+                    rank TEXT DEFAULT 'rookie',
                     grp TEXT DEFAULT '',
                     score INT DEFAULT 0,
+                    total_blocks INT DEFAULT 0,
                     metadata JSONB DEFAULT '{}',
                     created_at TIMESTAMPTZ DEFAULT now()
                 );
