@@ -2,8 +2,7 @@
 """bastion — CCC 운영 관리 에이전트
 
 Claude Code + Ollama 오픈모델 기반.
-litellm 프록시로 Ollama를 Anthropic API 호환으로 변환 후
-Claude Code CLI를 CCC 운영 시스템 프롬프트로 실행.
+자체 경량 프록시로 Ollama를 Anthropic Messages API 호환으로 변환.
 
 Usage:
     python -m apps.bastion.main
@@ -12,13 +11,13 @@ Usage:
 import os
 import sys
 import subprocess
-import signal
 import time
+import threading
 
 CCC_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
-ENV_PATH = os.path.join(CCC_DIR, ".env")
 
 # .env 로드
+ENV_PATH = os.path.join(CCC_DIR, ".env")
 if os.path.exists(ENV_PATH):
     with open(ENV_PATH) as f:
         for line in f:
@@ -29,77 +28,46 @@ if os.path.exists(ENV_PATH):
 
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
 LLM_MODEL = os.getenv("LLM_MANAGER_MODEL", "gpt-oss:120b")
-LITELLM_PORT = int(os.getenv("LITELLM_PORT", "4100"))
-PROXY_URL = f"http://localhost:{LITELLM_PORT}"
-
-litellm_proc = None
+PROXY_PORT = int(os.getenv("BASTION_PROXY_PORT", "4100"))
+PROXY_URL = f"http://127.0.0.1:{PROXY_PORT}"
 
 
-def start_litellm():
-    """litellm 프록시 시작 — Ollama를 Anthropic API 호환으로"""
-    global litellm_proc
-
+def start_proxy():
+    """자체 경량 프록시 시작 (Ollama → Anthropic API)"""
     # 이미 떠있는지 확인
     try:
         import httpx
         r = httpx.get(f"{PROXY_URL}/health", timeout=2.0)
         if r.status_code == 200:
-            print(f"[bastion] litellm 프록시 이미 실행 중 ({PROXY_URL})")
-            return True
+            print(f"[bastion] 프록시 이미 실행 중 ({PROXY_URL})")
+            return
     except Exception:
         pass
 
-    print(f"[bastion] litellm 프록시 시작 (Ollama {LLM_BASE_URL} → Anthropic API)...")
-    print(f"[bastion] 모델: ollama/{LLM_MODEL}")
+    # 백그라운드 스레드로 프록시 실행
+    from apps.bastion.proxy import run as run_proxy
+    t = threading.Thread(target=run_proxy, args=(PROXY_PORT,), daemon=True)
+    t.start()
 
-    litellm_proc = subprocess.Popen(
-        ["litellm",
-         "--model", f"ollama/{LLM_MODEL}",
-         "--api_base", LLM_BASE_URL,
-         "--port", str(LITELLM_PORT),
-         "--drop_params",
-         ],
-        stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
-    )
-
-    # 프록시 준비 대기
-    for i in range(15):
-        time.sleep(1)
+    # 준비 대기
+    print(f"[bastion] 프록시 시작 (Ollama {LLM_BASE_URL} → Anthropic API)...", end="", flush=True)
+    for _ in range(10):
+        time.sleep(0.5)
         try:
             import httpx
-            r = httpx.get(f"{PROXY_URL}/health", timeout=2.0)
+            r = httpx.get(f"{PROXY_URL}/health", timeout=1.0)
             if r.status_code == 200:
-                print(f"[bastion] litellm 프록시 ready ({PROXY_URL})")
-                return True
+                print(" ready")
+                return
         except Exception:
             pass
         print(".", end="", flush=True)
 
-    print(f"\n[bastion] ERROR: litellm 프록시 시작 실패")
-    return False
-
-
-def stop_litellm():
-    global litellm_proc
-    if litellm_proc:
-        litellm_proc.terminate()
-        litellm_proc.wait(timeout=5)
-        litellm_proc = None
+    print("\n[bastion] ERROR: 프록시 시작 실패")
+    sys.exit(1)
 
 
 def main():
-    # litellm 설치 확인
-    try:
-        import litellm
-        # proxy CLI가 있는지 확인
-        r = subprocess.run(["litellm", "--help"], capture_output=True, timeout=5)
-        if r.returncode != 0:
-            raise ImportError
-    except Exception:
-        print("[bastion] litellm[proxy] 설치 중...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "litellm[proxy]", "-q"], check=True)
-
     # claude CLI 확인/설치
     claude_path = os.popen("which claude 2>/dev/null").read().strip()
     if not claude_path:
@@ -110,29 +78,26 @@ def main():
             print("[bastion] ERROR: claude CLI 설치 실패")
             sys.exit(1)
 
-    # litellm 프록시 시작
-    if not start_litellm():
-        sys.exit(1)
+    # 프록시 시작
+    start_proxy()
 
-    # CCC.md를 시스템 프롬프트로 사용
+    # CCC.md 시스템 프롬프트
     ccc_md = os.path.join(CCC_DIR, "CCC.md")
     system_prompt = ""
     if os.path.exists(ccc_md):
         with open(ccc_md, encoding="utf-8") as f:
             system_prompt = f.read()
 
-    # Claude Code 실행 — Ollama 백엔드
+    # Claude Code 실행
     env = os.environ.copy()
     env["ANTHROPIC_BASE_URL"] = PROXY_URL
-    env["ANTHROPIC_API_KEY"] = "sk-dummy"  # litellm 프록시는 키 검증 안 함
-    env["CLAUDE_CODE_USE_BEDROCK"] = ""
-    env["CLAUDE_CODE_USE_VERTEX"] = ""
+    env["ANTHROPIC_API_KEY"] = "sk-dummy"
 
     cmd = [claude_path]
     if system_prompt:
         cmd.extend(["--system-prompt", system_prompt])
 
-    print(f"[bastion] Claude Code 시작 (모델: {LLM_MODEL} via litellm)")
+    print(f"[bastion] Claude Code 시작 (모델: {LLM_MODEL})")
     print(f"[bastion] CCC 경로: {CCC_DIR}")
     print()
 
@@ -141,8 +106,6 @@ def main():
         sys.exit(proc.returncode)
     except KeyboardInterrupt:
         pass
-    finally:
-        stop_litellm()
 
 
 if __name__ == "__main__":
