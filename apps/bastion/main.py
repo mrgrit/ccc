@@ -20,6 +20,9 @@ import time
 import glob as _glob
 import re
 import uuid
+import signal
+import threading
+import subprocess
 from pathlib import Path
 from typing import Any
 
@@ -56,7 +59,21 @@ O = "orange3"; G = "bright_black"; GR = "green"; R = "red"; B = "dodger_blue2"; 
 # ── Paths ─────────────────────────────────────────
 CCC_HOME = Path.home() / ".ccc"
 SESSIONS_DIR = CCC_HOME / "sessions"
+MEMORY_DIR = CCC_HOME / "memory"
 SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
+MEMORY_DIR.mkdir(parents=True, exist_ok=True)
+
+# ── Interrupt (AbortController 패턴) ─────────────
+_interrupted = threading.Event()
+
+def _sigint_handler(sig, frame):
+    if _interrupted.is_set():
+        console.print(f"\n  [{R}]강제 종료[/]")
+        sys.exit(1)
+    _interrupted.set()
+    console.print(f"\n  [yellow]⚠ 중단 요청 (한번 더 누르면 강제 종료)[/]")
+
+signal.signal(signal.SIGINT, _sigint_handler)
 
 
 # ══════════════════════════════════════════════════
@@ -238,7 +255,170 @@ def file_grep(pattern: str, path: str = ".", glob_filter: str = "") -> dict:
 
 
 # ══════════════════════════════════════════════════
-#  4. Tool Definitions (Ollama function calling)
+#  4. Git 도구
+# ══════════════════════════════════════════════════
+def git_exec(subcmd: str) -> dict:
+    return shell_exec(f"cd {CCC_DIR} && git {subcmd}", timeout=30)
+
+def git_status() -> dict:
+    return git_exec("status -sb")
+
+def git_diff(target: str = "") -> dict:
+    return git_exec(f"diff {target}")
+
+def git_log(count: int = 10) -> dict:
+    return git_exec(f"log --oneline -{count}")
+
+def git_commit(message: str) -> dict:
+    return git_exec(f'add -A && git commit -m "{message}"')
+
+def git_push(remote: str = "origin", branch: str = "") -> dict:
+    b = branch or "$(git branch --show-current)"
+    return git_exec(f"push {remote} {b}")
+
+
+# ══════════════════════════════════════════════════
+#  5. 메모리 시스템 (.ccc/memory/)
+# ══════════════════════════════════════════════════
+def memory_save(name: str, content: str, mem_type: str = "project") -> dict:
+    """메모리 저장 — YAML frontmatter + markdown"""
+    safe = re.sub(r'[^\w\-]', '_', name)[:60]
+    fpath = MEMORY_DIR / f"{safe}.md"
+    desc = content.split("\n")[0][:100]
+    md = f"---\nname: {name}\ndescription: {desc}\ntype: {mem_type}\n---\n\n{content}\n"
+    fpath.write_text(md, encoding="utf-8")
+    # MEMORY.md 인덱스 업데이트
+    idx = MEMORY_DIR / "MEMORY.md"
+    entry = f"- [{name}]({safe}.md) — {desc}"
+    existing = idx.read_text(encoding="utf-8") if idx.exists() else ""
+    if safe not in existing:
+        idx.write_text(existing.rstrip() + "\n" + entry + "\n", encoding="utf-8")
+    return {"status": "saved", "path": str(fpath), "name": name}
+
+def memory_search(query: str) -> dict:
+    """메모리 검색"""
+    results = []
+    for f in MEMORY_DIR.glob("*.md"):
+        if f.name == "MEMORY.md":
+            continue
+        text = f.read_text(encoding="utf-8", errors="replace")
+        if query.lower() in text.lower():
+            # frontmatter 파싱
+            lines = text.split("\n")
+            name = desc = mtype = ""
+            for l in lines[:6]:
+                if l.startswith("name:"): name = l.split(":", 1)[1].strip()
+                if l.startswith("description:"): desc = l.split(":", 1)[1].strip()
+                if l.startswith("type:"): mtype = l.split(":", 1)[1].strip()
+            results.append({"name": name, "type": mtype, "desc": desc, "file": f.name})
+    return {"query": query, "count": len(results), "results": results}
+
+def memory_list() -> dict:
+    """메모리 목록"""
+    idx = MEMORY_DIR / "MEMORY.md"
+    if idx.exists():
+        return {"content": idx.read_text(encoding="utf-8")}
+    return {"content": "(비어있음)"}
+
+def memory_load_context() -> str:
+    """시스템 프롬프트에 포함할 메모리 컨텍스트"""
+    idx = MEMORY_DIR / "MEMORY.md"
+    if not idx.exists():
+        return ""
+    content = idx.read_text(encoding="utf-8").strip()
+    if not content:
+        return ""
+    return f"\n\n[기억된 정보]\n{content[:1500]}"
+
+
+# ══════════════════════════════════════════════════
+#  6. 플랜 모드
+# ══════════════════════════════════════════════════
+class PlanMode:
+    """복잡한 작업 → 계획 수립 → 승인 → 실행"""
+    def __init__(self):
+        self.active = False
+        self.plan: list[dict] = []
+        self.current_step = 0
+
+    def enter(self, steps: list[dict]):
+        self.active = True
+        self.plan = steps
+        self.current_step = 0
+
+    def exit(self):
+        self.active = False
+        self.plan = []
+        self.current_step = 0
+
+    def next_step(self) -> dict | None:
+        if self.current_step >= len(self.plan):
+            return None
+        step = self.plan[self.current_step]
+        self.current_step += 1
+        return step
+
+    def render(self):
+        console.print(Panel(
+            "\n".join(
+                f"  [{'green' if i < self.current_step else 'yellow' if i == self.current_step else 'dim'}]"
+                f"{'✓' if i < self.current_step else '→' if i == self.current_step else '○'} "
+                f"Step {i+1}: {s.get('description', '')}[/]"
+                for i, s in enumerate(self.plan)
+            ),
+            title=f"Plan ({self.current_step}/{len(self.plan)})", border_style=O,
+        ))
+
+plan_mode = PlanMode()
+
+
+# ══════════════════════════════════════════════════
+#  7. 에이전트 분기 (서브에이전트)
+# ══════════════════════════════════════════════════
+def spawn_agent(task: str, timeout: int = 120) -> dict:
+    """서브에이전트 — 별도 스레드에서 LLM + 도구 실행"""
+    result_holder = {"status": "running", "output": ""}
+
+    def _run():
+        try:
+            r = httpx.post(f"{LLM_BASE_URL}/api/chat", json={
+                "model": LLM_MODEL, "tools": TOOL_DEFS, "stream": False,
+                "messages": [
+                    {"role": "system", "content": build_system_prompt(f"CCC 경로: {CCC_DIR}")},
+                    {"role": "user", "content": task},
+                ],
+                "options": {"temperature": 0.1},
+            }, timeout=float(timeout))
+            msg = r.json().get("message", {})
+            content = msg.get("content", "")
+            tool_calls = msg.get("tool_calls", [])
+
+            outputs = [content] if content else []
+            for tc in tool_calls:
+                fn = tc.get("function", {})
+                name, params = fn.get("name", ""), fn.get("arguments", {})
+                if isinstance(params, str):
+                    try: params = json.loads(params)
+                    except: params = {}
+                res = dispatch_tool(name, params)
+                outputs.append(f"[{name}] {json.dumps(res, ensure_ascii=False)[:500]}")
+
+            result_holder["output"] = "\n".join(outputs)
+            result_holder["status"] = "done"
+        except Exception as e:
+            result_holder["output"] = str(e)
+            result_holder["status"] = "error"
+
+    t = threading.Thread(target=_run, daemon=True)
+    t.start()
+    t.join(timeout=timeout)
+    if t.is_alive():
+        result_holder["status"] = "timeout"
+    return result_holder
+
+
+# ══════════════════════════════════════════════════
+#  8. Tool Definitions (Ollama function calling)
 # ══════════════════════════════════════════════════
 TOOL_DEFS = [
     {"type": "function", "function": {
@@ -313,6 +493,49 @@ TOOL_DEFS = [
             "ip": {"type": "string"}, "script": {"type": "string"},
         }, "required": ["ip", "script"]},
     }},
+    # git
+    {"type": "function", "function": {
+        "name": "git",
+        "description": "Git 작업: status, diff, log, commit, push, pull, branch, checkout",
+        "parameters": {"type": "object", "properties": {
+            "subcmd": {"type": "string", "description": "git 서브커맨드 (예: status -sb, log --oneline -5, commit -m 'msg', push origin main)"},
+        }, "required": ["subcmd"]},
+    }},
+    # memory
+    {"type": "function", "function": {
+        "name": "memory_save",
+        "description": "정보를 영구 메모리에 저장 (.ccc/memory/). 세션 간 기억 유지. type: user/feedback/project/reference",
+        "parameters": {"type": "object", "properties": {
+            "name": {"type": "string", "description": "메모리 이름"},
+            "content": {"type": "string", "description": "저장할 내용"},
+            "type": {"type": "string", "enum": ["user","feedback","project","reference"]},
+        }, "required": ["name", "content"]},
+    }},
+    {"type": "function", "function": {
+        "name": "memory_search",
+        "description": "영구 메모리에서 검색",
+        "parameters": {"type": "object", "properties": {
+            "query": {"type": "string"},
+        }, "required": ["query"]},
+    }},
+    # plan
+    {"type": "function", "function": {
+        "name": "plan",
+        "description": "복잡한 작업을 단계별 계획으로 분해. action: create(계획수립), show(현재계획), next(다음단계실행), cancel(취소)",
+        "parameters": {"type": "object", "properties": {
+            "action": {"type": "string", "enum": ["create","show","next","cancel"]},
+            "steps": {"type": "string", "description": "JSON 배열: [{\"description\":\"설명\",\"tool\":\"도구명\",\"params\":{}}]"},
+        }, "required": ["action"]},
+    }},
+    # agent
+    {"type": "function", "function": {
+        "name": "agent",
+        "description": "서브에이전트 생성 — 독립 작업을 백그라운드에서 병렬 실행. 복잡한 작업을 분할할 때 사용",
+        "parameters": {"type": "object", "properties": {
+            "task": {"type": "string", "description": "서브에이전트에게 맡길 작업 설명"},
+            "timeout": {"type": "integer", "description": "타임아웃 (초, 기본 120)"},
+        }, "required": ["task"]},
+    }},
 ]
 
 
@@ -321,7 +544,6 @@ TOOL_DEFS = [
 # ══════════════════════════════════════════════════
 def dispatch_tool(name: str, params: dict) -> dict:
     """도구 실행 — 권한 확인 후 디스패치"""
-    # 권한 확인
     if not check_permission(name, params):
         return {"status": "denied", "message": "사용자가 실행을 거부했습니다."}
 
@@ -335,8 +557,51 @@ def dispatch_tool(name: str, params: dict) -> dict:
         return file_glob(params["pattern"], params.get("path", CCC_DIR))
     elif name == "grep":
         return file_grep(params["pattern"], params.get("path", CCC_DIR), params.get("glob_filter", ""))
+    elif name == "git":
+        return git_exec(params.get("subcmd", "status"))
+    elif name == "memory_save":
+        return memory_save(params["name"], params["content"], params.get("type", "project"))
+    elif name == "memory_search":
+        return memory_search(params["query"])
+    elif name == "plan":
+        return _handle_plan(params)
+    elif name == "agent":
+        return spawn_agent(params["task"], params.get("timeout", 120))
     else:
         return dispatch_skill(name, params)
+
+def _handle_plan(params: dict) -> dict:
+    action = params.get("action", "show")
+    if action == "create":
+        try:
+            steps = json.loads(params.get("steps", "[]"))
+        except: steps = []
+        if not steps:
+            return {"error": "steps 파라미터 필요 (JSON 배열)"}
+        plan_mode.enter(steps)
+        plan_mode.render()
+        return {"status": "plan_created", "steps": len(steps)}
+    elif action == "show":
+        if not plan_mode.active:
+            return {"status": "no_plan"}
+        plan_mode.render()
+        return {"status": "showing", "step": plan_mode.current_step, "total": len(plan_mode.plan)}
+    elif action == "next":
+        step = plan_mode.next_step()
+        if not step:
+            plan_mode.exit()
+            return {"status": "plan_complete"}
+        plan_mode.render()
+        # 단계에 도구가 지정되어 있으면 실행
+        tool = step.get("tool")
+        if tool:
+            result = dispatch_tool(tool, step.get("params", {}))
+            return {"status": "step_executed", "step": step["description"], "result": result}
+        return {"status": "step_ready", "step": step["description"]}
+    elif action == "cancel":
+        plan_mode.exit()
+        return {"status": "cancelled"}
+    return {"error": f"Unknown plan action: {action}"}
 
 
 # ══════════════════════════════════════════════════
@@ -408,9 +673,10 @@ def render_help():
         "자연어로 작업을 지시하세요. 예: 'API 시작해줘', 'main.py 보여줘', '.env 수정해줘'\n\n"
         f"[bold]CCC 관리[/]               [{P}]![/] CMD  로컬 쉘 직접 실행\n"
         f"  [{P}]/start[/] /stop /restart /svc /logs /errors /deploy /build /env\n\n"
-        f"[bold]인프라[/]                  [bold]세션[/]\n"
-        f"  [{P}]/status[/] /health /onboard /run   [{P}]/save[/] /load /sessions\n\n"
-        f"  [{P}]/skills[/] /infras /history /clear /help /exit[/]\n",
+        f"[bold]인프라[/]                  [bold]세션/메모리[/]\n"
+        f"  [{P}]/status[/] /health /onboard /run   [{P}]/save[/] /load /sessions /memory\n\n"
+        f"[bold]기타[/]                    Ctrl+C: 스트리밍 중단\n"
+        f"  [{P}]/skills[/] /infras /history /plan /clear /help /exit[/]\n",
         title="Bastion Help", border_style=O))
 
 
@@ -422,10 +688,11 @@ def execute_interactive(instruction: str, session: Session):
     session.add("user", instruction)
     ctx = session.context()
 
+    mem_ctx = memory_load_context()
     system = build_system_prompt(
         f"등록된 인프라: {json.dumps(ctx['infras'], ensure_ascii=False)}\n"
         f"세션: {ctx['duration']}초, 완료: {ctx['tasks']}건\n"
-        f"CCC 경로: {CCC_DIR}"
+        f"CCC 경로: {CCC_DIR}{mem_ctx}"
     )
 
     messages = [{"role": "system", "content": system}]
@@ -433,8 +700,12 @@ def execute_interactive(instruction: str, session: Session):
     messages.append({"role": "user", "content": instruction})
 
     full_response = ""
+    _interrupted.clear()
 
     for iteration in range(5):  # max 5 tool call rounds
+        if _interrupted.is_set():
+            console.print(f"  [yellow]⚠ 중단됨 (응답 일부 보존)[/]")
+            break
         try:
             # 스트리밍 + tool calling
             with httpx.stream("POST", f"{LLM_BASE_URL}/api/chat", json={
@@ -455,6 +726,10 @@ def execute_interactive(instruction: str, session: Session):
                         continue
 
                     msg = chunk.get("message", {})
+
+                    # Ctrl+C 체크
+                    if _interrupted.is_set():
+                        break
 
                     # 텍스트 토큰 스트리밍
                     token = msg.get("content", "")
@@ -498,8 +773,14 @@ def execute_interactive(instruction: str, session: Session):
 
             render_tool_call(name, params)
 
+            # 실행 + 자동 에러 복구 (1회 재시도)
             with console.status("[bold]실행 중...", spinner="dots", spinner_style=O):
                 result = dispatch_tool(name, params)
+                # 연결 에러 시 1회 재시도
+                if result.get("exit_code", 0) != 0 and "Connection refused" in result.get("stderr", ""):
+                    console.print(f"  [yellow]↻ 재시도...[/]")
+                    time.sleep(2)
+                    result = dispatch_tool(name, params)
 
             render_result(result)
             session.tasks += 1
@@ -616,6 +897,14 @@ def handle_slash(cmd: str, session: Session) -> bool:
             color = O if m["role"] == "user" else B
             console.print(f"  [{color}]{m['role']}[/]: {m['content'][:100]}")
 
+    elif c == "/memory":
+        r = memory_list(); render_result(r)
+    elif c == "/plan":
+        if plan_mode.active:
+            plan_mode.render()
+        else:
+            console.print("  플랜 없음. 자연어로 '계획 세워줘' 지시", style=G)
+
     # 세션 관리
     elif c == "/save":
         session.save()
@@ -692,6 +981,7 @@ def main():
 
     # REPL
     while True:
+        _interrupted.clear()
         try:
             console.print(f"[bold {O}]bastion >[/] ", end="")
             user_input = input().strip()
