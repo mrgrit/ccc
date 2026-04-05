@@ -23,8 +23,8 @@ export default function MyInfra() {
   const [setupResult, setSetupResult] = useState<any>(null)
   const [form, setForm] = useState({
     attacker_ip: '', secu_ip: '', web_ip: '', siem_ip: '',
-    ssh_user: 'opsclaw', ssh_password: '1', ollama_url: '',
-    windows_ip: '', manager_ip: '',
+    ssh_user: 'ccc', ssh_password: '1',
+    windows_ip: '', manager_ip: '', gpu_url: '',
   })
 
   const load = () => {
@@ -36,8 +36,8 @@ export default function MyInfra() {
   useEffect(load, [])
 
   const setup = async () => {
-    if (!form.attacker_ip || !form.secu_ip || !form.web_ip || !form.siem_ip) {
-      alert('4개 VM의 IP를 모두 입력하세요')
+    if (!form.attacker_ip || !form.secu_ip || !form.web_ip || !form.siem_ip || !form.manager_ip) {
+      alert('5개 VM의 IP를 모두 입력하세요 (Attacker, Security, Web, SIEM, Manager)')
       return
     }
     setSetting(true)
@@ -60,7 +60,7 @@ export default function MyInfra() {
     } catch {}
   }
 
-  const hasInfra = infras.length >= 4
+  const hasInfra = infras.length >= 5
 
   if (loading) return <div style={{ color: '#8b949e', padding: 40, textAlign: 'center' }}>Loading...</div>
 
@@ -68,7 +68,7 @@ export default function MyInfra() {
     <div>
       <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, color: '#e6edf3' }}>My Infrastructure</h2>
       <p style={{ fontSize: 15, color: '#8b949e', marginBottom: 24 }}>
-        실습과 대전에 사용할 VM 4대를 등록합니다. IP를 입력하면 Bastion AI가 SubAgent를 자동 설치합니다.
+        실습과 대전에 사용할 VM 5대를 등록합니다. IP를 입력하면 Bastion AI가 SubAgent를 자동 설치합니다.
       </p>
 
       {/* 현재 인프라 상태 */}
@@ -103,11 +103,6 @@ export default function MyInfra() {
                       SubAgent: <code style={{ color: '#58a6ff' }}>{infra.subagent_url}</code>
                     </div>
                   )}
-                  {cfg.ollama_url && cfg.role === 'attacker' && (
-                    <div style={{ fontSize: 13, color: '#8b949e', marginBottom: 8 }}>
-                      Ollama: <code style={{ color: '#3fb950' }}>{cfg.ollama_url}</code>
-                    </div>
-                  )}
                   {roleMeta.needSubagent && (
                     <button onClick={() => checkHealth(infra.id)} style={smallBtn}>Health Check</button>
                   )}
@@ -124,7 +119,7 @@ export default function MyInfra() {
           {hasInfra ? '인프라 재설정' : '인프라 등록'}
         </h3>
         <p style={{ fontSize: 14, color: '#8b949e', marginBottom: 20 }}>
-          4개 VM의 IP를 입력하고 "자동 설정"을 누르면 Bastion AI가 SubAgent를 설치합니다.
+          5개 VM의 IP를 입력하고 "자동 설정"을 누르면 Bastion AI가 SubAgent를 설치합니다.
         </p>
 
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 20 }}>
@@ -133,12 +128,17 @@ export default function MyInfra() {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
               <span style={{ fontSize: 20 }}>🗡️</span>
               <span style={{ fontSize: 16, fontWeight: 600, color: '#e6edf3' }}>Attacker (Kali)</span>
+              <span style={reqBadge}>필수</span>
+            </div>
+            <div style={reqBox}>
+              <div style={reqLine}>OS: Kali Linux 2024+ / Ubuntu 22.04+</div>
+              <div style={reqLine}>CPU: 2코어 이상 / RAM: 4GB 이상</div>
+              <div style={reqLine}>디스크: 40GB 이상</div>
+              <div style={reqLine}>네트워크: 내부망(10.x) 접근 가능</div>
             </div>
             <input placeholder="IP (예: 192.168.0.50)" value={form.attacker_ip}
               onChange={e => setForm({ ...form, attacker_ip: e.target.value })} style={inputStyle} />
-            <input placeholder="Ollama URL (비어있으면 dgx-spark 사용)" value={form.ollama_url}
-              onChange={e => setForm({ ...form, ollama_url: e.target.value })} style={{ ...inputStyle, marginTop: 8 }} />
-            <div style={{ fontSize: 12, color: '#8b949e', marginTop: 6 }}>GPU가 있으면 http://IP:11434 입력</div>
+            <div style={{ fontSize: 12, color: '#3fb950', marginTop: 6 }}>nmap, metasploit, hydra, sqlmap + SubAgent 자동설치</div>
           </div>
 
           {/* Secu */}
@@ -146,6 +146,14 @@ export default function MyInfra() {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
               <span style={{ fontSize: 20 }}>🛡️</span>
               <span style={{ fontSize: 16, fontWeight: 600, color: '#e6edf3' }}>Security Gateway</span>
+              <span style={reqBadge}>필수</span>
+            </div>
+            <div style={reqBox}>
+              <div style={reqLine}>OS: Ubuntu 22.04+ / Debian 12+</div>
+              <div style={reqLine}>CPU: 2코어 이상 / RAM: 4GB 이상</div>
+              <div style={reqLine}>디스크: 20GB 이상</div>
+              <div style={{ ...reqLine, color: '#f97316' }}>NIC 2개 필수: 외부(bridge) + 내부(10.x)</div>
+              <div style={reqLine}>IP forwarding 활성화 (sysctl)</div>
             </div>
             <input placeholder="IP (예: 10.20.30.1)" value={form.secu_ip}
               onChange={e => setForm({ ...form, secu_ip: e.target.value })} style={inputStyle} />
@@ -157,6 +165,13 @@ export default function MyInfra() {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
               <span style={{ fontSize: 20 }}>🌐</span>
               <span style={{ fontSize: 16, fontWeight: 600, color: '#e6edf3' }}>Web Server</span>
+              <span style={reqBadge}>필수</span>
+            </div>
+            <div style={reqBox}>
+              <div style={reqLine}>OS: Ubuntu 22.04+ / Debian 12+</div>
+              <div style={reqLine}>CPU: 2코어 이상 / RAM: 4GB 이상</div>
+              <div style={reqLine}>디스크: 30GB 이상</div>
+              <div style={reqLine}>포트: 80, 443, 3000(JuiceShop), 8080(DVWA)</div>
             </div>
             <input placeholder="IP (예: 10.20.30.80)" value={form.web_ip}
               onChange={e => setForm({ ...form, web_ip: e.target.value })} style={inputStyle} />
@@ -168,6 +183,14 @@ export default function MyInfra() {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
               <span style={{ fontSize: 20 }}>📡</span>
               <span style={{ fontSize: 16, fontWeight: 600, color: '#e6edf3' }}>SIEM</span>
+              <span style={reqBadge}>필수</span>
+            </div>
+            <div style={reqBox}>
+              <div style={reqLine}>OS: Ubuntu 22.04+ / Debian 12+</div>
+              <div style={reqLine}>CPU: 4코어 이상</div>
+              <div style={{ ...reqLine, color: '#f97316' }}>RAM: 8GB 이상 (Wazuh+OpenCTI 동시 구동)</div>
+              <div style={reqLine}>디스크: 50GB 이상 (로그 저장)</div>
+              <div style={reqLine}>포트: 1514(Wazuh), 5601(Dashboard), 9200(ES)</div>
             </div>
             <input placeholder="IP (예: 10.20.30.100)" value={form.siem_ip}
               onChange={e => setForm({ ...form, siem_ip: e.target.value })} style={inputStyle} />
@@ -179,6 +202,13 @@ export default function MyInfra() {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
               <span style={{ fontSize: 20 }}>🪟</span>
               <span style={{ fontSize: 16, fontWeight: 600, color: '#e6edf3' }}>Windows (분석/포렌식)</span>
+              <span style={optBadge}>선택</span>
+            </div>
+            <div style={reqBox}>
+              <div style={reqLine}>OS: Windows 10/11 Pro 이상</div>
+              <div style={reqLine}>CPU: 2코어 이상 / RAM: 8GB 이상</div>
+              <div style={reqLine}>디스크: 60GB 이상 (분석 도구 + 이미지)</div>
+              <div style={reqLine}>OpenSSH Server 활성화 필수</div>
             </div>
             <input placeholder="IP (선택, 없으면 skip)" value={form.windows_ip}
               onChange={e => setForm({ ...form, windows_ip: e.target.value })} style={inputStyle} />
@@ -190,16 +220,26 @@ export default function MyInfra() {
             <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 10 }}>
               <span style={{ fontSize: 20 }}>🤖</span>
               <span style={{ fontSize: 16, fontWeight: 600, color: '#e6edf3' }}>Manager AI</span>
+              <span style={reqBadge}>필수</span>
             </div>
-            <input placeholder="IP (선택, 없으면 외부 GPU)" value={form.manager_ip}
+            <div style={reqBox}>
+              <div style={reqLine}>OS: Ubuntu 22.04+ / Debian 12+</div>
+              <div style={reqLine}>CPU: 4코어 이상 / RAM: 8GB 이상</div>
+              <div style={reqLine}>디스크: 30GB 이상</div>
+              <div style={reqLine}>외부 GPU 미사용 시: VRAM 8GB+ GPU 권장</div>
+              <div style={reqLine}>포트: 11434(Ollama), 8765(SubAgent)</div>
+            </div>
+            <input placeholder="IP (예: 10.20.30.200)" value={form.manager_ip}
               onChange={e => setForm({ ...form, manager_ip: e.target.value })} style={inputStyle} />
-            <div style={{ fontSize: 12, color: '#8b949e', marginTop: 6 }}>Ollama + gpt-oss:120b (또는 외부 GPU 서버 연결)</div>
+            <input placeholder="외부 GPU URL (선택, 예: http://dgx-spark:11434)" value={form.gpu_url}
+              onChange={e => setForm({ ...form, gpu_url: e.target.value })} style={{ ...inputStyle, marginTop: 8 }} />
+            <div style={{ fontSize: 12, color: '#3fb950', marginTop: 6 }}>Ollama + SubAgent 자동설치, 외부 GPU 연결 시 URL 입력</div>
           </div>
         </div>
 
         {/* SSH 자격증명 */}
         <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
-          <input placeholder="SSH 사용자 (기본: opsclaw)" value={form.ssh_user}
+          <input placeholder="SSH 사용자 (기본: ccc)" value={form.ssh_user}
             onChange={e => setForm({ ...form, ssh_user: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
           <input placeholder="SSH 비밀번호" type="password" value={form.ssh_password}
             onChange={e => setForm({ ...form, ssh_password: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
@@ -221,9 +261,6 @@ export default function MyInfra() {
               <span style={{ color: o.status === 'healthy' || o.status === 'bootstrapped' ? '#3fb950' : o.status.startsWith('skip') ? '#8b949e' : '#d29922' }}>{o.status}</span>
             </div>
           ))}
-          <div style={{ fontSize: 13, color: '#8b949e', marginTop: 10 }}>
-            Ollama: <code style={{ color: '#3fb950' }}>{setupResult.ollama_url}</code>
-          </div>
         </div>
       )}
     </div>
@@ -240,4 +277,16 @@ const inputStyle: React.CSSProperties = {
 const smallBtn: React.CSSProperties = {
   padding: '6px 14px', borderRadius: 6, border: '1px solid #30363d',
   background: '#21262d', color: '#e6edf3', cursor: 'pointer', fontSize: 13,
+}
+const reqBadge: React.CSSProperties = {
+  fontSize: 11, padding: '1px 8px', borderRadius: 10, background: 'rgba(248,81,73,0.15)', color: '#f85149', fontWeight: 600,
+}
+const optBadge: React.CSSProperties = {
+  fontSize: 11, padding: '1px 8px', borderRadius: 10, background: 'rgba(139,148,158,0.15)', color: '#8b949e', fontWeight: 600,
+}
+const reqBox: React.CSSProperties = {
+  background: '#0d1117', border: '1px solid #21262d', borderRadius: 6, padding: '8px 12px', marginBottom: 10, fontSize: 12, lineHeight: 1.8,
+}
+const reqLine: React.CSSProperties = {
+  color: '#8b949e',
 }

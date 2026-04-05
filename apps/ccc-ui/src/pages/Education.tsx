@@ -1,59 +1,81 @@
 import React, { useEffect, useState } from 'react'
+import { useSearchParams } from 'react-router-dom'
 import { api } from '../api.ts'
 import { isAdmin } from '../auth.ts'
 
 export default function Education() {
+  const [searchParams, setSearchParams] = useSearchParams()
   const [groups, setGroups] = useState<any[]>([])
-  const [courses, setCourses] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
-  const [selectedCourse, setSelectedCourse] = useState<any>(null)
   const [weeks, setWeeks] = useState<any[]>([])
   const [weeksLoading, setWeeksLoading] = useState(false)
   const [lecture, setLecture] = useState<string | null>(null)
-  const [lectureTitle, setLectureTitle] = useState('')
   const [labDetail, setLabDetail] = useState<any>(null)
   const [showAnswers, setShowAnswers] = useState(false)
-  // 현재 보기 모드: none | lecture | lab
-  const [viewMode, setViewMode] = useState<'none' | 'lecture' | 'lab'>('none')
+
+  // URL 파라미터에서 네비게이션 상태 파생
+  const courseId = searchParams.get('course')
+  const viewParam = searchParams.get('view') as 'lecture' | 'lab' | null
+  const weekParam = searchParams.get('week')
+  const labIdParam = searchParams.get('lab')
+  const viewMode = viewParam || 'none'
+
+  const selectedCourse = courseId
+    ? groups.flatMap(g => g.courses).find((c: any) => c.course_id === courseId) || null
+    : null
 
   useEffect(() => {
     api('/api/education/courses')
-      .then(d => { setCourses(d.courses || []); setGroups(d.groups || []) })
+      .then(d => setGroups(d.groups || []))
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
   }, [])
 
-  const selectCourse = async (course: any) => {
-    setSelectedCourse(course)
-    setLecture(null)
-    setLabDetail(null)
-    setViewMode('none')
+  // 코스 선택 시 주차 데이터 로드
+  useEffect(() => {
+    if (!courseId) { setWeeks([]); return }
     setWeeksLoading(true)
-    try {
-      const d = await api(`/api/education/courses/${course.course_id}/weeks`)
-      setWeeks(d.weeks || [])
-    } catch (e: any) { setError(e.message) }
-    setWeeksLoading(false)
+    api(`/api/education/courses/${courseId}/weeks`)
+      .then(d => setWeeks(d.weeks || []))
+      .catch(e => setError(e.message))
+      .finally(() => setWeeksLoading(false))
+  }, [courseId])
+
+  // 교안 로드
+  useEffect(() => {
+    if (viewParam === 'lecture' && courseId && weekParam) {
+      api(`/api/education/lecture/${courseId}/${weekParam}`)
+        .then(d => setLecture(d.content))
+        .catch(() => setLecture('교안을 로드할 수 없습니다.'))
+    } else {
+      setLecture(null)
+    }
+  }, [viewParam, courseId, weekParam])
+
+  // 실습 로드
+  useEffect(() => {
+    if (viewParam === 'lab' && labIdParam) {
+      api(`/api/labs/catalog/${labIdParam}`)
+        .then(d => setLabDetail(d))
+        .catch(() => setLabDetail(null))
+    } else {
+      setLabDetail(null)
+    }
+  }, [viewParam, labIdParam])
+
+  const selectCourse = (course: any) => {
+    setSearchParams({ course: course.course_id })
   }
 
-  const openLecture = async (courseId: string, week: number, title: string) => {
-    setLabDetail(null)
-    setViewMode('lecture')
-    setLectureTitle(`Week ${week}: ${title}`)
-    try {
-      const d = await api(`/api/education/lecture/${courseId}/${week}`)
-      setLecture(d.content)
-    } catch { setLecture('교안을 로드할 수 없습니다.') }
+  const openLecture = (courseId: string, week: number) => {
+    setSearchParams({ course: courseId, view: 'lecture', week: String(week) })
   }
 
-  const openLab = async (labId: string, admin = false) => {
-    setLecture(null)
-    setViewMode('lab')
-    try {
-      const d = await api(`/api/labs/catalog/${labId}${admin ? '?admin=true' : ''}`)
-      setLabDetail(d)
-    } catch { setLabDetail(null) }
+  const openLab = (labId: string, admin = false) => {
+    const params: Record<string, string> = { course: courseId!, view: 'lab', lab: labId }
+    if (admin) params.admin = '1'
+    setSearchParams(params)
   }
 
   if (loading) return <div style={{ color: '#8b949e', padding: 40, textAlign: 'center', fontSize: 15 }}>Loading courses...</div>
@@ -105,11 +127,11 @@ export default function Education() {
       <div>
         {/* 상단 네비 */}
         <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 16 }}>
-          <button onClick={() => { setViewMode('none'); setLecture(null); setLabDetail(null) }} style={backBtn}>주차 목록</button>
-          <button onClick={() => { setSelectedCourse(null); setViewMode('none') }} style={backBtn}>과목 목록</button>
-          <span style={{ fontSize: 14, color: '#8b949e' }}>{selectedCourse.icon} {selectedCourse.title}</span>
+          <button onClick={() => setSearchParams({ course: courseId! })} style={backBtn}>주차 목록</button>
+          <button onClick={() => setSearchParams({})} style={backBtn}>과목 목록</button>
+          <span style={{ fontSize: 14, color: '#8b949e' }}>{selectedCourse?.icon} {selectedCourse?.title}</span>
           <span style={{ fontSize: 16, fontWeight: 700, color: '#e6edf3', marginLeft: 8 }}>
-            {viewMode === 'lecture' ? lectureTitle : labDetail?.title}
+            {viewMode === 'lecture' && weekParam ? `Week ${weekParam}: ${weeks.find(w => w.week === Number(weekParam))?.title || ''}` : labDetail?.title}
           </span>
           {labDetail?.has_answers && viewMode === 'lab' && isAdmin() && (
             <button onClick={() => { setShowAnswers(!showAnswers); openLab(labDetail.lab_id, !showAnswers) }} style={{
@@ -178,7 +200,7 @@ export default function Education() {
   return (
     <div>
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 24 }}>
-        <button onClick={() => { setSelectedCourse(null) }} style={backBtn}>Back</button>
+        <button onClick={() => setSearchParams({})} style={backBtn}>Back</button>
         <span style={{ fontSize: 24 }}>{selectedCourse.icon}</span>
         <h2 style={{ fontSize: 22, fontWeight: 700, color: '#e6edf3' }}>{selectedCourse.title}</h2>
       </div>
@@ -193,7 +215,7 @@ export default function Education() {
               <div style={{ fontSize: 16, fontWeight: 600, color: '#e6edf3', marginBottom: 12 }}>{w.title || `Week ${w.week}`}</div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
                 {w.has_lecture && (
-                  <button onClick={() => openLecture(selectedCourse.course_id, w.week, w.title)} style={{ ...actionBtn, background: '#21262d', color: '#e6edf3' }}>📖 교안</button>
+                  <button onClick={() => openLecture(selectedCourse.course_id, w.week)} style={{ ...actionBtn, background: '#21262d', color: '#e6edf3' }}>📖 교안</button>
                 )}
                 <button onClick={() => openLab(w.lab_nonai_id)} style={{ ...actionBtn, color: '#58a6ff' }}>📝 Non-AI 실습</button>
                 <button onClick={() => openLab(w.lab_ai_id)} style={{ ...actionBtn, color: '#f97316' }}>🤖 AI 실습</button>
