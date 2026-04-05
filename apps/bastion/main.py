@@ -96,12 +96,15 @@ def main():
         print("[bastion] litellm 설치 중...")
         subprocess.run([sys.executable, "-m", "pip", "install", "litellm", "-q"], check=True)
 
-    # claude CLI 확인
+    # claude CLI 확인/설치
     claude_path = os.popen("which claude 2>/dev/null").read().strip()
     if not claude_path:
-        print("[bastion] ERROR: claude CLI가 설치되어 있지 않습니다.")
-        print("  설치: npm install -g @anthropic-ai/claude-code")
-        sys.exit(1)
+        print("[bastion] Claude Code CLI 설치 중...")
+        subprocess.run(["npm", "install", "-g", "@anthropic-ai/claude-code"], check=True)
+        claude_path = os.popen("which claude 2>/dev/null").read().strip()
+        if not claude_path:
+            print("[bastion] ERROR: claude CLI 설치 실패")
+            sys.exit(1)
 
     # litellm 프록시 시작
     if not start_litellm():
