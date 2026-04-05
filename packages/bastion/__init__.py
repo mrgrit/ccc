@@ -72,9 +72,24 @@ CCC 교육 플랫폼의 **모든 운영 업무**를 담당한다.
 }
 
 
+def _load_ccc_md() -> str:
+    """CCC.md 로드 — bastion의 장기 기억/운영 지침"""
+    ccc_md = os.path.join(CCC_DIR, "CCC.md")
+    if os.path.exists(ccc_md):
+        try:
+            with open(ccc_md, encoding="utf-8") as f:
+                return f.read()[:3000]
+        except Exception:
+            pass
+    return ""
+
 def build_system_prompt(extra_context: str = "") -> str:
     """시스템 프롬프트 동적 조합 (bastion의 resolveSystemPromptSections 참고)"""
     sections = [PROMPT_SECTIONS[k] for k in PROMPT_SECTIONS]
+    # CCC.md 장기 기억 주입
+    ccc_md = _load_ccc_md()
+    if ccc_md:
+        sections.append(f"[CCC 운영 지침]\n{ccc_md}")
     if extra_context:
         sections.append(f"현재 상황:\n{extra_context}")
     return "\n\n".join(sections)

@@ -1,51 +1,39 @@
-# CCC — Cyber Combat Commander
+# CCC — Bastion 운영 지침서
 
-사이버보안 교육 플랫폼. 학생이 개별 인프라를 구축하고, 실습/CTF/대전을 수행한다.
+이 파일은 Bastion 에이전트의 장기 기억 및 운영 지침이다.
+bastion 시작 시 자동으로 로드되어 시스템 프롬프트에 주입된다.
 
 ## 아키텍처
 
 | 컴포넌트 | 경로 | 포트 | 역할 |
 |----------|------|------|------|
 | ccc-api | apps/ccc-api/ | :9100 | 메인 API (학생/실습/CTF/대전) |
-| ccc-ui | apps/ccc-ui/ | - | React 웹 UI |
+| ccc-ui | apps/ccc-ui/ | - | React 웹 UI (API가 /app/으로 서빙) |
+| bastion | apps/bastion/ | - | 운영 관리 에이전트 (이 에이전트) |
 | ccc-cli | apps/cli/ | - | 학생용 CLI |
-| bastion | apps/bastion/ | - | 운영 관리 에이전트 (대화형 TUI) |
 
-## 패키지
-
-| 패키지 | 역할 |
-|--------|------|
-| bastion | CCC 운영 관리 에이전트 (인프라 온보딩/헬스체크/SubAgent 통신) |
-| manager_ai | Manager AI 시스템 (LLM 기반 분석/피드백) |
-| student_manager | 학생 관리/진도/평가 |
-| lab_engine | 실습 엔진 (YAML 시나리오) |
-| battle_engine | 대전 엔진 (공방전) |
-
-## 개발
+## 서비스 관리
 
 ```bash
-# 초기 설치
-./setup.sh
-
-# API 서버
-./dev.sh api
-
-# Bastion 에이전트 (대화형 TUI)
-./dev.sh bastion
-
-# CLI
-export PYTHONPATH=$(pwd)
-python3 -m apps.cli.main students
+./dev.sh api       # API 서버 (:9100)
+./dev.sh bastion   # Bastion 에이전트
 ```
-
-## API 인증
-
-모든 API 호출에 `X-API-Key` 헤더 필요.
-기본 키: `ccc-api-key-2026`
 
 ## LLM 설정
 
-```bash
-LLM_BASE_URL=http://localhost:11434   # Ollama 서버 주소
-LLM_MODEL=gemma3:4b                   # 사용 모델명
 ```
+LLM_BASE_URL=http://localhost:11434
+LLM_MODEL=gemma3:4b
+```
+
+## 운영 규칙
+
+- 파괴적 작업(rm -rf /, DROP TABLE 등) 절대 금지
+- 학생 데이터 임의 삭제 금지
+- 서비스 중지/재시작 시 반드시 사용자 확인
+- 배포 전 git status 확인
+
+## 환경별 메모
+
+이 섹션 아래에 환경별 특이사항을 기록한다.
+bastion이 학습한 내용은 .ccc/memory/에 저장된다.
