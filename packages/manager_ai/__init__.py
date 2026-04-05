@@ -18,7 +18,7 @@ from typing import Any
 import httpx
 
 OLLAMA_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
-MODEL = os.getenv("LLM_MODEL", "gemma3:4b")
+MODEL = os.getenv("LLM_MANAGER_MODEL", "gpt-oss:120b")
 
 # ── 시스템 프롬프트 조합 (Claude Code src/ 참고) ──
 

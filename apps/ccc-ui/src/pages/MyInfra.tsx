@@ -25,6 +25,7 @@ export default function MyInfra() {
     attacker_ip: '', secu_ip: '', web_ip: '', siem_ip: '',
     ssh_user: 'ccc', ssh_password: '1',
     windows_ip: '', manager_ip: '', gpu_url: '',
+    manager_model: 'gpt-oss:120b', subagent_model: 'gemma3:4b',
   })
 
   const load = () => {
@@ -233,7 +234,13 @@ export default function MyInfra() {
               onChange={e => setForm({ ...form, manager_ip: e.target.value })} style={inputStyle} />
             <input placeholder="외부 GPU URL (선택, 예: http://dgx-spark:11434)" value={form.gpu_url}
               onChange={e => setForm({ ...form, gpu_url: e.target.value })} style={{ ...inputStyle, marginTop: 8 }} />
-            <div style={{ fontSize: 12, color: '#3fb950', marginTop: 6 }}>Ollama + SubAgent 자동설치, 외부 GPU 연결 시 URL 입력</div>
+            <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
+              <input placeholder="Manager 모델 (gpt-oss:120b)" value={form.manager_model}
+                onChange={e => setForm({ ...form, manager_model: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
+              <input placeholder="SubAgent 모델 (gemma3:4b)" value={form.subagent_model}
+                onChange={e => setForm({ ...form, subagent_model: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
+            </div>
+            <div style={{ fontSize: 12, color: '#3fb950', marginTop: 6 }}>Ollama + Bastion + 모델 자동설치, 학생이 자기 인프라를 직접 운영</div>
           </div>
         </div>
 

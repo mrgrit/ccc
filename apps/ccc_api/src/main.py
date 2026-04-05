@@ -16,7 +16,8 @@ from pydantic import BaseModel
 DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://ccc:ccc@127.0.0.1:5434/ccc")
 API_KEY = os.getenv("CCC_API_KEY", "ccc-api-key-2026")
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
-LLM_MODEL = os.getenv("LLM_MODEL", "gemma3:4b")
+LLM_MANAGER_MODEL = os.getenv("LLM_MANAGER_MODEL", "gpt-oss:120b")
+LLM_SUBAGENT_MODEL = os.getenv("LLM_SUBAGENT_MODEL", "gemma3:4b")
 
 # ── Pydantic Models ────────────────────────────────
 
@@ -742,8 +743,10 @@ class InfraSetupBody(BaseModel):
     web_ip: str
     siem_ip: str
     manager_ip: str
-    windows_ip: str = ""       # 선택 (없으면 skip)
-    gpu_url: str = ""          # 외부 GPU URL (선택)
+    windows_ip: str = ""            # 선택 (없으면 skip)
+    gpu_url: str = ""               # 외부 GPU URL (선택)
+    manager_model: str = "gpt-oss:120b"    # Manager AI 모델
+    subagent_model: str = "gemma3:4b"      # SubAgent 모델
     ssh_user: str = "ccc"
     ssh_password: str = "1"
 
@@ -776,7 +779,8 @@ def setup_infra(body: InfraSetupBody, request: Request):
                     """INSERT INTO student_infras (id, student_id, infra_name, ip, subagent_url, vm_config, status)
                        VALUES (%s,%s,%s,%s,%s,%s,'registered')""",
                     (iid, uid, vm["name"], vm["ip"], subagent_url,
-                     Json({"role": vm["role"], "ssh_user": body.ssh_user, "gpu_url": body.gpu_url})),
+                     Json({"role": vm["role"], "ssh_user": body.ssh_user, "gpu_url": body.gpu_url,
+                           "manager_model": body.manager_model, "subagent_model": body.subagent_model})),
                 )
                 results.append({"id": iid, "role": vm["role"], "ip": vm["ip"], "subagent_url": subagent_url, "status": "registered"})
             conn.commit()
@@ -1765,7 +1769,7 @@ def ai_feedback(request: Request):
     stats = user_stats(request)
     import httpx as _hxf
     ollama_url = LLM_BASE_URL
-    model = LLM_MODEL
+    model = LLM_MANAGER_MODEL
     prompt = f"""다음 학생의 학습 데이터를 분석하고, 개인화된 피드백과 추천을 제공하세요.
 
 학생: {stats['student']['name']} (rank: {stats['student']['rank']})
@@ -1808,7 +1812,7 @@ def chat(body: ChatBody, request: Request):
     user = get_current_user(request)
     import httpx as _hxc
     ollama_url = LLM_BASE_URL
-    model = LLM_MODEL
+    model = LLM_SUBAGENT_MODEL
 
     system_prompt = f"""너는 CCC(Cyber Combat Commander) 사이버보안 교육 플랫폼의 AI 튜터다.
 학생의 질문에 친절하고 정확하게 답변한다.
@@ -1878,7 +1882,7 @@ def generate_ctf(body: CTFGenerateBody, request: Request):
     # LLM으로 문제 생성
     import httpx as _hx2
     ollama_url = LLM_BASE_URL
-    model = LLM_MODEL
+    model = LLM_MANAGER_MODEL
 
     prompt = f"""다음 교육 과정 내용을 바탕으로 CTF 문제 {body.count}개를 생성하세요.
 난이도: {body.difficulty}

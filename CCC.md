@@ -23,7 +23,8 @@ bastion 시작 시 자동으로 로드되어 시스템 프롬프트에 주입된
 
 ```
 LLM_BASE_URL=http://localhost:11434
-LLM_MODEL=gemma3:4b
+LLM_MANAGER_MODEL=gpt-oss:120b    # Manager AI용 (분석/피드백/CTF생성)
+LLM_SUBAGENT_MODEL=gemma3:4b      # SubAgent/챗봇용 (경량)
 ```
 
 ## 운영 규칙

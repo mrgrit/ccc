@@ -20,7 +20,10 @@ import httpx
 
 # ── Config ────────────────────────────────────────
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
-LLM_MODEL = os.getenv("LLM_MODEL", "gemma3:4b")
+LLM_MANAGER_MODEL = os.getenv("LLM_MANAGER_MODEL", "gpt-oss:120b")
+LLM_SUBAGENT_MODEL = os.getenv("LLM_SUBAGENT_MODEL", "gemma3:4b")
+# bastion TUI는 manager 모델 사용
+LLM_MODEL = LLM_MANAGER_MODEL
 SUBAGENT_PORT = 8002
 SSH_TIMEOUT = 30
 
@@ -121,7 +124,18 @@ ROLE_SETUP_SCRIPTS: dict[str, list[str]] = {
     ],
     "manager": [
         "curl -fsSL https://ollama.ai/install.sh | sh",
-        f"ollama pull {LLM_MODEL}",
+        f"ollama pull {LLM_MANAGER_MODEL}",
+        f"ollama pull {LLM_SUBAGENT_MODEL}",
+        # bastion 설치 (CCC 레포 clone + venv)
+        "apt-get update -y && apt-get install -y python3 python3-pip python3-venv git",
+        "if [ ! -d /opt/ccc ]; then git clone https://github.com/mrgrit/ccc.git /opt/ccc; fi",
+        "cd /opt/ccc && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt -q",
+        # bastion용 .env 생성
+        f"cat > /opt/ccc/.env << 'ENVEOF'\n"
+        f"LLM_BASE_URL=http://localhost:11434\n"
+        f"LLM_MANAGER_MODEL={LLM_MANAGER_MODEL}\n"
+        f"LLM_SUBAGENT_MODEL={LLM_SUBAGENT_MODEL}\n"
+        f"ENVEOF",
     ],
 }
 
