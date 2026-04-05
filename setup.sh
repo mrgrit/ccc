@@ -111,18 +111,54 @@ else
 fi
 echo "  PostgreSQL 시작됨 (port ${DB_PORT:-5434})"
 
+# 6. API 시작 + 관리자 계정 생성
+echo "[6/6] 초기 관리자 계정 생성..."
+source .venv/bin/activate
+set -a; [ -f .env ] && source .env; set +a
+export PYTHONPATH="$(pwd)"
+
+# API 임시 시작 (백그라운드)
+python3 -m uvicorn apps.ccc_api.src.main:app --host 0.0.0.0 --port 9100 > /tmp/ccc-api-setup.log 2>&1 &
+API_PID=$!
+
+# API 준비 대기
+echo -n "  API 시작 대기..."
+for i in $(seq 1 15); do
+    if curl -s http://localhost:9100/api/health > /dev/null 2>&1; then
+        echo " ready"
+        break
+    fi
+    echo -n "."
+    sleep 1
+done
+
+# admin 계정 생성
+ADMIN_RESULT=$(curl -s -X POST http://localhost:9100/api/auth/create-admin \
+    -H "Content-Type: application/json" \
+    -d '{"student_id":"admin","name":"관리자","password":"admin1234"}' 2>/dev/null)
+
+if echo "$ADMIN_RESULT" | grep -q '"role":"admin"'; then
+    echo "  관리자 계정 생성 완료: admin / admin1234"
+else
+    echo "  관리자 계정이 이미 존재하거나 생성 실패"
+fi
+
+# 임시 API 종료
+kill $API_PID 2>/dev/null
+wait $API_PID 2>/dev/null
+
 echo ""
-echo "=== 설치 완료 ==="
+echo "========================================"
+echo "  CCC 설치 완료"
+echo "========================================"
 echo ""
-echo "=== 실행 ==="
+echo "  실행:  ./dev.sh api"
+echo "  접속:  http://$(hostname -I | awk '{print $1}'):9100/app/"
+echo "  관리자: admin / admin1234"
 echo ""
-echo "  ./dev.sh api              # API 서버 (:9100)"
-echo "  ./dev.sh bastion          # Bastion 에이전트 (TUI)"
-echo "  브라우저: http://localhost:9100/app/"
+echo "  Bastion: ./dev.sh bastion"
 echo ""
-echo "  VM 콘솔(tty)에서 한글이 깨지면:"
-echo "    fbterm -- ./dev.sh bastion"
-echo ""
-echo "설정 (.env):"
-echo "  LLM_BASE_URL=http://your-ollama-server:11434"
-echo "  LLM_MODEL=gemma3:4b"
+echo "  설정 (.env):"
+echo "    LLM_BASE_URL=http://your-ollama-server:11434"
+echo "    LLM_MODEL=gemma3:4b"
+echo "========================================"
