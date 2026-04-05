@@ -214,23 +214,26 @@ systemctl enable --now ccc-subagent
 """
 
 
-def ssh_run(ip: str, user: str, password: str, commands: list[str]) -> dict:
-    """SSH로 명령 실행 (subprocess + sshpass, sudo -S로 비밀번호 전달)"""
-    script = " && ".join(commands)
-    # echo password | sudo -S 로 non-interactive sudo 지원
-    remote_cmd = f"echo '{password}' | sudo -S bash -c '{script}'"
+def ssh_run(ip: str, user: str, password: str, commands: list[str], timeout: int = None) -> dict:
+    """SSH로 명령 실행 — 스크립트를 stdin으로 전달하여 이스케이핑 문제 회피"""
+    script = "\n".join(commands)
+    t = timeout or SSH_TIMEOUT
+
+    # 방법: echo password | sudo -S bash 로 stdin에 스크립트 전달
+    # sshpass로 SSH 인증, ssh 내부에서 sudo -S로 권한 상승
     cmd = [
         "sshpass", "-p", password,
         "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-        f"{user}@{ip}", remote_cmd,
+        f"{user}@{ip}",
+        f"echo '{password}' | sudo -S bash",
     ]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=SSH_TIMEOUT)
-        # sudo -S 는 stderr에 password prompt를 출력하므로 필터링
-        stderr = "\n".join(l for l in r.stderr.splitlines() if "password" not in l.lower())
+        r = subprocess.run(cmd, input=script, capture_output=True, text=True, timeout=t)
+        stderr = "\n".join(l for l in r.stderr.splitlines()
+                           if "password" not in l.lower() and "setlocale" not in l.lower())
         return {"success": r.returncode == 0, "stdout": r.stdout[:5000], "stderr": stderr[:2000]}
     except subprocess.TimeoutExpired:
-        return {"success": False, "stdout": "", "stderr": "SSH timeout"}
+        return {"success": False, "stdout": "", "stderr": f"SSH timeout ({t}s)"}
     except Exception as e:
         return {"success": False, "stdout": "", "stderr": str(e)}
 
@@ -261,7 +264,7 @@ def onboard_vm(ip: str, role: str, user: str = "ccc", password: str = "1") -> di
 
     # 1. SubAgent 설치 (외부 IP로 SSH — 인터넷 필요)
     install_script = SUBAGENT_INSTALL_SCRIPT.replace("{role}", role)
-    r = ssh_run(ip, user, password, [f"bash -c '{install_script}'"])
+    r = ssh_run(ip, user, password, [install_script], timeout=120)
     results["steps"].append({"step": "subagent_install", **r})
 
     # 2. 역할별 소프트웨어 설치 (인터넷 필요)
@@ -270,61 +273,40 @@ def onboard_vm(ip: str, role: str, user: str = "ccc", password: str = "1") -> di
         r = ssh_run(ip, user, password, role_cmds)
         results["steps"].append({"step": "role_setup", **r})
 
-    # 3. 내부 NIC IP 설정 (두번째 인터페이스에 고정 IP)
-    internal_setup = [
-        # 두번째 NIC 찾기 (eth1, ens19, enp0s8 등)
-        f"IFACE=$(ip -o link show | grep -v 'lo\\|docker\\|veth' | awk '{{print $2}}' | tr -d ':' | tail -1)",
-        f"if [ -n \"$IFACE\" ]; then ip addr add {internal_ip}/24 dev $IFACE 2>/dev/null || true; ip link set $IFACE up; fi",
-        # netplan으로 영구 설정
-        f"mkdir -p /etc/netplan",
-        f"cat > /etc/netplan/60-ccc-internal.yaml << 'NPEOF'\n"
-        f"network:\n"
-        f"  version: 2\n"
-        f"  ethernets:\n"
-        f"    internal:\n"
-        f"      match:\n"
-        f"        name: \"e*\"\n"
-        f"      addresses:\n"
-        f"        - {internal_ip}/24\n"
-        f"NPEOF",
-    ]
-    r = ssh_run(ip, user, password, internal_setup)
+    # 3. 내부 NIC IP 설정 — 단일 스크립트로 전달
+    internal_script = f"""
+IFACE=$(ip -o link show | grep -v 'lo\\|docker\\|veth' | awk '{{print $2}}' | tr -d ':' | tail -1)
+if [ -n "$IFACE" ]; then
+    ip addr add {internal_ip}/24 dev $IFACE 2>/dev/null || true
+    ip link set $IFACE up
+    echo "Internal NIC: $IFACE = {internal_ip}"
+else
+    echo "WARN: second NIC not found"
+fi
+"""
+    r = ssh_run(ip, user, password, [internal_script])
     results["steps"].append({"step": "internal_ip_setup", "ip": internal_ip, **r})
 
-    # 4. NAT disable + Security GW 경유 (Security GW 자신은 제외)
+    # 4. NAT disable + Security GW 경유
     if role != "secu":
-        nat_disable = [
-            # 기본 게이트웨이를 Security GW의 내부 IP로 변경
-            f"ip route del default 2>/dev/null || true",
-            f"ip route add default via {SECU_GW}",
-            # 영구 설정
-            f"cat > /etc/netplan/70-ccc-gateway.yaml << 'GWEOF'\n"
-            f"network:\n"
-            f"  version: 2\n"
-            f"  ethernets:\n"
-            f"    external:\n"
-            f"      match:\n"
-            f"        name: \"e*\"\n"
-            f"      dhcp4: false\n"
-            f"      routes:\n"
-            f"        - to: default\n"
-            f"          via: {SECU_GW}\n"
-            f"GWEOF",
-        ]
-        r = ssh_run(ip, user, password, nat_disable)
+        nat_script = f"""
+ip route del default 2>/dev/null || true
+ip route add default via {SECU_GW} 2>/dev/null || true
+echo "Default gateway set to {SECU_GW}"
+"""
+        r = ssh_run(ip, user, password, [nat_script])
         results["steps"].append({"step": "nat_disable_gw_route", "gateway": SECU_GW, **r})
     else:
-        # Security GW: NAT + 포워딩 설정
-        secu_setup = [
-            "sysctl -w net.ipv4.ip_forward=1",
-            "echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf",
-            # 내부→외부 NAT (masquerade)
-            "EXTERNAL=$(ip -o link show | grep -v 'lo\\|docker\\|veth' | awk '{print $2}' | tr -d ':' | head -1)",
-            "nft add table nat 2>/dev/null || true",
-            "nft add chain nat postrouting '{ type nat hook postrouting priority 100; }' 2>/dev/null || true",
-            "nft add rule nat postrouting oifname \"$EXTERNAL\" masquerade 2>/dev/null || true",
-        ]
-        r = ssh_run(ip, user, password, secu_setup)
+        secu_script = """
+sysctl -w net.ipv4.ip_forward=1
+echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
+EXTERNAL=$(ip -o link show | grep -v 'lo\\|docker\\|veth' | awk '{print $2}' | tr -d ':' | head -1)
+nft add table nat 2>/dev/null || true
+nft 'add chain nat postrouting { type nat hook postrouting priority 100; }' 2>/dev/null || true
+nft add rule nat postrouting oifname "$EXTERNAL" masquerade 2>/dev/null || true
+echo "NAT masquerade on $EXTERNAL"
+"""
+        r = ssh_run(ip, user, password, [secu_script])
         results["steps"].append({"step": "secu_nat_forward", **r})
 
     # 5. 헬스체크 (내부 IP로 확인)
