@@ -103,7 +103,7 @@ export default function MyInfra() {
     <div>
       <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, color: '#e6edf3' }}>My Infrastructure</h2>
       <p style={{ fontSize: 15, color: '#8b949e', marginBottom: 24 }}>
-        실습과 대전에 사용할 VM 5대를 등록합니다. IP를 입력하면 Bastion AI가 SubAgent를 자동 설치합니다.
+        실습과 대전에 사용할 VM 5대의 외부 IP를 입력합니다. 내부 IP(10.20.30.x)는 자동 할당됩니다.
       </p>
 
       {/* 현재 인프라 상태 */}
@@ -171,9 +171,10 @@ export default function MyInfra() {
               <div style={reqLine}>디스크: 40GB 이상</div>
               <div style={reqLine}>네트워크: 내부망(10.x) 접근 가능</div>
             </div>
-            <input placeholder="IP (예: 192.168.0.50)" value={form.attacker_ip}
+            <input placeholder="외부 IP (예: 192.168.0.50)" value={form.attacker_ip}
               onChange={e => setForm({ ...form, attacker_ip: e.target.value })} style={inputStyle} />
-            <div style={{ fontSize: 12, color: '#3fb950', marginTop: 6 }}>nmap, metasploit, hydra, sqlmap + SubAgent 자동설치</div>
+            <div style={{ fontSize: 12, color: '#58a6ff', marginTop: 4 }}>내부: 10.20.30.201 (자동)</div>
+            <div style={{ fontSize: 12, color: '#3fb950' }}>nmap, metasploit, hydra, sqlmap + SubAgent 자동설치</div>
           </div>
 
           {/* Secu */}
@@ -190,9 +191,10 @@ export default function MyInfra() {
               <div style={{ ...reqLine, color: '#f97316' }}>NIC 2개 필수: 외부(bridge) + 내부(10.x)</div>
               <div style={reqLine}>IP forwarding 활성화 (sysctl)</div>
             </div>
-            <input placeholder="IP (예: 10.20.30.1)" value={form.secu_ip}
+            <input placeholder="외부 IP (예: 192.168.0.51)" value={form.secu_ip}
               onChange={e => setForm({ ...form, secu_ip: e.target.value })} style={inputStyle} />
-            <div style={{ fontSize: 12, color: '#3fb950', marginTop: 6 }}>nftables + Suricata IPS + SubAgent 자동설치</div>
+            <div style={{ fontSize: 12, color: '#58a6ff', marginTop: 4 }}>내부: 10.20.30.1 (자동) — 인터넷 게이트웨이</div>
+            <div style={{ fontSize: 12, color: '#3fb950' }}>nftables + Suricata IPS + NAT + SubAgent 자동설치</div>
           </div>
 
           {/* Web */}
@@ -208,9 +210,10 @@ export default function MyInfra() {
               <div style={reqLine}>디스크: 30GB 이상</div>
               <div style={reqLine}>포트: 80, 443, 3000(JuiceShop), 8080(DVWA)</div>
             </div>
-            <input placeholder="IP (예: 10.20.30.80)" value={form.web_ip}
+            <input placeholder="외부 IP (예: 192.168.0.52)" value={form.web_ip}
               onChange={e => setForm({ ...form, web_ip: e.target.value })} style={inputStyle} />
-            <div style={{ fontSize: 12, color: '#3fb950', marginTop: 6 }}>Apache + JuiceShop + WAF + SubAgent 자동설치</div>
+            <div style={{ fontSize: 12, color: '#58a6ff', marginTop: 4 }}>내부: 10.20.30.80 (자동)</div>
+            <div style={{ fontSize: 12, color: '#3fb950' }}>Apache + JuiceShop + WAF + SubAgent 자동설치</div>
           </div>
 
           {/* SIEM */}
@@ -227,9 +230,10 @@ export default function MyInfra() {
               <div style={reqLine}>디스크: 50GB 이상 (로그 저장)</div>
               <div style={reqLine}>포트: 1514(Wazuh), 5601(Dashboard), 9200(ES)</div>
             </div>
-            <input placeholder="IP (예: 10.20.30.100)" value={form.siem_ip}
+            <input placeholder="외부 IP (예: 192.168.0.53)" value={form.siem_ip}
               onChange={e => setForm({ ...form, siem_ip: e.target.value })} style={inputStyle} />
-            <div style={{ fontSize: 12, color: '#3fb950', marginTop: 6 }}>Wazuh + SIGMA + OpenCTI + SubAgent 자동설치</div>
+            <div style={{ fontSize: 12, color: '#58a6ff', marginTop: 4 }}>내부: 10.20.30.100 (자동)</div>
+            <div style={{ fontSize: 12, color: '#3fb950' }}>Wazuh + SIGMA + OpenCTI + SubAgent 자동설치</div>
           </div>
 
           {/* Windows */}
@@ -245,9 +249,10 @@ export default function MyInfra() {
               <div style={reqLine}>디스크: 60GB 이상 (분석 도구 + 이미지)</div>
               <div style={reqLine}>OpenSSH Server 활성화 필수</div>
             </div>
-            <input placeholder="IP (선택, 없으면 skip)" value={form.windows_ip}
+            <input placeholder="외부 IP (선택, 없으면 skip)" value={form.windows_ip}
               onChange={e => setForm({ ...form, windows_ip: e.target.value })} style={inputStyle} />
-            <div style={{ fontSize: 12, color: '#8b949e', marginTop: 6 }}>Sysmon, Ghidra, x64dbg, Autopsy, FTK Imager</div>
+            <div style={{ fontSize: 12, color: '#58a6ff', marginTop: 4 }}>내부: 10.20.30.50 (자동)</div>
+            <div style={{ fontSize: 12, color: '#8b949e' }}>Sysmon, Ghidra, x64dbg, Autopsy, FTK Imager</div>
           </div>
 
           {/* Manager AI */}
@@ -264,8 +269,9 @@ export default function MyInfra() {
               <div style={reqLine}>외부 GPU 미사용 시: VRAM 8GB+ GPU 권장</div>
               <div style={reqLine}>포트: 11434(Ollama), 8765(SubAgent)</div>
             </div>
-            <input placeholder="IP (예: 10.20.30.200)" value={form.manager_ip}
+            <input placeholder="외부 IP (예: 192.168.0.55)" value={form.manager_ip}
               onChange={e => setForm({ ...form, manager_ip: e.target.value })} style={inputStyle} />
+            <div style={{ fontSize: 12, color: '#58a6ff', marginTop: 4 }}>내부: 10.20.30.200 (자동)</div>
 
             {/* LLM 서버 연결 */}
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>

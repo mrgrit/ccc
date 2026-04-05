@@ -737,34 +737,44 @@ VM_SOFTWARE = {
     "manager": {"os": "Ubuntu", "packages": ["ollama","ccc-bastion"], "subagent": True},
 }
 
+# 내부 IP 고정 할당 (역할별)
+INTERNAL_IPS = {
+    "attacker": "10.20.30.201",
+    "secu":     "10.20.30.1",
+    "web":      "10.20.30.80",
+    "siem":     "10.20.30.100",
+    "manager":  "10.20.30.200",
+    "windows":  "10.20.30.50",
+}
+
 class InfraSetupBody(BaseModel):
-    attacker_ip: str
+    attacker_ip: str            # 외부 IP (온보딩용)
     secu_ip: str
     web_ip: str
     siem_ip: str
     manager_ip: str
-    windows_ip: str = ""            # 선택 (없으면 skip)
-    gpu_url: str = ""               # 외부 GPU URL (선택)
-    manager_model: str = "gpt-oss:120b"    # Manager AI 모델
-    subagent_model: str = "gemma3:4b"      # SubAgent 모델
+    windows_ip: str = ""
+    gpu_url: str = ""
+    manager_model: str = ""
+    subagent_model: str = ""
     ssh_user: str = "ccc"
     ssh_password: str = "1"
 
 @app.post("/infras/setup", dependencies=[Depends(verify_api_key)])
 def setup_infra(body: InfraSetupBody, request: Request):
-    """학생 인프라 일괄 등록"""
+    """학생 인프라 일괄 등록 — 외부 IP로 온보딩, 내부 IP는 고정 자동 할당"""
     user = get_current_user(request)
     uid = user.get("sub", "")
 
     vms = [
-        {"role": "attacker", "name": f"{uid}-attacker", "ip": body.attacker_ip, "subagent": True},
-        {"role": "secu", "name": f"{uid}-secu", "ip": body.secu_ip, "subagent": True},
-        {"role": "web", "name": f"{uid}-web", "ip": body.web_ip, "subagent": True},
-        {"role": "siem", "name": f"{uid}-siem", "ip": body.siem_ip, "subagent": True},
-        {"role": "manager", "name": f"{uid}-manager", "ip": body.manager_ip, "subagent": True},
+        {"role": "attacker", "name": f"{uid}-attacker", "ip": body.attacker_ip, "internal_ip": INTERNAL_IPS["attacker"], "subagent": True},
+        {"role": "secu", "name": f"{uid}-secu", "ip": body.secu_ip, "internal_ip": INTERNAL_IPS["secu"], "subagent": True},
+        {"role": "web", "name": f"{uid}-web", "ip": body.web_ip, "internal_ip": INTERNAL_IPS["web"], "subagent": True},
+        {"role": "siem", "name": f"{uid}-siem", "ip": body.siem_ip, "internal_ip": INTERNAL_IPS["siem"], "subagent": True},
+        {"role": "manager", "name": f"{uid}-manager", "ip": body.manager_ip, "internal_ip": INTERNAL_IPS["manager"], "subagent": True},
     ]
     if body.windows_ip:
-        vms.append({"role": "windows", "name": f"{uid}-windows", "ip": body.windows_ip, "subagent": True})
+        vms.append({"role": "windows", "name": f"{uid}-windows", "ip": body.windows_ip, "internal_ip": INTERNAL_IPS["windows"], "subagent": True})
 
     results = []
     with _conn() as conn:
@@ -779,7 +789,9 @@ def setup_infra(body: InfraSetupBody, request: Request):
                     """INSERT INTO student_infras (id, student_id, infra_name, ip, subagent_url, vm_config, status)
                        VALUES (%s,%s,%s,%s,%s,%s,'registered')""",
                     (iid, uid, vm["name"], vm["ip"], subagent_url,
-                     Json({"role": vm["role"], "ssh_user": body.ssh_user, "gpu_url": body.gpu_url,
+                     Json({"role": vm["role"], "ssh_user": body.ssh_user,
+                           "external_ip": vm["ip"], "internal_ip": vm["internal_ip"],
+                           "gpu_url": body.gpu_url,
                            "manager_model": body.manager_model, "subagent_model": body.subagent_model})),
                 )
                 results.append({"id": iid, "role": vm["role"], "ip": vm["ip"], "subagent_url": subagent_url, "status": "registered"})

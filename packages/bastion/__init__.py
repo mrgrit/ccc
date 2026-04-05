@@ -231,23 +231,102 @@ def ssh_run(ip: str, user: str, password: str, commands: list[str]) -> dict:
         return {"success": False, "stdout": "", "stderr": str(e)}
 
 
-def onboard_vm(ip: str, role: str, user: str = "ccc", password: str = "1") -> dict:
-    """VM 온보딩: SubAgent 설치 + 역할별 소프트웨어 설치"""
-    results = {"ip": ip, "role": role, "steps": []}
+# 내부 IP 고정 (API의 INTERNAL_IPS와 동일)
+INTERNAL_IPS = {
+    "attacker": "10.20.30.201",
+    "secu":     "10.20.30.1",
+    "web":      "10.20.30.80",
+    "siem":     "10.20.30.100",
+    "manager":  "10.20.30.200",
+    "windows":  "10.20.30.50",
+}
+INTERNAL_SUBNET = "10.20.30.0/24"
+SECU_GW = INTERNAL_IPS["secu"]  # Security Gateway = 기본 게이트웨이
 
-    # 1. SubAgent 설치
+
+def onboard_vm(ip: str, role: str, user: str = "ccc", password: str = "1") -> dict:
+    """VM 온보딩 (외부 IP로 SSH 접속)
+    1. SubAgent 설치
+    2. 역할별 소프트웨어 설치
+    3. 내부 NIC에 고정 IP 설정
+    4. Security GW 제외 — NAT disable + 기본 게이트웨이를 Security GW로 변경
+    5. 헬스체크
+    """
+    internal_ip = INTERNAL_IPS.get(role, "10.20.30.250")
+    results = {"ip": ip, "internal_ip": internal_ip, "role": role, "steps": []}
+
+    # 1. SubAgent 설치 (외부 IP로 SSH — 인터넷 필요)
     install_script = SUBAGENT_INSTALL_SCRIPT.replace("{role}", role)
     r = ssh_run(ip, user, password, [f"bash -c '{install_script}'"])
     results["steps"].append({"step": "subagent_install", **r})
 
-    # 2. 역할별 소프트웨어 설치
+    # 2. 역할별 소프트웨어 설치 (인터넷 필요)
     role_cmds = ROLE_SETUP_SCRIPTS.get(role, [])
     if role_cmds:
         r = ssh_run(ip, user, password, role_cmds)
         results["steps"].append({"step": "role_setup", **r})
 
-    # 3. 헬스체크 확인
-    health = health_check(ip)
+    # 3. 내부 NIC IP 설정 (두번째 인터페이스에 고정 IP)
+    internal_setup = [
+        # 두번째 NIC 찾기 (eth1, ens19, enp0s8 등)
+        f"IFACE=$(ip -o link show | grep -v 'lo\\|docker\\|veth' | awk '{{print $2}}' | tr -d ':' | tail -1)",
+        f"if [ -n \"$IFACE\" ]; then ip addr add {internal_ip}/24 dev $IFACE 2>/dev/null || true; ip link set $IFACE up; fi",
+        # netplan으로 영구 설정
+        f"mkdir -p /etc/netplan",
+        f"cat > /etc/netplan/60-ccc-internal.yaml << 'NPEOF'\n"
+        f"network:\n"
+        f"  version: 2\n"
+        f"  ethernets:\n"
+        f"    internal:\n"
+        f"      match:\n"
+        f"        name: \"e*\"\n"
+        f"      addresses:\n"
+        f"        - {internal_ip}/24\n"
+        f"NPEOF",
+    ]
+    r = ssh_run(ip, user, password, internal_setup)
+    results["steps"].append({"step": "internal_ip_setup", "ip": internal_ip, **r})
+
+    # 4. NAT disable + Security GW 경유 (Security GW 자신은 제외)
+    if role != "secu":
+        nat_disable = [
+            # 기본 게이트웨이를 Security GW의 내부 IP로 변경
+            f"ip route del default 2>/dev/null || true",
+            f"ip route add default via {SECU_GW}",
+            # 영구 설정
+            f"cat > /etc/netplan/70-ccc-gateway.yaml << 'GWEOF'\n"
+            f"network:\n"
+            f"  version: 2\n"
+            f"  ethernets:\n"
+            f"    external:\n"
+            f"      match:\n"
+            f"        name: \"e*\"\n"
+            f"      dhcp4: false\n"
+            f"      routes:\n"
+            f"        - to: default\n"
+            f"          via: {SECU_GW}\n"
+            f"GWEOF",
+        ]
+        r = ssh_run(ip, user, password, nat_disable)
+        results["steps"].append({"step": "nat_disable_gw_route", "gateway": SECU_GW, **r})
+    else:
+        # Security GW: NAT + 포워딩 설정
+        secu_setup = [
+            "sysctl -w net.ipv4.ip_forward=1",
+            "echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf",
+            # 내부→외부 NAT (masquerade)
+            "EXTERNAL=$(ip -o link show | grep -v 'lo\\|docker\\|veth' | awk '{print $2}' | tr -d ':' | head -1)",
+            "nft add table nat 2>/dev/null || true",
+            "nft add chain nat postrouting '{ type nat hook postrouting priority 100; }' 2>/dev/null || true",
+            "nft add rule nat postrouting oifname \"$EXTERNAL\" masquerade 2>/dev/null || true",
+        ]
+        r = ssh_run(ip, user, password, secu_setup)
+        results["steps"].append({"step": "secu_nat_forward", **r})
+
+    # 5. 헬스체크 (내부 IP로 확인)
+    health = health_check(internal_ip)
+    if health.get("status") != "healthy":
+        health = health_check(ip)  # 내부 안되면 외부로 fallback
     results["healthy"] = health.get("status") == "healthy"
     results["steps"].append({"step": "health_check", "success": results["healthy"], "detail": health})
 
