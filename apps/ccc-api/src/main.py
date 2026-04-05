@@ -11,16 +11,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-# ── Config (Central 우선, 환경변수 폴백) ──────────
-def _cfg(key: str, fallback: str) -> str:
-    try:
-        from packages.opsclaw_common.config_client import get_config
-        return get_config(key, fallback=os.getenv(key.upper().replace(".", "_"), fallback))
-    except Exception:
-        return os.getenv(key.upper().replace(".", "_"), fallback)
-
-DATABASE_URL = os.getenv("DATABASE_URL", _cfg("db.ccc.url", "postgresql://opsclaw:opsclaw@127.0.0.1:5432/ccc"))
-API_KEY = os.getenv("CCC_API_KEY", _cfg("auth.ccc.api_key", "ccc-api-key-2026"))
+# ── Config ────────────────────────────────────────
+DATABASE_URL = os.getenv("DATABASE_URL", "postgresql://ccc:ccc@127.0.0.1:5434/ccc")
+API_KEY = os.getenv("CCC_API_KEY", "ccc-api-key-2026")
+LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
+LLM_MODEL = os.getenv("LLM_MODEL", "gemma3:4b")
 
 # ── Pydantic Models ────────────────────────────────
 
@@ -736,7 +731,7 @@ VM_SOFTWARE = {
     "web": {"os": "Ubuntu", "packages": ["sysmon-for-linux","osquery","auditd","libapache2-mod-security2","docker.io"], "apps": ["JuiceShop(:3000)","DVWA(:8081)","WebGoat(:8082)","HackableApp(:8083)"], "subagent": True},
     "siem": {"os": "Ubuntu", "packages": ["sysmon-for-linux","osquery","auditd","wazuh-manager","wazuh-dashboard","sigma-cli"], "apps": ["Wazuh(:443)","OpenCTI(:9400)"], "subagent": True},
     "windows": {"os": "Windows 10/11", "packages": ["sysmon","osquery","Ghidra","x64dbg","PEStudio","FLOSS","Autopsy","FTK-Imager","Wireshark","Process-Monitor"], "subagent": True},
-    "manager": {"os": "Ubuntu", "packages": ["ollama","bastion-manager"], "models": ["gpt-oss:120b"], "subagent": True},
+    "manager": {"os": "Ubuntu", "packages": ["ollama","ccc-bastion"], "subagent": True},
 }
 
 class InfraSetupBody(BaseModel):
@@ -744,30 +739,27 @@ class InfraSetupBody(BaseModel):
     secu_ip: str
     web_ip: str
     siem_ip: str
+    manager_ip: str
     windows_ip: str = ""       # 선택 (없으면 skip)
-    manager_ip: str = ""       # 선택 (없으면 외부 GPU 사용)
-    ssh_user: str = "opsclaw"
+    gpu_url: str = ""          # 외부 GPU URL (선택)
+    ssh_user: str = "ccc"
     ssh_password: str = "1"
-    ollama_url: str = ""       # manager 또는 학생 PC의 Ollama
-    gpu_type: str = "external" # external(dgx-spark) | local(학생PC) | manager(manager VM)
 
 @app.post("/infras/setup", dependencies=[Depends(verify_api_key)])
 def setup_infra(body: InfraSetupBody, request: Request):
-    """학생 인프라 6대 일괄 등록 + Bastion AI 온보딩 요청"""
+    """학생 인프라 일괄 등록"""
     user = get_current_user(request)
     uid = user.get("sub", "")
-    ollama = body.ollama_url or os.getenv("OLLAMA_FALLBACK_URL", "http://192.168.0.105:11434")
 
     vms = [
         {"role": "attacker", "name": f"{uid}-attacker", "ip": body.attacker_ip, "subagent": True},
         {"role": "secu", "name": f"{uid}-secu", "ip": body.secu_ip, "subagent": True},
         {"role": "web", "name": f"{uid}-web", "ip": body.web_ip, "subagent": True},
         {"role": "siem", "name": f"{uid}-siem", "ip": body.siem_ip, "subagent": True},
+        {"role": "manager", "name": f"{uid}-manager", "ip": body.manager_ip, "subagent": True},
     ]
     if body.windows_ip:
         vms.append({"role": "windows", "name": f"{uid}-windows", "ip": body.windows_ip, "subagent": True})
-    if body.manager_ip:
-        vms.append({"role": "manager", "name": f"{uid}-manager", "ip": body.manager_ip, "subagent": True})
 
     results = []
     with _conn() as conn:
@@ -782,38 +774,19 @@ def setup_infra(body: InfraSetupBody, request: Request):
                     """INSERT INTO student_infras (id, student_id, infra_name, ip, subagent_url, vm_config, status)
                        VALUES (%s,%s,%s,%s,%s,%s,'registered')""",
                     (iid, uid, vm["name"], vm["ip"], subagent_url,
-                     Json({"role": vm["role"], "ssh_user": body.ssh_user, "ollama_url": ollama})),
+                     Json({"role": vm["role"], "ssh_user": body.ssh_user, "gpu_url": body.gpu_url})),
                 )
                 results.append({"id": iid, "role": vm["role"], "ip": vm["ip"], "subagent_url": subagent_url, "status": "registered"})
             conn.commit()
 
-    # Bastion AI에 온보딩 요청 (SubAgent 설치)
-    import httpx as _hx
-    bastion_url = os.getenv("BASTION_URL", "http://localhost:9000")
-    bastion_key = os.getenv("BASTION_API_KEY", "bastion-api-key-2026")
+    # Bastion 온보딩 (SubAgent 설치)
+    from packages.bastion import onboard_vm
     onboard_results = []
-
     for vm in vms:
-        if not vm["subagent"]:
-            onboard_results.append({"role": vm["role"], "status": "skip (attacker)"})
-            continue
         try:
-            # Bastion에 자산 등록
-            r = _hx.post(f"{bastion_url}/assets", json={
-                "name": vm["name"], "ip": vm["ip"], "role": vm["role"],
-                "ssh_user": body.ssh_user,
-            }, headers={"X-API-Key": bastion_key}, timeout=10.0)
-            asset_id = r.json().get("asset", {}).get("id", "")
-
-            # 온보딩 (SubAgent 설치)
-            r2 = _hx.post(f"{bastion_url}/assets/{asset_id}/onboard", json={
-                "ssh_password": body.ssh_password, "auto_bootstrap": True,
-            }, headers={"X-API-Key": bastion_key}, timeout=30.0)
-            ob = r2.json()
-            status = ob.get("status", "error")
-            onboard_results.append({"role": vm["role"], "status": status, "asset_id": asset_id})
-
-            # CCC DB 상태 업데이트
+            ob = onboard_vm(ip=vm["ip"], role=vm["role"], user=body.ssh_user, password=body.ssh_password)
+            status = "healthy" if ob.get("healthy") else "registered"
+            onboard_results.append({"role": vm["role"], "status": status})
             with _conn() as conn:
                 with conn.cursor() as cur:
                     cur.execute("UPDATE student_infras SET status=%s WHERE student_id=%s AND ip=%s",
@@ -825,8 +798,7 @@ def setup_infra(body: InfraSetupBody, request: Request):
     return {
         "infras": results,
         "onboarding": onboard_results,
-        "ollama_url": ollama,
-        "message": "인프라 등록 완료. SubAgent 설치 상태를 확인하세요.",
+        "message": "인프라 등록 + SubAgent 설치 완료.",
     }
 
 @app.get("/infras/my", dependencies=[Depends(verify_api_key)])
@@ -857,12 +829,9 @@ def check_infra_health(iid: str):
             infra = cur.fetchone()
     if not infra:
         raise HTTPException(404, "Infra not found")
-    import httpx
-    try:
-        r = httpx.get(f"{infra['subagent_url']}/health", timeout=5.0)
-        healthy = r.status_code == 200
-    except Exception:
-        healthy = False
+    from packages.bastion import health_check
+    h = health_check(infra["ip"])
+    healthy = h.get("status") == "healthy"
     with _conn() as conn:
         with conn.cursor() as cur:
             cur.execute("UPDATE student_infras SET status=%s WHERE id=%s", ("healthy" if healthy else "unreachable", iid))
@@ -870,13 +839,13 @@ def check_infra_health(iid: str):
     return {"infra_id": iid, "healthy": healthy, "subagent_url": infra["subagent_url"]}
 
 # ══════════════════════════════════════════════════
-#  Education (교안 — opsclaw 교육 콘텐츠)
+#  Education (교안)
 # ══════════════════════════════════════════════════
 import pathlib as _pathlib
-_EDUCATION_DIR = os.getenv("EDUCATION_DIR", "/home/opsclaw/opsclaw/contents/education")
+_EDUCATION_DIR = os.getenv("EDUCATION_DIR", str(_pathlib.Path(__file__).parent.parent.parent.parent / "contents" / "education"))
 _LABS_DIR = str(_pathlib.Path(__file__).parent.parent.parent.parent / "contents" / "labs")
 
-# 과목 매핑 (opsclaw course dir → CCC lab course name) + 그룹
+# 과목 매핑 (course dir → CCC lab course name) + 그룹
 _COURSE_MAP = {
     "course1-attack": {"name": "attack", "title": "사이버 공격/해킹/침투 테스트", "group": "공격 기술", "group_color": "#f85149", "icon": "⚔️", "description": "SQL Injection, XSS, 권한 상승, 네트워크 공격 등 실제 해킹 기법을 학습하고, MITRE ATT&CK 프레임워크에 매핑하여 체계적으로 이해합니다."},
     "course2-security-ops": {"name": "secops", "title": "보안 솔루션 운영", "group": "방어 운영", "group_color": "#3fb950", "icon": "🛡️", "description": "nftables 방화벽, Suricata IPS, Wazuh SIEM, WAF 등 실제 보안 솔루션을 설치하고 운영합니다."},
@@ -1592,16 +1561,24 @@ def list_battles(status: str | None = None):
     return {"battles": [dict(r) for r in rows]}
 
 # ══════════════════════════════════════════════════
-#  AI Tasks (M9: bastion 연동)
+#  AI Tasks (Bastion 에이전트)
 # ══════════════════════════════════════════════════
 @app.post("/ai/task", dependencies=[Depends(verify_api_key)])
-def ai_task(body: AITaskRequest):
-    """AI 작업 요청 → bastion 연동 (M9 구현 예정)"""
-    return {
-        "status": "stub",
-        "message": "AI 작업 기능은 M9에서 bastion 연동 후 활성화됩니다",
-        "instruction": body.instruction,
-    }
+def ai_task(body: AITaskRequest, request: Request):
+    """AI 작업 요청 → Bastion 에이전트가 스킬 디스패치"""
+    from packages.bastion import execute_task
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+
+    # 사용자 인프라 정보를 컨텍스트로 전달
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT ip, vm_config FROM student_infras WHERE student_id=%s", (uid,))
+            infras = [dict(r) for r in cur.fetchall()]
+
+    context = {"student_id": uid, "infras": infras}
+    result = execute_task(instruction=body.instruction, context=context)
+    return {"status": "ok", **result}
 
 # ══════════════════════════════════════════════════
 #  Dashboard
@@ -1775,8 +1752,8 @@ def ai_feedback(request: Request):
     # 통계 수집
     stats = user_stats(request)
     import httpx as _hxf
-    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://192.168.0.105:11434")
-    model = os.getenv("CHAT_LLM_MODEL", "gpt-oss:120b")
+    ollama_url = LLM_BASE_URL
+    model = LLM_MODEL
     prompt = f"""다음 학생의 학습 데이터를 분석하고, 개인화된 피드백과 추천을 제공하세요.
 
 학생: {stats['student']['name']} (rank: {stats['student']['rank']})
@@ -1818,8 +1795,8 @@ def chat(body: ChatBody, request: Request):
     """AI 튜터 챗봇 — 사용법, 학습 내용 질의응답"""
     user = get_current_user(request)
     import httpx as _hxc
-    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://192.168.0.105:11434")
-    model = os.getenv("CHAT_LLM_MODEL", "gpt-oss:120b")
+    ollama_url = LLM_BASE_URL
+    model = LLM_MODEL
 
     system_prompt = f"""너는 CCC(Cyber Combat Commander) 사이버보안 교육 플랫폼의 AI 튜터다.
 학생의 질문에 친절하고 정확하게 답변한다.
@@ -1888,8 +1865,8 @@ def generate_ctf(body: CTFGenerateBody, request: Request):
 
     # LLM으로 문제 생성
     import httpx as _hx2
-    ollama_url = os.getenv("OLLAMA_BASE_URL", "http://192.168.0.105:11434")
-    model = os.getenv("CTF_LLM_MODEL", "gpt-oss:120b")
+    ollama_url = LLM_BASE_URL
+    model = LLM_MODEL
 
     prompt = f"""다음 교육 과정 내용을 바탕으로 CTF 문제 {body.count}개를 생성하세요.
 난이도: {body.difficulty}
@@ -2175,12 +2152,6 @@ async def battle_ws(websocket: WebSocket, bid: str):
     except WebSocketDisconnect:
         _battle_connections.get(bid, []).remove(websocket)
 
-# ══════════════════════════════════════════════════
-#  Central Server (중앙서버 연동 — M6 stub)
-# ══════════════════════════════════════════════════
-@app.post("/central/register", dependencies=[Depends(verify_api_key)])
-def register_central(central_url: str = "http://localhost:7000"):
-    return {"status": "stub", "message": "중앙서버 연동은 M6에서 구현"}
 
 # ── Static files ───────────────────────────────────
 import pathlib

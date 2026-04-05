@@ -17,8 +17,8 @@ from typing import Any
 
 import httpx
 
-OLLAMA_URL = os.getenv("OLLAMA_BASE_URL", "http://192.168.0.105:11434")
-MODEL = os.getenv("MANAGER_LLM_MODEL", "gpt-oss:120b")
+OLLAMA_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
+MODEL = os.getenv("LLM_MODEL", "gemma3:4b")
 
 # ── 시스템 프롬프트 조합 (Claude Code src/ 참고) ──
 
@@ -110,7 +110,7 @@ def execute(instruction: str, student_info: dict | None = None, subagent_url: st
     return {"plan": [], "raw": content if 'content' in dir() else ""}
 
 
-def setup_vm(role: str, ip: str, ssh_user: str = "opsclaw") -> list[str]:
+def setup_vm(role: str, ip: str, ssh_user: str = "ccc") -> list[str]:
     """VM별 설치 명령어 목록 생성"""
     commands = {
         "secu": [
@@ -145,7 +145,7 @@ def setup_vm(role: str, ip: str, ssh_user: str = "opsclaw") -> list[str]:
         ],
         "manager": [
             "curl -fsSL https://ollama.ai/install.sh | sh",
-            "ollama pull gpt-oss:120b",
+            f"ollama pull {MODEL}",
         ],
     }
     return commands.get(role, [])

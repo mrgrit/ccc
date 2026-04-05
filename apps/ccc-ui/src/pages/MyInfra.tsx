@@ -8,7 +8,7 @@ const ROLES = [
   { role: 'web', label: 'Web Server', icon: '🌐', desc: 'ModSecurity, JuiceShop, DVWA, WebGoat, sysmon, osquery', needSubagent: true },
   { role: 'siem', label: 'SIEM', icon: '📡', desc: 'Wazuh, SIGMA, OpenCTI, sysmon, osquery, 로그 수집', needSubagent: true },
   { role: 'windows', label: 'Windows (분석)', icon: '🪟', desc: 'Sysmon, osquery, Ghidra, x64dbg, Autopsy, FTK Imager', needSubagent: true },
-  { role: 'manager', label: 'Manager AI', icon: '🤖', desc: 'Ollama, gpt-oss:120b, bastion manager', needSubagent: true },
+  { role: 'manager', label: 'Manager AI', icon: '🤖', desc: 'Ollama, LLM 추론, CCC 운영 에이전트', needSubagent: true },
 ]
 
 const statusColor: Record<string, string> = {
