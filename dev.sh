@@ -2,7 +2,10 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# venv 자동 활성화
+# UTF-8 + venv
+export LANG=ko_KR.UTF-8
+export LC_ALL=ko_KR.UTF-8
+export PYTHONIOENCODING=utf-8
 [ -f .venv/bin/activate ] && source .venv/bin/activate
 
 set -a; [ -f .env ] && source .env; set +a

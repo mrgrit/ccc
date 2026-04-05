@@ -11,15 +11,19 @@ if command -v apt-get &>/dev/null; then
     sudo apt-get install -y python3 python3-pip python3-venv sshpass ca-certificates curl gnupg \
         locales fonts-nanum fonts-noto-cjk
 
-    # 한국어 로케일 설정
-    sudo sed -i 's/# ko_KR.UTF-8 UTF-8/ko_KR.UTF-8 UTF-8/' /etc/locale.gen 2>/dev/null || true
+    # 한국어 로케일 설정 (UTF-8)
     sudo locale-gen ko_KR.UTF-8 2>/dev/null || true
+    sudo update-locale LANG=ko_KR.UTF-8 LC_ALL=ko_KR.UTF-8 2>/dev/null || true
+
+    # 현재 세션 + 이후 세션에도 적용
+    for rc in ~/.bashrc ~/.profile; do
+        if [ -f "$rc" ] && ! grep -q 'export LANG=ko_KR.UTF-8' "$rc" 2>/dev/null; then
+            echo 'export LANG=ko_KR.UTF-8' >> "$rc"
+            echo 'export LC_ALL=ko_KR.UTF-8' >> "$rc"
+        fi
+    done
     export LANG=ko_KR.UTF-8
     export LC_ALL=ko_KR.UTF-8
-    if ! grep -q 'LANG=ko_KR.UTF-8' /etc/default/locale 2>/dev/null; then
-        echo 'LANG=ko_KR.UTF-8' | sudo tee /etc/default/locale >/dev/null
-    fi
-    sudo fc-cache -f 2>/dev/null || true
 
     # Node.js 22 LTS (Vite 8 요구: >=20.19 or >=22.12)
     NODE_MAJOR=$(node --version 2>/dev/null | sed 's/v\([0-9]*\).*/\1/' || echo "0")
