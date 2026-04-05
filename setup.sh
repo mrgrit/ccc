@@ -10,12 +10,14 @@ if command -v apt-get &>/dev/null; then
     sudo apt-get update -y
     sudo apt-get install -y python3 python3-pip python3-venv nodejs npm sshpass
 elif command -v dnf &>/dev/null; then
-    sudo dnf install -y python3 python3-pip nodejs npm sshpass
+    sudo dnf install -y python3 python3-pip python3-virtualenv nodejs npm sshpass
 fi
 
-# 2. Python 의존성
-echo "[2/5] Python 의존성 설치..."
-pip3 install --user -r requirements.txt 2>/dev/null || pip install -r requirements.txt
+# 2. Python venv + 의존성
+echo "[2/5] Python 가상환경 + 의존성 설치..."
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
 
 # 3. UI 빌드
 echo "[3/5] UI 빌드..."
@@ -47,7 +49,9 @@ echo ""
 echo "=== 설치 완료 ==="
 echo ""
 echo "실행:"
-echo "  ./dev.sh api          # API 서버 (:9100)"
+echo "  source .venv/bin/activate"
+echo "  ./dev.sh api              # API 서버 (:9100)"
+echo "  ./dev.sh bastion          # Bastion 에이전트 (TUI)"
 echo "  브라우저: http://localhost:9100/app/"
 echo ""
 echo "설정 (.env):"

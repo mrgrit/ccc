@@ -2,6 +2,9 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
+# venv 자동 활성화
+[ -f .venv/bin/activate ] && source .venv/bin/activate
+
 set -a; [ -f .env ] && source .env; set +a
 export PYTHONPATH="$(pwd)"
 
