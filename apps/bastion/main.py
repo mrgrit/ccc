@@ -282,145 +282,185 @@ def render_result(result: dict):
 
 # ── LLM Streaming ────────────────────────────────
 
-def llm_chat(messages: list[dict], stream: bool = True) -> str:
-    """LLM 호출 — bastion의 services/api/claude.ts 참고"""
-    try:
-        if stream:
-            return _llm_stream(messages)
-        else:
-            r = httpx.post(f"{LLM_BASE_URL}/api/chat", json={
-                "model": LLM_MODEL,
-                "messages": messages,
-                "stream": False,
-                "options": {"temperature": 0.1},
-            }, timeout=60.0)
-            return r.json().get("message", {}).get("content", "")
-    except Exception as e:
-        return f"[LLM 연결 실패: {e}]"
+# ── Ollama Tool Definitions (Claude Code의 tools/ 패턴) ──
+
+TOOL_DEFS = [
+    {
+        "type": "function",
+        "function": {
+            "name": "ccc",
+            "description": "CCC 플랫폼 관리: start(API+DB시작), stop(전체중지), restart(API재시작), status(상태확인), logs(로그), logs_error(에러로그), build_ui(UI빌드), deploy(pull+build+restart), update(git pull), start_api, stop_api, start_db, stop_db, reset_db, backup_db, env(환경변수), set_env(환경변수설정), create_admin, student_list, firewall_open, firewall_close, check_port",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "action": {"type": "string", "description": "실행할 액션"},
+                    "port": {"type": "string", "description": "포트 번호 (firewall 관련)"},
+                    "key": {"type": "string", "description": "환경변수 키 (set_env용)"},
+                    "value": {"type": "string", "description": "환경변수 값 (set_env용)"},
+                    "id": {"type": "string", "description": "사용자 ID (create_admin용)"},
+                    "name": {"type": "string", "description": "사용자 이름 (create_admin용)"},
+                    "password": {"type": "string", "description": "비밀번호 (create_admin용)"},
+                },
+                "required": ["action"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "shell",
+            "description": "이 서버에서 로컬 쉘 명령 실행. 파일 조회, 패키지 설치, 프로세스 관리, 네트워크 확인 등 ccc 스킬에 없는 모든 작업에 사용",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "command": {"type": "string", "description": "실행할 쉘 명령어"},
+                },
+                "required": ["command"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "onboard",
+            "description": "학생 VM에 SSH로 접속하여 SubAgent 설치 및 역할별 소프트웨어 배포",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ip": {"type": "string", "description": "VM IP 주소"},
+                    "role": {"type": "string", "enum": ["attacker", "secu", "web", "siem", "manager", "windows"], "description": "VM 역할"},
+                    "ssh_user": {"type": "string", "description": "SSH 사용자 (기본: ccc)"},
+                    "ssh_password": {"type": "string", "description": "SSH 비밀번호"},
+                },
+                "required": ["ip", "role"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "health_check",
+            "description": "SubAgent 상태 확인 (A2A 프로토콜)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ip": {"type": "string", "description": "VM IP 주소"},
+                },
+                "required": ["ip"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_command",
+            "description": "원격 VM의 SubAgent에 명령 실행 (A2A 프로토콜)",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "ip": {"type": "string", "description": "VM IP 주소"},
+                    "script": {"type": "string", "description": "실행할 명령어"},
+                },
+                "required": ["ip", "script"],
+            },
+        },
+    },
+]
 
 
-def _llm_stream(messages: list[dict]) -> str:
-    """스트리밍 응답 — bastion의 query loop streaming 참고"""
-    full_text = ""
-    try:
-        with httpx.stream("POST", f"{LLM_BASE_URL}/api/chat", json={
-            "model": LLM_MODEL,
-            "messages": messages,
-            "stream": True,
-            "options": {"temperature": 0.1},
-        }, timeout=120.0) as r:
-            for line in r.iter_lines():
-                if not line:
-                    continue
-                try:
-                    chunk = json.loads(line)
-                    token = chunk.get("message", {}).get("content", "")
-                    if token:
-                        console.print(token, end="", highlight=False)
-                        full_text += token
-                    if chunk.get("done"):
-                        break
-                except json.JSONDecodeError:
-                    continue
-        console.print()  # newline after stream
-    except Exception as e:
-        full_text = f"[LLM 연결 실패: {e}]"
-        console.print(full_text, style=RED)
-    return full_text
-
-
-# ── Task Execution (대화형) ──────────────────────
+# ── LLM + Tool Calling (Claude Code의 query.ts 패턴) ──
 
 def execute_interactive(instruction: str):
-    """자연어 지시 실행 — bastion의 query.ts 메인 루프 참고
+    """자연어 지시 실행 — Claude Code의 query loop 패턴
 
-    1. 사용자 입력 → 시스템 프롬프트 조합
-    2. LLM에게 스킬 선택 요청 (JSON)
-    3. 스킬 실행 + 결과 표시
-    4. 필요시 LLM에게 결과 요약 요청
+    Claude Code 방식:
+    1. 사용자 메시지 + 도구 정의를 LLM에 전달
+    2. LLM이 자연스럽게 응답하면서 필요할 때 tool_call 발생
+    3. tool_call 실행 → 결과를 대화에 추가
+    4. LLM이 결과를 보고 이어서 설명
+    5. 더 이상 tool_call이 없을 때까지 반복 (multi-step)
     """
     state.add_message("user", instruction)
     context = state.get_context()
-    skill_list = json.dumps(SKILLS, ensure_ascii=False, indent=2)
 
     system = build_system_prompt(
         f"등록된 인프라: {json.dumps(context['infras'], ensure_ascii=False)}\n"
         f"세션 경과: {context['session_duration']}초, 완료 작업: {context['tasks_completed']}건"
     )
 
-    # 대화 히스토리 포함 (스마트 컨텍스트 관리)
+    # 대화 구성
     messages = [{"role": "system", "content": system}]
     messages.extend(state.build_messages())
+    messages.append({"role": "user", "content": instruction})
 
-    # 현재 지시에 스킬 선택 안내 추가
-    messages.append({"role": "user", "content": f"""지시: {instruction}
+    # Tool calling loop (Claude Code처럼 다중 도구 호출 가능)
+    max_iterations = 5
+    full_response = ""
 
-사용 가능한 스킬:
-{skill_list}
+    for i in range(max_iterations):
+        # LLM 호출 (tool calling)
+        try:
+            r = httpx.post(f"{LLM_BASE_URL}/api/chat", json={
+                "model": LLM_MODEL,
+                "messages": messages,
+                "tools": TOOL_DEFS,
+                "stream": False,
+                "options": {"temperature": 0.1},
+            }, timeout=120.0)
+            resp = r.json()
+        except Exception as e:
+            console.print(f"  [{RED}]LLM 연결 실패: {e}[/]")
+            return
 
-스킬 실행이 필요하면 반드시 아래 JSON 형식으로만 응답:
-{{"skill": "스킬명", "params": {{...}}, "reason": "선택 이유"}}
+        msg = resp.get("message", {})
+        content = msg.get("content", "")
+        tool_calls = msg.get("tool_calls", [])
 
-스킬 없이 직접 답변 가능하면:
-{{"skill": "none", "params": {{}}, "reason": "직접 답변", "answer": "답변 내용"}}"""})
+        # 텍스트 응답 출력 (스트리밍 효과)
+        if content:
+            console.print()
+            console.print(Markdown(content))
+            full_response += content
 
-    # LLM 응답 (스킬 선택)
-    with console.status("[bold]생각하는 중...", spinner="dots", spinner_style=ORANGE):
-        reply = llm_chat(messages, stream=False)
+        # tool_call이 없으면 종료
+        if not tool_calls:
+            break
 
-    # JSON 파싱
-    import re
-    match = re.search(r'\{[\s\S]*\}', reply)
-    if not match:
-        # JSON이 아니면 직접 답변으로 취급
-        console.print()
-        console.print(Markdown(reply))
-        state.add_message("assistant", reply)
-        return
+        # tool_call 실행
+        messages.append(msg)  # assistant message with tool_calls
 
-    try:
-        plan = json.loads(match.group())
-    except json.JSONDecodeError:
-        console.print()
-        console.print(Markdown(reply))
-        state.add_message("assistant", reply)
-        return
+        for tc in tool_calls:
+            fn = tc.get("function", {})
+            skill_name = fn.get("name", "")
+            params = fn.get("arguments", {})
+            if isinstance(params, str):
+                try:
+                    params = json.loads(params)
+                except json.JSONDecodeError:
+                    params = {}
 
-    skill_name = plan.get("skill", "none")
-    reason = plan.get("reason", "")
+            # 도구 호출 표시
+            render_tool_call(skill_name, params)
 
-    if skill_name == "none":
-        answer = plan.get("answer", reply)
-        console.print()
-        console.print(Markdown(answer))
-        state.add_message("assistant", answer)
-        return
+            # 실행
+            with console.status("[bold]실행 중...", spinner="dots", spinner_style=ORANGE):
+                result = dispatch_skill(skill_name, params)
 
-    # 스킬 실행
-    console.print(f"\n  [dim]이유:[/] {reason}", highlight=False)
-    params = plan.get("params", {})
-    render_tool_call(skill_name, params)
+            render_result(result)
+            state.task_count += 1
+
+            # 결과를 대화에 추가 → LLM이 다음 턴에서 참조
+            result_json = json.dumps(result, ensure_ascii=False)
+            if len(result_json) > 3000:
+                result_json = result_json[:3000] + "...(truncated)"
+            messages.append({"role": "tool", "content": result_json})
+
+        # 다음 iteration에서 LLM이 결과를 보고 이어서 응답
+
+    # 최종 응답을 히스토리에 저장
+    if full_response:
+        state.add_message("assistant", full_response[:500])
     console.print()
-
-    with console.status("[bold]실행 중...", spinner="dots", spinner_style=ORANGE):
-        result = dispatch_skill(skill_name, params)
-
-    render_result(result)
-    state.task_count += 1
-
-    # 결과를 LLM에 보내서 사람이 읽을 수 있는 설명 생성
-    result_json = json.dumps(result, ensure_ascii=False)
-    if len(result_json) > 2000:
-        result_json = result_json[:2000] + "...(truncated)"
-
-    console.print()
-    explain_messages = [
-        {"role": "system", "content": "너는 CCC 운영 에이전트다. 스킬 실행 결과를 사용자에게 간결하게 설명해라. 성공/실패 여부, 핵심 내용, 주의사항을 알려줘. 2-3문장으로 짧게."},
-        {"role": "user", "content": f"사용자 지시: {instruction}\n실행 스킬: {skill_name}\n결과:\n{result_json}"},
-    ]
-    explanation = llm_chat(explain_messages, stream=True)
-
-    state.add_message("assistant", f"[{skill_name}] {reason}\n결과: {result_json[:500]}\n설명: {explanation[:300]}")
 
     # 결과 요약 (복잡한 결과일 때)
     if skill_name in ("diagnose", "system_status"):
