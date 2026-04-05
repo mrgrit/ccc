@@ -25,7 +25,7 @@ LLM_SUBAGENT_MODEL = os.getenv("LLM_SUBAGENT_MODEL", "gemma3:4b")
 # bastion TUI는 manager 모델 사용
 LLM_MODEL = LLM_MANAGER_MODEL
 SUBAGENT_PORT = 8002
-SSH_TIMEOUT = 30
+SSH_TIMEOUT = 120  # 온보딩 시 패키지 설치에 시간 필요
 
 # ── System Prompt Sections (bastion/src/constants 참고) ──
 
@@ -215,16 +215,20 @@ systemctl enable --now ccc-subagent
 
 
 def ssh_run(ip: str, user: str, password: str, commands: list[str]) -> dict:
-    """SSH로 명령 실행 (subprocess + sshpass 사용)"""
+    """SSH로 명령 실행 (subprocess + sshpass, sudo -S로 비밀번호 전달)"""
     script = " && ".join(commands)
+    # echo password | sudo -S 로 non-interactive sudo 지원
+    remote_cmd = f"echo '{password}' | sudo -S bash -c '{script}'"
     cmd = [
         "sshpass", "-p", password,
         "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-        f"{user}@{ip}", f"sudo bash -c '{script}'"
+        f"{user}@{ip}", remote_cmd,
     ]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=SSH_TIMEOUT)
-        return {"success": r.returncode == 0, "stdout": r.stdout[:5000], "stderr": r.stderr[:2000]}
+        # sudo -S 는 stderr에 password prompt를 출력하므로 필터링
+        stderr = "\n".join(l for l in r.stderr.splitlines() if "password" not in l.lower())
+        return {"success": r.returncode == 0, "stdout": r.stdout[:5000], "stderr": stderr[:2000]}
     except subprocess.TimeoutExpired:
         return {"success": False, "stdout": "", "stderr": "SSH timeout"}
     except Exception as e:
