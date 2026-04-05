@@ -51,6 +51,12 @@ python3 -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
 
+# Claude Code CLI 설치 (bastion용)
+if ! command -v claude &>/dev/null; then
+    echo "  Claude Code CLI 설치..."
+    npm install -g @anthropic-ai/claude-code 2>/dev/null || true
+fi
+
 # 3. UI 빌드
 echo "[3/5] UI 빌드..."
 cd apps/ccc-ui
