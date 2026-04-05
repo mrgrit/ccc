@@ -426,8 +426,8 @@ def register(body: RegisterBody):
             if cur.fetchone():
                 raise HTTPException(409, "이미 등록된 학번입니다")
             cur.execute(
-                """INSERT INTO students (id, student_id, name, email, password_hash, role, rank, group_id, grp)
-                   VALUES (%s,%s,%s,%s,%s,'trainee','rookie','trainee',%s) RETURNING id, student_id, name, email, role, rank, group_id, grp""",
+                """INSERT INTO students (id, student_id, name, email, password_hash, role, rank, grp)
+                   VALUES (%s,%s,%s,%s,%s,'trainee','rookie',%s) RETURNING id, student_id, name, email, role, rank, grp""",
                 (sid, body.student_id, body.name, body.email, pw_hash, body.group),
             )
             row = cur.fetchone()
