@@ -1,6 +1,7 @@
 """ccc-api — Cyber Combat Commander 교육 플랫폼 API (:9100)"""
 from __future__ import annotations
 import os
+import re as _re
 import uuid
 import time
 from contextlib import asynccontextmanager
@@ -868,16 +869,27 @@ _GROUP_ORDER = ["공격 기술", "방어 운영", "AI 보안", "실전"]
 
 @app.get("/education/courses", dependencies=[Depends(verify_api_key)])
 def list_education_courses():
-    """교과목 목록 (교안 + 실습 통합)"""
+    """교과목 목록 (교안 + 실습 통합) — 교안 없어도 labs 기반으로 표시"""
     import glob as _glob
     result = []
-    for course_dir in sorted(_glob.glob(os.path.join(_EDUCATION_DIR, "course*/"))):
-        dirname = os.path.basename(course_dir.rstrip("/"))
-        meta = _COURSE_MAP.get(dirname, {"name": dirname, "title": dirname, "icon": "📖", "description": ""})
-        weeks = len([d for d in os.listdir(course_dir) if d.startswith("week")])
-        # 대응하는 CCC lab 수
+    for dirname, meta in _COURSE_MAP.items():
+        course_dir = os.path.join(_EDUCATION_DIR, dirname)
+        # 교안이 있으면 주차 수를 교안에서, 없으면 labs에서
+        if os.path.isdir(course_dir):
+            weeks = len([d for d in os.listdir(course_dir) if d.startswith("week")])
+        else:
+            lab_files = _glob.glob(os.path.join(_LABS_DIR, f"{meta['name']}-nonai", "*.yaml"))
+            lab_files += _glob.glob(os.path.join(_LABS_DIR, f"{meta['name']}-ai", "*.yaml"))
+            week_nums = set()
+            for f in lab_files:
+                m = _re.search(r'week(\d+)', os.path.basename(f))
+                if m:
+                    week_nums.add(int(m.group(1)))
+            weeks = len(week_nums) if week_nums else 15
         lab_nonai = len(_glob.glob(os.path.join(_LABS_DIR, f"{meta['name']}-nonai", "*.yaml")))
         lab_ai = len(_glob.glob(os.path.join(_LABS_DIR, f"{meta['name']}-ai", "*.yaml")))
+        if weeks == 0 and lab_nonai == 0 and lab_ai == 0:
+            continue  # 교안도 실습도 없는 과목은 스킵
         result.append({
             "course_dir": dirname,
             "course_id": meta["name"],
@@ -890,7 +902,6 @@ def list_education_courses():
             "labs_nonai": lab_nonai,
             "labs_ai": lab_ai,
         })
-    # 그룹별 정렬
     groups = []
     for gname in _GROUP_ORDER:
         courses_in_group = [c for c in result if c.get("group") == gname]
