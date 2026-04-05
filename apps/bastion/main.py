@@ -256,12 +256,13 @@ def render_result(result: dict):
         stderr = result.get("stderr", "").strip()
         code = result.get("exit_code", -1)
         color = GREEN if code == 0 else RED
+        status_icon = "✓" if code == 0 else "✗"
+        console.print(f"  [{color}]{status_icon}[/] ", end="")
+        console.print(f"[{color}]{'성공' if code == 0 else f'실패 (exit {code})'}[/]")
         if stdout:
-            console.print(f"  [dim]stdout:[/]")
             console.print(Syntax(stdout, "bash", theme="monokai", line_numbers=False, padding=1))
         if stderr:
-            console.print(f"  [{RED}]stderr:[/] {stderr[:500]}")
-        console.print(f"  [dim]exit_code:[/] [{color}]{code}[/]")
+            console.print(f"  [{RED}]{stderr[:500]}[/]")
         return
 
     if "healthy" in result:
@@ -407,11 +408,19 @@ def execute_interactive(instruction: str):
     render_result(result)
     state.task_count += 1
 
-    # 실행 결과를 히스토리에 저장 (LLM이 다음 대화에서 참조)
-    result_summary = json.dumps(result, ensure_ascii=False)
-    if len(result_summary) > 800:
-        result_summary = result_summary[:800] + "...(truncated)"
-    state.add_message("assistant", f"[{skill_name}] {reason}\n결과: {result_summary}")
+    # 결과를 LLM에 보내서 사람이 읽을 수 있는 설명 생성
+    result_json = json.dumps(result, ensure_ascii=False)
+    if len(result_json) > 2000:
+        result_json = result_json[:2000] + "...(truncated)"
+
+    console.print()
+    explain_messages = [
+        {"role": "system", "content": "너는 CCC 운영 에이전트다. 스킬 실행 결과를 사용자에게 간결하게 설명해라. 성공/실패 여부, 핵심 내용, 주의사항을 알려줘. 2-3문장으로 짧게."},
+        {"role": "user", "content": f"사용자 지시: {instruction}\n실행 스킬: {skill_name}\n결과:\n{result_json}"},
+    ]
+    explanation = llm_chat(explain_messages, stream=True)
+
+    state.add_message("assistant", f"[{skill_name}] {reason}\n결과: {result_json[:500]}\n설명: {explanation[:300]}")
 
     # 결과 요약 (복잡한 결과일 때)
     if skill_name in ("diagnose", "system_status"):
