@@ -215,23 +215,39 @@ systemctl enable --now ccc-subagent
 
 
 def ssh_run(ip: str, user: str, password: str, commands: list[str], timeout: int = None) -> dict:
-    """SSH로 명령 실행 — 스크립트를 stdin으로 전달하여 이스케이핑 문제 회피"""
-    script = "\n".join(commands)
+    """SSH로 명령 실행 — scp로 스크립트 업로드 후 실행 (이스케이핑/stdin 문제 원천 해결)"""
+    import tempfile
+    script = "#!/bin/bash\nset -e\n" + "\n".join(commands) + "\n"
     t = timeout or SSH_TIMEOUT
+    ssh_opts = ["-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"]
 
-    # 방법: echo password | sudo -S bash 로 stdin에 스크립트 전달
-    # sshpass로 SSH 인증, ssh 내부에서 sudo -S로 권한 상승
-    cmd = [
-        "sshpass", "-p", password,
-        "ssh", "-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10",
-        f"{user}@{ip}",
-        f"echo '{password}' | sudo -S bash",
-    ]
     try:
-        r = subprocess.run(cmd, input=script, capture_output=True, text=True, timeout=t, errors='replace')
+        # 1. 로컬에 임시 스크립트 파일 생성
+        with tempfile.NamedTemporaryFile(mode="w", suffix=".sh", delete=False) as f:
+            f.write(script)
+            local_path = f.name
+
+        remote_path = f"/tmp/ccc_onboard_{os.getpid()}.sh"
+
+        # 2. scp로 스크립트 업로드
+        scp_cmd = ["sshpass", "-p", password, "scp", *ssh_opts, local_path, f"{user}@{ip}:{remote_path}"]
+        scp_r = subprocess.run(scp_cmd, capture_output=True, text=True, timeout=30, errors="replace")
+        os.unlink(local_path)
+
+        if scp_r.returncode != 0:
+            return {"success": False, "stdout": "", "stderr": f"scp failed: {scp_r.stderr[:500]}"}
+
+        # 3. ssh로 스크립트 실행 (sudo -S로 비밀번호 전달)
+        run_cmd = [
+            "sshpass", "-p", password,
+            "ssh", *ssh_opts, f"{user}@{ip}",
+            f"echo '{password}' | sudo -S bash {remote_path}; rm -f {remote_path}",
+        ]
+        r = subprocess.run(run_cmd, capture_output=True, text=True, timeout=t, errors="replace")
         stderr = "\n".join(l for l in r.stderr.splitlines()
                            if "password" not in l.lower() and "setlocale" not in l.lower())
         return {"success": r.returncode == 0, "stdout": r.stdout[:5000], "stderr": stderr[:2000]}
+
     except subprocess.TimeoutExpired:
         return {"success": False, "stdout": "", "stderr": f"SSH timeout ({t}s)"}
     except Exception as e:
