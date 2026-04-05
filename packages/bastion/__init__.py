@@ -267,13 +267,13 @@ def system_status(infras: list[dict]) -> dict:
 # ── LLM 기반 스킬 디스패치 (bastion의 skill system 참고) ──
 
 SKILLS = {
-    "shell": {
-        "description": "이 서버에서 로컬 쉘 명령 실행 (서비스 관리, 파일 조회, 로그 확인, 패키지 설치, 프로세스 관리 등 모든 작업)",
-        "requires": ["command"],
-    },
-    "service": {
-        "description": "CCC 서비스 관리 — action: start_api, stop_api, restart_api, start_db, stop_db, status, start_all, stop_all, build_ui, logs",
+    "ccc": {
+        "description": "CCC 플랫폼 관리 — action: start, stop, restart, status, logs, build_ui, start_api, stop_api, restart_api, start_db, stop_db, reset_db, backup_db, env, set_env, update, deploy, create_admin, student_list, firewall_open, firewall_close, check_port",
         "requires": ["action"],
+    },
+    "shell": {
+        "description": "이 서버에서 로컬 쉘 명령 실행 (파일 조회, 패키지 설치, 프로세스 관리 등 ccc 스킬에 없는 모든 작업)",
+        "requires": ["command"],
     },
     "onboard": {
         "description": "학생 VM에 SubAgent 설치 및 역할별 소프트웨어 배포",
@@ -314,39 +314,113 @@ def shell_exec(command: str, timeout: int = 60) -> dict:
         return {"exit_code": -1, "stdout": "", "stderr": str(e)}
 
 
-# ── Service Management ────────────────────────────
+# ── CCC Platform Management ───────────────────────
 
-def service_manage(action: str) -> dict:
-    """CCC 서비스 관리"""
+_VENV = f"source {CCC_DIR}/.venv/bin/activate 2>/dev/null"
+_ENVLOAD = f"set -a; [ -f {CCC_DIR}/.env ] && source {CCC_DIR}/.env; set +a; export PYTHONPATH={CCC_DIR}"
+_API_START = f"{_VENV}; {_ENVLOAD}; nohup python3 -m uvicorn apps.ccc-api.src.main:app --host 0.0.0.0 --port 9100 > /tmp/ccc-api.log 2>&1 & echo \"API started (pid: $!)\""
+_API_KEY = os.getenv("CCC_API_KEY", "ccc-api-key-2026")
+
+
+def ccc_manage(action: str, params: dict = None) -> dict:
+    """CCC 플랫폼 통합 관리"""
+    params = params or {}
     actions = {
-        "start_api": f"cd {CCC_DIR} && source .venv/bin/activate 2>/dev/null; set -a; [ -f .env ] && source .env; set +a; export PYTHONPATH={CCC_DIR}; nohup python3 -m uvicorn apps.ccc-api.src.main:app --host 0.0.0.0 --port 9100 > /tmp/ccc-api.log 2>&1 & echo $!",
-        "stop_api": "pkill -f 'uvicorn apps.ccc-api' || echo 'not running'",
-        "restart_api": "pkill -f 'uvicorn apps.ccc-api' 2>/dev/null; sleep 1; " +
-            f"cd {CCC_DIR} && source .venv/bin/activate 2>/dev/null; set -a; [ -f .env ] && source .env; set +a; export PYTHONPATH={CCC_DIR}; nohup python3 -m uvicorn apps.ccc-api.src.main:app --host 0.0.0.0 --port 9100 > /tmp/ccc-api.log 2>&1 & echo $!",
-        "start_db": f"cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml up -d postgres",
-        "stop_db": f"cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml stop postgres",
-        "start_all": f"cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml up -d postgres && sleep 2 && source .venv/bin/activate 2>/dev/null; set -a; [ -f .env ] && source .env; set +a; export PYTHONPATH={CCC_DIR}; nohup python3 -m uvicorn apps.ccc-api.src.main:app --host 0.0.0.0 --port 9100 > /tmp/ccc-api.log 2>&1 & echo $!",
-        "stop_all": f"pkill -f 'uvicorn apps.ccc-api' 2>/dev/null; cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml stop",
-        "build_ui": f"cd {CCC_DIR}/apps/ccc-ui && npm run build",
-        "status": "echo '=== CCC Services ===' && "
-            "(pgrep -fa 'uvicorn apps.ccc-api' && echo 'API: running') || echo 'API: stopped'; "
-            "(docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep postgres) || echo 'DB: stopped'; "
-            f"curl -s http://localhost:9100/api/dashboard -H 'X-API-Key: {os.getenv('CCC_API_KEY', 'ccc-api-key-2026')}' > /dev/null 2>&1 && echo 'API health: OK' || echo 'API health: unreachable'; "
-            f"curl -s {LLM_BASE_URL}/api/tags > /dev/null 2>&1 && echo 'LLM: connected' || echo 'LLM: unreachable'",
-        "logs": "tail -50 /tmp/ccc-api.log 2>/dev/null || echo 'no log file'",
+        # ── 서비스 시작/중지 ──
+        "start": f"cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml up -d postgres && sleep 2 && {_API_START}",
+        "stop": f"pkill -f 'uvicorn apps.ccc-api' 2>/dev/null; cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml stop; echo 'All stopped'",
+        "restart": f"pkill -f 'uvicorn apps.ccc-api' 2>/dev/null; sleep 1; cd {CCC_DIR} && {_API_START}",
+        "start_api": f"cd {CCC_DIR} && {_API_START}",
+        "stop_api": "pkill -f 'uvicorn apps.ccc-api' && echo 'API stopped' || echo 'API not running'",
+        "restart_api": f"pkill -f 'uvicorn apps.ccc-api' 2>/dev/null; sleep 1; cd {CCC_DIR} && {_API_START}",
+        "start_db": f"cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml up -d postgres && echo 'DB started'",
+        "stop_db": f"cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml stop postgres && echo 'DB stopped'",
+
+        # ── 상태/로그 ──
+        "status":
+            "echo '=== CCC Platform Status ==='; echo; "
+            "echo '-- Processes --'; "
+            "(pgrep -fa 'uvicorn apps.ccc-api' && echo '  API: RUNNING') || echo '  API: STOPPED'; "
+            "(docker ps --format '  DB:  RUNNING ({{.Names}} {{.Status}})' 2>/dev/null | grep postgres) || echo '  DB:  STOPPED'; "
+            "echo; echo '-- Health --'; "
+            f"curl -s -o /dev/null -w '  API response: %{{http_code}}' http://localhost:9100/api/dashboard -H 'X-API-Key: {_API_KEY}' 2>/dev/null; echo; "
+            f"curl -s -o /dev/null -w '  LLM response: %{{http_code}}' {LLM_BASE_URL}/api/tags 2>/dev/null; echo; "
+            "echo; echo '-- Resources --'; "
+            "df -h / | tail -1 | awk '{print \"  Disk: \" $3 \"/\" $2 \" (\" $5 \" used)\"}'; "
+            "free -h | awk '/Mem/{print \"  RAM:  \" $3 \"/\" $2}'; "
+            f"echo; echo '-- Config --'; "
+            f"echo '  CCC_DIR: {CCC_DIR}'; "
+            f"echo '  LLM: {LLM_BASE_URL} / {LLM_MODEL}'; "
+            f"echo '  DB: {os.getenv('DATABASE_URL', 'postgresql://ccc:ccc@127.0.0.1:5434/ccc')}'",
+        "logs": "tail -100 /tmp/ccc-api.log 2>/dev/null || echo 'No API log file. Start API first.'",
+        "logs_follow": "tail -f /tmp/ccc-api.log 2>/dev/null || echo 'No API log file'",
+        "logs_error": "grep -i 'error\\|traceback\\|exception' /tmp/ccc-api.log 2>/dev/null | tail -30 || echo 'No errors found'",
+
+        # ── UI 빌드/배포 ──
+        "build_ui": f"cd {CCC_DIR}/apps/ccc-ui && npm run build 2>&1 && echo 'UI build complete'",
+        "deploy": f"cd {CCC_DIR} && git pull && "
+            f"cd apps/ccc-ui && npm install && npm run build && cd ../.. && "
+            f"{_VENV} && pip install -r requirements.txt -q && "
+            f"pkill -f 'uvicorn apps.ccc-api' 2>/dev/null; sleep 1 && {_API_START} && echo 'Deploy complete'",
+        "update": f"cd {CCC_DIR} && git pull && echo 'Code updated. Run: ccc restart'",
+
+        # ── DB 관리 ──
+        "reset_db": f"cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml stop postgres && "
+            "docker compose -f docker/docker-compose.yaml rm -f postgres && "
+            "docker volume rm docker_ccc-pgdata 2>/dev/null; "
+            "docker compose -f docker/docker-compose.yaml up -d postgres && echo 'DB reset complete. Restart API to recreate tables.'",
+        "backup_db": f"docker exec $(docker ps -qf name=postgres) pg_dump -U ccc ccc > {CCC_DIR}/backup_$(date +%Y%m%d_%H%M%S).sql && echo 'Backup saved'",
+        "db_shell": f"docker exec -it $(docker ps -qf name=postgres) psql -U ccc ccc",
+
+        # ── 환경 설정 ──
+        "env": f"cat {CCC_DIR}/.env 2>/dev/null || echo 'No .env file'",
+        "set_env": _set_env_cmd(params),
+
+        # ── 사용자 관리 ──
+        "create_admin": f"cd {CCC_DIR} && {_VENV}; {_ENVLOAD}; python3 -c \""
+            f"import httpx; r=httpx.post('http://localhost:9100/api/auth/create-admin', json={{"
+            f"'student_id':'{params.get('id', 'admin')}','name':'{params.get('name', 'Admin')}','password':'{params.get('password', 'admin')}'}},"
+            f"headers={{'X-API-Key':'{_API_KEY}'}}); print(r.json())\"",
+        "student_list": f"curl -s http://localhost:9100/api/students -H 'X-API-Key: {_API_KEY}' 2>/dev/null | python3 -m json.tool || echo 'API unreachable'",
+
+        # ── 네트워크/방화벽 ──
+        "firewall_open": f"sudo ufw allow {params.get('port', '9100')}/tcp && echo 'Port {params.get('port', '9100')} opened'",
+        "firewall_close": f"sudo ufw deny {params.get('port', '9100')}/tcp && echo 'Port {params.get('port', '9100')} closed'",
+        "check_port": f"ss -tlnp | grep ':{params.get('port', '9100')}' || echo 'Port {params.get('port', '9100')} not listening'",
+        "firewall_status": "sudo ufw status verbose 2>/dev/null || echo 'ufw not available'",
     }
     cmd = actions.get(action)
     if not cmd:
-        return {"exit_code": 1, "stdout": "", "stderr": f"Unknown action: {action}. Available: {', '.join(actions.keys())}"}
-    return shell_exec(cmd, timeout=30)
+        available = ", ".join(sorted(actions.keys()))
+        return {"exit_code": 1, "stdout": "", "stderr": f"Unknown action: {action}\nAvailable: {available}"}
+    return shell_exec(cmd, timeout=60)
+
+
+def _set_env_cmd(params: dict) -> str:
+    """환경 변수 설정 명령 생성"""
+    key = params.get("key", "")
+    value = params.get("value", "")
+    if not key:
+        return "echo 'key 파라미터 필요'"
+    return (
+        f"grep -q '^{key}=' {CCC_DIR}/.env 2>/dev/null && "
+        f"sed -i 's|^{key}=.*|{key}={value}|' {CCC_DIR}/.env || "
+        f"echo '{key}={value}' >> {CCC_DIR}/.env; "
+        f"echo '{key}={value} saved. Restart API to apply.'"
+    )
+
+
+# 하위호환
+def service_manage(action: str) -> dict:
+    return ccc_manage(action)
 
 
 def dispatch_skill(skill_name: str, params: dict) -> dict:
     """스킬 디스패치 — bastion의 tool dispatch 패턴 참고"""
     if skill_name == "shell":
         return shell_exec(params.get("command", "echo 'no command'"), params.get("timeout", 60))
-    elif skill_name == "service":
-        return service_manage(params.get("action", "status"))
+    elif skill_name in ("ccc", "service"):
+        return ccc_manage(params.get("action", "status"), params)
     elif skill_name == "onboard":
         return onboard_vm(
             ip=params["ip"], role=params["role"],

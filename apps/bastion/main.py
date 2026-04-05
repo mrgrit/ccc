@@ -45,7 +45,7 @@ from packages.bastion import (
     LLM_BASE_URL, LLM_MODEL, SKILLS, PROMPT_SECTIONS,
     build_system_prompt, dispatch_skill, health_check,
     onboard_vm, run_command, system_status, diagnose_vm,
-    shell_exec, service_manage,
+    shell_exec, ccc_manage,
 )
 
 # ── Console Setup ─────────────────────────────────
@@ -113,12 +113,16 @@ def render_help():
         "[bold]사용법[/]\n\n"
         "자연어로 작업을 지시하세요. LLM이 적절한 스킬을 선택하여 실행합니다.\n"
         "예: 'API 서버 시작해줘', '디스크 용량 확인', 'nginx 설치해줘'\n\n"
-        "[bold]서비스 관리[/]\n"
+        "[bold]CCC 관리[/]\n"
         f"  [{ PURPLE }]/start[/]       API + DB 시작\n"
-        f"  [{ PURPLE }]/stop[/]        API + DB 중지\n"
+        f"  [{ PURPLE }]/stop[/]        전체 중지\n"
         f"  [{ PURPLE }]/restart[/]     API 재시작\n"
-        f"  [{ PURPLE }]/logs[/]        API 로그 확인\n"
-        f"  [{ PURPLE }]/svc[/]         서비스 상태 확인\n\n"
+        f"  [{ PURPLE }]/svc[/]         서비스 상태 (프로세스/헬스/리소스/설정)\n"
+        f"  [{ PURPLE }]/logs[/]        API 로그 (최근 100줄)\n"
+        f"  [{ PURPLE }]/errors[/]      API 에러 로그만\n"
+        f"  [{ PURPLE }]/deploy[/]      원클릭 배포 (pull + build + restart)\n"
+        f"  [{ PURPLE }]/build[/]       UI 빌드만\n"
+        f"  [{ PURPLE }]/env[/]         환경변수 확인\n\n"
         "[bold]로컬 명령[/]\n"
         f"  [{ PURPLE }]![/] <CMD>      로컬 쉘 명령 실행 (예: ! df -h)\n\n"
         "[bold]인프라 관리[/]\n"
@@ -360,29 +364,49 @@ def handle_slash(cmd: str) -> bool:
         return False
 
     elif command in ("/start",):
-        render_tool_call("service", {"action": "start_all"})
-        with console.status("[bold]서비스 시작 중...", spinner="dots", spinner_style=ORANGE):
-            result = service_manage("start_all")
+        render_tool_call("ccc", {"action": "start"})
+        with console.status("[bold]CCC 시작 중...", spinner="dots", spinner_style=ORANGE):
+            result = ccc_manage("start")
         render_result(result)
 
     elif command in ("/stop",):
-        render_tool_call("service", {"action": "stop_all"})
-        result = service_manage("stop_all")
+        render_tool_call("ccc", {"action": "stop"})
+        result = ccc_manage("stop")
         render_result(result)
 
     elif command in ("/restart",):
-        render_tool_call("service", {"action": "restart_api"})
+        render_tool_call("ccc", {"action": "restart"})
         with console.status("[bold]API 재시작 중...", spinner="dots", spinner_style=ORANGE):
-            result = service_manage("restart_api")
+            result = ccc_manage("restart")
         render_result(result)
 
     elif command in ("/svc", "/service"):
-        render_tool_call("service", {"action": "status"})
-        result = service_manage("status")
+        render_tool_call("ccc", {"action": "status"})
+        result = ccc_manage("status")
         render_result(result)
 
     elif command in ("/logs",):
-        result = service_manage("logs")
+        result = ccc_manage("logs")
+        render_result(result)
+
+    elif command in ("/errors",):
+        result = ccc_manage("logs_error")
+        render_result(result)
+
+    elif command in ("/deploy",):
+        render_tool_call("ccc", {"action": "deploy"})
+        with console.status("[bold]배포 중 (pull + build + restart)...", spinner="dots", spinner_style=ORANGE):
+            result = ccc_manage("deploy")
+        render_result(result)
+
+    elif command in ("/env",):
+        result = ccc_manage("env")
+        render_result(result)
+
+    elif command in ("/build",):
+        render_tool_call("ccc", {"action": "build_ui"})
+        with console.status("[bold]UI 빌드 중...", spinner="dots", spinner_style=ORANGE):
+            result = ccc_manage("build_ui")
         render_result(result)
 
     elif command == "/help":
