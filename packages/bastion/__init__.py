@@ -26,30 +26,48 @@ SSH_TIMEOUT = 30
 
 # ── System Prompt Sections (bastion/src/constants 참고) ──
 
+CCC_DIR = os.getenv("CCC_DIR", os.path.join(os.path.dirname(__file__), "..", ".."))
+
 PROMPT_SECTIONS = {
     "identity": """너는 CCC(Cyber Combat Commander)의 Bastion 운영 에이전트다.
-사이버보안 교육 플랫폼의 인프라를 관리하고, 학생 VM에 SubAgent를 설치/관리하며,
-시스템 상태를 모니터링하는 것이 주 임무다.""",
+CCC 교육 플랫폼의 **모든 운영 업무**를 담당한다.
+서버 관리, 서비스 시작/중지, 인프라 관리, 모니터링, 문제 해결 등 관리자가 요청하는 모든 작업을 수행한다.""",
+
+    "architecture": """CCC 아키텍처:
+- ccc-api (:9100): FastAPI 메인 서버. ./dev.sh api 로 실행. UI도 /app/ 경로로 서빙.
+- ccc-ui: React 웹 UI. npm run build로 빌드 → ccc-api가 정적 파일 서빙.
+- bastion: 이 에이전트. ./dev.sh bastion 으로 실행.
+- PostgreSQL (:5434): docker compose -f docker/docker-compose.yaml up -d postgres
+- Ollama (LLM): 외부 또는 로컬 서버. 환경변수 LLM_BASE_URL로 설정.
+
+핵심 파일:
+- ./dev.sh: API/bastion 실행 스크립트
+- .env: 환경 설정 (DATABASE_URL, LLM_BASE_URL, LLM_MODEL)
+- docker/docker-compose.yaml: PostgreSQL + API 컨테이너
+- apps/ccc-api/src/main.py: API 소스
+- apps/ccc-ui/: React UI 소스""",
 
     "capabilities": """사용 가능한 스킬:
-- onboard: VM에 SSH 접속하여 SubAgent 설치 + 역할별 소프트웨어 배포
-- health_check: SubAgent 상태 확인 (A2A /health 엔드포인트)
-- run_command: SubAgent에 명령 실행 (A2A /a2a/run_script)
+- shell: 이 서버에서 로컬 명령 실행 (서비스 시작/중지, 파일 확인, 로그 조회 등)
+- service: CCC 서비스 관리 (api 시작/중지/재시작, db 시작/중지, 상태 확인)
+- onboard: 학생 VM에 SSH 접속 → SubAgent 설치 + 역할별 소프트웨어 배포
+- health_check: SubAgent 상태 확인 (A2A /health)
+- run_command: SubAgent에 원격 명령 실행 (A2A /a2a/run_script)
 - system_status: 전체 인프라 상태 요약
-- diagnose: VM 문제 진단 및 해결 방안 제시""",
+- diagnose: VM 문제 진단 (상태 수집 + LLM 분석)
+- build_ui: UI 빌드 (npm run build)""",
 
     "constraints": """제약사항:
-- 학생 VM에 직접 SSH 접속은 온보딩 시에만 허용
-- 온보딩 완료 후에는 반드시 SubAgent(A2A)를 통해서만 명령 실행
-- 파괴적 작업(rm -rf, 디스크 포맷 등) 실행 금지
-- 학생 데이터 삭제 금지""",
+- 파괴적 작업(rm -rf /, 디스크 포맷) 금지
+- 학생 데이터 임의 삭제 금지
+- DB DROP TABLE 금지""",
 
-    "roles": """VM 역할별 소프트웨어:
+    "roles": """학생 VM 역할:
 - attacker (Kali): nmap, metasploit, hydra, sqlmap, nikto, gobuster
-- secu (Security GW): nftables, suricata, sysmon, osquery, auditd
+- secu (Security GW): nftables, suricata, sysmon, osquery, auditd (NIC 2개)
 - web (Web Server): apache2, modsecurity, docker(juiceshop/dvwa)
-- siem (SIEM): wazuh-manager, sigma, opencti, elasticsearch
-- windows (분석): sysmon, osquery (OpenSSH 필요)
+- siem (SIEM): wazuh-manager, sigma, opencti, elasticsearch (RAM 8G+)
+- windows (분석): sysmon, osquery, ghidra (OpenSSH 필요)
 - manager (Manager AI): ollama, ccc-bastion subagent""",
 }
 
@@ -249,8 +267,16 @@ def system_status(infras: list[dict]) -> dict:
 # ── LLM 기반 스킬 디스패치 (bastion의 skill system 참고) ──
 
 SKILLS = {
+    "shell": {
+        "description": "이 서버에서 로컬 쉘 명령 실행 (서비스 관리, 파일 조회, 로그 확인, 패키지 설치, 프로세스 관리 등 모든 작업)",
+        "requires": ["command"],
+    },
+    "service": {
+        "description": "CCC 서비스 관리 — action: start_api, stop_api, restart_api, start_db, stop_db, status, start_all, stop_all, build_ui, logs",
+        "requires": ["action"],
+    },
     "onboard": {
-        "description": "VM에 SubAgent 설치 및 역할별 소프트웨어 배포",
+        "description": "학생 VM에 SubAgent 설치 및 역할별 소프트웨어 배포",
         "requires": ["ip", "role", "ssh_user", "ssh_password"],
     },
     "health_check": {
@@ -258,23 +284,70 @@ SKILLS = {
         "requires": ["ip"],
     },
     "run_command": {
-        "description": "SubAgent에 명령 실행",
+        "description": "원격 VM의 SubAgent에 명령 실행 (A2A 프로토콜)",
         "requires": ["ip", "script"],
     },
     "system_status": {
-        "description": "전체 인프라 상태 요약",
+        "description": "전체 학생 인프라 상태 요약",
         "requires": ["infras"],
     },
     "diagnose": {
-        "description": "VM 문제 진단 — LLM이 상태를 분석하고 해결 방안 제시",
+        "description": "VM 문제 진단 — 상태 수집 + LLM 분석 + 해결 방안",
         "requires": ["ip", "symptoms"],
     },
 }
 
 
+# ── Local Shell ───────────────────────────────────
+
+def shell_exec(command: str, timeout: int = 60) -> dict:
+    """로컬 쉘 명령 실행"""
+    try:
+        r = subprocess.run(
+            command, shell=True, capture_output=True, text=True,
+            timeout=timeout, cwd=CCC_DIR,
+        )
+        return {"exit_code": r.returncode, "stdout": r.stdout[:10000], "stderr": r.stderr[:5000]}
+    except subprocess.TimeoutExpired:
+        return {"exit_code": -1, "stdout": "", "stderr": "timeout"}
+    except Exception as e:
+        return {"exit_code": -1, "stdout": "", "stderr": str(e)}
+
+
+# ── Service Management ────────────────────────────
+
+def service_manage(action: str) -> dict:
+    """CCC 서비스 관리"""
+    actions = {
+        "start_api": f"cd {CCC_DIR} && source .venv/bin/activate 2>/dev/null; set -a; [ -f .env ] && source .env; set +a; export PYTHONPATH={CCC_DIR}; nohup python3 -m uvicorn apps.ccc-api.src.main:app --host 0.0.0.0 --port 9100 > /tmp/ccc-api.log 2>&1 & echo $!",
+        "stop_api": "pkill -f 'uvicorn apps.ccc-api' || echo 'not running'",
+        "restart_api": "pkill -f 'uvicorn apps.ccc-api' 2>/dev/null; sleep 1; " +
+            f"cd {CCC_DIR} && source .venv/bin/activate 2>/dev/null; set -a; [ -f .env ] && source .env; set +a; export PYTHONPATH={CCC_DIR}; nohup python3 -m uvicorn apps.ccc-api.src.main:app --host 0.0.0.0 --port 9100 > /tmp/ccc-api.log 2>&1 & echo $!",
+        "start_db": f"cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml up -d postgres",
+        "stop_db": f"cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml stop postgres",
+        "start_all": f"cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml up -d postgres && sleep 2 && source .venv/bin/activate 2>/dev/null; set -a; [ -f .env ] && source .env; set +a; export PYTHONPATH={CCC_DIR}; nohup python3 -m uvicorn apps.ccc-api.src.main:app --host 0.0.0.0 --port 9100 > /tmp/ccc-api.log 2>&1 & echo $!",
+        "stop_all": f"pkill -f 'uvicorn apps.ccc-api' 2>/dev/null; cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml stop",
+        "build_ui": f"cd {CCC_DIR}/apps/ccc-ui && npm run build",
+        "status": "echo '=== CCC Services ===' && "
+            "(pgrep -fa 'uvicorn apps.ccc-api' && echo 'API: running') || echo 'API: stopped'; "
+            "(docker ps --format '{{.Names}} {{.Status}}' 2>/dev/null | grep postgres) || echo 'DB: stopped'; "
+            f"curl -s http://localhost:9100/api/dashboard -H 'X-API-Key: {os.getenv('CCC_API_KEY', 'ccc-api-key-2026')}' > /dev/null 2>&1 && echo 'API health: OK' || echo 'API health: unreachable'; "
+            f"curl -s {LLM_BASE_URL}/api/tags > /dev/null 2>&1 && echo 'LLM: connected' || echo 'LLM: unreachable'",
+        "logs": "tail -50 /tmp/ccc-api.log 2>/dev/null || echo 'no log file'",
+    }
+    cmd = actions.get(action)
+    if not cmd:
+        return {"exit_code": 1, "stdout": "", "stderr": f"Unknown action: {action}. Available: {', '.join(actions.keys())}"}
+    return shell_exec(cmd, timeout=30)
+
+
 def dispatch_skill(skill_name: str, params: dict) -> dict:
     """스킬 디스패치 — bastion의 tool dispatch 패턴 참고"""
-    if skill_name == "onboard":
+    if skill_name == "shell":
+        return shell_exec(params.get("command", "echo 'no command'"), params.get("timeout", 60))
+    elif skill_name == "service":
+        return service_manage(params.get("action", "status"))
+    elif skill_name == "onboard":
         return onboard_vm(
             ip=params["ip"], role=params["role"],
             user=params.get("ssh_user", "ccc"),

@@ -45,6 +45,7 @@ from packages.bastion import (
     LLM_BASE_URL, LLM_MODEL, SKILLS, PROMPT_SECTIONS,
     build_system_prompt, dispatch_skill, health_check,
     onboard_vm, run_command, system_status, diagnose_vm,
+    shell_exec, service_manage,
 )
 
 # ── Console Setup ─────────────────────────────────
@@ -110,18 +111,28 @@ def render_help():
     """도움말"""
     console.print(Panel(
         "[bold]사용법[/]\n\n"
-        "자연어로 작업을 지시하세요. LLM이 적절한 스킬을 선택하여 실행합니다.\n\n"
-        "[bold]내장 명령어[/]\n"
-        f"  [{ PURPLE }]/status[/]     전체 인프라 상태\n"
-        f"  [{ PURPLE }]/health[/] IP  특정 VM 헬스체크\n"
-        f"  [{ PURPLE }]/onboard[/]    VM 온보딩 (SSH → SubAgent 설치)\n"
-        f"  [{ PURPLE }]/run[/] IP CMD SubAgent에 명령 실행\n"
-        f"  [{ PURPLE }]/skills[/]     스킬 목록\n"
-        f"  [{ PURPLE }]/infras[/]     등록된 인프라 목록\n"
-        f"  [{ PURPLE }]/history[/]    대화 히스토리\n"
-        f"  [{ PURPLE }]/clear[/]      화면 지우기\n"
-        f"  [{ PURPLE }]/help[/]       이 도움말\n"
-        f"  [{ PURPLE }]/exit[/]       종료\n",
+        "자연어로 작업을 지시하세요. LLM이 적절한 스킬을 선택하여 실행합니다.\n"
+        "예: 'API 서버 시작해줘', '디스크 용량 확인', 'nginx 설치해줘'\n\n"
+        "[bold]서비스 관리[/]\n"
+        f"  [{ PURPLE }]/start[/]       API + DB 시작\n"
+        f"  [{ PURPLE }]/stop[/]        API + DB 중지\n"
+        f"  [{ PURPLE }]/restart[/]     API 재시작\n"
+        f"  [{ PURPLE }]/logs[/]        API 로그 확인\n"
+        f"  [{ PURPLE }]/svc[/]         서비스 상태 확인\n\n"
+        "[bold]로컬 명령[/]\n"
+        f"  [{ PURPLE }]![/] <CMD>      로컬 쉘 명령 실행 (예: ! df -h)\n\n"
+        "[bold]인프라 관리[/]\n"
+        f"  [{ PURPLE }]/status[/]      전체 VM 인프라 상태\n"
+        f"  [{ PURPLE }]/health[/] IP   특정 VM 헬스체크\n"
+        f"  [{ PURPLE }]/onboard[/]     VM 온보딩\n"
+        f"  [{ PURPLE }]/run[/] IP CMD  SubAgent에 원격 명령\n\n"
+        "[bold]기타[/]\n"
+        f"  [{ PURPLE }]/skills[/]      스킬 목록\n"
+        f"  [{ PURPLE }]/infras[/]      등록된 인프라\n"
+        f"  [{ PURPLE }]/history[/]     대화 히스토리\n"
+        f"  [{ PURPLE }]/clear[/]       화면 지우기\n"
+        f"  [{ PURPLE }]/help[/]        이 도움말\n"
+        f"  [{ PURPLE }]/exit[/]        종료\n",
         title="Bastion Help", border_style=ORANGE,
     ))
 
@@ -345,8 +356,34 @@ def handle_slash(cmd: str) -> bool:
     command = parts[0].lower()
 
     if command in ("/exit", "/quit", "/q"):
-        console.print("\n  [dim]세션 종료[/]", style=GRAY)
+        console.print("\n  [dim]세션 종료[/]")
         return False
+
+    elif command in ("/start",):
+        render_tool_call("service", {"action": "start_all"})
+        with console.status("[bold]서비스 시작 중...", spinner="dots", spinner_style=ORANGE):
+            result = service_manage("start_all")
+        render_result(result)
+
+    elif command in ("/stop",):
+        render_tool_call("service", {"action": "stop_all"})
+        result = service_manage("stop_all")
+        render_result(result)
+
+    elif command in ("/restart",):
+        render_tool_call("service", {"action": "restart_api"})
+        with console.status("[bold]API 재시작 중...", spinner="dots", spinner_style=ORANGE):
+            result = service_manage("restart_api")
+        render_result(result)
+
+    elif command in ("/svc", "/service"):
+        render_tool_call("service", {"action": "status"})
+        result = service_manage("status")
+        render_result(result)
+
+    elif command in ("/logs",):
+        result = service_manage("logs")
+        render_result(result)
 
     elif command == "/help":
         render_help()
@@ -496,6 +533,16 @@ def main():
         if user_input.startswith("/"):
             if not handle_slash(user_input):
                 break
+            console.print()
+            continue
+
+        # ! 접두사: 로컬 쉘 직접 실행
+        if user_input.startswith("!"):
+            cmd = user_input[1:].strip()
+            if cmd:
+                render_tool_call("shell", {"command": cmd})
+                result = shell_exec(cmd)
+                render_result(result)
             console.print()
             continue
 
