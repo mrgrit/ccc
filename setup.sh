@@ -9,7 +9,7 @@ echo "[1/5] 시스템 패키지 설치..."
 if command -v apt-get &>/dev/null; then
     sudo apt-get update -y
     sudo apt-get install -y python3 python3-pip python3-venv sshpass ca-certificates curl gnupg \
-        locales fonts-nanum fonts-noto-cjk
+        locales fonts-nanum fonts-noto-cjk fbterm
 
     # 한국어 로케일 설정 (UTF-8)
     sudo locale-gen ko_KR.UTF-8 2>/dev/null || true
@@ -24,6 +24,10 @@ if command -v apt-get &>/dev/null; then
     done
     export LANG=ko_KR.UTF-8
     export LC_ALL=ko_KR.UTF-8
+
+    # fbterm 권한 설정 (일반 유저가 framebuffer 접근)
+    sudo chmod u+s /usr/bin/fbterm 2>/dev/null || true
+    sudo usermod -aG video "$(whoami)" 2>/dev/null || true
 
     # Node.js 22 LTS (Vite 8 요구: >=20.19 or >=22.12)
     NODE_MAJOR=$(node --version 2>/dev/null | sed 's/v\([0-9]*\).*/\1/' || echo "0")
@@ -76,11 +80,14 @@ fi
 echo ""
 echo "=== 설치 완료 ==="
 echo ""
-echo "실행:"
-echo "  source .venv/bin/activate"
+echo "=== 실행 ==="
+echo ""
 echo "  ./dev.sh api              # API 서버 (:9100)"
 echo "  ./dev.sh bastion          # Bastion 에이전트 (TUI)"
 echo "  브라우저: http://localhost:9100/app/"
+echo ""
+echo "  VM 콘솔(tty)에서 한글이 깨지면:"
+echo "    fbterm -- ./dev.sh bastion"
 echo ""
 echo "설정 (.env):"
 echo "  LLM_BASE_URL=http://your-ollama-server:11434"
