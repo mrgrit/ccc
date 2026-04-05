@@ -16,7 +16,8 @@ pkill -f 'uvicorn apps.ccc_api' 2>/dev/null && echo "  API 중지됨" || echo " 
 
 # 2. DB 백업 (보존)
 echo "[2/5] DB 백업..."
-BACKUP_FILE="backup_$(date +%Y%m%d_%H%M%S).sql"
+mkdir -p db_backup
+BACKUP_FILE="db_backup/backup_$(date +%Y%m%d_%H%M%S).sql"
 if _docker ps --format '{{.Names}}' 2>/dev/null | grep -q postgres; then
     _docker exec "$(_docker ps -qf name=postgres)" pg_dump -U ccc ccc > "$BACKUP_FILE" 2>/dev/null && \
         echo "  백업 완료: $BACKUP_FILE" || echo "  백업 실패 (계속 진행)"

@@ -398,7 +398,7 @@ def ccc_manage(action: str, params: dict = None) -> dict:
             "docker compose -f docker/docker-compose.yaml rm -f postgres && "
             "docker volume rm docker_ccc-pgdata 2>/dev/null; "
             "docker compose -f docker/docker-compose.yaml up -d postgres && echo 'DB reset complete. Restart API to recreate tables.'",
-        "backup_db": f"docker exec $(docker ps -qf name=postgres) pg_dump -U ccc ccc > {CCC_DIR}/backup_$(date +%Y%m%d_%H%M%S).sql && echo 'Backup saved'",
+        "backup_db": f"mkdir -p {CCC_DIR}/db_backup && docker exec $(docker ps -qf name=postgres) pg_dump -U ccc ccc > {CCC_DIR}/db_backup/backup_$(date +%Y%m%d_%H%M%S).sql && echo 'Backup saved'",
         "db_shell": f"docker exec -it $(docker ps -qf name=postgres) psql -U ccc ccc",
 
         # ── 환경 설정 ──

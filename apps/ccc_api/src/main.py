@@ -845,6 +845,24 @@ def check_infra_health(iid: str):
     return {"infra_id": iid, "healthy": healthy, "subagent_url": infra["subagent_url"]}
 
 # ══════════════════════════════════════════════════
+#  LLM 모델 조회 (Ollama 프록시)
+# ══════════════════════════════════════════════════
+class LLMConnectBody(BaseModel):
+    url: str
+
+@app.post("/llm/models", dependencies=[Depends(verify_api_key)])
+def llm_models(body: LLMConnectBody):
+    """외부 LLM 서버에서 사용 가능한 모델 목록 조회"""
+    import httpx
+    url = body.url.rstrip("/")
+    try:
+        r = httpx.get(f"{url}/api/tags", timeout=10.0)
+        models = [m["name"] for m in r.json().get("models", [])]
+        return {"connected": True, "url": url, "models": models}
+    except Exception as e:
+        return {"connected": False, "url": url, "models": [], "error": str(e)}
+
+# ══════════════════════════════════════════════════
 #  Education (교안)
 # ══════════════════════════════════════════════════
 import pathlib as _pathlib

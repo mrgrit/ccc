@@ -38,19 +38,23 @@ export default function MyInfra() {
     setLlmModels([])
     try {
       const url = llmUrl.replace(/\/+$/, '')
-      const r = await fetch(`${url}/api/tags`)
-      const d = await r.json()
-      const models = (d.models || []).map((m: any) => m.name as string)
+      const d = await api('/api/llm/models', {
+        method: 'POST',
+        body: JSON.stringify({ url }),
+      })
+      const models: string[] = d.models || []
       setLlmModels(models)
-      setLlmConnected(true)
-      setForm(f => ({ ...f, gpu_url: url }))
-      if (models.length > 0 && !form.manager_model) {
-        setForm(f => ({ ...f, manager_model: models[0] }))
-      }
-      if (models.length > 1 && !form.subagent_model) {
-        setForm(f => ({ ...f, subagent_model: models[models.length > 1 ? 1 : 0] }))
-      } else if (models.length === 1 && !form.subagent_model) {
-        setForm(f => ({ ...f, subagent_model: models[0] }))
+      setLlmConnected(d.connected)
+      if (d.connected) {
+        setForm(f => ({ ...f, gpu_url: url }))
+        if (models.length > 0 && !form.manager_model) {
+          setForm(f => ({ ...f, manager_model: models[0] }))
+        }
+        if (models.length > 1 && !form.subagent_model) {
+          setForm(f => ({ ...f, subagent_model: models[1] }))
+        } else if (models.length === 1 && !form.subagent_model) {
+          setForm(f => ({ ...f, subagent_model: models[0] }))
+        }
       }
     } catch {
       setLlmConnected(false)
