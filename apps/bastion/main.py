@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
 """bastion — CCC 운영 관리 에이전트 (대화형 TUI)
 
-Claude Code의 대화형 TUI를 참고한 인터랙티브 에이전트.
-자연어로 인프라 관리 작업을 지시하면 LLM이 스킬을 선택/실행한다.
+Claude Code 아키텍처를 참고한 인터랙티브 에이전트.
+- Ollama tool calling으로 자연어 → 도구 실행 → 결과 설명 (단일 대화 루프)
+- 스트리밍 출력 (토큰 단위 실시간)
+- 권한 확인 시스템 (위험 명령 사전 확인)
+- 세션 저장/복원 (.ccc/sessions/)
+- 파일 도구 (read/write/glob/grep)
 
 Usage:
     python -m apps.bastion.main
@@ -13,621 +17,640 @@ import os
 import sys
 import json
 import time
-import signal
-import textwrap
+import glob as _glob
+import re
+import uuid
+from pathlib import Path
 from typing import Any
 
-# ── 의존성 체크 ──
+# ── 의존성 ──
 try:
     from rich.console import Console
     from rich.panel import Panel
     from rich.table import Table
     from rich.text import Text
-    from rich.live import Live
-    from rich.spinner import Spinner
     from rich.markdown import Markdown
     from rich.syntax import Syntax
-    from rich.prompt import Prompt
+    from rich.prompt import Prompt, Confirm
     from rich import box
 except ImportError:
-    print("rich 라이브러리가 필요합니다: pip install rich")
-    sys.exit(1)
+    print("pip install rich"); sys.exit(1)
 
 try:
     import httpx
 except ImportError:
-    print("httpx 라이브러리가 필요합니다: pip install httpx")
-    sys.exit(1)
+    print("pip install httpx"); sys.exit(1)
 
-# CCC 패키지
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 from packages.bastion import (
-    LLM_BASE_URL, LLM_MODEL, SKILLS, PROMPT_SECTIONS,
+    LLM_BASE_URL, LLM_MODEL, SKILLS, CCC_DIR,
     build_system_prompt, dispatch_skill, health_check,
     onboard_vm, run_command, system_status, diagnose_vm,
     shell_exec, ccc_manage,
 )
 
-# ── Console Setup ─────────────────────────────────
+# ── Console ───────────────────────────────────────
 console = Console()
-ORANGE = "orange3"
-GRAY = "bright_black"
-GREEN = "green"
-RED = "red"
-BLUE = "dodger_blue2"
-PURPLE = "medium_purple"
+O = "orange3"; G = "bright_black"; GR = "green"; R = "red"; B = "dodger_blue2"; P = "medium_purple"
 
-# ── State ─────────────────────────────────────────
-MAX_CONTEXT_CHARS = 8000  # LLM에 보낼 히스토리 최대 크기
-MAX_MSG_CHARS = 600       # 개별 메시지 최대 길이
+# ── Paths ─────────────────────────────────────────
+CCC_HOME = Path.home() / ".ccc"
+SESSIONS_DIR = CCC_HOME / "sessions"
+SESSIONS_DIR.mkdir(parents=True, exist_ok=True)
 
-class BastionState:
-    """세션 상태 — bastion/src/state/AppStateStore.ts 참고
 
-    컨텍스트 관리 전략 (bastion의 REACTIVE_COMPACT 참고):
-    1. 최근 대화를 우선 유지 (recency bias)
-    2. 오래된 대화는 요약으로 압축 (compaction)
-    3. 총 크기를 MAX_CONTEXT_CHARS 이내로 유지
-    """
-    def __init__(self):
-        self.infras: list[dict] = []
+# ══════════════════════════════════════════════════
+#  1. 세션 저장/복원 (.ccc/sessions/)
+# ══════════════════════════════════════════════════
+MAX_CTX = 8000
+MAX_MSG = 600
+
+class Session:
+    def __init__(self, session_id: str = None):
+        self.id = session_id or time.strftime("%Y%m%d_%H%M%S")
         self.history: list[dict] = []
-        self.summary: str = ""  # 오래된 대화 요약
-        self.session_start = time.time()
-        self.task_count = 0
+        self.summary: str = ""
+        self.infras: list[dict] = []
+        self.start = time.time()
+        self.tasks = 0
+        self.file = SESSIONS_DIR / f"{self.id}.json"
 
-    def add_message(self, role: str, content: str):
+    # ── persist ──
+    def save(self):
+        data = {"id": self.id, "history": self.history, "summary": self.summary,
+                "infras": self.infras, "start": self.start, "tasks": self.tasks}
+        self.file.write_text(json.dumps(data, ensure_ascii=False, indent=2))
+
+    @classmethod
+    def load(cls, session_id: str) -> "Session":
+        s = cls(session_id)
+        if s.file.exists():
+            d = json.loads(s.file.read_text())
+            s.history, s.summary = d.get("history", []), d.get("summary", "")
+            s.infras, s.start, s.tasks = d.get("infras", []), d.get("start", time.time()), d.get("tasks", 0)
+        return s
+
+    @classmethod
+    def list_sessions(cls) -> list[dict]:
+        sessions = []
+        for f in sorted(SESSIONS_DIR.glob("*.json"), reverse=True)[:10]:
+            try:
+                d = json.loads(f.read_text())
+                turns = len(d.get("history", []))
+                sessions.append({"id": d["id"], "turns": turns, "tasks": d.get("tasks", 0)})
+            except Exception:
+                pass
+        return sessions
+
+    # ── message & compaction ──
+    def add(self, role: str, content: str):
         self.history.append({"role": role, "content": content, "ts": time.time()})
         self._compact()
+        self.save()
 
     def _compact(self):
-        """히스토리가 너무 길면 오래된 부분을 요약으로 압축"""
         total = sum(len(m["content"]) for m in self.history)
-        if total <= MAX_CONTEXT_CHARS:
+        if total <= MAX_CTX:
             return
-
-        # 앞쪽 절반을 요약으로 압축
         mid = len(self.history) // 2
-        old_msgs = self.history[:mid]
+        old = self.history[:mid]
         self.history = self.history[mid:]
-
-        old_text = "\n".join(
-            f"{'사용자' if m['role']=='user' else '에이전트'}: {m['content'][:200]}"
-            for m in old_msgs
-        )
-        if self.summary:
-            self.summary += f"\n---\n{old_text[:1000]}"
-        else:
-            self.summary = old_text[:1000]
-
-        # 요약도 너무 길면 자르기
-        if len(self.summary) > 2000:
-            self.summary = self.summary[-2000:]
+        txt = "\n".join(f"{'user' if m['role']=='user' else 'assistant'}: {m['content'][:200]}" for m in old)
+        self.summary = (self.summary + "\n---\n" + txt)[-2000:] if self.summary else txt[:2000]
 
     def build_messages(self) -> list[dict]:
-        """LLM에 보낼 대화 히스토리 구성"""
-        messages = []
-
-        # 요약이 있으면 첫 메시지로 추가
+        msgs = []
         if self.summary:
-            messages.append({
-                "role": "user",
-                "content": f"[이전 대화 요약]\n{self.summary}"
-            })
-            messages.append({
-                "role": "assistant",
-                "content": "이전 대화 내용을 확인했습니다. 계속하겠습니다."
-            })
+            msgs.append({"role": "user", "content": f"[이전 대화 요약]\n{self.summary}"})
+            msgs.append({"role": "assistant", "content": "확인했습니다. 계속하겠습니다."})
+        for m in self.history:
+            c = m["content"]
+            msgs.append({"role": m["role"], "content": c[:MAX_MSG] + "..." if len(c) > MAX_MSG else c})
+        return msgs
 
-        # 최근 히스토리
-        for msg in self.history:
-            content = msg["content"]
-            if len(content) > MAX_MSG_CHARS:
-                content = content[:MAX_MSG_CHARS] + "...(truncated)"
-            messages.append({"role": msg["role"], "content": content})
-
-        return messages
-
-    def get_context(self) -> dict:
-        return {
-            "infras": self.infras,
-            "session_duration": int(time.time() - self.session_start),
-            "tasks_completed": self.task_count,
-        }
-
-state = BastionState()
+    def context(self) -> dict:
+        return {"infras": self.infras, "duration": int(time.time() - self.start), "tasks": self.tasks}
 
 
-# ── UI Components (bastion/src/components 참고) ───
+# ══════════════════════════════════════════════════
+#  2. 권한 시스템
+# ══════════════════════════════════════════════════
+DANGEROUS_PATTERNS = [
+    (r"rm\s+-rf\s+/", "루트 디렉토리 삭제"),
+    (r"mkfs\.", "디스크 포맷"),
+    (r"dd\s+if=.*/dev/zero.*of=.*/dev/", "디스크 초기화"),
+    (r"DROP\s+(TABLE|DATABASE)", "DB 삭제"),
+    (r"reset_db", "DB 전체 초기화"),
+    (r":(){ :\|:& };:", "포크 폭탄"),
+    (r">\s*/dev/sd", "디스크 직접 쓰기"),
+]
 
-def render_banner():
-    """시작 배너 — bastion의 App.tsx 초기 렌더링 참고"""
-    banner = Text()
-    banner.append("  ____            _   _             \n", style=ORANGE)
-    banner.append(" | __ )  __ _ ___| |_(_) ___  _ __  \n", style=ORANGE)
-    banner.append(" |  _ \\ / _` / __| __| |/ _ \\| '_ \\ \n", style=ORANGE)
-    banner.append(" | |_) | (_| \\__ \\ |_| | (_) | | | |\n", style=ORANGE)
-    banner.append(" |____/ \\__,_|___/\\__|_|\\___/|_| |_|\n", style=ORANGE)
-    console.print(banner)
-    console.print(f"  CCC 운영 관리 에이전트", style=GRAY)
-    console.print(f"  LLM: {LLM_BASE_URL} / {LLM_MODEL}", style=GRAY)
-    console.print()
+CONFIRM_PATTERNS = [
+    (r"apt.*(remove|purge|autoremove)", "패키지 삭제"),
+    (r"systemctl\s+(stop|disable)", "서비스 중지"),
+    (r"kill\s+-9", "프로세스 강제 종료"),
+    (r"reboot|shutdown|poweroff", "시스템 재시작/종료"),
+    (r"firewall_close", "방화벽 포트 차단"),
+    (r"stop", "서비스 중지"),
+    (r"pip.*uninstall", "패키지 삭제"),
+    (r"docker\s+(rm|rmi|prune)", "컨테이너/이미지 삭제"),
+    (r"git\s+(reset|push\s+--force)", "git 위험 작업"),
+]
 
+def check_permission(skill_name: str, params: dict) -> bool:
+    """권한 확인 — Claude Code의 3단계 permission 참고
+    Returns True if allowed, False if denied.
+    """
+    # 검사 대상 문자열 조합
+    check_str = json.dumps(params, ensure_ascii=False) + " " + skill_name
+    if skill_name == "shell":
+        check_str += " " + params.get("command", "")
+    elif skill_name == "ccc":
+        check_str += " " + params.get("action", "")
 
-def render_skills_table():
-    """사용 가능한 스킬 목록 — bastion의 SkillTool 참고"""
-    table = Table(box=box.ROUNDED, border_style=GRAY, title="Skills", title_style=ORANGE)
-    table.add_column("스킬", style=PURPLE, width=16)
-    table.add_column("설명", style="white")
-    table.add_column("필요 파라미터", style=GRAY)
-    for name, info in SKILLS.items():
-        table.add_row(name, info["description"], ", ".join(info["requires"]))
-    console.print(table)
-    console.print()
+    # 절대 거부
+    for pattern, desc in DANGEROUS_PATTERNS:
+        if re.search(pattern, check_str, re.IGNORECASE):
+            console.print(f"  [bold {R}]⛔ 거부:[/] {desc} — 이 작업은 실행할 수 없습니다.")
+            return False
 
+    # 확인 필요
+    for pattern, desc in CONFIRM_PATTERNS:
+        if re.search(pattern, check_str, re.IGNORECASE):
+            console.print(f"  [yellow]⚠ {desc}[/]")
+            return Confirm.ask(f"  실행하시겠습니까?", default=False)
 
-def render_help():
-    """도움말"""
-    console.print(Panel(
-        "[bold]사용법[/]\n\n"
-        "자연어로 작업을 지시하세요. LLM이 적절한 스킬을 선택하여 실행합니다.\n"
-        "예: 'API 서버 시작해줘', '디스크 용량 확인', 'nginx 설치해줘'\n\n"
-        "[bold]CCC 관리[/]\n"
-        f"  [{ PURPLE }]/start[/]       API + DB 시작\n"
-        f"  [{ PURPLE }]/stop[/]        전체 중지\n"
-        f"  [{ PURPLE }]/restart[/]     API 재시작\n"
-        f"  [{ PURPLE }]/svc[/]         서비스 상태 (프로세스/헬스/리소스/설정)\n"
-        f"  [{ PURPLE }]/logs[/]        API 로그 (최근 100줄)\n"
-        f"  [{ PURPLE }]/errors[/]      API 에러 로그만\n"
-        f"  [{ PURPLE }]/deploy[/]      원클릭 배포 (pull + build + restart)\n"
-        f"  [{ PURPLE }]/build[/]       UI 빌드만\n"
-        f"  [{ PURPLE }]/env[/]         환경변수 확인\n\n"
-        "[bold]로컬 명령[/]\n"
-        f"  [{ PURPLE }]![/] <CMD>      로컬 쉘 명령 실행 (예: ! df -h)\n\n"
-        "[bold]인프라 관리[/]\n"
-        f"  [{ PURPLE }]/status[/]      전체 VM 인프라 상태\n"
-        f"  [{ PURPLE }]/health[/] IP   특정 VM 헬스체크\n"
-        f"  [{ PURPLE }]/onboard[/]     VM 온보딩\n"
-        f"  [{ PURPLE }]/run[/] IP CMD  SubAgent에 원격 명령\n\n"
-        "[bold]기타[/]\n"
-        f"  [{ PURPLE }]/skills[/]      스킬 목록\n"
-        f"  [{ PURPLE }]/infras[/]      등록된 인프라\n"
-        f"  [{ PURPLE }]/history[/]     대화 히스토리\n"
-        f"  [{ PURPLE }]/clear[/]       화면 지우기\n"
-        f"  [{ PURPLE }]/help[/]        이 도움말\n"
-        f"  [{ PURPLE }]/exit[/]        종료\n",
-        title="Bastion Help", border_style=ORANGE,
-    ))
+    return True  # 자동 허용
 
 
-def render_infra_status(infras: list[dict]):
-    """인프라 상태 테이블 — bastion의 CoordinatorAgentStatus 참고"""
-    if not infras:
-        console.print("  등록된 인프라가 없습니다.", style=GRAY)
-        return
+# ══════════════════════════════════════════════════
+#  3. 파일 도구
+# ══════════════════════════════════════════════════
+def file_read(path: str, offset: int = 0, limit: int = 200) -> dict:
+    try:
+        p = Path(path).expanduser()
+        lines = p.read_text(encoding="utf-8", errors="replace").splitlines()
+        selected = lines[offset:offset + limit]
+        numbered = "\n".join(f"{i+offset+1:4d}\t{l}" for i, l in enumerate(selected))
+        return {"path": str(p), "lines": len(lines), "showing": f"{offset+1}-{offset+len(selected)}", "content": numbered}
+    except Exception as e:
+        return {"error": str(e)}
 
-    table = Table(box=box.ROUNDED, border_style=GRAY)
-    table.add_column("역할", style=PURPLE, width=12)
-    table.add_column("IP", style="white", width=18)
-    table.add_column("상태", width=14)
-    table.add_column("호스트명", style=GRAY)
+def file_write(path: str, content: str) -> dict:
+    try:
+        p = Path(path).expanduser()
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(content, encoding="utf-8")
+        return {"path": str(p), "bytes": len(content), "status": "written"}
+    except Exception as e:
+        return {"error": str(e)}
 
-    for infra in infras:
-        status = infra.get("status", "unknown")
-        if status == "healthy":
-            status_text = Text(status, style=GREEN)
-        elif status == "unreachable":
-            status_text = Text(status, style=RED)
-        else:
-            status_text = Text(status, style="yellow")
-        table.add_row(
-            infra.get("role", "?"),
-            infra.get("ip", "?"),
-            status_text,
-            infra.get("hostname", ""),
-        )
-    console.print(table)
+def file_edit(path: str, old_string: str, new_string: str) -> dict:
+    try:
+        p = Path(path).expanduser()
+        text = p.read_text(encoding="utf-8")
+        if old_string not in text:
+            return {"error": f"old_string not found in {path}"}
+        count = text.count(old_string)
+        text = text.replace(old_string, new_string, 1)
+        p.write_text(text, encoding="utf-8")
+        return {"path": str(p), "replacements": 1, "total_occurrences": count, "status": "edited"}
+    except Exception as e:
+        return {"error": str(e)}
 
+def file_glob(pattern: str, path: str = ".") -> dict:
+    try:
+        matches = sorted(_glob.glob(os.path.join(path, pattern), recursive=True))[:50]
+        return {"pattern": pattern, "count": len(matches), "files": matches}
+    except Exception as e:
+        return {"error": str(e)}
 
-def render_tool_call(skill_name: str, params: dict):
-    """스킬 실행 표시 — bastion의 AgentTool/UI.tsx 참고"""
-    param_str = " ".join(f"{k}={v}" for k, v in params.items() if k != "infras")
-    console.print(f"  ⚡ [bold {ORANGE}]{skill_name}[/] {param_str}", highlight=False)
-
-
-def render_result(result: dict):
-    """실행 결과 표시"""
-    if "error" in result:
-        console.print(f"  [bold {RED}]Error:[/] {result['error']}")
-        return
-
-    if "answer" in result:
-        console.print()
-        console.print(Markdown(result["answer"]))
-        return
-
-    if "diagnosis" in result:
-        console.print()
-        console.print(Panel(result["diagnosis"], title="진단 결과", border_style=BLUE))
-        return
-
-    if "stdout" in result:
-        stdout = result.get("stdout", "").strip()
-        stderr = result.get("stderr", "").strip()
-        code = result.get("exit_code", -1)
-        color = GREEN if code == 0 else RED
-        status_icon = "✓" if code == 0 else "✗"
-        console.print(f"  [{color}]{status_icon}[/] ", end="")
-        console.print(f"[{color}]{'성공' if code == 0 else f'실패 (exit {code})'}[/]")
-        if stdout:
-            console.print(Syntax(stdout, "bash", theme="monokai", line_numbers=False, padding=1))
-        if stderr:
-            console.print(f"  [{RED}]{stderr[:500]}[/]")
-        return
-
-    if "healthy" in result:
-        h = "✓ healthy" if result["healthy"] else "✗ failed"
-        color = GREEN if result["healthy"] else RED
-        console.print(f"  [{color}]{h}[/]")
-        if "steps" in result:
-            for step in result["steps"]:
-                s = "✓" if step.get("success") else "✗"
-                console.print(f"    {s} {step.get('step', '')}", style=GRAY)
-        return
-
-    # generic JSON
-    console.print(Syntax(json.dumps(result, ensure_ascii=False, indent=2), "json",
-                         theme="monokai", line_numbers=False, padding=1))
+def file_grep(pattern: str, path: str = ".", glob_filter: str = "") -> dict:
+    try:
+        cmd = f"grep -rn '{pattern}' {path}"
+        if glob_filter:
+            cmd += f" --include='{glob_filter}'"
+        cmd += " | head -30"
+        r = shell_exec(cmd, timeout=10)
+        return {"pattern": pattern, "matches": r.get("stdout", ""), "exit_code": r.get("exit_code", -1)}
+    except Exception as e:
+        return {"error": str(e)}
 
 
-# ── LLM Streaming ────────────────────────────────
-
-# ── Ollama Tool Definitions (Claude Code의 tools/ 패턴) ──
-
+# ══════════════════════════════════════════════════
+#  4. Tool Definitions (Ollama function calling)
+# ══════════════════════════════════════════════════
 TOOL_DEFS = [
-    {
-        "type": "function",
-        "function": {
-            "name": "ccc",
-            "description": "CCC 플랫폼 관리: start(API+DB시작), stop(전체중지), restart(API재시작), status(상태확인), logs(로그), logs_error(에러로그), build_ui(UI빌드), deploy(pull+build+restart), update(git pull), start_api, stop_api, start_db, stop_db, reset_db, backup_db, env(환경변수), set_env(환경변수설정), create_admin, student_list, firewall_open, firewall_close, check_port",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "action": {"type": "string", "description": "실행할 액션"},
-                    "port": {"type": "string", "description": "포트 번호 (firewall 관련)"},
-                    "key": {"type": "string", "description": "환경변수 키 (set_env용)"},
-                    "value": {"type": "string", "description": "환경변수 값 (set_env용)"},
-                    "id": {"type": "string", "description": "사용자 ID (create_admin용)"},
-                    "name": {"type": "string", "description": "사용자 이름 (create_admin용)"},
-                    "password": {"type": "string", "description": "비밀번호 (create_admin용)"},
-                },
-                "required": ["action"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "shell",
-            "description": "이 서버에서 로컬 쉘 명령 실행. 파일 조회, 패키지 설치, 프로세스 관리, 네트워크 확인 등 ccc 스킬에 없는 모든 작업에 사용",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "command": {"type": "string", "description": "실행할 쉘 명령어"},
-                },
-                "required": ["command"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "onboard",
-            "description": "학생 VM에 SSH로 접속하여 SubAgent 설치 및 역할별 소프트웨어 배포",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "ip": {"type": "string", "description": "VM IP 주소"},
-                    "role": {"type": "string", "enum": ["attacker", "secu", "web", "siem", "manager", "windows"], "description": "VM 역할"},
-                    "ssh_user": {"type": "string", "description": "SSH 사용자 (기본: ccc)"},
-                    "ssh_password": {"type": "string", "description": "SSH 비밀번호"},
-                },
-                "required": ["ip", "role"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "health_check",
-            "description": "SubAgent 상태 확인 (A2A 프로토콜)",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "ip": {"type": "string", "description": "VM IP 주소"},
-                },
-                "required": ["ip"],
-            },
-        },
-    },
-    {
-        "type": "function",
-        "function": {
-            "name": "run_command",
-            "description": "원격 VM의 SubAgent에 명령 실행 (A2A 프로토콜)",
-            "parameters": {
-                "type": "object",
-                "properties": {
-                    "ip": {"type": "string", "description": "VM IP 주소"},
-                    "script": {"type": "string", "description": "실행할 명령어"},
-                },
-                "required": ["ip", "script"],
-            },
-        },
-    },
+    {"type": "function", "function": {
+        "name": "ccc",
+        "description": "CCC 플랫폼 관리: start, stop, restart, status, logs, logs_error, build_ui, deploy, update, start_api, stop_api, start_db, stop_db, reset_db, backup_db, env, set_env, create_admin, student_list, firewall_open, firewall_close, check_port",
+        "parameters": {"type": "object", "properties": {
+            "action": {"type": "string"}, "port": {"type": "string"}, "key": {"type": "string"},
+            "value": {"type": "string"}, "id": {"type": "string"}, "name": {"type": "string"}, "password": {"type": "string"},
+        }, "required": ["action"]},
+    }},
+    {"type": "function", "function": {
+        "name": "shell",
+        "description": "로컬 쉘 명령 실행. 파일 조회, 패키지 설치, 프로세스 관리, 네트워크 확인 등",
+        "parameters": {"type": "object", "properties": {
+            "command": {"type": "string", "description": "실행할 쉘 명령어"},
+        }, "required": ["command"]},
+    }},
+    {"type": "function", "function": {
+        "name": "read_file",
+        "description": "파일 내용 읽기 (줄번호 포함)",
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string"}, "offset": {"type": "integer", "description": "시작 줄 (0-based)"},
+            "limit": {"type": "integer", "description": "읽을 줄 수 (기본 200)"},
+        }, "required": ["path"]},
+    }},
+    {"type": "function", "function": {
+        "name": "write_file",
+        "description": "파일 생성/덮어쓰기",
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string"}, "content": {"type": "string"},
+        }, "required": ["path", "content"]},
+    }},
+    {"type": "function", "function": {
+        "name": "edit_file",
+        "description": "파일 내 문자열 치환 (old_string → new_string)",
+        "parameters": {"type": "object", "properties": {
+            "path": {"type": "string"}, "old_string": {"type": "string"}, "new_string": {"type": "string"},
+        }, "required": ["path", "old_string", "new_string"]},
+    }},
+    {"type": "function", "function": {
+        "name": "glob",
+        "description": "파일 패턴 검색 (예: **/*.py)",
+        "parameters": {"type": "object", "properties": {
+            "pattern": {"type": "string"}, "path": {"type": "string", "description": "검색 시작 경로 (기본: CCC_DIR)"},
+        }, "required": ["pattern"]},
+    }},
+    {"type": "function", "function": {
+        "name": "grep",
+        "description": "파일 내용 검색 (정규식)",
+        "parameters": {"type": "object", "properties": {
+            "pattern": {"type": "string"}, "path": {"type": "string", "description": "검색 경로"},
+            "glob_filter": {"type": "string", "description": "파일 필터 (예: *.py)"},
+        }, "required": ["pattern"]},
+    }},
+    {"type": "function", "function": {
+        "name": "onboard",
+        "description": "학생 VM에 SSH로 SubAgent 설치 + 역할별 소프트웨어 배포",
+        "parameters": {"type": "object", "properties": {
+            "ip": {"type": "string"}, "role": {"type": "string", "enum": ["attacker","secu","web","siem","manager","windows"]},
+            "ssh_user": {"type": "string"}, "ssh_password": {"type": "string"},
+        }, "required": ["ip", "role"]},
+    }},
+    {"type": "function", "function": {
+        "name": "health_check",
+        "description": "SubAgent 상태 확인 (A2A)",
+        "parameters": {"type": "object", "properties": {"ip": {"type": "string"}}, "required": ["ip"]},
+    }},
+    {"type": "function", "function": {
+        "name": "run_command",
+        "description": "원격 VM SubAgent에 명령 실행 (A2A)",
+        "parameters": {"type": "object", "properties": {
+            "ip": {"type": "string"}, "script": {"type": "string"},
+        }, "required": ["ip", "script"]},
+    }},
 ]
 
 
-# ── LLM + Tool Calling (Claude Code의 query.ts 패턴) ──
+# ══════════════════════════════════════════════════
+#  5. 도구 디스패치 (권한 확인 포함)
+# ══════════════════════════════════════════════════
+def dispatch_tool(name: str, params: dict) -> dict:
+    """도구 실행 — 권한 확인 후 디스패치"""
+    # 권한 확인
+    if not check_permission(name, params):
+        return {"status": "denied", "message": "사용자가 실행을 거부했습니다."}
 
-def execute_interactive(instruction: str):
-    """자연어 지시 실행 — Claude Code의 query loop 패턴
+    if name == "read_file":
+        return file_read(params["path"], params.get("offset", 0), params.get("limit", 200))
+    elif name == "write_file":
+        return file_write(params["path"], params["content"])
+    elif name == "edit_file":
+        return file_edit(params["path"], params["old_string"], params["new_string"])
+    elif name == "glob":
+        return file_glob(params["pattern"], params.get("path", CCC_DIR))
+    elif name == "grep":
+        return file_grep(params["pattern"], params.get("path", CCC_DIR), params.get("glob_filter", ""))
+    else:
+        return dispatch_skill(name, params)
 
-    Claude Code 방식:
-    1. 사용자 메시지 + 도구 정의를 LLM에 전달
-    2. LLM이 자연스럽게 응답하면서 필요할 때 tool_call 발생
-    3. tool_call 실행 → 결과를 대화에 추가
-    4. LLM이 결과를 보고 이어서 설명
-    5. 더 이상 tool_call이 없을 때까지 반복 (multi-step)
-    """
-    state.add_message("user", instruction)
-    context = state.get_context()
+
+# ══════════════════════════════════════════════════
+#  6. UI 렌더링
+# ══════════════════════════════════════════════════
+def render_banner():
+    banner = Text()
+    banner.append("  ____            _   _             \n", style=O)
+    banner.append(" | __ )  __ _ ___| |_(_) ___  _ __  \n", style=O)
+    banner.append(" |  _ \\ / _` / __| __| |/ _ \\| '_ \\ \n", style=O)
+    banner.append(" | |_) | (_| \\__ \\ |_| | (_) | | | |\n", style=O)
+    banner.append(" |____/ \\__,_|___/\\__|_|\\___/|_| |_|\n", style=O)
+    console.print(banner)
+    console.print(f"  CCC 운영 관리 에이전트", style=G)
+    console.print(f"  LLM: {LLM_BASE_URL} / {LLM_MODEL}", style=G)
+    console.print(f"  세션: {SESSIONS_DIR}", style=G)
+    console.print()
+
+def render_tool_call(name: str, params: dict):
+    p = " ".join(f"{k}={v}" for k, v in params.items() if k not in ("infras","content") and len(str(v)) < 80)
+    console.print(f"\n  ⚡ [bold {O}]{name}[/] {p}", highlight=False)
+
+def render_result(result: dict):
+    if "error" in result:
+        console.print(f"  [bold {R}]✗ Error:[/] {result['error']}"); return
+    if "status" in result and result["status"] == "denied":
+        return
+    if "content" in result and "path" in result:  # file_read
+        console.print(f"  [{G}]✓[/] {result.get('path','')} ({result.get('showing','')}/{result.get('lines','')} lines)")
+        content = result["content"]
+        if len(content) > 3000:
+            content = content[:3000] + "\n..."
+        console.print(Syntax(content, "text", theme="monokai", line_numbers=False, padding=1))
+        return
+    if "files" in result:  # glob
+        console.print(f"  [{G}]✓[/] {result.get('count', 0)} files")
+        for f in result["files"][:20]:
+            console.print(f"    {f}", style=G)
+        return
+    if "matches" in result:  # grep
+        console.print(Syntax(result["matches"][:3000], "text", theme="monokai", line_numbers=False, padding=1))
+        return
+    if "stdout" in result:  # shell/ccc
+        code = result.get("exit_code", -1)
+        icon, color = ("✓", GR) if code == 0 else ("✗", R)
+        console.print(f"  [{color}]{icon} {'성공' if code==0 else f'실패 (exit {code})'}[/]")
+        stdout = result.get("stdout", "").strip()
+        if stdout:
+            console.print(Syntax(stdout[:5000], "bash", theme="monokai", line_numbers=False, padding=1))
+        stderr = result.get("stderr", "").strip()
+        if stderr:
+            console.print(f"  [{R}]{stderr[:500]}[/]")
+        return
+    if "healthy" in result:
+        h, color = ("✓ healthy", GR) if result["healthy"] else ("✗ failed", R)
+        console.print(f"  [{color}]{h}[/]")
+        for step in result.get("steps", []):
+            s = "✓" if step.get("success") else "✗"
+            console.print(f"    {s} {step.get('step','')}", style=G)
+        return
+    if "diagnosis" in result:
+        console.print(Panel(result["diagnosis"], title="진단 결과", border_style=B)); return
+    # fallback
+    console.print(Syntax(json.dumps(result, ensure_ascii=False, indent=2)[:3000], "json", theme="monokai", line_numbers=False, padding=1))
+
+def render_help():
+    console.print(Panel(
+        "[bold]사용법[/]\n\n"
+        "자연어로 작업을 지시하세요. 예: 'API 시작해줘', 'main.py 보여줘', '.env 수정해줘'\n\n"
+        f"[bold]CCC 관리[/]               [{P}]![/] CMD  로컬 쉘 직접 실행\n"
+        f"  [{P}]/start[/] /stop /restart /svc /logs /errors /deploy /build /env\n\n"
+        f"[bold]인프라[/]                  [bold]세션[/]\n"
+        f"  [{P}]/status[/] /health /onboard /run   [{P}]/save[/] /load /sessions\n\n"
+        f"  [{P}]/skills[/] /infras /history /clear /help /exit[/]\n",
+        title="Bastion Help", border_style=O))
+
+
+# ══════════════════════════════════════════════════
+#  7. 스트리밍 Tool Calling Loop (Claude Code query.ts)
+# ══════════════════════════════════════════════════
+def execute_interactive(instruction: str, session: Session):
+    """Claude Code 스타일 대화 루프 — 스트리밍 + tool calling"""
+    session.add("user", instruction)
+    ctx = session.context()
 
     system = build_system_prompt(
-        f"등록된 인프라: {json.dumps(context['infras'], ensure_ascii=False)}\n"
-        f"세션 경과: {context['session_duration']}초, 완료 작업: {context['tasks_completed']}건"
+        f"등록된 인프라: {json.dumps(ctx['infras'], ensure_ascii=False)}\n"
+        f"세션: {ctx['duration']}초, 완료: {ctx['tasks']}건\n"
+        f"CCC 경로: {CCC_DIR}"
     )
 
-    # 대화 구성
     messages = [{"role": "system", "content": system}]
-    messages.extend(state.build_messages())
+    messages.extend(session.build_messages())
     messages.append({"role": "user", "content": instruction})
 
-    # Tool calling loop (Claude Code처럼 다중 도구 호출 가능)
-    max_iterations = 5
     full_response = ""
 
-    for i in range(max_iterations):
-        # LLM 호출 (tool calling)
+    for iteration in range(5):  # max 5 tool call rounds
         try:
-            r = httpx.post(f"{LLM_BASE_URL}/api/chat", json={
-                "model": LLM_MODEL,
-                "messages": messages,
-                "tools": TOOL_DEFS,
-                "stream": False,
-                "options": {"temperature": 0.1},
-            }, timeout=120.0)
-            resp = r.json()
+            # 스트리밍 + tool calling
+            with httpx.stream("POST", f"{LLM_BASE_URL}/api/chat", json={
+                "model": LLM_MODEL, "messages": messages, "tools": TOOL_DEFS,
+                "stream": True, "options": {"temperature": 0.1},
+            }, timeout=120.0) as r:
+
+                streamed_text = ""
+                tool_calls = []
+                current_tc = None
+
+                for line in r.iter_lines():
+                    if not line:
+                        continue
+                    try:
+                        chunk = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+
+                    msg = chunk.get("message", {})
+
+                    # 텍스트 토큰 스트리밍
+                    token = msg.get("content", "")
+                    if token:
+                        if not streamed_text:
+                            console.print()  # first token → newline
+                        console.print(token, end="", highlight=False)
+                        streamed_text += token
+
+                    # tool call 수집
+                    tcs = msg.get("tool_calls", [])
+                    if tcs:
+                        tool_calls.extend(tcs)
+
+                    if chunk.get("done"):
+                        break
+
+                if streamed_text:
+                    console.print()  # final newline
+                    full_response += streamed_text
+
         except Exception as e:
-            console.print(f"  [{RED}]LLM 연결 실패: {e}[/]")
-            return
+            console.print(f"\n  [{R}]LLM 연결 실패: {e}[/]")
+            break
 
-        msg = resp.get("message", {})
-        content = msg.get("content", "")
-        tool_calls = msg.get("tool_calls", [])
-
-        # 텍스트 응답 출력 (스트리밍 효과)
-        if content:
-            console.print()
-            console.print(Markdown(content))
-            full_response += content
-
-        # tool_call이 없으면 종료
+        # tool call이 없으면 종료
         if not tool_calls:
             break
 
-        # tool_call 실행
-        messages.append(msg)  # assistant message with tool_calls
+        # assistant 메시지를 대화에 추가
+        messages.append({"role": "assistant", "content": streamed_text, "tool_calls": tool_calls})
 
+        # 각 tool call 실행
         for tc in tool_calls:
             fn = tc.get("function", {})
-            skill_name = fn.get("name", "")
+            name = fn.get("name", "")
             params = fn.get("arguments", {})
             if isinstance(params, str):
-                try:
-                    params = json.loads(params)
-                except json.JSONDecodeError:
-                    params = {}
+                try: params = json.loads(params)
+                except: params = {}
 
-            # 도구 호출 표시
-            render_tool_call(skill_name, params)
+            render_tool_call(name, params)
 
-            # 실행
-            with console.status("[bold]실행 중...", spinner="dots", spinner_style=ORANGE):
-                result = dispatch_skill(skill_name, params)
+            with console.status("[bold]실행 중...", spinner="dots", spinner_style=O):
+                result = dispatch_tool(name, params)
 
             render_result(result)
-            state.task_count += 1
+            session.tasks += 1
 
-            # 결과를 대화에 추가 → LLM이 다음 턴에서 참조
             result_json = json.dumps(result, ensure_ascii=False)
             if len(result_json) > 3000:
-                result_json = result_json[:3000] + "...(truncated)"
+                result_json = result_json[:3000] + "..."
             messages.append({"role": "tool", "content": result_json})
 
-        # 다음 iteration에서 LLM이 결과를 보고 이어서 응답
+        tool_calls = []  # reset for next iteration
 
-    # 최종 응답을 히스토리에 저장
     if full_response:
-        state.add_message("assistant", full_response[:500])
+        session.add("assistant", full_response[:500])
+    session.save()
     console.print()
 
-    # 결과 요약 (복잡한 결과일 때)
-    if skill_name in ("diagnose", "system_status"):
-        console.print()
 
-
-# ── Slash Commands ────────────────────────────────
-
-def handle_slash(cmd: str) -> bool:
-    """슬래시 명령 처리 — bastion의 commands/ 패턴 참고"""
+# ══════════════════════════════════════════════════
+#  8. Slash Commands
+# ══════════════════════════════════════════════════
+def handle_slash(cmd: str, session: Session) -> bool:
     parts = cmd.strip().split(None, 2)
-    command = parts[0].lower()
+    c = parts[0].lower()
 
-    if command in ("/exit", "/quit", "/q"):
-        console.print("\n  [dim]세션 종료[/]")
+    if c in ("/exit", "/quit", "/q"):
+        session.save()
+        console.print(f"\n  [dim]세션 저장됨: {session.id}[/]")
         return False
 
-    elif command in ("/start",):
+    elif c == "/start":
         render_tool_call("ccc", {"action": "start"})
-        with console.status("[bold]CCC 시작 중...", spinner="dots", spinner_style=ORANGE):
-            result = ccc_manage("start")
-        render_result(result)
-
-    elif command in ("/stop",):
-        render_tool_call("ccc", {"action": "stop"})
-        result = ccc_manage("stop")
-        render_result(result)
-
-    elif command in ("/restart",):
+        with console.status("[bold]CCC 시작 중...", spinner="dots", spinner_style=O):
+            r = ccc_manage("start")
+        render_result(r)
+    elif c == "/stop":
+        if Confirm.ask("  CCC 전체를 중지하시겠습니까?", default=False):
+            r = ccc_manage("stop"); render_result(r)
+    elif c == "/restart":
         render_tool_call("ccc", {"action": "restart"})
-        with console.status("[bold]API 재시작 중...", spinner="dots", spinner_style=ORANGE):
-            result = ccc_manage("restart")
-        render_result(result)
+        with console.status("[bold]재시작 중...", spinner="dots", spinner_style=O):
+            r = ccc_manage("restart")
+        render_result(r)
+    elif c in ("/svc", "/service"):
+        r = ccc_manage("status"); render_result(r)
+    elif c == "/logs":
+        r = ccc_manage("logs"); render_result(r)
+    elif c == "/errors":
+        r = ccc_manage("logs_error"); render_result(r)
+    elif c == "/deploy":
+        if Confirm.ask("  배포 (pull + build + restart) 하시겠습니까?", default=True):
+            with console.status("[bold]배포 중...", spinner="dots", spinner_style=O):
+                r = ccc_manage("deploy")
+            render_result(r)
+    elif c == "/build":
+        with console.status("[bold]UI 빌드 중...", spinner="dots", spinner_style=O):
+            r = ccc_manage("build_ui")
+        render_result(r)
+    elif c == "/env":
+        r = ccc_manage("env"); render_result(r)
 
-    elif command in ("/svc", "/service"):
-        render_tool_call("ccc", {"action": "status"})
-        result = ccc_manage("status")
-        render_result(result)
-
-    elif command in ("/logs",):
-        result = ccc_manage("logs")
-        render_result(result)
-
-    elif command in ("/errors",):
-        result = ccc_manage("logs_error")
-        render_result(result)
-
-    elif command in ("/deploy",):
-        render_tool_call("ccc", {"action": "deploy"})
-        with console.status("[bold]배포 중 (pull + build + restart)...", spinner="dots", spinner_style=ORANGE):
-            result = ccc_manage("deploy")
-        render_result(result)
-
-    elif command in ("/env",):
-        result = ccc_manage("env")
-        render_result(result)
-
-    elif command in ("/build",):
-        render_tool_call("ccc", {"action": "build_ui"})
-        with console.status("[bold]UI 빌드 중...", spinner="dots", spinner_style=ORANGE):
-            result = ccc_manage("build_ui")
-        render_result(result)
-
-    elif command == "/help":
+    elif c == "/help":
         render_help()
+    elif c == "/skills":
+        t = Table(box=box.ROUNDED, border_style=G, title="Tools", title_style=O)
+        t.add_column("도구", style=P, width=14); t.add_column("설명", style="white")
+        for td in TOOL_DEFS:
+            fn = td["function"]
+            t.add_row(fn["name"], fn["description"][:80])
+        console.print(t)
+    elif c == "/clear":
+        console.clear(); render_banner()
 
-    elif command == "/skills":
-        render_skills_table()
-
-    elif command == "/clear":
-        console.clear()
-        render_banner()
-
-    elif command == "/status":
-        if not state.infras:
-            console.print("  등록된 인프라가 없습니다. /infras add 로 추가하세요.", style=GRAY)
+    elif c == "/status":
+        if not session.infras:
+            console.print("  인프라 없음. /infras add", style=G)
         else:
-            with console.status("[bold]상태 확인 중...", spinner="dots", spinner_style=ORANGE):
-                result = system_status(state.infras)
-            console.print(f"\n  전체: {result['total']}  [{ GREEN }]정상: {result['healthy']}[/]  [{ RED }]불가: {result['unreachable']}[/]\n")
-            render_infra_status(result["details"])
-
-    elif command == "/health":
-        if len(parts) < 2:
-            console.print("  사용법: /health <IP>", style=GRAY)
+            with console.status("[bold]확인 중...", spinner="dots", spinner_style=O):
+                r = system_status(session.infras)
+            console.print(f"\n  전체: {r['total']}  [{GR}]정상: {r['healthy']}[/]  [{R}]불가: {r['unreachable']}[/]")
+    elif c == "/health":
+        if len(parts) < 2: console.print("  /health <IP>", style=G)
         else:
-            ip = parts[1]
-            with console.status(f"[bold]{ip} 확인 중...", spinner="dots", spinner_style=ORANGE):
-                result = health_check(ip)
-            status = result.get("status", "unknown")
-            color = GREEN if status == "healthy" else RED
-            console.print(f"  [{color}]{ip}: {status}[/]")
-            if result.get("hostname"):
-                console.print(f"  [dim]hostname: {result['hostname']}[/]")
-
-    elif command == "/onboard":
-        ip = parts[1] if len(parts) > 1 else Prompt.ask("  VM IP")
-        role = parts[2] if len(parts) > 2 else Prompt.ask("  역할", choices=["attacker", "secu", "web", "siem", "manager", "windows"])
-        user = Prompt.ask("  SSH 사용자", default="ccc")
-        password = Prompt.ask("  SSH 비밀번호", password=True, default="1")
-        console.print(f"\n  온보딩 시작: {ip} ({role})")
-        with console.status(f"[bold]{ip} SubAgent 설치 중...", spinner="dots", spinner_style=ORANGE):
-            result = onboard_vm(ip=ip, role=role, user=user, password=password)
-        render_result(result)
-        if result.get("healthy"):
-            state.infras.append({"ip": ip, "role": role, "status": "healthy"})
-            console.print(f"  [{ GREEN }]인프라 목록에 추가됨[/]")
-
-    elif command == "/run":
-        if len(parts) < 3:
-            console.print("  사용법: /run <IP> <명령어>", style=GRAY)
+            r = health_check(parts[1])
+            color = GR if r.get("status") == "healthy" else R
+            console.print(f"  [{color}]{parts[1]}: {r.get('status','?')}[/]")
+    elif c == "/onboard":
+        ip = parts[1] if len(parts) > 1 else Prompt.ask("  IP")
+        role = Prompt.ask("  역할", choices=["attacker","secu","web","siem","manager","windows"])
+        pw = Prompt.ask("  SSH 비밀번호", password=True, default="1")
+        with console.status(f"[bold]{ip} 온보딩 중...", spinner="dots", spinner_style=O):
+            r = onboard_vm(ip=ip, role=role, password=pw)
+        render_result(r)
+        if r.get("healthy"):
+            session.infras.append({"ip": ip, "role": role, "status": "healthy"})
+    elif c == "/run":
+        if len(parts) < 3: console.print("  /run <IP> <CMD>", style=G)
         else:
-            ip, script = parts[1], parts[2]
-            render_tool_call("run_command", {"ip": ip, "script": script})
-            with console.status(f"[bold]실행 중...", spinner="dots", spinner_style=ORANGE):
-                result = run_command(ip, script)
-            render_result(result)
-
-    elif command == "/infras":
+            with console.status("[bold]실행 중...", spinner="dots", spinner_style=O):
+                r = run_command(parts[1], parts[2])
+            render_result(r)
+    elif c == "/infras":
         if len(parts) > 1 and parts[1] == "add":
-            ip = Prompt.ask("  IP")
-            role = Prompt.ask("  역할", choices=["attacker", "secu", "web", "siem", "manager", "windows"])
-            state.infras.append({"ip": ip, "role": role, "status": "registered"})
-            console.print(f"  [{ GREEN }]추가됨: {role} @ {ip}[/]")
+            ip = Prompt.ask("  IP"); role = Prompt.ask("  역할", choices=["attacker","secu","web","siem","manager","windows"])
+            session.infras.append({"ip": ip, "role": role, "status": "registered"})
+            console.print(f"  [{GR}]추가: {role} @ {ip}[/]")
+        elif not session.infras:
+            console.print("  인프라 없음. /infras add", style=G)
         else:
-            if not state.infras:
-                console.print("  등록된 인프라 없음. /infras add 로 추가", style=GRAY)
-            else:
-                render_infra_status(state.infras)
+            for inf in session.infras:
+                color = GR if inf.get("status") == "healthy" else G
+                console.print(f"  [{color}]{inf.get('role','?'):12s} {inf.get('ip','?')}  {inf.get('status','')}[/]")
+    elif c == "/history":
+        for m in session.history[-20:]:
+            color = O if m["role"] == "user" else B
+            console.print(f"  [{color}]{m['role']}[/]: {m['content'][:100]}")
 
-    elif command == "/history":
-        for msg in state.history[-20:]:
-            role_color = ORANGE if msg["role"] == "user" else BLUE
-            console.print(f"  [{role_color}]{msg['role']}[/]: {msg['content'][:100]}")
+    # 세션 관리
+    elif c == "/save":
+        session.save()
+        console.print(f"  [{GR}]세션 저장됨: {session.id}[/]")
+    elif c == "/sessions":
+        for s in Session.list_sessions():
+            console.print(f"  {s['id']}  ({s['turns']} turns, {s['tasks']} tasks)")
+    elif c == "/load":
+        sid = parts[1] if len(parts) > 1 else Prompt.ask("  세션 ID")
+        return sid  # special return: switch session
 
     else:
-        console.print(f"  알 수 없는 명령: {command}. /help 참고", style=GRAY)
-
+        console.print(f"  알 수 없는 명령. /help 참고", style=G)
     return True
 
 
-# ── Main REPL (bastion/src/query.ts 메인 루프 참고) ──
-
-def load_infras_from_api():
-    """CCC API에서 인프라 목록 로드"""
+# ══════════════════════════════════════════════════
+#  9. Main REPL
+# ══════════════════════════════════════════════════
+def load_infras(session: Session):
     api_url = os.getenv("CCC_API_URL", "http://localhost:9100")
     api_key = os.getenv("CCC_API_KEY", "ccc-api-key-2026")
     try:
         r = httpx.get(f"{api_url}/api/infras/my", headers={"X-API-Key": api_key}, timeout=5.0)
         if r.status_code == 200:
-            infras = r.json().get("infras", [])
-            for inf in infras:
+            for inf in r.json().get("infras", []):
                 cfg = inf.get("vm_config", {}) or {}
-                state.infras.append({
-                    "ip": inf.get("ip", ""),
-                    "role": cfg.get("role", ""),
-                    "status": inf.get("status", "registered"),
-                })
-            if state.infras:
-                console.print(f"  [dim]API에서 인프라 {len(state.infras)}대 로드됨[/]")
+                session.infras.append({"ip": inf.get("ip",""), "role": cfg.get("role",""), "status": inf.get("status","")})
+            if session.infras:
+                console.print(f"  [dim]인프라 {len(session.infras)}대 로드[/]")
     except Exception:
-        pass  # API 연결 실패 시 무시
-
+        pass
 
 def main():
-    """메인 REPL — Claude Code의 대화 루프 참고"""
-    # .env 로드
+    # .env
     env_path = os.path.join(os.path.dirname(__file__), "..", "..", ".env")
     if os.path.exists(env_path):
         with open(env_path) as f:
@@ -639,62 +662,75 @@ def main():
 
     render_banner()
 
-    # LLM 연결 확인
-    with console.status("[bold]LLM 연결 확인...", spinner="dots", spinner_style=ORANGE):
+    # LLM 체크
+    with console.status("[bold]LLM 연결 확인...", spinner="dots", spinner_style=O):
         try:
             r = httpx.get(f"{LLM_BASE_URL}/api/tags", timeout=5.0)
             models = [m["name"] for m in r.json().get("models", [])]
-            if models:
-                console.print(f"  [dim]사용 가능 모델: {', '.join(models[:5])}[/]")
-            else:
-                console.print(f"  [yellow]모델 없음 — ollama pull {LLM_MODEL} 실행 필요[/]")
+            console.print(f"  [dim]모델: {', '.join(models[:5]) if models else '없음'}[/]")
         except Exception:
-            console.print(f"  [{RED}]LLM 서버 연결 실패: {LLM_BASE_URL}[/]")
-            console.print(f"  [dim]Ollama 서버를 시작하거나 .env의 LLM_BASE_URL을 확인하세요[/]")
+            console.print(f"  [{R}]LLM 연결 실패: {LLM_BASE_URL}[/]")
 
-    # API에서 인프라 로드
-    load_infras_from_api()
+    # 세션 (이전 세션 이어받기 또는 새 세션)
+    sessions = Session.list_sessions()
+    session = Session()
+    if sessions and len(sys.argv) <= 1:
+        latest = sessions[0]
+        if latest["turns"] > 0:
+            console.print(f"  [dim]이전 세션: {latest['id']} ({latest['turns']} turns)[/]")
+            if Confirm.ask("  이전 세션을 이어서 하시겠습니까?", default=False):
+                session = Session.load(latest["id"])
+                console.print(f"  [{GR}]세션 복원: {session.id}[/]")
 
-    console.print(f"  [dim]/help 로 도움말 확인. 자연어로 작업을 지시하세요.[/]\n")
+    # CLI에서 세션 ID 지정
+    if len(sys.argv) > 1:
+        session = Session.load(sys.argv[1])
+        console.print(f"  [{GR}]세션 로드: {session.id}[/]")
+
+    load_infras(session)
+    console.print(f"  [dim]세션: {session.id} | /help 도움말 | 자연어로 작업 지시[/]\n")
 
     # REPL
     while True:
         try:
-            console.print(f"[bold {ORANGE}]bastion >[/] ", end="")
+            console.print(f"[bold {O}]bastion >[/] ", end="")
             user_input = input().strip()
         except (EOFError, KeyboardInterrupt):
-            console.print(f"\n  [dim]세션 종료[/]")
+            session.save()
+            console.print(f"\n  [dim]세션 저장: {session.id}[/]")
             break
 
         if not user_input:
             continue
 
         if user_input.startswith("/"):
-            if not handle_slash(user_input):
+            result = handle_slash(user_input, session)
+            if result is False:
                 break
+            elif isinstance(result, str):
+                # /load 로 세션 전환
+                session = Session.load(result)
+                console.print(f"  [{GR}]세션 전환: {session.id}[/]")
             console.print()
             continue
 
-        # ! 접두사: 로컬 쉘 직접 실행
         if user_input.startswith("!"):
             cmd = user_input[1:].strip()
             if cmd:
-                render_tool_call("shell", {"command": cmd})
-                result = shell_exec(cmd)
-                render_result(result)
+                if check_permission("shell", {"command": cmd}):
+                    render_tool_call("shell", {"command": cmd})
+                    r = shell_exec(cmd)
+                    render_result(r)
             console.print()
             continue
 
-        # 자연어 지시 실행
         try:
-            execute_interactive(user_input)
+            execute_interactive(user_input, session)
         except KeyboardInterrupt:
-            console.print(f"\n  [dim]작업 취소됨[/]")
+            console.print(f"\n  [dim]취소됨[/]")
         except Exception as e:
-            console.print(f"  [{RED}]Error: {e}[/]")
-
+            console.print(f"  [{R}]{e}[/]")
         console.print()
-
 
 if __name__ == "__main__":
     main()
