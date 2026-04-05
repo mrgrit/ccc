@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """bastion — CCC 운영 관리 에이전트
 
-Claude Code + Ollama 오픈모델 기반.
-자체 경량 프록시로 Ollama를 Anthropic Messages API 호환으로 변환.
+open-interpreter + Ollama 기반. Claude Code 스타일 대화형 에이전트.
+자연어로 CCC 플랫폼 운영, 인프라 관리, 파일 편집, 코드 실행 가능.
 
 Usage:
     python -m apps.bastion.main
@@ -11,10 +11,8 @@ Usage:
 import os
 import sys
 import subprocess
-import time
-import threading
 
-CCC_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
+CCC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
 
 # .env 로드
 ENV_PATH = os.path.join(CCC_DIR, ".env")
@@ -28,84 +26,71 @@ if os.path.exists(ENV_PATH):
 
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
 LLM_MODEL = os.getenv("LLM_MANAGER_MODEL", "gpt-oss:120b")
-PROXY_PORT = int(os.getenv("BASTION_PROXY_PORT", "4100"))
-PROXY_URL = f"http://127.0.0.1:{PROXY_PORT}"
 
 
-def start_proxy():
-    """자체 경량 프록시 시작 (Ollama → Anthropic API)"""
-    # 이미 떠있는지 확인
-    try:
-        import httpx
-        r = httpx.get(f"{PROXY_URL}/health", timeout=2.0)
-        if r.status_code == 200:
-            print(f"[bastion] 프록시 이미 실행 중 ({PROXY_URL})")
-            return
-    except Exception:
-        pass
+def load_system_prompt() -> str:
+    """CCC.md + 운영 컨텍스트를 시스템 프롬프트로"""
+    parts = []
 
-    # 백그라운드 스레드로 프록시 실행
-    from apps.bastion.proxy import run as run_proxy
-    t = threading.Thread(target=run_proxy, args=(PROXY_PORT,), daemon=True)
-    t.start()
+    ccc_md = os.path.join(CCC_DIR, "CCC.md")
+    if os.path.exists(ccc_md):
+        with open(ccc_md, encoding="utf-8") as f:
+            parts.append(f.read())
 
-    # 준비 대기
-    print(f"[bastion] 프록시 시작 (Ollama {LLM_BASE_URL} → Anthropic API)...", end="", flush=True)
-    for _ in range(10):
-        time.sleep(0.5)
-        try:
-            import httpx
-            r = httpx.get(f"{PROXY_URL}/health", timeout=1.0)
-            if r.status_code == 200:
-                print(" ready")
-                return
-        except Exception:
-            pass
-        print(".", end="", flush=True)
+    parts.append(f"""
+현재 환경:
+- CCC 경로: {CCC_DIR}
+- LLM: {LLM_BASE_URL} / {LLM_MODEL}
+- OS: {os.popen('uname -a 2>/dev/null || ver').read().strip()}
 
-    print("\n[bastion] ERROR: 프록시 시작 실패")
-    sys.exit(1)
+너는 CCC(Cyber Combat Commander) 사이버보안 교육 플랫폼의 운영 관리 에이전트다.
+서버 관리, 서비스 시작/중지, 인프라 관리, 파일 편집, 코드 실행, 문제 해결 등
+관리자가 요청하는 모든 작업을 수행한다.
+
+CCC 서비스 관리:
+- API 시작: cd {CCC_DIR} && ./dev.sh api
+- API 중지: pkill -f 'uvicorn apps.ccc_api'
+- DB 시작: docker compose -f {CCC_DIR}/docker/docker-compose.yaml up -d postgres
+- UI 빌드: cd {CCC_DIR}/apps/ccc-ui && npm run build
+- 배포: cd {CCC_DIR} && git pull && ./upgrade.sh
+
+파괴적 작업(rm -rf /, DROP TABLE) 금지. 위험 명령 실행 전 사용자 확인.
+""")
+
+    return "\n\n".join(parts)
 
 
 def main():
-    # claude CLI 확인/설치
-    claude_path = os.popen("which claude 2>/dev/null").read().strip()
-    if not claude_path:
-        print("[bastion] Claude Code CLI 설치 중...")
-        subprocess.run(["sudo", "npm", "install", "-g", "@anthropic-ai/claude-code"], check=True)
-        claude_path = os.popen("which claude 2>/dev/null").read().strip()
-        if not claude_path:
-            print("[bastion] ERROR: claude CLI 설치 실패")
-            sys.exit(1)
+    # open-interpreter 설치 확인
+    try:
+        import interpreter
+    except ImportError:
+        print("[bastion] open-interpreter 설치 중...")
+        subprocess.run([sys.executable, "-m", "pip", "install", "open-interpreter", "-q"], check=True)
+        import interpreter
 
-    # 프록시 시작
-    start_proxy()
+    from interpreter import interpreter as oi
 
-    # CCC.md 시스템 프롬프트
-    ccc_md = os.path.join(CCC_DIR, "CCC.md")
-    system_prompt = ""
-    if os.path.exists(ccc_md):
-        with open(ccc_md, encoding="utf-8") as f:
-            system_prompt = f.read()
+    # Ollama 설정
+    oi.llm.model = f"ollama/{LLM_MODEL}"
+    oi.llm.api_base = LLM_BASE_URL
+    oi.llm.api_key = "dummy"
 
-    # Claude Code 실행
-    env = os.environ.copy()
-    env["ANTHROPIC_BASE_URL"] = PROXY_URL
-    env["ANTHROPIC_API_KEY"] = "sk-dummy"
+    # 시스템 프롬프트
+    oi.system_message = load_system_prompt()
 
-    cmd = [claude_path]
-    if system_prompt:
-        cmd.extend(["--system-prompt", system_prompt])
+    # 설정
+    oi.auto_run = False          # 코드 실행 전 확인
+    oi.loop = True               # 대화 루프
+    oi.offline = True            # 인터넷 체크 스킵
 
-    print(f"[bastion] Claude Code 시작 (모델: {LLM_MODEL})")
-    print(f"[bastion] CCC 경로: {CCC_DIR}")
+    print(f"[bastion] CCC 운영 에이전트")
+    print(f"[bastion] 모델: {LLM_MODEL} ({LLM_BASE_URL})")
+    print(f"[bastion] CCC: {CCC_DIR}")
     print()
 
-    try:
-        proc = subprocess.run(cmd, env=env, cwd=CCC_DIR)
-        sys.exit(proc.returncode)
-    except KeyboardInterrupt:
-        pass
+    # 대화 시작
+    oi.chat()
 
 
 if __name__ == "__main__":
