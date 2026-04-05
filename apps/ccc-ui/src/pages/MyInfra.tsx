@@ -281,6 +281,7 @@ export default function MyInfra() {
               <div style={reqLine}>CPU: 2코어 이상 / RAM: 8GB 이상</div>
               <div style={reqLine}>디스크: 60GB 이상 (분석 도구 + 이미지)</div>
               <div style={reqLine}>OpenSSH Server 활성화 필수</div>
+              <div style={{ ...reqLine, color: '#f97316' }}>Python 3.x 사전 설치 필수 (python.org)</div>
             </div>
             <input placeholder="외부 IP (선택, 없으면 skip)" value={form.windows_ip}
               onChange={e => setForm({ ...form, windows_ip: e.target.value })} style={inputStyle} />
