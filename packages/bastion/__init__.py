@@ -288,6 +288,39 @@ def _win_ssh_run(ip: str, user: str, password: str, ps_script: str, timeout: int
 
 # Windows SubAgent (Python http.server 기반, 스케줄 작업으로 자동 시작)
 WIN_SUBAGENT_SCRIPT = r'''
+# Python 설치 확인 + 자동 설치
+$PythonOk = $false
+try {
+    $v = & python -c "import sys; print(sys.version)" 2>$null
+    if ($v -and $v -match "\d+\.\d+") { $PythonOk = $true; Write-Host "Python found: $v" }
+} catch {}
+
+if (-not $PythonOk) {
+    Write-Host "Python not found. Installing..."
+    # winget으로 설치 시도
+    $winget = Get-Command winget -ErrorAction SilentlyContinue
+    if ($winget) {
+        winget install Python.Python.3.12 --accept-package-agreements --accept-source-agreements --silent 2>$null
+    } else {
+        # winget 없으면 직접 다운로드
+        $url = "https://www.python.org/ftp/python/3.12.4/python-3.12.4-amd64.exe"
+        $installer = "$env:TEMP\python-installer.exe"
+        [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+        Invoke-WebRequest -Uri $url -OutFile $installer -UseBasicParsing
+        Start-Process -FilePath $installer -ArgumentList "/quiet InstallAllUsers=1 PrependPath=1 Include_pip=1" -Wait
+        Remove-Item $installer -Force -ErrorAction SilentlyContinue
+    }
+    # PATH 갱신
+    $env:Path = [System.Environment]::GetEnvironmentVariable("Path","Machine") + ";" + [System.Environment]::GetEnvironmentVariable("Path","User")
+    Write-Host "Python installed: $(python --version 2>&1)"
+}
+
+# Windows Store python.exe 리다이렉트 제거
+$storePython = "$env:LOCALAPPDATA\Microsoft\WindowsApps\python.exe"
+if (Test-Path $storePython) { Remove-Item $storePython -Force -ErrorAction SilentlyContinue }
+$storePython3 = "$env:LOCALAPPDATA\Microsoft\WindowsApps\python3.exe"
+if (Test-Path $storePython3) { Remove-Item $storePython3 -Force -ErrorAction SilentlyContinue }
+
 $AgentDir = "C:\ccc-subagent"
 New-Item -ItemType Directory -Force -Path $AgentDir | Out-Null
 
