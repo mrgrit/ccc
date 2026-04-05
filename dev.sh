@@ -30,7 +30,7 @@ ensure_docker() {
     sudo apt-get update -y
     sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-compose-plugin
     sudo usermod -aG docker "$(whoami)" 2>/dev/null || true
-    echo "[CCC] Docker 설치 완료. 그룹 권한 적용을 위해 재로그인이 필요할 수 있습니다."
+    echo "[CCC] Docker 설치 완료"
   elif command -v dnf &>/dev/null; then
     sudo dnf install -y docker docker-compose-plugin
     sudo systemctl enable --now docker
@@ -46,16 +46,24 @@ ensure_docker() {
 ensure_db() {
   ensure_docker
 
-  # postgres 컨테이너 시작
-  if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q ccc.*postgres; then
-    echo "[CCC] Starting PostgreSQL..."
-    if docker compose version &>/dev/null; then
-      docker compose -f docker/docker-compose.yaml up -d postgres
-    elif command -v docker-compose &>/dev/null; then
-      docker-compose -f docker/docker-compose.yaml up -d postgres
+  # docker 권한 확인 — sudo 없이 안 되면 sudo로
+  _docker() {
+    if docker info &>/dev/null; then
+      docker "$@"
     else
-      echo "[CCC] ERROR: docker compose 플러그인이 없습니다."
-      echo "  설치: sudo apt-get install -y docker-compose-plugin"
+      sudo docker "$@"
+    fi
+  }
+
+  # postgres 컨테이너 시작
+  if ! _docker ps --format '{{.Names}}' 2>/dev/null | grep -q ccc.*postgres; then
+    echo "[CCC] Starting PostgreSQL..."
+    if _docker compose version &>/dev/null; then
+      _docker compose -f docker/docker-compose.yaml up -d postgres
+    elif sudo docker-compose version &>/dev/null; then
+      sudo docker-compose -f docker/docker-compose.yaml up -d postgres
+    else
+      echo "[CCC] ERROR: docker compose를 실행할 수 없습니다."
       exit 1
     fi
   fi

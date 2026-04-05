@@ -85,15 +85,28 @@ if ! command -v docker &>/dev/null; then
         sudo systemctl enable --now docker
     fi
     sudo usermod -aG docker "$(whoami)" 2>/dev/null || true
+    # 재로그인 없이 현재 세션에 그룹 적용
+    newgrp docker <<NEWGRP
+echo "  Docker 그룹 적용됨"
+NEWGRP
     echo "  Docker 설치 완료"
 fi
-if docker compose version &>/dev/null; then
-    docker compose -f docker/docker-compose.yaml up -d postgres
-elif command -v docker-compose &>/dev/null; then
-    docker-compose -f docker/docker-compose.yaml up -d postgres
+
+# docker 권한 확인 — sudo 없이 안 되면 sudo로 실행
+_docker() {
+    if docker info &>/dev/null; then
+        docker "$@"
+    else
+        sudo docker "$@"
+    fi
+}
+
+if _docker compose version &>/dev/null; then
+    _docker compose -f docker/docker-compose.yaml up -d postgres
+elif sudo docker-compose version &>/dev/null; then
+    sudo docker-compose -f docker/docker-compose.yaml up -d postgres
 else
-    echo "  ERROR: docker compose 플러그인이 없습니다."
-    echo "  설치: sudo apt-get install -y docker-compose-plugin"
+    echo "  ERROR: docker compose를 실행할 수 없습니다."
     exit 1
 fi
 echo "  PostgreSQL 시작됨 (port ${DB_PORT:-5434})"
