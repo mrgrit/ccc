@@ -58,16 +58,75 @@ BLUE = "dodger_blue2"
 PURPLE = "medium_purple"
 
 # ── State ─────────────────────────────────────────
+MAX_CONTEXT_CHARS = 8000  # LLM에 보낼 히스토리 최대 크기
+MAX_MSG_CHARS = 600       # 개별 메시지 최대 길이
+
 class BastionState:
-    """세션 상태 — bastion/src/state/AppStateStore.ts 참고"""
+    """세션 상태 — bastion/src/state/AppStateStore.ts 참고
+
+    컨텍스트 관리 전략 (bastion의 REACTIVE_COMPACT 참고):
+    1. 최근 대화를 우선 유지 (recency bias)
+    2. 오래된 대화는 요약으로 압축 (compaction)
+    3. 총 크기를 MAX_CONTEXT_CHARS 이내로 유지
+    """
     def __init__(self):
         self.infras: list[dict] = []
         self.history: list[dict] = []
+        self.summary: str = ""  # 오래된 대화 요약
         self.session_start = time.time()
         self.task_count = 0
 
     def add_message(self, role: str, content: str):
         self.history.append({"role": role, "content": content, "ts": time.time()})
+        self._compact()
+
+    def _compact(self):
+        """히스토리가 너무 길면 오래된 부분을 요약으로 압축"""
+        total = sum(len(m["content"]) for m in self.history)
+        if total <= MAX_CONTEXT_CHARS:
+            return
+
+        # 앞쪽 절반을 요약으로 압축
+        mid = len(self.history) // 2
+        old_msgs = self.history[:mid]
+        self.history = self.history[mid:]
+
+        old_text = "\n".join(
+            f"{'사용자' if m['role']=='user' else '에이전트'}: {m['content'][:200]}"
+            for m in old_msgs
+        )
+        if self.summary:
+            self.summary += f"\n---\n{old_text[:1000]}"
+        else:
+            self.summary = old_text[:1000]
+
+        # 요약도 너무 길면 자르기
+        if len(self.summary) > 2000:
+            self.summary = self.summary[-2000:]
+
+    def build_messages(self) -> list[dict]:
+        """LLM에 보낼 대화 히스토리 구성"""
+        messages = []
+
+        # 요약이 있으면 첫 메시지로 추가
+        if self.summary:
+            messages.append({
+                "role": "user",
+                "content": f"[이전 대화 요약]\n{self.summary}"
+            })
+            messages.append({
+                "role": "assistant",
+                "content": "이전 대화 내용을 확인했습니다. 계속하겠습니다."
+            })
+
+        # 최근 히스토리
+        for msg in self.history:
+            content = msg["content"]
+            if len(content) > MAX_MSG_CHARS:
+                content = content[:MAX_MSG_CHARS] + "...(truncated)"
+            messages.append({"role": msg["role"], "content": content})
+
+        return messages
 
     def get_context(self) -> dict:
         return {
@@ -288,15 +347,9 @@ def execute_interactive(instruction: str):
         f"세션 경과: {context['session_duration']}초, 완료 작업: {context['tasks_completed']}건"
     )
 
-    # 대화 히스토리 포함 (최근 20턴, 토큰 절약을 위해 요약)
+    # 대화 히스토리 포함 (스마트 컨텍스트 관리)
     messages = [{"role": "system", "content": system}]
-    for msg in state.history[-20:]:
-        role = msg["role"]
-        content = msg["content"]
-        # 너무 긴 결과는 잘라서 전달
-        if len(content) > 500:
-            content = content[:500] + "...(truncated)"
-        messages.append({"role": role, "content": content})
+    messages.extend(state.build_messages())
 
     # 현재 지시에 스킬 선택 안내 추가
     messages.append({"role": "user", "content": f"""지시: {instruction}
