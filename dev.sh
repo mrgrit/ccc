@@ -26,7 +26,7 @@ case "${1:-api}" in
   api)
     ensure_db
     echo "[CCC] Starting ccc-api on :9100..."
-    python3 -m uvicorn apps.ccc-api.src.main:app --host 0.0.0.0 --port 9100 --reload
+    python3 -m uvicorn apps.ccc_api.src.main:app --host 0.0.0.0 --port 9100 --reload
     ;;
   bastion)
     ensure_db

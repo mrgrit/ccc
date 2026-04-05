@@ -19,4 +19,4 @@ ENV PYTHONPATH=/app
 
 EXPOSE 9100
 
-CMD ["python", "-m", "uvicorn", "apps.ccc-api.src.main:app", "--host", "0.0.0.0", "--port", "9100"]
+CMD ["python", "-m", "uvicorn", "apps.ccc_api.src.main:app", "--host", "0.0.0.0", "--port", "9100"]

@@ -98,13 +98,6 @@ curl -X POST http://localhost:9100/auth/create-admin \
 | POST | `/battles/{id}/submit-mission` | 미션 제출 |
 | GET | `/leaderboard` | 리더보드 |
 
-## 관련 시스템
-
-| 시스템 | 역할 |
-|--------|------|
-| [OpsClaw](https://github.com/mrgrit/opsclaw) | 연구/개발 + 중앙서버 |
-| [Bastion](https://github.com/mrgrit/bastion) | 실무 운영/보안 에이전트 |
-
 ## 기술 스택
 
 Python 3.11 / FastAPI / PostgreSQL / React / YAML / JWT

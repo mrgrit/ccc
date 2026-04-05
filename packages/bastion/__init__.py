@@ -44,7 +44,7 @@ CCC 교육 플랫폼의 **모든 운영 업무**를 담당한다.
 - ./dev.sh: API/bastion 실행 스크립트
 - .env: 환경 설정 (DATABASE_URL, LLM_BASE_URL, LLM_MODEL)
 - docker/docker-compose.yaml: PostgreSQL + API 컨테이너
-- apps/ccc-api/src/main.py: API 소스
+- apps/ccc_api/src/main.py: API 소스
 - apps/ccc-ui/: React UI 소스""",
 
     "capabilities": """사용 가능한 스킬:
@@ -333,7 +333,7 @@ def shell_exec(command: str, timeout: int = 60) -> dict:
 
 _VENV = f"source {CCC_DIR}/.venv/bin/activate 2>/dev/null"
 _ENVLOAD = f"set -a; [ -f {CCC_DIR}/.env ] && source {CCC_DIR}/.env; set +a; export PYTHONPATH={CCC_DIR}"
-_API_START = f"{_VENV}; {_ENVLOAD}; nohup python3 -m uvicorn apps.ccc-api.src.main:app --host 0.0.0.0 --port 9100 > /tmp/ccc-api.log 2>&1 & echo \"API started (pid: $!)\""
+_API_START = f"{_VENV}; {_ENVLOAD}; nohup python3 -m uvicorn apps.ccc_api.src.main:app --host 0.0.0.0 --port 9100 > /tmp/ccc-api.log 2>&1 & echo \"API started (pid: $!)\""
 _API_KEY = os.getenv("CCC_API_KEY", "ccc-api-key-2026")
 
 
@@ -343,11 +343,11 @@ def ccc_manage(action: str, params: dict = None) -> dict:
     actions = {
         # ── 서비스 시작/중지 ──
         "start": f"cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml up -d postgres && sleep 2 && {_API_START}",
-        "stop": f"pkill -f 'uvicorn apps.ccc-api' 2>/dev/null; cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml stop; echo 'All stopped'",
-        "restart": f"pkill -f 'uvicorn apps.ccc-api' 2>/dev/null; sleep 1; cd {CCC_DIR} && {_API_START}",
+        "stop": f"pkill -f 'uvicorn apps.ccc_api' 2>/dev/null; cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml stop; echo 'All stopped'",
+        "restart": f"pkill -f 'uvicorn apps.ccc_api' 2>/dev/null; sleep 1; cd {CCC_DIR} && {_API_START}",
         "start_api": f"cd {CCC_DIR} && {_API_START}",
-        "stop_api": "pkill -f 'uvicorn apps.ccc-api' && echo 'API stopped' || echo 'API not running'",
-        "restart_api": f"pkill -f 'uvicorn apps.ccc-api' 2>/dev/null; sleep 1; cd {CCC_DIR} && {_API_START}",
+        "stop_api": "pkill -f 'uvicorn apps.ccc_api' && echo 'API stopped' || echo 'API not running'",
+        "restart_api": f"pkill -f 'uvicorn apps.ccc_api' 2>/dev/null; sleep 1; cd {CCC_DIR} && {_API_START}",
         "start_db": f"cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml up -d postgres && echo 'DB started'",
         "stop_db": f"cd {CCC_DIR} && docker compose -f docker/docker-compose.yaml stop postgres && echo 'DB stopped'",
 
@@ -355,7 +355,7 @@ def ccc_manage(action: str, params: dict = None) -> dict:
         "status":
             "echo '=== CCC Platform Status ==='; echo; "
             "echo '-- Processes --'; "
-            "(pgrep -fa 'uvicorn apps.ccc-api' && echo '  API: RUNNING') || echo '  API: STOPPED'; "
+            "(pgrep -fa 'uvicorn apps.ccc_api' && echo '  API: RUNNING') || echo '  API: STOPPED'; "
             "(docker ps --format '  DB:  RUNNING ({{.Names}} {{.Status}})' 2>/dev/null | grep postgres) || echo '  DB:  STOPPED'; "
             "echo; echo '-- Health --'; "
             f"curl -s -o /dev/null -w '  API response: %{{http_code}}' http://localhost:9100/api/dashboard -H 'X-API-Key: {_API_KEY}' 2>/dev/null; echo; "
@@ -376,7 +376,7 @@ def ccc_manage(action: str, params: dict = None) -> dict:
         "deploy": f"cd {CCC_DIR} && git pull && "
             f"cd apps/ccc-ui && npm install && npm run build && cd ../.. && "
             f"{_VENV} && pip install -r requirements.txt -q && "
-            f"pkill -f 'uvicorn apps.ccc-api' 2>/dev/null; sleep 1 && {_API_START} && echo 'Deploy complete'",
+            f"pkill -f 'uvicorn apps.ccc_api' 2>/dev/null; sleep 1 && {_API_START} && echo 'Deploy complete'",
         "update": f"cd {CCC_DIR} && git pull && echo 'Code updated. Run: ccc restart'",
 
         # ── DB 관리 ──

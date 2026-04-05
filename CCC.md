@@ -7,7 +7,7 @@ bastion 시작 시 자동으로 로드되어 시스템 프롬프트에 주입된
 
 | 컴포넌트 | 경로 | 포트 | 역할 |
 |----------|------|------|------|
-| ccc-api | apps/ccc-api/ | :9100 | 메인 API (학생/실습/CTF/대전) |
+| ccc-api | apps/ccc_api/ | :9100 | 메인 API (학생/실습/CTF/대전) |
 | ccc-ui | apps/ccc-ui/ | - | React 웹 UI (API가 /app/으로 서빙) |
 | bastion | apps/bastion/ | - | 운영 관리 에이전트 (이 에이전트) |
 | ccc-cli | apps/cli/ | - | 학생용 CLI |
