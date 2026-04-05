@@ -49,8 +49,15 @@ ensure_db() {
   # postgres 컨테이너 시작
   if ! docker ps --format '{{.Names}}' 2>/dev/null | grep -q ccc.*postgres; then
     echo "[CCC] Starting PostgreSQL..."
-    docker compose -f docker/docker-compose.yaml up -d postgres 2>/dev/null || \
+    if docker compose version &>/dev/null; then
+      docker compose -f docker/docker-compose.yaml up -d postgres
+    elif command -v docker-compose &>/dev/null; then
       docker-compose -f docker/docker-compose.yaml up -d postgres
+    else
+      echo "[CCC] ERROR: docker compose 플러그인이 없습니다."
+      echo "  설치: sudo apt-get install -y docker-compose-plugin"
+      exit 1
+    fi
   fi
 
   # DB 접속 가능할 때까지 대기 (최대 15초)

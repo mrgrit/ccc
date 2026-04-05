@@ -87,8 +87,15 @@ if ! command -v docker &>/dev/null; then
     sudo usermod -aG docker "$(whoami)" 2>/dev/null || true
     echo "  Docker 설치 완료"
 fi
-docker compose -f docker/docker-compose.yaml up -d postgres 2>/dev/null || \
-  docker-compose -f docker/docker-compose.yaml up -d postgres
+if docker compose version &>/dev/null; then
+    docker compose -f docker/docker-compose.yaml up -d postgres
+elif command -v docker-compose &>/dev/null; then
+    docker-compose -f docker/docker-compose.yaml up -d postgres
+else
+    echo "  ERROR: docker compose 플러그인이 없습니다."
+    echo "  설치: sudo apt-get install -y docker-compose-plugin"
+    exit 1
+fi
 echo "  PostgreSQL 시작됨 (port ${DB_PORT:-5434})"
 
 echo ""
