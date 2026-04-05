@@ -839,9 +839,17 @@ def onboard_infra(body: InfraSetupBody, request: Request):
                                     (status, uid, vm["ip"]))
                         conn.commit()
 
-                # 단계별 결과 전송
+                # 단계별 결과 전송 (에러 내용 포함)
                 for step in ob.get("steps", []):
-                    yield f"data: {_j.dumps({'event': 'step', 'role': vm['role'], 'step': step.get('step',''), 'success': step.get('success', False)}, ensure_ascii=False)}\n\n"
+                    step_data = {
+                        'event': 'step', 'role': vm['role'],
+                        'step': step.get('step', ''),
+                        'success': step.get('success', False),
+                    }
+                    if not step.get('success'):
+                        step_data['stderr'] = step.get('stderr', '')[:300]
+                        step_data['stdout'] = step.get('stdout', '')[:200]
+                    yield f"data: {_j.dumps(step_data, ensure_ascii=False)}\n\n"
 
                 yield f"data: {_j.dumps({'event': 'done', 'role': vm['role'], 'status': status, 'progress': f'{i+1}/{total}'}, ensure_ascii=False)}\n\n"
 

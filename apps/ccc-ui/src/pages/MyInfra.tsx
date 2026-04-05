@@ -371,8 +371,13 @@ export default function MyInfra() {
                 </div>
               )
               if (evt.event === 'step') return (
-                <div key={i} style={{ padding: '2px 0 2px 16px', color: evt.success ? '#3fb950' : '#f85149' }}>
-                  {evt.success ? '✓' : '✗'} {evt.step}
+                <div key={i}>
+                  <div style={{ padding: '2px 0 2px 16px', color: evt.success ? '#3fb950' : '#f85149' }}>
+                    {evt.success ? '✓' : '✗'} {evt.step}
+                  </div>
+                  {!evt.success && evt.stderr && (
+                    <div style={{ padding: '0 0 2px 32px', color: '#8b949e', fontSize: 11 }}>{evt.stderr}</div>
+                  )}
                 </div>
               )
               if (evt.event === 'done') return (
