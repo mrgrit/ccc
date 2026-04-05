@@ -267,8 +267,9 @@ def _win_ssh_run(ip: str, user: str, password: str, ps_script: str, timeout: int
             f.write(ps_script)
             local_path = f.name
 
-        remote_path = "C:\\\\ccc_onboard.ps1"
-        scp_cmd = ["sshpass", "-p", password, "scp", *ssh_opts, local_path, f"{user}@{ip}:{remote_path}"]
+        # Windows scp는 홈 디렉토리 상대경로만 동작
+        remote_file = "ccc_onboard.ps1"
+        scp_cmd = ["sshpass", "-p", password, "scp", *ssh_opts, local_path, f"{user}@{ip}:{remote_file}"]
         scp_r = subprocess.run(scp_cmd, capture_output=True, text=True, timeout=30, errors="replace")
         os.unlink(local_path)
         if scp_r.returncode != 0:
@@ -276,7 +277,7 @@ def _win_ssh_run(ip: str, user: str, password: str, ps_script: str, timeout: int
 
         run_cmd = [
             "sshpass", "-p", password, "ssh", *ssh_opts, f"{user}@{ip}",
-            f"powershell -ExecutionPolicy Bypass -File {remote_path}; del {remote_path}",
+            f"powershell -ExecutionPolicy Bypass -File {remote_file}; del {remote_file}",
         ]
         r = subprocess.run(run_cmd, capture_output=True, text=True, timeout=timeout, errors="replace")
         return {"success": r.returncode == 0, "stdout": r.stdout[:5000], "stderr": r.stderr[:2000]}
