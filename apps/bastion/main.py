@@ -288,7 +288,7 @@ def execute_interactive(instruction: str):
     ]
 
     # LLM 응답 (스킬 선택)
-    with console.status("[bold]생각하는 중...", spinner="dots", style=ORANGE):
+    with console.status("[bold]생각하는 중...", spinner="dots", spinner_style=ORANGE):
         reply = llm_chat(messages, stream=False)
 
     # JSON 파싱
@@ -325,7 +325,7 @@ def execute_interactive(instruction: str):
     render_tool_call(skill_name, params)
     console.print()
 
-    with console.status("[bold]실행 중...", spinner="dots", style=ORANGE):
+    with console.status("[bold]실행 중...", spinner="dots", spinner_style=ORANGE):
         result = dispatch_skill(skill_name, params)
 
     render_result(result)
@@ -362,7 +362,7 @@ def handle_slash(cmd: str) -> bool:
         if not state.infras:
             console.print("  등록된 인프라가 없습니다. /infras add 로 추가하세요.", style=GRAY)
         else:
-            with console.status("[bold]상태 확인 중...", spinner="dots", style=ORANGE):
+            with console.status("[bold]상태 확인 중...", spinner="dots", spinner_style=ORANGE):
                 result = system_status(state.infras)
             console.print(f"\n  전체: {result['total']}  [{ GREEN }]정상: {result['healthy']}[/]  [{ RED }]불가: {result['unreachable']}[/]\n")
             render_infra_status(result["details"])
@@ -372,7 +372,7 @@ def handle_slash(cmd: str) -> bool:
             console.print("  사용법: /health <IP>", style=GRAY)
         else:
             ip = parts[1]
-            with console.status(f"[bold]{ip} 확인 중...", spinner="dots", style=ORANGE):
+            with console.status(f"[bold]{ip} 확인 중...", spinner="dots", spinner_style=ORANGE):
                 result = health_check(ip)
             status = result.get("status", "unknown")
             color = GREEN if status == "healthy" else RED
@@ -386,7 +386,7 @@ def handle_slash(cmd: str) -> bool:
         user = Prompt.ask("  SSH 사용자", default="ccc")
         password = Prompt.ask("  SSH 비밀번호", password=True, default="1")
         console.print(f"\n  온보딩 시작: {ip} ({role})")
-        with console.status(f"[bold]{ip} SubAgent 설치 중...", spinner="dots", style=ORANGE):
+        with console.status(f"[bold]{ip} SubAgent 설치 중...", spinner="dots", spinner_style=ORANGE):
             result = onboard_vm(ip=ip, role=role, user=user, password=password)
         render_result(result)
         if result.get("healthy"):
@@ -399,7 +399,7 @@ def handle_slash(cmd: str) -> bool:
         else:
             ip, script = parts[1], parts[2]
             render_tool_call("run_command", {"ip": ip, "script": script})
-            with console.status(f"[bold]실행 중...", spinner="dots", style=ORANGE):
+            with console.status(f"[bold]실행 중...", spinner="dots", spinner_style=ORANGE):
                 result = run_command(ip, script)
             render_result(result)
 
@@ -464,7 +464,7 @@ def main():
     render_banner()
 
     # LLM 연결 확인
-    with console.status("[bold]LLM 연결 확인...", spinner="dots", style=ORANGE):
+    with console.status("[bold]LLM 연결 확인...", spinner="dots", spinner_style=ORANGE):
         try:
             r = httpx.get(f"{LLM_BASE_URL}/api/tags", timeout=5.0)
             models = [m["name"] for m in r.json().get("models", [])]
