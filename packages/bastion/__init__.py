@@ -101,26 +101,173 @@ def build_system_prompt(extra_context: str = "") -> str:
 # ── SSH Onboarding ────────────────────────────────
 
 # 역할별 설치 스크립트
+# ── Wazuh Agent 설치 (web, attacker에서 공통 사용) ──
+WAZUH_AGENT_INSTALL = """
+curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import 2>/dev/null && chmod 644 /usr/share/keyrings/wazuh.gpg
+echo 'deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main' > /etc/apt/sources.list.d/wazuh.list
+apt-get update -y
+WAZUH_MANAGER="10.20.30.100" apt-get install -y wazuh-agent 2>/dev/null || true
+if [ -f /var/ossec/bin/agent-auth ]; then
+    sed -i 's|<address>.*</address>|<address>10.20.30.100</address>|' /var/ossec/etc/ossec.conf 2>/dev/null || true
+    /var/ossec/bin/agent-auth -m 10.20.30.100 2>/dev/null || true
+    systemctl daemon-reload
+    systemctl enable --now wazuh-agent 2>/dev/null || true
+fi
+"""
+
+# 역할별 설치 스크립트 — 기본 온보딩 (서비스 설치 + 시작 + 기본 설정)
+# 강좌/주차별 세부 설정은 Lab 실행 시 추가 적용
 ROLE_SETUP_SCRIPTS: dict[str, list[str]] = {
     "attacker": [
         "apt-get update -y",
-        "apt-get install -y nmap hydra sqlmap nikto dirb gobuster seclists",
+        "apt-get install -y nmap hydra sqlmap nikto dirb gobuster seclists curl net-tools",
+        WAZUH_AGENT_INSTALL,
     ],
     "secu": [
+        # ── 패키지 설치 ──
         "apt-get update -y",
-        "apt-get install -y nftables suricata auditd",
+        "apt-get install -y nftables suricata auditd rsyslog",
+        # ── IP 포워딩 ──
         "sysctl -w net.ipv4.ip_forward=1",
-        "echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf",
+        "grep -q 'net.ipv4.ip_forward=1' /etc/sysctl.conf || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf",
+        # ── Suricata 기본 설정 + 룰 업데이트 ──
+        """
+suricata-update 2>/dev/null || true
+# HOME_NET 설정
+if [ -f /etc/suricata/suricata.yaml ]; then
+    sed -i 's|HOME_NET:.*|HOME_NET: "[10.20.30.0/24]"|' /etc/suricata/suricata.yaml
+    # af-packet 인터페이스 자동 감지 (내부 NIC)
+    IFACE=$(ip -o link show | grep -v 'lo\\|docker\\|veth' | awk '{print $2}' | tr -d ':' | tail -1)
+    if [ -n "$IFACE" ]; then
+        sed -i "s|interface: eth0|interface: $IFACE|g" /etc/suricata/suricata.yaml 2>/dev/null || true
+    fi
+fi
+systemctl enable --now suricata 2>/dev/null || true
+""",
+        # ── nftables 기본 방화벽 + NAT ──
+        """
+EXTERNAL=$(ip -o link show | grep -v 'lo\\|docker\\|veth' | awk '{print $2}' | tr -d ':' | head -1)
+cat > /etc/nftables.conf << NFTEOF
+#!/usr/sbin/nft -f
+flush ruleset
+table inet filter {
+    chain input {
+        type filter hook input priority 0; policy drop;
+        ct state established,related accept
+        iif lo accept
+        tcp dport 22 accept
+        tcp dport 8002 accept
+        icmp type echo-request accept
+        ip6 nexthdr icmpv6 accept
+    }
+    chain forward {
+        type filter hook forward priority 0; policy accept;
+        ct state established,related accept
+    }
+    chain output {
+        type filter hook output priority 0; policy accept;
+    }
+}
+table ip nat {
+    chain postrouting {
+        type nat hook postrouting priority 100;
+        oifname "$EXTERNAL" masquerade
+    }
+}
+NFTEOF
+nft -f /etc/nftables.conf
+systemctl enable nftables
+""",
+        # ── rsyslog → SIEM 포워딩 ──
+        """
+cat > /etc/rsyslog.d/50-ccc-siem.conf << 'RSEOF'
+*.* @@10.20.30.100:514
+RSEOF
+systemctl restart rsyslog
+""",
     ],
     "web": [
+        # ── 패키지 설치 ──
         "apt-get update -y",
-        "apt-get install -y apache2 docker.io",
-        "systemctl enable --now docker",
-        "docker pull bkimminich/juice-shop 2>/dev/null || true",
+        "apt-get install -y apache2 docker.io libapache2-mod-security2 curl",
+        # ── ModSecurity 기본 활성화 ──
+        """
+if [ -f /etc/modsecurity/modsecurity.conf-recommended ] && [ ! -f /etc/modsecurity/modsecurity.conf ]; then
+    cp /etc/modsecurity/modsecurity.conf-recommended /etc/modsecurity/modsecurity.conf
+fi
+if [ -f /etc/modsecurity/modsecurity.conf ]; then
+    sed -i 's/SecRuleEngine DetectionOnly/SecRuleEngine On/' /etc/modsecurity/modsecurity.conf
+fi
+# OWASP CRS 설치
+if [ ! -d /etc/modsecurity/crs ]; then
+    apt-get install -y git 2>/dev/null || true
+    git clone --depth 1 https://github.com/coreruleset/coreruleset.git /etc/modsecurity/crs 2>/dev/null || true
+    if [ -f /etc/modsecurity/crs/crs-setup.conf.example ]; then
+        cp /etc/modsecurity/crs/crs-setup.conf.example /etc/modsecurity/crs/crs-setup.conf
+    fi
+    # Apache에 CRS 포함
+    cat > /etc/apache2/conf-available/modsecurity-crs.conf << 'CRSEOF'
+IncludeOptional /etc/modsecurity/crs/crs-setup.conf
+IncludeOptional /etc/modsecurity/crs/rules/*.conf
+CRSEOF
+    a2enconf modsecurity-crs 2>/dev/null || true
+fi
+a2enmod security2 proxy proxy_http headers 2>/dev/null || true
+systemctl restart apache2
+""",
+        # ── Docker 서비스 + 웹 앱 컨테이너 ──
+        """
+systemctl enable --now docker
+docker rm -f juiceshop dvwa 2>/dev/null || true
+docker run -d --restart=always --name juiceshop -p 3000:3000 bkimminich/juice-shop 2>/dev/null || true
+docker run -d --restart=always --name dvwa -p 8080:80 vulnerables/web-dvwa 2>/dev/null || true
+""",
+        # ── rsyslog → SIEM ──
+        """
+cat > /etc/rsyslog.d/50-ccc-siem.conf << 'RSEOF'
+*.* @@10.20.30.100:514
+RSEOF
+systemctl restart rsyslog
+""",
+        # ── Wazuh Agent ──
+        WAZUH_AGENT_INSTALL,
     ],
     "siem": [
+        # ── Wazuh Manager 설치 ──
         "apt-get update -y",
-        "curl -sO https://packages.wazuh.com/4.x/wazuh-install.sh 2>/dev/null || true",
+        "apt-get install -y curl apt-transport-https gnupg2",
+        """
+curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import 2>/dev/null && chmod 644 /usr/share/keyrings/wazuh.gpg
+echo 'deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main' > /etc/apt/sources.list.d/wazuh.list
+apt-get update -y
+apt-get install -y wazuh-manager 2>/dev/null || true
+""",
+        # ── Wazuh 기본 설정: syslog 리스너 + 에이전트 등록 ──
+        """
+if [ -f /var/ossec/etc/ossec.conf ]; then
+    # syslog 리스너 활성화 (514/tcp)
+    if ! grep -q '<connection>syslog</connection>' /var/ossec/etc/ossec.conf; then
+        sed -i '/<\\/ossec_config>/i \\
+  <remote>\\n    <connection>syslog</connection>\\n    <port>514</port>\\n    <protocol>tcp</protocol>\\n    <allowed-ips>10.20.30.0/24</allowed-ips>\\n  </remote>' /var/ossec/etc/ossec.conf
+    fi
+    # 에이전트 자동 등록 활성화
+    if ! grep -q '<auth>' /var/ossec/etc/ossec.conf; then
+        sed -i '/<\\/ossec_config>/i \\
+  <auth>\\n    <disabled>no</disabled>\\n    <port>1515</port>\\n    <use_password>yes</use_password>\\n  </auth>' /var/ossec/etc/ossec.conf
+    fi
+fi
+# 에이전트 등록 비밀번호 설정
+echo 'ccc2026' > /var/ossec/etc/authd.pass 2>/dev/null || true
+systemctl enable --now wazuh-manager 2>/dev/null || true
+""",
+        # ── rsyslog 수신 설정 ──
+        """
+cat > /etc/rsyslog.d/50-ccc-receive.conf << 'RSEOF'
+module(load="imtcp")
+input(type="imtcp" port="514")
+RSEOF
+systemctl restart rsyslog 2>/dev/null || true
+""",
     ],
     "manager": [
         # bastion 설치만 (Ollama는 gpu_url에 따라 동적 결정)
@@ -592,7 +739,7 @@ def onboard_vm(ip: str, role: str, user: str = "ccc", password: str = "1",
         )
 
     if role_cmds:
-        t = 300 if role == "manager" and not gpu_url else 120
+        t = 300 if role in ("manager", "siem") or (role == "manager" and not gpu_url) else 180
         r = ssh_run(ip, user, password, role_cmds, timeout=t)
         results["steps"].append({"step": "role_setup", **r})
         # role_setup 실패는 경고만 (SubAgent는 이미 설치됨, 계속 진행)

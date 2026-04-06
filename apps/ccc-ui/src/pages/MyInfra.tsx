@@ -12,7 +12,7 @@ const ROLES = [
 ]
 
 const statusColor: Record<string, string> = {
-  healthy: '#3fb950', bootstrapped: '#58a6ff', registered: '#d29922', unreachable: '#f85149', error: '#f85149',
+  healthy: '#3fb950', verified: '#58a6ff', bootstrapped: '#58a6ff', registered: '#d29922', unreachable: '#f85149', error: '#f85149',
 }
 
 export default function MyInfra() {
@@ -22,6 +22,9 @@ export default function MyInfra() {
   const [setting, setSetting] = useState(false)
   const [setupResult, setSetupResult] = useState<any>(null)
   const [onboardLog, setOnboardLog] = useState<any[]>([])
+  const [verifyLog, setVerifyLog] = useState<any[]>([])
+  const [verifying, setVerifying] = useState(false)
+  const [includeWindows, setIncludeWindows] = useState(false)
   const [form, setForm] = useState({
     attacker_ip: '', secu_ip: '', web_ip: '', siem_ip: '',
     ssh_user: 'ccc', ssh_password: '1',
@@ -174,6 +177,55 @@ export default function MyInfra() {
   }
 
   const [onboardingId, setOnboardingId] = useState<string | null>(null)
+  const [verifyingId, setVerifyingId] = useState<string | null>(null)
+
+  const readSSE = async (url: string, body: any, setLog: (fn: (prev: any[]) => any[]) => void) => {
+    const token = localStorage.getItem('ccc_token') || ''
+    const resp = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-API-Key': 'ccc-api-key-2026', 'Authorization': `Bearer ${token}` },
+      body: JSON.stringify(body),
+    })
+    const reader = resp.body?.getReader()
+    const decoder = new TextDecoder()
+    if (reader) {
+      let buf = ''
+      while (true) {
+        const { done, value } = await reader.read()
+        if (done) break
+        buf += decoder.decode(value, { stream: true })
+        const lines = buf.split('\n')
+        buf = lines.pop() || ''
+        for (const line of lines) {
+          if (line.startsWith('data: ')) {
+            try { setLog(prev => [...prev, JSON.parse(line.slice(6))]) } catch {}
+          }
+        }
+      }
+    }
+  }
+
+  const runVerifyAll = async () => {
+    setVerifying(true)
+    setVerifyLog([])
+    try {
+      await readSSE('/api/infras/verify', { include_windows: includeWindows }, setVerifyLog)
+    } catch (e: any) {
+      setVerifyLog(prev => [...prev, { event: 'error', role: 'system', message: e.message }])
+    }
+    setVerifying(false)
+    load()
+  }
+
+  const runVerifySingle = async (infra: any) => {
+    setVerifyingId(infra.id)
+    setVerifyLog([])
+    try {
+      await readSSE(`/api/infras/${infra.id}/verify`, {}, setVerifyLog)
+    } catch {}
+    setVerifyingId(null)
+    load()
+  }
 
   const reonboard = async (infra: any) => {
     const cfg = infra.vm_config || {}
@@ -261,12 +313,29 @@ export default function MyInfra() {
                       <button onClick={() => reonboard(infra)} disabled={onboardingId === infra.id} style={{
                         ...smallBtn, background: onboardingId === infra.id ? '#21262d' : '#f97316', color: '#fff',
                       }}>{onboardingId === infra.id ? '설치 중...' : '재온보딩'}</button>
+                      <button onClick={() => runVerifySingle(infra)} disabled={verifyingId === infra.id} style={{
+                        ...smallBtn, background: verifyingId === infra.id ? '#21262d' : '#58a6ff', color: '#fff',
+                      }}>{verifyingId === infra.id ? '검수 중...' : '검수'}</button>
                     </div>
                   )}
                 </div>
               )
             })}
           </div>
+        </div>
+      )}
+
+      {/* 온보딩 검수 */}
+      {hasInfra && (
+        <div style={{ marginBottom: 28, display: 'flex', alignItems: 'center', gap: 16 }}>
+          <button onClick={runVerifyAll} disabled={verifying} style={{
+            padding: '10px 24px', borderRadius: 8, border: 'none', cursor: verifying ? 'wait' : 'pointer',
+            background: verifying ? '#21262d' : '#58a6ff', color: '#fff', fontSize: 15, fontWeight: 700,
+          }}>{verifying ? '검수 진행 중...' : '온보딩 검수'}</button>
+          <label style={{ fontSize: 13, color: '#8b949e', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+            <input type="checkbox" checked={includeWindows} onChange={e => setIncludeWindows(e.target.checked)} style={{ accentColor: '#58a6ff' }} />
+            Windows VM 포함
+          </label>
         </div>
       )}
 
@@ -498,6 +567,44 @@ export default function MyInfra() {
                 <div key={i} style={{ padding: '8px 0 0', color: '#58a6ff', fontWeight: 600, borderTop: '1px solid #21262d', marginTop: 8 }}>
                   ■ 온보딩 완료 ({evt.total}대)
                 </div>
+              )
+              return null
+            })}
+          </div>
+        </div>
+      )}
+      {/* 검수 결과 */}
+      {verifyLog.length > 0 && (
+        <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 10, padding: 20, marginTop: 20, fontFamily: 'Consolas,Monaco,monospace', fontSize: 13 }}>
+          <h3 style={{ fontSize: 15, marginBottom: 12, color: '#e6edf3' }}>검수 결과</h3>
+          <div style={{ maxHeight: 500, overflowY: 'auto' }}>
+            {verifyLog.map((evt, i) => {
+              if (evt.event === 'verify_start') return (
+                <div key={i} style={{ padding: '6px 0 2px', color: '#58a6ff', fontWeight: 600, borderTop: i > 0 ? '1px solid #21262d' : 'none', marginTop: i > 0 ? 6 : 0 }}>
+                  ▶ {evt.role} {evt.ip ? `(${evt.ip})` : ''}
+                </div>
+              )
+              if (evt.event === 'verify_check') return (
+                <div key={i} style={{ padding: '2px 0 2px 16px', color: evt.passed ? '#3fb950' : '#f85149' }}>
+                  {evt.passed ? '✓' : '✗'} {evt.name}
+                  {evt.detail && <span style={{ color: '#8b949e', fontSize: 11, marginLeft: 8 }}>{evt.detail.substring(0, 80)}</span>}
+                </div>
+              )
+              if (evt.event === 'verify_done') return (
+                <div key={i} style={{ padding: '2px 0 2px 16px', color: evt.passed ? '#3fb950' : '#f97316', fontWeight: 600 }}>
+                  {evt.passed ? '✓' : '⚠'} {evt.role}: {evt.summary}
+                  {!evt.passed && evt.summary === 'IP 없음' && <span style={{ color: '#8b949e', fontWeight: 400 }}> — 등록되지 않음</span>}
+                </div>
+              )
+              if (evt.event === 'verify_complete') return (
+                <div key={i} style={{ padding: '8px 0 0', fontWeight: 600, borderTop: '1px solid #21262d', marginTop: 8,
+                  color: evt.all_passed ? '#3fb950' : '#f97316' }}>
+                  ■ 검수 완료: {evt.total_passed}/{evt.total_checks} 통과
+                  {evt.all_passed ? ' — 모든 항목 정상' : ' — 일부 항목 실패'}
+                </div>
+              )
+              if (evt.event === 'error') return (
+                <div key={i} style={{ padding: '4px 0', color: '#f85149' }}>✗ {evt.role}: {evt.message}</div>
               )
               return null
             })}

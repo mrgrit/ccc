@@ -779,11 +779,12 @@ def setup_infra(body: InfraSetupBody, request: Request):
     user = get_current_user(request)
     uid = user.get("sub", "")
 
+    # 순서: secu(GW) → siem(wazuh-manager) → web/attacker(agent 등록) → manager
     vms = [
-        {"role": "attacker", "name": f"{uid}-attacker", "ip": body.attacker_ip, "internal_ip": INTERNAL_IPS["attacker"], "subagent": True},
         {"role": "secu", "name": f"{uid}-secu", "ip": body.secu_ip, "internal_ip": INTERNAL_IPS["secu"], "subagent": True},
-        {"role": "web", "name": f"{uid}-web", "ip": body.web_ip, "internal_ip": INTERNAL_IPS["web"], "subagent": True},
         {"role": "siem", "name": f"{uid}-siem", "ip": body.siem_ip, "internal_ip": INTERNAL_IPS["siem"], "subagent": True},
+        {"role": "web", "name": f"{uid}-web", "ip": body.web_ip, "internal_ip": INTERNAL_IPS["web"], "subagent": True},
+        {"role": "attacker", "name": f"{uid}-attacker", "ip": body.attacker_ip, "internal_ip": INTERNAL_IPS["attacker"], "subagent": True},
         {"role": "manager", "name": f"{uid}-manager", "ip": body.manager_ip, "internal_ip": INTERNAL_IPS["manager"], "subagent": True},
     ]
     if body.windows_ip:
@@ -825,11 +826,12 @@ def onboard_infra(body: InfraSetupBody, request: Request):
     user = get_current_user(request)
     uid = user.get("sub", "")
 
+    # 순서: secu(GW) → siem(wazuh-manager) → web/attacker(agent 등록) → manager
     vms = [
-        {"role": "attacker", "ip": body.attacker_ip},
         {"role": "secu", "ip": body.secu_ip},
-        {"role": "web", "ip": body.web_ip},
         {"role": "siem", "ip": body.siem_ip},
+        {"role": "web", "ip": body.web_ip},
+        {"role": "attacker", "ip": body.attacker_ip},
         {"role": "manager", "ip": body.manager_ip},
     ]
     if body.windows_ip:
@@ -917,6 +919,66 @@ def onboard_single(iid: str, body: SingleOnboardBody, request: Request):
         except Exception as e:
             yield f"data: {_j.dumps({'event': 'error', 'role': body.role, 'message': str(e)[:200]}, ensure_ascii=False)}\n\n"
         yield f"data: {_j.dumps({'event': 'complete', 'total': 1}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+# ── 온보딩 검수 ──
+
+class VerifyBody(BaseModel):
+    include_windows: bool = False
+
+@app.post("/infras/verify", dependencies=[Depends(verify_api_key)])
+def verify_infra(body: VerifyBody, request: Request):
+    """전체 인프라 검수 (SSE 스트리밍)"""
+    from starlette.responses import StreamingResponse
+    from packages.bastion.verify import verify_all_stream
+    import json as _j
+
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+
+    # 유저의 인프라에서 role → ip 매핑
+    infra_ips = {}
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT ip, vm_config FROM student_infras WHERE student_id=%s", (uid,))
+            for row in cur.fetchall():
+                cfg = row.get("vm_config") or {}
+                role = cfg.get("role", "")
+                if role:
+                    infra_ips[role] = row["ip"]
+
+    def stream():
+        for evt in verify_all_stream(infra_ips, body.include_windows):
+            yield f"data: {_j.dumps(evt, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
+@app.post("/infras/{iid}/verify", dependencies=[Depends(verify_api_key)])
+def verify_single(iid: str, request: Request):
+    """단일 VM 검수 (SSE 스트리밍)"""
+    from starlette.responses import StreamingResponse
+    from packages.bastion.verify import verify_role
+    import json as _j
+
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+
+    # 해당 인프라 조회
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT ip, vm_config FROM student_infras WHERE id=%s AND student_id=%s", (iid, uid))
+            row = cur.fetchone()
+    if not row:
+        return {"error": "인프라를 찾을 수 없습니다"}
+
+    cfg = row.get("vm_config") or {}
+    role = cfg.get("role", "")
+    ip = row["ip"]
+
+    def stream():
+        for evt in verify_role(role, ip):
+            yield f"data: {_j.dumps(evt, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
