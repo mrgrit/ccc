@@ -78,7 +78,7 @@ def _checks_web(ip: str) -> list[dict]:
     return [
         _check(ip, "apache2_running", "systemctl is-active apache2 2>/dev/null", "active"),
         _check(ip, "modsecurity_module", "apachectl -M 2>/dev/null | grep security2", "security2"),
-        _check(ip, "modsecurity_crs", "ls /etc/modsecurity/crs/rules/*.conf 2>/dev/null | wc -l", "", mode="gt_zero"),
+        _check(ip, "modsecurity_crs", "ls /etc/modsecurity/crs/rules/*.conf /usr/share/modsecurity-crs/rules/*.conf 2>/dev/null | wc -l", "", mode="gt_zero"),
         _check(ip, "juiceshop_running", "curl -s -o /dev/null -w '%{http_code}' http://localhost:3000 2>/dev/null", "", mode="http_ok"),
         _check(ip, "dvwa_running", "curl -s -o /dev/null -w '%{http_code}' http://localhost:8080 2>/dev/null", "", mode="http_ok"),
         _check(ip, "wazuh_agent", "systemctl is-active wazuh-agent 2>/dev/null", "active"),
@@ -170,10 +170,10 @@ def _checks_network_flow(ips: dict[str, str]) -> list[dict]:
                          "test -f /var/log/suricata/eve.json && tail -20 /var/log/suricata/eve.json | grep -c 'event_type' || echo 0",
                          "", mode="gt_zero"))
 
-    # 4. web에서 modsecurity audit log 확인
-    checks.append(_check(web_ip, "modsecurity_audit_log",
-                         "ls /var/log/apache2/modsec_audit.log 2>/dev/null && tail -10 /var/log/apache2/modsec_audit.log | wc -l || "
-                         "ls /var/log/modsec_audit.log 2>/dev/null && tail -10 /var/log/modsec_audit.log | wc -l || echo 0",
+    # 4. web에서 modsecurity 차단 로그 확인 (error.log 또는 audit log)
+    checks.append(_check(web_ip, "modsecurity_block_log",
+                         "grep -c 'ModSecurity: Access denied' /var/log/apache2/error.log 2>/dev/null || "
+                         "grep -c 'ModSecurity' /var/log/apache2/modsec_audit.log 2>/dev/null || echo 0",
                          "", mode="gt_zero"))
 
     return checks

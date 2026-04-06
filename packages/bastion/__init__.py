@@ -155,6 +155,7 @@ table inet filter {
         type filter hook input priority 0; policy drop;
         ct state established,related accept
         iif lo accept
+        ip saddr 10.20.30.0/24 accept
         tcp dport 22 accept
         tcp dport 8002 accept
         icmp type echo-request accept
@@ -198,20 +199,18 @@ fi
 if [ -f /etc/modsecurity/modsecurity.conf ]; then
     sed -i 's/SecRuleEngine DetectionOnly/SecRuleEngine On/' /etc/modsecurity/modsecurity.conf
 fi
-# OWASP CRS 설치
-if [ ! -d /etc/modsecurity/crs ]; then
-    apt-get install -y git 2>/dev/null || true
-    git clone --depth 1 https://github.com/coreruleset/coreruleset.git /etc/modsecurity/crs 2>/dev/null || true
-    if [ -f /etc/modsecurity/crs/crs-setup.conf.example ]; then
-        cp /etc/modsecurity/crs/crs-setup.conf.example /etc/modsecurity/crs/crs-setup.conf
-    fi
-    # Apache에 CRS 포함
-    cat > /etc/apache2/conf-available/modsecurity-crs.conf << 'CRSEOF'
-IncludeOptional /etc/modsecurity/crs/crs-setup.conf
-IncludeOptional /etc/modsecurity/crs/rules/*.conf
+# OWASP CRS 설치 + 최소 설정
+apt-get install -y modsecurity-crs 2>/dev/null || true
+a2disconf modsecurity-crs 2>/dev/null || true
+# CRS 초기화 설정 (없으면 REQUEST-901이 500 에러 발생)
+cat > /etc/modsecurity/crs/crs-setup.conf << 'CRSEOF'
+SecAction "id:900000,phase:1,nolog,pass,t:none,setvar:tx.crs_setup_version=330"
+SecAction "id:900001,phase:1,nolog,pass,t:none,setvar:tx.paranoia_level=1"
+SecAction "id:900100,phase:1,nolog,pass,t:none,setvar:tx.enforce_bodyproc_urlencoded=1"
+SecAction "id:900110,phase:1,nolog,pass,t:none,setvar:tx.inbound_anomaly_score_threshold=5,setvar:tx.outbound_anomaly_score_threshold=4"
+SecAction "id:900300,phase:1,nolog,pass,t:none,setvar:tx.max_num_args=255"
+SecAction "id:900400,phase:1,nolog,pass,t:none,setvar:tx.max_file_size=1048576"
 CRSEOF
-    a2enconf modsecurity-crs 2>/dev/null || true
-fi
 a2enmod security2 proxy proxy_http headers 2>/dev/null || true
 systemctl restart apache2
 """,
@@ -704,6 +703,27 @@ def onboard_vm(ip: str, role: str, user: str = "ccc", password: str = "1",
         results["error"] = pre["error"]
         return results
     results["steps"].append({"step": "ssh_sudo_verify", "success": True})
+
+    # 0. 재온보딩 시 인터넷 접근 보장 — 외부 NIC의 DHCP GW 복구
+    if role != "secu":
+        restore_gw = """
+# 인터넷 접근 확인 → 안 되면 외부 NIC DHCP GW 복구
+if ! curl -s --connect-timeout 3 http://archive.ubuntu.com/ >/dev/null 2>&1; then
+    EXT_IF=$(ip -o link show | grep -v 'lo\\|docker\\|veth' | awk '{print $2}' | tr -d ':' | head -1)
+    # DHCP 릴리스에서 GW 찾기
+    GW=$(grep -h 'option routers' /var/lib/dhcp/dhclient*.leases /var/lib/NetworkManager/*.lease 2>/dev/null | tail -1 | awk '{print $3}' | tr -d ';')
+    # 못 찾으면 서브넷의 .2 시도 (VMware 기본)
+    if [ -z "$GW" ]; then
+        SUBNET=$(ip -o addr show dev $EXT_IF 2>/dev/null | awk '{print $4}' | head -1 | sed 's|\\.[0-9]*/.*|.2|')
+        GW=$SUBNET
+    fi
+    if [ -n "$GW" ] && [ -n "$EXT_IF" ]; then
+        ip route add default via $GW dev $EXT_IF metric 50 2>/dev/null || true
+        echo "Restored GW: $GW via $EXT_IF"
+    fi
+fi
+"""
+        ssh_run(ip, user, password, [restore_gw], timeout=20)
 
     # 1. SubAgent 설치 (외부 IP로 SSH — 인터넷 필요)
     install_script = SUBAGENT_INSTALL_SCRIPT.replace("{role}", role)
