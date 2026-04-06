@@ -47,9 +47,17 @@ fi
 
 # 2. Python venv + 의존성
 echo "[2/5] Python 가상환경 + 의존성 설치..."
-python3 -m venv .venv
+if [ -n "$SUDO_USER" ]; then
+    sudo -u "$SUDO_USER" python3 -m venv .venv
+    sudo -u "$SUDO_USER" .venv/bin/pip install -r requirements.txt
+    sudo -u "$SUDO_USER" .venv/bin/pip install open-interpreter --no-deps 2>/dev/null || true
+else
+    python3 -m venv .venv
+    source .venv/bin/activate
+    pip install -r requirements.txt
+    pip install open-interpreter --no-deps 2>/dev/null || true
+fi
 source .venv/bin/activate
-pip install -r requirements.txt
 
 # Claude Code CLI 설치 (bastion용)
 if ! command -v claude &>/dev/null; then
@@ -57,11 +65,16 @@ if ! command -v claude &>/dev/null; then
     npm install -g @anthropic-ai/claude-code 2>/dev/null || true
 fi
 
-# 3. UI 빌드
+# 3. UI 빌드 (sudo로 실행 시 원래 유저 권한으로 빌드)
 echo "[3/5] UI 빌드..."
 cd apps/ccc-ui
-npm install
-npm run build
+if [ -n "$SUDO_USER" ]; then
+    sudo -u "$SUDO_USER" npm install
+    sudo -u "$SUDO_USER" npm run build
+else
+    npm install
+    npm run build
+fi
 cd ../..
 
 # 4. 환경 설정
@@ -151,7 +164,7 @@ fi
 
 # 임시 API 종료
 kill $API_PID 2>/dev/null
-wait $API_PID 2>/dev/null
+wait $API_PID 2>/dev/null || true
 
 echo ""
 echo "========================================"

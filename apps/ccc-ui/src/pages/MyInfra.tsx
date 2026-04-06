@@ -27,7 +27,52 @@ export default function MyInfra() {
     ssh_user: 'ccc', ssh_password: '1',
     windows_ip: '', manager_ip: '', gpu_url: '',
     manager_model: '', subagent_model: '',
+    vm_credentials: {} as Record<string, { ssh_user: string; ssh_password: string }>,
   })
+  const setVmCred = (role: string, field: 'ssh_user' | 'ssh_password', val: string) => {
+    setForm(f => {
+      const prev = f.vm_credentials[role] || { ssh_user: '', ssh_password: '' }
+      return {
+        ...f,
+        vm_credentials: {
+          ...f.vm_credentials,
+          [role]: { ...prev, [field]: val },
+        },
+      }
+    })
+  }
+  const clearVmCred = (role: string) => {
+    setForm(f => {
+      const c = { ...f.vm_credentials }
+      delete c[role]
+      return { ...f, vm_credentials: c }
+    })
+  }
+
+  const renderVmCred = (role: string) => {
+    const cred = form.vm_credentials[role]
+    const hasOverride = !!cred
+    return (
+      <div style={{ marginTop: 8 }}>
+        <label style={{ fontSize: 12, color: '#8b949e', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}
+          onClick={() => hasOverride ? clearVmCred(role) : setVmCred(role, 'ssh_user', '')}>
+          <input type="checkbox" checked={hasOverride} readOnly style={{ accentColor: '#f97316' }} />
+          SSH 계정이 기본값과 다름
+        </label>
+        {hasOverride && (
+          <div style={{ display: 'flex', gap: 6, marginTop: 4 }}>
+            <input placeholder={`사용자 (기본: ${form.ssh_user})`} value={cred.ssh_user}
+              onChange={e => setVmCred(role, 'ssh_user', e.target.value)}
+              style={{ ...inputStyle, fontSize: 13, padding: '6px 10px', flex: 1 }} />
+            <input placeholder={`비밀번호 (기본: ${form.ssh_password})`} type="password" value={cred.ssh_password}
+              onChange={e => setVmCred(role, 'ssh_password', e.target.value)}
+              style={{ ...inputStyle, fontSize: 13, padding: '6px 10px', flex: 1 }} />
+          </div>
+        )}
+      </div>
+    )
+  }
+
   const [llmUrl, setLlmUrl] = useState('http://localhost:11434')
   const [llmModels, setLlmModels] = useState<string[]>([])
   const [llmConnected, setLlmConnected] = useState(false)
@@ -139,7 +184,11 @@ export default function MyInfra() {
       const resp = await fetch(`/api/infras/${infra.id}/onboard`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'X-API-Key': 'ccc-api-key-2026', 'Authorization': `Bearer ${token}` },
-        body: JSON.stringify({ ip: infra.ip, role: cfg.role || '', ssh_user: form.ssh_user, ssh_password: form.ssh_password }),
+        body: JSON.stringify({
+          ip: infra.ip, role: cfg.role || '',
+          ssh_user: cfg.ssh_user || form.ssh_user,
+          ssh_password: form.vm_credentials[cfg.role]?.ssh_password || form.ssh_password,
+        }),
       })
       const reader = resp.body?.getReader()
       const decoder = new TextDecoder()
@@ -248,6 +297,7 @@ export default function MyInfra() {
               onChange={e => setForm({ ...form, attacker_ip: e.target.value })} style={inputStyle} />
             <div style={{ fontSize: 12, color: '#58a6ff', marginTop: 4 }}>내부: 10.20.30.201 (자동)</div>
             <div style={{ fontSize: 12, color: '#3fb950' }}>nmap, metasploit, hydra, sqlmap + SubAgent 자동설치</div>
+            {renderVmCred('attacker')}
           </div>
 
           {/* Secu */}
@@ -268,6 +318,7 @@ export default function MyInfra() {
               onChange={e => setForm({ ...form, secu_ip: e.target.value })} style={inputStyle} />
             <div style={{ fontSize: 12, color: '#58a6ff', marginTop: 4 }}>내부: 10.20.30.1 (자동) — 인터넷 게이트웨이</div>
             <div style={{ fontSize: 12, color: '#3fb950' }}>nftables + Suricata IPS + NAT + SubAgent 자동설치</div>
+            {renderVmCred('secu')}
           </div>
 
           {/* Web */}
@@ -287,6 +338,7 @@ export default function MyInfra() {
               onChange={e => setForm({ ...form, web_ip: e.target.value })} style={inputStyle} />
             <div style={{ fontSize: 12, color: '#58a6ff', marginTop: 4 }}>내부: 10.20.30.80 (자동)</div>
             <div style={{ fontSize: 12, color: '#3fb950' }}>Apache + JuiceShop + WAF + SubAgent 자동설치</div>
+            {renderVmCred('web')}
           </div>
 
           {/* SIEM */}
@@ -307,6 +359,7 @@ export default function MyInfra() {
               onChange={e => setForm({ ...form, siem_ip: e.target.value })} style={inputStyle} />
             <div style={{ fontSize: 12, color: '#58a6ff', marginTop: 4 }}>내부: 10.20.30.100 (자동)</div>
             <div style={{ fontSize: 12, color: '#3fb950' }}>Wazuh + SIGMA + OpenCTI + SubAgent 자동설치</div>
+            {renderVmCred('siem')}
           </div>
 
           {/* Windows */}
@@ -327,6 +380,7 @@ export default function MyInfra() {
               onChange={e => setForm({ ...form, windows_ip: e.target.value })} style={inputStyle} />
             <div style={{ fontSize: 12, color: '#58a6ff', marginTop: 4 }}>내부: 10.20.30.50 (자동)</div>
             <div style={{ fontSize: 12, color: '#8b949e' }}>Sysmon, Ghidra, x64dbg, Autopsy, FTK Imager</div>
+            {renderVmCred('windows')}
           </div>
 
           {/* Manager AI */}
@@ -346,6 +400,7 @@ export default function MyInfra() {
             <input placeholder="외부 IP (예: 192.168.0.55)" value={form.manager_ip}
               onChange={e => setForm({ ...form, manager_ip: e.target.value })} style={inputStyle} />
             <div style={{ fontSize: 12, color: '#58a6ff', marginTop: 4 }}>내부: 10.20.30.200 (자동)</div>
+            {renderVmCred('manager')}
 
             {/* LLM 서버 연결 */}
             <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
@@ -386,12 +441,15 @@ export default function MyInfra() {
           </div>
         </div>
 
-        {/* SSH 자격증명 */}
-        <div style={{ display: 'flex', gap: 12, marginBottom: 20 }}>
-          <input placeholder="SSH 사용자 (기본: ccc)" value={form.ssh_user}
-            onChange={e => setForm({ ...form, ssh_user: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
-          <input placeholder="SSH 비밀번호" type="password" value={form.ssh_password}
-            onChange={e => setForm({ ...form, ssh_password: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
+        {/* SSH 기본 자격증명 */}
+        <div style={{ marginBottom: 20 }}>
+          <div style={{ fontSize: 13, color: '#8b949e', marginBottom: 6 }}>기본 SSH 계정 (개별 설정 안 된 VM에 적용)</div>
+          <div style={{ display: 'flex', gap: 12 }}>
+            <input placeholder="SSH 사용자 (기본: ccc)" value={form.ssh_user}
+              onChange={e => setForm({ ...form, ssh_user: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
+            <input placeholder="SSH 비밀번호" type="password" value={form.ssh_password}
+              onChange={e => setForm({ ...form, ssh_password: e.target.value })} style={{ ...inputStyle, flex: 1 }} />
+          </div>
         </div>
 
         <button onClick={setup} disabled={setting} style={{

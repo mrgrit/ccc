@@ -747,6 +747,10 @@ INTERNAL_IPS = {
     "windows":  "10.20.30.50",
 }
 
+class VMCredential(BaseModel):
+    ssh_user: str = ""
+    ssh_password: str = ""
+
 class InfraSetupBody(BaseModel):
     attacker_ip: str            # 외부 IP (온보딩용)
     secu_ip: str
@@ -757,8 +761,17 @@ class InfraSetupBody(BaseModel):
     gpu_url: str = ""
     manager_model: str = ""
     subagent_model: str = ""
-    ssh_user: str = "ccc"
+    ssh_user: str = "ccc"       # 기본 SSH 계정
     ssh_password: str = "1"
+    # VM별 개별 SSH 계정 (비어있으면 기본값 사용)
+    vm_credentials: dict[str, VMCredential] = {}
+
+    def get_cred(self, role: str) -> tuple[str, str]:
+        """VM별 SSH 계정 반환 (개별 설정 > 기본값)"""
+        cred = self.vm_credentials.get(role)
+        if cred and cred.ssh_user:
+            return cred.ssh_user, cred.ssh_password or self.ssh_password
+        return self.ssh_user, self.ssh_password
 
 @app.post("/infras/setup", dependencies=[Depends(verify_api_key)])
 def setup_infra(body: InfraSetupBody, request: Request):
@@ -789,7 +802,7 @@ def setup_infra(body: InfraSetupBody, request: Request):
                     """INSERT INTO student_infras (id, student_id, infra_name, ip, subagent_url, vm_config, status)
                        VALUES (%s,%s,%s,%s,%s,%s,'registered')""",
                     (iid, uid, vm["name"], vm["ip"], subagent_url,
-                     Json({"role": vm["role"], "ssh_user": body.ssh_user,
+                     Json({"role": vm["role"], "ssh_user": body.get_cred(vm["role"])[0],
                            "external_ip": vm["ip"], "internal_ip": vm["internal_ip"],
                            "gpu_url": body.gpu_url,
                            "manager_model": body.manager_model, "subagent_model": body.subagent_model})),
@@ -829,7 +842,8 @@ def onboard_infra(body: InfraSetupBody, request: Request):
             yield f"data: {_j.dumps({'event': 'start', 'role': vm['role'], 'ip': vm['ip'], 'progress': f'{i+1}/{total}'}, ensure_ascii=False)}\n\n"
 
             try:
-                ob = onboard_vm(ip=vm["ip"], role=vm["role"], user=body.ssh_user, password=body.ssh_password,
+                _user, _pass = body.get_cred(vm["role"])
+                ob = onboard_vm(ip=vm["ip"], role=vm["role"], user=_user, password=_pass,
                                 gpu_url=body.gpu_url, manager_model=body.manager_model, subagent_model=body.subagent_model)
                 status = "healthy" if ob.get("healthy") else "error"
 
