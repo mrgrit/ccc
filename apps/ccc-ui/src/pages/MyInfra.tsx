@@ -480,8 +480,13 @@ export default function MyInfra() {
                 </div>
               )
               if (evt.event === 'done') return (
-                <div key={i} style={{ padding: '4px 0', color: evt.status === 'healthy' ? '#3fb950' : '#d29922', fontWeight: 600 }}>
-                  {evt.status === 'healthy' ? '✓' : '⚠'} [{evt.progress}] {evt.role}: {evt.status}
+                <div key={i} style={{ padding: '4px 0' }}>
+                  <div style={{ color: evt.status === 'healthy' ? '#3fb950' : '#f85149', fontWeight: 600 }}>
+                    {evt.status === 'healthy' ? '✓' : '✗'} [{evt.progress}] {evt.role}: {evt.status}
+                  </div>
+                  {evt.error && (
+                    <div style={{ padding: '2px 0 0 16px', color: '#f97316', fontSize: 13 }}>{evt.error}</div>
+                  )}
                 </div>
               )
               if (evt.event === 'error') return (

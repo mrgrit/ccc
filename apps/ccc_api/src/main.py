@@ -862,11 +862,15 @@ def onboard_infra(body: InfraSetupBody, request: Request):
                         'success': step.get('success', False),
                     }
                     if not step.get('success'):
-                        step_data['stderr'] = step.get('stderr', '')[:300]
-                        step_data['stdout'] = step.get('stdout', '')[:200]
+                        step_data['stderr'] = step.get('stderr', '')[:500]
+                        step_data['stdout'] = step.get('stdout', '')[:300]
                     yield f"data: {_j.dumps(step_data, ensure_ascii=False)}\n\n"
 
-                yield f"data: {_j.dumps({'event': 'done', 'role': vm['role'], 'status': status, 'progress': f'{i+1}/{total}'}, ensure_ascii=False)}\n\n"
+                # early return 에러가 있으면 원인 명시
+                done_data = {'event': 'done', 'role': vm['role'], 'status': status, 'progress': f'{i+1}/{total}'}
+                if ob.get("error"):
+                    done_data['error'] = ob['error']
+                yield f"data: {_j.dumps(done_data, ensure_ascii=False)}\n\n"
 
             except Exception as e:
                 yield f"data: {_j.dumps({'event': 'error', 'role': vm['role'], 'message': str(e)[:200]}, ensure_ascii=False)}\n\n"

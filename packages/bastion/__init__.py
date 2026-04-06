@@ -205,6 +205,54 @@ systemctl enable --now ccc-subagent
 """
 
 
+def ssh_test(ip: str, user: str, password: str) -> dict:
+    """SSH 연결 + sudo 권한을 단계적으로 검증. 실패 시 원인을 분류해서 반환."""
+    ssh_opts = ["-o", "StrictHostKeyChecking=no", "-o", "ConnectTimeout=10"]
+
+    # 1단계: SSH 연결 + 인증
+    try:
+        r = subprocess.run(
+            ["sshpass", "-p", password, "ssh", *ssh_opts, f"{user}@{ip}", "echo __ccc_ok__"],
+            capture_output=True, text=True, timeout=15, errors="replace",
+        )
+        stdout, stderr = r.stdout, r.stderr
+        if r.returncode != 0:
+            if "Permission denied" in stderr:
+                return {"ok": False, "stage": "auth", "error": f"SSH 인증 실패 — 계정({user}) 또는 비밀번호가 틀립니다"}
+            if "Connection refused" in stderr:
+                return {"ok": False, "stage": "connect", "error": f"SSH 연결 거부 — {ip}:22 포트가 닫혀있습니다"}
+            if "timed out" in stderr.lower() or "No route" in stderr:
+                return {"ok": False, "stage": "network", "error": f"네트워크 도달 불가 — {ip}에 접근할 수 없습니다"}
+            if "Host key verification" in stderr:
+                return {"ok": False, "stage": "hostkey", "error": f"호스트 키 검증 실패 — known_hosts 문제"}
+            return {"ok": False, "stage": "ssh", "error": f"SSH 실패: {stderr[:300]}"}
+        if "__ccc_ok__" not in stdout:
+            return {"ok": False, "stage": "ssh", "error": f"SSH 응답 이상: {stdout[:200]}"}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "stage": "network", "error": f"SSH 연결 시간 초과 — {ip}에 접근할 수 없습니다"}
+    except Exception as e:
+        return {"ok": False, "stage": "ssh", "error": str(e)}
+
+    # 2단계: sudo 권한
+    try:
+        r = subprocess.run(
+            ["sshpass", "-p", password, "ssh", *ssh_opts, f"{user}@{ip}",
+             f"echo '{password}' | sudo -S whoami 2>&1"],
+            capture_output=True, text=True, timeout=15, errors="replace",
+        )
+        if "not in the sudoers" in r.stdout or "not in the sudoers" in r.stderr:
+            return {"ok": False, "stage": "sudo", "error": f"sudo 권한 없음 — {user} 계정이 sudoers에 없습니다"}
+        if "root" not in r.stdout:
+            combined = (r.stdout + r.stderr)[:300]
+            return {"ok": False, "stage": "sudo", "error": f"sudo 실행 실패: {combined}"}
+    except subprocess.TimeoutExpired:
+        return {"ok": False, "stage": "sudo", "error": "sudo 실행 시간 초과"}
+    except Exception as e:
+        return {"ok": False, "stage": "sudo", "error": str(e)}
+
+    return {"ok": True, "stage": "ready"}
+
+
 def ssh_run(ip: str, user: str, password: str, commands: list[str], timeout: int = None) -> dict:
     """SSH로 명령 실행 — scp로 스크립트 업로드 후 실행 (이스케이핑/stdin 문제 원천 해결)"""
     import tempfile
@@ -501,10 +549,23 @@ def onboard_vm(ip: str, role: str, user: str = "ccc", password: str = "1",
         results["steps"].append({"step": "health_check", "success": results["healthy"], "detail": health})
         return results
 
+    # ── SSH 연결 + sudo 사전 검증 ──
+    pre = ssh_test(ip, user, password)
+    if not pre["ok"]:
+        results["steps"].append({"step": f"{pre['stage']}_verify", "success": False, "stderr": pre["error"]})
+        results["healthy"] = False
+        results["error"] = pre["error"]
+        return results
+    results["steps"].append({"step": "ssh_sudo_verify", "success": True})
+
     # 1. SubAgent 설치 (외부 IP로 SSH — 인터넷 필요)
     install_script = SUBAGENT_INSTALL_SCRIPT.replace("{role}", role)
     r = ssh_run(ip, user, password, [install_script], timeout=120)
     results["steps"].append({"step": "subagent_install", **r})
+    if not r["success"]:
+        results["healthy"] = False
+        results["error"] = f"SubAgent 설치 실패: {r.get('stderr', '')[:300]}"
+        return results
 
     # 2. 역할별 소프트웨어 설치
     role_cmds = list(ROLE_SETUP_SCRIPTS.get(role, []))
@@ -534,6 +595,7 @@ def onboard_vm(ip: str, role: str, user: str = "ccc", password: str = "1",
         t = 300 if role == "manager" and not gpu_url else 120
         r = ssh_run(ip, user, password, role_cmds, timeout=t)
         results["steps"].append({"step": "role_setup", **r})
+        # role_setup 실패는 경고만 (SubAgent는 이미 설치됨, 계속 진행)
 
     # 3. 내부 NIC IP 설정 — 단일 스크립트로 전달
     internal_script = f"""
