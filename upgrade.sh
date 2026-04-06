@@ -35,6 +35,7 @@ git stash pop 2>/dev/null || true
 echo "[4/5] 의존성 + UI 빌드..."
 [ -f .venv/bin/activate ] && source .venv/bin/activate
 pip install -r requirements.txt -q
+pip install open-interpreter --no-deps -q 2>/dev/null || true
 cd apps/ccc-ui && npm install --silent && npm run build && cd ../..
 
 # 5. 서비스 재시작
@@ -59,8 +60,8 @@ if ! _docker ps --format '{{.Names}}' 2>/dev/null | grep -q postgres; then
     done
 fi
 
-# API 시작
-nohup python3 -m uvicorn apps.ccc_api.src.main:app --host 0.0.0.0 --port 9100 > /tmp/ccc-api.log 2>&1 &
+# API 시작 (PYTHONPATH 명시)
+PYTHONPATH="$(pwd)" nohup .venv/bin/python3 -m uvicorn apps.ccc_api.src.main:app --host 0.0.0.0 --port 9100 > /tmp/ccc-api.log 2>&1 &
 sleep 2
 
 if curl -s http://localhost:9100/api/health > /dev/null 2>&1; then
