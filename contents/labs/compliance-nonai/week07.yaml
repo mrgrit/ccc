@@ -1,164 +1,113 @@
 lab_id: "compliance-nonai-week07"
-title: "[Non-AI] SOX"
+title: "SOX IT 통제 점검 실습"
 version: "non-ai"
 course: "compliance-nonai"
 week: 7
-description: "사베인스-옥슬리법과 IT 통제를 학습합니다"
+description: "SOX(Sarbanes-Oxley Act) Section 404의 IT 일반통제(ITGC) 요구사항을 시스템에서 점검합니다. 접근 통제, 변경 관리, 컴퓨터 운영, 프로그램 개발 관련 설정을 검증합니다."
 difficulty: "medium"
 duration_minutes: 120
 objectives:
-  - "SOX의 핵심 개념을 이해한다"
-  - "SOX 관련 실무 기술을 습득한다"
-  - "SOX 보안 대책을 수립하고 적용한다"
+  - "SOX ITGC의 네 가지 도메인(접근통제, 변경관리, 운영, 개발)을 이해한다"
+  - "시스템의 접근 통제와 변경 관리 설정을 점검한다"
+  - "IT 통제 증적(evidence)을 수집하고 보관한다"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "SOX의 기본 개념과 구성 요소를 조사하세요"
-    hint: "SOX 관련 핵심 용어와 구조를 확인하세요"
-    category: "recon"
+    instruction: "SECU 서버(10.20.30.1)에서 사용자 계정의 최종 로그인 이력을 확인하시오. SOX ITGC - 접근 통제: 비활성 계정 식별."
+    hint: "lastlog 명령으로 각 계정의 마지막 로그인을 확인하세요."
+    category: "audit"
     points: 10
-    answer: "SOX의 주요 구성요소와 핵심 개념을 정리"
-    answer_detail: "SOX는 컴플라이언스 분야의 핵심 주제로, 기본 개념을 정확히 이해하는 것이 실무 적용의 기초입니다."
+    answer: "lastlog | grep -v 'Never logged in' | head -20"
+    answer_detail: "SOX ITGC 접근 통제 도메인은 시스템 접근을 인가된 사용자로 제한할 것을 요구합니다. 장기간 미사용 계정은 비활성화해야 하며, lastlog로 각 계정의 마지막 로그인 일시와 출발지 IP를 확인할 수 있습니다."
     verify:
       type: "output_contains"
-      expect: "SOX의 주요 구성요소와 핵심 개념을 정리"
+      expect: "root"
+      field: "stdout"
   - order: 2
-    instruction: "SOX 관련 현재 환경을 분석하세요"
-    hint: "시스템 상태와 설정을 확인하세요"
-    category: "analysis"
+    instruction: "실패한 로그인 시도를 확인하시오. SOX ITGC - 접근 통제: 비인가 접근 시도 모니터링."
+    hint: "/var/log/auth.log에서 Failed 키워드를 검색하세요."
+    category: "audit"
     points: 10
-    answer: "현재 환경의 SOX 적용 현황 분석 완료"
-    answer_detail: "SOX 적용을 위해서는 먼저 현재 환경의 상태를 정확히 파악해야 합니다. 기존 설정과 구성을 분석하여 개선점을 식별합니다."
+    answer: "sudo grep -c 'Failed' /var/log/auth.log 2>/dev/null && echo '건 실패' && sudo grep 'Failed' /var/log/auth.log 2>/dev/null | tail -5"
+    answer_detail: "SOX는 재무 데이터에 대한 비인가 접근 시도를 모니터링할 것을 요구합니다. 로그인 실패가 특정 계정이나 IP에서 집중되면 무차별 대입 공격의 징후일 수 있습니다. 이를 자동 차단하는 메커니즘(fail2ban 등)도 필요합니다."
     verify:
       type: "output_contains"
-      expect: "현재 환경의 SOX 적용 현황 분석 완료"
+      expect: "실패"
+      field: "stdout"
   - order: 3
-    instruction: "SOX 관련 보안 정책을 수립하세요"
-    hint: "정책 문서의 필수 항목을 확인하세요"
-    category: "config"
+    instruction: "시스템 패키지 변경 이력을 확인하시오. SOX ITGC - 변경 관리: 모든 시스템 변경을 추적."
+    hint: "apt 또는 dpkg 로그에서 설치/업데이트 이력을 확인하세요."
+    category: "audit"
     points: 10
-    answer: "SOX 보안 정책: 목적, 범위, 역할, 절차, 위반조치 포함"
-    answer_detail: "보안 정책은 SOX에 대한 조직의 방향과 기준을 제시하는 최상위 문서입니다. 명확한 목적, 범위, 역할과 책임을 포함해야 합니다."
+    answer: "tail -50 /var/log/dpkg.log 2>/dev/null | grep -E '(install|upgrade|remove)' | tail -15"
+    answer_detail: "SOX ITGC 변경 관리 도메인은 IT 시스템의 모든 변경을 문서화하고 승인 절차를 거칠 것을 요구합니다. dpkg.log는 패키지 설치, 업그레이드, 삭제 이력을 기록하며, 이 로그가 SOX 감사의 변경 관리 증적이 됩니다."
     verify:
       type: "output_contains"
-      expect: "SOX 보안 정책: 목적, 범위, 역할, 절차, 위반조"
+      expect: "install"
+      field: "stdout"
   - order: 4
-    instruction: "SOX의 위험 요소를 식별하고 평가하세요"
-    hint: "위험 식별 기법을 활용하세요"
-    category: "analysis"
+    instruction: "시스템 설정 파일의 최근 변경을 확인하시오. SOX ITGC - 변경 관리: 설정 변경 추적."
+    hint: "find 명령으로 최근 7일 내 변경된 /etc 파일을 검색하세요."
+    category: "audit"
     points: 10
-    answer: "위험 평가: 위협 식별, 취약점 분석, 영향도 평가, 위험도 산정"
-    answer_detail: "SOX 관련 위험을 체계적으로 식별하고 평가하는 것은 효과적인 보안 대책 수립의 기반입니다."
+    answer: "sudo find /etc -type f -mtime -7 -ls 2>/dev/null | sort -k11 | tail -15"
+    answer_detail: "SOX 변경 관리에서는 운영 환경의 설정 변경이 승인된 것인지 확인해야 합니다. /etc 디렉터리의 최근 변경 파일 목록은 비인가 변경을 탐지하는 증적이 됩니다. 변경 관리 시스템(CMDB)과 대조하여 모든 변경이 승인된 것인지 확인해야 합니다."
     verify:
       type: "output_contains"
-      expect: "위험 평가: 위협 식별, 취약점 분석, 영향도 평가, "
+      expect: "/etc"
+      field: "stdout"
   - order: 5
-    instruction: "SOX 보호 대책을 구현하세요"
-    hint: "기술적 통제와 관리적 통제를 모두 적용하세요"
-    category: "defense"
+    instruction: "백업 작업의 실행 이력과 성공 여부를 확인하시오. SOX ITGC - 컴퓨터 운영: 데이터 백업 및 복원."
+    hint: "시스템 로그에서 백업 관련 작업을 검색하세요."
+    category: "audit"
     points: 10
-    answer: "기술적 통제: 접근제어, 암호화, 모니터링 / 관리적 통제: 정책, 교육, 감사"
-    answer_detail: "SOX에 대한 보호 대책은 기술적 통제와 관리적 통제를 균형 있게 적용하여 다층 방어를 구현해야 합니다."
+    answer: "sudo grep -i 'backup\\|rsync\\|dump\\|cron' /var/log/syslog 2>/dev/null | tail -10; echo '--- 예약 작업 ---' && sudo crontab -l 2>/dev/null"
+    answer_detail: "SOX ITGC 컴퓨터 운영 도메인은 데이터의 정기적 백업과 복원 테스트를 요구합니다. 백업 작업이 예약(cron)되어 실행되고 있는지, 성공했는지, 복원 테스트를 수행했는지 확인해야 합니다."
     verify:
       type: "output_contains"
-      expect: "기술적 통제: 접근제어, 암호화, 모니터링 / 관리적 "
+      expect: "cron"
+      field: "stdout"
   - order: 6
-    instruction: "10.20.30.0/24 네트워크에서 SOX 관련 설정을 점검하세요"
-    hint: "대상 서버의 설정 파일을 확인하세요"
+    instruction: "시스템 시간 동기화 상태를 확인하시오. SOX ITGC - 컴퓨터 운영: 정확한 시간 기록."
+    hint: "timedatectl로 시간 동기화 상태를 확인하세요."
     category: "audit"
     points: 10
-    answer: "네트워크 스캔 및 설정 점검으로 SOX 적용 상태 확인"
-    answer_detail: "실제 네트워크 환경에서 SOX 관련 설정이 올바르게 적용되어 있는지 점검합니다. 10.20.30.0/24 대역의 모든 호스트를 대상으로 합니다."
+    answer: "timedatectl status"
+    answer_detail: "SOX 감사에서 로그의 시간 정확성은 매우 중요합니다. 모든 서버의 시간이 동기화되지 않으면 이벤트의 시간 순서를 정확히 파악할 수 없어 감사 증적의 신뢰성이 떨어집니다. NTP로 모든 서버 시간을 동기화해야 합니다."
     verify:
       type: "output_contains"
-      expect: "네트워크 스캔 및 설정 점검으로 SOX 적용 상태 확인"
+      expect: "Time zone"
+      field: "stdout"
   - order: 7
-    instruction: "SOX 모니터링 체계를 구성하세요"
-    hint: "모니터링 도구와 알림 설정을 확인하세요"
-    category: "monitor"
-    points: 10
-    answer: "모니터링: 실시간 감시, 임계값 알림, 대시보드, 로그 분석"
-    answer_detail: "SOX의 지속적인 모니터링은 보안 위협을 조기에 탐지하고 대응하기 위해 필수적입니다."
+    instruction: "sudo 명령 실행 로그를 확인하시오. SOX ITGC - 접근 통제: 권한 있는 계정의 활동 추적."
+    hint: "/var/log/auth.log에서 sudo 사용 이력을 검색하세요."
+    category: "audit"
+    points: 12
+    answer: "sudo grep 'sudo:' /var/log/auth.log 2>/dev/null | tail -10"
+    answer_detail: "SOX는 특권 계정(sudo, root) 사용을 특히 엄격하게 모니터링할 것을 요구합니다. sudo 로그에는 실행 사용자, 실행 명령, 실행 시간이 기록됩니다. 비인가된 관리 명령 실행은 즉시 조사해야 합니다."
     verify:
       type: "output_contains"
-      expect: "모니터링: 실시간 감시, 임계값 알림, 대시보드, 로그"
+      expect: "sudo"
+      field: "stdout"
   - order: 8
-    instruction: "SOX 관련 로그를 수집하고 분석하세요"
-    hint: "로그 소스와 분석 도구를 활용하세요"
-    category: "analysis"
-    points: 10
-    answer: "로그 수집: syslog, 애플리케이션 로그, 감사 로그 통합 분석"
-    answer_detail: "로그 분석은 SOX 관련 보안 이벤트를 추적하고 이상 징후를 탐지하는 핵심 활동입니다."
+    instruction: "직무 분리(SoD) 관점에서 사용자 권한을 분석하시오. SOX ITGC - 접근 통제: 직무 분리."
+    hint: "각 사용자의 그룹 멤버십과 sudo 권한을 분석하세요."
+    category: "audit"
+    points: 12
+    answer: "echo '=== 사용자별 그룹 멤버십 ===' && for user in $(awk -F: '$7 !~ /nologin|false/ {print $1}' /etc/passwd); do echo \"$user: $(groups $user 2>/dev/null | cut -d: -f2)\"; done && echo '=== sudoers 설정 ===' && sudo grep -v '^#\\|^$\\|^Defaults' /etc/sudoers 2>/dev/null"
+    answer_detail: "SOX의 직무 분리(Segregation of Duties)는 한 사람이 승인과 실행을 모두 수행할 수 없도록 하는 것입니다. IT 환경에서는 개발자에게 운영 서버 접근 권한을 부여하지 않고, DBA에게 애플리케이션 관리 권한을 부여하지 않는 등의 통제가 필요합니다."
     verify:
       type: "output_contains"
-      expect: "로그 수집: syslog, 애플리케이션 로그, 감사 로"
+      expect: "그룹 멤버십"
+      field: "stdout"
   - order: 9
-    instruction: "SOX에 대한 방어 체계를 강화하세요"
-    hint: "다층 방어 전략을 적용하세요"
-    category: "defense"
-    points: 10
-    answer: "다층 방어: 네트워크, 호스트, 애플리케이션, 데이터 계층별 보안 강화"
-    answer_detail: "SOX에 대한 단일 방어선은 충분하지 않습니다. 네트워크부터 데이터까지 모든 계층에서 방어 체계를 구축해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "다층 방어: 네트워크, 호스트, 애플리케이션, 데이터 "
-  - order: 10
-    instruction: "SOX 인시던트 대응 절차를 수립하세요"
-    hint: "대응 단계별 역할과 절차를 정의하세요"
-    category: "response"
-    points: 10
-    answer: "인시던트 대응: 탐지→분석→억제→제거→복구→교훈 6단계"
-    answer_detail: "SOX 관련 보안 인시던트 발생 시 신속하고 체계적으로 대응하기 위한 절차를 사전에 수립해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "인시던트 대응: 탐지→분석→억제→제거→복구→교훈 6단계"
-  - order: 11
-    instruction: "SOX의 접근 권한을 관리하세요"
-    hint: "최소 권한 원칙을 적용하세요"
-    category: "config"
-    points: 10
-    answer: "접근 관리: RBAC 기반, 최소 권한, 주기적 검토, 권한 변경 로깅"
-    answer_detail: "접근 권한 관리는 SOX의 보안을 확보하기 위한 기본적인 통제입니다. 최소 권한 원칙에 따라 필요한 최소한의 권한만 부여해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "접근 관리: RBAC 기반, 최소 권한, 주기적 검토,"
-  - order: 12
-    instruction: "SOX 관련 감사를 수행하세요"
-    hint: "감사 계획, 수행, 보고 절차를 따르세요"
+    instruction: "SOX ITGC 종합 점검 보고서 스크립트를 작성하고 실행하시오."
+    hint: "접근 통제, 변경 관리, 운영 항목을 종합하세요."
     category: "audit"
-    points: 10
-    answer: "감사: 계획수립→증거수집→분석→발견사항→개선권고 프로세스"
-    answer_detail: "정기적인 감사를 통해 SOX 관련 통제의 효과성을 평가하고, 미흡한 사항을 식별하여 개선해야 합니다."
+    points: 16
+    answer: "cat << 'SCRIPT' > /tmp/sox_itgc_audit.sh\n#!/bin/bash\necho '=== SOX ITGC 종합 점검 보고서 ==='\necho ''\necho '[접근 통제]'\necho \"활성 계정 수: $(grep -vc 'nologin\\|false' /etc/passwd)\"\necho \"sudo 그룹: $(getent group sudo | cut -d: -f4)\"\necho \"금일 실패 로그인: $(sudo grep -c 'Failed' /var/log/auth.log 2>/dev/null || echo 0)\"\necho '[변경 관리]'\necho \"최근 7일 /etc 변경: $(sudo find /etc -type f -mtime -7 2>/dev/null | wc -l)건\"\necho \"최근 패키지 변경: $(grep -c 'install\\|upgrade' /var/log/dpkg.log 2>/dev/null || echo 0)건\"\necho '[컴퓨터 운영]'\ntimedatectl status | grep 'synchronized'\necho \"감사 로그 규칙: $(sudo auditctl -l 2>/dev/null | wc -l)개\"\necho ''\necho '=== SOX ITGC 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/sox_itgc_audit.sh && bash /tmp/sox_itgc_audit.sh"
+    answer_detail: "SOX Section 404는 경영진이 내부 통제의 효과성을 평가하고 외부 감사인이 이를 감사할 것을 요구합니다. ITGC는 접근 통제, 변경 관리, 컴퓨터 운영, 프로그램 개발의 네 도메인으로 구성되며, 이 스크립트는 각 도메인의 핵심 점검 항목을 자동으로 수집합니다."
     verify:
       type: "output_contains"
-      expect: "감사: 계획수립→증거수집→분석→발견사항→개선권고 프로세"
-  - order: 13
-    instruction: "SOX의 성능과 효과를 측정하세요"
-    hint: "핵심 성과지표(KPI)를 설정하세요"
-    category: "monitor"
-    points: 10
-    answer: "KPI: 탐지율, 대응시간, 오탐률, 준수율, 개선 완료율"
-    answer_detail: "SOX의 효과를 객관적으로 측정하기 위해 핵심 성과지표를 설정하고 정기적으로 측정해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "KPI: 탐지율, 대응시간, 오탐률, 준수율, 개선 완"
-  - order: 14
-    instruction: "SOX 개선 계획을 수립하세요"
-    hint: "발견된 문제점과 개선 방안을 정리하세요"
-    category: "analysis"
-    points: 10
-    answer: "개선 계획: 단기(1개월), 중기(3개월), 장기(1년) 로드맵 수립"
-    answer_detail: "지속적인 개선은 SOX 관리의 핵심입니다. 발견된 문제점에 대한 우선순위별 개선 계획을 수립해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "개선 계획: 단기(1개월), 중기(3개월), 장기(1년"
-  - order: 15
-    instruction: "SOX 종합 평가 보고서를 작성하세요"
-    hint: "전체 실습 내용을 종합하세요"
-    category: "audit"
-    points: 10
-    answer: "SOX 종합 평가: 현황, 위험, 대책, 모니터링, 개선계획 총괄"
-    answer_detail: "SOX에 대한 전체 학습 내용을 종합하여 평가 보고서를 작성합니다. 현황 분석, 위험 평가, 대책 구현, 모니터링, 개선 계획을 모두 포함합니다."
-    verify:
-      type: "output_contains"
-      expect: "SOX 종합 평가: 현황, 위험, 대책, 모니터링, 개"
+      expect: "SOX ITGC 점검 완료"
+      field: "stdout"

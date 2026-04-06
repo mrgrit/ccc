@@ -145,34 +145,12 @@ steps:
       expect: "GUI-Based Lateral Movement"
       field: "stdout"
   - order: 13
-    instruction: "네트워크 공유를 통한 측면 이동을 실습하라. smbclient로 10.20.30.80의 공유 폴더를 열거하라."
-    hint: "smbclient -L 대상 또는 nmap --script smb-enum-shares로 공유를 열거한다"
-    category: "recon"
-    points: 10
-    answer: "smbclient -L //10.20.30.80 -N 2>&1 | head -20 && echo '---' && nmap --script smb-enum-shares -p 445 10.20.30.80 2>&1 | tail -20"
-    answer_detail: "SMB 공유는 측면 이동의 중요한 경로이다. 익명 접근이 가능한 공유에서 설정 파일, 스크립트, 백업을 발견할 수 있고, 쓰기 가능한 공유에 악성 파일을 배치할 수 있다. 관리 공유(C$, ADMIN$, IPC$)에 접근하면 PsExec 등을 통한 원격 실행이 가능하다."
-    verify:
-      type: "output_contains"
-      expect: "10.20.30.80"
-      field: "stdout"
-  - order: 14
-    instruction: "측면 이동 탐지를 위한 모니터링 전략을 수립하라. 각 측면 이동 기법에 대한 탐지 규칙을 작성하라."
-    hint: "네트워크 로그, 이벤트 로그, EDR 이벤트를 기반으로 탐지 규칙을 작성한다"
-    category: "defense"
-    points: 10
-    answer: "echo -e '=== Lateral Movement Detection Rules ===\\n\\n[Network]\\n1. Internal SSH: Alert on new SSH connections between servers\\n2. SMB lateral: Detect PsExec service creation (445)\\n3. Tunneling: Unusual port forwarding patterns\\n4. DNS: Internal hosts querying external DNS\\n\\n[Windows Events]\\n5. Event 4624 Type 3: Network logon (PtH, PsExec)\\n6. Event 4624 Type 10: RDP logon\\n7. Event 7045: New service installation (PsExec)\\n8. Event 5145: SMB share access audit\\n\\n[Linux]\\n9. SSH AuthLog: Successful auth from unusual source\\n10. /var/log/wtmp: New login sessions\\n11. auditd: execve syscall monitoring\\n\\n[Behavioral]\\n12. First-seen connections between hosts\\n13. Account used from multiple sources simultaneously\\n14. Service accounts with interactive logons'"
-    answer_detail: "측면 이동 탐지는 내부 트래픽 모니터링이 핵심이다. 대부분의 조직은 경계 보안에 집중하지만, 내부 호스트 간 비정상 연결(First-seen 접근)을 탐지하는 것이 중요하다. UEBA(User Entity Behavior Analytics)는 기준선(baseline) 대비 이상 행위를 자동으로 탐지한다."
-    verify:
-      type: "output_contains"
-      expect: "Lateral Movement Detection"
-      field: "stdout"
-  - order: 15
-    instruction: "측면 이동 실습 결과를 종합하여 공격 경로 다이어그램과 방어 권고사항을 /tmp/lateral_report.txt에 작성하라."
-    hint: "각 호스트를 거쳐 이동한 경로와 사용한 기법, 방어 방안을 정리한다"
+    instruction: "측면 이동 실습 결과를 종합하여 공격 경로, 사용 기법, 탐지 규칙, 방어 권고사항을 /tmp/lateral_report.txt에 작성하라."
+    hint: "공격 경로 다이어그램, 각 기법의 탐지 방법, 방어 우선순위를 정리한다"
     category: "analysis"
-    points: 10
-    answer: "cat > /tmp/lateral_report.txt << 'EOF'\n=== Lateral Movement Lab Report ===\n\n[Attack Path]\nExternal -> Web(10.20.30.80) via web exploit\n  -> Firewall(10.20.30.1) via SSH credential reuse\n  -> SIEM(10.20.30.100) via SSH pivot + default creds\n  -> Control(10.20.30.201) via reverse tunnel\n\n[Techniques Used]\n1. SSH port forwarding (local, dynamic, reverse)\n2. Proxychains for tool routing\n3. Credential harvesting from config files\n4. Credential reuse across systems\n5. Default credential exploitation\n6. SMB share enumeration\n\n[Defense Recommendations]\n1. Network segmentation with micro-segmentation\n2. Unique passwords per system (LAPS)\n3. MFA for all remote access\n4. Internal network monitoring (NDR)\n5. Disable unnecessary protocols (SMB, RDP)\n6. Privileged Access Workstations (PAW)\n7. Just-in-Time (JIT) administrative access\nEOF\ncat /tmp/lateral_report.txt"
-    answer_detail: "측면 이동은 초기 침입 후 네트워크를 장악하는 핵심 단계이다. 방어의 핵심은 네트워크 세그먼테이션, 고유 자격증명, 내부 모니터링이다. 제로 트러스트 아키텍처는 모든 접근을 검증하여 측면 이동을 근본적으로 차단한다. 마이크로 세그먼테이션은 호스트 단위의 접근 제어를 구현한다."
+    points: 15
+    answer: "cat > /tmp/lateral_report.txt << 'EOF'\n=== Lateral Movement Lab Report ===\n\n[Attack Path]\nExternal -> Web(10.20.30.80) via web exploit\n  -> Firewall(10.20.30.1) via SSH credential reuse\n  -> SIEM(10.20.30.100) via SSH pivot + default creds\n\n[Techniques Used]\n1. SSH port forwarding (local, dynamic, reverse)\n2. Proxychains for tool routing\n3. Credential harvesting from config files\n4. Credential reuse across systems\n5. Default credential exploitation\n\n[Detection Rules]\n- Internal SSH: Alert on new SSH between servers\n- SMB lateral: Detect PsExec service creation (445)\n- Tunneling: Unusual port forwarding patterns\n- Behavioral: First-seen connections between hosts\n- Behavioral: Account used from multiple sources\n\n[Defense Recommendations]\n1. Network micro-segmentation (nftables host-level ACLs)\n2. Unique passwords per system (LAPS)\n3. MFA for all remote access\n4. Internal network monitoring (NDR)\n5. Just-in-Time (JIT) administrative access\nEOF\ncat /tmp/lateral_report.txt"
+    answer_detail: "측면 이동 보고서는 공격 경로, 탐지 규칙, 방어 권고를 통합한다. 제로 트러스트 아키텍처와 마이크로 세그먼테이션이 측면 이동의 근본적 방어이며, 내부 트래픽 모니터링으로 탐지를 보완한다."
     verify:
       type: "output_contains"
       expect: "Lateral Movement Lab Report"

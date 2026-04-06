@@ -1,164 +1,113 @@
 lab_id: "compliance-nonai-week02"
-title: "[Non-AI] 정보통신망법"
+title: "정보통신망법 기술적 보호조치 점검"
 version: "non-ai"
 course: "compliance-nonai"
 week: 2
-description: "정보통신망 이용촉진 및 정보보호에 관한 법률을 학습합니다"
+description: "정보통신망 이용촉진 및 정보보호 등에 관한 법률의 기술적 보호조치를 시스템에서 점검합니다. 방화벽 설정, 침입탐지, 접근 제어, 웹 보안 헤더 등을 확인합니다."
 difficulty: "easy"
 duration_minutes: 120
 objectives:
-  - "정보통신망법의 핵심 개념을 이해한다"
-  - "정보통신망법 관련 실무 기술을 습득한다"
-  - "정보통신망법 보안 대책을 수립하고 적용한다"
+  - "정보통신망법의 기술적 보호조치 요구사항을 이해한다"
+  - "방화벽, IDS 설정이 법적 요구사항을 충족하는지 점검한다"
+  - "네트워크 보안 설정의 적정성을 평가한다"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "정보통신망법의 주요 보안 관련 조항을 조회하세요"
-    hint: "법률 데이터베이스에서 핵심 조항을 확인하세요"
-    category: "recon"
+    instruction: "SECU 서버(10.20.30.1)의 nftables 방화벽이 활성화되어 있는지 확인하고 현재 룰셋을 조회하시오."
+    hint: "sudo nft list ruleset 명령을 사용하세요."
+    category: "audit"
     points: 10
-    answer: "제45조(정보보호조치), 제47조(정보보호관리체계인증), 제48조(침해행위금지)"
-    answer_detail: "정보통신망법은 정보통신서비스 이용자의 개인정보 보호와 정보통신망의 안전성 확보를 위한 법률입니다. 정보보호조치, 인증, 침해사고 대응 등을 규정합니다."
+    answer: "sudo nft list ruleset"
+    answer_detail: "정보통신망법 시행령 제15조에 따라 정보통신서비스 제공자는 침입 차단 시스템(방화벽)을 설치·운영해야 합니다. nftables는 리눅스의 차세대 방화벽 프레임워크로, iptables를 대체합니다."
     verify:
       type: "output_contains"
-      expect: "제45조"
+      expect: "table"
+      field: "stdout"
   - order: 2
-    instruction: "정보보호조치 의무 대상을 확인하세요"
-    hint: "매출액 및 이용자 수 기준을 확인하세요"
-    category: "analysis"
+    instruction: "방화벽 기본 정책(policy)이 DROP(차단)으로 설정되어 있는지 확인하시오."
+    hint: "nft list ruleset 출력에서 policy 키워드를 검색하세요."
+    category: "audit"
     points: 10
-    answer: "연 매출 100억 이상 또는 일평균 이용자 100만명 이상 정보통신서비스제공자"
-    answer_detail: "법 제45조에 따라 정보통신서비스 제공자는 정보통신망의 안정성 및 정보의 신뢰성을 확보하기 위한 보호조치를 취해야 합니다."
+    answer: "sudo nft list ruleset | grep -i 'policy'"
+    answer_detail: "방화벽의 기본 정책은 'deny all, permit by exception' 원칙에 따라 기본 차단(DROP)으로 설정하고, 업무에 필요한 포트만 명시적으로 허용해야 합니다. 이는 정보통신망법의 접근 통제 요구사항의 핵심입니다."
     verify:
       type: "output_contains"
-      expect: "정보보호조치"
+      expect: "policy"
+      field: "stdout"
   - order: 3
-    instruction: "네트워크 접근 통제 설정을 점검하세요"
-    hint: "방화벽 규칙을 확인하세요"
-    category: "config"
+    instruction: "Suricata IDS 서비스가 활성화되어 동작 중인지 확인하시오. 정보통신망법은 침입탐지시스템 운영을 요구합니다."
+    hint: "systemctl로 suricata 서비스 상태를 확인하세요."
+    category: "audit"
     points: 10
-    answer: "nft list ruleset 명령으로 현재 방화벽 규칙 확인"
-    answer_detail: "정보통신망법 시행령에 따라 접근 통제 시스템을 설치·운영해야 합니다. 외부 네트워크와의 불법적인 접근을 차단하는 방화벽 설정이 필수적입니다."
-    verify:
-      type: "output_contains"
-      expect: "nft"
-  - order: 4
-    instruction: "침입탐지시스템(IDS) 설정을 확인하세요"
-    hint: "Suricata 규칙 설정을 점검하세요"
-    category: "defense"
-    points: 10
-    answer: "suricata -T -c /etc/suricata/suricata.yaml 으로 설정 검증"
-    answer_detail: "침입탐지시스템은 네트워크 트래픽을 모니터링하여 비정상적인 접근을 탐지합니다. 시그니처 기반과 행위 기반 탐지 규칙을 모두 활용해야 합니다."
+    answer: "sudo systemctl status suricata --no-pager | head -10"
+    answer_detail: "정보통신망법 시행령 제15조에 따라 침입탐지시스템(IDS)을 설치·운영해야 합니다. Suricata는 오픈소스 IDS/IPS로, 네트워크 트래픽을 실시간 분석하여 악성 활동을 탐지합니다."
     verify:
       type: "output_contains"
       expect: "suricata"
+      field: "stdout"
+  - order: 4
+    instruction: "Suricata의 규칙 파일 경로를 확인하고 현재 활성화된 규칙 파일 수를 파악하시오."
+    hint: "suricata.yaml에서 default-rule-path를 확인하세요."
+    category: "audit"
+    points: 10
+    answer: "sudo grep -E 'rule-files|default-rule-path' /etc/suricata/suricata.yaml | head -5 && ls /var/lib/suricata/rules/*.rules 2>/dev/null | wc -l"
+    answer_detail: "IDS 규칙은 정기적으로 업데이트해야 최신 위협을 탐지할 수 있습니다. Suricata는 ET Open, Suricata 자체 규칙 등 다양한 규칙셋을 지원합니다. suricata-update 명령으로 규칙을 최신으로 유지해야 합니다."
+    verify:
+      type: "output_contains"
+      expect: "rule"
+      field: "stdout"
   - order: 5
-    instruction: "취약점 점검 스캔을 수행하세요"
-    hint: "네트워크 취약점 스캐너를 실행하세요"
-    category: "recon"
+    instruction: "Suricata 로그에서 최근 알림(alert)을 확인하시오. IDS 알림이 정상 기록되는지 점검합니다."
+    hint: "/var/log/suricata/ 디렉터리의 fast.log를 확인하세요."
+    category: "audit"
     points: 10
-    answer: "nmap -sV --script vuln 10.20.30.0/24 로 취약점 스캔"
-    answer_detail: "법 제45조의3에 따라 정기적인 취약점 점검이 필요합니다. 네트워크 스캔을 통해 열린 포트, 서비스 버전, 알려진 취약점을 식별해야 합니다."
+    answer: "sudo tail -20 /var/log/suricata/fast.log 2>/dev/null; sudo ls -la /var/log/suricata/"
+    answer_detail: "IDS 로그 모니터링은 정보통신망법의 침해사고 대응 의무와 직결됩니다. fast.log는 간결한 알림 형식이고, eve.json은 상세 이벤트를 JSON으로 기록합니다. 알림이 전혀 없다면 규칙이 비활성이거나 탐지 대상 트래픽이 없는 것입니다."
     verify:
       type: "output_contains"
-      expect: "nmap"
+      expect: "suricata"
+      field: "stdout"
   - order: 6
-    instruction: "웹 애플리케이션 보안 점검을 수행하세요"
-    hint: "OWASP Top 10 기준으로 점검하세요"
+    instruction: "시스템에서 LISTEN 상태인 포트를 조회하여 불필요한 서비스가 동작하지 않는지 확인하시오."
+    hint: "ss -tlnp 명령으로 열린 포트와 프로세스를 확인하세요."
     category: "audit"
     points: 10
-    answer: "SQL Injection, XSS, CSRF 등 주요 웹 취약점 점검"
-    answer_detail: "정보통신망법상 정보보호조치에는 웹 애플리케이션 보안이 포함됩니다. OWASP Top 10을 기준으로 SQL Injection, XSS, CSRF 등 주요 취약점을 점검해야 합니다."
+    answer: "sudo ss -tlnp"
+    answer_detail: "정보통신망법에 따라 불필요한 서비스와 포트를 차단해야 합니다. ss 명령에서 -t는 TCP, -l은 LISTEN, -n은 숫자 표시, -p는 프로세스 정보입니다. 업무에 필요 없는 포트가 열려 있다면 서비스를 중지하거나 방화벽에서 차단합니다."
     verify:
       type: "output_contains"
-      expect: "OWASP"
+      expect: "LISTEN"
+      field: "stdout"
   - order: 7
-    instruction: "접속기록 관리 시스템을 점검하세요"
-    hint: "로그 저장 및 보존 설정을 확인하세요"
-    category: "monitor"
-    points: 10
-    answer: "syslog 설정 확인 및 로그 보존 기간 검증 (최소 6개월)"
-    answer_detail: "접속기록은 침해사고 발생 시 원인 분석과 증거 확보를 위해 필수적입니다. 최소 6개월 이상 보관하고 위변조 방지 대책을 수립해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "syslog"
-  - order: 8
-    instruction: "암호화 적용 현황을 점검하세요"
-    hint: "SSL/TLS 인증서 설정을 확인하세요"
-    category: "config"
-    points: 10
-    answer: "openssl s_client -connect 10.20.30.80:443 으로 TLS 설정 확인"
-    answer_detail: "정보통신망법에 따라 이용자의 개인정보 및 인증정보 전송 시 암호화를 적용해야 합니다. TLS 1.2 이상 사용과 적절한 암호 스위트 설정이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "TLS"
-  - order: 9
-    instruction: "침해사고 신고 절차를 수립하세요"
-    hint: "KISA 신고 프로세스를 확인하세요"
-    category: "response"
-    points: 10
-    answer: "침해사고 인지 후 24시간 이내 KISA(한국인터넷진흥원)에 신고"
-    answer_detail: "법 제48조의3에 따라 침해사고가 발생한 경우 지체 없이 그 사실을 과학기술정보통신부장관 또는 KISA에 신고해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "KISA"
-  - order: 10
-    instruction: "정보보호 최고책임자(CISO) 지정 요건을 확인하세요"
-    hint: "CISO 자격 요건과 신고 의무를 확인하세요"
-    category: "config"
-    points: 10
-    answer: "자산총액 5조원 이상, 정보통신서비스 매출 100억원 이상 기업은 CISO 지정 의무"
-    answer_detail: "법 제45조의3에 따라 일정 규모 이상의 정보통신서비스 제공자는 CISO를 지정하고 과학기술정보통신부에 신고해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "CISO"
-  - order: 11
-    instruction: "정보보호 사전점검 절차를 수립하세요"
-    hint: "신규 서비스 출시 전 보안 점검 항목을 확인하세요"
-    category: "analysis"
-    points: 10
-    answer: "서비스 기획단계부터 보안성 검토, 설계 보안, 구현 보안, 운영 보안 점검"
-    answer_detail: "정보통신망법에 따라 정보통신서비스를 새로 도입할 때 사전에 보안 위험을 평가하고 보호조치를 적용해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "사전점검"
-  - order: 12
-    instruction: "이용자 본인확인 체계를 점검하세요"
-    hint: "인증 시스템 설정을 확인하세요"
-    category: "defense"
-    points: 10
-    answer: "다중인증(MFA) 적용 및 본인확인 수단의 안전성 확인"
-    answer_detail: "법 제23조의3에 따라 본인확인기관은 안전한 본인확인 수단을 제공해야 합니다. 비밀번호 외 추가 인증 수단 적용이 권장됩니다."
-    verify:
-      type: "output_contains"
-      expect: "MFA"
-  - order: 13
-    instruction: "스팸 및 악성 트래픽 차단 시스템을 점검하세요"
-    hint: "메일 보안 게이트웨이 설정을 확인하세요"
-    category: "defense"
-    points: 10
-    answer: "SPF, DKIM, DMARC 레코드 설정 확인"
-    answer_detail: "법 제50조에 따라 영리목적의 광고성 정보 전송 시 수신자의 사전 동의가 필요합니다. 기술적으로 스팸 필터링 시스템을 운영해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "SPF"
-  - order: 14
-    instruction: "정보통신망법 준수 체크리스트를 작성하세요"
-    hint: "주요 의무사항을 종합 점검하세요"
+    instruction: "rsyslog 원격 로그 전송 설정을 확인하시오. 정보통신망법은 로그 위변조 방지를 위해 별도 서버 보관을 권고합니다."
+    hint: "/etc/rsyslog.conf와 /etc/rsyslog.d/ 에서 원격 전송(@@) 설정을 확인하세요."
     category: "audit"
-    points: 10
-    answer: "정보보호조치, ISMS인증, 침해사고대응, 개인정보보호, 접근통제 종합 체크"
-    answer_detail: "정보통신망법의 주요 의무사항을 체계적으로 점검하기 위한 체크리스트를 작성합니다. 기술적·관리적 보호조치를 모두 포함해야 합니다."
+    points: 12
+    answer: "grep -rn '@@\\|@' /etc/rsyslog.conf /etc/rsyslog.d/ 2>/dev/null | grep -v '^#'"
+    answer_detail: "로그를 원본 서버에만 보관하면 공격자가 침입 후 삭제·위변조할 수 있습니다. rsyslog에서 @는 UDP, @@는 TCP로 원격 서버에 로그를 전송합니다. SIEM(10.20.30.100)으로 전송하면 위변조 방지와 중앙 관리가 가능합니다."
     verify:
       type: "output_contains"
-      expect: "체크리스트"
-  - order: 15
-    instruction: "정보통신망법 위반 시 제재 사항을 분석하세요"
-    hint: "과태료 및 벌칙 조항을 확인하세요"
-    category: "analysis"
-    points: 10
-    answer: "위반 유형별 과태료: 3천만원~5억원, 벌칙: 5년 이하 징역"
-    answer_detail: "정보통신망법 위반 시 과태료, 과징금, 형사처벌이 부과될 수 있습니다. 위반 유형과 심각성에 따라 제재 수준이 달라지므로 사전에 충분한 예방 조치가 필요합니다."
+      expect: "@"
+      field: "stdout"
+  - order: 8
+    instruction: "WEB 서버(10.20.30.80)에서 HTTP 응답 보안 헤더를 점검하시오. X-Frame-Options, X-Content-Type-Options 등이 설정되어야 합니다."
+    hint: "curl -I 명령으로 HTTP 응답 헤더를 확인하세요."
+    category: "audit"
+    points: 12
+    answer: "curl -sI http://10.20.30.80/ | grep -iE '(X-Frame|X-Content-Type|X-XSS|Strict-Transport|Server|Content-Security)'"
+    answer_detail: "정보통신망법은 웹 서비스의 보안 취약점 방지를 요구합니다. X-Frame-Options은 클릭재킹 방지, X-Content-Type-Options은 MIME 스니핑 방지, Strict-Transport-Security는 HTTPS 강제에 기여합니다. Server 헤더는 버전 정보 노출을 막기 위해 숨겨야 합니다."
     verify:
       type: "output_contains"
-      expect: "과태료"
+      expect: "HTTP"
+      field: "stdout"
+  - order: 9
+    instruction: "정보통신망법 기술적 보호조치 준수 점검 스크립트를 작성하고 실행하시오."
+    hint: "방화벽, IDS, 포트, 로그 설정을 종합 점검하는 스크립트를 작성하세요."
+    category: "audit"
+    points: 16
+    answer: "cat << 'SCRIPT' > /tmp/network_compliance.sh\n#!/bin/bash\necho '=== 정보통신망법 기술적 보호조치 점검 ==='\necho '[1] 방화벽 활성 여부'\nsudo nft list ruleset | head -3\necho '[2] IDS 상태'\nsudo systemctl is-active suricata 2>/dev/null || echo 'suricata 비활성'\necho '[3] 열린 TCP 포트 수'\nsudo ss -tlnp | grep LISTEN | wc -l\necho '[4] 로그 원격 전송 설정'\ngrep -c '@@' /etc/rsyslog.conf /etc/rsyslog.d/* 2>/dev/null\necho '=== 정보통신망법 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/network_compliance.sh && bash /tmp/network_compliance.sh"
+    answer_detail: "정보통신망법 기술적 보호조치에는 접근 통제(방화벽), 침입 탐지/방지(IDS/IPS), 접속기록 보관, 악성 프로그램 방지 등이 포함됩니다. 자동화된 점검 스크립트로 정기적으로 확인하면 법적 의무를 체계적으로 이행할 수 있습니다."
+    verify:
+      type: "output_contains"
+      expect: "정보통신망법 점검 완료"
+      field: "stdout"

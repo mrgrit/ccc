@@ -1,164 +1,133 @@
 lab_id: "soc-nonai-week14"
-title: "[Non-AI] 레드팀연동"
+title: "레드팀 연동 - 공격 시뮬레이션과 탐지 검증"
 version: "non-ai"
 course: "soc-nonai"
 week: 14
-description: "레드팀/블루팀 협업과 퍼플팀 운영을 학습합니다"
+description: "ATTACKER VM에서 실제 공격 도구(nmap, hydra, sqlmap)를 사용하여 공격을 시뮬레이션하고, SOC 입장에서 각 공격 단계가 SIEM에 어떻게 탐지되는지 검증합니다."
 difficulty: "hard"
-duration_minutes: 120
+duration_minutes: 180
 objectives:
-  - "레드팀연동의 핵심 개념을 이해한다"
-  - "레드팀연동 관련 실무 기술을 습득한다"
-  - "레드팀연동 보안 대책을 수립하고 적용한다"
+  - "공격 도구(nmap, hydra, sqlmap)의 기본 사용법을 이해한다"
+  - "공격 시뮬레이션 결과가 SIEM 알림으로 생성되는 과정을 검증한다"
+  - "탐지 누락(gap)을 식별하고 룰 개선 방안을 도출한다"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "레드팀연동의 기본 개념과 구성 요소를 조사하세요"
-    hint: "레드팀연동 관련 핵심 용어와 구조를 확인하세요"
-    category: "recon"
+    instruction: "ATTACKER VM에서 WEB VM(10.20.30.80)에 대한 포트 스캔을 실행하고, 개방된 포트를 확인하시오."
+    hint: "nmap으로 전체 포트 스캔을 수행하세요."
+    category: "detection"
     points: 10
-    answer: "레드팀연동의 주요 구성요소와 핵심 개념을 정리"
-    answer_detail: "레드팀연동는 보안관제 분야의 핵심 주제로, 기본 개념을 정확히 이해하는 것이 실무 적용의 기초입니다."
+    answer: "ssh attacker 'nmap -sT -p 1-10000 --open 10.20.30.80 2>/dev/null | head -30'"
+    answer_detail: "nmap -sT는 TCP Connect 스캔으로, 가장 기본적인 포트 스캔 방식입니다. SOC에서는 이 스캔이 Wazuh 알림이나 Suricata 이벤트로 탐지되는지 확인해야 합니다."
     verify:
       type: "output_contains"
-      expect: "레드팀연동의 주요 구성요소와 핵심 개념을 정리"
+      expect: "open"
+      field: "stdout"
+
   - order: 2
-    instruction: "레드팀연동 관련 현재 환경을 분석하세요"
-    hint: "시스템 상태와 설정을 확인하세요"
-    category: "analysis"
+    instruction: "포트 스캔 후 SIEM VM에서 해당 공격이 탐지되었는지 Wazuh 알림을 확인하시오."
+    hint: "alerts.log에서 ATTACKER IP(10.20.30.201)의 최근 알림을 검색하세요."
+    category: "detection"
     points: 10
-    answer: "현재 환경의 레드팀연동 적용 현황 분석 완료"
-    answer_detail: "레드팀연동 적용을 위해서는 먼저 현재 환경의 상태를 정확히 파악해야 합니다. 기존 설정과 구성을 분석하여 개선점을 식별합니다."
+    answer: "ssh siem 'grep -B 2 -A 5 \"10.20.30.201\" /var/ossec/logs/alerts/alerts.log | tail -30'"
+    answer_detail: "포트 스캔은 정찰(Reconnaissance) 단계로, SOC에서 공격의 시작을 알리는 지표입니다. Wazuh가 다수의 연결 시도를 브루트포스나 스캔으로 탐지했는지 확인합니다."
     verify:
       type: "output_contains"
-      expect: "현재 환경의 레드팀연동 적용 현황 분석 완료"
+      expect: "10.20.30.201"
+      field: "stdout"
+
   - order: 3
-    instruction: "레드팀연동 관련 보안 정책을 수립하세요"
-    hint: "정책 문서의 필수 항목을 확인하세요"
-    category: "config"
+    instruction: "포트 스캔이 SECU VM의 Suricata IDS에서도 탐지되었는지 확인하시오."
+    hint: "Suricata fast.log에서 ATTACKER IP를 검색하세요."
+    category: "detection"
     points: 10
-    answer: "레드팀연동 보안 정책: 목적, 범위, 역할, 절차, 위반조치 포함"
-    answer_detail: "보안 정책은 레드팀연동에 대한 조직의 방향과 기준을 제시하는 최상위 문서입니다. 명확한 목적, 범위, 역할과 책임을 포함해야 합니다."
+    answer: "ssh secu 'grep \"10.20.30.201\" /var/log/suricata/fast.log 2>/dev/null | tail -10'"
+    answer_detail: "네트워크 IDS인 Suricata는 포트 스캔 패턴을 시그니처로 탐지합니다. Wazuh와 Suricata 양쪽에서 동시 탐지되면 상관분석의 신뢰도가 높아집니다."
     verify:
       type: "output_contains"
-      expect: "레드팀연동 보안 정책: 목적, 범위, 역할, 절차, 위"
+      expect: ""
+      field: "stdout"
+
   - order: 4
-    instruction: "레드팀연동의 위험 요소를 식별하고 평가하세요"
-    hint: "위험 식별 기법을 활용하세요"
-    category: "analysis"
-    points: 10
-    answer: "위험 평가: 위협 식별, 취약점 분석, 영향도 평가, 위험도 산정"
-    answer_detail: "레드팀연동 관련 위험을 체계적으로 식별하고 평가하는 것은 효과적인 보안 대책 수립의 기반입니다."
+    instruction: "ATTACKER VM에서 WEB VM의 SSH 서비스에 대한 브루트포스 공격을 시뮬레이션하시오. (5회 제한)"
+    hint: "hydra로 SSH 브루트포스를 수행하세요. 시도 횟수를 제한하세요."
+    category: "detection"
+    points: 12
+    answer: "ssh attacker 'hydra -l admin -P /dev/null -t 1 -f -V ssh://10.20.30.80 2>&1 | head -10 || echo \"hydra test completed\"'"
+    answer_detail: "hydra는 패스워드 브루트포스 공격 도구입니다. SOC 관점에서 이 공격이 Wazuh의 SSH 브루트포스 탐지 룰(5712)에 의해 탐지되는지 확인하는 것이 목적입니다."
     verify:
       type: "output_contains"
-      expect: "위험 평가: 위협 식별, 취약점 분석, 영향도 평가, "
+      expect: ""
+      field: "stdout"
+
   - order: 5
-    instruction: "레드팀연동 보호 대책을 구현하세요"
-    hint: "기술적 통제와 관리적 통제를 모두 적용하세요"
-    category: "defense"
-    points: 10
-    answer: "기술적 통제: 접근제어, 암호화, 모니터링 / 관리적 통제: 정책, 교육, 감사"
-    answer_detail: "레드팀연동에 대한 보호 대책은 기술적 통제와 관리적 통제를 균형 있게 적용하여 다층 방어를 구현해야 합니다."
+    instruction: "SSH 브루트포스 공격 후 SIEM VM에서 관련 Wazuh 알림이 생성되었는지 확인하시오."
+    hint: "alerts.log에서 SSH 관련 고레벨 알림을 검색하세요."
+    category: "detection"
+    points: 12
+    answer: "ssh siem 'grep -B 2 -A 5 \"authentication\\|ssh\\|brute\" /var/ossec/logs/alerts/alerts.log | tail -30'"
+    answer_detail: "Wazuh 룰 5710(SSH 로그인 실패), 5712(브루트포스)가 트리거되어야 합니다. 알림이 없으면 탐지 룰이 누락된 것이므로 커스텀 룰 추가가 필요합니다."
     verify:
       type: "output_contains"
-      expect: "기술적 통제: 접근제어, 암호화, 모니터링 / 관리적 "
+      expect: ""
+      field: "stdout"
+
   - order: 6
-    instruction: "10.20.30.0/24 네트워크에서 레드팀연동 관련 설정을 점검하세요"
-    hint: "대상 서버의 설정 파일을 확인하세요"
-    category: "audit"
-    points: 10
-    answer: "네트워크 스캔 및 설정 점검으로 레드팀연동 적용 상태 확인"
-    answer_detail: "실제 네트워크 환경에서 레드팀연동 관련 설정이 올바르게 적용되어 있는지 점검합니다. 10.20.30.0/24 대역의 모든 호스트를 대상으로 합니다."
+    instruction: "ATTACKER VM에서 WEB VM의 JuiceShop(3000번 포트)에 HTTP 요청을 보내 웹 애플리케이션 접근을 확인하시오."
+    hint: "curl로 JuiceShop에 접속하세요."
+    category: "detection"
+    points: 8
+    answer: "ssh attacker 'curl -s -o /dev/null -w \"HTTP Status: %{http_code}\\nSize: %{size_download} bytes\\n\" http://10.20.30.80:3000/'"
+    answer_detail: "JuiceShop은 의도적으로 취약한 웹 애플리케이션입니다. 공격 시뮬레이션의 대상으로, 이 접근이 Apache/Wazuh 로그에 기록되는지 확인합니다."
     verify:
       type: "output_contains"
-      expect: "네트워크 스캔 및 설정 점검으로 레드팀연동 적용 상태 "
+      expect: "HTTP Status"
+      field: "stdout"
+
   - order: 7
-    instruction: "레드팀연동 모니터링 체계를 구성하세요"
-    hint: "모니터링 도구와 알림 설정을 확인하세요"
-    category: "monitor"
-    points: 10
-    answer: "모니터링: 실시간 감시, 임계값 알림, 대시보드, 로그 분석"
-    answer_detail: "레드팀연동의 지속적인 모니터링은 보안 위협을 조기에 탐지하고 대응하기 위해 필수적입니다."
+    instruction: "ATTACKER VM에서 WEB VM의 웹서버에 SQL Injection 패턴을 포함한 요청을 보내시오."
+    hint: "curl로 SQL Injection 페이로드가 포함된 URL을 요청하세요."
+    category: "detection"
+    points: 12
+    answer: "ssh attacker 'curl -s -o /dev/null -w \"Status: %{http_code}\" \"http://10.20.30.80/index.html?id=1%27%20OR%201=1--\"'"
+    answer_detail: "SQL Injection 패턴(1' OR 1=1--)을 URL에 포함하여 전송합니다. ModSecurity WAF가 이를 차단하거나, Wazuh가 Apache 로그에서 탐지해야 합니다."
     verify:
       type: "output_contains"
-      expect: "모니터링: 실시간 감시, 임계값 알림, 대시보드, 로그"
+      expect: "Status"
+      field: "stdout"
+
   - order: 8
-    instruction: "레드팀연동 관련 로그를 수집하고 분석하세요"
-    hint: "로그 소스와 분석 도구를 활용하세요"
-    category: "analysis"
-    points: 10
-    answer: "로그 수집: syslog, 애플리케이션 로그, 감사 로그 통합 분석"
-    answer_detail: "로그 분석은 레드팀연동 관련 보안 이벤트를 추적하고 이상 징후를 탐지하는 핵심 활동입니다."
+    instruction: "SQL Injection 시도 후 SIEM VM에서 웹 공격 관련 Wazuh 알림을 확인하시오."
+    hint: "alerts.log에서 web, sql, injection, attack 키워드를 검색하세요."
+    category: "detection"
+    points: 12
+    answer: "ssh siem 'grep -B 2 -A 5 -i \"sql\\|injection\\|attack\\|web\" /var/ossec/logs/alerts/alerts.log | tail -30'"
+    answer_detail: "SQL Injection 시도가 Wazuh 알림으로 생성되었는지 확인합니다. 탐지가 안 되었다면 웹 공격 탐지 룰이 부족하거나, Apache 로그 모니터링 설정이 미흡한 것입니다."
     verify:
       type: "output_contains"
-      expect: "로그 수집: syslog, 애플리케이션 로그, 감사 로"
+      expect: ""
+      field: "stdout"
+
   - order: 9
-    instruction: "레드팀연동에 대한 방어 체계를 강화하세요"
-    hint: "다층 방어 전략을 적용하세요"
-    category: "defense"
-    points: 10
-    answer: "다층 방어: 네트워크, 호스트, 애플리케이션, 데이터 계층별 보안 강화"
-    answer_detail: "레드팀연동에 대한 단일 방어선은 충분하지 않습니다. 네트워크부터 데이터까지 모든 계층에서 방어 체계를 구축해야 합니다."
+    instruction: "ATTACKER VM에서 사용 가능한 공격 도구 목록을 확인하시오."
+    hint: "nmap, hydra, sqlmap, nikto 등의 설치 여부를 확인하세요."
+    category: "setup"
+    points: 8
+    answer: "ssh attacker 'which nmap hydra sqlmap nikto curl 2>/dev/null; echo \"=== nmap ===\"; nmap --version 2>/dev/null | head -2'"
+    answer_detail: "ATTACKER VM에 설치된 도구를 파악하면 시뮬레이션 가능한 공격 시나리오를 계획할 수 있습니다. 각 도구는 공격 라이프사이클의 서로 다른 단계에 사용됩니다."
     verify:
       type: "output_contains"
-      expect: "다층 방어: 네트워크, 호스트, 애플리케이션, 데이터 "
+      expect: "nmap"
+      field: "stdout"
+
   - order: 10
-    instruction: "레드팀연동 인시던트 대응 절차를 수립하세요"
-    hint: "대응 단계별 역할과 절차를 정의하세요"
-    category: "response"
-    points: 10
-    answer: "인시던트 대응: 탐지→분석→억제→제거→복구→교훈 6단계"
-    answer_detail: "레드팀연동 관련 보안 인시던트 발생 시 신속하고 체계적으로 대응하기 위한 절차를 사전에 수립해야 합니다."
+    instruction: "전체 공격 시뮬레이션의 탐지 결과를 요약하시오. SIEM에서 탐지된 알림의 룰 ID와 레벨을 정리하시오."
+    hint: "ATTACKER IP 관련 알림의 룰 ID와 레벨을 집계하세요."
+    category: "reporting"
+    points: 15
+    answer: "ssh siem 'echo \"=== 공격 탐지 요약 ===\"; echo \"ATTACKER(10.20.30.201) 관련 알림:\"; grep \"10.20.30.201\" /var/ossec/logs/alerts/alerts.log | grep -oP \"Rule: \\d+ \\(level \\d+\\)\" | sort | uniq -c | sort -rn'"
+    answer_detail: "레드팀 연동의 최종 산출물은 탐지 커버리지 보고서입니다. 탐지된 공격 유형, 미탐지 항목, 각 탐지의 레벨을 정리하여 SOC의 탐지 능력을 평가하고 개선점을 도출합니다."
     verify:
       type: "output_contains"
-      expect: "인시던트 대응: 탐지→분석→억제→제거→복구→교훈 6단계"
-  - order: 11
-    instruction: "레드팀연동의 접근 권한을 관리하세요"
-    hint: "최소 권한 원칙을 적용하세요"
-    category: "config"
-    points: 10
-    answer: "접근 관리: RBAC 기반, 최소 권한, 주기적 검토, 권한 변경 로깅"
-    answer_detail: "접근 권한 관리는 레드팀연동의 보안을 확보하기 위한 기본적인 통제입니다. 최소 권한 원칙에 따라 필요한 최소한의 권한만 부여해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "접근 관리: RBAC 기반, 최소 권한, 주기적 검토,"
-  - order: 12
-    instruction: "레드팀연동 관련 감사를 수행하세요"
-    hint: "감사 계획, 수행, 보고 절차를 따르세요"
-    category: "audit"
-    points: 10
-    answer: "감사: 계획수립→증거수집→분석→발견사항→개선권고 프로세스"
-    answer_detail: "정기적인 감사를 통해 레드팀연동 관련 통제의 효과성을 평가하고, 미흡한 사항을 식별하여 개선해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "감사: 계획수립→증거수집→분석→발견사항→개선권고 프로세"
-  - order: 13
-    instruction: "레드팀연동의 성능과 효과를 측정하세요"
-    hint: "핵심 성과지표(KPI)를 설정하세요"
-    category: "monitor"
-    points: 10
-    answer: "KPI: 탐지율, 대응시간, 오탐률, 준수율, 개선 완료율"
-    answer_detail: "레드팀연동의 효과를 객관적으로 측정하기 위해 핵심 성과지표를 설정하고 정기적으로 측정해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "KPI: 탐지율, 대응시간, 오탐률, 준수율, 개선 완"
-  - order: 14
-    instruction: "레드팀연동 개선 계획을 수립하세요"
-    hint: "발견된 문제점과 개선 방안을 정리하세요"
-    category: "analysis"
-    points: 10
-    answer: "개선 계획: 단기(1개월), 중기(3개월), 장기(1년) 로드맵 수립"
-    answer_detail: "지속적인 개선은 레드팀연동 관리의 핵심입니다. 발견된 문제점에 대한 우선순위별 개선 계획을 수립해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "개선 계획: 단기(1개월), 중기(3개월), 장기(1년"
-  - order: 15
-    instruction: "레드팀연동 종합 평가 보고서를 작성하세요"
-    hint: "전체 실습 내용을 종합하세요"
-    category: "audit"
-    points: 10
-    answer: "레드팀연동 종합 평가: 현황, 위험, 대책, 모니터링, 개선계획 총괄"
-    answer_detail: "레드팀연동에 대한 전체 학습 내용을 종합하여 평가 보고서를 작성합니다. 현황 분석, 위험 평가, 대책 구현, 모니터링, 개선 계획을 모두 포함합니다."
-    verify:
-      type: "output_contains"
-      expect: "레드팀연동 종합 평가: 현황, 위험, 대책, 모니터링,"
+      expect: "공격 탐지"
+      field: "stdout"

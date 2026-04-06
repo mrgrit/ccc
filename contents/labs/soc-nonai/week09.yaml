@@ -1,164 +1,133 @@
 lab_id: "soc-nonai-week09"
-title: "[Non-AI] 포렌식기초"
+title: "포렌식 기초 - 시스템 아티팩트 수집과 타임라인 분석"
 version: "non-ai"
 course: "soc-nonai"
 week: 9
-description: "디지털 포렌식 기초와 증거 수집을 학습합니다"
+description: "인시던트 발생 후 디지털 포렌식 관점에서 시스템 아티팩트를 수집하고, 타임라인을 구성하여 공격 경로를 재구성하는 기초 기법을 학습합니다."
 difficulty: "medium"
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-  - "포렌식기초의 핵심 개념을 이해한다"
-  - "포렌식기초 관련 실무 기술을 습득한다"
-  - "포렌식기초 보안 대책을 수립하고 적용한다"
+  - "시스템 휘발성/비휘발성 아티팩트를 식별하고 수집할 수 있다"
+  - "로그 기반 타임라인을 구성하여 공격 경로를 재구성한다"
+  - "파일 시스템 메타데이터를 분석하여 변조 흔적을 탐지한다"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "포렌식기초의 기본 개념과 구성 요소를 조사하세요"
-    hint: "포렌식기초 관련 핵심 용어와 구조를 확인하세요"
-    category: "recon"
-    points: 10
-    answer: "포렌식기초의 주요 구성요소와 핵심 개념을 정리"
-    answer_detail: "포렌식기초는 보안관제 분야의 핵심 주제로, 기본 개념을 정확히 이해하는 것이 실무 적용의 기초입니다."
+    instruction: "WEB VM에서 현재 시스템의 휘발성 정보(업타임, 로그인 사용자, 메모리 사용량)를 수집하시오."
+    hint: "uptime, who, free 명령을 사용하세요."
+    category: "analysis"
+    points: 5
+    answer: "ssh web 'echo \"=== UPTIME ===\"; uptime; echo \"=== LOGGED USERS ===\"; who; echo \"=== MEMORY ===\"; free -h'"
+    answer_detail: "포렌식에서는 휘발성 데이터부터 수집합니다(RFC 3227 증거 수집 순서). 업타임으로 마지막 재부팅 시점, who로 현재 접속자, free로 메모리 상태를 파악합니다."
     verify:
       type: "output_contains"
-      expect: "포렌식기초의 주요 구성요소와 핵심 개념을 정리"
+      expect: "UPTIME"
+      field: "stdout"
+
   - order: 2
-    instruction: "포렌식기초 관련 현재 환경을 분석하세요"
-    hint: "시스템 상태와 설정을 확인하세요"
+    instruction: "WEB VM에서 현재 네트워크 연결 상태를 수집하시오. 모든 TCP/UDP 연결과 리스닝 포트를 기록하시오."
+    hint: "ss -tunap 명령을 사용하세요."
     category: "analysis"
-    points: 10
-    answer: "현재 환경의 포렌식기초 적용 현황 분석 완료"
-    answer_detail: "포렌식기초 적용을 위해서는 먼저 현재 환경의 상태를 정확히 파악해야 합니다. 기존 설정과 구성을 분석하여 개선점을 식별합니다."
+    points: 8
+    answer: "ssh web 'ss -tunap'"
+    answer_detail: "네트워크 연결은 휘발성 데이터입니다. 공격자의 원격 접속(reverse shell 등)이 ESTABLISHED 상태로 남아있을 수 있습니다. 모든 연결의 소스/대상 IP와 프로세스를 기록합니다."
     verify:
       type: "output_contains"
-      expect: "현재 환경의 포렌식기초 적용 현황 분석 완료"
+      expect: "LISTEN"
+      field: "stdout"
+
   - order: 3
-    instruction: "포렌식기초 관련 보안 정책을 수립하세요"
-    hint: "정책 문서의 필수 항목을 확인하세요"
-    category: "config"
-    points: 10
-    answer: "포렌식기초 보안 정책: 목적, 범위, 역할, 절차, 위반조치 포함"
-    answer_detail: "보안 정책은 포렌식기초에 대한 조직의 방향과 기준을 제시하는 최상위 문서입니다. 명확한 목적, 범위, 역할과 책임을 포함해야 합니다."
+    instruction: "WEB VM에서 현재 실행 중인 모든 프로세스를 수집하시오. 프로세스 트리 형태로 확인하시오."
+    hint: "ps auxf 또는 pstree 명령을 사용하세요."
+    category: "analysis"
+    points: 8
+    answer: "ssh web 'ps auxf --cols 200 | head -50'"
+    answer_detail: "프로세스 목록은 포렌식의 핵심 아티팩트입니다. 비정상적인 프로세스(이상한 이름, root 권한, 높은 리소스 사용)를 식별합니다. PPID를 통해 프로세스 생성 관계도 파악합니다."
     verify:
       type: "output_contains"
-      expect: "포렌식기초 보안 정책: 목적, 범위, 역할, 절차, 위"
+      expect: "root"
+      field: "stdout"
+
   - order: 4
-    instruction: "포렌식기초의 위험 요소를 식별하고 평가하세요"
-    hint: "위험 식별 기법을 활용하세요"
+    instruction: "WEB VM에서 최근 24시간 내 수정된 파일을 /etc 디렉토리에서 검색하시오."
+    hint: "find 명령의 -mtime 옵션을 사용하세요."
     category: "analysis"
     points: 10
-    answer: "위험 평가: 위협 식별, 취약점 분석, 영향도 평가, 위험도 산정"
-    answer_detail: "포렌식기초 관련 위험을 체계적으로 식별하고 평가하는 것은 효과적인 보안 대책 수립의 기반입니다."
+    answer: "ssh web 'find /etc -mtime -1 -type f -ls 2>/dev/null | head -20'"
+    answer_detail: "공격자는 지속성 확보를 위해 /etc 하위의 설정 파일(crontab, passwd, ssh 설정 등)을 변조할 수 있습니다. 최근 변경된 설정 파일은 포렌식 분석의 핵심 대상입니다."
     verify:
       type: "output_contains"
-      expect: "위험 평가: 위협 식별, 취약점 분석, 영향도 평가, "
+      expect: "/etc"
+      field: "stdout"
+
   - order: 5
-    instruction: "포렌식기초 보호 대책을 구현하세요"
-    hint: "기술적 통제와 관리적 통제를 모두 적용하세요"
-    category: "defense"
+    instruction: "WEB VM에서 사용자 계정 관련 파일(passwd, shadow, group)의 최근 수정 시간을 확인하시오."
+    hint: "stat 또는 ls -la 명령으로 파일 메타데이터를 확인하세요."
+    category: "analysis"
     points: 10
-    answer: "기술적 통제: 접근제어, 암호화, 모니터링 / 관리적 통제: 정책, 교육, 감사"
-    answer_detail: "포렌식기초에 대한 보호 대책은 기술적 통제와 관리적 통제를 균형 있게 적용하여 다층 방어를 구현해야 합니다."
+    answer: "ssh web 'stat /etc/passwd /etc/shadow /etc/group 2>/dev/null | grep -E \"File:|Modify:\"'"
+    answer_detail: "passwd와 shadow 파일의 수정 시간이 예상 시점과 다르면 계정 추가/변경이 발생한 것입니다. 공격자가 백도어 계정을 생성했을 가능성을 조사해야 합니다."
     verify:
       type: "output_contains"
-      expect: "기술적 통제: 접근제어, 암호화, 모니터링 / 관리적 "
+      expect: "Modify"
+      field: "stdout"
+
   - order: 6
-    instruction: "10.20.30.0/24 네트워크에서 포렌식기초 관련 설정을 점검하세요"
-    hint: "대상 서버의 설정 파일을 확인하세요"
-    category: "audit"
+    instruction: "WEB VM에서 cron 작업(예약된 작업)을 확인하시오. 시스템 전체와 사용자별 crontab을 모두 검사하시오."
+    hint: "/etc/crontab, /etc/cron.d/, 사용자 crontab을 확인하세요."
+    category: "analysis"
     points: 10
-    answer: "네트워크 스캔 및 설정 점검으로 포렌식기초 적용 상태 확인"
-    answer_detail: "실제 네트워크 환경에서 포렌식기초 관련 설정이 올바르게 적용되어 있는지 점검합니다. 10.20.30.0/24 대역의 모든 호스트를 대상으로 합니다."
+    answer: "ssh web 'cat /etc/crontab && echo \"=== cron.d ===\"; ls -la /etc/cron.d/ && echo \"=== user crontab ===\"; crontab -l 2>/dev/null || echo \"no user crontab\"'"
+    answer_detail: "공격자는 지속성(persistence)을 위해 cron에 악성 스크립트를 등록합니다. 비정상적인 스크립트 경로나 외부 URL 다운로드 명령이 있으면 의심해야 합니다."
     verify:
       type: "output_contains"
-      expect: "네트워크 스캔 및 설정 점검으로 포렌식기초 적용 상태 "
+      expect: "cron"
+      field: "stdout"
+
   - order: 7
-    instruction: "포렌식기초 모니터링 체계를 구성하세요"
-    hint: "모니터링 도구와 알림 설정을 확인하세요"
-    category: "monitor"
+    instruction: "WEB VM에서 bash 히스토리를 확인하여 최근 실행된 명령어를 분석하시오."
+    hint: "각 사용자의 .bash_history 파일을 확인하세요."
+    category: "analysis"
     points: 10
-    answer: "모니터링: 실시간 감시, 임계값 알림, 대시보드, 로그 분석"
-    answer_detail: "포렌식기초의 지속적인 모니터링은 보안 위협을 조기에 탐지하고 대응하기 위해 필수적입니다."
+    answer: "ssh web 'cat /root/.bash_history 2>/dev/null | tail -30; for user in $(ls /home/); do echo \"=== $user ===\"; cat /home/$user/.bash_history 2>/dev/null | tail -10; done'"
+    answer_detail: "bash_history에는 사용자가 실행한 명령이 기록됩니다. 공격자가 히스토리를 삭제할 수 있지만, 남아있다면 공격 단계를 재구성하는 데 매우 유용한 아티팩트입니다."
     verify:
       type: "output_contains"
-      expect: "모니터링: 실시간 감시, 임계값 알림, 대시보드, 로그"
+      expect: ""
+      field: "stdout"
+
   - order: 8
-    instruction: "포렌식기초 관련 로그를 수집하고 분석하세요"
-    hint: "로그 소스와 분석 도구를 활용하세요"
+    instruction: "WEB VM에서 SSH 관련 아티팩트를 수집하시오. authorized_keys, known_hosts, sshd 설정을 확인하시오."
+    hint: "/root/.ssh/와 /etc/ssh/ 디렉토리를 확인하세요."
     category: "analysis"
-    points: 10
-    answer: "로그 수집: syslog, 애플리케이션 로그, 감사 로그 통합 분석"
-    answer_detail: "로그 분석은 포렌식기초 관련 보안 이벤트를 추적하고 이상 징후를 탐지하는 핵심 활동입니다."
+    points: 12
+    answer: "ssh web 'echo \"=== authorized_keys ===\"; cat /root/.ssh/authorized_keys 2>/dev/null; echo \"=== sshd_config ===\"; grep -v \"^#\" /etc/ssh/sshd_config | grep -v \"^$\" | head -20'"
+    answer_detail: "authorized_keys에 알 수 없는 공개키가 있으면 공격자가 SSH 백도어를 설치한 것입니다. sshd_config에서 PermitRootLogin, PasswordAuthentication 설정도 변조 여부를 확인합니다."
     verify:
       type: "output_contains"
-      expect: "로그 수집: syslog, 애플리케이션 로그, 감사 로"
+      expect: "sshd_config"
+      field: "stdout"
+
   - order: 9
-    instruction: "포렌식기초에 대한 방어 체계를 강화하세요"
-    hint: "다층 방어 전략을 적용하세요"
-    category: "defense"
-    points: 10
-    answer: "다층 방어: 네트워크, 호스트, 애플리케이션, 데이터 계층별 보안 강화"
-    answer_detail: "포렌식기초에 대한 단일 방어선은 충분하지 않습니다. 네트워크부터 데이터까지 모든 계층에서 방어 체계를 구축해야 합니다."
+    instruction: "SIEM VM에서 WEB VM 에이전트의 Wazuh 파일 무결성 모니터링(syscheck) 알림을 확인하시오."
+    hint: "alerts.log에서 syscheck 관련 알림을 검색하세요."
+    category: "detection"
+    points: 12
+    answer: "ssh siem 'grep -B 2 -A 5 \"syscheck\\|integrity\" /var/ossec/logs/alerts/alerts.log | tail -30'"
+    answer_detail: "Wazuh syscheck는 파일 변경(추가/수정/삭제)을 탐지하여 알림을 생성합니다. 포렌식에서 syscheck 알림은 공격자의 파일 변조 타임라인을 구성하는 핵심 데이터입니다."
     verify:
       type: "output_contains"
-      expect: "다층 방어: 네트워크, 호스트, 애플리케이션, 데이터 "
+      expect: ""
+      field: "stdout"
+
   - order: 10
-    instruction: "포렌식기초 인시던트 대응 절차를 수립하세요"
-    hint: "대응 단계별 역할과 절차를 정의하세요"
-    category: "response"
-    points: 10
-    answer: "인시던트 대응: 탐지→분석→억제→제거→복구→교훈 6단계"
-    answer_detail: "포렌식기초 관련 보안 인시던트 발생 시 신속하고 체계적으로 대응하기 위한 절차를 사전에 수립해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "인시던트 대응: 탐지→분석→억제→제거→복구→교훈 6단계"
-  - order: 11
-    instruction: "포렌식기초의 접근 권한을 관리하세요"
-    hint: "최소 권한 원칙을 적용하세요"
-    category: "config"
-    points: 10
-    answer: "접근 관리: RBAC 기반, 최소 권한, 주기적 검토, 권한 변경 로깅"
-    answer_detail: "접근 권한 관리는 포렌식기초의 보안을 확보하기 위한 기본적인 통제입니다. 최소 권한 원칙에 따라 필요한 최소한의 권한만 부여해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "접근 관리: RBAC 기반, 최소 권한, 주기적 검토,"
-  - order: 12
-    instruction: "포렌식기초 관련 감사를 수행하세요"
-    hint: "감사 계획, 수행, 보고 절차를 따르세요"
-    category: "audit"
-    points: 10
-    answer: "감사: 계획수립→증거수집→분석→발견사항→개선권고 프로세스"
-    answer_detail: "정기적인 감사를 통해 포렌식기초 관련 통제의 효과성을 평가하고, 미흡한 사항을 식별하여 개선해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "감사: 계획수립→증거수집→분석→발견사항→개선권고 프로세"
-  - order: 13
-    instruction: "포렌식기초의 성능과 효과를 측정하세요"
-    hint: "핵심 성과지표(KPI)를 설정하세요"
-    category: "monitor"
-    points: 10
-    answer: "KPI: 탐지율, 대응시간, 오탐률, 준수율, 개선 완료율"
-    answer_detail: "포렌식기초의 효과를 객관적으로 측정하기 위해 핵심 성과지표를 설정하고 정기적으로 측정해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "KPI: 탐지율, 대응시간, 오탐률, 준수율, 개선 완"
-  - order: 14
-    instruction: "포렌식기초 개선 계획을 수립하세요"
-    hint: "발견된 문제점과 개선 방안을 정리하세요"
+    instruction: "WEB VM에서 최근 로그인 기록(wtmp)과 마지막 접속 기록(lastlog)을 수집하시오."
+    hint: "last와 lastlog 명령을 사용하세요."
     category: "analysis"
     points: 10
-    answer: "개선 계획: 단기(1개월), 중기(3개월), 장기(1년) 로드맵 수립"
-    answer_detail: "지속적인 개선은 포렌식기초 관리의 핵심입니다. 발견된 문제점에 대한 우선순위별 개선 계획을 수립해야 합니다."
+    answer: "ssh web 'echo \"=== LAST LOGINS ===\"; last -20; echo \"=== LASTLOG ===\"; lastlog | grep -v \"Never\"'"
+    answer_detail: "wtmp(last 명령)은 로그인/로그아웃 기록, lastlog는 각 사용자의 마지막 접속 정보를 보여줍니다. 비정상적인 시간대 접속이나 알 수 없는 소스 IP가 있으면 침해 증거입니다."
     verify:
       type: "output_contains"
-      expect: "개선 계획: 단기(1개월), 중기(3개월), 장기(1년"
-  - order: 15
-    instruction: "포렌식기초 종합 평가 보고서를 작성하세요"
-    hint: "전체 실습 내용을 종합하세요"
-    category: "audit"
-    points: 10
-    answer: "포렌식기초 종합 평가: 현황, 위험, 대책, 모니터링, 개선계획 총괄"
-    answer_detail: "포렌식기초에 대한 전체 학습 내용을 종합하여 평가 보고서를 작성합니다. 현황 분석, 위험 평가, 대책 구현, 모니터링, 개선 계획을 모두 포함합니다."
-    verify:
-      type: "output_contains"
-      expect: "포렌식기초 종합 평가: 현황, 위험, 대책, 모니터링,"
+      expect: "LAST"
+      field: "stdout"

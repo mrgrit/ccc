@@ -1,164 +1,102 @@
 lab_id: "compliance-nonai-week09"
-title: "[Non-AI] 정보보호관리체계"
+title: "정보보호관리체계(ISMS) 기술 점검 실습"
 version: "non-ai"
 course: "compliance-nonai"
 week: 9
-description: "정보보호관리체계 구축 및 운영을 학습합니다"
+description: "정보보호관리체계(ISMS) 수립을 위한 기술적 현황 점검을 수행합니다. 자산 식별, 보안 설정 기준선(baseline) 수립, 통제 구현 상태 확인을 실습합니다."
 difficulty: "medium"
 duration_minutes: 120
 objectives:
-  - "정보보호관리체계의 핵심 개념을 이해한다"
-  - "정보보호관리체계 관련 실무 기술을 습득한다"
-  - "정보보호관리체계 보안 대책을 수립하고 적용한다"
+  - "ISMS 수립을 위한 정보자산 식별 방법을 이해한다"
+  - "보안 설정 기준선을 수립하고 현재 상태와 비교한다"
+  - "통제 구현 상태를 자동으로 점검한다"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "정보보호관리체계의 기본 개념과 구성 요소를 조사하세요"
-    hint: "정보보호관리체계 관련 핵심 용어와 구조를 확인하세요"
-    category: "recon"
+    instruction: "SECU 서버(10.20.30.1)의 정보자산 현황을 조사하시오. 하드웨어/소프트웨어 자산 식별."
+    hint: "시스템 하드웨어 정보와 설치된 주요 소프트웨어를 확인하세요."
+    category: "audit"
     points: 10
-    answer: "정보보호관리체계의 주요 구성요소와 핵심 개념을 정리"
-    answer_detail: "정보보호관리체계는 컴플라이언스 분야의 핵심 주제로, 기본 개념을 정확히 이해하는 것이 실무 적용의 기초입니다."
+    answer: "echo '=== 하드웨어 ===' && cat /proc/cpuinfo | grep 'model name' | head -1 && free -h | head -2 && df -h / && echo '=== 소프트웨어 ===' && dpkg -l | grep -E '(openssh|apache|mysql|nginx|suricata|auditd|nftables)' | head -10"
+    answer_detail: "ISMS 수립의 첫 단계는 보호해야 할 정보자산을 식별하는 것입니다. 정보자산에는 하드웨어(서버, 네트워크 장비), 소프트웨어(OS, 미들웨어, 애플리케이션), 데이터(DB, 파일), 서비스 등이 포함됩니다."
     verify:
       type: "output_contains"
-      expect: "정보보호관리체계의 주요 구성요소와 핵심 개념을 정리"
+      expect: "하드웨어"
+      field: "stdout"
   - order: 2
-    instruction: "정보보호관리체계 관련 현재 환경을 분석하세요"
-    hint: "시스템 상태와 설정을 확인하세요"
-    category: "analysis"
+    instruction: "네트워크 자산을 식별하시오. 현재 서버가 통신하는 네트워크 대역과 활성 연결을 확인합니다."
+    hint: "ip addr과 ss 명령으로 네트워크 정보를 확인하세요."
+    category: "audit"
     points: 10
-    answer: "현재 환경의 정보보호관리체계 적용 현황 분석 완료"
-    answer_detail: "정보보호관리체계 적용을 위해서는 먼저 현재 환경의 상태를 정확히 파악해야 합니다. 기존 설정과 구성을 분석하여 개선점을 식별합니다."
+    answer: "ip addr show | grep 'inet ' && echo '--- 활성 연결 ---' && ss -tn | grep ESTAB | head -10 && echo '--- 라우팅 ---' && ip route"
+    answer_detail: "네트워크 자산 식별은 서버의 IP 주소, 서브넷, 게이트웨이, 통신 대상을 파악하는 것입니다. ISMS에서는 네트워크 토폴로지를 문서화하고, 각 네트워크 세그먼트의 보안 등급을 정의해야 합니다."
     verify:
       type: "output_contains"
-      expect: "현재 환경의 정보보호관리체계 적용 현황 분석 완료"
+      expect: "inet"
+      field: "stdout"
   - order: 3
-    instruction: "정보보호관리체계 관련 보안 정책을 수립하세요"
-    hint: "정책 문서의 필수 항목을 확인하세요"
-    category: "config"
+    instruction: "서비스 자산을 식별하시오. 현재 실행 중인 서비스 목록과 포트를 확인합니다."
+    hint: "systemctl과 ss로 활성 서비스와 열린 포트를 확인하세요."
+    category: "audit"
     points: 10
-    answer: "정보보호관리체계 보안 정책: 목적, 범위, 역할, 절차, 위반조치 포함"
-    answer_detail: "보안 정책은 정보보호관리체계에 대한 조직의 방향과 기준을 제시하는 최상위 문서입니다. 명확한 목적, 범위, 역할과 책임을 포함해야 합니다."
+    answer: "systemctl list-units --type=service --state=running --no-pager | head -20 && echo '--- 열린 포트 ---' && sudo ss -tlnp | column -t"
+    answer_detail: "서비스 자산 식별은 시스템에서 제공하는 모든 서비스를 파악하는 것입니다. 각 서비스의 용도, 관리자, 중요도를 문서화하고, 불필요한 서비스는 비활성화합니다. 이는 공격 표면을 줄이는 기본 조치입니다."
     verify:
       type: "output_contains"
-      expect: "정보보호관리체계 보안 정책: 목적, 범위, 역할, 절차"
+      expect: "열린 포트"
+      field: "stdout"
   - order: 4
-    instruction: "정보보호관리체계의 위험 요소를 식별하고 평가하세요"
-    hint: "위험 식별 기법을 활용하세요"
-    category: "analysis"
-    points: 10
-    answer: "위험 평가: 위협 식별, 취약점 분석, 영향도 평가, 위험도 산정"
-    answer_detail: "정보보호관리체계 관련 위험을 체계적으로 식별하고 평가하는 것은 효과적인 보안 대책 수립의 기반입니다."
-    verify:
-      type: "output_contains"
-      expect: "위험 평가: 위협 식별, 취약점 분석, 영향도 평가, "
-  - order: 5
-    instruction: "정보보호관리체계 보호 대책을 구현하세요"
-    hint: "기술적 통제와 관리적 통제를 모두 적용하세요"
-    category: "defense"
-    points: 10
-    answer: "기술적 통제: 접근제어, 암호화, 모니터링 / 관리적 통제: 정책, 교육, 감사"
-    answer_detail: "정보보호관리체계에 대한 보호 대책은 기술적 통제와 관리적 통제를 균형 있게 적용하여 다층 방어를 구현해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "기술적 통제: 접근제어, 암호화, 모니터링 / 관리적 "
-  - order: 6
-    instruction: "10.20.30.0/24 네트워크에서 정보보호관리체계 관련 설정을 점검하세요"
-    hint: "대상 서버의 설정 파일을 확인하세요"
-    category: "audit"
-    points: 10
-    answer: "네트워크 스캔 및 설정 점검으로 정보보호관리체계 적용 상태 확인"
-    answer_detail: "실제 네트워크 환경에서 정보보호관리체계 관련 설정이 올바르게 적용되어 있는지 점검합니다. 10.20.30.0/24 대역의 모든 호스트를 대상으로 합니다."
-    verify:
-      type: "output_contains"
-      expect: "네트워크 스캔 및 설정 점검으로 정보보호관리체계 적용 "
-  - order: 7
-    instruction: "정보보호관리체계 모니터링 체계를 구성하세요"
-    hint: "모니터링 도구와 알림 설정을 확인하세요"
-    category: "monitor"
-    points: 10
-    answer: "모니터링: 실시간 감시, 임계값 알림, 대시보드, 로그 분석"
-    answer_detail: "정보보호관리체계의 지속적인 모니터링은 보안 위협을 조기에 탐지하고 대응하기 위해 필수적입니다."
-    verify:
-      type: "output_contains"
-      expect: "모니터링: 실시간 감시, 임계값 알림, 대시보드, 로그"
-  - order: 8
-    instruction: "정보보호관리체계 관련 로그를 수집하고 분석하세요"
-    hint: "로그 소스와 분석 도구를 활용하세요"
-    category: "analysis"
-    points: 10
-    answer: "로그 수집: syslog, 애플리케이션 로그, 감사 로그 통합 분석"
-    answer_detail: "로그 분석은 정보보호관리체계 관련 보안 이벤트를 추적하고 이상 징후를 탐지하는 핵심 활동입니다."
-    verify:
-      type: "output_contains"
-      expect: "로그 수집: syslog, 애플리케이션 로그, 감사 로"
-  - order: 9
-    instruction: "정보보호관리체계에 대한 방어 체계를 강화하세요"
-    hint: "다층 방어 전략을 적용하세요"
-    category: "defense"
-    points: 10
-    answer: "다층 방어: 네트워크, 호스트, 애플리케이션, 데이터 계층별 보안 강화"
-    answer_detail: "정보보호관리체계에 대한 단일 방어선은 충분하지 않습니다. 네트워크부터 데이터까지 모든 계층에서 방어 체계를 구축해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "다층 방어: 네트워크, 호스트, 애플리케이션, 데이터 "
-  - order: 10
-    instruction: "정보보호관리체계 인시던트 대응 절차를 수립하세요"
-    hint: "대응 단계별 역할과 절차를 정의하세요"
-    category: "response"
-    points: 10
-    answer: "인시던트 대응: 탐지→분석→억제→제거→복구→교훈 6단계"
-    answer_detail: "정보보호관리체계 관련 보안 인시던트 발생 시 신속하고 체계적으로 대응하기 위한 절차를 사전에 수립해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "인시던트 대응: 탐지→분석→억제→제거→복구→교훈 6단계"
-  - order: 11
-    instruction: "정보보호관리체계의 접근 권한을 관리하세요"
-    hint: "최소 권한 원칙을 적용하세요"
+    instruction: "보안 설정 기준선(baseline)을 위한 현재 설정을 수집하시오. 패스워드 정책, SSH 설정, 방화벽 정책을 한 번에 수집합니다."
+    hint: "주요 보안 설정 파일의 내용을 수집하는 스크립트를 작성하세요."
     category: "config"
-    points: 10
-    answer: "접근 관리: RBAC 기반, 최소 권한, 주기적 검토, 권한 변경 로깅"
-    answer_detail: "접근 권한 관리는 정보보호관리체계의 보안을 확보하기 위한 기본적인 통제입니다. 최소 권한 원칙에 따라 필요한 최소한의 권한만 부여해야 합니다."
+    points: 12
+    answer: "echo '=== 보안 기준선 수집 ===' && echo '[패스워드]' && grep -E '^(PASS_|minlen|credit)' /etc/login.defs /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' && echo '[SSH]' && grep -E '^(PermitRoot|MaxAuth|PasswordAuth|ClientAlive)' /etc/ssh/sshd_config 2>/dev/null && echo '[방화벽]' && sudo nft list ruleset 2>/dev/null | grep -c 'rule'"
+    answer_detail: "보안 설정 기준선(baseline)은 조직이 정한 최소 보안 설정 기준입니다. 현재 시스템의 설정을 수집하여 기준선과 비교하고, 미달 항목을 식별하여 조치합니다. CIS Benchmark가 대표적인 기준선 프레임워크입니다."
     verify:
       type: "output_contains"
-      expect: "접근 관리: RBAC 기반, 최소 권한, 주기적 검토,"
-  - order: 12
-    instruction: "정보보호관리체계 관련 감사를 수행하세요"
-    hint: "감사 계획, 수행, 보고 절차를 따르세요"
+      expect: "보안 기준선 수집"
+      field: "stdout"
+  - order: 5
+    instruction: "WEB 서버(10.20.30.80)의 자산과 보안 설정을 원격으로 수집하시오."
+    hint: "SSH로 WEB 서버에 접속하여 주요 정보를 수집하세요."
     category: "audit"
     points: 10
-    answer: "감사: 계획수립→증거수집→분석→발견사항→개선권고 프로세스"
-    answer_detail: "정기적인 감사를 통해 정보보호관리체계 관련 통제의 효과성을 평가하고, 미흡한 사항을 식별하여 개선해야 합니다."
+    answer: "ssh trainee@10.20.30.80 'echo \"=== WEB 서버 자산 ===\"; echo \"[OS]\"; cat /etc/os-release | head -3; echo \"[서비스]\"; systemctl is-active apache2 docker 2>/dev/null; echo \"[포트]\"; sudo ss -tlnp 2>/dev/null | head -10'"
+    answer_detail: "ISMS에서는 모든 정보자산에 대해 보안 현황을 파악해야 합니다. 원격 서버의 자산 정보를 SSH로 수집하면 중앙에서 전체 시스템의 보안 현황을 관리할 수 있습니다."
     verify:
       type: "output_contains"
-      expect: "감사: 계획수립→증거수집→분석→발견사항→개선권고 프로세"
-  - order: 13
-    instruction: "정보보호관리체계의 성능과 효과를 측정하세요"
-    hint: "핵심 성과지표(KPI)를 설정하세요"
-    category: "monitor"
-    points: 10
-    answer: "KPI: 탐지율, 대응시간, 오탐률, 준수율, 개선 완료율"
-    answer_detail: "정보보호관리체계의 효과를 객관적으로 측정하기 위해 핵심 성과지표를 설정하고 정기적으로 측정해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "KPI: 탐지율, 대응시간, 오탐률, 준수율, 개선 완"
-  - order: 14
-    instruction: "정보보호관리체계 개선 계획을 수립하세요"
-    hint: "발견된 문제점과 개선 방안을 정리하세요"
-    category: "analysis"
-    points: 10
-    answer: "개선 계획: 단기(1개월), 중기(3개월), 장기(1년) 로드맵 수립"
-    answer_detail: "지속적인 개선은 정보보호관리체계 관리의 핵심입니다. 발견된 문제점에 대한 우선순위별 개선 계획을 수립해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "개선 계획: 단기(1개월), 중기(3개월), 장기(1년"
-  - order: 15
-    instruction: "정보보호관리체계 종합 평가 보고서를 작성하세요"
-    hint: "전체 실습 내용을 종합하세요"
+      expect: "WEB 서버 자산"
+      field: "stdout"
+  - order: 6
+    instruction: "SIEM 서버(10.20.30.100)의 Wazuh 연동 상태를 확인하시오. ISMS의 로그 중앙 관리 요구사항."
+    hint: "Wazuh 에이전트 상태를 확인하세요."
     category: "audit"
-    points: 10
-    answer: "정보보호관리체계 종합 평가: 현황, 위험, 대책, 모니터링, 개선계획 총괄"
-    answer_detail: "정보보호관리체계에 대한 전체 학습 내용을 종합하여 평가 보고서를 작성합니다. 현황 분석, 위험 평가, 대책 구현, 모니터링, 개선 계획을 모두 포함합니다."
+    points: 12
+    answer: "sudo systemctl status wazuh-agent --no-pager 2>/dev/null | head -5 || echo 'wazuh-agent 미설치' && sudo cat /var/ossec/etc/ossec.conf 2>/dev/null | grep -A3 '<server>' | head -5 || echo 'ossec.conf 없음'"
+    answer_detail: "ISMS는 보안 로그의 중앙 수집과 모니터링을 요구합니다. Wazuh는 오픈소스 SIEM/XDR로, 에이전트가 각 서버에서 로그를 수집하여 매니저(10.20.30.100)로 전송합니다. 에이전트가 active 상태이고 매니저와 연결되어야 합니다."
     verify:
       type: "output_contains"
-      expect: "정보보호관리체계 종합 평가: 현황, 위험, 대책, 모니"
+      expect: "wazuh"
+      field: "stdout"
+  - order: 7
+    instruction: "정보자산 목록과 보안 등급을 정리하는 자산 관리 파일을 생성하시오."
+    hint: "CSV 형식으로 자산명, 유형, IP, 보안 등급, 관리자를 정리하세요."
+    category: "config"
+    points: 12
+    answer: "cat << 'EOF' > /tmp/asset_inventory.csv\n자산명,유형,IP,보안등급,운영서비스,관리자\nSECU서버,서버,10.20.30.1,상,방화벽/IDS/감사,보안팀\nWEB서버,서버,10.20.30.80,상,웹서비스/Docker,개발팀\nSIEM서버,서버,10.20.30.100,최상,Wazuh-SIEM,보안팀\nEOF\ncat /tmp/asset_inventory.csv"
+    answer_detail: "ISMS에서 자산 목록은 관리체계의 기본 문서입니다. 각 자산의 보안 등급은 기밀성, 무결성, 가용성(CIA) 평가를 통해 결정하며, 등급에 따라 적용할 보호조치 수준이 달라집니다."
+    verify:
+      type: "output_contains"
+      expect: "SECU서버"
+      field: "stdout"
+  - order: 8
+    instruction: "전체 인프라의 ISMS 기술적 현황 점검 스크립트를 작성하고 실행하시오."
+    hint: "3대 서버의 핵심 보안 설정을 종합 수집하세요."
+    category: "audit"
+    points: 14
+    answer: "cat << 'SCRIPT' > /tmp/isms_baseline.sh\n#!/bin/bash\necho '=== ISMS 기술적 현황 종합 보고 ==='\necho ''\necho '[SECU 서버 - 10.20.30.1]'\necho \"방화벽: $(sudo nft list ruleset 2>/dev/null | grep -c 'rule') 규칙\"\necho \"IDS: $(sudo systemctl is-active suricata 2>/dev/null)\"\necho \"감사: $(sudo auditctl -l 2>/dev/null | wc -l) 규칙\"\necho ''\necho '[WEB 서버 - 10.20.30.80]'\nssh trainee@10.20.30.80 'echo \"Apache: $(systemctl is-active apache2 2>/dev/null)\"; echo \"Docker: $(systemctl is-active docker 2>/dev/null)\"; echo \"컨테이너: $(docker ps -q 2>/dev/null | wc -l)개\"' 2>/dev/null\necho ''\necho '[자산 요약]'\necho \"총 서버: 3대 (SECU, WEB, SIEM)\"\necho \"총 서비스: 방화벽, IDS, 감사, 웹서버, 컨테이너, SIEM\"\necho ''\necho '=== ISMS 현황 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/isms_baseline.sh && bash /tmp/isms_baseline.sh"
+    answer_detail: "ISMS 수립은 정보자산 식별 -> 위험 평가 -> 보호대책 선정 -> 구현 -> 모니터링의 PDCA(Plan-Do-Check-Act) 사이클을 따릅니다. 기술적 현황 점검은 Check 단계에 해당하며, 정기적으로 수행하여 보호대책의 효과성을 평가합니다."
+    verify:
+      type: "output_contains"
+      expect: "ISMS 현황 점검 완료"
+      field: "stdout"

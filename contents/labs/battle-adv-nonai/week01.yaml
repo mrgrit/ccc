@@ -146,34 +146,12 @@ steps:
       expect: "enterprise-attack"
 
   - order: 13
-    instruction: "APT 시뮬레이션 과정에서 생성된 IoC(Indicator of Compromise)를 정리하라. IP, 해시, 파일 경로, 프로세스 등의 IoC를 STIX 2.1 형태로 기록하라."
-    hint: "STIX indicator 객체 형태의 JSON을 생성한다."
-    category: "analysis"
-    points: 10
-    answer: "cat > /tmp/apt_ioc_stix.json << 'EOF'\n{\"type\":\"bundle\",\"id\":\"bundle--apt-sim-001\",\"objects\":[{\"type\":\"indicator\",\"id\":\"indicator--001\",\"name\":\"APT Sim Phishing Server\",\"pattern\":\"[ipv4-addr:value = '10.20.30.201' AND network-traffic:dst_port = 8888]\",\"pattern_type\":\"stix\",\"valid_from\":\"2026-04-03T00:00:00Z\"},{\"type\":\"indicator\",\"id\":\"indicator--002\",\"name\":\"APT Sim Persistence\",\"pattern\":\"[file:name = 'apt_persist.txt']\",\"pattern_type\":\"stix\",\"valid_from\":\"2026-04-03T00:00:00Z\"},{\"type\":\"indicator\",\"id\":\"indicator--003\",\"name\":\"APT Sim Exfil Data\",\"pattern\":\"[file:name = 'apt_exfil.txt']\",\"pattern_type\":\"stix\",\"valid_from\":\"2026-04-03T00:00:00Z\"}]}\nEOF\ncat /tmp/apt_ioc_stix.json | python3 -m json.tool | head -10"
-    answer_detail: "IoC(침해 지표)는 APT 탐지와 공유의 핵심 자산이다. STIX(Structured Threat Information eXpression) 2.1은 사이버 위협 인텔리전스를 구조화하는 표준이다. indicator 객체에 STIX 패턴으로 IoC를 기술하면 다른 보안 도구와 호환 가능하다."
-    verify:
-      type: "output_contains"
-      expect: "bundle"
-
-  - order: 14
-    instruction: "실습 환경을 정리하라. 시뮬레이션 과정에서 설치한 Persistence 메커니즘(crontab)을 제거하고, 생성된 임시 파일과 프로세스를 정리하라."
-    hint: "crontab -r로 크론탭을 초기화하고, 백그라운드 HTTP 서버를 종료한다."
-    category: "response"
-    points: 5
-    answer: "crontab -r 2>/dev/null; kill $(lsof -ti:8888) 2>/dev/null; rm -f /tmp/apt_*.txt /tmp/apt_*.vba /tmp/apt_*.json /tmp/phishing_sim/* 2>/dev/null; echo 'Cleanup completed'"
-    answer_detail: "APT 시뮬레이션 후에는 반드시 환경을 원래 상태로 복원해야 한다. Persistence 메커니즘 제거, 임시 파일 삭제, 백그라운드 프로세스 종료를 수행한다. 실제 침해 대응에서도 동일한 정리 작업이 필수적이다."
-    verify:
-      type: "output_contains"
-      expect: "Cleanup completed"
-
-  - order: 15
-    instruction: "이번 APT 시뮬레이션 실습의 킬체인 분석 보고서를 작성하라. 각 단계에서 사용한 기법, MITRE ATT&CK 매핑, 탐지 포인트, 방어 권고사항을 포함하라."
-    hint: "킬체인 7단계 × (기법 + ATT&CK ID + 탐지 방법 + 방어 권고) 형태로 정리한다."
+    instruction: "실습 환경을 정리하고 킬체인 분석 보고서를 작성하라. crontab과 임시 파일을 제거한 후, 각 킬체인 단계의 기법, MITRE ATT&CK 매핑, 탐지 포인트를 /tmp/apt_killchain_report.txt에 정리하라."
+    hint: "crontab -r로 크론탭을 초기화하고, 킬체인 7단계를 ATT&CK ID와 매핑한다."
     category: "analysis"
     points: 15
-    answer: "cat > /tmp/apt_killchain_report.txt << 'EOF'\n=== APT Kill Chain Analysis Report ===\nDate: 2026-04-03\nTarget: 10.20.30.0/24\n\n1. Reconnaissance (T1595): Nmap SYN+Version scan → 탐지: IDS 포트스캔 규칙 → 방어: 포트 최소화\n2. Weaponization (T1587): VBA Macro 생성 → 탐지: 샌드박스 분석 → 방어: 매크로 비활성화\n3. Delivery (T1566.001): HTTP 피싱 서버 → 탐지: URL 필터링 → 방어: 이메일 보안 게이트웨이\n4. Exploitation (T1190): SQL Injection → 탐지: WAF 로그 → 방어: 파라미터화 쿼리\n5. Installation (T1053.003): Crontab Persistence → 탐지: crontab 모니터링 → 방어: 크론 화이트리스트\n6. C2 (T1071.004): DNS 기반 C2 → 탐지: DNS 이상 트래픽 → 방어: DNS 필터링\n7. Actions (T1005): 데이터 수집 및 유출 → 탐지: DLP → 방어: 데이터 분류/암호화\n\nConclusion: 각 킬체인 단계에서 방어 기회가 존재하며, Defense-in-Depth 전략이 필수적이다.\nEOF\nwc -l /tmp/apt_killchain_report.txt"
-    answer_detail: "APT 분석 보고서는 킬체인의 각 단계를 구조적으로 정리하여 공격 흐름을 이해하고 방어 전략을 수립하는 데 활용한다. MITRE ATT&CK ID 매핑, 탐지 방법, 방어 권고사항을 포함하여 실무에서 활용 가능한 형태로 작성한다."
+    answer: "crontab -r 2>/dev/null; kill $(lsof -ti:8888) 2>/dev/null; rm -f /tmp/apt_*.txt /tmp/apt_*.vba /tmp/phishing_sim/* 2>/dev/null && cat > /tmp/apt_killchain_report.txt << 'EOF'\n=== APT Kill Chain Analysis Report ===\nDate: 2026-04-06\nTarget: 10.20.30.0/24\n\n1. Reconnaissance (T1595): Nmap SYN+Version scan -> Detect: IDS port scan rule -> Defend: Minimize ports\n2. Weaponization (T1587): VBA Macro generation -> Detect: Sandbox analysis -> Defend: Disable macros\n3. Delivery (T1566.001): HTTP phishing server -> Detect: URL filtering -> Defend: Email security gateway\n4. Exploitation (T1190): SQL Injection -> Detect: WAF logs -> Defend: Parameterized queries\n5. Installation (T1053.003): Crontab Persistence -> Detect: crontab monitoring -> Defend: Cron whitelist\n6. C2 (T1071.004): DNS-based C2 -> Detect: DNS anomaly -> Defend: DNS filtering\n7. Actions (T1005): Data collection & exfil -> Detect: DLP -> Defend: Data classification\n\nConclusion: Defense-in-Depth is essential - every kill chain stage offers a detection opportunity.\nEOF\ncat /tmp/apt_killchain_report.txt && echo '--- Cleanup completed ---'"
+    answer_detail: "APT 시뮬레이션 후에는 환경 복원(Persistence 제거, 임시 파일 삭제)과 결과 문서화를 수행한다. 킬체인 각 단계의 ATT&CK 매핑과 탐지/방어 포인트를 정리하여 실무에서 활용 가능한 보고서를 작성한다."
     verify:
       type: "output_contains"
       expect: "Kill Chain Analysis"

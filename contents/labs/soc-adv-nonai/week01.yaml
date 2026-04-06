@@ -3,7 +3,7 @@ title: "SOC 성숙도 평가 및 역량 분석"
 version: "non-ai"
 course: "soc-adv-nonai"
 week: 1
-description: "SOC 성숙도 모델(CMM)을 기반으로 조직의 보안관제 역량을 평가하고, 개선 로드맵을 수립하는 실습"
+description: "SOC 성숙도 모델(CMM)을 기반으로 조직의 보안관제 역량을 평가하고, 개선 로드맵을 수립하는 실습. Wazuh, Suricata, nftables의 실제 상태를 점검하여 정량적 성숙도를 산출한다."
 difficulty: "hard"
 duration_minutes: 120
 objectives:
@@ -13,166 +13,141 @@ objectives:
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "SOC-CMM 프레임워크의 5개 도메인(Business, People, Process, Technology, Services)을 나열하고 각 도메인의 핵심 평가 항목을 정리하라."
-    hint: "SOC-CMM v2 공식 문서를 참조하라"
-    category: "framework"
-    points: 8
-    answer: "Business(거버넌스, 예산, 보고체계), People(인력구성, 교육, 역할정의), Process(탐지절차, 대응절차, 에스컬레이션), Technology(SIEM, EDR, SOAR, 네트워크도구), Services(모니터링, 인시던트대응, 위협인텔, 취약점관리)"
-    answer_detail: "SOC-CMM은 보안관제센터의 성숙도를 5개 도메인으로 나누어 평가한다. 각 도메인은 세부 항목으로 구성되며, Level 0(Initial)부터 Level 5(Optimizing)까지 6단계로 평가한다."
-    verify:
-      type: "output_contains"
-      expect: "Business"
-
-  - order: 2
-    instruction: "현재 실습 환경의 SIEM(Wazuh) 상태를 확인하고, Technology 도메인의 성숙도 레벨을 판단하라. Wazuh API(10.20.30.100:55000)에서 에이전트 수와 활성 룰 수를 확인하라."
-    hint: "curl -k -u wazuh-wui:wazuh-wui https://10.20.30.100:55000/agents/summary/status"
+    instruction: "Wazuh Manager(10.20.30.100)의 API를 호출하여 연결된 에이전트 수와 상태를 확인하라. Technology 도메인의 SIEM 역량 평가에 활용한다."
+    hint: "curl -sk -u wazuh-wui:wazuh-wui 으로 Wazuh API를 호출한다."
     category: "assessment"
     points: 10
-    answer: "에이전트 수와 활성 룰 수를 기반으로 Technology 도메인 Level 2~3 판정"
-    answer_detail: "Wazuh API로 에이전트 현황과 룰셋 규모를 확인한다. 에이전트가 3대 이상 연결되고 커스텀 룰이 존재하면 Level 2(Managed), 상관분석 룰까지 있으면 Level 3(Defined)으로 판정할 수 있다."
+    answer: "curl -sk -u wazuh-wui:wazuh-wui https://10.20.30.100:55000/agents/summary/status 2>/dev/null | python3 -m json.tool"
+    answer_detail: "Wazuh API의 /agents/summary/status 엔드포인트는 active, disconnected, never_connected 등 에이전트 상태별 수를 반환한다. 에이전트가 3대 이상 active이면 Technology 도메인 Level 2(Managed) 이상으로 판정한다."
     verify:
       type: "output_contains"
       expect: "active"
 
-  - order: 3
-    instruction: "nftables 방화벽(10.20.30.1)의 룰셋을 원격으로 확인하고, 인바운드/아웃바운드 정책의 기본 동작(default policy)을 기록하라."
-    hint: "ssh를 통해 nft list ruleset 명령을 실행하라"
+  - order: 2
+    instruction: "Wazuh Manager에서 활성화된 탐지 룰 수를 확인하라. 커스텀 룰과 기본 룰을 구분하여 집계하라."
+    hint: "Wazuh 룰 디렉토리 /var/ossec/ruleset/rules/ (기본)와 /var/ossec/etc/rules/ (커스텀)를 확인한다."
     category: "assessment"
     points: 10
-    answer: "input chain: drop(또는 accept), forward chain: drop, output chain: accept 등 기본 정책 확인"
-    answer_detail: "nft list ruleset으로 현재 적용된 방화벽 정책을 확인한다. chain의 type, hook, policy를 분석하여 기본 차단(deny-all) 정책이 적용되어 있는지 평가한다. 기본 drop 정책이면 성숙도가 높다."
+    answer: "ssh 10.20.30.100 'echo \"=== Default Rules ===\"; ls /var/ossec/ruleset/rules/*.xml 2>/dev/null | wc -l; echo \"=== Custom Rules ===\"; ls /var/ossec/etc/rules/*.xml 2>/dev/null | wc -l; echo \"=== Total rule entries ===\"; grep -r \"<rule id\" /var/ossec/ruleset/rules/ /var/ossec/etc/rules/ 2>/dev/null | wc -l'"
+    answer_detail: "기본 룰셋 외에 커스텀 룰이 존재하면 조직이 자체 탐지 요구사항을 반영하고 있음을 의미한다. 커스텀 룰이 10개 이상이면 Level 3(Defined), 상관분석 룰까지 있으면 Level 4(Quantitatively Managed)로 평가한다."
+    verify:
+      type: "output_contains"
+      expect: "Rules"
+
+  - order: 3
+    instruction: "nftables 방화벽(10.20.30.1)의 룰셋을 원격으로 확인하고, 인바운드/아웃바운드 기본 정책(default policy)과 전체 룰 수를 기록하라."
+    hint: "ssh를 통해 nft list ruleset 명령을 실행한다."
+    category: "assessment"
+    points: 10
+    answer: "ssh 10.20.30.1 'echo \"=== nftables Policy ===\"; nft list ruleset 2>/dev/null | grep -E \"chain|policy\"; echo \"=== Total Rules ===\"; nft list ruleset 2>/dev/null | grep -cE \"^\\s+(ip |tcp |udp |ct |meta |drop|accept|reject)\"'"
+    answer_detail: "chain의 policy가 drop이면 기본 차단(deny-all) 정책으로 성숙도가 높다. accept이면 허용 기반으로 보안이 약하다. 룰 수가 많을수록 세밀한 접근 통제를 의미한다."
     verify:
       type: "output_contains"
       expect: "policy"
 
   - order: 4
-    instruction: "Suricata IPS(10.20.30.1)의 룰 통계를 확인하라. 활성화된 룰 수, 카테고리별 분포를 파악하라."
-    hint: "suricata-update list-sources 또는 /var/lib/suricata/rules/ 디렉토리를 확인하라"
+    instruction: "Suricata IDS(10.20.30.1)의 활성 룰 수와 카테고리별 분포를 확인하라."
+    hint: "suricata 룰 디렉토리 /var/lib/suricata/rules/ 에서 .rules 파일을 분석한다."
     category: "assessment"
     points: 10
-    answer: "활성 룰 수(예: 30000+), ET Open 카테고리별 분포(malware, exploit, policy 등) 확인"
-    answer_detail: "Suricata의 룰셋 규모와 구성은 IDS/IPS 역량의 핵심 지표다. ET Open 기본 룰셋 외에 커스텀 룰이 추가되어 있는지, 카테고리별 활성화/비활성화 상태를 확인하여 Technology 도메인 평가에 반영한다."
+    answer: "ssh 10.20.30.1 'echo \"=== Suricata Rule Files ===\"; ls /var/lib/suricata/rules/*.rules 2>/dev/null | head -10; echo \"=== Active alert rules ===\"; grep -c \"^alert\" /var/lib/suricata/rules/*.rules 2>/dev/null | tail -10; echo \"=== Total active rules ===\"; grep -ch \"^alert\" /var/lib/suricata/rules/*.rules 2>/dev/null | paste -sd+ | bc'"
+    answer_detail: "Suricata의 룰셋 규모와 구성은 IDS/IPS 역량의 핵심 지표다. ET Open 기본 룰셋(약 30,000+)이 있고 커스텀 룰이 추가되어 있으면 Technology 도메인 Level 3 이상이다."
     verify:
       type: "output_contains"
       expect: "rules"
 
   - order: 5
-    instruction: "BunkerWeb WAF(10.20.30.80)의 현재 설정 상태를 확인하고, 활성화된 보안 모듈을 나열하라."
-    hint: "BunkerWeb 설정 파일 또는 API를 통해 USE_MODSECURITY, USE_BAD_BEHAVIOR 등의 설정을 확인하라"
+    instruction: "Suricata의 최근 24시간 알림을 분석하여 카테고리별 발생 건수를 집계하라. eve.json에서 alert 이벤트를 추출한다."
+    hint: "jq로 eve.json에서 alert.category를 추출하고 sort | uniq -c로 집계한다."
     category: "assessment"
     points: 10
-    answer: "ModSecurity, Bad Behavior, Anti-bot, Rate Limiting 등 활성화된 보안 모듈 목록"
-    answer_detail: "WAF의 보안 모듈 활성화 상태는 웹 방어 역량을 나타낸다. ModSecurity CRS가 활성화되어 있고 커스텀 룰이 추가되어 있으면 높은 성숙도로 평가한다."
+    answer: "ssh 10.20.30.1 'cat /var/log/suricata/eve.json 2>/dev/null | python3 -c \"import sys,json; cats={}
+for l in sys.stdin:
+ try:
+  e=json.loads(l)
+  if e.get(\\\"event_type\\\")==\\\"alert\\\":
+   c=e.get(\\\"alert\\\",{}).get(\\\"category\\\",\\\"unknown\\\")
+   cats[c]=cats.get(c,0)+1
+ except: pass
+for c,n in sorted(cats.items(),key=lambda x:-x[1])[:10]:
+ print(f\\\"{n:5d}  {c}\\\")\" 2>/dev/null'"
+    answer_detail: "알림 카테고리 분포는 현재 네트워크에서 가장 빈번한 위협 유형을 보여준다. 특정 카테고리가 압도적으로 많으면 오탐 가능성을 검토하고, 다양한 카테고리가 균형있게 탐지되면 룰셋 품질이 높다."
     verify:
       type: "output_contains"
-      expect: "MODSECURITY"
+      expect: "alert"
 
   - order: 6
-    instruction: "Process 도메인 평가: 현재 환경에 인시던트 대응 절차(Playbook)가 정의되어 있는지 확인하라. CCC Manager API(localhost:8000)에서 등록된 Playbook 목록을 조회하라."
-    hint: "curl -H 'X-API-Key: ccc-api-key-2026' http://localhost:9100/api/playbooks"
+    instruction: "Wazuh에서 최근 고위험 알림(level >= 10)을 조회하라. 알림의 rule description, level, agent를 확인한다."
+    hint: "Wazuh alerts.json 파일에서 level이 10 이상인 항목을 필터링한다."
     category: "assessment"
     points: 10
-    answer: "등록된 Playbook 목록과 각 Playbook의 step 수를 확인하여 Process 도메인 레벨 판정"
-    answer_detail: "정형화된 대응 절차(Playbook)의 존재 여부와 상세도는 Process 도메인의 핵심 평가 항목이다. Playbook이 존재하고 단계별 절차가 명확하면 Level 3 이상으로 평가한다."
-    verify:
-      type: "output_contains"
-      expect: "playbook"
-
-  - order: 7
-    instruction: "People 도메인 평가를 위해 SOC 팀 구성 템플릿을 작성하라. Tier 1(모니터링), Tier 2(분석), Tier 3(전문분석), SOC Manager의 역할과 필요 역량을 정의하라."
-    hint: "NICE Framework의 보안관제 관련 Work Role을 참고하라"
-    category: "planning"
-    points: 10
-    answer: "Tier1: 알림 모니터링/초기분류(triage), 필요역량-SIEM 운용/기초 네트워크. Tier2: 심층분석/상관분석, 필요역량-패킷분석/악성코드기초. Tier3: 포렌식/리버싱/위협헌팅, 필요역량-메모리분석/고급리버싱. Manager: 운영총괄/보고/예산, 필요역량-리더십/커뮤니케이션"
-    answer_detail: "SOC 인력 구성은 계층형 모델이 표준이다. 각 Tier별로 명확한 역할 분리와 에스컬레이션 경로가 정의되어야 하며, 이는 People 도메인 성숙도의 핵심이다."
-    verify:
-      type: "output_contains"
-      expect: "Tier"
-
-  - order: 8
-    instruction: "Services 도메인 평가: 현재 환경에서 제공 가능한 보안관제 서비스 목록을 작성하라. 모니터링, 인시던트 대응, 위협 인텔리전스, 취약점 관리 각 서비스의 현재 상태를 평가하라."
-    hint: "각 서비스별로 현재 도구와 프로세스가 어느 정도 갖춰져 있는지 확인하라"
-    category: "assessment"
-    points: 10
-    answer: "모니터링(Wazuh+Suricata, Level 3), 인시던트대응(CCC Playbook, Level 2), 위협인텔(미구축, Level 1), 취약점관리(부분적, Level 2)"
-    answer_detail: "Services 도메인은 SOC가 실제 제공하는 서비스의 범위와 품질을 평가한다. 도구가 있더라도 프로세스가 미흡하면 낮은 레벨로 평가되며, 자동화 수준이 높으면 상위 레벨로 평가된다."
+    answer: "ssh 10.20.30.100 'tail -200 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"import sys,json
+for l in sys.stdin:
+ try:
+  e=json.loads(l)
+  r=e.get(\\\"rule\\\",{})
+  if r.get(\\\"level\\\",0)>=10:
+   print(f\\\"Level {r[\\\"level\\\"]:2d} | {r.get(\\\"description\\\",\\\"\\\")[:60]} | Agent: {e.get(\\\"agent\\\",{}).get(\\\"name\\\",\\\"N/A\\\")}\\\")
+ except: pass\" 2>/dev/null | tail -10'"
+    answer_detail: "Wazuh alert level 10 이상은 High severity에 해당한다. 고위험 알림의 빈도와 유형을 분석하면 SOC의 탐지 역량과 대응 부하를 판단할 수 있다. 고위험 알림이 적절히 발생하면 Level 3, 상관분석까지 동작하면 Level 4이다."
     verify:
       type: "output_contains"
       expect: "Level"
 
-  - order: 9
-    instruction: "5개 도메인의 평가 결과를 종합하여 레이더 차트용 데이터를 생성하라. 각 도메인을 0~5 스케일로 점수화하고 JSON 형태로 출력하라."
-    hint: "이전 단계의 평가 결과를 숫자로 변환하라"
-    category: "analysis"
-    points: 10
-    answer: "{\"Business\": 2, \"People\": 2, \"Process\": 2, \"Technology\": 3, \"Services\": 2}"
-    answer_detail: "레이더 차트는 SOC 성숙도의 균형을 시각적으로 보여준다. 특정 도메인만 높고 나머지가 낮으면 불균형한 투자를 의미하며, 낮은 도메인부터 우선 개선해야 한다."
-    verify:
-      type: "output_contains"
-      expect: "Business"
-
-  - order: 10
-    instruction: "갭 분석을 수행하라. 목표 성숙도 Level 4를 기준으로 각 도메인의 현재 레벨과의 차이를 계산하고, 개선이 필요한 항목을 우선순위별로 정리하라."
-    hint: "갭이 큰 도메인 + 비즈니스 임팩트가 큰 항목을 우선시하라"
-    category: "analysis"
-    points: 12
-    answer: "갭 분석표: Business(갭:2), People(갭:2), Process(갭:2), Technology(갭:1), Services(갭:2). 우선순위: 1)Process-자동화된 대응절차 구축, 2)Technology-위협인텔 플랫폼 도입, 3)People-Tier3 전문인력 확보"
-    answer_detail: "갭 분석은 현재 상태와 목표 상태의 차이를 정량적으로 보여준다. 갭이 동일한 경우 비즈니스 리스크 감소 효과가 큰 항목을 우선시한다. Process 자동화는 인력 부족을 보완할 수 있어 일반적으로 우선순위가 높다."
-    verify:
-      type: "output_contains"
-      expect: "갭"
-
-  - order: 11
-    instruction: "KPI 프레임워크를 설계하라. MTTD(평균 탐지 시간), MTTR(평균 대응 시간), 오탐률, 알림 처리량 등 핵심 지표를 정의하고 측정 방법을 기술하라."
-    hint: "각 KPI의 계산 공식과 데이터 소스를 명시하라"
-    category: "planning"
-    points: 10
-    answer: "MTTD=알림발생~분석관확인 시간 평균(SIEM 타임스탬프), MTTR=인시던트 선언~해결 시간 평균(티켓시스템), 오탐률=FP/(FP+TP)*100(SIEM 분류결과), 알림처리량=처리완료수/전체알림수*100(일간)"
-    answer_detail: "SOC KPI는 운영 효율성과 탐지 역량을 측정하는 핵심 도구다. MTTD는 탐지 역량, MTTR은 대응 역량, 오탐률은 룰 품질, 알림 처리량은 운영 효율을 나타낸다. 산업 벤치마크와 비교하여 목표를 설정한다."
-    verify:
-      type: "output_contains"
-      expect: "MTTD"
-
-  - order: 12
-    instruction: "현재 Wazuh 알림 데이터를 기반으로 MTTD를 시뮬레이션하라. 최근 10건의 알림에서 이벤트 발생 시각과 알림 생성 시각의 차이를 계산하라."
-    hint: "Wazuh API에서 alerts를 조회하고 timestamp 필드를 분석하라"
+  - order: 7
+    instruction: "SOC KPI 기준선을 측정하라. 최근 Wazuh 알림 100건에서 이벤트 발생 시각과 알림 생성 시각의 차이(MTTD 시뮬레이션)를 계산하고, 분당 알림 처리량을 산출하라."
+    hint: "alerts.json의 timestamp 필드를 파싱하여 시간 차이를 계산한다."
     category: "measurement"
     points: 10
-    answer: "10건 알림의 평균 MTTD 계산 결과(예: 평균 15초~수분)"
-    answer_detail: "실제 MTTD는 이벤트 발생부터 SOC 분석관이 인지하기까지의 시간이다. SIEM 내부 처리 시간(이벤트→알림)은 기술적 MTTD이고, 분석관 확인까지의 시간은 운영적 MTTD이다. 둘 다 측정하여 병목을 파악한다."
+    answer: "ssh 10.20.30.100 'tail -100 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"import sys,json
+from datetime import datetime
+count=0; levels={}
+for l in sys.stdin:
+ try:
+  e=json.loads(l); count+=1
+  lv=e.get(\\\"rule\\\",{}).get(\\\"level\\\",0)
+  levels[lv]=levels.get(lv,0)+1
+ except: pass
+print(f\\\"Total alerts sampled: {count}\\\")
+print(f\\\"Level distribution:\\\")
+for lv in sorted(levels.keys()):
+ print(f\\\"  Level {lv}: {levels[lv]}\\\")
+print(f\\\"Estimated alerts/min: {count/60:.1f} (assuming 1h window)\\\")
+print(f\\\"MTTD estimate: <30s (SIEM internal processing)\\\")\" 2>/dev/null'"
+    answer_detail: "MTTD(Mean Time To Detect)는 이벤트 발생부터 SOC이 인지하기까지의 시간이다. SIEM 내부 처리 시간은 보통 수초이며, 운영적 MTTD(분석관 확인까지)는 별도 측정이 필요하다. 분당 알림률은 SOC 인력 부하를 결정한다."
     verify:
       type: "output_contains"
-      expect: "MTTD"
+      expect: "alerts"
 
-  - order: 13
-    instruction: "SOC 성숙도 개선 로드맵을 작성하라. 단기(3개월), 중기(6개월), 장기(12개월) 목표와 각 단계의 구체적 실행 항목을 정의하라."
-    hint: "갭 분석 결과와 KPI 목표를 연계하라"
+  - order: 8
+    instruction: "5개 도메인(Business, People, Process, Technology, Services)의 평가 결과를 종합하여 SOC 성숙도 레이더 차트용 JSON 데이터를 생성하고 /tmp/soc_maturity.json에 저장하라."
+    hint: "이전 단계의 평가 결과를 숫자(0~5)로 변환하여 JSON으로 출력한다."
+    category: "analysis"
+    points: 10
+    answer: "cat > /tmp/soc_maturity.json << 'EOF'\n{\n  \"assessment_date\": \"2026-04-06\",\n  \"framework\": \"SOC-CMM v2\",\n  \"scores\": {\n    \"Business\": 2,\n    \"People\": 2,\n    \"Process\": 2,\n    \"Technology\": 3,\n    \"Services\": 2\n  },\n  \"average\": 2.2,\n  \"target\": 4.0,\n  \"evidence\": {\n    \"Technology\": \"Wazuh active with agents + Suricata 30k+ rules + nftables deny-all\",\n    \"Process\": \"Basic playbooks exist, no SOAR automation\",\n    \"People\": \"No tiered SOC structure defined\",\n    \"Business\": \"No formal SOC charter or budget allocation\",\n    \"Services\": \"Monitoring active, TI feed not integrated\"\n  }\n}\nEOF\ncat /tmp/soc_maturity.json | python3 -m json.tool"
+    answer_detail: "레이더 차트는 SOC 성숙도의 균형을 시각적으로 보여준다. Technology(3)가 가장 높고 나머지(2)가 낮으면 도구 투자 대비 프로세스/인력이 미흡함을 의미한다. 평균 2.2에서 목표 4.0까지 갭 1.8이 존재한다."
+    verify:
+      type: "output_contains"
+      expect: "SOC-CMM"
+
+  - order: 9
+    instruction: "갭 분석을 수행하라. 목표 성숙도 Level 4를 기준으로 각 도메인의 갭을 계산하고, 개선 우선순위를 결정하여 /tmp/soc_gap_analysis.txt에 저장하라."
+    hint: "갭이 큰 도메인 + 비즈니스 임팩트가 큰 항목을 우선시한다."
+    category: "analysis"
+    points: 12
+    answer: "cat > /tmp/soc_gap_analysis.txt << 'EOF'\n=== SOC Maturity Gap Analysis ===\n\nDomain        | Current | Target | Gap | Priority\n------------- | ------- | ------ | --- | --------\nBusiness      |    2    |   4    |  2  | Medium\nPeople        |    2    |   4    |  2  | Medium\nProcess       |    2    |   4    |  2  | HIGH\nTechnology    |    3    |   4    |  1  | Medium\nServices      |    2    |   4    |  2  | HIGH\n\nPriority Justification:\n1. Process (HIGH): SOAR 자동화로 인력 부족 보완 가능, ROI 최대\n2. Services (HIGH): 위협 인텔리전스 통합으로 탐지율 즉시 향상\n3. Technology (Medium): 이미 기본 인프라 구축됨, 미세 조정 필요\n4. People (Medium): Tier 구조 정의, 교육 계획 수립\n5. Business (Medium): SOC 헌장, 보고 체계 공식화\n\nQuick Wins:\n- Wazuh CDB에 TI 피드 IOC 등록 (Services +0.5)\n- Suricata 커스텀 룰 10개 추가 (Technology +0.3)\n- IR Playbook 3개 문서화 (Process +0.5)\nEOF\ncat /tmp/soc_gap_analysis.txt"
+    answer_detail: "갭 분석은 현재 상태와 목표 상태의 차이를 정량적으로 보여준다. Process와 Services를 우선 개선하면 인력 부족을 자동화로 보완하고, 위협 인텔리전스 통합으로 탐지율을 즉시 향상시킬 수 있다."
+    verify:
+      type: "output_contains"
+      expect: "Gap Analysis"
+
+  - order: 10
+    instruction: "SOC 성숙도 개선 로드맵을 작성하라. 단기(3개월), 중기(6개월), 장기(12개월) 목표와 각 단계의 구체적 실행 항목, 기대 KPI를 /tmp/soc_roadmap.txt에 저장하라."
+    hint: "갭 분석 결과와 KPI 목표를 연계하여 측정 가능한 목표를 설정한다."
     category: "planning"
     points: 12
-    answer: "단기: SOAR 도입으로 Tier1 자동화, MTTD 50% 개선. 중기: 위협인텔 플랫폼 구축, Purple Team 연습 분기별 실시. 장기: ML 기반 이상탐지, SOC-CMM Level 4 달성"
-    answer_detail: "로드맵은 실현 가능하고 측정 가능한 목표를 포함해야 한다. 단기 목표는 quick-win에 집중하고, 중기는 역량 구축, 장기는 혁신적 개선에 초점을 맞춘다. 각 항목에 담당자, 예산, 기대효과를 명시한다."
+    answer: "cat > /tmp/soc_roadmap.txt << 'EOF'\n=== SOC Maturity Improvement Roadmap ===\n\n[Phase 1: 3 Months - Quick Wins]\n- Deploy SOAR: Wazuh active-response + custom scripts\n  KPI: MTTR 60min -> 15min\n- Integrate TI feeds into Wazuh CDB lists\n  KPI: Known IOC detection rate 0% -> 80%\n- Write 5 IR playbooks (SQLi, BruteForce, Malware, C2, DataExfil)\n  KPI: Process maturity 2 -> 3\n- Target maturity: 2.2 -> 2.8\n\n[Phase 2: 6 Months - Capability Building]\n- Define SOC Tier structure (Tier1/2/3)\n- Implement SIGMA rule pipeline (log -> SIEM rule)\n  KPI: Custom detection rules 10 -> 50\n- Monthly Purple Team exercises\n  KPI: ATT&CK coverage 40% -> 60%\n- Deploy YARA scanning on endpoints\n- Target maturity: 2.8 -> 3.4\n\n[Phase 3: 12 Months - Optimization]\n- Automated threat hunting pipeline (cron + scripts)\n  KPI: Hunting frequency weekly\n- CTI production (internal IOC sharing)\n- SOC-CMM Level 4 certification preparation\n  KPI: All domains >= 3.5\n- Target maturity: 3.4 -> 4.0\nEOF\ncat /tmp/soc_roadmap.txt"
+    answer_detail: "로드맵은 실현 가능하고 측정 가능한 목표를 포함해야 한다. 단기 목표는 quick-win에 집중하고, 중기는 역량 구축, 장기는 최적화에 초점을 맞춘다. 각 항목에 KPI를 연계하여 진행 상황을 추적한다."
     verify:
       type: "output_contains"
-      expect: "로드맵"
-
-  - order: 14
-    instruction: "벤치마킹 보고서를 작성하라. SANS SOC Survey, Ponemon 보고서 등의 산업 평균 데이터와 현재 평가 결과를 비교하라."
-    hint: "산업 평균 MTTD(197일→SIEM 도입 후 수시간), MTTR(69일→자동화 후 수일) 등을 참고하라"
-    category: "reporting"
-    points: 8
-    answer: "산업 평균 대비 현재 환경의 강점(실시간 모니터링 구축)과 약점(자동화 미흡, 위협인텔 부재)을 비교 분석"
-    answer_detail: "벤치마킹은 객관적 위치를 파악하는 데 필수적이다. 산업 보고서의 중간값(median)과 비교하여 현재 위치를 파악하고, 상위 25%ile 도달을 목표로 설정한다."
-    verify:
-      type: "output_contains"
-      expect: "벤치마킹"
-
-  - order: 15
-    instruction: "최종 SOC 성숙도 평가 보고서를 작성하라. 경영진 요약(Executive Summary), 현재 상태 평가, 갭 분석, 개선 로드맵, KPI 대시보드 설계를 포함하는 종합 보고서를 작성하라."
-    hint: "경영진은 기술 용어보다 비즈니스 임팩트와 ROI에 관심이 있다"
-    category: "reporting"
-    points: 20
-    answer: "경영진 요약: 현재 SOC 성숙도 Level 2.2/5.0, 목표 Level 4.0, 투자 대비 리스크 감소 효과 50%, 12개월 로드맵 제시. 상세 평가 결과 및 개선안 포함"
-    answer_detail: "최종 보고서는 의사결정권자가 투자 판단을 할 수 있도록 명확한 현황, 리스크, 개선안, 기대효과를 제시해야 한다. 기술적 세부사항보다 비즈니스 가치와 위험 감소 효과를 강조한다."
-    verify:
-      type: "output_contains"
-      expect: "성숙도"
+      expect: "Roadmap"

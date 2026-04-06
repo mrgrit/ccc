@@ -146,34 +146,12 @@ steps:
       expect: "Threat Hunting Report"
 
   - order: 13
-    instruction: "자동화된 헌팅 파이프라인을 설계하라. 정기적으로 헌팅 쿼리를 실행하고 결과를 수집하는 자동화 시스템을 구성하라."
-    hint: "cron + 스크립트로 주기적 헌팅을 자동화한다."
-    category: "defense"
-    points: 10
-    answer: "cat > /tmp/automated_hunting.sh << 'SCRIPT'\n#!/bin/bash\n# Automated Threat Hunting Pipeline\nDATE=$(date +%Y%m%d_%H%M)\nOUTPUT_DIR=\"/var/log/hunting\"\nmkdir -p $OUTPUT_DIR\n\necho \"=== Automated Hunt: $DATE ===\" > $OUTPUT_DIR/hunt_$DATE.txt\n\n# Hunt 1: DNS anomaly\necho \"[DNS]\" >> $OUTPUT_DIR/hunt_$DATE.txt\n# Run DNS entropy analysis\n\n# Hunt 2: Process anomaly\necho \"[PROCESS]\" >> $OUTPUT_DIR/hunt_$DATE.txt\nps auxf | grep -E 'www-data.*sh|mysql.*sh|cron.*nc' >> $OUTPUT_DIR/hunt_$DATE.txt 2>&1\n\n# Hunt 3: File system anomaly\necho \"[FILESYSTEM]\" >> $OUTPUT_DIR/hunt_$DATE.txt\nfind /tmp /dev/shm -name '.*' -type f >> $OUTPUT_DIR/hunt_$DATE.txt 2>&1\n\n# Hunt 4: Network anomaly\necho \"[NETWORK]\" >> $OUTPUT_DIR/hunt_$DATE.txt\nss -tn | awk '{print $5}' | grep -vE '10.20.30|127.0|^$' >> $OUTPUT_DIR/hunt_$DATE.txt 2>&1\n\n# Send summary\nALERTS=$(grep -c 'ALERT\\|SUSPICIOUS\\|MATCH' $OUTPUT_DIR/hunt_$DATE.txt)\necho \"Hunt $DATE completed: $ALERTS findings\"\nSCRIPT\necho 'Automated hunting pipeline created:' && cat /tmp/automated_hunting.sh | head -20 && echo '...'\necho 'Cron entry: 0 */4 * * * /opt/hunting/automated_hunting.sh'"
-    answer_detail: "자동화된 헌팅 파이프라인은 cron으로 주기적(4시간마다)으로 헌팅 쿼리를 실행한다. DNS 이상, 프로세스 이상, 파일 시스템 이상, 네트워크 이상을 자동 검사하고 결과를 기록한다. 발견 사항이 있으면 알림을 전송하여 분석가의 검토를 유도한다."
-    verify:
-      type: "output_contains"
-      expect: "Automated hunting pipeline"
-
-  - order: 14
-    instruction: "실습 환경을 정리하라. 헌팅 실습에서 생성된 모든 파일을 삭제하라."
-    hint: "rm으로 /tmp 내 헌팅 관련 파일을 삭제한다."
-    category: "response"
-    points: 5
-    answer: "rm -f /tmp/hunting_*.txt /tmp/sigma_*.yaml /tmp/attack_*.txt /tmp/threat_intel_*.txt /tmp/automated_hunting.sh 2>/dev/null; echo 'Threat hunting lab cleanup completed'"
-    answer_detail: "실습 환경 정리에서는 헌팅 계획, Sigma 규칙, ATT&CK 매트릭스, IOC 목록, 자동화 스크립트를 삭제한다. 실제 운영 환경에서는 이 파일들을 보존하여 지속적인 헌팅에 활용한다."
-    verify:
-      type: "output_contains"
-      expect: "cleanup completed"
-
-  - order: 15
-    instruction: "위협 헌팅 실습의 종합 평가를 작성하라. 헌팅 성숙도(Hunting Maturity Model) 관점에서 현재 수준을 평가하고 개선 방안을 제시하라."
-    hint: "HMM Level 0~4의 기준으로 현재 수준을 평가한다."
+    instruction: "실습 환경을 정리하고, 헌팅 성숙도(HMM)를 평가하라. 임시 파일을 삭제한 후, 현재 헌팅 역량을 HMM Level 0~4 기준으로 평가하여 /tmp/hunting_maturity.txt에 저장하라."
+    hint: "rm으로 임시 파일을 삭제하고, HMM 기준으로 자가 평가한다."
     category: "analysis"
     points: 15
-    answer: "cat > /tmp/hunting_maturity.txt << 'EOF'\n=== Hunting Maturity Assessment ===\n\nHunting Maturity Model (HMM) Evaluation:\n\n| Level | Description | Status |\n|-------|------------|--------|\n| HM0 | Initial - Rely on automated alerts only | PASSED |\n| HM1 | Minimal - Use threat intel IOC searches | PASSED |\n| HM2 | Procedural - Follow documented procedures | CURRENT |\n| HM3 | Innovative - Create custom analytics | PARTIAL |\n| HM4 | Leading - Automate hunting + generate TI | TARGET |\n\nCurrent Level: HM2 (Procedural)\n\nStrengths:\n- Documented hunting hypotheses and procedures\n- Sigma rule creation capability\n- Multiple data source analysis (logs, network, files)\n- IOC-based hunting operational\n\nGaps to HM3:\n- No ML-based anomaly detection\n- Limited automated hunting pipeline\n- No threat intelligence generation\n- Hunting results not shared externally\n\nRoadmap to HM4:\n1. Deploy ML anomaly detection (6 months)\n2. Fully automate hunting pipeline (3 months)\n3. Generate and share threat intelligence (12 months)\n4. Continuous hunting (24/7 operation)\n\nMITRE ATT&CK Coverage: 15/14 tactics covered by hunting queries\nEOF\ncat /tmp/hunting_maturity.txt"
-    answer_detail: "헌팅 성숙도 모델(HMM)은 Level 0(자동 알림 의존)부터 Level 4(자동화+TI 생성)까지 5단계로 평가한다. 현재 HM2(절차 기반) 수준이며, ML 이상 탐지, 자동화 파이프라인, 위협 인텔리전스 생성을 통해 HM3/HM4로 발전할 수 있다."
+    answer: "rm -f /tmp/hunting_*.txt /tmp/sigma_*.yaml /tmp/attack_*.txt /tmp/threat_intel_*.txt 2>/dev/null && cat > /tmp/hunting_maturity.txt << 'EOF'\n=== Hunting Maturity Assessment ===\n\n| Level | Description | Status |\n|-------|------------|--------|\n| HM0 | Initial - Rely on automated alerts only | PASSED |\n| HM1 | Minimal - Use threat intel IOC searches | PASSED |\n| HM2 | Procedural - Follow documented procedures | CURRENT |\n| HM3 | Innovative - Create custom analytics | PARTIAL |\n| HM4 | Leading - Automate hunting + generate TI | TARGET |\n\nCurrent Level: HM2 (Procedural)\n\nStrengths:\n- Documented hunting hypotheses and procedures\n- Sigma rule creation capability\n- Multiple data source analysis (logs, network, files)\n\nRoadmap to HM4:\n1. Automate hunting pipeline with cron+scripts (3 months)\n2. Deploy ML anomaly detection (6 months)\n3. Generate and share threat intelligence (12 months)\n\nLab cleanup completed.\nEOF\ncat /tmp/hunting_maturity.txt"
+    answer_detail: "헌팅 성숙도 모델(HMM)은 Level 0(자동 알림 의존)부터 Level 4(자동화+TI 생성)까지 5단계로 평가한다. 현재 HM2(절차 기반) 수준이며, 자동화 파이프라인과 위협 인텔리전스 생성을 통해 상위 레벨로 발전할 수 있다."
     verify:
       type: "output_contains"
-      expect: "Hunting Maturity Assessment"
+      expect: "Hunting Maturity"

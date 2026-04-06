@@ -1,164 +1,102 @@
 lab_id: "compliance-nonai-week11"
-title: "[Non-AI] 위험관리"
+title: "위험관리 기술 실습"
 version: "non-ai"
 course: "compliance-nonai"
 week: 11
-description: "정보보안 위험 식별, 평가, 대응을 학습합니다"
-difficulty: "hard"
+description: "위험관리 프로세스를 시스템 환경에 적용합니다. 취약점 식별, 위협 분석, 위험도 산정, 보호대책 선정을 실제 시스템 점검을 통해 수행합니다."
+difficulty: "medium"
 duration_minutes: 120
 objectives:
-  - "위험관리의 핵심 개념을 이해한다"
-  - "위험관리 관련 실무 기술을 습득한다"
-  - "위험관리 보안 대책을 수립하고 적용한다"
+  - "정보보안 위험관리 프로세스(식별-분석-평가-처리)를 이해한다"
+  - "시스템 취약점을 식별하고 위험도를 산정한다"
+  - "위험 처리 계획을 수립한다"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "위험관리의 기본 개념과 구성 요소를 조사하세요"
-    hint: "위험관리 관련 핵심 용어와 구조를 확인하세요"
-    category: "recon"
+    instruction: "SECU 서버(10.20.30.1)에서 커널 버전과 알려진 취약점 가능성을 확인하시오. 위험 식별 단계."
+    hint: "uname -r로 커널 버전을 확인하고, 해당 버전의 보안 상태를 파악하세요."
+    category: "audit"
     points: 10
-    answer: "위험관리의 주요 구성요소와 핵심 개념을 정리"
-    answer_detail: "위험관리는 컴플라이언스 분야의 핵심 주제로, 기본 개념을 정확히 이해하는 것이 실무 적용의 기초입니다."
+    answer: "uname -r && echo '--- 보안 업데이트 대기 ---' && apt list --upgradable 2>/dev/null | grep -i 'security\\|linux' | head -10"
+    answer_detail: "위험관리의 첫 단계는 위험 식별입니다. 커널 버전을 확인하면 해당 버전의 CVE(공개된 취약점)를 조회할 수 있습니다. 보안 업데이트가 대기 중인 패키지가 있다면 알려진 취약점이 패치되지 않은 상태입니다."
     verify:
       type: "output_contains"
-      expect: "위험관리의 주요 구성요소와 핵심 개념을 정리"
+      expect: "보안 업데이트 대기"
+      field: "stdout"
   - order: 2
-    instruction: "위험관리 관련 현재 환경을 분석하세요"
-    hint: "시스템 상태와 설정을 확인하세요"
-    category: "analysis"
+    instruction: "SSH 서비스의 보안 취약점 요소를 식별하시오. 위험 식별: 서비스별 위협 분석."
+    hint: "SSH 버전, 허용 알고리즘, 인증 방식을 확인하세요."
+    category: "audit"
     points: 10
-    answer: "현재 환경의 위험관리 적용 현황 분석 완료"
-    answer_detail: "위험관리 적용을 위해서는 먼저 현재 환경의 상태를 정확히 파악해야 합니다. 기존 설정과 구성을 분석하여 개선점을 식별합니다."
+    answer: "ssh -V 2>&1 && echo '--- SSH 설정 취약점 ---' && grep -E '^(Protocol|PermitRootLogin|PermitEmptyPasswords|X11Forwarding|AllowTcpForwarding|MaxAuthTries)' /etc/ssh/sshd_config 2>/dev/null; echo '--- 미설정 항목(기본값 사용) ---' && for opt in PermitRootLogin MaxAuthTries PasswordAuthentication; do grep -q \"^$opt\" /etc/ssh/sshd_config 2>/dev/null || echo \"$opt: 미설정\"; done"
+    answer_detail: "위험 식별에서는 각 서비스의 위협 요소를 체계적으로 파악합니다. SSH의 주요 위협은 무차별 대입 공격, 취약한 암호 스위트, root 직접 접속, 포트 포워딩 악용 등입니다. 설정이 명시되지 않으면 기본값을 사용하므로, 기본값의 보안성도 평가해야 합니다."
     verify:
       type: "output_contains"
-      expect: "현재 환경의 위험관리 적용 현황 분석 완료"
+      expect: "OpenSSH"
+      field: "stdout"
   - order: 3
-    instruction: "위험관리 관련 보안 정책을 수립하세요"
-    hint: "정책 문서의 필수 항목을 확인하세요"
-    category: "config"
+    instruction: "세계 쓰기 가능(world-writable) 파일을 검색하시오. 위험 식별: 파일 시스템 취약점."
+    hint: "find 명령으로 /etc, /var에서 o+w 파일을 검색하세요."
+    category: "audit"
     points: 10
-    answer: "위험관리 보안 정책: 목적, 범위, 역할, 절차, 위반조치 포함"
-    answer_detail: "보안 정책은 위험관리에 대한 조직의 방향과 기준을 제시하는 최상위 문서입니다. 명확한 목적, 범위, 역할과 책임을 포함해야 합니다."
+    answer: "echo '=== World-Writable 파일 ===' && sudo find /etc /var -type f -perm -002 2>/dev/null | head -15 && echo '--- World-Writable 디렉터리 (sticky 제외) ---' && sudo find / -maxdepth 3 -type d -perm -002 ! -perm -1000 2>/dev/null | head -10"
+    answer_detail: "세계 쓰기 가능 파일은 모든 사용자가 수정할 수 있으므로 악성 코드 삽입, 설정 변조, 권한 상승의 통로가 됩니다. 특히 sticky bit 없는 세계 쓰기 가능 디렉터리는 파일 교체 공격(symlink attack)에 취약합니다."
     verify:
       type: "output_contains"
-      expect: "위험관리 보안 정책: 목적, 범위, 역할, 절차, 위반"
+      expect: "World-Writable"
+      field: "stdout"
   - order: 4
-    instruction: "위험관리의 위험 요소를 식별하고 평가하세요"
-    hint: "위험 식별 기법을 활용하세요"
-    category: "analysis"
-    points: 10
-    answer: "위험 평가: 위협 식별, 취약점 분석, 영향도 평가, 위험도 산정"
-    answer_detail: "위험관리 관련 위험을 체계적으로 식별하고 평가하는 것은 효과적인 보안 대책 수립의 기반입니다."
-    verify:
-      type: "output_contains"
-      expect: "위험 평가: 위협 식별, 취약점 분석, 영향도 평가, "
-  - order: 5
-    instruction: "위험관리 보호 대책을 구현하세요"
-    hint: "기술적 통제와 관리적 통제를 모두 적용하세요"
-    category: "defense"
-    points: 10
-    answer: "기술적 통제: 접근제어, 암호화, 모니터링 / 관리적 통제: 정책, 교육, 감사"
-    answer_detail: "위험관리에 대한 보호 대책은 기술적 통제와 관리적 통제를 균형 있게 적용하여 다층 방어를 구현해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "기술적 통제: 접근제어, 암호화, 모니터링 / 관리적 "
-  - order: 6
-    instruction: "10.20.30.0/24 네트워크에서 위험관리 관련 설정을 점검하세요"
-    hint: "대상 서버의 설정 파일을 확인하세요"
+    instruction: "네트워크 수준의 위험을 식별하시오. 열린 포트와 외부 노출 서비스를 분석합니다."
+    hint: "ss와 nft를 조합하여 외부에서 접근 가능한 서비스를 파악하세요."
     category: "audit"
-    points: 10
-    answer: "네트워크 스캔 및 설정 점검으로 위험관리 적용 상태 확인"
-    answer_detail: "실제 네트워크 환경에서 위험관리 관련 설정이 올바르게 적용되어 있는지 점검합니다. 10.20.30.0/24 대역의 모든 호스트를 대상으로 합니다."
+    points: 12
+    answer: "echo '=== 네트워크 위험 분석 ===' && echo '[외부 노출 포트]' && sudo ss -tlnp | grep -v '127.0.0' && echo '[방화벽 허용 규칙]' && sudo nft list ruleset 2>/dev/null | grep 'accept' | head -10"
+    answer_detail: "네트워크 위험 식별에서는 외부에서 접근 가능한 서비스를 파악합니다. 127.0.0.1(로컬)이 아닌 0.0.0.0에서 LISTEN하는 서비스는 네트워크에 노출됩니다. 각 노출 서비스의 필요성과 방화벽 보호 여부를 확인해야 합니다."
     verify:
       type: "output_contains"
-      expect: "네트워크 스캔 및 설정 점검으로 위험관리 적용 상태 확"
-  - order: 7
-    instruction: "위험관리 모니터링 체계를 구성하세요"
-    hint: "모니터링 도구와 알림 설정을 확인하세요"
-    category: "monitor"
-    points: 10
-    answer: "모니터링: 실시간 감시, 임계값 알림, 대시보드, 로그 분석"
-    answer_detail: "위험관리의 지속적인 모니터링은 보안 위협을 조기에 탐지하고 대응하기 위해 필수적입니다."
-    verify:
-      type: "output_contains"
-      expect: "모니터링: 실시간 감시, 임계값 알림, 대시보드, 로그"
-  - order: 8
-    instruction: "위험관리 관련 로그를 수집하고 분석하세요"
-    hint: "로그 소스와 분석 도구를 활용하세요"
+      expect: "네트워크 위험 분석"
+      field: "stdout"
+  - order: 5
+    instruction: "식별된 취약점의 위험도를 산정하는 위험 평가표를 작성하시오. 발생 가능성 x 영향도 = 위험도."
+    hint: "각 취약점에 대해 1~5 스케일의 발생 가능성과 영향도를 부여하세요."
     category: "analysis"
-    points: 10
-    answer: "로그 수집: syslog, 애플리케이션 로그, 감사 로그 통합 분석"
-    answer_detail: "로그 분석은 위험관리 관련 보안 이벤트를 추적하고 이상 징후를 탐지하는 핵심 활동입니다."
+    points: 12
+    answer: "cat << 'EOF' > /tmp/risk_assessment.csv\n위험ID,취약점,위협,발생가능성(1-5),영향도(1-5),위험도,위험등급\nR-001,미패치 커널,원격코드실행,3,5,15,상\nR-002,약한 패스워드정책,무차별대입,4,4,16,상\nR-003,불필요 포트 노출,서비스 악용,3,3,9,중\nR-004,로그 미보관,사고추적 불가,2,4,8,중\nR-005,World-Writable파일,권한상승,2,3,6,하\nEOF\ncat /tmp/risk_assessment.csv && echo '' && echo '위험등급: 상(12-25), 중(6-11), 하(1-5)'"
+    answer_detail: "위험도 산정은 발생 가능성(Likelihood)과 영향도(Impact)를 곱하여 정량적으로 평가합니다. 위험도 = 발생 가능성(1~5) x 영향도(1~5)로, 최대 25점입니다. 위험 등급에 따라 처리 우선순위를 결정합니다: 상(즉시 조치), 중(계획 조치), 하(수용 검토)."
     verify:
       type: "output_contains"
-      expect: "로그 수집: syslog, 애플리케이션 로그, 감사 로"
-  - order: 9
-    instruction: "위험관리에 대한 방어 체계를 강화하세요"
-    hint: "다층 방어 전략을 적용하세요"
-    category: "defense"
-    points: 10
-    answer: "다층 방어: 네트워크, 호스트, 애플리케이션, 데이터 계층별 보안 강화"
-    answer_detail: "위험관리에 대한 단일 방어선은 충분하지 않습니다. 네트워크부터 데이터까지 모든 계층에서 방어 체계를 구축해야 합니다."
+      expect: "위험등급"
+      field: "stdout"
+  - order: 6
+    instruction: "위험 처리 방안을 수립하시오. 각 위험에 대해 회피/완화/전가/수용 중 처리 방법을 결정합니다."
+    hint: "위험 평가표의 각 항목에 대해 구체적 조치와 담당자를 지정하세요."
+    category: "config"
+    points: 12
+    answer: "cat << 'EOF' > /tmp/risk_treatment.txt\n=== 위험 처리 계획서 ===\n\n[R-001 미패치 커널 - 위험도: 상]\n처리: 완화\n조치: sudo apt update && sudo apt upgrade -y\n담당: 시스템관리팀\n기한: 즉시\n\n[R-002 약한 패스워드정책 - 위험도: 상]\n처리: 완화\n조치: pwquality.conf minlen=12, PASS_MAX_DAYS=90 설정\n담당: 보안팀\n기한: 1주 이내\n\n[R-003 불필요 포트 노출 - 위험도: 중]\n처리: 완화\n조치: nft 방화벽 규칙으로 불필요 포트 차단\n담당: 네트워크팀\n기한: 2주 이내\n\n=== 계획서 끝 ===\nEOF\ncat /tmp/risk_treatment.txt"
+    answer_detail: "위험 처리에는 네 가지 방법이 있습니다: 회피(위험 활동 중단), 완화(통제 구현으로 위험 감소), 전가(보험/아웃소싱), 수용(잔여 위험 허용). 대부분의 IT 위험은 완화 방법으로 처리하며, 경영진의 승인을 받아야 합니다."
     verify:
       type: "output_contains"
-      expect: "다층 방어: 네트워크, 호스트, 애플리케이션, 데이터 "
-  - order: 10
-    instruction: "위험관리 인시던트 대응 절차를 수립하세요"
-    hint: "대응 단계별 역할과 절차를 정의하세요"
-    category: "response"
-    points: 10
-    answer: "인시던트 대응: 탐지→분석→억제→제거→복구→교훈 6단계"
-    answer_detail: "위험관리 관련 보안 인시던트 발생 시 신속하고 체계적으로 대응하기 위한 절차를 사전에 수립해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "인시던트 대응: 탐지→분석→억제→제거→복구→교훈 6단계"
-  - order: 11
-    instruction: "위험관리의 접근 권한을 관리하세요"
-    hint: "최소 권한 원칙을 적용하세요"
+      expect: "위험 처리 계획서"
+      field: "stdout"
+  - order: 7
+    instruction: "위험 처리 조치 중 하나를 실제로 수행하시오. 패스워드 최대 사용일을 90일로 설정합니다."
+    hint: "login.defs에서 PASS_MAX_DAYS 값을 변경하세요."
     category: "config"
     points: 10
-    answer: "접근 관리: RBAC 기반, 최소 권한, 주기적 검토, 권한 변경 로깅"
-    answer_detail: "접근 권한 관리는 위험관리의 보안을 확보하기 위한 기본적인 통제입니다. 최소 권한 원칙에 따라 필요한 최소한의 권한만 부여해야 합니다."
+    answer: "sudo sed -i 's/^PASS_MAX_DAYS.*/PASS_MAX_DAYS   90/' /etc/login.defs && grep '^PASS_MAX_DAYS' /etc/login.defs"
+    answer_detail: "위험 처리 조치를 실행한 후에는 반드시 설정이 올바르게 적용되었는지 검증해야 합니다. login.defs의 PASS_MAX_DAYS는 새로 생성되는 계정에만 적용되며, 기존 계정은 chage -M 90 username으로 개별 설정해야 합니다."
     verify:
       type: "output_contains"
-      expect: "접근 관리: RBAC 기반, 최소 권한, 주기적 검토,"
-  - order: 12
-    instruction: "위험관리 관련 감사를 수행하세요"
-    hint: "감사 계획, 수행, 보고 절차를 따르세요"
+      expect: "90"
+      field: "stdout"
+  - order: 8
+    instruction: "위험관리 종합 보고서를 생성하는 스크립트를 작성하고 실행하시오."
+    hint: "식별된 위험, 평가 결과, 처리 상태를 종합하세요."
     category: "audit"
-    points: 10
-    answer: "감사: 계획수립→증거수집→분석→발견사항→개선권고 프로세스"
-    answer_detail: "정기적인 감사를 통해 위험관리 관련 통제의 효과성을 평가하고, 미흡한 사항을 식별하여 개선해야 합니다."
+    points: 14
+    answer: "cat << 'SCRIPT' > /tmp/risk_report.sh\n#!/bin/bash\necho '=== 위험관리 종합 보고서 ==='\necho \"보고일: $(date +%Y-%m-%d)\"\necho ''\necho '[1. 취약점 현황]'\necho \"미패치 패키지: $(apt list --upgradable 2>/dev/null | grep -c '/')건\"\necho \"World-Writable: $(sudo find /etc -type f -perm -002 2>/dev/null | wc -l)건\"\necho \"열린 포트: $(sudo ss -tlnp | grep -c LISTEN)개\"\necho ''\necho '[2. 위험 처리 현황]'\nMAXDAYS=$(grep '^PASS_MAX_DAYS' /etc/login.defs | awk '{print $2}')\necho \"패스워드 정책(PASS_MAX_DAYS): ${MAXDAYS}일 $([ \"$MAXDAYS\" -le 90 ] && echo '[조치완료]' || echo '[미조치]')\"\necho \"방화벽: $(sudo nft list ruleset 2>/dev/null | grep -c rule) 규칙 적용 중\"\necho \"감사 시스템: $(sudo systemctl is-active auditd 2>/dev/null)\"\necho ''\necho '=== 위험관리 보고 완료 ==='\nSCRIPT\nchmod +x /tmp/risk_report.sh && bash /tmp/risk_report.sh"
+    answer_detail: "위험관리 보고서는 식별된 위험, 위험도 평가 결과, 처리 현황, 잔여 위험을 포함합니다. 경영진에게 보고하여 위험 수용 여부를 결정받아야 하며, 정기적으로(최소 연 1회) 위험 재평가를 수행해야 합니다."
     verify:
       type: "output_contains"
-      expect: "감사: 계획수립→증거수집→분석→발견사항→개선권고 프로세"
-  - order: 13
-    instruction: "위험관리의 성능과 효과를 측정하세요"
-    hint: "핵심 성과지표(KPI)를 설정하세요"
-    category: "monitor"
-    points: 10
-    answer: "KPI: 탐지율, 대응시간, 오탐률, 준수율, 개선 완료율"
-    answer_detail: "위험관리의 효과를 객관적으로 측정하기 위해 핵심 성과지표를 설정하고 정기적으로 측정해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "KPI: 탐지율, 대응시간, 오탐률, 준수율, 개선 완"
-  - order: 14
-    instruction: "위험관리 개선 계획을 수립하세요"
-    hint: "발견된 문제점과 개선 방안을 정리하세요"
-    category: "analysis"
-    points: 10
-    answer: "개선 계획: 단기(1개월), 중기(3개월), 장기(1년) 로드맵 수립"
-    answer_detail: "지속적인 개선은 위험관리 관리의 핵심입니다. 발견된 문제점에 대한 우선순위별 개선 계획을 수립해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "개선 계획: 단기(1개월), 중기(3개월), 장기(1년"
-  - order: 15
-    instruction: "위험관리 종합 평가 보고서를 작성하세요"
-    hint: "전체 실습 내용을 종합하세요"
-    category: "audit"
-    points: 10
-    answer: "위험관리 종합 평가: 현황, 위험, 대책, 모니터링, 개선계획 총괄"
-    answer_detail: "위험관리에 대한 전체 학습 내용을 종합하여 평가 보고서를 작성합니다. 현황 분석, 위험 평가, 대책 구현, 모니터링, 개선 계획을 모두 포함합니다."
-    verify:
-      type: "output_contains"
-      expect: "위험관리 종합 평가: 현황, 위험, 대책, 모니터링, "
+      expect: "위험관리 보고 완료"
+      field: "stdout"

@@ -145,34 +145,23 @@ steps:
       expect: "saved"
       field: "stdout"
   - order: 13
-    instruction: "킬체인 목표 달성 단계를 시뮬레이션하라. 대상 웹서버에서 /etc/hostname 파일의 내용을 확인하고, 시스템 정보를 수집하여 /tmp/exfil_data.txt에 저장하라."
-    hint: "curl로 웹 취약점을 통해 파일을 읽거나, 로컬에서 수집하여 저장한다"
+    instruction: "킬체인 목표 달성 단계를 시뮬레이션하라. 시스템 정보를 수집하여 /tmp/exfil_data.txt에 저장하고, Base64로 인코딩하여 DNS 기반 데이터 유출을 시뮬레이션하라."
+    hint: "시스템 정보를 수집한 후 base64 인코딩하여 DNS 서브도메인으로 사용할 수 있는 형태로 변환한다"
     category: "exploit"
-    points: 10
-    answer: "cat /etc/hostname > /tmp/exfil_data.txt && uname -a >> /tmp/exfil_data.txt && ip addr >> /tmp/exfil_data.txt && cat /tmp/exfil_data.txt"
-    answer_detail: "킬체인의 최종 단계인 목표 달성(Actions on Objectives)에서는 데이터 수집과 유출이 이루어진다. 시스템 정보, 네트워크 구성, 사용자 목록 등을 수집하여 외부로 전송한다. MITRE ATT&CK의 Collection(TA0009)과 Exfiltration(TA0010) 전술에 해당한다."
+    points: 15
+    answer: "cat /etc/hostname > /tmp/exfil_data.txt && uname -a >> /tmp/exfil_data.txt && ip addr >> /tmp/exfil_data.txt && echo '=== Collected data ===' && wc -l /tmp/exfil_data.txt && echo '=== DNS exfil simulation (base64 chunks) ===' && cat /tmp/exfil_data.txt | base64 -w 63 | head -5"
+    answer_detail: "킬체인 최종 단계에서 데이터를 수집하고 유출한다. DNS Exfiltration(T1048.003)은 방화벽이 DNS를 허용하는 점을 악용하여 데이터를 Base64 인코딩 후 DNS 서브도메인으로 전송한다."
     verify:
       type: "output_contains"
-      expect: "10.20.30"
+      expect: "exfil"
       field: "stdout"
   - order: 14
-    instruction: "수집한 데이터를 Base64로 인코딩하여 DNS 쿼리를 통한 데이터 유출을 시뮬레이션하라. /tmp/exfil_data.txt의 내용을 인코딩하고 출력하라."
-    hint: "base64 명령으로 파일 내용을 인코딩하고, 출력 결과를 DNS 서브도메인으로 사용할 수 있다"
-    category: "exploit"
-    points: 15
-    answer: "cat /tmp/exfil_data.txt | base64 -w 63 | head -5"
-    answer_detail: "DNS 기반 데이터 유출(DNS Exfiltration)은 방화벽이 DNS 트래픽(포트 53)을 허용하는 점을 악용한다. 데이터를 Base64로 인코딩하여 DNS 쿼리의 서브도메인으로 전송하면(예: encoded-data.attacker.com) 일반 DNS 트래픽으로 위장된다. MITRE ATT&CK T1048.003(Exfiltration Over Alternative Protocol: DNS)에 해당한다."
-    verify:
-      type: "output_contains"
-      expect: "=="
-      field: "stdout"
-  - order: 15
-    instruction: "APT 공격 시뮬레이션의 정리 단계로, 생성한 crontab 항목을 제거하고, 임시 파일을 삭제한 후, 전체 킬체인 단계별 사용 기법을 요약하여 /tmp/killchain_report.txt에 작성하라."
-    hint: "crontab -r로 전체 삭제하고, echo로 보고서를 작성한다"
+    instruction: "APT 시뮬레이션을 정리하라. crontab의 비콘 항목을 제거하고, 임시 파일을 삭제한 후, 킬체인 단계별 사용 기법을 /tmp/killchain_report.txt에 요약하라."
+    hint: "crontab에서 beacon 항목을 제거하고, 킬체인 7단계를 정리한다"
     category: "analysis"
     points: 15
-    answer: "crontab -l | grep -v beacon | crontab - && rm -f /tmp/payload.elf /tmp/exfil_data.txt && echo -e '=== APT Kill Chain Report ===\\n1. Recon: nmap stealth scan\\n2. Weaponization: msfvenom payload\\n3. Delivery: phishing template\\n4. Exploitation: reverse shell\\n5. Installation: crontab persistence\\n6. C2: netcat listener\\n7. Actions: data collection & exfil' > /tmp/killchain_report.txt && cat /tmp/killchain_report.txt"
-    answer_detail: "APT 시뮬레이션 후 정리(Cleanup)는 레드팀 운영의 필수 절차이다. 실습 환경의 무결성을 유지하고, 킬체인 각 단계에서 사용한 기법을 문서화한다. 보고서에는 각 단계의 도구, 기법, MITRE ATT&CK ID를 포함하여 방어 전략 수립에 활용한다."
+    answer: "crontab -l | grep -v beacon | crontab - && rm -f /tmp/payload.elf /tmp/exfil_data.txt && echo -e '=== APT Kill Chain Report ===\\n1. Recon: nmap stealth scan (T1595)\\n2. Weaponization: msfvenom payload (T1587)\\n3. Delivery: phishing template (T1566)\\n4. Exploitation: reverse shell (T1059)\\n5. Installation: crontab persistence (T1053.003)\\n6. C2: netcat listener (T1071)\\n7. Actions: data collection & DNS exfil (T1005, T1048.003)' > /tmp/killchain_report.txt && cat /tmp/killchain_report.txt"
+    answer_detail: "APT 시뮬레이션 후 환경 정리(Cleanup)는 레드팀 운영의 필수 절차이다. Persistence 메커니즘을 제거하고, 킬체인 각 단계에서 사용한 기법과 MITRE ATT&CK ID를 문서화하여 방어 전략 수립에 활용한다."
     verify:
       type: "output_contains"
       expect: "Kill Chain Report"

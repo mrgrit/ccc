@@ -163,36 +163,12 @@ steps:
       field: "stdout"
 
   - order: 13
-    instruction: "cron job 변경 이력을 확인하여 지속성(Persistence) 기법을 탐지하라."
-    hint: "cron.log 또는 syslog에서 cron 관련 로그를 검색한다."
-    category: "analysis"
-    points: 10
-    answer: "grep -i cron /var/log/syslog | tail -20 && cat /etc/crontab && ls -la /var/spool/cron/crontabs/"
-    answer_detail: "공격자는 cron job에 리버스 셸이나 백도어 실행 명령을 추가하여 지속성을 확보한다. 알 수 없는 cron 엔트리, 특히 /tmp나 /dev/shm의 스크립트를 실행하는 항목은 침해 증거이다."
-    verify:
-      type: "output_contains"
-      expect: "cron"
-      field: "stdout"
-
-  - order: 14
-    instruction: "수집한 로그를 시간순으로 정렬하여 공격 타임라인을 재구성하라."
-    hint: "각 로그의 타임스탬프를 기준으로 시간순 정렬한다."
-    category: "analysis"
-    points: 10
-    answer: "cat > /tmp/attack_timeline.txt << 'EOF'\n=== Attack Timeline ===\n\n[Phase 1: Reconnaissance]\n14:00 - Nmap SYN scan from 10.20.30.10\n14:02 - Service version detection\n14:05 - Web directory bruteforce (dirb)\n\n[Phase 2: Initial Access]\n14:10 - SQL Injection attempts on DVWA\n14:15 - Successful UNION SELECT extraction\n14:20 - PHP webshell uploaded\n\n[Phase 3: Lateral Movement]\n14:25 - SSH brute force (87 failed attempts)\n14:30 - Successful SSH login as msfadmin\n14:32 - sudo -l enumeration\n\n[Phase 4: Privilege Escalation]\n14:35 - SUID binary enumeration\n14:38 - nmap --interactive → root shell\n\n[Phase 5: Persistence]\n14:40 - New user added to /etc/passwd\n14:42 - Cron job backdoor installed\nEOF"
-    answer_detail: "공격 타임라인은 인시던트의 전체 흐름을 시간순으로 재구성한 것이다. MITRE ATT&CK 프레임워크의 단계(정찰→초기접근→실행→지속성→권한상승)에 맞춰 분류하면 체계적인 분석이 가능하다."
-    verify:
-      type: "file_exists"
-      expect: "/tmp/attack_timeline.txt"
-      field: "filesystem"
-
-  - order: 15
-    instruction: "로그 분석 결과를 종합하여 위협 헌팅 보고서를 작성하라. IoC(침해 지표), 공격자 TTPs, 대응 권고사항을 포함하라."
-    hint: "MITRE ATT&CK 프레임워크를 참고한다."
+    instruction: "수집한 로그를 시간순으로 정렬하여 공격 타임라인을 재구성하고, IoC(침해 지표)와 MITRE ATT&CK TTPs를 매핑하여 /tmp/threat_hunting_report.txt에 저장하라."
+    hint: "각 로그의 타임스탬프를 기준으로 시간순 정렬하고, MITRE ATT&CK 프레임워크를 참고한다."
     category: "analysis"
     points: 15
-    answer: "cat > /tmp/threat_hunting_report.txt << 'EOF'\n=== Threat Hunting Report ===\n\nIndicators of Compromise (IoC):\n- Attacker IP: 10.20.30.10\n- Webshell: /dvwa/hackable/uploads/shell.php\n- Backdoor user: hacker (UID 0)\n- Cron backdoor: /tmp/.backdoor.sh\n\nATT&CK TTPs:\n- T1046: Network Service Scanning\n- T1190: Exploit Public-Facing Application\n- T1059.004: Unix Shell Command Execution\n- T1110.001: Password Brute Force\n- T1548.001: SUID/SGID Abuse\n- T1136.001: Local Account Creation\n- T1053.003: Cron Persistence\n\nRecommendations:\n1. Block attacker IP at firewall\n2. Remove webshell and backdoor user\n3. Reset all compromised credentials\n4. Patch vsftpd and Apache vulnerabilities\n5. Implement centralized log management (SIEM)\n6. Enable auditd for process/file monitoring\nEOF"
-    answer_detail: "위협 헌팅 보고서는 발견된 침해 지표(IoC), 공격자의 전술/기술/절차(TTPs), 그리고 실행 가능한 대응 방안을 포함해야 한다. MITRE ATT&CK ID를 매핑하면 표준화된 분류가 가능하다."
+    answer: "cat > /tmp/threat_hunting_report.txt << 'EOF'\n=== Threat Hunting Report ===\n\n[Attack Timeline]\n14:00 - Nmap SYN scan from 10.20.30.10 (T1046)\n14:10 - SQL Injection attempts on DVWA (T1190)\n14:15 - Successful UNION SELECT extraction\n14:20 - PHP webshell uploaded\n14:25 - SSH brute force - 87 failed attempts (T1110.001)\n14:30 - Successful SSH login as msfadmin\n14:35 - SUID binary enumeration (T1548.001)\n14:40 - New user added to /etc/passwd (T1136.001)\n14:42 - Cron job backdoor installed (T1053.003)\n\nIndicators of Compromise (IoC):\n- Attacker IP: 10.20.30.10\n- Webshell: /dvwa/hackable/uploads/shell.php\n- Backdoor user: hacker (UID 0)\n- Cron backdoor: /tmp/.backdoor.sh\n\nRecommendations:\n1. Block attacker IP at firewall\n2. Remove webshell and backdoor user\n3. Reset all compromised credentials\n4. Patch vsftpd and Apache vulnerabilities\n5. Enable auditd for process/file monitoring\nEOF\ncat /tmp/threat_hunting_report.txt"
+    answer_detail: "위협 헌팅 보고서는 공격 타임라인, IoC, TTPs, 대응 권고를 통합한다. MITRE ATT&CK ID를 매핑하면 표준화된 분류가 가능하며, 타임라인은 사고 재구성의 핵심이다."
     verify:
       type: "file_exists"
       expect: "/tmp/threat_hunting_report.txt"
