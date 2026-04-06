@@ -306,6 +306,8 @@ def _init_db():
                     PRIMARY KEY(student_id, category)
                 );
             """)
+            # V1 마이그레이션: group_id FK
+            cur.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS group_id TEXT REFERENCES ccc_groups(id)")
             conn.commit()
 
 # ── 기본 그룹 시딩 ──────────────────────────────────
@@ -622,7 +624,36 @@ def promote_rank(student_id: str, request: Request):
             cur.execute("INSERT INTO rank_history (student_id, old_rank, new_rank, reason) VALUES (%s,%s,%s,%s)",
                         (student_id, old_rank, new_rank, f"Auto promotion: met all requirements"))
             conn.commit()
+    # CCCNet 블록 생성 (conn.commit 이후)
+    try:
+        _cccnet_add_block(student_id, "rank_up", ACHIEVEMENT_POINTS.get("rank_up", 1000),
+                          f"{old_rank}->{new_rank}", f"Promoted from {old_rank} to {new_rank}")
+    except Exception:
+        pass
     return {"promoted": True, "old_rank": old_rank, "new_rank": new_rank}
+
+def _try_auto_promote(student_id: str) -> dict | None:
+    """자동 승급 시도 — 조건 충족 시 승급 실행. 실패해도 호출자를 깨뜨리지 않음."""
+    try:
+        check = check_rank(student_id)
+        if not check.get("can_promote"):
+            return None
+        new_rank = check["next_rank"]
+        old_rank = check["current_rank"]
+        with _conn() as conn:
+            with conn.cursor() as cur:
+                cur.execute("UPDATE students SET rank=%s WHERE id=%s", (new_rank, student_id))
+                cur.execute("INSERT INTO rank_history (student_id, old_rank, new_rank, reason) VALUES (%s,%s,%s,%s)",
+                            (student_id, old_rank, new_rank, "Auto promotion: met all requirements"))
+                conn.commit()
+        try:
+            _cccnet_add_block(student_id, "rank_up", ACHIEVEMENT_POINTS.get("rank_up", 1000),
+                              f"{old_rank}->{new_rank}", f"Auto-promoted from {old_rank} to {new_rank}")
+        except Exception:
+            pass
+        return {"promoted": True, "old_rank": old_rank, "new_rank": new_rank}
+    except Exception:
+        return None
 
 @app.get("/rank/history/{student_id}", dependencies=[Depends(verify_api_key)])
 def rank_history(student_id: str):
@@ -1052,15 +1083,15 @@ _COURSE_MAP = {
     "course4-compliance": {"name": "compliance", "title": "정보보안 컴플라이언스", "group": "방어 운영", "group_color": "#3fb950", "icon": "📋", "description": "개인정보보호법, ISMS-P, ISO27001, GDPR 등 법규와 인증 체계를 학습합니다."},
     "course5-soc": {"name": "soc", "title": "보안관제 (SOC)", "group": "방어 운영", "group_color": "#3fb950", "icon": "📡", "description": "SOC 분석가의 업무 — 로그 분석, 경보 분류, 인시던트 대응, SIGMA 룰, 위협 인텔리전스를 실습합니다."},
     "course6-cloud-container": {"name": "cloud-container", "title": "클라우드/컨테이너 보안", "group": "방어 운영", "group_color": "#3fb950", "icon": "☁️", "description": "Docker, Kubernetes, AWS 보안, 서버리스 보안을 학습합니다."},
-    "course7-ai-security": {"name": "ai-security", "title": "AI/LLM 보안", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🤖", "description": "OpsClaw를 활용한 보안 자동화 — Ollama LLM, 프롬프트 엔지니어링, 탐지 룰 자동 생성을 구축합니다."},
-    "course8-ai-safety": {"name": "ai-safety", "title": "AI Safety / Red Teaming", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🧠", "description": "LLM 탈옥, 프롬프트 인젝션, 가드레일, 적대적 입력, RAG 보안, AI Red Teaming을 학습합니다."},
-    "course9-autonomous-security": {"name": "autonomous", "title": "자율보안시스템", "group": "AI 보안", "group_color": "#bc8cff", "icon": "⚡", "description": "PoW 작업증명, 강화학습(RL), Experience 메모리, 자율 Red/Blue/Purple Team을 구축합니다."},
-    "course10-ai-security-agent": {"name": "ai-agent", "title": "AI 보안 에이전트", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🕹️", "description": "AI 에이전트 기본부터 하네스 구축, 멀티에이전트, RAG, 에이전트 보안까지 실습합니다."},
+    "course7-ai-security": {"name": "ai-security", "min_rank": "skilled", "title": "AI/LLM 보안", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🤖", "description": "OpsClaw를 활용한 보안 자동화 — Ollama LLM, 프롬프트 엔지니어링, 탐지 룰 자동 생성을 구축합니다."},
+    "course8-ai-safety": {"name": "ai-safety", "min_rank": "skilled", "title": "AI Safety / Red Teaming", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🧠", "description": "LLM 탈옥, 프롬프트 인젝션, 가드레일, 적대적 입력, RAG 보안, AI Red Teaming을 학습합니다."},
+    "course9-autonomous-security": {"name": "autonomous", "min_rank": "skilled", "title": "자율보안시스템", "group": "AI 보안", "group_color": "#bc8cff", "icon": "⚡", "description": "PoW 작업증명, 강화학습(RL), Experience 메모리, 자율 Red/Blue/Purple Team을 구축합니다."},
+    "course10-ai-security-agent": {"name": "ai-agent", "min_rank": "skilled", "title": "AI 보안 에이전트", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🕹️", "description": "AI 에이전트 기본부터 하네스 구축, 멀티에이전트, RAG, 에이전트 보안까지 실습합니다."},
     "course11-battle": {"name": "battle", "title": "공방전 기초 (Cyber Battle)", "group": "실전", "group_color": "#f97316", "icon": "⚔️", "description": "인프라 간 공격/방어 대전 기초 — 정찰, 취약점, 방화벽, IDS, 1v1, 팀전"},
-    "course12-battle-advanced": {"name": "battle-adv", "title": "공방전 심화 (Advanced Battle)", "group": "실전", "group_color": "#f97316", "icon": "🔥", "description": "APT 시나리오, 다단계 침투, 실시간 공방, AI vs AI 대전, 종합 레드/블루팀 운영"},
-    "course13-attack-advanced": {"name": "attack-adv", "title": "사이버 공격 심화 (Advanced Attack)", "group": "공격 기술", "group_color": "#f85149", "icon": "💀", "description": "APT 킬체인, C2 인프라, 측면이동, 권한상승 체인, AD 공격, 공급망 공격, 안티포렌식"},
-    "course14-soc-advanced": {"name": "soc-adv", "title": "보안관제 심화 (Advanced SOC)", "group": "방어 운영", "group_color": "#3fb950", "icon": "🔍", "description": "고급 SIEM 상관분석, SIGMA/YARA, 위협헌팅, SOAR 자동화, 인시던트 포렌식, 악성코드 분석"},
-    "course15-ai-safety-advanced": {"name": "ai-safety-adv", "title": "AI Safety 심화 (Advanced AI Safety)", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🧪", "description": "LLM Red Teaming, 프롬프트 인젝션 심화, 가드레일 우회, AI 에이전트 보안, 모델 탈취/백도어"},
+    "course12-battle-advanced": {"name": "battle-adv", "min_rank": "expert", "title": "공방전 심화 (Advanced Battle)", "group": "실전", "group_color": "#f97316", "icon": "🔥", "description": "APT 시나리오, 다단계 침투, 실시간 공방, AI vs AI 대전, 종합 레드/블루팀 운영"},
+    "course13-attack-advanced": {"name": "attack-adv", "min_rank": "expert", "title": "사이버 공격 심화 (Advanced Attack)", "group": "공격 기술", "group_color": "#f85149", "icon": "💀", "description": "APT 킬체인, C2 인프라, 측면이동, 권한상승 체인, AD 공격, 공급망 공격, 안티포렌식"},
+    "course14-soc-advanced": {"name": "soc-adv", "min_rank": "expert", "title": "보안관제 심화 (Advanced SOC)", "group": "방어 운영", "group_color": "#3fb950", "icon": "🔍", "description": "고급 SIEM 상관분석, SIGMA/YARA, 위협헌팅, SOAR 자동화, 인시던트 포렌식, 악성코드 분석"},
+    "course15-ai-safety-advanced": {"name": "ai-safety-adv", "min_rank": "expert", "title": "AI Safety 심화 (Advanced AI Safety)", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🧪", "description": "LLM Red Teaming, 프롬프트 인젝션 심화, 가드레일 우회, AI 에이전트 보안, 모델 탈취/백도어"},
 }
 _GROUP_ORDER = ["공격 기술", "방어 운영", "AI 보안", "실전"]
 
@@ -1098,6 +1129,7 @@ def list_education_courses():
             "weeks": weeks,
             "labs_nonai": lab_nonai,
             "labs_ai": lab_ai,
+            "min_rank": meta.get("min_rank", "rookie"),
         })
     groups = []
     for gname in _GROUP_ORDER:
@@ -1162,6 +1194,19 @@ def get_lecture(course_id: str, week: int):
     with open(lecture_path, "r", encoding="utf-8") as f:
         content = f.read()
     return {"course_id": course_id, "week": week, "content": content}
+
+# ── Training aliases (V7: Education → Training) ──
+@app.get("/training/courses", dependencies=[Depends(verify_api_key)])
+def list_training_courses():
+    return list_education_courses()
+
+@app.get("/training/courses/{course_id}/weeks", dependencies=[Depends(verify_api_key)])
+def list_training_weeks(course_id: str):
+    return list_course_weeks(course_id)
+
+@app.get("/training/lecture/{course_id}/{week}", dependencies=[Depends(verify_api_key)])
+def get_training_lecture(course_id: str, week: int):
+    return get_lecture(course_id, week)
 
 # ══════════════════════════════════════════════════
 #  Lab Catalog (lab_engine 연동)
@@ -1310,6 +1355,14 @@ def auto_verify_lab_endpoint(body: AutoVerifyRequest):
                 )
                 conn.commit()
         result.block_hash = block_hash
+        # CCCNet 블록 + 자동승급
+        try:
+            _cccnet_add_block(body.student_id, "lab_complete", ACHIEVEMENT_POINTS.get("lab_complete", 50),
+                              body.lab_id, f"Lab completed: {body.lab_id}",
+                              {"earned_points": result.earned_points, "total_points": result.total_points})
+            _try_auto_promote(body.student_id)
+        except Exception:
+            pass
 
     return {
         "lab_id": result.lab_id, "student_id": result.student_id,
@@ -1382,6 +1435,13 @@ def submit_lab(body: LabSubmit):
                     (Json(body.evidence), block_hash, body.student_id, body.lab_id),
                 )
                 conn.commit()
+                # CCCNet 블록 + 자동승급
+                try:
+                    _cccnet_add_block(body.student_id, "lab_complete", ACHIEVEMENT_POINTS.get("lab_complete", 50),
+                                      body.lab_id, f"Lab completed: {body.lab_id}")
+                    _try_auto_promote(body.student_id)
+                except Exception:
+                    pass
                 return {"status": "completed", "verified": True, "block_hash": block_hash, "reward": 10.0}
             else:
                 return {"status": "failed", "verified": False, "message": "실습 검증 실패"}
@@ -1754,6 +1814,21 @@ def end_battle(bid: str, result: dict[str, Any] = {}):
                 (Json(result), block_hash, bid),
             )
             conn.commit()
+    # CCCNet 블록: 참가(20pt) + 승리(50pt)
+    try:
+        red_id = battle.get("red_id") if battle else None
+        blue_id = battle.get("blue_id") if battle else None
+        winner_id = result.get("winner_id", "")
+        for pid in [red_id, blue_id]:
+            if pid:
+                _cccnet_add_block(pid, "battle_join", ACHIEVEMENT_POINTS.get("battle_join", 20),
+                                  bid, f"Battle participated: {bid}")
+                if pid == winner_id:
+                    _cccnet_add_block(pid, "battle_win", ACHIEVEMENT_POINTS.get("battle_win", 50),
+                                      bid, f"Battle won: {bid}")
+                _try_auto_promote(pid)
+    except Exception:
+        pass
     return {"status": "completed", "battle_id": bid, "block_hash": block_hash}
 
 @app.get("/battles", dependencies=[Depends(verify_api_key)])

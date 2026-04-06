@@ -10,6 +10,7 @@ import Battle from './pages/Battle.tsx'
 import Leaderboard from './pages/Leaderboard.tsx'
 import Blockchain from './pages/Blockchain.tsx'
 import MyInfra from './pages/MyInfra.tsx'
+import Admin from './pages/Admin.tsx'
 import ChatBot from './components/ChatBot.tsx'
 
 const navItems = [
@@ -20,6 +21,7 @@ const navItems = [
   { to: '/battle', label: 'Battle', icon: '⚔️' },
   { to: '/leaderboard', label: 'Leaderboard', icon: '🏆' },
   { to: '/blockchain', label: 'Blockchain', icon: '⛓️' },
+  { to: '/admin', label: 'Admin', icon: '⚙️', adminOnly: true },
 ]
 
 export default function App() {
@@ -64,7 +66,7 @@ export default function App() {
           <div style={{ fontSize: 11, color: '#8b949e', marginTop: 4 }}>Cyber Combat Commander</div>
         </div>
         <div style={{ marginTop: 16, flex: 1 }}>
-          {navItems.map(n => (
+          {navItems.filter(n => !(n as any).adminOnly || isAdmin()).map(n => (
             <NavLink key={n.to} to={n.to} style={({ isActive }) => ({
               display: 'flex', alignItems: 'center', gap: 10,
               padding: '10px 20px', color: isActive ? '#f97316' : '#8b949e',
@@ -119,6 +121,7 @@ export default function App() {
           <Route path="/battle" element={<Battle />} />
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/blockchain" element={<Blockchain />} />
+          <Route path="/admin" element={<Admin />} />
         </Routes>
       </main>
       <ChatBot />

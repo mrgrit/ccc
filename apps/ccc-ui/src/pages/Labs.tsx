@@ -83,8 +83,8 @@ export default function Labs() {
   if (!selectedCourse) {
     return (
       <div>
-        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, color: '#e6edf3' }}>Labs</h2>
-        <p style={{ fontSize: 15, color: '#8b949e', marginBottom: 24 }}>실습 문제를 풀고 제출하면 자동 채점됩니다.</p>
+        <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 8, color: '#e6edf3' }}>Labs (Exam Mode)</h2>
+        <p style={{ fontSize: 15, color: '#8b949e', marginBottom: 24 }}>시험 모드: 실습 문제를 풀고 제출하면 자동 채점됩니다. 스텝 그룹별로 제출하세요.</p>
         {groups.map(g => (
           <div key={g.group} style={{ marginBottom: 32 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>

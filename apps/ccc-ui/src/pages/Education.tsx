@@ -26,7 +26,7 @@ export default function Education() {
     : null
 
   useEffect(() => {
-    api('/api/education/courses')
+    api('/api/training/courses')
       .then(d => setGroups(d.groups || []))
       .catch(e => setError(e.message))
       .finally(() => setLoading(false))
@@ -36,7 +36,7 @@ export default function Education() {
   useEffect(() => {
     if (!courseId) { setWeeks([]); return }
     setWeeksLoading(true)
-    api(`/api/education/courses/${courseId}/weeks`)
+    api(`/api/training/courses/${courseId}/weeks`)
       .then(d => setWeeks(d.weeks || []))
       .catch(e => setError(e.message))
       .finally(() => setWeeksLoading(false))
@@ -45,7 +45,7 @@ export default function Education() {
   // 교안 로드
   useEffect(() => {
     if (viewParam === 'lecture' && courseId && weekParam) {
-      api(`/api/education/lecture/${courseId}/${weekParam}`)
+      api(`/api/training/lecture/${courseId}/${weekParam}`)
         .then(d => setLecture(d.content))
         .catch(() => setLecture('교안을 로드할 수 없습니다.'))
     } else {
@@ -104,6 +104,9 @@ export default function Education() {
                   <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
                     <span style={{ fontSize: 28 }}>{c.icon}</span>
                     <div style={{ fontSize: 17, fontWeight: 700, color: '#e6edf3' }}>{c.title}</div>
+                    {c.min_rank && c.min_rank !== 'rookie' && (
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: 'rgba(249,115,22,0.12)', color: '#f97316', fontWeight: 600, textTransform: 'uppercase' as const }}>{c.min_rank}+</span>
+                    )}
                   </div>
                   <div style={{ fontSize: 14, color: '#8b949e', marginBottom: 14, lineHeight: 1.6 }}>{c.description}</div>
                   <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', fontSize: 12 }}>
