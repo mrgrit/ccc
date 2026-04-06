@@ -1,19 +1,29 @@
+# ── Stage 1: UI Build ──
+FROM node:22-slim AS ui-builder
+WORKDIR /build
+COPY apps/ccc-ui/package*.json ./
+RUN npm install --silent
+COPY apps/ccc-ui/ ./
+RUN npm run build
+
+# ── Stage 2: API ──
 FROM python:3.11-slim
 
 WORKDIR /app
 
-# 시스템 패키지
 RUN apt-get update && apt-get install -y --no-install-recommends \
-    curl build-essential libpq-dev && rm -rf /var/lib/apt/lists/*
+    curl sshpass openssh-client libpq-dev && rm -rf /var/lib/apt/lists/*
 
-# Python 패키지
-RUN pip install --no-cache-dir \
-    fastapi uvicorn httpx psycopg2-binary pydantic paramiko pyyaml websockets
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt && \
+    pip install --no-cache-dir open-interpreter --no-deps 2>/dev/null || true
 
-# 앱 복사
 COPY apps/ apps/
 COPY packages/ packages/
 COPY contents/ contents/
+
+# UI 빌드 결과 복사
+COPY --from=ui-builder /build/dist/ apps/ccc-ui/dist/
 
 ENV PYTHONPATH=/app
 
