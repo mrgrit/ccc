@@ -1,164 +1,91 @@
 lab_id: "cloud-container-nonai-week10"
-title: "[Non-AI] CI/CD보안"
+title: "CI/CD 파이프라인 보안 실습"
 version: "non-ai"
 course: "cloud-container-nonai"
 week: 10
-description: "CI/CD 파이프라인 보안을 학습합니다"
+description: "CI/CD 파이프라인에서 Docker 이미지 빌드와 배포의 보안을 점검합니다. Dockerfile 보안 분석, 이미지 서명, 레지스트리 보안, 빌드 아티팩트 검증을 수행합니다."
 difficulty: "medium"
 duration_minutes: 120
 objectives:
-  - "CI/CD보안의 핵심 개념을 이해한다"
-  - "CI/CD보안 관련 실무 기술을 습득한다"
-  - "CI/CD보안 보안 대책을 수립하고 적용한다"
+  - "CI/CD 파이프라인의 보안 위험 요소를 이해한다"
+  - "Dockerfile의 보안 모범 사례를 적용한다"
+  - "이미지 빌드와 배포 단계의 보안 점검 방법을 습득한다"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "CI/CD보안의 기본 개념과 구성 요소를 조사하세요"
-    hint: "CI/CD보안 관련 핵심 용어와 구조를 확인하세요"
-    category: "recon"
+    instruction: "WEB 서버(10.20.30.80)에서 Dockerfile 보안 점검을 수행하시오. 보안 모범 사례 위반 항목을 식별합니다."
+    hint: "테스트용 Dockerfile을 작성하고 보안 이슈를 분석하세요."
+    category: "audit"
     points: 10
-    answer: "CI/CD보안의 주요 구성요소와 핵심 개념을 정리"
-    answer_detail: "CI/CD보안는 클라우드/컨테이너 분야의 핵심 주제로, 기본 개념을 정확히 이해하는 것이 실무 적용의 기초입니다."
+    answer: "ssh trainee@10.20.30.80 'cat << \"DFILE\" > /tmp/test.Dockerfile\nFROM ubuntu:latest\nRUN apt-get update && apt-get install -y curl wget\nENV DB_PASSWORD=mysecret123\nRUN echo \"root:password\" | chpasswd\nADD https://example.com/app.tar.gz /app/\nEXPOSE 22 80 443 8080\nCMD [\"bash\"]\nDFILE\necho \"=== Dockerfile 보안 분석 ===\"\ngrep -n \"latest\" /tmp/test.Dockerfile && echo \"  -> 위험: latest 태그 사용\"\ngrep -n \"PASSWORD\\|SECRET\\|KEY\" /tmp/test.Dockerfile && echo \"  -> 위험: 민감정보 하드코딩\"\ngrep -n \"ADD http\" /tmp/test.Dockerfile && echo \"  -> 위험: 원격 ADD 사용\"\ngrep -n \"EXPOSE 22\" /tmp/test.Dockerfile && echo \"  -> 위험: SSH 포트 노출\"\ngrep -q \"USER\" /tmp/test.Dockerfile || echo \"  -> 위험: USER 미지정 (root 실행)\"\ngrep -q \"HEALTHCHECK\" /tmp/test.Dockerfile || echo \"  -> 권고: HEALTHCHECK 미설정\"'"
+    answer_detail: "Dockerfile 보안 모범 사례: (1) 특정 태그 사용(latest 금지), (2) 민감 정보 하드코딩 금지, (3) ADD 대신 COPY 사용, (4) USER로 비root 지정, (5) 불필요한 포트 노출 금지, (6) HEALTHCHECK 설정, (7) multi-stage build로 빌드 도구 제거."
     verify:
       type: "output_contains"
-      expect: "CI/CD보안의 주요 구성요소와 핵심 개념을 정리"
+      expect: "Dockerfile 보안 분석"
+      field: "stdout"
   - order: 2
-    instruction: "CI/CD보안 관련 현재 환경을 분석하세요"
-    hint: "시스템 상태와 설정을 확인하세요"
-    category: "analysis"
-    points: 10
-    answer: "현재 환경의 CI/CD보안 적용 현황 분석 완료"
-    answer_detail: "CI/CD보안 적용을 위해서는 먼저 현재 환경의 상태를 정확히 파악해야 합니다. 기존 설정과 구성을 분석하여 개선점을 식별합니다."
+    instruction: "보안이 적용된 Dockerfile을 작성하시오."
+    hint: "위에서 식별된 모든 보안 이슈를 해결하세요."
+    category: "config"
+    points: 12
+    answer: "ssh trainee@10.20.30.80 'cat << \"DFILE\" > /tmp/secure.Dockerfile\nFROM alpine:3.19\nRUN addgroup -S appgroup && adduser -S appuser -G appgroup\nCOPY --chown=appuser:appgroup . /app/\nWORKDIR /app\nRUN apk add --no-cache tini\nEXPOSE 8080\nHEALTHCHECK --interval=30s --timeout=3s CMD wget -q --spider http://localhost:8080/ || exit 1\nUSER appuser\nENTRYPOINT [\"tini\", \"--\"]\nCMD [\"./app\"]\nDFILE\necho \"=== 보안 Dockerfile ===\"\ncat /tmp/secure.Dockerfile'"
+    answer_detail: "보안 Dockerfile의 핵심: alpine(최소 이미지), 특정 버전 태그(3.19), adduser(비root 사용자), COPY(ADD 대신), --no-cache(캐시 제거로 이미지 최소화), HEALTHCHECK(상태 확인), USER(비root 실행), tini(PID 1 init 프로세스로 좀비 프로세스 방지)."
     verify:
       type: "output_contains"
-      expect: "현재 환경의 CI/CD보안 적용 현황 분석 완료"
+      expect: "보안 Dockerfile"
+      field: "stdout"
   - order: 3
-    instruction: "CI/CD보안 관련 보안 정책을 수립하세요"
-    hint: "정책 문서의 필수 항목을 확인하세요"
-    category: "config"
+    instruction: "Docker 이미지의 레이어 수와 크기를 분석하시오. 레이어 최적화는 보안과 성능에 모두 중요합니다."
+    hint: "docker history로 레이어를 분석하세요."
+    category: "audit"
     points: 10
-    answer: "CI/CD보안 보안 정책: 목적, 범위, 역할, 절차, 위반조치 포함"
-    answer_detail: "보안 정책은 CI/CD보안에 대한 조직의 방향과 기준을 제시하는 최상위 문서입니다. 명확한 목적, 범위, 역할과 책임을 포함해야 합니다."
+    answer: "ssh trainee@10.20.30.80 'for IMG in $(docker images --format \"{{.Repository}}:{{.Tag}}\" | head -3); do echo \"=== $IMG ===\"; docker history $IMG --format \"{{.Size}}\\t{{.CreatedBy}}\" 2>/dev/null | head -5; echo \"\"; done'"
+    answer_detail: "각 RUN 명령은 새 레이어를 생성합니다. RUN apt-get update && apt-get install && apt-get clean처럼 체이닝하면 레이어 수를 줄이고 불필요한 파일(캐시, 임시 파일)이 레이어에 남지 않습니다. CI/CD에서 이미지 크기는 빌드/배포 속도와 보안에 직접 영향을 미칩니다."
     verify:
       type: "output_contains"
-      expect: "CI/CD보안 보안 정책: 목적, 범위, 역할, 절차,"
+      expect: "==="
+      field: "stdout"
   - order: 4
-    instruction: "CI/CD보안의 위험 요소를 식별하고 평가하세요"
-    hint: "위험 식별 기법을 활용하세요"
-    category: "analysis"
+    instruction: "Docker Content Trust(이미지 서명) 설정을 확인하시오."
+    hint: "DOCKER_CONTENT_TRUST 환경 변수를 확인하세요."
+    category: "audit"
     points: 10
-    answer: "위험 평가: 위협 식별, 취약점 분석, 영향도 평가, 위험도 산정"
-    answer_detail: "CI/CD보안 관련 위험을 체계적으로 식별하고 평가하는 것은 효과적인 보안 대책 수립의 기반입니다."
+    answer: "ssh trainee@10.20.30.80 'echo \"DOCKER_CONTENT_TRUST=${DOCKER_CONTENT_TRUST:-미설정(비활성)}\" && echo \"--- Docker Notary 상태 ---\" && docker trust inspect --pretty alpine:latest 2>/dev/null || echo \"Content Trust 서명 정보 없음\"'"
+    answer_detail: "Docker Content Trust(DCT)는 이미지 서명과 검증을 제공합니다. DOCKER_CONTENT_TRUST=1을 설정하면 서명되지 않은 이미지의 pull/run이 차단됩니다. CI/CD에서 빌드한 이미지에 서명하고, 배포 시 서명을 검증하면 공급망(supply chain) 공격을 방지할 수 있습니다."
     verify:
       type: "output_contains"
-      expect: "위험 평가: 위협 식별, 취약점 분석, 영향도 평가, "
+      expect: "DOCKER_CONTENT_TRUST"
+      field: "stdout"
   - order: 5
-    instruction: "CI/CD보안 보호 대책을 구현하세요"
-    hint: "기술적 통제와 관리적 통제를 모두 적용하세요"
-    category: "defense"
+    instruction: "이미지 빌드 시 사용하는 Docker BuildKit의 보안 기능을 확인하시오."
+    hint: "DOCKER_BUILDKIT 환경 변수와 빌드 캐시를 확인하세요."
+    category: "audit"
     points: 10
-    answer: "기술적 통제: 접근제어, 암호화, 모니터링 / 관리적 통제: 정책, 교육, 감사"
-    answer_detail: "CI/CD보안에 대한 보호 대책은 기술적 통제와 관리적 통제를 균형 있게 적용하여 다층 방어를 구현해야 합니다."
+    answer: "ssh trainee@10.20.30.80 'echo \"DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-미설정}\" && echo \"--- 빌드 캐시 ---\" && docker builder prune --dry-run 2>/dev/null || echo \"BuildKit 캐시 없음\" && echo \"--- 빌더 정보 ---\" && docker buildx ls 2>/dev/null || echo \"buildx 미설치\"'"
+    answer_detail: "BuildKit(DOCKER_BUILDKIT=1)은 Docker의 차세대 빌드 엔진으로, --secret(빌드 시 민감 정보 안전 전달), --ssh(SSH 에이전트 포워딩), 병렬 빌드, 캐시 최적화를 제공합니다. CI/CD 파이프라인에서 빌드 속도와 보안을 동시에 향상시킵니다."
     verify:
       type: "output_contains"
-      expect: "기술적 통제: 접근제어, 암호화, 모니터링 / 관리적 "
+      expect: "DOCKER_BUILDKIT"
+      field: "stdout"
   - order: 6
-    instruction: "10.20.30.0/24 네트워크에서 CI/CD보안 관련 설정을 점검하세요"
-    hint: "대상 서버의 설정 파일을 확인하세요"
+    instruction: "레지스트리에서 이미지를 pull할 때의 보안 설정을 확인하시오."
+    hint: "daemon.json에서 insecure-registries를 확인하세요."
     category: "audit"
     points: 10
-    answer: "네트워크 스캔 및 설정 점검으로 CI/CD보안 적용 상태 확인"
-    answer_detail: "실제 네트워크 환경에서 CI/CD보안 관련 설정이 올바르게 적용되어 있는지 점검합니다. 10.20.30.0/24 대역의 모든 호스트를 대상으로 합니다."
+    answer: "ssh trainee@10.20.30.80 'echo \"=== 레지스트리 보안 ===\"; cat /etc/docker/daemon.json 2>/dev/null | grep -i \"insecure\\|registry\" || echo \"insecure-registries 미설정 (안전)\"; echo \"--- 인증 정보 ---\"; ls -la ~/.docker/config.json 2>/dev/null || echo \"Docker 로그인 정보 없음\"'"
+    answer_detail: "insecure-registries는 HTTPS 없이 레지스트리에 접근을 허용하여 MITM 공격에 취약합니다. CI/CD에서는 반드시 HTTPS 레지스트리를 사용하고, ~/.docker/config.json의 인증 정보는 credential helper로 안전하게 관리해야 합니다."
     verify:
       type: "output_contains"
-      expect: "네트워크 스캔 및 설정 점검으로 CI/CD보안 적용 상"
+      expect: "레지스트리 보안"
+      field: "stdout"
   - order: 7
-    instruction: "CI/CD보안 모니터링 체계를 구성하세요"
-    hint: "모니터링 도구와 알림 설정을 확인하세요"
-    category: "monitor"
-    points: 10
-    answer: "모니터링: 실시간 감시, 임계값 알림, 대시보드, 로그 분석"
-    answer_detail: "CI/CD보안의 지속적인 모니터링은 보안 위협을 조기에 탐지하고 대응하기 위해 필수적입니다."
-    verify:
-      type: "output_contains"
-      expect: "모니터링: 실시간 감시, 임계값 알림, 대시보드, 로그"
-  - order: 8
-    instruction: "CI/CD보안 관련 로그를 수집하고 분석하세요"
-    hint: "로그 소스와 분석 도구를 활용하세요"
-    category: "analysis"
-    points: 10
-    answer: "로그 수집: syslog, 애플리케이션 로그, 감사 로그 통합 분석"
-    answer_detail: "로그 분석은 CI/CD보안 관련 보안 이벤트를 추적하고 이상 징후를 탐지하는 핵심 활동입니다."
-    verify:
-      type: "output_contains"
-      expect: "로그 수집: syslog, 애플리케이션 로그, 감사 로"
-  - order: 9
-    instruction: "CI/CD보안에 대한 방어 체계를 강화하세요"
-    hint: "다층 방어 전략을 적용하세요"
-    category: "defense"
-    points: 10
-    answer: "다층 방어: 네트워크, 호스트, 애플리케이션, 데이터 계층별 보안 강화"
-    answer_detail: "CI/CD보안에 대한 단일 방어선은 충분하지 않습니다. 네트워크부터 데이터까지 모든 계층에서 방어 체계를 구축해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "다층 방어: 네트워크, 호스트, 애플리케이션, 데이터 "
-  - order: 10
-    instruction: "CI/CD보안 인시던트 대응 절차를 수립하세요"
-    hint: "대응 단계별 역할과 절차를 정의하세요"
-    category: "response"
-    points: 10
-    answer: "인시던트 대응: 탐지→분석→억제→제거→복구→교훈 6단계"
-    answer_detail: "CI/CD보안 관련 보안 인시던트 발생 시 신속하고 체계적으로 대응하기 위한 절차를 사전에 수립해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "인시던트 대응: 탐지→분석→억제→제거→복구→교훈 6단계"
-  - order: 11
-    instruction: "CI/CD보안의 접근 권한을 관리하세요"
-    hint: "최소 권한 원칙을 적용하세요"
-    category: "config"
-    points: 10
-    answer: "접근 관리: RBAC 기반, 최소 권한, 주기적 검토, 권한 변경 로깅"
-    answer_detail: "접근 권한 관리는 CI/CD보안의 보안을 확보하기 위한 기본적인 통제입니다. 최소 권한 원칙에 따라 필요한 최소한의 권한만 부여해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "접근 관리: RBAC 기반, 최소 권한, 주기적 검토,"
-  - order: 12
-    instruction: "CI/CD보안 관련 감사를 수행하세요"
-    hint: "감사 계획, 수행, 보고 절차를 따르세요"
+    instruction: "CI/CD 보안 종합 점검 스크립트를 작성하고 실행하시오."
+    hint: "Dockerfile 분석, 이미지 서명, 레지스트리, 빌드 캐시를 종합 점검하세요."
     category: "audit"
-    points: 10
-    answer: "감사: 계획수립→증거수집→분석→발견사항→개선권고 프로세스"
-    answer_detail: "정기적인 감사를 통해 CI/CD보안 관련 통제의 효과성을 평가하고, 미흡한 사항을 식별하여 개선해야 합니다."
+    points: 18
+    answer: "cat << 'SCRIPT' > /tmp/cicd_security.sh\n#!/bin/bash\nHOST='trainee@10.20.30.80'\necho '=== CI/CD 파이프라인 보안 점검 ==='\necho '[이미지 태그 점검]'\nssh $HOST 'docker images --format \"{{.Repository}}:{{.Tag}}\" | grep \":latest\" | wc -l' 2>/dev/null | xargs -I{} echo \"latest 태그 사용: {}개\"\necho '[Content Trust]'\nssh $HOST 'echo ${DOCKER_CONTENT_TRUST:-비활성}' 2>/dev/null\necho '[insecure-registries]'\nssh $HOST 'grep -c insecure /etc/docker/daemon.json 2>/dev/null || echo 0' | xargs -I{} echo \"{}건\"\necho '[빌드 캐시]'\nssh $HOST 'docker system df --format \"Build Cache: {{.Size}}\" 2>/dev/null | tail -1' || echo '정보 없음'\necho '[이미지 수]'\nssh $HOST 'docker images -q | wc -l' 2>/dev/null | xargs -I{} echo \"{}개\"\necho '=== CI/CD 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/cicd_security.sh && bash /tmp/cicd_security.sh"
+    answer_detail: "CI/CD 보안은 소프트웨어 공급망(Supply Chain) 보안의 핵심입니다. SLSA(Supply-chain Levels for Software Artifacts) 프레임워크에서는 빌드의 무결성, 소스의 출처, 아티팩트의 검증을 요구합니다. Docker 환경에서는 이미지 서명(DCT), 베이스 이미지 관리, 취약점 스캔, 비밀 관리가 핵심 요소입니다."
     verify:
       type: "output_contains"
-      expect: "감사: 계획수립→증거수집→분석→발견사항→개선권고 프로세"
-  - order: 13
-    instruction: "CI/CD보안의 성능과 효과를 측정하세요"
-    hint: "핵심 성과지표(KPI)를 설정하세요"
-    category: "monitor"
-    points: 10
-    answer: "KPI: 탐지율, 대응시간, 오탐률, 준수율, 개선 완료율"
-    answer_detail: "CI/CD보안의 효과를 객관적으로 측정하기 위해 핵심 성과지표를 설정하고 정기적으로 측정해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "KPI: 탐지율, 대응시간, 오탐률, 준수율, 개선 완"
-  - order: 14
-    instruction: "CI/CD보안 개선 계획을 수립하세요"
-    hint: "발견된 문제점과 개선 방안을 정리하세요"
-    category: "analysis"
-    points: 10
-    answer: "개선 계획: 단기(1개월), 중기(3개월), 장기(1년) 로드맵 수립"
-    answer_detail: "지속적인 개선은 CI/CD보안 관리의 핵심입니다. 발견된 문제점에 대한 우선순위별 개선 계획을 수립해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "개선 계획: 단기(1개월), 중기(3개월), 장기(1년"
-  - order: 15
-    instruction: "CI/CD보안 종합 평가 보고서를 작성하세요"
-    hint: "전체 실습 내용을 종합하세요"
-    category: "audit"
-    points: 10
-    answer: "CI/CD보안 종합 평가: 현황, 위험, 대책, 모니터링, 개선계획 총괄"
-    answer_detail: "CI/CD보안에 대한 전체 학습 내용을 종합하여 평가 보고서를 작성합니다. 현황 분석, 위험 평가, 대책 구현, 모니터링, 개선 계획을 모두 포함합니다."
-    verify:
-      type: "output_contains"
-      expect: "CI/CD보안 종합 평가: 현황, 위험, 대책, 모니터"
+      expect: "CI/CD 점검 완료"
+      field: "stdout"

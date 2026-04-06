@@ -1,164 +1,91 @@
 lab_id: "cloud-container-nonai-week12"
-title: "[Non-AI] 모니터링"
+title: "컨테이너 모니터링 및 로깅 실습"
 version: "non-ai"
 course: "cloud-container-nonai"
 week: 12
-description: "클라우드 보안 모니터링과 로깅을 학습합니다"
-difficulty: "hard"
+description: "Docker 환경의 모니터링과 로깅 체계를 구축하고 점검합니다. 컨테이너 로그 수집, 리소스 모니터링, 이벤트 추적, 이상 징후 탐지를 실습합니다."
+difficulty: "medium"
 duration_minutes: 120
 objectives:
-  - "모니터링의 핵심 개념을 이해한다"
-  - "모니터링 관련 실무 기술을 습득한다"
-  - "모니터링 보안 대책을 수립하고 적용한다"
+  - "Docker 로깅 드라이버와 로그 관리 방법을 이해한다"
+  - "컨테이너 리소스 모니터링 체계를 구축한다"
+  - "Docker 이벤트를 활용한 보안 모니터링 방법을 습득한다"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "모니터링의 기본 개념과 구성 요소를 조사하세요"
-    hint: "모니터링 관련 핵심 용어와 구조를 확인하세요"
-    category: "recon"
+    instruction: "WEB 서버(10.20.30.80)에서 Docker의 로깅 드라이버 설정을 확인하시오."
+    hint: "docker info에서 Logging Driver를 확인하세요."
+    category: "audit"
     points: 10
-    answer: "모니터링의 주요 구성요소와 핵심 개념을 정리"
-    answer_detail: "모니터링는 클라우드/컨테이너 분야의 핵심 주제로, 기본 개념을 정확히 이해하는 것이 실무 적용의 기초입니다."
+    answer: "ssh trainee@10.20.30.80 'docker info --format \"Logging: {{.LoggingDriver}}\" && echo \"--- daemon.json 로그 설정 ---\" && cat /etc/docker/daemon.json 2>/dev/null | grep -A5 log || echo \"daemon.json 로그 설정 없음 (기본값)\"'"
+    answer_detail: "Docker 기본 로깅 드라이버는 json-file로, 컨테이너별 JSON 파일에 로그를 저장합니다. 로그 크기 제한(max-size)과 파일 수(max-file)를 설정하지 않으면 디스크를 소진합니다. 중앙 로그 수집을 위해 syslog, fluentd, awslogs 드라이버를 사용할 수 있습니다."
     verify:
       type: "output_contains"
-      expect: "모니터링의 주요 구성요소와 핵심 개념을 정리"
+      expect: "Logging"
+      field: "stdout"
   - order: 2
-    instruction: "모니터링 관련 현재 환경을 분석하세요"
-    hint: "시스템 상태와 설정을 확인하세요"
-    category: "analysis"
+    instruction: "실행 중인 컨테이너의 로그를 확인하시오. 보안 관련 이벤트를 식별합니다."
+    hint: "docker logs 명령으로 컨테이너 로그를 확인하세요."
+    category: "audit"
     points: 10
-    answer: "현재 환경의 모니터링 적용 현황 분석 완료"
-    answer_detail: "모니터링 적용을 위해서는 먼저 현재 환경의 상태를 정확히 파악해야 합니다. 기존 설정과 구성을 분석하여 개선점을 식별합니다."
+    answer: "ssh trainee@10.20.30.80 'CID=$(docker ps -q | head -1); [ -n \"$CID\" ] && echo \"=== $(docker inspect --format=\"{{.Name}}\" $CID) 로그 ===\" && docker logs --tail 20 $CID 2>&1 || echo \"실행 중인 컨테이너 없음\"'"
+    answer_detail: "컨테이너 로그에서 보안 이벤트를 식별해야 합니다: 인증 실패(401/403), 비정상 접근 패턴, 에러 급증, 알 수 없는 경로 접근. docker logs --since로 특정 시간 이후 로그를 필터링할 수 있습니다."
     verify:
       type: "output_contains"
-      expect: "현재 환경의 모니터링 적용 현황 분석 완료"
+      expect: "로그"
+      field: "stdout"
   - order: 3
-    instruction: "모니터링 관련 보안 정책을 수립하세요"
-    hint: "정책 문서의 필수 항목을 확인하세요"
-    category: "config"
+    instruction: "컨테이너별 로그 파일 크기를 확인하시오. 로그 크기 제한이 없으면 디스크 소진 위험이 있습니다."
+    hint: "/var/lib/docker/containers/ 하위의 로그 파일 크기를 확인하세요."
+    category: "audit"
     points: 10
-    answer: "모니터링 보안 정책: 목적, 범위, 역할, 절차, 위반조치 포함"
-    answer_detail: "보안 정책은 모니터링에 대한 조직의 방향과 기준을 제시하는 최상위 문서입니다. 명확한 목적, 범위, 역할과 책임을 포함해야 합니다."
+    answer: "ssh trainee@10.20.30.80 'echo \"=== 컨테이너 로그 크기 ===\"; sudo find /var/lib/docker/containers/ -name \"*-json.log\" -exec ls -lh {} \\; 2>/dev/null | awk \"{print \\$5, \\$NF}\" | head -10 || echo \"로그 파일 없음\"'"
+    answer_detail: "json-file 드라이버는 기본적으로 로그 크기에 제한이 없어 디스크를 가득 채울 수 있습니다. daemon.json에서 전역 설정하거나, 컨테이너별로 --log-opt max-size=10m --log-opt max-file=3을 설정하여 로그 크기를 관리해야 합니다."
     verify:
       type: "output_contains"
-      expect: "모니터링 보안 정책: 목적, 범위, 역할, 절차, 위반"
+      expect: "컨테이너 로그 크기"
+      field: "stdout"
   - order: 4
-    instruction: "모니터링의 위험 요소를 식별하고 평가하세요"
-    hint: "위험 식별 기법을 활용하세요"
-    category: "analysis"
+    instruction: "Docker 이벤트 스트림을 확인하시오. 컨테이너 생성/시작/중지 등의 이벤트를 모니터링합니다."
+    hint: "docker events --since 또는 docker system events를 사용하세요."
+    category: "audit"
     points: 10
-    answer: "위험 평가: 위협 식별, 취약점 분석, 영향도 평가, 위험도 산정"
-    answer_detail: "모니터링 관련 위험을 체계적으로 식별하고 평가하는 것은 효과적인 보안 대책 수립의 기반입니다."
+    answer: "ssh trainee@10.20.30.80 'echo \"=== Docker 이벤트 (최근 1시간) ===\"; docker events --since 1h --until 0s --format \"{{.Time}} {{.Action}} {{.Actor.Attributes.name}}\" 2>/dev/null | head -15 || echo \"최근 이벤트 없음\"'"
+    answer_detail: "Docker 이벤트는 컨테이너 라이프사이클(create, start, stop, destroy), 이미지(pull, push), 네트워크(connect, disconnect) 등을 추적합니다. 보안 모니터링에서 비인가 컨테이너 생성, 이미지 pull, 네트워크 변경을 감지할 수 있습니다."
     verify:
       type: "output_contains"
-      expect: "위험 평가: 위협 식별, 취약점 분석, 영향도 평가, "
+      expect: "Docker 이벤트"
+      field: "stdout"
   - order: 5
-    instruction: "모니터링 보호 대책을 구현하세요"
-    hint: "기술적 통제와 관리적 통제를 모두 적용하세요"
-    category: "defense"
+    instruction: "컨테이너 리소스 사용량 스냅샷을 수집하시오."
+    hint: "docker stats --no-stream으로 현재 상태를 캡처하세요."
+    category: "audit"
     points: 10
-    answer: "기술적 통제: 접근제어, 암호화, 모니터링 / 관리적 통제: 정책, 교육, 감사"
-    answer_detail: "모니터링에 대한 보호 대책은 기술적 통제와 관리적 통제를 균형 있게 적용하여 다층 방어를 구현해야 합니다."
+    answer: "ssh trainee@10.20.30.80 'echo \"=== 리소스 사용량 스냅샷 ===\"; docker stats --no-stream --format \"table {{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}\\t{{.MemPerc}}\\t{{.NetIO}}\\t{{.PIDs}}\" 2>/dev/null || echo \"실행 중인 컨테이너 없음\"'"
+    answer_detail: "리소스 모니터링은 성능과 보안 모두에 중요합니다. 비정상적인 CPU/메모리 급증은 암호화폐 채굴(cryptojacking), 데이터 유출, DoS 공격의 징후일 수 있습니다. Prometheus + cAdvisor로 시계열 데이터를 수집하고 Grafana로 대시보드를 구성합니다."
     verify:
       type: "output_contains"
-      expect: "기술적 통제: 접근제어, 암호화, 모니터링 / 관리적 "
+      expect: "리소스 사용량 스냅샷"
+      field: "stdout"
   - order: 6
-    instruction: "10.20.30.0/24 네트워크에서 모니터링 관련 설정을 점검하세요"
-    hint: "대상 서버의 설정 파일을 확인하세요"
+    instruction: "호스트에서 컨테이너 관련 시스템 로그를 확인하시오."
+    hint: "journalctl로 docker 서비스 로그를 확인하세요."
     category: "audit"
     points: 10
-    answer: "네트워크 스캔 및 설정 점검으로 모니터링 적용 상태 확인"
-    answer_detail: "실제 네트워크 환경에서 모니터링 관련 설정이 올바르게 적용되어 있는지 점검합니다. 10.20.30.0/24 대역의 모든 호스트를 대상으로 합니다."
+    answer: "ssh trainee@10.20.30.80 'echo \"=== Docker 데몬 로그 ===\"; sudo journalctl -u docker --no-pager -n 20 2>/dev/null | tail -15'"
+    answer_detail: "Docker 데몬 로그에는 컨테이너 시작/중지 실패, 이미지 pull 오류, 네트워크 문제, 보안 관련 경고가 기록됩니다. 데몬 크래시, OOM Kill, 디스크 부족 등의 시스템 수준 이벤트도 확인할 수 있습니다."
     verify:
       type: "output_contains"
-      expect: "네트워크 스캔 및 설정 점검으로 모니터링 적용 상태 확"
+      expect: "Docker 데몬 로그"
+      field: "stdout"
   - order: 7
-    instruction: "모니터링 모니터링 체계를 구성하세요"
-    hint: "모니터링 도구와 알림 설정을 확인하세요"
-    category: "monitor"
-    points: 10
-    answer: "모니터링: 실시간 감시, 임계값 알림, 대시보드, 로그 분석"
-    answer_detail: "모니터링의 지속적인 모니터링은 보안 위협을 조기에 탐지하고 대응하기 위해 필수적입니다."
-    verify:
-      type: "output_contains"
-      expect: "모니터링: 실시간 감시, 임계값 알림, 대시보드, 로그"
-  - order: 8
-    instruction: "모니터링 관련 로그를 수집하고 분석하세요"
-    hint: "로그 소스와 분석 도구를 활용하세요"
-    category: "analysis"
-    points: 10
-    answer: "로그 수집: syslog, 애플리케이션 로그, 감사 로그 통합 분석"
-    answer_detail: "로그 분석은 모니터링 관련 보안 이벤트를 추적하고 이상 징후를 탐지하는 핵심 활동입니다."
-    verify:
-      type: "output_contains"
-      expect: "로그 수집: syslog, 애플리케이션 로그, 감사 로"
-  - order: 9
-    instruction: "모니터링에 대한 방어 체계를 강화하세요"
-    hint: "다층 방어 전략을 적용하세요"
-    category: "defense"
-    points: 10
-    answer: "다층 방어: 네트워크, 호스트, 애플리케이션, 데이터 계층별 보안 강화"
-    answer_detail: "모니터링에 대한 단일 방어선은 충분하지 않습니다. 네트워크부터 데이터까지 모든 계층에서 방어 체계를 구축해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "다층 방어: 네트워크, 호스트, 애플리케이션, 데이터 "
-  - order: 10
-    instruction: "모니터링 인시던트 대응 절차를 수립하세요"
-    hint: "대응 단계별 역할과 절차를 정의하세요"
-    category: "response"
-    points: 10
-    answer: "인시던트 대응: 탐지→분석→억제→제거→복구→교훈 6단계"
-    answer_detail: "모니터링 관련 보안 인시던트 발생 시 신속하고 체계적으로 대응하기 위한 절차를 사전에 수립해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "인시던트 대응: 탐지→분석→억제→제거→복구→교훈 6단계"
-  - order: 11
-    instruction: "모니터링의 접근 권한을 관리하세요"
-    hint: "최소 권한 원칙을 적용하세요"
-    category: "config"
-    points: 10
-    answer: "접근 관리: RBAC 기반, 최소 권한, 주기적 검토, 권한 변경 로깅"
-    answer_detail: "접근 권한 관리는 모니터링의 보안을 확보하기 위한 기본적인 통제입니다. 최소 권한 원칙에 따라 필요한 최소한의 권한만 부여해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "접근 관리: RBAC 기반, 최소 권한, 주기적 검토,"
-  - order: 12
-    instruction: "모니터링 관련 감사를 수행하세요"
-    hint: "감사 계획, 수행, 보고 절차를 따르세요"
+    instruction: "컨테이너 모니터링 보안 점검 스크립트를 작성하고 실행하시오."
+    hint: "로그 설정, 리소스, 이벤트를 종합 점검하세요."
     category: "audit"
     points: 10
-    answer: "감사: 계획수립→증거수집→분석→발견사항→개선권고 프로세스"
-    answer_detail: "정기적인 감사를 통해 모니터링 관련 통제의 효과성을 평가하고, 미흡한 사항을 식별하여 개선해야 합니다."
+    answer: "cat << 'SCRIPT' > /tmp/monitoring_check.sh\n#!/bin/bash\nHOST='trainee@10.20.30.80'\necho '=== 컨테이너 모니터링 점검 ==='\necho '[로깅 드라이버]'\nssh $HOST 'docker info --format \"{{.LoggingDriver}}\"' 2>/dev/null\necho '[로그 크기 제한]'\nssh $HOST 'cat /etc/docker/daemon.json 2>/dev/null | grep max-size || echo \"미설정 (무제한!)\"'\necho '[로그 파일 총 크기]'\nssh $HOST 'sudo du -sh /var/lib/docker/containers/ 2>/dev/null | cut -f1'\necho '[실행 컨테이너]'\nssh $HOST 'docker ps --format \"{{.Names}}: {{.Status}}\"' 2>/dev/null | head -5\necho '[리소스 상한]'\nssh $HOST 'docker ps -q | xargs -I{} docker inspect --format \"{{.Name}}: Mem={{.HostConfig.Memory}}\" {} 2>/dev/null' | head -5\necho '=== 모니터링 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/monitoring_check.sh && bash /tmp/monitoring_check.sh"
+    answer_detail: "컨테이너 모니터링의 3대 축: (1) 로그(Logs) - 애플리케이션/시스템 이벤트 추적, (2) 메트릭(Metrics) - CPU/메모리/네트워크 리소스 측정, (3) 트레이스(Traces) - 요청 흐름 추적. 클라우드 네이티브 환경에서는 ELK/EFK(로그), Prometheus/Grafana(메트릭), Jaeger(트레이스)를 사용합니다."
     verify:
       type: "output_contains"
-      expect: "감사: 계획수립→증거수집→분석→발견사항→개선권고 프로세"
-  - order: 13
-    instruction: "모니터링의 성능과 효과를 측정하세요"
-    hint: "핵심 성과지표(KPI)를 설정하세요"
-    category: "monitor"
-    points: 10
-    answer: "KPI: 탐지율, 대응시간, 오탐률, 준수율, 개선 완료율"
-    answer_detail: "모니터링의 효과를 객관적으로 측정하기 위해 핵심 성과지표를 설정하고 정기적으로 측정해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "KPI: 탐지율, 대응시간, 오탐률, 준수율, 개선 완"
-  - order: 14
-    instruction: "모니터링 개선 계획을 수립하세요"
-    hint: "발견된 문제점과 개선 방안을 정리하세요"
-    category: "analysis"
-    points: 10
-    answer: "개선 계획: 단기(1개월), 중기(3개월), 장기(1년) 로드맵 수립"
-    answer_detail: "지속적인 개선은 모니터링 관리의 핵심입니다. 발견된 문제점에 대한 우선순위별 개선 계획을 수립해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "개선 계획: 단기(1개월), 중기(3개월), 장기(1년"
-  - order: 15
-    instruction: "모니터링 종합 평가 보고서를 작성하세요"
-    hint: "전체 실습 내용을 종합하세요"
-    category: "audit"
-    points: 10
-    answer: "모니터링 종합 평가: 현황, 위험, 대책, 모니터링, 개선계획 총괄"
-    answer_detail: "모니터링에 대한 전체 학습 내용을 종합하여 평가 보고서를 작성합니다. 현황 분석, 위험 평가, 대책 구현, 모니터링, 개선 계획을 모두 포함합니다."
-    verify:
-      type: "output_contains"
-      expect: "모니터링 종합 평가: 현황, 위험, 대책, 모니터링, "
+      expect: "모니터링 점검 완료"
+      field: "stdout"

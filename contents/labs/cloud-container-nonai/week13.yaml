@@ -1,164 +1,102 @@
 lab_id: "cloud-container-nonai-week13"
-title: "[Non-AI] 인시던트대응"
+title: "컨테이너 인시던트 대응 실습"
 version: "non-ai"
 course: "cloud-container-nonai"
 week: 13
-description: "클라우드 환경 인시던트 대응을 학습합니다"
+description: "Docker 컨테이너 환경에서 보안 인시던트를 탐지하고 대응합니다. 의심 컨테이너 격리, 포렌식 데이터 수집, 컨테이너 분석, 복구 절차를 실습합니다."
 difficulty: "hard"
 duration_minutes: 120
 objectives:
-  - "인시던트대응의 핵심 개념을 이해한다"
-  - "인시던트대응 관련 실무 기술을 습득한다"
-  - "인시던트대응 보안 대책을 수립하고 적용한다"
+  - "컨테이너 환경의 인시던트 대응 절차를 이해한다"
+  - "의심 컨테이너에서 포렌식 데이터를 수집한다"
+  - "컨테이너 격리와 복구 절차를 수행한다"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "인시던트대응의 기본 개념과 구성 요소를 조사하세요"
-    hint: "인시던트대응 관련 핵심 용어와 구조를 확인하세요"
-    category: "recon"
+    instruction: "WEB 서버(10.20.30.80)에서 실행 중인 컨테이너의 이상 징후를 확인하시오. 인시던트 탐지 단계."
+    hint: "docker stats와 docker top으로 비정상 활동을 확인하세요."
+    category: "audit"
     points: 10
-    answer: "인시던트대응의 주요 구성요소와 핵심 개념을 정리"
-    answer_detail: "인시던트대응는 클라우드/컨테이너 분야의 핵심 주제로, 기본 개념을 정확히 이해하는 것이 실무 적용의 기초입니다."
+    answer: "ssh trainee@10.20.30.80 'echo \"=== 인시던트 탐지: 리소스 이상 ===\"; docker stats --no-stream --format \"{{.Name}}\\tCPU:{{.CPUPerc}}\\tMem:{{.MemUsage}}\\tPIDs:{{.PIDs}}\" 2>/dev/null; echo \"=== 프로세스 확인 ===\"; docker ps -q | head -3 | xargs -I{} sh -c \"echo --- \\$(docker inspect --format=\\\"{{.Name}}\\\" {}) ---; docker top {} 2>/dev/null | head -5\" 2>/dev/null'"
+    answer_detail: "컨테이너 인시던트 탐지의 징후: 비정상 CPU/메모리 사용(채굴), 예상치 못한 프로세스(리버스 셸), 네트워크 I/O 급증(데이터 유출), PID 수 급증(Fork Bomb). docker top으로 컨테이너 내부 프로세스를 확인하여 의심 프로세스를 식별합니다."
     verify:
       type: "output_contains"
-      expect: "인시던트대응의 주요 구성요소와 핵심 개념을 정리"
+      expect: "인시던트 탐지"
+      field: "stdout"
   - order: 2
-    instruction: "인시던트대응 관련 현재 환경을 분석하세요"
-    hint: "시스템 상태와 설정을 확인하세요"
-    category: "analysis"
-    points: 10
-    answer: "현재 환경의 인시던트대응 적용 현황 분석 완료"
-    answer_detail: "인시던트대응 적용을 위해서는 먼저 현재 환경의 상태를 정확히 파악해야 합니다. 기존 설정과 구성을 분석하여 개선점을 식별합니다."
+    instruction: "의심 컨테이너의 네트워크 연결 상태를 확인하시오. 외부 C2 서버 통신을 탐지합니다."
+    hint: "docker exec로 컨테이너 내부의 네트워크 연결을 확인하세요."
+    category: "audit"
+    points: 12
+    answer: "ssh trainee@10.20.30.80 'CID=$(docker ps -q | head -1); [ -n \"$CID\" ] && echo \"=== 네트워크 연결 분석: $(docker inspect --format=\"{{.Name}}\" $CID) ===\"; docker exec $CID sh -c \"cat /proc/net/tcp 2>/dev/null | head -10; echo --- ; netstat -tlnp 2>/dev/null || ss -tlnp 2>/dev/null\" 2>/dev/null || echo \"실행 중인 컨테이너 없음\"'"
+    answer_detail: "인시던트 대응에서 네트워크 분석은 C2(Command & Control) 통신을 식별하는 핵심입니다. /proc/net/tcp에서 외부 IP로의 ESTABLISHED 연결, 알 수 없는 LISTEN 포트를 확인합니다. 컨테이너의 의도된 네트워크 연결과 비교하여 비정상 연결을 식별합니다."
     verify:
       type: "output_contains"
-      expect: "현재 환경의 인시던트대응 적용 현황 분석 완료"
+      expect: "네트워크 연결 분석"
+      field: "stdout"
   - order: 3
-    instruction: "인시던트대응 관련 보안 정책을 수립하세요"
-    hint: "정책 문서의 필수 항목을 확인하세요"
+    instruction: "의심 컨테이너를 네트워크에서 격리하시오. 인시던트 억제 단계."
+    hint: "docker network disconnect으로 네트워크를 분리하세요."
     category: "config"
-    points: 10
-    answer: "인시던트대응 보안 정책: 목적, 범위, 역할, 절차, 위반조치 포함"
-    answer_detail: "보안 정책은 인시던트대응에 대한 조직의 방향과 기준을 제시하는 최상위 문서입니다. 명확한 목적, 범위, 역할과 책임을 포함해야 합니다."
+    points: 12
+    answer: "ssh trainee@10.20.30.80 'CID=$(docker ps -q | head -1); [ -n \"$CID\" ] && CNAME=$(docker inspect --format=\"{{.Name}}\" $CID | tr -d \"/\"); echo \"=== 컨테이너 격리: $CNAME ===\"; NETS=$(docker inspect --format=\"{{range \\$k, \\$v := .NetworkSettings.Networks}}{{\\$k}} {{end}}\" $CID); echo \"연결된 네트워크: $NETS\"; echo \"(실제 격리는 docker network disconnect <net> <container>)\"; echo \"격리 절차 확인 완료\" || echo \"컨테이너 없음\"'"
+    answer_detail: "인시던트 억제(Containment)에서 컨테이너를 즉시 삭제하면 포렌식 증거가 사라집니다. 먼저 네트워크를 분리(docker network disconnect)하여 추가 피해를 방지하고, 상태를 보존한 채 분석합니다. docker pause로 프로세스를 일시 정지할 수도 있습니다."
     verify:
       type: "output_contains"
-      expect: "인시던트대응 보안 정책: 목적, 범위, 역할, 절차, "
+      expect: "격리 절차 확인 완료"
+      field: "stdout"
   - order: 4
-    instruction: "인시던트대응의 위험 요소를 식별하고 평가하세요"
-    hint: "위험 식별 기법을 활용하세요"
-    category: "analysis"
-    points: 10
-    answer: "위험 평가: 위협 식별, 취약점 분석, 영향도 평가, 위험도 산정"
-    answer_detail: "인시던트대응 관련 위험을 체계적으로 식별하고 평가하는 것은 효과적인 보안 대책 수립의 기반입니다."
-    verify:
-      type: "output_contains"
-      expect: "위험 평가: 위협 식별, 취약점 분석, 영향도 평가, "
-  - order: 5
-    instruction: "인시던트대응 보호 대책을 구현하세요"
-    hint: "기술적 통제와 관리적 통제를 모두 적용하세요"
-    category: "defense"
-    points: 10
-    answer: "기술적 통제: 접근제어, 암호화, 모니터링 / 관리적 통제: 정책, 교육, 감사"
-    answer_detail: "인시던트대응에 대한 보호 대책은 기술적 통제와 관리적 통제를 균형 있게 적용하여 다층 방어를 구현해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "기술적 통제: 접근제어, 암호화, 모니터링 / 관리적 "
-  - order: 6
-    instruction: "10.20.30.0/24 네트워크에서 인시던트대응 관련 설정을 점검하세요"
-    hint: "대상 서버의 설정 파일을 확인하세요"
+    instruction: "컨테이너의 파일시스템 변경사항을 확인하시오. 포렌식 분석 단계."
+    hint: "docker diff로 컨테이너 내부의 변경된 파일을 확인하세요."
     category: "audit"
-    points: 10
-    answer: "네트워크 스캔 및 설정 점검으로 인시던트대응 적용 상태 확인"
-    answer_detail: "실제 네트워크 환경에서 인시던트대응 관련 설정이 올바르게 적용되어 있는지 점검합니다. 10.20.30.0/24 대역의 모든 호스트를 대상으로 합니다."
+    points: 12
+    answer: "ssh trainee@10.20.30.80 'CID=$(docker ps -q | head -1); [ -n \"$CID\" ] && echo \"=== 파일시스템 변경 분석: $(docker inspect --format=\"{{.Name}}\" $CID) ===\"; docker diff $CID 2>/dev/null | head -20 || echo \"변경 없음\"'"
+    answer_detail: "docker diff는 컨테이너 생성 후 변경된 파일을 표시합니다. A(추가), C(변경), D(삭제). 악성 코드가 추가되었거나(/tmp/backdoor), 설정이 변경되었거나(/etc/passwd), 바이너리가 교체된 것을 식별할 수 있습니다. 이 정보는 IOC(Indicator of Compromise)로 활용됩니다."
     verify:
       type: "output_contains"
-      expect: "네트워크 스캔 및 설정 점검으로 인시던트대응 적용 상태"
-  - order: 7
-    instruction: "인시던트대응 모니터링 체계를 구성하세요"
-    hint: "모니터링 도구와 알림 설정을 확인하세요"
-    category: "monitor"
-    points: 10
-    answer: "모니터링: 실시간 감시, 임계값 알림, 대시보드, 로그 분석"
-    answer_detail: "인시던트대응의 지속적인 모니터링은 보안 위협을 조기에 탐지하고 대응하기 위해 필수적입니다."
-    verify:
-      type: "output_contains"
-      expect: "모니터링: 실시간 감시, 임계값 알림, 대시보드, 로그"
-  - order: 8
-    instruction: "인시던트대응 관련 로그를 수집하고 분석하세요"
-    hint: "로그 소스와 분석 도구를 활용하세요"
-    category: "analysis"
-    points: 10
-    answer: "로그 수집: syslog, 애플리케이션 로그, 감사 로그 통합 분석"
-    answer_detail: "로그 분석은 인시던트대응 관련 보안 이벤트를 추적하고 이상 징후를 탐지하는 핵심 활동입니다."
-    verify:
-      type: "output_contains"
-      expect: "로그 수집: syslog, 애플리케이션 로그, 감사 로"
-  - order: 9
-    instruction: "인시던트대응에 대한 방어 체계를 강화하세요"
-    hint: "다층 방어 전략을 적용하세요"
-    category: "defense"
-    points: 10
-    answer: "다층 방어: 네트워크, 호스트, 애플리케이션, 데이터 계층별 보안 강화"
-    answer_detail: "인시던트대응에 대한 단일 방어선은 충분하지 않습니다. 네트워크부터 데이터까지 모든 계층에서 방어 체계를 구축해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "다층 방어: 네트워크, 호스트, 애플리케이션, 데이터 "
-  - order: 10
-    instruction: "인시던트대응 인시던트 대응 절차를 수립하세요"
-    hint: "대응 단계별 역할과 절차를 정의하세요"
-    category: "response"
-    points: 10
-    answer: "인시던트 대응: 탐지→분석→억제→제거→복구→교훈 6단계"
-    answer_detail: "인시던트대응 관련 보안 인시던트 발생 시 신속하고 체계적으로 대응하기 위한 절차를 사전에 수립해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "인시던트 대응: 탐지→분석→억제→제거→복구→교훈 6단계"
-  - order: 11
-    instruction: "인시던트대응의 접근 권한을 관리하세요"
-    hint: "최소 권한 원칙을 적용하세요"
+      expect: "파일시스템 변경 분석"
+      field: "stdout"
+  - order: 5
+    instruction: "컨테이너를 이미지로 커밋하여 포렌식 스냅샷을 보존하시오."
+    hint: "docker commit으로 현재 상태를 이미지로 저장하세요."
     category: "config"
     points: 10
-    answer: "접근 관리: RBAC 기반, 최소 권한, 주기적 검토, 권한 변경 로깅"
-    answer_detail: "접근 권한 관리는 인시던트대응의 보안을 확보하기 위한 기본적인 통제입니다. 최소 권한 원칙에 따라 필요한 최소한의 권한만 부여해야 합니다."
+    answer: "ssh trainee@10.20.30.80 'CID=$(docker ps -q | head -1); [ -n \"$CID\" ] && CNAME=$(docker inspect --format=\"{{.Name}}\" $CID | tr -d \"/\"); echo \"=== 포렌식 스냅샷 생성 ===\"; docker commit $CID forensic-${CNAME}-$(date +%Y%m%d) 2>/dev/null && docker images | grep forensic || echo \"컨테이너 없음\"'"
+    answer_detail: "docker commit은 컨테이너의 현재 상태를 새 이미지로 저장합니다. 이 포렌식 이미지는 나중에 분석할 수 있으며, 법적 증거로도 활용됩니다. 커밋 후 원본 컨테이너를 삭제해도 포렌식 이미지에서 분석을 계속할 수 있습니다."
     verify:
       type: "output_contains"
-      expect: "접근 관리: RBAC 기반, 최소 권한, 주기적 검토,"
-  - order: 12
-    instruction: "인시던트대응 관련 감사를 수행하세요"
-    hint: "감사 계획, 수행, 보고 절차를 따르세요"
+      expect: "포렌식 스냅샷 생성"
+      field: "stdout"
+  - order: 6
+    instruction: "컨테이너의 로그를 포렌식 증거로 보존하시오."
+    hint: "docker logs의 출력을 파일로 저장하세요."
+    category: "config"
+    points: 10
+    answer: "ssh trainee@10.20.30.80 'CID=$(docker ps -q | head -1); [ -n \"$CID\" ] && CNAME=$(docker inspect --format=\"{{.Name}}\" $CID | tr -d \"/\"); echo \"=== 로그 보존 ===\"; docker logs $CID 2>&1 | tail -50 > /tmp/forensic-${CNAME}-logs.txt 2>/dev/null; echo \"로그 저장: /tmp/forensic-${CNAME}-logs.txt\"; wc -l /tmp/forensic-${CNAME}-logs.txt 2>/dev/null || echo \"컨테이너 없음\"'"
+    answer_detail: "인시던트 대응에서 로그 보존은 법적 요구사항이기도 합니다. 컨테이너 로그, Docker 이벤트, 호스트 시스템 로그를 모두 수집하여 타임스탬프순으로 정리합니다. 증거 보전 체인(Chain of Custody)을 유지하기 위해 해시값도 기록합니다."
+    verify:
+      type: "output_contains"
+      expect: "로그 보존"
+      field: "stdout"
+  - order: 7
+    instruction: "Docker 이벤트에서 인시던트 타임라인을 구성하시오."
+    hint: "docker events로 의심 시간대의 이벤트를 조회하세요."
     category: "audit"
     points: 10
-    answer: "감사: 계획수립→증거수집→분석→발견사항→개선권고 프로세스"
-    answer_detail: "정기적인 감사를 통해 인시던트대응 관련 통제의 효과성을 평가하고, 미흡한 사항을 식별하여 개선해야 합니다."
+    answer: "ssh trainee@10.20.30.80 'echo \"=== 인시던트 타임라인 ===\"; docker events --since 2h --until 0s --format \"{{.Time}} | {{.Action}} | {{.Actor.Attributes.name}} | {{.Type}}\" 2>/dev/null | head -20 || echo \"이벤트 없음\"'"
+    answer_detail: "인시던트 타임라인은 사건의 전체 흐름을 파악하는 핵심 도구입니다. Docker 이벤트에서 컨테이너 생성/시작/정지 시점, 이미지 pull 시점, 네트워크 변경 시점을 추출하여 시간 순서대로 정리합니다."
     verify:
       type: "output_contains"
-      expect: "감사: 계획수립→증거수집→분석→발견사항→개선권고 프로세"
-  - order: 13
-    instruction: "인시던트대응의 성능과 효과를 측정하세요"
-    hint: "핵심 성과지표(KPI)를 설정하세요"
-    category: "monitor"
-    points: 10
-    answer: "KPI: 탐지율, 대응시간, 오탐률, 준수율, 개선 완료율"
-    answer_detail: "인시던트대응의 효과를 객관적으로 측정하기 위해 핵심 성과지표를 설정하고 정기적으로 측정해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "KPI: 탐지율, 대응시간, 오탐률, 준수율, 개선 완"
-  - order: 14
-    instruction: "인시던트대응 개선 계획을 수립하세요"
-    hint: "발견된 문제점과 개선 방안을 정리하세요"
-    category: "analysis"
-    points: 10
-    answer: "개선 계획: 단기(1개월), 중기(3개월), 장기(1년) 로드맵 수립"
-    answer_detail: "지속적인 개선은 인시던트대응 관리의 핵심입니다. 발견된 문제점에 대한 우선순위별 개선 계획을 수립해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "개선 계획: 단기(1개월), 중기(3개월), 장기(1년"
-  - order: 15
-    instruction: "인시던트대응 종합 평가 보고서를 작성하세요"
-    hint: "전체 실습 내용을 종합하세요"
+      expect: "인시던트 타임라인"
+      field: "stdout"
+  - order: 8
+    instruction: "인시던트 대응 종합 보고서 스크립트를 작성하고 실행하시오."
+    hint: "탐지, 분석, 격리, 증거 보존 단계를 종합하세요."
     category: "audit"
-    points: 10
-    answer: "인시던트대응 종합 평가: 현황, 위험, 대책, 모니터링, 개선계획 총괄"
-    answer_detail: "인시던트대응에 대한 전체 학습 내용을 종합하여 평가 보고서를 작성합니다. 현황 분석, 위험 평가, 대책 구현, 모니터링, 개선 계획을 모두 포함합니다."
+    points: 14
+    answer: "cat << 'SCRIPT' > /tmp/incident_response.sh\n#!/bin/bash\nHOST='trainee@10.20.30.80'\necho '=== 컨테이너 인시던트 대응 보고서 ==='\necho \"시각: $(date)\"\necho ''\necho '[1. 탐지 - 실행 중 컨테이너]'\nssh $HOST 'docker ps --format \"{{.Names}}: {{.Image}} ({{.Status}})\"' 2>/dev/null\necho '[2. 분석 - 리소스 현황]'\nssh $HOST 'docker stats --no-stream --format \"{{.Name}}: CPU={{.CPUPerc}} Mem={{.MemPerc}}\"' 2>/dev/null | head -5\necho '[3. 증거 - 포렌식 이미지]'\nssh $HOST 'docker images --format \"{{.Repository}}:{{.Tag}} {{.Size}}\" | grep forensic' 2>/dev/null || echo '  포렌식 이미지 없음'\necho '[4. 복구 - 권장 사항]'\necho '  - 침해 컨테이너 삭제 후 클린 이미지로 재배포'\necho '  - 이미지 취약점 스캔 후 패치된 버전 사용'\necho '  - 네트워크 격리 및 접근 제어 강화'\necho ''\necho '=== 인시던트 대응 보고 완료 ==='\nSCRIPT\nchmod +x /tmp/incident_response.sh && bash /tmp/incident_response.sh"
+    answer_detail: "컨테이너 인시던트 대응은 NIST SP 800-61의 4단계(준비 -> 탐지/분석 -> 억제/제거/복구 -> 사후 활동)를 따릅니다. 컨테이너 환경의 특수성: 불변 인프라에서는 패치 대신 새 이미지로 교체, 포렌식은 commit으로 보존, 복구는 오케스트레이터가 자동 수행."
     verify:
       type: "output_contains"
-      expect: "인시던트대응 종합 평가: 현황, 위험, 대책, 모니터링"
+      expect: "인시던트 대응 보고 완료"
+      field: "stdout"
