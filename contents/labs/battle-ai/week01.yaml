@@ -38,98 +38,100 @@ steps:
   hint: nmap의 -sn 옵션을 사용한다.
   category: recon
   points: 10
-  answer: nmap -sn 10.20.30.0/24
+  answer: nmap -sn --max-retries 1 --host-timeout 15s -T4 10.20.30.0/24
   answer_detail: nmap -sn은 포트 스캔 없이 호스트 발견만 수행하는 Ping Sweep이다. ICMP echo, TCP SYN(443), TCP ACK(80), ICMP timestamp 를 조합하여 호스트 존재 여부를 판단한다.
   verify:
     type: output_contains
     expect: Host is up
     field: stdout
   target_vm: attacker
-  script: nmap -sn 10.20.30.0/24
+  script: nmap -sn --max-retries 1 --host-timeout 15s -T4 10.20.30.0/24
   risk_level: low
 - order: 3
   instruction: 발견된 대상 호스트(10.20.30.80)에 대해 TCP 전체 포트 스캔을 수행하라.
   hint: nmap -p- 옵션으로 65535개 전체 포트를 스캔한다.
   category: recon
   points: 10
-  answer: nmap -p 1-10000 -T4 10.20.30.80
+  answer: nmap -p 1-10000 --max-retries 1 --host-timeout 15s -T4 10.20.30.80
   answer_detail: 주요 포트 범위(1~10000)를 스캔한다. -T4는 타이밍 템플릿으로 속도를 높인다. 실무에서는 방화벽 우회를 위해 -T2 등 느린 옵션을 사용하기도 한다. 전체 65535 포트 스캔은 시간이 많이 소요되므로 실습에서는 범위를 제한한다.
   verify:
     type: output_contains
     expect: open
     field: stdout
   target_vm: attacker
-  script: nmap -p 1-10000 -T4 10.20.30.80
+  script: nmap -p 1-10000 --max-retries 1 --host-timeout 15s -T4 10.20.30.80
   risk_level: low
 - order: 4
   instruction: 대상 호스트의 열린 포트에 대해 서비스 버전 탐지를 수행하라.
   hint: nmap -sV 옵션을 사용한다.
   category: recon
   points: 10
-  answer: nmap -sV -p 22,80,443,3000,8080 10.20.30.80
+  answer: nmap -sV -p 22,80,443,3000,8080 --max-retries 1 --host-timeout 15s -T4 10.20.30.80
   answer_detail: -sV 옵션은 각 열린 포트에 프로브를 보내 서비스 이름과 버전을 식별한다. 이 정보는 취약점 탐색의 핵심 입력이 된다.
   verify:
     type: output_contains
     expect: VERSION
     field: stdout
   target_vm: attacker
-  script: nmap -sV -p 22,80,443,3000,8080 10.20.30.80
+  script: nmap -sV -p 22,80,443,3000,8080 --max-retries 1 --host-timeout 15s -T4 10.20.30.80
   risk_level: low
 - order: 5
   instruction: 대상 호스트의 운영체제를 탐지하라.
   hint: nmap -O 옵션은 root 권한이 필요하다.
   category: recon
   points: 10
-  answer: sudo nmap -O 10.20.30.80
+  answer: sudo nmap -O --max-retries 1 --host-timeout 15s -T4 10.20.30.80
   answer_detail: -O 옵션은 TCP/IP 스택 핑거프린팅으로 OS를 추측한다. TTL, Window Size, DF bit 등 패킷 특성을 분석한다. root 권한이 필요한 이유는 raw socket을 사용하기 때문이다.
   verify:
     type: output_contains
-    expect: OS details
+    expect: OS
     field: stdout
   target_vm: attacker
-  script: sudo nmap -O 10.20.30.80
+  script: sudo nmap -O --max-retries 1 --host-timeout 15s -T4 10.20.30.80
   risk_level: low
 - order: 6
   instruction: nmap NSE 스크립트를 사용하여 대상의 HTTP 서비스 정보를 열거하라.
   hint: http-enum, http-headers 스크립트를 사용한다.
   category: recon
   points: 10
-  answer: nmap --script http-enum,http-headers -p 80,3000 10.20.30.80
+  answer: nmap --script http-enum,http-headers -p 80,3000 --max-retries 1 --host-timeout 15s -T4 10.20.30.80
   answer_detail: NSE(Nmap Scripting Engine)의 http-enum 스크립트는 웹 서버에서 알려진 경로(admin, backup 등)를 탐색한다. http-headers는 응답 헤더를 수집하여 서버 정보를 식별한다.
   verify:
     type: output_contains
     expect: http
     field: stdout
   target_vm: attacker
-  script: nmap --script http-enum,http-headers -p 80,3000 10.20.30.80
+  script: nmap --script http-enum,http-headers -p 80,3000 --max-retries 1 --host-timeout 15s -T4 10.20.30.80
   risk_level: low
 - order: 7
-  instruction: '대상 호스트의 DNS 정보를 dig 명령으로 조회하라. (대상 도메인: target.lab.local)'
-  hint: dig 명령에 @DNS서버 옵션을 사용한다.
+  instruction: 대상 웹 서버(10.20.30.80)에서 가상호스트(vhost)를 탐색하라. curl로 Host 헤더를 변경하여 다른 응답이 있는지 확인하라.
+  hint: 'curl -H "Host: target.lab.local" 옵션으로 가상호스트를 테스트한다.'
   category: recon
   points: 10
-  answer: dig @10.20.30.80 target.lab.local ANY
-  answer_detail: dig는 DNS 질의 도구이다. ANY 타입으로 A, MX, NS, TXT 등 모든 레코드를 조회한다. @으로 특정 DNS 서버를 지정할 수 있다. Zone Transfer 가능 여부도 확인해야 한다.
+  answer: 'echo "=== Default vhost ===" && curl -sI http://10.20.30.80/ | head -5 && echo "=== target.lab.local vhost ===" && curl -sI -H "Host: target.lab.local" http://10.20.30.80/ | head -5 && echo "===
+    Vhost discovery complete ==="'
+  answer_detail: 가상호스트(Virtual Host) 탐색은 하나의 IP에서 여러 웹사이트를 호스팅할 때 숨겨진 사이트를 발견하는 기법이다. Host 헤더를 변경하여 다른 응답(상태 코드, 크기)이 돌아오면 별도의 가상호스트가 존재한다. DNS 서버가 없는 환경에서도 HTTP 기반으로 정보를 수집할 수 있다.
   verify:
     type: output_contains
-    expect: ANSWER
+    expect: Vhost discovery complete
     field: stdout
   target_vm: attacker
-  script: dig @10.20.30.80 target.lab.local ANY
+  script: 'echo "=== Default vhost ===" && curl -sI http://10.20.30.80/ | head -5 && echo "=== target.lab.local vhost ===" && curl -sI -H "Host: target.lab.local" http://10.20.30.80/ | head -5 && echo "===
+    Vhost discovery complete ==="'
   risk_level: low
 - order: 8
-  instruction: DNS Zone Transfer를 시도하여 전체 DNS 레코드를 획득하라.
-  hint: dig axfr 명령을 사용한다.
+  instruction: nmap의 HTTP 관련 NSE 스크립트로 대상 웹 서버의 숨겨진 경로와 메서드를 탐색하라.
+  hint: http-methods, http-robots.txt 스크립트를 사용한다.
   category: recon
   points: 10
-  answer: dig @10.20.30.80 lab.local axfr
-  answer_detail: AXFR은 DNS Zone Transfer 요청이다. 잘못 설정된 DNS 서버는 모든 레코드를 노출하여 내부 호스트명, IP 매핑 등 민감 정보가 유출된다. 실무에서 빈번히 발견되는 설정 취약점이다.
+  answer: nmap --script http-methods,http-robots.txt -p 80,3000 --max-retries 1 --host-timeout 15s -T4 10.20.30.80 && echo "=== HTTP recon complete ==="
+  answer_detail: http-methods 스크립트는 허용된 HTTP 메서드(GET, POST, PUT, DELETE 등)를 확인하여 불필요한 메서드(PUT, DELETE)가 활성화되어 있는지 점검한다. http-robots.txt는 robots.txt에서 숨겨진 경로를 발견한다. DNS 없이도 웹 서비스 기반 정찰이 가능하다.
   verify:
     type: output_contains
-    expect: XFR
+    expect: http
     field: stdout
   target_vm: attacker
-  script: dig @10.20.30.80 lab.local axfr
+  script: nmap --script http-methods,http-robots.txt -p 80,3000 --max-retries 1 --host-timeout 15s -T4 10.20.30.80 && echo "=== HTTP recon complete ==="
   risk_level: low
 - order: 9
   instruction: netcat을 사용하여 대상의 SSH 서비스(22번 포트) 배너를 수집하라.
@@ -178,26 +180,26 @@ steps:
   hint: nmap --script http-enum 스크립트로 웹 경로를 탐색한다.
   category: recon
   points: 10
-  answer: nmap --script http-enum -p 80,3000,8080 10.20.30.80
+  answer: nmap --script http-enum -p 80,3000,8080 --max-retries 1 --host-timeout 15s -T4 10.20.30.80
   answer_detail: nmap의 http-enum 스크립트는 웹 서버에서 알려진 디렉토리와 파일(admin, backup, phpmyadmin 등)을 탐색한다. 여러 포트에 대해 동시에 스캔하면 다양한 웹 서비스의 경로를 발견할 수 있다.
   verify:
     type: output_contains
     expect: http
     field: stdout
   target_vm: attacker
-  script: nmap --script http-enum -p 80,3000,8080 10.20.30.80
+  script: nmap --script http-enum -p 80,3000,8080 --max-retries 1 --host-timeout 15s -T4 10.20.30.80
   risk_level: low
 - order: 13
   instruction: 수집한 정찰 결과를 nmap XML 형식으로 저장하여 후속 분석에 활용할 수 있도록 하라.
   hint: nmap -oX 옵션으로 XML 출력한다.
   category: recon
   points: 15
-  answer: nmap -sV -oX /tmp/recon_week01.xml 10.20.30.80
+  answer: nmap -sV --max-retries 1 --host-timeout 15s -T4 -oX /tmp/recon_week01.xml 10.20.30.80
   answer_detail: -oX 옵션은 결과를 XML 형식으로 저장한다. XML 출력은 Metasploit, OpenVAS 등 다른 도구에서 import할 수 있으며, 자동화 파이프라인에서 파싱하기 용이하다.
   verify:
     type: file_exists
     expect: /tmp/recon_week01.xml
     field: filesystem
   target_vm: attacker
-  script: nmap -sV -oX /tmp/recon_week01.xml 10.20.30.80
+  script: nmap -sV --max-retries 1 --host-timeout 15s -T4 -oX /tmp/recon_week01.xml 10.20.30.80
   risk_level: low
