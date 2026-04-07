@@ -17,116 +17,116 @@ steps:
   hint: docker images 명령을 사용하세요.
   category: recon
   points: 8
-  answer: ssh trainee@10.20.30.80 'docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"'
+  answer: docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"
   answer_detail: Docker 이미지는 읽기 전용 레이어의 스택으로 구성됩니다. 각 Dockerfile 명령어(RUN, COPY, ADD)가 하나의 레이어를 생성합니다. 이미지 크기가 클수록 공격 표면이 넓어지므로, 가능한 작은 베이스 이미지(alpine, distroless)를 사용해야 합니다.
   verify:
     type: output_contains
     expect: REPOSITORY
     field: stdout
   target_vm: web
-  script: ssh trainee@10.20.30.80 'docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"'
+  script: docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"
   risk_level: low
 - order: 2
   instruction: Docker 이미지의 레이어 히스토리를 확인하시오. 빌드 과정에서 민감 정보가 포함되었는지 점검합니다.
   hint: docker history 명령으로 이미지 빌드 이력을 확인하세요.
   category: audit
   points: 10
-  answer: ssh trainee@10.20.30.80 'IMG=$(docker images -q | head -1); [ -n "$IMG" ] && docker history $IMG --no-trunc 2>/dev/null | head -15 || echo "이미지 없음"'
+  answer: IMG=$(docker images -q | head -1); [ -n "$IMG" ] && docker history $IMG --no-trunc 2>/dev/null | head -15 || echo "이미지 없음"
   answer_detail: docker history는 이미지의 각 레이어를 생성한 명령을 표시합니다. RUN 명령에 패스워드, API 키 등이 포함되면 이미지 레이어에 영구 저장됩니다. 삭제해도 이전 레이어에 남아 있으므로, 빌드 시 multi-stage build를 사용하거나 BuildKit의 --secret을 활용해야 합니다.
   verify:
     type: output_contains
     expect: IMAGE
     field: stdout
   target_vm: web
-  script: ssh trainee@10.20.30.80 'IMG=$(docker images -q | head -1); [ -n "$IMG" ] && docker history $IMG --no-trunc 2>/dev/null | head -15 || echo "이미지 없음"'
+  script: IMG=$(docker images -q | head -1); [ -n "$IMG" ] && docker history $IMG --no-trunc 2>/dev/null | head -15 || echo "이미지 없음"
   risk_level: low
 - order: 3
   instruction: 컨테이너의 마운트 포인트(볼륨, 바인드 마운트)를 확인하시오. 호스트 파일시스템 노출 여부를 점검합니다.
   hint: docker inspect에서 Mounts 항목을 확인하세요.
   category: audit
   points: 12
-  answer: ssh trainee@10.20.30.80 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range .Mounts}}  Type={{.Type}} Src={{.Source}} Dst={{.Destination}} RW={{.RW}}\n{{end}}" {}
-    2>/dev/null || echo "실행 중인 컨테이너 없음"'
+  answer: docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range .Mounts}}  Type={{.Type}} Src={{.Source}} Dst={{.Destination}} RW={{.RW}}\n{{end}}" {} 2>/dev/null || echo "실행
+    중인 컨테이너 없음"
   answer_detail: 바인드 마운트(-v /host/path:/container/path)는 호스트 파일시스템을 직접 노출하므로 위험합니다. 특히 /etc, /var/run/docker.sock, / 같은 민감 경로를 마운트하면 컨테이너에서 호스트를 제어할 수 있습니다. 볼륨(docker volume)은 Docker가 관리하여 상대적으로 안전합니다.
   verify:
     type: output_contains
     expect: 컨테이너
     field: stdout
   target_vm: web
-  script: ssh trainee@10.20.30.80 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range .Mounts}}  Type={{.Type}} Src={{.Source}} Dst={{.Destination}} RW={{.RW}}\n{{end}}" {}
-    2>/dev/null || echo "실행 중인 컨테이너 없음"'
+  script: docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range .Mounts}}  Type={{.Type}} Src={{.Source}} Dst={{.Destination}} RW={{.RW}}\n{{end}}" {} 2>/dev/null || echo "실행
+    중인 컨테이너 없음"
   risk_level: low
 - order: 4
   instruction: Docker 볼륨 목록을 확인하고 미사용(dangling) 볼륨이 있는지 점검하시오.
   hint: docker volume ls와 dangling 필터를 사용하세요.
   category: audit
   points: 10
-  answer: 'ssh trainee@10.20.30.80 ''docker volume ls && echo "--- 미사용 볼륨 ---" && docker volume ls -f dangling=true --format "{{.Name}}: {{.Driver}}"'''
+  answer: 'docker volume ls && echo "--- 미사용 볼륨 ---" && docker volume ls -f dangling=true --format "{{.Name}}: {{.Driver}}"'''
   answer_detail: 미사용(dangling) 볼륨은 삭제된 컨테이너가 남긴 것으로, 민감 데이터(DB, 로그, 설정)가 포함될 수 있습니다. 정기적으로 docker volume prune으로 정리해야 합니다. 클라우드의 EBS 스냅샷 관리와 유사한 개념입니다.
   verify:
     type: output_contains
     expect: VOLUME
     field: stdout
   target_vm: web
-  script: 'ssh trainee@10.20.30.80 ''docker volume ls && echo "--- 미사용 볼륨 ---" && docker volume ls -f dangling=true --format "{{.Name}}: {{.Driver}}"'''
+  script: 'docker volume ls && echo "--- 미사용 볼륨 ---" && docker volume ls -f dangling=true --format "{{.Name}}: {{.Driver}}"'''
   risk_level: low
 - order: 5
   instruction: 중지된 컨테이너와 미사용 이미지를 확인하시오. 디스크 낭비와 보안 위험을 파악합니다.
   hint: docker ps -a로 중지된 컨테이너, docker images -f dangling=true로 미사용 이미지를 확인하세요.
   category: audit
   points: 10
-  answer: 'ssh trainee@10.20.30.80 ''echo "=== 중지된 컨테이너 ==="; docker ps -a --filter status=exited --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" 2>/dev/null; echo "=== 미사용 이미지 ==="; docker images
-    -f dangling=true --format "{{.ID}}: {{.Size}}" 2>/dev/null'''
+  answer: 'echo "=== 중지된 컨테이너 ==="; docker ps -a --filter status=exited --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" 2>/dev/null; echo "=== 미사용 이미지 ==="; docker images -f dangling=true --format
+    "{{.ID}}: {{.Size}}" 2>/dev/null'''
   answer_detail: 중지된 컨테이너에는 실행 중에 생성된 파일(로그, 임시 데이터, 인증 정보)이 남아 있습니다. 미사용 이미지는 취약한 버전의 소프트웨어를 포함할 수 있습니다. 정기적으로 docker system prune으로 정리하되, 프로덕션에서는 신중하게 수행해야 합니다.
   verify:
     type: output_contains
     expect: 중지된 컨테이너
     field: stdout
   target_vm: web
-  script: 'ssh trainee@10.20.30.80 ''echo "=== 중지된 컨테이너 ==="; docker ps -a --filter status=exited --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" 2>/dev/null; echo "=== 미사용 이미지 ==="; docker images
-    -f dangling=true --format "{{.ID}}: {{.Size}}" 2>/dev/null'''
+  script: 'echo "=== 중지된 컨테이너 ==="; docker ps -a --filter status=exited --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" 2>/dev/null; echo "=== 미사용 이미지 ==="; docker images -f dangling=true --format
+    "{{.ID}}: {{.Size}}" 2>/dev/null'''
   risk_level: low
 - order: 6
   instruction: Docker 디스크 사용량을 분석하시오.
   hint: docker system df 명령을 사용하세요.
   category: audit
   points: 10
-  answer: ssh trainee@10.20.30.80 'docker system df && echo "--- 상세 ---" && docker system df -v 2>/dev/null | head -20'
+  answer: docker system df && echo "--- 상세 ---" && docker system df -v 2>/dev/null | head -20
   answer_detail: docker system df는 이미지, 컨테이너, 볼륨, 빌드 캐시의 디스크 사용량을 표시합니다. RECLAIMABLE 컬럼은 정리 가능한 공간입니다. 클라우드 환경에서 디스크 비용과 직결되므로 정기적인 모니터링과 정리가 필요합니다.
   verify:
     type: output_contains
     expect: RECLAIMABLE
     field: stdout
   target_vm: web
-  script: ssh trainee@10.20.30.80 'docker system df && echo "--- 상세 ---" && docker system df -v 2>/dev/null | head -20'
+  script: docker system df && echo "--- 상세 ---" && docker system df -v 2>/dev/null | head -20
   risk_level: low
 - order: 7
   instruction: 컨테이너 내부에서 실행 중인 프로세스를 확인하시오.
   hint: docker top 명령으로 컨테이너 프로세스를 확인하세요.
   category: audit
   points: 10
-  answer: 'ssh trainee@10.20.30.80 ''CID=$(docker ps -q | head -1); [ -n "$CID" ] && echo "컨테이너: $(docker inspect --format="{{.Name}}" $CID)" && docker top $CID 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  answer: 'CID=$(docker ps -q | head -1); [ -n "$CID" ] && echo "컨테이너: $(docker inspect --format="{{.Name}}" $CID)" && docker top $CID 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   answer_detail: docker top은 컨테이너 내부 프로세스를 호스트 관점에서 보여줍니다. UID 컬럼에서 root(0)으로 실행되는 프로세스가 있으면 위험합니다. 컨테이너 내부에서도 비root 사용자(USER 지시어)로 프로세스를 실행해야 합니다.
   verify:
     type: output_contains
     expect: PID
     field: stdout
   target_vm: web
-  script: 'ssh trainee@10.20.30.80 ''CID=$(docker ps -q | head -1); [ -n "$CID" ] && echo "컨테이너: $(docker inspect --format="{{.Name}}" $CID)" && docker top $CID 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  script: 'CID=$(docker ps -q | head -1); [ -n "$CID" ] && echo "컨테이너: $(docker inspect --format="{{.Name}}" $CID)" && docker top $CID 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   risk_level: low
 - order: 8
   instruction: 컨테이너 리소스 사용량을 실시간으로 확인하시오.
   hint: docker stats --no-stream으로 한 번만 스냅샷을 찍으세요.
   category: audit
   points: 10
-  answer: ssh trainee@10.20.30.80 'docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}" 2>/dev/null || echo "실행 중인 컨테이너 없음"'
+  answer: docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}" 2>/dev/null || echo "실행 중인 컨테이너 없음"
   answer_detail: docker stats는 CPU, 메모리, 네트워크, 디스크 I/O를 표시합니다. 자원 제한이 설정되지 않은 컨테이너는 호스트 자원을 독점할 수 있어 DoS 공격에 취약합니다. 클라우드 환경에서 자원 모니터링은 비용 관리와 보안 모두에 중요합니다.
   verify:
     type: output_contains
     expect: MEM
     field: stdout
   target_vm: web
-  script: ssh trainee@10.20.30.80 'docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}" 2>/dev/null || echo "실행 중인 컨테이너 없음"'
+  script: docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}" 2>/dev/null || echo "실행 중인 컨테이너 없음"
   risk_level: low
 - order: 9
   instruction: 컨테이너 기초 보안 종합 점검 스크립트를 작성하고 실행하시오.
@@ -137,23 +137,21 @@ steps:
 
     #!/bin/bash
 
-    HOST=''trainee@10.20.30.80''
-
     echo ''=== 컨테이너 기초 보안 점검 ===''
 
-    echo "[이미지] $(ssh $HOST ''docker images -q | wc -l'' 2>/dev/null)개"
+    echo "[이미지] $(docker images -q | wc -l 2>/dev/null)개"
 
-    echo "[실행 컨테이너] $(ssh $HOST ''docker ps -q | wc -l'' 2>/dev/null)개"
+    echo "[실행 컨테이너] $(docker ps -q | wc -l 2>/dev/null)개"
 
-    echo "[중지 컨테이너] $(ssh $HOST ''docker ps -aq --filter status=exited | wc -l'' 2>/dev/null)개"
+    echo "[중지 컨테이너] $(docker ps -aq --filter status=exited | wc -l 2>/dev/null)개"
 
-    echo "[볼륨] $(ssh $HOST ''docker volume ls -q | wc -l'' 2>/dev/null)개"
+    echo "[볼륨] $(docker volume ls -q | wc -l 2>/dev/null)개"
 
-    echo "[미사용 볼륨] $(ssh $HOST ''docker volume ls -qf dangling=true | wc -l'' 2>/dev/null)개"
+    echo "[미사용 볼륨] $(docker volume ls -qf dangling=true | wc -l 2>/dev/null)개"
 
-    echo "[네트워크] $(ssh $HOST ''docker network ls -q | wc -l'' 2>/dev/null)개"
+    echo "[네트워크] $(docker network ls -q | wc -l 2>/dev/null)개"
 
-    ssh $HOST ''docker system df 2>/dev/null'' | head -5
+    docker system df 2>/dev/null | head -5
 
     echo ''=== 기초 점검 완료 ===''
 
@@ -170,23 +168,21 @@ steps:
 
     #!/bin/bash
 
-    HOST=''trainee@10.20.30.80''
-
     echo ''=== 컨테이너 기초 보안 점검 ===''
 
-    echo "[이미지] $(ssh $HOST ''docker images -q | wc -l'' 2>/dev/null)개"
+    echo "[이미지] $(docker images -q | wc -l 2>/dev/null)개"
 
-    echo "[실행 컨테이너] $(ssh $HOST ''docker ps -q | wc -l'' 2>/dev/null)개"
+    echo "[실행 컨테이너] $(docker ps -q | wc -l 2>/dev/null)개"
 
-    echo "[중지 컨테이너] $(ssh $HOST ''docker ps -aq --filter status=exited | wc -l'' 2>/dev/null)개"
+    echo "[중지 컨테이너] $(docker ps -aq --filter status=exited | wc -l 2>/dev/null)개"
 
-    echo "[볼륨] $(ssh $HOST ''docker volume ls -q | wc -l'' 2>/dev/null)개"
+    echo "[볼륨] $(docker volume ls -q | wc -l 2>/dev/null)개"
 
-    echo "[미사용 볼륨] $(ssh $HOST ''docker volume ls -qf dangling=true | wc -l'' 2>/dev/null)개"
+    echo "[미사용 볼륨] $(docker volume ls -qf dangling=true | wc -l 2>/dev/null)개"
 
-    echo "[네트워크] $(ssh $HOST ''docker network ls -q | wc -l'' 2>/dev/null)개"
+    echo "[네트워크] $(docker network ls -q | wc -l 2>/dev/null)개"
 
-    ssh $HOST ''docker system df 2>/dev/null'' | head -5
+    docker system df 2>/dev/null | head -5
 
     echo ''=== 기초 점검 완료 ===''
 

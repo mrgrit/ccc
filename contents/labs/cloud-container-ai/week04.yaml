@@ -17,97 +17,95 @@ steps:
   hint: docker inspect에서 CapAdd와 CapDrop을 확인하세요.
   category: audit
   points: 12
-  answer: 'ssh trainee@10.20.30.80 ''docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: CapAdd={{.HostConfig.CapAdd}} CapDrop={{.HostConfig.CapDrop}}" {} 2>/dev/null || echo "실행 중인
-    컨테이너 없음"'''
+  answer: 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: CapAdd={{.HostConfig.CapAdd}} CapDrop={{.HostConfig.CapDrop}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   answer_detail: 리눅스 Capabilities는 root 권한을 세분화합니다. Docker는 기본적으로 14개 Capability를 부여하는데, NET_RAW(원시 소켓), SYS_CHROOT 등이 포함됩니다. --cap-drop ALL로 모든 Capability를 제거하고 필요한 것만 --cap-add로 추가하는 것이 최선의 관행입니다.
   verify:
     type: output_contains
     expect: Cap
     field: stdout
   target_vm: web
-  script: 'ssh trainee@10.20.30.80 ''docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: CapAdd={{.HostConfig.CapAdd}} CapDrop={{.HostConfig.CapDrop}}" {} 2>/dev/null || echo "실행 중인
-    컨테이너 없음"'''
+  script: 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: CapAdd={{.HostConfig.CapAdd}} CapDrop={{.HostConfig.CapDrop}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   risk_level: low
 - order: 2
   instruction: 컨테이너의 privileged 모드 사용 여부를 점검하시오. privileged 모드는 호스트의 모든 장치와 Capability에 접근합니다.
   hint: docker inspect에서 Privileged 항목을 확인하세요.
   category: audit
   points: 12
-  answer: 'ssh trainee@10.20.30.80 ''docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: Privileged={{.HostConfig.Privileged}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  answer: 'docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: Privileged={{.HostConfig.Privileged}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   answer_detail: privileged 모드(--privileged)는 컨테이너에 호스트의 모든 Capability, 장치, 커널 모듈 접근을 부여합니다. 이는 컨테이너 격리를 완전히 무력화하므로 프로덕션에서 절대 사용하면 안 됩니다. 컨테이너 탈출 공격의 주요 벡터입니다.
   verify:
     type: output_contains
     expect: Privileged
     field: stdout
   target_vm: web
-  script: 'ssh trainee@10.20.30.80 ''docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: Privileged={{.HostConfig.Privileged}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  script: 'docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: Privileged={{.HostConfig.Privileged}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   risk_level: low
 - order: 3
   instruction: 컨테이너의 사용자(실행 UID) 설정을 확인하시오. root로 실행되는 컨테이너를 식별합니다.
   hint: docker inspect에서 User 필드와 docker top으로 실행 UID를 확인하세요.
   category: audit
   points: 10
-  answer: 'ssh trainee@10.20.30.80 ''docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: User={{.Config.User}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  answer: 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: User={{.Config.User}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   answer_detail: 컨테이너 내부에서 root(UID 0)로 프로세스가 실행되면, 컨테이너 탈출 시 호스트에서도 root 권한을 얻게 됩니다. Dockerfile에서 USER 지시어로 비root 사용자를 지정하거나, --user 플래그로 실행 UID를 변경해야 합니다.
   verify:
     type: output_contains
     expect: User
     field: stdout
   target_vm: web
-  script: 'ssh trainee@10.20.30.80 ''docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: User={{.Config.User}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  script: 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: User={{.Config.User}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   risk_level: low
 - order: 4
   instruction: 컨테이너의 읽기 전용 파일시스템(ReadonlyRootfs) 설정을 점검하시오.
   hint: docker inspect에서 ReadonlyRootfs 항목을 확인하세요.
   category: audit
   points: 10
-  answer: 'ssh trainee@10.20.30.80 ''docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: ReadOnly={{.HostConfig.ReadonlyRootfs}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  answer: 'docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: ReadOnly={{.HostConfig.ReadonlyRootfs}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   answer_detail: 읽기 전용 파일시스템(--read-only)은 컨테이너 내부에서 파일 쓰기를 차단합니다. 공격자가 컨테이너에 침입해도 악성 코드를 저장하거나 설정을 변경할 수 없습니다. /tmp 같은 쓰기 필요 경로만 tmpfs로 마운트합니다.
   verify:
     type: output_contains
     expect: ReadOnly
     field: stdout
   target_vm: web
-  script: 'ssh trainee@10.20.30.80 ''docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: ReadOnly={{.HostConfig.ReadonlyRootfs}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  script: 'docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: ReadOnly={{.HostConfig.ReadonlyRootfs}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   risk_level: low
 - order: 5
   instruction: 컨테이너의 no-new-privileges 설정을 확인하시오. SUID를 통한 권한 상승을 방지합니다.
   hint: docker inspect에서 SecurityOpt를 확인하세요.
   category: audit
   points: 10
-  answer: 'ssh trainee@10.20.30.80 ''docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: SecurityOpt={{.HostConfig.SecurityOpt}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  answer: 'docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: SecurityOpt={{.HostConfig.SecurityOpt}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   answer_detail: no-new-privileges(--security-opt=no-new-privileges)는 컨테이너 내부에서 SUID/SGID 바이너리를 통한 권한 상승을 방지합니다. 프로세스가 exec 시 추가 권한을 획득할 수 없게 하여, setuid root 바이너리를 악용한 탈출을 차단합니다.
   verify:
     type: output_contains
     expect: SecurityOpt
     field: stdout
   target_vm: web
-  script: 'ssh trainee@10.20.30.80 ''docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: SecurityOpt={{.HostConfig.SecurityOpt}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  script: 'docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: SecurityOpt={{.HostConfig.SecurityOpt}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   risk_level: low
 - order: 6
   instruction: 컨테이너의 자원 제한(CPU, 메모리) 설정을 점검하시오.
   hint: docker inspect에서 Memory, NanoCpus, PidsLimit을 확인하세요.
   category: audit
   points: 10
-  answer: 'ssh trainee@10.20.30.80 ''docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: Memory={{.HostConfig.Memory}} CPU={{.HostConfig.NanoCpus}} PidsLimit={{.HostConfig.PidsLimit}}"
-    {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  answer: 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: Memory={{.HostConfig.Memory}} CPU={{.HostConfig.NanoCpus}} PidsLimit={{.HostConfig.PidsLimit}}" {} 2>/dev/null || echo
+    "실행 중인 컨테이너 없음"'''
   answer_detail: 자원 제한이 없으면(Memory=0) 하나의 컨테이너가 호스트 전체 자원을 소모하여 다른 컨테이너와 호스트에 영향을 미칩니다(DoS). --memory, --cpus, --pids-limit으로 제한을 설정해야 합니다. PidsLimit은 Fork Bomb 공격을 방지합니다.
   verify:
     type: output_contains
     expect: Memory
     field: stdout
   target_vm: web
-  script: 'ssh trainee@10.20.30.80 ''docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: Memory={{.HostConfig.Memory}} CPU={{.HostConfig.NanoCpus}} PidsLimit={{.HostConfig.PidsLimit}}"
-    {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  script: 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: Memory={{.HostConfig.Memory}} CPU={{.HostConfig.NanoCpus}} PidsLimit={{.HostConfig.PidsLimit}}" {} 2>/dev/null || echo
+    "실행 중인 컨테이너 없음"'''
   risk_level: low
 - order: 7
   instruction: 보안 설정이 적용된 테스트 컨테이너를 실행하고 설정을 검증하시오.
   hint: 보안 옵션(read-only, cap-drop, no-new-privileges)을 적용하여 nginx를 실행하세요.
   category: config
   points: 14
-  answer: ssh trainee@10.20.30.80 'docker run -d --name secure-test --read-only --tmpfs /tmp --tmpfs /var/cache/nginx --tmpfs /var/run --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges
-    --memory 128m --pids-limit 50 --user 101:101 nginx:latest 2>/dev/null; docker inspect secure-test --format "ReadOnly={{.HostConfig.ReadonlyRootfs}} Privileged={{.HostConfig.Privileged}} CapDrop={{.HostConfig.CapDrop}}
-    Memory={{.HostConfig.Memory}} NoNewPriv={{.HostConfig.SecurityOpt}}" 2>/dev/null && docker rm -f secure-test 2>/dev/null' || echo '테스트 완료'
+  answer: docker run -d --name secure-test --read-only --tmpfs /tmp --tmpfs /var/cache/nginx --tmpfs /var/run --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges --memory 128m --pids-limit
+    50 --user 101:101 nginx:latest 2>/dev/null; docker inspect secure-test --format "ReadOnly={{.HostConfig.ReadonlyRootfs}} Privileged={{.HostConfig.Privileged}} CapDrop={{.HostConfig.CapDrop}} Memory={{.HostConfig.Memory}}
+    NoNewPriv={{.HostConfig.SecurityOpt}}" 2>/dev/null && docker rm -f secure-test 2>/dev/null || echo '테스트 완료'
   answer_detail: '이 컨테이너에는 모든 주요 보안 옵션이 적용되어 있습니다: --read-only(파일시스템 보호), --cap-drop ALL(최소 권한), --security-opt no-new-privileges(권한 상승 방지), --memory(자원 제한), --pids-limit(Fork Bomb 방지), --user(비root 실행).
     프로덕션 컨테이너는 이러한 설정을 기본으로 적용해야 합니다.'
   verify:
@@ -115,31 +113,31 @@ steps:
     expect: ReadOnly
     field: stdout
   target_vm: web
-  script: ssh trainee@10.20.30.80 'docker run -d --name secure-test --read-only --tmpfs /tmp --tmpfs /var/cache/nginx --tmpfs /var/run --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges
-    --memory 128m --pids-limit 50 --user 101:101 nginx:latest 2>/dev/null; docker inspect secure-test --format "ReadOnly={{.HostConfig.ReadonlyRootfs}} Privileged={{.HostConfig.Privileged}} CapDrop={{.HostConfig.CapDrop}}
-    Memory={{.HostConfig.Memory}} NoNewPriv={{.HostConfig.SecurityOpt}}" 2>/dev/null && docker rm -f secure-test 2>/dev/null' || echo '테스트 완료'
+  script: docker run -d --name secure-test --read-only --tmpfs /tmp --tmpfs /var/cache/nginx --tmpfs /var/run --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges --memory 128m --pids-limit
+    50 --user 101:101 nginx:latest 2>/dev/null; docker inspect secure-test --format "ReadOnly={{.HostConfig.ReadonlyRootfs}} Privileged={{.HostConfig.Privileged}} CapDrop={{.HostConfig.CapDrop}} Memory={{.HostConfig.Memory}}
+    NoNewPriv={{.HostConfig.SecurityOpt}}" 2>/dev/null && docker rm -f secure-test 2>/dev/null || echo '테스트 완료'
   risk_level: low
 - order: 8
   instruction: Docker 보안 심화 종합 점검 스크립트를 작성하고 실행하시오.
   hint: 모든 실행 중인 컨테이너의 보안 설정을 일괄 점검하세요.
   category: audit
   points: 12
-  answer: "cat << 'SCRIPT' > /tmp/docker_security.sh\n#!/bin/bash\nHOST='trainee@10.20.30.80'\necho '=== Docker 보안 심화 점검 ==='\nssh $HOST 'for CID in $(docker ps -q); do\n  NAME=$(docker inspect --format=\"\
-    {{.Name}}\" $CID)\n  PRIV=$(docker inspect --format=\"{{.HostConfig.Privileged}}\" $CID)\n  RO=$(docker inspect --format=\"{{.HostConfig.ReadonlyRootfs}}\" $CID)\n  USER=$(docker inspect --format=\"\
-    {{.Config.User}}\" $CID)\n  MEM=$(docker inspect --format=\"{{.HostConfig.Memory}}\" $CID)\n  CAP=$(docker inspect --format=\"{{.HostConfig.CapDrop}}\" $CID)\n  echo \"$NAME:\"\n  echo \"  Privileged=$PRIV\
-    \ $([ \"$PRIV\" = \"true\" ] && echo \"[위험]\" || echo \"[양호]\")\"  \n  echo \"  ReadOnly=$RO $([ \"$RO\" = \"true\" ] && echo \"[양호]\" || echo \"[권고]\")\"  \n  echo \"  User=$USER $([ -z \"$USER\" ]\
-    \ && echo \"[권고:root]\" || echo \"[양호]\")\"  \n  echo \"  Memory=$MEM $([ \"$MEM\" = \"0\" ] && echo \"[권고:무제한]\" || echo \"[양호]\")\"  \ndone' 2>/dev/null\necho '=== Docker 보안 점검 완료 ==='\nSCRIPT\nchmod\
-    \ +x /tmp/docker_security.sh && bash /tmp/docker_security.sh"
+  answer: "cat << 'SCRIPT' > /tmp/docker_security.sh\n#!/bin/bash\nHOST='trainee@10.20.30.80'\necho '=== Docker 보안 심화 점검 ==='\nfor CID in $(docker ps -q); do\n  NAME=$(docker inspect --format=\"{{.Name}}\"\
+    \ $CID)\n  PRIV=$(docker inspect --format=\"{{.HostConfig.Privileged}}\" $CID)\n  RO=$(docker inspect --format=\"{{.HostConfig.ReadonlyRootfs}}\" $CID)\n  USER=$(docker inspect --format=\"{{.Config.User}}\"\
+    \ $CID)\n  MEM=$(docker inspect --format=\"{{.HostConfig.Memory}}\" $CID)\n  CAP=$(docker inspect --format=\"{{.HostConfig.CapDrop}}\" $CID)\n  echo \"$NAME:\"\n  echo \"  Privileged=$PRIV $([ \"$PRIV\"\
+    \ = \"true\" ] && echo \"[위험]\" || echo \"[양호]\")\"  \n  echo \"  ReadOnly=$RO $([ \"$RO\" = \"true\" ] && echo \"[양호]\" || echo \"[권고]\")\"  \n  echo \"  User=$USER $([ -z \"$USER\" ] && echo \"[권고:root]\"\
+    \ || echo \"[양호]\")\"  \n  echo \"  Memory=$MEM $([ \"$MEM\" = \"0\" ] && echo \"[권고:무제한]\" || echo \"[양호]\")\"  \ndone 2>/dev/null\necho '=== Docker 보안 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/docker_security.sh\
+    \ && bash /tmp/docker_security.sh"
   answer_detail: Docker 보안의 핵심 원칙은 최소 권한, 격리 강화, 자원 제한입니다. CIS Docker Benchmark에서는 이러한 설정을 체계적으로 점검하는 가이드를 제공합니다. 컨테이너 보안은 빌드 시(이미지), 배포 시(레지스트리), 런타임(실행 중) 전 단계에서 적용해야 합니다.
   verify:
     type: output_contains
     expect: Docker 보안 점검 완료
     field: stdout
   target_vm: web
-  script: "cat << 'SCRIPT' > /tmp/docker_security.sh\n#!/bin/bash\nHOST='trainee@10.20.30.80'\necho '=== Docker 보안 심화 점검 ==='\nssh $HOST 'for CID in $(docker ps -q); do\n  NAME=$(docker inspect --format=\"\
-    {{.Name}}\" $CID)\n  PRIV=$(docker inspect --format=\"{{.HostConfig.Privileged}}\" $CID)\n  RO=$(docker inspect --format=\"{{.HostConfig.ReadonlyRootfs}}\" $CID)\n  USER=$(docker inspect --format=\"\
-    {{.Config.User}}\" $CID)\n  MEM=$(docker inspect --format=\"{{.HostConfig.Memory}}\" $CID)\n  CAP=$(docker inspect --format=\"{{.HostConfig.CapDrop}}\" $CID)\n  echo \"$NAME:\"\n  echo \"  Privileged=$PRIV\
-    \ $([ \"$PRIV\" = \"true\" ] && echo \"[위험]\" || echo \"[양호]\")\"  \n  echo \"  ReadOnly=$RO $([ \"$RO\" = \"true\" ] && echo \"[양호]\" || echo \"[권고]\")\"  \n  echo \"  User=$USER $([ -z \"$USER\" ]\
-    \ && echo \"[권고:root]\" || echo \"[양호]\")\"  \n  echo \"  Memory=$MEM $([ \"$MEM\" = \"0\" ] && echo \"[권고:무제한]\" || echo \"[양호]\")\"  \ndone' 2>/dev/null\necho '=== Docker 보안 점검 완료 ==='\nSCRIPT\nchmod\
-    \ +x /tmp/docker_security.sh && bash /tmp/docker_security.sh"
+  script: "cat << 'SCRIPT' > /tmp/docker_security.sh\n#!/bin/bash\nHOST='trainee@10.20.30.80'\necho '=== Docker 보안 심화 점검 ==='\nfor CID in $(docker ps -q); do\n  NAME=$(docker inspect --format=\"{{.Name}}\"\
+    \ $CID)\n  PRIV=$(docker inspect --format=\"{{.HostConfig.Privileged}}\" $CID)\n  RO=$(docker inspect --format=\"{{.HostConfig.ReadonlyRootfs}}\" $CID)\n  USER=$(docker inspect --format=\"{{.Config.User}}\"\
+    \ $CID)\n  MEM=$(docker inspect --format=\"{{.HostConfig.Memory}}\" $CID)\n  CAP=$(docker inspect --format=\"{{.HostConfig.CapDrop}}\" $CID)\n  echo \"$NAME:\"\n  echo \"  Privileged=$PRIV $([ \"$PRIV\"\
+    \ = \"true\" ] && echo \"[위험]\" || echo \"[양호]\")\"  \n  echo \"  ReadOnly=$RO $([ \"$RO\" = \"true\" ] && echo \"[양호]\" || echo \"[권고]\")\"  \n  echo \"  User=$USER $([ -z \"$USER\" ] && echo \"[권고:root]\"\
+    \ || echo \"[양호]\")\"  \n  echo \"  Memory=$MEM $([ \"$MEM\" = \"0\" ] && echo \"[권고:무제한]\" || echo \"[양호]\")\"  \ndone 2>/dev/null\necho '=== Docker 보안 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/docker_security.sh\
+    \ && bash /tmp/docker_security.sh"
   risk_level: low

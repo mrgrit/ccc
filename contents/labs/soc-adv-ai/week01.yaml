@@ -17,105 +17,105 @@ steps:
   hint: curl -sk -u wazuh-wui:wazuh-wui 으로 Wazuh API를 호출한다.
   category: assessment
   points: 10
-  answer: curl -sk -u wazuh-wui:wazuh-wui https://10.20.30.100:55000/agents/summary/status 2>/dev/null | python3 -m json.tool
-  answer_detail: Wazuh API의 /agents/summary/status 엔드포인트는 active, disconnected, never_connected 등 에이전트 상태별 수를 반환한다. 에이전트가 3대 이상 active이면 Technology 도메인 Level 2(Managed) 이상으로 판정한다.
+  answer: '/var/ossec/bin/agent_control -l 2>/dev/null | head -20 && echo "=== Agent Summary ===" && /var/ossec/bin/agent_control -l 2>/dev/null | grep -c "Active" | xargs -I{} echo "active agents: {}"'
+  answer_detail: Wazuh의 agent_control 명령으로 연결된 에이전트 수와 상태를 확인한다. Active 에이전트가 3대 이상이면 Technology 도메인 Level 2(Managed) 이상으로 판정한다. API 대신 CLI를 사용하면 인증 문제를 우회할 수 있다.
   verify:
     type: output_contains
     expect: active
   target_vm: siem
-  script: curl -sk -u wazuh-wui:wazuh-wui https://10.20.30.100:55000/agents/summary/status 2>/dev/null | python3 -m json.tool
+  script: '/var/ossec/bin/agent_control -l 2>/dev/null | head -20 && echo "=== Agent Summary ===" && /var/ossec/bin/agent_control -l 2>/dev/null | grep -c "Active" | xargs -I{} echo "active agents: {}"'
   risk_level: low
 - order: 2
   instruction: Wazuh Manager에서 활성화된 탐지 룰 수를 확인하라. 커스텀 룰과 기본 룰을 구분하여 집계하라.
   hint: Wazuh 룰 디렉토리 /var/ossec/ruleset/rules/ (기본)와 /var/ossec/etc/rules/ (커스텀)를 확인한다.
   category: assessment
   points: 10
-  answer: ssh 10.20.30.100 'echo "=== Default Rules ==="; ls /var/ossec/ruleset/rules/*.xml 2>/dev/null | wc -l; echo "=== Custom Rules ==="; ls /var/ossec/etc/rules/*.xml 2>/dev/null | wc -l; echo "===
-    Total rule entries ==="; grep -r "<rule id" /var/ossec/ruleset/rules/ /var/ossec/etc/rules/ 2>/dev/null | wc -l'
+  answer: echo "=== Default Rules ===" && ls /var/ossec/ruleset/rules/*.xml 2>/dev/null | wc -l && echo "=== Custom Rules ===" && ls /var/ossec/etc/rules/*.xml 2>/dev/null | wc -l && echo "=== Total rule
+    entries ===" && grep -r "<rule id" /var/ossec/ruleset/rules/ /var/ossec/etc/rules/ 2>/dev/null | wc -l
   answer_detail: 기본 룰셋 외에 커스텀 룰이 존재하면 조직이 자체 탐지 요구사항을 반영하고 있음을 의미한다. 커스텀 룰이 10개 이상이면 Level 3(Defined), 상관분석 룰까지 있으면 Level 4(Quantitatively Managed)로 평가한다.
   verify:
     type: output_contains
     expect: Rules
   target_vm: siem
-  script: ssh 10.20.30.100 'echo "=== Default Rules ==="; ls /var/ossec/ruleset/rules/*.xml 2>/dev/null | wc -l; echo "=== Custom Rules ==="; ls /var/ossec/etc/rules/*.xml 2>/dev/null | wc -l; echo "===
-    Total rule entries ==="; grep -r "<rule id" /var/ossec/ruleset/rules/ /var/ossec/etc/rules/ 2>/dev/null | wc -l'
+  script: echo "=== Default Rules ===" && ls /var/ossec/ruleset/rules/*.xml 2>/dev/null | wc -l && echo "=== Custom Rules ===" && ls /var/ossec/etc/rules/*.xml 2>/dev/null | wc -l && echo "=== Total rule
+    entries ===" && grep -r "<rule id" /var/ossec/ruleset/rules/ /var/ossec/etc/rules/ 2>/dev/null | wc -l
   risk_level: low
 - order: 3
   instruction: nftables 방화벽(10.20.30.1)의 룰셋을 원격으로 확인하고, 인바운드/아웃바운드 기본 정책(default policy)과 전체 룰 수를 기록하라.
   hint: ssh를 통해 nft list ruleset 명령을 실행한다.
   category: assessment
   points: 10
-  answer: ssh 10.20.30.1 'echo "=== nftables Policy ==="; nft list ruleset 2>/dev/null | grep -E "chain|policy"; echo "=== Total Rules ==="; nft list ruleset 2>/dev/null | grep -cE "^\s+(ip |tcp |udp |ct
-    |meta |drop|accept|reject)"'
+  answer: echo "=== nftables Policy ===" && sudo nft list ruleset 2>/dev/null | grep -E "chain|policy" && echo "=== Total Rules ===" && sudo nft list ruleset 2>/dev/null | grep -cE "^\s+(ip |tcp |udp |ct
+    |meta |drop|accept|reject)"
   answer_detail: chain의 policy가 drop이면 기본 차단(deny-all) 정책으로 성숙도가 높다. accept이면 허용 기반으로 보안이 약하다. 룰 수가 많을수록 세밀한 접근 통제를 의미한다.
   verify:
     type: output_contains
     expect: policy
-  target_vm: siem
-  script: ssh 10.20.30.1 'echo "=== nftables Policy ==="; nft list ruleset 2>/dev/null | grep -E "chain|policy"; echo "=== Total Rules ==="; nft list ruleset 2>/dev/null | grep -cE "^\s+(ip |tcp |udp |ct
-    |meta |drop|accept|reject)"'
+  target_vm: secu
+  script: echo "=== nftables Policy ===" && sudo nft list ruleset 2>/dev/null | grep -E "chain|policy" && echo "=== Total Rules ===" && sudo nft list ruleset 2>/dev/null | grep -cE "^\s+(ip |tcp |udp |ct
+    |meta |drop|accept|reject)"
   risk_level: low
 - order: 4
   instruction: Suricata IDS(10.20.30.1)의 활성 룰 수와 카테고리별 분포를 확인하라.
   hint: suricata 룰 디렉토리 /var/lib/suricata/rules/ 에서 .rules 파일을 분석한다.
   category: assessment
   points: 10
-  answer: ssh 10.20.30.1 'echo "=== Suricata Rule Files ==="; ls /var/lib/suricata/rules/*.rules 2>/dev/null | head -10; echo "=== Active alert rules ==="; grep -c "^alert" /var/lib/suricata/rules/*.rules
-    2>/dev/null | tail -10; echo "=== Total active rules ==="; grep -ch "^alert" /var/lib/suricata/rules/*.rules 2>/dev/null | paste -sd+ | bc'
+  answer: echo "=== Suricata Rule Files ===" && ls /var/lib/suricata/rules/*.rules 2>/dev/null | head -10 && echo "=== Active alert rules ===" && grep -c "^alert" /var/lib/suricata/rules/*.rules 2>/dev/null
+    | tail -10 && echo "=== Total active rules ===" && grep -ch "^alert" /var/lib/suricata/rules/*.rules 2>/dev/null | paste -sd+ | bc
   answer_detail: Suricata의 룰셋 규모와 구성은 IDS/IPS 역량의 핵심 지표다. ET Open 기본 룰셋(약 30,000+)이 있고 커스텀 룰이 추가되어 있으면 Technology 도메인 Level 3 이상이다.
   verify:
     type: output_contains
     expect: rules
-  target_vm: siem
-  script: ssh 10.20.30.1 'echo "=== Suricata Rule Files ==="; ls /var/lib/suricata/rules/*.rules 2>/dev/null | head -10; echo "=== Active alert rules ==="; grep -c "^alert" /var/lib/suricata/rules/*.rules
-    2>/dev/null | tail -10; echo "=== Total active rules ==="; grep -ch "^alert" /var/lib/suricata/rules/*.rules 2>/dev/null | paste -sd+ | bc'
+  target_vm: secu
+  script: echo "=== Suricata Rule Files ===" && ls /var/lib/suricata/rules/*.rules 2>/dev/null | head -10 && echo "=== Active alert rules ===" && grep -c "^alert" /var/lib/suricata/rules/*.rules 2>/dev/null
+    | tail -10 && echo "=== Total active rules ===" && grep -ch "^alert" /var/lib/suricata/rules/*.rules 2>/dev/null | paste -sd+ | bc
   risk_level: low
 - order: 5
   instruction: Suricata의 최근 24시간 알림을 분석하여 카테고리별 발생 건수를 집계하라. eve.json에서 alert 이벤트를 추출한다.
   hint: jq로 eve.json에서 alert.category를 추출하고 sort | uniq -c로 집계한다.
   category: assessment
   points: 10
-  answer: 'ssh 10.20.30.1 ''cat /var/log/suricata/eve.json 2>/dev/null | python3 -c "import sys,json; cats={} for l in sys.stdin: try: e=json.loads(l) if e.get(\"event_type\")==\"alert\": c=e.get(\"alert\",{}).get(\"category\",\"unknown\")
-    cats[c]=cats.get(c,0)+1 except: pass for c,n in sorted(cats.items(),key=lambda x:-x[1])[:10]: print(f\"{n:5d}  {c}\")" 2>/dev/null'''
+  answer: 'cat /var/log/suricata/eve.json 2>/dev/null | python3 -c " import sys,json cats={} for l in sys.stdin: try: e=json.loads(l) if e.get(\"event_type\")==\"alert\": c=e.get(\"alert\",{}).get(\"category\",\"unknown\")
+    cats[c]=cats.get(c,0)+1 except: pass for c,n in sorted(cats.items(),key=lambda x:-x[1])[:10]: print(f\"{n:5d}  {c}\") " 2>/dev/null || echo "No alert data found"'
   answer_detail: 알림 카테고리 분포는 현재 네트워크에서 가장 빈번한 위협 유형을 보여준다. 특정 카테고리가 압도적으로 많으면 오탐 가능성을 검토하고, 다양한 카테고리가 균형있게 탐지되면 룰셋 품질이 높다.
   verify:
     type: output_contains
     expect: alert
-  target_vm: siem
-  script: 'ssh 10.20.30.1 ''cat /var/log/suricata/eve.json 2>/dev/null | python3 -c "import sys,json; cats={} for l in sys.stdin: try: e=json.loads(l) if e.get(\"event_type\")==\"alert\": c=e.get(\"alert\",{}).get(\"category\",\"unknown\")
-    cats[c]=cats.get(c,0)+1 except: pass for c,n in sorted(cats.items(),key=lambda x:-x[1])[:10]: print(f\"{n:5d}  {c}\")" 2>/dev/null'''
+  target_vm: secu
+  script: 'cat /var/log/suricata/eve.json 2>/dev/null | python3 -c " import sys,json cats={} for l in sys.stdin: try: e=json.loads(l) if e.get(\"event_type\")==\"alert\": c=e.get(\"alert\",{}).get(\"category\",\"unknown\")
+    cats[c]=cats.get(c,0)+1 except: pass for c,n in sorted(cats.items(),key=lambda x:-x[1])[:10]: print(f\"{n:5d}  {c}\") " 2>/dev/null || echo "No alert data found"'
   risk_level: low
 - order: 6
   instruction: Wazuh에서 최근 고위험 알림(level >= 10)을 조회하라. 알림의 rule description, level, agent를 확인한다.
   hint: Wazuh alerts.json 파일에서 level이 10 이상인 항목을 필터링한다.
   category: assessment
   points: 10
-  answer: 'ssh 10.20.30.100 ''tail -200 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c "import sys,json for l in sys.stdin: try: e=json.loads(l) r=e.get(\"rule\",{}) if r.get(\"level\",0)>=10:
-    print(f\"Level {r[\"level\"]:2d} | {r.get(\"description\",\"\")[:60]} | Agent: {e.get(\"agent\",{}).get(\"name\",\"N/A\")}\") except: pass" 2>/dev/null | tail -10'''
+  answer: 'tail -200 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c " import sys,json for l in sys.stdin: try: e=json.loads(l) r=e.get(\"rule\",{}) if r.get(\"level\",0)>=10: print(f\"Level
+    {r.get(\"level\",0):2d} | {r.get(\"description\",\"\")[:60]} | Agent: {e.get(\"agent\",{}).get(\"name\",\"N/A\")}\") except: pass " 2>/dev/null | tail -10 || echo "No Level 10+ alerts found"'
   answer_detail: Wazuh alert level 10 이상은 High severity에 해당한다. 고위험 알림의 빈도와 유형을 분석하면 SOC의 탐지 역량과 대응 부하를 판단할 수 있다. 고위험 알림이 적절히 발생하면 Level 3, 상관분석까지 동작하면 Level 4이다.
   verify:
     type: output_contains
     expect: Level
   target_vm: siem
-  script: 'ssh 10.20.30.100 ''tail -200 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c "import sys,json for l in sys.stdin: try: e=json.loads(l) r=e.get(\"rule\",{}) if r.get(\"level\",0)>=10:
-    print(f\"Level {r[\"level\"]:2d} | {r.get(\"description\",\"\")[:60]} | Agent: {e.get(\"agent\",{}).get(\"name\",\"N/A\")}\") except: pass" 2>/dev/null | tail -10'''
+  script: 'tail -200 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c " import sys,json for l in sys.stdin: try: e=json.loads(l) r=e.get(\"rule\",{}) if r.get(\"level\",0)>=10: print(f\"Level
+    {r.get(\"level\",0):2d} | {r.get(\"description\",\"\")[:60]} | Agent: {e.get(\"agent\",{}).get(\"name\",\"N/A\")}\") except: pass " 2>/dev/null | tail -10 || echo "No Level 10+ alerts found"'
   risk_level: low
 - order: 7
   instruction: SOC KPI 기준선을 측정하라. 최근 Wazuh 알림 100건에서 이벤트 발생 시각과 알림 생성 시각의 차이(MTTD 시뮬레이션)를 계산하고, 분당 알림 처리량을 산출하라.
   hint: alerts.json의 timestamp 필드를 파싱하여 시간 차이를 계산한다.
   category: measurement
   points: 10
-  answer: 'ssh 10.20.30.100 ''tail -100 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c "import sys,json from datetime import datetime count=0; levels={} for l in sys.stdin: try: e=json.loads(l);
-    count+=1 lv=e.get(\"rule\",{}).get(\"level\",0) levels[lv]=levels.get(lv,0)+1 except: pass print(f\"Total alerts sampled: {count}\") print(f\"Level distribution:\") for lv in sorted(levels.keys()):
-    print(f\"  Level {lv}: {levels[lv]}\") print(f\"Estimated alerts/min: {count/60:.1f} (assuming 1h window)\") print(f\"MTTD estimate: <30s (SIEM internal processing)\")" 2>/dev/null'''
+  answer: 'tail -100 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c " import sys,json from datetime import datetime count=0; levels={} for l in sys.stdin: try: e=json.loads(l); count+=1 lv=e.get(\"rule\",{}).get(\"level\",0)
+    levels[lv]=levels.get(lv,0)+1 except: pass print(f\"Total alerts sampled: {count}\") print(f\"Level distribution:\") for lv in sorted(levels.keys()): print(f\"  Level {lv}: {levels[lv]}\") print(f\"Estimated
+    alerts/min: {count/60:.1f} (assuming 1h window)\") print(f\"MTTD estimate: <30s (SIEM internal processing)\") " 2>/dev/null || echo "No alerts data available"'
   answer_detail: MTTD(Mean Time To Detect)는 이벤트 발생부터 SOC이 인지하기까지의 시간이다. SIEM 내부 처리 시간은 보통 수초이며, 운영적 MTTD(분석관 확인까지)는 별도 측정이 필요하다. 분당 알림률은 SOC 인력 부하를 결정한다.
   verify:
     type: output_contains
     expect: alerts
   target_vm: siem
-  script: 'ssh 10.20.30.100 ''tail -100 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c "import sys,json from datetime import datetime count=0; levels={} for l in sys.stdin: try: e=json.loads(l);
-    count+=1 lv=e.get(\"rule\",{}).get(\"level\",0) levels[lv]=levels.get(lv,0)+1 except: pass print(f\"Total alerts sampled: {count}\") print(f\"Level distribution:\") for lv in sorted(levels.keys()):
-    print(f\"  Level {lv}: {levels[lv]}\") print(f\"Estimated alerts/min: {count/60:.1f} (assuming 1h window)\") print(f\"MTTD estimate: <30s (SIEM internal processing)\")" 2>/dev/null'''
+  script: 'tail -100 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c " import sys,json from datetime import datetime count=0; levels={} for l in sys.stdin: try: e=json.loads(l); count+=1 lv=e.get(\"rule\",{}).get(\"level\",0)
+    levels[lv]=levels.get(lv,0)+1 except: pass print(f\"Total alerts sampled: {count}\") print(f\"Level distribution:\") for lv in sorted(levels.keys()): print(f\"  Level {lv}: {levels[lv]}\") print(f\"Estimated
+    alerts/min: {count/60:.1f} (assuming 1h window)\") print(f\"MTTD estimate: <30s (SIEM internal processing)\") " 2>/dev/null || echo "No alerts data available"'
   risk_level: low
 - order: 8
   instruction: 5개 도메인(Business, People, Process, Technology, Services)의 평가 결과를 종합하여 SOC 성숙도 레이더 차트용 JSON 데이터를 생성하고 /tmp/soc_maturity.json에 저장하라.

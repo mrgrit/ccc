@@ -69,18 +69,18 @@ steps:
   script: curl -s http://10.20.30.80:3000/robots.txt
   risk_level: low
 - order: 5
-  instruction: whatweb 도구를 사용하여 10.20.30.80:3000 웹 애플리케이션의 기술 스택을 핑거프린팅하라.
-  hint: whatweb URL 형태로 실행한다
+  instruction: curl을 사용하여 10.20.30.80:3000 웹 애플리케이션의 기술 스택을 핑거프린팅하라.
+  hint: curl -sI로 응답 헤더를 확인하고 Server 등의 정보를 추출한다
   category: recon
   points: 10
-  answer: whatweb http://10.20.30.80:3000
-  answer_detail: whatweb은 웹 사이트의 기술 스택(CMS, 프레임워크, 서버, 스크립팅 언어 등)을 자동으로 식별하는 도구이다. 패시브/액티브 핑거프린팅을 통해 공격 표면을 빠르게 파악할 수 있다.
+  answer: curl -sI http://10.20.30.80:3000 | grep -iE "(Server|X-Powered-By|X-Frame|Content-Type|Set-Cookie)"
+  answer_detail: HTTP 응답 헤더에서 Server, X-Powered-By, Set-Cookie 등의 정보를 통해 웹 서버 종류, 프레임워크, 세션 관리 방식을 파악할 수 있다. 패시브 핑거프린팅을 통해 공격 표면을 빠르게 파악할 수 있다.
   verify:
     type: output_contains
-    expect: http://10.20.30.80:3000
+    expect: Server
     field: stdout
   target_vm: attacker
-  script: whatweb http://10.20.30.80:3000
+  script: curl -sI http://10.20.30.80:3000 | grep -iE "(Server|X-Powered-By|X-Frame|Content-Type|Set-Cookie)"
   risk_level: low
 - order: 6
   instruction: curl을 사용하여 JuiceShop의 /ftp 디렉토리에 접근하여 공개된 파일 목록을 확인하라.
@@ -97,18 +97,18 @@ steps:
   script: curl -s http://10.20.30.80:3000/ftp
   risk_level: low
 - order: 7
-  instruction: traceroute를 사용하여 attacker(10.20.30.201)에서 web(10.20.30.80)까지의 네트워크 경로를 확인하라.
-  hint: traceroute 명령으로 경유하는 라우터를 확인한다
+  instruction: ping과 ip route를 사용하여 attacker에서 web(10.20.30.80)까지의 네트워크 경로와 연결 상태를 확인하라.
+  hint: ping -c 1으로 연결을 확인하고 ip route get으로 라우팅 경로를 파악한다
   category: recon
   points: 10
-  answer: traceroute -n 10.20.30.80
-  answer_detail: traceroute는 목적지까지의 네트워크 경로(hop)를 보여준다. 각 hop의 IP 주소를 통해 네트워크 토폴로지, 방화벽 위치, 라우팅 구조를 파악할 수 있다. -n 옵션은 DNS 역방향 조회를 생략하여 속도를 높인다.
+  answer: ping -c 1 10.20.30.80 && echo "--- Routing ---" && ip route get 10.20.30.80
+  answer_detail: ping으로 대상 호스트의 생존 여부와 응답 시간을 확인하고, ip route get으로 해당 목적지까지의 라우팅 경로를 파악한다. TTL 값과 라우팅 정보를 통해 네트워크 토폴로지, 방화벽 위치, 라우팅 구조를 추정할 수 있다.
   verify:
     type: output_contains
     expect: 10.20.30
     field: stdout
   target_vm: attacker
-  script: traceroute -n 10.20.30.80
+  script: ping -c 1 10.20.30.80 && echo "--- Routing ---" && ip route get 10.20.30.80
   risk_level: low
 - order: 8
   instruction: netcat(nc)을 사용하여 10.20.30.80의 포트 3000에 접속하여 배너를 그래빙하라.
@@ -129,14 +129,14 @@ steps:
   hint: curl 출력을 python3 -c로 파이프하여 JSON 파싱한다
   category: recon
   points: 10
-  answer: 'curl -s http://10.20.30.80:3000/api/Products | python3 -c "import sys,json; d=json.load(sys.stdin); print(f''Total products: {len(d["data"])}'')"'
+  answer: 'curl -s http://10.20.30.80:3000/api/Products | python3 -c "import sys,json; d=json.load(sys.stdin); print(\"Total products: \" + str(len(d.get(\"data\",[]))))"'
   answer_detail: 웹 애플리케이션의 REST API를 탐색하면 데이터 구조, 엔드포인트 패턴, 인증 방식 등을 파악할 수 있다. API 응답의 JSON 구조를 분석하면 후속 공격에 필요한 파라미터와 데이터 형식을 알 수 있다.
   verify:
     type: output_contains
     expect: 'Total products:'
     field: stdout
   target_vm: attacker
-  script: 'curl -s http://10.20.30.80:3000/api/Products | python3 -c "import sys,json; d=json.load(sys.stdin); print(f''Total products: {len(d["data"])}'')"'
+  script: 'curl -s http://10.20.30.80:3000/api/Products | python3 -c "import sys,json; d=json.load(sys.stdin); print(\"Total products: \" + str(len(d.get(\"data\",[]))))"'
   risk_level: low
 - order: 10
   instruction: curl을 사용하여 웹서버(10.20.30.80) 포트 80의 Apache 서버 헤더 정보를 확인하라.

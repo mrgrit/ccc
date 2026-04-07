@@ -15,7 +15,7 @@ prerequisites:
 - TCP/IP 네트워크 기초
 infra_requirements:
 - Kali Linux VM (attacker)
-- Metasploitable2 VM (target, 10.20.30.50)
+- Web VM (target, 10.20.30.80)
 - Internal network 10.20.30.0/24
 pass_threshold: 0.6
 steps:
@@ -48,156 +48,156 @@ steps:
   script: nmap -sn 10.20.30.0/24
   risk_level: low
 - order: 3
-  instruction: 발견된 대상 호스트(10.20.30.50)에 대해 TCP 전체 포트 스캔을 수행하라.
+  instruction: 발견된 대상 호스트(10.20.30.80)에 대해 TCP 전체 포트 스캔을 수행하라.
   hint: nmap -p- 옵션으로 65535개 전체 포트를 스캔한다.
   category: recon
   points: 10
-  answer: nmap -p- -T4 10.20.30.50
-  answer_detail: -p- 옵션은 1~65535 전체 포트를 스캔한다. -T4는 타이밍 템플릿으로 속도를 높인다. 실무에서는 방화벽 우회를 위해 -T2 등 느린 옵션을 사용하기도 한다.
+  answer: nmap -p 1-10000 -T4 10.20.30.80
+  answer_detail: 주요 포트 범위(1~10000)를 스캔한다. -T4는 타이밍 템플릿으로 속도를 높인다. 실무에서는 방화벽 우회를 위해 -T2 등 느린 옵션을 사용하기도 한다. 전체 65535 포트 스캔은 시간이 많이 소요되므로 실습에서는 범위를 제한한다.
   verify:
     type: output_contains
     expect: open
     field: stdout
   target_vm: attacker
-  script: nmap -p- -T4 10.20.30.50
+  script: nmap -p 1-10000 -T4 10.20.30.80
   risk_level: low
 - order: 4
   instruction: 대상 호스트의 열린 포트에 대해 서비스 버전 탐지를 수행하라.
   hint: nmap -sV 옵션을 사용한다.
   category: recon
   points: 10
-  answer: nmap -sV -p 21,22,23,25,80,139,445,3306 10.20.30.50
+  answer: nmap -sV -p 22,80,443,3000,8080 10.20.30.80
   answer_detail: -sV 옵션은 각 열린 포트에 프로브를 보내 서비스 이름과 버전을 식별한다. 이 정보는 취약점 탐색의 핵심 입력이 된다.
   verify:
     type: output_contains
     expect: VERSION
     field: stdout
   target_vm: attacker
-  script: nmap -sV -p 21,22,23,25,80,139,445,3306 10.20.30.50
+  script: nmap -sV -p 22,80,443,3000,8080 10.20.30.80
   risk_level: low
 - order: 5
   instruction: 대상 호스트의 운영체제를 탐지하라.
   hint: nmap -O 옵션은 root 권한이 필요하다.
   category: recon
   points: 10
-  answer: sudo nmap -O 10.20.30.50
+  answer: sudo nmap -O 10.20.30.80
   answer_detail: -O 옵션은 TCP/IP 스택 핑거프린팅으로 OS를 추측한다. TTL, Window Size, DF bit 등 패킷 특성을 분석한다. root 권한이 필요한 이유는 raw socket을 사용하기 때문이다.
   verify:
     type: output_contains
     expect: OS details
     field: stdout
   target_vm: attacker
-  script: sudo nmap -O 10.20.30.50
+  script: sudo nmap -O 10.20.30.80
   risk_level: low
 - order: 6
-  instruction: nmap NSE 스크립트를 사용하여 대상의 SMB 공유 폴더를 열거하라.
-  hint: smb-enum-shares 스크립트를 사용한다.
+  instruction: nmap NSE 스크립트를 사용하여 대상의 HTTP 서비스 정보를 열거하라.
+  hint: http-enum, http-headers 스크립트를 사용한다.
   category: recon
   points: 10
-  answer: nmap --script smb-enum-shares -p 445 10.20.30.50
-  answer_detail: NSE(Nmap Scripting Engine)의 smb-enum-shares 스크립트는 SMB 프로토콜을 통해 공유 폴더 목록을 열거한다. 익명 접근 가능한 공유가 있으면 정보 유출 위험이 크다.
+  answer: nmap --script http-enum,http-headers -p 80,3000 10.20.30.80
+  answer_detail: NSE(Nmap Scripting Engine)의 http-enum 스크립트는 웹 서버에서 알려진 경로(admin, backup 등)를 탐색한다. http-headers는 응답 헤더를 수집하여 서버 정보를 식별한다.
   verify:
     type: output_contains
-    expect: Account Used
+    expect: http
     field: stdout
   target_vm: attacker
-  script: nmap --script smb-enum-shares -p 445 10.20.30.50
+  script: nmap --script http-enum,http-headers -p 80,3000 10.20.30.80
   risk_level: low
 - order: 7
   instruction: '대상 호스트의 DNS 정보를 dig 명령으로 조회하라. (대상 도메인: target.lab.local)'
   hint: dig 명령에 @DNS서버 옵션을 사용한다.
   category: recon
   points: 10
-  answer: dig @10.20.30.50 target.lab.local ANY
+  answer: dig @10.20.30.80 target.lab.local ANY
   answer_detail: dig는 DNS 질의 도구이다. ANY 타입으로 A, MX, NS, TXT 등 모든 레코드를 조회한다. @으로 특정 DNS 서버를 지정할 수 있다. Zone Transfer 가능 여부도 확인해야 한다.
   verify:
     type: output_contains
     expect: ANSWER
     field: stdout
   target_vm: attacker
-  script: dig @10.20.30.50 target.lab.local ANY
+  script: dig @10.20.30.80 target.lab.local ANY
   risk_level: low
 - order: 8
   instruction: DNS Zone Transfer를 시도하여 전체 DNS 레코드를 획득하라.
   hint: dig axfr 명령을 사용한다.
   category: recon
   points: 10
-  answer: dig @10.20.30.50 lab.local axfr
+  answer: dig @10.20.30.80 lab.local axfr
   answer_detail: AXFR은 DNS Zone Transfer 요청이다. 잘못 설정된 DNS 서버는 모든 레코드를 노출하여 내부 호스트명, IP 매핑 등 민감 정보가 유출된다. 실무에서 빈번히 발견되는 설정 취약점이다.
   verify:
     type: output_contains
     expect: XFR
     field: stdout
   target_vm: attacker
-  script: dig @10.20.30.50 lab.local axfr
+  script: dig @10.20.30.80 lab.local axfr
   risk_level: low
 - order: 9
-  instruction: netcat을 사용하여 대상의 FTP 서비스(21번 포트) 배너를 수집하라.
+  instruction: netcat을 사용하여 대상의 SSH 서비스(22번 포트) 배너를 수집하라.
   hint: nc -v 옵션으로 연결한다.
   category: recon
   points: 10
-  answer: nc -nv 10.20.30.50 21
-  answer_detail: Banner Grabbing은 서비스에 연결하여 초기 응답 메시지를 수집하는 기법이다. FTP, SSH, SMTP 등은 연결 시 서비스명과 버전을 포함한 배너를 전송한다. 이 정보로 CVE를 검색할 수 있다.
+  answer: nc -w 3 -nv 10.20.30.80 22
+  answer_detail: Banner Grabbing은 서비스에 연결하여 초기 응답 메시지를 수집하는 기법이다. SSH, FTP, SMTP 등은 연결 시 서비스명과 버전을 포함한 배너를 전송한다. 이 정보로 CVE를 검색할 수 있다.
   verify:
     type: output_contains
-    expect: FTP
+    expect: SSH
     field: stdout
   target_vm: attacker
-  script: nc -nv 10.20.30.50 21
+  script: nc -w 3 -nv 10.20.30.80 22
   risk_level: low
 - order: 10
   instruction: HTTP 서비스(80번 포트)의 응답 헤더를 curl로 수집하라.
   hint: curl -I 옵션으로 HEAD 요청을 보낸다.
   category: recon
   points: 10
-  answer: curl -I http://10.20.30.50/
+  answer: curl -I http://10.20.30.80/
   answer_detail: curl -I는 HTTP HEAD 요청을 보내 응답 헤더만 받는다. Server, X-Powered-By, Set-Cookie 등 헤더에서 웹서버 종류, 프레임워크, 세션 설정 등 공격에 유용한 정보를 얻을 수 있다.
   verify:
     type: output_contains
     expect: 'Server:'
     field: stdout
   target_vm: attacker
-  script: curl -I http://10.20.30.50/
+  script: curl -I http://10.20.30.80/
   risk_level: low
 - order: 11
-  instruction: whatweb 도구를 사용하여 대상 웹 애플리케이션의 기술 스택을 식별하라.
-  hint: whatweb URL을 실행한다.
+  instruction: curl을 사용하여 대상 웹 애플리케이션의 기술 스택을 식별하라. 응답 헤더의 Server, X-Powered-By 등을 확인한다.
+  hint: curl -sI로 HTTP 헤더를 확인하고 grep으로 서버 정보를 추출한다.
   category: recon
   points: 10
-  answer: whatweb http://10.20.30.50/
-  answer_detail: whatweb은 웹사이트의 기술 스택(CMS, 프레임워크, 서버, JavaScript 라이브러리 등)을 자동 식별한다. 각 플러그인이 HTTP 응답의 특정 패턴을 매칭하여 기술을 탐지한다.
+  answer: curl -sI http://10.20.30.80/ | grep -iE "(Server|X-Powered-By|X-Frame|Content-Type)" && echo "--- Port 3000 ---" && curl -sI http://10.20.30.80:3000/ | grep -iE "(Server|X-Powered-By|X-Frame|Content-Type)"
+  answer_detail: HTTP 응답 헤더에서 Server, X-Powered-By 등의 정보를 통해 웹 서버 종류, 프레임워크, 보안 설정을 파악할 수 있다. 포트별로 다른 서비스가 동작하므로 각각 확인해야 한다.
+  verify:
+    type: output_contains
+    expect: Server
+    field: stdout
+  target_vm: attacker
+  script: curl -sI http://10.20.30.80/ | grep -iE "(Server|X-Powered-By|X-Frame|Content-Type)" && echo "--- Port 3000 ---" && curl -sI http://10.20.30.80:3000/ | grep -iE "(Server|X-Powered-By|X-Frame|Content-Type)"
+  risk_level: low
+- order: 12
+  instruction: nmap을 사용하여 대상의 웹 서비스에서 디렉토리와 파일을 열거하라.
+  hint: nmap --script http-enum 스크립트로 웹 경로를 탐색한다.
+  category: recon
+  points: 10
+  answer: nmap --script http-enum -p 80,3000,8080 10.20.30.80
+  answer_detail: nmap의 http-enum 스크립트는 웹 서버에서 알려진 디렉토리와 파일(admin, backup, phpmyadmin 등)을 탐색한다. 여러 포트에 대해 동시에 스캔하면 다양한 웹 서비스의 경로를 발견할 수 있다.
   verify:
     type: output_contains
     expect: http
     field: stdout
   target_vm: attacker
-  script: whatweb http://10.20.30.50/
-  risk_level: low
-- order: 12
-  instruction: enum4linux 도구를 사용하여 대상의 NetBIOS/SMB 정보를 열거하라.
-  hint: enum4linux -a 옵션으로 전체 열거를 수행한다.
-  category: recon
-  points: 10
-  answer: enum4linux -a 10.20.30.50
-  answer_detail: enum4linux는 Windows/Samba 시스템에서 사용자, 그룹, 공유, 정책 등을 열거하는 도구이다. NULL 세션을 이용하여 인증 없이 정보를 수집한다. -a 옵션은 모든 열거 작업을 수행한다.
-  verify:
-    type: output_contains
-    expect: enum4linux
-    field: stdout
-  target_vm: attacker
-  script: enum4linux -a 10.20.30.50
+  script: nmap --script http-enum -p 80,3000,8080 10.20.30.80
   risk_level: low
 - order: 13
   instruction: 수집한 정찰 결과를 nmap XML 형식으로 저장하여 후속 분석에 활용할 수 있도록 하라.
   hint: nmap -oX 옵션으로 XML 출력한다.
   category: recon
   points: 15
-  answer: nmap -sV -O -oX /tmp/recon_week01.xml 10.20.30.50
+  answer: nmap -sV -oX /tmp/recon_week01.xml 10.20.30.80
   answer_detail: -oX 옵션은 결과를 XML 형식으로 저장한다. XML 출력은 Metasploit, OpenVAS 등 다른 도구에서 import할 수 있으며, 자동화 파이프라인에서 파싱하기 용이하다.
   verify:
     type: file_exists
     expect: /tmp/recon_week01.xml
     field: filesystem
   target_vm: attacker
-  script: nmap -sV -O -oX /tmp/recon_week01.xml 10.20.30.50
+  script: nmap -sV -oX /tmp/recon_week01.xml 10.20.30.80
   risk_level: low
