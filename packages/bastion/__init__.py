@@ -271,10 +271,11 @@ systemctl restart rsyslog 2>/dev/null || true
 """,
     ],
     "manager": [
-        # bastion 설치만 (Ollama는 gpu_url에 따라 동적 결정)
-        "apt-get update -y && apt-get install -y python3 python3-pip python3-venv git",
-        "if [ ! -d /opt/ccc ]; then git clone https://github.com/mrgrit/ccc.git /opt/ccc; fi",
-        "cd /opt/ccc && python3 -m venv .venv && source .venv/bin/activate && pip install -r requirements.txt -q",
+        # bastion 독립 설치 (CCC 레포 전체가 아닌 bastion만)
+        "apt-get update -y && apt-get install -y python3 python3-pip python3-venv git sshpass",
+        "if [ ! -d /opt/bastion ]; then git clone https://github.com/mrgrit/bastion.git /opt/bastion; else cd /opt/bastion && git pull; fi",
+        "cd /opt/bastion && bash setup.sh",
+        "hostnamectl set-hostname bastion 2>/dev/null || true",
     ],
 }
 
