@@ -120,7 +120,9 @@ fi
 ROLE_SETUP_SCRIPTS: dict[str, list[str]] = {
     "attacker": [
         "apt-get update -y",
-        "apt-get install -y nmap hydra sqlmap nikto dirb gobuster seclists curl net-tools traceroute whatweb",
+        "apt-get install -y nmap hydra sqlmap nikto dirb gobuster seclists curl net-tools traceroute whatweb enum4linux hashcat john python3-impacket smbclient",
+        # metasploit framework
+        "if ! command -v msfconsole &>/dev/null; then curl -s https://raw.githubusercontent.com/rapid7/metasploit-omnibus/master/config/templates/metasploit-framework-wrappers/msfupdate.erb > /tmp/msfinstall && chmod 755 /tmp/msfinstall && /tmp/msfinstall; fi",
         WAZUH_AGENT_INSTALL,
     ],
     "secu": [
