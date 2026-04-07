@@ -85,7 +85,7 @@ steps:
     type: output_contains
     expect: union
     field: stdout
-  target_vm: attacker
+  target_vm: web
   script: grep -iE '(union|select|insert|update|delete|drop|or%201%3D1|\x27)' /var/log/apache2/access.log | tail -20
   risk_level: low
 - order: 6
@@ -99,7 +99,7 @@ steps:
     type: output_contains
     expect: ..
     field: stdout
-  target_vm: attacker
+  target_vm: web
   script: grep -E '(\.\./)|(\.\.\\)' /var/log/apache2/access.log | tail -20
   risk_level: low
 - order: 7
@@ -113,7 +113,7 @@ steps:
     type: output_contains
     expect: '200'
     field: stdout
-  target_vm: attacker
+  target_vm: web
   script: awk '{print $9}' /var/log/apache2/access.log | sort | uniq -c | sort -rn
   risk_level: low
 - order: 8
@@ -121,14 +121,16 @@ steps:
   hint: jq로 timestamp를 추출하여 시간별 집계한다.
   category: analysis
   points: 10
-  answer: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .timestamp[:13]' | sort | uniq -c | sort -k2
+  answer: "python3 -c \"import json,sys;\nfor line in open('/var/log/suricata/eve.json'):\n  try:\n    e=json.loads(line)\n    if e.get('event_type')=='alert': print(e['timestamp'][:13])\n  except: pass\"\
+    \ | sort | uniq -c | sort -k2"
   answer_detail: timestamp의 앞 13자(YYYY-MM-DDTHH)를 추출하면 시간별 집계가 된다. 경보가 급증하는 시간대는 활발한 공격이 진행된 시점이다. 이 패턴으로 공격 캠페인의 시작과 종료를 파악한다.
   verify:
     type: output_contains
     expect: T
     field: stdout
-  target_vm: attacker
-  script: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .timestamp[:13]' | sort | uniq -c | sort -k2
+  target_vm: secu
+  script: "python3 -c \"import json,sys;\nfor line in open('/var/log/suricata/eve.json'):\n  try:\n    e=json.loads(line)\n    if e.get('event_type')=='alert': print(e['timestamp'][:13])\n  except: pass\"\
+    \ | sort | uniq -c | sort -k2"
   risk_level: low
 - order: 9
   instruction: 시스템 프로세스 생성 로그에서 의심스러운 프로세스를 확인하라.
@@ -245,9 +247,9 @@ steps:
     cat /tmp/threat_hunting_report.txt'
   answer_detail: 위협 헌팅 보고서는 공격 타임라인, IoC, TTPs, 대응 권고를 통합한다. MITRE ATT&CK ID를 매핑하면 표준화된 분류가 가능하며, 타임라인은 사고 재구성의 핵심이다.
   verify:
-    type: file_exists
-    expect: /tmp/threat_hunting_report.txt
-    field: filesystem
+    type: output_contains
+    expect: Threat Hunting Report
+    field: stdout
   target_vm: attacker
   script: 'cat > /tmp/threat_hunting_report.txt << ''EOF''
 

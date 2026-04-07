@@ -17,57 +17,57 @@ steps:
   hint: OS 정보, 열린 포트, 서비스를 종합 확인하세요.
   category: audit
   points: 10
-  answer: 'echo "=== [1] 호스트 보안 ==="; echo "OS: $(cat /etc/os-release | grep PRETTY | cut -d\"=\" -f2)"; echo "커널: $(uname -r)"; echo "Docker: $(docker version --format "{{.Server.Version}}" 2>/dev/null)";
-    echo "열린 포트: $(sudo ss -tlnp | grep -c LISTEN)"; echo "가동시간: $(uptime -p)"'''
+  answer: 'echo "=== [1] 호스트 보안 ==="; echo "OS: $(cat /etc/os-release | grep PRETTY | cut -d= -f2)"; echo "커널: $(uname -r)"; echo "Docker: $(docker version --format ''{{.Server.Version}}'' 2>/dev/null)";
+    echo "열린 포트: $(sudo ss -tlnp | grep -c LISTEN)"; echo "가동시간: $(uptime -p)"'
   answer_detail: 호스트 보안은 컨테이너 보안의 기초입니다. 호스트가 침해되면 모든 컨테이너가 위험합니다. OS 패치 상태, 불필요한 서비스 비활성화, 커널 보안 파라미터, Docker 버전의 최신 상태를 확인합니다.
   verify:
     type: output_contains
     expect: 호스트 보안
     field: stdout
   target_vm: web
-  script: 'echo "=== [1] 호스트 보안 ==="; echo "OS: $(cat /etc/os-release | grep PRETTY | cut -d\"=\" -f2)"; echo "커널: $(uname -r)"; echo "Docker: $(docker version --format "{{.Server.Version}}" 2>/dev/null)";
-    echo "열린 포트: $(sudo ss -tlnp | grep -c LISTEN)"; echo "가동시간: $(uptime -p)"'''
+  script: 'echo "=== [1] 호스트 보안 ==="; echo "OS: $(cat /etc/os-release | grep PRETTY | cut -d= -f2)"; echo "커널: $(uname -r)"; echo "Docker: $(docker version --format ''{{.Server.Version}}'' 2>/dev/null)";
+    echo "열린 포트: $(sudo ss -tlnp | grep -c LISTEN)"; echo "가동시간: $(uptime -p)"'
   risk_level: low
 - order: 2
   instruction: Docker 데몬의 보안 설정을 종합 점검하시오.
   hint: daemon.json, 보안 옵션, 로깅을 확인하세요.
   category: audit
   points: 10
-  answer: 'echo "=== [2] 데몬 보안 ==="; echo "보안 옵션: $(docker info --format "{{.SecurityOptions}}" 2>/dev/null)"; echo "로깅: $(docker info --format "{{.LoggingDriver}}" 2>/dev/null)"; echo "소켓 권한: $(stat -c
-    "%a" /var/run/docker.sock)"; echo "daemon.json:"; cat /etc/docker/daemon.json 2>/dev/null || echo "  미설정"'''
+  answer: 'echo "=== [2] 데몬 보안 ==="; echo "보안 옵션: $(docker info --format ''{{.SecurityOptions}}'' 2>/dev/null)"; echo "로깅: $(docker info --format ''{{.LoggingDriver}}'' 2>/dev/null)"; echo "소켓 권한: $(stat
+    -c ''%a'' /var/run/docker.sock)"; echo "daemon.json:"; cat /etc/docker/daemon.json 2>/dev/null || echo "  미설정"'
   answer_detail: Docker 데몬 설정은 모든 컨테이너에 영향을 미치는 전역 설정입니다. 보안 옵션(apparmor, seccomp), 로깅 드라이버, TLS 인증, insecure-registries, live-restore 등을 확인합니다.
   verify:
     type: output_contains
     expect: 데몬 보안
     field: stdout
   target_vm: web
-  script: 'echo "=== [2] 데몬 보안 ==="; echo "보안 옵션: $(docker info --format "{{.SecurityOptions}}" 2>/dev/null)"; echo "로깅: $(docker info --format "{{.LoggingDriver}}" 2>/dev/null)"; echo "소켓 권한: $(stat -c
-    "%a" /var/run/docker.sock)"; echo "daemon.json:"; cat /etc/docker/daemon.json 2>/dev/null || echo "  미설정"'''
+  script: 'echo "=== [2] 데몬 보안 ==="; echo "보안 옵션: $(docker info --format ''{{.SecurityOptions}}'' 2>/dev/null)"; echo "로깅: $(docker info --format ''{{.LoggingDriver}}'' 2>/dev/null)"; echo "소켓 권한: $(stat
+    -c ''%a'' /var/run/docker.sock)"; echo "daemon.json:"; cat /etc/docker/daemon.json 2>/dev/null || echo "  미설정"'
   risk_level: low
 - order: 3
   instruction: 이미지 보안을 종합 점검하시오. 태그, 크기, USER 설정을 분석합니다.
   hint: 모든 이미지의 태그와 보안 설정을 확인하세요.
   category: audit
   points: 10
-  answer: 'echo "=== [3] 이미지 보안 ==="; echo "이미지 수: $(docker images -q | wc -l)"; echo "latest 태그: $(docker images --format "{{.Tag}}" | grep -c latest)개"; echo "미사용: $(docker images -f dangling=true -q
-    | wc -l)개"; echo "--- 이미지 목록 ---"; docker images --format "{{.Repository}}:{{.Tag}} ({{.Size}})" | head -5'''
+  answer: 'echo "=== [3] 이미지 보안 ==="; echo "이미지 수: $(docker images -q | wc -l)"; echo "latest 태그: $(docker images --format ''{{.Tag}}'' | grep -c latest)개"; echo "미사용: $(docker images -f dangling=true -q
+    | wc -l)개"; echo "--- 이미지 목록 ---"; docker images --format ''{{.Repository}}:{{.Tag}} ({{.Size}})'' | head -5'
   answer_detail: '이미지 보안 점검: latest 태그 비사용(버전 고정), 최소 이미지(alpine, distroless), 정기 취약점 스캔, 미사용 이미지 정리, multi-stage build, 민감 정보 미포함. 이미지는 소프트웨어 공급망의 핵심이므로 출처와 무결성을 보장해야 합니다.'
   verify:
     type: output_contains
     expect: 이미지 보안
     field: stdout
   target_vm: web
-  script: 'echo "=== [3] 이미지 보안 ==="; echo "이미지 수: $(docker images -q | wc -l)"; echo "latest 태그: $(docker images --format "{{.Tag}}" | grep -c latest)개"; echo "미사용: $(docker images -f dangling=true -q
-    | wc -l)개"; echo "--- 이미지 목록 ---"; docker images --format "{{.Repository}}:{{.Tag}} ({{.Size}})" | head -5'''
+  script: 'echo "=== [3] 이미지 보안 ==="; echo "이미지 수: $(docker images -q | wc -l)"; echo "latest 태그: $(docker images --format ''{{.Tag}}'' | grep -c latest)개"; echo "미사용: $(docker images -f dangling=true -q
+    | wc -l)개"; echo "--- 이미지 목록 ---"; docker images --format ''{{.Repository}}:{{.Tag}} ({{.Size}})'' | head -5'
   risk_level: low
 - order: 4
   instruction: 컨테이너 런타임 보안을 종합 점검하시오. 모든 실행 중 컨테이너의 보안 옵션을 분석합니다.
   hint: privileged, capabilities, read-only, user, 자원 제한을 확인하세요.
   category: audit
   points: 14
-  answer: 'echo "=== [4] 런타임 보안 ==="; for CID in $(docker ps -q); do NAME=$(docker inspect --format="{{.Name}}" $CID | tr -d "/"); PRIV=$(docker inspect --format="{{.HostConfig.Privileged}}" $CID); RO=$(docker
-    inspect --format="{{.HostConfig.ReadonlyRootfs}}" $CID); USER=$(docker inspect --format="{{.Config.User}}" $CID); MEM=$(docker inspect --format="{{.HostConfig.Memory}}" $CID); NETMODE=$(docker inspect
-    --format="{{.HostConfig.NetworkMode}}" $CID); echo "$NAME: Priv=$PRIV RO=$RO User=${USER:-root} Mem=$MEM Net=$NETMODE"; done || echo "실행 중인 컨테이너 없음"'''
+  answer: 'echo "=== [4] 런타임 보안 ==="; for CID in $(docker ps -q); do NAME=$(docker inspect --format=''{{.Name}}'' $CID | tr -d ''/''); PRIV=$(docker inspect --format=''{{.HostConfig.Privileged}}'' $CID);
+    RO=$(docker inspect --format=''{{.HostConfig.ReadonlyRootfs}}'' $CID); USER=$(docker inspect --format=''{{.Config.User}}'' $CID); MEM=$(docker inspect --format=''{{.HostConfig.Memory}}'' $CID); NETMODE=$(docker
+    inspect --format=''{{.HostConfig.NetworkMode}}'' $CID); echo "$NAME: Priv=$PRIV RO=$RO User=${USER:-root} Mem=$MEM Net=$NETMODE"; done || echo "실행 중인 컨테이너 없음"'
   answer_detail: '런타임 보안은 실행 중인 컨테이너의 보안 상태를 평가합니다. 핵심 체크리스트: Privileged=false, ReadOnly=true, User!=root(또는 비어 있지 않음), Memory>0(자원 제한), NetworkMode!=host, CapDrop=[ALL], SecurityOpt에 no-new-privileges
     포함.'
   verify:
@@ -75,59 +75,59 @@ steps:
     expect: 런타임 보안
     field: stdout
   target_vm: web
-  script: 'echo "=== [4] 런타임 보안 ==="; for CID in $(docker ps -q); do NAME=$(docker inspect --format="{{.Name}}" $CID | tr -d "/"); PRIV=$(docker inspect --format="{{.HostConfig.Privileged}}" $CID); RO=$(docker
-    inspect --format="{{.HostConfig.ReadonlyRootfs}}" $CID); USER=$(docker inspect --format="{{.Config.User}}" $CID); MEM=$(docker inspect --format="{{.HostConfig.Memory}}" $CID); NETMODE=$(docker inspect
-    --format="{{.HostConfig.NetworkMode}}" $CID); echo "$NAME: Priv=$PRIV RO=$RO User=${USER:-root} Mem=$MEM Net=$NETMODE"; done || echo "실행 중인 컨테이너 없음"'''
+  script: 'echo "=== [4] 런타임 보안 ==="; for CID in $(docker ps -q); do NAME=$(docker inspect --format=''{{.Name}}'' $CID | tr -d ''/''); PRIV=$(docker inspect --format=''{{.HostConfig.Privileged}}'' $CID);
+    RO=$(docker inspect --format=''{{.HostConfig.ReadonlyRootfs}}'' $CID); USER=$(docker inspect --format=''{{.Config.User}}'' $CID); MEM=$(docker inspect --format=''{{.HostConfig.Memory}}'' $CID); NETMODE=$(docker
+    inspect --format=''{{.HostConfig.NetworkMode}}'' $CID); echo "$NAME: Priv=$PRIV RO=$RO User=${USER:-root} Mem=$MEM Net=$NETMODE"; done || echo "실행 중인 컨테이너 없음"'
   risk_level: low
 - order: 5
   instruction: 네트워크 보안을 종합 점검하시오. Docker 네트워크 격리와 포트 노출을 분석합니다.
   hint: 네트워크 목록, 포트 매핑, ICC를 확인하세요.
   category: audit
   points: 10
-  answer: 'echo "=== [5] 네트워크 보안 ==="; echo "네트워크: $(docker network ls -q | wc -l)개"; echo "포트 매핑:"; docker ps --format "  {{.Names}}: {{.Ports}}" 2>/dev/null | head -5; echo "host 네트워크 사용: $(docker ps
-    -q 2>/dev/null | xargs -I{} docker inspect --format="{{.HostConfig.NetworkMode}}" {} | grep -c host)건"'''
+  answer: 'echo "=== [5] 네트워크 보안 ==="; echo "네트워크: $(docker network ls -q | wc -l)개"; echo "포트 매핑:"; docker ps --format ''  {{.Names}}: {{.Ports}}'' 2>/dev/null | head -5; echo "host 네트워크 사용: $(docker ps
+    -q 2>/dev/null | xargs -I{} docker inspect --format=''{{.HostConfig.NetworkMode}}'' {} | grep -c host)건"'
   answer_detail: '네트워크 보안 점검: 사용자 정의 네트워크로 격리, host 네트워크 미사용, 포트 매핑 최소화(127.0.0.1 바인드 권장), internal 네트워크로 외부 차단, ICC 비활성화(필요시), 네트워크 간 분리.'
   verify:
     type: output_contains
     expect: 네트워크 보안
     field: stdout
   target_vm: web
-  script: 'echo "=== [5] 네트워크 보안 ==="; echo "네트워크: $(docker network ls -q | wc -l)개"; echo "포트 매핑:"; docker ps --format "  {{.Names}}: {{.Ports}}" 2>/dev/null | head -5; echo "host 네트워크 사용: $(docker ps
-    -q 2>/dev/null | xargs -I{} docker inspect --format="{{.HostConfig.NetworkMode}}" {} | grep -c host)건"'''
+  script: 'echo "=== [5] 네트워크 보안 ==="; echo "네트워크: $(docker network ls -q | wc -l)개"; echo "포트 매핑:"; docker ps --format ''  {{.Names}}: {{.Ports}}'' 2>/dev/null | head -5; echo "host 네트워크 사용: $(docker ps
+    -q 2>/dev/null | xargs -I{} docker inspect --format=''{{.HostConfig.NetworkMode}}'' {} | grep -c host)건"'
   risk_level: low
 - order: 6
   instruction: 스토리지 보안을 종합 점검하시오. 볼륨, 바인드 마운트, Docker Root Dir를 분석합니다.
   hint: 볼륨 목록, 위험 마운트, 디스크 사용량을 확인하세요.
   category: audit
   points: 10
-  answer: 'echo "=== [6] 스토리지 보안 ==="; echo "볼륨: $(docker volume ls -q | wc -l)개"; echo "미사용 볼륨: $(docker volume ls -qf dangling=true | wc -l)개"; echo "Docker Root 권한: $(stat -c "%a" /var/lib/docker)";
-    echo "위험 마운트:"; docker ps -q 2>/dev/null | xargs -I{} docker inspect --format="{{range .Mounts}}{{.Source}} {{end}}" {} 2>/dev/null | tr " " "\n" | sort -u | grep -E "(docker.sock|/etc$|/root|^/$)"
-    | head -5 || echo "  없음"'''
+  answer: 'echo "=== [6] 스토리지 보안 ==="; echo "볼륨: $(docker volume ls -q | wc -l)개"; echo "미사용 볼륨: $(docker volume ls -qf dangling=true | wc -l)개"; echo "Docker Root 권한: $(stat -c ''%a'' /var/lib/docker)";
+    echo "위험 마운트:"; docker ps -q 2>/dev/null | xargs -I{} docker inspect --format=''{{range .Mounts}}{{.Source}} {{end}}'' {} 2>/dev/null | tr '' '' ''\n'' | sort -u | grep -E ''(docker.sock|/etc$|/root|^/$)''
+    | head -5 || echo "  없음"'
   answer_detail: '스토리지 보안 점검: Docker Root Dir 권한(700), 미사용 볼륨 정리, 위험 바인드 마운트(docker.sock, /etc, /) 식별, 볼륨 데이터 암호화, tmpfs를 활용한 민감 데이터 관리.'
   verify:
     type: output_contains
     expect: 스토리지 보안
     field: stdout
   target_vm: web
-  script: 'echo "=== [6] 스토리지 보안 ==="; echo "볼륨: $(docker volume ls -q | wc -l)개"; echo "미사용 볼륨: $(docker volume ls -qf dangling=true | wc -l)개"; echo "Docker Root 권한: $(stat -c "%a" /var/lib/docker)";
-    echo "위험 마운트:"; docker ps -q 2>/dev/null | xargs -I{} docker inspect --format="{{range .Mounts}}{{.Source}} {{end}}" {} 2>/dev/null | tr " " "\n" | sort -u | grep -E "(docker.sock|/etc$|/root|^/$)"
-    | head -5 || echo "  없음"'''
+  script: 'echo "=== [6] 스토리지 보안 ==="; echo "볼륨: $(docker volume ls -q | wc -l)개"; echo "미사용 볼륨: $(docker volume ls -qf dangling=true | wc -l)개"; echo "Docker Root 권한: $(stat -c ''%a'' /var/lib/docker)";
+    echo "위험 마운트:"; docker ps -q 2>/dev/null | xargs -I{} docker inspect --format=''{{range .Mounts}}{{.Source}} {{end}}'' {} 2>/dev/null | tr '' '' ''\n'' | sort -u | grep -E ''(docker.sock|/etc$|/root|^/$)''
+    | head -5 || echo "  없음"'
   risk_level: low
 - order: 7
   instruction: 모니터링 및 로깅 체계를 종합 점검하시오.
   hint: 로그 드라이버, 로그 크기 제한, 이벤트 추적을 확인하세요.
   category: audit
   points: 10
-  answer: 'echo "=== [7] 모니터링/로깅 ==="; echo "로그 드라이버: $(docker info --format "{{.LoggingDriver}}" 2>/dev/null)"; echo "로그 크기 제한:"; cat /etc/docker/daemon.json 2>/dev/null | grep max-size || echo "  미설정
-    (무제한)"; echo "로그 총 크기: $(sudo du -sh /var/lib/docker/containers/ 2>/dev/null | cut -f1)"'''
+  answer: 'echo "=== [7] 모니터링/로깅 ==="; echo "로그 드라이버: $(docker info --format ''{{.LoggingDriver}}'' 2>/dev/null)"; echo "로그 크기 제한:"; cat /etc/docker/daemon.json 2>/dev/null | grep max-size || echo "  미설정
+    (무제한)"; echo "로그 총 크기: $(sudo du -sh /var/lib/docker/containers/ 2>/dev/null | cut -f1)"'
   answer_detail: '모니터링/로깅 점검: 로그 드라이버 설정, 로그 크기 제한(max-size/max-file), 중앙 로그 수집(syslog/fluentd), Docker 이벤트 모니터링, 리소스 사용량 추적(cAdvisor/Prometheus).'
   verify:
     type: output_contains
     expect: 모니터링/로깅
     field: stdout
   target_vm: web
-  script: 'echo "=== [7] 모니터링/로깅 ==="; echo "로그 드라이버: $(docker info --format "{{.LoggingDriver}}" 2>/dev/null)"; echo "로그 크기 제한:"; cat /etc/docker/daemon.json 2>/dev/null | grep max-size || echo "  미설정
-    (무제한)"; echo "로그 총 크기: $(sudo du -sh /var/lib/docker/containers/ 2>/dev/null | cut -f1)"'''
+  script: 'echo "=== [7] 모니터링/로깅 ==="; echo "로그 드라이버: $(docker info --format ''{{.LoggingDriver}}'' 2>/dev/null)"; echo "로그 크기 제한:"; cat /etc/docker/daemon.json 2>/dev/null | grep max-size || echo "  미설정
+    (무제한)"; echo "로그 총 크기: $(sudo du -sh /var/lib/docker/containers/ 2>/dev/null | cut -f1)"'
   risk_level: low
 - order: 8
   instruction: 클라우드/컨테이너 보안 종합 평가 스크립트를 작성하고 실행하시오. 전 영역의 보안 점수를 산출합니다.

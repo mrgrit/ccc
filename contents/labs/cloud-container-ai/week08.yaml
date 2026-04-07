@@ -19,7 +19,7 @@ steps:
   points: 10
   answer: 'docker info --format "Storage: {{.Driver}}
 
-    Root: {{.DockerRootDir}}" && echo "--- 디스크 사용량 ---" && sudo du -sh /var/lib/docker/ 2>/dev/null'''
+    Root: {{.DockerRootDir}}" && echo "--- 디스크 사용량 ---" && sudo du -sh /var/lib/docker/ 2>/dev/null'
   answer_detail: Docker 스토리지 드라이버(overlay2)는 이미지 레이어를 관리합니다. Docker Root Dir(/var/lib/docker)에는 이미지, 컨테이너 데이터, 볼륨이 저장됩니다. 이 디렉터리의 권한(700)과 디스크 파티션을 별도 관리하여 디스크 소진 공격을 방지해야 합니다.
   verify:
     type: output_contains
@@ -28,21 +28,21 @@ steps:
   target_vm: web
   script: 'docker info --format "Storage: {{.Driver}}
 
-    Root: {{.DockerRootDir}}" && echo "--- 디스크 사용량 ---" && sudo du -sh /var/lib/docker/ 2>/dev/null'''
+    Root: {{.DockerRootDir}}" && echo "--- 디스크 사용량 ---" && sudo du -sh /var/lib/docker/ 2>/dev/null'
   risk_level: low
 - order: 2
   instruction: Docker 볼륨 목록과 각 볼륨의 마운트 포인트를 확인하시오.
   hint: docker volume ls와 docker volume inspect를 사용하세요.
   category: audit
   points: 10
-  answer: 'docker volume ls && echo "--- 볼륨 상세 ---" && docker volume ls -q | head -3 | xargs -I{} docker volume inspect --format "Name: {{.Name}} Mount: {{.Mountpoint}} Driver: {{.Driver}}" {} 2>/dev/null'''
+  answer: 'docker volume ls && echo "--- 볼륨 상세 ---" && docker volume ls -q | head -3 | xargs -I{} docker volume inspect --format "Name: {{.Name}} Mount: {{.Mountpoint}} Driver: {{.Driver}}" {} 2>/dev/null'
   answer_detail: Docker 볼륨은 /var/lib/docker/volumes/에 저장됩니다. 클라우드의 EBS(블록 스토리지)와 유사합니다. 볼륨 내용은 호스트 파일시스템에서 직접 접근 가능하므로, 호스트 보안이 볼륨 보안의 전제 조건입니다.
   verify:
     type: output_contains
     expect: VOLUME
     field: stdout
   target_vm: web
-  script: 'docker volume ls && echo "--- 볼륨 상세 ---" && docker volume ls -q | head -3 | xargs -I{} docker volume inspect --format "Name: {{.Name}} Mount: {{.Mountpoint}} Driver: {{.Driver}}" {} 2>/dev/null'''
+  script: 'docker volume ls && echo "--- 볼륨 상세 ---" && docker volume ls -q | head -3 | xargs -I{} docker volume inspect --format "Name: {{.Name}} Mount: {{.Mountpoint}} Driver: {{.Driver}}" {} 2>/dev/null'
   risk_level: low
 - order: 3
   instruction: 컨테이너의 바인드 마운트를 점검하시오. 호스트의 민감 경로가 마운트되어 있는지 확인합니다.
@@ -65,14 +65,14 @@ steps:
   hint: --tmpfs 옵션으로 메모리 기반 파일시스템을 마운트하세요.
   category: config
   points: 10
-  answer: docker run --rm --tmpfs /secrets:rw,noexec,nosuid,size=10m alpine:latest sh -c "echo sensitive-data' > /secrets/key.txt && mount | grep /secrets && cat /secrets/key.txt && echo --- && df -h /secrets"'
+  answer: docker run --rm --tmpfs /secrets:rw,noexec,nosuid,size=10m alpine:latest sh -c "echo sensitive-data > /secrets/key.txt && mount | grep /secrets && cat /secrets/key.txt && echo --- && df -h /secrets"
   answer_detail: tmpfs는 메모리 기반 파일시스템으로, 컨테이너 종료 시 자동 삭제됩니다. 암호화 키, 토큰 등 임시 민감 데이터는 tmpfs에 저장하면 디스크에 흔적이 남지 않습니다. noexec(실행 금지), nosuid(SUID 무시), size(크기 제한) 옵션으로 보안을 강화합니다.
   verify:
     type: output_contains
     expect: tmpfs
     field: stdout
   target_vm: web
-  script: docker run --rm --tmpfs /secrets:rw,noexec,nosuid,size=10m alpine:latest sh -c "echo sensitive-data' > /secrets/key.txt && mount | grep /secrets && cat /secrets/key.txt && echo --- && df -h /secrets"'
+  script: docker run --rm --tmpfs /secrets:rw,noexec,nosuid,size=10m alpine:latest sh -c "echo sensitive-data > /secrets/key.txt && mount | grep /secrets && cat /secrets/key.txt && echo --- && df -h /secrets"
   risk_level: low
 - order: 5
   instruction: Docker 이미지 레이어에 민감 정보가 포함되어 있는지 점검하시오.
@@ -80,7 +80,7 @@ steps:
   category: audit
   points: 12
   answer: 'for IMG in $(docker images -q | head -3); do echo "=== Image: $IMG ==="; docker history --no-trunc $IMG 2>/dev/null | grep -iE "(password|secret|key|token|api_key)" | head -3; done; echo "---
-    스캔 완료 ---"'''
+    스캔 완료 ---"'
   answer_detail: Dockerfile의 RUN, ENV, COPY 명령에 민감 정보가 포함되면 이미지 레이어에 영구 저장됩니다. docker history로 확인 가능하며, 이후 레이어에서 삭제해도 이전 레이어에 남아 있습니다. multi-stage build와 BuildKit --secret을 사용해야 합니다.
   verify:
     type: output_contains
@@ -88,7 +88,7 @@ steps:
     field: stdout
   target_vm: web
   script: 'for IMG in $(docker images -q | head -3); do echo "=== Image: $IMG ==="; docker history --no-trunc $IMG 2>/dev/null | grep -iE "(password|secret|key|token|api_key)" | head -3; done; echo "---
-    스캔 완료 ---"'''
+    스캔 완료 ---"'
   risk_level: low
 - order: 6
   instruction: Docker Root Dir(/var/lib/docker)의 권한을 확인하시오.
@@ -109,14 +109,14 @@ steps:
   hint: docker system df와 dangling 필터를 사용하세요.
   category: audit
   points: 10
-  answer: 'echo "=== Docker 디스크 사용량 ==="; docker system df; echo "=== 미사용 볼륨 ==="; docker volume ls -f dangling=true; echo "=== 미사용 이미지 ==="; docker images -f dangling=true --format "{{.ID}}: {{.Size}}"'''
+  answer: 'echo "=== Docker 디스크 사용량 ==="; docker system df; echo "=== 미사용 볼륨 ==="; docker volume ls -f dangling=true; echo "=== 미사용 이미지 ==="; docker images -f dangling=true --format "{{.ID}}: {{.Size}}"'
   answer_detail: 미사용 리소스는 데이터 유출 위험과 디스크 비용을 증가시킵니다. 삭제된 컨테이너의 볼륨에 데이터베이스 파일이 남아 있을 수 있고, 오래된 이미지에 취약한 소프트웨어가 포함될 수 있습니다. 정기적인 docker system prune이 필요합니다.
   verify:
     type: output_contains
     expect: Docker 디스크 사용량
     field: stdout
   target_vm: web
-  script: 'echo "=== Docker 디스크 사용량 ==="; docker system df; echo "=== 미사용 볼륨 ==="; docker volume ls -f dangling=true; echo "=== 미사용 이미지 ==="; docker images -f dangling=true --format "{{.ID}}: {{.Size}}"'''
+  script: 'echo "=== Docker 디스크 사용량 ==="; docker system df; echo "=== 미사용 볼륨 ==="; docker volume ls -f dangling=true; echo "=== 미사용 이미지 ==="; docker images -f dangling=true --format "{{.ID}}: {{.Size}}"'
   risk_level: low
 - order: 8
   instruction: 스토리지 보안 종합 점검 스크립트를 작성하고 실행하시오.
@@ -131,11 +131,11 @@ steps:
 
     echo ''[드라이버]''
 
-    docker info --format "{{.Driver}}" 2>/dev/null
+    docker info --format ''{{.Driver}}'' 2>/dev/null
 
     echo ''[Docker Root 권한]''
 
-    stat -c "%a" /var/lib/docker 2>/dev/null
+    stat -c ''%a'' /var/lib/docker 2>/dev/null
 
     echo ''[볼륨]''
 
@@ -143,11 +143,11 @@ steps:
 
     echo ''[위험 마운트]''
 
-    docker ps -q | xargs -I{} docker inspect --format="{{range .Mounts}}{{.Source}} {{end}}" {} 2>/dev/null | tr " " "\n" | grep -cE "(docker.sock|/etc$|/root)" 2>/dev/null | xargs -I{} echo "{}건"
+    docker ps -q | xargs -I{} docker inspect --format=''{{range .Mounts}}{{.Source}} {{end}}'' {} 2>/dev/null | tr '' '' ''\n'' | grep -cE ''(docker.sock|/etc$|/root)'' 2>/dev/null | xargs -I{} echo ''{}건''
 
     echo ''[이미지 디스크]''
 
-    docker system df --format "Images: {{.Size}}" 2>/dev/null | head -1
+    docker system df --format ''Images: {{.Size}}'' 2>/dev/null | head -1
 
     echo ''=== 스토리지 점검 완료 ===''
 
@@ -168,11 +168,11 @@ steps:
 
     echo ''[드라이버]''
 
-    docker info --format "{{.Driver}}" 2>/dev/null
+    docker info --format ''{{.Driver}}'' 2>/dev/null
 
     echo ''[Docker Root 권한]''
 
-    stat -c "%a" /var/lib/docker 2>/dev/null
+    stat -c ''%a'' /var/lib/docker 2>/dev/null
 
     echo ''[볼륨]''
 
@@ -180,11 +180,11 @@ steps:
 
     echo ''[위험 마운트]''
 
-    docker ps -q | xargs -I{} docker inspect --format="{{range .Mounts}}{{.Source}} {{end}}" {} 2>/dev/null | tr " " "\n" | grep -cE "(docker.sock|/etc$|/root)" 2>/dev/null | xargs -I{} echo "{}건"
+    docker ps -q | xargs -I{} docker inspect --format=''{{range .Mounts}}{{.Source}} {{end}}'' {} 2>/dev/null | tr '' '' ''\n'' | grep -cE ''(docker.sock|/etc$|/root)'' 2>/dev/null | xargs -I{} echo ''{}건''
 
     echo ''[이미지 디스크]''
 
-    docker system df --format "Images: {{.Size}}" 2>/dev/null | head -1
+    docker system df --format ''Images: {{.Size}}'' 2>/dev/null | head -1
 
     echo ''=== 스토리지 점검 완료 ===''
 
