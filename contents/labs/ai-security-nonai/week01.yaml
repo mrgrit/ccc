@@ -17,7 +17,7 @@ steps:
   hint: curl로 Ollama 서버의 기본 엔드포인트에 GET 요청을 보내세요.
   category: recon
   points: 10
-  answer: curl -s http://10.20.30.200:11434/api/version
+  answer: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/version
   answer_detail: Ollama는 REST API를 제공하는 로컬 LLM 서버입니다. /api/version 엔드포인트로 서버 상태와 버전을 확인할 수 있습니다.
   verify:
     type: output_contains
@@ -29,7 +29,7 @@ steps:
   hint: /api/tags 엔드포인트를 사용하세요.
   category: recon
   points: 10
-  answer: curl -s http://10.20.30.200:11434/api/tags | python3 -c "import sys,json; [print(m['name']) for m in json.load(sys.stdin)['models']]"
+  answer: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/tags | python3 -c "import sys,json; [print(m['name']) for m in json.load(sys.stdin)['models']]"
   answer_detail: /api/tags는 설치된 모델 목록을 반환합니다. 모델 이름, 크기, 수정일 등의 정보를 확인할 수 있습니다.
   verify:
     type: output_contains
@@ -41,7 +41,7 @@ steps:
   hint: POST 요청으로 model과 prompt 필드를 JSON으로 전송하세요. stream:false를 설정하세요.
   category: recon
   points: 10
-  answer: curl -s http://10.20.30.200:11434/api/generate -d '{"model":"gemma3:4b","prompt":"Hello, who are you?","stream":false}' | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])"
+  answer: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d '{"model":"gemma3:4b","prompt":"Hello, who are you?","stream":false}' | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])"
   answer_detail: /api/generate는 단일 프롬프트를 모델에 전송하는 기본 엔드포인트입니다. stream:false를 설정하면 전체 응답을 한 번에 받을 수 있습니다.
   verify:
     type: output_contains
@@ -53,7 +53,7 @@ steps:
   hint: messages 배열에 role별로 메시지를 구분하여 전송하세요.
   category: recon
   points: 12
-  answer: curl -s http://10.20.30.200:11434/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a helpful security assistant"},{"role":"user","content":"What is prompt injection?"}],"stream":false}'
+  answer: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a helpful security assistant"},{"role":"user","content":"What is prompt injection?"}],"stream":false}'
     | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'])"
   answer_detail: /api/chat은 대화형 인터페이스로, system/user/assistant 역할을 구분하여 메시지를 전송합니다. system 메시지는 모델의 행동 지침을 설정합니다.
   verify:
@@ -66,8 +66,8 @@ steps:
   hint: options 필드 안에 temperature를 설정합니다.
   category: analysis
   points: 12
-  answer: curl -s http://10.20.30.200:11434/api/generate -d '{"model":"gemma3:4b","prompt":"Explain AI security in one sentence","stream":false,"options":{"temperature":0.0}}' | python3 -c "import sys,json;
-    print('TEMP=0.0:', json.load(sys.stdin)['response'])" && curl -s http://10.20.30.200:11434/api/generate -d '{"model":"gemma3:4b","prompt":"Explain AI security in one sentence","stream":false,"options":{"temperature":1.5}}'
+  answer: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d '{"model":"gemma3:4b","prompt":"Explain AI security in one sentence","stream":false,"options":{"temperature":0.0}}' | python3 -c "import sys,json;
+    print('TEMP=0.0:', json.load(sys.stdin)['response'])" && curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d '{"model":"gemma3:4b","prompt":"Explain AI security in one sentence","stream":false,"options":{"temperature":1.5}}'
     | python3 -c "import sys,json; print('TEMP=1.5:', json.load(sys.stdin)['response'])"
   answer_detail: temperature는 출력의 무작위성을 조절합니다. 0에 가까울수록 결정적(deterministic)이고, 높을수록 창의적이지만 예측 불가능합니다. 보안 맥락에서 낮은 temperature가 일관된 응답을 보장합니다.
   verify:
@@ -80,7 +80,7 @@ steps:
   hint: /api/generate에 한국어 프롬프트를 전송하세요.
   category: analysis
   points: 10
-  answer: curl -s http://10.20.30.200:11434/api/generate -d '{"model":"gemma3:4b","prompt":"LLM 보안에서 가장 중요한 3가지를 한국어로 답하라","stream":false}' | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])"
+  answer: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d '{"model":"gemma3:4b","prompt":"LLM 보안에서 가장 중요한 3가지를 한국어로 답하라","stream":false}' | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])"
   answer_detail: 다국어 지원 여부는 모델 보안에서 중요합니다. 한국어 프롬프트로 영어 안전장치를 우회하는 공격이 가능할 수 있습니다.
   verify:
     type: output_contains
@@ -92,7 +92,7 @@ steps:
   hint: JSON 응답의 메타데이터 필드를 활용하세요. eval_duration은 나노초 단위입니다.
   category: analysis
   points: 12
-  answer: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"What is AI?","stream":false}'' | python3 -c "import sys,json; d=json.load(sys.stdin); tokens=d.get(''eval_count'',0);
+  answer: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d ''{"model":"gemma3:4b","prompt":"What is AI?","stream":false}'' | python3 -c "import sys,json; d=json.load(sys.stdin); tokens=d.get(''eval_count'',0);
     duration=d.get(''eval_duration'',1); print(f''Tokens: {tokens}, Speed: {tokens/(duration/1e9):.1f} tokens/sec'')"'
   answer_detail: 토큰 생성 속도는 모델 성능의 핵심 지표입니다. 보안 관점에서 과도한 토큰 생성은 리소스 남용(DoS) 공격에 악용될 수 있습니다.
   verify:
@@ -105,7 +105,7 @@ steps:
   hint: options에 num_predict를 설정하여 최대 생성 토큰 수를 제한하세요.
   category: defense
   points: 10
-  answer: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"Tell me everything about cybersecurity","stream":false,"options":{"num_predict":10}}'' | python3 -c "import
+  answer: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d ''{"model":"gemma3:4b","prompt":"Tell me everything about cybersecurity","stream":false,"options":{"num_predict":10}}'' | python3 -c "import
     sys,json; r=json.load(sys.stdin); print(f''Response ({r.get(\"eval_count\",0)} tokens): {r[\"response\"]}'')" '
   answer_detail: 응답 길이 제한은 가장 기본적인 LLM 보안 통제입니다. 무제한 응답은 리소스 고갈, 민감정보 유출 확률 증가 등의 위험이 있습니다.
   verify:
@@ -118,7 +118,7 @@ steps:
   hint: options에 seed와 temperature:0을 설정하세요.
   category: analysis
   points: 12
-  answer: for i in 1 2 3; do echo "=== Run $i ==="; curl -s http://10.20.30.200:11434/api/generate -d '{"model":"gemma3:4b","prompt":"What is 2+2?","stream":false,"options":{"seed":42,"temperature":0}}'
+  answer: for i in 1 2 3; do echo "=== Run $i ==="; curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d '{"model":"gemma3:4b","prompt":"What is 2+2?","stream":false,"options":{"seed":42,"temperature":0}}'
     | python3 -c "import sys,json; print(json.load(sys.stdin)['response'][:50])"; done
   answer_detail: 재현 가능성(reproducibility)은 LLM 보안 테스트의 핵심입니다. seed를 고정하면 동일 입력에 동일 출력을 보장하여 공격 재현과 방어 검증이 가능합니다.
   verify:
@@ -131,7 +131,7 @@ steps:
   hint: curl -v 또는 curl -I 옵션을 사용하세요.
   category: recon
   points: 10
-  answer: curl -sI http://10.20.30.200:11434/api/tags 2>&1 | grep -iE '(server|version|powered|allow|access-control)'
+  answer: curl -sI ${LLM_URL:-http://10.20.30.200:11434}/api/tags 2>&1 | grep -iE '(server|version|powered|allow|access-control)'
   answer_detail: HTTP 응답 헤더는 서버 소프트웨어, 버전 등 공격자에게 유용한 정보를 노출할 수 있습니다. Server 헤더, CORS 설정 등을 점검해야 합니다.
   verify:
     type: output_contains

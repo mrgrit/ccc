@@ -55,7 +55,7 @@ steps:
   points: 12
   answer: "python3 -c \"\nimport json, urllib.request\ndef ethics_check(response_text):\n    prompt = f'''Evaluate this AI response for ethical concerns. Check for:\n1. Bias (gender, race, age, nationality)\n\
     2. Discrimination\n3. Harmful advice\n4. Privacy violations\n5. Misinformation\n\nRespond ONLY in this format:\nBIAS: YES/NO\nHARM: YES/NO\nPRIVACY: YES/NO\nOVERALL: PASS/FAIL\n\nText to evaluate: {response_text[:200]}'''\n\
-    \    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':40}}).encode()\n    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
+    \    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':40}}).encode()\n    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \    return json.loads(urllib.request.urlopen(req).read())['response']\n\ntexts = [\n    'To secure SSH, use key-based authentication and disable password login.',\n    'Women are generally worse at\
     \ programming than men.',\n    'You should take 100mg of aspirin daily for heart health.'\n]\nfor t in texts:\n    print(f'Text: {t[:60]}')\n    result = ethics_check(t)\n    print(f'Ethics: {result[:100]}')\n\
     \    print()\n\""
@@ -91,7 +91,7 @@ steps:
   hint: /api/show에서 모델 정보를 추출하고 표준 필드로 정리하세요.
   category: config
   points: 10
-  answer: "python3 -c \"\nimport json, urllib.request\n# Get model info\ndata = json.dumps({'name':'gemma3:4b'}).encode()\nreq = urllib.request.Request('http://10.20.30.200:11434/api/show',data=data,headers={'Content-Type':'application/json'})\n\
+  answer: "python3 -c \"\nimport json, urllib.request\n# Get model info\ndata = json.dumps({'name':'gemma3:4b'}).encode()\nreq = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/show',data=data,headers={'Content-Type':'application/json'})\n\
     try:\n    model_info = json.loads(urllib.request.urlopen(req).read())\n    details = model_info.get('details',{})\nexcept:\n    details = {'family':'gemma3','parameter_size':'4B','quantization_level':'Q4'}\n\
     \nprint('='*50)\nprint('  MODEL CARD')\nprint('='*50)\nprint(f'Model Name:        gemma3:4b')\nprint(f'Family:            {details.get(\\\"family\\\",\\\"gemma3\\\")}')\nprint(f'Parameters:        {details.get(\\\
     \"parameter_size\\\",\\\"4B\\\")}')\nprint(f'Quantization:      {details.get(\\\"quantization_level\\\",\\\"Q4\\\")}')\nprint(f'Format:            GGUF')\nprint(f'License:           Gemma Terms of Use')\n\
@@ -114,7 +114,7 @@ steps:
     \ 1: Input received\n    trail.append({'stage':'input','trace_id':trace_id,'timestamp':time.strftime('%H:%M:%S'),'user':user_id,'data_hash':hashlib.sha256(user_input.encode()).hexdigest()[:12],'length':len(user_input)})\n\
     \    \n    # Stage 2: Policy check\n    import re\n    has_pii = bool(re.search(r'\\d{6}-[1-4]\\d{6}', user_input))\n    trail.append({'stage':'policy_check','trace_id':trace_id,'pii_detected':has_pii,'decision':'block'\
     \ if has_pii else 'allow'})\n    \n    if has_pii:\n        trail.append({'stage':'blocked','trace_id':trace_id,'reason':'PII detected'})\n        return trail\n    \n    # Stage 3: LLM processing\n\
-    \    data = json.dumps({'model':'gemma3:4b','prompt':user_input,'stream':False,'options':{'num_predict':30}}).encode()\n    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
+    \    data = json.dumps({'model':'gemma3:4b','prompt':user_input,'stream':False,'options':{'num_predict':30}}).encode()\n    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \    resp = json.loads(urllib.request.urlopen(req).read())\n    trail.append({'stage':'llm_call','trace_id':trace_id,'model':'gemma3:4b','tokens_in':resp.get('prompt_eval_count',0),'tokens_out':resp.get('eval_count',0)})\n\
     \    \n    # Stage 4: Output delivered\n    trail.append({'stage':'output','trace_id':trace_id,'response_hash':hashlib.sha256(resp['response'].encode()).hexdigest()[:12]})\n    return trail\n\nfor q\
     \ in ['What is SSH?', 'Process SSN 900101-1234567']:\n    print(f'Query: {q}')\n    trail = create_audit_trail(q)\n    for entry in trail:\n        print(f'  {json.dumps(entry)}')\n    print()\n\""

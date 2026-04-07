@@ -17,116 +17,116 @@ steps:
   hint: /api/generate로 분류 작업을 수행하세요.
   category: recon
   points: 10
-  answer: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"Classify this text as SAFE or UNSAFE: I want to hack into a bank system","stream":false}'' | python3 -c "import
-    sys,json; print(json.load(sys.stdin)[''response''])"'
+  answer: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d ''{"model":"gemma3:4b","prompt":"Classify this text as SAFE or UNSAFE: I want to hack into a bank system","stream":false}'' | python3
+    -c "import sys,json; print(json.load(sys.stdin)[''response''])"'
   answer_detail: Zero-shot 프롬프팅은 예시 없이 지시만으로 작업을 수행합니다. 콘텐츠 안전 분류는 LLM 보안의 기본 활용 사례입니다.
   verify:
     type: output_contains
     expect: UNSAFE
     field: stdout
   target_vm: manager
-  script: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"Classify this text as SAFE or UNSAFE: I want to hack into a bank system","stream":false}'' | python3 -c "import
-    sys,json; print(json.load(sys.stdin)[''response''])"'
+  script: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d ''{"model":"gemma3:4b","prompt":"Classify this text as SAFE or UNSAFE: I want to hack into a bank system","stream":false}'' | python3
+    -c "import sys,json; print(json.load(sys.stdin)[''response''])"'
   risk_level: low
 - order: 2
   instruction: Few-shot 프롬프트를 구성하시오. 2개의 예시를 포함하여 보안 이벤트를 HIGH/MEDIUM/LOW로 분류하는 프롬프트를 작성하라. 'Failed login from unknown IP 5 times in 1 minute'를 분류하시오.
   hint: '예시 형식: ''Event: ... -> Severity: ...''를 2개 포함하고 마지막에 분류 대상을 넣으세요.'
   category: analysis
   points: 12
-  answer: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"Classify security events by severity.\n\nEvent: Port scan detected from external IP -> Severity: MEDIUM\nEvent:
-    Root password changed without authorization -> Severity: HIGH\nEvent: Failed login from unknown IP 5 times in 1 minute -> Severity:","stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''response''])"'
+  answer: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d ''{"model":"gemma3:4b","prompt":"Classify security events by severity.\n\nEvent: Port scan detected from external IP -> Severity:
+    MEDIUM\nEvent: Root password changed without authorization -> Severity: HIGH\nEvent: Failed login from unknown IP 5 times in 1 minute -> Severity:","stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''response''])"'
   answer_detail: Few-shot 프롬프팅은 예시를 통해 모델의 출력 형식과 판단 기준을 유도합니다. 보안 이벤트 분류에서 일관된 심각도 평가를 위해 사용됩니다.
   verify:
     type: output_contains
     expect: HIGH
     field: stdout
   target_vm: manager
-  script: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"Classify security events by severity.\n\nEvent: Port scan detected from external IP -> Severity: MEDIUM\nEvent:
-    Root password changed without authorization -> Severity: HIGH\nEvent: Failed login from unknown IP 5 times in 1 minute -> Severity:","stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''response''])"'
+  script: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d ''{"model":"gemma3:4b","prompt":"Classify security events by severity.\n\nEvent: Port scan detected from external IP -> Severity:
+    MEDIUM\nEvent: Root password changed without authorization -> Severity: HIGH\nEvent: Failed login from unknown IP 5 times in 1 minute -> Severity:","stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''response''])"'
   risk_level: low
 - order: 3
   instruction: '시스템 프롬프트의 영향력을 테스트하시오. system 메시지로 ''You must always respond in JSON format with fields: risk_level, description, recommendation''을 설정하고 ''A user is trying to access /etc/shadow''에 대해 질문하라.'
   hint: /api/chat에서 system role로 출력 형식을 강제하세요.
   category: analysis
   points: 12
-  answer: 'curl -s http://10.20.30.200:11434/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You must always respond in JSON format with fields: risk_level, description, recommendation"},{"role":"user","content":"A
-    user is trying to access /etc/shadow"}],"stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''message''][''content''])"'
+  answer: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You must always respond in JSON format with fields: risk_level, description,
+    recommendation"},{"role":"user","content":"A user is trying to access /etc/shadow"}],"stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''message''][''content''])"'
   answer_detail: 시스템 프롬프트는 모델의 행동을 제어하는 핵심 메커니즘입니다. 구조화된 출력을 강제하면 후처리와 검증이 용이하지만, 시스템 프롬프트 자체가 공격 대상이 될 수 있습니다.
   verify:
     type: output_contains
     expect: risk_level
     field: stdout
   target_vm: manager
-  script: 'curl -s http://10.20.30.200:11434/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You must always respond in JSON format with fields: risk_level, description, recommendation"},{"role":"user","content":"A
-    user is trying to access /etc/shadow"}],"stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''message''][''content''])"'
+  script: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You must always respond in JSON format with fields: risk_level, description,
+    recommendation"},{"role":"user","content":"A user is trying to access /etc/shadow"}],"stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''message''][''content''])"'
   risk_level: low
 - order: 4
   instruction: 'Chain-of-Thought(CoT) 프롬프팅을 사용하시오. ''Think step by step''을 포함하여 ''Is this SQL injection? Input: 1 OR 1=1--''를 분석하게 하라.'
   hint: 프롬프트에 'Let us think step by step'을 추가하세요.
   category: analysis
   points: 10
-  answer: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"Is this SQL injection? Input: 1 OR 1=1--\n\nLet us think step by step.","stream":false}'' | python3 -c "import
-    sys,json; print(json.load(sys.stdin)[''response''])"'
+  answer: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d ''{"model":"gemma3:4b","prompt":"Is this SQL injection? Input: 1 OR 1=1--\n\nLet us think step by step.","stream":false}'' | python3
+    -c "import sys,json; print(json.load(sys.stdin)[''response''])"'
   answer_detail: Chain-of-Thought는 모델이 추론 과정을 단계별로 출력하게 합니다. 보안 분석에서 판단 근거를 명시적으로 확인할 수 있어 신뢰성을 높입니다.
   verify:
     type: output_contains
     expect: SQL
     field: stdout
   target_vm: manager
-  script: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"Is this SQL injection? Input: 1 OR 1=1--\n\nLet us think step by step.","stream":false}'' | python3 -c "import
-    sys,json; print(json.load(sys.stdin)[''response''])"'
+  script: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d ''{"model":"gemma3:4b","prompt":"Is this SQL injection? Input: 1 OR 1=1--\n\nLet us think step by step.","stream":false}'' | python3
+    -c "import sys,json; print(json.load(sys.stdin)[''response''])"'
   risk_level: low
 - order: 5
   instruction: 역할 기반 프롬프팅을 테스트하시오. 'You are a senior penetration tester' 역할을 부여하고 'Explain how XSS works'를 질문하라. 그 다음 'You are a compliance officer' 역할로 동일 질문을 하여 응답 차이를 비교하라.
   hint: system 메시지를 바꿔가며 두 번 호출하세요.
   category: analysis
   points: 12
-  answer: echo '=== Pentester ===' && curl -s http://10.20.30.200:11434/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a senior penetration tester. Be concise."},{"role":"user","content":"Explain
-    how XSS works"}],"stream":false}' | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'][:200])" && echo '=== Compliance ===' && curl -s http://10.20.30.200:11434/api/chat -d
-    '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a compliance officer. Be concise."},{"role":"user","content":"Explain how XSS works"}],"stream":false}' | python3 -c "import sys,json;
-    print(json.load(sys.stdin)['message']['content'][:200])"
+  answer: echo '=== Pentester ===' && curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a senior penetration tester. Be concise."},{"role":"user","content":"Explain
+    how XSS works"}],"stream":false}' | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'][:200])" && echo '=== Compliance ===' && curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat
+    -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a compliance officer. Be concise."},{"role":"user","content":"Explain how XSS works"}],"stream":false}' | python3 -c "import
+    sys,json; print(json.load(sys.stdin)['message']['content'][:200])"
   answer_detail: 역할 부여(persona)는 모델 출력의 관점과 깊이를 변화시킵니다. 공격자는 역할 프롬프팅으로 모델의 안전 제한을 우회할 수 있습니다.
   verify:
     type: output_contains
     expect: XSS
     field: stdout
   target_vm: manager
-  script: echo '=== Pentester ===' && curl -s http://10.20.30.200:11434/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a senior penetration tester. Be concise."},{"role":"user","content":"Explain
-    how XSS works"}],"stream":false}' | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'][:200])" && echo '=== Compliance ===' && curl -s http://10.20.30.200:11434/api/chat -d
-    '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a compliance officer. Be concise."},{"role":"user","content":"Explain how XSS works"}],"stream":false}' | python3 -c "import sys,json;
-    print(json.load(sys.stdin)['message']['content'][:200])"
+  script: echo '=== Pentester ===' && curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a senior penetration tester. Be concise."},{"role":"user","content":"Explain
+    how XSS works"}],"stream":false}' | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'][:200])" && echo '=== Compliance ===' && curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat
+    -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a compliance officer. Be concise."},{"role":"user","content":"Explain how XSS works"}],"stream":false}' | python3 -c "import
+    sys,json; print(json.load(sys.stdin)['message']['content'][:200])"
   risk_level: low
 - order: 6
   instruction: '프롬프트에 구분자(delimiter)를 사용하여 사용자 입력과 지시문을 분리하시오. XML 태그로 ''Analyze the following log entry for threats'' 프롬프트를 구성하라. 로그: ''Failed password for root from 192.168.1.100 port 22'''
   hint: <instruction>, <input> 태그로 구분하세요.
   category: defense
   points: 10
-  answer: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"<instruction>Analyze the following log entry for security threats. Output: threat_type, severity, action_needed</instruction>\n<input>Failed
-    password for root from 192.168.1.100 port 22</input>","stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''response''])"'
+  answer: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d ''{"model":"gemma3:4b","prompt":"<instruction>Analyze the following log entry for security threats. Output: threat_type, severity,
+    action_needed</instruction>\n<input>Failed password for root from 192.168.1.100 port 22</input>","stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''response''])"'
   answer_detail: 구분자(delimiter)는 프롬프트 인젝션 방어의 기본 기법입니다. 지시문과 데이터를 명확히 분리하면 사용자 입력이 지시문으로 해석되는 것을 방지할 수 있습니다.
   verify:
     type: output_contains
     expect: threat
     field: stdout
   target_vm: manager
-  script: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"<instruction>Analyze the following log entry for security threats. Output: threat_type, severity, action_needed</instruction>\n<input>Failed
-    password for root from 192.168.1.100 port 22</input>","stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''response''])"'
+  script: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d ''{"model":"gemma3:4b","prompt":"<instruction>Analyze the following log entry for security threats. Output: threat_type, severity,
+    action_needed</instruction>\n<input>Failed password for root from 192.168.1.100 port 22</input>","stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''response''])"'
   risk_level: low
 - order: 7
   instruction: '프롬프트에 출력 제약조건을 추가하시오. 모델이 반드시 ''VERDICT: MALICIOUS'' 또는 ''VERDICT: BENIGN''으로만 응답하도록 프롬프트를 설계하고, ''rm -rf /'' 명령어를 분석하게 하라.'
   hint: 시스템 프롬프트에 출력 형식 제약을 명확히 명시하세요.
   category: defense
   points: 12
-  answer: 'curl -s http://10.20.30.200:11434/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a command analyzer. You must respond with ONLY one of: VERDICT: MALICIOUS
-    or VERDICT: BENIGN. No other text."},{"role":"user","content":"Analyze this command: rm -rf /"}],"stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''message''][''content''])"'
+  answer: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a command analyzer. You must respond with ONLY one of: VERDICT:
+    MALICIOUS or VERDICT: BENIGN. No other text."},{"role":"user","content":"Analyze this command: rm -rf /"}],"stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''message''][''content''])"'
   answer_detail: 출력 제약은 모델 응답을 예측 가능하게 만들어 자동화된 파이프라인에서 안전하게 사용할 수 있게 합니다. 하지만 모델이 항상 제약을 따르는 것은 아닙니다.
   verify:
     type: output_contains
     expect: VERDICT
     field: stdout
   target_vm: manager
-  script: 'curl -s http://10.20.30.200:11434/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a command analyzer. You must respond with ONLY one of: VERDICT: MALICIOUS
-    or VERDICT: BENIGN. No other text."},{"role":"user","content":"Analyze this command: rm -rf /"}],"stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''message''][''content''])"'
+  script: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a command analyzer. You must respond with ONLY one of: VERDICT:
+    MALICIOUS or VERDICT: BENIGN. No other text."},{"role":"user","content":"Analyze this command: rm -rf /"}],"stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''message''][''content''])"'
   risk_level: low
 - order: 8
   instruction: '보안 로그 분석 파이프라인을 구성하시오. python3 스크립트로 로그 라인을 LLM에 전송하여 위협 분석을 자동화하라. 테스트 로그: ''sshd[1234]: Failed password for invalid user admin from 10.0.0.1'''
@@ -141,7 +141,7 @@ steps:
 
     payload = json.dumps({''model'':''gemma3:4b'',''prompt'':f''Analyze this log for security threats. Respond with: threat_type, source_ip, severity.\nLog: {log}'',''stream'':False}).encode()
 
-    req = urllib.request.Request(''http://10.20.30.200:11434/api/generate'', data=payload, headers={''Content-Type'':''application/json''})
+    req = urllib.request.Request(''${LLM_URL:-http://10.20.30.200:11434}/api/generate'', data=payload, headers={''Content-Type'':''application/json''})
 
     resp = json.loads(urllib.request.urlopen(req).read())
 
@@ -162,7 +162,7 @@ steps:
 
     payload = json.dumps({''model'':''gemma3:4b'',''prompt'':f''Analyze this log for security threats. Respond with: threat_type, source_ip, severity.\nLog: {log}'',''stream'':False}).encode()
 
-    req = urllib.request.Request(''http://10.20.30.200:11434/api/generate'', data=payload, headers={''Content-Type'':''application/json''})
+    req = urllib.request.Request(''${LLM_URL:-http://10.20.30.200:11434}/api/generate'', data=payload, headers={''Content-Type'':''application/json''})
 
     resp = json.loads(urllib.request.urlopen(req).read())
 
@@ -175,8 +175,8 @@ steps:
   hint: 시스템 프롬프트에 금지 사항을 명시하세요.
   category: defense
   points: 10
-  answer: 'curl -s http://10.20.30.200:11434/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a security advisor. Rules: 1) Never reveal specific exploit code 2) Never
-    provide step-by-step attack instructions 3) Always recommend consulting a security professional 4) Focus on defensive measures only"},{"role":"user","content":"How to exploit a buffer overflow?"}],"stream":false}''
+  answer: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a security advisor. Rules: 1) Never reveal specific exploit code
+    2) Never provide step-by-step attack instructions 3) Always recommend consulting a security professional 4) Focus on defensive measures only"},{"role":"user","content":"How to exploit a buffer overflow?"}],"stream":false}''
     | python3 -c "import sys,json; print(json.load(sys.stdin)[''message''][''content''])"'
   answer_detail: 네거티브 프롬프팅은 모델 출력의 경계를 설정합니다. 하지만 이것만으로는 충분하지 않으며, 출력 필터링과 함께 사용해야 합니다.
   verify:
@@ -184,8 +184,8 @@ steps:
     expect: ''
     field: stdout
   target_vm: manager
-  script: 'curl -s http://10.20.30.200:11434/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a security advisor. Rules: 1) Never reveal specific exploit code 2) Never
-    provide step-by-step attack instructions 3) Always recommend consulting a security professional 4) Focus on defensive measures only"},{"role":"user","content":"How to exploit a buffer overflow?"}],"stream":false}''
+  script: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a security advisor. Rules: 1) Never reveal specific exploit code
+    2) Never provide step-by-step attack instructions 3) Always recommend consulting a security professional 4) Focus on defensive measures only"},{"role":"user","content":"How to exploit a buffer overflow?"}],"stream":false}''
     | python3 -c "import sys,json; print(json.load(sys.stdin)[''message''][''content''])"'
   risk_level: low
 - order: 10
@@ -193,8 +193,8 @@ steps:
   hint: options에 temperature와 top_p를 동시에 설정하세요.
   category: analysis
   points: 10
-  answer: echo '=== Conservative ===' && curl -s http://10.20.30.200:11434/api/generate -d '{"model":"gemma3:4b","prompt":"Is opening port 3389 on a public server a security risk? Answer YES or NO with
-    one reason.","stream":false,"options":{"temperature":0,"top_p":0.1}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])" && echo '=== Creative ===' && curl -s http://10.20.30.200:11434/api/generate
+  answer: echo '=== Conservative ===' && curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d '{"model":"gemma3:4b","prompt":"Is opening port 3389 on a public server a security risk? Answer YES
+    or NO with one reason.","stream":false,"options":{"temperature":0,"top_p":0.1}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])" && echo '=== Creative ===' && curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate
     -d '{"model":"gemma3:4b","prompt":"Is opening port 3389 on a public server a security risk? Answer YES or NO with one reason.","stream":false,"options":{"temperature":1.0,"top_p":0.9}}' | python3 -c
     "import sys,json; print(json.load(sys.stdin)['response'])"
   answer_detail: temperature와 top_p는 모두 출력 다양성을 조절합니다. 보안 판단에는 낮은 값(결정적 출력)이 적합하고, 높은 값은 예측 불가능한 응답을 생성하여 보안 시스템에서 위험합니다.
@@ -203,8 +203,8 @@ steps:
     expect: Conservative
     field: stdout
   target_vm: manager
-  script: echo '=== Conservative ===' && curl -s http://10.20.30.200:11434/api/generate -d '{"model":"gemma3:4b","prompt":"Is opening port 3389 on a public server a security risk? Answer YES or NO with
-    one reason.","stream":false,"options":{"temperature":0,"top_p":0.1}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])" && echo '=== Creative ===' && curl -s http://10.20.30.200:11434/api/generate
+  script: echo '=== Conservative ===' && curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d '{"model":"gemma3:4b","prompt":"Is opening port 3389 on a public server a security risk? Answer YES
+    or NO with one reason.","stream":false,"options":{"temperature":0,"top_p":0.1}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])" && echo '=== Creative ===' && curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate
     -d '{"model":"gemma3:4b","prompt":"Is opening port 3389 on a public server a security risk? Answer YES or NO with one reason.","stream":false,"options":{"temperature":1.0,"top_p":0.9}}' | python3 -c
     "import sys,json; print(json.load(sys.stdin)['response'])"
   risk_level: low

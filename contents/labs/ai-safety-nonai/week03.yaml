@@ -22,7 +22,7 @@ steps:
 
     Question: {q}
 
-    Topic:'',''stream'':False,''options'':{''temperature'':0,''num_predict'':5}}).encode()     req = urllib.request.Request(''http://10.20.30.200:11434/api/generate'',data=data,headers={''Content-Type'':''application/json''})     topic
+    Topic:'',''stream'':False,''options'':{''temperature'':0,''num_predict'':5}}).encode()     req = urllib.request.Request(''${LLM_URL:-http://10.20.30.200:11434}/api/generate'',data=data,headers={''Content-Type'':''application/json''})     topic
     = json.loads(urllib.request.urlopen(req).read())[''response''].strip().lower().split()[0]     return topic tests = [''How to configure SSH?'',''What is your favorite movie?'',''Explain AES encryption'',''How
     to cook pasta?'',''Best firewall settings?''] for q in tests:     topic = classify_topic(q)     allowed = any(a in topic for a in ALLOWED)     print(f''[{"ALLOW" if allowed else "DENY "}] Topic:{topic:15s}
     | {q}'') "'
@@ -38,7 +38,7 @@ steps:
   category: defense
   points: 10
   answer: 'python3 -c " import json, urllib.request def limited_query(prompt, max_words=50, max_chars=300):     data = json.dumps({''model'':''gemma3:4b'',''prompt'':prompt,''stream'':False,''options'':{''num_predict'':80}}).encode()     req
-    = urllib.request.Request(''http://10.20.30.200:11434/api/generate'',data=data,headers={''Content-Type'':''application/json''})     resp = json.loads(urllib.request.urlopen(req).read())[''response'']     words
+    = urllib.request.Request(''${LLM_URL:-http://10.20.30.200:11434}/api/generate'',data=data,headers={''Content-Type'':''application/json''})     resp = json.loads(urllib.request.urlopen(req).read())[''response'']     words
     = resp.split()     if len(words) > max_words:         resp = '' ''.join(words[:max_words]) + ''... [TRUNCATED]''     if len(resp) > max_chars:         resp = resp[:max_chars] + ''... [TRUNCATED]''     return
     resp r = limited_query(''Write a very long essay about cybersecurity history from the beginning of computing'') print(f''Response ({len(r)} chars, {len(r.split())} words):'') print(r) "'
   answer_detail: 출력 길이 제한은 과도한 토큰 생성을 방지합니다. 리소스 남용과 민감 정보 유출 확률을 줄이는 기본 가드레일입니다.
@@ -57,7 +57,7 @@ steps:
 
     Text: {text[:200]}
 
-    Classification:'',''stream'':False,''options'':{''temperature'':0,''num_predict'':5}}).encode()     req = urllib.request.Request(''http://10.20.30.200:11434/api/generate'',data=data,headers={''Content-Type'':''application/json''})     r
+    Classification:'',''stream'':False,''options'':{''temperature'':0,''num_predict'':5}}).encode()     req = urllib.request.Request(''${LLM_URL:-http://10.20.30.200:11434}/api/generate'',data=data,headers={''Content-Type'':''application/json''})     r
     = json.loads(urllib.request.urlopen(req).read())[''response''].upper()     for c in [''DANGER'',''CAUTION'',''SAFE'']:         if c in r: return c     return ''CAUTION'' texts = [''Use strong passwords
     with 12+ characters'',''SQL injection: input 1 OR 1=1 to bypass login'',''Always update your software regularly''] for t in texts:     cat = classify_content(t)     action = {''SAFE'':''DELIVER'',''CAUTION'':''FLAG'',''DANGER'':''BLOCK''}[cat]     print(f''[{cat:7s}]
     -> {action:7s} | {t[:55]}'') "'
@@ -73,7 +73,7 @@ steps:
   category: defense
   points: 12
   answer: 'python3 -c " import json, urllib.request def structured_query(prompt):     sys = ''Respond ONLY in JSON: {"answer": "...", "confidence": "high/medium/low", "category": "..."}''     data = json.dumps({''model'':''gemma3:4b'',''messages'':[{''role'':''system'',''content'':sys},{''role'':''user'',''content'':prompt}],''stream'':False,''options'':{''temperature'':0,''num_predict'':80}}).encode()     req
-    = urllib.request.Request(''http://10.20.30.200:11434/api/chat'',data=data,headers={''Content-Type'':''application/json''})     resp = json.loads(urllib.request.urlopen(req).read())[''message''][''content'']     try:         start
+    = urllib.request.Request(''${LLM_URL:-http://10.20.30.200:11434}/api/chat'',data=data,headers={''Content-Type'':''application/json''})     resp = json.loads(urllib.request.urlopen(req).read())[''message''][''content'']     try:         start
     = resp.index(''{'')         end = resp.rindex(''}'') + 1         parsed = json.loads(resp[start:end])         if ''answer'' in parsed and ''confidence'' in parsed:             return ''VALID'', parsed     except:
     pass     return ''INVALID'', resp[:80] for q in [''What port does SSH use?'',''Is Telnet secure?'',''What is HTTPS?'']:     status, result = structured_query(q)     print(f''[{status}] {q}'')     print(f''  {json.dumps(result)
     if isinstance(result,dict) else result}'')     print() "'
@@ -90,7 +90,7 @@ steps:
   points: 10
   answer: 'python3 -c " import json, urllib.request class TokenGuard:     def __init__(self, limit=300):         self.limit = limit         self.used = 0     def query(self, prompt):         if self.used
     >= self.limit:             return f''BUDGET_EXCEEDED ({self.used}/{self.limit})''         data = json.dumps({''model'':''gemma3:4b'',''prompt'':prompt,''stream'':False,''options'':{''num_predict'':20}}).encode()         req
-    = urllib.request.Request(''http://10.20.30.200:11434/api/generate'',data=data,headers={''Content-Type'':''application/json''})         resp = json.loads(urllib.request.urlopen(req).read())         tokens
+    = urllib.request.Request(''${LLM_URL:-http://10.20.30.200:11434}/api/generate'',data=data,headers={''Content-Type'':''application/json''})         resp = json.loads(urllib.request.urlopen(req).read())         tokens
     = resp.get(''eval_count'',0) + resp.get(''prompt_eval_count'',0)         self.used += tokens         return f''OK ({self.used}/{self.limit} tokens) - {resp["response"][:30]}'' guard = TokenGuard(300)
     for q in [''What is AI?'',''Explain SSH'',''Define VPN'',''What is TLS?'',''Explain DNS'',''What is HTTP?'',''Define TCP'',''What is UDP?'']:     r = guard.query(q)     print(f''{q:20s} -> {r}'') "'
   answer_detail: 토큰 예산 관리는 비용 폭주와 리소스 남용을 방지합니다. 사용자/세션별 한도를 설정하여 공정한 리소스 배분을 보장합니다.

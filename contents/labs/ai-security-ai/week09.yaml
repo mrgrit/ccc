@@ -17,7 +17,7 @@ steps:
   hint: CVE-2024-99999 같은 가짜 CVE에 대해 질문하세요.
   category: analysis
   points: 12
-  answer: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"Explain CVE-2024-99999 in detail. What software is affected and what is the CVSS score?","stream":false,"options":{"temperature":0}}''
+  answer: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d ''{"model":"gemma3:4b","prompt":"Explain CVE-2024-99999 in detail. What software is affected and what is the CVSS score?","stream":false,"options":{"temperature":0}}''
     | python3 -c "import sys,json; r=json.load(sys.stdin)[''response'']; print(r[:300]); print(''\n=== Hallucination Check ===''); print(''WARNING: This CVE does not exist. Any detailed description is a
     hallucination.''); has_details = any(w in r.lower() for w in [''cvss'',''affected'',''vulnerability'',''score'',''patch'']); print(f''Hallucination detected: {has_details}'')"'
   answer_detail: 환각(hallucination)은 LLM이 사실이 아닌 정보를 자신있게 생성하는 현상입니다. 보안 맥락에서 잘못된 CVE 정보, 존재하지 않는 취약점 설명은 심각한 문제를 야기합니다.
@@ -26,7 +26,7 @@ steps:
     expect: Hallucination
     field: stdout
   target_vm: manager
-  script: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"Explain CVE-2024-99999 in detail. What software is affected and what is the CVSS score?","stream":false,"options":{"temperature":0}}''
+  script: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d ''{"model":"gemma3:4b","prompt":"Explain CVE-2024-99999 in detail. What software is affected and what is the CVSS score?","stream":false,"options":{"temperature":0}}''
     | python3 -c "import sys,json; r=json.load(sys.stdin)[''response'']; print(r[:300]); print(''\n=== Hallucination Check ===''); print(''WARNING: This CVE does not exist. Any detailed description is a
     hallucination.''); has_details = any(w in r.lower() for w in [''cvss'',''affected'',''vulnerability'',''score'',''patch'']); print(f''Hallucination detected: {has_details}'')"'
   risk_level: low
@@ -36,7 +36,7 @@ steps:
   category: analysis
   points: 12
   answer: "python3 -c \"\nimport json, urllib.request\ndef query(prompt):\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':40,'temperature':0.5}}).encode()\n\
-    \    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    return json.loads(urllib.request.urlopen(req).read())['response'].strip()\n\
+    \    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n    return json.loads(urllib.request.urlopen(req).read())['response'].strip()\n\
     \nquestion = 'What port does HTTPS use? Answer with just the number.'\nresponses = [query(question) for _ in range(5)]\nprint(f'Question: {question}')\nfor i, r in enumerate(responses):\n    print(f'\
     \  Run {i+1}: {r[:40]}')\n\n# Extract numbers\nimport re\nnumbers = []\nfor r in responses:\n    nums = re.findall(r'\\b\\d+\\b', r)\n    if nums: numbers.append(nums[0])\nfrom collections import Counter\n\
     counts = Counter(numbers)\nmost_common = counts.most_common(1)[0] if counts else ('?', 0)\nprint(f'\\nConsensus: {most_common[0]} (appeared {most_common[1]}/{len(responses)} times)')\nprint(f'Confidence:\
@@ -48,7 +48,7 @@ steps:
     field: stdout
   target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request\ndef query(prompt):\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':40,'temperature':0.5}}).encode()\n\
-    \    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    return json.loads(urllib.request.urlopen(req).read())['response'].strip()\n\
+    \    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n    return json.loads(urllib.request.urlopen(req).read())['response'].strip()\n\
     \nquestion = 'What port does HTTPS use? Answer with just the number.'\nresponses = [query(question) for _ in range(5)]\nprint(f'Question: {question}')\nfor i, r in enumerate(responses):\n    print(f'\
     \  Run {i+1}: {r[:40]}')\n\n# Extract numbers\nimport re\nnumbers = []\nfor r in responses:\n    nums = re.findall(r'\\b\\d+\\b', r)\n    if nums: numbers.append(nums[0])\nfrom collections import Counter\n\
     counts = Counter(numbers)\nmost_common = counts.most_common(1)[0] if counts else ('?', 0)\nprint(f'\\nConsensus: {most_common[0]} (appeared {most_common[1]}/{len(responses)} times)')\nprint(f'Confidence:\
@@ -59,8 +59,8 @@ steps:
   hint: CoT(Chain-of-Thought)를 사용하여 판단 과정을 명시하게 하세요.
   category: analysis
   points: 10
-  answer: 'curl -s http://10.20.30.200:11434/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a security analyst. For every analysis, explain your reasoning step by step.
-    Format: STEP 1: ... STEP 2: ... VERDICT: ..."},{"role":"user","content":"Analyze this log: Multiple failed SSH logins from 10.0.0.5 followed by successful login, then immediate sudo commands."}],"stream":false}''
+  answer: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a security analyst. For every analysis, explain your reasoning
+    step by step. Format: STEP 1: ... STEP 2: ... VERDICT: ..."},{"role":"user","content":"Analyze this log: Multiple failed SSH logins from 10.0.0.5 followed by successful login, then immediate sudo commands."}],"stream":false}''
     | python3 -c "import sys,json; r=json.load(sys.stdin)[''message''][''content'']; print(r[:500]); import re; steps=re.findall(r''STEP \d+'', r); print(f''\nReasoning steps found: {len(steps)}'')"'
   answer_detail: 설명가능 AI는 모델의 판단 과정을 투명하게 제시합니다. 보안 분석에서 판단 근거가 명확하면 오류를 발견하고 수정하기 쉽고, 규정 준수(compliance) 요건을 충족합니다.
   verify:
@@ -68,8 +68,8 @@ steps:
     expect: STEP
     field: stdout
   target_vm: manager
-  script: 'curl -s http://10.20.30.200:11434/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a security analyst. For every analysis, explain your reasoning step by step.
-    Format: STEP 1: ... STEP 2: ... VERDICT: ..."},{"role":"user","content":"Analyze this log: Multiple failed SSH logins from 10.0.0.5 followed by successful login, then immediate sudo commands."}],"stream":false}''
+  script: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a security analyst. For every analysis, explain your reasoning
+    step by step. Format: STEP 1: ... STEP 2: ... VERDICT: ..."},{"role":"user","content":"Analyze this log: Multiple failed SSH logins from 10.0.0.5 followed by successful login, then immediate sudo commands."}],"stream":false}''
     | python3 -c "import sys,json; r=json.load(sys.stdin)[''message''][''content'']; print(r[:500]); import re; steps=re.findall(r''STEP \d+'', r); print(f''\nReasoning steps found: {len(steps)}'')"'
   risk_level: low
 - order: 4
@@ -78,7 +78,7 @@ steps:
   category: analysis
   points: 12
   answer: "python3 -c \"\nimport json, urllib.request\ndef query(prompt):\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':50,'temperature':0}}).encode()\n\
-    \    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    return json.loads(urllib.request.urlopen(req).read())['response'].strip()[:80]\n\
+    \    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n    return json.loads(urllib.request.urlopen(req).read())['response'].strip()[:80]\n\
     \nvariants = [\n    ('Direct', 'Is port 23 (Telnet) secure for remote administration?'),\n    ('Classify', 'Classify the security risk of Telnet on port 23: HIGH, MEDIUM, or LOW'),\n    ('Yes/No', 'Should\
     \ Telnet (port 23) be enabled on production servers? Answer YES or NO.')\n]\nprint('Cross-validation: Telnet Security')\nprint('='*50)\nfor style, prompt in variants:\n    resp = query(prompt)\n   \
     \ print(f'{style:10s}: {resp}')\nprint('\\nExpected consensus: Telnet is insecure (HIGH risk, NO)')\n\""
@@ -89,7 +89,7 @@ steps:
     field: stdout
   target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request\ndef query(prompt):\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':50,'temperature':0}}).encode()\n\
-    \    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    return json.loads(urllib.request.urlopen(req).read())['response'].strip()[:80]\n\
+    \    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n    return json.loads(urllib.request.urlopen(req).read())['response'].strip()[:80]\n\
     \nvariants = [\n    ('Direct', 'Is port 23 (Telnet) secure for remote administration?'),\n    ('Classify', 'Classify the security risk of Telnet on port 23: HIGH, MEDIUM, or LOW'),\n    ('Yes/No', 'Should\
     \ Telnet (port 23) be enabled on production servers? Answer YES or NO.')\n]\nprint('Cross-validation: Telnet Security')\nprint('='*50)\nfor style, prompt in variants:\n    resp = query(prompt)\n   \
     \ print(f'{style:10s}: {resp}')\nprint('\\nExpected consensus: Telnet is insecure (HIGH risk, NO)')\n\""
@@ -102,7 +102,7 @@ steps:
   answer: "python3 -c \"\nimport json, urllib.request, re\nqa_pairs = [\n    ('What is the default SSH port?', '22'),\n    ('What is the CVSS score range?', '0.0 to 10.0'),\n    ('Who created the Python\
     \ language?', 'Guido van Rossum'),\n    ('What year was CVE-2024-99999 published?', 'DOES NOT EXIST'),\n    ('What is the atomic number of Linuxium?', 'DOES NOT EXIST')\n]\nfor q, expected in qa_pairs:\n\
     \    prompt = f'{q}\\n\\nProvide your answer and your confidence level (0-100%). Format: ANSWER: ... CONFIDENCE: X%'\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':60}}).encode()\n\
-    \    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    resp = json.loads(urllib.request.urlopen(req).read())['response']\n\
+    \    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n    resp = json.loads(urllib.request.urlopen(req).read())['response']\n\
     \    conf_match = re.search(r'(\\d+)%', resp)\n    conf = int(conf_match.group(1)) if conf_match else -1\n    is_real = expected != 'DOES NOT EXIST'\n    calibrated = (conf > 70 and is_real) or (conf\
     \ < 50 and not is_real)\n    print(f'Q: {q[:45]}')\n    print(f'  Expected: {expected} | Confidence: {conf}% | Calibrated: {calibrated}')\n    print(f'  Response: {resp[:60]}')\n    print()\n\""
   answer_detail: 모델 확신도 측정은 환각 탐지의 핵심 기법입니다. 잘 보정된(calibrated) 모델은 모르는 것에 낮은 확신도를, 아는 것에 높은 확신도를 보여야 합니다.
@@ -114,7 +114,7 @@ steps:
   script: "python3 -c \"\nimport json, urllib.request, re\nqa_pairs = [\n    ('What is the default SSH port?', '22'),\n    ('What is the CVSS score range?', '0.0 to 10.0'),\n    ('Who created the Python\
     \ language?', 'Guido van Rossum'),\n    ('What year was CVE-2024-99999 published?', 'DOES NOT EXIST'),\n    ('What is the atomic number of Linuxium?', 'DOES NOT EXIST')\n]\nfor q, expected in qa_pairs:\n\
     \    prompt = f'{q}\\n\\nProvide your answer and your confidence level (0-100%). Format: ANSWER: ... CONFIDENCE: X%'\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':60}}).encode()\n\
-    \    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    resp = json.loads(urllib.request.urlopen(req).read())['response']\n\
+    \    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n    resp = json.loads(urllib.request.urlopen(req).read())['response']\n\
     \    conf_match = re.search(r'(\\d+)%', resp)\n    conf = int(conf_match.group(1)) if conf_match else -1\n    is_real = expected != 'DOES NOT EXIST'\n    calibrated = (conf > 70 and is_real) or (conf\
     \ < 50 and not is_real)\n    print(f'Q: {q[:45]}')\n    print(f'  Expected: {expected} | Confidence: {conf}% | Calibrated: {calibrated}')\n    print(f'  Response: {resp[:60]}')\n    print()\n\""
   risk_level: low
@@ -124,9 +124,10 @@ steps:
   category: defense
   points: 12
   answer: "python3 -c \"\nimport json, urllib.request\ndef query(prompt, sys=None):\n    if sys:\n        payload = {'model':'gemma3:4b','messages':[{'role':'system','content':sys},{'role':'user','content':prompt}],'stream':False,'options':{'temperature':0,'num_predict':100}}\n\
-    \        data = json.dumps(payload).encode()\n        req = urllib.request.Request('http://10.20.30.200:11434/api/chat',data=data,headers={'Content-Type':'application/json'})\n        return json.loads(urllib.request.urlopen(req).read())['message']['content']\n\
-    \    else:\n        payload = {'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':100}}\n        data = json.dumps(payload).encode()\n        req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
-    \        return json.loads(urllib.request.urlopen(req).read())['response']\n\n# Get initial response\nresp = query('What are the top 3 most common network ports and their services?')\nprint('=== Initial\
+    \        data = json.dumps(payload).encode()\n        req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/chat',data=data,headers={'Content-Type':'application/json'})\n        return\
+    \ json.loads(urllib.request.urlopen(req).read())['message']['content']\n    else:\n        payload = {'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':100}}\n\
+    \        data = json.dumps(payload).encode()\n        req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n     \
+    \   return json.loads(urllib.request.urlopen(req).read())['response']\n\n# Get initial response\nresp = query('What are the top 3 most common network ports and their services?')\nprint('=== Initial\
     \ Response ===')\nprint(resp[:200])\n\n# Extract and verify claims\nverify_prompt = f'From this text, extract factual claims as a numbered list. Then for each, say TRUE or FALSE:\\n\\n{resp[:300]}'\n\
     verification = query(verify_prompt, 'You are a fact checker. Be strict and accurate.')\nprint('\\n=== Fact Verification ===')\nprint(verification[:300])\n\""
   answer_detail: 사실 검증 파이프라인은 LLM의 출력에서 주장을 추출하고 독립적으로 검증합니다. 자동화된 팩트체킹은 환각에 의한 잘못된 보안 조언을 방지합니다.
@@ -136,9 +137,10 @@ steps:
     field: stdout
   target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request\ndef query(prompt, sys=None):\n    if sys:\n        payload = {'model':'gemma3:4b','messages':[{'role':'system','content':sys},{'role':'user','content':prompt}],'stream':False,'options':{'temperature':0,'num_predict':100}}\n\
-    \        data = json.dumps(payload).encode()\n        req = urllib.request.Request('http://10.20.30.200:11434/api/chat',data=data,headers={'Content-Type':'application/json'})\n        return json.loads(urllib.request.urlopen(req).read())['message']['content']\n\
-    \    else:\n        payload = {'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':100}}\n        data = json.dumps(payload).encode()\n        req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
-    \        return json.loads(urllib.request.urlopen(req).read())['response']\n\n# Get initial response\nresp = query('What are the top 3 most common network ports and their services?')\nprint('=== Initial\
+    \        data = json.dumps(payload).encode()\n        req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/chat',data=data,headers={'Content-Type':'application/json'})\n        return\
+    \ json.loads(urllib.request.urlopen(req).read())['message']['content']\n    else:\n        payload = {'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':100}}\n\
+    \        data = json.dumps(payload).encode()\n        req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n     \
+    \   return json.loads(urllib.request.urlopen(req).read())['response']\n\n# Get initial response\nresp = query('What are the top 3 most common network ports and their services?')\nprint('=== Initial\
     \ Response ===')\nprint(resp[:200])\n\n# Extract and verify claims\nverify_prompt = f'From this text, extract factual claims as a numbered list. Then for each, say TRUE or FALSE:\\n\\n{resp[:300]}'\n\
     verification = query(verify_prompt, 'You are a fact checker. Be strict and accurate.')\nprint('\\n=== Fact Verification ===')\nprint(verification[:300])\n\""
   risk_level: low
@@ -147,8 +149,8 @@ steps:
   hint: '모델에게 각 주장에 [SOURCE: ...] 또는 [NO SOURCE]를 붙이게 하세요.'
   category: defense
   points: 10
-  answer: 'curl -s http://10.20.30.200:11434/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"For every factual claim, add a source tag. Use [SOURCE: RFC/CVE/NIST/OWASP/...] for
-    known sources or [NO SOURCE] if unsure. Be honest about uncertainty."},{"role":"user","content":"Explain the security risks of using HTTP instead of HTTPS."}],"stream":false,"options":{"num_predict":200}}''
+  answer: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"For every factual claim, add a source tag. Use [SOURCE: RFC/CVE/NIST/OWASP/...]
+    for known sources or [NO SOURCE] if unsure. Be honest about uncertainty."},{"role":"user","content":"Explain the security risks of using HTTP instead of HTTPS."}],"stream":false,"options":{"num_predict":200}}''
     | python3 -c "
 
     import sys, json, re
@@ -176,8 +178,8 @@ steps:
     expect: Attribution Summary
     field: stdout
   target_vm: manager
-  script: 'curl -s http://10.20.30.200:11434/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"For every factual claim, add a source tag. Use [SOURCE: RFC/CVE/NIST/OWASP/...] for
-    known sources or [NO SOURCE] if unsure. Be honest about uncertainty."},{"role":"user","content":"Explain the security risks of using HTTP instead of HTTPS."}],"stream":false,"options":{"num_predict":200}}''
+  script: 'curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"For every factual claim, add a source tag. Use [SOURCE: RFC/CVE/NIST/OWASP/...]
+    for known sources or [NO SOURCE] if unsure. Be honest about uncertainty."},{"role":"user","content":"Explain the security risks of using HTTP instead of HTTPS."}],"stream":false,"options":{"num_predict":200}}''
     | python3 -c "
 
     import sys, json, re
@@ -209,7 +211,7 @@ steps:
     \ sure','I think','it seems','appears to']\n    certain_words = ['definitely','certainly','always','never','must','is','are','will','guaranteed']\n    text_lower = text.lower()\n    unc_count = sum(1\
     \ for w in uncertain_words if w in text_lower)\n    cert_count = sum(1 for w in certain_words if w in text_lower)\n    total = unc_count + cert_count\n    if total == 0: return 0.5\n    return unc_count\
     \ / total\n\nquestions = [\n    'What port does SSH use?',\n    'Will quantum computing break RSA encryption?',\n    'Is this IP address 10.0.0.5 malicious?',\n    'What is the best firewall software?'\n\
-    ]\nfor q in questions:\n    data = json.dumps({'model':'gemma3:4b','prompt':q,'stream':False,'options':{'num_predict':80}}).encode()\n    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
+    ]\nfor q in questions:\n    data = json.dumps({'model':'gemma3:4b','prompt':q,'stream':False,'options':{'num_predict':80}}).encode()\n    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \    resp = json.loads(urllib.request.urlopen(req).read())['response']\n    unc = measure_uncertainty(resp)\n    level = 'HIGH' if unc > 0.6 else 'MEDIUM' if unc > 0.3 else 'LOW'\n    print(f'[Uncertainty:\
     \ {level:6s} ({unc:.2f})] {q}')\n    print(f'  Response: {resp[:80]}')\n    print()\n\""
   answer_detail: 불확실성 정량화는 모델이 사용하는 언어적 표현에서 확신도를 추론합니다. 불확실한 응답은 추가 검증이 필요하며, 자동화된 의사결정에 사용하면 안 됩니다.
@@ -222,7 +224,7 @@ steps:
     \ sure','I think','it seems','appears to']\n    certain_words = ['definitely','certainly','always','never','must','is','are','will','guaranteed']\n    text_lower = text.lower()\n    unc_count = sum(1\
     \ for w in uncertain_words if w in text_lower)\n    cert_count = sum(1 for w in certain_words if w in text_lower)\n    total = unc_count + cert_count\n    if total == 0: return 0.5\n    return unc_count\
     \ / total\n\nquestions = [\n    'What port does SSH use?',\n    'Will quantum computing break RSA encryption?',\n    'Is this IP address 10.0.0.5 malicious?',\n    'What is the best firewall software?'\n\
-    ]\nfor q in questions:\n    data = json.dumps({'model':'gemma3:4b','prompt':q,'stream':False,'options':{'num_predict':80}}).encode()\n    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
+    ]\nfor q in questions:\n    data = json.dumps({'model':'gemma3:4b','prompt':q,'stream':False,'options':{'num_predict':80}}).encode()\n    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \    resp = json.loads(urllib.request.urlopen(req).read())['response']\n    unc = measure_uncertainty(resp)\n    level = 'HIGH' if unc > 0.6 else 'MEDIUM' if unc > 0.3 else 'LOW'\n    print(f'[Uncertainty:\
     \ {level:6s} ({unc:.2f})] {q}')\n    print(f'  Response: {resp[:80]}')\n    print()\n\""
   risk_level: low

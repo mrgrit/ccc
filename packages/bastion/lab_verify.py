@@ -25,6 +25,13 @@ def verify_lab_step(step: dict, vm_ips: dict[str, str]) -> dict:
     if not answer:
         return {"passed": False, "detail": "No answer/command"}
 
+    # 환경변수 주입 (LLM_URL 등)
+    import os
+    llm_url = os.getenv("LLM_BASE_URL", "http://10.20.30.200:11434")
+    env_prefix = f"export LLM_URL='{llm_url}'; "
+    if "${LLM_URL" in answer:
+        answer = env_prefix + answer
+
     r = run_command(vm_ip, answer, timeout=20)
     output = r.get(field, r.get("stdout", ""))
 
