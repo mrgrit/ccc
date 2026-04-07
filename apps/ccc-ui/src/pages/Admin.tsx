@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api.ts'
 
-const tabs = ['Groups', 'Students', 'Promotions'] as const
+const tabs = ['Groups', 'Students', 'Promotions', 'Lab Verify'] as const
 type Tab = typeof tabs[number]
 
 export default function Admin() {
@@ -162,6 +162,92 @@ export default function Admin() {
                 )}
               </div>
             )
+          })}
+        </div>
+      )}
+
+      {/* Lab Verify Tab */}
+      {tab === 'Lab Verify' && <LabVerifyPanel />}
+    </div>
+  )
+}
+
+function LabVerifyPanel() {
+  const [verifyLog, setVerifyLog] = useState<any[]>([])
+  const [running, setRunning] = useState(false)
+  const [sampleWeeks, setSampleWeeks] = useState('1,8,15')
+
+  const runVerify = async () => {
+    setRunning(true)
+    setVerifyLog([])
+    const weeks = sampleWeeks.split(',').map(w => parseInt(w.trim())).filter(w => !isNaN(w))
+    try {
+      const token = localStorage.getItem('ccc_token') || ''
+      const resp = await fetch('/api/labs/verify-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-API-Key': 'ccc-api-key-2026', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({ sample_weeks: weeks }),
+      })
+      const reader = resp.body?.getReader()
+      const decoder = new TextDecoder()
+      if (reader) {
+        let buf = ''
+        while (true) {
+          const { done, value } = await reader.read()
+          if (done) break
+          buf += decoder.decode(value, { stream: true })
+          const lines = buf.split('\n')
+          buf = lines.pop() || ''
+          for (const line of lines) {
+            if (line.startsWith('data: ')) {
+              try { setVerifyLog(prev => [...prev, JSON.parse(line.slice(6))]) } catch {}
+            }
+          }
+        }
+      }
+    } catch (e: any) {
+      setVerifyLog(prev => [...prev, { event: 'error', detail: e.message }])
+    }
+    setRunning(false)
+  }
+
+  return (
+    <div>
+      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 20 }}>
+        <input value={sampleWeeks} onChange={e => setSampleWeeks(e.target.value)}
+          placeholder="Sample weeks (e.g., 1,8,15)" style={{ ...inputStyle, flex: 'none', width: 200 }} />
+        <button onClick={runVerify} disabled={running} style={{
+          ...btnStyle, background: running ? '#21262d' : '#58a6ff',
+        }}>{running ? 'Testing...' : 'Run Lab Verify'}</button>
+        <span style={{ fontSize: 12, color: '#8b949e' }}>
+          비어있으면 전체 주차 테스트 (오래 걸림)
+        </span>
+      </div>
+
+      {verifyLog.length > 0 && (
+        <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 8, padding: 16, fontFamily: 'Consolas,monospace', fontSize: 12, maxHeight: 500, overflowY: 'auto' }}>
+          {verifyLog.map((evt, i) => {
+            if (evt.event === 'lab_start') return (
+              <div key={i} style={{ padding: '4px 0', color: '#58a6ff', fontWeight: 600, borderTop: i > 0 ? '1px solid #21262d' : 'none', marginTop: i > 0 ? 4 : 0 }}>
+                {evt.lab_id} — {evt.title} ({evt.total_steps} steps)
+              </div>
+            )
+            if (evt.event === 'lab_step') return (
+              <div key={i} style={{ padding: '1px 0 1px 16px', color: evt.passed ? '#3fb950' : '#f85149' }}>
+                {evt.passed ? 'P' : 'F'} step{evt.step}({evt.target_vm}) {evt.instruction}
+              </div>
+            )
+            if (evt.event === 'lab_done') return (
+              <div key={i} style={{ padding: '2px 0 2px 16px', fontWeight: 600, color: evt.pct >= 80 ? '#3fb950' : evt.pct >= 50 ? '#d29922' : '#f85149' }}>
+                {evt.passed}/{evt.total} ({evt.pct}%)
+              </div>
+            )
+            if (evt.event === 'verify_complete') return (
+              <div key={i} style={{ padding: '8px 0', fontWeight: 700, borderTop: '1px solid #30363d', marginTop: 8, color: evt.pct >= 80 ? '#3fb950' : '#f97316' }}>
+                TOTAL: {evt.total_passed}/{evt.total_steps} ({evt.pct}%) — {evt.labs_tested} labs tested
+              </div>
+            )
+            return null
           })}
         </div>
       )}

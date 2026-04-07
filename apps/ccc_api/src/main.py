@@ -1013,6 +1013,45 @@ def verify_single(iid: str, request: Request):
 
     return StreamingResponse(stream(), media_type="text/event-stream")
 
+# ── Lab 콘텐츠 검증 ──
+
+class LabVerifyBody(BaseModel):
+    courses: list[str] = []           # 빈 리스트면 전체
+    sample_weeks: list[int] = [1, 8, 15]  # 샘플 주차 (빈 리스트면 전체)
+    version: str = "non-ai"
+
+@app.post("/labs/verify-all", dependencies=[Depends(verify_api_key)])
+def verify_all_labs(body: LabVerifyBody, request: Request):
+    """Lab 콘텐츠 검증 — 실제 인프라에서 Lab step 실행 + verify 통과 확인 (SSE)"""
+    from starlette.responses import StreamingResponse
+    from packages.bastion.lab_verify import verify_all_labs_stream
+    import json as _j
+
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+
+    # 유저 인프라에서 VM IP 매핑
+    vm_ips = {}
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT ip, vm_config FROM student_infras WHERE student_id=%s", (uid,))
+            for row in cur.fetchall():
+                cfg = row.get("vm_config") or {}
+                role = cfg.get("role", "")
+                if role:
+                    vm_ips[role] = row["ip"]
+
+    def stream():
+        for evt in verify_all_labs_stream(
+            _LABS_DIR, vm_ips,
+            courses=body.courses or None,
+            version=body.version,
+            sample_weeks=body.sample_weeks or None,
+        ):
+            yield f"data: {_j.dumps(evt, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(stream(), media_type="text/event-stream")
+
 @app.get("/infras/my", dependencies=[Depends(verify_api_key)])
 def my_infra(request: Request):
     """내 인프라 목록 (로그인 사용자)"""
