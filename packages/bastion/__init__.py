@@ -120,13 +120,13 @@ fi
 ROLE_SETUP_SCRIPTS: dict[str, list[str]] = {
     "attacker": [
         "apt-get update -y",
-        "apt-get install -y nmap hydra sqlmap nikto dirb gobuster seclists curl net-tools",
+        "apt-get install -y nmap hydra sqlmap nikto dirb gobuster seclists curl net-tools traceroute whatweb",
         WAZUH_AGENT_INSTALL,
     ],
     "secu": [
         # ── 패키지 설치 ──
         "apt-get update -y",
-        "apt-get install -y nftables suricata auditd rsyslog",
+        "apt-get install -y nftables suricata auditd rsyslog libpam-pwquality",
         # ── IP 포워딩 ──
         "sysctl -w net.ipv4.ip_forward=1",
         "grep -q 'net.ipv4.ip_forward=1' /etc/sysctl.conf || echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf",
