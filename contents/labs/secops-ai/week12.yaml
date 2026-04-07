@@ -1,194 +1,211 @@
-lab_id: "secops-ai-week12"
-title: "보안 감사 실습"
-version: "ai"
-course: "secops-ai"
+lab_id: secops-ai-week12
+title: 보안 감사 실습 (AI 지원)
+version: ai
+course: secops-ai
 week: 12
-description: "시스템 보안 감사 수행, 체크리스트 작성, 감사 보고서 생성을 실습합니다."
-difficulty: "hard"
+description: 시스템 보안 감사 수행, 체크리스트 작성, 감사 보고서 생성을 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+difficulty: hard
 duration_minutes: 120
 objectives:
-  - "보안 감사 체크리스트를 작성하고 점검한다"
-  - "CIS 벤치마크 기반 설정 검증을 수행한다"
-  - "감사 보고서를 작성한다"
+- 보안 감사 체크리스트를 작성하고 점검한다
+- CIS 벤치마크 기반 설정 검증을 수행한다
+- 감사 보고서를 작성한다
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "10.20.30.1 서버에서 CIS 벤치마크 기준 파일시스템 설정을 점검하시오."
-    hint: "/tmp, /var/tmp의 마운트 옵션을 확인하세요."
-    category: "audit"
-    points: 10
-    answer: "mount | grep -E '(/tmp|/var/tmp)' && echo '파일시스템 감사 완료'"
-    answer_detail: "/tmp는 noexec, nosuid, nodev 옵션으로 마운트해야 합니다."
-    script: "ai_secops_analyze --week 12 --step 1 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "파일시스템 감사 완료"
-      field: "stdout"
-  - order: 2
-    instruction: "패스워드 정책 준수 여부를 감사하시오."
-    hint: "pwquality.conf와 login.defs를 점검하세요."
-    category: "audit"
-    points: 10
-    answer: "echo '[패스워드 정책]' && grep -v '^#' /etc/security/pwquality.conf 2>/dev/null | grep -v '^$' && grep -E '^PASS_' /etc/login.defs && echo '패스워드 감사 완료'"
-    answer_detail: "패스워드 정책은 최소 12자, 복잡도 요구, 90일 만료가 기본 기준입니다."
-    script: "ai_secops_analyze --week 12 --step 2 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "패스워드 감사 완료"
-      field: "stdout"
-  - order: 3
-    instruction: "SSH 서버 보안 설정을 감사하시오."
-    hint: "sshd_config의 보안 관련 설정을 확인하세요."
-    category: "audit"
-    points: 10
-    answer: "echo '[SSH 감사]' && sudo grep -E '(PermitRootLogin|PasswordAuth|X11|MaxAuthTries|LoginGraceTime|Protocol)' /etc/ssh/sshd_config | grep -v '^#' && echo 'SSH 감사 완료'"
-    answer_detail: "SSH 감사 항목: root 로그인 차단, 패스워드 인증 비활성화, X11 포워딩 차단, 최대 인증 시도 제한."
-    script: "ai_secops_analyze --week 12 --step 3 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "SSH 감사 완료"
-      field: "stdout"
-  - order: 4
-    instruction: "서비스 최소화 원칙 준수를 감사하시오: 불필요한 서비스 식별."
-    hint: "실행 중인 서비스 목록을 확인하세요."
-    category: "audit"
-    points: 10
-    answer: "systemctl list-units --type=service --state=running --no-pager | grep -v '^$' | wc -l && echo '서비스 감사 완료'"
-    answer_detail: "필요한 서비스만 실행하는 최소화 원칙은 공격 표면을 줄입니다."
-    script: "ai_secops_analyze --week 12 --step 4 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "서비스 감사 완료"
-      field: "stdout"
-  - order: 5
-    instruction: "네트워크 보안 설정을 감사하시오: 커널 파라미터."
-    hint: "sysctl로 네트워크 보안 설정을 확인하세요."
-    category: "audit"
-    points: 10
-    answer: "echo '[네트워크 보안 파라미터]' && sysctl net.ipv4.ip_forward net.ipv4.conf.all.rp_filter net.ipv4.tcp_syncookies net.ipv4.conf.all.accept_redirects 2>/dev/null && echo '네트워크 감사 완료'"
-    answer_detail: "IP 포워딩 비활성화, RP 필터 활성화, SYN cookies 활성화, ICMP redirect 거부가 기본 기준입니다."
-    script: "ai_secops_analyze --week 12 --step 5 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "네트워크 감사 완료"
-      field: "stdout"
-  - order: 6
-    instruction: "로그 설정을 감사하시오: 감사 로그 활성화 및 보존 기간."
-    hint: "auditd와 rsyslog 설정을 확인하세요."
-    category: "audit"
-    points: 10
-    answer: "echo '[감사 로그]' && sudo systemctl is-active auditd 2>/dev/null && echo '[로그 보존]' && cat /etc/logrotate.d/rsyslog 2>/dev/null | head -10 && echo '로그 감사 완료'"
-    answer_detail: "감사 로그는 최소 90일 보존, auditd 서비스 활성화가 필수입니다."
-    script: "ai_secops_analyze --week 12 --step 6 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "로그 감사 완료"
-      field: "stdout"
-  - order: 7
-    instruction: "사용자 계정 보안을 감사하시오: 비활성 계정, 빈 패스워드."
-    hint: "shadow 파일과 lastlog를 분석하세요."
-    category: "audit"
-    points: 10
-    answer: "echo '[빈 패스워드 계정]' && sudo awk -F: '($2 == \"\") {print $1}' /etc/shadow && echo '[비활성 계정]' && lastlog -b 90 2>/dev/null | tail -10 && echo '계정 감사 완료'"
-    answer_detail: "빈 패스워드 계정은 즉시 조치, 90일 이상 비활성 계정은 잠금 처리해야 합니다."
-    script: "ai_secops_analyze --week 12 --step 7 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "계정 감사 완료"
-      field: "stdout"
-  - order: 8
-    instruction: "파일 무결성을 감사하시오: 주요 시스템 파일 해시 검증."
-    hint: "sha256sum으로 주요 바이너리를 확인하세요."
-    category: "audit"
-    points: 10
-    answer: "echo '[파일 무결성]' && for f in /usr/bin/ssh /usr/bin/sudo /usr/bin/passwd; do sha256sum $f 2>/dev/null; done && echo '무결성 감사 완료'"
-    answer_detail: "시스템 바이너리의 해시를 기준값과 비교하여 변조 여부를 확인합니다."
-    script: "ai_secops_analyze --week 12 --step 8 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "무결성 감사 완료"
-      field: "stdout"
-  - order: 9
-    instruction: "방화벽 규칙을 감사하시오: 기본 거부 정책과 허용 규칙."
-    hint: "nftables 규칙을 확인하세요."
-    category: "audit"
-    points: 10
-    answer: "echo '[방화벽 감사]' && sudo nft list ruleset 2>/dev/null | head -30 && echo '방화벽 감사 완료'"
-    answer_detail: "기본 거부(default deny) 정책과 최소 허용 원칙이 적용되어야 합니다."
-    script: "ai_secops_analyze --week 12 --step 9 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "방화벽 감사 완료"
-      field: "stdout"
-  - order: 10
-    instruction: "시간 동기화(NTP) 설정을 감사하시오."
-    hint: "timedatectl 또는 chronyc를 사용하세요."
-    category: "audit"
-    points: 8
-    answer: "timedatectl status && echo 'NTP 감사 완료'"
-    answer_detail: "정확한 시간 동기화는 로그 분석과 인시던트 타임라인 구성에 필수입니다."
-    script: "ai_secops_analyze --week 12 --step 10 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "NTP 감사 완료"
-      field: "stdout"
-  - order: 11
-    instruction: "암호화 설정을 감사하시오: TLS 버전, 키 길이."
-    hint: "openssl로 TLS 설정을 확인하세요."
-    category: "audit"
-    points: 10
-    answer: "echo '[TLS 설정]' && openssl version && echo '[SSH 키]' && ls -la /etc/ssh/ssh_host_*_key 2>/dev/null && echo '암호화 감사 완료'"
-    answer_detail: "TLS 1.2 이상, RSA 2048비트 이상 키 사용이 기본 요구사항입니다."
-    script: "ai_secops_analyze --week 12 --step 11 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "암호화 감사 완료"
-      field: "stdout"
-  - order: 12
-    instruction: "감사 체크리스트를 생성하시오."
-    hint: "점검 항목, 기준, 결과를 표 형태로 작성하세요."
-    category: "documentation"
-    points: 12
-    answer: "echo -e '=== 보안 감사 체크리스트 ===\\n항목 | 기준 | 결과\\nSSH root 로그인 | 비활성화 | 점검완료\\n패스워드 최소길이 | 12자 이상 | 점검완료\\n방화벽 기본정책 | DROP | 점검완료\\n감사 로그 | 활성화 | 점검완료\\nNTP 동기화 | 설정됨 | 점검완료\\n\\n체크리스트 작성 완료'"
-    answer_detail: "감사 체크리스트는 반복 가능한 점검 프로세스의 기반입니다."
-    script: "ai_secops_analyze --week 12 --step 12 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "체크리스트 작성 완료"
-      field: "stdout"
-  - order: 13
-    instruction: "감사 결과에서 미준수 항목을 식별하고 조치 계획을 수립하시오."
-    hint: "각 미준수 항목에 대한 조치 방안과 일정을 기술하세요."
-    category: "remediation"
-    points: 12
-    answer: "echo -e '=== 미준수 항목 조치 계획 ===\\n1. /tmp noexec 미설정 → fstab 수정 (1주 내)\\n2. 비활성 계정 존재 → 잠금 처리 (즉시)\\n3. 로그 보존 30일 → 90일로 변경 (1주 내)\\n\\n조치 계획 수립 완료'"
-    answer_detail: "미준수 항목은 위험도에 따라 우선순위를 부여하고 조치 기한을 설정합니다."
-    script: "ai_secops_analyze --week 12 --step 13 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "조치 계획 수립 완료"
-      field: "stdout"
-  - order: 14
-    instruction: "감사 보고서 전체를 작성하시오."
-    hint: "범위, 방법론, 발견사항, 권고사항을 포함하세요."
-    category: "documentation"
-    points: 12
-    answer: "echo -e '=== 보안 감사 보고서 ===\\n\\n1. 감사 범위: 10.20.30.0/24 내 전체 서버\\n2. 감사 기준: CIS 벤치마크 Level 1\\n3. 감사 기간: '$(date +%Y-%m-%d)'\\n4. 발견사항: 12개 항목 중 9개 준수, 3개 미준수\\n5. 위험 등급: 중\\n6. 권고사항: 미준수 항목 즉시 조치\\n\\n감사 보고서 완료' | tee /tmp/audit_report.txt"
-    answer_detail: "감사 보고서는 경영진에게 보고할 수 있는 형식으로 작성합니다."
-    script: "ai_secops_analyze --week 12 --step 14 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "감사 보고서 완료"
-      field: "stdout"
-  - order: 15
-    instruction: "감사 종합 결과를 최종 정리하시오."
-    hint: "준수율, 주요 이슈, 다음 감사 일정을 포함하세요."
-    category: "verification"
-    points: 6
-    answer: "echo '=== 보안 감사 종합 ===' && echo '준수율: 75%' && echo '주요 이슈: 3건' && echo '다음 감사: 분기별' && echo '=== 보고서 완료 ==='"
-    answer_detail: "정기적인 보안 감사는 보안 수준을 지속적으로 유지/향상하는 핵심 활동입니다."
-    script: "ai_secops_analyze --week 12 --step 15 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "보고서 완료"
-      field: "stdout"
+- order: 1
+  instruction: 10.20.30.1 서버에서 CIS 벤치마크 기준 파일시스템 설정을 점검하시오.
+  hint: /tmp, /var/tmp의 마운트 옵션을 확인하세요.
+  category: audit
+  points: 10
+  answer: mount | grep -E '(/tmp|/var/tmp)' && echo '파일시스템 감사 완료'
+  answer_detail: /tmp는 noexec, nosuid, nodev 옵션으로 마운트해야 합니다.
+  verify:
+    type: output_contains
+    expect: 파일시스템 감사 완료
+    field: stdout
+  script: mount | grep -E '(/tmp|/var/tmp)' && echo '파일시스템 감사 완료'
+  risk_level: low
+- order: 2
+  instruction: 패스워드 정책 준수 여부를 감사하시오.
+  hint: pwquality.conf와 login.defs를 점검하세요.
+  category: audit
+  points: 10
+  answer: echo '[패스워드 정책]' && grep -v '^#' /etc/security/pwquality.conf 2>/dev/null | grep -v '^$' && grep -E '^PASS_' /etc/login.defs && echo '패스워드 감사 완료'
+  answer_detail: 패스워드 정책은 최소 12자, 복잡도 요구, 90일 만료가 기본 기준입니다.
+  verify:
+    type: output_contains
+    expect: 패스워드 감사 완료
+    field: stdout
+  script: echo '[패스워드 정책]' && grep -v '^#' /etc/security/pwquality.conf 2>/dev/null | grep -v '^$' && grep -E '^PASS_' /etc/login.defs && echo '패스워드 감사 완료'
+  risk_level: low
+- order: 3
+  instruction: SSH 서버 보안 설정을 감사하시오.
+  hint: sshd_config의 보안 관련 설정을 확인하세요.
+  category: audit
+  points: 10
+  answer: echo '[SSH 감사]' && sudo grep -E '(PermitRootLogin|PasswordAuth|X11|MaxAuthTries|LoginGraceTime|Protocol)' /etc/ssh/sshd_config | grep -v '^#' && echo 'SSH 감사 완료'
+  answer_detail: 'SSH 감사 항목: root 로그인 차단, 패스워드 인증 비활성화, X11 포워딩 차단, 최대 인증 시도 제한.'
+  verify:
+    type: output_contains
+    expect: SSH 감사 완료
+    field: stdout
+  script: echo '[SSH 감사]' && sudo grep -E '(PermitRootLogin|PasswordAuth|X11|MaxAuthTries|LoginGraceTime|Protocol)' /etc/ssh/sshd_config | grep -v '^#' && echo 'SSH 감사 완료'
+  risk_level: low
+- order: 4
+  instruction: '서비스 최소화 원칙 준수를 감사하시오: 불필요한 서비스 식별.'
+  hint: 실행 중인 서비스 목록을 확인하세요.
+  category: audit
+  points: 10
+  answer: systemctl list-units --type=service --state=running --no-pager | grep -v '^$' | wc -l && echo '서비스 감사 완료'
+  answer_detail: 필요한 서비스만 실행하는 최소화 원칙은 공격 표면을 줄입니다.
+  verify:
+    type: output_contains
+    expect: 서비스 감사 완료
+    field: stdout
+  script: systemctl list-units --type=service --state=running --no-pager | grep -v '^$' | wc -l && echo '서비스 감사 완료'
+  risk_level: low
+- order: 5
+  instruction: '네트워크 보안 설정을 감사하시오: 커널 파라미터.'
+  hint: sysctl로 네트워크 보안 설정을 확인하세요.
+  category: audit
+  points: 10
+  answer: echo '[네트워크 보안 파라미터]' && sysctl net.ipv4.ip_forward net.ipv4.conf.all.rp_filter net.ipv4.tcp_syncookies net.ipv4.conf.all.accept_redirects 2>/dev/null && echo '네트워크 감사 완료'
+  answer_detail: IP 포워딩 비활성화, RP 필터 활성화, SYN cookies 활성화, ICMP redirect 거부가 기본 기준입니다.
+  verify:
+    type: output_contains
+    expect: 네트워크 감사 완료
+    field: stdout
+  script: echo '[네트워크 보안 파라미터]' && sysctl net.ipv4.ip_forward net.ipv4.conf.all.rp_filter net.ipv4.tcp_syncookies net.ipv4.conf.all.accept_redirects 2>/dev/null && echo '네트워크 감사 완료'
+  risk_level: low
+- order: 6
+  instruction: '로그 설정을 감사하시오: 감사 로그 활성화 및 보존 기간.'
+  hint: auditd와 rsyslog 설정을 확인하세요.
+  category: audit
+  points: 10
+  answer: echo '[감사 로그]' && sudo systemctl is-active auditd 2>/dev/null && echo '[로그 보존]' && cat /etc/logrotate.d/rsyslog 2>/dev/null | head -10 && echo '로그 감사 완료'
+  answer_detail: 감사 로그는 최소 90일 보존, auditd 서비스 활성화가 필수입니다.
+  verify:
+    type: output_contains
+    expect: 로그 감사 완료
+    field: stdout
+  script: echo '[감사 로그]' && sudo systemctl is-active auditd 2>/dev/null && echo '[로그 보존]' && cat /etc/logrotate.d/rsyslog 2>/dev/null | head -10 && echo '로그 감사 완료'
+  risk_level: low
+- order: 7
+  instruction: '사용자 계정 보안을 감사하시오: 비활성 계정, 빈 패스워드.'
+  hint: shadow 파일과 lastlog를 분석하세요.
+  category: audit
+  points: 10
+  answer: 'echo ''[빈 패스워드 계정]'' && sudo awk -F: ''($2 == "") {print $1}'' /etc/shadow && echo ''[비활성 계정]'' && lastlog -b 90 2>/dev/null | tail -10 && echo ''계정 감사 완료'''
+  answer_detail: 빈 패스워드 계정은 즉시 조치, 90일 이상 비활성 계정은 잠금 처리해야 합니다.
+  verify:
+    type: output_contains
+    expect: 계정 감사 완료
+    field: stdout
+  script: 'echo ''[빈 패스워드 계정]'' && sudo awk -F: ''($2 == "") {print $1}'' /etc/shadow && echo ''[비활성 계정]'' && lastlog -b 90 2>/dev/null | tail -10 && echo ''계정 감사 완료'''
+  risk_level: low
+- order: 8
+  instruction: '파일 무결성을 감사하시오: 주요 시스템 파일 해시 검증.'
+  hint: sha256sum으로 주요 바이너리를 확인하세요.
+  category: audit
+  points: 10
+  answer: echo '[파일 무결성]' && for f in /usr/bin/ssh /usr/bin/sudo /usr/bin/passwd; do sha256sum $f 2>/dev/null; done && echo '무결성 감사 완료'
+  answer_detail: 시스템 바이너리의 해시를 기준값과 비교하여 변조 여부를 확인합니다.
+  verify:
+    type: output_contains
+    expect: 무결성 감사 완료
+    field: stdout
+  script: echo '[파일 무결성]' && for f in /usr/bin/ssh /usr/bin/sudo /usr/bin/passwd; do sha256sum $f 2>/dev/null; done && echo '무결성 감사 완료'
+  risk_level: low
+- order: 9
+  instruction: '방화벽 규칙을 감사하시오: 기본 거부 정책과 허용 규칙.'
+  hint: nftables 규칙을 확인하세요.
+  category: audit
+  points: 10
+  answer: echo '[방화벽 감사]' && sudo nft list ruleset 2>/dev/null | head -30 && echo '방화벽 감사 완료'
+  answer_detail: 기본 거부(default deny) 정책과 최소 허용 원칙이 적용되어야 합니다.
+  verify:
+    type: output_contains
+    expect: 방화벽 감사 완료
+    field: stdout
+  script: echo '[방화벽 감사]' && sudo nft list ruleset 2>/dev/null | head -30 && echo '방화벽 감사 완료'
+  risk_level: low
+- order: 10
+  instruction: 시간 동기화(NTP) 설정을 감사하시오.
+  hint: timedatectl 또는 chronyc를 사용하세요.
+  category: audit
+  points: 8
+  answer: timedatectl status && echo 'NTP 감사 완료'
+  answer_detail: 정확한 시간 동기화는 로그 분석과 인시던트 타임라인 구성에 필수입니다.
+  verify:
+    type: output_contains
+    expect: NTP 감사 완료
+    field: stdout
+  script: timedatectl status && echo 'NTP 감사 완료'
+  risk_level: low
+- order: 11
+  instruction: '암호화 설정을 감사하시오: TLS 버전, 키 길이.'
+  hint: openssl로 TLS 설정을 확인하세요.
+  category: audit
+  points: 10
+  answer: echo '[TLS 설정]' && openssl version && echo '[SSH 키]' && ls -la /etc/ssh/ssh_host_*_key 2>/dev/null && echo '암호화 감사 완료'
+  answer_detail: TLS 1.2 이상, RSA 2048비트 이상 키 사용이 기본 요구사항입니다.
+  verify:
+    type: output_contains
+    expect: 암호화 감사 완료
+    field: stdout
+  script: echo '[TLS 설정]' && openssl version && echo '[SSH 키]' && ls -la /etc/ssh/ssh_host_*_key 2>/dev/null && echo '암호화 감사 완료'
+  risk_level: low
+- order: 12
+  instruction: 감사 체크리스트를 생성하시오.
+  hint: 점검 항목, 기준, 결과를 표 형태로 작성하세요.
+  category: documentation
+  points: 12
+  answer: echo -e '=== 보안 감사 체크리스트 ===\n항목 | 기준 | 결과\nSSH root 로그인 | 비활성화 | 점검완료\n패스워드 최소길이 | 12자 이상 | 점검완료\n방화벽 기본정책 | DROP | 점검완료\n감사 로그 | 활성화 | 점검완료\nNTP 동기화 | 설정됨 | 점검완료\n\n체크리스트 작성 완료'
+  answer_detail: 감사 체크리스트는 반복 가능한 점검 프로세스의 기반입니다.
+  verify:
+    type: output_contains
+    expect: 체크리스트 작성 완료
+    field: stdout
+  script: echo -e '=== 보안 감사 체크리스트 ===\n항목 | 기준 | 결과\nSSH root 로그인 | 비활성화 | 점검완료\n패스워드 최소길이 | 12자 이상 | 점검완료\n방화벽 기본정책 | DROP | 점검완료\n감사 로그 | 활성화 | 점검완료\nNTP 동기화 | 설정됨 | 점검완료\n\n체크리스트 작성 완료'
+  risk_level: low
+- order: 13
+  instruction: 감사 결과에서 미준수 항목을 식별하고 조치 계획을 수립하시오.
+  hint: 각 미준수 항목에 대한 조치 방안과 일정을 기술하세요.
+  category: remediation
+  points: 12
+  answer: echo -e '=== 미준수 항목 조치 계획 ===\n1. /tmp noexec 미설정 → fstab 수정 (1주 내)\n2. 비활성 계정 존재 → 잠금 처리 (즉시)\n3. 로그 보존 30일 → 90일로 변경 (1주 내)\n\n조치 계획 수립 완료'
+  answer_detail: 미준수 항목은 위험도에 따라 우선순위를 부여하고 조치 기한을 설정합니다.
+  verify:
+    type: output_contains
+    expect: 조치 계획 수립 완료
+    field: stdout
+  script: echo -e '=== 미준수 항목 조치 계획 ===\n1. /tmp noexec 미설정 → fstab 수정 (1주 내)\n2. 비활성 계정 존재 → 잠금 처리 (즉시)\n3. 로그 보존 30일 → 90일로 변경 (1주 내)\n\n조치 계획 수립 완료'
+  risk_level: low
+- order: 14
+  instruction: 감사 보고서 전체를 작성하시오.
+  hint: 범위, 방법론, 발견사항, 권고사항을 포함하세요.
+  category: documentation
+  points: 12
+  answer: 'echo -e ''=== 보안 감사 보고서 ===\n\n1. 감사 범위: 10.20.30.0/24 내 전체 서버\n2. 감사 기준: CIS 벤치마크 Level 1\n3. 감사 기간: ''$(date +%Y-%m-%d)''\n4. 발견사항: 12개 항목 중 9개 준수, 3개 미준수\n5. 위험 등급: 중\n6. 권고사항: 미준수 항목 즉시 조치\n\n감사
+    보고서 완료'' | tee /tmp/audit_report.txt'
+  answer_detail: 감사 보고서는 경영진에게 보고할 수 있는 형식으로 작성합니다.
+  verify:
+    type: output_contains
+    expect: 감사 보고서 완료
+    field: stdout
+  script: 'echo -e ''=== 보안 감사 보고서 ===\n\n1. 감사 범위: 10.20.30.0/24 내 전체 서버\n2. 감사 기준: CIS 벤치마크 Level 1\n3. 감사 기간: ''$(date +%Y-%m-%d)''\n4. 발견사항: 12개 항목 중 9개 준수, 3개 미준수\n5. 위험 등급: 중\n6. 권고사항: 미준수 항목 즉시 조치\n\n감사
+    보고서 완료'' | tee /tmp/audit_report.txt'
+  risk_level: low
+- order: 15
+  instruction: 감사 종합 결과를 최종 정리하시오.
+  hint: 준수율, 주요 이슈, 다음 감사 일정을 포함하세요.
+  category: verification
+  points: 6
+  answer: 'echo ''=== 보안 감사 종합 ==='' && echo ''준수율: 75%'' && echo ''주요 이슈: 3건'' && echo ''다음 감사: 분기별'' && echo ''=== 보고서 완료 ==='''
+  answer_detail: 정기적인 보안 감사는 보안 수준을 지속적으로 유지/향상하는 핵심 활동입니다.
+  verify:
+    type: output_contains
+    expect: 보고서 완료
+    field: stdout
+  script: 'echo ''=== 보안 감사 종합 ==='' && echo ''준수율: 75%'' && echo ''주요 이슈: 3건'' && echo ''다음 감사: 분기별'' && echo ''=== 보고서 완료 ==='''
+  risk_level: low

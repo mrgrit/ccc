@@ -1,9 +1,9 @@
 lab_id: battle-ai-week09
-title: AI 기반 사고 대응(Incident Response) — 탐지부터 복구까지
+title: 사고 대응(Incident Response) — 탐지부터 복구까지 (AI 지원)
 version: ai
 course: battle-ai
 week: 9
-description: AI 에이전트가 자동으로 실행하는 NIST 사고 대응 프레임워크(준비→탐지→억제→제거→복구→교훈)를 실습한다. 실제 침해 시... 나리오에서 각 단계를 수행하며, 포렌식 증거 수집, 격리, 복구 절차를 체험한다.
+description: NIST 사고 대응 프레임워크(준비→탐지→억제→제거→복구→교훈)를 실습한다. 실제 침해 시나리오에서 각 단계를 수행하며, 포렌식 증거 수집, 격리, 복구 절차를 체험한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: hard
 duration_minutes: 120
 objectives:
@@ -30,6 +30,7 @@ steps:
     expect: '---'
     field: stdout
   script: who && echo '---' && ps auxf --sort=-%cpu | head -30 && echo '---' && ss -tunapl | grep ESTAB
+  risk_level: low
 - order: 2
   instruction: 휘발성 증거를 수집하라. 메모리 덤프, 프로세스 목록, 네트워크 상태, 라우팅 테이블을 저장하라.
   hint: 각 명령의 출력을 /tmp/forensics/ 디렉토리에 저장한다.
@@ -44,6 +45,7 @@ steps:
     field: filesystem
   script: mkdir -p /tmp/forensics && date > /tmp/forensics/timestamp.txt && ps auxf > /tmp/forensics/processes.txt && ss -tunapl > /tmp/forensics/network.txt && ip route > /tmp/forensics/routes.txt && cat
     /proc/meminfo > /tmp/forensics/meminfo.txt && ls -la /tmp/forensics/
+  risk_level: low
 - order: 3
   instruction: 의심스러운 프로세스를 식별하라. /tmp, /dev/shm에서 실행 중인 프로세스를 찾아라.
   hint: ps와 lsof를 조합한다.
@@ -56,6 +58,7 @@ steps:
     expect: tmp
     field: stdout
   script: ps aux | grep -E '(/tmp/|/dev/shm/|/var/tmp/)' && lsof -i -P | grep -E '(LISTEN|ESTABLISHED)' | grep -v -E '(sshd|apache|mysql)'
+  risk_level: low
 - order: 4
   instruction: 악성 프로세스의 실행 파일을 보존하고 해시를 계산하라.
   hint: cp로 복사하고 md5sum/sha256sum으로 해시를 생성한다.
@@ -70,6 +73,7 @@ steps:
     field: filesystem
   script: cp /tmp/.backdoor.sh /tmp/forensics/malware_sample.sh 2>/dev/null; find /tmp -name '*.sh' -o -name '*.py' -o -name '*.elf' 2>/dev/null | while read f; do sha256sum "$f"; done > /tmp/forensics/file_hashes.txt
     && cat /tmp/forensics/file_hashes.txt
+  risk_level: low
 - order: 5
   instruction: 침해된 시스템을 네트워크에서 격리하라. 외부 통신을 차단하되 SSH 관리 접근은 유지하라.
   hint: iptables/nftables로 특정 IP만 허용한다.
@@ -84,6 +88,7 @@ steps:
     field: stdout
   script: sudo nft add table inet isolation && sudo nft add chain inet isolation output '{ type filter hook output priority 0; policy drop; }' && sudo nft add rule inet isolation output ip daddr 10.20.30.10
     accept && sudo nft add rule inet isolation output oifname lo accept && sudo nft add rule inet isolation output ct state established,related accept
+  risk_level: low
 - order: 6
   instruction: 백도어 사용자 계정을 식별하고 비활성화하라.
   hint: /etc/passwd에서 UID 0인 비정상 계정을 찾는다.
@@ -96,6 +101,7 @@ steps:
     expect: root
     field: stdout
   script: 'awk -F: ''$3 == 0 {print}'' /etc/passwd && awk -F: ''$3 >= 1000 {print $1}'' /etc/passwd && sudo usermod -L hacker 2>/dev/null && sudo passwd -l hacker 2>/dev/null'
+  risk_level: low
 - order: 7
   instruction: 악성 cron job을 식별하고 제거하라.
   hint: 모든 사용자의 crontab을 확인한다.
@@ -108,6 +114,7 @@ steps:
     expect: ===
     field: stdout
   script: 'for user in $(cut -f1 -d: /etc/passwd); do echo "=== $user ==="; crontab -l -u $user 2>/dev/null; done && cat /etc/crontab && ls -la /etc/cron.d/'
+  risk_level: low
 - order: 8
   instruction: 웹셸을 찾아 제거하라. 웹 디렉토리에서 PHP 셸을 검색한다.
   hint: grep으로 system(), exec(), passthru() 등 위험 함수를 검색한다.
@@ -120,6 +127,7 @@ steps:
     expect: php
     field: stdout
   script: grep -rl 'system\|exec\|passthru\|shell_exec\|eval' /var/www/ 2>/dev/null | head -10 && find /var/www/ -name '*.php' -newer /var/www/index.html 2>/dev/null
+  risk_level: low
 - order: 9
   instruction: SSH 키 기반 백도어를 확인하라. authorized_keys 파일에 비인가 키가 있는지 검사한다.
   hint: 모든 사용자의 .ssh/authorized_keys를 확인한다.
@@ -132,6 +140,7 @@ steps:
     expect: ===
     field: stdout
   script: find /home -name 'authorized_keys' -exec echo '=== {} ===' \; -exec cat {} \; 2>/dev/null && echo '=== /root ===' && cat /root/.ssh/authorized_keys 2>/dev/null
+  risk_level: low
 - order: 10
   instruction: 침해된 서비스의 취약점을 패치하라. 취약한 vsftpd를 제거하고 불필요한 서비스를 비활성화하라.
   hint: apt remove 또는 systemctl disable을 사용한다.
@@ -146,6 +155,7 @@ steps:
     field: stdout
   script: sudo systemctl stop vsftpd 2>/dev/null && sudo systemctl disable vsftpd 2>/dev/null && sudo systemctl stop telnet.socket 2>/dev/null && sudo systemctl disable telnet.socket 2>/dev/null && echo
     'Services disabled successfully'
+  risk_level: low
 - order: 11
   instruction: 모든 사용자 패스워드를 강제 변경하고, 패스워드 정책을 강화하라.
   hint: chage -d 0으로 다음 로그인 시 변경을 강제한다.
@@ -158,6 +168,7 @@ steps:
     expect: Password reset
     field: stdout
   script: for user in msfadmin user service; do sudo chage -d 0 $user 2>/dev/null && echo "Password reset forced for $user"; done && cat /etc/login.defs | grep -E '(PASS_MAX_DAYS|PASS_MIN_LEN|PASS_WARN_AGE)'
+  risk_level: low
 - order: 12
   instruction: 시스템 파일 무결성을 검증하라. 주요 바이너리의 해시를 확인한다.
   hint: dpkg -V 또는 rpm -V로 패키지 무결성을 확인한다.
@@ -170,6 +181,7 @@ steps:
     expect: sha256
     field: stdout
   script: dpkg -V 2>/dev/null | head -20 || rpm -Va 2>/dev/null | head -20 && sha256sum /usr/bin/ssh /usr/bin/sudo /usr/bin/passwd 2>/dev/null
+  risk_level: low
 - order: 13
   instruction: 방화벽 규칙을 강화하고, 불필요한 포트를 차단하라.
   hint: Week 6에서 학습한 nftables 규칙을 적용한다.
@@ -184,6 +196,7 @@ steps:
     field: stdout
   script: sudo nft flush ruleset && sudo nft add table inet filter && sudo nft add chain inet filter input '{ type filter hook input priority 0; policy drop; }' && sudo nft add rule inet filter input iifname
     lo accept && sudo nft add rule inet filter input ct state established,related accept && sudo nft add rule inet filter input tcp dport 22 accept && sudo nft list ruleset
+  risk_level: low
 - order: 14
   instruction: 복구 완료 후 시스템 정상 동작을 검증하라. 핵심 서비스 상태와 보안 설정을 확인한다.
   hint: systemctl status, ss -tlnp 등으로 검증한다.
@@ -196,6 +209,7 @@ steps:
     expect: '---'
     field: stdout
   script: systemctl list-units --type=service --state=running | head -20 && echo '---' && ss -tlnp && echo '---' && nft list ruleset | grep -c 'rule'
+  risk_level: low
 - order: 15
   instruction: 사고 대응 전체 과정을 종합하여 Incident Response 보고서를 작성하라.
   hint: NIST 6단계에 맞춰 작성한다.
@@ -348,3 +362,4 @@ steps:
     - Need: Stronger password policies + MFA
 
     EOF'
+  risk_level: low

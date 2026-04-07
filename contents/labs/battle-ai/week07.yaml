@@ -1,9 +1,9 @@
 lab_id: battle-ai-week07
-title: AI 기반 IDS/IPS 구축 — Suricata 기반 침입 탐지/방지
+title: IDS/IPS 구축 — Suricata 기반 침입 탐지/방지 (AI 지원)
 version: ai
 course: battle-ai
 week: 7
-description: AI 에이전트가 자동으로 실행하는 Suricata IDS/IPS를 구축하고 커스텀 룰을 작성하여 다양한 공격을 탐지한다. 시... 그니처 기반 탐지의 원리를 이해하고, Week 1-5에서 배운 공격 기법에 대한 탐지 룰을 직접 작성한다.
+description: Suricata IDS/IPS를 구축하고 커스텀 룰을 작성하여 다양한 공격을 탐지한다. 시그니처 기반 탐지의 원리를 이해하고, Week 1-5에서 배운 공격 기법에 대한 탐지 룰을 직접 작성한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -30,6 +30,7 @@ steps:
     expect: Suricata
     field: stdout
   script: suricata -V && suricata --build-info | head -20
+  risk_level: low
 - order: 2
   instruction: Suricata 설정 파일(suricata.yaml)에서 HOME_NET 변수를 실습 환경에 맞게 설정하라.
   hint: /etc/suricata/suricata.yaml 파일을 편집한다.
@@ -42,6 +43,7 @@ steps:
     expect: HOME_NET
     field: stdout
   script: 'sudo sed -i ''s/HOME_NET: .*/HOME_NET: "[10.20.30.0\/24]"/'' /etc/suricata/suricata.yaml && grep HOME_NET /etc/suricata/suricata.yaml'
+  risk_level: low
 - order: 3
   instruction: Nmap SYN 스캔을 탐지하는 커스텀 Suricata 룰을 작성하라.
   hint: flags:S로 SYN 패킷을 매칭하고 threshold로 빈도를 설정한다.
@@ -56,6 +58,7 @@ steps:
     field: stdout
   script: 'echo ''alert tcp $EXTERNAL_NET any -> $HOME_NET any (msg:"SCAN Nmap SYN Scan Detected"; flags:S,12; threshold: type both, track by_src, count 20, seconds 5; classtype:attempted-recon; sid:1000001;
     rev:1;)'' | sudo tee /etc/suricata/rules/local.rules'
+  risk_level: low
 - order: 4
   instruction: SQL Injection 시도를 탐지하는 HTTP 룰을 작성하라.
   hint: content 키워드로 SQL 구문을 매칭한다.
@@ -70,6 +73,7 @@ steps:
     field: stdout
   script: echo 'alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"WEB-ATTACK SQL Injection Attempt - UNION SELECT"; flow:to_server,established; content:"UNION"; nocase; content:"SELECT"; nocase; distance:0;
     within:20; classtype:web-application-attack; sid:1000002; rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
+  risk_level: low
 - order: 5
   instruction: XSS 공격 시도를 탐지하는 룰을 작성하라.
   hint: <script> 태그를 content로 매칭한다.
@@ -84,6 +88,7 @@ steps:
     field: stdout
   script: echo 'alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"WEB-ATTACK XSS Script Tag Detected"; flow:to_server,established; content:"<script"; nocase; classtype:web-application-attack; sid:1000003;
     rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
+  risk_level: low
 - order: 6
   instruction: SSH 브루트포스 공격을 탐지하는 룰을 작성하라.
   hint: SSH 연결 시도의 빈도를 threshold로 설정한다.
@@ -98,6 +103,7 @@ steps:
     field: stdout
   script: 'echo ''alert tcp $EXTERNAL_NET any -> $HOME_NET 22 (msg:"ATTACK SSH Brute Force Attempt"; flow:to_server; flags:S,12; threshold: type both, track by_src, count 5, seconds 30; classtype:attempted-admin;
     sid:1000004; rev:1;)'' | sudo tee -a /etc/suricata/rules/local.rules'
+  risk_level: low
 - order: 7
   instruction: 리버스 셸 연결을 탐지하는 룰을 작성하라.
   hint: /bin/bash 또는 /bin/sh 문자열이 네트워크를 통해 전송되는 것을 탐지한다.
@@ -112,6 +118,7 @@ steps:
     field: stdout
   script: echo 'alert tcp $HOME_NET any -> $EXTERNAL_NET any (msg:"BACKDOOR Reverse Shell Detected"; flow:established; content:"/bin/bash"; classtype:trojan-activity; sid:1000005; rev:1;)' | sudo tee -a
     /etc/suricata/rules/local.rules
+  risk_level: low
 - order: 8
   instruction: Suricata 룰 파일의 문법을 검증하라.
   hint: suricata -T 옵션으로 설정을 테스트한다.
@@ -124,6 +131,7 @@ steps:
     expect: Configuration provided was successfully loaded
     field: stdout
   script: sudo suricata -T -c /etc/suricata/suricata.yaml -S /etc/suricata/rules/local.rules
+  risk_level: low
 - order: 9
   instruction: Suricata를 AF_PACKET 모드로 실행하여 실시간 트래픽 분석을 시작하라.
   hint: suricata --af-packet 옵션을 사용한다.
@@ -136,6 +144,7 @@ steps:
     expect: engine started
     field: stdout
   script: sudo suricata -c /etc/suricata/suricata.yaml --af-packet=eth0 -D && sleep 3 && sudo tail -5 /var/log/suricata/suricata.log
+  risk_level: low
 - order: 10
   instruction: 공격자 VM에서 nmap 스캔을 실행하고, Suricata 경보가 발생하는지 확인하라.
   hint: fast.log 또는 eve.json에서 경보를 확인한다.
@@ -148,6 +157,7 @@ steps:
     expect: SCAN
     field: stdout
   script: sudo tail -f /var/log/suricata/fast.log
+  risk_level: low
 - order: 11
   instruction: eve.json 로그에서 경보를 jq로 파싱하여 소스 IP별 경보 건수를 집계하라.
   hint: jq 명령으로 JSON을 파싱한다.
@@ -160,6 +170,7 @@ steps:
     expect: '10.'
     field: stdout
   script: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .src_ip' | sort | uniq -c | sort -rn
+  risk_level: low
 - order: 12
   instruction: eve.json에서 특정 SID(1000002, SQL Injection)의 경보 상세 정보를 추출하라.
   hint: jq select로 signature_id를 필터링한다.
@@ -172,6 +183,7 @@ steps:
     expect: signature_id
     field: stdout
   script: cat /var/log/suricata/eve.json | jq 'select(.event_type=="alert" and .alert.signature_id==1000002)'
+  risk_level: low
 - order: 13
   instruction: Suricata의 stats.log에서 성능 통계를 확인하라.
   hint: stats.log에서 처리된 패킷 수와 경보 수를 확인한다.
@@ -184,6 +196,7 @@ steps:
     expect: detect
     field: stdout
   script: sudo tail -50 /var/log/suricata/stats.log | grep -E 'detect.alert|decoder.pkts|flow.total'
+  risk_level: low
 - order: 14
   instruction: Suricata를 IPS 모드(nfqueue)로 전환하여 공격 트래픽을 차단하도록 설정하라.
   hint: 룰의 action을 alert에서 drop으로 변경하고 NFQ 모드로 실행한다.
@@ -196,6 +209,7 @@ steps:
     expect: drop
     field: stdout
   script: sudo sed -i 's/^alert/drop/' /etc/suricata/rules/local.rules && sudo iptables -I FORWARD -j NFQUEUE --queue-num 0 && head -5 /etc/suricata/rules/local.rules
+  risk_level: low
 - order: 15
   instruction: IDS/IPS 구축 결과를 종합하여 탐지 정책 보고서를 작성하라. 작성한 룰 목록, 탐지 결과, 오탐 분석, 개선 방안을 포함하라.
   hint: 각 룰의 SID, 설명, 탐지 건수를 정리한다.
@@ -216,3 +230,4 @@ steps:
     \ nmap test\n- SQL Injection: 5 alerts from sqlmap test\n- XSS: 2 alerts from manual XSS test\n- SSH Brute Force: 1 alert from hydra test\n\nFalse Positive Analysis:\n- SID 1000003: May trigger on legitimate\
     \ script tags\n  Action: Exclude known admin IPs\n\nIPS Mode Considerations:\n- Drop rules may impact legitimate traffic\n- Recommend IDS monitoring period before IPS activation\n- Whitelist management\
     \ essential for production\nEOF"
+  risk_level: low

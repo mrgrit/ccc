@@ -1,194 +1,247 @@
-lab_id: "secops-ai-week06"
-title: "암호화 구현 실습"
-version: "ai"
-course: "secops-ai"
+lab_id: secops-ai-week06
+title: 암호화 구현 실습 (AI 지원)
+version: ai
+course: secops-ai
 week: 6
-description: "대칭키/비대칭키 암호화, TLS 인증서 관리, 파일시스템 암호화를 실습합니다."
-difficulty: "medium"
+description: 대칭키/비대칭키 암호화, TLS 인증서 관리, 파일시스템 암호화를 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+difficulty: medium
 duration_minutes: 120
 objectives:
-  - "대칭키/비대칭키 암호화 원리를 이해한다"
-  - "TLS 인증서를 생성하고 관리한다"
-  - "파일 및 디스크 암호화를 구현한다"
+- 대칭키/비대칭키 암호화 원리를 이해한다
+- TLS 인증서를 생성하고 관리한다
+- 파일 및 디스크 암호화를 구현한다
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "10.20.30.1 서버에서 OpenSSL 버전을 확인하고 지원하는 암호화 알고리즘 목록을 조회하시오."
-    hint: "openssl version과 openssl ciphers를 사용하세요."
-    category: "encryption"
-    points: 8
-    answer: "openssl version && openssl ciphers -v | head -20"
-    answer_detail: "OpenSSL은 대부분의 암호화 작업에 사용되는 핵심 라이브러리입니다."
-    script: "ai_secops_analyze --week 6 --step 1 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "OpenSSL"
-      field: "stdout"
-  - order: 2
-    instruction: "AES-256-CBC 대칭키 암호화로 파일을 암호화하시오."
-    hint: "openssl enc 명령을 사용하세요."
-    category: "encryption"
-    points: 10
-    answer: "echo '기밀 데이터 테스트' > /tmp/secret.txt && openssl enc -aes-256-cbc -salt -in /tmp/secret.txt -out /tmp/secret.enc -pass pass:TestPass2026! 2>/dev/null && echo '암호화 완료' && ls -la /tmp/secret.enc"
-    answer_detail: "AES-256-CBC는 256비트 키를 사용하는 블록 암호화 방식으로, -salt 옵션은 레인보우 테이블 공격을 방지합니다."
-    script: "ai_secops_analyze --week 6 --step 2 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "암호화 완료"
-      field: "stdout"
-  - order: 3
-    instruction: "암호화된 파일을 복호화하여 원본과 일치하는지 확인하시오."
-    hint: "openssl enc -d 옵션을 사용하세요."
-    category: "encryption"
-    points: 10
-    answer: "openssl enc -aes-256-cbc -d -in /tmp/secret.enc -out /tmp/secret_dec.txt -pass pass:TestPass2026! 2>/dev/null && diff /tmp/secret.txt /tmp/secret_dec.txt && echo '복호화 검증 성공'"
-    answer_detail: "-d 옵션으로 복호화합니다. diff로 원본과 복호화 결과를 비교하여 무결성을 확인합니다."
-    script: "ai_secops_analyze --week 6 --step 3 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "복호화 검증 성공"
-      field: "stdout"
-  - order: 4
-    instruction: "RSA 2048비트 개인키를 생성하시오."
-    hint: "openssl genrsa 명령을 사용하세요."
-    category: "encryption"
-    points: 10
-    answer: "openssl genrsa -out /tmp/private.key 2048 2>/dev/null && echo '개인키 생성 완료' && openssl rsa -in /tmp/private.key -check 2>/dev/null | head -1"
-    answer_detail: "RSA 2048은 현재 권장되는 최소 키 길이입니다. 중요 시스템에는 4096비트를 사용합니다."
-    script: "ai_secops_analyze --week 6 --step 4 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "개인키 생성 완료"
-      field: "stdout"
-  - order: 5
-    instruction: "개인키에서 공개키를 추출하시오."
-    hint: "openssl rsa -pubout 옵션을 사용하세요."
-    category: "encryption"
-    points: 8
-    answer: "openssl rsa -in /tmp/private.key -pubout -out /tmp/public.key 2>/dev/null && cat /tmp/public.key"
-    answer_detail: "공개키는 개인키에서 수학적으로 추출됩니다. 공개키는 배포해도 안전하지만, 개인키는 반드시 보호해야 합니다."
-    script: "ai_secops_analyze --week 6 --step 5 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "PUBLIC KEY"
-      field: "stdout"
-  - order: 6
-    instruction: "자체 서명 TLS 인증서(CSR 포함)를 생성하시오."
-    hint: "openssl req -x509 옵션을 사용하세요."
-    category: "tls"
-    points: 12
-    answer: "openssl req -x509 -newkey rsa:2048 -keyout /tmp/server.key -out /tmp/server.crt -days 365 -nodes -subj '/C=KR/ST=Seoul/L=Seoul/O=SecOps/CN=10.20.30.1' 2>/dev/null && echo '인증서 생성 완료'"
-    answer_detail: "-x509는 자체 서명 인증서 생성, -nodes는 개인키 암호화 없음, -subj로 인증서 주체를 지정합니다."
-    script: "ai_secops_analyze --week 6 --step 6 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "인증서 생성 완료"
-      field: "stdout"
-  - order: 7
-    instruction: "생성된 인증서의 상세 정보를 확인하시오."
-    hint: "openssl x509 -text 옵션을 사용하세요."
-    category: "tls"
-    points: 8
-    answer: "openssl x509 -in /tmp/server.crt -text -noout | head -20"
-    answer_detail: "인증서의 발급자, 유효기간, 주체, 공개키 정보 등을 확인할 수 있습니다."
-    script: "ai_secops_analyze --week 6 --step 7 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "Issuer"
-      field: "stdout"
-  - order: 8
-    instruction: "현재 시스템의 TLS 인증서 저장소 위치를 확인하고 신뢰할 수 있는 CA 목록을 조회하시오."
-    hint: "/etc/ssl/certs/ 디렉터리를 확인하세요."
-    category: "tls"
-    points: 8
-    answer: "ls /etc/ssl/certs/ | head -20 && echo '인증서 수:' && ls /etc/ssl/certs/ | wc -l"
-    answer_detail: "/etc/ssl/certs/에는 시스템이 신뢰하는 CA 인증서들이 저장되어 있습니다."
-    script: "ai_secops_analyze --week 6 --step 8 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "인증서 수"
-      field: "stdout"
-  - order: 9
-    instruction: "파일의 SHA-256 해시를 생성하고 무결성 검증에 활용하시오."
-    hint: "sha256sum 명령을 사용하세요."
-    category: "integrity"
-    points: 10
-    answer: "sha256sum /etc/passwd > /tmp/passwd_hash.txt && cat /tmp/passwd_hash.txt && sha256sum -c /tmp/passwd_hash.txt && echo '무결성 검증 통과'"
-    answer_detail: "SHA-256 해시로 파일의 무결성을 검증합니다. 해시 값이 변경되면 파일이 변조된 것입니다."
-    script: "ai_secops_analyze --week 6 --step 9 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "무결성 검증 통과"
-      field: "stdout"
-  - order: 10
-    instruction: "SSH 키 쌍(Ed25519)을 생성하시오."
-    hint: "ssh-keygen -t ed25519를 사용하세요."
-    category: "encryption"
-    points: 10
-    answer: "ssh-keygen -t ed25519 -f /tmp/test_ed25519 -N '' -C 'secops-lab' 2>/dev/null && echo '키 생성 완료' && cat /tmp/test_ed25519.pub"
-    answer_detail: "Ed25519는 현대적인 타원곡선 알고리즘으로, RSA보다 짧은 키로 동등한 보안을 제공합니다."
-    script: "ai_secops_analyze --week 6 --step 10 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "키 생성 완료"
-      field: "stdout"
-  - order: 11
-    instruction: "GPG 키를 사용하여 파일에 디지털 서명을 생성하시오."
-    hint: "gpg --sign 옵션을 사용하세요."
-    category: "encryption"
-    points: 12
-    answer: "echo 'test' | gpg --batch --gen-key <<EOF 2>/dev/null\nKey-Type: RSA\nKey-Length: 2048\nName-Real: SecOps Lab\nName-Email: secops@lab.local\nExpire-Date: 0\n%no-protection\n%commit\nEOF\necho '서명 준비 완료'"
-    answer_detail: "GPG 디지털 서명은 문서의 인증성과 무결성을 보장합니다."
-    script: "ai_secops_analyze --week 6 --step 11 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "서명 준비 완료"
-      field: "stdout"
-  - order: 12
-    instruction: "원격 서버의 TLS 인증서 정보를 확인하시오."
-    hint: "openssl s_client를 사용하세요."
-    category: "tls"
-    points: 10
-    answer: "echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | openssl x509 -text -noout 2>/dev/null | head -15 || echo 'TLS 연결 확인 완료'"
-    answer_detail: "s_client로 원격 서버에 TLS 연결을 수립하고 인증서 정보를 조회합니다."
-    script: "ai_secops_analyze --week 6 --step 12 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 13
-    instruction: "암호화 키 파일의 퍼미션을 보안 기준에 맞게 설정하시오."
-    hint: "개인키는 600, 인증서는 644로 설정하세요."
-    category: "encryption"
-    points: 10
-    answer: "chmod 600 /tmp/private.key /tmp/server.key && chmod 644 /tmp/server.crt /tmp/public.key && ls -la /tmp/private.key /tmp/server.key /tmp/server.crt /tmp/public.key"
-    answer_detail: "개인키는 소유자만 읽기/쓰기(600), 공개키/인증서는 공개 읽기 가능(644)으로 설정합니다."
-    script: "ai_secops_analyze --week 6 --step 13 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "-rw-------"
-      field: "stdout"
-  - order: 14
-    instruction: "LUKS를 이용한 암호화 볼륨 생성 절차를 시뮬레이션하시오."
-    hint: "cryptsetup 명령의 도움말을 확인하세요."
-    category: "disk_encryption"
-    points: 12
-    answer: "which cryptsetup && cryptsetup --help 2>&1 | head -10 || echo 'cryptsetup 사용법 확인 완료'"
-    answer_detail: "LUKS(Linux Unified Key Setup)는 리눅스 디스크 암호화 표준입니다. cryptsetup luksFormat으로 볼륨을 암호화합니다."
-    script: "ai_secops_analyze --week 6 --step 14 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "cryptsetup"
-      field: "stdout"
-  - order: 15
-    instruction: "암호화 구현 종합 보고서를 생성하시오."
-    hint: "사용한 암호화 방식, 키 관리 현황 등을 포함하세요."
-    category: "verification"
-    points: 12
-    answer: "echo '=== 암호화 구현 보고서 ===' && echo '[OpenSSL 버전]' && openssl version && echo '[생성된 키/인증서]' && ls -la /tmp/*.key /tmp/*.crt /tmp/*.pub 2>/dev/null && echo '[해시 무결성]' && cat /tmp/passwd_hash.txt 2>/dev/null && echo '=== 보고서 완료 ==='"
-    answer_detail: "암호화 구현 현황을 정기적으로 점검하여 키 만료, 알고리즘 취약성 등을 관리합니다."
-    script: "ai_secops_analyze --week 6 --step 15 --target 10.20.30.0/24 --mode ai-assisted"
-    verify:
-      type: "output_contains"
-      expect: "보고서 완료"
-      field: "stdout"
+- order: 1
+  instruction: 10.20.30.1 서버에서 OpenSSL 버전을 확인하고 지원하는 암호화 알고리즘 목록을 조회하시오.
+  hint: openssl version과 openssl ciphers를 사용하세요.
+  category: encryption
+  points: 8
+  answer: openssl version && openssl ciphers -v | head -20
+  answer_detail: OpenSSL은 대부분의 암호화 작업에 사용되는 핵심 라이브러리입니다.
+  verify:
+    type: output_contains
+    expect: OpenSSL
+    field: stdout
+  script: openssl version && openssl ciphers -v | head -20
+  risk_level: low
+- order: 2
+  instruction: AES-256-CBC 대칭키 암호화로 파일을 암호화하시오.
+  hint: openssl enc 명령을 사용하세요.
+  category: encryption
+  points: 10
+  answer: echo '기밀 데이터 테스트' > /tmp/secret.txt && openssl enc -aes-256-cbc -salt -in /tmp/secret.txt -out /tmp/secret.enc -pass pass:TestPass2026! 2>/dev/null && echo '암호화 완료' && ls -la /tmp/secret.enc
+  answer_detail: AES-256-CBC는 256비트 키를 사용하는 블록 암호화 방식으로, -salt 옵션은 레인보우 테이블 공격을 방지합니다.
+  verify:
+    type: output_contains
+    expect: 암호화 완료
+    field: stdout
+  script: echo '기밀 데이터 테스트' > /tmp/secret.txt && openssl enc -aes-256-cbc -salt -in /tmp/secret.txt -out /tmp/secret.enc -pass pass:TestPass2026! 2>/dev/null && echo '암호화 완료' && ls -la /tmp/secret.enc
+  risk_level: low
+- order: 3
+  instruction: 암호화된 파일을 복호화하여 원본과 일치하는지 확인하시오.
+  hint: openssl enc -d 옵션을 사용하세요.
+  category: encryption
+  points: 10
+  answer: openssl enc -aes-256-cbc -d -in /tmp/secret.enc -out /tmp/secret_dec.txt -pass pass:TestPass2026! 2>/dev/null && diff /tmp/secret.txt /tmp/secret_dec.txt && echo '복호화 검증 성공'
+  answer_detail: -d 옵션으로 복호화합니다. diff로 원본과 복호화 결과를 비교하여 무결성을 확인합니다.
+  verify:
+    type: output_contains
+    expect: 복호화 검증 성공
+    field: stdout
+  script: openssl enc -aes-256-cbc -d -in /tmp/secret.enc -out /tmp/secret_dec.txt -pass pass:TestPass2026! 2>/dev/null && diff /tmp/secret.txt /tmp/secret_dec.txt && echo '복호화 검증 성공'
+  risk_level: low
+- order: 4
+  instruction: RSA 2048비트 개인키를 생성하시오.
+  hint: openssl genrsa 명령을 사용하세요.
+  category: encryption
+  points: 10
+  answer: openssl genrsa -out /tmp/private.key 2048 2>/dev/null && echo '개인키 생성 완료' && openssl rsa -in /tmp/private.key -check 2>/dev/null | head -1
+  answer_detail: RSA 2048은 현재 권장되는 최소 키 길이입니다. 중요 시스템에는 4096비트를 사용합니다.
+  verify:
+    type: output_contains
+    expect: 개인키 생성 완료
+    field: stdout
+  script: openssl genrsa -out /tmp/private.key 2048 2>/dev/null && echo '개인키 생성 완료' && openssl rsa -in /tmp/private.key -check 2>/dev/null | head -1
+  risk_level: low
+- order: 5
+  instruction: 개인키에서 공개키를 추출하시오.
+  hint: openssl rsa -pubout 옵션을 사용하세요.
+  category: encryption
+  points: 8
+  answer: openssl rsa -in /tmp/private.key -pubout -out /tmp/public.key 2>/dev/null && cat /tmp/public.key
+  answer_detail: 공개키는 개인키에서 수학적으로 추출됩니다. 공개키는 배포해도 안전하지만, 개인키는 반드시 보호해야 합니다.
+  verify:
+    type: output_contains
+    expect: PUBLIC KEY
+    field: stdout
+  script: openssl rsa -in /tmp/private.key -pubout -out /tmp/public.key 2>/dev/null && cat /tmp/public.key
+  risk_level: low
+- order: 6
+  instruction: 자체 서명 TLS 인증서(CSR 포함)를 생성하시오.
+  hint: openssl req -x509 옵션을 사용하세요.
+  category: tls
+  points: 12
+  answer: openssl req -x509 -newkey rsa:2048 -keyout /tmp/server.key -out /tmp/server.crt -days 365 -nodes -subj '/C=KR/ST=Seoul/L=Seoul/O=SecOps/CN=10.20.30.1' 2>/dev/null && echo '인증서 생성 완료'
+  answer_detail: -x509는 자체 서명 인증서 생성, -nodes는 개인키 암호화 없음, -subj로 인증서 주체를 지정합니다.
+  verify:
+    type: output_contains
+    expect: 인증서 생성 완료
+    field: stdout
+  script: openssl req -x509 -newkey rsa:2048 -keyout /tmp/server.key -out /tmp/server.crt -days 365 -nodes -subj '/C=KR/ST=Seoul/L=Seoul/O=SecOps/CN=10.20.30.1' 2>/dev/null && echo '인증서 생성 완료'
+  risk_level: low
+- order: 7
+  instruction: 생성된 인증서의 상세 정보를 확인하시오.
+  hint: openssl x509 -text 옵션을 사용하세요.
+  category: tls
+  points: 8
+  answer: openssl x509 -in /tmp/server.crt -text -noout | head -20
+  answer_detail: 인증서의 발급자, 유효기간, 주체, 공개키 정보 등을 확인할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: Issuer
+    field: stdout
+  script: openssl x509 -in /tmp/server.crt -text -noout | head -20
+  risk_level: low
+- order: 8
+  instruction: 현재 시스템의 TLS 인증서 저장소 위치를 확인하고 신뢰할 수 있는 CA 목록을 조회하시오.
+  hint: /etc/ssl/certs/ 디렉터리를 확인하세요.
+  category: tls
+  points: 8
+  answer: ls /etc/ssl/certs/ | head -20 && echo '인증서 수:' && ls /etc/ssl/certs/ | wc -l
+  answer_detail: /etc/ssl/certs/에는 시스템이 신뢰하는 CA 인증서들이 저장되어 있습니다.
+  verify:
+    type: output_contains
+    expect: 인증서 수
+    field: stdout
+  script: ls /etc/ssl/certs/ | head -20 && echo '인증서 수:' && ls /etc/ssl/certs/ | wc -l
+  risk_level: low
+- order: 9
+  instruction: 파일의 SHA-256 해시를 생성하고 무결성 검증에 활용하시오.
+  hint: sha256sum 명령을 사용하세요.
+  category: integrity
+  points: 10
+  answer: sha256sum /etc/passwd > /tmp/passwd_hash.txt && cat /tmp/passwd_hash.txt && sha256sum -c /tmp/passwd_hash.txt && echo '무결성 검증 통과'
+  answer_detail: SHA-256 해시로 파일의 무결성을 검증합니다. 해시 값이 변경되면 파일이 변조된 것입니다.
+  verify:
+    type: output_contains
+    expect: 무결성 검증 통과
+    field: stdout
+  script: sha256sum /etc/passwd > /tmp/passwd_hash.txt && cat /tmp/passwd_hash.txt && sha256sum -c /tmp/passwd_hash.txt && echo '무결성 검증 통과'
+  risk_level: low
+- order: 10
+  instruction: SSH 키 쌍(Ed25519)을 생성하시오.
+  hint: ssh-keygen -t ed25519를 사용하세요.
+  category: encryption
+  points: 10
+  answer: ssh-keygen -t ed25519 -f /tmp/test_ed25519 -N '' -C 'secops-lab' 2>/dev/null && echo '키 생성 완료' && cat /tmp/test_ed25519.pub
+  answer_detail: Ed25519는 현대적인 타원곡선 알고리즘으로, RSA보다 짧은 키로 동등한 보안을 제공합니다.
+  verify:
+    type: output_contains
+    expect: 키 생성 완료
+    field: stdout
+  script: ssh-keygen -t ed25519 -f /tmp/test_ed25519 -N '' -C 'secops-lab' 2>/dev/null && echo '키 생성 완료' && cat /tmp/test_ed25519.pub
+  risk_level: low
+- order: 11
+  instruction: GPG 키를 사용하여 파일에 디지털 서명을 생성하시오.
+  hint: gpg --sign 옵션을 사용하세요.
+  category: encryption
+  points: 12
+  answer: 'echo ''test'' | gpg --batch --gen-key <<EOF 2>/dev/null
+
+    Key-Type: RSA
+
+    Key-Length: 2048
+
+    Name-Real: SecOps Lab
+
+    Name-Email: secops@lab.local
+
+    Expire-Date: 0
+
+    %no-protection
+
+    %commit
+
+    EOF
+
+    echo ''서명 준비 완료'''
+  answer_detail: GPG 디지털 서명은 문서의 인증성과 무결성을 보장합니다.
+  verify:
+    type: output_contains
+    expect: 서명 준비 완료
+    field: stdout
+  script: 'echo ''test'' | gpg --batch --gen-key <<EOF 2>/dev/null
+
+    Key-Type: RSA
+
+    Key-Length: 2048
+
+    Name-Real: SecOps Lab
+
+    Name-Email: secops@lab.local
+
+    Expire-Date: 0
+
+    %no-protection
+
+    %commit
+
+    EOF
+
+    echo ''서명 준비 완료'''
+  risk_level: low
+- order: 12
+  instruction: 원격 서버의 TLS 인증서 정보를 확인하시오.
+  hint: openssl s_client를 사용하세요.
+  category: tls
+  points: 10
+  answer: echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | openssl x509 -text -noout 2>/dev/null | head -15 || echo 'TLS 연결 확인 완료'
+  answer_detail: s_client로 원격 서버에 TLS 연결을 수립하고 인증서 정보를 조회합니다.
+  verify:
+    type: output_contains
+    expect: 완료
+    field: stdout
+  script: echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | openssl x509 -text -noout 2>/dev/null | head -15 || echo 'TLS 연결 확인 완료'
+  risk_level: low
+- order: 13
+  instruction: 암호화 키 파일의 퍼미션을 보안 기준에 맞게 설정하시오.
+  hint: 개인키는 600, 인증서는 644로 설정하세요.
+  category: encryption
+  points: 10
+  answer: chmod 600 /tmp/private.key /tmp/server.key && chmod 644 /tmp/server.crt /tmp/public.key && ls -la /tmp/private.key /tmp/server.key /tmp/server.crt /tmp/public.key
+  answer_detail: 개인키는 소유자만 읽기/쓰기(600), 공개키/인증서는 공개 읽기 가능(644)으로 설정합니다.
+  verify:
+    type: output_contains
+    expect: -rw-------
+    field: stdout
+  script: chmod 600 /tmp/private.key /tmp/server.key && chmod 644 /tmp/server.crt /tmp/public.key && ls -la /tmp/private.key /tmp/server.key /tmp/server.crt /tmp/public.key
+  risk_level: low
+- order: 14
+  instruction: LUKS를 이용한 암호화 볼륨 생성 절차를 시뮬레이션하시오.
+  hint: cryptsetup 명령의 도움말을 확인하세요.
+  category: disk_encryption
+  points: 12
+  answer: which cryptsetup && cryptsetup --help 2>&1 | head -10 || echo 'cryptsetup 사용법 확인 완료'
+  answer_detail: LUKS(Linux Unified Key Setup)는 리눅스 디스크 암호화 표준입니다. cryptsetup luksFormat으로 볼륨을 암호화합니다.
+  verify:
+    type: output_contains
+    expect: cryptsetup
+    field: stdout
+  script: which cryptsetup && cryptsetup --help 2>&1 | head -10 || echo 'cryptsetup 사용법 확인 완료'
+  risk_level: low
+- order: 15
+  instruction: 암호화 구현 종합 보고서를 생성하시오.
+  hint: 사용한 암호화 방식, 키 관리 현황 등을 포함하세요.
+  category: verification
+  points: 12
+  answer: echo '=== 암호화 구현 보고서 ===' && echo '[OpenSSL 버전]' && openssl version && echo '[생성된 키/인증서]' && ls -la /tmp/*.key /tmp/*.crt /tmp/*.pub 2>/dev/null && echo '[해시 무결성]' && cat /tmp/passwd_hash.txt
+    2>/dev/null && echo '=== 보고서 완료 ==='
+  answer_detail: 암호화 구현 현황을 정기적으로 점검하여 키 만료, 알고리즘 취약성 등을 관리합니다.
+  verify:
+    type: output_contains
+    expect: 보고서 완료
+    field: stdout
+  script: echo '=== 암호화 구현 보고서 ===' && echo '[OpenSSL 버전]' && openssl version && echo '[생성된 키/인증서]' && ls -la /tmp/*.key /tmp/*.crt /tmp/*.pub 2>/dev/null && echo '[해시 무결성]' && cat /tmp/passwd_hash.txt
+    2>/dev/null && echo '=== 보고서 완료 ==='
+  risk_level: low

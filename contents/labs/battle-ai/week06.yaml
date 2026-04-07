@@ -1,9 +1,9 @@
 lab_id: battle-ai-week06
-title: AI 기반 방화벽 구축 및 트래픽 제어 — nftables/iptables 실전 방어
+title: 방화벽 구축 및 트래픽 제어 — nftables/iptables 실전 방어 (AI 지원)
 version: ai
 course: battle-ai
 week: 6
-description: AI 에이전트가 자동으로 실행하는 리눅스 방화벽(nftables/iptables)을 구축하여 네트워크 트래픽을 제어한다. 기... 본 정책 설정, 서비스별 접근 제어, 로깅, Rate Limiting, 포트 노킹 등 실전 방어 기법을 실습한다.
+description: 리눅스 방화벽(nftables/iptables)을 구축하여 네트워크 트래픽을 제어한다. 기본 정책 설정, 서비스별 접근 제어, 로깅, Rate Limiting, 포트 노킹 등 실전 방어 기법을 실습한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -30,6 +30,7 @@ steps:
     expect: table
     field: stdout
   script: sudo nft list ruleset && sudo nft flush ruleset
+  risk_level: low
 - order: 2
   instruction: nftables 테이블과 기본 체인(input, forward, output)을 생성하라.
   hint: nft add table/chain 명령을 사용한다.
@@ -44,6 +45,7 @@ steps:
     field: stdout
   script: sudo nft add table inet filter && sudo nft add chain inet filter input '{ type filter hook input priority 0; policy drop; }' && sudo nft add chain inet filter forward '{ type filter hook forward
     priority 0; policy drop; }' && sudo nft add chain inet filter output '{ type filter hook output priority 0; policy accept; }'
+  risk_level: low
 - order: 3
   instruction: 루프백 인터페이스 트래픽을 허용하고, established/related 연결을 허용하라.
   hint: lo 인터페이스와 ct state를 사용한다.
@@ -56,6 +58,7 @@ steps:
     expect: accept
     field: stdout
   script: sudo nft add rule inet filter input iifname lo accept && sudo nft add rule inet filter input ct state established,related accept
+  risk_level: low
 - order: 4
   instruction: SSH(22), HTTP(80), HTTPS(443) 서비스만 외부에서 접근 가능하도록 허용하라.
   hint: tcp dport로 포트를 지정한다.
@@ -68,6 +71,7 @@ steps:
     expect: accept
     field: stdout
   script: sudo nft add rule inet filter input tcp dport 22 accept && sudo nft add rule inet filter input tcp dport 80 accept && sudo nft add rule inet filter input tcp dport 443 accept
+  risk_level: low
 - order: 5
   instruction: ICMP ping 요청을 허용하되, Rate Limiting(초당 5회)을 적용하라.
   hint: nft limit rate 구문을 사용한다.
@@ -80,6 +84,7 @@ steps:
     expect: limit
     field: stdout
   script: sudo nft add rule inet filter input icmp type echo-request limit rate 5/second accept
+  risk_level: low
 - order: 6
   instruction: SSH 서비스에 대한 브루트포스 방어를 위해 연결 Rate Limiting을 적용하라.
   hint: 30초에 3회 이상 연결 시도를 차단한다.
@@ -92,6 +97,7 @@ steps:
     expect: limit
     field: stdout
   script: sudo nft add rule inet filter input tcp dport 22 ct state new limit rate 3/minute accept && sudo nft insert rule inet filter input tcp dport 22 ct state new drop
+  risk_level: low
 - order: 7
   instruction: 특정 IP 대역(10.20.30.100/32)에서의 모든 접근을 차단하라.
   hint: saddr로 소스 IP를 매칭한다.
@@ -104,6 +110,7 @@ steps:
     expect: drop
     field: stdout
   script: sudo nft insert rule inet filter input ip saddr 10.20.30.100 drop
+  risk_level: low
 - order: 8
   instruction: 방화벽에 로깅 규칙을 추가하여 차단된 트래픽을 기록하라.
   hint: nft log prefix 구문을 사용한다.
@@ -116,6 +123,7 @@ steps:
     expect: log
     field: stdout
   script: sudo nft add rule inet filter input log prefix "[NFT-DROP] " flags all counter drop
+  risk_level: low
 - order: 9
   instruction: 현재 적용된 전체 룰셋을 확인하고 파일로 백업하라.
   hint: nft list ruleset을 파일로 리다이렉트한다.
@@ -128,6 +136,7 @@ steps:
     expect: /tmp/nftables_backup.conf
     field: filesystem
   script: sudo nft list ruleset | tee /tmp/nftables_backup.conf
+  risk_level: low
 - order: 10
   instruction: 공격자 VM에서 nmap 스캔을 실행하여 방화벽이 올바르게 작동하는지 검증하라.
   hint: 허용된 포트만 open, 나머지는 filtered로 표시되어야 한다.
@@ -140,6 +149,7 @@ steps:
     expect: filtered
     field: stdout
   script: nmap -sS -p 22,80,443,3306,8080 10.20.30.1
+  risk_level: low
 - order: 11
   instruction: SYN Flood 방어를 위한 synproxy 규칙을 설정하라.
   hint: nft의 synproxy 기능을 사용한다.
@@ -152,6 +162,7 @@ steps:
     expect: syn
     field: stdout
   script: sudo nft add rule inet filter input tcp dport 80 ct state new tcp flags syn limit rate over 100/second burst 150 packets drop
+  risk_level: low
 - order: 12
   instruction: Invalid 상태의 패킷을 차단하여 비정상 트래픽을 필터링하라.
   hint: ct state invalid를 사용한다.
@@ -164,6 +175,7 @@ steps:
     expect: invalid
     field: stdout
   script: sudo nft insert rule inet filter input ct state invalid drop
+  risk_level: low
 - order: 13
   instruction: IP set을 생성하여 여러 차단 IP를 효율적으로 관리하라.
   hint: nft add set과 add element를 사용한다.
@@ -178,6 +190,7 @@ steps:
     field: stdout
   script: sudo nft add set inet filter blocklist '{ type ipv4_addr; }' && sudo nft add element inet filter blocklist '{ 10.20.30.100, 10.20.30.101, 10.20.30.102 }' && sudo nft add rule inet filter input
     ip saddr @blocklist drop
+  risk_level: low
 - order: 14
   instruction: 방화벽 카운터를 확인하여 각 규칙의 매칭 횟수를 분석하라.
   hint: nft list ruleset에서 counter 값을 확인한다.
@@ -190,6 +203,7 @@ steps:
     expect: packets
     field: stdout
   script: sudo nft list ruleset | grep -A1 'counter'
+  risk_level: low
 - order: 15
   instruction: 방화벽 구축 결과를 종합하여 방화벽 정책 문서를 작성하라. 적용된 규칙, 테스트 결과, 운영 가이드를 포함하라.
   hint: 각 규칙의 목적과 테스트 결과를 정리한다.
@@ -306,3 +320,4 @@ steps:
     - Backup before changes: nft list ruleset > backup.conf
 
     EOF'
+  risk_level: low

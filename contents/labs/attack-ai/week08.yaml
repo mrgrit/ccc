@@ -1,218 +1,219 @@
 lab_id: attack-ai-week08
-title: 권한 상승 (Privilege Escalation) - AI 지원
+title: 권한 상승 (Privilege Escalation) (AI 지원)
 version: ai
 course: attack-ai
 week: 8
-description: AI 에이전트를 활용하여 Linux 권한 상승 벡터를 자동 탐색한다. LinPEAS와 유사한 자동화 검사를 AI가 수행한다.
+description: Linux 시스템에서의 로컬 권한 상승 기법을 실습한다. SUID 악용, sudo 미스컨피규레이션, cron 조작, 커널 익스플로잇 등 다양한 경로를 통해 root 권한을 획득한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: hard
 duration_minutes: 120
 objectives:
-- CCC를 통해 권한 상승 작업을 자동화할 수 있다
-- AI가 권한 상승 결과를 분석하고 보고서를 생성하는 과정을 학습한다
-- 수동 vs AI 기반 권한 상승의 장단점을 이해한다
+- Linux 권한 상승의 다양한 벡터를 이해한다
+- LinPEAS 등 자동화 도구로 권한 상승 경로를 탐색할 수 있다
+- SUID, sudo, cron 기반 권한 상승을 수행할 수 있다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: CCC에 권한 상승 프로젝트를 생성하라.
-  hint: CCC API를 사용하여 권한 상승을 자동화한다
+  instruction: web 서버(10.20.30.80)에 SSH로 접속하여 현재 사용자의 권한과 그룹 정보를 확인하라.
+  hint: id, whoami, groups 명령을 사용한다
   category: recon
   points: 5
-  answer: 'curl -s -X POST http://localhost:9100/api/projects -H ''Content-Type: application/json''
-    -H ''X-API-Key: ccc-api-key-2026'' -d ''{"name":"권한_상승","request_text":"권한
-    상승","master_mode":"external"}'''
-  answer_detail: CCC 프로젝트 생성으로 모든 작업의 증적이 자동 기록된다.
-  script: ccc_project_create.py
+  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'id && whoami && groups' 2>/dev/null
+  answer_detail: 현재 사용자의 UID, GID, 소속 그룹을 파악하는 것은 권한 상승의 첫 단계이다. docker, lxd, disk 등의 그룹에 속하면 컨테이너 탈출이나 직접적인 권한 상승이 가능할 수 있다.
   verify:
     type: output_contains
-    expect: result
+    expect: uid=
     field: stdout
+  script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'id && whoami && groups' 2>/dev/null
+  risk_level: low
 - order: 2
-  instruction: AI에게 사용자 권한 확인 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 권한 상승을 자동화한다
-  category: exploit
+  instruction: web 서버에서 sudo -l 명령으로 현재 사용자가 sudo로 실행할 수 있는 명령을 확인하라.
+  hint: sudo -l은 현재 사용자의 sudo 권한을 표시한다
+  category: recon
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"사용자
-    권한 확인","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 사용자 권한 확인 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_사용자_권한_확인.py
+  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'echo 1 | sudo -S -l' 2>/dev/null
+  answer_detail: sudo -l 출력에서 NOPASSWD 항목이나 와일드카드(*) 사용, 위험한 바이너리(vim, python, bash 등)가 허용되면 즉시 root 셸을 획득할 수 있다. GTFOBins에서 각 바이너리의 sudo 권한 상승 방법을 확인한다.
   verify:
     type: output_contains
-    expect: result
+    expect: sudo
     field: stdout
+  script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'echo 1 | sudo -S -l' 2>/dev/null
+  risk_level: low
 - order: 3
-  instruction: AI에게 sudo 설정 분석 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 권한 상승을 자동화한다
-  category: exploit
+  instruction: web 서버에서 SUID 비트가 설정된 모든 바이너리를 검색하고, 비정상적인 항목을 식별하라.
+  hint: find / -perm -4000 -type f로 검색한다
+  category: recon
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"sudo
-    설정 분석","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 sudo 설정 분석 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_sudo_설정_분석.py
+  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'find / -perm -4000 -type f 2>/dev/null | sort' 2>/dev/null
+  answer_detail: 표준 SUID 바이너리(passwd, ping, su 등) 외에 비정상적인 SUID 파일이 있으면 권한 상승에 악용할 수 있다. /usr/bin/python3, /usr/bin/vim 등이 SUID이면 즉시 root 획득이 가능하다.
   verify:
     type: output_contains
-    expect: result
+    expect: /usr
     field: stdout
+  script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'find / -perm -4000 -type f 2>/dev/null | sort' 2>/dev/null
+  risk_level: low
 - order: 4
-  instruction: AI에게 SUID 바이너리 검색 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 권한 상승을 자동화한다
-  category: exploit
+  instruction: web 서버에서 world-writable 파일을 검색하라. 특히 root가 소유한 world-writable 파일에 주목하라.
+  hint: find / -writable -type f로 검색한다
+  category: recon
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"SUID
-    바이너리 검색","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 SUID 바이너리 검색 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_suid_바이너리_검색.py
+  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'find / -writable -type f -not -path "/proc/*" -not -path "/sys/*" 2>/dev/null | head -20' 2>/dev/null
+  answer_detail: world-writable 파일은 모든 사용자가 수정할 수 있다. root 소유의 스크립트나 설정 파일이 world-writable이면 악성 코드를 삽입하여 root 권한으로 실행시킬 수 있다.
   verify:
     type: output_contains
-    expect: result
+    expect: /
     field: stdout
+  script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'find / -writable -type f -not -path "/proc/*" -not -path "/sys/*" 2>/dev/null | head -20' 2>/dev/null
+  risk_level: low
 - order: 5
-  instruction: AI에게 world-writable 파일 검색 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 권한 상승을 자동화한다
-  category: exploit
+  instruction: web 서버의 /etc/passwd 파일에서 셸 접근이 가능한 사용자를 나열하라.
+  hint: /bin/bash 또는 /bin/sh가 설정된 사용자를 필터링한다
+  category: recon
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"world-writable
-    파일 검색","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 world-writable 파일 검색 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_world-writable_파일_검색.py
+  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'grep -E "/bin/(bash|sh|zsh)$" /etc/passwd' 2>/dev/null
+  answer_detail: 셸 접근이 가능한 사용자 계정은 잠재적 공격 대상이다. 불필요한 계정에 셸이 할당되어 있으면 해당 계정을 침해하여 시스템에 접근할 수 있다.
   verify:
     type: output_contains
-    expect: result
+    expect: root
     field: stdout
+  script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'grep -E "/bin/(bash|sh|zsh)$" /etc/passwd' 2>/dev/null
+  risk_level: low
 - order: 6
-  instruction: AI에게 셸 사용자 나열 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 권한 상승을 자동화한다
-  category: exploit
+  instruction: web 서버의 crontab과 cron 디렉토리를 검사하여 root로 실행되는 예약 작업을 찾아라.
+  hint: /etc/crontab, /etc/cron.d/, /var/spool/cron/ 디렉토리를 확인한다
+  category: recon
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"셸 사용자
-    나열","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 셸 사용자 나열 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_셸_사용자_나열.py
+  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'cat /etc/crontab 2>/dev/null; echo ---; ls -la /etc/cron.d/ 2>/dev/null; echo ---; ls -la /var/spool/cron/crontabs/ 2>/dev/null' 2>/dev/null
+  answer_detail: root 권한으로 실행되는 cron 작업이 일반 사용자가 수정할 수 있는 스크립트를 참조하면, 해당 스크립트에 리버스 셸을 삽입하여 root 권한을 획득할 수 있다.
   verify:
     type: output_contains
-    expect: result
+    expect: cron
     field: stdout
+  script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'cat /etc/crontab 2>/dev/null; echo ---; ls -la /etc/cron.d/ 2>/dev/null; echo ---; ls -la /var/spool/cron/crontabs/ 2>/dev/null' 2>/dev/null
+  risk_level: low
 - order: 7
-  instruction: AI에게 crontab 검사 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 권한 상승을 자동화한다
-  category: exploit
+  instruction: web 서버에서 capabilities가 설정된 바이너리를 검색하라. 특수 capability는 SUID와 유사한 권한 상승에 사용될 수 있다.
+  hint: getcap -r / 명령으로 검색한다
+  category: recon
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"crontab
-    검사","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 crontab 검사 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_crontab_검사.py
+  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'getcap -r / 2>/dev/null' 2>/dev/null
+  answer_detail: Linux Capabilities는 root 권한을 세분화한 시스템이다. cap_setuid, cap_dac_override 등이 설정된 바이너리는 SUID 없이도 권한 상승이 가능하다. python3에 cap_setuid가 있으면 os.setuid(0)으로 root가 된다.
   verify:
     type: output_contains
-    expect: result
+    expect: cap
     field: stdout
+  script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'getcap -r / 2>/dev/null' 2>/dev/null
+  risk_level: low
 - order: 8
-  instruction: AI에게 capabilities 검사 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 권한 상승을 자동화한다
-  category: exploit
+  instruction: web 서버에서 /etc/shadow 파일의 읽기 권한을 확인하라. 일반 사용자가 읽을 수 있으면 오프라인 크래킹이 가능하다.
+  hint: ls -la /etc/shadow로 권한을 확인한다
+  category: analysis
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"capabilities
-    검사","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 capabilities 검사 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_capabilities_검사.py
+  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'ls -la /etc/shadow; cat /etc/shadow 2>/dev/null || echo "Permission denied (normal)"' 2>/dev/null
+  answer_detail: /etc/shadow는 보통 root만 읽을 수 있다(640). 권한 미스컨피규레이션으로 일반 사용자가 읽을 수 있으면 비밀번호 해시를 추출하여 john이나 hashcat으로 오프라인 크래킹할 수 있다.
   verify:
     type: output_contains
-    expect: result
+    expect: shadow
     field: stdout
+  script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'ls -la /etc/shadow; cat /etc/shadow 2>/dev/null || echo "Permission denied (normal)"' 2>/dev/null
+  risk_level: low
 - order: 9
-  instruction: AI에게 shadow 파일 확인 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 권한 상승을 자동화한다
-  category: exploit
+  instruction: web 서버에서 환경변수에 민감한 정보(비밀번호, API 키)가 포함되어 있는지 확인하라.
+  hint: env 또는 printenv 명령으로 환경변수를 확인한다
+  category: recon
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"shadow
-    파일 확인","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 shadow 파일 확인 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_shadow_파일_확인.py
+  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'env | grep -iE "(pass|key|secret|token|api)"' 2>/dev/null; echo '---'; sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80
+    'cat /proc/1/environ 2>/dev/null | tr "\0" "\n" | grep -iE "(pass|key|secret)" || echo "Cannot read /proc/1/environ"' 2>/dev/null
+  answer_detail: 환경변수에 저장된 비밀번호나 API 키는 프로세스 목록이나 /proc/PID/environ에서 노출될 수 있다. Docker 컨테이너 환경에서는 특히 환경변수를 통한 시크릿 전달이 위험하다.
   verify:
     type: output_contains
-    expect: result
+    expect: '---'
     field: stdout
+  script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'env | grep -iE "(pass|key|secret|token|api)"' 2>/dev/null; echo '---'; sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80
+    'cat /proc/1/environ 2>/dev/null | tr "\0" "\n" | grep -iE "(pass|key|secret)" || echo "Cannot read /proc/1/environ"' 2>/dev/null
+  risk_level: low
 - order: 10
-  instruction: AI에게 환경변수 검사 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 권한 상승을 자동화한다
-  category: exploit
+  instruction: web 서버에서 PATH 하이재킹 가능성을 확인하라. 현재 사용자가 쓸 수 있는 디렉토리가 PATH에 포함되어 있는지 확인하라.
+  hint: echo $PATH로 PATH를 확인하고, 각 디렉토리의 쓰기 권한을 확인한다
+  category: analysis
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"환경변수
-    검사","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 환경변수 검사 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_환경변수_검사.py
+  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'IFS=:; for d in $PATH; do echo -n "$d -> "; test -w "$d" && echo "WRITABLE" || echo "not writable"; done' 2>/dev/null
+  answer_detail: PATH 하이재킹은 상대 경로로 명령을 실행하는 프로그램을 악용한다. PATH의 앞쪽에 있는 writable 디렉토리에 같은 이름의 악성 바이너리를 배치하면, 원래 명령 대신 악성 코드가 실행된다.
   verify:
     type: output_contains
-    expect: result
+    expect: ->
     field: stdout
+  script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'IFS=:; for d in $PATH; do echo -n "$d -> "; test -w "$d" && echo "WRITABLE" || echo "not writable"; done' 2>/dev/null
+  risk_level: low
 - order: 11
-  instruction: AI에게 PATH 하이재킹 확인 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 권한 상승을 자동화한다
-  category: exploit
+  instruction: web 서버에서 Docker 소켓이 일반 사용자에게 접근 가능한지 확인하라. docker.sock 접근이 가능하면 컨테이너 탈출로 root를 획득할 수 있다.
+  hint: ls -la /var/run/docker.sock 또는 docker ps를 실행한다
+  category: analysis
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"PATH
-    하이재킹 확인","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 PATH 하이재킹 확인 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_path_하이재킹_확인.py
+  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'ls -la /var/run/docker.sock 2>/dev/null; docker ps 2>/dev/null || echo "Docker not accessible"' 2>/dev/null
+  answer_detail: Docker 소켓에 접근 가능하면 docker run --privileged -v /:/mnt alpine chroot /mnt 명령으로 호스트 파일시스템에 root 접근이 가능하다. docker 그룹은 사실상 root와 동등한 권한이다.
   verify:
     type: output_contains
-    expect: result
+    expect: docker
     field: stdout
+  script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'ls -la /var/run/docker.sock 2>/dev/null; docker ps 2>/dev/null || echo "Docker not accessible"' 2>/dev/null
+  risk_level: low
 - order: 12
-  instruction: AI가 수행한 작업의 evidence summary를 조회하라.
-  hint: CCC API를 사용하여 권한 상승을 자동화한다
-  category: analysis
+  instruction: web 서버의 네트워크 서비스 중 내부 전용 서비스(localhost에만 바인딩)를 확인하라. 포트 포워딩으로 접근할 수 있는 서비스를 식별하라.
+  hint: ss -tlnp 명령으로 리스닝 포트를 확인한다
+  category: recon
   points: 10
-  answer: 'curl -s -H ''X-API-Key: ccc-api-key-2026'' http://localhost:9100/api/projects/{id}/evidence/summary'
-  answer_detail: 증적 시스템에서 모든 작업 결과를 조회하여 진행 상황을 파악한다.
-  script: ccc_evidence_summary.py
+  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'ss -tlnp 2>/dev/null' 2>/dev/null
+  answer_detail: 127.0.0.1에만 바인딩된 서비스는 외부에서 직접 접근할 수 없지만, SSH 포트 포워딩(-L)이나 proxychains를 통해 접근할 수 있다. 내부 전용 관리 인터페이스가 대상이 될 수 있다.
   verify:
     type: output_contains
-    expect: result
+    expect: LISTEN
     field: stdout
+  script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'ss -tlnp 2>/dev/null' 2>/dev/null
+  risk_level: low
 - order: 13
-  instruction: AI에게 권한 상승 결과를 MITRE ATT&CK에 매핑하도록 요청하라.
-  hint: CCC API를 사용하여 권한 상승을 자동화한다
-  category: analysis
+  instruction: web 서버에서 history 파일을 확인하여 이전에 실행된 명령 중 민감한 정보(비밀번호, 토큰)가 포함된 것이 있는지 찾아라.
+  hint: .bash_history 파일을 확인한다
+  category: recon
   points: 10
-  answer: echo '=== MITRE ATT&CK Mapping for 권한 상승 ==='
-  answer_detail: AI가 수행한 기법을 MITRE ATT&CK 프레임워크에 자동 매핑하여 방어 커버리지를 분석한다.
-  script: ai_attack_mapping.py
+  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'cat ~/.bash_history 2>/dev/null | grep -iE "(pass|key|secret|token|mysql|psql)" | head -10; echo ---; cat ~/.bash_history 2>/dev/null
+    | tail -20' 2>/dev/null
+  answer_detail: 셸 히스토리 파일에는 이전에 실행된 명령이 저장되며, 비밀번호가 명령줄에 포함된 경우가 많다(mysql -u root -p패스워드). 침해 후 히스토리 검사는 추가 자격 증명을 수집하는 중요한 기법이다.
   verify:
     type: output_contains
-    expect: result
+    expect: '---'
     field: stdout
+  script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'cat ~/.bash_history 2>/dev/null | grep -iE "(pass|key|secret|token|mysql|psql)" | head -10; echo ---; cat ~/.bash_history 2>/dev/null
+    | tail -20' 2>/dev/null
+  risk_level: low
 - order: 14
-  instruction: PoW 블록을 조회하여 AI 에이전트의 작업 이력과 보상을 확인하라.
-  hint: CCC API를 사용하여 권한 상승을 자동화한다
+  instruction: LinPEAS 스크립트의 주요 검사 항목을 수동으로 재현하라. 커널 버전, SUID, sudo, cron, 네트워크를 한 번에 검사하는 원라이너를 작성하라.
+  hint: 여러 검사 명령을 세미콜론으로 연결한다
   category: analysis
   points: 15
-  answer: 'curl -s -H ''X-API-Key: ccc-api-key-2026'' ''http://localhost:9100/api/pow/blocks?agent_id=http://localhost:8002'''
-  answer_detail: PoW 시스템으로 AI 에이전트의 작업 증적과 보상을 추적한다.
-  script: ccc_pow_blocks.py
+  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'echo "=== Kernel ==="; uname -a; echo "=== SUID ==="; find / -perm -4000 -type f 2>/dev/null | wc -l; echo "=== Sudo ==="; echo 1 |
+    sudo -S -l 2>/dev/null | tail -5; echo "=== Cron ==="; ls /etc/cron.d/ 2>/dev/null; echo "=== Listening ==="; ss -tlnp 2>/dev/null | head -10' 2>/dev/null
+  answer_detail: LinPEAS(Linux Privilege Escalation Awesome Script)는 권한 상승 경로를 자동으로 탐색하는 스크립트이다. 주요 검사 항목(커널, SUID, sudo, cron, 네트워크, 파일 권한)을 이해하면 도구 없이도 수동 검사가 가능하다.
   verify:
     type: output_contains
-    expect: result
+    expect: Kernel
     field: stdout
+  script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'echo "=== Kernel ==="; uname -a; echo "=== SUID ==="; find / -perm -4000 -type f 2>/dev/null | wc -l; echo "=== Sudo ==="; echo 1 |
+    sudo -S -l 2>/dev/null | tail -5; echo "=== Cron ==="; ls /etc/cron.d/ 2>/dev/null; echo "=== Listening ==="; ss -tlnp 2>/dev/null | head -10' 2>/dev/null
+  risk_level: low
 - order: 15
-  instruction: 권한 상승 완료 보고서를 CCC API로 생성하라.
-  hint: CCC API를 사용하여 권한 상승을 자동화한다
+  instruction: 권한 상승 공격 결과를 /tmp/privesc_report.txt에 정리하라. 발견된 벡터, 성공한 기법, 방어 권고를 포함하라.
+  hint: 발견된 모든 권한 상승 벡터를 위험도 순으로 정리한다
   category: analysis
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/completion-report -H
-    ''Content-Type: application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"summary":"권한
-    상승 완료","outcome":"success"}'''
-  answer_detail: AI가 권한 상승 결과를 자동으로 종합하여 완료 보고서를 생성한다.
-  script: ccc_completion_report.py
+  answer: 'echo -e ''=== Privilege Escalation Report ===\n\n[Vectors Found]\n1. sudo misconfig: 위험한 바이너리 NOPASSWD 허용\n2. SUID binaries: 비표준 SUID 파일 발견\n3. Writable cron scripts: root cronjob 조작 가능\n4. Capabilities:
+    특수 capability 설정 확인\n5. PATH hijacking: writable PATH directory\n\n[Successful Techniques]\n- sudo -l 기반 권한 상승\n- SUID 바이너리 악용\n\n[Recommendations]\n1. sudo 규칙 최소화 (NOPASSWD 제거)\n2. 불필요한 SUID bit 제거\n3.
+    cron 스크립트 권한 제한 (750)\n4. 정기적 권한 감사 수행\n5. SELinux/AppArmor 활성화'' > /tmp/privesc_report.txt && cat /tmp/privesc_report.txt'
+  answer_detail: 권한 상승 보고서는 발견된 벡터의 위험도, 공격 재현 절차, 방어 우선순위를 명시해야 한다. 즉시 조치(sudo 규칙 수정)와 장기 조치(SELinux 도입)를 구분하여 제시한다.
   verify:
     type: output_contains
-    expect: result
+    expect: Privilege Escalation Report
     field: stdout
+  script: 'echo -e ''=== Privilege Escalation Report ===\n\n[Vectors Found]\n1. sudo misconfig: 위험한 바이너리 NOPASSWD 허용\n2. SUID binaries: 비표준 SUID 파일 발견\n3. Writable cron scripts: root cronjob 조작 가능\n4. Capabilities:
+    특수 capability 설정 확인\n5. PATH hijacking: writable PATH directory\n\n[Successful Techniques]\n- sudo -l 기반 권한 상승\n- SUID 바이너리 악용\n\n[Recommendations]\n1. sudo 규칙 최소화 (NOPASSWD 제거)\n2. 불필요한 SUID bit 제거\n3.
+    cron 스크립트 권한 제한 (750)\n4. 정기적 권한 감사 수행\n5. SELinux/AppArmor 활성화'' > /tmp/privesc_report.txt && cat /tmp/privesc_report.txt'
+  risk_level: low

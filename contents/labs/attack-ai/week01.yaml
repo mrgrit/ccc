@@ -1,194 +1,211 @@
-lab_id: "attack-ai-week01"
-title: "정보수집 기초 (Reconnaissance) - AI 지원"
-version: "ai"
-course: "attack-ai"
+lab_id: attack-ai-week01
+title: 정보수집 기초 (Reconnaissance) (AI 지원)
+version: ai
+course: attack-ai
 week: 1
-description: "AI 에이전트를 활용하여 대상 네트워크와 호스트의 정보를 체계적으로 수집한다. CCC API를 통해 자동화된 정찰을 수행하고, AI가 수집 결과를 분석하여 공격 표면을 도출한다."
-difficulty: "easy"
+description: OSINT 및 능동적 정보수집 기법을 활용하여 대상 네트워크와 호스트의 정보를 체계적으로 수집한다. whois, DNS 조회, 배너 그래빙, 웹 핑거프린팅 등 기본적인 정찰 기술을 실습한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+difficulty: easy
 duration_minutes: 120
 objectives:
-  - "CCC API를 통해 AI 기반 자동 정찰을 수행할 수 있다"
-  - "AI가 정찰 결과를 분석하여 공격 우선순위를 도출하는 과정을 이해한다"
-  - "수동 정찰과 AI 정찰의 결과를 비교할 수 있다"
+- 수동 정보수집(OSINT)과 능동 정보수집의 차이를 이해한다
+- DNS, whois, 배너 그래빙 등 기본 정찰 도구를 사용할 수 있다
+- 수집된 정보를 체계적으로 정리하고 공격 표면을 식별한다
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "CCC API에 정찰 프로젝트를 생성하라. master_mode를 external로 설정하라."
-    hint: "curl로 /projects 엔드포인트에 POST 요청을 보낸다"
-    category: "recon"
-    points: 5
-    answer: "curl -s -X POST http://localhost:9100/api/projects -H 'Content-Type: application/json' -H 'X-API-Key: ccc-api-key-2026' -d '{\"name\":\"recon-week01\",\"request_text\":\"10.20.30.0/24 네트워크 정보수집\",\"master_mode\":\"external\"}' | python3 -m json.tool"
-    answer_detail: "CCC 프로젝트를 생성하면 모든 작업의 증적(evidence)이 자동으로 기록된다. master_mode=external은 Claude Code가 직접 오케스트레이션함을 의미한다."
-    script: "ccc_project_create.py"
-    verify:
-      type: "output_contains"
-      expect: "project_id"
-      field: "stdout"
-  - order: 2
-    instruction: "AI 에이전트를 통해 대상 호스트 10.20.30.80의 생존 여부를 확인하라. CCC dispatch API를 사용하라."
-    hint: "dispatch API로 ping 명령을 전달한다"
-    category: "recon"
-    points: 10
-    answer: "curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H 'Content-Type: application/json' -H 'X-API-Key: ccc-api-key-2026' -d '{\"command\":\"ping -c 3 10.20.30.80\",\"subagent_url\":\"http://localhost:8002\"}' | python3 -m json.tool"
-    answer_detail: "CCC dispatch API를 통해 SubAgent에 명령을 전달하면, 실행 결과와 함께 증적이 자동 기록된다. 모든 정찰 활동이 추적 가능하여 감사(audit)에 활용된다."
-    script: "ccc_dispatch.py"
-    verify:
-      type: "output_contains"
-      expect: "bytes from"
-      field: "stdout"
-  - order: 3
-    instruction: "AI를 활용하여 웹서버(10.20.30.80:3000)의 HTTP 헤더를 분석하라. AI에게 보안 관점에서 헤더를 평가하도록 요청하라."
-    hint: "dispatch로 curl -I를 실행한 후 AI 분석을 요청한다"
-    category: "recon"
-    points: 10
-    answer: "curl -sI http://10.20.30.80:3000 > /tmp/headers.txt && cat /tmp/headers.txt && echo '--- AI Analysis Request ---' && curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H 'Content-Type: application/json' -H 'X-API-Key: ccc-api-key-2026' -d '{\"command\":\"curl -I http://10.20.30.80:3000\",\"subagent_url\":\"http://localhost:8002\"}'"
-    answer_detail: "AI는 HTTP 헤더에서 누락된 보안 헤더(CSP, X-Frame-Options, HSTS), 서버 정보 노출, 기술 스택 식별을 자동으로 수행한다. 수동 분석보다 빠르고 일관된 결과를 제공한다."
-    script: "ai_analyze_headers.py"
-    verify:
-      type: "output_contains"
-      expect: "HTTP/"
-      field: "stdout"
-  - order: 4
-    instruction: "AI에게 robots.txt와 /ftp 디렉토리를 동시에 조사하도록 execute-plan을 사용하여 병렬 정찰을 수행하라."
-    hint: "execute-plan API에 tasks 배열로 여러 명령을 전달한다"
-    category: "recon"
-    points: 10
-    answer: "curl -s -X POST http://localhost:9100/api/projects/{id}/execute-plan -H 'Content-Type: application/json' -H 'X-API-Key: ccc-api-key-2026' -d '{\"tasks\":[{\"order\":1,\"instruction_prompt\":\"curl -s http://10.20.30.80:3000/robots.txt\",\"risk_level\":\"low\"},{\"order\":2,\"instruction_prompt\":\"curl -s http://10.20.30.80:3000/ftp\",\"risk_level\":\"low\"}],\"subagent_url\":\"http://localhost:8002\"}' | python3 -m json.tool"
-    answer_detail: "execute-plan API는 여러 정찰 작업을 동시에 실행할 수 있다. AI 에이전트가 각 작업의 결과를 수집하고, PoW 블록으로 증적을 기록하며, 보상 시스템으로 효율을 추적한다."
-    script: "ccc_parallel_recon.py"
-    verify:
-      type: "output_contains"
-      expect: "task"
-      field: "stdout"
-  - order: 5
-    instruction: "AI를 활용하여 JuiceShop의 REST API 엔드포인트를 자동 열거하라. /api/Products, /api/Users, /api/SecurityQuestions 등을 체계적으로 탐색하라."
-    hint: "여러 API 엔드포인트에 대한 요청을 자동화한다"
-    category: "recon"
-    points: 10
-    answer: "for ep in Products Users SecurityQuestions Feedbacks Challenges; do echo \"=== /api/$ep ===\"; curl -s http://10.20.30.80:3000/api/$ep | python3 -c \"import sys,json; d=json.load(sys.stdin); print(f'Items: {len(d.get(\\\"data\\\",d.get(\\\"status\\\",\\\"unknown\\\")))}')\" 2>/dev/null; done"
-    answer_detail: "API 자동 열거는 AI가 각 엔드포인트의 응답 구조, 인증 요구사항, 데이터 노출 범위를 분석하여 취약점을 자동 식별하는 기반이 된다."
-    script: "ai_enumerate_apis.py"
-    verify:
-      type: "output_contains"
-      expect: "/api/"
-      field: "stdout"
-  - order: 6
-    instruction: "CCC의 probe_linux_host 스킬을 사용하여 web 서버(10.20.30.80)의 시스템 정보를 자동 수집하라."
-    hint: "dispatch API에서 스킬을 호출한다"
-    category: "recon"
-    points: 10
-    answer: "curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H 'Content-Type: application/json' -H 'X-API-Key: ccc-api-key-2026' -d '{\"command\":\"uname -a && cat /etc/os-release && ss -tlnp\",\"subagent_url\":\"http://10.20.30.80:8002\"}' | python3 -m json.tool"
-    answer_detail: "probe_linux_host 스킬은 호스트의 OS, 커널, 서비스, 네트워크 구성을 자동 수집한다. AI가 수집된 정보를 분석하여 잠재적 취약점과 공격 벡터를 식별한다."
-    script: "ccc_probe_host.py"
-    verify:
-      type: "output_contains"
-      expect: "Linux"
-      field: "stdout"
-  - order: 7
-    instruction: "AI에게 네트워크 전체(10.20.30.0/24)의 호스트 발견과 포트 스캔을 자동화하도록 요청하라."
-    hint: "nmap 명령을 dispatch로 실행한다"
-    category: "recon"
-    points: 10
-    answer: "curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H 'Content-Type: application/json' -H 'X-API-Key: ccc-api-key-2026' -d '{\"command\":\"nmap -sn 10.20.30.0/24\",\"subagent_url\":\"http://localhost:8002\"}' | python3 -m json.tool"
-    answer_detail: "AI 기반 네트워크 스캔은 결과를 자동으로 파싱하고, 각 호스트의 역할을 추정하며, 다음 정찰 단계를 자동으로 계획할 수 있다. 수동 스캔 대비 시간과 일관성에서 우위가 있다."
-    script: "ai_network_scan.py"
-    verify:
-      type: "output_contains"
-      expect: "Nmap"
-      field: "stdout"
-  - order: 8
-    instruction: "AI를 사용하여 JuiceShop의 main.js 소스 코드에서 숨겨진 API 엔드포인트와 관리자 경로를 자동 추출하라."
-    hint: "JavaScript 소스를 다운로드하고 패턴 분석을 수행한다"
-    category: "recon"
-    points: 10
-    answer: "curl -s http://10.20.30.80:3000/main.js | grep -oP '\"/(api|rest|admin|ftp)[^\"]*\"' | sort -u | head -20"
-    answer_detail: "AI는 JavaScript 번들에서 API 경로, 인증 토큰 패턴, 숨겨진 기능, 개발자 주석 등을 자동으로 추출하고 분류할 수 있다. 대규모 SPA 애플리케이션에서 특히 효과적이다."
-    script: "ai_js_analysis.py"
-    verify:
-      type: "output_contains"
-      expect: "api"
-      field: "stdout"
-  - order: 9
-    instruction: "CCC의 evidence summary API를 사용하여 지금까지 수집된 모든 정찰 결과를 조회하라."
-    hint: "/projects/{id}/evidence/summary 엔드포인트를 사용한다"
-    category: "analysis"
-    points: 10
-    answer: "curl -s -H 'X-API-Key: ccc-api-key-2026' http://localhost:9100/api/projects/{id}/evidence/summary | python3 -m json.tool"
-    answer_detail: "CCC의 evidence 시스템은 모든 정찰 활동의 결과를 자동 저장한다. summary API로 전체 결과를 조회하면 정찰 진행 상황과 수집된 정보를 한눈에 파악할 수 있다."
-    script: "ccc_evidence_summary.py"
-    verify:
-      type: "output_contains"
-      expect: "evidence"
-      field: "stdout"
-  - order: 10
-    instruction: "AI에게 JuiceShop 버전 정보를 확인하고, 해당 버전의 알려진 취약점을 분석하도록 요청하라."
-    hint: "/rest/admin/application-version에서 버전을 확인한다"
-    category: "analysis"
-    points: 10
-    answer: "curl -s http://10.20.30.80:3000/rest/admin/application-version && echo '' && echo '--- AI Analysis: Known vulnerabilities for this version ---'"
-    answer_detail: "AI는 버전 정보를 기반으로 CVE 데이터베이스를 자동 검색하고, 적용 가능한 익스플로잇을 분류하며, 위험도를 평가할 수 있다. 수동 searchsploit보다 포괄적인 분석이 가능하다."
-    script: "ai_version_vuln_analysis.py"
-    verify:
-      type: "output_contains"
-      expect: "version"
-      field: "stdout"
-  - order: 11
-    instruction: "AI를 활용하여 수집된 정보를 MITRE ATT&CK 프레임워크에 매핑하라. 정찰 단계에서 사용한 기법의 ATT&CK ID를 식별하라."
-    hint: "각 정찰 기법에 해당하는 T-ID를 매핑한다"
-    category: "analysis"
-    points: 10
-    answer: "echo -e '=== MITRE ATT&CK Mapping (AI-assisted) ===\\nT1595.002 - Active Scanning: Vulnerability Scanning (nmap)\\nT1592.004 - Gather Victim Host Information: Client Configurations (HTTP headers)\\nT1590.002 - Gather Victim Network Information: DNS (dig)\\nT1593.002 - Search Open Technical Databases (API enumeration)\\nT1595.001 - Active Scanning: Scanning IP Blocks (ping sweep)\\nT1592.002 - Gather Victim Host Information: Software (whatweb)'"
-    answer_detail: "AI는 수행된 정찰 활동을 자동으로 MITRE ATT&CK 기법에 매핑할 수 있다. 이를 통해 공격 커버리지를 시각화하고, 방어팀이 탐지 규칙을 설계하는 데 활용할 수 있다."
-    script: "ai_attack_mapping.py"
-    verify:
-      type: "output_contains"
-      expect: "ATT&CK"
-      field: "stdout"
-  - order: 12
-    instruction: "AI에게 정찰 결과를 기반으로 공격 우선순위를 자동 결정하도록 요청하라."
-    hint: "AI가 발견된 서비스와 취약점을 분석하여 공격 순서를 제안한다"
-    category: "analysis"
-    points: 10
-    answer: "echo -e '=== AI Attack Priority Analysis ===\\n\\nBased on reconnaissance data:\\n\\n1. [HIGH PRIORITY] JuiceShop (10.20.30.80:3000)\\n   - Multiple API endpoints exposed without auth\\n   - Error messages suggest SQL backend\\n   - Recommendation: Test SQLi on login/search\\n\\n2. [MEDIUM PRIORITY] SSH (10.20.30.80:22)\\n   - Standard SSH service\\n   - Recommendation: Credential testing\\n\\n3. [MEDIUM PRIORITY] Apache (10.20.30.80:80)\\n   - Web server with potential misconfig\\n   - Recommendation: Directory enumeration\\n\\n4. [LOW PRIORITY] SIEM (10.20.30.100:443)\\n   - Administrative interface\\n   - Recommendation: After initial access obtained'"
-    answer_detail: "AI는 수집된 정보의 패턴을 분석하여 가장 유망한 공격 벡터를 자동으로 식별하고 우선순위를 매긴다. 인증 없이 접근 가능한 API, 에러 메시지에서 추론한 백엔드 정보 등을 종합적으로 고려한다."
-    script: "ai_priority_analysis.py"
-    verify:
-      type: "output_contains"
-      expect: "Attack Priority"
-      field: "stdout"
-  - order: 13
-    instruction: "AI가 생성한 정찰 결과와 수동 정찰 결과를 비교하여 차이점을 분석하라."
-    hint: "AI의 자동 분석과 수동 분석의 커버리지를 비교한다"
-    category: "analysis"
-    points: 15
-    answer: "echo -e '=== Manual vs AI Recon Comparison ===\\n\\n| Aspect | Manual | AI-assisted |\\n|--------|--------|-------------|\\n| Speed | 30-60 min | 5-10 min |\\n| Coverage | Depends on skill | Systematic, consistent |\\n| False positives | Lower | May be higher |\\n| Context understanding | Better | Improving |\\n| Documentation | Manual effort | Auto-generated |\\n| Reproducibility | Low | High |\\n\\n[AI Advantages]\\n- Parallel execution of multiple scans\\n- Automatic evidence logging via CCC\\n- Pattern recognition across large datasets\\n- Consistent methodology\\n\\n[Manual Advantages]\\n- Better contextual understanding\\n- Creative approach to hidden paths\\n- Lower false positive rate\\n- Intuition-based discovery'"
-    answer_detail: "AI 정찰은 속도, 일관성, 자동 문서화에서 우위가 있지만, 컨텍스트 이해와 창의적 접근에서는 수동 정찰이 우수하다. 최적의 결과는 AI와 수동 분석을 병행할 때 달성된다."
-    script: "ai_comparison_report.py"
-    verify:
-      type: "output_contains"
-      expect: "Manual vs AI"
-      field: "stdout"
-  - order: 14
-    instruction: "CCC의 PoW(Proof of Work) 시스템에서 이번 정찰 프로젝트의 작업 블록을 조회하라."
-    hint: "/pow/blocks 엔드포인트를 사용한다"
-    category: "analysis"
-    points: 10
-    answer: "curl -s -H 'X-API-Key: ccc-api-key-2026' 'http://localhost:9100/api/pow/blocks?agent_id=http://localhost:8002' | python3 -m json.tool | head -30"
-    answer_detail: "PoW 시스템은 모든 AI 에이전트의 작업을 블록체인 형태로 기록한다. 각 블록에는 작업 내용, 결과, 타임스탬프가 포함되어 감사 추적과 무결성 검증에 활용된다."
-    script: "ccc_pow_query.py"
-    verify:
-      type: "output_contains"
-      expect: "block"
-      field: "stdout"
-  - order: 15
-    instruction: "CCC의 completion-report API를 사용하여 정찰 프로젝트의 완료 보고서를 생성하라."
-    hint: "/projects/{id}/completion-report 엔드포인트에 POST 요청을 보낸다"
-    category: "analysis"
-    points: 15
-    answer: "curl -s -X POST http://localhost:9100/api/projects/{id}/completion-report -H 'Content-Type: application/json' -H 'X-API-Key: ccc-api-key-2026' -d '{\"summary\":\"10.20.30.0/24 네트워크 정찰 완료\",\"outcome\":\"success\",\"work_details\":[\"4개 호스트 발견\",\"웹 서비스 3개 식별\",\"API 엔드포인트 5개 열거\",\"공격 우선순위 도출\"]}' | python3 -m json.tool"
-    answer_detail: "CCC 완료 보고서는 프로젝트의 결과를 구조화하여 기록한다. AI가 생성한 정찰 결과, PoW 증적, evidence 로그가 모두 연결되어 체계적인 모의해킹 문서가 완성된다."
-    script: "ccc_completion_report.py"
-    verify:
-      type: "output_contains"
-      expect: "summary"
-      field: "stdout"
+- order: 1
+  instruction: ping을 사용하여 대상 호스트 10.20.30.80이 활성 상태인지 확인하라. ICMP 응답을 3회만 보내라.
+  hint: ping -c 옵션으로 횟수를 제한할 수 있다
+  category: recon
+  points: 5
+  answer: ping -c 3 10.20.30.80
+  answer_detail: ping -c 3은 ICMP Echo Request를 3회 전송하여 대상 호스트의 생존 여부를 확인한다. TTL 값과 응답 시간으로 OS 유형을 추정할 수 있다.
+  verify:
+    type: output_contains
+    expect: bytes from 10.20.30.80
+    field: stdout
+  script: ping -c 3 10.20.30.80
+  risk_level: low
+- order: 2
+  instruction: nslookup 또는 dig를 사용하여 실습 네트워크의 DNS 서버에 10.20.30.80의 역방향 DNS 조회를 수행하라.
+  hint: dig -x 옵션으로 역방향 조회가 가능하다
+  category: recon
+  points: 10
+  answer: dig -x 10.20.30.80
+  answer_detail: 역방향 DNS 조회(Reverse DNS Lookup)는 IP 주소로부터 호스트명을 알아내는 기법이다. PTR 레코드를 조회하며, 대상 시스템의 명명 규칙이나 역할을 추정할 수 있다.
+  verify:
+    type: output_contains
+    expect: IN
+    field: stdout
+  script: dig -x 10.20.30.80
+  risk_level: low
+- order: 3
+  instruction: curl을 사용하여 웹서버(10.20.30.80:3000)의 HTTP 헤더만 확인하라. 서버 소프트웨어 정보를 파악하라.
+  hint: curl -I 옵션은 HEAD 요청을 보내 헤더만 가져온다
+  category: recon
+  points: 10
+  answer: curl -I http://10.20.30.80:3000
+  answer_detail: HTTP 응답 헤더에는 Server, X-Powered-By 등 서버 기술 스택 정보가 포함될 수 있다. 이 정보로 사용 중인 프레임워크와 버전을 식별하여 알려진 취약점을 검색할 수 있다.
+  verify:
+    type: output_contains
+    expect: HTTP/
+    field: stdout
+  script: curl -I http://10.20.30.80:3000
+  risk_level: low
+- order: 4
+  instruction: curl로 웹서버(10.20.30.80:3000)의 robots.txt 파일을 확인하여 숨겨진 경로를 찾아라.
+  hint: robots.txt는 웹 루트에 위치한다
+  category: recon
+  points: 10
+  answer: curl -s http://10.20.30.80:3000/robots.txt
+  answer_detail: robots.txt는 검색엔진 크롤러에게 접근을 제한할 경로를 알려주는 파일이다. 공격자 관점에서는 관리자 페이지, 백업 파일 등 민감한 경로가 노출될 수 있어 정찰에 유용하다.
+  verify:
+    type: output_contains
+    expect: Disallow
+    field: stdout
+  script: curl -s http://10.20.30.80:3000/robots.txt
+  risk_level: low
+- order: 5
+  instruction: whatweb 도구를 사용하여 10.20.30.80:3000 웹 애플리케이션의 기술 스택을 핑거프린팅하라.
+  hint: whatweb URL 형태로 실행한다
+  category: recon
+  points: 10
+  answer: whatweb http://10.20.30.80:3000
+  answer_detail: whatweb은 웹 사이트의 기술 스택(CMS, 프레임워크, 서버, 스크립팅 언어 등)을 자동으로 식별하는 도구이다. 패시브/액티브 핑거프린팅을 통해 공격 표면을 빠르게 파악할 수 있다.
+  verify:
+    type: output_contains
+    expect: http://10.20.30.80:3000
+    field: stdout
+  script: whatweb http://10.20.30.80:3000
+  risk_level: low
+- order: 6
+  instruction: curl을 사용하여 JuiceShop의 /ftp 디렉토리에 접근하여 공개된 파일 목록을 확인하라.
+  hint: /ftp 경로로 GET 요청을 보내라
+  category: recon
+  points: 10
+  answer: curl -s http://10.20.30.80:3000/ftp
+  answer_detail: 웹 서버의 디렉토리 리스팅이 활성화되어 있으면 내부 파일 구조가 노출된다. /ftp 디렉토리에는 백업 파일, 설정 파일 등 민감한 정보가 포함될 수 있다.
+  verify:
+    type: output_contains
+    expect: .md
+    field: stdout
+  script: curl -s http://10.20.30.80:3000/ftp
+  risk_level: low
+- order: 7
+  instruction: traceroute를 사용하여 attacker(10.20.30.201)에서 web(10.20.30.80)까지의 네트워크 경로를 확인하라.
+  hint: traceroute 명령으로 경유하는 라우터를 확인한다
+  category: recon
+  points: 10
+  answer: traceroute -n 10.20.30.80
+  answer_detail: traceroute는 목적지까지의 네트워크 경로(hop)를 보여준다. 각 hop의 IP 주소를 통해 네트워크 토폴로지, 방화벽 위치, 라우팅 구조를 파악할 수 있다. -n 옵션은 DNS 역방향 조회를 생략하여 속도를 높인다.
+  verify:
+    type: output_contains
+    expect: 10.20.30
+    field: stdout
+  script: traceroute -n 10.20.30.80
+  risk_level: low
+- order: 8
+  instruction: netcat(nc)을 사용하여 10.20.30.80의 포트 3000에 접속하여 배너를 그래빙하라.
+  hint: nc로 접속 후 HTTP 요청을 수동으로 보내라
+  category: recon
+  points: 10
+  answer: echo -e 'HEAD / HTTP/1.0\r\n\r\n' | nc -w 3 10.20.30.80 3000
+  answer_detail: 배너 그래빙(Banner Grabbing)은 서비스에 접속하여 응답 메시지에서 소프트웨어 종류와 버전을 수집하는 기법이다. nc(netcat)로 수동 HTTP 요청을 보내면 서버 헤더를 직접 확인할 수 있다.
+  verify:
+    type: output_contains
+    expect: HTTP/
+    field: stdout
+  script: echo -e 'HEAD / HTTP/1.0\r\n\r\n' | nc -w 3 10.20.30.80 3000
+  risk_level: low
+- order: 9
+  instruction: curl로 JuiceShop의 REST API(/api/Products)에 접근하여 제품 목록을 가져오고, python3으로 JSON을 파싱하여 제품 수를 세어라.
+  hint: curl 출력을 python3 -c로 파이프하여 JSON 파싱한다
+  category: recon
+  points: 10
+  answer: 'curl -s http://10.20.30.80:3000/api/Products | python3 -c "import sys,json; d=json.load(sys.stdin); print(f''Total products: {len(d["data"])}'')"'
+  answer_detail: 웹 애플리케이션의 REST API를 탐색하면 데이터 구조, 엔드포인트 패턴, 인증 방식 등을 파악할 수 있다. API 응답의 JSON 구조를 분석하면 후속 공격에 필요한 파라미터와 데이터 형식을 알 수 있다.
+  verify:
+    type: output_contains
+    expect: 'Total products:'
+    field: stdout
+  script: 'curl -s http://10.20.30.80:3000/api/Products | python3 -c "import sys,json; d=json.load(sys.stdin); print(f''Total products: {len(d["data"])}'')"'
+  risk_level: low
+- order: 10
+  instruction: curl을 사용하여 웹서버(10.20.30.80) 포트 80의 Apache 서버 헤더 정보를 확인하라.
+  hint: 포트 80의 HTTP 서버도 확인해 보라
+  category: recon
+  points: 10
+  answer: curl -I http://10.20.30.80:80
+  answer_detail: 하나의 호스트에 여러 웹 서비스가 구동될 수 있다. 포트 80(Apache)과 포트 3000(Node.js/JuiceShop) 각각의 헤더를 비교하면 서로 다른 기술 스택과 보안 설정을 파악할 수 있다.
+  verify:
+    type: output_contains
+    expect: HTTP/
+    field: stdout
+  script: curl -I http://10.20.30.80:80
+  risk_level: low
+- order: 11
+  instruction: arp-scan 또는 ping sweep으로 10.20.30.0/24 네트워크에서 활성화된 호스트 목록을 작성하라.
+  hint: nmap -sn 옵션으로 핑 스윕을 수행할 수 있다
+  category: recon
+  points: 10
+  answer: nmap -sn 10.20.30.0/24
+  answer_detail: 핑 스윕(Ping Sweep)은 네트워크 대역에서 활성 호스트를 빠르게 찾는 기법이다. nmap -sn은 포트 스캔 없이 호스트 발견만 수행하며, ARP/ICMP/TCP를 조합하여 생존 호스트를 식별한다.
+  verify:
+    type: output_contains
+    expect: Nmap scan report
+    field: stdout
+  script: nmap -sn 10.20.30.0/24
+  risk_level: low
+- order: 12
+  instruction: curl로 JuiceShop의 /rest/admin/application-version 엔드포인트에 접근하여 애플리케이션 버전을 확인하라.
+  hint: REST API 엔드포인트에 GET 요청을 보내라
+  category: recon
+  points: 10
+  answer: curl -s http://10.20.30.80:3000/rest/admin/application-version
+  answer_detail: 애플리케이션 버전 정보는 알려진 취약점(CVE)을 검색하는 데 핵심 정보이다. 버전이 노출되는 엔드포인트가 인증 없이 접근 가능하면 보안 설정 미흡으로 볼 수 있다.
+  verify:
+    type: output_contains
+    expect: version
+    field: stdout
+  script: curl -s http://10.20.30.80:3000/rest/admin/application-version
+  risk_level: low
+- order: 13
+  instruction: curl을 사용하여 JuiceShop의 main.js 파일을 다운로드하고, grep으로 'admin' 키워드가 포함된 라인을 검색하라.
+  hint: JuiceShop의 JavaScript 번들은 /main.js 경로에 있다
+  category: recon
+  points: 15
+  answer: curl -s http://10.20.30.80:3000/main.js | grep -i 'admin' | head -20
+  answer_detail: 프론트엔드 JavaScript 번들에는 API 엔드포인트, 관리자 경로, 숨겨진 기능 등이 하드코딩되어 있을 수 있다. 소스 코드 분석을 통해 공격 표면을 확장하는 것은 정찰의 중요한 기법이다.
+  verify:
+    type: output_contains
+    expect: admin
+    field: stdout
+  script: curl -s http://10.20.30.80:3000/main.js | grep -i 'admin' | head -20
+  risk_level: low
+- order: 14
+  instruction: JuiceShop의 /rest/memories 엔드포인트에 접근하여 사용자가 업로드한 파일 정보를 수집하라.
+  hint: 인증 없이 접근 가능한 API를 탐색하라
+  category: recon
+  points: 15
+  answer: curl -s http://10.20.30.80:3000/rest/memories | python3 -m json.tool | head -30
+  answer_detail: 인증 없이 접근 가능한 API 엔드포인트는 정보 유출의 원인이 된다. 사용자 업로드 파일, 댓글, 리뷰 등의 데이터에서 사용자명, 이메일 등 추가 정보를 수집할 수 있다.
+  verify:
+    type: output_contains
+    expect: data
+    field: stdout
+  script: curl -s http://10.20.30.80:3000/rest/memories | python3 -m json.tool | head -30
+  risk_level: low
+- order: 15
+  instruction: 수집한 모든 정보를 정리하여 /tmp/recon_report.txt 파일로 저장하라. 대상 IP, 열린 포트, 서버 기술 스택, 발견된 API 엔드포인트를 포함하라.
+  hint: echo와 리다이렉션(>>, >)으로 파일을 생성할 수 있다
+  category: recon
+  points: 15
+  answer: 'echo -e ''=== Recon Report ===\nTarget: 10.20.30.80\nPorts: 80(Apache), 3000(JuiceShop)\nTech: Node.js, Express, Angular\nAPIs: /api/Products, /rest/admin/application-version, /ftp, /rest/memories\nNetwork:
+    10.20.30.0/24 (hosts: .1, .80, .100, .201)'' > /tmp/recon_report.txt && cat /tmp/recon_report.txt'
+  answer_detail: 정찰 결과를 체계적으로 문서화하는 것은 모의해킹의 필수 단계이다. 수집된 정보를 정리하면 공격 계획을 수립하고, 팀원과 공유하며, 최종 보고서 작성 시 근거 자료로 활용할 수 있다.
+  verify:
+    type: output_contains
+    expect: Recon Report
+    field: stdout
+  script: 'echo -e ''=== Recon Report ===\nTarget: 10.20.30.80\nPorts: 80(Apache), 3000(JuiceShop)\nTech: Node.js, Express, Angular\nAPIs: /api/Products, /rest/admin/application-version, /ftp, /rest/memories\nNetwork:
+    10.20.30.0/24 (hosts: .1, .80, .100, .201)'' > /tmp/recon_report.txt && cat /tmp/recon_report.txt'
+  risk_level: low

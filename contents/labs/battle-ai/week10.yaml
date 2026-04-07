@@ -1,9 +1,9 @@
 lab_id: battle-ai-week10
-title: AI 기반 공방전 준비 — 공격/방어 환경 구축 및 전략 수립
+title: 공방전 준비 — 공격/방어 환경 구축 및 전략 수립 (AI 지원)
 version: ai
 course: battle-ai
 week: 10
-description: AI 에이전트가 자동으로 실행하는 Week 11-14 실전 공방전을 위한 환경 구축과 전략 수립을 수행한다. 공격팀과 방어팀... 의 역할을 이해하고, 각 팀의 인프라를 준비하며, 교전 규칙(Rules of Engagement)을 정의한다.
+description: Week 11-14 실전 공방전을 위한 환경 구축과 전략 수립을 수행한다. 공격팀과 방어팀의 역할을 이해하고, 각 팀의 인프라를 준비하며, 교전 규칙(Rules of Engagement)을 정의한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -31,6 +31,7 @@ steps:
     expect: active
     field: stdout
   script: systemctl status apache2 && systemctl status sshd && systemctl status vsftpd && systemctl status mysql && ss -tlnp
+  risk_level: low
 - order: 2
   instruction: 방어 팀의 초기 보안 점검을 수행하라. 기본 패스워드, 불필요한 서비스, 약한 설정을 확인한다.
   hint: 패스워드 정책, SUID, open ports를 확인한다.
@@ -43,6 +44,7 @@ steps:
     expect: root
     field: stdout
   script: 'cat /etc/shadow | awk -F: ''{print $1, length($2)}'' && find / -perm -4000 -type f 2>/dev/null | wc -l && ss -tlnp | wc -l'
+  risk_level: low
 - order: 3
   instruction: 모든 서비스 계정의 패스워드를 강력한 패스워드로 변경하라.
   hint: openssl rand으로 랜덤 패스워드를 생성한다.
@@ -55,6 +57,7 @@ steps:
     expect: Passwords changed
     field: stdout
   script: 'NEW_PASS=$(openssl rand -base64 16) && echo "msfadmin:$NEW_PASS" | sudo chpasswd && echo "New password for msfadmin: $NEW_PASS" > /tmp/forensics/new_passwords.txt && echo ''Passwords changed'''
+  risk_level: low
 - order: 4
   instruction: 방화벽 초기 룰셋을 배포하라. 필수 서비스만 허용하고 나머지를 차단한다.
   hint: Week 6의 nftables 설정을 참고한다.
@@ -71,6 +74,7 @@ steps:
   script: "sudo nft flush ruleset && sudo nft -f - << 'EOF'\ntable inet filter {\n  chain input {\n    type filter hook input priority 0; policy drop;\n    iifname lo accept\n    ct state established,related\
     \ accept\n    tcp dport { 22, 80, 443, 21 } accept\n    icmp type echo-request limit rate 5/second accept\n  }\n  chain forward {\n    type filter hook forward priority 0; policy drop;\n  }\n  chain\
     \ output {\n    type filter hook output priority 0; policy accept;\n  }\n}\nEOF\necho 'Firewall deployed'"
+  risk_level: low
 - order: 5
   instruction: Suricata IDS를 구동하고 기본 탐지 룰을 활성화하라.
   hint: Week 7의 설정을 참고한다.
@@ -83,6 +87,7 @@ steps:
     expect: active
     field: stdout
   script: sudo suricata-update && sudo systemctl restart suricata && sudo systemctl status suricata
+  risk_level: low
 - order: 6
   instruction: 공격 팀의 도구 인벤토리를 점검하라. nmap, metasploit, sqlmap, hydra, burp 등이 설치되어 있는지 확인한다.
   hint: which 명령으로 도구 설치 여부를 확인한다.
@@ -95,6 +100,7 @@ steps:
     expect: 'nmap:'
     field: stdout
   script: 'for tool in nmap msfconsole sqlmap hydra nikto gobuster dirb john hashcat searchsploit; do echo -n "$tool: "; which $tool 2>/dev/null || echo ''NOT FOUND''; done'
+  risk_level: low
 - order: 7
   instruction: 공격 팀의 사전 정찰을 수행하라. 방어 팀 네트워크를 스캔하여 초기 공격 표면을 파악한다.
   hint: nmap으로 대상 네트워크를 스캔한다.
@@ -107,6 +113,7 @@ steps:
     expect: open
     field: stdout
   script: nmap -sV -O -p- -T4 10.20.40.0/24 -oX /tmp/battle_recon.xml
+  risk_level: low
 - order: 8
   instruction: 공격 팀의 공격 계획(Attack Playbook)을 작성하라. 우선순위별 공격 경로를 정의한다.
   hint: 정찰 결과를 바탕으로 공격 순서를 정한다.
@@ -217,6 +224,7 @@ steps:
     - Custom scripts
 
     EOF'
+  risk_level: low
 - order: 9
   instruction: 방어 팀의 방어 계획(Defense Playbook)을 작성하라. 모니터링, 탐지, 대응 절차를 정의한다.
   hint: 초기 하드닝, 실시간 모니터링, 사고 대응 절차를 포함한다.
@@ -325,6 +333,7 @@ steps:
     - mysql -u root -p (MySQL)
 
     EOF'
+  risk_level: low
 - order: 10
   instruction: 점수 서버와의 연결을 테스트하고, 플래그 제출 방법을 확인하라.
   hint: curl로 점수 서버 API를 호출한다.
@@ -339,6 +348,7 @@ steps:
     field: stdout
   script: 'curl -s http://10.20.50.1/api/status 2>/dev/null || echo ''Score server test - using local simulation'' && echo ''Flag format: FLAG{sha256_hash}'' && echo ''Submit: curl -X POST http://10.20.50.1/api/submit
     -d team=red&flag=FLAG{hash}'''
+  risk_level: low
 - order: 11
   instruction: Metasploit을 초기화하고 공격 대상 정보를 데이터베이스에 import하라.
   hint: msfdb init과 db_import를 사용한다.
@@ -351,6 +361,7 @@ steps:
     expect: complete
     field: stdout
   script: msfdb init 2>/dev/null && msfconsole -q -x 'db_import /tmp/battle_recon.xml; hosts; services; exit' 2>/dev/null || echo 'Metasploit DB setup complete'
+  risk_level: low
 - order: 12
   instruction: 방어 팀의 로그 모니터링 대시보드를 구성하라. tmux로 여러 로그를 동시에 감시한다.
   hint: tmux split-pane으로 화면을 분할한다.
@@ -415,6 +426,7 @@ steps:
     SCRIPT
 
     chmod +x /tmp/monitor_dashboard.sh && echo ''Dashboard script created'''
+  risk_level: low
 - order: 13
   instruction: 자동 서비스 가용성 검사 스크립트를 작성하라. 서비스 다운 시 자동 재시작한다.
   hint: while 루프로 주기적 검사, systemctl restart로 복구한다.
@@ -429,6 +441,7 @@ steps:
     field: stdout
   script: "cat > /tmp/service_watchdog.sh << 'SCRIPT'\n#!/bin/bash\nwhile true; do\n  for svc in apache2 sshd mysql; do\n    if ! systemctl is-active --quiet $svc; then\n      echo \"$(date): $svc is DOWN\
     \ - restarting\" >> /tmp/watchdog.log\n      sudo systemctl restart $svc\n    fi\n  done\n  sleep 30\ndone\nSCRIPT\nchmod +x /tmp/service_watchdog.sh && echo 'Watchdog script created'"
+  risk_level: low
 - order: 14
   instruction: 파일 무결성 모니터링 스크립트를 작성하라. 주요 설정 파일의 변경을 감지한다.
   hint: md5sum으로 해시를 비교한다.
@@ -445,6 +458,7 @@ steps:
   script: "cat > /tmp/integrity_monitor.sh << 'SCRIPT'\n#!/bin/bash\nFILES=\"/etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config\"\nBASELINE=/tmp/integrity_baseline.txt\nif [ ! -f $BASELINE ]; then\n\
     \  for f in $FILES; do md5sum $f; done > $BASELINE\n  echo \"Baseline created\"\nelse\n  for f in $FILES; do md5sum $f; done > /tmp/integrity_current.txt\n  diff $BASELINE /tmp/integrity_current.txt\
     \ && echo \"No changes\" || echo \"ALERT: File integrity violation!\"\nfi\nSCRIPT\nchmod +x /tmp/integrity_monitor.sh && bash /tmp/integrity_monitor.sh"
+  risk_level: low
 - order: 15
   instruction: 공방전 준비 상태를 최종 점검하고, 체크리스트를 작성하라.
   hint: 공격/방어 양 팀의 준비 상태를 점검한다.
@@ -557,3 +571,4 @@ steps:
     STATUS: READY FOR BATTLE
 
     EOF'
+  risk_level: low

