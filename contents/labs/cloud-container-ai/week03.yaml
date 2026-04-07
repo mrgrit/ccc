@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: REPOSITORY
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"'
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: IMAGE
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'IMG=$(docker images -q | head -1); [ -n "$IMG" ] && docker history $IMG --no-trunc 2>/dev/null | head -15 || echo "이미지 없음"'
   risk_level: low
 - order: 3
@@ -50,6 +52,7 @@ steps:
     type: output_contains
     expect: 컨테이너
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range .Mounts}}  Type={{.Type}} Src={{.Source}} Dst={{.Destination}} RW={{.RW}}\n{{end}}" {}
     2>/dev/null || echo "실행 중인 컨테이너 없음"'
   risk_level: low
@@ -64,6 +67,7 @@ steps:
     type: output_contains
     expect: VOLUME
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''docker volume ls && echo "--- 미사용 볼륨 ---" && docker volume ls -f dangling=true --format "{{.Name}}: {{.Driver}}"'''
   risk_level: low
 - order: 5
@@ -78,6 +82,7 @@ steps:
     type: output_contains
     expect: 중지된 컨테이너
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== 중지된 컨테이너 ==="; docker ps -a --filter status=exited --format "table {{.Names}}\t{{.Image}}\t{{.Status}}" 2>/dev/null; echo "=== 미사용 이미지 ==="; docker images
     -f dangling=true --format "{{.ID}}: {{.Size}}" 2>/dev/null'''
   risk_level: low
@@ -92,6 +97,7 @@ steps:
     type: output_contains
     expect: RECLAIMABLE
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'docker system df && echo "--- 상세 ---" && docker system df -v 2>/dev/null | head -20'
   risk_level: low
 - order: 7
@@ -105,6 +111,7 @@ steps:
     type: output_contains
     expect: PID
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''CID=$(docker ps -q | head -1); [ -n "$CID" ] && echo "컨테이너: $(docker inspect --format="{{.Name}}" $CID)" && docker top $CID 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   risk_level: low
 - order: 8
@@ -118,6 +125,7 @@ steps:
     type: output_contains
     expect: MEM
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}" 2>/dev/null || echo "실행 중인 컨테이너 없음"'
   risk_level: low
 - order: 9
@@ -157,6 +165,7 @@ steps:
     type: output_contains
     expect: 기초 점검 완료
     field: stdout
+  target_vm: web
   script: 'cat << ''SCRIPT'' > /tmp/container_basic.sh
 
     #!/bin/bash

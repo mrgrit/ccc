@@ -24,6 +24,7 @@ steps:
   verify:
     type: output_contains
     expect: open
+  target_vm: attacker
   script: 'nmap -sV --top-ports 50 10.20.30.0/24 -oN /tmp/exam_recon.txt 2>&1 | tail -30 && echo ''---'' && echo ''Structured result: Host | Port | Service | Version'' && grep ''open'' /tmp/exam_recon.txt
     | head -20'
   risk_level: low
@@ -38,6 +39,7 @@ steps:
   verify:
     type: output_contains
     expect: Vulnerabilities
+  target_vm: attacker
   script: nikto -h http://10.20.30.80 -output /tmp/exam_vuln.txt 2>&1 | tail -10; echo '---'; echo 'Top 3 Vulnerabilities:'; echo '  1. SQL Injection in REST API (CVSS 9.8, T1190)'; echo '  2. Weak/Default
     Credentials (CVSS 9.1, T1078)'; echo '  3. Missing Security Headers (CVSS 5.0, T1189)'
   risk_level: low
@@ -52,6 +54,7 @@ steps:
   verify:
     type: output_contains
     expect: Initial access
+  target_vm: attacker
   script: 'curl -s -X POST http://10.20.30.80/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"\" OR 1=1--","password":"x"}'' 2>/dev/null | python3 -m json.tool 2>/dev/null | head -10;
     echo ''---''; echo ''Initial access achieved via SQL Injection (T1190)'''
   risk_level: medium
@@ -66,6 +69,7 @@ steps:
   verify:
     type: output_contains
     expect: Lateral movement
+  target_vm: attacker
   script: 'echo ''=== Lateral Movement ==='' && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.1 ''hostname && id'' 2>&1 | head -3 && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no
     ccc@10.20.30.100 ''hostname && id'' 2>&1 | head -3 && echo ''---'' && echo ''Lateral movement: 2 additional hosts accessed (T1021.004)'''
   risk_level: medium
@@ -81,6 +85,7 @@ steps:
   verify:
     type: output_contains
     expect: Blue Team Detection
+  target_vm: attacker
   script: 'echo ''=== Blue Team Detection ==='' && echo ''[1] auth.log:'' && grep -E ''Accepted|Failed'' /var/log/auth.log 2>/dev/null | tail -5 && echo '''' && echo ''[2] Network connections:'' && ss -tn
     | grep ''10.20.30'' | head -5 && echo '''' && echo ''[3] Attack evidence found:'' && echo ''  - SQLi: WAF access log shows UNION SELECT payload'' && echo ''  - SSH lateral: auth.log shows multi-host
     login pattern'' && echo ''  - Detection gap: No DNS C2 monitoring configured'''
@@ -98,6 +103,7 @@ steps:
   verify:
     type: output_contains
     expect: EXAM
+  target_vm: attacker
   script: "cat > /tmp/exam_detection_rule.txt << 'EOF'\n# Suricata Rule: Detect SQL Injection in HTTP POST\nalert http any any -> 10.20.30.0/24 any (msg:\"EXAM: SQL Injection in POST body\"; flow:to_server,established;\
     \ http.method; content:\"POST\"; http.request_body; content:\"OR\"; nocase; content:\"1=1\"; distance:0; within:10; sid:9000001; rev:1;)\n\n# Wazuh Rule: Multi-host SSH lateral movement\n<rule id=\"\
     100500\" level=\"12\" frequency=\"3\" timeframe=\"300\">\n  <if_sid>5715</if_sid>\n  <same_user />\n  <description>EXAM: Lateral movement - same user SSH to 3+ hosts in 5 min</description>\n  <mitre><id>T1021.004</id></mitre>\n\
@@ -115,6 +121,7 @@ steps:
   verify:
     type: output_contains
     expect: Threat Hunting
+  target_vm: attacker
   script: 'echo ''=== Threat Hunting Results ==='' && echo ''[1] Process hunting:'' && ps aux | grep -E ''nc -|ncat|python.*socket|perl.*socket'' | grep -v grep || echo ''Clean: No suspicious processes''
     && echo '''' && echo ''[2] Network hunting:'' && ss -tn | grep -v ''10.20.30\|127.0'' | head -5 || echo ''Clean: No suspicious outbound connections'' && echo '''' && echo ''[3] File system hunting:''
     && find /tmp /dev/shm -name ''.*'' -type f 2>/dev/null || echo ''Clean: No hidden files in temp directories'' && echo '''' && echo ''Hunting conclusion: No active threats detected'''
@@ -131,6 +138,7 @@ steps:
   verify:
     type: output_contains
     expect: Forensic Artifact
+  target_vm: attacker
   script: 'echo ''=== Forensic Artifact Collection ==='' && echo ''[Memory] Active processes:'' && ps auxf | wc -l && echo '''' && echo ''[Disk] Recent file changes:'' && find /tmp /var/log -mmin -30 -type
     f 2>/dev/null | wc -l && echo '''' && echo ''[Network] Current connections:'' && ss -tn | wc -l && echo '''' && echo ''[Logs] Recent auth events:'' && grep -c '''' /var/log/auth.log 2>/dev/null && echo
     '''' && echo ''Total artifacts: 4 categories collected'' && echo ''Evidence hash: '' && echo ''forensic_collection_complete'' | sha256sum | cut -d'' '' -f1'
@@ -148,6 +156,7 @@ steps:
   verify:
     type: output_contains
     expect: Incident Response
+  target_vm: attacker
   script: 'echo ''=== Incident Response Execution ==='' && TIMESTAMP=$(date -u ''+%Y-%m-%dT%H:%M:%SZ'') && echo "[${TIMESTAMP}] INCIDENT: SQLi detected from 203.0.113.50" && echo '''' && echo ''[1] CONTAIN
     (T+0s):'' && echo ''  Action: nft add element inet filter blocklist { 203.0.113.50 }'' && echo ''  Status: IP blocked at perimeter'' && echo '''' && echo ''[2] EVIDENCE (T+60s):'' && echo ''  Collected:
     WAF logs, Suricata alerts, network connections'' && mkdir -p /tmp/exam_evidence && echo "IR-${TIMESTAMP}" > /tmp/exam_evidence/incident.txt && echo ''  Evidence saved to /tmp/exam_evidence/'' && echo
@@ -166,6 +175,7 @@ steps:
   verify:
     type: output_contains
     expect: Exam ATT&CK
+  target_vm: attacker
   script: "cat > /tmp/exam_attack_map.txt << 'EOF'\n=== Exam ATT&CK Mapping ===\n\nOffensive Techniques Used:\n  T1595 - Active Scanning (network reconnaissance)\n  T1190 - Exploit Public-Facing Application\
     \ (SQLi)\n  T1078 - Valid Accounts (credential reuse)\n  T1021.004 - Remote Services: SSH (lateral movement)\n\nDefensive Detections:\n  T1595 → Suricata port scan rule (DETECTED)\n  T1190 → WAF + custom\
     \ Suricata rule (DETECTED)\n  T1078 → auth.log monitoring (PARTIAL)\n  T1021.004 → Wazuh correlation rule (NEW - created in exam)\n\nCoverage: 4/4 techniques mapped (100%)\nDetection: 3.5/4 detected\
@@ -184,6 +194,7 @@ steps:
   verify:
     type: output_contains
     expect: Improvement Recommendations
+  target_vm: attacker
   script: "cat > /tmp/exam_recommendations.txt << 'EOF'\n=== Security Improvement Recommendations ===\n\nImmediate (24h):\n  1. Patch SQL Injection vulnerability (parameterized queries)\n  2. Rotate all\
     \ SSH credentials\n  3. Enable DNS anomaly monitoring\n\nShort-term (1 week):\n  4. Implement network micro-segmentation\n  5. Deploy honey tokens on all servers\n  6. Add SSH lateral movement correlation\
     \ rule\n\nMedium-term (1 month):\n  7. Deploy EDR on all endpoints\n  8. Implement Zero Trust SSH (certificate-based)\n  9. Establish monthly purple team exercises\n\nExpected Impact:\n  ATT&CK coverage:\
@@ -201,6 +212,7 @@ steps:
   verify:
     type: output_contains
     expect: EXECUTIVE SUMMARY
+  target_vm: attacker
   script: "cat > /tmp/exam_executive_summary.txt << 'EOF'\n=== EXECUTIVE SUMMARY: Security Assessment ===\n\nCurrent Risk Level: HIGH\n\n핵심 발견사항:\n  공격자가 85분 만에 웹 서버를 침투하고 내부 네트워크의\n  75%에 접근할 수 있음을 확인했습니다.\n\
     \n비즈니스 영향:\n  - 고객 데이터 유출 위험 (GDPR 위반 시 매출 4% 벌금)\n  - 서비스 중단 가능성 (시간당 $50,000 손실 추정)\n  - 평판 훼손 (경쟁사 대비 신뢰도 하락)\n\n권장 투자:\n  즉시 조치 (비용: $5,000): SQL 취약점 패치 + 자격 증명 교체\n  3개월 조치 (비용: $50,000): 네트워크\
     \ 세분화 + 모니터링 강화\n  12개월 조치 (비용: $200,000): Zero Trust 아키텍처 구축\n\n투자 대비 효과:\n  현재 예상 연간 손실: $1.2M\n  투자 후 예상 연간 손실: $300K\n  ROI: 354% (3년 기준)\nEOF\ncat /tmp/exam_executive_summary.txt"
@@ -220,6 +232,7 @@ steps:
   verify:
     type: output_contains
     expect: TECHNICAL ASSESSMENT
+  target_vm: attacker
   script: "cat > /tmp/exam_technical_report.txt << 'EOF'\n=== TECHNICAL ASSESSMENT REPORT ===\n\nFinding RT-01: SQL Injection (CVSS 9.8)\n  Location: POST /rest/user/login\n  PoC: curl -X POST http://10.20.30.80/rest/user/login\
     \ -d '{\"email\":\"\\\" OR 1=1--\",\"password\":\"x\"}'\n  Impact: Authentication bypass, data extraction\n  Fix: Use parameterized queries (prepared statements)\n  MITRE: T1190\n\nFinding RT-02: SSH\
     \ Credential Reuse (CVSS 8.5)\n  Location: All servers share same SSH key\n  Impact: Lateral movement across entire network\n  Fix: Unique key pairs per server, certificate-based auth\n  MITRE: T1021.004\n\

@@ -22,6 +22,7 @@ steps:
   verify:
     type: output_contains
     expect: rule
+  target_vm: siem
   script: 'Wazuh 룰 구조: <rule id=''N'' level=''N''> 하위에 <description>, <match>, <decoded_as>, <group>, <if_sid>, <frequency>, <timeframe> 등의 요소로 구성'
   risk_level: low
 - order: 2
@@ -34,6 +35,7 @@ steps:
   verify:
     type: output_contains
     expect: frequency
+  target_vm: siem
   script: 'rule 5712: if_sid=5710(인증실패), frequency=8, timeframe=120 → 2분 내 8회 인증 실패 시 level 10 알림'
   risk_level: low
 - order: 3
@@ -46,6 +48,7 @@ steps:
   verify:
     type: output_contains
     expect: '100001'
+  target_vm: siem
   script: <rule id='100001' level='10' frequency='5' timeframe='180'><if_sid>기본_방화벽_룰_id</if_sid><same_source_ip/><description>포트 스캔 탐지</description></rule>
   risk_level: low
 - order: 4
@@ -58,6 +61,7 @@ steps:
   verify:
     type: output_contains
     expect: 킬체인
+  target_vm: siem
   script: '정찰: 100001(포트스캔), 침투: 5715(SSH 로그인 성공), 권한상승: 5401(sudo 실행), 유출: 커스텀 룰(대량 read 이벤트). 상관룰: if_sid 체인으로 연결'
   risk_level: low
 - order: 5
@@ -70,6 +74,7 @@ steps:
   verify:
     type: output_contains
     expect: '100010'
+  target_vm: siem
   script: <rule id='100010' level='12' frequency='5' timeframe='60'><if_group>web|attack</if_group><same_source_ip/><description>복합 웹 공격 탐지 - SQLi+XSS</description></rule>
   risk_level: low
 - order: 6
@@ -82,6 +87,7 @@ steps:
   verify:
     type: output_contains
     expect: time
+  target_vm: siem
   script: <rule id='100020' level='10'><if_sid>5715</if_sid><user>root|admin</user><time>10pm - 6am</time><description>업무시간 외 관리자 로그인</description></rule>
   risk_level: low
 - order: 7
@@ -94,6 +100,7 @@ steps:
   verify:
     type: output_contains
     expect: GeoIP
+  target_vm: siem
   script: 1) GeoIP DB 연동으로 srcip→국가 매핑, 2) CDB에 허용 국가 목록 등록, 3) 로그인 성공 + CDB 미매칭 국가 → level 10 알림
   risk_level: low
 - order: 8
@@ -106,6 +113,7 @@ steps:
   verify:
     type: output_contains
     expect: level
+  target_vm: siem
   script: '오탐 식별: 내부 스캐너 IP의 포트스캔 알림 → 예외 룰 추가: <rule id=''100099'' level=''0''><if_sid>100001</if_sid><srcip>10.20.30.X</srcip></rule>'
   risk_level: low
 - order: 9
@@ -118,6 +126,7 @@ steps:
   verify:
     type: output_contains
     expect: SLA
+  target_vm: siem
   script: 'Level 1-5: 자동 기록(SLA 없음), Level 6-9: Tier1 30분 내 확인, Level 10-12: Tier2 15분 내 분석, Level 13-15: Tier3 즉시 대응+경영진 보고'
   risk_level: low
 - order: 10
@@ -130,6 +139,7 @@ steps:
   verify:
     type: output_contains
     expect: Suricata
+  target_vm: siem
   script: Suricata 악성 트래픽 탐지(86601) + 동일 목적지 호스트에서 프로세스 생성(5902) → level 13 복합 알림
   risk_level: low
 - order: 11
@@ -142,6 +152,7 @@ steps:
   verify:
     type: output_contains
     expect: 대시보드
+  target_vm: siem
   script: '시간대별: timestamp 기준 히스토그램, Top IP: agent.ip 기준 집계, 룰별: rule.id 기준 카운트, 심각도: rule.level 기준 분포'
   risk_level: low
 - order: 12
@@ -154,6 +165,7 @@ steps:
   verify:
     type: output_contains
     expect: logtest
+  target_vm: siem
   script: 1) ossec-logtest로 샘플 로그 입력 → 디코딩/룰 매칭 확인, 2) level=0 테스트 룰로 프로덕션 영향 없이 검증, 3) 테스트 완료 후 level 원복
   risk_level: low
 - order: 13
@@ -166,6 +178,7 @@ steps:
   verify:
     type: output_contains
     expect: 최적화
+  target_vm: siem
   script: '성능 영향 요인: 1) 룰 수(선형 증가), 2) if_sid 체인 깊이(지수적 증가 가능), 3) frequency 룰의 메모리 사용. 최적화: atomic 룰 우선, 체인 깊이 3 이하 유지, 불필요한 frequency 룰 제거'
   risk_level: low
 - order: 14
@@ -178,6 +191,7 @@ steps:
   verify:
     type: output_contains
     expect: Git
+  target_vm: siem
   script: 1) /var/ossec/etc/rules/를 Git 저장소로 관리, 2) 변경 시 branch→PR→리뷰→머지, 3) CI/CD로 ossec-logtest 자동 실행, 4) 배포 시 Wazuh Manager 재시작
   risk_level: low
 - order: 15
@@ -190,5 +204,6 @@ steps:
   verify:
     type: output_contains
     expect: ATT&CK
+  target_vm: siem
   script: '커버리지: Initial Access 60%, Execution 70%, Persistence 50%, Privilege Escalation 60%, Defense Evasion 30%, Lateral Movement 40%. 전체 예상 탐지율 55%, 오탐률 목표 <5%'
   risk_level: low

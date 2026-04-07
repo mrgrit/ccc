@@ -23,6 +23,7 @@ steps:
   verify:
     type: output_contains
     expect: Up
+  target_vm: attacker
   script: nmap -sn 10.20.30.0/24 -oG /tmp/lateral_hosts.txt && grep 'Up' /tmp/lateral_hosts.txt
   risk_level: low
 - order: 2
@@ -35,6 +36,7 @@ steps:
   verify:
     type: output_contains
     expect: ===
+  target_vm: attacker
   script: for host in 10.20.30.1 10.20.30.80 10.20.30.100; do echo "=== $host ==="; smbclient -L //$host -N 2>&1 | head -10; echo; done
   risk_level: low
 - order: 3
@@ -47,6 +49,7 @@ steps:
   verify:
     type: output_contains
     expect: Hash formats
+  target_vm: attacker
   script: 'echo ''1'' | sudo -S cat /etc/shadow 2>/dev/null | grep -v '':\*:\|:!:'' | head -5; echo ''---''; echo ''Hash formats: $1$=MD5, $5$=SHA-256, $6$=SHA-512, $y$=yescrypt'''
   risk_level: medium
 - order: 4
@@ -62,6 +65,7 @@ steps:
   verify:
     type: output_contains
     expect: Pass-the-Hash
+  target_vm: attacker
   script: "cat > /tmp/pth_simulation.txt << 'EOF'\n=== Pass-the-Hash Attack Simulation ===\n\n1. NTLM Hash Format: LM_HASH:NT_HASH\n   Example: aad3b435b51404eeaad3b435b51404ee:e19ccf75ee54e06b06a5907af13cef42\n\
     \n2. Attack Tools:\n   pth-smbclient //target/share -U domain/user%hash --pw-nt-hash\n   impacket-psexec -hashes LM:NT user@target\n   impacket-wmiexec -hashes LM:NT user@target\n   crackmapexec smb\
     \ target -u user -H NT_HASH\n\n3. Why it works:\n   NTLM auth uses hash directly - no plaintext needed\n   Server compares hash(challenge+stored_hash) with hash(challenge+provided_hash)\n\n4. Detection:\n\
@@ -81,6 +85,7 @@ steps:
   verify:
     type: output_contains
     expect: Kerberoasting
+  target_vm: attacker
   script: "cat > /tmp/kerberos_analysis.txt << 'EOF'\n=== Kerberos Protocol & Kerberoasting Analysis ===\n\n1. Kerberos Authentication Flow:\n   Client → KDC: AS-REQ (username + timestamp encrypted with\
     \ user's hash)\n   KDC → Client: AS-REP (TGT encrypted with krbtgt hash)\n   Client → KDC: TGS-REQ (TGT + target service SPN)\n   KDC → Client: TGS-REP (Service Ticket encrypted with service account\
     \ hash)\n   Client → Service: AP-REQ (Service Ticket)\n\n2. Kerberoasting Attack (T1558.003):\n   - Any authenticated user can request TGS for any SPN\n   - TGS is encrypted with service account's NTLM\
@@ -98,6 +103,7 @@ steps:
   verify:
     type: output_contains
     expect: SSH lateral
+  target_vm: attacker
   script: ssh-keygen -t ed25519 -f /tmp/lateral_key -N '' -q && echo 'Testing SSH lateral movement:' && ssh -i /tmp/lateral_key -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.1 'hostname'
     2>&1 | head -5; ssh -i /tmp/lateral_key -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.80 'hostname' 2>&1 | head -5
   risk_level: medium
@@ -145,6 +151,7 @@ steps:
   verify:
     type: output_contains
     expect: Impacket Lateral
+  target_vm: attacker
   script: 'cat > /tmp/impacket_comparison.txt << ''EOF''
 
     === Impacket Lateral Movement Tools Comparison ===
@@ -215,6 +222,7 @@ steps:
   verify:
     type: output_contains
     expect: lateral movement
+  target_vm: attacker
   script: 'cat > /tmp/lateral_detection_rules.txt << ''EOF''
 
     === Lateral Movement Detection Rules ===
@@ -255,6 +263,7 @@ steps:
   verify:
     type: output_contains
     expect: segmentation
+  target_vm: attacker
   script: "cat > /tmp/segmentation_policy.nft << 'EOF'\n#!/usr/sbin/nft -f\ntable inet segmentation {\n  set control_plane { type ipv4_addr; elements = { 10.20.30.201 } }\n  set security_tier { type ipv4_addr;\
     \ elements = { 10.20.30.1 } }\n  set web_tier { type ipv4_addr; elements = { 10.20.30.80 } }\n  set siem_tier { type ipv4_addr; elements = { 10.20.30.100 } }\n\n  chain forward {\n    type filter hook\
     \ forward priority 0; policy drop;\n    # Control plane can reach all tiers (management)\n    ip saddr @control_plane accept\n    # Web tier cannot initiate to other tiers\n    ip saddr @web_tier ip\
@@ -309,6 +318,7 @@ steps:
   verify:
     type: output_contains
     expect: Windows Event IDs
+  target_vm: attacker
   script: 'cat > /tmp/windows_lateral_events.txt << ''EOF''
 
     === Windows Event IDs for Lateral Movement Detection ===
@@ -363,6 +373,7 @@ steps:
   verify:
     type: output_contains
     expect: Honey Token
+  target_vm: attacker
   script: "cat > /tmp/honey_tokens.txt << 'EOF'\n=== Honey Token Deployment Plan ===\n\n1. Fake Credentials (canary tokens):\n   - /home/admin/.ssh/config → fake host entries pointing to honeypot\n   -\
     \ /opt/backup/credentials.txt → fake passwords that trigger alert on use\n   - /etc/samba/smb.conf → fake share \"financial_data\" on honeypot\n\n2. Honey Services:\n   - 10.20.30.250:445 → SMB honeypot\
     \ (any auth attempt = alert)\n   - 10.20.30.250:22 → SSH honeypot (Cowrie)\n   - 10.20.30.250:3389 → RDP honeypot\n\n3. Detection Triggers:\n   - Any login attempt to honeypot IPs → CRITICAL alert\n\
@@ -383,6 +394,7 @@ steps:
   verify:
     type: output_contains
     expect: LateralMovement
+  target_vm: attacker
   script: "cat > /tmp/lateral_movement_graph.dot << 'EOF'\ndigraph LateralMovement {\n  rankdir=LR;\n  node [shape=box, style=filled];\n  \n  attacker [label=\"Attacker\\n10.20.30.201\", fillcolor=\"#ff6666\"\
     ];\n  web [label=\"Web Server\\n10.20.30.80\", fillcolor=\"#ffcc66\"];\n  secu [label=\"Security\\n10.20.30.1\", fillcolor=\"#66ff66\"];\n  siem [label=\"SIEM\\n10.20.30.100\", fillcolor=\"#66ccff\"\
     ];\n  honeypot [label=\"Honeypot\\n10.20.30.250\", fillcolor=\"#cc66ff\"];\n  \n  attacker -> web [label=\"1. SQLi\\n(T1190)\", color=red];\n  web -> secu [label=\"2. SSH PtH\\n(T1550.002)\", color=red];\n\
@@ -403,6 +415,7 @@ steps:
   verify:
     type: output_contains
     expect: Zero Trust
+  target_vm: attacker
   script: "cat > /tmp/zero_trust_design.txt << 'EOF'\n=== Zero Trust Architecture for Lateral Movement Prevention ===\n\n1. Micro-Segmentation:\n   - Each server = individual security zone\n   - All inter-server\
     \ traffic through policy engine\n   - Default deny, explicit allow per flow\n\n2. Continuous Authentication:\n   - mTLS for all service-to-service communication\n   - Short-lived tokens (15min max)\n\
     \   - Re-authentication on privilege escalation\n\n3. Least Privilege Access:\n   - Service accounts: minimal permissions per function\n   - No shared credentials between services\n   - JIT (Just-In-Time)\
@@ -420,6 +433,7 @@ steps:
   verify:
     type: output_contains
     expect: cleanup completed
+  target_vm: attacker
   script: rm -f /tmp/lateral_*.txt /tmp/lateral_*.dot /tmp/pth_*.txt /tmp/kerberos_*.txt /tmp/impacket_*.txt /tmp/segmentation_*.nft /tmp/windows_*.txt /tmp/honey_*.txt /tmp/zero_trust_*.txt /tmp/lateral_key*
     2>/dev/null; echo 'Lateral movement lab cleanup completed'
   risk_level: low
@@ -438,6 +452,7 @@ steps:
   verify:
     type: output_contains
     expect: Lateral Movement Assessment
+  target_vm: attacker
   script: "cat > /tmp/lateral_report.txt << 'EOF'\n=== Lateral Movement Assessment Report ===\nDate: 2026-04-03 | Scope: 10.20.30.0/24\n\n1. Techniques Tested:\n   - Pass-the-Hash (T1550.002): Hash reuse\
     \ for authentication\n   - Kerberoasting (T1558.003): Service ticket offline cracking\n   - SSH Key Reuse (T1021.004): Stolen key lateral access\n   - Impacket Tools: psexec/wmiexec/smbexec comparison\n\
     \n2. Findings:\n   [C-01] No network segmentation between server tiers\n   [C-02] Shared SSH keys across multiple servers\n   [H-01] No internal traffic monitoring (east-west)\n   [H-02] Missing honey\

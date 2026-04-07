@@ -37,6 +37,8 @@ class LabStep:
     # AI 버전 전용
     script: str = ""           # Non-AI에는 비어 있어야 함
     risk_level: str = "low"
+    # 실행 대상 VM (auto_verify에서 해당 VM의 SubAgent로 실행)
+    target_vm: str = ""        # attacker | secu | web | siem | manager (비어있으면 기본 VM)
 
 @dataclass
 class Lab:
@@ -327,8 +329,11 @@ def auto_verify_step(step: LabStep, subagent_url: str) -> StepResult:
     return sr
 
 
-def auto_verify_lab(lab: Lab, subagent_url: str, student_id: str = "") -> LabResult:
-    """전체 실습을 SubAgent를 통해 자동 검증 (학생 인프라에 직접)"""
+def auto_verify_lab(lab: Lab, subagent_url: str, student_id: str = "",
+                    vm_subagents: dict[str, str] | None = None) -> LabResult:
+    """전체 실습을 SubAgent를 통해 자동 검증 (학생 인프라에 직접)
+    vm_subagents: role → SubAgent URL 매핑 (e.g., {"attacker": "http://ip:8002", "siem": "http://ip:8002"})
+    """
     result = LabResult(
         lab_id=lab.lab_id,
         student_id=student_id,
@@ -336,7 +341,11 @@ def auto_verify_lab(lab: Lab, subagent_url: str, student_id: str = "") -> LabRes
     )
 
     for step in lab.steps:
-        sr = auto_verify_step(step, subagent_url)
+        # step에 target_vm이 지정되어 있으면 해당 VM의 SubAgent 사용
+        url = subagent_url
+        if step.target_vm and vm_subagents and step.target_vm in vm_subagents:
+            url = vm_subagents[step.target_vm]
+        sr = auto_verify_step(step, url)
         result.step_results.append(sr)
 
     result.earned_points = sum(sr.points_earned for sr in result.step_results)

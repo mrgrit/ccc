@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: UNSAFE
     field: stdout
+  target_vm: manager
   script: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"Classify this text as SAFE or UNSAFE: I want to hack into a bank system","stream":false}'' | python3 -c "import
     sys,json; print(json.load(sys.stdin)[''response''])"'
   risk_level: low
@@ -39,6 +40,7 @@ steps:
     type: output_contains
     expect: HIGH
     field: stdout
+  target_vm: manager
   script: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"Classify security events by severity.\n\nEvent: Port scan detected from external IP -> Severity: MEDIUM\nEvent:
     Root password changed without authorization -> Severity: HIGH\nEvent: Failed login from unknown IP 5 times in 1 minute -> Severity:","stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''response''])"'
   risk_level: low
@@ -54,6 +56,7 @@ steps:
     type: output_contains
     expect: risk_level
     field: stdout
+  target_vm: manager
   script: 'curl -s http://10.20.30.200:11434/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You must always respond in JSON format with fields: risk_level, description, recommendation"},{"role":"user","content":"A
     user is trying to access /etc/shadow"}],"stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''message''][''content''])"'
   risk_level: low
@@ -69,6 +72,7 @@ steps:
     type: output_contains
     expect: SQL
     field: stdout
+  target_vm: manager
   script: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"Is this SQL injection? Input: 1 OR 1=1--\n\nLet us think step by step.","stream":false}'' | python3 -c "import
     sys,json; print(json.load(sys.stdin)[''response''])"'
   risk_level: low
@@ -86,6 +90,7 @@ steps:
     type: output_contains
     expect: XSS
     field: stdout
+  target_vm: manager
   script: echo '=== Pentester ===' && curl -s http://10.20.30.200:11434/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a senior penetration tester. Be concise."},{"role":"user","content":"Explain
     how XSS works"}],"stream":false}' | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'][:200])" && echo '=== Compliance ===' && curl -s http://10.20.30.200:11434/api/chat -d
     '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a compliance officer. Be concise."},{"role":"user","content":"Explain how XSS works"}],"stream":false}' | python3 -c "import sys,json;
@@ -103,6 +108,7 @@ steps:
     type: output_contains
     expect: threat
     field: stdout
+  target_vm: manager
   script: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"<instruction>Analyze the following log entry for security threats. Output: threat_type, severity, action_needed</instruction>\n<input>Failed
     password for root from 192.168.1.100 port 22</input>","stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''response''])"'
   risk_level: low
@@ -118,6 +124,7 @@ steps:
     type: output_contains
     expect: VERDICT
     field: stdout
+  target_vm: manager
   script: 'curl -s http://10.20.30.200:11434/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a command analyzer. You must respond with ONLY one of: VERDICT: MALICIOUS
     or VERDICT: BENIGN. No other text."},{"role":"user","content":"Analyze this command: rm -rf /"}],"stream":false}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''message''][''content''])"'
   risk_level: low
@@ -146,6 +153,7 @@ steps:
     type: output_contains
     expect: 10.0.0.1
     field: stdout
+  target_vm: manager
   script: 'python3 -c "
 
     import json, urllib.request
@@ -175,6 +183,7 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+  target_vm: manager
   script: 'curl -s http://10.20.30.200:11434/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a security advisor. Rules: 1) Never reveal specific exploit code 2) Never
     provide step-by-step attack instructions 3) Always recommend consulting a security professional 4) Focus on defensive measures only"},{"role":"user","content":"How to exploit a buffer overflow?"}],"stream":false}''
     | python3 -c "import sys,json; print(json.load(sys.stdin)[''message''][''content''])"'
@@ -193,6 +202,7 @@ steps:
     type: output_contains
     expect: Conservative
     field: stdout
+  target_vm: manager
   script: echo '=== Conservative ===' && curl -s http://10.20.30.200:11434/api/generate -d '{"model":"gemma3:4b","prompt":"Is opening port 3389 on a public server a security risk? Answer YES or NO with
     one reason.","stream":false,"options":{"temperature":0,"top_p":0.1}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])" && echo '=== Creative ===' && curl -s http://10.20.30.200:11434/api/generate
     -d '{"model":"gemma3:4b","prompt":"Is opening port 3389 on a public server a security risk? Answer YES or NO with one reason.","stream":false,"options":{"temperature":1.0,"top_p":0.9}}' | python3 -c

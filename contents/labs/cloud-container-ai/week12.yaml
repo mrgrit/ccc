@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: Logging
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''docker info --format "Logging: {{.LoggingDriver}}" && echo "--- daemon.json 로그 설정 ---" && cat /etc/docker/daemon.json 2>/dev/null | grep -A5 log || echo "daemon.json
     로그 설정 없음 (기본값)"'''
   risk_level: low
@@ -38,6 +39,7 @@ steps:
     type: output_contains
     expect: 로그
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'CID=$(docker ps -q | head -1); [ -n "$CID" ] && echo "=== $(docker inspect --format="{{.Name}}" $CID) 로그 ===" && docker logs --tail 20 $CID 2>&1 || echo "실행 중인 컨테이너 없음"'
   risk_level: low
 - order: 3
@@ -52,6 +54,7 @@ steps:
     type: output_contains
     expect: 컨테이너 로그 크기
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'echo "=== 컨테이너 로그 크기 ==="; sudo find /var/lib/docker/containers/ -name "*-json.log" -exec ls -lh {} \; 2>/dev/null | awk "{print \$5, \$NF}" | head -10 || echo "로그 파일
     없음"'
   risk_level: low
@@ -67,6 +70,7 @@ steps:
     type: output_contains
     expect: Docker 이벤트
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'echo "=== Docker 이벤트 (최근 1시간) ==="; docker events --since 1h --until 0s --format "{{.Time}} {{.Action}} {{.Actor.Attributes.name}}" 2>/dev/null | head -15 || echo "최근
     이벤트 없음"'
   risk_level: low
@@ -82,6 +86,7 @@ steps:
     type: output_contains
     expect: 리소스 사용량 스냅샷
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'echo "=== 리소스 사용량 스냅샷 ==="; docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.PIDs}}" 2>/dev/null || echo "실행
     중인 컨테이너 없음"'
   risk_level: low
@@ -96,6 +101,7 @@ steps:
     type: output_contains
     expect: Docker 데몬 로그
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'echo "=== Docker 데몬 로그 ==="; sudo journalctl -u docker --no-pager -n 20 2>/dev/null | tail -15'
   risk_level: low
 - order: 7
@@ -142,6 +148,7 @@ steps:
     type: output_contains
     expect: 모니터링 점검 완료
     field: stdout
+  target_vm: web
   script: 'cat << ''SCRIPT'' > /tmp/monitoring_check.sh
 
     #!/bin/bash

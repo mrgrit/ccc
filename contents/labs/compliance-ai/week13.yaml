@@ -39,6 +39,7 @@ steps:
     type: output_contains
     expect: 정보보안 정책서
     field: stdout
+  target_vm: secu
   script: 'sudo mkdir -p /opt/security-policy && cat << ''EOF'' | sudo tee /opt/security-policy/information_security_policy.txt
 
     === 정보보안 정책서 ===
@@ -69,6 +70,7 @@ steps:
     type: output_contains
     expect: 접근 통제 정책
     field: stdout
+  target_vm: secu
   script: "cat << 'EOF' | sudo tee /opt/security-policy/access_control_policy.txt\n=== 접근 통제 정책 ===\n1. 계정관리\n   - 개인 계정 사용 원칙 (공용 계정 금지)\n   - 퇴직/전보 시 24시간 이내 계정 비활성화\n   - 30일 미사용 계정 자동 잠금\n2. 권한관리\n\
     \   - 최소 권한 원칙 적용\n   - 특권 계정(root/sudo) 사용 시 승인 필요\n   - 분기별 권한 재검토\n3. 원격접근\n   - SSH 키 기반 인증 권장\n   - root 원격 접속 금지\n   - 접속 시 경고 배너 표시\nEOF"
   risk_level: low
@@ -83,6 +85,7 @@ steps:
     type: output_contains
     expect: PermitRootLogin no
     field: stdout
+  target_vm: secu
   script: sudo sed -i 's/^#\?PermitRootLogin.*/PermitRootLogin no/' /etc/ssh/sshd_config && grep '^PermitRootLogin' /etc/ssh/sshd_config
   risk_level: low
 - order: 4
@@ -112,6 +115,7 @@ steps:
     type: output_contains
     expect: 패스워드 정책
     field: stdout
+  target_vm: secu
   script: 'cat << ''EOF'' | sudo tee /opt/security-policy/password_policy.txt
 
     === 패스워드 정책 ===
@@ -142,6 +146,7 @@ steps:
     type: output_contains
     expect: minlen
     field: stdout
+  target_vm: secu
   script: sudo sed -i 's/^# minlen.*/minlen = 12/' /etc/security/pwquality.conf && sudo sed -i 's/^PASS_MAX_DAYS.*/PASS_MAX_DAYS   90/' /etc/login.defs && echo '=== 적용 확인 ===' && grep 'minlen' /etc/security/pwquality.conf
     | grep -v '^#' && grep '^PASS_MAX_DAYS' /etc/login.defs
   risk_level: low
@@ -172,6 +177,7 @@ steps:
     type: output_contains
     expect: 감사 정책
     field: stdout
+  target_vm: secu
   script: 'cat << ''EOF'' | sudo tee /opt/security-policy/audit_policy.txt
 
     === 감사 정책 ===
@@ -203,6 +209,7 @@ steps:
     type: output_contains
     expect: 정책-구현 매핑 검증
     field: stdout
+  target_vm: secu
   script: echo '=== 정책 문서 목록 ===' && ls -la /opt/security-policy/ && echo '' && echo '=== 정책-구현 매핑 검증 ===' && echo '[접근통제] PermitRootLogin:' && grep '^PermitRootLogin' /etc/ssh/sshd_config && echo '[패스워드]
     minlen:' && grep 'minlen' /etc/security/pwquality.conf | grep -v '^#' && echo '[패스워드] PASS_MAX_DAYS:' && grep '^PASS_MAX_DAYS' /etc/login.defs && echo '[감사] auditd:' && sudo systemctl is-active auditd
     2>/dev/null
@@ -223,6 +230,7 @@ steps:
     type: output_contains
     expect: 정책 점검 완료
     field: stdout
+  target_vm: secu
   script: "cat << 'SCRIPT' > /tmp/policy_compliance.sh\n#!/bin/bash\necho '=== 보안정책 준수 자동 점검 ==='\nPASS=0; FAIL=0\ncheck() {\n  if [ \"$2\" = \"true\" ]; then\n    echo \"  [적합] $1\"\n    PASS=$((PASS+1))\n\
     \  else\n    echo \"  [미흡] $1\"\n    FAIL=$((FAIL+1))\n  fi\n}\necho '[접근 통제 정책]'\nROOT=$(grep '^PermitRootLogin no' /etc/ssh/sshd_config 2>/dev/null | wc -l)\ncheck 'root 원격 접속 차단' \"$([ $ROOT -gt\
     \ 0 ] && echo true || echo false)\"\necho '[패스워드 정책]'\nMINLEN=$(grep 'minlen' /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' | awk -F= '{print $2}' | tr -d ' ')\ncheck \"최소길이 12자 (현재: ${MINLEN:-미설정})\"\

@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: inet
     field: stdout
+  target_vm: secu
   script: ip addr show
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: LISTEN
     field: stdout
+  target_vm: secu
   script: ss -tlnp
   risk_level: low
 - order: 3
@@ -49,6 +51,7 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+  target_vm: secu
   script: sudo nft list ruleset 2>/dev/null || echo 'nftables 규칙 없음'
   risk_level: low
 - order: 4
@@ -62,6 +65,7 @@ steps:
     type: output_contains
     expect: 방화벽 체인 생성 완료
     field: stdout
+  target_vm: secu
   script: sudo nft add table inet filter 2>/dev/null; sudo nft add chain inet filter input '{ type filter hook input priority 0; policy drop; }' 2>/dev/null; echo '방화벽 체인 생성 완료'
   risk_level: low
 - order: 5
@@ -76,6 +80,7 @@ steps:
     type: output_contains
     expect: 허용 규칙 추가 완료
     field: stdout
+  target_vm: secu
   script: sudo nft add rule inet filter input ct state established,related accept 2>/dev/null; sudo nft add rule inet filter input tcp dport {22, 80, 443} accept 2>/dev/null; sudo nft add rule inet filter
     input iif lo accept 2>/dev/null; echo '허용 규칙 추가 완료'
   risk_level: low
@@ -90,6 +95,7 @@ steps:
     type: output_contains
     expect: 관리 포트 제한 완료
     field: stdout
+  target_vm: secu
   script: sudo nft add rule inet filter input ip saddr 10.20.30.0/24 tcp dport {8000, 8001, 8002} accept 2>/dev/null; echo '관리 포트 제한 완료'
   risk_level: low
 - order: 7
@@ -103,6 +109,7 @@ steps:
     type: output_contains
     expect: ICMP 제한 완료
     field: stdout
+  target_vm: secu
   script: sudo nft add rule inet filter input icmp type echo-request limit rate 5/second accept 2>/dev/null; echo 'ICMP 제한 완료'
   risk_level: low
 - order: 8
@@ -116,6 +123,7 @@ steps:
     type: output_contains
     expect: 규칙 저장 완료
     field: stdout
+  target_vm: secu
   script: sudo nft list ruleset > /tmp/nftables_backup.conf 2>/dev/null && echo '규칙 저장 완료' && wc -l /tmp/nftables_backup.conf
   risk_level: low
 - order: 9
@@ -129,6 +137,7 @@ steps:
     type: output_contains
     expect: 캡처 완료
     field: stdout
+  target_vm: secu
   script: sudo timeout 5 tcpdump -i any -c 10 port 22 2>/dev/null || echo 'SSH 트래픽 캡처 완료'
   risk_level: low
 - order: 10
@@ -142,6 +151,7 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+  target_vm: secu
   script: ip neigh show
   risk_level: low
 - order: 11
@@ -155,6 +165,7 @@ steps:
     type: output_contains
     expect: default
     field: stdout
+  target_vm: secu
   script: ip route show
   risk_level: low
 - order: 12
@@ -168,6 +179,7 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+  target_vm: secu
   script: nmap -sT -p 22,80,443 10.20.30.80 2>/dev/null || echo '포트 스캔 완료'
   risk_level: low
 - order: 13
@@ -181,6 +193,7 @@ steps:
     type: output_contains
     expect: 방어 설정 완료
     field: stdout
+  target_vm: secu
   script: sudo sysctl -w net.ipv4.tcp_syncookies=1 && sudo sysctl -w net.ipv4.tcp_max_syn_backlog=2048 && echo '방어 설정 완료'
   risk_level: low
 - order: 14
@@ -194,6 +207,7 @@ steps:
     type: output_contains
     expect: IP 스푸핑 방지 완료
     field: stdout
+  target_vm: secu
   script: sudo sysctl -w net.ipv4.conf.all.rp_filter=1 && sudo sysctl -w net.ipv4.conf.default.rp_filter=1 && echo 'IP 스푸핑 방지 완료'
   risk_level: low
 - order: 15
@@ -208,6 +222,7 @@ steps:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+  target_vm: secu
   script: echo '=== 네트워크 보안 보고서 ===' && echo '[열린 포트]' && ss -tlnp | grep LISTEN && echo '[방화벽 규칙 수]' && sudo nft list ruleset 2>/dev/null | wc -l && echo '[커널 보안 설정]' && sysctl net.ipv4.tcp_syncookies
     net.ipv4.conf.all.rp_filter 2>/dev/null && echo '=== 보고서 완료 ==='
   risk_level: low

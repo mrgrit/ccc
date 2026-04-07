@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: 핵심 서비스 가용성
     field: stdout
+  target_vm: secu
   script: 'echo ''=== 핵심 서비스 가용성 ==='' && for svc in sshd auditd suricata nftables rsyslog; do STATUS=$(sudo systemctl is-active $svc 2>/dev/null); echo "$svc: $STATUS"; done'
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: 자동 재시작 설정
     field: stdout
+  target_vm: secu
   script: 'echo ''=== 자동 재시작 설정 ==='' && for svc in sshd auditd suricata; do RESTART=$(systemctl show $svc --property=Restart 2>/dev/null | cut -d= -f2); echo "$svc: Restart=$RESTART"; done'
   risk_level: low
 - order: 3
@@ -49,6 +51,7 @@ steps:
     type: output_contains
     expect: 디스크 사용량
     field: stdout
+  target_vm: secu
   script: echo '=== 디스크 사용량 ===' && df -h | grep -E '(Filesystem|/dev/)' && echo '--- 대용량 디렉터리 ---' && sudo du -sh /var/log/ /var/lib/ /tmp/ 2>/dev/null
   risk_level: low
 - order: 4
@@ -63,6 +66,7 @@ steps:
     type: output_contains
     expect: config_backup
     field: stdout
+  target_vm: secu
   script: sudo tar czf /tmp/config_backup_$(date +%Y%m%d).tar.gz /etc/ssh/sshd_config /etc/security/pwquality.conf /etc/login.defs /etc/rsyslog.conf /etc/audit/ /etc/nftables.conf 2>/dev/null && ls -lh
     /tmp/config_backup_*.tar.gz
   risk_level: low
@@ -77,6 +81,7 @@ steps:
     type: output_contains
     expect: 체크섬 파일
     field: stdout
+  target_vm: secu
   script: sha256sum /tmp/config_backup_*.tar.gz | tee /tmp/backup_checksum.txt && echo '--- 체크섬 파일 ---' && cat /tmp/backup_checksum.txt
   risk_level: low
 - order: 6
@@ -91,6 +96,7 @@ steps:
     type: output_contains
     expect: 복원 검증
     field: stdout
+  target_vm: secu
   script: 'mkdir -p /tmp/restore_test && sudo tar xzf /tmp/config_backup_*.tar.gz -C /tmp/restore_test 2>/dev/null && diff /etc/ssh/sshd_config /tmp/restore_test/etc/ssh/sshd_config && echo ''복원 검증: 일치''
     || echo ''복원 검증: 불일치'''
   risk_level: low
@@ -106,6 +112,7 @@ steps:
     type: output_contains
     expect: 복구 완료
     field: stdout
+  target_vm: secu
   script: echo '=== 장애 시뮬레이션 ===' && echo '[1] rsyslog 중지' && sudo systemctl stop rsyslog && sudo systemctl is-active rsyslog && echo '[2] rsyslog 복구' && sudo systemctl start rsyslog && sudo systemctl is-active
     rsyslog && echo '=== 복구 완료 ==='
   risk_level: low
@@ -123,6 +130,7 @@ steps:
     type: output_contains
     expect: BCP/DR 점검 완료
     field: stdout
+  target_vm: secu
   script: "cat << 'SCRIPT' > /tmp/bcp_report.sh\n#!/bin/bash\necho '=== BCP/DR 준비상태 점검 보고서 ==='\necho \"점검일: $(date +%Y-%m-%d)\"\necho ''\necho '[1. 서비스 가용성]'\nfor svc in sshd auditd suricata rsyslog; do\n\
     \  echo \"  $svc: $(sudo systemctl is-active $svc 2>/dev/null)\"\ndone\necho '[2. 디스크 여유]'\ndf -h / | tail -1 | awk '{print \"  사용률: \"$5\" (여유: \"$4\")\"}'\necho '[3. 백업]'\nls -lh /tmp/config_backup_*.tar.gz\
     \ 2>/dev/null | tail -1 || echo '  백업 파일 없음'\necho '[4. 자동 재시작]'\nfor svc in sshd auditd; do\n  echo \"  $svc: $(systemctl show $svc --property=Restart 2>/dev/null | cut -d= -f2)\"\ndone\necho ''\n\

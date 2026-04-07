@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: 인시던트 탐지
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== 인시던트 탐지: 리소스 이상 ==="; docker stats --no-stream --format "{{.Name}}\tCPU:{{.CPUPerc}}\tMem:{{.MemUsage}}\tPIDs:{{.PIDs}}" 2>/dev/null; echo "=== 프로세스 확인 ===";
     docker ps -q | head -3 | xargs -I{} sh -c "echo --- \$(docker inspect --format=\"{{.Name}}\" {}) ---; docker top {} 2>/dev/null | head -5" 2>/dev/null'''
   risk_level: low
@@ -39,6 +40,7 @@ steps:
     type: output_contains
     expect: 네트워크 연결 분석
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''CID=$(docker ps -q | head -1); [ -n "$CID" ] && echo "=== 네트워크 연결 분석: $(docker inspect --format="{{.Name}}" $CID) ==="; docker exec $CID sh -c "cat /proc/net/tcp 2>/dev/null
     | head -10; echo --- ; netstat -tlnp 2>/dev/null || ss -tlnp 2>/dev/null" 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   risk_level: low
@@ -55,6 +57,7 @@ steps:
     type: output_contains
     expect: 격리 절차 확인 완료
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''CID=$(docker ps -q | head -1); [ -n "$CID" ] && CNAME=$(docker inspect --format="{{.Name}}" $CID | tr -d "/"); echo "=== 컨테이너 격리: $CNAME ==="; NETS=$(docker inspect
     --format="{{range \$k, \$v := .NetworkSettings.Networks}}{{\$k}} {{end}}" $CID); echo "연결된 네트워크: $NETS"; echo "(실제 격리는 docker network disconnect <net> <container>)"; echo "격리 절차 확인 완료" || echo "컨테이너
     없음"'''
@@ -71,6 +74,7 @@ steps:
     type: output_contains
     expect: 파일시스템 변경 분석
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''CID=$(docker ps -q | head -1); [ -n "$CID" ] && echo "=== 파일시스템 변경 분석: $(docker inspect --format="{{.Name}}" $CID) ==="; docker diff $CID 2>/dev/null | head -20 || echo
     "변경 없음"'''
   risk_level: low
@@ -86,6 +90,7 @@ steps:
     type: output_contains
     expect: 포렌식 스냅샷 생성
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'CID=$(docker ps -q | head -1); [ -n "$CID" ] && CNAME=$(docker inspect --format="{{.Name}}" $CID | tr -d "/"); echo "=== 포렌식 스냅샷 생성 ==="; docker commit $CID forensic-${CNAME}-$(date
     +%Y%m%d) 2>/dev/null && docker images | grep forensic || echo "컨테이너 없음"'
   risk_level: low
@@ -101,6 +106,7 @@ steps:
     type: output_contains
     expect: 로그 보존
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''CID=$(docker ps -q | head -1); [ -n "$CID" ] && CNAME=$(docker inspect --format="{{.Name}}" $CID | tr -d "/"); echo "=== 로그 보존 ==="; docker logs $CID 2>&1 | tail -50
     > /tmp/forensic-${CNAME}-logs.txt 2>/dev/null; echo "로그 저장: /tmp/forensic-${CNAME}-logs.txt"; wc -l /tmp/forensic-${CNAME}-logs.txt 2>/dev/null || echo "컨테이너 없음"'''
   risk_level: low
@@ -116,6 +122,7 @@ steps:
     type: output_contains
     expect: 인시던트 타임라인
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'echo "=== 인시던트 타임라인 ==="; docker events --since 2h --until 0s --format "{{.Time}} | {{.Action}} | {{.Actor.Attributes.name}} | {{.Type}}" 2>/dev/null | head -20 || echo
     "이벤트 없음"'
   risk_level: low
@@ -168,6 +175,7 @@ steps:
     type: output_contains
     expect: 인시던트 대응 보고 완료
     field: stdout
+  target_vm: web
   script: 'cat << ''SCRIPT'' > /tmp/incident_response.sh
 
     #!/bin/bash

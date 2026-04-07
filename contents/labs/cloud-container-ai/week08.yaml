@@ -25,6 +25,7 @@ steps:
     type: output_contains
     expect: Storage
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''docker info --format "Storage: {{.Driver}}
 
     Root: {{.DockerRootDir}}" && echo "--- 디스크 사용량 ---" && sudo du -sh /var/lib/docker/ 2>/dev/null'''
@@ -41,6 +42,7 @@ steps:
     type: output_contains
     expect: VOLUME
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''docker volume ls && echo "--- 볼륨 상세 ---" && docker volume ls -q | head -3 | xargs -I{} docker volume inspect --format "Name: {{.Name}} Mount: {{.Mountpoint}} Driver:
     {{.Driver}}" {} 2>/dev/null'''
   risk_level: low
@@ -56,6 +58,7 @@ steps:
     type: output_contains
     expect: 마운트
     field: stdout
+  target_vm: web
   script: "ssh trainee@10.20.30.80 'docker ps -q | xargs -I{} docker inspect --format=\"{{.Name}}:{{range .Mounts}}\n  Type={{.Type}} Src={{.Source}} RW={{.RW}}{{end}}\" {} 2>/dev/null | grep -E \"(docker.sock|/etc|/root|/var/run)\"\
     \ && echo \"위험한 마운트 발견!\" || echo \"위험한 바인드 마운트 없음\"'"
   risk_level: low
@@ -71,6 +74,7 @@ steps:
     type: output_contains
     expect: tmpfs
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'docker run --rm --tmpfs /secrets:rw,noexec,nosuid,size=10m alpine:latest sh -c "echo 'sensitive-data' > /secrets/key.txt && mount | grep /secrets && cat /secrets/key.txt
     && echo --- && df -h /secrets"'
   risk_level: low
@@ -86,6 +90,7 @@ steps:
     type: output_contains
     expect: 스캔 완료
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''for IMG in $(docker images -q | head -3); do echo "=== Image: $IMG ==="; docker history --no-trunc $IMG 2>/dev/null | grep -iE "(password|secret|key|token|api_key)"
     | head -3; done; echo "--- 스캔 완료 ---"'''
   risk_level: low
@@ -100,6 +105,7 @@ steps:
     type: output_contains
     expect: /var/lib/docker
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'stat -c "%a %U:%G %n" /var/lib/docker && echo "--- 하위 디렉터리 ---" && sudo ls -la /var/lib/docker/ | head -10'
   risk_level: low
 - order: 7
@@ -114,6 +120,7 @@ steps:
     type: output_contains
     expect: Docker 디스크 사용량
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== Docker 디스크 사용량 ==="; docker system df; echo "=== 미사용 볼륨 ==="; docker volume ls -f dangling=true; echo "=== 미사용 이미지 ==="; docker images -f dangling=true --format
     "{{.ID}}: {{.Size}}"'''
   risk_level: low
@@ -161,6 +168,7 @@ steps:
     type: output_contains
     expect: 스토리지 점검 완료
     field: stdout
+  target_vm: web
   script: 'cat << ''SCRIPT'' > /tmp/storage_security.sh
 
     #!/bin/bash

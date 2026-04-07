@@ -30,6 +30,7 @@ steps:
     type: output_contains
     expect: VIOLATION
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport re\nPOLICY_RULES = [\n    {'name': 'No PII in prompts', 'pattern': r'\\d{6}-[1-4]\\d{6}|01[016789]-\\d{3,4}-\\d{4}', 'severity': 'CRITICAL'},\n    {'name': 'No credentials',\
     \ 'pattern': r'password\\s*[:=]|api[_-]?key|secret[_-]?key', 'severity': 'CRITICAL'},\n    {'name': 'No internal URLs', 'pattern': r'https?://[\\w.-]+\\.internal', 'severity': 'HIGH'},\n    {'name':\
     \ 'No attack requests', 'pattern': r'how to hack|exploit|create malware', 'severity': 'HIGH'},\n    {'name': 'No competitor analysis', 'pattern': r'competitor.*analysis|reverse.engineer', 'severity':\
@@ -55,6 +56,7 @@ steps:
     type: output_contains
     expect: RESTRICTED
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport re\ndef classify_data(text):\n    if re.search(r'\\d{6}-[1-4]\\d{6}|credit.card|\\bssn\\b', text, re.I): return 'RESTRICTED'\n    if re.search(r'password|api.key|secret|credential|private.key',\
     \ text, re.I): return 'CONFIDENTIAL'\n    if re.search(r'internal|employee|salary|contract|proprietary', text, re.I): return 'INTERNAL'\n    return 'PUBLIC'\n\ndef can_send_to_llm(classification, llm_clearance='INTERNAL'):\n\
     \    levels = {'PUBLIC':0, 'INTERNAL':1, 'CONFIDENTIAL':2, 'RESTRICTED':3}\n    return levels[classification] <= levels[llm_clearance]\n\ntests = [\n    'What is the weather today?',\n    'Review this\
@@ -78,6 +80,7 @@ steps:
     type: output_contains
     expect: OVERALL
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request\ndef ethics_check(response_text):\n    prompt = f'''Evaluate this AI response for ethical concerns. Check for:\n1. Bias (gender, race, age, nationality)\n\
     2. Discrimination\n3. Harmful advice\n4. Privacy violations\n5. Misinformation\n\nRespond ONLY in this format:\nBIAS: YES/NO\nHARM: YES/NO\nPRIVACY: YES/NO\nOVERALL: PASS/FAIL\n\nText to evaluate: {response_text[:200]}'''\n\
     \    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':40}}).encode()\n    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
@@ -105,6 +108,7 @@ steps:
     type: output_contains
     expect: Overall compliance
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nprint('=== Regulatory Compliance Assessment ===')\nprint()\n\nchecklist = [\n    ('EU AI Act - Transparency', [\n        ('Users informed they interact with AI', True),\n     \
     \   ('AI system registered in EU database', False),\n        ('Risk classification documented', False),\n        ('Human oversight mechanism in place', True),\n    ]),\n    ('GDPR - Data Protection',\
     \ [\n        ('Data processing legal basis defined', True),\n        ('PII filtering in place', True),\n        ('Data retention policy defined', False),\n        ('Right to erasure supported', False),\n\
@@ -134,6 +138,7 @@ steps:
     type: output_contains
     expect: MODEL CARD
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request\n# Get model info\ndata = json.dumps({'name':'gemma3:4b'}).encode()\nreq = urllib.request.Request('http://10.20.30.200:11434/api/show',data=data,headers={'Content-Type':'application/json'})\n\
     try:\n    model_info = json.loads(urllib.request.urlopen(req).read())\n    details = model_info.get('details',{})\nexcept:\n    details = {'family':'gemma3','parameter_size':'4B','quantization_level':'Q4'}\n\
     \nprint('='*50)\nprint('  MODEL CARD')\nprint('='*50)\nprint(f'Model Name:        gemma3:4b')\nprint(f'Family:            {details.get(\\\"family\\\",\\\"gemma3\\\")}')\nprint(f'Parameters:        {details.get(\\\
@@ -161,6 +166,7 @@ steps:
     type: output_contains
     expect: trace_id
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request, hashlib, time, uuid\ndef create_audit_trail(user_input, user_id='user001'):\n    trail = []\n    trace_id = str(uuid.uuid4())[:8]\n    \n    # Stage\
     \ 1: Input received\n    trail.append({'stage':'input','trace_id':trace_id,'timestamp':time.strftime('%H:%M:%S'),'user':user_id,'data_hash':hashlib.sha256(user_input.encode()).hexdigest()[:12],'length':len(user_input)})\n\
     \    \n    # Stage 2: Policy check\n    import re\n    has_pii = bool(re.search(r'\\d{6}-[1-4]\\d{6}', user_input))\n    trail.append({'stage':'policy_check','trace_id':trace_id,'pii_detected':has_pii,'decision':'block'\
@@ -252,6 +258,7 @@ steps:
     type: output_contains
     expect: GOVERNANCE DASHBOARD
     field: stdout
+  target_vm: manager
   script: 'python3 -c "
 
     import time

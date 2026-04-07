@@ -28,6 +28,7 @@ steps:
     type: output_contains
     expect: 보안 분석
     field: stdout
+  target_vm: web
   script: "ssh trainee@10.20.30.80 'cat << \"YAML\" > /tmp/insecure-compose.yml\nversion: \"3\"\nservices:\n  web:\n    image: nginx:latest\n    privileged: true\n    network_mode: host\n    ports:\n  \
     \    - \"80:80\"\n    environment:\n      - DB_PASSWORD=admin123\n    volumes:\n      - /:/hostroot\n  db:\n    image: mysql:latest\n    environment:\n      - MYSQL_ROOT_PASSWORD=root123\nYAML\necho\
     \ \"=== 보안 분석 ===\"\ngrep -n \"privileged: true\" /tmp/insecure-compose.yml && echo \"  [위험] privileged 모드\"\ngrep -n \"PASSWORD\" /tmp/insecure-compose.yml && echo \"  [위험] 평문 비밀번호\"\ngrep -n \"network_mode:\
@@ -51,6 +52,7 @@ steps:
     type: output_contains
     expect: 보안 Compose
     field: stdout
+  target_vm: web
   script: "ssh trainee@10.20.30.80 'cat << \"YAML\" > /tmp/secure-compose.yml\nversion: \"3.8\"\nservices:\n  web:\n    image: nginx:1.25-alpine\n    read_only: true\n    tmpfs:\n      - /tmp\n      - /var/cache/nginx\n\
     \      - /var/run\n    cap_drop:\n      - ALL\n    cap_add:\n      - NET_BIND_SERVICE\n    security_opt:\n      - no-new-privileges:true\n    deploy:\n      resources:\n        limits:\n          memory:\
     \ 128M\n          cpus: \"0.5\"\n    ports:\n      - \"127.0.0.1:8080:80\"\n    networks:\n      - frontend\n    user: \"101:101\"\n  db:\n    image: mysql:8.0\n    read_only: true\n    tmpfs:\n   \
@@ -70,6 +72,7 @@ steps:
     type: output_contains
     expect: 보안 개선 항목
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== 보안 개선 항목 ==="; echo "[1] 이미지 태그: latest -> 특정 버전"; echo "[2] privileged: true -> cap_drop ALL"; echo "[3] network_mode: host -> 분리된 네트워크"; echo "[4] 평문 비밀번호
     -> env_file"; echo "[5] / 마운트 -> named volume"; echo "[6] 추가: read_only, no-new-privileges, 자원 제한"; echo "--- 파일 크기 비교 ---"; wc -l /tmp/insecure-compose.yml /tmp/secure-compose.yml'''
   risk_level: low
@@ -86,6 +89,7 @@ steps:
     type: output_contains
     expect: Docker Secrets 대안
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== Docker Secrets 대안 ==="; echo "[방법1] env_file: .env 파일 분리 (.gitignore 추가 필수)"; echo -e "DB_PASSWORD=secure_pass_here\nAPI_KEY=key_here" > /tmp/.env.example;
     cat /tmp/.env.example; echo ""; echo "[방법2] Docker Swarm Secrets"; docker secret ls 2>/dev/null || echo "Swarm 미활성 - secret 사용 불가"; echo "[방법3] 볼륨 마운트 시크릿"; echo "  volumes: [./secrets/db_pass:/run/secrets/db_pass:ro]"'''
   risk_level: low
@@ -101,6 +105,7 @@ steps:
     type: output_contains
     expect: .gitignore 권장 내용
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'echo "=== Git 보안 점검 시뮬레이션 ==="; echo "[.gitignore 권장 내용]"; echo -e ".env\n.env.*\n*.key\n*.pem\nsecrets/\n!.env.example" | tee /tmp/.gitignore.example; echo ""; echo "[민감
     파일 검색]"; find /tmp -name ".env*" -o -name "*.key" -o -name "*secret*" 2>/dev/null | head -5'
   risk_level: low
@@ -119,6 +124,7 @@ steps:
     type: output_contains
     expect: IaC 보안 점검 완료
     field: stdout
+  target_vm: web
   script: "cat << 'SCRIPT' > /tmp/iac_security.sh\n#!/bin/bash\necho '=== IaC(docker-compose) 보안 점검 ==='\nFILE=$1\n[ -z \"$FILE\" ] && FILE='/tmp/insecure-compose.yml'\necho \"대상: $FILE\"\nFINDINGS=0\n\
     check() {\n  COUNT=$(grep -c \"$2\" $FILE 2>/dev/null)\n  if [ \"$COUNT\" -gt 0 ]; then\n    echo \"  [FAIL] $1 ($COUNT건)\"\n    FINDINGS=$((FINDINGS+COUNT))\n  else\n    echo \"  [PASS] $1\"\n  fi\n\
     }\ncheck 'privileged 모드' 'privileged: true'\ncheck '평문 비밀번호' 'PASSWORD='\ncheck 'host 네트워크' 'network_mode: host'\ncheck 'latest 태그' ':latest'\ncheck '루트 볼륨 마운트' '- /:/'\ncheck 'docker.sock 마운트' 'docker.sock'\n\

@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: tcpdump
     field: stdout
+  target_vm: attacker
   script: sudo tcpdump -c 10 -i any host 10.20.30.80 and port 3000 -nn
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: tcpdump
     field: stdout
+  target_vm: attacker
   script: curl -s http://10.20.30.80:3000/ > /dev/null & sudo tcpdump -c 5 -A -i any host 10.20.30.80 and port 3000 -nn 2>&1 | head -50
   risk_level: low
 - order: 3
@@ -49,6 +51,7 @@ steps:
     type: output_contains
     expect: 10.20.30
     field: stdout
+  target_vm: attacker
   script: ip neigh show && echo '---' && arp -a 2>/dev/null
   risk_level: low
 - order: 4
@@ -62,6 +65,7 @@ steps:
     type: output_contains
     expect: Nmap scan report
     field: stdout
+  target_vm: attacker
   script: sudo nmap -sn 10.20.30.0/24
   risk_level: low
 - order: 5
@@ -75,6 +79,7 @@ steps:
     type: output_contains
     expect: ARP
     field: stdout
+  target_vm: attacker
   script: sudo tcpdump -c 10 -i any arp -nn
   risk_level: low
 - order: 6
@@ -88,6 +93,7 @@ steps:
     type: output_contains
     expect: '53'
     field: stdout
+  target_vm: attacker
   script: dig google.com @8.8.8.8 > /dev/null 2>&1 & sudo tcpdump -c 4 -i any port 53 -nn 2>&1 | head -20
   risk_level: low
 - order: 7
@@ -102,6 +108,7 @@ steps:
     type: output_contains
     expect: Response
     field: stdout
+  target_vm: attacker
   script: 'sudo python3 -c "from scapy.all import *; pkt=IP(dst=''10.20.30.80'')/ICMP(); resp=sr1(pkt, timeout=3, verbose=0); print(f''Response from: {resp.src}, TTL: {resp.ttl}'') if resp else print(''No
     response'')"'
   risk_level: medium
@@ -117,6 +124,7 @@ steps:
     type: output_contains
     expect: 'MAC:'
     field: stdout
+  target_vm: attacker
   script: 'sudo python3 -c "from scapy.all import *; ans,_=srp(Ether(dst=''ff:ff:ff:ff:ff:ff'')/ARP(pdst=''10.20.30.80''), timeout=3, verbose=0); [print(f''IP: {r[1].psrc}, MAC: {r[1].hwsrc}'') for r in
     ans]"'
   risk_level: medium
@@ -131,6 +139,7 @@ steps:
     type: output_contains
     expect: 'Captured:'
     field: stdout
+  target_vm: attacker
   script: curl -s http://10.20.30.80:3000/ > /dev/null & sudo tcpdump -c 20 -i any host 10.20.30.80 -w /tmp/capture.pcap 2>&1; echo 'Captured:' && tcpdump -r /tmp/capture.pcap 2>/dev/null | wc -l
   risk_level: low
 - order: 10
@@ -144,6 +153,7 @@ steps:
     type: output_contains
     expect: TRACEROUTE
     field: stdout
+  target_vm: attacker
   script: sudo nmap --traceroute -sn 10.20.30.80
   risk_level: low
 - order: 11
@@ -157,6 +167,7 @@ steps:
     type: output_contains
     expect: ESTAB
     field: stdout
+  target_vm: attacker
   script: ss -tn state established
   risk_level: low
 - order: 12
@@ -170,6 +181,7 @@ steps:
     type: output_contains
     expect: hping
     field: stdout
+  target_vm: attacker
   script: sudo hping3 --rand-source -S -p 3000 -c 5 10.20.30.80
   risk_level: medium
 - order: 13
@@ -183,6 +195,7 @@ steps:
     type: output_contains
     expect: table
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 'sudo nft list ruleset' 2>/dev/null | head -40
   risk_level: low
 - order: 14
@@ -197,6 +210,7 @@ steps:
     type: output_contains
     expect: Response
     field: stdout
+  target_vm: attacker
   script: 'sudo python3 -c "from scapy.all import *; pkt=IP(dst=''10.20.30.80'')/TCP(dport=3000, flags=''S''); resp=sr1(pkt, timeout=3, verbose=0); print(f''Response flags: {resp[TCP].flags}, Seq: {resp[TCP].seq},
     Ack: {resp[TCP].ack}'') if resp else print(''No response'')"'
   risk_level: medium
@@ -213,6 +227,7 @@ steps:
     type: output_contains
     expect: Network Attack Report
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Network Attack Report ===\n\n[Attacks Performed]\n1. Packet Sniffing: HTTP 평문 트래픽 캡처 성공\n2. ARP Recon: MAC 주소 매핑 수집\n3. SYN Flood Simulation: 5 packets sent\n4. Custom Packet Crafting:
     scapy 활용\n\n[Findings]\n- HTTP(3000) 트래픽 평문 노출\n- ARP 캐시 조작 가능\n- 방화벽(secu) nftables 규칙 확인\n\n[Recommendations]\n1. HTTPS 강제 적용 (HSTS)\n2. Dynamic ARP Inspection(DAI) 활성화\n3. SYN Cookie 또는 rate limiting
     적용\n4. 802.1X 네트워크 인증 도입'' > /tmp/network_attack_report.txt && cat /tmp/network_attack_report.txt'

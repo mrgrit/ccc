@@ -23,6 +23,7 @@ steps:
   verify:
     type: output_contains
     expect: suricata
+  target_vm: attacker
   script: ssh 10.20.30.1 'suricatasc -c uptime 2>/dev/null; cat /var/log/suricata/stats.log 2>/dev/null | tail -20; suricata --build-info 2>/dev/null | grep -i "nfqueue\|af-packet\|ips"' 2>&1 | head -30
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
   verify:
     type: output_contains
     expect: Real-time monitoring
+  target_vm: attacker
   script: ssh 10.20.30.1 'tail -5 /var/log/suricata/eve.json 2>/dev/null | python3 -m json.tool 2>/dev/null | head -30' 2>&1; echo '---'; echo 'Real-time monitoring command:'; echo 'tail -f /var/log/suricata/eve.json
     | jq -r "select(.event_type==\"alert\") | [.timestamp, .alert.severity, .alert.signature, .src_ip, .dest_ip] | @tsv"'
   risk_level: low
@@ -103,6 +105,7 @@ steps:
   verify:
     type: output_contains
     expect: Auto IP Blocker
+  target_vm: attacker
   script: 'cat > /tmp/auto_block.sh << ''SCRIPT''
 
     #!/bin/bash
@@ -218,6 +221,7 @@ steps:
   verify:
     type: output_contains
     expect: fail2ban
+  target_vm: attacker
   script: 'cat > /tmp/fail2ban_jail.conf << ''EOF''
 
     # /etc/fail2ban/jail.local
@@ -294,6 +298,7 @@ steps:
   verify:
     type: output_contains
     expect: PORT SCAN
+  target_vm: attacker
   script: 'cat > /tmp/portscan_detection.rules << ''EOF''
 
     # Port Scan Detection Rules
@@ -321,6 +326,7 @@ steps:
   verify:
     type: output_contains
     expect: WAF monitoring
+  target_vm: attacker
   script: 'ssh 10.20.30.80 ''tail -20 /var/log/bunkerweb/access.log 2>/dev/null || tail -20 /var/log/nginx/access.log 2>/dev/null'' 2>&1 | head -20; echo ''---''; echo ''Real-time WAF monitoring:''; echo
     ''tail -f /var/log/bunkerweb/access.log | grep -iE "union|select|script|alert|\.\.\/'' '
   risk_level: low
@@ -380,6 +386,7 @@ steps:
   verify:
     type: output_contains
     expect: Process Anomaly Monitor
+  target_vm: attacker
   script: 'cat > /tmp/process_monitor.sh << ''SCRIPT''
 
     #!/bin/bash
@@ -440,6 +447,7 @@ steps:
   verify:
     type: output_contains
     expect: Outbound Connection
+  target_vm: attacker
   script: echo '=== Outbound Connection Analysis ===' && ss -tn state established | awk '{print $4, $5}' | grep -v '10.20.30\|127.0.0\|::' | sort | uniq -c | sort -rn | head -10; echo '---'; echo 'Suspicious
     indicators:'; echo '1. Connections to non-standard ports (4444, 5555, 9999)'; echo '2. Multiple connections to same external IP'; echo '3. Connections to known-bad IP ranges'; echo '4. Long-lived connections
     (>24h)'
@@ -517,6 +525,7 @@ steps:
   verify:
     type: output_contains
     expect: Automated IR Workflow
+  target_vm: attacker
   script: 'cat > /tmp/auto_ir_workflow.sh << ''SCRIPT''
 
     #!/bin/bash
@@ -595,6 +604,7 @@ steps:
   verify:
     type: output_contains
     expect: active-response
+  target_vm: attacker
   script: "cat > /tmp/wazuh_active_response.xml << 'EOF'\n<!-- /var/ossec/etc/ossec.conf Active Response Section -->\n<ossec_config>\n  <active-response>\n    <command>firewall-drop</command>\n    <location>local</location>\n\
     \    <rules_id>100100,100200</rules_id>\n    <timeout>3600</timeout>\n  </active-response>\n\n  <active-response>\n    <command>host-deny</command>\n    <location>local</location>\n    <level>12</level>\n\
     \    <timeout>1800</timeout>\n  </active-response>\n\n  <command>\n    <name>firewall-drop</name>\n    <executable>firewall-drop</executable>\n    <timeout_allowed>yes</timeout_allowed>\n  </command>\n\
@@ -612,6 +622,7 @@ steps:
   verify:
     type: output_contains
     expect: Attack simulation complete
+  target_vm: attacker
   script: echo '=== Live Attack Simulation ===' && echo '[1] Port scan:' && nmap -sS -T4 --top-ports 100 10.20.30.80 2>&1 | tail -5 && echo '[2] SQL Injection:' && curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20OR%201=1--'
     2>&1 | head -3 && echo '[3] SSH brute force (3 attempts):' && for i in 1 2 3; do ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no -o PasswordAuthentication=yes fakeuser@10.20.30.80 2>&1 | head -1;
     done && echo '=== Attack simulation complete ==='
@@ -628,6 +639,7 @@ steps:
   verify:
     type: output_contains
     expect: Detection Results
+  target_vm: attacker
   script: echo '=== Detection Results ===' && echo '[Suricata Alerts]:' && ssh 10.20.30.1 'tail -50 /var/log/suricata/eve.json 2>/dev/null | python3 -c "import sys,json; [print(json.loads(l).get(\"alert\",{}).get(\"signature\",\"\"))
     for l in sys.stdin if \"alert\" in l]" 2>/dev/null' | tail -5; echo '[Auth.log]:' && grep -E 'Failed|Invalid' /var/log/auth.log 2>/dev/null | tail -5; echo '[Network connections]:' && ss -tn | grep
     -c ESTAB
@@ -647,6 +659,7 @@ steps:
   verify:
     type: output_contains
     expect: timestamp
+  target_vm: attacker
   script: "python3 -c \"\nimport json, subprocess, time\n\ndef get_metric(cmd):\n    try:\n        return subprocess.check_output(cmd, shell=True, timeout=5).decode().strip()\n    except:\n        return\
     \ '0'\n\ndashboard = {\n    'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ'),\n    'system': {\n        'cpu_usage': get_metric(\\\"top -bn1 | grep 'Cpu(s)' | awk '{print \\$2}'\\\"),\n        'memory_used_pct':\
     \ get_metric(\\\"free | awk '/Mem:/{printf(\\\"%.1f\\\", \\$3/\\$2*100)}'\\\"),\n        'disk_used_pct': get_metric(\\\"df / | awk 'NR==2{print \\$5}'\\\"),\n    },\n    'network': {\n        'established_connections':\
@@ -664,6 +677,7 @@ steps:
   verify:
     type: output_contains
     expect: cleanup completed
+  target_vm: attacker
   script: rm -f /tmp/auto_block.sh /tmp/fail2ban_*.conf /tmp/portscan_*.rules /tmp/process_monitor.sh /tmp/auto_ir_*.sh /tmp/wazuh_active_*.xml 2>/dev/null; echo 'Real-time defense lab cleanup completed'
   risk_level: low
 - order: 15
@@ -681,6 +695,7 @@ steps:
   verify:
     type: output_contains
     expect: Real-time Defense Assessment
+  target_vm: attacker
   script: "cat > /tmp/realtime_defense_report.txt << 'EOF'\n=== Real-time Defense Assessment Report ===\nDate: 2026-04-03 | Scope: 10.20.30.0/24\n\n1. Detection Coverage:\n   | Attack Type | Detected |\
     \ Tool | Response Time |\n   |------------|----------|------|---------------|\n   | Port Scan | YES | Suricata IPS | <5s |\n   | SQL Injection | YES | WAF + Suricata | <2s |\n   | SSH Brute Force |\
     \ YES | fail2ban | 30s (after 5 fails) |\n   | Reverse Shell | PARTIAL | Process monitor | 60s (polling) |\n   | DNS Tunnel | NO | Not configured | N/A |\n\n2. Metrics:\n   - True Positive Rate: 80%\

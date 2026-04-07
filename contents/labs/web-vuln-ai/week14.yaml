@@ -23,6 +23,7 @@ steps:
     type: output_regex
     expect: nikto|Nikto
     field: stdout
+  target_vm: attacker
   script: nikto -h http://10.20.30.80:3000 -maxtime 30 2>/dev/null | head -30
   risk_level: low
 - order: 2
@@ -37,6 +38,7 @@ steps:
     type: output_contains
     expect: Server
     field: stdout
+  target_vm: attacker
   script: echo '=== Port 80 (Apache+ModSecurity) ===' && curl -sI http://10.20.30.80:80 | grep -iE '(server|x-powered|x-aspnet)' && echo '=== Port 3000 (JuiceShop) ===' && curl -sI http://10.20.30.80:3000
     | grep -iE '(server|x-powered|x-aspnet)' && echo '=== Port 8080 (DVWA) ===' && curl -sI http://10.20.30.80:8080 | grep -iE '(server|x-powered|x-aspnet)'
   risk_level: low
@@ -53,6 +55,7 @@ steps:
     type: output_contains
     expect: Dir Listing Check Complete
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Directory Listing Check ==='' && for DIR in ftp assets encryptionkeys public; do echo -n "/$DIR/: " && RESP=$(curl -s http://10.20.30.80:3000/$DIR/ | head -c 200) && if echo "$RESP"
     | grep -qi ''href\|listing\|index of''; then echo ''EXPOSED''; else echo "HTTP $(curl -s -o /dev/null -w ''%{http_code}'' http://10.20.30.80:3000/$DIR/)"; fi; done && echo ''=== Dir Listing Check Complete
     ==='''
@@ -70,6 +73,7 @@ steps:
     type: output_contains
     expect: Sensitive File Scan Complete
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Sensitive File Scan ==='' && for FILE in .git/config .env .htaccess robots.txt package.json main.js.map ftp/package.json.bak ftp/coupons_2013.md.bak ftp/eastere.gg; do SIZE=$(curl
     -s -o /dev/null -w ''%{size_download}'' http://10.20.30.80:3000/$FILE 2>/dev/null); CODE=$(curl -s -o /dev/null -w ''%{http_code}'' http://10.20.30.80:3000/$FILE 2>/dev/null); echo "/$FILE: HTTP $CODE
     ($SIZE bytes)"; done && echo ''=== Sensitive File Scan Complete ==='''
@@ -86,6 +90,7 @@ steps:
     type: output_contains
     expect: Error Leak Check Complete
     field: stdout
+  target_vm: attacker
   script: echo '=== Error Information Leak ===' && echo '[SQL Error]' && curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27' | head -c 300 && echo '' && echo '[Invalid API]' && curl -s http://10.20.30.80:3000/api/Nonexistent/
     | head -c 200 && echo '' && echo '[Type Error]' && curl -s 'http://10.20.30.80:3000/api/Products/abc' | head -c 200 && echo '' && echo '=== Error Leak Check Complete ==='
   risk_level: medium
@@ -102,6 +107,7 @@ steps:
     type: output_contains
     expect: WAF Detection Complete
     field: stdout
+  target_vm: attacker
   script: echo '=== WAF Detection Test ===' && echo -n '[XSS] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%3Cscript%3Ealert(1)%3C/script%3E' && echo '' && echo -n '[SQLi]
     ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' "http://10.20.30.80:80/?id=1'+OR+1=1--" && echo '' && echo -n '[CMDi] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?cmd=;cat+/etc/passwd'
     && echo '' && echo -n '[LFI] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/../../etc/passwd' && echo '' && echo '=== WAF Detection Complete ==='
@@ -120,6 +126,7 @@ steps:
     type: output_contains
     expect: Bypass Test Complete
     field: stdout
+  target_vm: attacker
   script: echo '=== WAF Bypass Techniques ===' && echo -n '[Normal XSS - blocked] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%3Cscript%3Ealert(1)%3C/script%3E' && echo ''
     && echo -n '[Double Encoded] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%253Cscript%253Ealert(1)%253C/script%253E' && echo '' && echo -n '[Mixed Case] ' && curl -s -o
     /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?q=%3CScRiPt%3Ealert(1)%3C/ScRiPt%3E' && echo '' && echo -n '[SQL Comment] ' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?id=1+UNION/**/SELECT/**/1,2,3'
@@ -138,6 +145,7 @@ steps:
     type: output_contains
     expect: Method Bypass Test Complete
     field: stdout
+  target_vm: attacker
   script: 'PAYLOAD="id=1''+OR+1=1--" && echo ''=== HTTP Method Bypass ==='' && for METHOD in GET POST PUT PATCH; do echo -n "[$METHOD] " && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X $METHOD -d "$PAYLOAD"
     http://10.20.30.80:80/ && echo ''''; done && echo ''=== Content-Type Bypass ==='' && echo -n ''[JSON] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:80/ -H ''Content-Type:
     application/json'' -d ''{"id":"1 OR 1=1--"}'' && echo '''' && echo ''=== Method Bypass Test Complete ==='''
@@ -155,6 +163,7 @@ steps:
     type: output_contains
     expect: CORS Test Complete
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== CORS Misconfiguration Test ==='' && echo ''[JuiceShop - evil.com]'' && curl -sI http://10.20.30.80:3000/api/Products/ -H ''Origin: http://evil.com'' | grep -i access-control && echo
     ''[JuiceShop - null origin]'' && curl -sI http://10.20.30.80:3000/api/Products/ -H ''Origin: null'' | grep -i access-control && echo ''[DVWA - evil.com]'' && curl -sI http://10.20.30.80:8080/ -H ''Origin:
     http://evil.com'' | grep -i access-control || echo ''No CORS headers'' && echo ''=== CORS Test Complete ==='''
@@ -173,6 +182,7 @@ steps:
     type: output_contains
     expect: 보안 설정 오류 종합 점검 보고서
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/misconfig_report.txt << 'EOF'\n=== 보안 설정 오류 종합 점검 보고서 ===\n대상: 10.20.30.80 (Apache:80, JuiceShop:3000, DVWA:8080)\n\n[즉시 조치 - CRITICAL]\n1. 디렉터리 리스팅 비활성화\n   Apache: Options -Indexes\n\
     \   Express: 정적 파일 서빙 경로 제한\n2. 민감 파일(.bak, .git, .env) 접근 차단\n   Apache: <FilesMatch> deny 규칙\n3. 에러 메시지 최소화\n   NODE_ENV=production 설정\n\n[단기 조치 - HIGH]\n4. Server 헤더 최소화: ServerTokens Prod\n5. X-Powered-By\
     \ 헤더 제거\n6. CORS 허용 도메인 제한\n7. WAF 규칙 전 메서드/인코딩 대응 강화\n\n[중기 조치 - MEDIUM]\n8. 보안 헤더 추가: HSTS, CSP, X-Frame-Options\n9. 불필요한 HTTP 메서드(PUT, DELETE, TRACE) 비활성화\n10. TLS 1.2+ 강제, 약한 암호화 스위트 제거\n\n[WAF\

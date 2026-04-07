@@ -29,6 +29,7 @@ steps:
     type: output_contains
     expect: Suricata
     field: stdout
+  target_vm: attacker
   script: suricata -V && suricata --build-info | head -20
   risk_level: low
 - order: 2
@@ -42,6 +43,7 @@ steps:
     type: output_contains
     expect: HOME_NET
     field: stdout
+  target_vm: attacker
   script: 'sudo sed -i ''s/HOME_NET: .*/HOME_NET: "[10.20.30.0\/24]"/'' /etc/suricata/suricata.yaml && grep HOME_NET /etc/suricata/suricata.yaml'
   risk_level: low
 - order: 3
@@ -56,6 +58,7 @@ steps:
     type: output_contains
     expect: SCAN Nmap
     field: stdout
+  target_vm: attacker
   script: 'echo ''alert tcp $EXTERNAL_NET any -> $HOME_NET any (msg:"SCAN Nmap SYN Scan Detected"; flags:S,12; threshold: type both, track by_src, count 20, seconds 5; classtype:attempted-recon; sid:1000001;
     rev:1;)'' | sudo tee /etc/suricata/rules/local.rules'
   risk_level: low
@@ -71,6 +74,7 @@ steps:
     type: output_contains
     expect: SQL Injection
     field: stdout
+  target_vm: attacker
   script: echo 'alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"WEB-ATTACK SQL Injection Attempt - UNION SELECT"; flow:to_server,established; content:"UNION"; nocase; content:"SELECT"; nocase; distance:0;
     within:20; classtype:web-application-attack; sid:1000002; rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
   risk_level: low
@@ -86,6 +90,7 @@ steps:
     type: output_contains
     expect: XSS
     field: stdout
+  target_vm: attacker
   script: echo 'alert http $EXTERNAL_NET any -> $HOME_NET any (msg:"WEB-ATTACK XSS Script Tag Detected"; flow:to_server,established; content:"<script"; nocase; classtype:web-application-attack; sid:1000003;
     rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
   risk_level: low
@@ -101,6 +106,7 @@ steps:
     type: output_contains
     expect: SSH Brute Force
     field: stdout
+  target_vm: attacker
   script: 'echo ''alert tcp $EXTERNAL_NET any -> $HOME_NET 22 (msg:"ATTACK SSH Brute Force Attempt"; flow:to_server; flags:S,12; threshold: type both, track by_src, count 5, seconds 30; classtype:attempted-admin;
     sid:1000004; rev:1;)'' | sudo tee -a /etc/suricata/rules/local.rules'
   risk_level: low
@@ -116,6 +122,7 @@ steps:
     type: output_contains
     expect: Reverse Shell
     field: stdout
+  target_vm: attacker
   script: echo 'alert tcp $HOME_NET any -> $EXTERNAL_NET any (msg:"BACKDOOR Reverse Shell Detected"; flow:established; content:"/bin/bash"; classtype:trojan-activity; sid:1000005; rev:1;)' | sudo tee -a
     /etc/suricata/rules/local.rules
   risk_level: low
@@ -130,6 +137,7 @@ steps:
     type: output_contains
     expect: Configuration provided was successfully loaded
     field: stdout
+  target_vm: attacker
   script: sudo suricata -T -c /etc/suricata/suricata.yaml -S /etc/suricata/rules/local.rules
   risk_level: low
 - order: 9
@@ -143,6 +151,7 @@ steps:
     type: output_contains
     expect: engine started
     field: stdout
+  target_vm: attacker
   script: sudo suricata -c /etc/suricata/suricata.yaml --af-packet=eth0 -D && sleep 3 && sudo tail -5 /var/log/suricata/suricata.log
   risk_level: low
 - order: 10
@@ -156,6 +165,7 @@ steps:
     type: output_contains
     expect: SCAN
     field: stdout
+  target_vm: attacker
   script: sudo tail -f /var/log/suricata/fast.log
   risk_level: low
 - order: 11
@@ -169,6 +179,7 @@ steps:
     type: output_contains
     expect: '10.'
     field: stdout
+  target_vm: attacker
   script: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .src_ip' | sort | uniq -c | sort -rn
   risk_level: low
 - order: 12
@@ -182,6 +193,7 @@ steps:
     type: output_contains
     expect: signature_id
     field: stdout
+  target_vm: attacker
   script: cat /var/log/suricata/eve.json | jq 'select(.event_type=="alert" and .alert.signature_id==1000002)'
   risk_level: low
 - order: 13
@@ -195,6 +207,7 @@ steps:
     type: output_contains
     expect: detect
     field: stdout
+  target_vm: attacker
   script: sudo tail -50 /var/log/suricata/stats.log | grep -E 'detect.alert|decoder.pkts|flow.total'
   risk_level: low
 - order: 14
@@ -208,6 +221,7 @@ steps:
     type: output_contains
     expect: drop
     field: stdout
+  target_vm: attacker
   script: sudo sed -i 's/^alert/drop/' /etc/suricata/rules/local.rules && sudo iptables -I FORWARD -j NFQUEUE --queue-num 0 && head -5 /etc/suricata/rules/local.rules
   risk_level: low
 - order: 15
@@ -225,6 +239,7 @@ steps:
     type: file_exists
     expect: /tmp/ids_policy_report.txt
     field: filesystem
+  target_vm: attacker
   script: "cat > /tmp/ids_policy_report.txt << 'EOF'\n=== IDS/IPS Policy Report ===\n\nCustom Rules Deployed:\nSID 1000001: Nmap SYN Scan Detection (threshold: 20/5s)\nSID 1000002: SQL Injection - UNION\
     \ SELECT\nSID 1000003: XSS - Script Tag Detection\nSID 1000004: SSH Brute Force (threshold: 5/30s)\nSID 1000005: Reverse Shell Detection\n\nDetection Results:\n- SYN Scan: 3 alerts triggered during\
     \ nmap test\n- SQL Injection: 5 alerts from sqlmap test\n- XSS: 2 alerts from manual XSS test\n- SSH Brute Force: 1 alert from hydra test\n\nFalse Positive Analysis:\n- SID 1000003: May trigger on legitimate\

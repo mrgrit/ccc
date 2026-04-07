@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: XFR
     field: stdout
+  target_vm: attacker
   script: dig axfr @10.20.30.1 lab.local
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: 10.20.30
     field: stdout
+  target_vm: attacker
   script: for i in $(seq 1 254); do result=$(dig -x 10.20.30.$i +short 2>/dev/null); [ -n "$result" ] && echo "10.20.30.$i -> $result"; done
   risk_level: low
 - order: 3
@@ -49,6 +51,7 @@ steps:
     type: output_contains
     expect: ssl-cert
     field: stdout
+  target_vm: attacker
   script: nmap --script ssl-cert -p 443 10.20.30.80
   risk_level: low
 - order: 4
@@ -62,6 +65,7 @@ steps:
     type: output_contains
     expect: Server
     field: stdout
+  target_vm: attacker
   script: curl -sI http://10.20.30.80:3000 | grep -iE '(x-frame|content-security|strict-transport|x-content-type|x-xss|server|x-powered)'
   risk_level: low
 - order: 5
@@ -75,6 +79,7 @@ steps:
     type: output_contains
     expect: ftp
     field: stdout
+  target_vm: attacker
   script: curl -s http://10.20.30.80:3000/ftp -o /tmp/ftp_index.html && strings /tmp/ftp_index.html | head -30
   risk_level: low
 - order: 6
@@ -88,6 +93,7 @@ steps:
     type: output_contains
     expect: ->
     field: stdout
+  target_vm: attacker
   script: for path in admin api swagger debug console backup .git .env api-docs; do code=$(curl -s -o /dev/null -w '%{http_code}' http://10.20.30.80:3000/$path); echo "/$path -> $code"; done
   risk_level: low
 - order: 7
@@ -101,6 +107,7 @@ steps:
     type: output_contains
     expect: api
     field: stdout
+  target_vm: attacker
   script: curl -s http://10.20.30.80:3000 | grep -oE '(api|rest|/api/)[a-zA-Z0-9/_-]+' | sort -u
   risk_level: low
 - order: 8
@@ -114,6 +121,7 @@ steps:
     type: output_contains
     expect: http-enum
     field: stdout
+  target_vm: attacker
   script: nmap --script http-enum -p 3000 10.20.30.80
   risk_level: low
 - order: 9
@@ -127,6 +135,7 @@ steps:
     type: output_contains
     expect: '161'
     field: stdout
+  target_vm: attacker
   script: nmap -sU --script snmp-brute -p 161 10.20.30.1
   risk_level: low
 - order: 10
@@ -140,6 +149,7 @@ steps:
     type: output_contains
     expect: '445'
     field: stdout
+  target_vm: attacker
   script: nmap --script smb-os-discovery,smb-enum-shares -p 445 10.20.30.80
   risk_level: low
 - order: 11
@@ -153,6 +163,7 @@ steps:
     type: output_contains
     expect: open
     field: stdout
+  target_vm: attacker
   script: nmap -sV --version-intensity 5 -p 22,80,443,3000,8080,8443 10.20.30.0/24
   risk_level: low
 - order: 12
@@ -167,6 +178,7 @@ steps:
     type: output_contains
     expect: Network Topology Map
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Network Topology Map ===\n\n[10.20.30.1] Role: Firewall/IPS\n  - Services: nftables, Suricata\n\n[10.20.30.80] Role: Web Server\n  - Port 3000: JuiceShop (Node.js)\n  - Port 80/443:
     BunkerWeb WAF\n\n[10.20.30.100] Role: SIEM\n  - Service: Wazuh 4.11.2\n\n[10.20.30.201] Role: Control Plane\n  - Port 8000: Manager API'' > /tmp/network_map.txt && cat /tmp/network_map.txt'
   risk_level: low
@@ -181,6 +193,7 @@ steps:
     type: output_contains
     expect: '@'
     field: stdout
+  target_vm: attacker
   script: curl -s http://10.20.30.80:3000 | grep -oE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' | sort -u
   risk_level: low
 - order: 14
@@ -195,6 +208,7 @@ steps:
     type: output_contains
     expect: script
     field: stdout
+  target_vm: attacker
   script: curl -s http://10.20.30.80:3000 | grep -oiE '(<meta[^>]+>|<script[^>]+src="[^"]+"|<link[^>]+href="[^"]+")' | head -20
   risk_level: low
 - order: 15
@@ -210,6 +224,7 @@ steps:
     type: output_contains
     expect: OSINT Assessment Report
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== OSINT Assessment Report ===\nDate: $(date)\n\n[1] Attack Surface Summary\n- Web: JuiceShop on port 3000 (known vulnerable app)\n- Firewall: nftables + Suricata on 10.20.30.1\n-
     SIEM: Wazuh on 10.20.30.100\n\n[2] Priority Attack Vectors\n1. Web application vulnerabilities (OWASP Top 10)\n2. Missing security headers\n3. Information disclosure via banners\n\n[3] Recommendations\n-
     Harden HTTP security headers\n- Restrict banner information\n- Implement network segmentation'' > /tmp/osint_report.txt && cat /tmp/osint_report.txt'

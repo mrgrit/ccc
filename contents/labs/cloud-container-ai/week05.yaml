@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: ReadOnly=true
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'docker run -d --name k8s-restricted --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --user 1000:1000 --memory 128m alpine:latest sleep 3600 2>/dev/null
     && docker inspect k8s-restricted --format "Privileged={{.HostConfig.Privileged}} ReadOnly={{.HostConfig.ReadonlyRootfs}} User={{.Config.User}} CapDrop={{.HostConfig.CapDrop}}" 2>/dev/null'
   risk_level: low
@@ -39,6 +40,7 @@ steps:
     type: output_contains
     expect: frontend-net
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''docker network create frontend-net 2>/dev/null; docker network create backend-net 2>/dev/null; echo "=== 네트워크 격리 ==="; docker network ls --format "{{.Name}}: {{.Driver}}"
     | grep -E "(frontend|backend|bridge)"'''
   risk_level: low
@@ -55,6 +57,7 @@ steps:
     type: output_contains
     expect: 네트워크 격리 테스트
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''docker run -d --name frontend --network frontend-net alpine:latest sleep 3600 2>/dev/null; docker run -d --name backend --network backend-net alpine:latest sleep 3600
     2>/dev/null; echo "=== 네트워크 격리 테스트 ==="; BACKEND_IP=$(docker inspect backend --format "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" 2>/dev/null); echo "Backend IP: $BACKEND_IP"; docker
     exec frontend ping -c 2 -W 2 $BACKEND_IP 2>&1 | tail -3 || echo "통신 차단 확인 (정상)"'''
@@ -71,6 +74,7 @@ steps:
     type: output_contains
     expect: 자원 제한 확인
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'docker run -d --name resource-limited --memory 64m --memory-swap 64m --cpus 0.5 --pids-limit 30 alpine:latest sleep 3600 2>/dev/null; echo "=== 자원 제한 확인 ==="; docker inspect
     resource-limited --format "Memory={{.HostConfig.Memory}} MemSwap={{.HostConfig.MemorySwap}} CPU={{.HostConfig.NanoCpus}} Pids={{.HostConfig.PidsLimit}}" 2>/dev/null'
   risk_level: low
@@ -86,6 +90,7 @@ steps:
     type: output_contains
     expect: Health
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''docker ps -q | head -5 | xargs -I{} docker inspect --format="{{.Name}}: Health={{if .State.Health}}{{.State.Health.Status}}{{else}}미설정{{end}}" {} 2>/dev/null || echo
     "실행 중인 컨테이너 없음"'''
   risk_level: low
@@ -101,6 +106,7 @@ steps:
     type: output_contains
     expect: RestartPolicy
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''docker ps -aq | head -5 | xargs -I{} docker inspect --format="{{.Name}}: RestartPolicy={{.HostConfig.RestartPolicy.Name}} MaxRetry={{.HostConfig.RestartPolicy.MaximumRetryCount}}"
     {} 2>/dev/null'''
   risk_level: low
@@ -116,6 +122,7 @@ steps:
     type: output_contains
     expect: 정리 완료
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'docker rm -f k8s-restricted frontend backend resource-limited 2>/dev/null; docker network rm frontend-net backend-net 2>/dev/null; echo "=== 정리 완료 ==="; docker ps -a --format
     "{{.Names}}" | head -5'
   risk_level: low
@@ -135,6 +142,7 @@ steps:
     type: output_contains
     expect: K8s 시뮬레이션 점검 완료
     field: stdout
+  target_vm: web
   script: "cat << 'SCRIPT' > /tmp/k8s_sim_check.sh\n#!/bin/bash\nHOST='trainee@10.20.30.80'\necho '=== K8s Pod Security Standards 시뮬레이션 점검 ==='\nssh $HOST '\nfor CID in $(docker ps -q); do\n  NAME=$(docker\
     \ inspect --format=\"{{.Name}}\" $CID)\n  PRIV=$(docker inspect --format=\"{{.HostConfig.Privileged}}\" $CID)\n  USER=$(docker inspect --format=\"{{.Config.User}}\" $CID)\n  RO=$(docker inspect --format=\"\
     {{.HostConfig.ReadonlyRootfs}}\" $CID)\n  MEM=$(docker inspect --format=\"{{.HostConfig.Memory}}\" $CID)\n  echo \"$NAME:\"\n  [ \"$PRIV\" = \"true\" ] && echo \"  Privileged: FAIL\" || echo \"  Privileged:\

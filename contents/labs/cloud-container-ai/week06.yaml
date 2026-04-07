@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: docker
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''getent group docker && echo "--- 로그인 가능 계정 ---" && awk -F: "\$7 !~ /nologin|false/ {print \$1}" /etc/passwd'''
   risk_level: low
 - order: 2
@@ -37,6 +38,7 @@ steps:
     type: output_contains
     expect: uid=
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'docker run -d --name uid-test alpine:latest sleep 300 2>/dev/null; echo "=== 컨테이너 내부 UID ==="; docker exec uid-test id; echo "=== 호스트에서 본 UID ==="; docker top uid-test
     -o uid,pid,cmd; docker rm -f uid-test 2>/dev/null' 2>/dev/null
   risk_level: low
@@ -51,6 +53,7 @@ steps:
     type: output_contains
     expect: uid=1000
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'docker run --rm --user 1000:1000 alpine:latest sh -c "id && echo --- && whoami 2>/dev/null || echo nobody && echo --- && cat /etc/shadow 2>&1 | head -3"'
   risk_level: low
 - order: 4
@@ -65,6 +68,7 @@ steps:
     type: output_contains
     expect: docker.sock
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'echo "=== Docker 소켓 마운트 위험성 ==="; docker run --rm -v /var/run/docker.sock:/var/run/docker.sock docker:cli docker ps --format "{{.Names}}" 2>/dev/null | head -5 || echo
     "docker:cli 이미지 없음 - 소켓 권한 확인"; echo "--- 소켓 권한 ---"; ls -la /var/run/docker.sock'
   risk_level: low
@@ -80,6 +84,7 @@ steps:
     type: output_contains
     expect: 환경변수
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'docker ps -q | head -5 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range .Config.Env}}  {{.}}\n{{end}}" {} 2>/dev/null | grep -iE "(PASSWORD|SECRET|KEY|TOKEN|API)"
     && echo "민감 환경변수 발견!" || echo "민감 환경변수 미발견"'
   risk_level: low
@@ -94,6 +99,7 @@ steps:
     type: output_contains
     expect: Plugins
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''docker info --format "Plugins: {{.Plugins}}" 2>/dev/null && echo "--- Authorization ---" && docker info 2>/dev/null | grep -A2 "Authorization"'''
   risk_level: low
 - order: 7
@@ -108,6 +114,7 @@ steps:
     type: output_contains
     expect: sudo/docker 권한 분석
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'echo "=== sudo/docker 권한 분석 ==="; echo "[sudo 그룹]" && getent group sudo; echo "[docker 그룹]" && getent group docker; echo "[sudoers]" && sudo grep -v "^#\|^$\|^Defaults"
     /etc/sudoers 2>/dev/null | head -5'
   risk_level: low
@@ -150,6 +157,7 @@ steps:
     type: output_contains
     expect: IAM 점검 완료
     field: stdout
+  target_vm: web
   script: 'cat << ''SCRIPT'' > /tmp/iam_check.sh
 
     #!/bin/bash

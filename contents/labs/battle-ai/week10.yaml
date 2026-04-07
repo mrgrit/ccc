@@ -30,6 +30,7 @@ steps:
     type: output_contains
     expect: active
     field: stdout
+  target_vm: attacker
   script: systemctl status apache2 && systemctl status sshd && systemctl status vsftpd && systemctl status mysql && ss -tlnp
   risk_level: low
 - order: 2
@@ -43,6 +44,7 @@ steps:
     type: output_contains
     expect: root
     field: stdout
+  target_vm: attacker
   script: 'cat /etc/shadow | awk -F: ''{print $1, length($2)}'' && find / -perm -4000 -type f 2>/dev/null | wc -l && ss -tlnp | wc -l'
   risk_level: low
 - order: 3
@@ -56,6 +58,7 @@ steps:
     type: output_contains
     expect: Passwords changed
     field: stdout
+  target_vm: attacker
   script: 'NEW_PASS=$(openssl rand -base64 16) && echo "msfadmin:$NEW_PASS" | sudo chpasswd && echo "New password for msfadmin: $NEW_PASS" > /tmp/forensics/new_passwords.txt && echo ''Passwords changed'''
   risk_level: low
 - order: 4
@@ -71,6 +74,7 @@ steps:
     type: output_contains
     expect: Firewall deployed
     field: stdout
+  target_vm: attacker
   script: "sudo nft flush ruleset && sudo nft -f - << 'EOF'\ntable inet filter {\n  chain input {\n    type filter hook input priority 0; policy drop;\n    iifname lo accept\n    ct state established,related\
     \ accept\n    tcp dport { 22, 80, 443, 21 } accept\n    icmp type echo-request limit rate 5/second accept\n  }\n  chain forward {\n    type filter hook forward priority 0; policy drop;\n  }\n  chain\
     \ output {\n    type filter hook output priority 0; policy accept;\n  }\n}\nEOF\necho 'Firewall deployed'"
@@ -86,6 +90,7 @@ steps:
     type: output_contains
     expect: active
     field: stdout
+  target_vm: attacker
   script: sudo suricata-update && sudo systemctl restart suricata && sudo systemctl status suricata
   risk_level: low
 - order: 6
@@ -99,6 +104,7 @@ steps:
     type: output_contains
     expect: 'nmap:'
     field: stdout
+  target_vm: attacker
   script: 'for tool in nmap msfconsole sqlmap hydra nikto gobuster dirb john hashcat searchsploit; do echo -n "$tool: "; which $tool 2>/dev/null || echo ''NOT FOUND''; done'
   risk_level: low
 - order: 7
@@ -112,6 +118,7 @@ steps:
     type: output_contains
     expect: open
     field: stdout
+  target_vm: attacker
   script: nmap -sV -O -p- -T4 10.20.40.0/24 -oX /tmp/battle_recon.xml
   risk_level: low
 - order: 8
@@ -174,6 +181,7 @@ steps:
     type: file_exists
     expect: /tmp/attack_playbook.txt
     field: filesystem
+  target_vm: attacker
   script: 'cat > /tmp/attack_playbook.txt << ''EOF''
 
     === Red Team Attack Playbook ===
@@ -284,6 +292,7 @@ steps:
     type: file_exists
     expect: /tmp/defense_playbook.txt
     field: filesystem
+  target_vm: attacker
   script: 'cat > /tmp/defense_playbook.txt << ''EOF''
 
     === Blue Team Defense Playbook ===
@@ -346,6 +355,7 @@ steps:
     type: output_contains
     expect: FLAG
     field: stdout
+  target_vm: attacker
   script: 'curl -s http://10.20.50.1/api/status 2>/dev/null || echo ''Score server test - using local simulation'' && echo ''Flag format: FLAG{sha256_hash}'' && echo ''Submit: curl -X POST http://10.20.50.1/api/submit
     -d team=red&flag=FLAG{hash}'''
   risk_level: low
@@ -360,6 +370,7 @@ steps:
     type: output_contains
     expect: complete
     field: stdout
+  target_vm: attacker
   script: msfdb init 2>/dev/null && msfconsole -q -x 'db_import /tmp/battle_recon.xml; hosts; services; exit' 2>/dev/null || echo 'Metasploit DB setup complete'
   risk_level: low
 - order: 12
@@ -399,6 +410,7 @@ steps:
     type: output_contains
     expect: Dashboard script created
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/monitor_dashboard.sh << ''SCRIPT''
 
     #!/bin/bash
@@ -439,6 +451,7 @@ steps:
     type: output_contains
     expect: Watchdog script created
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/service_watchdog.sh << 'SCRIPT'\n#!/bin/bash\nwhile true; do\n  for svc in apache2 sshd mysql; do\n    if ! systemctl is-active --quiet $svc; then\n      echo \"$(date): $svc is DOWN\
     \ - restarting\" >> /tmp/watchdog.log\n      sudo systemctl restart $svc\n    fi\n  done\n  sleep 30\ndone\nSCRIPT\nchmod +x /tmp/service_watchdog.sh && echo 'Watchdog script created'"
   risk_level: low
@@ -455,6 +468,7 @@ steps:
     type: output_contains
     expect: Baseline created
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/integrity_monitor.sh << 'SCRIPT'\n#!/bin/bash\nFILES=\"/etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config\"\nBASELINE=/tmp/integrity_baseline.txt\nif [ ! -f $BASELINE ]; then\n\
     \  for f in $FILES; do md5sum $f; done > $BASELINE\n  echo \"Baseline created\"\nelse\n  for f in $FILES; do md5sum $f; done > /tmp/integrity_current.txt\n  diff $BASELINE /tmp/integrity_current.txt\
     \ && echo \"No changes\" || echo \"ALERT: File integrity violation!\"\nfi\nSCRIPT\nchmod +x /tmp/integrity_monitor.sh && bash /tmp/integrity_monitor.sh"
@@ -520,6 +534,7 @@ steps:
     type: file_exists
     expect: /tmp/battle_readiness.txt
     field: filesystem
+  target_vm: attacker
   script: 'cat > /tmp/battle_readiness.txt << ''EOF''
 
     === Battle Readiness Checklist ===

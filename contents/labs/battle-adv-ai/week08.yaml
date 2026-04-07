@@ -27,6 +27,7 @@ steps:
   verify:
     type: output_contains
     expect: Threat Hunting Plan
+  target_vm: attacker
   script: "cat > /tmp/hunting_hypothesis.txt << 'EOF'\n=== Threat Hunting Plan ===\n\nHypothesis: An APT actor is using DNS tunneling for C2 communication\n\nData Sources:\n  1. DNS query logs (Suricata\
     \ eve.json, /var/log/named/queries.log)\n  2. Network flow data (NetFlow/IPFIX)\n  3. Endpoint DNS resolver cache\n  4. Passive DNS database\n\nAnalysis Methods:\n  1. DNS query length distribution\
     \ analysis\n  2. Shannon entropy of subdomain labels\n  3. Query frequency per unique domain\n  4. TXT record query ratio\n  5. NXDOMAIN response ratio\n\nDetection Criteria:\n  - Subdomain label length\
@@ -44,6 +45,7 @@ steps:
   verify:
     type: output_contains
     expect: DNS Hunting
+  target_vm: attacker
   script: echo '=== DNS Hunting Execution ===' && timeout 3 tcpdump -i any port 53 -nn -c 10 2>/dev/null; echo '---' && echo 'DNS query analysis from Suricata:' && ssh 10.20.30.1 'cat /var/log/suricata/eve.json
     2>/dev/null | python3 -c "import sys,json; [print(json.loads(l).get(\"dns\",{}).get(\"rrname\",\"\")) for l in sys.stdin if \"dns\" in l]" 2>/dev/null | sort | uniq -c | sort -rn | head -10' 2>&1
   risk_level: low
@@ -61,6 +63,7 @@ steps:
   verify:
     type: output_contains
     expect: Suspicious Base64
+  target_vm: attacker
   script: "cat > /tmp/sigma_hunting_rule.yaml << 'EOF'\ntitle: Suspicious Base64 Decode Execution\nid: hunt-001\nstatus: experimental\ndescription: Detects execution of base64 decode commands which may\
     \ indicate C2 payload decoding\nauthor: Lab Student\ndate: 2026/04/03\nreferences:\n  - https://attack.mitre.org/techniques/T1140/\nlogsource:\n  category: process_creation\n  product: linux\ndetection:\n\
     \  selection_base64:\n    CommandLine|contains:\n      - 'base64 -d'\n      - 'base64 --decode'\n      - 'python3 -c \"import base64'\n  selection_eval:\n    CommandLine|contains:\n      - 'eval $(echo'\n\
@@ -78,6 +81,7 @@ steps:
   verify:
     type: output_contains
     expect: Process Tree Hunting
+  target_vm: attacker
   script: echo '=== Process Tree Hunting ===' && ps auxf | grep -B2 -A2 -E 'sh$|bash$|python|perl|nc |ncat ' | grep -v grep | head -30 && echo '---' && echo 'Suspicious parent-child patterns:' && echo '  -
     www-data → bash/sh (web shell)' && echo '  - mysql → bash/sh (SQLi RCE)' && echo '  - cron → bash → network activity (C2 beacon)' && echo '  - sshd → bash → unusual child (lateral movement)'
   risk_level: low
@@ -93,6 +97,7 @@ steps:
   verify:
     type: output_contains
     expect: Network Hunting
+  target_vm: attacker
   script: 'echo ''=== Network Hunting ==='' && echo ''[1] Unusual internal connections:'' && ss -tn | awk ''{print $4,$5}'' | grep ''10.20.30'' | sort | uniq -c | sort -rn | head -10 && echo '''' && echo
     ''[2] Non-standard ports:'' && ss -tn state established | awk ''{print $5}'' | grep -oP '':\K[0-9]+'' | sort -n | uniq -c | sort -rn | head -10 && echo '''' && echo ''[3] Long-lived connections:'' &&
     ss -tn -o | grep ''timer'' | head -5 && echo '''' && echo ''Hunting complete: Review results for anomalies'''
@@ -109,6 +114,7 @@ steps:
   verify:
     type: output_contains
     expect: File System Hunting
+  target_vm: attacker
   script: echo '=== File System Hunting ===' && echo '[1] New executables (7 days):' && find /usr/local/bin /opt /home -type f -newer /etc/hostname -executable 2>/dev/null | head -10 && echo '' && echo
     '[2] World-writable files:' && find /etc /usr -type f -perm -o+w 2>/dev/null | head -10 && echo '' && echo '[3] Hidden files in unusual locations:' && find /tmp /var/tmp /dev/shm -name '.*' -type f
     2>/dev/null | head -10 && echo '' && echo '[4] Recently modified configs:' && find /etc -name '*.conf' -mtime -7 2>/dev/null | head -10
@@ -125,6 +131,7 @@ steps:
   verify:
     type: output_contains
     expect: User Behavior Analysis
+  target_vm: attacker
   script: 'echo ''=== User Behavior Analysis ==='' && echo ''[1] Login time distribution:'' && grep ''Accepted\|session opened'' /var/log/auth.log 2>/dev/null | awk ''{print $1,$2,$3}'' | cut -d: -f1 |
     sort | uniq -c | head -10 && echo '''' && echo ''[2] Login source IPs:'' && grep ''Accepted'' /var/log/auth.log 2>/dev/null | grep -oP ''from \K[0-9.]+'' | sort | uniq -c | sort -rn | head -10 && echo
     '''' && echo ''[3] Failed login patterns:'' && grep ''Failed'' /var/log/auth.log 2>/dev/null | grep -oP ''for \K\w+'' | sort | uniq -c | sort -rn | head -10 && echo '''' && echo ''UBA hunting complete'''
@@ -143,6 +150,7 @@ steps:
   verify:
     type: output_contains
     expect: ATT&CK Hunting Matrix
+  target_vm: attacker
   script: "cat > /tmp/attack_hunting_matrix.txt << 'EOF'\n=== MITRE ATT&CK Hunting Matrix ===\n\n1. T1190 - Exploit Public-Facing Application\n   Query: grep -E 'UNION|SELECT.*FROM|<script>|\\.\\./' /var/log/nginx/access.log\n\
     \   Data Source: Web server logs\n   Priority: CRITICAL\n\n2. T1053.003 - Cron Persistence\n   Query: for u in $(cut -f1 -d: /etc/passwd); do crontab -u $u -l 2>/dev/null; done\n   Data Source: crontab,\
     \ /var/spool/cron\n   Priority: HIGH\n\n3. T1071.004 - DNS C2\n   Query: Entropy analysis on DNS query logs (entropy > 3.5)\n   Data Source: Suricata eve.json (dns events)\n   Priority: HIGH\n\n4. T1021.004\
@@ -163,6 +171,7 @@ steps:
   verify:
     type: output_contains
     expect: timestamp
+  target_vm: attacker
   script: "python3 -c \"\nimport subprocess, json, time\n\ndef run(cmd):\n    try: return subprocess.check_output(cmd, shell=True, timeout=5).decode().strip()\n    except: return 'N/A'\n\nbaseline = {\n\
     \    'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ'),\n    'network': {\n        'established_connections': int(run('ss -tn state established | wc -l') or 0),\n        'listening_ports': run('ss -tln\
     \ | tail -n+2 | awk \\'{print \\$4}\\' | sort').split('\\n')[:10],\n        'dns_queries_per_min': 'baseline_to_establish',\n    },\n    'processes': {\n        'total_count': int(run('ps aux | wc -l')\
@@ -181,6 +190,7 @@ steps:
   verify:
     type: output_contains
     expect: Wazuh SIEM Hunting
+  target_vm: attacker
   script: echo '=== Wazuh SIEM Hunting ===' && ssh 10.20.30.100 'cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -20 | python3 -c "import sys,json; [print(json.loads(l).get(\"rule\",{}).get(\"description\",\"\"),
     json.loads(l).get(\"rule\",{}).get(\"level\",0)) for l in sys.stdin]" 2>/dev/null' 2>&1 | head -15; echo '---'; echo 'Wazuh hunting queries:'; echo '1. High severity alerts (level >= 10)'; echo '2.
     Repeated alerts from same agent'; echo '3. New alert types not seen before'; echo '4. Correlation between multiple agents'
@@ -211,6 +221,7 @@ steps:
   verify:
     type: output_contains
     expect: IOC-based Hunting
+  target_vm: attacker
   script: 'cat > /tmp/threat_intel_ioc.txt << ''EOF''
 
     198.51.100.1
@@ -244,6 +255,7 @@ steps:
   verify:
     type: output_contains
     expect: Threat Hunting Report
+  target_vm: attacker
   script: "cat > /tmp/hunting_report.txt << 'EOF'\n=== Threat Hunting Report ===\nHunt ID: HUNT-20260403-001\nPeriod: 2026-04-03\nScope: 10.20.30.0/24\n\n1. Hypothesis Results:\n   | Hypothesis | Result\
     \ | Evidence |\n   |-----------|--------|----------|\n   | DNS tunneling C2 | Not confirmed | No high-entropy DNS queries found |\n   | Unauthorized processes | Clean | No suspicious parent-child relationships\
     \ |\n   | Lateral movement | Clean | No anomalous internal SMB/SSH |\n   | Data exfiltration | Not confirmed | Normal outbound traffic patterns |\n   | Persistence mechanisms | Clean | No unauthorized\
@@ -306,6 +318,7 @@ steps:
   verify:
     type: output_contains
     expect: Hunting Maturity
+  target_vm: attacker
   script: 'rm -f /tmp/hunting_*.txt /tmp/sigma_*.yaml /tmp/attack_*.txt /tmp/threat_intel_*.txt 2>/dev/null && cat > /tmp/hunting_maturity.txt << ''EOF''
 
     === Hunting Maturity Assessment ===

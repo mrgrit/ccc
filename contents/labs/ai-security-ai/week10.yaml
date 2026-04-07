@@ -25,6 +25,7 @@ steps:
     type: output_contains
     expect: Ollama accessible
     field: stdout
+  target_vm: manager
   script: 'echo ''=== Port Check ==='' && curl -s -o /dev/null -w ''%{http_code}'' http://10.20.30.200:11434/api/version && echo '' (Ollama accessible)'' && echo ''=== Service Info ==='' && curl -s http://10.20.30.200:11434/api/version
     | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin), indent=2))" && echo ''=== Network Exposure ==='' && for port in 11434 8080 443 80; do timeout 2 bash -c "echo >/dev/tcp/10.20.30.200/$port"
     2>/dev/null && echo "Port $port: OPEN" || echo "Port $port: CLOSED"; done'
@@ -43,6 +44,7 @@ steps:
     type: output_contains
     expect: Payload
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request\nfor size_kb in [1, 10, 50, 100, 500]:\n    prompt = 'A ' * (size_kb * 128)  # ~1KB per 128 words\n    prompt += ' What is AI?'\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':5}}).encode()\n\
     \    payload_kb = len(data) / 1024\n    try:\n        req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n        resp = urllib.request.urlopen(req,\
     \ timeout=30)\n        print(f'Payload {payload_kb:.0f}KB: ACCEPTED (HTTP {resp.status})')\n    except urllib.error.HTTPError as e:\n        print(f'Payload {payload_kb:.0f}KB: REJECTED (HTTP {e.code})')\n\
@@ -63,6 +65,7 @@ steps:
     type: output_contains
     expect: tokens
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request, time\nconfigs = [\n    ('Short', 10),\n    ('Medium', 100),\n    ('Long', 500),\n    ('Very Long', 1000)\n]\nfor label, num_predict in configs:\n \
     \   data = json.dumps({'model':'gemma3:4b','prompt':'Write a comprehensive cybersecurity guide','stream':False,'options':{'num_predict':num_predict}}).encode()\n    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \    start = time.time()\n    try:\n        resp = json.loads(urllib.request.urlopen(req, timeout=60).read())\n        elapsed = time.time() - start\n        tokens = resp.get('eval_count', 0)\n   \
@@ -83,6 +86,7 @@ steps:
     type: output_contains
     expect: Security Header Audit
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport urllib.request\nreq = urllib.request.Request('http://10.20.30.200:11434/api/tags')\nresp = urllib.request.urlopen(req)\nheaders = dict(resp.headers)\nprint('=== Current\
     \ Headers ===')\nfor k,v in headers.items():\n    print(f'  {k}: {v}')\n\nsecurity_headers = {\n    'X-Content-Type-Options': 'nosniff',\n    'X-Frame-Options': 'DENY',\n    'Content-Security-Policy':\
     \ 'any',\n    'Strict-Transport-Security': 'any',\n    'X-XSS-Protection': '1',\n    'Cache-Control': 'no-store',\n}\nprint('\\n=== Security Header Audit ===')\nfor h, expected in security_headers.items():\n\
@@ -105,6 +109,7 @@ steps:
     type: output_contains
     expect: Error Handling
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport urllib.request, json\ntests = [\n    ('Empty body', b''),\n    ('Invalid JSON', b'{invalid}'),\n    ('Missing model', json.dumps({'prompt':'hi'}).encode()),\n    ('Unknown\
     \ model', json.dumps({'model':'nonexistent-model','prompt':'hi','stream':False}).encode()),\n    ('Wrong type', json.dumps({'model':123,'prompt':'hi','stream':False}).encode()),\n    ('Null prompt',\
     \ json.dumps({'model':'gemma3:4b','prompt':None,'stream':False}).encode()),\n]\nprint('=== Error Handling Security Test ===')\nfor name, body in tests:\n    try:\n        req = urllib.request.Request('http://10.20.30.200:11434/api/generate',\
@@ -132,6 +137,7 @@ steps:
     type: output_contains
     expect: Monitoring Dashboard
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request, time\nstats = {'total':0,'success':0,'error':0,'times':[],'tokens':[]}\n\nfor i in range(8):\n    prompts = ['What is SSH?','Explain HTTPS','What is\
     \ a firewall?','Define VPN','What is DNS?','Explain TCP','What is UDP?','Define NAT']\n    data = json.dumps({'model':'gemma3:4b','prompt':prompts[i],'stream':False,'options':{'num_predict':20}}).encode()\n\
     \    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    start = time.time()\n    try:\n        resp = json.loads(urllib.request.urlopen(req,\
@@ -161,6 +167,7 @@ steps:
     type: output_contains
     expect: ALERT
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport time, random\n# Simulate request log\nclass AnomalyDetector:\n    def __init__(self):\n        self.window = []\n        self.baseline_rps = 2  # requests per second\n \
     \       self.max_prompt_len = 500\n        self.seen_prompts = {}\n    \n    def check(self, timestamp, prompt_len, prompt_hash):\n        alerts = []\n        # Check 1: Rate spike\n        self.window\
     \ = [t for t in self.window if timestamp - t < 10]\n        self.window.append(timestamp)\n        rps = len(self.window) / 10\n        if rps > self.baseline_rps * 3:\n            alerts.append(f'RATE_SPIKE:\
@@ -190,6 +197,7 @@ steps:
     type: output_contains
     expect: Deployment Security
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request\nresults = []\ndef check(name, test_fn):\n    try:\n        passed, detail = test_fn()\n        results.append((name, 'PASS' if passed else 'FAIL',\
     \ detail))\n    except Exception as e:\n        results.append((name, 'ERROR', str(e)[:40]))\n\ndef test_auth():\n    req = urllib.request.Request('http://10.20.30.200:11434/api/tags')\n    resp = urllib.request.urlopen(req,\
     \ timeout=5)\n    return False, 'No authentication required'\n\ndef test_https():\n    return False, 'Using HTTP (port 11434)'\n\ndef test_model_info():\n    data = json.dumps({'name':'gemma3:4b'}).encode()\n\

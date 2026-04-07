@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: 감사 대상 시스템 정보
     field: stdout
+  target_vm: secu
   script: echo '=== 감사 대상 시스템 정보 ===' && hostname && cat /etc/os-release | grep PRETTY && uname -r && uptime
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: 계정 감사
     field: stdout
+  target_vm: secu
   script: 'echo ''=== 계정 감사 ==='' && echo ''[로그인 가능 계정]'' && awk -F: ''$7 !~ /nologin|false/ {print $1}'' /etc/passwd && echo ''[최근 로그인]'' && lastlog | grep -v ''Never'' | head -10'
   risk_level: low
 - order: 3
@@ -50,6 +52,7 @@ steps:
     type: output_contains
     expect: 패스워드 정책 감사
     field: stdout
+  target_vm: secu
   script: 'echo ''=== 패스워드 정책 감사 ==='' && echo ''[기준: minlen>=12]'' && grep ''minlen'' /etc/security/pwquality.conf 2>/dev/null | grep -v ''^#'' && echo ''[기준: PASS_MAX_DAYS<=90]'' && grep ''^PASS_MAX_DAYS''
     /etc/login.defs && echo ''[기준: 복잡도 설정]'' && grep -E ''(ucredit|lcredit|dcredit|ocredit)'' /etc/security/pwquality.conf 2>/dev/null | grep -v ''^#'''
   risk_level: low
@@ -66,6 +69,7 @@ steps:
     type: output_contains
     expect: SSH 접근 통제 감사
     field: stdout
+  target_vm: secu
   script: 'echo ''=== SSH 접근 통제 감사 ==='' && echo ''[기준: root 직접 접속 차단]'' && grep ''^PermitRootLogin'' /etc/ssh/sshd_config 2>/dev/null || echo ''PermitRootLogin 미설정(기본값 사용)'' && echo ''[기준: 빈 패스워드 차단]''
     && grep ''^PermitEmptyPasswords'' /etc/ssh/sshd_config 2>/dev/null || echo ''PermitEmptyPasswords 미설정'' && echo ''[기준: 인증 시도 제한]'' && grep ''^MaxAuthTries'' /etc/ssh/sshd_config 2>/dev/null || echo
     ''MaxAuthTries 미설정'''
@@ -81,6 +85,7 @@ steps:
     type: output_contains
     expect: 방화벽 규칙 감사
     field: stdout
+  target_vm: secu
   script: echo '=== 방화벽 규칙 감사 ===' && sudo nft list ruleset 2>/dev/null | grep -i 'accept' && echo '--- 전체 규칙 수 ---' && sudo nft list ruleset 2>/dev/null | grep -c 'rule'
   risk_level: low
 - order: 6
@@ -95,6 +100,7 @@ steps:
     type: output_contains
     expect: 로그 관리 감사
     field: stdout
+  target_vm: secu
   script: echo '=== 로그 관리 감사 ===' && ls -lh /var/log/auth.log /var/log/syslog /var/log/kern.log 2>/dev/null && echo '[로그 회전 설정]' && cat /etc/logrotate.d/rsyslog 2>/dev/null | head -10 && echo '[최근 auth
     로그]' && sudo tail -3 /var/log/auth.log
   risk_level: low
@@ -110,6 +116,7 @@ steps:
     type: output_contains
     expect: 파일 권한 감사
     field: stdout
+  target_vm: secu
   script: 'echo ''=== 파일 권한 감사 ==='' && for f in /etc/shadow /etc/gshadow /etc/sudoers /etc/ssh/sshd_config /etc/crontab; do PERM=$(stat -c ''%a'' $f 2>/dev/null); echo "$f: $PERM $([ "$PERM" -le 640 ]
     && echo ''[적합]'' || echo ''[미흡]'')"; done'
   risk_level: low
@@ -155,6 +162,7 @@ steps:
     type: output_contains
     expect: 보안감사 발견사항 보고서
     field: stdout
+  target_vm: secu
   script: 'cat << ''EOF'' > /tmp/audit_findings.txt
 
     === 보안감사 발견사항 보고서 ===
@@ -245,6 +253,7 @@ steps:
     type: output_contains
     expect: 감사 완료
     field: stdout
+  target_vm: secu
   script: 'cat << ''SCRIPT'' > /tmp/full_audit.sh
 
     #!/bin/bash

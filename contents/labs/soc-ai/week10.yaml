@@ -17,115 +17,124 @@ steps:
   hint: find 명령으로 최근 7일 내 생성된 파일을 검색하세요.
   category: analysis
   points: 8
-  answer: ssh web 'find /tmp /var/tmp -type f -mtime -7 -ls 2>/dev/null'
+  answer: find /tmp /var/tmp -type f -mtime -7 -ls 2>/dev/null
   answer_detail: /tmp과 /var/tmp은 악성코드가 자주 사용하는 디렉토리입니다. 실행 권한이 있는 파일, 이상한 이름의 파일, 숨김 파일(.으로 시작)이 있으면 의심해야 합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  script: ssh web 'find /tmp /var/tmp -type f -mtime -7 -ls 2>/dev/null'
+  target_vm: siem
+  script: find /tmp /var/tmp -type f -mtime -7 -ls 2>/dev/null
   risk_level: low
 - order: 2
   instruction: WEB VM에서 실행 가능한 파일 중 최근 수정된 것을 검색하시오. /usr/local/bin과 /opt 디렉토리를 확인하시오.
   hint: find 명령으로 실행 권한이 있는 파일을 검색하세요.
   category: analysis
   points: 10
-  answer: ssh web 'find /usr/local/bin /opt -type f -executable -mtime -30 -ls 2>/dev/null | head -15'
+  answer: find /usr/local/bin /opt -type f -executable -mtime -30 -ls 2>/dev/null | head -15
   answer_detail: 공격자는 정상 경로에 악성 바이너리를 배치하여 은닉합니다. 최근 수정된 실행 파일은 변조 여부를 확인해야 합니다. file 명령으로 파일 유형, md5sum으로 해시를 비교합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  script: ssh web 'find /usr/local/bin /opt -type f -executable -mtime -30 -ls 2>/dev/null | head -15'
+  target_vm: siem
+  script: find /usr/local/bin /opt -type f -executable -mtime -30 -ls 2>/dev/null | head -15
   risk_level: low
 - order: 3
   instruction: WEB VM에서 Apache 웹서버 바이너리의 무결성을 확인하시오. dpkg로 패키지 파일의 변조 여부를 검증하시오.
   hint: dpkg --verify 명령으로 패키지 파일의 무결성을 검증하세요.
   category: detection
   points: 12
-  answer: 'ssh web ''dpkg --verify apache2 2>/dev/null || rpm -V httpd 2>/dev/null; echo "hash: $(md5sum /usr/sbin/apache2 2>/dev/null)"'''
+  answer: 'dpkg --verify apache2 2>/dev/null || rpm -V httpd 2>/dev/null; echo "hash: $(md5sum /usr/sbin/apache2 2>/dev/null)"'
   answer_detail: dpkg --verify는 설치된 패키지 파일의 해시를 원본과 비교합니다. 출력이 없으면 변조가 없는 것이고, '5'가 표시되면 MD5 해시가 변경된 것입니다.
   verify:
     type: output_contains
     expect: hash
     field: stdout
-  script: 'ssh web ''dpkg --verify apache2 2>/dev/null || rpm -V httpd 2>/dev/null; echo "hash: $(md5sum /usr/sbin/apache2 2>/dev/null)"'''
+  target_vm: siem
+  script: 'dpkg --verify apache2 2>/dev/null || rpm -V httpd 2>/dev/null; echo "hash: $(md5sum /usr/sbin/apache2 2>/dev/null)"'
   risk_level: low
 - order: 4
   instruction: WEB VM에서 setuid/setgid 비트가 설정된 파일 목록을 확인하시오. 비정상적인 setuid 파일은 권한 상승 백도어일 수 있습니다.
   hint: find 명령으로 setuid 비트를 가진 파일을 검색하세요.
   category: detection
   points: 10
-  answer: ssh web 'find / -perm -4000 -type f -ls 2>/dev/null | head -20'
+  answer: find / -perm -4000 -type f -ls 2>/dev/null | head -20
   answer_detail: setuid 파일은 실행 시 파일 소유자 권한으로 동작합니다. 알려진 시스템 파일(passwd, su, sudo 등) 외에 비정상적인 setuid 파일이 있으면 권한 상승 백도어일 수 있습니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  script: ssh web 'find / -perm -4000 -type f -ls 2>/dev/null | head -20'
+  target_vm: siem
+  script: find / -perm -4000 -type f -ls 2>/dev/null | head -20
   risk_level: low
 - order: 5
   instruction: WEB VM에서 /etc/passwd 파일을 분석하여 UID 0(root 권한)을 가진 계정이 root 외에 있는지 확인하시오.
   hint: awk로 UID 필드(3번째)가 0인 라인을 검색하세요.
   category: detection
   points: 10
-  answer: 'ssh web ''awk -F: "\$3==0" /etc/passwd'''
+  answer: 'awk -F: "\$3==0" /etc/passwd'
   answer_detail: UID 0 계정은 root와 동일한 권한을 가집니다. root 외에 UID 0 계정이 있으면 공격자가 생성한 백도어 계정입니다. 이는 심각한 침해 지표(IoC)입니다.
   verify:
     type: output_contains
     expect: root
     field: stdout
-  script: 'ssh web ''awk -F: "\$3==0" /etc/passwd'''
+  target_vm: siem
+  script: 'awk -F: "\$3==0" /etc/passwd'
   risk_level: low
 - order: 6
   instruction: SIEM VM에서 Wazuh의 rootcheck(루트킷 탐지) 결과를 확인하시오.
   hint: rootcheck 로그 또는 알림에서 rootcheck 관련 이벤트를 검색하세요.
   category: detection
   points: 12
-  answer: ssh siem 'grep -i "rootcheck\|rootkit" /var/ossec/logs/alerts/alerts.log | tail -10 || echo "No rootcheck alerts found"'
+  answer: grep -i "rootcheck\|rootkit" /var/ossec/logs/alerts/alerts.log | tail -10 || echo "No rootcheck alerts found"
   answer_detail: Wazuh rootcheck는 알려진 루트킷 시그니처, 숨겨진 파일/프로세스, 커널 모듈 변조 등을 주기적으로 검사합니다. 탐지 결과는 알림으로 생성되어 SOC에서 분석합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  script: ssh siem 'grep -i "rootcheck\|rootkit" /var/ossec/logs/alerts/alerts.log | tail -10 || echo "No rootcheck alerts found"'
+  target_vm: siem
+  script: grep -i "rootcheck\|rootkit" /var/ossec/logs/alerts/alerts.log | tail -10 || echo "No rootcheck alerts found"
   risk_level: low
 - order: 7
   instruction: WEB VM에서 현재 로드된 커널 모듈 목록을 확인하시오. 비정상적인 모듈이 있는지 분석하시오.
   hint: lsmod 명령을 사용하세요.
   category: analysis
   points: 10
-  answer: ssh web 'lsmod | head -30'
+  answer: lsmod | head -30
   answer_detail: 루트킷은 커널 모듈로 설치될 수 있습니다. 알 수 없는 모듈, 최근 로드된 모듈, 설명이 없는 모듈은 의심 대상입니다. modinfo로 각 모듈의 상세 정보를 확인할 수 있습니다.
   verify:
     type: output_contains
     expect: Module
     field: stdout
-  script: ssh web 'lsmod | head -30'
+  target_vm: siem
+  script: lsmod | head -30
   risk_level: low
 - order: 8
   instruction: WEB VM에서 열린 파일과 네트워크 연결을 프로세스별로 확인하시오. 의심스러운 외부 연결을 가진 프로세스를 찾으시오.
   hint: lsof -i 명령으로 네트워크 연결을 확인하세요.
   category: analysis
   points: 12
-  answer: ssh web 'lsof -i -P -n 2>/dev/null | grep -v "localhost\|127.0.0" | head -20'
+  answer: lsof -i -P -n 2>/dev/null | grep -v "localhost\|127.0.0" | head -20
   answer_detail: lsof -i는 네트워크 연결을 가진 프로세스를 보여줍니다. localhost가 아닌 외부 연결, 특히 비표준 포트를 사용하는 프로세스는 C2(Command & Control) 통신 가능성이 있습니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  script: ssh web 'lsof -i -P -n 2>/dev/null | grep -v "localhost\|127.0.0" | head -20'
+  target_vm: siem
+  script: lsof -i -P -n 2>/dev/null | grep -v "localhost\|127.0.0" | head -20
   risk_level: low
 - order: 9
   instruction: WEB VM에서 systemd 서비스 중 최근 추가되거나 수정된 유닛 파일을 확인하시오.
   hint: find로 /etc/systemd/ 하위의 최근 변경 파일을 검색하세요.
   category: detection
   points: 10
-  answer: ssh web 'find /etc/systemd/system /lib/systemd/system -mtime -30 -name "*.service" -ls 2>/dev/null | head -10'
+  answer: find /etc/systemd/system /lib/systemd/system -mtime -30 -name "*.service" -ls 2>/dev/null | head -10
   answer_detail: 공격자는 systemd 서비스를 생성하여 악성코드의 지속성을 확보합니다. 최근 생성/수정된 서비스 파일의 ExecStart 경로를 확인하여 악성 바이너리 실행 여부를 판단합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  script: ssh web 'find /etc/systemd/system /lib/systemd/system -mtime -30 -name "*.service" -ls 2>/dev/null | head -10'
+  target_vm: siem
+  script: find /etc/systemd/system /lib/systemd/system -mtime -30 -name "*.service" -ls 2>/dev/null | head -10
   risk_level: low

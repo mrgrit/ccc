@@ -17,128 +17,138 @@ steps:
   hint: nmap으로 전체 포트 스캔을 수행하세요.
   category: detection
   points: 10
-  answer: ssh attacker 'nmap -sT -p 1-10000 --open 10.20.30.80 2>/dev/null | head -30'
+  answer: nmap -sT -p 1-10000 --open 10.20.30.80 2>/dev/null | head -30
   answer_detail: nmap -sT는 TCP Connect 스캔으로, 가장 기본적인 포트 스캔 방식입니다. SOC에서는 이 스캔이 Wazuh 알림이나 Suricata 이벤트로 탐지되는지 확인해야 합니다.
   verify:
     type: output_contains
     expect: open
     field: stdout
-  script: ssh attacker 'nmap -sT -p 1-10000 --open 10.20.30.80 2>/dev/null | head -30'
+  target_vm: siem
+  script: nmap -sT -p 1-10000 --open 10.20.30.80 2>/dev/null | head -30
   risk_level: low
 - order: 2
   instruction: 포트 스캔 후 SIEM VM에서 해당 공격이 탐지되었는지 Wazuh 알림을 확인하시오.
   hint: alerts.log에서 ATTACKER IP(10.20.30.201)의 최근 알림을 검색하세요.
   category: detection
   points: 10
-  answer: ssh siem 'grep -B 2 -A 5 "10.20.30.201" /var/ossec/logs/alerts/alerts.log | tail -30'
+  answer: grep -B 2 -A 5 "10.20.30.201" /var/ossec/logs/alerts/alerts.log | tail -30
   answer_detail: 포트 스캔은 정찰(Reconnaissance) 단계로, SOC에서 공격의 시작을 알리는 지표입니다. Wazuh가 다수의 연결 시도를 브루트포스나 스캔으로 탐지했는지 확인합니다.
   verify:
     type: output_contains
     expect: 10.20.30.201
     field: stdout
-  script: ssh siem 'grep -B 2 -A 5 "10.20.30.201" /var/ossec/logs/alerts/alerts.log | tail -30'
+  target_vm: siem
+  script: grep -B 2 -A 5 "10.20.30.201" /var/ossec/logs/alerts/alerts.log | tail -30
   risk_level: low
 - order: 3
   instruction: 포트 스캔이 SECU VM의 Suricata IDS에서도 탐지되었는지 확인하시오.
   hint: Suricata fast.log에서 ATTACKER IP를 검색하세요.
   category: detection
   points: 10
-  answer: ssh secu 'grep "10.20.30.201" /var/log/suricata/fast.log 2>/dev/null | tail -10'
+  answer: grep "10.20.30.201" /var/log/suricata/fast.log 2>/dev/null | tail -10
   answer_detail: 네트워크 IDS인 Suricata는 포트 스캔 패턴을 시그니처로 탐지합니다. Wazuh와 Suricata 양쪽에서 동시 탐지되면 상관분석의 신뢰도가 높아집니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  script: ssh secu 'grep "10.20.30.201" /var/log/suricata/fast.log 2>/dev/null | tail -10'
+  target_vm: siem
+  script: grep "10.20.30.201" /var/log/suricata/fast.log 2>/dev/null | tail -10
   risk_level: low
 - order: 4
   instruction: ATTACKER VM에서 WEB VM의 SSH 서비스에 대한 브루트포스 공격을 시뮬레이션하시오. (5회 제한)
   hint: hydra로 SSH 브루트포스를 수행하세요. 시도 횟수를 제한하세요.
   category: detection
   points: 12
-  answer: ssh attacker 'hydra -l admin -P /dev/null -t 1 -f -V ssh://10.20.30.80 2>&1 | head -10 || echo "hydra test completed"'
+  answer: hydra -l admin -P /dev/null -t 1 -f -V ssh://10.20.30.80 2>&1 | head -10 || echo "hydra test completed"
   answer_detail: hydra는 패스워드 브루트포스 공격 도구입니다. SOC 관점에서 이 공격이 Wazuh의 SSH 브루트포스 탐지 룰(5712)에 의해 탐지되는지 확인하는 것이 목적입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  script: ssh attacker 'hydra -l admin -P /dev/null -t 1 -f -V ssh://10.20.30.80 2>&1 | head -10 || echo "hydra test completed"'
+  target_vm: siem
+  script: hydra -l admin -P /dev/null -t 1 -f -V ssh://10.20.30.80 2>&1 | head -10 || echo "hydra test completed"
   risk_level: low
 - order: 5
   instruction: SSH 브루트포스 공격 후 SIEM VM에서 관련 Wazuh 알림이 생성되었는지 확인하시오.
   hint: alerts.log에서 SSH 관련 고레벨 알림을 검색하세요.
   category: detection
   points: 12
-  answer: ssh siem 'grep -B 2 -A 5 "authentication\|ssh\|brute" /var/ossec/logs/alerts/alerts.log | tail -30'
+  answer: grep -B 2 -A 5 "authentication\|ssh\|brute" /var/ossec/logs/alerts/alerts.log | tail -30
   answer_detail: Wazuh 룰 5710(SSH 로그인 실패), 5712(브루트포스)가 트리거되어야 합니다. 알림이 없으면 탐지 룰이 누락된 것이므로 커스텀 룰 추가가 필요합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  script: ssh siem 'grep -B 2 -A 5 "authentication\|ssh\|brute" /var/ossec/logs/alerts/alerts.log | tail -30'
+  target_vm: siem
+  script: grep -B 2 -A 5 "authentication\|ssh\|brute" /var/ossec/logs/alerts/alerts.log | tail -30
   risk_level: low
 - order: 6
   instruction: ATTACKER VM에서 WEB VM의 JuiceShop(3000번 포트)에 HTTP 요청을 보내 웹 애플리케이션 접근을 확인하시오.
   hint: curl로 JuiceShop에 접속하세요.
   category: detection
   points: 8
-  answer: 'ssh attacker ''curl -s -o /dev/null -w "HTTP Status: %{http_code}\nSize: %{size_download} bytes\n" http://10.20.30.80:3000/'''
+  answer: 'curl -s -o /dev/null -w "HTTP Status: %{http_code}\nSize: %{size_download} bytes\n" http://10.20.30.80:3000/'
   answer_detail: JuiceShop은 의도적으로 취약한 웹 애플리케이션입니다. 공격 시뮬레이션의 대상으로, 이 접근이 Apache/Wazuh 로그에 기록되는지 확인합니다.
   verify:
     type: output_contains
     expect: HTTP Status
     field: stdout
-  script: 'ssh attacker ''curl -s -o /dev/null -w "HTTP Status: %{http_code}\nSize: %{size_download} bytes\n" http://10.20.30.80:3000/'''
+  target_vm: siem
+  script: 'curl -s -o /dev/null -w "HTTP Status: %{http_code}\nSize: %{size_download} bytes\n" http://10.20.30.80:3000/'
   risk_level: low
 - order: 7
   instruction: ATTACKER VM에서 WEB VM의 웹서버에 SQL Injection 패턴을 포함한 요청을 보내시오.
   hint: curl로 SQL Injection 페이로드가 포함된 URL을 요청하세요.
   category: detection
   points: 12
-  answer: 'ssh attacker ''curl -s -o /dev/null -w "Status: %{http_code}" "http://10.20.30.80/index.html?id=1%27%20OR%201=1--"'''
+  answer: 'curl -s -o /dev/null -w "Status: %{http_code}" "http://10.20.30.80/index.html?id=1%27%20OR%201=1--"'
   answer_detail: SQL Injection 패턴(1' OR 1=1--)을 URL에 포함하여 전송합니다. ModSecurity WAF가 이를 차단하거나, Wazuh가 Apache 로그에서 탐지해야 합니다.
   verify:
     type: output_contains
     expect: Status
     field: stdout
-  script: 'ssh attacker ''curl -s -o /dev/null -w "Status: %{http_code}" "http://10.20.30.80/index.html?id=1%27%20OR%201=1--"'''
+  target_vm: siem
+  script: 'curl -s -o /dev/null -w "Status: %{http_code}" "http://10.20.30.80/index.html?id=1%27%20OR%201=1--"'
   risk_level: low
 - order: 8
   instruction: SQL Injection 시도 후 SIEM VM에서 웹 공격 관련 Wazuh 알림을 확인하시오.
   hint: alerts.log에서 web, sql, injection, attack 키워드를 검색하세요.
   category: detection
   points: 12
-  answer: ssh siem 'grep -B 2 -A 5 -i "sql\|injection\|attack\|web" /var/ossec/logs/alerts/alerts.log | tail -30'
+  answer: grep -B 2 -A 5 -i "sql\|injection\|attack\|web" /var/ossec/logs/alerts/alerts.log | tail -30
   answer_detail: SQL Injection 시도가 Wazuh 알림으로 생성되었는지 확인합니다. 탐지가 안 되었다면 웹 공격 탐지 룰이 부족하거나, Apache 로그 모니터링 설정이 미흡한 것입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  script: ssh siem 'grep -B 2 -A 5 -i "sql\|injection\|attack\|web" /var/ossec/logs/alerts/alerts.log | tail -30'
+  target_vm: siem
+  script: grep -B 2 -A 5 -i "sql\|injection\|attack\|web" /var/ossec/logs/alerts/alerts.log | tail -30
   risk_level: low
 - order: 9
   instruction: ATTACKER VM에서 사용 가능한 공격 도구 목록을 확인하시오.
   hint: nmap, hydra, sqlmap, nikto 등의 설치 여부를 확인하세요.
   category: setup
   points: 8
-  answer: ssh attacker 'which nmap hydra sqlmap nikto curl 2>/dev/null; echo "=== nmap ==="; nmap --version 2>/dev/null | head -2'
+  answer: which nmap hydra sqlmap nikto curl 2>/dev/null; echo "=== nmap ==="; nmap --version 2>/dev/null | head -2
   answer_detail: ATTACKER VM에 설치된 도구를 파악하면 시뮬레이션 가능한 공격 시나리오를 계획할 수 있습니다. 각 도구는 공격 라이프사이클의 서로 다른 단계에 사용됩니다.
   verify:
     type: output_contains
     expect: nmap
     field: stdout
-  script: ssh attacker 'which nmap hydra sqlmap nikto curl 2>/dev/null; echo "=== nmap ==="; nmap --version 2>/dev/null | head -2'
+  target_vm: siem
+  script: which nmap hydra sqlmap nikto curl 2>/dev/null; echo "=== nmap ==="; nmap --version 2>/dev/null | head -2
   risk_level: low
 - order: 10
   instruction: 전체 공격 시뮬레이션의 탐지 결과를 요약하시오. SIEM에서 탐지된 알림의 룰 ID와 레벨을 정리하시오.
   hint: ATTACKER IP 관련 알림의 룰 ID와 레벨을 집계하세요.
   category: reporting
   points: 15
-  answer: 'ssh siem ''echo "=== 공격 탐지 요약 ==="; echo "ATTACKER(10.20.30.201) 관련 알림:"; grep "10.20.30.201" /var/ossec/logs/alerts/alerts.log | grep -oP "Rule: \d+ \(level \d+\)" | sort | uniq -c | sort -rn'''
+  answer: 'echo "=== 공격 탐지 요약 ==="; echo "ATTACKER(10.20.30.201) 관련 알림:"; grep "10.20.30.201" /var/ossec/logs/alerts/alerts.log | grep -oP "Rule: \d+ \(level \d+\)" | sort | uniq -c | sort -rn'
   answer_detail: 레드팀 연동의 최종 산출물은 탐지 커버리지 보고서입니다. 탐지된 공격 유형, 미탐지 항목, 각 탐지의 레벨을 정리하여 SOC의 탐지 능력을 평가하고 개선점을 도출합니다.
   verify:
     type: output_contains
     expect: 공격 탐지
     field: stdout
-  script: 'ssh siem ''echo "=== 공격 탐지 요약 ==="; echo "ATTACKER(10.20.30.201) 관련 알림:"; grep "10.20.30.201" /var/ossec/logs/alerts/alerts.log | grep -oP "Rule: \d+ \(level \d+\)" | sort | uniq -c | sort -rn'''
+  target_vm: siem
+  script: 'echo "=== 공격 탐지 요약 ==="; echo "ATTACKER(10.20.30.201) 관련 알림:"; grep "10.20.30.201" /var/ossec/logs/alerts/alerts.log | grep -oP "Rule: \d+ \(level \d+\)" | sort | uniq -c | sort -rn'
   risk_level: low

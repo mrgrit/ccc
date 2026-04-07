@@ -1,102 +1,206 @@
-lab_id: "compliance-nonai-week11"
-title: "위험관리 기술 실습"
-version: "non-ai"
-course: "compliance-nonai"
+lab_id: compliance-nonai-week11
+title: 위험관리 기술 실습
+version: non-ai
+course: compliance-nonai
 week: 11
-description: "위험관리 프로세스를 시스템 환경에 적용합니다. 취약점 식별, 위협 분석, 위험도 산정, 보호대책 선정을 실제 시스템 점검을 통해 수행합니다."
-difficulty: "medium"
+description: 위험관리 프로세스를 시스템 환경에 적용합니다. 취약점 식별, 위협 분석, 위험도 산정, 보호대책 선정을 실제 시스템 점검을 통해 수행합니다.
+difficulty: medium
 duration_minutes: 120
 objectives:
-  - "정보보안 위험관리 프로세스(식별-분석-평가-처리)를 이해한다"
-  - "시스템 취약점을 식별하고 위험도를 산정한다"
-  - "위험 처리 계획을 수립한다"
+- 정보보안 위험관리 프로세스(식별-분석-평가-처리)를 이해한다
+- 시스템 취약점을 식별하고 위험도를 산정한다
+- 위험 처리 계획을 수립한다
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "SECU 서버(10.20.30.1)에서 커널 버전과 알려진 취약점 가능성을 확인하시오. 위험 식별 단계."
-    hint: "uname -r로 커널 버전을 확인하고, 해당 버전의 보안 상태를 파악하세요."
-    category: "audit"
-    points: 10
-    answer: "uname -r && echo '--- 보안 업데이트 대기 ---' && apt list --upgradable 2>/dev/null | grep -i 'security\\|linux' | head -10"
-    answer_detail: "위험관리의 첫 단계는 위험 식별입니다. 커널 버전을 확인하면 해당 버전의 CVE(공개된 취약점)를 조회할 수 있습니다. 보안 업데이트가 대기 중인 패키지가 있다면 알려진 취약점이 패치되지 않은 상태입니다."
-    verify:
-      type: "output_contains"
-      expect: "보안 업데이트 대기"
-      field: "stdout"
-  - order: 2
-    instruction: "SSH 서비스의 보안 취약점 요소를 식별하시오. 위험 식별: 서비스별 위협 분석."
-    hint: "SSH 버전, 허용 알고리즘, 인증 방식을 확인하세요."
-    category: "audit"
-    points: 10
-    answer: "ssh -V 2>&1 && echo '--- SSH 설정 취약점 ---' && grep -E '^(Protocol|PermitRootLogin|PermitEmptyPasswords|X11Forwarding|AllowTcpForwarding|MaxAuthTries)' /etc/ssh/sshd_config 2>/dev/null; echo '--- 미설정 항목(기본값 사용) ---' && for opt in PermitRootLogin MaxAuthTries PasswordAuthentication; do grep -q \"^$opt\" /etc/ssh/sshd_config 2>/dev/null || echo \"$opt: 미설정\"; done"
-    answer_detail: "위험 식별에서는 각 서비스의 위협 요소를 체계적으로 파악합니다. SSH의 주요 위협은 무차별 대입 공격, 취약한 암호 스위트, root 직접 접속, 포트 포워딩 악용 등입니다. 설정이 명시되지 않으면 기본값을 사용하므로, 기본값의 보안성도 평가해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "OpenSSH"
-      field: "stdout"
-  - order: 3
-    instruction: "세계 쓰기 가능(world-writable) 파일을 검색하시오. 위험 식별: 파일 시스템 취약점."
-    hint: "find 명령으로 /etc, /var에서 o+w 파일을 검색하세요."
-    category: "audit"
-    points: 10
-    answer: "echo '=== World-Writable 파일 ===' && sudo find /etc /var -type f -perm -002 2>/dev/null | head -15 && echo '--- World-Writable 디렉터리 (sticky 제외) ---' && sudo find / -maxdepth 3 -type d -perm -002 ! -perm -1000 2>/dev/null | head -10"
-    answer_detail: "세계 쓰기 가능 파일은 모든 사용자가 수정할 수 있으므로 악성 코드 삽입, 설정 변조, 권한 상승의 통로가 됩니다. 특히 sticky bit 없는 세계 쓰기 가능 디렉터리는 파일 교체 공격(symlink attack)에 취약합니다."
-    verify:
-      type: "output_contains"
-      expect: "World-Writable"
-      field: "stdout"
-  - order: 4
-    instruction: "네트워크 수준의 위험을 식별하시오. 열린 포트와 외부 노출 서비스를 분석합니다."
-    hint: "ss와 nft를 조합하여 외부에서 접근 가능한 서비스를 파악하세요."
-    category: "audit"
-    points: 12
-    answer: "echo '=== 네트워크 위험 분석 ===' && echo '[외부 노출 포트]' && sudo ss -tlnp | grep -v '127.0.0' && echo '[방화벽 허용 규칙]' && sudo nft list ruleset 2>/dev/null | grep 'accept' | head -10"
-    answer_detail: "네트워크 위험 식별에서는 외부에서 접근 가능한 서비스를 파악합니다. 127.0.0.1(로컬)이 아닌 0.0.0.0에서 LISTEN하는 서비스는 네트워크에 노출됩니다. 각 노출 서비스의 필요성과 방화벽 보호 여부를 확인해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "네트워크 위험 분석"
-      field: "stdout"
-  - order: 5
-    instruction: "식별된 취약점의 위험도를 산정하는 위험 평가표를 작성하시오. 발생 가능성 x 영향도 = 위험도."
-    hint: "각 취약점에 대해 1~5 스케일의 발생 가능성과 영향도를 부여하세요."
-    category: "analysis"
-    points: 12
-    answer: "cat << 'EOF' > /tmp/risk_assessment.csv\n위험ID,취약점,위협,발생가능성(1-5),영향도(1-5),위험도,위험등급\nR-001,미패치 커널,원격코드실행,3,5,15,상\nR-002,약한 패스워드정책,무차별대입,4,4,16,상\nR-003,불필요 포트 노출,서비스 악용,3,3,9,중\nR-004,로그 미보관,사고추적 불가,2,4,8,중\nR-005,World-Writable파일,권한상승,2,3,6,하\nEOF\ncat /tmp/risk_assessment.csv && echo '' && echo '위험등급: 상(12-25), 중(6-11), 하(1-5)'"
-    answer_detail: "위험도 산정은 발생 가능성(Likelihood)과 영향도(Impact)를 곱하여 정량적으로 평가합니다. 위험도 = 발생 가능성(1~5) x 영향도(1~5)로, 최대 25점입니다. 위험 등급에 따라 처리 우선순위를 결정합니다: 상(즉시 조치), 중(계획 조치), 하(수용 검토)."
-    verify:
-      type: "output_contains"
-      expect: "위험등급"
-      field: "stdout"
-  - order: 6
-    instruction: "위험 처리 방안을 수립하시오. 각 위험에 대해 회피/완화/전가/수용 중 처리 방법을 결정합니다."
-    hint: "위험 평가표의 각 항목에 대해 구체적 조치와 담당자를 지정하세요."
-    category: "config"
-    points: 12
-    answer: "cat << 'EOF' > /tmp/risk_treatment.txt\n=== 위험 처리 계획서 ===\n\n[R-001 미패치 커널 - 위험도: 상]\n처리: 완화\n조치: sudo apt update && sudo apt upgrade -y\n담당: 시스템관리팀\n기한: 즉시\n\n[R-002 약한 패스워드정책 - 위험도: 상]\n처리: 완화\n조치: pwquality.conf minlen=12, PASS_MAX_DAYS=90 설정\n담당: 보안팀\n기한: 1주 이내\n\n[R-003 불필요 포트 노출 - 위험도: 중]\n처리: 완화\n조치: nft 방화벽 규칙으로 불필요 포트 차단\n담당: 네트워크팀\n기한: 2주 이내\n\n=== 계획서 끝 ===\nEOF\ncat /tmp/risk_treatment.txt"
-    answer_detail: "위험 처리에는 네 가지 방법이 있습니다: 회피(위험 활동 중단), 완화(통제 구현으로 위험 감소), 전가(보험/아웃소싱), 수용(잔여 위험 허용). 대부분의 IT 위험은 완화 방법으로 처리하며, 경영진의 승인을 받아야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "위험 처리 계획서"
-      field: "stdout"
-  - order: 7
-    instruction: "위험 처리 조치 중 하나를 실제로 수행하시오. 패스워드 최대 사용일을 90일로 설정합니다."
-    hint: "login.defs에서 PASS_MAX_DAYS 값을 변경하세요."
-    category: "config"
-    points: 10
-    answer: "sudo sed -i 's/^PASS_MAX_DAYS.*/PASS_MAX_DAYS   90/' /etc/login.defs && grep '^PASS_MAX_DAYS' /etc/login.defs"
-    answer_detail: "위험 처리 조치를 실행한 후에는 반드시 설정이 올바르게 적용되었는지 검증해야 합니다. login.defs의 PASS_MAX_DAYS는 새로 생성되는 계정에만 적용되며, 기존 계정은 chage -M 90 username으로 개별 설정해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "90"
-      field: "stdout"
-  - order: 8
-    instruction: "위험관리 종합 보고서를 생성하는 스크립트를 작성하고 실행하시오."
-    hint: "식별된 위험, 평가 결과, 처리 상태를 종합하세요."
-    category: "audit"
-    points: 14
-    answer: "cat << 'SCRIPT' > /tmp/risk_report.sh\n#!/bin/bash\necho '=== 위험관리 종합 보고서 ==='\necho \"보고일: $(date +%Y-%m-%d)\"\necho ''\necho '[1. 취약점 현황]'\necho \"미패치 패키지: $(apt list --upgradable 2>/dev/null | grep -c '/')건\"\necho \"World-Writable: $(sudo find /etc -type f -perm -002 2>/dev/null | wc -l)건\"\necho \"열린 포트: $(sudo ss -tlnp | grep -c LISTEN)개\"\necho ''\necho '[2. 위험 처리 현황]'\nMAXDAYS=$(grep '^PASS_MAX_DAYS' /etc/login.defs | awk '{print $2}')\necho \"패스워드 정책(PASS_MAX_DAYS): ${MAXDAYS}일 $([ \"$MAXDAYS\" -le 90 ] && echo '[조치완료]' || echo '[미조치]')\"\necho \"방화벽: $(sudo nft list ruleset 2>/dev/null | grep -c rule) 규칙 적용 중\"\necho \"감사 시스템: $(sudo systemctl is-active auditd 2>/dev/null)\"\necho ''\necho '=== 위험관리 보고 완료 ==='\nSCRIPT\nchmod +x /tmp/risk_report.sh && bash /tmp/risk_report.sh"
-    answer_detail: "위험관리 보고서는 식별된 위험, 위험도 평가 결과, 처리 현황, 잔여 위험을 포함합니다. 경영진에게 보고하여 위험 수용 여부를 결정받아야 하며, 정기적으로(최소 연 1회) 위험 재평가를 수행해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "위험관리 보고 완료"
-      field: "stdout"
+- order: 1
+  instruction: SECU 서버(10.20.30.1)에서 커널 버전과 알려진 취약점 가능성을 확인하시오. 위험 식별 단계.
+  hint: uname -r로 커널 버전을 확인하고, 해당 버전의 보안 상태를 파악하세요.
+  category: audit
+  points: 10
+  answer: uname -r && echo '--- 보안 업데이트 대기 ---' && apt list --upgradable 2>/dev/null | grep -i 'security\|linux' | head -10
+  answer_detail: 위험관리의 첫 단계는 위험 식별입니다. 커널 버전을 확인하면 해당 버전의 CVE(공개된 취약점)를 조회할 수 있습니다. 보안 업데이트가 대기 중인 패키지가 있다면 알려진 취약점이 패치되지 않은 상태입니다.
+  verify:
+    type: output_contains
+    expect: 보안 업데이트 대기
+    field: stdout
+  target_vm: secu
+- order: 2
+  instruction: 'SSH 서비스의 보안 취약점 요소를 식별하시오. 위험 식별: 서비스별 위협 분석.'
+  hint: SSH 버전, 허용 알고리즘, 인증 방식을 확인하세요.
+  category: audit
+  points: 10
+  answer: 'ssh -V 2>&1 && echo ''--- SSH 설정 취약점 ---'' && grep -E ''^(Protocol|PermitRootLogin|PermitEmptyPasswords|X11Forwarding|AllowTcpForwarding|MaxAuthTries)'' /etc/ssh/sshd_config 2>/dev/null; echo
+    ''--- 미설정 항목(기본값 사용) ---'' && for opt in PermitRootLogin MaxAuthTries PasswordAuthentication; do grep -q "^$opt" /etc/ssh/sshd_config 2>/dev/null || echo "$opt: 미설정"; done'
+  answer_detail: 위험 식별에서는 각 서비스의 위협 요소를 체계적으로 파악합니다. SSH의 주요 위협은 무차별 대입 공격, 취약한 암호 스위트, root 직접 접속, 포트 포워딩 악용 등입니다. 설정이 명시되지 않으면 기본값을 사용하므로, 기본값의 보안성도 평가해야 합니다.
+  verify:
+    type: output_contains
+    expect: OpenSSH
+    field: stdout
+  target_vm: secu
+- order: 3
+  instruction: '세계 쓰기 가능(world-writable) 파일을 검색하시오. 위험 식별: 파일 시스템 취약점.'
+  hint: find 명령으로 /etc, /var에서 o+w 파일을 검색하세요.
+  category: audit
+  points: 10
+  answer: echo '=== World-Writable 파일 ===' && sudo find /etc /var -type f -perm -002 2>/dev/null | head -15 && echo '--- World-Writable 디렉터리 (sticky 제외) ---' && sudo find / -maxdepth 3 -type d -perm -002
+    ! -perm -1000 2>/dev/null | head -10
+  answer_detail: 세계 쓰기 가능 파일은 모든 사용자가 수정할 수 있으므로 악성 코드 삽입, 설정 변조, 권한 상승의 통로가 됩니다. 특히 sticky bit 없는 세계 쓰기 가능 디렉터리는 파일 교체 공격(symlink attack)에 취약합니다.
+  verify:
+    type: output_contains
+    expect: World-Writable
+    field: stdout
+  target_vm: secu
+- order: 4
+  instruction: 네트워크 수준의 위험을 식별하시오. 열린 포트와 외부 노출 서비스를 분석합니다.
+  hint: ss와 nft를 조합하여 외부에서 접근 가능한 서비스를 파악하세요.
+  category: audit
+  points: 12
+  answer: echo '=== 네트워크 위험 분석 ===' && echo '[외부 노출 포트]' && sudo ss -tlnp | grep -v '127.0.0' && echo '[방화벽 허용 규칙]' && sudo nft list ruleset 2>/dev/null | grep 'accept' | head -10
+  answer_detail: 네트워크 위험 식별에서는 외부에서 접근 가능한 서비스를 파악합니다. 127.0.0.1(로컬)이 아닌 0.0.0.0에서 LISTEN하는 서비스는 네트워크에 노출됩니다. 각 노출 서비스의 필요성과 방화벽 보호 여부를 확인해야 합니다.
+  verify:
+    type: output_contains
+    expect: 네트워크 위험 분석
+    field: stdout
+  target_vm: secu
+- order: 5
+  instruction: 식별된 취약점의 위험도를 산정하는 위험 평가표를 작성하시오. 발생 가능성 x 영향도 = 위험도.
+  hint: 각 취약점에 대해 1~5 스케일의 발생 가능성과 영향도를 부여하세요.
+  category: analysis
+  points: 12
+  answer: 'cat << ''EOF'' > /tmp/risk_assessment.csv
+
+    위험ID,취약점,위협,발생가능성(1-5),영향도(1-5),위험도,위험등급
+
+    R-001,미패치 커널,원격코드실행,3,5,15,상
+
+    R-002,약한 패스워드정책,무차별대입,4,4,16,상
+
+    R-003,불필요 포트 노출,서비스 악용,3,3,9,중
+
+    R-004,로그 미보관,사고추적 불가,2,4,8,중
+
+    R-005,World-Writable파일,권한상승,2,3,6,하
+
+    EOF
+
+    cat /tmp/risk_assessment.csv && echo '''' && echo ''위험등급: 상(12-25), 중(6-11), 하(1-5)'''
+  answer_detail: '위험도 산정은 발생 가능성(Likelihood)과 영향도(Impact)를 곱하여 정량적으로 평가합니다. 위험도 = 발생 가능성(1~5) x 영향도(1~5)로, 최대 25점입니다. 위험 등급에 따라 처리 우선순위를 결정합니다: 상(즉시 조치), 중(계획 조치), 하(수용 검토).'
+  verify:
+    type: output_contains
+    expect: 위험등급
+    field: stdout
+  target_vm: secu
+- order: 6
+  instruction: 위험 처리 방안을 수립하시오. 각 위험에 대해 회피/완화/전가/수용 중 처리 방법을 결정합니다.
+  hint: 위험 평가표의 각 항목에 대해 구체적 조치와 담당자를 지정하세요.
+  category: config
+  points: 12
+  answer: 'cat << ''EOF'' > /tmp/risk_treatment.txt
+
+    === 위험 처리 계획서 ===
+
+
+    [R-001 미패치 커널 - 위험도: 상]
+
+    처리: 완화
+
+    조치: sudo apt update && sudo apt upgrade -y
+
+    담당: 시스템관리팀
+
+    기한: 즉시
+
+
+    [R-002 약한 패스워드정책 - 위험도: 상]
+
+    처리: 완화
+
+    조치: pwquality.conf minlen=12, PASS_MAX_DAYS=90 설정
+
+    담당: 보안팀
+
+    기한: 1주 이내
+
+
+    [R-003 불필요 포트 노출 - 위험도: 중]
+
+    처리: 완화
+
+    조치: nft 방화벽 규칙으로 불필요 포트 차단
+
+    담당: 네트워크팀
+
+    기한: 2주 이내
+
+
+    === 계획서 끝 ===
+
+    EOF
+
+    cat /tmp/risk_treatment.txt'
+  answer_detail: '위험 처리에는 네 가지 방법이 있습니다: 회피(위험 활동 중단), 완화(통제 구현으로 위험 감소), 전가(보험/아웃소싱), 수용(잔여 위험 허용). 대부분의 IT 위험은 완화 방법으로 처리하며, 경영진의 승인을 받아야 합니다.'
+  verify:
+    type: output_contains
+    expect: 위험 처리 계획서
+    field: stdout
+  target_vm: secu
+- order: 7
+  instruction: 위험 처리 조치 중 하나를 실제로 수행하시오. 패스워드 최대 사용일을 90일로 설정합니다.
+  hint: login.defs에서 PASS_MAX_DAYS 값을 변경하세요.
+  category: config
+  points: 10
+  answer: sudo sed -i 's/^PASS_MAX_DAYS.*/PASS_MAX_DAYS   90/' /etc/login.defs && grep '^PASS_MAX_DAYS' /etc/login.defs
+  answer_detail: 위험 처리 조치를 실행한 후에는 반드시 설정이 올바르게 적용되었는지 검증해야 합니다. login.defs의 PASS_MAX_DAYS는 새로 생성되는 계정에만 적용되며, 기존 계정은 chage -M 90 username으로 개별 설정해야 합니다.
+  verify:
+    type: output_contains
+    expect: '90'
+    field: stdout
+  target_vm: secu
+- order: 8
+  instruction: 위험관리 종합 보고서를 생성하는 스크립트를 작성하고 실행하시오.
+  hint: 식별된 위험, 평가 결과, 처리 상태를 종합하세요.
+  category: audit
+  points: 14
+  answer: 'cat << ''SCRIPT'' > /tmp/risk_report.sh
+
+    #!/bin/bash
+
+    echo ''=== 위험관리 종합 보고서 ===''
+
+    echo "보고일: $(date +%Y-%m-%d)"
+
+    echo ''''
+
+    echo ''[1. 취약점 현황]''
+
+    echo "미패치 패키지: $(apt list --upgradable 2>/dev/null | grep -c ''/'')건"
+
+    echo "World-Writable: $(sudo find /etc -type f -perm -002 2>/dev/null | wc -l)건"
+
+    echo "열린 포트: $(sudo ss -tlnp | grep -c LISTEN)개"
+
+    echo ''''
+
+    echo ''[2. 위험 처리 현황]''
+
+    MAXDAYS=$(grep ''^PASS_MAX_DAYS'' /etc/login.defs | awk ''{print $2}'')
+
+    echo "패스워드 정책(PASS_MAX_DAYS): ${MAXDAYS}일 $([ "$MAXDAYS" -le 90 ] && echo ''[조치완료]'' || echo ''[미조치]'')"
+
+    echo "방화벽: $(sudo nft list ruleset 2>/dev/null | grep -c rule) 규칙 적용 중"
+
+    echo "감사 시스템: $(sudo systemctl is-active auditd 2>/dev/null)"
+
+    echo ''''
+
+    echo ''=== 위험관리 보고 완료 ===''
+
+    SCRIPT
+
+    chmod +x /tmp/risk_report.sh && bash /tmp/risk_report.sh'
+  answer_detail: 위험관리 보고서는 식별된 위험, 위험도 평가 결과, 처리 현황, 잔여 위험을 포함합니다. 경영진에게 보고하여 위험 수용 여부를 결정받아야 하며, 정기적으로(최소 연 1회) 위험 재평가를 수행해야 합니다.
+  verify:
+    type: output_contains
+    expect: 위험관리 보고 완료
+    field: stdout
+  target_vm: secu

@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: syslog
     field: stdout
+  target_vm: secu
   script: ls -lh /var/log/ | head -30
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+  target_vm: secu
   script: sudo grep 'sshd' /var/log/auth.log 2>/dev/null | tail -20 || sudo grep 'sshd' /var/log/secure 2>/dev/null | tail -20
   risk_level: low
 - order: 3
@@ -49,6 +51,7 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+  target_vm: secu
   script: sudo grep 'Failed password' /var/log/auth.log 2>/dev/null | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn | head -10 || echo '실패 로그 분석 완료'
   risk_level: low
 - order: 4
@@ -62,6 +65,7 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+  target_vm: secu
   script: journalctl -b -p warning --no-pager | tail -30
   risk_level: low
 - order: 5
@@ -75,6 +79,7 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+  target_vm: secu
   script: sudo ausearch -ts recent -m SYSCALL 2>/dev/null | tail -30 || echo '감사 로그 분석 완료'
   risk_level: low
 - order: 6
@@ -88,6 +93,7 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+  target_vm: secu
   script: sudo aureport --summary 2>/dev/null || echo '감사 보고서 생성 완료'
   risk_level: low
 - order: 7
@@ -101,6 +107,7 @@ steps:
     type: output_contains
     expect: Wazuh
     field: stdout
+  target_vm: secu
   script: sudo systemctl status wazuh-agent 2>/dev/null || echo 'Wazuh 에이전트 확인 완료'
   risk_level: low
 - order: 8
@@ -114,6 +121,7 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+  target_vm: secu
   script: sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5 || echo 'Wazuh 알림 로그 확인 완료'
   risk_level: low
 - order: 9
@@ -127,6 +135,7 @@ steps:
     type: output_contains
     expect: 로그 로테이션 확인 완료
     field: stdout
+  target_vm: secu
   script: cat /etc/logrotate.d/rsyslog 2>/dev/null && echo '로그 로테이션 확인 완료'
   risk_level: low
 - order: 10
@@ -140,6 +149,7 @@ steps:
     type: output_contains
     expect: 모니터링 테스트 완료
     field: stdout
+  target_vm: secu
   script: sudo timeout 3 tail -f /var/log/auth.log 2>/dev/null || echo '실시간 모니터링 테스트 완료'
   risk_level: low
 - order: 11
@@ -153,6 +163,7 @@ steps:
     type: output_contains
     expect: 연결 모니터링 완료
     field: stdout
+  target_vm: secu
   script: ss -tnp | grep ESTAB && echo '연결 모니터링 완료'
   risk_level: low
 - order: 12
@@ -166,6 +177,7 @@ steps:
     type: output_contains
     expect: 리소스 모니터링 완료
     field: stdout
+  target_vm: secu
   script: ps aux --sort=-%mem | head -10 && echo '리소스 모니터링 완료'
   risk_level: low
 - order: 13
@@ -180,6 +192,7 @@ steps:
     type: output_contains
     expect: SSH 실패
     field: stdout
+  target_vm: secu
   script: "echo '#!/bin/bash\nCOUNT=$(sudo grep -c \"Failed password\" /var/log/auth.log 2>/dev/null || echo 0)\nif [ \"$COUNT\" -gt 10 ]; then\n  echo \"경고: SSH 실패 ${COUNT}회 탐지\"\nelse\n  echo \"정상: SSH\
     \ 실패 ${COUNT}회\"\nfi' > /tmp/alert_check.sh && chmod +x /tmp/alert_check.sh && bash /tmp/alert_check.sh"
   risk_level: low
@@ -194,6 +207,7 @@ steps:
     type: output_contains
     expect: 무결성 검사 완료
     field: stdout
+  target_vm: secu
   script: for bin in /usr/bin/ssh /usr/bin/sudo /usr/bin/passwd; do sha256sum $bin 2>/dev/null; done | tee /tmp/binary_hashes.txt && echo '무결성 검사 완료'
   risk_level: low
 - order: 15
@@ -208,6 +222,7 @@ steps:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+  target_vm: secu
   script: echo '=== 보안 모니터링 보고서 ===' && echo '[로그 파일 현황]' && ls -lh /var/log/auth.log /var/log/syslog 2>/dev/null && echo '[활성 연결]' && ss -tnp | wc -l && echo '[감사 이벤트]' && sudo aureport --summary 2>/dev/null
     | head -5 && echo '=== 보고서 완료 ==='
   risk_level: low

@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: DOCKER
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'sudo iptables -L -n -v --line-numbers 2>/dev/null | head -30 && echo "=== DOCKER 체인 ===" && sudo iptables -L DOCKER -n -v 2>/dev/null && echo "=== DOCKER-ISOLATION ==="
     && sudo iptables -L DOCKER-ISOLATION-STAGE-1 -n 2>/dev/null'
   risk_level: low
@@ -42,6 +43,7 @@ steps:
     type: output_contains
     expect: Internal
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''docker network create --internal --subnet 172.30.0.0/24 isolated-net 2>/dev/null || echo "이미 존재"; docker network inspect isolated-net --format "Name: {{.Name}}
 
     Internal: {{.Internal}}
@@ -59,6 +61,7 @@ steps:
     type: output_contains
     expect: 종료코드
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''docker run --rm --network isolated-net alpine:latest ping -c 2 -W 3 8.8.8.8 2>&1; echo "종료코드: $?"'''
   risk_level: low
 - order: 4
@@ -73,6 +76,7 @@ steps:
     type: output_contains
     expect: nameserver
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'echo "=== bridge 네트워크 DNS ==="; docker run --rm alpine:latest cat /etc/resolv.conf; echo "=== 사용자 정의 네트워크 DNS ==="; docker run --rm --network isolated-net alpine:latest
     cat /etc/resolv.conf 2>/dev/null'
   risk_level: low
@@ -88,6 +92,7 @@ steps:
     type: output_contains
     expect: Network
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range \$net, \$cfg := .NetworkSettings.Networks}}  Network={{\$net}} IP={{\$cfg.IPAddress}}
     GW={{\$cfg.Gateway}}\n{{end}}" {} 2>/dev/null || echo "컨테이너 없음"'
   risk_level: low
@@ -103,6 +108,7 @@ steps:
     type: output_contains
     expect: Docker 네트워크 인터페이스
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'echo "=== Docker 네트워크 인터페이스 ==="; ip link show type bridge; echo "--- veth 인터페이스 ---"; ip link show type veth 2>/dev/null | head -10; echo "--- 트래픽 캡처 테스트 ---"; sudo timeout
     3 tcpdump -i docker0 -c 5 -n 2>/dev/null || echo "트래픽 없음 또는 docker0 없음"'
   risk_level: low
@@ -117,6 +123,7 @@ steps:
     type: output_contains
     expect: 네트워크 정리 후
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'docker network rm isolated-net secure-net 2>/dev/null; echo "=== 네트워크 정리 후 ==="; docker network ls'
   risk_level: low
 - order: 8
@@ -158,6 +165,7 @@ steps:
     type: output_contains
     expect: 네트워크 점검 완료
     field: stdout
+  target_vm: web
   script: 'cat << ''SCRIPT'' > /tmp/network_security.sh
 
     #!/bin/bash

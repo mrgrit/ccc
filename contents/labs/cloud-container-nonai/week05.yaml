@@ -1,102 +1,123 @@
-lab_id: "cloud-container-nonai-week05"
-title: "Kubernetes 보안 기초 (Docker 시뮬레이션)"
-version: "non-ai"
-course: "cloud-container-nonai"
+lab_id: cloud-container-nonai-week05
+title: Kubernetes 보안 기초 (Docker 시뮬레이션)
+version: non-ai
+course: cloud-container-nonai
 week: 5
-description: "Kubernetes의 핵심 보안 개념을 Docker 환경에서 시뮬레이션합니다. Pod 보안 컨텍스트, 서비스 계정, 네트워크 정책에 대응하는 Docker 보안 설정을 실습합니다."
-difficulty: "medium"
+description: Kubernetes의 핵심 보안 개념을 Docker 환경에서 시뮬레이션합니다. Pod 보안 컨텍스트, 서비스 계정, 네트워크 정책에 대응하는 Docker 보안 설정을 실습합니다.
+difficulty: medium
 duration_minutes: 120
 objectives:
-  - "Kubernetes Pod Security Standards의 핵심 개념을 이해한다"
-  - "컨테이너 보안 컨텍스트에 대응하는 Docker 옵션을 적용한다"
-  - "멀티 컨테이너 환경의 네트워크 격리를 구현한다"
+- Kubernetes Pod Security Standards의 핵심 개념을 이해한다
+- 컨테이너 보안 컨텍스트에 대응하는 Docker 옵션을 적용한다
+- 멀티 컨테이너 환경의 네트워크 격리를 구현한다
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "WEB 서버(10.20.30.80)에서 K8s의 restricted Pod Security Standard에 해당하는 보안 설정으로 컨테이너를 실행하시오."
-    hint: "non-root, read-only, cap-drop ALL, no-new-privileges를 모두 적용하세요."
-    category: "config"
-    points: 12
-    answer: "ssh trainee@10.20.30.80 'docker run -d --name k8s-restricted --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --user 1000:1000 --memory 128m alpine:latest sleep 3600 2>/dev/null && docker inspect k8s-restricted --format \"Privileged={{.HostConfig.Privileged}} ReadOnly={{.HostConfig.ReadonlyRootfs}} User={{.Config.User}} CapDrop={{.HostConfig.CapDrop}}\" 2>/dev/null'"
-    answer_detail: "K8s Pod Security Standards에는 3개 수준이 있습니다: Privileged(무제한), Baseline(위험 설정 차단), Restricted(최소 권한). Restricted 수준에서는 non-root 실행, Capability 제거, 읽기 전용 루트 파일시스템, no-new-privileges가 필수입니다."
-    verify:
-      type: "output_contains"
-      expect: "ReadOnly=true"
-      field: "stdout"
-  - order: 2
-    instruction: "K8s의 Namespace별 격리를 Docker 네트워크로 시뮬레이션하시오. frontend와 backend 네트워크를 분리합니다."
-    hint: "두 개의 사용자 정의 네트워크를 생성하세요."
-    category: "config"
-    points: 10
-    answer: "ssh trainee@10.20.30.80 'docker network create frontend-net 2>/dev/null; docker network create backend-net 2>/dev/null; echo \"=== 네트워크 격리 ===\"; docker network ls --format \"{{.Name}}: {{.Driver}}\" | grep -E \"(frontend|backend|bridge)\"'"
-    answer_detail: "K8s의 Namespace는 리소스를 논리적으로 분리합니다. NetworkPolicy로 Namespace 간 통신을 제어하듯, Docker에서는 별도 네트워크를 생성하여 컨테이너 그룹을 격리합니다. 서로 다른 Docker 네트워크에 연결된 컨테이너는 기본적으로 통신할 수 없습니다."
-    verify:
-      type: "output_contains"
-      expect: "frontend-net"
-      field: "stdout"
-  - order: 3
-    instruction: "격리된 네트워크에 컨테이너를 배치하고 네트워크 간 통신이 차단되는지 확인하시오."
-    hint: "frontend와 backend 네트워크에 각각 컨테이너를 배치하고 ping 테스트를 수행하세요."
-    category: "config"
-    points: 12
-    answer: "ssh trainee@10.20.30.80 'docker run -d --name frontend --network frontend-net alpine:latest sleep 3600 2>/dev/null; docker run -d --name backend --network backend-net alpine:latest sleep 3600 2>/dev/null; echo \"=== 네트워크 격리 테스트 ===\"; BACKEND_IP=$(docker inspect backend --format \"{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}\" 2>/dev/null); echo \"Backend IP: $BACKEND_IP\"; docker exec frontend ping -c 2 -W 2 $BACKEND_IP 2>&1 | tail -3 || echo \"통신 차단 확인 (정상)\"'"
-    answer_detail: "K8s NetworkPolicy는 Pod 간 트래픽을 레이블 기반으로 제어합니다. Docker에서 서로 다른 네트워크의 컨테이너는 기본적으로 격리됩니다. 이 격리를 확인하는 것은 마이크로세그멘테이션의 기본입니다."
-    verify:
-      type: "output_contains"
-      expect: "네트워크 격리 테스트"
-      field: "stdout"
-  - order: 4
-    instruction: "K8s의 Resource Limits에 대응하는 Docker 자원 제한을 적용하고 검증하시오."
-    hint: "--memory, --cpus, --pids-limit을 설정한 컨테이너를 실행하세요."
-    category: "config"
-    points: 10
-    answer: "ssh trainee@10.20.30.80 'docker run -d --name resource-limited --memory 64m --memory-swap 64m --cpus 0.5 --pids-limit 30 alpine:latest sleep 3600 2>/dev/null; echo \"=== 자원 제한 확인 ===\"; docker inspect resource-limited --format \"Memory={{.HostConfig.Memory}} MemSwap={{.HostConfig.MemorySwap}} CPU={{.HostConfig.NanoCpus}} Pids={{.HostConfig.PidsLimit}}\" 2>/dev/null'"
-    answer_detail: "K8s에서는 Pod spec의 resources.limits로 자원을 제한합니다. Memory Limit 초과 시 OOMKilled, CPU Limit은 throttling 됩니다. Docker에서도 동일하게 --memory(OOM), --cpus(throttle), --pids-limit(fork bomb 방지)을 설정합니다."
-    verify:
-      type: "output_contains"
-      expect: "자원 제한 확인"
-      field: "stdout"
-  - order: 5
-    instruction: "K8s의 readinessProbe에 대응하는 Docker 헬스체크를 확인하시오."
-    hint: "docker inspect에서 Healthcheck 설정을 확인하세요."
-    category: "audit"
-    points: 10
-    answer: "ssh trainee@10.20.30.80 'docker ps -q | head -5 | xargs -I{} docker inspect --format=\"{{.Name}}: Health={{if .State.Health}}{{.State.Health.Status}}{{else}}미설정{{end}}\" {} 2>/dev/null || echo \"실행 중인 컨테이너 없음\"'"
-    answer_detail: "K8s의 livenessProbe/readinessProbe는 Pod의 정상 동작을 확인합니다. Docker의 HEALTHCHECK는 컨테이너 내부에서 주기적으로 명령을 실행하여 상태를 확인합니다. 헬스체크 실패 시 자동 재시작(restart policy)과 연계하면 가용성을 높일 수 있습니다."
-    verify:
-      type: "output_contains"
-      expect: "Health"
-      field: "stdout"
-  - order: 6
-    instruction: "컨테이너의 restart policy를 확인하시오. K8s의 restartPolicy에 대응합니다."
-    hint: "docker inspect에서 RestartPolicy를 확인하세요."
-    category: "audit"
-    points: 8
-    answer: "ssh trainee@10.20.30.80 'docker ps -aq | head -5 | xargs -I{} docker inspect --format=\"{{.Name}}: RestartPolicy={{.HostConfig.RestartPolicy.Name}} MaxRetry={{.HostConfig.RestartPolicy.MaximumRetryCount}}\" {} 2>/dev/null'"
-    answer_detail: "K8s의 restartPolicy(Always/OnFailure/Never)와 유사하게 Docker도 --restart 옵션으로 컨테이너 재시작 정책을 설정합니다. on-failure는 비정상 종료 시에만, always는 항상, unless-stopped는 수동 중지 전까지 재시작합니다."
-    verify:
-      type: "output_contains"
-      expect: "RestartPolicy"
-      field: "stdout"
-  - order: 7
-    instruction: "테스트에 사용한 컨테이너와 네트워크를 정리하시오."
-    hint: "docker rm -f와 docker network rm으로 정리하세요."
-    category: "config"
-    points: 8
-    answer: "ssh trainee@10.20.30.80 'docker rm -f k8s-restricted frontend backend resource-limited 2>/dev/null; docker network rm frontend-net backend-net 2>/dev/null; echo \"=== 정리 완료 ===\"; docker ps -a --format \"{{.Names}}\" | head -5'"
-    answer_detail: "테스트 후 리소스를 정리하는 것은 좋은 습관입니다. K8s에서는 kubectl delete로, Docker에서는 docker rm/network rm으로 정리합니다. 프로덕션에서는 자동 정리 정책(TTL, garbage collection)을 설정합니다."
-    verify:
-      type: "output_contains"
-      expect: "정리 완료"
-      field: "stdout"
-  - order: 8
-    instruction: "K8s 보안 시뮬레이션 종합 점검 스크립트를 작성하고 실행하시오."
-    hint: "현재 실행 중인 모든 컨테이너의 K8s 보안 기준 준수 여부를 점검하세요."
-    category: "audit"
-    points: 10
-    answer: "cat << 'SCRIPT' > /tmp/k8s_sim_check.sh\n#!/bin/bash\nHOST='trainee@10.20.30.80'\necho '=== K8s Pod Security Standards 시뮬레이션 점검 ==='\nssh $HOST '\nfor CID in $(docker ps -q); do\n  NAME=$(docker inspect --format=\"{{.Name}}\" $CID)\n  PRIV=$(docker inspect --format=\"{{.HostConfig.Privileged}}\" $CID)\n  USER=$(docker inspect --format=\"{{.Config.User}}\" $CID)\n  RO=$(docker inspect --format=\"{{.HostConfig.ReadonlyRootfs}}\" $CID)\n  MEM=$(docker inspect --format=\"{{.HostConfig.Memory}}\" $CID)\n  echo \"$NAME:\"\n  [ \"$PRIV\" = \"true\" ] && echo \"  Privileged: FAIL\" || echo \"  Privileged: PASS\"\n  [ -z \"$USER\" ] && echo \"  Non-root: WARN (root)\" || echo \"  Non-root: PASS ($USER)\"\n  [ \"$RO\" = \"true\" ] && echo \"  ReadOnly: PASS\" || echo \"  ReadOnly: WARN\"\n  [ \"$MEM\" = \"0\" ] && echo \"  MemLimit: WARN (unlimited)\" || echo \"  MemLimit: PASS\"\ndone' 2>/dev/null\necho '=== K8s 시뮬레이션 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/k8s_sim_check.sh && bash /tmp/k8s_sim_check.sh"
-    answer_detail: "Kubernetes 보안은 클러스터(RBAC, NetworkPolicy, PodSecurityStandards), 노드(OS 보안, kubelet), 컨테이너(이미지, 런타임), 코드(취약점, 설정) 4개 계층으로 구성됩니다. Docker 환경에서 Pod Security Standards를 시뮬레이션하면 K8s 도입 전에 컨테이너 보안 기초를 다질 수 있습니다."
-    verify:
-      type: "output_contains"
-      expect: "K8s 시뮬레이션 점검 완료"
-      field: "stdout"
+- order: 1
+  instruction: WEB 서버(10.20.30.80)에서 K8s의 restricted Pod Security Standard에 해당하는 보안 설정으로 컨테이너를 실행하시오.
+  hint: non-root, read-only, cap-drop ALL, no-new-privileges를 모두 적용하세요.
+  category: config
+  points: 12
+  answer: ssh trainee@10.20.30.80 'docker run -d --name k8s-restricted --read-only --tmpfs /tmp --cap-drop ALL --security-opt no-new-privileges --user 1000:1000 --memory 128m alpine:latest sleep 3600 2>/dev/null
+    && docker inspect k8s-restricted --format "Privileged={{.HostConfig.Privileged}} ReadOnly={{.HostConfig.ReadonlyRootfs}} User={{.Config.User}} CapDrop={{.HostConfig.CapDrop}}" 2>/dev/null'
+  answer_detail: 'K8s Pod Security Standards에는 3개 수준이 있습니다: Privileged(무제한), Baseline(위험 설정 차단), Restricted(최소 권한). Restricted 수준에서는 non-root 실행, Capability 제거, 읽기 전용 루트 파일시스템, no-new-privileges가 필수입니다.'
+  verify:
+    type: output_contains
+    expect: ReadOnly=true
+    field: stdout
+  target_vm: web
+- order: 2
+  instruction: K8s의 Namespace별 격리를 Docker 네트워크로 시뮬레이션하시오. frontend와 backend 네트워크를 분리합니다.
+  hint: 두 개의 사용자 정의 네트워크를 생성하세요.
+  category: config
+  points: 10
+  answer: 'ssh trainee@10.20.30.80 ''docker network create frontend-net 2>/dev/null; docker network create backend-net 2>/dev/null; echo "=== 네트워크 격리 ==="; docker network ls --format "{{.Name}}: {{.Driver}}"
+    | grep -E "(frontend|backend|bridge)"'''
+  answer_detail: K8s의 Namespace는 리소스를 논리적으로 분리합니다. NetworkPolicy로 Namespace 간 통신을 제어하듯, Docker에서는 별도 네트워크를 생성하여 컨테이너 그룹을 격리합니다. 서로 다른 Docker 네트워크에 연결된 컨테이너는 기본적으로 통신할 수 없습니다.
+  verify:
+    type: output_contains
+    expect: frontend-net
+    field: stdout
+  target_vm: web
+- order: 3
+  instruction: 격리된 네트워크에 컨테이너를 배치하고 네트워크 간 통신이 차단되는지 확인하시오.
+  hint: frontend와 backend 네트워크에 각각 컨테이너를 배치하고 ping 테스트를 수행하세요.
+  category: config
+  points: 12
+  answer: 'ssh trainee@10.20.30.80 ''docker run -d --name frontend --network frontend-net alpine:latest sleep 3600 2>/dev/null; docker run -d --name backend --network backend-net alpine:latest sleep 3600
+    2>/dev/null; echo "=== 네트워크 격리 테스트 ==="; BACKEND_IP=$(docker inspect backend --format "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" 2>/dev/null); echo "Backend IP: $BACKEND_IP"; docker
+    exec frontend ping -c 2 -W 2 $BACKEND_IP 2>&1 | tail -3 || echo "통신 차단 확인 (정상)"'''
+  answer_detail: K8s NetworkPolicy는 Pod 간 트래픽을 레이블 기반으로 제어합니다. Docker에서 서로 다른 네트워크의 컨테이너는 기본적으로 격리됩니다. 이 격리를 확인하는 것은 마이크로세그멘테이션의 기본입니다.
+  verify:
+    type: output_contains
+    expect: 네트워크 격리 테스트
+    field: stdout
+  target_vm: web
+- order: 4
+  instruction: K8s의 Resource Limits에 대응하는 Docker 자원 제한을 적용하고 검증하시오.
+  hint: --memory, --cpus, --pids-limit을 설정한 컨테이너를 실행하세요.
+  category: config
+  points: 10
+  answer: ssh trainee@10.20.30.80 'docker run -d --name resource-limited --memory 64m --memory-swap 64m --cpus 0.5 --pids-limit 30 alpine:latest sleep 3600 2>/dev/null; echo "=== 자원 제한 확인 ==="; docker inspect
+    resource-limited --format "Memory={{.HostConfig.Memory}} MemSwap={{.HostConfig.MemorySwap}} CPU={{.HostConfig.NanoCpus}} Pids={{.HostConfig.PidsLimit}}" 2>/dev/null'
+  answer_detail: K8s에서는 Pod spec의 resources.limits로 자원을 제한합니다. Memory Limit 초과 시 OOMKilled, CPU Limit은 throttling 됩니다. Docker에서도 동일하게 --memory(OOM), --cpus(throttle), --pids-limit(fork bomb 방지)을 설정합니다.
+  verify:
+    type: output_contains
+    expect: 자원 제한 확인
+    field: stdout
+  target_vm: web
+- order: 5
+  instruction: K8s의 readinessProbe에 대응하는 Docker 헬스체크를 확인하시오.
+  hint: docker inspect에서 Healthcheck 설정을 확인하세요.
+  category: audit
+  points: 10
+  answer: 'ssh trainee@10.20.30.80 ''docker ps -q | head -5 | xargs -I{} docker inspect --format="{{.Name}}: Health={{if .State.Health}}{{.State.Health.Status}}{{else}}미설정{{end}}" {} 2>/dev/null || echo
+    "실행 중인 컨테이너 없음"'''
+  answer_detail: K8s의 livenessProbe/readinessProbe는 Pod의 정상 동작을 확인합니다. Docker의 HEALTHCHECK는 컨테이너 내부에서 주기적으로 명령을 실행하여 상태를 확인합니다. 헬스체크 실패 시 자동 재시작(restart policy)과 연계하면 가용성을 높일 수 있습니다.
+  verify:
+    type: output_contains
+    expect: Health
+    field: stdout
+  target_vm: web
+- order: 6
+  instruction: 컨테이너의 restart policy를 확인하시오. K8s의 restartPolicy에 대응합니다.
+  hint: docker inspect에서 RestartPolicy를 확인하세요.
+  category: audit
+  points: 8
+  answer: 'ssh trainee@10.20.30.80 ''docker ps -aq | head -5 | xargs -I{} docker inspect --format="{{.Name}}: RestartPolicy={{.HostConfig.RestartPolicy.Name}} MaxRetry={{.HostConfig.RestartPolicy.MaximumRetryCount}}"
+    {} 2>/dev/null'''
+  answer_detail: K8s의 restartPolicy(Always/OnFailure/Never)와 유사하게 Docker도 --restart 옵션으로 컨테이너 재시작 정책을 설정합니다. on-failure는 비정상 종료 시에만, always는 항상, unless-stopped는 수동 중지 전까지 재시작합니다.
+  verify:
+    type: output_contains
+    expect: RestartPolicy
+    field: stdout
+  target_vm: web
+- order: 7
+  instruction: 테스트에 사용한 컨테이너와 네트워크를 정리하시오.
+  hint: docker rm -f와 docker network rm으로 정리하세요.
+  category: config
+  points: 8
+  answer: ssh trainee@10.20.30.80 'docker rm -f k8s-restricted frontend backend resource-limited 2>/dev/null; docker network rm frontend-net backend-net 2>/dev/null; echo "=== 정리 완료 ==="; docker ps -a --format
+    "{{.Names}}" | head -5'
+  answer_detail: 테스트 후 리소스를 정리하는 것은 좋은 습관입니다. K8s에서는 kubectl delete로, Docker에서는 docker rm/network rm으로 정리합니다. 프로덕션에서는 자동 정리 정책(TTL, garbage collection)을 설정합니다.
+  verify:
+    type: output_contains
+    expect: 정리 완료
+    field: stdout
+  target_vm: web
+- order: 8
+  instruction: K8s 보안 시뮬레이션 종합 점검 스크립트를 작성하고 실행하시오.
+  hint: 현재 실행 중인 모든 컨테이너의 K8s 보안 기준 준수 여부를 점검하세요.
+  category: audit
+  points: 10
+  answer: "cat << 'SCRIPT' > /tmp/k8s_sim_check.sh\n#!/bin/bash\nHOST='trainee@10.20.30.80'\necho '=== K8s Pod Security Standards 시뮬레이션 점검 ==='\nssh $HOST '\nfor CID in $(docker ps -q); do\n  NAME=$(docker\
+    \ inspect --format=\"{{.Name}}\" $CID)\n  PRIV=$(docker inspect --format=\"{{.HostConfig.Privileged}}\" $CID)\n  USER=$(docker inspect --format=\"{{.Config.User}}\" $CID)\n  RO=$(docker inspect --format=\"\
+    {{.HostConfig.ReadonlyRootfs}}\" $CID)\n  MEM=$(docker inspect --format=\"{{.HostConfig.Memory}}\" $CID)\n  echo \"$NAME:\"\n  [ \"$PRIV\" = \"true\" ] && echo \"  Privileged: FAIL\" || echo \"  Privileged:\
+    \ PASS\"\n  [ -z \"$USER\" ] && echo \"  Non-root: WARN (root)\" || echo \"  Non-root: PASS ($USER)\"\n  [ \"$RO\" = \"true\" ] && echo \"  ReadOnly: PASS\" || echo \"  ReadOnly: WARN\"\n  [ \"$MEM\"\
+    \ = \"0\" ] && echo \"  MemLimit: WARN (unlimited)\" || echo \"  MemLimit: PASS\"\ndone' 2>/dev/null\necho '=== K8s 시뮬레이션 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/k8s_sim_check.sh && bash /tmp/k8s_sim_check.sh"
+  answer_detail: Kubernetes 보안은 클러스터(RBAC, NetworkPolicy, PodSecurityStandards), 노드(OS 보안, kubelet), 컨테이너(이미지, 런타임), 코드(취약점, 설정) 4개 계층으로 구성됩니다. Docker 환경에서 Pod Security Standards를 시뮬레이션하면 K8s 도입 전에 컨테이너
+    보안 기초를 다질 수 있습니다.
+  verify:
+    type: output_contains
+    expect: K8s 시뮬레이션 점검 완료
+    field: stdout
+  target_vm: web

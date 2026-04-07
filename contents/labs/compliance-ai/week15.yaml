@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: 사용자 계정/인증 통제
     field: stdout
+  target_vm: secu
   script: 'echo ''=== [1] 사용자 계정/인증 통제 ==='' && echo ''[계정 현황]'' && awk -F: ''$7 !~ /nologin|false/ {print $1}'' /etc/passwd && echo ''[패스워드 정책]'' && grep -E ''(minlen|credit)'' /etc/security/pwquality.conf
     2>/dev/null | grep -v ''^#'' && grep ''^PASS_MAX_DAYS'' /etc/login.defs && echo ''[SSH 인증]'' && grep -E ''^(PermitRootLogin|MaxAuthTries|PasswordAuth)'' /etc/ssh/sshd_config 2>/dev/null'
   risk_level: low
@@ -39,6 +40,7 @@ steps:
     type: output_contains
     expect: 접근 통제/방화벽
     field: stdout
+  target_vm: secu
   script: echo '=== [2] 접근 통제/방화벽 ===' && echo '[방화벽 규칙]' && sudo nft list ruleset 2>/dev/null | grep -E '(policy|accept|drop)' | head -10 && echo '[열린 포트]' && sudo ss -tlnp | grep LISTEN | head -10 &&
     echo '[커널 보안]' && sysctl net.ipv4.ip_forward net.ipv4.conf.all.accept_redirects 2>/dev/null
   risk_level: low
@@ -54,6 +56,7 @@ steps:
     type: output_contains
     expect: 암호화 통제
     field: stdout
+  target_vm: secu
   script: 'echo ''=== [3] 암호화 통제 ==='' && echo ''[SSH 암호]'' && grep -E ''(Ciphers|MACs|KexAlgorithms)'' /etc/ssh/sshd_config 2>/dev/null | grep -v ''^#'' || echo ''SSH: 기본 암호 스위트 사용'' && echo ''[WEB TLS]''
     && echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | grep -E ''(Protocol|Cipher)'' | head -3 || echo ''HTTPS 미설정'''
   risk_level: low
@@ -70,6 +73,7 @@ steps:
     type: output_contains
     expect: 감사/로그 관리
     field: stdout
+  target_vm: secu
   script: 'echo ''=== [4] 감사/로그 관리 ==='' && echo ''[auditd]'' && sudo systemctl is-active auditd 2>/dev/null && echo "규칙 수: $(sudo auditctl -l 2>/dev/null | wc -l)" && echo ''[로그 보관]'' && cat /etc/logrotate.conf
     2>/dev/null | grep ''rotate'' | head -3 && echo ''[원격 전송]'' && grep -r ''@@'' /etc/rsyslog.conf /etc/rsyslog.d/ 2>/dev/null | grep -v ''^#'' | head -3 && echo ''[로그 권한]'' && stat -c ''%a %n'' /var/log/auth.log
     /var/log/syslog 2>/dev/null'
@@ -86,6 +90,7 @@ steps:
     type: output_contains
     expect: 침입탐지/악성코드 방지
     field: stdout
+  target_vm: secu
   script: 'echo ''=== [5] 침입탐지/악성코드 방지 ==='' && echo ''[IDS]'' && sudo systemctl is-active suricata 2>/dev/null && echo ''[안티바이러스]'' && which clamscan 2>/dev/null && echo ''설치됨'' || echo ''미설치'' && echo
     ''[취약점 관리]'' && echo "미패치 패키지: $(apt list --upgradable 2>/dev/null | grep -c ''/'')건"'
   risk_level: low
@@ -101,6 +106,7 @@ steps:
     type: output_contains
     expect: WEB 서버 보안
     field: stdout
+  target_vm: secu
   script: echo '=== [6] WEB 서버 보안 ===' && echo '[HTTP 헤더]' && curl -sI http://10.20.30.80/ | grep -iE '(Server|X-Frame|X-Content|Strict)' && echo '[Apache 상태]' && ssh trainee@10.20.30.80 'systemctl is-active
     apache2 2>/dev/null' && echo '[Docker 보안]' && ssh trainee@10.20.30.80 'docker info 2>/dev/null | grep "Security Options"' 2>/dev/null
   risk_level: low
@@ -116,6 +122,7 @@ steps:
     type: output_contains
     expect: 정책/교육 체계
     field: stdout
+  target_vm: secu
   script: echo '=== [7] 정책/교육 체계 ===' && echo '[정책 문서]' && ls /opt/security-policy/*.txt 2>/dev/null | wc -l | xargs -I{} echo "{}개" && echo '[SSH 배너]' && grep '^Banner' /etc/ssh/sshd_config 2>/dev/null
     || echo '미설정' && echo '[MOTD]' && [ -s /etc/motd ] && echo '설정됨' || echo '미설정' && echo '[교육 자료]' && ls /opt/security-training/ 2>/dev/null | wc -l | xargs -I{} echo "{}개"
   risk_level: low
@@ -139,6 +146,7 @@ steps:
     type: output_contains
     expect: 컴플라이언스 종합평가 보고서
     field: stdout
+  target_vm: secu
   script: "cat << 'SCRIPT' > /tmp/compliance_final.sh\n#!/bin/bash\necho '===================================================='\necho '     컴플라이언스 종합평가 보고서'\necho '===================================================='\n\
     echo \"평가일: $(date +%Y-%m-%d)\"\necho \"평가자: $(whoami)@$(hostname)\"\necho ''\nPASS=0; FAIL=0\ncheck() {\n  if [ \"$2\" = \"PASS\" ]; then\n    echo \"  [PASS] $1\"; PASS=$((PASS+1))\n  else\n    echo\
     \ \"  [FAIL] $1\"; FAIL=$((FAIL+1))\n  fi\n}\necho '[개인정보보호법/GDPR - 데이터 보호]'\nMINLEN=$(grep 'minlen' /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' | awk -F= '{print $2}' | tr -d ' ')\ncheck\

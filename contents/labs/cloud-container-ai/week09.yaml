@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: serverless function
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== 서버리스 시뮬레이션: 단기 실행 ==="; time docker run --rm --read-only --cap-drop ALL --memory 64m --user 1000 alpine:latest sh -c "echo Hello from serverless function &&
     date && id" 2>&1'''
   risk_level: low
@@ -39,6 +40,7 @@ steps:
     type: output_contains
     expect: 이미지 크기 비교
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== 이미지 크기 비교 ==="; docker images alpine --format "Alpine: {{.Size}}" 2>/dev/null; docker images ubuntu --format "Ubuntu: {{.Size}}" 2>/dev/null; echo "=== 바이너리
     수 비교 ==="; echo -n "Alpine /usr/bin: "; docker run --rm alpine:latest ls /usr/bin 2>/dev/null | wc -l; echo -n "Alpine /usr/sbin: "; docker run --rm alpine:latest ls /usr/sbin 2>/dev/null | wc -l'''
   risk_level: low
@@ -53,6 +55,7 @@ steps:
     type: output_contains
     expect: 종료코드
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== 타임아웃 시뮬레이션 ==="; timeout 5 docker run --rm alpine:latest sh -c "echo Start && sleep 10 && echo End" 2>&1; echo "종료코드: $? (124=타임아웃)"'''
   risk_level: low
 - order: 4
@@ -67,6 +70,7 @@ steps:
     type: output_contains
     expect: 파일쓰기차단확인
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'echo "=== 불변 환경 테스트 ==="; docker run --rm --read-only alpine:latest sh -c "touch /test.txt 2>&1 || echo 파일쓰기차단확인" && echo "=== tmpfs만 쓰기 가능 ==="; docker run --rm --read-only
     --tmpfs /tmp alpine:latest sh -c "echo ok > /tmp/test.txt && cat /tmp/test.txt && echo tmpfs쓰기성공"'
   risk_level: low
@@ -81,6 +85,7 @@ steps:
     type: output_contains
     expect: 네트워크격리확인
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'echo "=== 네트워크 없는 컨테이너 ==="; docker run --rm --network none alpine:latest sh -c "ip addr 2>/dev/null; ping -c 1 8.8.8.8 2>&1 | head -3; echo 네트워크격리확인"'
   risk_level: low
 - order: 6
@@ -95,6 +100,7 @@ steps:
     type: output_contains
     expect: SECRET
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'echo "=== 환경변수 노출 테스트 ==="; docker run --rm -e SECRET_KEY=my-secret-value alpine:latest sh -c "echo [env] && env | grep SECRET && echo [/proc/self/environ] && cat /proc/self/environ
     | tr \"\\0\" \"\\n\" | grep SECRET"'
   risk_level: low
@@ -112,6 +118,7 @@ steps:
     type: output_contains
     expect: 서버리스 점검 완료
     field: stdout
+  target_vm: web
   script: "cat << 'SCRIPT' > /tmp/serverless_check.sh\n#!/bin/bash\nHOST='trainee@10.20.30.80'\necho '=== 서버리스 보안 원칙 점검 ==='\necho '[최소 이미지]'\nssh $HOST 'docker images --format \"{{.Repository}}:{{.Tag}}\
     \ {{.Size}}\" | head -5' 2>/dev/null\necho '[실행 중 컨테이너 보안]'\nssh $HOST 'for CID in $(docker ps -q); do\n  NAME=$(docker inspect --format=\"{{.Name}}\" $CID)\n  RO=$(docker inspect --format=\"{{.HostConfig.ReadonlyRootfs}}\"\
     \ $CID)\n  MEM=$(docker inspect --format=\"{{.HostConfig.Memory}}\" $CID)\n  echo \"$NAME: ReadOnly=$RO Memory=$MEM\"\ndone' 2>/dev/null\necho '[자동 삭제 설정]'\nssh $HOST 'docker ps -a --filter status=exited\

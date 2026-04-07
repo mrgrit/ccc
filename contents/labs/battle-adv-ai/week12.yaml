@@ -28,6 +28,7 @@ steps:
   verify:
     type: output_contains
     expect: SOC Operations
+  target_vm: attacker
   script: "cat > /tmp/soc_operations.txt << 'EOF'\n=== SOC Operations Procedure ===\n\n1. MONITOR (24/7):\n   - Wazuh SIEM dashboard review (10.20.30.100)\n   - Suricata IDS alert feed (10.20.30.1)\n  \
     \ - System health metrics (all hosts)\n   - Threat intel feed updates\n\n2. DETECT:\n   - Automated: SIEM correlation rules (500+ rules)\n   - Semi-auto: Anomaly detection baselines\n   - Manual: Threat\
     \ hunting (weekly)\n\n3. TRIAGE (Classification):\n   - P1 Critical: Active exploitation, data breach\n   - P2 High: Successful intrusion, persistence\n   - P3 Medium: Reconnaissance, failed attacks\n\
@@ -46,6 +47,7 @@ steps:
   verify:
     type: output_contains
     expect: agents
+  target_vm: attacker
   script: ssh 10.20.30.100 '/var/ossec/bin/agent_control -l 2>/dev/null || /var/ossec/bin/manage_agents -l 2>/dev/null' 2>&1 | head -20; echo '---'; echo 'Expected agents:'; echo '  001 - attacker (10.20.30.201)
     - Control plane'; echo '  002 - secu (10.20.30.1) - Security server'; echo '  003 - web (10.20.30.80) - Web server'
   risk_level: low
@@ -63,6 +65,7 @@ steps:
   verify:
     type: output_contains
     expect: soc_enhanced
+  target_vm: attacker
   script: "ssh 10.20.30.100 'ls /var/ossec/ruleset/rules/*.xml 2>/dev/null | wc -l; echo \"Custom rules:\"; ls /var/ossec/etc/rules/local_rules.xml 2>/dev/null && wc -l /var/ossec/etc/rules/local_rules.xml'\
     \ 2>&1; echo '---'; cat > /tmp/soc_custom_rules.xml << 'EOF'\n<group name=\"soc_enhanced\">\n  <rule id=\"100300\" level=\"14\">\n    <if_group>authentication_failed</if_group>\n    <match>admin|root|administrator</match>\n\
     \    <description>SOC: Admin account brute force attempt</description>\n    <mitre><id>T1110</id></mitre>\n  </rule>\n  <rule id=\"100301\" level=\"12\" frequency=\"5\" timeframe=\"60\">\n    <if_matched_group>web_attack</if_matched_group>\n\
@@ -81,6 +84,7 @@ steps:
   verify:
     type: output_contains
     expect: Defense Layer Status
+  target_vm: attacker
   script: 'echo ''=== Defense Layer Status ==='' && echo ''[1] Suricata IPS:'' && ssh 10.20.30.1 ''suricatasc -c ruleset-reload-rules 2>/dev/null; cat /var/log/suricata/stats.log 2>/dev/null | tail -5''
     2>&1 | head -5 && echo '''' && echo ''[2] nftables Firewall:'' && ssh 10.20.30.1 ''nft list ruleset 2>/dev/null | wc -l; nft list ruleset 2>/dev/null | grep -c drop'' 2>&1 && echo '''' && echo ''[3]
     WAF (BunkerWeb):'' && ssh 10.20.30.80 ''cat /var/log/bunkerweb/error.log 2>/dev/null | tail -3 || echo WAF status check'' 2>&1 && echo '''' && echo ''Defense layers: IPS + Firewall + WAF = 3-tier protection'''
@@ -101,6 +105,7 @@ steps:
   verify:
     type: output_contains
     expect: IR Playbook
+  target_vm: attacker
   script: "cat > /tmp/ir_playbook_sqli.txt << 'EOF'\n=== IR Playbook: SQL Injection Attack ===\nPlaybook ID: IR-WEB-001 | Severity: CRITICAL\n\nTRIGGER: Wazuh rule 100301 or Suricata SID 1000001\n\nStep\
     \ 1: CONFIRM (2 min)\n  - Review alert details (source IP, payload, target URL)\n  - Check WAF logs for matching request\n  - Verify: Is this a true positive?\n\nStep 2: CONTAIN (5 min)\n  - Block source\
     \ IP: nft add element inet filter blocklist { SRC_IP }\n  - Enable WAF paranoia level 3 (strict mode)\n  - Notify SOC lead via Slack #security-incidents\n\nStep 3: COLLECT EVIDENCE (10 min)\n  - Export\
@@ -174,6 +179,7 @@ steps:
   verify:
     type: output_contains
     expect: SOAR Automation
+  target_vm: attacker
   script: 'cat > /tmp/soar_automation.sh << ''SCRIPT''
 
     #!/bin/bash
@@ -246,6 +252,7 @@ steps:
   verify:
     type: output_contains
     expect: syscheck
+  target_vm: attacker
   script: "cat > /tmp/fim_config.xml << 'EOF'\n<!-- Wazuh FIM Configuration (syscheck) -->\n<syscheck>\n  <disabled>no</disabled>\n  <frequency>600</frequency>\n  <alert_new_files>yes</alert_new_files>\n\
     \n  <!-- Critical system files -->\n  <directories check_all=\"yes\" realtime=\"yes\">/etc/passwd,/etc/shadow,/etc/sudoers</directories>\n  <directories check_all=\"yes\" realtime=\"yes\">/etc/ssh/sshd_config</directories>\n\
     \  <directories check_all=\"yes\" realtime=\"yes\">/etc/crontab</directories>\n  <directories check_all=\"yes\" report_changes=\"yes\">/var/spool/cron/crontabs</directories>\n\n  <!-- Web application\
@@ -266,6 +273,7 @@ steps:
   verify:
     type: output_contains
     expect: Log Collection
+  target_vm: attacker
   script: "cat > /tmp/log_retention_policy.txt << 'EOF'\n=== Log Collection & Retention Policy ===\n\n| Log Source | Server | Transport | Retention | Format |\n|-----------|--------|-----------|-----------|--------|\n\
     | auth.log | All | Wazuh agent | 1 year | Syslog |\n| syslog | All | Wazuh agent | 6 months | Syslog |\n| Suricata eve.json | secu | Filebeat | 1 year | JSON |\n| WAF access.log | web | Wazuh agent\
     \ | 1 year | CLF |\n| Wazuh alerts | siem | Local | 2 years | JSON |\n| nftables log | secu | Wazuh agent | 6 months | Syslog |\n| audit.log | All | Wazuh agent | 1 year | Audit |\n\nStorage: /var/ossec/logs/archives\
@@ -286,6 +294,7 @@ steps:
   verify:
     type: output_contains
     expect: SOC KPI
+  target_vm: attacker
   script: "cat > /tmp/soc_kpi_dashboard.txt << 'EOF'\n=== SOC KPI Dashboard ===\n\nOperational Metrics:\n  | KPI | Target | Current | Status |\n  |-----|--------|---------|--------|\n  | MTTD (Mean Time\
     \ to Detect) | <15 min | 12 min | OK |\n  | MTTR (Mean Time to Respond) | <60 min | 45 min | OK |\n  | MTTC (Mean Time to Contain) | <30 min | 25 min | OK |\n  | Alert Volume | <500/day | 320/day |\
     \ OK |\n  | False Positive Rate | <10% | 8% | OK |\n  | Ticket Closure Rate | >90% | 88% | WARN |\n\nCoverage Metrics:\n  | Metric | Target | Current |\n  |--------|--------|---------|\n  | Host Monitoring\
@@ -306,6 +315,7 @@ steps:
   verify:
     type: output_contains
     expect: Incident Response Simulation
+  target_vm: attacker
   script: 'echo ''=== Incident Response Simulation ==='' && echo ''ALERT: Wazuh Rule 100301 fired - Sustained web attack detected'' && echo ''Source: 203.0.113.50 → 10.20.30.80:80'' && echo '''' && echo
     ''[Step 1: CONFIRM]'' && echo ''Checking WAF logs...'' && ssh 10.20.30.80 ''tail -5 /var/log/bunkerweb/access.log 2>/dev/null || tail -5 /var/log/nginx/access.log 2>/dev/null'' 2>&1 | head -5 && echo
     ''Confirmed: Multiple SQLi attempts from 203.0.113.50'' && echo '''' && echo ''[Step 2: CONTAIN]'' && echo ''Blocking source IP at perimeter...'' && echo ''nft add element inet filter blocklist { 203.0.113.50
@@ -326,6 +336,7 @@ steps:
   verify:
     type: output_contains
     expect: Defense Hardening
+  target_vm: attacker
   script: "cat > /tmp/defense_hardening.txt << 'EOF'\n=== Defense Hardening Checklist ===\n\n[1] Network Segmentation (nftables):\n  ✓ Web tier → Security tier: BLOCKED\n  ✓ Web tier → SIEM tier: BLOCKED\n\
     \  ✓ Management only from 10.20.30.201\n  ✓ Default policy: DROP\n\n[2] Access Control:\n  ✓ SSH: Key-only authentication (PasswordAuthentication no)\n  ✓ SSH: AllowUsers restricted per server\n  ✓\
     \ Sudo: Specific commands only (no ALL)\n  ✓ Service accounts: nologin shell\n\n[3] Encryption:\n  ✓ TLS 1.3 on all web services\n  ✓ SSH: Ed25519 keys only\n  ✓ Database: SSL connections required\n\
@@ -347,6 +358,7 @@ steps:
   verify:
     type: output_contains
     expect: SOC Shift Handover
+  target_vm: attacker
   script: "cat > /tmp/soc_handover.txt << 'EOF'\n=== SOC Shift Handover ===\nFrom: Day Shift (08:00-20:00) | Date: 2026-04-03\nTo: Night Shift (20:00-08:00)\n\n1. Current Threat Level: ELEVATED\n   Reason:\
     \ Increased web attack attempts observed\n\n2. Open Incidents:\n   | Ticket | Severity | Status | Description |\n   |--------|----------|--------|-------------|\n   | IR-001 | HIGH | Investigating |\
     \ SQLi from 203.0.113.50 |\n   | IR-002 | MEDIUM | Monitoring | Port scan from 198.51.100.0/24 |\n\n3. Actions Taken Today:\n   - Blocked 203.0.113.50 at perimeter (IR-001)\n   - Updated Suricata rules\
@@ -368,6 +380,7 @@ steps:
   verify:
     type: output_contains
     expect: SOC Maturity
+  target_vm: attacker
   script: "cat > /tmp/soc_maturity.txt << 'EOF'\n=== SOC Maturity Assessment (CMMI-based) ===\n\n| Domain | Level 1 | Level 2 | Level 3 | Level 4 | Level 5 |\n|--------|---------|---------|---------|---------|--------|\n\
     | | Initial | Managed | Defined | Measured | Optimizing |\n| People | ✓ | ✓ | CURRENT | | |\n| Process | ✓ | ✓ | CURRENT | | |\n| Technology | ✓ | ✓ | ✓ | CURRENT | |\n| Threat Intel | ✓ | CURRENT |\
     \ | | |\n| Automation | ✓ | ✓ | CURRENT | | |\n\nOverall: Level 3 (Defined)\n\nStrengths:\n  - Technology stack is mature (Level 4)\n  - Documented procedures and playbooks\n  - Multiple detection layers\n\
@@ -384,6 +397,7 @@ steps:
   verify:
     type: output_contains
     expect: cleanup completed
+  target_vm: attacker
   script: rm -f /tmp/soc_*.txt /tmp/soc_*.xml /tmp/ir_*.txt /tmp/soar_*.sh /tmp/fim_*.xml /tmp/log_*.txt /tmp/defense_*.txt 2>/dev/null; echo 'Blue team SOC lab cleanup completed'
   risk_level: low
 - order: 15
@@ -400,6 +414,7 @@ steps:
   verify:
     type: output_contains
     expect: Blue Team SOC Operations
+  target_vm: attacker
   script: "cat > /tmp/blue_team_report.txt << 'EOF'\n=== Blue Team SOC Operations Report ===\nDate: 2026-04-03 | Scope: 10.20.30.0/24\n\n1. Defense Posture:\n   - 3-tier protection: IPS + Firewall + WAF\n\
     \   - 4/4 hosts monitored (100% coverage)\n   - 480+ detection rules active\n   - FIM on all critical files\n   - SOAR basic automation operational\n\n2. Performance Metrics:\n   - MTTD: 12 min (target:\
     \ <15)\n   - MTTR: 45 min (target: <60)\n   - Detection rate: 85%\n   - False positive rate: 8%\n\n3. Incidents Handled:\n   - Total alerts: 320/day\n   - True incidents: 2\n   - Successfully contained:\

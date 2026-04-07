@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: HTTP Status
     field: stdout
+  target_vm: manager
   script: 'echo ''=== API Access Test ==='' && curl -s -o /dev/null -w ''HTTP Status: %{http_code}\nResponse Time: %{time_total}s\n'' http://10.20.30.200:11434/api/tags && echo ''=== Headers ==='' && curl
     -sI http://10.20.30.200:11434/api/tags 2>&1 | head -10 && echo ''=== CORS Test ==='' && curl -sI -H ''Origin: http://evil.com'' http://10.20.30.200:11434/api/tags 2>&1 | grep -i ''access-control'''
   risk_level: low
@@ -42,6 +43,7 @@ steps:
     type: output_contains
     expect: /api/
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport urllib.request\nendpoints = [\n    ('GET', '/api/tags'),\n    ('GET', '/api/version'),\n    ('POST', '/api/generate'),\n    ('POST', '/api/chat'),\n    ('POST', '/api/embeddings'),\n\
     \    ('POST', '/api/show'),\n    ('POST', '/api/copy'),\n    ('DELETE', '/api/delete'),\n    ('POST', '/api/pull'),\n    ('POST', '/api/push'),\n]\nfor method, path in endpoints:\n    try:\n       \
     \ req = urllib.request.Request(f'http://10.20.30.200:11434{path}', method=method)\n        if method == 'POST':\n            req.add_header('Content-Type', 'application/json')\n            req.data\
@@ -63,6 +65,7 @@ steps:
     type: output_contains
     expect: Rate limiting
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request, time\nresults = []\nfor i in range(10):\n    start = time.time()\n    data = json.dumps({'model':'gemma3:4b','prompt':'Hi','stream':False,'options':{'num_predict':5}}).encode()\n\
     \    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    try:\n        resp = urllib.request.urlopen(req, timeout=10)\n\
     \        elapsed = time.time() - start\n        results.append(('OK', elapsed))\n        print(f'Request {i+1:2d}: {resp.status} ({elapsed:.2f}s)')\n    except Exception as e:\n        elapsed = time.time()\
@@ -82,6 +85,7 @@ steps:
     type: output_contains
     expect: Model Info
     field: stdout
+  target_vm: manager
   script: "curl -s http://10.20.30.200:11434/api/show -d '{\"name\":\"gemma3:4b\"}' | python3 -c \"\nimport sys,json\ndata = json.load(sys.stdin)\nprint('=== Model Info ===')\nfor key in ['modelfile','parameters','template','details']:\n\
     \    if key in data:\n        val = str(data[key])[:200]\n        print(f'{key}: {val}')\nif 'details' in data:\n    d = data['details']\n    print(f'\\nFamily: {d.get(\\\"family\\\",\\\"?\\\")}') \
     \ \n    print(f'Parameter size: {d.get(\\\"parameter_size\\\",\\\"?\\\")}')  \n    print(f'Quantization: {d.get(\\\"quantization_level\\\",\\\"?\\\")}')  \n\""
@@ -100,6 +104,7 @@ steps:
     type: output_contains
     expect: tok/s
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request, time\nfor num in [10, 50, 200, 500]:\n    data = json.dumps({'model':'gemma3:4b','prompt':'Write a very detailed essay about cybersecurity history.','stream':False,'options':{'num_predict':num}}).encode()\n\
     \    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    start = time.time()\n    resp = json.loads(urllib.request.urlopen(req).read())\n\
     \    elapsed = time.time() - start\n    tokens = resp.get('eval_count', 0)\n    print(f'num_predict={num:4d}: generated {tokens:4d} tokens in {elapsed:.1f}s ({tokens/max(elapsed,0.1):.0f} tok/s)')\n\
@@ -120,6 +125,7 @@ steps:
     type: output_contains
     expect: prompt_hash
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request, hashlib, time\ndef logged_query(prompt, model='gemma3:4b'):\n    log = {'timestamp': time.strftime('%Y-%m-%d %H:%M:%S'), 'model': model}\n    log['prompt_hash']\
     \ = hashlib.sha256(prompt.encode()).hexdigest()[:16]\n    log['prompt_length'] = len(prompt)\n    data = json.dumps({'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':30}}).encode()\n\
     \    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    start = time.time()\n    resp = json.loads(urllib.request.urlopen(req).read())\n\
@@ -141,6 +147,7 @@ steps:
     type: output_contains
     expect: BLOCKED
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request\ndef safe_query(prompt, max_chars=500, max_est_tokens=200):\n    # Rough token estimation: ~4 chars per token for English\n    est_tokens = len(prompt)\
     \ // 4\n    if len(prompt) > max_chars:\n        return f'BLOCKED: prompt too long ({len(prompt)} chars > {max_chars})'\n    if est_tokens > max_est_tokens:\n        return f'BLOCKED: estimated tokens\
     \ too high ({est_tokens} > {max_est_tokens})'\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':50}}).encode()\n    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
@@ -161,6 +168,7 @@ steps:
     type: output_contains
     expect: Removed
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request\ndata = json.dumps({'model':'gemma3:4b','prompt':'What is AI security?','stream':False,'options':{'num_predict':30}}).encode()\nreq = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     raw = json.loads(urllib.request.urlopen(req).read())\nprint('=== Raw response fields ===')\nfor k in raw.keys():\n    print(f'  {k}: {str(raw[k])[:50]}')\n\nsensitive_fields = ['model','created_at','context','total_duration','load_duration','prompt_eval_duration','eval_duration','prompt_eval_count']\n\
     filtered = {k:v for k,v in raw.items() if k not in sensitive_fields}\nprint('\\n=== Filtered response fields ===')\nfor k in filtered.keys():\n    print(f'  {k}: {str(filtered[k])[:50]}')\nprint(f'\\\
@@ -182,6 +190,7 @@ steps:
     type: output_contains
     expect: Total time
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request, threading, time\nresults = []\ndef query(idx):\n    start = time.time()\n    try:\n        data = json.dumps({'model':'gemma3:4b','prompt':f'Count\
     \ to {idx+1}','stream':False,'options':{'num_predict':10}}).encode()\n        req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \        resp = urllib.request.urlopen(req, timeout=30)\n        elapsed = time.time() - start\n        results.append((idx, 'OK', elapsed))\n    except Exception as e:\n        elapsed = time.time()\
@@ -209,6 +218,7 @@ steps:
     type: output_contains
     expect: Audit Report
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request\ndef check(name, url, method='GET', data=None):\n    try:\n        req = urllib.request.Request(url, method=method)\n        if data:\n            req.add_header('Content-Type','application/json')\n\
     \            req.data = json.dumps(data).encode()\n        resp = urllib.request.urlopen(req, timeout=5)\n        return resp.status\n    except Exception as e:\n        return str(e)[:30]\n\nprint('='\
     \ * 50)\nprint('  Ollama API Security Audit Report')\nprint('=' * 50)\n\n# Check 1: Unauthenticated access\ns = check('Auth', 'http://10.20.30.200:11434/api/tags')\nprint(f'\\n[1] Authentication: {\\\

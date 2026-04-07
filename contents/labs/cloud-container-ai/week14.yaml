@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: CIS 1.1
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== CIS 1.1 호스트 OS ==="; cat /etc/os-release | grep PRETTY; uname -r; docker version --format "Docker: {{.Server.Version}}"'''
   risk_level: low
 - order: 2
@@ -38,6 +39,7 @@ steps:
     type: output_contains
     expect: CIS 2.x
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== CIS 2.x Docker 데몬 ==="; echo "[2.1 네트워크 트래픽 제한]" && docker info --format "{{.LiveRestoreEnabled}}" 2>/dev/null | xargs -I{} echo "Live Restore: {}"; echo "[2.2
     로깅 레벨]" && ps aux | grep dockerd | grep -oP "log-level=\S+" || echo "기본 로그 레벨"; echo "[2.5 insecure-registries]" && cat /etc/docker/daemon.json 2>/dev/null | grep insecure || echo "insecure-registries
     없음"; echo "[2.8 사용자 namespace]" && docker info --format "{{.SecurityOptions}}" 2>/dev/null'''
@@ -55,6 +57,7 @@ steps:
     type: output_contains
     expect: CIS 3.x
     field: stdout
+  target_vm: web
   script: ssh trainee@10.20.30.80 'echo "=== CIS 3.x 파일 권한 ==="; echo "[3.1 docker.service]" && stat -c "%a %U:%G" /lib/systemd/system/docker.service 2>/dev/null; echo "[3.3 docker.sock]" && stat -c "%a
     %U:%G" /var/run/docker.sock 2>/dev/null; echo "[3.7 daemon.json]" && stat -c "%a %U:%G" /etc/docker/daemon.json 2>/dev/null || echo "daemon.json 없음"; echo "[3.15 Docker Root]" && stat -c "%a %U:%G"
     /var/lib/docker 2>/dev/null'
@@ -72,6 +75,7 @@ steps:
     type: output_contains
     expect: CIS 4.x
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== CIS 4.x 이미지 보안 ==="; for IMG in $(docker images --format "{{.Repository}}:{{.Tag}}" | head -5); do echo "--- $IMG ---"; echo "[4.1 USER 설정]" && docker inspect
     $IMG --format "User: {{.Config.User}}" 2>/dev/null | grep -q "User: $" && echo "  미설정(root)" || docker inspect $IMG --format "User: {{.Config.User}}" 2>/dev/null; echo "[4.6 HEALTHCHECK]" && docker
     inspect $IMG --format "{{.Config.Healthcheck}}" 2>/dev/null | grep -q "<nil>" && echo "  미설정" || echo "  설정됨"; done'''
@@ -90,6 +94,7 @@ steps:
     type: output_contains
     expect: CIS 5.x
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== CIS 5.x 런타임 보안 ==="; for CID in $(docker ps -q); do NAME=$(docker inspect --format="{{.Name}}" $CID | tr -d "/"); echo "--- $NAME ---"; echo "[5.1] AppArmor:
     $(docker inspect --format="{{.AppArmorProfile}}" $CID 2>/dev/null)"; echo "[5.4] Privileged: $(docker inspect --format="{{.HostConfig.Privileged}}" $CID)"; echo "[5.10] Memory: $(docker inspect --format="{{.HostConfig.Memory}}"
     $CID)"; echo "[5.12] ReadOnly: $(docker inspect --format="{{.HostConfig.ReadonlyRootfs}}" $CID)"; echo "[5.25] Restart: $(docker inspect --format="{{.HostConfig.RestartPolicy.Name}}" $CID)"; done ||
@@ -107,6 +112,7 @@ steps:
     type: output_contains
     expect: CIS 6.x
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== CIS 6.x 보안 운영 ==="; echo "[6.1] 이미지 스캔" && which trivy 2>/dev/null && echo "trivy 설치됨" || echo "취약점 스캔 도구 미설치"; echo "[6.2] Content Trust" && echo "DOCKER_CONTENT_TRUST=${DOCKER_CONTENT_TRUST:-비활성}";
     echo "[6.5] Docker Swarm" && docker info --format "Swarm: {{.Swarm.LocalNodeState}}" 2>/dev/null'''
   risk_level: low
@@ -128,6 +134,7 @@ steps:
     type: output_contains
     expect: CIS Benchmark 점검 완료
     field: stdout
+  target_vm: web
   script: "cat << 'SCRIPT' > /tmp/cis_benchmark.sh\n#!/bin/bash\nHOST='trainee@10.20.30.80'\necho '=== CIS Docker Benchmark 종합 점검 ==='\nPASS=0; FAIL=0; WARN=0\nresult() {\n  case $2 in\n    PASS) PASS=$((PASS+1));\
     \ echo \"  [PASS] $1\" ;;\n    FAIL) FAIL=$((FAIL+1)); echo \"  [FAIL] $1\" ;;\n    *) WARN=$((WARN+1)); echo \"  [WARN] $1\" ;;\n  esac\n}\necho '[Section 2: 데몬 설정]'\nINSECURE=$(ssh $HOST 'grep -c\
     \ insecure /etc/docker/daemon.json 2>/dev/null || echo 0' 2>/dev/null)\nresult '2.5 insecure-registries' \"$([ \"$INSECURE\" = '0' ] && echo PASS || echo FAIL)\"\necho '[Section 3: 파일 권한]'\nSOCK=$(ssh\

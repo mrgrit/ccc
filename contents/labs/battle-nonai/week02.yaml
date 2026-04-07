@@ -1,199 +1,205 @@
-lab_id: "battle-nonai-week02"
-title: "취약점 스캐닝 및 분석 — CVE 기반 공격 벡터 식별"
-version: "non-ai"
-course: "battle-nonai"
+lab_id: battle-nonai-week02
+title: 취약점 스캐닝 및 분석 — CVE 기반 공격 벡터 식별
+version: non-ai
+course: battle-nonai
 week: 2
-description: "정찰 결과를 바탕으로 자동화된 취약점 스캐너와 수동 분석을 병행하여 실제 공격 가능한 취약점을 식별한다. Nmap NSE, Nikto, searchsploit 등을 활용하며 CVE 데이터베이스 활용법을 익힌다."
-difficulty: "easy"
+description: 정찰 결과를 바탕으로 자동화된 취약점 스캐너와 수동 분석을 병행하여 실제 공격 가능한 취약점을 식별한다. Nmap NSE, Nikto, searchsploit 등을 활용하며 CVE 데이터베이스 활용법을 익힌다.
+difficulty: easy
 duration_minutes: 120
 objectives:
-  - "자동화 취약점 스캐너를 활용한 취약점 탐지를 수행한다"
-  - "CVE 데이터베이스에서 취약점 정보를 검색하고 분석한다"
-  - "발견된 취약점의 위험도를 평가하고 우선순위를 설정한다"
+- 자동화 취약점 스캐너를 활용한 취약점 탐지를 수행한다
+- CVE 데이터베이스에서 취약점 정보를 검색하고 분석한다
+- 발견된 취약점의 위험도를 평가하고 우선순위를 설정한다
 prerequisites:
-  - "Week 1 정찰 실습 완료"
-  - "nmap 기본 사용법"
+- Week 1 정찰 실습 완료
+- nmap 기본 사용법
 infra_requirements:
-  - "Kali Linux VM (attacker)"
-  - "Metasploitable2 VM (target, 10.20.30.50)"
+- Kali Linux VM (attacker)
+- Metasploitable2 VM (target, 10.20.30.50)
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "nmap의 vuln 스크립트 카테고리를 사용하여 대상 호스트의 알려진 취약점을 스캔하라."
-    hint: "--script vuln 옵션을 사용한다."
-    category: "recon"
-    points: 10
-    answer: "nmap --script vuln -p 21,22,80,139,445 10.20.30.50"
-    answer_detail: "--script vuln은 NSE의 vuln 카테고리 스크립트를 모두 실행한다. 각 스크립트는 특정 CVE를 검사하며, VULNERABLE 상태를 보고한다. 실무에서는 오탐 확인이 필수이다."
-    verify:
-      type: "output_contains"
-      expect: "VULNERABLE"
-      field: "stdout"
-
-  - order: 2
-    instruction: "Nikto를 사용하여 대상 웹서버(80번 포트)의 웹 취약점을 스캔하라."
-    hint: "nikto -h 옵션으로 대상을 지정한다."
-    category: "recon"
-    points: 10
-    answer: "nikto -h http://10.20.30.50/"
-    answer_detail: "Nikto는 웹서버 전용 취약점 스캐너이다. 위험한 파일/CGI, 오래된 서버 소프트웨어, 잘못된 설정 등 6,700개 이상의 항목을 검사한다. 노이즈가 많으므로 결과 필터링이 중요하다."
-    verify:
-      type: "output_contains"
-      expect: "Server:"
-      field: "stdout"
-
-  - order: 3
-    instruction: "searchsploit을 사용하여 vsftpd 2.3.4의 알려진 익스플로잇을 검색하라."
-    hint: "searchsploit 명령에 서비스명과 버전을 입력한다."
-    category: "recon"
-    points: 10
-    answer: "searchsploit vsftpd 2.3.4"
-    answer_detail: "searchsploit은 ExploitDB의 오프라인 검색 도구이다. 서비스명+버전으로 검색하면 해당하는 PoC 코드와 설명을 확인할 수 있다. vsftpd 2.3.4에는 백도어 취약점이 존재한다."
-    verify:
-      type: "output_contains"
-      expect: "vsftpd"
-      field: "stdout"
-
-  - order: 4
-    instruction: "searchsploit으로 Apache 2.2.8 관련 익스플로잇을 검색하라."
-    hint: "searchsploit apache 2.2로 검색한다."
-    category: "recon"
-    points: 10
-    answer: "searchsploit apache 2.2"
-    answer_detail: "Apache 2.2.x 계열에는 다수의 CVE가 존재한다. mod_cgi, mod_negotiation 등 모듈별 취약점과 DoS, 정보 유출 취약점이 포함된다. 버전을 너무 구체적으로 검색하면 결과가 누락될 수 있으므로 마이너 버전까지만 검색하는 것이 좋다."
-    verify:
-      type: "output_contains"
-      expect: "Apache"
-      field: "stdout"
-
-  - order: 5
-    instruction: "nmap NSE 스크립트로 대상의 SMB 취약점(ms17-010 등)을 점검하라."
-    hint: "smb-vuln 계열 스크립트를 사용한다."
-    category: "recon"
-    points: 10
-    answer: "nmap --script smb-vuln* -p 445 10.20.30.50"
-    answer_detail: "smb-vuln* 와일드카드로 smb-vuln-ms17-010, smb-vuln-ms08-067 등 모든 SMB 취약점 스크립트를 실행한다. MS17-010(EternalBlue)은 WannaCry 랜섬웨어가 사용한 취약점으로 매우 위험하다."
-    verify:
-      type: "output_contains"
-      expect: "smb-vuln"
-      field: "stdout"
-
-  - order: 6
-    instruction: "대상의 SSH 서비스 보안 설정을 nmap 스크립트로 점검하라."
-    hint: "ssh-auth-methods, ssh2-enum-algos 스크립트를 사용한다."
-    category: "recon"
-    points: 10
-    answer: "nmap --script ssh-auth-methods,ssh2-enum-algos -p 22 10.20.30.50"
-    answer_detail: "ssh-auth-methods는 허용된 인증 방식(password, publickey 등)을, ssh2-enum-algos는 지원하는 암호화 알고리즘을 열거한다. 약한 알고리즘(DES, RC4)이나 password 인증 허용은 취약점이다."
-    verify:
-      type: "output_contains"
-      expect: "ssh"
-      field: "stdout"
-
-  - order: 7
-    instruction: "대상 MySQL 서비스(3306)에 대해 빈 패스워드 또는 기본 계정 로그인을 시도하라."
-    hint: "nmap의 mysql-empty-password 스크립트를 사용한다."
-    category: "recon"
-    points: 10
-    answer: "nmap --script mysql-empty-password -p 3306 10.20.30.50"
-    answer_detail: "mysql-empty-password 스크립트는 root 등 기본 계정이 빈 패스워드로 설정되어 있는지 확인한다. 빈 패스워드는 가장 흔한 데이터베이스 설정 실수 중 하나이다."
-    verify:
-      type: "output_contains"
-      expect: "mysql"
-      field: "stdout"
-
-  - order: 8
-    instruction: "대상 FTP 서비스에 Anonymous 로그인이 가능한지 확인하라."
-    hint: "nmap ftp-anon 스크립트 또는 ftp 명령을 사용한다."
-    category: "recon"
-    points: 10
-    answer: "nmap --script ftp-anon -p 21 10.20.30.50"
-    answer_detail: "ftp-anon 스크립트는 FTP 서버의 익명(anonymous) 로그인 허용 여부를 확인한다. 익명 접근이 허용되면 파일 열람/업로드가 가능하여 정보 유출이나 악성 파일 배포에 악용될 수 있다."
-    verify:
-      type: "output_contains"
-      expect: "ftp"
-      field: "stdout"
-
-  - order: 9
-    instruction: "웹 디렉토리 브루트포스를 수행하여 숨겨진 경로를 탐색하라."
-    hint: "dirb 또는 gobuster 도구를 사용한다."
-    category: "recon"
-    points: 10
-    answer: "dirb http://10.20.30.50/ /usr/share/wordlists/dirb/common.txt"
-    answer_detail: "dirb는 사전 파일의 경로를 하나씩 요청하여 존재하는 디렉토리/파일을 탐색한다. common.txt는 약 4,600개의 일반적인 경로를 포함한다. 200, 301, 403 응답 코드를 확인하여 존재 여부를 판단한다."
-    verify:
-      type: "output_contains"
-      expect: "FOUND"
-      field: "stdout"
-
-  - order: 10
-    instruction: "발견된 익스플로잇 중 vsftpd 2.3.4 백도어의 상세 정보를 확인하라."
-    hint: "searchsploit -x 옵션으로 코드를 확인한다."
-    category: "analysis"
-    points: 10
-    answer: "searchsploit -x unix/remote/17491.rb"
-    answer_detail: "-x 옵션은 익스플로잇 코드를 직접 열어 확인할 수 있다. vsftpd 2.3.4 백도어는 ':)' 스마일리를 유저명에 포함하면 6200 포트에 셸이 열리는 의도적 백도어이다."
-    verify:
-      type: "output_contains"
-      expect: "vsftpd"
-      field: "stdout"
-
-  - order: 11
-    instruction: "Nikto 스캔 결과를 파일로 저장하라."
-    hint: "nikto -o 옵션으로 출력 파일을 지정한다."
-    category: "recon"
-    points: 10
-    answer: "nikto -h http://10.20.30.50/ -o /tmp/nikto_report.txt"
-    answer_detail: "-o 옵션은 스캔 결과를 파일로 저장한다. txt, htm, xml, csv 등 다양한 형식을 지원한다. 파일 확장자에 따라 자동으로 형식이 결정된다."
-    verify:
-      type: "file_exists"
-      expect: "/tmp/nikto_report.txt"
-      field: "filesystem"
-
-  - order: 12
-    instruction: "nmap 결과를 grepable 형식으로 저장하여 자동화 분석에 활용할 수 있게 하라."
-    hint: "nmap -oG 옵션을 사용한다."
-    category: "recon"
-    points: 10
-    answer: "nmap -sV -oG /tmp/nmap_grep.txt 10.20.30.50"
-    answer_detail: "-oG는 grep하기 쉬운 형식으로 결과를 저장한다. 한 줄에 호스트/포트 정보가 모두 포함되어 grep, awk, cut 등으로 빠르게 필터링할 수 있다. 다수의 호스트를 분석할 때 유용하다."
-    verify:
-      type: "file_exists"
-      expect: "/tmp/nmap_grep.txt"
-      field: "filesystem"
-
-  - order: 13
-    instruction: "grepable nmap 결과에서 열린 포트만 추출하라."
-    hint: "grep 명령으로 open 상태를 필터링한다."
-    category: "analysis"
-    points: 10
-    answer: "grep 'open' /tmp/nmap_grep.txt | grep -oP '\\d+/open/tcp//[^/]*'"
-    answer_detail: "grepable 형식에서 포트 정보는 'PORT/STATE/PROTOCOL//SERVICE' 패턴으로 표현된다. grep -oP로 정규식 매칭 부분만 추출하면 열린 포트와 서비스 목록을 깔끔하게 얻을 수 있다."
-    verify:
-      type: "output_contains"
-      expect: "open"
-      field: "stdout"
-
-  - order: 14
-    instruction: "발견된 모든 취약점의 CVSS 점수를 기준으로 위험도 매트릭스를 작성하라."
-    hint: "Critical(9.0+), High(7.0-8.9), Medium(4.0-6.9), Low(0.1-3.9)로 분류한다."
-    category: "analysis"
-    points: 10
-    answer: "cat > /tmp/vuln_matrix.txt << 'EOF'\n=== Vulnerability Risk Matrix ===\nTarget: 10.20.30.50\nDate: $(date)\n\n[CRITICAL - CVSS 9.0+]\n1. vsftpd 2.3.4 Backdoor (CVE-2011-2523) - CVSS 10.0\n   Impact: Remote Code Execution\n\n[HIGH - CVSS 7.0-8.9]\n2. SMB Null Session (CVE-2017-0144) - CVSS 8.1\n   Impact: Remote Code Execution\n3. MySQL Empty Password - CVSS 7.5\n   Impact: Data Breach\n\n[MEDIUM - CVSS 4.0-6.9]\n4. Apache 2.2.8 Information Disclosure - CVSS 5.0\n5. FTP Anonymous Login - CVSS 5.0\n6. Telnet Cleartext Protocol - CVSS 5.9\n\n[LOW - CVSS 0.1-3.9]\n7. SSH Weak Algorithms - CVSS 3.7\nEOF"
-    answer_detail: "CVSS(Common Vulnerability Scoring System)는 취약점의 심각도를 0~10 점수로 정량화한다. 위험도 매트릭스를 작성하면 한정된 리소스로 가장 위험한 취약점부터 대응할 수 있다."
-    verify:
-      type: "file_exists"
-      expect: "/tmp/vuln_matrix.txt"
-      field: "filesystem"
-
-  - order: 15
-    instruction: "취약점 스캔 전체 결과를 종합하여 공격 계획(Attack Plan)을 문서로 작성하라. 각 취약점별 공격 경로, 성공 가능성, 예상 영향도를 포함하라."
-    hint: "정찰 결과와 취약점 분석 결과를 결합하여 작성한다."
-    category: "analysis"
-    points: 15
-    answer: "cat > /tmp/attack_plan.txt << 'EOF'\n=== Attack Plan ===\nTarget: 10.20.30.50 (Metasploitable2)\n\nPrimary Attack Path:\n1. vsftpd 2.3.4 Backdoor → RCE (확률: 95%)\n   - 6200 포트 백도어 셸 획득\n   - 권한: daemon user\n\nSecondary Attack Paths:\n2. SMB Exploitation → RCE (확률: 80%)\n   - Samba 취약점 활용\n3. MySQL Empty Password → Data Exfil (확률: 90%)\n   - 데이터베이스 직접 접근\n4. Telnet Bruteforce → Shell Access (확률: 60%)\n   - 약한 패스워드 공격\n\nPost-Exploitation:\n- Privilege Escalation via kernel exploit\n- Lateral Movement via SSH keys\n- Data Exfiltration via MySQL dump\nEOF"
-    answer_detail: "공격 계획 수립은 침투 테스트의 핵심 단계이다. 취약점별 공격 경로를 우선순위화하고, 성공 확률과 영향도를 평가하여 효율적인 테스트 전략을 수립한다. 이 문서는 고객 보고서의 기초가 된다."
-    verify:
-      type: "file_exists"
-      expect: "/tmp/attack_plan.txt"
-      field: "filesystem"
+- order: 1
+  instruction: nmap의 vuln 스크립트 카테고리를 사용하여 대상 호스트의 알려진 취약점을 스캔하라.
+  hint: --script vuln 옵션을 사용한다.
+  category: recon
+  points: 10
+  answer: nmap --script vuln -p 21,22,80,139,445 10.20.30.50
+  answer_detail: --script vuln은 NSE의 vuln 카테고리 스크립트를 모두 실행한다. 각 스크립트는 특정 CVE를 검사하며, VULNERABLE 상태를 보고한다. 실무에서는 오탐 확인이 필수이다.
+  verify:
+    type: output_contains
+    expect: VULNERABLE
+    field: stdout
+  target_vm: attacker
+- order: 2
+  instruction: Nikto를 사용하여 대상 웹서버(80번 포트)의 웹 취약점을 스캔하라.
+  hint: nikto -h 옵션으로 대상을 지정한다.
+  category: recon
+  points: 10
+  answer: nikto -h http://10.20.30.50/
+  answer_detail: Nikto는 웹서버 전용 취약점 스캐너이다. 위험한 파일/CGI, 오래된 서버 소프트웨어, 잘못된 설정 등 6,700개 이상의 항목을 검사한다. 노이즈가 많으므로 결과 필터링이 중요하다.
+  verify:
+    type: output_contains
+    expect: 'Server:'
+    field: stdout
+  target_vm: attacker
+- order: 3
+  instruction: searchsploit을 사용하여 vsftpd 2.3.4의 알려진 익스플로잇을 검색하라.
+  hint: searchsploit 명령에 서비스명과 버전을 입력한다.
+  category: recon
+  points: 10
+  answer: searchsploit vsftpd 2.3.4
+  answer_detail: searchsploit은 ExploitDB의 오프라인 검색 도구이다. 서비스명+버전으로 검색하면 해당하는 PoC 코드와 설명을 확인할 수 있다. vsftpd 2.3.4에는 백도어 취약점이 존재한다.
+  verify:
+    type: output_contains
+    expect: vsftpd
+    field: stdout
+  target_vm: attacker
+- order: 4
+  instruction: searchsploit으로 Apache 2.2.8 관련 익스플로잇을 검색하라.
+  hint: searchsploit apache 2.2로 검색한다.
+  category: recon
+  points: 10
+  answer: searchsploit apache 2.2
+  answer_detail: Apache 2.2.x 계열에는 다수의 CVE가 존재한다. mod_cgi, mod_negotiation 등 모듈별 취약점과 DoS, 정보 유출 취약점이 포함된다. 버전을 너무 구체적으로 검색하면 결과가 누락될 수 있으므로 마이너 버전까지만 검색하는 것이 좋다.
+  verify:
+    type: output_contains
+    expect: Apache
+    field: stdout
+  target_vm: attacker
+- order: 5
+  instruction: nmap NSE 스크립트로 대상의 SMB 취약점(ms17-010 등)을 점검하라.
+  hint: smb-vuln 계열 스크립트를 사용한다.
+  category: recon
+  points: 10
+  answer: nmap --script smb-vuln* -p 445 10.20.30.50
+  answer_detail: smb-vuln* 와일드카드로 smb-vuln-ms17-010, smb-vuln-ms08-067 등 모든 SMB 취약점 스크립트를 실행한다. MS17-010(EternalBlue)은 WannaCry 랜섬웨어가 사용한 취약점으로 매우 위험하다.
+  verify:
+    type: output_contains
+    expect: smb-vuln
+    field: stdout
+  target_vm: attacker
+- order: 6
+  instruction: 대상의 SSH 서비스 보안 설정을 nmap 스크립트로 점검하라.
+  hint: ssh-auth-methods, ssh2-enum-algos 스크립트를 사용한다.
+  category: recon
+  points: 10
+  answer: nmap --script ssh-auth-methods,ssh2-enum-algos -p 22 10.20.30.50
+  answer_detail: ssh-auth-methods는 허용된 인증 방식(password, publickey 등)을, ssh2-enum-algos는 지원하는 암호화 알고리즘을 열거한다. 약한 알고리즘(DES, RC4)이나 password 인증 허용은 취약점이다.
+  verify:
+    type: output_contains
+    expect: ssh
+    field: stdout
+  target_vm: attacker
+- order: 7
+  instruction: 대상 MySQL 서비스(3306)에 대해 빈 패스워드 또는 기본 계정 로그인을 시도하라.
+  hint: nmap의 mysql-empty-password 스크립트를 사용한다.
+  category: recon
+  points: 10
+  answer: nmap --script mysql-empty-password -p 3306 10.20.30.50
+  answer_detail: mysql-empty-password 스크립트는 root 등 기본 계정이 빈 패스워드로 설정되어 있는지 확인한다. 빈 패스워드는 가장 흔한 데이터베이스 설정 실수 중 하나이다.
+  verify:
+    type: output_contains
+    expect: mysql
+    field: stdout
+  target_vm: attacker
+- order: 8
+  instruction: 대상 FTP 서비스에 Anonymous 로그인이 가능한지 확인하라.
+  hint: nmap ftp-anon 스크립트 또는 ftp 명령을 사용한다.
+  category: recon
+  points: 10
+  answer: nmap --script ftp-anon -p 21 10.20.30.50
+  answer_detail: ftp-anon 스크립트는 FTP 서버의 익명(anonymous) 로그인 허용 여부를 확인한다. 익명 접근이 허용되면 파일 열람/업로드가 가능하여 정보 유출이나 악성 파일 배포에 악용될 수 있다.
+  verify:
+    type: output_contains
+    expect: ftp
+    field: stdout
+  target_vm: attacker
+- order: 9
+  instruction: 웹 디렉토리 브루트포스를 수행하여 숨겨진 경로를 탐색하라.
+  hint: dirb 또는 gobuster 도구를 사용한다.
+  category: recon
+  points: 10
+  answer: dirb http://10.20.30.50/ /usr/share/wordlists/dirb/common.txt
+  answer_detail: dirb는 사전 파일의 경로를 하나씩 요청하여 존재하는 디렉토리/파일을 탐색한다. common.txt는 약 4,600개의 일반적인 경로를 포함한다. 200, 301, 403 응답 코드를 확인하여 존재 여부를 판단한다.
+  verify:
+    type: output_contains
+    expect: FOUND
+    field: stdout
+  target_vm: attacker
+- order: 10
+  instruction: 발견된 익스플로잇 중 vsftpd 2.3.4 백도어의 상세 정보를 확인하라.
+  hint: searchsploit -x 옵션으로 코드를 확인한다.
+  category: analysis
+  points: 10
+  answer: searchsploit -x unix/remote/17491.rb
+  answer_detail: -x 옵션은 익스플로잇 코드를 직접 열어 확인할 수 있다. vsftpd 2.3.4 백도어는 ':)' 스마일리를 유저명에 포함하면 6200 포트에 셸이 열리는 의도적 백도어이다.
+  verify:
+    type: output_contains
+    expect: vsftpd
+    field: stdout
+  target_vm: attacker
+- order: 11
+  instruction: Nikto 스캔 결과를 파일로 저장하라.
+  hint: nikto -o 옵션으로 출력 파일을 지정한다.
+  category: recon
+  points: 10
+  answer: nikto -h http://10.20.30.50/ -o /tmp/nikto_report.txt
+  answer_detail: -o 옵션은 스캔 결과를 파일로 저장한다. txt, htm, xml, csv 등 다양한 형식을 지원한다. 파일 확장자에 따라 자동으로 형식이 결정된다.
+  verify:
+    type: file_exists
+    expect: /tmp/nikto_report.txt
+    field: filesystem
+  target_vm: attacker
+- order: 12
+  instruction: nmap 결과를 grepable 형식으로 저장하여 자동화 분석에 활용할 수 있게 하라.
+  hint: nmap -oG 옵션을 사용한다.
+  category: recon
+  points: 10
+  answer: nmap -sV -oG /tmp/nmap_grep.txt 10.20.30.50
+  answer_detail: -oG는 grep하기 쉬운 형식으로 결과를 저장한다. 한 줄에 호스트/포트 정보가 모두 포함되어 grep, awk, cut 등으로 빠르게 필터링할 수 있다. 다수의 호스트를 분석할 때 유용하다.
+  verify:
+    type: file_exists
+    expect: /tmp/nmap_grep.txt
+    field: filesystem
+  target_vm: attacker
+- order: 13
+  instruction: grepable nmap 결과에서 열린 포트만 추출하라.
+  hint: grep 명령으로 open 상태를 필터링한다.
+  category: analysis
+  points: 10
+  answer: grep 'open' /tmp/nmap_grep.txt | grep -oP '\d+/open/tcp//[^/]*'
+  answer_detail: grepable 형식에서 포트 정보는 'PORT/STATE/PROTOCOL//SERVICE' 패턴으로 표현된다. grep -oP로 정규식 매칭 부분만 추출하면 열린 포트와 서비스 목록을 깔끔하게 얻을 수 있다.
+  verify:
+    type: output_contains
+    expect: open
+    field: stdout
+  target_vm: attacker
+- order: 14
+  instruction: 발견된 모든 취약점의 CVSS 점수를 기준으로 위험도 매트릭스를 작성하라.
+  hint: Critical(9.0+), High(7.0-8.9), Medium(4.0-6.9), Low(0.1-3.9)로 분류한다.
+  category: analysis
+  points: 10
+  answer: "cat > /tmp/vuln_matrix.txt << 'EOF'\n=== Vulnerability Risk Matrix ===\nTarget: 10.20.30.50\nDate: $(date)\n\n[CRITICAL - CVSS 9.0+]\n1. vsftpd 2.3.4 Backdoor (CVE-2011-2523) - CVSS 10.0\n  \
+    \ Impact: Remote Code Execution\n\n[HIGH - CVSS 7.0-8.9]\n2. SMB Null Session (CVE-2017-0144) - CVSS 8.1\n   Impact: Remote Code Execution\n3. MySQL Empty Password - CVSS 7.5\n   Impact: Data Breach\n\
+    \n[MEDIUM - CVSS 4.0-6.9]\n4. Apache 2.2.8 Information Disclosure - CVSS 5.0\n5. FTP Anonymous Login - CVSS 5.0\n6. Telnet Cleartext Protocol - CVSS 5.9\n\n[LOW - CVSS 0.1-3.9]\n7. SSH Weak Algorithms\
+    \ - CVSS 3.7\nEOF"
+  answer_detail: CVSS(Common Vulnerability Scoring System)는 취약점의 심각도를 0~10 점수로 정량화한다. 위험도 매트릭스를 작성하면 한정된 리소스로 가장 위험한 취약점부터 대응할 수 있다.
+  verify:
+    type: file_exists
+    expect: /tmp/vuln_matrix.txt
+    field: filesystem
+  target_vm: attacker
+- order: 15
+  instruction: 취약점 스캔 전체 결과를 종합하여 공격 계획(Attack Plan)을 문서로 작성하라. 각 취약점별 공격 경로, 성공 가능성, 예상 영향도를 포함하라.
+  hint: 정찰 결과와 취약점 분석 결과를 결합하여 작성한다.
+  category: analysis
+  points: 15
+  answer: "cat > /tmp/attack_plan.txt << 'EOF'\n=== Attack Plan ===\nTarget: 10.20.30.50 (Metasploitable2)\n\nPrimary Attack Path:\n1. vsftpd 2.3.4 Backdoor → RCE (확률: 95%)\n   - 6200 포트 백도어 셸 획득\n   -\
+    \ 권한: daemon user\n\nSecondary Attack Paths:\n2. SMB Exploitation → RCE (확률: 80%)\n   - Samba 취약점 활용\n3. MySQL Empty Password → Data Exfil (확률: 90%)\n   - 데이터베이스 직접 접근\n4. Telnet Bruteforce → Shell\
+    \ Access (확률: 60%)\n   - 약한 패스워드 공격\n\nPost-Exploitation:\n- Privilege Escalation via kernel exploit\n- Lateral Movement via SSH keys\n- Data Exfiltration via MySQL dump\nEOF"
+  answer_detail: 공격 계획 수립은 침투 테스트의 핵심 단계이다. 취약점별 공격 경로를 우선순위화하고, 성공 확률과 영향도를 평가하여 효율적인 테스트 전략을 수립한다. 이 문서는 고객 보고서의 기초가 된다.
+  verify:
+    type: file_exists
+    expect: /tmp/attack_plan.txt
+    field: filesystem
+  target_vm: attacker

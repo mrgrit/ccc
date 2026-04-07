@@ -22,6 +22,7 @@ steps:
   verify:
     type: output_contains
     expect: 인벤토리
+  target_vm: siem
   script: '로그 소스: secu(nftables, suricata, auth), web(apache, modsecurity, app), siem(wazuh-manager, elasticsearch), attacker(api, subagent). 우선순위: 보안 도구 > 인증 > 서비스 > 시스템'
   risk_level: low
 - order: 2
@@ -34,6 +35,7 @@ steps:
   verify:
     type: output_contains
     expect: localfile
+  target_vm: siem
   script: '에이전트 설정: <localfile> 추가 - suricata eve.json, nftables log, apache access/error log, modsecurity audit log. log_format: json 또는 syslog'
   risk_level: low
 - order: 3
@@ -46,6 +48,7 @@ steps:
   verify:
     type: output_contains
     expect: decoder
+  target_vm: siem
   script: <decoder name='ccc'><prematch>CCC|</prematch><regex>(\S+) (\S+) (\S+) (\S+)</regex><order>action, project_id, user, status</order></decoder>
   risk_level: low
 - order: 4
@@ -58,6 +61,7 @@ steps:
   verify:
     type: output_contains
     expect: 정규화
+  target_vm: siem
   script: '정규화 스키마: timestamp(UTC), source.ip, destination.ip, event.category, event.action, user.name, process.name, file.path. 각 로그 소스별 필드 매핑 테이블 작성'
   risk_level: low
 - order: 5
@@ -70,6 +74,7 @@ steps:
   verify:
     type: output_contains
     expect: 필터링
+  target_vm: siem
   script: '필터링: 1) 헬스체크 URL(/health, /status), 2) 정적 리소스(.css, .js, .png), 3) 내부 모니터링 IP. 집계: 동일 이벤트 5분 내 N회 → 1건으로 집계+카운트 포함'
   risk_level: low
 - order: 6
@@ -82,6 +87,7 @@ steps:
   verify:
     type: output_contains
     expect: 보관
+  target_vm: siem
   script: '보관 정책: Hot(SSD, 7일, 실시간 분석), Warm(HDD, 30일, 필요 시 조회), Cold(S3/아카이브, 365일, 법적 요건). 보안 로그는 Hot 30일 + Cold 3년'
   risk_level: low
 - order: 7
@@ -94,6 +100,7 @@ steps:
   verify:
     type: output_contains
     expect: 무결성
+  target_vm: siem
   script: '무결성 보장: 1) rsyslog로 중앙 서버 즉시 전송(공격자 삭제 방지), 2) 로그 해시 체인(SHA-256), 3) 로그 디렉토리 접근 제어(root only), 4) Wazuh FIM으로 로그 파일 변경 감지'
   risk_level: low
 - order: 8
@@ -106,6 +113,7 @@ steps:
   verify:
     type: output_contains
     expect: EPS
+  target_vm: siem
   script: '성능 지표: EPS(초당 이벤트 수), 수집 지연(이벤트 생성~SIEM 수신 시간), 큐 사용률(%), 드롭된 이벤트 수. 병목: 네트워크/디스크IO/CPU'
   risk_level: low
 - order: 9
@@ -118,6 +126,7 @@ steps:
   verify:
     type: output_contains
     expect: ATT&CK
+  target_vm: siem
   script: '매핑: Process Creation(auditd, sysmon)→커버, Network Connection(suricata, nftables)→커버, File Modification(Wazuh FIM)→커버, User Account Auth(auth.log)→커버. 갭: Cloud Service, Container 등'
   risk_level: low
 - order: 10
@@ -130,6 +139,7 @@ steps:
   verify:
     type: output_contains
     expect: JSON
+  target_vm: siem
   script: 'JSON 디코더: <decoder name=''suricata-json''><prematch>^\{</prematch><plugin_decoder>JSON_Decoder</plugin_decoder></decoder>. 추출 필드: event_type, src_ip, dest_ip, alert.signature, alert.severity'
   risk_level: low
 - order: 11
@@ -142,6 +152,7 @@ steps:
   verify:
     type: output_contains
     expect: enrichment
+  target_vm: siem
   script: 'Enrichment 파이프라인: 원시로그 → GeoIP(국가/도시 추가) → DNS역조회(호스트명 추가) → 자산DB(서버역할/담당자 추가) → TI매칭(IOC 일치 여부) → SIEM 저장'
   risk_level: low
 - order: 12
@@ -154,6 +165,7 @@ steps:
   verify:
     type: output_contains
     expect: 대시보드
+  target_vm: siem
   script: '대시보드: 1) 소스별 EPS 추이, 2) 파싱 실패율(%), 3) 수집 지연(초), 4) 소스별 마지막 수신 시간, 5) 디스크 사용량. 알림: 소스 중단 시 즉시 통보'
   risk_level: low
 - order: 13
@@ -166,6 +178,7 @@ steps:
   verify:
     type: output_contains
     expect: auditd
+  target_vm: siem
   script: 'auditd 규칙: 1) 프로세스 실행(-S execve), 2) 파일 변경(-w /etc/ -p wa), 3) 사용자 변경(-w /etc/passwd -p wa), 4) 네트워크 소켓(-S connect), 5) 시간 변경(-S settimeofday)'
   risk_level: low
 - order: 14
@@ -178,6 +191,7 @@ steps:
   verify:
     type: output_contains
     expect: 아키텍처
+  target_vm: siem
   script: '리뷰: 1) 단일장애점(SIEM 서버 1대 → HA 필요), 2) 확장성(에이전트 수 증가 시 부하), 3) 전송 보안(TLS 암호화 필요), 4) 백업(로그 아카이브 부재)'
   risk_level: low
 - order: 15
@@ -190,5 +204,6 @@ steps:
   verify:
     type: output_contains
     expect: 로그
+  target_vm: siem
   script: '종합: N개 로그 소스, 평균 EPS M, ATT&CK 데이터소스 커버리지 65%→80%. 최적화: 필터링으로 30% 스토리지 절감, enrichment로 분석 시간 50% 단축. 로드맵: auditd 확대, TLS 암호화, HA 구축'
   risk_level: low

@@ -1,124 +1,162 @@
-lab_id: "compliance-nonai-week01"
-title: "개인정보보호법 기술적 보호조치 점검"
-version: "non-ai"
-course: "compliance-nonai"
+lab_id: compliance-nonai-week01
+title: 개인정보보호법 기술적 보호조치 점검
+version: non-ai
+course: compliance-nonai
 week: 1
-description: "개인정보보호법 제29조(안전조치 의무)에 따른 기술적 보호조치가 시스템에 올바르게 적용되어 있는지 점검합니다. 패스워드 정책, 접근 통제, 암호화 설정, 접속기록 관리를 실제 시스템에서 확인합니다."
-difficulty: "easy"
+description: 개인정보보호법 제29조(안전조치 의무)에 따른 기술적 보호조치가 시스템에 올바르게 적용되어 있는지 점검합니다. 패스워드 정책, 접근 통제, 암호화 설정, 접속기록 관리를 실제 시스템에서 확인합니다.
+difficulty: easy
 duration_minutes: 120
 objectives:
-  - "개인정보보호법의 안전조치 기준을 시스템 설정과 매핑한다"
-  - "패스워드 정책, 접근 통제, 로그 보관 설정을 점검한다"
-  - "컴플라이언스 점검 스크립트를 작성하고 실행한다"
+- 개인정보보호법의 안전조치 기준을 시스템 설정과 매핑한다
+- 패스워드 정책, 접근 통제, 로그 보관 설정을 점검한다
+- 컴플라이언스 점검 스크립트를 작성하고 실행한다
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "SECU 서버(10.20.30.1)에 접속하여 현재 패스워드 최소 길이 정책을 확인하시오. 개인정보보호법 안전조치 기준에서는 최소 8자 이상을 요구합니다."
-    hint: "/etc/security/pwquality.conf 파일에서 minlen 설정을 확인하세요."
-    category: "audit"
-    points: 10
-    answer: "grep -i 'minlen' /etc/security/pwquality.conf"
-    answer_detail: "개인정보보호법 안전조치 기준 제5조에 따라 비밀번호는 영문, 숫자, 특수문자 중 2종류 이상을 조합하여 최소 10자리 이상 또는 3종류 이상 조합 시 최소 8자리 이상으로 설정해야 합니다. pwquality.conf의 minlen 값으로 이를 강제합니다."
-    verify:
-      type: "output_contains"
-      expect: "minlen"
-      field: "stdout"
-  - order: 2
-    instruction: "패스워드 복잡도 설정을 확인하시오. 대문자, 소문자, 숫자, 특수문자 요구 설정이 되어 있는지 점검합니다."
-    hint: "pwquality.conf에서 ucredit, lcredit, dcredit, ocredit 값을 확인하세요."
-    category: "audit"
-    points: 10
-    answer: "grep -E '(ucredit|lcredit|dcredit|ocredit)' /etc/security/pwquality.conf"
-    answer_detail: "pwquality.conf에서 ucredit=-1(대문자 최소 1개), lcredit=-1(소문자 최소 1개), dcredit=-1(숫자 최소 1개), ocredit=-1(특수문자 최소 1개)로 설정해야 합니다. 음수 값은 해당 문자 유형의 최소 요구 수를 의미합니다."
-    verify:
-      type: "output_contains"
-      expect: "credit"
-      field: "stdout"
-  - order: 3
-    instruction: "패스워드 최대 사용 기간(PASS_MAX_DAYS)을 확인하시오. 안전조치 기준에서는 반기별 1회 이상 변경을 권고합니다."
-    hint: "/etc/login.defs 파일에서 PASS_ 관련 설정을 확인하세요."
-    category: "audit"
-    points: 10
-    answer: "grep -E '^PASS_' /etc/login.defs"
-    answer_detail: "login.defs에서 PASS_MAX_DAYS는 패스워드 최대 사용일(권장 90일), PASS_MIN_DAYS는 최소 변경 간격, PASS_WARN_AGE는 만료 경고 시작일을 의미합니다. 개인정보 처리 시스템의 경우 90일 이내 변경을 권고합니다."
-    verify:
-      type: "output_contains"
-      expect: "PASS_MAX_DAYS"
-      field: "stdout"
-  - order: 4
-    instruction: "시스템의 SSH 접근 통제 설정을 점검하시오. root 직접 로그인 차단 여부와 허용된 인증 방식을 확인합니다."
-    hint: "/etc/ssh/sshd_config에서 PermitRootLogin과 PasswordAuthentication을 확인하세요."
-    category: "audit"
-    points: 10
-    answer: "grep -E '(PermitRootLogin|PasswordAuthentication|MaxAuthTries)' /etc/ssh/sshd_config | grep -v '^#'"
-    answer_detail: "개인정보보호법 안전조치 기준 제6조(접근통제)에 따라 불법적인 접근을 차단해야 합니다. PermitRootLogin no로 root 직접 접속을 차단하고, MaxAuthTries로 인증 시도 횟수를 제한하여 무차별 대입 공격을 방지합니다."
-    verify:
-      type: "output_contains"
-      expect: "PermitRootLogin"
-      field: "stdout"
-  - order: 5
-    instruction: "개인정보 처리 시스템의 접속기록(로그) 보관 설정을 점검하시오. 법령에서는 최소 1년(5만명 이상 시 2년) 보관을 요구합니다."
-    hint: "/etc/logrotate.conf 또는 /etc/logrotate.d/rsyslog에서 로그 보관 주기를 확인하세요."
-    category: "audit"
-    points: 12
-    answer: "cat /etc/logrotate.conf | grep -A 2 'rotate'"
-    answer_detail: "안전조치 기준 제8조에 따라 개인정보 취급자의 접속기록은 최소 1년, 5만명 이상 처리 시 2년 이상 보관해야 합니다. logrotate의 rotate 값이 52(주간 회전 시 1년) 이상인지 확인해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "rotate"
-      field: "stdout"
-  - order: 6
-    instruction: "auditd 감사 시스템이 활성화되어 있는지 확인하고, /etc/passwd와 /etc/shadow에 대한 감사 규칙이 설정되어 있는지 점검하시오."
-    hint: "systemctl status auditd로 상태를 확인하고, auditctl -l로 규칙을 확인하세요."
-    category: "audit"
-    points: 12
-    answer: "sudo systemctl is-active auditd && sudo auditctl -l | grep -E '(passwd|shadow)'"
-    answer_detail: "개인정보보호법 안전조치 기준 제8조에 따라 접속기록에는 식별자, 접속일시, 접속지 IP, 처리 내용 등이 포함되어야 합니다. auditd로 주요 인증 파일(/etc/passwd, /etc/shadow)의 변경을 추적하면 비인가 계정 생성이나 패스워드 변경을 감지할 수 있습니다."
-    verify:
-      type: "output_contains"
-      expect: "active"
-      field: "stdout"
-  - order: 7
-    instruction: "개인정보가 포함될 수 있는 로그 파일의 접근 권한을 점검하시오. 로그 파일은 640 이하 권한이어야 합니다."
-    hint: "/var/log/ 디렉터리의 주요 로그 파일 권한을 확인하세요."
-    category: "audit"
-    points: 10
-    answer: "stat -c '%a %n' /var/log/auth.log /var/log/syslog /var/log/kern.log 2>/dev/null || ls -la /var/log/auth.log /var/log/syslog"
-    answer_detail: "개인정보보호법 안전조치 기준 제5조에 따라 접속기록을 안전하게 보관해야 합니다. 로그 파일 권한이 640(소유자 읽기/쓰기, 그룹 읽기) 이하여야 일반 사용자의 로그 열람이나 위변조를 방지할 수 있습니다."
-    verify:
-      type: "output_contains"
-      expect: "auth.log"
-      field: "stdout"
-  - order: 8
-    instruction: "WEB 서버(10.20.30.80)의 Apache에서 SSL/TLS 설정을 확인하시오. 개인정보 전송 시 암호화는 필수입니다."
-    hint: "Apache SSL 설정 파일에서 SSLProtocol과 SSLCipherSuite를 확인하세요."
-    category: "audit"
-    points: 12
-    answer: "ssh trainee@10.20.30.80 'grep -r \"SSLProtocol\\|SSLCipherSuite\" /etc/apache2/sites-enabled/ 2>/dev/null || grep -r \"SSLProtocol\\|SSLCipherSuite\" /etc/apache2/mods-enabled/ssl.conf 2>/dev/null'"
-    answer_detail: "안전조치 기준 제7조에 따라 개인정보를 정보통신망으로 전송할 때 암호화해야 합니다. SSLProtocol에서 TLSv1.2 이상만 허용하고, 취약한 암호 스위트(RC4, DES 등)를 비활성화해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "SSL"
-      field: "stdout"
-  - order: 9
-    instruction: "시스템에 불필요한 SUID/SGID 파일이 있는지 점검하시오. 최소 권한 원칙 위반 여부를 확인합니다."
-    hint: "find 명령어로 SUID 비트가 설정된 파일을 검색하세요."
-    category: "audit"
-    points: 10
-    answer: "sudo find /usr -perm -4000 -type f -exec ls -la {} \\; 2>/dev/null | head -20"
-    answer_detail: "SUID(Set User ID) 파일은 실행 시 소유자 권한으로 동작하므로 권한 상승 공격에 악용될 수 있습니다. 개인정보 처리 시스템에서는 불필요한 SUID 파일을 제거하여 안전조치 기준 제5조(접근 권한 관리)를 준수해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "root"
-      field: "stdout"
-  - order: 10
-    instruction: "개인정보보호법 안전조치 기준 준수 여부를 종합 점검하는 스크립트를 작성하고 실행하시오."
-    hint: "패스워드 정책, 접근 통제, 로그 설정을 한 번에 점검하는 쉘 스크립트를 만드세요."
-    category: "audit"
-    points: 14
-    answer: "cat << 'SCRIPT' > /tmp/privacy_audit.sh\n#!/bin/bash\necho '=== 개인정보보호법 안전조치 점검 ==='\\necho '[1] 패스워드 정책'\ngrep -E '(minlen|credit)' /etc/security/pwquality.conf 2>/dev/null | grep -v '^#'\necho '[2] 패스워드 만료'\ngrep '^PASS_MAX_DAYS' /etc/login.defs\necho '[3] SSH 접근 통제'\ngrep -E '^(PermitRootLogin|MaxAuthTries)' /etc/ssh/sshd_config 2>/dev/null\necho '[4] 감사 시스템'\nsudo systemctl is-active auditd 2>/dev/null\necho '[5] 로그 보관'\ngrep '^rotate' /etc/logrotate.conf 2>/dev/null\necho '=== 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/privacy_audit.sh && bash /tmp/privacy_audit.sh"
-    answer_detail: "컴플라이언스 점검은 수동으로 하면 누락이 발생하기 쉽습니다. 점검 항목을 스크립트로 자동화하면 일관성 있는 점검이 가능하고, 정기 감사 시 증적으로도 활용할 수 있습니다. 이 스크립트는 안전조치 기준의 주요 항목(접근 권한 관리, 접근 통제, 접속기록 보관)을 한 번에 확인합니다."
-    verify:
-      type: "output_contains"
-      expect: "점검 완료"
-      field: "stdout"
+- order: 1
+  instruction: SECU 서버(10.20.30.1)에 접속하여 현재 패스워드 최소 길이 정책을 확인하시오. 개인정보보호법 안전조치 기준에서는 최소 8자 이상을 요구합니다.
+  hint: /etc/security/pwquality.conf 파일에서 minlen 설정을 확인하세요.
+  category: audit
+  points: 10
+  answer: grep -i 'minlen' /etc/security/pwquality.conf
+  answer_detail: 개인정보보호법 안전조치 기준 제5조에 따라 비밀번호는 영문, 숫자, 특수문자 중 2종류 이상을 조합하여 최소 10자리 이상 또는 3종류 이상 조합 시 최소 8자리 이상으로 설정해야 합니다. pwquality.conf의 minlen 값으로 이를 강제합니다.
+  verify:
+    type: output_contains
+    expect: minlen
+    field: stdout
+  target_vm: secu
+- order: 2
+  instruction: 패스워드 복잡도 설정을 확인하시오. 대문자, 소문자, 숫자, 특수문자 요구 설정이 되어 있는지 점검합니다.
+  hint: pwquality.conf에서 ucredit, lcredit, dcredit, ocredit 값을 확인하세요.
+  category: audit
+  points: 10
+  answer: grep -E '(ucredit|lcredit|dcredit|ocredit)' /etc/security/pwquality.conf
+  answer_detail: pwquality.conf에서 ucredit=-1(대문자 최소 1개), lcredit=-1(소문자 최소 1개), dcredit=-1(숫자 최소 1개), ocredit=-1(특수문자 최소 1개)로 설정해야 합니다. 음수 값은 해당 문자 유형의 최소 요구 수를 의미합니다.
+  verify:
+    type: output_contains
+    expect: credit
+    field: stdout
+  target_vm: secu
+- order: 3
+  instruction: 패스워드 최대 사용 기간(PASS_MAX_DAYS)을 확인하시오. 안전조치 기준에서는 반기별 1회 이상 변경을 권고합니다.
+  hint: /etc/login.defs 파일에서 PASS_ 관련 설정을 확인하세요.
+  category: audit
+  points: 10
+  answer: grep -E '^PASS_' /etc/login.defs
+  answer_detail: login.defs에서 PASS_MAX_DAYS는 패스워드 최대 사용일(권장 90일), PASS_MIN_DAYS는 최소 변경 간격, PASS_WARN_AGE는 만료 경고 시작일을 의미합니다. 개인정보 처리 시스템의 경우 90일 이내 변경을 권고합니다.
+  verify:
+    type: output_contains
+    expect: PASS_MAX_DAYS
+    field: stdout
+  target_vm: secu
+- order: 4
+  instruction: 시스템의 SSH 접근 통제 설정을 점검하시오. root 직접 로그인 차단 여부와 허용된 인증 방식을 확인합니다.
+  hint: /etc/ssh/sshd_config에서 PermitRootLogin과 PasswordAuthentication을 확인하세요.
+  category: audit
+  points: 10
+  answer: grep -E '(PermitRootLogin|PasswordAuthentication|MaxAuthTries)' /etc/ssh/sshd_config | grep -v '^#'
+  answer_detail: 개인정보보호법 안전조치 기준 제6조(접근통제)에 따라 불법적인 접근을 차단해야 합니다. PermitRootLogin no로 root 직접 접속을 차단하고, MaxAuthTries로 인증 시도 횟수를 제한하여 무차별 대입 공격을 방지합니다.
+  verify:
+    type: output_contains
+    expect: PermitRootLogin
+    field: stdout
+  target_vm: secu
+- order: 5
+  instruction: 개인정보 처리 시스템의 접속기록(로그) 보관 설정을 점검하시오. 법령에서는 최소 1년(5만명 이상 시 2년) 보관을 요구합니다.
+  hint: /etc/logrotate.conf 또는 /etc/logrotate.d/rsyslog에서 로그 보관 주기를 확인하세요.
+  category: audit
+  points: 12
+  answer: cat /etc/logrotate.conf | grep -A 2 'rotate'
+  answer_detail: 안전조치 기준 제8조에 따라 개인정보 취급자의 접속기록은 최소 1년, 5만명 이상 처리 시 2년 이상 보관해야 합니다. logrotate의 rotate 값이 52(주간 회전 시 1년) 이상인지 확인해야 합니다.
+  verify:
+    type: output_contains
+    expect: rotate
+    field: stdout
+  target_vm: secu
+- order: 6
+  instruction: auditd 감사 시스템이 활성화되어 있는지 확인하고, /etc/passwd와 /etc/shadow에 대한 감사 규칙이 설정되어 있는지 점검하시오.
+  hint: systemctl status auditd로 상태를 확인하고, auditctl -l로 규칙을 확인하세요.
+  category: audit
+  points: 12
+  answer: sudo systemctl is-active auditd && sudo auditctl -l | grep -E '(passwd|shadow)'
+  answer_detail: 개인정보보호법 안전조치 기준 제8조에 따라 접속기록에는 식별자, 접속일시, 접속지 IP, 처리 내용 등이 포함되어야 합니다. auditd로 주요 인증 파일(/etc/passwd, /etc/shadow)의 변경을 추적하면 비인가 계정 생성이나 패스워드 변경을 감지할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: active
+    field: stdout
+  target_vm: secu
+- order: 7
+  instruction: 개인정보가 포함될 수 있는 로그 파일의 접근 권한을 점검하시오. 로그 파일은 640 이하 권한이어야 합니다.
+  hint: /var/log/ 디렉터리의 주요 로그 파일 권한을 확인하세요.
+  category: audit
+  points: 10
+  answer: stat -c '%a %n' /var/log/auth.log /var/log/syslog /var/log/kern.log 2>/dev/null || ls -la /var/log/auth.log /var/log/syslog
+  answer_detail: 개인정보보호법 안전조치 기준 제5조에 따라 접속기록을 안전하게 보관해야 합니다. 로그 파일 권한이 640(소유자 읽기/쓰기, 그룹 읽기) 이하여야 일반 사용자의 로그 열람이나 위변조를 방지할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: auth.log
+    field: stdout
+  target_vm: secu
+- order: 8
+  instruction: WEB 서버(10.20.30.80)의 Apache에서 SSL/TLS 설정을 확인하시오. 개인정보 전송 시 암호화는 필수입니다.
+  hint: Apache SSL 설정 파일에서 SSLProtocol과 SSLCipherSuite를 확인하세요.
+  category: audit
+  points: 12
+  answer: ssh trainee@10.20.30.80 'grep -r "SSLProtocol\|SSLCipherSuite" /etc/apache2/sites-enabled/ 2>/dev/null || grep -r "SSLProtocol\|SSLCipherSuite" /etc/apache2/mods-enabled/ssl.conf 2>/dev/null'
+  answer_detail: 안전조치 기준 제7조에 따라 개인정보를 정보통신망으로 전송할 때 암호화해야 합니다. SSLProtocol에서 TLSv1.2 이상만 허용하고, 취약한 암호 스위트(RC4, DES 등)를 비활성화해야 합니다.
+  verify:
+    type: output_contains
+    expect: SSL
+    field: stdout
+  target_vm: secu
+- order: 9
+  instruction: 시스템에 불필요한 SUID/SGID 파일이 있는지 점검하시오. 최소 권한 원칙 위반 여부를 확인합니다.
+  hint: find 명령어로 SUID 비트가 설정된 파일을 검색하세요.
+  category: audit
+  points: 10
+  answer: sudo find /usr -perm -4000 -type f -exec ls -la {} \; 2>/dev/null | head -20
+  answer_detail: SUID(Set User ID) 파일은 실행 시 소유자 권한으로 동작하므로 권한 상승 공격에 악용될 수 있습니다. 개인정보 처리 시스템에서는 불필요한 SUID 파일을 제거하여 안전조치 기준 제5조(접근 권한 관리)를 준수해야 합니다.
+  verify:
+    type: output_contains
+    expect: root
+    field: stdout
+  target_vm: secu
+- order: 10
+  instruction: 개인정보보호법 안전조치 기준 준수 여부를 종합 점검하는 스크립트를 작성하고 실행하시오.
+  hint: 패스워드 정책, 접근 통제, 로그 설정을 한 번에 점검하는 쉘 스크립트를 만드세요.
+  category: audit
+  points: 14
+  answer: 'cat << ''SCRIPT'' > /tmp/privacy_audit.sh
+
+    #!/bin/bash
+
+    echo ''=== 개인정보보호법 안전조치 점검 ===''\necho ''[1] 패스워드 정책''
+
+    grep -E ''(minlen|credit)'' /etc/security/pwquality.conf 2>/dev/null | grep -v ''^#''
+
+    echo ''[2] 패스워드 만료''
+
+    grep ''^PASS_MAX_DAYS'' /etc/login.defs
+
+    echo ''[3] SSH 접근 통제''
+
+    grep -E ''^(PermitRootLogin|MaxAuthTries)'' /etc/ssh/sshd_config 2>/dev/null
+
+    echo ''[4] 감사 시스템''
+
+    sudo systemctl is-active auditd 2>/dev/null
+
+    echo ''[5] 로그 보관''
+
+    grep ''^rotate'' /etc/logrotate.conf 2>/dev/null
+
+    echo ''=== 점검 완료 ===''
+
+    SCRIPT
+
+    chmod +x /tmp/privacy_audit.sh && bash /tmp/privacy_audit.sh'
+  answer_detail: 컴플라이언스 점검은 수동으로 하면 누락이 발생하기 쉽습니다. 점검 항목을 스크립트로 자동화하면 일관성 있는 점검이 가능하고, 정기 감사 시 증적으로도 활용할 수 있습니다. 이 스크립트는 안전조치 기준의 주요 항목(접근 권한 관리, 접근 통제, 접속기록 보관)을 한 번에 확인합니다.
+  verify:
+    type: output_contains
+    expect: 점검 완료
+    field: stdout
+  target_vm: secu

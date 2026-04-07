@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: 파일시스템 감사 완료
     field: stdout
+  target_vm: secu
   script: mount | grep -E '(/tmp|/var/tmp)' && echo '파일시스템 감사 완료'
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: 패스워드 감사 완료
     field: stdout
+  target_vm: secu
   script: echo '[패스워드 정책]' && grep -v '^#' /etc/security/pwquality.conf 2>/dev/null | grep -v '^$' && grep -E '^PASS_' /etc/login.defs && echo '패스워드 감사 완료'
   risk_level: low
 - order: 3
@@ -49,6 +51,7 @@ steps:
     type: output_contains
     expect: SSH 감사 완료
     field: stdout
+  target_vm: secu
   script: echo '[SSH 감사]' && sudo grep -E '(PermitRootLogin|PasswordAuth|X11|MaxAuthTries|LoginGraceTime|Protocol)' /etc/ssh/sshd_config | grep -v '^#' && echo 'SSH 감사 완료'
   risk_level: low
 - order: 4
@@ -62,6 +65,7 @@ steps:
     type: output_contains
     expect: 서비스 감사 완료
     field: stdout
+  target_vm: secu
   script: systemctl list-units --type=service --state=running --no-pager | grep -v '^$' | wc -l && echo '서비스 감사 완료'
   risk_level: low
 - order: 5
@@ -75,6 +79,7 @@ steps:
     type: output_contains
     expect: 네트워크 감사 완료
     field: stdout
+  target_vm: secu
   script: echo '[네트워크 보안 파라미터]' && sysctl net.ipv4.ip_forward net.ipv4.conf.all.rp_filter net.ipv4.tcp_syncookies net.ipv4.conf.all.accept_redirects 2>/dev/null && echo '네트워크 감사 완료'
   risk_level: low
 - order: 6
@@ -88,6 +93,7 @@ steps:
     type: output_contains
     expect: 로그 감사 완료
     field: stdout
+  target_vm: secu
   script: echo '[감사 로그]' && sudo systemctl is-active auditd 2>/dev/null && echo '[로그 보존]' && cat /etc/logrotate.d/rsyslog 2>/dev/null | head -10 && echo '로그 감사 완료'
   risk_level: low
 - order: 7
@@ -101,6 +107,7 @@ steps:
     type: output_contains
     expect: 계정 감사 완료
     field: stdout
+  target_vm: secu
   script: 'echo ''[빈 패스워드 계정]'' && sudo awk -F: ''($2 == "") {print $1}'' /etc/shadow && echo ''[비활성 계정]'' && lastlog -b 90 2>/dev/null | tail -10 && echo ''계정 감사 완료'''
   risk_level: low
 - order: 8
@@ -114,6 +121,7 @@ steps:
     type: output_contains
     expect: 무결성 감사 완료
     field: stdout
+  target_vm: secu
   script: echo '[파일 무결성]' && for f in /usr/bin/ssh /usr/bin/sudo /usr/bin/passwd; do sha256sum $f 2>/dev/null; done && echo '무결성 감사 완료'
   risk_level: low
 - order: 9
@@ -127,6 +135,7 @@ steps:
     type: output_contains
     expect: 방화벽 감사 완료
     field: stdout
+  target_vm: secu
   script: echo '[방화벽 감사]' && sudo nft list ruleset 2>/dev/null | head -30 && echo '방화벽 감사 완료'
   risk_level: low
 - order: 10
@@ -140,6 +149,7 @@ steps:
     type: output_contains
     expect: NTP 감사 완료
     field: stdout
+  target_vm: secu
   script: timedatectl status && echo 'NTP 감사 완료'
   risk_level: low
 - order: 11
@@ -153,6 +163,7 @@ steps:
     type: output_contains
     expect: 암호화 감사 완료
     field: stdout
+  target_vm: secu
   script: echo '[TLS 설정]' && openssl version && echo '[SSH 키]' && ls -la /etc/ssh/ssh_host_*_key 2>/dev/null && echo '암호화 감사 완료'
   risk_level: low
 - order: 12
@@ -166,6 +177,7 @@ steps:
     type: output_contains
     expect: 체크리스트 작성 완료
     field: stdout
+  target_vm: secu
   script: echo -e '=== 보안 감사 체크리스트 ===\n항목 | 기준 | 결과\nSSH root 로그인 | 비활성화 | 점검완료\n패스워드 최소길이 | 12자 이상 | 점검완료\n방화벽 기본정책 | DROP | 점검완료\n감사 로그 | 활성화 | 점검완료\nNTP 동기화 | 설정됨 | 점검완료\n\n체크리스트 작성 완료'
   risk_level: low
 - order: 13
@@ -179,6 +191,7 @@ steps:
     type: output_contains
     expect: 조치 계획 수립 완료
     field: stdout
+  target_vm: secu
   script: echo -e '=== 미준수 항목 조치 계획 ===\n1. /tmp noexec 미설정 → fstab 수정 (1주 내)\n2. 비활성 계정 존재 → 잠금 처리 (즉시)\n3. 로그 보존 30일 → 90일로 변경 (1주 내)\n\n조치 계획 수립 완료'
   risk_level: low
 - order: 14
@@ -193,6 +206,7 @@ steps:
     type: output_contains
     expect: 감사 보고서 완료
     field: stdout
+  target_vm: secu
   script: 'echo -e ''=== 보안 감사 보고서 ===\n\n1. 감사 범위: 10.20.30.0/24 내 전체 서버\n2. 감사 기준: CIS 벤치마크 Level 1\n3. 감사 기간: ''$(date +%Y-%m-%d)''\n4. 발견사항: 12개 항목 중 9개 준수, 3개 미준수\n5. 위험 등급: 중\n6. 권고사항: 미준수 항목 즉시 조치\n\n감사
     보고서 완료'' | tee /tmp/audit_report.txt'
   risk_level: low
@@ -207,5 +221,6 @@ steps:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+  target_vm: secu
   script: 'echo ''=== 보안 감사 종합 ==='' && echo ''준수율: 75%'' && echo ''주요 이슈: 3건'' && echo ''다음 감사: 분기별'' && echo ''=== 보고서 완료 ==='''
   risk_level: low

@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: 호스트 보안
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== [1] 호스트 보안 ==="; echo "OS: $(cat /etc/os-release | grep PRETTY | cut -d\"=\" -f2)"; echo "커널: $(uname -r)"; echo "Docker: $(docker version --format "{{.Server.Version}}"
     2>/dev/null)"; echo "열린 포트: $(sudo ss -tlnp | grep -c LISTEN)"; echo "가동시간: $(uptime -p)"'''
   risk_level: low
@@ -39,6 +40,7 @@ steps:
     type: output_contains
     expect: 데몬 보안
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== [2] 데몬 보안 ==="; echo "보안 옵션: $(docker info --format "{{.SecurityOptions}}" 2>/dev/null)"; echo "로깅: $(docker info --format "{{.LoggingDriver}}" 2>/dev/null)";
     echo "소켓 권한: $(stat -c "%a" /var/run/docker.sock)"; echo "daemon.json:"; cat /etc/docker/daemon.json 2>/dev/null || echo "  미설정"'''
   risk_level: low
@@ -54,6 +56,7 @@ steps:
     type: output_contains
     expect: 이미지 보안
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== [3] 이미지 보안 ==="; echo "이미지 수: $(docker images -q | wc -l)"; echo "latest 태그: $(docker images --format "{{.Tag}}" | grep -c latest)개"; echo "미사용: $(docker images
     -f dangling=true -q | wc -l)개"; echo "--- 이미지 목록 ---"; docker images --format "{{.Repository}}:{{.Tag}} ({{.Size}})" | head -5'''
   risk_level: low
@@ -71,6 +74,7 @@ steps:
     type: output_contains
     expect: 런타임 보안
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== [4] 런타임 보안 ==="; for CID in $(docker ps -q); do NAME=$(docker inspect --format="{{.Name}}" $CID | tr -d "/"); PRIV=$(docker inspect --format="{{.HostConfig.Privileged}}"
     $CID); RO=$(docker inspect --format="{{.HostConfig.ReadonlyRootfs}}" $CID); USER=$(docker inspect --format="{{.Config.User}}" $CID); MEM=$(docker inspect --format="{{.HostConfig.Memory}}" $CID); NETMODE=$(docker
     inspect --format="{{.HostConfig.NetworkMode}}" $CID); echo "$NAME: Priv=$PRIV RO=$RO User=${USER:-root} Mem=$MEM Net=$NETMODE"; done || echo "실행 중인 컨테이너 없음"'''
@@ -87,6 +91,7 @@ steps:
     type: output_contains
     expect: 네트워크 보안
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== [5] 네트워크 보안 ==="; echo "네트워크: $(docker network ls -q | wc -l)개"; echo "포트 매핑:"; docker ps --format "  {{.Names}}: {{.Ports}}" 2>/dev/null | head -5; echo "host
     네트워크 사용: $(docker ps -q 2>/dev/null | xargs -I{} docker inspect --format="{{.HostConfig.NetworkMode}}" {} | grep -c host)건"'''
   risk_level: low
@@ -103,6 +108,7 @@ steps:
     type: output_contains
     expect: 스토리지 보안
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== [6] 스토리지 보안 ==="; echo "볼륨: $(docker volume ls -q | wc -l)개"; echo "미사용 볼륨: $(docker volume ls -qf dangling=true | wc -l)개"; echo "Docker Root 권한: $(stat -c
     "%a" /var/lib/docker)"; echo "위험 마운트:"; docker ps -q 2>/dev/null | xargs -I{} docker inspect --format="{{range .Mounts}}{{.Source}} {{end}}" {} 2>/dev/null | tr " " "\n" | sort -u | grep -E "(docker.sock|/etc$|/root|^/$)"
     | head -5 || echo "  없음"'''
@@ -119,6 +125,7 @@ steps:
     type: output_contains
     expect: 모니터링/로깅
     field: stdout
+  target_vm: web
   script: 'ssh trainee@10.20.30.80 ''echo "=== [7] 모니터링/로깅 ==="; echo "로그 드라이버: $(docker info --format "{{.LoggingDriver}}" 2>/dev/null)"; echo "로그 크기 제한:"; cat /etc/docker/daemon.json 2>/dev/null | grep
     max-size || echo "  미설정 (무제한)"; echo "로그 총 크기: $(sudo du -sh /var/lib/docker/containers/ 2>/dev/null | cut -f1)"'''
   risk_level: low
@@ -145,6 +152,7 @@ steps:
     type: output_contains
     expect: 클라우드/컨테이너 보안 종합 평가 보고서
     field: stdout
+  target_vm: web
   script: "cat << 'SCRIPT' > /tmp/final_assessment.sh\n#!/bin/bash\nHOST='trainee@10.20.30.80'\necho '======================================================'\necho '  클라우드/컨테이너 보안 종합 평가 보고서'\necho '======================================================'\n\
     echo \"평가일: $(date +%Y-%m-%d)\"\nPASS=0; FAIL=0\ncheck() {\n  if [ \"$2\" = \"PASS\" ]; then\n    PASS=$((PASS+1)); echo \"  [PASS] $1\"\n  else\n    FAIL=$((FAIL+1)); echo \"  [FAIL] $1\"\n  fi\n}\n\
     echo ''\necho '[호스트 보안]'\nDOCKER_VER=$(ssh $HOST 'docker version --format \"{{.Server.Version}}\" 2>/dev/null')\ncheck \"Docker 설치됨 ($DOCKER_VER)\" \"$([ -n \"$DOCKER_VER\" ] && echo PASS || echo FAIL)\"\

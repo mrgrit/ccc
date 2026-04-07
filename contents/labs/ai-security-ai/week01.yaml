@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: version
     field: stdout
+  target_vm: manager
   script: curl -s http://10.20.30.200:11434/api/version
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: gemma
     field: stdout
+  target_vm: manager
   script: curl -s http://10.20.30.200:11434/api/tags | python3 -c "import sys,json; [print(m['name']) for m in json.load(sys.stdin)['models']]"
   risk_level: low
 - order: 3
@@ -49,6 +51,7 @@ steps:
     type: output_contains
     expect: I
     field: stdout
+  target_vm: manager
   script: curl -s http://10.20.30.200:11434/api/generate -d '{"model":"gemma3:4b","prompt":"Hello, who are you?","stream":false}' | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])"
   risk_level: low
 - order: 4
@@ -63,6 +66,7 @@ steps:
     type: output_contains
     expect: injection
     field: stdout
+  target_vm: manager
   script: curl -s http://10.20.30.200:11434/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a helpful security assistant"},{"role":"user","content":"What is prompt injection?"}],"stream":false}'
     | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'])"
   risk_level: low
@@ -79,6 +83,7 @@ steps:
     type: output_contains
     expect: TEMP=
     field: stdout
+  target_vm: manager
   script: curl -s http://10.20.30.200:11434/api/generate -d '{"model":"gemma3:4b","prompt":"Explain AI security in one sentence","stream":false,"options":{"temperature":0.0}}' | python3 -c "import sys,json;
     print('TEMP=0.0:', json.load(sys.stdin)['response'])" && curl -s http://10.20.30.200:11434/api/generate -d '{"model":"gemma3:4b","prompt":"Explain AI security in one sentence","stream":false,"options":{"temperature":1.5}}'
     | python3 -c "import sys,json; print('TEMP=1.5:', json.load(sys.stdin)['response'])"
@@ -94,6 +99,7 @@ steps:
     type: output_contains
     expect: 보안
     field: stdout
+  target_vm: manager
   script: curl -s http://10.20.30.200:11434/api/generate -d '{"model":"gemma3:4b","prompt":"LLM 보안에서 가장 중요한 3가지를 한국어로 답하라","stream":false}' | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])"
   risk_level: low
 - order: 7
@@ -108,6 +114,7 @@ steps:
     type: output_contains
     expect: tokens/sec
     field: stdout
+  target_vm: manager
   script: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"What is AI?","stream":false}'' | python3 -c "import sys,json; d=json.load(sys.stdin); tokens=d.get(''eval_count'',0);
     duration=d.get(''eval_duration'',1); print(f''Tokens: {tokens}, Speed: {tokens/(duration/1e9):.1f} tokens/sec'')"'
   risk_level: low
@@ -123,6 +130,7 @@ steps:
     type: output_contains
     expect: tokens
     field: stdout
+  target_vm: manager
   script: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"Tell me everything about cybersecurity","stream":false,"options":{"num_predict":10}}'' | python3 -c "import
     sys,json; r=json.load(sys.stdin); print(f''Response ({r.get(\"eval_count\",0)} tokens): {r[\"response\"]}'')" '
   risk_level: low
@@ -138,6 +146,7 @@ steps:
     type: output_contains
     expect: Run 3
     field: stdout
+  target_vm: manager
   script: for i in 1 2 3; do echo "=== Run $i ==="; curl -s http://10.20.30.200:11434/api/generate -d '{"model":"gemma3:4b","prompt":"What is 2+2?","stream":false,"options":{"seed":42,"temperature":0}}'
     | python3 -c "import sys,json; print(json.load(sys.stdin)['response'][:50])"; done
   risk_level: low
@@ -152,5 +161,6 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+  target_vm: manager
   script: curl -sI http://10.20.30.200:11434/api/tags 2>&1 | grep -iE '(server|version|powered|allow|access-control)'
   risk_level: low

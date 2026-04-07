@@ -1,179 +1,198 @@
-lab_id: "attack-adv-nonai-week02"
-title: "OSINT 고급 정보수집"
-version: "non-ai"
-course: "attack-adv-nonai"
+lab_id: attack-adv-nonai-week02
+title: OSINT 고급 정보수집
+version: non-ai
+course: attack-adv-nonai
 week: 2
-description: "고급 OSINT(Open Source Intelligence) 기법을 활용하여 대상 조직과 인프라의 심층 정보를 수집한다. DNS 열거, 인증서 투명성 로그, 메타데이터 분석 등 다양한 수동 정찰 기법을 실습한다."
-difficulty: "hard"
+description: 고급 OSINT(Open Source Intelligence) 기법을 활용하여 대상 조직과 인프라의 심층 정보를 수집한다. DNS 열거, 인증서 투명성 로그, 메타데이터 분석 등 다양한 수동 정찰 기법을 실습한다.
+difficulty: hard
 duration_minutes: 120
 objectives:
-  - "DNS 열거, 서브도메인 브루트포스 등 고급 정찰 기법을 적용한다"
-  - "인증서 투명성 로그와 WHOIS 이력을 활용한 인프라 매핑을 수행한다"
-  - "문서 메타데이터에서 민감 정보를 추출한다"
+- DNS 열거, 서브도메인 브루트포스 등 고급 정찰 기법을 적용한다
+- 인증서 투명성 로그와 WHOIS 이력을 활용한 인프라 매핑을 수행한다
+- 문서 메타데이터에서 민감 정보를 추출한다
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "dig를 사용하여 10.20.30.1 DNS 서버에 대해 AXFR(존 전송) 요청을 시도하라. 도메인은 lab.local로 설정하라."
-    hint: "dig axfr @서버 도메인 형태로 존 전송을 요청한다"
-    category: "recon"
-    points: 10
-    answer: "dig axfr @10.20.30.1 lab.local"
-    answer_detail: "DNS 존 전송(AXFR)은 DNS 서버의 전체 레코드를 한 번에 가져오는 기법이다. 잘못 구성된 DNS 서버는 인증 없이 존 전송을 허용하여 내부 호스트명, IP 매핑이 모두 노출된다. MITRE ATT&CK T1596.001에 해당하며, 대부분의 현대 DNS 서버는 이를 차단한다."
-    verify:
-      type: "output_contains"
-      expect: "XFR"
-      field: "stdout"
-  - order: 2
-    instruction: "dig를 사용하여 10.20.30.0/24 대역의 PTR 레코드를 역방향 조회하라. for 루프를 사용하여 1~254까지 순회하라."
-    hint: "for i in $(seq 1 254); do dig -x 10.20.30.$i +short; done 형태로 순회한다"
-    category: "recon"
-    points: 10
-    answer: "for i in $(seq 1 254); do result=$(dig -x 10.20.30.$i +short 2>/dev/null); [ -n \"$result\" ] && echo \"10.20.30.$i -> $result\"; done"
-    answer_detail: "역방향 DNS 스위핑은 IP 대역 전체에 대해 PTR 레코드를 조회하여 호스트명을 수집하는 기법이다. 내부 명명 규칙(예: db-prod-01, web-staging)이 노출되어 서버 역할과 환경을 추정할 수 있다. 이는 네트워크 맵 작성의 핵심 정보원이다."
-    verify:
-      type: "output_contains"
-      expect: "10.20.30"
-      field: "stdout"
-  - order: 3
-    instruction: "nmap을 사용하여 10.20.30.80의 SSL/TLS 인증서 정보를 수집하라. 포트 443을 대상으로 ssl-cert 스크립트를 실행하라."
-    hint: "nmap --script ssl-cert -p 443 대상 형태로 인증서를 수집한다"
-    category: "recon"
-    points: 10
-    answer: "nmap --script ssl-cert -p 443 10.20.30.80"
-    answer_detail: "SSL/TLS 인증서에는 조직명, 도메인, 발급자, 유효기간 등 풍부한 정보가 포함된다. 인증서의 SAN(Subject Alternative Name) 필드에서 추가 서브도메인을 발견할 수 있다. Certificate Transparency 로그를 검색하면 과거 발급된 모든 인증서를 확인할 수 있다."
-    verify:
-      type: "output_contains"
-      expect: "ssl-cert"
-      field: "stdout"
-  - order: 4
-    instruction: "curl을 사용하여 10.20.30.80:3000 웹서버의 다양한 HTTP 헤더를 분석하라. 보안 헤더(X-Frame-Options, CSP, HSTS 등)의 존재 여부를 확인하라."
-    hint: "curl -I 또는 curl -v로 응답 헤더를 확인한다"
-    category: "recon"
-    points: 10
-    answer: "curl -sI http://10.20.30.80:3000 | grep -iE '(x-frame|content-security|strict-transport|x-content-type|x-xss|server|x-powered)'"
-    answer_detail: "HTTP 보안 헤더의 부재는 공격 표면을 나타낸다. X-Frame-Options 미설정은 클릭재킹, CSP 미설정은 XSS, HSTS 미설정은 다운그레이드 공격의 가능성을 의미한다. Server 헤더와 X-Powered-By 헤더는 기술 스택을 직접 노출하여 CVE 기반 공격을 용이하게 한다."
-    verify:
-      type: "output_contains"
-      expect: "Server"
-      field: "stdout"
-  - order: 5
-    instruction: "웹서버에서 다운로드한 파일의 메타데이터를 분석하라. curl로 10.20.30.80:3000/ftp 경로의 파일을 다운로드하고, exiftool 또는 strings로 메타데이터를 추출하라."
-    hint: "curl로 파일을 다운로드하고 file, strings 명령으로 분석한다"
-    category: "recon"
-    points: 10
-    answer: "curl -s http://10.20.30.80:3000/ftp -o /tmp/ftp_index.html && strings /tmp/ftp_index.html | head -30"
-    answer_detail: "문서 메타데이터에는 작성자명, 소프트웨어 버전, 내부 경로 등이 포함될 수 있다. PDF, Office 문서에서 exiftool로 추출한 메타데이터는 직원 이름(스피어 피싱 대상), 내부 디렉토리 구조, 사용 소프트웨어 버전 등 귀중한 OSINT 정보를 제공한다."
-    verify:
-      type: "output_contains"
-      expect: "ftp"
-      field: "stdout"
-  - order: 6
-    instruction: "웹서버의 숨겨진 디렉토리를 탐색하라. curl을 사용하여 일반적인 관리자 경로(/admin, /api, /swagger, /debug, /console)에 접근을 시도하라."
-    hint: "for 루프로 여러 경로를 순회하며 HTTP 상태 코드를 확인한다"
-    category: "recon"
-    points: 10
-    answer: "for path in admin api swagger debug console backup .git .env api-docs; do code=$(curl -s -o /dev/null -w '%{http_code}' http://10.20.30.80:3000/$path); echo \"/$path -> $code\"; done"
-    answer_detail: "디렉토리 브루트포스는 웹 정찰의 핵심 기법이다. /api-docs, /swagger는 API 명세 노출, /.git은 소스코드 유출, /.env는 환경변수(DB 비밀번호 등) 노출로 이어진다. 200(존재), 301/302(리다이렉트), 403(접근차단=존재확인) 응답을 구분하여 분석한다."
-    verify:
-      type: "output_contains"
-      expect: "->"
-      field: "stdout"
-  - order: 7
-    instruction: "JavaScript 소스코드에서 API 엔드포인트를 추출하라. curl로 10.20.30.80:3000의 메인 페이지를 가져와서 grep으로 API 경로와 URL 패턴을 검색하라."
-    hint: "grep -oE 옵션으로 정규식에 매칭되는 부분만 추출한다"
-    category: "recon"
-    points: 10
-    answer: "curl -s http://10.20.30.80:3000 | grep -oE '(api|rest|/api/)[a-zA-Z0-9/_-]+' | sort -u"
-    answer_detail: "JavaScript 소스코드에는 클라이언트 측에서 호출하는 API 엔드포인트가 하드코딩되어 있는 경우가 많다. fetch(), XMLHttpRequest, axios 호출에서 URL을 추출하면 인증이 필요한 관리자 API나 문서화되지 않은 엔드포인트를 발견할 수 있다."
-    verify:
-      type: "output_contains"
-      expect: "api"
-      field: "stdout"
-  - order: 8
-    instruction: "nmap의 http-enum 스크립트를 사용하여 10.20.30.80의 웹서버에서 알려진 경로와 파일을 자동으로 열거하라."
-    hint: "--script http-enum 옵션을 사용한다"
-    category: "recon"
-    points: 10
-    answer: "nmap --script http-enum -p 3000 10.20.30.80"
-    answer_detail: "http-enum NSE 스크립트는 수천 개의 알려진 웹 경로(관리 콘솔, 기본 파일, 백업 등)를 자동으로 검사한다. 수동 브루트포스보다 효율적이며, CMS별 특화 경로도 포함한다. nikto, dirsearch 등 전용 도구와 병행하면 더 높은 커버리지를 달성할 수 있다."
-    verify:
-      type: "output_contains"
-      expect: "http-enum"
-      field: "stdout"
-  - order: 9
-    instruction: "SNMP를 통한 정보수집을 시뮬레이션하라. snmpwalk 또는 nmap의 snmp-brute 스크립트로 10.20.30.1에서 SNMP 커뮤니티 문자열을 탐지하라."
-    hint: "nmap --script snmp-brute -p 161 대상 형태로 실행한다"
-    category: "recon"
-    points: 10
-    answer: "nmap -sU --script snmp-brute -p 161 10.20.30.1"
-    answer_detail: "SNMP(Simple Network Management Protocol)는 네트워크 장비 관리에 사용되며, 기본 커뮤니티 문자열(public/private)이 변경되지 않은 경우가 많다. SNMPv1/v2c는 평문 전송이므로 인터페이스 목록, 라우팅 테이블, 프로세스 목록 등 상세 정보가 유출된다."
-    verify:
-      type: "output_contains"
-      expect: "161"
-      field: "stdout"
-  - order: 10
-    instruction: "SMB 프로토콜을 통한 정보수집을 수행하라. nmap의 smb-os-discovery와 smb-enum-shares 스크립트로 10.20.30.80을 스캔하라."
-    hint: "--script smb-os-discovery,smb-enum-shares -p 445 형태로 복수 스크립트를 실행한다"
-    category: "recon"
-    points: 10
-    answer: "nmap --script smb-os-discovery,smb-enum-shares -p 445 10.20.30.80"
-    answer_detail: "SMB 프로토콜은 Windows 네트워크에서 파일 공유에 사용되며, 인증 없이도 OS 버전, 도메인명, 호스트명을 노출할 수 있다. 익명 공유(null session)가 허용되면 사용자 목록, 공유 폴더 등이 추가로 유출된다. EternalBlue(MS17-010) 등 치명적 취약점의 공격 표면이기도 하다."
-    verify:
-      type: "output_contains"
-      expect: "445"
-      field: "stdout"
-  - order: 11
-    instruction: "대상 네트워크의 서비스 배너를 체계적으로 수집하라. nmap으로 10.20.30.0/24의 주요 포트(22,80,443,3000,8080,8443)를 배너 그래빙하라."
-    hint: "-sV --version-intensity 5 옵션으로 상세 배너를 수집한다"
-    category: "recon"
-    points: 10
-    answer: "nmap -sV --version-intensity 5 -p 22,80,443,3000,8080,8443 10.20.30.0/24"
-    answer_detail: "배너 그래빙(Banner Grabbing)은 서비스의 종류와 버전을 식별하는 핵심 정찰 기법이다. SSH, HTTP, FTP 등의 배너에서 소프트웨어명과 버전을 추출하면 CVE 데이터베이스에서 알려진 취약점을 검색할 수 있다. --version-intensity 5는 기본값으로 균형 잡힌 탐지율을 제공한다."
-    verify:
-      type: "output_contains"
-      expect: "open"
-      field: "stdout"
-  - order: 12
-    instruction: "수집된 정보를 바탕으로 대상 네트워크의 토폴로지 맵을 텍스트로 작성하라. 각 호스트의 IP, 역할, 열린 포트, 서비스 버전을 /tmp/network_map.txt에 정리하라."
-    hint: "echo와 리다이렉션으로 정보를 체계적으로 정리한다"
-    category: "analysis"
-    points: 10
-    answer: "echo -e '=== Network Topology Map ===\\n\\n[10.20.30.1] Role: Firewall/IPS\\n  - Services: nftables, Suricata\\n\\n[10.20.30.80] Role: Web Server\\n  - Port 3000: JuiceShop (Node.js)\\n  - Port 80/443: BunkerWeb WAF\\n\\n[10.20.30.100] Role: SIEM\\n  - Service: Wazuh 4.11.2\\n\\n[10.20.30.201] Role: Control Plane\\n  - Port 8000: Manager API' > /tmp/network_map.txt && cat /tmp/network_map.txt"
-    answer_detail: "네트워크 토폴로지 맵은 정찰 결과를 종합한 문서로, 공격 계획 수립의 기초 자료이다. 호스트별 역할, 서비스, 버전 정보를 체계적으로 정리하면 공격 경로(Attack Path)를 시각화하고 우선순위를 결정할 수 있다. 실제 모의해킹에서는 Maltego, Bloodhound 등 시각화 도구를 활용한다."
-    verify:
-      type: "output_contains"
-      expect: "Network Topology Map"
-      field: "stdout"
-  - order: 13
-    instruction: "theHarvester 기능을 수동으로 시뮬레이션하라. curl을 사용하여 웹서버의 HTML에서 이메일 주소 패턴을 추출하라."
-    hint: "grep -oE로 이메일 정규식을 적용한다"
-    category: "recon"
-    points: 10
-    answer: "curl -s http://10.20.30.80:3000 | grep -oE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\\.[a-zA-Z]{2,}' | sort -u"
-    answer_detail: "이메일 주소 수집은 OSINT의 핵심 요소이다. 수집된 이메일은 스피어 피싱 대상 선정, 사용자명 추정(이메일 앞부분이 계정명인 경우가 많음), 비밀번호 스프레이 공격 등에 활용된다. theHarvester, Hunter.io 등 전용 도구는 검색엔진, SNS, 코드 저장소 등 다양한 소스를 자동으로 수집한다."
-    verify:
-      type: "output_contains"
-      expect: "@"
-      field: "stdout"
-  - order: 14
-    instruction: "웹 기술 스택 핑거프린팅을 수동으로 수행하라. curl로 가져온 HTML에서 프레임워크 특유의 패턴(메타 태그, CSS 클래스, JavaScript 라이브러리)을 분석하라."
-    hint: "grep으로 meta, script, link 태그를 필터링하여 기술 스택을 추정한다"
-    category: "recon"
-    points: 10
-    answer: "curl -s http://10.20.30.80:3000 | grep -oiE '(<meta[^>]+>|<script[^>]+src=\"[^\"]+\"|<link[^>]+href=\"[^\"]+\")' | head -20"
-    answer_detail: "웹 핑거프린팅은 HTML 소스에서 프레임워크별 고유 패턴을 식별하는 기법이다. Angular는 ng- 속성, React는 data-reactroot, jQuery는 jquery.min.js 등으로 식별된다. 서버 측은 쿠키명(PHPSESSID=PHP, JSESSIONID=Java)으로도 추정 가능하다. 이 정보는 CVE 검색과 맞춤형 공격에 활용된다."
-    verify:
-      type: "output_contains"
-      expect: "script"
-      field: "stdout"
-  - order: 15
-    instruction: "OSINT 수집 결과를 종합하여 위협 모델링 보고서를 작성하라. 발견된 공격 표면, 우선순위화된 공격 벡터, 권장 방어 조치를 /tmp/osint_report.txt에 작성하라."
-    hint: "수집된 모든 정보를 종합하여 echo로 구조화된 보고서를 작성한다"
-    category: "analysis"
-    points: 10
-    answer: "echo -e '=== OSINT Assessment Report ===\\nDate: $(date)\\n\\n[1] Attack Surface Summary\\n- Web: JuiceShop on port 3000 (known vulnerable app)\\n- Firewall: nftables + Suricata on 10.20.30.1\\n- SIEM: Wazuh on 10.20.30.100\\n\\n[2] Priority Attack Vectors\\n1. Web application vulnerabilities (OWASP Top 10)\\n2. Missing security headers\\n3. Information disclosure via banners\\n\\n[3] Recommendations\\n- Harden HTTP security headers\\n- Restrict banner information\\n- Implement network segmentation' > /tmp/osint_report.txt && cat /tmp/osint_report.txt"
-    answer_detail: "OSINT 결과를 체계적으로 문서화하면 팀 내 공유와 후속 공격 단계 계획에 활용된다. 공격 표면 요약, 위험도 기준 우선순위화, 방어자를 위한 권고사항을 포함한다. PTES(Penetration Testing Execution Standard)의 Intelligence Gathering 단계 산출물에 해당한다."
-    verify:
-      type: "output_contains"
-      expect: "OSINT Assessment Report"
-      field: "stdout"
+- order: 1
+  instruction: dig를 사용하여 10.20.30.1 DNS 서버에 대해 AXFR(존 전송) 요청을 시도하라. 도메인은 lab.local로 설정하라.
+  hint: dig axfr @서버 도메인 형태로 존 전송을 요청한다
+  category: recon
+  points: 10
+  answer: dig axfr @10.20.30.1 lab.local
+  answer_detail: DNS 존 전송(AXFR)은 DNS 서버의 전체 레코드를 한 번에 가져오는 기법이다. 잘못 구성된 DNS 서버는 인증 없이 존 전송을 허용하여 내부 호스트명, IP 매핑이 모두 노출된다. MITRE ATT&CK T1596.001에 해당하며, 대부분의 현대 DNS 서버는 이를 차단한다.
+  verify:
+    type: output_contains
+    expect: XFR
+    field: stdout
+  target_vm: attacker
+- order: 2
+  instruction: dig를 사용하여 10.20.30.0/24 대역의 PTR 레코드를 역방향 조회하라. for 루프를 사용하여 1~254까지 순회하라.
+  hint: for i in $(seq 1 254); do dig -x 10.20.30.$i +short; done 형태로 순회한다
+  category: recon
+  points: 10
+  answer: for i in $(seq 1 254); do result=$(dig -x 10.20.30.$i +short 2>/dev/null); [ -n "$result" ] && echo "10.20.30.$i -> $result"; done
+  answer_detail: '역방향 DNS 스위핑은 IP 대역 전체에 대해 PTR 레코드를 조회하여 호스트명을 수집하는 기법이다. 내부 명명 규칙(예: db-prod-01, web-staging)이 노출되어 서버 역할과 환경을 추정할 수 있다. 이는 네트워크 맵 작성의 핵심 정보원이다.'
+  verify:
+    type: output_contains
+    expect: 10.20.30
+    field: stdout
+  target_vm: attacker
+- order: 3
+  instruction: nmap을 사용하여 10.20.30.80의 SSL/TLS 인증서 정보를 수집하라. 포트 443을 대상으로 ssl-cert 스크립트를 실행하라.
+  hint: nmap --script ssl-cert -p 443 대상 형태로 인증서를 수집한다
+  category: recon
+  points: 10
+  answer: nmap --script ssl-cert -p 443 10.20.30.80
+  answer_detail: SSL/TLS 인증서에는 조직명, 도메인, 발급자, 유효기간 등 풍부한 정보가 포함된다. 인증서의 SAN(Subject Alternative Name) 필드에서 추가 서브도메인을 발견할 수 있다. Certificate Transparency 로그를 검색하면 과거 발급된 모든 인증서를 확인할 수 있다.
+  verify:
+    type: output_contains
+    expect: ssl-cert
+    field: stdout
+  target_vm: attacker
+- order: 4
+  instruction: curl을 사용하여 10.20.30.80:3000 웹서버의 다양한 HTTP 헤더를 분석하라. 보안 헤더(X-Frame-Options, CSP, HSTS 등)의 존재 여부를 확인하라.
+  hint: curl -I 또는 curl -v로 응답 헤더를 확인한다
+  category: recon
+  points: 10
+  answer: curl -sI http://10.20.30.80:3000 | grep -iE '(x-frame|content-security|strict-transport|x-content-type|x-xss|server|x-powered)'
+  answer_detail: HTTP 보안 헤더의 부재는 공격 표면을 나타낸다. X-Frame-Options 미설정은 클릭재킹, CSP 미설정은 XSS, HSTS 미설정은 다운그레이드 공격의 가능성을 의미한다. Server 헤더와 X-Powered-By 헤더는 기술 스택을 직접 노출하여 CVE 기반 공격을 용이하게 한다.
+  verify:
+    type: output_contains
+    expect: Server
+    field: stdout
+  target_vm: attacker
+- order: 5
+  instruction: 웹서버에서 다운로드한 파일의 메타데이터를 분석하라. curl로 10.20.30.80:3000/ftp 경로의 파일을 다운로드하고, exiftool 또는 strings로 메타데이터를 추출하라.
+  hint: curl로 파일을 다운로드하고 file, strings 명령으로 분석한다
+  category: recon
+  points: 10
+  answer: curl -s http://10.20.30.80:3000/ftp -o /tmp/ftp_index.html && strings /tmp/ftp_index.html | head -30
+  answer_detail: 문서 메타데이터에는 작성자명, 소프트웨어 버전, 내부 경로 등이 포함될 수 있다. PDF, Office 문서에서 exiftool로 추출한 메타데이터는 직원 이름(스피어 피싱 대상), 내부 디렉토리 구조, 사용 소프트웨어 버전 등 귀중한 OSINT 정보를 제공한다.
+  verify:
+    type: output_contains
+    expect: ftp
+    field: stdout
+  target_vm: attacker
+- order: 6
+  instruction: 웹서버의 숨겨진 디렉토리를 탐색하라. curl을 사용하여 일반적인 관리자 경로(/admin, /api, /swagger, /debug, /console)에 접근을 시도하라.
+  hint: for 루프로 여러 경로를 순회하며 HTTP 상태 코드를 확인한다
+  category: recon
+  points: 10
+  answer: for path in admin api swagger debug console backup .git .env api-docs; do code=$(curl -s -o /dev/null -w '%{http_code}' http://10.20.30.80:3000/$path); echo "/$path -> $code"; done
+  answer_detail: 디렉토리 브루트포스는 웹 정찰의 핵심 기법이다. /api-docs, /swagger는 API 명세 노출, /.git은 소스코드 유출, /.env는 환경변수(DB 비밀번호 등) 노출로 이어진다. 200(존재), 301/302(리다이렉트), 403(접근차단=존재확인) 응답을 구분하여 분석한다.
+  verify:
+    type: output_contains
+    expect: ->
+    field: stdout
+  target_vm: attacker
+- order: 7
+  instruction: JavaScript 소스코드에서 API 엔드포인트를 추출하라. curl로 10.20.30.80:3000의 메인 페이지를 가져와서 grep으로 API 경로와 URL 패턴을 검색하라.
+  hint: grep -oE 옵션으로 정규식에 매칭되는 부분만 추출한다
+  category: recon
+  points: 10
+  answer: curl -s http://10.20.30.80:3000 | grep -oE '(api|rest|/api/)[a-zA-Z0-9/_-]+' | sort -u
+  answer_detail: JavaScript 소스코드에는 클라이언트 측에서 호출하는 API 엔드포인트가 하드코딩되어 있는 경우가 많다. fetch(), XMLHttpRequest, axios 호출에서 URL을 추출하면 인증이 필요한 관리자 API나 문서화되지 않은 엔드포인트를 발견할 수 있다.
+  verify:
+    type: output_contains
+    expect: api
+    field: stdout
+  target_vm: attacker
+- order: 8
+  instruction: nmap의 http-enum 스크립트를 사용하여 10.20.30.80의 웹서버에서 알려진 경로와 파일을 자동으로 열거하라.
+  hint: --script http-enum 옵션을 사용한다
+  category: recon
+  points: 10
+  answer: nmap --script http-enum -p 3000 10.20.30.80
+  answer_detail: http-enum NSE 스크립트는 수천 개의 알려진 웹 경로(관리 콘솔, 기본 파일, 백업 등)를 자동으로 검사한다. 수동 브루트포스보다 효율적이며, CMS별 특화 경로도 포함한다. nikto, dirsearch 등 전용 도구와 병행하면 더 높은 커버리지를 달성할 수 있다.
+  verify:
+    type: output_contains
+    expect: http-enum
+    field: stdout
+  target_vm: attacker
+- order: 9
+  instruction: SNMP를 통한 정보수집을 시뮬레이션하라. snmpwalk 또는 nmap의 snmp-brute 스크립트로 10.20.30.1에서 SNMP 커뮤니티 문자열을 탐지하라.
+  hint: nmap --script snmp-brute -p 161 대상 형태로 실행한다
+  category: recon
+  points: 10
+  answer: nmap -sU --script snmp-brute -p 161 10.20.30.1
+  answer_detail: SNMP(Simple Network Management Protocol)는 네트워크 장비 관리에 사용되며, 기본 커뮤니티 문자열(public/private)이 변경되지 않은 경우가 많다. SNMPv1/v2c는 평문 전송이므로 인터페이스 목록, 라우팅 테이블, 프로세스 목록 등 상세 정보가 유출된다.
+  verify:
+    type: output_contains
+    expect: '161'
+    field: stdout
+  target_vm: attacker
+- order: 10
+  instruction: SMB 프로토콜을 통한 정보수집을 수행하라. nmap의 smb-os-discovery와 smb-enum-shares 스크립트로 10.20.30.80을 스캔하라.
+  hint: --script smb-os-discovery,smb-enum-shares -p 445 형태로 복수 스크립트를 실행한다
+  category: recon
+  points: 10
+  answer: nmap --script smb-os-discovery,smb-enum-shares -p 445 10.20.30.80
+  answer_detail: SMB 프로토콜은 Windows 네트워크에서 파일 공유에 사용되며, 인증 없이도 OS 버전, 도메인명, 호스트명을 노출할 수 있다. 익명 공유(null session)가 허용되면 사용자 목록, 공유 폴더 등이 추가로 유출된다. EternalBlue(MS17-010) 등 치명적 취약점의 공격 표면이기도 하다.
+  verify:
+    type: output_contains
+    expect: '445'
+    field: stdout
+  target_vm: attacker
+- order: 11
+  instruction: 대상 네트워크의 서비스 배너를 체계적으로 수집하라. nmap으로 10.20.30.0/24의 주요 포트(22,80,443,3000,8080,8443)를 배너 그래빙하라.
+  hint: -sV --version-intensity 5 옵션으로 상세 배너를 수집한다
+  category: recon
+  points: 10
+  answer: nmap -sV --version-intensity 5 -p 22,80,443,3000,8080,8443 10.20.30.0/24
+  answer_detail: 배너 그래빙(Banner Grabbing)은 서비스의 종류와 버전을 식별하는 핵심 정찰 기법이다. SSH, HTTP, FTP 등의 배너에서 소프트웨어명과 버전을 추출하면 CVE 데이터베이스에서 알려진 취약점을 검색할 수 있다. --version-intensity 5는 기본값으로 균형 잡힌 탐지율을 제공한다.
+  verify:
+    type: output_contains
+    expect: open
+    field: stdout
+  target_vm: attacker
+- order: 12
+  instruction: 수집된 정보를 바탕으로 대상 네트워크의 토폴로지 맵을 텍스트로 작성하라. 각 호스트의 IP, 역할, 열린 포트, 서비스 버전을 /tmp/network_map.txt에 정리하라.
+  hint: echo와 리다이렉션으로 정보를 체계적으로 정리한다
+  category: analysis
+  points: 10
+  answer: 'echo -e ''=== Network Topology Map ===\n\n[10.20.30.1] Role: Firewall/IPS\n  - Services: nftables, Suricata\n\n[10.20.30.80] Role: Web Server\n  - Port 3000: JuiceShop (Node.js)\n  - Port 80/443:
+    BunkerWeb WAF\n\n[10.20.30.100] Role: SIEM\n  - Service: Wazuh 4.11.2\n\n[10.20.30.201] Role: Control Plane\n  - Port 8000: Manager API'' > /tmp/network_map.txt && cat /tmp/network_map.txt'
+  answer_detail: 네트워크 토폴로지 맵은 정찰 결과를 종합한 문서로, 공격 계획 수립의 기초 자료이다. 호스트별 역할, 서비스, 버전 정보를 체계적으로 정리하면 공격 경로(Attack Path)를 시각화하고 우선순위를 결정할 수 있다. 실제 모의해킹에서는 Maltego, Bloodhound 등 시각화 도구를 활용한다.
+  verify:
+    type: output_contains
+    expect: Network Topology Map
+    field: stdout
+  target_vm: attacker
+- order: 13
+  instruction: theHarvester 기능을 수동으로 시뮬레이션하라. curl을 사용하여 웹서버의 HTML에서 이메일 주소 패턴을 추출하라.
+  hint: grep -oE로 이메일 정규식을 적용한다
+  category: recon
+  points: 10
+  answer: curl -s http://10.20.30.80:3000 | grep -oE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' | sort -u
+  answer_detail: 이메일 주소 수집은 OSINT의 핵심 요소이다. 수집된 이메일은 스피어 피싱 대상 선정, 사용자명 추정(이메일 앞부분이 계정명인 경우가 많음), 비밀번호 스프레이 공격 등에 활용된다. theHarvester, Hunter.io 등 전용 도구는 검색엔진, SNS, 코드 저장소 등 다양한 소스를 자동으로 수집한다.
+  verify:
+    type: output_contains
+    expect: '@'
+    field: stdout
+  target_vm: attacker
+- order: 14
+  instruction: 웹 기술 스택 핑거프린팅을 수동으로 수행하라. curl로 가져온 HTML에서 프레임워크 특유의 패턴(메타 태그, CSS 클래스, JavaScript 라이브러리)을 분석하라.
+  hint: grep으로 meta, script, link 태그를 필터링하여 기술 스택을 추정한다
+  category: recon
+  points: 10
+  answer: curl -s http://10.20.30.80:3000 | grep -oiE '(<meta[^>]+>|<script[^>]+src="[^"]+"|<link[^>]+href="[^"]+")' | head -20
+  answer_detail: 웹 핑거프린팅은 HTML 소스에서 프레임워크별 고유 패턴을 식별하는 기법이다. Angular는 ng- 속성, React는 data-reactroot, jQuery는 jquery.min.js 등으로 식별된다. 서버 측은 쿠키명(PHPSESSID=PHP, JSESSIONID=Java)으로도 추정 가능하다. 이 정보는 CVE 검색과 맞춤형
+    공격에 활용된다.
+  verify:
+    type: output_contains
+    expect: script
+    field: stdout
+  target_vm: attacker
+- order: 15
+  instruction: OSINT 수집 결과를 종합하여 위협 모델링 보고서를 작성하라. 발견된 공격 표면, 우선순위화된 공격 벡터, 권장 방어 조치를 /tmp/osint_report.txt에 작성하라.
+  hint: 수집된 모든 정보를 종합하여 echo로 구조화된 보고서를 작성한다
+  category: analysis
+  points: 10
+  answer: 'echo -e ''=== OSINT Assessment Report ===\nDate: $(date)\n\n[1] Attack Surface Summary\n- Web: JuiceShop on port 3000 (known vulnerable app)\n- Firewall: nftables + Suricata on 10.20.30.1\n-
+    SIEM: Wazuh on 10.20.30.100\n\n[2] Priority Attack Vectors\n1. Web application vulnerabilities (OWASP Top 10)\n2. Missing security headers\n3. Information disclosure via banners\n\n[3] Recommendations\n-
+    Harden HTTP security headers\n- Restrict banner information\n- Implement network segmentation'' > /tmp/osint_report.txt && cat /tmp/osint_report.txt'
+  answer_detail: OSINT 결과를 체계적으로 문서화하면 팀 내 공유와 후속 공격 단계 계획에 활용된다. 공격 표면 요약, 위험도 기준 우선순위화, 방어자를 위한 권고사항을 포함한다. PTES(Penetration Testing Execution Standard)의 Intelligence Gathering 단계 산출물에 해당한다.
+  verify:
+    type: output_contains
+    expect: OSINT Assessment Report
+    field: stdout
+  target_vm: attacker

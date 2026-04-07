@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: OpenSSL
     field: stdout
+  target_vm: secu
   script: openssl version && openssl ciphers -v | head -20
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: 암호화 완료
     field: stdout
+  target_vm: secu
   script: echo '기밀 데이터 테스트' > /tmp/secret.txt && openssl enc -aes-256-cbc -salt -in /tmp/secret.txt -out /tmp/secret.enc -pass pass:TestPass2026! 2>/dev/null && echo '암호화 완료' && ls -la /tmp/secret.enc
   risk_level: low
 - order: 3
@@ -49,6 +51,7 @@ steps:
     type: output_contains
     expect: 복호화 검증 성공
     field: stdout
+  target_vm: secu
   script: openssl enc -aes-256-cbc -d -in /tmp/secret.enc -out /tmp/secret_dec.txt -pass pass:TestPass2026! 2>/dev/null && diff /tmp/secret.txt /tmp/secret_dec.txt && echo '복호화 검증 성공'
   risk_level: low
 - order: 4
@@ -62,6 +65,7 @@ steps:
     type: output_contains
     expect: 개인키 생성 완료
     field: stdout
+  target_vm: secu
   script: openssl genrsa -out /tmp/private.key 2048 2>/dev/null && echo '개인키 생성 완료' && openssl rsa -in /tmp/private.key -check 2>/dev/null | head -1
   risk_level: low
 - order: 5
@@ -75,6 +79,7 @@ steps:
     type: output_contains
     expect: PUBLIC KEY
     field: stdout
+  target_vm: secu
   script: openssl rsa -in /tmp/private.key -pubout -out /tmp/public.key 2>/dev/null && cat /tmp/public.key
   risk_level: low
 - order: 6
@@ -88,6 +93,7 @@ steps:
     type: output_contains
     expect: 인증서 생성 완료
     field: stdout
+  target_vm: secu
   script: openssl req -x509 -newkey rsa:2048 -keyout /tmp/server.key -out /tmp/server.crt -days 365 -nodes -subj '/C=KR/ST=Seoul/L=Seoul/O=SecOps/CN=10.20.30.1' 2>/dev/null && echo '인증서 생성 완료'
   risk_level: low
 - order: 7
@@ -101,6 +107,7 @@ steps:
     type: output_contains
     expect: Issuer
     field: stdout
+  target_vm: secu
   script: openssl x509 -in /tmp/server.crt -text -noout | head -20
   risk_level: low
 - order: 8
@@ -114,6 +121,7 @@ steps:
     type: output_contains
     expect: 인증서 수
     field: stdout
+  target_vm: secu
   script: ls /etc/ssl/certs/ | head -20 && echo '인증서 수:' && ls /etc/ssl/certs/ | wc -l
   risk_level: low
 - order: 9
@@ -127,6 +135,7 @@ steps:
     type: output_contains
     expect: 무결성 검증 통과
     field: stdout
+  target_vm: secu
   script: sha256sum /etc/passwd > /tmp/passwd_hash.txt && cat /tmp/passwd_hash.txt && sha256sum -c /tmp/passwd_hash.txt && echo '무결성 검증 통과'
   risk_level: low
 - order: 10
@@ -140,6 +149,7 @@ steps:
     type: output_contains
     expect: 키 생성 완료
     field: stdout
+  target_vm: secu
   script: ssh-keygen -t ed25519 -f /tmp/test_ed25519 -N '' -C 'secops-lab' 2>/dev/null && echo '키 생성 완료' && cat /tmp/test_ed25519.pub
   risk_level: low
 - order: 11
@@ -171,6 +181,7 @@ steps:
     type: output_contains
     expect: 서명 준비 완료
     field: stdout
+  target_vm: secu
   script: 'echo ''test'' | gpg --batch --gen-key <<EOF 2>/dev/null
 
     Key-Type: RSA
@@ -202,6 +213,7 @@ steps:
     type: output_contains
     expect: 완료
     field: stdout
+  target_vm: secu
   script: echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | openssl x509 -text -noout 2>/dev/null | head -15 || echo 'TLS 연결 확인 완료'
   risk_level: low
 - order: 13
@@ -215,6 +227,7 @@ steps:
     type: output_contains
     expect: -rw-------
     field: stdout
+  target_vm: secu
   script: chmod 600 /tmp/private.key /tmp/server.key && chmod 644 /tmp/server.crt /tmp/public.key && ls -la /tmp/private.key /tmp/server.key /tmp/server.crt /tmp/public.key
   risk_level: low
 - order: 14
@@ -228,6 +241,7 @@ steps:
     type: output_contains
     expect: cryptsetup
     field: stdout
+  target_vm: secu
   script: which cryptsetup && cryptsetup --help 2>&1 | head -10 || echo 'cryptsetup 사용법 확인 완료'
   risk_level: low
 - order: 15
@@ -242,6 +256,7 @@ steps:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+  target_vm: secu
   script: echo '=== 암호화 구현 보고서 ===' && echo '[OpenSSL 버전]' && openssl version && echo '[생성된 키/인증서]' && ls -la /tmp/*.key /tmp/*.crt /tmp/*.pub 2>/dev/null && echo '[해시 무결성]' && cat /tmp/passwd_hash.txt
     2>/dev/null && echo '=== 보고서 완료 ==='
   risk_level: low

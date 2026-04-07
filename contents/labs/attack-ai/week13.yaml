@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: '---'
     field: stdout
+  target_vm: attacker
   script: ip link show && echo '---' && iwconfig 2>/dev/null || echo 'No wireless interfaces (expected in lab VM)'
   risk_level: low
 - order: 2
@@ -39,6 +40,7 @@ steps:
     type: output_contains
     expect: Wi-Fi Security Protocols
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Wi-Fi Security Protocols ===\n\n| Protocol | Year | Encryption | Key Mgmt | Known Vulnerabilities |\n|----------|------|-----------|----------|---------------------|\n| WEP | 1997
     | RC4 (40/104-bit) | Static key | IV collision, FMS attack |\n| WPA | 2003 | TKIP (RC4) | PSK/EAP | TKIP weak, dictionary attack |\n| WPA2 | 2004 | AES-CCMP | PSK/EAP | KRACK, dictionary on PSK |\n|
     WPA3 | 2018 | AES-GCMP | SAE(Dragonfly) | Dragonblood (patched) |\n\n[Summary]\n- WEP: BROKEN - never use\n- WPA: DEPRECATED - TKIP vulnerable\n- WPA2-PSK: Vulnerable to offline dictionary attack\n-
@@ -57,6 +59,7 @@ steps:
     type: output_contains
     expect: Aircrack-ng Suite
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Aircrack-ng Suite ===\n\n1. airmon-ng: 무선 인터페이스를 Monitor 모드로 전환\n   Usage: airmon-ng start wlan0\n\n2. airodump-ng: 무선 네트워크 스캐닝 및 패킷 캡처\n   Usage: airodump-ng wlan0mon\n   Usage:
     airodump-ng -c CH --bssid AP_MAC -w capture wlan0mon\n\n3. aireplay-ng: 패킷 인젝션 (Deauth, ARP replay)\n   Usage: aireplay-ng -0 5 -a AP_MAC -c CLIENT_MAC wlan0mon\n\n4. aircrack-ng: WEP/WPA 키 크래킹\n   Usage:
     aircrack-ng -w wordlist.txt capture.cap\n\n5. airbase-ng: Fake AP (Evil Twin) 생성\n   Usage: airbase-ng -e "Free WiFi" -c 6 wlan0mon'''
@@ -75,6 +78,7 @@ steps:
     type: output_contains
     expect: 4-Way Handshake
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== WPA2 4-Way Handshake ===\n\nPMK = PBKDF2(PSK, SSID, 4096, 256)\n\n[Message 1] AP -> Client\n  - ANonce (AP random number)\n  - Client derives PTK from PMK + ANonce + SNonce + MACs\n\n[Message
     2] Client -> AP\n  - SNonce (Client random number)\n  - MIC (Message Integrity Check)\n  - AP derives PTK and verifies MIC\n\n[Message 3] AP -> Client\n  - GTK (Group Temporal Key, encrypted)\n  - MIC\n\n[Message
     4] Client -> AP\n  - ACK\n  - Encrypted communication begins\n\n[Attack Vector]\n- Capture handshake (Msg 1-2 sufficient)\n- Offline dictionary attack: try passwords to derive PMK\n- If PMK matches
@@ -93,6 +97,7 @@ steps:
     type: output_contains
     expect: WPA2 Cracking
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== WPA2 Cracking Simulation ==='' && echo ''Step 1: Monitor mode'' && echo ''  airmon-ng start wlan0'' && echo ''Step 2: Capture handshake'' && echo ''  airodump-ng -c 6 --bssid AA:BB:CC:DD:EE:FF
     -w capture wlan0mon'' && echo ''Step 3: Force deauth to trigger handshake'' && echo ''  aireplay-ng -0 5 -a AA:BB:CC:DD:EE:FF wlan0mon'' && echo ''Step 4: Crack with wordlist'' && echo ''  aircrack-ng
     -w /usr/share/wordlists/rockyou.txt capture-01.cap'' && echo ''---'' && echo ''hashcat GPU crack: hashcat -m 22000 hash.hc22000 rockyou.txt'' && echo ''Speed: ~500K passwords/sec (GPU) vs ~2K/sec (CPU)'''
@@ -111,6 +116,7 @@ steps:
     type: output_contains
     expect: Evil Twin Attack
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Evil Twin Attack ===\n\n[Architecture]\nVictim --> Fake AP(Evil Twin) --> Internet\n                |\n                v\n        Attacker captures all traffic\n\n[Components]\n1.
     Fake AP: airbase-ng -e "Target_SSID" -c 6 wlan0mon\n2. DHCP: dnsmasq --dhcp-range=192.168.1.10,192.168.1.50\n3. NAT: iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE\n4. Captive Portal: nginx serving
     fake login page\n5. SSL Strip: downgrade HTTPS to HTTP\n\n[Attack Flow]\n1. Create AP with same SSID as target\n2. Deauth clients from real AP\n3. Clients auto-connect to stronger (closer) signal\n4.
@@ -129,6 +135,7 @@ steps:
     type: output_contains
     expect: Deauthentication Attack
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Deauthentication Attack ===\n\n[Principle]\n- 802.11 management frames are NOT authenticated\n- Anyone can send deauth frames with spoofed source MAC\n\n[Attack]\n  aireplay-ng
     -0 0 -a AP_BSSID -c CLIENT_MAC wlan0mon\n  -0: deauth attack\n  0: continuous (use specific count in practice)\n\n[Uses]\n1. Capture WPA handshake (force reconnection)\n2. DoS (deny wireless access)\n3.
     Force client to Evil Twin\n\n[Defense]\n- 802.11w (Protected Management Frames)\n- WPA3 mandates PMF\n- WIDS (Wireless IDS) to detect deauth floods'''
@@ -147,6 +154,7 @@ steps:
     type: output_contains
     expect: WEP Cracking
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== WEP Cracking ===\n\n[WEP Weakness]\n- RC4 stream cipher with 24-bit IV\n- Only 2^24 = 16,777,216 possible IVs\n- After ~5000 packets, IV reuse is likely\n- Same IV + same key =
     same keystream\n\n[FMS Attack (Fluhrer, Mantin, Shamir)]\n- Certain weak IVs reveal key bytes\n- Collect ~40,000 to 85,000 IVs\n- Statistical analysis recovers the key\n\n[PTW Attack (faster)]\n- Needs
     only ~20,000 packets\n- Works with ARP request replay\n\n[Commands]\n1. airodump-ng -c CH --bssid AP -w capture wlan0mon\n2. aireplay-ng -3 -b AP wlan0mon  (ARP replay to generate IVs)\n3. aircrack-ng
@@ -166,6 +174,7 @@ steps:
     type: output_contains
     expect: KRACK Attack
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== KRACK Attack (CVE-2017-13077) ===\n\n[Principle]\n- Exploits WPA2 4-Way Handshake implementation\n- Attacker replays Message 3 of handshake\n- Client reinstalls already-in-use encryption
     key\n- Nonce is reset to zero\n- Nonce reuse in AES-CCMP allows decryption\n\n[Impact]\n- Decrypt packets (read encrypted traffic)\n- Replay packets\n- TCP hijacking (in some cases)\n- Affects ALL correct
     WPA2 implementations\n\n[Mitigation]\n- Patch client OS (most important)\n- Accept retransmitted Message 3 without key reinstallation\n- 802.11r (Fast BSS Transition) most vulnerable\n- WPA3 not affected\n\n[Status:
@@ -185,6 +194,7 @@ steps:
     type: output_contains
     expect: WPA3-SAE vs WPA2-PSK
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== WPA3-SAE vs WPA2-PSK ===\n\n[WPA2-PSK]\n- PSK -> PMK (static, derived from password)\n- Offline dictionary attack possible with handshake capture\n- No forward secrecy\n\n[WPA3-SAE
     (Dragonfly)]\n- Password used in Diffie-Hellman exchange\n- PMK is ephemeral (different each session)\n- Offline dictionary attack IMPOSSIBLE\n  (attacker must interact with AP for each guess)\n- Forward
     secrecy: past sessions safe even if password leaked\n\n[Comparison]\n| Feature | WPA2-PSK | WPA3-SAE |\n|---------|----------|----------|\n| Offline attack | Possible | Impossible |\n| Forward secrecy
@@ -204,6 +214,7 @@ steps:
     type: output_contains
     expect: Bluetooth Attacks
     field: stdout
+  target_vm: attacker
   script: echo -e '=== Bluetooth Attacks ===\n\n[BlueBorne (CVE-2017-0785)]\n- Remote code execution via Bluetooth\n- No pairing required, no user interaction\n- Affects Linux, Android, Windows, iOS\n\n[BlueSmack]\n-
     Bluetooth DoS attack\n- Sends oversized L2CAP packets\n- Crashes Bluetooth stack\n\n[KNOB (Key Negotiation of Bluetooth)]\n- Forces short encryption key (1 byte)\n- MITM can then brute-force the key\n-
     Affects Bluetooth BR/EDR\n\n[BIAS (Bluetooth Impersonation)]\n- Impersonate previously paired device\n- Bypass authentication in Secure Connections\n\n[Defense]\n- Keep firmware updated\n- Disable Bluetooth
@@ -223,6 +234,7 @@ steps:
     type: output_contains
     expect: Wireless Security Audit
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Wireless Security Audit Checklist ===\n\n[Encryption]\n[ ] WPA3-SAE or WPA2-Enterprise in use\n[ ] WEP/WPA-TKIP disabled\n[ ] PMF (802.11w) enabled\n\n[Authentication]\n[ ] Strong
     PSK (20+ chars, random) or RADIUS\n[ ] MAC filtering (supplementary only)\n[ ] Guest network isolated\n\n[AP Configuration]\n[ ] Default admin password changed\n[ ] Firmware up to date\n[ ] SSID broadcast:
     policy decision\n[ ] Unnecessary services disabled (WPS)\n\n[Monitoring]\n[ ] WIDS/WIPS deployed\n[ ] Rogue AP detection active\n[ ] Deauth flood alerts configured\n\n[Physical]\n[ ] AP placement minimizes
@@ -241,6 +253,7 @@ steps:
     type: output_contains
     expect: Rogue AP Detection
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Rogue AP Detection ===\n\n[Methods]\n1. BSSID whitelist comparison\n2. Signal strength anomaly (same SSID, different signal)\n3. Channel overlap analysis\n4. Vendor OUI mismatch\n\n[Pseudo
     Script]\nknown_aps = load_whitelist()\nfor ap in scan_results:\n    if ap.bssid not in known_aps:\n        alert(f"ROGUE AP: {ap.ssid} at {ap.bssid}")\n    if ap.ssid in known_ssids and ap.signal >
     threshold:\n        alert(f"EVIL TWIN suspect: {ap.ssid}")\n\n[Tools]\n- Kismet: wireless network detector\n- Wazuh: can correlate wireless events\n- Commercial: Aruba WIPS, Cisco CleanAir'''
@@ -259,6 +272,7 @@ steps:
     type: output_contains
     expect: WPA2 GPU Cracking
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== WPA2 GPU Cracking with hashcat ===\n\n[Convert capture to hashcat format]\nhcxpcapngtool capture.pcapng -o hash.hc22000\n\n[Crack with wordlist]\nhashcat -m 22000 hash.hc22000 /usr/share/wordlists/rockyou.txt\n\n[Crack
     with rules]\nhashcat -m 22000 hash.hc22000 wordlist.txt -r best64.rule\n\n[Brute force 8-digit numeric]\nhashcat -m 22000 hash.hc22000 -a 3 "?d?d?d?d?d?d?d?d"\n\n[Performance Estimates]\n| GPU | Speed
     (WPA2) |\n|-----|-------------|\n| RTX 4090 | ~2.5M PMK/s |\n| RTX 3080 | ~1.1M PMK/s |\n| CPU i7 | ~10K PMK/s |\n\n[Time to crack 8-char password]\n- Numeric only: 10^8 / 2.5M = 40 seconds\n- Lower
@@ -278,6 +292,7 @@ steps:
     type: output_contains
     expect: Wireless Attack Report
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Wireless Attack Report ===\n\n[Protocol Risk Assessment]\n- WEP: CRITICAL - cracked in minutes\n- WPA-TKIP: HIGH - deprecated\n- WPA2-PSK: MEDIUM - offline dict attack possible\n-
     WPA2-Enterprise: LOW - RADIUS + certificates\n- WPA3-SAE: LOW - no offline attack\n\n[Attack Scenarios Studied]\n1. WPA2-PSK handshake capture + cracking\n2. Evil Twin with captive portal\n3. Deauthentication
     DoS\n4. Rogue AP\n5. Bluetooth BlueBorne/KNOB\n\n[Recommendations]\n1. Deploy WPA3-SAE where possible\n2. WPA2-Enterprise with RADIUS for corporate\n3. Strong PSK (20+ chars) if WPA2-PSK required\n4.

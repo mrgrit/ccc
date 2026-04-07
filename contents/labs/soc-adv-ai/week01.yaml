@@ -22,6 +22,7 @@ steps:
   verify:
     type: output_contains
     expect: active
+  target_vm: siem
   script: curl -sk -u wazuh-wui:wazuh-wui https://10.20.30.100:55000/agents/summary/status 2>/dev/null | python3 -m json.tool
   risk_level: low
 - order: 2
@@ -35,6 +36,7 @@ steps:
   verify:
     type: output_contains
     expect: Rules
+  target_vm: siem
   script: ssh 10.20.30.100 'echo "=== Default Rules ==="; ls /var/ossec/ruleset/rules/*.xml 2>/dev/null | wc -l; echo "=== Custom Rules ==="; ls /var/ossec/etc/rules/*.xml 2>/dev/null | wc -l; echo "===
     Total rule entries ==="; grep -r "<rule id" /var/ossec/ruleset/rules/ /var/ossec/etc/rules/ 2>/dev/null | wc -l'
   risk_level: low
@@ -49,6 +51,7 @@ steps:
   verify:
     type: output_contains
     expect: policy
+  target_vm: siem
   script: ssh 10.20.30.1 'echo "=== nftables Policy ==="; nft list ruleset 2>/dev/null | grep -E "chain|policy"; echo "=== Total Rules ==="; nft list ruleset 2>/dev/null | grep -cE "^\s+(ip |tcp |udp |ct
     |meta |drop|accept|reject)"'
   risk_level: low
@@ -63,6 +66,7 @@ steps:
   verify:
     type: output_contains
     expect: rules
+  target_vm: siem
   script: ssh 10.20.30.1 'echo "=== Suricata Rule Files ==="; ls /var/lib/suricata/rules/*.rules 2>/dev/null | head -10; echo "=== Active alert rules ==="; grep -c "^alert" /var/lib/suricata/rules/*.rules
     2>/dev/null | tail -10; echo "=== Total active rules ==="; grep -ch "^alert" /var/lib/suricata/rules/*.rules 2>/dev/null | paste -sd+ | bc'
   risk_level: low
@@ -77,6 +81,7 @@ steps:
   verify:
     type: output_contains
     expect: alert
+  target_vm: siem
   script: 'ssh 10.20.30.1 ''cat /var/log/suricata/eve.json 2>/dev/null | python3 -c "import sys,json; cats={} for l in sys.stdin: try: e=json.loads(l) if e.get(\"event_type\")==\"alert\": c=e.get(\"alert\",{}).get(\"category\",\"unknown\")
     cats[c]=cats.get(c,0)+1 except: pass for c,n in sorted(cats.items(),key=lambda x:-x[1])[:10]: print(f\"{n:5d}  {c}\")" 2>/dev/null'''
   risk_level: low
@@ -91,6 +96,7 @@ steps:
   verify:
     type: output_contains
     expect: Level
+  target_vm: siem
   script: 'ssh 10.20.30.100 ''tail -200 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c "import sys,json for l in sys.stdin: try: e=json.loads(l) r=e.get(\"rule\",{}) if r.get(\"level\",0)>=10:
     print(f\"Level {r[\"level\"]:2d} | {r.get(\"description\",\"\")[:60]} | Agent: {e.get(\"agent\",{}).get(\"name\",\"N/A\")}\") except: pass" 2>/dev/null | tail -10'''
   risk_level: low
@@ -106,6 +112,7 @@ steps:
   verify:
     type: output_contains
     expect: alerts
+  target_vm: siem
   script: 'ssh 10.20.30.100 ''tail -100 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c "import sys,json from datetime import datetime count=0; levels={} for l in sys.stdin: try: e=json.loads(l);
     count+=1 lv=e.get(\"rule\",{}).get(\"level\",0) levels[lv]=levels.get(lv,0)+1 except: pass print(f\"Total alerts sampled: {count}\") print(f\"Level distribution:\") for lv in sorted(levels.keys()):
     print(f\"  Level {lv}: {levels[lv]}\") print(f\"Estimated alerts/min: {count/60:.1f} (assuming 1h window)\") print(f\"MTTD estimate: <30s (SIEM internal processing)\")" 2>/dev/null'''
@@ -123,6 +130,7 @@ steps:
   verify:
     type: output_contains
     expect: SOC-CMM
+  target_vm: siem
   script: "cat > /tmp/soc_maturity.json << 'EOF'\n{\n  \"assessment_date\": \"2026-04-06\",\n  \"framework\": \"SOC-CMM v2\",\n  \"scores\": {\n    \"Business\": 2,\n    \"People\": 2,\n    \"Process\"\
     : 2,\n    \"Technology\": 3,\n    \"Services\": 2\n  },\n  \"average\": 2.2,\n  \"target\": 4.0,\n  \"evidence\": {\n    \"Technology\": \"Wazuh active with agents + Suricata 30k+ rules + nftables deny-all\"\
     ,\n    \"Process\": \"Basic playbooks exist, no SOAR automation\",\n    \"People\": \"No tiered SOC structure defined\",\n    \"Business\": \"No formal SOC charter or budget allocation\",\n    \"Services\"\
@@ -181,6 +189,7 @@ steps:
   verify:
     type: output_contains
     expect: Gap Analysis
+  target_vm: siem
   script: 'cat > /tmp/soc_gap_analysis.txt << ''EOF''
 
     === SOC Maturity Gap Analysis ===
@@ -241,6 +250,7 @@ steps:
   verify:
     type: output_contains
     expect: Roadmap
+  target_vm: siem
   script: "cat > /tmp/soc_roadmap.txt << 'EOF'\n=== SOC Maturity Improvement Roadmap ===\n\n[Phase 1: 3 Months - Quick Wins]\n- Deploy SOAR: Wazuh active-response + custom scripts\n  KPI: MTTR 60min ->\
     \ 15min\n- Integrate TI feeds into Wazuh CDB lists\n  KPI: Known IOC detection rate 0% -> 80%\n- Write 5 IR playbooks (SQLi, BruteForce, Malware, C2, DataExfil)\n  KPI: Process maturity 2 -> 3\n- Target\
     \ maturity: 2.2 -> 2.8\n\n[Phase 2: 6 Months - Capability Building]\n- Define SOC Tier structure (Tier1/2/3)\n- Implement SIGMA rule pipeline (log -> SIEM rule)\n  KPI: Custom detection rules 10 ->\

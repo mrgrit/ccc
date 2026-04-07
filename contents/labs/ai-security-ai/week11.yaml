@@ -29,6 +29,7 @@ steps:
     type: output_contains
     expect: prompt_hash
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request, hashlib, time, uuid\ndef audit_log(prompt, model='gemma3:4b'):\n    entry = {\n        'id': str(uuid.uuid4())[:8],\n        'timestamp': time.strftime('%Y-%m-%dT%H:%M:%S'),\n\
     \        'model': model,\n        'prompt_hash': hashlib.sha256(prompt.encode()).hexdigest()[:16],\n        'prompt_length': len(prompt),\n        'prompt_preview': prompt[:30] + '...' if len(prompt)>30\
     \ else prompt\n    }\n    data = json.dumps({'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':30}}).encode()\n    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
@@ -54,6 +55,7 @@ steps:
     type: output_contains
     expect: instruction_override
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport re, json, time\nINJECTION_PATTERNS = [\n    (r'ignore.*(?:previous|all|above).*instructions?', 'instruction_override', 'HIGH'),\n    (r'you\\s+are\\s+now', 'role_switch',\
     \ 'HIGH'),\n    (r'system\\s*prompt', 'prompt_leak', 'MEDIUM'),\n    (r'(?:DAN|STAN|DUDE)\\b', 'jailbreak_persona', 'HIGH'),\n    (r'base64|decode|rot13', 'encoding_attack', 'MEDIUM'),\n    (r'OVERRIDE|ADMIN|DEBUG\\\
     s*MODE', 'trigger_word', 'HIGH'),\n    (r'\\]\\]>|</system>', 'xml_injection', 'MEDIUM'),\n]\ndef detect_injection(text):\n    alerts = []\n    for pat, name, severity in INJECTION_PATTERNS:\n     \
@@ -79,6 +81,7 @@ steps:
     type: output_contains
     expect: ANOMALY
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport math\n# Simulate hourly request counts (24 hours)\nhourly_counts = [10,8,5,3,2,2,5,15,45,50,48,42,40,55,47,35,30,28,20,15,12,11,10,8]\n# Inject anomaly\nhourly_counts[14]\
     \ = 200  # Spike at 14:00\nhourly_counts[20] = 150  # Spike at 20:00\n\ndef moving_avg(data, window=3):\n    result = []\n    for i in range(len(data)):\n        start = max(0, i-window)\n        result.append(sum(data[start:i+1])\
     \ / (i-start+1))\n    return result\n\ndef detect_anomalies(counts, threshold_factor=2.5):\n    avg = sum(counts) / len(counts)\n    std = math.sqrt(sum((x-avg)**2 for x in counts) / len(counts))\n\
@@ -106,6 +109,7 @@ steps:
     type: output_contains
     expect: Unique ratio
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request, re\ndef quality_metrics(response_text):\n    words = response_text.split()\n    unique = set(w.lower() for w in words)\n    metrics = {\n        'length_chars':\
     \ len(response_text),\n        'length_words': len(words),\n        'unique_word_ratio': len(unique)/max(len(words),1),\n        'avg_word_length': sum(len(w) for w in words)/max(len(words),1),\n  \
     \      'repetition_score': 1 - len(unique)/max(len(words),1),\n    }\n    # Check for harmful content indicators\n    harmful_kw = ['hack','exploit','attack','malware','password','credential']\n   \
@@ -134,6 +138,7 @@ steps:
     type: output_contains
     expect: Total tokens
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request\nclass TokenBudget:\n    def __init__(self, daily_limit=5000):\n        self.daily_limit = daily_limit\n        self.used = 0\n        self.requests\
     \ = 0\n    \n    def query(self, prompt):\n        self.requests += 1\n        if self.used >= self.daily_limit:\n            return None, f'BUDGET EXCEEDED ({self.used}/{self.daily_limit} tokens)'\n\
     \        data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':30}}).encode()\n        req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
@@ -162,6 +167,7 @@ steps:
     type: output_contains
     expect: Kill Chain
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\n# Simulated security event log\nevents = [\n    {'time':'10:01','type':'recon','detail':'API enumeration: 15 endpoints probed in 2s'},\n    {'time':'10:02','type':'recon','detail':'Model\
     \ info extraction via /api/show'},\n    {'time':'10:05','type':'injection','detail':'Basic prompt injection attempt: ignore instructions'},\n    {'time':'10:06','type':'injection','detail':'DAN jailbreak\
     \ attempt detected'},\n    {'time':'10:07','type':'injection','detail':'Base64 encoded injection payload'},\n    {'time':'10:10','type':'extraction','detail':'Repeated prompts requesting PII generation'},\n\
@@ -193,6 +199,7 @@ steps:
     type: output_contains
     expect: Blocked sources
     field: stdout
+  target_vm: manager
   script: "python3 -c \"\nimport re\nclass AutoResponder:\n    def __init__(self):\n        self.blocked_sources = set()\n        self.rate_limited = set()\n        self.alerts = []\n    \n    def assess_threat(self,\
     \ source, prompt):\n        score = 0\n        reasons = []\n        if re.search(r'ignore.*instruct', prompt, re.I): score += 3; reasons.append('injection')\n        if re.search(r'DAN|jailbreak',\
     \ prompt, re.I): score += 4; reasons.append('jailbreak')\n        if len(prompt) > 1000: score += 2; reasons.append('oversized')\n        if re.search(r'system.*prompt|reveal.*secret', prompt, re.I):\
@@ -295,6 +302,7 @@ steps:
     type: output_contains
     expect: Daily Report
     field: stdout
+  target_vm: manager
   script: 'python3 -c "
 
     import json, time

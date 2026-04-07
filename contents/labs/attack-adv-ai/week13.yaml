@@ -26,6 +26,7 @@ steps:
     type: output_contains
     expect: Cloud Attack Surface
     field: stdout
+  target_vm: attacker
   script: echo -e '=== Cloud Attack Surface (MITRE ATT&CK Cloud) ===\n\n[Initial Access]\n- Stolen credentials (phishing, leaked keys)\n- SSRF to metadata service\n- Exposed management consoles\n\n[Privilege
     Escalation]\n- IAM policy misconfiguration\n- Role assumption chains\n- Lambda function privilege abuse\n\n[Lateral Movement]\n- Cross-account role assumption\n- VPC peering exploitation\n- Shared storage
     (S3, GCS) access\n\n[Data Exfiltration]\n- S3 bucket to external account\n- Snapshot sharing\n- DNS over VPC\n\n[Persistence]\n- IAM user/key creation\n- Lambda backdoor\n- EC2 instance with reverse
@@ -46,6 +47,7 @@ steps:
     type: output_contains
     expect: IMDS Metadata
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== IMDS Metadata Attack ===\n\n[Step 1: Discover Role]\ncurl http://169.254.169.254/latest/meta-data/iam/security-credentials/\n-> Returns: my-ec2-role\n\n[Step 2: Get Credentials]\ncurl
     http://169.254.169.254/latest/meta-data/iam/security-credentials/my-ec2-role\n-> Returns:\n{\n  "AccessKeyId": "ASIA...",\n  "SecretAccessKey": "xxx...",\n  "Token": "FwoGZX...",\n  "Expiration": "2026-04-04T12:00:00Z"\n}\n\n[Step
     3: Use Credentials]\nexport AWS_ACCESS_KEY_ID=ASIA...\nexport AWS_SECRET_ACCESS_KEY=xxx...\nexport AWS_SESSION_TOKEN=FwoGZX...\naws s3 ls  # Access S3 as the EC2 role\n\n[IMDSv2 Defense]\nTOKEN=$(curl
@@ -68,6 +70,7 @@ steps:
     type: output_contains
     expect: S3 Bucket
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== S3 Bucket Misconfiguration ===\n\n[Enumeration]\naws s3 ls s3://target-bucket --no-sign-request\naws s3 cp s3://target-bucket/sensitive.txt . --no-sign-request\n\n[Common Misconfigurations]\n1.
     Public read: Anyone can list and download\n2. Public write: Anyone can upload/overwrite\n3. Authenticated users: Any AWS account can access\n4. Public ACL on specific objects\n\n[Discovery Methods]\n1.
     DNS brute-force: bucket-name.s3.amazonaws.com\n2. Google dork: site:s3.amazonaws.com "index of"\n3. Certificate transparency: S3 custom domains\n4. GitHub search: s3://company-name\n\n[Tools]\n- S3Scanner:
@@ -90,6 +93,7 @@ steps:
     type: output_contains
     expect: IAM Privilege Escalation
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== AWS IAM Privilege Escalation ===\n\n[21 Known IAM Privesc Paths (Rhino Security)]\n\n1. iam:CreatePolicyVersion\n   - Create new version of managed policy\n   - Set as default ->
     gain any permission\n\n2. iam:AttachUserPolicy\n   - Attach AdministratorAccess to self\n\n3. iam:PutUserPolicy\n   - Add inline policy with full access\n\n4. iam:CreateLoginProfile\n   - Create console
     password for another user\n\n5. iam:UpdateLoginProfile\n   - Reset another user password\n\n6. sts:AssumeRole\n   - Assume more privileged role\n\n7. lambda:CreateFunction + iam:PassRole\n   - Create
@@ -111,6 +115,7 @@ steps:
     type: output_contains
     expect: Cloud Lateral Movement
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Cloud Lateral Movement ===\n\n[Cross-Account Access]\naws sts assume-role --role-arn arn:aws:iam::ACCOUNT_B:role/CrossAccountRole --role-session-name attacker\n-> Temporary credentials
     for Account B\n\n[VPC Peering]\n- Peered VPCs share network connectivity\n- Security groups may allow peered VPC traffic\n- Pivot from compromised VPC to peered VPC\n\n[Service-Level Movement]\n- Lambda
     -> RDS: Shared VPC, read database\n- EC2 -> S3: Instance profile permissions\n- ECS -> Secrets Manager: Task role access\n\n[Multi-Cloud Pivot]\n- AWS -> Azure via federated identity\n- GCP -> AWS via
@@ -132,6 +137,7 @@ steps:
     type: output_contains
     expect: Serverless Attack
     field: stdout
+  target_vm: attacker
   script: echo -e '=== Serverless Attack Vectors ===\n\n[1] Environment Variable Leakage\naws lambda get-function-configuration --function-name target\n-> Returns environment variables (often contains secrets)\n\n[2]
     Code Injection\n- Event data used in system commands\n- SQL injection via Lambda to RDS\n- Template injection in response rendering\n\n[3] Dependency Attacks\n- Lambda layers with malicious packages\n-
     Vulnerable dependencies in deployment package\n\n[4] Execution Role Abuse\naws sts get-caller-identity\n-> Shows Lambda execution role\n-> May have excessive permissions\n\n[5] Cold Start Exploitation\n-
@@ -154,6 +160,7 @@ steps:
     type: output_contains
     expect: Kubernetes Attack
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Kubernetes Attack Vectors ===\n\n[1] Pod Escape\n- Privileged container: nsenter to host\n- hostPID/hostNetwork: Access host resources\n- Mount /var/run/docker.sock: Container breakout\n\n[2]
     Service Account Token\ncat /var/run/secrets/kubernetes.io/serviceaccount/token\nkubectl --token=\$TOKEN get secrets --all-namespaces\n\n[3] etcd Direct Access\ncurl https://etcd:2379/v3/kv/range -d
     \''{}\'' --cert ...\n-> Contains all cluster secrets in plaintext\n\n[4] Kubelet API\ncurl -sk https://node:10250/pods\ncurl -sk https://node:10250/run/namespace/pod/container -d "cmd=id"\n\n[5] Cloud
@@ -176,6 +183,7 @@ steps:
     type: output_contains
     expect: Cloud Credential
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Cloud Credential Exposure ===\n\n[GitHub/Source Code]\n- Hardcoded in source files\n- .env files committed to repo\n- Git history (even after deletion)\n- Detection: trufflehog,
     gitleaks\n\n[CI/CD]\n- Build logs showing environment variables\n- Cached credentials in runner\n- Secrets in pipeline configuration\n\n[Metadata Service]\n- SSRF -> 169.254.169.254\n- Container escape
     -> instance profile\n\n[Client-Side]\n- Browser local storage (SPA apps)\n- Mobile app reverse engineering\n- SDK configuration files (~/.aws/credentials)\n\n[Logs]\n- CloudTrail logged API calls with
@@ -197,6 +205,7 @@ steps:
     type: output_contains
     expect: Cloud Persistence
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Cloud Persistence Techniques ===\n\n[IAM-Based]\n1. Create new IAM user with admin access\n2. Generate long-lived access keys\n3. Create cross-account role for attacker\n4. Modify
     trust policy to allow external account\n\n[Compute-Based]\n5. EC2 instance with reverse shell in user data\n6. Lambda function triggered by CloudWatch Events\n7. ECS task with backdoor container\n\n[Storage-Based]\n8.
     S3 event notification -> Lambda -> C2\n9. SNS topic forwarding to attacker\n\n[Network-Based]\n10. VPN gateway to attacker network\n11. Security group rules allowing attacker IP\n\n[Stealth Techniques]\n-
@@ -219,6 +228,7 @@ steps:
     type: output_contains
     expect: Cloud Security Posture
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Cloud Security Posture Management ===\n\n[Prowler (AWS)]\nprowler aws --severity critical high\n- 300+ security checks\n- CIS Benchmark, PCI DSS, HIPAA compliance\n\n[ScoutSuite
     (Multi-cloud)]\nscout suite aws --report-dir /tmp/report\n- AWS, Azure, GCP, Alibaba, Oracle\n- IAM, network, storage, logging checks\n\n[Key Checks]\n1. IAM: MFA, password policy, key rotation\n2.
     S3: Public access, encryption, logging\n3. EC2: Security groups, IMDSv2, encryption\n4. CloudTrail: Enabled, multi-region, log integrity\n5. VPC: Flow logs, default SG, NACL\n6. RDS: Public access,
@@ -240,6 +250,7 @@ steps:
     type: output_contains
     expect: CloudTrail
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== CloudTrail Log Analysis ===\n\n[High-Risk Events to Monitor]\n\n1. IAM Changes:\njq \''.Records[] | select(.eventName | startswith("Create") or startswith("Attach") or startswith("Put"))
     | select(.eventSource == "iam.amazonaws.com")\'' cloudtrail.json\n\n2. Console Login from Unusual Location:\njq \''.Records[] | select(.eventName == "ConsoleLogin" and .sourceIPAddress != "corporate_ip")\''
     cloudtrail.json\n\n3. Access Denied (Privilege Escalation Attempt):\njq \''.Records[] | select(.errorCode == "AccessDenied")\'' cloudtrail.json\n\n4. S3 Public Access:\njq \''.Records[] | select(.eventName
@@ -262,6 +273,7 @@ steps:
     type: output_contains
     expect: AWS Native Security
     field: stdout
+  target_vm: attacker
   script: echo -e '=== AWS Native Security Tools ===\n\nTool            | Scope              | Detection Type    | Auto-Remediation\n--------------- | ------------------ | ----------------- | ----------------\nGuardDuty       |
     Threat detection   | ML + Rules        | via EventBridge\nSecurity Hub    | Centralized view   | Aggregation       | via SSM\nInspector       | Vulnerability scan | CVE database      | No\nMacie           |
     Data classification| ML for PII/PHI    | No\nConfig          | Compliance         | Rule-based        | via SSM\nIAM Analyzer    | Access analysis    | Policy analysis   | No\nDetective       | Investigation      |
@@ -282,6 +294,7 @@ steps:
     type: output_contains
     expect: IaC Security
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== IaC Security Scanning ===\n\n[Common IaC Misconfigurations]\n1. S3 bucket without encryption\n2. Security group with 0.0.0.0/0 inbound\n3. RDS without encryption at rest\n4. IAM
     policy with *:* (full admin)\n5. EC2 without IMDSv2 enforcement\n\n[Tools]\ncheckov -d /path/to/terraform/\n- 1000+ built-in policies\n- Terraform, CloudFormation, K8s, Docker\n\ntfsec /path/to/terraform/\n-
     Terraform-specific security scanner\n\nterraform-compliance\n- BDD-style compliance testing\n\n[Example Check (checkov)]\nCKV_AWS_18: S3 bucket logging enabled\nCKV_AWS_19: S3 bucket encryption enabled\nCKV_AWS_24:
@@ -302,6 +315,7 @@ steps:
     type: output_contains
     expect: Zero Trust
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Cloud Zero Trust Architecture ===\n\n[Principle: Never Trust, Always Verify]\n\n[1] Identity]\n- MFA for all human access\n- Short-lived credentials (STS, OIDC)\n- No long-lived
     access keys\n- JIT (Just-in-Time) access\n\n[2] Network]\n- Micro-segmentation (Security Groups per resource)\n- Private endpoints (no public IPs)\n- VPN/PrivateLink for management\n- No implicit trust
     between VPCs\n\n[3] Device]\n- Device attestation for console access\n- Managed devices only\n- Certificate-based authentication\n\n[4] Workload]\n- Least privilege IAM per function\n- Service mesh
@@ -323,6 +337,7 @@ steps:
     type: output_contains
     expect: Cloud Security Assessment
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/cloud_security_report.txt << 'EOF'\n=== Cloud Security Assessment Report ===\n\n[Critical Findings]\n1. IMDS v1 enabled: SSRF -> credential theft\n   Fix: Enforce IMDSv2 on all EC2\
     \ instances\n2. Overly permissive IAM policies: iam:* on user\n   Fix: Least privilege, use IAM Access Analyzer\n3. Public S3 buckets: Data exposure risk\n   Fix: Account-level Block Public Access\n\
     \n[High Findings]\n4. No MFA on root account\n5. Long-lived access keys (>90 days)\n6. CloudTrail not enabled in all regions\n7. Default VPC security groups allow all inbound\n\n[Recommendations Priority]\n\

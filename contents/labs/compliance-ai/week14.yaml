@@ -31,6 +31,7 @@ steps:
     type: output_contains
     expect: Banner /etc/issue.net
     field: stdout
+  target_vm: secu
   script: 'echo ''================================================================
 
     경고: 본 시스템은 인가된 사용자만 접근할 수 있습니다.
@@ -68,6 +69,7 @@ steps:
     type: output_contains
     expect: 보안 공지
     field: stdout
+  target_vm: secu
   script: 'cat << ''EOF'' | sudo tee /etc/motd
 
 
@@ -98,6 +100,7 @@ steps:
     type: output_contains
     expect: 사용자 패스워드 보안 수준
     field: stdout
+  target_vm: secu
   script: 'echo ''=== 사용자 패스워드 보안 수준 ==='' && for user in $(awk -F: ''$7 !~ /nologin|false/ {print $1}'' /etc/passwd); do echo "[$user]"; sudo chage -l $user 2>/dev/null | grep -E ''(Last password|Maximum|Password
     expires)''; echo ''''; done'
   risk_level: low
@@ -113,6 +116,7 @@ steps:
     type: output_contains
     expect: 비정상 시간 로그인 분석
     field: stdout
+  target_vm: secu
   script: 'echo ''=== 비정상 시간 로그인 분석 ==='' && sudo grep ''session opened\|Accepted'' /var/log/auth.log 2>/dev/null | awk ''{print $1, $2, $3}'' | sort | tail -15 && echo ''--- 야간(22-06시) 접속 ---'' && sudo
     grep ''session opened\|Accepted'' /var/log/auth.log 2>/dev/null | awk -F: ''{if($1 ~ /[0-5]:/) print}'' | head -5 || echo ''야간 접속 없음'''
   risk_level: low
@@ -128,6 +132,7 @@ steps:
     type: output_contains
     expect: sudo 사용 분석
     field: stdout
+  target_vm: secu
   script: echo '=== sudo 사용 분석 ===' && sudo grep 'sudo:' /var/log/auth.log 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="COMMAND=") {for(j=i;j<=NF;j++) printf $j" "; print ""}}' | sort | uniq -c | sort
     -rn | head -10
   risk_level: low
@@ -143,6 +148,7 @@ steps:
     type: output_contains
     expect: security_awareness
     field: stdout
+  target_vm: secu
   script: "sudo mkdir -p /opt/security-training && cat << 'EOF' | sudo tee /opt/security-training/security_awareness.txt\n=== 보안 인식 교육 자료 ===\n\n1. 피싱 이메일 식별법\n   - 발신자 주소 확인\n   - 의심스러운 링크 호버 확인\n   -\
     \ 긴급/위협성 문구 주의\n\n2. 안전한 패스워드 관리\n   - 12자 이상, 3종 이상 문자 조합\n   - 서비스별 다른 패스워드 사용\n   - 패스워드 관리자 활용\n\n3. 인시던트 신고\n   - 이상 징후 발견 시 보안팀 즉시 신고\n   - 신고 채널: 내선 1234, security@company.com\nEOF\nls -la /opt/security-training/"
   risk_level: low
@@ -159,6 +165,7 @@ steps:
     type: output_contains
     expect: 로그인 실패
     field: stdout
+  target_vm: secu
   script: "cat << 'SCRIPT' > /tmp/login_alert.sh\n#!/bin/bash\nTHRESHOLD=5\nFAILED=$(sudo grep -c 'Failed password' /var/log/auth.log 2>/dev/null || echo 0)\nif [ \"$FAILED\" -ge \"$THRESHOLD\" ]; then\n\
     \  echo \"[경고] 로그인 실패 ${FAILED}회 감지!\"\n  echo \"상위 실패 IP:\"\n  sudo grep 'Failed password' /var/log/auth.log 2>/dev/null | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn | head -5\nelse\n  echo\
     \ \"[정상] 로그인 실패 ${FAILED}회 (임계값: ${THRESHOLD})\"\nfi\nSCRIPT\nchmod +x /tmp/login_alert.sh && bash /tmp/login_alert.sh"
@@ -212,6 +219,7 @@ steps:
     type: output_contains
     expect: 교육/인식 점검 완료
     field: stdout
+  target_vm: secu
   script: 'cat << ''SCRIPT'' > /tmp/awareness_check.sh
 
     #!/bin/bash

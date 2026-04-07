@@ -1,102 +1,161 @@
-lab_id: "ai-security-nonai-week09"
-title: "[Non-AI] LLM 설명가능성과 해석가능성"
-version: "non-ai"
-course: "ai-security-nonai"
+lab_id: ai-security-nonai-week09
+title: '[Non-AI] LLM 설명가능성과 해석가능성'
+version: non-ai
+course: ai-security-nonai
 week: 9
-description: "LLM 응답의 설명가능성을 분석하고 신뢰성 평가 기법을 학습합니다"
-difficulty: "hard"
+description: LLM 응답의 설명가능성을 분석하고 신뢰성 평가 기법을 학습합니다
+difficulty: hard
 duration_minutes: 120
 objectives:
-  - "LLM 응답의 신뢰도를 측정하는 방법을 이해한다"
-  - "환각(hallucination) 탐지 기법을 실습한다"
-  - "설명가능한 AI 보안 시스템을 구성한다"
+- LLM 응답의 신뢰도를 측정하는 방법을 이해한다
+- 환각(hallucination) 탐지 기법을 실습한다
+- 설명가능한 AI 보안 시스템을 구성한다
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "LLM의 환각(hallucination)을 탐지하시오. 존재하지 않는 CVE 번호를 질문하여 모델이 거짓 정보를 생성하는지 확인하라."
-    hint: "CVE-2024-99999 같은 가짜 CVE에 대해 질문하세요."
-    category: "analysis"
-    points: 12
-    answer: "curl -s http://10.20.30.200:11434/api/generate -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Explain CVE-2024-99999 in detail. What software is affected and what is the CVSS score?\",\"stream\":false,\"options\":{\"temperature\":0}}' | python3 -c \"import sys,json; r=json.load(sys.stdin)['response']; print(r[:300]); print('\\n=== Hallucination Check ==='); print('WARNING: This CVE does not exist. Any detailed description is a hallucination.'); has_details = any(w in r.lower() for w in ['cvss','affected','vulnerability','score','patch']); print(f'Hallucination detected: {has_details}')\""
-    answer_detail: "환각(hallucination)은 LLM이 사실이 아닌 정보를 자신있게 생성하는 현상입니다. 보안 맥락에서 잘못된 CVE 정보, 존재하지 않는 취약점 설명은 심각한 문제를 야기합니다."
-    verify:
-      type: "output_contains"
-      expect: "Hallucination"
-      field: "stdout"
-  - order: 2
-    instruction: "자기 일관성 검증(self-consistency check)을 수행하시오. 동일 질문을 5회 반복하여 응답의 핵심 사실이 일관되는지 확인하라."
-    hint: "같은 사실 확인 질문을 여러 번 하고 핵심 키워드의 일치율을 측정하세요."
-    category: "analysis"
-    points: 12
-    answer: "python3 -c \"\nimport json, urllib.request\ndef query(prompt):\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':40,'temperature':0.5}}).encode()\n    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    return json.loads(urllib.request.urlopen(req).read())['response'].strip()\n\nquestion = 'What port does HTTPS use? Answer with just the number.'\nresponses = [query(question) for _ in range(5)]\nprint(f'Question: {question}')\nfor i, r in enumerate(responses):\n    print(f'  Run {i+1}: {r[:40]}')\n\n# Extract numbers\nimport re\nnumbers = []\nfor r in responses:\n    nums = re.findall(r'\\b\\d+\\b', r)\n    if nums: numbers.append(nums[0])\nfrom collections import Counter\ncounts = Counter(numbers)\nmost_common = counts.most_common(1)[0] if counts else ('?', 0)\nprint(f'\\nConsensus: {most_common[0]} (appeared {most_common[1]}/{len(responses)} times)')\nprint(f'Confidence: {\\\"HIGH\\\" if most_common[1] >= 4 else \\\"MEDIUM\\\" if most_common[1] >= 3 else \\\"LOW\\\"}')\n\""
-    answer_detail: "자기 일관성 검증은 동일 질문에 대한 다수 응답의 합의를 통해 신뢰도를 측정합니다. 높은 일관성은 모델이 확실한 지식을 가지고 있음을, 낮은 일관성은 추측이나 환각 가능성을 나타냅니다."
-    verify:
-      type: "output_contains"
-      expect: "Confidence"
-      field: "stdout"
-  - order: 3
-    instruction: "모델에게 판단 근거를 요구하는 설명가능 보안 분석을 수행하시오. 'Explain your reasoning step by step'을 추가하여 보안 판단의 투명성을 확보하라."
-    hint: "CoT(Chain-of-Thought)를 사용하여 판단 과정을 명시하게 하세요."
-    category: "analysis"
-    points: 10
-    answer: "curl -s http://10.20.30.200:11434/api/chat -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a security analyst. For every analysis, explain your reasoning step by step. Format: STEP 1: ... STEP 2: ... VERDICT: ...\"},{\"role\":\"user\",\"content\":\"Analyze this log: Multiple failed SSH logins from 10.0.0.5 followed by successful login, then immediate sudo commands.\"}],\"stream\":false}' | python3 -c \"import sys,json; r=json.load(sys.stdin)['message']['content']; print(r[:500]); import re; steps=re.findall(r'STEP \\d+', r); print(f'\\nReasoning steps found: {len(steps)}')\""
-    answer_detail: "설명가능 AI는 모델의 판단 과정을 투명하게 제시합니다. 보안 분석에서 판단 근거가 명확하면 오류를 발견하고 수정하기 쉽고, 규정 준수(compliance) 요건을 충족합니다."
-    verify:
-      type: "output_contains"
-      expect: "STEP"
-      field: "stdout"
-  - order: 4
-    instruction: "교차 검증(cross-validation)을 수행하시오. 동일한 보안 질문을 다른 프롬프트 스타일로 3번 물어 응답의 일관성을 확인하라."
-    hint: "직접 질문, 분류 형태, 예/아니오 형태로 같은 내용을 질문하세요."
-    category: "analysis"
-    points: 12
-    answer: "python3 -c \"\nimport json, urllib.request\ndef query(prompt):\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':50,'temperature':0}}).encode()\n    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    return json.loads(urllib.request.urlopen(req).read())['response'].strip()[:80]\n\nvariants = [\n    ('Direct', 'Is port 23 (Telnet) secure for remote administration?'),\n    ('Classify', 'Classify the security risk of Telnet on port 23: HIGH, MEDIUM, or LOW'),\n    ('Yes/No', 'Should Telnet (port 23) be enabled on production servers? Answer YES or NO.')\n]\nprint('Cross-validation: Telnet Security')\nprint('='*50)\nfor style, prompt in variants:\n    resp = query(prompt)\n    print(f'{style:10s}: {resp}')\nprint('\\nExpected consensus: Telnet is insecure (HIGH risk, NO)')\n\""
-    answer_detail: "교차 검증은 동일한 사실을 다른 각도에서 확인합니다. 질문 형식(개방형, 분류형, 이진)에 따라 답이 달라지면 모델의 판단이 불안정한 것입니다."
-    verify:
-      type: "output_contains"
-      expect: "Cross-validation"
-      field: "stdout"
-  - order: 5
-    instruction: "확신도(confidence) 추출을 시도하시오. 모델에게 자신의 답변에 대한 확신도를 0-100으로 평가하게 하고 실제 정확도와 비교하라."
-    hint: "모델에게 답변과 함께 'Confidence: X%' 형식으로 확신도를 출력하게 하세요."
-    category: "analysis"
-    points: 12
-    answer: "python3 -c \"\nimport json, urllib.request, re\nqa_pairs = [\n    ('What is the default SSH port?', '22'),\n    ('What is the CVSS score range?', '0.0 to 10.0'),\n    ('Who created the Python language?', 'Guido van Rossum'),\n    ('What year was CVE-2024-99999 published?', 'DOES NOT EXIST'),\n    ('What is the atomic number of Linuxium?', 'DOES NOT EXIST')\n]\nfor q, expected in qa_pairs:\n    prompt = f'{q}\\n\\nProvide your answer and your confidence level (0-100%). Format: ANSWER: ... CONFIDENCE: X%'\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':60}}).encode()\n    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    resp = json.loads(urllib.request.urlopen(req).read())['response']\n    conf_match = re.search(r'(\\d+)%', resp)\n    conf = int(conf_match.group(1)) if conf_match else -1\n    is_real = expected != 'DOES NOT EXIST'\n    calibrated = (conf > 70 and is_real) or (conf < 50 and not is_real)\n    print(f'Q: {q[:45]}')\n    print(f'  Expected: {expected} | Confidence: {conf}% | Calibrated: {calibrated}')\n    print(f'  Response: {resp[:60]}')\n    print()\n\""
-    answer_detail: "모델 확신도 측정은 환각 탐지의 핵심 기법입니다. 잘 보정된(calibrated) 모델은 모르는 것에 낮은 확신도를, 아는 것에 높은 확신도를 보여야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "Calibrated"
-      field: "stdout"
-  - order: 6
-    instruction: "사실 검증 파이프라인을 구성하시오. LLM 응답에서 사실적 주장을 추출하고 각각에 대해 재검증을 수행하라."
-    hint: "LLM 응답에서 주장을 추출한 후 각 주장을 독립적으로 검증하세요."
-    category: "defense"
-    points: 12
-    answer: "python3 -c \"\nimport json, urllib.request\ndef query(prompt, sys=None):\n    if sys:\n        payload = {'model':'gemma3:4b','messages':[{'role':'system','content':sys},{'role':'user','content':prompt}],'stream':False,'options':{'temperature':0,'num_predict':100}}\n        data = json.dumps(payload).encode()\n        req = urllib.request.Request('http://10.20.30.200:11434/api/chat',data=data,headers={'Content-Type':'application/json'})\n        return json.loads(urllib.request.urlopen(req).read())['message']['content']\n    else:\n        payload = {'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':100}}\n        data = json.dumps(payload).encode()\n        req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n        return json.loads(urllib.request.urlopen(req).read())['response']\n\n# Get initial response\nresp = query('What are the top 3 most common network ports and their services?')\nprint('=== Initial Response ===')\nprint(resp[:200])\n\n# Extract and verify claims\nverify_prompt = f'From this text, extract factual claims as a numbered list. Then for each, say TRUE or FALSE:\\n\\n{resp[:300]}'\nverification = query(verify_prompt, 'You are a fact checker. Be strict and accurate.')\nprint('\\n=== Fact Verification ===')\nprint(verification[:300])\n\""
-    answer_detail: "사실 검증 파이프라인은 LLM의 출력에서 주장을 추출하고 독립적으로 검증합니다. 자동화된 팩트체킹은 환각에 의한 잘못된 보안 조언을 방지합니다."
-    verify:
-      type: "output_contains"
-      expect: "Fact Verification"
-      field: "stdout"
-  - order: 7
-    instruction: "출처 추적(attribution) 시스템을 구현하시오. 모델에게 답변의 근거를 명시하게 하고 출처 없는 주장을 표시하라."
-    hint: "모델에게 각 주장에 [SOURCE: ...] 또는 [NO SOURCE]를 붙이게 하세요."
-    category: "defense"
-    points: 10
-    answer: "curl -s http://10.20.30.200:11434/api/chat -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"For every factual claim, add a source tag. Use [SOURCE: RFC/CVE/NIST/OWASP/...] for known sources or [NO SOURCE] if unsure. Be honest about uncertainty.\"},{\"role\":\"user\",\"content\":\"Explain the security risks of using HTTP instead of HTTPS.\"}],\"stream\":false,\"options\":{\"num_predict\":200}}' | python3 -c \"\nimport sys, json, re\nr = json.load(sys.stdin)['message']['content']\nprint(r[:400])\nsources = re.findall(r'\\[SOURCE: [^\\]]+\\]', r)\nno_source = r.count('[NO SOURCE]')\nprint(f'\\n=== Attribution Summary ===')\nprint(f'Claims with sources: {len(sources)}')\nprint(f'Claims without sources: {no_source}')\nfor s in set(sources): print(f'  {s}')\n\""
-    answer_detail: "출처 추적은 LLM 응답의 각 주장에 근거를 명시하여 검증 가능성을 높입니다. 출처 없는 주장은 환각 가능성이 높으므로 별도 검증이 필요합니다."
-    verify:
-      type: "output_contains"
-      expect: "Attribution Summary"
-      field: "stdout"
-  - order: 8
-    instruction: "불확실성 정량화 시스템을 구현하시오. 모델의 응답에서 불확실성을 나타내는 표현(may, might, possibly, I think)을 탐지하고 정량화하라."
-    hint: "불확실성 표현의 빈도를 측정하여 응답의 신뢰도를 판단하세요."
-    category: "analysis"
-    points: 10
-    answer: "python3 -c \"\nimport json, urllib.request, re\ndef measure_uncertainty(text):\n    uncertain_words = ['may','might','possibly','perhaps','probably','could','likely','unlikely','uncertain','unclear','not sure','I think','it seems','appears to']\n    certain_words = ['definitely','certainly','always','never','must','is','are','will','guaranteed']\n    text_lower = text.lower()\n    unc_count = sum(1 for w in uncertain_words if w in text_lower)\n    cert_count = sum(1 for w in certain_words if w in text_lower)\n    total = unc_count + cert_count\n    if total == 0: return 0.5\n    return unc_count / total\n\nquestions = [\n    'What port does SSH use?',\n    'Will quantum computing break RSA encryption?',\n    'Is this IP address 10.0.0.5 malicious?',\n    'What is the best firewall software?'\n]\nfor q in questions:\n    data = json.dumps({'model':'gemma3:4b','prompt':q,'stream':False,'options':{'num_predict':80}}).encode()\n    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    resp = json.loads(urllib.request.urlopen(req).read())['response']\n    unc = measure_uncertainty(resp)\n    level = 'HIGH' if unc > 0.6 else 'MEDIUM' if unc > 0.3 else 'LOW'\n    print(f'[Uncertainty: {level:6s} ({unc:.2f})] {q}')\n    print(f'  Response: {resp[:80]}')\n    print()\n\""
-    answer_detail: "불확실성 정량화는 모델이 사용하는 언어적 표현에서 확신도를 추론합니다. 불확실한 응답은 추가 검증이 필요하며, 자동화된 의사결정에 사용하면 안 됩니다."
-    verify:
-      type: "output_contains"
-      expect: "Uncertainty"
-      field: "stdout"
+- order: 1
+  instruction: LLM의 환각(hallucination)을 탐지하시오. 존재하지 않는 CVE 번호를 질문하여 모델이 거짓 정보를 생성하는지 확인하라.
+  hint: CVE-2024-99999 같은 가짜 CVE에 대해 질문하세요.
+  category: analysis
+  points: 12
+  answer: 'curl -s http://10.20.30.200:11434/api/generate -d ''{"model":"gemma3:4b","prompt":"Explain CVE-2024-99999 in detail. What software is affected and what is the CVSS score?","stream":false,"options":{"temperature":0}}''
+    | python3 -c "import sys,json; r=json.load(sys.stdin)[''response'']; print(r[:300]); print(''\n=== Hallucination Check ===''); print(''WARNING: This CVE does not exist. Any detailed description is a
+    hallucination.''); has_details = any(w in r.lower() for w in [''cvss'',''affected'',''vulnerability'',''score'',''patch'']); print(f''Hallucination detected: {has_details}'')"'
+  answer_detail: 환각(hallucination)은 LLM이 사실이 아닌 정보를 자신있게 생성하는 현상입니다. 보안 맥락에서 잘못된 CVE 정보, 존재하지 않는 취약점 설명은 심각한 문제를 야기합니다.
+  verify:
+    type: output_contains
+    expect: Hallucination
+    field: stdout
+  target_vm: manager
+- order: 2
+  instruction: 자기 일관성 검증(self-consistency check)을 수행하시오. 동일 질문을 5회 반복하여 응답의 핵심 사실이 일관되는지 확인하라.
+  hint: 같은 사실 확인 질문을 여러 번 하고 핵심 키워드의 일치율을 측정하세요.
+  category: analysis
+  points: 12
+  answer: "python3 -c \"\nimport json, urllib.request\ndef query(prompt):\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':40,'temperature':0.5}}).encode()\n\
+    \    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    return json.loads(urllib.request.urlopen(req).read())['response'].strip()\n\
+    \nquestion = 'What port does HTTPS use? Answer with just the number.'\nresponses = [query(question) for _ in range(5)]\nprint(f'Question: {question}')\nfor i, r in enumerate(responses):\n    print(f'\
+    \  Run {i+1}: {r[:40]}')\n\n# Extract numbers\nimport re\nnumbers = []\nfor r in responses:\n    nums = re.findall(r'\\b\\d+\\b', r)\n    if nums: numbers.append(nums[0])\nfrom collections import Counter\n\
+    counts = Counter(numbers)\nmost_common = counts.most_common(1)[0] if counts else ('?', 0)\nprint(f'\\nConsensus: {most_common[0]} (appeared {most_common[1]}/{len(responses)} times)')\nprint(f'Confidence:\
+    \ {\\\"HIGH\\\" if most_common[1] >= 4 else \\\"MEDIUM\\\" if most_common[1] >= 3 else \\\"LOW\\\"}')\n\""
+  answer_detail: 자기 일관성 검증은 동일 질문에 대한 다수 응답의 합의를 통해 신뢰도를 측정합니다. 높은 일관성은 모델이 확실한 지식을 가지고 있음을, 낮은 일관성은 추측이나 환각 가능성을 나타냅니다.
+  verify:
+    type: output_contains
+    expect: Confidence
+    field: stdout
+  target_vm: manager
+- order: 3
+  instruction: 모델에게 판단 근거를 요구하는 설명가능 보안 분석을 수행하시오. 'Explain your reasoning step by step'을 추가하여 보안 판단의 투명성을 확보하라.
+  hint: CoT(Chain-of-Thought)를 사용하여 판단 과정을 명시하게 하세요.
+  category: analysis
+  points: 10
+  answer: 'curl -s http://10.20.30.200:11434/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a security analyst. For every analysis, explain your reasoning step by step.
+    Format: STEP 1: ... STEP 2: ... VERDICT: ..."},{"role":"user","content":"Analyze this log: Multiple failed SSH logins from 10.0.0.5 followed by successful login, then immediate sudo commands."}],"stream":false}''
+    | python3 -c "import sys,json; r=json.load(sys.stdin)[''message''][''content'']; print(r[:500]); import re; steps=re.findall(r''STEP \d+'', r); print(f''\nReasoning steps found: {len(steps)}'')"'
+  answer_detail: 설명가능 AI는 모델의 판단 과정을 투명하게 제시합니다. 보안 분석에서 판단 근거가 명확하면 오류를 발견하고 수정하기 쉽고, 규정 준수(compliance) 요건을 충족합니다.
+  verify:
+    type: output_contains
+    expect: STEP
+    field: stdout
+  target_vm: manager
+- order: 4
+  instruction: 교차 검증(cross-validation)을 수행하시오. 동일한 보안 질문을 다른 프롬프트 스타일로 3번 물어 응답의 일관성을 확인하라.
+  hint: 직접 질문, 분류 형태, 예/아니오 형태로 같은 내용을 질문하세요.
+  category: analysis
+  points: 12
+  answer: "python3 -c \"\nimport json, urllib.request\ndef query(prompt):\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':50,'temperature':0}}).encode()\n\
+    \    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    return json.loads(urllib.request.urlopen(req).read())['response'].strip()[:80]\n\
+    \nvariants = [\n    ('Direct', 'Is port 23 (Telnet) secure for remote administration?'),\n    ('Classify', 'Classify the security risk of Telnet on port 23: HIGH, MEDIUM, or LOW'),\n    ('Yes/No', 'Should\
+    \ Telnet (port 23) be enabled on production servers? Answer YES or NO.')\n]\nprint('Cross-validation: Telnet Security')\nprint('='*50)\nfor style, prompt in variants:\n    resp = query(prompt)\n   \
+    \ print(f'{style:10s}: {resp}')\nprint('\\nExpected consensus: Telnet is insecure (HIGH risk, NO)')\n\""
+  answer_detail: 교차 검증은 동일한 사실을 다른 각도에서 확인합니다. 질문 형식(개방형, 분류형, 이진)에 따라 답이 달라지면 모델의 판단이 불안정한 것입니다.
+  verify:
+    type: output_contains
+    expect: Cross-validation
+    field: stdout
+  target_vm: manager
+- order: 5
+  instruction: 확신도(confidence) 추출을 시도하시오. 모델에게 자신의 답변에 대한 확신도를 0-100으로 평가하게 하고 실제 정확도와 비교하라.
+  hint: '모델에게 답변과 함께 ''Confidence: X%'' 형식으로 확신도를 출력하게 하세요.'
+  category: analysis
+  points: 12
+  answer: "python3 -c \"\nimport json, urllib.request, re\nqa_pairs = [\n    ('What is the default SSH port?', '22'),\n    ('What is the CVSS score range?', '0.0 to 10.0'),\n    ('Who created the Python\
+    \ language?', 'Guido van Rossum'),\n    ('What year was CVE-2024-99999 published?', 'DOES NOT EXIST'),\n    ('What is the atomic number of Linuxium?', 'DOES NOT EXIST')\n]\nfor q, expected in qa_pairs:\n\
+    \    prompt = f'{q}\\n\\nProvide your answer and your confidence level (0-100%). Format: ANSWER: ... CONFIDENCE: X%'\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':60}}).encode()\n\
+    \    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n    resp = json.loads(urllib.request.urlopen(req).read())['response']\n\
+    \    conf_match = re.search(r'(\\d+)%', resp)\n    conf = int(conf_match.group(1)) if conf_match else -1\n    is_real = expected != 'DOES NOT EXIST'\n    calibrated = (conf > 70 and is_real) or (conf\
+    \ < 50 and not is_real)\n    print(f'Q: {q[:45]}')\n    print(f'  Expected: {expected} | Confidence: {conf}% | Calibrated: {calibrated}')\n    print(f'  Response: {resp[:60]}')\n    print()\n\""
+  answer_detail: 모델 확신도 측정은 환각 탐지의 핵심 기법입니다. 잘 보정된(calibrated) 모델은 모르는 것에 낮은 확신도를, 아는 것에 높은 확신도를 보여야 합니다.
+  verify:
+    type: output_contains
+    expect: Calibrated
+    field: stdout
+  target_vm: manager
+- order: 6
+  instruction: 사실 검증 파이프라인을 구성하시오. LLM 응답에서 사실적 주장을 추출하고 각각에 대해 재검증을 수행하라.
+  hint: LLM 응답에서 주장을 추출한 후 각 주장을 독립적으로 검증하세요.
+  category: defense
+  points: 12
+  answer: "python3 -c \"\nimport json, urllib.request\ndef query(prompt, sys=None):\n    if sys:\n        payload = {'model':'gemma3:4b','messages':[{'role':'system','content':sys},{'role':'user','content':prompt}],'stream':False,'options':{'temperature':0,'num_predict':100}}\n\
+    \        data = json.dumps(payload).encode()\n        req = urllib.request.Request('http://10.20.30.200:11434/api/chat',data=data,headers={'Content-Type':'application/json'})\n        return json.loads(urllib.request.urlopen(req).read())['message']['content']\n\
+    \    else:\n        payload = {'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':100}}\n        data = json.dumps(payload).encode()\n        req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
+    \        return json.loads(urllib.request.urlopen(req).read())['response']\n\n# Get initial response\nresp = query('What are the top 3 most common network ports and their services?')\nprint('=== Initial\
+    \ Response ===')\nprint(resp[:200])\n\n# Extract and verify claims\nverify_prompt = f'From this text, extract factual claims as a numbered list. Then for each, say TRUE or FALSE:\\n\\n{resp[:300]}'\n\
+    verification = query(verify_prompt, 'You are a fact checker. Be strict and accurate.')\nprint('\\n=== Fact Verification ===')\nprint(verification[:300])\n\""
+  answer_detail: 사실 검증 파이프라인은 LLM의 출력에서 주장을 추출하고 독립적으로 검증합니다. 자동화된 팩트체킹은 환각에 의한 잘못된 보안 조언을 방지합니다.
+  verify:
+    type: output_contains
+    expect: Fact Verification
+    field: stdout
+  target_vm: manager
+- order: 7
+  instruction: 출처 추적(attribution) 시스템을 구현하시오. 모델에게 답변의 근거를 명시하게 하고 출처 없는 주장을 표시하라.
+  hint: '모델에게 각 주장에 [SOURCE: ...] 또는 [NO SOURCE]를 붙이게 하세요.'
+  category: defense
+  points: 10
+  answer: 'curl -s http://10.20.30.200:11434/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"For every factual claim, add a source tag. Use [SOURCE: RFC/CVE/NIST/OWASP/...] for
+    known sources or [NO SOURCE] if unsure. Be honest about uncertainty."},{"role":"user","content":"Explain the security risks of using HTTP instead of HTTPS."}],"stream":false,"options":{"num_predict":200}}''
+    | python3 -c "
+
+    import sys, json, re
+
+    r = json.load(sys.stdin)[''message''][''content'']
+
+    print(r[:400])
+
+    sources = re.findall(r''\[SOURCE: [^\]]+\]'', r)
+
+    no_source = r.count(''[NO SOURCE]'')
+
+    print(f''\n=== Attribution Summary ==='')
+
+    print(f''Claims with sources: {len(sources)}'')
+
+    print(f''Claims without sources: {no_source}'')
+
+    for s in set(sources): print(f''  {s}'')
+
+    "'
+  answer_detail: 출처 추적은 LLM 응답의 각 주장에 근거를 명시하여 검증 가능성을 높입니다. 출처 없는 주장은 환각 가능성이 높으므로 별도 검증이 필요합니다.
+  verify:
+    type: output_contains
+    expect: Attribution Summary
+    field: stdout
+  target_vm: manager
+- order: 8
+  instruction: 불확실성 정량화 시스템을 구현하시오. 모델의 응답에서 불확실성을 나타내는 표현(may, might, possibly, I think)을 탐지하고 정량화하라.
+  hint: 불확실성 표현의 빈도를 측정하여 응답의 신뢰도를 판단하세요.
+  category: analysis
+  points: 10
+  answer: "python3 -c \"\nimport json, urllib.request, re\ndef measure_uncertainty(text):\n    uncertain_words = ['may','might','possibly','perhaps','probably','could','likely','unlikely','uncertain','unclear','not\
+    \ sure','I think','it seems','appears to']\n    certain_words = ['definitely','certainly','always','never','must','is','are','will','guaranteed']\n    text_lower = text.lower()\n    unc_count = sum(1\
+    \ for w in uncertain_words if w in text_lower)\n    cert_count = sum(1 for w in certain_words if w in text_lower)\n    total = unc_count + cert_count\n    if total == 0: return 0.5\n    return unc_count\
+    \ / total\n\nquestions = [\n    'What port does SSH use?',\n    'Will quantum computing break RSA encryption?',\n    'Is this IP address 10.0.0.5 malicious?',\n    'What is the best firewall software?'\n\
+    ]\nfor q in questions:\n    data = json.dumps({'model':'gemma3:4b','prompt':q,'stream':False,'options':{'num_predict':80}}).encode()\n    req = urllib.request.Request('http://10.20.30.200:11434/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
+    \    resp = json.loads(urllib.request.urlopen(req).read())['response']\n    unc = measure_uncertainty(resp)\n    level = 'HIGH' if unc > 0.6 else 'MEDIUM' if unc > 0.3 else 'LOW'\n    print(f'[Uncertainty:\
+    \ {level:6s} ({unc:.2f})] {q}')\n    print(f'  Response: {resp[:80]}')\n    print()\n\""
+  answer_detail: 불확실성 정량화는 모델이 사용하는 언어적 표현에서 확신도를 추론합니다. 불확실한 응답은 추가 검증이 필요하며, 자동화된 의사결정에 사용하면 안 됩니다.
+  verify:
+    type: output_contains
+    expect: Uncertainty
+    field: stdout
+  target_vm: manager

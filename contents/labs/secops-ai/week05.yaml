@@ -23,6 +23,7 @@ steps:
     type: output_contains
     expect: /etc
     field: stdout
+  target_vm: secu
   script: du -sh /etc /home 2>/dev/null
   risk_level: low
 - order: 2
@@ -36,6 +37,7 @@ steps:
     type: output_contains
     expect: drwx------
     field: stdout
+  target_vm: secu
   script: sudo mkdir -p /backup && sudo chmod 700 /backup && ls -ld /backup
   risk_level: low
 - order: 3
@@ -49,6 +51,7 @@ steps:
     type: output_contains
     expect: etc_full
     field: stdout
+  target_vm: secu
   script: sudo tar czf /backup/etc_full_$(date +%Y%m%d).tar.gz /etc 2>/dev/null && ls -lh /backup/etc_full_*.tar.gz
   risk_level: low
 - order: 4
@@ -62,6 +65,7 @@ steps:
     type: output_contains
     expect: etc_full
     field: stdout
+  target_vm: secu
   script: sudo tar tzf /backup/etc_full_*.tar.gz | wc -l && md5sum /backup/etc_full_*.tar.gz | sudo tee /backup/checksums.md5
   risk_level: low
 - order: 5
@@ -75,6 +79,7 @@ steps:
     type: output_contains
     expect: 미러링 완료
     field: stdout
+  target_vm: secu
   script: sudo rsync -avz /home/ /backup/home_mirror/ 2>/dev/null && echo '미러링 완료'
   risk_level: low
 - order: 6
@@ -88,6 +93,7 @@ steps:
     type: output_contains
     expect: etc_incr
     field: stdout
+  target_vm: secu
   script: sudo find /etc -mtime -1 -type f | sudo tar czf /backup/etc_incr_$(date +%Y%m%d).tar.gz -T - 2>/dev/null && ls -lh /backup/etc_incr_*.tar.gz
   risk_level: low
 - order: 7
@@ -101,6 +107,7 @@ steps:
     type: output_contains
     expect: daily_backup
     field: stdout
+  target_vm: secu
   script: echo '0 2 * * * tar czf /backup/etc_daily_$(date +\%Y\%m\%d).tar.gz /etc 2>/dev/null' | sudo tee /etc/cron.d/daily_backup
   risk_level: low
 - order: 8
@@ -118,6 +125,7 @@ steps:
     type: output_contains
     expect: cleanup.sh
     field: stdout
+  target_vm: secu
   script: 'echo ''#!/bin/bash
 
     find /backup -name "*.tar.gz" -mtime +7 -delete
@@ -135,6 +143,7 @@ steps:
     type: output_contains
     expect: 복구 완료
     field: stdout
+  target_vm: secu
   script: sudo tar xzf /backup/etc_full_*.tar.gz -C /tmp etc/hostname 2>/dev/null && cat /tmp/etc/hostname && echo '복구 완료'
   risk_level: low
 - order: 10
@@ -148,6 +157,7 @@ steps:
     type: output_contains
     expect: 복구 검증 완료
     field: stdout
+  target_vm: secu
   script: sudo mkdir -p /tmp/restore_test && sudo tar xzf /backup/etc_full_*.tar.gz -C /tmp/restore_test 2>/dev/null && diff -rq /etc/hostname /tmp/restore_test/etc/hostname 2>/dev/null && echo '복구 검증 완료'
   risk_level: low
 - order: 11
@@ -161,6 +171,7 @@ steps:
     type: output_contains
     expect: 백업
     field: stdout
+  target_vm: secu
   script: pg_dump -h 127.0.0.1 -U ccc ccc > /tmp/db_backup.sql 2>/dev/null || echo 'DB 백업 시뮬레이션 완료'
   risk_level: low
 - order: 12
@@ -174,6 +185,7 @@ steps:
     type: output_contains
     expect: 암호화 백업 완료
     field: stdout
+  target_vm: secu
   script: echo 'backup_encryption_test' > /tmp/test_backup.txt && gpg --batch --passphrase 'backup2026!' --symmetric /tmp/test_backup.txt 2>/dev/null && ls -la /tmp/test_backup.txt.gpg && echo '암호화 백업 완료'
   risk_level: low
 - order: 13
@@ -187,6 +199,7 @@ steps:
     type: output_contains
     expect: 백업 저장소 현황
     field: stdout
+  target_vm: secu
   script: df -h /backup && echo '=== 백업 저장소 현황 ===' && du -sh /backup/
   risk_level: low
 - order: 14
@@ -200,6 +213,7 @@ steps:
     type: output_contains
     expect: RPO
     field: stdout
+  target_vm: secu
   script: 'echo -e ''백업 정책서\n\nRPO: 24시간\nRTO: 4시간\n백업 주기: 전체-주1회, 증분-매일\n보존 기간: 30일\n암호화: 필수\n복구 테스트: 월1회'' | sudo tee /backup/policy.txt'
   risk_level: low
 - order: 15
@@ -214,6 +228,7 @@ steps:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+  target_vm: secu
   script: echo '=== 백업 종합 보고서 ===' && echo '[백업 파일]' && ls -lh /backup/*.tar.gz 2>/dev/null && echo '[체크섬]' && cat /backup/checksums.md5 2>/dev/null && echo '[디스크]' && df -h /backup && echo '=== 보고서 완료
     ==='
   risk_level: low

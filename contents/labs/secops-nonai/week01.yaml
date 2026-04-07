@@ -1,179 +1,197 @@
-lab_id: "secops-nonai-week01"
-title: "보안 정책 수립 실습"
-version: "non-ai"
-course: "secops-nonai"
+lab_id: secops-nonai-week01
+title: 보안 정책 수립 실습
+version: non-ai
+course: secops-nonai
 week: 1
-description: "조직의 보안 정책을 수립하고 적용하는 기초 실습입니다. 정책 문서 작성, 접근 제어 기본 설정, 감사 로깅 활성화 등을 수행합니다."
-difficulty: "easy"
+description: 조직의 보안 정책을 수립하고 적용하는 기초 실습입니다. 정책 문서 작성, 접근 제어 기본 설정, 감사 로깅 활성화 등을 수행합니다.
+difficulty: easy
 duration_minutes: 120
 objectives:
-  - "보안 정책 문서 구조를 이해한다"
-  - "리눅스 시스템에 기본 보안 정책을 적용한다"
-  - "감사 로깅을 설정하고 확인한다"
+- 보안 정책 문서 구조를 이해한다
+- 리눅스 시스템에 기본 보안 정책을 적용한다
+- 감사 로깅을 설정하고 확인한다
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "대상 서버 10.20.30.1에 SSH로 접속하여 현재 시스템의 보안 정책 파일 목록을 확인하시오."
-    hint: "/etc/security/ 디렉터리를 확인하세요."
-    category: "policy_review"
-    points: 8
-    answer: "ls -la /etc/security/"
-    answer_detail: "/etc/security/ 디렉터리에는 access.conf, limits.conf, pwquality.conf 등 시스템 보안 정책 파일이 위치합니다."
-    verify:
-      type: "output_contains"
-      expect: "access.conf"
-      field: "stdout"
-  - order: 2
-    instruction: "현재 시스템의 패스워드 정책(최소 길이, 만료일 등)을 확인하시오."
-    hint: "/etc/login.defs 파일을 확인하세요."
-    category: "policy_review"
-    points: 8
-    answer: "grep -E '^PASS_' /etc/login.defs"
-    answer_detail: "login.defs에서 PASS_MAX_DAYS(최대 사용일), PASS_MIN_DAYS(최소 변경 간격), PASS_MIN_LEN(최소 길이), PASS_WARN_AGE(만료 경고일)를 확인할 수 있습니다."
-    verify:
-      type: "output_contains"
-      expect: "PASS_MAX_DAYS"
-      field: "stdout"
-  - order: 3
-    instruction: "패스워드 최소 길이를 12자로 설정하시오."
-    hint: "pwquality.conf 또는 login.defs를 수정하세요."
-    category: "policy_config"
-    points: 10
-    answer: "sudo sed -i 's/^# minlen.*/minlen = 12/' /etc/security/pwquality.conf"
-    answer_detail: "pwquality.conf의 minlen 값을 12로 설정하면 PAM을 통해 패스워드 생성 시 최소 12자를 요구합니다."
-    verify:
-      type: "output_contains"
-      expect: "minlen = 12"
-      field: "stdout"
-  - order: 4
-    instruction: "패스워드 복잡도 정책을 설정하시오: 대문자 1개, 소문자 1개, 숫자 1개, 특수문자 1개 이상 요구."
-    hint: "pwquality.conf에서 ucredit, lcredit, dcredit, ocredit을 설정하세요."
-    category: "policy_config"
-    points: 12
-    answer: "sudo sed -i 's/^# ucredit.*/ucredit = -1/' /etc/security/pwquality.conf && sudo sed -i 's/^# lcredit.*/lcredit = -1/' /etc/security/pwquality.conf && sudo sed -i 's/^# dcredit.*/dcredit = -1/' /etc/security/pwquality.conf && sudo sed -i 's/^# ocredit.*/ocredit = -1/' /etc/security/pwquality.conf"
-    answer_detail: "ucredit=-1(대문자 최소 1개), lcredit=-1(소문자 최소 1개), dcredit=-1(숫자 최소 1개), ocredit=-1(특수문자 최소 1개). 음수 값은 최소 요구 수를 의미합니다."
-    verify:
-      type: "output_contains"
-      expect: "ucredit = -1"
-      field: "stdout"
-  - order: 5
-    instruction: "계정 잠금 정책을 설정하시오: 5회 실패 시 10분간 잠금."
-    hint: "pam_faillock 또는 pam_tally2 모듈을 사용하세요."
-    category: "policy_config"
-    points: 12
-    answer: "sudo sed -i '/pam_unix.so/i auth required pam_faillock.so preauth deny=5 unlock_time=600' /etc/pam.d/system-auth"
-    answer_detail: "pam_faillock 모듈의 deny=5는 5회 실패 시 잠금, unlock_time=600은 600초(10분) 후 자동 해제를 의미합니다."
-    verify:
-      type: "output_contains"
-      expect: "pam_faillock"
-      field: "stdout"
-  - order: 6
-    instruction: "시스템 배너를 설정하여 비인가 접근 경고 메시지를 표시하시오."
-    hint: "/etc/issue와 /etc/issue.net을 수정하세요."
-    category: "policy_config"
-    points: 8
-    answer: "echo '경고: 본 시스템은 인가된 사용자만 접근할 수 있습니다. 모든 활동이 기록됩니다.' | sudo tee /etc/issue.net"
-    answer_detail: "/etc/issue.net은 SSH 등 원격 접속 시 표시되는 배너입니다. sshd_config에서 Banner /etc/issue.net을 설정해야 실제로 표시됩니다."
-    verify:
-      type: "output_contains"
-      expect: "인가된 사용자"
-      field: "stdout"
-  - order: 7
-    instruction: "SSH 배너 설정을 sshd_config에 적용하시오."
-    hint: "Banner 지시어를 설정하세요."
-    category: "policy_config"
-    points: 10
-    answer: "sudo sed -i 's/^#Banner.*/Banner \\/etc\\/issue.net/' /etc/ssh/sshd_config"
-    answer_detail: "sshd_config의 Banner 지시어를 /etc/issue.net으로 설정하면 SSH 접속 시 경고 메시지가 표시됩니다."
-    verify:
-      type: "output_contains"
-      expect: "Banner /etc/issue.net"
-      field: "stdout"
-  - order: 8
-    instruction: "auditd 서비스 상태를 확인하고 활성화하시오."
-    hint: "systemctl 명령을 사용하세요."
-    category: "audit"
-    points: 10
-    answer: "sudo systemctl enable --now auditd && sudo systemctl status auditd"
-    answer_detail: "auditd는 리눅스 감사 프레임워크로, 시스템 호출과 파일 접근을 기록합니다. enable --now로 즉시 시작과 부팅 시 자동 시작을 동시에 설정합니다."
-    verify:
-      type: "output_contains"
-      expect: "active (running)"
-      field: "stdout"
-  - order: 9
-    instruction: "/etc/passwd 파일에 대한 감사 규칙을 추가하시오."
-    hint: "auditctl -w 옵션을 사용하세요."
-    category: "audit"
-    points: 10
-    answer: "sudo auditctl -w /etc/passwd -p wa -k passwd_changes"
-    answer_detail: "-w는 감시 대상 파일, -p wa는 쓰기(w)와 속성변경(a) 감시, -k는 검색용 키워드입니다. 이 규칙으로 passwd 파일의 모든 변경이 기록됩니다."
-    verify:
-      type: "output_contains"
-      expect: "passwd_changes"
-      field: "stdout"
-  - order: 10
-    instruction: "현재 설정된 감사 규칙 목록을 확인하시오."
-    hint: "auditctl -l 명령을 사용하세요."
-    category: "audit"
-    points: 8
-    answer: "sudo auditctl -l"
-    answer_detail: "auditctl -l은 현재 커널에 로드된 모든 감사 규칙을 표시합니다. 영구 적용을 위해서는 /etc/audit/rules.d/ 에 규칙 파일을 작성해야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "/etc/passwd"
-      field: "stdout"
-  - order: 11
-    instruction: "sudo 명령어 사용에 대한 감사 규칙을 추가하시오."
-    hint: "/var/log/auth.log 또는 sudoers 관련 감사를 설정하세요."
-    category: "audit"
-    points: 10
-    answer: "sudo auditctl -w /etc/sudoers -p wa -k sudoers_changes && sudo auditctl -w /usr/bin/sudo -p x -k sudo_usage"
-    answer_detail: "sudoers 파일 변경과 sudo 바이너리 실행을 모두 감사합니다. -p x는 실행(execute) 이벤트를 감시합니다."
-    verify:
-      type: "output_contains"
-      expect: "sudo_usage"
-      field: "stdout"
-  - order: 12
-    instruction: "rsyslog 설정을 확인하고 인증 로그가 별도 파일에 기록되는지 확인하시오."
-    hint: "/etc/rsyslog.conf 또는 /etc/rsyslog.d/ 를 확인하세요."
-    category: "logging"
-    points: 10
-    answer: "grep -r 'auth' /etc/rsyslog.conf /etc/rsyslog.d/"
-    answer_detail: "rsyslog에서 auth,authpriv 시설은 인증 관련 로그를 처리합니다. 일반적으로 /var/log/auth.log 또는 /var/log/secure에 기록됩니다."
-    verify:
-      type: "output_contains"
-      expect: "auth"
-      field: "stdout"
-  - order: 13
-    instruction: "보안 정책 문서 템플릿을 /opt/security-policy/ 디렉터리에 생성하시오."
-    hint: "mkdir로 디렉터리를 만들고 정책 파일을 작성하세요."
-    category: "documentation"
-    points: 10
-    answer: "sudo mkdir -p /opt/security-policy && echo -e '# 정보보안 정책서\\n\\n## 1. 목적\\n본 정책은 조직의 정보자산을 보호하기 위한 기본 방침을 정한다.\\n\\n## 2. 적용범위\\n전 임직원 및 정보시스템\\n\\n## 3. 패스워드 정책\\n- 최소 12자\\n- 90일마다 변경\\n- 5회 실패시 잠금' | sudo tee /opt/security-policy/policy.md"
-    answer_detail: "보안 정책 문서에는 목적, 적용범위, 세부 정책(접근통제, 패스워드, 감사 등)이 포함되어야 합니다."
-    verify:
-      type: "output_contains"
-      expect: "정보보안 정책서"
-      field: "stdout"
-  - order: 14
-    instruction: "현재 시스템의 보안 설정 상태를 요약하는 스크립트를 작성하고 실행하시오."
-    hint: "패스워드 정책, 방화벽, 감사 설정 등을 확인하는 스크립트를 만드세요."
-    category: "verification"
-    points: 12
-    answer: "echo -e '#!/bin/bash\\necho \"=== 보안 점검 보고서 ===\"\\necho \"[패스워드 정책]\"\\ngrep minlen /etc/security/pwquality.conf\\necho \"[감사 규칙]\"\\nsudo auditctl -l | wc -l\\necho \"[SSH 배너]\"\\ngrep Banner /etc/ssh/sshd_config\\necho \"[점검 완료]\"' > /tmp/security_check.sh && chmod +x /tmp/security_check.sh && bash /tmp/security_check.sh"
-    answer_detail: "보안 점검 스크립트는 주요 보안 설정을 한 번에 확인할 수 있어 정기 점검에 유용합니다."
-    verify:
-      type: "output_contains"
-      expect: "보안 점검 보고서"
-      field: "stdout"
-  - order: 15
-    instruction: "설정한 모든 보안 정책의 적용 상태를 최종 검증하고, 감사 로그에서 오늘의 이벤트를 조회하시오."
-    hint: "ausearch 명령을 사용하세요."
-    category: "verification"
-    points: 12
-    answer: "sudo ausearch -ts today -k passwd_changes 2>/dev/null; echo '=== 정책 검증 완료 ==='"
-    answer_detail: "ausearch -ts today는 오늘 날짜의 감사 이벤트를 검색합니다. -k 옵션으로 특정 키의 이벤트만 필터링할 수 있습니다."
-    verify:
-      type: "output_contains"
-      expect: "정책 검증 완료"
-      field: "stdout"
+- order: 1
+  instruction: 대상 서버 10.20.30.1에 SSH로 접속하여 현재 시스템의 보안 정책 파일 목록을 확인하시오.
+  hint: /etc/security/ 디렉터리를 확인하세요.
+  category: policy_review
+  points: 8
+  answer: ls -la /etc/security/
+  answer_detail: /etc/security/ 디렉터리에는 access.conf, limits.conf, pwquality.conf 등 시스템 보안 정책 파일이 위치합니다.
+  verify:
+    type: output_contains
+    expect: access.conf
+    field: stdout
+  target_vm: secu
+- order: 2
+  instruction: 현재 시스템의 패스워드 정책(최소 길이, 만료일 등)을 확인하시오.
+  hint: /etc/login.defs 파일을 확인하세요.
+  category: policy_review
+  points: 8
+  answer: grep -E '^PASS_' /etc/login.defs
+  answer_detail: login.defs에서 PASS_MAX_DAYS(최대 사용일), PASS_MIN_DAYS(최소 변경 간격), PASS_MIN_LEN(최소 길이), PASS_WARN_AGE(만료 경고일)를 확인할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: PASS_MAX_DAYS
+    field: stdout
+  target_vm: secu
+- order: 3
+  instruction: 패스워드 최소 길이를 12자로 설정하시오.
+  hint: pwquality.conf 또는 login.defs를 수정하세요.
+  category: policy_config
+  points: 10
+  answer: sudo sed -i 's/^# minlen.*/minlen = 12/' /etc/security/pwquality.conf
+  answer_detail: pwquality.conf의 minlen 값을 12로 설정하면 PAM을 통해 패스워드 생성 시 최소 12자를 요구합니다.
+  verify:
+    type: output_contains
+    expect: minlen = 12
+    field: stdout
+  target_vm: secu
+- order: 4
+  instruction: '패스워드 복잡도 정책을 설정하시오: 대문자 1개, 소문자 1개, 숫자 1개, 특수문자 1개 이상 요구.'
+  hint: pwquality.conf에서 ucredit, lcredit, dcredit, ocredit을 설정하세요.
+  category: policy_config
+  points: 12
+  answer: sudo sed -i 's/^# ucredit.*/ucredit = -1/' /etc/security/pwquality.conf && sudo sed -i 's/^# lcredit.*/lcredit = -1/' /etc/security/pwquality.conf && sudo sed -i 's/^# dcredit.*/dcredit = -1/'
+    /etc/security/pwquality.conf && sudo sed -i 's/^# ocredit.*/ocredit = -1/' /etc/security/pwquality.conf
+  answer_detail: ucredit=-1(대문자 최소 1개), lcredit=-1(소문자 최소 1개), dcredit=-1(숫자 최소 1개), ocredit=-1(특수문자 최소 1개). 음수 값은 최소 요구 수를 의미합니다.
+  verify:
+    type: output_contains
+    expect: ucredit = -1
+    field: stdout
+  target_vm: secu
+- order: 5
+  instruction: '계정 잠금 정책을 설정하시오: 5회 실패 시 10분간 잠금.'
+  hint: pam_faillock 또는 pam_tally2 모듈을 사용하세요.
+  category: policy_config
+  points: 12
+  answer: sudo sed -i '/pam_unix.so/i auth required pam_faillock.so preauth deny=5 unlock_time=600' /etc/pam.d/system-auth
+  answer_detail: pam_faillock 모듈의 deny=5는 5회 실패 시 잠금, unlock_time=600은 600초(10분) 후 자동 해제를 의미합니다.
+  verify:
+    type: output_contains
+    expect: pam_faillock
+    field: stdout
+  target_vm: secu
+- order: 6
+  instruction: 시스템 배너를 설정하여 비인가 접근 경고 메시지를 표시하시오.
+  hint: /etc/issue와 /etc/issue.net을 수정하세요.
+  category: policy_config
+  points: 8
+  answer: 'echo ''경고: 본 시스템은 인가된 사용자만 접근할 수 있습니다. 모든 활동이 기록됩니다.'' | sudo tee /etc/issue.net'
+  answer_detail: /etc/issue.net은 SSH 등 원격 접속 시 표시되는 배너입니다. sshd_config에서 Banner /etc/issue.net을 설정해야 실제로 표시됩니다.
+  verify:
+    type: output_contains
+    expect: 인가된 사용자
+    field: stdout
+  target_vm: secu
+- order: 7
+  instruction: SSH 배너 설정을 sshd_config에 적용하시오.
+  hint: Banner 지시어를 설정하세요.
+  category: policy_config
+  points: 10
+  answer: sudo sed -i 's/^#Banner.*/Banner \/etc\/issue.net/' /etc/ssh/sshd_config
+  answer_detail: sshd_config의 Banner 지시어를 /etc/issue.net으로 설정하면 SSH 접속 시 경고 메시지가 표시됩니다.
+  verify:
+    type: output_contains
+    expect: Banner /etc/issue.net
+    field: stdout
+  target_vm: secu
+- order: 8
+  instruction: auditd 서비스 상태를 확인하고 활성화하시오.
+  hint: systemctl 명령을 사용하세요.
+  category: audit
+  points: 10
+  answer: sudo systemctl enable --now auditd && sudo systemctl status auditd
+  answer_detail: auditd는 리눅스 감사 프레임워크로, 시스템 호출과 파일 접근을 기록합니다. enable --now로 즉시 시작과 부팅 시 자동 시작을 동시에 설정합니다.
+  verify:
+    type: output_contains
+    expect: active (running)
+    field: stdout
+  target_vm: secu
+- order: 9
+  instruction: /etc/passwd 파일에 대한 감사 규칙을 추가하시오.
+  hint: auditctl -w 옵션을 사용하세요.
+  category: audit
+  points: 10
+  answer: sudo auditctl -w /etc/passwd -p wa -k passwd_changes
+  answer_detail: -w는 감시 대상 파일, -p wa는 쓰기(w)와 속성변경(a) 감시, -k는 검색용 키워드입니다. 이 규칙으로 passwd 파일의 모든 변경이 기록됩니다.
+  verify:
+    type: output_contains
+    expect: passwd_changes
+    field: stdout
+  target_vm: secu
+- order: 10
+  instruction: 현재 설정된 감사 규칙 목록을 확인하시오.
+  hint: auditctl -l 명령을 사용하세요.
+  category: audit
+  points: 8
+  answer: sudo auditctl -l
+  answer_detail: auditctl -l은 현재 커널에 로드된 모든 감사 규칙을 표시합니다. 영구 적용을 위해서는 /etc/audit/rules.d/ 에 규칙 파일을 작성해야 합니다.
+  verify:
+    type: output_contains
+    expect: /etc/passwd
+    field: stdout
+  target_vm: secu
+- order: 11
+  instruction: sudo 명령어 사용에 대한 감사 규칙을 추가하시오.
+  hint: /var/log/auth.log 또는 sudoers 관련 감사를 설정하세요.
+  category: audit
+  points: 10
+  answer: sudo auditctl -w /etc/sudoers -p wa -k sudoers_changes && sudo auditctl -w /usr/bin/sudo -p x -k sudo_usage
+  answer_detail: sudoers 파일 변경과 sudo 바이너리 실행을 모두 감사합니다. -p x는 실행(execute) 이벤트를 감시합니다.
+  verify:
+    type: output_contains
+    expect: sudo_usage
+    field: stdout
+  target_vm: secu
+- order: 12
+  instruction: rsyslog 설정을 확인하고 인증 로그가 별도 파일에 기록되는지 확인하시오.
+  hint: /etc/rsyslog.conf 또는 /etc/rsyslog.d/ 를 확인하세요.
+  category: logging
+  points: 10
+  answer: grep -r 'auth' /etc/rsyslog.conf /etc/rsyslog.d/
+  answer_detail: rsyslog에서 auth,authpriv 시설은 인증 관련 로그를 처리합니다. 일반적으로 /var/log/auth.log 또는 /var/log/secure에 기록됩니다.
+  verify:
+    type: output_contains
+    expect: auth
+    field: stdout
+  target_vm: secu
+- order: 13
+  instruction: 보안 정책 문서 템플릿을 /opt/security-policy/ 디렉터리에 생성하시오.
+  hint: mkdir로 디렉터리를 만들고 정책 파일을 작성하세요.
+  category: documentation
+  points: 10
+  answer: sudo mkdir -p /opt/security-policy && echo -e '# 정보보안 정책서\n\n## 1. 목적\n본 정책은 조직의 정보자산을 보호하기 위한 기본 방침을 정한다.\n\n## 2. 적용범위\n전 임직원 및 정보시스템\n\n## 3. 패스워드 정책\n- 최소 12자\n- 90일마다 변경\n- 5회 실패시 잠금' | sudo
+    tee /opt/security-policy/policy.md
+  answer_detail: 보안 정책 문서에는 목적, 적용범위, 세부 정책(접근통제, 패스워드, 감사 등)이 포함되어야 합니다.
+  verify:
+    type: output_contains
+    expect: 정보보안 정책서
+    field: stdout
+  target_vm: secu
+- order: 14
+  instruction: 현재 시스템의 보안 설정 상태를 요약하는 스크립트를 작성하고 실행하시오.
+  hint: 패스워드 정책, 방화벽, 감사 설정 등을 확인하는 스크립트를 만드세요.
+  category: verification
+  points: 12
+  answer: echo -e '#!/bin/bash\necho "=== 보안 점검 보고서 ==="\necho "[패스워드 정책]"\ngrep minlen /etc/security/pwquality.conf\necho "[감사 규칙]"\nsudo auditctl -l | wc -l\necho "[SSH 배너]"\ngrep Banner /etc/ssh/sshd_config\necho
+    "[점검 완료]"' > /tmp/security_check.sh && chmod +x /tmp/security_check.sh && bash /tmp/security_check.sh
+  answer_detail: 보안 점검 스크립트는 주요 보안 설정을 한 번에 확인할 수 있어 정기 점검에 유용합니다.
+  verify:
+    type: output_contains
+    expect: 보안 점검 보고서
+    field: stdout
+  target_vm: secu
+- order: 15
+  instruction: 설정한 모든 보안 정책의 적용 상태를 최종 검증하고, 감사 로그에서 오늘의 이벤트를 조회하시오.
+  hint: ausearch 명령을 사용하세요.
+  category: verification
+  points: 12
+  answer: sudo ausearch -ts today -k passwd_changes 2>/dev/null; echo '=== 정책 검증 완료 ==='
+  answer_detail: ausearch -ts today는 오늘 날짜의 감사 이벤트를 검색합니다. -k 옵션으로 특정 키의 이벤트만 필터링할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: 정책 검증 완료
+    field: stdout
+  target_vm: secu

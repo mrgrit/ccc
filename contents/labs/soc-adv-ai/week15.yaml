@@ -24,6 +24,7 @@ steps:
   verify:
     type: output_contains
     expect: Environment Check
+  target_vm: siem
   script: echo '=== SOC Environment Check ===' && echo '[Wazuh Manager]' && ssh 10.20.30.100 'systemctl is-active wazuh-manager 2>/dev/null; /var/ossec/bin/agent_control -l 2>/dev/null | tail -5' 2>&1 &&
     echo '' && echo '[Suricata]' && ssh 10.20.30.1 'systemctl is-active suricata 2>/dev/null; tail -1 /var/log/suricata/stats.log 2>/dev/null' 2>&1 && echo '' && echo '[nftables]' && ssh 10.20.30.1 'nft
     list ruleset 2>/dev/null | grep -c "rule"' 2>&1 && echo '' && echo 'Environment check complete'
@@ -40,6 +41,7 @@ steps:
   verify:
     type: output_contains
     expect: Web Attack
+  target_vm: siem
   script: 'echo ''=== Web Attack Analysis ==='' && ssh 10.20.30.1 ''tail -500 /var/log/suricata/eve.json 2>/dev/null | python3 -c "import sys,json for l in sys.stdin: try: e=json.loads(l) if e.get(\"event_type\")==\"alert\"
     and \"http\" in str(e.get(\"alert\",{}).get(\"category\",\"\")): a=e[\"alert\"] print(f\"{e.get(\"timestamp\",\"\")[:19]} | {e.get(\"src_ip\",\"\")}:{e.get(\"src_port\",\"\")} -> {e.get(\"dest_ip\",\"\")}:{e.get(\"dest_port\",\"\")}
     | {a.get(\"signature\",\"\")[:60]} | Severity:{a.get(\"severity\",\"\")} \") except: pass" 2>/dev/null | tail -10'' 2>&1 && echo '''' && echo ''MITRE ATT&CK: T1190 (Exploit Public-Facing Application)'''
@@ -57,6 +59,7 @@ steps:
   verify:
     type: output_contains
     expect: Response complete
+  target_vm: siem
   script: 'ATTACKER_IP="203.0.113.50" && echo ''=== Incident Response: Web Attack ==='' && echo ''[1] Block attacker IP:'' && ssh 10.20.30.1 "sudo nft add rule inet filter input ip saddr $ATTACKER_IP drop
     2>/dev/null && echo ''IP blocked: $ATTACKER_IP''" 2>&1 && echo '''' && echo ''[2] Deploy Suricata detection rule:'' && ssh 10.20.30.1 "echo ''alert http $ATTACKER_IP any -> \$HOME_NET any (msg:\"CUSTOM:
     Blocked attacker resumed activity\"; flow:to_server,established; sid:9100001; rev:1;)'' | sudo tee -a /etc/suricata/rules/local.rules" 2>&1 && echo '''' && echo ''[3] Verify block:'' && ssh 10.20.30.1
@@ -75,6 +78,7 @@ steps:
   verify:
     type: output_contains
     expect: C2 analysis
+  target_vm: siem
   script: 'echo ''=== Outbound Traffic Analysis ==='' && echo ''[Suricata C2/Trojan alerts]'' && ssh 10.20.30.1 ''grep -i "trojan\|c2\|beacon\|backdoor\|shellcode" /var/log/suricata/fast.log 2>/dev/null
     | tail -5'' 2>&1 && echo '''' && echo ''[Active outbound connections]'' && ss -tn state established 2>/dev/null | awk ''{print $5}'' | grep -vE ''^(10\.|127\.|$)'' | sort | uniq -c | sort -rn | head
     -10 && echo '''' && echo ''[DNS query anomaly check]'' && ssh 10.20.30.1 ''tail -200 /var/log/suricata/eve.json 2>/dev/null | python3 -c "import sys,json for l in sys.stdin: try: e=json.loads(l) if
@@ -93,6 +97,7 @@ steps:
   verify:
     type: output_contains
     expect: Persistence hunting
+  target_vm: siem
   script: 'echo ''=== Threat Hunting: Persistence ==='' && for host in 10.20.30.1 10.20.30.80 10.20.30.100; do echo "--- Host: $host ---"; ssh $host ''echo "[Crontabs]"; for u in $(cut -f1 -d: /etc/passwd);
     do crontab -u $u -l 2>/dev/null | grep -v "^#" | grep -v "^$"; done; echo "[Suspicious systemd]"; systemctl list-units --type=service --state=running 2>/dev/null | grep -vE "(ssh|cron|rsyslog|wazuh|suricata|nftables|apache|docker|network|system)"
     | head -5; echo "[SSH keys]"; for f in /home/*/.ssh/authorized_keys /root/.ssh/authorized_keys; do test -f $f && echo "$f: $(wc -l < $f) keys"; done 2>/dev/null'' 2>&1; done && echo '''' && echo ''Persistence
@@ -119,6 +124,7 @@ steps:
   verify:
     type: output_contains
     expect: IOC deployment
+  target_vm: siem
   script: 'echo ''=== IOC Deployment ==='' && echo ''203.0.113.50:blocked_attacker'' > /tmp/ioc_list.txt && echo ''198.51.100.1:c2_suspect'' >> /tmp/ioc_list.txt && echo '''' && echo ''[1] Deploy to Wazuh
     CDB:'' && ssh 10.20.30.100 ''cat >> /var/ossec/etc/lists/blocked_ips << EOF
 
@@ -146,6 +152,7 @@ steps:
   verify:
     type: output_contains
     expect: Correlation
+  target_vm: siem
   script: 'echo ''=== Cross-Tool Correlation ==='' && echo ''[Suricata top alert source IPs]'' && ssh 10.20.30.1 ''tail -1000 /var/log/suricata/eve.json 2>/dev/null | python3 -c "import sys,json; ips={}
     for l in sys.stdin: try: e=json.loads(l) if e.get(\"event_type\")==\"alert\": ip=e.get(\"src_ip\",\"\"); ips[ip]=ips.get(ip,0)+1 except: pass for ip,c in sorted(ips.items(),key=lambda x:-x[1])[:5]:
     print(f\"{c:5d} alerts from {ip}\")" 2>/dev/null'' 2>&1 && echo '''' && echo ''[Wazuh top alert source IPs]'' && ssh 10.20.30.100 ''tail -200 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3
@@ -166,6 +173,7 @@ steps:
   verify:
     type: output_contains
     expect: SOC KPI
+  target_vm: siem
   script: "cat > /tmp/soc_kpi.txt << 'EOF'\n=== SOC KPI Report ===\nDate: 2026-04-06\n\n[Incident Metrics]\nIncidents handled: 2 (Web Attack, C2 Suspect)\nP1 incidents: 1 (Web SQLi - Critical)\nP2 incidents:\
     \ 1 (Outbound anomaly - High)\n\n[Time Metrics]\nMTTD (Mean Time to Detect):\n  Scenario 1 (Web Attack): ~5 min (Suricata real-time)\n  Scenario 2 (C2 Traffic): ~10 min (log analysis)\n  Average MTTD:\
     \ 7.5 min\n\nMTTR (Mean Time to Respond):\n  Scenario 1: ~8 min (block + rule deploy)\n  Scenario 2: ~15 min (analysis + block)\n  Average MTTR: 11.5 min\n\n[Volume Metrics]\nTotal alerts reviewed:\
@@ -231,6 +239,7 @@ steps:
   verify:
     type: output_contains
     expect: Re-Assessment
+  target_vm: siem
   script: 'cat > /tmp/soc_maturity_final.txt << ''EOF''
 
     === SOC Maturity Re-Assessment ===
@@ -300,6 +309,7 @@ steps:
   verify:
     type: output_contains
     expect: FINAL ASSESSMENT
+  target_vm: siem
   script: "cat > /tmp/soc_final_report.txt << 'EOF'\n================================================================\n       SOC ADVANCED COURSE - FINAL ASSESSMENT REPORT\n================================================================\n\
     \n1. EXECUTIVE SUMMARY\n\nThe 15-week SOC Advanced course achieved measurable improvements\nacross all security operations domains. SOC maturity increased\nfrom 2.2 to 3.4 on the SOC-CMM scale (0-5).\n\
     \n2. KEY ACHIEVEMENTS\n\n[Detection Capability]\n- Custom Suricata rules: 20+ (from 0)\n- Custom Wazuh rules: 15+ (from 0)\n- SIGMA rules developed: 10+\n- ATT&CK detection coverage: 40% -> 75%\n\n\
