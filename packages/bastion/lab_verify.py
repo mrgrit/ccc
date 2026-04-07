@@ -25,14 +25,21 @@ def verify_lab_step(step: dict, vm_ips: dict[str, str]) -> dict:
     if not answer:
         return {"passed": False, "detail": "No answer/command"}
 
-    # 환경변수 주입 (LLM_URL 등)
-    import os
-    llm_url = os.getenv("LLM_BASE_URL", "http://10.20.30.200:11434")
-    env_prefix = f"export LLM_URL='{llm_url}'; "
-    if "${LLM_URL" in answer:
-        answer = env_prefix + answer
+    import os, re
 
-    r = run_command(vm_ip, answer, timeout=20)
+    # 1. python3 -c "...\\n..." → heredoc 변환 (멀티라인 Python 스크립트)
+    if 'python3 -c "' in answer and "\\n" in answer:
+        m = re.match(r'python3 -c "(.*)"$', answer, re.DOTALL)
+        if m:
+            script = m.group(1).replace("\\n", "\n").replace('\\"', '"')
+            answer = f"python3 << 'PYEOF'\n{script}\nPYEOF"
+
+    # 2. 환경변수 주입 (LLM_URL 등)
+    llm_url = os.getenv("LLM_BASE_URL", "http://10.20.30.200:11434")
+    answer = answer.replace("${LLM_URL:-http://10.20.30.200:11434}", llm_url)
+    answer = answer.replace("${LLM_URL}", llm_url)
+
+    r = run_command(vm_ip, answer, timeout=30)
     output = r.get(field, r.get("stdout", ""))
 
     if vtype == "output_contains":
