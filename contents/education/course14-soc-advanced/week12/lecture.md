@@ -11,10 +11,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
@@ -121,7 +121,7 @@ Apr  4 10:15:23 secu kernel: nft_log: IN=eth0 SRC=10.20.30.201 DST=10.20.30.80 P
 ## 2.1 기존 디코더 분석
 
 ```bash
-sshpass -p1 ssh siem@10.20.30.100 << 'REMOTE'
+sshpass -p1 ssh ccc@10.20.30.100 << 'REMOTE'
 echo "=== Wazuh 기본 디코더 수 ==="
 find /var/ossec/ruleset/decoders/ -name "*.xml" | wc -l
 
@@ -205,7 +205,7 @@ python3 /tmp/regex_patterns.py
 > **실습 목적**: Bastion API 로그를 Wazuh에서 파싱하는 커스텀 디코더를 작성한다.
 
 ```bash
-sshpass -p1 ssh siem@10.20.30.100 << 'REMOTE'
+sshpass -p1 ssh ccc@10.20.30.100 << 'REMOTE'
 
 # Bastion 로그 디코더 작성
 sudo tee /var/ossec/etc/decoders/local_decoder.xml << 'DECODERS'
@@ -270,7 +270,7 @@ REMOTE
 ## 3.2 wazuh-logtest로 디코더 검증
 
 ```bash
-sshpass -p1 ssh siem@10.20.30.100 << 'REMOTE'
+sshpass -p1 ssh ccc@10.20.30.100 << 'REMOTE'
 
 # 테스트 로그로 디코더 검증
 echo "=== Bastion 로그 테스트 ==="
@@ -396,7 +396,7 @@ python3 /tmp/retention_policy.py
 
 ```bash
 # Wazuh 로그 로테이션 확인
-sshpass -p1 ssh siem@10.20.30.100 << 'REMOTE'
+sshpass -p1 ssh ccc@10.20.30.100 << 'REMOTE'
 echo "=== Wazuh 로그 크기 ==="
 du -sh /var/ossec/logs/ 2>/dev/null
 du -sh /var/ossec/logs/alerts/ 2>/dev/null

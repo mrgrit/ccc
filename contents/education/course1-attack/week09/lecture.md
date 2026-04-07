@@ -11,10 +11,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -369,7 +369,7 @@ secu 서버에 SSH 접속 후 패킷 캡처를 시작한다.
 
 ```bash
 # 터미널 1: secu 서버 접속
-sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1
 
 # 네트워크 인터페이스 확인
 ip addr show
@@ -454,7 +454,7 @@ nmap -sV -p 22,80,3000 10.20.30.80
 
 ```bash
 # secu에서 SYN 패킷만 캡처
-sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
   "sudo tcpdump -i eth0 'tcp[tcpflags] & tcp-syn != 0' -nn -c 30"
 
 # 동시에 bastion에서 스캔 실행
@@ -472,7 +472,7 @@ ip neigh show
 # 10.20.30.80 dev eth0 lladdr yy:yy:yy:yy:yy:yy STALE
 
 # web 서버에서도 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 "ip neigh show"
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 "ip neigh show"
 ```
 
 ### 실습 6: Bastion로 스캔 자동화

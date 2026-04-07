@@ -19,10 +19,10 @@
 
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
-| bastion | 10.20.30.201 | 공격 기지 / Control Plane | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | 공격 기지 / Control Plane | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `sshpass -p1 ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | GPU 추론 서버 (Ollama LLM) | Ollama API: `http://192.168.0.105:11434` |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -781,19 +781,19 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID3/execute-plan \
     "tasks": [
       {
         "order": 1,
-        "instruction_prompt": "echo \"[BLUE] Phase 1: IPS 로그 분석\"; sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 \"tail -20 /var/log/suricata/fast.log 2>/dev/null || echo No Suricata alerts\"",
+        "instruction_prompt": "echo \"[BLUE] Phase 1: IPS 로그 분석\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"tail -20 /var/log/suricata/fast.log 2>/dev/null || echo No Suricata alerts\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
       {
         "order": 2,
-        "instruction_prompt": "echo \"[BLUE] Phase 2: 웹 접근 로그 분석\"; sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \"tail -30 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|script|alert|or 1=1\\\" || echo No suspicious entries\"",
+        "instruction_prompt": "echo \"[BLUE] Phase 2: 웹 접근 로그 분석\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"tail -30 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|script|alert|or 1=1\\\" || echo No suspicious entries\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
       {
         "order": 3,
-        "instruction_prompt": "echo \"[BLUE] Phase 3: Wazuh 알림 확인\"; sshpass -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100 \"tail -20 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -m json.tool 2>/dev/null | head -40 || echo No recent alerts\"",
+        "instruction_prompt": "echo \"[BLUE] Phase 3: Wazuh 알림 확인\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \"tail -20 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -m json.tool 2>/dev/null | head -40 || echo No recent alerts\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       }

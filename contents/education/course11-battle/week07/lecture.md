@@ -196,7 +196,7 @@ alert tcp any any -> $HOME_NET 22 (
 
 ```bash
 # secu 서버에 커스텀 룰 작성
-sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 << 'RULES'
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 << 'RULES'
 echo 1 | sudo -S bash -c 'cat > /etc/suricata/rules/custom.rules << "EOF"
 # === 포트 스캔 탐지 ===
 alert tcp any any -> $HOME_NET any (msg:"[CUSTOM] TCP SYN 스캔 탐지"; flags:S,12; threshold:type threshold,track by_src,count 20,seconds 10; classtype:attempted-recon; sid:9000001; rev:1;)
@@ -221,7 +221,7 @@ EOF
 RULES
 
 # 룰 파일 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1   "echo 1 | sudo -S cat /etc/suricata/rules/custom.rules 2>/dev/null"
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S cat /etc/suricata/rules/custom.rules 2>/dev/null"
 ```
 
 > **결과 해석**:
@@ -238,14 +238,14 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1   "echo 1 | sudo -S 
 
 ```bash
 # suricata.yaml에 커스텀 룰 경로 추가 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1   "echo 1 | sudo -S grep 'custom.rules' /etc/suricata/suricata.yaml 2>/dev/null"
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S grep 'custom.rules' /etc/suricata/suricata.yaml 2>/dev/null"
 
 # Suricata 룰 검증
-sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1   "echo 1 | sudo -S suricata -T -c /etc/suricata/suricata.yaml 2>&1 | tail -5"
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S suricata -T -c /etc/suricata/suricata.yaml 2>&1 | tail -5"
 # 예상 출력: Configuration provided was successfully loaded.
 
 # Suricata 재시작
-sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1   "echo 1 | sudo -S systemctl restart suricata 2>/dev/null; echo 1 | sudo -S systemctl status suricata 2>/dev/null | head -5"
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S systemctl restart suricata 2>/dev/null; echo 1 | sudo -S systemctl status suricata 2>/dev/null | head -5"
 ```
 
 > **트러블슈팅**:
@@ -270,14 +270,14 @@ curl -s "http://10.20.30.80:3000/rest/products/search?q=%3Cscript%3Ealert(1)%3C%
 
 # Suricata 경보 확인
 sleep 3
-sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1   "echo 1 | sudo -S tail -20 /var/log/suricata/fast.log 2>/dev/null"
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S tail -20 /var/log/suricata/fast.log 2>/dev/null"
 # 예상 출력:
 # [**] [1:9000001:1] [CUSTOM] TCP SYN 스캔 탐지 [**] ...
 # [**] [1:9000003:1] [CUSTOM] SQL Injection - UNION SELECT [**] ...
 # [**] [1:9000005:1] [CUSTOM] XSS - script 태그 [**] ...
 
 # eve.json에서 상세 정보 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1   "echo 1 | sudo -S tail -5 /var/log/suricata/eve.json 2>/dev/null | python3 -m json.tool 2>/dev/null | head -30"
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S tail -5 /var/log/suricata/eve.json 2>/dev/null | python3 -m json.tool 2>/dev/null | head -30"
 ```
 
 > **결과 해석**:
@@ -312,9 +312,9 @@ curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
-      {"order":1,"title":"Suricata 상태 확인","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 \"echo 1 | sudo -S systemctl status suricata 2>/dev/null | head -5\"","risk_level":"low","subagent_url":"http://localhost:8002"},
-      {"order":2,"title":"최근 경보 확인","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 \"echo 1 | sudo -S tail -10 /var/log/suricata/fast.log 2>/dev/null\"","risk_level":"low","subagent_url":"http://localhost:8002"},
-      {"order":3,"title":"커스텀 룰 수","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 \"echo 1 | sudo -S wc -l /etc/suricata/rules/custom.rules 2>/dev/null\"","risk_level":"low","subagent_url":"http://localhost:8002"}
+      {"order":1,"title":"Suricata 상태 확인","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"echo 1 | sudo -S systemctl status suricata 2>/dev/null | head -5\"","risk_level":"low","subagent_url":"http://localhost:8002"},
+      {"order":2,"title":"최근 경보 확인","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"echo 1 | sudo -S tail -10 /var/log/suricata/fast.log 2>/dev/null\"","risk_level":"low","subagent_url":"http://localhost:8002"},
+      {"order":3,"title":"커스텀 룰 수","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"echo 1 | sudo -S wc -l /etc/suricata/rules/custom.rules 2>/dev/null\"","risk_level":"low","subagent_url":"http://localhost:8002"}
     ],
     "subagent_url":"http://localhost:8002",
     "parallel":true

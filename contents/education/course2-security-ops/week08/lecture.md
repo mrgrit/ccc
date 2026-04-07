@@ -6,10 +6,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -70,8 +70,8 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| secu | 10.20.30.1 | 방화벽 + IPS | `sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1` |
-| web | 10.20.30.80 | WAF + 웹 앱 | `sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80` |
+| secu | 10.20.30.1 | 방화벽 + IPS | `sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1` |
+| web | 10.20.30.80 | WAF + 웹 앱 | `sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80` |
 
 ---
 
@@ -107,7 +107,7 @@ secu 서버에 다음 조건의 방화벽을 구성하라.
 > **실전 활용**: 보안 장비 긴급 구성은 실무에서 보안 사고 대응 시 시간 압박 속에 수행해야 하는 핵심 기술이다
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1  # 비밀번호 자동입력 SSH
 
 # 테이블 및 체인 생성
 echo 1 | sudo -S nft add table inet exam_filter
@@ -217,7 +217,7 @@ echo 1 | sudo -S sysctl -w net.ipv4.ip_forward=1
 **정답 예시:**
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1  # 비밀번호 자동입력 SSH
 
 echo 1 | sudo -S tee /etc/suricata/rules/local.rules << 'EOF'
 # 1. 디렉터리 트래버설
@@ -325,7 +325,7 @@ echo 1 | sudo -S grep "kernel_drops" /var/log/suricata/stats.log | tail -1
 # fail-open이 아니면 → Suricata 정지 시 트래픽 차단
 
 # 3. Apache+ModSecurity 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80
 systemctl is-active apache2
 echo 1 | sudo -S apache2ctl -M 2>/dev/null | grep security
 # security2_module이 로드되어 있으면 ModSecurity 정상
@@ -354,7 +354,7 @@ echo 1 | sudo -S apache2ctl -M 2>/dev/null | grep security
 
 ```bash
 # 시험 설정 제거
-sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1  # 비밀번호 자동입력 SSH
 echo 1 | sudo -S nft delete table inet exam_filter 2>/dev/null
 echo 1 | sudo -S nft delete table inet exam_nat 2>/dev/null
 echo 1 | sudo -S sed -i '/EXAM/d' /etc/suricata/rules/local.rules 2>/dev/null

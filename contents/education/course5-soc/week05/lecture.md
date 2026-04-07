@@ -10,10 +10,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -126,7 +126,7 @@ SOC 분석원은 경보를 분석하여 **실제 위협인지 판별**한다.
 
 ```bash
 # 경보 샘플 추출
-sshpass -p1 ssh siem@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 alerts = []
 for line in sys.stdin:                                 # 반복문 시작
@@ -226,7 +226,7 @@ for i, a in enumerate(alerts[-10:], 1):                # 반복문 시작
 
 ```bash
 # 오늘의 경보 현황
-sshpass -p1 ssh siem@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 from collections import Counter
 levels = Counter()
@@ -263,7 +263,7 @@ for agent, cnt in agents.most_common():                # 반복문 시작
 
 ```bash
 # Level 8 이상 경보 상세 분석
-sshpass -p1 ssh siem@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 for line in sys.stdin:                                 # 반복문 시작
     try:
@@ -293,7 +293,7 @@ for line in sys.stdin:                                 # 반복문 시작
 # 특정 규칙 ID에 대한 모든 경보
 RULE_ID="5710"  # SSH authentication failed (예시)
 
-sshpass -p1 ssh siem@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 from collections import Counter
 sources = Counter()
@@ -349,7 +349,7 @@ for user, cnt in targets.most_common(5):               # 반복문 시작
 
 ```bash
 # SSH 실패 경보 중 TP/FP 판별
-sshpass -p1 ssh bastion@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
+sshpass -p1 ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
   awk '{
     # IP 추출
     for(i=1;i<=NF;i++) if($i==\"from\") ip=$(i+1)
@@ -373,7 +373,7 @@ sshpass -p1 ssh bastion@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2
 
 ```bash
 # 반복되는 FP 경보 확인
-sshpass -p1 ssh siem@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 from collections import Counter
 rules = Counter()

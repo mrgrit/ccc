@@ -374,7 +374,7 @@ which hydra > /dev/null 2>&1 && {
   for user in web root; do
     for pass in 1 password 123456; do
       sshpass -p"$pass" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 \
-        "$user@10.20.30.80" "echo 'SUCCESS: $user/$pass'" 2>/dev/null && break 2
+        "$ccc@10.20.30.80" "echo 'SUCCESS: $user/$pass'" 2>/dev/null && break 2
     done
   done
   echo "수동 시도 완료"
@@ -411,7 +411,7 @@ echo "[$(date +%H:%M:%S)] Post-Exploitation 시작"
 
 # SSH 접근 성공 시나리오 (비밀번호 '1'로 접근)
 echo "[정보 수집]"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 << 'POSTEX'
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'POSTEX'
 echo "=== 시스템 정보 ==="
 echo "호스트: $(hostname)"
 echo "사용자: $(whoami)"
@@ -476,11 +476,11 @@ echo "[$(date +%H:%M:%S)] 침투 탐지 분석 시작"
 
 # SSH 브루트포스 탐지
 echo "[SSH 인증 분석]"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "grep -c 'Failed password' /var/log/auth.log 2>/dev/null"
 echo "건의 실패한 SSH 인증 시도"
 
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
    awk '{print \$(NF-3)}' | sort | uniq -c | sort -rn | head -5"
 # 예상 출력: 소스 IP별 실패 횟수
@@ -488,14 +488,14 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
 # 성공한 SSH 로그인 확인
 echo ""
 echo "[성공한 SSH 로그인]"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "grep 'Accepted' /var/log/auth.log 2>/dev/null | tail -10"
 # 예상 출력: Accepted password for web from 10.20.30.201 port ...
 
 # 웹 공격 탐지 (access.log)
 echo ""
 echo "[웹 공격 패턴]"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "grep -iE \"(union|select|insert|drop|script|alert|onerror|eval|exec|cmd)\" \
    /var/log/apache2/access.log 2>/dev/null | tail -10"
 # 예상 출력: SQLi, XSS 시도가 포함된 HTTP 요청
@@ -503,7 +503,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
 # Suricata IDS 알림
 echo ""
 echo "[IDS 침투 관련 알림]"
-sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
   "grep -iE 'sql|injection|xss|exploit|shell|trojan|reverse' \
    /var/log/suricata/fast.log 2>/dev/null | tail -10"
 
@@ -539,31 +539,31 @@ ATTACKER_IP="10.20.30.201"
 
 # 1. 공격자 IP 차단 (secu 방화벽)
 echo "[조치 1] 공격자 IP 차단"
-# sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 \
+# sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
 #   "echo 1 | sudo -S nft add rule inet filter input ip saddr $ATTACKER_IP drop"
 echo "(시뮬레이션) nft add rule inet filter input ip saddr $ATTACKER_IP drop"
 
 # 2. 공격자 세션 종료 (web 서버)
 echo ""
 echo "[조치 2] 공격자 세션 확인/종료"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "who 2>/dev/null"
 # 공격자 세션이 있으면:
-# sshpass -p1 ssh web@10.20.30.80 "echo 1 | sudo -S pkill -u web"
+# sshpass -p1 ssh ccc@10.20.30.80 "echo 1 | sudo -S pkill -u web"
 
 # 3. 비밀번호 즉시 변경
 echo ""
 echo "[조치 3] 비밀번호 변경"
-# sshpass -p1 ssh web@10.20.30.80 \
+# sshpass -p1 ssh ccc@10.20.30.80 \
 #   "echo 'web:NEW_STRONG_PASS' | sudo chpasswd"
 echo "(시뮬레이션) 비밀번호 변경"
 
 # 4. 증거 수집 (격리 전)
 echo ""
 echo "[조치 4] 빠른 증거 수집"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "ps auxf | grep -v '^\[' | head -20" > /tmp/blue_evidence_ps.txt
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "ss -tnpa" > /tmp/blue_evidence_net.txt
 echo "증거 수집 완료: ps, network"
 
@@ -604,28 +604,28 @@ echo "[$(date +%H:%M:%S)] 근절 시작"
 
 # 백도어 계정 확인
 echo "[근절 1] 비정상 계정 확인"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "grep -E '/bin/(ba)?sh' /etc/passwd | grep -v 'root\|web\|sshd'"
 # 비정상 계정이 있으면 userdel -r로 제거
 
 # 의심 파일 확인
 echo ""
 echo "[근절 2] 의심 파일 확인"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "find /tmp /var/tmp /dev/shm -name '.*' -type f 2>/dev/null; \
    find /tmp /var/tmp -perm -111 -type f 2>/dev/null"
 
 # crontab 확인
 echo ""
 echo "[근절 3] 크론 작업 확인"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "echo 1 | sudo -S crontab -l 2>/dev/null; \
    echo 1 | sudo -S cat /var/spool/cron/crontabs/* 2>/dev/null"
 
 # SSH authorized_keys 확인
 echo ""
 echo "[근절 4] SSH 키 확인"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "cat ~/.ssh/authorized_keys 2>/dev/null; \
    echo 1 | sudo -S cat /root/.ssh/authorized_keys 2>/dev/null"
 

@@ -11,10 +11,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -223,10 +223,10 @@ cat > ~/lab/week07/security-project/CLAUDE.md << 'MDEOF'
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane | ssh bastion@10.20.30.201 |
-| secu | 10.20.30.1 | 방화벽/IPS | sshpass -p1 ssh secu@10.20.30.1 |
-| web | 10.20.30.80 | 웹서버 | sshpass -p1 ssh web@10.20.30.80 |
-| siem | 10.20.30.100 | SIEM | sshpass -p1 ssh siem@10.20.30.100 |
+| bastion | 10.20.30.201 | Control Plane | ssh ccc@10.20.30.201 |
+| secu | 10.20.30.1 | 방화벽/IPS | sshpass -p1 ssh ccc@10.20.30.1 |
+| web | 10.20.30.80 | 웹서버 | sshpass -p1 ssh ccc@10.20.30.80 |
+| siem | 10.20.30.100 | SIEM | sshpass -p1 ssh ccc@10.20.30.100 |
 
 ## Bastion API
 

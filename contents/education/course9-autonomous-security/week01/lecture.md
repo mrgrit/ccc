@@ -11,10 +11,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -226,7 +226,7 @@ created → planning → executing → validating → reporting → closed
 
 ```bash
 # bastion 서버에 접속
-ssh bastion@10.20.30.201
+ssh ccc@10.20.30.201
 ```
 
 > **실습 목적**: 자율보안시스템의 핵심인 Bastion API가 정상 동작하는지 확인하는 것은, 자율 보안 운영의 첫 단계이다.
@@ -399,11 +399,11 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 **수동 점검 (전통적 방법)**:
 ```bash
 # 서버 1번 접속하여 확인
-sshpass -p1 ssh secu@10.20.30.1 "hostname && uptime"
+sshpass -p1 ssh ccc@10.20.30.1 "hostname && uptime"
 # 서버 2번 접속하여 확인
-sshpass -p1 ssh web@10.20.30.80 "hostname && uptime"
+sshpass -p1 ssh ccc@10.20.30.80 "hostname && uptime"
 # 서버 3번 접속하여 확인
-sshpass -p1 ssh siem@10.20.30.100 "hostname && uptime"
+sshpass -p1 ssh ccc@10.20.30.100 "hostname && uptime"
 # 각 서버에 개별 접속 → 순차 실행 → 결과 수동 취합
 ```
 

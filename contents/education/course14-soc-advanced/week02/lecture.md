@@ -11,10 +11,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -394,7 +394,7 @@ Rule 86601-86700        Rule 88001-88100        Rule 5501-5600
 
 ```bash
 # siem 서버 접속
-sshpass -p1 ssh siem@10.20.30.100
+sshpass -p1 ssh ccc@10.20.30.100
 
 # 커스텀 룰 파일 백업
 sudo cp /var/ossec/etc/rules/local_rules.xml \
@@ -460,7 +460,7 @@ echo "Exit code: $?"
 # (siem 서버의 Wazuh가 탐지하도록)
 
 # 먼저 siem에서 Wazuh 재시작 (새 룰 적용)
-sshpass -p1 ssh siem@10.20.30.100 "sudo systemctl restart wazuh-manager"
+sshpass -p1 ssh ccc@10.20.30.100 "sudo systemctl restart wazuh-manager"
 
 # 5초 대기
 sleep 5
@@ -469,7 +469,7 @@ sleep 5
 echo "=== SSH 무차별 대입 시뮬레이션 시작 ==="
 for i in $(seq 1 15); do
     sshpass -p wrong_password ssh -o StrictHostKeyChecking=no \
-        -o ConnectTimeout=3 fake_user@10.20.30.100 \
+        -o ConnectTimeout=3 fake_ccc@10.20.30.100 \
         "echo test" 2>/dev/null
     echo "시도 $i/15 완료"
 done
@@ -478,7 +478,7 @@ echo "=== 시뮬레이션 완료, 경보 확인 중... ==="
 sleep 3
 
 # siem에서 경보 확인
-sshpass -p1 ssh siem@10.20.30.100 << 'EOF'
+sshpass -p1 ssh ccc@10.20.30.100 << 'EOF'
 echo "=== 최근 SSH 관련 경보 ==="
 tail -50 /var/ossec/logs/alerts/alerts.log 2>/dev/null | \
   grep -A2 "Rule: 100" || echo "(커스텀 룰 경보 없음 - 기본 룰 확인)"
@@ -508,7 +508,7 @@ EOF
 
 ```bash
 # siem 서버에서 웹 공격 상관 룰 추가
-sshpass -p1 ssh siem@10.20.30.100 << 'REMOTE'
+sshpass -p1 ssh ccc@10.20.30.100 << 'REMOTE'
 
 # 웹 공격 상관 룰 추가
 sudo tee -a /var/ossec/etc/rules/local_rules.xml << 'RULES'
@@ -574,7 +574,7 @@ REMOTE
 ## 3.4 다중 소스 연계 룰 - Suricata + Wazuh
 
 ```bash
-sshpass -p1 ssh siem@10.20.30.100 << 'REMOTE'
+sshpass -p1 ssh ccc@10.20.30.100 << 'REMOTE'
 
 # 다중 소스 상관 룰
 sudo tee -a /var/ossec/etc/rules/local_rules.xml << 'RULES'
@@ -629,7 +629,7 @@ REMOTE
 
 ```bash
 # siem 서버에서 logtest 도구로 룰 매칭 검증
-sshpass -p1 ssh siem@10.20.30.100 << 'EOF'
+sshpass -p1 ssh ccc@10.20.30.100 << 'EOF'
 
 # 테스트 로그 입력으로 룰 매칭 확인
 echo 'Apr  4 10:15:23 web sshd[12345]: Failed password for invalid user admin from 192.168.1.100 port 54321 ssh2' | \
@@ -653,7 +653,7 @@ EOF
 
 ```bash
 # 최근 경보에서 오탐 패턴 분석
-sshpass -p1 ssh siem@10.20.30.100 << 'EOF'
+sshpass -p1 ssh ccc@10.20.30.100 << 'EOF'
 echo "=== 최근 24시간 경보 Rule ID 분포 ==="
 cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | \
   python3 -c "
@@ -706,7 +706,7 @@ EOF
 
 ```bash
 # 룰 매칭 성능 확인
-sshpass -p1 ssh siem@10.20.30.100 << 'EOF'
+sshpass -p1 ssh ccc@10.20.30.100 << 'EOF'
 echo "=== Wazuh 분석 엔진 상태 ==="
 sudo /var/ossec/bin/wazuh-analysisd -s 2>/dev/null | head -30
 

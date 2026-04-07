@@ -10,10 +10,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -118,7 +118,7 @@
 > **실전 활용**: 보안 자동화 에이전트의 안전 경계 설정, 위험 행동 감시 시스템 설계, 인간 승인 워크플로 구축에 활용한다
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 << 'ENDSSH'
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 # Bastion 도구 남용 시나리오
 tool_abuse_scenarios = [
@@ -200,7 +200,7 @@ echo "$RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(json
 ### 3.1 에이전트 권한 체계
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 << 'ENDSSH'
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 # 최소 권한 원칙 적용 예시
 agent_roles = {
@@ -258,7 +258,7 @@ AI 에이전트의 자율성 수준(Advisory/Semi/Full)별 위험도를 분석�
 
 ```bash
 # 에이전트 자율성 수준별 위험도 분석
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 << 'ENDSSH'
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 autonomy_levels = [
     {
@@ -313,7 +313,7 @@ ENDSSH
 
 ```bash
 # 에이전트 안전 설계 원칙 구현
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 << 'ENDSSH'
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 principles = [
     ("최소 권한", "에이전트에게 작업에 필요한 최소한의 권한만 부여"),
@@ -344,7 +344,7 @@ Bastion의 기존 안전 장치(risk_level, PoW, dry_run 등)를 AI Safety 프�
 
 ```bash
 # Bastion 안전 장치 → AI Safety 프레임워크 매핑
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 << 'ENDSSH'
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 bastion_safety = {
     "최소 권한": "SubAgent에 직접 접근 금지, Manager API 통해서만",

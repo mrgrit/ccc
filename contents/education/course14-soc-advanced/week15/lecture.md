@@ -11,10 +11,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -92,7 +92,7 @@ echo "============================================"
 echo "  종합 실전 - 인프라 점검"
 echo "============================================"
 
-for server in "secu@10.20.30.1" "web@10.20.30.80" "siem@10.20.30.100"; do
+for server in "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
     ip=$(echo "$server" | cut -d@ -f2)
     user=$(echo "$server" | cut -d@ -f1)
     result=$(sshpass -p1 ssh -o ConnectTimeout=3 "$server" "hostname" 2>/dev/null)
@@ -112,7 +112,7 @@ echo "  Manager API: HTTP $HTTP_CODE"
 
 echo ""
 echo "=== Wazuh ==="
-sshpass -p1 ssh siem@10.20.30.100 \
+sshpass -p1 ssh ccc@10.20.30.100 \
   "systemctl is-active wazuh-manager 2>/dev/null" 2>/dev/null || echo "  (확인 필요)"
 ```
 
@@ -130,7 +130,7 @@ echo "============================================"
 echo "  [Tier 1] 경보 모니터링"
 echo "============================================"
 
-sshpass -p1 ssh siem@10.20.30.100 << 'REMOTE'
+sshpass -p1 ssh ccc@10.20.30.100 << 'REMOTE'
 echo "=== 최근 경보 (최신 20건) ==="
 tail -20 /var/ossec/logs/alerts/alerts.log 2>/dev/null | \
   grep "Rule:" | while read line; do
@@ -191,7 +191,7 @@ sleep 3
 # 경보 재확인
 echo ""
 echo "=== [Tier 1] 트리아지 ==="
-sshpass -p1 ssh siem@10.20.30.100 \
+sshpass -p1 ssh ccc@10.20.30.100 \
   "tail -10 /var/ossec/logs/alerts/alerts.log 2>/dev/null" 2>/dev/null | tail -10
 
 echo ""
@@ -332,7 +332,7 @@ echo "4. LD_PRELOAD:"
 test -f /etc/ld.so.preload && echo "  [경고] 존재!" || echo "  (정상)"
 HUNT
 
-for server in "secu@10.20.30.1" "web@10.20.30.80" "siem@10.20.30.100"; do
+for server in "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
     echo ""
     sshpass -p1 ssh -o ConnectTimeout=3 "$server" 'bash -s' < /tmp/final_hunt.sh 2>/dev/null
 done

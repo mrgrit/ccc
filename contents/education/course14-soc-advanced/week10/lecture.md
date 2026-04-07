@@ -11,10 +11,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
@@ -174,7 +174,7 @@ Step 6: 기록
 ## 2.1 Active Response 기본 설정
 
 ```bash
-sshpass -p1 ssh siem@10.20.30.100 << 'REMOTE'
+sshpass -p1 ssh ccc@10.20.30.100 << 'REMOTE'
 
 echo "=== 현재 Active Response 설정 ==="
 sudo grep -A20 "active-response" /var/ossec/etc/ossec.conf 2>/dev/null | head -30
@@ -191,7 +191,7 @@ REMOTE
 ## 2.2 IP 차단 Active Response 구성
 
 ```bash
-sshpass -p1 ssh siem@10.20.30.100 << 'REMOTE'
+sshpass -p1 ssh ccc@10.20.30.100 << 'REMOTE'
 
 # 커스텀 IP 차단 스크립트 생성
 sudo tee /var/ossec/active-response/bin/block_ip.sh << 'SCRIPT'
@@ -246,7 +246,7 @@ REMOTE
 
 ```bash
 # Active Response 로그 확인
-sshpass -p1 ssh siem@10.20.30.100 << 'REMOTE'
+sshpass -p1 ssh ccc@10.20.30.100 << 'REMOTE'
 echo "=== Active Response 로그 ==="
 tail -20 /var/ossec/logs/active-responses.log 2>/dev/null || echo "(로그 없음)"
 

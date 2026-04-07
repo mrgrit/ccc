@@ -11,10 +11,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -683,7 +683,7 @@ python3 /tmp/pysigma_convert.py
 
 ```bash
 # siem 서버에 SIGMA 변환 룰 배포
-sshpass -p1 ssh siem@10.20.30.100 << 'REMOTE'
+sshpass -p1 ssh ccc@10.20.30.100 << 'REMOTE'
 
 # 기존 커스텀 룰 백업
 sudo cp /var/ossec/etc/rules/local_rules.xml \
@@ -757,7 +757,7 @@ REMOTE
 
 ```bash
 # web 서버에서 웹셸 업로드 시뮬레이션
-sshpass -p1 ssh web@10.20.30.80 << 'EOF'
+sshpass -p1 ssh ccc@10.20.30.80 << 'EOF'
 # 가짜 웹셸 파일 생성 (실제 코드 아님, 탐지 테스트용)
 echo '<?php echo "test"; ?>' > /tmp/test_webshell.php
 
@@ -773,7 +773,7 @@ EOF
 
 # 경보 확인
 sleep 3
-sshpass -p1 ssh siem@10.20.30.100 << 'EOF'
+sshpass -p1 ssh ccc@10.20.30.100 << 'EOF'
 echo "=== SIGMA 룰 관련 최근 경보 ==="
 tail -30 /var/ossec/logs/alerts/alerts.log 2>/dev/null | \
   grep -i "sigma\|webshell\|100500" || \

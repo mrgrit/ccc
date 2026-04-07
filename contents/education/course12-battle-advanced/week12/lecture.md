@@ -19,10 +19,10 @@
 
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane / SOAR 엔진 | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh 4.11.2) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane / SOAR 엔진 | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh 4.11.2) | `sshpass -p1 ssh ccc@10.20.30.100` |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 **Wazuh API:** `https://10.20.30.100:55000` (admin/admin)
@@ -328,19 +328,19 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
     "tasks": [
       {
         "order": 1,
-        "instruction_prompt": "echo \"=== SOC Tier 1: Wazuh 알림 수집 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100 \"tail -50 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \\\"import sys,json; [print(json.dumps({\\x27level\\x27:json.loads(l).get(\\x27rule\\x27,{}).get(\\x27level\\x27), \\x27desc\\x27:json.loads(l).get(\\x27rule\\x27,{}).get(\\x27description\\x27,\\x27\\x27)[:60], \\x27src\\x27:json.loads(l).get(\\x27data\\x27,{}).get(\\x27srcip\\x27,\\x27-\\x27)})) for l in sys.stdin if l.strip()]\\\" 2>/dev/null | tail -20 || echo No alerts\"",
+        "instruction_prompt": "echo \"=== SOC Tier 1: Wazuh 알림 수집 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \"tail -50 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \\\"import sys,json; [print(json.dumps({\\x27level\\x27:json.loads(l).get(\\x27rule\\x27,{}).get(\\x27level\\x27), \\x27desc\\x27:json.loads(l).get(\\x27rule\\x27,{}).get(\\x27description\\x27,\\x27\\x27)[:60], \\x27src\\x27:json.loads(l).get(\\x27data\\x27,{}).get(\\x27srcip\\x27,\\x27-\\x27)})) for l in sys.stdin if l.strip()]\\\" 2>/dev/null | tail -20 || echo No alerts\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
       {
         "order": 2,
-        "instruction_prompt": "echo \"=== SOC Tier 1: Suricata IPS 알림 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 \"tail -30 /var/log/suricata/fast.log 2>/dev/null | tail -15 || echo No Suricata alerts\"",
+        "instruction_prompt": "echo \"=== SOC Tier 1: Suricata IPS 알림 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"tail -30 /var/log/suricata/fast.log 2>/dev/null | tail -15 || echo No Suricata alerts\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
       {
         "order": 3,
-        "instruction_prompt": "echo \"=== SOC Tier 1: 웹 서버 에러 로그 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \"tail -20 /var/log/apache2/error.log 2>/dev/null | tail -10 || echo No errors\"; echo \"---\"; echo \"=== 접근 로그 이상 패턴 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \"tail -100 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|script|alert|../|etc/passwd\\\" | tail -10 || echo No suspicious patterns\"",
+        "instruction_prompt": "echo \"=== SOC Tier 1: 웹 서버 에러 로그 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"tail -20 /var/log/apache2/error.log 2>/dev/null | tail -10 || echo No errors\"; echo \"---\"; echo \"=== 접근 로그 이상 패턴 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"tail -100 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|script|alert|../|etc/passwd\\\" | tail -10 || echo No suspicious patterns\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       }
@@ -375,19 +375,19 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
     "tasks": [
       {
         "order": 1,
-        "instruction_prompt": "echo \"=== SOAR Step 1: 트리거 — SQLi 탐지 확인 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \"tail -100 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select.*from|or 1=1\\\" | tail -5 || echo No SQLi detected\"; echo \"탐지 시각: $(date +%Y-%m-%d_%H:%M:%S)\"",
+        "instruction_prompt": "echo \"=== SOAR Step 1: 트리거 — SQLi 탐지 확인 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"tail -100 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select.*from|or 1=1\\\" | tail -5 || echo No SQLi detected\"; echo \"탐지 시각: $(date +%Y-%m-%d_%H:%M:%S)\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
       {
         "order": 2,
-        "instruction_prompt": "echo \"=== SOAR Step 2: 분석 — 공격 IP 추출 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \"tail -200 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select.*from|or 1=1\\\" | awk '{print \\$1}' | sort | uniq -c | sort -rn | head -5 || echo No attacking IPs found\"",
+        "instruction_prompt": "echo \"=== SOAR Step 2: 분석 — 공격 IP 추출 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"tail -200 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select.*from|or 1=1\\\" | awk '{print \\$1}' | sort | uniq -c | sort -rn | head -5 || echo No attacking IPs found\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
       {
         "order": 3,
-        "instruction_prompt": "echo \"=== SOAR Step 3: 대응 — 방화벽 규칙 확인 (dry-run) ===\"; echo \"[DRY-RUN] nft add rule inet filter input ip saddr {공격IP} drop\"; echo \"실제 차단은 수동 확인 후 실행합니다.\"; echo \"---\"; echo \"현재 nftables 규칙:\"; sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 \"nft list ruleset 2>/dev/null | head -20 || echo nftables not available\"",
+        "instruction_prompt": "echo \"=== SOAR Step 3: 대응 — 방화벽 규칙 확인 (dry-run) ===\"; echo \"[DRY-RUN] nft add rule inet filter input ip saddr {공격IP} drop\"; echo \"실제 차단은 수동 확인 후 실행합니다.\"; echo \"---\"; echo \"현재 nftables 규칙:\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"nft list ruleset 2>/dev/null | head -20 || echo nftables not available\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
@@ -429,7 +429,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
     "tasks": [
       {
         "order": 1,
-        "instruction_prompt": "echo \"=== Wazuh 현재 규칙 확인 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100 \"cat /var/ossec/etc/rules/local_rules.xml 2>/dev/null | head -30 || echo No custom rules\"",
+        "instruction_prompt": "echo \"=== Wazuh 현재 규칙 확인 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \"cat /var/ossec/etc/rules/local_rules.xml 2>/dev/null | head -30 || echo No custom rules\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
@@ -441,7 +441,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
       },
       {
         "order": 3,
-        "instruction_prompt": "echo \"=== Wazuh 규칙 테스트 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100 \"/var/ossec/bin/wazuh-logtest 2>/dev/null <<< '10.20.30.201 - - [01/Apr/2026:10:00:00 +0900] \\\"GET /rest/products/search?q=UNION+SELECT+1,2,3 HTTP/1.1\\\" 200 1234' 2>/dev/null | tail -10 || echo logtest not available\"",
+        "instruction_prompt": "echo \"=== Wazuh 규칙 테스트 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \"/var/ossec/bin/wazuh-logtest 2>/dev/null <<< '10.20.30.201 - - [01/Apr/2026:10:00:00 +0900] \\\"GET /rest/products/search?q=UNION+SELECT+1,2,3 HTTP/1.1\\\" 200 1234' 2>/dev/null | tail -10 || echo logtest not available\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       }
@@ -518,13 +518,13 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID2/execute-plan \
       },
       {
         "order": 2,
-        "instruction_prompt": "echo \"=== IR Step 2: 식별 (Identification) ===\"; echo \"[알림 확인]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \"tail -50 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|or 1=1|script\\\" | wc -l\" 2>/dev/null; echo \"건의 의심스러운 요청 발견\"; echo \"---\"; echo \"[공격 IP]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \"tail -200 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|or 1=1\\\" | awk '{print \\$1}' | sort -u\" 2>/dev/null || echo \"IP 추출 실패\"; echo \"---\"; echo \"[판정] 실제 SQL Injection 공격으로 분류\"",
+        "instruction_prompt": "echo \"=== IR Step 2: 식별 (Identification) ===\"; echo \"[알림 확인]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"tail -50 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|or 1=1|script\\\" | wc -l\" 2>/dev/null; echo \"건의 의심스러운 요청 발견\"; echo \"---\"; echo \"[공격 IP]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"tail -200 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|or 1=1\\\" | awk '{print \\$1}' | sort -u\" 2>/dev/null || echo \"IP 추출 실패\"; echo \"---\"; echo \"[판정] 실제 SQL Injection 공격으로 분류\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
       {
         "order": 3,
-        "instruction_prompt": "echo \"=== IR Step 3: 억제 (Containment) ===\"; echo \"[단기 억제] 공격 IP 차단 (dry-run)\"; echo \"  nft add rule inet filter input ip saddr {공격IP} drop\"; echo \"[장기 억제] WAF 규칙 강화\"; echo \"  JuiceShop search 파라미터에 입력 검증 추가 필요\"; echo \"---\"; echo \"현재 방화벽 상태:\"; sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 \"nft list ruleset 2>/dev/null | grep -c rule || echo 0\"; echo \"개의 규칙 활성\"",
+        "instruction_prompt": "echo \"=== IR Step 3: 억제 (Containment) ===\"; echo \"[단기 억제] 공격 IP 차단 (dry-run)\"; echo \"  nft add rule inet filter input ip saddr {공격IP} drop\"; echo \"[장기 억제] WAF 규칙 강화\"; echo \"  JuiceShop search 파라미터에 입력 검증 추가 필요\"; echo \"---\"; echo \"현재 방화벽 상태:\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"nft list ruleset 2>/dev/null | grep -c rule || echo 0\"; echo \"개의 규칙 활성\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },

@@ -6,10 +6,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -98,7 +98,7 @@
 # 실행하여 결과를 분석할 것
 
 # 각 서버별 SSH 실패 횟수
-for srv in "bastion@10.20.30.201" "secu@10.20.30.1" "web@10.20.30.80" "siem@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   echo -n "실패: "
   sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "grep -c 'Failed password' /var/log/auth.log 2>/dev/null || echo 0"
@@ -107,11 +107,11 @@ for srv in "bastion@10.20.30.201" "secu@10.20.30.1" "web@10.20.30.80" "siem@10.2
 done
 
 # 공격자 IP Top 5
-sshpass -p1 ssh bastion@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
+sshpass -p1 ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
   awk '{print \$(NF-3)}' | sort | uniq -c | sort -rn | head -5"
 
 # 공격 대상 사용자 Top 5
-sshpass -p1 ssh bastion@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
+sshpass -p1 ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
   awk '{for(i=1;i<=NF;i++) if(\$i==\"for\") {if(\$(i+1)==\"invalid\") print \$(i+3); else print \$(i+1)}}' | \
   sort | uniq -c | sort -rn | head -5"
 ```
@@ -132,7 +132,7 @@ for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
 done
 
 # 비인가 sudo 시도
-for srv in "bastion@10.20.30.201" "secu@10.20.30.1" "web@10.20.30.80" "siem@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "grep 'NOT in sudoers' /var/log/auth.log 2>/dev/null"
 done
@@ -146,13 +146,13 @@ done
 
 ```bash
 # syslog에서 이상 징후 검색
-for srv in "bastion@10.20.30.201" "secu@10.20.30.1" "web@10.20.30.80" "siem@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "grep -iE 'error|fail|critical|emergency|segfault|oom' /var/log/syslog 2>/dev/null | wc -l"
 done
 
 # 커널 오류 확인
-sshpass -p1 ssh bastion@10.20.30.201 "journalctl -p err --no-pager 2>/dev/null | tail -10"
+sshpass -p1 ssh ccc@10.20.30.201 "journalctl -p err --no-pager 2>/dev/null | tail -10"
 ```
 
 ---
@@ -163,18 +163,18 @@ sshpass -p1 ssh bastion@10.20.30.201 "journalctl -p err --no-pager 2>/dev/null |
 
 ```bash
 # Suricata 알림 통계
-sshpass -p1 ssh secu@10.20.30.1 "cat /var/log/suricata/fast.log 2>/dev/null | wc -l"
+sshpass -p1 ssh ccc@10.20.30.1 "cat /var/log/suricata/fast.log 2>/dev/null | wc -l"
 
 # 알림 유형 Top 10
-sshpass -p1 ssh secu@10.20.30.1 "cat /var/log/suricata/fast.log 2>/dev/null | \
+sshpass -p1 ssh ccc@10.20.30.1 "cat /var/log/suricata/fast.log 2>/dev/null | \
   grep -oP '\[\*\*\].*?\[\*\*\]' | sort | uniq -c | sort -rn | head -10"
 
 # Priority별 분포
-sshpass -p1 ssh secu@10.20.30.1 "grep -oP 'Priority: [0-9]+' /var/log/suricata/fast.log 2>/dev/null | \
+sshpass -p1 ssh ccc@10.20.30.1 "grep -oP 'Priority: [0-9]+' /var/log/suricata/fast.log 2>/dev/null | \
   sort | uniq -c | sort -rn"
 
 # 공격자 IP Top 5
-sshpass -p1 ssh secu@10.20.30.1 "grep -oP '\\{\\w+\\} [0-9.]+' /var/log/suricata/fast.log 2>/dev/null | \
+sshpass -p1 ssh ccc@10.20.30.1 "grep -oP '\\{\\w+\\} [0-9.]+' /var/log/suricata/fast.log 2>/dev/null | \
   awk '{print \$2}' | sort | uniq -c | sort -rn | head -5"
 ```
 
@@ -187,20 +187,20 @@ sshpass -p1 ssh secu@10.20.30.1 "grep -oP '\\{\\w+\\} [0-9.]+' /var/log/suricata
 
 ```bash
 # 웹 로그 기본 통계
-sshpass -p1 ssh web@10.20.30.80 "wc -l /var/log/nginx/access.log 2>/dev/null || echo '0'"
+sshpass -p1 ssh ccc@10.20.30.80 "wc -l /var/log/nginx/access.log 2>/dev/null || echo '0'"
 
 # HTTP 상태코드 분포
-sshpass -p1 ssh web@10.20.30.80 "awk '{print \$9}' /var/log/nginx/access.log 2>/dev/null | \
+sshpass -p1 ssh ccc@10.20.30.80 "awk '{print \$9}' /var/log/nginx/access.log 2>/dev/null | \
   sort | uniq -c | sort -rn | head -10"
 
 # 웹 공격 패턴 검색
-sshpass -p1 ssh web@10.20.30.80 "grep -iE 'union|select|script|alert|\.\./' /var/log/nginx/access.log 2>/dev/null | wc -l"
+sshpass -p1 ssh ccc@10.20.30.80 "grep -iE 'union|select|script|alert|\.\./' /var/log/nginx/access.log 2>/dev/null | wc -l"
 
 # 의심스러운 요청 샘플
-sshpass -p1 ssh web@10.20.30.80 "grep -iE 'union|select|script|\.\./' /var/log/nginx/access.log 2>/dev/null | head -5"
+sshpass -p1 ssh ccc@10.20.30.80 "grep -iE 'union|select|script|\.\./' /var/log/nginx/access.log 2>/dev/null | head -5"
 
 # User-Agent 분석
-sshpass -p1 ssh web@10.20.30.80 "awk -F'\"' '{print \$6}' /var/log/nginx/access.log 2>/dev/null | \
+sshpass -p1 ssh ccc@10.20.30.80 "awk -F'\"' '{print \$6}' /var/log/nginx/access.log 2>/dev/null | \
   sort | uniq -c | sort -rn | head -5"
 ```
 
@@ -219,7 +219,7 @@ sshpass -p1 ssh web@10.20.30.80 "awk -F'\"' '{print \$6}' /var/log/nginx/access.
 
 ```bash
 # 경보 전체 통계
-sshpass -p1 ssh siem@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 from collections import Counter
 levels = Counter()
@@ -241,7 +241,7 @@ for r, c in rules.most_common(10):                     # 반복문 시작
 \" 2>/dev/null"
 
 # Level 10+ 상세
-sshpass -p1 ssh siem@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 for line in sys.stdin:                                 # 반복문 시작
     try:
@@ -338,9 +338,9 @@ for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시�
 done
 
 # 로그 존재 확인
-sshpass -p1 ssh bastion@10.20.30.201 "ls -lh /var/log/auth.log 2>/dev/null"  # 비밀번호 자동입력 SSH
-sshpass -p1 ssh secu@10.20.30.1 "ls -lh /var/log/suricata/fast.log 2>/dev/null"  # 비밀번호 자동입력 SSH
-sshpass -p1 ssh siem@10.20.30.100 "ls -lh /var/ossec/logs/alerts/alerts.json 2>/dev/null"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.201 "ls -lh /var/log/auth.log 2>/dev/null"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.1 "ls -lh /var/log/suricata/fast.log 2>/dev/null"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.100 "ls -lh /var/ossec/logs/alerts/alerts.json 2>/dev/null"  # 비밀번호 자동입력 SSH
 ```
 
 ---
@@ -391,7 +391,7 @@ sshpass -p1 ssh siem@10.20.30.100 "ls -lh /var/ossec/logs/alerts/alerts.json 2>/
 
 ```bash
 # siem 서버에서 최근 경보 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100 "  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 "  # 비밀번호 자동입력 SSH
   echo '=== 최근 경보 (level >= 7) ==='
   sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | \
     python3 -c '                                       # Python 코드 실행

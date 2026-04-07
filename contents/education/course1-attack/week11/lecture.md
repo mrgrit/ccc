@@ -11,10 +11,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -411,7 +411,7 @@ cat /etc/os-release
 
 ```bash
 # web 서버 SSH 접속
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80
 
 # 현재 사용자 정보
 whoami
@@ -432,7 +432,7 @@ cat /etc/os-release | head -5
 
 ```bash
 # web 서버에서 SUID 바이너리 검색
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "find / -perm -4000 -type f 2>/dev/null"
 
 # 예상 출력:
@@ -449,7 +449,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
 # /usr/lib/dbus-1.0/dbus-daemon-launch-helper
 
 # SGID 바이너리도 검색
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "find / -perm -2000 -type f 2>/dev/null"
 
 # 결과를 정리하고, GTFOBins에서 악용 가능한 바이너리가 있는지 확인
@@ -459,18 +459,18 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
 
 ```bash
 # sudo 권한 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 "echo 1 | sudo -S -l"
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 "echo 1 | sudo -S -l"
 
 # 예상 출력:
 # User user may run the following commands on web:
 #     (ALL) NOPASSWD: ALL
 
 # sudo로 root 쉘 획득
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 "sudo whoami"
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 "sudo whoami"
 # 예상 출력: root
 
 # root로 중요 파일 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 "sudo cat /etc/shadow | head -3"
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 "sudo cat /etc/shadow | head -3"
 # 예상 출력:
 # root:$6$...:19000:0:99999:7:::
 # daemon:*:19000:0:99999:7:::
@@ -483,19 +483,19 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 "sudo cat /etc/shado
 
 ```bash
 # 시스템 crontab 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "cat /etc/crontab"
 
 # root의 cron 작업 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "sudo crontab -l 2>/dev/null || echo 'root cron 없음'"
 
 # cron 디렉토리 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "ls -la /etc/cron.d/ /etc/cron.daily/ 2>/dev/null"
 
 # 쓰기 가능한 스크립트 찾기
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "find /etc/cron* -writable 2>/dev/null"
 ```
 
@@ -505,7 +505,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
 
 ```bash
 # web 서버 접속
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80
 
 # 1. 현재 PATH 확인
 echo $PATH
@@ -551,7 +551,7 @@ export PATH=$(echo $PATH | sed 's|/tmp:||')
 
 ```bash
 # web 서버에서 한 번에 체크하는 스크립트
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 << 'CHECK'  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'CHECK'  # 비밀번호 자동입력 SSH
 echo "===== 1. 현재 사용자 ====="
 whoami && id
 

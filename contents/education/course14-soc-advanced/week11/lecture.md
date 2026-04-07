@@ -11,10 +11,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
@@ -298,19 +298,19 @@ echo "============================================"
 # 웹서버 현황 확인
 echo ""
 echo "--- 웹서버 프로세스 상태 ---"
-sshpass -p1 ssh web@10.20.30.80 "ps aux | grep -E 'apache|nginx|node|http' | head -5" 2>/dev/null
+sshpass -p1 ssh ccc@10.20.30.80 "ps aux | grep -E 'apache|nginx|node|http' | head -5" 2>/dev/null
 
 echo ""
 echo "--- 의심 파일 검색 ---"
-sshpass -p1 ssh web@10.20.30.80 "find /var/www /opt -name '*.php' -newer /etc/hostname 2>/dev/null | head -10" 2>/dev/null
+sshpass -p1 ssh ccc@10.20.30.80 "find /var/www /opt -name '*.php' -newer /etc/hostname 2>/dev/null | head -10" 2>/dev/null
 
 echo ""
 echo "--- 최근 SSH 접속 ---"
-sshpass -p1 ssh web@10.20.30.80 "last -10" 2>/dev/null
+sshpass -p1 ssh ccc@10.20.30.80 "last -10" 2>/dev/null
 
 echo ""
 echo "--- 외부 네트워크 연결 ---"
-sshpass -p1 ssh web@10.20.30.80 "ss -tnp 2>/dev/null | grep ESTAB" 2>/dev/null | head -10
+sshpass -p1 ssh ccc@10.20.30.80 "ss -tnp 2>/dev/null | grep ESTAB" 2>/dev/null | head -10
 ```
 
 ## 3.2 Phase 3: 봉쇄 + 근절

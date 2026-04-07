@@ -13,10 +13,10 @@
 
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
-| bastion | 10.20.30.201 | 실습 기지 (공격 출발점) | `ssh bastion@10.20.30.201` |
-| secu | 10.20.30.1 | 방화벽/IPS | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹 서버 (대상) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM 모니터링 | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | 실습 기지 (공격 출발점) | `ssh ccc@10.20.30.201` |
+| secu | 10.20.30.1 | 방화벽/IPS | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹 서버 (대상) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM 모니터링 | `sshpass -p1 ssh ccc@10.20.30.100` |
 
 ## 강의 시간 배분 (3시간)
 
@@ -311,9 +311,9 @@ dig google.com TXT +short 2>/dev/null || echo "외부 DNS 접근 불가"
 ```bash
 # 각 서버의 hosts 파일 확인
 echo "=== bastion ===" && cat /etc/hosts | grep -v "^#" | grep -v "^$"
-echo "=== web ===" && sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 "cat /etc/hosts | grep -v '^#' | grep -v '^$'" 2>/dev/null
-echo "=== secu ===" && sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 "cat /etc/hosts | grep -v '^#' | grep -v '^$'" 2>/dev/null
-echo "=== siem ===" && sshpass -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100 "cat /etc/hosts | grep -v '^#' | grep -v '^$'" 2>/dev/null
+echo "=== web ===" && sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 "cat /etc/hosts | grep -v '^#' | grep -v '^$'" 2>/dev/null
+echo "=== secu ===" && sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 "cat /etc/hosts | grep -v '^#' | grep -v '^$'" 2>/dev/null
+echo "=== siem ===" && sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 "cat /etc/hosts | grep -v '^#' | grep -v '^$'" 2>/dev/null
 ```
 
 > **왜 hosts 파일을 확인하는가?**

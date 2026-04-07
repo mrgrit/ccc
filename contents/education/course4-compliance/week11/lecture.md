@@ -10,10 +10,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -174,16 +174,16 @@
 
 ```bash
 # 정책 4.2: root 직접 로그인 금지 — 현재 설정 확인
-for srv in "bastion@10.20.30.201" "secu@10.20.30.1" "web@10.20.30.80" "siem@10.20.30.100"; do
+for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
   sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "grep '^PermitRootLogin' /etc/ssh/sshd_config || echo 'PermitRootLogin: 기본값'"
 done
 
 # 정책 4.1: 미사용 계정 확인
-sshpass -p1 ssh bastion@10.20.30.201 "lastlog 2>/dev/null | awk 'NR>1 && \$2==\"Never\" {print \$1}'"
+sshpass -p1 ssh ccc@10.20.30.201 "lastlog 2>/dev/null | awk 'NR>1 && \$2==\"Never\" {print \$1}'"
 
 # 정책 4.4: 방화벽 기본 정책 확인
-sshpass -p1 ssh secu@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep 'policy'"
+sshpass -p1 ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep 'policy'"
 ```
 
 ---
@@ -227,10 +227,10 @@ sshpass -p1 ssh secu@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep 'polic
 
 ```bash
 # 현재 설정 확인
-sshpass -p1 ssh bastion@10.20.30.201 "grep -E 'PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN|PASS_WARN_AGE' /etc/login.defs | grep -v '^#'"
+sshpass -p1 ssh ccc@10.20.30.201 "grep -E 'PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN|PASS_WARN_AGE' /etc/login.defs | grep -v '^#'"
 
 # pwquality 설정 확인
-sshpass -p1 ssh bastion@10.20.30.201 "cat /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' | grep -v '^$'"
+sshpass -p1 ssh ccc@10.20.30.201 "cat /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' | grep -v '^$'"
 
 # 정책에 맞게 설정하려면 (예시 - 실제 변경은 주의):
 # /etc/login.defs:
@@ -248,10 +248,10 @@ sshpass -p1 ssh bastion@10.20.30.201 "cat /etc/security/pwquality.conf 2>/dev/nu
 #   maxrepeat = 3
 
 # PAM 계정 잠금 설정 확인
-sshpass -p1 ssh bastion@10.20.30.201 "grep -E 'pam_faillock|pam_tally' /etc/pam.d/common-auth 2>/dev/null || echo '계정 잠금 미설정'"
+sshpass -p1 ssh ccc@10.20.30.201 "grep -E 'pam_faillock|pam_tally' /etc/pam.d/common-auth 2>/dev/null || echo '계정 잠금 미설정'"
 
 # 비밀번호 해시 알고리즘 확인
-sshpass -p1 ssh bastion@10.20.30.201 "grep '^ENCRYPT_METHOD' /etc/login.defs"
+sshpass -p1 ssh ccc@10.20.30.201 "grep '^ENCRYPT_METHOD' /etc/login.defs"
 ```
 
 ---
@@ -312,10 +312,10 @@ sshpass -p1 ssh bastion@10.20.30.201 "grep '^ENCRYPT_METHOD' /etc/login.defs"
 ```bash
 # 탐지 체계 확인 (Wazuh)
 echo "=== Wazuh Manager 상태 ==="
-sshpass -p1 ssh siem@10.20.30.100 "systemctl is-active wazuh-manager 2>/dev/null"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.100 "systemctl is-active wazuh-manager 2>/dev/null"  # 비밀번호 자동입력 SSH
 
 echo "=== 최근 고위험 알림 ==="
-sshpass -p1 ssh siem@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 for line in sys.stdin:                                 # 반복문 시작
     try:
@@ -328,11 +328,11 @@ for line in sys.stdin:                                 # 반복문 시작
 
 # 격리 능력 확인 (방화벽으로 IP 차단 가능 여부)
 echo "=== 방화벽 차단 가능 ==="
-sshpass -p1 ssh secu@10.20.30.1 "sudo nft list ruleset 2>/dev/null | head -5 && echo 'nftables 사용 가능'"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | head -5 && echo 'nftables 사용 가능'"  # 비밀번호 자동입력 SSH
 
 # 증거 보존 확인 (로그 보관 기간)
 echo "=== 로그 보관 설정 ==="
-sshpass -p1 ssh bastion@10.20.30.201 "cat /etc/logrotate.conf 2>/dev/null | grep -E 'rotate|weekly|monthly'"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.201 "cat /etc/logrotate.conf 2>/dev/null | grep -E 'rotate|weekly|monthly'"  # 비밀번호 자동입력 SSH
 ```
 
 ---

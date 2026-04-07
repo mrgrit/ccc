@@ -6,10 +6,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -126,16 +126,16 @@ Part A에서 작성한 체크리스트를 실제 4개 서버에서 실행하고 
 
 ```bash
 # bastion (Control Plane)
-sshpass -p1 ssh bastion@10.20.30.201
+sshpass -p1 ssh ccc@10.20.30.201
 
 # secu (방화벽/IPS)
-sshpass -p1 ssh secu@10.20.30.1
+sshpass -p1 ssh ccc@10.20.30.1
 
 # web (WAF/웹앱)
-sshpass -p1 ssh web@10.20.30.80
+sshpass -p1 ssh ccc@10.20.30.80
 
 # siem (SIEM)
-sshpass -p1 ssh siem@10.20.30.100
+sshpass -p1 ssh ccc@10.20.30.100
 ```
 
 ### 필수 점검 항목 (최소 이것은 수행할 것)
@@ -212,7 +212,7 @@ done
 ```bash
 # secu 서버 방화벽
 echo "[11] 방화벽 기본 정책:"
-sshpass -p1 ssh secu@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep policy"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep policy"  # 비밀번호 자동입력 SSH
 
 echo "[12] 열린 포트:"
 for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
@@ -222,17 +222,17 @@ done
 
 # IPS 상태
 echo "[13] Suricata IPS:"
-sshpass -p1 ssh secu@10.20.30.1 "systemctl is-active suricata 2>/dev/null"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.1 "systemctl is-active suricata 2>/dev/null"  # 비밀번호 자동입력 SSH
 ```
 
 #### 5. 암호화 (A.8.24)
 
 ```bash
 echo "[14] TLS 버전 (Wazuh Dashboard):"
-sshpass -p1 ssh siem@10.20.30.100 "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.100 "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"  # 비밀번호 자동입력 SSH
 
 echo "[15] SSH 프로토콜 버전:"
-sshpass -p1 ssh bastion@10.20.30.201 "ssh -V 2>&1"     # 비밀번호 자동입력 SSH
+sshpass -p1 ssh ccc@10.20.30.201 "ssh -V 2>&1"     # 비밀번호 자동입력 SSH
 ```
 
 #### 6. 시스템 설정 (A.8.9)
@@ -387,7 +387,7 @@ done
 ```bash
 # ISO 27001 A.8.5 (안전한 인증) 점검 증적 수집
 echo "=== 패스워드 정책 확인 ==="
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 "  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
   echo '--- login.defs ---' && grep -E 'PASS_MAX|PASS_MIN|PASS_WARN' /etc/login.defs
   echo '--- pam 설정 ---' && grep pam_pwquality /etc/pam.d/common-password 2>/dev/null || echo 'pam_pwquality 미설정'
   echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5

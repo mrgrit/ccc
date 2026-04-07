@@ -19,10 +19,10 @@
 
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
-| bastion | 10.20.30.201 | 수신 서버 (공격자) | `ssh bastion@10.20.30.201` |
-| secu | 10.20.30.1 | 방화벽/IPS (탐지) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 유출 대상 (피해 서버) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM 모니터링 | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | 수신 서버 (공격자) | `ssh ccc@10.20.30.201` |
+| secu | 10.20.30.1 | 방화벽/IPS (탐지) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 유출 대상 (피해 서버) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM 모니터링 | `sshpass -p1 ssh ccc@10.20.30.100` |
 
 ## 강의 시간 배분 (3시간)
 
@@ -429,7 +429,7 @@ ss -tn state established 2>/dev/null | awk '{print $5}' | cut -d: -f1 | sort | u
 
 echo ""
 echo "[4] Suricata 유출 관련 알림"
-sshpass -p1 ssh secu@10.20.30.1 \
+sshpass -p1 ssh ccc@10.20.30.1 \
   "grep -i 'exfil\|dns.*tunnel\|data.*transfer' /var/log/suricata/fast.log 2>/dev/null | tail -5 || echo '  관련 알림 없음'" 2>/dev/null
 
 echo ""
@@ -492,7 +492,7 @@ echo "  → 트래픽 이상 탐지를 회피하기 위한 랜덤 지연"
 echo ""
 echo "[실습] web 서버에서 bastion으로 파일 유출 시뮬레이션"
 # web → bastion으로 데이터 전송
-sshpass -p1 ssh web@10.20.30.80 "
+sshpass -p1 ssh ccc@10.20.30.80 "
   echo 'sensitive data from web server' > /tmp/exfil_test.txt
   echo '[유출] web → bastion 전송 시뮬레이션'
   cat /tmp/exfil_test.txt
@@ -592,7 +592,7 @@ echo "============================================================"
 echo ""
 echo "[Phase 1] 데이터 수집"
 echo "  대상: web 서버의 설정 파일, 로그, 데이터베이스"
-sshpass -p1 ssh web@10.20.30.80 "
+sshpass -p1 ssh ccc@10.20.30.80 "
   echo '수집 가능 데이터:'
   echo '  - /etc/passwd: '$(wc -l < /etc/passwd 2>/dev/null || echo 'N/A')' 줄'
   echo '  - SSH 설정: '$(ls -la /etc/ssh/sshd_config 2>/dev/null | awk '{print \$5}')' 바이트'
@@ -615,10 +615,10 @@ echo "  전략: 1차 시도 → SSH, 실패 시 → HTTPS, 모두 차단 → DNS
 
 echo ""
 echo "[Phase 4] 방어 모니터링"
-sshpass -p1 ssh secu@10.20.30.1 \
+sshpass -p1 ssh ccc@10.20.30.1 \
   "echo '--- Suricata 최근 알림 ---'; tail -5 /var/log/suricata/fast.log 2>/dev/null || echo 'N/A'" 2>/dev/null
 
-sshpass -p1 ssh siem@10.20.30.100 \
+sshpass -p1 ssh ccc@10.20.30.100 \
   "echo '--- Wazuh 파일 무결성 ---'; grep -i 'integrity\|syscheck' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3 | python3 -c '
 import sys,json
 for l in sys.stdin:

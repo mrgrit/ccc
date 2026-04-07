@@ -11,10 +11,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -233,26 +233,26 @@ Act (조치)   --> 부적합 시정, 프로세스 개선
 
 ```bash
 # bastion 서버 (control plane)
-sshpass -p1 ssh bastion@10.20.30.201 "hostname; uname -a; cat /etc/os-release | head -5"
+sshpass -p1 ssh ccc@10.20.30.201 "hostname; uname -a; cat /etc/os-release | head -5"
 
 # secu 서버 (방화벽/IPS)
-sshpass -p1 ssh secu@10.20.30.1 "hostname; uname -a"
+sshpass -p1 ssh ccc@10.20.30.1 "hostname; uname -a"
 
 # web 서버 (WAF/웹앱)
-sshpass -p1 ssh web@10.20.30.80 "hostname; uname -a"
+sshpass -p1 ssh ccc@10.20.30.80 "hostname; uname -a"
 
 # siem 서버 (Wazuh)
-sshpass -p1 ssh siem@10.20.30.100 "hostname; uname -a"
+sshpass -p1 ssh ccc@10.20.30.100 "hostname; uname -a"
 ```
 
 ### 6.2 서비스 자산 식별
 
 ```bash
 # 각 서버에서 실행 중인 서비스 확인
-sshpass -p1 ssh bastion@10.20.30.201 "systemctl list-units --type=service --state=running | head -20"
+sshpass -p1 ssh ccc@10.20.30.201 "systemctl list-units --type=service --state=running | head -20"
 
 # 열린 포트 확인
-sshpass -p1 ssh secu@10.20.30.1 "ss -tlnp"
+sshpass -p1 ssh ccc@10.20.30.1 "ss -tlnp"
 ```
 
 ### 6.3 자산 목록 작성 (실습 과제)
@@ -275,20 +275,20 @@ sshpass -p1 ssh secu@10.20.30.1 "ss -tlnp"
 
 ```bash
 # SSH 설정 점검 (비밀번호 로그인 허용 여부)
-sshpass -p1 ssh bastion@10.20.30.201 "grep -i 'PasswordAuthentication' /etc/ssh/sshd_config"
+sshpass -p1 ssh ccc@10.20.30.201 "grep -i 'PasswordAuthentication' /etc/ssh/sshd_config"
 
 # 방화벽 상태 확인
-sshpass -p1 ssh secu@10.20.30.1 "sudo nft list ruleset | head -30"
+sshpass -p1 ssh ccc@10.20.30.1 "sudo nft list ruleset | head -30"
 ```
 
 ### 7.2 Check - 로그 모니터링
 
 ```bash
 # 최근 SSH 접근 시도 확인
-sshpass -p1 ssh bastion@10.20.30.201 "journalctl -u sshd --since '1 hour ago' --no-pager | tail -10"
+sshpass -p1 ssh ccc@10.20.30.201 "journalctl -u sshd --since '1 hour ago' --no-pager | tail -10"
 
 # 실패한 로그인 시도 확인
-sshpass -p1 ssh bastion@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | tail -5"
+sshpass -p1 ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | tail -5"
 ```
 
 ---
@@ -351,7 +351,7 @@ sshpass -p1 ssh bastion@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2
 ```bash
 # ISO 27001 A.8.5 (안전한 인증) 점검 증적 수집
 echo "=== 패스워드 정책 확인 ==="
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 "  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
   echo '--- login.defs ---' && grep -E 'PASS_MAX|PASS_MIN|PASS_WARN' /etc/login.defs
   echo '--- pam 설정 ---' && grep pam_pwquality /etc/pam.d/common-password 2>/dev/null || echo 'pam_pwquality 미설정'
   echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5

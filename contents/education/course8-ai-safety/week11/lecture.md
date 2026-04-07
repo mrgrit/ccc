@@ -10,10 +10,10 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -127,7 +127,7 @@
 > **실전 활용**: AI 서비스의 GDPR/개인정보보호법 준수, 학습 데이터 정제 프로세스 설계, PII 유출 방지에 활용한다
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 << 'ENDSSH'
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 import json
 
@@ -169,7 +169,7 @@ ENDSSH
 ### 2.2 검색 결과 조작 (SEO Poisoning 유사)
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 << 'ENDSSH'
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 # 악성 문서가 검색 랭킹을 조작하는 기법
 manipulation_techniques = [
@@ -229,7 +229,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 
 ```bash
 # 간접 인젝션 탐지 스크립트 구현
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 << 'ENDSSH'
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 import re
 
@@ -279,7 +279,7 @@ ENDSSH
 
 ```bash
 # 문서 검증 파이프라인: 인젝션 패턴 + 무결성 검증
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 << 'ENDSSH'
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 rag_security = {
     "문서 수집": [
@@ -346,7 +346,7 @@ Bastion 분산 지식 아키텍처의 신뢰 경계를 분석하고 Supply Chain
 
 ```bash
 # 분산 지식 아키텍처 보안 분석: 신뢰 경계 + 공격 벡터
-sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 << 'ENDSSH'
+sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 print("=== Bastion 분산 지식 아키텍처 보안 ===\n")
 
