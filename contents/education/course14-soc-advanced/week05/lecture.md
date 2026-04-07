@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -27,7 +27,7 @@
 | 0:50-1:30 | MISP + OpenCTI (Part 2) | 강의/데모 |
 | 1:30-1:40 | 휴식 | - |
 | 1:40-2:30 | IOC 관리 + 피드 연동 실습 (Part 3) | 실습 |
-| 2:30-3:10 | Wazuh 연동 + OpsClaw 자동화 (Part 4) | 실습 |
+| 2:30-3:10 | Wazuh 연동 + Bastion 자동화 (Part 4) | 실습 |
 | 3:10-3:20 | 복습 퀴즈 + 과제 안내 | 정리 |
 
 ---
@@ -701,7 +701,7 @@ REMOTE
 
 ---
 
-# Part 4: Wazuh 연동 + OpsClaw 자동화 (40분)
+# Part 4: Wazuh 연동 + Bastion 자동화 (40분)
 
 ## 4.1 IOC 피드 자동 업데이트
 
@@ -757,15 +757,15 @@ echo "# cron 등록 예시 (매 6시간)"
 echo "0 */6 * * * /tmp/ioc_updater.sh"
 ```
 
-## 4.2 OpsClaw를 활용한 TI 워크플로우
+## 4.2 Bastion를 활용한 TI 워크플로우
 
 ```bash
-export OPSCLAW_API_KEY="opsclaw-api-key-2026"
+export BASTION_API_KEY="bastion-api-key-2026"
 
 # TI 워크플로우 프로젝트
 PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "ti-ioc-deployment",
     "request_text": "위협 인텔리전스 IOC 수집 및 SIEM 배포",
@@ -775,14 +775,14 @@ PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
 echo "Project: $PROJECT_ID"
 
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
-  -H "X-API-Key: $OPSCLAW_API_KEY"
+  -H "X-API-Key: $BASTION_API_KEY"
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
-  -H "X-API-Key: $OPSCLAW_API_KEY"
+  -H "X-API-Key: $BASTION_API_KEY"
 
 # IOC 배포 + 검증 자동화
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -808,12 +808,12 @@ curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
   }'
 
 sleep 3
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/$PROJECT_ID/evidence/summary" | \
   python3 -m json.tool 2>/dev/null | head -30
 ```
 
-> **실전 활용**: OpsClaw로 IOC 배포를 자동화하면, 새로운 위협 인텔리전스가 발표될 때 신속하게 모든 SIEM에 반영할 수 있다.
+> **실전 활용**: Bastion로 IOC 배포를 자동화하면, 새로운 위협 인텔리전스가 발표될 때 신속하게 모든 SIEM에 반영할 수 있다.
 
 ## 4.3 STIX 파일 파싱 실습
 
@@ -985,7 +985,7 @@ python3 /tmp/ti_effectiveness.py
 - [ ] TLP 4단계를 구분할 수 있다
 - [ ] Wazuh CDB 리스트를 생성하고 룰에 연동할 수 있다
 - [ ] IOC 품질 관리(만료, 중복, 신뢰도)를 수행할 수 있다
-- [ ] OpsClaw로 IOC 배포를 자동화할 수 있다
+- [ ] Bastion로 IOC 배포를 자동화할 수 있다
 
 ---
 

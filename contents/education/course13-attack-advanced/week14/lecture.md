@@ -19,7 +19,7 @@
 
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
-| opsclaw | 10.20.30.201 | 공격 기지 + C2 | `ssh opsclaw@10.20.30.201` |
+| bastion | 10.20.30.201 | 공격 기지 + C2 | `ssh bastion@10.20.30.201` |
 | secu | 10.20.30.1 | 방화벽/IPS (고가치 목표) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹 서버 (초기 접근점) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (최종 목표) | `sshpass -p1 ssh siem@10.20.30.100` |
@@ -61,7 +61,7 @@
 ## 1.2 이번 실습 규칙
 
 ```
-범위: 10.20.30.0/24 (secu, web, siem, opsclaw)
+범위: 10.20.30.0/24 (secu, web, siem, bastion)
 목표: 1) 전체 네트워크 맵 완성
       2) 최소 3개 취약점 발견 + 익스플로잇
       3) 측면 이동으로 3개 이상 서버 접근
@@ -120,7 +120,7 @@ cat << 'ASSETS'
 | secu     | 10.20.30.1     | 방화벽, IPS      | 매우 높음 |
 | web      | 10.20.30.80    | 웹서버, JuiceShop| 중간     |
 | siem     | 10.20.30.100   | Wazuh SIEM      | 높음     |
-| opsclaw  | 10.20.30.201   | 컨트롤플레인     | 매우 높음 |
+| bastion  | 10.20.30.201   | 컨트롤플레인     | 매우 높음 |
 +----------+----------------+------------------+----------+
 
 공격 벡터 우선순위:
@@ -199,7 +199,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 "siem@10.20.30.1
 
 echo ""
 echo "[취약점 5] Manager API 인증"
-API_RESULT=$(curl -s -H "X-API-Key: opsclaw-api-key-2026" http://10.20.30.201:8000/projects 2>/dev/null)
+API_RESULT=$(curl -s -H "X-API-Key: bastion-api-key-2026" http://10.20.30.201:8000/projects 2>/dev/null)
 if echo "$API_RESULT" | grep -q "projects\|data\|\["; then
   echo "  [+] Manager API 접근 성공 (알려진 API 키)"
 fi
@@ -274,7 +274,7 @@ echo "  [+] Juice Shop: 관리자 JWT, 사용자 목록, 제품 데이터"
 echo "  [+] web 서버: SSH 접근, sudo root"
 echo "  [+] secu 서버: 방화벽 규칙 접근"
 echo "  [+] siem 서버: Wazuh 알림 데이터 접근"
-echo "  [+] OpsClaw API: 프로젝트 데이터 접근"
+echo "  [+] Bastion API: 프로젝트 데이터 접근"
 echo "============================================================"
 ```
 
@@ -310,7 +310,7 @@ cat << 'REPORT'
 2. 범위와 방법론
    방법론: PTES (Penetration Testing Execution Standard)
    범위: secu(10.20.30.1), web(10.20.30.80),
-         siem(10.20.30.100), opsclaw(10.20.30.201)
+         siem(10.20.30.100), bastion(10.20.30.201)
    제한: DoS 공격 금지, 데이터 변조 금지
 
 3. 발견사항
@@ -343,7 +343,7 @@ cat << 'REPORT'
 
    [VULN-005] API 키 하드코딩
    위험도: High (CVSS 7.0)
-   위치: OpsClaw Manager API
+   위치: Bastion Manager API
    영향: 전체 API 접근, 프로젝트 데이터
    권고: 동적 토큰 발급, 키 로테이션
 
@@ -496,7 +496,7 @@ cat << 'NARRATIVE'
 [10:15] 데이터 접근 — 최종 목표 달성
   SIEM 서버에서 Wazuh 보안 알림 데이터에 접근하여,
   전체 인프라의 보안 이벤트 기록을 확인할 수 있었다.
-  또한 OpsClaw Manager API에 알려진 API 키로 접근하여
+  또한 Bastion Manager API에 알려진 API 키로 접근하여
   프로젝트 및 운영 데이터에 접근할 수 있었다.
 
 [10:30] 발견사항 정리

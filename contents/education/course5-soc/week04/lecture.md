@@ -10,13 +10,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +28,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -97,7 +97,7 @@ Wazuh는 **오픈소스 SIEM/XDR** 플랫폼이다.
 
 ```
 [에이전트(Agent)]  →  [매니저(Manager)]  →  [인덱서(Indexer)]  →  [대시보드(Dashboard)]
-  opsclaw              siem                  siem                 siem
+  bastion              siem                  siem                 siem
   secu                 10.20.30.100          10.20.30.100         10.20.30.100:443
   web
 ```
@@ -173,8 +173,8 @@ sshpass -p1 ssh siem@10.20.30.100 "/var/ossec/bin/agent_control -s 2>/dev/null |
 ### 3.2 각 서버의 에이전트 상태
 
 ```bash
-# opsclaw 서버
-sshpass -p1 ssh opsclaw@10.20.30.201 "systemctl status wazuh-agent 2>/dev/null | head -5 || echo 'Agent 미설치'"
+# bastion 서버
+sshpass -p1 ssh bastion@10.20.30.201 "systemctl status wazuh-agent 2>/dev/null | head -5 || echo 'Agent 미설치'"
 
 # secu 서버
 sshpass -p1 ssh secu@10.20.30.1 "systemctl status wazuh-agent 2>/dev/null | head -5 || echo 'Agent 미설치'"
@@ -187,10 +187,10 @@ sshpass -p1 ssh web@10.20.30.80 "systemctl status wazuh-agent 2>/dev/null | head
 
 ```bash
 # 에이전트 설정 파일
-sshpass -p1 ssh opsclaw@10.20.30.201 "cat /var/ossec/etc/ossec.conf 2>/dev/null | head -30"
+sshpass -p1 ssh bastion@10.20.30.201 "cat /var/ossec/etc/ossec.conf 2>/dev/null | head -30"
 
 # 에이전트가 모니터링하는 로그 파일
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep '<location>' /var/ossec/etc/ossec.conf 2>/dev/null"
+sshpass -p1 ssh bastion@10.20.30.201 "grep '<location>' /var/ossec/etc/ossec.conf 2>/dev/null"
 ```
 
 ### 3.4 Wazuh API 사용
@@ -341,10 +341,10 @@ sshpass -p1 ssh siem@10.20.30.100 "cat /var/ossec/etc/rules/local_rules.xml 2>/d
 
 ```bash
 # FIM 설정 (syscheck)
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep -A10 '<syscheck>' /var/ossec/etc/ossec.conf 2>/dev/null | head -15"
+sshpass -p1 ssh bastion@10.20.30.201 "grep -A10 '<syscheck>' /var/ossec/etc/ossec.conf 2>/dev/null | head -15"
 
 # 모니터링 대상 디렉토리
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep '<directories' /var/ossec/etc/ossec.conf 2>/dev/null"
+sshpass -p1 ssh bastion@10.20.30.201 "grep '<directories' /var/ossec/etc/ossec.conf 2>/dev/null"
 ```
 
 ### 6.2 FIM 알림 확인

@@ -561,25 +561,25 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
 echo "[완료] 공격 체인 종료"
 ```
 
-### Step 2: OpsClaw 기반 자동화 실행
+### Step 2: Bastion 기반 자동화 실행
 
-> **실습 목적**: 전체 권한 상승 프로세스를 OpsClaw로 자동화하고 증적을 기록한다.
+> **실습 목적**: 전체 권한 상승 프로세스를 Bastion로 자동화하고 증적을 기록한다.
 >
 > **배우는 것**: 권한 상승 작업의 자동화와 증적 관리
 
 ```bash
 RESULT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"week05-privesc","request_text":"권한 상승 실습","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1,"title":"SUID 바이너리 탐색","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \"find / -perm -4000 -type f 2>/dev/null\"","risk_level":"low","subagent_url":"http://localhost:8002"},

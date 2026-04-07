@@ -10,13 +10,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +28,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -256,7 +256,7 @@ level: medium
 
 ```bash
 # 실제 환경에서 이 패턴이 발생하는지 확인
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
+sshpass -p1 ssh bastion@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
   awk '{print \$(NF-3)}' | sort | uniq -c | sort -rn | awk '\$1>5 {print \$1, \$2}' | head -5"  # 텍스트 필드 처리
 ```
 
@@ -293,7 +293,7 @@ level: high
 
 검증:
 ```bash
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep 'COMMAND=' /var/log/auth.log 2>/dev/null | \
+sshpass -p1 ssh bastion@10.20.30.201 "grep 'COMMAND=' /var/log/auth.log 2>/dev/null | \
   grep -E 'bash|sh |passwd|useradd|userdel|chmod' | tail -5"  # 패턴 검색
 ```
 
@@ -405,7 +405,7 @@ sshpass -p1 ssh siem@10.20.30.100 "cat /var/ossec/etc/rules/local_rules.xml 2>/d
 
 ```bash
 # 규칙 문법 검증
-sshpass -p1 ssh siem@10.20.30.100 "/var/ossec/bin/wazuh-logtest 2>/dev/null <<< 'Mar 27 10:00:00 opsclaw sshd[1234]: Failed password for root from 10.0.0.1 port 22 ssh2'"
+sshpass -p1 ssh siem@10.20.30.100 "/var/ossec/bin/wazuh-logtest 2>/dev/null <<< 'Mar 27 10:00:00 bastion sshd[1234]: Failed password for root from 10.0.0.1 port 22 ssh2'"
 ```
 
 ---
@@ -487,7 +487,7 @@ level: medium
 검증:
 ```bash
 # 새벽 시간대 로그인 확인
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep 'Accepted' /var/log/auth.log 2>/dev/null | \
+sshpass -p1 ssh bastion@10.20.30.201 "grep 'Accepted' /var/log/auth.log 2>/dev/null | \
   awk '{print \$3}' | awk -F: '{h=\$1; if(h>=22||h<=5) print}' | head -10"  # 텍스트 필드 처리
 ```
 

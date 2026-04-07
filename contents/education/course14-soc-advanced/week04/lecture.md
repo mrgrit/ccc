@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -174,7 +174,7 @@ condition: uint16(0) == 0x2123    // #!
 ## 1.4 YARA 설치 및 기본 사용
 
 ```bash
-# YARA 설치 확인 (opsclaw 서버)
+# YARA 설치 확인 (bastion 서버)
 yara --version 2>/dev/null || echo "YARA 미설치"
 
 # 설치 (필요시)
@@ -605,12 +605,12 @@ echo "=== 웹서버 파일 스캔 ==="
 scp -o StrictHostKeyChecking=no /tmp/yara_rules/*.yar \
   siem@10.20.30.100:/tmp/ 2>/dev/null
 
-# web 서버 스캔 (OpsClaw 경유)
-export OPSCLAW_API_KEY="opsclaw-api-key-2026"
+# web 서버 스캔 (Bastion 경유)
+export BASTION_API_KEY="bastion-api-key-2026"
 
 PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "yara-web-scan",
     "request_text": "웹서버 YARA 스캔 수행",
@@ -618,20 +618,20 @@ PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
   }' | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
-  -H "X-API-Key: $OPSCLAW_API_KEY"
+  -H "X-API-Key: $BASTION_API_KEY"
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
-  -H "X-API-Key: $OPSCLAW_API_KEY"
+  -H "X-API-Key: $BASTION_API_KEY"
 
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/dispatch" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "which yara && yara --version || echo YARA_NOT_INSTALLED",
     "subagent_url": "http://10.20.30.80:8002"
   }'
 ```
 
-> **실전 활용**: 침해사고 조사 시 YARA를 웹 루트 디렉토리에 대해 실행하여 웹셸을 신속하게 찾을 수 있다. OpsClaw를 통해 여러 서버를 동시에 스캔할 수 있다.
+> **실전 활용**: 침해사고 조사 시 YARA를 웹 루트 디렉토리에 대해 실행하여 웹셸을 신속하게 찾을 수 있다. Bastion를 통해 여러 서버를 동시에 스캔할 수 있다.
 
 ---
 

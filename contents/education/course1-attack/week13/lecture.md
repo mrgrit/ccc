@@ -10,13 +10,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +28,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -70,7 +70,7 @@
 | **OWASP** | Open Web Application Security Project | 웹 보안 취약점 연구 국제 단체 | 웹 보안의 표준 기관 |
 | **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 점수 (0~10점) | 질병 위험도 등급 |
 | **CVE** | Common Vulnerabilities and Exposures | 취약점 고유 식별 번호 | 질병의 고유 코드 (예: COVID-19) |
-| **OpsClaw** | OpsClaw | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
+| **Bastion** | Bastion | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
 
 ---
 
@@ -343,15 +343,15 @@ echo "Week 05: JuiceShop SQL Injection → T1190"
 echo "Week 06: Command Injection → T1190 + T1059.004"
 ```
 
-### 실습 2: OpsClaw로 ATT&CK 기반 공격 체인 실행
+### 실습 2: Bastion로 ATT&CK 기반 공격 체인 실행
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
-# OpsClaw 프로젝트 생성: ATT&CK 매핑된 공격 체인
+# Bastion 프로젝트 생성: ATT&CK 매핑된 공격 체인
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{                                                # 요청 데이터(body)
     "name": "week13-attack-mapping",
     "request_text": "ATT&CK 기반 공격 체인 실행 및 매핑",
@@ -360,14 +360,14 @@ curl -s -X POST http://localhost:8000/projects \
 
 # 프로젝트 ID 확인 후 Stage 전환 (예: id=1)
 curl -s -X POST http://localhost:8000/projects/1/plan \
-  -H "X-API-Key: opsclaw-api-key-2026"                 # API 인증 키
+  -H "X-API-Key: bastion-api-key-2026"                 # API 인증 키
 curl -s -X POST http://localhost:8000/projects/1/execute \
-  -H "X-API-Key: opsclaw-api-key-2026"                 # API 인증 키
+  -H "X-API-Key: bastion-api-key-2026"                 # API 인증 키
 
 # ATT&CK 기법별 태스크 실행
 curl -s -X POST http://localhost:8000/projects/1/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{                                                # 요청 데이터(body)
     "tasks": [
       {
@@ -393,7 +393,7 @@ curl -s -X POST http://localhost:8000/projects/1/execute-plan \
   }' | python3 -m json.tool
 
 # 결과 확인
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   http://localhost:8000/projects/1/evidence/summary | python3 -m json.tool
 
 # ATT&CK 매핑 기록
@@ -554,7 +554,7 @@ ATT&CK을 방어자 관점에서 활용하는 방법이다.
 - 본 과정에서 **22개 이상의 ATT&CK 기법**을 직접 실습했다
 - 동일한 프레임워크를 **공격자와 방어자 모두** 활용할 수 있다
 
-**다음 주 예고**: Week 14에서는 OpsClaw 플랫폼을 활용하여 이 모든 공격을 자동화하는 방법을 학습한다.
+**다음 주 예고**: Week 14에서는 Bastion 플랫폼을 활용하여 이 모든 공격을 자동화하는 방법을 학습한다.
 
 ---
 

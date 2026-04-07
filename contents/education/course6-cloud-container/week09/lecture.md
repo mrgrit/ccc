@@ -10,13 +10,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +28,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -236,7 +236,7 @@ VPC (10.0.0.0/16)
 
 ```
 외부 네트워크 (192.168.208.0/24)    ← Public Subnet에 해당
-├── opsclaw (10.20.30.201)       ← 관리 서버
+├── bastion (10.20.30.201)       ← 관리 서버
 ├── secu    (10.20.30.1)       ← 방화벽/IPS
 ├── web     (10.20.30.80)       ← 웹 서버
 └── siem    (10.20.30.100)       ← SIEM
@@ -269,14 +269,14 @@ sudo nft list ruleset
 
 ## 6. 실습: IAM 개념 체험
 
-OpsClaw의 API 인증이 IAM의 축소판이다.
+Bastion의 API 인증이 IAM의 축소판이다.
 
 ```bash
 # API 키 없이 요청 → 인증 실패
 curl -s http://localhost:8000/projects | head -5
 
 # API 키 포함 요청 → 인증 성공
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   http://localhost:8000/projects | head -5
 
 # 이것이 IAM의 핵심 원리:

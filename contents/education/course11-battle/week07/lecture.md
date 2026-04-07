@@ -291,25 +291,25 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1   "echo 1 | sudo -S 
 
 ## 실습 4.1: 실시간 모니터링 시뮬레이션
 
-### Step 1: OpsClaw 기반 IDS 모니터링
+### Step 1: Bastion 기반 IDS 모니터링
 
-> **실습 목적**: OpsClaw를 활용하여 IDS 경보를 자동 수집하고 분석한다.
+> **실습 목적**: Bastion를 활용하여 IDS 경보를 자동 수집하고 분석한다.
 >
 > **배우는 것**: IDS 모니터링 자동화
 
 ```bash
 RESULT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"week07-ids","request_text":"IDS/IPS 구축 실습","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1,"title":"Suricata 상태 확인","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 \"echo 1 | sudo -S systemctl status suricata 2>/dev/null | head -5\"","risk_level":"low","subagent_url":"http://localhost:8002"},
@@ -347,7 +347,7 @@ for t in d.get('task_results',[]):
 - [ ] SQL Injection/XSS 탐지 룰을 작성하고 테스트했는가
 - [ ] SSH 브루트포스 탐지 룰을 작성했는가
 - [ ] fast.log과 eve.json을 분석할 수 있는가
-- [ ] OpsClaw를 통해 IDS 모니터링을 자동화했는가
+- [ ] Bastion를 통해 IDS 모니터링을 자동화했는가
 - [ ] IDS 우회 기법을 이해했는가
 
 ## 자가 점검 퀴즈

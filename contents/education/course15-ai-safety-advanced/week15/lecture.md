@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -486,13 +486,13 @@ PYEOF
 python3 /tmp/full_redteam.py
 ```
 
-## 3.2 OpsClaw 프로젝트 오케스트레이션
+## 3.2 Bastion 프로젝트 오케스트레이션
 
 ```bash
-# 종합 Red Team을 OpsClaw 프로젝트로 관리
+# 종합 Red Team을 Bastion 프로젝트로 관리
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "name": "full-redteam-week15",
     "request_text": "종합 AI Red Team - 전체 공격 체인 수행 + 방어 보고서",

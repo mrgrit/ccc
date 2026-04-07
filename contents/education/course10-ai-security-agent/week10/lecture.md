@@ -12,7 +12,7 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
@@ -35,8 +35,8 @@
 | 용어 | 설명 | 예시 |
 |------|------|------|
 | **오케스트레이션** | 여러 에이전트/서비스를 조율하여 하나의 작업을 수행 | Manager가 3개 SubAgent를 병렬 실행 |
-| **Master Agent** | 전체 작업 계획을 수립하는 최상위 에이전트 | Claude Code, OpsClaw Master |
-| **Manager API** | 상태 관리와 실행 제어를 담당하는 중간 계층 | OpsClaw Manager (:8000) |
+| **Master Agent** | 전체 작업 계획을 수립하는 최상위 에이전트 | Claude Code, Bastion Master |
+| **Manager API** | 상태 관리와 실행 제어를 담당하는 중간 계층 | Bastion Manager (:8000) |
 | **SubAgent** | 실제 명령을 실행하는 말단 에이전트 | secu/web/siem SubAgent (:8002) |
 | **Red Agent** | 공격 측 자율 에이전트 (취약점 탐색/익스플로잇) | gemma3:12b 기반 공격 에이전트 |
 | **Blue Agent** | 방어 측 자율 에이전트 (탐지/대응) | llama3.1:8b 기반 방어 에이전트 |
@@ -65,7 +65,7 @@
 | 장애 격리 | 전체 중단 | 부분 장애 허용 |
 | 복잡도 | 낮음 | 높음 (통신, 동기화) |
 
-### 1.2 OpsClaw 멀티에이전트 아키텍처
+### 1.2 Bastion 멀티에이전트 아키텍처
 
 ```
 Master (Claude Code / Native LLM)
@@ -109,12 +109,12 @@ Master (Claude Code / Native LLM)
 
 ```bash
 # 환경 변수 설정
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 # 멀티에이전트 테스트 프로젝트 생성
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "week10-multi-agent",
     "request_text": "멀티에이전트 병렬 제어 실습",
@@ -127,10 +127,10 @@ PROJECT_ID="위에서 받은 ID"
 
 # plan → execute stage 전환
 curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/plan" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 단계로 전환
 curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 echo "Stage 전환 완료"
 ```
 
@@ -138,11 +138,11 @@ echo "Stage 전환 완료"
 
 ```bash
 # 3개 서버에 동시에 시스템 정보 수집 명령 전송
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -173,14 +173,14 @@ curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute-plan" \
 
 ```bash
 # 전체 evidence를 수집하여 결과를 종합
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 # evidence 요약 조회
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/${PROJECT_ID}/evidence/summary" | python3 -m json.tool
 
 # PoW 리더보드로 각 에이전트별 작업량 비교
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/leaderboard" | python3 -m json.tool
 ```
 
@@ -188,11 +188,11 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ```bash
 # 각 서버에 역할에 맞는 다른 명령을 전송
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -266,28 +266,28 @@ print(resp['message']['content'][:2000])
 ### 3.3 Red Agent 공격 실행
 
 ```bash
-# Red Agent의 공격을 OpsClaw를 통해 실행
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+# Red Agent의 공격을 Bastion를 통해 실행
+export BASTION_API_KEY=bastion-api-key-2026
 
 # Red Agent 프로젝트 생성
 RESP=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"week10-red-agent","request_text":"Red Agent 공격 시뮬레이션","master_mode":"external"}')
 # 프로젝트 ID 추출
 RED_PID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
 # Stage 전환
 curl -s -X POST "http://localhost:8000/projects/${RED_PID}/plan" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 단계로 전환
 curl -s -X POST "http://localhost:8000/projects/${RED_PID}/execute" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # Red Agent 공격 태스크 실행
 curl -s -X POST "http://localhost:8000/projects/${RED_PID}/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -318,27 +318,27 @@ curl -s -X POST "http://localhost:8000/projects/${RED_PID}/execute-plan" \
 
 ```bash
 # Blue Agent가 동시에 방어 활동 수행
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 # Blue Agent 프로젝트 생성
 RESP=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"week10-blue-agent","request_text":"Blue Agent 방어 모니터링","master_mode":"external"}')
 # 프로젝트 ID 추출
 BLUE_PID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
 # Stage 전환
 curl -s -X POST "http://localhost:8000/projects/${BLUE_PID}/plan" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 단계로 전환
 curl -s -X POST "http://localhost:8000/projects/${BLUE_PID}/execute" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # Blue Agent 방어 태스크 실행
 curl -s -X POST "http://localhost:8000/projects/${BLUE_PID}/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -369,17 +369,17 @@ curl -s -X POST "http://localhost:8000/projects/${BLUE_PID}/execute-plan" \
 
 ```bash
 # 양쪽 프로젝트의 evidence를 비교
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 echo "=== Red Agent 결과 ==="
 # Red Agent evidence 조회
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/${RED_PID}/evidence/summary" | python3 -m json.tool
 
 echo ""
 echo "=== Blue Agent 결과 ==="
 # Blue Agent evidence 조회
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/${BLUE_PID}/evidence/summary" | python3 -m json.tool
 ```
 
@@ -389,7 +389,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ### 4.1 지식 교환 개념
 
-OpsClaw는 Agent간 경험(experience)을 공유하는 API를 제공한다.
+Bastion는 Agent간 경험(experience)을 공유하는 API를 제공한다.
 Red Agent가 발견한 취약점을 Blue Agent가 참조하여 방어를 강화할 수 있다.
 
 ```
@@ -406,12 +406,12 @@ publish
 
 ```bash
 # Red Agent가 발견한 취약점을 Experience로 게시
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 # SubAgent의 experience/publish API 사용 (Manager를 통해)
 curl -s -X POST "http://localhost:8000/projects/${RED_PID}/dispatch" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "echo {\"finding\": \"JuiceShop /rest/admin 접근 가능\", \"severity\": \"high\", \"target\": \"10.20.30.80:3000\", \"timestamp\": \"2026-03-30T10:00:00Z\"}",
     "subagent_url": "http://localhost:8002"
@@ -433,7 +433,7 @@ curl -s http://192.168.0.105:11434/api/chat \
       },
       {
         "role": "user",
-        "content": "Red Team 발견 내용:\n1. JuiceShop /rest/admin 엔드포인트 접근 가능 (severity: high)\n2. /api/products에서 전체 상품 정보 노출\n\n이에 대한 방어 대응 방안을 OpsClaw 명령 형태로 3가지 제안해줘."
+        "content": "Red Team 발견 내용:\n1. JuiceShop /rest/admin 엔드포인트 접근 가능 (severity: high)\n2. /api/products에서 전체 상품 정보 노출\n\n이에 대한 방어 대응 방안을 Bastion 명령 형태로 3가지 제안해줘."
       }
     ],
     "stream": false
@@ -455,7 +455,7 @@ import time
 import requests
 
 MANAGER_URL = "http://localhost:8000"
-API_KEY = "opsclaw-api-key-2026"
+API_KEY = "bastion-api-key-2026"
 OLLAMA_URL = "http://192.168.0.105:11434"
 HEADERS = {
     "Content-Type": "application/json",
@@ -548,7 +548,7 @@ if __name__ == "__main__":
 ### 5.1 LangGraph 개념
 
 LangGraph는 LLM 애플리케이션을 상태기계(State Machine)로 구성하는 프레임워크이다.
-OpsClaw의 프로젝트 라이프사이클도 상태기계로 설계되어 있다.
+Bastion의 프로젝트 라이프사이클도 상태기계로 설계되어 있다.
 
 ```
 /plan  /execute  /complete
@@ -687,17 +687,17 @@ else:
     state = report_node(state)
 ```
 
-### 5.3 OpsClaw 실제 워크플로우
+### 5.3 Bastion 실제 워크플로우
 
 ```bash
-# OpsClaw의 실제 프로젝트 라이프사이클 확인
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+# Bastion의 실제 프로젝트 라이프사이클 확인
+export BASTION_API_KEY=bastion-api-key-2026
 
 # 프로젝트 상태 전이 실습
 # init → plan → execute → completion-report
 RESP=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"week10-workflow","request_text":"워크플로우 실습","master_mode":"external"}')
 # 프로젝트 ID 추출
 WF_PID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
@@ -705,22 +705,22 @@ echo "Project: $WF_PID"
 
 # 1. plan 단계 전환
 curl -s -X POST "http://localhost:8000/projects/${WF_PID}/plan" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -c "import sys,json; print('Stage:', json.load(sys.stdin).get('stage','?'))"
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -c "import sys,json; print('Stage:', json.load(sys.stdin).get('stage','?'))"
 
 # 2. execute 단계 전환
 curl -s -X POST "http://localhost:8000/projects/${WF_PID}/execute" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -c "import sys,json; print('Stage:', json.load(sys.stdin).get('stage','?'))"
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -c "import sys,json; print('Stage:', json.load(sys.stdin).get('stage','?'))"
 
 # 3. 태스크 실행
 curl -s -X POST "http://localhost:8000/projects/${WF_PID}/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"tasks":[{"order":1,"instruction_prompt":"hostname","risk_level":"low"}],"subagent_url":"http://localhost:8002"}' | python3 -m json.tool
 
 # 4. 완료 보고서 작성
 curl -s -X POST "http://localhost:8000/projects/${WF_PID}/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "summary": "멀티에이전트 워크플로우 실습 완료",
     "outcome": "success",
@@ -728,7 +728,7 @@ curl -s -X POST "http://localhost:8000/projects/${WF_PID}/completion-report" \
   }' | python3 -m json.tool
 
 # 5. 프로젝트 replay로 전체 흐름 확인
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/${WF_PID}/replay" | python3 -m json.tool
 ```
 
@@ -738,7 +738,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ### 6.1 종합 과제
 
-다음 시나리오를 OpsClaw를 사용하여 구현하라:
+다음 시나리오를 Bastion를 사용하여 구현하라:
 
 1. 프로젝트 생성 (master_mode=external)
 2. 3개 서버(secu, web, siem)에 동시에 상태 점검 명령 전송
@@ -748,7 +748,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ### 6.2 퀴즈
 
-**Q1.** Fan-out과 Fan-in 패턴을 설명하고, OpsClaw에서 어떻게 구현되는지 서술하시오.
+**Q1.** Fan-out과 Fan-in 패턴을 설명하고, Bastion에서 어떻게 구현되는지 서술하시오.
 
 **Q2.** Red Agent와 Blue Agent의 역할 차이를 설명하고, 동시에 운영할 때의 이점 3가지를 나열하시오.
 

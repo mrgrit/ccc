@@ -12,7 +12,7 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
@@ -116,14 +116,14 @@
 
 ```bash
 # 환경 변수 설정
-export OPSCLAW_API_KEY="opsclaw-api-key-2026"
+export BASTION_API_KEY="bastion-api-key-2026"
 # Manager API 주소
 export MGR="http://localhost:8000"
 
 # 1. 분산 지식 프로젝트 생성
 curl -s -X POST $MGR/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "week13-distributed-knowledge",
     "request_text": "분산 지식 아키텍처 실습 — SubAgent별 Experience 축적",
@@ -136,14 +136,14 @@ export PID="반환된-프로젝트-ID"
 
 # 2. 스테이지 전환
 # plan 스테이지
-curl -s -X POST $MGR/projects/$PID/plan -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+curl -s -X POST $MGR/projects/$PID/plan -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 스테이지
-curl -s -X POST $MGR/projects/$PID/execute -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+curl -s -X POST $MGR/projects/$PID/execute -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # 3. 각 SubAgent에서 도메인 특화 정보 수집
 curl -s -X POST $MGR/projects/$PID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -178,7 +178,7 @@ for AGENT in "http://10.20.30.1:8002" "http://10.20.30.80:8002" "http://10.20.30
   echo "=== $AGENT ==="
   # 각 SubAgent의 PoW 블록 수 확인
   curl -s "$MGR/pow/blocks?agent_id=$AGENT" \
-    -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -c "
+    -H "X-API-Key: $BASTION_API_KEY" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 blocks = data.get('blocks', [])
@@ -212,7 +212,7 @@ SubAgent 간 Experience를 교환하는 두 가지 방식:
 # 1. secu의 방화벽 지식을 수집
 curl -s -X POST $MGR/projects/$PID/dispatch \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "echo \"{\\\"source\\\": \\\"secu\\\", \\\"type\\\": \\\"firewall_knowledge\\\", \\\"content\\\": \\\"nftables rate-limit SSH: ct state new limit rate 3/minute accept\\\", \\\"timestamp\\\": \\\"$(date -Iseconds)\\\"}\"",
     "subagent_url": "http://10.20.30.1:8002"
@@ -224,7 +224,7 @@ curl -s -X POST $MGR/projects/$PID/dispatch \
 # 2. web의 웹 보안 지식을 수집
 curl -s -X POST $MGR/projects/$PID/dispatch \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "echo \"{\\\"source\\\": \\\"web\\\", \\\"type\\\": \\\"web_security_knowledge\\\", \\\"content\\\": \\\"JuiceShop SQLi endpoint: /rest/products/search?q= - parameterized query required\\\", \\\"timestamp\\\": \\\"$(date -Iseconds)\\\"}\"",
     "subagent_url": "http://10.20.30.80:8002"
@@ -236,7 +236,7 @@ curl -s -X POST $MGR/projects/$PID/dispatch \
 # 3. siem의 관제 지식을 수집
 curl -s -X POST $MGR/projects/$PID/dispatch \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "echo \"{\\\"source\\\": \\\"siem\\\", \\\"type\\\": \\\"siem_knowledge\\\", \\\"content\\\": \\\"Wazuh rule 5712: SSH brute force detected - threshold 5 failures in 120s\\\", \\\"timestamp\\\": \\\"$(date -Iseconds)\\\"}\"",
     "subagent_url": "http://10.20.30.100:8002"
@@ -249,7 +249,7 @@ curl -s -X POST $MGR/projects/$PID/dispatch \
 ```bash
 # 4. 수집된 지식을 Evidence에서 가져와 LLM으로 통합 분석
 curl -s "$MGR/projects/$PID/evidence/summary" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /tmp/distributed_knowledge.json
+  -H "X-API-Key: $BASTION_API_KEY" > /tmp/distributed_knowledge.json
 
 # 5. LLM으로 분산 지식 통합 분석
 python3 -c "
@@ -300,7 +300,7 @@ print(resp.json()['choices'][0]['message']['content'])
 ```bash
 # 1. secu SubAgent의 PoW 체인 무결성 검증
 curl -s "$MGR/pow/verify?agent_id=http://10.20.30.1:8002" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -c "
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 # 검증 결과 출력
@@ -316,7 +316,7 @@ print(f'  tampered: {data.get(\"tampered\", [])}')
 ```bash
 # 2. web SubAgent의 PoW 체인 검증
 curl -s "$MGR/pow/verify?agent_id=http://10.20.30.80:8002" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -c "
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 print('=== web PoW 검증 ===')
@@ -327,7 +327,7 @@ print(f'  orphans: {data.get(\"orphans\", 0)}')
 
 # 3. siem SubAgent의 PoW 체인 검증
 curl -s "$MGR/pow/verify?agent_id=http://10.20.30.100:8002" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -c "
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 print('=== siem PoW 검증 ===')
@@ -342,7 +342,7 @@ print(f'  orphans: {data.get(\"orphans\", 0)}')
 ```bash
 # 4. 전체 SubAgent PoW 비교 — 리더보드 조회
 curl -s "$MGR/pow/leaderboard" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -c "
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 # 리더보드에서 각 SubAgent의 기여도 확인
@@ -365,7 +365,7 @@ python3 -c "
 import requests, json
 
 API = 'http://localhost:8000'
-KEY = 'opsclaw-api-key-2026'
+KEY = 'bastion-api-key-2026'
 headers = {'X-API-Key': KEY}
 agents = [
     ('secu', 'http://10.20.30.1:8002'),
@@ -431,7 +431,7 @@ print(f'\\n전체 결과: {\"ALL VALID\" if all_valid else \"VERIFICATION FAILED
 # 1. 충돌 시나리오 시뮬레이션 프로젝트
 curl -s -X POST $MGR/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "week13-conflict-resolution",
     "request_text": "분산 지식 충돌 해결 시뮬레이션",
@@ -444,14 +444,14 @@ export CONFLICT_PID="반환된-프로젝트-ID"
 
 # 2. 스테이지 전환
 # plan 스테이지
-curl -s -X POST $MGR/projects/$CONFLICT_PID/plan -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+curl -s -X POST $MGR/projects/$CONFLICT_PID/plan -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 스테이지
-curl -s -X POST $MGR/projects/$CONFLICT_PID/execute -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+curl -s -X POST $MGR/projects/$CONFLICT_PID/execute -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # 3. 충돌하는 지식 수집
 curl -s -X POST $MGR/projects/$CONFLICT_PID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -581,7 +581,7 @@ print(resp.json()['choices'][0]['message']['content'])
 
 ---
 
-**문제 5.** CAP 정리에서 OpsClaw의 분산 지식 아키텍처가 선택한 모델은?
+**문제 5.** CAP 정리에서 Bastion의 분산 지식 아키텍처가 선택한 모델은?
 
 - A) CA (일관성 + 가용성)
 - B) CP (일관성 + 분할 내성)

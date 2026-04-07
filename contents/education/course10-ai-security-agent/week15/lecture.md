@@ -3,7 +3,7 @@
 ## 학습 목표
 
 - RAG 기반 보안 교육 AI 튜터 에이전트를 구축하고 통합 시연한다
-- OpsClaw Experience를 학습 기록으로 활용하는 시스템을 완성한다
+- Bastion Experience를 학습 기록으로 활용하는 시스템을 완성한다
 - 프로젝트 A(인시던트 대응), B(CTF 풀이), C(교육 에이전트) 3개를 동시 시연한다
 - 각 프로젝트의 completion-report를 작성하고 최종 발표를 수행한다
 - 15주간의 AI 보안 에이전트 학습을 종합 정리한다
@@ -12,7 +12,7 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
@@ -36,13 +36,13 @@
 |------|------|------|
 | **AI 튜터** | AI가 학습자의 질문에 답하고 학습을 안내하는 에이전트 | "nftables 규칙 작성법 알려줘" |
 | **RAG** | Retrieval-Augmented Generation, 검색 증강 생성 | 교안 검색 후 LLM이 답변 생성 |
-| **학습 기록** | 학생의 질문/답변 이력을 기록하는 시스템 | OpsClaw Experience 활용 |
+| **학습 기록** | 학생의 질문/답변 이력을 기록하는 시스템 | Bastion Experience 활용 |
 | **교안 인덱싱** | 교안 콘텐츠를 검색 가능하게 등록하는 과정 | FTS tsvector 인덱싱 |
 | **Chunk** | 긴 문서를 검색 단위로 분할한 조각 | 500자 단위 |
 | **Context** | LLM에 전달하는 참고 정보 | 검색된 교안 내용 |
 | **Grounding** | LLM 응답을 실제 문서에 근거하게 만드는 기법 | RAG로 교안 참조 |
 | **Hallucination** | LLM이 사실과 다른 내용을 생성 | 존재하지 않는 명령어 설명 |
-| **completion-report** | OpsClaw 프로젝트 완료 보고서 | summary + outcome + details |
+| **completion-report** | Bastion 프로젝트 완료 보고서 | summary + outcome + details |
 | **Evidence** | 에이전트 실행 결과 감사 기록 | 모든 질의/응답 기록 |
 | **시연 (Demo)** | 구현된 시스템의 실제 동작을 보여주는 발표 | 라이브 데모 |
 | **PoW 리더보드** | 에이전트별 작업 증명 순위 | 팀별 evidence 수 비교 |
@@ -61,9 +61,9 @@
 |------|---------|
 | 팀 구성 | 동일 팀 (2-3명) |
 | 목표 | 교안/문서를 RAG로 참조하여 학생 질문에 답하는 AI 튜터 |
-| 지식 소스 | 보안 교안 (lecture.md), OpsClaw Experience |
+| 지식 소스 | 보안 교안 (lecture.md), Bastion Experience |
 | LLM | llama3.1:8b (답변 생성) |
-| 기록 | 모든 질의/응답을 OpsClaw Evidence로 기록 |
+| 기록 | 모든 질의/응답을 Bastion Evidence로 기록 |
 | 평가 | 답변 정확도 + Evidence 수 + 시연 품질 |
 
 ### 1.2 교육 에이전트 아키텍처
@@ -105,7 +105,7 @@
 
 ```bash
 # security_knowledge 테이블에 교안이 인덱싱되어 있는지 확인
-PGPASSWORD=opsclaw psql -h 127.0.0.1 -U opsclaw -d opsclaw << 'SQLEOF'
+PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion << 'SQLEOF'
 -- 인덱싱된 교안 수 확인
 SELECT category, COUNT(*) AS cnt
 FROM security_knowledge
@@ -124,7 +124,7 @@ SQLEOF
 
 ```bash
 # 부족한 교안 데이터를 추가 삽입
-PGPASSWORD=opsclaw psql -h 127.0.0.1 -U opsclaw -d opsclaw << 'SQLEOF'
+PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion << 'SQLEOF'
 -- 핵심 보안 주제별 교안 데이터 추가
 INSERT INTO security_knowledge (category, title, content, tags, source) VALUES
 ('education', 'Suricata IPS 규칙 작성법',
@@ -132,10 +132,10 @@ INSERT INTO security_knowledge (category, title, content, tags, source) VALUES
  ARRAY['suricata', 'ips', 'rule', 'tutorial'],
  'edu-suricata-001'),
 
-('education', 'OpsClaw 프로젝트 생성과 실행',
- 'OpsClaw 프로젝트 생성: POST /projects (name, request_text, master_mode). Stage 전환: /plan → /execute. 태스크 실행: /execute-plan (tasks 배열, subagent_url). 결과 확인: /evidence/summary. 완료: /completion-report. 인증: X-API-Key 헤더 필수.',
- ARRAY['opsclaw', 'project', 'api', 'tutorial'],
- 'edu-opsclaw-001'),
+('education', 'Bastion 프로젝트 생성과 실행',
+ 'Bastion 프로젝트 생성: POST /projects (name, request_text, master_mode). Stage 전환: /plan → /execute. 태스크 실행: /execute-plan (tasks 배열, subagent_url). 결과 확인: /evidence/summary. 완료: /completion-report. 인증: X-API-Key 헤더 필수.',
+ ARRAY['bastion', 'project', 'api', 'tutorial'],
+ 'edu-bastion-001'),
 
 ('education', 'LLM 프롬프트 엔지니어링 기초',
  'LLM 프롬프트 작성법: 1) system 메시지로 역할 부여 2) 구체적 출력 형식 지정 (JSON 등) 3) temperature 0.1~0.3으로 결정론적 응답 유도 4) few-shot 예시 제공 5) 부정형 지시("하지 마세요") 보다 긍정형("만 하세요") 사용.',
@@ -169,11 +169,11 @@ import psycopg2
 
 OLLAMA_URL = "http://192.168.0.105:11434"
 MANAGER_URL = "http://localhost:8000"
-API_KEY = "opsclaw-api-key-2026"
+API_KEY = "bastion-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 DB_CONFIG = {
     "host": "127.0.0.1", "port": 5432,
-    "dbname": "opsclaw", "user": "opsclaw", "password": "opsclaw",
+    "dbname": "bastion", "user": "bastion", "password": "bastion",
 }
 
 class EducationTutor:
@@ -257,7 +257,7 @@ class EducationTutor:
             return f"답변 생성 오류: {e}"
 
     def record_evidence(self, question: str, answer: str, docs_used: int):
-        """질의/응답을 OpsClaw Evidence로 기록한다."""
+        """질의/응답을 Bastion Evidence로 기록한다."""
         try:
             resp = requests.post(
                 f"{MANAGER_URL}/projects/{self.project_id}/dispatch",
@@ -326,11 +326,11 @@ if __name__ == "__main__":
 
 ```bash
 # 프로젝트 C 생성
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 RESP=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"project-C-education-agent","request_text":"보안 교육 AI 튜터 에이전트","master_mode":"external"}')
 # 프로젝트 ID 추출
 PC_PID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
@@ -338,17 +338,17 @@ echo "Project C ID: $PC_PID"
 
 # Stage 전환
 curl -s -X POST "http://localhost:8000/projects/${PC_PID}/plan" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 단계 전환
 curl -s -X POST "http://localhost:8000/projects/${PC_PID}/execute" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # RAG 검색 테스트 (DB에서 교안 검색)
 curl -s -X POST "http://localhost:8000/projects/${PC_PID}/dispatch" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
-    "command": "PGPASSWORD=opsclaw psql -h 127.0.0.1 -U opsclaw -d opsclaw -t -c \"SELECT title FROM security_knowledge WHERE search_vector @@ to_tsquery('"'"'simple'"'"', '"'"'nftables | firewall'"'"') ORDER BY ts_rank(search_vector, to_tsquery('"'"'simple'"'"', '"'"'nftables | firewall'"'"')) DESC LIMIT 3\"",
+    "command": "PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -t -c \"SELECT title FROM security_knowledge WHERE search_vector @@ to_tsquery('"'"'simple'"'"', '"'"'nftables | firewall'"'"') ORDER BY ts_rank(search_vector, to_tsquery('"'"'simple'"'"', '"'"'nftables | firewall'"'"')) DESC LIMIT 3\"",
     "subagent_url": "http://localhost:8002"
   }' | python3 -m json.tool
 # nftables/firewall 관련 교안 검색 결과 확인
@@ -368,11 +368,11 @@ import time
 import requests
 
 MANAGER_URL = "http://localhost:8000"
-API_KEY = "opsclaw-api-key-2026"
+API_KEY = "bastion-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 
 class LearningTracker:
-    """학생의 학습 활동을 OpsClaw Evidence와 Experience로 기록한다."""
+    """학생의 학습 활동을 Bastion Evidence와 Experience로 기록한다."""
 
     def __init__(self, project_id: str, student_id: str):
         self.project_id = project_id
@@ -393,7 +393,7 @@ class LearningTracker:
         }
         self.records.append(record)
 
-        # OpsClaw dispatch로 Evidence 기록
+        # Bastion dispatch로 Evidence 기록
         evidence_text = json.dumps({
             "student": self.student_id,
             "q": question[:80],
@@ -457,7 +457,7 @@ class LearningTracker:
 
 if __name__ == "__main__":
     # 사용 예시
-    print("LearningTracker — OpsClaw 프로젝트 ID로 초기화")
+    print("LearningTracker — Bastion 프로젝트 ID로 초기화")
     print("사용법:")
     print("  tracker = LearningTracker('프로젝트ID', 'student-001')")
     print("  tracker.record_question('nftables란?', '답변...', 'firewall', 'good')")
@@ -468,12 +468,12 @@ if __name__ == "__main__":
 
 ```bash
 # 학생의 질문 패턴을 분석하여 약점 영역 파악
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 # 여러 질문을 dispatch로 기록
 curl -s -X POST "http://localhost:8000/projects/${PC_PID}/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -510,12 +510,12 @@ curl -s -X POST "http://localhost:8000/projects/${PC_PID}/execute-plan" \
 
 ```bash
 # 프로젝트 A — 자율 인시던트 대응 에이전트 completion-report
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 # 프로젝트 A 완료 보고서 (PA_PID는 실제 ID로 교체)
 curl -s -X POST "http://localhost:8000/projects/${PA_PID}/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "summary": "Wazuh 경보 자동 수신 → LLM 분석 → nftables 차단 → Slack 알림 → Evidence 기록 파이프라인 완성",
     "outcome": "success",
@@ -531,11 +531,11 @@ curl -s -X POST "http://localhost:8000/projects/${PA_PID}/completion-report" \
 
 ```bash
 # 프로젝트 B — CTF 자동 풀이 에이전트 completion-report
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 curl -s -X POST "http://localhost:8000/projects/${PB_PID}/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "summary": "JuiceShop 취약점 자동 스캔 + LLM 공격 전략 수립 + 익스플로잇 자동화 Red Agent 완성",
     "outcome": "success",
@@ -551,11 +551,11 @@ curl -s -X POST "http://localhost:8000/projects/${PB_PID}/completion-report" \
 
 ```bash
 # 프로젝트 C — 보안 교육 에이전트 completion-report
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 curl -s -X POST "http://localhost:8000/projects/${PC_PID}/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "summary": "보안 교안 RAG 기반 AI 튜터 에이전트 구축 + Experience 학습 기록 시스템 완성",
     "outcome": "success",
@@ -563,7 +563,7 @@ curl -s -X POST "http://localhost:8000/projects/${PC_PID}/completion-report" \
       "PostgreSQL FTS 기반 교안 인덱싱 완료",
       "RAG 파이프라인(Retrieve→Augment→Generate) 구현",
       "LLM(llama3.1:8b) 기반 질의응답 엔진 구축",
-      "학습 기록을 OpsClaw Experience로 자동 저장",
+      "학습 기록을 Bastion Experience로 자동 저장",
       "학생별 학습 진행 리포트 생성 기능 구현"
     ]
   }' | python3 -m json.tool 2>/dev/null || echo "PC_PID 설정 필요"
@@ -573,11 +573,11 @@ curl -s -X POST "http://localhost:8000/projects/${PC_PID}/completion-report" \
 
 ```bash
 # 3개 프로젝트의 evidence와 PoW 종합 현황
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 echo "=== PoW 리더보드 (전체 에이전트) ==="
 # 에이전트별 작업량 순위
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/leaderboard" | python3 -m json.tool
 
 echo ""
@@ -585,7 +585,7 @@ echo "=== 체인 무결성 검증 ==="
 # 각 에이전트의 PoW 체인 무결성 확인
 for AGENT in "http://localhost:8002" "http://10.20.30.1:8002" "http://10.20.30.80:8002" "http://10.20.30.100:8002"; do
   # 에이전트별 체인 검증
-  RESULT=$(curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+  RESULT=$(curl -s -H "X-API-Key: $BASTION_API_KEY" \
     "http://localhost:8000/pow/verify?agent_id=${AGENT}" 2>/dev/null)
   VALID=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('valid','?'))" 2>/dev/null || echo "?")
   echo "  ${AGENT}: valid=${VALID}"
@@ -596,13 +596,13 @@ done
 
 ```bash
 # 시연 전 환경 점검
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 echo "=== 시연 환경 점검 ==="
 
 # 1. Manager API 상태
 echo -n "Manager API: "
-curl -s -o /dev/null -w "%{http_code}" -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -o /dev/null -w "%{http_code}" -H "X-API-Key: $BASTION_API_KEY" \
   http://localhost:8000/projects 2>/dev/null || echo "FAIL"
 
 # 2. Ollama LLM 상태
@@ -618,7 +618,7 @@ done
 
 # 4. PostgreSQL FTS 확인
 echo -n "PostgreSQL FTS: "
-PGPASSWORD=opsclaw psql -h 127.0.0.1 -U opsclaw -d opsclaw -t -c \
+PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -t -c \
   "SELECT COUNT(*) FROM security_knowledge" 2>/dev/null || echo "FAIL"
 
 # 5. JuiceShop 상태
@@ -647,7 +647,7 @@ curl -s -o /dev/null -w "%{http_code}" http://10.20.30.80:3000/ 2>/dev/null || e
 | 항목 | 배점 | 세부 기준 |
 |------|------|----------|
 | 시스템 완성도 | 30% | 3개 프로젝트 모두 동작하는지 |
-| Evidence 품질 | 25% | OpsClaw evidence 수와 상세도 |
+| Evidence 품질 | 25% | Bastion evidence 수와 상세도 |
 | 기술적 깊이 | 20% | LLM 활용, RAG 구현, 안전장치 |
 | 발표력 | 15% | 설명 명확성, 시연 원활성 |
 | Q&A 대응 | 10% | 질문에 대한 답변 품질 |
@@ -665,7 +665,7 @@ curl -s -o /dev/null -w "%{http_code}" http://10.20.30.80:3000/ 2>/dev/null || e
 
 2. [프로젝트 B] 동시에 Red Agent가 JuiceShop 점검
    → LLM이 공격 전략 수립 (SQLi, 사용자 열거)
-   → OpsClaw가 전략 실행
+   → Bastion가 전략 실행
    → 발견된 취약점 Evidence로 기록
 
 3. [프로젝트 C] 학생이 "SSH 브루트포스 대응법" 질문
@@ -684,7 +684,7 @@ curl -s -o /dev/null -w "%{http_code}" http://10.20.30.80:3000/ 2>/dev/null || e
 
 | 주차 | 주제 | 핵심 기술 |
 |------|------|----------|
-| 01-04 | 기초 | LLM, 프롬프트 엔지니어링, OpsClaw 기초 |
+| 01-04 | 기초 | LLM, 프롬프트 엔지니어링, Bastion 기초 |
 | 05-08 | 심화 | SubAgent, PoW, RL, Tool/Skill |
 | 09 | 에이전트 보안 | OWASP LLM Top 10, Injection 방어 |
 | 10 | 멀티에이전트 | 오케스트레이션, Red/Blue 동시 운영 |
@@ -699,7 +699,7 @@ curl -s -o /dev/null -w "%{http_code}" http://10.20.30.80:3000/ 2>/dev/null || e
 
   LLM 활용              보안 분석            시스템 운영
   -----------           -----------         -----------
-  Prompting             위협 탐지            OpsClaw
+  Prompting             위협 탐지            Bastion
   RAG                   인시던트             nftables
   RL                    취약점              Wazuh
   에이전트 설계          평가                안전/가드레일
@@ -711,7 +711,7 @@ curl -s -o /dev/null -w "%{http_code}" http://10.20.30.80:3000/ 2>/dev/null || e
 
 **최종 제출물**:
 
-1. 3개 프로젝트의 OpsClaw 프로젝트 ID
+1. 3개 프로젝트의 Bastion 프로젝트 ID
 2. 각 프로젝트의 completion-report (API 응답 스크린샷)
 3. 전체 evidence summary (3개 프로젝트 합산)
 4. 발표 슬라이드 (PDF, 10페이지 이내)

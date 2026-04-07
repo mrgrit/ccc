@@ -13,7 +13,7 @@
 - Week 01~08의 공격/방어 기법 복습 완료
 - Week 09 인시던트 대응 프레임워크 이해
 - Week 10 하드닝 체크리스트 실행 경험
-- 실습 인프라 접속 확인 (opsclaw, secu, web, siem)
+- 실습 인프라 접속 확인 (bastion, secu, web, siem)
 
 ## 강의 시간 배분 (3시간)
 
@@ -268,7 +268,7 @@ Input: 대상 네트워크 CIDR (10.20.30.0/24)
 [1v1 공방전 네트워크]
 
                 +----------+
-                |  opsclaw  | ← 심판/관리 서버
+                |  bastion  | ← 심판/관리 서버
                 |10.20.30.201|
                 +----+-----+
                      |
@@ -281,7 +281,7 @@ Input: 대상 네트워크 CIDR (10.20.30.0/24)
    |IDS/방화벽|  |웹+취약앱|  |Wazuh   |
    +---------+  +---------+  +---------+
 
-Red Team: opsclaw에서 web을 공격
+Red Team: bastion에서 web을 공격
 Blue Team: secu + siem에서 web을 방어
 ```
 
@@ -289,8 +289,8 @@ Blue Team: secu + siem에서 web을 방어
 
 | 역할 | 접근 가능 서버 | 제한 사항 |
 |------|-------------|---------|
-| Red Team | opsclaw (공격 기지) | web 직접 SSH 금지 (침투로만 접근) |
-| Blue Team | secu, siem, web | opsclaw 접근 금지 |
+| Red Team | bastion (공격 기지) | web 직접 SSH 금지 (침투로만 접근) |
+| Blue Team | secu, siem, web | bastion 접근 금지 |
 | 심판 | 전체 서버 | 점수 기록, 규칙 집행 |
 
 ---
@@ -326,7 +326,7 @@ echo "[$(date +%H:%M:%S)] Phase 1 완료 (소요 시간: ~3초)"
 ```
 
 > **결과 해석**:
-> - 4개 호스트 발견: secu(1), web(80), siem(100), opsclaw(201)
+> - 4개 호스트 발견: secu(1), web(80), siem(100), bastion(201)
 > - 이 중 공격 대상은 web(80)이 주 목표이다
 > - `-T4`로 빠르게 스캔하면 약 2~3초 내에 완료된다
 >
@@ -718,7 +718,7 @@ echo "  Suricata 스캔 탐지 이벤트: ${IDS_COUNT}건"
 # 공격자 IP 식별
 echo ""
 echo "[공격자 IP 식별 (+10점)]"
-echo "  식별된 공격자: 10.20.30.201 (opsclaw)"
+echo "  식별된 공격자: 10.20.30.201 (bastion)"
 
 # 서비스 가용성 확인
 echo ""
@@ -791,30 +791,30 @@ ANALYSIS
 
 > **실전 활용**: 이 비교 분석은 양측이 서로의 전략을 이해하고 Week 12의 침투/차단에 대비하는 핵심 자료이다.
 
-## 실습 4.2: OpsClaw 결과 기록
+## 실습 4.2: Bastion 결과 기록
 
 ### Step 1: 공방전 결과 기록
 
-> **실습 목적**: 공방전 결과를 OpsClaw에 기록하여 추적 가능하게 한다.
+> **실습 목적**: 공방전 결과를 Bastion에 기록하여 추적 가능하게 한다.
 >
-> **배우는 것**: OpsClaw completion-report를 이용한 결과 문서화
+> **배우는 것**: Bastion completion-report를 이용한 결과 문서화
 
 ```bash
 # 공방전 프로젝트 생성 + 보고서
 RESULT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"week11-battle-r1","request_text":"1v1 공방전 Phase 1","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
 curl -s -X POST "http://localhost:8000/projects/$PID/plan" \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 curl -s -X POST "http://localhost:8000/projects/$PID/execute" \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "summary": "1v1 공방전 Phase 1 완료 — 정찰 vs 탐지",
     "outcome": "success",
@@ -827,7 +827,7 @@ curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
   }' | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'보고서: {d.get(\"status\",\"ok\")}')"
 ```
 
-> **결과 해석**: OpsClaw에 공방전 결과가 기록되어 이후 분석과 개선에 활용할 수 있다.
+> **결과 해석**: Bastion에 공방전 결과가 기록되어 이후 분석과 개선에 활용할 수 있다.
 
 ---
 

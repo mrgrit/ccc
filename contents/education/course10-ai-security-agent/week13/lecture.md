@@ -6,13 +6,13 @@
 - LLM 기반 위협 분석 엔진의 프롬프트와 판정 기준을 설계한다
 - nftables 자동 차단 → Slack 알림 → Evidence 기록 전체 흐름을 설계한다
 - 팀별 아키텍처를 확정하고 핵심 모듈의 프로토타입을 완성한다
-- OpsClaw 프로젝트와 연동하여 모든 작업을 evidence로 기록한다
+- Bastion 프로젝트와 연동하여 모든 작업을 evidence로 기록한다
 
 ## 실습 환경 (공통)
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
@@ -27,7 +27,7 @@
 | 0:50-1:25 | Part 3 | LLM 위협 분석 엔진 프로토타입 | 실습 |
 | 1:25-1:35 | — | 휴식 | — |
 | 1:35-2:10 | Part 4 | 자동 차단 + Slack 알림 모듈 | 실습 |
-| 2:10-2:40 | Part 5 | OpsClaw 연동 및 Evidence 기록 | 실습 |
+| 2:10-2:40 | Part 5 | Bastion 연동 및 Evidence 기록 | 실습 |
 | 2:40-3:00 | Part 6 | 팀별 설계 발표 + 피드백 | 발표 |
 
 ## 용어 해설 (AI보안에이전트 과목)
@@ -41,9 +41,9 @@
 | **rule_level** | Wazuh 경보 심각도 (0-15) | 10 이상 = 즉시 대응 |
 | **nftables set** | IP 주소 집합을 관리하는 nftables 객체 | blocklist set에 IP 추가 |
 | **Slack Bot** | Slack 채널에 메시지를 보내는 자동화 봇 | OldClaw Bot |
-| **Evidence** | OpsClaw의 감사 기록 | 모든 실행 결과를 불변 기록 |
+| **Evidence** | Bastion의 감사 기록 | 모든 실행 결과를 불변 기록 |
 | **completion-report** | 프로젝트 완료 보고서 | 요약, 결과, 세부사항 포함 |
-| **Webhook** | 이벤트 발생 시 HTTP로 통보하는 메커니즘 | Wazuh → OpsClaw 경보 전달 |
+| **Webhook** | 이벤트 발생 시 HTTP로 통보하는 메커니즘 | Wazuh → Bastion 경보 전달 |
 | **Triage** | 경보 우선순위 분류 | critical/high/medium/low |
 | **enrichment** | 경보에 추가 정보를 보강 | IP → GeoIP, reputation |
 | **rate-limit** | 단위 시간당 처리량 제한 | 1분당 최대 10건 차단 |
@@ -61,8 +61,8 @@
 | 팀 구성 | 2-3명 |
 | 기간 | 3주 (Week 13: 설계+프로토타입, Week 14: 구현, Week 15: 시연) |
 | 목표 | Wazuh 경보 → LLM 분석 → 차단 → 알림 → Evidence 전체 자동화 |
-| 평가 | OpsClaw evidence 수 + 성공률 + 보고서 품질 + 발표 |
-| 결과물 | OpsClaw 프로젝트 ID + completion-report + 발표 슬라이드 |
+| 평가 | Bastion evidence 수 + 성공률 + 보고서 품질 + 발표 |
+| 결과물 | Bastion 프로젝트 ID + completion-report + 발표 슬라이드 |
 
 ### 1.2 전체 아키텍처
 
@@ -83,7 +83,7 @@
 
 | 항목 | 배점 | 기준 |
 |------|------|------|
-| evidence 수 | 30% | OpsClaw에 기록된 evidence 건수 |
+| evidence 수 | 30% | Bastion에 기록된 evidence 건수 |
 | 성공률 | 25% | 정탐률(Recall) + 오탐률(FP rate) |
 | 보고서 품질 | 25% | completion-report 상세도 |
 | 발표 | 20% | 시연 + Q&A |
@@ -224,16 +224,16 @@ if __name__ == "__main__":
         print(json.dumps(formatted, indent=2, ensure_ascii=False))
 ```
 
-### 2.3 OpsClaw를 통한 경보 수집
+### 2.3 Bastion를 통한 경보 수집
 
 ```bash
-# OpsClaw dispatch로 Wazuh 경보를 수집
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+# Bastion dispatch로 Wazuh 경보를 수집
+export BASTION_API_KEY=bastion-api-key-2026
 
 # 프로젝트 A 생성
 RESP=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"project-A-incident-response","request_text":"자율 인시던트 대응 에이전트 프로젝트","master_mode":"external"}')
 # 프로젝트 ID 추출
 PA_PID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
@@ -241,15 +241,15 @@ echo "Project A ID: $PA_PID"
 
 # Stage 전환
 curl -s -X POST "http://localhost:8000/projects/${PA_PID}/plan" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 단계 전환
 curl -s -X POST "http://localhost:8000/projects/${PA_PID}/execute" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # siem 서버에서 Wazuh 경보 로그 수집
 curl -s -X POST "http://localhost:8000/projects/${PA_PID}/dispatch" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "tail -20 /var/ossec/logs/alerts/alerts.json 2>/dev/null || echo no-alerts-file",
     "subagent_url": "http://10.20.30.100:8002"
@@ -389,7 +389,7 @@ if __name__ == "__main__":
             "rule_level": 3,
             "rule_description": "User login successful",
             "src_ip": "10.20.30.201",
-            "full_log": "sshd[3456]: Accepted publickey for opsclaw from 10.20.30.201",
+            "full_log": "sshd[3456]: Accepted publickey for bastion from 10.20.30.201",
         },
     ]
 
@@ -405,13 +405,13 @@ if __name__ == "__main__":
 ### 4.1 nftables 자동 차단
 
 ```bash
-# nftables 차단 명령을 OpsClaw를 통해 실행
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+# nftables 차단 명령을 Bastion를 통해 실행
+export BASTION_API_KEY=bastion-api-key-2026
 
 # 차단할 IP 리스트를 secu 서버에서 nftables로 차단
 curl -s -X POST "http://localhost:8000/projects/${PA_PID}/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -441,7 +441,7 @@ import json
 import requests
 
 MANAGER_URL = "http://localhost:8000"
-API_KEY = "opsclaw-api-key-2026"
+API_KEY = "bastion-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 
 class AutoBlocker:
@@ -477,7 +477,7 @@ class AutoBlocker:
         severity = analysis.get("severity", "medium")
         risk = self.BLOCK_THRESHOLDS.get(severity, {}).get("risk_level", "high")
 
-        # OpsClaw를 통해 secu 서버에 차단 명령 전송
+        # Bastion를 통해 secu 서버에 차단 명령 전송
         resp = requests.post(
             f"{MANAGER_URL}/projects/{self.project_id}/execute-plan",
             headers=HEADERS,
@@ -500,7 +500,7 @@ class AutoBlocker:
 
 if __name__ == "__main__":
     # 실행 시 프로젝트 ID 필요
-    print("AutoBlocker 모듈 — OpsClaw 프로젝트 ID로 초기화하여 사용")
+    print("AutoBlocker 모듈 — Bastion 프로젝트 ID로 초기화하여 사용")
     print("사용법: blocker = AutoBlocker('프로젝트ID')")
     print("       blocker.block_ip('10.0.0.5', analysis_result)")
 ```
@@ -548,7 +548,7 @@ class SlackNotifier:
                     {"title": "조치", "value": action.get("status", "?"), "short": True},
                     {"title": "신뢰도", "value": f"{analysis.get('confidence', 0):.0%}", "short": True},
                 ],
-                "footer": "OpsClaw 자율 인시던트 대응 에이전트",
+                "footer": "Bastion 자율 인시던트 대응 에이전트",
             }],
         }
 
@@ -596,7 +596,7 @@ if __name__ == "__main__":
 
 ---
 
-## Part 5: OpsClaw 연동 및 Evidence 기록 (2:10-2:40)
+## Part 5: Bastion 연동 및 Evidence 기록 (2:10-2:40)
 
 ### 5.1 전체 파이프라인 통합
 
@@ -609,11 +609,11 @@ import requests
 
 MANAGER_URL = "http://localhost:8000"
 OLLAMA_URL = "http://192.168.0.105:11434"
-API_KEY = "opsclaw-api-key-2026"
+API_KEY = "bastion-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 
 def create_project() -> str:
-    """OpsClaw 프로젝트를 생성한다."""
+    """Bastion 프로젝트를 생성한다."""
     resp = requests.post(
         f"{MANAGER_URL}/projects",
         headers=HEADERS,
@@ -631,7 +631,7 @@ def create_project() -> str:
     return pid
 
 def collect_alerts(pid: str) -> list:
-    """Wazuh에서 경보를 수집한다 (OpsClaw 경유)."""
+    """Wazuh에서 경보를 수집한다 (Bastion 경유)."""
     resp = requests.post(
         f"{MANAGER_URL}/projects/{pid}/dispatch",
         headers=HEADERS,
@@ -704,18 +704,18 @@ if __name__ == "__main__":
 
 ```bash
 # 프로젝트 A의 evidence 확인
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 # evidence 요약
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/${PA_PID}/evidence/summary" | python3 -m json.tool
 
 # 프로젝트 replay로 전체 흐름 확인
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/${PA_PID}/replay" | python3 -m json.tool
 
 # PoW 블록 확인
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/blocks?agent_id=http://10.20.30.100:8002" | python3 -m json.tool
 ```
 
@@ -734,7 +734,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 | 분석 엔진 | LLM 모델 선택, 프롬프트 설계, 판정 기준 |
 | 대응 모듈 | 차단 정책, risk_level 매핑, 승인 게이트 |
 | 알림 모듈 | Slack 채널 구성, 알림 포맷 |
-| 증빙 전략 | OpsClaw evidence 활용 계획 |
+| 증빙 전략 | Bastion evidence 활용 계획 |
 
 ### 6.2 프로젝트 과제
 
@@ -744,7 +744,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 2. 전체 아키텍처 설계 문서 작성
 3. Wazuh 경보 수집 모듈 프로토타입 완성
 4. LLM 분석 엔진 프롬프트 설계 완료
-5. OpsClaw 프로젝트 생성 및 첫 evidence 기록
+5. Bastion 프로젝트 생성 및 첫 evidence 기록
 
 **다음 주 (Week 14) 목표**:
 - 전체 파이프라인 구현 완료
@@ -752,6 +752,6 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 - Slack 알림 연동 완료
 
 **제출물**:
-- OpsClaw 프로젝트 ID
+- Bastion 프로젝트 ID
 - evidence summary 스크린샷
 - 팀 아키텍처 문서 (1페이지)

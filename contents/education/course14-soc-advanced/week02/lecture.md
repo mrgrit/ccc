@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -27,7 +27,7 @@
 | 0:50-1:30 | 고급 룰 요소 + 다중 소스 연계 (Part 2) | 강의/토론 |
 | 1:30-1:40 | 휴식 | - |
 | 1:40-2:30 | 상관 룰 작성 실습 (Part 3) | 실습 |
-| 2:30-3:10 | 룰 튜닝 + OpsClaw 자동화 (Part 4) | 실습 |
+| 2:30-3:10 | 룰 튜닝 + Bastion 자동화 (Part 4) | 실습 |
 | 3:10-3:20 | 복습 퀴즈 + 과제 안내 | 정리 |
 
 ---
@@ -456,7 +456,7 @@ echo "Exit code: $?"
 ## 3.2 룰 테스트 - 공격 시뮬레이션
 
 ```bash
-# opsclaw 서버에서 SSH 무차별 대입 시뮬레이션
+# bastion 서버에서 SSH 무차별 대입 시뮬레이션
 # (siem 서버의 Wazuh가 탐지하도록)
 
 # 먼저 siem에서 Wazuh 재시작 (새 룰 적용)
@@ -647,7 +647,7 @@ EOF
 
 ---
 
-# Part 4: 룰 튜닝 + OpsClaw 자동화 (40분)
+# Part 4: 룰 튜닝 + Bastion 자동화 (40분)
 
 ## 4.1 오탐 분석 및 튜닝
 
@@ -690,7 +690,7 @@ EOF
 <rule id="100900" level="0">
   <if_sid>100002</if_sid>
   <srcip>10.20.30.201</srcip>
-  <description>화이트리스트: OpsClaw 모니터링 SSH 접근</description>
+  <description>화이트리스트: Bastion 모니터링 SSH 접근</description>
 </rule>
 
 <!-- 오탐 제거: 스케줄 작업의 정기 점검 제외 -->
@@ -723,15 +723,15 @@ ls -la /var/ossec/logs/alerts/alerts.json 2>/dev/null
 EOF
 ```
 
-## 4.3 OpsClaw를 활용한 상관 룰 배포 자동화
+## 4.3 Bastion를 활용한 상관 룰 배포 자동화
 
 ```bash
-export OPSCLAW_API_KEY="opsclaw-api-key-2026"
+export BASTION_API_KEY="bastion-api-key-2026"
 
 # 프로젝트 생성 - 상관 룰 배포
 PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "correlation-rule-deploy",
     "request_text": "SIEM 상관 룰 배포 및 검증",
@@ -742,14 +742,14 @@ echo "Project: $PROJECT_ID"
 
 # Stage 전환
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
-  -H "X-API-Key: $OPSCLAW_API_KEY"
+  -H "X-API-Key: $BASTION_API_KEY"
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
-  -H "X-API-Key: $OPSCLAW_API_KEY"
+  -H "X-API-Key: $BASTION_API_KEY"
 
 # 다중 서버 점검 자동화
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -776,12 +776,12 @@ curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
 
 # 결과 확인
 sleep 3
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/$PROJECT_ID/evidence/summary" | \
   python3 -m json.tool
 ```
 
-> **실전 활용**: 상관 룰 변경을 OpsClaw 프로젝트로 관리하면 변경 이력(evidence)이 자동 기록되어 감사 추적이 가능하다. 여러 SIEM에 동일 룰을 배포할 때 일관성을 보장한다.
+> **실전 활용**: 상관 룰 변경을 Bastion 프로젝트로 관리하면 변경 이력(evidence)이 자동 기록되어 감사 추적이 가능하다. 여러 SIEM에 동일 룰을 배포할 때 일관성을 보장한다.
 
 ## 4.4 상관분석 효과 측정
 
@@ -849,7 +849,7 @@ python3 /tmp/correlation_effectiveness.py
 - [ ] 임계치 설정 원칙(베이스라인, 시그마, 테스트, 튜닝)을 알고 있다
 - [ ] wazuh-logtest로 룰 매칭을 검증할 수 있다
 - [ ] 화이트리스트 룰로 오탐을 제거할 수 있다
-- [ ] OpsClaw로 룰 배포를 자동화할 수 있다
+- [ ] Bastion로 룰 배포를 자동화할 수 있다
 
 ---
 

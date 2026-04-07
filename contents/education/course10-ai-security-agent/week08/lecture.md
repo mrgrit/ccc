@@ -3,7 +3,7 @@
 ## 학습 목표
 - Week 01~07에서 학습한 내용을 종합하여 보안 에이전트를 구축한다
 - Ollama 모델을 선택하고 보안 분석용 프롬프트를 설계한다
-- OpsClaw 프로젝트를 생성하고 execute-plan으로 4대 서버를 자동 점검한다
+- Bastion 프로젝트를 생성하고 execute-plan으로 4대 서버를 자동 점검한다
 - 점검 결과를 LLM으로 분석하고 보고서를 작성한다
 - Evidence 기반으로 채점 가능한 결과물을 산출한다
 
@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -69,7 +69,7 @@
   ↓
   [Step 2] 보안 분석 프롬프트 설계 (5원칙 적용)
   ↓
-  [Step 3] OpsClaw 프로젝트 생성 + Playbook 작성
+  [Step 3] Bastion 프로젝트 생성 + Playbook 작성
   ↓
   [Step 4] execute-plan으로 4대 서버 자동 점검
   ↓
@@ -95,7 +95,7 @@
 2. `~/lab/week08/playbook.json` — Playbook 정의
 3. `~/lab/week08/prompt.txt` — 프롬프트 설계
 4. `~/lab/week08/report.md` — 최종 보고서
-5. OpsClaw에 completion-report가 기록되어야 함
+5. Bastion에 completion-report가 기록되어야 함
 
 ---
 
@@ -121,8 +121,8 @@ cat > ~/lab/week08/env_check.sh << 'SHEOF'
 echo "=== 중간 실습 환경 점검 ==="
 echo ""
 
-# 1. OpsClaw 서비스
-echo "[1] OpsClaw 서비스"
+# 1. Bastion 서비스
+echo "[1] Bastion 서비스"
 for svc in "Manager:8000" "SubAgent:8002"; do
     NAME=$(echo $svc | cut -d: -f1)
     PORT=$(echo $svc | cut -d: -f2)
@@ -138,7 +138,7 @@ done
 # 2. PostgreSQL
 echo ""
 echo "[2] PostgreSQL"
-PGPASSWORD=opsclaw psql -h 127.0.0.1 -U opsclaw -d opsclaw -c "SELECT 1" > /dev/null 2>&1
+PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -c "SELECT 1" > /dev/null 2>&1
 if [ $? -eq 0 ]; then
     echo "  PostgreSQL — OK"
 else
@@ -285,7 +285,7 @@ python3 ~/lab/week08/model_selection.py
 
 ### 3.1 보안 분석 프롬프트 설계 (5원칙 적용)
 
-OpsClaw 에이전트의 보안 분석 프롬프트를 5원칙(역할/맥락/형식/제약/예시)에 맞게 설계한다.
+Bastion 에이전트의 보안 분석 프롬프트를 5원칙(역할/맥락/형식/제약/예시)에 맞게 설계한다.
 
 ```bash
 # 보안 분석 프롬프트 설계 (5원칙 적용)
@@ -294,7 +294,7 @@ cat > ~/lab/week08/prompt.txt << 'PROMPTEOF'
 
 [원칙 1: 역할 부여]
 너는 10년 경력의 보안 관제센터(SOC) Tier-2 분석가이다.
-4대 서버(opsclaw, secu, web, siem)의 보안 상태를 점검하고 분석하는 것이 임무이다.
+4대 서버(bastion, secu, web, siem)의 보안 상태를 점검하고 분석하는 것이 임무이다.
 MITRE ATT&CK 프레임워크를 기준으로 위협을 분류한다.
 
 [원칙 2: 구조화 출력]
@@ -316,8 +316,8 @@ MITRE ATT&CK 프레임워크를 기준으로 위협을 분류한다.
 }
 
 [원칙 3: Few-Shot 예시]
-입력: hostname=opsclaw, disk_usage=45%, open_ports=6, failed_logins=3
-출력: {"server":"opsclaw","overall_status":"정상","score":90,"findings":[{"category":"디스크","severity":"low","description":"디스크 사용량 45%로 정상","mitre_tactic":"N/A","recommendation":"모니터링 유지"}],"summary":"전반적으로 정상 상태"}
+입력: hostname=bastion, disk_usage=45%, open_ports=6, failed_logins=3
+출력: {"server":"bastion","overall_status":"정상","score":90,"findings":[{"category":"디스크","severity":"low","description":"디스크 사용량 45%로 정상","mitre_tactic":"N/A","recommendation":"모니터링 유지"}],"summary":"전반적으로 정상 상태"}
 
 입력: hostname=web, disk_usage=92%, open_ports=15, failed_logins=234
 출력: {"server":"web","overall_status":"위험","score":35,"findings":[{"category":"디스크","severity":"high","description":"디스크 92% 사용 — 서비스 장애 임박","mitre_tactic":"Impact (TA0040)","recommendation":"즉시 디스크 정리 필요"},{"category":"인증","severity":"critical","description":"234회 로그인 실패 — 브루트포스 공격 의심","mitre_tactic":"Credential Access (TA0006)","recommendation":"공격 IP 즉시 차단"}],"summary":"디스크 부족 + 브루트포스 공격 의심으로 위험 상태"}
@@ -349,7 +349,7 @@ cat > ~/lab/week08/playbook.json << 'JSONEOF'
   "name": "week08-full-security-audit",
   "description": "4대 서버 종합 보안 점검 Playbook",
   "servers": {
-    "opsclaw": {
+    "bastion": {
       "subagent_url": "http://localhost:8002",
       "checks": [
         {"order": 1, "command": "hostname && uptime", "risk": "low", "purpose": "서버 식별"},
@@ -432,8 +432,8 @@ import datetime
 # ============================================================
 OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"  # 모델 선택 결과에 따라 변경
-OPSCLAW = "http://localhost:8000"
-API_KEY = "opsclaw-api-key-2026"
+BASTION = "http://localhost:8000"
+API_KEY = "bastion-api-key-2026"
 HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
 # 프롬프트 로드
@@ -445,11 +445,11 @@ with open("/root/lab/week08/playbook.json") as f:
     PLAYBOOK = json.load(f)
 
 # ============================================================
-# Phase 1: OpsClaw 프로젝트 생성
+# Phase 1: Bastion 프로젝트 생성
 # ============================================================
 def create_project() -> str:
-    """OpsClaw 프로젝트 생성 및 stage 전환"""
-    project = requests.post(f"{OPSCLAW}/projects", headers=HEADERS, json={
+    """Bastion 프로젝트 생성 및 stage 전환"""
+    project = requests.post(f"{BASTION}/projects", headers=HEADERS, json={
         "name": f"week08-security-audit-{datetime.datetime.now().strftime('%H%M%S')}",
         "request_text": "4대 서버 종합 보안 점검",
         "master_mode": "external"
@@ -457,8 +457,8 @@ def create_project() -> str:
     pid = project["id"]
 
     # stage 전환: created → planning → executing
-    requests.post(f"{OPSCLAW}/projects/{pid}/plan", headers=HEADERS)
-    requests.post(f"{OPSCLAW}/projects/{pid}/execute", headers=HEADERS)
+    requests.post(f"{BASTION}/projects/{pid}/plan", headers=HEADERS)
+    requests.post(f"{BASTION}/projects/{pid}/execute", headers=HEADERS)
 
     return pid
 
@@ -483,7 +483,7 @@ def check_server(project_id: str, server_name: str, server_config: dict) -> dict
 
     try:
         resp = requests.post(
-            f"{OPSCLAW}/projects/{project_id}/execute-plan",
+            f"{BASTION}/projects/{project_id}/execute-plan",
             headers=HEADERS,
             json={"tasks": tasks, "subagent_url": subagent_url},
             timeout=60
@@ -584,7 +584,7 @@ def generate_report(project_id: str, all_results: dict, analyses: dict) -> str:
         f"# 4대 서버 종합 보안 점검 보고서",
         f"",
         f"- 일시: {datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
-        f"- OpsClaw Project: {project_id}",
+        f"- Bastion Project: {project_id}",
         f"- 모델: {MODEL}",
         f"- Playbook: {PLAYBOOK['name']}",
         f"",
@@ -641,7 +641,7 @@ def generate_report(project_id: str, all_results: dict, analyses: dict) -> str:
     return report
 
 def submit_report(project_id: str, report: str, analyses: dict):
-    """OpsClaw에 완료 보고서 제출"""
+    """Bastion에 완료 보고서 제출"""
     # 보고서 파일 저장
     with open("/root/lab/week08/report.md", "w") as f:
         f.write(report)
@@ -650,7 +650,7 @@ def submit_report(project_id: str, report: str, analyses: dict):
     with open("/root/lab/week08/analysis_results.json", "w") as f:
         json.dump(analyses, f, indent=2, ensure_ascii=False)
 
-    # OpsClaw completion-report 제출
+    # Bastion completion-report 제출
     summary_parts = []
     for server, analysis in analyses.items():
         status = analysis.get("overall_status", "N/A")
@@ -658,7 +658,7 @@ def submit_report(project_id: str, report: str, analyses: dict):
         summary_parts.append(f"{server}: {status} ({score}점)")
 
     requests.post(
-        f"{OPSCLAW}/projects/{project_id}/completion-report",
+        f"{BASTION}/projects/{project_id}/completion-report",
         headers=HEADERS,
         json={
             "summary": f"4대 서버 보안 점검 완료: {', '.join(summary_parts)}",
@@ -677,7 +677,7 @@ def main():
     start_time = time.time()
 
     # Phase 1: 프로젝트 생성
-    print("\n[Phase 1] OpsClaw 프로젝트 생성...")
+    print("\n[Phase 1] Bastion 프로젝트 생성...")
     project_id = create_project()
     print(f"  Project ID: {project_id}")
 
@@ -706,7 +706,7 @@ def main():
     # Evidence 확인
     print("\n[Evidence 확인]")
     evidence = requests.get(
-        f"{OPSCLAW}/projects/{project_id}/evidence/summary",
+        f"{BASTION}/projects/{project_id}/evidence/summary",
         headers=HEADERS
     ).json()
     print(json.dumps(evidence, indent=2, ensure_ascii=False)[:500])
@@ -714,7 +714,7 @@ def main():
     # PoW 검증
     print("\n[PoW 검증]")
     verify = requests.get(
-        f"{OPSCLAW}/pow/verify",
+        f"{BASTION}/pow/verify",
         headers=HEADERS,
         params={"agent_id": "http://localhost:8002"}
     ).json()
@@ -962,7 +962,7 @@ python3 ~/lab/week08/grading.py
 
 ### 복습 퀴즈
 
-**Q1. 보안 에이전트의 Perceive-Decide-Act 루프에서 OpsClaw가 주로 담당하는 단계는?**
+**Q1. 보안 에이전트의 Perceive-Decide-Act 루프에서 Bastion가 주로 담당하는 단계는?**
 - (A) Perceive
 - (B) Decide
 - **(C) Act (execute-plan으로 명령 실행)** ✅
@@ -986,9 +986,9 @@ python3 ~/lab/week08/grading.py
 - (C) /pow/leaderboard
 - (D) /projects/{id}/replay
 
-**Q5. 하이브리드 구성(Claude Code + OpsClaw)의 장점이 아닌 것은?**
+**Q5. 하이브리드 구성(Claude Code + Bastion)의 장점이 아닌 것은?**
 - (A) 대화형 분석과 분산 실행을 결합할 수 있다
-- (B) Claude Code로 유연한 탐색, OpsClaw로 증적 관리
+- (B) Claude Code로 유연한 탐색, Bastion로 증적 관리
 - **(C) 인터넷 연결 없이도 동작한다** ✅
 - (D) 여러 서버에 동시에 명령을 실행할 수 있다
 
@@ -1008,7 +1008,7 @@ python3 ~/lab/week08/grading.py
 - `~/lab/week08/prompt.txt`
 - `~/lab/week08/report.md`
 - `~/lab/week08/analysis_results.json`
-- OpsClaw completion-report (Project ID 기록)
+- Bastion completion-report (Project ID 기록)
 
 ---
 

@@ -2,7 +2,7 @@
 
 ## 학습 목표
 
-- OpsClaw의 Schedule 기능으로 정기 보안 점검 작업을 자동화한다
+- Bastion의 Schedule 기능으로 정기 보안 점검 작업을 자동화한다
 - Watcher를 구성하여 실시간 시스템 이상 징후를 감지한다
 - Schedule과 Watcher의 차이점과 적절한 사용 시나리오를 구분한다
 - 이상 탐지 시 인시던트 프로젝트를 자동 생성하는 파이프라인을 구축한다
@@ -12,7 +12,7 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
@@ -42,8 +42,8 @@
 | **Threshold** | 경보 발생 기준 값 | 로그인 실패 5회 이상 |
 | **Polling** | 주기적으로 상태를 확인하는 방식 | 5분마다 디스크 사용량 확인 |
 | **Event-Driven** | 이벤트 발생 시 즉시 반응하는 방식 | 로그 발생 즉시 분석 |
-| **scheduler-worker** | Schedule 작업을 실행하는 OpsClaw 내부 워커 프로세스 | 등록된 cron 작업을 주기적으로 확인하고 실행 |
-| **watch-worker** | Watcher를 실행하는 OpsClaw 내부 워커 프로세스 | 등록된 감시 조건을 지속적으로 확인 |
+| **scheduler-worker** | Schedule 작업을 실행하는 Bastion 내부 워커 프로세스 | 등록된 cron 작업을 주기적으로 확인하고 실행 |
+| **watch-worker** | Watcher를 실행하는 Bastion 내부 워커 프로세스 | 등록된 감시 조건을 지속적으로 확인 |
 | **Notification** | 이상 탐지 시 발송되는 알림 | Slack, Email, Webhook |
 | **Playbook** | 사전 정의된 자동화 작업 절차 | 인시던트 대응 Playbook |
 | **jitter** | 스케줄 실행 시 의도적으로 추가하는 시간 편차 | +-30초 (동시 실행 방지) |
@@ -69,7 +69,7 @@
 ### 1.2 아키텍처에서의 위치
 
 ```
-  OpsClaw Manager API (:8000)
+  Bastion Manager API (:8000)
   | Schedule  |  | Watcher  |
   | (cron 기반)  |  | (조건 기반)  |
   ▼  ▼
@@ -131,13 +131,13 @@
 
 ```bash
 # 환경 변수 설정
-export OPSCLAW_API_KEY="opsclaw-api-key-2026"
+export BASTION_API_KEY="bastion-api-key-2026"
 # Manager API 주소
 export MGR="http://localhost:8000"
 
 # 1. Schedule 목록 조회 — 현재 등록된 예약 작업 확인
 curl -s "$MGR/schedules" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -m json.tool
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 # 등록된 Schedule 목록이 출력된다
 ```
 
@@ -145,7 +145,7 @@ curl -s "$MGR/schedules" \
 # 2. 새 Schedule 등록 — 5분마다 secu 서버 방화벽 상태 점검
 curl -s -X POST "$MGR/schedules" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "project_name": "secu-firewall-check-5m",
     "schedule_type": "cron",
@@ -164,7 +164,7 @@ curl -s -X POST "$MGR/schedules" \
 # 3. 매시간 웹 서버 상태 점검 Schedule 등록
 curl -s -X POST "$MGR/schedules" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "project_name": "web-health-hourly",
     "schedule_type": "cron",
@@ -183,7 +183,7 @@ curl -s -X POST "$MGR/schedules" \
 # 4. 매일 새벽 2시 SIEM 로그 요약 Schedule 등록
 curl -s -X POST "$MGR/schedules" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "project_name": "siem-daily-summary",
     "schedule_type": "cron",
@@ -202,7 +202,7 @@ curl -s -X POST "$MGR/schedules" \
 ```bash
 # 5. 등록된 Schedule 목록 재확인
 curl -s "$MGR/schedules" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -c "
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 schedules = data if isinstance(data, list) else data.get('schedules', [])
@@ -239,7 +239,7 @@ for s in schedules:
 # 1. 전 서버 디스크 사용량 점검 프로젝트 생성
 curl -s -X POST $MGR/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "week10-disk-check-all",
     "request_text": "전 서버 디스크 사용량 점검 — Schedule 시뮬레이션",
@@ -252,14 +252,14 @@ export PID="반환된-프로젝트-ID"
 
 # 2. 스테이지 전환
 # plan 스테이지 전환
-curl -s -X POST $MGR/projects/$PID/plan -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+curl -s -X POST $MGR/projects/$PID/plan -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 스테이지 전환
-curl -s -X POST $MGR/projects/$PID/execute -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+curl -s -X POST $MGR/projects/$PID/execute -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # 3. 전 서버 디스크 점검 실행 (Schedule이 실행하는 것과 동일한 패턴)
 curl -s -X POST $MGR/projects/$PID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -289,7 +289,7 @@ curl -s -X POST $MGR/projects/$PID/execute-plan \
 ```bash
 # 4. 결과 분석 — 디스크 사용량 임계값 확인
 curl -s "$MGR/projects/$PID/evidence/summary" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -c "
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 # 각 서버의 디스크 사용량에서 임계값(80%) 초과 여부 확인
@@ -309,7 +309,7 @@ for ev in data.get('evidences', data.get('evidence', [])):
 # 5. 완료 보고서 작성 — Schedule 실행 결과를 Experience로 보존
 curl -s -X POST $MGR/projects/$PID/completion-report \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "summary": "전 서버 디스크/메모리 정기 점검 완료",
     "outcome": "success",
@@ -349,14 +349,14 @@ No:  대기 후 재확인
 ```bash
 # 1. Watcher 목록 조회 — 현재 등록된 Watcher 확인
 curl -s "$MGR/watchers" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -m json.tool
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
 ```bash
 # 2. 디스크 사용량 Watcher 등록 — web 서버 80% 초과 시 경보
 curl -s -X POST "$MGR/watchers" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "project_name": "web-disk-high",
     "watch_type": "threshold",
@@ -381,7 +381,7 @@ curl -s -X POST "$MGR/watchers" \
 # 3. SSH 브루트포스 Watcher — secu 서버에서 로그인 실패 감시
 curl -s -X POST "$MGR/watchers" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "project_name": "secu-ssh-brute",
     "watch_type": "threshold",
@@ -405,7 +405,7 @@ curl -s -X POST "$MGR/watchers" \
 # 4. Wazuh 고위험 경보 Watcher — Level 12 이상 경보 감시
 curl -s -X POST "$MGR/watchers" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "project_name": "siem-high-alert",
     "watch_type": "threshold",
@@ -430,7 +430,7 @@ curl -s -X POST "$MGR/watchers" \
 ```bash
 # 5. 등록된 Watcher 목록 확인
 curl -s "$MGR/watchers" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -c "
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -c "
 import sys, json
 data = json.load(sys.stdin)
 watchers = data if isinstance(data, list) else data.get('watchers', [])
@@ -479,7 +479,7 @@ Watcher가 이상을 탐지했다고 가정하고, 자동 대응 파이프라인
 # 1. 인시던트 프로젝트 생성 (Watcher가 자동 생성하는 것을 시뮬레이션)
 curl -s -X POST $MGR/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "auto-incident-ssh-brute-sim",
     "request_text": "[AUTO] SSH 브루트포스 탐지 — secu(10.20.30.1)에서 5분간 로그인 실패 12회 발생. 자동 조사 및 대응 필요.",
@@ -492,14 +492,14 @@ export INCIDENT_PID="반환된-프로젝트-ID"
 
 # 2. 스테이지 전환
 # plan 스테이지로 전환
-curl -s -X POST $MGR/projects/$INCIDENT_PID/plan -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+curl -s -X POST $MGR/projects/$INCIDENT_PID/plan -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 스테이지로 전환
-curl -s -X POST $MGR/projects/$INCIDENT_PID/execute -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+curl -s -X POST $MGR/projects/$INCIDENT_PID/execute -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # 3. 자동 조사 태스크 실행 — 인시던트 원인 분석
 curl -s -X POST $MGR/projects/$INCIDENT_PID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -531,7 +531,7 @@ curl -s -X POST $MGR/projects/$INCIDENT_PID/execute-plan \
 ```bash
 # 4. Evidence 수집 후 LLM으로 인시던트 분석
 curl -s "$MGR/projects/$INCIDENT_PID/evidence/summary" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /tmp/incident_evidence.json
+  -H "X-API-Key: $BASTION_API_KEY" > /tmp/incident_evidence.json
 
 # 5. LLM에게 인시던트 분석 요청
 python3 -c "
@@ -569,7 +569,7 @@ print(resp.json()['choices'][0]['message']['content'])
 # 6. 인시던트 완료 보고서 작성
 curl -s -X POST $MGR/projects/$INCIDENT_PID/completion-report \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "summary": "SSH 브루트포스 인시던트 자동 조사 완료",
     "outcome": "success",

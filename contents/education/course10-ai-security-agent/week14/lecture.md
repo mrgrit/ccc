@@ -3,7 +3,7 @@
 ## 학습 목표
 
 - JuiceShop의 취약점을 자동 스캔하는 Red Agent를 설계하고 구현한다
-- Ollama LLM이 공격 전략을 수립하고 OpsClaw가 실행하는 파이프라인을 구축한다
+- Ollama LLM이 공격 전략을 수립하고 Bastion가 실행하는 파이프라인을 구축한다
 - 취약점 발견 → 익스플로잇 → Evidence 기록 전체 흐름을 자동화한다
 - 프로젝트 A(인시던트 대응)와 병행하여 구현과 테스트를 완료한다
 - Red Agent의 안전한 실행을 위한 가드레일을 설계한다
@@ -12,7 +12,7 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
@@ -72,7 +72,7 @@
 [CTF 자동 풀이 Red Agent]
 
   1.정찰 → 2.분석 → 3.전략 → 4.실행 → 5.검증 → 6.기록
-  Scan     LLM      LLM      OpsClaw   결과확인   Evidence
+  Scan     LLM      LLM      Bastion   결과확인   Evidence
   HTTP     분석      계획     dispatch
 ```
 
@@ -103,12 +103,12 @@
 
 ```bash
 # JuiceShop 기본 정보 수집
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 # 프로젝트 B 생성
 RESP=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"project-B-ctf-agent","request_text":"CTF 자동 풀이 Red Agent","master_mode":"external"}')
 # 프로젝트 ID 추출
 PB_PID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
@@ -116,15 +116,15 @@ echo "Project B ID: $PB_PID"
 
 # Stage 전환
 curl -s -X POST "http://localhost:8000/projects/${PB_PID}/plan" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 단계 전환
 curl -s -X POST "http://localhost:8000/projects/${PB_PID}/execute" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # 1단계: JuiceShop 기본 정찰
 curl -s -X POST "http://localhost:8000/projects/${PB_PID}/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -162,7 +162,7 @@ import requests
 
 TARGET = "http://10.20.30.80:3000"
 MANAGER_URL = "http://localhost:8000"
-API_KEY = "opsclaw-api-key-2026"
+API_KEY = "bastion-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 
 class JuiceShopScanner:
@@ -351,16 +351,16 @@ if __name__ == "__main__":
             print(f"  - {f['path']}: {', '.join(f.get('notes', []))}")
 ```
 
-### 2.3 OpsClaw를 통한 스캔 실행
+### 2.3 Bastion를 통한 스캔 실행
 
 ```bash
-# 스캔 결과를 OpsClaw dispatch로 수집
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+# 스캔 결과를 Bastion dispatch로 수집
+export BASTION_API_KEY=bastion-api-key-2026
 
 # web 서버에서 직접 JuiceShop 엔드포인트 스캔
 curl -s -X POST "http://localhost:8000/projects/${PB_PID}/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -544,13 +544,13 @@ if __name__ == "__main__":
 ### 4.1 자동 익스플로잇 실행
 
 ```bash
-# LLM이 수립한 전략을 OpsClaw execute-plan으로 실행
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+# LLM이 수립한 전략을 Bastion execute-plan으로 실행
+export BASTION_API_KEY=bastion-api-key-2026
 
 # 3단계 익스플로잇 실행
 curl -s -X POST "http://localhost:8000/projects/${PB_PID}/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -587,11 +587,11 @@ import time
 import requests
 
 MANAGER_URL = "http://localhost:8000"
-API_KEY = "opsclaw-api-key-2026"
+API_KEY = "bastion-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 
 class ExploitExecutor:
-    """검증된 공격 전략을 OpsClaw를 통해 실행한다."""
+    """검증된 공격 전략을 Bastion를 통해 실행한다."""
 
     def __init__(self, project_id: str):
         self.project_id = project_id
@@ -617,7 +617,7 @@ class ExploitExecutor:
             print("[EXEC] 실행할 태스크 없음")
             return []
 
-        # OpsClaw execute-plan으로 일괄 실행
+        # Bastion execute-plan으로 일괄 실행
         try:
             resp = requests.post(
                 f"{MANAGER_URL}/projects/{self.project_id}/execute-plan",
@@ -662,7 +662,7 @@ class ExploitExecutor:
 
 
 if __name__ == "__main__":
-    print("ExploitExecutor — OpsClaw 프로젝트 ID로 초기화하여 사용")
+    print("ExploitExecutor — Bastion 프로젝트 ID로 초기화하여 사용")
     print("사용법:")
     print("  executor = ExploitExecutor('프로젝트ID')")
     print("  executor.execute_strategy(validated_strategy)")
@@ -673,18 +673,18 @@ if __name__ == "__main__":
 
 ```bash
 # 프로젝트 B evidence 확인
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 # evidence 요약
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/${PB_PID}/evidence/summary" | python3 -m json.tool
 
 # 전체 replay
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/${PB_PID}/replay" | python3 -m json.tool
 
 # PoW 블록 확인 (web 서버 에이전트)
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/blocks?agent_id=http://10.20.30.80:8002" | python3 -m json.tool
 ```
 
@@ -703,29 +703,29 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 | nftables 차단 모듈 | [ ] | 차단 명령 실행 (dry_run 포함) |
 | Slack 알림 | [ ] | 알림 1건 이상 전송 |
 | Evidence 기록 | [ ] | evidence 10건 이상 |
-| OpsClaw 프로젝트 | [ ] | 프로젝트 ID 확인 |
+| Bastion 프로젝트 | [ ] | 프로젝트 ID 확인 |
 
 ### 5.2 프로젝트 A+B 통합 데모
 
 ```bash
 # 프로젝트 A와 B의 evidence를 함께 조회하여 통합 현황 파악
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 echo "=== 프로젝트 A (인시던트 대응) ==="
 # 프로젝트 A evidence
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/${PA_PID}/evidence/summary" 2>/dev/null | python3 -m json.tool || echo "ID 필요"
 
 echo ""
 echo "=== 프로젝트 B (CTF 에이전트) ==="
 # 프로젝트 B evidence
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/${PB_PID}/evidence/summary" 2>/dev/null | python3 -m json.tool || echo "ID 필요"
 
 echo ""
 echo "=== 전체 PoW 리더보드 ==="
 # 에이전트별 작업량 비교
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/leaderboard" | python3 -m json.tool
 ```
 
@@ -733,13 +733,13 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ```bash
 # Red Agent(프로젝트 B)가 발견한 취약점을 Blue Agent(프로젝트 A)가 방어
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 # Red Agent 발견 → Blue Agent 방어 연계 태스크
 # Red가 발견한 SQL Injection을 Blue가 탐지하는지 확인
 curl -s -X POST "http://localhost:8000/projects/${PA_PID}/dispatch" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "tail -20 /var/log/suricata/eve.json 2>/dev/null | grep -i sql | head -5 || echo no-sqli-alerts",
     "subagent_url": "http://10.20.30.1:8002"
@@ -760,7 +760,7 @@ curl -s -X POST "http://localhost:8000/projects/${PA_PID}/dispatch" \
 | 스캔 결과 | 발견된 엔드포인트와 흥미로운 점 |
 | 공격 전략 | LLM이 수립한 공격 계획 |
 | 익스플로잇 | 성공한 취약점 목록 |
-| Evidence | OpsClaw evidence 수와 주요 기록 |
+| Evidence | Bastion evidence 수와 주요 기록 |
 | 프로젝트 A 연계 | Red→Blue 연동 현황 |
 
 ### 6.2 프로젝트 과제
@@ -784,6 +784,6 @@ curl -s -X POST "http://localhost:8000/projects/${PA_PID}/dispatch" \
 - 발표 슬라이드 준비 (팀당 10분)
 
 **제출물**:
-- OpsClaw 프로젝트 B ID
+- Bastion 프로젝트 B ID
 - evidence summary 스크린샷
 - 발견 취약점 리스트 (JSON)

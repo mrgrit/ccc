@@ -10,13 +10,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +28,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -141,19 +141,19 @@ sshpass -p1 ssh secu@10.20.30.1 "grep -i 'scan' /var/log/suricata/fast.log 2>/de
 
 # 2단계: 초기 접근 (Initial Access) - TA0001
 # SSH 무차별 대입 공격
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
+sshpass -p1 ssh bastion@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
   awk '{print \$(NF-3)}' | sort | uniq -c | sort -rn | head -5"
 
 # 무차별 대입 후 성공 여부
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep 'Accepted password' /var/log/auth.log 2>/dev/null | tail -5"
+sshpass -p1 ssh bastion@10.20.30.201 "grep 'Accepted password' /var/log/auth.log 2>/dev/null | tail -5"
 
 # 3단계: 실행 (Execution) - TA0002
 # 로그인 후 실행된 명령 (auth.log에서 sudo 사용 확인)
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep 'sudo:' /var/log/auth.log 2>/dev/null | tail -10"
+sshpass -p1 ssh bastion@10.20.30.201 "grep 'sudo:' /var/log/auth.log 2>/dev/null | tail -10"
 
 # 4단계: 권한 상승 (Privilege Escalation) - TA0004
 # sudo를 통한 root 권한 획득
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep 'COMMAND=' /var/log/auth.log 2>/dev/null | tail -10"
+sshpass -p1 ssh bastion@10.20.30.201 "grep 'COMMAND=' /var/log/auth.log 2>/dev/null | tail -10"
 ```
 
 ### 2.2 시나리오: 웹 공격 체인
@@ -261,26 +261,26 @@ sshpass -p1 ssh secu@10.20.30.1 "grep -i 'scan' /var/log/suricata/fast.log 2>/de
 echo ""
 echo "=== 2. 초기 접근 시도 ==="
 echo "SSH 무차별 대입:"
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep -c 'Failed password' /var/log/auth.log 2>/dev/null || echo '0'"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh bastion@10.20.30.201 "grep -c 'Failed password' /var/log/auth.log 2>/dev/null || echo '0'"  # 비밀번호 자동입력 SSH
 echo "웹 공격 시도:"
 sshpass -p1 ssh web@10.20.30.80 "grep -cE 'union|select|script' /var/log/nginx/access.log 2>/dev/null || echo '0'"  # 비밀번호 자동입력 SSH
 
 echo ""
 echo "=== 3. 초기 접근 성공 ==="
 echo "외부IP SSH 로그인 성공:"
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep 'Accepted' /var/log/auth.log 2>/dev/null | grep -v '192.168.208' | head -5"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh bastion@10.20.30.201 "grep 'Accepted' /var/log/auth.log 2>/dev/null | grep -v '192.168.208' | head -5"  # 비밀번호 자동입력 SSH
 
 echo ""
 echo "=== 4. 권한 상승 ==="
 echo "sudo 사용:"
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep 'COMMAND=' /var/log/auth.log 2>/dev/null | tail -5"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh bastion@10.20.30.201 "grep 'COMMAND=' /var/log/auth.log 2>/dev/null | tail -5"  # 비밀번호 자동입력 SSH
 
 echo ""
 echo "=== 5. 지속성 확보 (의심) ==="
 echo "cron 변경:"
-sshpass -p1 ssh opsclaw@10.20.30.201 "ls -la /var/spool/cron/crontabs/ 2>/dev/null"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh bastion@10.20.30.201 "ls -la /var/spool/cron/crontabs/ 2>/dev/null"  # 비밀번호 자동입력 SSH
 echo "SSH authorized_keys:"
-sshpass -p1 ssh opsclaw@10.20.30.201 "ls -la ~/.ssh/authorized_keys 2>/dev/null || echo '없음'"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh bastion@10.20.30.201 "ls -la ~/.ssh/authorized_keys 2>/dev/null || echo '없음'"  # 비밀번호 자동입력 SSH
 ```
 
 ---

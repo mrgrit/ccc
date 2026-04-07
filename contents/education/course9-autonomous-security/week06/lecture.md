@@ -4,20 +4,20 @@
 - SHA-256 해시 함수의 원리와 보안에서의 역할을 이해한다
 - PoW(Proof of Work) 블록체인의 구조와 동작 원리를 설명할 수 있다
 - Nonce mining 과정을 직접 수행하고 난이도의 의미를 체감한다
-- OpsClaw PoW 블록을 조회·검증하여 작업 무결성을 확인할 수 있다
+- Bastion PoW 블록을 조회·검증하여 작업 무결성을 확인할 수 있다
 - 리더보드와 보상 시스템의 구조를 이해한다
 
 ## 실습 환경 (공통)
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -29,7 +29,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -64,7 +64,7 @@
 ## 학습 목표
 - SHA-256과 PoW 원리를 이해한다
 - Nonce mining을 직접 수행한다
-- OpsClaw PoW 블록을 조회·검증한다
+- Bastion PoW 블록을 조회·검증한다
 - 리더보드와 보상 구조를 파악한다
 
 ## 전제 조건
@@ -113,7 +113,7 @@
 
 ### 2.1 블록 구조
 
-OpsClaw의 각 PoW 블록은 다음 필드를 포함한다:
+Bastion의 각 PoW 블록은 다음 필드를 포함한다:
 
 ```
   PoW Block #N
@@ -184,8 +184,8 @@ Nonce mining은 블록 해시가 특정 조건(난이도)을 만족하는 nonce 
 > **실전 활용**: 보안 자동 대응의 최적 전략 학습, 오탐 감소를 위한 임계값 자동 조정, 적응형 보안 정책 구축에 활용한다
 
 ```bash
-# opsclaw 서버 접속
-ssh opsclaw@10.20.30.201
+# bastion 서버 접속
+ssh bastion@10.20.30.201
 ```
 
 ```bash
@@ -306,20 +306,20 @@ PYTHON
 
 ---
 
-## 4. OpsClaw PoW 블록 조회 (40분)
+## 4. Bastion PoW 블록 조회 (40분)
 
 ### 4.1 작업 실행 후 PoW 블록 확인
 
 ```bash
 # API 키 설정
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 ```
 
 ```bash
 # PoW 블록 생성을 위한 프로젝트 생성 및 실행
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "week06-pow-practice",
     "request_text": "PoW 블록 생성 및 검증 실습",
@@ -331,16 +331,16 @@ curl -s -X POST http://localhost:8000/projects \
 export PROJECT_ID="반환된-프로젝트-ID"
 # stage 전환
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 ```
 
 ```bash
 # 3개 task 실행 → 3개 PoW 블록 생성
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -371,7 +371,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # 프로젝트별 PoW 블록 조회
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/blocks?project_id=$PROJECT_ID" \
   | python3 -c "
 import sys, json
@@ -395,7 +395,7 @@ if isinstance(blocks, list):
 
 ```bash
 # 전체 PoW 체인 무결성 검증
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/verify?agent_id=http://localhost:8002" \
   | python3 -m json.tool
 # 정상: {"valid": true, "blocks": N, "orphans": 0, "tampered": []}
@@ -405,7 +405,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ```bash
 # 특정 에이전트의 체인 검증
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/verify?agent_id=http://10.20.30.1:8002" \
   | python3 -m json.tool
 # secu SubAgent의 체인만 검증
@@ -415,7 +415,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ```bash
 # secu SubAgent의 블록만 조회
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/blocks?agent_id=http://10.20.30.1:8002" \
   | python3 -m json.tool
 # secu에서 실행된 모든 task의 PoW 블록 목록
@@ -423,7 +423,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ```bash
 # web SubAgent의 블록만 조회
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/blocks?agent_id=http://10.20.30.80:8002" \
   | python3 -m json.tool
 ```
@@ -436,7 +436,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ```bash
 # 보상 랭킹 조회
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   http://localhost:8000/pow/leaderboard | python3 -c "
 import sys, json
 # 리더보드를 순위별로 출력
@@ -467,7 +467,7 @@ if isinstance(data, list):
 # 프로젝트 완료 보고서
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "summary": "Week06 PoW 작업증명 실습 완료",
     "outcome": "success",
@@ -475,7 +475,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
       "SHA-256 해시 함수 직접 실험 (눈사태 효과 확인)",
       "Python으로 Nonce mining 구현 (난이도 1~4 비교)",
       "3-블록 해시 체인 구현 및 위변조 탐지 시뮬레이션",
-      "OpsClaw PoW 블록 생성·조회·검증",
+      "Bastion PoW 블록 생성·조회·검증",
       "리더보드로 에이전트별 보상 점수 확인"
     ]
   }' | python3 -m json.tool
@@ -488,8 +488,8 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
 ### 토론 주제
 
 1. **PoW의 보안 가치**: 해시 체인 없이도 DB에 로그를 기록하면 되지 않는가? PoW가 추가로 보장하는 것은?
-2. **난이도 설정**: OpsClaw에서 PoW 난이도를 높이면 보안은 올라가지만 실행 속도가 떨어진다. 적절한 난이도는?
-3. **블록체인 vs 전통 감사**: 기존 SIEM 로그와 OpsClaw PoW 블록의 감사 증거로서의 차이는?
+2. **난이도 설정**: Bastion에서 PoW 난이도를 높이면 보안은 올라가지만 실행 속도가 떨어진다. 적절한 난이도는?
+3. **블록체인 vs 전통 감사**: 기존 SIEM 로그와 Bastion PoW 블록의 감사 증거로서의 차이는?
 
 ---
 
@@ -499,7 +499,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
 Python으로 5-블록 해시 체인을 구현하고, 3번째 블록을 변조하여 무결성 검증이 실패하는 것을 시연하라. 코드와 실행 결과를 제출한다.
 
 ### 과제 2: PoW 블록 분석 (필수)
-OpsClaw에서 최소 5개의 task를 실행하고, 생성된 PoW 블록의 block_hash, prev_hash, nonce를 표로 정리하라. 체인의 연결 관계를 그림으로 그린다.
+Bastion에서 최소 5개의 task를 실행하고, 생성된 PoW 블록의 block_hash, prev_hash, nonce를 표로 정리하라. 체인의 연결 관계를 그림으로 그린다.
 
 ### 과제 3: 난이도 벤치마크 (선택)
 Python mining 코드를 사용하여 난이도 1~6까지 각각 100회 mining하고, 평균 시도 횟수와 소요 시간의 그래프를 그린다.
@@ -512,7 +512,7 @@ Python mining 코드를 사용하여 난이도 1~6까지 각각 100회 mining하
 - [ ] 해시 체인이 위변조를 탐지하는 원리를 설명할 수 있는가?
 - [ ] Nonce mining의 과정을 단계별로 설명할 수 있는가?
 - [ ] 난이도가 mining 시간에 미치는 영향을 수치로 설명할 수 있는가?
-- [ ] OpsClaw에서 PoW 블록을 조회할 수 있는가?
+- [ ] Bastion에서 PoW 블록을 조회할 수 있는가?
 - [ ] PoW 체인 무결성 검증 API를 사용할 수 있는가?
 - [ ] 리더보드에서 에이전트별 보상 점수를 확인할 수 있는가?
 
@@ -523,7 +523,7 @@ Python mining 코드를 사용하여 난이도 1~6까지 각각 100회 mining하
 **Week 07: 강화학습(RL)과 보상**
 - Q-learning과 UCB1 알고리즘 기초
 - Reward 설계와 risk_level 최적화
-- OpsClaw RL 학습 및 추천 API 활용
+- Bastion RL 학습 및 추천 API 활용
 - 보상 데이터 기반 자율 의사결정
 
 ---
@@ -546,7 +546,7 @@ Python mining 코드를 사용하여 난이도 1~6까지 각각 100회 mining하
 **Q4.** PoW 체인에서 중간 블록을 변조하면?
 - (a) 아무 일도 없다  (b) 그 블록만 무효화  (c) **해당 블록 이후 모든 블록의 연결이 깨진다**  (d) 자동으로 복구된다
 
-**Q5.** OpsClaw에서 risk_level=critical의 기본 보상은?
+**Q5.** Bastion에서 risk_level=critical의 기본 보상은?
 - (a) 1.0  (b) 2.0  (c) 3.0  (d) **5.0**
 
 **정답:** Q1:b, Q2:b, Q3:c, Q4:c, Q5:d

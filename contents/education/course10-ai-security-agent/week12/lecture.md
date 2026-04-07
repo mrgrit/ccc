@@ -4,7 +4,7 @@
 
 - AI 보안 에이전트의 성능 평가 프레임워크를 설계한다
 - 정밀도/재현율/F1 등 평가 지표를 보안 에이전트에 적용한다
-- OpsClaw PoW 리더보드를 활용하여 에이전트 간 성능을 비교한다
+- Bastion PoW 리더보드를 활용하여 에이전트 간 성능을 비교한다
 - A/B 테스트를 설계하고 실행하여 에이전트 개선 효과를 측정한다
 - RL(강화학습) 수렴 분석을 통해 에이전트 학습 효과를 평가한다
 
@@ -12,7 +12,7 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
@@ -85,9 +85,9 @@ AI 보안 에이전트의 성능을 정량적으로 측정하지 않으면:
   개선 추이          dry_run 비율
 ```
 
-### 1.3 OpsClaw 기반 평가 데이터
+### 1.3 Bastion 기반 평가 데이터
 
-OpsClaw는 다음 데이터를 자동으로 수집한다:
+Bastion는 다음 데이터를 자동으로 수집한다:
 
 | 데이터 소스 | 평가 지표 | API |
 |------------|----------|-----|
@@ -332,19 +332,19 @@ if __name__ == "__main__":
 ### 3.1 PoW 리더보드 조회
 
 ```bash
-# OpsClaw PoW 리더보드 조회
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+# Bastion PoW 리더보드 조회
+export BASTION_API_KEY=bastion-api-key-2026
 
 # 전체 리더보드
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/leaderboard" | python3 -m json.tool
 
 # 특정 에이전트의 PoW 블록 조회
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/blocks?agent_id=http://localhost:8002" | python3 -m json.tool
 
 # 체인 무결성 검증
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
 ```
 
@@ -357,11 +357,11 @@ import json
 import requests
 
 MANAGER_URL = "http://localhost:8000"
-API_KEY = "opsclaw-api-key-2026"
+API_KEY = "bastion-api-key-2026"
 HEADERS = {"X-API-Key": API_KEY}
 
 AGENTS = {
-    "opsclaw": "http://localhost:8002",
+    "bastion": "http://localhost:8002",
     "secu": "http://10.20.30.1:8002",
     "web": "http://10.20.30.80:8002",
     "siem": "http://10.20.30.100:8002",
@@ -407,7 +407,7 @@ def get_agent_stats(agent_name: str, agent_url: str) -> dict:
 def print_dashboard():
     """에이전트 대시보드를 출력한다."""
     print("=" * 70)
-    print("  OpsClaw 에이전트 성능 대시보드")
+    print("  Bastion 에이전트 성능 대시보드")
     print("=" * 70)
     print(f"{'에이전트':<10} {'URL':<30} {'블록수':>6} {'체인':>6} {'고아':>4}")
     print("-" * 70)
@@ -477,7 +477,7 @@ import requests
 
 OLLAMA_URL = "http://192.168.0.105:11434"
 MANAGER_URL = "http://localhost:8000"
-API_KEY = "opsclaw-api-key-2026"
+API_KEY = "bastion-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 
 # 테스트 경보 데이터
@@ -617,16 +617,16 @@ if __name__ == "__main__":
     run_ab_test()
 ```
 
-### 4.3 OpsClaw를 통한 A/B 테스트
+### 4.3 Bastion를 통한 A/B 테스트
 
 ```bash
-# OpsClaw 프로젝트 2개로 A/B 테스트 수행
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+# Bastion 프로젝트 2개로 A/B 테스트 수행
+export BASTION_API_KEY=bastion-api-key-2026
 
 # Variant A 프로젝트
 RESP_A=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"week12-ab-variant-A","request_text":"A/B 테스트 Variant A","master_mode":"external"}')
 # 프로젝트 A ID 추출
 PID_A=$(echo "$RESP_A" | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
@@ -634,7 +634,7 @@ PID_A=$(echo "$RESP_A" | python3 -c "import sys,json; print(json.load(sys.stdin)
 # Variant B 프로젝트
 RESP_B=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"week12-ab-variant-B","request_text":"A/B 테스트 Variant B","master_mode":"external"}')
 # 프로젝트 B ID 추출
 PID_B=$(echo "$RESP_B" | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
@@ -643,10 +643,10 @@ PID_B=$(echo "$RESP_B" | python3 -c "import sys,json; print(json.load(sys.stdin)
 for PID in $PID_A $PID_B; do
   # plan 단계로 전환
   curl -s -X POST "http://localhost:8000/projects/${PID}/plan" \
-    -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+    -H "X-API-Key: $BASTION_API_KEY" > /dev/null
   # execute 단계로 전환
   curl -s -X POST "http://localhost:8000/projects/${PID}/execute" \
-    -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+    -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 done
 echo "Variant A: $PID_A"
 echo "Variant B: $PID_B"
@@ -656,17 +656,17 @@ for PID in $PID_A $PID_B; do
   # 동일한 태스크를 양쪽 프로젝트에 실행
   curl -s -X POST "http://localhost:8000/projects/${PID}/execute-plan" \
     -H "Content-Type: application/json" \
-    -H "X-API-Key: $OPSCLAW_API_KEY" \
+    -H "X-API-Key: $BASTION_API_KEY" \
     -d '{"tasks":[{"order":1,"instruction_prompt":"hostname","risk_level":"low"},{"order":2,"instruction_prompt":"uptime","risk_level":"low"}],"subagent_url":"http://localhost:8002"}' > /dev/null
 done
 echo "양쪽 태스크 실행 완료"
 
 # evidence 비교
 echo "=== Variant A ==="
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/${PID_A}/evidence/summary" | python3 -m json.tool
 echo "=== Variant B ==="
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/${PID_B}/evidence/summary" | python3 -m json.tool
 ```
 
@@ -674,7 +674,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ## Part 5: RL 수렴 분석 (2:10-2:40)
 
-### 5.1 OpsClaw RL 시스템 개요
+### 5.1 Bastion RL 시스템 개요
 
 ```
 태스크 실행  보상 계산
@@ -688,23 +688,23 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 ### 5.2 RL 학습 실행
 
 ```bash
-# OpsClaw RL 학습 실행
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+# Bastion RL 학습 실행
+export BASTION_API_KEY=bastion-api-key-2026
 
 # 1. RL 학습 실행 (기존 task_reward 데이터 사용)
 curl -s -X POST "http://localhost:8000/rl/train" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -m json.tool
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
 # 2. 학습된 정책 조회
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/rl/policy" | python3 -m json.tool
 
 # 3. 추천 조회 — 특정 에이전트/위험도에 대한 최적 행동
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/rl/recommend?agent_id=http://localhost:8002&risk_level=low" | python3 -m json.tool
 
 # 4. 다른 위험도로 추천 조회
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/rl/recommend?agent_id=http://localhost:8002&risk_level=critical" | python3 -m json.tool
 ```
 
@@ -854,14 +854,14 @@ if __name__ == "__main__":
 1. 10건의 보안 경보 테스트 데이터를 작성
 2. LLM 에이전트로 경보를 분석하여 threat/benign 판정
 3. Confusion Matrix와 F1 Score 계산
-4. OpsClaw PoW 리더보드와 결합하여 종합 리포트 생성
+4. Bastion PoW 리더보드와 결합하여 종합 리포트 생성
 5. 결과를 completion-report로 기록
 
 ### 6.2 퀴즈
 
 **Q1.** 정밀도(Precision)가 낮고 재현율(Recall)이 높은 보안 에이전트의 실무적 문제점을 설명하시오.
 
-**Q2.** OpsClaw의 PoW 리더보드가 에이전트 평가에 활용될 수 있는 이유를 3가지 서술하시오.
+**Q2.** Bastion의 PoW 리더보드가 에이전트 평가에 활용될 수 있는 이유를 3가지 서술하시오.
 
 **Q3.** A/B 테스트에서 통제 변인(temperature 등)을 하나만 변경해야 하는 이유를 설명하시오.
 

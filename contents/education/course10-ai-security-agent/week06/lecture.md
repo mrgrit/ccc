@@ -1,7 +1,7 @@
 # Week 06: 서버 사이드 하네스 구축 (2) — Playbook+RL
 
 ## 학습 목표
-- Playbook을 설계하고 OpsClaw에 등록할 수 있다
+- Playbook을 설계하고 Bastion에 등록할 수 있다
 - execute-plan으로 복수 Task를 병렬/순차 실행할 수 있다
 - PoW(Proof of Work) 보상 시스템의 원리를 이해한다
 - Q-learning 기반 RL 정책 학습을 실행할 수 있다
@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -210,17 +210,17 @@ JSONEOF
 cat ~/lab/week06/security_check_playbook.json | python3 -m json.tool
 ```
 
-### 3.2 Playbook을 OpsClaw에 등록
+### 3.2 Playbook을 Bastion에 등록
 
 ```bash
 # Playbook 등록 API 호출
 curl -s -X POST http://localhost:8000/playbooks \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d @~/lab/week06/security_check_playbook.json | python3 -m json.tool
 
 # 등록된 Playbook 목록 확인
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   http://localhost:8000/playbooks | python3 -m json.tool
 ```
 
@@ -230,13 +230,13 @@ curl -s -H "X-API-Key: opsclaw-api-key-2026" \
 cat > ~/lab/week06/run_playbook.py << 'PYEOF'
 """
 Week 06 실습: Playbook 기반 프로젝트 실행
-사전 정의된 Playbook을 OpsClaw execute-plan으로 실행한다.
+사전 정의된 Playbook을 Bastion execute-plan으로 실행한다.
 """
 import requests
 import json
 
-OPSCLAW = "http://localhost:8000"
-API_KEY = "opsclaw-api-key-2026"
+BASTION = "http://localhost:8000"
+API_KEY = "bastion-api-key-2026"
 HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
 # Playbook 로드
@@ -244,10 +244,10 @@ with open("/root/lab/week06/security_check_playbook.json") as f:
     playbook = json.load(f)
 
 def run_playbook(playbook: dict, subagent_url: str, server_name: str):
-    """Playbook을 OpsClaw 프로젝트로 실행"""
+    """Playbook을 Bastion 프로젝트로 실행"""
 
     # 1. 프로젝트 생성
-    project = requests.post(f"{OPSCLAW}/projects", headers=HEADERS, json={
+    project = requests.post(f"{BASTION}/projects", headers=HEADERS, json={
         "name": f"playbook-{playbook['name']}-{server_name}",
         "request_text": f"{playbook['description']} ({server_name})",
         "master_mode": "external"
@@ -256,8 +256,8 @@ def run_playbook(playbook: dict, subagent_url: str, server_name: str):
     print(f"  Project: {pid}")
 
     # 2. Stage 전환
-    requests.post(f"{OPSCLAW}/projects/{pid}/plan", headers=HEADERS)
-    requests.post(f"{OPSCLAW}/projects/{pid}/execute", headers=HEADERS)
+    requests.post(f"{BASTION}/projects/{pid}/plan", headers=HEADERS)
+    requests.post(f"{BASTION}/projects/{pid}/execute", headers=HEADERS)
 
     # 3. Playbook steps → execute-plan tasks 변환
     tasks = []
@@ -271,7 +271,7 @@ def run_playbook(playbook: dict, subagent_url: str, server_name: str):
 
     # 4. 실행
     result = requests.post(
-        f"{OPSCLAW}/projects/{pid}/execute-plan",
+        f"{BASTION}/projects/{pid}/execute-plan",
         headers=HEADERS,
         json={"tasks": tasks, "subagent_url": subagent_url}
     ).json()
@@ -283,7 +283,7 @@ def run_playbook(playbook: dict, subagent_url: str, server_name: str):
         print(f"    [{step_name}] {output}")
 
     # 6. 완료 보고서
-    requests.post(f"{OPSCLAW}/projects/{pid}/completion-report", headers=HEADERS, json={
+    requests.post(f"{BASTION}/projects/{pid}/completion-report", headers=HEADERS, json={
         "summary": f"Playbook '{playbook['name']}' 실행 완료 ({server_name})",
         "outcome": "success",
         "work_details": [f"Step {s['order']}: {s['name']}" for s in playbook["steps"]]
@@ -296,8 +296,8 @@ print("=" * 60)
 print(f"Playbook: {playbook['name']}")
 print("=" * 60)
 
-print("\n--- opsclaw (localhost) ---")
-pid = run_playbook(playbook, "http://localhost:8002", "opsclaw")
+print("\n--- bastion (localhost) ---")
+pid = run_playbook(playbook, "http://localhost:8002", "bastion")
 print(f"\n  완료! Project ID: {pid}")
 PYEOF
 
@@ -315,7 +315,7 @@ python3 ~/lab/week06/run_playbook.py
 # 프로젝트 생성
 PROJECT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "name": "week06-pow-demo",
     "request_text": "PoW 보상 시스템 실습",
@@ -326,14 +326,14 @@ echo "Project: $PID"
 
 # Stage 전환
 curl -s -X POST http://localhost:8000/projects/${PID}/plan \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 curl -s -X POST http://localhost:8000/projects/${PID}/execute \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 # 다양한 risk_level로 Task 실행
 curl -s -X POST http://localhost:8000/projects/${PID}/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order": 1, "instruction_prompt": "hostname", "risk_level": "low"},
@@ -350,7 +350,7 @@ curl -s -X POST http://localhost:8000/projects/${PID}/execute-plan \
 ```bash
 # 현재 PoW 블록 조회
 echo "=== PoW 블록 목록 ==="
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   "http://localhost:8000/pow/blocks?agent_id=http://localhost:8002" | \
   python3 -c "
 import sys, json
@@ -373,7 +373,7 @@ for b in block_list[-5:]:
 ```bash
 # 체인 무결성 검증
 echo "=== PoW 체인 검증 ==="
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   "http://localhost:8000/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
 
 # 정상 출력 예시:
@@ -385,12 +385,12 @@ curl -s -H "X-API-Key: opsclaw-api-key-2026" \
 ```bash
 # 보상 리더보드
 echo "=== 보상 리더보드 ==="
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   http://localhost:8000/pow/leaderboard | python3 -m json.tool
 
 # 프로젝트 작업 Replay (전체 재현)
 echo "=== 프로젝트 Replay ==="
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   http://localhost:8000/projects/${PID}/replay | python3 -m json.tool
 ```
 
@@ -405,14 +405,14 @@ PoW 블록을 조회하고 보상을 분석한다.
 import requests
 import json
 
-OPSCLAW = "http://localhost:8000"
-HEADERS = {"X-API-Key": "opsclaw-api-key-2026"}
+BASTION = "http://localhost:8000"
+HEADERS = {"X-API-Key": "bastion-api-key-2026"}
 
 def analyze_pow(agent_id: str):
     """에이전트별 PoW 분석"""
     # 블록 조회
     blocks_resp = requests.get(
-        f"{OPSCLAW}/pow/blocks",
+        f"{BASTION}/pow/blocks",
         headers=HEADERS,
         params={"agent_id": agent_id}
     ).json()
@@ -421,7 +421,7 @@ def analyze_pow(agent_id: str):
 
     # 검증
     verify = requests.get(
-        f"{OPSCLAW}/pow/verify",
+        f"{BASTION}/pow/verify",
         headers=HEADERS,
         params={"agent_id": agent_id}
     ).json()
@@ -445,7 +445,7 @@ analyze_pow("http://localhost:8002")
 # 리더보드 출력
 print(f"\n{'='*60}")
 print("보상 리더보드")
-lb = requests.get(f"{OPSCLAW}/pow/leaderboard", headers=HEADERS).json()
+lb = requests.get(f"{BASTION}/pow/leaderboard", headers=HEADERS).json()
 if isinstance(lb, list):
     for entry in lb:
         print(f"  {entry.get('agent_id','?')}: {entry.get('total_reward', entry.get('score', 0))}")
@@ -468,11 +468,11 @@ python3 ~/lab/week06/pow_analysis.py
 # Q-learning 학습 트리거
 echo "=== RL 학습 실행 ==="
 curl -s -X POST http://localhost:8000/rl/train \
-  -H "X-API-Key: opsclaw-api-key-2026" | python3 -m json.tool
+  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
 
 # 학습된 정책 확인
 echo "=== RL 정책 상태 ==="
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   http://localhost:8000/rl/policy | python3 -m json.tool
 ```
 
@@ -481,15 +481,15 @@ curl -s -H "X-API-Key: opsclaw-api-key-2026" \
 ```bash
 # risk_level별 추천 조회
 echo "=== low risk 추천 ==="
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   "http://localhost:8000/rl/recommend?agent_id=http://localhost:8002&risk_level=low" | python3 -m json.tool
 
 echo "=== medium risk 추천 ==="
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   "http://localhost:8000/rl/recommend?agent_id=http://localhost:8002&risk_level=medium" | python3 -m json.tool
 
 echo "=== high risk 추천 ==="
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   "http://localhost:8000/rl/recommend?agent_id=http://localhost:8002&risk_level=high" | python3 -m json.tool
 ```
 
@@ -504,14 +504,14 @@ Q-learning 정책에 따라 최적 risk_level을 자동 결정한다.
 import requests
 import json
 
-OPSCLAW = "http://localhost:8000"
-HEADERS = {"X-API-Key": "opsclaw-api-key-2026", "Content-Type": "application/json"}
+BASTION = "http://localhost:8000"
+HEADERS = {"X-API-Key": "bastion-api-key-2026", "Content-Type": "application/json"}
 AGENT_ID = "http://localhost:8002"
 
 def get_rl_recommendation(risk_level: str) -> dict:
     """RL 추천 조회"""
     resp = requests.get(
-        f"{OPSCLAW}/rl/recommend",
+        f"{BASTION}/rl/recommend",
         headers=HEADERS,
         params={"agent_id": AGENT_ID, "risk_level": risk_level}
     )
@@ -520,7 +520,7 @@ def get_rl_recommendation(risk_level: str) -> dict:
 def execute_with_rl(tasks: list):
     """RL 추천을 적용하여 실행"""
     # 1. 프로젝트 생성
-    project = requests.post(f"{OPSCLAW}/projects", headers=HEADERS, json={
+    project = requests.post(f"{BASTION}/projects", headers=HEADERS, json={
         "name": "week06-rl-auto",
         "request_text": "RL 추천 기반 자동 실행",
         "master_mode": "external"
@@ -528,8 +528,8 @@ def execute_with_rl(tasks: list):
     pid = project["id"]
 
     # 2. Stage 전환
-    requests.post(f"{OPSCLAW}/projects/{pid}/plan", headers=HEADERS)
-    requests.post(f"{OPSCLAW}/projects/{pid}/execute", headers=HEADERS)
+    requests.post(f"{BASTION}/projects/{pid}/plan", headers=HEADERS)
+    requests.post(f"{BASTION}/projects/{pid}/execute", headers=HEADERS)
 
     # 3. 각 Task에 RL 추천 적용
     rl_tasks = []
@@ -549,7 +549,7 @@ def execute_with_rl(tasks: list):
 
     # 4. 실행
     result = requests.post(
-        f"{OPSCLAW}/projects/{pid}/execute-plan",
+        f"{BASTION}/projects/{pid}/execute-plan",
         headers=HEADERS,
         json={"tasks": rl_tasks, "subagent_url": AGENT_ID}
     ).json()
@@ -570,7 +570,7 @@ print("=" * 60)
 
 # 학습 먼저 실행
 print("\n[1] RL 학습...")
-requests.post(f"{OPSCLAW}/rl/train", headers=HEADERS)
+requests.post(f"{BASTION}/rl/train", headers=HEADERS)
 
 # RL 적용 실행
 print("\n[2] RL 추천 적용...")
@@ -584,7 +584,7 @@ for r in result.get("results", result.get("task_results", [])):
 # PoW 검증
 print("\n[4] PoW 검증...")
 verify = requests.get(
-    f"{OPSCLAW}/pow/verify",
+    f"{BASTION}/pow/verify",
     headers=HEADERS,
     params={"agent_id": AGENT_ID}
 ).json()
@@ -607,20 +607,20 @@ import requests
 import json
 import time
 
-OPSCLAW = "http://localhost:8000"
-HEADERS = {"X-API-Key": "opsclaw-api-key-2026", "Content-Type": "application/json"}
+BASTION = "http://localhost:8000"
+HEADERS = {"X-API-Key": "bastion-api-key-2026", "Content-Type": "application/json"}
 
 def run_quick_project(name: str, tasks: list):
     """빠른 프로젝트 실행"""
     # 프로젝트 생성 + stage 전환 + 실행을 한 번에
-    project = requests.post(f"{OPSCLAW}/projects", headers=HEADERS, json={
+    project = requests.post(f"{BASTION}/projects", headers=HEADERS, json={
         "name": name, "request_text": name, "master_mode": "external"
     }).json()
     pid = project["id"]
-    requests.post(f"{OPSCLAW}/projects/{pid}/plan", headers=HEADERS)
-    requests.post(f"{OPSCLAW}/projects/{pid}/execute", headers=HEADERS)
+    requests.post(f"{BASTION}/projects/{pid}/plan", headers=HEADERS)
+    requests.post(f"{BASTION}/projects/{pid}/execute", headers=HEADERS)
     # 실행
-    result = requests.post(f"{OPSCLAW}/projects/{pid}/execute-plan", headers=HEADERS, json={
+    result = requests.post(f"{BASTION}/projects/{pid}/execute-plan", headers=HEADERS, json={
         "tasks": tasks, "subagent_url": "http://localhost:8002"
     }).json()
     return result
@@ -651,17 +651,17 @@ for round_num in range(1, 4):
         run_quick_project(f"rl-round{round_num}-{name}", tasks)
         print(f"  {name}: 완료")
     # 매 라운드 후 학습
-    requests.post(f"{OPSCLAW}/rl/train", headers=HEADERS)
+    requests.post(f"{BASTION}/rl/train", headers=HEADERS)
     print(f"  RL 학습 완료\n")
 
 # 최종 정책 확인
 print("=== 최종 RL 정책 ===")
-policy = requests.get(f"{OPSCLAW}/rl/policy", headers=HEADERS).json()
+policy = requests.get(f"{BASTION}/rl/policy", headers=HEADERS).json()
 print(json.dumps(policy, indent=2, ensure_ascii=False))
 
 # 최종 리더보드
 print("\n=== 최종 리더보드 ===")
-lb = requests.get(f"{OPSCLAW}/pow/leaderboard", headers=HEADERS).json()
+lb = requests.get(f"{BASTION}/pow/leaderboard", headers=HEADERS).json()
 print(json.dumps(lb, indent=2, ensure_ascii=False))
 PYEOF
 
@@ -726,4 +726,4 @@ python3 ~/lab/week06/rl_training_loop.py
 
 ---
 
-> **다음 주 예고:** Week 07에서는 Claude Code를 Client-side 하네스로 활용한다. CLAUDE.md 작성, MCP 서버 연동, Hooks 설정을 실습하고, OpsClaw과 Claude Code를 결합한 하이브리드 구성을 구축한다.
+> **다음 주 예고:** Week 07에서는 Claude Code를 Client-side 하네스로 활용한다. CLAUDE.md 작성, MCP 서버 연동, Hooks 설정을 실습하고, Bastion과 Claude Code를 결합한 하이브리드 구성을 구축한다.

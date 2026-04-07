@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -782,4 +782,4 @@ python3 ~/lab/week03/prompt_templates.py
 
 ---
 
-> **다음 주 예고:** Week 04에서는 에이전트 하네스(Harness)의 개념을 학습한다. 에이전트를 안전하게 제어하고 실행하는 프레임워크의 구성요소(Tools, Skills, Hooks, Memory, Agents, Tasks, Permissions)를 이해하고, Client-side(Claude Code)와 Server-side(OpsClaw) 하네스를 비교한다.
+> **다음 주 예고:** Week 04에서는 에이전트 하네스(Harness)의 개념을 학습한다. 에이전트를 안전하게 제어하고 실행하는 프레임워크의 구성요소(Tools, Skills, Hooks, Memory, Agents, Tasks, Permissions)를 이해하고, Client-side(Claude Code)와 Server-side(Bastion) 하네스를 비교한다.

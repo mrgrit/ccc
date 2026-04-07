@@ -10,13 +10,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +28,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -134,7 +134,7 @@ Blue Team: 공격 탐지 → 방어 강화
 # Red Team 미션: web 서버 취약점 탐색
 curl -s -X POST "http://localhost:8000/projects/$PID/dispatch" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "command": "RED_MISSION: web 서버(10.20.30.80)의 열린 포트와 서비스를 탐색하고 보안 취약점을 식별하라",
     "subagent_url": "http://10.20.30.1:8002"
@@ -210,7 +210,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
     \"temperature\": 0.3
   }" | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
 
-# Step 3: OpsClaw로 방어 조치 실행 (승인 후)
+# Step 3: Bastion로 방어 조치 실행 (승인 후)
 ```
 
 ### 4.2 자동화 스크립트
@@ -221,8 +221,8 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 import requests
 
 OLLAMA = "http://192.168.0.105:11434/v1/chat/completions"
-OPSCLAW = "http://localhost:8000"
-API_KEY = "opsclaw-api-key-2026"
+BASTION = "http://localhost:8000"
+API_KEY = "bastion-api-key-2026"
 HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
 def red_team_scan(target):
@@ -267,17 +267,17 @@ print(blue_team_defend(findings))
 # 프로젝트 생성 및 준비
 PID=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"purple-team-lab","request_text":"Purple Team 실습","master_mode":"external"}' \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
 
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 # Red Team: 정보 수집
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1, "instruction_prompt":"ss -tlnp", "risk_level":"low"},
@@ -298,7 +298,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
     "model": "gemma3:12b",
     "messages": [
       {"role": "system", "content": "Red Team 분석가입니다. 수집된 정보에서 보안 취약점을 식별합니다."},
-      {"role": "user", "content": "다음은 대상 서버에서 수집한 정보입니다:\n\n1. 열린 포트: 22(SSH), 80(HTTP), 8000(API), 8002(SubAgent)\n2. HTTP 헤더: Server: nginx/1.24.0\n3. 셸 접근 가능 사용자: root, opsclaw, student\n\n보안 취약점과 공격 가능 경로를 분석하세요."}
+      {"role": "user", "content": "다음은 대상 서버에서 수집한 정보입니다:\n\n1. 열린 포트: 22(SSH), 80(HTTP), 8000(API), 8002(SubAgent)\n2. HTTP 헤더: Server: nginx/1.24.0\n3. 셸 접근 가능 사용자: root, bastion, student\n\n보안 취약점과 공격 가능 경로를 분석하세요."}
     ],
     "temperature": 0.3
   }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
@@ -403,7 +403,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 {"role":"system","content":"단계별로 분석하세요: 1)현상 파악 2)원인 추론 3)ATT&CK 매핑 4)대응 방안"}
 ```
 
-### OpsClaw API 핵심 흐름 요약
+### Bastion API 핵심 흐름 요약
 
 ```
 [1] POST /projects                     → 프로젝트 생성
@@ -421,7 +421,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 [6] GET /projects/{id}/replay           → 타임라인 재구성
 [7] POST /projects/{id}/completion-report → 완료 보고
 
-모든 API에 필수: -H "X-API-Key: opsclaw-api-key-2026"
+모든 API에 필수: -H "X-API-Key: bastion-api-key-2026"
 ```
 
 ---
@@ -433,7 +433,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 **Q1.** Ollama API에서 temperature=0의 효과는?
 - (a) 최대 창의성  (b) **매번 동일한 출력 (결정론적)**  (c) 에러 발생  (d) 속도 향상
 
-**Q2.** OpsClaw execute-plan 실행 전 반드시 거쳐야 하는 단계는?
+**Q2.** Bastion execute-plan 실행 전 반드시 거쳐야 하는 단계는?
 - (a) 서버 재시작  (b) **plan → execute stage 전환**  (c) DB 백업  (d) 코드 컴파일
 
 **Q3.** RL에서 UCB1 탐색 전략의 핵심은?
@@ -442,7 +442,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 **Q4.** Playbook이 LLM adhoc보다 재현성이 높은 이유는?
 - (a) LLM이 더 똑똑해서  (b) **파라미터가 결정론적으로 바인딩되어 동일 명령 생성**  (c) 네트워크가 빨라서  (d) DB가 달라서
 
-**Q5.** OpsClaw evidence가 제공하는 핵심 가치는?
+**Q5.** Bastion evidence가 제공하는 핵심 가치는?
 - (a) 실행 속도 향상  (b) **모든 실행의 자동 기록으로 감사 추적 가능**  (c) 메모리 절약  (d) 코드 자동 생성
 
 **정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
@@ -450,4 +450,4 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 ---
 ---
 
-> **실습 환경 검증 완료** (2026-03-28): Ollama 22모델(gemma3:12b ~5s), OpsClaw 50프로젝트, execute-plan 병렬, RL train/recommend
+> **실습 환경 검증 완료** (2026-03-28): Ollama 22모델(gemma3:12b ~5s), Bastion 50프로젝트, execute-plan 병렬, RL train/recommend

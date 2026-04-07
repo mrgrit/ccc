@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 
 ## 강의 시간 배분 (3시간)
@@ -30,7 +30,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -73,7 +73,7 @@
 | **OWASP** | Open Web Application Security Project | 웹 보안 취약점 연구 국제 단체 | 웹 보안의 표준 기관 |
 | **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 점수 (0~10점) | 질병 위험도 등급 |
 | **CVE** | Common Vulnerabilities and Exposures | 취약점 고유 식별 번호 | 질병의 고유 코드 (예: COVID-19) |
-| **OpsClaw** | OpsClaw | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
+| **Bastion** | Bastion | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
 
 
 ---
@@ -91,7 +91,7 @@
 
 | 호스트 | IP | 역할 |
 |--------|-----|------|
-| opsclaw | 10.20.30.201 | 실습 기지 |
+| bastion | 10.20.30.201 | 실습 기지 |
 | web | 10.20.30.80 | JuiceShop:3000 |
 
 ---
@@ -538,15 +538,15 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100 \
 
 ---
 
-## 9. OpsClaw로 SQLi 테스트 자동화
+## 9. Bastion로 SQLi 테스트 자동화
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # SQLi 테스트 프로젝트 생성
 PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"week04-sqli-test","request_text":"JuiceShop SQLi 취약점 점검","master_mode":"external"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 
@@ -554,14 +554,14 @@ echo "Project ID: $PROJECT_ID"
 
 # Stage 전환
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null     # API 인증 키
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null     # API 인증 키
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null     # API 인증 키
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null     # API 인증 키
 
 # SQLi 테스트 실행
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{                                                # 요청 데이터(body)
     "tasks": [
       {
@@ -574,7 +574,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   }'
 
 # 결과 확인
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   http://localhost:8000/projects/$PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 ```

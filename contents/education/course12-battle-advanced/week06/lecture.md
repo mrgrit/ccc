@@ -6,7 +6,7 @@
 - nftables 연동 자동차단 스크립트를 작성하여 로그 기반 실시간 대응 체계를 구현할 수 있다
 - Cowrie SSH 허니팟을 배포하여 공격자 행동을 수집하고 분석할 수 있다
 - Slack/Webhook 기반 실시간 알림 체계를 구성하여 보안 이벤트에 즉각 대응할 수 있다
-- OpsClaw execute-plan을 통해 다중 서버에 방어 체계를 자동 배포할 수 있다
+- Bastion execute-plan을 통해 다중 서버에 방어 체계를 자동 배포할 수 있다
 
 ## 전제 조건
 - 공방전 기초 과정(course11) 이수 완료
@@ -14,18 +14,18 @@
 - nftables 기본 사용법 (체인, 룰 추가/삭제)
 - Suricata IDS 모드 경험 (Week 01-05에서 룰 작성 경험)
 - Linux 서비스 관리 (systemctl) 기초
-- OpsClaw 플랫폼 기본 사용법 (프로젝트 생성, execute-plan)
+- Bastion 플랫폼 기본 사용법 (프로젝트 생성, execute-plan)
 
 ## 실습 환경 (공통)
 
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
-| opsclaw | 10.20.30.201 | 공격 기지 / Control Plane | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | 공격 기지 / Control Plane | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `sshpass -p1 ssh siem@10.20.30.100` |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -284,7 +284,7 @@ echo "  +----------+------------------------------------------+"
 **배우는 것**: IPS 차단 테스트 방법론, eve.json 로그 분석, 오탐 처리와 룰 튜닝, 차단 통계 모니터링
 
 ```bash
-# -- opsclaw 서버에서 실행 (공격자 역할) --
+# -- bastion 서버에서 실행 (공격자 역할) --
 
 # 1. SQL Injection 차단 테스트
 echo "[+] SQL Injection 차단 테스트:"
@@ -481,9 +481,9 @@ echo "[+] Jail 상태 확인:"
 echo "  fail2ban-client status"
 echo "  fail2ban-client status sshd"
 
-# 4. SSH 브루트포스 시뮬레이션 (opsclaw에서 실행)
+# 4. SSH 브루트포스 시뮬레이션 (bastion에서 실행)
 echo ""
-echo "[+] SSH 브루트포스 시뮬레이션 (opsclaw → web):"
+echo "[+] SSH 브루트포스 시뮬레이션 (bastion → web):"
 echo "  for i in 1 2 3 4; do"
 echo "    echo \"시도 \$i\""
 echo "    sshpass -p 'wrongpass' ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 test@10.20.30.80 2>&1 | tail -1"
@@ -580,9 +580,9 @@ echo "[+] 필터 테스트:"
 echo "  fail2ban-regex /var/log/apache2/access.log /etc/fail2ban/filter.d/apache-scan.conf"
 echo "  fail2ban-regex /var/log/apache2/access.log /etc/fail2ban/filter.d/apache-attack.conf"
 
-# 5. 디렉토리 스캔 시뮬레이션 (opsclaw에서)
+# 5. 디렉토리 스캔 시뮬레이션 (bastion에서)
 echo ""
-echo "[+] 디렉토리 스캔 시뮬레이션 (opsclaw → web):"
+echo "[+] 디렉토리 스캔 시뮬레이션 (bastion → web):"
 echo "  for path in admin login config backup database wp-admin phpmyadmin; do"
 echo "    curl -s -o /dev/null -w '%{http_code} ' http://10.20.30.80/\$path"
 echo "  done"
@@ -938,7 +938,7 @@ echo "  - 지속적인 공격만 차단 임계값에 도달"
 **배우는 것**: Cowrie 설치/설정, 가짜 파일시스템 구성, 세션 로그 분석, 다운로드된 악성코드 수집
 
 ```bash
-# -- opsclaw 서버에서 실행 --
+# -- bastion 서버에서 실행 --
 
 # 1. Cowrie Docker 배포
 echo "[+] Cowrie Docker 배포:"
@@ -1072,7 +1072,7 @@ echo "  cat var/log/cowrie/cowrie.json | jq -r 'select(.eventid==\"cowrie.login.
 **배우는 것**: Slack Incoming Webhook 설정, 이벤트별 알림 스크립트, 알림 피로도 관리
 
 ```bash
-# -- opsclaw 서버에서 실행 --
+# -- bastion 서버에서 실행 --
 
 # 1. 보안 알림 통합 스크립트
 echo "[+] 보안 알림 통합 스크립트:"
@@ -1171,13 +1171,13 @@ echo "  2. 채널 분리: #alerts-critical (high+), #alerts-all (모두)"
 echo "  3. 업무시간: 09-18시 medium 이상, 야간 low 이상"
 echo "  4. 자동 요약: 매시간 차단 IP 수, 알림 통계 보고"
 
-# 5. OpsClaw 방어 상태 통합 점검
+# 5. Bastion 방어 상태 통합 점검
 echo ""
-echo "[+] OpsClaw 다층 방어 상태 점검:"
+echo "[+] Bastion 다층 방어 상태 점검:"
 cat << 'CHECK_EOF'
 curl -X POST http://localhost:8000/projects/{id}/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1, "instruction_prompt":"suricata -T 2>&1 | tail -1", "risk_level":"low", "subagent_url":"http://10.20.30.1:8002"},
@@ -1218,7 +1218,7 @@ CHECK_EOF
 - [ ] Cowrie SSH 허니팟을 배포하고 로그를 분석할 수 있는가?
 - [ ] Slack/Webhook 실시간 알림을 구성할 수 있는가?
 - [ ] 알림 피로도 관리 전략 3가지를 나열할 수 있는가?
-- [ ] OpsClaw로 다층 방어 체계를 통합 배포할 수 있는가?
+- [ ] Bastion로 다층 방어 체계를 통합 배포할 수 있는가?
 
 ---
 

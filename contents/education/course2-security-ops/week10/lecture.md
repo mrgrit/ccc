@@ -10,13 +10,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +28,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -392,18 +392,18 @@ echo 1 | sudo -S cat /var/ossec/ruleset/decoders/0310-ssh_decoders.xml | head -3
 
 ```bash
 echo 1 | sudo -S tee /var/ossec/etc/decoders/local_decoder.xml << 'EOF'
-<decoder name="opsclaw-app">
-  <program_name>opsclaw</program_name>
+<decoder name="bastion-app">
+  <program_name>bastion</program_name>
 </decoder>
 
-<decoder name="opsclaw-app-fields">
-  <parent>opsclaw-app</parent>
+<decoder name="bastion-app-fields">
+  <parent>bastion-app</parent>
   <regex>user=(\S+) action=(\S+) target=(\S+) status=(\S+)</regex>
   <order>user, action, extra_data, status</order>
 </decoder>
 
-<decoder name="opsclaw-login">
-  <parent>opsclaw-app</parent>
+<decoder name="bastion-login">
+  <parent>bastion-app</parent>
   <regex>LOGIN (\S+) from (\S+) status=(\S+)</regex>
   <order>user, srcip, status</order>
 </decoder>
@@ -416,22 +416,22 @@ EOF
 # local_rules.xml에 추가
 echo 1 | sudo -S tee -a /var/ossec/etc/rules/local_rules.xml << 'RULEEOF'
 
-<group name="opsclaw,">
+<group name="bastion,">
   <rule id="100010" level="3">
-    <decoded_as>opsclaw-app</decoded_as>
-    <description>OpsClaw 애플리케이션 이벤트</description>
+    <decoded_as>bastion-app</decoded_as>
+    <description>Bastion 애플리케이션 이벤트</description>
   </rule>
 
   <rule id="100011" level="5">
     <if_sid>100010</if_sid>
     <status>failed</status>
-    <description>OpsClaw 로그인 실패</description>
+    <description>Bastion 로그인 실패</description>
   </rule>
 
   <rule id="100012" level="10" frequency="5" timeframe="120">
     <if_matched_sid>100011</if_matched_sid>
     <same_source_ip />
-    <description>OpsClaw 브루트포스 공격 의심</description>
+    <description>Bastion 브루트포스 공격 의심</description>
   </rule>
 </group>
 RULEEOF
@@ -445,14 +445,14 @@ echo 1 | sudo -S /var/ossec/bin/wazuh-logtest
 
 입력:
 ```
-Mar 27 11:00:00 siem opsclaw: LOGIN admin from 10.20.30.80 status=failed
+Mar 27 11:00:00 siem bastion: LOGIN admin from 10.20.30.80 status=failed
 ```
 
 **예상 출력:**
 ```
 **Phase 2: Completed decoding.
-       name: 'opsclaw-login'
-       parent: 'opsclaw-app'
+       name: 'bastion-login'
+       parent: 'bastion-app'
        srcip: '10.20.30.80'
        srcuser: 'admin'
        status: 'failed'
@@ -460,7 +460,7 @@ Mar 27 11:00:00 siem opsclaw: LOGIN admin from 10.20.30.80 status=failed
 **Phase 3: Completed filtering (rules).
        id: '100011'
        level: '5'
-       description: 'OpsClaw 로그인 실패'
+       description: 'Bastion 로그인 실패'
 ```
 
 ---

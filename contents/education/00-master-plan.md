@@ -3,7 +3,7 @@
 **총 8과목 × 15주 × 3시간 = 360시간**
 **대상:** 대학교 신입생~2학년 (보안 비전공자 포함)
 **방식:** 100% 실습 중심, 모든 명령어 검증 완료, 실환경 재현 가능
-**인프라:** OpsClaw 5대 서버 (opsclaw, secu, web, siem, dgx-spark)
+**인프라:** Bastion 5대 서버 (bastion, secu, web, siem, dgx-spark)
 
 ---
 
@@ -11,7 +11,7 @@
 
 ```
 ┌─────────────────────────────────────────────────────┐
-│  opsclaw (192.168.208.142 / 10.20.30.201)           │
+│  bastion (192.168.208.142 / 10.20.30.201)           │
 │  → Manager API, SubAgent, 교육 control plane        │
 ├─────────────────────────────────────────────────────┤
 │  secu (10.20.30.1) → nftables, Suricata IPS         │
@@ -32,7 +32,7 @@
 
 | 주차 | 주제 | 실습 |
 |------|------|------|
-| 1 | 보안 개론 + 실습 환경 구축 | SSH 접속, 서버 구조 이해, OpsClaw 소개 |
+| 1 | 보안 개론 + 실습 환경 구축 | SSH 접속, 서버 구조 이해, Bastion 소개 |
 | 2 | 정보수집과 정찰 (Reconnaissance) | nmap, whois, dig, robots.txt, 헤더 분석 |
 | 3 | 웹 애플리케이션 구조 이해 | HTTP/HTTPS, 쿠키, 세션, JWT, REST API |
 | 4 | OWASP Top 10 (1): Injection | SQLi 원리, JuiceShop SQLi 실습, 방어 |
@@ -45,7 +45,7 @@
 | 11 | 권한 상승 (Linux) | SUID, sudo, cron, PATH 하이잭, 커널 exploit |
 | 12 | 지속성 확보 + 흔적 제거 | SSH 키, cron backdoor, 로그 삭제, /dev/shm |
 | 13 | MITRE ATT&CK 프레임워크 | 전술/기법 매핑, 공격 체인 설계 |
-| 14 | 자동화 침투 테스트 | OpsClaw 활용 자동 공격, Playbook 기반 재현 |
+| 14 | 자동화 침투 테스트 | Bastion 활용 자동 공격, Playbook 기반 재현 |
 | 15 | 기말: 종합 침투 테스트 | 전체 인프라 대상 모의해킹 + 보고서 작성 |
 
 ### Course 2: 보안시스템/솔루션 운영
@@ -133,7 +133,7 @@
 | 11 | 인시던트 대응 실습 (2): 악성코드 | 의심 파일 분석, 프로세스 조사, 격리 |
 | 12 | 인시던트 대응 실습 (3): 내부 위협 | sudo 남용, 비인가 접근, 데이터 유출 |
 | 13 | 위협 인텔리전스 (CTI) 활용 | OpenCTI 연동, IOC 조회, 위협 헌팅 |
-| 14 | 자동화 관제: OpsClaw Agent Daemon | 자율 탐지 에이전트 구성 + 자극 테스트 |
+| 14 | 자동화 관제: Bastion Agent Daemon | 자율 탐지 에이전트 구성 + 자극 테스트 |
 | 15 | 기말: 종합 인시던트 대응 훈련 | Red Team 공격 → Blue Team 관제/대응 |
 
 ---
@@ -174,8 +174,8 @@
 | 6 | LLM 기반 취약점 분석 | 코드 리뷰, CVE 분석, 패치 권고 자동 생성 |
 | 7 | AI 에이전트 아키텍처 | Master-Manager-SubAgent, 위임, 자율 판단 |
 | 8 | 중간고사: LLM 보안 분석 도구 개발 | 특정 로그 → LLM 분석 → 보고서 자동화 |
-| 9 | OpsClaw 활용 (1): 기본 운용 | 프로젝트 생성, dispatch, execute-plan |
-| 10 | OpsClaw 활용 (2): Playbook + RL | Playbook 생성, 보상 기반 정책 학습 |
+| 9 | Bastion 활용 (1): 기본 운용 | 프로젝트 생성, dispatch, execute-plan |
+| 10 | Bastion 활용 (2): Playbook + RL | Playbook 생성, 보상 기반 정책 학습 |
 | 11 | 자율 미션 (Mission) 실습 | /a2a/mission으로 Red/Blue 자율 미션 |
 | 12 | Agent Daemon: 자율 보안 관제 | explore + daemon + 자극 테스트 |
 | 13 | 분산 지식 아키텍처 | local_knowledge, 경량 모델 지식 전이 |
@@ -219,7 +219,7 @@
 
 ## 실습 검증 원칙
 
-1. **모든 명령어는 OpsClaw 또는 직접 실행으로 검증**
+1. **모든 명령어는 Bastion 또는 직접 실행으로 검증**
 2. **검증 안 된 명령어는 절대 교재에 포함하지 않음**
 3. **각 주차 시작에 전제 조건(prerequisite) 명시**
 4. **각 실습 끝에 검증 방법(expected output) 명시**

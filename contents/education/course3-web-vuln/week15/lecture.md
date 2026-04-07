@@ -10,13 +10,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +28,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -490,32 +490,32 @@ ENDSSH
 
 ---
 
-## 6. OpsClaw 연동 실습
+## 6. Bastion 연동 실습
 
-### 6.1 OpsClaw로 점검 자동화
+### 6.1 Bastion로 점검 자동화
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
-export OPSCLAW_API_KEY=opsclaw-api-key-2026            # 환경 변수 설정
+export BASTION_API_KEY=bastion-api-key-2026            # 환경 변수 설정
 
 # 1. 프로젝트 생성
-echo "=== OpsClaw 프로젝트 생성 ==="
+echo "=== Bastion 프로젝트 생성 ==="
 PROJECT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"final-vuln-assessment","request_text":"기말 종합 점검","master_mode":"external"}')  # 요청 데이터(body)
 PID=$(echo "$PROJECT" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
 echo "Project ID: $PID"
 
 # 2. Stage 전환
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null  # silent 모드 / POST 요청 / API 인증 / OpsClaw 프로젝트
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null  # silent 모드 / POST 요청 / API 인증 / OpsClaw 프로젝트
+curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: $BASTION_API_KEY" > /dev/null  # silent 모드 / POST 요청 / API 인증 / Bastion 프로젝트
+curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: $BASTION_API_KEY" > /dev/null  # silent 모드 / POST 요청 / API 인증 / Bastion 프로젝트
 
 # 3. 점검 실행 (evidence 자동 기록)
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
     "tasks": [
       {"order":1,"instruction_prompt":"curl -sI http://localhost:3000/ | head -15","risk_level":"low"},
@@ -527,7 +527,7 @@ curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
 # 4. evidence 확인
 echo ""
 curl -s "http://localhost:8000/projects/$PID/evidence/summary" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False)[:300])" 2>/dev/null  # API 인증 키
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False)[:300])" 2>/dev/null  # API 인증 키
 ```
 
 ### 6.2 LLM 기반 보고서 품질 검증
@@ -577,7 +577,7 @@ Week 15:    기말          -> 종합 점검 프로젝트
 
 ## 제출물
 1. 취약점 점검 보고서 (PDF 또는 Markdown)
-2. OpsClaw 프로젝트 ID (evidence 자동 확인용)
+2. Bastion 프로젝트 ID (evidence 자동 확인용)
 3. 재현 스크립트 (모든 취약점 재현 가능)
 
 ---

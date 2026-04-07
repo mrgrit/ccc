@@ -10,13 +10,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +28,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -286,8 +286,8 @@ IDS/IPS 알림 -+
 인터넷/학생PC
   |
   v
-[opsclaw] 10.20.30.201
-  역할: 관제 본부 (OpsClaw Manager API)
+[bastion] 10.20.30.201
+  역할: 관제 본부 (Bastion Manager API)
   |
   +----------+----------+
   |          |          |
@@ -317,7 +317,7 @@ IDS/IPS 알림 -+
 > **실전 활용**: 보안 엔지니어가 서버 인수 시 가장 먼저 확인하는 것이 방화벽 규칙 현황이다
 
 ```bash
-# opsclaw 서버에서 secu로 접속
+# bastion 서버에서 secu로 접속
 sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1
 ```
 
@@ -570,7 +570,7 @@ sudo /var/ossec/bin/agent_control -l 2>/dev/null || sudo /var/ossec/bin/manage_a
 Available agents:
    ID: 001, Name: secu, IP: 10.20.30.1, Active
    ID: 002, Name: web, IP: 10.20.30.80, Active
-   ID: 003, Name: opsclaw, IP: 10.20.30.201, Active
+   ID: 003, Name: bastion, IP: 10.20.30.201, Active
 ```
 
 ### 7.4 최근 알림 확인
@@ -645,9 +645,9 @@ exit
 
 ---
 
-## 9. 실습 6: opsclaw 서버에서 전체 점검 (15분)
+## 9. 실습 6: bastion 서버에서 전체 점검 (15분)
 
-opsclaw 서버에서 원격으로 모든 보안 솔루션의 상태를 한 번에 확인해보자.
+bastion 서버에서 원격으로 모든 보안 솔루션의 상태를 한 번에 확인해보자.
 
 ### 9.1 네트워크 연결 확인
 
@@ -776,7 +776,7 @@ active
 - [ ] Wazuh Manager 서비스 `active` 상태 확인
 - [ ] Wazuh 에이전트 목록 조회 성공
 - [ ] OpenCTI 포트(9400) 접근 확인
-- [ ] opsclaw에서 원격 전체 점검 스크립트 실행 성공
+- [ ] bastion에서 원격 전체 점검 스크립트 실행 성공
 
 ---
 

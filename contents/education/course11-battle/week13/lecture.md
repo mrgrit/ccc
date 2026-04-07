@@ -197,7 +197,7 @@ cat << 'OPORD'
 
 1. 상황 (Situation)
    - 대상 네트워크: 10.20.30.0/24
-   - 알려진 호스트: secu(.1), web(.80), siem(.100), opsclaw(.201)
+   - 알려진 호스트: secu(.1), web(.80), siem(.100), bastion(.201)
    - 주 목표: web 서버 플래그 획득 (root 권한)
    - 부 목표: siem 서버 접근, 횡적 이동
 
@@ -561,24 +561,24 @@ done
 
 > **실전 활용**: Purple Team 분석은 Red/Blue 양측의 교훈을 통합하여 조직의 보안을 실질적으로 개선하는 핵심 과정이다.
 
-### Step 2: OpsClaw 결과 기록
+### Step 2: Bastion 결과 기록
 
-> **실습 목적**: 팀 공방전 결과를 OpsClaw에 기록한다.
+> **실습 목적**: 팀 공방전 결과를 Bastion에 기록한다.
 >
-> **배우는 것**: OpsClaw를 이용한 팀 단위 작업 기록
+> **배우는 것**: Bastion를 이용한 팀 단위 작업 기록
 
 ```bash
 RESULT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"week13-team-battle","request_text":"팀 공방전","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "summary": "팀 공방전 완료 — Red Team vs Blue Team 60분",
     "outcome": "success",

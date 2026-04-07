@@ -762,7 +762,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
 sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \
   "tar tzf /tmp/config_backup_*.tar.gz 2>/dev/null | head -20"
 
-# 백업을 관리 서버(opsclaw)로 복사 (오프사이트 보관)
+# 백업을 관리 서버(bastion)로 복사 (오프사이트 보관)
 sshpass -p1 scp -o StrictHostKeyChecking=no \
   web@10.20.30.80:/tmp/config_backup_*.tar.gz /tmp/ 2>/dev/null
 echo "백업 파일 원격 복사 완료"
@@ -923,31 +923,31 @@ AUDIT
 > - sshd -T 권한 오류: root 권한 필요 → `echo 1 | sudo -S sshd -T`
 > - 일부 확인이 실패하는 경우: sudo 없이 실행한 항목 → `echo 1 | sudo -S` 추가
 
-### Step 2: OpsClaw 자동화 멀티 호스트 점검
+### Step 2: Bastion 자동화 멀티 호스트 점검
 
-> **실습 목적**: OpsClaw를 활용하여 여러 서버의 보안 상태를 동시에 점검한다.
+> **실습 목적**: Bastion를 활용하여 여러 서버의 보안 상태를 동시에 점검한다.
 >
-> **배우는 것**: OpsClaw execute-plan을 이용한 멀티 호스트 보안 감사 자동화
+> **배우는 것**: Bastion execute-plan을 이용한 멀티 호스트 보안 감사 자동화
 
 ```bash
-# OpsClaw 프로젝트 생성
+# Bastion 프로젝트 생성
 RESULT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"week10-hardening","request_text":"인프라 하드닝 점검","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 echo "Project ID: $PID"
 
 # Stage 전환
 curl -s -X POST "http://localhost:8000/projects/$PID/plan" \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 curl -s -X POST "http://localhost:8000/projects/$PID/execute" \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 # 멀티 호스트 보안 점검
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1,"title":"web SSH 설정","instruction_prompt":"sshd -T 2>/dev/null | grep -E \"permitrootlogin|passwordauthentication|x11forwarding|maxauthtries\"","risk_level":"low","subagent_url":"http://10.20.30.80:8002"},
@@ -973,7 +973,7 @@ for t in d.get('task_results',[]):
 #   [5] web 비표준 SUID      -> ok
 ```
 
-> **결과 해석**: OpsClaw를 통한 점검 결과는 evidence로 기록되어 나중에 확인할 수 있다. 전체 인프라의 보안 상태를 한 번에 파악할 수 있다.
+> **결과 해석**: Bastion를 통한 점검 결과는 evidence로 기록되어 나중에 확인할 수 있다. 전체 인프라의 보안 상태를 한 번에 파악할 수 있다.
 >
 > **실전 활용**: 공방전 시작 전에 이 자동화 점검을 실행하여 모든 서버의 보안 상태를 빠르게 확인하고, 취약한 항목을 우선 조치한다.
 

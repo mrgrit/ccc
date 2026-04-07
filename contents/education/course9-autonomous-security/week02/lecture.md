@@ -5,19 +5,19 @@
 - 보안 분석에 효과적인 프롬프트 엔지니어링 기법을 적용할 수 있다
 - Tool Calling의 개념과 보안 자동화에서의 역할을 이해한다
 - LLM에게 보안 로그를 분석시키고 결과를 해석할 수 있다
-- OpsClaw의 A2A 프로토콜을 통한 LLM 연동 방식을 파악한다
+- Bastion의 A2A 프로토콜을 통한 LLM 연동 방식을 파악한다
 
 ## 실습 환경 (공통)
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -29,7 +29,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -55,7 +55,7 @@
 | **컨텍스트 윈도우** | Context Window | LLM이 한 번에 처리할 수 있는 토큰 수 | AI의 단기 기억 용량 |
 | **환각** | Hallucination | LLM이 사실이 아닌 내용을 생성하는 현상 | AI의 거짓말 (본인은 진실이라 믿음) |
 | **RAG** | Retrieval-Augmented Generation | 외부 문서를 검색하여 LLM 답변에 반영하는 기법 | 오픈북 시험 |
-| **invoke_llm** | invoke_llm | OpsClaw SubAgent의 LLM 호출 엔드포인트 | AI에게 질문 보내기 |
+| **invoke_llm** | invoke_llm | Bastion SubAgent의 LLM 호출 엔드포인트 | AI에게 질문 보내기 |
 
 ---
 
@@ -68,7 +68,7 @@
 - LLM으로 보안 로그를 분석할 수 있다
 
 ## 전제 조건
-- Week 01 완료 (OpsClaw API 호출 경험)
+- Week 01 완료 (Bastion API 호출 경험)
 - curl 명령어 능숙
 - JSON 포맷 기본 이해
 
@@ -133,7 +133,7 @@ Tool Calling은 LLM이 자체적으로 답할 수 없는 질문에 대해 외부
   "command": "nft list",
   "server": "secu"
   })
-↓ (OpsClaw가 실행)
+↓ (Bastion가 실행)
   SubAgent (secu:8002)
   $ nft list ruleset
   → 결과 반환
@@ -144,7 +144,7 @@ Tool Calling은 LLM이 자체적으로 답할 수 없는 질문에 대해 외부
   (443)이 허용되어 있습니다"
 ```
 
-**OpsClaw에 등록된 Tool 목록**:
+**Bastion에 등록된 Tool 목록**:
 - `run_command`: 서버에서 셸 명령 실행
 - `fetch_log`: 로그 파일 내용 가져오기
 - `query_metric`: 시스템 메트릭 조회
@@ -167,8 +167,8 @@ Tool Calling은 LLM이 자체적으로 답할 수 없는 질문에 대해 외부
 > **실전 활용**: 보안 운영센터(SOC)의 대응 시간(MTTR) 단축, 보안 자동화 성숙도 향상 전략 수립에 활용한다
 
 ```bash
-# opsclaw 서버에 접속
-ssh opsclaw@10.20.30.201
+# bastion 서버에 접속
+ssh bastion@10.20.30.201
 ```
 
 ```bash
@@ -335,22 +335,22 @@ curl -s -X POST http://192.168.0.105:11434/api/chat \
 
 ---
 
-## 4. OpsClaw A2A를 통한 LLM 호출 (40분)
+## 4. Bastion A2A를 통한 LLM 호출 (40분)
 
 ### 4.1 A2A invoke_llm
 
-OpsClaw의 SubAgent에는 LLM 호출 엔드포인트가 내장되어 있다.
+Bastion의 SubAgent에는 LLM 호출 엔드포인트가 내장되어 있다.
 
 ```bash
 # 환경변수 설정
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 ```
 
 ```bash
-# OpsClaw 프로젝트 생성 (LLM 분석 실습용)
+# Bastion 프로젝트 생성 (LLM 분석 실습용)
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "week02-llm-analysis",
     "request_text": "LLM을 활용한 보안 로그 분석 실습",
@@ -364,9 +364,9 @@ curl -s -X POST http://localhost:8000/projects \
 export PROJECT_ID="반환된-프로젝트-ID"
 # stage 전환: plan → execute
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 ```
 
 ### 4.2 실제 로그 수집 후 LLM 분석
@@ -375,7 +375,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
 # Step 1: web 서버에서 실제 접근 로그 수집
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "tail -20 /var/log/auth.log 2>/dev/null || tail -20 /var/log/secure 2>/dev/null || echo no-log-found",
     "subagent_url": "http://10.20.30.80:8002"
@@ -387,7 +387,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 # Step 2: 수집된 로그를 LLM에게 분석 요청 (execute-plan 활용)
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -459,7 +459,7 @@ curl -s -X POST http://192.168.0.105:11434/api/chat \
 
 ---
 
-## 5. OpsClaw에서 LLM 기반 보안 분석 워크플로우 (30분)
+## 5. Bastion에서 LLM 기반 보안 분석 워크플로우 (30분)
 
 ### 5.1 수집-분석-대응 파이프라인
 
@@ -468,7 +468,7 @@ curl -s -X POST http://192.168.0.105:11434/api/chat \
 # Step 1: siem 서버에서 Wazuh 경보 수집
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5 || echo no-wazuh-alerts",
     "subagent_url": "http://10.20.30.100:8002"
@@ -481,9 +481,9 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 보안 분석용 프롬프트 템플릿을 만들어 재사용한다:
 
 ```bash
-# 보안 분석 프롬프트 템플릿 파일 생성 (opsclaw 서버에서)
+# 보안 분석 프롬프트 템플릿 파일 생성 (bastion 서버에서)
 cat << 'TEMPLATE'
-당신은 OpsClaw SOC 분석 에이전트입니다.
+당신은 Bastion SOC 분석 에이전트입니다.
 
 ## 역할
 - 보안 로그와 경보를 분석합니다
@@ -519,7 +519,7 @@ TEMPLATE
 
 ```bash
 # evidence 요약 조회 — 모든 분석 결과가 기록되어 있다
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   http://localhost:8000/projects/$PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 # 수집된 로그와 분석 결과가 evidence로 기록되어 있다
@@ -529,7 +529,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 # 프로젝트 완료 보고서
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "summary": "Week02 LLM 보안 분석 실습 완료",
     "outcome": "success",
@@ -573,15 +573,15 @@ gemma3:12b와 llama3.1:8b에 동일한 보안 로그 5건을 분석시켜 정확
 - [ ] Temperature가 분석 결과에 미치는 영향을 설명할 수 있는가?
 - [ ] 역할 부여, CoT, Few-shot 프롬프트 기법의 차이를 구분하는가?
 - [ ] 구조화 출력(JSON)을 요구하는 프롬프트를 작성할 수 있는가?
-- [ ] Tool Calling 개념과 OpsClaw에서의 역할을 설명할 수 있는가?
-- [ ] OpsClaw dispatch로 로그를 수집하고 LLM에게 분석을 요청할 수 있는가?
+- [ ] Tool Calling 개념과 Bastion에서의 역할을 설명할 수 있는가?
+- [ ] Bastion dispatch로 로그를 수집하고 LLM에게 분석을 요청할 수 있는가?
 - [ ] 서로 다른 LLM 모델의 보안 분석 결과를 비교 평가할 수 있는가?
 
 ---
 
 ## 다음 주 예고
 
-**Week 03: OpsClaw 프로젝트 생명주기**
+**Week 03: Bastion 프로젝트 생명주기**
 - 프로젝트 6단계(create→plan→execute→validate→report→close) 완전 실습
 - Evidence 기록 체계와 감사 추적
 - Stage 전환 규칙과 제약 조건
@@ -607,7 +607,7 @@ gemma3:12b와 llama3.1:8b에 동일한 보안 로그 5건을 분석시켜 정확
 **Q4.** Few-shot 프롬프트의 장점은?
 - (a) 토큰을 절약한다  (b) 속도가 빠르다  (c) **예시를 통해 출력 형식과 판단 기준을 학습시킨다**  (d) 모델 크기를 줄인다
 
-**Q5.** OpsClaw에서 보안 로그를 수집하는 방법은?
+**Q5.** Bastion에서 보안 로그를 수집하는 방법은?
 - (a) SubAgent에 직접 SSH 접속  (b) **Manager API의 dispatch 또는 execute-plan으로 SubAgent를 통해 수집**  (c) 이메일로 요청  (d) 수동 복사
 
 **정답:** Q1:c, Q2:b, Q3:b, Q4:c, Q5:b

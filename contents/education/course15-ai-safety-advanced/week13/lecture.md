@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -303,9 +303,9 @@ class AIRiskAssessor:
 # 예시 평가
 assessor = AIRiskAssessor()
 
-# OpsClaw 에이전트 시스템 평가
+# Bastion 에이전트 시스템 평가
 result = assessor.assess(
-    "OpsClaw AI Agent",
+    "Bastion AI Agent",
     "IT 운영 자동화를 위한 AI 에이전트 시스템. 서버 관리, 보안 작업을 자동화. 중요 인프라 관리.",
     {
         "데이터 프라이버시": [True, False, True],
@@ -388,7 +388,7 @@ class ComplianceChecker:
 
 checker = ComplianceChecker()
 
-# OpsClaw 준수 현황 (예시)
+# Bastion 준수 현황 (예시)
 status = {
     "EU-1": True, "EU-2": True, "EU-3": True, "EU-4": True,
     "EU-5": True, "EU-6": True, "EU-7": True, "EU-8": True,
@@ -421,12 +421,12 @@ python3 /tmp/compliance_check.py
 >
 > **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
 
-## 4.1 OpsClaw 연동
+## 4.1 Bastion 연동
 
 ```bash
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "name": "ai-governance-week13",
     "request_text": "AI 거버넌스/규제 실습 - EU AI Act, NIST AI RMF, 위험 평가, 준수 체크",
@@ -639,7 +639,7 @@ policy = gen.generate(
     ai_systems=[
         {"name": "SecureBot", "description": "보안 상담 챗봇", "risk": "Limited"},
         {"name": "HireAI", "description": "채용 지원 AI", "risk": "High"},
-        {"name": "OpsClaw", "description": "IT 운영 자동화 에이전트", "risk": "High"},
+        {"name": "Bastion", "description": "IT 운영 자동화 에이전트", "risk": "High"},
     ],
 )
 print(policy)

@@ -1,22 +1,22 @@
-# Week 09: OpsClaw (1) - 기본
+# Week 09: Bastion (1) - 기본
 
 ## 학습 목표
-- OpsClaw의 프로젝트 생명주기를 이해한다
+- Bastion의 프로젝트 생명주기를 이해한다
 - dispatch와 execute-plan의 차이를 구분하고 적절히 사용한다
 - 증거(evidence) 시스템과 PoW 체인을 이해한다
-- OpsClaw를 활용한 보안 점검 자동화를 실습한다
+- Bastion를 활용한 보안 점검 자동화를 실습한다
 
 ## 실습 환경 (공통)
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +28,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -58,22 +58,22 @@
 
 ---
 
-# Week 09: OpsClaw (1) - 기본
+# Week 09: Bastion (1) - 기본
 
 ## 학습 목표
-- OpsClaw의 프로젝트 생명주기를 이해한다
+- Bastion의 프로젝트 생명주기를 이해한다
 - dispatch와 execute-plan의 차이를 구분하고 적절히 사용한다
 - 증거(evidence) 시스템과 PoW 체인을 이해한다
-- OpsClaw를 활용한 보안 점검 자동화를 실습한다
+- Bastion를 활용한 보안 점검 자동화를 실습한다
 
 ---
 
-## 1. OpsClaw 프로젝트 생명주기
+## 1. Bastion 프로젝트 생명주기
 
 > **이 실습을 왜 하는가?**
-> OpsClaw는 보안 작업을 **자동화하고 증적을 관리**하는 하네스 플랫폼이다.
+> Bastion는 보안 작업을 **자동화하고 증적을 관리**하는 하네스 플랫폼이다.
 > 직접 SSH로 명령을 실행하면 아무런 기록이 남지 않지만,
-> OpsClaw를 경유하면 **모든 명령, 결과, 시간, 보상이 자동으로 기록**된다.
+> Bastion를 경유하면 **모든 명령, 결과, 시간, 보상이 자동으로 기록**된다.
 >
 > **이걸 하면 무엇을 알 수 있는가?**
 > - 프로젝트 라이프사이클 (created→planned→executing→done)
@@ -86,7 +86,7 @@
 > - 성과 관리: 에이전트별 보상 누적 → 리더보드
 > - 반복 작업: Playbook으로 동일 점검을 매주 자동 실행
 >
-> **검증 완료:** OpsClaw API 정상 동작, execute-plan 병렬 실행, evidence/replay 확인
+> **검증 완료:** Bastion API 정상 동작, execute-plan 병렬 실행, evidence/replay 확인
 
 ```
 created → planned → executing → done
@@ -118,7 +118,7 @@ created → planned → executing → done
 # external 모드: Claude Code(사람)가 오케스트레이션
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "name": "security-audit-web",
     "request_text": "web 서버 보안 점검",
@@ -147,14 +147,14 @@ PID="프로젝트_ID"
 
 # Stage 전환
 curl -s -X POST "http://localhost:8000/projects/$PID/plan" \
-  -H "X-API-Key: opsclaw-api-key-2026"
+  -H "X-API-Key: bastion-api-key-2026"
 curl -s -X POST "http://localhost:8000/projects/$PID/execute" \
-  -H "X-API-Key: opsclaw-api-key-2026"
+  -H "X-API-Key: bastion-api-key-2026"
 
 # 로컬 SubAgent에서 명령 실행
 curl -s -X POST "http://localhost:8000/projects/$PID/dispatch" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "command": "hostname && uptime",
     "subagent_url": "http://localhost:8002"
@@ -163,7 +163,7 @@ curl -s -X POST "http://localhost:8000/projects/$PID/dispatch" \
 # 원격 SubAgent에서 명령 실행 (secu 서버)
 curl -s -X POST "http://localhost:8000/projects/$PID/dispatch" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "command": "sudo nft list ruleset | head -20",
     "subagent_url": "http://10.20.30.1:8002"
@@ -184,7 +184,7 @@ execute-plan은 **여러 태스크를 순차적으로** 실행한다.
 # order: 실행 순서 / risk_level: low/medium/high/critical
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {
@@ -227,7 +227,7 @@ curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
 
 ```bash
 # 증거 요약 조회
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   "http://localhost:8000/projects/$PID/evidence/summary" | python3 -m json.tool
 ```
 
@@ -237,11 +237,11 @@ curl -s -H "X-API-Key: opsclaw-api-key-2026" \
 
 ```bash
 # PoW 블록 조회
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   "http://localhost:8000/pow/blocks?agent_id=http://localhost:8002" | python3 -m json.tool
 
 # 체인 무결성 검증
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   "http://localhost:8000/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
 # 정상: {"valid": true, "blocks": N, "orphans": 0}
 ```
@@ -256,7 +256,7 @@ curl -s -H "X-API-Key: opsclaw-api-key-2026" \
 # 프로젝트 완료 보고서 작성 (outcome: success/failure/partial)
 curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "summary": "web 서버 보안 점검 완료",
     "outcome": "success",
@@ -278,21 +278,21 @@ curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
 # 1. 프로젝트 생성
 PID=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"lab-audit","request_text":"실습 보안 점검","master_mode":"external"}' \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
 echo "Project: $PID"
 
 # 2. Stage 전환
 curl -s -X POST "http://localhost:8000/projects/$PID/plan" \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 curl -s -X POST "http://localhost:8000/projects/$PID/execute" \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 # 3. 보안 점검 태스크 실행
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1, "instruction_prompt":"uname -a", "risk_level":"low"},
@@ -303,13 +303,13 @@ curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   }' | python3 -m json.tool
 
 # 4. 증거 확인
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   "http://localhost:8000/projects/$PID/evidence/summary" | python3 -m json.tool
 
 # 5. 완료 보고
 curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"summary":"보안 점검 완료","outcome":"success","work_details":["시스템 정보 수집","열린 포트 확인","최근 로그인 이력 확인"]}'
 ```
 
@@ -319,7 +319,7 @@ curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
 # 여러 서버에 동시에 명령 실행
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1, "instruction_prompt":"hostname && uptime", "risk_level":"low", "subagent_url":"http://localhost:8002"},
@@ -334,11 +334,11 @@ curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
 
 ```bash
 # 보상 랭킹 확인
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   http://localhost:8000/pow/leaderboard | python3 -m json.tool
 
 # 프로젝트 작업 리플레이
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   "http://localhost:8000/projects/$PID/replay" | python3 -m json.tool
 ```
 
@@ -346,7 +346,7 @@ curl -s -H "X-API-Key: opsclaw-api-key-2026" \
 
 ## 핵심 정리
 
-1. OpsClaw 프로젝트는 created → planned → executing → done 순으로 진행한다
+1. Bastion 프로젝트는 created → planned → executing → done 순으로 진행한다
 2. dispatch는 단일 명령, execute-plan은 여러 태스크를 순차 실행한다
 3. risk_level로 태스크의 위험도를 관리하고, critical은 자동으로 dry_run된다
 4. 모든 작업은 증거로 기록되고 PoW 체인으로 무결성을 보장한다
@@ -355,7 +355,7 @@ curl -s -H "X-API-Key: opsclaw-api-key-2026" \
 ---
 
 ## 다음 주 예고
-- Week 10: OpsClaw (2) - Playbook과 강화학습(RL) 연동
+- Week 10: Bastion (2) - Playbook과 강화학습(RL) 연동
 
 ---
 
@@ -421,7 +421,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 {"role":"system","content":"단계별로 분석하세요: 1)현상 파악 2)원인 추론 3)ATT&CK 매핑 4)대응 방안"}
 ```
 
-### OpsClaw API 핵심 흐름 요약
+### Bastion API 핵심 흐름 요약
 
 ```
 [1] POST /projects                     → 프로젝트 생성
@@ -439,7 +439,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 [6] GET /projects/{id}/replay           → 타임라인 재구성
 [7] POST /projects/{id}/completion-report → 완료 보고
 
-모든 API에 필수: -H "X-API-Key: opsclaw-api-key-2026"
+모든 API에 필수: -H "X-API-Key: bastion-api-key-2026"
 ```
 
 ---
@@ -451,7 +451,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 **Q1.** Ollama API에서 temperature=0의 효과는?
 - (a) 최대 창의성  (b) **매번 동일한 출력 (결정론적)**  (c) 에러 발생  (d) 속도 향상
 
-**Q2.** OpsClaw execute-plan 실행 전 반드시 거쳐야 하는 단계는?
+**Q2.** Bastion execute-plan 실행 전 반드시 거쳐야 하는 단계는?
 - (a) 서버 재시작  (b) **plan → execute stage 전환**  (c) DB 백업  (d) 코드 컴파일
 
 **Q3.** RL에서 UCB1 탐색 전략의 핵심은?
@@ -460,7 +460,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 **Q4.** Playbook이 LLM adhoc보다 재현성이 높은 이유는?
 - (a) LLM이 더 똑똑해서  (b) **파라미터가 결정론적으로 바인딩되어 동일 명령 생성**  (c) 네트워크가 빨라서  (d) DB가 달라서
 
-**Q5.** OpsClaw evidence가 제공하는 핵심 가치는?
+**Q5.** Bastion evidence가 제공하는 핵심 가치는?
 - (a) 실행 속도 향상  (b) **모든 실행의 자동 기록으로 감사 추적 가능**  (c) 메모리 절약  (d) 코드 자동 생성
 
 **정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b

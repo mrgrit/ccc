@@ -607,28 +607,28 @@ curl -s http://10.20.30.80/server-status | head -5
 
 ### Step 1: 전체 인프라 취약점 스캔 자동화
 
-> **실습 목적**: OpsClaw를 활용하여 전체 인프라의 취약점 스캔을 자동화하고 증적을 기록한다.
+> **실습 목적**: Bastion를 활용하여 전체 인프라의 취약점 스캔을 자동화하고 증적을 기록한다.
 >
 > **배우는 것**: 멀티 호스트 취약점 스캔 오케스트레이션
 
 ```bash
-# OpsClaw 프로젝트 생성
+# Bastion 프로젝트 생성
 RESULT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"week02-vulnscan","request_text":"취약점 스캐닝 실습","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
 # Stage 전환
 curl -s -X POST "http://localhost:8000/projects/$PID/plan" \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 curl -s -X POST "http://localhost:8000/projects/$PID/execute" \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 # 멀티 타겟 취약점 스캔
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1,"title":"web nmap-vuln","instruction_prompt":"nmap --script=vuln -p 22,80,3000 10.20.30.80 2>/dev/null | tail -50","risk_level":"low","subagent_url":"http://localhost:8002"},
@@ -663,7 +663,7 @@ for t in d.get('task_results',[]):
 cat << 'REPORT'
 === 취약점 스캔 보고서 ===
 
-1. 스캔 범위: 10.20.30.0/24 (secu, web, siem, opsclaw)
+1. 스캔 범위: 10.20.30.0/24 (secu, web, siem, bastion)
 2. 스캔 도구: nmap 7.94 (NSE), Nikto 2.5.0
 3. 스캔 일시: $(date)
 
@@ -694,7 +694,7 @@ REPORT
 - [ ] SSH 보안 설정을 감사했는가 (인증 방법, 알고리즘)
 - [ ] Nikto로 Apache와 JuiceShop을 스캔했는가
 - [ ] 자동 스캔 결과의 오탐 여부를 수동으로 검증했는가 (최소 3건)
-- [ ] OpsClaw를 통해 멀티 타겟 취약점 스캔을 실행했는가
+- [ ] Bastion를 통해 멀티 타겟 취약점 스캔을 실행했는가
 - [ ] CVSS 기반 취약점 요약 보고서를 작성했는가
 
 ## 자가 점검 퀴즈

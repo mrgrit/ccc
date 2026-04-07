@@ -1,32 +1,32 @@
-# Week 05: 서버 사이드 하네스 구축 (1) — OpsClaw
+# Week 05: 서버 사이드 하네스 구축 (1) — Bastion
 
 ## 학습 목표
-- OpsClaw Native Mode의 구조와 설정 방법을 이해한다
+- Bastion Native Mode의 구조와 설정 방법을 이해한다
 - Master Service와 Ollama LLM 연동을 구성할 수 있다
 - 자연어 요청에서 실행까지의 전체 파이프라인을 구축한다
-- CLI(opsclaw run)로 자율 작업을 실행할 수 있다
+- CLI(bastion run)로 자율 작업을 실행할 수 있다
 - Project 생명주기(생성→계획→실행→보고)를 실습한다
 
 ## 실습 환경 (공통)
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
 | 시간 | 내용 | 유형 |
 |------|------|------|
-| 0:00-0:25 | 이론: OpsClaw Native Mode 아키텍처 (Part 1) | 강의 |
+| 0:00-0:25 | 이론: Bastion Native Mode 아키텍처 (Part 1) | 강의 |
 | 0:25-0:50 | 이론: 자연어→실행 파이프라인 (Part 2) | 강의 |
 | 0:50-1:00 | 휴식 | - |
-| 1:00-1:45 | 실습: OpsClaw 서비스 기동과 설정 (Part 3) | 실습 |
+| 1:00-1:45 | 실습: Bastion 서비스 기동과 설정 (Part 3) | 실습 |
 | 1:45-2:30 | 실습: Native Mode 자율 실행 (Part 4) | 실습 |
 | 2:30-2:40 | 휴식 | - |
 | 2:40-3:15 | 실습: 다중 서버 점검 자동화 (Part 5) | 실습 |
@@ -38,7 +38,7 @@
 
 | 용어 | 영문 | 설명 | 비유 |
 |------|------|------|------|
-| **Native Mode** | Native Mode | OpsClaw 내부 LLM이 자율 계획·실행하는 모드 | 자율주행 모드 |
+| **Native Mode** | Native Mode | Bastion 내부 LLM이 자율 계획·실행하는 모드 | 자율주행 모드 |
 | **External Mode** | External Mode | 외부 에이전트(Claude Code)가 API로 제어하는 모드 | 수동 운전 모드 |
 | **Master Service** | Master Service | LLM 기반 계획 수립 서비스 (:8001) | 참모본부 |
 | **Manager API** | Manager API | 상태 관리·실행 제어 서비스 (:8000) | 작전 사령부 |
@@ -57,7 +57,7 @@
 
 ---
 
-## Part 1: OpsClaw Native Mode 아키텍처 (25분) — 이론
+## Part 1: Bastion Native Mode 아키텍처 (25분) — 이론
 
 ### 1.1 두 가지 작동 모드
 
@@ -136,7 +136,7 @@ created → planning → executing → reporting → completed
 
 ---
 
-## Part 3: OpsClaw 서비스 기동과 설정 (45분) — 실습
+## Part 3: Bastion 서비스 기동과 설정 (45분) — 실습
 
 ### 3.1 PostgreSQL 기동 확인
 
@@ -153,10 +153,10 @@ created → planning → executing → reporting → completed
 sudo docker ps --format "table {{.Names}}\t{{.Status}}\t{{.Ports}}" | grep postgres
 
 # PostgreSQL이 미기동이면 시작
-echo "1" | sudo -S docker compose -f /home/opsclaw/opsclaw/docker/postgres-compose.yaml up -d
+echo "1" | sudo -S docker compose -f /home/bastion/bastion/docker/postgres-compose.yaml up -d
 
 # DB 연결 테스트
-PGPASSWORD=opsclaw psql -h 127.0.0.1 -U opsclaw -d opsclaw -c "SELECT version();" 2>/dev/null || \
+PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -c "SELECT version();" 2>/dev/null || \
   echo "PostgreSQL 연결 실패 — Docker 컨테이너를 확인하세요"
 ```
 
@@ -164,18 +164,18 @@ PGPASSWORD=opsclaw psql -h 127.0.0.1 -U opsclaw -d opsclaw -c "SELECT version();
 
 ```bash
 # .env 파일 확인
-cat /home/opsclaw/opsclaw/.env | head -20
+cat /home/bastion/bastion/.env | head -20
 
 # 환경 변수 로딩
-cd /home/opsclaw/opsclaw
+cd /home/bastion/bastion
 # .env 파일의 모든 변수를 현재 셸에 로딩
 set -a && source .env && set +a
 
 # PYTHONPATH 설정 (모듈 경로)
-export PYTHONPATH=/home/opsclaw/opsclaw
+export PYTHONPATH=/home/bastion/bastion
 
 # 주요 변수 확인
-echo "OPSCLAW_API_KEY: $OPSCLAW_API_KEY"
+echo "BASTION_API_KEY: $BASTION_API_KEY"
 echo "OLLAMA_BASE_URL: $OLLAMA_BASE_URL"
 echo "DATABASE_URL: $DATABASE_URL"
 ```
@@ -187,7 +187,7 @@ echo "DATABASE_URL: $DATABASE_URL"
 pgrep -af "manager-api" || echo "Manager API 미기동"
 
 # Manager API 시작 (백그라운드)
-cd /home/opsclaw/opsclaw
+cd /home/bastion/bastion
 nohup .venv/bin/python3.11 -m uvicorn apps.manager-api.src.main:app \
   --host 0.0.0.0 --port 8000 --log-level warning > /tmp/manager.log 2>&1 &
 
@@ -209,7 +209,7 @@ curl -s http://localhost:8000/health | python3 -m json.tool
 pgrep -af "subagent" || echo "SubAgent 미기동"
 
 # SubAgent 시작 (로컬)
-cd /home/opsclaw/opsclaw
+cd /home/bastion/bastion
 nohup .venv/bin/python3.11 -m uvicorn apps.subagent-runtime.src.main:app \
   --host 0.0.0.0 --port 8002 --log-level warning > /tmp/subagent.log 2>&1 &
 
@@ -225,7 +225,7 @@ curl -s http://localhost:8002/health | python3 -m json.tool
 pgrep -af "master-service" || echo "Master Service 미기동"
 
 # Master Service 시작
-cd /home/opsclaw/opsclaw
+cd /home/bastion/bastion
 nohup .venv/bin/python3.11 -m uvicorn apps.master-service.src.main:app \
   --host 0.0.0.0 --port 8001 --log-level warning > /tmp/master.log 2>&1 &
 
@@ -241,9 +241,9 @@ mkdir -p ~/lab/week05
 
 cat > ~/lab/week05/check_services.sh << 'SHEOF'
 #!/bin/bash
-# OpsClaw 전체 서비스 상태 확인 스크립트
+# Bastion 전체 서비스 상태 확인 스크립트
 
-echo "=== OpsClaw 서비스 상태 ==="
+echo "=== Bastion 서비스 상태 ==="
 echo ""
 
 # Manager API (:8000)
@@ -276,7 +276,7 @@ fi
 
 # PostgreSQL
 printf "%-20s " "PostgreSQL"
-PGPASSWORD=opsclaw psql -h 127.0.0.1 -U opsclaw -d opsclaw -c "SELECT 1" > /dev/null 2>&1
+PGPASSWORD=bastion psql -h 127.0.0.1 -U bastion -d bastion -c "SELECT 1" > /dev/null 2>&1
 if [ $? -eq 0 ]; then
     echo "OK (port 5432)"
 else
@@ -324,10 +324,10 @@ bash ~/lab/week05/check_services.sh
 # 1. 프로젝트 생성 (external mode)
 PROJECT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "name": "week05-external-demo",
-    "request_text": "opsclaw 서버의 디스크와 메모리 상태를 확인해줘",
+    "request_text": "bastion 서버의 디스크와 메모리 상태를 확인해줘",
     "master_mode": "external"
   }')
 PID_EXT=$(echo $PROJECT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
@@ -336,16 +336,16 @@ echo "External Project: $PID_EXT"
 # 2. Stage 전환
 # plan 단계로 전환
 curl -s -X POST http://localhost:8000/projects/${PID_EXT}/plan \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 # execute 단계로 전환
 curl -s -X POST http://localhost:8000/projects/${PID_EXT}/execute \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 # 3. 수동으로 Task 배열 구성 및 실행
 curl -s -X POST http://localhost:8000/projects/${PID_EXT}/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order": 1, "instruction_prompt": "df -h / /tmp /home", "risk_level": "low"},
@@ -364,7 +364,7 @@ for task in data.get('results', data.get('task_results', [])):
 # 4. 완료 보고서
 curl -s -X POST http://localhost:8000/projects/${PID_EXT}/completion-report \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"summary":"External Mode 수동 실행 완료","outcome":"success","work_details":["디스크/메모리 상태 확인 완료"]}'
 ```
 
@@ -375,10 +375,10 @@ curl -s -X POST http://localhost:8000/projects/${PID_EXT}/completion-report \
 # master_mode를 "native"로 설정하면 Master Service가 자율 실행
 PROJECT_N=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "name": "week05-native-demo",
-    "request_text": "opsclaw 서버의 보안 상태를 점검해줘. 디스크, 메모리, 열린 포트, 최근 로그인 기록을 확인하라.",
+    "request_text": "bastion 서버의 보안 상태를 점검해줘. 디스크, 메모리, 열린 포트, 최근 로그인 기록을 확인하라.",
     "master_mode": "native"
   }')
 PID_NAT=$(echo $PROJECT_N | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
@@ -388,7 +388,7 @@ echo "Native Project: $PID_NAT"
 # 진행 상태 모니터링 (10초 간격, 최대 2분)
 for i in $(seq 1 12); do
     # 프로젝트 상태 조회
-    STATUS=$(curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+    STATUS=$(curl -s -H "X-API-Key: bastion-api-key-2026" \
       http://localhost:8000/projects/${PID_NAT} | \
       python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('stage','unknown'))")
     echo "[$i] Stage: $STATUS"
@@ -402,7 +402,7 @@ done
 # 결과 확인
 echo ""
 echo "=== Evidence 요약 ==="
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   http://localhost:8000/projects/${PID_NAT}/evidence/summary | python3 -m json.tool
 ```
 
@@ -414,7 +414,7 @@ Native Mode가 동작하지 않을 경우, External Mode에서 LLM을 직접 활
 cat > ~/lab/week05/external_with_llm.py << 'PYEOF'
 """
 Week 05 실습: External Mode + LLM 조합
-Claude Code 방식으로 OpsClaw API를 호출한다.
+Claude Code 방식으로 Bastion API를 호출한다.
 LLM이 계획을 세우고, 프로그램이 execute-plan으로 실행한다.
 """
 import requests
@@ -422,8 +422,8 @@ import json
 
 OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
-OPSCLAW = "http://localhost:8000"
-API_KEY = "opsclaw-api-key-2026"
+BASTION = "http://localhost:8000"
+API_KEY = "bastion-api-key-2026"
 HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
 def ask_llm_for_plan(request: str) -> list:
@@ -449,20 +449,20 @@ JSON 배열만 출력하라."""
     end = content.rfind("]") + 1
     return json.loads(content[start:end])
 
-def execute_plan_via_opsclaw(project_id: str, tasks: list):
-    """OpsClaw execute-plan API로 실행"""
-    opsclaw_tasks = []
+def execute_plan_via_bastion(project_id: str, tasks: list):
+    """Bastion execute-plan API로 실행"""
+    bastion_tasks = []
     for t in tasks:
-        opsclaw_tasks.append({
+        bastion_tasks.append({
             "order": t["order"],
             "instruction_prompt": t["command"],
             "risk_level": t.get("risk", "low"),
         })
 
     resp = requests.post(
-        f"{OPSCLAW}/projects/{project_id}/execute-plan",
+        f"{BASTION}/projects/{project_id}/execute-plan",
         headers=HEADERS,
-        json={"tasks": opsclaw_tasks, "subagent_url": "http://localhost:8002"}
+        json={"tasks": bastion_tasks, "subagent_url": "http://localhost:8002"}
     )
     return resp.json()
 
@@ -479,9 +479,9 @@ def main():
     for t in plan:
         print(f"  Task {t['order']}: {t['command']} ({t.get('risk','low')})")
 
-    # 2. OpsClaw 프로젝트 생성
-    print("\n[2] OpsClaw 프로젝트 생성...")
-    project = requests.post(f"{OPSCLAW}/projects", headers=HEADERS, json={
+    # 2. Bastion 프로젝트 생성
+    print("\n[2] Bastion 프로젝트 생성...")
+    project = requests.post(f"{BASTION}/projects", headers=HEADERS, json={
         "name": "week05-llm-plan",
         "request_text": user_request,
         "master_mode": "external"
@@ -490,19 +490,19 @@ def main():
     print(f"  Project ID: {pid}")
 
     # 3. Stage 전환
-    requests.post(f"{OPSCLAW}/projects/{pid}/plan", headers=HEADERS)
-    requests.post(f"{OPSCLAW}/projects/{pid}/execute", headers=HEADERS)
+    requests.post(f"{BASTION}/projects/{pid}/plan", headers=HEADERS)
+    requests.post(f"{BASTION}/projects/{pid}/execute", headers=HEADERS)
 
     # 4. execute-plan 실행
     print("\n[3] execute-plan 실행 중...")
-    results = execute_plan_via_opsclaw(pid, plan)
+    results = execute_plan_via_bastion(pid, plan)
     for r in results.get("results", results.get("task_results", [])):
         output = str(r.get("output", r.get("result", "")))[:150]
         print(f"  Task {r.get('order','?')}: {output}")
 
     # 5. 완료 보고서
     print("\n[4] 완료 보고서 작성...")
-    requests.post(f"{OPSCLAW}/projects/{pid}/completion-report", headers=HEADERS, json={
+    requests.post(f"{BASTION}/projects/{pid}/completion-report", headers=HEADERS, json={
         "summary": "LLM 계획 기반 보안 점검 완료",
         "outcome": "success",
         "work_details": [f"Task {t['order']}: {t['command']}" for t in plan]
@@ -532,13 +532,13 @@ Week 05 실습: 다중 서버 보안 점검
 import requests
 import json
 
-OPSCLAW = "http://localhost:8000"
-API_KEY = "opsclaw-api-key-2026"
+BASTION = "http://localhost:8000"
+API_KEY = "bastion-api-key-2026"
 HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
 # 서버별 SubAgent URL
 SERVERS = {
-    "opsclaw": "http://localhost:8002",
+    "bastion": "http://localhost:8002",
     "secu": "http://192.168.208.150:8002",
     "web": "http://192.168.208.151:8002",
     "siem": "http://192.168.208.152:8002",
@@ -565,7 +565,7 @@ def check_server(server_name: str, subagent_url: str, project_id: str):
 
     try:
         resp = requests.post(
-            f"{OPSCLAW}/projects/{project_id}/execute-plan",
+            f"{BASTION}/projects/{project_id}/execute-plan",
             headers=HEADERS,
             json={"tasks": tasks, "subagent_url": subagent_url},
             timeout=30
@@ -576,7 +576,7 @@ def check_server(server_name: str, subagent_url: str, project_id: str):
 
 def main():
     # 프로젝트 생성
-    project = requests.post(f"{OPSCLAW}/projects", headers=HEADERS, json={
+    project = requests.post(f"{BASTION}/projects", headers=HEADERS, json={
         "name": "week05-multi-server",
         "request_text": "전체 인프라 보안 점검",
         "master_mode": "external"
@@ -584,8 +584,8 @@ def main():
     pid = project["id"]
 
     # Stage 전환
-    requests.post(f"{OPSCLAW}/projects/{pid}/plan", headers=HEADERS)
-    requests.post(f"{OPSCLAW}/projects/{pid}/execute", headers=HEADERS)
+    requests.post(f"{BASTION}/projects/{pid}/plan", headers=HEADERS)
+    requests.post(f"{BASTION}/projects/{pid}/execute", headers=HEADERS)
 
     print(f"Project: {pid}")
     print("=" * 60)
@@ -610,7 +610,7 @@ def main():
 
     # 완료 보고서
     success_count = sum(1 for r in all_results.values() if "error" not in r)
-    requests.post(f"{OPSCLAW}/projects/{pid}/completion-report", headers=HEADERS, json={
+    requests.post(f"{BASTION}/projects/{pid}/completion-report", headers=HEADERS, json={
         "summary": f"다중 서버 점검 완료: {success_count}/{len(SERVERS)} 서버 성공",
         "outcome": "success" if success_count == len(SERVERS) else "partial",
         "work_details": [f"{name}: {'OK' if 'error' not in r else 'FAIL'}" for name, r in all_results.items()]
@@ -645,7 +645,7 @@ try:
     with open("/root/lab/week05/multi_server_results.json") as f:
         results = json.load(f)
 except FileNotFoundError:
-    results = {"opsclaw": {"results": [{"output": "sample data"}]}}
+    results = {"bastion": {"results": [{"output": "sample data"}]}}
 
 # LLM 분석 요청
 resp = requests.post(OLLAMA_URL, json={
@@ -692,13 +692,13 @@ python3 ~/lab/week05/analyze_results.py
 
 ### 복습 퀴즈
 
-**Q1. OpsClaw의 Native Mode와 External Mode의 가장 큰 차이는?**
+**Q1. Bastion의 Native Mode와 External Mode의 가장 큰 차이는?**
 - (A) 사용하는 데이터베이스가 다르다
 - **(B) LLM이 자율 계획·실행하느냐, 외부에서 API로 제어하느냐의 차이** ✅
 - (C) SubAgent 수가 다르다
 - (D) 보안 수준이 다르다
 
-**Q2. OpsClaw의 Project Stage 순서로 올바른 것은?**
+**Q2. Bastion의 Project Stage 순서로 올바른 것은?**
 - **(A) created → planning → executing → completed** ✅
 - (B) planning → created → executing → completed
 - (C) executing → planning → completed → created
@@ -730,7 +730,7 @@ python3 ~/lab/week05/analyze_results.py
    - LLM에게 "웹 서버 보안 점검" 계획을 요청
    - web 서버(http://192.168.208.151:8002)에 Task 실행
    - 결과를 LLM으로 분석
-   - 최종 보고서를 OpsClaw completion-report로 기록
+   - 최종 보고서를 Bastion completion-report로 기록
 
 2. 점검 항목: Apache 설정, SSL 인증서, 열린 포트, Wazuh 에이전트 상태
 

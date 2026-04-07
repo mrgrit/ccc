@@ -294,7 +294,7 @@ FIREWALL
 > **배우는 것**: 소스 IP 필터링과 세분화된 접근 제어
 
 ```bash
-# 특정 IP에서만 SSH 허용 (opsclaw에서만)
+# 특정 IP에서만 SSH 허용 (bastion에서만)
 sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1   "echo 1 | sudo -S nft add rule inet filter input ip saddr 10.20.30.201 tcp dport 22 accept 2>/dev/null"
 
 # 내부 네트워크에서만 SubAgent 접근 허용
@@ -308,7 +308,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1   "echo 1 | sudo -S 
 ```
 
 > **결과 해석**:
-> - `ip saddr 10.20.30.201`: opsclaw 서버 IP에서만 허용
+> - `ip saddr 10.20.30.201`: bastion 서버 IP에서만 허용
 > - `ip saddr 10.20.30.0/24`: 내부 서브넷 전체 허용
 > - `log prefix "BLOCKED:" counter drop`: 차단된 패킷을 로그에 기록
 >
@@ -352,7 +352,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1   "echo 1 | sudo -S 
 # 차단 로그가 있는지 확인
 sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1   "echo 1 | sudo -S dmesg 2>/dev/null | grep 'BLOCKED' | tail -10"
 
-# 포트 스캔 탐지 시뮬레이션 (opsclaw에서 secu로 스캔)
+# 포트 스캔 탐지 시뮬레이션 (bastion에서 secu로 스캔)
 echo 1 | sudo -S nmap -sS -p 1-100 10.20.30.1 2>/dev/null | head -10
 
 # 스캔 후 로그 확인
@@ -434,22 +434,22 @@ POLICY
 >
 > **실전 활용**: 공방전에서 이 정책은 기본 방어의 시작점이다. Red Team의 스캔과 공격을 차단하면서 필요한 서비스만 허용한다.
 
-### Step 2: OpsClaw를 활용한 방화벽 감사
+### Step 2: Bastion를 활용한 방화벽 감사
 
-> **실습 목적**: OpsClaw로 방화벽 상태를 자동 점검한다.
+> **실습 목적**: Bastion로 방화벽 상태를 자동 점검한다.
 >
 > **배우는 것**: 방화벽 감사 자동화
 
 ```bash
-RESULT=$(curl -s -X POST http://localhost:8000/projects   -H "Content-Type: application/json"   -H "X-API-Key: opsclaw-api-key-2026"   -d '{"name":"week06-firewall","request_text":"방화벽 구축 실습","master_mode":"external"}')
+RESULT=$(curl -s -X POST http://localhost:8000/projects   -H "Content-Type: application/json"   -H "X-API-Key: bastion-api-key-2026"   -d '{"name":"week06-firewall","request_text":"방화벽 구축 실습","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1,"title":"secu 방화벽 규칙","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 \"echo 1 | sudo -S nft list ruleset 2>/dev/null\"","risk_level":"low","subagent_url":"http://localhost:8002"},

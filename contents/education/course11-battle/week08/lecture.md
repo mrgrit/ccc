@@ -256,7 +256,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80   "cat /var/log/apac
 
 ## 실습 3.3: 타임라인 구성 + 종합 분석
 
-### Step 1: OpsClaw를 활용한 로그 수집 자동화
+### Step 1: Bastion를 활용한 로그 수집 자동화
 
 > **실습 목적**: 여러 서버의 로그를 자동으로 수집하고 분석한다.
 >
@@ -265,16 +265,16 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80   "cat /var/log/apac
 ```bash
 RESULT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"week08-log-analysis","request_text":"로그 분석 실습","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1,"title":"web SSH 실패 분석","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 \"echo 1 | sudo -S grep Failed /var/log/auth.log 2>/dev/null | wc -l\"","risk_level":"low","subagent_url":"http://localhost:8002"},
@@ -331,7 +331,7 @@ for t in d.get('task_results',[]):
 - [ ] 웹 접근 로그에서 SQLi/XSS 흔적을 찾았는가
 - [ ] HTTP 상태 코드 통계로 비정상 활동을 식별했는가
 - [ ] 타임라인을 구성하여 공격 경로를 재구성했는가
-- [ ] OpsClaw를 통해 멀티 호스트 로그 수집을 자동화했는가
+- [ ] Bastion를 통해 멀티 호스트 로그 수집을 자동화했는가
 - [ ] IOC를 추출하고 분류했는가
 - [ ] 안티포렌식 기법을 이해하고 방어 방법을 알고 있는가
 

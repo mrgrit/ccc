@@ -10,13 +10,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +28,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -152,14 +152,14 @@ Identify(식별) --> Protect(보호) --> Detect(탐지) --> Respond(대응) --> 
 
 ```bash
 # ID.AM-1: 물리적 장치 및 시스템 인벤토리
-for srv in "opsclaw@10.20.30.201" "secu@10.20.30.1" "web@10.20.30.80" "siem@10.20.30.100"; do
+for srv in "bastion@10.20.30.201" "secu@10.20.30.1" "web@10.20.30.80" "siem@10.20.30.100"; do
   echo "=== $srv ==="
   sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "hostname; lscpu | grep 'Model name'; free -h | grep Mem; df -h / | tail -1"
 done
 
 # ID.AM-2: 소프트웨어 인벤토리
-sshpass -p1 ssh opsclaw@10.20.30.201 "dpkg -l | wc -l"
-sshpass -p1 ssh opsclaw@10.20.30.201 "systemctl list-units --type=service --state=running --no-pager | wc -l"
+sshpass -p1 ssh bastion@10.20.30.201 "dpkg -l | wc -l"
+sshpass -p1 ssh bastion@10.20.30.201 "systemctl list-units --type=service --state=running --no-pager | wc -l"
 
 # ID.AM-3: 데이터 흐름 매핑
 sshpass -p1 ssh secu@10.20.30.1 "ip route show"
@@ -185,25 +185,25 @@ sshpass -p1 ssh secu@10.20.30.1 "ss -tlnp | grep LISTEN"
 
 ```bash
 # PR.AC-1: 접근 통제 (계정 관리)
-sshpass -p1 ssh opsclaw@10.20.30.201 "awk -F: '\$3>=1000 && \$3<65534{print \$1}' /etc/passwd"
+sshpass -p1 ssh bastion@10.20.30.201 "awk -F: '\$3>=1000 && \$3<65534{print \$1}' /etc/passwd"
 
 # PR.AC-3: 원격 접근 관리 (SSH 설정)
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep -E 'PermitRootLogin|MaxAuthTries|Protocol' /etc/ssh/sshd_config | grep -v '^#'"
+sshpass -p1 ssh bastion@10.20.30.201 "grep -E 'PermitRootLogin|MaxAuthTries|Protocol' /etc/ssh/sshd_config | grep -v '^#'"
 
 # PR.DS-1: 전송 데이터 보호 (TLS)
 sshpass -p1 ssh siem@10.20.30.100 "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"
 
 # PR.DS-2: 저장 데이터 보호 (파일 권한)
-sshpass -p1 ssh opsclaw@10.20.30.201 "ls -la /etc/shadow"
+sshpass -p1 ssh bastion@10.20.30.201 "ls -la /etc/shadow"
 
 # PR.IP-1: 설정 관리 (기본 설정 변경 여부)
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep '^Port' /etc/ssh/sshd_config || echo '기본 포트(22) 사용'"
+sshpass -p1 ssh bastion@10.20.30.201 "grep '^Port' /etc/ssh/sshd_config || echo '기본 포트(22) 사용'"
 
 # PR.IP-4: 백업
-sshpass -p1 ssh opsclaw@10.20.30.201 "crontab -l 2>/dev/null | grep backup || echo '자동 백업 미설정'"
+sshpass -p1 ssh bastion@10.20.30.201 "crontab -l 2>/dev/null | grep backup || echo '자동 백업 미설정'"
 
 # PR.PT-1: 감사 로그
-sshpass -p1 ssh opsclaw@10.20.30.201 "systemctl is-active rsyslog 2>/dev/null"
+sshpass -p1 ssh bastion@10.20.30.201 "systemctl is-active rsyslog 2>/dev/null"
 ```
 
 ---
@@ -226,7 +226,7 @@ sshpass -p1 ssh secu@10.20.30.1 "systemctl is-active suricata 2>/dev/null"
 sshpass -p1 ssh secu@10.20.30.1 "tail -3 /var/log/suricata/fast.log 2>/dev/null || echo '로그 없음'"
 
 # DE.CM-4: 악성코드 탐지
-sshpass -p1 ssh opsclaw@10.20.30.201 "which clamscan 2>/dev/null || echo 'AV 미설치'"
+sshpass -p1 ssh bastion@10.20.30.201 "which clamscan 2>/dev/null || echo 'AV 미설치'"
 
 # DE.CM-7: 비인가 활동 모니터링 (Wazuh)
 sshpass -p1 ssh siem@10.20.30.100 "systemctl is-active wazuh-manager 2>/dev/null"
@@ -254,7 +254,7 @@ sshpass -p1 ssh siem@10.20.30.100 "ls -lh /var/ossec/logs/alerts/alerts.json 2>/
 ```bash
 # RS.AN-1: 사고 분석 (로그 분석 능력)
 # 최근 SSH 실패 로그 분석
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | tail -5"
+sshpass -p1 ssh bastion@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | tail -5"
 
 # RS.MI-1: 사고 격리 (방화벽으로 IP 차단 가능 여부)
 sshpass -p1 ssh secu@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep 'drop' | head -5"
@@ -279,13 +279,13 @@ sshpass -p1 ssh siem@10.20.30.100 "cat /var/ossec/etc/ossec.conf 2>/dev/null | g
 
 ```bash
 # RC.RP-1: 백업 존재 여부
-sshpass -p1 ssh opsclaw@10.20.30.201 "ls -la /backup/ 2>/dev/null || echo '백업 디렉토리 없음'"
+sshpass -p1 ssh bastion@10.20.30.201 "ls -la /backup/ 2>/dev/null || echo '백업 디렉토리 없음'"
 
 # 데이터베이스 백업 확인
-sshpass -p1 ssh opsclaw@10.20.30.201 "ls -la /tmp/*dump* /tmp/*backup* 2>/dev/null || echo 'DB 백업 없음'"
+sshpass -p1 ssh bastion@10.20.30.201 "ls -la /tmp/*dump* /tmp/*backup* 2>/dev/null || echo 'DB 백업 없음'"
 
 # 서비스 재시작 능력 확인
-sshpass -p1 ssh opsclaw@10.20.30.201 "systemctl is-enabled postgresql 2>/dev/null || echo 'postgresql 서비스 상태 확인 필요'"
+sshpass -p1 ssh bastion@10.20.30.201 "systemctl is-enabled postgresql 2>/dev/null || echo 'postgresql 서비스 상태 확인 필요'"
 ```
 
 ---
@@ -381,7 +381,7 @@ sshpass -p1 ssh opsclaw@10.20.30.201 "systemctl is-enabled postgresql 2>/dev/nul
 
 [4] 증적(Evidence) 수집
     → 구현되었음을 증명하는 자료 확보
-    예: login.defs 캡처, 변경 로그, OpsClaw evidence
+    예: login.defs 캡처, 변경 로그, Bastion evidence
 ```
 
 ### 증적 수집 실습
@@ -395,8 +395,8 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 "  # 비밀번호 �
   echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5
 " 2>/dev/null
 
-# 결과를 OpsClaw evidence로 기록
-# (OpsClaw dispatch 사용)
+# 결과를 Bastion evidence로 기록
+# (Bastion dispatch 사용)
 ```
 
 ### GAP 분석 워크시트 예시
@@ -412,7 +412,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 "  # 비밀번호 �
 
 | 질문 | 준비 방법 |
 |------|---------|
-| "이 통제의 증적을 보여주세요" | OpsClaw evidence/replay로 실행 이력 제시 |
+| "이 통제의 증적을 보여주세요" | Bastion evidence/replay로 실행 이력 제시 |
 | "리스크 평가를 어떻게 했나요?" | 리스크 평가 워크시트 + 기준 설명 |
 | "부적합 사항은 어떻게 처리했나요?" | 시정 조치 계획서 + 완료 증적 |
 | "경영진의 검토는?" | 검토 회의록 + 서명 |

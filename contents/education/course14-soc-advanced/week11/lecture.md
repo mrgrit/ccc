@@ -11,12 +11,12 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -198,7 +198,7 @@ bash /tmp/evidence_collect.sh
 
 > **실습 목적**: 인시던트 발생 시 증거를 체계적으로 수집하는 자동화 스크립트를 실행하고 증거 무결성을 보장한다.
 >
-> **실전 활용**: 이 스크립트를 USB에 넣어두거나 OpsClaw에 등록해두면 인시던트 발생 시 신속하게 증거를 수집할 수 있다.
+> **실전 활용**: 이 스크립트를 USB에 넣어두거나 Bastion에 등록해두면 인시던트 발생 시 신속하게 증거를 수집할 수 있다.
 
 ---
 
@@ -316,12 +316,12 @@ sshpass -p1 ssh web@10.20.30.80 "ss -tnp 2>/dev/null | grep ESTAB" 2>/dev/null |
 ## 3.2 Phase 3: 봉쇄 + 근절
 
 ```bash
-# Phase 3: 봉쇄, 근절, 복구 (OpsClaw 활용)
-export OPSCLAW_API_KEY="opsclaw-api-key-2026"
+# Phase 3: 봉쇄, 근절, 복구 (Bastion 활용)
+export BASTION_API_KEY="bastion-api-key-2026"
 
 PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "ir-webserver-compromise",
     "request_text": "웹서버 침해 인시던트 대응 - 봉쇄 및 근절",
@@ -331,14 +331,14 @@ PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
 echo "IR Project: $PROJECT_ID"
 
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
-  -H "X-API-Key: $OPSCLAW_API_KEY"
+  -H "X-API-Key: $BASTION_API_KEY"
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
-  -H "X-API-Key: $OPSCLAW_API_KEY"
+  -H "X-API-Key: $BASTION_API_KEY"
 
 # 봉쇄 조치
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -368,7 +368,7 @@ sleep 3
 # 완료 보고
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "summary": "웹서버 침해 IR 봉쇄 단계 완료",
     "outcome": "success",
@@ -537,7 +537,7 @@ python3 /tmp/ir_report.py
 - [ ] 증거 체인(Chain of Custody)을 관리할 수 있다
 - [ ] 인시던트 타임라인을 구성할 수 있다
 - [ ] 5 Whys 기법으로 근본 원인 분석을 수행할 수 있다
-- [ ] OpsClaw로 다중 서버 IR 조치를 자동화할 수 있다
+- [ ] Bastion로 다중 서버 IR 조치를 자동화할 수 있다
 - [ ] 인시던트 대응 보고서를 작성할 수 있다
 - [ ] Lessons Learned 회의의 목적과 산출물을 알고 있다
 
@@ -599,7 +599,7 @@ python3 /tmp/ir_report.py
 법적 절차에서 증거의 진정성(authenticity)이 의심받아 증거 능력을 잃을 수 있다. 누군가가 증거를 변조했을 가능성을 배제할 수 없게 된다.
 </details>
 
-**Q10.** OpsClaw를 IR에 활용하는 장점 3가지를 설명하시오.
+**Q10.** Bastion를 IR에 활용하는 장점 3가지를 설명하시오.
 
 <details><summary>정답</summary>
 1) 여러 서버에 동시에 증거 수집/봉쇄 명령을 실행할 수 있다. 2) 모든 대응 조치가 evidence로 자동 기록되어 감사 추적과 보고서 작성이 용이하다. 3) completion-report로 인시던트 종결 보고서를 체계적으로 생성할 수 있다.
@@ -614,7 +614,7 @@ python3 /tmp/ir_report.py
 가상 시나리오 "siem 서버에서 비인가 SSH 접속이 발견됨"에 대해 NIST IR 4단계를 수행하라:
 1. 증거 수집 스크립트 실행 + 해시 기록
 2. 타임라인 구성
-3. 봉쇄 조치 계획 + OpsClaw로 실행
+3. 봉쇄 조치 계획 + Bastion로 실행
 4. 근본 원인 분석 (5 Whys)
 5. 인시던트 보고서 작성
 
@@ -633,12 +633,12 @@ python3 /tmp/ir_report.py
 ### 증거 수집 자동화 (전체 서버)
 
 ```bash
-# OpsClaw를 활용한 전체 서버 동시 증거 수집
-export OPSCLAW_API_KEY="opsclaw-api-key-2026"
+# Bastion를 활용한 전체 서버 동시 증거 수집
+export BASTION_API_KEY="bastion-api-key-2026"
 
 cat << 'SCRIPT' > /tmp/mass_evidence_collection.sh
 #!/bin/bash
-# 대규모 증거 수집 스크립트 (OpsClaw execute-plan용)
+# 대규모 증거 수집 스크립트 (Bastion execute-plan용)
 EVIDENCE="/tmp/evidence_$(hostname)_$(date +%Y%m%d%H%M%S)"
 mkdir -p "$EVIDENCE"
 
@@ -677,13 +677,13 @@ echo "총 크기: $(du -sh "$EVIDENCE" | awk '{print $1}')"
 SCRIPT
 
 echo "=== 증거 수집 스크립트 준비 완료 ==="
-echo "사용법: OpsClaw execute-plan으로 전체 서버에 배포"
+echo "사용법: Bastion execute-plan으로 전체 서버에 배포"
 
 # 실행 (로컬 테스트)
 bash /tmp/mass_evidence_collection.sh
 ```
 
-> **실전 활용**: 이 스크립트를 OpsClaw의 execute-plan에 등록하면 인시던트 발생 시 전체 서버의 증거를 1분 내에 동시 수집할 수 있다. 증거 수집 순서는 RFC 3227의 휘발성 순서를 따른다.
+> **실전 활용**: 이 스크립트를 Bastion의 execute-plan에 등록하면 인시던트 발생 시 전체 서버의 증거를 1분 내에 동시 수집할 수 있다. 증거 수집 순서는 RFC 3227의 휘발성 순서를 따른다.
 
 ### RACI 매트릭스
 
@@ -895,7 +895,7 @@ for name, info in scripts.items():
 print("""
 배포 위치:
   /opt/ir-toolkit/scripts/
-  OpsClaw Playbook으로 등록 가능
+  Bastion Playbook으로 등록 가능
 
 사용 원칙:
   1. 실행 전 반드시 해시 확인 (변조 방지)

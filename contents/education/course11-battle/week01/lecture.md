@@ -568,7 +568,7 @@ echo 1 | sudo -S nmap 10.20.30.80
 > - `22/tcp open ssh`: SSH 서비스 → 원격 접속 가능
 > - `80/tcp open http`: HTTP 서비스 → 웹 서버 동작 중
 > - `3000/tcp open ppp`: 실제로는 JuiceShop (nmap이 ppp로 잘못 추정)
-> - `8002/tcp open teradataordbms`: 실제로는 OpsClaw SubAgent
+> - `8002/tcp open teradataordbms`: 실제로는 Bastion SubAgent
 >
 > **실전 활용**: 이 결과에서 공격 가능한 서비스를 식별한다. HTTP(80, 3000)는 웹 공격, SSH(22)는 브루트포스 대상이다.
 >
@@ -721,7 +721,7 @@ echo 1 | sudo -S nmap -sV -p 22,443,1514,1515,8002,55000 10.20.30.100
 > - `OpenSSH 8.9p1`: 정확한 버전 → `searchsploit OpenSSH 8.9` 또는 CVE DB 검색
 > - `Apache httpd 2.4.52`: Apache 웹 서버 버전 확인 → 알려진 취약점 유무 확인
 > - `Node.js Express framework`: JuiceShop이 Express 기반임을 확인
-> - `Uvicorn`: Python ASGI 서버 → OpsClaw SubAgent
+> - `Uvicorn`: Python ASGI 서버 → Bastion SubAgent
 > - `CPE: cpe:/o:linux:linux_kernel`: CPE 표기로 자동화 도구 연동 가능
 >
 > **실전 활용**: 버전 정보로 exploit-db, NVD에서 CVE를 검색한다. 예: Apache 2.4.52에 CVE-2023-25690(HTTP Request Smuggling)이 있으면 공격 가능 여부를 평가한다.
@@ -961,37 +961,37 @@ done
 
 ## 실습 4.2: 공격 표면 보고서 작성
 
-### Step 1: OpsClaw를 활용한 자동화된 정찰
+### Step 1: Bastion를 활용한 자동화된 정찰
 
-> **실습 목적**: OpsClaw Manager API를 통해 여러 서버의 정찰을 자동화하고 증적을 기록한다.
+> **실습 목적**: Bastion Manager API를 통해 여러 서버의 정찰을 자동화하고 증적을 기록한다.
 >
-> **배우는 것**: OpsClaw execute-plan으로 멀티 호스트 정찰을 오케스트레이션하는 방법
+> **배우는 것**: Bastion execute-plan으로 멀티 호스트 정찰을 오케스트레이션하는 방법
 
 ```bash
-# OpsClaw 프로젝트 생성
+# Bastion 프로젝트 생성
 RESULT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"week01-recon","request_text":"네트워크 정찰 실습","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 echo "Project ID: $PID"
 
 # Stage 전환
 curl -s -X POST "http://localhost:8000/projects/$PID/plan" \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 curl -s -X POST "http://localhost:8000/projects/$PID/execute" \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 # 4개 서버 동시 정찰
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1,"title":"secu 포트스캔","instruction_prompt":"nmap -sV -T4 10.20.30.1 2>/dev/null","risk_level":"low","subagent_url":"http://localhost:8002"},
       {"order":2,"title":"web 포트스캔","instruction_prompt":"nmap -sV -T4 10.20.30.80 2>/dev/null","risk_level":"low","subagent_url":"http://localhost:8002"},
       {"order":3,"title":"siem 포트스캔","instruction_prompt":"nmap -sV -T4 10.20.30.100 2>/dev/null","risk_level":"low","subagent_url":"http://localhost:8002"},
-      {"order":4,"title":"opsclaw 포트스캔","instruction_prompt":"nmap -sV -T4 localhost 2>/dev/null","risk_level":"low","subagent_url":"http://localhost:8002"}
+      {"order":4,"title":"bastion 포트스캔","instruction_prompt":"nmap -sV -T4 localhost 2>/dev/null","risk_level":"low","subagent_url":"http://localhost:8002"}
     ],
     "subagent_url":"http://localhost:8002",
     "parallel":true
@@ -1007,12 +1007,12 @@ for t in d.get('task_results',[]):
 #   [1] secu 포트스캔          → ok
 #   [2] web 포트스캔           → ok
 #   [3] siem 포트스캔          → ok
-#   [4] opsclaw 포트스캔       → ok
+#   [4] bastion 포트스캔       → ok
 ```
 
-> **결과 해석**: OpsClaw를 통해 실행하면 모든 스캔 결과가 evidence로 자동 기록된다. 이후 `/evidence/summary`로 확인 가능하다.
+> **결과 해석**: Bastion를 통해 실행하면 모든 스캔 결과가 evidence로 자동 기록된다. 이후 `/evidence/summary`로 확인 가능하다.
 >
-> **실전 활용**: 실무에서는 정찰 작업도 증적으로 남겨야 감사 대응이 가능하다. OpsClaw는 이를 자동화한다.
+> **실전 활용**: 실무에서는 정찰 작업도 증적으로 남겨야 감사 대응이 가능하다. Bastion는 이를 자동화한다.
 
 ### Step 2: 공격 표면 분석 보고서 템플릿
 
@@ -1033,13 +1033,13 @@ cat << 'REPORT'
    - 10.20.30.1   (secu)  — 네트워크 보안 장비
    - 10.20.30.80  (web)   — 웹 서버 + 취약 앱
    - 10.20.30.100 (siem)  — 보안 모니터링
-   - 10.20.30.201 (opsclaw) — 관리 플랫폼
+   - 10.20.30.201 (bastion) — 관리 플랫폼
 
 5. 서비스 목록:
    [secu] SSH(22), SubAgent(8002)
    [web]  SSH(22), HTTP(80), JuiceShop(3000), SubAgent(8002)
    [siem] SSH(22), HTTPS(443), Wazuh(1514,1515,55000), SubAgent(8002)
-   [opsclaw] SSH(22), Manager(8000), SubAgent(8002)
+   [bastion] SSH(22), Manager(8000), SubAgent(8002)
 
 6. 공격 우선순위:
    (1) web:3000  — OWASP JuiceShop (알려진 취약 앱) → SQLi, XSS
@@ -1129,7 +1129,7 @@ echo 1 | sudo -S nmap -f -p 80 10.20.30.80
 - [ ] 각 호스트의 열린 포트와 서비스 버전을 확인하고 기록했는가
 - [ ] OS 핑거프린팅으로 대상 OS를 식별했는가
 - [ ] 스캔 결과를 파일로 저장하고 분석 스크립트로 정리했는가
-- [ ] OpsClaw를 통한 자동화된 정찰을 수행했는가
+- [ ] Bastion를 통한 자동화된 정찰을 수행했는가
 - [ ] Blue Team 관점에서 스캔 탐지 로그를 확인했는가
 - [ ] 공격 표면 보고서를 작성했는가
 
@@ -1158,7 +1158,7 @@ echo 1 | sudo -S nmap -f -p 80 10.20.30.80
 ## 과제
 
 ### 과제 1: 전체 인프라 정찰 보고서 (필수)
-- 4개 서버(secu, web, siem, opsclaw)에 대해 종합 스캔(-A) 수행
+- 4개 서버(secu, web, siem, bastion)에 대해 종합 스캔(-A) 수행
 - 각 서버별 열린 포트, 서비스 버전, OS 정보를 표 형태로 정리
 - 공격 우선순위를 정하고 그 근거를 서술 (최소 500자)
 - nmap 결과 파일(.nmap, .xml) 첨부

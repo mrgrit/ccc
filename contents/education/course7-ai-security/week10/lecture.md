@@ -1,7 +1,7 @@
-# Week 10: OpsClaw (2) - Playbook + RL
+# Week 10: Bastion (2) - Playbook + RL
 
 ## 학습 목표
-- OpsClaw Playbook의 개념과 구조를 이해한다
+- Bastion Playbook의 개념과 구조를 이해한다
 - Playbook을 생성하고 실행할 수 있다
 - 강화학습(RL) 보상 시스템의 원리를 이해한다
 - RL 학습과 정책 추천 기능을 활용할 수 있다
@@ -10,13 +10,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +28,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -58,10 +58,10 @@
 
 ---
 
-# Week 10: OpsClaw (2) - Playbook + RL
+# Week 10: Bastion (2) - Playbook + RL
 
 ## 학습 목표
-- OpsClaw Playbook의 개념과 구조를 이해한다
+- Bastion Playbook의 개념과 구조를 이해한다
 - Playbook을 생성하고 실행할 수 있다
 - 강화학습(RL) 보상 시스템의 원리를 이해한다
 - RL 학습과 정책 추천 기능을 활용할 수 있다
@@ -87,7 +87,7 @@ Ansible Playbook과 유사한 개념이다.
 ## 2. Playbook 구조
 
 > **이 실습을 왜 하는가?**
-> "OpsClaw (2) - Playbook + RL" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
+> "Bastion (2) - Playbook + RL" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
 > AI/LLM 보안 활용 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
 > 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
 >
@@ -148,7 +148,7 @@ PID="프로젝트_ID"
 # Playbook의 steps를 tasks로 변환하여 실행
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {
@@ -197,7 +197,7 @@ execute-plan으로 태스크를 실행하면 자동으로:
 
 ### 4.3 Q-learning 기초
 
-OpsClaw는 Q-learning 알고리즘으로 최적 행동을 학습한다.
+Bastion는 Q-learning 알고리즘으로 최적 행동을 학습한다.
 
 ```
 Q(상태, 행동) = 현재 보상 + 감가율 * 미래 최대 보상
@@ -216,7 +216,7 @@ Q(상태, 행동) = 현재 보상 + 감가율 * 미래 최대 보상
 ```bash
 # 축적된 보상 데이터로 Q-learning 학습
 curl -s -X POST http://localhost:8000/rl/train \
-  -H "X-API-Key: opsclaw-api-key-2026" | python3 -m json.tool
+  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
 ```
 
 ### 5.2 정책 추천
@@ -224,10 +224,10 @@ curl -s -X POST http://localhost:8000/rl/train \
 ```bash
 # 특정 에이전트+위험수준에 대한 최적 행동 추천
 curl -s "http://localhost:8000/rl/recommend?agent_id=http://localhost:8002&risk_level=low" \
-  -H "X-API-Key: opsclaw-api-key-2026" | python3 -m json.tool
+  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
 
 curl -s "http://localhost:8000/rl/recommend?agent_id=http://localhost:8002&risk_level=high" \
-  -H "X-API-Key: opsclaw-api-key-2026" | python3 -m json.tool
+  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
 ```
 
 ### 5.3 정책 상태 확인
@@ -235,7 +235,7 @@ curl -s "http://localhost:8000/rl/recommend?agent_id=http://localhost:8002&risk_
 ```bash
 # 현재 학습된 Q-table 상태
 curl -s http://localhost:8000/rl/policy \
-  -H "X-API-Key: opsclaw-api-key-2026" | python3 -m json.tool
+  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
 ```
 
 ### 5.4 보상 랭킹
@@ -243,7 +243,7 @@ curl -s http://localhost:8000/rl/policy \
 ```bash
 # SubAgent별 누적 보상 순위
 curl -s http://localhost:8000/pow/leaderboard \
-  -H "X-API-Key: opsclaw-api-key-2026" | python3 -m json.tool
+  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
 ```
 
 ---
@@ -256,20 +256,20 @@ curl -s http://localhost:8000/pow/leaderboard \
 # 프로젝트 생성
 PID=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"playbook-lab","request_text":"Playbook 실습","master_mode":"external"}' \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
 
 # Stage 전환
 curl -s -X POST "http://localhost:8000/projects/$PID/plan" \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 curl -s -X POST "http://localhost:8000/projects/$PID/execute" \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 # 시스템 보안 점검 Playbook 실행
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1, "instruction_prompt":"uname -a", "risk_level":"low"},
@@ -287,33 +287,33 @@ curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
 ```bash
 # 현재 정책 확인
 curl -s http://localhost:8000/rl/policy \
-  -H "X-API-Key: opsclaw-api-key-2026" | python3 -m json.tool
+  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
 
 # 학습 실행
 curl -s -X POST http://localhost:8000/rl/train \
-  -H "X-API-Key: opsclaw-api-key-2026" | python3 -m json.tool
+  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
 
 # 학습 후 추천 확인
 for level in low medium high critical; do
   echo "=== $level ==="
   curl -s "http://localhost:8000/rl/recommend?agent_id=http://localhost:8002&risk_level=$level" \
-    -H "X-API-Key: opsclaw-api-key-2026" | python3 -m json.tool
+    -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
 done
 ```
 
 ### 실습 3: LLM으로 Playbook 설계
 
-LLM에게 보안 점검 요구사항을 전달하면 OpsClaw에서 바로 실행할 수 있는 JSON 형식의 Playbook을 자동 생성한다.
+LLM에게 보안 점검 요구사항을 전달하면 Bastion에서 바로 실행할 수 있는 JSON 형식의 Playbook을 자동 생성한다.
 
 ```bash
 # LLM으로 보안 하드닝 Playbook JSON 자동 생성
-# 생성된 JSON을 OpsClaw execute-plan에 직접 사용 가능
+# 생성된 JSON을 Bastion execute-plan에 직접 사용 가능
 curl -s http://192.168.0.105:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
     "messages": [
-      {"role": "system", "content": "OpsClaw 보안 자동화 전문가입니다. 보안 점검 Playbook을 JSON 형식으로 설계합니다."},
+      {"role": "system", "content": "Bastion 보안 자동화 전문가입니다. 보안 점검 Playbook을 JSON 형식으로 설계합니다."},
       {"role": "user", "content": "Linux 서버의 보안 하드닝 상태를 점검하는 Playbook을 설계하세요.\n점검 항목: SSH 설정, 패스워드 정책, 방화벽 상태, 불필요 서비스, 파일 권한\n\nJSON 형식: {\"name\": \"\", \"steps\": [{\"order\": N, \"tool\": \"run_command\", \"params\": {\"command\": \"\"}, \"risk_level\": \"\", \"description\": \"\"}]}"}
     ],
     "temperature": 0.3
@@ -415,7 +415,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 {"role":"system","content":"단계별로 분석하세요: 1)현상 파악 2)원인 추론 3)ATT&CK 매핑 4)대응 방안"}
 ```
 
-### OpsClaw API 핵심 흐름 요약
+### Bastion API 핵심 흐름 요약
 
 ```
 [1] POST /projects                     → 프로젝트 생성
@@ -433,7 +433,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 [6] GET /projects/{id}/replay           → 타임라인 재구성
 [7] POST /projects/{id}/completion-report → 완료 보고
 
-모든 API에 필수: -H "X-API-Key: opsclaw-api-key-2026"
+모든 API에 필수: -H "X-API-Key: bastion-api-key-2026"
 ```
 
 ---
@@ -445,7 +445,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 **Q1.** Ollama API에서 temperature=0의 효과는?
 - (a) 최대 창의성  (b) **매번 동일한 출력 (결정론적)**  (c) 에러 발생  (d) 속도 향상
 
-**Q2.** OpsClaw execute-plan 실행 전 반드시 거쳐야 하는 단계는?
+**Q2.** Bastion execute-plan 실행 전 반드시 거쳐야 하는 단계는?
 - (a) 서버 재시작  (b) **plan → execute stage 전환**  (c) DB 백업  (d) 코드 컴파일
 
 **Q3.** RL에서 UCB1 탐색 전략의 핵심은?
@@ -454,7 +454,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 **Q4.** Playbook이 LLM adhoc보다 재현성이 높은 이유는?
 - (a) LLM이 더 똑똑해서  (b) **파라미터가 결정론적으로 바인딩되어 동일 명령 생성**  (c) 네트워크가 빨라서  (d) DB가 달라서
 
-**Q5.** OpsClaw evidence가 제공하는 핵심 가치는?
+**Q5.** Bastion evidence가 제공하는 핵심 가치는?
 - (a) 실행 속도 향상  (b) **모든 실행의 자동 기록으로 감사 추적 가능**  (c) 메모리 절약  (d) 코드 자동 생성
 
 **정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
@@ -462,4 +462,4 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 ---
 ---
 
-> **실습 환경 검증 완료** (2026-03-28): Ollama 22모델(gemma3:12b ~5s), OpsClaw 50프로젝트, execute-plan 병렬, RL train/recommend
+> **실습 환경 검증 완료** (2026-03-28): Ollama 22모델(gemma3:12b ~5s), Bastion 50프로젝트, execute-plan 병렬, RL train/recommend

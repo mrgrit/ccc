@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -162,7 +162,7 @@ LLM은 텍스트만 생성한다. 하지만 Tool Calling을 사용하면 LLM이 
         "host": {
           "type": "string",
           "description": "대상 서버 (secu, web, siem)",
-          "enum": ["secu", "web", "siem", "opsclaw"]
+          "enum": ["secu", "web", "siem", "bastion"]
         },
         "command": {
           "type": "string",
@@ -792,13 +792,13 @@ PYEOF
 python3 ~/lab/week02/security_agent.py
 ```
 
-### 5.2 OpsClaw dispatch로 원격 도구 실행
+### 5.2 Bastion dispatch로 원격 도구 실행
 
 ```bash
-# OpsClaw 프로젝트 생성
+# Bastion 프로젝트 생성
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "name": "week02-tool-calling",
     "request_text": "Week02 Tool Calling 실습",
@@ -811,16 +811,16 @@ export PROJECT_ID="<실제ID>"
 
 # plan 단계로 전환
 curl -s -X POST http://localhost:8000/projects/${PROJECT_ID}/plan \
-  -H "X-API-Key: opsclaw-api-key-2026" | python3 -m json.tool
+  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
 
 # execute 단계로 전환
 curl -s -X POST http://localhost:8000/projects/${PROJECT_ID}/execute \
-  -H "X-API-Key: opsclaw-api-key-2026" | python3 -m json.tool
+  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
 
 # dispatch로 원격 명령 실행 (secu 서버)
 curl -s -X POST http://localhost:8000/projects/${PROJECT_ID}/dispatch \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "command": "nft list ruleset | head -30",
     "subagent_url": "http://192.168.208.150:8002"

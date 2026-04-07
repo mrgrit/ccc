@@ -4,20 +4,20 @@
 - 강화학습(Reinforcement Learning)의 기본 개념과 보안 적용 원리를 이해한다
 - Q-learning 알고리즘의 동작 원리를 설명하고 간단한 구현을 할 수 있다
 - UCB1(Upper Confidence Bound) 탐색-활용 전략을 이해한다
-- OpsClaw의 RL 학습·추천 API를 활용하여 risk_level 최적화를 수행할 수 있다
+- Bastion의 RL 학습·추천 API를 활용하여 risk_level 최적화를 수행할 수 있다
 - 보상 설계가 자율보안시스템의 행동에 미치는 영향을 분석할 수 있다
 
 ## 실습 환경 (공통)
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -29,7 +29,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -66,7 +66,7 @@
 - 강화학습 기본 개념을 이해한다
 - Q-learning 동작 원리를 이해하고 구현한다
 - UCB1을 이해한다
-- OpsClaw RL API를 활용한다
+- Bastion RL API를 활용한다
 
 ## 전제 조건
 - Week 01-06 완료 (PoW, 보상 개념)
@@ -83,7 +83,7 @@
 
 ```
   에이전트  | ← 보상/벌점을 바탕으로 정책 업데이트
-  (OpsClaw)
+  (Bastion)
   행동 (action)
   risk_level 선택
 ↓
@@ -97,9 +97,9 @@
 
 ### 1.2 보안에서의 RL 적용
 
-| 요소 | 일반 RL | OpsClaw 보안 RL |
+| 요소 | 일반 RL | Bastion 보안 RL |
 |------|---------|----------------|
-| 에이전트 | 게임 캐릭터 | OpsClaw Master |
+| 에이전트 | 게임 캐릭터 | Bastion Master |
 | 환경 | 게임 세계 | 보안 인프라 (secu/web/siem) |
 | 상태 | 게임 화면 | 서버 상태, 위협 수준, 이전 결과 |
 | 행동 | 방향키 입력 | risk_level 선택 (low/medium/high/critical) |
@@ -158,8 +158,8 @@ Q(s, a) ← Q(s, a) + α × [R + γ × max Q(s', a') - Q(s, a)]
 > **실전 활용**: 분산 보안 모니터링, 다중 서버 동시 패치, 협업형 인시던트 대응 시스템 구축에 활용한다
 
 ```bash
-# opsclaw 서버 접속
-ssh opsclaw@10.20.30.201
+# bastion 서버 접속
+ssh bastion@10.20.30.201
 ```
 
 ```bash
@@ -300,19 +300,19 @@ PYTHON
 
 ---
 
-## 3. OpsClaw RL API 실습 (40분)
+## 3. Bastion RL API 실습 (40분)
 
 ### 3.1 RL 학습 실행
 
 ```bash
 # API 키 설정
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 ```
 
 ```bash
 # RL 학습 실행 (기존 task_reward 데이터 기반)
 curl -s -X POST http://localhost:8000/rl/train \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   | python3 -m json.tool
 # 학습 결과: 에피소드 수, Q-table 크기, 수렴 여부 등이 반환된다
 ```
@@ -321,7 +321,7 @@ curl -s -X POST http://localhost:8000/rl/train \
 
 ```bash
 # 현재 학습된 RL 정책 조회
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   http://localhost:8000/rl/policy \
   | python3 -m json.tool
 # 상태별 최적 행동(risk_level)과 Q-value가 출력된다
@@ -331,7 +331,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ```bash
 # 특정 에이전트와 risk_level에 대한 RL 추천
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/rl/recommend?agent_id=http://10.20.30.1:8002&risk_level=low" \
   | python3 -m json.tool
 # 해당 에이전트의 해당 risk_level에 대한 추천 정보가 반환된다
@@ -339,7 +339,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ```bash
 # 다른 에이전트의 추천
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/rl/recommend?agent_id=http://10.20.30.80:8002&risk_level=medium" \
   | python3 -m json.tool
 ```
@@ -350,7 +350,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 # 다양한 risk_level로 작업 실행하여 학습 데이터 축적
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "week07-rl-data-collection",
     "request_text": "RL 학습 데이터 수집: 다양한 risk_level 실행",
@@ -362,16 +362,16 @@ curl -s -X POST http://localhost:8000/projects \
 export PROJECT_ID="반환된-프로젝트-ID"
 # stage 전환
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 ```
 
 ```bash
 # 다양한 risk_level로 task 실행
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -421,14 +421,14 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 ```bash
 # 새 데이터 축적 후 RL 재학습
 curl -s -X POST http://localhost:8000/rl/train \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   | python3 -m json.tool
 # 추가 데이터를 반영하여 정책이 업데이트된다
 ```
 
 ```bash
 # 업데이트된 정책 확인
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   http://localhost:8000/rl/policy \
   | python3 -m json.tool
 # Q-value가 변경되었는지 확인
@@ -524,7 +524,7 @@ PYTHON
 
 ```bash
 # PoW 리더보드 조회 (보상 합계 순위)
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   http://localhost:8000/pow/leaderboard | python3 -m json.tool
 ```
 
@@ -532,14 +532,14 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 # 프로젝트 완료
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "summary": "Week07 강화학습과 보상 실습 완료",
     "outcome": "success",
     "work_details": [
       "Q-learning 시뮬레이션 구현 및 실행",
       "UCB1 탐색-활용 전략 시뮬레이션",
-      "OpsClaw RL train/policy/recommend API 활용",
+      "Bastion RL train/policy/recommend API 활용",
       "다양한 risk_level task 실행으로 학습 데이터 축적",
       "보상 설계 3가지 시뮬레이션 비교 분석"
     ]
@@ -609,8 +609,8 @@ execute-plan 실행
 ### 과제 2: 보상 설계 실험 (필수)
 3가지 이상의 서로 다른 보상 함수를 설계하고, 각각의 학습 결과(에이전트 행동 패턴)를 비교 분석하라. 어떤 보상 설계가 보안 운영에 가장 적합한지 논증한다.
 
-### 과제 3: OpsClaw RL 활용 보고서 (선택)
-OpsClaw RL API를 사용하여 10개 이상의 다양한 task를 실행하고, train → policy → recommend 흐름을 기록하라. 정책 변화를 관찰하고 보고서를 작성한다.
+### 과제 3: Bastion RL 활용 보고서 (선택)
+Bastion RL API를 사용하여 10개 이상의 다양한 task를 실행하고, train → policy → recommend 흐름을 기록하라. 정책 변화를 관찰하고 보고서를 작성한다.
 
 ---
 
@@ -620,7 +620,7 @@ OpsClaw RL API를 사용하여 10개 이상의 다양한 task를 실행하고, t
 - [ ] Q-learning의 업데이트 공식을 말할 수 있는가?
 - [ ] 탐색과 활용의 딜레마를 설명할 수 있는가?
 - [ ] UCB1 알고리즘의 동작 원리를 설명할 수 있는가?
-- [ ] OpsClaw RL train API를 호출하여 학습을 실행할 수 있는가?
+- [ ] Bastion RL train API를 호출하여 학습을 실행할 수 있는가?
 - [ ] RL policy와 recommend API를 사용할 수 있는가?
 - [ ] 보상 설계가 에이전트 행동에 미치는 영향을 설명할 수 있는가?
 
@@ -630,7 +630,7 @@ OpsClaw RL API를 사용하여 10개 이상의 다양한 task를 실행하고, t
 
 **Week 08: 중간고사 — 자율 보안 점검 CTF**
 - 4대 서버 종합 점검 CTF
-- OpsClaw execute-plan으로 병렬 실행
+- Bastion execute-plan으로 병렬 실행
 - Week 01~07 전체 지식 종합 평가
 - 팀별 점수 경쟁
 
@@ -654,7 +654,7 @@ OpsClaw RL API를 사용하여 10개 이상의 다양한 task를 실행하고, t
 **Q4.** 보상 설계에서 벌점을 너무 크게 하면?
 - (a) 학습이 빨라진다  (b) **에이전트가 위험 회피적이 되어 안전한 행동만 선택**  (c) 에이전트가 공격적이 된다  (d) 변화 없음
 
-**Q5.** OpsClaw에서 RL 학습 데이터의 원천은?
+**Q5.** Bastion에서 RL 학습 데이터의 원천은?
 - (a) 사용자 입력  (b) 외부 API  (c) **execute-plan 실행 시 생성되는 task_reward (PoW 연동)**  (d) 이메일 알림
 
 **정답:** Q1:b, Q2:b, Q3:c, Q4:b, Q5:c

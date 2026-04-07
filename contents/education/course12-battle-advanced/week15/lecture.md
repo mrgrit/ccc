@@ -6,23 +6,23 @@
 - 전문적 수준의 보안 평가 보고서를 작성할 수 있다
 - 보안 커리어 로드맵을 수립하고 지속 학습 계획을 세울 수 있다
 - 과정 전체를 회고하여 성장 포인트와 개선 방향을 도출할 수 있다
-- OpsClaw/bastion 플랫폼을 활용한 자동화 보안 운영의 전체 그림을 이해한다
+- Bastion/bastion 플랫폼을 활용한 자동화 보안 운영의 전체 그림을 이해한다
 
 ## 전제 조건
 - Week 01-14 전체 이수 완료
 - 공격(Red), 방어(Blue), 퍼플팀 전 과정 실습 완료
-- OpsClaw 전체 API 사용 능숙
+- Bastion 전체 API 사용 능숙
 
 ## 실습 환경 (공통)
 
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh 4.11.2) | `sshpass -p1 ssh siem@10.20.30.100` |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 평가 시간 배분 (3시간)
 
@@ -88,7 +88,7 @@
 |------|----------|----------|
 | **공격** | nmap, curl, SQLi, XSS, 권한상승 | W01-W05, W09 |
 | **방어** | Wazuh, Suricata, nftables | W06-W08, W12 |
-| **자동화** | OpsClaw API, SubAgent, RL | W09-W10 |
+| **자동화** | Bastion API, SubAgent, RL | W09-W10 |
 | **분석** | ATT&CK Navigator, CVSS, Gap 분석 | W01, W11-W13 |
 | **보고** | PTES 보고서, IR 보고서, completion-report | W11-W12 |
 | **협업** | 퍼플팀 워크플로, CTF 팀전 | W13-W14 |
@@ -103,7 +103,7 @@
 | 취약점 발견 수 | 15점 | OWASP Top 10 기준 (3점/취약점) |
 | 익스플로잇 PoC | 10점 | 재현 가능한 PoC 명령어 |
 | 방어 대응 | 10점 | 탐지 규칙, 차단 조치 |
-| 증적 관리 | 5점 | OpsClaw evidence, PoW 검증 |
+| 증적 관리 | 5점 | Bastion evidence, PoW 검증 |
 
 ### 최종 보고서 (30점)
 
@@ -145,11 +145,11 @@
 
 대상: 10.20.30.80 (JuiceShop + Apache)
 시간: 60분
-도구: OpsClaw API, CLI 도구 자유
+도구: Bastion API, CLI 도구 자유
 목표: OWASP Top 10 취약점 최소 3개 발견 + PoC + 방어 대응
 
 요구사항:
-1. OpsClaw 프로젝트를 생성하여 모든 행위를 기록할 것
+1. Bastion 프로젝트를 생성하여 모든 행위를 기록할 것
 2. PTES 프레임워크에 따라 체계적으로 수행할 것
 3. 각 취약점에 CVSS 점수와 ATT&CK ID를 매핑할 것
 4. 최소 1개의 방어 대응(탐지 규칙 또는 차단 조치)을 수행할 것
@@ -158,7 +158,7 @@
 RoE:
 - 범위: 10.20.30.0/24
 - 금지: DoS, 데이터 파괴, 서비스 중단
-- 증적: OpsClaw PoW 블록에 자동 기록
+- 증적: Bastion PoW 블록에 자동 기록
 ===================================================
 ```
 
@@ -166,11 +166,11 @@ RoE:
 
 ```bash
 # Step 1: 프로젝트 생성 및 환경 준비
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "week15-final-exam",
     "request_text": "종합 실전 시험: Full-Scope Penetration Test",
@@ -184,12 +184,12 @@ export PROJECT_ID="반환된-프로젝트-ID"
 
 # Stage 전환
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -m json.tool
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -m json.tool
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
-> **명령어 해설**: 시험의 첫 단계로 OpsClaw 프로젝트를 생성하고 Stage를 전환한다. 이후 모든 공격과 방어 행위는 execute-plan 또는 dispatch로 실행하여 자동 증적을 생성한다.
+> **명령어 해설**: 시험의 첫 단계로 Bastion 프로젝트를 생성하고 Stage를 전환한다. 이후 모든 공격과 방어 행위는 execute-plan 또는 dispatch로 실행하여 자동 증적을 생성한다.
 >
 > **트러블슈팅**: Stage 전환 실패 시 프로젝트 상태를 확인하고, 필요하면 새 프로젝트를 생성한다.
 
@@ -205,7 +205,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
 # 예시 구조 (수험자가 직접 작성):
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -248,13 +248,13 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 ```bash
 # Step 5: 증적 수집 및 검증 (권장 10분)
 # Evidence 수집
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   http://localhost:8000/projects/$PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 
 # PoW 체인 검증
 curl -s "http://localhost:8000/pow/verify?agent_id=http://10.20.30.201:8002" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -m json.tool
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
 > **명령어 해설**: 시험 종료 전에 반드시 evidence를 수집하고 PoW 체인을 검증한다. 이것이 시험 결과의 공식 기록이 된다.
@@ -318,7 +318,7 @@ PoC:
 
 ## 실습 3.2: completion-report 제출
 
-> **실습 목적**: 시험 결과를 OpsClaw completion-report API로 공식 제출한다.
+> **실습 목적**: 시험 결과를 Bastion completion-report API로 공식 제출한다.
 >
 > **배우는 것**: 구조화된 결과 보고의 중요성, API 기반 보고서 자동화, 증적과 보고서의 연결을 이해한다.
 >
@@ -330,7 +330,7 @@ PoC:
 # 최종 보고서 제출 (수험자가 발견 사항에 맞게 수정)
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "summary": "종합 실전 시험 완료. [발견 취약점 수]개 OWASP Top 10 취약점 발견.",
     "outcome": "success",
@@ -395,10 +395,10 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
 
 | 점수 | 기준 |
 |------|------|
-| 5점 | OpsClaw 프로젝트 생성 + 모든 행위 execute-plan 기록 + PoW 검증 완료 |
+| 5점 | Bastion 프로젝트 생성 + 모든 행위 execute-plan 기록 + PoW 검증 완료 |
 | 3-4점 | 프로젝트 생성 + 대부분 기록 (일부 누락) |
 | 1-2점 | 프로젝트 생성만 완료 |
-| 0점 | OpsClaw 미사용 |
+| 0점 | Bastion 미사용 |
 
 ---
 
@@ -489,13 +489,13 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
 | SANS Community | 전반 | 영어 | sans.org |
 | r/netsec | 보안 뉴스 | 영어 | reddit.com/r/netsec |
 
-## 4.4 OpsClaw/bastion 기반 지속 실습 계획
+## 4.4 Bastion/bastion 기반 지속 실습 계획
 
 과정 수료 후에도 실습 환경을 활용하여 지속 학습할 수 있다.
 
 ### 월별 실습 계획 예시
 
-| 월 | 주제 | OpsClaw 활용 |
+| 월 | 주제 | Bastion 활용 |
 |----|------|-------------|
 | **1월** | 새로운 ATT&CK 기법 5개 학습 + 시뮬레이션 | execute-plan으로 Atomic Test |
 | **2월** | Wazuh 커스텀 규칙 10개 개발 | SOAR 플레이북 구현 |
@@ -511,14 +511,14 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
 최종 평가 전 다음 항목을 스스로 확인한다:
 
 - [ ] PTES 7단계를 독립적으로 수행할 수 있는가?
-- [ ] OpsClaw 프로젝트 생성, execute-plan, evidence, completion-report 전 과정을 수행할 수 있는가?
+- [ ] Bastion 프로젝트 생성, execute-plan, evidence, completion-report 전 과정을 수행할 수 있는가?
 - [ ] OWASP Top 10 취약점을 설명하고 최소 5개를 테스트할 수 있는가?
 - [ ] CVSS 점수를 산정하고 근거를 설명할 수 있는가?
 - [ ] ATT&CK 기법 ID를 매핑할 수 있는가?
 - [ ] Wazuh 커스텀 규칙을 XML로 작성할 수 있는가?
 - [ ] IR 6단계를 실행하고 문서화할 수 있는가?
 - [ ] ATT&CK Gap 분석을 수행하고 개선 계획을 수립할 수 있는가?
-- [ ] AI 에이전트(ReAct, RL)의 원리를 설명하고 OpsClaw로 구현할 수 있는가?
+- [ ] AI 에이전트(ReAct, RL)의 원리를 설명하고 Bastion로 구현할 수 있는가?
 - [ ] 전문적 침투 테스트 보고서를 작성할 수 있는가?
 
 ---
@@ -531,7 +531,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
 **Q2.** CVSS 9.0 이상의 취약점에 대한 권장 리미디에이션 기한은?
 - (a) 30일  (b) 7일  (c) **즉시 (24시간 이내)**  (d) 다음 릴리즈
 
-**Q3.** OpsClaw에서 risk_level "critical" 태스크의 동작은?
+**Q3.** Bastion에서 risk_level "critical" 태스크의 동작은?
 - (a) 즉시 실행  (b) 에러 반환  (c) **dry_run 강제, 사용자 확인 필수**  (d) 삭제
 
 **Q4.** Q-learning에서 ε-greedy의 ε=0.1이면?
@@ -583,7 +583,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
    - 월별 실습 계획
 
 5. **부록**
-   - OpsClaw evidence 원시 데이터
+   - Bastion evidence 원시 데이터
    - PoW 검증 결과
    - 사용 도구 목록
 

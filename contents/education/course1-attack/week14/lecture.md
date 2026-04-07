@@ -1,7 +1,7 @@
-# Week 14: 자동화 침투 테스트 (OpsClaw 활용)
+# Week 14: 자동화 침투 테스트 (Bastion 활용)
 
 ## 학습 목표
-- OpsClaw 플랫폼의 아키텍처와 API를 이해한다
+- Bastion 플랫폼의 아키텍처와 API를 이해한다
 - execute-plan API로 다단계 공격을 자동 실행할 수 있다
 - Playbook 기반 공격 재현의 장점을 설명할 수 있다
 - PoW(Proof of Work) 증거 체인의 원리와 감사 활용을 이해한다
@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -29,7 +29,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -71,15 +71,15 @@
 | **OWASP** | Open Web Application Security Project | 웹 보안 취약점 연구 국제 단체 | 웹 보안의 표준 기관 |
 | **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 점수 (0~10점) | 질병 위험도 등급 |
 | **CVE** | Common Vulnerabilities and Exposures | 취약점 고유 식별 번호 | 질병의 고유 코드 (예: COVID-19) |
-| **OpsClaw** | OpsClaw | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
+| **Bastion** | Bastion | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
 
 ---
 
-# Week 14: 자동화 침투 테스트 (OpsClaw 활용)
+# Week 14: 자동화 침투 테스트 (Bastion 활용)
 
 ## 학습 목표
 
-- OpsClaw 플랫폼의 아키텍처와 API를 이해한다
+- Bastion 플랫폼의 아키텍처와 API를 이해한다
 - execute-plan API로 다단계 공격을 자동 실행할 수 있다
 - Playbook 기반 공격 재현의 장점을 설명할 수 있다
 - PoW(Proof of Work) 증거 체인의 원리와 감사 활용을 이해한다
@@ -87,7 +87,7 @@
 
 ---
 
-## 1. OpsClaw 플랫폼 개요
+## 1. Bastion 플랫폼 개요
 
 ### 1.1 아키텍처
 
@@ -123,7 +123,7 @@
 
 모든 API 호출에 인증 헤더가 필요하다.
 
-> **실습 목적**: OpsClaw API를 사용하여 자동화된 침투 테스트를 수행하고 증적을 체계적으로 관리한다
+> **실습 목적**: Bastion API를 사용하여 자동화된 침투 테스트를 수행하고 증적을 체계적으로 관리한다
 >
 > **배우는 것**: API 인증, 프로젝트 생성, 태스크 디스패치 등 자동화 침투 테스트 파이프라인 구축 방법을 배운다
 >
@@ -133,18 +133,18 @@
 
 ```bash
 # 환경 변수 설정
-export OPSCLAW_API_KEY="opsclaw-api-key-2026"
+export BASTION_API_KEY="bastion-api-key-2026"
 
 # 모든 curl 요청에 포함
--H "X-API-Key: $OPSCLAW_API_KEY"
+-H "X-API-Key: $BASTION_API_KEY"
 ```
 
 ---
 
-## 2. OpsClaw API 워크플로우
+## 2. Bastion API 워크플로우
 
 > **이 실습을 왜 하는가?**
-> "자동화 침투 테스트 (OpsClaw 활용)" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
+> "자동화 침투 테스트 (Bastion 활용)" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
 > 사이버보안 공격/웹해킹/침투테스트 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
 > 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
 >
@@ -220,7 +220,7 @@ export OPSCLAW_API_KEY="opsclaw-api-key-2026"
 
 | 서버 | SubAgent URL |
 |------|-------------|
-| opsclaw (로컬) | http://localhost:8002 |
+| bastion (로컬) | http://localhost:8002 |
 | secu | http://10.20.30.1:8002 또는 http://10.20.30.1:8002 |
 | web | http://10.20.30.80:8002 또는 http://10.20.30.80:8002 |
 | siem | http://10.20.30.100:8002 또는 http://10.20.30.100:8002 |
@@ -257,16 +257,16 @@ Block 1              Block 2              Block 3
 
 ### 실습 1: 프로젝트 생성 및 기본 워크플로우
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # 환경 변수 설정
-export OPSCLAW_API_KEY="opsclaw-api-key-2026"          # 환경 변수 설정
+export BASTION_API_KEY="bastion-api-key-2026"          # 환경 변수 설정
 
 # 1. 프로젝트 생성
 PROJECT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
     "name": "week14-automated-pentest",
     "request_text": "JuiceShop 대상 자동화 침투 테스트",
@@ -281,21 +281,21 @@ echo "프로젝트 ID: $PROJECT_ID"
 
 # 2. Stage 전환: created → planning → executing
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -m json.tool  # API 인증 키
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool  # API 인증 키
 
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -m json.tool  # API 인증 키
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool  # API 인증 키
 ```
 
 ### 실습 2: 정찰 단계 자동화 (T1046, T1595)
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # 정찰 태스크 실행
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
     "tasks": [
       {
@@ -333,13 +333,13 @@ curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
 
 ### 실습 3: 웹 공격 단계 자동화 (T1190)
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # SQL Injection 테스트 태스크
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
     "tasks": [
       {
@@ -367,18 +367,18 @@ curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
 
 ### 실습 4: 증거 확인
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # 증거 요약 조회
 echo "===== 증거 요약 ====="
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/$PROJECT_ID/evidence/summary" | python3 -m json.tool
 
 # 프로젝트 재생 (모든 태스크 타임라인)
 echo ""
 echo "===== 작업 재생 ====="
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/$PROJECT_ID/replay" | python3 -m json.tool
 ```
 
@@ -387,13 +387,13 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 ```bash
 # PoW 블록 조회
 echo "===== PoW 블록 ====="
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/blocks?agent_id=http://localhost:8002" | python3 -m json.tool
 
 # 체인 무결성 검증
 echo ""
 echo "===== 체인 무결성 검증 ====="
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
 
 # 예상 출력:
@@ -407,19 +407,19 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 # 보상 랭킹
 echo ""
 echo "===== 보상 랭킹 ====="
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/leaderboard" | python3 -m json.tool
 ```
 
 ### 실습 6: 완료 보고서 생성
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # 완료 보고서 작성
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
     "summary": "JuiceShop 대상 자동화 침투 테스트 완료",
     "outcome": "success",
@@ -442,13 +442,13 @@ curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/completion-report" \
 
 ### 실습 7: 다중 서버 공격 자동화
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # 새 프로젝트: 전체 인프라 스캔
 PROJECT2=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
     "name": "week14-multi-server-scan",
     "request_text": "전체 인프라 정찰 스캔",
@@ -457,14 +457,14 @@ PROJECT2=$(curl -s -X POST http://localhost:8000/projects \
 PID2=$(echo "$PROJECT2" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 
 curl -s -X POST "http://localhost:8000/projects/$PID2/plan" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null         # API 인증 키
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null         # API 인증 키
 curl -s -X POST "http://localhost:8000/projects/$PID2/execute" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null         # API 인증 키
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null         # API 인증 키
 
 # 각 서버별 SubAgent로 명령 분배
 curl -s -X POST "http://localhost:8000/projects/$PID2/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
     "tasks": [
       {
@@ -497,7 +497,7 @@ curl -s -X POST "http://localhost:8000/projects/$PID2/execute-plan" \
 
 echo ""
 echo "===== 전체 서버 정보 수집 결과 ====="
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/projects/$PID2/evidence/summary" | python3 -m json.tool
 ```
 
@@ -505,7 +505,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ## 6. 수동 vs 자동화 침투 테스트 비교
 
-| 항목 | 수동 테스트 | OpsClaw 자동화 |
+| 항목 | 수동 테스트 | Bastion 자동화 |
 |------|------------|---------------|
 | **속도** | 느림 (사람이 직접 입력) | 빠름 (API 일괄 실행) |
 | **재현성** | 낮음 (매번 다르게 실행) | 높음 (동일 Playbook 재실행) |
@@ -536,15 +536,15 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ## 7. 실습 과제
 
-1. **자동화 공격 체인**: OpsClaw를 사용하여 JuiceShop에 대한 5단계 이상의 공격 체인을 설계하고 실행하라. 각 단계의 ATT&CK 기법 ID를 명시할 것.
+1. **자동화 공격 체인**: Bastion를 사용하여 JuiceShop에 대한 5단계 이상의 공격 체인을 설계하고 실행하라. 각 단계의 ATT&CK 기법 ID를 명시할 것.
 2. **PoW 검증 보고서**: 실행된 모든 태스크의 PoW 블록을 조회하고, 체인 무결성이 유지되었음을 확인하는 보고서를 작성하라.
-3. **비교 분석**: 동일한 공격을 수동(Week 05 방식)과 자동화(OpsClaw)로 각각 수행하고, 소요 시간, 정확도, 증거 품질을 비교하라.
+3. **비교 분석**: 동일한 공격을 수동(Week 05 방식)과 자동화(Bastion)로 각각 수행하고, 소요 시간, 정확도, 증거 품질을 비교하라.
 
 ---
 
 ## 8. 핵심 정리
 
-- OpsClaw는 **프로젝트 → 계획 → 실행 → 증거 → 보고**의 체계적 워크플로우를 제공한다
+- Bastion는 **프로젝트 → 계획 → 실행 → 증거 → 보고**의 체계적 워크플로우를 제공한다
 - **execute-plan**으로 다단계 공격을 한 번에 자동 실행할 수 있다
 - **PoW 체인**은 변조 불가능한 감사 증적을 자동 생성한다
 - **SubAgent**를 통해 여러 서버에 동시에 명령을 분배할 수 있다

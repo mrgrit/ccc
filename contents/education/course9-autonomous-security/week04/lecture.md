@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -29,7 +29,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -78,7 +78,7 @@
 
 ### 1.1 A2A 프로토콜이란
 
-A2A(Agent-to-Agent)는 OpsClaw에서 Manager와 SubAgent 사이의 통신 규약이다.
+A2A(Agent-to-Agent)는 Bastion에서 Manager와 SubAgent 사이의 통신 규약이다.
 
 ```
 Manager API (:8000)
@@ -129,7 +129,7 @@ Manager API
   :8002                   :8002                   :8002
   nftables, Suricata      JuiceShop, Apache       Wazuh, OpenCTI
 
-  opsclaw (10.20.30.201) ← Control Plane
+  bastion (10.20.30.201) ← Control Plane
   :8000 :8001 :8002
 
 [외부 네트워크]
@@ -169,13 +169,13 @@ Manager API
 > **실전 활용**: 다중 서버 보안 자동화, 원격 패치 관리, 분산 환경의 보안 운영 자동화에 활용한다
 
 ```bash
-# opsclaw 서버 접속
-ssh opsclaw@10.20.30.201
+# bastion 서버 접속
+ssh bastion@10.20.30.201
 ```
 
 ```bash
 # API 키 설정
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 ```
 
 ```bash
@@ -221,7 +221,7 @@ curl -s http://10.20.30.100:8002/health | python3 -m json.tool
 # 프로젝트 생성
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "week04-subagent-practice",
     "request_text": "SubAgent 원격 실행 심화 실습",
@@ -234,16 +234,16 @@ curl -s -X POST http://localhost:8000/projects \
 export PROJECT_ID="반환된-프로젝트-ID"
 # stage 전환
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 ```
 
 ```bash
 # dispatch: secu 서버에서 Suricata 상태 확인
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "systemctl is-active suricata 2>/dev/null && suricata --build-info | head -5 || echo suricata-not-found",
     "subagent_url": "http://10.20.30.1:8002"
@@ -257,7 +257,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 # secu 서버: 방화벽 통계 조회
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "sudo nft list counters 2>/dev/null || echo no-counters",
     "subagent_url": "http://10.20.30.1:8002"
@@ -269,7 +269,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 # web 서버: JuiceShop 프로세스 확인
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "ps aux | grep -i juice | grep -v grep | head -5",
     "subagent_url": "http://10.20.30.80:8002"
@@ -281,7 +281,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 # siem 서버: Wazuh 에이전트 연결 수 확인
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "/var/ossec/bin/agent_control -l 2>/dev/null | tail -10 || echo wazuh-agent-control-not-found",
     "subagent_url": "http://10.20.30.100:8002"
@@ -299,7 +299,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 # 패턴 1: 전 서버에 동일한 점검 명령 병렬 실행
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -338,7 +338,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 # 패턴 2: 서버별 역할에 맞는 특화 명령 병렬 실행
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -372,7 +372,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 # Step 1: 로그 수집
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "tail -50 /var/log/apache2/access.log 2>/dev/null || tail -50 /var/log/httpd/access_log 2>/dev/null || echo no-access-log",
     "subagent_url": "http://10.20.30.80:8002"
@@ -386,7 +386,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 # 존재하지 않는 SubAgent로 명령 전송 (오류 실험)
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "hostname",
     "subagent_url": "http://10.20.30.99:8002"
@@ -407,7 +407,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 # 긴급 점검: 네트워크 연결, 보안 서비스, 이상 프로세스 동시 확인
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -450,7 +450,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # evidence 요약으로 전체 결과 확인
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   http://localhost:8000/projects/$PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 ```
@@ -459,7 +459,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 # 프로젝트 완료
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "summary": "Week04 SubAgent 원격 실행 실습 완료",
     "outcome": "success",

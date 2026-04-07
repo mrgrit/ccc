@@ -10,13 +10,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +28,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -207,10 +207,10 @@ ENDSSH
 
 ### 3.1 AI RMF 구조
 
-NIST AI RMF의 4개 기능(Govern/Map/Measure/Manage)을 OpsClaw 아키텍처에 매핑하여 분석한다.
+NIST AI RMF의 4개 기능(Govern/Map/Measure/Manage)을 Bastion 아키텍처에 매핑하여 분석한다.
 
 ```bash
-# NIST AI RMF → OpsClaw 매핑 분석
+# NIST AI RMF → Bastion 매핑 분석
 sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 nist_ai_rmf = {
@@ -363,7 +363,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
     "model": "gemma3:12b",
     "messages": [
       {"role": "system", "content": "AI 윤리 전문가입니다. EU AI Act와 한국 AI 기본법 기준으로 판단합니다."},
-      {"role": "user", "content": "다음 AI 시스템의 위험 등급을 EU AI Act 기준으로 분류하고, 필요한 규제 조치를 제시하세요:\n\n1. 직원 채용 이력서 자동 필터링 AI\n2. 고객 서비스 챗봇\n3. 의료 영상 진단 보조 AI\n4. 이메일 스팸 필터\n5. 보안 관제 자동 대응 AI (OpsClaw)"}
+      {"role": "user", "content": "다음 AI 시스템의 위험 등급을 EU AI Act 기준으로 분류하고, 필요한 규제 조치를 제시하세요:\n\n1. 직원 채용 이력서 자동 필터링 AI\n2. 고객 서비스 챗봇\n3. 의료 영상 진단 보조 AI\n4. 이메일 스팸 필터\n5. 보안 관제 자동 대응 AI (Bastion)"}
     ],
     "temperature": 0.3
   }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"

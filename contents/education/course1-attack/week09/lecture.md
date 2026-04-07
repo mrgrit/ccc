@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -29,7 +29,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -71,7 +71,7 @@
 | **OWASP** | Open Web Application Security Project | 웹 보안 취약점 연구 국제 단체 | 웹 보안의 표준 기관 |
 | **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 점수 (0~10점) | 질병 위험도 등급 |
 | **CVE** | Common Vulnerabilities and Exposures | 취약점 고유 식별 번호 | 질병의 고유 코드 (예: COVID-19) |
-| **OpsClaw** | OpsClaw | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
+| **Bastion** | Bastion | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
 
 ---
 
@@ -358,7 +358,7 @@ ip neigh show
 
 | 서버 | IP | 역할 |
 |------|-----|------|
-| opsclaw | 10.20.30.201 | 공격자 (스캔 수행) |
+| bastion | 10.20.30.201 | 공격자 (스캔 수행) |
 | secu | 10.20.30.1 | 방화벽/IPS (패킷 모니터링) |
 | web | 10.20.30.80 | 대상 서버 (JuiceShop) |
 | siem | 10.20.30.100 | SIEM (로그 수집) |
@@ -384,12 +384,12 @@ sudo tcpdump -i eth0 host 10.20.30.80 -nn -c 100
 # (패킷 대기 중...)
 ```
 
-### 실습 2: opsclaw에서 web 서버 포트 스캔
+### 실습 2: bastion에서 web 서버 포트 스캔
 
-다른 터미널을 열고 opsclaw에서 스캔을 수행한다.
+다른 터미널을 열고 bastion에서 스캔을 수행한다.
 
 ```bash
-# 터미널 2: opsclaw에서 실행
+# 터미널 2: bastion에서 실행
 
 # 2-1. 기본 ping 테스트 (ICMP)
 ping -c 3 10.20.30.80
@@ -457,14 +457,14 @@ nmap -sV -p 22,80,3000 10.20.30.80
 sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 \
   "sudo tcpdump -i eth0 'tcp[tcpflags] & tcp-syn != 0' -nn -c 30"
 
-# 동시에 opsclaw에서 스캔 실행
+# 동시에 bastion에서 스캔 실행
 nmap -sS -p 1-100 10.20.30.80
 ```
 
 ### 실습 5: ARP 테이블 확인
 
 ```bash
-# opsclaw에서 ARP 테이블 확인
+# bastion에서 ARP 테이블 확인
 ip neigh show
 
 # 예상 출력:
@@ -475,15 +475,15 @@ ip neigh show
 sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 "ip neigh show"
 ```
 
-### 실습 6: OpsClaw로 스캔 자동화
+### 실습 6: Bastion로 스캔 자동화
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
-# OpsClaw 프로젝트 생성
+# Bastion 프로젝트 생성
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{                                                # 요청 데이터(body)
     "name": "week09-network-scan",
     "request_text": "네트워크 스캔 실습",
@@ -493,14 +493,14 @@ curl -s -X POST http://localhost:8000/projects \
 # 프로젝트 ID 확인 후 (예: id=1)
 # Stage 전환
 curl -s -X POST http://localhost:8000/projects/1/plan \
-  -H "X-API-Key: opsclaw-api-key-2026"                 # API 인증 키
+  -H "X-API-Key: bastion-api-key-2026"                 # API 인증 키
 curl -s -X POST http://localhost:8000/projects/1/execute \
-  -H "X-API-Key: opsclaw-api-key-2026"                 # API 인증 키
+  -H "X-API-Key: bastion-api-key-2026"                 # API 인증 키
 
 # nmap 스캔 실행
 curl -s -X POST http://localhost:8000/projects/1/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{                                                # 요청 데이터(body)
     "tasks": [
       {
@@ -514,7 +514,7 @@ curl -s -X POST http://localhost:8000/projects/1/execute-plan \
   }' | python3 -m json.tool
 
 # 결과 확인
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   http://localhost:8000/projects/1/evidence/summary | python3 -m json.tool
 ```
 

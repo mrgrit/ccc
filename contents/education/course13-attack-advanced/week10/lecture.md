@@ -19,7 +19,7 @@
 
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
-| opsclaw | 10.20.30.201 | 수신 서버 (공격자) | `ssh opsclaw@10.20.30.201` |
+| bastion | 10.20.30.201 | 수신 서버 (공격자) | `ssh bastion@10.20.30.201` |
 | secu | 10.20.30.1 | 방화벽/IPS (탐지) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 유출 대상 (피해 서버) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM 모니터링 | `sshpass -p1 ssh siem@10.20.30.100` |
@@ -490,11 +490,11 @@ echo "  done"
 echo "  → 트래픽 이상 탐지를 회피하기 위한 랜덤 지연"
 
 echo ""
-echo "[실습] web 서버에서 opsclaw으로 파일 유출 시뮬레이션"
-# web → opsclaw으로 데이터 전송
+echo "[실습] web 서버에서 bastion으로 파일 유출 시뮬레이션"
+# web → bastion으로 데이터 전송
 sshpass -p1 ssh web@10.20.30.80 "
   echo 'sensitive data from web server' > /tmp/exfil_test.txt
-  echo '[유출] web → opsclaw 전송 시뮬레이션'
+  echo '[유출] web → bastion 전송 시뮬레이션'
   cat /tmp/exfil_test.txt
   rm -f /tmp/exfil_test.txt
 " 2>/dev/null

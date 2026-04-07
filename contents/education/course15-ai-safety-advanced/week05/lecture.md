@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -251,12 +251,12 @@ AI 에이전트 권한 상승 경로
   Level 3: 네트워크 전체 장악
 ```
 
-## 2.4 OpsClaw 에이전트의 보안 모델
+## 2.4 Bastion 에이전트의 보안 모델
 
-OpsClaw는 이런 위협에 대비한 보안 모델을 갖추고 있다.
+Bastion는 이런 위협에 대비한 보안 모델을 갖추고 있다.
 
 ```
-OpsClaw 보안 계층
+Bastion 보안 계층
 
   1. risk_level 체계
      - low: 자동 실행 가능
@@ -289,7 +289,7 @@ OpsClaw 보안 계층
 > **이걸 하면 무엇을 알 수 있는가?**
 > - 도구 호출 유도 공격의 실제 동작
 > - 파라미터 인젝션의 위험성
-> - OpsClaw의 보안 메커니즘 동작
+> - Bastion의 보안 메커니즘 동작
 >
 > **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
 
@@ -481,14 +481,14 @@ for name, prompt in INJECTION_TESTS:
 PYEOF
 ```
 
-## 3.3 OpsClaw dispatch 보안 테스트
+## 3.3 Bastion dispatch 보안 테스트
 
 ```bash
-# OpsClaw의 dispatch 명령으로 실제 에이전트 보안 테스트
+# Bastion의 dispatch 명령으로 실제 에이전트 보안 테스트
 # 먼저 프로젝트 생성
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "name": "agent-security-week05",
     "request_text": "AI 에이전트 보안 테스트 - 도구 사용 공격, 권한 남용, 체인 공격",
@@ -496,8 +496,8 @@ curl -s -X POST http://localhost:8000/projects \
   }' | python3 -m json.tool
 
 # Stage 전환 (프로젝트 ID 확인 후 사용)
-# curl -s -X POST http://localhost:8000/projects/{id}/plan -H "X-API-Key: opsclaw-api-key-2026"
-# curl -s -X POST http://localhost:8000/projects/{id}/execute -H "X-API-Key: opsclaw-api-key-2026"
+# curl -s -X POST http://localhost:8000/projects/{id}/plan -H "X-API-Key: bastion-api-key-2026"
+# curl -s -X POST http://localhost:8000/projects/{id}/execute -H "X-API-Key: bastion-api-key-2026"
 ```
 
 ## 3.4 체인 공격 시뮬레이션
@@ -1039,7 +1039,7 @@ python3 /tmp/agent_monitor.py
 **정답: B) 셸이 괄호 안 명령을 먼저 실행하여 의도치 않은 명령이 실행될 수 있으므로**
 > `echo $(cat /etc/shadow)`에서 먼저 `cat /etc/shadow`가 실행되어 민감 정보가 노출될 수 있다.
 
-### 퀴즈 7: OpsClaw의 risk_level=critical 태스크에 적용되는 보안 조치는?
+### 퀴즈 7: Bastion의 risk_level=critical 태스크에 적용되는 보안 조치는?
 - A) 즉시 실행
 - B) 로깅만
 - C) dry_run 강제 → 사용자 확인 후 실행
@@ -1091,7 +1091,7 @@ python3 /tmp/agent_monitor.py
   - 감사 로그 JSON 파일 저장
 - 10가지 테스트 케이스로 보안 프레임워크 검증
 
-### 과제 3: OpsClaw 보안 모델 분석 (심화)
-- OpsClaw의 에이전트 보안 모델(risk_level, PoW, SubAgent 격리)을 분석
+### 과제 3: Bastion 보안 모델 분석 (심화)
+- Bastion의 에이전트 보안 모델(risk_level, PoW, SubAgent 격리)을 분석
 - 개선점 3가지 이상을 제안하고 구현 방안 설계
 - 다른 에이전트 프레임워크(LangChain, AutoGPT 등)와 보안 모델 비교

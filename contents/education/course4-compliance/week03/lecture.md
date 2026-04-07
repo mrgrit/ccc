@@ -10,13 +10,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +28,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -162,7 +162,7 @@ ISO 27001:2013에서는 14개 그룹 114개 항목이었으나, 2022년 개정�
 
 ```bash
 # 실습: 서버 자산의 서비스 목록 확인
-sshpass -p1 ssh opsclaw@10.20.30.201 "systemctl list-units --type=service --state=running --no-pager"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh bastion@10.20.30.201 "systemctl list-units --type=service --state=running --no-pager"  # 비밀번호 자동입력 SSH
 sshpass -p1 ssh secu@10.20.30.1 "systemctl list-units --type=service --state=running --no-pager"  # 비밀번호 자동입력 SSH
 ```
 
@@ -175,8 +175,8 @@ sshpass -p1 ssh secu@10.20.30.1 "systemctl list-units --type=service --state=run
 
 ```bash
 # 실습: 사용자 계정 및 권한 확인
-sshpass -p1 ssh opsclaw@10.20.30.201 "cat /etc/passwd | grep -v nologin | grep -v false"  # 비밀번호 자동입력 SSH
-sshpass -p1 ssh opsclaw@10.20.30.201 "cat /etc/group | grep sudo"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh bastion@10.20.30.201 "cat /etc/passwd | grep -v nologin | grep -v false"  # 비밀번호 자동입력 SSH
+sshpass -p1 ssh bastion@10.20.30.201 "cat /etc/group | grep sudo"  # 비밀번호 자동입력 SSH
 ```
 
 ### 2.6 공급망 보안 (A.5.19~A.5.22)
@@ -213,13 +213,13 @@ sshpass -p1 ssh opsclaw@10.20.30.201 "cat /etc/group | grep sudo"  # 비밀번�
 
 ```bash
 # 비활성 계정 찾기 (90일 이상 로그인 안 한 계정)
-sshpass -p1 ssh opsclaw@10.20.30.201 "lastlog | awk 'NR>1 && \$2==\"Never\" {print \$1}'"
+sshpass -p1 ssh bastion@10.20.30.201 "lastlog | awk 'NR>1 && \$2==\"Never\" {print \$1}'"
 
 # sudo 권한 가진 사용자 확인
-sshpass -p1 ssh opsclaw@10.20.30.201 "getent group sudo"
+sshpass -p1 ssh bastion@10.20.30.201 "getent group sudo"
 
 # 비밀번호 만료 정책 확인
-sshpass -p1 ssh opsclaw@10.20.30.201 "chage -l user 2>/dev/null || echo 'chage 명령 확인 필요'"
+sshpass -p1 ssh bastion@10.20.30.201 "chage -l user 2>/dev/null || echo 'chage 명령 확인 필요'"
 ```
 
 ---
@@ -246,15 +246,15 @@ sshpass -p1 ssh opsclaw@10.20.30.201 "chage -l user 2>/dev/null || echo 'chage �
 
 ```bash
 # 화면 잠금(자동 로그아웃) 설정 확인
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep -i tmout /etc/profile /etc/bash.bashrc 2>/dev/null"
+sshpass -p1 ssh bastion@10.20.30.201 "grep -i tmout /etc/profile /etc/bash.bashrc 2>/dev/null"
 
 # USB 장치 접근 로그 확인
-sshpass -p1 ssh opsclaw@10.20.30.201 "dmesg | grep -i usb | tail -5"
+sshpass -p1 ssh bastion@10.20.30.201 "dmesg | grep -i usb | tail -5"
 
 # 하드웨어 정보 확인 (자산 관리 용도)
-sshpass -p1 ssh opsclaw@10.20.30.201 "lscpu | head -10"
-sshpass -p1 ssh opsclaw@10.20.30.201 "free -h"
-sshpass -p1 ssh opsclaw@10.20.30.201 "df -h /"
+sshpass -p1 ssh bastion@10.20.30.201 "lscpu | head -10"
+sshpass -p1 ssh bastion@10.20.30.201 "free -h"
+sshpass -p1 ssh bastion@10.20.30.201 "df -h /"
 ```
 
 ---
@@ -266,10 +266,10 @@ sshpass -p1 ssh opsclaw@10.20.30.201 "df -h /"
 ```bash
 # 실습: 접근 제한 설정 확인
 # SSH 설정 확인
-sshpass -p1 ssh opsclaw@10.20.30.201 "grep -E 'PermitRootLogin|PasswordAuthentication|MaxAuthTries' /etc/ssh/sshd_config"
+sshpass -p1 ssh bastion@10.20.30.201 "grep -E 'PermitRootLogin|PasswordAuthentication|MaxAuthTries' /etc/ssh/sshd_config"
 
 # PAM 설정 확인 (로그인 실패 잠금)
-sshpass -p1 ssh opsclaw@10.20.30.201 "cat /etc/pam.d/common-auth | grep -v '^#' | head -10"
+sshpass -p1 ssh bastion@10.20.30.201 "cat /etc/pam.d/common-auth | grep -v '^#' | head -10"
 ```
 
 ### 5.2 권한 관리 (A.8.2~A.8.3)
@@ -279,27 +279,27 @@ sshpass -p1 ssh opsclaw@10.20.30.201 "cat /etc/pam.d/common-auth | grep -v '^#' 
 
 ```bash
 # sudo 설정 확인
-sshpass -p1 ssh opsclaw@10.20.30.201 "sudo cat /etc/sudoers | grep -v '^#' | grep -v '^$'"
+sshpass -p1 ssh bastion@10.20.30.201 "sudo cat /etc/sudoers | grep -v '^#' | grep -v '^$'"
 
 # SUID 파일 찾기 (잠재적 권한 상승 위험)
-sshpass -p1 ssh opsclaw@10.20.30.201 "find /usr/bin -perm -4000 2>/dev/null | head -10"
+sshpass -p1 ssh bastion@10.20.30.201 "find /usr/bin -perm -4000 2>/dev/null | head -10"
 ```
 
 ### 5.3 악성코드 방지 (A.8.7)
 
 ```bash
 # ClamAV 등 안티바이러스 설치 여부 확인
-sshpass -p1 ssh opsclaw@10.20.30.201 "which clamscan 2>/dev/null || echo 'ClamAV 미설치'"
+sshpass -p1 ssh bastion@10.20.30.201 "which clamscan 2>/dev/null || echo 'ClamAV 미설치'"
 ```
 
 ### 5.4 로깅 및 모니터링 (A.8.15~A.8.16)
 
 ```bash
 # 시스템 로그 확인
-sshpass -p1 ssh opsclaw@10.20.30.201 "ls -la /var/log/syslog /var/log/auth.log 2>/dev/null"
+sshpass -p1 ssh bastion@10.20.30.201 "ls -la /var/log/syslog /var/log/auth.log 2>/dev/null"
 
 # Wazuh 에이전트 상태 확인
-sshpass -p1 ssh opsclaw@10.20.30.201 "systemctl status wazuh-agent 2>/dev/null | head -5"
+sshpass -p1 ssh bastion@10.20.30.201 "systemctl status wazuh-agent 2>/dev/null | head -5"
 ```
 
 ### 5.5 네트워크 보안 (A.8.20~A.8.22)
@@ -389,7 +389,7 @@ sshpass -p1 ssh siem@10.20.30.100 "echo | openssl s_client -connect localhost:44
 
 [4] 증적(Evidence) 수집
     → 구현되었음을 증명하는 자료 확보
-    예: login.defs 캡처, 변경 로그, OpsClaw evidence
+    예: login.defs 캡처, 변경 로그, Bastion evidence
 ```
 
 ### 증적 수집 실습
@@ -403,8 +403,8 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 "  # 비밀번호 �
   echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5
 " 2>/dev/null
 
-# 결과를 OpsClaw evidence로 기록
-# (OpsClaw dispatch 사용)
+# 결과를 Bastion evidence로 기록
+# (Bastion dispatch 사용)
 ```
 
 ### GAP 분석 워크시트 예시
@@ -420,7 +420,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 "  # 비밀번호 �
 
 | 질문 | 준비 방법 |
 |------|---------|
-| "이 통제의 증적을 보여주세요" | OpsClaw evidence/replay로 실행 이력 제시 |
+| "이 통제의 증적을 보여주세요" | Bastion evidence/replay로 실행 이력 제시 |
 | "리스크 평가를 어떻게 했나요?" | 리스크 평가 워크시트 + 기준 설명 |
 | "부적합 사항은 어떻게 처리했나요?" | 시정 조치 계획서 + 완료 증적 |
 | "경영진의 검토는?" | 검토 회의록 + 서명 |

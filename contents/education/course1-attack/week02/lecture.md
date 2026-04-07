@@ -13,7 +13,7 @@
 
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
-| opsclaw | 10.20.30.201 | 실습 기지 (공격 출발점) | `ssh opsclaw@10.20.30.201` |
+| bastion | 10.20.30.201 | 실습 기지 (공격 출발점) | `ssh bastion@10.20.30.201` |
 | secu | 10.20.30.1 | 방화벽/IPS | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹 서버 (대상) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM 모니터링 | `sshpass -p1 ssh siem@10.20.30.100` |
@@ -28,7 +28,7 @@
 | 1:20-1:50 | DNS/WHOIS 정보 수집 실습 | 실습 |
 | 1:50-2:30 | 웹 서버 핑거프린팅 + 디렉토리 열거 | 실습 |
 | 2:30-2:40 | 휴식 | - |
-| 2:40-3:10 | OpsClaw 정찰 자동화 실습 | 실습 |
+| 2:40-3:10 | Bastion 정찰 자동화 실습 | 실습 |
 | 3:10-3:30 | ATT&CK 매핑 + 복습 퀴즈 + 과제 | 토론/퀴즈 |
 
 ---
@@ -253,7 +253,7 @@ nmap -sn 10.20.30.0/24
 # Host is up (0.001s latency).
 # Nmap scan report for 10.20.30.100 (siem)
 # Host is up (0.001s latency).
-# Nmap scan report for 10.20.30.201 (opsclaw)
+# Nmap scan report for 10.20.30.201 (bastion)
 # Host is up (0.0001s latency).
 ```
 
@@ -310,7 +310,7 @@ dig google.com TXT +short 2>/dev/null || echo "외부 DNS 접근 불가"
 
 ```bash
 # 각 서버의 hosts 파일 확인
-echo "=== opsclaw ===" && cat /etc/hosts | grep -v "^#" | grep -v "^$"
+echo "=== bastion ===" && cat /etc/hosts | grep -v "^#" | grep -v "^$"
 echo "=== web ===" && sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 "cat /etc/hosts | grep -v '^#' | grep -v '^$'" 2>/dev/null
 echo "=== secu ===" && sshpass -p1 ssh -o StrictHostKeyChecking=no secu@10.20.30.1 "cat /etc/hosts | grep -v '^#' | grep -v '^$'" 2>/dev/null
 echo "=== siem ===" && sshpass -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100 "cat /etc/hosts | grep -v '^#' | grep -v '^$'" 2>/dev/null
@@ -462,29 +462,29 @@ which nikto >/dev/null 2>&1 && {
 
 ---
 
-# Part 5: OpsClaw로 정찰 자동화 (30분)
+# Part 5: Bastion로 정찰 자동화 (30분)
 
-## 실습 5.1: OpsClaw 정찰 프로젝트
+## 실습 5.1: Bastion 정찰 프로젝트
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # 프로젝트 생성
 RESULT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"week02-recon","request_text":"Week 02: 정보수집 자동화","master_mode":"external"}')  # 요청 데이터(body)
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 echo "Project: $PID"
 
 # Stage 전환
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null  # silent 모드 / POST 요청 / API 인증 / OpsClaw 프로젝트
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null  # silent 모드 / POST 요청 / API 인증 / OpsClaw 프로젝트
+curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: bastion-api-key-2026" > /dev/null  # silent 모드 / POST 요청 / API 인증 / Bastion 프로젝트
+curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: bastion-api-key-2026" > /dev/null  # silent 모드 / POST 요청 / API 인증 / Bastion 프로젝트
 
 # 정찰 태스크 병렬 실행
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{                                                # 요청 데이터(body)
     "tasks": [
       {"order":1,"title":"네트워크 호스트 발견","instruction_prompt":"nmap -sn 10.20.30.0/24 2>/dev/null","risk_level":"low","subagent_url":"http://localhost:8002"},
@@ -506,19 +506,19 @@ for t in d.get('task_results',[]):                     # 반복문 시작
 
 ### 결과 확인
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # Evidence 요약
 curl -s "http://localhost:8000/projects/$PID/evidence/summary" \
-  -H "X-API-Key: opsclaw-api-key-2026" | python3 -c "  # API 인증 키
+  -H "X-API-Key: bastion-api-key-2026" | python3 -c "  # API 인증 키
 import sys,json; d=json.load(sys.stdin)
 print(f'증적: {d[\"total\"]}건, 성공률: {d[\"success_rate\"]*100:.0f}%')
 "
 
 # Replay 타임라인
 curl -s "http://localhost:8000/projects/$PID/replay" \
-  -H "X-API-Key: opsclaw-api-key-2026" | python3 -c "  # API 인증 키
+  -H "X-API-Key: bastion-api-key-2026" | python3 -c "  # API 인증 키
 import sys,json; d=json.load(sys.stdin)
 print(f'총 보상: {d[\"total_reward\"]}')
 for s in d['timeline']:                                # 반복문 시작
@@ -526,9 +526,9 @@ for s in d['timeline']:                                # 반복문 시작
 "
 ```
 
-> **직접 실행 vs OpsClaw 비교:**
+> **직접 실행 vs Bastion 비교:**
 > 위 5개 정찰 태스크를 직접 SSH로 실행하면 → 아무 기록도 남지 않음
-> OpsClaw로 실행하면 → 5건 evidence + 5건 PoW 블록 + 5건 reward + replay 가능
+> Bastion로 실행하면 → 5건 evidence + 5건 PoW 블록 + 5건 reward + replay 가능
 
 ---
 
@@ -604,9 +604,9 @@ web 서버(10.20.30.80)에 대해 다음 정보를 수집하고 보고서를 작
 - FTP 디렉토리 리스팅
 - 관리자 설정 API 무인증 접근
 
-### 과제 2: OpsClaw 자동화 (40점)
+### 과제 2: Bastion 자동화 (40점)
 
-OpsClaw execute-plan으로 과제 1의 정보수집을 자동화하라.
+Bastion execute-plan으로 과제 1의 정보수집을 자동화하라.
 
 - 최소 5개 태스크, parallel=true — 20점
 - evidence/summary 결과 캡처 — 10점
@@ -659,7 +659,7 @@ OpsClaw execute-plan으로 과제 1의 정보수집을 자동화하라.
 | **OWASP** | Open Web Application Security Project | 웹 보안 취약점 연구 국제 단체 | 웹 보안의 표준 기관 |
 | **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 점수 (0~10점) | 질병 위험도 등급 |
 | **CVE** | Common Vulnerabilities and Exposures | 취약점 고유 식별 번호 | 질병의 고유 코드 (예: COVID-19) |
-| **OpsClaw** | OpsClaw | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
+| **Bastion** | Bastion | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): JuiceShop SQLi/XSS/IDOR, nmap, 경로탐색(%2500), sudo NOPASSWD, SSH키, crontab

@@ -5,7 +5,7 @@
 - 사이버 킬체인(Cyber Kill Chain) 7단계를 설명하고 각 단계별 공격·방어 기법을 매핑할 수 있다
 - MITRE ATT&CK 프레임워크의 전체 구조(Tactic-Technique-Sub-technique-Procedure)를 이해한다
 - ATT&CK Navigator를 활용하여 공격 시나리오를 시각화하고 방어 커버리지를 분석할 수 있다
-- OpsClaw를 활용한 APT 시뮬레이션 프로젝트를 설계하고 실행할 수 있다
+- Bastion를 활용한 APT 시뮬레이션 프로젝트를 설계하고 실행할 수 있다
 - 실제 APT 사례(SolarWinds, APT29, APT41)를 킬체인과 ATT&CK에 매핑할 수 있다
 
 ## 전제 조건
@@ -13,18 +13,18 @@
 - 네트워크/시스템 보안 기본 개념 (TCP/IP, 방화벽, IDS/IPS)
 - Linux CLI 기본 조작 (ssh, curl, grep, awk)
 - REST API 호출 경험 (curl 사용)
-- OpsClaw 플랫폼 기본 사용법 (프로젝트 생성, execute-plan)
+- Bastion 플랫폼 기본 사용법 (프로젝트 생성, execute-plan)
 
 ## 실습 환경 (공통)
 
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
-| opsclaw | 10.20.30.201 | 공격 기지 / Control Plane | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | 공격 기지 / Control Plane | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `sshpass -p1 ssh siem@10.20.30.100` |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -34,7 +34,7 @@
 | 0:40-1:10 | Part 2: MITRE ATT&CK 프레임워크 심화 | 강의/토론 |
 | 1:10-1:20 | 휴식 | - |
 | 1:20-2:00 | Part 3: ATT&CK Navigator 실습 + 정찰 기법 실습 | 실습 |
-| 2:00-2:40 | Part 4: OpsClaw APT 시뮬레이션 프로젝트 설계·실행 | 실습 |
+| 2:00-2:40 | Part 4: Bastion APT 시뮬레이션 프로젝트 설계·실행 | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 실제 APT 사례 심층 분석 + 토론 | 토론 |
 | 3:20-3:40 | 검증 퀴즈 + 과제 안내 | 퀴즈 |
@@ -313,9 +313,9 @@ ATT&CK v13부터 각 기법에 Data Source와 Data Component가 명시되어 있
 
 # Part 3: ATT&CK Navigator 실습 + 정찰 기법 실습 (40분)
 
-## 실습 3.1: OpsClaw 환경 확인 및 API 키 설정
+## 실습 3.1: Bastion 환경 확인 및 API 키 설정
 
-> **실습 목적**: APT 시뮬레이션을 수행하기 전에 OpsClaw 플랫폼과 전체 실습 환경이 정상 동작하는지 확인한다.
+> **실습 목적**: APT 시뮬레이션을 수행하기 전에 Bastion 플랫폼과 전체 실습 환경이 정상 동작하는지 확인한다.
 >
 > **배우는 것**: 멀티 서버 환경에서의 사전 점검 절차, API 인증 메커니즘의 중요성을 이해한다.
 >
@@ -325,7 +325,7 @@ ATT&CK v13부터 각 기법에 Data Source와 Data Component가 명시되어 있
 
 ```bash
 # API 키 설정
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
 # Manager API 상태 확인
 curl -s http://localhost:8000/health | python3 -m json.tool
@@ -352,17 +352,17 @@ done
 
 > **실습 목적**: 킬체인 1단계(정찰)의 핵심 기법인 OSINT 수집을 실습한다. 실제 환경(web 서버)에 대한 정보 수집을 통해 공격 표면을 식별한다.
 >
-> **배우는 것**: 수동/능동 정찰의 차이, 포트 스캔 기법, 웹 서버 핑거프린팅, OpsClaw를 활용한 자동화된 정찰 수행 방법을 이해한다.
+> **배우는 것**: 수동/능동 정찰의 차이, 포트 스캔 기법, 웹 서버 핑거프린팅, Bastion를 활용한 자동화된 정찰 수행 방법을 이해한다.
 >
 > **결과 해석**: 열린 포트가 많을수록 공격 표면이 넓다. 버전 정보가 노출되면 CVE 검색이 용이해져 익스플로잇 가능성이 높아진다.
 >
 > **실전 활용**: 실제 침투 테스트 시 정찰 단계는 전체 작전의 60% 이상을 차지한다. 정확한 정찰이 성공적 침투의 핵심이다.
 
 ```bash
-# OpsClaw 프로젝트 생성 (APT 정찰 시뮬레이션)
+# Bastion 프로젝트 생성 (APT 정찰 시뮬레이션)
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "week01-apt-recon",
     "request_text": "APT 킬체인 1단계: 대상 서버 정찰 수행",
@@ -377,13 +377,13 @@ export PROJECT_ID="반환된-프로젝트-ID"
 
 # Stage 전환: plan → execute
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -m json.tool
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -m json.tool
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
-> **명령어 해설**: OpsClaw 프로젝트의 생명주기는 `created → planning → executing → validating → reporting → closed`이다. execute-plan을 호출하려면 반드시 `plan` → `execute` stage 전환이 필요하다.
+> **명령어 해설**: Bastion 프로젝트의 생명주기는 `created → planning → executing → validating → reporting → closed`이다. execute-plan을 호출하려면 반드시 `plan` → `execute` stage 전환이 필요하다.
 >
 > **트러블슈팅**: "stage transition not allowed" 오류가 발생하면 현재 프로젝트 상태를 `GET /projects/{id}`로 확인한다. 이미 executing 상태라면 stage 전환이 불필요하다.
 
@@ -391,7 +391,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
 # 정찰 태스크 실행: 포트 스캔 + 서비스 식별 + 웹 핑거프린팅
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -432,7 +432,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # 정찰 결과 확인
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   http://localhost:8000/projects/$PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 # 각 태스크의 실행 결과(stdout, exit_code)가 기록되어 있다
@@ -566,7 +566,7 @@ PYEOF
 # secu 서버의 Suricata 경보 확인 (직전 정찰에 대한 탐지)
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "sudo tail -30 /var/log/suricata/fast.log 2>/dev/null || echo No Suricata logs",
     "subagent_url": "http://10.20.30.1:8002"
@@ -578,7 +578,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 # Wazuh SIEM에서 정찰 관련 경보 확인
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5 | python3 -m json.tool 2>/dev/null || echo No Wazuh alerts",
     "subagent_url": "http://10.20.30.100:8002"
@@ -590,7 +590,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 
 ---
 
-# Part 4: OpsClaw APT 시뮬레이션 프로젝트 설계 (40분)
+# Part 4: Bastion APT 시뮬레이션 프로젝트 설계 (40분)
 
 ## 4.1 APT 시뮬레이션 프로젝트 설계 방법론
 
@@ -602,7 +602,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 1. 위협 모델링    → 대상 조직에 가장 관련된 APT 그룹 선정
 2. TTP 매핑       → 선정된 그룹의 ATT&CK 기법 목록화
 3. 환경 매핑      → 실습 환경에서 구현 가능한 기법 필터링
-4. 태스크 설계    → 각 기법을 OpsClaw 태스크로 변환
+4. 태스크 설계    → 각 기법을 Bastion 태스크로 변환
 5. 위험도 분류    → low/medium/high/critical 분류
 6. 실행 계획      → 태스크 실행 순서와 의존성 정의
 7. 검증 계획      → 각 태스크의 성공/탐지 기준 정의
@@ -610,7 +610,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 
 ### 위험도 분류 기준
 
-| 위험도 | 기준 | 예시 | OpsClaw 동작 |
+| 위험도 | 기준 | 예시 | Bastion 동작 |
 |--------|------|------|-------------|
 | low | 읽기 전용, 비파괴적 | 포트 스캔, 정보 조회 | 즉시 실행 |
 | medium | 설정 변경, 일시적 영향 | 파일 생성, 서비스 상태 변경 | 즉시 실행 |
@@ -619,9 +619,9 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 
 ## 4.2 APT29 에뮬레이션 시나리오 설계
 
-> **실습 목적**: 실제 APT29 그룹의 공격 TTP를 기반으로 5단계 시뮬레이션 시나리오를 설계하고, OpsClaw 프로젝트로 구현한다.
+> **실습 목적**: 실제 APT29 그룹의 공격 TTP를 기반으로 5단계 시뮬레이션 시나리오를 설계하고, Bastion 프로젝트로 구현한다.
 >
-> **배우는 것**: 위협 모델링에서 실행 계획까지의 전체 프로세스, 각 단계의 위험도 분류 방법, OpsClaw execute-plan의 고급 사용법을 이해한다.
+> **배우는 것**: 위협 모델링에서 실행 계획까지의 전체 프로세스, 각 단계의 위험도 분류 방법, Bastion execute-plan의 고급 사용법을 이해한다.
 >
 > **결과 해석**: 모든 태스크의 exit_code가 0이면 시뮬레이션이 성공한 것이다. 각 단계에서 수집한 정보가 다음 단계의 입력이 된다.
 >
@@ -631,7 +631,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 # APT29 에뮬레이션 프로젝트 생성
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "apt29-emulation-week01",
     "request_text": "APT29 에뮬레이션: 정찰→초기접근→실행→지속성→발견 5단계 시뮬레이션",
@@ -645,17 +645,17 @@ export APT29_PROJECT_ID="반환된-프로젝트-ID"
 
 # Stage 전환
 curl -s -X POST http://localhost:8000/projects/$APT29_PROJECT_ID/plan \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -m json.tool
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
 curl -s -X POST http://localhost:8000/projects/$APT29_PROJECT_ID/execute \
-  -H "X-API-Key: $OPSCLAW_API_KEY" | python3 -m json.tool
+  -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
 ```bash
 # APT29 에뮬레이션 5단계 실행
 curl -s -X POST http://localhost:8000/projects/$APT29_PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -705,7 +705,7 @@ curl -s -X POST http://localhost:8000/projects/$APT29_PROJECT_ID/execute-plan \
 
 ```bash
 # 에뮬레이션 결과 확인
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   http://localhost:8000/projects/$APT29_PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 # 5단계 각각의 실행 결과와 수집된 정보가 evidence로 기록되어 있다
@@ -713,7 +713,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ```bash
 # PoW 블록 확인 — 모든 태스크가 블록체인에 기록됨
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/blocks?project_id=$APT29_PROJECT_ID" \
   | python3 -m json.tool
 # 각 태스크마다 PoW 블록이 생성되어 실행 증거가 암호학적으로 보장된다
@@ -723,7 +723,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 # 완료 보고서 작성
 curl -s -X POST http://localhost:8000/projects/$APT29_PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "summary": "APT29 에뮬레이션 5단계 시뮬레이션 완료",
     "outcome": "success",
@@ -826,7 +826,7 @@ APT41은 국가 지원 사이버 첩보 활동과 금전 목적 범죄를 동시
 - [ ] 킬체인 7단계를 순서대로 나열하고 각 단계의 방어 수단을 말할 수 있는가?
 - [ ] ATT&CK의 4계층 구조(Tactic-Technique-Sub-technique-Procedure)를 설명할 수 있는가?
 - [ ] ATT&CK Navigator에서 특정 APT 그룹의 기법을 시각화할 수 있는가?
-- [ ] OpsClaw에서 APT 시뮬레이션 프로젝트를 생성하고 execute-plan을 실행할 수 있는가?
+- [ ] Bastion에서 APT 시뮬레이션 프로젝트를 생성하고 execute-plan을 실행할 수 있는가?
 - [ ] 정찰 단계의 수동/능동 정찰 차이를 설명할 수 있는가?
 - [ ] SolarWinds 사례를 킬체인 7단계에 완전히 매핑할 수 있는가?
 - [ ] ATT&CK 기법 ID(T번호)와 전술 ID(TA번호)의 차이를 이해하는가?
@@ -855,7 +855,7 @@ APT41은 국가 지원 사이버 첩보 활동과 금전 목적 범죄를 동시
 **Q6.** SolarWinds 공격에서 C2 통신에 사용된 프로토콜은?
 - (a) HTTPS  (b) ICMP  (c) **DNS**  (d) SMTP
 
-**Q7.** OpsClaw에서 risk_level이 "critical"인 태스크의 동작은?
+**Q7.** Bastion에서 risk_level이 "critical"인 태스크의 동작은?
 - (a) 즉시 실행  (b) 경고 후 실행  (c) **dry_run 강제, 사용자 확인 필수**  (d) 실행 거부
 
 **Q8.** ATT&CK Navigator의 주요 활용 용도가 아닌 것은?
@@ -881,14 +881,14 @@ APT28, APT41, Lazarus 중 하나를 선택하여 다음을 작성하라:
 - Navigator 레이어 JSON 파일 생성 (보너스)
 
 ### 과제 2: 방어 커버리지 분석 (필수)
-실습에서 사용한 OpsClaw 환경의 방어 매트릭스를 기반으로:
+실습에서 사용한 Bastion 환경의 방어 매트릭스를 기반으로:
 - 각 킬체인 단계별 탐지 가능 여부를 분석
 - 탐지 사각지대(탐지할 수 없는 기법) 3가지 이상 식별
 - 각 사각지대에 대한 보완 방안 제시
 
-### 과제 3: OpsClaw 정찰 시나리오 확장 (선택)
+### 과제 3: Bastion 정찰 시나리오 확장 (선택)
 실습에서 수행한 정찰을 확장하여:
-- 5가지 이상의 정찰 기법을 OpsClaw execute-plan으로 구현
+- 5가지 이상의 정찰 기법을 Bastion execute-plan으로 구현
 - 각 기법의 ATT&CK ID를 매핑
 - 정찰 결과를 종합하여 대상 서버의 공격 표면 보고서 작성
 
@@ -900,4 +900,4 @@ APT28, APT41, Lazarus 중 하나를 선택하여 다음을 작성하라:
 - 실제 웹 취약점을 활용한 초기 접근(Initial Access) 실습
 - 원격 코드 실행(RCE) 기법과 방어
 - 다양한 지속성(Persistence) 메커니즘 구현 및 탐지
-- OpsClaw를 활용한 다단계 침투 시뮬레이션 자동화
+- Bastion를 활용한 다단계 침투 시뮬레이션 자동화

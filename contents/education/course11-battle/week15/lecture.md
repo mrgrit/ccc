@@ -6,7 +6,7 @@
 - MITRE ATT&CK 기반의 TTP 분류와 탐지 효과 분석을 수행할 수 있다
 - 전문적인 보안 보고서(Executive Summary, 기술 분석, 교훈, 개선 권고)를 작성할 수 있다
 - Purple Team 관점에서 공격-방어 갭 분석을 수행하고 보안 개선 로드맵을 제안할 수 있다
-- OpsClaw를 활용하여 전체 과정의 증적을 통합 관리할 수 있다
+- Bastion를 활용하여 전체 과정의 증적을 통합 관리할 수 있다
 - 보안 보고서의 대상 독자(경영진, 기술팀, 감사)에 맞게 내용을 조정할 수 있다
 
 ## 전제 조건
@@ -390,26 +390,26 @@ MAPPING
 >
 > **실전 활용**: 이 갭 분석은 보안 투자 우선순위를 결정하는 핵심 자료이다. 경영진에게 "어디에 투자해야 하는가"를 보여준다.
 
-### Step 2: OpsClaw 통합 증적
+### Step 2: Bastion 통합 증적
 
-> **실습 목적**: 전체 공방전의 증적을 OpsClaw에 통합 기록한다.
+> **실습 목적**: 전체 공방전의 증적을 Bastion에 통합 기록한다.
 >
-> **배우는 것**: OpsClaw execute-plan으로 분석 결과를 자동 기록
+> **배우는 것**: Bastion execute-plan으로 분석 결과를 자동 기록
 
 ```bash
 # 분석 프로젝트 생성
 RESULT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"week15-analysis","request_text":"공방전 결과 분석 및 보고서","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 # 분석 태스크 실행
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1,"title":"web SSH 통계","instruction_prompt":"echo \"Failed: $(grep -c Failed /var/log/auth.log 2>/dev/null || echo 0), Accepted: $(grep -c Accepted /var/log/auth.log 2>/dev/null || echo 0)\"","risk_level":"low","subagent_url":"http://10.20.30.80:8002"},
@@ -426,7 +426,7 @@ for t in d.get('task_results',[]):
 "
 ```
 
-> **결과 해석**: OpsClaw에 통계 데이터가 증적으로 기록되어 보고서 작성 시 참조할 수 있다.
+> **결과 해석**: Bastion에 통계 데이터가 증적으로 기록되어 보고서 작성 시 참조할 수 있다.
 
 ---
 
@@ -480,11 +480,11 @@ cat << 'FINAL_REPORT'
   - secu (10.20.30.1): 네트워크 보안 장비 (nftables, Suricata)
   - web  (10.20.30.80): 웹 서버 (Apache, JuiceShop)
   - siem (10.20.30.100): SIEM (Wazuh 4.11.2)
-  - opsclaw (10.20.30.201): 관리 플랫폼
+  - bastion (10.20.30.201): 관리 플랫폼
 
 평가 기간: Week 11~14 (4주, 각 3시간)
 방법론: MITRE ATT&CK 기반 Red Team/Blue Team 평가
-도구: nmap, curl, hydra, Suricata, nftables, OpsClaw
+도구: nmap, curl, hydra, Suricata, nftables, Bastion
 제한사항: 교육 환경, 실제 악성코드 미사용
 
 === 3. 발견 사항 ===
@@ -552,22 +552,22 @@ cat << 'FINAL_REPORT'
   B. nmap 스캔 결과 파일
   C. 로그 해시 매니페스트
   D. ATT&CK Navigator 매핑
-  E. OpsClaw 프로젝트 ID 목록
+  E. Bastion 프로젝트 ID 목록
 FINAL_REPORT
 ```
 
 > **실전 활용**: 이 보고서 구조는 실제 침투 테스트(Pentest) 보고서, SOC 평가 보고서, 인시던트 사후 보고서에 모두 적용할 수 있다. 구조화된 보고서는 독자가 빠르게 핵심을 파악하고 의사결정할 수 있게 한다.
 
-### Step 2: OpsClaw 최종 보고서
+### Step 2: Bastion 최종 보고서
 
-> **실습 목적**: 과정 전체의 결과를 OpsClaw에 최종 기록한다.
+> **실습 목적**: 과정 전체의 결과를 Bastion에 최종 기록한다.
 >
 > **배우는 것**: 과정 전체의 증적 통합 관리
 
 ```bash
 curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "summary": "공방전 기초 과정 최종 보고서 — 15주 결과 분석 및 보안 평가",
     "outcome": "success",
@@ -593,7 +593,7 @@ curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
 - [ ] 경영진 요약(Executive Summary)을 비기술적 언어로 작성할 수 있는가
 - [ ] 발견 사항을 심각도별로 분류하고 증거와 권고를 포함하여 작성할 수 있는가
 - [ ] 단기/중기/장기 개선 로드맵을 수립할 수 있는가
-- [ ] OpsClaw를 이용하여 전체 증적을 통합 관리할 수 있는가
+- [ ] Bastion를 이용하여 전체 증적을 통합 관리할 수 있는가
 
 ## 자가 점검 퀴즈
 

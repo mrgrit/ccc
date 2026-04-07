@@ -509,7 +509,7 @@ echo "web → 내부: 허용 (분석 통신)"
 >
 > **트러블슈팅**:
 > - 내부 통신도 차단된 경우: 규칙 순서 확인 → `nft list chain inet filter forward`
-> - SSH 끊김: opsclaw에서 직접 접근하는 경우 관리 IP 예외 추가 필요
+> - SSH 끊김: bastion에서 직접 접근하는 경우 관리 IP 예외 추가 필요
 
 ### Step 3: 격리 해제 및 원상 복구
 
@@ -779,33 +779,33 @@ ls -la "$EVIDENCE_DIR"/system/
 > - find 결과가 너무 많은 경우: `-mmin -60`으로 1시간으로 제한
 > - 권한 부족: `sudo find`로 실행하거나 접근 가능한 경로만 검색
 
-## 실습 3.3: OpsClaw를 활용한 자동화된 증거 수집
+## 실습 3.3: Bastion를 활용한 자동화된 증거 수집
 
 ### Step 1: 멀티 호스트 증거 자동 수집
 
-> **실습 목적**: OpsClaw의 execute-plan을 활용하여 여러 서버의 증거를 동시에 자동 수집한다.
+> **실습 목적**: Bastion의 execute-plan을 활용하여 여러 서버의 증거를 동시에 자동 수집한다.
 >
-> **배우는 것**: OpsClaw를 통한 멀티 호스트 증거 수집 오케스트레이션
+> **배우는 것**: Bastion를 통한 멀티 호스트 증거 수집 오케스트레이션
 
 ```bash
-# OpsClaw 프로젝트 생성
+# Bastion 프로젝트 생성
 RESULT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{"name":"week09-ir-evidence","request_text":"인시던트 대응 증거 수집","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 echo "Project ID: $PID"
 
 # Stage 전환
 curl -s -X POST "http://localhost:8000/projects/$PID/plan" \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 curl -s -X POST "http://localhost:8000/projects/$PID/execute" \
-  -H "X-API-Key: opsclaw-api-key-2026" > /dev/null
+  -H "X-API-Key: bastion-api-key-2026" > /dev/null
 
 # 증거 수집 태스크 실행
 curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1,"title":"web 프로세스 수집","instruction_prompt":"ps auxf","risk_level":"low","subagent_url":"http://10.20.30.80:8002"},
@@ -831,9 +831,9 @@ for t in d.get('task_results',[]):
 #   [5] web SUID 감사        -> ok
 ```
 
-> **결과 해석**: OpsClaw를 통해 실행하면 모든 증거가 evidence로 자동 기록되어 추적 가능하다. PoW 블록도 자동 생성되어 작업 이력이 블록체인에 보존된다.
+> **결과 해석**: Bastion를 통해 실행하면 모든 증거가 evidence로 자동 기록되어 추적 가능하다. PoW 블록도 자동 생성되어 작업 이력이 블록체인에 보존된다.
 >
-> **실전 활용**: 다수의 서버에서 동시에 증거를 수집해야 할 때 수동으로 하면 시간이 오래 걸린다. OpsClaw 자동화로 수 분 내에 전체 인프라의 증거를 확보할 수 있다.
+> **실전 활용**: 다수의 서버에서 동시에 증거를 수집해야 할 때 수동으로 하면 시간이 오래 걸린다. Bastion 자동화로 수 분 내에 전체 인프라의 증거를 확보할 수 있다.
 
 ---
 
@@ -1077,17 +1077,17 @@ REPORT
 
 > **실전 활용**: 이 보고서 형태는 실제 기업의 인시던트 사후 분석 보고서와 동일한 구조이다. MITRE ATT&CK 매핑은 업계 표준으로, 다른 조직과 위협 정보를 공유할 때도 활용된다. STIX/TAXII 형식으로 변환하여 CTI(Cyber Threat Intelligence) 플랫폼에 공유할 수 있다.
 
-### Step 3: OpsClaw 완료 보고서
+### Step 3: Bastion 완료 보고서
 
-> **실습 목적**: OpsClaw에 인시던트 대응 결과를 완료 보고서로 기록한다.
+> **실습 목적**: Bastion에 인시던트 대응 결과를 완료 보고서로 기록한다.
 >
-> **배우는 것**: OpsClaw completion-report API 활용법
+> **배우는 것**: Bastion completion-report API 활용법
 
 ```bash
 # 앞서 생성한 프로젝트 ID 사용 (변수 PID)
 curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "summary": "인시던트 대응 실습 완료 — NIST IR 프레임워크 전 과정 수행",
     "outcome": "success",
@@ -1107,7 +1107,7 @@ print(f'보고서 상태: {d.get(\"status\",\"ok\")}')
 # 예상 출력: 보고서 상태: ok
 ```
 
-> **결과 해석**: OpsClaw에 모든 작업 이력이 기록되어 감사(Audit) 추적이 가능하다. 실무에서는 이 증적이 규정 준수(Compliance) 증거로 활용된다.
+> **결과 해석**: Bastion에 모든 작업 이력이 기록되어 감사(Audit) 추적이 가능하다. 실무에서는 이 증적이 규정 준수(Compliance) 증거로 활용된다.
 
 ---
 

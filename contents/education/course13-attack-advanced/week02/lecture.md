@@ -19,7 +19,7 @@
 
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
-| opsclaw | 10.20.30.201 | 실습 기지 (공격 출발점) | `ssh opsclaw@10.20.30.201` |
+| bastion | 10.20.30.201 | 실습 기지 (공격 출발점) | `ssh bastion@10.20.30.201` |
 | secu | 10.20.30.1 | 방화벽/IPS | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹 서버 (대상) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM 모니터링 | `sshpass -p1 ssh siem@10.20.30.100` |
@@ -703,7 +703,7 @@ echo "[3] 기술 스택 요약"
 echo "  secu (10.20.30.1): nftables 방화벽, Suricata IPS"
 echo "  web (10.20.30.80): Apache/Nginx, Juice Shop (Node.js), SubAgent"
 echo "  siem (10.20.30.100): Wazuh 4.11.2, SubAgent"
-echo "  opsclaw (10.20.30.201): Python FastAPI, PostgreSQL, OpsClaw"
+echo "  bastion (10.20.30.201): Python FastAPI, PostgreSQL, Bastion"
 
 echo ""
 echo "[4] 공격 표면 평가"

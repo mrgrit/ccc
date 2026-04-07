@@ -2,7 +2,7 @@
 
 ## 학습 목표
 - Week 01~07의 지식을 종합하여 실전 보안 점검 CTF를 수행한다
-- OpsClaw의 프로젝트 생명주기, execute-plan, PoW, RL을 통합 활용한다
+- Bastion의 프로젝트 생명주기, execute-plan, PoW, RL을 통합 활용한다
 - 4대 서버에 대한 종합 보안 점검을 병렬로 실행할 수 있다
 - 시간 내에 최대한 많은 Flag를 획득하는 전략을 수립·실행한다
 - CTF 결과를 evidence 기반으로 분석하고 보고서를 작성할 수 있다
@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -63,12 +63,12 @@
 
 ## 시험 목표
 - Week 01~07 지식 종합 평가
-- OpsClaw 전체 기능 활용 능력 검증
+- Bastion 전체 기능 활용 능력 검증
 - 실전 보안 점검 역량 확인
 
 ## 전제 조건
 - Week 01~07 전체 수강 및 과제 완료
-- OpsClaw API 호출 능숙
+- Bastion API 호출 능숙
 - 보안 점검 명령어 숙지
 
 ---
@@ -86,7 +86,7 @@
 | **합계** | 100점 | |
 
 ### 규칙
-1. 모든 작업은 OpsClaw API를 통해 수행한다 (직접 SSH 접속 금지)
+1. 모든 작업은 Bastion API를 통해 수행한다 (직접 SSH 접속 금지)
 2. API 호출에는 반드시 인증 키를 포함한다
 3. 파괴적 명령(rm, drop, kill 등)은 사용 금지
 4. 각 Phase별 제한 시간 내에 수행한다
@@ -107,18 +107,18 @@
 > **실전 활용**: SOC 자동화 로드맵 수립, 자율보안 시스템 PoC 설계, 보안 자동화 투자 대비 효과 분석에 활용한다
 
 ```bash
-# opsclaw 서버 접속
-ssh opsclaw@10.20.30.201
+# bastion 서버 접속
+ssh bastion@10.20.30.201
 ```
 
 ```bash
 # API 키 설정
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 ```
 
 ```bash
 # Manager API 상태 확인
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   http://localhost:8000/health | python3 -m json.tool
 # 정상 응답 확인
 ```
@@ -144,7 +144,7 @@ done
 # CTF 프로젝트 생성
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "name": "midterm-ctf-autonomous-security",
     "request_text": "중간고사 CTF: 4대 서버 종합 보안 점검",
@@ -158,9 +158,9 @@ curl -s -X POST http://localhost:8000/projects \
 export PROJECT_ID="반환된-프로젝트-ID"
 # stage 전환
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # executing 단계 진입 확인
 ```
 
@@ -176,7 +176,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
 # Flag 획득: 4대 서버 기본 정보 병렬 수집
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -217,7 +217,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 # 전 서버 열린 포트 수집
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -252,7 +252,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 # 전 서버 리소스 현황 수집
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -286,7 +286,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 # 사용자 계정 감사
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -324,7 +324,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 # secu 방화벽 정책 상세 조회
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "echo \"=== nftables ruleset ===\" && sudo nft list ruleset",
     "subagent_url": "http://10.20.30.1:8002"
@@ -336,7 +336,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 # Suricata IPS 상태 확인
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "command": "echo \"=== Suricata status ===\" && systemctl is-active suricata 2>/dev/null && suricata --build-info 2>/dev/null | head -5 || echo suricata-not-found",
     "subagent_url": "http://10.20.30.1:8002"
@@ -351,7 +351,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 # 웹 서비스 보안 점검
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -392,7 +392,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 # SIEM 종합 점검
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -430,7 +430,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 # 전 서버 인증 실패 로그 수집
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -465,7 +465,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 # 비정상 프로세스 탐지
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [
       {
@@ -525,7 +525,7 @@ curl -s -X POST http://192.168.0.105:11434/api/chat \
 
 ```bash
 # 전체 evidence 요약 조회
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   http://localhost:8000/projects/$PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 # 모든 task의 실행 결과가 기록되어 있는지 확인
@@ -535,7 +535,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ```bash
 # PoW 체인 무결성 검증
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/verify" \
   | python3 -m json.tool
 # valid: true, tampered: [] 확인
@@ -543,7 +543,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ```bash
 # 프로젝트 PoW 블록 수 확인
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/pow/blocks?project_id=$PROJECT_ID" \
   | python3 -c "import sys,json; blocks=json.load(sys.stdin); print(f'PoW 블록 수: {len(blocks) if isinstance(blocks,list) else 0}')"
 ```
@@ -552,14 +552,14 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 ```bash
 # RL 추천 조회
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   "http://localhost:8000/rl/recommend?agent_id=http://10.20.30.1:8002&risk_level=low" \
   | python3 -m json.tool
 ```
 
 ```bash
 # 리더보드 확인
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   http://localhost:8000/pow/leaderboard | python3 -m json.tool
 ```
 
@@ -569,7 +569,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 # 완료 보고서 작성 (내용의 품질이 채점 대상)
 curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "summary": "중간고사 CTF: 4대 서버 종합 보안 점검 완료",
     "outcome": "success",
@@ -589,7 +589,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
 
 ```bash
 # 전체 CTF 이력 재생
-curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
+curl -s -H "X-API-Key: $BASTION_API_KEY" \
   http://localhost:8000/projects/$PROJECT_ID/replay \
   | python3 -m json.tool
 # 전체 4 Phase의 작업 이력이 시간순으로 출력된다
@@ -620,15 +620,15 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 ### 리뷰 토론
 
 1. **가장 어려웠던 Challenge**: 어떤 점검이 가장 어려웠는가? 이유는?
-2. **OpsClaw 효과**: SSH 수동 점검 대비 OpsClaw 사용 시 시간이 얼마나 절약되었는가?
-3. **개선 제안**: CTF를 통해 발견한 OpsClaw 개선 사항은?
+2. **Bastion 효과**: SSH 수동 점검 대비 Bastion 사용 시 시간이 얼마나 절약되었는가?
+3. **개선 제안**: CTF를 통해 발견한 Bastion 개선 사항은?
 4. **자율화 가능성**: 이번 CTF의 어떤 부분을 완전 자율화할 수 있는가?
 
 ---
 
 ## 검증 체크리스트
 
-- [ ] OpsClaw 프로젝트 생명주기(생성→계획→실행→보고→종료)를 완전히 수행했는가?
+- [ ] Bastion 프로젝트 생명주기(생성→계획→실행→보고→종료)를 완전히 수행했는가?
 - [ ] execute-plan으로 다수 서버에 병렬 명령을 실행했는가?
 - [ ] dispatch로 단일 서버에 특화 명령을 실행했는가?
 - [ ] evidence 요약으로 전체 실행 결과를 확인했는가?
@@ -644,7 +644,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 **Week 09: 자율 Purple Team (1) — Red Team Agent**
 - 자율 공격 에이전트 개념
 - LLM 기반 공격 시나리오 생성
-- OpsClaw A2A mission 엔드포인트 활용
+- Bastion A2A mission 엔드포인트 활용
 - 통제된 환경에서의 자율 공격 실습
 
 ---
@@ -655,7 +655,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 
 이번 주차(중간고사)의 핵심 개념을 최종 점검한다.
 
-**Q1.** OpsClaw에서 4대 서버에 동시에 명령을 보내는 API는?
+**Q1.** Bastion에서 4대 서버에 동시에 명령을 보내는 API는?
 - (a) dispatch  (b) **execute-plan (tasks 배열에 각 서버의 subagent_url 지정)**  (c) health  (d) replay
 
 **Q2.** PoW 체인 검증 결과에서 "valid": true, "tampered": []의 의미는?
@@ -664,7 +664,7 @@ curl -s -H "X-API-Key: $OPSCLAW_API_KEY" \
 **Q3.** evidence 기록이 중요한 이유는?
 - (a) 속도 향상  (b) 비용 절감  (c) **감사 추적 가능, 재현성 보장, 규정 준수 증거**  (d) 서버 보호
 
-**Q4.** CTF에서 모든 작업을 OpsClaw API로 수행해야 하는 이유는?
+**Q4.** CTF에서 모든 작업을 Bastion API로 수행해야 하는 이유는?
 - (a) SSH가 느리기 때문  (b) **evidence 자동 기록 + PoW 블록 생성 + 감사 추적이 가능하기 때문**  (c) 비밀번호를 모르기 때문  (d) 네트워크 제한
 
 **정답:** Q1:b, Q2:c, Q3:c, Q4:b

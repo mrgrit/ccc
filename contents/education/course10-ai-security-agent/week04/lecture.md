@@ -4,20 +4,20 @@
 - 에이전트 하네스(Harness)의 개념과 필요성을 이해한다
 - Client-side 하네스와 Server-side 하네스의 차이를 설명할 수 있다
 - 하네스의 7대 구성요소를 파악하고 각 역할을 구분한다
-- OpsClaw(Server-side)와 Claude Code(Client-side) 하네스를 비교 분석한다
+- Bastion(Server-side)와 Claude Code(Client-side) 하네스를 비교 분석한다
 - 간단한 하네스 프레임워크를 직접 설계할 수 있다
 
 ## 실습 환경 (공통)
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -27,7 +27,7 @@
 | 0:30-0:55 | 이론: 7대 구성요소와 하네스 비교 (Part 2) | 강의/토론 |
 | 0:55-1:05 | 휴식 | - |
 | 1:05-1:50 | 실습: 미니 하네스 프레임워크 구현 (Part 3) | 실습 |
-| 1:50-2:35 | 실습: OpsClaw 하네스 탐색 (Part 4) | 실습 |
+| 1:50-2:35 | 실습: Bastion 하네스 탐색 (Part 4) | 실습 |
 | 2:35-2:45 | 휴식 | - |
 | 2:45-3:15 | 실습: Claude Code 하네스 구조 분석 (Part 5) | 실습 |
 | 3:15-3:30 | 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
@@ -92,7 +92,7 @@ LLM 자체는 텍스트만 생성한다. 하네스가 다음을 제공한다:
 
 | 구분 | Client-side | Server-side |
 |------|------------|------------|
-| 대표 | Claude Code, Cursor | OpsClaw, LangGraph |
+| 대표 | Claude Code, Cursor | Bastion, LangGraph |
 | 실행 위치 | 사용자 로컬 PC | 원격 서버 |
 | 제어 방식 | 사용자가 실시간 확인 | API/정책으로 자동 제어 |
 | 적합한 작업 | 개발, 코드 리뷰, 탐색 | 인프라 운영, 정기 점검, 자동 대응 |
@@ -106,7 +106,7 @@ LLM 자체는 텍스트만 생성한다. 하네스가 다음을 제공한다:
 
 ### 2.1 하네스의 7대 구성요소
 
-| # | 구성요소 | 역할 | OpsClaw | Claude Code |
+| # | 구성요소 | 역할 | Bastion | Claude Code |
 |---|---------|------|---------|-------------|
 | 1 | **Tools** | 외부 시스템과 상호작용 | run_command, fetch_log, query_metric | Bash, Read, Write, Grep |
 | 2 | **Skills** | 복합 도구의 고수준 조합 | probe_linux_host, analyze_wazuh_alert | MCP 서버 |
@@ -116,7 +116,7 @@ LLM 자체는 텍스트만 생성한다. 하네스가 다음을 제공한다:
 | 6 | **Tasks** | 작업 단위 | execute-plan tasks 배열 | 사용자 대화 턴 |
 | 7 | **Permissions** | 행동 제한 | risk_level, dry_run | .claude/settings.json |
 
-### 2.2 하네스 비교: OpsClaw vs Claude Code
+### 2.2 하네스 비교: Bastion vs Claude Code
 
 ```
   [Client-side] Claude Code
@@ -127,7 +127,7 @@ LLM 자체는 텍스트만 생성한다. 하네스가 다음을 제공한다:
   장점: 실시간 대화, 유연한 탐색
   단점: 로컬 실행만, 자동화 어려움
 
-  [Server-side] OpsClaw
+  [Server-side] Bastion
   Claude/사용자 → Manager API → SubAgent(secu)
   → SubAgent(web)
   → SubAgent(siem)
@@ -142,9 +142,9 @@ LLM 자체는 텍스트만 생성한다. 하네스가 다음을 제공한다:
 | 시나리오 | 추천 하네스 | 이유 |
 |---------|-----------|------|
 | 코드 리뷰/개발 | Claude Code | 대화형, 파일 편집 |
-| 정기 보안 점검 | OpsClaw | 스케줄, 자동화, 증적 |
-| 사고 대응 | 하이브리드 | Claude Code로 분석 + OpsClaw로 실행 |
-| 규정 준수 감사 | OpsClaw | PoW 증적, 보고서 |
+| 정기 보안 점검 | Bastion | 스케줄, 자동화, 증적 |
+| 사고 대응 | 하이브리드 | Claude Code로 분석 + Bastion로 실행 |
+| 규정 준수 감사 | Bastion | PoW 증적, 보고서 |
 
 ---
 
@@ -515,13 +515,13 @@ python3 ~/lab/week04/permission_test.py
 
 ---
 
-## Part 4: OpsClaw 하네스 탐색 (45분) — 실습
+## Part 4: Bastion 하네스 탐색 (45분) — 실습
 
-### 4.1 OpsClaw의 하네스 구성요소 확인
+### 4.1 Bastion의 하네스 구성요소 확인
 
 ```bash
-# OpsClaw Manager API 상태 확인
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+# Bastion Manager API 상태 확인
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   http://localhost:8000/health | python3 -m json.tool
 
 # 등록된 Tools 확인 (SubAgent 런타임)
@@ -533,13 +533,13 @@ curl -s http://localhost:8002/skills 2>/dev/null | python3 -m json.tool || \
   echo "SubAgent 미기동"
 ```
 
-### 4.2 OpsClaw 하네스를 통한 작업 실행
+### 4.2 Bastion 하네스를 통한 작업 실행
 
 ```bash
 # 1. 프로젝트 생성 (하네스 진입점)
 PROJECT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "name": "week04-harness-demo",
     "request_text": "하네스 구성요소 탐색 실습",
@@ -552,20 +552,20 @@ echo "Project ID: $PID"
 # 2. Stage 전환 (Task 생명주기)
 # plan 단계로 전환
 curl -s -X POST http://localhost:8000/projects/${PID}/plan \
-  -H "X-API-Key: opsclaw-api-key-2026" | python3 -c "import sys,json; print('Stage:', json.load(sys.stdin).get('stage'))"
+  -H "X-API-Key: bastion-api-key-2026" | python3 -c "import sys,json; print('Stage:', json.load(sys.stdin).get('stage'))"
 
 # execute 단계로 전환
 curl -s -X POST http://localhost:8000/projects/${PID}/execute \
-  -H "X-API-Key: opsclaw-api-key-2026" | python3 -c "import sys,json; print('Stage:', json.load(sys.stdin).get('stage'))"
+  -H "X-API-Key: bastion-api-key-2026" | python3 -c "import sys,json; print('Stage:', json.load(sys.stdin).get('stage'))"
 ```
 
 ### 4.3 execute-plan으로 Task 배열 실행
 
 ```bash
-# execute-plan: 여러 Task를 한 번에 실행 (OpsClaw의 핵심 기능)
+# execute-plan: 여러 Task를 한 번에 실행 (Bastion의 핵심 기능)
 curl -s -X POST http://localhost:8000/projects/${PID}/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
       {
@@ -595,15 +595,15 @@ curl -s -X POST http://localhost:8000/projects/${PID}/execute-plan \
 
 ```bash
 # Evidence 요약 (하네스의 Memory 역할)
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   http://localhost:8000/projects/${PID}/evidence/summary | python3 -m json.tool
 
 # PoW 블록 확인 (하네스의 Hook 역할 — 자동 기록)
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   "http://localhost:8000/pow/blocks?agent_id=http://localhost:8002" | python3 -m json.tool
 
 # PoW 체인 무결성 검증
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   "http://localhost:8000/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
 ```
 
@@ -613,19 +613,19 @@ curl -s -H "X-API-Key: opsclaw-api-key-2026" \
 # 완료 보고서 작성
 curl -s -X POST http://localhost:8000/projects/${PID}/completion-report \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "summary": "Week04 하네스 탐색 실습 완료",
     "outcome": "success",
     "work_details": [
-      "OpsClaw 7대 구성요소 확인",
+      "Bastion 7대 구성요소 확인",
       "execute-plan으로 3개 태스크 실행",
       "PoW 증적 기록 확인"
     ]
   }' | python3 -m json.tool
 
 # 프로젝트 전체 Replay (작업 재현)
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   http://localhost:8000/projects/${PID}/replay | python3 -m json.tool
 ```
 
@@ -637,7 +637,7 @@ curl -s -H "X-API-Key: opsclaw-api-key-2026" \
 
 ```bash
 # Claude Code 프로젝트 설정 파일 확인 (CLAUDE.md)
-cat /home/opsclaw/opsclaw/CLAUDE.md | head -60
+cat /home/bastion/bastion/CLAUDE.md | head -60
 
 # Claude Code 사용자 설정 디렉토리 확인
 ls -la ~/.claude/ 2>/dev/null || echo ".claude/ 디렉토리 없음 — Claude Code 미설치"
@@ -654,7 +654,7 @@ Claude Code 하네스의 핵심 설정 파일을 분석한다.
 import re
 
 # CLAUDE.md 읽기
-claudemd_path = "/home/opsclaw/opsclaw/CLAUDE.md"
+claudemd_path = "/home/bastion/bastion/CLAUDE.md"
 with open(claudemd_path, "r") as f:
     content = f.read()
 
@@ -695,16 +695,16 @@ python3 ~/lab/week04/claudemd_anatomy.py
 cat > ~/lab/week04/harness_comparison.py << 'PYEOF'
 """
 Week 04 실습: 하네스 비교표 생성
-OpsClaw와 Claude Code의 하네스를 7대 구성요소별로 비교한다.
+Bastion와 Claude Code의 하네스를 7대 구성요소별로 비교한다.
 """
 import json
 
 comparison = {
-    "comparison_title": "에이전트 하네스 비교: OpsClaw vs Claude Code",
+    "comparison_title": "에이전트 하네스 비교: Bastion vs Claude Code",
     "components": [
         {
             "name": "Tools",
-            "opsclaw": {
+            "bastion": {
                 "implementation": "Manager API의 dispatch/execute-plan → SubAgent 실행",
                 "examples": ["run_command", "fetch_log", "query_metric", "read_file"],
                 "extensibility": "Python 함수로 Tool 추가 가능"
@@ -717,7 +717,7 @@ comparison = {
         },
         {
             "name": "Skills",
-            "opsclaw": {
+            "bastion": {
                 "implementation": "Playbook + 등록 Skill",
                 "examples": ["probe_linux_host", "check_tls_cert", "analyze_wazuh_alert_burst"],
             },
@@ -728,7 +728,7 @@ comparison = {
         },
         {
             "name": "Hooks",
-            "opsclaw": {
+            "bastion": {
                 "implementation": "PoW 자동 기록, 보상 자동 계산",
                 "trigger": "execute-plan 실행 시",
             },
@@ -739,7 +739,7 @@ comparison = {
         },
         {
             "name": "Memory",
-            "opsclaw": {
+            "bastion": {
                 "storage": "PostgreSQL DB",
                 "scope": "프로젝트 단위 evidence, PoW 블록",
             },
@@ -750,7 +750,7 @@ comparison = {
         },
         {
             "name": "Permissions",
-            "opsclaw": {
+            "bastion": {
                 "mechanism": "risk_level (low/medium/high/critical), dry_run",
                 "enforcement": "critical → 자동 dry_run, confirmed:true로 해제",
             },
@@ -767,10 +767,10 @@ with open("/root/lab/week04/harness_comparison.json", "w") as f:
     json.dump(comparison, f, indent=2, ensure_ascii=False)
 
 # 표 형태로 출력
-print(f"{'구성요소':<12} {'OpsClaw':^35} {'Claude Code':^35}")
+print(f"{'구성요소':<12} {'Bastion':^35} {'Claude Code':^35}")
 print("=" * 82)
 for comp in comparison["components"]:
-    ops_desc = comp["opsclaw"].get("implementation", comp["opsclaw"].get("mechanism", ""))[:32]
+    ops_desc = comp["bastion"].get("implementation", comp["bastion"].get("mechanism", ""))[:32]
     cc_desc = comp["claude_code"].get("implementation", comp["claude_code"].get("mechanism", ""))[:32]
     print(f"{comp['name']:<12} {ops_desc:<35} {cc_desc:<35}")
 PYEOF
@@ -791,7 +791,7 @@ python3 ~/lab/week04/harness_comparison.py
 - **(C) LLM 모델 학습** ✅
 - (D) 안전 장치
 
-**Q2. OpsClaw는 어떤 유형의 하네스인가?**
+**Q2. Bastion는 어떤 유형의 하네스인가?**
 - (A) Client-side 하네스
 - **(B) Server-side 하네스** ✅
 - (C) Hybrid 하네스
@@ -803,7 +803,7 @@ python3 ~/lab/week04/harness_comparison.py
 - (C) Permissions
 - **(D) Database** ✅
 
-**Q4. OpsClaw에서 critical risk_level 태스크의 기본 동작은?**
+**Q4. Bastion에서 critical risk_level 태스크의 기본 동작은?**
 - (A) 즉시 실행된다
 - **(B) dry_run이 자동 강제된다** ✅
 - (C) 거부된다
@@ -832,4 +832,4 @@ python3 ~/lab/week04/harness_comparison.py
 
 ---
 
-> **다음 주 예고:** Week 05에서는 OpsClaw을 Server-side 하네스로 본격 구축한다. Native Mode(Master Service)를 설정하고, Ollama를 연동하여 자연어→실행 파이프라인을 구축한다.
+> **다음 주 예고:** Week 05에서는 Bastion을 Server-side 하네스로 본격 구축한다. Native Mode(Master Service)를 설정하고, Ollama를 연동하여 자연어→실행 파이프라인을 구축한다.

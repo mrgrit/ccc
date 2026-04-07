@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
-"""bastion — CCC 운영 관리 에이전트
+"""bastion — CCC Bastion 보안 운영 에이전트 TUI
 
-open-interpreter + Ollama 기반. Claude Code 스타일 대화형 에이전트.
-자연어로 CCC 플랫폼 운영, 인프라 관리, 파일 편집, 코드 실행 가능.
+자연어로 보안 작업을 지시하면 Skill/Playbook 기반으로 실행.
+학생은 manager VM에서, 관리자는 CCC 서버에서 사용.
 
 Usage:
     python -m apps.bastion.main
@@ -10,9 +10,10 @@ Usage:
 """
 import os
 import sys
-import subprocess
+import json
 
 CCC_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", ".."))
+sys.path.insert(0, CCC_DIR)
 
 # .env 로드
 ENV_PATH = os.path.join(CCC_DIR, ".env")
@@ -24,73 +25,158 @@ if os.path.exists(ENV_PATH):
                 k, v = line.split("=", 1)
                 os.environ.setdefault(k.strip(), v.strip())
 
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
-LLM_MODEL = os.getenv("LLM_MANAGER_MODEL", "gpt-oss:120b")
 
+def get_vm_ips() -> dict[str, str]:
+    """DB 또는 환경변수에서 VM IP 가져오기"""
+    # 환경변수에서 직접 지정 가능
+    vm_ips = {}
+    for role in ["attacker", "secu", "web", "siem", "manager"]:
+        env_key = f"VM_{role.upper()}_IP"
+        ip = os.getenv(env_key, "")
+        if ip:
+            vm_ips[role] = ip
 
-def load_system_prompt() -> str:
-    """CCC.md + 운영 컨텍스트를 시스템 프롬프트로"""
-    parts = []
+    if vm_ips:
+        return vm_ips
 
-    ccc_md = os.path.join(CCC_DIR, "CCC.md")
-    if os.path.exists(ccc_md):
-        with open(ccc_md, encoding="utf-8") as f:
-            parts.append(f.read())
+    # DB에서 가져오기
+    try:
+        import psycopg2
+        conn = psycopg2.connect(os.getenv("DATABASE_URL", "postgresql://ccc:ccc@127.0.0.1:5434/ccc"))
+        cur = conn.cursor()
+        cur.execute("SELECT ip, vm_config FROM student_infras LIMIT 10")
+        for row in cur.fetchall():
+            cfg = row[1] if isinstance(row[1], dict) else json.loads(row[1]) if row[1] else {}
+            role = cfg.get("role", "")
+            if role:
+                vm_ips[role] = row[0]
+        conn.close()
+    except Exception:
+        pass
 
-    parts.append(f"""
-현재 환경:
-- CCC 경로: {CCC_DIR}
-- LLM: {LLM_BASE_URL} / {LLM_MODEL}
-- OS: {os.popen('uname -a 2>/dev/null || ver').read().strip()}
+    # 기본값
+    if not vm_ips:
+        from packages.bastion import INTERNAL_IPS
+        vm_ips = dict(INTERNAL_IPS)
 
-너는 CCC(Cyber Combat Commander) 사이버보안 교육 플랫폼의 운영 관리 에이전트다.
-서버 관리, 서비스 시작/중지, 인프라 관리, 파일 편집, 코드 실행, 문제 해결 등
-관리자가 요청하는 모든 작업을 수행한다.
-
-CCC 서비스 관리:
-- API 시작: cd {CCC_DIR} && ./dev.sh api
-- API 중지: pkill -f 'uvicorn apps.ccc_api'
-- DB 시작: docker compose -f {CCC_DIR}/docker/docker-compose.yaml up -d postgres
-- UI 빌드: cd {CCC_DIR}/apps/ccc-ui && npm run build
-- 배포: cd {CCC_DIR} && git pull && ./upgrade.sh
-
-파괴적 작업(rm -rf /, DROP TABLE) 금지. 위험 명령 실행 전 사용자 확인.
-""")
-
-    return "\n\n".join(parts)
+    return vm_ips
 
 
 def main():
-    # open-interpreter 설치 확인
     try:
-        import interpreter
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.markdown import Markdown
+        from rich.text import Text
     except ImportError:
-        print("[bastion] open-interpreter 설치 중...")
-        subprocess.run([sys.executable, "-m", "pip", "install", "open-interpreter", "-q"], check=True)
-        import interpreter
+        print("[bastion] rich 설치 중...")
+        import subprocess
+        subprocess.run([sys.executable, "-m", "pip", "install", "rich", "-q"], check=True)
+        from rich.console import Console
+        from rich.panel import Panel
+        from rich.markdown import Markdown
+        from rich.text import Text
 
-    from interpreter import interpreter as oi
+    from packages.bastion.agent import BastionAgent
 
-    # Ollama 설정
-    oi.llm.model = f"ollama/{LLM_MODEL}"
-    oi.llm.api_base = LLM_BASE_URL
-    oi.llm.api_key = "dummy"
+    console = Console()
+    vm_ips = get_vm_ips()
+    ollama_url = os.getenv("LLM_BASE_URL", "http://localhost:11434")
+    model = os.getenv("LLM_SUBAGENT_MODEL", os.getenv("LLM_MODEL", "gemma3:4b"))
 
-    # 시스템 프롬프트
-    oi.system_message = load_system_prompt()
+    agent = BastionAgent(vm_ips=vm_ips, ollama_url=ollama_url, model=model)
 
-    # 설정
-    oi.auto_run = False          # 코드 실행 전 확인
-    oi.loop = True               # 대화 루프
-    oi.offline = True            # 인터넷 체크 스킵
+    # 헤더
+    vm_status = ", ".join(f"{r}={ip}" for r, ip in vm_ips.items())
+    console.print(Panel(
+        f"[bold orange1]CCC Bastion Agent[/]\n"
+        f"[dim]Model: {model} | LLM: {ollama_url}[/]\n"
+        f"[dim]Infra: {vm_status}[/]\n"
+        f"[dim]Skills: {len(agent.get_skills())} | Playbooks: {len(agent.get_playbooks())}[/]",
+        border_style="orange1",
+    ))
+    console.print("[dim]명령어: /skills, /playbooks, /evidence, /quit[/]\n")
 
-    print(f"[bastion] CCC 운영 에이전트")
-    print(f"[bastion] 모델: {LLM_MODEL} ({LLM_BASE_URL})")
-    print(f"[bastion] CCC: {CCC_DIR}")
-    print()
+    def approval_callback(step_name: str, skill: str, params: dict) -> bool:
+        """위험 작업 확인"""
+        console.print(f"\n[yellow bold]  !! 확인 필요: {skill}[/]")
+        console.print(f"  [dim]{json.dumps(params, ensure_ascii=False)[:100]}[/]")
+        try:
+            answer = console.input("  [yellow]실행? [Y/n]: [/]").strip().lower()
+            return answer in ("", "y", "yes")
+        except (EOFError, KeyboardInterrupt):
+            return False
 
-    # 대화 시작
-    oi.chat()
+    while True:
+        try:
+            user_input = console.input("\n[bold green]> [/]").strip()
+        except (EOFError, KeyboardInterrupt):
+            console.print("\n[dim]Bye![/]")
+            break
+
+        if not user_input:
+            continue
+
+        # 내장 명령어
+        if user_input in ("/quit", "/exit", "/q"):
+            console.print("[dim]Bye![/]")
+            break
+        elif user_input == "/skills":
+            for s in agent.get_skills():
+                console.print(f"  [cyan]{s['name']:20}[/] {s['description']}")
+            continue
+        elif user_input == "/playbooks":
+            for p in agent.get_playbooks():
+                console.print(f"  [cyan]{p['playbook_id']:20}[/] {p['title']} ({p['steps']}단계)")
+            continue
+        elif user_input == "/evidence":
+            if not agent.evidence:
+                console.print("  [dim]No evidence yet[/]")
+            else:
+                for i, e in enumerate(agent.evidence[-5:], 1):
+                    s = "ok" if e["result"].get("success") else "fail"
+                    console.print(f"  {i}. [{s}] {e['skill']} — {str(e['result'].get('output',''))[:60]}")
+            continue
+
+        # 에이전트 대화
+        with console.status("[orange1]Bastion thinking...[/]", spinner="dots"):
+            events = list(agent.chat(user_input, approval_callback=approval_callback))
+
+        for evt in events:
+            if evt.get("event") == "skill_start":
+                console.print(f"\n  [cyan]>> {evt['skill']}[/] 실행 중...", end="")
+            elif evt.get("event") == "skill_result":
+                status = "[green]ok[/]" if evt.get("success") else "[red]fail[/]"
+                console.print(f" {status}")
+                output = evt.get("output", "")
+                if output:
+                    # 딕셔너리면 정리해서 표시
+                    if isinstance(output, str) and output.startswith("{"):
+                        try:
+                            d = json.loads(output.replace("'", '"'))
+                            for k, v in d.items():
+                                console.print(f"    [dim]{k}:[/] {v}")
+                        except Exception:
+                            for line in output.split("\n")[:15]:
+                                console.print(f"    {line}")
+                    else:
+                        for line in str(output).split("\n")[:15]:
+                            console.print(f"    {line}")
+            elif evt.get("event") == "skill_skip":
+                console.print(f"  [yellow]>> {evt.get('skill','')} 스킵됨 ({evt.get('reason','')})[/]")
+            elif evt.get("event") == "message":
+                console.print(f"\n  [bold]{evt['content']}[/]")
+            elif evt.get("event") == "error":
+                console.print(f"\n  [red]Error: {evt.get('content', evt.get('message',''))}[/]")
+            elif evt.get("event") == "playbook_start":
+                console.print(f"\n  [cyan bold]Playbook: {evt.get('title','')} ({evt.get('total_steps',0)}단계)[/]")
+            elif evt.get("event") == "step_start":
+                console.print(f"    [{evt.get('step',0)}] {evt.get('name','')}...", end="")
+            elif evt.get("event") == "step_done":
+                s = "[green]ok[/]" if evt.get("success") else "[red]fail[/]"
+                console.print(f" {s}")
+            elif evt.get("event") == "playbook_done":
+                console.print(f"  [bold]Playbook 완료: {evt.get('passed',0)}/{evt.get('total',0)}[/]")
 
 
 if __name__ == "__main__":

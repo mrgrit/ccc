@@ -1,8 +1,8 @@
-# Week 14: 자동화 관제 - OpsClaw Agent Daemon
+# Week 14: 자동화 관제 - Bastion Agent Daemon
 
 ## 학습 목표
 - AI 기반 자율 보안 관제의 개념을 이해한다
-- OpsClaw Agent Daemon의 explore/daemon/stimulate 기능을 사용한다
+- Bastion Agent Daemon의 explore/daemon/stimulate 기능을 사용한다
 - 자율 탐지 에이전트를 구성하고 자극 테스트를 수행한다
 - 자동화 관제의 장점과 한계를 분석한다
 
@@ -10,13 +10,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +28,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -60,11 +60,11 @@
 
 ---
 
-# Week 14: 자동화 관제 - OpsClaw Agent Daemon
+# Week 14: 자동화 관제 - Bastion Agent Daemon
 
 ## 학습 목표
 - AI 기반 자율 보안 관제의 개념을 이해한다
-- OpsClaw Agent Daemon의 explore/daemon/stimulate 기능을 사용한다
+- Bastion Agent Daemon의 explore/daemon/stimulate 기능을 사용한다
 - 자율 탐지 에이전트를 구성하고 자극 테스트를 수행한다
 - 자동화 관제의 장점과 한계를 분석한다
 
@@ -82,11 +82,11 @@
 | 24/7 | 교대 근무 필요 | 에이전트 상시 가동 |
 | 확장성 | 인력 비례 | 에이전트 추가 |
 
-### 1.2 OpsClaw Agent Daemon 아키텍처
+### 1.2 Bastion Agent Daemon 아키텍처
 
 ```
 +---------------------------------------------+
-|              OpsClaw Manager API              |
+|              Bastion Manager API              |
 |              (http://localhost:8000)           |
 +-----------+-----------+-----------------------+
 |           |           |                       |
@@ -107,7 +107,7 @@
 ## 2. Explore: 환경 탐색
 
 > **이 실습을 왜 하는가?**
-> "자동화 관제 - OpsClaw Agent Daemon" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
+> "자동화 관제 - Bastion Agent Daemon" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
 > 보안관제/SOC 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
 > 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
 >
@@ -118,9 +118,9 @@
 >
 > **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
 
-### 2.1 OpsClaw API로 환경 탐색
+### 2.1 Bastion API로 환경 탐색
 
-> **실습 목적**: OpsClaw API를 활용하여 자동화된 관제 워크플로우를 구축한다
+> **실습 목적**: Bastion API를 활용하여 자동화된 관제 워크플로우를 구축한다
 >
 > **배우는 것**: 경보 수집, 분석, 대응을 API 기반으로 자동화하여 관제 효율을 높이는 방법을 배운다
 >
@@ -129,36 +129,36 @@
 > **실전 활용**: SOAR(Security Orchestration, Automation and Response)는 SOC 운영 효율화의 핵심 기술이다
 
 ```bash
-export OPSCLAW_API_KEY=opsclaw-api-key-2026            # 환경 변수 설정
+export BASTION_API_KEY=bastion-api-key-2026            # 환경 변수 설정
 
 # 프로젝트 생성
 echo "=== Phase 1: 프로젝트 생성 ==="
 PROJECT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"soc-explore-demo","request_text":"보안 관제 환경 탐색","master_mode":"external"}')  # 요청 데이터(body)
 PROJECT_ID=$(echo "$PROJECT" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
 echo "Project ID: $PROJECT_ID"
 
 # Stage 전환
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null         # API 인증 키
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null         # API 인증 키
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null         # API 인증 키
+  -H "X-API-Key: $BASTION_API_KEY" > /dev/null         # API 인증 키
 echo "Stage: execute"
 ```
 
 ### 2.2 secu 서버 탐색
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
-export OPSCLAW_API_KEY=opsclaw-api-key-2026            # 환경 변수 설정
+export BASTION_API_KEY=bastion-api-key-2026            # 환경 변수 설정
 
 echo "=== secu 서버 탐색 ==="
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
     "tasks": [
       {
@@ -181,15 +181,15 @@ for r in data.get('results', []):                      # 반복문 시작
 
 ### 2.3 siem 서버 탐색
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
-export OPSCLAW_API_KEY=opsclaw-api-key-2026            # 환경 변수 설정
+export BASTION_API_KEY=bastion-api-key-2026            # 환경 변수 설정
 
 echo "=== siem 서버 탐색 ==="
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
     "tasks": [
       {
@@ -311,15 +311,15 @@ ENDSSH
 
 ### 4.1 탐지 능력 검증
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
-export OPSCLAW_API_KEY=opsclaw-api-key-2026            # 환경 변수 설정
+export BASTION_API_KEY=bastion-api-key-2026            # 환경 변수 설정
 
 echo "=== 자극 테스트: 포트 스캔 ==="
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/dispatch" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
     "command": "for port in 22 80 443 3306 5432 8080; do timeout 1 bash -c \"echo > /dev/tcp/10.20.30.1/$port\" 2>/dev/null && echo \"Port $port: OPEN\" || echo \"Port $port: CLOSED\"; done",
     "subagent_url": "http://10.20.30.80:8002"
@@ -328,15 +328,15 @@ curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/dispatch" \
 
 ### 4.2 SQL Injection 자극
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
-export OPSCLAW_API_KEY=opsclaw-api-key-2026            # 환경 변수 설정
+export BASTION_API_KEY=bastion-api-key-2026            # 환경 변수 설정
 
 echo "=== 자극: SQLi 시도 ==="
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/dispatch" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
     "command": "curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:3000/rest/products/search?q=test%27+OR+1=1--\" && echo \" (SQLi 전송)\"",
     "subagent_url": "http://10.20.30.80:8002"
@@ -345,15 +345,15 @@ curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/dispatch" \
 
 ### 4.3 탐지 확인
 
-OpsClaw Manager API를 호출하여 작업을 수행합니다.
+Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
-export OPSCLAW_API_KEY=opsclaw-api-key-2026            # 환경 변수 설정
+export BASTION_API_KEY=bastion-api-key-2026            # 환경 변수 설정
 
 echo "=== 탐지 확인: Suricata ==="
 curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/dispatch" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
     "command": "tail -10 /var/log/suricata/fast.log 2>/dev/null | grep -iE \"sql|scan|injection\" || echo \"관련 경보 없음\"",
     "subagent_url": "http://10.20.30.1:8002"
@@ -457,7 +457,7 @@ ENDSSH
 
 ## 핵심 정리
 
-1. OpsClaw Agent Daemon은 explore/daemon/stimulate 3단계로 자율 관제한다
+1. Bastion Agent Daemon은 explore/daemon/stimulate 3단계로 자율 관제한다
 2. LLM은 경보 1차 분석과 분류를 자동화하여 분석관 부담을 줄인다
 3. 에스컬레이션 임계값으로 자동 경보 분류와 상위 통보를 구현한다
 4. 자극 테스트로 탐지 능력을 지속적으로 검증해야 한다

@@ -14,7 +14,7 @@
 |------|---------|
 | Ollama LLM | `http://192.168.0.105:11434/v1/chat/completions` |
 | 테스트 모델 | gemma3:12b (Google), llama3.1:8b (Meta) |
-| OpsClaw | `http://localhost:8000` (Key: opsclaw-api-key-2026) |
+| Bastion | `http://localhost:8000` (Key: bastion-api-key-2026) |
 
 ## 강의 시간 배분 (3시간)
 

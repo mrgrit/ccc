@@ -3,20 +3,20 @@
 ## 학습 목표
 - AI 에이전트의 Tool 남용 위협을 이해한다
 - 권한 상승과 자율 에이전트의 위험을 분석한다
-- OpsClaw 아키텍처에서의 안전 장치를 점검한다
+- Bastion 아키텍처에서의 안전 장치를 점검한다
 - 에이전트 보안 설계 원칙을 수립한다
 
 ## 실습 환경 (공통)
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +28,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -63,7 +63,7 @@
 ## 학습 목표
 - AI 에이전트의 Tool 남용 위협을 이해한다
 - 권한 상승과 자율 에이전트의 위험을 분석한다
-- OpsClaw 아키텍처에서의 안전 장치를 점검한다
+- Bastion 아키텍처에서의 안전 장치를 점검한다
 - 에이전트 보안 설계 원칙을 수립한다
 
 ---
@@ -120,7 +120,7 @@
 ```bash
 sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
-# OpsClaw 도구 남용 시나리오
+# Bastion 도구 남용 시나리오
 tool_abuse_scenarios = [
     {
         "tool": "run_command",
@@ -164,28 +164,28 @@ PYEOF
 ENDSSH
 ```
 
-### 2.2 OpsClaw 안전 장치 점검
+### 2.2 Bastion 안전 장치 점검
 
 ```bash
-export OPSCLAW_API_KEY=opsclaw-api-key-2026
+export BASTION_API_KEY=bastion-api-key-2026
 
-echo "=== OpsClaw 안전 장치 점검 ==="
+echo "=== Bastion 안전 장치 점검 ==="
 
 # risk_level=critical 태스크는 dry_run 강제
 echo "--- Critical 태스크 dry_run 테스트 ---"
 PROJECT=$(curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"safety-test","request_text":"안전 장치 테스트","master_mode":"external"}')
 PID=$(echo "$PROJECT" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
 
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: $OPSCLAW_API_KEY" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: $BASTION_API_KEY" > /dev/null
+curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # Critical 태스크 실행 시도 (dry_run 강제 확인)
 RESULT=$(curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: $OPSCLAW_API_KEY" \
+  -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
     "tasks": [{"order": 1, "instruction_prompt": "echo SAFETY_TEST", "risk_level": "critical"}],
     "subagent_url": "http://localhost:8002"
@@ -299,7 +299,7 @@ for l in autonomy_levels:
     print(f"{l['level']:<15} {l['risk']:<12} {l['desc']}")
     print(f"{'':>15} 예시: {l['example']}\n")
 
-print("OpsClaw 현재 수준: L3 (위임)")
+print("Bastion 현재 수준: L3 (위임)")
 print("  - Low/Medium: 자동 실행")
 print("  - Critical: dry_run 강제 + 사용자 confirmed 필요")
 
@@ -336,17 +336,17 @@ ENDSSH
 
 ---
 
-## 5. OpsClaw 안전 아키텍처 분석
+## 5. Bastion 안전 아키텍처 분석
 
 ### 5.1 안전 장치 매핑
 
-OpsClaw의 기존 안전 장치(risk_level, PoW, dry_run 등)를 AI Safety 프레임워크에 매핑하여 분석한다.
+Bastion의 기존 안전 장치(risk_level, PoW, dry_run 등)를 AI Safety 프레임워크에 매핑하여 분석한다.
 
 ```bash
-# OpsClaw 안전 장치 → AI Safety 프레임워크 매핑
+# Bastion 안전 장치 → AI Safety 프레임워크 매핑
 sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
-opsclaw_safety = {
+bastion_safety = {
     "최소 권한": "SubAgent에 직접 접근 금지, Manager API 통해서만",
     "인간 감독": "risk_level=critical -> dry_run 강제, confirmed 필요",
     "감사 추적": "PoW 블록체인으로 모든 작업 기록, evidence 자동 저장",
@@ -356,8 +356,8 @@ opsclaw_safety = {
     "투명성": "Replay API로 작업 이력 재생 가능",
 }
 
-print("=== OpsClaw 안전 장치 매핑 ===\n")
-for principle, implementation in opsclaw_safety.items():
+print("=== Bastion 안전 장치 매핑 ===\n")
+for principle, implementation in bastion_safety.items():
     print(f"  {principle}")
     print(f"    -> {implementation}\n")
 
@@ -379,7 +379,7 @@ ENDSSH
 3. 프롬프트 인젝션이 도구 실행으로 이어지면 실제 피해가 발생한다
 4. 자율성 수준이 높을수록 안전 장치가 더 강력해야 한다
 5. 최소 권한, 인간 감독, 감사 추적이 에이전트 보안의 핵심이다
-6. OpsClaw는 PoW, dry_run, Manager 중개로 안전 장치를 구현한다
+6. Bastion는 PoW, dry_run, Manager 중개로 안전 장치를 구현한다
 
 ---
 

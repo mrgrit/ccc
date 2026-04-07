@@ -5,19 +5,19 @@
 - 체계적 테스트 방법론(OWASP LLM Top 10, MITRE ATLAS)을 학습한다
 - Red Team 평가 메트릭(ASR, toxicity score 등)을 설계할 수 있다
 - 자동화된 Red Team 파이프라인을 구축하고 실행할 수 있다
-- OpsClaw 기반으로 Red Team 프로젝트를 오케스트레이션할 수 있다
+- Bastion 기반으로 Red Team 프로젝트를 오케스트레이션할 수 있다
 
 ## 실습 환경 (공통)
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -864,15 +864,15 @@ PYEOF
 python3 /tmp/redteam/evaluator.py /tmp/redteam/results_sample.jsonl
 ```
 
-## 4.5 OpsClaw 연동: Red Team 프로젝트 자동화
+## 4.5 Bastion 연동: Red Team 프로젝트 자동화
 
-OpsClaw Manager API를 통해 Red Team 작업을 프로젝트로 관리한다.
+Bastion Manager API를 통해 Red Team 작업을 프로젝트로 관리한다.
 
 ```bash
-# OpsClaw Red Team 프로젝트 생성
+# Bastion Red Team 프로젝트 생성
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "name": "llm-redteam-week01",
     "request_text": "LLM Red Teaming 프레임워크 실습 - 수동+자동 테스트 수행",
@@ -884,14 +884,14 @@ curl -s -X POST http://localhost:8000/projects \
 
 # Stage 전환
 # curl -s -X POST http://localhost:8000/projects/$RT_PROJECT_ID/plan \
-#   -H "X-API-Key: opsclaw-api-key-2026"
+#   -H "X-API-Key: bastion-api-key-2026"
 # curl -s -X POST http://localhost:8000/projects/$RT_PROJECT_ID/execute \
-#   -H "X-API-Key: opsclaw-api-key-2026"
+#   -H "X-API-Key: bastion-api-key-2026"
 
 # 실행 계획 디스패치 (로컬 SubAgent에서 자동화 스크립트 실행)
 # curl -s -X POST http://localhost:8000/projects/$RT_PROJECT_ID/execute-plan \
 #   -H "Content-Type: application/json" \
-#   -H "X-API-Key: opsclaw-api-key-2026" \
+#   -H "X-API-Key: bastion-api-key-2026" \
 #   -d '{
 #     "tasks": [
 #       {"order":1, "instruction_prompt":"python3 /tmp/redteam/runner.py /tmp/redteam/mutations.jsonl /tmp/redteam/results.jsonl", "risk_level":"low"},
@@ -985,7 +985,7 @@ python3 /tmp/redteam/report.py
 - [ ] 프롬프트 변형 엔진을 구현할 수 있다
 - [ ] 자동 실행 엔진을 구동할 수 있다
 - [ ] 키워드 기반 분류기를 작성할 수 있다
-- [ ] OpsClaw 프로젝트로 Red Team 작업을 관리할 수 있다
+- [ ] Bastion 프로젝트로 Red Team 작업을 관리할 수 있다
 - [ ] Red Team 보고서를 생성할 수 있다
 
 ---

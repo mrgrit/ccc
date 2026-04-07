@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -29,7 +29,7 @@
 | 1:20-2:00 | 실습 (Part 3) | 실습 |
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + OpsClaw 연동 (Part 5) | 실습 |
+| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
@@ -312,7 +312,7 @@ web 서버에 접속하여 실행 중인 컨테이너를 확인한다.
 > **실전 활용**: 컨테이너 보안 감사에서 root 실행, privileged 모드, 불필요한 포트 노출은 가장 먼저 점검하는 항목이다.
 
 ```bash
-# opsclaw 서버에서 web 서버로 SSH 접속
+# bastion 서버에서 web 서버로 SSH 접속
 sshpass -p1 ssh -o StrictHostKeyChecking=no web@10.20.30.80
 ```
 
@@ -441,7 +441,7 @@ exit
 siem 서버에는 OpenCTI(위협 인텔리전스 플랫폼)가 Docker Compose로 실행 중이다.
 
 ```bash
-# opsclaw 서버에서 siem 서버로 접속
+# bastion 서버에서 siem 서버로 접속
 sshpass -p1 ssh -o StrictHostKeyChecking=no siem@10.20.30.100
 ```
 

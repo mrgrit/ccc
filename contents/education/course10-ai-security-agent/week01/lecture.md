@@ -11,13 +11,13 @@
 
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
-| opsclaw | 10.20.30.201 | Control Plane (OpsClaw) | `ssh opsclaw@10.20.30.201` (pw: 1) |
+| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh bastion@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh secu@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh web@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh siem@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
-**OpsClaw API:** `http://localhost:8000` / Key: `opsclaw-api-key-2026`
+**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -258,7 +258,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 
 ### 4.1 기본 LLM 호출 함수 작성
 
-opsclaw 서버에서 Python 스크립트를 작성한다.
+bastion 서버에서 Python 스크립트를 작성한다.
 
 ```bash
 # 작업 디렉토리 생성
@@ -461,15 +461,15 @@ python3 ~/lab/week01/multi_turn_agent.py
 
 ## Part 5: 보안 에이전트 프로토타입 (30분) — 실습
 
-### 5.1 OpsClaw API로 에이전트 결과 기록
+### 5.1 Bastion API로 에이전트 결과 기록
 
-실습 에이전트를 OpsClaw과 연동하여 작업 기록을 남긴다.
+실습 에이전트를 Bastion과 연동하여 작업 기록을 남긴다.
 
 ```bash
-# OpsClaw에 프로젝트 생성 (에이전트 실습 기록용)
+# Bastion에 프로젝트 생성 (에이전트 실습 기록용)
 curl -s -X POST http://localhost:8000/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: opsclaw-api-key-2026" \
+  -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "name": "week01-first-agent",
     "request_text": "Week01 실습: 첫 번째 AI 보안 에이전트 테스트",
@@ -484,10 +484,10 @@ export PROJECT_ID="<응답에서 받은 id>"
 ### 5.2 에이전트로 서버 상태 점검 후 기록
 
 ```bash
-cat > ~/lab/week01/agent_with_opsclaw.py << 'PYEOF'
+cat > ~/lab/week01/agent_with_bastion.py << 'PYEOF'
 """
-Week 01 실습: OpsClaw 연동 보안 에이전트
-에이전트 결과를 OpsClaw API에 기록한다.
+Week 01 실습: Bastion 연동 보안 에이전트
+에이전트 결과를 Bastion API에 기록한다.
 """
 import subprocess
 import requests
@@ -496,8 +496,8 @@ import os
 
 OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
-OPSCLAW_URL = "http://localhost:8000"
-API_KEY = "opsclaw-api-key-2026"
+BASTION_URL = "http://localhost:8000"
+API_KEY = "bastion-api-key-2026"
 HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
 def llm_analyze(system_info: str) -> str:
@@ -539,13 +539,13 @@ def main():
     analysis = llm_analyze(info)
     print(f"분석 결과: {analysis[:400]}")
 
-    # 3. Act (OpsClaw에 기록)
-    print("[Act] OpsClaw에 결과 기록...")
+    # 3. Act (Bastion에 기록)
+    print("[Act] Bastion에 결과 기록...")
     project_id = os.environ.get("PROJECT_ID")
     if project_id:
         # 완료 보고서 작성
         requests.post(
-            f"{OPSCLAW_URL}/projects/{project_id}/completion-report",
+            f"{BASTION_URL}/projects/{project_id}/completion-report",
             headers=HEADERS,
             json={
                 "summary": "Week01 에이전트 실습 완료",
@@ -556,7 +556,7 @@ def main():
                 ]
             }
         )
-        print("OpsClaw 기록 완료!")
+        print("Bastion 기록 완료!")
     else:
         print("PROJECT_ID 환경변수를 설정해주세요.")
 
@@ -566,18 +566,18 @@ PYEOF
 
 # PROJECT_ID 설정 후 실행 (위에서 생성한 프로젝트 ID 사용)
 # export PROJECT_ID="실제ID"
-# python3 ~/lab/week01/agent_with_opsclaw.py
+# python3 ~/lab/week01/agent_with_bastion.py
 ```
 
 ### 5.3 결과 확인
 
 ```bash
-# OpsClaw에서 프로젝트 상태 확인
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+# Bastion에서 프로젝트 상태 확인
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   http://localhost:8000/projects/${PROJECT_ID} | python3 -m json.tool
 
 # evidence 요약 확인
-curl -s -H "X-API-Key: opsclaw-api-key-2026" \
+curl -s -H "X-API-Key: bastion-api-key-2026" \
   http://localhost:8000/projects/${PROJECT_ID}/evidence/summary | python3 -m json.tool
 ```
 
