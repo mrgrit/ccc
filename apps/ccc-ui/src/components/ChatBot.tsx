@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect } from 'react'
+import React, { useState, useRef, useEffect, useCallback } from 'react'
 import { api } from '../api.ts'
 import { getUser } from '../auth.ts'
 
@@ -15,11 +15,52 @@ export default function ChatBot() {
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const bottomRef = useRef<HTMLDivElement>(null)
+  const inputRef = useRef<HTMLInputElement>(null)
   const user = getUser()
+
+  // 텍스트 선택 팝업
+  const [selPopup, setSelPopup] = useState<{ text: string; x: number; y: number } | null>(null)
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
+
+  // 텍스트 선택 감지
+  const handleMouseUp = useCallback(() => {
+    const sel = window.getSelection()
+    const text = sel?.toString().trim() || ''
+    if (text.length < 5 || text.length > 500) {
+      setSelPopup(null)
+      return
+    }
+    const range = sel?.getRangeAt(0)
+    if (range) {
+      const rect = range.getBoundingClientRect()
+      setSelPopup({ text, x: rect.left + rect.width / 2, y: rect.top - 10 })
+    }
+  }, [])
+
+  const handleMouseDown = useCallback(() => {
+    setSelPopup(null)
+  }, [])
+
+  useEffect(() => {
+    document.addEventListener('mouseup', handleMouseUp)
+    document.addEventListener('mousedown', handleMouseDown)
+    return () => {
+      document.removeEventListener('mouseup', handleMouseUp)
+      document.removeEventListener('mousedown', handleMouseDown)
+    }
+  }, [handleMouseUp, handleMouseDown])
+
+  const askAboutSelection = () => {
+    if (!selPopup) return
+    setInput(selPopup.text)
+    setOpen(true)
+    setSelPopup(null)
+    window.getSelection()?.removeAllRanges()
+    setTimeout(() => inputRef.current?.focus(), 100)
+  }
 
   const send = async () => {
     if (!input.trim() || loading) return
@@ -45,6 +86,32 @@ export default function ChatBot() {
 
   return (
     <>
+      {/* 텍스트 선택 팝업 */}
+      {selPopup && (
+        <div
+          onClick={askAboutSelection}
+          style={{
+            position: 'fixed',
+            left: selPopup.x,
+            top: selPopup.y,
+            transform: 'translate(-50%, -100%)',
+            background: '#f97316',
+            color: '#fff',
+            padding: '5px 12px',
+            borderRadius: 8,
+            fontSize: 12,
+            fontWeight: 600,
+            cursor: 'pointer',
+            zIndex: 2000,
+            boxShadow: '0 2px 8px rgba(0,0,0,0.3)',
+            whiteSpace: 'nowrap',
+            userSelect: 'none',
+          }}
+        >
+          AI Tutor에게 질문하기
+        </div>
+      )}
+
       {/* 플로팅 버튼 */}
       {!open && (
         <button onClick={() => setOpen(true)} style={{
@@ -52,7 +119,7 @@ export default function ChatBot() {
           borderRadius: '50%', background: '#f97316', color: '#fff', border: 'none',
           fontSize: 24, cursor: 'pointer', boxShadow: '0 4px 12px rgba(0,0,0,0.3)',
           zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center',
-        }}>💬</button>
+        }}>AI</button>
       )}
 
       {/* 챗 창 */}
@@ -88,6 +155,7 @@ export default function ChatBot() {
                   maxWidth: '80%', padding: '10px 14px', borderRadius: 12, fontSize: 14, lineHeight: 1.6,
                   background: m.role === 'user' ? '#f97316' : '#21262d',
                   color: m.role === 'user' ? '#fff' : '#e6edf3',
+                  whiteSpace: 'pre-wrap',
                 }}>
                   {m.content}
                 </div>
@@ -106,6 +174,7 @@ export default function ChatBot() {
           {/* 입력 */}
           <div style={{ padding: '12px 16px', borderTop: '1px solid #30363d', display: 'flex', gap: 8 }}>
             <input
+              ref={inputRef}
               value={input}
               onChange={e => setInput(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && send()}
