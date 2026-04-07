@@ -34,7 +34,7 @@ class BastionAgent:
                  ollama_url: str = "", model: str = ""):
         self.vm_ips = vm_ips
         self.ollama_url = ollama_url or os.getenv("LLM_BASE_URL", "http://localhost:11434")
-        self.model = model or os.getenv("LLM_SUBAGENT_MODEL", os.getenv("LLM_MODEL", "gemma3:4b"))
+        self.model = model or os.getenv("LLM_MANAGER_MODEL", os.getenv("LLM_MODEL", "gpt-oss:120b"))
         self.history: list[dict] = []
         self.evidence: list[dict] = []
 

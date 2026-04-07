@@ -82,7 +82,7 @@ def main():
     console = Console()
     vm_ips = get_vm_ips()
     ollama_url = os.getenv("LLM_BASE_URL", "http://localhost:11434")
-    model = os.getenv("LLM_SUBAGENT_MODEL", os.getenv("LLM_MODEL", "gemma3:4b"))
+    model = os.getenv("LLM_MANAGER_MODEL", os.getenv("LLM_MODEL", "gpt-oss:120b"))
 
     agent = BastionAgent(vm_ips=vm_ips, ollama_url=ollama_url, model=model)
 
