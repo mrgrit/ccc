@@ -449,12 +449,12 @@ echo -n "admin123" | md5sum
 
 ```bash
 # /etc/shadow에서 해시 추출 (web 서버)
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 1 | sudo -S cat /etc/shadow 2>/dev/null" | grep -E "^(web|root):" > /tmp/shadow_hashes.txt
 cat /tmp/shadow_hashes.txt
 
 # unshadow 명령으로 john 형식 변환
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "cat /etc/passwd" | grep -E "^(web|root):" > /tmp/passwd_entries.txt
 unshadow /tmp/passwd_entries.txt /tmp/shadow_hashes.txt > /tmp/unshadowed.txt 2>/dev/null
 
@@ -539,8 +539,8 @@ curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -d '{
     "tasks": [
       {"order":1,"title":"SSH 인증방식 확인","instruction_prompt":"nmap --script=ssh-auth-methods -p 22 10.20.30.80 2>/dev/null | tail -10","risk_level":"low","subagent_url":"http://localhost:8002"},
-      {"order":2,"title":"비밀번호 정책 확인","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"cat /etc/pam.d/common-password 2>/dev/null | grep -v ^#\" 2>/dev/null","risk_level":"low","subagent_url":"http://localhost:8002"},
-      {"order":3,"title":"shadow 해시 유형 확인","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"echo 1 | sudo -S cat /etc/shadow 2>/dev/null\" 2>/dev/null | grep web | cut -d: -f2 | cut -c1-4","risk_level":"medium","subagent_url":"http://localhost:8002"}
+      {"order":2,"title":"비밀번호 정책 확인","instruction_prompt":"ssh ccc@10.20.30.80 \"cat /etc/pam.d/common-password 2>/dev/null | grep -v ^#\" 2>/dev/null","risk_level":"low","subagent_url":"http://localhost:8002"},
+      {"order":3,"title":"shadow 해시 유형 확인","instruction_prompt":"ssh ccc@10.20.30.80 \"echo 1 | sudo -S cat /etc/shadow 2>/dev/null\" 2>/dev/null | grep web | cut -d: -f2 | cut -c1-4","risk_level":"medium","subagent_url":"http://localhost:8002"}
     ],
     "subagent_url":"http://localhost:8002"
   }' | python3 -c "
@@ -560,18 +560,18 @@ for t in d.get('task_results',[]):
 
 ```bash
 # PAM 비밀번호 정책 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "cat /etc/pam.d/common-password 2>/dev/null | grep -v '^#' | grep -v '^$'"
 
 # 비밀번호 만료 정책 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "chage -l web 2>/dev/null"
 # 예상 출력:
 # Password expires: never  ← 만료 없음 (취약)
 # Maximum number of days between password change: 99999
 
 # SSH 설정 확인 (비밀번호 인증 여부)
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "cat /etc/ssh/sshd_config 2>/dev/null | grep -i 'PasswordAuthentication\|MaxAuthTries\|LoginGraceTime'"
 # 예상 출력:
 # PasswordAuthentication yes  ← 비밀번호 인증 허용 (취약)

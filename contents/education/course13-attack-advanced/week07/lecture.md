@@ -20,9 +20,9 @@
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
 | bastion | 10.20.30.201 | C2 서버 (교육용) | `ssh ccc@10.20.30.201` |
-| secu | 10.20.30.1 | 방화벽/IPS (탐지 검증) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 피해 시스템 (비콘 대상) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM 모니터링 | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (탐지 검증) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 피해 시스템 (비콘 대상) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM 모니터링 | `ssh ccc@10.20.30.100` |
 
 ## 강의 시간 배분 (3시간)
 
@@ -643,7 +643,7 @@ echo ""
 
 echo "[2] DNS 이상 탐지"
 echo "--- 최근 DNS 쿼리 통계 ---"
-sshpass -p1 ssh ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "cat /var/log/suricata/dns.log 2>/dev/null | tail -5 || echo 'DNS 로그 없음'" 2>/dev/null
 
 echo ""
@@ -654,7 +654,7 @@ echo "  - User-Agent와 TLS 핑거프린트 불일치"
 echo ""
 
 echo "[4] Suricata C2 규칙"
-sshpass -p1 ssh ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "grep -r 'C2\|beacon\|cobalt\|command.and.control' /etc/suricata/rules/ 2>/dev/null | head -5 || echo 'C2 규칙 없음'" 2>/dev/null
 
 echo ""

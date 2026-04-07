@@ -11,9 +11,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -128,19 +128,19 @@ Phase 6: Lessons Learned (15분)
 echo "=== Blue Team: 방어 환경 점검 ==="
 
 echo "--- [1] Suricata IPS (secu) ---"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "systemctl is-active suricata 2>/dev/null && echo 'Suricata: OK' || echo 'Suricata: DOWN'"
 
 echo "--- [2] nftables (secu) ---"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "echo 1 | sudo -S nft list tables 2>/dev/null | wc -l | xargs -I{} echo 'nftables 테이블: {}'"
 
 echo "--- [3] Wazuh SIEM (siem) ---"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "systemctl is-active wazuh-manager 2>/dev/null && echo 'Wazuh: OK' || echo 'Wazuh: DOWN'"
 
 echo "--- [4] JuiceShop (web) ---"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "curl -s -o /dev/null -w '%{http_code}' http://localhost:3000/ | xargs -I{} echo 'JuiceShop: HTTP {}'"
 ```
 
@@ -149,11 +149,11 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
 ```bash
 echo "=== 기준선 확보 ==="
 
-SURICATA_COUNT=$(sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
+SURICATA_COUNT=$(ssh ccc@10.20.30.1 \
   "wc -l /var/log/suricata/fast.log 2>/dev/null | awk '{print \$1}'" 2>/dev/null)
 echo "Suricata 기준선: ${SURICATA_COUNT:-0}줄"
 
-WAZUH_COUNT=$(sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
+WAZUH_COUNT=$(ssh ccc@10.20.30.100 \
   "wc -l /var/ossec/logs/alerts/alerts.json 2>/dev/null | awk '{print \$1}'" 2>/dev/null)
 echo "Wazuh 기준선: ${WAZUH_COUNT:-0}줄"
 
@@ -169,7 +169,7 @@ echo "기준선 시간: $(date '+%Y-%m-%d %H:%M:%S')"
 ```bash
 echo "=== Red Team: 정찰 ==="
 
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "--- 포트 스캔 ---"
 for port in 22 80 443 3000 8000 8080 3306 5432; do     # 반복문 시작
   (echo > /dev/tcp/10.20.30.1/$port) 2>/dev/null && echo "secu:$port OPEN" &
@@ -195,7 +195,7 @@ ENDSSH
 ```bash
 echo "=== Red Team: 초기 침투 ==="
 
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "--- SQL Injection ---"
 RESULT=$(curl -s -X POST http://localhost:3000/rest/user/login \
   -H "Content-Type: application/json" \
@@ -231,7 +231,7 @@ ENDSSH
 ```bash
 echo "=== Red Team: SSH 무차별 대입 시뮬레이션 ==="
 
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 for i in 1 2 3; do                                     # 반복문 시작
   sshpass -p"wrong${i}" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 \
     badccc@10.20.30.1 echo "success" 2>/dev/null || echo "시도 $i: 실패"
@@ -250,12 +250,12 @@ ENDSSH
 echo "=== Blue Team: 경보 수집 ==="
 
 echo "--- Suricata ---"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "tail -20 /var/log/suricata/fast.log 2>/dev/null"
 
 echo ""
 echo "--- Wazuh ---"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.100 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 tail -10 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c "  # 파일 끝부분 출력
 import sys, json
 for line in sys.stdin:                                 # 반복문 시작
@@ -275,7 +275,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 attacks = [
     ("Reconnaissance", "T1046", "Network Service Discovery", "포트 스캔"),
@@ -332,7 +332,7 @@ echo "  JuiceShop 관리자 세션 토큰 갱신 필요"
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "--- SQL Injection 재시도 ---"
 RESULT=$(curl -s -X POST http://localhost:3000/rest/user/login \
   -H "Content-Type: application/json" \
@@ -358,7 +358,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 from datetime import datetime
 

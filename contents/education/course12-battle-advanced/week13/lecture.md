@@ -19,9 +19,9 @@
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
 | bastion | 10.20.30.201 | 퍼플팀 Control Plane | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh 4.11.2) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh 4.11.2) | `ssh ccc@10.20.30.100` |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
@@ -292,13 +292,13 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
       },
       {
         "order": 3,
-        "instruction_prompt": "echo \"=== [RED] T1059: Command-Line Interface ===\"; echo \"시뮬레이션: 원격 명령 실행 시도\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"id; whoami; uname -a\" 2>/dev/null; echo \"결과: 원격 명령 실행 완료\"",
+        "instruction_prompt": "echo \"=== [RED] T1059: Command-Line Interface ===\"; echo \"시뮬레이션: 원격 명령 실행 시도\"; ssh ccc@10.20.30.80 \"id; whoami; uname -a\" 2>/dev/null; echo \"결과: 원격 명령 실행 완료\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
       {
         "order": 4,
-        "instruction_prompt": "echo \"=== [RED] T1083: File and Directory Discovery ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"ls -la /etc/passwd /etc/shadow /var/www/ 2>/dev/null; find /tmp -maxdepth 1 -type f 2>/dev/null | head -10\"; echo \"결과: 파일/디렉토리 탐색 완료\"",
+        "instruction_prompt": "echo \"=== [RED] T1083: File and Directory Discovery ===\"; ssh ccc@10.20.30.80 \"ls -la /etc/passwd /etc/shadow /var/www/ 2>/dev/null; find /tmp -maxdepth 1 -type f 2>/dev/null | head -10\"; echo \"결과: 파일/디렉토리 탐색 완료\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
@@ -322,19 +322,19 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
     "tasks": [
       {
         "order": 1,
-        "instruction_prompt": "echo \"=== [BLUE] T1190 탐지 확인 ===\"; echo \"[Suricata]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"tail -10 /var/log/suricata/fast.log 2>/dev/null | grep -i sql || echo MISS\"; echo \"[Wazuh]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \"tail -30 /var/ossec/logs/alerts/alerts.json 2>/dev/null | grep -i sql | tail -3 || echo MISS\"; echo \"[Apache]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"tail -20 /var/log/apache2/access.log 2>/dev/null | grep -i \\\"OR 1=1\\\" | tail -3 || echo MISS\"",
+        "instruction_prompt": "echo \"=== [BLUE] T1190 탐지 확인 ===\"; echo \"[Suricata]\"; ssh ccc@10.20.30.1 \"tail -10 /var/log/suricata/fast.log 2>/dev/null | grep -i sql || echo MISS\"; echo \"[Wazuh]\"; ssh ccc@10.20.30.100 \"tail -30 /var/ossec/logs/alerts/alerts.json 2>/dev/null | grep -i sql | tail -3 || echo MISS\"; echo \"[Apache]\"; ssh ccc@10.20.30.80 \"tail -20 /var/log/apache2/access.log 2>/dev/null | grep -i \\\"OR 1=1\\\" | tail -3 || echo MISS\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
       {
         "order": 2,
-        "instruction_prompt": "echo \"=== [BLUE] T1110 탐지 확인 ===\"; echo \"[Wazuh 인증 실패]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \"tail -30 /var/ossec/logs/alerts/alerts.json 2>/dev/null | grep -iE \\\"authentication|login|failed\\\" | tail -3 || echo MISS\"; echo \"[Apache 401/403]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"tail -20 /var/log/apache2/access.log 2>/dev/null | grep -E \\\"401|403\\\" | tail -3 || echo MISS\"",
+        "instruction_prompt": "echo \"=== [BLUE] T1110 탐지 확인 ===\"; echo \"[Wazuh 인증 실패]\"; ssh ccc@10.20.30.100 \"tail -30 /var/ossec/logs/alerts/alerts.json 2>/dev/null | grep -iE \\\"authentication|login|failed\\\" | tail -3 || echo MISS\"; echo \"[Apache 401/403]\"; ssh ccc@10.20.30.80 \"tail -20 /var/log/apache2/access.log 2>/dev/null | grep -E \\\"401|403\\\" | tail -3 || echo MISS\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
       {
         "order": 3,
-        "instruction_prompt": "echo \"=== [BLUE] T1059+T1083+T1071 탐지 확인 ===\"; echo \"[Wazuh 명령 실행]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \"tail -50 /var/ossec/logs/alerts/alerts.json 2>/dev/null | grep -iE \\\"command|exec|shell\\\" | tail -3 || echo MISS\"; echo \"[Wazuh 파일 접근]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \"tail -50 /var/ossec/logs/alerts/alerts.json 2>/dev/null | grep -iE \\\"file|directory|passwd\\\" | tail -3 || echo MISS\"; echo \"[Suricata C2 패턴]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"tail -10 /var/log/suricata/fast.log 2>/dev/null | grep -iE \\\"c2|beacon|callback\\\" || echo MISS\"",
+        "instruction_prompt": "echo \"=== [BLUE] T1059+T1083+T1071 탐지 확인 ===\"; echo \"[Wazuh 명령 실행]\"; ssh ccc@10.20.30.100 \"tail -50 /var/ossec/logs/alerts/alerts.json 2>/dev/null | grep -iE \\\"command|exec|shell\\\" | tail -3 || echo MISS\"; echo \"[Wazuh 파일 접근]\"; ssh ccc@10.20.30.100 \"tail -50 /var/ossec/logs/alerts/alerts.json 2>/dev/null | grep -iE \\\"file|directory|passwd\\\" | tail -3 || echo MISS\"; echo \"[Suricata C2 패턴]\"; ssh ccc@10.20.30.1 \"tail -10 /var/log/suricata/fast.log 2>/dev/null | grep -iE \\\"c2|beacon|callback\\\" || echo MISS\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       }
@@ -384,7 +384,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
     "tasks": [
       {
         "order": 1,
-        "instruction_prompt": "echo \"=== [RETEST] T1190 재테스트 ===\"; curl -s \"http://10.20.30.80:3000/rest/products/search?q=%27%20UNION%20SELECT%201--\" 2>/dev/null | head -3; echo \"---\"; echo \"[탐지 확인]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"tail -5 /var/log/apache2/access.log 2>/dev/null | grep -i union || echo 로그 확인 필요\"",
+        "instruction_prompt": "echo \"=== [RETEST] T1190 재테스트 ===\"; curl -s \"http://10.20.30.80:3000/rest/products/search?q=%27%20UNION%20SELECT%201--\" 2>/dev/null | head -3; echo \"---\"; echo \"[탐지 확인]\"; ssh ccc@10.20.30.80 \"tail -5 /var/log/apache2/access.log 2>/dev/null | grep -i union || echo 로그 확인 필요\"",
         "risk_level": "medium",
         "subagent_url": "http://10.20.30.201:8002"
       },
@@ -436,7 +436,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
     "tasks": [
       {
         "order": 1,
-        "instruction_prompt": "echo \"=== 보안 성숙도 평가: 기술 차원 ===\"; echo \"[SIEM 상태]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \"systemctl is-active wazuh-manager 2>/dev/null || echo inactive\"; echo \"[IPS 상태]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"systemctl is-active suricata 2>/dev/null || echo inactive\"; echo \"[방화벽 규칙 수]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"nft list ruleset 2>/dev/null | grep -c rule || echo 0\"; echo \"[커스텀 탐지 규칙 수]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \"cat /var/ossec/etc/rules/local_rules.xml 2>/dev/null | grep -c '<rule' || echo 0\"",
+        "instruction_prompt": "echo \"=== 보안 성숙도 평가: 기술 차원 ===\"; echo \"[SIEM 상태]\"; ssh ccc@10.20.30.100 \"systemctl is-active wazuh-manager 2>/dev/null || echo inactive\"; echo \"[IPS 상태]\"; ssh ccc@10.20.30.1 \"systemctl is-active suricata 2>/dev/null || echo inactive\"; echo \"[방화벽 규칙 수]\"; ssh ccc@10.20.30.1 \"nft list ruleset 2>/dev/null | grep -c rule || echo 0\"; echo \"[커스텀 탐지 규칙 수]\"; ssh ccc@10.20.30.100 \"cat /var/ossec/etc/rules/local_rules.xml 2>/dev/null | grep -c '<rule' || echo 0\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },

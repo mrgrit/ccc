@@ -10,9 +10,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -103,7 +103,7 @@
 # 모든 서버 접속 확인
 for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do  # 반복문 시작
   echo "=== $srv ==="
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv "hostname" 2>/dev/null || echo "접속 실패"  # 비밀번호 자동입력 SSH
+  ssh $srv "hostname" 2>/dev/null || echo "접속 실패"  # 비밀번호 자동입력 SSH
 done
 ```
 
@@ -126,7 +126,7 @@ done
 # 자동 로그아웃 설정 확인 (TMOUT)
 for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "grep TMOUT /etc/profile /etc/bash.bashrc /etc/environment 2>/dev/null || echo 'TMOUT 미설정'"
+  ssh $srv  # srv=user@ip (아래 루프 참고) "grep TMOUT /etc/profile /etc/bash.bashrc /etc/environment 2>/dev/null || echo 'TMOUT 미설정'"
 done
 ```
 
@@ -142,7 +142,7 @@ done
 # 각 서버의 sudo 사용자 확인
 for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "getent group sudo 2>/dev/null; getent group wheel 2>/dev/null"
+  ssh $srv  # srv=user@ip (아래 루프 참고) "getent group sudo 2>/dev/null; getent group wheel 2>/dev/null"
 done
 ```
 
@@ -153,7 +153,7 @@ done
 ```bash
 for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do  # 반복문 시작
   echo "=== $srv ==="
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "grep '^PermitRootLogin' /etc/ssh/sshd_config || echo '기본값 사용 중'"
+  ssh $srv  # srv=user@ip (아래 루프 참고) "grep '^PermitRootLogin' /etc/ssh/sshd_config || echo '기본값 사용 중'"
 done
 ```
 
@@ -163,7 +163,7 @@ done
 
 ```bash
 # SUID 비트가 설정된 파일 확인 (권한 상승 위험)
-sshpass -p1 ssh ccc@10.20.30.201 "find /usr -perm -4000 -type f 2>/dev/null"
+ssh ccc@10.20.30.201 "find /usr -perm -4000 -type f 2>/dev/null"
 ```
 
 ---
@@ -174,10 +174,10 @@ sshpass -p1 ssh ccc@10.20.30.201 "find /usr -perm -4000 -type f 2>/dev/null"
 
 ```bash
 # 비밀번호 복잡도 정책
-sshpass -p1 ssh ccc@10.20.30.201 "cat /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' | grep -v '^$' || echo 'pwquality 미설정'"
+ssh ccc@10.20.30.201 "cat /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' | grep -v '^$' || echo 'pwquality 미설정'"
 
 # 비밀번호 만료 기본 정책
-sshpass -p1 ssh ccc@10.20.30.201 "grep -E 'PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN|PASS_WARN_AGE' /etc/login.defs"
+ssh ccc@10.20.30.201 "grep -E 'PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN|PASS_WARN_AGE' /etc/login.defs"
 ```
 
 ### 4.2 SSH 인증 방식 점검
@@ -187,7 +187,7 @@ sshpass -p1 ssh ccc@10.20.30.201 "grep -E 'PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_
 ```bash
 for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do  # 반복문 시작
   echo "=== $srv ==="
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "grep -E 'PasswordAuthentication|PubkeyAuthentication|MaxAuthTries' /etc/ssh/sshd_config | grep -v '^#'"
+  ssh $srv  # srv=user@ip (아래 루프 참고) "grep -E 'PasswordAuthentication|PubkeyAuthentication|MaxAuthTries' /etc/ssh/sshd_config | grep -v '^#'"
 done
 ```
 
@@ -202,8 +202,8 @@ done
 
 ```bash
 # PAM 기반 계정 잠금 설정 확인
-sshpass -p1 ssh ccc@10.20.30.201 "grep pam_faillock /etc/pam.d/common-auth 2>/dev/null || echo 'faillock 미설정'"  # 비밀번호 자동입력 SSH
-sshpass -p1 ssh ccc@10.20.30.201 "grep pam_tally /etc/pam.d/common-auth 2>/dev/null || echo 'tally 미설정'"  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.201 "grep pam_faillock /etc/pam.d/common-auth 2>/dev/null || echo 'faillock 미설정'"  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.201 "grep pam_tally /etc/pam.d/common-auth 2>/dev/null || echo 'tally 미설정'"  # 비밀번호 자동입력 SSH
 ```
 
 ---
@@ -214,13 +214,13 @@ sshpass -p1 ssh ccc@10.20.30.201 "grep pam_tally /etc/pam.d/common-auth 2>/dev/n
 
 ```bash
 # 실행 중인 서비스 중 불필요한 것이 있는지 확인
-sshpass -p1 ssh ccc@10.20.30.201 "systemctl list-units --type=service --state=running --no-pager | grep -E 'cups|avahi|bluetooth|rpcbind'"
+ssh ccc@10.20.30.201 "systemctl list-units --type=service --state=running --no-pager | grep -E 'cups|avahi|bluetooth|rpcbind'"
 ```
 
 ### 5.2 커널 보안 파라미터 확인
 
 ```bash
-sshpass -p1 ssh ccc@10.20.30.201 "sysctl net.ipv4.ip_forward net.ipv4.conf.all.accept_redirects net.ipv4.conf.all.accept_source_route net.ipv4.conf.all.log_martians 2>/dev/null"
+ssh ccc@10.20.30.201 "sysctl net.ipv4.ip_forward net.ipv4.conf.all.accept_redirects net.ipv4.conf.all.accept_source_route net.ipv4.conf.all.log_martians 2>/dev/null"
 ```
 
 **권장 설정**:
@@ -237,20 +237,20 @@ sshpass -p1 ssh ccc@10.20.30.201 "sysctl net.ipv4.ip_forward net.ipv4.conf.all.a
 
 ```bash
 # rsyslog 설정 확인
-sshpass -p1 ssh ccc@10.20.30.201 "cat /etc/rsyslog.conf | grep -v '^#' | grep -v '^$' | head -20"
+ssh ccc@10.20.30.201 "cat /etc/rsyslog.conf | grep -v '^#' | grep -v '^$' | head -20"
 
 # 주요 로그 파일 존재 및 크기 확인
-sshpass -p1 ssh ccc@10.20.30.201 "ls -lh /var/log/syslog /var/log/auth.log /var/log/kern.log 2>/dev/null"
+ssh ccc@10.20.30.201 "ls -lh /var/log/syslog /var/log/auth.log /var/log/kern.log 2>/dev/null"
 ```
 
 ### 6.2 감사 로그 (auditd) 확인
 
 ```bash
 # auditd 설치 및 실행 여부
-sshpass -p1 ssh ccc@10.20.30.201 "systemctl status auditd 2>/dev/null | head -5 || echo 'auditd 미설치'"
+ssh ccc@10.20.30.201 "systemctl status auditd 2>/dev/null | head -5 || echo 'auditd 미설치'"
 
 # audit 규칙 확인
-sshpass -p1 ssh ccc@10.20.30.201 "sudo auditctl -l 2>/dev/null || echo 'audit 규칙 없음'"
+ssh ccc@10.20.30.201 "sudo auditctl -l 2>/dev/null || echo 'audit 규칙 없음'"
 ```
 
 ### 6.3 Wazuh 에이전트 로그 수집 확인
@@ -259,7 +259,7 @@ sshpass -p1 ssh ccc@10.20.30.201 "sudo auditctl -l 2>/dev/null || echo 'audit �
 # Wazuh 에이전트 상태
 for ip in 10.20.30.201 10.20.30.1 10.20.30.80; do
   echo "=== $ip ==="
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "systemctl status wazuh-agent 2>/dev/null | grep Active || echo 'Wazuh Agent 미설치'"
+  ssh $srv  # srv=user@ip (아래 루프 참고) "systemctl status wazuh-agent 2>/dev/null | grep Active || echo 'Wazuh Agent 미설치'"
 done
 ```
 
@@ -271,7 +271,7 @@ done
 
 ```bash
 # secu 서버의 nftables 규칙 확인
-sshpass -p1 ssh ccc@10.20.30.1 "sudo nft list ruleset"
+ssh ccc@10.20.30.1 "sudo nft list ruleset"
 ```
 
 ### 7.2 열린 포트 점검
@@ -280,7 +280,7 @@ sshpass -p1 ssh ccc@10.20.30.1 "sudo nft list ruleset"
 # 각 서버에서 열려 있는 포트 확인
 for srv in "ccc@10.20.30.201" "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
   echo "=== $srv ==="
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "ss -tlnp 2>/dev/null | grep LISTEN"
+  ssh $srv  # srv=user@ip (아래 루프 참고) "ss -tlnp 2>/dev/null | grep LISTEN"
 done
 ```
 
@@ -290,7 +290,7 @@ done
 
 ```bash
 # secu 서버의 네트워크 인터페이스 확인 (DMZ 분리)
-sshpass -p1 ssh ccc@10.20.30.1 "ip addr show | grep 'inet '"
+ssh ccc@10.20.30.1 "ip addr show | grep 'inet '"
 ```
 
 ---
@@ -301,16 +301,16 @@ sshpass -p1 ssh ccc@10.20.30.1 "ip addr show | grep 'inet '"
 
 ```bash
 # Wazuh 대시보드 TLS 확인
-sshpass -p1 ssh ccc@10.20.30.100 "echo | openssl s_client -connect localhost:443 2>/dev/null | head -20"
+ssh ccc@10.20.30.100 "echo | openssl s_client -connect localhost:443 2>/dev/null | head -20"
 
 # TLS 버전 확인 (TLS 1.2 이상이어야 함)
-sshpass -p1 ssh ccc@10.20.30.100 "echo | openssl s_client -connect localhost:443 2>/dev/null | grep 'Protocol'"
+ssh ccc@10.20.30.100 "echo | openssl s_client -connect localhost:443 2>/dev/null | grep 'Protocol'"
 ```
 
 ### 8.2 SSH 암호화 알고리즘 확인
 
 ```bash
-sshpass -p1 ssh ccc@10.20.30.201 "grep -E 'Ciphers|MACs|KexAlgorithms' /etc/ssh/sshd_config | grep -v '^#'"
+ssh ccc@10.20.30.201 "grep -E 'Ciphers|MACs|KexAlgorithms' /etc/ssh/sshd_config | grep -v '^#'"
 ```
 
 ### 8.3 디스크 암호화 확인
@@ -318,8 +318,8 @@ sshpass -p1 ssh ccc@10.20.30.201 "grep -E 'Ciphers|MACs|KexAlgorithms' /etc/ssh/
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh ccc@10.20.30.201 "lsblk -o NAME,FSTYPE,MOUNTPOINT | head -10"  # 비밀번호 자동입력 SSH
-sshpass -p1 ssh ccc@10.20.30.201 "dmsetup status 2>/dev/null | head -5 || echo 'dm-crypt 미사용'"  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.201 "lsblk -o NAME,FSTYPE,MOUNTPOINT | head -10"  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.201 "dmsetup status 2>/dev/null | head -5 || echo 'dm-crypt 미사용'"  # 비밀번호 자동입력 SSH
 ```
 
 ---
@@ -399,7 +399,7 @@ sshpass -p1 ssh ccc@10.20.30.201 "dmsetup status 2>/dev/null | head -5 || echo '
 ```bash
 # ISO 27001 A.8.5 (안전한 인증) 점검 증적 수집
 echo "=== 패스워드 정책 확인 ==="
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
   echo '--- login.defs ---' && grep -E 'PASS_MAX|PASS_MIN|PASS_WARN' /etc/login.defs
   echo '--- pam 설정 ---' && grep pam_pwquality /etc/pam.d/common-password 2>/dev/null || echo 'pam_pwquality 미설정'
   echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5

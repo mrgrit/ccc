@@ -11,9 +11,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -206,7 +206,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 ### 3.2 간접 인젝션 시뮬레이션
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'
+ssh ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
@@ -297,7 +297,7 @@ LLM 취약점 평가 결과를 정형화된 보고서로 작성하는 템플릿�
 
 ```bash
 # 평가 보고서 템플릿 생성 스크립트
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'
+ssh ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 report_template = """
 ================================================================

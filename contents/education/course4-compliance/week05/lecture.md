@@ -11,9 +11,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -202,53 +202,53 @@ ISMS-P 인증 기준 (총 102개)
 # 실습: 사용자 인증 관련 점검
 
 # 2.5.1 사용자 계정 관리 — 불필요한 계정 확인
-sshpass -p1 ssh ccc@10.20.30.201 "awk -F: '\$3 >= 1000 && \$3 < 65534 {print \$1}' /etc/passwd"
+ssh ccc@10.20.30.201 "awk -F: '\$3 >= 1000 && \$3 < 65534 {print \$1}' /etc/passwd"
 
 # 2.5.2 사용자 식별 — 공용 계정 사용 여부
-sshpass -p1 ssh ccc@10.20.30.201 "last | head -10"
+ssh ccc@10.20.30.201 "last | head -10"
 
 # 2.5.3 사용자 인증 — 비밀번호 정책
-sshpass -p1 ssh ccc@10.20.30.201 "grep -E 'PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN' /etc/login.defs"
+ssh ccc@10.20.30.201 "grep -E 'PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN' /etc/login.defs"
 
 # 2.5.4 비밀번호 관리 — 비밀번호 복잡도
-sshpass -p1 ssh ccc@10.20.30.201 "cat /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' | grep -v '^$'"
+ssh ccc@10.20.30.201 "cat /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' | grep -v '^$'"
 ```
 
 ### 4.2 접근통제 (2.6)
 
 ```bash
 # 2.6.1 네트워크 접근 — 방화벽 규칙
-sshpass -p1 ssh ccc@10.20.30.1 "sudo nft list ruleset | wc -l"
+ssh ccc@10.20.30.1 "sudo nft list ruleset | wc -l"
 
 # 2.6.2 정보시스템 접근 — SSH 접근 제한
-sshpass -p1 ssh ccc@10.20.30.201 "grep -E 'AllowUsers|AllowGroups|DenyUsers' /etc/ssh/sshd_config"
+ssh ccc@10.20.30.201 "grep -E 'AllowUsers|AllowGroups|DenyUsers' /etc/ssh/sshd_config"
 
 # 2.6.5 인터넷 접속 통제 — 외부 접근 포트 확인
-sshpass -p1 ssh ccc@10.20.30.1 "sudo nft list ruleset | grep 'dport' | head -10"
+ssh ccc@10.20.30.1 "sudo nft list ruleset | grep 'dport' | head -10"
 ```
 
 ### 4.3 암호화 적용 (2.7)
 
 ```bash
 # 2.7.1 암호정책 적용 — 전송 구간 암호화
-sshpass -p1 ssh ccc@10.20.30.100 "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"
+ssh ccc@10.20.30.100 "echo | openssl s_client -connect localhost:443 2>/dev/null | grep Protocol"
 
 # 2.7.2 암호키 관리 — 키 파일 권한 확인
-sshpass -p1 ssh ccc@10.20.30.201 "ls -la ~/.ssh/ 2>/dev/null"
-sshpass -p1 ssh ccc@10.20.30.201 "stat -c '%a %n' /etc/ssh/ssh_host_*_key 2>/dev/null"
+ssh ccc@10.20.30.201 "ls -la ~/.ssh/ 2>/dev/null"
+ssh ccc@10.20.30.201 "stat -c '%a %n' /etc/ssh/ssh_host_*_key 2>/dev/null"
 ```
 
 ### 4.4 시스템 및 서비스 보안관리 (2.10)
 
 ```bash
 # 2.10.1 보안시스템 운영 — IPS 상태 확인
-sshpass -p1 ssh ccc@10.20.30.1 "systemctl status suricata 2>/dev/null | head -5"
+ssh ccc@10.20.30.1 "systemctl status suricata 2>/dev/null | head -5"
 
 # 2.10.4 로그 및 접속기록 관리 — 로그 보존 기간
-sshpass -p1 ssh ccc@10.20.30.201 "cat /etc/logrotate.conf | grep -A2 'rotate'"
+ssh ccc@10.20.30.201 "cat /etc/logrotate.conf | grep -A2 'rotate'"
 
 # 2.10.7 패치 관리
-sshpass -p1 ssh ccc@10.20.30.201 "apt list --upgradable 2>/dev/null | head -10"
+ssh ccc@10.20.30.201 "apt list --upgradable 2>/dev/null | head -10"
 ```
 
 ---
@@ -327,18 +327,18 @@ sshpass -p1 ssh ccc@10.20.30.201 "apt list --upgradable 2>/dev/null | head -10"
 echo "=== 자산 목록 ==="
 for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
   echo "--- $ip ---"
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "hostname; uname -r; cat /etc/os-release | grep PRETTY_NAME" 2>/dev/null
+  ssh $srv  # srv=user@ip (아래 루프 참고) "hostname; uname -r; cat /etc/os-release | grep PRETTY_NAME" 2>/dev/null
 done
 
 # 1.2.2 현황분석 — 네트워크 구성 확인
 echo "=== 네트워크 구성 ==="
-sshpass -p1 ssh ccc@10.20.30.1 "ip route show"        # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1 "ip route show"        # 비밀번호 자동입력 SSH
 
 # 2.11.1 사고 예방 — Wazuh 에이전트 설치 현황
 echo "=== Wazuh Agent 상태 ==="
 for ip in 10.20.30.201 10.20.30.1 10.20.30.80; do      # 반복문 시작
   echo "--- $ip ---"
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "systemctl is-active wazuh-agent 2>/dev/null || echo 'N/A'"
+  ssh $srv  # srv=user@ip (아래 루프 참고) "systemctl is-active wazuh-agent 2>/dev/null || echo 'N/A'"
 done
 ```
 
@@ -401,7 +401,7 @@ done
 ```bash
 # ISO 27001 A.8.5 (안전한 인증) 점검 증적 수집
 echo "=== 패스워드 정책 확인 ==="
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
   echo '--- login.defs ---' && grep -E 'PASS_MAX|PASS_MIN|PASS_WARN' /etc/login.defs
   echo '--- pam 설정 ---' && grep pam_pwquality /etc/pam.d/common-password 2>/dev/null || echo 'pam_pwquality 미설정'
   echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5

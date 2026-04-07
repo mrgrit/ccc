@@ -20,9 +20,9 @@
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
 | bastion | 10.20.30.201 | 실습 기지 | `ssh ccc@10.20.30.201` |
-| secu | 10.20.30.1 | 방화벽/IPS | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 안티포렌식 실습 대상 | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (로그 무결성 검증) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 안티포렌식 실습 대상 | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (로그 무결성 검증) | `ssh ccc@10.20.30.100` |
 
 ## 강의 시간 배분 (3시간)
 
@@ -313,7 +313,7 @@ find /etc /usr/bin /usr/sbin -mmin -60 -type f 2>/dev/null | head -10
 
 echo ""
 echo "[4] SIEM 교차 검증"
-sshpass -p1 ssh ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "echo '--- Wazuh FIM 알림 ---'; grep 'integrity' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3 | python3 -c '
 import sys,json
 for l in sys.stdin:
@@ -473,7 +473,7 @@ echo "  7. auditd 로그 (커널 수준 기록)"
 
 echo ""
 echo "[Phase 4] SIEM 교차 검증"
-sshpass -p1 ssh ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "echo 'SIEM에 보존된 증거 수:' && wc -l < /var/ossec/logs/alerts/alerts.json 2>/dev/null || echo 'N/A'" 2>/dev/null
 
 echo ""

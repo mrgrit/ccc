@@ -20,9 +20,9 @@
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
 | bastion | 10.20.30.201 | 실습 기지 (공격 출발점) | `ssh ccc@10.20.30.201` |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables + Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹 서버 (대상) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM 모니터링 (Wazuh) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables + Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹 서버 (대상) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM 모니터링 (Wazuh) | `ssh ccc@10.20.30.100` |
 
 ## 강의 시간 배분 (3시간)
 
@@ -198,7 +198,7 @@ echo 1 | sudo -S nmap -sS -D 10.20.30.1,10.20.30.100,10.20.30.50,ME -p 22,80 10.
 echo ""
 echo "=== IDS 로그 확인 (Decoy 효과 검증) ==="
 sleep 2
-sshpass -p1 ssh ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "tail -10 /var/log/suricata/fast.log 2>/dev/null | grep -i 'scan' || echo 'No scan alerts'"
 ```
 
@@ -399,22 +399,22 @@ alert http any any -> $HOME_NET any (
 ```bash
 # Suricata 규칙 확인
 echo "=== Suricata 활성 규칙 확인 ==="
-sshpass -p1 ssh ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "ls /etc/suricata/rules/ 2>/dev/null || ls /var/lib/suricata/rules/ 2>/dev/null | head -10" 2>/dev/null || echo "규칙 디렉토리 접근 불가"
 
 echo ""
 echo "=== 스캔 탐지 규칙 검색 ==="
-sshpass -p1 ssh ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "grep -r 'SCAN\|scan' /etc/suricata/rules/ 2>/dev/null | head -5 || echo 'rules 디렉토리 확인 불가'"
 
 echo ""
 echo "=== SQL Injection 탐지 규칙 검색 ==="
-sshpass -p1 ssh ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "grep -r 'SQL\|sql.*inject\|UNION.*SELECT' /etc/suricata/rules/ 2>/dev/null | head -5 || echo '규칙 확인 불가'"
 
 echo ""
 echo "=== 현재 Suricata 알림 (최근 10건) ==="
-sshpass -p1 ssh ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "tail -10 /var/log/suricata/fast.log 2>/dev/null || echo 'fast.log 없음'"
 ```
 
@@ -458,7 +458,7 @@ curl -s "http://10.20.30.80:3000/rest/products/search?q=' UN/**/ION SE/**/LECT 1
 echo ""
 echo "=== IDS 알림 확인 ==="
 sleep 2
-sshpass -p1 ssh ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "tail -5 /var/log/suricata/fast.log 2>/dev/null | grep -i 'sql\|injection' || echo 'SQL 관련 알림 없음'"
 ```
 
@@ -495,7 +495,7 @@ echo "소요시간: $((END-START))초"
 
 echo ""
 echo "=== IDS 알림 비교 ==="
-sshpass -p1 ssh ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "tail -10 /var/log/suricata/fast.log 2>/dev/null | grep -c 'SCAN' || echo '0'" 2>/dev/null
 echo "건의 스캔 알림 발생"
 ```
@@ -662,10 +662,10 @@ kill $(pgrep -f "ssh.*9999:localhost:8002" 2>/dev/null) 2>/dev/null
 echo ""
 echo "[단계 5] 방어 로그 확인"
 sleep 2
-sshpass -p1 ssh ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "echo 'Suricata 알림:' && tail -5 /var/log/suricata/fast.log 2>/dev/null || echo 'N/A'" 2>/dev/null
 
-sshpass -p1 ssh ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "echo 'Wazuh 알림:' && tail -3 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c '
 import sys,json
 for line in sys.stdin:

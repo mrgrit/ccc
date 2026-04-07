@@ -12,9 +12,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -415,7 +415,7 @@ bastion (Agent) --+    (로그 수집/분석)   (로그 저장/검색)
 > **실전 활용**: SOC L1 분석가의 첫 업무는 SIEM 서비스 정상 여부를 확인하는 것이다. 서비스 장애 시 즉시 에스컬레이션해야 한다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "sudo systemctl status wazuh-manager --no-pager | head -10"
 ```
 
@@ -429,7 +429,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "sudo systemctl status wazuh-dashboard --no-pager | head -10"
 ```
 
@@ -483,7 +483,7 @@ Wazuh Dashboard 주요 메뉴:
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "sudo /var/ossec/bin/agent_control -l 2>/dev/null || sudo /var/ossec/bin/manage_agents -l 2>/dev/null"
 ```
 
@@ -501,7 +501,7 @@ Available agents:
 
 ```bash
 # 에이전트 001 (secu) 상세 정보
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "sudo /var/ossec/bin/agent_control -i 001 2>/dev/null"
 ```
 
@@ -529,7 +529,7 @@ bastion (10.20.30.201) --> Wazuh Agent --> TCP 1514 --> Wazuh Manager (siem)
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "sudo tail -5 /var/ossec/logs/alerts/alerts.json" 2>/dev/null | python3 -m json.tool 2>/dev/null | head -50
 ```
 
@@ -595,7 +595,7 @@ Wazuh 알림의 JSON 구조를 이해해보자:
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"
 import sys, json
 levels = {}
@@ -647,7 +647,7 @@ for level in sorted(levels.keys()):                    # 반복문 시작
 
 ```bash
 # MITRE ATT&CK ID가 포함된 알림 조회
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"
 import sys, json
 mitre_count = {}
@@ -689,9 +689,9 @@ SOC 분석가는 MITRE ATT&CK을 다음과 같이 활용한다:
 
 ```bash
 # 잘못된 비밀번호로 secu에 SSH 시도 (의도적 실패)
-sshpass -p wrongpassword ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 "echo test" 2>/dev/null  # 비밀번호 자동입력 SSH
-sshpass -p wrongpassword ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 "echo test" 2>/dev/null  # 비밀번호 자동입력 SSH
-sshpass -p wrongpassword ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 "echo test" 2>/dev/null  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1 "echo test" 2>/dev/null  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1 "echo test" 2>/dev/null  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1 "echo test" 2>/dev/null  # 비밀번호 자동입력 SSH
 echo "3회 로그인 실패 생성 완료"
 ```
 
@@ -700,7 +700,7 @@ echo "3회 로그인 실패 생성 완료"
 ```bash
 # 최근 SSH 관련 알림 확인
 sleep 15
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "sudo tail -20 /var/ossec/logs/alerts/alerts.json 2>/dev/null" | \
   python3 -c "                                         # Python 코드 실행
 import sys, json

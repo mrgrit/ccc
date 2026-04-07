@@ -601,17 +601,17 @@ for t in d.get('task_results',[]):
 
 ```bash
 # Apache 접근 로그에서 SQLi 흔적 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "cat /var/log/apache2/access.log 2>/dev/null | grep -i 'union\|select\|or%201' | tail -10"
 # 예상 출력: UNION SELECT가 포함된 요청 로그
 
 # Suricata IDS에서 웹 공격 탐지 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "cat /var/log/suricata/fast.log 2>/dev/null | grep -i 'sql\|xss\|injection' | tail -10"
 # 예상 출력: SQL Injection, XSS 관련 IDS 경보
 
 # Wazuh에서 웹 공격 알림 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "cat /var/ossec/logs/alerts/alerts.log 2>/dev/null | grep -i 'sql\|xss\|web' | tail -10"
 # 예상 출력: Wazuh 규칙에 매칭된 웹 공격 경보
 ```

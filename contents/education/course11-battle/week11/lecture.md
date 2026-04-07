@@ -469,26 +469,26 @@ echo "[$(date +%H:%M:%S)] Blue Team 모니터링 시작"
 
 # 모니터링 창 설명 (별도 터미널에서 각각 실행)
 echo "=== 모니터링 창 구성 ==="
-echo "창 1: IDS 알림     → sshpass -p1 ssh ccc@10.20.30.1 'tail -f /var/log/suricata/fast.log'"
-echo "창 2: SSH 인증     → sshpass -p1 ssh ccc@10.20.30.80 'tail -f /var/log/auth.log'"
-echo "창 3: 웹 로그      → sshpass -p1 ssh ccc@10.20.30.80 'tail -f /var/log/apache2/access.log'"
-echo "창 4: 네트워크 연결 → sshpass -p1 ssh ccc@10.20.30.80 'watch -n5 ss -tn'"
+echo "창 1: IDS 알림     → ssh ccc@10.20.30.1 'tail -f /var/log/suricata/fast.log'"
+echo "창 2: SSH 인증     → ssh ccc@10.20.30.80 'tail -f /var/log/auth.log'"
+echo "창 3: 웹 로그      → ssh ccc@10.20.30.80 'tail -f /var/log/apache2/access.log'"
+echo "창 4: 네트워크 연결 → ssh ccc@10.20.30.80 'watch -n5 ss -tn'"
 echo ""
 
 # 한 번에 상태 스냅샷 확인
 echo "=== 현재 상태 스냅샷 ==="
 echo "[Suricata 최근 알림]"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "tail -5 /var/log/suricata/fast.log 2>/dev/null || echo 'Suricata 로그 없음'"
 
 echo ""
 echo "[web 서버 현재 연결]"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "ss -tn 2>/dev/null | grep -v 'State' | head -10"
 
 echo ""
 echo "[web 서버 SSH 최근 로그]"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "tail -5 /var/log/auth.log 2>/dev/null || echo '로그 없음'"
 
 echo ""
@@ -526,7 +526,7 @@ echo "[$(date +%H:%M:%S)] 스캔 탐지 분석 시작"
 
 # Suricata 알림에서 스캔 관련 이벤트 추출
 echo "[IDS 스캔 탐지 이벤트]"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "grep -iE 'scan|portscan|nmap' /var/log/suricata/fast.log 2>/dev/null | tail -20"
 # 예상 출력:
 # 04/03/2026-14:10:05 [**] [1:2010936:3] ET SCAN Suspicious inbound to mySQL port 3306 [**]
@@ -535,7 +535,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
 # 공격자 IP 식별 (알림에서 가장 빈번한 소스 IP)
 echo ""
 echo "[공격 소스 IP 분석]"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "grep -oP '\d+\.\d+\.\d+\.\d+' /var/log/suricata/fast.log 2>/dev/null | \
    sort | uniq -c | sort -rn | head -5"
 # 예상 출력:
@@ -545,14 +545,14 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
 # web 서버에서 연결 패턴 분석
 echo ""
 echo "[web 서버 연결 패턴]"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "ss -tn 2>/dev/null | awk '{print \$5}' | cut -d: -f1 | \
    sort | uniq -c | sort -rn | head -5"
 
 # HTTP 로그에서 비정상 요청 확인
 echo ""
 echo "[웹 비정상 요청]"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "tail -100 /var/log/apache2/access.log 2>/dev/null | \
    awk '{print \$9}' | sort | uniq -c | sort -rn"
 # 예상 출력: HTTP 상태 코드별 빈도 (404가 많으면 디렉토리 스캔)
@@ -710,7 +710,7 @@ echo "================================================="
 # IDS 탐지 이벤트 수
 echo ""
 echo "[IDS 탐지 (+10점)]"
-IDS_COUNT=$(sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
+IDS_COUNT=$(ssh ccc@10.20.30.1 \
   "grep -c 'ET SCAN' /var/log/suricata/fast.log 2>/dev/null || echo 0")
 echo "  Suricata 스캔 탐지 이벤트: ${IDS_COUNT}건"
 [ "$IDS_COUNT" -gt 0 ] && echo "  → 스캔 탐지 성공 (+10점)" || echo "  → 탐지 실패 (-10점)"

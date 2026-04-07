@@ -11,9 +11,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -214,7 +214,7 @@ echo "저장 위치: $EVIDENCE_DIR"
 # 1. 서버 인벤토리 (A.5.9)
 echo "=== [A.5.9] 자산 인벤토리 수집 ==="
 for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "
+  ssh $srv  # srv=user@ip (아래 루프 참고) "
     echo '=== 서버 정보 ==='
     hostname
     uname -a                                           # 커널/시스템 정보
@@ -231,13 +231,13 @@ done
 # 2. SSH 설정 (A.8.5)
 echo "=== [A.8.5] SSH 설정 수집 ==="
 for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "cat /etc/ssh/sshd_config" 2>/dev/null > "$EVIDENCE_DIR/sshd_config_${ip}.txt"
+  ssh $srv  # srv=user@ip (아래 루프 참고) "cat /etc/ssh/sshd_config" 2>/dev/null > "$EVIDENCE_DIR/sshd_config_${ip}.txt"
 done
 
 # 3. 사용자 계정 (A.8.2)
 echo "=== [A.8.2] 계정 정보 수집 ==="
 for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "
+  ssh $srv  # srv=user@ip (아래 루프 참고) "
     echo '=== 사용자 목록 ==='
     cat /etc/passwd                                    # 설정 파일 조회
     echo '=== 그룹 ==='
@@ -251,11 +251,11 @@ done
 
 # 4. 방화벽 규칙 (A.8.20)
 echo "=== [A.8.20] 방화벽 규칙 수집 ==="
-sshpass -p1 ssh ccc@10.20.30.1 "sudo nft list ruleset" 2>/dev/null > "$EVIDENCE_DIR/firewall_rules.txt"  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1 "sudo nft list ruleset" 2>/dev/null > "$EVIDENCE_DIR/firewall_rules.txt"  # 비밀번호 자동입력 SSH
 
 # 5. 비밀번호 정책 (A.8.5)
 echo "=== [A.8.5] 비밀번호 정책 수집 ==="
-sshpass -p1 ssh ccc@10.20.30.201 "                 # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.201 "                 # 비밀번호 자동입력 SSH
   echo '=== login.defs ==='
   grep -E 'PASS_MAX_DAYS|PASS_MIN_DAYS|PASS_MIN_LEN|PASS_WARN_AGE' /etc/login.defs  # 패턴 검색
   echo '=== pwquality ==='
@@ -264,19 +264,19 @@ sshpass -p1 ssh ccc@10.20.30.201 "                 # 비밀번호 자동입력 S
 
 # 6. 로그 샘플 (A.8.15)
 echo "=== [A.8.15] 로그 샘플 수집 ==="
-sshpass -p1 ssh ccc@10.20.30.201 "tail -100 /var/log/auth.log" 2>/dev/null > "$EVIDENCE_DIR/auth_log_sample.txt"  # 비밀번호 자동입력 SSH
-sshpass -p1 ssh ccc@10.20.30.100 "tail -50 /var/ossec/logs/alerts/alerts.json" 2>/dev/null > "$EVIDENCE_DIR/wazuh_alerts_sample.txt"  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.201 "tail -100 /var/log/auth.log" 2>/dev/null > "$EVIDENCE_DIR/auth_log_sample.txt"  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.100 "tail -50 /var/ossec/logs/alerts/alerts.json" 2>/dev/null > "$EVIDENCE_DIR/wazuh_alerts_sample.txt"  # 비밀번호 자동입력 SSH
 
 # 7. NTP 설정 (A.8.17)
 echo "=== [A.8.17] NTP 설정 수집 ==="
 for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "timedatectl" 2>/dev/null > "$EVIDENCE_DIR/ntp_${ip}.txt"
+  ssh $srv  # srv=user@ip (아래 루프 참고) "timedatectl" 2>/dev/null > "$EVIDENCE_DIR/ntp_${ip}.txt"
 done
 
 # 8. 패치 현황 (A.8.8)
 echo "=== [A.8.8] 패치 현황 수집 ==="
 for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "apt list --upgradable 2>/dev/null" > "$EVIDENCE_DIR/patches_${ip}.txt"
+  ssh $srv  # srv=user@ip (아래 루프 참고) "apt list --upgradable 2>/dev/null" > "$EVIDENCE_DIR/patches_${ip}.txt"
 done
 
 echo ""
@@ -325,13 +325,13 @@ cat checksums.sha256
 
 ```bash
 # SSH 접근 제한 설정 시연
-sshpass -p1 ssh ccc@10.20.30.201 "grep -E 'PermitRootLogin|PasswordAuthentication|MaxAuthTries' /etc/ssh/sshd_config | grep -v '^#'"
+ssh ccc@10.20.30.201 "grep -E 'PermitRootLogin|PasswordAuthentication|MaxAuthTries' /etc/ssh/sshd_config | grep -v '^#'"
 
 # 방화벽에서 SSH 접근 제한
-sshpass -p1 ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep -A2 'ssh\|22'"
+ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep -A2 'ssh\|22'"
 
 # 계정 권한 현황
-sshpass -p1 ssh ccc@10.20.30.201 "getent group sudo"
+ssh ccc@10.20.30.201 "getent group sudo"
 ```
 
 **시나리오 2: 모니터링 심사**
@@ -341,13 +341,13 @@ sshpass -p1 ssh ccc@10.20.30.201 "getent group sudo"
 
 ```bash
 # Wazuh SIEM 운영 현황
-sshpass -p1 ssh ccc@10.20.30.100 "systemctl status wazuh-manager 2>/dev/null | head -5"
+ssh ccc@10.20.30.100 "systemctl status wazuh-manager 2>/dev/null | head -5"
 
 # 에이전트 연결 현황
-sshpass -p1 ssh ccc@10.20.30.100 "/var/ossec/bin/agent_control -l 2>/dev/null | head -10"
+ssh ccc@10.20.30.100 "/var/ossec/bin/agent_control -l 2>/dev/null | head -10"
 
 # 최근 알림 확인
-sshpass -p1 ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3 | python3 -m json.tool 2>/dev/null | head -20"
+ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3 | python3 -m json.tool 2>/dev/null | head -20"
 ```
 
 **시나리오 3: 사고대응 심사**
@@ -359,7 +359,7 @@ sshpass -p1 ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/
 
 ```bash
 # 고위험 알림 이력
-sshpass -p1 ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 for line in sys.stdin:                                 # 반복문 시작
     try:
@@ -457,7 +457,7 @@ for line in sys.stdin:                                 # 반복문 시작
 ```bash
 # ISO 27001 A.8.5 (안전한 인증) 점검 증적 수집
 echo "=== 패스워드 정책 확인 ==="
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
   echo '--- login.defs ---' && grep -E 'PASS_MAX|PASS_MIN|PASS_WARN' /etc/login.defs
   echo '--- pam 설정 ---' && grep pam_pwquality /etc/pam.d/common-password 2>/dev/null || echo 'pam_pwquality 미설정'
   echo '--- sudo 설정 ---' && sudo -l 2>/dev/null | head -5

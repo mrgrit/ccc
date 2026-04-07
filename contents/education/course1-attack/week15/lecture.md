@@ -12,9 +12,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -366,12 +366,12 @@ curl -s "http://10.20.30.80:3000/ftp/../../etc/passwd" | head -5  # silent 모�
 # 5. web 서버 권한 확인
 echo ""
 echo "===== 서버 권한 확인 ====="
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 "echo 1 | sudo -S -l 2>/dev/null"  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.80 "echo 1 | sudo -S -l 2>/dev/null"  # 비밀번호 자동입력 SSH
 
 # 6. SUID 검사
 echo ""
 echo "===== SUID 바이너리 ====="
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "find / -perm -4000 -type f 2>/dev/null"
 
 # === 방화벽/IPS 분석 ===
@@ -379,7 +379,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
 # 7. secu 규칙 확인
 echo ""
 echo "===== nftables 규칙 ====="
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "sudo nft list ruleset 2>/dev/null | head -30"
 ```
 
@@ -604,7 +604,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ```bash
 # SSH 접속
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80
+ssh ccc@10.20.30.80
 
 # 포트 스캔
 nmap -sT -F 10.20.30.80

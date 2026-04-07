@@ -11,9 +11,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -129,7 +129,7 @@
 > **실전 활용**: CTI 기반 선제 탐지는 알려진 위협을 조기에 차단하는 SOC의 핵심 역량이다
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 # 교육용 IOC 데이터베이스 시뮬레이션
 ioc_database = {
@@ -171,7 +171,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== IOC 매칭: 네트워크 로그 vs 악성 IP ==="
 
 MALICIOUS_IPS="45.33.32.156 185.220.101.35 91.219.236.222"
@@ -202,7 +202,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.100 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== Wazuh CDB 리스트 기반 IOC 탐지 ==="
 
 cat << 'EXPLAIN'
@@ -242,7 +242,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 import json
 
@@ -292,7 +292,7 @@ ENDSSH
 파일 시스템을 검색하여 보안 관련 항목을 찾습니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== 위협 헌팅 실습 ==="
 echo "가설: 내부 서버에서 외부 C2 서버로 비콘 통신이 발생하고 있다"
 echo ""
@@ -326,7 +326,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== Suricata 로그 위협 헌팅 ==="
 
 cat /var/log/suricata/eve.json 2>/dev/null | python3 -c "
@@ -384,7 +384,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 import json
 from datetime import datetime

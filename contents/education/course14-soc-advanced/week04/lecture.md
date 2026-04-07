@@ -12,9 +12,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -641,7 +641,7 @@ curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/dispatch" \
 
 ```bash
 # Wazuh의 Active Response로 YARA 스캔 연동
-sshpass -p1 ssh ccc@10.20.30.100 << 'REMOTE'
+ssh ccc@10.20.30.100 << 'REMOTE'
 
 # YARA 설치 확인
 which yara || sudo apt-get install -y yara 2>/dev/null
@@ -724,7 +724,7 @@ REMOTE
 ## 4.2 Wazuh ossec.conf 설정
 
 ```bash
-sshpass -p1 ssh ccc@10.20.30.100 << 'REMOTE'
+ssh ccc@10.20.30.100 << 'REMOTE'
 
 # Wazuh FIM 설정 확인 (웹 디렉토리 모니터링)
 echo "=== 현재 FIM 설정 ==="

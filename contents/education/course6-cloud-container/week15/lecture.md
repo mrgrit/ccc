@@ -7,9 +7,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -130,7 +130,7 @@
 > **실전 활용**: 실제 클라우드 마이그레이션 프로젝트에서 보안 아키텍처 설계서 작성 및 보안 요구사항 정의에 활용한다
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80
+ssh ccc@10.20.30.80
 
 # 실행 중인 모든 컨테이너의 이미지를 스캔
 # CRITICAL/HIGH 취약점 요약 보고서 작성
@@ -333,14 +333,14 @@ HEALTHCHECK CMD curl -f http://localhost:8080 || exit 1  # ✅ 헬스체크
 
 ```bash
 # web 서버의 Docker 상태 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 "
+ssh ccc@10.20.30.80 "
   echo '=== Docker 버전 ===' && docker --version 2>/dev/null || echo 'Docker 미설치'
   echo '=== 실행 중 컨테이너 ===' && docker ps 2>/dev/null || echo '접근 불가'
   echo '=== Docker 소켓 권한 ===' && ls -la /var/run/docker.sock 2>/dev/null
 " 2>/dev/null
 
 # siem 서버의 Docker 상태 (OpenCTI가 Docker로 실행)
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 "
+ssh ccc@10.20.30.100 "
   echo '=== Docker 컨테이너 ===' && sudo docker ps --format 'table {{.Names}}\t{{.Image}}\t{{.Status}}' 2>/dev/null
   echo '=== Docker 네트워크 ===' && sudo docker network ls 2>/dev/null
 " 2>/dev/null

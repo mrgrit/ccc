@@ -88,7 +88,7 @@ curl -s http://localhost:8000/projects -H "X-API-Key: bastion-api-key-2026" \
 
 # 4. 원격 서버 접속 확인
 for srv in "ccc@10.20.30.1" "ccc@10.20.30.80" "ccc@10.20.30.100"; do
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv "hostname" 2>/dev/null || echo "$srv: 접속 실패"
+  ssh $srv "hostname" 2>/dev/null || echo "$srv: 접속 실패"
 done
 # 기대 결과: secu, web, siem 출력
 ```

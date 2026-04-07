@@ -20,9 +20,9 @@
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
 | bastion | 10.20.30.201 | 공격 기지 / Control Plane | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `ssh ccc@10.20.30.100` |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
@@ -907,7 +907,7 @@ echo ""
 
 # web 서버에 원격 명령 실행
 echo "=== SSH를 통한 원격 명령 실행 ==="
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 "hostname && id && uptime" 2>/dev/null || \
+ssh ccc@10.20.30.80 "hostname && id && uptime" 2>/dev/null || \
   echo "[참고] web 서버 접속 불가 시 스킵"
 
 echo ""

@@ -12,9 +12,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -313,7 +313,7 @@ web 서버에 접속하여 실행 중인 컨테이너를 확인한다.
 
 ```bash
 # bastion 서버에서 web 서버로 SSH 접속
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80
+ssh ccc@10.20.30.80
 ```
 
 접속 후 Docker 상태를 확인한다:
@@ -442,7 +442,7 @@ siem 서버에는 OpenCTI(위협 인텔리전스 플랫폼)가 Docker Compose로
 
 ```bash
 # bastion 서버에서 siem 서버로 접속
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100
+ssh ccc@10.20.30.100
 ```
 
 ```bash
@@ -486,7 +486,7 @@ docker network inspect <opencti_네트워크_이름>
 
 ```bash
 # web 서버에서 (다시 접속 필요 시)
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80
+ssh ccc@10.20.30.80
 
 # 컨테이너 로그 확인 (최근 20줄)
 docker logs --tail 20 <컨테이너이름>

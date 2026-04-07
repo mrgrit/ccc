@@ -12,9 +12,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -142,7 +142,7 @@ WAF(Web Application Firewall)는 HTTP/HTTPS 트래픽을 검사하여 웹 공격
 > **실전 활용**: 웹 서비스 앞단에 WAF를 배치하여 SQLi, XSS 등 웹 공격을 1차 차단하는 것이 표준 구성이다
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80
+ssh ccc@10.20.30.80
 ```
 
 ### 3.1 WAF 상태 확인
@@ -151,7 +151,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80
 
 ```bash
 # Apache + ModSecurity 상태 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 echo '=== Apache 상태 ===' && systemctl is-active apache2
 echo '=== ModSecurity 모듈 ===' && echo 1 | sudo -S apache2ctl -M 2>/dev/null | grep security
 echo '=== VirtualHost (WAF 적용 포트) ===' && echo 1 | sudo -S apache2ctl -S 2>/dev/null | grep -E '808[12]|:80 '

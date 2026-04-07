@@ -11,9 +11,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -123,7 +123,7 @@
 
 ```bash
 # Wazuh SIEM에서 파일 무결성 변경 알림 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.100 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== Wazuh FIM 경보 확인 ==="
 
 # FIM 관련 경보 (rule.group: syscheck)
@@ -167,7 +167,7 @@ ENDSSH
 
 ```bash
 # 의심 프로세스 탐색
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== 의심 프로세스 탐색 ==="
 
 # 1. 비정상 네트워크 연결 프로세스
@@ -206,7 +206,7 @@ ENDSSH
 시스템 서비스를 관리합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== cron 백도어 탐색 ==="
 
 # 모든 사용자 crontab
@@ -257,7 +257,7 @@ ENDSSH
 
 ```bash
 # 의심 파일이 발견되었다고 가정하고 분석 절차 실습
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== 파일 분석 시뮬레이션 ==="
 
 # 분석용 샘플 파일 생성 (교육용)
@@ -300,7 +300,7 @@ ENDSSH
 로그나 설정에서 특정 패턴을 검색합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== 네트워크 IOC 분석 ==="
 
 # 1. DNS 쿼리 로그 (의심 도메인)
@@ -351,7 +351,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 nftables 방화벽 규칙을 설정합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== 네트워크 격리 시뮬레이션 ==="
 
 # 실제 격리는 수행하지 않음 - 규칙 예시만 표시
@@ -377,7 +377,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== 프로세스 격리 절차 (교육용) ==="
 
 cat << 'PROCEDURE'
@@ -418,7 +418,7 @@ ENDSSH
 파일 시스템을 검색하여 보안 관련 항목을 찾습니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== 시스템 무결성 검증 ==="
 
 # 1. 패키지 무결성 확인
@@ -459,7 +459,7 @@ ENDSSH
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.100 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 echo "=== Wazuh SCA 결과 확인 ==="
 
 cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c "
@@ -508,7 +508,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 python3 << 'PYEOF'                                     # Python 스크립트 실행
 attack_mapping = [
     ("Initial Access", "T1190", "Exploit Public-Facing App", "웹 취약점으로 초기 침입"),

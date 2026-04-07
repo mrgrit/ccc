@@ -20,9 +20,9 @@
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
 | bastion | 10.20.30.201 | 실습 기지 (공격 출발점) | `ssh ccc@10.20.30.201` |
-| secu | 10.20.30.1 | 방화벽/IPS | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹 서버 (대상) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM 모니터링 | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹 서버 (대상) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM 모니터링 | `ssh ccc@10.20.30.100` |
 
 ## 강의 시간 배분 (3시간)
 
@@ -215,17 +215,17 @@ echo 1 | sudo -S nmap -sS --scan-delay 5s -p 8002 10.20.30.80 2>/dev/null
 
 ```bash
 # secu 서버에서 Suricata 알림 확인
-sshpass -p1 ssh ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "tail -20 /var/log/suricata/fast.log 2>/dev/null | grep -i 'scan\|nmap' || echo 'No scan alerts found'"
 
 # 일반 스캔 후 알림 발생 확인
 echo 1 | sudo -S nmap -sS -T4 -p 1-100 10.20.30.80 2>/dev/null
 sleep 3
-sshpass -p1 ssh ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "tail -5 /var/log/suricata/fast.log 2>/dev/null || echo 'Log not available'"
 
 # Wazuh에서도 확인
-sshpass -p1 ssh ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "grep -i 'scan\|nmap' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3 | python3 -m json.tool 2>/dev/null || echo 'No alerts'"
 ```
 
@@ -423,11 +423,11 @@ echo "[익스플로잇 단계 완료 - 인증 우회 성공 시 토큰 획득]"
 
 ```bash
 # Wazuh에서 웹 공격 탐지 확인
-sshpass -p1 ssh ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "grep -i 'sql\|injection\|xss' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3 | python3 -m json.tool 2>/dev/null || echo 'No web attack alerts'"
 
 # Apache 액세스 로그에서 공격 흔적 확인
-sshpass -p1 ssh ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "tail -10 /var/log/apache2/access.log 2>/dev/null || tail -10 /var/log/nginx/access.log 2>/dev/null || echo 'No web logs'"
 ```
 

@@ -11,9 +11,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -135,9 +135,9 @@ echo "=== SSH 로그인 감사 ==="
 for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do  # 반복문 시작
   echo "--- $ip ---"
   echo -n "성공: "
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "grep 'Accepted' /var/log/auth.log 2>/dev/null | wc -l"
+  ssh $srv  # srv=user@ip (아래 루프 참고) "grep 'Accepted' /var/log/auth.log 2>/dev/null | wc -l"
   echo -n "실패: "
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "grep 'Failed password' /var/log/auth.log 2>/dev/null | wc -l"
+  ssh $srv  # srv=user@ip (아래 루프 참고) "grep 'Failed password' /var/log/auth.log 2>/dev/null | wc -l"
 done
 ```
 
@@ -145,7 +145,7 @@ done
 
 ```bash
 # 2. 실패한 로그인의 출발지 IP 분석
-sshpass -p1 ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
+ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/dev/null | \
   awk '{print \$(NF-3)}' | sort | uniq -c | sort -rn | head -10"  # 텍스트 필드 처리
 ```
 
@@ -153,7 +153,7 @@ sshpass -p1 ssh ccc@10.20.30.201 "grep 'Failed password' /var/log/auth.log 2>/de
 # 3. sudo 사용 감사
 for ip in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
   echo "=== $ip: sudo 사용 이력 ==="
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "grep 'sudo:' /var/log/auth.log 2>/dev/null | tail -5"
+  ssh $srv  # srv=user@ip (아래 루프 참고) "grep 'sudo:' /var/log/auth.log 2>/dev/null | tail -5"
 done
 ```
 
@@ -161,7 +161,7 @@ done
 
 ```bash
 # 4. 비정상 시간대 로그인 확인 (새벽 2~5시)
-sshpass -p1 ssh ccc@10.20.30.201 "grep 'session opened' /var/log/auth.log 2>/dev/null | \
+ssh ccc@10.20.30.201 "grep 'session opened' /var/log/auth.log 2>/dev/null | \
   awk '{print \$3}' | awk -F: '\$1>=2 && \$1<=5 {print}'"  # 텍스트 필드 처리
 ```
 
@@ -172,11 +172,11 @@ sshpass -p1 ssh ccc@10.20.30.201 "grep 'session opened' /var/log/auth.log 2>/dev
 ```bash
 # Suricata 알림 분석
 echo "=== Suricata 알림 통계 ==="
-sshpass -p1 ssh ccc@10.20.30.1 "cat /var/log/suricata/fast.log 2>/dev/null | \
+ssh ccc@10.20.30.1 "cat /var/log/suricata/fast.log 2>/dev/null | \
   awk -F'\\]' '{print \$2}' | sort | uniq -c | sort -rn | head -10"  # 텍스트 필드 처리
 
 # Suricata 알림 심각도별 분류
-sshpass -p1 ssh ccc@10.20.30.1 "cat /var/log/suricata/fast.log 2>/dev/null | \
+ssh ccc@10.20.30.1 "cat /var/log/suricata/fast.log 2>/dev/null | \
   grep -oE 'Priority: [0-9]+' | sort | uniq -c | sort -rn"  # 디렉터리 재귀 검색
 ```
 
@@ -186,7 +186,7 @@ sshpass -p1 ssh ccc@10.20.30.1 "cat /var/log/suricata/fast.log 2>/dev/null | \
 
 ```bash
 # Wazuh 알림 레벨별 통계
-sshpass -p1 ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.100 "cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c \"  # 비밀번호 자동입력 SSH
 import sys, json
 from collections import Counter
 levels = Counter()
@@ -232,7 +232,7 @@ for ip in $SERVERS; do                                 # 반복문 시작
 
   # 1. SSH 설정
   echo "[SSH 설정]"
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "
+  ssh $srv  # srv=user@ip (아래 루프 참고) "
     echo -n '  PermitRootLogin: '; grep '^PermitRootLogin' /etc/ssh/sshd_config 2>/dev/null || echo '기본값'
     echo -n '  PasswordAuth: '; grep '^PasswordAuthentication' /etc/ssh/sshd_config 2>/dev/null || echo '기본값'
     echo -n '  MaxAuthTries: '; grep '^MaxAuthTries' /etc/ssh/sshd_config 2>/dev/null || echo '기본값(6)'
@@ -241,23 +241,23 @@ for ip in $SERVERS; do                                 # 반복문 시작
 
   # 2. 비밀번호 정책
   echo "[비밀번호 정책]"
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "
+  ssh $srv  # srv=user@ip (아래 루프 참고) "
     grep -E '^PASS_MAX_DAYS|^PASS_MIN_DAYS|^PASS_MIN_LEN' /etc/login.defs 2>/dev/null | sed 's/^/  /'  # 패턴 검색
   " 2>/dev/null
 
   # 3. 파일 권한
   echo "[중요 파일 권한]"
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "
+  ssh $srv  # srv=user@ip (아래 루프 참고) "
     stat -c '  %a %n' /etc/passwd /etc/shadow /etc/ssh/sshd_config 2>/dev/null
   " 2>/dev/null
 
   # 4. 네트워크 서비스
   echo "[열린 포트]"
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "ss -tlnp 2>/dev/null | grep LISTEN | awk '{print \"  \" \$4}'" 2>/dev/null
+  ssh $srv  # srv=user@ip (아래 루프 참고) "ss -tlnp 2>/dev/null | grep LISTEN | awk '{print \"  \" \$4}'" 2>/dev/null
 
   # 5. 커널 보안
   echo "[커널 보안 파라미터]"
-  sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "
+  ssh $srv  # srv=user@ip (아래 루프 참고) "
     echo -n '  ip_forward: '; sysctl -n net.ipv4.ip_forward 2>/dev/null
     echo -n '  accept_redirects: '; sysctl -n net.ipv4.conf.all.accept_redirects 2>/dev/null
     echo -n '  accept_source_route: '; sysctl -n net.ipv4.conf.all.accept_source_route 2>/dev/null
@@ -276,28 +276,28 @@ ip=10.20.30.201
 echo "=== CIS Benchmark 일부 점검 ==="
 
 echo "[1.1] 별도 /tmp 파티션:"
-sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "mount | grep ' /tmp ' || echo '  별도 파티션 아님'"
+ssh $srv  # srv=user@ip (아래 루프 참고) "mount | grep ' /tmp ' || echo '  별도 파티션 아님'"
 
 echo "[1.4] ASLR 활성화:"
-sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "sysctl kernel.randomize_va_space 2>/dev/null"
+ssh $srv  # srv=user@ip (아래 루프 참고) "sysctl kernel.randomize_va_space 2>/dev/null"
 
 echo "[2.1] inetd/xinetd 서비스:"
-sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "systemctl is-active inetd xinetd 2>/dev/null || echo '  미설치 (양호)'"
+ssh $srv  # srv=user@ip (아래 루프 참고) "systemctl is-active inetd xinetd 2>/dev/null || echo '  미설치 (양호)'"
 
 echo "[3.1] IP 포워딩 비활성화:"
-sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "sysctl net.ipv4.ip_forward 2>/dev/null"
+ssh $srv  # srv=user@ip (아래 루프 참고) "sysctl net.ipv4.ip_forward 2>/dev/null"
 
 echo "[4.1] auditd 활성화:"
-sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "systemctl is-active auditd 2>/dev/null || echo '  미활성'"
+ssh $srv  # srv=user@ip (아래 루프 참고) "systemctl is-active auditd 2>/dev/null || echo '  미활성'"
 
 echo "[5.1] cron 접근 제한:"
-sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "ls -la /etc/cron.allow /etc/cron.deny 2>/dev/null || echo '  설정 없음'"
+ssh $srv  # srv=user@ip (아래 루프 참고) "ls -la /etc/cron.allow /etc/cron.deny 2>/dev/null || echo '  설정 없음'"
 
 echo "[5.2] SSH 설정:"
-sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "stat -c '%a' /etc/ssh/sshd_config 2>/dev/null | xargs -I{} echo '  sshd_config 권한: {}'"
+ssh $srv  # srv=user@ip (아래 루프 참고) "stat -c '%a' /etc/ssh/sshd_config 2>/dev/null | xargs -I{} echo '  sshd_config 권한: {}'"
 
 echo "[6.1] 파일 무결성 도구:"
-sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "which aide tripwire 2>/dev/null || echo '  무결성 도구 미설치'"
+ssh $srv  # srv=user@ip (아래 루프 참고) "which aide tripwire 2>/dev/null || echo '  무결성 도구 미설치'"
 ```
 
 ---
@@ -326,7 +326,7 @@ ip=10.20.30.201
 echo ""
 echo "[A.8.2] 특수접근권한 관리"
 echo "  기준: PermitRootLogin no"
-result=$(sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "grep '^PermitRootLogin' /etc/ssh/sshd_config 2>/dev/null" || echo "미설정")
+result=$(ssh $srv  # srv=user@ip (아래 루프 참고) "grep '^PermitRootLogin' /etc/ssh/sshd_config 2>/dev/null" || echo "미설정")
 echo "  현황: $result"
 if echo "$result" | grep -q "no"; then
   echo "  판정: 적합"
@@ -339,7 +339,7 @@ fi
 echo ""
 echo "[A.8.5] 보안인증 - 비밀번호 최대 사용일"
 echo "  기준: PASS_MAX_DAYS <= 90"
-result=$(sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "grep '^PASS_MAX_DAYS' /etc/login.defs 2>/dev/null | awk '{print \$2}'")
+result=$(ssh $srv  # srv=user@ip (아래 루프 참고) "grep '^PASS_MAX_DAYS' /etc/login.defs 2>/dev/null | awk '{print \$2}'")
 echo "  현황: PASS_MAX_DAYS = $result"
 if [ -n "$result" ] && [ "$result" -le 90 ] 2>/dev/null; then
   echo "  판정: 적합"
@@ -352,7 +352,7 @@ fi
 echo ""
 echo "[A.8.15] 로깅 - auditd"
 echo "  기준: auditd 활성화"
-result=$(sshpass -p1 ssh -o StrictHostKeyChecking=no $srv  # srv=user@ip (아래 루프 참고) "systemctl is-active auditd 2>/dev/null" || echo "inactive")
+result=$(ssh $srv  # srv=user@ip (아래 루프 참고) "systemctl is-active auditd 2>/dev/null" || echo "inactive")
 echo "  현황: $result"
 if [ "$result" = "active" ]; then
   echo "  판정: 적합"
@@ -365,7 +365,7 @@ fi
 echo ""
 echo "[A.8.20] 네트워크보안 - 방화벽 기본정책"
 echo "  기준: 기본 정책 DROP"
-result=$(sshpass -p1 ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep 'policy drop'" || echo "")
+result=$(ssh ccc@10.20.30.1 "sudo nft list ruleset 2>/dev/null | grep 'policy drop'" || echo "")
 if [ -n "$result" ]; then
   echo "  현황: 기본 정책 DROP"
   echo "  판정: 적합"

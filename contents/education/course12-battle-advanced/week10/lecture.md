@@ -20,9 +20,9 @@
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
 | bastion | 10.20.30.201 | 공격 기지 / Control Plane | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | GPU 추론 서버 (Ollama LLM) | Ollama API: `http://192.168.0.105:11434` |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -671,7 +671,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID4/execute-plan \
       },
       {
         "order": 2,
-        "instruction_prompt": "echo \"[Round1-BLUE] 탐지 분석\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"tail -10 /var/log/suricata/fast.log 2>/dev/null | grep -i sql || echo 탐지 없음\"; echo \"---\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"tail -5 /var/log/apache2/access.log 2>/dev/null | grep -i \\\"OR 1=1\\\" || echo 로그 패턴 미발견\"",
+        "instruction_prompt": "echo \"[Round1-BLUE] 탐지 분석\"; ssh ccc@10.20.30.1 \"tail -10 /var/log/suricata/fast.log 2>/dev/null | grep -i sql || echo 탐지 없음\"; echo \"---\"; ssh ccc@10.20.30.80 \"tail -5 /var/log/apache2/access.log 2>/dev/null | grep -i \\\"OR 1=1\\\" || echo 로그 패턴 미발견\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       }
@@ -701,7 +701,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID4/execute-plan \
       },
       {
         "order": 3,
-        "instruction_prompt": "echo \"[Round2-BLUE] 강화 탐지\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"tail -15 /var/log/suricata/fast.log 2>/dev/null | tail -5 || echo No alerts\"; echo \"---\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \"tail -10 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -m json.tool 2>/dev/null | head -20 || echo No Wazuh alerts\"",
+        "instruction_prompt": "echo \"[Round2-BLUE] 강화 탐지\"; ssh ccc@10.20.30.1 \"tail -15 /var/log/suricata/fast.log 2>/dev/null | tail -5 || echo No alerts\"; echo \"---\"; ssh ccc@10.20.30.100 \"tail -10 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -m json.tool 2>/dev/null | head -20 || echo No Wazuh alerts\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       }

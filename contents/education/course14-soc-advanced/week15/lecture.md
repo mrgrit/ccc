@@ -12,9 +12,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -112,7 +112,7 @@ echo "  Manager API: HTTP $HTTP_CODE"
 
 echo ""
 echo "=== Wazuh ==="
-sshpass -p1 ssh ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "systemctl is-active wazuh-manager 2>/dev/null" 2>/dev/null || echo "  (확인 필요)"
 ```
 
@@ -130,7 +130,7 @@ echo "============================================"
 echo "  [Tier 1] 경보 모니터링"
 echo "============================================"
 
-sshpass -p1 ssh ccc@10.20.30.100 << 'REMOTE'
+ssh ccc@10.20.30.100 << 'REMOTE'
 echo "=== 최근 경보 (최신 20건) ==="
 tail -20 /var/ossec/logs/alerts/alerts.log 2>/dev/null | \
   grep "Rule:" | while read line; do
@@ -191,7 +191,7 @@ sleep 3
 # 경보 재확인
 echo ""
 echo "=== [Tier 1] 트리아지 ==="
-sshpass -p1 ssh ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "tail -10 /var/ossec/logs/alerts/alerts.log 2>/dev/null" 2>/dev/null | tail -10
 
 echo ""

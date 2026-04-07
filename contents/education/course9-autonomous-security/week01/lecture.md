@@ -12,9 +12,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -399,11 +399,11 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 **수동 점검 (전통적 방법)**:
 ```bash
 # 서버 1번 접속하여 확인
-sshpass -p1 ssh ccc@10.20.30.1 "hostname && uptime"
+ssh ccc@10.20.30.1 "hostname && uptime"
 # 서버 2번 접속하여 확인
-sshpass -p1 ssh ccc@10.20.30.80 "hostname && uptime"
+ssh ccc@10.20.30.80 "hostname && uptime"
 # 서버 3번 접속하여 확인
-sshpass -p1 ssh ccc@10.20.30.100 "hostname && uptime"
+ssh ccc@10.20.30.100 "hostname && uptime"
 # 각 서버에 개별 접속 → 순차 실행 → 결과 수동 취합
 ```
 

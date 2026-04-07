@@ -211,26 +211,26 @@ echo "로그 수집 디렉토리: $LOGDIR"
 
 # web 서버 로그 수집
 echo "[수집] web 서버 로그"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "cat /var/log/auth.log 2>/dev/null" > "$LOGDIR/web/auth.log"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "cat /var/log/apache2/access.log 2>/dev/null" > "$LOGDIR/web/access.log"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "cat /var/log/syslog 2>/dev/null" > "$LOGDIR/web/syslog"
 echo "  auth.log: $(wc -l < "$LOGDIR/web/auth.log") lines"
 echo "  access.log: $(wc -l < "$LOGDIR/web/access.log") lines"
 
 # secu 서버 로그 수집
 echo "[수집] secu 서버 로그"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "cat /var/log/suricata/fast.log 2>/dev/null" > "$LOGDIR/secu/suricata.log"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "cat /var/log/auth.log 2>/dev/null" > "$LOGDIR/secu/auth.log"
 echo "  suricata: $(wc -l < "$LOGDIR/secu/suricata.log") lines"
 
 # siem 서버 로그 수집
 echo "[수집] siem 서버 로그"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "cat /var/log/auth.log 2>/dev/null" > "$LOGDIR/siem/auth.log" 2>/dev/null
 echo "  auth.log: $(wc -l < "$LOGDIR/siem/auth.log") lines"
 
@@ -498,14 +498,14 @@ cat << 'FINAL_REPORT'
 
 [High] SSH 약한 비밀번호
   설명: web 서버 SSH 비밀번호가 단순 ("1")
-  증거: sshpass -p1 ssh ccc@10.20.30.80 → 접속 성공
+  증거: ssh ccc@10.20.30.80 → 접속 성공
   영향: 무단 시스템 접근, 데이터 접근, 횡적 이동 가능
   ATT&CK: T1110 Brute Force, T1078 Valid Accounts
   권고: 강력한 비밀번호 정책, 키 기반 인증 전환, fail2ban 도입
 
 [Medium] 횡적 이동 가능
   설명: web 서버에서 siem/secu로 SSH 피벗 가능
-  증거: web에서 sshpass -p1 ssh ccc@10.20.30.100 → 접속 성공
+  증거: web에서 ssh ccc@10.20.30.100 → 접속 성공
   영향: 내부 네트워크 전체 침해 가능
   ATT&CK: T1021.004 Remote Services: SSH
   권고: 내부 SSH 접근 제한 (방화벽), 서버별 고유 자격증명

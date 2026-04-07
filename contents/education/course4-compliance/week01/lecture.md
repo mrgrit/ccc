@@ -11,9 +11,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -465,7 +465,7 @@ cat /etc/security/pwquality.conf 2>/dev/null | grep -v "^#" | grep -v "^$"
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "cat /etc/login.defs | grep -E '^PASS_MAX_DAYS|^PASS_MIN_DAYS|^PASS_MIN_LEN|^PASS_WARN_AGE'"
 ```
 
@@ -499,17 +499,17 @@ sudo nft list ruleset 2>/dev/null | head -5 || sudo iptables -L 2>/dev/null | he
 
 echo ""
 echo "=== secu 방화벽 상태 ==="
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "sudo nft list ruleset 2>/dev/null | head -10"
 
 echo ""
 echo "=== web 방화벽 상태 ==="
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "sudo nft list ruleset 2>/dev/null | head -5 || sudo iptables -L 2>/dev/null | head -5 || echo '방화벽 규칙 없음'"
 
 echo ""
 echo "=== siem 방화벽 상태 ==="
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \
+ssh ccc@10.20.30.100 \
   "sudo nft list ruleset 2>/dev/null | head -5 || sudo iptables -L 2>/dev/null | head -5 || echo '방화벽 규칙 없음'"
 ```
 
@@ -558,7 +558,7 @@ grep -E "^(PermitRootLogin|PasswordAuthentication|Port|MaxAuthTries|Protocol|X11
 ```bash
 for host in 10.20.30.1 10.20.30.80 10.20.30.100; do    # 반복문 시작
   echo "=== $host SSH 설정 ==="
-  sshpass -p1 ssh -o StrictHostKeyChecking=no user@$host \
+  ssh ccc@$host \
     "grep -E '^(PermitRootLogin|PasswordAuthentication|Port|MaxAuthTries)' /etc/ssh/sshd_config 2>/dev/null || echo '설정 확인 불가'"
   echo ""
 done
@@ -619,7 +619,7 @@ for host in "localhost" "10.20.30.1" "10.20.30.80" "10.20.30.100"; do  # 반복�
     ls -lh /var/log/syslog /var/log/auth.log 2>/dev/null | awk '{print $5, $9}'
     cat /etc/logrotate.conf 2>/dev/null | grep "^rotate"
   else
-    sshpass -p1 ssh -o StrictHostKeyChecking=no user@$host \
+    ssh ccc@$host \
       "ls -lh /var/log/syslog /var/log/auth.log 2>/dev/null | awk '{print \$5, \$9}'; cat /etc/logrotate.conf 2>/dev/null | grep '^rotate'" 2>/dev/null
   fi
   echo ""
@@ -683,7 +683,7 @@ grep "^PASS_MIN_LEN" /etc/login.defs                   # 패턴 검색
 
 for host in 10.20.30.1 10.20.30.80 10.20.30.100; do    # 반복문 시작
   echo "--- $host ---"
-  sshpass -p1 ssh -o StrictHostKeyChecking=no user@$host \
+  ssh ccc@$host \
     "grep '^PASS_MAX_DAYS\|^PASS_MIN_LEN' /etc/login.defs" 2>/dev/null
 done
 
@@ -694,7 +694,7 @@ grep "^PermitRootLogin" /etc/ssh/sshd_config 2>/dev/null || echo "미설정(기�
 
 for host in 10.20.30.1 10.20.30.80 10.20.30.100; do    # 반복문 시작
   echo "--- $host ---"
-  sshpass -p1 ssh -o StrictHostKeyChecking=no user@$host \
+  ssh ccc@$host \
     "grep '^PermitRootLogin' /etc/ssh/sshd_config 2>/dev/null || echo '미설정(기본값)'" 2>/dev/null
 done
 

@@ -19,9 +19,9 @@
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
 | bastion | 10.20.30.201 | CTF Control Plane / 게임 서버 | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS — 방어 인프라 | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 대상 서버 — 공격/방어 대상 | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM — 관전/분석 | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS — 방어 인프라 | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 대상 서버 — 공격/방어 대상 | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM — 관전/분석 | `ssh ccc@10.20.30.100` |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
 
@@ -325,13 +325,13 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_R1/execute-plan \
       },
       {
         "order": 2,
-        "instruction_prompt": "echo \"=== [R1-DEF] 방화벽 현황 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"nft list ruleset 2>/dev/null | head -30 || echo nftables 미설정\"",
+        "instruction_prompt": "echo \"=== [R1-DEF] 방화벽 현황 ===\"; ssh ccc@10.20.30.1 \"nft list ruleset 2>/dev/null | head -30 || echo nftables 미설정\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
       {
         "order": 3,
-        "instruction_prompt": "echo \"=== [R1-DEF] 로그 모니터링 시작 ===\"; echo \"[Suricata]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"tail -5 /var/log/suricata/fast.log 2>/dev/null || echo No alerts\"; echo \"[Wazuh]\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100 \"tail -10 /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3 || echo No alerts\"",
+        "instruction_prompt": "echo \"=== [R1-DEF] 로그 모니터링 시작 ===\"; echo \"[Suricata]\"; ssh ccc@10.20.30.1 \"tail -5 /var/log/suricata/fast.log 2>/dev/null || echo No alerts\"; echo \"[Wazuh]\"; ssh ccc@10.20.30.100 \"tail -10 /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3 || echo No alerts\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       }
@@ -417,7 +417,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_R2/execute-plan \
     "tasks": [
       {
         "order": 1,
-        "instruction_prompt": "echo \"=== [R2-DEF] 공격 탐지 확인 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"tail -30 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|or 1=1|script\\\" | wc -l\" 2>/dev/null; echo \"건의 공격 시도 탐지\"; echo \"[점수] 공격 탐지: +50점/건\"",
+        "instruction_prompt": "echo \"=== [R2-DEF] 공격 탐지 확인 ===\"; ssh ccc@10.20.30.80 \"tail -30 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|or 1=1|script\\\" | wc -l\" 2>/dev/null; echo \"건의 공격 시도 탐지\"; echo \"[점수] 공격 탐지: +50점/건\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
@@ -468,7 +468,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_R2/execute-plan \
       },
       {
         "order": 2,
-        "instruction_prompt": "echo \"=== [관전] 공격 이벤트 타임라인 ===\"; sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \"tail -100 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|script|alert|or 1=1|passwd\\\" | awk '{print \\$4, \\$7}' | tail -10 || echo No attack events\"",
+        "instruction_prompt": "echo \"=== [관전] 공격 이벤트 타임라인 ===\"; ssh ccc@10.20.30.80 \"tail -100 /var/log/apache2/access.log 2>/dev/null | grep -iE \\\"union|select|script|alert|or 1=1|passwd\\\" | awk '{print \\$4, \\$7}' | tail -10 || echo No attack events\"",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       }

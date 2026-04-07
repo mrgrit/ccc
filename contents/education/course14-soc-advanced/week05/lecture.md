@@ -12,9 +12,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -605,7 +605,7 @@ python3 /tmp/ioc_quality.py
 
 ```bash
 # Wazuh CDB(Constant Database) 리스트로 IOC 배포
-sshpass -p1 ssh ccc@10.20.30.100 << 'REMOTE'
+ssh ccc@10.20.30.100 << 'REMOTE'
 
 # CDB 리스트 디렉토리 확인
 ls -la /var/ossec/etc/lists/ 2>/dev/null
@@ -656,7 +656,7 @@ REMOTE
 ## 3.4 IOC 기반 Wazuh 탐지 룰
 
 ```bash
-sshpass -p1 ssh ccc@10.20.30.100 << 'REMOTE'
+ssh ccc@10.20.30.100 << 'REMOTE'
 
 # IOC 기반 탐지 룰 추가
 sudo tee -a /var/ossec/etc/rules/local_rules.xml << 'RULES'

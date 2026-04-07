@@ -416,13 +416,13 @@ echo "  siem(443): $(curl -s -o /dev/null -w '%{http_code}' --connect-timeout 2 
 # 네트워크 분석가: IDS + 방화벽 모니터링
 echo ""
 echo "[네트워크 분석가] Suricata 최근 알림"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "tail -10 /var/log/suricata/fast.log 2>/dev/null || echo 'Suricata 로그 없음'"
 
 # 호스트 분석가: 서버 로그 + 하드닝 확인
 echo ""
 echo "[호스트 분석가] web 서버 보안 상태"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "echo 'SSH 실패: '$(grep -c 'Failed' /var/log/auth.log 2>/dev/null); \
    echo '열린 포트: '$(ss -tln 2>/dev/null | grep -c LISTEN); \
    echo '로그인 계정: '$(grep -cv 'nologin\|false' /etc/passwd)"
@@ -487,11 +487,11 @@ echo "   DONE: 차단 완료, 서비스 정상"
 echo ""
 echo "=== 현재 탐지 데이터 ==="
 echo "[SSH 실패 카운트]"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 \
+ssh ccc@10.20.30.80 \
   "grep 'Failed' /var/log/auth.log 2>/dev/null | wc -l"
 
 echo "[IDS 알림 카운트]"
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \
+ssh ccc@10.20.30.1 \
   "grep -c 'SCAN\|EXPLOIT\|TROJAN' /var/log/suricata/fast.log 2>/dev/null || echo 0"
 ```
 

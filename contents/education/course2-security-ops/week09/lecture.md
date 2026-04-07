@@ -11,9 +11,9 @@
 | 서버 | IP | 역할 | 접속 |
 |------|-----|------|------|
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `sshpass -p1 ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `sshpass -p1 ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `sshpass -p1 ssh ccc@10.20.30.100` |
+| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
+| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
+| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
 | dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
 
 **Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
@@ -163,7 +163,7 @@ Wazuh 4.11.2는 3개 컴포넌트로 구성된다:
 > **실전 활용**: SOC 구축 시 SIEM 플랫폼 설치와 에이전트 배포가 첫 번째 단계이다
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100
+ssh ccc@10.20.30.100
 ```
 
 ### 3.2 Wazuh 서비스 상태 확인
@@ -359,7 +359,7 @@ curl -s -k -X POST "https://10.20.30.100:55000/agents" \
 secu 서버에 접속하여 Agent를 설정:
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1
+ssh ccc@10.20.30.1
 
 # Agent 설치 확인
 echo 1 | sudo -S /var/ossec/bin/wazuh-control info
@@ -394,7 +394,7 @@ echo 1 | sudo -S systemctl status wazuh-agent
 
 ```bash
 # siem 서버에서
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.100  # 비밀번호 자동입력 SSH
 
 echo 1 | sudo -S /var/ossec/bin/agent_control -l
 ```
@@ -510,7 +510,7 @@ Suricata의 eve.json을 Wazuh가 수집하도록 설정:
 원격 서버에 접속하여 명령을 실행합니다.
 
 ```bash
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.1  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.1  # 비밀번호 자동입력 SSH
 
 # ossec.conf에 Suricata 로그 수집 추가
 echo 1 | sudo -S tee -a /var/ossec/etc/ossec.conf << 'XMLEOF'
@@ -532,7 +532,7 @@ echo 1 | sudo -S systemctl restart wazuh-agent
 
 ```bash
 # siem 서버에서 Suricata 알림 확인
-sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100  # 비밀번호 자동입력 SSH
+ssh ccc@10.20.30.100  # 비밀번호 자동입력 SSH
 
 echo 1 | sudo -S cat /var/ossec/logs/alerts/alerts.json | \
   python3 -c "                                         # Python 코드 실행
