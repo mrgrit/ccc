@@ -283,6 +283,95 @@ input(type="imtcp" port="514")
 RSEOF
 systemctl restart rsyslog 2>/dev/null || true
 """,
+        # ── OpenCTI 설치 (Docker) ──
+        """
+# Docker 설치
+if ! command -v docker &>/dev/null; then
+    curl -fsSL https://get.docker.com | sh
+    usermod -aG docker ccc 2>/dev/null || true
+fi
+systemctl enable --now docker
+
+# OpenCTI docker-compose
+mkdir -p /opt/opencti
+cat > /opt/opencti/docker-compose.yml << 'OCEOF'
+version: '3'
+services:
+  redis:
+    image: redis:7
+    restart: always
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.15.0
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    restart: always
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+  minio:
+    image: minio/minio
+    environment:
+      MINIO_ROOT_USER: opencti
+      MINIO_ROOT_PASSWORD: opencti2026
+    command: server /data --console-address ":9001"
+    restart: always
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_DEFAULT_USER: opencti
+      RABBITMQ_DEFAULT_PASS: opencti2026
+    restart: always
+  opencti:
+    image: opencti/platform:6.4.4
+    depends_on:
+      - redis
+      - elasticsearch
+      - minio
+      - rabbitmq
+    ports:
+      - "8080:8080"
+    environment:
+      - NODE_OPTIONS=--max-old-space-size=2048
+      - APP__PORT=8080
+      - APP__BASE_URL=http://localhost:8080
+      - APP__ADMIN__EMAIL=admin@opencti.io
+      - APP__ADMIN__PASSWORD=CCC2026!
+      - APP__ADMIN__TOKEN=ccc-opencti-token-2026
+      - REDIS__HOSTNAME=redis
+      - ELASTICSEARCH__URL=http://elasticsearch:9200
+      - MINIO__ENDPOINT=minio
+      - MINIO__PORT=9000
+      - MINIO__USE_SSL=false
+      - MINIO__ACCESS_KEY=opencti
+      - MINIO__SECRET_KEY=opencti2026
+      - RABBITMQ__HOSTNAME=rabbitmq
+      - RABBITMQ__PORT=5672
+      - RABBITMQ__USERNAME=opencti
+      - RABBITMQ__PASSWORD=opencti2026
+      - SMTP__HOSTNAME=localhost
+      - SMTP__PORT=25
+    restart: always
+  worker:
+    image: opencti/worker:6.4.4
+    depends_on:
+      - opencti
+    environment:
+      - OPENCTI_URL=http://opencti:8080
+      - OPENCTI_TOKEN=ccc-opencti-token-2026
+    restart: always
+OCEOF
+
+# vm.max_map_count (Elasticsearch 요구)
+sysctl -w vm.max_map_count=262144
+echo 'vm.max_map_count=262144' >> /etc/sysctl.conf 2>/dev/null || true
+
+# OpenCTI 시작 (백그라운드, 이미지 pull 오래 걸림)
+cd /opt/opencti && docker compose up -d 2>&1 | tail -10
+echo 'OpenCTI 시작됨 — http://SIEM_IP:8080 (admin@opencti.io / CCC2026!)'
+""",
     ],
     "manager": [
         # bastion 독립 설치
