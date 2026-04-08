@@ -234,16 +234,31 @@ systemctl restart rsyslog
         WAZUH_AGENT_INSTALL,
     ],
     "siem": [
-        # ── Wazuh Manager 설치 ──
-        "apt-get update -y",
-        "apt-get install -y curl apt-transport-https gnupg2",
+        # ── Wazuh All-in-One 공식 설치 (Manager + Indexer + Dashboard + Filebeat) ──
+        "apt-get update -y && apt-get install -y curl apt-transport-https gnupg2",
+        # 공식 설치 스크립트 다운로드
         """
-curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import 2>/dev/null && chmod 644 /usr/share/keyrings/wazuh.gpg
-echo 'deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main' > /etc/apt/sources.list.d/wazuh.list
-apt-get update -y
-apt-get install -y wazuh-manager 2>/dev/null || true
+cd /tmp
+curl -sO https://packages.wazuh.com/4.10/wazuh-install.sh
+curl -sO https://packages.wazuh.com/4.10/config.yml
+# config.yml 단일 노드 설정
+cat > /tmp/config.yml << 'CFGEOF'
+nodes:
+  indexer:
+    - name: node-1
+      ip: 127.0.0.1
+  server:
+    - name: wazuh-1
+      ip: 127.0.0.1
+  dashboard:
+    - name: dashboard
+      ip: 127.0.0.1
+CFGEOF
+chmod +x /tmp/wazuh-install.sh
 """,
-        # ── Wazuh 기본 설정: syslog 리스너 + 에이전트 등록 ──
+        # All-in-One 설치 실행 (--ignore-check: 리소스 체크 무시)
+        "cd /tmp && bash wazuh-install.sh -a --ignore-check 2>&1 | tail -20",
+        # ── 설치 후 추가 설정: syslog + agent 등록 ──
         """
 if [ -f /var/ossec/etc/ossec.conf ]; then
     # syslog 리스너 활성화 (514/tcp)
@@ -251,15 +266,14 @@ if [ -f /var/ossec/etc/ossec.conf ]; then
         sed -i '/<\\/ossec_config>/i \\
   <remote>\\n    <connection>syslog</connection>\\n    <port>514</port>\\n    <protocol>tcp</protocol>\\n    <allowed-ips>10.20.30.0/24</allowed-ips>\\n  </remote>' /var/ossec/etc/ossec.conf
     fi
-    # 에이전트 자동 등록 활성화
+    # 에이전트 자동 등록
     if ! grep -q '<auth>' /var/ossec/etc/ossec.conf; then
         sed -i '/<\\/ossec_config>/i \\
   <auth>\\n    <disabled>no</disabled>\\n    <port>1515</port>\\n    <use_password>yes</use_password>\\n  </auth>' /var/ossec/etc/ossec.conf
     fi
+    echo 'ccc2026' > /var/ossec/etc/authd.pass 2>/dev/null || true
+    systemctl restart wazuh-manager 2>/dev/null || true
 fi
-# 에이전트 등록 비밀번호 설정
-echo 'ccc2026' > /var/ossec/etc/authd.pass 2>/dev/null || true
-systemctl enable --now wazuh-manager 2>/dev/null || true
 """,
         # ── rsyslog 수신 설정 ──
         """
@@ -770,7 +784,7 @@ fi
         )
 
     if role_cmds:
-        t = 300 if role in ("manager", "siem") or (role == "manager" and not gpu_url) else 180
+        t = 600 if role == "siem" else 300 if role == "manager" and not gpu_url else 180
         r = ssh_run(ip, user, password, role_cmds, timeout=t)
         results["steps"].append({"step": "role_setup", **r})
         # role_setup 실패는 경고만 (SubAgent는 이미 설치됨, 계속 진행)
