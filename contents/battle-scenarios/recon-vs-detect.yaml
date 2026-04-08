@@ -1,80 +1,116 @@
 id: "recon-vs-detect"
-title: "정찰 vs 탐지"
-description: "공격자는 대상 네트워크를 스캔하고, 방어자는 스캔을 탐지하고 차단한다."
+title: "네트워크 정찰 vs IDS 탐지"
+description: "공격자가 내부 네트워크에 침입한 흔적이 발견되었다. Red Team은 타겟 인프라의 네트워크 구조와 서비스 정보를 최대한 수집해야 한다. Blue Team은 IDS 알림을 모니터링하고, 공격자를 식별하여 실시간으로 차단해야 한다. 최초 탐지부터 차단까지의 속도가 승부를 가른다."
 difficulty: "easy"
 time_limit: 1800
 battle_type: "1v1"
 
 red_missions:
   - order: 1
-    instruction: "대상 네트워크(10.20.30.0/24)에서 활성 호스트를 스캔하라"
-    hint: "nmap -sn 옵션 활용"
+    instruction: "nmap을 사용하여 10.20.30.0/24 대역의 활성 호스트를 탐색하라."
+    hint: "nmap -sn 10.20.30.0/24 --max-retries 1 --host-timeout 15s -T4"
     points: 10
+    target_vm: attacker
     verify:
       type: "output_contains"
       expect: "Host is up"
+
   - order: 2
-    instruction: "발견된 호스트의 열린 포트를 확인하라"
-    hint: "nmap -sS 또는 -sV 옵션"
+    instruction: "웹 서버(10.20.30.80)의 열린 포트와 서비스 버전을 스캔하라."
+    hint: "nmap -sV -p 1-10000 10.20.30.80 --max-retries 1 --host-timeout 15s -T4"
     points: 15
+    target_vm: attacker
     verify:
       type: "output_contains"
-      expect: "open"
+      expect: "Apache"
+
   - order: 3
-    instruction: "서비스 버전을 열거하라"
-    hint: "nmap -sV"
-    points: 15
+    instruction: "whatweb을 사용하여 웹 서버(http://10.20.30.80)의 기술 스택을 식별하라."
+    hint: "whatweb http://10.20.30.80"
+    points: 10
+    target_vm: attacker
     verify:
       type: "output_contains"
-      expect: "VERSION"
+      expect: "HTTPServer"
+
   - order: 4
-    instruction: "OS 핑거프린팅을 수행하라"
-    hint: "nmap -O"
-    points: 20
+    instruction: "nmap 스크립트를 사용하여 웹 서버의 HTTP 헤더와 배너 정보를 수집하라."
+    hint: "nmap -sV --script=http-headers 10.20.30.80 -p 80 --max-retries 1 --host-timeout 15s -T4"
+    points: 15
+    target_vm: attacker
     verify:
       type: "output_contains"
-      expect: "OS"
+      expect: "http-headers"
+
   - order: 5
-    instruction: "취약점 스크립트 스캔을 실행하라"
-    hint: "nmap --script vuln"
+    instruction: "nikto를 사용하여 웹 서버(http://10.20.30.80)의 취약점을 스캔하라."
+    hint: "nikto -h http://10.20.30.80 -maxtime 60s"
     points: 20
+    target_vm: attacker
     verify:
       type: "output_contains"
-      expect: "VULNERABLE"
+      expect: "Server:"
+
+  - order: 6
+    instruction: "JuiceShop(10.20.30.80:3000)에 대해 디렉토리 브루트포싱을 수행하라."
+    hint: "nmap --script http-enum -p 3000 10.20.30.80 --max-retries 1 --host-timeout 15s -T4"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "http-enum"
 
 blue_missions:
   - order: 1
-    instruction: "Suricata 로그에서 스캔 시도를 탐지하라"
-    hint: "cat /var/log/suricata/fast.log | grep SCAN"
-    points: 15
-    verify:
-      type: "output_contains"
-      expect: "SCAN"
-  - order: 2
-    instruction: "공격자의 IP 주소를 식별하라"
-    hint: "Suricata 또는 auth.log에서 출발지 IP 확인"
-    points: 15
-    verify:
-      type: "output_contains"
-      expect: "10.20.30"
-  - order: 3
-    instruction: "nftables에서 공격자 IP를 차단하라"
-    hint: "nft add rule inet filter input ip saddr <IP> drop"
-    points: 25
-    verify:
-      type: "output_contains"
-      expect: "drop"
-  - order: 4
-    instruction: "차단 후 추가 스캔 시도가 없는지 확인하라"
-    hint: "tail -f /var/log/suricata/fast.log"
-    points: 15
-    verify:
-      type: "output_contains"
-      expect: "blocked"
-  - order: 5
-    instruction: "탐지 보고서를 작성하라 (타임라인 포함)"
-    hint: "탐지 시간, 공격 유형, 대응 조치를 정리"
+    instruction: "suricata의 실시간 알림 로그에서 스캔 탐지 이벤트를 확인하라."
+    hint: "tail -20 /var/log/suricata/fast.log"
     points: 10
+    target_vm: secu
     verify:
       type: "output_contains"
-      expect: "report"
+      expect: "10.20.30.201"
+
+  - order: 2
+    instruction: "suricata 알림에서 탐지된 공격 유형(SID)을 식별하라."
+    hint: "cat /var/log/suricata/fast.log | grep -oP '\\[\\d+:\\d+:\\d+\\]' | sort -u"
+    points: 15
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "["
+
+  - order: 3
+    instruction: "nftables를 사용하여 공격자 IP(10.20.30.201)에서 오는 모든 트래픽을 차단하라."
+    hint: "nft add rule inet filter input ip saddr 10.20.30.201 drop"
+    points: 20
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 4
+    instruction: "nftables 룰셋을 확인하여 차단 룰이 정상 적용되었는지 검증하라."
+    hint: "nft list ruleset | grep 10.20.30.201"
+    points: 10
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "10.20.30.201"
+
+  - order: 5
+    instruction: "Wazuh에서 네트워크 스캔 관련 알림을 확인하라."
+    hint: "cat /var/ossec/logs/alerts/alerts.json | tail -50 | grep -i scan"
+    points: 15
+    target_vm: siem
+    verify:
+      type: "output_contains"
+      expect: "alert"
+
+  - order: 6
+    instruction: "suricata의 eve.json 로그에서 공격자의 스캔 패턴을 분석하라."
+    hint: "cat /var/log/suricata/eve.json | grep 10.20.30.201 | tail -10"
+    points: 15
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "10.20.30.201"

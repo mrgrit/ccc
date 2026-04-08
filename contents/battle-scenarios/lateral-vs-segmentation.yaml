@@ -1,0 +1,116 @@
+id: "lateral-vs-segmentation"
+title: "측면 이동 vs 네트워크 분리"
+description: "내부 웹 서버가 침해된 것으로 의심되는 상황이다. Red Team은 탈취한 거점에서 내부 네트워크의 다른 시스템으로 측면 이동을 시도해야 한다. Blue Team은 네트워크 세그멘테이션을 강화하고 내부 트래픽을 모니터링하여 측면 이동을 차단해야 한다."
+difficulty: "medium"
+time_limit: 2700
+battle_type: "1v1"
+
+red_missions:
+  - order: 1
+    instruction: "내부 네트워크(10.20.30.0/24)의 활성 호스트를 ARP 스캔으로 탐색하라."
+    hint: "nmap -sn -PR 10.20.30.0/24 --max-retries 1 --host-timeout 15s -T4"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "Host is up"
+
+  - order: 2
+    instruction: "SIEM 서버(10.20.30.100)의 열린 포트와 서비스를 스캔하라."
+    hint: "nmap -sV -p 1-10000 10.20.30.100 --max-retries 1 --host-timeout 15s -T4"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "open"
+
+  - order: 3
+    instruction: "보안 장비(10.20.30.1)의 서비스를 스캔하여 접근 가능한 포트를 확인하라."
+    hint: "nmap -sV -p 1-10000 10.20.30.1 --max-retries 1 --host-timeout 15s -T4"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "10.20.30.1"
+
+  - order: 4
+    instruction: "웹 서버에서 SSH 키 파일이 노출되어 있는지 확인하라."
+    hint: "curl -s http://10.20.30.80/.ssh/id_rsa 2>/dev/null; curl -s http://10.20.30.80:8080/.ssh/authorized_keys 2>/dev/null; echo 'SSH key enumeration complete'"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "SSH key enumeration complete"
+
+  - order: 5
+    instruction: "nmap 스크립트로 내부 호스트 간 SMB/NFS 공유 자원을 탐색하라."
+    hint: "nmap --script smb-enum-shares,nfs-showmount -p 139,445,2049 10.20.30.80 10.20.30.100 --max-retries 1 --host-timeout 15s -T4"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "nmap"
+
+  - order: 6
+    instruction: "각 내부 호스트의 SSH 배너를 수집하여 OS 정보를 파악하라."
+    hint: "nmap --script ssh2-enum-algos -p 22 10.20.30.1 10.20.30.80 10.20.30.100 --max-retries 1 --host-timeout 15s -T4"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "ssh2-enum-algos"
+
+blue_missions:
+  - order: 1
+    instruction: "현재 nftables 룰셋을 확인하여 내부 네트워크 세그멘테이션 상태를 점검하라."
+    hint: "nft list ruleset"
+    points: 10
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "table"
+
+  - order: 2
+    instruction: "공격자(10.20.30.201)에서 SIEM(10.20.30.100)으로의 직접 접근을 차단하는 룰을 추가하라."
+    hint: "nft add rule inet filter forward ip saddr 10.20.30.201 ip daddr 10.20.30.100 drop"
+    points: 20
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 3
+    instruction: "suricata에서 내부 네트워크 스캔 활동을 탐지한 로그를 확인하라."
+    hint: "grep -i 'scan\\|portscan' /var/log/suricata/fast.log | tail -20"
+    points: 15
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "10.20.30"
+
+  - order: 4
+    instruction: "내부 호스트 간 SSH 연결 시도 로그를 분석하라."
+    hint: "grep -i 'ssh\\|sshd' /var/log/auth.log | grep -v 'session opened\\|session closed' | tail -20"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "ssh"
+
+  - order: 5
+    instruction: "Wazuh에서 내부 네트워크 이상 트래픽 알림을 확인하라."
+    hint: "grep -i 'lateral\\|internal\\|scan' /var/ossec/logs/alerts/alerts.json | tail -20"
+    points: 15
+    target_vm: siem
+    verify:
+      type: "output_contains"
+      expect: "alert"
+
+  - order: 6
+    instruction: "nftables에 내부 호스트 간 허용된 포트만 통신 가능하도록 화이트리스트 룰을 추가하라."
+    hint: "nft add rule inet filter forward ip saddr 10.20.30.0/24 ip daddr 10.20.30.0/24 tcp dport != { 22, 80, 443, 1514, 1515 } drop"
+    points: 15
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""

