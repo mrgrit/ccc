@@ -53,11 +53,15 @@ export default function ChatBot() {
     }
   }, [handleMouseUp, handleMouseDown])
 
+  const pendingText = useRef<string>('')
+
   const askAboutSelection = () => {
-    if (!selPopup) return
-    setInput(selPopup.text)
-    setOpen(true)
+    const text = pendingText.current || selPopup?.text || ''
+    if (!text) return
+    pendingText.current = ''
     setSelPopup(null)
+    setInput(text)
+    setOpen(true)
     window.getSelection()?.removeAllRanges()
     setTimeout(() => inputRef.current?.focus(), 100)
   }
@@ -89,6 +93,11 @@ export default function ChatBot() {
       {/* 텍스트 선택 팝업 */}
       {selPopup && (
         <div
+          onMouseDown={(e) => {
+            e.stopPropagation()
+            e.preventDefault()
+            pendingText.current = selPopup.text
+          }}
           onClick={askAboutSelection}
           style={{
             position: 'fixed',
