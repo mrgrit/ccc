@@ -1,0 +1,110 @@
+lab_id: autonomous-systems-nonai-week10
+title: '[Non-AI] ROS2 보안'
+version: non-ai
+course: autonomous-systems-nonai
+week: 10
+description: ROS2 DDS 토픽 스니핑, 명령 인젝션 공격과 DDS Security 방어를 실습합니다
+difficulty: hard
+duration_minutes: 120
+objectives:
+- DDS 토픽을 스니핑한다
+- ROS2 명령 인젝션을 수행한다
+- DDS Security를 구성한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: Python으로 DDS SPDP Discovery를 시뮬레이션하시오. 멀티캐스트(239.255.0.1:7400)로 참여자를 발견하는 과정을 출력하라.
+  hint: 참여자 이름, IP, GUID를 출력하세요.
+  category: recon
+  points: 12
+  answer: 'python3 -c "nodes=[(''lidar_driver'',''192.168.1.10'',''GUID_0001''),(''nav_controller'',''192.168.1.10'',''GUID_0002''),(''arm_controller'',''192.168.1.10'',''GUID_0003'')];print(''=== DDS SPDP Discovery (239.255.0.1:7400) ==='');[print(f''  Participant: {n[0]} IP:{n[1]} GUID:{n[2]}'') for n in nodes];print(''  [!] All participants discoverable via multicast'')"'
+  answer_detail: DDS Discovery 과정은 공격 정찰의 첫 단계입니다.
+  verify:
+    type: output_contains
+    expect: 'SPDP Discovery'
+    field: stdout
+  target_vm: attacker
+- order: 2
+  instruction: 스니핑된 ROS2 토픽 데이터를 분석하시오. /scan, /cmd_vel, /odom, /camera/image 토픽의 데이터를 출력하라.
+  hint: 각 토픽의 데이터를 JSON으로 출력하세요.
+  category: recon
+  points: 10
+  answer: 'python3 -c "import json;sniffed={''/scan'':{''ranges'':[1.5,2.3,4.1]},'' /cmd_vel'':{''linear_x'':0.5,''angular_z'':0.2},'' /odom'':{''x'':3.14,''y'':1.59},'' /camera'':{''width'':640,''height'':480}};print(''=== Sniffed ROS2 Topics ==='');[print(f''  {t}: {json.dumps(d)}'') for t,d in sniffed.items()];print(''  [!] All data captured without authentication'')"'
+  answer_detail: 토픽 스니핑으로 로봇의 센서 데이터와 위치를 파악합니다.
+  verify:
+    type: output_contains
+    expect: 'Sniffed ROS2'
+    field: stdout
+  target_vm: attacker
+- order: 3
+  instruction: /cmd_vel 토픽에 속도 명령을 인젝션하는 공격을 시뮬레이션하시오. 전진, 후진, 회전, 급정지 4가지 명령을 인젝션하라.
+  hint: linear.x와 angular.z 값을 변경하세요.
+  category: attack
+  points: 12
+  answer: 'python3 -c "attacks=[(2.0,0,''Full speed forward''),(- 1.0,0,''Reverse''),( 0,3.14,''Spin''),(0,0,''Emergency stop'')];print(''=== cmd_vel Injection ==='');[print(f''  [INJECT] linear={a[0]:+.1f} angular={a[1]:+.2f} — {a[2]}'') for a in attacks];print(''  [!] Robot movement fully controlled by attacker'')"'
+  answer_detail: /cmd_vel 인젝션은 로봇 이동을 직접 제어하는 치명적 공격입니다.
+  verify:
+    type: output_contains
+    expect: 'cmd_vel Injection'
+    field: stdout
+  target_vm: attacker
+- order: 4
+  instruction: 가짜 /scan 데이터를 인젝션하여 로봇을 속이는 공격을 시뮬레이션하시오. 모든 방향에 가까운 장애물을 주입하라.
+  hint: ranges를 모두 0.1m로 설정하세요.
+  category: attack
+  points: 12
+  answer: 'python3 -c "fake_scan={''ranges'':[0.1]*360,''angle_min'':-3.14,''angle_max'':3.14};print(''=== Fake Sensor Injection ==='');print(f''  Injected /scan: all ranges = 0.1m'');print(f''  [!] Robot thinks surrounded by obstacles'');print(f''  [!] Navigation stops — robot is stuck'')"'
+  answer_detail: 센서 데이터 위조로 로봇의 인지 시스템을 교란합니다.
+  verify:
+    type: output_contains
+    expect: 'Fake Sensor'
+    field: stdout
+  target_vm: attacker
+- order: 5
+  instruction: ROS2 토픽별 접근 제어(ACL) 정책을 Python으로 설계하시오. 노드별 발행/구독 권한을 정의하라.
+  hint: 각 노드가 접근할 수 있는 토픽을 제한하세요.
+  category: config
+  points: 12
+  answer: 'python3 -c "acl={''nav_ctrl'':{''pub'':[''/cmd_vel''],''sub'':[''/scan'',''/odom'']},''lidar'':{''pub'':[''/scan''],''sub'':[]},''camera'':{''pub'':[''/camera/image''],''sub'':[]},''safety'':{''pub'':[''/emergency_stop''],''sub'':[''/cmd_vel'']}};print(''=== ROS2 Topic ACL ==='');[print(f''  {n}: pub={p[\"pub\"]} sub={p[\"sub\"]}'') for n,p in acl.items()];print(''  [OK] Least-privilege access control'')"'
+  answer_detail: 토픽 ACL로 인가되지 않은 토픽 접근을 차단합니다.
+  verify:
+    type: output_contains
+    expect: 'Topic ACL'
+    field: stdout
+  target_vm: attacker
+- order: 6
+  instruction: LLM에게 ROS2 DDS Security 플러그인 설정 방법을 질의하시오.
+  hint: SROS2 DDS security configuration을 질문하세요.
+  category: analysis
+  points: 10
+  answer: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a ROS2 security engineer."},{"role":"user","content":"How do you configure DDS Security in ROS2 using SROS2? List the 3 main security plugins and their purposes."}],"stream":false,"options":{"num_predict":150}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'])"
+  answer_detail: SROS2는 ROS2의 공식 보안 도구입니다.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: manager
+- order: 7
+  instruction: DDS Security 적용 전후 공격 성공률을 비교하는 시뮬레이션을 수행하시오.
+  hint: 보안 적용 전/후 각 공격의 성공 여부를 비교하세요.
+  category: analysis
+  points: 12
+  answer: 'python3 -c "attacks=[(''Topic Sniffing'',''POSSIBLE'',''BLOCKED''),(''Command Injection'',''POSSIBLE'',''BLOCKED''),(''Discovery Scan'',''POSSIBLE'',''BLOCKED''),(''Node Spoofing'',''POSSIBLE'',''BLOCKED''),(''DoS Flooding'',''POSSIBLE'',''MITIGATED'')];print(''=== DDS Security Comparison ==='');print(f''  {\"Attack\":<22} {\"Before\":<12} {\"After\":<12}'');[print(f''  {a[0]:<22} {a[1]:<12} {a[2]:<12}'') for a in attacks]"'
+  answer_detail: DDS Security는 ROS2의 주요 공격 벡터를 효과적으로 차단합니다.
+  verify:
+    type: output_contains
+    expect: 'Security Comparison'
+    field: stdout
+  target_vm: attacker
+- order: 8
+  instruction: ROS2 보안 감사 보고서를 Python으로 생성하시오. 발견된 취약점, 공격 시연 결과, 권고 사항을 포함하라.
+  hint: 취약점, 공격 결과, 대응 방안을 구조화하세요.
+  category: analysis
+  points: 10
+  answer: 'python3 -c "print(''=== ROS2 Security Audit Report ==='');vulns=[(''No DDS auth'',''CRITICAL''),(''Topic open access'',''CRITICAL''),(''Plaintext data'',''HIGH''),(''Discovery exposed'',''HIGH'')];print(''  Vulnerabilities:'');[print(f''    [{s}] {v}'') for v,s in vulns];print(''  Recommendations:'');print(''    1. Enable SROS2 DDS Security'');print(''    2. Implement topic-level ACL'');print(''    3. Encrypt sensitive topics'');print(''    4. Segment robot network'')"'
+  answer_detail: 보안 감사 보고서로 ROS2 환경의 보안 수준을 평가합니다.
+  verify:
+    type: output_contains
+    expect: 'Security Audit Report'
+    field: stdout
+  target_vm: attacker

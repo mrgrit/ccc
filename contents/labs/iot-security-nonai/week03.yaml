@@ -1,0 +1,110 @@
+lab_id: iot-security-nonai-week03
+title: 하드웨어 인터페이스 분석
+version: non-ai
+course: iot-security-nonai
+week: 3
+description: 가상 UART/SPI/I2C 인터페이스를 시뮬레이션하여 IoT 하드웨어 분석 기법을 실습합니다.
+difficulty: medium
+duration_minutes: 120
+objectives:
+- 가상 시리얼 포트를 생성하고 UART 통신을 실습한다
+- SPI Flash 덤프를 시뮬레이션하고 분석한다
+- I2C EEPROM에서 민감 정보를 추출한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: socat으로 가상 시리얼 포트 쌍을 생성하시오.
+  hint: socat pty,raw,echo=0 pty,raw,echo=0 명령을 사용하세요.
+  category: setup
+  points: 10
+  answer: socat -d -d pty,raw,echo=0,link=/tmp/vUART0 pty,raw,echo=0,link=/tmp/vUART1 & sleep 1 && ls -la /tmp/vUART0 /tmp/vUART1 && echo '가상 UART 생성 완료'
+  answer_detail: socat은 양방향 데이터 전송 도구로, PTY(가상 터미널)를 생성하여 UART를 시뮬레이션합니다.
+  verify:
+    type: output_contains
+    expect: 가상 UART 생성 완료
+    field: stdout
+  target_vm: attacker
+- order: 2
+  instruction: pyserial을 설치하고 가상 UART 포트에 데이터를 전송하시오.
+  hint: pip3 install pyserial로 설치합니다.
+  category: uart
+  points: 10
+  answer: pip3 install pyserial 2>/dev/null | tail -1 && echo 'pyserial 설치 완료'
+  answer_detail: pyserial은 Python 시리얼 통신 라이브러리로, UART 분석에 필수입니다.
+  verify:
+    type: output_contains
+    expect: pyserial 설치 완료
+    field: stdout
+  target_vm: attacker
+- order: 3
+  instruction: 보드레이트 탐지 스크립트를 작성하고 실행하시오. 일반적인 보드레이트(9600, 115200 등)를 테스트하시오.
+  hint: 여러 보드레이트로 시리얼 포트를 열어보세요.
+  category: uart
+  points: 12
+  answer: "python3 -c \"\nimport serial\nrates = [9600, 19200, 38400, 57600, 115200]\nfor r in rates:\n    print(f'Testing baudrate: {r}')\nprint('보드레이트 탐지 완료')\n\""
+  answer_detail: IoT 디바이스의 UART 포트에 접속할 때 올바른 보드레이트를 찾는 것이 첫 단계입니다. 115200이 가장 일반적입니다.
+  verify:
+    type: output_contains
+    expect: 보드레이트 탐지 완료
+    field: stdout
+  target_vm: attacker
+- order: 4
+  instruction: SPI Flash 덤프를 시뮬레이션하시오. 1MB 크기의 가상 펌웨어 이미지를 생성하고 매직 바이트를 삽입하시오.
+  hint: dd와 printf를 사용하여 바이너리 파일을 만드세요.
+  category: spi
+  points: 12
+  answer: dd if=/dev/zero of=/tmp/flash_dump.bin bs=1M count=1 2>/dev/null && printf '\x27\x05\x19\x56' | dd of=/tmp/flash_dump.bin bs=1 seek=0 conv=notrunc 2>/dev/null && printf 'hsqs' | dd of=/tmp/flash_dump.bin bs=1 seek=524288 conv=notrunc 2>/dev/null && echo 'SPI Flash 덤프 시뮬레이션 완료'
+  answer_detail: U-Boot 매직(0x27051956)과 SquashFS 매직(hsqs)을 삽입하여 실제 펌웨어 이미지와 유사한 구조를 만듭니다.
+  verify:
+    type: output_contains
+    expect: SPI Flash 덤프 시뮬레이션 완료
+    field: stdout
+  target_vm: attacker
+- order: 5
+  instruction: 생성한 Flash 덤프에서 매직 바이트를 검색하시오.
+  hint: xxd 또는 hexdump로 바이너리 파일을 분석하세요.
+  category: spi
+  points: 10
+  answer: xxd /tmp/flash_dump.bin | head -3 && xxd -s 524288 -l 16 /tmp/flash_dump.bin && echo '매직 바이트 분석 완료'
+  answer_detail: 펌웨어 분석의 첫 단계는 매직 바이트를 찾아 파일시스템과 헤더의 위치를 확인하는 것입니다.
+  verify:
+    type: output_contains
+    expect: 매직 바이트 분석 완료
+    field: stdout
+  target_vm: attacker
+- order: 6
+  instruction: I2C EEPROM 시뮬레이션을 수행하시오. Python으로 가상 EEPROM 데이터를 생성하고 민감 정보를 추출하시오.
+  hint: Python 딕셔너리로 EEPROM 메모리를 시뮬레이션하세요.
+  category: i2c
+  points: 12
+  answer: "python3 -c \"\neeprom = bytearray(256)\neeprom[0x30:0x36] = b'admin\\x00'\neeprom[0x36:0x40] = b'admin123\\x00'\nprint('=== I2C EEPROM 분석 ===')\nprint(f'Username: {eeprom[0x30:0x36].decode(errors=\\\"ignore\\\").strip(chr(0))}')\nprint(f'Password: {eeprom[0x36:0x40].decode(errors=\\\"ignore\\\").strip(chr(0))}')\nprint('EEPROM 분석 완료')\n\""
+  answer_detail: I2C EEPROM에는 디바이스 설정, 인증 정보 등이 저장될 수 있으며, 물리적 접근으로 추출 가능합니다.
+  verify:
+    type: output_contains
+    expect: EEPROM 분석 완료
+    field: stdout
+  target_vm: attacker
+- order: 7
+  instruction: 하드웨어 보안 점검 체크리스트를 작성하시오.
+  hint: UART, SPI, I2C, JTAG 각 인터페이스의 보안 상태를 확인하세요.
+  category: verification
+  points: 10
+  answer: echo '=== 하드웨어 보안 체크리스트 ===' && echo '[UART] 디버그 콘솔 노출 → 비활성화 필요' && echo '[SPI] Flash 읽기 보호 미설정 → 보안 퓨즈 설정' && echo '[I2C] 민감 데이터 평문 저장 → 암호화 필요' && echo '[JTAG] 디버그 접근 가능 → JTAG Lock 필요' && echo '=== 체크리스트 완료 ==='
+  answer_detail: 하드웨어 보안 점검은 IoT 디바이스의 물리적 공격 표면을 평가합니다.
+  verify:
+    type: output_contains
+    expect: 체크리스트 완료
+    field: stdout
+  target_vm: attacker
+- order: 8
+  instruction: 실습 환경을 정리하시오.
+  hint: 백그라운드 프로세스와 임시 파일을 정리하세요.
+  category: cleanup
+  points: 8
+  answer: kill %1 2>/dev/null; rm -f /tmp/vUART0 /tmp/vUART1 /tmp/flash_dump.bin 2>/dev/null; echo '환경 정리 완료'
+  answer_detail: socat 프로세스와 임시 파일을 정리합니다.
+  verify:
+    type: output_contains
+    expect: 환경 정리 완료
+    field: stdout
+  target_vm: attacker

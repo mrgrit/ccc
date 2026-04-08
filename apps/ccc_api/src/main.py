@@ -1131,6 +1131,9 @@ _COURSE_MAP = {
     "course13-attack-advanced": {"name": "attack-adv", "min_rank": "expert", "title": "사이버 공격 심화 (Advanced Attack)", "group": "공격 기술", "group_color": "#f85149", "icon": "💀", "description": "APT 킬체인, C2 인프라, 측면이동, 권한상승 체인, AD 공격, 공급망 공격, 안티포렌식"},
     "course14-soc-advanced": {"name": "soc-adv", "min_rank": "expert", "title": "보안관제 심화 (Advanced SOC)", "group": "방어 운영", "group_color": "#3fb950", "icon": "🔍", "description": "고급 SIEM 상관분석, SIGMA/YARA, 위협헌팅, SOAR 자동화, 인시던트 포렌식, 악성코드 분석"},
     "course15-ai-safety-advanced": {"name": "ai-safety-adv", "min_rank": "expert", "title": "AI Safety 심화 (Advanced AI Safety)", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🧪", "description": "LLM Red Teaming, 프롬프트 인젝션 심화, 가드레일 우회, AI 에이전트 보안, 모델 탈취/백도어"},
+    "course16-physical-pentest": {"name": "physical-pentest", "min_rank": "skilled", "title": "물리 침투 테스트 (Physical Penetration Testing)", "group": "실전", "group_color": "#f97316", "icon": "🔓", "description": "RFID/NFC 복제, USB HID 공격, 무선 해킹, RF 분석, 물리적 접근 통제 우회, 침투 보고서"},
+    "course17-iot-security": {"name": "iot-security", "min_rank": "skilled", "title": "IoT/임베디드 보안 (IoT & Embedded Security)", "group": "실전", "group_color": "#f97316", "icon": "📡", "description": "펌웨어 분석, UART/SPI/JTAG 해킹, BLE/Zigbee, IP Camera, SCADA/PLC, 자동차 CAN 버스"},
+    "course18-autonomous-systems": {"name": "autonomous-systems", "min_rank": "expert", "title": "드론/로봇/자율시스템 보안 (CPS Security)", "group": "실전", "group_color": "#f97316", "icon": "🤖", "description": "드론 해킹/방어, 자율주행 AI 공격, ROS2 보안, OT/ICS, GPS 스푸핑, CPS 인시던트 대응"},
 }
 _GROUP_ORDER = ["공격 기술", "방어 운영", "AI 보안", "실전"]
 

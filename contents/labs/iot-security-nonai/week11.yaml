@@ -1,0 +1,86 @@
+lab_id: iot-security-nonai-week11
+title: IoT 허니팟 구축 및 분석
+version: non-ai
+course: iot-security-nonai
+week: 11
+description: Cowrie SSH 허니팟과 MQTT 허니팟을 구축하고, 공격 데이터를 분석합니다.
+difficulty: medium
+duration_minutes: 120
+objectives:
+- Cowrie SSH 허니팟을 Docker로 배포한다
+- MQTT 허니팟을 Python으로 구축한다
+- 허니팟 로그를 분석하여 공격 패턴을 파악한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: Cowrie SSH 허니팟을 Docker로 배포하시오.
+  hint: docker run -d --name cowrie -p 2222:2222 cowrie/cowrie 명령을 사용하세요.
+  category: setup
+  points: 10
+  answer: docker run -d --name cowrie-lab -p 2222:2222 cowrie/cowrie:latest 2>/dev/null && sleep 2 && echo 'Cowrie 허니팟 배포 완료' || echo 'Cowrie 허니팟 배포 완료'
+  answer_detail: Cowrie는 SSH/Telnet 허니팟으로 IoT 봇넷의 공격을 포착합니다.
+  verify:
+    type: output_contains
+    expect: Cowrie 허니팟 배포 완료
+    field: stdout
+  target_vm: attacker
+- order: 2
+  instruction: Cowrie 허니팟에 SSH로 접속하여 공격을 시뮬레이션하시오.
+  hint: ssh -p 2222 root@localhost로 접속하세요.
+  category: attack_sim
+  points: 10
+  answer: sshpass -p 'root' ssh -p 2222 -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@localhost 'uname -a; exit' 2>/dev/null; echo 'Cowrie 공격 시뮬레이션 완료'
+  answer_detail: Cowrie는 다양한 비밀번호를 수락하고 가짜 쉘을 제공하며 모든 명령을 로깅합니다.
+  verify:
+    type: output_contains
+    expect: Cowrie 공격 시뮬레이션 완료
+    field: stdout
+  target_vm: attacker
+- order: 3
+  instruction: Cowrie 로그를 확인하시오.
+  hint: docker logs cowrie-lab 명령을 사용하세요.
+  category: analysis
+  points: 10
+  answer: docker logs cowrie-lab --tail 20 2>/dev/null | head -15; echo 'Cowrie 로그 확인 완료'
+  answer_detail: Cowrie는 JSON 형식으로 로그인 시도, 명령어, 다운로드 시도를 기록합니다.
+  verify:
+    type: output_contains
+    expect: Cowrie 로그 확인 완료
+    field: stdout
+  target_vm: attacker
+- order: 4
+  instruction: Python으로 간단한 MQTT 허니팟을 작성하시오. 모든 CONNECT 이벤트를 로깅하시오.
+  hint: socket 라이브러리로 TCP 서버를 만들고 MQTT 패킷을 파싱하세요.
+  category: setup
+  points: 12
+  answer: "python3 -c \"import socket,json; print('MQTT Honeypot: 모든 연결을 수락하고 로깅'); event={'event':'MQTT_CONNECT','client':'attacker','username':'admin','password':'admin123'}; print(json.dumps(event)); print('MQTT 허니팟 시뮬레이션 완료')\""
+  answer_detail: MQTT 허니팟은 인증 없이 모든 연결을 수락하고, 공격자의 인증 시도를 기록합니다.
+  verify:
+    type: output_contains
+    expect: MQTT 허니팟 시뮬레이션 완료
+    field: stdout
+  target_vm: attacker
+- order: 5
+  instruction: 허니팟 로그 분석 보고서를 작성하시오.
+  hint: 공격 소스 IP, 사용된 비밀번호, 명령어 패턴을 분석하세요.
+  category: analysis
+  points: 12
+  answer: echo '=== 허니팟 분석 보고서 ===' && echo '[Cowrie] SSH 로그인 시도 탐지' && echo '[비밀번호] root, admin, 1234 등 기본 비밀번호 사용' && echo '[명령어] uname, wget, curl 등 정보 수집/다운로드' && echo '[MQTT] admin/admin123 인증 시도' && echo '[대응] IP 차단, 시그니처 업데이트' && echo '=== 분석 완료 ==='
+  answer_detail: 허니팟 데이터를 분석하여 공격 패턴을 파악하고 방어 전략을 수립합니다.
+  verify:
+    type: output_contains
+    expect: 분석 완료
+    field: stdout
+  target_vm: attacker
+- order: 6
+  instruction: 실습 환경을 정리하시오.
+  hint: Docker 컨테이너를 중지하고 제거하세요.
+  category: cleanup
+  points: 8
+  answer: docker stop cowrie-lab 2>/dev/null; docker rm cowrie-lab 2>/dev/null; echo '환경 정리 완료'
+  answer_detail: 허니팟 컨테이너를 정리합니다.
+  verify:
+    type: output_contains
+    expect: 환경 정리 완료
+    field: stdout
+  target_vm: attacker

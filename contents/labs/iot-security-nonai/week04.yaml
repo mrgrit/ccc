@@ -1,0 +1,122 @@
+lab_id: iot-security-nonai-week04
+title: 펌웨어 분석 실습
+version: non-ai
+course: iot-security-nonai
+week: 4
+description: binwalk를 이용한 펌웨어 분석, 파일시스템 추출, 민감 정보 검색을 수행합니다.
+difficulty: medium
+duration_minutes: 120
+objectives:
+- 가상 펌웨어 이미지를 생성하고 분석한다
+- binwalk로 파일시스템을 추출한다
+- 펌웨어에서 하드코딩된 인증 정보를 찾는다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: binwalk를 설치하시오.
+  hint: sudo apt install -y binwalk를 사용하세요.
+  category: setup
+  points: 8
+  answer: which binwalk 2>/dev/null && echo 'binwalk 설치 확인 완료' || (sudo apt install -y binwalk 2>/dev/null && echo 'binwalk 설치 확인 완료')
+  answer_detail: binwalk는 펌웨어 이미지의 시그니처를 분석하고 내장된 파일시스템을 추출하는 도구입니다.
+  verify:
+    type: output_contains
+    expect: binwalk 설치 확인 완료
+    field: stdout
+  target_vm: attacker
+- order: 2
+  instruction: 가상 IoT 펌웨어 이미지를 생성하시오. /etc/passwd, 설정 파일 등을 포함하는 디렉터리 구조를 만드시오.
+  hint: mkdir -p로 디렉터리를 만들고 설정 파일을 생성하세요.
+  category: setup
+  points: 10
+  answer: mkdir -p /tmp/fw_rootfs/{etc,www,bin} && echo 'root:x:0:0:root:/root:/bin/sh' > /tmp/fw_rootfs/etc/passwd && echo 'mqtt_password=IoTSecret123' > /tmp/fw_rootfs/etc/config.ini && echo 'api_key=sk-iot-abcdef123456' >> /tmp/fw_rootfs/etc/config.ini && echo '가상 루트 파일시스템 생성 완료'
+  answer_detail: IoT 펌웨어의 루트 파일시스템에는 시스템 설정, 인증 정보, 웹 인터페이스 파일 등이 포함됩니다.
+  verify:
+    type: output_contains
+    expect: 가상 루트 파일시스템 생성 완료
+    field: stdout
+  target_vm: attacker
+- order: 3
+  instruction: 생성한 루트 파일시스템을 SquashFS로 패키징하시오.
+  hint: mksquashfs 명령을 사용하세요.
+  category: firmware
+  points: 10
+  answer: mksquashfs /tmp/fw_rootfs /tmp/rootfs.sqsh -noappend -comp gzip 2>/dev/null && ls -lh /tmp/rootfs.sqsh && echo 'SquashFS 패키징 완료'
+  answer_detail: SquashFS는 IoT 펌웨어에서 가장 많이 사용되는 읽기 전용 파일시스템입니다.
+  verify:
+    type: output_contains
+    expect: SquashFS 패키징 완료
+    field: stdout
+  target_vm: attacker
+- order: 4
+  instruction: binwalk로 생성한 SquashFS 이미지를 분석하시오.
+  hint: binwalk /tmp/rootfs.sqsh 명령을 실행하세요.
+  category: firmware
+  points: 10
+  answer: binwalk /tmp/rootfs.sqsh && echo 'binwalk 시그니처 분석 완료'
+  answer_detail: binwalk는 매직 바이트를 검색하여 파일시스템, 압축 데이터, 헤더 등을 식별합니다.
+  verify:
+    type: output_contains
+    expect: binwalk 시그니처 분석 완료
+    field: stdout
+  target_vm: attacker
+- order: 5
+  instruction: binwalk -e 옵션으로 파일시스템을 추출하시오.
+  hint: binwalk -e /tmp/rootfs.sqsh -C /tmp/fw_extract/ 명령을 사용하세요.
+  category: firmware
+  points: 10
+  answer: rm -rf /tmp/fw_extract 2>/dev/null; binwalk -e /tmp/rootfs.sqsh -C /tmp/fw_extract/ 2>/dev/null; find /tmp/fw_extract/ -type f 2>/dev/null | head -10; echo '파일시스템 추출 완료'
+  answer_detail: binwalk -e는 식별된 파일시스템을 자동으로 추출합니다.
+  verify:
+    type: output_contains
+    expect: 파일시스템 추출 완료
+    field: stdout
+  target_vm: attacker
+- order: 6
+  instruction: 추출된 파일시스템에서 하드코딩된 비밀번호와 API 키를 검색하시오.
+  hint: grep -r 'password\|api_key\|secret' 명령을 사용하세요.
+  category: analysis
+  points: 12
+  answer: grep -r -i 'password\|api_key\|secret\|psk' /tmp/fw_extract/ 2>/dev/null; grep -r -i 'password\|api_key\|secret\|psk' /tmp/fw_rootfs/ 2>/dev/null; echo '민감 정보 검색 완료'
+  answer_detail: 펌웨어에서 하드코딩된 인증 정보를 찾는 것은 IoT 보안 점검의 핵심 단계입니다.
+  verify:
+    type: output_contains
+    expect: 민감 정보 검색 완료
+    field: stdout
+  target_vm: attacker
+- order: 7
+  instruction: strings 명령으로 바이너리에서 읽을 수 있는 문자열을 추출하시오.
+  hint: strings /tmp/rootfs.sqsh | grep -i password를 사용하세요.
+  category: analysis
+  points: 10
+  answer: strings /tmp/rootfs.sqsh | grep -iE '(password|key|secret|admin)' | head -10 && echo 'strings 분석 완료'
+  answer_detail: strings 명령은 바이너리 파일에서 출력 가능한 문자열을 추출합니다.
+  verify:
+    type: output_contains
+    expect: strings 분석 완료
+    field: stdout
+  target_vm: attacker
+- order: 8
+  instruction: binwalk -E 옵션으로 엔트로피 분석을 수행하시오.
+  hint: 높은 엔트로피는 암호화/압축 영역을 의미합니다.
+  category: analysis
+  points: 10
+  answer: binwalk -E /tmp/rootfs.sqsh 2>/dev/null | head -20 && echo '엔트로피 분석 완료'
+  answer_detail: 엔트로피 분석으로 암호화된 영역(높은 엔트로피)과 평문 영역(낮은 엔트로피)을 구분합니다.
+  verify:
+    type: output_contains
+    expect: 엔트로피 분석 완료
+    field: stdout
+  target_vm: attacker
+- order: 9
+  instruction: 펌웨어 분석 보고서를 작성하시오.
+  hint: 발견된 파일시스템, 민감 정보, 보안 문제를 정리하세요.
+  category: verification
+  points: 10
+  answer: echo '=== 펌웨어 분석 보고서 ===' && echo '[파일시스템] SquashFS (gzip 압축)' && echo '[민감정보] MQTT 비밀번호 하드코딩' && echo '[민감정보] API 키 하드코딩' && echo '[권장] 민감 정보 암호화 저장' && echo '[권장] 보안 부트 체인 구현' && echo '=== 보고서 완료 ==='
+  answer_detail: 체계적인 펌웨어 분석 보고서는 취약점 관리와 보안 개선에 활용됩니다.
+  verify:
+    type: output_contains
+    expect: 보고서 완료
+    field: stdout
+  target_vm: attacker

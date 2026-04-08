@@ -1,0 +1,148 @@
+lab_id: autonomous-systems-ai-week11
+title: '[Non-AI] OT/ICS 보안'
+version: ai
+course: autonomous-systems-ai
+week: 11
+description: Modbus 프로토콜 분석, PLC 시뮬레이션, SCADA 공격/방어를 실습합니다
+difficulty: hard
+duration_minutes: 120
+objectives:
+- Modbus 프로토콜을 분석한다
+- PLC 레지스터를 읽고 쓴다
+- ICS 보안 모니터링을 구현한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: nmap으로 Modbus(502) 서비스를 스캔하시오.
+  hint: nmap -p 502로 Modbus 포트를 확인하세요.
+  category: recon
+  points: 10
+  answer: nmap -sV -p 502 10.20.30.200
+  answer_detail: Modbus 서비스 탐지는 ICS 정찰의 첫 단계입니다.
+  verify:
+    type: output_contains
+    expect: 10.20.30.200
+    field: stdout
+  target_vm: attacker
+  script: nmap -sV -p 502 10.20.30.200
+  risk_level: low
+- order: 2
+  instruction: Python으로 Modbus TCP 클라이언트를 구현하여 Holding Register 0~4를 읽으시오. pymodbus 또는 소켓을 사용하라.
+  hint: Modbus FC 0x03 (Read Holding Registers)를 구현하세요.
+  category: recon
+  points: 12
+  answer: 'python3 -c "import struct;fc=0x03;addr=0;count=5;pdu=struct.pack(''>BHH'',fc,addr,count);mbap=struct.pack(''>HHHB'',1,0,len(pdu)+1,1);print(''=== Modbus Read Registers ==='');print(f''  FC:0x{fc:02X}
+    Addr:{addr} Count:{count}'');print(f''  MBAP:{mbap.hex()} PDU:{pdu.hex()}'');regs=[250,350,700,1000,150];print(f''  Response: {regs}'');names=[''Level'',''Temp'',''pH'',''Flow'',''Pressure''];[print(f''  Reg[{i}]
+    {names[i]}: {v}'') for i,v in enumerate(regs)]"'
+  answer_detail: Modbus 레지스터 읽기로 PLC의 프로세스 값을 수집합니다.
+  verify:
+    type: output_contains
+    expect: Modbus Read
+    field: stdout
+  target_vm: attacker
+  script: 'python3 -c "import struct;fc=0x03;addr=0;count=5;pdu=struct.pack(''>BHH'',fc,addr,count);mbap=struct.pack(''>HHHB'',1,0,len(pdu)+1,1);print(''=== Modbus Read Registers ==='');print(f''  FC:0x{fc:02X}
+    Addr:{addr} Count:{count}'');print(f''  MBAP:{mbap.hex()} PDU:{pdu.hex()}'');regs=[250,350,700,1000,150];print(f''  Response: {regs}'');names=[''Level'',''Temp'',''pH'',''Flow'',''Pressure''];[print(f''  Reg[{i}]
+    {names[i]}: {v}'') for i,v in enumerate(regs)]"'
+  risk_level: low
+- order: 3
+  instruction: Modbus 레지스터 변조 공격을 시뮬레이션하시오. 수위를 위험 수준(999)으로, 온도를 90도로 변경하라.
+  hint: FC 0x06 (Write Single Register)로 값을 변조하세요.
+  category: attack
+  points: 12
+  answer: 'python3 -c "attacks=[(0,250,999,''Water level → overflow risk''),(1,350,900,''Temperature → equipment damage''),(2,700,200,''pH → highly acidic'')];print(''=== Modbus Write Attack ==='');[print(f''  Reg[{a}]:
+    {o}→{n} [{d}]'') for a,o,n,d in attacks];print(''  [CRITICAL] Process values manipulated!'')"'
+  answer_detail: Modbus 인증 없이 프로세스 값을 변조할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: Modbus Write Attack
+    field: stdout
+  target_vm: attacker
+  script: 'python3 -c "attacks=[(0,250,999,''Water level → overflow risk''),(1,350,900,''Temperature → equipment damage''),(2,700,200,''pH → highly acidic'')];print(''=== Modbus Write Attack ==='');[print(f''  Reg[{a}]:
+    {o}→{n} [{d}]'') for a,o,n,d in attacks];print(''  [CRITICAL] Process values manipulated!'')"'
+  risk_level: low
+- order: 4
+  instruction: Modbus Coil 제어 공격을 시뮬레이션하시오. 펌프를 끄고, 밸브를 닫고, 긴급정지를 트리거하라.
+  hint: FC 0x05 (Write Single Coil)로 액추에이터를 제어하세요.
+  category: attack
+  points: 12
+  answer: 'python3 -c "attacks=[(0,True,False,''Pump 1 OFF''),(2,True,False,''Valve 1 CLOSED''),(10,False,True,''Emergency STOP'')];print(''=== Coil Control Attack ==='');[print(f''  Coil[{c}]: {o}→{n}
+    [{d}]'') for c,o,n,d in attacks];print(''  [CRITICAL] Plant shutdown triggered!'')"'
+  answer_detail: Coil 제어는 물리적 액추에이터를 직접 조작하는 공격입니다.
+  verify:
+    type: output_contains
+    expect: Coil Control Attack
+    field: stdout
+  target_vm: attacker
+  script: 'python3 -c "attacks=[(0,True,False,''Pump 1 OFF''),(2,True,False,''Valve 1 CLOSED''),(10,False,True,''Emergency STOP'')];print(''=== Coil Control Attack ==='');[print(f''  Coil[{c}]: {o}→{n}
+    [{d}]'') for c,o,n,d in attacks];print(''  [CRITICAL] Plant shutdown triggered!'')"'
+  risk_level: low
+- order: 5
+  instruction: Stuxnet 스타일 HMI 기만 공격을 시뮬레이션하시오. PLC에 위험한 값을 쓰면서 HMI에는 정상 값을 보여주는 공격을 구현하라.
+  hint: 실제 PLC 값과 HMI 표시 값을 분리하세요.
+  category: attack
+  points: 12
+  answer: 'python3 -c "print(''=== Stuxnet-Style HMI Deception ==='');real={''level'':99.9,''temp'':90,''pH'':2.0,''pressure'':50};fake={''level'':25.0,''temp'':35,''pH'':7.0,''pressure'':15};print(''  Real
+    PLC values:'');[print(f''    {k}: {v}'') for k,v in real.items()];print(''  HMI display (fake):'');[print(f''    {k}: {v}'') for k,v in fake.items()];print(''  [CRITICAL] Operator sees normal while
+    plant is at risk!'')"'
+  answer_detail: HMI 기만은 Stuxnet의 핵심 전술이었습니다.
+  verify:
+    type: output_contains
+    expect: HMI Deception
+    field: stdout
+  target_vm: attacker
+  script: 'python3 -c "print(''=== Stuxnet-Style HMI Deception ==='');real={''level'':99.9,''temp'':90,''pH'':2.0,''pressure'':50};fake={''level'':25.0,''temp'':35,''pH'':7.0,''pressure'':15};print(''  Real
+    PLC values:'');[print(f''    {k}: {v}'') for k,v in real.items()];print(''  HMI display (fake):'');[print(f''    {k}: {v}'') for k,v in fake.items()];print(''  [CRITICAL] Operator sees normal while
+    plant is at risk!'')"'
+  risk_level: low
+- order: 6
+  instruction: Python으로 ICS 트래픽 모니터링 시스템을 구현하시오. 비인가 출발지, 위험한 값 쓰기, 비정상 FC를 탐지하라.
+  hint: 정상 baseline과 비교하여 이상을 탐지하세요.
+  category: config
+  points: 12
+  answer: 'python3 -c "allowed={''10.20.30.200''};alerts=[];pkts=[(''10.20.30.200'',0x03,0,0),(''10.20.30.201'',0x06,0,999),(''10.20.30.201'',0x05,10,1)];print(''=== ICS Monitor ==='');[((alerts.append(f''Unauth:{s}'')
+    if s not in allowed else None),(alerts.append(f''Danger:Reg[{a}]={v}'') if fc==0x06 and v>500 else None),print(f''  src={s} FC=0x{fc:02X} addr={a} val={v} alerts={len(alerts)}'')) for s,fc,a,v in pkts];print(f''  Total:
+    {len(alerts)} alerts'')"'
+  answer_detail: ICS 모니터링은 비인가 Modbus 접근을 실시간 탐지합니다.
+  verify:
+    type: output_contains
+    expect: ICS Monitor
+    field: stdout
+  target_vm: attacker
+  script: 'python3 -c "allowed={''10.20.30.200''};alerts=[];pkts=[(''10.20.30.200'',0x03,0,0),(''10.20.30.201'',0x06,0,999),(''10.20.30.201'',0x05,10,1)];print(''=== ICS Monitor ==='');[((alerts.append(f''Unauth:{s}'')
+    if s not in allowed else None),(alerts.append(f''Danger:Reg[{a}]={v}'') if fc==0x06 and v>500 else None),print(f''  src={s} FC=0x{fc:02X} addr={a} val={v} alerts={len(alerts)}'')) for s,fc,a,v in pkts];print(f''  Total:
+    {len(alerts)} alerts'')"'
+  risk_level: low
+- order: 7
+  instruction: LLM에게 Modbus 보안 강화 방안과 OPC-UA로의 마이그레이션을 질의하시오.
+  hint: Modbus security vs OPC-UA migration을 질문하세요.
+  category: analysis
+  points: 10
+  answer: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are an ICS security consultant."},{"role":"user","content":"Compare
+    Modbus TCP security limitations with OPC-UA security features. Should organizations migrate? Give 3 reasons."}],"stream":false,"options":{"num_predict":150}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'])"
+  answer_detail: OPC-UA는 Modbus의 보안 한계를 극복하는 대안입니다.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: manager
+  script: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are an ICS security consultant."},{"role":"user","content":"Compare
+    Modbus TCP security limitations with OPC-UA security features. Should organizations migrate? Give 3 reasons."}],"stream":false,"options":{"num_predict":150}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'])"
+  risk_level: low
+- order: 8
+  instruction: ICS 보안 평가 보고서를 Python으로 생성하시오. Modbus 취약점, 공격 시연 결과, IDS 규칙, 권고 사항을 포함하라.
+  hint: 취약점, 공격, 방어를 구조화하세요.
+  category: analysis
+  points: 10
+  answer: python3 -c "print('=== ICS Security Assessment ===');vulns=[('No Modbus auth','CRITICAL'),('No encryption','HIGH'),('Flat OT network','CRITICAL'),('No IDS','HIGH')];print('  Findings:');[print(f'    [{s}]
+    {v}') for v,s in vulns];print('  Recommendations:');[print(f'    {i+1}. {r}') for i,r in enumerate(['Implement network segmentation','Deploy ICS-aware IDS','Migrate to OPC-UA Secure','Regular OT pen
+    testing'])]"
+  answer_detail: ICS 보안 평가 보고서로 개선 방향을 제시합니다.
+  verify:
+    type: output_contains
+    expect: ICS Security Assessment
+    field: stdout
+  target_vm: attacker
+  script: python3 -c "print('=== ICS Security Assessment ===');vulns=[('No Modbus auth','CRITICAL'),('No encryption','HIGH'),('Flat OT network','CRITICAL'),('No IDS','HIGH')];print('  Findings:');[print(f'    [{s}]
+    {v}') for v,s in vulns];print('  Recommendations:');[print(f'    {i+1}. {r}') for i,r in enumerate(['Implement network segmentation','Deploy ICS-aware IDS','Migrate to OPC-UA Secure','Regular OT pen
+    testing'])]"
+  risk_level: low

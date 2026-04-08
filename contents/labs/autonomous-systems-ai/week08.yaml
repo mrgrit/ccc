@@ -1,0 +1,146 @@
+lab_id: autonomous-systems-ai-week08
+title: '[Non-AI] 중간 평가'
+version: ai
+course: autonomous-systems-ai
+week: 8
+description: 드론/자율주행 보안 종합 실습 및 중간 평가를 수행합니다
+difficulty: hard
+duration_minutes: 120
+objectives:
+- Week 01-07 핵심 개념을 종합 실습한다
+- 드론 침투+방어 시나리오를 수행한다
+- 자율주행 보안 평가를 실시한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: 실습 네트워크에서 CPS 자산을 스캔하고, 드론(9999), ICS(502), LLM(11434) 서비스를 식별하시오.
+  hint: nmap으로 주요 CPS 포트를 스캔하세요.
+  category: recon
+  points: 10
+  answer: nmap -sV -p 22,80,443,502,9999,11434 10.20.30.200
+  answer_detail: CPS 환경의 자산 식별은 보안 평가의 첫 단계입니다.
+  verify:
+    type: output_contains
+    expect: 10.20.30.200
+    field: stdout
+  target_vm: attacker
+  script: nmap -sV -p 22,80,443,502,9999,11434 10.20.30.200
+  risk_level: low
+- order: 2
+  instruction: 드론 보안 취약점 5가지를 Python으로 정리하고 각 취약점의 심각도와 공격 방법을 출력하시오.
+  hint: 드론 통신, 인증, GPS, 지오펜싱, 펌웨어 취약점을 포함하세요.
+  category: analysis
+  points: 12
+  answer: 'python3 -c "vulns=[(''Plaintext Auth'',''CRITICAL'',''Sniff+Reuse''),(''No MAVLink Signing'',''CRITICAL'',''Command Injection''),(''GPS L1 Only'',''HIGH'',''GPS Spoofing''),(''Weak Geofence'',''HIGH'',''GPS
+    Spoof Bypass''),(''No Encryption'',''HIGH'',''Traffic Sniffing'')];print(''=== Drone Vulnerability Assessment ==='');[print(f''  [{s}] {v} — Attack: {a}'') for v,s,a in vulns]"'
+  answer_detail: 드론 취약점의 체계적 정리는 보안 개선 우선순위 설정에 필수입니다.
+  verify:
+    type: output_contains
+    expect: Vulnerability Assessment
+    field: stdout
+  target_vm: attacker
+  script: 'python3 -c "vulns=[(''Plaintext Auth'',''CRITICAL'',''Sniff+Reuse''),(''No MAVLink Signing'',''CRITICAL'',''Command Injection''),(''GPS L1 Only'',''HIGH'',''GPS Spoofing''),(''Weak Geofence'',''HIGH'',''GPS
+    Spoof Bypass''),(''No Encryption'',''HIGH'',''Traffic Sniffing'')];print(''=== Drone Vulnerability Assessment ==='');[print(f''  [{s}] {v} — Attack: {a}'') for v,s,a in vulns]"'
+  risk_level: low
+- order: 3
+  instruction: 드론 하이재킹 전체 공격 체인을 시뮬레이션하시오. 정찰→스니핑→Deauth→연결→제어 탈취 5단계를 실행하라.
+  hint: 각 단계를 순서대로 시뮬레이션하세요.
+  category: attack
+  points: 12
+  answer: 'python3 -c "import socket,json;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.settimeout(2);target=(''10.20.30.200'',9999);print(''=== Drone Hijack Chain ==='');steps=[(''PING'',{''action'':''PING''}),(''AUTH'',{''action'':''AUTH'',''key'':''DRONE_SECRET_2026''}),(''ARM'',{''action'':''ARM''}),(''TAKEOFF'',{''action'':''TAKEOFF'',''altitude'':50}),(''LAND'',{''action'':''LAND''})];[print(f''  Step:
+    {n}'') for n,c in steps];s.close();print(''  [!] Attack chain complete'')"'
+  answer_detail: 전체 공격 체인을 이해하면 각 단계에서의 방어 지점을 파악할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: Hijack Chain
+    field: stdout
+  target_vm: attacker
+  script: 'python3 -c "import socket,json;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.settimeout(2);target=(''10.20.30.200'',9999);print(''=== Drone Hijack Chain ==='');steps=[(''PING'',{''action'':''PING''}),(''AUTH'',{''action'':''AUTH'',''key'':''DRONE_SECRET_2026''}),(''ARM'',{''action'':''ARM''}),(''TAKEOFF'',{''action'':''TAKEOFF'',''altitude'':50}),(''LAND'',{''action'':''LAND''})];[print(f''  Step:
+    {n}'') for n,c in steps];s.close();print(''  [!] Attack chain complete'')"'
+  risk_level: low
+- order: 4
+  instruction: 드론 IDS 규칙 5개를 Python으로 구현하고, 테스트 트래픽으로 검증하시오.
+  hint: 출발지 검증, 인증 확인, 속도 이상, 좌표 이상, 명령 빈도 규칙을 만드세요.
+  category: config
+  points: 12
+  answer: 'python3 -c "rules=[''Unknown source IP'',''Unauthenticated flight cmd'',''Speed exceeds max'',''Coordinate jump >1km'',''Command rate >10/min''];pkts=[{''src'':''10.20.30.99'',''auth'':False,''cmd'':''TAKEOFF''}];alerts=[r
+    for r in rules[:2]];print(''=== Drone IDS Test ==='');[print(f''  Rule: {r}'') for r in rules];print(f''  Test packet: {pkts[0]}'');print(f''  Alerts triggered: {len(alerts)}'');[print(f''  [!] {a}'')
+    for a in alerts]"'
+  answer_detail: IDS 규칙을 테스트하면 탐지 효과를 검증할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: Drone IDS Test
+    field: stdout
+  target_vm: attacker
+  script: 'python3 -c "rules=[''Unknown source IP'',''Unauthenticated flight cmd'',''Speed exceeds max'',''Coordinate jump >1km'',''Command rate >10/min''];pkts=[{''src'':''10.20.30.99'',''auth'':False,''cmd'':''TAKEOFF''}];alerts=[r
+    for r in rules[:2]];print(''=== Drone IDS Test ==='');[print(f''  Rule: {r}'') for r in rules];print(f''  Test packet: {pkts[0]}'');print(f''  Alerts triggered: {len(alerts)}'');[print(f''  [!] {a}'')
+    for a in alerts]"'
+  risk_level: low
+- order: 5
+  instruction: 자율주행 보안 위험 매트릭스를 Python으로 생성하시오. 5가지 시나리오의 발생 가능성 x 영향도로 위험 점수를 계산하라.
+  hint: likelihood와 impact를 곱하여 risk score를 계산하세요.
+  category: analysis
+  points: 12
+  answer: python3 -c "scenarios=[('Adversarial Patch',0.6,0.95),('CAN Injection',0.4,1.0),('GPS Spoofing',0.5,0.7),('OTA Tampering',0.2,1.0),('LiDAR Spoofing',0.3,0.8)];print('=== AV Risk Matrix ===');[print(f'  {s[0]:20}
+    L={s[1]:.1f} I={s[2]:.1f} Risk={s[1]*s[2]:.2f} {\"CRIT\" if s[1]*s[2]>0.5 else \"HIGH\" if s[1]*s[2]>0.3 else \"MED\"}') for s in scenarios]"
+  answer_detail: 위험 매트릭스는 보안 대응 우선순위를 결정합니다.
+  verify:
+    type: output_contains
+    expect: Risk Matrix
+    field: stdout
+  target_vm: attacker
+  script: python3 -c "scenarios=[('Adversarial Patch',0.6,0.95),('CAN Injection',0.4,1.0),('GPS Spoofing',0.5,0.7),('OTA Tampering',0.2,1.0),('LiDAR Spoofing',0.3,0.8)];print('=== AV Risk Matrix ===');[print(f'  {s[0]:20}
+    L={s[1]:.1f} I={s[2]:.1f} Risk={s[1]*s[2]:.2f} {\"CRIT\" if s[1]*s[2]>0.5 else \"HIGH\" if s[1]*s[2]>0.3 else \"MED\"}') for s in scenarios]"
+  risk_level: low
+- order: 6
+  instruction: LLM에게 드론+자율주행 통합 보안 프레임워크를 요청하시오. 공통 위협과 공통 방어를 정리하라.
+  hint: drone and autonomous vehicle common security framework를 질문하세요.
+  category: analysis
+  points: 10
+  answer: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a CPS security architect."},{"role":"user","content":"What are the
+    common security threats and defenses shared by drones and autonomous vehicles? List 5 common threats and their unified defenses."}],"stream":false,"options":{"num_predict":200}}' | python3 -c "import
+    sys,json; print(json.load(sys.stdin)['message']['content'])"
+  answer_detail: 드론과 자율주행의 공통 보안 프레임워크를 이해합니다.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: manager
+  script: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a CPS security architect."},{"role":"user","content":"What are the
+    common security threats and defenses shared by drones and autonomous vehicles? List 5 common threats and their unified defenses."}],"stream":false,"options":{"num_predict":200}}' | python3 -c "import
+    sys,json; print(json.load(sys.stdin)['message']['content'])"
+  risk_level: low
+- order: 7
+  instruction: GPS 스푸핑 탐지+센서 퓨전 방어 시스템을 Python으로 종합 구현하시오. SNR 감시, INS 교차 검증, 자동 전환을 포함하라.
+  hint: GPS와 INS 데이터를 비교하고 이상 시 INS로 전환하세요.
+  category: config
+  points: 12
+  answer: python3 -c "data=[(37.5666,37.5666,44),(37.59,37.5667,56)];print('=== GPS Defense System ===');[print(f'  GPS:{g:.4f} INS:{i:.4f} SNR:{s} → {\"GPS_OK\" if s<52 else \"SPOOFED→INS\"}') for g,i,s
+    in data];print('  [OK] Auto-switched to INS on spoofing detection')"
+  answer_detail: 통합 방어 시스템으로 GPS 스푸핑을 효과적으로 완화합니다.
+  verify:
+    type: output_contains
+    expect: GPS Defense
+    field: stdout
+  target_vm: attacker
+  script: python3 -c "data=[(37.5666,37.5666,44),(37.59,37.5667,56)];print('=== GPS Defense System ===');[print(f'  GPS:{g:.4f} INS:{i:.4f} SNR:{s} → {\"GPS_OK\" if s<52 else \"SPOOFED→INS\"}') for g,i,s
+    in data];print('  [OK] Auto-switched to INS on spoofing detection')"
+  risk_level: low
+- order: 8
+  instruction: 중간 평가 보안 점수를 계산하시오. 드론 보안(4항목), 자율주행 보안(4항목) 총 8항목을 평가하라.
+  hint: 각 항목을 구현/미구현으로 평가하세요.
+  category: analysis
+  points: 10
+  answer: 'python3 -c "items=[(''MAVLink Signing'',False),(''Drone IDS'',True),(''GPS Anti-Spoof'',False),(''Encrypted Channel'',False),(''CAN Auth'',False),(''Adversarial Defense'',False),(''OTA Signing'',True),(''V2X
+    PKI'',False)];score=sum(v for _,v in items)/len(items)*100;print(''=== Midterm Security Score ==='');[print(f''  [{\"OK\" if v else \"!!\"} ] {k}'') for k,v in items];print(f''  Score: {score:.0f}%
+    — Needs significant improvement'')"'
+  answer_detail: 보안 점수 평가로 현재 수준과 개선 방향을 확인합니다.
+  verify:
+    type: output_contains
+    expect: Midterm Security Score
+    field: stdout
+  target_vm: attacker
+  script: 'python3 -c "items=[(''MAVLink Signing'',False),(''Drone IDS'',True),(''GPS Anti-Spoof'',False),(''Encrypted Channel'',False),(''CAN Auth'',False),(''Adversarial Defense'',False),(''OTA Signing'',True),(''V2X
+    PKI'',False)];score=sum(v for _,v in items)/len(items)*100;print(''=== Midterm Security Score ==='');[print(f''  [{\"OK\" if v else \"!!\"} ] {k}'') for k,v in items];print(f''  Score: {score:.0f}%
+    — Needs significant improvement'')"'
+  risk_level: low

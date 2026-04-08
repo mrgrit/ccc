@@ -1,0 +1,146 @@
+lab_id: autonomous-systems-ai-week06
+title: '[Non-AI] 자율주행 기초'
+version: ai
+course: autonomous-systems-ai
+week: 6
+description: 자율주행 시스템의 AI 파이프라인과 센서 퓨전을 시뮬레이션합니다
+difficulty: medium
+duration_minutes: 120
+objectives:
+- 자율주행 인지-판단-제어 파이프라인을 이해한다
+- 객체 인식 시뮬레이션을 수행한다
+- 센서 퓨전과 의사결정을 실습한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: LLM에게 자율주행 SAE 레벨(L0~L5)의 차이를 표 형식으로 설명하도록 요청하시오.
+  hint: SAE J3016 autonomous driving levels를 질문하세요.
+  category: analysis
+  points: 10
+  answer: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d '{"model":"gemma3:4b","prompt":"Explain SAE autonomous driving levels L0 to L5 in a concise table format","stream":false,"options":{"num_predict":200}}'
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])"
+  answer_detail: SAE 레벨 분류는 자율주행 보안 범위를 이해하는 기초입니다.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: manager
+  script: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/generate -d '{"model":"gemma3:4b","prompt":"Explain SAE autonomous driving levels L0 to L5 in a concise table format","stream":false,"options":{"num_predict":200}}'
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])"
+  risk_level: low
+- order: 2
+  instruction: Python으로 가상 객체 탐지기를 구현하시오. 5개 도로 객체(차량, 보행자, 정지표지판, 신호등, 자전거)를 탐지하고 신뢰도를 출력하라.
+  hint: random으로 각 객체의 탐지 신뢰도를 생성하세요.
+  category: config
+  points: 12
+  answer: python3 -c "import random;random.seed(1);objects=[('car','ahead'),('pedestrian','crosswalk'),('stop_sign','right'),('traffic_light','overhead'),('bicycle','left')];print('=== Object Detection
+    ===');[print(f'  {o[0]:15} at {o[1]:10} conf={random.uniform(0.75,0.99):.3f}') for o in objects];print('  5 objects detected')"
+  answer_detail: 객체 탐지 시뮬레이션으로 AI 인지 파이프라인을 이해합니다.
+  verify:
+    type: output_contains
+    expect: Object Detection
+    field: stdout
+  target_vm: attacker
+  script: python3 -c "import random;random.seed(1);objects=[('car','ahead'),('pedestrian','crosswalk'),('stop_sign','right'),('traffic_light','overhead'),('bicycle','left')];print('=== Object Detection
+    ===');[print(f'  {o[0]:15} at {o[1]:10} conf={random.uniform(0.75,0.99):.3f}') for o in objects];print('  5 objects detected')"
+  risk_level: low
+- order: 3
+  instruction: Python으로 자율주행 의사결정 시스템을 구현하시오. 인지 결과에 따라 정지/감속/유지 판단을 내려라.
+  hint: 탐지된 객체와 거리에 따라 행동을 결정하세요.
+  category: config
+  points: 12
+  answer: python3 -c "detections=[('stop_sign',25,0.95),('pedestrian',15,0.88),('car',40,0.92)];print('=== Decision Making ===');[print(f'  {d[0]} at {d[1]}m → {\"STOP\" if d[0]==\"stop_sign\" and d[1]<30
+    else \"BRAKE\" if d[0]==\"pedestrian\" and d[1]<20 else \"MAINTAIN\"}') for d in detections]"
+  answer_detail: 의사결정 시스템의 동작을 이해하면 공격 영향을 분석할 수 있습니다.
+  verify:
+    type: output_contains
+    expect: Decision Making
+    field: stdout
+  target_vm: attacker
+  script: python3 -c "detections=[('stop_sign',25,0.95),('pedestrian',15,0.88),('car',40,0.92)];print('=== Decision Making ===');[print(f'  {d[0]} at {d[1]}m → {\"STOP\" if d[0]==\"stop_sign\" and d[1]<30
+    else \"BRAKE\" if d[0]==\"pedestrian\" and d[1]<20 else \"MAINTAIN\"}') for d in detections]"
+  risk_level: low
+- order: 4
+  instruction: Python으로 카메라+LiDAR+레이더 센서 퓨전 시뮬레이션을 구현하시오. 각 센서의 탐지 결과를 결합하라.
+  hint: 각 센서의 특성(정확도, 범위)을 반영하세요.
+  category: config
+  points: 12
+  answer: 'python3 -c "camera={''class'':''car'',''conf'':0.85,''dist'':None};lidar={''class'':''object'',''conf'':0.95,''dist'':32.5};radar={''class'':''moving'',''conf'':0.80,''dist'':33.0,''speed'':45};print(''===
+    Sensor Fusion ==='');print(f''  Camera: {camera}'');print(f''  LiDAR:  {lidar}'');print(f''  Radar:  {radar}'');print(f''  Fused: car at 32.8m moving 45km/h (conf=0.93)'')"'
+  answer_detail: 센서 퓨전은 단일 센서의 약점을 보완합니다.
+  verify:
+    type: output_contains
+    expect: Sensor Fusion
+    field: stdout
+  target_vm: attacker
+  script: 'python3 -c "camera={''class'':''car'',''conf'':0.85,''dist'':None};lidar={''class'':''object'',''conf'':0.95,''dist'':32.5};radar={''class'':''moving'',''conf'':0.80,''dist'':33.0,''speed'':45};print(''===
+    Sensor Fusion ==='');print(f''  Camera: {camera}'');print(f''  LiDAR:  {lidar}'');print(f''  Radar:  {radar}'');print(f''  Fused: car at 32.8m moving 45km/h (conf=0.93)'')"'
+  risk_level: low
+- order: 5
+  instruction: 자율주행 공격 표면을 Python으로 매핑하시오. 인지/통신/소프트웨어/물리 4가지 계층의 공격 벡터를 출력하라.
+  hint: 각 계층별 공격 벡터를 리스트로 정의하세요.
+  category: analysis
+  points: 12
+  answer: 'python3 -c "surface={''Perception'':[''Adversarial patch'',''LiDAR spoofing'',''Camera blinding''],''Communication'':[''V2X forgery'',''CAN injection'',''GPS spoofing''],''Software'':[''OTA tampering'',''Model
+    poisoning''],''Physical'':[''OBD-II access'',''Sensor tampering'']};print(''=== AV Attack Surface ==='');total=0;[print(f''  [{k}] {v}'') or exec(''total=total+len(v)'') for k,v in surface.items()];print(f''  Total:
+    {sum(len(v) for v in surface.values())} vectors'')"'
+  answer_detail: 공격 표면 매핑은 자율주행 보안 평가의 첫 단계입니다.
+  verify:
+    type: output_contains
+    expect: Attack Surface
+    field: stdout
+  target_vm: attacker
+  script: 'python3 -c "surface={''Perception'':[''Adversarial patch'',''LiDAR spoofing'',''Camera blinding''],''Communication'':[''V2X forgery'',''CAN injection'',''GPS spoofing''],''Software'':[''OTA tampering'',''Model
+    poisoning''],''Physical'':[''OBD-II access'',''Sensor tampering'']};print(''=== AV Attack Surface ==='');total=0;[print(f''  [{k}] {v}'') or exec(''total=total+len(v)'') for k,v in surface.items()];print(f''  Total:
+    {sum(len(v) for v in surface.values())} vectors'')"'
+  risk_level: low
+- order: 6
+  instruction: LLM에게 자율주행 차량에 대한 적대적 패치 공격의 원리와 방어를 질의하시오.
+  hint: adversarial patch attack autonomous vehicle를 질문하세요.
+  category: analysis
+  points: 10
+  answer: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are an autonomous vehicle security researcher."},{"role":"user","content":"Explain
+    how adversarial patches can fool autonomous vehicle perception. What are 3 defense techniques?"}],"stream":false,"options":{"num_predict":200}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'])"
+  answer_detail: 적대적 패치는 자율주행 AI 모델의 핵심 위협입니다.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: manager
+  script: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are an autonomous vehicle security researcher."},{"role":"user","content":"Explain
+    how adversarial patches can fool autonomous vehicle perception. What are 3 defense techniques?"}],"stream":false,"options":{"num_predict":200}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'])"
+  risk_level: low
+- order: 7
+  instruction: Python으로 적대적 공격 시 자율주행 의사결정의 변화를 시뮬레이션하시오. 정지표지판이 속도제한으로 오인되는 시나리오를 구현하라.
+  hint: 동일한 장면에서 정상/공격 시 결과를 비교하세요.
+  category: attack
+  points: 12
+  answer: python3 -c "print('=== Adversarial Impact on Decision ===');print('  [Normal]  stop_sign detected → STOP');print('  [Attack]  speed_limit detected → MAINTAIN SPEED');print('  [DANGER]  Vehicle
+    does NOT stop at intersection!');print('  [Impact]  Potential collision with cross traffic')"
+  answer_detail: 적대적 공격이 자율주행 의사결정에 미치는 물리적 영향을 분석합니다.
+  verify:
+    type: output_contains
+    expect: Adversarial Impact
+    field: stdout
+  target_vm: attacker
+  script: python3 -c "print('=== Adversarial Impact on Decision ===');print('  [Normal]  stop_sign detected → STOP');print('  [Attack]  speed_limit detected → MAINTAIN SPEED');print('  [DANGER]  Vehicle
+    does NOT stop at intersection!');print('  [Impact]  Potential collision with cross traffic')"
+  risk_level: low
+- order: 8
+  instruction: 자율주행 보안 체크리스트를 Python으로 생성하시오. 8가지 보안 항목의 준수 여부를 평가하라.
+  hint: 각 보안 항목의 상태를 True/False로 평가하세요.
+  category: analysis
+  points: 10
+  answer: 'python3 -c "checks=[(''Input validation'',True),(''Sensor fusion cross-check'',True),(''Adversarial training'',False),(''CAN authentication'',False),(''OTA signing'',True),(''AI model integrity'',False),(''Failsafe
+    mode'',True),(''V2X authentication'',False)];ok=sum(v for _,v in checks);print(''=== AV Security Checklist ==='');[print(f''  [{\"OK\" if v else \"!!\"} ] {k}'') for k,v in checks];print(f''  Score:
+    {ok}/{len(checks)} ({ok/len(checks)*100:.0f}%)'')"'
+  answer_detail: 보안 체크리스트로 자율주행 시스템의 보안 수준을 평가합니다.
+  verify:
+    type: output_contains
+    expect: Security Checklist
+    field: stdout
+  target_vm: attacker
+  script: 'python3 -c "checks=[(''Input validation'',True),(''Sensor fusion cross-check'',True),(''Adversarial training'',False),(''CAN authentication'',False),(''OTA signing'',True),(''AI model integrity'',False),(''Failsafe
+    mode'',True),(''V2X authentication'',False)];ok=sum(v for _,v in checks);print(''=== AV Security Checklist ==='');[print(f''  [{\"OK\" if v else \"!!\"} ] {k}'') for k,v in checks];print(f''  Score:
+    {ok}/{len(checks)} ({ok/len(checks)*100:.0f}%)'')"'
+  risk_level: low
