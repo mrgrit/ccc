@@ -1622,6 +1622,29 @@ def join_battle(bid: str, body: BattleJoinBody, request: Request):
             conn.commit()
     return {"battle": dict(row), "joined_as": team}
 
+@app.post("/battles/{bid}/leave", dependencies=[Depends(verify_api_key)])
+def leave_battle(bid: str, request: Request):
+    """대전 참가 취소 (waiting 상태에서만)"""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM battles WHERE id=%s", (bid,))
+            battle = cur.fetchone()
+            if not battle:
+                raise HTTPException(404, "Battle not found")
+            if battle["status"] != "waiting":
+                raise HTTPException(400, "진행 중인 대전은 취소할 수 없습니다")
+            if battle.get("red_id") == uid:
+                cur.execute("UPDATE battles SET red_id=NULL WHERE id=%s RETURNING *", (bid,))
+            elif battle.get("blue_id") == uid:
+                cur.execute("UPDATE battles SET blue_id=NULL WHERE id=%s RETURNING *", (bid,))
+            else:
+                raise HTTPException(400, "이 대전에 참가하지 않았습니다")
+            row = cur.fetchone()
+            conn.commit()
+    return {"battle": dict(row), "left": True}
+
 @app.post("/battles/{bid}/ready", dependencies=[Depends(verify_api_key)])
 def ready_battle(bid: str, request: Request):
     """Ready 표시. 양측 모두 ready면 자동 시작 + 미션 로드."""

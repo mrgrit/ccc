@@ -52,6 +52,14 @@ export default function Battle() {
     } catch (e: any) { alert(e.message) }
   }
 
+  // 참가 취소
+  const leaveBattle = async (bid: string) => {
+    try {
+      await api(`/api/battles/${bid}/leave`, { method: 'POST' })
+      loadLobby()
+    } catch (e: any) { alert(e.message) }
+  }
+
   // Ready + 입장
   const readyAndEnter = async (bid: string) => {
     try {
@@ -316,7 +324,10 @@ export default function Battle() {
                 <div style={{ display: 'flex', gap: 6 }}>
                   {!b.red_id && !amIn && <button onClick={() => joinBattle(b.id, 'red')} style={{ ...joinBtn, color: '#f85149', borderColor: '#f85149' }}>Red 참가</button>}
                   {!b.blue_id && !amIn && <button onClick={() => joinBattle(b.id, 'blue')} style={{ ...joinBtn, color: '#58a6ff', borderColor: '#58a6ff' }}>Blue 참가</button>}
-                  {amIn && <button onClick={() => readyAndEnter(b.id)} style={{ ...joinBtn, background: '#f97316', color: '#fff', border: 'none' }}>Ready &amp; Enter</button>}
+                  {amIn && <>
+                    <button onClick={() => readyAndEnter(b.id)} style={{ ...joinBtn, background: '#f97316', color: '#fff', border: 'none' }}>Ready &amp; Enter</button>
+                    <button onClick={() => leaveBattle(b.id)} style={{ ...joinBtn, color: '#8b949e', borderColor: '#30363d' }}>취소</button>
+                  </>}
                 </div>
               </div>
             )
