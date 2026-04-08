@@ -245,27 +245,50 @@ export default function Battle() {
     <div>
       <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24, color: '#e6edf3' }}>Battlefield</h2>
 
-      {/* 시나리오 선택 + 개설 (admin) */}
-      {isAdmin() && scenarios.length > 0 && (
+      {/* 시나리오 선택 + 개설 */}
+      {scenarios.length > 0 && (
         <div style={{ marginBottom: 28 }}>
-          <h3 style={{ fontSize: 16, marginBottom: 12, color: '#8b949e' }}>대전 개설</h3>
-          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-            {scenarios.map(s => (
-              <div key={s.id} style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 16, width: 280 }}>
-                <div style={{ fontSize: 16, fontWeight: 600, color: '#e6edf3', marginBottom: 6 }}>{s.title}</div>
-                <div style={{ fontSize: 13, color: '#8b949e', marginBottom: 10 }}>{s.description?.slice(0, 60)}</div>
-                <div style={{ display: 'flex', gap: 8, fontSize: 12, marginBottom: 10 }}>
-                  <span style={{ color: '#d29922' }}>{s.difficulty}</span>
-                  <span style={{ color: '#8b949e' }}>{Math.floor(s.time_limit / 60)}분</span>
-                  <span style={{ color: '#f85149' }}>Red:{s.red_missions}</span>
-                  <span style={{ color: '#58a6ff' }}>Blue:{s.blue_missions}</span>
+          <h3 style={{ fontSize: 16, marginBottom: 16, color: '#8b949e' }}>
+            시나리오 ({scenarios.length})
+          </h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            {scenarios.map(s => {
+              const diffColor: Record<string, string> = { easy: '#3fb950', medium: '#d29922', hard: '#f85149' }
+              return (
+                <div key={s.id} style={{
+                  background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: '20px 24px',
+                  borderLeft: `4px solid ${diffColor[s.difficulty] || '#8b949e'}`,
+                }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 16 }}>
+                    <div style={{ flex: 1 }}>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+                        <span style={{ fontSize: 18, fontWeight: 700, color: '#e6edf3' }}>{s.title}</span>
+                        <span style={{
+                          fontSize: 11, padding: '2px 10px', borderRadius: 10, fontWeight: 600,
+                          background: `${diffColor[s.difficulty] || '#8b949e'}15`,
+                          color: diffColor[s.difficulty] || '#8b949e',
+                          textTransform: 'uppercase' as const,
+                        }}>{s.difficulty}</span>
+                      </div>
+                      <div style={{ fontSize: 14, color: '#8b949e', lineHeight: 1.6, marginBottom: 10 }}>
+                        {s.description}
+                      </div>
+                      <div style={{ display: 'flex', gap: 16, fontSize: 13 }}>
+                        <span style={{ color: '#8b949e' }}>{Math.floor(s.time_limit / 60)}분</span>
+                        <span style={{ color: '#f85149' }}>Red {s.red_missions} missions</span>
+                        <span style={{ color: '#58a6ff' }}>Blue {s.blue_missions} missions</span>
+                      </div>
+                    </div>
+                    {isAdmin() && (
+                      <button onClick={() => createBattle(s.id)} style={{
+                        padding: '10px 24px', borderRadius: 8, border: 'none', whiteSpace: 'nowrap' as const,
+                        background: '#f97316', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600,
+                      }}>개설</button>
+                    )}
+                  </div>
                 </div>
-                <button onClick={() => createBattle(s.id)} style={{
-                  width: '100%', padding: '8px 0', borderRadius: 6, border: 'none',
-                  background: '#f97316', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600,
-                }}>개설</button>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
       )}
