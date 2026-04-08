@@ -23,6 +23,9 @@ COURSE_PAIRS = [
     ("attack-adv-nonai", "attack-adv-ai"),
     ("soc-adv-nonai", "soc-adv-ai"),
     ("ai-safety-adv-nonai", "ai-safety-adv-ai"),
+    ("physical-pentest-nonai", "physical-pentest-ai"),
+    ("iot-security-nonai", "iot-security-ai"),
+    ("autonomous-systems-nonai", "autonomous-systems-ai"),
 ]
 
 def convert_answer_to_script(answer: str) -> str:
