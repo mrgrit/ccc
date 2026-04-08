@@ -112,6 +112,7 @@ export default function App() {
         </div>
       </nav>
       <main style={{ flex: 1, padding: 32, overflow: 'auto' }}>
+        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />
@@ -123,6 +124,7 @@ export default function App() {
           <Route path="/blockchain" element={<Blockchain />} />
           <Route path="/admin" element={<Admin />} />
         </Routes>
+        </div>
       </main>
       <ChatBot />
     </div>

@@ -146,10 +146,32 @@ export default function Education() {
 
         {/* 교안 전체 화면 */}
         {viewMode === 'lecture' && lecture && (
-          <div style={{
-            background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: '32px 36px',
-            fontSize: 16, color: '#c9d1d9', lineHeight: 1.7,
-          }} dangerouslySetInnerHTML={{ __html: markdownToHtml(lecture) }} />
+          <>
+            <style>{`
+              .lecture-content table { border-collapse: collapse; width: auto; max-width: 100%; margin: 16px 0; font-size: 14px; }
+              .lecture-content th, .lecture-content td { border: 1px solid #30363d; padding: 8px 14px; text-align: left; white-space: nowrap; }
+              .lecture-content th { background: #21262d; color: #e6edf3; font-weight: 600; }
+              .lecture-content td { color: #c9d1d9; }
+              .lecture-content tr:hover td { background: #1c2128; }
+              .lecture-content pre { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 16px; overflow-x: auto; font-size: 14px; }
+              .lecture-content code { background: #21262d; padding: 2px 6px; border-radius: 4px; font-size: 14px; color: #f97316; }
+              .lecture-content pre code { background: none; padding: 0; color: #e6edf3; }
+              .lecture-content h1 { font-size: 28px; border-bottom: 2px solid #f97316; padding-bottom: 8px; margin-top: 40px; }
+              .lecture-content h2 { font-size: 22px; border-bottom: 1px solid #30363d; padding-bottom: 6px; margin-top: 32px; color: #e6edf3; }
+              .lecture-content h3 { font-size: 18px; margin-top: 24px; color: #e6edf3; }
+              .lecture-content blockquote { border-left: 4px solid #f97316; padding: 8px 16px; margin: 16px 0; background: #161b22; color: #8b949e; }
+              .lecture-content img { max-width: 100%; border-radius: 8px; }
+              .lecture-content ul, .lecture-content ol { padding-left: 24px; }
+              .lecture-content li { margin-bottom: 4px; }
+              .lecture-content hr { border: none; border-top: 1px solid #30363d; margin: 24px 0; }
+              .lecture-content a { color: #58a6ff; text-decoration: none; }
+              .lecture-content a:hover { text-decoration: underline; }
+            `}</style>
+            <div className="lecture-content" style={{
+              background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: '32px 36px',
+              fontSize: 16, color: '#c9d1d9', lineHeight: 1.7, maxWidth: 900,
+            }} dangerouslySetInnerHTML={{ __html: markdownToHtml(lecture) }} />
+          </>
         )}
 
         {/* 실습 전체 화면 */}
