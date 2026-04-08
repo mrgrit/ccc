@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 **Ollama API:** `http://192.168.0.105:11434/v1`
 
 ## 강의 시간 배분 (3시간)
@@ -338,9 +337,9 @@ python3 /tmp/llm_alert_analysis.py
 ## 3.2 Bastion + AI 연동 자동화
 
 ```bash
-export BASTION_API_KEY="bastion-api-key-2026"
+export BASTION_API_KEY="ccc-api-key-2026"
 
-PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT_ID=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -349,13 +348,13 @@ PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
     "master_mode": "external"
   }' | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/plan" \
   -H "X-API-Key: $BASTION_API_KEY"
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute" \
   -H "X-API-Key: $BASTION_API_KEY"
 
 # SIEM에서 최근 경보 수집 → AI 분석
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -1004,3 +1003,33 @@ python3 /tmp/ai_best_practices.py
 ## 다음 주 예고
 
 **Week 15: 종합 실전**에서는 모의 인시던트 전체 대응(탐지→분석→대응→보고)을 수행하며 15주 과정을 종합 실습한다.
+
+---
+
+## 웹 UI 실습
+
+### 종합: Dashboard + OpenCTI + Suricata 통합 분석 (AI 연동)
+
+#### Step 1: Wazuh Dashboard — AI 자동 트리아지 결과 확인
+
+> **접속 URL:** `https://10.20.30.100:443`
+
+1. `https://10.20.30.100:443` 접속 → 로그인
+2. **Modules → Security events** 클릭
+3. AI 트리아지가 처리한 경보 확인:
+   ```
+   rule.level >= 8
+   ```
+4. 경보 목록에서 Bastion API의 AI 분류 결과와 Dashboard 경보 레벨 비교
+5. **Dashboards** → AI 분류 정확도 대시보드 확인 (TP/FP/FN 분포)
+6. Suricata 경보와 Wazuh 호스트 경보의 AI 분류 결과 교차 검증
+
+#### Step 2: OpenCTI — AI 분석 결과 보강
+
+> **접속 URL:** `http://10.20.30.100:8080`
+
+1. `http://10.20.30.100:8080` 접속 → 로그인
+2. AI가 "위협"으로 분류한 IOC를 OpenCTI에서 검색하여 컨텍스트 보강
+3. **Analysis → Reports** 에서 AI 생성 보고서의 근거가 되는 TI 확인
+4. AI 판단과 OpenCTI 위협 정보의 일치 여부로 AI 신뢰도 평가
+5. 불일치 사례는 AI 학습 데이터 개선에 피드백

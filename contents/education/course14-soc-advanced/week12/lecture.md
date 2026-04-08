@@ -14,9 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -414,9 +414,9 @@ REMOTE
 ## 4.3 Bastion로 로그 수집 자동화
 
 ```bash
-export BASTION_API_KEY="bastion-api-key-2026"
+export BASTION_API_KEY="ccc-api-key-2026"
 
-PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT_ID=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -425,12 +425,12 @@ PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
     "master_mode": "external"
   }' | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/plan" \
   -H "X-API-Key: $BASTION_API_KEY"
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute" \
   -H "X-API-Key: $BASTION_API_KEY"
 
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -943,3 +943,32 @@ INFO
 ## 다음 주 예고
 
 **Week 13: 레드팀 연동**에서는 Purple Team 운영, 탐지 격차 분석, 룰 개선 방법을 학습한다.
+
+---
+
+## 웹 UI 실습
+
+### SOAR 시나리오: Dashboard 알림 → OpenCTI IoC → 로그 엔지니어링 검증
+
+#### Step 1: Wazuh Dashboard에서 커스텀 디코더/룰 검증
+
+> **접속 URL:** `https://10.20.30.100:443`
+
+1. `https://10.20.30.100:443` 접속 → 로그인
+2. **Management → Rules** 클릭 → 커스텀 룰 파일(local_rules.xml) 확인
+3. **Management → Decoders** → 커스텀 디코더(local_decoder.xml) 확인
+4. **Modules → Security events** 에서 커스텀 룰 경보 필터링:
+   ```
+   rule.id >= 100000
+   ```
+5. 경보 상세에서 디코딩된 필드(`data.*`)가 올바르게 파싱되었는지 확인
+6. 파싱 오류 발견 시 디코더 수정 후 재배포 → Dashboard에서 재검증
+
+#### Step 2: OpenCTI에서 IoC 연동 확인
+
+> **접속 URL:** `http://10.20.30.100:8080`
+
+1. `http://10.20.30.100:8080` 접속 → 로그인
+2. Wazuh에서 탐지한 IOC가 OpenCTI에 자동/수동 동기화되었는지 확인
+3. **Data → Connectors** 에서 Wazuh 연동 커넥터 상태 점검
+4. 누락된 IOC는 수동으로 **+ Create → Indicator** 등록

@@ -24,7 +24,7 @@
 | web | 10.20.30.80 | 공격 대상 (JuiceShop, Apache) | `ssh ccc@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh 4.11.2) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -156,10 +156,10 @@ T1190(Exploit Public-Facing Application)은 인터넷에 노출된 웹 서비스
 
 ```bash
 # API 키 설정
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # Manager API 상태 확인
-curl -s http://localhost:8000/health | python3 -m json.tool
+curl -s http://localhost:9100/health | python3 -m json.tool
 # 예상 출력:
 # {
 #     "status": "ok"
@@ -181,7 +181,7 @@ done
 
 ```bash
 # 다단계 침투 시뮬레이션 프로젝트 생성
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -197,10 +197,10 @@ curl -s -X POST http://localhost:8000/projects \
 export PROJECT_ID="반환된-프로젝트-ID"
 
 # Stage 전환: plan → execute
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
@@ -217,7 +217,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
 ```bash
 # 피싱 페이로드 생성: HTA (HTML Application) 형태
 # 실습용으로 실제 악성 동작 없이 시뮬레이션만 수행한다
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -258,7 +258,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # SQL Injection을 통한 인증 우회 (T1190)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -352,7 +352,7 @@ Execution(TA0002)은 공격자가 대상 시스템에서 **악성 코드를 실�
 # nc -lvnp 4444
 
 # 대상 측 (web 서버): 리버스 셸 실행 — Bastion를 통해 시뮬레이션
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -394,7 +394,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # Python 기반 파일리스 페이로드 시뮬레이션
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -459,7 +459,7 @@ Web Shell      ○           ◎           ◎            ◎
 
 ```bash
 # Cron 기반 persistence 설치 시뮬레이션
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -501,7 +501,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # Systemd 서비스 persistence 시뮬레이션
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -543,7 +543,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # SSH Key Persistence 시뮬레이션
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -585,7 +585,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # .bashrc Persistence 시뮬레이션
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -646,7 +646,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 
 ```bash
 # Wazuh FIM 설정 확인 및 persistence 관련 경보 조회
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -693,7 +693,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # 전체 침투 체인 자동화 실행
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -751,7 +751,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 ```bash
 # 실행 결과 요약 확인
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID/evidence/summary \
+  http://localhost:9100/projects/$PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 # 모든 태스크의 실행 결과가 evidence로 기록되어 있다
 ```
@@ -759,14 +759,14 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ```bash
 # PoW 블록 확인 — 침투 시뮬레이션의 암호학적 증거
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/blocks?project_id=$PROJECT_ID" \
+  "http://localhost:9100/pow/blocks?project_id=$PROJECT_ID" \
   | python3 -m json.tool
 # 각 태스크마다 PoW 블록이 생성되어 실행의 무결성이 보장된다
 ```
 
 ```bash
 # 완료 보고서 작성
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{

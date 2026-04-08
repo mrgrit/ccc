@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -172,7 +171,6 @@ Execute:
 
 ### 3.1 Ollama 서버 확인
 
-dgx-spark 서버에 Ollama가 이미 설치되어 있다. 연결을 확인한다.
 
 > **실습 목적**: AI 보안 에이전트의 두뇌 역할을 하는 LLM 서버(Ollama)의 상태를 확인하여, 에이전트 실습의 기반 환경을 검증한다.
 >
@@ -183,7 +181,6 @@ dgx-spark 서버에 Ollama가 이미 설치되어 있다. 연결을 확인한다
 > **실전 활용**: 보안 에이전트 구축 시 모델 선택은 성능/비용/정확도의 트레이드오프이며, 로컬 모델은 데이터 유출 위험을 원천 차단한다.
 
 ```bash
-# Ollama 서버 상태 확인 (dgx-spark)
 curl -s http://192.168.0.105:11434/api/tags | python3 -m json.tool
 
 # 사용 가능한 모델 목록 확인
@@ -467,9 +464,9 @@ python3 ~/lab/week01/multi_turn_agent.py
 
 ```bash
 # Bastion에 프로젝트 생성 (에이전트 실습 기록용)
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "name": "week01-first-agent",
     "request_text": "Week01 실습: 첫 번째 AI 보안 에이전트 테스트",
@@ -496,8 +493,8 @@ import os
 
 OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
-BASTION_URL = "http://localhost:8000"
-API_KEY = "bastion-api-key-2026"
+BASTION_URL = "http://localhost:9100"
+API_KEY = "ccc-api-key-2026"
 HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
 def llm_analyze(system_info: str) -> str:
@@ -573,12 +570,12 @@ PYEOF
 
 ```bash
 # Bastion에서 프로젝트 상태 확인
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  http://localhost:8000/projects/${PROJECT_ID} | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  http://localhost:9100/projects/${PROJECT_ID} | python3 -m json.tool
 
 # evidence 요약 확인
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  http://localhost:8000/projects/${PROJECT_ID}/evidence/summary | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  http://localhost:9100/projects/${PROJECT_ID}/evidence/summary | python3 -m json.tool
 ```
 
 ---

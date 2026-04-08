@@ -15,8 +15,7 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
 ## 강의 시간 배분 (3시간)
 
@@ -623,10 +622,10 @@ python3 rag_security_agent.py
 
 ```bash
 # Bastion dispatch로 RAG 검색 수행
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 프로젝트 생성
-RESP=$(curl -s -X POST http://localhost:8000/projects \
+RESP=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"week11-rag-agent","request_text":"RAG 기반 보안 분석","master_mode":"external"}')
@@ -634,14 +633,14 @@ RESP=$(curl -s -X POST http://localhost:8000/projects \
 RAG_PID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
 # Stage 전환
-curl -s -X POST "http://localhost:8000/projects/${RAG_PID}/plan" \
+curl -s -X POST "http://localhost:9100/projects/${RAG_PID}/plan" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 단계 전환
-curl -s -X POST "http://localhost:8000/projects/${RAG_PID}/execute" \
+curl -s -X POST "http://localhost:9100/projects/${RAG_PID}/execute" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # DB에서 관련 지식 검색 후 LLM에 전달하는 파이프라인
-curl -s -X POST "http://localhost:8000/projects/${RAG_PID}/dispatch" \
+curl -s -X POST "http://localhost:9100/projects/${RAG_PID}/dispatch" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{

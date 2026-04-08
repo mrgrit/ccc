@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -450,6 +449,83 @@ fi
 - CIS Benchmarks (https://www.cisecurity.org/cis-benchmarks)
 - ISO 27001:2022 내부 감사 가이드
 - KISA 보안 감사 체크리스트
+
+---
+
+## 웹 UI 실습: Wazuh Dashboard 서비스 모니터링
+
+> **실습 목적**: 보안 감사 시 서비스 가용성과 모니터링 현황을 Wazuh Dashboard에서 확인하고 증적을 수집한다
+>
+> **배우는 것**: Dashboard를 활용한 서비스 상태 모니터링, 감사 대상 기간의 이벤트 분석, 감사 보고서 데이터 추출
+>
+> **실전 활용**: 보안 감사에서 "모니터링 체계가 운영 중인가?"를 증명할 때, SIEM 대시보드의 실시간 화면이 가장 직접적인 증거이다
+
+### 1단계: Wazuh Dashboard에서 서비스 모니터링 현황 확인
+
+1. **https://10.20.30.100:443** 접속 후 로그인
+2. 왼쪽 메뉴 > **Agents** 클릭
+3. Agent 목록에서 전체 서비스 상태 확인:
+   - 모든 Agent가 **Active** (녹색) 상태인가?
+   - **Disconnected** Agent가 있으면 서비스 모니터링 공백이 발생한 것
+4. 각 Agent의 **Last keep alive** 시간을 확인:
+   - 현재 시간과의 차이가 5분 이내 = 정상
+   - 5분 이상 = 연결 문제 발생 (감사 지적 사항)
+
+### 2단계: 감사 기간 이벤트 통계 조회
+
+1. 왼쪽 메뉴 > **Security events** 클릭
+2. 시간 범위를 감사 대상 기간으로 설정 (예: 최근 1개월)
+3. 다음 쿼리로 감사 항목별 통계 조회:
+
+**전체 보안 이벤트 현황:**
+- 검색창 비우고 전체 이벤트 조회
+- 화면 상단의 이벤트 수 = 감사 기간 총 보안 이벤트
+
+**고위험 알림 현황:**
+```
+rule.level >= 10
+```
+- 결과 건수 = 즉시 대응이 필요했던 이벤트 수
+
+**서비스 시작/중지 이벤트:**
+```
+rule.groups:service_start OR rule.description:*started* OR rule.description:*stopped*
+```
+- 예상치 못한 서비스 중단이 있었는지 확인
+
+### 3단계: OpenCTI에서 위협 인텔리전스 운영 현황 확인
+
+1. 새 탭에서 **http://10.20.30.100:8080** 접속
+2. 로그인: `admin@opencti.io` / `CCC2026!`
+3. **Data** > **Connectors** 클릭하여 확인:
+   - 각 커넥터의 **State**: active = 위협 정보 자동 수집 중
+   - **Last run**: 마지막 수집 시간 (최근이어야 정상)
+4. **Dashboard** 메인 화면에서:
+   - 등록된 Indicator 수 = 관리 중인 IoC 수
+   - 최근 활동 = CTI 플랫폼 운영 현황
+
+### 4단계: 감사 증적 내보내기
+
+1. Wazuh Dashboard에서:
+   - 각 검색 결과의 **CSV 보고서** 다운로드
+   - Overview 대시보드 화면 캡처 (전체 현황 증적)
+   - Agents 목록 화면 캡처 (서비스 모니터링 증적)
+2. OpenCTI에서:
+   - Connectors 상태 화면 캡처 (CTI 운영 증적)
+   - Dashboard 화면 캡처 (위협 인텔리전스 현황 증적)
+3. 감사 보고서에 다음과 같이 기록:
+
+```
+[감사 항목] 보안 모니터링 체계 운영
+  - 모니터링 도구: Wazuh SIEM v4.11.2
+  - 모니터링 대상: N대 서버 (Agent Active)
+  - 감사 기간 보안 이벤트: X건
+  - 고위험 알림: X건 (조치 완료 / 미조치)
+  - CTI 플랫폼: OpenCTI (커넥터 N개 운영)
+  - 판정: 적합 / 부적합
+```
+
+> **핵심 포인트**: 보안 감사에서 "서비스 모니터링"의 핵심 질문은 "모니터링이 실제로 동작하고 있는가?"이다. SIEM Dashboard에서 Agent가 Active이고 이벤트가 수집되고 있으면 동작 증거이며, OpenCTI 커넥터가 동작 중이면 위협 인텔리전스 운영 증거이다. 이 두 화면의 캡처가 감사 증적의 핵심이다.
 
 ---
 

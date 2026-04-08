@@ -23,7 +23,7 @@
 | web | 10.20.30.80 | 감염 호스트 (피해 서버) | `ssh ccc@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh 4.11.2) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -167,10 +167,10 @@ HTTP/HTTPS 기반 C2는 **가장 보편적인** C2 채널이다. 웹 트래픽�
 
 ```bash
 # API 키 설정
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 환경 점검
-curl -s http://localhost:8000/health | python3 -m json.tool
+curl -s http://localhost:9100/health | python3 -m json.tool
 # 예상 출력: {"status": "ok"}
 
 for host in 10.20.30.201 10.20.30.1 10.20.30.80 10.20.30.100; do
@@ -184,7 +184,7 @@ done
 
 ```bash
 # 프로젝트 생성
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -197,9 +197,9 @@ curl -s -X POST http://localhost:8000/projects \
 ```bash
 export PROJECT_ID="반환된-프로젝트-ID"
 
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
@@ -230,7 +230,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
 
 ```bash
 # DNS 터널링 시뮬레이션
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -277,7 +277,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # DNS 터널링 탐지
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -347,7 +347,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # HTTP C2 서버 + 비콘 코드 생성
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -388,7 +388,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # 비콘 통신 시뮬레이션 (curl)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -415,7 +415,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 
 ```bash
 # Malleable C2 프로파일 분석
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -466,7 +466,7 @@ Cobalt Strike:   769,49196-49195-49200-49199-...,0-10-11-13-...,29-23-24,0
 
 ```bash
 # 암호화 C2 시뮬레이션
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -507,7 +507,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # C2 방어 종합 점검
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -546,14 +546,14 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 ```bash
 # 결과 확인
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID/evidence/summary | python3 -m json.tool
+  http://localhost:9100/projects/$PROJECT_ID/evidence/summary | python3 -m json.tool
 
 # PoW 블록 확인
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/blocks?project_id=$PROJECT_ID" | python3 -m json.tool
+  "http://localhost:9100/pow/blocks?project_id=$PROJECT_ID" | python3 -m json.tool
 
 # 완료 보고서
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{

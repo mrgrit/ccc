@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -146,9 +145,9 @@ Ansible Playbook과 유사한 개념이다.
 PID="프로젝트_ID"
 
 # Playbook의 steps를 tasks로 변환하여 실행
-curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
       {
@@ -215,35 +214,35 @@ Q(상태, 행동) = 현재 보상 + 감가율 * 미래 최대 보상
 
 ```bash
 # 축적된 보상 데이터로 Q-learning 학습
-curl -s -X POST http://localhost:8000/rl/train \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
+curl -s -X POST http://localhost:9100/rl/train \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
 ```
 
 ### 5.2 정책 추천
 
 ```bash
 # 특정 에이전트+위험수준에 대한 최적 행동 추천
-curl -s "http://localhost:8000/rl/recommend?agent_id=http://localhost:8002&risk_level=low" \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
+curl -s "http://localhost:9100/rl/recommend?agent_id=http://localhost:8002&risk_level=low" \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
 
-curl -s "http://localhost:8000/rl/recommend?agent_id=http://localhost:8002&risk_level=high" \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
+curl -s "http://localhost:9100/rl/recommend?agent_id=http://localhost:8002&risk_level=high" \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
 ```
 
 ### 5.3 정책 상태 확인
 
 ```bash
 # 현재 학습된 Q-table 상태
-curl -s http://localhost:8000/rl/policy \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
+curl -s http://localhost:9100/rl/policy \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
 ```
 
 ### 5.4 보상 랭킹
 
 ```bash
 # SubAgent별 누적 보상 순위
-curl -s http://localhost:8000/pow/leaderboard \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
+curl -s http://localhost:9100/pow/leaderboard \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
 ```
 
 ---
@@ -254,22 +253,22 @@ curl -s http://localhost:8000/pow/leaderboard \
 
 ```bash
 # 프로젝트 생성
-PID=$(curl -s -X POST http://localhost:8000/projects \
+PID=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"name":"playbook-lab","request_text":"Playbook 실습","master_mode":"external"}' \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
 
 # Stage 전환
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" \
-  -H "X-API-Key: bastion-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" \
-  -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/plan" \
+  -H "X-API-Key: ccc-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/execute" \
+  -H "X-API-Key: ccc-api-key-2026" > /dev/null
 
 # 시스템 보안 점검 Playbook 실행
-curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1, "instruction_prompt":"uname -a", "risk_level":"low"},
@@ -286,18 +285,18 @@ curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
 
 ```bash
 # 현재 정책 확인
-curl -s http://localhost:8000/rl/policy \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
+curl -s http://localhost:9100/rl/policy \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
 
 # 학습 실행
-curl -s -X POST http://localhost:8000/rl/train \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
+curl -s -X POST http://localhost:9100/rl/train \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
 
 # 학습 후 추천 확인
 for level in low medium high critical; do
   echo "=== $level ==="
-  curl -s "http://localhost:8000/rl/recommend?agent_id=http://localhost:8002&risk_level=$level" \
-    -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
+  curl -s "http://localhost:9100/rl/recommend?agent_id=http://localhost:8002&risk_level=$level" \
+    -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
 done
 ```
 
@@ -433,7 +432,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 [6] GET /projects/{id}/replay           → 타임라인 재구성
 [7] POST /projects/{id}/completion-report → 완료 보고
 
-모든 API에 필수: -H "X-API-Key: bastion-api-key-2026"
+모든 API에 필수: -H "X-API-Key: ccc-api-key-2026"
 ```
 
 ---

@@ -708,17 +708,17 @@ TIMELINE
 > **배우는 것**: Bastion completion-report API 활용
 
 ```bash
-RESULT=$(curl -s -X POST http://localhost:8000/projects \
+RESULT=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"name":"week12-battle-r2","request_text":"1v1 공방전 Phase 2 침투","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: bastion-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/plan" -H "X-API-Key: ccc-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/execute" -H "X-API-Key: ccc-api-key-2026" > /dev/null
 
-curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
+curl -s -X POST "http://localhost:9100/projects/$PID/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "summary": "1v1 공방전 Phase 2 완료 — 침투 vs 차단/대응",
     "outcome": "success",

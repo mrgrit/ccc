@@ -25,7 +25,7 @@
 | web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `ssh ccc@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -843,9 +843,9 @@ REPORT_SCRIPT
 echo ""
 echo "[+] Bastion 포렌식 자동화:"
 cat << 'BASTION_EOF'
-curl -X POST http://localhost:8000/projects/{id}/execute-plan \
+curl -X POST http://localhost:9100/projects/{id}/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
       {
@@ -891,9 +891,9 @@ echo "  +------------+------------------------------------------+"
 # 4. Bastion 완료보고서
 echo ""
 echo "[+] Bastion 완료보고서:"
-echo '  curl -X POST http://localhost:8000/projects/{id}/completion-report \'
+echo '  curl -X POST http://localhost:9100/projects/{id}/completion-report \'
 echo '    -H "Content-Type: application/json" \'
-echo '    -H "X-API-Key: bastion-api-key-2026" \'
+echo '    -H "X-API-Key: ccc-api-key-2026" \'
 echo '    -d '"'"'{"summary":"포렌식 분석 완료","outcome":"success","work_details":["메모리/디스크 분석","타임라인 구성","IOC 추출","보고서 작성"]}'"'"''
 ```
 

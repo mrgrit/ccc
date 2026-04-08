@@ -23,9 +23,8 @@
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `ssh ccc@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | GPU 추론 서버 (Ollama LLM) | Ollama API: `http://192.168.0.105:11434` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -310,10 +309,10 @@ RL 학습의 품질은 **충분하고 다양한 경험 데이터**에 의존한�
 
 ```bash
 # API 키 설정
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 프로젝트 생성 — RL 학습 데이터 생성용
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -328,15 +327,15 @@ curl -s -X POST http://localhost:8000/projects \
 export PROJECT_ID="반환된-프로젝트-ID"
 
 # Stage 전환
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
 ```bash
 # 시나리오 1: 성공적 공격 경로 (높은 보상 기대)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -373,7 +372,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # 시나리오 2: 실패 경로 (낮은/음수 보상 기대)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -397,21 +396,21 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # RL 학습 실행
-curl -s -X POST http://localhost:8000/rl/train \
+curl -s -X POST http://localhost:9100/rl/train \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 # 학습 결과 (에피소드 수, 수렴 여부) 확인
 ```
 
 ```bash
 # 학습된 정책 확인
-curl -s http://localhost:8000/rl/policy \
+curl -s http://localhost:9100/rl/policy \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
 # 특정 에이전트의 최적 행동 추천
-curl -s "http://localhost:8000/rl/recommend?agent_id=http://10.20.30.201:8002&risk_level=low" \
+curl -s "http://localhost:9100/rl/recommend?agent_id=http://10.20.30.201:8002&risk_level=low" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
-curl -s "http://localhost:8000/rl/recommend?agent_id=http://10.20.30.201:8002&risk_level=medium" \
+curl -s "http://localhost:9100/rl/recommend?agent_id=http://10.20.30.201:8002&risk_level=medium" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
@@ -434,7 +433,7 @@ curl -s "http://localhost:8000/rl/recommend?agent_id=http://10.20.30.201:8002&ri
 
 ```bash
 # 프롬프트 A: 최소 지시 — 자율 미션
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -446,7 +445,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 
 ```bash
 # 프롬프트 B: 상세 지시 — 자율 미션
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -475,14 +474,14 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 
 ```bash
 # RL 추천 확인 — 현재 에이전트의 최적 행동
-curl -s "http://localhost:8000/rl/recommend?agent_id=http://10.20.30.201:8002&risk_level=low" \
+curl -s "http://localhost:9100/rl/recommend?agent_id=http://10.20.30.201:8002&risk_level=low" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 # 추천된 행동을 확인하고 실행할 계획을 수립한다
 ```
 
 ```bash
 # 추천 행동 실행 프로젝트
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -495,13 +494,13 @@ curl -s -X POST http://localhost:8000/projects \
 ```bash
 export PROJECT_ID2="반환된-프로젝트-ID"
 
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID2/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID2/plan \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID2/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID2/execute \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
 # RL 추천 행동 실행 (정찰 → 웹 취약점 테스트)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID2/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID2/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -539,12 +538,12 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID2/execute-plan \
 
 ```bash
 # 보상 랭킹 재확인 — 실습 후 변화 관찰
-curl -s http://localhost:8000/pow/leaderboard \
+curl -s http://localhost:9100/pow/leaderboard \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
 # evidence 종합 비교
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID2/evidence/summary \
+  http://localhost:9100/projects/$PROJECT_ID2/evidence/summary \
   | python3 -m json.tool
 ```
 
@@ -568,7 +567,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ```bash
 # 앙상블 프로젝트 생성
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -581,15 +580,15 @@ curl -s -X POST http://localhost:8000/projects \
 ```bash
 export PROJECT_ID3="반환된-프로젝트-ID"
 
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID3/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID3/plan \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID3/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID3/execute \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
 ```bash
 # 앙상블 공격: 3개 SubAgent가 서로 다른 관점으로 동시 공격
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID3/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID3/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -637,7 +636,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID3/execute-plan \
 
 ```bash
 # 반복 대결 프로젝트
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -650,15 +649,15 @@ curl -s -X POST http://localhost:8000/projects \
 ```bash
 export PROJECT_ID4="반환된-프로젝트-ID"
 
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID4/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID4/plan \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID4/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID4/execute \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
 ```bash
 # Round 1: Red Agent 공격 (기본 SQLi)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID4/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID4/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -682,7 +681,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID4/execute-plan \
 
 ```bash
 # Round 2: Red Agent 우회 공격 (인코딩 변형 SQLi)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID4/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID4/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -729,19 +728,19 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID4/execute-plan \
 
 ```bash
 # 재학습 실행
-curl -s -X POST http://localhost:8000/rl/train \
+curl -s -X POST http://localhost:9100/rl/train \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
 # 업데이트된 정책 확인
-curl -s http://localhost:8000/rl/policy \
+curl -s http://localhost:9100/rl/policy \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
 # 업데이트된 추천 확인
-curl -s "http://localhost:8000/rl/recommend?agent_id=http://10.20.30.201:8002&risk_level=medium" \
+curl -s "http://localhost:9100/rl/recommend?agent_id=http://10.20.30.201:8002&risk_level=medium" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
 # 전체 PoW 보상 랭킹 — 학습 효과 관찰
-curl -s http://localhost:8000/pow/leaderboard \
+curl -s http://localhost:9100/pow/leaderboard \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 

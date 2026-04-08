@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -444,6 +443,49 @@ done
 - auditd Configuration Guide
 
 ---
+
+---
+
+## 웹 UI 실습: Wazuh Dashboard 탐색
+
+> **목적**: CLI에서 분석한 시스템 로그를 Wazuh Dashboard에서 검색하고 시각화하는 방법을 익힌다.
+
+### 접속
+
+1. 브라우저에서 `https://10.20.30.100` 접속
+2. 자체 서명 인증서 경고 → "고급" → "계속 진행"
+3. admin / 비밀번호 입력
+
+### 실습 1: Dashboard 메뉴 구조 탐색
+
+1. 로그인 후 좌측 메뉴 전체를 펼쳐 확인
+2. 다음 메뉴 경로를 순서대로 클릭하여 각 화면이 무엇을 보여주는지 파악:
+   - **Wazuh** > **Overview**: 전체 현황 대시보드
+   - **Wazuh** > **Events**: 보안 이벤트 목록 (검색/필터)
+   - **Wazuh** > **Agents**: 에이전트 목록 및 상태
+   - **Wazuh** > **MITRE ATT&CK**: ATT&CK 매핑 뷰
+   - **Management** > **Rules**: 탐지 규칙 관리
+3. 각 화면의 역할을 메모
+
+### 실습 2: 알림 조회 및 필터링
+
+1. **Wazuh** > **Events** 이동
+2. 시간 범위를 "Last 24 hours"로 설정
+3. 검색창에 다음 필터를 하나씩 입력하여 결과 비교:
+   - `rule.groups: sshd` → SSH 관련 이벤트만 표시
+   - `rule.level >= 8` → 높은 위험도 알림만 표시
+   - `agent.name: bastion` → bastion 서버 이벤트만 표시
+4. CLI의 `grep 'Failed password' auth.log` 결과와 Dashboard의 SSH 실패 이벤트 수를 비교
+
+### 실습 3: 시각화 차트 읽기
+
+1. **Overview** 화면에서 "Alert level evolution" 그래프 확인
+2. 시간대별 알림 급증 구간이 있는지 확인 → 급증 시간대를 클릭하여 상세 이벤트 조회
+3. "Top 5 agents" 차트에서 알림이 가장 많은 에이전트 확인
+4. CLI에서 `wc -l`로 센 에이전트별 알림 수와 비교
+
+> **핵심**: Dashboard의 검색 기능은 CLI의 `grep | sort | uniq -c`와 같은 역할을 하지만,
+> 시각화를 통해 패턴을 더 빠르게 파악할 수 있다.
 
 ---
 

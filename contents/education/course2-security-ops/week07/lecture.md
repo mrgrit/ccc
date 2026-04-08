@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -587,6 +586,65 @@ Scanner (sqlmap)               BLOCKED (403)
 Week 08은 **중간고사**이다:
 - nftables 방화벽 + Suricata IPS를 조합하여
 - 실제 보안 인프라를 구성하는 실기 시험
+
+---
+
+## 웹 UI 실습: Wazuh Dashboard에서 Suricata/WAF 알림 확인
+
+> **실습 목적**: CLI에서 확인한 WAF 차단 이벤트가 Wazuh Dashboard에도 수집되는지 웹 UI로 확인한다
+>
+> **배우는 것**: 웹 기반 SIEM 대시보드에서 ModSecurity/Suricata 알림을 조회하고 필터링하는 방법
+>
+> **실전 활용**: SOC 환경에서 분석가는 CLI보다 대시보드를 통해 일상적인 알림 모니터링을 수행한다
+
+### 1단계: Wazuh Dashboard 접속
+
+1. 브라우저에서 **https://10.20.30.100:443** 접속
+2. 인증서 경고가 나오면 "고급" > "계속 진행" 클릭
+3. 로그인: `admin` / `admin` (또는 수업 시간에 안내된 계정)
+4. 왼쪽 메뉴에서 **Security events** 클릭
+
+### 2단계: WAF(ModSecurity) 차단 이벤트 검색
+
+1. 상단 검색창(Search bar)에 다음 쿼리 입력:
+
+```
+rule.groups:web OR rule.groups:attack
+```
+
+2. 시간 범위를 **Last 1 hour** 또는 실습 시간에 맞게 조정 (우측 상단 시계 아이콘)
+3. 결과 목록에서 다음을 확인한다:
+   - **rule.description**: ModSecurity 관련 알림 메시지
+   - **rule.level**: 알림 심각도 (숫자가 높을수록 위험)
+   - **data.srcip**: 공격 출발지 IP
+4. 개별 알림을 클릭하면 **상세 JSON 데이터**를 볼 수 있다
+
+### 3단계: Suricata IPS 알림 필터링
+
+1. 검색창에 다음 쿼리 입력:
+
+```
+rule.groups:ids OR rule.groups:suricata
+```
+
+2. 결과에서 확인할 항목:
+   - **rule.id**: Wazuh 룰 ID (86601 등 Suricata 연동 룰)
+   - **data.alert.signature**: Suricata 시그니처 이름
+   - **data.alert.severity**: Suricata 알림 심각도 (1=높음, 3=낮음)
+3. 특정 IP에서 발생한 알림만 보려면 필터 추가:
+
+```
+data.srcip:10.20.30.80
+```
+
+### 4단계: 결과 내보내기
+
+1. 검색 결과 화면에서 우측 상단 **Share** 또는 **Export** 버튼 클릭
+2. **CSV reports** > **Generate CSV** 선택
+3. 다운로드된 CSV 파일을 열어 알림 목록을 확인한다
+4. 이 CSV 파일은 WAF 운영 보고서의 증적 자료로 활용 가능하다
+
+> **핵심 포인트**: CLI의 `modsec_audit.log` 분석과 Dashboard의 웹 UI 검색은 동일한 데이터를 다른 방식으로 조회하는 것이다. 실무에서는 일상 모니터링은 Dashboard로, 심화 분석은 CLI로 수행한다.
 
 ---
 

@@ -298,18 +298,18 @@ ssh ccc@10.20.30.1   "echo 1 | sudo -S tail -5 /var/log/suricata/eve.json 2>/dev
 > **배우는 것**: IDS 모니터링 자동화
 
 ```bash
-RESULT=$(curl -s -X POST http://localhost:8000/projects \
+RESULT=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"name":"week07-ids","request_text":"IDS/IPS 구축 실습","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: bastion-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/plan" -H "X-API-Key: ccc-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/execute" -H "X-API-Key: ccc-api-key-2026" > /dev/null
 
-curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1,"title":"Suricata 상태 확인","instruction_prompt":"ssh ccc@10.20.30.1 \"echo 1 | sudo -S systemctl status suricata 2>/dev/null | head -5\"","risk_level":"low","subagent_url":"http://localhost:8002"},

@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -239,13 +238,13 @@ ssh ccc@10.20.30.201
 
 ```bash
 # Bastion API 상태 확인
-curl -s http://localhost:8000/health | python3 -m json.tool
+curl -s http://localhost:9100/health | python3 -m json.tool
 # 예상: {"status":"ok"} 또는 서비스 상태 정보 출력
 ```
 
 ```bash
 # API 인증 키 설정 (이후 모든 명령에서 사용)
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 # 환경변수 확인
 echo $BASTION_API_KEY
 ```
@@ -255,7 +254,7 @@ echo $BASTION_API_KEY
 ```bash
 # 기존 프로젝트 목록 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects | python3 -m json.tool
+  http://localhost:9100/projects | python3 -m json.tool
 # 프로젝트 ID, 이름, 상태, 생성일 등이 출력된다
 ```
 
@@ -281,7 +280,7 @@ curl -s http://10.20.30.100:8002/health
 
 ```bash
 # 프로젝트 생성 (external 모드: Claude Code가 오케스트레이션)
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -301,14 +300,14 @@ export PROJECT_ID="반환된-프로젝트-ID"
 
 ```bash
 # plan 단계로 전환
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 # stage가 "planning"으로 변경됨을 확인
 ```
 
 ```bash
 # execute 단계로 전환
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 # stage가 "executing"으로 변경됨을 확인
 ```
@@ -323,7 +322,7 @@ execute-plan은 여러 서버에 동시에 명령을 보내는 Bastion의 핵심
 
 ```bash
 # 4대 서버에 동시에 hostname + uptime 확인 명령 실행
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -363,7 +362,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 ```bash
 # 실행 결과 evidence 요약 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID/evidence/summary \
+  http://localhost:9100/projects/$PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 # 각 task의 실행 결과(stdout, exit_code)가 기록되어 있다
 ```
@@ -372,7 +371,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ```bash
 # secu 서버에 단일 명령 전송: 방화벽 규칙 확인
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -384,7 +383,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 
 ```bash
 # web 서버에 단일 명령 전송: 웹 서비스 상태 확인
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -425,7 +424,7 @@ ssh ccc@10.20.30.100 "hostname && uptime"
 
 ```bash
 # 완료 보고서 작성
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -446,7 +445,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
 ```bash
 # 생성된 PoW 블록 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/blocks?project_id=$PROJECT_ID" \
+  "http://localhost:9100/pow/blocks?project_id=$PROJECT_ID" \
   | python3 -m json.tool
 # block_hash, prev_hash, nonce, task 정보 등이 포함된 블록 목록 출력
 ```
@@ -454,7 +453,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ```bash
 # PoW 체인 무결성 검증
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/verify" \
+  "http://localhost:9100/pow/verify" \
   | python3 -m json.tool
 # 정상: {"valid": true, "blocks": N, "orphans": 0, "tampered": []}
 ```
@@ -464,7 +463,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ```bash
 # 전체 작업 이력을 시간순으로 재생
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID/replay \
+  http://localhost:9100/projects/$PROJECT_ID/replay \
   | python3 -m json.tool
 # 프로젝트의 전체 생명주기(생성→계획→실행→검증→보고)가 기록되어 있다
 ```

@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -485,6 +484,51 @@ for line in sys.stdin:                                 # 반복문 시작
 - Wazuh API Reference
 
 ---
+
+---
+
+## 웹 UI 실습: Dashboard Security Events 분석 실습
+
+> **목적**: Wazuh Dashboard에서 Security Events를 검색, 필터링, 분석하는 실무 워크플로우를 체험한다.
+
+### 접속
+
+1. 브라우저에서 `https://10.20.30.100` 접속
+2. 자체 서명 인증서 경고 → "고급" → "계속 진행"
+3. admin / 비밀번호 입력
+
+### 실습 1: Security Events 필터링
+
+1. **Wazuh** > **Events** 클릭
+2. 시간 범위를 "Last 1 hour"로 설정
+3. 필터 추가: `rule.level >= 7`
+4. 결과에서 **rule.id**, **rule.description**, **agent.name** 컬럼 확인
+5. 이벤트를 클릭하여 상세 JSON 확인 — `full_log`에서 원본 로그 내용 확인
+
+### 실습 2: 에이전트 필터로 서버별 분석
+
+1. 검색창에 `agent.name: secu` 입력 → secu 서버의 이벤트만 표시
+2. 좌측 필터 패널에서 `rule.groups`를 펼쳐 그룹별 분포 확인
+3. `sshd`, `syslog`, `web` 등 그룹을 클릭하여 필터 적용
+4. CLI의 `python3 -c "... levels[r.get('level',0)] += 1 ..."`과 동일한 통계를 Dashboard에서 시각적으로 확인
+
+### 실습 3: 규칙 관리 화면
+
+1. **Management** > **Rules** 이동
+2. 검색창에 `5710` 입력 → SSH authentication failed 규칙 확인
+3. 규칙 상세에서 **level**, **description**, **group** 확인
+4. CLI에서 `cat /var/ossec/ruleset/rules/0095-sshd_rules.xml`로 본 내용과 비교
+5. **local_rules.xml**에 추가한 커스텀 규칙이 있는지 확인
+
+### 실습 4: FIM(파일 무결성) 이벤트 확인
+
+1. **Wazuh** > **Integrity Monitoring** 클릭
+2. 에이전트를 선택하여 파일 변경 이벤트 확인
+3. 변경된 파일 경로, 변경 유형(added/modified/deleted) 확인
+4. CLI에서 `grep 'syscheck' alerts.json`으로 확인한 FIM 이벤트와 비교
+
+> **핵심**: Dashboard의 Rules 관리 화면에서 규칙을 검색하고 이해하는 것은,
+> CLI에서 XML 파일을 직접 읽는 것보다 빠르고 직관적이다.
 
 ---
 

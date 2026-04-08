@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -442,6 +441,79 @@ ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 | "리스크 평가를 어떻게 했나요?" | 리스크 평가 워크시트 + 기준 설명 |
 | "부적합 사항은 어떻게 처리했나요?" | 시정 조치 계획서 + 완료 증적 |
 | "경영진의 검토는?" | 검토 회의록 + 서명 |
+
+---
+
+## 웹 UI 실습: Wazuh Dashboard + OpenCTI로 증적 수집
+
+> **실습 목적**: 리스크 평가에서 식별한 위협/취약점을 Wazuh Dashboard와 OpenCTI 웹 UI에서 기술적 증적으로 수집한다
+>
+> **배우는 것**: 리스크 평가 워크시트의 "위협 증거"와 "취약점 증거" 컬럼을 웹 UI에서 직접 채우는 방법
+>
+> **실전 활용**: 리스크 평가는 문서 작업이지만, 그 근거가 되는 데이터는 SIEM과 CTI 플랫폼에서 추출한다. 웹 UI에서 추출하면 심사원에게 직접 시연하기에도 용이하다
+
+### 1단계: Wazuh Dashboard에서 위협 증거 수집
+
+1. **https://10.20.30.100:443** 접속 후 로그인
+2. 왼쪽 메뉴 > **Security events** 클릭
+3. 리스크 평가에서 식별한 위협별로 검색:
+
+**SSH 무차별 대입 위협:**
+```
+rule.groups:authentication_failed
+```
+- 결과 건수 = SSH 공격 시도 횟수 (위협 가능성 "높음"의 근거)
+
+**웹 공격 위협:**
+```
+rule.groups:web OR rule.groups:attack
+```
+- 결과 건수 = 웹 공격 시도 횟수
+
+**파일 변조 위협:**
+```
+rule.groups:syscheck
+```
+- 결과 건수 = 파일 무결성 변경 횟수
+
+4. 각 검색 결과의 건수를 메모하고, 화면을 캡처한다
+
+### 2단계: Wazuh Dashboard에서 취약점 증거 수집
+
+1. 왼쪽 메뉴 > **Agents** > 서버 하나 선택 (예: web)
+2. **Vulnerabilities** 탭 클릭
+3. 확인할 항목:
+   - **Critical** 취약점 수 = 리스크 매트릭스의 "영향도 5(치명적)" 근거
+   - **High** 취약점 수 = 리스크 매트릭스의 "영향도 4(높음)" 근거
+4. **SCA** 탭 클릭
+5. CIS Benchmark 점수 확인:
+   - **Pass/Fail 비율** = 보안 설정 취약점의 정량적 증거
+   - **Failed 항목 목록** = 구체적 취약점 식별
+
+### 3단계: OpenCTI에서 외부 위협 증거 수집
+
+1. 새 탭에서 **http://10.20.30.100:8080** 접속
+2. 로그인: `admin@opencti.io` / `CCC2026!`
+3. **Dashboard** 메인 화면에서 확인:
+   - 등록된 Indicator(IoC) 수 = 알려진 외부 위협 지표
+   - Threat Actor 수 = 식별된 위협 행위자
+4. **Observations** > **Indicators** 클릭
+5. 실습 환경과 관련된 IoC(IP, 도메인)가 있는지 확인
+6. 해당 IoC를 클릭하면 연관된 위협 행위자, 공격 패턴 정보를 확인할 수 있다
+
+### 4단계: 리스크 평가 워크시트에 증적 반영
+
+1. 수집한 데이터를 리스크 평가 워크시트에 반영:
+
+| 자산 | 위협 | 증거 출처 | 취약점 | 증거 출처 | 영향도 | 가능성 | 리스크 |
+|------|------|----------|--------|----------|--------|--------|--------|
+| SSH | 무차별대입 | Dashboard: auth_failed N건 | 비밀번호 인증 | SCA: Failed | 4 | 4 | 16 |
+| 웹서버 | SQLi/XSS | Dashboard: web attack N건 | CVE-xxxx | Vuln: Critical N건 | 5 | 3 | 15 |
+| 전체 | APT | OpenCTI: IoC N개 | 패치 미적용 | Vuln: High N건 | 5 | 2 | 10 |
+
+2. Dashboard/OpenCTI 화면 캡처를 "증거 출처" 첨부 파일로 저장한다
+
+> **핵심 포인트**: 리스크 평가의 신뢰성은 "증거 기반"이냐에 달려 있다. "위협 가능성이 높다"고 주장할 때, SIEM 대시보드에서 실제 공격 시도 N건을 보여주면 정량적 근거가 된다. 이것이 CLI 로그 분석 결과와 웹 UI 증적을 함께 수집해야 하는 이유이다.
 
 ---
 

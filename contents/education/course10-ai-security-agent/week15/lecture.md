@@ -15,8 +15,7 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
 ## 강의 시간 배분 (3시간)
 
@@ -168,8 +167,8 @@ import requests
 import psycopg2
 
 OLLAMA_URL = "http://192.168.0.105:11434"
-MANAGER_URL = "http://localhost:8000"
-API_KEY = "bastion-api-key-2026"
+MANAGER_URL = "http://localhost:9100"
+API_KEY = "ccc-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 DB_CONFIG = {
     "host": "127.0.0.1", "port": 5432,
@@ -326,9 +325,9 @@ if __name__ == "__main__":
 
 ```bash
 # 프로젝트 C 생성
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
-RESP=$(curl -s -X POST http://localhost:8000/projects \
+RESP=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"project-C-education-agent","request_text":"보안 교육 AI 튜터 에이전트","master_mode":"external"}')
@@ -337,14 +336,14 @@ PC_PID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)[
 echo "Project C ID: $PC_PID"
 
 # Stage 전환
-curl -s -X POST "http://localhost:8000/projects/${PC_PID}/plan" \
+curl -s -X POST "http://localhost:9100/projects/${PC_PID}/plan" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 단계 전환
-curl -s -X POST "http://localhost:8000/projects/${PC_PID}/execute" \
+curl -s -X POST "http://localhost:9100/projects/${PC_PID}/execute" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # RAG 검색 테스트 (DB에서 교안 검색)
-curl -s -X POST "http://localhost:8000/projects/${PC_PID}/dispatch" \
+curl -s -X POST "http://localhost:9100/projects/${PC_PID}/dispatch" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -367,8 +366,8 @@ import json
 import time
 import requests
 
-MANAGER_URL = "http://localhost:8000"
-API_KEY = "bastion-api-key-2026"
+MANAGER_URL = "http://localhost:9100"
+API_KEY = "ccc-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 
 class LearningTracker:
@@ -468,10 +467,10 @@ if __name__ == "__main__":
 
 ```bash
 # 학생의 질문 패턴을 분석하여 약점 영역 파악
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 여러 질문을 dispatch로 기록
-curl -s -X POST "http://localhost:8000/projects/${PC_PID}/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/${PC_PID}/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -510,10 +509,10 @@ curl -s -X POST "http://localhost:8000/projects/${PC_PID}/execute-plan" \
 
 ```bash
 # 프로젝트 A — 자율 인시던트 대응 에이전트 completion-report
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 프로젝트 A 완료 보고서 (PA_PID는 실제 ID로 교체)
-curl -s -X POST "http://localhost:8000/projects/${PA_PID}/completion-report" \
+curl -s -X POST "http://localhost:9100/projects/${PA_PID}/completion-report" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -531,9 +530,9 @@ curl -s -X POST "http://localhost:8000/projects/${PA_PID}/completion-report" \
 
 ```bash
 # 프로젝트 B — CTF 자동 풀이 에이전트 completion-report
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
-curl -s -X POST "http://localhost:8000/projects/${PB_PID}/completion-report" \
+curl -s -X POST "http://localhost:9100/projects/${PB_PID}/completion-report" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -551,9 +550,9 @@ curl -s -X POST "http://localhost:8000/projects/${PB_PID}/completion-report" \
 
 ```bash
 # 프로젝트 C — 보안 교육 에이전트 completion-report
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
-curl -s -X POST "http://localhost:8000/projects/${PC_PID}/completion-report" \
+curl -s -X POST "http://localhost:9100/projects/${PC_PID}/completion-report" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -573,12 +572,12 @@ curl -s -X POST "http://localhost:8000/projects/${PC_PID}/completion-report" \
 
 ```bash
 # 3개 프로젝트의 evidence와 PoW 종합 현황
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 echo "=== PoW 리더보드 (전체 에이전트) ==="
 # 에이전트별 작업량 순위
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/leaderboard" | python3 -m json.tool
+  "http://localhost:9100/pow/leaderboard" | python3 -m json.tool
 
 echo ""
 echo "=== 체인 무결성 검증 ==="
@@ -586,7 +585,7 @@ echo "=== 체인 무결성 검증 ==="
 for AGENT in "http://localhost:8002" "http://10.20.30.1:8002" "http://10.20.30.80:8002" "http://10.20.30.100:8002"; do
   # 에이전트별 체인 검증
   RESULT=$(curl -s -H "X-API-Key: $BASTION_API_KEY" \
-    "http://localhost:8000/pow/verify?agent_id=${AGENT}" 2>/dev/null)
+    "http://localhost:9100/pow/verify?agent_id=${AGENT}" 2>/dev/null)
   VALID=$(echo "$RESULT" | python3 -c "import sys,json; print(json.load(sys.stdin).get('valid','?'))" 2>/dev/null || echo "?")
   echo "  ${AGENT}: valid=${VALID}"
 done
@@ -596,14 +595,14 @@ done
 
 ```bash
 # 시연 전 환경 점검
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 echo "=== 시연 환경 점검 ==="
 
 # 1. Manager API 상태
 echo -n "Manager API: "
 curl -s -o /dev/null -w "%{http_code}" -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects 2>/dev/null || echo "FAIL"
+  http://localhost:9100/projects 2>/dev/null || echo "FAIL"
 
 # 2. Ollama LLM 상태
 echo -n "Ollama LLM: "

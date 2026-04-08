@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -199,8 +198,8 @@ AGGRESSIVE_REWARDS = {
 
 ```bash
 # RL 정책 조회: 각 상태(agent_id + risk_level)별 Q-값 확인
-curl -s http://localhost:8000/rl/policy \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
+curl -s http://localhost:9100/rl/policy \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
 ```
 
 ### 4.2 보상 데이터 축적
@@ -209,9 +208,9 @@ curl -s http://localhost:8000/rl/policy \
 # 다양한 risk_level의 태스크를 실행하여 보상 데이터 축적
 PID="프로젝트_ID"
 
-curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1, "instruction_prompt":"hostname", "risk_level":"low"},
@@ -228,14 +227,14 @@ curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
 
 ```bash
 # RL 학습 실행
-curl -s -X POST http://localhost:8000/rl/train \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
+curl -s -X POST http://localhost:9100/rl/train \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
 
 # risk_level별 추천 확인
 for level in low medium high critical; do
   echo "--- $level ---"
-  curl -s "http://localhost:8000/rl/recommend?agent_id=http://localhost:8002&risk_level=$level" \
-    -H "X-API-Key: bastion-api-key-2026"
+  curl -s "http://localhost:9100/rl/recommend?agent_id=http://localhost:8002&risk_level=$level" \
+    -H "X-API-Key: ccc-api-key-2026"
   echo ""
 done
 ```
@@ -294,17 +293,17 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 # 여러 차례 태스크 실행 후 학습하여 정책 변화 관찰
 
 # 1차 실행 (low risk 위주)
-curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"tasks":[{"order":1,"instruction_prompt":"date","risk_level":"low"},{"order":2,"instruction_prompt":"whoami","risk_level":"low"}],"subagent_url":"http://localhost:8002"}'
 
 # 학습
-curl -s -X POST http://localhost:8000/rl/train -H "X-API-Key: bastion-api-key-2026"
+curl -s -X POST http://localhost:9100/rl/train -H "X-API-Key: ccc-api-key-2026"
 
 # 추천 확인
-curl -s "http://localhost:8000/rl/recommend?agent_id=http://localhost:8002&risk_level=low" \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
+curl -s "http://localhost:9100/rl/recommend?agent_id=http://localhost:8002&risk_level=low" \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
 ```
 
 ### 실습 3: 보상 해킹 시나리오 분석
@@ -436,7 +435,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 [6] GET /projects/{id}/replay           → 타임라인 재구성
 [7] POST /projects/{id}/completion-report → 완료 보고
 
-모든 API에 필수: -H "X-API-Key: bastion-api-key-2026"
+모든 API에 필수: -H "X-API-Key: ccc-api-key-2026"
 ```
 
 ---

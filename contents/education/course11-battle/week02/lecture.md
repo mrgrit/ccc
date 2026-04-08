@@ -613,22 +613,22 @@ curl -s http://10.20.30.80/server-status | head -5
 
 ```bash
 # Bastion 프로젝트 생성
-RESULT=$(curl -s -X POST http://localhost:8000/projects \
+RESULT=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"name":"week02-vulnscan","request_text":"취약점 스캐닝 실습","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
 # Stage 전환
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" \
-  -H "X-API-Key: bastion-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" \
-  -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/plan" \
+  -H "X-API-Key: ccc-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/execute" \
+  -H "X-API-Key: ccc-api-key-2026" > /dev/null
 
 # 멀티 타겟 취약점 스캔
-curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1,"title":"web nmap-vuln","instruction_prompt":"nmap --script=vuln -p 22,80,3000 10.20.30.80 2>/dev/null | tail -50","risk_level":"low","subagent_url":"http://localhost:8002"},

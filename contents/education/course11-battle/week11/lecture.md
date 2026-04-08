@@ -801,20 +801,20 @@ ANALYSIS
 
 ```bash
 # 공방전 프로젝트 생성 + 보고서
-RESULT=$(curl -s -X POST http://localhost:8000/projects \
+RESULT=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"name":"week11-battle-r1","request_text":"1v1 공방전 Phase 1","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" \
-  -H "X-API-Key: bastion-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" \
-  -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/plan" \
+  -H "X-API-Key: ccc-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/execute" \
+  -H "X-API-Key: ccc-api-key-2026" > /dev/null
 
-curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
+curl -s -X POST "http://localhost:9100/projects/$PID/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "summary": "1v1 공방전 Phase 1 완료 — 정찰 vs 탐지",
     "outcome": "success",

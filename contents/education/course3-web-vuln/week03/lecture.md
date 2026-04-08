@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -493,3 +492,22 @@ echo "보고서 템플릿이 /tmp/recon_report.md에 생성되었습니다."
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): nmap/nikto, SQLi/IDOR/swagger.json, CVSS, 보고서 작성
+
+---
+
+## 웹 UI 실습
+
+### DVWA 보안 레벨 변경 방법 (웹 UI)
+
+> **DVWA URL:** `http://10.20.30.80:8080`
+
+1. 브라우저에서 `http://10.20.30.80:8080` 접속 → 로그인 (admin / password)
+2. 좌측 메뉴 **DVWA Security** 클릭
+3. **Security Level** 드롭다운에서 실습 목적에 맞는 레벨 선택:
+   - **Low**: 필터 없음 → 정보수집 기법이 모두 동작
+   - **Medium**: 일부 헤더 제한 → 정보수집 우회 필요
+   - **High**: 강화된 접근 제어 → 고급 정보수집 기법 실습
+   - **Impossible**: 안전한 구현 참조
+4. **Submit** 클릭하여 적용
+5. 좌측 메뉴에서 실습 항목 선택 후 각 레벨에서의 차이점 비교
+6. 각 항목 페이지 하단 **View Source** 로 레벨별 소스 코드 비교 분석

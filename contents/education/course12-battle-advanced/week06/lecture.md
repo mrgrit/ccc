@@ -25,7 +25,7 @@
 | web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `ssh ccc@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -1175,9 +1175,9 @@ echo "  4. 자동 요약: 매시간 차단 IP 수, 알림 통계 보고"
 echo ""
 echo "[+] Bastion 다층 방어 상태 점검:"
 cat << 'CHECK_EOF'
-curl -X POST http://localhost:8000/projects/{id}/execute-plan \
+curl -X POST http://localhost:9100/projects/{id}/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1, "instruction_prompt":"suricata -T 2>&1 | tail -1", "risk_level":"low", "subagent_url":"http://10.20.30.1:8002"},

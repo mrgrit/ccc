@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -472,10 +471,10 @@ ssh ccc@10.20.30.1 'bash -s' < /tmp/hunt_network.sh 2>/dev/null
 ## 3.4 Bastion 자동화 헌팅
 
 ```bash
-export BASTION_API_KEY="bastion-api-key-2026"
+export BASTION_API_KEY="ccc-api-key-2026"
 
 # 헌팅 프로젝트 생성
-PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT_ID=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -486,13 +485,13 @@ PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
 
 echo "Project: $PROJECT_ID"
 
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/plan" \
   -H "X-API-Key: $BASTION_API_KEY"
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute" \
   -H "X-API-Key: $BASTION_API_KEY"
 
 # 전체 서버 동시 헌팅
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -521,7 +520,7 @@ curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
 
 sleep 3
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/$PROJECT_ID/evidence/summary" | \
+  "http://localhost:9100/projects/$PROJECT_ID/evidence/summary" | \
   python3 -m json.tool 2>/dev/null | head -40
 ```
 
@@ -926,3 +925,33 @@ python3 /tmp/hunting_calendar.py
 ## 다음 주 예고
 
 **Week 07: 네트워크 포렌식**에서는 Wireshark/tshark를 심화 활용하여 네트워크 패킷 분석과 NetFlow 기반 트래픽 분석을 수행한다.
+
+---
+
+## 웹 UI 실습
+
+### Wazuh Dashboard — SIGMA 룰 + 위협 헌팅 워크플로우
+
+> **접속 URL:** `https://10.20.30.100:443`
+
+1. 브라우저에서 `https://10.20.30.100:443` 접속 → 로그인
+2. **Modules → Security events** 클릭
+3. 가설 기반 헌팅 쿼리 실행 (예: 비정상 프로세스 탐지):
+   ```
+   data.process.name: (nc OR ncat OR socat OR python*) AND NOT rule.level: 0
+   ```
+4. 시간 범위를 **Last 30 days**로 확대하여 장기 패턴 분석
+5. **Discover** 탭에서 결과를 시간축으로 정렬 → 이상 클러스터 식별
+6. **Save search** 로 헌팅 쿼리 저장 → 반복 헌팅에 재활용
+7. 의심 이벤트 발견 시 **Inspect** 클릭 → 원본 로그 전문 확인
+
+### OpenCTI — 위협 헌팅 워크플로우 연동
+
+> **접속 URL:** `http://10.20.30.100:8080`
+
+1. `http://10.20.30.100:8080` 접속 → 로그인
+2. **Techniques → Attack patterns** 에서 헌팅 대상 ATT&CK 기법 검색
+3. 해당 기법 페이지 → **Knowledge** 탭에서 알려진 위협 그룹/캠페인 확인
+4. **Observations → Indicators** 에서 해당 기법과 연관된 IOC 수집
+5. 수집한 IOC를 Wazuh Dashboard 검색에 활용하여 헌팅 범위 구체화
+6. 헌팅 결과를 OpenCTI에 **Sighting** 으로 등록하여 조직 내 탐지 이력 기록

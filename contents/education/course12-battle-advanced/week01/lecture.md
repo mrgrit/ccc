@@ -24,7 +24,7 @@
 | web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `ssh ccc@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -325,10 +325,10 @@ ATT&CK v13부터 각 기법에 Data Source와 Data Component가 명시되어 있
 
 ```bash
 # API 키 설정
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # Manager API 상태 확인
-curl -s http://localhost:8000/health | python3 -m json.tool
+curl -s http://localhost:9100/health | python3 -m json.tool
 # 예상 출력:
 # {
 #     "status": "ok"
@@ -360,7 +360,7 @@ done
 
 ```bash
 # Bastion 프로젝트 생성 (APT 정찰 시뮬레이션)
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -376,10 +376,10 @@ curl -s -X POST http://localhost:8000/projects \
 export PROJECT_ID="반환된-프로젝트-ID"
 
 # Stage 전환: plan → execute
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
@@ -389,7 +389,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
 
 ```bash
 # 정찰 태스크 실행: 포트 스캔 + 서비스 식별 + 웹 핑거프린팅
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -433,7 +433,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 ```bash
 # 정찰 결과 확인
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID/evidence/summary \
+  http://localhost:9100/projects/$PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 # 각 태스크의 실행 결과(stdout, exit_code)가 기록되어 있다
 ```
@@ -564,7 +564,7 @@ PYEOF
 
 ```bash
 # secu 서버의 Suricata 경보 확인 (직전 정찰에 대한 탐지)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -576,7 +576,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 
 ```bash
 # Wazuh SIEM에서 정찰 관련 경보 확인
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -629,7 +629,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 
 ```bash
 # APT29 에뮬레이션 프로젝트 생성
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -644,16 +644,16 @@ curl -s -X POST http://localhost:8000/projects \
 export APT29_PROJECT_ID="반환된-프로젝트-ID"
 
 # Stage 전환
-curl -s -X POST http://localhost:8000/projects/$APT29_PROJECT_ID/plan \
+curl -s -X POST http://localhost:9100/projects/$APT29_PROJECT_ID/plan \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
-curl -s -X POST http://localhost:8000/projects/$APT29_PROJECT_ID/execute \
+curl -s -X POST http://localhost:9100/projects/$APT29_PROJECT_ID/execute \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
 ```bash
 # APT29 에뮬레이션 5단계 실행
-curl -s -X POST http://localhost:8000/projects/$APT29_PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$APT29_PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -706,7 +706,7 @@ curl -s -X POST http://localhost:8000/projects/$APT29_PROJECT_ID/execute-plan \
 ```bash
 # 에뮬레이션 결과 확인
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$APT29_PROJECT_ID/evidence/summary \
+  http://localhost:9100/projects/$APT29_PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 # 5단계 각각의 실행 결과와 수집된 정보가 evidence로 기록되어 있다
 ```
@@ -714,14 +714,14 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ```bash
 # PoW 블록 확인 — 모든 태스크가 블록체인에 기록됨
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/blocks?project_id=$APT29_PROJECT_ID" \
+  "http://localhost:9100/pow/blocks?project_id=$APT29_PROJECT_ID" \
   | python3 -m json.tool
 # 각 태스크마다 PoW 블록이 생성되어 실행 증거가 암호학적으로 보장된다
 ```
 
 ```bash
 # 완료 보고서 작성
-curl -s -X POST http://localhost:8000/projects/$APT29_PROJECT_ID/completion-report \
+curl -s -X POST http://localhost:9100/projects/$APT29_PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{

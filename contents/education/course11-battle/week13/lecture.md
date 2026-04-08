@@ -568,17 +568,17 @@ done
 > **배우는 것**: Bastion를 이용한 팀 단위 작업 기록
 
 ```bash
-RESULT=$(curl -s -X POST http://localhost:8000/projects \
+RESULT=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"name":"week13-team-battle","request_text":"팀 공방전","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: bastion-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/plan" -H "X-API-Key: ccc-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/execute" -H "X-API-Key: ccc-api-key-2026" > /dev/null
 
-curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
+curl -s -X POST "http://localhost:9100/projects/$PID/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "summary": "팀 공방전 완료 — Red Team vs Blue Team 60분",
     "outcome": "success",

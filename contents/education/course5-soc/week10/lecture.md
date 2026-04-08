@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -505,6 +504,59 @@ DETECT_TIME=$(date +%s)
 TTD=$((DETECT_TIME - ATTACK_TIME))
 echo "TTD (탐지 소요 시간): ${TTD}초"
 ```
+
+---
+
+## 웹 UI 실습: OpenCTI 악성코드 IoC 관리
+
+> **목적**: OpenCTI에서 악성코드 관련 IoC(파일 해시, C2 IP, 악성 도메인)를
+> 등록하고 관리하는 방법을 익힌다.
+
+### OpenCTI 접속
+
+1. 브라우저에서 `http://10.20.30.100:8080` 접속
+2. 로그인 정보:
+   - **Email**: `admin@opencti.io`
+   - **Password**: `CCC2026!`
+
+### 실습 1: 악성코드 IoC 등록
+
+1. **Observations** > **Indicators** 클릭
+2. **+** 버튼으로 새 Indicator 생성:
+   - **Name**: `Coinminer C2 Server`
+   - **Pattern type**: `STIX`
+   - **Pattern**: `[ipv4-addr:value = '45.33.32.156']`
+   - **Main observable type**: `IPv4-Addr`
+   - **Description**: `코인마이너 C2 서버 - 실습에서 탐지`
+3. Label 추가: `malware`, `coinminer`, `c2`
+
+### 실습 2: 파일 해시 IoC 등록
+
+1. 새 Indicator 생성:
+   - **Name**: `Suspicious hidden binary`
+   - **Pattern**: `[file:hashes.'SHA-256' = '교육용해시값']`
+   - **Main observable type**: `StixFile`
+2. CLI에서 `sha256sum`으로 계산한 해시값을 등록
+
+### 실습 3: Malware 객체 생성
+
+1. 좌측 메뉴에서 **Arsenal** > **Malware** 클릭
+2. **+** 버튼으로 새 Malware 생성:
+   - **Name**: `Linux.Coinminer.Practice`
+   - **Malware types**: `Resource Exploitation`
+   - **Description**: `교육용 코인마이너 시뮬레이션`
+3. 생성된 Malware 객체에 앞서 등록한 IoC를 **Relationship**로 연결:
+   - "indicates" 관계로 C2 IP Indicator와 연결
+4. 관계 그래프에서 Malware ↔ Indicator 연결 시각화 확인
+
+### Wazuh Dashboard에서 교차 확인
+
+1. `https://10.20.30.100` 접속
+2. **Events**에서 `data.srcip: 45.33.32.156` 검색
+3. OpenCTI에 등록한 IoC와 매칭되는 알림이 있는지 확인
+
+> **핵심**: OpenCTI는 악성코드 분석 결과를 STIX 형식으로 체계적으로 관리하며,
+> IoC, Malware, Campaign 간 관계를 시각화하여 위협의 전체 그림을 파악한다.
 
 ---
 

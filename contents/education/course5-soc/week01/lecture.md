@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -842,6 +841,54 @@ L1/L2/L3 분석가 중 하나를 선택하여 다음을 조사하라:
 > 다음 주에는 Wazuh의 탐지 규칙을 직접 분석하고, 새로운 규칙을 작성합니다. SOC 분석가의 핵심 역량인 로그 분석을 본격적으로 연습합니다!
 
 ---
+
+---
+
+## 웹 UI 실습: Wazuh Dashboard 첫 접속
+
+> **목적**: CLI로 확인한 Wazuh 상태를 웹 Dashboard에서도 확인하는 방법을 익힌다.
+> SOC 실무에서는 CLI와 웹 UI를 병행하여 관제하며, Dashboard가 일상 모니터링의 주 도구이다.
+
+### 접속
+
+1. 브라우저에서 `https://10.20.30.100` 접속
+2. 자체 서명 인증서 경고 → "고급" → "계속 진행"
+3. 로그인 정보 입력:
+   - **Username**: `admin`
+   - **Password**: (수업 시간에 안내하는 자동 생성 비밀번호)
+
+### 실습 1: Overview 대시보드 확인
+
+1. 로그인 후 **Wazuh** > **Overview** 클릭
+2. 상단 "Total alerts" 숫자 확인 — CLI에서 `wc -l alerts.json`으로 확인한 수와 비교
+3. 원형 차트에서 **에이전트별 알림 분포** 확인
+4. 시간 범위를 "Last 24 hours"로 설정하여 최근 알림 추이 그래프 확인
+
+### 실습 2: 에이전트 상태 확인
+
+1. 좌측 메뉴에서 **Wazuh** > **Agents** 클릭
+2. 연결된 에이전트 목록 확인 (bastion, secu, web)
+3. 각 에이전트의 **Status** 컬럼이 `Active`인지 확인
+4. 에이전트 하나를 클릭하여 상세 정보(OS, IP, 마지막 연결 시간) 확인
+5. CLI의 `agent_control -l` 결과와 비교
+
+### 실습 3: Security Events 탐색
+
+1. 좌측 메뉴에서 **Wazuh** > **Events** 클릭
+2. 시간 범위를 "Last 1 hour"로 설정
+3. 검색창에 `rule.level >= 7` 입력하여 중요 알림만 필터링
+4. 결과 테이블에서 **rule.description**, **agent.name**, **rule.level** 컬럼 확인
+5. 한 이벤트를 클릭하여 JSON 원본 확인 — CLI에서 본 `alerts.json` 구조와 동일한지 비교
+
+### 실습 4: MITRE ATT&CK 뷰
+
+1. 좌측 메뉴에서 **Wazuh** > **MITRE ATT&CK** 클릭
+2. 매트릭스 형태로 표시되는 전술/기법 확인
+3. 색이 칠해진 셀 = 탐지된 기법. 셀을 클릭하면 관련 알림 목록 표시
+4. CLI에서 `mitre.id`로 검색한 결과와 비교
+
+> **핵심**: Dashboard는 CLI 분석의 결과를 시각적으로 한눈에 파악하게 해준다.
+> L1 관제사는 Dashboard를 상시 모니터링하고, 상세 분석이 필요할 때 CLI를 사용한다.
 
 ---
 

@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -501,3 +500,22 @@ cursor.execute("SELECT * FROM users WHERE email=?", (email,))
 **정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
 
 ---
+
+---
+
+## 웹 UI 실습
+
+### DVWA 보안 레벨 변경 방법 (웹 UI)
+
+> **DVWA URL:** `http://10.20.30.80:8080`
+
+1. 브라우저에서 `http://10.20.30.80:8080` 접속 → 로그인 (admin / password)
+2. 좌측 메뉴 **DVWA Security** 클릭
+3. **Security Level** 드롭다운에서 레벨 선택:
+   - **Low**: SQL Injection 필터 없음 → 기본 SQLi 페이로드 테스트
+   - **Medium**: 숫자 입력 강제 → 우회 기법 필요
+   - **High**: 별도 팝업 입력 → 고급 SQLi 우회 실습
+   - **Impossible**: PDO Prepared Statement 적용 (안전한 코드 참조)
+4. **Submit** 클릭하여 적용
+5. 좌측 메뉴 **SQL Injection** 및 **SQL Injection (Blind)** 에서 레벨별 실습
+6. 각 항목 페이지 하단 **View Source** 로 레벨별 쿼리 처리 방식 비교

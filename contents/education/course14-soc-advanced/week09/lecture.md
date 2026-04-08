@@ -14,9 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -1045,3 +1045,32 @@ python3 /tmp/malware_classification.py
 ## 다음 주 예고
 
 **Week 10: SOAR 자동화**에서는 플레이북 기반 자동 대응을 설계하고, API 연동과 Wazuh Active Response를 활용한 SOC 자동화를 구현한다.
+
+---
+
+## 웹 UI 실습
+
+### Wazuh Dashboard — 악성코드 탐지 경보 분석
+
+> **접속 URL:** `https://10.20.30.100:443`
+
+1. 브라우저에서 `https://10.20.30.100:443` 접속 → 로그인
+2. **Modules → Security events** 클릭
+3. 악성코드 관련 경보 필터링:
+   ```
+   rule.groups: (rootcheck OR syscheck OR yara) AND rule.level >= 7
+   ```
+4. FIM(파일 무결성) 경보에서 변경된 파일 경로, 해시값 확인
+5. 의심 파일의 시간대별 변경 이력 추적 → 악성코드 드롭 시점 특정
+6. **Modules → Vulnerabilities** 에서 해당 에이전트의 취약점 현황 확인
+
+### OpenCTI — 악성코드 인텔리전스 활용
+
+> **접속 URL:** `http://10.20.30.100:8080`
+
+1. `http://10.20.30.100:8080` 접속 → 로그인
+2. **Arsenal → Malware** 에서 알려진 악성코드 패밀리 목록 탐색
+3. 분석 중인 악성코드의 특징(문자열, 행위)을 기반으로 유사 악성코드 검색
+4. 해당 악성코드 상세 → **Knowledge** 탭에서 사용 기법(ATT&CK), 연관 캠페인 확인
+5. **Observations → Indicators** 에서 관련 IOC(C2 IP, 도메인, 해시) 일괄 확인
+6. 분석 결과를 OpenCTI에 **Note** 또는 **Report** 로 기록

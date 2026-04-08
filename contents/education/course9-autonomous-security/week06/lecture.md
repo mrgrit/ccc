@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -312,12 +311,12 @@ PYTHON
 
 ```bash
 # API 키 설정
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 ```
 
 ```bash
 # PoW 블록 생성을 위한 프로젝트 생성 및 실행
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -330,15 +329,15 @@ curl -s -X POST http://localhost:8000/projects \
 ```bash
 export PROJECT_ID="반환된-프로젝트-ID"
 # stage 전환
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 ```
 
 ```bash
 # 3개 task 실행 → 3개 PoW 블록 생성
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -372,7 +371,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 ```bash
 # 프로젝트별 PoW 블록 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/blocks?project_id=$PROJECT_ID" \
+  "http://localhost:9100/pow/blocks?project_id=$PROJECT_ID" \
   | python3 -c "
 import sys, json
 # 블록 목록을 읽기 쉬운 형태로 출력
@@ -396,7 +395,7 @@ if isinstance(blocks, list):
 ```bash
 # 전체 PoW 체인 무결성 검증
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/verify?agent_id=http://localhost:8002" \
+  "http://localhost:9100/pow/verify?agent_id=http://localhost:8002" \
   | python3 -m json.tool
 # 정상: {"valid": true, "blocks": N, "orphans": 0, "tampered": []}
 # orphans: 메인 체인에 포함되지 않은 분기 블록 수
@@ -406,7 +405,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ```bash
 # 특정 에이전트의 체인 검증
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/verify?agent_id=http://10.20.30.1:8002" \
+  "http://localhost:9100/pow/verify?agent_id=http://10.20.30.1:8002" \
   | python3 -m json.tool
 # secu SubAgent의 체인만 검증
 ```
@@ -416,7 +415,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ```bash
 # secu SubAgent의 블록만 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/blocks?agent_id=http://10.20.30.1:8002" \
+  "http://localhost:9100/pow/blocks?agent_id=http://10.20.30.1:8002" \
   | python3 -m json.tool
 # secu에서 실행된 모든 task의 PoW 블록 목록
 ```
@@ -424,7 +423,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ```bash
 # web SubAgent의 블록만 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/blocks?agent_id=http://10.20.30.80:8002" \
+  "http://localhost:9100/pow/blocks?agent_id=http://10.20.30.80:8002" \
   | python3 -m json.tool
 ```
 
@@ -437,7 +436,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ```bash
 # 보상 랭킹 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/pow/leaderboard | python3 -c "
+  http://localhost:9100/pow/leaderboard | python3 -c "
 import sys, json
 # 리더보드를 순위별로 출력
 data = json.load(sys.stdin)
@@ -465,7 +464,7 @@ if isinstance(data, list):
 
 ```bash
 # 프로젝트 완료 보고서
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{

@@ -562,7 +562,7 @@ done
 
 echo ""
 echo "=== SubAgent API 키 테스트 ==="
-for key in "bastion-api-key-2026" "admin" "test" "default"; do
+for key in "ccc-api-key-2026" "admin" "test" "default"; do
   CODE=$(curl -s -o /dev/null -w "%{http_code}" \
     -H "X-API-Key: $key" http://10.20.30.201:8000/projects 2>/dev/null)
   echo "  API Key '$key' → HTTP $CODE"

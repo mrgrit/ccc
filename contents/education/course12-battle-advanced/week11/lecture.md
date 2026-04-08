@@ -24,7 +24,7 @@
 | web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `ssh ccc@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -314,10 +314,10 @@ OpOrder는 **구체적인 작전 실행 계획**을 담은 문서이다. 군사 
 
 ```bash
 # API 키 설정
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 레드팀 프로젝트 생성 (PTES 전 과정 포함)
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -332,15 +332,15 @@ curl -s -X POST http://localhost:8000/projects \
 export PROJECT_ID="반환된-프로젝트-ID"
 
 # Stage 전환
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
 ```bash
 # Phase 1: 체계적 정찰 (PTES 2단계 — Intelligence Gathering)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -394,7 +394,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # Phase 2: OWASP Top 10 취약점 테스트 (PTES 4-5단계)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -455,7 +455,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # Phase 3: 후속 행동 (PTES 6단계 — Post-Exploitation)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -507,17 +507,17 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 ```bash
 # 1. Evidence 종합 수집
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID/evidence/summary \
+  http://localhost:9100/projects/$PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 
 # 2. PoW 체인 무결성 검증
-curl -s "http://localhost:8000/pow/verify?agent_id=http://10.20.30.201:8002" \
+curl -s "http://localhost:9100/pow/verify?agent_id=http://10.20.30.201:8002" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 # 기대: {"valid": true, "blocks": N, "orphans": 0, "tampered": []}
 
 # 3. 프로젝트 전체 Replay
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID/replay \
+  http://localhost:9100/projects/$PROJECT_ID/replay \
   | python3 -m json.tool | head -80
 ```
 
@@ -540,7 +540,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ```bash
 # Bastion 완료 보고서 생성
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{

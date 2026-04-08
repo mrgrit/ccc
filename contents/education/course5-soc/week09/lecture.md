@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -529,6 +528,47 @@ DETECT_TIME=$(date +%s)
 TTD=$((DETECT_TIME - ATTACK_TIME))
 echo "TTD (탐지 소요 시간): ${TTD}초"
 ```
+
+---
+
+## 웹 UI 실습: Dashboard Integrity Monitoring
+
+> **목적**: Wazuh Dashboard의 Integrity Monitoring(FIM) 뷰를 활용하여
+> 파일 변경 이벤트를 모니터링하고 포렌식 초기 증거를 수집하는 방법을 익힌다.
+
+### 접속
+
+1. 브라우저에서 `https://10.20.30.100` 접속
+2. 자체 서명 인증서 경고 → "고급" → "계속 진행"
+3. admin / 비밀번호 입력
+
+### 실습 1: Integrity Monitoring 대시보드
+
+1. **Wazuh** > **Integrity Monitoring** 클릭
+2. 에이전트 선택 (bastion, secu, web 각각 확인)
+3. 최근 파일 변경 이벤트 목록 확인:
+   - **파일 경로**: 어떤 파일이 변경되었는가?
+   - **이벤트 유형**: added / modified / deleted
+   - **시간**: 언제 변경되었는가?
+4. `/etc/passwd`, `/etc/shadow`, `/etc/sudoers` 변경 이벤트가 있는지 확인
+
+### 실습 2: FIM 이벤트 상세 분석
+
+1. 변경된 파일을 클릭하여 상세 정보 확인:
+   - **변경 전/후 해시**: MD5, SHA256 비교
+   - **변경 전/후 파일 크기**
+   - **변경 전/후 소유자/권한**
+2. 포렌식 관점에서 "누가, 언제, 어떤 파일을, 어떻게 변경했는가?" 정리
+
+### 실습 3: FIM 알림과 인시던트 대응 연계
+
+1. **Events** 화면에서 `rule.groups: syscheck` 필터 적용
+2. FIM 알림의 `rule.level` 분포 확인
+3. Level 8 이상 FIM 알림 = 중요 시스템 파일 변경 → 인시던트 대응 트리거
+4. CLI의 `grep 'syscheck' alerts.json` 결과와 비교하여 동일한 이벤트인지 확인
+
+> **핵심**: Dashboard의 Integrity Monitoring은 포렌식 초기 증거 수집에 핵심적이며,
+> "어떤 파일이 변경되었는가?"를 시각적으로 빠르게 파악할 수 있다.
 
 ---
 

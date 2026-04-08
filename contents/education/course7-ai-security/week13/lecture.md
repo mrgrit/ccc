@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -256,18 +255,18 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 
 ```bash
 # 프로젝트 준비
-PID=$(curl -s -X POST http://localhost:8000/projects \
+PID=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"name":"knowledge-lab","request_text":"분산 지식 실습","master_mode":"external"}' \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: bastion-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/plan" -H "X-API-Key: ccc-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/execute" -H "X-API-Key: ccc-api-key-2026" > /dev/null
 
 # 여러 서버에서 지식 수집
-curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1, "instruction_prompt":"hostname && uname -r && ss -tlnp | grep LISTEN | wc -l", "risk_level":"low", "subagent_url":"http://localhost:8002"},
@@ -401,7 +400,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 [6] GET /projects/{id}/replay           → 타임라인 재구성
 [7] POST /projects/{id}/completion-report → 완료 보고
 
-모든 API에 필수: -H "X-API-Key: bastion-api-key-2026"
+모든 API에 필수: -H "X-API-Key: ccc-api-key-2026"
 ```
 
 ---

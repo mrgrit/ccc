@@ -1091,9 +1091,9 @@ Bastion 플랫폼을 이용하면 유출 탐지를 자동화할 수 있다. Mana
 
 ```bash
 # Bastion 프로젝트 생성: DNS 유출 탐지 작업
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -1105,13 +1105,13 @@ curl -s -X POST http://localhost:8000/projects \
 
 # Stage 전환
 PROJECT_ID="<생성된 프로젝트 ID>"
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/plan" \
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/plan" \
   -H "X-API-Key: $BASTION_API_KEY"
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute" \
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/execute" \
   -H "X-API-Key: $BASTION_API_KEY"
 
 # 다중 서버 탐지 작업 실행
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -1140,10 +1140,10 @@ curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute-plan" \
 
 # 결과 확인
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/${PROJECT_ID}/evidence/summary" | python3 -m json.tool
+  "http://localhost:9100/projects/${PROJECT_ID}/evidence/summary" | python3 -m json.tool
 
 # 완료 보고서 생성
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/completion-report" \
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/completion-report" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{

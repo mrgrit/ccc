@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -133,7 +132,7 @@
 
 ```bash
 # 환경 변수 설정
-export BASTION_API_KEY="bastion-api-key-2026"
+export BASTION_API_KEY="ccc-api-key-2026"
 
 # 모든 curl 요청에 포함
 -H "X-API-Key: $BASTION_API_KEY"
@@ -261,10 +260,10 @@ Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # 환경 변수 설정
-export BASTION_API_KEY="bastion-api-key-2026"          # 환경 변수 설정
+export BASTION_API_KEY="ccc-api-key-2026"          # 환경 변수 설정
 
 # 1. 프로젝트 생성
-PROJECT=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
@@ -280,10 +279,10 @@ PROJECT_ID=$(echo "$PROJECT" | python3 -c "import sys,json; print(json.load(sys.
 echo "프로젝트 ID: $PROJECT_ID"
 
 # 2. Stage 전환: created → planning → executing
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/plan" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool  # API 인증 키
 
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool  # API 인증 키
 ```
 
@@ -293,7 +292,7 @@ Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # 정찰 태스크 실행
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
@@ -337,7 +336,7 @@ Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # SQL Injection 테스트 태스크
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
@@ -373,13 +372,13 @@ Bastion Manager API를 호출하여 작업을 수행합니다.
 # 증거 요약 조회
 echo "===== 증거 요약 ====="
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/$PROJECT_ID/evidence/summary" | python3 -m json.tool
+  "http://localhost:9100/projects/$PROJECT_ID/evidence/summary" | python3 -m json.tool
 
 # 프로젝트 재생 (모든 태스크 타임라인)
 echo ""
 echo "===== 작업 재생 ====="
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/$PROJECT_ID/replay" | python3 -m json.tool
+  "http://localhost:9100/projects/$PROJECT_ID/replay" | python3 -m json.tool
 ```
 
 ### 실습 5: PoW 체인 검증
@@ -388,13 +387,13 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 # PoW 블록 조회
 echo "===== PoW 블록 ====="
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/blocks?agent_id=http://localhost:8002" | python3 -m json.tool
+  "http://localhost:9100/pow/blocks?agent_id=http://localhost:8002" | python3 -m json.tool
 
 # 체인 무결성 검증
 echo ""
 echo "===== 체인 무결성 검증 ====="
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
+  "http://localhost:9100/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
 
 # 예상 출력:
 # {
@@ -408,7 +407,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 echo ""
 echo "===== 보상 랭킹 ====="
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/leaderboard" | python3 -m json.tool
+  "http://localhost:9100/pow/leaderboard" | python3 -m json.tool
 ```
 
 ### 실습 6: 완료 보고서 생성
@@ -417,7 +416,7 @@ Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # 완료 보고서 작성
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/completion-report" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/completion-report" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
@@ -446,7 +445,7 @@ Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # 새 프로젝트: 전체 인프라 스캔
-PROJECT2=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT2=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
@@ -456,13 +455,13 @@ PROJECT2=$(curl -s -X POST http://localhost:8000/projects \
   }')
 PID2=$(echo "$PROJECT2" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 
-curl -s -X POST "http://localhost:8000/projects/$PID2/plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID2/plan" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null         # API 인증 키
-curl -s -X POST "http://localhost:8000/projects/$PID2/execute" \
+curl -s -X POST "http://localhost:9100/projects/$PID2/execute" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null         # API 인증 키
 
 # 각 서버별 SubAgent로 명령 분배
-curl -s -X POST "http://localhost:8000/projects/$PID2/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID2/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
@@ -498,7 +497,7 @@ curl -s -X POST "http://localhost:8000/projects/$PID2/execute-plan" \
 echo ""
 echo "===== 전체 서버 정보 수집 결과 ====="
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/$PID2/evidence/summary" | python3 -m json.tool
+  "http://localhost:9100/projects/$PID2/evidence/summary" | python3 -m json.tool
 ```
 
 ---

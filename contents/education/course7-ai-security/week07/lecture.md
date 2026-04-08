@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -171,14 +170,14 @@ Claude Code /
 
 ```bash
 # 1. External Master(Claude Code)가 Manager에 프로젝트 생성
-curl -X POST http://localhost:8000/projects \
-  -H "X-API-Key: bastion-api-key-2026" \
+curl -X POST http://localhost:9100/projects \
+  -H "X-API-Key: ccc-api-key-2026" \
   -H "Content-Type: application/json" \
   -d '{"name":"test","request_text":"테스트","master_mode":"external"}'
 
 # 2. Manager가 SubAgent에 명령 전달 (dispatch)
-curl -X POST http://localhost:8000/projects/{id}/dispatch \
-  -H "X-API-Key: bastion-api-key-2026" \
+curl -X POST http://localhost:9100/projects/{id}/dispatch \
+  -H "X-API-Key: ccc-api-key-2026" \
   -H "Content-Type: application/json" \
   -d '{"command":"hostname","subagent_url":"http://localhost:8002"}'
 
@@ -216,8 +215,8 @@ GET  /health              → 상태 확인
 ```bash
 # Manager를 통해 SubAgent의 도구 호출
 # (직접 SubAgent 호출은 금지)
-curl -X POST http://localhost:8000/projects/{id}/dispatch \
-  -H "X-API-Key: bastion-api-key-2026" \
+curl -X POST http://localhost:9100/projects/{id}/dispatch \
+  -H "X-API-Key: ccc-api-key-2026" \
   -H "Content-Type: application/json" \
   -d '{
     "command": "uname -a",
@@ -233,11 +232,11 @@ curl -X POST http://localhost:8000/projects/{id}/dispatch \
 
 ```bash
 # Manager API 상태 확인
-curl -s http://localhost:8000/health | python3 -m json.tool
+curl -s http://localhost:9100/health | python3 -m json.tool
 
 # 프로젝트 목록 조회
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  http://localhost:8000/projects | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  http://localhost:9100/projects | python3 -m json.tool
 
 # SubAgent 상태 확인
 curl -s http://localhost:8002/health | python3 -m json.tool
@@ -266,9 +265,9 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 
 ```bash
 # 프로젝트 생성 → 계획 → 실행 → 결과 확인 플로우
-PROJECT=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"name":"arch-lab","request_text":"아키텍처 실습","master_mode":"external"}')
 echo $PROJECT | python3 -m json.tool
 
@@ -277,21 +276,21 @@ PID=$(echo $PROJECT | python3 -c "import json,sys; print(json.load(sys.stdin)['i
 echo "Project ID: $PID"
 
 # Stage 전환
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
+curl -s -X POST "http://localhost:9100/projects/$PID/plan" \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
 
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -m json.tool
+curl -s -X POST "http://localhost:9100/projects/$PID/execute" \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
 
 # 명령 실행
-curl -s -X POST "http://localhost:8000/projects/$PID/dispatch" \
+curl -s -X POST "http://localhost:9100/projects/$PID/dispatch" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"command":"hostname && date","subagent_url":"http://localhost:8002"}'
 
 # 증거 확인
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  "http://localhost:8000/projects/$PID/evidence/summary" | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  "http://localhost:9100/projects/$PID/evidence/summary" | python3 -m json.tool
 ```
 
 ---
@@ -402,7 +401,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 [6] GET /projects/{id}/replay           → 타임라인 재구성
 [7] POST /projects/{id}/completion-report → 완료 보고
 
-모든 API에 필수: -H "X-API-Key: bastion-api-key-2026"
+모든 API에 필수: -H "X-API-Key: ccc-api-key-2026"
 ```
 
 ---

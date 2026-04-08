@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -194,12 +193,12 @@ nohup .venv/bin/python3.11 -m uvicorn apps.manager-api.src.main:app \
 # 기동 대기 (최대 10초)
 for i in $(seq 1 10); do
   # health 엔드포인트 확인
-  curl -s http://localhost:8000/health > /dev/null 2>&1 && break
+  curl -s http://localhost:9100/health > /dev/null 2>&1 && break
   sleep 1
 done
 
 # 기동 확인
-curl -s http://localhost:8000/health | python3 -m json.tool
+curl -s http://localhost:9100/health | python3 -m json.tool
 ```
 
 ### 3.4 SubAgent Runtime 기동
@@ -248,7 +247,7 @@ echo ""
 
 # Manager API (:8000)
 printf "%-20s " "Manager API"
-HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8000/health 2>/dev/null)
+HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:9100/health 2>/dev/null)
 # HTTP 상태 코드로 판정
 if [ "$HEALTH" = "200" ]; then
     echo "OK (port 8000)"
@@ -283,8 +282,6 @@ else
     echo "DOWN"
 fi
 
-# Ollama (dgx-spark)
-printf "%-20s " "Ollama (dgx-spark)"
 HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://192.168.0.105:11434/api/tags 2>/dev/null)
 if [ "$HEALTH" = "200" ]; then
     echo "OK (port 11434)"
@@ -322,9 +319,9 @@ bash ~/lab/week05/check_services.sh
 
 ```bash
 # 1. 프로젝트 생성 (external mode)
-PROJECT=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "name": "week05-external-demo",
     "request_text": "bastion 서버의 디스크와 메모리 상태를 확인해줘",
@@ -335,17 +332,17 @@ echo "External Project: $PID_EXT"
 
 # 2. Stage 전환
 # plan 단계로 전환
-curl -s -X POST http://localhost:8000/projects/${PID_EXT}/plan \
-  -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST http://localhost:9100/projects/${PID_EXT}/plan \
+  -H "X-API-Key: ccc-api-key-2026" > /dev/null
 
 # execute 단계로 전환
-curl -s -X POST http://localhost:8000/projects/${PID_EXT}/execute \
-  -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST http://localhost:9100/projects/${PID_EXT}/execute \
+  -H "X-API-Key: ccc-api-key-2026" > /dev/null
 
 # 3. 수동으로 Task 배열 구성 및 실행
-curl -s -X POST http://localhost:8000/projects/${PID_EXT}/execute-plan \
+curl -s -X POST http://localhost:9100/projects/${PID_EXT}/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
       {"order": 1, "instruction_prompt": "df -h / /tmp /home", "risk_level": "low"},
@@ -362,9 +359,9 @@ for task in data.get('results', data.get('task_results', [])):
 "
 
 # 4. 완료 보고서
-curl -s -X POST http://localhost:8000/projects/${PID_EXT}/completion-report \
+curl -s -X POST http://localhost:9100/projects/${PID_EXT}/completion-report \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"summary":"External Mode 수동 실행 완료","outcome":"success","work_details":["디스크/메모리 상태 확인 완료"]}'
 ```
 
@@ -373,9 +370,9 @@ curl -s -X POST http://localhost:8000/projects/${PID_EXT}/completion-report \
 ```bash
 # Native Mode 프로젝트 생성
 # master_mode를 "native"로 설정하면 Master Service가 자율 실행
-PROJECT_N=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT_N=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "name": "week05-native-demo",
     "request_text": "bastion 서버의 보안 상태를 점검해줘. 디스크, 메모리, 열린 포트, 최근 로그인 기록을 확인하라.",
@@ -388,8 +385,8 @@ echo "Native Project: $PID_NAT"
 # 진행 상태 모니터링 (10초 간격, 최대 2분)
 for i in $(seq 1 12); do
     # 프로젝트 상태 조회
-    STATUS=$(curl -s -H "X-API-Key: bastion-api-key-2026" \
-      http://localhost:8000/projects/${PID_NAT} | \
+    STATUS=$(curl -s -H "X-API-Key: ccc-api-key-2026" \
+      http://localhost:9100/projects/${PID_NAT} | \
       python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('stage','unknown'))")
     echo "[$i] Stage: $STATUS"
     # 완료되면 종료
@@ -402,8 +399,8 @@ done
 # 결과 확인
 echo ""
 echo "=== Evidence 요약 ==="
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  http://localhost:8000/projects/${PID_NAT}/evidence/summary | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  http://localhost:9100/projects/${PID_NAT}/evidence/summary | python3 -m json.tool
 ```
 
 ### 4.3 External Mode로 수동 제어 (LLM 활용)
@@ -422,8 +419,8 @@ import json
 
 OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
-BASTION = "http://localhost:8000"
-API_KEY = "bastion-api-key-2026"
+BASTION = "http://localhost:9100"
+API_KEY = "ccc-api-key-2026"
 HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
 def ask_llm_for_plan(request: str) -> list:
@@ -532,8 +529,8 @@ Week 05 실습: 다중 서버 보안 점검
 import requests
 import json
 
-BASTION = "http://localhost:8000"
-API_KEY = "bastion-api-key-2026"
+BASTION = "http://localhost:9100"
+API_KEY = "ccc-api-key-2026"
 HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
 
 # 서버별 SubAgent URL

@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -481,6 +480,56 @@ DETECT_TIME=$(date +%s)
 TTD=$((DETECT_TIME - ATTACK_TIME))
 echo "TTD (탐지 소요 시간): ${TTD}초"
 ```
+
+---
+
+## 웹 UI 실습: Dashboard에서 ATT&CK 매핑 + OpenCTI IoC 조회
+
+> **목적**: Wazuh Dashboard의 MITRE ATT&CK 뷰에서 공격 기법을 시각적으로 매핑하고,
+> OpenCTI에서 위협 인텔리전스 데이터를 확인하는 방법을 익힌다.
+
+### Wazuh Dashboard 접속
+
+1. 브라우저에서 `https://10.20.30.100` 접속
+2. 자체 서명 인증서 경고 → "고급" → "계속 진행"
+3. admin / 비밀번호 입력
+
+### 실습 1: MITRE ATT&CK 매트릭스 뷰
+
+1. **Wazuh** > **MITRE ATT&CK** 클릭
+2. 매트릭스에서 색이 칠해진 셀 확인 — 실습 환경에서 실제 탐지된 기법
+3. 셀 위에 마우스를 올려 탐지 건수 확인
+4. **Credential Access** > **Brute Force (T1110)** 셀 클릭
+5. 관련 알림 목록에서 출발지 IP, 시간, 대상 확인
+6. CLI에서 `mitre.get('id',[])` 스크립트로 집계한 결과와 비교
+
+### 실습 2: Dashboard에서 킬 체인 추적
+
+1. MITRE ATT&CK 뷰에서 탐지된 전술을 좌→우 순서로 확인:
+   - Reconnaissance → Initial Access → Execution → Privilege Escalation 등
+2. 각 전술의 탐지된 기법을 클릭하여 시간순 이벤트 확인
+3. 동일 출발지 IP가 여러 전술에 걸쳐 나타나는지 확인 → 다단계 공격 징후
+
+### OpenCTI 접속
+
+1. 브라우저에서 `http://10.20.30.100:8080` 접속
+2. 로그인 정보:
+   - **Email**: `admin@opencti.io`
+   - **Password**: `CCC2026!`
+
+### 실습 3: OpenCTI에서 IoC 등록
+
+1. 로그인 후 좌측 메뉴에서 **Observations** > **Indicators** 클릭
+2. 우측 상단 **+** 버튼 클릭하여 새 Indicator 생성
+3. CLI에서 발견한 의심 IP를 IoC로 등록:
+   - **Name**: `Suspicious SSH Brute Force Source`
+   - **Pattern type**: `STIX`
+   - **Pattern**: `[ipv4-addr:value = '의심IP']`
+   - **Main observable type**: `IPv4-Addr`
+4. 저장 후 등록된 IoC 목록에서 확인
+
+> **핵심**: Wazuh의 MITRE ATT&CK 뷰는 CLI 스크립트 없이도 공격 기법을 시각적으로 매핑하며,
+> OpenCTI는 외부 위협 인텔리전스와 연동하여 IoC를 체계적으로 관리한다.
 
 ---
 

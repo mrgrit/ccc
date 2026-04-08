@@ -12,10 +12,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -576,6 +575,64 @@ Week 12에서는 OpenCTI를 다룬다:
 - 위협 인텔리전스 플랫폼 설치와 구성
 - STIX/TAXII 기초
 - 데이터 소스 연동
+
+---
+
+## 웹 UI 실습: Dashboard 알림에서 OpenCTI IoC 등록 워크플로우
+
+> **실습 목적**: Wazuh Dashboard에서 탐지된 위협 알림의 IP/도메인을 OpenCTI에 IoC(침해 지표)로 등록하는 전체 워크플로우를 실습한다
+>
+> **배우는 것**: SIEM 알림 확인 -> 위협 정보 추출 -> CTI 플랫폼 등록의 실무 프로세스
+>
+> **실전 활용**: SOC 분석가의 핵심 업무 중 하나가 SIEM 알림에서 IoC를 추출하여 CTI 플랫폼에 등록하고, 이를 다시 탐지 룰에 반영하는 피드백 루프이다
+
+### 1단계: Wazuh Dashboard에서 위협 알림 확인
+
+1. **https://10.20.30.100:443** 접속 후 로그인
+2. 왼쪽 메뉴 > **Security events** 클릭
+3. 검색창에 다음 쿼리로 높은 심각도 알림 필터링:
+
+```
+rule.level >= 10
+```
+
+4. 결과에서 의심스러운 IP가 포함된 알림을 찾는다
+5. 해당 알림을 클릭하여 상세 정보에서 다음을 메모한다:
+   - **data.srcip**: 공격 출발지 IP (예: 192.168.99.99)
+   - **rule.description**: 알림 설명
+   - **rule.mitre.id**: MITRE ATT&CK 기법 ID (있을 경우)
+
+### 2단계: OpenCTI에 IoC 등록
+
+1. 새 탭에서 **http://10.20.30.100:8080** 접속
+2. 로그인: `admin@opencti.io` / `CCC2026!`
+3. 왼쪽 메뉴에서 **Observations** > **Indicators** 클릭
+4. 우측 상단 **+** (추가) 버튼 클릭
+5. Indicator 생성 양식 작성:
+   - **Name**: 설명적 이름 (예: "SSH 브루트포스 공격 IP - 2026-04-08")
+   - **Pattern type**: `stix`
+   - **Pattern**: `[ipv4-addr:value = '의심 IP']` (예: `[ipv4-addr:value = '192.168.99.99']`)
+   - **Valid from**: 오늘 날짜
+   - **Score**: 위험도에 따라 50~100 설정
+   - **Labels**: `malicious-activity` 선택
+6. **Create** 버튼 클릭하여 저장
+
+### 3단계: OpenCTI에서 등록된 IoC 확인
+
+1. **Observations** > **Indicators** 목록에서 방금 등록한 항목 확인
+2. 해당 Indicator를 클릭하면 상세 페이지에서:
+   - **Overview**: 기본 정보 및 패턴
+   - **Relationships**: 관련된 위협 행위자/캠페인 (연결 시)
+   - **History**: 변경 이력
+3. 우측 상단 **Export** > **STIX 2.1 bundle** 클릭하면 STIX JSON 파일로 내보내기 가능
+
+### 4단계: 결과 저장 및 증적 확보
+
+1. Wazuh Dashboard에서 해당 알림의 **CSV 내보내기** 수행
+2. OpenCTI에서 Indicator 화면 캡처 또는 STIX 번들 다운로드
+3. 이 두 자료를 연결하면 "알림 탐지 -> IoC 등록"의 완전한 증적이 된다
+
+> **핵심 포인트**: 이 워크플로우를 자동화하면 Wazuh의 알림이 OpenCTI에 자동으로 등록되고, OpenCTI의 IoC가 다시 Wazuh CDB에 반영되는 **폐쇄 루프(closed loop)** 위협 관리가 가능하다. 수동 워크플로우를 먼저 이해한 후 자동화를 구현하는 것이 올바른 순서이다.
 
 ---
 

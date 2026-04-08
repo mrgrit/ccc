@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -634,10 +633,10 @@ EOF
 
 ```bash
 # Bastion 프로젝트 생성 - KPI 수집
-export BASTION_API_KEY="bastion-api-key-2026"
+export BASTION_API_KEY="ccc-api-key-2026"
 
 # 프로젝트 생성
-PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT_ID=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -649,13 +648,13 @@ PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
 echo "Project ID: $PROJECT_ID"
 
 # Stage 전환
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/plan" \
   -H "X-API-Key: $BASTION_API_KEY"
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute" \
   -H "X-API-Key: $BASTION_API_KEY"
 
 # SIEM 서버에서 KPI 데이터 수집
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -832,8 +831,8 @@ fi
 # 7. Bastion 자동화 가동 여부
 echo "[체크 7] Bastion 자동화 플랫폼 가동 여부..."
 if curl -s -o /dev/null -w "%{http_code}" \
-   -H "X-API-Key: bastion-api-key-2026" \
-   http://localhost:8000/projects 2>/dev/null | grep -q "200"; then
+   -H "X-API-Key: ccc-api-key-2026" \
+   http://localhost:9100/projects 2>/dev/null | grep -q "200"; then
     echo "  [PASS] Bastion Manager API 가동 중"
     SCORE=$((SCORE+1))
 else
@@ -1124,3 +1123,33 @@ Process 도메인에서 기본 인시던트 대응 플레이북을 작성하고,
 ## 다음 주 예고
 
 **Week 02: SIEM 고급 상관분석**에서는 Wazuh의 상관 룰을 심화 학습하고, 다중 소스 이벤트를 연계하여 고도화된 탐지를 구현한다. 단일 이벤트로는 탐지할 수 없는 복합 공격 패턴을 상관분석으로 잡아내는 방법을 다룬다.
+
+---
+
+## 웹 UI 실습
+
+### Wazuh Dashboard 고급 검색
+
+> **접속 URL:** `https://10.20.30.100:443` (ID: `admin` / PW: 초기 설정값)
+
+1. 브라우저에서 `https://10.20.30.100:443` 접속 (인증서 경고 → "고급" → "계속")
+2. 좌측 메뉴에서 **Modules → Security events** 클릭
+3. 상단 검색바(KQL)에 다음을 입력하여 고급 검색 실습:
+   ```
+   rule.level >= 10
+   ```
+4. **Add filter** → `agent.name` = `web` 선택하여 특정 에이전트 필터링
+5. 시간 범위를 **Last 24 hours** → **Last 7 days**로 변경하여 트렌드 확인
+6. **Visualize** 탭에서 경보 레벨 분포 차트 확인
+7. 상단 **Export** 버튼으로 CSV 내보내기 → KPI 계산에 활용
+
+### OpenCTI STIX 분석
+
+> **접속 URL:** `http://10.20.30.100:8080`
+
+1. 브라우저에서 `http://10.20.30.100:8080` 접속 → 로그인
+2. 좌측 메뉴 **Analysis → Reports** 클릭하여 등록된 위협 보고서 목록 확인
+3. **Data → Entities** 클릭 → STIX 객체(Indicator, Malware, Threat Actor 등) 탐색
+4. 특정 엔티티 클릭 → **Knowledge** 탭에서 관계 그래프 확인
+5. 상단 검색바에 키워드(예: `APT`, `ransomware`) 입력하여 관련 엔티티 검색
+6. **Data → Import** 에서 STIX 2.1 번들 JSON 파일 업로드 실습

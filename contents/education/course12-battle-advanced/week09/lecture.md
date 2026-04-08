@@ -23,9 +23,8 @@
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `ssh ccc@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | GPU 추론 서버 (Ollama LLM) | Ollama API: `http://192.168.0.105:11434` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 **Ollama API:** `http://192.168.0.105:11434/v1` (모델: gpt-oss:120b, gemma3:12b, llama3.1:8b)
 
 ## 강의 시간 배분 (3시간)
@@ -434,10 +433,10 @@ AI 공격 에이전트는 각 단계에서 **어떤 행동을 선택할지** 결
 
 ```bash
 # API 키 설정
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 1. Manager API 상태 확인
-curl -s http://localhost:8000/health | python3 -m json.tool
+curl -s http://localhost:9100/health | python3 -m json.tool
 # 예상: {"status": "ok"}
 ```
 
@@ -458,7 +457,7 @@ curl -s http://192.168.0.105:11434/api/tags | python3 -m json.tool | head -20
 
 ```bash
 # 4. SubAgent를 통한 LLM 호출 테스트 — 프로젝트 생성
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -471,7 +470,6 @@ curl -s -X POST http://localhost:8000/projects \
 
 > **명령어 해설**: `http://192.168.0.105:11434/api/tags`는 Ollama의 모델 목록 API이다. 이 API가 응답하면 LLM 추론 서비스가 정상 가동 중인 것이다. `master_mode: "external"`은 Claude Code가 오케스트레이션하는 모드를 의미한다.
 >
-> **트러블슈팅**: Ollama가 응답하지 않으면 GPU 서버(dgx-spark)에 SSH 접속하여 `systemctl status ollama` 또는 `ollama list`로 서비스 상태를 확인한다. GPU 메모리 부족 시 작은 모델(gemma3:12b)을 우선 사용한다.
 
 ## 실습 3.2: 단순 ReAct 공격 에이전트 구현
 
@@ -488,17 +486,17 @@ curl -s -X POST http://localhost:8000/projects \
 export PROJECT_ID="반환된-프로젝트-ID"
 
 # Stage 전환: plan → execute (execute-plan 호출 전 필수)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
 ```bash
 # ReAct Step 1: 정찰 (Acting)
 # 대상 서버의 열린 포트와 서비스를 식별한다
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -529,7 +527,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # ReAct Step 2: 분석 (Reasoning) — LLM을 활용한 정찰 결과 분석
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -544,7 +542,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 
 ```bash
 # ReAct Step 3: 공격 실행 (Acting) — LLM 추천 기반 공격
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -591,7 +589,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # 새 프로젝트 생성 — 멀티 스텝 공격 파이프라인
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -606,15 +604,15 @@ curl -s -X POST http://localhost:8000/projects \
 export PROJECT_ID2="반환된-프로젝트-ID"
 
 # Stage 전환
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID2/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID2/plan \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID2/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID2/execute \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
 ```bash
 # 5단계 자동 공격 파이프라인 실행
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID2/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID2/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -664,11 +662,11 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID2/execute-plan \
 ```bash
 # 실행 결과 확인 및 PoW 증적 검증
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID2/evidence/summary \
+  http://localhost:9100/projects/$PROJECT_ID2/evidence/summary \
   | python3 -m json.tool
 
 # PoW 블록 검증 — 모든 공격 행위가 블록체인에 기록되었는지 확인
-curl -s "http://localhost:8000/pow/verify?agent_id=http://10.20.30.201:8002" \
+curl -s "http://localhost:9100/pow/verify?agent_id=http://10.20.30.201:8002" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 # 정상 응답: {"valid": true, "blocks": N, "orphans": 0, "tampered": []}
 ```
@@ -693,7 +691,7 @@ curl -s "http://localhost:8000/pow/verify?agent_id=http://10.20.30.201:8002" \
 
 ```bash
 # Bastion를 통한 자율 미션 실행 (Manager API 경유 — 직접 호출 금지)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID2/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID2/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -721,7 +719,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID2/dispatch \
 
 ```bash
 # 새 프로젝트 — AI vs AI 기본 대결
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -736,15 +734,15 @@ curl -s -X POST http://localhost:8000/projects \
 export PROJECT_ID3="반환된-프로젝트-ID"
 
 # Stage 전환
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID3/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID3/plan \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID3/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID3/execute \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
 ```bash
 # Phase 1: Red Agent 공격 수행
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID3/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID3/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -774,7 +772,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID3/execute-plan \
 
 ```bash
 # Phase 2: Blue Agent 탐지 분석
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID3/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID3/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -822,22 +820,22 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID3/execute-plan \
 ```bash
 # 전체 프로젝트의 실행 결과 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID2/evidence/summary \
+  http://localhost:9100/projects/$PROJECT_ID2/evidence/summary \
   | python3 -m json.tool
 
 # 프로젝트 Replay — 전체 실행 과정을 시간순으로 재현
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID2/replay \
+  http://localhost:9100/projects/$PROJECT_ID2/replay \
   | python3 -m json.tool | head -60
 ```
 
 ```bash
 # PoW 보상 기반 에이전트 성능 랭킹
-curl -s http://localhost:8000/pow/leaderboard \
+curl -s http://localhost:9100/pow/leaderboard \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
 # RL 추천 조회 — 현재 에이전트의 최적 행동 추천
-curl -s "http://localhost:8000/rl/recommend?agent_id=http://10.20.30.201:8002&risk_level=medium" \
+curl -s "http://localhost:9100/rl/recommend?agent_id=http://10.20.30.201:8002&risk_level=medium" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
@@ -847,7 +845,7 @@ curl -s "http://localhost:8000/rl/recommend?agent_id=http://10.20.30.201:8002&ri
 > - `pow/leaderboard`: 에이전트별 누적 보상 랭킹 조회
 > - `rl/recommend`: Q-learning 정책 기반 최적 행동 추천 조회
 >
-> **트러블슈팅**: leaderboard가 비어있으면 `curl -X POST http://localhost:8000/rl/train`으로 RL 학습을 먼저 실행한다. 학습 데이터가 부족하면 더 많은 태스크를 실행한 후 재시도한다.
+> **트러블슈팅**: leaderboard가 비어있으면 `curl -X POST http://localhost:9100/rl/train`으로 RL 학습을 먼저 실행한다. 학습 데이터가 부족하면 더 많은 태스크를 실행한 후 재시도한다.
 
 ### 에이전트 성능 평가 메트릭 종합표
 

@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -349,9 +348,9 @@ Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # Bastion 프로젝트 생성: ATT&CK 매핑된 공격 체인
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{                                                # 요청 데이터(body)
     "name": "week13-attack-mapping",
     "request_text": "ATT&CK 기반 공격 체인 실행 및 매핑",
@@ -359,15 +358,15 @@ curl -s -X POST http://localhost:8000/projects \
   }' | python3 -m json.tool
 
 # 프로젝트 ID 확인 후 Stage 전환 (예: id=1)
-curl -s -X POST http://localhost:8000/projects/1/plan \
-  -H "X-API-Key: bastion-api-key-2026"                 # API 인증 키
-curl -s -X POST http://localhost:8000/projects/1/execute \
-  -H "X-API-Key: bastion-api-key-2026"                 # API 인증 키
+curl -s -X POST http://localhost:9100/projects/1/plan \
+  -H "X-API-Key: ccc-api-key-2026"                 # API 인증 키
+curl -s -X POST http://localhost:9100/projects/1/execute \
+  -H "X-API-Key: ccc-api-key-2026"                 # API 인증 키
 
 # ATT&CK 기법별 태스크 실행
-curl -s -X POST http://localhost:8000/projects/1/execute-plan \
+curl -s -X POST http://localhost:9100/projects/1/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{                                                # 요청 데이터(body)
     "tasks": [
       {
@@ -393,8 +392,8 @@ curl -s -X POST http://localhost:8000/projects/1/execute-plan \
   }' | python3 -m json.tool
 
 # 결과 확인
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  http://localhost:8000/projects/1/evidence/summary | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  http://localhost:9100/projects/1/evidence/summary | python3 -m json.tool
 
 # ATT&CK 매핑 기록
 echo "Task 1 → T1046 (Network Service Scanning)"

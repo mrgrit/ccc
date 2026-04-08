@@ -789,23 +789,23 @@ ls -la "$EVIDENCE_DIR"/system/
 
 ```bash
 # Bastion 프로젝트 생성
-RESULT=$(curl -s -X POST http://localhost:8000/projects \
+RESULT=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"name":"week09-ir-evidence","request_text":"인시던트 대응 증거 수집","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 echo "Project ID: $PID"
 
 # Stage 전환
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" \
-  -H "X-API-Key: bastion-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" \
-  -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/plan" \
+  -H "X-API-Key: ccc-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/execute" \
+  -H "X-API-Key: ccc-api-key-2026" > /dev/null
 
 # 증거 수집 태스크 실행
-curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1,"title":"web 프로세스 수집","instruction_prompt":"ps auxf","risk_level":"low","subagent_url":"http://10.20.30.80:8002"},
@@ -1085,9 +1085,9 @@ REPORT
 
 ```bash
 # 앞서 생성한 프로젝트 ID 사용 (변수 PID)
-curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
+curl -s -X POST "http://localhost:9100/projects/$PID/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "summary": "인시던트 대응 실습 완료 — NIST IR 프레임워크 전 과정 수행",
     "outcome": "success",

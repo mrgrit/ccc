@@ -15,8 +15,7 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
 ## 강의 시간 배분 (3시간)
 
@@ -256,10 +255,10 @@ python3 prompt_injection_detector.py
 ```bash
 # 위험 시나리오: 에이전트가 모든 명령을 실행할 수 있는 상태
 # Bastion 프로젝트 생성 — 의도적으로 넓은 권한 부여
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 프로젝트 생성
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -272,10 +271,10 @@ curl -s -X POST http://localhost:8000/projects \
 # Stage 전환
 PROJECT_ID="위에서 받은 ID"
 # plan 단계로 전환
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/plan" \
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/plan" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 # execute 단계로 전환
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute" \
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/execute" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
@@ -283,7 +282,7 @@ curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute" \
 
 ```bash
 # 위험 1: 시스템 정보 과도 수집 — 에이전트가 민감 파일을 읽으려 시도
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/dispatch" \
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/dispatch" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -293,7 +292,7 @@ curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/dispatch" \
 # 결과: 권한 부족으로 실패해야 정상 (SubAgent가 root가 아닌 경우)
 
 # 위험 2: 네트워크 스캔 — 에이전트가 내부 네트워크를 무단 스캔
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/dispatch" \
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/dispatch" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -457,8 +456,8 @@ Bastion의 dispatch API는 자연어 명령을 SubAgent에 전달한다.
 
 ```bash
 # 정상 dispatch 요청
-export BASTION_API_KEY=bastion-api-key-2026
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/dispatch" \
+export BASTION_API_KEY=ccc-api-key-2026
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/dispatch" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -467,7 +466,7 @@ curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/dispatch" \
   }' | python3 -m json.tool
 
 # 인젝션 시도: 세미콜론으로 추가 명령 삽입
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/dispatch" \
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/dispatch" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -565,9 +564,9 @@ if __name__ == "__main__":
 
 ```bash
 # execute-plan으로 여러 명령을 한 번에 실행하며 인젝션 방어 테스트
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -594,7 +593,7 @@ curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute-plan" \
 
 # evidence 확인 — 어떤 명령이 실행/차단되었는지 확인
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/${PROJECT_ID}/evidence/summary" | python3 -m json.tool
+  "http://localhost:9100/projects/${PROJECT_ID}/evidence/summary" | python3 -m json.tool
 ```
 
 ---
@@ -746,9 +745,9 @@ if __name__ == "__main__":
 
 ```bash
 # critical 태스크를 dry_run으로 실행
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -764,7 +763,7 @@ curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute-plan" \
 # dry_run이 자동 적용되어 실제 실행되지 않음
 
 # 사람이 검토 후 confirmed:true로 재실행
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -785,10 +784,10 @@ curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute-plan" \
 
 ```bash
 # 전체 플로우 테스트: 프로젝트 생성 → 위험 평가 → 승인 → 실행 → evidence 확인
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 1. 새 프로젝트 생성
-RESP=$(curl -s -X POST http://localhost:8000/projects \
+RESP=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"week09-approval-test","request_text":"Approval Gate 테스트","master_mode":"external"}')
@@ -797,14 +796,14 @@ PID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['pr
 echo "Project ID: $PID"
 
 # 2. Stage 전환
-curl -s -X POST "http://localhost:8000/projects/${PID}/plan" \
+curl -s -X POST "http://localhost:9100/projects/${PID}/plan" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 단계로 전환
-curl -s -X POST "http://localhost:8000/projects/${PID}/execute" \
+curl -s -X POST "http://localhost:9100/projects/${PID}/execute" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # 3. 혼합 위험도 태스크 실행
-curl -s -X POST "http://localhost:8000/projects/${PID}/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/${PID}/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -818,7 +817,7 @@ curl -s -X POST "http://localhost:8000/projects/${PID}/execute-plan" \
 
 # 4. evidence로 결과 확인
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/${PID}/evidence/summary" | python3 -m json.tool
+  "http://localhost:9100/projects/${PID}/evidence/summary" | python3 -m json.tool
 ```
 
 ---

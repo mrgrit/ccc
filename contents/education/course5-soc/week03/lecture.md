@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -517,6 +516,44 @@ DETECT_TIME=$(date +%s)
 TTD=$((DETECT_TIME - ATTACK_TIME))
 echo "TTD (탐지 소요 시간): ${TTD}초"
 ```
+
+---
+
+## 웹 UI 실습: Dashboard에서 에이전트 로그 확인
+
+> **목적**: CLI로 분석한 웹/네트워크 로그가 Wazuh Dashboard에서 어떻게 수집되고 표시되는지 확인한다.
+
+### 접속
+
+1. 브라우저에서 `https://10.20.30.100` 접속
+2. 자체 서명 인증서 경고 → "고급" → "계속 진행"
+3. admin / 비밀번호 입력
+
+### 실습 1: 에이전트별 로그 수집 확인
+
+1. **Wazuh** > **Agents** 클릭
+2. **web** 에이전트 (10.20.30.80)를 클릭하여 상세 페이지 이동
+3. 상단 탭에서 **Events** 클릭 → 이 에이전트에서 수집된 이벤트만 표시
+4. 시간 범위를 "Last 24 hours"로 설정
+5. 이벤트 목록에서 `location` 필드를 확인 — `/var/log/nginx/access.log`, `/var/log/auth.log` 등 수집 소스 확인
+
+### 실습 2: 웹 공격 로그 검색
+
+1. **Wazuh** > **Events** 이동
+2. 검색창에 `rule.groups: web` 입력하여 웹 관련 이벤트 필터링
+3. 결과가 없으면 `data.srcip: *` AND `agent.name: web`으로 검색
+4. CLI에서 `grep 'union\|select\|script' access.log`로 찾은 공격 패턴이 Dashboard에도 나타나는지 확인
+5. 이벤트 하나를 클릭하여 `full_log` 필드에서 원본 웹 로그 확인
+
+### 실습 3: Suricata 알림과 교차 확인
+
+1. 검색창에 `rule.groups: ids` 또는 `rule.groups: suricata` 입력
+2. Suricata에서 전달된 IPS 알림이 Wazuh에 수집되었는지 확인
+3. 동일 시간대의 웹 로그와 IPS 알림을 비교 — CLI에서 수행한 "시간 기반 상관 분석"을 Dashboard에서 재현
+4. 검색창에 특정 IP를 입력하여 해당 IP의 모든 활동을 한눈에 조회
+
+> **핵심**: Dashboard는 여러 로그 소스(auth.log, access.log, Suricata)를 **하나의 화면에서 통합 검색**할 수 있어,
+> CLI에서 서버별로 따로 조회하던 작업을 훨씬 효율적으로 수행할 수 있다.
 
 ---
 

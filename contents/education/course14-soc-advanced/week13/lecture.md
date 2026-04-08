@@ -14,9 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -282,9 +282,9 @@ ssh ccc@10.20.30.100 \
 ## 3.2 Bastion 자동화 Purple Team
 
 ```bash
-export BASTION_API_KEY="bastion-api-key-2026"
+export BASTION_API_KEY="ccc-api-key-2026"
 
-PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT_ID=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -293,13 +293,13 @@ PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
     "master_mode": "external"
   }' | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/plan" \
   -H "X-API-Key: $BASTION_API_KEY"
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute" \
   -H "X-API-Key: $BASTION_API_KEY"
 
 # Red Team: 공격 시뮬레이션 + Blue Team: 탐지 확인
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -322,7 +322,7 @@ curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
 
 sleep 3
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/$PROJECT_ID/evidence/summary" | \
+  "http://localhost:9100/projects/$PROJECT_ID/evidence/summary" | \
   python3 -m json.tool 2>/dev/null | head -30
 ```
 
@@ -862,7 +862,7 @@ tools = {
         "설명": "Bastion execute-plan 기반 자동 테스트",
         "장점": "우리 환경에 최적화, evidence 자동 기록",
         "단점": "커스텀 개발 필요",
-        "URL": "http://localhost:8000 (내부)",
+        "URL": "http://localhost:9100 (내부)",
     },
 }
 
@@ -951,3 +951,36 @@ python3 /tmp/coverage_tracker.py
 ## 다음 주 예고
 
 **Week 14: SOC 자동화 + AI**에서는 LLM 기반 경보 분류, 자동 분석, 보고서 자동 생성을 학습한다.
+
+---
+
+## 웹 UI 실습
+
+### 종합: Dashboard + OpenCTI + Suricata 통합 분석 (Purple Team)
+
+#### Step 1: Wazuh Dashboard — Atomic Test 탐지 현황
+
+> **접속 URL:** `https://10.20.30.100:443`
+
+1. `https://10.20.30.100:443` 접속 → 로그인
+2. **Modules → Security events** 에서 레드팀 공격 시뮬레이션 경보 확인:
+   ```
+   rule.mitre.id: * AND timestamp >= "now-1h"
+   ```
+3. **Modules → MITRE ATT&CK** 클릭 → ATT&CK 매트릭스 히트맵 확인
+4. 탐지 성공 기법(초록)과 미탐 기법(빈칸)을 비교하여 탐지 격차 식별
+5. Suricata 경보 필터링:
+   ```
+   rule.groups: suricata
+   ```
+6. 네트워크 레벨 탐지와 호스트 레벨 탐지의 커버리지 비교
+
+#### Step 2: OpenCTI — 탐지 격차 매핑
+
+> **접속 URL:** `http://10.20.30.100:8080`
+
+1. `http://10.20.30.100:8080` 접속 → 로그인
+2. **Techniques → Attack patterns** 에서 미탐 기법 검색
+3. 해당 기법을 사용하는 알려진 위협 그룹 확인 → 리스크 우선순위 결정
+4. **Arsenal → Malware/Tools** 에서 해당 기법의 실제 도구 확인
+5. 탐지 격차 분석 결과를 OpenCTI에 **Note** 로 기록 → 팀 공유

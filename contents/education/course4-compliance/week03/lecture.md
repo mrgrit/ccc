@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -424,6 +423,70 @@ ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 | "리스크 평가를 어떻게 했나요?" | 리스크 평가 워크시트 + 기준 설명 |
 | "부적합 사항은 어떻게 처리했나요?" | 시정 조치 계획서 + 완료 증적 |
 | "경영진의 검토는?" | 검토 회의록 + 서명 |
+
+---
+
+## 웹 UI 실습: Wazuh Dashboard로 보안 현황 보고서 생성
+
+> **실습 목적**: ISMS-P 인증 심사에서 요구하는 보안 현황 보고서를 Wazuh Dashboard에서 생성한다
+>
+> **배우는 것**: Dashboard에서 보안 현황 데이터를 조회하고, 인증 심사 증적으로 활용 가능한 보고서를 내보내는 방법
+>
+> **실전 활용**: ISMS-P/ISO 27001 인증 심사에서 "보안 모니터링 현황"을 요구받을 때, SIEM 대시보드 보고서가 핵심 증적이다
+
+### 1단계: Wazuh Dashboard 접속 및 Overview 확인
+
+1. 브라우저에서 **https://10.20.30.100:443** 접속
+2. 인증서 경고 > "고급" > "계속 진행" 클릭
+3. 로그인: `admin` / `admin` (또는 수업 시간에 안내된 계정)
+4. **Overview** 대시보드에서 확인할 항목 (이것이 보안 현황 요약이다):
+   - 전체 보안 이벤트 수 (기간별 추이 그래프)
+   - MITRE ATT&CK 히트맵 (탐지된 공격 기법)
+   - Agent 상태 요약 (Active/Disconnected)
+
+### 2단계: 통제 항목별 현황 데이터 조회
+
+**A.5.7 위협 인텔리전스 현황:**
+1. 왼쪽 메뉴 > **Security events** 클릭
+2. 검색창에 `rule.groups:ids OR rule.groups:suricata` 입력
+3. 결과 건수 = 수집 중인 위협 탐지 이벤트 수 (증적: A.5.7 적합)
+
+**A.8.15 로깅 현황:**
+1. 왼쪽 메뉴 > **Agents** 클릭
+2. 모든 Agent가 `Active` 상태인지 확인
+3. Agent 수 = 모니터링 대상 서버 수 (증적: A.8.15 적합)
+
+**A.8.8 취약점 관리 현황:**
+1. Agent 하나를 클릭 > **Vulnerabilities** 탭 클릭
+2. Critical/High 취약점 수를 확인
+3. 이 데이터가 취약점 관리 현황 증적이다
+
+### 3단계: 보고서 내보내기
+
+1. 원하는 검색 결과 화면에서 우측 상단 **Share** > **CSV reports** 클릭
+2. **Generate CSV** 버튼 클릭
+3. 다운로드된 CSV 파일에 포함되는 항목:
+   - 타임스탬프, Agent 이름, 룰 ID, 룰 레벨, 설명
+   - 출발지 IP, 사용자, MITRE ATT&CK ID
+4. 각 통제 항목별로 검색 결과를 캡처하여 "보안 현황 보고서"에 첨부한다
+
+### 4단계: 보안 현황 보고서 요약 작성
+
+1. 위 데이터를 바탕으로 다음을 정리한다:
+
+```
+보안 현황 보고서 (ISMS-P 증적)
+- 보고 기간: YYYY-MM-DD ~ YYYY-MM-DD
+- 모니터링 대상: N대 서버 (Agent Active)
+- 기간 내 보안 이벤트: X건
+- 고위험 알림 (Level 7+): X건
+- 탐지된 MITRE ATT&CK 기법: N개
+- 취약점 현황: Critical X건, High X건
+```
+
+2. 이 보고서는 경영진 보고 및 인증 심사 자료로 활용한다
+
+> **핵심 포인트**: ISMS-P 인증에서 "정보보호 관리체계가 운영되고 있는가?"를 증명하려면 SIEM 대시보드의 실시간 모니터링 현황이 가장 강력한 증적이다. CLI 로그 파일보다 대시보드 화면 캡처가 심사원에게 훨씬 직관적이다.
 
 ---
 

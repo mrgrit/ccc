@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -514,9 +513,9 @@ REMOTE
 ## 4.3 Bastion 자동화 네트워크 분석
 
 ```bash
-export BASTION_API_KEY="bastion-api-key-2026"
+export BASTION_API_KEY="ccc-api-key-2026"
 
-PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT_ID=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -525,13 +524,13 @@ PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
     "master_mode": "external"
   }' | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/plan" \
   -H "X-API-Key: $BASTION_API_KEY"
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute" \
   -H "X-API-Key: $BASTION_API_KEY"
 
 # 전체 서버 네트워크 상태 수집
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -953,3 +952,31 @@ python3 /tmp/pcap_report.py
 ## 다음 주 예고
 
 **Week 08: 메모리 포렌식**에서는 Volatility3를 사용하여 메모리 덤프에서 악성 프로세스, 인젝션, 루트킷을 탐지하는 방법을 학습한다.
+
+---
+
+## 웹 UI 실습
+
+### Wazuh Dashboard — 네트워크 포렌식 연계
+
+> **접속 URL:** `https://10.20.30.100:443`
+
+1. 브라우저에서 `https://10.20.30.100:443` 접속 → 로그인
+2. **Modules → Security events** 클릭
+3. 네트워크 관련 경보 필터링:
+   ```
+   rule.groups: (suricata OR network) AND rule.level >= 8
+   ```
+4. Suricata 경보에서 `data.src_ip`, `data.dest_ip`, `data.dest_port` 필드 확인
+5. 의심 IP를 기반으로 시간대별 통신 패턴 분석
+6. **Dashboards** 에서 네트워크 경보 히트맵 확인 (시간 × 심각도)
+
+### OpenCTI — 네트워크 IOC 위협 헌팅
+
+> **접속 URL:** `http://10.20.30.100:8080`
+
+1. `http://10.20.30.100:8080` 접속 → 로그인
+2. **Observations → Indicators** → 필터: `pattern_type = STIX` + `observable_type = IPv4-Addr`
+3. 네트워크 포렌식에서 발견한 의심 IP를 검색하여 알려진 위협 여부 확인
+4. **Observations → Observables** 에서 도메인/URL 타입 검색
+5. 매칭된 결과의 **Knowledge** 탭에서 C2 서버, 캠페인 연관성 분석

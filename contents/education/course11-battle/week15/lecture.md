@@ -398,18 +398,18 @@ MAPPING
 
 ```bash
 # 분석 프로젝트 생성
-RESULT=$(curl -s -X POST http://localhost:8000/projects \
+RESULT=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"name":"week15-analysis","request_text":"공방전 결과 분석 및 보고서","master_mode":"external"}')
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: bastion-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/plan" -H "X-API-Key: ccc-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/execute" -H "X-API-Key: ccc-api-key-2026" > /dev/null
 
 # 분석 태스크 실행
-curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1,"title":"web SSH 통계","instruction_prompt":"echo \"Failed: $(grep -c Failed /var/log/auth.log 2>/dev/null || echo 0), Accepted: $(grep -c Accepted /var/log/auth.log 2>/dev/null || echo 0)\"","risk_level":"low","subagent_url":"http://10.20.30.80:8002"},
@@ -565,9 +565,9 @@ FINAL_REPORT
 > **배우는 것**: 과정 전체의 증적 통합 관리
 
 ```bash
-curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
+curl -s -X POST "http://localhost:9100/projects/$PID/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "summary": "공방전 기초 과정 최종 보고서 — 15주 결과 분석 및 보안 평가",
     "outcome": "success",

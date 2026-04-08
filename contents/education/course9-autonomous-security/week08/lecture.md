@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -113,13 +112,13 @@ ssh ccc@10.20.30.201
 
 ```bash
 # API 키 설정
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 ```
 
 ```bash
 # Manager API 상태 확인
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/health | python3 -m json.tool
+  http://localhost:9100/health | python3 -m json.tool
 # 정상 응답 확인
 ```
 
@@ -142,7 +141,7 @@ done
 
 ```bash
 # CTF 프로젝트 생성
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -157,9 +156,9 @@ curl -s -X POST http://localhost:8000/projects \
 # 프로젝트 ID 설정 (실제 값으로 교체)
 export PROJECT_ID="반환된-프로젝트-ID"
 # stage 전환
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # executing 단계 진입 확인
 ```
@@ -174,7 +173,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
 
 ```bash
 # Flag 획득: 4대 서버 기본 정보 병렬 수집
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -215,7 +214,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # 전 서버 열린 포트 수집
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -250,7 +249,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # 전 서버 리소스 현황 수집
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -284,7 +283,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # 사용자 계정 감사
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -322,7 +321,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # secu 방화벽 정책 상세 조회
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -334,7 +333,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 
 ```bash
 # Suricata IPS 상태 확인
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -349,7 +348,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 
 ```bash
 # 웹 서비스 보안 점검
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -390,7 +389,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # SIEM 종합 점검
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -428,7 +427,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # 전 서버 인증 실패 로그 수집
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -463,7 +462,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # 비정상 프로세스 탐지
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -526,7 +525,7 @@ curl -s -X POST http://192.168.0.105:11434/api/chat \
 ```bash
 # 전체 evidence 요약 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID/evidence/summary \
+  http://localhost:9100/projects/$PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 # 모든 task의 실행 결과가 기록되어 있는지 확인
 ```
@@ -536,7 +535,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ```bash
 # PoW 체인 무결성 검증
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/verify" \
+  "http://localhost:9100/pow/verify" \
   | python3 -m json.tool
 # valid: true, tampered: [] 확인
 ```
@@ -544,7 +543,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ```bash
 # 프로젝트 PoW 블록 수 확인
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/blocks?project_id=$PROJECT_ID" \
+  "http://localhost:9100/pow/blocks?project_id=$PROJECT_ID" \
   | python3 -c "import sys,json; blocks=json.load(sys.stdin); print(f'PoW 블록 수: {len(blocks) if isinstance(blocks,list) else 0}')"
 ```
 
@@ -553,21 +552,21 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ```bash
 # RL 추천 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/rl/recommend?agent_id=http://10.20.30.1:8002&risk_level=low" \
+  "http://localhost:9100/rl/recommend?agent_id=http://10.20.30.1:8002&risk_level=low" \
   | python3 -m json.tool
 ```
 
 ```bash
 # 리더보드 확인
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/pow/leaderboard | python3 -m json.tool
+  http://localhost:9100/pow/leaderboard | python3 -m json.tool
 ```
 
 ### Challenge 4-4: 완료 보고서 작성 (5점)
 
 ```bash
 # 완료 보고서 작성 (내용의 품질이 채점 대상)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -590,7 +589,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
 ```bash
 # 전체 CTF 이력 재생
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID/replay \
+  http://localhost:9100/projects/$PROJECT_ID/replay \
   | python3 -m json.tool
 # 전체 4 Phase의 작업 이력이 시간순으로 출력된다
 ```

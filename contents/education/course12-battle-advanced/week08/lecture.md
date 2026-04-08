@@ -25,7 +25,7 @@
 | web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `ssh ccc@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -1018,9 +1018,9 @@ echo "  헌팅 대상: secu, web, siem 서버"
 echo ""
 echo "[+] Bastion 위협 헌팅 execute-plan:"
 cat << 'HUNT_EOF'
-curl -X POST http://localhost:8000/projects/{id}/execute-plan \
+curl -X POST http://localhost:9100/projects/{id}/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
       {

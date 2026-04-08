@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -437,6 +436,58 @@ ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 | "리스크 평가를 어떻게 했나요?" | 리스크 평가 워크시트 + 기준 설명 |
 | "부적합 사항은 어떻게 처리했나요?" | 시정 조치 계획서 + 완료 증적 |
 | "경영진의 검토는?" | 검토 회의록 + 서명 |
+
+---
+
+## 웹 UI 실습: Wazuh Dashboard 에이전트 현황으로 자산 관리
+
+> **실습 목적**: GDPR Article 30(처리활동 기록) 및 개인정보보호법의 자산 관리 요구사항을 Wazuh Dashboard의 에이전트 현황으로 충족하는 방법을 실습한다
+>
+> **배우는 것**: Dashboard의 Agents 화면이 자산 인벤토리 역할을 하며, 각 서버의 OS/버전/설치 패키지를 자동으로 수집한다는 것
+>
+> **실전 활용**: 개인정보를 처리하는 시스템의 자산 목록을 SIEM에서 자동 관리하면, 정기 갱신과 증적 제출이 용이하다
+
+### 1단계: Wazuh Dashboard에서 자산 현황 확인
+
+1. 브라우저에서 **https://10.20.30.100:443** 접속 후 로그인
+2. 왼쪽 메뉴에서 **Agents** 클릭
+3. Agent 목록이 곧 **관리 대상 자산 목록**이다. 확인할 항목:
+   - **Name**: 서버 호스트명 (siem, secu, web 등)
+   - **IP address**: 서버 IP
+   - **OS**: 운영체제 이름 및 버전
+   - **Status**: Active(정상) / Disconnected(비정상)
+   - **Last keep alive**: 마지막 통신 시간
+
+### 2단계: 개별 Agent 상세 정보 확인 (자산 상세)
+
+1. Agent 목록에서 서버 하나를 클릭 (예: web)
+2. Agent 상세 페이지에서 확인할 항목:
+   - **Overview**: OS 버전, 아키텍처, Wazuh Agent 버전
+   - **Inventory data** (있을 경우): 설치된 패키지 목록, 열린 포트, 네트워크 인터페이스
+   - **SCA (Security Configuration Assessment)**: CIS 벤치마크 준수율
+3. 이 정보가 "개인정보 처리 시스템 자산 명세"의 기술적 증적이다
+
+### 3단계: 자산 현황 내보내기
+
+1. Agents 목록 화면에서 우측 상단 **Export** 또는 **Share** > **CSV** 클릭
+2. CSV에 포함되는 항목:
+   - Agent ID, Name, IP, OS, Status, Version, Last keep alive
+3. 이 CSV를 엑셀에서 열고 다음 컬럼을 추가하면 자산 관리 대장이 된다:
+   - 자산 분류 (정보자산/서비스자산/소프트웨어자산)
+   - 개인정보 처리 여부 (Y/N)
+   - 관리 책임자
+   - 비고
+
+### 4단계: GDPR/개인정보보호법 관점 활용
+
+1. Agent가 **Disconnected** 상태이면:
+   - 해당 서버의 보안 모니터링이 중단된 것 = GDPR Article 32(보안 조치) 위반 가능
+   - 즉시 원인을 파악하고 Agent를 재연결해야 한다
+2. Agent의 **OS 버전**이 오래되었으면:
+   - 보안 패치 미적용 상태 = 기술적 보호조치 미흡
+3. 이 점검을 주기적으로 수행하여 "자산 관리 현황 보고서"에 반영한다
+
+> **핵심 포인트**: Wazuh Agent 목록은 단순한 모니터링 대상이 아니라, 개인정보 처리 시스템의 **자동화된 자산 인벤토리**이다. Agent 등록/해제 이력이 곧 자산 변경 관리 이력이며, GDPR Article 30과 개인정보보호법의 자산 관리 요구사항을 기술적으로 충족한다.
 
 ---
 

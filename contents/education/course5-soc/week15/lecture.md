@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -450,6 +449,64 @@ Week 15:    기말       -> 종합 인시던트 대응 훈련
 5. Lessons Learned를 통한 지속적 개선이 보안 성숙도를 높인다
 
 ---
+
+---
+
+## 웹 UI 실습: Dashboard + OpenCTI 종합 관제 실습
+
+> **목적**: 기말 종합 훈련에서 Wazuh Dashboard와 OpenCTI를 동시에 활용하여
+> 실전 수준의 종합 관제를 수행한다.
+
+### Wazuh Dashboard (https://10.20.30.100)
+
+1. 브라우저 탭 1에서 `https://10.20.30.100` 접속
+2. admin / 비밀번호 입력
+
+### OpenCTI (http://10.20.30.100:8080)
+
+1. 브라우저 탭 2에서 `http://10.20.30.100:8080` 접속
+2. `admin@opencti.io` / `CCC2026!` 입력
+
+### 실습 1: Blue Team - 실시간 Dashboard 관제
+
+1. Wazuh Dashboard에서 **Events** 화면 열기
+2. 시간 범위: "Last 15 minutes", 자동 새로고침 활성화
+3. Red Team 공격 시작 후 경보가 나타나는 순서 기록:
+   - 첫 번째 탐지 시간 (포트 스캔)
+   - SQL Injection 관련 경보 시간
+   - SSH 무차별 대입 경보 시간
+4. 각 경보의 rule.level, 출발지 IP, ATT&CK 매핑 기록
+
+### 실습 2: MITRE ATT&CK 실시간 매핑
+
+1. **MITRE ATT&CK** 뷰에서 공격 진행에 따라 새 기법이 추가되는 것 관찰
+2. 탐지된 전술 흐름 기록:
+   - Reconnaissance → Initial Access → Credential Access → ...
+3. 각 전술별 대표 경보 1건씩 스크린샷 또는 메모
+
+### 실습 3: OpenCTI 인시던트 기록
+
+1. OpenCTI에서 **Events** > **Incidents** 이동
+2. 기말 훈련 인시던트 생성:
+   - **Name**: `Final Exercise - Web Attack + SSH Brute Force`
+   - **Severity**: `High`
+   - **Description**: Red Team 공격 요약
+3. 관련 IoC(공격자 IP), Attack Pattern(T1190, T1110) 연결
+4. 타임라인에 Phase별 주요 이벤트 기록
+
+### 실습 4: 종합 보고서를 위한 데이터 수집
+
+1. Wazuh Dashboard에서 시간 범위를 훈련 전체 시간으로 설정
+2. 다음 데이터 수집:
+   - 총 경보 건수
+   - Level 10+ 경보 건수
+   - 탐지된 ATT&CK 기법 수
+   - 에이전트별 경보 분포
+3. OpenCTI에서 생성한 인시던트 페이지의 관계 그래프 캡처
+4. 수집한 데이터를 인시던트 대응 보고서에 포함
+
+> **핵심**: Wazuh Dashboard(실시간 탐지/분석)와 OpenCTI(위협 인텔리전스/인시던트 관리)를
+> 동시에 활용하는 것이 현대 SOC의 표준 관제 모델이다.
 
 ---
 

@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -306,7 +305,7 @@ $ curl -s "http://10.20.30.80:3000/rest/products/search?q=test'%20OR%201=1--"
 
 ```bash
 # 환경 변수 설정
-export BASTION_API_KEY="bastion-api-key-2026"          # 환경 변수 설정
+export BASTION_API_KEY="ccc-api-key-2026"          # 환경 변수 설정
 
 # === 전체 네트워크 스캔 ===
 
@@ -391,7 +390,7 @@ Bastion Manager API를 호출하여 작업을 수행합니다.
 # === Bastion 자동화 공격 ===
 
 # 프로젝트 생성
-PROJECT=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
@@ -403,13 +402,13 @@ PID=$(echo "$PROJECT" | python3 -c "import sys,json; print(json.load(sys.stdin)[
 echo "프로젝트 ID: $PID"
 
 # Stage 전환
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID/plan" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null         # API 인증 키
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" \
+curl -s -X POST "http://localhost:9100/projects/$PID/execute" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null         # API 인증 키
 
 # 정찰 + 공격 체인 실행
-curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
@@ -457,19 +456,19 @@ Bastion Manager API를 호출하여 작업을 수행합니다.
 # 증거 요약
 echo "===== 증거 요약 ====="
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/$PID/evidence/summary" | python3 -m json.tool
+  "http://localhost:9100/projects/$PID/evidence/summary" | python3 -m json.tool
 
 # PoW 체인 검증
 echo ""
 echo "===== PoW 검증 ====="
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
+  "http://localhost:9100/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
 
 # 작업 재생
 echo ""
 echo "===== 작업 타임라인 ====="
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/$PID/replay" | python3 -m json.tool
+  "http://localhost:9100/projects/$PID/replay" | python3 -m json.tool
 ```
 
 ### 보고서 템플릿
@@ -613,8 +612,8 @@ nmap -sT -F 10.20.30.80
 curl -s http://10.20.30.80:3000/rest/products/search?q=test
 
 # Bastion API
-export BASTION_API_KEY="bastion-api-key-2026"
-curl -s -H "X-API-Key: $BASTION_API_KEY" http://localhost:8000/projects
+export BASTION_API_KEY="ccc-api-key-2026"
+curl -s -H "X-API-Key: $BASTION_API_KEY" http://localhost:9100/projects
 
 # 권한 확인
 sudo -l
@@ -690,3 +689,27 @@ sudo tail -20 /var/log/suricata/fast.log
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): JuiceShop SQLi/XSS/IDOR, nmap, 경로탐색(%2500), sudo NOPASSWD, SSH키, crontab
+
+---
+
+## 웹 UI 실습
+
+### Wazuh Dashboard에서 공격 흔적 확인
+
+> **접속 URL:** `https://10.20.30.100:443` (ID: `admin` / PW: 초기 설정값)
+
+1. 브라우저에서 `https://10.20.30.100:443` 접속 (인증서 경고 → "고급" → "계속")
+2. 로그인 후 좌측 메뉴에서 **Modules → Security events** 클릭
+3. 종합 침투 테스트에서 발생시킨 경보 확인:
+   ```
+   agent.name: web AND rule.level >= 5
+   ```
+4. 공격 단계별로 경보 추적:
+   - **정찰**: `rule.description: *scan*` 또는 `rule.groups: web`
+   - **익스플로잇**: `rule.level >= 10` 경보 확인
+   - **후속 공격**: `rule.groups: (syscheck OR rootcheck)` 파일 변경/무결성 경보
+5. 각 경보 클릭 → **Rule** 탭에서 탐지 룰 확인 → 어떤 공격이 탐지되었는지 분석
+6. **Modules → MITRE ATT&CK** 에서 자신의 공격이 ATT&CK 매트릭스의 어디에 매핑되는지 확인
+7. **Export** → CSV로 경보 내보내기 → 침투 테스트 보고서의 "탐지 현황" 섹션에 활용
+
+> **핵심 관점:** 공격자 입장에서 수행한 침투 테스트를 방어자 입장(SIEM)에서 되돌아보는 것이 이 실습의 목적이다. 어떤 공격이 탐지되고 어떤 공격이 탐지되지 않았는지를 분석하여 보고서에 포함한다.

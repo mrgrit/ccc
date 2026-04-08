@@ -15,8 +15,7 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
 ## 강의 시간 배분 (3시간)
 
@@ -333,19 +332,19 @@ if __name__ == "__main__":
 
 ```bash
 # Bastion PoW 리더보드 조회
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 전체 리더보드
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/leaderboard" | python3 -m json.tool
+  "http://localhost:9100/pow/leaderboard" | python3 -m json.tool
 
 # 특정 에이전트의 PoW 블록 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/blocks?agent_id=http://localhost:8002" | python3 -m json.tool
+  "http://localhost:9100/pow/blocks?agent_id=http://localhost:8002" | python3 -m json.tool
 
 # 체인 무결성 검증
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
+  "http://localhost:9100/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
 ```
 
 ### 3.2 에이전트별 성능 비교 대시보드
@@ -356,8 +355,8 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 import json
 import requests
 
-MANAGER_URL = "http://localhost:8000"
-API_KEY = "bastion-api-key-2026"
+MANAGER_URL = "http://localhost:9100"
+API_KEY = "ccc-api-key-2026"
 HEADERS = {"X-API-Key": API_KEY}
 
 AGENTS = {
@@ -476,8 +475,8 @@ import time
 import requests
 
 OLLAMA_URL = "http://192.168.0.105:11434"
-MANAGER_URL = "http://localhost:8000"
-API_KEY = "bastion-api-key-2026"
+MANAGER_URL = "http://localhost:9100"
+API_KEY = "ccc-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 
 # 테스트 경보 데이터
@@ -621,10 +620,10 @@ if __name__ == "__main__":
 
 ```bash
 # Bastion 프로젝트 2개로 A/B 테스트 수행
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # Variant A 프로젝트
-RESP_A=$(curl -s -X POST http://localhost:8000/projects \
+RESP_A=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"week12-ab-variant-A","request_text":"A/B 테스트 Variant A","master_mode":"external"}')
@@ -632,7 +631,7 @@ RESP_A=$(curl -s -X POST http://localhost:8000/projects \
 PID_A=$(echo "$RESP_A" | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
 # Variant B 프로젝트
-RESP_B=$(curl -s -X POST http://localhost:8000/projects \
+RESP_B=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"week12-ab-variant-B","request_text":"A/B 테스트 Variant B","master_mode":"external"}')
@@ -642,10 +641,10 @@ PID_B=$(echo "$RESP_B" | python3 -c "import sys,json; print(json.load(sys.stdin)
 # 양쪽 프로젝트 Stage 전환
 for PID in $PID_A $PID_B; do
   # plan 단계로 전환
-  curl -s -X POST "http://localhost:8000/projects/${PID}/plan" \
+  curl -s -X POST "http://localhost:9100/projects/${PID}/plan" \
     -H "X-API-Key: $BASTION_API_KEY" > /dev/null
   # execute 단계로 전환
-  curl -s -X POST "http://localhost:8000/projects/${PID}/execute" \
+  curl -s -X POST "http://localhost:9100/projects/${PID}/execute" \
     -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 done
 echo "Variant A: $PID_A"
@@ -654,7 +653,7 @@ echo "Variant B: $PID_B"
 # 양쪽에 동일한 점검 태스크 실행
 for PID in $PID_A $PID_B; do
   # 동일한 태스크를 양쪽 프로젝트에 실행
-  curl -s -X POST "http://localhost:8000/projects/${PID}/execute-plan" \
+  curl -s -X POST "http://localhost:9100/projects/${PID}/execute-plan" \
     -H "Content-Type: application/json" \
     -H "X-API-Key: $BASTION_API_KEY" \
     -d '{"tasks":[{"order":1,"instruction_prompt":"hostname","risk_level":"low"},{"order":2,"instruction_prompt":"uptime","risk_level":"low"}],"subagent_url":"http://localhost:8002"}' > /dev/null
@@ -664,10 +663,10 @@ echo "양쪽 태스크 실행 완료"
 # evidence 비교
 echo "=== Variant A ==="
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/${PID_A}/evidence/summary" | python3 -m json.tool
+  "http://localhost:9100/projects/${PID_A}/evidence/summary" | python3 -m json.tool
 echo "=== Variant B ==="
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/${PID_B}/evidence/summary" | python3 -m json.tool
+  "http://localhost:9100/projects/${PID_B}/evidence/summary" | python3 -m json.tool
 ```
 
 ---
@@ -689,23 +688,23 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ```bash
 # Bastion RL 학습 실행
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 1. RL 학습 실행 (기존 task_reward 데이터 사용)
-curl -s -X POST "http://localhost:8000/rl/train" \
+curl -s -X POST "http://localhost:9100/rl/train" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 
 # 2. 학습된 정책 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/rl/policy" | python3 -m json.tool
+  "http://localhost:9100/rl/policy" | python3 -m json.tool
 
 # 3. 추천 조회 — 특정 에이전트/위험도에 대한 최적 행동
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/rl/recommend?agent_id=http://localhost:8002&risk_level=low" | python3 -m json.tool
+  "http://localhost:9100/rl/recommend?agent_id=http://localhost:8002&risk_level=low" | python3 -m json.tool
 
 # 4. 다른 위험도로 추천 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/rl/recommend?agent_id=http://localhost:8002&risk_level=critical" | python3 -m json.tool
+  "http://localhost:9100/rl/recommend?agent_id=http://localhost:8002&risk_level=critical" | python3 -m json.tool
 ```
 
 ### 5.3 RL 수렴 분석 도구

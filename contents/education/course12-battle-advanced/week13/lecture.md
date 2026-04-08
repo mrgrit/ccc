@@ -23,7 +23,7 @@
 | web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `ssh ccc@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh 4.11.2) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -234,10 +234,10 @@ Bastion execute-plan 1개 task = 1개 Atomic Test
 
 ```bash
 # API 키 설정
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 퍼플팀 프로젝트 생성
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -251,9 +251,9 @@ curl -s -X POST http://localhost:8000/projects \
 ```bash
 export PROJECT_ID="반환된-프로젝트-ID"
 
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 ```
 
@@ -273,7 +273,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
 
 ```bash
 # Red Phase: 5개 ATT&CK 기법 실행
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -315,7 +315,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # Blue Phase: 각 기법에 대한 탐지 확인
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -362,7 +362,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # 규칙 개선 제안 생성 (LLM 분석 활용)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -377,7 +377,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 
 ```bash
 # 재테스트: 규칙 개선 후 동일 기법 재실행
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -429,7 +429,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # 성숙도 평가 데이터 수집
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -442,7 +442,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
       },
       {
         "order": 2,
-        "instruction_prompt": "echo \"=== 보안 성숙도 평가: 자동화 차원 ===\"; echo \"[Bastion 프로젝트 수]\"; curl -s http://localhost:8000/projects -H \"X-API-Key: $BASTION_API_KEY\" 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); print(f\\\"총 프로젝트: {len(d) if isinstance(d,list) else d.get(\\x27count\\x27,\\x27?\\x27)}\\\")\" 2>/dev/null; echo \"[PoW 블록 수]\"; curl -s \"http://localhost:8000/pow/blocks\" -H \"X-API-Key: $BASTION_API_KEY\" 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); print(f\\\"총 블록: {len(d) if isinstance(d,list) else \\x27?\\x27}\\\")\" 2>/dev/null; echo \"[RL 정책 상태]\"; curl -s http://localhost:8000/rl/policy -H \"X-API-Key: $BASTION_API_KEY\" 2>/dev/null | head -3",
+        "instruction_prompt": "echo \"=== 보안 성숙도 평가: 자동화 차원 ===\"; echo \"[Bastion 프로젝트 수]\"; curl -s http://localhost:9100/projects -H \"X-API-Key: $BASTION_API_KEY\" 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); print(f\\\"총 프로젝트: {len(d) if isinstance(d,list) else d.get(\\x27count\\x27,\\x27?\\x27)}\\\")\" 2>/dev/null; echo \"[PoW 블록 수]\"; curl -s \"http://localhost:9100/pow/blocks\" -H \"X-API-Key: $BASTION_API_KEY\" 2>/dev/null | python3 -c \"import sys,json; d=json.load(sys.stdin); print(f\\\"총 블록: {len(d) if isinstance(d,list) else \\x27?\\x27}\\\")\" 2>/dev/null; echo \"[RL 정책 상태]\"; curl -s http://localhost:9100/rl/policy -H \"X-API-Key: $BASTION_API_KEY\" 2>/dev/null | head -3",
         "risk_level": "low",
         "subagent_url": "http://10.20.30.201:8002"
       },
@@ -466,7 +466,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # 퍼플팀 완료 보고서 생성
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{

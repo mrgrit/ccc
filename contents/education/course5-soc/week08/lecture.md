@@ -9,10 +9,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -456,6 +455,45 @@ DETECT_TIME=$(date +%s)
 TTD=$((DETECT_TIME - ATTACK_TIME))
 echo "TTD (탐지 소요 시간): ${TTD}초"
 ```
+
+---
+
+## 웹 UI 실습: Dashboard 알림 분류 실습
+
+> **목적**: 중간고사의 로그 분석 결과를 Wazuh Dashboard에서 교차 검증하고,
+> Dashboard 기반 경보 분류(Triage) 워크플로우를 체험한다.
+
+### 접속
+
+1. 브라우저에서 `https://10.20.30.100` 접속
+2. 자체 서명 인증서 경고 → "고급" → "계속 진행"
+3. admin / 비밀번호 입력
+
+### 실습 1: 시험 데이터 Dashboard 검증
+
+1. **Wazuh** > **Events** 이동
+2. Part A에서 CLI로 분석한 SSH 공격 IP를 검색: `data.srcip: [공격자IP]`
+3. Dashboard 결과에서 CLI 분석과 동일한 건수가 나오는지 확인
+4. 시간 그래프에서 공격이 집중된 시간대 확인
+
+### 실습 2: 경보 분류(Triage) 워크플로우
+
+1. `rule.level >= 10` 필터 적용
+2. 각 경보를 하나씩 클릭하여 다음을 확인:
+   - **출발지 IP**: 내부(10.20.30.x)인가 외부인가?
+   - **시간대**: 업무 시간인가 새벽인가?
+   - **빈도**: 이 규칙이 얼마나 자주 발생하는가?
+3. 확인한 내용을 바탕으로 TP/FP 판정
+4. Dashboard의 "Add filter" 기능으로 FP 경보를 제외하고 TP만 남기기
+
+### 실습 3: ATT&CK 매핑 교차 확인
+
+1. **Wazuh** > **MITRE ATT&CK** 이동
+2. Part C에서 수동으로 매핑한 ATT&CK 기법이 Dashboard에도 탐지되어 있는지 확인
+3. Dashboard에서 추가로 발견되는 기법이 있는지 확인 → 시험 보고서에 추가
+
+> **핵심**: CLI 분석과 Dashboard 분석을 교차 검증하면 분석의 정확도가 높아진다.
+> 실무에서는 두 방법을 병행하여 분석 결과를 확인한다.
 
 ---
 

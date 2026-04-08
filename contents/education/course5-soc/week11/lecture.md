@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -545,6 +544,64 @@ ENDSSH
 - Week 12: 인시던트 대응 실습 (3) - 내부 위협 (sudo 남용, 비인가 접근)
 
 ---
+
+---
+
+## 웹 UI 실습: OpenCTI 전체 활용 - 위협 행위자, STIX, 관계 그래프
+
+> **목적**: OpenCTI의 핵심 기능(위협 행위자 관리, STIX 객체, 관계 그래프)을
+> 전체적으로 활용하는 방법을 익힌다.
+
+### OpenCTI 접속
+
+1. 브라우저에서 `http://10.20.30.100:8080` 접속
+2. **Email**: `admin@opencti.io` / **Password**: `CCC2026!`
+
+### 실습 1: 위협 행위자(Threat Actor) 등록
+
+1. 좌측 메뉴에서 **Threats** > **Threat actors (Group)** 클릭
+2. **+** 버튼으로 위협 행위자 생성:
+   - **Name**: `Practice-APT-01`
+   - **Threat actor types**: `APT`
+   - **Description**: `교육용 가상 위협 그룹 - SSH 무차별 대입 및 웹 공격 수행`
+   - **Sophistication**: `Intermediate`
+   - **Primary motivation**: `Organizational gain`
+3. 저장 후 상세 페이지에서 정보 확인
+
+### 실습 2: Attack Pattern (ATT&CK 기법) 연결
+
+1. 생성된 위협 행위자 상세 페이지에서 **Knowledge** 탭 클릭
+2. **Attack patterns** 섹션에서 **+** 클릭
+3. 다음 ATT&CK 기법을 연결:
+   - `Brute Force (T1110)`
+   - `Exploit Public-Facing Application (T1190)`
+   - `Valid Accounts (T1078)`
+4. 관계 그래프에서 위협 행위자 → Attack Pattern 연결 시각화 확인
+
+### 실습 3: 관계 그래프 탐색
+
+1. 위협 행위자 상세 페이지에서 **Knowledge** > **Graph** 탭 클릭
+2. 노드(위협 행위자, Attack Pattern, Indicator, Malware) 간 연결 확인
+3. 노드를 드래그하여 그래프 레이아웃 조정
+4. 특정 노드를 클릭하여 관련 정보 팝업 확인
+5. 이전 주차에서 등록한 IoC, Malware가 이 그래프에 연결되어 있는지 확인
+
+### 실습 4: STIX Bundle 내보내기
+
+1. 위협 행위자 상세 페이지에서 우측 상단 **Export** 버튼 클릭
+2. STIX 2.1 Bundle (JSON) 형식으로 내보내기
+3. 다운로드된 JSON 파일을 열어 STIX 객체 구조 확인:
+   - `type: threat-actor`, `type: relationship`, `type: attack-pattern` 등
+
+### Wazuh Dashboard 교차 확인
+
+1. `https://10.20.30.100` 접속
+2. **MITRE ATT&CK** 뷰에서 OpenCTI에 등록한 Attack Pattern(T1110, T1190)이
+   실제로 탐지되어 있는지 확인
+3. 탐지된 경보의 출발지 IP가 OpenCTI에 등록한 IoC와 일치하는지 확인
+
+> **핵심**: OpenCTI는 위협 인텔리전스의 **수집 → 분석 → 공유** 전 과정을 지원하며,
+> STIX 표준으로 다른 보안 도구/조직과 위협 정보를 교환할 수 있다.
 
 ---
 

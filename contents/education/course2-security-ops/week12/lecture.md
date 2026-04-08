@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -494,6 +493,71 @@ Week 13에서는 OpenCTI를 활용한 위협 인텔리전스 분석을 다룬다
 - IOC 관리와 활용
 - 공격 그룹 분석
 - 위협 헌팅
+
+---
+
+## 웹 UI 실습: Wazuh Dashboard에서 감사 로그 조회
+
+> **실습 목적**: Wazuh Dashboard에서 보안 감사에 필요한 로그를 검색, 필터링, 내보내기하는 실습을 수행한다
+>
+> **배우는 것**: 웹 UI를 통한 감사 로그 조회, 시간 범위 필터링, 보고서 생성 방법
+>
+> **실전 활용**: 보안 감사(내부/외부)에서 심사원이 증적을 요구할 때, SIEM 대시보드에서 직접 보여주거나 보고서를 생성하여 제출한다
+
+### 1단계: Wazuh Dashboard 접속 및 감사 이벤트 검색
+
+1. **https://10.20.30.100:443** 접속 후 로그인
+2. 왼쪽 메뉴에서 **Security events** 클릭
+3. 시간 범위를 감사 대상 기간으로 설정 (예: **Last 7 days** 또는 커스텀 범위)
+4. 검색창에 감사 항목별 쿼리 입력:
+
+**인증 감사:**
+```
+rule.groups:authentication_success OR rule.groups:authentication_failed
+```
+
+**권한 상승 감사 (sudo):**
+```
+rule.groups:sudo
+```
+
+**파일 무결성 감사 (FIM):**
+```
+rule.groups:syscheck
+```
+
+### 2단계: OpenCTI에서 위협 인텔리전스 현황 확인
+
+1. 새 탭에서 **http://10.20.30.100:8080** 접속
+2. 로그인: `admin@opencti.io` / `CCC2026!`
+3. **Dashboard** 메인 화면에서 확인할 항목:
+   - **Indicators**: 등록된 IoC 총 수
+   - **Threat Actors**: 등록된 위협 행위자 수
+   - **Recent observations**: 최근 관찰된 위협 정보
+4. **Data** > **Connectors** 클릭하여 커넥터 동작 상태 확인:
+   - 각 커넥터의 **State**: `active` = 정상 동작
+   - **Last run**: 마지막 데이터 수집 시간
+
+### 3단계: 감사 보고서 생성 및 내보내기
+
+1. Wazuh Dashboard로 돌아와서 원하는 검색 결과 유지
+2. 우측 상단 **Share** > **CSV reports** 클릭
+3. **Generate CSV** 버튼으로 보고서 다운로드
+4. 다운로드된 CSV에 포함되는 항목:
+   - 타임스탬프, Agent 이름, 룰 ID, 룰 레벨, 설명
+   - 출발지 IP, 사용자 정보 등
+5. OpenCTI에서도 **Data** > **Export** 기능으로 STIX 번들 내보내기 가능
+
+### 4단계: 감사 결과 요약 작성
+
+1. 위 데이터를 바탕으로 다음을 정리한다:
+   - 기간 내 총 보안 이벤트 수
+   - Level 7 이상 고위험 알림 수 및 상위 5개 유형
+   - Agent별 이벤트 분포 (어떤 서버에서 이벤트가 많은지)
+   - FIM 변경 탐지 건수 (파일 무결성 관점)
+2. 이 요약은 보안 감사 보고서의 "기술적 증적" 섹션에 첨부한다
+
+> **핵심 포인트**: 보안 감사에서 SIEM 대시보드는 "로그가 중앙에 수집되고 있다"는 것 자체가 ISO 27001 A.8.15(로깅) 통제의 증적이다. 대시보드 화면 캡처와 CSV 보고서를 함께 제출하면 기술적 증적으로 충분하다.
 
 ---
 

@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -464,3 +463,22 @@ curl -sI http://10.20.30.80:3000 | grep -i "content-security-policy"
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): nmap/nikto, SQLi/IDOR/swagger.json, CVSS, 보고서 작성
+
+---
+
+## 웹 UI 실습
+
+### DVWA 보안 레벨 변경 방법 (웹 UI)
+
+> **DVWA URL:** `http://10.20.30.80:8080`
+
+1. 브라우저에서 `http://10.20.30.80:8080` 접속 → 로그인 (admin / password)
+2. 좌측 메뉴 **DVWA Security** 클릭
+3. **Security Level** 드롭다운에서 레벨 선택:
+   - **Low**: XSS/CSRF 필터 없음 → 기본 스크립트 삽입 테스트
+   - **Medium**: 기본 태그 필터링 → `<script>` 우회 기법 필요
+   - **High**: 강화된 필터링 → 이벤트 핸들러/인코딩 우회 실습
+   - **Impossible**: CSP + 토큰 적용 (안전한 구현 참조)
+4. **Submit** 클릭하여 적용
+5. 좌측 메뉴 **XSS (Reflected)**, **XSS (Stored)**, **CSRF** 에서 레벨별 실습
+6. 각 항목 페이지 하단 **View Source** 로 레벨별 필터링 로직 비교

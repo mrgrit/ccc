@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -106,8 +105,8 @@ done
 echo ""
 echo "=== Bastion API ==="
 HTTP_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
-  -H "X-API-Key: bastion-api-key-2026" \
-  http://localhost:8000/projects 2>/dev/null)
+  -H "X-API-Key: ccc-api-key-2026" \
+  http://localhost:9100/projects 2>/dev/null)
 echo "  Manager API: HTTP $HTTP_CODE"
 
 echo ""
@@ -207,9 +206,9 @@ echo "  [Tier 2] 심화 분석"
 echo "============================================"
 
 # 전체 서버 상태 확인 (Bastion 활용)
-export BASTION_API_KEY="bastion-api-key-2026"
+export BASTION_API_KEY="ccc-api-key-2026"
 
-PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT_ID=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -220,13 +219,13 @@ PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
 
 echo "IR Project: $PROJECT_ID"
 
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/plan" \
   -H "X-API-Key: $BASTION_API_KEY"
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute" \
   -H "X-API-Key: $BASTION_API_KEY"
 
 # 다중 서버 동시 분석
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -257,7 +256,7 @@ sleep 5
 echo ""
 echo "=== 분석 결과 ==="
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/$PROJECT_ID/evidence/summary" | \
+  "http://localhost:9100/projects/$PROJECT_ID/evidence/summary" | \
   python3 -m json.tool 2>/dev/null | head -40
 ```
 
@@ -283,7 +282,7 @@ echo "
 "
 
 # 봉쇄 조치 실행 (Bastion)
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -383,7 +382,7 @@ python3 /tmp/final_timeline.py
 
 ```bash
 # Bastion 완료 보고서
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/completion-report" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/completion-report" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -902,3 +901,50 @@ SCRIPT
 
 python3 /tmp/course_matrix.py
 ```
+
+---
+
+## 웹 UI 실습
+
+### 종합: Dashboard + OpenCTI + Suricata 통합 분석 (최종 실전)
+
+이 실습은 모의 인시던트 "Operation Shadow Strike" 대응 중 웹 UI를 활용한 전체 사이클을 수행한다.
+
+#### Step 1: Wazuh Dashboard — 초기 탐지 + 경보 분석
+
+> **접속 URL:** `https://10.20.30.100:443`
+
+1. `https://10.20.30.100:443` 접속 → 로그인
+2. **Modules → Security events** 에서 전체 경보 개요 확인
+3. 높은 심각도 경보부터 분석:
+   ```
+   rule.level >= 10
+   ```
+4. **Modules → MITRE ATT&CK** 에서 공격자의 ATT&CK 체인 시각화
+5. Suricata 네트워크 경보 확인:
+   ```
+   rule.groups: suricata AND rule.level >= 6
+   ```
+6. 호스트 + 네트워크 경보를 시간순 통합하여 킬체인 타임라인 구성
+7. **Export** 로 증거 CSV 저장
+
+#### Step 2: OpenCTI — 위협 인텔리전스 조회 + 공격자 프로파일링
+
+> **접속 URL:** `http://10.20.30.100:8080`
+
+1. `http://10.20.30.100:8080` 접속 → 로그인
+2. 경보에서 추출한 IOC(IP, 도메인, 해시)를 검색
+3. **Threats → Threat actors** 에서 매칭되는 위협 그룹 확인
+4. **Techniques → Attack patterns** 에서 공격자의 기법 셋 확인
+5. **Knowledge** 그래프에서 캠페인 전체 관계도 시각화
+6. 인시던트 최종 보고서에 OpenCTI 위협 인텔리전스 근거 포함
+
+#### Step 3: 통합 대시보드 구성
+
+1. Wazuh Dashboard → **Dashboards → Create new**
+2. 다음 위젯 추가:
+   - 시간별 경보 히스토그램 (Suricata + Wazuh 통합)
+   - ATT&CK 기법별 경보 수 바 차트
+   - 에이전트별 경보 심각도 히트맵
+   - 공격 출발지 IP Top 10 테이블
+3. 대시보드 저장 → 인시던트 보고서 부록으로 첨부

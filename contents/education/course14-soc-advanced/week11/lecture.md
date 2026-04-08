@@ -14,9 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -317,9 +317,9 @@ ssh ccc@10.20.30.80 "ss -tnp 2>/dev/null | grep ESTAB" 2>/dev/null | head -10
 
 ```bash
 # Phase 3: 봉쇄, 근절, 복구 (Bastion 활용)
-export BASTION_API_KEY="bastion-api-key-2026"
+export BASTION_API_KEY="ccc-api-key-2026"
 
-PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT_ID=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -330,13 +330,13 @@ PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
 
 echo "IR Project: $PROJECT_ID"
 
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/plan" \
   -H "X-API-Key: $BASTION_API_KEY"
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute" \
   -H "X-API-Key: $BASTION_API_KEY"
 
 # 봉쇄 조치
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -366,7 +366,7 @@ curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
 sleep 3
 
 # 완료 보고
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/completion-report" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/completion-report" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -634,7 +634,7 @@ python3 /tmp/ir_report.py
 
 ```bash
 # Bastion를 활용한 전체 서버 동시 증거 수집
-export BASTION_API_KEY="bastion-api-key-2026"
+export BASTION_API_KEY="ccc-api-key-2026"
 
 cat << 'SCRIPT' > /tmp/mass_evidence_collection.sh
 #!/bin/bash
@@ -1023,3 +1023,41 @@ python3 /tmp/ttx_guide.py
 ## 다음 주 예고
 
 **Week 12: 로그 엔지니어링**에서는 커스텀 디코더 작성, 로그 파서 개발, 정규화, 보존 정책을 학습한다.
+
+---
+
+## 웹 UI 실습
+
+### SOAR 시나리오: Dashboard 알림 → OpenCTI IoC → 인시던트 대응
+
+#### Step 1: Wazuh Dashboard에서 인시던트 경보 수집
+
+> **접속 URL:** `https://10.20.30.100:443`
+
+1. `https://10.20.30.100:443` 접속 → 로그인
+2. **Modules → Security events** 클릭
+3. 인시던트 관련 경보 수집 쿼리:
+   ```
+   rule.level >= 10 AND agent.name: web
+   ```
+4. 경보를 시간순 정렬하여 공격 타임라인 구성
+5. 각 경보의 `rule.mitre.id` 필드에서 ATT&CK 기법 ID 추출
+6. **Export** → CSV로 증거 보존
+
+#### Step 2: OpenCTI에서 IoC 교차 확인
+
+> **접속 URL:** `http://10.20.30.100:8080`
+
+1. `http://10.20.30.100:8080` 접속 → 로그인
+2. 경보에서 추출한 IP/도메인/해시를 **Observations → Observables** 에서 검색
+3. 매칭된 IOC의 연관 캠페인 → 공격자 프로파일링
+4. **Techniques → Attack patterns** 에서 타임라인의 ATT&CK 기법 매핑
+5. 인시던트 보고서 작성 시 OpenCTI의 위협 컨텍스트를 증거로 활용
+
+#### Step 3: nftables 차단 확인
+
+1. Dashboard **Modules → Security events** 에서 Active Response 로그 확인:
+   ```
+   rule.description: *active*response* OR data.command: *nftables*
+   ```
+2. 봉쇄 조치 전후 경보 빈도 비교로 효과 측정

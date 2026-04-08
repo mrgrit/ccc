@@ -15,8 +15,7 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
 ## 강의 시간 배분 (3시간)
 
@@ -228,10 +227,10 @@ if __name__ == "__main__":
 
 ```bash
 # Bastion dispatch로 Wazuh 경보를 수집
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 프로젝트 A 생성
-RESP=$(curl -s -X POST http://localhost:8000/projects \
+RESP=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"project-A-incident-response","request_text":"자율 인시던트 대응 에이전트 프로젝트","master_mode":"external"}')
@@ -240,14 +239,14 @@ PA_PID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)[
 echo "Project A ID: $PA_PID"
 
 # Stage 전환
-curl -s -X POST "http://localhost:8000/projects/${PA_PID}/plan" \
+curl -s -X POST "http://localhost:9100/projects/${PA_PID}/plan" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 단계 전환
-curl -s -X POST "http://localhost:8000/projects/${PA_PID}/execute" \
+curl -s -X POST "http://localhost:9100/projects/${PA_PID}/execute" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # siem 서버에서 Wazuh 경보 로그 수집
-curl -s -X POST "http://localhost:8000/projects/${PA_PID}/dispatch" \
+curl -s -X POST "http://localhost:9100/projects/${PA_PID}/dispatch" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -406,10 +405,10 @@ if __name__ == "__main__":
 
 ```bash
 # nftables 차단 명령을 Bastion를 통해 실행
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 차단할 IP 리스트를 secu 서버에서 nftables로 차단
-curl -s -X POST "http://localhost:8000/projects/${PA_PID}/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/${PA_PID}/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -440,8 +439,8 @@ curl -s -X POST "http://localhost:8000/projects/${PA_PID}/execute-plan" \
 import json
 import requests
 
-MANAGER_URL = "http://localhost:8000"
-API_KEY = "bastion-api-key-2026"
+MANAGER_URL = "http://localhost:9100"
+API_KEY = "ccc-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 
 class AutoBlocker:
@@ -607,9 +606,9 @@ import json
 import time
 import requests
 
-MANAGER_URL = "http://localhost:8000"
+MANAGER_URL = "http://localhost:9100"
 OLLAMA_URL = "http://192.168.0.105:11434"
-API_KEY = "bastion-api-key-2026"
+API_KEY = "ccc-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 
 def create_project() -> str:
@@ -704,19 +703,19 @@ if __name__ == "__main__":
 
 ```bash
 # 프로젝트 A의 evidence 확인
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # evidence 요약
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/${PA_PID}/evidence/summary" | python3 -m json.tool
+  "http://localhost:9100/projects/${PA_PID}/evidence/summary" | python3 -m json.tool
 
 # 프로젝트 replay로 전체 흐름 확인
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/${PA_PID}/replay" | python3 -m json.tool
+  "http://localhost:9100/projects/${PA_PID}/replay" | python3 -m json.tool
 
 # PoW 블록 확인
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/blocks?agent_id=http://10.20.30.100:8002" | python3 -m json.tool
+  "http://localhost:9100/pow/blocks?agent_id=http://10.20.30.100:8002" | python3 -m json.tool
 ```
 
 ---

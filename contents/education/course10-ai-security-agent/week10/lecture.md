@@ -15,8 +15,7 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
 ## 강의 시간 배분 (3시간)
 
@@ -109,10 +108,10 @@ Master (Claude Code / Native LLM)
 
 ```bash
 # 환경 변수 설정
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 멀티에이전트 테스트 프로젝트 생성
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -126,10 +125,10 @@ curl -s -X POST http://localhost:8000/projects \
 PROJECT_ID="위에서 받은 ID"
 
 # plan → execute stage 전환
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/plan" \
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/plan" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 단계로 전환
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute" \
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/execute" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 echo "Stage 전환 완료"
 ```
@@ -138,9 +137,9 @@ echo "Stage 전환 완료"
 
 ```bash
 # 3개 서버에 동시에 시스템 정보 수집 명령 전송
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -173,24 +172,24 @@ curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute-plan" \
 
 ```bash
 # 전체 evidence를 수집하여 결과를 종합
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # evidence 요약 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/${PROJECT_ID}/evidence/summary" | python3 -m json.tool
+  "http://localhost:9100/projects/${PROJECT_ID}/evidence/summary" | python3 -m json.tool
 
 # PoW 리더보드로 각 에이전트별 작업량 비교
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/leaderboard" | python3 -m json.tool
+  "http://localhost:9100/pow/leaderboard" | python3 -m json.tool
 ```
 
 ### 2.4 서버별 특화 태스크
 
 ```bash
 # 각 서버에 역할에 맞는 다른 명령을 전송
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
-curl -s -X POST "http://localhost:8000/projects/${PROJECT_ID}/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -267,10 +266,10 @@ print(resp['message']['content'][:2000])
 
 ```bash
 # Red Agent의 공격을 Bastion를 통해 실행
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # Red Agent 프로젝트 생성
-RESP=$(curl -s -X POST http://localhost:8000/projects \
+RESP=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"week10-red-agent","request_text":"Red Agent 공격 시뮬레이션","master_mode":"external"}')
@@ -278,14 +277,14 @@ RESP=$(curl -s -X POST http://localhost:8000/projects \
 RED_PID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
 # Stage 전환
-curl -s -X POST "http://localhost:8000/projects/${RED_PID}/plan" \
+curl -s -X POST "http://localhost:9100/projects/${RED_PID}/plan" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 단계로 전환
-curl -s -X POST "http://localhost:8000/projects/${RED_PID}/execute" \
+curl -s -X POST "http://localhost:9100/projects/${RED_PID}/execute" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # Red Agent 공격 태스크 실행
-curl -s -X POST "http://localhost:8000/projects/${RED_PID}/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/${RED_PID}/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -318,10 +317,10 @@ curl -s -X POST "http://localhost:8000/projects/${RED_PID}/execute-plan" \
 
 ```bash
 # Blue Agent가 동시에 방어 활동 수행
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # Blue Agent 프로젝트 생성
-RESP=$(curl -s -X POST http://localhost:8000/projects \
+RESP=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"week10-blue-agent","request_text":"Blue Agent 방어 모니터링","master_mode":"external"}')
@@ -329,14 +328,14 @@ RESP=$(curl -s -X POST http://localhost:8000/projects \
 BLUE_PID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 
 # Stage 전환
-curl -s -X POST "http://localhost:8000/projects/${BLUE_PID}/plan" \
+curl -s -X POST "http://localhost:9100/projects/${BLUE_PID}/plan" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 단계로 전환
-curl -s -X POST "http://localhost:8000/projects/${BLUE_PID}/execute" \
+curl -s -X POST "http://localhost:9100/projects/${BLUE_PID}/execute" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # Blue Agent 방어 태스크 실행
-curl -s -X POST "http://localhost:8000/projects/${BLUE_PID}/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/${BLUE_PID}/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -369,18 +368,18 @@ curl -s -X POST "http://localhost:8000/projects/${BLUE_PID}/execute-plan" \
 
 ```bash
 # 양쪽 프로젝트의 evidence를 비교
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 echo "=== Red Agent 결과 ==="
 # Red Agent evidence 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/${RED_PID}/evidence/summary" | python3 -m json.tool
+  "http://localhost:9100/projects/${RED_PID}/evidence/summary" | python3 -m json.tool
 
 echo ""
 echo "=== Blue Agent 결과 ==="
 # Blue Agent evidence 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/${BLUE_PID}/evidence/summary" | python3 -m json.tool
+  "http://localhost:9100/projects/${BLUE_PID}/evidence/summary" | python3 -m json.tool
 ```
 
 ---
@@ -406,10 +405,10 @@ publish
 
 ```bash
 # Red Agent가 발견한 취약점을 Experience로 게시
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # SubAgent의 experience/publish API 사용 (Manager를 통해)
-curl -s -X POST "http://localhost:8000/projects/${RED_PID}/dispatch" \
+curl -s -X POST "http://localhost:9100/projects/${RED_PID}/dispatch" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -454,8 +453,8 @@ import json
 import time
 import requests
 
-MANAGER_URL = "http://localhost:8000"
-API_KEY = "bastion-api-key-2026"
+MANAGER_URL = "http://localhost:9100"
+API_KEY = "ccc-api-key-2026"
 OLLAMA_URL = "http://192.168.0.105:11434"
 HEADERS = {
     "Content-Type": "application/json",
@@ -691,11 +690,11 @@ else:
 
 ```bash
 # Bastion의 실제 프로젝트 라이프사이클 확인
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 프로젝트 상태 전이 실습
 # init → plan → execute → completion-report
-RESP=$(curl -s -X POST http://localhost:8000/projects \
+RESP=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"week10-workflow","request_text":"워크플로우 실습","master_mode":"external"}')
@@ -704,21 +703,21 @@ WF_PID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)[
 echo "Project: $WF_PID"
 
 # 1. plan 단계 전환
-curl -s -X POST "http://localhost:8000/projects/${WF_PID}/plan" \
+curl -s -X POST "http://localhost:9100/projects/${WF_PID}/plan" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -c "import sys,json; print('Stage:', json.load(sys.stdin).get('stage','?'))"
 
 # 2. execute 단계 전환
-curl -s -X POST "http://localhost:8000/projects/${WF_PID}/execute" \
+curl -s -X POST "http://localhost:9100/projects/${WF_PID}/execute" \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -c "import sys,json; print('Stage:', json.load(sys.stdin).get('stage','?'))"
 
 # 3. 태스크 실행
-curl -s -X POST "http://localhost:8000/projects/${WF_PID}/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/${WF_PID}/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"tasks":[{"order":1,"instruction_prompt":"hostname","risk_level":"low"}],"subagent_url":"http://localhost:8002"}' | python3 -m json.tool
 
 # 4. 완료 보고서 작성
-curl -s -X POST "http://localhost:8000/projects/${WF_PID}/completion-report" \
+curl -s -X POST "http://localhost:9100/projects/${WF_PID}/completion-report" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -729,7 +728,7 @@ curl -s -X POST "http://localhost:8000/projects/${WF_PID}/completion-report" \
 
 # 5. 프로젝트 replay로 전체 흐름 확인
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/${WF_PID}/replay" | python3 -m json.tool
+  "http://localhost:9100/projects/${WF_PID}/replay" | python3 -m json.tool
 ```
 
 ---

@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -454,6 +453,46 @@ for desc, cnt in rules.most_common(10):                # 반복문 시작
 - SOC Metrics: MTTD, MTTR
 
 ---
+
+---
+
+## 웹 UI 실습: Dashboard에서 상관분석 뷰
+
+> **목적**: Dashboard의 검색과 시각화 기능을 활용하여 경보 간 상관관계를 분석한다.
+
+### 접속
+
+1. 브라우저에서 `https://10.20.30.100` 접속
+2. 자체 서명 인증서 경고 → "고급" → "계속 진행"
+3. admin / 비밀번호 입력
+
+### 실습 1: 동일 IP의 다중 경보 상관 분석
+
+1. **Wazuh** > **Events** 이동
+2. 시간 범위를 "Last 24 hours"로 설정
+3. 검색창에 `rule.level >= 5` 입력
+4. 좌측 필터 패널에서 `data.srcip` 필드를 펼침
+5. 가장 빈번한 출발지 IP를 클릭하여 필터 적용
+6. 해당 IP에서 발생한 **모든 유형의 경보**를 시간순으로 확인
+7. SSH 실패 → 성공 → sudo 사용 등 연속 패턴이 있는지 확인
+
+### 실습 2: 시간대별 경보 급증 분석
+
+1. **Overview** 화면의 시간 그래프에서 경보 급증 구간 식별
+2. 급증 구간을 드래그하여 시간 범위 축소
+3. 해당 시간대에 어떤 규칙이 집중적으로 발생했는지 확인
+4. `rule.description` 기준으로 그룹핑하여 Top 5 경보 유형 파악
+5. CLI의 `Counter()` 스크립트 결과와 비교
+
+### 실습 3: 에이전트 간 상관 분석
+
+1. 검색창에 특정 시간 범위 + `rule.level >= 8` 설정
+2. `agent.name` 필터를 토글하며 secu, web, bastion 각 서버의 경보 비교
+3. 같은 시간대에 여러 서버에서 동시에 경보가 발생했는지 확인
+4. 동시 발생 = 다단계 공격(킬 체인) 가능성 → TP 판별 근거
+
+> **핵심**: Dashboard의 **필터 조합**은 CLI에서 여러 서버를 ssh로 접속하여 grep하던 상관 분석을
+> 하나의 화면에서 즉시 수행할 수 있게 해준다.
 
 ---
 

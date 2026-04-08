@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -467,6 +466,56 @@ ENDSSH
 - Week 13: 위협 인텔리전스(CTI) 활용 - OpenCTI 연동, IOC 조회, 위협 헌팅
 
 ---
+
+---
+
+## 웹 UI 실습: Wazuh Active Response + OpenCTI 자동화
+
+> **목적**: Wazuh Dashboard에서 Active Response 설정을 확인하고,
+> OpenCTI에서 인시던트 대응 결과를 기록하는 방법을 익힌다.
+
+### Wazuh Dashboard 접속
+
+1. 브라우저에서 `https://10.20.30.100` 접속
+2. 자체 서명 인증서 경고 → "고급" → "계속 진행"
+3. admin / 비밀번호 입력
+
+### 실습 1: Active Response 관련 이벤트 확인
+
+1. **Wazuh** > **Events** 이동
+2. 검색: `rule.groups: active_response` 또는 `rule.description: *active*response*`
+3. Active Response에 의해 자동 차단된 이벤트 확인
+4. 차단된 IP, 차단 시간, 트리거 규칙 확인
+5. CLI에서 `grep 'active-response' alerts.json` 결과와 비교
+
+### 실습 2: 내부 위협 경보 Dashboard 분석
+
+1. 검색: `rule.description: *sudo*` 또는 `rule.groups: authentication_success`
+2. sudo 사용 이벤트를 시간순으로 정렬
+3. 비정상 시간대(새벽, 주말)의 sudo 사용 이벤트 필터링
+4. 내부 위협 지표:
+   - 업무 외 시간 sudo 사용
+   - 평소와 다른 명령 패턴
+   - 대량 파일 접근
+
+### OpenCTI 접속
+
+1. 브라우저에서 `http://10.20.30.100:8080` 접속
+2. **Email**: `admin@opencti.io` / **Password**: `CCC2026!`
+
+### 실습 3: 인시던트 기록
+
+1. **Events** > **Incidents** 클릭
+2. **+** 버튼으로 새 Incident 생성:
+   - **Name**: `Internal Threat - Sudo Abuse (Practice)`
+   - **Incident type**: `Unauthorized access`
+   - **Severity**: `High`
+   - **Description**: `내부 관리자 sudo 권한 남용 - 타 사용자 파일 접근 및 외부 전송 시도`
+3. 인시던트에 관련 IoC, Threat Actor 연결
+4. 타임라인에 대응 조치 기록: 계정 잠금, sudo 권한 제거, 증거 보전
+
+> **핵심**: Wazuh의 Active Response는 자동 차단을, OpenCTI의 Incident 관리는 대응 과정 기록을 담당한다.
+> 두 도구를 연동하면 탐지-대응-기록의 전 과정이 체계화된다.
 
 ---
 

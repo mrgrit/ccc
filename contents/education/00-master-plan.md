@@ -3,7 +3,6 @@
 **총 8과목 × 15주 × 3시간 = 360시간**
 **대상:** 대학교 신입생~2학년 (보안 비전공자 포함)
 **방식:** 100% 실습 중심, 모든 명령어 검증 완료, 실환경 재현 가능
-**인프라:** Bastion 5대 서버 (bastion, secu, web, siem, dgx-spark)
 
 ---
 
@@ -17,7 +16,6 @@
 │  secu (10.20.30.1) → nftables, Suricata IPS         │
 │  web  (10.20.30.80) → BunkerWeb/ModSec, JuiceShop   │
 │  siem (10.20.30.100) → Wazuh 4.11.2, OpenCTI        │
-│  dgx-spark (192.168.0.105) → Ollama LLM, GPU        │
 └─────────────────────────────────────────────────────┘
 ```
 

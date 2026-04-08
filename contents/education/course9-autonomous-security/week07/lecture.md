@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -306,12 +305,12 @@ PYTHON
 
 ```bash
 # API 키 설정
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 ```
 
 ```bash
 # RL 학습 실행 (기존 task_reward 데이터 기반)
-curl -s -X POST http://localhost:8000/rl/train \
+curl -s -X POST http://localhost:9100/rl/train \
   -H "X-API-Key: $BASTION_API_KEY" \
   | python3 -m json.tool
 # 학습 결과: 에피소드 수, Q-table 크기, 수렴 여부 등이 반환된다
@@ -322,7 +321,7 @@ curl -s -X POST http://localhost:8000/rl/train \
 ```bash
 # 현재 학습된 RL 정책 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/rl/policy \
+  http://localhost:9100/rl/policy \
   | python3 -m json.tool
 # 상태별 최적 행동(risk_level)과 Q-value가 출력된다
 ```
@@ -332,7 +331,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ```bash
 # 특정 에이전트와 risk_level에 대한 RL 추천
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/rl/recommend?agent_id=http://10.20.30.1:8002&risk_level=low" \
+  "http://localhost:9100/rl/recommend?agent_id=http://10.20.30.1:8002&risk_level=low" \
   | python3 -m json.tool
 # 해당 에이전트의 해당 risk_level에 대한 추천 정보가 반환된다
 ```
@@ -340,7 +339,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ```bash
 # 다른 에이전트의 추천
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/rl/recommend?agent_id=http://10.20.30.80:8002&risk_level=medium" \
+  "http://localhost:9100/rl/recommend?agent_id=http://10.20.30.80:8002&risk_level=medium" \
   | python3 -m json.tool
 ```
 
@@ -348,7 +347,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ```bash
 # 다양한 risk_level로 작업 실행하여 학습 데이터 축적
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -361,15 +360,15 @@ curl -s -X POST http://localhost:8000/projects \
 ```bash
 export PROJECT_ID="반환된-프로젝트-ID"
 # stage 전환
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 ```
 
 ```bash
 # 다양한 risk_level로 task 실행
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -420,7 +419,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # 새 데이터 축적 후 RL 재학습
-curl -s -X POST http://localhost:8000/rl/train \
+curl -s -X POST http://localhost:9100/rl/train \
   -H "X-API-Key: $BASTION_API_KEY" \
   | python3 -m json.tool
 # 추가 데이터를 반영하여 정책이 업데이트된다
@@ -429,7 +428,7 @@ curl -s -X POST http://localhost:8000/rl/train \
 ```bash
 # 업데이트된 정책 확인
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/rl/policy \
+  http://localhost:9100/rl/policy \
   | python3 -m json.tool
 # Q-value가 변경되었는지 확인
 ```
@@ -525,12 +524,12 @@ PYTHON
 ```bash
 # PoW 리더보드 조회 (보상 합계 순위)
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/pow/leaderboard | python3 -m json.tool
+  http://localhost:9100/pow/leaderboard | python3 -m json.tool
 ```
 
 ```bash
 # 프로젝트 완료
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{

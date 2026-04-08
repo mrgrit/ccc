@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -521,8 +520,8 @@ python3 ~/lab/week04/permission_test.py
 
 ```bash
 # Bastion Manager API 상태 확인
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  http://localhost:8000/health | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  http://localhost:9100/health | python3 -m json.tool
 
 # 등록된 Tools 확인 (SubAgent 런타임)
 curl -s http://localhost:8002/tools 2>/dev/null | python3 -m json.tool || \
@@ -537,9 +536,9 @@ curl -s http://localhost:8002/skills 2>/dev/null | python3 -m json.tool || \
 
 ```bash
 # 1. 프로젝트 생성 (하네스 진입점)
-PROJECT=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "name": "week04-harness-demo",
     "request_text": "하네스 구성요소 탐색 실습",
@@ -551,21 +550,21 @@ echo "Project ID: $PID"
 
 # 2. Stage 전환 (Task 생명주기)
 # plan 단계로 전환
-curl -s -X POST http://localhost:8000/projects/${PID}/plan \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -c "import sys,json; print('Stage:', json.load(sys.stdin).get('stage'))"
+curl -s -X POST http://localhost:9100/projects/${PID}/plan \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -c "import sys,json; print('Stage:', json.load(sys.stdin).get('stage'))"
 
 # execute 단계로 전환
-curl -s -X POST http://localhost:8000/projects/${PID}/execute \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -c "import sys,json; print('Stage:', json.load(sys.stdin).get('stage'))"
+curl -s -X POST http://localhost:9100/projects/${PID}/execute \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -c "import sys,json; print('Stage:', json.load(sys.stdin).get('stage'))"
 ```
 
 ### 4.3 execute-plan으로 Task 배열 실행
 
 ```bash
 # execute-plan: 여러 Task를 한 번에 실행 (Bastion의 핵심 기능)
-curl -s -X POST http://localhost:8000/projects/${PID}/execute-plan \
+curl -s -X POST http://localhost:9100/projects/${PID}/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
       {
@@ -595,25 +594,25 @@ curl -s -X POST http://localhost:8000/projects/${PID}/execute-plan \
 
 ```bash
 # Evidence 요약 (하네스의 Memory 역할)
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  http://localhost:8000/projects/${PID}/evidence/summary | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  http://localhost:9100/projects/${PID}/evidence/summary | python3 -m json.tool
 
 # PoW 블록 확인 (하네스의 Hook 역할 — 자동 기록)
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  "http://localhost:8000/pow/blocks?agent_id=http://localhost:8002" | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  "http://localhost:9100/pow/blocks?agent_id=http://localhost:8002" | python3 -m json.tool
 
 # PoW 체인 무결성 검증
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  "http://localhost:8000/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  "http://localhost:9100/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
 ```
 
 ### 4.5 완료 보고서 (Agent output)
 
 ```bash
 # 완료 보고서 작성
-curl -s -X POST http://localhost:8000/projects/${PID}/completion-report \
+curl -s -X POST http://localhost:9100/projects/${PID}/completion-report \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "summary": "Week04 하네스 탐색 실습 완료",
     "outcome": "success",
@@ -625,8 +624,8 @@ curl -s -X POST http://localhost:8000/projects/${PID}/completion-report \
   }' | python3 -m json.tool
 
 # 프로젝트 전체 Replay (작업 재현)
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  http://localhost:8000/projects/${PID}/replay | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  http://localhost:9100/projects/${PID}/replay | python3 -m json.tool
 ```
 
 ---

@@ -14,9 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -400,10 +400,10 @@ python3 /tmp/soar_webattack.py
 ## 3.3 Bastion를 이용한 실제 자동 대응
 
 ```bash
-export BASTION_API_KEY="bastion-api-key-2026"
+export BASTION_API_KEY="ccc-api-key-2026"
 
 # SOAR 플레이북 프로젝트
-PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT_ID=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -414,13 +414,13 @@ PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
 
 echo "Project: $PROJECT_ID"
 
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/plan" \
   -H "X-API-Key: $BASTION_API_KEY"
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute" \
   -H "X-API-Key: $BASTION_API_KEY"
 
 # 다중 서버 동시 대응
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -449,7 +449,7 @@ curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
 
 sleep 3
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/$PROJECT_ID/evidence/summary" | \
+  "http://localhost:9100/projects/$PROJECT_ID/evidence/summary" | \
   python3 -m json.tool 2>/dev/null | head -30
 ```
 
@@ -489,7 +489,7 @@ integrations = {
     },
     "Bastion API": {
         "용도": "다중 서버 명령 실행, 증거 수집",
-        "예시": "curl -X POST http://localhost:8000/projects/{id}/dispatch",
+        "예시": "curl -X POST http://localhost:9100/projects/{id}/dispatch",
         "자동화": "플레이북 → 다중 서버 동시 대응",
     },
 }
@@ -977,3 +977,43 @@ python3 /tmp/soar_roi.py
 ## 다음 주 예고
 
 **Week 11: 인시던트 대응 심화**에서는 NIST IR 프레임워크를 기반으로 봉쇄 전략, 증거 수집, 증거 체인을 학습한다.
+
+---
+
+## 웹 UI 실습
+
+### SOAR 시나리오: Dashboard 알림 → OpenCTI IoC → nftables 차단
+
+이 실습에서는 Wazuh Dashboard의 경보를 기점으로 OpenCTI에서 IoC를 확인하고, 최종적으로 nftables 차단까지 이어지는 SOAR 워크플로우를 웹 UI로 따라간다.
+
+#### Step 1: Wazuh Dashboard에서 알림 확인
+
+> **접속 URL:** `https://10.20.30.100:443`
+
+1. `https://10.20.30.100:443` 접속 → 로그인
+2. **Modules → Security events** 클릭
+3. 높은 심각도 경보 필터링:
+   ```
+   rule.level >= 12
+   ```
+4. 경보 클릭 → `data.srcip` (공격 출발지 IP) 복사
+5. **Active responses** 탭에서 이미 실행된 자동 대응 이력 확인
+
+#### Step 2: OpenCTI에서 IoC 조회 및 컨텍스트 확보
+
+> **접속 URL:** `http://10.20.30.100:8080`
+
+1. `http://10.20.30.100:8080` 접속 → 로그인
+2. 상단 검색바에 Step 1에서 복사한 IP 입력
+3. 매칭 시: **Knowledge** 탭 → 연관 캠페인/악성코드 확인 → 차단 정당성 확보
+4. 미매칭 시: **+ Create → Observable** 로 IP 등록 → `x_opencti_score` 설정
+5. **Observations → Indicators** 에서 해당 IP의 STIX 패턴 확인
+
+#### Step 3: 차단 결과 확인
+
+1. Wazuh Dashboard로 돌아가 **Modules → Security events** 에서:
+   ```
+   rule.id: 601 OR rule.description: *active*response*
+   ```
+2. Active Response 실행 로그에서 IP 차단 성공 여부 확인
+3. 차단 후 해당 IP의 추가 경보가 발생하지 않는지 모니터링

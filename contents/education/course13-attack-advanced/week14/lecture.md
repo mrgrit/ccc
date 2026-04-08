@@ -199,7 +199,7 @@ ssh "ccc@10.20.30.100" "echo success" 2>/dev/null && echo "  [+] ccc@10.20.30.10
 
 echo ""
 echo "[취약점 5] Manager API 인증"
-API_RESULT=$(curl -s -H "X-API-Key: bastion-api-key-2026" http://10.20.30.201:8000/projects 2>/dev/null)
+API_RESULT=$(curl -s -H "X-API-Key: ccc-api-key-2026" http://10.20.30.201:8000/projects 2>/dev/null)
 if echo "$API_RESULT" | grep -q "projects\|data\|\["; then
   echo "  [+] Manager API 접근 성공 (알려진 API 키)"
 fi

@@ -7,7 +7,7 @@
 | 유형 | 실기 시험 (자율 보안 시스템 구축 + 운용 + 분석) |
 | 시간 | 3시간 (180분) |
 | 배점 | 100점 |
-| 환경 | Bastion (localhost:8000), Ollama (192.168.0.105:11434), 실습 서버 4대 |
+| 환경 | Bastion (localhost:9100), Ollama (192.168.0.105:11434), 실습 서버 4대 |
 | 제출 | Bastion completion-report + 분석 스크린샷 |
 | 참고 | 오픈 북 (강의 자료, 인터넷 검색 가능. 타인과 공유 금지) |
 
@@ -38,8 +38,7 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
 ## 강의 시간 배분 (3시간)
 
@@ -90,8 +89,8 @@
 
 ```bash
 # 1. Bastion Manager API 연결 확인
-curl -s http://localhost:8000/projects \
-  -H "X-API-Key: bastion-api-key-2026" \
+curl -s http://localhost:9100/projects \
+  -H "X-API-Key: ccc-api-key-2026" \
   | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'Bastion: 정상 (프로젝트 {len(d.get(\"projects\",[]))}개)')"
 # 기대 결과: Bastion: 정상 (프로젝트 N개)
 
@@ -119,8 +118,8 @@ done
 # 기대 결과: 각 SubAgent의 health 응답
 
 # 5. RL API 확인
-curl -s http://localhost:8000/rl/policy \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -c "
+curl -s http://localhost:9100/rl/policy \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -c "
 import sys,json
 data = json.load(sys.stdin)
 print(f'RL Policy: 정상')
@@ -130,9 +129,9 @@ print(f'RL Policy: 정상')
 
 ```bash
 # 환경 변수 설정 (시험 전체에서 사용)
-export BASTION_API_KEY="bastion-api-key-2026"
+export BASTION_API_KEY="ccc-api-key-2026"
 # Manager API 주소
-export MGR="http://localhost:8000"
+export MGR="http://localhost:9100"
 ```
 
 ---

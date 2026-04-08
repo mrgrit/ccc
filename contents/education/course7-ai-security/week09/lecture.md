@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -116,9 +115,9 @@ created → planned → executing → done
 
 ```bash
 # external 모드: Claude Code(사람)가 오케스트레이션
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "name": "security-audit-web",
     "request_text": "web 서버 보안 점검",
@@ -146,24 +145,24 @@ dispatch는 **단일 명령**을 특정 SubAgent에 전달하여 실행한다.
 PID="프로젝트_ID"
 
 # Stage 전환
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" \
-  -H "X-API-Key: bastion-api-key-2026"
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" \
-  -H "X-API-Key: bastion-api-key-2026"
+curl -s -X POST "http://localhost:9100/projects/$PID/plan" \
+  -H "X-API-Key: ccc-api-key-2026"
+curl -s -X POST "http://localhost:9100/projects/$PID/execute" \
+  -H "X-API-Key: ccc-api-key-2026"
 
 # 로컬 SubAgent에서 명령 실행
-curl -s -X POST "http://localhost:8000/projects/$PID/dispatch" \
+curl -s -X POST "http://localhost:9100/projects/$PID/dispatch" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "command": "hostname && uptime",
     "subagent_url": "http://localhost:8002"
   }' | python3 -m json.tool
 
 # 원격 SubAgent에서 명령 실행 (secu 서버)
-curl -s -X POST "http://localhost:8000/projects/$PID/dispatch" \
+curl -s -X POST "http://localhost:9100/projects/$PID/dispatch" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "command": "sudo nft list ruleset | head -20",
     "subagent_url": "http://10.20.30.1:8002"
@@ -182,9 +181,9 @@ execute-plan은 **여러 태스크를 순차적으로** 실행한다.
 ```bash
 # 3개 태스크를 순차 실행: 각각 다른 서버의 SubAgent에 전달
 # order: 실행 순서 / risk_level: low/medium/high/critical
-curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
       {
@@ -227,8 +226,8 @@ curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
 
 ```bash
 # 증거 요약 조회
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  "http://localhost:8000/projects/$PID/evidence/summary" | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  "http://localhost:9100/projects/$PID/evidence/summary" | python3 -m json.tool
 ```
 
 ### PoW (Proof of Work) 체인
@@ -237,12 +236,12 @@ curl -s -H "X-API-Key: bastion-api-key-2026" \
 
 ```bash
 # PoW 블록 조회
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  "http://localhost:8000/pow/blocks?agent_id=http://localhost:8002" | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  "http://localhost:9100/pow/blocks?agent_id=http://localhost:8002" | python3 -m json.tool
 
 # 체인 무결성 검증
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  "http://localhost:8000/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  "http://localhost:9100/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
 # 정상: {"valid": true, "blocks": N, "orphans": 0}
 ```
 
@@ -254,9 +253,9 @@ curl -s -H "X-API-Key: bastion-api-key-2026" \
 
 ```bash
 # 프로젝트 완료 보고서 작성 (outcome: success/failure/partial)
-curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
+curl -s -X POST "http://localhost:9100/projects/$PID/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "summary": "web 서버 보안 점검 완료",
     "outcome": "success",
@@ -276,23 +275,23 @@ curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
 
 ```bash
 # 1. 프로젝트 생성
-PID=$(curl -s -X POST http://localhost:8000/projects \
+PID=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"name":"lab-audit","request_text":"실습 보안 점검","master_mode":"external"}' \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
 echo "Project: $PID"
 
 # 2. Stage 전환
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" \
-  -H "X-API-Key: bastion-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" \
-  -H "X-API-Key: bastion-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/plan" \
+  -H "X-API-Key: ccc-api-key-2026" > /dev/null
+curl -s -X POST "http://localhost:9100/projects/$PID/execute" \
+  -H "X-API-Key: ccc-api-key-2026" > /dev/null
 
 # 3. 보안 점검 태스크 실행
-curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1, "instruction_prompt":"uname -a", "risk_level":"low"},
@@ -303,13 +302,13 @@ curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
   }' | python3 -m json.tool
 
 # 4. 증거 확인
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  "http://localhost:8000/projects/$PID/evidence/summary" | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  "http://localhost:9100/projects/$PID/evidence/summary" | python3 -m json.tool
 
 # 5. 완료 보고
-curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
+curl -s -X POST "http://localhost:9100/projects/$PID/completion-report" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"summary":"보안 점검 완료","outcome":"success","work_details":["시스템 정보 수집","열린 포트 확인","최근 로그인 이력 확인"]}'
 ```
 
@@ -317,9 +316,9 @@ curl -s -X POST "http://localhost:8000/projects/$PID/completion-report" \
 
 ```bash
 # 여러 서버에 동시에 명령 실행
-curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "tasks": [
       {"order":1, "instruction_prompt":"hostname && uptime", "risk_level":"low", "subagent_url":"http://localhost:8002"},
@@ -334,12 +333,12 @@ curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
 
 ```bash
 # 보상 랭킹 확인
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  http://localhost:8000/pow/leaderboard | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  http://localhost:9100/pow/leaderboard | python3 -m json.tool
 
 # 프로젝트 작업 리플레이
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  "http://localhost:8000/projects/$PID/replay" | python3 -m json.tool
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  "http://localhost:9100/projects/$PID/replay" | python3 -m json.tool
 ```
 
 ---
@@ -439,7 +438,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 [6] GET /projects/{id}/replay           → 타임라인 재구성
 [7] POST /projects/{id}/completion-report → 완료 보고
 
-모든 API에 필수: -H "X-API-Key: bastion-api-key-2026"
+모든 API에 필수: -H "X-API-Key: ccc-api-key-2026"
 ```
 
 ---

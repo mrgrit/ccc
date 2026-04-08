@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -91,7 +90,6 @@
 Ollama는 로컬 환경에서 오픈소스 LLM을 실행하는 런타임이다.
 
 ```
-  dgx-spark 서버
   192.168.0.105
   |  Ollama (:11434)  |
   |  | gemma3  |  | llama3.1  |  |
@@ -343,12 +341,12 @@ Bastion의 SubAgent에는 LLM 호출 엔드포인트가 내장되어 있다.
 
 ```bash
 # 환경변수 설정
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 ```
 
 ```bash
 # Bastion 프로젝트 생성 (LLM 분석 실습용)
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -363,9 +361,9 @@ curl -s -X POST http://localhost:8000/projects \
 # 프로젝트 ID 설정 (실제 반환값으로 교체)
 export PROJECT_ID="반환된-프로젝트-ID"
 # stage 전환: plan → execute
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 ```
 
@@ -373,7 +371,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
 
 ```bash
 # Step 1: web 서버에서 실제 접근 로그 수집
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -385,7 +383,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 
 ```bash
 # Step 2: 수집된 로그를 LLM에게 분석 요청 (execute-plan 활용)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -466,7 +464,7 @@ curl -s -X POST http://192.168.0.105:11434/api/chat \
 ```bash
 # 전체 파이프라인: 로그 수집 → LLM 분석 → 결과 기록
 # Step 1: siem 서버에서 Wazuh 경보 수집
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -520,14 +518,14 @@ TEMPLATE
 ```bash
 # evidence 요약 조회 — 모든 분석 결과가 기록되어 있다
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID/evidence/summary \
+  http://localhost:9100/projects/$PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 # 수집된 로그와 분석 결과가 evidence로 기록되어 있다
 ```
 
 ```bash
 # 프로젝트 완료 보고서
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{

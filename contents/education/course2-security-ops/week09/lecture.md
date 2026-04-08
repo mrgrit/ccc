@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -592,6 +591,56 @@ Week 10에서는 Wazuh 탐지 룰을 다룬다:
 - local_rules.xml에 커스텀 룰 작성
 - 디코더 작성
 - logtest로 룰 검증
+
+---
+
+## 웹 UI 실습: Wazuh Dashboard 실시간 모니터링
+
+> **실습 목적**: CLI에서 확인한 Wazuh 서비스 상태와 알림을 웹 대시보드에서 실시간으로 모니터링한다
+>
+> **배우는 것**: Wazuh Dashboard의 주요 화면 구성, 실시간 이벤트 스트림, Agent 상태 모니터링 방법
+>
+> **실전 활용**: 실무 SOC에서 대시보드는 24/7 모니터링의 핵심 도구이며, 분석가가 가장 먼저 확인하는 화면이다
+
+### 1단계: Wazuh Dashboard 접속 및 Overview 확인
+
+1. 브라우저에서 **https://10.20.30.100:443** 접속
+2. 인증서 경고가 나오면 "고급" > "계속 진행" 클릭
+3. 로그인: `admin` / `admin` (또는 수업 시간에 안내된 계정)
+4. 로그인 후 첫 화면이 **Overview** 대시보드이다
+5. Overview 화면에서 확인할 항목:
+   - **Security events**: 최근 보안 이벤트 수 (시간대별 그래프)
+   - **MITRE ATT&CK**: 탐지된 공격 기법 히트맵
+   - **Top 5 agents**: 알림이 많은 에이전트 순위
+
+### 2단계: Agents 상태 모니터링
+
+1. 왼쪽 메뉴에서 **Agents** 클릭
+2. Agent 목록 화면에서 확인할 항목:
+   - **Status** 컬럼: `Active` (녹색) = 정상, `Disconnected` (적색) = 연결 끊김
+   - **Name**: siem (000), secu (001), web (002) 등
+   - **OS**: 각 에이전트의 운영체제 정보
+   - **Last keep alive**: 마지막 통신 시간 (5분 이상 지나면 이상)
+3. 특정 Agent(예: secu)를 클릭하면 해당 서버의 상세 보안 현황을 볼 수 있다
+
+### 3단계: Security Events 실시간 확인
+
+1. 왼쪽 메뉴에서 **Security events** 클릭
+2. 상단의 시간 범위를 **Last 15 minutes**로 설정
+3. 실시간 이벤트 목록에서 확인할 항목:
+   - **rule.level**: 숫자가 높을수록 심각 (7 이상은 주의, 12 이상은 긴급)
+   - **rule.description**: 이벤트 설명 (한글/영문)
+   - **agent.name**: 이벤트 발생 서버
+4. 검색창에 `rule.level >= 7`을 입력하면 중요도 높은 알림만 필터링된다
+
+### 4단계: 대시보드 결과 저장
+
+1. 원하는 검색 결과 화면에서 우측 상단 **Share** > **CSV reports** 클릭
+2. **Generate CSV** 버튼 클릭하여 보고서 다운로드
+3. 또는 **Share** > **Short URL** 클릭하여 현재 검색 조건을 URL로 공유 가능
+4. 다운로드된 CSV는 보안 현황 보고의 증적 자료로 활용한다
+
+> **핵심 포인트**: CLI의 `tail -f /var/ossec/logs/alerts/alerts.json`과 Dashboard의 Security Events는 동일한 데이터를 보여준다. 대시보드는 시각화와 필터링이 쉽고, CLI는 스크립트 연동과 심화 분석에 적합하다.
 
 ---
 

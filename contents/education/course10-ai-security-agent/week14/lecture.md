@@ -15,8 +15,7 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
 ## 강의 시간 배분 (3시간)
 
@@ -103,10 +102,10 @@
 
 ```bash
 # JuiceShop 기본 정보 수집
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 프로젝트 B 생성
-RESP=$(curl -s -X POST http://localhost:8000/projects \
+RESP=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"project-B-ctf-agent","request_text":"CTF 자동 풀이 Red Agent","master_mode":"external"}')
@@ -115,14 +114,14 @@ PB_PID=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin)[
 echo "Project B ID: $PB_PID"
 
 # Stage 전환
-curl -s -X POST "http://localhost:8000/projects/${PB_PID}/plan" \
+curl -s -X POST "http://localhost:9100/projects/${PB_PID}/plan" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # execute 단계 전환
-curl -s -X POST "http://localhost:8000/projects/${PB_PID}/execute" \
+curl -s -X POST "http://localhost:9100/projects/${PB_PID}/execute" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 
 # 1단계: JuiceShop 기본 정찰
-curl -s -X POST "http://localhost:8000/projects/${PB_PID}/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/${PB_PID}/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -161,8 +160,8 @@ import time
 import requests
 
 TARGET = "http://10.20.30.80:3000"
-MANAGER_URL = "http://localhost:8000"
-API_KEY = "bastion-api-key-2026"
+MANAGER_URL = "http://localhost:9100"
+API_KEY = "ccc-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 
 class JuiceShopScanner:
@@ -355,10 +354,10 @@ if __name__ == "__main__":
 
 ```bash
 # 스캔 결과를 Bastion dispatch로 수집
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # web 서버에서 직접 JuiceShop 엔드포인트 스캔
-curl -s -X POST "http://localhost:8000/projects/${PB_PID}/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/${PB_PID}/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -545,10 +544,10 @@ if __name__ == "__main__":
 
 ```bash
 # LLM이 수립한 전략을 Bastion execute-plan으로 실행
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # 3단계 익스플로잇 실행
-curl -s -X POST "http://localhost:8000/projects/${PB_PID}/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/${PB_PID}/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -586,8 +585,8 @@ import json
 import time
 import requests
 
-MANAGER_URL = "http://localhost:8000"
-API_KEY = "bastion-api-key-2026"
+MANAGER_URL = "http://localhost:9100"
+API_KEY = "ccc-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 
 class ExploitExecutor:
@@ -673,19 +672,19 @@ if __name__ == "__main__":
 
 ```bash
 # 프로젝트 B evidence 확인
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # evidence 요약
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/${PB_PID}/evidence/summary" | python3 -m json.tool
+  "http://localhost:9100/projects/${PB_PID}/evidence/summary" | python3 -m json.tool
 
 # 전체 replay
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/${PB_PID}/replay" | python3 -m json.tool
+  "http://localhost:9100/projects/${PB_PID}/replay" | python3 -m json.tool
 
 # PoW 블록 확인 (web 서버 에이전트)
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/blocks?agent_id=http://10.20.30.80:8002" | python3 -m json.tool
+  "http://localhost:9100/pow/blocks?agent_id=http://10.20.30.80:8002" | python3 -m json.tool
 ```
 
 ---
@@ -709,35 +708,35 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ```bash
 # 프로젝트 A와 B의 evidence를 함께 조회하여 통합 현황 파악
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 echo "=== 프로젝트 A (인시던트 대응) ==="
 # 프로젝트 A evidence
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/${PA_PID}/evidence/summary" 2>/dev/null | python3 -m json.tool || echo "ID 필요"
+  "http://localhost:9100/projects/${PA_PID}/evidence/summary" 2>/dev/null | python3 -m json.tool || echo "ID 필요"
 
 echo ""
 echo "=== 프로젝트 B (CTF 에이전트) ==="
 # 프로젝트 B evidence
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/projects/${PB_PID}/evidence/summary" 2>/dev/null | python3 -m json.tool || echo "ID 필요"
+  "http://localhost:9100/projects/${PB_PID}/evidence/summary" 2>/dev/null | python3 -m json.tool || echo "ID 필요"
 
 echo ""
 echo "=== 전체 PoW 리더보드 ==="
 # 에이전트별 작업량 비교
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/leaderboard" | python3 -m json.tool
+  "http://localhost:9100/pow/leaderboard" | python3 -m json.tool
 ```
 
 ### 5.3 Red/Blue 연동 시나리오
 
 ```bash
 # Red Agent(프로젝트 B)가 발견한 취약점을 Blue Agent(프로젝트 A)가 방어
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 
 # Red Agent 발견 → Blue Agent 방어 연계 태스크
 # Red가 발견한 SQL Injection을 Blue가 탐지하는지 확인
-curl -s -X POST "http://localhost:8000/projects/${PA_PID}/dispatch" \
+curl -s -X POST "http://localhost:9100/projects/${PA_PID}/dispatch" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{

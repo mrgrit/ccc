@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -474,3 +473,25 @@ done
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): nmap/nikto, SQLi/IDOR/swagger.json, CVSS, 보고서 작성
+
+---
+
+## 웹 UI 실습
+
+### DVWA 보안 레벨 변경 방법 (웹 UI)
+
+> **DVWA URL:** `http://10.20.30.80:8080`
+
+1. 브라우저에서 `http://10.20.30.80:8080` 접속
+2. 로그인: ID `admin` / PW `password`
+3. 좌측 메뉴에서 **DVWA Security** 클릭
+4. **Security Level** 드롭다운에서 레벨 선택:
+   - **Low**: 보안 장치 없음 (취약점 학습용)
+   - **Medium**: 기본적인 필터링 적용 (우회 실습용)
+   - **High**: 강화된 필터링 (고급 우회 실습용)
+   - **Impossible**: 안전한 구현 (방어 코드 참조용)
+5. **Submit** 버튼 클릭하여 레벨 변경 적용
+6. 좌측 메뉴에서 실습할 취약점 항목(SQL Injection, XSS 등) 선택
+7. 각 항목 페이지 하단 **View Source** 클릭 → 현재 레벨의 소스 코드 확인
+
+> **실습 순서:** Low에서 취약점 확인 → Medium에서 우회 시도 → High에서 고급 우회 → Impossible에서 안전한 코드 학습

@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -601,6 +600,55 @@ Week 11에서는 Wazuh의 고급 기능을 다룬다:
 - FIM (File Integrity Monitoring)
 - SCA (Security Configuration Assessment)
 - Active Response (자동 대응)
+
+---
+
+## 웹 UI 실습: Wazuh Vulnerability Detection 웹 UI
+
+> **실습 목적**: CLI에서 작성한 커스텀 탐지 룰의 동작 결과를 Wazuh Dashboard에서 확인하고, 취약점 탐지 현황을 웹 UI로 모니터링한다
+>
+> **배우는 것**: Dashboard에서 커스텀 룰 알림 조회, Vulnerability Detection 화면 활용법
+>
+> **실전 활용**: 취약점 관리는 ISO 27001 A.8.8(기술적 취약점 관리)의 핵심 통제이며, SIEM 대시보드를 통해 자동화된 취약점 현황 보고가 가능하다
+
+### 1단계: Wazuh Dashboard에서 커스텀 룰 알림 확인
+
+1. 브라우저에서 **https://10.20.30.100:443** 접속 후 로그인
+2. 왼쪽 메뉴에서 **Security events** 클릭
+3. 검색창에 다음 쿼리를 입력하여 커스텀 룰(100000번대)만 필터링:
+
+```
+rule.id >= 100000
+```
+
+4. 결과 목록에서 확인할 항목:
+   - **rule.id**: 100001(root SSH), 100003(sudo), 100005(침입 의심) 등
+   - **rule.description**: 한글 알림 메시지 (커스텀 룰에서 작성한 것)
+   - **rule.level**: 알림 레벨 (5, 8, 10, 12 등)
+5. 개별 알림을 클릭하면 디코더 결과(srcip, user 등) 포함 상세 데이터를 확인할 수 있다
+
+### 2단계: Vulnerabilities 화면 확인
+
+1. 왼쪽 메뉴에서 Agent 하나를 클릭 (예: secu)
+2. Agent 상세 페이지에서 **Vulnerabilities** 탭 클릭
+3. 취약점 목록에서 확인할 항목:
+   - **CVE**: 취약점 식별자 (예: CVE-2024-xxxx)
+   - **Severity**: Critical / High / Medium / Low
+   - **Package**: 취약한 패키지 이름과 버전
+   - **Status**: 탐지됨 / 수정 가능 여부
+4. **Severity** 필터로 Critical/High만 선택하면 우선 패치 대상을 확인할 수 있다
+
+### 3단계: 결과 내보내기 및 보고
+
+1. Vulnerabilities 화면에서 우측 상단 **Export** 또는 **Generate report** 클릭
+2. CSV 또는 PDF 형식으로 취약점 현황 보고서 다운로드
+3. 다운로드된 보고서에서 확인할 내용:
+   - 전체 취약점 수, 심각도별 분포
+   - 각 에이전트별 취약점 현황
+   - 패치 필요 패키지 목록
+4. 이 보고서는 취약점 관리 증적 및 경영진 보고 자료로 활용한다
+
+> **핵심 포인트**: CLI의 `wazuh-logtest`로 룰을 검증한 후, Dashboard에서 실제 알림이 정상적으로 생성되는지 반드시 확인한다. Vulnerability Detection은 Wazuh Agent가 주기적으로 패키지 목록을 스캔하여 CVE 데이터베이스와 대조한 결과를 보여준다.
 
 ---
 

@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -557,21 +556,21 @@ Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # 파일 접근 테스트 프로젝트 생성
-PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT_ID=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"name":"week07-file-access","request_text":"JuiceShop 파일접근/SSRF 취약점 점검","master_mode":"external"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
-  -H "X-API-Key: bastion-api-key-2026" > /dev/null     # API 인증 키
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
-  -H "X-API-Key: bastion-api-key-2026" > /dev/null     # API 인증 키
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
+  -H "X-API-Key: ccc-api-key-2026" > /dev/null     # API 인증 키
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
+  -H "X-API-Key: ccc-api-key-2026" > /dev/null     # API 인증 키
 
 # 파일 접근 테스트 자동 실행
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{                                                # 요청 데이터(body)
     "tasks": [
       {"order":1, "instruction_prompt":"curl -s http://10.20.30.80:3000/ftp", "risk_level":"low"},
@@ -582,8 +581,8 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   }'
 
 # 결과 확인
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  http://localhost:8000/projects/$PROJECT_ID/evidence/summary \
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  http://localhost:9100/projects/$PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 ```
 
@@ -646,3 +645,21 @@ curl -s -H "X-API-Key: bastion-api-key-2026" \
 **정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
 
 ---
+
+---
+
+## 웹 UI 실습
+
+### JuiceShop Score Board에서 진행도 확인
+
+> **JuiceShop URL:** `http://10.20.30.80:3000`
+
+1. 브라우저에서 `http://10.20.30.80:3000` 접속
+2. 우측 상단 **Account → Login** 으로 로그인
+3. 주소창에 `http://10.20.30.80:3000/#/score-board` 입력
+4. Score Board에서 이번 주차에 해당하는 챌린지 확인:
+   - **SSRF** 카테고리 필터링 → 관련 챌린지 확인
+   - **Broken Access Control** 카테고리 → 파일 업로드/경로 탐색 챌린지 확인
+5. 실습에서 공격을 수행할 때마다 Score Board 새로고침하여 챌린지 해결 여부 확인
+6. 해결된 챌린지의 초록색 체크 표시와 해결 시각 기록 확인
+7. 이번 주 목표: 3성 이하 챌린지 중 SSRF/파일 업로드/경로 탐색 관련 챌린지 최소 3개 해결

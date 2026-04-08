@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -519,6 +518,50 @@ ssh ccc@10.20.30.201 "grep 'Accepted' /var/log/auth.log 2>/dev/null | \
 - Wazuh Custom Rules Guide
 
 ---
+
+---
+
+## 웹 UI 실습: Dashboard에서 룰 관리 + OpenCTI IoC 등록
+
+> **목적**: Wazuh Dashboard에서 탐지 규칙을 검색/관리하고, OpenCTI에 IoC를 등록하여
+> SIGMA 룰과 위협 인텔리전스를 연결하는 방법을 익힌다.
+
+### Wazuh Dashboard 접속
+
+1. 브라우저에서 `https://10.20.30.100` 접속
+2. 자체 서명 인증서 경고 → "고급" → "계속 진행"
+3. admin / 비밀번호 입력
+
+### 실습 1: Dashboard에서 규칙 검색
+
+1. **Management** > **Rules** 이동
+2. 검색창에 `brute force` 입력 → 관련 규칙 목록 확인
+3. 각 규칙의 **ID**, **Level**, **Description** 확인
+4. SIGMA 룰로 작성한 "SSH Brute Force Detection"에 대응하는 Wazuh 규칙 ID 확인
+5. 규칙을 클릭하여 XML 원본 확인 — CLI에서 본 `/var/ossec/ruleset/rules/` 파일과 비교
+
+### 실습 2: 커스텀 규칙 확인
+
+1. Rules 화면에서 필터를 **Custom rules**로 설정
+2. `/var/ossec/etc/rules/local_rules.xml`에 추가한 규칙이 Dashboard에 표시되는지 확인
+3. SIGMA → Wazuh XML로 변환한 커스텀 규칙의 탐지 건수 확인
+
+### OpenCTI 접속
+
+1. 브라우저에서 `http://10.20.30.100:8080` 접속
+2. **Email**: `admin@opencti.io` / **Password**: `CCC2026!`
+
+### 실습 3: OpenCTI에서 IoC 등록 및 관리
+
+1. **Observations** > **Indicators** 이동
+2. **+** 버튼으로 새 IoC 등록:
+   - SIGMA 룰에서 탐지 대상으로 삼은 악성 IP, 도메인을 등록
+   - Pattern: `[ipv4-addr:value = 'X.X.X.X']`
+3. 등록된 IoC에 **Label** 추가: `brute-force`, `ssh-attack` 등
+4. **Analysis** > **Reports** 에서 간단한 분석 보고서 작성 가능 여부 확인
+
+> **핵심**: SIGMA 룰 작성 → Wazuh 규칙 변환 → Dashboard에서 모니터링 → OpenCTI에 IoC 등록의
+> 전체 워크플로우를 경험하는 것이 이 실습의 목표이다.
 
 ---
 

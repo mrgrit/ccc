@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 
 ## 강의 시간 배분 (3시간)
@@ -542,22 +541,22 @@ Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # XSS 테스트 프로젝트 생성
-PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT_ID=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"name":"week05-xss-test","request_text":"JuiceShop XSS 취약점 점검","master_mode":"external"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 
 # Stage 전환
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
-  -H "X-API-Key: bastion-api-key-2026" > /dev/null     # API 인증 키
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
-  -H "X-API-Key: bastion-api-key-2026" > /dev/null     # API 인증 키
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
+  -H "X-API-Key: ccc-api-key-2026" > /dev/null     # API 인증 키
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
+  -H "X-API-Key: ccc-api-key-2026" > /dev/null     # API 인증 키
 
 # XSS 페이로드 테스트 자동 실행
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{                                                # 요청 데이터(body)
     "tasks": [
       {"order":1, "instruction_prompt":"curl -sI http://10.20.30.80:3000/ | grep -iE \"content-security|x-xss|x-frame\"", "risk_level":"low"},
@@ -567,8 +566,8 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
   }'
 
 # 결과 확인
-curl -s -H "X-API-Key: bastion-api-key-2026" \
-  http://localhost:8000/projects/$PROJECT_ID/evidence/summary \
+curl -s -H "X-API-Key: ccc-api-key-2026" \
+  http://localhost:9100/projects/$PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 ```
 

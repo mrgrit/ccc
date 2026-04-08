@@ -24,7 +24,7 @@
 | web | 10.20.30.80 | 웹 서버 (JuiceShop, Apache) | `ssh ccc@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -286,9 +286,9 @@ echo "  - 동일 해시로 짧은 시간 내 다수 시스템 접근"
 echo "  - 소스 IP가 서버가 아닌 워크스테이션"
 
 # 5. Bastion를 통한 PtH 탐지 시뮬레이션
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "name": "week04-pth-detection",
     "request_text": "Pass-the-Hash 공격 탐지 시뮬레이션",
@@ -914,9 +914,9 @@ echo ""
 
 # 3. Bastion dispatch를 통한 원격 실행 (측면 이동 시뮬레이션)
 echo "[+] Bastion dispatch를 통한 원격 실행:"
-PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT_ID=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "name": "week04-lateral-movement",
     "request_text": "측면 이동 시뮬레이션: 다중 서버 정보 수집",
@@ -927,15 +927,15 @@ if [ -n "$PROJECT_ID" ]; then
     echo "  프로젝트 ID: $PROJECT_ID"
     
     # Stage 전환
-    curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
-      -H "X-API-Key: bastion-api-key-2026" > /dev/null 2>&1
-    curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
-      -H "X-API-Key: bastion-api-key-2026" > /dev/null 2>&1
+    curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/plan" \
+      -H "X-API-Key: ccc-api-key-2026" > /dev/null 2>&1
+    curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute" \
+      -H "X-API-Key: ccc-api-key-2026" > /dev/null 2>&1
     
     # 다중 서버 정보 수집 (측면 이동 시뮬레이션)
-    curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
+    curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
       -H "Content-Type: application/json" \
-      -H "X-API-Key: bastion-api-key-2026" \
+      -H "X-API-Key: ccc-api-key-2026" \
       -d '{
         "tasks": [
           {"order":1,"instruction_prompt":"hostname && id && cat /etc/os-release | head -3","risk_level":"low","subagent_url":"http://localhost:8002"},
@@ -947,8 +947,8 @@ if [ -n "$PROJECT_ID" ]; then
     
     echo ""
     echo "[+] 증거 확인:"
-    curl -s -H "X-API-Key: bastion-api-key-2026" \
-      "http://localhost:8000/projects/$PROJECT_ID/evidence/summary" 2>/dev/null | python3 -m json.tool 2>/dev/null
+    curl -s -H "X-API-Key: ccc-api-key-2026" \
+      "http://localhost:9100/projects/$PROJECT_ID/evidence/summary" 2>/dev/null | python3 -m json.tool 2>/dev/null
 else
     echo "[참고] Bastion API 미기동 시 스킵"
 fi
@@ -966,7 +966,7 @@ fi
 
 **트러블슈팅**:
 - `sshpass: command not found`: `sudo apt install sshpass`로 설치
-- Bastion API 타임아웃: Manager API가 기동 중인지 확인 (`curl http://localhost:8000/health`)
+- Bastion API 타임아웃: Manager API가 기동 중인지 확인 (`curl http://localhost:9100/health`)
 - SubAgent 접속 불가: 방화벽 규칙 확인 (`nftables list ruleset | grep 8002`)
 
 ### 실습 8: Suricata에서 원격 실행 탐지
@@ -1138,9 +1138,9 @@ echo "+------------------+--------------------+-------------+"
 # Bastion로 탐지 룰 배포 시뮬레이션
 echo ""
 echo "[+] Bastion 측면 이동 체인 탐지 자동화:"
-CHAIN_PROJECT=$(curl -s -X POST http://localhost:8000/projects \
+CHAIN_PROJECT=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{
     "name": "week04-chain-detection",
     "request_text": "측면 이동 체인 탐지 자동화",
@@ -1148,14 +1148,14 @@ CHAIN_PROJECT=$(curl -s -X POST http://localhost:8000/projects \
   }' 2>/dev/null | python3 -c "import sys,json; print(json.load(sys.stdin).get('id',''))" 2>/dev/null)
 
 if [ -n "$CHAIN_PROJECT" ]; then
-    curl -s -X POST "http://localhost:8000/projects/$CHAIN_PROJECT/plan" \
-      -H "X-API-Key: bastion-api-key-2026" > /dev/null 2>&1
-    curl -s -X POST "http://localhost:8000/projects/$CHAIN_PROJECT/execute" \
-      -H "X-API-Key: bastion-api-key-2026" > /dev/null 2>&1
+    curl -s -X POST "http://localhost:9100/projects/$CHAIN_PROJECT/plan" \
+      -H "X-API-Key: ccc-api-key-2026" > /dev/null 2>&1
+    curl -s -X POST "http://localhost:9100/projects/$CHAIN_PROJECT/execute" \
+      -H "X-API-Key: ccc-api-key-2026" > /dev/null 2>&1
     
-    curl -s -X POST "http://localhost:8000/projects/$CHAIN_PROJECT/execute-plan" \
+    curl -s -X POST "http://localhost:9100/projects/$CHAIN_PROJECT/execute-plan" \
       -H "Content-Type: application/json" \
-      -H "X-API-Key: bastion-api-key-2026" \
+      -H "X-API-Key: ccc-api-key-2026" \
       -d '{
         "tasks": [
           {"order":1,"instruction_prompt":"suricata --build-info 2>/dev/null | head -5 || echo Suricata not installed","risk_level":"low","subagent_url":"http://10.20.30.1:8002"},
@@ -1166,9 +1166,9 @@ if [ -n "$CHAIN_PROJECT" ]; then
       }' 2>/dev/null | python3 -m json.tool 2>/dev/null
     
     echo ""
-    curl -s -X POST "http://localhost:8000/projects/$CHAIN_PROJECT/completion-report" \
+    curl -s -X POST "http://localhost:9100/projects/$CHAIN_PROJECT/completion-report" \
       -H "Content-Type: application/json" \
-      -H "X-API-Key: bastion-api-key-2026" \
+      -H "X-API-Key: ccc-api-key-2026" \
       -d '{"summary":"측면 이동 체인 탐지 인프라 점검 완료","outcome":"success","work_details":["Suricata 버전 확인","Wazuh 커스텀 룰 점검","SMB/RPC 포트 상태 확인"]}' 2>/dev/null | python3 -m json.tool 2>/dev/null
 else
     echo "[참고] Bastion API 미기동 시 스킵"

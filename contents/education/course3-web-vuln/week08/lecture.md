@@ -12,10 +12,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -449,3 +448,25 @@ for c in sorted(data, key=lambda x: x.get('difficulty', 0)):  # 반복문 시작
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): nmap/nikto, SQLi/IDOR/swagger.json, CVSS, 보고서 작성
+
+---
+
+## 웹 UI 실습
+
+### JuiceShop 파일 업로드 페이지 활용
+
+> **JuiceShop URL:** `http://10.20.30.80:3000`
+
+1. 브라우저에서 `http://10.20.30.80:3000` 접속
+2. 우측 상단 **Account → Login** → 계정 생성 또는 기존 계정으로 로그인
+3. 좌측 메뉴 또는 주소창에서 **Complaint** 페이지 이동 (`/#/complain`)
+4. **Upload** 영역에서 파일 업로드 기능 확인:
+   - 허용되는 파일 형식 확인 (PDF, ZIP 등)
+   - 파일 크기 제한 확인
+5. 점검 보고서(PDF)를 업로드하여 정상 동작 확인
+6. 비허용 확장자 파일(.php, .jsp) 업로드 시도 → 클라이언트/서버 검증 차이 관찰
+7. Burp Suite로 업로드 요청 인터셉트 → Content-Type 변조 실습
+8. `http://10.20.30.80:3000/#/score-board` 에서 파일 업로드 관련 챌린지 진행 상황 확인:
+   - "Upload Size" 챌린지
+   - "Upload Type" 챌린지
+9. Score Board에서 해결한 챌린지에 초록색 체크 표시가 되는지 확인

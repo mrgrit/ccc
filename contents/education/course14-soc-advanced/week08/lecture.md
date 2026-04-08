@@ -14,9 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -706,9 +706,9 @@ python3 /tmp/mem_forensics_workflow.py
 ## 4.3 Bastion를 활용한 메모리 점검 자동화
 
 ```bash
-export BASTION_API_KEY="bastion-api-key-2026"
+export BASTION_API_KEY="ccc-api-key-2026"
 
-PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT_ID=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -717,12 +717,12 @@ PROJECT_ID=$(curl -s -X POST http://localhost:8000/projects \
     "master_mode": "external"
   }' | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
 
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/plan" \
   -H "X-API-Key: $BASTION_API_KEY"
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute" \
   -H "X-API-Key: $BASTION_API_KEY"
 
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -1032,3 +1032,31 @@ bash /tmp/vol3_auto_analysis.sh
 ## 다음 주 예고
 
 **Week 09: 악성코드 분석 기초**에서는 정적/동적 분석 기법으로 악성코드를 분석한다. strings, strace, sandbox 환경을 활용한 안전한 분석 방법을 학습한다.
+
+---
+
+## 웹 UI 실습
+
+### Wazuh Dashboard — 메모리 포렌식 연계
+
+> **접속 URL:** `https://10.20.30.100:443`
+
+1. 브라우저에서 `https://10.20.30.100:443` 접속 → 로그인
+2. **Modules → Security events** 클릭
+3. 메모리 포렌식에서 발견한 의심 프로세스의 로그 추적:
+   ```
+   data.process.name: <의심_프로세스명> OR data.audit.exe: *<의심_프로세스명>*
+   ```
+4. 해당 프로세스의 최초 실행 시점, 네트워크 연결, 파일 접근 이력 확인
+5. **Modules → Integrity monitoring** 에서 관련 파일 변경 이력 확인
+6. Volatility3 분석 결과와 Wazuh 로그를 교차 검증하여 타임라인 구성
+
+### OpenCTI — 악성 프로세스/해시 위협 조회
+
+> **접속 URL:** `http://10.20.30.100:8080`
+
+1. `http://10.20.30.100:8080` 접속 → 로그인
+2. **Observations → Observables** 에서 파일 해시(MD5/SHA256) 검색
+3. 메모리 덤프에서 추출한 악성 바이너리의 해시를 입력하여 알려진 위협 매칭
+4. 매칭 시 **Knowledge** 탭에서 악성코드 패밀리, 배후 그룹 정보 확인
+5. 미등록 해시의 경우 **+ Create** 로 새 Observable 등록 → 조직 내 위협 DB 구축

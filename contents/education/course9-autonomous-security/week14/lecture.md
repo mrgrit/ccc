@@ -15,8 +15,7 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
 ## 강의 시간 배분 (3시간)
 
@@ -139,9 +138,9 @@ Q-value 업데이트
 
 ```bash
 # 환경 변수 설정
-export BASTION_API_KEY="bastion-api-key-2026"
+export BASTION_API_KEY="ccc-api-key-2026"
 # Manager API 주소
-export MGR="http://localhost:8000"
+export MGR="http://localhost:9100"
 
 # 1. 현재 RL 정책 상태 확인
 curl -s "$MGR/rl/policy" \
@@ -500,8 +499,8 @@ done
 python3 -c "
 import requests, json
 
-API = 'http://localhost:8000'
-KEY = 'bastion-api-key-2026'
+API = 'http://localhost:9100'
+KEY = 'ccc-api-key-2026'
 headers = {'X-API-Key': KEY}
 
 # 각 SubAgent에 대해 모든 risk_level의 추천을 조회

@@ -470,21 +470,21 @@ Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # 프로젝트 생성
-RESULT=$(curl -s -X POST http://localhost:8000/projects \
+RESULT=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{"name":"week02-recon","request_text":"Week 02: 정보수집 자동화","master_mode":"external"}')  # 요청 데이터(body)
 PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
 echo "Project: $PID"
 
 # Stage 전환
-curl -s -X POST "http://localhost:8000/projects/$PID/plan" -H "X-API-Key: bastion-api-key-2026" > /dev/null  # silent 모드 / POST 요청 / API 인증 / Bastion 프로젝트
-curl -s -X POST "http://localhost:8000/projects/$PID/execute" -H "X-API-Key: bastion-api-key-2026" > /dev/null  # silent 모드 / POST 요청 / API 인증 / Bastion 프로젝트
+curl -s -X POST "http://localhost:9100/projects/$PID/plan" -H "X-API-Key: ccc-api-key-2026" > /dev/null  # silent 모드 / POST 요청 / API 인증 / Bastion 프로젝트
+curl -s -X POST "http://localhost:9100/projects/$PID/execute" -H "X-API-Key: ccc-api-key-2026" > /dev/null  # silent 모드 / POST 요청 / API 인증 / Bastion 프로젝트
 
 # 정찰 태스크 병렬 실행
-curl -s -X POST "http://localhost:8000/projects/$PID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
   -H "Content-Type: application/json" \
-  -H "X-API-Key: bastion-api-key-2026" \
+  -H "X-API-Key: ccc-api-key-2026" \
   -d '{                                                # 요청 데이터(body)
     "tasks": [
       {"order":1,"title":"네트워크 호스트 발견","instruction_prompt":"nmap -sn 10.20.30.0/24 2>/dev/null","risk_level":"low","subagent_url":"http://localhost:8002"},
@@ -510,15 +510,15 @@ Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
 # Evidence 요약
-curl -s "http://localhost:8000/projects/$PID/evidence/summary" \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -c "  # API 인증 키
+curl -s "http://localhost:9100/projects/$PID/evidence/summary" \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -c "  # API 인증 키
 import sys,json; d=json.load(sys.stdin)
 print(f'증적: {d[\"total\"]}건, 성공률: {d[\"success_rate\"]*100:.0f}%')
 "
 
 # Replay 타임라인
-curl -s "http://localhost:8000/projects/$PID/replay" \
-  -H "X-API-Key: bastion-api-key-2026" | python3 -c "  # API 인증 키
+curl -s "http://localhost:9100/projects/$PID/replay" \
+  -H "X-API-Key: ccc-api-key-2026" | python3 -c "  # API 인증 키
 import sys,json; d=json.load(sys.stdin)
 print(f'총 보상: {d[\"total_reward\"]}')
 for s in d['timeline']:                                # 반복문 시작

@@ -13,10 +13,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -87,7 +86,7 @@
 ```
 +---------------------------------------------+
 |              Bastion Manager API              |
-|              (http://localhost:8000)           |
+|              (http://localhost:9100)           |
 +-----------+-----------+-----------------------+
 |           |           |                       |
 |  Explore  |  Daemon   |  Stimulate            |
@@ -129,11 +128,11 @@
 > **실전 활용**: SOAR(Security Orchestration, Automation and Response)는 SOC 운영 효율화의 핵심 기술이다
 
 ```bash
-export BASTION_API_KEY=bastion-api-key-2026            # 환경 변수 설정
+export BASTION_API_KEY=ccc-api-key-2026            # 환경 변수 설정
 
 # 프로젝트 생성
 echo "=== Phase 1: 프로젝트 생성 ==="
-PROJECT=$(curl -s -X POST http://localhost:8000/projects \
+PROJECT=$(curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"name":"soc-explore-demo","request_text":"보안 관제 환경 탐색","master_mode":"external"}')  # 요청 데이터(body)
@@ -141,9 +140,9 @@ PROJECT_ID=$(echo "$PROJECT" | python3 -c "import json,sys; print(json.load(sys.
 echo "Project ID: $PROJECT_ID"
 
 # Stage 전환
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/plan" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null         # API 인증 키
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute" \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null         # API 인증 키
 echo "Stage: execute"
 ```
@@ -153,10 +152,10 @@ echo "Stage: execute"
 Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
-export BASTION_API_KEY=bastion-api-key-2026            # 환경 변수 설정
+export BASTION_API_KEY=ccc-api-key-2026            # 환경 변수 설정
 
 echo "=== secu 서버 탐색 ==="
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
@@ -184,10 +183,10 @@ for r in data.get('results', []):                      # 반복문 시작
 Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
-export BASTION_API_KEY=bastion-api-key-2026            # 환경 변수 설정
+export BASTION_API_KEY=ccc-api-key-2026            # 환경 변수 설정
 
 echo "=== siem 서버 탐색 ==="
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/execute-plan" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
@@ -314,10 +313,10 @@ ENDSSH
 Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
-export BASTION_API_KEY=bastion-api-key-2026            # 환경 변수 설정
+export BASTION_API_KEY=ccc-api-key-2026            # 환경 변수 설정
 
 echo "=== 자극 테스트: 포트 스캔 ==="
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/dispatch" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/dispatch" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
@@ -331,10 +330,10 @@ curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/dispatch" \
 Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
-export BASTION_API_KEY=bastion-api-key-2026            # 환경 변수 설정
+export BASTION_API_KEY=ccc-api-key-2026            # 환경 변수 설정
 
 echo "=== 자극: SQLi 시도 ==="
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/dispatch" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/dispatch" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
@@ -348,10 +347,10 @@ curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/dispatch" \
 Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
-export BASTION_API_KEY=bastion-api-key-2026            # 환경 변수 설정
+export BASTION_API_KEY=ccc-api-key-2026            # 환경 변수 설정
 
 echo "=== 탐지 확인: Suricata ==="
-curl -s -X POST "http://localhost:8000/projects/$PROJECT_ID/dispatch" \
+curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/dispatch" \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{                                                # 요청 데이터(body)
@@ -470,6 +469,48 @@ ENDSSH
 - Week 15: 기말 종합 인시던트 대응 훈련 - Red Team vs Blue Team
 
 ---
+
+---
+
+## 웹 UI 실습: Dashboard에서 실시간 공격 모니터링
+
+> **목적**: Red Team 자극 테스트 중 Wazuh Dashboard에서 실시간으로 경보를 모니터링하여
+> 자동화 관제와 수동 관제의 차이를 체험한다.
+
+### 접속
+
+1. 브라우저에서 `https://10.20.30.100` 접속
+2. 자체 서명 인증서 경고 → "고급" → "계속 진행"
+3. admin / 비밀번호 입력
+
+### 실습 1: 실시간 모니터링 설정
+
+1. **Wazuh** > **Events** 이동
+2. 시간 범위를 "Last 15 minutes"로 설정
+3. 우측 상단 **자동 새로고침** 활성화 (10초 간격)
+4. 검색: `rule.level >= 5`
+5. 이 상태에서 CLI에서 자극 테스트(포트 스캔, SQLi)를 실행
+
+### 실습 2: 자극 테스트 경보 실시간 확인
+
+1. Bastion API로 포트 스캔 자극 실행 후 Dashboard 화면 관찰
+2. 새 경보가 자동으로 나타나는지 확인 (10~30초 소요)
+3. 경보 클릭하여 상세 확인:
+   - 출발지 IP, 목적지 포트, 규칙 설명
+4. MITRE ATT&CK 뷰에서 새로운 기법이 추가되는지 확인
+
+### 실습 3: 자동 대응 vs 수동 대응 비교
+
+1. Active Response에 의해 자동 차단된 이벤트 확인:
+   - `rule.groups: active_response` 검색
+2. 자동 대응이 작동하지 않은 경보 확인:
+   - 자동 대응 규칙에 포함되지 않은 경보 유형 식별
+3. 비교 분석:
+   - **자동 대응 가능**: 반복적, 명확한 패턴 (SSH 무차별 대입)
+   - **수동 분석 필요**: 복합적, 맥락 판단 필요 (SQL Injection 성공 여부)
+
+> **핵심**: Dashboard의 실시간 모니터링은 SOC L1의 일상 업무이다.
+> 자동화 관제(Bastion Daemon)와 수동 관제(Dashboard)를 병행하는 것이 최적의 관제 모델이다.
 
 ---
 

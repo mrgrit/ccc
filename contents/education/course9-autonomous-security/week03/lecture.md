@@ -14,10 +14,9 @@
 | bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
 | secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh:443, OpenCTI:9400) | `ssh ccc@10.20.30.100` |
-| dgx-spark | 192.168.0.105 | AI/GPU (Ollama:11434) | 원격 API만 |
+| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:8000` / Key: `bastion-api-key-2026`
+**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
 ## 강의 시간 배분 (3시간)
 
@@ -201,14 +200,14 @@ ssh ccc@10.20.30.201
 
 ```bash
 # API 키 설정
-export BASTION_API_KEY=bastion-api-key-2026
+export BASTION_API_KEY=ccc-api-key-2026
 ```
 
 ### 3.2 Stage 1: created (프로젝트 생성)
 
 ```bash
 # 프로젝트 생성
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -225,7 +224,7 @@ curl -s -X POST http://localhost:8000/projects \
 export PROJECT_ID="반환된-프로젝트-ID"
 # 프로젝트 상세 조회로 stage 확인
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID \
+  http://localhost:9100/projects/$PROJECT_ID \
   | python3 -m json.tool
 # "stage": "created" 확인
 ```
@@ -234,14 +233,14 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ```bash
 # plan 단계로 전환
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 # "stage": "planning" 확인
 ```
 
 ```bash
 # (참고) planning 단계에서 dispatch를 시도하면 에러 발생
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"command":"hostname","subagent_url":"http://localhost:8002"}' \
@@ -253,14 +252,14 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/dispatch \
 
 ```bash
 # execute 단계로 전환
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 # "stage": "executing" 확인
 ```
 
 ```bash
 # Task 그룹 1: 전 서버 디스크 사용량 확인
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -297,7 +296,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # Task 그룹 2: 보안 서비스 상태 확인
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -331,7 +330,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/execute-plan \
 ```bash
 # evidence 요약 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID/evidence/summary \
+  http://localhost:9100/projects/$PROJECT_ID/evidence/summary \
   | python3 -m json.tool
 # 7개 task의 실행 결과가 모두 기록되어 있다
 ```
@@ -340,7 +339,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ```bash
 # 완료 보고서 작성 (validating → reporting → closed 자동 전환)
-curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
+curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/completion-report \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -362,7 +361,7 @@ curl -s -X POST http://localhost:8000/projects/$PROJECT_ID/completion-report \
 ```bash
 # 프로젝트 전체 이력 재생
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects/$PROJECT_ID/replay \
+  http://localhost:9100/projects/$PROJECT_ID/replay \
   | python3 -m json.tool
 # 프로젝트의 전체 생명주기가 시간순으로 출력된다:
 # created → planning → executing → (각 task 실행) → closed
@@ -376,7 +375,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ```bash
 # 새 프로젝트 생성 (오류 실험용)
-curl -s -X POST http://localhost:8000/projects \
+curl -s -X POST http://localhost:9100/projects \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -390,17 +389,17 @@ curl -s -X POST http://localhost:8000/projects \
 ```bash
 export ERR_PROJECT="새-프로젝트-ID"
 # 실험 1: created에서 바로 execute로 전환 시도
-curl -s -X POST http://localhost:8000/projects/$ERR_PROJECT/execute \
+curl -s -X POST http://localhost:9100/projects/$ERR_PROJECT/execute \
   -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool
 # 예상: planning을 거쳐야 한다는 에러 메시지
 ```
 
 ```bash
 # 실험 2: planning으로 전환 후 dispatch 시도
-curl -s -X POST http://localhost:8000/projects/$ERR_PROJECT/plan \
+curl -s -X POST http://localhost:9100/projects/$ERR_PROJECT/plan \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 # planning 단계에서 dispatch 시도
-curl -s -X POST http://localhost:8000/projects/$ERR_PROJECT/dispatch \
+curl -s -X POST http://localhost:9100/projects/$ERR_PROJECT/dispatch \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{"command":"hostname","subagent_url":"http://localhost:8002"}' \
@@ -412,13 +411,13 @@ curl -s -X POST http://localhost:8000/projects/$ERR_PROJECT/dispatch \
 
 ```bash
 # execute 단계로 전환
-curl -s -X POST http://localhost:8000/projects/$ERR_PROJECT/execute \
+curl -s -X POST http://localhost:9100/projects/$ERR_PROJECT/execute \
   -H "X-API-Key: $BASTION_API_KEY" > /dev/null
 ```
 
 ```bash
 # low risk: 즉시 실행
-curl -s -X POST http://localhost:8000/projects/$ERR_PROJECT/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$ERR_PROJECT/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -432,7 +431,7 @@ curl -s -X POST http://localhost:8000/projects/$ERR_PROJECT/execute-plan \
 
 ```bash
 # critical risk: dry_run 강제
-curl -s -X POST http://localhost:8000/projects/$ERR_PROJECT/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$ERR_PROJECT/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -446,7 +445,7 @@ curl -s -X POST http://localhost:8000/projects/$ERR_PROJECT/execute-plan \
 
 ```bash
 # critical risk + confirmed: 실제 실행
-curl -s -X POST http://localhost:8000/projects/$ERR_PROJECT/execute-plan \
+curl -s -X POST http://localhost:9100/projects/$ERR_PROJECT/execute-plan \
   -H "Content-Type: application/json" \
   -H "X-API-Key: $BASTION_API_KEY" \
   -d '{
@@ -468,7 +467,7 @@ curl -s -X POST http://localhost:8000/projects/$ERR_PROJECT/execute-plan \
 ```bash
 # 전체 프로젝트 목록 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/projects | python3 -c "
+  http://localhost:9100/projects | python3 -c "
 import sys, json
 # 프로젝트 목록을 표 형태로 출력
 projects = json.load(sys.stdin)
@@ -487,7 +486,7 @@ if isinstance(projects, list):
 ```bash
 # 이번 실습에서 생성된 PoW 블록 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:8000/pow/blocks?project_id=$PROJECT_ID" \
+  "http://localhost:9100/pow/blocks?project_id=$PROJECT_ID" \
   | python3 -c "
 import sys, json
 # PoW 블록 목록 출력
@@ -504,7 +503,7 @@ if isinstance(blocks, list):
 ```bash
 # 보상 랭킹 조회
 curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  http://localhost:8000/pow/leaderboard | python3 -m json.tool
+  http://localhost:9100/pow/leaderboard | python3 -m json.tool
 # 각 SubAgent의 누적 보상 점수가 순위별로 출력된다
 ```
 
