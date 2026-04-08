@@ -74,11 +74,23 @@ export default function ChatBot() {
     setLoading(true)
 
     try {
+      // 현재 페이지의 교안 컨텍스트 수집
+      const pageContent = document.querySelector('main')?.innerText?.slice(0, 4000) || ''
+      const params = new URLSearchParams(window.location.search)
+
       const d = await api('/api/chat', {
         method: 'POST',
         body: JSON.stringify({
           message: userMsg,
-          context: { page: window.location.pathname, user_name: user?.name, rank: user?.rank },
+          context: {
+            page: window.location.pathname,
+            page_content: pageContent,
+            course_id: params.get('course') || '',
+            week: params.get('week') || '',
+            user_name: user?.name,
+            rank: user?.rank,
+          },
+          history: messages.slice(-10).map(m => ({ role: m.role, content: m.content.slice(0, 500) })),
         }),
       })
       setMessages(prev => [...prev, { role: 'assistant', content: d.reply || '응답을 생성할 수 없습니다.' }])

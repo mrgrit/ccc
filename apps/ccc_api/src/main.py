@@ -2112,6 +2112,7 @@ CTF: {stats['ctf']['solved']}/{stats['ctf']['attempted']} 해결 ({stats['ctf'][
 class ChatBody(BaseModel):
     message: str
     context: dict[str, Any] = {}
+    history: list[dict[str, str]] = []  # [{"role":"user","content":"..."}, {"role":"assistant","content":"..."}]
 
 @app.post("/chat", dependencies=[Depends(verify_api_key)])
 def chat(body: ChatBody, request: Request):
@@ -2121,32 +2122,50 @@ def chat(body: ChatBody, request: Request):
     ollama_url = LLM_BASE_URL
     model = LLM_SUBAGENT_MODEL
 
+    # 현재 페이지의 교안 내용을 컨텍스트로 주입
+    page_content = body.context.get("page_content", "")
+    page_info = body.context.get("page", "")
+    course_id = body.context.get("course_id", "")
+    week = body.context.get("week", "")
+
+    # 페이지 컨텍스트가 없으면 course_id/week으로 교안 로드
+    if not page_content and course_id and week:
+        for k, v in _COURSE_MAP.items():
+            if v["name"] == course_id:
+                lecture_path = os.path.join(_EDUCATION_DIR, k, f"week{int(week):02d}", "lecture.md")
+                if os.path.isfile(lecture_path):
+                    with open(lecture_path, encoding="utf-8") as f:
+                        page_content = f.read()[:4000]
+                break
+
+    context_section = ""
+    if page_content:
+        context_section = f"\n\n[현재 학생이 보고 있는 교안 내용]\n{page_content[:4000]}\n\n위 교안 내용을 기반으로 학생의 질문에 답변하세요. 교안에 나온 구체적인 코드, SQL 구문, 명령어의 맥락을 설명하세요."
+
     system_prompt = f"""너는 CCC(Cyber Combat Commander) 사이버보안 교육 플랫폼의 AI 튜터다.
 학생의 질문에 친절하고 정확하게 답변한다.
+이전 대화 맥락을 기억하고 이어서 답변한다.
 
 현재 사용자: {user.get('name', '학생')} (rank: {user.get('rank', 'rookie')})
-현재 페이지: {body.context.get('page', '')}
-
-CCC 시스템 안내:
-- Training: 15개 교과목의 교안과 실습 (공격/방어/AI/실전)
-- Labs: 문제 풀이 + 자동 채점
-- Battle: 공방전 (Red vs Blue)
-- My Infra: 학생 인프라 등록 (6대 VM)
-- CCCNet: 블록체인 성과 관리
-- CTF: AI 자동 출제 문제
+현재 페이지: {page_info}
+{context_section}
 
 한국어로 답변. 간결하고 실용적으로."""
+
+    # 대화 히스토리 구성
+    messages = [{"role": "system", "content": system_prompt}]
+    for h in body.history[-10:]:  # 최근 10턴
+        if h.get("role") in ("user", "assistant") and h.get("content"):
+            messages.append({"role": h["role"], "content": h["content"][:500]})
+    messages.append({"role": "user", "content": body.message})
 
     try:
         r = _hxc.post(f"{ollama_url}/api/chat", json={
             "model": model,
-            "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": body.message},
-            ],
+            "messages": messages,
             "stream": False,
-            "options": {"temperature": 0.5, "num_predict": 500},
-        }, timeout=60.0)
+            "options": {"temperature": 0.5, "num_predict": 800},
+        }, timeout=90.0)
         reply = r.json().get("message", {}).get("content", "응답 생성 실패")
     except Exception as e:
         reply = f"AI 서버 연결 실패: {str(e)[:100]}"
