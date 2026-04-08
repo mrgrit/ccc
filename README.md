@@ -27,8 +27,8 @@ docker compose -f docker/docker-compose.yaml up -d
     v
 CCC Central (:9100)
     ├── Training (교안 + 실습 통합)
-    ├── Labs (시험 모드)
-    ├── Battle (공방전 Red vs Blue)
+    ├── Cyber Range
+    ├── Battlefield (공방전 Red vs Blue)
     ├── CCCNet (블록체인 성과)
     ├── CTF (AI 자동 출제)
     ├── AI Tutor (챗봇)

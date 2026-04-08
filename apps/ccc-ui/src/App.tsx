@@ -16,9 +16,9 @@ import ChatBot from './components/ChatBot.tsx'
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: '📊' },
   { to: '/training', label: 'Training', icon: '📚' },
-  { to: '/labs', label: 'Labs', icon: '🔬' },
+  { to: '/labs', label: 'Cyber Range', icon: '🎯' },
   { to: '/my-infra', label: 'My Infra', icon: '🖥️' },
-  { to: '/battle', label: 'Battle', icon: '⚔️' },
+  { to: '/battle', label: 'Battlefield', icon: '⚔️' },
   { to: '/leaderboard', label: 'Leaderboard', icon: '🏆' },
   { to: '/blockchain', label: 'Blockchain', icon: '⛓️' },
   { to: '/admin', label: 'Admin', icon: '⚙️', adminOnly: true },

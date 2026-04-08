@@ -243,7 +243,7 @@ export default function Battle() {
 
   return (
     <div>
-      <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24, color: '#e6edf3' }}>Battle Arena</h2>
+      <h2 style={{ fontSize: 24, fontWeight: 700, marginBottom: 24, color: '#e6edf3' }}>Battlefield</h2>
 
       {/* 시나리오 선택 + 개설 (admin) */}
       {isAdmin() && scenarios.length > 0 && (
