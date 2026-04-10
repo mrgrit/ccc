@@ -47,7 +47,7 @@ fi
 
 # 2. Python venv + 의존성
 echo "[2/5] Python 가상환경 + 의존성 설치..."
-if [ -n "$SUDO_USER" ]; then
+if [ -n "${SUDO_USER:-}" ]; then
     sudo -u "$SUDO_USER" python3 -m venv .venv
     sudo -u "$SUDO_USER" .venv/bin/pip install -r requirements.txt
     sudo -u "$SUDO_USER" .venv/bin/pip install open-interpreter --no-deps 2>/dev/null || true
@@ -68,7 +68,7 @@ fi
 # 3. UI 빌드 (sudo로 실행 시 원래 유저 권한으로 빌드)
 echo "[3/5] UI 빌드..."
 cd apps/ccc-ui
-if [ -n "$SUDO_USER" ]; then
+if [ -n "${SUDO_USER:-}" ]; then
     sudo -u "$SUDO_USER" npm install
     sudo -u "$SUDO_USER" npm run build
 else
