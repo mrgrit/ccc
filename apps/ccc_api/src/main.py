@@ -435,17 +435,61 @@ def login(body: LoginBody):
 
 @app.get("/auth/me", dependencies=[Depends(verify_api_key)])
 def get_me(request: Request):
-    """내 프로필"""
+    """내 프로필 (metadata에 credentials 포함)"""
     user = get_current_user(request)
     if user.get("sub") == "api":
         return {"user": {"role": "admin", "name": "API Admin"}}
     with _conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
-            cur.execute("SELECT id, student_id, name, email, role, grp, score, created_at FROM students WHERE id=%s", (user["sub"],))
+            cur.execute("SELECT id, student_id, name, email, role, rank, grp, group_id, score, total_blocks, metadata, created_at FROM students WHERE id=%s", (user["sub"],))
             row = cur.fetchone()
     if not row:
         raise HTTPException(404, "User not found")
-    return {"user": dict(row)}
+    d = dict(row)
+    # metadata에서 credentials 추출
+    meta = d.get("metadata") or {}
+    d["credentials"] = meta.get("credentials", {})
+    return {"user": d}
+
+@app.get("/profile", dependencies=[Depends(verify_api_key)])
+def get_profile(request: Request):
+    """프로필 상세 — 본인 또는 admin만 접근"""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM students WHERE id=%s", (uid,))
+            student = cur.fetchone()
+            if not student:
+                raise HTTPException(404)
+            # 인프라 정보
+            cur.execute("SELECT id, infra_name, ip, subagent_url, status, vm_config FROM student_infras WHERE student_id=%s", (uid,))
+            infras = [dict(r) for r in cur.fetchall()]
+            # 랭크 히스토리
+            cur.execute("SELECT * FROM rank_history WHERE student_id=%s ORDER BY created_at DESC LIMIT 10", (uid,))
+            rank_hist = [dict(r) for r in cur.fetchall()]
+    meta = (student.get("metadata") or {})
+    return {
+        "student": {k: v for k, v in dict(student).items() if k != "password_hash"},
+        "credentials": meta.get("credentials", {}),
+        "infras": infras,
+        "rank_history": rank_hist,
+    }
+
+@app.post("/profile/credentials", dependencies=[Depends(verify_api_key)])
+def save_credentials(body: dict[str, Any], request: Request):
+    """계정 정보 저장 — 본인 또는 admin만"""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT metadata FROM students WHERE id=%s", (uid,))
+            row = cur.fetchone()
+            meta = row[0] if row and row[0] else {}
+            meta["credentials"] = body
+            cur.execute("UPDATE students SET metadata=%s WHERE id=%s", (Json(meta), uid))
+            conn.commit()
+    return {"saved": True}
 
 class ChangePasswordBody(BaseModel):
     current_password: str
@@ -898,6 +942,30 @@ def onboard_infra(body: InfraSetupBody, request: Request):
                         step_data['stderr'] = step.get('stderr', '')[:500]
                         step_data['stdout'] = step.get('stdout', '')[:300]
                     yield f"data: {_j.dumps(step_data, ensure_ascii=False)}\n\n"
+
+                # SIEM 온보딩 완료 시 credential 수집 + 저장
+                if vm["role"] == "siem" and status == "healthy":
+                    try:
+                        from packages.bastion import run_command as _rc
+                        _creds = {}
+                        # Wazuh Dashboard 비밀번호
+                        _r = _rc(vm["ip"], "tar -axf /tmp/wazuh-install-files.tar wazuh-install-files/wazuh-passwords.txt -O 2>/dev/null | grep -A1 \"indexer_username: 'admin'\" | tail -1 | awk '{print $2}' | tr -d \"'\"", timeout=10)
+                        wazuh_pw = _r.get("stdout", "").strip()
+                        if wazuh_pw:
+                            _creds["wazuh_dashboard"] = {"url": f"https://{vm['ip']}:443", "user": "admin", "password": wazuh_pw}
+                        _creds["opencti"] = {"url": f"http://{vm['ip']}:8080", "user": "admin@opencti.io", "password": "CCC2026!"}
+                        _creds["wazuh_api"] = {"url": f"https://{vm['ip']}:55000", "user": "wazuh-wui", "password": wazuh_pw}
+                        # DB에 저장
+                        with _conn() as _c2:
+                            with _c2.cursor() as _cur2:
+                                _cur2.execute("SELECT metadata FROM students WHERE id=%s", (uid,))
+                                _meta = (_cur2.fetchone() or [{}])[0] or {}
+                                _meta["credentials"] = {**_meta.get("credentials", {}), **_creds}
+                                _cur2.execute("UPDATE students SET metadata=%s WHERE id=%s", (Json(_meta), uid))
+                                _c2.commit()
+                        yield f"data: {_j.dumps({'event': 'credentials', 'role': 'siem', 'saved': list(_creds.keys())}, ensure_ascii=False)}\n\n"
+                    except Exception:
+                        pass
 
                 # early return 에러가 있으면 원인 명시
                 done_data = {'event': 'done', 'role': vm['role'], 'status': status, 'progress': f'{i+1}/{total}'}

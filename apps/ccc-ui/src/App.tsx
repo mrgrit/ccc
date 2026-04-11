@@ -11,6 +11,7 @@ import Leaderboard from './pages/Leaderboard.tsx'
 import Blockchain from './pages/Blockchain.tsx'
 import MyInfra from './pages/MyInfra.tsx'
 import Admin from './pages/Admin.tsx'
+import Profile from './pages/Profile.tsx'
 import ChatBot from './components/ChatBot.tsx'
 
 const navItems = [
@@ -80,7 +81,9 @@ export default function App() {
         </div>
         {/* 사용자 정보 */}
         <div style={{ padding: '12px 20px', borderTop: '1px solid #30363d' }}>
-          <div style={{ fontSize: 14, color: '#e6edf3', fontWeight: 600 }}>{user?.name || 'User'}</div>
+          <NavLink to="/profile" style={{ fontSize: 14, color: '#e6edf3', fontWeight: 600, textDecoration: 'none' }}>
+            {user?.name || 'User'}
+          </NavLink>
           <div style={{ fontSize: 12, color: '#8b949e' }}>{user?.student_id} {user?.role === 'admin' && '(Admin)'}</div>
           <button onClick={() => setShowPwChange(!showPwChange)} style={{
             marginTop: 8, width: '100%', padding: '6px 0', borderRadius: 6,
@@ -123,6 +126,7 @@ export default function App() {
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/blockchain" element={<Blockchain />} />
           <Route path="/admin" element={<Admin />} />
+          <Route path="/profile" element={<Profile />} />
         </Routes>
         </div>
       </main>
