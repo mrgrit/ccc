@@ -215,7 +215,13 @@ def execute_skill(name: str, params: dict[str, Any], vm_ips: dict[str, str],
         h = health_check(ip)
         if h.get("status") != "healthy":
             return {"success": False, "output": f"SubAgent unreachable: {ip}", "health": h}
-        r = run_command(ip, "uptime && echo '---' && df -h / && echo '---' && free -h && echo '---' && systemctl list-units --failed --no-pager | head -5", timeout=15)
+        r = run_command(ip,
+            "echo '=== UPTIME ===' && uptime && "
+            "echo '=== CPU ===' && top -bn1 2>/dev/null | grep 'Cpu(s)' | head -1 && "
+            "echo '=== DISK ===' && df -h / && "
+            "echo '=== MEMORY ===' && free -h && "
+            "echo '=== FAILED SERVICES ===' && systemctl list-units --failed --no-pager | head -5",
+            timeout=20)
         return {"success": r.get("exit_code") == 0, "output": r.get("stdout", ""), "target": target, "ip": ip}
 
     elif name == "probe_all":
@@ -234,8 +240,23 @@ def execute_skill(name: str, params: dict[str, Any], vm_ips: dict[str, str],
         ip = _resolve_vm_ip(target, vm_ips)
         ports = params.get("ports", "--top-ports 100")
         attacker_ip = vm_ips.get("attacker", "")
-        r = run_command(attacker_ip, f"nmap -sV {ip} {ports} --max-retries 1 -T4 --host-timeout 30s", timeout=45)
-        return {"success": r.get("exit_code") == 0, "output": r.get("stdout", ""), "target": ip}
+        # greppable output (-oG) for reliable parsing, plus normal output
+        r = run_command(attacker_ip,
+            f"nmap -sV {ip} {ports} --max-retries 1 -T4 --host-timeout 30s -oG - 2>/dev/null | grep 'Ports:' || "
+            f"nmap -sV {ip} {ports} --max-retries 1 -T4 --host-timeout 30s 2>/dev/null | grep -E '^[0-9]+/tcp'",
+            timeout=45)
+        raw = r.get("stdout", "")
+        # extract open ports summary
+        open_ports = []
+        for line in raw.splitlines():
+            if "/open/" in line:  # greppable format
+                import re
+                for m in re.finditer(r'(\d+)/open/tcp//([^/]*)//', line):
+                    open_ports.append(f"{m.group(1)}/tcp {m.group(2)}")
+            elif "/tcp" in line and "open" in line:  # normal format
+                open_ports.append(line.strip())
+        summary = f"Open ports on {ip}: {len(open_ports)} found\n" + "\n".join(open_ports) if open_ports else f"No open ports found on {ip}"
+        return {"success": r.get("exit_code") == 0, "output": summary, "target": ip, "open_count": len(open_ports)}
 
     elif name == "check_suricata":
         lines = params.get("lines", 10)

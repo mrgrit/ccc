@@ -476,25 +476,31 @@ class BastionAgent:
 
     def _stream_analysis_events(self, user_msg: str, results: list[dict]):
         """분석 결과를 stream_token 이벤트로 yield. 전체 텍스트 반환 (yield from 사용)."""
-        results_text = "\n".join(
-            f"[{r.get('skill', r.get('name', '?'))}] "
-            f"{'성공' if r.get('success') else '실패'}: "
-            f"{str(r.get('output', ''))[:300]}"
-            for r in results
-        )
+        # 각 스킬 결과를 명확히 구분 — 스킬명, 성패, 전체 출력
+        parts = []
+        for r in results:
+            skill_name = r.get('skill', r.get('name', '?'))
+            status = '성공' if r.get('success') else '실패'
+            output = str(r.get('output', '')).strip()
+            parts.append(f"## 스킬: {skill_name} ({status})\n{output[:2000]}")
+        results_text = "\n\n".join(parts)
+
         messages = [
             {"role": "system",
              "content": (
-                 "너는 사이버보안 전문가 Bastion 에이전트다. "
-                 "실행 결과를 분석하고 3줄 이내로 한국어 요약해. "
-                 "이상 징후가 있으면 다음 행동을 추천해."
+                 "너는 사이버보안 전문가 Bastion 에이전트다.\n"
+                 "규칙:\n"
+                 "1. 출력에 있는 데이터를 있는 그대로 읽어라. 데이터가 있으면 '누락' '잘림' '없음'이라고 하지 마라.\n"
+                 "2. 수치(CPU, 메모리, 디스크 %)를 반드시 포함해 요약해라.\n"
+                 "3. 이상 징후가 있으면 구체적 행동을 추천해라.\n"
+                 "4. 한국어로 답변해라. 5줄 이내."
              )},
             {"role": "user",
-             "content": f"요청: {user_msg}\n\n결과:\n{results_text}\n\n분석:"},
+             "content": f"요청: {user_msg}\n\n실행 결과:\n{results_text}\n\n분석:"},
         ]
         yield {"event": "stream_start", "label": "분석"}
         full = ""
-        for token in self._stream_llm(messages, max_tokens=400, temperature=0.2):
+        for token in self._stream_llm(messages, max_tokens=600, temperature=0.1):
             yield {"event": "stream_token", "token": token}
             full += token
         yield {"event": "stream_end"}
