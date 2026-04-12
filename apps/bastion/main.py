@@ -99,6 +99,7 @@ COMMANDS = {
     "/skills":         "등록된 Skill 목록",
     "/playbooks":      "등록된 Playbook 목록",
     "/evidence":       "최근 실행 기록 (10건)",
+    "/assets":         "Asset 상태 (VM 목록)",
     "/search <키워드>": "Evidence 검색",
     "/stats":          "통계 (evidence, RAG)",
     "/clear":          "대화 기록 초기화",
@@ -257,6 +258,32 @@ def main():
                     )
             continue
 
+        elif user_input == "/assets":
+            assets = agent.evidence_db.get_assets()
+            if not assets:
+                console.print("  [dim]Asset 기록 없음 — probe_host 또는 probe_all 실행 후 업데이트됨[/]")
+            else:
+                t = Table(box=box.SIMPLE, show_header=True,
+                          header_style="bold dim", border_style="dim", padding=(0, 1))
+                t.add_column("Role", style="cyan", width=10)
+                t.add_column("IP", style="white", width=16)
+                t.add_column("Status", width=10)
+                t.add_column("Last Seen", style="dim", width=16)
+                t.add_column("Notes", style="dim")
+                for a in assets:
+                    s = a.get("status", "unknown")
+                    status_str = "[green]online[/]" if s == "online" else \
+                                 "[red]unreachable[/]" if s == "unreachable" else f"[dim]{s}[/]"
+                    t.add_row(
+                        a.get("role", ""),
+                        a.get("ip", ""),
+                        status_str,
+                        (a.get("last_seen") or "")[:16],
+                        a.get("notes") or "",
+                    )
+                console.print(t)
+            continue
+
         elif user_input == "/stats":
             s = agent.evidence_db.stats()
             console.print(
@@ -322,6 +349,31 @@ def main():
 
                 elif etype == "stream_end":
                     console.print()
+
+                # ── Dry-run 실행 계획 미리보기
+                elif etype == "plan_preview":
+                    steps = evt.get("steps", [])
+                    if steps:
+                        console.print()
+                        t = Table(box=box.SIMPLE, show_header=True,
+                                  header_style="bold dim", border_style="dim", padding=(0, 1))
+                        t.add_column("#", style="dim", width=3)
+                        t.add_column("Skill", style="cyan", width=20)
+                        t.add_column("대상", style="white", width=16)
+                        t.add_column("명령", style="dim")
+                        t.add_column("위험", width=8)
+                        for i, s in enumerate(steps, 1):
+                            risk = s.get("risk", "LOW")
+                            risk_str = "[red]HIGH[/]" if risk == "HIGH" else \
+                                       "[yellow]MEDIUM[/]" if risk == "MEDIUM" else "[green]LOW[/]"
+                            t.add_row(
+                                str(i),
+                                s.get("skill", ""),
+                                f"{s.get('target_role','')} ({s.get('target_ip','')})",
+                                (s.get("command") or "")[:50],
+                                risk_str,
+                            )
+                        console.print(t)
 
                 # ── Playbook 이벤트
                 elif etype == "playbook_selected":
