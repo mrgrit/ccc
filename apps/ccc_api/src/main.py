@@ -931,6 +931,19 @@ def onboard_infra(body: InfraSetupBody, request: Request):
                                     (status, uid, vm["ip"]))
                         conn.commit()
 
+                # Bastion assets 등록 (온보딩 완료 시 즉시 반영)
+                try:
+                    import httpx as _hx
+                    _asset_ip = ob.get("internal_ip") or vm["ip"]
+                    _asset_status = "healthy" if ob.get("healthy") else "unreachable"
+                    _hx.put(
+                        f"http://localhost:8003/assets/{vm['role']}",
+                        json={"ip": _asset_ip, "status": _asset_status, "notes": "온보딩"},
+                        timeout=5,
+                    )
+                except Exception:
+                    pass  # bastion API 미실행 시 무시
+
                 # 단계별 결과 전송 (에러 내용 포함)
                 for step in ob.get("steps", []):
                     step_data = {
@@ -1014,6 +1027,18 @@ def onboard_single(iid: str, body: SingleOnboardBody, request: Request):
                 if not step.get('success'):
                     step_data['stderr'] = step.get('stderr', '')[:300]
                 yield f"data: {_j.dumps(step_data, ensure_ascii=False)}\n\n"
+            # Bastion assets 등록
+            try:
+                import httpx as _hx
+                _hx.put(
+                    f"http://localhost:8003/assets/{body.role}",
+                    json={"ip": ob.get("internal_ip") or body.ip,
+                          "status": "healthy" if ob.get("healthy") else "unreachable",
+                          "notes": "온보딩"},
+                    timeout=5,
+                )
+            except Exception:
+                pass
             yield f"data: {_j.dumps({'event': 'done', 'role': body.role, 'status': status, 'progress': '1/1'}, ensure_ascii=False)}\n\n"
         except Exception as e:
             yield f"data: {_j.dumps({'event': 'error', 'role': body.role, 'message': str(e)[:200]}, ensure_ascii=False)}\n\n"

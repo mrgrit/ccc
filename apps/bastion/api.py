@@ -113,6 +113,19 @@ def assets():
     return agent.evidence_db.get_assets()
 
 
+class AssetUpdateBody(BaseModel):
+    ip: str
+    status: str = "healthy"
+    notes: str = ""
+
+
+@app.put("/assets/{role}")
+def update_asset(role: str, body: AssetUpdateBody):
+    """온보딩 완료 후 asset 등록/갱신. LLM 호출 없이 직접 등록."""
+    agent.evidence_db.update_asset(role, body.ip, body.status, body.notes)
+    return {"role": role, "ip": body.ip, "status": body.status}
+
+
 @app.post("/chat")
 def chat(req: ChatRequest):
     """자연어 요청을 bastion에 실행.

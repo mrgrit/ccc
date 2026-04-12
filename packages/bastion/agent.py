@@ -770,6 +770,17 @@ class BastionAgent:
 
     # ── Asset 추적 ───────────────────────────────────────────────────────────
 
+    def _ip_to_role(self, ip: str) -> str:
+        """IP → role 역방향 조회."""
+        for role, r_ip in self.vm_ips.items():
+            if r_ip == ip:
+                return role
+        from packages.bastion import INTERNAL_IPS
+        for role, r_ip in INTERNAL_IPS.items():
+            if r_ip == ip:
+                return role
+        return ip  # 못 찾으면 IP 그대로
+
     def _update_assets_from_result(self, skill_name: str, params: dict, success: bool):
         """Skill 실행 결과로 Asset 상태 업데이트."""
         from packages.bastion import INTERNAL_IPS
@@ -779,8 +790,12 @@ class BastionAgent:
                 self.evidence_db.update_asset(role, ip, status)
         elif skill_name == "probe_host":
             target = params.get("target", "")
-            ip = self.vm_ips.get(target, INTERNAL_IPS.get(target, target))
-            role = target if target in self.vm_ips else target
+            # target이 IP일 수도 있으므로 role로 역조회
+            if target in self.vm_ips:
+                role, ip = target, self.vm_ips[target]
+            else:
+                ip = target
+                role = self._ip_to_role(ip)
             self.evidence_db.update_asset(role, ip, status)
         elif skill_name == "check_suricata":
             ip = self.vm_ips.get("secu", INTERNAL_IPS.get("secu", ""))
@@ -791,3 +806,9 @@ class BastionAgent:
         elif skill_name == "check_modsecurity":
             ip = self.vm_ips.get("web", INTERNAL_IPS.get("web", ""))
             self.evidence_db.update_asset("web", ip, status, "ModSecurity 점검")
+        elif skill_name in ("probe_host", "onboard"):
+            role = params.get("role") or params.get("target", "")
+            ip = params.get("ip") or self.vm_ips.get(role, INTERNAL_IPS.get(role, ""))
+            if role and ip:
+                notes = "온보딩 완료" if skill_name == "onboard" else ""
+                self.evidence_db.update_asset(role, ip, status, notes)
