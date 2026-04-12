@@ -386,14 +386,36 @@ def execute_skill(name: str, params: dict[str, Any], vm_ips: dict[str, str],
         return {"success": True, "output": analysis, "raw_log": log_data[:500]}
 
     elif name == "deploy_rule":
+        import base64
         rule_type = params.get("rule_type", "suricata")
         rule_content = params.get("rule_content", "")
+        # base64 인코딩으로 인용부호 문제 방지
+        b64 = base64.b64encode(rule_content.encode()).decode()
         if rule_type == "suricata":
             ip = vm_ips.get("secu", "")
-            r = run_command(ip, f"echo '{rule_content}' >> /var/lib/suricata/rules/local.rules && suricatasc -c reload-rules 2>/dev/null || systemctl reload suricata", timeout=15)
+            rules_path = "/var/lib/suricata/rules/local.rules"
+            # sid 중복 방지: 해당 sid가 없을 때만 추가
+            sid = ""
+            import re as _re
+            sid_m = _re.search(r'sid:(\d+)', rule_content)
+            if sid_m:
+                sid = sid_m.group(1)
+            dedup_check = f"grep -q 'sid:{sid}' {rules_path} 2>/dev/null && echo DUPLICATE || echo NEW" if sid else "echo NEW"
+            r_check = run_command(ip, dedup_check, timeout=5)
+            if "DUPLICATE" in r_check.get("stdout", ""):
+                return {"success": True, "output": f"Rule sid:{sid} already exists in {rules_path}"}
+            r = run_command(ip,
+                f"echo '{b64}' | base64 -d | sudo tee -a {rules_path} > /dev/null && "
+                f"echo -n 'Rule added. Reloading... ' && "
+                f"sudo kill -HUP $(pidof suricata) 2>/dev/null && echo 'OK' || echo 'reload failed'",
+                timeout=15)
         elif rule_type == "wazuh":
             ip = vm_ips.get("siem", "")
-            r = run_command(ip, f"echo '{rule_content}' >> /var/ossec/etc/rules/local_rules.xml && /var/ossec/bin/wazuh-control restart 2>/dev/null", timeout=30)
+            rules_path = "/var/ossec/etc/rules/local_rules.xml"
+            r = run_command(ip,
+                f"echo '{b64}' | base64 -d | sudo tee -a {rules_path} > /dev/null && "
+                f"echo 'Rule added' && sudo /var/ossec/bin/wazuh-control restart 2>/dev/null | tail -3",
+                timeout=30)
         else:
             return {"success": False, "error": f"Unknown rule_type: {rule_type}"}
         return {"success": r.get("exit_code") == 0, "output": r.get("stdout", ""), "stderr": r.get("stderr", "")}
