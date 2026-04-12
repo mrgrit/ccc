@@ -172,6 +172,10 @@ table inet filter {
     }
 }
 table ip nat {
+    chain prerouting {
+        type nat hook prerouting priority -100;
+        iifname "$EXTERNAL" tcp dport 80 dnat to 10.20.30.80:80
+    }
     chain postrouting {
         type nat hook postrouting priority 100;
         oifname "$EXTERNAL" masquerade
@@ -187,6 +191,34 @@ cat > /etc/rsyslog.d/50-ccc-siem.conf << 'RSEOF'
 *.* @@10.20.30.100:514
 RSEOF
 systemctl restart rsyslog
+""",
+        # ── dnsmasq 내부 DNS ──
+        """
+apt-get install -y dnsmasq
+# systemd-resolved stub 비활성화 (포트 53 충돌 방지)
+mkdir -p /etc/systemd/resolved.conf.d
+cat > /etc/systemd/resolved.conf.d/no-stub.conf << 'RESEOF'
+[Resolve]
+DNSStubListener=no
+RESEOF
+systemctl restart systemd-resolved 2>/dev/null || true
+# dnsmasq 설정
+cat > /etc/dnsmasq.d/ccc.conf << 'DNSEOF'
+domain-needed
+bogus-priv
+no-resolv
+bind-dynamic
+listen-address=127.0.0.1,10.20.30.1
+server=8.8.8.8
+server=1.1.1.1
+address=/attacker/10.20.30.201
+address=/web/10.20.30.80
+address=/siem/10.20.30.100
+address=/manager/10.20.30.200
+address=/secu/10.20.30.1
+address=/windows/10.20.30.50
+DNSEOF
+systemctl enable --now dnsmasq
 """,
     ],
     "web": [
@@ -222,6 +254,20 @@ systemctl enable --now docker
 docker rm -f juiceshop dvwa 2>/dev/null || true
 docker run -d --restart=always --name juiceshop -p 3000:3000 bkimminich/juice-shop 2>/dev/null || true
 docker run -d --restart=always --name dvwa -p 8080:80 vulnerables/web-dvwa 2>/dev/null || true
+""",
+        # ── Apache → JuiceShop 리버스 프록시 (포트 80) ──
+        """
+cat > /etc/apache2/sites-available/juiceshop.conf << 'APEOF'
+<VirtualHost *:80>
+    ProxyPreserveHost On
+    ProxyPass / http://localhost:3000/
+    ProxyPassReverse / http://localhost:3000/
+    Header always set X-Forwarded-Proto http
+</VirtualHost>
+APEOF
+a2dissite 000-default 2>/dev/null || true
+a2ensite juiceshop
+systemctl reload apache2
 """,
         # ── rsyslog → SIEM ──
         """
@@ -892,12 +938,21 @@ fi
     r = ssh_run(ip, user, password, [internal_script])
     results["steps"].append({"step": "internal_ip_setup", "ip": internal_ip, **r})
 
-    # 4. NAT disable + Security GW 경유
+    # 4. NAT disable + Security GW 경유 + DNS 설정
     if role != "secu":
         nat_script = f"""
 ip route del default 2>/dev/null || true
 ip route add default via {SECU_GW} 2>/dev/null || true
 echo "Default gateway set to {SECU_GW}"
+# DNS → secu
+mkdir -p /etc/systemd/resolved.conf.d
+cat > /etc/systemd/resolved.conf.d/ccc.conf << 'RESEOF'
+[Resolve]
+DNS=10.20.30.1
+FallbackDNS=8.8.8.8
+RESEOF
+systemctl restart systemd-resolved 2>/dev/null || true
+echo "DNS set to {SECU_GW}"
 """
         r = ssh_run(ip, user, password, [nat_script])
         results["steps"].append({"step": "nat_disable_gw_route", "gateway": SECU_GW, **r})
