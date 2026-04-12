@@ -9,12 +9,14 @@ Usage:
     ./dev.sh bastion-api
 
 Endpoints:
-    POST /chat          — 자연어 요청 실행 (NDJSON 스트림)
-    GET  /skills        — Skill 목록
-    GET  /playbooks     — Playbook 목록
-    GET  /evidence      — 최근 실행 기록
-    GET  /assets        — Asset 레지스트리
-    GET  /health        — 헬스체크
+    POST /chat              — 자연어 요청 실행 (NDJSON 스트림)
+    POST /onboard           — VM 온보딩 (NDJSON 스트림, 타임아웃 없음)
+    GET  /skills            — Skill 목록
+    GET  /playbooks         — Playbook 목록
+    GET  /evidence          — 최근 실행 기록
+    GET  /assets            — Asset 레지스트리
+    PUT  /assets/{role}     — Asset 직접 등록/갱신
+    GET  /health            — 헬스체크
 """
 import json
 import os
@@ -124,6 +126,61 @@ def update_asset(role: str, body: AssetUpdateBody):
     """온보딩 완료 후 asset 등록/갱신. LLM 호출 없이 직접 등록."""
     agent.evidence_db.update_asset(role, body.ip, body.status, body.notes)
     return {"role": role, "ip": body.ip, "status": body.status}
+
+
+class OnboardRequest(BaseModel):
+    role: str
+    ip: str
+    ssh_user: str = "ccc"
+    ssh_password: str = "1"
+    gpu_url: str = ""
+
+
+@app.post("/onboard")
+def onboard(req: OnboardRequest):
+    """VM 온보딩 — SubAgent 설치 + 역할별 소프트웨어 + Asset 등록.
+
+    NDJSON 스트림으로 단계별 진행상황 실시간 반환. 타임아웃 없음.
+
+    예시:
+        curl -N -X POST http://localhost:8003/onboard \\
+             -H 'Content-Type: application/json' \\
+             -d '{"role": "secu", "ip": "192.168.208.155"}'
+    """
+    from packages.bastion import onboard_vm, LLM_BASE_URL, LLM_MANAGER_MODEL, LLM_SUBAGENT_MODEL
+
+    def event_generator():
+        yield json.dumps({"event": "start", "role": req.role, "ip": req.ip}, ensure_ascii=False) + "\n"
+        try:
+            result = onboard_vm(
+                ip=req.ip, role=req.role,
+                user=req.ssh_user, password=req.ssh_password,
+                gpu_url=req.gpu_url or LLM_BASE_URL,
+                manager_model=LLM_MANAGER_MODEL,
+                subagent_model=LLM_SUBAGENT_MODEL,
+            )
+            for step in result.get("steps", []):
+                yield json.dumps({"event": "step", **step}, ensure_ascii=False) + "\n"
+
+            healthy = result.get("healthy", False)
+            internal_ip = result.get("internal_ip", req.ip)
+
+            # Asset 등록
+            status = "healthy" if healthy else "unreachable"
+            agent.evidence_db.update_asset(req.role, internal_ip, status, "온보딩")
+
+            yield json.dumps({
+                "event": "done",
+                "role": req.role,
+                "healthy": healthy,
+                "internal_ip": internal_ip,
+                "error": result.get("error", ""),
+            }, ensure_ascii=False) + "\n"
+
+        except Exception as e:
+            yield json.dumps({"event": "error", "role": req.role, "message": str(e)}, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(event_generator(), media_type="application/x-ndjson")
 
 
 @app.post("/chat")
