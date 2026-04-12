@@ -144,6 +144,13 @@ class EvidenceDB:
         notes       TEXT
     )"""
 
+    MIGRATIONS = [
+        "ALTER TABLE evidence ADD COLUMN stage TEXT",
+        "ALTER TABLE evidence ADD COLUMN playbook_id TEXT",
+        "ALTER TABLE evidence ADD COLUMN exit_code INTEGER DEFAULT -1",
+        "ALTER TABLE evidence ADD COLUMN session_id TEXT",
+    ]
+
     def __init__(self, db_path: str = ""):
         self.db_path = ":memory:"
         for candidate in [
@@ -160,6 +167,7 @@ class EvidenceDB:
                         stmt = stmt.strip()
                         if stmt:
                             conn.execute(stmt)
+                    self._migrate(conn)
                 self.db_path = candidate
                 return
             except Exception:
@@ -169,6 +177,15 @@ class EvidenceDB:
                 stmt = stmt.strip()
                 if stmt:
                     conn.execute(stmt)
+            self._migrate(conn)
+
+    def _migrate(self, conn):
+        """기존 DB에 누락 컬럼 추가 (idempotent)."""
+        for sql in self.MIGRATIONS:
+            try:
+                conn.execute(sql)
+            except sqlite3.OperationalError:
+                pass  # 이미 존재하면 무시
 
     def add(self, *, skill: str = "", playbook_id: str = "", params: dict = None,
             success: bool, exit_code: int = -1, output: str = "",
@@ -261,8 +278,9 @@ class BastionAgent:
                  ollama_url: str = "", model: str = "",
                  knowledge_dir: str = "", evidence_db: str = ""):
         self.vm_ips = vm_ips
-        self.ollama_url = (ollama_url or os.getenv("LLM_BASE_URL", "http://localhost:11434")).rstrip("/")
-        self.model = model or os.getenv("LLM_MANAGER_MODEL", os.getenv("LLM_MODEL", "gpt-oss:120b"))
+        from packages.bastion import LLM_BASE_URL, LLM_MANAGER_MODEL
+        self.ollama_url = (ollama_url or LLM_BASE_URL).rstrip("/")
+        self.model = model or LLM_MANAGER_MODEL
         self.history: list[dict] = []
         self.session_id = f"s{int(time.time())}"
         self.evidence_db = EvidenceDB(evidence_db)
@@ -381,6 +399,10 @@ class BastionAgent:
             pre_ok, pre_msg = self._pre_check(skill_name, params)
             if not pre_ok:
                 yield {"event": "precheck_fail", "skill": skill_name, "message": pre_msg}
+                yield {"event": "skill_skip", "skill": skill_name, "reason": pre_msg}
+                all_results.append({"skill": skill_name, "params": params,
+                                     "success": False, "output": f"pre-check failed: {pre_msg}"})
+                continue
 
             yield {"event": "skill_start", "skill": skill_name, "params": params}
             result = execute_skill(skill_name, params, self.vm_ips, self.ollama_url, self.model)

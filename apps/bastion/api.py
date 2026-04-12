@@ -60,11 +60,10 @@ def _get_vm_ips() -> dict[str, str]:
     return vm_ips or dict(INTERNAL_IPS)
 
 
-_vm_ips = _get_vm_ips()
-_ollama_url = os.getenv("LLM_BASE_URL", "http://localhost:11434")
-_model = os.getenv("LLM_MANAGER_MODEL", os.getenv("LLM_MODEL", "gpt-oss:120b"))
+from packages.bastion import LLM_BASE_URL, LLM_MANAGER_MODEL
 
-agent = BastionAgent(vm_ips=_vm_ips, ollama_url=_ollama_url, model=_model)
+_vm_ips = _get_vm_ips()
+agent = BastionAgent(vm_ips=_vm_ips, ollama_url=LLM_BASE_URL, model=LLM_MANAGER_MODEL)
 
 app = FastAPI(
     title="Bastion API",
@@ -87,8 +86,8 @@ class ChatRequest(BaseModel):
 def health():
     return {
         "status": "ok",
-        "model": _model,
-        "llm": _ollama_url,
+        "model": agent.model,
+        "llm": agent.ollama_url,
         "skills": len(agent.get_skills()),
         "playbooks": len(agent.get_playbooks()),
     }

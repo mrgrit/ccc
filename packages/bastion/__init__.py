@@ -19,9 +19,15 @@ from typing import Any
 import httpx
 
 # ── Config ────────────────────────────────────────
-LLM_BASE_URL = os.getenv("LLM_BASE_URL", "http://localhost:11434")
-LLM_MANAGER_MODEL = os.getenv("LLM_MANAGER_MODEL", "gpt-oss:120b")
-LLM_SUBAGENT_MODEL = os.getenv("LLM_SUBAGENT_MODEL", "gemma3:4b")
+def _require_env(key: str) -> str:
+    val = os.getenv(key)
+    if not val:
+        raise ValueError(f"{key} is not set — add it to .env")
+    return val
+
+LLM_BASE_URL       = _require_env("LLM_BASE_URL")
+LLM_MANAGER_MODEL  = _require_env("LLM_MANAGER_MODEL")
+LLM_SUBAGENT_MODEL = _require_env("LLM_SUBAGENT_MODEL")
 # bastion TUI는 manager 모델 사용
 LLM_MODEL = LLM_MANAGER_MODEL
 SUBAGENT_PORT = 8002
