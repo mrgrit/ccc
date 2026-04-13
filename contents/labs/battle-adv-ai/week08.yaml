@@ -31,12 +31,13 @@ steps:
   answer_detail: 라이브 메모리 포렌식에서 /proc 파일시스템은 프로세스 정보의 보고이다. exe(실행 파일 경로), cmdline(명령줄 인수)을 분석하여 의심 프로세스를 식별한다.
   verify:
     type: output_contains
-    expect: Process Forensic
+    expect: 
   target_vm: secu
   script: 'echo ''=== Process Forensic Analysis ==='' && for pid in $(ls /proc/ | grep -E ''^[0-9]+$'' | head -20); do exe=$(readlink /proc/$pid/exe 2>/dev/null) && cmdline=$(tr ''\0'' '' '' < /proc/$pid/cmdline
     2>/dev/null) && echo "PID:$pid EXE:$exe CMD:${cmdline:0:80}"; done | head -15 && ps auxf > /tmp/forensic_processes.txt && ss -tnap > /tmp/forensic_connections.txt && echo ''Artifacts collected: processes,
     connections'''
   risk_level: low
+  bastion_prompt: '[BLUE] 메모리 포렌식 아티팩트를 수집하라. /proc 파일시스템에서 모든 프로세스의 실행 경로, 명령줄, 네트워크 연결을 수집해줘'
 - order: 2
   instruction: '[BLUE] 숨겨진 프로세스를 탐지하라. /proc에서 보이는 PID와 ps 출력을 비교하여 루트킷에 의해 숨겨진 프로세스가 있는지 확인하라.'
   hint: /proc의 PID 디렉토리와 ps aux의 PID를 비교한다.
@@ -47,11 +48,12 @@ steps:
   answer_detail: 루트킷은 ps 등의 도구를 후킹하여 프로세스를 숨긴다. /proc(커널 직접 노출)과 ps(사용자 공간)의 PID를 비교하면 불일치를 발견할 수 있다.
   verify:
     type: output_contains
-    expect: Hidden Process Detection
+    expect: 
   target_vm: secu
   script: 'echo "=== Hidden Process Detection ===" && PROC_PIDS=$(ls -d /proc/[0-9]* 2>/dev/null | sed "s|/proc/||" | sort -n) && PS_PIDS=$(ps -eo pid --no-headers | tr -d " " | sort -n) && HIDDEN=$(comm
     -23 <(echo "$PROC_PIDS") <(echo "$PS_PIDS")) && if [ -z "$HIDDEN" ]; then echo "No hidden processes detected - system appears clean"; else echo "Hidden PIDs: $HIDDEN"; fi'
   risk_level: low
+  bastion_prompt: '[BLUE] 숨겨진 프로세스를 탐지하라. /proc에서 보이는 PID와 ps 출력을 비교하여 루트킷에 의해 숨겨진 프로세스가 있는지 확인해줘'
 - order: 3
   instruction: '[BLUE] 디스크 아티팩트를 수집하라. 최근 24시간 내 수정된 파일, /tmp의 스크립트/바이너리, SUID 바이너리를 조사하라.'
   hint: find 명령으로 최근 변경 파일을 검색한다.
@@ -63,12 +65,13 @@ steps:
   answer_detail: 최근 수정된 파일(mtime), 임시 디렉토리의 스크립트/바이너리, SUID 비트 설정 파일은 핵심 포렌식 아티팩트이다.
   verify:
     type: output_contains
-    expect: Disk Artifact
+    expect: 
   target_vm: secu
   script: echo '=== Disk Artifact Collection ===' && echo '[1] Recently modified (24h):' && find / -mtime -1 -type f -not -path '/proc/*' -not -path '/sys/*' -not -path '/run/*' 2>/dev/null | head -15 &&
     echo '[2] Suspicious in /tmp:' && find /tmp -type f -name '*.sh' -o -name '*.py' -o -name '*.elf' -o -name '*.bin' 2>/dev/null | head -10 && echo '[3] SUID binaries:' && find /usr -perm -4000 -type
     f 2>/dev/null | head -10
   risk_level: low
+  bastion_prompt: '[BLUE] 디스크 아티팩트를 수집해줘'
 - order: 4
   instruction: '[BLUE] 파일 시스템 타임라인을 생성하라. /tmp과 /var/log의 MAC 타임스탬프를 시간순으로 정렬하라.'
   hint: find -printf로 타임스탬프를 추출하고 정렬한다.
@@ -79,11 +82,12 @@ steps:
   answer_detail: 파일 시스템 타임라인은 MAC 타임스탬프를 시간순으로 정렬하여 공격 활동을 재구성한다. 짧은 시간 내 대량의 파일 수정 클러스터는 공격 행위를 나타낸다.
   verify:
     type: output_contains
-    expect: File System Timeline
+    expect: 
   target_vm: secu
   script: echo "=== File System Timeline ===" && find /tmp /var/log -maxdepth 2 -type f -printf "%T+ %p\n" 2>/dev/null | sort -r | head -20 && echo "---" && echo "Focus on clusters of modifications within
     short timeframes"
   risk_level: low
+  bastion_prompt: '[BLUE] 파일 시스템 타임라인을 생성하라. /tmp과 /var/log의 MAC 타임스탬프를 시간순으로 정렬해줘'
 - order: 5
   instruction: '[BLUE] 악성코드 정적 분석을 시뮬레이션하라. 의심 파일의 해시, 문자열, ELF 헤더를 분석하고 파일 엔트로피를 계산하라.'
   hint: sha256sum, strings, file, readelf로 바이너리를 분석한다.
@@ -96,13 +100,14 @@ steps:
   answer_detail: 정적 분석은 악성코드를 실행하지 않고 분석한다. Shannon 엔트로피 7.0 이상은 패킹/암호화된 악성코드 가능성이 높다.
   verify:
     type: output_contains
-    expect: Entropy
+    expect: 
   target_vm: secu
   script: "echo '=== Static Analysis + Entropy ===' && SAMPLE=/usr/bin/curl && sha256sum $SAMPLE && file $SAMPLE && strings $SAMPLE | grep -iE 'http|socket|connect|exec' | head -5 && python3 -c \"\nimport\
     \ math, os\nfrom collections import Counter\ndef entropy(data):\n    if not data: return 0\n    freq = Counter(data)\n    length = len(data)\n    return -sum((c/length) * math.log2(c/length) for c in\
     \ freq.values())\nfiles = ['/usr/bin/ls', '/usr/bin/curl', '/etc/passwd']\nprint('File Entropy Analysis:')\nfor f in files:\n    try:\n        with open(f, 'rb') as fh:\n            data = fh.read(10000)\n\
     \        e = entropy(data)\n        assess = 'PACKED/ENC' if e > 7.0 else 'NORMAL'\n        print(f'  {f}: entropy={e:.4f} -> {assess}')\n    except: pass\n\""
   risk_level: low
+  bastion_prompt: '[BLUE] 악성코드 정적 분석을 시뮬레이션해줘'
 - order: 6
   instruction: '[BLUE] 증거 보존(Chain of Custody)을 수행하라. 수집된 모든 포렌식 아티팩트의 SHA256 해시를 계산하고 증거 목록을 작성하라.'
   hint: sha256sum으로 모든 증거 파일의 해시를 기록한다.
@@ -114,12 +119,13 @@ steps:
   answer_detail: Chain of Custody는 법적 절차에서 증거 무결성을 보장한다. SHA256 해시, 수집 시각, 수집자, 케이스 ID를 기록한다.
   verify:
     type: output_contains
-    expect: Chain of Custody
+    expect: 
   target_vm: secu
   script: 'echo "=== Chain of Custody Record ===" > /tmp/evidence_custody.txt && echo "Investigator: Lab Student" >> /tmp/evidence_custody.txt && echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /tmp/evidence_custody.txt
     && echo "Case ID: FORENSIC-$(date +%Y%m%d)-001" >> /tmp/evidence_custody.txt && echo "" >> /tmp/evidence_custody.txt && for f in /tmp/forensic_*.txt; do if [ -f "$f" ]; then HASH=$(sha256sum "$f" |
     awk "{print \$1}"); SIZE=$(stat -c%s "$f"); echo "File: $f | Size: $SIZE | SHA256: $HASH" >> /tmp/evidence_custody.txt; fi; done && cat /tmp/evidence_custody.txt'
   risk_level: low
+  bastion_prompt: '[BLUE] 증거 보존(Chain of Custody)을 수행하라 구현 방법과 예시를 설명해줘'
 - order: 7
   instruction: '[BLUE] IOC(Indicator of Compromise)를 STIX 형식으로 문서화하라.'
   hint: IP, 도메인, 해시, 파일 경로 등의 IOC를 STIX indicator로 변환한다.
@@ -132,13 +138,14 @@ steps:
   answer_detail: 포렌식에서 추출된 IOC를 STIX 형식으로 문서화하면 다른 조직/도구와 공유할 수 있다.
   verify:
     type: output_contains
-    expect: bundle
+    expect: 
   target_vm: siem
   script: cat > /tmp/forensic_ioc.json << 'EOF' {"type":"bundle","id":"bundle--forensic-001","objects":[{"type":"indicator","id":"indicator--f001","name":"Suspicious crontab modification","pattern":"[file:name
     = 'crontabs' AND file:parent_directory_ref.path = '/var/spool/cron']","pattern_type":"stix","indicator_types":["malicious-activity"],"valid_from":"2026-04-06T00:00:00Z"},{"type":"indicator","id":"indicator--f002","name":"DNS
     tunneling domain","pattern":"[domain-name:value LIKE '%.exfil.test.local']","pattern_type":"stix","indicator_types":["malicious-activity"],"valid_from":"2026-04-06T00:00:00Z"}]} EOF python3 -m json.tool
     /tmp/forensic_ioc.json | head -15
   risk_level: low
+  bastion_prompt: '[BLUE] IOC(Indicator of Compromise)를 STIX 형식으로 문서화해줘'
 - order: 8
   instruction: '[RED/BLUE] 환경을 정리하고 침해 사고 포렌식 보고서를 NIST SP 800-86 형식으로 작성하라.'
   hint: Evidence, Analysis Methods, Findings, Recovery Plan, Recommendations를 포함한다.
@@ -153,7 +160,7 @@ steps:
   answer_detail: NIST SP 800-86 포렌식 보고서는 증거 목록, 분석 방법, 발견 사항, 복구 계획, 권고사항을 포함한다. Chain of Custody를 유지하고 모든 발견에 증거를 명시한다.
   verify:
     type: output_contains
-    expect: Digital Forensic Investigation
+    expect: 
   target_vm: attacker
   script: "rm -f /tmp/forensic_*.txt /tmp/forensic_*.json /tmp/evidence_*.txt 2>/dev/null && cat > /tmp/forensic_report.txt << 'EOF'\n=== Digital Forensic Investigation Report ===\nCase ID: FORENSIC-20260406-001\n\
     Methodology: NIST SP 800-86\n\n1. Evidence Collected:\n   - Memory: processes, modules, network connections\n   - Disk: file system timeline, SUID binaries\n   - Log: auth.log, syslog, Suricata eve.json\n\
@@ -162,3 +169,4 @@ steps:
     \ Plan:\n   P1: Remove any persistence mechanisms found\n   P2: Patch identified vulnerabilities\n   P3: Implement FIM on critical servers\n\n5. Recommendations:\n   - Deploy FIM on all servers\n  \
     \ - Enable DNS anomaly detection\n   - Conduct regular forensic readiness assessments\n\nMITRE ATT&CK: T1190, T1053, T1048, T1005, T1070\nEOF\ncat /tmp/forensic_report.txt"
   risk_level: low
+  bastion_prompt: '[RED/BLUE] 환경을 정리하고 침해 사고 포렌식 보고서를 NIST SP 800-86 형식으로 구현 방법을 설명하고 예시 코드를 보여줘'

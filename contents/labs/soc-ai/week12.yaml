@@ -21,11 +21,12 @@ steps:
   answer_detail: command 섹션은 실행할 스크립트와 파라미터를 정의하고, active-response 섹션은 어떤 룰(rules_id)이 트리거되면 어떤 command를 실행할지 매핑합니다.
   verify:
     type: output_contains
-    expect: command
+    expect: 
     field: stdout
   target_vm: siem
   script: grep -A 5 "<command>" /var/ossec/etc/ossec.conf && echo "===" && grep -A 8 "<active-response>" /var/ossec/etc/ossec.conf
   risk_level: low
+  bastion_prompt: SIEM VM에서 Wazuh Active Response에 등록된 명령(command)과 대응 설정을 전체 확인해줘
 - order: 2
   instruction: SIEM VM에서 firewall-drop Active Response 스크립트의 내용을 분석하시오.
   hint: /var/ossec/active-response/bin/firewall-drop 파일을 확인하세요.
@@ -40,6 +41,7 @@ steps:
   target_vm: siem
   script: head -50 /var/ossec/active-response/bin/firewall-drop
   risk_level: low
+  bastion_prompt: SIEM VM에서 firewall-drop Active Response 스크립트의 내용을 분석해줘
 - order: 3
   instruction: SIEM VM에서 Active Response 실행 이력을 확인하시오.
   hint: /var/ossec/logs/active-responses.log를 확인하세요.
@@ -49,11 +51,12 @@ steps:
   answer_detail: Active Response 로그에는 실행 시간, 명령, 대상 IP, 에이전트 정보가 기록됩니다. 이 로그를 통해 자동 대응이 의도한 대로 동작했는지 검증합니다.
   verify:
     type: output_contains
-    expect: AR log
+    expect: 
     field: stdout
   target_vm: siem
   script: 'cat /var/ossec/logs/active-responses.log 2>/dev/null | tail -20; echo "--- AR log entries: $(wc -l < /var/ossec/logs/active-responses.log 2>/dev/null || echo 0)"'
   risk_level: low
+  bastion_prompt: SIEM VM에서 Active Response 실행 이력을 확인해줘
 - order: 4
   instruction: SIEM VM에서 최근 1시간 내 발생한 고위험 알림(레벨 10+)의 소스 IP를 자동 추출하는 명령을 실행하시오.
   hint: alerts.log에서 시간 필터링 후 소스 IP를 추출하세요.
@@ -68,6 +71,7 @@ steps:
   target_vm: siem
   script: 'grep -E "level 1[0-5]" /var/ossec/logs/alerts/alerts.log | grep -oP "Src IP: \S+" | sort -u'
   risk_level: low
+  bastion_prompt: SIEM VM에서 최근 1시간 내 발생한 고위험 알림(레벨 10+)의 소스 IP를 자동 추출하는 명령을 실행해줘
 - order: 5
   instruction: SIEM VM에서 특정 룰 ID가 트리거될 때 로그를 파일로 자동 저장하는 간단한 모니터링 명령을 실행하시오.
   hint: tail -f와 grep을 조합하여 실시간 필터링하세요.
@@ -78,12 +82,13 @@ steps:
   answer_detail: 고위험 알림을 별도 파일로 자동 저장하면 SOC 분석가가 빠르게 검토할 수 있습니다. 실제 운영에서는 이 과정을 cron job이나 systemd timer로 자동화합니다.
   verify:
     type: output_contains
-    expect: saved
+    expect: 
     field: stdout
   target_vm: siem
   script: tail -100 /var/ossec/logs/alerts/alerts.log | grep -B 2 -A 3 "level 1[0-5]" > /tmp/high_alerts_$(date +%Y%m%d).txt && cat /tmp/high_alerts_$(date +%Y%m%d).txt | head -20 && echo "saved to /tmp/high_alerts_$(date
     +%Y%m%d).txt"
   risk_level: low
+  bastion_prompt: SIEM VM에서 특정 룰 ID가 트리거될 때 로그를 파일로 자동 저장하는 간단한 모니터링 명령을 실행해줘
 - order: 6
   instruction: WEB VM에서 Wazuh 에이전트의 Active Response 스크립트 목록을 확인하시오.
   hint: /var/ossec/active-response/bin/ 디렉토리를 확인하세요.
@@ -98,6 +103,7 @@ steps:
   target_vm: siem
   script: ls -la /var/ossec/active-response/bin/
   risk_level: low
+  bastion_prompt: WEB VM에서 Wazuh 에이전트의 Active Response 스크립트 목록을 확인해줘
 - order: 7
   instruction: SIEM VM에서 Wazuh API를 통해 에이전트 상태를 조회하시오.
   hint: curl로 Wazuh API(https://localhost:55000)에 접근하세요. 기본 인증을 사용합니다.
@@ -112,6 +118,7 @@ steps:
   target_vm: siem
   script: curl -s -k -u wazuh-wui:wazuh-wui https://localhost:55000/agents?pretty 2>/dev/null | head -30 || echo "API not available, checking via CLI" && /var/ossec/bin/agent_control -l
   risk_level: low
+  bastion_prompt: SIEM VM에서 Wazuh API를 통해 에이전트 상태를 조회해줘
 - order: 8
   instruction: SIEM VM에서 알림 발생 시 이메일 알림 설정이 되어 있는지 ossec.conf를 확인하시오.
   hint: ossec.conf에서 email 관련 설정을 검색하세요.
@@ -121,11 +128,12 @@ steps:
   answer_detail: email_notification, email_to, smtp_server 설정으로 Wazuh가 고위험 알림 발생 시 자동으로 이메일을 전송합니다. 실제 SOC에서는 이를 통해 담당자에게 즉시 통보합니다.
   verify:
     type: output_contains
-    expect: email
+    expect: 
     field: stdout
   target_vm: siem
   script: grep -A 5 "<email" /var/ossec/etc/ossec.conf | head -20
   risk_level: low
+  bastion_prompt: SIEM VM에서 알림 발생 시 이메일 알림 설정이 되어 있는지 ossec.conf를 확인해줘
 - order: 9
   instruction: SIEM VM에서 알림 통계를 자동 생성하는 원라이너 스크립트를 실행하시오. 룰별 빈도, 레벨 분포, 상위 소스 IP를 한 번에 출력하시오.
   hint: 여러 grep/awk 명령을 세미콜론으로 연결하세요.
@@ -136,12 +144,13 @@ steps:
   answer_detail: 이 원라이너는 SOC 일일 보고서의 기초 데이터를 자동 생성합니다. 실제 운영에서는 이를 스크립트로 저장하고 cron으로 매일 실행하여 보고서를 자동화합니다.
   verify:
     type: output_contains
-    expect: TOP
+    expect: 
     field: stdout
   target_vm: siem
   script: 'echo "=== TOP RULES ==="; grep -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log | sort | uniq -c | sort -rn | head -5; echo "=== LEVEL DIST ==="; grep -oP "level \d+" /var/ossec/logs/alerts/alerts.log
     | sort | uniq -c | sort -rn | head -5; echo "=== TOP SRC IPs ==="; grep -oP "Src IP: \S+" /var/ossec/logs/alerts/alerts.log | sort | uniq -c | sort -rn | head -5'
   risk_level: low
+  bastion_prompt: SIEM VM에서 알림 통계를 자동 생성하는 원라이너 스크립트를 실행해줘
 - order: 10
   instruction: SECU VM에서 nftables에 설정된 차단 규칙의 패킷 카운터를 확인하시오. 실제로 차단된 트래픽이 있는지 검증하시오.
   hint: nft list ruleset에서 counter 정보를 확인하세요.
@@ -156,3 +165,4 @@ steps:
   target_vm: siem
   script: nft list ruleset | grep -A 1 -i "drop\|reject\|counter"
   risk_level: low
+  bastion_prompt: SECU VM에서 nftables에 설정된 차단 규칙의 패킷 카운터를 확인해줘

@@ -7,7 +7,7 @@
 | 유형 | 실기 시험 (도구 구축 + 분석 보고서) |
 | 시간 | 3시간 (180분) |
 | 배점 | 100점 |
-| 환경 | Ollama (192.168.0.105:11434), Bastion (localhost:9100) |
+| 환경 | Ollama (localhost:8003), Bastion (localhost:9100) |
 | 제출 | 스크립트 파일 + 실행 결과 캡처 + 분석 보고서 |
 | 참고 | 오픈 북 (강의 자료, 인터넷 검색 가능. 타인과 공유 금지) |
 
@@ -43,7 +43,7 @@
 
 | 용어 | 설명 | 예시 |
 |------|------|------|
-| **Ollama API** | 로컬 LLM을 HTTP API로 호출하는 인터페이스 | `curl http://192.168.0.105:11434/v1/chat/completions` |
+| **Ollama API** | 로컬 LLM을 HTTP API로 호출하는 인터페이스 | `curl http://localhost:8003/v1/chat/completions` |
 | **system 메시지** | LLM에게 역할과 규칙을 부여하는 메시지 | `"role":"system","content":"보안 분석가입니다"` |
 | **user 메시지** | 사용자의 실제 요청/데이터 | `"role":"user","content":"이 로그를 분석하세요"` |
 | **temperature** | LLM 출력의 창의성/무작위성 조절 (0=결정론, 1=창의적) | 분석: 0~0.3, 룰 생성: 0.2~0.5 |
@@ -65,7 +65,7 @@
 
 ```bash
 # 1. Ollama LLM 연결 확인
-curl -s http://192.168.0.105:11434/v1/models | python3 -c "
+curl -s http://localhost:8003/v1/models | python3 -c "
 import sys,json
 models = json.load(sys.stdin)['data']
 print(f'사용 가능한 모델: {len(models)}개')
@@ -75,7 +75,7 @@ for m in models[:5]:
 # 기대 결과: gemma3:12b, llama3.1:8b 등 모델 목록
 
 # 2. Ollama 응답 테스트
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"gemma3:12b","messages":[{"role":"user","content":"hello"}],"max_tokens":10}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
@@ -149,7 +149,7 @@ SOC(보안관제센터) 분석가가 Wazuh SIEM에서 수집된 보안 알림을
 **구현 힌트:**
 ```bash
 #!/bin/bash
-OLLAMA_URL="http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL="http://localhost:8003/v1/chat/completions"
 MODEL="gemma3:12b"
 
 # 알림 데이터
@@ -296,7 +296,7 @@ for scenario in \
   "권한 상승: 일반 사용자의 /etc/shadow 접근 시도. 로그소스: linux/auditd"
 do
   echo "=== SIGMA 룰 생성: $scenario ==="
-  curl -s http://192.168.0.105:11434/v1/chat/completions \
+  curl -s http://localhost:8003/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d "{
       \"model\": \"gemma3:12b\",
@@ -331,7 +331,7 @@ done
 ```bash
 # 예: gemma3:12b가 생성한 룰을 llama3.1:8b로 검증
 SIGMA_RULE="(생성된 룰 내용)"
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"llama3.1:8b\",
@@ -497,7 +497,7 @@ EVIDENCE=$(curl -s "http://localhost:9100/projects/$PID/evidence/summary" \
   -H "X-API-Key: ccc-api-key-2026")
 
 # LLM으로 분석 보고서 생성
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -623,9 +623,9 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 
 ```bash
 # Ollama는 OpenAI 호환 API를 제공한다
-# URL: http://192.168.0.105:11434/v1/chat/completions
+# URL: http://localhost:8003/v1/chat/completions
 
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델

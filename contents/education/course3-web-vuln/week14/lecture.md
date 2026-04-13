@@ -484,7 +484,7 @@ ENDSSH
 
 ```bash
 # Ollama LLM으로 취약점 설명 자동 생성
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{                                                # 요청 데이터(body)
     "model": "gemma3:12b",
@@ -499,7 +499,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 ### 5.2 권고사항 코드 자동 생성
 
 ```bash
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{                                                # 요청 데이터(body)
     "model": "gemma3:12b",

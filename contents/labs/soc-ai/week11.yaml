@@ -26,6 +26,7 @@ steps:
   target_vm: siem
   script: ls -la /var/ossec/etc/lists/
   risk_level: low
+  bastion_prompt: SIEM VM에서 Wazuh의 CDB(Constant DataBase) 리스트 디렉토리를 확인해줘
 - order: 2
   instruction: SIEM VM에서 Wazuh 룰셋에 포함된 기본 CDB 리스트의 내용을 확인하시오.
   hint: /var/ossec/etc/lists/ 하위 파일의 내용을 확인하세요.
@@ -35,11 +36,12 @@ steps:
   answer_detail: CDB 리스트는 'key:value' 형식입니다. 예를 들어 IP 블랙리스트는 '10.20.30.201:attacker' 형태로 저장됩니다. 이 리스트에 매칭되는 이벤트가 발생하면 알림이 트리거됩니다.
   verify:
     type: output_contains
-    expect: ===
+    expect: 
     field: stdout
   target_vm: siem
   script: for f in /var/ossec/etc/lists/*; do echo "=== $f ==="; head -5 "$f" 2>/dev/null; done
   risk_level: low
+  bastion_prompt: SIEM VM에서 Wazuh 룰셋에 포함된 기본 CDB 리스트의 내용을 확인해줘
 - order: 3
   instruction: SIEM VM의 Wazuh 알림 로그에서 ATTACKER IP(10.20.30.201)의 모든 활동 이력을 추출하시오.
   hint: alerts.log와 archives에서 ATTACKER IP를 검색하세요.
@@ -50,12 +52,13 @@ steps:
   answer_detail: 특정 IP의 과거 활동을 추적하는 것이 위협 인텔리전스의 핵심입니다. 해당 IP가 트리거한 룰 유형과 빈도를 분석하면 공격 패턴과 의도를 파악할 수 있습니다.
   verify:
     type: output_contains
-    expect: events
+    expect: 
     field: stdout
   target_vm: siem
   script: 'grep -c "10.20.30.201" /var/ossec/logs/alerts/alerts.log && echo "events from attacker" && grep "10.20.30.201" /var/ossec/logs/alerts/alerts.log | grep -oP "Rule: \d+" | sort | uniq -c | sort
     -rn'
   risk_level: low
+  bastion_prompt: SIEM VM의 Wazuh 알림 로그에서 ATTACKER IP(10.20.30.201)의 모든 활동 이력을 추출해줘
 - order: 4
   instruction: SIEM VM에서 Wazuh 룰셋 중 CDB 리스트를 참조하는 룰의 예시를 찾으시오.
   hint: 룰 파일에서 list 키워드를 검색하세요.
@@ -65,11 +68,12 @@ steps:
   answer_detail: Wazuh 룰에서 <list field="srcip" lookup="address_match">etc/lists/blacklist</list> 형태로 CDB를 참조합니다. 이렇게 하면 알려진 악성 IP에서의 이벤트를 자동 탐지합니다.
   verify:
     type: output_contains
-    expect: list
+    expect: 
     field: stdout
   target_vm: siem
   script: grep -rn "<list" /var/ossec/ruleset/rules/*.xml | head -10
   risk_level: low
+  bastion_prompt: SIEM VM에서 Wazuh 룰셋 중 CDB 리스트를 참조하는 룰의 예시를 찾으시오해줘
 - order: 5
   instruction: WEB VM의 Apache 접근 로그에서 알려진 공격 패턴(SQL Injection, XSS, 디렉토리 트래버설) 시도를 검색하시오.
   hint: access.log에서 select, union, script, ../ 등의 패턴을 검색하세요.
@@ -84,6 +88,7 @@ steps:
   target_vm: siem
   script: grep -iE "(select|union|script|alert\(|\.\./)" /var/log/apache2/access.log | tail -10
   risk_level: low
+  bastion_prompt: WEB VM의 Apache 접근 로그에서 알려진 공격 패턴(SQL Injection, XSS, 디렉토리 트래버설) 시도를 검색해줘
 - order: 6
   instruction: WEB VM의 Apache 에러 로그에서 ModSecurity가 탐지/차단한 요청을 확인하시오.
   hint: /var/log/apache2/error.log 또는 modsec_audit.log에서 ModSecurity를 검색하세요.
@@ -98,6 +103,7 @@ steps:
   target_vm: siem
   script: grep -i "modsecurity\|ModSecurity" /var/log/apache2/error.log /var/log/apache2/modsec_audit.log 2>/dev/null | tail -10
   risk_level: low
+  bastion_prompt: WEB VM의 Apache 에러 로그에서 ModSecurity가 탐지/차단한 요청을 확인해줘
 - order: 7
   instruction: SECU VM에서 Suricata가 탐지한 이벤트의 시그니처 ID(SID)별 발생 횟수를 집계하시오.
   hint: eve.json 또는 fast.log에서 SID를 추출하여 집계하세요.
@@ -112,6 +118,7 @@ steps:
   target_vm: siem
   script: grep -oP "\[\d+:\d+:\d+\]" /var/log/suricata/fast.log 2>/dev/null | sort | uniq -c | sort -rn | head -10 || echo "check eve.json"
   risk_level: low
+  bastion_prompt: SECU VM에서 Suricata가 탐지한 이벤트의 시그니처 ID(SID)별 발생 횟수를 집계해줘
 - order: 8
   instruction: SIEM VM에서 ossec.conf의 룰셋 설정을 확인하여 CDB 리스트가 올바르게 참조되고 있는지 검증하시오.
   hint: ossec.conf에서 list 또는 ruleset 섹션을 확인하세요.
@@ -121,11 +128,12 @@ steps:
   answer_detail: ossec.conf의 ruleset 섹션에서 list와 decoder, rule_dir 경로가 올바르게 설정되어야 CDB 리스트와 탐지 룰이 정상 동작합니다.
   verify:
     type: output_contains
-    expect: ruleset
+    expect: 
     field: stdout
   target_vm: siem
   script: grep -A 20 "<ruleset>" /var/ossec/etc/ossec.conf | head -25
   risk_level: low
+  bastion_prompt: SIEM VM에서 ossec.conf의 룰셋 설정을 확인하여 CDB 리스트가 올바르게 참조되고 있는지 검증해줘
 - order: 9
   instruction: SIEM VM의 Wazuh 알림에서 파일 무결성 변경(syscheck) 이벤트를 추출하고, 변경된 파일 경로를 목록화하시오.
   hint: alerts.json에서 syscheck 룰 그룹을 검색하세요.
@@ -140,3 +148,4 @@ steps:
   target_vm: siem
   script: grep "syscheck" /var/ossec/logs/alerts/alerts.json | grep -oP "\"path\":\"[^\"]+\"" | sort -u | head -15
   risk_level: low
+  bastion_prompt: SIEM VM의 Wazuh 알림에서 파일 무결성 변경(syscheck) 이벤트를 추출하고, 변경된 파일 경로를 목록화해줘

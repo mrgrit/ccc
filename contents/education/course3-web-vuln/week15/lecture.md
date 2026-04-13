@@ -532,7 +532,7 @@ curl -s "http://localhost:9100/projects/$PID/evidence/summary" \
 ### 6.2 LLM 기반 보고서 품질 검증
 
 ```bash
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{                                                # 요청 데이터(body)
     "model": "gemma3:12b",

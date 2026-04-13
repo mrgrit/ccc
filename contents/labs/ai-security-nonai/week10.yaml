@@ -17,9 +17,9 @@ steps:
   hint: netstat/ss와 iptables/nftables를 사용하여 네트워크 설정을 확인하세요.
   category: audit
   points: 10
-  answer: 'echo ''=== Port Check ==='' && curl -s -o /dev/null -w ''%{http_code}'' ${LLM_URL:-http://10.20.30.200:11434}/api/version && echo '' (Ollama accessible)'' && echo ''=== Service Info ==='' && curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/version
-    | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin), indent=2))" && echo ''=== Network Exposure ==='' && for port in 11434 8080 443 80; do timeout 2 bash -c "echo >/dev/tcp/10.20.30.200/$port"
-    2>/dev/null && echo "Port $port: OPEN" || echo "Port $port: CLOSED"; done'
+  answer: 'echo ''=== Port Check ==='' && curl -s -o /dev/null -w ''%{http_code}'' ${BASTION_URL:-http://localhost:8003}/api/version && echo '' (Ollama accessible)'' && echo ''=== Service Info ==='' &&
+    curl -s ${BASTION_URL:-http://localhost:8003}/api/version | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin), indent=2))" && echo ''=== Network Exposure ==='' && for port in 11434
+    8080 443 80; do timeout 2 bash -c "echo >/dev/tcp/10.20.30.200/$port" 2>/dev/null && echo "Port $port: OPEN" || echo "Port $port: CLOSED"; done'
   answer_detail: 배포 보안의 첫 단계는 네트워크 노출 범위를 파악하는 것입니다. LLM 서버가 불필요한 포트를 열고 있거나 모든 인터페이스에서 접근 가능하면 공격 표면이 넓어집니다.
   verify:
     type: output_contains
@@ -32,9 +32,9 @@ steps:
   category: analysis
   points: 12
   answer: "python3 -c \"\nimport json, urllib.request\nfor size_kb in [1, 10, 50, 100, 500]:\n    prompt = 'A ' * (size_kb * 128)  # ~1KB per 128 words\n    prompt += ' What is AI?'\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':5}}).encode()\n\
-    \    payload_kb = len(data) / 1024\n    try:\n        req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n        resp = urllib.request.urlopen(req,\
-    \ timeout=30)\n        print(f'Payload {payload_kb:.0f}KB: ACCEPTED (HTTP {resp.status})')\n    except urllib.error.HTTPError as e:\n        print(f'Payload {payload_kb:.0f}KB: REJECTED (HTTP {e.code})')\n\
-    \    except Exception as e:\n        print(f'Payload {payload_kb:.0f}KB: ERROR ({str(e)[:40]})')\n\""
+    \    payload_kb = len(data) / 1024\n    try:\n        req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n     \
+    \   resp = urllib.request.urlopen(req, timeout=30)\n        print(f'Payload {payload_kb:.0f}KB: ACCEPTED (HTTP {resp.status})')\n    except urllib.error.HTTPError as e:\n        print(f'Payload {payload_kb:.0f}KB:\
+    \ REJECTED (HTTP {e.code})')\n    except Exception as e:\n        print(f'Payload {payload_kb:.0f}KB: ERROR ({str(e)[:40]})')\n\""
   answer_detail: 요청 크기 제한이 없으면 공격자가 매우 긴 프롬프트로 메모리를 고갈시킬 수 있습니다. 서버 레벨과 프록시 레벨 모두에서 페이로드 크기를 제한해야 합니다.
   verify:
     type: output_contains
@@ -47,7 +47,7 @@ steps:
   category: analysis
   points: 10
   answer: "python3 -c \"\nimport json, urllib.request, time\nconfigs = [\n    ('Short', 10),\n    ('Medium', 100),\n    ('Long', 500),\n    ('Very Long', 1000)\n]\nfor label, num_predict in configs:\n \
-    \   data = json.dumps({'model':'gemma3:4b','prompt':'Write a comprehensive cybersecurity guide','stream':False,'options':{'num_predict':num_predict}}).encode()\n    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
+    \   data = json.dumps({'model':'gemma3:4b','prompt':'Write a comprehensive cybersecurity guide','stream':False,'options':{'num_predict':num_predict}}).encode()\n    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \    start = time.time()\n    try:\n        resp = json.loads(urllib.request.urlopen(req, timeout=60).read())\n        elapsed = time.time() - start\n        tokens = resp.get('eval_count', 0)\n   \
     \     print(f'{label:10s} (predict={num_predict:4d}): {elapsed:.1f}s, {tokens} tokens')\n    except Exception as e:\n        elapsed = time.time() - start\n        print(f'{label:10s} (predict={num_predict:4d}):\
     \ TIMEOUT/ERROR after {elapsed:.1f}s - {str(e)[:30]}')\n\""
@@ -62,8 +62,8 @@ steps:
   hint: curl -I로 응답 헤더를 분석하고 보안 헤더 체크리스트와 비교하세요.
   category: audit
   points: 10
-  answer: "python3 -c \"\nimport urllib.request\nreq = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/tags')\nresp = urllib.request.urlopen(req)\nheaders = dict(resp.headers)\nprint('=== Current\
-    \ Headers ===')\nfor k,v in headers.items():\n    print(f'  {k}: {v}')\n\nsecurity_headers = {\n    'X-Content-Type-Options': 'nosniff',\n    'X-Frame-Options': 'DENY',\n    'Content-Security-Policy':\
+  answer: "python3 -c \"\nimport urllib.request\nreq = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/tags')\nresp = urllib.request.urlopen(req)\nheaders = dict(resp.headers)\nprint('===\
+    \ Current Headers ===')\nfor k,v in headers.items():\n    print(f'  {k}: {v}')\n\nsecurity_headers = {\n    'X-Content-Type-Options': 'nosniff',\n    'X-Frame-Options': 'DENY',\n    'Content-Security-Policy':\
     \ 'any',\n    'Strict-Transport-Security': 'any',\n    'X-XSS-Protection': '1',\n    'Cache-Control': 'no-store',\n}\nprint('\\n=== Security Header Audit ===')\nfor h, expected in security_headers.items():\n\
     \    actual = headers.get(h, None)\n    if actual:\n        print(f'  [PASS] {h}: {actual}')\n    else:\n        print(f'  [FAIL] {h}: MISSING (recommended: {expected})')\n\""
   answer_detail: 보안 헤더는 API 응답의 보안성을 강화합니다. X-Content-Type-Options, CORS, CSP 등이 누락되면 XSS, 클릭재킹, MIME 스니핑 등의 공격에 취약합니다.
@@ -79,7 +79,7 @@ steps:
   points: 12
   answer: "python3 -c \"\nimport urllib.request, json\ntests = [\n    ('Empty body', b''),\n    ('Invalid JSON', b'{invalid}'),\n    ('Missing model', json.dumps({'prompt':'hi'}).encode()),\n    ('Unknown\
     \ model', json.dumps({'model':'nonexistent-model','prompt':'hi','stream':False}).encode()),\n    ('Wrong type', json.dumps({'model':123,'prompt':'hi','stream':False}).encode()),\n    ('Null prompt',\
-    \ json.dumps({'model':'gemma3:4b','prompt':None,'stream':False}).encode()),\n]\nprint('=== Error Handling Security Test ===')\nfor name, body in tests:\n    try:\n        req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',\
+    \ json.dumps({'model':'gemma3:4b','prompt':None,'stream':False}).encode()),\n]\nprint('=== Error Handling Security Test ===')\nfor name, body in tests:\n    try:\n        req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',\
     \ data=body, headers={'Content-Type':'application/json'})\n        resp = urllib.request.urlopen(req, timeout=5)\n        content = resp.read().decode()[:100]\n        print(f'[{resp.status}] {name}:\
     \ {content}')\n    except urllib.error.HTTPError as e:\n        body_text = e.read().decode()[:100]\n        # Check for info leakage\n        leaks = [w for w in ['stack','trace','internal','panic','goroutine','file']\
     \ if w in body_text.lower()]\n        leak_status = f'INFO LEAK: {leaks}' if leaks else 'OK'\n        print(f'[{e.code}] {name}: {body_text[:60]} | {leak_status}')\n    except Exception as e:\n    \
@@ -97,7 +97,7 @@ steps:
   points: 12
   answer: "python3 -c \"\nimport json, urllib.request, time\nstats = {'total':0,'success':0,'error':0,'times':[],'tokens':[]}\n\nfor i in range(8):\n    prompts = ['What is SSH?','Explain HTTPS','What is\
     \ a firewall?','Define VPN','What is DNS?','Explain TCP','What is UDP?','Define NAT']\n    data = json.dumps({'model':'gemma3:4b','prompt':prompts[i],'stream':False,'options':{'num_predict':20}}).encode()\n\
-    \    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n    start = time.time()\n    try:\n        resp = json.loads(urllib.request.urlopen(req,\
+    \    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n    start = time.time()\n    try:\n        resp = json.loads(urllib.request.urlopen(req,\
     \ timeout=30).read())\n        elapsed = time.time() - start\n        stats['success'] += 1\n        stats['times'].append(elapsed)\n        stats['tokens'].append(resp.get('eval_count',0))\n    except:\n\
     \        stats['error'] += 1\n    stats['total'] += 1\n\nprint('='*50)\nprint('  LLM API Monitoring Dashboard')\nprint('='*50)\nprint(f'Total requests:    {stats[\\\"total\\\"]}')\nprint(f'Successful:\
     \        {stats[\\\"success\\\"]}')\nprint(f'Errors:            {stats[\\\"error\\\"]}')\nprint(f'Error rate:        {stats[\\\"error\\\"]*100/max(stats[\\\"total\\\"],1):.1f}%')\nif stats['times']:\n\
@@ -136,14 +136,15 @@ steps:
   category: audit
   points: 12
   answer: "python3 -c \"\nimport json, urllib.request\nresults = []\ndef check(name, test_fn):\n    try:\n        passed, detail = test_fn()\n        results.append((name, 'PASS' if passed else 'FAIL',\
-    \ detail))\n    except Exception as e:\n        results.append((name, 'ERROR', str(e)[:40]))\n\ndef test_auth():\n    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/tags')\n    resp = urllib.request.urlopen(req,\
-    \ timeout=5)\n    return False, 'No authentication required'\n\ndef test_https():\n    return False, 'Using HTTP (port 11434)'\n\ndef test_model_info():\n    data = json.dumps({'name':'gemma3:4b'}).encode()\n\
-    \    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/show',data=data,headers={'Content-Type':'application/json'})\n    try:\n        resp = urllib.request.urlopen(req, timeout=5)\n     \
-    \   return False, 'Model details exposed without auth'\n    except: return True, 'Model info restricted'\n\ndef test_mgmt_api():\n    data = json.dumps({'name':'test'}).encode()\n    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/pull',data=data,headers={'Content-Type':'application/json'})\n\
-    \    try:\n        resp = urllib.request.urlopen(req, timeout=5)\n        return False, 'Management API accessible'\n    except urllib.error.HTTPError as e:\n        return e.code == 403, f'HTTP {e.code}'\n\
-    \    except: return True, 'Blocked'\n\ncheck('Authentication', test_auth)\ncheck('HTTPS/TLS', test_https)\ncheck('Model Info Exposure', test_model_info)\ncheck('Management API', test_mgmt_api)\n\nprint('='*55)\n\
-    print('  Deployment Security Checklist')\nprint('='*55)\nfor name, status, detail in results:\n    icon = 'PASS' if status=='PASS' else 'FAIL'\n    print(f'  [{icon:4s}] {name:25s} {detail}')\n\npassed\
-    \ = sum(1 for _,s,_ in results if s=='PASS')\ntotal = len(results)\nprint(f'\\n  Score: {passed}/{total} ({passed*100//total}%)')\nprint('='*55)\n\""
+    \ detail))\n    except Exception as e:\n        results.append((name, 'ERROR', str(e)[:40]))\n\ndef test_auth():\n    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/tags')\n\
+    \    resp = urllib.request.urlopen(req, timeout=5)\n    return False, 'No authentication required'\n\ndef test_https():\n    return False, 'Using HTTP (port 11434)'\n\ndef test_model_info():\n    data\
+    \ = json.dumps({'name':'gemma3:4b'}).encode()\n    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/show',data=data,headers={'Content-Type':'application/json'})\n    try:\n  \
+    \      resp = urllib.request.urlopen(req, timeout=5)\n        return False, 'Model details exposed without auth'\n    except: return True, 'Model info restricted'\n\ndef test_mgmt_api():\n    data =\
+    \ json.dumps({'name':'test'}).encode()\n    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/pull',data=data,headers={'Content-Type':'application/json'})\n    try:\n        resp\
+    \ = urllib.request.urlopen(req, timeout=5)\n        return False, 'Management API accessible'\n    except urllib.error.HTTPError as e:\n        return e.code == 403, f'HTTP {e.code}'\n    except: return\
+    \ True, 'Blocked'\n\ncheck('Authentication', test_auth)\ncheck('HTTPS/TLS', test_https)\ncheck('Model Info Exposure', test_model_info)\ncheck('Management API', test_mgmt_api)\n\nprint('='*55)\nprint('\
+    \  Deployment Security Checklist')\nprint('='*55)\nfor name, status, detail in results:\n    icon = 'PASS' if status=='PASS' else 'FAIL'\n    print(f'  [{icon:4s}] {name:25s} {detail}')\n\npassed =\
+    \ sum(1 for _,s,_ in results if s=='PASS')\ntotal = len(results)\nprint(f'\\n  Score: {passed}/{total} ({passed*100//total}%)')\nprint('='*55)\n\""
   answer_detail: 배포 보안 체크리스트는 운영 환경의 보안 설정을 체계적으로 점검합니다. 자동화된 검사로 정기적인 보안 감사를 수행하고 미비점을 추적합니다.
   verify:
     type: output_contains

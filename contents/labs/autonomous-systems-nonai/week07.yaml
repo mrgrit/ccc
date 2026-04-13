@@ -21,7 +21,7 @@ steps:
   answer_detail: FGSM은 가장 기본적인 적대적 공격 알고리즘입니다.
   verify:
     type: output_contains
-    expect: 'Original'
+    expect: Original
     field: stdout
   target_vm: attacker
 - order: 2
@@ -33,7 +33,7 @@ steps:
   answer_detail: CAN 메시지 구조를 이해하면 인젝션 공격을 수행할 수 있습니다.
   verify:
     type: output_contains
-    expect: 'CAN Bus Traffic'
+    expect: CAN Bus Traffic
     field: stdout
   target_vm: attacker
 - order: 3
@@ -41,11 +41,11 @@ steps:
   hint: struct.pack으로 조향 각도와 브레이크 값을 인코딩하세요.
   category: attack
   points: 12
-  answer: 'python3 -c "import struct;print(''=== CAN Injection Attack ==='');steer=struct.pack(''>h'',450)+b''\x00''*6;print(f''  [INJECT] ID:0x300 Data:{steer.hex()} — Force right turn 45deg'');brake=b''\x00''*8;print(f''  [INJECT] ID:0x200 Data:{brake.hex()} — Disable brakes'');print(''  [CRITICAL] Vehicle steering and brakes compromised!'')"'
+  answer: python3 -c "import struct;print('=== CAN Injection Attack ===');steer=struct.pack('>h',450)+b'\x00'*6;print(f'  [INJECT] ID:0x300 Data:{steer.hex()} — Force right turn 45deg');brake=b'\x00'*8;print(f'  [INJECT] ID:0x200 Data:{brake.hex()} — Disable brakes');print('  [CRITICAL] Vehicle steering and brakes compromised!')"
   answer_detail: CAN 인젝션은 차량 제어를 직접 탈취하는 치명적 공격입니다.
   verify:
     type: output_contains
-    expect: 'CAN Injection'
+    expect: CAN Injection
     field: stdout
   target_vm: attacker
 - order: 4
@@ -53,11 +53,12 @@ steps:
   hint: hmac과 hashlib으로 서명 생성 및 검증을 구현하세요.
   category: config
   points: 12
-  answer: 'python3 -c "import hmac,hashlib;key=b''mfg_key'';fw=b''firmware_v2.2'';sig=hmac.new(key,fw,hashlib.sha256).hexdigest()[:32];print(''=== OTA Verification ==='');print(f''  [PASS] Legit: sig matches'');fake_sig=hmac.new(b''fake'',fw,hashlib.sha256).hexdigest()[:32];print(f''  [FAIL] Tampered: sig mismatch'');print(f''  [FAIL] Rollback: v1.9 < current v2.1'');print(''  OTA security: signature + version + hash required'')"'
+  answer: 'python3 -c "import hmac,hashlib;key=b''mfg_key'';fw=b''firmware_v2.2'';sig=hmac.new(key,fw,hashlib.sha256).hexdigest()[:32];print(''=== OTA Verification ==='');print(f''  [PASS] Legit: sig matches'');fake_sig=hmac.new(b''fake'',fw,hashlib.sha256).hexdigest()[:32];print(f''  [FAIL] Tampered: sig mismatch'');print(f''  [FAIL] Rollback: v1.9 < current v2.1'');print(''  OTA security: signature
+    + version + hash required'')"'
   answer_detail: OTA 보안은 서명, 해시, 롤백 방지의 3중 검증이 필요합니다.
   verify:
     type: output_contains
-    expect: 'OTA Verification'
+    expect: OTA Verification
     field: stdout
   target_vm: attacker
 - order: 5
@@ -69,7 +70,7 @@ steps:
   answer_detail: CAN DoS는 안전 시스템 통신을 차단하여 생명을 위협합니다.
   verify:
     type: output_contains
-    expect: 'CAN Bus DoS'
+    expect: CAN Bus DoS
     field: stdout
   target_vm: attacker
 - order: 6
@@ -77,7 +78,8 @@ steps:
   hint: AUTOSAR SecOC CAN authentication을 질문하세요.
   category: analysis
   points: 10
-  answer: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are an automotive cybersecurity expert."},{"role":"user","content":"Explain AUTOSAR SecOC (Secure Onboard Communication) for CAN bus authentication. How does it prevent message injection?"}],"stream":false,"options":{"num_predict":150}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'])"
+  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are an automotive cybersecurity expert.\"},{\"role\":\"user\",\"content\":\"Explain AUTOSAR SecOC (Secure Onboard Communication) for CAN bus authentication. How does it prevent message injection?\"}],\"stream\":false,\"options\":{\"num_predict\":150}}'\
+    \ \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: SecOC는 CAN 메시지 인증의 산업 표준입니다.
   verify:
     type: output_contains
@@ -89,11 +91,12 @@ steps:
   hint: 정상 트래픽 baseline과 비교하여 이상을 탐지하세요.
   category: config
   points: 10
-  answer: 'python3 -c "alerts=[];normal_ids={0x100,0x200,0x300,0x400};traffic=[(0x100,60),(0x200,0),(0x000,100),(0x300,450)];print(''=== CAN IDS ==='');exec(''\\nfor aid,val in traffic:\\n  if aid not in normal_ids: alerts.append(f\"Unknown ID 0x{aid:03X}\")\\n  if aid==0x200 and val==0: alerts.append(\"Brake zero while moving\")\\n  if aid==0x300 and abs(val)>300: alerts.append(f\"Steering {val/10}deg exceeds limit\")\\n  print(f\"  ID:0x{aid:03X} val={val} alerts={len(alerts)}\")\\n'');[print(f''  [!] {a}'') for a in alerts]"'
+  answer: 'python3 -c "alerts=[];normal_ids={0x100,0x200,0x300,0x400};traffic=[(0x100,60),(0x200,0),(0x000,100),(0x300,450)];print(''=== CAN IDS ==='');exec(''\\nfor aid,val in traffic:\\n  if aid not in normal_ids: alerts.append(f\"Unknown ID 0x{aid:03X}\")\\n  if aid==0x200 and val==0: alerts.append(\"Brake zero while moving\")\\n  if aid==0x300 and abs(val)>300: alerts.append(f\"Steering {val/10}deg
+    exceeds limit\")\\n  print(f\"  ID:0x{aid:03X} val={val} alerts={len(alerts)}\")\\n'');[print(f''  [!] {a}'') for a in alerts]"'
   answer_detail: CAN IDS는 인젝션 공격과 이상 트래픽을 실시간 탐지합니다.
   verify:
     type: output_contains
-    expect: 'CAN IDS'
+    expect: CAN IDS
     field: stdout
   target_vm: attacker
 - order: 8
@@ -105,6 +108,6 @@ steps:
   answer_detail: 종합 보고서로 자율주행 보안 개선 방향을 제시합니다.
   verify:
     type: output_contains
-    expect: 'Attack Report'
+    expect: Attack Report
     field: stdout
   target_vm: attacker

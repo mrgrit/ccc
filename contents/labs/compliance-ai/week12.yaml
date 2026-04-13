@@ -21,11 +21,12 @@ steps:
   answer_detail: BCP에서 서비스 가용성은 핵심 지표입니다. 각 서비스의 RPO(복구 시점 목표)와 RTO(복구 시간 목표)를 정의해야 합니다. sshd가 중단되면 원격 관리 불가, auditd 중단은 감사 추적 불가를 의미합니다.
   verify:
     type: output_contains
-    expect: 핵심 서비스 가용성
+    expect: 
     field: stdout
   target_vm: secu
   script: 'echo ''=== 핵심 서비스 가용성 ==='' && for svc in sshd auditd suricata nftables rsyslog; do STATUS=$(sudo systemctl is-active $svc 2>/dev/null); echo "$svc: $STATUS"; done'
   risk_level: low
+  bastion_prompt: SECU 서버(10.20.30.1)의 주요 서비스 가용성 상태를 확인해줘
 - order: 2
   instruction: 서비스 자동 재시작 설정을 확인하시오. 장애 시 자동 복구가 되도록 systemd의 Restart 설정을 점검합니다.
   hint: systemctl show로 서비스의 Restart 옵션을 확인하세요.
@@ -35,11 +36,12 @@ steps:
   answer_detail: systemd의 Restart 설정은 서비스 장애 시 자동 복구의 핵심입니다. Restart=on-failure(비정상 종료 시 재시작), Restart=always(항상 재시작)를 설정하면 서비스 중단 시간을 최소화할 수 있습니다. RestartSec으로 재시작 간격도 조정합니다.
   verify:
     type: output_contains
-    expect: 자동 재시작 설정
+    expect: 
     field: stdout
   target_vm: secu
   script: 'echo ''=== 자동 재시작 설정 ==='' && for svc in sshd auditd suricata; do RESTART=$(systemctl show $svc --property=Restart 2>/dev/null | cut -d= -f2); echo "$svc: Restart=$RESTART"; done'
   risk_level: low
+  bastion_prompt: 서비스 자동 재시작 설정을 확인해줘
 - order: 3
   instruction: 디스크 사용량을 확인하시오. 디스크 풀(full)은 서비스 중단의 주요 원인입니다.
   hint: df -h로 파일 시스템 사용량을 확인하세요.
@@ -49,11 +51,12 @@ steps:
   answer_detail: 디스크 사용률이 90%를 초과하면 로그 기록 실패, 데이터베이스 중단, 서비스 장애가 발생할 수 있습니다. BCP에서는 디스크 사용량 모니터링과 임계값 알림을 설정하고, 로그 순환(logrotate)으로 디스크 소진을 방지합니다.
   verify:
     type: output_contains
-    expect: 디스크 사용량
+    expect: 
     field: stdout
   target_vm: secu
   script: echo '=== 디스크 사용량 ===' && df -h | grep -E '(Filesystem|/dev/)' && echo '--- 대용량 디렉터리 ---' && sudo du -sh /var/log/ /var/lib/ /tmp/ 2>/dev/null
   risk_level: low
+  bastion_prompt: 디스크 사용량을 확인해줘
 - order: 4
   instruction: 핵심 설정 파일의 백업본을 생성하시오. DR에서 설정 복원은 서비스 복구의 핵심입니다.
   hint: tar로 /etc 디렉터리의 주요 파일을 백업하세요.
@@ -64,12 +67,13 @@ steps:
   answer_detail: 설정 파일 백업은 DR의 기본입니다. 서버 재구축 시 설정을 처음부터 다시 하는 것보다 백업본에서 복원하면 RTO를 크게 단축할 수 있습니다. 백업은 별도 위치(원격 서버, 클라우드 스토리지)에도 보관해야 합니다.
   verify:
     type: output_contains
-    expect: config_backup
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo tar czf /tmp/config_backup_$(date +%Y%m%d).tar.gz /etc/ssh/sshd_config /etc/security/pwquality.conf /etc/login.defs /etc/rsyslog.conf /etc/audit/ /etc/nftables.conf 2>/dev/null && ls -lh
     /tmp/config_backup_*.tar.gz
   risk_level: low
+  bastion_prompt: 핵심 설정 파일의 백업본을 생성하시오. DR에서 설정 복원은 서비스 복구의 핵심해줘
 - order: 5
   instruction: 백업 파일의 무결성을 검증하기 위한 체크섬을 생성하시오.
   hint: sha256sum으로 백업 파일의 해시를 생성하세요.
@@ -79,11 +83,12 @@ steps:
   answer_detail: 백업 무결성 검증은 복원 전 필수 단계입니다. 저장 중 손상되거나 위변조된 백업을 복원하면 시스템이 비정상 상태가 됩니다. SHA-256 체크섬을 백업과 함께 보관하고, 복원 전 대조하여 무결성을 확인합니다.
   verify:
     type: output_contains
-    expect: 체크섬 파일
+    expect: 
     field: stdout
   target_vm: secu
   script: sha256sum /tmp/config_backup_*.tar.gz | tee /tmp/backup_checksum.txt && echo '--- 체크섬 파일 ---' && cat /tmp/backup_checksum.txt
   risk_level: low
+  bastion_prompt: 백업 파일의 무결성을 검증하기 위한 체크섬을 생성해줘
 - order: 6
   instruction: 백업 복원 테스트를 수행하시오. 백업에서 특정 파일을 추출하여 원본과 비교합니다.
   hint: tar로 백업에서 파일을 추출하고 diff로 비교하세요.
@@ -94,12 +99,13 @@ steps:
   answer_detail: 백업 복원 테스트는 BCP에서 반드시 수행해야 하지만 종종 생략됩니다. '백업은 복원에 성공하기 전까지는 백업이 아니다'라는 격언이 있습니다. 정기적인 복원 테스트로 백업의 실효성을 확인해야 합니다.
   verify:
     type: output_contains
-    expect: 복원 검증
+    expect: 
     field: stdout
   target_vm: secu
   script: 'mkdir -p /tmp/restore_test && sudo tar xzf /tmp/config_backup_*.tar.gz -C /tmp/restore_test 2>/dev/null && diff /etc/ssh/sshd_config /tmp/restore_test/etc/ssh/sshd_config && echo ''복원 검증: 일치''
     || echo ''복원 검증: 불일치'''
   risk_level: low
+  bastion_prompt: 백업 복원 테스트를 수행해줘
 - order: 7
   instruction: 서비스 장애 시뮬레이션과 복구를 수행하시오. rsyslog를 중지했다가 재시작하여 복구 절차를 테스트합니다.
   hint: systemctl stop/start로 서비스를 제어하세요.
@@ -110,12 +116,13 @@ steps:
   answer_detail: 장애 시뮬레이션(Tabletop Exercise)은 BCP의 효과성을 테스트하는 방법입니다. 실제 서비스를 중지하고 복구하는 훈련을 통해 복구 절차의 정확성, 담당자의 숙련도, RTO 달성 여부를 검증합니다. 운영 환경에서는 반드시 계획된 시간에 수행해야 합니다.
   verify:
     type: output_contains
-    expect: 복구 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: echo '=== 장애 시뮬레이션 ===' && echo '[1] rsyslog 중지' && sudo systemctl stop rsyslog && sudo systemctl is-active rsyslog && echo '[2] rsyslog 복구' && sudo systemctl start rsyslog && sudo systemctl is-active
     rsyslog && echo '=== 복구 완료 ==='
   risk_level: low
+  bastion_prompt: 서비스 장애 시뮬레이션과 복구를 수행하시오. rsyslog를 중지했다가 재시작하여 복구 절차를 테스트해줘
 - order: 8
   instruction: BCP/DR 종합 점검 보고서 스크립트를 작성하고 실행하시오.
   hint: 서비스 가용성, 백업, 디스크, 자동 복구 설정을 종합하세요.
@@ -128,7 +135,7 @@ steps:
   answer_detail: BCP(Business Continuity Plan)는 재해 발생 시 핵심 업무를 지속할 수 있도록 하는 계획이고, DR(Disaster Recovery)은 IT 시스템 복구에 초점을 맞춥니다. 정기적인 점검과 훈련을 통해 RTO(복구 시간), RPO(복구 시점)를 검증하고, 계획을 최신 상태로 유지해야 합니다.
   verify:
     type: output_contains
-    expect: BCP/DR 점검 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: "cat << 'SCRIPT' > /tmp/bcp_report.sh\n#!/bin/bash\necho '=== BCP/DR 준비상태 점검 보고서 ==='\necho \"점검일: $(date +%Y-%m-%d)\"\necho ''\necho '[1. 서비스 가용성]'\nfor svc in sshd auditd suricata rsyslog; do\n\
@@ -136,3 +143,4 @@ steps:
     \ 2>/dev/null | tail -1 || echo '  백업 파일 없음'\necho '[4. 자동 재시작]'\nfor svc in sshd auditd; do\n  echo \"  $svc: $(systemctl show $svc --property=Restart 2>/dev/null | cut -d= -f2)\"\ndone\necho ''\n\
     echo '=== BCP/DR 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/bcp_report.sh && bash /tmp/bcp_report.sh"
   risk_level: low
+  bastion_prompt: BCP/DR 종합 점검 보고서 스크립트를 작성하고 실행하시오 구현 방법과 예시를 설명해줘

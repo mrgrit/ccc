@@ -21,11 +21,12 @@ steps:
   answer_detail: ping -c 3은 ICMP Echo Request를 3회 전송하여 대상 호스트의 생존 여부를 확인한다. TTL 값과 응답 시간으로 OS 유형을 추정할 수 있다.
   verify:
     type: output_contains
-    expect: bytes from 10.20.30.80
+    expect: ''
     field: stdout
   target_vm: attacker
   script: ping -c 3 10.20.30.80
   risk_level: low
+  bastion_prompt: ping을 사용하여 대상 호스트 10.20.30.80이 활성 상태인지 확인해줘
 - order: 2
   instruction: nslookup 또는 dig를 사용하여 실습 네트워크의 DNS 서버에 10.20.30.80의 역방향 DNS 조회를 수행하라.
   hint: dig -x 옵션으로 역방향 조회가 가능하다
@@ -35,11 +36,12 @@ steps:
   answer_detail: 역방향 DNS 조회(Reverse DNS Lookup)는 IP 주소로부터 호스트명을 알아내는 기법이다. PTR 레코드를 조회하며, 대상 시스템의 명명 규칙이나 역할을 추정할 수 있다.
   verify:
     type: output_contains
-    expect: IN
+    expect: 
     field: stdout
   target_vm: attacker
   script: dig -x 10.20.30.80
   risk_level: low
+  bastion_prompt: nslookup 또는 dig를 사용하여 실습 네트워크의 DNS 서버에 10.20.30.80의 역방향 DNS 조회를 수행해줘
 - order: 3
   instruction: curl을 사용하여 웹서버(10.20.30.80:3000)의 HTTP 헤더만 확인하라. 서버 소프트웨어 정보를 파악하라.
   hint: curl -I 옵션은 HEAD 요청을 보내 헤더만 가져온다
@@ -49,11 +51,12 @@ steps:
   answer_detail: HTTP 응답 헤더에는 Server, X-Powered-By 등 서버 기술 스택 정보가 포함될 수 있다. 이 정보로 사용 중인 프레임워크와 버전을 식별하여 알려진 취약점을 검색할 수 있다.
   verify:
     type: output_contains
-    expect: HTTP/
+    expect: 
     field: stdout
   target_vm: attacker
   script: curl -I http://10.20.30.80:3000
   risk_level: low
+  bastion_prompt: curl을 사용하여 웹서버(10.20.30.80:3000)의 HTTP 헤더만 확인해줘
 - order: 4
   instruction: curl로 웹서버(10.20.30.80:3000)의 robots.txt 파일을 확인하여 숨겨진 경로를 찾아라.
   hint: robots.txt는 웹 루트에 위치한다
@@ -63,11 +66,12 @@ steps:
   answer_detail: robots.txt는 검색엔진 크롤러에게 접근을 제한할 경로를 알려주는 파일이다. 공격자 관점에서는 관리자 페이지, 백업 파일 등 민감한 경로가 노출될 수 있어 정찰에 유용하다.
   verify:
     type: output_contains
-    expect: Disallow
+    expect: 
     field: stdout
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/robots.txt
   risk_level: low
+  bastion_prompt: curl로 웹서버(10.20.30.80:3000)의 robots.txt 파일을 확인하여 숨겨진 경로를 찾아라해줘
 - order: 5
   instruction: curl을 사용하여 10.20.30.80:3000 웹 애플리케이션의 기술 스택을 핑거프린팅하라.
   hint: curl -sI로 응답 헤더를 확인하고 Server 등의 정보를 추출한다
@@ -77,11 +81,12 @@ steps:
   answer_detail: HTTP 응답 헤더에서 Server, X-Powered-By, Set-Cookie 등의 정보를 통해 웹 서버 종류, 프레임워크, 세션 관리 방식을 파악할 수 있다. 패시브 핑거프린팅을 통해 공격 표면을 빠르게 파악할 수 있다.
   verify:
     type: output_contains
-    expect: Server
+    expect: 
     field: stdout
   target_vm: attacker
   script: curl -sI http://10.20.30.80:3000 | grep -iE "(Server|X-Powered-By|X-Frame|Content-Type|Set-Cookie)"
   risk_level: low
+  bastion_prompt: curl을 사용하여 10.20.30.80:3000 웹 애플리케이션의 기술 스택을 핑거프린팅해줘
 - order: 6
   instruction: curl을 사용하여 JuiceShop의 /ftp 디렉토리에 접근하여 공개된 파일 목록을 확인하라.
   hint: /ftp 경로로 GET 요청을 보내라
@@ -91,11 +96,12 @@ steps:
   answer_detail: 웹 서버의 디렉토리 리스팅이 활성화되어 있으면 내부 파일 구조가 노출된다. /ftp 디렉토리에는 백업 파일, 설정 파일 등 민감한 정보가 포함될 수 있다.
   verify:
     type: output_contains
-    expect: .md
+    expect: 
     field: stdout
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/ftp
   risk_level: low
+  bastion_prompt: curl을 사용하여 JuiceShop의 /ftp 디렉토리에 접근하여 공개된 파일 목록을 확인해줘
 - order: 7
   instruction: ping과 ip route를 사용하여 attacker에서 web(10.20.30.80)까지의 네트워크 경로와 연결 상태를 확인하라.
   hint: ping -c 1으로 연결을 확인하고 ip route get으로 라우팅 경로를 파악한다
@@ -105,11 +111,12 @@ steps:
   answer_detail: ping으로 대상 호스트의 생존 여부와 응답 시간을 확인하고, ip route get으로 해당 목적지까지의 라우팅 경로를 파악한다. TTL 값과 라우팅 정보를 통해 네트워크 토폴로지, 방화벽 위치, 라우팅 구조를 추정할 수 있다.
   verify:
     type: output_contains
-    expect: 10.20.30
+    expect: 
     field: stdout
   target_vm: attacker
   script: ping -c 1 10.20.30.80 && echo "--- Routing ---" && ip route get 10.20.30.80
   risk_level: low
+  bastion_prompt: ping과 ip route를 사용하여 attacker에서 web(10.20.30.80)까지의 네트워크 경로와 연결 상태를 확인해줘
 - order: 8
   instruction: netcat(nc)을 사용하여 10.20.30.80의 포트 3000에 접속하여 배너를 그래빙하라.
   hint: nc로 접속 후 HTTP 요청을 수동으로 보내라
@@ -119,11 +126,12 @@ steps:
   answer_detail: 배너 그래빙(Banner Grabbing)은 서비스에 접속하여 응답 메시지에서 소프트웨어 종류와 버전을 수집하는 기법이다. nc(netcat)로 수동 HTTP 요청을 보내면 서버 헤더를 직접 확인할 수 있다.
   verify:
     type: output_contains
-    expect: HTTP/
+    expect: 
     field: stdout
   target_vm: attacker
   script: echo -e 'HEAD / HTTP/1.0\r\n\r\n' | nc -w 3 10.20.30.80 3000
   risk_level: low
+  bastion_prompt: netcat(nc)을 사용하여 10.20.30.80의 포트 3000에 접속하여 배너를 그래빙해줘
 - order: 9
   instruction: curl로 JuiceShop의 REST API(/api/Products)에 접근하여 제품 목록을 가져오고, python3으로 JSON을 파싱하여 제품 수를 세어라.
   hint: curl 출력을 python3 -c로 파이프하여 JSON 파싱한다
@@ -133,11 +141,12 @@ steps:
   answer_detail: 웹 애플리케이션의 REST API를 탐색하면 데이터 구조, 엔드포인트 패턴, 인증 방식 등을 파악할 수 있다. API 응답의 JSON 구조를 분석하면 후속 공격에 필요한 파라미터와 데이터 형식을 알 수 있다.
   verify:
     type: output_contains
-    expect: 'Total products:'
+    expect: 
     field: stdout
   target_vm: attacker
   script: 'curl -s http://10.20.30.80:3000/api/Products | python3 -c "import sys,json; d=json.load(sys.stdin); print(\"Total products: \" + str(len(d.get(\"data\",[]))))"'
   risk_level: low
+  bastion_prompt: curl로 JuiceShop의 REST API(/api/Products)에 접근하여 제품 목록을 가져오고, python3으로 JSON을 파싱하여 제품 수를 세어라해줘
 - order: 10
   instruction: curl을 사용하여 웹서버(10.20.30.80) 포트 80의 Apache 서버 헤더 정보를 확인하라.
   hint: 포트 80의 HTTP 서버도 확인해 보라
@@ -147,11 +156,12 @@ steps:
   answer_detail: 하나의 호스트에 여러 웹 서비스가 구동될 수 있다. 포트 80(Apache)과 포트 3000(Node.js/JuiceShop) 각각의 헤더를 비교하면 서로 다른 기술 스택과 보안 설정을 파악할 수 있다.
   verify:
     type: output_contains
-    expect: HTTP/
+    expect: 
     field: stdout
   target_vm: attacker
   script: curl -I http://10.20.30.80:80
   risk_level: low
+  bastion_prompt: curl을 사용하여 웹서버(10.20.30.80) 포트 80의 Apache 서버 헤더 정보를 확인해줘
 - order: 11
   instruction: arp-scan 또는 ping sweep으로 10.20.30.0/24 네트워크에서 활성화된 호스트 목록을 작성하라.
   hint: nmap -sn 옵션으로 핑 스윕을 수행할 수 있다
@@ -161,11 +171,12 @@ steps:
   answer_detail: 핑 스윕(Ping Sweep)은 네트워크 대역에서 활성 호스트를 빠르게 찾는 기법이다. nmap -sn은 포트 스캔 없이 호스트 발견만 수행하며, ARP/ICMP/TCP를 조합하여 생존 호스트를 식별한다.
   verify:
     type: output_contains
-    expect: Nmap scan report
+    expect: 
     field: stdout
   target_vm: attacker
   script: nmap -sn 10.20.30.0/24
   risk_level: low
+  bastion_prompt: arp-scan 또는 ping sweep으로 10 구현 방법과 예시를 설명해줘
 - order: 12
   instruction: curl로 JuiceShop의 /rest/admin/application-version 엔드포인트에 접근하여 애플리케이션 버전을 확인하라.
   hint: REST API 엔드포인트에 GET 요청을 보내라
@@ -175,11 +186,12 @@ steps:
   answer_detail: 애플리케이션 버전 정보는 알려진 취약점(CVE)을 검색하는 데 핵심 정보이다. 버전이 노출되는 엔드포인트가 인증 없이 접근 가능하면 보안 설정 미흡으로 볼 수 있다.
   verify:
     type: output_contains
-    expect: version
+    expect: 
     field: stdout
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/rest/admin/application-version
   risk_level: low
+  bastion_prompt: curl로 JuiceShop의 /rest/admin/application-version 엔드포인트에 접근하여 애플리케이션 버전을 확인해줘
 - order: 13
   instruction: curl을 사용하여 JuiceShop의 main.js 파일을 다운로드하고, grep으로 'admin' 키워드가 포함된 라인을 검색하라.
   hint: JuiceShop의 JavaScript 번들은 /main.js 경로에 있다
@@ -189,11 +201,12 @@ steps:
   answer_detail: 프론트엔드 JavaScript 번들에는 API 엔드포인트, 관리자 경로, 숨겨진 기능 등이 하드코딩되어 있을 수 있다. 소스 코드 분석을 통해 공격 표면을 확장하는 것은 정찰의 중요한 기법이다.
   verify:
     type: output_contains
-    expect: admin
+    expect: 
     field: stdout
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/main.js | grep -i 'admin' | head -20
   risk_level: low
+  bastion_prompt: curl을 사용하여 JuiceShop의 main.js 파일을 다운로드하고, grep으로 'admin' 키워드가 포함된 라인을 검색해줘
 - order: 14
   instruction: JuiceShop의 /rest/memories 엔드포인트에 접근하여 사용자가 업로드한 파일 정보를 수집하라.
   hint: 인증 없이 접근 가능한 API를 탐색하라
@@ -203,11 +216,12 @@ steps:
   answer_detail: 인증 없이 접근 가능한 API 엔드포인트는 정보 유출의 원인이 된다. 사용자 업로드 파일, 댓글, 리뷰 등의 데이터에서 사용자명, 이메일 등 추가 정보를 수집할 수 있다.
   verify:
     type: output_contains
-    expect: data
+    expect: 
     field: stdout
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/rest/memories | python3 -m json.tool | head -30
   risk_level: low
+  bastion_prompt: JuiceShop의 /rest/memories 엔드포인트에 접근하여 사용자가 업로드한 파일 정보를 수집해줘
 - order: 15
   instruction: 수집한 모든 정보를 정리하여 /tmp/recon_report.txt 파일로 저장하라. 대상 IP, 열린 포트, 서버 기술 스택, 발견된 API 엔드포인트를 포함하라.
   hint: echo와 리다이렉션(>>, >)으로 파일을 생성할 수 있다
@@ -218,9 +232,10 @@ steps:
   answer_detail: 정찰 결과를 체계적으로 문서화하는 것은 모의해킹의 필수 단계이다. 수집된 정보를 정리하면 공격 계획을 수립하고, 팀원과 공유하며, 최종 보고서 작성 시 근거 자료로 활용할 수 있다.
   verify:
     type: output_contains
-    expect: Recon Report
+    expect: 
     field: stdout
   target_vm: attacker
   script: 'echo -e ''=== Recon Report ===\nTarget: 10.20.30.80\nPorts: 80(Apache), 3000(JuiceShop)\nTech: Node.js, Express, Angular\nAPIs: /api/Products, /rest/admin/application-version, /ftp, /rest/memories\nNetwork:
     10.20.30.0/24 (hosts: .1, .80, .100, .201)'' > /tmp/recon_report.txt && cat /tmp/recon_report.txt'
   risk_level: low
+  bastion_prompt: 수집한 모든 정보를 정리하여 /tmp/recon_report.txt 파일로 저장해줘

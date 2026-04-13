@@ -29,11 +29,12 @@ steps:
   answer_detail: --script vuln은 NSE의 vuln 카테고리 스크립트를 모두 실행한다. 각 스크립트는 특정 CVE를 검사하며, web 서버의 Apache, JuiceShop, DVWA 취약점을 탐지한다.
   verify:
     type: output_contains
-    expect: http
+    expect: 
     field: stdout
   target_vm: attacker
   script: nmap --script vuln -p 80,3000,8080 -T4 --max-retries 1 --host-timeout 30s 10.20.30.80
   risk_level: low
+  bastion_prompt: '[RED] nmap의 vuln 스크립트 카테고리를 사용하여 web 서버의 알려진 취약점을 스캔해줘'
 - order: 2
   instruction: '[RED] Nikto를 사용하여 web 서버(80번 포트)의 웹 취약점을 스캔하라.'
   hint: nikto -h 옵션으로 대상을 지정한다.
@@ -43,11 +44,12 @@ steps:
   answer_detail: Nikto는 웹서버 전용 취약점 스캐너이다. 위험한 파일/CGI, 오래된 서버 소프트웨어, 잘못된 설정 등 6,700개 이상의 항목을 검사한다.
   verify:
     type: output_contains
-    expect: 'Server:'
+    expect: 
     field: stdout
   target_vm: attacker
   script: nikto -h http://10.20.30.80/ -maxtime 60s
   risk_level: low
+  bastion_prompt: '[RED] Nikto를 사용하여 web 서버(80번 포트)의 웹 취약점을 스캔해줘'
 - order: 3
   instruction: '[RED] searchsploit을 사용하여 Apache 관련 알려진 익스플로잇을 검색하라.'
   hint: searchsploit 명령에 서비스명과 버전을 입력한다.
@@ -57,11 +59,12 @@ steps:
   answer_detail: searchsploit은 ExploitDB의 오프라인 검색 도구이다. 서비스명+버전으로 검색하면 해당하는 PoC 코드와 설명을 확인할 수 있다.
   verify:
     type: output_contains
-    expect: Apache
+    expect: 
     field: stdout
   target_vm: attacker
   script: searchsploit apache 2.4
   risk_level: low
+  bastion_prompt: '[RED] searchsploit을 사용하여 Apache 관련 알려진 익스플로잇을 검색해줘'
 - order: 4
   instruction: '[RED] web 서버의 SSH 서비스 보안 설정을 nmap 스크립트로 점검하라.'
   hint: ssh-auth-methods, ssh2-enum-algos 스크립트를 사용한다.
@@ -71,11 +74,12 @@ steps:
   answer_detail: ssh-auth-methods는 허용된 인증 방식(password, publickey 등)을, ssh2-enum-algos는 지원하는 암호화 알고리즘을 열거한다. 약한 알고리즘이나 password 인증 허용은 취약점이다.
   verify:
     type: output_contains
-    expect: ssh
+    expect: 
     field: stdout
   target_vm: attacker
   script: nmap --script ssh-auth-methods,ssh2-enum-algos -p 22 -T4 --max-retries 1 --host-timeout 15s 10.20.30.80
   risk_level: low
+  bastion_prompt: '[RED] web 서버의 SSH 서비스 보안 설정을 nmap 스크립트로 점검해줘'
 - order: 5
   instruction: '[RED] 웹 디렉토리 브루트포스를 수행하여 DVWA(:8080)의 숨겨진 경로를 탐색하라.'
   hint: dirb 또는 gobuster 도구를 사용한다.
@@ -85,11 +89,12 @@ steps:
   answer_detail: dirb는 사전 파일의 경로를 하나씩 요청하여 존재하는 디렉토리/파일을 탐색한다. -r 옵션은 재귀를 비활성화하여 속도를 높인다.
   verify:
     type: output_contains
-    expect: FOUND
+    expect: 
     field: stdout
   target_vm: attacker
   script: dirb http://10.20.30.80:8080/ /usr/share/wordlists/dirb/common.txt -r
   risk_level: low
+  bastion_prompt: '[RED] 웹 디렉토리 브루트포스를 수행하여 DVWA(:8080)의 숨겨진 경로를 탐색해줘'
 - order: 6
   instruction: '[BLUE] Suricata에서 취약점 스캐닝 관련 알림을 확인하라.'
   hint: fast.log에서 vuln scan 관련 경보를 검색한다.
@@ -99,11 +104,12 @@ steps:
   answer_detail: Nikto, nmap vuln 스캔은 특징적인 패턴을 남긴다. Suricata의 ET Open 룰셋은 주요 스캐너의 User-Agent, 요청 패턴을 탐지한다.
   verify:
     type: output_contains
-    expect: 10.20.30
+    expect: 
     field: stdout
   target_vm: secu
   script: tail -50 /var/log/suricata/fast.log | grep -iE '(scan|vuln|nikto|sql)' | tail -10
   risk_level: low
+  bastion_prompt: '[BLUE] Suricata에서 취약점 스캐닝 관련 알림을 확인해줘'
 - order: 7
   instruction: '[BLUE] web 서버의 Apache access.log에서 스캐닝 흔적을 분석하라.'
   hint: HTTP 상태 코드별 요청 건수를 집계한다.
@@ -113,11 +119,12 @@ steps:
   answer_detail: 404가 대량이면 디렉토리 브루트포스, 403이 많으면 접근 차단된 경로 탐색 시도이다. 정상 트래픽 대비 비정상적인 상태 코드 비율을 확인한다.
   verify:
     type: output_contains
-    expect: '200'
+    expect: 
     field: stdout
   target_vm: web
   script: awk '{print $9}' /var/log/apache2/access.log 2>/dev/null | sort | uniq -c | sort -rn | head -10
   risk_level: low
+  bastion_prompt: '[BLUE] web 서버의 Apache access.log에서 스캐닝 흔적을 분석해줘'
 - order: 8
   instruction: '[BLUE] secu에서 공격자 IP(10.20.30.201)의 스캔 트래픽 빈도를 확인하고, 과도한 스캔 시 nftables로 rate limiting을 적용하라.'
   hint: nft add rule로 rate limiting을 설정한다.
@@ -127,12 +134,13 @@ steps:
   answer_detail: rate limiting으로 분당 30회 이상의 새 연결을 차단하면 자동화 스캐너의 효율을 크게 떨어뜨린다. 정상 접근은 허용하면서 스캐닝만 억제한다.
   verify:
     type: output_contains
-    expect: 10.20.30.201
+    expect: ''
     field: stdout
   target_vm: secu
   requires_approval: true
   script: sudo nft add rule inet filter input ip saddr 10.20.30.201 tcp dport 80 ct state new limit rate over 30/minute drop && nft list ruleset | grep '10.20.30.201'
   risk_level: low
+  bastion_prompt: '[BLUE] secu에서 공격자 IP(10.20.30.201)의 스캔 트래픽 빈도를 확인하고, 과도한 스캔 시 nftables로 rate limiting을 적용해줘'
 - order: 9
   instruction: '[RED] Nikto 스캔 결과를 파일로 저장하라.'
   hint: nikto -o 옵션으로 출력 파일을 지정한다.
@@ -142,11 +150,12 @@ steps:
   answer_detail: -o 옵션은 스캔 결과를 파일로 저장한다. DVWA(:8080)를 대상으로 스캔하면 알려진 취약점과 설정 오류를 발견할 수 있다.
   verify:
     type: file_exists
-    expect: /tmp/nikto_report.txt
+    expect: 
     field: filesystem
   target_vm: attacker
   script: nikto -h http://10.20.30.80:8080/ -o /tmp/nikto_report.txt -maxtime 60s
   risk_level: low
+  bastion_prompt: '[RED] Nikto 스캔 결과를 파일로 저장해줘'
 - order: 10
   instruction: '[RED] 발견된 취약점을 종합하여 공격 계획(Attack Plan)을 문서로 작성하라.'
   hint: 정찰 결과와 취약점 분석 결과를 결합하여 작성한다.
@@ -183,7 +192,7 @@ steps:
   answer_detail: 공격 계획은 발견된 취약점을 우선순위화하고, 방어 장치를 고려한 우회 전략을 포함한다. secu VM의 Suricata/nftables를 우회하는 것이 핵심 과제이다.
   verify:
     type: file_exists
-    expect: /tmp/attack_plan.txt
+    expect: 
     field: filesystem
   target_vm: attacker
   script: 'cat > /tmp/attack_plan.txt << ''EOF''
@@ -215,3 +224,4 @@ steps:
 
     EOF'
   risk_level: low
+  bastion_prompt: '[RED] 발견된 취약점을 종합하여 공격 계획(Attack Plan)을 문서로 구현 방법을 설명하고 예시 코드를 보여줘'

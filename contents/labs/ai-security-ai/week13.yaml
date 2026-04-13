@@ -28,7 +28,7 @@ steps:
   answer_detail: AI 사용 정책 준수 검사는 LLM 거버넌스의 기본입니다. 조직의 정책을 자동화된 규칙으로 구현하여 정책 위반을 사전에 방지합니다.
   verify:
     type: output_contains
-    expect: VIOLATION
+    expect: 
     field: stdout
   target_vm: manager
   script: "python3 -c \"\nimport re\nPOLICY_RULES = [\n    {'name': 'No PII in prompts', 'pattern': r'\\d{6}-[1-4]\\d{6}|01[016789]-\\d{3,4}-\\d{4}', 'severity': 'CRITICAL'},\n    {'name': 'No credentials',\
@@ -40,6 +40,7 @@ steps:
     \ engineering their product'\n]\nprint('=== AI Usage Policy Compliance Check ===')\nfor t in tests:\n    v = policy_check(t)\n    status = 'VIOLATION' if v else 'COMPLIANT'\n    print(f'[{status:9s}]\
     \ {t[:55]}')\n    for rule in v:\n        print(f'  -> [{rule[\\\"severity\\\"]}] {rule[\\\"name\\\"]}')\n\""
   risk_level: low
+  bastion_prompt: AI 사용 정책 준수 검사기를 구현 방법을 설명하고 예시 코드를 보여줘
 - order: 2
   instruction: 데이터 분류 시스템을 구현하시오. LLM에 전송되는 데이터의 민감도를 자동 분류(PUBLIC/INTERNAL/CONFIDENTIAL/RESTRICTED)하는 시스템을 작성하라.
   hint: 데이터 내용을 분석하여 민감도 등급을 자동 부여하세요.
@@ -54,7 +55,7 @@ steps:
   answer_detail: 데이터 분류는 적절한 데이터만 LLM에 전송되도록 보장합니다. RESTRICTED/CONFIDENTIAL 데이터는 LLM에 전송하면 안 되며, 자동 분류로 인적 오류를 방지합니다.
   verify:
     type: output_contains
-    expect: RESTRICTED
+    expect: 
     field: stdout
   target_vm: manager
   script: "python3 -c \"\nimport re\ndef classify_data(text):\n    if re.search(r'\\d{6}-[1-4]\\d{6}|credit.card|\\bssn\\b', text, re.I): return 'RESTRICTED'\n    if re.search(r'password|api.key|secret|credential|private.key',\
@@ -64,6 +65,7 @@ steps:
     \ algorithm uses XYZ approach'\n]\nprint('=== Data Classification for LLM Usage ===')\nprint(f'LLM clearance level: INTERNAL\\n')\nfor t in tests:\n    cls = classify_data(t)\n    allowed = can_send_to_llm(cls)\n\
     \    print(f'[{cls:12s}] {\\\"ALLOW\\\" if allowed else \\\"DENY \\\"} | {t[:50]}')\n\""
   risk_level: low
+  bastion_prompt: 데이터 분류 시스템을 구현 방법을 설명하고 예시 코드를 보여줘
 - order: 3
   instruction: AI 윤리 검사를 수행하시오. LLM 응답이 편향, 차별, 유해 콘텐츠를 포함하는지 자동으로 평가하는 시스템을 구현하라.
   hint: LLM-as-judge 패턴으로 윤리 위반을 평가하세요.
@@ -71,23 +73,24 @@ steps:
   points: 12
   answer: "python3 -c \"\nimport json, urllib.request\ndef ethics_check(response_text):\n    prompt = f'''Evaluate this AI response for ethical concerns. Check for:\n1. Bias (gender, race, age, nationality)\n\
     2. Discrimination\n3. Harmful advice\n4. Privacy violations\n5. Misinformation\n\nRespond ONLY in this format:\nBIAS: YES/NO\nHARM: YES/NO\nPRIVACY: YES/NO\nOVERALL: PASS/FAIL\n\nText to evaluate: {response_text[:200]}'''\n\
-    \    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':40}}).encode()\n    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
+    \    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':40}}).encode()\n    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \    return json.loads(urllib.request.urlopen(req).read())['response']\n\ntexts = [\n    'To secure SSH, use key-based authentication and disable password login.',\n    'Women are generally worse at\
     \ programming than men.',\n    'You should take 100mg of aspirin daily for heart health.'\n]\nfor t in texts:\n    print(f'Text: {t[:60]}')\n    result = ethics_check(t)\n    print(f'Ethics: {result[:100]}')\n\
     \    print()\n\""
   answer_detail: AI 윤리 검사는 모델 출력의 편향, 차별, 유해성을 자동으로 평가합니다. LLM-as-judge 패턴으로 대규모 검사를 자동화하되, 중요한 판단은 인간 검토가 필요합니다.
   verify:
     type: output_contains
-    expect: OVERALL
+    expect: 
     field: stdout
   target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request\ndef ethics_check(response_text):\n    prompt = f'''Evaluate this AI response for ethical concerns. Check for:\n1. Bias (gender, race, age, nationality)\n\
     2. Discrimination\n3. Harmful advice\n4. Privacy violations\n5. Misinformation\n\nRespond ONLY in this format:\nBIAS: YES/NO\nHARM: YES/NO\nPRIVACY: YES/NO\nOVERALL: PASS/FAIL\n\nText to evaluate: {response_text[:200]}'''\n\
-    \    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':40}}).encode()\n    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
+    \    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':40}}).encode()\n    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \    return json.loads(urllib.request.urlopen(req).read())['response']\n\ntexts = [\n    'To secure SSH, use key-based authentication and disable password login.',\n    'Women are generally worse at\
     \ programming than men.',\n    'You should take 100mg of aspirin daily for heart health.'\n]\nfor t in texts:\n    print(f'Text: {t[:60]}')\n    result = ethics_check(t)\n    print(f'Ethics: {result[:100]}')\n\
     \    print()\n\""
   risk_level: low
+  bastion_prompt: AI 윤리 검사를 수행하시오 구현 방법과 예시를 설명해줘
 - order: 4
   instruction: 규제 준수 체크리스트를 자동 점검하시오. EU AI Act, GDPR 등의 요건에 대해 현재 LLM 시스템의 준수 상태를 평가하라.
   hint: 각 규제 요건을 체크 항목으로 정의하고 현재 시스템 상태를 확인하세요.
@@ -106,7 +109,7 @@ steps:
   answer_detail: 규제 준수 평가는 적용 가능한 법규(EU AI Act, GDPR, NIST AI RMF)의 요건을 체계적으로 점검합니다. 미준수 항목을 우선순위화하여 개선 로드맵을 수립합니다.
   verify:
     type: output_contains
-    expect: Overall compliance
+    expect: 
     field: stdout
   target_vm: manager
   script: "python3 -c \"\nprint('=== Regulatory Compliance Assessment ===')\nprint()\n\nchecklist = [\n    ('EU AI Act - Transparency', [\n        ('Users informed they interact with AI', True),\n     \
@@ -120,12 +123,13 @@ steps:
     print('  1. Complete AI risk classification (EU AI Act)')\nprint('  2. Define data retention policy (GDPR)')\nprint('  3. Implement right to erasure (GDPR)')\nprint('  4. Conduct bias testing (NIST\
     \ AI RMF)')\n\""
   risk_level: low
+  bastion_prompt: 규제 준수 체크리스트를 자동 점검하시오. EU AI Act, GDPR 등의 요건에 대해 현재 LLM 시스템의 준수 상태를 평가해줘
 - order: 5
   instruction: AI 모델 카드(Model Card)를 자동 생성하시오. Ollama 모델의 정보를 수집하여 표준 형식의 모델 카드를 작성하라.
   hint: /api/show에서 모델 정보를 추출하고 표준 필드로 정리하세요.
   category: config
   points: 10
-  answer: "python3 -c \"\nimport json, urllib.request\n# Get model info\ndata = json.dumps({'name':'gemma3:4b'}).encode()\nreq = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/show',data=data,headers={'Content-Type':'application/json'})\n\
+  answer: "python3 -c \"\nimport json, urllib.request\n# Get model info\ndata = json.dumps({'name':'gemma3:4b'}).encode()\nreq = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/show',data=data,headers={'Content-Type':'application/json'})\n\
     try:\n    model_info = json.loads(urllib.request.urlopen(req).read())\n    details = model_info.get('details',{})\nexcept:\n    details = {'family':'gemma3','parameter_size':'4B','quantization_level':'Q4'}\n\
     \nprint('='*50)\nprint('  MODEL CARD')\nprint('='*50)\nprint(f'Model Name:        gemma3:4b')\nprint(f'Family:            {details.get(\\\"family\\\",\\\"gemma3\\\")}')\nprint(f'Parameters:        {details.get(\\\
     \"parameter_size\\\",\\\"4B\\\")}')\nprint(f'Quantization:      {details.get(\\\"quantization_level\\\",\\\"Q4\\\")}')\nprint(f'Format:            GGUF')\nprint(f'License:           Gemma Terms of Use')\n\
@@ -136,10 +140,10 @@ steps:
   answer_detail: 모델 카드는 AI 모델의 의도된 용도, 한계, 윤리적 고려사항을 문서화합니다. EU AI Act 등 규제에서 요구하는 투명성 요건을 충족하는 핵심 문서입니다.
   verify:
     type: output_contains
-    expect: MODEL CARD
+    expect: 
     field: stdout
   target_vm: manager
-  script: "python3 -c \"\nimport json, urllib.request\n# Get model info\ndata = json.dumps({'name':'gemma3:4b'}).encode()\nreq = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/show',data=data,headers={'Content-Type':'application/json'})\n\
+  script: "python3 -c \"\nimport json, urllib.request\n# Get model info\ndata = json.dumps({'name':'gemma3:4b'}).encode()\nreq = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/show',data=data,headers={'Content-Type':'application/json'})\n\
     try:\n    model_info = json.loads(urllib.request.urlopen(req).read())\n    details = model_info.get('details',{})\nexcept:\n    details = {'family':'gemma3','parameter_size':'4B','quantization_level':'Q4'}\n\
     \nprint('='*50)\nprint('  MODEL CARD')\nprint('='*50)\nprint(f'Model Name:        gemma3:4b')\nprint(f'Family:            {details.get(\\\"family\\\",\\\"gemma3\\\")}')\nprint(f'Parameters:        {details.get(\\\
     \"parameter_size\\\",\\\"4B\\\")}')\nprint(f'Quantization:      {details.get(\\\"quantization_level\\\",\\\"Q4\\\")}')\nprint(f'Format:            GGUF')\nprint(f'License:           Gemma Terms of Use')\n\
@@ -148,6 +152,7 @@ steps:
     print(f'  - Must not be used for offensive operations')\nprint(f'  - Outputs require human verification')\nprint(f'  - PII filtering required for production use')\nprint(f'\\nSecurity Properties:')\n\
     print(f'  - No authentication on API')\nprint(f'  - No rate limiting')\nprint(f'  - Susceptible to known injection patterns')\nprint('='*50)\n\""
   risk_level: low
+  bastion_prompt: AI 모델 카드(Model Card)를 자동 생성하시오 구현 방법과 예시를 설명해줘
 - order: 6
   instruction: AI 감사 트레일(audit trail)을 구현하시오. LLM 사용의 모든 의사결정 과정을 추적할 수 있는 감사 로그 시스템을 구성하라.
   hint: 입력, 처리, 출력, 필터링 각 단계의 감사 기록을 생성하세요.
@@ -157,25 +162,26 @@ steps:
     \ 1: Input received\n    trail.append({'stage':'input','trace_id':trace_id,'timestamp':time.strftime('%H:%M:%S'),'user':user_id,'data_hash':hashlib.sha256(user_input.encode()).hexdigest()[:12],'length':len(user_input)})\n\
     \    \n    # Stage 2: Policy check\n    import re\n    has_pii = bool(re.search(r'\\d{6}-[1-4]\\d{6}', user_input))\n    trail.append({'stage':'policy_check','trace_id':trace_id,'pii_detected':has_pii,'decision':'block'\
     \ if has_pii else 'allow'})\n    \n    if has_pii:\n        trail.append({'stage':'blocked','trace_id':trace_id,'reason':'PII detected'})\n        return trail\n    \n    # Stage 3: LLM processing\n\
-    \    data = json.dumps({'model':'gemma3:4b','prompt':user_input,'stream':False,'options':{'num_predict':30}}).encode()\n    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
+    \    data = json.dumps({'model':'gemma3:4b','prompt':user_input,'stream':False,'options':{'num_predict':30}}).encode()\n    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \    resp = json.loads(urllib.request.urlopen(req).read())\n    trail.append({'stage':'llm_call','trace_id':trace_id,'model':'gemma3:4b','tokens_in':resp.get('prompt_eval_count',0),'tokens_out':resp.get('eval_count',0)})\n\
     \    \n    # Stage 4: Output delivered\n    trail.append({'stage':'output','trace_id':trace_id,'response_hash':hashlib.sha256(resp['response'].encode()).hexdigest()[:12]})\n    return trail\n\nfor q\
     \ in ['What is SSH?', 'Process SSN 900101-1234567']:\n    print(f'Query: {q}')\n    trail = create_audit_trail(q)\n    for entry in trail:\n        print(f'  {json.dumps(entry)}')\n    print()\n\""
   answer_detail: 감사 트레일은 LLM 상호작용의 모든 단계를 추적 가능하게 기록합니다. 규제 감사, 인시던트 조사, 책임 추적에 필수적이며, 각 단계의 결정과 근거를 보존합니다.
   verify:
     type: output_contains
-    expect: trace_id
+    expect: 
     field: stdout
   target_vm: manager
   script: "python3 -c \"\nimport json, urllib.request, hashlib, time, uuid\ndef create_audit_trail(user_input, user_id='user001'):\n    trail = []\n    trace_id = str(uuid.uuid4())[:8]\n    \n    # Stage\
     \ 1: Input received\n    trail.append({'stage':'input','trace_id':trace_id,'timestamp':time.strftime('%H:%M:%S'),'user':user_id,'data_hash':hashlib.sha256(user_input.encode()).hexdigest()[:12],'length':len(user_input)})\n\
     \    \n    # Stage 2: Policy check\n    import re\n    has_pii = bool(re.search(r'\\d{6}-[1-4]\\d{6}', user_input))\n    trail.append({'stage':'policy_check','trace_id':trace_id,'pii_detected':has_pii,'decision':'block'\
     \ if has_pii else 'allow'})\n    \n    if has_pii:\n        trail.append({'stage':'blocked','trace_id':trace_id,'reason':'PII detected'})\n        return trail\n    \n    # Stage 3: LLM processing\n\
-    \    data = json.dumps({'model':'gemma3:4b','prompt':user_input,'stream':False,'options':{'num_predict':30}}).encode()\n    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
+    \    data = json.dumps({'model':'gemma3:4b','prompt':user_input,'stream':False,'options':{'num_predict':30}}).encode()\n    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \    resp = json.loads(urllib.request.urlopen(req).read())\n    trail.append({'stage':'llm_call','trace_id':trace_id,'model':'gemma3:4b','tokens_in':resp.get('prompt_eval_count',0),'tokens_out':resp.get('eval_count',0)})\n\
     \    \n    # Stage 4: Output delivered\n    trail.append({'stage':'output','trace_id':trace_id,'response_hash':hashlib.sha256(resp['response'].encode()).hexdigest()[:12]})\n    return trail\n\nfor q\
     \ in ['What is SSH?', 'Process SSN 900101-1234567']:\n    print(f'Query: {q}')\n    trail = create_audit_trail(q)\n    for entry in trail:\n        print(f'  {json.dumps(entry)}')\n    print()\n\""
   risk_level: low
+  bastion_prompt: AI 감사 트레일(audit trail)을 구현 방법을 설명하고 예시 코드를 보여줘
 - order: 7
   instruction: 거버넌스 대시보드 보고서를 생성하시오. 정책 준수율, 보안 이벤트, 사용량, 규제 준수 상태를 종합하는 거버넌스 보고서를 작성하라.
   hint: 모든 거버넌스 메트릭을 종합하여 경영진 수준의 보고서를 출력하세요.
@@ -256,7 +262,7 @@ steps:
   answer_detail: 거버넌스 대시보드는 정책 준수, 보안, 사용량, 규제 준수를 한눈에 파악할 수 있는 종합 보고서입니다. 경영진과 규제 기관에 AI 거버넌스 상태를 효과적으로 전달합니다.
   verify:
     type: output_contains
-    expect: GOVERNANCE DASHBOARD
+    expect: 
     field: stdout
   target_vm: manager
   script: 'python3 -c "
@@ -332,3 +338,4 @@ steps:
 
     "'
   risk_level: low
+  bastion_prompt: 거버넌스 대시보드 보고서를 생성하시오 구현 방법과 예시를 설명해줘

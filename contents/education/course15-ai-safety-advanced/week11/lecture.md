@@ -346,7 +346,7 @@ import json
 import urllib.request
 import time
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 
 # 시뮬레이션: 이미지에서 추출된 텍스트가 컨텍스트에 포함되는 상황
 SCENARIOS = [

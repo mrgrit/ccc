@@ -235,7 +235,7 @@ ENDSSH
 
 ```bash
 # 간접 인젝션으로 도구 실행을 유도하는 시나리오 분석
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -415,7 +415,7 @@ ENDSSH
 ### 실습: 프롬프트 인젝션 테스트
 
 ```bash
-OLLAMA="http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA="http://localhost:8003/v1/chat/completions"
 
 # 정상 요청
 echo "=== 정상 요청 ==="

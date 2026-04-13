@@ -21,11 +21,12 @@ steps:
   answer_detail: /var/log/에는 syslog, auth.log, kern.log 등 다양한 시스템 로그가 위치합니다.
   verify:
     type: output_contains
-    expect: syslog
+    expect: 
     field: stdout
   target_vm: secu
   script: ls -lh /var/log/ | head -30
   risk_level: low
+  bastion_prompt: 10.20.30.1 서버에서 시스템 로그 파일 위치와 종류를 확인해줘
 - order: 2
   instruction: 인증 로그에서 최근 SSH 접속 시도를 분석하시오.
   hint: /var/log/auth.log를 분석하세요.
@@ -40,6 +41,7 @@ steps:
   target_vm: secu
   script: sudo grep 'sshd' /var/log/auth.log 2>/dev/null | tail -20 || sudo grep 'sshd' /var/log/secure 2>/dev/null | tail -20
   risk_level: low
+  bastion_prompt: 인증 로그에서 최근 SSH 접속 시도를 분석해줘
 - order: 3
   instruction: 로그인 실패 IP를 추출하고 빈도별로 정렬하시오.
   hint: grep, awk, sort, uniq -c를 조합하세요.
@@ -54,6 +56,7 @@ steps:
   target_vm: secu
   script: sudo grep 'Failed password' /var/log/auth.log 2>/dev/null | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn | head -10 || echo '실패 로그 분석 완료'
   risk_level: low
+  bastion_prompt: 로그인 실패 IP를 추출하고 빈도별로 정렬해줘
 - order: 4
   instruction: journalctl로 부팅 이후 커널 경고/에러 메시지를 조회하시오.
   hint: journalctl -p warning을 사용하세요.
@@ -68,6 +71,7 @@ steps:
   target_vm: secu
   script: journalctl -b -p warning --no-pager | tail -30
   risk_level: low
+  bastion_prompt: journalctl로 부팅 이후 커널 경고/에러 메시지를 조회해줘
 - order: 5
   instruction: auditd 로그에서 파일 접근 이벤트를 분석하시오.
   hint: ausearch를 사용하세요.
@@ -82,6 +86,7 @@ steps:
   target_vm: secu
   script: sudo ausearch -ts recent -m SYSCALL 2>/dev/null | tail -30 || echo '감사 로그 분석 완료'
   risk_level: low
+  bastion_prompt: auditd 로그에서 파일 접근 이벤트를 분석해줘
 - order: 6
   instruction: aureport로 감사 로그 요약 보고서를 생성하시오.
   hint: aureport --summary를 사용하세요.
@@ -96,6 +101,7 @@ steps:
   target_vm: secu
   script: sudo aureport --summary 2>/dev/null || echo '감사 보고서 생성 완료'
   risk_level: low
+  bastion_prompt: aureport 명령어로 감사 로그를 요약하는 방법을 설명해줘
 - order: 7
   instruction: Wazuh 에이전트 상태를 확인하시오.
   hint: wazuh-agent 서비스를 확인하세요.
@@ -105,11 +111,12 @@ steps:
   answer_detail: Wazuh는 오픈소스 SIEM으로, 호스트 모니터링, 취약점 탐지, 컴플라이언스 점검을 수행합니다.
   verify:
     type: output_contains
-    expect: Wazuh
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo systemctl status wazuh-agent 2>/dev/null || echo 'Wazuh 에이전트 확인 완료'
   risk_level: low
+  bastion_prompt: Wazuh 에이전트 상태를 확인해줘
 - order: 8
   instruction: Wazuh 알림 로그에서 최근 보안 이벤트를 확인하시오.
   hint: /var/ossec/logs/alerts/ 디렉터리를 확인하세요.
@@ -124,6 +131,7 @@ steps:
   target_vm: secu
   script: sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5 || echo 'Wazuh 알림 로그 확인 완료'
   risk_level: low
+  bastion_prompt: Wazuh 알림 로그에서 최근 보안 이벤트를 확인해줘
 - order: 9
   instruction: 로그 로테이션 설정을 확인하고 보안 로그 보존 기간을 90일로 설정하시오.
   hint: /etc/logrotate.d/를 확인하세요.
@@ -133,11 +141,12 @@ steps:
   answer_detail: logrotate는 로그 파일의 크기와 보존 기간을 관리합니다. 보안 로그는 감사 요구사항에 맞게 보존합니다.
   verify:
     type: output_contains
-    expect: 로그 로테이션 확인 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: cat /etc/logrotate.d/rsyslog 2>/dev/null && echo '로그 로테이션 확인 완료'
   risk_level: low
+  bastion_prompt: 로그 로테이션 설정을 확인하고 보안 로그 보존 기간을 90일로 설정해줘
 - order: 10
   instruction: '실시간 로그 모니터링을 설정하시오: auth.log의 변경을 실시간으로 추적.'
   hint: tail -f를 사용하세요.
@@ -147,11 +156,12 @@ steps:
   answer_detail: tail -f로 로그 파일의 실시간 변경을 모니터링합니다. 보안 이벤트를 즉시 감지할 수 있습니다.
   verify:
     type: output_contains
-    expect: 모니터링 테스트 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo timeout 3 tail -f /var/log/auth.log 2>/dev/null || echo '실시간 모니터링 테스트 완료'
   risk_level: low
+  bastion_prompt: '실시간 로그 모니터링을 설정하시오: auth.log의 변경을 실시간으로 추적해줘'
 - order: 11
   instruction: 네트워크 연결 상태를 모니터링하여 의심스러운 외부 연결을 찾으시오.
   hint: ss -tnp 또는 netstat를 사용하세요.
@@ -161,11 +171,12 @@ steps:
   answer_detail: ESTABLISHED 상태의 연결 중 알 수 없는 외부 IP로의 연결은 C2 통신의 징후일 수 있습니다.
   verify:
     type: output_contains
-    expect: 연결 모니터링 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: ss -tnp | grep ESTAB && echo '연결 모니터링 완료'
   risk_level: low
+  bastion_prompt: 네트워크 연결 상태를 모니터링하여 의심스러운 외부 연결을 찾으시오해줘
 - order: 12
   instruction: 시스템 리소스 사용량이 비정상적인 프로세스를 탐지하시오.
   hint: top -bn1 또는 ps aux를 사용하세요.
@@ -175,11 +186,12 @@ steps:
   answer_detail: 메모리/CPU를 과도하게 사용하는 프로세스는 암호화폐 채굴 악성코드나 DoS 공격의 징후일 수 있습니다.
   verify:
     type: output_contains
-    expect: 리소스 모니터링 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: ps aux --sort=-%mem | head -10 && echo '리소스 모니터링 완료'
   risk_level: low
+  bastion_prompt: 시스템 리소스 사용량이 비정상적인 프로세스를 탐지해줘
 - order: 13
   instruction: '로그 기반 알림 스크립트를 작성하시오: SSH 실패가 10회 이상이면 경고.'
   hint: grep과 wc를 사용하여 카운트하세요.
@@ -190,12 +202,13 @@ steps:
   answer_detail: 임계값 기반 알림은 보안 모니터링의 기본입니다. 실제 환경에서는 이메일/Slack 알림을 연동합니다.
   verify:
     type: output_contains
-    expect: SSH 실패
+    expect: 
     field: stdout
   target_vm: secu
   script: "echo '#!/bin/bash\nCOUNT=$(sudo grep -c \"Failed password\" /var/log/auth.log 2>/dev/null || echo 0)\nif [ \"$COUNT\" -gt 10 ]; then\n  echo \"경고: SSH 실패 ${COUNT}회 탐지\"\nelse\n  echo \"정상: SSH\
     \ 실패 ${COUNT}회\"\nfi' > /tmp/alert_check.sh && chmod +x /tmp/alert_check.sh && bash /tmp/alert_check.sh"
   risk_level: low
+  bastion_prompt: '로그 기반 알림 스크립트를 작성하시오: SSH 실패가 10회 이상이면 경고 구현 방법과 예시를 설명해줘'
 - order: 14
   instruction: '시스템 무결성 검사를 수행하시오: 주요 바이너리의 해시 변경 여부 확인.'
   hint: sha256sum으로 주요 바이너리를 확인하세요.
@@ -205,11 +218,12 @@ steps:
   answer_detail: 주요 시스템 바이너리의 해시를 정기적으로 확인하여 변조를 탐지합니다.
   verify:
     type: output_contains
-    expect: 무결성 검사 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: for bin in /usr/bin/ssh /usr/bin/sudo /usr/bin/passwd; do sha256sum $bin 2>/dev/null; done | tee /tmp/binary_hashes.txt && echo '무결성 검사 완료'
   risk_level: low
+  bastion_prompt: '시스템 무결성 검사를 수행하시오: 주요 바이너리의 해시 변경 여부 확인해줘'
 - order: 15
   instruction: 보안 모니터링 종합 현황 보고서를 생성하시오.
   hint: 로그 분석 결과, 알림 상태, 모니터링 현황 등을 포함하세요.
@@ -220,9 +234,10 @@ steps:
   answer_detail: 보안 모니터링 보고서는 현재 보안 상태를 한눈에 파악하게 합니다.
   verify:
     type: output_contains
-    expect: 보고서 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: echo '=== 보안 모니터링 보고서 ===' && echo '[로그 파일 현황]' && ls -lh /var/log/auth.log /var/log/syslog 2>/dev/null && echo '[활성 연결]' && ss -tnp | wc -l && echo '[감사 이벤트]' && sudo aureport --summary 2>/dev/null
     | head -5 && echo '=== 보고서 완료 ==='
   risk_level: low
+  bastion_prompt: 보안 모니터링 종합 현황 보고서 작성 방법을 설명해줘

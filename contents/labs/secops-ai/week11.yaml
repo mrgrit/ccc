@@ -26,6 +26,7 @@ steps:
   target_vm: secu
   script: ps aux --sort=-%cpu | head -15 && ss -tnp | grep ESTAB
   risk_level: low
+  bastion_prompt: 10.20.30.1 서버에서 의심스러운 프로세스를 탐지해줘
 - order: 2
   instruction: 최근 수정된 시스템 파일을 검색하여 변조 징후를 찾으시오.
   hint: find -mtime -1로 최근 변경 파일을 검색하세요.
@@ -35,11 +36,12 @@ steps:
   answer_detail: 시스템 바이너리와 설정 파일의 최근 변경은 침입의 징후일 수 있습니다.
   verify:
     type: output_contains
-    expect: 변조 검색 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: find /etc /usr/bin /usr/sbin -mtime -1 -type f 2>/dev/null | head -20 && echo '변조 검색 완료'
   risk_level: low
+  bastion_prompt: 최근 수정된 시스템 파일을 검색하여 변조 징후를 찾으시오해줘
 - order: 3
   instruction: /tmp 및 /var/tmp에서 의심스러운 파일을 검색하시오.
   hint: 실행 파일, 스크립트, 숨김 파일을 검색하세요.
@@ -49,11 +51,12 @@ steps:
   answer_detail: 임시 디렉터리는 악성코드의 드롭 위치로 자주 사용됩니다.
   verify:
     type: output_contains
-    expect: 임시 디렉터리 검사 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: find /tmp /var/tmp -type f \( -perm -111 -o -name '.*' -o -name '*.sh' \) 2>/dev/null && echo '임시 디렉터리 검사 완료'
   risk_level: low
+  bastion_prompt: /tmp 및 /var/tmp에서 의심스러운 파일을 검색해줘
 - order: 4
   instruction: 현재 로그인 세션과 최근 로그인 이력을 분석하시오.
   hint: w, last, lastb를 조합하세요.
@@ -63,11 +66,12 @@ steps:
   answer_detail: 비인가 로그인, 이상한 시간대의 접속, 알 수 없는 IP에서의 접속을 확인합니다.
   verify:
     type: output_contains
-    expect: 세션 분석 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: echo '[현재 세션]' && w && echo '[최근 로그인]' && last -n 10 && echo '[실패 로그인]' && sudo lastb -n 10 2>/dev/null && echo '세션 분석 완료'
   risk_level: low
+  bastion_prompt: 현재 로그인 세션과 최근 로그인 이력을 분석해줘
 - order: 5
   instruction: 네트워크 연결에서 C2(Command & Control) 통신 징후를 찾으시오.
   hint: 비정상 외부 연결, 주기적 통신 패턴을 확인하세요.
@@ -82,6 +86,7 @@ steps:
   target_vm: secu
   script: ss -tnp | grep -v '10.20.30\|127.0.0.1\|::1' | grep ESTAB && echo 'C2 분석 완료' || echo '의심 연결 없음'
   risk_level: low
+  bastion_prompt: 네트워크 연결에서 C2(Command & Control) 통신 징후를 찾으시오해줘
 - order: 6
   instruction: cron과 systemd timer에서 의심스러운 지속성 메커니즘을 검사하시오.
   hint: 모든 crontab과 timer 유닛을 확인하세요.
@@ -92,12 +97,13 @@ steps:
   answer_detail: 공격자는 cron, systemd timer, rc.local 등에 지속성을 확보합니다.
   verify:
     type: output_contains
-    expect: 지속성 검사 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: echo '[시스템 cron]' && ls -la /etc/cron.d/ /etc/cron.daily/ 2>/dev/null && echo '[사용자 cron]' && sudo crontab -l 2>/dev/null && echo '[systemd timer]' && systemctl list-timers --no-pager && echo
     '지속성 검사 완료'
   risk_level: low
+  bastion_prompt: cron과 systemd timer에서 의심스러운 지속성 메커니즘을 검사해줘
 - order: 7
   instruction: 의심 IP를 방화벽으로 즉시 차단하시오.
   hint: nftables rule을 추가하세요.
@@ -107,11 +113,12 @@ steps:
   answer_detail: 인시던트 대응의 억제 단계에서 의심 IP를 즉시 차단하여 추가 피해를 방지합니다.
   verify:
     type: output_contains
-    expect: 의심 IP 차단 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo nft add rule inet filter input ip saddr 192.168.99.99 drop 2>/dev/null && echo '의심 IP 차단 완료'
   risk_level: low
+  bastion_prompt: 의심 IP를 방화벽으로 즉시 차단해줘
 - order: 8
   instruction: 침해된 사용자 계정을 즉시 비활성화하시오.
   hint: usermod -L과 패스워드 만료를 설정하세요.
@@ -121,11 +128,12 @@ steps:
   answer_detail: -L로 잠금하고 -E 0으로 즉시 만료시켜 모든 접근을 차단합니다.
   verify:
     type: output_contains
-    expect: 계정 비활성화 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo usermod -L opsuser1 2>/dev/null && sudo chage -E 0 opsuser1 2>/dev/null && echo '계정 비활성화 완료'
   risk_level: low
+  bastion_prompt: 침해된 사용자 계정을 즉시 비활성화해줘
 - order: 9
   instruction: 증거 보존을 위해 현재 시스템 상태를 기록하시오.
   hint: 메모리, 프로세스, 네트워크, 로그를 기록하세요.
@@ -135,11 +143,12 @@ steps:
   answer_detail: 디지털 포렌식의 기본은 증거 보존입니다. 휘발성 데이터(메모리, 프로세스)를 우선 수집합니다.
   verify:
     type: output_contains
-    expect: 증거 수집 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo mkdir -p /tmp/evidence && ps aux > /tmp/evidence/processes.txt && ss -tnp > /tmp/evidence/connections.txt && sudo cp /var/log/auth.log /tmp/evidence/ 2>/dev/null && echo '증거 수집 완료'
   risk_level: low
+  bastion_prompt: 증거 보존을 위해 현재 시스템 상태를 기록해줘
 - order: 10
   instruction: 타임라인 분석을 위해 주요 이벤트를 시간순으로 정리하시오.
   hint: 로그 파일의 타임스탬프를 분석하세요.
@@ -149,11 +158,12 @@ steps:
   answer_detail: 타임라인 분석은 공격 경로와 시간대를 파악하여 피해 범위를 산정합니다.
   verify:
     type: output_contains
-    expect: 타임라인 분석 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: echo '=== 인시던트 타임라인 ===' && sudo grep -h 'sshd\|sudo\|Failed' /var/log/auth.log 2>/dev/null | tail -20 | sort && echo '타임라인 분석 완료'
   risk_level: low
+  bastion_prompt: 타임라인 분석을 위해 주요 이벤트를 시간순으로 정리해줘
 - order: 11
   instruction: 악성 파일을 격리(quarantine) 처리하시오.
   hint: 의심 파일을 별도 디렉터리로 이동하고 퍼미션을 제거하세요.
@@ -163,11 +173,12 @@ steps:
   answer_detail: 격리는 파일을 삭제하지 않고 접근을 차단하여 분석 가능한 상태로 보존합니다.
   verify:
     type: output_contains
-    expect: 격리 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo mkdir -p /tmp/quarantine && echo 'test_malware' > /tmp/suspicious.bin && sudo mv /tmp/suspicious.bin /tmp/quarantine/ && sudo chmod 000 /tmp/quarantine/suspicious.bin && echo '격리 완료'
   risk_level: low
+  bastion_prompt: 악성 파일을 격리(quarantine) 처리해줘
 - order: 12
   instruction: '시스템 복구 절차를 시뮬레이션하시오: 깨끗한 설정 파일 복원.'
   hint: 백업에서 설정 파일을 복원하세요.
@@ -177,11 +188,12 @@ steps:
   answer_detail: 복구 단계에서는 깨끗한 백업에서 시스템을 복원하고 변경된 설정을 원래 상태로 되돌립니다.
   verify:
     type: output_contains
-    expect: 복구 시뮬레이션 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo cp /etc/ssh/sshd_config /etc/ssh/sshd_config.incident_backup 2>/dev/null && echo '복구 시뮬레이션 완료'
   risk_level: low
+  bastion_prompt: '시스템 복구 절차를 시뮬레이션하시오: 깨끗한 설정 파일 복원해줘'
 - order: 13
   instruction: 인시던트 대응 보고서 초안을 작성하시오.
   hint: 탐지/분석/억제/복구 단계별 내용을 포함하세요.
@@ -191,11 +203,12 @@ steps:
   answer_detail: 인시던트 보고서는 NIST SP 800-61의 대응 단계를 따라 작성합니다.
   verify:
     type: output_contains
-    expect: 보고서 작성 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: 'echo -e ''=== 인시던트 대응 보고서 ===\n\n1. 탐지: 비정상 프로세스/연결 식별\n2. 분석: 로그/파일 변조 분석, 타임라인 구성\n3. 억제: IP 차단, 계정 비활성화, 파일 격리\n4. 복구: 설정 복원, 패치 적용\n5. 교훈: 모니터링 강화, 접근 통제 개선\n\n보고서 작성 완료'' | tee /tmp/incident_report.txt'
   risk_level: low
+  bastion_prompt: 인시던트 대응 보고서 초안을 구현 방법을 설명하고 예시 코드를 보여줘
 - order: 14
   instruction: '사후 개선 사항을 도출하시오: 재발 방지 조치 목록.'
   hint: 탐지, 예방, 대응 각 영역의 개선 사항을 기술하세요.
@@ -205,11 +218,12 @@ steps:
   answer_detail: 사후 분석(Lessons Learned)은 동일한 인시던트의 재발을 방지하는 핵심 단계입니다.
   verify:
     type: output_contains
-    expect: 조치 목록 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: 'echo -e ''=== 재발 방지 조치 ===\n1. 접근통제: MFA 도입\n2. 모니터링: 실시간 알림 강화\n3. 패치: 자동 보안 패치 적용\n4. 교육: 보안 인식 교육 실시\n5. 백업: 일일 백업 검증 강화\n조치 목록 완료'''
   risk_level: low
+  bastion_prompt: '사후 개선 사항을 도출하시오: 재발 방지 조치 목록를 확인해줘'
 - order: 15
   instruction: 인시던트 대응 종합 현황을 최종 정리하시오.
   hint: 증거, 타임라인, 조치 결과 등을 포함하세요.
@@ -220,9 +234,10 @@ steps:
   answer_detail: 인시던트 대응의 모든 단계를 문서화하여 추후 참고 자료로 활용합니다.
   verify:
     type: output_contains
-    expect: 보고서 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: echo '=== 인시던트 대응 종합 보고서 ===' && echo '[수집 증거]' && ls -la /tmp/evidence/ 2>/dev/null && echo '[격리 파일]' && ls -la /tmp/quarantine/ 2>/dev/null && echo '[조치 현황]' && cat /tmp/incident_report.txt
     2>/dev/null | head -10 && echo '=== 보고서 완료 ==='
   risk_level: low
+  bastion_prompt: 인시던트 대응 종합 현황을 최종 정리해줘

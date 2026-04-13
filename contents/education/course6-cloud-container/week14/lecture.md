@@ -383,7 +383,7 @@ TF_CODE=$(cat /tmp/iac-lab/main.tf)
 
 # Ollama API로 IaC 보안 분석 요청
 # 변수 치환을 위해 큰따옴표 + 이스케이프 사용
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",

@@ -307,7 +307,7 @@ LLM에게 보안 점검 요구사항을 전달하면 Bastion에서 바로 실행
 ```bash
 # LLM으로 보안 하드닝 Playbook JSON 자동 생성
 # 생성된 JSON을 Bastion execute-plan에 직접 사용 가능
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -362,9 +362,9 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 
 ```bash
 # Ollama는 OpenAI 호환 API를 제공한다
-# URL: http://192.168.0.105:11434/v1/chat/completions
+# URL: http://localhost:8003/v1/chat/completions
 
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델

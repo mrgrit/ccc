@@ -1,151 +1,273 @@
 lab_id: battle-nonai-week10
-title: "공방전 준비 — Red/Blue Phase 환경 구축 및 전략 수립"
+title: 공방전 준비 — Red/Blue Phase 환경 구축 및 전략 수립
 version: non-ai
 course: battle-nonai
 week: 10
-description: "1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Week 11-14 실전 공방전을 위해 공격/방어 도구를 점검하고, Playbook을 수립하며, 모니터링 환경을 구성한다."
+description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Week 11-14 실전 공방전을 위해 공격/방어 도구를 점검하고, Playbook을 수립하며, 모니터링 환경을 구성한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
-  - Red/Blue Phase 전환을 위한 환경을 준비한다
-  - 공격 Playbook과 방어 Playbook을 수립한다
-  - 모니터링 대시보드와 자동화 스크립트를 구성한다
+- Red/Blue Phase 전환을 위한 환경을 준비한다
+- 공격 Playbook과 방어 Playbook을 수립한다
+- 모니터링 대시보드와 자동화 스크립트를 구성한다
 prerequisites:
-  - Week 1-9 전체 과정 이수
+- Week 1-9 전체 과정 이수
 infra_requirements:
-  - attacker VM (10.20.30.201)
-  - secu VM (10.20.30.1) — nftables, suricata
-  - web VM (10.20.30.80) — apache, modsecurity, JuiceShop(:3000), DVWA(:8080)
-  - siem VM (10.20.30.100) — wazuh-manager
+- attacker VM (10.20.30.201)
+- secu VM (10.20.30.1) — nftables, suricata
+- web VM (10.20.30.80) — apache, modsecurity, JuiceShop(:3000), DVWA(:8080)
+- siem VM (10.20.30.100) — wazuh-manager
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "[BLUE] web 서버의 서비스(HTTP, SSH, JuiceShop, DVWA)가 정상 동작하는지 검증하라."
-    hint: "systemctl status와 curl로 확인한다."
-    category: defense
-    points: 10
-    answer: "curl -so /dev/null -w 'Apache:%{http_code} ' http://10.20.30.80/ && curl -so /dev/null -w 'JuiceShop:%{http_code} ' http://10.20.30.80:3000/ && curl -so /dev/null -w 'DVWA:%{http_code}' http://10.20.30.80:8080/ && echo ' - All services checked'"
-    answer_detail: "공방전 시작 전 모든 서비스의 정상 동작을 확인한다. HTTP 200 응답이 돌아오면 서비스가 정상이다."
-    verify:
-      type: output_contains
-      expect: "All services checked"
-      field: stdout
-    target_vm: secu
+- order: 1
+  instruction: '[BLUE] web 서버의 서비스(HTTP, SSH, JuiceShop, DVWA)가 정상 동작하는지 검증하라.'
+  hint: systemctl status와 curl로 확인한다.
+  category: defense
+  points: 10
+  answer: "curl -so /dev/null \\\n  -w 'Apache:%{http_code} ' http://10.20.30.80/ && curl -so /dev/null \\\n  -w 'JuiceShop:%{http_code} ' http://10.20.30.80:3000/ && curl -so /dev/null \\\n  -w 'DVWA:%{http_code}' http://10.20.30.80:8080/ && echo ' - All services checked'"
+  answer_detail: 공방전 시작 전 모든 서비스의 정상 동작을 확인한다. HTTP 200 응답이 돌아오면 서비스가 정상이다.
+  verify:
+    type: output_contains
+    expect: All services checked
+    field: stdout
+  target_vm: secu
+- order: 2
+  instruction: '[BLUE] secu VM에서 방화벽 초기 룰셋을 배포하라.'
+  hint: Week 6의 nftables 설정을 참고한다.
+  category: defense
+  points: 10
+  answer: "sudo nft flush ruleset && sudo nft -f - << 'EOF'\ntable inet filter {\n  set blocklist {\n    type ipv4_addr\n  }\n  chain input {\n    type filter hook input priority 0; policy drop;\n    iifname lo accept\n    ct state established,related accept\n    tcp dport { 22, 80, 3000, 8080 } accept\n    icmp type echo-request limit rate 5/second accept\n    ip saddr @blocklist drop\n    log prefix\
+    \ \"[NFT-DROP] \" counter drop\n  }\n  chain forward {\n    type filter hook forward priority 0; policy accept;\n  }\n  chain output {\n    type filter hook output priority 0; policy accept;\n  }\n}\nEOF\necho 'Firewall deployed with blocklist'"
+  answer_detail: 화이트리스트 방식 방화벽을 배포하고, IP blocklist set을 미리 생성하여 공방전 중 즉시 IP를 차단할 수 있게 한다.
+  verify:
+    type: output_contains
+    expect: Firewall deployed
+    field: stdout
+  target_vm: secu
+  requires_approval: true
+- order: 3
+  instruction: '[BLUE] Suricata IDS를 최신 룰로 업데이트하고 재시작하라.'
+  hint: suricata-update를 실행한다.
+  category: defense
+  points: 10
+  answer: sudo suricata-update 2>&1 | tail -5 && sudo systemctl restart suricata && sudo systemctl status suricata | head -5
+  answer_detail: suricata-update는 ET Open 등 공개 룰셋을 다운로드하여 업데이트한다. 공방전 전 최신 룰로 업데이트하면 더 넓은 범위의 공격을 탐지할 수 있다.
+  verify:
+    type: output_contains
+    expect: active
+    field: stdout
+  target_vm: secu
+- order: 4
+  instruction: '[RED] 공격 도구 인벤토리를 점검하라. nmap, sqlmap, hydra 등이 설치되어 있는지 확인한다.'
+  hint: which 명령으로 도구 설치 여부를 확인한다.
+  category: recon
+  points: 10
+  answer: 'for tool in nmap sqlmap hydra nikto gobuster dirb john hashcat searchsploit curl; do echo -n "$tool: "; which $tool 2>/dev/null || echo ''NOT FOUND''; done'
+  answer_detail: 공격 도구 인벤토리 점검은 공방전 시작 전 필수이다. 도구가 누락되면 즉시 설치한다.
+  verify:
+    type: output_contains
+    expect: 'nmap:'
+    field: stdout
+  target_vm: attacker
+- order: 5
+  instruction: '[RED] web 서버에 사전 정찰을 수행하여 초기 공격 표면을 파악하라.'
+  hint: nmap으로 대상을 스캔한다.
+  category: recon
+  points: 10
+  answer: nmap -sV -T4 --top-ports 100 --max-retries 1 --host-timeout 15s 10.20.30.80 -oN /tmp/battle_recon.txt && tail -20 /tmp/battle_recon.txt
+  answer_detail: 공방전 시작 시 빠른 정찰로 전체 공격 표면을 파악한다. 결과를 파일로 저장하여 참조한다.
+  verify:
+    type: output_contains
+    expect: open
+    field: stdout
+  target_vm: attacker
+- order: 6
+  instruction: '[RED] 공격 Playbook을 작성하라. 우선순위별 공격 경로를 정의한다.'
+  hint: 정찰 결과를 바탕으로 공격 순서를 정한다.
+  category: analysis
+  points: 10
+  answer: 'cat > /tmp/attack_playbook.txt << ''EOF''
 
-  - order: 2
-    instruction: "[BLUE] secu VM에서 방화벽 초기 룰셋을 배포하라."
-    hint: "Week 6의 nftables 설정을 참고한다."
-    category: defense
-    points: 10
-    answer: "sudo nft flush ruleset && sudo nft -f - << 'EOF'\ntable inet filter {\n  set blocklist {\n    type ipv4_addr\n  }\n  chain input {\n    type filter hook input priority 0; policy drop;\n    iifname lo accept\n    ct state established,related accept\n    tcp dport { 22, 80, 3000, 8080 } accept\n    icmp type echo-request limit rate 5/second accept\n    ip saddr @blocklist drop\n    log prefix \"[NFT-DROP] \" counter drop\n  }\n  chain forward {\n    type filter hook forward priority 0; policy accept;\n  }\n  chain output {\n    type filter hook output priority 0; policy accept;\n  }\n}\nEOF\necho 'Firewall deployed with blocklist'"
-    answer_detail: "화이트리스트 방식 방화벽을 배포하고, IP blocklist set을 미리 생성하여 공방전 중 즉시 IP를 차단할 수 있게 한다."
-    verify:
-      type: output_contains
-      expect: "Firewall deployed"
-      field: stdout
-    target_vm: secu
-    requires_approval: true
+    === Red Phase Attack Playbook ===
 
-  - order: 3
-    instruction: "[BLUE] Suricata IDS를 최신 룰로 업데이트하고 재시작하라."
-    hint: "suricata-update를 실행한다."
-    category: defense
-    points: 10
-    answer: "sudo suricata-update 2>&1 | tail -5 && sudo systemctl restart suricata && sudo systemctl status suricata | head -5"
-    answer_detail: "suricata-update는 ET Open 등 공개 룰셋을 다운로드하여 업데이트한다. 공방전 전 최신 룰로 업데이트하면 더 넓은 범위의 공격을 탐지할 수 있다."
-    verify:
-      type: output_contains
-      expect: "active"
-      field: stdout
-    target_vm: secu
+    Target: 10.20.30.80 (web)
 
-  - order: 4
-    instruction: "[RED] 공격 도구 인벤토리를 점검하라. nmap, sqlmap, hydra 등이 설치되어 있는지 확인한다."
-    hint: "which 명령으로 도구 설치 여부를 확인한다."
-    category: recon
-    points: 10
-    answer: "for tool in nmap sqlmap hydra nikto gobuster dirb john hashcat searchsploit curl; do echo -n \"$tool: \"; which $tool 2>/dev/null || echo 'NOT FOUND'; done"
-    answer_detail: "공격 도구 인벤토리 점검은 공방전 시작 전 필수이다. 도구가 누락되면 즉시 설치한다."
-    verify:
-      type: output_contains
-      expect: "nmap:"
-      field: stdout
-    target_vm: attacker
+    Defense: 10.20.30.1 (secu - nftables/suricata)
 
-  - order: 5
-    instruction: "[RED] web 서버에 사전 정찰을 수행하여 초기 공격 표면을 파악하라."
-    hint: "nmap으로 대상을 스캔한다."
-    category: recon
-    points: 10
-    answer: "nmap -sV -T4 --top-ports 100 --max-retries 1 --host-timeout 15s 10.20.30.80 -oN /tmp/battle_recon.txt && tail -20 /tmp/battle_recon.txt"
-    answer_detail: "공방전 시작 시 빠른 정찰로 전체 공격 표면을 파악한다. 결과를 파일로 저장하여 참조한다."
-    verify:
-      type: output_contains
-      expect: "open"
-      field: stdout
-    target_vm: attacker
 
-  - order: 6
-    instruction: "[RED] 공격 Playbook을 작성하라. 우선순위별 공격 경로를 정의한다."
-    hint: "정찰 결과를 바탕으로 공격 순서를 정한다."
-    category: analysis
-    points: 10
-    answer: "cat > /tmp/attack_playbook.txt << 'EOF'\n=== Red Phase Attack Playbook ===\nTarget: 10.20.30.80 (web)\nDefense: 10.20.30.1 (secu - nftables/suricata)\n\nPhase 1 (0-15min): Quick Wins\n1. JuiceShop SQLi auth bypass (:3000)\n2. DVWA default credentials (:8080)\n3. Service version fingerprinting\n\nPhase 2 (15-40min): Web Exploitation\n4. DVWA SQL Injection → DB dump\n5. JuiceShop XSS/CSRF challenges\n6. Command Injection attempts\n\nPhase 3 (40-60min): System Access\n7. SSH brute force (if not blocked)\n8. Privilege escalation attempts\n9. Persistence installation\nEOF\ncat /tmp/attack_playbook.txt"
-    answer_detail: "공격 Playbook은 시간 제한 내 최대 효과를 거두기 위한 전략 문서이다. Quick Win을 먼저 시도하고, 복잡한 공격은 나중에 수행한다."
-    verify:
-      type: output_contains
-      expect: "Red Phase Attack Playbook"
-      field: stdout
-    target_vm: attacker
+    Phase 1 (0-15min): Quick Wins
 
-  - order: 7
-    instruction: "[BLUE] 방어 Playbook을 작성하라. 모니터링, 탐지, 대응 절차를 정의한다."
-    hint: "초기 하드닝, 실시간 모니터링, 사고 대응 절차를 포함한다."
-    category: analysis
-    points: 10
-    answer: "cat > /tmp/defense_playbook.txt << 'EOF'\n=== Blue Phase Defense Playbook ===\nDefense: secu(10.20.30.1), siem(10.20.30.100)\nProtect: web(10.20.30.80)\n\nPhase 1 (Pre-game): Hardening\n1. Deploy nftables firewall\n2. Update Suricata rules\n3. Verify ModSecurity on web\n4. Check service status\n\nPhase 2 (Ongoing): Monitoring\n5. Suricata fast.log: tail -f /var/log/suricata/fast.log\n6. auth.log: monitor SSH failures\n7. Apache access.log: watch for SQLi/XSS\n8. Wazuh dashboard: high-severity alerts\n\nPhase 3 (On Detection): Response\n9. Block attacker: nft add element inet filter blocklist { IP }\n10. Kill malicious processes\n11. Restore modified files\n12. Document all actions\nEOF\ncat /tmp/defense_playbook.txt"
-    answer_detail: "방어 Playbook은 사전 하드닝, 실시간 모니터링, 사고 대응의 3단계로 구성한다. 탐지에서 대응까지의 시간을 최소화하는 것이 핵심이다."
-    verify:
-      type: output_contains
-      expect: "Blue Phase Defense Playbook"
-      field: stdout
-    target_vm: secu
+    1. JuiceShop SQLi auth bypass (:3000)
 
-  - order: 8
-    instruction: "[BLUE] 자동 서비스 가용성 검사 스크립트를 작성하라."
-    hint: "curl로 주기적으로 서비스 상태를 확인한다."
-    category: defense
-    points: 10
-    answer: "cat > /tmp/service_watchdog.sh << 'SCRIPT'\n#!/bin/bash\nwhile true; do\n  for url in http://10.20.30.80/ http://10.20.30.80:3000/ http://10.20.30.80:8080/; do\n    code=$(curl -so /dev/null -w '%{http_code}' --connect-timeout 3 $url 2>/dev/null)\n    if [ \"$code\" != \"200\" ] && [ \"$code\" != \"302\" ]; then\n      echo \"$(date): $url is DOWN (HTTP $code)\" >> /tmp/watchdog.log\n    fi\n  done\n  sleep 30\ndone\nSCRIPT\nchmod +x /tmp/service_watchdog.sh && echo 'Watchdog script created'"
-    answer_detail: "서비스 와치독은 공방전에서 가용성을 모니터링하는 핵심 도구이다. 다운타임을 기록하여 사후 분석에 활용한다."
-    verify:
-      type: output_contains
-      expect: "Watchdog script created"
-      field: stdout
-    target_vm: secu
+    2. DVWA default credentials (:8080)
 
-  - order: 9
-    instruction: "[BLUE] 파일 무결성 모니터링 베이스라인을 생성하라."
-    hint: "주요 설정 파일의 해시를 기록한다."
-    category: defense
-    points: 10
-    answer: "cat > /tmp/integrity_monitor.sh << 'SCRIPT'\n#!/bin/bash\nFILES=\"/etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config\"\nBASELINE=/tmp/integrity_baseline.txt\nif [ ! -f $BASELINE ]; then\n  for f in $FILES; do md5sum $f 2>/dev/null; done > $BASELINE\n  echo \"Baseline created\"\nelse\n  for f in $FILES; do md5sum $f 2>/dev/null; done > /tmp/integrity_current.txt\n  diff $BASELINE /tmp/integrity_current.txt && echo \"No changes\" || echo \"ALERT: File integrity violation!\"\nfi\nSCRIPT\nchmod +x /tmp/integrity_monitor.sh && bash /tmp/integrity_monitor.sh"
-    answer_detail: "파일 무결성 모니터링(FIM)은 공격자의 설정 변경을 즉시 탐지한다. 최초 해시를 베이스라인으로 저장하고, 주기적으로 비교한다."
-    verify:
-      type: output_contains
-      expect: "Baseline created"
-      field: stdout
-    target_vm: web
+    3. Service version fingerprinting
 
-  - order: 10
-    instruction: "[공통] 공방전 준비 상태를 최종 점검하라."
-    hint: "Red/Blue 양 측의 준비 상태를 점검한다."
-    category: analysis
-    points: 15
-    answer: "cat > /tmp/battle_readiness.txt << 'EOF'\n=== Battle Readiness Checklist ===\n\n[RED PHASE]\n[x] Recon results saved\n[x] Attack playbook defined\n[x] All tools verified (nmap, sqlmap, hydra)\n[x] Target: web (10.20.30.80)\n\n[BLUE PHASE]\n[x] Firewall deployed on secu (10.20.30.1)\n[x] Suricata IDS active with custom rules\n[x] Wazuh SIEM monitoring on siem (10.20.30.100)\n[x] ModSecurity WAF on web\n[x] Service watchdog ready\n[x] File integrity baseline created\n[x] Defense playbook defined\n\n[INFRASTRUCTURE]\n[x] attacker (10.20.30.201) - Red operations\n[x] secu (10.20.30.1) - nftables + suricata\n[x] web (10.20.30.80) - target services\n[x] siem (10.20.30.100) - wazuh-manager\n\nSTATUS: READY FOR BATTLE\nEOF\ncat /tmp/battle_readiness.txt"
-    answer_detail: "최종 준비 체크리스트는 공방전 시작 전 모든 항목을 확인한다. 인프라 연결, 도구 동작, 방어 설정을 빠짐없이 점검한다."
-    verify:
-      type: output_contains
-      expect: "READY FOR BATTLE"
-      field: stdout
-    target_vm: attacker
+
+    Phase 2 (15-40min): Web Exploitation
+
+    4. DVWA SQL Injection → DB dump
+
+    5. JuiceShop XSS/CSRF challenges
+
+    6. Command Injection attempts
+
+
+    Phase 3 (40-60min): System Access
+
+    7. SSH brute force (if not blocked)
+
+    8. Privilege escalation attempts
+
+    9. Persistence installation
+
+    EOF
+
+    cat /tmp/attack_playbook.txt'
+  answer_detail: 공격 Playbook은 시간 제한 내 최대 효과를 거두기 위한 전략 문서이다. Quick Win을 먼저 시도하고, 복잡한 공격은 나중에 수행한다.
+  verify:
+    type: output_contains
+    expect: Red Phase Attack Playbook
+    field: stdout
+  target_vm: attacker
+- order: 7
+  instruction: '[BLUE] 방어 Playbook을 작성하라. 모니터링, 탐지, 대응 절차를 정의한다.'
+  hint: 초기 하드닝, 실시간 모니터링, 사고 대응 절차를 포함한다.
+  category: analysis
+  points: 10
+  answer: 'cat > /tmp/defense_playbook.txt << ''EOF''
+
+    === Blue Phase Defense Playbook ===
+
+    Defense: secu(10.20.30.1), siem(10.20.30.100)
+
+    Protect: web(10.20.30.80)
+
+
+    Phase 1 (Pre-game): Hardening
+
+    1. Deploy nftables firewall
+
+    2. Update Suricata rules
+
+    3. Verify ModSecurity on web
+
+    4. Check service status
+
+
+    Phase 2 (Ongoing): Monitoring
+
+    5. Suricata fast.log: tail -f /var/log/suricata/fast.log
+
+    6. auth.log: monitor SSH failures
+
+    7. Apache access.log: watch for SQLi/XSS
+
+    8. Wazuh dashboard: high-severity alerts
+
+
+    Phase 3 (On Detection): Response
+
+    9. Block attacker: nft add element inet filter blocklist { IP }
+
+    10. Kill malicious processes
+
+    11. Restore modified files
+
+    12. Document all actions
+
+    EOF
+
+    cat /tmp/defense_playbook.txt'
+  answer_detail: 방어 Playbook은 사전 하드닝, 실시간 모니터링, 사고 대응의 3단계로 구성한다. 탐지에서 대응까지의 시간을 최소화하는 것이 핵심이다.
+  verify:
+    type: output_contains
+    expect: Blue Phase Defense Playbook
+    field: stdout
+  target_vm: secu
+- order: 8
+  instruction: '[BLUE] 자동 서비스 가용성 검사 스크립트를 작성하라.'
+  hint: curl로 주기적으로 서비스 상태를 확인한다.
+  category: defense
+  points: 10
+  answer: "cat > /tmp/service_watchdog.sh << 'SCRIPT'\n#!/bin/bash\nwhile true; do\n  for url in http://10.20.30.80/ http://10.20.30.80:3000/ http://10.20.30.80:8080/; do\n    code=$(curl -so /dev/null -w '%{http_code}' --connect-timeout 3 $url 2>/dev/null)\n    if [ \"$code\" != \"200\" ] && [ \"$code\" != \"302\" ]; then\n      echo \"$(date): $url is DOWN (HTTP $code)\" >> /tmp/watchdog.log\n   \
+    \ fi\n  done\n  sleep 30\ndone\nSCRIPT\nchmod +x /tmp/service_watchdog.sh && echo 'Watchdog script created'"
+  answer_detail: 서비스 와치독은 공방전에서 가용성을 모니터링하는 핵심 도구이다. 다운타임을 기록하여 사후 분석에 활용한다.
+  verify:
+    type: output_contains
+    expect: Watchdog script created
+    field: stdout
+  target_vm: secu
+- order: 9
+  instruction: '[BLUE] 파일 무결성 모니터링 베이스라인을 생성하라.'
+  hint: 주요 설정 파일의 해시를 기록한다.
+  category: defense
+  points: 10
+  answer: "cat > /tmp/integrity_monitor.sh << 'SCRIPT'\n#!/bin/bash\nFILES=\"/etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config\"\nBASELINE=/tmp/integrity_baseline.txt\nif [ ! -f $BASELINE ]; then\n  for f in $FILES; do md5sum $f 2>/dev/null; done > $BASELINE\n  echo \"Baseline created\"\nelse\n  for f in $FILES; do md5sum $f 2>/dev/null; done > /tmp/integrity_current.txt\n  diff $BASELINE /tmp/integrity_current.txt\
+    \ && echo \"No changes\" || echo \"ALERT: File integrity violation!\"\nfi\nSCRIPT\nchmod +x /tmp/integrity_monitor.sh && bash /tmp/integrity_monitor.sh"
+  answer_detail: 파일 무결성 모니터링(FIM)은 공격자의 설정 변경을 즉시 탐지한다. 최초 해시를 베이스라인으로 저장하고, 주기적으로 비교한다.
+  verify:
+    type: output_contains
+    expect: Baseline created
+    field: stdout
+  target_vm: web
+- order: 10
+  instruction: '[공통] 공방전 준비 상태를 최종 점검하라.'
+  hint: Red/Blue 양 측의 준비 상태를 점검한다.
+  category: analysis
+  points: 15
+  answer: 'cat > /tmp/battle_readiness.txt << ''EOF''
+
+    === Battle Readiness Checklist ===
+
+
+    [RED PHASE]
+
+    [x] Recon results saved
+
+    [x] Attack playbook defined
+
+    [x] All tools verified (nmap, sqlmap, hydra)
+
+    [x] Target: web (10.20.30.80)
+
+
+    [BLUE PHASE]
+
+    [x] Firewall deployed on secu (10.20.30.1)
+
+    [x] Suricata IDS active with custom rules
+
+    [x] Wazuh SIEM monitoring on siem (10.20.30.100)
+
+    [x] ModSecurity WAF on web
+
+    [x] Service watchdog ready
+
+    [x] File integrity baseline created
+
+    [x] Defense playbook defined
+
+
+    [INFRASTRUCTURE]
+
+    [x] attacker (10.20.30.201) - Red operations
+
+    [x] secu (10.20.30.1) - nftables + suricata
+
+    [x] web (10.20.30.80) - target services
+
+    [x] siem (10.20.30.100) - wazuh-manager
+
+
+    STATUS: READY FOR BATTLE
+
+    EOF
+
+    cat /tmp/battle_readiness.txt'
+  answer_detail: 최종 준비 체크리스트는 공방전 시작 전 모든 항목을 확인한다. 인프라 연결, 도구 동작, 방어 설정을 빠짐없이 점검한다.
+  verify:
+    type: output_contains
+    expect: READY FOR BATTLE
+    field: stdout
+  target_vm: attacker

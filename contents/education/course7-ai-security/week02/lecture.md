@@ -126,7 +126,7 @@ ollama show gemma3:12b
 
 ```
 ├── GPU: NVIDIA DGX Spark
-├── Ollama 서버: http://192.168.0.105:11434
+├── Ollama 서버: http://localhost:8003
 ├── 모델: gemma3:12b, llama3.1:8b
 └── OpenAI 호환 API: /v1/chat/completions
 ```
@@ -152,7 +152,7 @@ ollama show gemma3:12b
 > - 보고서 작성: "다음 점검 결과를 보안 보고서로 작성해줘"
 > - 탐지 룰: "SSH 브루트포스를 탐지하는 SIGMA 룰을 작성해줘"
 >
-> **검증 완료:** Ollama(192.168.0.105:11434)에 22개 모델 가용, gemma3:12b 응답 약 5초
+> **검증 완료:** Ollama(localhost:8003)에 22개 모델 가용, gemma3:12b 응답 약 5초
 
 ### 3.1 기본 대화 (Chat Completion)
 
@@ -161,7 +161,7 @@ Ollama의 OpenAI 호환 API로 LLM에게 질문을 보낸다. system 메시지�
 ```bash
 # /v1/chat/completions: OpenAI 호환 API 엔드포인트
 # system: AI의 행동 지침 / user: 사용자 질문
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -187,7 +187,7 @@ temperature, max_tokens, top_p 파라미터를 조절하여 LLM 응답의 일관
 ```bash
 # temperature: 0.3(정확한 답변) / max_tokens: 출력 길이 제한
 # top_p: 상위 확률 토큰만 샘플링 (0.9 = 상위 90%)
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -210,7 +210,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 
 ```bash
 # temperature=0 (결정론적, 항상 같은 답)
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -219,7 +219,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
   }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
 
 # temperature=1.5 (매우 창의적, 매번 다른 답)
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -240,7 +240,7 @@ import json
 
 def ask_llm(question, model="gemma3:12b", temperature=0.7):
     response = requests.post(
-        "http://192.168.0.105:11434/v1/chat/completions",
+        "http://localhost:8003/v1/chat/completions",
         json={
             "model": model,
             "messages": [
@@ -263,7 +263,7 @@ print(answer)
 from openai import OpenAI
 
 client = OpenAI(
-    base_url="http://192.168.0.105:11434/v1",
+    base_url="http://localhost:8003/v1",
     api_key="unused"  # Ollama는 키 불필요
 )
 
@@ -287,7 +287,7 @@ print(response.choices[0].message.content)
 
 ```bash
 # 기본 질문
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -304,7 +304,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 # 같은 질문, 다른 system 프롬프트
 for role in "대학생" "10년차 해커" "CISO"; do
   echo "=== $role 관점 ==="
-  curl -s http://192.168.0.105:11434/v1/chat/completions \
+  curl -s http://localhost:8003/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d "{
       \"model\": \"gemma3:12b\",
@@ -325,7 +325,7 @@ done
 # gemma3:12b vs llama3.1:8b
 for model in "gemma3:12b" "llama3.1:8b"; do
   echo "=== $model ==="
-  curl -s http://192.168.0.105:11434/v1/chat/completions \
+  curl -s http://localhost:8003/v1/chat/completions \
     -H "Content-Type: application/json" \
     -d "{
       \"model\": \"$model\",
@@ -374,9 +374,9 @@ done
 
 ```bash
 # Ollama는 OpenAI 호환 API를 제공한다
-# URL: http://192.168.0.105:11434/v1/chat/completions
+# URL: http://localhost:8003/v1/chat/completions
 
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델

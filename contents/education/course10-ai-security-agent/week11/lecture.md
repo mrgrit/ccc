@@ -471,7 +471,7 @@ import json
 import requests
 import psycopg2
 
-OLLAMA_URL = "http://192.168.0.105:11434"
+OLLAMA_URL = "http://localhost:8003"
 DB_CONFIG = {
     "host": "127.0.0.1",
     "port": 5432,

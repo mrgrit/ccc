@@ -146,7 +146,7 @@ fi
 
 # 3. Ollama
 echo ""
-MODELS=$(curl -s http://192.168.0.105:11434/api/tags 2>/dev/null | \
+MODELS=$(curl -s http://localhost:8003/api/tags 2>/dev/null | \
   python3 -c "import sys,json; [print(f'  - {m[\"name\"]}') for m in json.load(sys.stdin).get('models',[])]" 2>/dev/null)
 if [ -n "$MODELS" ]; then
     echo "  Ollama — OK"
@@ -191,10 +191,10 @@ import requests
 import json
 import time
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 
 # 모델 목록 가져오기
-models_resp = requests.get("http://192.168.0.105:11434/api/tags", timeout=10)
+models_resp = requests.get("http://localhost:8003/api/tags", timeout=10)
 available_models = [m["name"] for m in models_resp.json().get("models", [])]
 
 # 테스트할 모델 (사용 가능한 것만)
@@ -428,7 +428,7 @@ import datetime
 # ============================================================
 # 설정
 # ============================================================
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 MODEL = "llama3.1:8b"  # 모델 선택 결과에 따라 변경
 BASTION = "http://localhost:9100"
 API_KEY = "ccc-api-key-2026"
@@ -764,7 +764,7 @@ LLM을 사용하여 종합 분석을 추가한다.
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 분석 결과 로드

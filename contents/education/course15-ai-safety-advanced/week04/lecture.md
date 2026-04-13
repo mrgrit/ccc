@@ -380,7 +380,7 @@ import math
 import urllib.request
 from collections import Counter
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 DOCS_DIR = "/tmp/rag_lab/docs"
 
 class SimpleRAG:
@@ -774,7 +774,7 @@ import math
 import urllib.request
 from collections import Counter
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 
 class SecureRAG:
     """보안 강화된 RAG 시스템"""

@@ -310,7 +310,7 @@ import urllib.request
 import time
 import random
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 TARGET_MODEL = "gemma3:12b"
 
 class ModelExtractor:
@@ -427,7 +427,7 @@ import json
 import urllib.request
 import time
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 
 # 일관성 테스트: 같은 질문을 여러 번 하여 응답 일관성 측정
 TEST_QUERIES = [
@@ -498,7 +498,7 @@ import urllib.request
 import hashlib
 import time
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 
 # 핑거프린트 입력 세트 (고정)
 FINGERPRINT_INPUTS = [

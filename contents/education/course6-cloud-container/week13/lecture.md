@@ -285,7 +285,7 @@ curl -s -X POST http://localhost:9100/projects \
 # Wazuh 알림을 LLM으로 분석 (CloudWatch Insights 대체)
 SAMPLE_LOG='{"rule":{"id":"5710","level":10,"description":"sshd: Attempt to login using a denied user."},"agent":{"name":"web"},"srcip":"192.168.1.100"}'
 
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",

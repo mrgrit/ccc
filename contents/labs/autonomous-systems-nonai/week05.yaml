@@ -21,7 +21,7 @@ steps:
   answer_detail: GPS 정상 데이터의 특성을 이해합니다.
   verify:
     type: output_contains
-    expect: 'GPS Receiver'
+    expect: GPS Receiver
     field: stdout
   target_vm: attacker
 - order: 2
@@ -29,11 +29,12 @@ steps:
   hint: 5단계로 위치를 점진적으로 변경하세요.
   category: attack
   points: 12
-  answer: 'python3 -c "start=(37.5665,126.978);end=(37.446,126.453);steps=5;print(''=== GPS Spoofing (Gradual) ==='');[print(f''  Step {i}: Lat={start[0]+(end[0]-start[0])*i/steps:.4f} Lon={start[1]+(end[1]-start[1])*i/steps:.4f} Drift={((start[0]+(end[0]-start[0])*i/steps-start[0])**2+(start[1]+(end[1]-start[1])*i/steps-start[1])**2)**0.5*111000:.0f}m'') for i in range(steps+1)];print(''  [!] Position shifted ~40km to Incheon Airport'')"'
+  answer: 'python3 -c "start=(37.5665,126.978);end=(37.446,126.453);steps=5;print(''=== GPS Spoofing (Gradual) ==='');[print(f''  Step {i}: Lat={start[0]+(end[0]-start[0])*i/steps:.4f} Lon={start[1]+(end[1]-start[1])*i/steps:.4f} Drift={((start[0]+(end[0]-start[0])*i/steps-start[0])**2+(start[1]+(end[1]-start[1])*i/steps-start[1])**2)**0.5*111000:.0f}m'') for i in range(steps+1)];print(''  [!] Position
+    shifted ~40km to Incheon Airport'')"'
   answer_detail: 점진적 GPS 스푸핑은 탐지가 어려운 고급 공격입니다.
   verify:
     type: output_contains
-    expect: 'GPS Spoofing'
+    expect: GPS Spoofing
     field: stdout
   target_vm: attacker
 - order: 3
@@ -41,11 +42,11 @@ steps:
   hint: 이전 위치와 비교하여 물리적으로 불가능한 이동을 탐지하세요.
   category: config
   points: 12
-  answer: "python3 -c \"import json; readings=[(37.5,126.9,44),(37.5,126.9,45),(37.8,127.0,55)]; alerts=[abs(readings[i][0]-readings[i-1][0])*111000 for i in range(1,len(readings)) if abs(readings[i][0]-readings[i-1][0])*111000>100]; print(f'=== GPS Spoof Detection ==='); print(f'Alerts: {len(alerts)}'); [print(f'SPEED_ALERT: {a:.0f}m jump') for a in alerts]\""
+  answer: 'python3 -c "import json; readings=[(37.5,126.9,44),(37.5,126.9,45),(37.8,127.0,55)]; alerts=[abs(readings[i][0]-readings[i-1][0])*111000 for i in range(1,len(readings)) if abs(readings[i][0]-readings[i-1][0])*111000>100]; print(f''=== GPS Spoof Detection ===''); print(f''Alerts: {len(alerts)}''); [print(f''SPEED_ALERT: {a:.0f}m jump'') for a in alerts]"'
   answer_detail: 다중 탐지 규칙을 결합하면 GPS 스푸핑 탐지율이 높아집니다.
   verify:
     type: output_contains
-    expect: 'Spoof Detection'
+    expect: Spoof Detection
     field: stdout
   target_vm: attacker
 - order: 4
@@ -53,10 +54,8 @@ steps:
   hint: GPS jamming vs spoofing defense를 질문하세요.
   category: analysis
   points: 10
-  answer: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You
-    are a GNSS security expert."},{"role":"user","content":"Compare GPS jamming and spoofing attacks. For each,
-    explain detection method and countermeasure in 3 sentences."}],"stream":false,"options":{"num_predict":150}}'
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'])"
+  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a GNSS security expert.\"},{\"role\":\"user\",\"content\":\"Compare GPS jamming and spoofing attacks. For each, explain detection method and countermeasure in 3 sentences.\"}],\"stream\":false,\"options\":{\"num_predict\":150}}' \\\n | python3\
+    \ -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: 재밍과 스푸핑은 서로 다른 탐지/방어 전략이 필요합니다.
   verify:
     type: output_contains
@@ -68,15 +67,11 @@ steps:
   hint: GPS 신뢰도에 따라 가중치를 동적으로 변경하세요.
   category: config
   points: 12
-  answer: 'python3 -c "
-    data=[(37.5666,37.5666,44),(37.5667,37.5667,45),(37.59,37.5668,56),(37.61,37.5669,57)]
-    ;print(''=== GPS+INS Fusion ==='')
-    ;[print(f''  GPS:{g:.4f} INS:{i:.4f} SNR:{s} -> Fused:{0.7*g+0.3*i if s<52 else 0.1*g+0.9*i:.4f} GPS_OK:{\"Y\" if s<52 else \"N\"}'') for g,i,s in data]
-    ;print(''  [OK] System auto-switches to INS when GPS spoofed'')"'
+  answer: python3 -c " data=[(37.5666,37.5666,44),(37.5667,37.5667,45),(37.59,37.5668,56),(37.61,37.5669,57)] ;print('=== GPS+INS Fusion ===') ;[print(f'  GPS:{g:.4f} INS:{i:.4f} SNR:{s} -> Fused:{0.7*g+0.3*i if s<52 else 0.1*g+0.9*i:.4f} GPS_OK:{\"Y\" if s<52 else \"N\"}') for g,i,s in data] ;print('  [OK] System auto-switches to INS when GPS spoofed')"
   answer_detail: 센서 퓨전은 GPS 스푸핑 공격을 완화하는 핵심 기술입니다.
   verify:
     type: output_contains
-    expect: 'GPS+INS Fusion'
+    expect: GPS+INS Fusion
     field: stdout
   target_vm: attacker
 - order: 6
@@ -88,7 +83,7 @@ steps:
   answer_detail: 위성 기하학은 GPS 정확도와 스푸핑 탐지에 영향을 줍니다.
   verify:
     type: output_contains
-    expect: 'Satellite Geometry'
+    expect: Satellite Geometry
     field: stdout
   target_vm: attacker
 - order: 7
@@ -96,11 +91,12 @@ steps:
   hint: 각 방어 기술의 이름, 설명, 효과를 리스트로 만드세요.
   category: analysis
   points: 12
-  answer: 'python3 -c "defenses=[(''Multi-antenna AoA'',''Verify signal direction'',''HIGH''),(''GPS+INS Fusion'',''Cross-validate with inertial nav'',''HIGH''),(''SNR Monitoring'',''Detect abnormal signal strength'',''MEDIUM''),(''Multi-GNSS'',''Use GPS+GLONASS+Galileo'',''HIGH''),(''Cryptographic Auth'',''Military GPS P(Y) code'',''VERY HIGH'')];print(''=== GPS Anti-Spoofing Defenses ==='');[print(f''  [{e}] {n}: {d}'') for n,d,e in defenses]"'
+  answer: 'python3 -c "defenses=[(''Multi-antenna AoA'',''Verify signal direction'',''HIGH''),(''GPS+INS Fusion'',''Cross-validate with inertial nav'',''HIGH''),(''SNR Monitoring'',''Detect abnormal signal strength'',''MEDIUM''),(''Multi-GNSS'',''Use GPS+GLONASS+Galileo'',''HIGH''),(''Cryptographic Auth'',''Military GPS P(Y) code'',''VERY HIGH'')];print(''=== GPS Anti-Spoofing Defenses ==='');[print(f''  [{e}]
+    {n}: {d}'') for n,d,e in defenses]"'
   answer_detail: 다중 방어 기술의 조합이 GPS 보안의 핵심입니다.
   verify:
     type: output_contains
-    expect: 'Anti-Spoofing'
+    expect: Anti-Spoofing
     field: stdout
   target_vm: attacker
 - order: 8
@@ -108,10 +104,8 @@ steps:
   hint: RQ-170 GPS spoofing Iran incident를 질문하세요.
   category: analysis
   points: 12
-  answer: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You
-    are a military drone security analyst."},{"role":"user","content":"Analyze the 2011 RQ-170 drone capture by
-    Iran. How was GPS spoofing allegedly used and what lessons were learned?"}],"stream":false,"options":{"num_predict":200}}'
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'])"
+  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a military drone security analyst.\"},{\"role\":\"user\",\"content\":\"Analyze the 2011 RQ-170 drone capture by Iran. How was GPS spoofing allegedly used and what lessons were learned?\"}],\"stream\":false,\"options\":{\"num_predict\":200}}' \\\
+    \n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: 실제 GPS 스푸핑 사례에서 교훈을 도출합니다.
   verify:
     type: output_contains

@@ -208,7 +208,7 @@ resource "aws_security_group" "web" {
 
 ```bash
 # LLM으로 분석
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",

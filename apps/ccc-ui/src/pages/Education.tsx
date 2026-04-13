@@ -202,8 +202,14 @@ export default function Education() {
                   </div>
                   <span style={{ fontSize: 15, color: '#f97316', fontWeight: 600 }}>{s.points}pts</span>
                 </div>
-                <div style={{ fontSize: 15, color: '#e6edf3', marginBottom: 8, lineHeight: 1.6 }}>{s.instruction}</div>
-                {s.hint && <div style={{ fontSize: 14, color: '#58a6ff', background: '#0d1f3c', borderRadius: 6, padding: '8px 12px', marginBottom: 8 }}>Hint: {s.hint}</div>}
+                <div style={{ fontSize: 15, color: '#e6edf3', marginBottom: 8, lineHeight: 1.6, whiteSpace: 'pre-wrap' as const }}>{s.instruction}</div>
+                {s.bastion_prompt && (
+                  <div style={{ background: '#0d1f0d', border: '1px solid #238636', borderRadius: 6, padding: '10px 14px', marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, color: '#3fb950', fontWeight: 700, marginBottom: 4 }}>🤖 bastion에 입력하세요</div>
+                    <div style={{ fontSize: 14, color: '#e6edf3', whiteSpace: 'pre-wrap' as const }}>{s.bastion_prompt}</div>
+                  </div>
+                )}
+                {s.hint && <div style={{ fontSize: 14, color: '#58a6ff', background: '#0d1f3c', borderRadius: 6, padding: '8px 12px', marginBottom: 8, whiteSpace: 'pre-wrap' as const }}>Hint: {s.hint}</div>}
                 {s.script && <div style={{ fontSize: 14, fontFamily: 'Consolas,Monaco,monospace', color: '#3fb950', background: '#0d1f0d', borderRadius: 6, padding: '8px 12px', marginBottom: 8, whiteSpace: 'pre-wrap' as const }}>$ {s.script}</div>}
                 {s.verify && <div style={{ fontSize: 15, color: '#8b949e' }}>Verify: <code style={{ color: '#d29922' }}>{s.verify.type}</code> <code style={{ color: '#bc8cff' }}>"{s.verify.expect}"</code></div>}
                 {s.answer && (

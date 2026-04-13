@@ -516,7 +516,7 @@ curl -s -X POST $MGR/projects/$PID4/dispatch \
 
 ```bash
 # 4. Step 2: LLM에게 과거 Experience를 포함하여 대응 방안 질의
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",

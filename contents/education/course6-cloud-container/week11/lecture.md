@@ -358,7 +358,7 @@ sudo nft list ruleset | head -30
 ```bash
 # Ollama API로 K8s YAML 보안 분석 요청
 # system: 역할 지정 / user: 분석 대상 YAML 전달
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",

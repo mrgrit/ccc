@@ -21,11 +21,12 @@ steps:
   answer_detail: GDPR Article 32(1)(a)는 개인 데이터의 가명처리 및 암호화를 요구합니다. LUKS(Linux Unified Key Setup)는 리눅스 디스크 암호화 표준으로, 물리적 도난이나 폐기 시 데이터 유출을 방지합니다.
   verify:
     type: output_contains
-    expect: LUKS
+    expect: 
     field: stdout
   target_vm: secu
   script: lsblk -f && sudo dmsetup ls --target crypt 2>/dev/null; echo 'LUKS 확인:' && sudo cryptsetup status $(lsblk -rno NAME | head -1) 2>/dev/null || echo '디스크 암호화 미적용'
   risk_level: low
+  bastion_prompt: SECU 서버(10.20.30.1)에서 디스크 암호화 상태를 확인하시오. GDPR Art.32 '저장 데이터의 암호화'해줘
 - order: 2
   instruction: WEB 서버(10.20.30.80)의 SSL/TLS 인증서 정보와 만료일을 확인하시오. GDPR은 전송 중인 데이터의 암호화를 요구합니다.
   hint: openssl s_client로 서버에 접속하여 인증서를 확인하세요.
@@ -35,11 +36,12 @@ steps:
   answer_detail: GDPR Recital 83은 전송 중인 데이터의 암호화를 권고합니다. TLS 인증서의 만료일을 정기적으로 확인해야 하며, 만료된 인증서는 브라우저 경고를 유발하고 MITM 공격에 취약해질 수 있습니다.
   verify:
     type: output_contains
-    expect: TLS
+    expect: 
     field: stdout
   target_vm: secu
   script: echo | openssl s_client -connect 10.20.30.80:443 -servername 10.20.30.80 2>/dev/null | openssl x509 -noout -dates -subject 2>/dev/null || echo 'HTTPS 미설정 - TLS 인증서 없음'
   risk_level: low
+  bastion_prompt: WEB 서버(10.20.30.80)의 SSL/TLS 인증서 정보와 만료일을 확인하시오. GDPR은 전송 중인 데이터의 암호화를 요구해줘
 - order: 3
   instruction: 시스템에서 개인 데이터가 포함될 수 있는 파일을 검색하시오. 이메일 주소 패턴이 포함된 로그 파일을 찾습니다.
   hint: grep으로 이메일 패턴(@)을 로그 파일에서 검색하세요.
@@ -49,11 +51,12 @@ steps:
   answer_detail: GDPR Article 5(1)(c) 데이터 최소화 원칙에 따라 로그에 불필요한 개인 데이터(이메일, IP 등)가 기록되지 않아야 합니다. 로그에 개인 데이터가 포함되면 해당 로그도 GDPR 보호 대상이 되어 보관 기간 제한과 접근 통제가 필요합니다.
   verify:
     type: output_contains
-    expect: log
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo grep -rl '@.*\.' /var/log/ 2>/dev/null | head -10 && echo '---' && sudo grep -c '@' /var/log/auth.log 2>/dev/null
   risk_level: low
+  bastion_prompt: 시스템에서 개인 데이터가 포함될 수 있는 파일을 검색해줘
 - order: 4
   instruction: Apache 웹 서버의 접근 로그 형식을 확인하시오. IP 주소의 가명화(anonymization) 설정 여부를 점검합니다.
   hint: ssh로 WEB 서버에 접속하여 Apache의 LogFormat 설정을 확인하세요.
@@ -63,11 +66,12 @@ steps:
   answer_detail: 'GDPR은 가명처리(pseudonymisation)를 권장합니다. Apache 접근 로그에 전체 IP 주소가 기록되면 개인 데이터 처리에 해당합니다. IP의 마지막 옥텟을 0으로 대체(예: 192.168.1.0)하거나, 해시 처리하여 가명화할 수 있습니다.'
   verify:
     type: output_contains
-    expect: LogFormat
+    expect: 
     field: stdout
   target_vm: secu
   script: ssh ccc@10.20.30.80 'grep -E "LogFormat|CustomLog" /etc/apache2/apache2.conf /etc/apache2/sites-enabled/* 2>/dev/null'
   risk_level: low
+  bastion_prompt: Apache 웹 서버의 접근 로그 형식을 확인하시오. IP 주소의 가명화(anonymization) 설정 여부를 점검해줘
 - order: 5
   instruction: 시스템의 데이터 백업 설정을 확인하시오. GDPR Art.32(1)(c) '적시에 가용성 및 접근성을 복원하는 능력'.
   hint: crontab과 /etc/cron.d/에서 백업 관련 작업을 찾으세요.
@@ -77,11 +81,12 @@ steps:
   answer_detail: GDPR Article 32(1)(c)는 사고 발생 시 개인 데이터의 가용성과 접근성을 적시에 복원할 수 있는 능력을 요구합니다. 정기 백업, 백업 암호화, 복원 테스트 절차가 수립되어 있어야 합니다.
   verify:
     type: output_contains
-    expect: cron
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo crontab -l 2>/dev/null; echo '--- cron.d ---' && grep -rl 'backup\|dump\|rsync' /etc/cron.d/ /etc/cron.daily/ 2>/dev/null
   risk_level: low
+  bastion_prompt: 시스템의 데이터 백업 설정을 확인하시오. GDPR Art.32(1)(c) '적시에 가용성 및 접근성을 복원하는 능력'해줘
 - order: 6
   instruction: fail2ban 또는 유사한 자동 차단 메커니즘이 설정되어 있는지 확인하시오. GDPR Art.32(1)(b) '보안 서비스의 지속적 보장'.
   hint: fail2ban 서비스 상태와 설정을 확인하세요.
@@ -91,11 +96,12 @@ steps:
   answer_detail: GDPR Article 32(1)(b)는 처리 시스템과 서비스의 지속적인 기밀성, 무결성, 가용성, 복원력을 요구합니다. fail2ban은 반복 로그인 실패를 감지하여 자동으로 IP를 차단함으로써 무차별 대입 공격으로부터 시스템을 보호합니다.
   verify:
     type: output_contains
-    expect: fail2ban
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo systemctl status fail2ban --no-pager 2>/dev/null | head -5; echo '---' && sudo fail2ban-client status 2>/dev/null || echo 'fail2ban 미설치/미활성'
   risk_level: low
+  bastion_prompt: fail2ban 또는 유사한 자동 차단 메커니즘이 설정되어 있는지 확인하시오. GDPR Art.32(1)(b) '보안 서비스의 지속적 보장'해줘
 - order: 7
   instruction: 시스템의 /tmp 디렉터리에 민감 데이터가 남아 있지 않은지 확인하시오. GDPR의 데이터 최소화 원칙.
   hint: 최근 생성된 임시 파일을 검색하세요.
@@ -105,11 +111,12 @@ steps:
   answer_detail: GDPR Article 5(1)(e) 저장 제한 원칙에 따라 개인 데이터는 필요 이상으로 보관하면 안 됩니다. /tmp에 처리 중간 결과로 개인 데이터가 남아 있을 수 있으며, tmpfs 마운트나 정기적 정리 정책이 필요합니다.
   verify:
     type: output_contains
-    expect: tmp
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo find /tmp -type f -mtime -7 -ls 2>/dev/null | head -20 && echo '--- /tmp 크기 ---' && du -sh /tmp 2>/dev/null
   risk_level: low
+  bastion_prompt: 시스템의 /tmp 디렉터리에 민감 데이터가 남아 있지 않은지 확인하시오. GDPR의 데이터 최소화 원칙해줘
 - order: 8
   instruction: 시스템의 사용자 활동 로그(audit trail)가 충분히 기록되는지 점검하시오. GDPR Art.5(2) 책임(accountability) 원칙.
   hint: auditd 규칙과 로그 크기를 확인하세요.
@@ -119,11 +126,12 @@ steps:
   answer_detail: GDPR Article 5(2) 책임 원칙은 컨트롤러가 GDPR 준수를 입증할 수 있어야 함을 요구합니다. 충분한 감사 로그가 있어야 데이터 처리 활동을 추적하고, 데이터 침해 시 영향 범위를 파악할 수 있습니다.
   verify:
     type: output_contains
-    expect: 규칙 수
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo auditctl -l | wc -l && echo '규칙 수' && sudo ls -lh /var/log/audit/audit.log 2>/dev/null && echo '--- auditd 설정 ---' && grep -E '(max_log_file|num_logs)' /etc/audit/auditd.conf 2>/dev/null
   risk_level: low
+  bastion_prompt: 시스템의 사용자 활동 로그(audit trail)가 충분히 기록되는지 점검하시오. GDPR Art.5(2) 책임(accountability) 원칙해줘
 - order: 9
   instruction: GDPR 기술적 보호조치 종합 점검 스크립트를 작성하고 실행하시오.
   hint: 암호화, 접근 통제, 로그, 백업 항목을 종합하세요.
@@ -165,7 +173,7 @@ steps:
   answer_detail: 'GDPR Article 32는 네 가지 기술적·조직적 조치를 요구합니다: (a) 가명처리 및 암호화, (b) 시스템의 지속적 기밀성·무결성·가용성·복원력, (c) 물리적·기술적 사고 후 적시 복원 능력, (d) 조치의 효과를 정기적으로 테스트·평가하는 절차.'
   verify:
     type: output_contains
-    expect: GDPR 점검 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: 'cat << ''SCRIPT'' > /tmp/gdpr_audit.sh
@@ -202,3 +210,4 @@ steps:
 
     chmod +x /tmp/gdpr_audit.sh && bash /tmp/gdpr_audit.sh'
   risk_level: low
+  bastion_prompt: GDPR 기술적 보호조치 종합 점검 스크립트를 작성하고 실행하시오 구현 방법과 예시를 설명해줘

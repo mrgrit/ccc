@@ -865,7 +865,7 @@ fi
 # 10. AI/LLM 연동 여부
 echo "[체크 10] AI/LLM 연동 여부..."
 if curl -s -o /dev/null -w "%{http_code}" \
-   http://192.168.0.105:11434/v1/models 2>/dev/null | grep -q "200"; then
+   http://localhost:8003/v1/models 2>/dev/null | grep -q "200"; then
     echo "  [PASS] Ollama LLM 연동 가능"
     SCORE=$((SCORE+1))
 else

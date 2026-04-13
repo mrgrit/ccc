@@ -128,6 +128,70 @@ def update_asset(role: str, body: AssetUpdateBody):
     return {"role": role, "ip": body.ip, "status": body.status}
 
 
+# ── Ollama 호환 프록시 엔드포인트 ─────────────────────────────────────────────
+# 실습 스크립트가 기존 Ollama API 형식 그대로 사용하되 bastion을 통해 라우팅
+
+@app.post("/api/generate")
+def ollama_generate_proxy(request: dict):
+    """Ollama /api/generate 호환 프록시 — bastion을 통해 LLM으로 포워딩.
+    모델이 지정되지 않거나 없는 모델 요청 시 bastion 설정 모델(LLM_SUBAGENT_MODEL)로 교체.
+    """
+    import httpx
+    # 모델을 설정된 서브에이전트 모델로 강제 지정 (gemma3:4b 등 없는 모델 방지)
+    request["model"] = agent.model
+    request.setdefault("stream", False)
+    try:
+        resp = httpx.post(
+            f"{agent.ollama_url}/api/generate",
+            json=request,
+            timeout=120,
+        )
+        return resp.json()
+    except Exception as e:
+        return {"error": str(e), "response": ""}
+
+
+@app.post("/api/chat")
+def ollama_chat_proxy(request: dict):
+    """Ollama /api/chat 호환 프록시 — bastion을 통해 LLM으로 포워딩.
+    모델을 bastion 설정 모델로 교체.
+    """
+    import httpx
+    request["model"] = agent.model
+    request.setdefault("stream", False)
+    try:
+        resp = httpx.post(
+            f"{agent.ollama_url}/api/chat",
+            json=request,
+            timeout=120,
+        )
+        return resp.json()
+    except Exception as e:
+        return {"error": str(e), "message": {"content": ""}}
+
+
+@app.get("/api/tags")
+def ollama_tags_proxy():
+    """Ollama /api/tags 호환 프록시"""
+    import httpx
+    try:
+        resp = httpx.get(f"{agent.ollama_url}/api/tags", timeout=10)
+        return resp.json()
+    except Exception as e:
+        return {"models": [], "error": str(e)}
+
+
+@app.get("/api/version")
+def ollama_version_proxy():
+    """Ollama /api/version 호환 프록시"""
+    import httpx
+    try:
+        resp = httpx.get(f"{agent.ollama_url}/api/version", timeout=10)
+        return resp.json()
+    except Exception as e:
+        return {"version": "unknown", "error": str(e)}
+
+
 class OnboardRequest(BaseModel):
     role: str
     ip: str
@@ -210,6 +274,49 @@ def chat(req: ChatRequest):
     else:
         events = list(agent.chat(req.message, approval_callback=approval_callback))
         return {"events": events}
+
+
+class AskRequest(BaseModel):
+    message: str
+    auto_approve: bool = True  # /ask는 기본 자동승인 (실습용)
+
+
+@app.post("/ask")
+def ask(req: AskRequest):
+    """실습 스크립트용 단순 질문 API — LLM 답변 텍스트만 반환.
+
+    /chat의 간소화 버전. 스트리밍 없이 답변 텍스트만 반환하여 셸 스크립트에서 쉽게 사용 가능.
+
+    예시:
+        curl -s -X POST http://localhost:8003/ask \\
+             -H 'Content-Type: application/json' \\
+             -d '{"message": "프롬프트 인젝션이란?"}' \\
+             | python3 -c "import sys,json; print(json.load(sys.stdin)['answer'])"
+    """
+    def approval_callback(step_name: str, skill: str, params: dict) -> bool:
+        return req.auto_approve
+
+    answer = ""
+    skill_outputs = []
+    events = []
+    for evt in agent.chat(req.message, approval_callback=approval_callback):
+        events.append(evt)
+        e = evt.get("event", "")
+        if e == "stream_token":
+            answer += evt.get("token", "")
+        elif e == "skill_result":
+            skill_outputs.append({
+                "skill": evt.get("skill", ""),
+                "output": evt.get("output", ""),
+                "success": evt.get("success", False),
+            })
+
+    return {
+        "answer": answer,
+        "success": True,
+        "skill_outputs": skill_outputs,
+        "event_count": len(events),
+    }
 
 
 # ── 직접 실행 ───────────────────────────────────────────────────────────────

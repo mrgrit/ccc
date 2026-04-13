@@ -259,7 +259,7 @@ import random
 import urllib.request
 import time
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 
 class TextAdversarialGenerator:
     """텍스트 적대적 샘플 생성기"""
@@ -394,7 +394,7 @@ import sys
 sys.path.insert(0, "/tmp")
 from text_adversarial import TextAdversarialGenerator
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 
 BENCHMARK = [
     ("이 영화 정말 재미있었습니다. 추천합니다.", "긍정"),
@@ -542,7 +542,7 @@ import json
 import urllib.request
 import time
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 
 CLASSIFIERS = [
     {"name": "직접 분류", "system": "텍스트 감정을 '긍정' 또는 '부정'으로 분류. 한 단어로만."},
@@ -715,7 +715,7 @@ import json
 import urllib.request
 import time
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 
 # 적대적 훈련의 핵심: 공격 예제를 시스템 프롬프트에 포함
 STANDARD_SYSTEM = """감정을 '긍정' 또는 '부정'으로 분류하세요. 한 단어로만."""

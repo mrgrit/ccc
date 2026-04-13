@@ -201,8 +201,15 @@ export default function Battle() {
                   </div>
                   {m.status === 'completed' && <span style={{ fontSize: 13, color: '#3fb950', fontWeight: 600 }}>+{m.points}pts</span>}
                 </div>
-                <div style={{ fontSize: 15, color: '#e6edf3', marginBottom: 8, lineHeight: 1.5 }}>{m.instruction}</div>
-                {m.hint && <div style={{ fontSize: 13, color: '#58a6ff', marginBottom: 8 }}>Hint: {m.hint}</div>}
+                <div style={{ fontSize: 15, color: '#e6edf3', marginBottom: 8, lineHeight: 1.5, whiteSpace: 'pre-wrap' as const }}>{m.instruction}</div>
+                {m.hint && <div style={{ fontSize: 13, color: '#58a6ff', background: '#0d1f3c', borderRadius: 6, padding: '6px 10px', marginBottom: 8, whiteSpace: 'pre-wrap' as const }}>Hint: {m.hint}</div>}
+                {isAdmin() && m.verify && (
+                  <div style={{ background: '#1a0a0a', border: '1px solid #f8514966', borderRadius: 6, padding: '8px 12px', marginBottom: 8 }}>
+                    <div style={{ fontSize: 12, color: '#f85149', fontWeight: 700, marginBottom: 4 }}>채점 기준 (Admin)</div>
+                    <div style={{ fontSize: 13, color: '#8b949e' }}>type: <code style={{ color: '#d29922' }}>{m.verify.type}</code></div>
+                    {m.verify.expect && <div style={{ fontSize: 13, color: '#8b949e' }}>expect: <code style={{ color: '#bc8cff' }}>"{m.verify.expect}"</code></div>}
+                  </div>
+                )}
                 {m.status !== 'completed' && !completed && (
                   <div style={{ display: 'flex', gap: 8, marginTop: 8 }}>
                     <textarea

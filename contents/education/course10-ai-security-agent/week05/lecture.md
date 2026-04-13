@@ -282,7 +282,7 @@ else
     echo "DOWN"
 fi
 
-HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://192.168.0.105:11434/api/tags 2>/dev/null)
+HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8003/api/tags 2>/dev/null)
 if [ "$HEALTH" = "200" ]; then
     echo "OK (port 11434)"
 else
@@ -417,7 +417,7 @@ LLM이 계획을 세우고, 프로그램이 execute-plan으로 실행한다.
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 MODEL = "llama3.1:8b"
 BASTION = "http://localhost:9100"
 API_KEY = "ccc-api-key-2026"
@@ -634,7 +634,7 @@ Week 05 실습: 점검 결과를 LLM으로 분석
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 점검 결과 로드

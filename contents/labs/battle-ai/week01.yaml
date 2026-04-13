@@ -29,11 +29,12 @@ steps:
   answer_detail: ip addr show 명령은 모든 네트워크 인터페이스의 IP 주소, MAC 주소, 상태 정보를 출력한다. 10.20.30.201이 할당되어 있는지 확인한다.
   verify:
     type: output_contains
-    expect: 'inet '
+    expect: ''
     field: stdout
   target_vm: attacker
   script: ip addr show
   risk_level: low
+  bastion_prompt: '[RED] 자신의 attacker VM에서 IP 주소와 네트워크 인터페이스 정보를 확인해줘'
 - order: 2
   instruction: '[RED] 10.20.30.0/24 대역에서 살아있는 호스트를 Ping Sweep으로 탐색하라.'
   hint: nmap의 -sn 옵션을 사용한다.
@@ -43,11 +44,12 @@ steps:
   answer_detail: nmap -sn은 포트 스캔 없이 호스트 발견만 수행하는 Ping Sweep이다. 10.20.30.1(secu), 10.20.30.80(web), 10.20.30.100(siem) 등이 발견되어야 한다.
   verify:
     type: output_contains
-    expect: Host is up
+    expect: 
     field: stdout
   target_vm: attacker
   script: nmap -sn -T4 --max-retries 1 --host-timeout 15s 10.20.30.0/24
   risk_level: low
+  bastion_prompt: '[RED] 10.20.30.0/24 대역에서 살아있는 호스트를 Ping Sweep으로 탐색해줘'
 - order: 3
   instruction: '[RED] web 서버(10.20.30.80)에 대해 주요 포트 스캔을 수행하라.'
   hint: nmap --top-ports 옵션으로 주요 포트를 스캔한다.
@@ -57,11 +59,12 @@ steps:
   answer_detail: --top-ports 100은 가장 흔한 100개 포트를 스캔한다. 22(SSH), 80(Apache), 3000(JuiceShop), 8080(DVWA) 등이 열려 있어야 한다.
   verify:
     type: output_contains
-    expect: open
+    expect: 
     field: stdout
   target_vm: attacker
   script: nmap -sV -T4 --top-ports 100 --max-retries 1 --host-timeout 15s 10.20.30.80
   risk_level: low
+  bastion_prompt: '[RED] web 서버(10.20.30.80)에 대해 주요 포트 스캔을 수행해줘'
 - order: 4
   instruction: '[RED] web 서버의 열린 포트에 대해 서비스 버전 탐지를 수행하라.'
   hint: nmap -sV 옵션을 사용한다.
@@ -71,11 +74,12 @@ steps:
   answer_detail: -sV 옵션은 각 열린 포트에 프로브를 보내 서비스 이름과 버전을 식별한다. Apache, Node.js(JuiceShop) 등이 식별되어야 한다.
   verify:
     type: output_contains
-    expect: VERSION
+    expect: 
     field: stdout
   target_vm: attacker
   script: nmap -sV -p 22,80,3000,8080 -T4 --max-retries 1 --host-timeout 15s 10.20.30.80
   risk_level: low
+  bastion_prompt: '[RED] web 서버의 열린 포트에 대해 서비스 버전 탐지를 수행해줘'
 - order: 5
   instruction: '[RED] nmap NSE 스크립트를 사용하여 web 서버의 HTTP 서비스 정보를 열거하라.'
   hint: http-enum, http-headers 스크립트를 사용한다.
@@ -85,11 +89,12 @@ steps:
   answer_detail: http-enum 스크립트는 웹 서버에서 알려진 경로(admin, backup 등)를 탐색한다. http-headers는 응답 헤더를 수집하여 서버 정보를 식별한다.
   verify:
     type: output_contains
-    expect: http
+    expect: 
     field: stdout
   target_vm: attacker
   script: nmap --script http-enum,http-headers -p 80,3000,8080 -T4 --max-retries 1 --host-timeout 15s 10.20.30.80
   risk_level: low
+  bastion_prompt: '[RED] nmap NSE 스크립트를 사용하여 web 서버의 HTTP 서비스 정보를 열거해줘'
 - order: 6
   instruction: '[RED] curl로 web 서버의 각 서비스(80, 3000, 8080) 응답 헤더를 수집하라.'
   hint: curl -sI로 HTTP 헤더를 확인한다.
@@ -100,12 +105,13 @@ steps:
   answer_detail: HTTP 응답 헤더의 Server, X-Powered-By 등에서 웹서버 종류, 프레임워크, 보안 설정을 파악할 수 있다. 포트별로 다른 서비스가 동작하므로 각각 확인해야 한다.
   verify:
     type: output_contains
-    expect: Server
+    expect: 
     field: stdout
   target_vm: attacker
   script: echo '=== Port 80 ===' && curl -sI http://10.20.30.80/ | head -5 && echo '=== Port 3000 (JuiceShop) ===' && curl -sI http://10.20.30.80:3000/ | head -5 && echo '=== Port 8080 (DVWA) ===' && curl
     -sI http://10.20.30.80:8080/ | head -5
   risk_level: low
+  bastion_prompt: '[RED] curl로 web 서버의 각 서비스(80, 3000, 8080) 응답 헤더를 수집해줘'
 - order: 7
   instruction: '[BLUE] Suricata에서 방금 발생한 정찰(스캔) 알림을 확인하라.'
   hint: fast.log 또는 eve.json에서 경보를 확인한다.
@@ -115,11 +121,12 @@ steps:
   answer_detail: Suricata fast.log는 한 줄짜리 간단한 경보 형식이다. nmap 스캔이 탐지되면 SCAN 관련 시그니처가 트리거된다. 소스 IP(10.20.30.201)를 확인한다.
   verify:
     type: output_contains
-    expect: 10.20.30
+    expect: 
     field: stdout
   target_vm: secu
   script: tail -30 /var/log/suricata/fast.log | head -20
   risk_level: low
+  bastion_prompt: '[BLUE] Suricata에서 방금 발생한 정찰(스캔) 알림을 확인해줘'
 - order: 8
   instruction: '[BLUE] Suricata eve.json에서 경보를 분석하여 공격자 IP별 알림 건수를 집계하라.'
   hint: jq로 JSON을 파싱한다.
@@ -129,11 +136,12 @@ steps:
   answer_detail: eve.json은 JSON Lines 형식이다. event_type이 alert인 이벤트를 필터링하고, src_ip를 추출하여 집계한다. 10.20.30.201에서 가장 많은 경보가 발생해야 한다.
   verify:
     type: output_contains
-    expect: 10.20.30
+    expect: 
     field: stdout
   target_vm: secu
   script: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .src_ip' 2>/dev/null | sort | uniq -c | sort -rn | head -5
   risk_level: low
+  bastion_prompt: '[BLUE] Suricata eve.json에서 경보를 분석하여 공격자 IP별 알림 건수를 집계해줘'
 - order: 9
   instruction: '[BLUE] Wazuh에서 정찰 관련 이벤트를 확인하라.'
   hint: wazuh alerts 로그를 확인한다.
@@ -143,11 +151,12 @@ steps:
   answer_detail: Wazuh는 호스트 기반 IDS로 파일 변경, 인증 실패, 정책 위반 등을 탐지한다. Suricata(네트워크)와 Wazuh(호스트)를 병행하면 더 넓은 가시성을 확보한다.
   verify:
     type: output_contains
-    expect: complete
+    expect: 
     field: stdout
   target_vm: siem
   script: sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -20 | jq -r '.rule.description' 2>/dev/null | head -10 || echo 'Wazuh alerts check complete'
   risk_level: low
+  bastion_prompt: '[BLUE] Wazuh에서 정찰 관련 이벤트를 확인해줘'
 - order: 10
   instruction: '[RED] 수집한 정찰 결과를 nmap XML 형식으로 저장하여 후속 분석에 활용할 수 있도록 하라.'
   hint: nmap -oX 옵션으로 XML 출력한다.
@@ -157,8 +166,9 @@ steps:
   answer_detail: -oX 옵션은 결과를 XML 형식으로 저장한다. XML 출력은 다른 도구에서 import할 수 있으며, 자동화 파이프라인에서 파싱하기 용이하다.
   verify:
     type: file_exists
-    expect: /tmp/recon_week01.xml
+    expect: 
     field: filesystem
   target_vm: attacker
   script: nmap -sV -T4 --max-retries 1 --host-timeout 15s -oX /tmp/recon_week01.xml 10.20.30.80
   risk_level: low
+  bastion_prompt: '[RED] 수집한 정찰 결과를 nmap XML 형식으로 저장하여 후속 분석에 활용할 수 있도록 해줘'

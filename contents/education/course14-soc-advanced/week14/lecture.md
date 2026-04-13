@@ -17,7 +17,7 @@
 | siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
 **Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
-**Ollama API:** `http://192.168.0.105:11434/v1`
+**Ollama API:** `http://localhost:8003/v1`
 
 ## 강의 시간 배분 (3시간)
 
@@ -143,7 +143,7 @@ Wazuh Alert
 ```bash
 # Ollama LLM 접속 테스트
 echo "=== Ollama 연결 테스트 ==="
-curl -s http://192.168.0.105:11434/v1/models 2>/dev/null | \
+curl -s http://localhost:8003/v1/models 2>/dev/null | \
   python3 -c "
 import sys, json
 try:
@@ -291,7 +291,7 @@ try:
 5. 추가 조사: (확인할 사항)"""
     
     response = httpx.post(
-        "http://192.168.0.105:11434/v1/chat/completions",
+        "http://localhost:8003/v1/chat/completions",
         json={
             "model": "llama3.1:8b",
             "messages": [

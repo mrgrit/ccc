@@ -545,7 +545,7 @@ evidence_text = json.dumps(evidence, indent=2, ensure_ascii=False)[:2000]
 
 # LLM에게 분석 요청
 resp = requests.post(
-    'http://192.168.0.105:11434/v1/chat/completions',
+    'http://localhost:8003/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [

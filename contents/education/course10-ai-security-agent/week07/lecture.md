@@ -285,7 +285,7 @@ CLAUDE.md가 있을 때와 없을 때 LLM 응답을 비교한다.
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # CLAUDE.md 읽기
@@ -696,7 +696,7 @@ Claude Code(LLM 판단) + Bastion(분산 실행)을 결합한다.
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 MODEL = "llama3.1:8b"
 BASTION = "http://localhost:9100"
 HEADERS = {"X-API-Key": "ccc-api-key-2026", "Content-Type": "application/json"}

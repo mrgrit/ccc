@@ -17,7 +17,7 @@
 | siem | 10.20.30.100 | SIEM | `ssh ccc@10.20.30.100` |
 | manager | 10.20.30.200 | AI/관리 (Ollama LLM) | `ssh ccc@10.20.30.200` |
 
-**LLM API:** `${LLM_URL:-http://10.20.30.200:11434}`
+**LLM API:** `${LLM_URL:-http://localhost:8003}`
 
 ## 강의 시간 배분 (3시간)
 
@@ -400,7 +400,7 @@ PYEOF
 ### 5.2 LLM 활용 공격 분석
 
 ```bash
-curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat \
+curl -s ${LLM_URL:-http://localhost:8003}/api/chat \
   -d '{
     "model":"gemma3:4b",
     "messages":[

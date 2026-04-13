@@ -99,7 +99,7 @@ Phase 7: 발표 / 리뷰 (20분)
 ### 1.3 대상 시스템
 
 ```
-대상 모델: gemma3:12b (http://192.168.0.105:11434)
+대상 모델: gemma3:12b (http://localhost:8003)
 에이전트: Bastion (http://localhost:9100)
 환경: web(10.20.30.80), siem(10.20.30.100)
 ```
@@ -182,7 +182,7 @@ ssh ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
-OLLAMA = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA = "http://localhost:8003/v1/chat/completions"
 
 def query(prompt, system=""):
     msgs = []
@@ -246,7 +246,7 @@ ssh ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
-OLLAMA = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA = "http://localhost:8003/v1/chat/completions"
 
 def query(system, user):
     data = json.dumps({
@@ -332,7 +332,7 @@ ssh ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
-OLLAMA = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA = "http://localhost:8003/v1/chat/completions"
 
 def query(prompt):
     data = json.dumps({

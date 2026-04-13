@@ -157,7 +157,7 @@ ALERT='{
 }'
 
 # LLM에 알림 전달 → 위협수준/MITRE ATT&CK/대응 형식으로 분석
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -183,7 +183,7 @@ ALERTS='[
   {"time": "10:36:00", "rule": "550",  "src": "10.20.30.80",  "msg": "사용자 추가: hacker"}
 ]'
 
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -205,7 +205,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 
 ```bash
 # 배치 알림 분류: 여러 알림을 한 번에 우선순위 분류
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -229,7 +229,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 MODEL = "gemma3:12b"
 
 SYSTEM_PROMPT = """SOC Tier-2 분석가입니다. Wazuh 알림을 분석하고
@@ -295,7 +295,7 @@ SCENARIO="다음은 웹 서버(10.20.30.80)에서 30분간 수집된 로그입�
 10:20 - /etc/passwd 읽기 시도
 10:25 - 리버스 셸 연결 시도"
 
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -311,7 +311,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 
 ```bash
 # 이전 분석 결과를 CISO용 보고서로 변환
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -361,9 +361,9 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 
 ```bash
 # Ollama는 OpenAI 호환 API를 제공한다
-# URL: http://192.168.0.105:11434/v1/chat/completions
+# URL: http://localhost:8003/v1/chat/completions
 
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델

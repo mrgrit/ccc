@@ -240,7 +240,7 @@ curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/execute-plan" \
 
 ```bash
 # Red Agent가 LLM을 사용해 공격 계획을 수립
-curl -s http://192.168.0.105:11434/api/chat \
+curl -s http://localhost:8003/api/chat \
   -d '{
     "model": "gemma3:12b",
     "messages": [
@@ -422,7 +422,7 @@ curl -s -X POST "http://localhost:9100/projects/${RED_PID}/dispatch" \
 
 ```bash
 # Blue Agent가 Red Agent의 발견 내용을 LLM에게 전달하여 대응 방안 수립
-curl -s http://192.168.0.105:11434/api/chat \
+curl -s http://localhost:8003/api/chat \
   -d '{
     "model": "llama3.1:8b",
     "messages": [
@@ -455,7 +455,7 @@ import requests
 
 MANAGER_URL = "http://localhost:9100"
 API_KEY = "ccc-api-key-2026"
-OLLAMA_URL = "http://192.168.0.105:11434"
+OLLAMA_URL = "http://localhost:8003"
 HEADERS = {
     "Content-Type": "application/json",
     "X-API-Key": API_KEY,

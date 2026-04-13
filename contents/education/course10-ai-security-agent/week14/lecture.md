@@ -388,7 +388,7 @@ curl -s -X POST "http://localhost:9100/projects/${PB_PID}/execute-plan" \
 
 ```bash
 # Red Agent LLM이 스캔 결과를 기반으로 공격 전략 수립
-curl -s http://192.168.0.105:11434/api/chat \
+curl -s http://localhost:8003/api/chat \
   -d '{
     "model": "gemma3:12b",
     "messages": [
@@ -419,7 +419,7 @@ print(resp['message']['content'][:2000])
 import json
 import requests
 
-OLLAMA_URL = "http://192.168.0.105:11434"
+OLLAMA_URL = "http://localhost:8003"
 
 class AttackStrategist:
     """스캔 결과를 분석하여 공격 전략을 수립한다."""

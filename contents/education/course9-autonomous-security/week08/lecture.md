@@ -496,7 +496,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # LLM에 수집된 로그 분석 요청
-curl -s -X POST http://192.168.0.105:11434/api/chat \
+curl -s -X POST http://localhost:8003/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",

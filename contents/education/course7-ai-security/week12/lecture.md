@@ -110,7 +110,7 @@ Agent Daemon은 SubAgent가 **백그라운드에서 지속적으로** 보안 관
 
 ```bash
 # LLM이 환경을 파악하기 위한 탐색 수행
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -197,7 +197,7 @@ def check_users(pid):
 def analyze_with_llm(data):
     """LLM으로 이상 탐지"""
     resp = requests.post(
-        "http://192.168.0.105:11434/v1/chat/completions",
+        "http://localhost:8003/v1/chat/completions",
         json={
             "model": "gemma3:12b",
             "messages": [
@@ -255,7 +255,7 @@ LLM에게 SIEM 탐지 능력 검증을 위한 안전한 stimulation 시나리오
 
 ```bash
 # LLM으로 SIEM 탐지 검증용 안전한 시나리오 5가지 자동 생성
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -326,7 +326,7 @@ curl -s -X POST "http://localhost:9100/projects/$PID/dispatch" \
   }' | python3 -m json.tool
 
 # 결과를 LLM으로 분석
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -377,9 +377,9 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 
 ```bash
 # Ollama는 OpenAI 호환 API를 제공한다
-# URL: http://192.168.0.105:11434/v1/chat/completions
+# URL: http://localhost:8003/v1/chat/completions
 
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델

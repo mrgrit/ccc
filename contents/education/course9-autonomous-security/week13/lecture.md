@@ -260,7 +260,7 @@ with open('/tmp/distributed_knowledge.json') as f:
 knowledge_text = json.dumps(knowledge, indent=2, ensure_ascii=False)[:3000]
 
 resp = requests.post(
-    'http://192.168.0.105:11434/v1/chat/completions',
+    'http://localhost:8003/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -490,7 +490,7 @@ conflict_data = {
 }
 
 resp = requests.post(
-    'http://192.168.0.105:11434/v1/chat/completions',
+    'http://localhost:8003/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [

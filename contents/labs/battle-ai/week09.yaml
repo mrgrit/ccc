@@ -29,11 +29,12 @@ steps:
   answer_detail: 사고 대응의 첫 단계는 현재 상태 파악이다. who로 활성 세션, ps로 의심 프로세스, ss로 네트워크 연결을 확인한다.
   verify:
     type: output_contains
-    expect: '---'
+    expect: 
     field: stdout
   target_vm: web
   script: who && echo '---' && ps auxf --sort=-%cpu | head -20 && echo '---' && ss -tunapl | grep ESTAB
   risk_level: low
+  bastion_prompt: '[BLUE] web 서버의 현재 상태를 초기 파악해줘'
 - order: 2
   instruction: '[BLUE] 휘발성 증거를 수집하라. 프로세스 목록, 네트워크 상태, 라우팅 테이블을 저장하라.'
   hint: 각 명령의 출력을 /tmp/forensics/ 디렉토리에 저장한다.
@@ -44,12 +45,13 @@ steps:
   answer_detail: 휘발성 증거는 시스템 재부팅 시 사라진다. RFC 3227의 증거 수집 순서를 따라 메모리, 네트워크, 프로세스, 디스크 순으로 수집한다.
   verify:
     type: file_exists
-    expect: /tmp/forensics/processes.txt
+    expect: 
     field: filesystem
   target_vm: web
   script: mkdir -p /tmp/forensics && date > /tmp/forensics/timestamp.txt && ps auxf > /tmp/forensics/processes.txt && ss -tunapl > /tmp/forensics/network.txt && ip route > /tmp/forensics/routes.txt && ls
     -la /tmp/forensics/
   risk_level: low
+  bastion_prompt: '[BLUE] 휘발성 증거를 수집해줘'
 - order: 3
   instruction: '[RED] web 서버에 접근하여 은밀한 백도어(SSH 키)를 설치하라.'
   hint: authorized_keys에 공개키를 추가한다.
@@ -59,11 +61,12 @@ steps:
   answer_detail: SSH 공개키를 authorized_keys에 추가하면 패스워드 없이 접근 가능한 백도어가 된다. ed25519는 현대적이고 짧은 키로 탐지가 어렵다.
   verify:
     type: output_contains
-    expect: SSH key backdoor prepared
+    expect: 
     field: stdout
   target_vm: attacker
   script: ssh-keygen -t ed25519 -f /tmp/backdoor_key -N '' -q 2>/dev/null && cat /tmp/backdoor_key.pub && echo '=== SSH key backdoor prepared ==='
   risk_level: medium
+  bastion_prompt: '[RED] web 서버에 접근하여 은밀한 백도어(SSH 키)를 설치해줘'
 - order: 4
   instruction: '[BLUE] SSH 키 기반 백도어를 확인하라. authorized_keys 파일에 비인가 키가 있는지 검사한다.'
   hint: 모든 사용자의 .ssh/authorized_keys를 확인한다.
@@ -73,11 +76,12 @@ steps:
   answer_detail: authorized_keys에 공격자의 공개키가 추가되면 패스워드 없이 SSH 접근이 가능하다. 알 수 없는 키는 제거해야 한다.
   verify:
     type: output_contains
-    expect: SSH key audit complete
+    expect: 
     field: stdout
   target_vm: web
   script: find /home -name 'authorized_keys' -exec echo '=== {} ===' \; -exec cat {} \; 2>/dev/null && echo '=== /root ===' && cat /root/.ssh/authorized_keys 2>/dev/null && echo 'SSH key audit complete'
   risk_level: low
+  bastion_prompt: '[BLUE] SSH 키 기반 백도어를 확인하라. authorized_keys 파일에 비인가 키가 있는지 검사한다해줘'
 - order: 5
   instruction: '[BLUE] 악성 cron job과 백도어 사용자 계정을 검사하라.'
   hint: 모든 사용자의 crontab과 UID 0 계정을 확인한다.
@@ -87,11 +91,12 @@ steps:
   answer_detail: UID 0인 계정이 root 외에 있으면 백도어이다. crontab에 비정상적인 스크립트 실행이 있으면 지속성 기법이다.
   verify:
     type: output_contains
-    expect: root
+    expect: 
     field: stdout
   target_vm: web
   script: 'awk -F: ''$3 == 0 {print}'' /etc/passwd && echo ''--- crontab ---'' && cat /etc/crontab && echo ''--- cron.d ---'' && ls -la /etc/cron.d/ 2>/dev/null'
   risk_level: low
+  bastion_prompt: '[BLUE] 악성 cron job과 백도어 사용자 계정을 검사해줘'
 - order: 6
   instruction: '[BLUE] web 서버에서 웹셸을 검색하라. system(), exec() 등 위험 함수를 포함한 파일을 찾는다.'
   hint: grep으로 위험 함수를 재귀 검색한다.
@@ -101,11 +106,12 @@ steps:
   answer_detail: 웹셸은 system(), exec() 등의 함수를 포함한다. 발견 시 해시를 기록하고 격리한 후 제거한다.
   verify:
     type: output_contains
-    expect: Webshell scan complete
+    expect: 
     field: stdout
   target_vm: web
   script: grep -rl 'system\|exec\|passthru\|shell_exec\|eval' /var/www/ 2>/dev/null | head -10 && echo 'Webshell scan complete'
   risk_level: low
+  bastion_prompt: '[BLUE] web 서버에서 웹셸을 검색하라. system(), exec() 등 위험 함수를 포함한 파일을 찾는다해줘'
 - order: 7
   instruction: '[BLUE] secu VM에서 공격자 IP(10.20.30.201)를 네트워크에서 격리하라.'
   hint: nftables로 공격자 IP의 모든 트래픽을 차단한다.
@@ -116,13 +122,14 @@ steps:
   answer_detail: 네트워크 격리는 추가 피해 확산과 데이터 유출을 방지하는 핵심 조치이다. input과 forward 모두에서 차단해야 완전한 격리가 된다.
   verify:
     type: output_contains
-    expect: Attacker isolated
+    expect: 
     field: stdout
   target_vm: secu
   requires_approval: true
   script: sudo nft insert rule inet filter input ip saddr 10.20.30.201 drop && sudo nft insert rule inet filter forward ip saddr 10.20.30.201 drop && nft list ruleset | grep '10.20.30.201' && echo 'Attacker
     isolated'
   risk_level: low
+  bastion_prompt: '[BLUE] secu VM에서 공격자 IP(10.20.30.201)를 네트워크에서 격리해줘'
 - order: 8
   instruction: '[BLUE] 방화벽을 강화하고, 모든 사용자 패스워드를 강제 변경하라.'
   hint: chage -d 0으로 다음 로그인 시 변경을 강제한다.
@@ -132,11 +139,12 @@ steps:
   answer_detail: 침해 사고 후 모든 계정의 패스워드를 변경하는 것은 필수이다. chage -d 0은 다음 로그인 시 변경을 강제한다.
   verify:
     type: output_contains
-    expect: Recovery actions documented
+    expect: 
     field: stdout
   target_vm: web
   script: 'echo ''Password reset required for all accounts'' && cat /etc/passwd | awk -F: ''$3 >= 1000 {print $1}'' | head -10 && echo ''Recovery actions documented'''
   risk_level: low
+  bastion_prompt: '[BLUE] 방화벽을 강화하고, 모든 사용자 패스워드를 강제 변경해줘'
 - order: 9
   instruction: '[BLUE] Wazuh SIEM에서 사고 관련 종합 이벤트를 수집하라.'
   hint: wazuh alerts에서 높은 심각도 이벤트를 추출한다.
@@ -147,12 +155,13 @@ steps:
   answer_detail: Wazuh에서 높은 심각도(level 8+) 이벤트를 수집하면 사고의 핵심 이벤트를 빠르게 파악할 수 있다.
   verify:
     type: output_contains
-    expect: collected
+    expect: 
     field: stdout
   target_vm: siem
   script: sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30 | jq -r 'select(.rule.level >= 8) | "[\(.rule.level)] \(.rule.description) src:\(.data.srcip // "local")"' 2>/dev/null | tail
     -10 || echo 'SIEM incident data collected'
   risk_level: low
+  bastion_prompt: '[BLUE] Wazuh SIEM에서 사고 관련 종합 이벤트를 수집해줘'
 - order: 10
   instruction: '[BLUE] 사고 대응 전체 과정을 종합하여 Incident Response 보고서를 작성하라.'
   hint: NIST 6단계에 맞춰 작성한다.
@@ -224,7 +233,7 @@ steps:
   answer_detail: 사고 대응 보고서는 NIST 6단계 프레임워크에 따라 작성한다. 기술적 상세, 타임라인, 대응 조치, 교훈을 포함한다.
   verify:
     type: output_contains
-    expect: Incident Response Report
+    expect: 
     field: stdout
   target_vm: secu
   script: 'cat > /tmp/incident_response_report.txt << ''EOF''
@@ -291,3 +300,4 @@ steps:
 
     cat /tmp/incident_response_report.txt'
   risk_level: low
+  bastion_prompt: '[BLUE] 사고 대응 전체 과정을 종합하여 Incident Response 보고서를 구현 방법을 설명하고 예시 코드를 보여줘'

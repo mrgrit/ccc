@@ -474,7 +474,7 @@ import json
 import time
 import requests
 
-OLLAMA_URL = "http://192.168.0.105:11434"
+OLLAMA_URL = "http://localhost:8003"
 MANAGER_URL = "http://localhost:9100"
 API_KEY = "ccc-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}

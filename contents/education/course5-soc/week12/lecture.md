@@ -396,7 +396,7 @@ ENDSSH
 ### 5.1 LLM 보고서 자동 생성
 
 ```bash
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{                                                # 요청 데이터(body)
     "model": "gemma3:12b",

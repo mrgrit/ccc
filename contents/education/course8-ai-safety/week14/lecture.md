@@ -154,7 +154,7 @@ ssh ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
-OLLAMA = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA = "http://localhost:8003/v1/chat/completions"
 
 def query(prompt):
     data = json.dumps({
@@ -237,7 +237,7 @@ ssh ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
-OLLAMA = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA = "http://localhost:8003/v1/chat/completions"
 
 def query(prompt):
     data = json.dumps({
@@ -298,7 +298,7 @@ ssh ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
-OLLAMA = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA = "http://localhost:8003/v1/chat/completions"
 
 def query_agent(system, user):
     data = json.dumps({

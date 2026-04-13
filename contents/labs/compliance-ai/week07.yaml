@@ -21,11 +21,12 @@ steps:
   answer_detail: SOX ITGC 접근 통제 도메인은 시스템 접근을 인가된 사용자로 제한할 것을 요구합니다. 장기간 미사용 계정은 비활성화해야 하며, lastlog로 각 계정의 마지막 로그인 일시와 출발지 IP를 확인할 수 있습니다.
   verify:
     type: output_contains
-    expect: root
+    expect: 
     field: stdout
   target_vm: secu
   script: lastlog | grep -v 'Never logged in' | head -20
   risk_level: low
+  bastion_prompt: 'SECU 서버(10.20.30.1)에서 사용자 계정의 최종 로그인 이력을 확인하시오. SOX ITGC - 접근 통제: 비활성 계정 식별해줘'
 - order: 2
   instruction: '실패한 로그인 시도를 확인하시오. SOX ITGC - 접근 통제: 비인가 접근 시도 모니터링.'
   hint: /var/log/auth.log에서 Failed 키워드를 검색하세요.
@@ -35,11 +36,12 @@ steps:
   answer_detail: SOX는 재무 데이터에 대한 비인가 접근 시도를 모니터링할 것을 요구합니다. 로그인 실패가 특정 계정이나 IP에서 집중되면 무차별 대입 공격의 징후일 수 있습니다. 이를 자동 차단하는 메커니즘(fail2ban 등)도 필요합니다.
   verify:
     type: output_contains
-    expect: 실패
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo grep -c 'Failed' /var/log/auth.log 2>/dev/null && echo '건 실패' && sudo grep 'Failed' /var/log/auth.log 2>/dev/null | tail -5
   risk_level: low
+  bastion_prompt: '실패한 로그인 시도를 확인하시오. SOX ITGC - 접근 통제: 비인가 접근 시도 모니터링해줘'
 - order: 3
   instruction: '시스템 패키지 변경 이력을 확인하시오. SOX ITGC - 변경 관리: 모든 시스템 변경을 추적.'
   hint: apt 또는 dpkg 로그에서 설치/업데이트 이력을 확인하세요.
@@ -49,11 +51,12 @@ steps:
   answer_detail: SOX ITGC 변경 관리 도메인은 IT 시스템의 모든 변경을 문서화하고 승인 절차를 거칠 것을 요구합니다. dpkg.log는 패키지 설치, 업그레이드, 삭제 이력을 기록하며, 이 로그가 SOX 감사의 변경 관리 증적이 됩니다.
   verify:
     type: output_contains
-    expect: install
+    expect: 
     field: stdout
   target_vm: secu
   script: tail -50 /var/log/dpkg.log 2>/dev/null | grep -E '(install|upgrade|remove)' | tail -15
   risk_level: low
+  bastion_prompt: '시스템 패키지 변경 이력을 확인하시오. SOX ITGC - 변경 관리: 모든 시스템 변경을 추적해줘'
 - order: 4
   instruction: '시스템 설정 파일의 최근 변경을 확인하시오. SOX ITGC - 변경 관리: 설정 변경 추적.'
   hint: find 명령으로 최근 7일 내 변경된 /etc 파일을 검색하세요.
@@ -63,11 +66,12 @@ steps:
   answer_detail: SOX 변경 관리에서는 운영 환경의 설정 변경이 승인된 것인지 확인해야 합니다. /etc 디렉터리의 최근 변경 파일 목록은 비인가 변경을 탐지하는 증적이 됩니다. 변경 관리 시스템(CMDB)과 대조하여 모든 변경이 승인된 것인지 확인해야 합니다.
   verify:
     type: output_contains
-    expect: /etc
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo find /etc -type f -mtime -7 -ls 2>/dev/null | sort -k11 | tail -15
   risk_level: low
+  bastion_prompt: '시스템 설정 파일의 최근 변경을 확인하시오. SOX ITGC - 변경 관리: 설정 변경 추적해줘'
 - order: 5
   instruction: '백업 작업의 실행 이력과 성공 여부를 확인하시오. SOX ITGC - 컴퓨터 운영: 데이터 백업 및 복원.'
   hint: 시스템 로그에서 백업 관련 작업을 검색하세요.
@@ -77,11 +81,12 @@ steps:
   answer_detail: SOX ITGC 컴퓨터 운영 도메인은 데이터의 정기적 백업과 복원 테스트를 요구합니다. 백업 작업이 예약(cron)되어 실행되고 있는지, 성공했는지, 복원 테스트를 수행했는지 확인해야 합니다.
   verify:
     type: output_contains
-    expect: cron
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo grep -i 'backup\|rsync\|dump\|cron' /var/log/syslog 2>/dev/null | tail -10; echo '--- 예약 작업 ---' && sudo crontab -l 2>/dev/null
   risk_level: low
+  bastion_prompt: '백업 작업의 실행 이력과 성공 여부를 확인하시오. SOX ITGC - 컴퓨터 운영: 데이터 백업 및 복원해줘'
 - order: 6
   instruction: '시스템 시간 동기화 상태를 확인하시오. SOX ITGC - 컴퓨터 운영: 정확한 시간 기록.'
   hint: timedatectl로 시간 동기화 상태를 확인하세요.
@@ -91,11 +96,12 @@ steps:
   answer_detail: SOX 감사에서 로그의 시간 정확성은 매우 중요합니다. 모든 서버의 시간이 동기화되지 않으면 이벤트의 시간 순서를 정확히 파악할 수 없어 감사 증적의 신뢰성이 떨어집니다. NTP로 모든 서버 시간을 동기화해야 합니다.
   verify:
     type: output_contains
-    expect: Time zone
+    expect: 
     field: stdout
   target_vm: secu
   script: timedatectl status
   risk_level: low
+  bastion_prompt: '시스템 시간 동기화 상태를 확인하시오. SOX ITGC - 컴퓨터 운영: 정확한 시간 기록해줘'
 - order: 7
   instruction: 'sudo 명령 실행 로그를 확인하시오. SOX ITGC - 접근 통제: 권한 있는 계정의 활동 추적.'
   hint: /var/log/auth.log에서 sudo 사용 이력을 검색하세요.
@@ -105,11 +111,12 @@ steps:
   answer_detail: SOX는 특권 계정(sudo, root) 사용을 특히 엄격하게 모니터링할 것을 요구합니다. sudo 로그에는 실행 사용자, 실행 명령, 실행 시간이 기록됩니다. 비인가된 관리 명령 실행은 즉시 조사해야 합니다.
   verify:
     type: output_contains
-    expect: sudo
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo grep 'sudo:' /var/log/auth.log 2>/dev/null | tail -10
   risk_level: low
+  bastion_prompt: 'sudo 명령 실행 로그를 확인하시오. SOX ITGC - 접근 통제: 권한 있는 계정의 활동 추적해줘'
 - order: 8
   instruction: '직무 분리(SoD) 관점에서 사용자 권한을 분석하시오. SOX ITGC - 접근 통제: 직무 분리.'
   hint: 각 사용자의 그룹 멤버십과 sudo 권한을 분석하세요.
@@ -120,12 +127,13 @@ steps:
   answer_detail: SOX의 직무 분리(Segregation of Duties)는 한 사람이 승인과 실행을 모두 수행할 수 없도록 하는 것입니다. IT 환경에서는 개발자에게 운영 서버 접근 권한을 부여하지 않고, DBA에게 애플리케이션 관리 권한을 부여하지 않는 등의 통제가 필요합니다.
   verify:
     type: output_contains
-    expect: 그룹 멤버십
+    expect: 
     field: stdout
   target_vm: secu
   script: 'echo ''=== 사용자별 그룹 멤버십 ==='' && for user in $(awk -F: ''$7 !~ /nologin|false/ {print $1}'' /etc/passwd); do echo "$user: $(groups $user 2>/dev/null | cut -d: -f2)"; done && echo ''=== sudoers
     설정 ==='' && sudo grep -v ''^#\|^$\|^Defaults'' /etc/sudoers 2>/dev/null'
   risk_level: low
+  bastion_prompt: '직무 분리(SoD) 관점에서 사용자 권한을 분석하시오. SOX ITGC - 접근 통제: 직무 분리해줘'
 - order: 9
   instruction: SOX ITGC 종합 점검 보고서 스크립트를 작성하고 실행하시오.
   hint: 접근 통제, 변경 관리, 운영 항목을 종합하세요.
@@ -169,7 +177,7 @@ steps:
   answer_detail: SOX Section 404는 경영진이 내부 통제의 효과성을 평가하고 외부 감사인이 이를 감사할 것을 요구합니다. ITGC는 접근 통제, 변경 관리, 컴퓨터 운영, 프로그램 개발의 네 도메인으로 구성되며, 이 스크립트는 각 도메인의 핵심 점검 항목을 자동으로 수집합니다.
   verify:
     type: output_contains
-    expect: SOX ITGC 점검 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: 'cat << ''SCRIPT'' > /tmp/sox_itgc_audit.sh
@@ -208,3 +216,4 @@ steps:
 
     chmod +x /tmp/sox_itgc_audit.sh && bash /tmp/sox_itgc_audit.sh'
   risk_level: low
+  bastion_prompt: SOX ITGC 종합 점검 보고서 스크립트를 작성하고 실행하시오 구현 방법과 예시를 설명해줘

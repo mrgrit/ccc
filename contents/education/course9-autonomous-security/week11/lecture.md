@@ -205,7 +205,7 @@ system_prompt = '''당신은 SOC Blue Agent입니다. 다음 규칙을 따르세
 
 # LLM 호출
 resp = requests.post(
-    'http://192.168.0.105:11434/v1/chat/completions',
+    'http://localhost:8003/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -457,7 +457,7 @@ system_prompt = '''당신은 SOC 경보 분석가입니다. 각 경보에 대해
 JSON 배열로 출력하라.'''
 
 resp = requests.post(
-    'http://192.168.0.105:11434/v1/chat/completions',
+    'http://localhost:8003/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [

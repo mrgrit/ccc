@@ -152,6 +152,7 @@ class EvidenceDB:
     ]
 
     def __init__(self, db_path: str = ""):
+        self._conn = None  # persistent connection for :memory: mode
         self.db_path = ":memory:"
         for candidate in [
             db_path,
@@ -162,22 +163,29 @@ class EvidenceDB:
             if not candidate:
                 continue
             try:
-                with sqlite3.connect(candidate) as conn:
-                    for stmt in self.CREATE_SQL.split(";"):
-                        stmt = stmt.strip()
-                        if stmt:
-                            conn.execute(stmt)
-                    self._migrate(conn)
+                conn = sqlite3.connect(candidate)
+                for stmt in self.CREATE_SQL.split(";"):
+                    stmt = stmt.strip()
+                    if stmt:
+                        conn.execute(stmt)
+                conn.commit()
+                self._migrate(conn)
+                conn.commit()
+                conn.close()
                 self.db_path = candidate
                 return
             except Exception:
                 continue
-        with sqlite3.connect(":memory:") as conn:
-            for stmt in self.CREATE_SQL.split(";"):
-                stmt = stmt.strip()
-                if stmt:
-                    conn.execute(stmt)
-            self._migrate(conn)
+        # Fallback: persistent in-memory connection
+        conn = sqlite3.connect(":memory:")
+        for stmt in self.CREATE_SQL.split(";"):
+            stmt = stmt.strip()
+            if stmt:
+                conn.execute(stmt)
+        conn.commit()
+        self._migrate(conn)
+        conn.commit()
+        self._conn = conn  # keep alive — :memory: is lost on close
 
     def _migrate(self, conn):
         """기존 DB에 누락 컬럼 추가 (idempotent)."""
@@ -187,10 +195,19 @@ class EvidenceDB:
             except sqlite3.OperationalError:
                 pass  # 이미 존재하면 무시
 
+    def _connect(self):
+        """DB 연결 반환 — :memory: 모드에서는 영구 연결 재사용."""
+        if self._conn is not None:
+            return self._conn, False  # (conn, should_close)
+        return sqlite3.connect(self.db_path), True
+
     def add(self, *, skill: str = "", playbook_id: str = "", params: dict = None,
             success: bool, exit_code: int = -1, output: str = "",
             analysis: str = "", stage: str = "", session_id: str = ""):
-        with sqlite3.connect(self.db_path) as conn:
+        conn, should_close = self._connect()
+        try:
+            # Ensure schema is up-to-date (e.g. old DB without stage column)
+            self._migrate(conn)
             conn.execute(
                 "INSERT INTO evidence "
                 "(stage,skill,playbook_id,params,success,exit_code,output,analysis,session_id) "
@@ -200,38 +217,52 @@ class EvidenceDB:
                  int(success), exit_code,
                  output[:5000], analysis[:2000], session_id),
             )
+            conn.commit()
+        except Exception:
+            pass  # evidence 저장 실패는 무시 — 기능에 영향 없음
+        finally:
+            if should_close:
+                conn.close()
 
     def recent(self, limit: int = 10) -> list[dict]:
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                rows = conn.execute(
-                    "SELECT * FROM evidence ORDER BY id DESC LIMIT ?", (limit,)
-                ).fetchall()
-            return [dict(r) for r in rows]
+            conn, should_close = self._connect()
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM evidence ORDER BY id DESC LIMIT ?", (limit,)
+            ).fetchall()
+            result = [dict(r) for r in rows]
+            if should_close:
+                conn.close()
+            return result
         except Exception:
             return []
 
     def search(self, keyword: str, limit: int = 5) -> list[dict]:
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                rows = conn.execute(
-                    "SELECT * FROM evidence WHERE skill LIKE ? OR output LIKE ? "
-                    "OR analysis LIKE ? OR playbook_id LIKE ? ORDER BY id DESC LIMIT ?",
-                    (f"%{keyword}%",) * 4 + (limit,),
-                ).fetchall()
-            return [dict(r) for r in rows]
+            conn, should_close = self._connect()
+            conn.row_factory = sqlite3.Row
+            rows = conn.execute(
+                "SELECT * FROM evidence WHERE skill LIKE ? OR output LIKE ? "
+                "OR analysis LIKE ? OR playbook_id LIKE ? ORDER BY id DESC LIMIT ?",
+                (f"%{keyword}%",) * 4 + (limit,),
+            ).fetchall()
+            result = [dict(r) for r in rows]
+            if should_close:
+                conn.close()
+            return result
         except Exception:
             return []
 
     def stats(self) -> dict:
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                total = conn.execute("SELECT COUNT(*) FROM evidence").fetchone()[0]
-                success = conn.execute(
-                    "SELECT COUNT(*) FROM evidence WHERE success=1"
-                ).fetchone()[0]
+            conn, should_close = self._connect()
+            total = conn.execute("SELECT COUNT(*) FROM evidence").fetchone()[0]
+            success = conn.execute(
+                "SELECT COUNT(*) FROM evidence WHERE success=1"
+            ).fetchone()[0]
+            if should_close:
+                conn.close()
             return {"total": total, "success": success, "fail": total - success}
         except Exception:
             return {"total": 0, "success": 0, "fail": 0}
@@ -249,22 +280,28 @@ class EvidenceDB:
 
     def update_asset(self, role: str, ip: str, status: str, notes: str = ""):
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.execute(
-                    "INSERT OR REPLACE INTO assets (role, ip, status, last_seen, notes) "
-                    "VALUES (?, ?, ?, datetime('now'), ?)",
-                    (role, ip, status, notes),
-                )
+            conn, should_close = self._connect()
+            conn.execute(
+                "INSERT OR REPLACE INTO assets (role, ip, status, last_seen, notes) "
+                "VALUES (?, ?, ?, datetime('now'), ?)",
+                (role, ip, status, notes),
+            )
+            conn.commit()
+            if should_close:
+                conn.close()
         except Exception:
             pass
 
     def get_assets(self) -> list[dict]:
         try:
-            with sqlite3.connect(self.db_path) as conn:
-                conn.row_factory = sqlite3.Row
-                return [dict(r) for r in conn.execute(
-                    "SELECT * FROM assets ORDER BY role"
-                ).fetchall()]
+            conn, should_close = self._connect()
+            conn.row_factory = sqlite3.Row
+            result = [dict(r) for r in conn.execute(
+                "SELECT * FROM assets ORDER BY role"
+            ).fetchall()]
+            if should_close:
+                conn.close()
+            return result
         except Exception:
             return []
 
@@ -458,7 +495,7 @@ class BastionAgent:
                 "messages": messages,
                 "stream": True,
                 "options": {"temperature": temperature, "num_predict": max_tokens},
-            }, timeout=120.0) as resp:
+            }, timeout=90.0) as resp:
                 for line in resp.iter_lines():
                     if not line:
                         continue
@@ -544,7 +581,7 @@ class BastionAgent:
             r = httpx.post(f"{self.ollama_url}/api/generate", json={
                 "model": self.model, "prompt": prompt, "stream": False,
                 "options": {"temperature": 0.0, "num_predict": 20},
-            }, timeout=30.0)
+            }, timeout=10.0)
             response = r.json().get("response", "").strip().lower()
             valid_ids = {p["playbook_id"] for p in playbooks}
             for word in re.split(r'[\s,]+', response):
@@ -568,7 +605,7 @@ class BastionAgent:
                 "tools": skills_to_ollama_tools(),
                 "stream": False,
                 "options": {"temperature": 0.1, "num_predict": 400},
-            }, timeout=60.0)
+            }, timeout=20.0)
             msg = r.json().get("message", {})
             tool_calls = msg.get("tool_calls", [])
             if tool_calls:
@@ -604,7 +641,7 @@ class BastionAgent:
                 "stream": False,
                 "format": "json",
                 "options": {"temperature": 0.1, "num_predict": 400},
-            }, timeout=60.0)
+            }, timeout=20.0)
             content = r.json().get("message", {}).get("content", "")
             items = extract_json_array(content)
             if items is not None:
@@ -647,7 +684,7 @@ class BastionAgent:
                 "stream": False,
                 "format": "json",
                 "options": {"temperature": 0.0, "num_predict": 600},
-            }, timeout=45.0)
+            }, timeout=15.0)
             content = r.json().get("message", {}).get("content", "")
             items = extract_json_array(content)
             if items is not None:

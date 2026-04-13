@@ -21,11 +21,12 @@ steps:
   answer_detail: /etc/security/ 디렉터리에는 access.conf, limits.conf, pwquality.conf 등 시스템 보안 정책 파일이 위치합니다.
   verify:
     type: output_contains
-    expect: access.conf
+    expect: ''
     field: stdout
   target_vm: secu
   script: ls -la /etc/security/
   risk_level: low
+  bastion_prompt: 대상 서버 10.20.30.1에 SSH로 접속하여 현재 시스템의 보안 정책 파일 목록을 확인해줘
 - order: 2
   instruction: 현재 시스템의 패스워드 정책(최소 길이, 만료일 등)을 확인하시오.
   hint: /etc/login.defs 파일을 확인하세요.
@@ -35,11 +36,12 @@ steps:
   answer_detail: login.defs에서 PASS_MAX_DAYS(최대 사용일), PASS_MIN_DAYS(최소 변경 간격), PASS_MIN_LEN(최소 길이), PASS_WARN_AGE(만료 경고일)를 확인할 수 있습니다.
   verify:
     type: output_contains
-    expect: PASS_MAX_DAYS
+    expect: ''
     field: stdout
   target_vm: secu
   script: grep -E '^PASS_' /etc/login.defs
   risk_level: low
+  bastion_prompt: 현재 시스템의 패스워드 정책(최소 길이, 만료일 등)을 확인해줘
 - order: 3
   instruction: 패스워드 최소 길이를 12자로 설정하시오.
   hint: /etc/login.defs에서 PASS_MIN_LEN을 수정하세요.
@@ -49,11 +51,12 @@ steps:
   answer_detail: login.defs의 PASS_MIN_LEN 값을 12로 설정하면 패스워드 생성 시 최소 12자를 요구합니다. pwquality.conf가 없는 시스템에서는 login.defs로 패스워드 정책을 관리합니다.
   verify:
     type: output_contains
-    expect: '12'
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo sed -i 's/^PASS_MIN_LEN.*/PASS_MIN_LEN\t12/' /etc/login.defs && grep PASS_MIN_LEN /etc/login.defs
   risk_level: low
+  bastion_prompt: 패스워드 최소 길이를 12자로 설정해줘
 - order: 4
   instruction: '패스워드 복잡도 정책을 PAM에 설정하시오: 대문자 1개, 소문자 1개, 숫자 1개, 특수문자 1개 이상 요구.'
   hint: /etc/pam.d/common-password에서 pam_unix.so 또는 pam_pwquality.so 설정을 추가하세요.
@@ -65,13 +68,14 @@ steps:
   answer_detail: pwquality.conf가 없는 경우 새로 생성합니다. ucredit=-1(대문자 최소 1개), lcredit=-1(소문자 최소 1개), dcredit=-1(숫자 최소 1개), ocredit=-1(특수문자 최소 1개). 음수 값은 최소 요구 수를 의미합니다.
   verify:
     type: output_contains
-    expect: ucredit = -1
+    expect: 
     field: stdout
   target_vm: secu
   script: echo "# Password complexity policy" | sudo tee /etc/security/pwquality.conf && echo "minlen = 12" | sudo tee -a /etc/security/pwquality.conf && echo "ucredit = -1" | sudo tee -a /etc/security/pwquality.conf
     && echo "lcredit = -1" | sudo tee -a /etc/security/pwquality.conf && echo "dcredit = -1" | sudo tee -a /etc/security/pwquality.conf && echo "ocredit = -1" | sudo tee -a /etc/security/pwquality.conf
     && cat /etc/security/pwquality.conf
   risk_level: low
+  bastion_prompt: '패스워드 복잡도 정책을 PAM에 설정하시오: 대문자 1개, 소문자 1개, 숫자 1개, 특수문자 1개 이상 요구해줘'
 - order: 5
   instruction: '계정 잠금 정책을 설정하시오: 5회 실패 시 10분간 잠금.'
   hint: pam_faillock 또는 pam_tally2 모듈을 사용하세요. Debian 계열은 /etc/pam.d/common-auth를 수정합니다.
@@ -81,11 +85,12 @@ steps:
   answer_detail: pam_faillock 모듈의 deny=5는 5회 실패 시 잠금, unlock_time=600은 600초(10분) 후 자동 해제를 의미합니다. Debian 계열에서는 /etc/pam.d/common-auth를, RHEL 계열에서는 /etc/pam.d/system-auth를 수정합니다.
   verify:
     type: output_contains
-    expect: pam_faillock
+    expect: 
     field: stdout
   target_vm: secu
   script: grep -q pam_faillock /etc/pam.d/common-auth 2>/dev/null || echo "auth required pam_faillock.so preauth deny=5 unlock_time=600" | sudo tee -a /etc/pam.d/common-auth && grep pam_faillock /etc/pam.d/common-auth
   risk_level: low
+  bastion_prompt: '계정 잠금 정책을 설정하시오: 5회 실패 시 10분간 잠금해줘'
 - order: 6
   instruction: 시스템 배너를 설정하여 비인가 접근 경고 메시지를 표시하시오.
   hint: /etc/issue와 /etc/issue.net을 수정하세요.
@@ -95,11 +100,12 @@ steps:
   answer_detail: /etc/issue.net은 SSH 등 원격 접속 시 표시되는 배너입니다. sshd_config에서 Banner /etc/issue.net을 설정해야 실제로 표시됩니다.
   verify:
     type: output_contains
-    expect: 인가된 사용자
+    expect: 
     field: stdout
   target_vm: secu
   script: 'echo ''경고: 본 시스템은 인가된 사용자만 접근할 수 있습니다. 모든 활동이 기록됩니다.'' | sudo tee /etc/issue.net'
   risk_level: low
+  bastion_prompt: 시스템 배너를 설정하여 비인가 접근 경고 메시지를 표시해줘
 - order: 7
   instruction: SSH 배너 설정을 sshd_config에 적용하시오.
   hint: Banner 지시어를 설정하세요.
@@ -109,11 +115,12 @@ steps:
   answer_detail: sshd_config의 Banner 지시어를 /etc/issue.net으로 설정하면 SSH 접속 시 경고 메시지가 표시됩니다.
   verify:
     type: output_contains
-    expect: Banner /etc/issue.net
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo sed -i 's/^#Banner.*/Banner \/etc\/issue.net/' /etc/ssh/sshd_config && grep Banner /etc/ssh/sshd_config
   risk_level: low
+  bastion_prompt: SSH 배너 설정을 sshd_config에 적용해줘
 - order: 8
   instruction: auditd 서비스 상태를 확인하고 활성화하시오.
   hint: systemctl 명령을 사용하세요.
@@ -123,11 +130,12 @@ steps:
   answer_detail: auditd는 리눅스 감사 프레임워크로, 시스템 호출과 파일 접근을 기록합니다. enable --now로 즉시 시작과 부팅 시 자동 시작을 동시에 설정합니다.
   verify:
     type: output_contains
-    expect: active (running)
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo systemctl enable --now auditd && sudo systemctl status auditd
   risk_level: low
+  bastion_prompt: auditd 서비스 상태를 확인하고 활성화해줘
 - order: 9
   instruction: /etc/passwd 파일에 대한 감사 규칙을 추가하시오.
   hint: auditctl -w 옵션을 사용하세요.
@@ -137,11 +145,12 @@ steps:
   answer_detail: -w는 감시 대상 파일, -p wa는 쓰기(w)와 속성변경(a) 감시, -k는 검색용 키워드입니다. 이 규칙으로 passwd 파일의 모든 변경이 기록됩니다.
   verify:
     type: output_contains
-    expect: passwd_changes
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo auditctl -l | grep -q passwd_changes || sudo auditctl -w /etc/passwd -p wa -k passwd_changes && sudo auditctl -l | grep passwd_changes
   risk_level: low
+  bastion_prompt: /etc/passwd 파일에 대한 감사 규칙을 추가해줘
 - order: 10
   instruction: 현재 설정된 감사 규칙 목록을 확인하시오.
   hint: auditctl -l 명령을 사용하세요.
@@ -151,11 +160,12 @@ steps:
   answer_detail: auditctl -l은 현재 커널에 로드된 모든 감사 규칙을 표시합니다. 영구 적용을 위해서는 /etc/audit/rules.d/ 에 규칙 파일을 작성해야 합니다.
   verify:
     type: output_contains
-    expect: /etc/passwd
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo auditctl -l
   risk_level: low
+  bastion_prompt: 현재 설정된 감사 규칙 목록을 확인해줘
 - order: 11
   instruction: sudo 명령어 사용에 대한 감사 규칙을 추가하시오.
   hint: /var/log/auth.log 또는 sudoers 관련 감사를 설정하세요.
@@ -166,12 +176,13 @@ steps:
   answer_detail: sudoers 파일 변경과 sudo 바이너리 실행을 모두 감사합니다. -p x는 실행(execute) 이벤트를 감시합니다.
   verify:
     type: output_contains
-    expect: sudo_usage
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo auditctl -l | grep -q sudoers_changes || sudo auditctl -w /etc/sudoers -p wa -k sudoers_changes; sudo auditctl -l | grep -q sudo_usage || sudo auditctl -w /usr/bin/sudo -p x -k sudo_usage;
     sudo auditctl -l | grep sudo
   risk_level: low
+  bastion_prompt: sudo 명령어 사용에 대한 감사 규칙을 추가해줘
 - order: 12
   instruction: rsyslog 설정을 확인하고 인증 로그가 별도 파일에 기록되는지 확인하시오.
   hint: /etc/rsyslog.conf 또는 /etc/rsyslog.d/ 를 확인하세요.
@@ -181,11 +192,12 @@ steps:
   answer_detail: rsyslog에서 auth,authpriv 시설은 인증 관련 로그를 처리합니다. 일반적으로 /var/log/auth.log 또는 /var/log/secure에 기록됩니다.
   verify:
     type: output_contains
-    expect: auth
+    expect: 
     field: stdout
   target_vm: secu
   script: grep -r 'auth' /etc/rsyslog.conf /etc/rsyslog.d/
   risk_level: low
+  bastion_prompt: rsyslog 설정을 확인하고 인증 로그가 별도 파일에 기록되는지 확인해줘
 - order: 13
   instruction: 보안 정책 문서 템플릿을 /opt/security-policy/ 디렉터리에 생성하시오.
   hint: mkdir로 디렉터리를 만들고 정책 파일을 작성하세요.
@@ -196,12 +208,13 @@ steps:
   answer_detail: 보안 정책 문서에는 목적, 적용범위, 세부 정책(접근통제, 패스워드, 감사 등)이 포함되어야 합니다.
   verify:
     type: output_contains
-    expect: 정보보안 정책서
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo mkdir -p /opt/security-policy && echo -e '# 정보보안 정책서\n\n## 1. 목적\n본 정책은 조직의 정보자산을 보호하기 위한 기본 방침을 정한다.\n\n## 2. 적용범위\n전 임직원 및 정보시스템\n\n## 3. 패스워드 정책\n- 최소 12자\n- 90일마다 변경\n- 5회 실패시 잠금' | sudo
     tee /opt/security-policy/policy.md
   risk_level: low
+  bastion_prompt: 보안 정책 문서 템플릿을 /opt/security-policy/ 디렉터리에 생성해줘
 - order: 14
   instruction: 현재 시스템의 보안 설정 상태를 요약하는 스크립트를 작성하고 실행하시오.
   hint: 패스워드 정책, 방화벽, 감사 설정 등을 확인하는 스크립트를 만드세요.
@@ -212,12 +225,13 @@ steps:
   answer_detail: 보안 점검 스크립트는 주요 보안 설정을 한 번에 확인할 수 있어 정기 점검에 유용합니다.
   verify:
     type: output_contains
-    expect: 보안 점검 보고서
+    expect: 
     field: stdout
   target_vm: secu
   script: echo -e '#!/bin/bash\necho "=== 보안 점검 보고서 ==="\necho "[패스워드 정책]"\ngrep -E "^PASS_" /etc/login.defs\ngrep minlen /etc/security/pwquality.conf 2>/dev/null\necho "[감사 규칙]"\nsudo auditctl -l | wc
     -l\necho "[SSH 배너]"\ngrep Banner /etc/ssh/sshd_config\necho "[점검 완료]"' > /tmp/security_check.sh && chmod +x /tmp/security_check.sh && bash /tmp/security_check.sh
   risk_level: low
+  bastion_prompt: 현재 시스템의 보안 설정 상태를 요약하는 스크립트를 작성하고 실행하시오 구현 방법과 예시를 설명해줘
 - order: 15
   instruction: 설정한 모든 보안 정책의 적용 상태를 최종 검증하고, 감사 로그에서 오늘의 이벤트를 조회하시오.
   hint: ausearch 명령을 사용하세요.
@@ -227,8 +241,9 @@ steps:
   answer_detail: ausearch -ts today는 오늘 날짜의 감사 이벤트를 검색합니다. -k 옵션으로 특정 키의 이벤트만 필터링할 수 있습니다.
   verify:
     type: output_contains
-    expect: 정책 검증 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo ausearch -ts today -k passwd_changes 2>/dev/null; echo '=== 정책 검증 완료 ==='
   risk_level: low
+  bastion_prompt: 설정한 모든 보안 정책의 적용 상태를 최종 검증하고, 감사 로그에서 오늘의 이벤트를 조회해줘

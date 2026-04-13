@@ -21,7 +21,7 @@ steps:
   answer_detail: DDS Discovery 과정은 공격 정찰의 첫 단계입니다.
   verify:
     type: output_contains
-    expect: 'SPDP Discovery'
+    expect: SPDP Discovery
     field: stdout
   target_vm: attacker
 - order: 2
@@ -33,7 +33,7 @@ steps:
   answer_detail: 토픽 스니핑으로 로봇의 센서 데이터와 위치를 파악합니다.
   verify:
     type: output_contains
-    expect: 'Sniffed ROS2'
+    expect: Sniffed ROS2
     field: stdout
   target_vm: attacker
 - order: 3
@@ -41,11 +41,11 @@ steps:
   hint: linear.x와 angular.z 값을 변경하세요.
   category: attack
   points: 12
-  answer: 'python3 -c "attacks=[(2.0,0,''Full speed forward''),(- 1.0,0,''Reverse''),( 0,3.14,''Spin''),(0,0,''Emergency stop'')];print(''=== cmd_vel Injection ==='');[print(f''  [INJECT] linear={a[0]:+.1f} angular={a[1]:+.2f} — {a[2]}'') for a in attacks];print(''  [!] Robot movement fully controlled by attacker'')"'
+  answer: python3 -c "attacks=[(2.0,0,'Full speed forward'),(- 1.0,0,'Reverse'),( 0,3.14,'Spin'),(0,0,'Emergency stop')];print('=== cmd_vel Injection ===');[print(f'  [INJECT] linear={a[0]:+.1f} angular={a[1]:+.2f} — {a[2]}') for a in attacks];print('  [!] Robot movement fully controlled by attacker')"
   answer_detail: /cmd_vel 인젝션은 로봇 이동을 직접 제어하는 치명적 공격입니다.
   verify:
     type: output_contains
-    expect: 'cmd_vel Injection'
+    expect: cmd_vel Injection
     field: stdout
   target_vm: attacker
 - order: 4
@@ -57,7 +57,7 @@ steps:
   answer_detail: 센서 데이터 위조로 로봇의 인지 시스템을 교란합니다.
   verify:
     type: output_contains
-    expect: 'Fake Sensor'
+    expect: Fake Sensor
     field: stdout
   target_vm: attacker
 - order: 5
@@ -65,11 +65,12 @@ steps:
   hint: 각 노드가 접근할 수 있는 토픽을 제한하세요.
   category: config
   points: 12
-  answer: 'python3 -c "acl={''nav_ctrl'':{''pub'':[''/cmd_vel''],''sub'':[''/scan'',''/odom'']},''lidar'':{''pub'':[''/scan''],''sub'':[]},''camera'':{''pub'':[''/camera/image''],''sub'':[]},''safety'':{''pub'':[''/emergency_stop''],''sub'':[''/cmd_vel'']}};print(''=== ROS2 Topic ACL ==='');[print(f''  {n}: pub={p[\"pub\"]} sub={p[\"sub\"]}'') for n,p in acl.items()];print(''  [OK] Least-privilege access control'')"'
+  answer: 'python3 -c "acl={''nav_ctrl'':{''pub'':[''/cmd_vel''],''sub'':[''/scan'',''/odom'']},''lidar'':{''pub'':[''/scan''],''sub'':[]},''camera'':{''pub'':[''/camera/image''],''sub'':[]},''safety'':{''pub'':[''/emergency_stop''],''sub'':[''/cmd_vel'']}};print(''=== ROS2 Topic ACL ==='');[print(f''  {n}: pub={p[\"pub\"]} sub={p[\"sub\"]}'') for n,p in acl.items()];print(''  [OK] Least-privilege access
+    control'')"'
   answer_detail: 토픽 ACL로 인가되지 않은 토픽 접근을 차단합니다.
   verify:
     type: output_contains
-    expect: 'Topic ACL'
+    expect: Topic ACL
     field: stdout
   target_vm: attacker
 - order: 6
@@ -77,7 +78,8 @@ steps:
   hint: SROS2 DDS security configuration을 질문하세요.
   category: analysis
   points: 10
-  answer: curl -s ${LLM_URL:-http://10.20.30.200:11434}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a ROS2 security engineer."},{"role":"user","content":"How do you configure DDS Security in ROS2 using SROS2? List the 3 main security plugins and their purposes."}],"stream":false,"options":{"num_predict":150}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'])"
+  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a ROS2 security engineer.\"},{\"role\":\"user\",\"content\":\"How do you configure DDS Security in ROS2 using SROS2? List the 3 main security plugins and their purposes.\"}],\"stream\":false,\"options\":{\"num_predict\":150}}' \\\n | python3 -c\
+    \ \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: SROS2는 ROS2의 공식 보안 도구입니다.
   verify:
     type: output_contains
@@ -89,11 +91,11 @@ steps:
   hint: 보안 적용 전/후 각 공격의 성공 여부를 비교하세요.
   category: analysis
   points: 12
-  answer: 'python3 -c "attacks=[(''Topic Sniffing'',''POSSIBLE'',''BLOCKED''),(''Command Injection'',''POSSIBLE'',''BLOCKED''),(''Discovery Scan'',''POSSIBLE'',''BLOCKED''),(''Node Spoofing'',''POSSIBLE'',''BLOCKED''),(''DoS Flooding'',''POSSIBLE'',''MITIGATED'')];print(''=== DDS Security Comparison ==='');print(f''  {\"Attack\":<22} {\"Before\":<12} {\"After\":<12}'');[print(f''  {a[0]:<22} {a[1]:<12} {a[2]:<12}'') for a in attacks]"'
+  answer: python3 -c "attacks=[('Topic Sniffing','POSSIBLE','BLOCKED'),('Command Injection','POSSIBLE','BLOCKED'),('Discovery Scan','POSSIBLE','BLOCKED'),('Node Spoofing','POSSIBLE','BLOCKED'),('DoS Flooding','POSSIBLE','MITIGATED')];print('=== DDS Security Comparison ===');print(f'  {\"Attack\":<22} {\"Before\":<12} {\"After\":<12}');[print(f'  {a[0]:<22} {a[1]:<12} {a[2]:<12}') for a in attacks]"
   answer_detail: DDS Security는 ROS2의 주요 공격 벡터를 효과적으로 차단합니다.
   verify:
     type: output_contains
-    expect: 'Security Comparison'
+    expect: Security Comparison
     field: stdout
   target_vm: attacker
 - order: 8
@@ -101,10 +103,11 @@ steps:
   hint: 취약점, 공격 결과, 대응 방안을 구조화하세요.
   category: analysis
   points: 10
-  answer: 'python3 -c "print(''=== ROS2 Security Audit Report ==='');vulns=[(''No DDS auth'',''CRITICAL''),(''Topic open access'',''CRITICAL''),(''Plaintext data'',''HIGH''),(''Discovery exposed'',''HIGH'')];print(''  Vulnerabilities:'');[print(f''    [{s}] {v}'') for v,s in vulns];print(''  Recommendations:'');print(''    1. Enable SROS2 DDS Security'');print(''    2. Implement topic-level ACL'');print(''    3. Encrypt sensitive topics'');print(''    4. Segment robot network'')"'
+  answer: python3 -c "print('=== ROS2 Security Audit Report ===');vulns=[('No DDS auth','CRITICAL'),('Topic open access','CRITICAL'),('Plaintext data','HIGH'),('Discovery exposed','HIGH')];print('  Vulnerabilities:');[print(f'    [{s}] {v}') for v,s in vulns];print('  Recommendations:');print('    1. Enable SROS2 DDS Security');print('    2. Implement topic-level ACL');print('    3. Encrypt sensitive
+    topics');print('    4. Segment robot network')"
   answer_detail: 보안 감사 보고서로 ROS2 환경의 보안 수준을 평가합니다.
   verify:
     type: output_contains
-    expect: 'Security Audit Report'
+    expect: Security Audit Report
     field: stdout
   target_vm: attacker

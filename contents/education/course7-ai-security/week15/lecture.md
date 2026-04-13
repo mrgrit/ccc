@@ -7,7 +7,7 @@
 | 유형 | 종합 실기 (자동화 파이프라인 구축 + Purple Team + RL 분석) |
 | 시간 | 3시간 (180분) |
 | 배점 | 100점 |
-| 환경 | Ollama (192.168.0.105:11434), Bastion (localhost:9100) |
+| 환경 | Ollama (localhost:8003), Bastion (localhost:9100) |
 | 대상 서버 | secu(10.20.30.1), web(10.20.30.80), siem(10.20.30.100) |
 | 제출 | 스크립트 파일 + 실행 결과 캡처 + 최종 보고서 |
 | 참고 | 오픈 북 (강의 자료, 인터넷 검색 가능. 타인과 공유 금지) |
@@ -39,7 +39,7 @@
 
 ```bash
 # 1. Ollama 확인
-curl -s http://192.168.0.105:11434/v1/models | python3 -c "
+curl -s http://localhost:8003/v1/models | python3 -c "
 import sys,json; models=json.load(sys.stdin)['data']
 print(f'Ollama: {len(models)}개 모델')
 for m in models[:3]: print(f'  - {m[\"id\"]}')
@@ -131,7 +131,7 @@ print(f'수집 결과: {d[\"overall\"]} (성공:{d[\"tasks_ok\"]}, 실패:{d[\"t
 
 ```bash
 # 수집된 로그를 LLM에게 전달
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -157,7 +157,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 
 ```bash
 # SIGMA 룰 생성
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -185,7 +185,7 @@ LLM에게 공격 계획을 수립시키고 Bastion로 실행하라.
 
 ```bash
 # LLM으로 공격 계획 수립
-PLAN=$(curl -s http://192.168.0.105:11434/v1/chat/completions \
+PLAN=$(curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -294,7 +294,7 @@ LLM으로 보상 해킹 방지 로직이 포함된 개선된 보상 함수를 Py
 
 ```bash
 # Ollama
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{"model":"gemma3:12b","messages":[...],"temperature":0.2}'
 

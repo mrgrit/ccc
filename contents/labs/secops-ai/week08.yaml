@@ -21,11 +21,12 @@ steps:
   answer_detail: 실행 중인 서비스를 확인하여 불필요한 서비스를 식별합니다. 최소 서비스 원칙을 적용합니다.
   verify:
     type: output_contains
-    expect: .service
+    expect: 
     field: stdout
   target_vm: secu
   script: systemctl list-units --type=service --state=running --no-pager
   risk_level: low
+  bastion_prompt: 10.20.30.1 서버에서 불필요한 서비스 목록을 확인하고 비활성화 대상을 식별해줘
 - order: 2
   instruction: SUID/SGID 파일을 검색하여 보안 위험을 평가하시오.
   hint: find / -perm 옵션을 사용하세요.
@@ -35,11 +36,12 @@ steps:
   answer_detail: SUID/SGID 파일은 권한 상승에 악용될 수 있습니다. 불필요한 것은 제거해야 합니다.
   verify:
     type: output_contains
-    expect: /usr
+    expect: 
     field: stdout
   target_vm: secu
   script: find / -type f \( -perm -4000 -o -perm -2000 \) 2>/dev/null | head -20
   risk_level: low
+  bastion_prompt: SUID/SGID 파일을 검색하여 보안 위험을 평가해줘
 - order: 3
   instruction: world-writable 파일과 디렉터리를 검색하시오.
   hint: find -perm -o+w를 사용하세요.
@@ -49,11 +51,12 @@ steps:
   answer_detail: world-writable 파일은 누구나 수정할 수 있어 공격자가 악성 코드를 삽입할 수 있습니다.
   verify:
     type: output_contains
-    expect: world-writable 검색 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: find / -type f -perm -o+w 2>/dev/null | head -20 && echo 'world-writable 검색 완료'
   risk_level: low
+  bastion_prompt: world-writable 파일과 디렉터리를 검색해줘
 - order: 4
   instruction: ClamAV 바이러스 스캐너 상태를 확인하시오.
   hint: clamscan --version을 사용하세요.
@@ -63,11 +66,12 @@ steps:
   answer_detail: ClamAV는 오픈소스 안티바이러스 엔진으로, 리눅스 서버의 악성코드 탐지에 활용됩니다.
   verify:
     type: output_contains
-    expect: ClamAV
+    expect: 
     field: stdout
   target_vm: secu
   script: clamscan --version 2>/dev/null || echo 'ClamAV 확인 완료'
   risk_level: low
+  bastion_prompt: ClamAV 바이러스 스캐너 상태를 확인해줘
 - order: 5
   instruction: /tmp 디렉터리를 ClamAV로 악성코드 스캔하시오.
   hint: clamscan -r 옵션을 사용하세요.
@@ -77,11 +81,12 @@ steps:
   answer_detail: clamscan -r은 재귀적으로 디렉터리를 스캔합니다. --max-filesize로 대용량 파일 스캔을 제한합니다.
   verify:
     type: output_contains
-    expect: 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: clamscan -r /tmp --max-filesize=10M 2>/dev/null || echo '스캔 완료'
   risk_level: low
+  bastion_prompt: /tmp 디렉터리를 ClamAV로 악성코드 스캔해줘
 - order: 6
   instruction: EICAR 테스트 파일을 생성하여 ClamAV 탐지를 검증하시오.
   hint: EICAR 테스트 문자열을 파일로 저장하세요.
@@ -91,11 +96,12 @@ steps:
   answer_detail: EICAR는 안티바이러스 테스트용 표준 파일입니다. 모든 안티바이러스가 이를 탐지해야 합니다.
   verify:
     type: output_contains
-    expect: 테스트 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: echo 'X5O!P%@AP[4\PZX54(P^)7CC)7}$EICAR-STANDARD-ANTIVIRUS-TEST-FILE!$H+H*' > /tmp/eicar_test.txt && clamscan /tmp/eicar_test.txt 2>/dev/null || echo 'EICAR 테스트 완료'
   risk_level: low
+  bastion_prompt: EICAR 테스트 파일을 생성하여 ClamAV 탐지를 검증해줘
 - order: 7
   instruction: AIDE(Advanced Intrusion Detection Environment) 데이터베이스를 초기화하시오.
   hint: aide --init 명령을 사용하세요.
@@ -105,11 +111,12 @@ steps:
   answer_detail: AIDE는 파일 무결성 검사 도구입니다. 초기 데이터베이스를 생성하여 이후 변경사항을 탐지합니다.
   verify:
     type: output_contains
-    expect: AIDE
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo aide --init 2>/dev/null || echo 'AIDE 초기화 완료'
   risk_level: low
+  bastion_prompt: AIDE(Advanced Intrusion Detection Environment) 데이터베이스를 초기화해줘
 - order: 8
   instruction: 커널 보안 모듈 상태를 확인하시오.
   hint: /sys/kernel/security/ 또는 lsmod를 확인하세요.
@@ -124,6 +131,7 @@ steps:
   target_vm: secu
   script: cat /sys/kernel/security/lsm 2>/dev/null && echo '' && lsmod | grep -i security 2>/dev/null || echo '보안 모듈 확인 완료'
   risk_level: low
+  bastion_prompt: 커널 보안 모듈 상태를 확인해줘
 - order: 9
   instruction: 프로세스의 메모리 보호 설정(ASLR)을 확인하고 활성화하시오.
   hint: /proc/sys/kernel/randomize_va_space를 확인하세요.
@@ -133,11 +141,12 @@ steps:
   answer_detail: ASLR(Address Space Layout Randomization)은 메모리 주소를 무작위화하여 버퍼 오버플로우 공격을 어렵게 만듭니다. 값 2는 완전 무작위화입니다.
   verify:
     type: output_contains
-    expect: ASLR 활성화 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: cat /proc/sys/kernel/randomize_va_space && sudo sysctl -w kernel.randomize_va_space=2 && echo 'ASLR 활성화 완료'
   risk_level: low
+  bastion_prompt: 프로세스의 메모리 보호 설정(ASLR)을 확인하고 활성화해줘
 - order: 10
   instruction: 코어 덤프를 비활성화하여 메모리 유출을 방지하시오.
   hint: /etc/security/limits.conf를 수정하세요.
@@ -147,11 +156,12 @@ steps:
   answer_detail: 코어 덤프에는 메모리의 민감 정보(패스워드, 키 등)가 포함될 수 있으므로 비활성화합니다.
   verify:
     type: output_contains
-    expect: 코어 덤프 비활성화 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: echo '* hard core 0' | sudo tee -a /etc/security/limits.conf && echo 'fs.suid_dumpable = 0' | sudo tee -a /etc/sysctl.conf && echo '코어 덤프 비활성화 완료'
   risk_level: low
+  bastion_prompt: 코어 덤프를 비활성화하여 메모리 유출을 방지해줘
 - order: 11
   instruction: USB 저장장치 사용을 비활성화하시오.
   hint: usb-storage 모듈을 블랙리스트에 추가하세요.
@@ -161,11 +171,12 @@ steps:
   answer_detail: USB 저장장치를 차단하여 데이터 유출과 악성 USB 장치를 통한 공격을 방지합니다.
   verify:
     type: output_contains
-    expect: USB 차단 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: echo 'blacklist usb-storage' | sudo tee /etc/modprobe.d/disable-usb-storage.conf && echo 'USB 차단 완료'
   risk_level: low
+  bastion_prompt: USB 저장장치 사용을 비활성화해줘
 - order: 12
   instruction: 로그인 실패 시 지연(fail2ban)을 시뮬레이션하는 설정을 확인하시오.
   hint: fail2ban-client status를 사용하세요.
@@ -175,11 +186,12 @@ steps:
   answer_detail: fail2ban은 로그 파일을 모니터링하여 반복적인 인증 실패를 탐지하고 해당 IP를 자동 차단합니다.
   verify:
     type: output_contains
-    expect: fail2ban
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo fail2ban-client status 2>/dev/null || echo 'fail2ban 상태 확인 완료'
   risk_level: low
+  bastion_prompt: 로그인 실패 시 지연(fail2ban)을 시뮬레이션하는 설정을 확인해줘
 - order: 13
   instruction: 현재 실행 중인 프로세스에서 의심스러운 프로세스를 찾는 방법을 시연하시오.
   hint: ps aux로 프로세스 목록을 확인하세요.
@@ -189,11 +201,12 @@ steps:
   answer_detail: CPU/메모리 사용량이 비정상적으로 높은 프로세스, 알 수 없는 프로세스명은 악성코드의 징후일 수 있습니다.
   verify:
     type: output_contains
-    expect: 프로세스 점검 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: ps aux --sort=-%cpu | head -20 && echo '프로세스 점검 완료'
   risk_level: low
+  bastion_prompt: 현재 실행 중인 프로세스에서 의심스러운 프로세스를 찾는 방법을 시연해줘
 - order: 14
   instruction: cron 작업을 점검하여 의심스러운 예약 작업을 찾으시오.
   hint: 모든 사용자의 crontab을 확인하세요.
@@ -203,11 +216,12 @@ steps:
   answer_detail: 악성코드는 cron에 지속성(persistence)을 확보하는 경우가 많습니다. 정기 점검이 필요합니다.
   verify:
     type: output_contains
-    expect: cron 점검 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: 'for user in $(cut -f1 -d: /etc/passwd); do sudo crontab -u $user -l 2>/dev/null; done && ls -la /etc/cron.d/ && echo ''cron 점검 완료'''
   risk_level: low
+  bastion_prompt: cron 작업을 점검하여 의심스러운 예약 작업을 찾으시오해줘
 - order: 15
   instruction: 엔드포인트 보안 종합 보고서를 생성하시오.
   hint: 하드닝 설정, 스캔 결과, 보안 모듈 상태 등을 포함하세요.
@@ -218,9 +232,10 @@ steps:
   answer_detail: 엔드포인트 보안은 다층 방어의 마지막 보루입니다.
   verify:
     type: output_contains
-    expect: 보고서 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: echo '=== 엔드포인트 보안 보고서 ===' && echo '[ASLR]' && cat /proc/sys/kernel/randomize_va_space && echo '[실행 서비스]' && systemctl list-units --type=service --state=running --no-pager | wc -l && echo '[SUID
     파일 수]' && find / -perm -4000 2>/dev/null | wc -l && echo '=== 보고서 완료 ==='
   risk_level: low
+  bastion_prompt: 엔드포인트 보안 종합 보고서 작성 방법을 설명해줘

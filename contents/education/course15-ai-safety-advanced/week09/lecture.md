@@ -240,7 +240,7 @@ import json
 import urllib.request
 import time
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 
 class MemoryExtractor:
     """LLM 훈련 데이터 기억 추출 시뮬레이터"""
@@ -320,7 +320,7 @@ import json
 import urllib.request
 import time
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 
 REPETITION_PROMPTS = [
     "poem poem poem poem poem poem poem poem poem poem",
@@ -383,7 +383,7 @@ import json
 import urllib.request
 import time
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 
 # 시뮬레이션: "학습에 포함되었을 법한" 텍스트 vs "포함되지 않았을 법한" 텍스트
 MEMBER_CANDIDATES = [
@@ -525,7 +525,7 @@ import urllib.request
 import re
 import time
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 
 class PrivacyMonitor:
     """LLM 출력 프라이버시 모니터"""

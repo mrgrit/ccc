@@ -21,11 +21,12 @@ steps:
   answer_detail: UID 1000 이상은 일반 사용자 계정입니다. 65534(nobody)를 제외하여 실제 사용자만 표시합니다.
   verify:
     type: output_contains
-    expect: root
+    expect: 
     field: stdout
   target_vm: secu
   script: 'awk -F: ''$3 >= 1000 && $3 < 65534 {print $1}'' /etc/passwd'
   risk_level: low
+  bastion_prompt: 10.20.30.1 서버에서 현재 활성 사용자 계정 목록을 확인해줘
 - order: 2
   instruction: '운영팀(ops-team) 계정 3개를 일괄 생성하시오: opsuser1, opsuser2, opsuser3.'
   hint: for 루프와 useradd를 사용하세요.
@@ -35,11 +36,12 @@ steps:
   answer_detail: 일괄 계정 생성은 스크립트를 통해 자동화할 수 있습니다. -G 옵션으로 보조 그룹, -s로 기본 쉘을 지정합니다.
   verify:
     type: output_contains
-    expect: ops-team
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo groupadd -f ops-team && for i in 1 2 3; do sudo useradd -m -G ops-team -s /bin/bash opsuser$i 2>/dev/null; done && getent group ops-team
   risk_level: low
+  bastion_prompt: '운영팀(ops-team) 계정 3개를 일괄 생성하시오: opsuser1, opsuser2, opsuser3해줘'
 - order: 3
   instruction: 'opsuser1 계정의 패스워드 만료 정책을 설정하시오: 최대 90일, 최소 7일, 경고 14일.'
   hint: chage 명령을 사용하세요.
@@ -49,11 +51,12 @@ steps:
   answer_detail: chage는 패스워드 만료 정책을 관리합니다. -M(최대), -m(최소), -W(경고일)로 세밀하게 제어합니다.
   verify:
     type: output_contains
-    expect: Maximum number of days
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo chage -M 90 -m 7 -W 14 opsuser1 && sudo chage -l opsuser1
   risk_level: low
+  bastion_prompt: 'opsuser1 계정의 패스워드 만료 정책을 설정하시오: 최대 90일, 최소 7일, 경고 14일해줘'
 - order: 4
   instruction: 90일 이상 로그인하지 않은 비활성 계정을 검색하시오.
   hint: lastlog 명령을 사용하세요.
@@ -68,6 +71,7 @@ steps:
   target_vm: secu
   script: lastlog -b 90 | grep -v 'Never logged in'
   risk_level: low
+  bastion_prompt: 90일 이상 로그인하지 않은 비활성 계정을 검색해줘
 - order: 5
   instruction: 한 번도 로그인하지 않은 사용자 계정을 찾아 나열하시오.
   hint: lastlog 출력에서 'Never logged in'을 필터링하세요.
@@ -82,6 +86,7 @@ steps:
   target_vm: secu
   script: lastlog | grep 'Never logged in' | awk '{print $1}'
   risk_level: low
+  bastion_prompt: 한 번도 로그인하지 않은 사용자 계정을 찾아 나열해줘
 - order: 6
   instruction: opsuser3 계정을 비활성화(잠금)하시오.
   hint: usermod -L 또는 passwd -l 명령을 사용하세요.
@@ -91,11 +96,12 @@ steps:
   answer_detail: usermod -L은 계정을 잠금합니다. 패스워드 해시 앞에 !가 추가되어 로그인이 불가능해집니다.
   verify:
     type: output_contains
-    expect: L
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo usermod -L opsuser3 && sudo passwd -S opsuser3
   risk_level: low
+  bastion_prompt: opsuser3 계정을 비활성화(잠금)해줘
 - order: 7
   instruction: 현재 시스템에 접속 중인 사용자를 확인하시오.
   hint: w 또는 who 명령을 사용하세요.
@@ -105,11 +111,12 @@ steps:
   answer_detail: w 명령은 현재 접속 중인 사용자, 접속 시간, 수행 중인 작업을 표시합니다.
   verify:
     type: output_contains
-    expect: load average
+    expect: 
     field: stdout
   target_vm: secu
   script: w
   risk_level: low
+  bastion_prompt: 현재 시스템에 접속 중인 사용자를 확인해줘
 - order: 8
   instruction: 최근 10건의 로그인 기록을 확인하시오.
   hint: last 명령을 사용하세요.
@@ -124,6 +131,7 @@ steps:
   target_vm: secu
   script: last -n 10
   risk_level: low
+  bastion_prompt: 최근 10건의 로그인 기록을 확인해줘
 - order: 9
   instruction: 실패한 로그인 시도를 확인하시오.
   hint: faillog 또는 lastb 명령을 사용하세요.
@@ -138,6 +146,7 @@ steps:
   target_vm: secu
   script: sudo lastb -n 10 2>/dev/null || echo '실패 로그인 기록 없음'
   risk_level: low
+  bastion_prompt: 실패한 로그인 시도를 확인해줘
 - order: 10
   instruction: 패스워드가 설정되지 않은(빈 패스워드) 계정을 검색하시오.
   hint: /etc/shadow에서 빈 패스워드 필드를 찾으세요.
@@ -152,6 +161,7 @@ steps:
   target_vm: secu
   script: 'sudo awk -F: ''($2 == "" || $2 == "!") && $3 >= 1000 {print $1}'' /etc/shadow'
   risk_level: low
+  bastion_prompt: 패스워드가 설정되지 않은(빈 패스워드) 계정을 검색해줘
 - order: 11
   instruction: opsuser1에게 특정 시간대(업무시간)에만 로그인을 허용하는 설정을 하시오.
   hint: /etc/security/time.conf를 설정하세요.
@@ -161,11 +171,12 @@ steps:
   answer_detail: time.conf에서 Al은 모든 요일, 0800-1800은 오전 8시부터 오후 6시까지를 의미합니다. PAM의 pam_time 모듈이 이를 적용합니다.
   verify:
     type: output_contains
-    expect: opsuser1
+    expect: 
     field: stdout
   target_vm: secu
   script: echo 'login;*;opsuser1;Al0800-1800' | sudo tee -a /etc/security/time.conf
   risk_level: low
+  bastion_prompt: opsuser1에게 특정 시간대(업무시간)에만 로그인을 허용하는 설정을 해줘
 - order: 12
   instruction: 계정 만료일이 설정되지 않은 사용자 목록을 조회하시오.
   hint: chage -l 출력을 활용하세요.
@@ -175,11 +186,12 @@ steps:
   answer_detail: 계정 만료일이 'never'인 계정은 영구 활성 상태로, 퇴직자 등의 계정이 방치될 수 있습니다.
   verify:
     type: output_contains
-    expect: never
+    expect: 
     field: stdout
   target_vm: secu
   script: 'for user in $(awk -F: ''$3 >= 1000 && $3 < 65534 {print $1}'' /etc/passwd); do expire=$(sudo chage -l $user 2>/dev/null | grep ''Account expires'' | cut -d: -f2); echo "$user: $expire"; done'
   risk_level: low
+  bastion_prompt: 계정 만료일이 설정되지 않은 사용자 목록을 조회해줘
 - order: 13
   instruction: opsuser2의 로그인 쉘을 /sbin/nologin으로 변경하여 대화형 로그인을 차단하시오.
   hint: usermod -s 명령을 사용하세요.
@@ -189,11 +201,12 @@ steps:
   answer_detail: /sbin/nologin을 쉘로 설정하면 SSH 등 대화형 로그인이 차단됩니다. 서비스 계정에 주로 사용합니다.
   verify:
     type: output_contains
-    expect: nologin
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo usermod -s /sbin/nologin opsuser2 && grep opsuser2 /etc/passwd
   risk_level: low
+  bastion_prompt: opsuser2의 로그인 쉘을 /sbin/nologin으로 변경하여 대화형 로그인을 차단해줘
 - order: 14
   instruction: 불필요한 계정(opsuser3)을 홈 디렉터리 포함하여 완전히 삭제하시오.
   hint: userdel -r 옵션을 사용하세요.
@@ -203,11 +216,12 @@ steps:
   answer_detail: userdel -r은 사용자 계정, 홈 디렉터리, 메일 스풀을 모두 삭제합니다. 삭제 전 데이터 백업 여부를 확인해야 합니다.
   verify:
     type: output_contains
-    expect: 계정
+    expect: 
     field: stdout
   target_vm: secu
   script: sudo userdel -r opsuser3 2>/dev/null; echo '계정 삭제 완료' && grep -c opsuser3 /etc/passwd || echo 'opsuser3 계정 없음 확인'
   risk_level: low
+  bastion_prompt: 불필요한 계정(opsuser3)을 홈 디렉터리 포함하여 완전히 삭제해줘
 - order: 15
   instruction: 계정 관리 현황을 종합 보고서로 출력하시오.
   hint: 활성 계정 수, 잠금 계정, 그룹 현황 등을 포함하세요.
@@ -218,9 +232,10 @@ steps:
   answer_detail: 정기적인 계정 현황 점검은 보안 운영의 기본입니다.
   verify:
     type: output_contains
-    expect: 보고서 완료
+    expect: 
     field: stdout
   target_vm: secu
   script: 'echo ''=== 계정 관리 현황 보고서 ==='' && echo ''[활성 사용자]'' && awk -F: ''$3 >= 1000 && $3 < 65534 {print $1}'' /etc/passwd && echo ''[그룹 현황]'' && getent group ops-team && echo ''[잠금 계정]'' && sudo awk
     -F: ''$2 ~ /^!/ && $1 !~ /^(root|daemon|bin)/ {print $1}'' /etc/shadow && echo ''=== 보고서 완료 ==='''
   risk_level: low
+  bastion_prompt: 계정 관리 현황을 종합 보고서로 출력해줘

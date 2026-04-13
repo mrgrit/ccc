@@ -210,7 +210,7 @@ JSON 형식 출력:
 }'''
 
 resp = requests.post(
-    'http://192.168.0.105:11434/v1/chat/completions',
+    'http://localhost:8003/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -260,7 +260,7 @@ import json, requests
 
 # LLM에게 JuiceShop 대상 공격 시나리오 생성 요청
 resp = requests.post(
-    'http://192.168.0.105:11434/v1/chat/completions',
+    'http://localhost:8003/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -423,7 +423,7 @@ with open('/tmp/red_attack_results.json') as f:
 results_text = json.dumps(results, indent=2, ensure_ascii=False)[:3000]
 
 resp = requests.post(
-    'http://192.168.0.105:11434/v1/chat/completions',
+    'http://localhost:8003/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [

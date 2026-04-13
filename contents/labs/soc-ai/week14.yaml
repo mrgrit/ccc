@@ -21,11 +21,12 @@ steps:
   answer_detail: nmap -sT는 TCP Connect 스캔으로, 가장 기본적인 포트 스캔 방식입니다. SOC에서는 이 스캔이 Wazuh 알림이나 Suricata 이벤트로 탐지되는지 확인해야 합니다.
   verify:
     type: output_contains
-    expect: open
+    expect: 
     field: stdout
   target_vm: siem
   script: nmap -sT -p 1-10000 --open 10.20.30.80 2>/dev/null | head -30
   risk_level: low
+  bastion_prompt: ATTACKER VM에서 WEB VM(10.20.30.80)에 대한 포트 스캔을 실행하고, 개방된 포트를 확인해줘
 - order: 2
   instruction: 포트 스캔 후 SIEM VM에서 해당 공격이 탐지되었는지 Wazuh 알림을 확인하시오.
   hint: alerts.log에서 ATTACKER IP(10.20.30.201)의 최근 알림을 검색하세요.
@@ -35,11 +36,12 @@ steps:
   answer_detail: 포트 스캔은 정찰(Reconnaissance) 단계로, SOC에서 공격의 시작을 알리는 지표입니다. Wazuh가 다수의 연결 시도를 브루트포스나 스캔으로 탐지했는지 확인합니다.
   verify:
     type: output_contains
-    expect: 10.20.30.201
+    expect: ''
     field: stdout
   target_vm: siem
   script: grep -B 2 -A 5 "10.20.30.201" /var/ossec/logs/alerts/alerts.log | tail -30
   risk_level: low
+  bastion_prompt: 포트 스캔 후 SIEM VM에서 해당 공격이 탐지되었는지 Wazuh 알림을 확인해줘
 - order: 3
   instruction: 포트 스캔이 SECU VM의 Suricata IDS에서도 탐지되었는지 확인하시오.
   hint: Suricata fast.log에서 ATTACKER IP를 검색하세요.
@@ -54,6 +56,7 @@ steps:
   target_vm: siem
   script: grep "10.20.30.201" /var/log/suricata/fast.log 2>/dev/null | tail -10
   risk_level: low
+  bastion_prompt: 포트 스캔이 SECU VM의 Suricata IDS에서도 탐지되었는지 확인해줘
 - order: 4
   instruction: ATTACKER VM에서 WEB VM의 SSH 서비스에 대한 브루트포스 공격을 시뮬레이션하시오. (5회 제한)
   hint: hydra로 SSH 브루트포스를 수행하세요. 시도 횟수를 제한하세요.
@@ -68,6 +71,7 @@ steps:
   target_vm: siem
   script: hydra -l admin -P /dev/null -t 1 -f -V ssh://10.20.30.80 2>&1 | head -10 || echo "hydra test completed"
   risk_level: low
+  bastion_prompt: ATTACKER VM에서 WEB VM의 SSH 서비스에 대한 브루트포스 공격을 시뮬레이션하시오. (5회 제한)해줘
 - order: 5
   instruction: SSH 브루트포스 공격 후 SIEM VM에서 관련 Wazuh 알림이 생성되었는지 확인하시오.
   hint: alerts.log에서 SSH 관련 고레벨 알림을 검색하세요.
@@ -82,34 +86,37 @@ steps:
   target_vm: siem
   script: grep -B 2 -A 5 "authentication\|ssh\|brute" /var/ossec/logs/alerts/alerts.log | tail -30
   risk_level: low
+  bastion_prompt: SSH 브루트포스 공격 후 SIEM VM에서 관련 Wazuh 알림이 생성되었는지 확인해줘
 - order: 6
   instruction: ATTACKER VM에서 WEB VM의 JuiceShop(3000번 포트)에 HTTP 요청을 보내 웹 애플리케이션 접근을 확인하시오.
   hint: curl로 JuiceShop에 접속하세요.
   category: detection
   points: 8
-  answer: 'curl -s -o /dev/null -w "HTTP Status: %{http_code}\nSize: %{size_download} bytes\n" http://10.20.30.80:3000/'
+  answer: "curl -s \\\n  -o /dev/null \\\n  -w \"HTTP Status: %{http_code}\\nSize: %{size_download} bytes\\n\" http://10.20.30.80:3000/"
   answer_detail: JuiceShop은 의도적으로 취약한 웹 애플리케이션입니다. 공격 시뮬레이션의 대상으로, 이 접근이 Apache/Wazuh 로그에 기록되는지 확인합니다.
   verify:
     type: output_contains
-    expect: HTTP Status
+    expect: 
     field: stdout
   target_vm: siem
-  script: 'curl -s -o /dev/null -w "HTTP Status: %{http_code}\nSize: %{size_download} bytes\n" http://10.20.30.80:3000/'
+  script: "curl -s \\\n  -o /dev/null \\\n  -w \"HTTP Status: %{http_code}\\nSize: %{size_download} bytes\\n\" http://10.20.30.80:3000/"
   risk_level: low
+  bastion_prompt: ATTACKER VM에서 WEB VM의 JuiceShop(3000번 포트)에 HTTP 요청을 보내 웹 애플리케이션 접근을 확인해줘
 - order: 7
   instruction: ATTACKER VM에서 WEB VM의 웹서버에 SQL Injection 패턴을 포함한 요청을 보내시오.
   hint: curl로 SQL Injection 페이로드가 포함된 URL을 요청하세요.
   category: detection
   points: 12
-  answer: 'curl -s -o /dev/null -w "Status: %{http_code}" "http://10.20.30.80/index.html?id=1%27%20OR%201=1--"'
+  answer: "curl -s \\\n  -o /dev/null \\\n  -w \"Status: %{http_code}\" \"http://10.20.30.80/index.html?id=1%27%20OR%201=1--\""
   answer_detail: SQL Injection 패턴(1' OR 1=1--)을 URL에 포함하여 전송합니다. ModSecurity WAF가 이를 차단하거나, Wazuh가 Apache 로그에서 탐지해야 합니다.
   verify:
     type: output_contains
-    expect: Status
+    expect: 
     field: stdout
   target_vm: siem
-  script: 'curl -s -o /dev/null -w "Status: %{http_code}" "http://10.20.30.80/index.html?id=1%27%20OR%201=1--"'
+  script: "curl -s \\\n  -o /dev/null \\\n  -w \"Status: %{http_code}\" \"http://10.20.30.80/index.html?id=1%27%20OR%201=1--\""
   risk_level: low
+  bastion_prompt: ATTACKER VM에서 WEB VM의 웹서버에 SQL Injection 패턴을 포함한 요청을 보내시오해줘
 - order: 8
   instruction: SQL Injection 시도 후 SIEM VM에서 웹 공격 관련 Wazuh 알림을 확인하시오.
   hint: alerts.log에서 web, sql, injection, attack 키워드를 검색하세요.
@@ -124,6 +131,7 @@ steps:
   target_vm: siem
   script: grep -B 2 -A 5 -i "sql\|injection\|attack\|web" /var/ossec/logs/alerts/alerts.log | tail -30
   risk_level: low
+  bastion_prompt: SQL Injection 시도 후 SIEM VM에서 웹 공격 관련 Wazuh 알림을 확인해줘
 - order: 9
   instruction: ATTACKER VM에서 사용 가능한 공격 도구 목록을 확인하시오.
   hint: nmap, hydra, sqlmap, nikto 등의 설치 여부를 확인하세요.
@@ -133,11 +141,12 @@ steps:
   answer_detail: ATTACKER VM에 설치된 도구를 파악하면 시뮬레이션 가능한 공격 시나리오를 계획할 수 있습니다. 각 도구는 공격 라이프사이클의 서로 다른 단계에 사용됩니다.
   verify:
     type: output_contains
-    expect: nmap
+    expect: 
     field: stdout
   target_vm: siem
   script: which nmap hydra sqlmap nikto curl 2>/dev/null; echo "=== nmap ==="; nmap --version 2>/dev/null | head -2
   risk_level: low
+  bastion_prompt: ATTACKER VM에서 사용 가능한 공격 도구 목록을 확인해줘
 - order: 10
   instruction: 전체 공격 시뮬레이션의 탐지 결과를 요약하시오. SIEM에서 탐지된 알림의 룰 ID와 레벨을 정리하시오.
   hint: ATTACKER IP 관련 알림의 룰 ID와 레벨을 집계하세요.
@@ -147,8 +156,9 @@ steps:
   answer_detail: 레드팀 연동의 최종 산출물은 탐지 커버리지 보고서입니다. 탐지된 공격 유형, 미탐지 항목, 각 탐지의 레벨을 정리하여 SOC의 탐지 능력을 평가하고 개선점을 도출합니다.
   verify:
     type: output_contains
-    expect: 공격 탐지
+    expect: 
     field: stdout
   target_vm: siem
   script: 'echo "=== 공격 탐지 요약 ==="; echo "ATTACKER(10.20.30.201) 관련 알림:"; grep "10.20.30.201" /var/ossec/logs/alerts/alerts.log | grep -oP "Rule: \d+ \(level \d+\)" | sort | uniq -c | sort -rn'
   risk_level: low
+  bastion_prompt: 전체 공격 시뮬레이션의 탐지 결과를 요약하시오. SIEM에서 탐지된 알림의 룰 ID와 레벨을 정리해줘

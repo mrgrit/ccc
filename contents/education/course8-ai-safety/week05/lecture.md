@@ -181,7 +181,7 @@ ENDSSH
 
 ```bash
 # Ollama로 입력을 분류하는 가드레일
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -194,7 +194,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 
 echo "---"
 
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -304,7 +304,7 @@ ENDSSH
 
 ```bash
 # 2단계 Constitutional AI: 생성 -> 자체 검토 -> 수정
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -323,7 +323,7 @@ print(resp[:300])
 echo ""
 echo "=== Step 2: 자체 검토 ==="
 
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -346,7 +346,7 @@ ssh ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 import re, json, urllib.request
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 
 INJECTION_PATTERNS = [
     r"(?i)ignore.*instructions",

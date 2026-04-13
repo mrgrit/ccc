@@ -7,7 +7,7 @@
 | 유형 | 실기 시험 (자율 보안 시스템 구축 + 운용 + 분석) |
 | 시간 | 3시간 (180분) |
 | 배점 | 100점 |
-| 환경 | Bastion (localhost:9100), Ollama (192.168.0.105:11434), 실습 서버 4대 |
+| 환경 | Bastion (localhost:9100), Ollama (localhost:8003), 실습 서버 4대 |
 | 제출 | Bastion completion-report + 분석 스크린샷 |
 | 참고 | 오픈 북 (강의 자료, 인터넷 검색 가능. 타인과 공유 금지) |
 
@@ -95,7 +95,7 @@ curl -s http://localhost:9100/projects \
 # 기대 결과: Bastion: 정상 (프로젝트 N개)
 
 # 2. Ollama LLM 연결 확인
-curl -s http://192.168.0.105:11434/v1/models | python3 -c "
+curl -s http://localhost:8003/v1/models | python3 -c "
 import sys,json
 models = json.load(sys.stdin)['data']
 print(f'Ollama: 정상 ({len(models)}개 모델)')

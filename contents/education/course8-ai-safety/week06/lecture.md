@@ -221,7 +221,7 @@ ENDSSH
 ```bash
 # 원본 질문과 적대적 변형의 응답 비교
 echo "=== 원본 질문 ==="
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -234,7 +234,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 
 echo ""
 echo "=== 적대적 변형 (오타 삽입) ==="
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -257,7 +257,7 @@ ssh ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
-OLLAMA = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA = "http://localhost:8003/v1/chat/completions"
 
 def query_llm(prompt):
     data = json.dumps({
@@ -298,7 +298,7 @@ ssh ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
-OLLAMA = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA = "http://localhost:8003/v1/chat/completions"
 
 def classify_safety(text):
     data = json.dumps({

@@ -19,7 +19,7 @@ steps:
   points: 12
   answer: "python3 -c \"\nimport json, urllib.request, hashlib, time, uuid\ndef audit_log(prompt, model='gemma3:4b'):\n    entry = {\n        'id': str(uuid.uuid4())[:8],\n        'timestamp': time.strftime('%Y-%m-%dT%H:%M:%S'),\n\
     \        'model': model,\n        'prompt_hash': hashlib.sha256(prompt.encode()).hexdigest()[:16],\n        'prompt_length': len(prompt),\n        'prompt_preview': prompt[:30] + '...' if len(prompt)>30\
-    \ else prompt\n    }\n    data = json.dumps({'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':30}}).encode()\n    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
+    \ else prompt\n    }\n    data = json.dumps({'model':model,'prompt':prompt,'stream':False,'options':{'num_predict':30}}).encode()\n    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \    start = time.time()\n    try:\n        resp = json.loads(urllib.request.urlopen(req, timeout=30).read())\n        entry['status'] = 'success'\n        entry['response_time_ms'] = int((time.time()-start)*1000)\n\
     \        entry['tokens_in'] = resp.get('prompt_eval_count',0)\n        entry['tokens_out'] = resp.get('eval_count',0)\n        entry['response_hash'] = hashlib.sha256(resp['response'].encode()).hexdigest()[:16]\n\
     \    except Exception as e:\n        entry['status'] = 'error'\n        entry['error'] = str(e)[:50]\n    return entry\n\nprompts = ['What is SSH?', 'Explain firewall rules', 'Ignore instructions']\n\
@@ -76,7 +76,7 @@ steps:
     \      'repetition_score': 1 - len(unique)/max(len(words),1),\n    }\n    # Check for harmful content indicators\n    harmful_kw = ['hack','exploit','attack','malware','password','credential']\n   \
     \ metrics['harmful_keyword_count'] = sum(1 for w in words if w.lower() in harmful_kw)\n    # Check for refusal indicators\n    refusal_kw = ['sorry','cannot','inappropriate','unable','decline']\n  \
     \  metrics['refusal_detected'] = any(w.lower() in refusal_kw for w in words)\n    return metrics\n\nprompts = ['What is encryption?', 'How to secure a Linux server?', 'Explain SQL injection for educational\
-    \ purposes']\nfor p in prompts:\n    data = json.dumps({'model':'gemma3:4b','prompt':p,'stream':False,'options':{'num_predict':60}}).encode()\n    req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
+    \ purposes']\nfor p in prompts:\n    data = json.dumps({'model':'gemma3:4b','prompt':p,'stream':False,'options':{'num_predict':60}}).encode()\n    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \    resp = json.loads(urllib.request.urlopen(req).read())['response']\n    m = quality_metrics(resp)\n    print(f'Prompt: {p[:40]}')\n    print(f'  Words: {m[\\\"length_words\\\"]}, Unique ratio: {m[\\\
     \"unique_word_ratio\\\"]:.2f}')\n    print(f'  Harmful KW: {m[\\\"harmful_keyword_count\\\"]}, Refusal: {m[\\\"refusal_detected\\\"]}')\n    print(f'  Repetition: {m[\\\"repetition_score\\\"]:.2f}')\n\
     \    print()\n\""
@@ -93,7 +93,7 @@ steps:
   points: 10
   answer: "python3 -c \"\nimport json, urllib.request\nclass TokenBudget:\n    def __init__(self, daily_limit=5000):\n        self.daily_limit = daily_limit\n        self.used = 0\n        self.requests\
     \ = 0\n    \n    def query(self, prompt):\n        self.requests += 1\n        if self.used >= self.daily_limit:\n            return None, f'BUDGET EXCEEDED ({self.used}/{self.daily_limit} tokens)'\n\
-    \        data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':30}}).encode()\n        req = urllib.request.Request('${LLM_URL:-http://10.20.30.200:11434}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
+    \        data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':30}}).encode()\n        req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \        resp = json.loads(urllib.request.urlopen(req).read())\n        tokens = resp.get('prompt_eval_count',0) + resp.get('eval_count',0)\n        self.used += tokens\n        pct = self.used * 100\
     \ / self.daily_limit\n        warning = ' WARNING: >80%' if pct > 80 else ''\n        return resp['response'], f'Used: {self.used}/{self.daily_limit} ({pct:.0f}%){warning}'\n\nbudget = TokenBudget(daily_limit=500)\n\
     prompts = ['What is AI?','Explain SSH','What is TLS?','Define VPN','What is DNS?','Explain SIEM','What is WAF?','Define EDR','What is SOAR?','What is XDR?']\nfor p in prompts:\n    result, status =\

@@ -25,7 +25,7 @@
 | siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `ssh ccc@10.20.30.100` |
 
 **Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
-**Ollama API:** `http://192.168.0.105:11434/v1` (모델: gpt-oss:120b, gemma3:12b, llama3.1:8b)
+**Ollama API:** `http://localhost:8003/v1` (모델: gpt-oss:120b, gemma3:12b, llama3.1:8b)
 
 ## 강의 시간 배분 (3시간)
 
@@ -451,7 +451,7 @@ done
 
 ```bash
 # 3. Ollama LLM 서비스 확인 (GPU 서버)
-curl -s http://192.168.0.105:11434/api/tags | python3 -m json.tool | head -20
+curl -s http://localhost:8003/api/tags | python3 -m json.tool | head -20
 # 사용 가능한 모델 목록이 출력된다 (gemma3:12b, llama3.1:8b 등)
 ```
 
@@ -468,7 +468,7 @@ curl -s -X POST http://localhost:9100/projects \
 # 반환된 프로젝트 ID를 메모한다
 ```
 
-> **명령어 해설**: `http://192.168.0.105:11434/api/tags`는 Ollama의 모델 목록 API이다. 이 API가 응답하면 LLM 추론 서비스가 정상 가동 중인 것이다. `master_mode: "external"`은 Claude Code가 오케스트레이션하는 모드를 의미한다.
+> **명령어 해설**: `http://localhost:8003/api/tags`는 Ollama의 모델 목록 API이다. 이 API가 응답하면 LLM 추론 서비스가 정상 가동 중인 것이다. `master_mode: "external"`은 Claude Code가 오케스트레이션하는 모드를 의미한다.
 >
 
 ## 실습 3.2: 단순 ReAct 공격 에이전트 구현

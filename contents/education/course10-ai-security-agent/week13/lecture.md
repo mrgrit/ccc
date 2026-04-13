@@ -269,7 +269,7 @@ import json
 import requests
 import time
 
-OLLAMA_URL = "http://192.168.0.105:11434"
+OLLAMA_URL = "http://localhost:8003"
 
 class ThreatAnalyzer:
     """LLM을 사용하여 보안 경보를 분석하고 위협을 판정한다."""
@@ -607,7 +607,7 @@ import time
 import requests
 
 MANAGER_URL = "http://localhost:9100"
-OLLAMA_URL = "http://192.168.0.105:11434"
+OLLAMA_URL = "http://localhost:8003"
 API_KEY = "ccc-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
 

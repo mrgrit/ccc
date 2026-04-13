@@ -181,10 +181,10 @@ Execute:
 > **실전 활용**: 보안 에이전트 구축 시 모델 선택은 성능/비용/정확도의 트레이드오프이며, 로컬 모델은 데이터 유출 위험을 원천 차단한다.
 
 ```bash
-curl -s http://192.168.0.105:11434/api/tags | python3 -m json.tool
+curl -s http://localhost:8003/api/tags | python3 -m json.tool
 
 # 사용 가능한 모델 목록 확인
-curl -s http://192.168.0.105:11434/api/tags | \
+curl -s http://localhost:8003/api/tags | \
   python3 -c "import sys,json; [print(m['name']) for m in json.load(sys.stdin)['models']]"
 ```
 
@@ -194,7 +194,7 @@ OpenAI 호환 API를 사용하여 Ollama와 대화한다.
 
 ```bash
 # Ollama에 간단한 질문 보내기 (OpenAI 호환 엔드포인트)
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -210,7 +210,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
 
 ```bash
 # system 메시지 변경 실험: 역할에 따라 응답이 달라지는지 확인
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -231,7 +231,7 @@ print(resp['choices'][0]['message']['content'])
 
 ```bash
 # temperature=0 (결정적 응답) — 같은 질문에 항상 동일한 답변
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -240,7 +240,7 @@ curl -s http://192.168.0.105:11434/v1/chat/completions \
   }' | python3 -c "import sys,json; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
 
 # temperature=1.0 (높은 무작위성) — 매번 다른 답변
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -270,7 +270,7 @@ import requests
 import json
 
 # Ollama 서버 설정
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 def chat(messages: list, temperature: float = 0.3) -> str:
@@ -313,7 +313,7 @@ import subprocess
 import requests
 import json
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 def chat(messages: list) -> str:
@@ -405,7 +405,7 @@ Week 01 실습: 멀티턴 대화 보안 에이전트
 """
 import requests
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 대화 기록을 리스트로 유지 (메모리 역할)
@@ -491,7 +491,7 @@ import requests
 import json
 import os
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 MODEL = "llama3.1:8b"
 BASTION_URL = "http://localhost:9100"
 API_KEY = "ccc-api-key-2026"

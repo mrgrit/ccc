@@ -174,7 +174,7 @@ import subprocess
 import datetime
 import os
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # ============================================================

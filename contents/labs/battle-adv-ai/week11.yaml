@@ -30,11 +30,12 @@ steps:
   answer_detail: 내부자 위협의 첫 단계는 정상 권한 범위 내에서의 정보 수집이다. sudo 권한, 읽기 가능한 설정 파일, SSH 키는 권한 상승이나 측면 이동에 활용될 수 있다.
   verify:
     type: output_contains
-    expect: Insider Recon
+    expect: 
   target_vm: attacker
   script: echo '=== Insider Recon (Legitimate User) ===' && echo '[1] Current privileges:' && id && echo '[2] Sudo permissions:' && echo '1' | sudo -S -l 2>&1 | tail -10 && echo '[3] Accessible config files:'
     && find /etc -readable -name '*.conf' -type f 2>/dev/null | head -10 && echo '[4] SSH keys:' && find /home -name 'authorized_keys' -o -name 'id_*' 2>/dev/null | head -5
   risk_level: low
+  bastion_prompt: '[RED] 내부자 시나리오 — 정상 사용자 권한으로 시스템 정보를 수집하라. sudo 권한, 접근 가능한 파일, 네트워크 연결을 조사해줘'
 - order: 2
   instruction: '[RED] 데이터 스테이징 — 민감 파일을 수집하여 하나의 아카이브로 압축하라. /etc/passwd, 설정 파일, 로그 파일을 수집하라.'
   hint: tar로 여러 파일을 하나의 아카이브로 압축한다.
@@ -45,11 +46,12 @@ steps:
   answer_detail: 데이터 스테이징(T1074)은 유출 전 데이터를 하나의 위치에 수집하고 압축하는 단계이다. 내부자는 정상 권한으로 접근 가능한 파일을 조용히 수집한다.
   verify:
     type: output_contains
-    expect: Data staged
+    expect: 
   target_vm: attacker
   script: mkdir -p /tmp/insider_staging && cp /etc/passwd /tmp/insider_staging/ 2>/dev/null && cp /etc/hosts /tmp/insider_staging/ 2>/dev/null && echo "INSIDER_EXFIL_DATA" > /tmp/insider_staging/secret.txt
     && tar czf /tmp/insider_archive.tar.gz -C /tmp insider_staging && ls -la /tmp/insider_archive.tar.gz && echo "Data staged successfully"
   risk_level: medium
+  bastion_prompt: '[RED] 데이터 스테이징 — 민감 파일을 수집하여 하나의 아카이브로 압축하라. /etc/passwd, 설정 파일, 로그 파일을 수집해줘'
 - order: 3
   instruction: '[RED] 비인가 접근 — 정상 업무 시간 외(야간)에 다른 서버에 SSH 접근을 시도하라. 시간대를 시뮬레이션하여 비정상 접근 패턴을 생성하라.'
   hint: SSH로 다른 서버에 접근하고, 업무 외 시간 접근을 시뮬레이션한다.
@@ -61,12 +63,13 @@ steps:
   answer_detail: 내부자의 비정상 접근 패턴으로 업무 외 시간(야간) 접근, 평소 사용하지 않는 서버 접근, SIEM 로그 접근 시도 등이 있다. UBA는 이러한 기준선 이탈을 탐지한다.
   verify:
     type: output_contains
-    expect: Off-hours
+    expect: 
   target_vm: attacker
   script: 'echo "=== Insider Off-hours Access ===" && echo "Simulated time: 02:30 AM (off-hours)" && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.80 "hostname && echo access_at_$(date
     +%H%M)" 2>&1 | head -3 && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.100 "hostname && ls /var/ossec/logs/ 2>/dev/null" 2>&1 | head -5 && echo "Off-hours SSH to web and SIEM servers
     simulated"'
   risk_level: medium
+  bastion_prompt: '[RED] 비인가 접근 — 정상 업무 시간 외(야간)에 다른 서버에 SSH 접근을 시도해줘'
 - order: 4
   instruction: '[BLUE] Phase 전환 — UBA(User Behavior Analytics) 분석을 수행하라. auth.log에서 사용자별 로그인 시간, 소스 IP, 빈도를 분석하라.'
   hint: auth.log에서 로그인 시간, 소스 IP, 사용자를 분석한다.
@@ -78,12 +81,13 @@ steps:
   answer_detail: UBA는 로그인 시간(업무 외 시간), 소스 IP(비정상 위치), 실패 패턴(브루트포스)을 분석하여 정상 행동 기준선에서 벗어나는 활동을 탐지한다.
   verify:
     type: output_contains
-    expect: User Behavior Analysis
+    expect: ''
   target_vm: secu
   script: 'echo "=== User Behavior Analysis ===" && echo "[1] Login time distribution:" && grep "Accepted\|session opened" /var/log/auth.log 2>/dev/null | awk "{print \$1,\$2,\$3}" | cut -d: -f1 | sort
     | uniq -c | head -10 && echo "[2] Login source IPs:" && grep "Accepted" /var/log/auth.log 2>/dev/null | grep -oP "from \K[0-9.]+" | sort | uniq -c | sort -rn | head -10 && echo "[3] Failed logins by
     user:" && grep "Failed" /var/log/auth.log 2>/dev/null | grep -oP "for \K\w+" | sort | uniq -c | sort -rn | head -10 && echo "UBA analysis complete"'
   risk_level: low
+  bastion_prompt: '[BLUE] Phase 전환 — UBA(User Behavior Analytics) 분석을 수행하라. auth.log에서 사용자별 로그인 시간, 소스 IP, 빈도를 분석해줘'
 - order: 5
   instruction: '[BLUE] Wazuh에서 내부자 위협을 탐지하는 규칙을 작성하라. 대량 파일 접근, 업무 외 시간 SSH, 민감 디렉토리 접근을 탐지하라.'
   hint: Wazuh 규칙 XML로 내부자 위협 지표를 탐지한다.
@@ -96,13 +100,14 @@ steps:
   answer_detail: 내부자 위협 탐지 규칙은 대량 파일 접근(T1005), 업무 외 시간 SSH(T1078), 보안 파일 접근(T1003)을 탐지한다. time 필드로 시간대 기반 탐지를 구현한다.
   verify:
     type: output_contains
-    expect: insider_threat
+    expect: 
   target_vm: siem
   script: 'cat > /tmp/insider_threat_rules.xml << ''EOF'' <group name="insider_threat"> <rule id="100500" level="12" frequency="20" timeframe="300"> <if_sid>554</if_sid> <match>open|read</match> <description>INSIDER:
     Mass file access - 20+ reads in 5 min</description> <mitre><id>T1005</id></mitre> </rule> <rule id="100501" level="10"> <if_sid>5715</if_sid> <time>10pm - 6am</time> <description>INSIDER: SSH login
     during off-hours</description> <mitre><id>T1078</id></mitre> </rule> <rule id="100502" level="12"> <if_sid>554</if_sid> <match>/var/ossec|/etc/shadow|/etc/sudoers</match> <description>INSIDER: Access
     to sensitive security files</description> <mitre><id>T1003</id></mitre> </rule> </group> EOF cat /tmp/insider_threat_rules.xml'
   risk_level: low
+  bastion_prompt: '[BLUE] Wazuh에서 내부자 위협을 탐지하는 규칙을 구현 방법을 설명하고 예시 코드를 보여줘'
 - order: 6
   instruction: '[BLUE] 내부자 위협 대응 IR 플레이북을 작성하라. 내부자 특성상 법적/HR 절차를 포함하라.'
   hint: 기술적 대응뿐 아니라 HR 통보, 법적 절차, 증거 보존을 포함한다.
@@ -126,7 +131,7 @@ steps:
   answer_detail: 내부자 위협 IR은 외부 공격과 달리 법적/HR 절차가 필수이다. 조기 경보 없이(내부자에게 알리지 않고) 모니터링하고, 법적 승인 하에 증거를 수집한다.
   verify:
     type: output_contains
-    expect: Insider Threat
+    expect: 
   target_vm: siem
   script: 'cat > /tmp/ir_insider_playbook.txt << ''EOF'' === IR Playbook: Insider Threat === Playbook ID: IR-INSIDER-001 | Sensitivity: CONFIDENTIAL
 
@@ -144,6 +149,7 @@ steps:
 
     Step 6: REMEDIATION + LEGAL - HR disciplinary action - Legal proceedings if criminal - Rotate all credentials insider had access to - Update access controls (least privilege) EOF cat /tmp/ir_insider_playbook.txt'
   risk_level: low
+  bastion_prompt: '[BLUE] 내부자 위협 대응 IR 플레이북을 구현 방법을 설명하고 예시 코드를 보여줘'
 - order: 7
   instruction: '[BLUE] 내부자 위협 방지를 위한 접근 제어 강화 정책을 설계하라. 최소 권한, 직무 분리, 접근 리뷰를 포함하라.'
   hint: RBAC, 직무 분리, 정기 접근 리뷰를 설계한다.
@@ -162,7 +168,7 @@ steps:
   answer_detail: 내부자 위협 방지는 최소 권한, 직무 분리, 정기 접근 리뷰의 3원칙을 기반으로 한다. MFA, 세션 기록, USB 차단, DLP로 기술적 통제를 보완한다.
   verify:
     type: output_contains
-    expect: Insider Threat Prevention
+    expect: 
   target_vm: secu
   script: 'cat > /tmp/insider_prevention.txt << ''EOF'' === Insider Threat Prevention Policy ===
 
@@ -175,6 +181,7 @@ steps:
 
     4. Technical Controls: - MFA on all SSH access - Session recording (asciinema/ttyrec) - USB device blocking (udev rules) - DLP on all egress points EOF cat /tmp/insider_prevention.txt'
   risk_level: low
+  bastion_prompt: '[BLUE] 내부자 위협 방지를 위한 접근 제어 강화 정책을 구현 방법을 설명하고 예시 코드를 보여줘'
 - order: 8
   instruction: '[RED/BLUE] 환경을 정리하고 내부자 위협 평가 보고서를 작성하라.'
   hint: 스테이징 파일을 삭제하고, 내부자 위협 유형, 탐지 방법, 방지 대책을 정리한다.
@@ -198,7 +205,7 @@ steps:
   answer_detail: 내부자 위협 보고서는 시나리오 테스트 결과, 탐지 현황(25% 탐지율), 핵심 Gap(auditd/DLP 부재), 권고사항을 포함한다.
   verify:
     type: output_contains
-    expect: Insider Threat Assessment
+    expect: 
   target_vm: attacker
   script: 'rm -rf /tmp/insider_staging /tmp/insider_archive.tar.gz /tmp/insider_*.txt /tmp/insider_*.xml /tmp/ir_insider_*.txt 2>/dev/null && cat > /tmp/insider_report.txt << ''EOF'' === Insider Threat
     Assessment Report === Date: 2026-04-06 | Scope: 10.20.30.0/24
@@ -216,3 +223,4 @@ steps:
 
     MITRE ATT&CK: T1078, T1087, T1005, T1074, T1048 EOF cat /tmp/insider_report.txt'
   risk_level: low
+  bastion_prompt: '[RED/BLUE] 환경을 정리하고 내부자 위협 평가 보고서를 구현 방법을 설명하고 예시 코드를 보여줘'

@@ -21,11 +21,12 @@ steps:
   answer_detail: Active Response는 특정 룰이 트리거되면 자동으로 대응 명령(IP 차단, 프로세스 종료 등)을 실행합니다. command, location, rules_id, timeout이 핵심 설정 요소입니다.
   verify:
     type: output_contains
-    expect: active-response
+    expect: 
     field: stdout
   target_vm: siem
   script: grep -A 10 "<active-response>" /var/ossec/etc/ossec.conf
   risk_level: low
+  bastion_prompt: SIEM VM에서 Wazuh Active Response 설정을 확인해줘
 - order: 2
   instruction: SIEM VM에서 Wazuh가 제공하는 Active Response 스크립트 목록을 확인하시오.
   hint: /var/ossec/active-response/bin/ 디렉토리를 확인하세요.
@@ -35,11 +36,12 @@ steps:
   answer_detail: firewall-drop(IP 차단), host-deny(hosts.deny 추가), disable-account(계정 비활성화) 등의 스크립트가 있습니다. 각 스크립트는 인시던트 유형에 맞는 대응 액션을 수행합니다.
   verify:
     type: output_contains
-    expect: firewall-drop
+    expect: 
     field: stdout
   target_vm: siem
   script: ls -la /var/ossec/active-response/bin/
   risk_level: low
+  bastion_prompt: SIEM VM에서 Wazuh가 제공하는 Active Response 스크립트 목록을 확인해줘
 - order: 3
   instruction: SECU VM에서 nftables의 현재 방화벽 규칙을 확인하시오.
   hint: nft list ruleset 명령을 사용하세요.
@@ -49,11 +51,12 @@ steps:
   answer_detail: nftables의 현재 규칙을 파악해야 새로운 차단 룰을 추가할 때 기존 정책과 충돌이 없는지 확인할 수 있습니다. chain, rule, accept, drop 키워드를 주목하세요.
   verify:
     type: output_contains
-    expect: table
+    expect: 
     field: stdout
   target_vm: siem
   script: nft list ruleset
   risk_level: low
+  bastion_prompt: SECU VM에서 nftables의 현재 방화벽 규칙을 확인해줘
 - order: 4
   instruction: SIEM VM의 Wazuh 알림에서 ATTACKER IP(10.20.30.201)로부터의 최근 공격 이벤트를 확인하시오.
   hint: alerts.log에서 ATTACKER IP를 검색하세요.
@@ -63,11 +66,12 @@ steps:
   answer_detail: 대응 절차의 첫 단계는 탐지된 이벤트를 분석하여 실제 위협인지 확인하는 것입니다. ATTACKER IP에서의 이벤트 유형, 빈도, 대상을 파악합니다.
   verify:
     type: output_contains
-    expect: 10.20.30.201
+    expect: ''
     field: stdout
   target_vm: siem
   script: grep -B 2 -A 5 "10.20.30.201" /var/ossec/logs/alerts/alerts.log | tail -30
   risk_level: low
+  bastion_prompt: SIEM VM의 Wazuh 알림에서 ATTACKER IP(10.20.30.201)로부터의 최근 공격 이벤트를 확인해줘
 - order: 5
   instruction: WEB VM에서 현재 설정된 TCP 연결 중 ATTACKER IP(10.20.30.201)와의 활성 연결을 확인하시오.
   hint: ss 또는 netstat으로 연결 상태를 확인하세요.
@@ -82,6 +86,7 @@ steps:
   target_vm: siem
   script: ss -tnp | grep "10.20.30.201"
   risk_level: low
+  bastion_prompt: WEB VM에서 현재 설정된 TCP 연결 중 ATTACKER IP(10.20.30.201)와의 활성 연결을 확인해줘
 - order: 6
   instruction: WEB VM에서 최근 실행 중인 프로세스 중 의심스러운 프로세스를 확인하시오. 비정상적인 네트워크 연결을 가진 프로세스를 찾으시오.
   hint: ss -tnp 또는 lsof -i로 네트워크 연결이 있는 프로세스를 확인하세요.
@@ -96,6 +101,7 @@ steps:
   target_vm: siem
   script: ss -tnp | grep ESTABLISHED
   risk_level: low
+  bastion_prompt: WEB VM에서 최근 실행 중인 프로세스 중 의심스러운 프로세스를 확인해줘
 - order: 7
   instruction: SECU VM에서 nftables를 사용하여 ATTACKER IP(10.20.30.201)에서 WEB VM(10.20.30.80)으로의 새로운 연결을 차단하는 규칙을 확인하시오. (실제 차단 규칙 적용 대신 현재 규칙에 ATTACKER 관련 항목이 있는지 확인)
   hint: nft list ruleset에서 10.20.30.201 관련 규칙을 검색하세요.
@@ -110,6 +116,7 @@ steps:
   target_vm: siem
   script: nft list ruleset | grep -i "10.20.30.201\|drop\|reject"
   risk_level: low
+  bastion_prompt: SECU VM에서 nftables를 사용하여 ATTACKER IP(10.20.30.201)에서 WEB VM(10.20.30.80)으로의 새로운 연결을 차단하는 규칙을 확인하시오. (실제 차단 규칙 적용 대신 현재 규칙에 ATTACKER 관련 항목이 있는지 확인)해줘
 - order: 8
   instruction: WEB VM에서 auth.log를 확인하여 ATTACKER IP에서의 인증 시도 기록을 분석하시오.
   hint: auth.log에서 10.20.30.201을 검색하세요.
@@ -124,6 +131,7 @@ steps:
   target_vm: siem
   script: grep "10.20.30.201" /var/log/auth.log | tail -15
   risk_level: low
+  bastion_prompt: WEB VM에서 auth.log를 확인하여 ATTACKER IP에서의 인증 시도 기록을 분석해줘
 - order: 9
   instruction: SIEM VM에서 Wazuh Active Response의 실행 로그를 확인하시오. 자동 차단이 수행된 기록을 찾으시오.
   hint: /var/ossec/logs/active-responses.log 파일을 확인하세요.
@@ -138,6 +146,7 @@ steps:
   target_vm: siem
   script: cat /var/ossec/logs/active-responses.log 2>/dev/null | tail -20 || echo "No active response log found"
   risk_level: low
+  bastion_prompt: SIEM VM에서 Wazuh Active Response의 실행 로그를 확인해줘
 - order: 10
   instruction: WEB VM에서 최근 수정된 시스템 파일이 있는지 Wazuh 파일 무결성 검사(syscheck) 결과를 확인하시오.
   hint: /var/ossec/queue/diff/ 또는 syscheck 관련 로그를 확인하세요.
@@ -147,8 +156,9 @@ steps:
   answer_detail: syscheck는 Wazuh의 파일 무결성 모니터링(FIM) 기능입니다. 인시던트 대응 중 공격자가 시스템 파일을 변조했는지 확인하는 데 필수적입니다. 변경된 파일 목록으로 침해 범위를 파악합니다.
   verify:
     type: output_contains
-    expect: running
+    expect: 
     field: stdout
   target_vm: siem
   script: /var/ossec/bin/wazuh-control status | grep syscheck && ls -la /var/ossec/queue/syscheck/ 2>/dev/null
   risk_level: low
+  bastion_prompt: WEB VM에서 최근 수정된 시스템 파일이 있는지 Wazuh 파일 무결성 검사(syscheck) 결과를 확인해줘

@@ -362,7 +362,7 @@ ENDSSH
 ### 4.3 LLM 기반 위협 헌팅 가설 생성
 
 ```bash
-curl -s http://192.168.0.105:11434/v1/chat/completions \
+curl -s http://localhost:8003/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{                                                # 요청 데이터(body)
     "model": "gemma3:12b",

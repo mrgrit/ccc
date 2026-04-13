@@ -216,7 +216,7 @@ import re
 import time
 import urllib.request
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 
 class AIDefenseFramework:
     """종합 AI 방어 프레임워크"""
@@ -587,7 +587,7 @@ import re
 import urllib.request
 import time
 
-OLLAMA_URL = "http://192.168.0.105:11434/v1/chat/completions"
+OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
 
 # 벤치마크 데이터
 BENCHMARK = [

