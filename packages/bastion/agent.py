@@ -420,11 +420,25 @@ class BastionAgent:
                 self.history.append({"role": "assistant", "content": analysis})
                 return
 
-            # 1-d. 순수 Q&A
-            yield {"event": "stage", "stage": "qa"}
-            response = yield from self._stream_qa_events(message)
-            self.history.append({"role": "assistant", "content": response})
-            return
+            # 1-d. shell 자동 fallback — 실행 가능한 작업이면 Q&A 대신 shell로
+            if self._should_execute(message):
+                target = self._infer_target_vm(message)
+                command = self._generate_shell_command(message, target)
+                if command:
+                    skill_steps = [("shell", {"target": target, "command": command})]
+                    # → STAGE 2로 진행
+                else:
+                    # 명령어 생성 실패 → Q&A
+                    yield {"event": "stage", "stage": "qa"}
+                    response = yield from self._stream_qa_events(message)
+                    self.history.append({"role": "assistant", "content": response})
+                    return
+            else:
+                # 순수 Q&A
+                yield {"event": "stage", "stage": "qa"}
+                response = yield from self._stream_qa_events(message)
+                self.history.append({"role": "assistant", "content": response})
+                return
 
         # ══ STAGE 2: EXECUTING — 멀티스텝 Skill ═══════════════════════════
         yield {"event": "stage", "stage": "executing"}
@@ -578,8 +592,100 @@ class BastionAgent:
 
     # ── PLANNING helpers ────────────────────────────────────────────────────
 
+    # 구체적 명령어 패턴 — 이 패턴이 포함되면 Playbook 대신 Skill로 라우팅
+    _CONCRETE_CMD_PATTERNS = re.compile(
+        r'(curl\s|nmap\s|grep\s|sed\s|awk\s|systemctl\s|auditctl\s|chage\s|chmod\s|'
+        r'docker\s|nft\s|hydra\s|nikto\s|sqlmap\s|ping\s|dig\s|nc\s|netcat\s|'
+        r'python3\s|cat\s|echo\s|ls\s|find\s|tail\s|head\s|mkdir\s|useradd\s|usermod\s)',
+        re.IGNORECASE
+    )
+
+    # 실행 가능한 작업 키워드 — 이 키워드가 있으면 Q&A가 아닌 shell 실행
+    _EXEC_KEYWORDS = re.compile(
+        r'(확인해줘|설정해줘|스캔해줘|실행해줘|점검해줘|테스트해줘|수행해줘|'
+        r'조회해줘|추가해줘|삭제해줘|생성해줘|저장해줘|분석해줘|검색해줘|'
+        r'활성화해줘|비활성화해줘|시작해줘|중지해줘|'
+        r'확인하|설정하|스캔하|실행하|점검하|시오)',
+        re.IGNORECASE
+    )
+
+    # VM 추론 패턴
+    _VM_ROUTE_RULES = [
+        (re.compile(r'attacker|nmap|hydra|nikto|sqlmap|searchsploit|metasploit|msfconsole', re.I), "attacker"),
+        (re.compile(r'secu|방화벽|nftables|suricata|IDS|게이트웨이|감사|auditd|audit|패스워드|PAM|SSH.*설정|배너|rsyslog|sshd|login\.defs|chage|계정.*잠금|계정.*관리', re.I), "secu"),
+        (re.compile(r'web|docker|apache|modsecurity|WAF|JuiceShop|DVWA|컨테이너|80|3000|8080', re.I), "web"),
+        (re.compile(r'siem|wazuh|alerts|알림|에이전트.*목록|ossec|로그.*분석', re.I), "siem"),
+        (re.compile(r'manager|ollama|LLM|python3.*스크립트|AI|가드레일|PII', re.I), "manager"),
+    ]
+
+    def _generate_shell_command(self, message: str, target_vm: str) -> str:
+        """자연어 요청을 셸 명령어로 변환. LLM이 적절한 명령어를 생성한다."""
+        # 메시지에 이미 구체적 명령어가 포함되어 있으면 추출
+        cmd_match = self._CONCRETE_CMD_PATTERNS.search(message)
+        if cmd_match:
+            # 명령어 부분 추출 시도 — 전체 메시지가 명령어일 수 있음
+            # "attacker에서 nmap -sV 10.20.30.80 실행해줘" → "nmap -sV 10.20.30.80"
+            import re
+            # VM 언급과 "에서" / "실행해줘" 같은 한국어 제거하고 명령어 부분만
+            cleaned = re.sub(r'^.*?에서\s+', '', message)
+            cleaned = re.sub(r'\s*(실행해줘|확인해줘|해줘|수행해줘|하시오).*$', '', cleaned)
+            if cleaned and self._CONCRETE_CMD_PATTERNS.search(cleaned):
+                return cleaned.strip()
+
+        # LLM으로 명령어 생성
+        vm_info = f"{target_vm} VM (IP: {self.vm_ips.get(target_vm, 'unknown')})"
+        prompt = (
+            f"다음 요청을 {vm_info}에서 실행할 셸 명령어 1줄로 변환하세요.\n"
+            f"명령어만 출력하세요. 설명이나 주석은 붙이지 마세요.\n\n"
+            f"요청: {message}\n\n명령어:"
+        )
+        try:
+            r = httpx.post(f"{self.ollama_url}/api/generate", json={
+                "model": self.model, "prompt": prompt, "stream": False,
+                "options": {"temperature": 0.0, "num_predict": 200},
+            }, timeout=15.0)
+            response = r.json().get("response", "").strip()
+            # 마크다운 코드블록 제거
+            import re
+            response = re.sub(r'^```\w*\n?', '', response)
+            response = re.sub(r'\n?```$', '', response)
+            response = response.strip().split('\n')[0]  # 첫 줄만
+            if response and not response.startswith('#'):
+                return response
+        except Exception:
+            pass
+        return ""
+
+    def _should_execute(self, message: str) -> bool:
+        """메시지가 실행 가능한 작업인지 판단."""
+        # 구체적 명령어가 포함되면 무조건 실행
+        if self._CONCRETE_CMD_PATTERNS.search(message):
+            return True
+        # 실행 키워드가 포함되면 실행
+        if self._EXEC_KEYWORDS.search(message):
+            return True
+        return False
+
+    def _infer_target_vm(self, message: str) -> str:
+        """메시지에서 대상 VM role을 추론."""
+        msg_lower = message.lower()
+        # 명시적 VM 언급 확인
+        for role in ["attacker", "secu", "web", "siem", "manager"]:
+            if role in msg_lower:
+                return role
+        # 키워드 패턴 매칭
+        for pattern, role in self._VM_ROUTE_RULES:
+            if pattern.search(message):
+                return role
+        return "attacker"  # 기본값
+
     def _select_playbook(self, message: str) -> str | None:
-        """LLM으로 정적 Playbook 매칭."""
+        """LLM으로 정적 Playbook 매칭.
+        구체적 명령어가 포함된 요청은 Playbook이 아닌 Skill로 라우팅."""
+        # 구체적 명령어가 포함되면 Playbook 매칭 건너뜀
+        if self._CONCRETE_CMD_PATTERNS.search(message):
+            return None
+
         playbooks = list_playbooks()
         if not playbooks:
             return None
@@ -588,7 +694,8 @@ class BastionAgent:
             for p in playbooks
         )
         prompt = (
-            f"다음 Playbook 중 사용자 요청에 맞는 것을 선택하세요.\n"
+            f"다음 Playbook 중 사용자 요청에 정확히 맞는 것을 선택하세요.\n"
+            f"구체적인 명령어 실행 요청이면 반드시 'none'을 출력하세요.\n"
             f"없으면 정확히 'none' 만 출력하세요. 있으면 playbook_id 만 출력하세요.\n\n"
             f"Playbook:\n{pb_lines}\n\n"
             f"요청: {message}\n\nplaybook_id:"
