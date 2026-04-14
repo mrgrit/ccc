@@ -3,7 +3,9 @@ title: 고급 탐지 공학 — Suricata 커스텀 규칙과 Wazuh 활성 응답
 version: ai
 course: battle-adv-ai
 week: 6
-description: 고급 탐지 공학을 실습한다. Suricata IPS의 커스텀 시그니처 작성, Wazuh Active Response 설정, 실시간 자동 차단 스크립트를 구현하여 활성 위협에 대한 자동화된 방어 체계를 구축한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: 고급 탐지 공학을 실습한다. Suricata IPS의 커스텀 시그니처 작성, Wazuh Active Response 설정,
+  실시간 자동 차단 스크립트를 구현하여 활성 위협에 대한 자동화된 방어 체계를 구축한다. AI SubAgent가 자동으로 명령을 실행하고 결과를
+  검증합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -24,15 +26,18 @@ steps:
   hint: suricatasc 또는 stats.log를 분석하고 eve.json의 최근 이벤트를 확인한다.
   category: defense
   points: 10
-  answer: ssh 10.20.30.1 'suricatasc -c uptime 2>/dev/null; cat /var/log/suricata/stats.log 2>/dev/null | tail -10; echo "---"; tail -5 /var/log/suricata/eve.json 2>/dev/null | python3 -m json.tool 2>/dev/null
-    | head -20' 2>&1 | head -30
-  answer_detail: Suricata IPS 모드는 네트워크 트래픽을 인라인으로 검사하고 악성 트래픽을 차단한다. stats.log에서 detect.alert, flow.tcp 등의 카운터를 확인한다.
+  answer: ssh 10.20.30.1 'suricatasc -c uptime 2>/dev/null; cat /var/log/suricata/stats.log
+    2>/dev/null | tail -10; echo "---"; tail -5 /var/log/suricata/eve.json 2>/dev/null
+    | python3 -m json.tool 2>/dev/null | head -20' 2>&1 | head -30
+  answer_detail: Suricata IPS 모드는 네트워크 트래픽을 인라인으로 검사하고 악성 트래픽을 차단한다. stats.log에서 detect.alert,
+    flow.tcp 등의 카운터를 확인한다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
   target_vm: secu
-  script: ssh 10.20.30.1 'suricatasc -c uptime 2>/dev/null; cat /var/log/suricata/stats.log 2>/dev/null | tail -10; echo "---"; tail -5 /var/log/suricata/eve.json 2>/dev/null | python3 -m json.tool 2>/dev/null
-    | head -20' 2>&1 | head -30
+  script: ssh 10.20.30.1 'suricatasc -c uptime 2>/dev/null; cat /var/log/suricata/stats.log
+    2>/dev/null | tail -10; echo "---"; tail -5 /var/log/suricata/eve.json 2>/dev/null
+    | python3 -m json.tool 2>/dev/null | head -20' 2>&1 | head -30
   risk_level: low
   bastion_prompt: '[BLUE] Suricata IPS의 동작 상태를 확인하고 현재 규칙 통계를 조회해줘'
 - order: 2
@@ -40,59 +45,91 @@ steps:
   hint: flags 옵션과 threshold로 짧은 시간 내 다수 연결 시도를 탐지한다.
   category: defense
   points: 10
-  answer: 'cat > /tmp/portscan_detection.rules << ''EOF'' alert tcp any any -> 10.20.30.0/24 any (msg:"SCAN: SYN scan detected"; flags:S; threshold:type both, track by_src, count 20, seconds 5; classtype:attempted-recon;
-    sid:4000001; rev:1;) alert tcp any any -> 10.20.30.0/24 any (msg:"SCAN: NULL scan detected"; flags:0; threshold:type both, track by_src, count 10, seconds 10; classtype:attempted-recon; sid:4000002;
-    rev:1;) alert tcp any any -> 10.20.30.0/24 any (msg:"SCAN: XMAS scan detected"; flags:FPU; threshold:type both, track by_src, count 10, seconds 10; classtype:attempted-recon; sid:4000003; rev:1;) alert
-    icmp any any -> 10.20.30.0/24 any (msg:"SCAN: ICMP sweep detected"; itype:8; threshold:type both, track by_src, count 10, seconds 5; classtype:attempted-recon; sid:4000004; rev:1;) EOF cat /tmp/portscan_detection.rules'
-  answer_detail: SYN 스캔(S 플래그만), NULL 스캔(플래그 없음), XMAS 스캔(FIN+PSH+URG)을 각각 탐지한다. threshold로 5초 내 20회 이상 연결 시도를 기준으로 한다.
+  answer: 'cat > /tmp/portscan_detection.rules << ''EOF'' alert tcp any any -> 10.20.30.0/24
+    any (msg:"SCAN: SYN scan detected"; flags:S; threshold:type both, track by_src,
+    count 20, seconds 5; classtype:attempted-recon; sid:4000001; rev:1;) alert tcp
+    any any -> 10.20.30.0/24 any (msg:"SCAN: NULL scan detected"; flags:0; threshold:type
+    both, track by_src, count 10, seconds 10; classtype:attempted-recon; sid:4000002;
+    rev:1;) alert tcp any any -> 10.20.30.0/24 any (msg:"SCAN: XMAS scan detected";
+    flags:FPU; threshold:type both, track by_src, count 10, seconds 10; classtype:attempted-recon;
+    sid:4000003; rev:1;) alert icmp any any -> 10.20.30.0/24 any (msg:"SCAN: ICMP
+    sweep detected"; itype:8; threshold:type both, track by_src, count 10, seconds
+    5; classtype:attempted-recon; sid:4000004; rev:1;) EOF cat /tmp/portscan_detection.rules'
+  answer_detail: SYN 스캔(S 플래그만), NULL 스캔(플래그 없음), XMAS 스캔(FIN+PSH+URG)을 각각 탐지한다. threshold로
+    5초 내 20회 이상 연결 시도를 기준으로 한다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
   target_vm: secu
-  script: 'cat > /tmp/portscan_detection.rules << ''EOF'' alert tcp any any -> 10.20.30.0/24 any (msg:"SCAN: SYN scan detected"; flags:S; threshold:type both, track by_src, count 20, seconds 5; classtype:attempted-recon;
-    sid:4000001; rev:1;) alert tcp any any -> 10.20.30.0/24 any (msg:"SCAN: NULL scan detected"; flags:0; threshold:type both, track by_src, count 10, seconds 10; classtype:attempted-recon; sid:4000002;
-    rev:1;) alert tcp any any -> 10.20.30.0/24 any (msg:"SCAN: XMAS scan detected"; flags:FPU; threshold:type both, track by_src, count 10, seconds 10; classtype:attempted-recon; sid:4000003; rev:1;) alert
-    icmp any any -> 10.20.30.0/24 any (msg:"SCAN: ICMP sweep detected"; itype:8; threshold:type both, track by_src, count 10, seconds 5; classtype:attempted-recon; sid:4000004; rev:1;) EOF cat /tmp/portscan_detection.rules'
+  script: 'cat > /tmp/portscan_detection.rules << ''EOF'' alert tcp any any -> 10.20.30.0/24
+    any (msg:"SCAN: SYN scan detected"; flags:S; threshold:type both, track by_src,
+    count 20, seconds 5; classtype:attempted-recon; sid:4000001; rev:1;) alert tcp
+    any any -> 10.20.30.0/24 any (msg:"SCAN: NULL scan detected"; flags:0; threshold:type
+    both, track by_src, count 10, seconds 10; classtype:attempted-recon; sid:4000002;
+    rev:1;) alert tcp any any -> 10.20.30.0/24 any (msg:"SCAN: XMAS scan detected";
+    flags:FPU; threshold:type both, track by_src, count 10, seconds 10; classtype:attempted-recon;
+    sid:4000003; rev:1;) alert icmp any any -> 10.20.30.0/24 any (msg:"SCAN: ICMP
+    sweep detected"; itype:8; threshold:type both, track by_src, count 10, seconds
+    5; classtype:attempted-recon; sid:4000004; rev:1;) EOF cat /tmp/portscan_detection.rules'
   risk_level: low
-  bastion_prompt: '[BLUE] 포트 스캔, NULL 스캔, XMAS 스캔, ICMP 스위프를 탐지하는 Suricata 규칙을 구현 방법을 설명하고 예시 코드를 보여줘'
+  bastion_prompt: '[BLUE] 포트 스캔, NULL 스캔, XMAS 스캔, ICMP 스위프를 탐지하는 Suricata 규칙을 구현
+    방법을 설명하고 예시 코드를 보여줘'
 - order: 3
-  instruction: '[BLUE] fail2ban을 설정하여 SSH 브루트포스 공격을 자동 차단하라. 5분 내 5회 실패 시 30분간 IP를 차단하는 규칙을 작성하라.'
+  instruction: '[BLUE] fail2ban을 설정하여 SSH 브루트포스 공격을 자동 차단하라. 5분 내 5회 실패 시 30분간 IP를
+    차단하는 규칙을 작성하라.'
   hint: fail2ban의 jail.local 파일에 sshd jail을 설정한다.
   category: defense
   points: 10
-  answer: 'cat > /tmp/fail2ban_jail.conf << ''EOF'' [DEFAULT] bantime = 1800 findtime = 300 maxretry = 5 banaction = nftables-multiport
+  answer: 'cat > /tmp/fail2ban_jail.conf << ''EOF'' [DEFAULT] bantime = 1800 findtime
+    = 300 maxretry = 5 banaction = nftables-multiport
 
-    [sshd] enabled = true port = ssh filter = sshd logpath = /var/log/auth.log maxretry = 5 findtime = 300 bantime = 1800
+    [sshd] enabled = true port = ssh filter = sshd logpath = /var/log/auth.log maxretry
+    = 5 findtime = 300 bantime = 1800
 
-    [suricata] enabled = true filter = suricata logpath = /var/log/suricata/eve.json maxretry = 3 findtime = 60 bantime = 3600 EOF cat /tmp/fail2ban_jail.conf'
-  answer_detail: fail2ban은 로그 파일을 모니터링하여 반복적인 공격을 자동 차단한다. findtime 내 maxretry 초과 시 bantime만큼 IP를 차단한다.
+    [suricata] enabled = true filter = suricata logpath = /var/log/suricata/eve.json
+    maxretry = 3 findtime = 60 bantime = 3600 EOF cat /tmp/fail2ban_jail.conf'
+  answer_detail: fail2ban은 로그 파일을 모니터링하여 반복적인 공격을 자동 차단한다. findtime 내 maxretry 초과
+    시 bantime만큼 IP를 차단한다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
   target_vm: secu
-  script: 'cat > /tmp/fail2ban_jail.conf << ''EOF'' [DEFAULT] bantime = 1800 findtime = 300 maxretry = 5 banaction = nftables-multiport
+  script: 'cat > /tmp/fail2ban_jail.conf << ''EOF'' [DEFAULT] bantime = 1800 findtime
+    = 300 maxretry = 5 banaction = nftables-multiport
 
-    [sshd] enabled = true port = ssh filter = sshd logpath = /var/log/auth.log maxretry = 5 findtime = 300 bantime = 1800
+    [sshd] enabled = true port = ssh filter = sshd logpath = /var/log/auth.log maxretry
+    = 5 findtime = 300 bantime = 1800
 
-    [suricata] enabled = true filter = suricata logpath = /var/log/suricata/eve.json maxretry = 3 findtime = 60 bantime = 3600 EOF cat /tmp/fail2ban_jail.conf'
+    [suricata] enabled = true filter = suricata logpath = /var/log/suricata/eve.json
+    maxretry = 3 findtime = 60 bantime = 3600 EOF cat /tmp/fail2ban_jail.conf'
   risk_level: low
   bastion_prompt: '[BLUE] fail2ban을 설정하여 SSH 브루트포스 공격을 자동 차단하라 구현 방법과 예시를 설명해줘'
 - order: 4
-  instruction: '[BLUE] Wazuh Active Response를 설정하라. 특정 알림 발생 시 자동으로 IP를 차단하는 firewall-drop 명령을 구성하라.'
+  instruction: '[BLUE] Wazuh Active Response를 설정하라. 특정 알림 발생 시 자동으로 IP를 차단하는 firewall-drop
+    명령을 구성하라.'
   hint: ossec.conf의 active-response 섹션에 firewall-drop 명령을 설정한다.
   category: defense
   points: 10
-  answer: "cat > /tmp/wazuh_active_response.xml << 'EOF'\n<ossec_config>\n  <active-response>\n    <command>firewall-drop</command>\n    <location>local</location>\n    <rules_id>100100,100300</rules_id>\n\
-    \    <timeout>3600</timeout>\n  </active-response>\n  <active-response>\n    <command>host-deny</command>\n    <location>local</location>\n    <level>12</level>\n    <timeout>1800</timeout>\n  </active-response>\n\
-    \  <command>\n    <name>firewall-drop</name>\n    <executable>firewall-drop</executable>\n    <timeout_allowed>yes</timeout_allowed>\n  </command>\n</ossec_config>\nEOF\ncat /tmp/wazuh_active_response.xml"
-  answer_detail: Wazuh Active Response는 알림 발생 시 자동 대응 액션을 실행한다. firewall-drop은 nftables로 IP를 차단하고, timeout으로 차단 기간을 설정한다.
+  answer: "cat > /tmp/wazuh_active_response.xml << 'EOF'\n<ossec_config>\n  <active-response>\n\
+    \    <command>firewall-drop</command>\n    <location>local</location>\n    <rules_id>100100,100300</rules_id>\n\
+    \    <timeout>3600</timeout>\n  </active-response>\n  <active-response>\n    <command>host-deny</command>\n\
+    \    <location>local</location>\n    <level>12</level>\n    <timeout>1800</timeout>\n\
+    \  </active-response>\n  <command>\n    <name>firewall-drop</name>\n    <executable>firewall-drop</executable>\n\
+    \    <timeout_allowed>yes</timeout_allowed>\n  </command>\n</ossec_config>\nEOF\n\
+    cat /tmp/wazuh_active_response.xml"
+  answer_detail: Wazuh Active Response는 알림 발생 시 자동 대응 액션을 실행한다. firewall-drop은 nftables로
+    IP를 차단하고, timeout으로 차단 기간을 설정한다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
   target_vm: siem
-  script: "cat > /tmp/wazuh_active_response.xml << 'EOF'\n<ossec_config>\n  <active-response>\n    <command>firewall-drop</command>\n    <location>local</location>\n    <rules_id>100100,100300</rules_id>\n\
-    \    <timeout>3600</timeout>\n  </active-response>\n  <active-response>\n    <command>host-deny</command>\n    <location>local</location>\n    <level>12</level>\n    <timeout>1800</timeout>\n  </active-response>\n\
-    \  <command>\n    <name>firewall-drop</name>\n    <executable>firewall-drop</executable>\n    <timeout_allowed>yes</timeout_allowed>\n  </command>\n</ossec_config>\nEOF\ncat /tmp/wazuh_active_response.xml"
+  script: "cat > /tmp/wazuh_active_response.xml << 'EOF'\n<ossec_config>\n  <active-response>\n\
+    \    <command>firewall-drop</command>\n    <location>local</location>\n    <rules_id>100100,100300</rules_id>\n\
+    \    <timeout>3600</timeout>\n  </active-response>\n  <active-response>\n    <command>host-deny</command>\n\
+    \    <location>local</location>\n    <level>12</level>\n    <timeout>1800</timeout>\n\
+    \  </active-response>\n  <command>\n    <name>firewall-drop</name>\n    <executable>firewall-drop</executable>\n\
+    \    <timeout_allowed>yes</timeout_allowed>\n  </command>\n</ossec_config>\nEOF\n\
+    cat /tmp/wazuh_active_response.xml"
   risk_level: low
   bastion_prompt: '[BLUE] Wazuh Active Response를 설정해줘'
 - order: 5
@@ -100,76 +137,154 @@ steps:
   hint: ps aux로 비정상 프로세스 패턴을 주기적으로 검사한다.
   category: defense
   points: 10
-  answer: 'cat > /tmp/process_monitor.sh << ''SCRIPT'' #!/bin/bash echo "=== Real-time Process Anomaly Monitor ===" echo "[1] Reverse Shell Indicators:" ps aux | grep -iE "nc -e|ncat -e|bash -i|/dev/tcp|python.*socket|perl.*socket"
-    | grep -v grep || echo "  None found" echo "[2] Crypto Miner Indicators:" ps aux | grep -iE "xmrig|minerd|cpuminer|stratum|pool\." | grep -v grep || echo "  None found" echo "[3] Privilege Escalation
-    Indicators:" ps aux | grep -iE "sudo.*-i|pkexec|dirtypipe|pwnkit" | grep -v grep || echo "  None found" echo "[4] High CPU Processes (>80%):" ps aux --sort=-%cpu | awk "NR<=3 && \$3>80 {print \$0}"
-    || echo "  None found" SCRIPT bash /tmp/process_monitor.sh'
-  answer_detail: 프로세스 모니터링은 리버스 쉘(nc -e, bash -i), 암호화폐 채굴(xmrig), 권한 상승(pkexec) 패턴을 검사한다. 높은 CPU 사용률도 채굴의 지표가 될 수 있다.
+  answer: 'cat > /tmp/process_monitor.sh << ''SCRIPT'' #!/bin/bash echo "=== Real-time
+    Process Anomaly Monitor ===" echo "[1] Reverse Shell Indicators:" ps aux | grep
+    -iE "nc -e|ncat -e|bash -i|/dev/tcp|python.*socket|perl.*socket" | grep -v grep
+    || echo "  None found" echo "[2] Crypto Miner Indicators:" ps aux | grep -iE "xmrig|minerd|cpuminer|stratum|pool\."
+    | grep -v grep || echo "  None found" echo "[3] Privilege Escalation Indicators:"
+    ps aux | grep -iE "sudo.*-i|pkexec|dirtypipe|pwnkit" | grep -v grep || echo "  None
+    found" echo "[4] High CPU Processes (>80%):" ps aux --sort=-%cpu | awk "NR<=3
+    && \$3>80 {print \$0}" || echo "  None found" SCRIPT bash /tmp/process_monitor.sh'
+  answer_detail: 프로세스 모니터링은 리버스 쉘(nc -e, bash -i), 암호화폐 채굴(xmrig), 권한 상승(pkexec) 패턴을
+    검사한다. 높은 CPU 사용률도 채굴의 지표가 될 수 있다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
   target_vm: secu
-  script: 'cat > /tmp/process_monitor.sh << ''SCRIPT'' #!/bin/bash echo "=== Real-time Process Anomaly Monitor ===" echo "[1] Reverse Shell Indicators:" ps aux | grep -iE "nc -e|ncat -e|bash -i|/dev/tcp|python.*socket|perl.*socket"
-    | grep -v grep || echo "  None found" echo "[2] Crypto Miner Indicators:" ps aux | grep -iE "xmrig|minerd|cpuminer|stratum|pool\." | grep -v grep || echo "  None found" echo "[3] Privilege Escalation
-    Indicators:" ps aux | grep -iE "sudo.*-i|pkexec|dirtypipe|pwnkit" | grep -v grep || echo "  None found" echo "[4] High CPU Processes (>80%):" ps aux --sort=-%cpu | awk "NR<=3 && \$3>80 {print \$0}"
-    || echo "  None found" SCRIPT bash /tmp/process_monitor.sh'
+  script: 'cat > /tmp/process_monitor.sh << ''SCRIPT'' #!/bin/bash echo "=== Real-time
+    Process Anomaly Monitor ===" echo "[1] Reverse Shell Indicators:" ps aux | grep
+    -iE "nc -e|ncat -e|bash -i|/dev/tcp|python.*socket|perl.*socket" | grep -v grep
+    || echo "  None found" echo "[2] Crypto Miner Indicators:" ps aux | grep -iE "xmrig|minerd|cpuminer|stratum|pool\."
+    | grep -v grep || echo "  None found" echo "[3] Privilege Escalation Indicators:"
+    ps aux | grep -iE "sudo.*-i|pkexec|dirtypipe|pwnkit" | grep -v grep || echo "  None
+    found" echo "[4] High CPU Processes (>80%):" ps aux --sort=-%cpu | awk "NR<=3
+    && \$3>80 {print \$0}" || echo "  None found" SCRIPT bash /tmp/process_monitor.sh'
   risk_level: low
-  bastion_prompt: '[BLUE] 의심스러운 프로세스(리버스 쉘, 암호화폐 채굴, 권한 상승)를 실시간으로 모니터링하는 스크립트를 구현 방법을 설명하고 예시 코드를 보여줘'
+  bastion_prompt: '[BLUE] 의심스러운 프로세스(리버스 쉘, 암호화폐 채굴, 권한 상승)를 실시간으로 모니터링하는 스크립트를 구현
+    방법을 설명하고 예시 코드를 보여줘'
 - order: 6
-  instruction: '[RED] 라이브 공격 시뮬레이션 — 포트 스캔, SQL Injection, SSH 브루트포스를 순차 실행하고 탐지 상황을 확인하라.'
+  instruction: '[RED] 라이브 공격 시뮬레이션 — 포트 스캔, SQL Injection, SSH 브루트포스를 순차 실행하고 탐지 상황을
+    확인하라.'
   hint: nmap, curl(SQLi), SSH 실패 접근을 순차 실행한다.
   category: exploit
   points: 10
-  answer: echo '=== Live Attack Simulation ===' && echo '[1] Port scan:' && nmap -sS --top-ports 100 --max-retries 1 --host-timeout 15s -T4 10.20.30.80 2>&1 | tail -5 && echo '[2] SQL Injection:' && curl
-    -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%20OR%201=1--' 2>&1 | head -3 && echo '[3] SSH brute force (3 attempts):' && for i in 1 2 3; do ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no
-    -o PasswordAuthentication=yes fakeccc@10.20.30.80 2>&1 | head -1; done && echo '=== Attack simulation complete ==='
-  answer_detail: 라이브 공격 시뮬레이션으로 방어 체계의 실효성을 검증한다. 포트 스캔(T1046), SQLi(T1190), SSH 브루트포스(T1110)를 실행하고 Suricata/WAF/fail2ban의 탐지 여부를 확인한다.
+  answer: echo '=== Live Attack Simulation ===' && echo '[1] Port scan:' && nmap -sS
+    --top-ports 100 --max-retries 1 --host-timeout 15s -T4 10.20.30.80 2>&1 | tail
+    -5 && echo '[2] SQL Injection:' && curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%20OR%201=1--'
+    2>&1 | head -3 && echo '[3] SSH brute force (3 attempts):' && for i in 1 2 3;
+    do ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no -o PasswordAuthentication=yes
+    fakeccc@10.20.30.80 2>&1 | head -1; done && echo '=== Attack simulation complete
+    ==='
+  answer_detail: 라이브 공격 시뮬레이션으로 방어 체계의 실효성을 검증한다. 포트 스캔(T1046), SQLi(T1190), SSH 브루트포스(T1110)를
+    실행하고 Suricata/WAF/fail2ban의 탐지 여부를 확인한다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
   target_vm: attacker
-  script: echo '=== Live Attack Simulation ===' && echo '[1] Port scan:' && nmap -sS --top-ports 100 --max-retries 1 --host-timeout 15s -T4 10.20.30.80 2>&1 | tail -5 && echo '[2] SQL Injection:' && curl
-    -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%20OR%201=1--' 2>&1 | head -3 && echo '[3] SSH brute force (3 attempts):' && for i in 1 2 3; do ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no
-    -o PasswordAuthentication=yes fakeccc@10.20.30.80 2>&1 | head -1; done && echo '=== Attack simulation complete ==='
+  script: echo '=== Live Attack Simulation ===' && echo '[1] Port scan:' && nmap -sS
+    --top-ports 100 --max-retries 1 --host-timeout 15s -T4 10.20.30.80 2>&1 | tail
+    -5 && echo '[2] SQL Injection:' && curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%20OR%201=1--'
+    2>&1 | head -3 && echo '[3] SSH brute force (3 attempts):' && for i in 1 2 3;
+    do ssh -o ConnectTimeout=2 -o StrictHostKeyChecking=no -o PasswordAuthentication=yes
+    fakeccc@10.20.30.80 2>&1 | head -1; done && echo '=== Attack simulation complete
+    ==='
   risk_level: medium
-  bastion_prompt: '[RED] 라이브 공격 시뮬레이션 — 포트 스캔, SQL Injection, SSH 브루트포스를 순차 실행하고 탐지 상황을 확인해줘'
+  bastion_prompt: '[RED] 라이브 공격 시뮬레이션 — 포트 스캔, SQL Injection, SSH 브루트포스를 순차 실행하고 탐지
+    상황을 확인해줘'
 - order: 7
-  instruction: '[BLUE] 공격 시뮬레이션 후 탐지 결과를 확인하라. Suricata 알림, WAF 로그, auth.log에서 탐지된 이벤트를 수집하라.'
+  instruction: '[BLUE] 공격 시뮬레이션 후 탐지 결과를 확인하라. Suricata 알림, WAF 로그, auth.log에서 탐지된
+    이벤트를 수집하라.'
   hint: 각 로그 소스에서 최근 보안 이벤트를 필터링한다.
   category: analysis
   points: 10
-  answer: echo '=== Detection Results ===' && echo '[Suricata Alerts]:' && ssh 10.20.30.1 'tail -50 /var/log/suricata/eve.json 2>/dev/null | python3 -c "import sys,json; [print(json.loads(l).get(\"alert\",{}).get(\"signature\",\"\"))
-    for l in sys.stdin if \"alert\" in l]" 2>/dev/null' | tail -5; echo '[Auth.log]:' && grep -E 'Failed|Invalid' /var/log/auth.log 2>/dev/null | tail -5; echo '[Network]:' && ss -tn | grep -c ESTAB
-  answer_detail: Suricata(네트워크 레벨), WAF(웹 레벨), auth.log(인증 레벨)의 3개 소스를 교차 분석하여 탐지된 공격과 놓친 공격을 식별한다.
+  answer: echo '=== Detection Results ===' && echo '[Suricata Alerts]:' && ssh 10.20.30.1
+    'tail -50 /var/log/suricata/eve.json 2>/dev/null | python3 -c "import sys,json;
+    [print(json.loads(l).get(\"alert\",{}).get(\"signature\",\"\")) for l in sys.stdin
+    if \"alert\" in l]" 2>/dev/null' | tail -5; echo '[Auth.log]:' && grep -E 'Failed|Invalid'
+    /var/log/auth.log 2>/dev/null | tail -5; echo '[Network]:' && ss -tn | grep -c
+    ESTAB
+  answer_detail: Suricata(네트워크 레벨), WAF(웹 레벨), auth.log(인증 레벨)의 3개 소스를 교차 분석하여 탐지된
+    공격과 놓친 공격을 식별한다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
   target_vm: secu
-  script: echo '=== Detection Results ===' && echo '[Suricata Alerts]:' && ssh 10.20.30.1 'tail -50 /var/log/suricata/eve.json 2>/dev/null | python3 -c "import sys,json; [print(json.loads(l).get(\"alert\",{}).get(\"signature\",\"\"))
-    for l in sys.stdin if \"alert\" in l]" 2>/dev/null' | tail -5; echo '[Auth.log]:' && grep -E 'Failed|Invalid' /var/log/auth.log 2>/dev/null | tail -5; echo '[Network]:' && ss -tn | grep -c ESTAB
+  script: echo '=== Detection Results ===' && echo '[Suricata Alerts]:' && ssh 10.20.30.1
+    'tail -50 /var/log/suricata/eve.json 2>/dev/null | python3 -c "import sys,json;
+    [print(json.loads(l).get(\"alert\",{}).get(\"signature\",\"\")) for l in sys.stdin
+    if \"alert\" in l]" 2>/dev/null' | tail -5; echo '[Auth.log]:' && grep -E 'Failed|Invalid'
+    /var/log/auth.log 2>/dev/null | tail -5; echo '[Network]:' && ss -tn | grep -c
+    ESTAB
   risk_level: low
-  bastion_prompt: '[BLUE] 공격 시뮬레이션 후 탐지 결과를 확인하라. Suricata 알림, WAF 로그, auth.log에서 탐지된 이벤트를 수집해줘'
+  bastion_prompt: '[BLUE] 공격 시뮬레이션 후 탐지 결과를 확인하라. Suricata 알림, WAF 로그, auth.log에서
+    탐지된 이벤트를 수집해줘'
 - order: 8
-  instruction: '[RED/BLUE] 환경을 정리하고 실시간 방어 평가 보고서를 작성하라. 탐지율, 오탐률, 대응 시간, 개선 권고사항을 포함하라.'
+  instruction: '[RED/BLUE] 환경을 정리하고 실시간 방어 평가 보고서를 작성하라. 탐지율, 오탐률, 대응 시간, 개선 권고사항을
+    포함하라.'
   hint: 각 공격 유형별 탐지/미탐지 현황과 자동 대응 효과를 정리한다.
   category: analysis
   points: 15
-  answer: "rm -f /tmp/process_monitor.sh /tmp/fail2ban_*.conf /tmp/portscan_*.rules /tmp/wazuh_active_*.xml 2>/dev/null && cat > /tmp/detection_engineering_report.txt << 'EOF'\n=== Detection Engineering\
-    \ Assessment ===\nDate: 2026-04-06 | Scope: 10.20.30.0/24\n\n1. Detection Coverage:\n   | Attack Type | Detected | Tool | Response Time |\n   |------------|----------|------|---------------|\n   | Port\
-    \ Scan | YES | Suricata IPS | <5s |\n   | SQL Injection | YES | WAF + Suricata | <2s |\n   | SSH Brute Force | YES | fail2ban | 30s |\n   | DNS Tunnel | NO | Not configured | N/A |\n\n2. Wazuh Active\
-    \ Response:\n   - firewall-drop: Blocks attacker IP within 10s\n   - host-deny: Adds to /etc/hosts.deny within 5s\n   - Timeout: Auto-unblock after configurable period\n\n3. Gaps:\n   [C-01] DNS tunneling\
-    \ not monitored\n   [H-01] Process monitoring is polling-based\n\n4. Recommendations:\n   - Deploy DNS anomaly detection\n   - Implement eBPF-based process monitoring\n   - Integrate all detections\
-    \ into central SIEM\n\nMITRE ATT&CK: T1046, T1190, T1110, T1071.004\nEOF\ncat /tmp/detection_engineering_report.txt"
-  answer_detail: 탐지 공학 보고서는 탐지 커버리지, Active Response 효과, Gap, 권고사항을 포함한다. 80% 탐지율은 양호하지만 DNS 터널링 Gap을 해결해야 한다.
+  answer: "rm -f /tmp/process_monitor.sh /tmp/fail2ban_*.conf /tmp/portscan_*.rules\
+    \ /tmp/wazuh_active_*.xml 2>/dev/null && cat > /tmp/detection_engineering_report.txt\
+    \ << 'EOF'\n=== Detection Engineering Assessment ===\nDate: 2026-04-06 | Scope:\
+    \ 10.20.30.0/24\n\n1. Detection Coverage:\n   | Attack Type | Detected | Tool\
+    \ | Response Time |\n   |------------|----------|------|---------------|\n   |\
+    \ Port Scan | YES | Suricata IPS | <5s |\n   | SQL Injection | YES | WAF + Suricata\
+    \ | <2s |\n   | SSH Brute Force | YES | fail2ban | 30s |\n   | DNS Tunnel | NO\
+    \ | Not configured | N/A |\n\n2. Wazuh Active Response:\n   - firewall-drop: Blocks\
+    \ attacker IP within 10s\n   - host-deny: Adds to /etc/hosts.deny within 5s\n\
+    \   - Timeout: Auto-unblock after configurable period\n\n3. Gaps:\n   [C-01] DNS\
+    \ tunneling not monitored\n   [H-01] Process monitoring is polling-based\n\n4.\
+    \ Recommendations:\n   - Deploy DNS anomaly detection\n   - Implement eBPF-based\
+    \ process monitoring\n   - Integrate all detections into central SIEM\n\nMITRE\
+    \ ATT&CK: T1046, T1190, T1110, T1071.004\nEOF\ncat /tmp/detection_engineering_report.txt"
+  answer_detail: 탐지 공학 보고서는 탐지 커버리지, Active Response 효과, Gap, 권고사항을 포함한다. 80% 탐지율은
+    양호하지만 DNS 터널링 Gap을 해결해야 한다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
   target_vm: attacker
-  script: "rm -f /tmp/process_monitor.sh /tmp/fail2ban_*.conf /tmp/portscan_*.rules /tmp/wazuh_active_*.xml 2>/dev/null && cat > /tmp/detection_engineering_report.txt << 'EOF'\n=== Detection Engineering\
-    \ Assessment ===\nDate: 2026-04-06 | Scope: 10.20.30.0/24\n\n1. Detection Coverage:\n   | Attack Type | Detected | Tool | Response Time |\n   |------------|----------|------|---------------|\n   | Port\
-    \ Scan | YES | Suricata IPS | <5s |\n   | SQL Injection | YES | WAF + Suricata | <2s |\n   | SSH Brute Force | YES | fail2ban | 30s |\n   | DNS Tunnel | NO | Not configured | N/A |\n\n2. Wazuh Active\
-    \ Response:\n   - firewall-drop: Blocks attacker IP within 10s\n   - host-deny: Adds to /etc/hosts.deny within 5s\n   - Timeout: Auto-unblock after configurable period\n\n3. Gaps:\n   [C-01] DNS tunneling\
-    \ not monitored\n   [H-01] Process monitoring is polling-based\n\n4. Recommendations:\n   - Deploy DNS anomaly detection\n   - Implement eBPF-based process monitoring\n   - Integrate all detections\
-    \ into central SIEM\n\nMITRE ATT&CK: T1046, T1190, T1110, T1071.004\nEOF\ncat /tmp/detection_engineering_report.txt"
+  script: "rm -f /tmp/process_monitor.sh /tmp/fail2ban_*.conf /tmp/portscan_*.rules\
+    \ /tmp/wazuh_active_*.xml 2>/dev/null && cat > /tmp/detection_engineering_report.txt\
+    \ << 'EOF'\n=== Detection Engineering Assessment ===\nDate: 2026-04-06 | Scope:\
+    \ 10.20.30.0/24\n\n1. Detection Coverage:\n   | Attack Type | Detected | Tool\
+    \ | Response Time |\n   |------------|----------|------|---------------|\n   |\
+    \ Port Scan | YES | Suricata IPS | <5s |\n   | SQL Injection | YES | WAF + Suricata\
+    \ | <2s |\n   | SSH Brute Force | YES | fail2ban | 30s |\n   | DNS Tunnel | NO\
+    \ | Not configured | N/A |\n\n2. Wazuh Active Response:\n   - firewall-drop: Blocks\
+    \ attacker IP within 10s\n   - host-deny: Adds to /etc/hosts.deny within 5s\n\
+    \   - Timeout: Auto-unblock after configurable period\n\n3. Gaps:\n   [C-01] DNS\
+    \ tunneling not monitored\n   [H-01] Process monitoring is polling-based\n\n4.\
+    \ Recommendations:\n   - Deploy DNS anomaly detection\n   - Implement eBPF-based\
+    \ process monitoring\n   - Integrate all detections into central SIEM\n\nMITRE\
+    \ ATT&CK: T1046, T1190, T1110, T1071.004\nEOF\ncat /tmp/detection_engineering_report.txt"
   risk_level: low
   bastion_prompt: '[RED/BLUE] 환경을 정리하고 실시간 방어 평가 보고서를 구현 방법을 설명하고 예시 코드를 보여줘'
+- order: 99
+  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
+  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+
+    1) [BLUE] Suricata IPS의 동작 상태를 확인하고 현재 규칙 통계를 조회해줘
+
+    2) [BLUE] 포트 스캔, NULL 스캔, XMAS 스캔, ICMP 스위프를 탐지하는 Suricata 규칙을 구현 방법을 설명하고 예시
+    코드를 보여줘
+
+    3) [BLUE] fail2ban을 설정하여 SSH 브루트포스 공격을 자동 차단하라 구현 방법과 예시를 설명해줘
+
+    4) [BLUE] Wazuh Active Response를 설정해줘
+
+    5) [BLUE] 의심스러운 프로세스(리버스 쉘, 암호화폐 채굴, 권한 상승)를 실시간으로 모니터링하는 스크립트를 구현 방법을 설명하고 예시
+    코드를 보여줘'
+  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: secu
+  risk_level: low
+  answer: ''
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
+  script: ''

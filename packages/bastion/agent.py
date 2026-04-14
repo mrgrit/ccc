@@ -149,6 +149,10 @@ class EvidenceDB:
         "ALTER TABLE evidence ADD COLUMN playbook_id TEXT",
         "ALTER TABLE evidence ADD COLUMN exit_code INTEGER DEFAULT -1",
         "ALTER TABLE evidence ADD COLUMN session_id TEXT",
+        "ALTER TABLE evidence ADD COLUMN course TEXT",
+        "ALTER TABLE evidence ADD COLUMN lab_id TEXT",
+        "ALTER TABLE evidence ADD COLUMN step_order INTEGER",
+        "ALTER TABLE evidence ADD COLUMN test_session TEXT",
     ]
 
     def __init__(self, db_path: str = ""):
@@ -203,26 +207,34 @@ class EvidenceDB:
 
     def add(self, *, skill: str = "", playbook_id: str = "", params: dict = None,
             success: bool, exit_code: int = -1, output: str = "",
-            analysis: str = "", stage: str = "", session_id: str = ""):
+            analysis: str = "", stage: str = "", session_id: str = "",
+            course: str = "", lab_id: str = "", step_order: int = 0,
+            test_session: str = ""):
         conn, should_close = self._connect()
         try:
             # Ensure schema is up-to-date (e.g. old DB without stage column)
             self._migrate(conn)
             conn.execute(
                 "INSERT INTO evidence "
-                "(stage,skill,playbook_id,params,success,exit_code,output,analysis,session_id) "
-                "VALUES (?,?,?,?,?,?,?,?,?)",
+                "(stage,skill,playbook_id,params,success,exit_code,output,analysis,"
+                "session_id,course,lab_id,step_order,test_session) "
+                "VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)",
                 (stage, skill, playbook_id,
                  json.dumps(params or {}, ensure_ascii=False),
                  int(success), exit_code,
-                 output[:5000], analysis[:2000], session_id),
+                 output[:5000], analysis[:2000], session_id,
+                 course, lab_id, step_order, test_session),
             )
             conn.commit()
-        except Exception:
-            pass  # evidence 저장 실패는 무시 — 기능에 영향 없음
-        finally:
+            # 마지막 삽입 ID 반환 (테스트 추적용)
+            row_id = conn.execute("SELECT last_insert_rowid()").fetchone()[0]
             if should_close:
                 conn.close()
+            return row_id
+        except Exception:
+            if should_close:
+                conn.close()
+            return None
 
     def recent(self, limit: int = 10) -> list[dict]:
         try:
@@ -321,6 +333,7 @@ class BastionAgent:
         self.history: list[dict] = []
         self.session_id = f"s{int(time.time())}"
         self.evidence_db = EvidenceDB(evidence_db)
+        self._test_meta: dict = {}  # 테스트 메타데이터 (course, lab_id, step_order, test_session)
 
         self.rag_index = None
         kdir = knowledge_dir or os.path.join(os.path.dirname(__file__), "..", "..", "contents")
@@ -378,6 +391,7 @@ class BastionAgent:
                 playbook_id=playbook_id, success=passed == len(pb_results),
                 output="\n".join(r.get("output", "") for r in pb_results)[:3000],
                 analysis=analysis, stage="playbook", session_id=self.session_id,
+                **self._test_meta,
             )
             self.history.append({"role": "assistant", "content": analysis})
             return
@@ -401,6 +415,7 @@ class BastionAgent:
                     playbook_id="dynamic", success=all(r.get("success") for r in pb_results),
                     output="\n".join(r.get("output", "") for r in pb_results)[:3000],
                     analysis=analysis, stage="dynamic_playbook", session_id=self.session_id,
+                    **self._test_meta,
                 )
                 self.history.append({"role": "assistant", "content": analysis})
                 return
@@ -455,6 +470,7 @@ class BastionAgent:
                 skill=skill_name, params=params, success=success,
                 exit_code=exit_code, output=output,
                 stage="skill", session_id=self.session_id,
+                **self._test_meta,
             )
             all_results.append({"skill": skill_name, "params": params,
                                  "success": success, "output": output})
@@ -716,6 +732,7 @@ class BastionAgent:
             self.evidence_db.add(
                 skill=skill_name, params=params, success=success,
                 output=output, stage="dynamic", session_id=self.session_id,
+                **self._test_meta,
             )
             yield {"event": "step_done", "step": i, "name": name,
                    "success": success, "output": output}

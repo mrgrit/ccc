@@ -3,7 +3,8 @@ title: '[Non-AI] Ollama LLM 기초와 API 탐색'
 version: ai
 course: ai-security-ai
 week: 1
-description: Ollama LLM 서버의 기본 구조를 이해하고 API를 통해 모델과 상호작용하는 방법을 학습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: Ollama LLM 서버의 기본 구조를 이해하고 API를 통해 모델과 상호작용하는 방법을 학습합니다. AI SubAgent가
+  자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: easy
 duration_minutes: 120
 objectives:
@@ -18,10 +19,11 @@ steps:
   category: recon
   points: 10
   answer: curl -s ${BASTION_URL:-http://localhost:8003}/api/version
-  answer_detail: Ollama는 REST API를 제공하는 로컬 LLM 서버입니다. /api/version 엔드포인트로 서버 상태와 버전을 확인할 수 있습니다.
+  answer_detail: Ollama는 REST API를 제공하는 로컬 LLM 서버입니다. /api/version 엔드포인트로 서버 상태와 버전을
+    확인할 수 있습니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: manager
   script: curl -s ${BASTION_URL:-http://localhost:8003}/api/version
@@ -32,61 +34,89 @@ steps:
   hint: /api/tags 엔드포인트를 사용하세요.
   category: recon
   points: 10
-  answer: curl -s ${BASTION_URL:-http://localhost:8003}/api/tags | python3 -c "import sys,json; [print(m['name']) for m in json.load(sys.stdin)['models']]"
+  answer: curl -s ${BASTION_URL:-http://localhost:8003}/api/tags | python3 -c "import
+    sys,json; [print(m['name']) for m in json.load(sys.stdin)['models']]"
   answer_detail: /api/tags는 설치된 모델 목록을 반환합니다. 모델 이름, 크기, 수정일 등의 정보를 확인할 수 있습니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: manager
-  script: curl -s ${BASTION_URL:-http://localhost:8003}/api/tags | python3 -c "import sys,json; [print(m['name']) for m in json.load(sys.stdin)['models']]"
+  script: curl -s ${BASTION_URL:-http://localhost:8003}/api/tags | python3 -c "import
+    sys,json; [print(m['name']) for m in json.load(sys.stdin)['models']]"
   risk_level: low
   bastion_prompt: Ollama 서버에 설치된 모델 목록을 조회해줘
 - order: 3
-  instruction: /api/generate 엔드포인트를 사용하여 gemma3:4b 모델에 'Hello, who are you?'라는 프롬프트를 전송하시오.
+  instruction: /api/generate 엔드포인트를 사용하여 gemma3:4b 모델에 'Hello, who are you?'라는 프롬프트를
+    전송하시오.
   hint: POST 요청으로 model과 prompt 필드를 JSON으로 전송하세요. stream:false를 설정하세요.
   category: recon
   points: 10
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Hello, who are you?\",\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
-  answer_detail: /api/generate는 단일 프롬프트를 모델에 전송하는 기본 엔드포인트입니다. stream:false를 설정하면 전체 응답을 한 번에 받을 수 있습니다.
+  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"\
+    model\":\"gemma3:4b\",\"prompt\":\"Hello, who are you?\",\"stream\":false}' \\\
+    \n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
+  answer_detail: /api/generate는 단일 프롬프트를 모델에 전송하는 기본 엔드포인트입니다. stream:false를 설정하면
+    전체 응답을 한 번에 받을 수 있습니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Hello, who are you?\",\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"\
+    model\":\"gemma3:4b\",\"prompt\":\"Hello, who are you?\",\"stream\":false}' \\\
+    \n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
   risk_level: low
   bastion_prompt: Hello, who are you?
 - order: 4
-  instruction: '/api/chat 엔드포인트를 사용하여 system 메시지와 user 메시지를 분리하여 전송하시오. system: ''You are a helpful security assistant'', user: ''What is prompt injection?'''
+  instruction: '/api/chat 엔드포인트를 사용하여 system 메시지와 user 메시지를 분리하여 전송하시오. system: ''You
+    are a helpful security assistant'', user: ''What is prompt injection?'''
   hint: messages 배열에 role별로 메시지를 구분하여 전송하세요.
   category: recon
   points: 12
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a helpful security assistant\"},{\"role\":\"user\",\"content\":\"What is prompt injection?\"}],\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
-  answer_detail: /api/chat은 대화형 인터페이스로, system/user/assistant 역할을 구분하여 메시지를 전송합니다. system 메시지는 모델의 행동 지침을 설정합니다.
+  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\"\
+    :\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a helpful\
+    \ security assistant\"},{\"role\":\"user\",\"content\":\"What is prompt injection?\"\
+    }],\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  answer_detail: /api/chat은 대화형 인터페이스로, system/user/assistant 역할을 구분하여 메시지를 전송합니다.
+    system 메시지는 모델의 행동 지침을 설정합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a helpful security assistant\"},{\"role\":\"user\",\"content\":\"What is prompt injection?\"}],\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\"\
+    :\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a helpful\
+    \ security assistant\"},{\"role\":\"user\",\"content\":\"What is prompt injection?\"\
+    }],\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   risk_level: low
   bastion_prompt: What is prompt injection?
 - order: 5
-  instruction: temperature 파라미터를 0.0과 1.5로 각각 설정하여 동일한 프롬프트 'Explain AI security in one sentence'의 응답 차이를 비교하시오.
+  instruction: temperature 파라미터를 0.0과 1.5로 각각 설정하여 동일한 프롬프트 'Explain AI security in
+    one sentence'의 응답 차이를 비교하시오.
   hint: options 필드 안에 temperature를 설정합니다.
   category: analysis
   points: 12
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Explain AI security in one sentence\",\"stream\":false,\"options\":{\"temperature\":0.0}}' \\\n | python3 -c \"import sys,json; print('TEMP=0.0:', json.load(sys.stdin)['response'])\" && curl -s ${BASTION_URL:-http://localhost:8003}/api/generate -d '{\"model\":\"gemma3:4b\",\"prompt\"\
-    :\"Explain AI security in one sentence\",\"stream\":false,\"options\":{\"temperature\":1.5}}' | python3 -c \"import sys,json; print('TEMP=1.5:', json.load(sys.stdin)['response'])\""
-  answer_detail: temperature는 출력의 무작위성을 조절합니다. 0에 가까울수록 결정적(deterministic)이고, 높을수록 창의적이지만 예측 불가능합니다. 보안 맥락에서 낮은 temperature가 일관된 응답을 보장합니다.
+  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"\
+    model\":\"gemma3:4b\",\"prompt\":\"Explain AI security in one sentence\",\"stream\"\
+    :false,\"options\":{\"temperature\":0.0}}' \\\n | python3 -c \"import sys,json;\
+    \ print('TEMP=0.0:', json.load(sys.stdin)['response'])\" && curl -s ${BASTION_URL:-http://localhost:8003}/api/generate\
+    \ -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Explain AI security in one sentence\"\
+    ,\"stream\":false,\"options\":{\"temperature\":1.5}}' | python3 -c \"import sys,json;\
+    \ print('TEMP=1.5:', json.load(sys.stdin)['response'])\""
+  answer_detail: temperature는 출력의 무작위성을 조절합니다. 0에 가까울수록 결정적(deterministic)이고, 높을수록
+    창의적이지만 예측 불가능합니다. 보안 맥락에서 낮은 temperature가 일관된 응답을 보장합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Explain AI security in one sentence\",\"stream\":false,\"options\":{\"temperature\":0.0}}' \\\n | python3 -c \"import sys,json; print('TEMP=0.0:', json.load(sys.stdin)['response'])\" && curl -s ${BASTION_URL:-http://localhost:8003}/api/generate -d '{\"model\":\"gemma3:4b\",\"prompt\"\
-    :\"Explain AI security in one sentence\",\"stream\":false,\"options\":{\"temperature\":1.5}}' | python3 -c \"import sys,json; print('TEMP=1.5:', json.load(sys.stdin)['response'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"\
+    model\":\"gemma3:4b\",\"prompt\":\"Explain AI security in one sentence\",\"stream\"\
+    :false,\"options\":{\"temperature\":0.0}}' \\\n | python3 -c \"import sys,json;\
+    \ print('TEMP=0.0:', json.load(sys.stdin)['response'])\" && curl -s ${BASTION_URL:-http://localhost:8003}/api/generate\
+    \ -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Explain AI security in one sentence\"\
+    ,\"stream\":false,\"options\":{\"temperature\":1.5}}' | python3 -c \"import sys,json;\
+    \ print('TEMP=1.5:', json.load(sys.stdin)['response'])\""
   risk_level: low
   bastion_prompt: Explain AI security in one sentence
 - order: 6
@@ -94,44 +124,68 @@ steps:
   hint: /api/generate에 한국어 프롬프트를 전송하세요.
   category: analysis
   points: 10
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"LLM 보안에서 가장 중요한 3가지를 한국어로 답하라\",\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
+  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"\
+    model\":\"gemma3:4b\",\"prompt\":\"LLM 보안에서 가장 중요한 3가지를 한국어로 답하라\",\"stream\"\
+    :false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
   answer_detail: 다국어 지원 여부는 모델 보안에서 중요합니다. 한국어 프롬프트로 영어 안전장치를 우회하는 공격이 가능할 수 있습니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"LLM 보안에서 가장 중요한 3가지를 한국어로 답하라\",\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"\
+    model\":\"gemma3:4b\",\"prompt\":\"LLM 보안에서 가장 중요한 3가지를 한국어로 답하라\",\"stream\"\
+    :false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
   risk_level: low
   bastion_prompt: LLM 보안에서 가장 중요한 3가지를 한국어로 답하라
 - order: 7
-  instruction: 모델의 응답에서 eval_count와 eval_duration 필드를 추출하여 초당 토큰 생성 속도(tokens/sec)를 계산하시오.
+  instruction: 모델의 응답에서 eval_count와 eval_duration 필드를 추출하여 초당 토큰 생성 속도(tokens/sec)를
+    계산하시오.
   hint: JSON 응답의 메타데이터 필드를 활용하세요. eval_duration은 나노초 단위입니다.
   category: analysis
   points: 12
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"What is AI?\",\"stream\":false}' \\\n | python3 -c \"import sys,json; d=json.load(sys.stdin); tokens=d.get('eval_count',0); duration=d.get('eval_duration',1); print(f'Tokens: {tokens}, Speed: {tokens/(duration/1e9):.1f} tokens/sec')\""
-  answer_detail: 토큰 생성 속도는 모델 성능의 핵심 지표입니다. 보안 관점에서 과도한 토큰 생성은 리소스 남용(DoS) 공격에 악용될 수 있습니다.
+  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"\
+    model\":\"gemma3:4b\",\"prompt\":\"What is AI?\",\"stream\":false}' \\\n | python3\
+    \ -c \"import sys,json; d=json.load(sys.stdin); tokens=d.get('eval_count',0);\
+    \ duration=d.get('eval_duration',1); print(f'Tokens: {tokens}, Speed: {tokens/(duration/1e9):.1f}\
+    \ tokens/sec')\""
+  answer_detail: 토큰 생성 속도는 모델 성능의 핵심 지표입니다. 보안 관점에서 과도한 토큰 생성은 리소스 남용(DoS) 공격에 악용될
+    수 있습니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"What is AI?\",\"stream\":false}' \\\n | python3 -c \"import sys,json; d=json.load(sys.stdin); tokens=d.get('eval_count',0); duration=d.get('eval_duration',1); print(f'Tokens: {tokens}, Speed: {tokens/(duration/1e9):.1f} tokens/sec')\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"\
+    model\":\"gemma3:4b\",\"prompt\":\"What is AI?\",\"stream\":false}' \\\n | python3\
+    \ -c \"import sys,json; d=json.load(sys.stdin); tokens=d.get('eval_count',0);\
+    \ duration=d.get('eval_duration',1); print(f'Tokens: {tokens}, Speed: {tokens/(duration/1e9):.1f}\
+    \ tokens/sec')\""
   risk_level: low
   bastion_prompt: What is AI?
 - order: 8
-  instruction: num_predict 옵션을 10으로 제한하여 모델 응답 길이를 통제하시오. 'Tell me everything about cybersecurity' 프롬프트를 전송하라.
+  instruction: num_predict 옵션을 10으로 제한하여 모델 응답 길이를 통제하시오. 'Tell me everything about
+    cybersecurity' 프롬프트를 전송하라.
   hint: options에 num_predict를 설정하여 최대 생성 토큰 수를 제한하세요.
   category: defense
   points: 10
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Tell me everything about cybersecurity\",\"stream\":false,\"options\":{\"num_predict\":10}}' \\\n | python3 -c \"import sys,json; r=json.load(sys.stdin); print(f'Response ({r.get(\\\"eval_count\\\",0)} tokens): {r[\\\"response\\\"]}')\""
-  answer_detail: 응답 길이 제한은 가장 기본적인 LLM 보안 통제입니다. 무제한 응답은 리소스 고갈, 민감정보 유출 확률 증가 등의 위험이 있습니다.
+  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"\
+    model\":\"gemma3:4b\",\"prompt\":\"Tell me everything about cybersecurity\",\"\
+    stream\":false,\"options\":{\"num_predict\":10}}' \\\n | python3 -c \"import sys,json;\
+    \ r=json.load(sys.stdin); print(f'Response ({r.get(\\\"eval_count\\\",0)} tokens):\
+    \ {r[\\\"response\\\"]}')\""
+  answer_detail: 응답 길이 제한은 가장 기본적인 LLM 보안 통제입니다. 무제한 응답은 리소스 고갈, 민감정보 유출 확률 증가 등의
+    위험이 있습니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Tell me everything about cybersecurity\",\"stream\":false,\"options\":{\"num_predict\":10}}' \\\n | python3 -c \"import sys,json; r=json.load(sys.stdin); print(f'Response ({r.get(\\\"eval_count\\\",0)} tokens): {r[\\\"response\\\"]}')\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"\
+    model\":\"gemma3:4b\",\"prompt\":\"Tell me everything about cybersecurity\",\"\
+    stream\":false,\"options\":{\"num_predict\":10}}' \\\n | python3 -c \"import sys,json;\
+    \ r=json.load(sys.stdin); print(f'Response ({r.get(\\\"eval_count\\\",0)} tokens):\
+    \ {r[\\\"response\\\"]}')\""
   risk_level: low
   bastion_prompt: Tell me everything about cybersecurity
 - order: 9
@@ -139,14 +193,21 @@ steps:
   hint: options에 seed와 temperature:0을 설정하세요.
   category: analysis
   points: 12
-  answer: for i in 1 2 3; do echo "=== Run $i ==="; curl -s ${BASTION_URL:-http://localhost:8003}/api/generate -d '{"model":"gemma3:4b","prompt":"What is 2+2?","stream":false,"options":{"seed":42,"temperature":0}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['response'][:50])"; done
-  answer_detail: 재현 가능성(reproducibility)은 LLM 보안 테스트의 핵심입니다. seed를 고정하면 동일 입력에 동일 출력을 보장하여 공격 재현과 방어 검증이 가능합니다.
+  answer: for i in 1 2 3; do echo "=== Run $i ==="; curl -s ${BASTION_URL:-http://localhost:8003}/api/generate
+    -d '{"model":"gemma3:4b","prompt":"What is 2+2?","stream":false,"options":{"seed":42,"temperature":0}}'
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['response'][:50])";
+    done
+  answer_detail: 재현 가능성(reproducibility)은 LLM 보안 테스트의 핵심입니다. seed를 고정하면 동일 입력에 동일
+    출력을 보장하여 공격 재현과 방어 검증이 가능합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: manager
-  script: for i in 1 2 3; do echo "=== Run $i ==="; curl -s ${BASTION_URL:-http://localhost:8003}/api/generate -d '{"model":"gemma3:4b","prompt":"What is 2+2?","stream":false,"options":{"seed":42,"temperature":0}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['response'][:50])"; done
+  script: for i in 1 2 3; do echo "=== Run $i ==="; curl -s ${BASTION_URL:-http://localhost:8003}/api/generate
+    -d '{"model":"gemma3:4b","prompt":"What is 2+2?","stream":false,"options":{"seed":42,"temperature":0}}'
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['response'][:50])";
+    done
   risk_level: low
   bastion_prompt: What is 2+2?
 - order: 10
@@ -154,13 +215,42 @@ steps:
   hint: curl -v 또는 curl -I 옵션을 사용하세요.
   category: recon
   points: 10
-  answer: curl -sI ${BASTION_URL:-http://localhost:8003}/api/tags 2>&1 | grep -iE '(server|version|powered|allow|access-control)'
-  answer_detail: HTTP 응답 헤더는 서버 소프트웨어, 버전 등 공격자에게 유용한 정보를 노출할 수 있습니다. Server 헤더, CORS 설정 등을 점검해야 합니다.
+  answer: curl -sI ${BASTION_URL:-http://localhost:8003}/api/tags 2>&1 | grep -iE
+    '(server|version|powered|allow|access-control)'
+  answer_detail: HTTP 응답 헤더는 서버 소프트웨어, 버전 등 공격자에게 유용한 정보를 노출할 수 있습니다. Server 헤더, CORS
+    설정 등을 점검해야 합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: manager
-  script: curl -sI ${BASTION_URL:-http://localhost:8003}/api/tags 2>&1 | grep -iE '(server|version|powered|allow|access-control)'
+  script: curl -sI ${BASTION_URL:-http://localhost:8003}/api/tags 2>&1 | grep -iE
+    '(server|version|powered|allow|access-control)'
   risk_level: low
   bastion_prompt: Ollama API의 응답 헤더를 분석해줘
+- order: 99
+  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
+  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+
+    1) Ollama 서버가 동작 중인지 확인해줘
+
+    2) Ollama 서버에 설치된 모델 목록을 조회해줘
+
+    3) Hello, who are you?
+
+    4) What is prompt injection?
+
+    5) Explain AI security in one sentence'
+  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: manager
+  risk_level: low
+  answer: ''
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
+  script: ''

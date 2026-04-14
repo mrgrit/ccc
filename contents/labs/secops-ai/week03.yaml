@@ -3,7 +3,8 @@ title: 계정 관리 실습 (AI 지원)
 version: ai
 course: secops-ai
 week: 3
-description: 리눅스 시스템의 사용자 계정 생명주기 관리, 권한 설정, 비활성 계정 관리를 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: 리눅스 시스템의 사용자 계정 생명주기 관리, 권한 설정, 비활성 계정 관리를 실습합니다. AI SubAgent가 자동으로 명령을
+  실행하고 결과를 검증합니다.
 difficulty: easy
 duration_minutes: 120
 objectives:
@@ -21,7 +22,7 @@ steps:
   answer_detail: UID 1000 이상은 일반 사용자 계정입니다. 65534(nobody)를 제외하여 실제 사용자만 표시합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: secu
   script: 'awk -F: ''$3 >= 1000 && $3 < 65534 {print $1}'' /etc/passwd'
@@ -32,14 +33,16 @@ steps:
   hint: for 루프와 useradd를 사용하세요.
   category: account_mgmt
   points: 10
-  answer: sudo groupadd -f ops-team && for i in 1 2 3; do sudo useradd -m -G ops-team -s /bin/bash opsuser$i 2>/dev/null; done && getent group ops-team
+  answer: sudo groupadd -f ops-team && for i in 1 2 3; do sudo useradd -m -G ops-team
+    -s /bin/bash opsuser$i 2>/dev/null; done && getent group ops-team
   answer_detail: 일괄 계정 생성은 스크립트를 통해 자동화할 수 있습니다. -G 옵션으로 보조 그룹, -s로 기본 쉘을 지정합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: secu
-  script: sudo groupadd -f ops-team && for i in 1 2 3; do sudo useradd -m -G ops-team -s /bin/bash opsuser$i 2>/dev/null; done && getent group ops-team
+  script: sudo groupadd -f ops-team && for i in 1 2 3; do sudo useradd -m -G ops-team
+    -s /bin/bash opsuser$i 2>/dev/null; done && getent group ops-team
   risk_level: low
   bastion_prompt: '운영팀(ops-team) 계정 3개를 일괄 생성하시오: opsuser1, opsuser2, opsuser3해줘'
 - order: 3
@@ -51,7 +54,7 @@ steps:
   answer_detail: chage는 패스워드 만료 정책을 관리합니다. -M(최대), -m(최소), -W(경고일)로 세밀하게 제어합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: secu
   script: sudo chage -M 90 -m 7 -W 14 opsuser1 && sudo chage -l opsuser1
@@ -96,7 +99,7 @@ steps:
   answer_detail: usermod -L은 계정을 잠금합니다. 패스워드 해시 앞에 !가 추가되어 로그인이 불가능해집니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: secu
   script: sudo usermod -L opsuser3 && sudo passwd -S opsuser3
@@ -111,7 +114,7 @@ steps:
   answer_detail: w 명령은 현재 접속 중인 사용자, 접속 시간, 수행 중인 작업을 표시합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: secu
   script: w
@@ -138,7 +141,8 @@ steps:
   category: account_audit
   points: 10
   answer: sudo lastb -n 10 2>/dev/null || echo '실패 로그인 기록 없음'
-  answer_detail: lastb는 /var/log/btmp에서 실패한 로그인 시도를 표시합니다. 다수의 실패 시도는 브루트포스 공격의 징후일 수 있습니다.
+  answer_detail: lastb는 /var/log/btmp에서 실패한 로그인 시도를 표시합니다. 다수의 실패 시도는 브루트포스 공격의 징후일
+    수 있습니다.
   verify:
     type: output_contains
     expect: ''
@@ -168,10 +172,11 @@ steps:
   category: account_mgmt
   points: 12
   answer: echo 'login;*;opsuser1;Al0800-1800' | sudo tee -a /etc/security/time.conf
-  answer_detail: time.conf에서 Al은 모든 요일, 0800-1800은 오전 8시부터 오후 6시까지를 의미합니다. PAM의 pam_time 모듈이 이를 적용합니다.
+  answer_detail: time.conf에서 Al은 모든 요일, 0800-1800은 오전 8시부터 오후 6시까지를 의미합니다. PAM의 pam_time
+    모듈이 이를 적용합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: secu
   script: echo 'login;*;opsuser1;Al0800-1800' | sudo tee -a /etc/security/time.conf
@@ -182,14 +187,18 @@ steps:
   hint: chage -l 출력을 활용하세요.
   category: account_audit
   points: 10
-  answer: 'for user in $(awk -F: ''$3 >= 1000 && $3 < 65534 {print $1}'' /etc/passwd); do expire=$(sudo chage -l $user 2>/dev/null | grep ''Account expires'' | cut -d: -f2); echo "$user: $expire"; done'
+  answer: 'for user in $(awk -F: ''$3 >= 1000 && $3 < 65534 {print $1}'' /etc/passwd);
+    do expire=$(sudo chage -l $user 2>/dev/null | grep ''Account expires'' | cut -d:
+    -f2); echo "$user: $expire"; done'
   answer_detail: 계정 만료일이 'never'인 계정은 영구 활성 상태로, 퇴직자 등의 계정이 방치될 수 있습니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: secu
-  script: 'for user in $(awk -F: ''$3 >= 1000 && $3 < 65534 {print $1}'' /etc/passwd); do expire=$(sudo chage -l $user 2>/dev/null | grep ''Account expires'' | cut -d: -f2); echo "$user: $expire"; done'
+  script: 'for user in $(awk -F: ''$3 >= 1000 && $3 < 65534 {print $1}'' /etc/passwd);
+    do expire=$(sudo chage -l $user 2>/dev/null | grep ''Account expires'' | cut -d:
+    -f2); echo "$user: $expire"; done'
   risk_level: low
   bastion_prompt: 계정 만료일이 설정되지 않은 사용자 목록을 조회해줘
 - order: 13
@@ -201,7 +210,7 @@ steps:
   answer_detail: /sbin/nologin을 쉘로 설정하면 SSH 등 대화형 로그인이 차단됩니다. 서비스 계정에 주로 사용합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: secu
   script: sudo usermod -s /sbin/nologin opsuser2 && grep opsuser2 /etc/passwd
@@ -212,14 +221,17 @@ steps:
   hint: userdel -r 옵션을 사용하세요.
   category: account_mgmt
   points: 12
-  answer: sudo userdel -r opsuser3 2>/dev/null; echo '계정 삭제 완료' && grep -c opsuser3 /etc/passwd || echo 'opsuser3 계정 없음 확인'
-  answer_detail: userdel -r은 사용자 계정, 홈 디렉터리, 메일 스풀을 모두 삭제합니다. 삭제 전 데이터 백업 여부를 확인해야 합니다.
+  answer: sudo userdel -r opsuser3 2>/dev/null; echo '계정 삭제 완료' && grep -c opsuser3
+    /etc/passwd || echo 'opsuser3 계정 없음 확인'
+  answer_detail: userdel -r은 사용자 계정, 홈 디렉터리, 메일 스풀을 모두 삭제합니다. 삭제 전 데이터 백업 여부를 확인해야
+    합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: secu
-  script: sudo userdel -r opsuser3 2>/dev/null; echo '계정 삭제 완료' && grep -c opsuser3 /etc/passwd || echo 'opsuser3 계정 없음 확인'
+  script: sudo userdel -r opsuser3 2>/dev/null; echo '계정 삭제 완료' && grep -c opsuser3
+    /etc/passwd || echo 'opsuser3 계정 없음 확인'
   risk_level: low
   bastion_prompt: 불필요한 계정(opsuser3)을 홈 디렉터리 포함하여 완전히 삭제해줘
 - order: 15
@@ -227,15 +239,45 @@ steps:
   hint: 활성 계정 수, 잠금 계정, 그룹 현황 등을 포함하세요.
   category: verification
   points: 12
-  answer: 'echo ''=== 계정 관리 현황 보고서 ==='' && echo ''[활성 사용자]'' && awk -F: ''$3 >= 1000 && $3 < 65534 {print $1}'' /etc/passwd && echo ''[그룹 현황]'' && getent group ops-team && echo ''[잠금 계정]'' && sudo awk
-    -F: ''$2 ~ /^!/ && $1 !~ /^(root|daemon|bin)/ {print $1}'' /etc/shadow && echo ''=== 보고서 완료 ==='''
+  answer: 'echo ''=== 계정 관리 현황 보고서 ==='' && echo ''[활성 사용자]'' && awk -F: ''$3 >= 1000
+    && $3 < 65534 {print $1}'' /etc/passwd && echo ''[그룹 현황]'' && getent group ops-team
+    && echo ''[잠금 계정]'' && sudo awk -F: ''$2 ~ /^!/ && $1 !~ /^(root|daemon|bin)/
+    {print $1}'' /etc/shadow && echo ''=== 보고서 완료 ==='''
   answer_detail: 정기적인 계정 현황 점검은 보안 운영의 기본입니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: secu
-  script: 'echo ''=== 계정 관리 현황 보고서 ==='' && echo ''[활성 사용자]'' && awk -F: ''$3 >= 1000 && $3 < 65534 {print $1}'' /etc/passwd && echo ''[그룹 현황]'' && getent group ops-team && echo ''[잠금 계정]'' && sudo awk
-    -F: ''$2 ~ /^!/ && $1 !~ /^(root|daemon|bin)/ {print $1}'' /etc/shadow && echo ''=== 보고서 완료 ==='''
+  script: 'echo ''=== 계정 관리 현황 보고서 ==='' && echo ''[활성 사용자]'' && awk -F: ''$3 >= 1000
+    && $3 < 65534 {print $1}'' /etc/passwd && echo ''[그룹 현황]'' && getent group ops-team
+    && echo ''[잠금 계정]'' && sudo awk -F: ''$2 ~ /^!/ && $1 !~ /^(root|daemon|bin)/
+    {print $1}'' /etc/shadow && echo ''=== 보고서 완료 ==='''
   risk_level: low
   bastion_prompt: 계정 관리 현황을 종합 보고서로 출력해줘
+- order: 99
+  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
+  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+
+    1) 10.20.30.1 서버에서 현재 활성 사용자 계정 목록을 확인해줘
+
+    2) 운영팀(ops-team) 계정 3개를 일괄 생성하시오: opsuser1, opsuser2, opsuser3해줘
+
+    3) opsuser1 계정의 패스워드 만료 정책을 설정하시오: 최대 90일, 최소 7일, 경고 14일해줘
+
+    4) 90일 이상 로그인하지 않은 비활성 계정을 검색해줘
+
+    5) 한 번도 로그인하지 않은 사용자 계정을 찾아 나열해줘'
+  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: secu
+  risk_level: low
+  answer: ''
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
+  script: ''

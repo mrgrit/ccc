@@ -3,7 +3,8 @@ title: 스토리지 보안 실습 (AI 지원)
 version: ai
 course: cloud-container-ai
 week: 8
-description: Docker 환경에서 스토리지 보안을 점검합니다. 볼륨 암호화, 바인드 마운트 제한, 임시 파일시스템(tmpfs), 데이터 유출 방지를 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: Docker 환경에서 스토리지 보안을 점검합니다. 볼륨 암호화, 바인드 마운트 제한, 임시 파일시스템(tmpfs), 데이터
+  유출 방지를 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -19,16 +20,19 @@ steps:
   points: 10
   answer: 'docker info --format "Storage: {{.Driver}}
 
-    Root: {{.DockerRootDir}}" && echo "--- 디스크 사용량 ---" && sudo du -sh /var/lib/docker/ 2>/dev/null'
-  answer_detail: Docker 스토리지 드라이버(overlay2)는 이미지 레이어를 관리합니다. Docker Root Dir(/var/lib/docker)에는 이미지, 컨테이너 데이터, 볼륨이 저장됩니다. 이 디렉터리의 권한(700)과 디스크 파티션을 별도 관리하여 디스크 소진 공격을 방지해야 합니다.
+    Root: {{.DockerRootDir}}" && echo "--- 디스크 사용량 ---" && sudo du -sh /var/lib/docker/
+    2>/dev/null'
+  answer_detail: Docker 스토리지 드라이버(overlay2)는 이미지 레이어를 관리합니다. Docker Root Dir(/var/lib/docker)에는
+    이미지, 컨테이너 데이터, 볼륨이 저장됩니다. 이 디렉터리의 권한(700)과 디스크 파티션을 별도 관리하여 디스크 소진 공격을 방지해야 합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: web
   script: 'docker info --format "Storage: {{.Driver}}
 
-    Root: {{.DockerRootDir}}" && echo "--- 디스크 사용량 ---" && sudo du -sh /var/lib/docker/ 2>/dev/null'
+    Root: {{.DockerRootDir}}" && echo "--- 디스크 사용량 ---" && sudo du -sh /var/lib/docker/
+    2>/dev/null'
   risk_level: low
   bastion_prompt: WEB 서버(10.20.30.80)에서 Docker 스토리지 드라이버와 루트 디렉터리를 확인해줘
 - order: 2
@@ -36,14 +40,19 @@ steps:
   hint: docker volume ls와 docker volume inspect를 사용하세요.
   category: audit
   points: 10
-  answer: 'docker volume ls && echo "--- 볼륨 상세 ---" && docker volume ls -q | head -3 | xargs -I{} docker volume inspect --format "Name: {{.Name}} Mount: {{.Mountpoint}} Driver: {{.Driver}}" {} 2>/dev/null'
-  answer_detail: Docker 볼륨은 /var/lib/docker/volumes/에 저장됩니다. 클라우드의 EBS(블록 스토리지)와 유사합니다. 볼륨 내용은 호스트 파일시스템에서 직접 접근 가능하므로, 호스트 보안이 볼륨 보안의 전제 조건입니다.
+  answer: 'docker volume ls && echo "--- 볼륨 상세 ---" && docker volume ls -q | head
+    -3 | xargs -I{} docker volume inspect --format "Name: {{.Name}} Mount: {{.Mountpoint}}
+    Driver: {{.Driver}}" {} 2>/dev/null'
+  answer_detail: Docker 볼륨은 /var/lib/docker/volumes/에 저장됩니다. 클라우드의 EBS(블록 스토리지)와 유사합니다.
+    볼륨 내용은 호스트 파일시스템에서 직접 접근 가능하므로, 호스트 보안이 볼륨 보안의 전제 조건입니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: web
-  script: 'docker volume ls && echo "--- 볼륨 상세 ---" && docker volume ls -q | head -3 | xargs -I{} docker volume inspect --format "Name: {{.Name}} Mount: {{.Mountpoint}} Driver: {{.Driver}}" {} 2>/dev/null'
+  script: 'docker volume ls && echo "--- 볼륨 상세 ---" && docker volume ls -q | head
+    -3 | xargs -I{} docker volume inspect --format "Name: {{.Name}} Mount: {{.Mountpoint}}
+    Driver: {{.Driver}}" {} 2>/dev/null'
   risk_level: low
   bastion_prompt: Docker 볼륨 목록과 각 볼륨의 마운트 포인트를 확인해줘
 - order: 3
@@ -51,16 +60,22 @@ steps:
   hint: docker inspect에서 Mounts를 확인하고, 위험한 마운트 경로를 식별하세요.
   category: audit
   points: 12
-  answer: "docker ps -q | xargs -I{} docker inspect --format=\"{{.Name}}:{{range .Mounts}}\n  Type={{.Type}} Src={{.Source}} RW={{.RW}}{{end}}\" {} 2>/dev/null | grep -E \"(docker.sock|/etc|/root|/var/run)\"\
-    \ && echo \"위험한 마운트 발견!\" || echo \"위험한 바인드 마운트 없음\""
-  answer_detail: '위험한 바인드 마운트: /var/run/docker.sock(호스트 제어), /etc(시스템 설정 접근), /root(root 홈), /(루트 전체). RW=true(읽기/쓰기)이면 수정까지 가능합니다. 클라우드에서 EBS 볼륨 권한 관리와 동일한 원칙으로, 최소한의 경로만 읽기 전용으로 마운트해야 합니다.'
+  answer: "docker ps -q | xargs -I{} docker inspect --format=\"{{.Name}}:{{range .Mounts}}\n\
+    \  Type={{.Type}} Src={{.Source}} RW={{.RW}}{{end}}\" {} 2>/dev/null | grep -E\
+    \ \"(docker.sock|/etc|/root|/var/run)\" && echo \"위험한 마운트 발견!\" || echo \"위험한\
+    \ 바인드 마운트 없음\""
+  answer_detail: '위험한 바인드 마운트: /var/run/docker.sock(호스트 제어), /etc(시스템 설정 접근), /root(root
+    홈), /(루트 전체). RW=true(읽기/쓰기)이면 수정까지 가능합니다. 클라우드에서 EBS 볼륨 권한 관리와 동일한 원칙으로, 최소한의
+    경로만 읽기 전용으로 마운트해야 합니다.'
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: web
-  script: "docker ps -q | xargs -I{} docker inspect --format=\"{{.Name}}:{{range .Mounts}}\n  Type={{.Type}} Src={{.Source}} RW={{.RW}}{{end}}\" {} 2>/dev/null | grep -E \"(docker.sock|/etc|/root|/var/run)\"\
-    \ && echo \"위험한 마운트 발견!\" || echo \"위험한 바인드 마운트 없음\""
+  script: "docker ps -q | xargs -I{} docker inspect --format=\"{{.Name}}:{{range .Mounts}}\n\
+    \  Type={{.Type}} Src={{.Source}} RW={{.RW}}{{end}}\" {} 2>/dev/null | grep -E\
+    \ \"(docker.sock|/etc|/root|/var/run)\" && echo \"위험한 마운트 발견!\" || echo \"위험한\
+    \ 바인드 마운트 없음\""
   risk_level: low
   bastion_prompt: 컨테이너의 바인드 마운트를 점검해줘
 - order: 4
@@ -68,14 +83,20 @@ steps:
   hint: --tmpfs 옵션으로 메모리 기반 파일시스템을 마운트하세요.
   category: config
   points: 10
-  answer: docker run --rm --tmpfs /secrets:rw,noexec,nosuid,size=10m alpine:latest sh -c "echo sensitive-data > /secrets/key.txt && mount | grep /secrets && cat /secrets/key.txt && echo --- && df -h /secrets"
-  answer_detail: tmpfs는 메모리 기반 파일시스템으로, 컨테이너 종료 시 자동 삭제됩니다. 암호화 키, 토큰 등 임시 민감 데이터는 tmpfs에 저장하면 디스크에 흔적이 남지 않습니다. noexec(실행 금지), nosuid(SUID 무시), size(크기 제한) 옵션으로 보안을 강화합니다.
+  answer: docker run --rm --tmpfs /secrets:rw,noexec,nosuid,size=10m alpine:latest
+    sh -c "echo sensitive-data > /secrets/key.txt && mount | grep /secrets && cat
+    /secrets/key.txt && echo --- && df -h /secrets"
+  answer_detail: tmpfs는 메모리 기반 파일시스템으로, 컨테이너 종료 시 자동 삭제됩니다. 암호화 키, 토큰 등 임시 민감 데이터는
+    tmpfs에 저장하면 디스크에 흔적이 남지 않습니다. noexec(실행 금지), nosuid(SUID 무시), size(크기 제한) 옵션으로
+    보안을 강화합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: web
-  script: docker run --rm --tmpfs /secrets:rw,noexec,nosuid,size=10m alpine:latest sh -c "echo sensitive-data > /secrets/key.txt && mount | grep /secrets && cat /secrets/key.txt && echo --- && df -h /secrets"
+  script: docker run --rm --tmpfs /secrets:rw,noexec,nosuid,size=10m alpine:latest
+    sh -c "echo sensitive-data > /secrets/key.txt && mount | grep /secrets && cat
+    /secrets/key.txt && echo --- && df -h /secrets"
   risk_level: low
   bastion_prompt: tmpfs를 사용하는 보안 컨테이너를 실행해줘
 - order: 5
@@ -83,16 +104,20 @@ steps:
   hint: docker history --no-trunc로 빌드 명령을 확인하세요.
   category: audit
   points: 12
-  answer: 'for IMG in $(docker images -q | head -3); do echo "=== Image: $IMG ==="; docker history --no-trunc $IMG 2>/dev/null | grep -iE "(password|secret|key|token|api_key)" | head -3; done; echo "---
-    스캔 완료 ---"'
-  answer_detail: Dockerfile의 RUN, ENV, COPY 명령에 민감 정보가 포함되면 이미지 레이어에 영구 저장됩니다. docker history로 확인 가능하며, 이후 레이어에서 삭제해도 이전 레이어에 남아 있습니다. multi-stage build와 BuildKit --secret을 사용해야 합니다.
+  answer: 'for IMG in $(docker images -q | head -3); do echo "=== Image: $IMG ===";
+    docker history --no-trunc $IMG 2>/dev/null | grep -iE "(password|secret|key|token|api_key)"
+    | head -3; done; echo "--- 스캔 완료 ---"'
+  answer_detail: Dockerfile의 RUN, ENV, COPY 명령에 민감 정보가 포함되면 이미지 레이어에 영구 저장됩니다. docker
+    history로 확인 가능하며, 이후 레이어에서 삭제해도 이전 레이어에 남아 있습니다. multi-stage build와 BuildKit --secret을
+    사용해야 합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: web
-  script: 'for IMG in $(docker images -q | head -3); do echo "=== Image: $IMG ==="; docker history --no-trunc $IMG 2>/dev/null | grep -iE "(password|secret|key|token|api_key)" | head -3; done; echo "---
-    스캔 완료 ---"'
+  script: 'for IMG in $(docker images -q | head -3); do echo "=== Image: $IMG ===";
+    docker history --no-trunc $IMG 2>/dev/null | grep -iE "(password|secret|key|token|api_key)"
+    | head -3; done; echo "--- 스캔 완료 ---"'
   risk_level: low
   bastion_prompt: 미지 레이어에 민감 정보가 포함되어 있는지점검해줘
 - order: 6
@@ -100,14 +125,17 @@ steps:
   hint: stat 명령으로 디렉터리 권한을 확인하세요.
   category: audit
   points: 10
-  answer: stat -c "%a %U:%G %n" /var/lib/docker && echo "--- 하위 디렉터리 ---" && sudo ls -la /var/lib/docker/ | head -10
-  answer_detail: Docker Root Dir은 모든 이미지, 컨테이너, 볼륨 데이터를 저장하므로 root만 접근할 수 있어야 합니다(700). 일반 사용자가 접근 가능하면 이미지 내용, 컨테이너 데이터, 볼륨의 민감 정보가 유출될 수 있습니다.
+  answer: stat -c "%a %U:%G %n" /var/lib/docker && echo "--- 하위 디렉터리 ---" && sudo
+    ls -la /var/lib/docker/ | head -10
+  answer_detail: Docker Root Dir은 모든 이미지, 컨테이너, 볼륨 데이터를 저장하므로 root만 접근할 수 있어야 합니다(700).
+    일반 사용자가 접근 가능하면 이미지 내용, 컨테이너 데이터, 볼륨의 민감 정보가 유출될 수 있습니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: web
-  script: stat -c "%a %U:%G %n" /var/lib/docker && echo "--- 하위 디렉터리 ---" && sudo ls -la /var/lib/docker/ | head -10
+  script: stat -c "%a %U:%G %n" /var/lib/docker && echo "--- 하위 디렉터리 ---" && sudo
+    ls -la /var/lib/docker/ | head -10
   risk_level: low
   bastion_prompt: Docker Root Dir(/var/lib/docker)의 권한을 확인해줘
 - order: 7
@@ -115,14 +143,19 @@ steps:
   hint: docker system df와 dangling 필터를 사용하세요.
   category: audit
   points: 10
-  answer: 'echo "=== Docker 디스크 사용량 ==="; docker system df; echo "=== 미사용 볼륨 ==="; docker volume ls -f dangling=true; echo "=== 미사용 이미지 ==="; docker images -f dangling=true --format "{{.ID}}: {{.Size}}"'
-  answer_detail: 미사용 리소스는 데이터 유출 위험과 디스크 비용을 증가시킵니다. 삭제된 컨테이너의 볼륨에 데이터베이스 파일이 남아 있을 수 있고, 오래된 이미지에 취약한 소프트웨어가 포함될 수 있습니다. 정기적인 docker system prune이 필요합니다.
+  answer: 'echo "=== Docker 디스크 사용량 ==="; docker system df; echo "=== 미사용 볼륨 ===";
+    docker volume ls -f dangling=true; echo "=== 미사용 이미지 ==="; docker images -f dangling=true
+    --format "{{.ID}}: {{.Size}}"'
+  answer_detail: 미사용 리소스는 데이터 유출 위험과 디스크 비용을 증가시킵니다. 삭제된 컨테이너의 볼륨에 데이터베이스 파일이 남아 있을
+    수 있고, 오래된 이미지에 취약한 소프트웨어가 포함될 수 있습니다. 정기적인 docker system prune이 필요합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: web
-  script: 'echo "=== Docker 디스크 사용량 ==="; docker system df; echo "=== 미사용 볼륨 ==="; docker volume ls -f dangling=true; echo "=== 미사용 이미지 ==="; docker images -f dangling=true --format "{{.ID}}: {{.Size}}"'
+  script: 'echo "=== Docker 디스크 사용량 ==="; docker system df; echo "=== 미사용 볼륨 ===";
+    docker volume ls -f dangling=true; echo "=== 미사용 이미지 ==="; docker images -f dangling=true
+    --format "{{.ID}}: {{.Size}}"'
   risk_level: low
   bastion_prompt: 미사용(dangling) 볼륨과 이미지를 점검하고 디스크 사용량을 분석해줘
 - order: 8
@@ -146,11 +179,14 @@ steps:
 
     echo ''[볼륨]''
 
-    echo "총: $(docker volume ls -q | wc -l)개, 미사용: $(docker volume ls -qf dangling=true | wc -l)개" 2>/dev/null
+    echo "총: $(docker volume ls -q | wc -l)개, 미사용: $(docker volume ls -qf dangling=true
+    | wc -l)개" 2>/dev/null
 
     echo ''[위험 마운트]''
 
-    docker ps -q | xargs -I{} docker inspect --format=''{{range .Mounts}}{{.Source}} {{end}}'' {} 2>/dev/null | tr '' '' ''\n'' | grep -cE ''(docker.sock|/etc$|/root)'' 2>/dev/null | xargs -I{} echo ''{}건''
+    docker ps -q | xargs -I{} docker inspect --format=''{{range .Mounts}}{{.Source}}
+    {{end}}'' {} 2>/dev/null | tr '' '' ''\n'' | grep -cE ''(docker.sock|/etc$|/root)''
+    2>/dev/null | xargs -I{} echo ''{}건''
 
     echo ''[이미지 디스크]''
 
@@ -161,10 +197,12 @@ steps:
     SCRIPT
 
     chmod +x /tmp/storage_security.sh && bash /tmp/storage_security.sh'
-  answer_detail: 클라우드 스토리지 보안의 핵심은 암호화(저장 시/전송 시), 접근 제어(IAM 정책), 데이터 분류(민감도 등급), 수명 주기 관리(보관/삭제)입니다. Docker 환경에서는 볼륨 권한 관리, 바인드 마운트 제한, tmpfs 활용, 이미지 레이어 검사가 이에 해당합니다.
+  answer_detail: 클라우드 스토리지 보안의 핵심은 암호화(저장 시/전송 시), 접근 제어(IAM 정책), 데이터 분류(민감도 등급),
+    수명 주기 관리(보관/삭제)입니다. Docker 환경에서는 볼륨 권한 관리, 바인드 마운트 제한, tmpfs 활용, 이미지 레이어 검사가 이에
+    해당합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: web
   script: 'cat << ''SCRIPT'' > /tmp/storage_security.sh
@@ -183,11 +221,14 @@ steps:
 
     echo ''[볼륨]''
 
-    echo "총: $(docker volume ls -q | wc -l)개, 미사용: $(docker volume ls -qf dangling=true | wc -l)개" 2>/dev/null
+    echo "총: $(docker volume ls -q | wc -l)개, 미사용: $(docker volume ls -qf dangling=true
+    | wc -l)개" 2>/dev/null
 
     echo ''[위험 마운트]''
 
-    docker ps -q | xargs -I{} docker inspect --format=''{{range .Mounts}}{{.Source}} {{end}}'' {} 2>/dev/null | tr '' '' ''\n'' | grep -cE ''(docker.sock|/etc$|/root)'' 2>/dev/null | xargs -I{} echo ''{}건''
+    docker ps -q | xargs -I{} docker inspect --format=''{{range .Mounts}}{{.Source}}
+    {{end}}'' {} 2>/dev/null | tr '' '' ''\n'' | grep -cE ''(docker.sock|/etc$|/root)''
+    2>/dev/null | xargs -I{} echo ''{}건''
 
     echo ''[이미지 디스크]''
 
@@ -200,3 +241,29 @@ steps:
     chmod +x /tmp/storage_security.sh && bash /tmp/storage_security.sh'
   risk_level: low
   bastion_prompt: 스토리지 보안 종합 점검 스크립트를 작성하고 실행하시오 구현 방법과 예시를 설명해줘
+- order: 99
+  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
+  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+
+    1) WEB 서버(10.20.30.80)에서 Docker 스토리지 드라이버와 루트 디렉터리를 확인해줘
+
+    2) Docker 볼륨 목록과 각 볼륨의 마운트 포인트를 확인해줘
+
+    3) 컨테이너의 바인드 마운트를 점검해줘
+
+    4) tmpfs를 사용하는 보안 컨테이너를 실행해줘
+
+    5) 미지 레이어에 민감 정보가 포함되어 있는지점검해줘'
+  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  risk_level: low
+  answer: ''
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
+  script: ''

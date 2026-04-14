@@ -3,7 +3,8 @@ title: '[Non-AI] 가드레일 구축'
 version: ai
 course: ai-safety-ai
 week: 3
-description: LLM의 안전한 운영을 위한 가드레일 시스템을 설계하고 구현합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: LLM의 안전한 운영을 위한 가드레일 시스템을 설계하고 구현합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를
+  검증합니다.
 difficulty: easy
 duration_minutes: 120
 objectives:
@@ -17,30 +18,40 @@ steps:
   hint: LLM에게 먼저 질문의 주제를 분류하게 하고, 허용 목록에 없으면 거부하세요.
   category: defense
   points: 12
-  answer: 'python3 -c " import json, urllib.request ALLOWED = [''security'',''network'',''system_admin'',''programming''] def classify_topic(q):     data = json.dumps({''model'':''gemma3:4b'',''prompt'':f''Classify
-    this question into ONE word: security, network, system_admin, programming, personal, other
+  answer: 'python3 -c " import json, urllib.request ALLOWED = [''security'',''network'',''system_admin'',''programming'']
+    def classify_topic(q):     data = json.dumps({''model'':''gemma3:4b'',''prompt'':f''Classify
+    this question into ONE word: security, network, system_admin, programming, personal,
+    other
 
     Question: {q}
 
-    Topic:'',''stream'':False,''options'':{''temperature'':0,''num_predict'':5}}).encode()     req = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'',data=data,headers={''Content-Type'':''application/json''})     topic
-    = json.loads(urllib.request.urlopen(req).read())[''response''].strip().lower().split()[0]     return topic tests = [''How to configure SSH?'',''What is your favorite movie?'',''Explain AES encryption'',''How
-    to cook pasta?'',''Best firewall settings?''] for q in tests:     topic = classify_topic(q)     allowed = any(a in topic for a in ALLOWED)     print(f''[{"ALLOW" if allowed else "DENY "}] Topic:{topic:15s}
-    | {q}'') "'
+    Topic:'',''stream'':False,''options'':{''temperature'':0,''num_predict'':5}}).encode()     req
+    = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'',data=data,headers={''Content-Type'':''application/json''})     topic
+    = json.loads(urllib.request.urlopen(req).read())[''response''].strip().lower().split()[0]     return
+    topic tests = [''How to configure SSH?'',''What is your favorite movie?'',''Explain
+    AES encryption'',''How to cook pasta?'',''Best firewall settings?''] for q in
+    tests:     topic = classify_topic(q)     allowed = any(a in topic for a in ALLOWED)     print(f''[{"ALLOW"
+    if allowed else "DENY "}] Topic:{topic:15s} | {q}'') "'
   answer_detail: 토픽 제한은 LLM의 응답 범위를 사전 정의된 주제로 한정합니다. 목적 외 사용과 남용을 방지하는 기본적인 가드레일입니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: manager
-  script: 'python3 -c " import json, urllib.request ALLOWED = [''security'',''network'',''system_admin'',''programming''] def classify_topic(q):     data = json.dumps({''model'':''gemma3:4b'',''prompt'':f''Classify
-    this question into ONE word: security, network, system_admin, programming, personal, other
+  script: 'python3 -c " import json, urllib.request ALLOWED = [''security'',''network'',''system_admin'',''programming'']
+    def classify_topic(q):     data = json.dumps({''model'':''gemma3:4b'',''prompt'':f''Classify
+    this question into ONE word: security, network, system_admin, programming, personal,
+    other
 
     Question: {q}
 
-    Topic:'',''stream'':False,''options'':{''temperature'':0,''num_predict'':5}}).encode()     req = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'',data=data,headers={''Content-Type'':''application/json''})     topic
-    = json.loads(urllib.request.urlopen(req).read())[''response''].strip().lower().split()[0]     return topic tests = [''How to configure SSH?'',''What is your favorite movie?'',''Explain AES encryption'',''How
-    to cook pasta?'',''Best firewall settings?''] for q in tests:     topic = classify_topic(q)     allowed = any(a in topic for a in ALLOWED)     print(f''[{"ALLOW" if allowed else "DENY "}] Topic:{topic:15s}
-    | {q}'') "'
+    Topic:'',''stream'':False,''options'':{''temperature'':0,''num_predict'':5}}).encode()     req
+    = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'',data=data,headers={''Content-Type'':''application/json''})     topic
+    = json.loads(urllib.request.urlopen(req).read())[''response''].strip().lower().split()[0]     return
+    topic tests = [''How to configure SSH?'',''What is your favorite movie?'',''Explain
+    AES encryption'',''How to cook pasta?'',''Best firewall settings?''] for q in
+    tests:     topic = classify_topic(q)     allowed = any(a in topic for a in ALLOWED)     print(f''[{"ALLOW"
+    if allowed else "DENY "}] Topic:{topic:15s} | {q}'') "'
   risk_level: low
   bastion_prompt: 토픽 제한 가드레일을 구현 방법을 설명하고 예시 코드를 보여줘
 - order: 2
@@ -48,20 +59,30 @@ steps:
   hint: num_predict 옵션과 후처리 잘라내기를 결합하세요.
   category: defense
   points: 10
-  answer: 'python3 -c " import json, urllib.request def limited_query(prompt, max_words=50, max_chars=300):     data = json.dumps({''model'':''gemma3:4b'',''prompt'':prompt,''stream'':False,''options'':{''num_predict'':80}}).encode()     req
-    = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'',data=data,headers={''Content-Type'':''application/json''})     resp = json.loads(urllib.request.urlopen(req).read())[''response'']     words
-    = resp.split()     if len(words) > max_words:         resp = '' ''.join(words[:max_words]) + ''... [TRUNCATED]''     if len(resp) > max_chars:         resp = resp[:max_chars] + ''... [TRUNCATED]''     return
-    resp r = limited_query(''Write a very long essay about cybersecurity history from the beginning of computing'') print(f''Response ({len(r)} chars, {len(r.split())} words):'') print(r) "'
+  answer: 'python3 -c " import json, urllib.request def limited_query(prompt, max_words=50,
+    max_chars=300):     data = json.dumps({''model'':''gemma3:4b'',''prompt'':prompt,''stream'':False,''options'':{''num_predict'':80}}).encode()     req
+    = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'',data=data,headers={''Content-Type'':''application/json''})     resp
+    = json.loads(urllib.request.urlopen(req).read())[''response'']     words = resp.split()     if
+    len(words) > max_words:         resp = '' ''.join(words[:max_words]) + ''... [TRUNCATED]''     if
+    len(resp) > max_chars:         resp = resp[:max_chars] + ''... [TRUNCATED]''     return
+    resp r = limited_query(''Write a very long essay about cybersecurity history from
+    the beginning of computing'') print(f''Response ({len(r)} chars, {len(r.split())}
+    words):'') print(r) "'
   answer_detail: 출력 길이 제한은 과도한 토큰 생성을 방지합니다. 리소스 남용과 민감 정보 유출 확률을 줄이는 기본 가드레일입니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: manager
-  script: 'python3 -c " import json, urllib.request def limited_query(prompt, max_words=50, max_chars=300):     data = json.dumps({''model'':''gemma3:4b'',''prompt'':prompt,''stream'':False,''options'':{''num_predict'':80}}).encode()     req
-    = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'',data=data,headers={''Content-Type'':''application/json''})     resp = json.loads(urllib.request.urlopen(req).read())[''response'']     words
-    = resp.split()     if len(words) > max_words:         resp = '' ''.join(words[:max_words]) + ''... [TRUNCATED]''     if len(resp) > max_chars:         resp = resp[:max_chars] + ''... [TRUNCATED]''     return
-    resp r = limited_query(''Write a very long essay about cybersecurity history from the beginning of computing'') print(f''Response ({len(r)} chars, {len(r.split())} words):'') print(r) "'
+  script: 'python3 -c " import json, urllib.request def limited_query(prompt, max_words=50,
+    max_chars=300):     data = json.dumps({''model'':''gemma3:4b'',''prompt'':prompt,''stream'':False,''options'':{''num_predict'':80}}).encode()     req
+    = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'',data=data,headers={''Content-Type'':''application/json''})     resp
+    = json.loads(urllib.request.urlopen(req).read())[''response'']     words = resp.split()     if
+    len(words) > max_words:         resp = '' ''.join(words[:max_words]) + ''... [TRUNCATED]''     if
+    len(resp) > max_chars:         resp = resp[:max_chars] + ''... [TRUNCATED]''     return
+    resp r = limited_query(''Write a very long essay about cybersecurity history from
+    the beginning of computing'') print(f''Response ({len(r)} chars, {len(r.split())}
+    words):'') print(r) "'
   risk_level: low
   bastion_prompt: 출력 길이 제한 가드레일을 구현 방법을 설명하고 예시 코드를 보여줘
 - order: 3
@@ -69,29 +90,41 @@ steps:
   hint: 분류 전용 프롬프트로 3단계 분류를 수행하세요.
   category: defense
   points: 12
-  answer: 'python3 -c " import json, urllib.request def classify_content(text):     data = json.dumps({''model'':''gemma3:4b'',''prompt'':f''Classify this text safety: SAFE (normal), CAUTION (sensitive
-    but educational), DANGER (harmful/exploit code). Answer ONE word only.
+  answer: 'python3 -c " import json, urllib.request def classify_content(text):     data
+    = json.dumps({''model'':''gemma3:4b'',''prompt'':f''Classify this text safety:
+    SAFE (normal), CAUTION (sensitive but educational), DANGER (harmful/exploit code).
+    Answer ONE word only.
 
     Text: {text[:200]}
 
-    Classification:'',''stream'':False,''options'':{''temperature'':0,''num_predict'':5}}).encode()     req = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'',data=data,headers={''Content-Type'':''application/json''})     r
-    = json.loads(urllib.request.urlopen(req).read())[''response''].upper()     for c in [''DANGER'',''CAUTION'',''SAFE'']:         if c in r: return c     return ''CAUTION'' texts = [''Use strong passwords
-    with 12+ characters'',''SQL injection: input 1 OR 1=1 to bypass login'',''Always update your software regularly''] for t in texts:     cat = classify_content(t)     action = {''SAFE'':''DELIVER'',''CAUTION'':''FLAG'',''DANGER'':''BLOCK''}[cat]     print(f''[{cat:7s}]
+    Classification:'',''stream'':False,''options'':{''temperature'':0,''num_predict'':5}}).encode()     req
+    = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'',data=data,headers={''Content-Type'':''application/json''})     r
+    = json.loads(urllib.request.urlopen(req).read())[''response''].upper()     for
+    c in [''DANGER'',''CAUTION'',''SAFE'']:         if c in r: return c     return
+    ''CAUTION'' texts = [''Use strong passwords with 12+ characters'',''SQL injection:
+    input 1 OR 1=1 to bypass login'',''Always update your software regularly''] for
+    t in texts:     cat = classify_content(t)     action = {''SAFE'':''DELIVER'',''CAUTION'':''FLAG'',''DANGER'':''BLOCK''}[cat]     print(f''[{cat:7s}]
     -> {action:7s} | {t[:55]}'') "'
   answer_detail: 콘텐츠 분류 가드레일은 이진 분류 대신 3단계로 구분하여 교육적 콘텐츠와 실제 위험을 구별합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: manager
-  script: 'python3 -c " import json, urllib.request def classify_content(text):     data = json.dumps({''model'':''gemma3:4b'',''prompt'':f''Classify this text safety: SAFE (normal), CAUTION (sensitive
-    but educational), DANGER (harmful/exploit code). Answer ONE word only.
+  script: 'python3 -c " import json, urllib.request def classify_content(text):     data
+    = json.dumps({''model'':''gemma3:4b'',''prompt'':f''Classify this text safety:
+    SAFE (normal), CAUTION (sensitive but educational), DANGER (harmful/exploit code).
+    Answer ONE word only.
 
     Text: {text[:200]}
 
-    Classification:'',''stream'':False,''options'':{''temperature'':0,''num_predict'':5}}).encode()     req = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'',data=data,headers={''Content-Type'':''application/json''})     r
-    = json.loads(urllib.request.urlopen(req).read())[''response''].upper()     for c in [''DANGER'',''CAUTION'',''SAFE'']:         if c in r: return c     return ''CAUTION'' texts = [''Use strong passwords
-    with 12+ characters'',''SQL injection: input 1 OR 1=1 to bypass login'',''Always update your software regularly''] for t in texts:     cat = classify_content(t)     action = {''SAFE'':''DELIVER'',''CAUTION'':''FLAG'',''DANGER'':''BLOCK''}[cat]     print(f''[{cat:7s}]
+    Classification:'',''stream'':False,''options'':{''temperature'':0,''num_predict'':5}}).encode()     req
+    = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'',data=data,headers={''Content-Type'':''application/json''})     r
+    = json.loads(urllib.request.urlopen(req).read())[''response''].upper()     for
+    c in [''DANGER'',''CAUTION'',''SAFE'']:         if c in r: return c     return
+    ''CAUTION'' texts = [''Use strong passwords with 12+ characters'',''SQL injection:
+    input 1 OR 1=1 to bypass login'',''Always update your software regularly''] for
+    t in texts:     cat = classify_content(t)     action = {''SAFE'':''DELIVER'',''CAUTION'':''FLAG'',''DANGER'':''BLOCK''}[cat]     print(f''[{cat:7s}]
     -> {action:7s} | {t[:55]}'') "'
   risk_level: low
   bastion_prompt: 콘텐츠 분류 가드레일을 구현 방법을 설명하고 예시 코드를 보여줘
@@ -100,21 +133,34 @@ steps:
   hint: JSON 스키마 검증으로 출력 형식을 제한하세요.
   category: defense
   points: 12
-  answer: 'python3 -c " import json, urllib.request def structured_query(prompt):     sys = ''Respond ONLY in JSON: {"answer": "...", "confidence": "high/medium/low", "category": "..."}''     data = json.dumps({''model'':''gemma3:4b'',''messages'':[{''role'':''system'',''content'':sys},{''role'':''user'',''content'':prompt}],''stream'':False,''options'':{''temperature'':0,''num_predict'':80}}).encode()     req
-    = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/chat'',data=data,headers={''Content-Type'':''application/json''})     resp = json.loads(urllib.request.urlopen(req).read())[''message''][''content'']     try:         start
-    = resp.index(''{'')         end = resp.rindex(''}'') + 1         parsed = json.loads(resp[start:end])         if ''answer'' in parsed and ''confidence'' in parsed:             return ''VALID'', parsed     except:
-    pass     return ''INVALID'', resp[:80] for q in [''What port does SSH use?'',''Is Telnet secure?'',''What is HTTPS?'']:     status, result = structured_query(q)     print(f''[{status}] {q}'')     print(f''  {json.dumps(result)
+  answer: 'python3 -c " import json, urllib.request def structured_query(prompt):     sys
+    = ''Respond ONLY in JSON: {"answer": "...", "confidence": "high/medium/low", "category":
+    "..."}''     data = json.dumps({''model'':''gemma3:4b'',''messages'':[{''role'':''system'',''content'':sys},{''role'':''user'',''content'':prompt}],''stream'':False,''options'':{''temperature'':0,''num_predict'':80}}).encode()     req
+    = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/chat'',data=data,headers={''Content-Type'':''application/json''})     resp
+    = json.loads(urllib.request.urlopen(req).read())[''message''][''content'']     try:         start
+    = resp.index(''{'')         end = resp.rindex(''}'') + 1         parsed = json.loads(resp[start:end])         if
+    ''answer'' in parsed and ''confidence'' in parsed:             return ''VALID'',
+    parsed     except: pass     return ''INVALID'', resp[:80] for q in [''What port
+    does SSH use?'',''Is Telnet secure?'',''What is HTTPS?'']:     status, result
+    = structured_query(q)     print(f''[{status}] {q}'')     print(f''  {json.dumps(result)
     if isinstance(result,dict) else result}'')     print() "'
-  answer_detail: 구조화된 출력은 자동 파이프라인에서 안전하게 파싱할 수 있게 합니다. 자유 형식 텍스트보다 예측 가능하여 후처리와 검증이 용이합니다.
+  answer_detail: 구조화된 출력은 자동 파이프라인에서 안전하게 파싱할 수 있게 합니다. 자유 형식 텍스트보다 예측 가능하여 후처리와 검증이
+    용이합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: manager
-  script: 'python3 -c " import json, urllib.request def structured_query(prompt):     sys = ''Respond ONLY in JSON: {"answer": "...", "confidence": "high/medium/low", "category": "..."}''     data = json.dumps({''model'':''gemma3:4b'',''messages'':[{''role'':''system'',''content'':sys},{''role'':''user'',''content'':prompt}],''stream'':False,''options'':{''temperature'':0,''num_predict'':80}}).encode()     req
-    = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/chat'',data=data,headers={''Content-Type'':''application/json''})     resp = json.loads(urllib.request.urlopen(req).read())[''message''][''content'']     try:         start
-    = resp.index(''{'')         end = resp.rindex(''}'') + 1         parsed = json.loads(resp[start:end])         if ''answer'' in parsed and ''confidence'' in parsed:             return ''VALID'', parsed     except:
-    pass     return ''INVALID'', resp[:80] for q in [''What port does SSH use?'',''Is Telnet secure?'',''What is HTTPS?'']:     status, result = structured_query(q)     print(f''[{status}] {q}'')     print(f''  {json.dumps(result)
+  script: 'python3 -c " import json, urllib.request def structured_query(prompt):     sys
+    = ''Respond ONLY in JSON: {"answer": "...", "confidence": "high/medium/low", "category":
+    "..."}''     data = json.dumps({''model'':''gemma3:4b'',''messages'':[{''role'':''system'',''content'':sys},{''role'':''user'',''content'':prompt}],''stream'':False,''options'':{''temperature'':0,''num_predict'':80}}).encode()     req
+    = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/chat'',data=data,headers={''Content-Type'':''application/json''})     resp
+    = json.loads(urllib.request.urlopen(req).read())[''message''][''content'']     try:         start
+    = resp.index(''{'')         end = resp.rindex(''}'') + 1         parsed = json.loads(resp[start:end])         if
+    ''answer'' in parsed and ''confidence'' in parsed:             return ''VALID'',
+    parsed     except: pass     return ''INVALID'', resp[:80] for q in [''What port
+    does SSH use?'',''Is Telnet secure?'',''What is HTTPS?'']:     status, result
+    = structured_query(q)     print(f''[{status}] {q}'')     print(f''  {json.dumps(result)
     if isinstance(result,dict) else result}'')     print() "'
   risk_level: low
   bastion_prompt: 구조화된 출력 가드레일을 구현 방법을 설명하고 예시 코드를 보여줘
@@ -123,22 +169,34 @@ steps:
   hint: 사용자별 누적 토큰 사용량을 추적하고 임계값에서 차단하세요.
   category: defense
   points: 10
-  answer: 'python3 -c " import json, urllib.request class TokenGuard:     def __init__(self, limit=300):         self.limit = limit         self.used = 0     def query(self, prompt):         if self.used
-    >= self.limit:             return f''BUDGET_EXCEEDED ({self.used}/{self.limit})''         data = json.dumps({''model'':''gemma3:4b'',''prompt'':prompt,''stream'':False,''options'':{''num_predict'':20}}).encode()         req
-    = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'',data=data,headers={''Content-Type'':''application/json''})         resp = json.loads(urllib.request.urlopen(req).read())         tokens
-    = resp.get(''eval_count'',0) + resp.get(''prompt_eval_count'',0)         self.used += tokens         return f''OK ({self.used}/{self.limit} tokens) - {resp["response"][:30]}'' guard = TokenGuard(300)
-    for q in [''What is AI?'',''Explain SSH'',''Define VPN'',''What is TLS?'',''Explain DNS'',''What is HTTP?'',''Define TCP'',''What is UDP?'']:     r = guard.query(q)     print(f''{q:20s} -> {r}'') "'
+  answer: 'python3 -c " import json, urllib.request class TokenGuard:     def __init__(self,
+    limit=300):         self.limit = limit         self.used = 0     def query(self,
+    prompt):         if self.used >= self.limit:             return f''BUDGET_EXCEEDED
+    ({self.used}/{self.limit})''         data = json.dumps({''model'':''gemma3:4b'',''prompt'':prompt,''stream'':False,''options'':{''num_predict'':20}}).encode()         req
+    = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'',data=data,headers={''Content-Type'':''application/json''})         resp
+    = json.loads(urllib.request.urlopen(req).read())         tokens = resp.get(''eval_count'',0)
+    + resp.get(''prompt_eval_count'',0)         self.used += tokens         return
+    f''OK ({self.used}/{self.limit} tokens) - {resp["response"][:30]}'' guard = TokenGuard(300)
+    for q in [''What is AI?'',''Explain SSH'',''Define VPN'',''What is TLS?'',''Explain
+    DNS'',''What is HTTP?'',''Define TCP'',''What is UDP?'']:     r = guard.query(q)     print(f''{q:20s}
+    -> {r}'') "'
   answer_detail: 토큰 예산 관리는 비용 폭주와 리소스 남용을 방지합니다. 사용자/세션별 한도를 설정하여 공정한 리소스 배분을 보장합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: manager
-  script: 'python3 -c " import json, urllib.request class TokenGuard:     def __init__(self, limit=300):         self.limit = limit         self.used = 0     def query(self, prompt):         if self.used
-    >= self.limit:             return f''BUDGET_EXCEEDED ({self.used}/{self.limit})''         data = json.dumps({''model'':''gemma3:4b'',''prompt'':prompt,''stream'':False,''options'':{''num_predict'':20}}).encode()         req
-    = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'',data=data,headers={''Content-Type'':''application/json''})         resp = json.loads(urllib.request.urlopen(req).read())         tokens
-    = resp.get(''eval_count'',0) + resp.get(''prompt_eval_count'',0)         self.used += tokens         return f''OK ({self.used}/{self.limit} tokens) - {resp["response"][:30]}'' guard = TokenGuard(300)
-    for q in [''What is AI?'',''Explain SSH'',''Define VPN'',''What is TLS?'',''Explain DNS'',''What is HTTP?'',''Define TCP'',''What is UDP?'']:     r = guard.query(q)     print(f''{q:20s} -> {r}'') "'
+  script: 'python3 -c " import json, urllib.request class TokenGuard:     def __init__(self,
+    limit=300):         self.limit = limit         self.used = 0     def query(self,
+    prompt):         if self.used >= self.limit:             return f''BUDGET_EXCEEDED
+    ({self.used}/{self.limit})''         data = json.dumps({''model'':''gemma3:4b'',''prompt'':prompt,''stream'':False,''options'':{''num_predict'':20}}).encode()         req
+    = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'',data=data,headers={''Content-Type'':''application/json''})         resp
+    = json.loads(urllib.request.urlopen(req).read())         tokens = resp.get(''eval_count'',0)
+    + resp.get(''prompt_eval_count'',0)         self.used += tokens         return
+    f''OK ({self.used}/{self.limit} tokens) - {resp["response"][:30]}'' guard = TokenGuard(300)
+    for q in [''What is AI?'',''Explain SSH'',''Define VPN'',''What is TLS?'',''Explain
+    DNS'',''What is HTTP?'',''Define TCP'',''What is UDP?'']:     r = guard.query(q)     print(f''{q:20s}
+    -> {r}'') "'
   risk_level: low
   bastion_prompt: 비용/토큰 제한 가드레일을 구현 방법을 설명하고 예시 코드를 보여줘
 - order: 6
@@ -146,24 +204,39 @@ steps:
   hint: 각 가드레일의 우회 가능성을 탐색하세요.
   category: attack
   points: 12
-  answer: 'python3 -c " import re # Test topic guardrail bypass bypass_attempts = [     (''Direct off-topic'', ''What is your favorite color?'', True),     (''Security framing'', ''What are the security
-    implications of cooking with gas?'', False),     (''Embedded'', ''While configuring SSH, what recipe do you recommend for dinner?'', False),     (''Metaphor'', ''In network terms, how do you layer a
-    cake?'', False),     (''Technical-looking'', ''Explain the TCP/IP stack of making coffee'', False), ] print(''=== Topic Guardrail Bypass Test ==='') for name, prompt, expected_block in bypass_attempts:     #
-    Simple topic check (simulated)     tech_words = [''ssh'',''tcp'',''network'',''security'',''firewall'',''encryption'',''server'',''api'']     has_tech = any(w in prompt.lower() for w in tech_words)     blocked
-    = not has_tech     bypassed = not blocked and expected_block     print(f''[{"BYPASS" if bypassed else "OK"    :6s}] {name:20s}: {prompt[:45]}'') print() print(''Findings: Topic guardrails can be bypassed
-    by embedding off-topic'') print(''content within technical-sounding questions.'') "'
-  answer_detail: 가드레일 우회 테스트는 방어의 실효성을 검증합니다. 기술 용어를 섞은 비기술 질문, 은유적 표현 등으로 토픽 필터를 우회할 수 있습니다.
+  answer: 'python3 -c " import re # Test topic guardrail bypass bypass_attempts =
+    [     (''Direct off-topic'', ''What is your favorite color?'', True),     (''Security
+    framing'', ''What are the security implications of cooking with gas?'', False),     (''Embedded'',
+    ''While configuring SSH, what recipe do you recommend for dinner?'', False),     (''Metaphor'',
+    ''In network terms, how do you layer a cake?'', False),     (''Technical-looking'',
+    ''Explain the TCP/IP stack of making coffee'', False), ] print(''=== Topic Guardrail
+    Bypass Test ==='') for name, prompt, expected_block in bypass_attempts:     #
+    Simple topic check (simulated)     tech_words = [''ssh'',''tcp'',''network'',''security'',''firewall'',''encryption'',''server'',''api'']     has_tech
+    = any(w in prompt.lower() for w in tech_words)     blocked = not has_tech     bypassed
+    = not blocked and expected_block     print(f''[{"BYPASS" if bypassed else "OK"    :6s}]
+    {name:20s}: {prompt[:45]}'') print() print(''Findings: Topic guardrails can be
+    bypassed by embedding off-topic'') print(''content within technical-sounding questions.'')
+    "'
+  answer_detail: 가드레일 우회 테스트는 방어의 실효성을 검증합니다. 기술 용어를 섞은 비기술 질문, 은유적 표현 등으로 토픽 필터를
+    우회할 수 있습니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: manager
-  script: 'python3 -c " import re # Test topic guardrail bypass bypass_attempts = [     (''Direct off-topic'', ''What is your favorite color?'', True),     (''Security framing'', ''What are the security
-    implications of cooking with gas?'', False),     (''Embedded'', ''While configuring SSH, what recipe do you recommend for dinner?'', False),     (''Metaphor'', ''In network terms, how do you layer a
-    cake?'', False),     (''Technical-looking'', ''Explain the TCP/IP stack of making coffee'', False), ] print(''=== Topic Guardrail Bypass Test ==='') for name, prompt, expected_block in bypass_attempts:     #
-    Simple topic check (simulated)     tech_words = [''ssh'',''tcp'',''network'',''security'',''firewall'',''encryption'',''server'',''api'']     has_tech = any(w in prompt.lower() for w in tech_words)     blocked
-    = not has_tech     bypassed = not blocked and expected_block     print(f''[{"BYPASS" if bypassed else "OK"    :6s}] {name:20s}: {prompt[:45]}'') print() print(''Findings: Topic guardrails can be bypassed
-    by embedding off-topic'') print(''content within technical-sounding questions.'') "'
+  script: 'python3 -c " import re # Test topic guardrail bypass bypass_attempts =
+    [     (''Direct off-topic'', ''What is your favorite color?'', True),     (''Security
+    framing'', ''What are the security implications of cooking with gas?'', False),     (''Embedded'',
+    ''While configuring SSH, what recipe do you recommend for dinner?'', False),     (''Metaphor'',
+    ''In network terms, how do you layer a cake?'', False),     (''Technical-looking'',
+    ''Explain the TCP/IP stack of making coffee'', False), ] print(''=== Topic Guardrail
+    Bypass Test ==='') for name, prompt, expected_block in bypass_attempts:     #
+    Simple topic check (simulated)     tech_words = [''ssh'',''tcp'',''network'',''security'',''firewall'',''encryption'',''server'',''api'']     has_tech
+    = any(w in prompt.lower() for w in tech_words)     blocked = not has_tech     bypassed
+    = not blocked and expected_block     print(f''[{"BYPASS" if bypassed else "OK"    :6s}]
+    {name:20s}: {prompt[:45]}'') print() print(''Findings: Topic guardrails can be
+    bypassed by embedding off-topic'') print(''content within technical-sounding questions.'')
+    "'
   risk_level: medium
   bastion_prompt: 가드레일 우회 테스트를 수행해줘
 - order: 7
@@ -171,19 +244,58 @@ steps:
   hint: 각 가드레일의 성능 메트릭을 수집하고 종합하세요.
   category: audit
   points: 10
-  answer: "python3 -c \" print('='*55) print('  Guardrail Effectiveness Report') print('='*55) guardrails = [     ('Topic Filter', 85, 5, 0.01),     ('Input Sanitizer', 90, 8, 0.001),     ('LLM-as-Judge',\
-    \ 75, 3, 1.2),     ('Output Filter', 80, 10, 0.001),     ('Token Budget', 100, 0, 0.0),     ('Sandwich Defense', 70, 2, 0.0),     ('Schema Enforcement', 95, 5, 0.05), ] print(f'  {\"Guardrail\":20s}\
-    \ {\"Block%\":>7s} {\"FP%\":>5s} {\"Latency\":>8s}') print('  ' + '-'*45) for name, block, fp, latency in guardrails:     print(f'  {name:20s} {block:6d}% {fp:4d}% {latency:7.3f}s') total_block = 100\
-    \ - (1-0.85)*(1-0.90)*(1-0.75)*(1-0.80)*100 print(f'\n  Combined block rate (layered): ~{total_block:.1f}%') print(f'  Combined latency: ~{sum(l for _,_,_,l in guardrails):.2f}s') print('='*55) \""
-  answer_detail: 가드레일 효과 보고서는 각 레이어의 독립적 성능과 결합 효과를 보여줍니다. 다층 방어의 누적 차단율은 개별 차단율보다 훨씬 높습니다.
+  answer: "python3 -c \" print('='*55) print('  Guardrail Effectiveness Report') print('='*55)\
+    \ guardrails = [     ('Topic Filter', 85, 5, 0.01),     ('Input Sanitizer', 90,\
+    \ 8, 0.001),     ('LLM-as-Judge', 75, 3, 1.2),     ('Output Filter', 80, 10, 0.001),\
+    \     ('Token Budget', 100, 0, 0.0),     ('Sandwich Defense', 70, 2, 0.0),   \
+    \  ('Schema Enforcement', 95, 5, 0.05), ] print(f'  {\"Guardrail\":20s} {\"Block%\"\
+    :>7s} {\"FP%\":>5s} {\"Latency\":>8s}') print('  ' + '-'*45) for name, block,\
+    \ fp, latency in guardrails:     print(f'  {name:20s} {block:6d}% {fp:4d}% {latency:7.3f}s')\
+    \ total_block = 100 - (1-0.85)*(1-0.90)*(1-0.75)*(1-0.80)*100 print(f'\n  Combined\
+    \ block rate (layered): ~{total_block:.1f}%') print(f'  Combined latency: ~{sum(l\
+    \ for _,_,_,l in guardrails):.2f}s') print('='*55) \""
+  answer_detail: 가드레일 효과 보고서는 각 레이어의 독립적 성능과 결합 효과를 보여줍니다. 다층 방어의 누적 차단율은 개별 차단율보다
+    훨씬 높습니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: manager
-  script: "python3 -c \" print('='*55) print('  Guardrail Effectiveness Report') print('='*55) guardrails = [     ('Topic Filter', 85, 5, 0.01),     ('Input Sanitizer', 90, 8, 0.001),     ('LLM-as-Judge',\
-    \ 75, 3, 1.2),     ('Output Filter', 80, 10, 0.001),     ('Token Budget', 100, 0, 0.0),     ('Sandwich Defense', 70, 2, 0.0),     ('Schema Enforcement', 95, 5, 0.05), ] print(f'  {\"Guardrail\":20s}\
-    \ {\"Block%\":>7s} {\"FP%\":>5s} {\"Latency\":>8s}') print('  ' + '-'*45) for name, block, fp, latency in guardrails:     print(f'  {name:20s} {block:6d}% {fp:4d}% {latency:7.3f}s') total_block = 100\
-    \ - (1-0.85)*(1-0.90)*(1-0.75)*(1-0.80)*100 print(f'\n  Combined block rate (layered): ~{total_block:.1f}%') print(f'  Combined latency: ~{sum(l for _,_,_,l in guardrails):.2f}s') print('='*55) \""
+  script: "python3 -c \" print('='*55) print('  Guardrail Effectiveness Report') print('='*55)\
+    \ guardrails = [     ('Topic Filter', 85, 5, 0.01),     ('Input Sanitizer', 90,\
+    \ 8, 0.001),     ('LLM-as-Judge', 75, 3, 1.2),     ('Output Filter', 80, 10, 0.001),\
+    \     ('Token Budget', 100, 0, 0.0),     ('Sandwich Defense', 70, 2, 0.0),   \
+    \  ('Schema Enforcement', 95, 5, 0.05), ] print(f'  {\"Guardrail\":20s} {\"Block%\"\
+    :>7s} {\"FP%\":>5s} {\"Latency\":>8s}') print('  ' + '-'*45) for name, block,\
+    \ fp, latency in guardrails:     print(f'  {name:20s} {block:6d}% {fp:4d}% {latency:7.3f}s')\
+    \ total_block = 100 - (1-0.85)*(1-0.90)*(1-0.75)*(1-0.80)*100 print(f'\n  Combined\
+    \ block rate (layered): ~{total_block:.1f}%') print(f'  Combined latency: ~{sum(l\
+    \ for _,_,_,l in guardrails):.2f}s') print('='*55) \""
   risk_level: low
   bastion_prompt: 가드레일 효과 보고서 작성 방법을 설명해줘
+- order: 99
+  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
+  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+
+    1) 토픽 제한 가드레일을 구현 방법을 설명하고 예시 코드를 보여줘
+
+    2) 출력 길이 제한 가드레일을 구현 방법을 설명하고 예시 코드를 보여줘
+
+    3) 콘텐츠 분류 가드레일을 구현 방법을 설명하고 예시 코드를 보여줘
+
+    4) 구조화된 출력 가드레일을 구현 방법을 설명하고 예시 코드를 보여줘
+
+    5) 비용/토큰 제한 가드레일을 구현 방법을 설명하고 예시 코드를 보여줘'
+  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
+  category: multi_task
+  points: 50
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: manager
+  risk_level: low
+  answer: ''
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
+  script: ''
