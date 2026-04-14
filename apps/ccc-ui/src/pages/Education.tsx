@@ -212,7 +212,7 @@ export default function Education() {
                 {s.hint && <div style={{ fontSize: 14, color: '#58a6ff', background: '#0d1f3c', borderRadius: 6, padding: '8px 12px', marginBottom: 8, whiteSpace: 'pre-wrap' as const }}>Hint: {s.hint}</div>}
                 {s.script && <div style={{ fontSize: 14, fontFamily: 'Consolas,Monaco,monospace', color: '#3fb950', background: '#0d1f0d', borderRadius: 6, padding: '8px 12px', marginBottom: 8, whiteSpace: 'pre-wrap' as const }}>$ {s.script}</div>}
                 {s.verify && <div style={{ fontSize: 15, color: '#8b949e' }}>Verify: <code style={{ color: '#d29922' }}>{s.verify.type}</code> <code style={{ color: '#bc8cff' }}>"{s.verify.expect}"</code></div>}
-                {s.answer && (
+                {showAnswers && isAdmin() && s.answer && (
                   <div style={{ marginTop: 8, background: '#1a0a0a', border: '1px solid #f8514966', borderRadius: 6, padding: '10px 12px' }}>
                     <div style={{ fontSize: 15, color: '#f85149', fontWeight: 600, marginBottom: 4 }}>Answer (Admin)</div>
                     <div style={{ fontSize: 14, color: '#e6edf3', fontFamily: 'Consolas,Monaco,monospace', whiteSpace: 'pre-wrap' as const }}>{s.answer}</div>

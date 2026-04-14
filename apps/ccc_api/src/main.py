@@ -1391,7 +1391,7 @@ def lab_catalog(course: str | None = None, version: str | None = None):
 def get_lab_detail(lab_id: str, request: Request):
     """실습 상세 (steps 포함). admin=true 쿼리파라미터 + API키로 정답 노출"""
     from packages.lab_engine import load_all_labs
-    is_admin = request.query_params.get("admin") == "true"
+    is_admin = request.query_params.get("admin") in ("true", "1")
     labs = load_all_labs(_LABS_DIR)
     for l in labs:
         if l.lab_id == lab_id:
@@ -1401,9 +1401,12 @@ def get_lab_detail(lab_id: str, request: Request):
                     "order": s.order, "instruction": s.instruction,
                     "hint": s.hint, "category": s.category, "points": s.points,
                 }
-                if l.version == "ai" and s.script:
-                    step_data["script"] = s.script
-                    step_data["risk_level"] = s.risk_level
+                if l.version == "ai":
+                    if s.script:
+                        step_data["script"] = s.script
+                        step_data["risk_level"] = s.risk_level
+                    if hasattr(s, 'bastion_prompt') and s.bastion_prompt:
+                        step_data["bastion_prompt"] = s.bastion_prompt
                 if s.verify:
                     step_data["verify"] = {"type": s.verify.type, "expect": s.verify.expect, "field": s.verify.field}
                 # admin만 정답 노출

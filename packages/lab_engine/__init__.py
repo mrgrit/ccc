@@ -39,6 +39,8 @@ class LabStep:
     risk_level: str = "low"
     # 실행 대상 VM (auto_verify에서 해당 VM의 SubAgent로 실행)
     target_vm: str = ""        # attacker | secu | web | siem | manager (비어있으면 기본 VM)
+    # AI 실습용 Bastion 프롬프트
+    bastion_prompt: str = ""   # Bastion에 입력할 프롬프트 (AI 버전 전용)
 
 @dataclass
 class Lab:
