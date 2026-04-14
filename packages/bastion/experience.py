@@ -314,6 +314,110 @@ class ExperienceLearner:
         except Exception:
             pass
 
+    # ── Playbook 자동 승격 (3단계: 결정화) ────────────────────────
+
+    PROMOTE_TO_PLAYBOOK_THRESHOLD = 5   # Playbook 승격 최소 증거 수
+    PROMOTE_SUCCESS_RATE = 0.8          # Playbook 승격 최소 성공률
+
+    def promote_to_playbook(self, playbooks_dir: str = "") -> list[str]:
+        """성공률 높은 경험을 Playbook YAML로 자동 생성.
+
+        승격 조건: total >= 5회, 성공률 >= 80%.
+        이미 같은 pattern_key의 Playbook이 있으면 건너뜀.
+
+        Returns: 생성된 Playbook ID 목록
+        """
+        import os, yaml
+        if not playbooks_dir:
+            playbooks_dir = os.path.join(
+                os.path.dirname(__file__), "..", "..", "contents", "playbooks"
+            )
+        os.makedirs(playbooks_dir, exist_ok=True)
+
+        # 이미 존재하는 playbook_id 수집
+        existing_ids = set()
+        for f in os.listdir(playbooks_dir):
+            if f.endswith(".yaml"):
+                try:
+                    with open(os.path.join(playbooks_dir, f)) as fh:
+                        pb = yaml.safe_load(fh)
+                    if pb:
+                        existing_ids.add(pb.get("playbook_id", ""))
+                except Exception:
+                    pass
+
+        created = []
+        try:
+            conn, should_close = self._connect()
+            conn.row_factory = sqlite3.Row
+
+            rows = conn.execute("""
+                SELECT * FROM experience
+                WHERE total_count >= ?
+                AND CAST(success_count AS REAL) / MAX(total_count, 1) >= ?
+                ORDER BY success_count DESC
+            """, (self.PROMOTE_TO_PLAYBOOK_THRESHOLD, self.PROMOTE_SUCCESS_RATE)).fetchall()
+
+            for row in rows:
+                row = dict(row)
+                pb_id = f"exp-{row['pattern_key'].replace(':', '-')}"
+
+                if pb_id in existing_ids:
+                    continue
+
+                # 명령어 템플릿이 없으면 건너뜀
+                cmd_tpl = row.get("command_template", "")
+                if not cmd_tpl or cmd_tpl == "{IP}":
+                    continue
+
+                skill = row.get("skill", "shell")
+                target_vm = row.get("target_vm", "attacker")
+                category = row.get("category", "general")
+                success_rate = row["success_count"] / max(row["total_count"], 1)
+
+                # 예시에서 대표 프롬프트 추출
+                examples = json.loads(row.get("examples", "[]"))
+                desc = examples[0] if examples else row["pattern_key"]
+
+                playbook = {
+                    "playbook_id": pb_id,
+                    "title": f"{category} 자동 생성 ({success_rate:.0%} 성공률)",
+                    "description": desc[:100],
+                    "source": "experience_auto_promote",
+                    "pattern_key": row["pattern_key"],
+                    "success_rate": round(success_rate, 2),
+                    "evidence_count": row["total_count"],
+                    "steps": [{
+                        "name": f"{category} 실행",
+                        "skill": skill,
+                        "params": {
+                            "target": target_vm,
+                            "command": cmd_tpl,
+                        },
+                    }],
+                }
+
+                pb_file = os.path.join(playbooks_dir, f"{pb_id}.yaml")
+                with open(pb_file, "w", encoding="utf-8") as fh:
+                    yaml.dump(playbook, fh, allow_unicode=True,
+                              default_flow_style=False, sort_keys=False)
+
+                # experience에 승격 기록
+                conn.execute(
+                    "UPDATE experience SET outcome = ? WHERE pattern_key = ?",
+                    (f"promoted_to_playbook:{pb_id}", row["pattern_key"])
+                )
+                created.append(pb_id)
+                existing_ids.add(pb_id)
+
+            conn.commit()
+            if should_close:
+                conn.close()
+        except Exception:
+            pass
+
+        return created
+
     # ── 통계 ──────────────────────────────────────────────────────
 
     def stats(self) -> dict:

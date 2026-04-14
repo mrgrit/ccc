@@ -290,9 +290,9 @@ YAML 수작업 (비교용)             27%
   → 부정 경험: "⚠ audit_ops → secu shell 실패 5회"
   → planning prompt에 주입 → LLM이 참고
 
-[3단계: 결정화] 미구현 (향후)
-  승격 경험 + 명령어 템플릿
-  → Playbook YAML 자동 생성
+[3단계: 결정화] 구현 완료 ✓
+  승격 경험 (5회+ 성공, 80%+ 성공률)
+  → Playbook YAML 자동 생성 (contents/playbooks/exp-*.yaml)
   → 다음엔 LLM 추론 없이 직접 실행
   → 응답 시간 대폭 단축 + 성공률 안정화
 ```

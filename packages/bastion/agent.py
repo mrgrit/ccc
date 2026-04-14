@@ -520,6 +520,13 @@ class BastionAgent:
         analysis = yield from self._stream_analysis_events(message, all_results)
         self.history.append({"role": "assistant", "content": analysis})
 
+        # Experience → Playbook 자동 승격 (10회마다 체크)
+        stats = self.experience.stats()
+        if stats.get("total_patterns", 0) % 10 == 0 and stats.get("total_patterns", 0) > 0:
+            promoted = self.experience.promote_to_playbook()
+            if promoted:
+                yield {"event": "message", "message": f"경험 → Playbook 승격: {', '.join(promoted)}"}
+
     def get_skills(self) -> list[dict]:
         return [{"name": k, "description": v["description"],
                  "target_vm": v.get("target_vm", "auto"),
