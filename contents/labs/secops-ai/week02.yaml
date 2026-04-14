@@ -22,7 +22,7 @@ steps:
   answer_detail: id 명령은 현재 사용자의 UID, GID, 소속 그룹 목록을 표시합니다.
   verify:
     type: output_contains
-    expect: ''
+    expect: uid=
     field: stdout
   target_vm: secu
   script: id
@@ -38,7 +38,7 @@ steps:
     생성합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: secteam
     field: stdout
   target_vm: secu
   script: sudo groupadd secteam && sudo useradd -m -G secteam secuser1
@@ -54,7 +54,7 @@ steps:
   answer_detail: chmod 770은 소유자와 그룹에 rwx, 기타 사용자에게 접근 불가를 설정합니다. chgrp로 그룹 소유권을 변경합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: secteam
     field: stdout
   target_vm: secu
   script: sudo mkdir -p /opt/secure-data && sudo chgrp secteam /opt/secure-data &&
@@ -70,7 +70,7 @@ steps:
   answer_detail: SGID 비트가 설정된 디렉터리에서 생성되는 파일은 부모 디렉터리의 그룹을 자동으로 상속받습니다.
   verify:
     type: output_contains
-    expect: null
+    expect: drwxrws
     field: stdout
   target_vm: secu
   script: sudo chmod g+s /opt/secure-data && ls -ld /opt/secure-data
@@ -86,7 +86,7 @@ steps:
     대표적인 예입니다.
   verify:
     type: output_contains
-    expect: null
+    expect: t
     field: stdout
   target_vm: secu
   script: sudo chmod +t /opt/secure-data && ls -ld /opt/secure-data
@@ -101,7 +101,7 @@ steps:
   answer_detail: setfacl -m u:사용자:권한으로 ACL을 설정합니다. 기본 파일 퍼미션을 넘어서 세밀한 접근 제어가 가능합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: secuser1
     field: stdout
   target_vm: secu
   script: sudo setfacl -m u:secuser1:r /var/log/syslog && getfacl /var/log/syslog
@@ -118,7 +118,7 @@ steps:
     적용됩니다.
   verify:
     type: output_contains
-    expect: null
+    expect: default:group:secteam:rw
     field: stdout
   target_vm: secu
   script: sudo setfacl -d -m g:secteam:rw /opt/secure-data && getfacl /opt/secure-data
@@ -135,7 +135,7 @@ steps:
     합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: '0027'
     field: stdout
   target_vm: secu
   script: umask 0027 && umask
@@ -150,7 +150,7 @@ steps:
   answer_detail: pam_wheel.so 모듈은 wheel 그룹에 속한 사용자만 su 명령으로 root 전환이 가능하도록 제한합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: pam_wheel.so
     field: stdout
   target_vm: secu
   script: sudo sed -i 's/^#.*pam_wheel.so/auth required pam_wheel.so/' /etc/pam.d/su
@@ -166,7 +166,7 @@ steps:
   answer_detail: sudoers.d에 별도 파일로 관리하면 유지보수가 용이합니다. 특정 명령만 허용하여 최소 권한 원칙을 적용합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: secteam
     field: stdout
   target_vm: secu
   script: 'echo ''%secteam ALL=(ALL) NOPASSWD: /usr/bin/systemctl status *, /usr/bin/journalctl''
@@ -183,7 +183,7 @@ steps:
   answer_detail: hosts.allow가 먼저 평가되고, 매치되지 않으면 hosts.deny가 적용됩니다. 허용 목록 + 전체 거부 전략입니다.
   verify:
     type: output_contains
-    expect: null
+    expect: 10.20.30
     field: stdout
   target_vm: secu
   script: 'echo ''sshd: 10.20.30.0/255.255.255.0'' | sudo tee /etc/hosts.allow &&
@@ -200,7 +200,7 @@ steps:
     리소스를 제한합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: profiles
     field: stdout
   target_vm: secu
   script: sudo aa-status 2>/dev/null || echo 'AppArmor not available'
@@ -217,7 +217,7 @@ steps:
     변경이 불가능합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: '----i'
     field: stdout
   target_vm: secu
   script: sudo touch /opt/secure-data/critical.conf && sudo chattr +i /opt/secure-data/critical.conf
@@ -234,7 +234,7 @@ steps:
     악용될 수 있으므로 정기 점검이 필요합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: /usr/bin/
     field: stdout
   target_vm: secu
   script: find / -perm -4000 -type f 2>/dev/null | head -20
@@ -251,7 +251,7 @@ steps:
   answer_detail: 접근 통제 점검은 그룹/퍼미션/ACL/sudo 설정을 종합적으로 확인해야 합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: 점검 완료
     field: stdout
   target_vm: secu
   script: echo '=== 접근 통제 점검 보고서 ===' && echo '[그룹 목록]' && getent group secteam &&

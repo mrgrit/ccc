@@ -22,7 +22,7 @@ steps:
   answer_detail: OpenSSL은 대부분의 암호화 작업에 사용되는 핵심 라이브러리입니다.
   verify:
     type: output_contains
-    expect: null
+    expect: OpenSSL
     field: stdout
   target_vm: secu
   script: openssl version && openssl ciphers -v | head -20
@@ -39,7 +39,7 @@ steps:
   answer_detail: AES-256-CBC는 256비트 키를 사용하는 블록 암호화 방식으로, -salt 옵션은 레인보우 테이블 공격을 방지합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: 암호화 완료
     field: stdout
   target_vm: secu
   script: echo '기밀 데이터 테스트' > /tmp/secret.txt && openssl enc -aes-256-cbc -salt -in
@@ -58,7 +58,7 @@ steps:
   answer_detail: -d 옵션으로 복호화합니다. diff로 원본과 복호화 결과를 비교하여 무결성을 확인합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: 복호화 검증 성공
     field: stdout
   target_vm: secu
   script: openssl enc -aes-256-cbc -d -in /tmp/secret.enc -out /tmp/secret_dec.txt
@@ -76,7 +76,7 @@ steps:
   answer_detail: RSA 2048은 현재 권장되는 최소 키 길이입니다. 중요 시스템에는 4096비트를 사용합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: 개인키 생성 완료
     field: stdout
   target_vm: secu
   script: openssl genrsa -out /tmp/private.key 2048 2>/dev/null && echo '개인키 생성 완료'
@@ -93,7 +93,7 @@ steps:
   answer_detail: 공개키는 개인키에서 수학적으로 추출됩니다. 공개키는 배포해도 안전하지만, 개인키는 반드시 보호해야 합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: PUBLIC KEY
     field: stdout
   target_vm: secu
   script: openssl rsa -in /tmp/private.key -pubout -out /tmp/public.key 2>/dev/null
@@ -111,7 +111,7 @@ steps:
   answer_detail: -x509는 자체 서명 인증서 생성, -nodes는 개인키 암호화 없음, -subj로 인증서 주체를 지정합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: 인증서 생성 완료
     field: stdout
   target_vm: secu
   script: openssl req -x509 -newkey rsa:2048 -keyout /tmp/server.key -out /tmp/server.crt
@@ -128,7 +128,7 @@ steps:
   answer_detail: 인증서의 발급자, 유효기간, 주체, 공개키 정보 등을 확인할 수 있습니다.
   verify:
     type: output_contains
-    expect: null
+    expect: Issuer
     field: stdout
   target_vm: secu
   script: openssl x509 -in /tmp/server.crt -text -noout | head -20
@@ -144,7 +144,7 @@ steps:
   answer_detail: /etc/ssl/certs/에는 시스템이 신뢰하는 CA 인증서들이 저장되어 있습니다.
   verify:
     type: output_contains
-    expect: null
+    expect: 인증서 수
     field: stdout
   target_vm: secu
   script: ls /etc/ssl/certs/ | head -20 && echo '인증서 수:' && ls /etc/ssl/certs/ | wc
@@ -161,7 +161,7 @@ steps:
   answer_detail: SHA-256 해시로 파일의 무결성을 검증합니다. 해시 값이 변경되면 파일이 변조된 것입니다.
   verify:
     type: output_contains
-    expect: null
+    expect: 무결성 검증 통과
     field: stdout
   target_vm: secu
   script: sha256sum /etc/passwd > /tmp/passwd_hash.txt && cat /tmp/passwd_hash.txt
@@ -178,7 +178,7 @@ steps:
   answer_detail: Ed25519는 현대적인 타원곡선 알고리즘으로, RSA보다 짧은 키로 동등한 보안을 제공합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: 키 생성 완료
     field: stdout
   target_vm: secu
   script: ssh-keygen -t ed25519 -f /tmp/test_ed25519 -N '' -C 'secops-lab' 2>/dev/null
@@ -212,7 +212,7 @@ steps:
   answer_detail: GPG 디지털 서명은 문서의 인증성과 무결성을 보장합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: 서명 준비 완료
     field: stdout
   target_vm: secu
   script: 'echo ''test'' | gpg --batch --gen-key <<EOF 2>/dev/null
@@ -246,7 +246,7 @@ steps:
   answer_detail: s_client로 원격 서버에 TLS 연결을 수립하고 인증서 정보를 조회합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: 완료
     field: stdout
   target_vm: secu
   script: echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | openssl x509
@@ -263,7 +263,7 @@ steps:
   answer_detail: 개인키는 소유자만 읽기/쓰기(600), 공개키/인증서는 공개 읽기 가능(644)으로 설정합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: -rw-------
     field: stdout
   target_vm: secu
   script: chmod 600 /tmp/private.key /tmp/server.key && chmod 644 /tmp/server.crt
@@ -281,7 +281,7 @@ steps:
     볼륨을 암호화합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: cryptsetup
     field: stdout
   target_vm: secu
   script: which cryptsetup && cryptsetup --help 2>&1 | head -10 || echo 'cryptsetup
@@ -299,7 +299,7 @@ steps:
   answer_detail: 암호화 구현 현황을 정기적으로 점검하여 키 만료, 알고리즘 취약성 등을 관리합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: 보고서 완료
     field: stdout
   target_vm: secu
   script: echo '=== 암호화 구현 보고서 ===' && echo '[OpenSSL 버전]' && openssl version && echo

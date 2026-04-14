@@ -33,7 +33,7 @@ steps:
     flow.tcp 등의 카운터를 확인한다.
   verify:
     type: output_contains
-    expect: null
+    expect: suricata
   target_vm: secu
   script: ssh 10.20.30.1 'suricatasc -c uptime 2>/dev/null; cat /var/log/suricata/stats.log
     2>/dev/null | tail -10; echo "---"; tail -5 /var/log/suricata/eve.json 2>/dev/null
@@ -59,7 +59,7 @@ steps:
     5초 내 20회 이상 연결 시도를 기준으로 한다.
   verify:
     type: output_contains
-    expect: null
+    expect: SCAN
   target_vm: secu
   script: 'cat > /tmp/portscan_detection.rules << ''EOF'' alert tcp any any -> 10.20.30.0/24
     any (msg:"SCAN: SYN scan detected"; flags:S; threshold:type both, track by_src,
@@ -92,7 +92,7 @@ steps:
     시 bantime만큼 IP를 차단한다.
   verify:
     type: output_contains
-    expect: null
+    expect: fail2ban
   target_vm: secu
   script: 'cat > /tmp/fail2ban_jail.conf << ''EOF'' [DEFAULT] bantime = 1800 findtime
     = 300 maxretry = 5 banaction = nftables-multiport
@@ -122,7 +122,7 @@ steps:
     IP를 차단하고, timeout으로 차단 기간을 설정한다.
   verify:
     type: output_contains
-    expect: null
+    expect: active-response
   target_vm: siem
   script: "cat > /tmp/wazuh_active_response.xml << 'EOF'\n<ossec_config>\n  <active-response>\n\
     \    <command>firewall-drop</command>\n    <location>local</location>\n    <rules_id>100100,100300</rules_id>\n\
@@ -150,7 +150,7 @@ steps:
     검사한다. 높은 CPU 사용률도 채굴의 지표가 될 수 있다.
   verify:
     type: output_contains
-    expect: null
+    expect: Process Anomaly Monitor
   target_vm: secu
   script: 'cat > /tmp/process_monitor.sh << ''SCRIPT'' #!/bin/bash echo "=== Real-time
     Process Anomaly Monitor ===" echo "[1] Reverse Shell Indicators:" ps aux | grep
@@ -180,7 +180,7 @@ steps:
     실행하고 Suricata/WAF/fail2ban의 탐지 여부를 확인한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Attack simulation complete
   target_vm: attacker
   script: echo '=== Live Attack Simulation ===' && echo '[1] Port scan:' && nmap -sS
     --top-ports 100 --max-retries 1 --host-timeout 15s -T4 10.20.30.80 2>&1 | tail
@@ -208,7 +208,7 @@ steps:
     공격과 놓친 공격을 식별한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Detection Results
   target_vm: secu
   script: echo '=== Detection Results ===' && echo '[Suricata Alerts]:' && ssh 10.20.30.1
     'tail -50 /var/log/suricata/eve.json 2>/dev/null | python3 -c "import sys,json;
@@ -243,7 +243,7 @@ steps:
     양호하지만 DNS 터널링 Gap을 해결해야 한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Detection Engineering Assessment
   target_vm: attacker
   script: "rm -f /tmp/process_monitor.sh /tmp/fail2ban_*.conf /tmp/portscan_*.rules\
     \ /tmp/wazuh_active_*.xml 2>/dev/null && cat > /tmp/detection_engineering_report.txt\

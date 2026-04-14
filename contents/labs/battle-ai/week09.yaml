@@ -31,7 +31,7 @@ steps:
   answer_detail: 사고 대응의 첫 단계는 현재 상태 파악이다. who로 활성 세션, ps로 의심 프로세스, ss로 네트워크 연결을 확인한다.
   verify:
     type: output_contains
-    expect: null
+    expect: '---'
     field: stdout
   target_vm: web
   script: who && echo '---' && ps auxf --sort=-%cpu | head -20 && echo '---' && ss
@@ -50,7 +50,7 @@ steps:
     순으로 수집한다.
   verify:
     type: file_exists
-    expect: null
+    expect: /tmp/forensics/processes.txt
     field: filesystem
   target_vm: web
   script: mkdir -p /tmp/forensics && date > /tmp/forensics/timestamp.txt && ps auxf
@@ -69,7 +69,7 @@ steps:
     짧은 키로 탐지가 어렵다.
   verify:
     type: output_contains
-    expect: null
+    expect: SSH key backdoor prepared
     field: stdout
   target_vm: attacker
   script: ssh-keygen -t ed25519 -f /tmp/backdoor_key -N '' -q 2>/dev/null && cat /tmp/backdoor_key.pub
@@ -88,7 +88,7 @@ steps:
     한다.
   verify:
     type: output_contains
-    expect: null
+    expect: SSH key audit complete
     field: stdout
   target_vm: web
   script: find /home -name 'authorized_keys' -exec echo '=== {} ===' \; -exec cat
@@ -106,7 +106,7 @@ steps:
   answer_detail: UID 0인 계정이 root 외에 있으면 백도어이다. crontab에 비정상적인 스크립트 실행이 있으면 지속성 기법이다.
   verify:
     type: output_contains
-    expect: null
+    expect: root
     field: stdout
   target_vm: web
   script: 'awk -F: ''$3 == 0 {print}'' /etc/passwd && echo ''--- crontab ---'' &&
@@ -123,7 +123,7 @@ steps:
   answer_detail: 웹셸은 system(), exec() 등의 함수를 포함한다. 발견 시 해시를 기록하고 격리한 후 제거한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Webshell scan complete
     field: stdout
   target_vm: web
   script: grep -rl 'system\|exec\|passthru\|shell_exec\|eval' /var/www/ 2>/dev/null
@@ -142,7 +142,7 @@ steps:
     완전한 격리가 된다.
   verify:
     type: output_contains
-    expect: null
+    expect: Attacker isolated
     field: stdout
   target_vm: secu
   requires_approval: true
@@ -161,7 +161,7 @@ steps:
   answer_detail: 침해 사고 후 모든 계정의 패스워드를 변경하는 것은 필수이다. chage -d 0은 다음 로그인 시 변경을 강제한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Recovery actions documented
     field: stdout
   target_vm: web
   script: 'echo ''Password reset required for all accounts'' && cat /etc/passwd |
@@ -179,7 +179,7 @@ steps:
   answer_detail: Wazuh에서 높은 심각도(level 8+) 이벤트를 수집하면 사고의 핵심 이벤트를 빠르게 파악할 수 있다.
   verify:
     type: output_contains
-    expect: null
+    expect: collected
     field: stdout
   target_vm: siem
   script: sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30 | jq
@@ -258,7 +258,7 @@ steps:
   answer_detail: 사고 대응 보고서는 NIST 6단계 프레임워크에 따라 작성한다. 기술적 상세, 타임라인, 대응 조치, 교훈을 포함한다.
   verify:
     type: output_contains
-    expect: null
+    expect: Incident Response Report
     field: stdout
   target_vm: secu
   script: 'cat > /tmp/incident_response_report.txt << ''EOF''
