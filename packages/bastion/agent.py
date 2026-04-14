@@ -399,6 +399,14 @@ class BastionAgent:
         # 1-b. 멀티스텝 Skill 선택 (Tool Calling → JSON fallback)
         skill_steps = self._select_skills_multi(message, rag_ctx, prev_ctx)
 
+        # LLM이 target을 잘못 지정했을 수 있으므로 _infer_target_vm으로 보정
+        if skill_steps:
+            inferred_target = self._infer_target_vm(message)
+            for i, (name, params) in enumerate(skill_steps):
+                if name == "shell" and params.get("target") not in self.vm_ips:
+                    params["target"] = inferred_target
+                    skill_steps[i] = (name, params)
+
         if not skill_steps:
             # 1-c. 동적 Playbook 생성 (등록된 Playbook·Skill 매칭 없을 때)
             dyn_steps = self._generate_dynamic_playbook(message)
