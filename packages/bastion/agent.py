@@ -335,6 +335,10 @@ class BastionAgent:
         self.evidence_db = EvidenceDB(evidence_db)
         self._test_meta: dict = {}  # 테스트 메타데이터 (course, lab_id, step_order, test_session)
 
+        # Experience Learning Layer — 카테고리 수준 일반화 경험 학습
+        from packages.bastion.experience import ExperienceLearner
+        self.experience = ExperienceLearner(db_path=self.evidence_db.db_path)
+
         self.rag_index = None
         kdir = knowledge_dir or os.path.join(os.path.dirname(__file__), "..", "..", "contents")
         if os.path.isdir(kdir):
@@ -360,6 +364,7 @@ class BastionAgent:
             chunks = self.rag_index.search(message, top_k=3)
             rag_ctx = format_context(chunks)
         prev_ctx = self.evidence_db.recent_context()
+        exp_ctx = self.experience.get_context(message)
 
         # ══ STAGE 1: PLANNING ══════════════════════════════════════════════
         yield {"event": "stage", "stage": "planning"}
@@ -496,6 +501,14 @@ class BastionAgent:
             )
             all_results.append({"skill": skill_name, "params": params,
                                  "success": success, "output": output})
+
+            # Experience Learning — 실행 결과를 카테고리 수준으로 일반화하여 축적
+            self.experience.record(
+                message=message, skill=skill_name,
+                target_vm=params.get("target", ""),
+                command=params.get("command", ""),
+                success=success,
+            )
 
             # Asset 상태 업데이트 (probe 계열)
             if skill_name in ("probe_host", "probe_all", "check_suricata",
@@ -725,7 +738,7 @@ class BastionAgent:
     def _select_skills_multi(self, message: str, rag_ctx: str,
                              prev_ctx: str) -> list[tuple[str, dict]]:
         """멀티스텝 Skill 선택 — Tool Calling → JSON 배열 fallback."""
-        system = build_planning_prompt(self.vm_ips, rag_ctx, prev_ctx)
+        system = build_planning_prompt(self.vm_ips, rag_ctx, prev_ctx, learned_context=exp_ctx)
         messages = [{"role": "system", "content": system}] + self.history[-8:]
 
         # ── 1차: Ollama Tool Calling (여러 tool_calls 지원) ────────────────
@@ -848,6 +861,13 @@ class BastionAgent:
                 skill=skill_name, params=params, success=success,
                 output=output, stage="dynamic", session_id=self.session_id,
                 **self._test_meta,
+            )
+            # Experience Learning
+            self.experience.record(
+                message=name, skill=skill_name,
+                target_vm=params.get("target", ""),
+                command=params.get("command", ""),
+                success=success,
             )
             yield {"event": "step_done", "step": i, "name": name,
                    "success": success, "output": output}

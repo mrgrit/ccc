@@ -13,7 +13,8 @@ from packages.bastion.playbook import list_playbooks
 
 def build_planning_prompt(vm_ips: dict[str, str] = None,
                           rag_context: str = "",
-                          prev_context: str = "") -> str:
+                          prev_context: str = "",
+                          learned_context: str = "") -> str:
     """Skill 선택 전용 프롬프트 — 간결하고 명확한 지시만 포함.
 
     Tool Calling 모드: 모델이 tool_calls 필드로 응답.
@@ -46,6 +47,10 @@ def build_planning_prompt(vm_ips: dict[str, str] = None,
     # 이전 실행 컨텍스트
     if prev_context:
         sections.append(prev_context)
+
+    # 학습된 경험 (experience learning)
+    if learned_context:
+        sections.append(learned_context)
 
     # RAG 컨텍스트
     if rag_context:
