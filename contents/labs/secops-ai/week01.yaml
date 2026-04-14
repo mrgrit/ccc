@@ -28,7 +28,7 @@ steps:
   target_vm: secu
   script: ls -la /etc/security/
   risk_level: low
-  bastion_prompt: 대상 서버 10.20.30.1에 SSH로 접속하여 현재 시스템의 보안 정책 파일 목록을 확인해줘
+  bastion_prompt: secu VM(10.20.30.1)에서 ls -la /etc/security/ 명령으로 보안 정책 파일 목록을 확인해줘
 - order: 2
   instruction: 현재 시스템의 패스워드 정책(최소 길이, 만료일 등)을 확인하시오.
   hint: /etc/login.defs 파일을 확인하세요.
@@ -44,7 +44,7 @@ steps:
   target_vm: secu
   script: grep -E '^PASS_' /etc/login.defs
   risk_level: low
-  bastion_prompt: 현재 시스템의 패스워드 정책(최소 길이, 만료일 등)을 확인해줘
+  bastion_prompt: secu VM에서 grep -E '^PASS_' /etc/login.defs 명령으로 패스워드 정책을 확인해줘
 - order: 3
   instruction: 패스워드 최소 길이를 12자로 설정하시오.
   hint: /etc/login.defs에서 PASS_MIN_LEN을 수정하세요.
@@ -62,7 +62,8 @@ steps:
   script: sudo sed -i 's/^PASS_MIN_LEN.*/PASS_MIN_LEN\t12/' /etc/login.defs && grep
     PASS_MIN_LEN /etc/login.defs
   risk_level: low
-  bastion_prompt: 패스워드 최소 길이를 12자로 설정해줘
+  bastion_prompt: secu VM에서 sed -i 's/^PASS_MIN_LEN.*/PASS_MIN_LEN\t12/' /etc/login.defs
+    명령으로 패스워드 최소 길이를 12자로 설정하고 확인해줘
 - order: 4
   instruction: '패스워드 복잡도 정책을 PAM에 설정하시오: 대문자 1개, 소문자 1개, 숫자 1개, 특수문자 1개 이상 요구.'
   hint: /etc/pam.d/common-password에서 pam_unix.so 또는 pam_pwquality.so 설정을 추가하세요.
@@ -86,7 +87,8 @@ steps:
     tee -a /etc/security/pwquality.conf && echo "dcredit = -1" | sudo tee -a /etc/security/pwquality.conf
     && echo "ocredit = -1" | sudo tee -a /etc/security/pwquality.conf && cat /etc/security/pwquality.conf
   risk_level: low
-  bastion_prompt: '패스워드 복잡도 정책을 PAM에 설정하시오: 대문자 1개, 소문자 1개, 숫자 1개, 특수문자 1개 이상 요구해줘'
+  bastion_prompt: secu VM에서 /etc/security/pwquality.conf에 패스워드 복잡도 정책을 설정해줘. 대문자 1개,
+    소문자 1개, 숫자 1개, 특수문자 1개 이상 요구
 - order: 5
   instruction: '계정 잠금 정책을 설정하시오: 5회 실패 시 10분간 잠금.'
   hint: pam_faillock 또는 pam_tally2 모듈을 사용하세요. Debian 계열은 /etc/pam.d/common-auth를 수정합니다.
@@ -107,7 +109,7 @@ steps:
     pam_faillock.so preauth deny=5 unlock_time=600" | sudo tee -a /etc/pam.d/common-auth
     && grep pam_faillock /etc/pam.d/common-auth
   risk_level: low
-  bastion_prompt: '계정 잠금 정책을 설정하시오: 5회 실패 시 10분간 잠금해줘'
+  bastion_prompt: secu VM에서 PAM에 pam_faillock을 추가하여 5회 실패 시 10분간 계정 잠금 정책을 설정해줘
 - order: 6
   instruction: 시스템 배너를 설정하여 비인가 접근 경고 메시지를 표시하시오.
   hint: /etc/issue와 /etc/issue.net을 수정하세요.
@@ -123,7 +125,8 @@ steps:
   target_vm: secu
   script: 'echo ''경고: 본 시스템은 인가된 사용자만 접근할 수 있습니다. 모든 활동이 기록됩니다.'' | sudo tee /etc/issue.net'
   risk_level: low
-  bastion_prompt: 시스템 배너를 설정하여 비인가 접근 경고 메시지를 표시해줘
+  bastion_prompt: 'secu VM에서 echo ''경고: 본 시스템은 인가된 사용자만 접근할 수 있습니다.'' > /etc/issue.net
+    명령으로 경고 배너를 설정해줘'
 - order: 7
   instruction: SSH 배너 설정을 sshd_config에 적용하시오.
   hint: Banner 지시어를 설정하세요.
@@ -140,7 +143,7 @@ steps:
   script: sudo sed -i 's/^#Banner.*/Banner \/etc\/issue.net/' /etc/ssh/sshd_config
     && grep Banner /etc/ssh/sshd_config
   risk_level: low
-  bastion_prompt: SSH 배너 설정을 sshd_config에 적용해줘
+  bastion_prompt: secu VM에서 sshd_config의 Banner를 /etc/issue.net으로 설정해줘
 - order: 8
   instruction: auditd 서비스 상태를 확인하고 활성화하시오.
   hint: systemctl 명령을 사용하세요.
@@ -156,7 +159,8 @@ steps:
   target_vm: secu
   script: sudo systemctl enable --now auditd && sudo systemctl status auditd
   risk_level: low
-  bastion_prompt: auditd 서비스 상태를 확인하고 활성화해줘
+  bastion_prompt: secu VM에서 systemctl enable --now auditd 명령으로 auditd 서비스를 활성화하고 상태를
+    확인해줘
 - order: 9
   instruction: /etc/passwd 파일에 대한 감사 규칙을 추가하시오.
   hint: auditctl -w 옵션을 사용하세요.
@@ -174,7 +178,8 @@ steps:
   script: sudo auditctl -l | grep -q passwd_changes || sudo auditctl -w /etc/passwd
     -p wa -k passwd_changes && sudo auditctl -l | grep passwd_changes
   risk_level: low
-  bastion_prompt: /etc/passwd 파일에 대한 감사 규칙을 추가해줘
+  bastion_prompt: secu VM에서 auditctl -w /etc/passwd -p wa -k passwd_changes 명령으로 /etc/passwd
+    파일 감사 규칙을 추가해줘
 - order: 10
   instruction: 현재 설정된 감사 규칙 목록을 확인하시오.
   hint: auditctl -l 명령을 사용하세요.
@@ -190,7 +195,7 @@ steps:
   target_vm: secu
   script: sudo auditctl -l
   risk_level: low
-  bastion_prompt: 현재 설정된 감사 규칙 목록을 확인해줘
+  bastion_prompt: secu VM에서 auditctl -l 명령으로 현재 설정된 감사 규칙 목록을 확인해줘
 - order: 11
   instruction: sudo 명령어 사용에 대한 감사 규칙을 추가하시오.
   hint: /var/log/auth.log 또는 sudoers 관련 감사를 설정하세요.
@@ -209,7 +214,8 @@ steps:
     -p wa -k sudoers_changes; sudo auditctl -l | grep -q sudo_usage || sudo auditctl
     -w /usr/bin/sudo -p x -k sudo_usage; sudo auditctl -l | grep sudo
   risk_level: low
-  bastion_prompt: sudo 명령어 사용에 대한 감사 규칙을 추가해줘
+  bastion_prompt: secu VM에서 auditctl -w /etc/sudoers -p wa -k sudoers_changes 명령으로
+    sudo 관련 감사 규칙을 추가해줘
 - order: 12
   instruction: rsyslog 설정을 확인하고 인증 로그가 별도 파일에 기록되는지 확인하시오.
   hint: /etc/rsyslog.conf 또는 /etc/rsyslog.d/ 를 확인하세요.
@@ -225,7 +231,8 @@ steps:
   target_vm: secu
   script: grep -r 'auth' /etc/rsyslog.conf /etc/rsyslog.d/
   risk_level: low
-  bastion_prompt: rsyslog 설정을 확인하고 인증 로그가 별도 파일에 기록되는지 확인해줘
+  bastion_prompt: secu VM에서 grep -r 'auth' /etc/rsyslog.conf /etc/rsyslog.d/ 명령으로
+    인증 로그 설정을 확인해줘
 - order: 13
   instruction: 보안 정책 문서 템플릿을 /opt/security-policy/ 디렉터리에 생성하시오.
   hint: mkdir로 디렉터리를 만들고 정책 파일을 작성하세요.
@@ -244,7 +251,8 @@ steps:
     정책은 조직의 정보자산을 보호하기 위한 기본 방침을 정한다.\n\n## 2. 적용범위\n전 임직원 및 정보시스템\n\n## 3. 패스워드 정책\n-
     최소 12자\n- 90일마다 변경\n- 5회 실패시 잠금' | sudo tee /opt/security-policy/policy.md
   risk_level: low
-  bastion_prompt: 보안 정책 문서 템플릿을 /opt/security-policy/ 디렉터리에 생성해줘
+  bastion_prompt: secu VM에서 mkdir -p /opt/security-policy 디렉터리를 생성하고 보안 정책 문서 템플릿을
+    작성해줘
 - order: 14
   instruction: 현재 시스템의 보안 설정 상태를 요약하는 스크립트를 작성하고 실행하시오.
   hint: 패스워드 정책, 방화벽, 감사 설정 등을 확인하는 스크립트를 만드세요.
@@ -267,8 +275,8 @@ steps:
     "[점검 완료]"' > /tmp/security_check.sh && chmod +x /tmp/security_check.sh && bash
     /tmp/security_check.sh
   risk_level: low
-  bastion_prompt: secu VM(보안게이트웨이)에서 grep으로 현재 시스템의 보안 설정 상태를 요약하는 스크립트를 작성하고 실행 작업을
-    수행해줘
+  bastion_prompt: secu VM에서 보안 점검 스크립트를 /tmp/security_audit.sh로 작성하고 실행해줘. 패스워드 정책,
+    SSH 설정, auditd 규칙을 점검하는 내용으로
 - order: 15
   instruction: 설정한 모든 보안 정책의 적용 상태를 최종 검증하고, 감사 로그에서 오늘의 이벤트를 조회하시오.
   hint: ausearch 명령을 사용하세요.
@@ -286,7 +294,8 @@ steps:
   script: sudo ausearch -ts today -k passwd_changes 2>/dev/null; echo '=== 정책 검증 완료
     ==='
   risk_level: low
-  bastion_prompt: 설정한 모든 보안 정책의 적용 상태를 최종 검증하고, 감사 로그에서 오늘의 이벤트를 조회해줘
+  bastion_prompt: secu VM에서 ausearch -ts today -k passwd_changes 명령으로 감사 로그를 조회하고
+    보안 정책 적용 상태를 최종 검증해줘
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
   bastion_prompt: '다음 작업들을 순서대로 수행해줘:
