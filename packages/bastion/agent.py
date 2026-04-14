@@ -402,7 +402,7 @@ class BastionAgent:
             return
 
         # 1-b. 멀티스텝 Skill 선택 (Tool Calling → JSON fallback)
-        skill_steps = self._select_skills_multi(message, rag_ctx, prev_ctx)
+        skill_steps = self._select_skills_multi(message, rag_ctx, prev_ctx, exp_ctx)
 
         # LLM이 target을 잘못 지정했을 수 있으므로 _infer_target_vm으로 보정
         if skill_steps:
@@ -736,7 +736,7 @@ class BastionAgent:
         return None
 
     def _select_skills_multi(self, message: str, rag_ctx: str,
-                             prev_ctx: str) -> list[tuple[str, dict]]:
+                             prev_ctx: str, exp_ctx: str = "") -> list[tuple[str, dict]]:
         """멀티스텝 Skill 선택 — Tool Calling → JSON 배열 fallback."""
         system = build_planning_prompt(self.vm_ips, rag_ctx, prev_ctx, learned_context=exp_ctx)
         messages = [{"role": "system", "content": system}] + self.history[-8:]
