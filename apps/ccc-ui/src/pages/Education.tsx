@@ -53,16 +53,18 @@ export default function Education() {
     }
   }, [viewParam, courseId, weekParam])
 
-  // 실습 로드
+  // 실습 로드 — admin일 때는 ?admin=1을 붙여 서버에서 answer 포함해서 받기
+  const adminParam = searchParams.get('admin')
   useEffect(() => {
     if (viewParam === 'lab' && labIdParam) {
-      api(`/api/labs/catalog/${labIdParam}`)
+      const qs = isAdmin() ? '?admin=1' : ''
+      api(`/api/labs/catalog/${labIdParam}${qs}`)
         .then(d => setLabDetail(d))
         .catch(() => setLabDetail(null))
     } else {
       setLabDetail(null)
     }
-  }, [viewParam, labIdParam])
+  }, [viewParam, labIdParam, adminParam])
 
   const selectCourse = (course: any) => {
     setSearchParams({ course: course.course_id })

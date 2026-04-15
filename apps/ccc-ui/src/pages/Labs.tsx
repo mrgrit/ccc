@@ -38,7 +38,9 @@ export default function Labs() {
     setResult(null)
     setAnswers({})
     try {
-      const d = await api(`/api/labs/catalog/${labId}`)
+      // admin/instructor는 정답 포함해서 받기
+      const qs = isAdmin() ? '?admin=1' : ''
+      const d = await api(`/api/labs/catalog/${labId}${qs}`)
       setActiveLab(d)
     } catch (e: any) { alert('Failed: ' + e.message) }
   }
