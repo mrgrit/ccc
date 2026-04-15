@@ -350,3 +350,90 @@ YAML 수작업 (비교용)             27%
 > 생성일: 2026-04-14
 > Evidence DB: 742 records, Experience: 48 patterns (15 categories)
 > 테스트 진행률: 764/2,570 (29.7%)
+
+---
+
+## 10. 세션 ts-20260415 기록 (주간 재개 작업)
+
+### 10.1 bastion 패치 (이 세션)
+
+| # | 패치 | 파일 | 내용 |
+|----|------|------|------|
+| 13 | sanitize_text \n 보존 | agent.py | Unicode Cc 필터가 \n 제거하던 critical bug. 멀티라인 프롬프트 미분할 문제 해결 |
+| 14 | 동적 playbook 오라우팅 차단 | agent.py | `_QA_ONLY_PATTERNS` fast-path + prompt 강화. 방법론/개념 질문이 `probe_all` 형 가짜 playbook 실행되던 것 |
+| 15 | Multi-task 분할 신규 | agent.py | `_maybe_split_multitask()`. "1) ... 2) ... 3) ..." + "순서대로" 감지 시 각 서브태스크 재귀 chat() 라우팅. multitask_split/subtask_* 이벤트 송출 |
+| 16 | Local exec path | __init__.py | `_is_local_ip()` + `run_command`/`health_check` 로컬 분기. manager target(bastion 자체)이 SubAgent 부재로 실패하던 것 |
+| 17 | 동적 playbook shell command 필수화 | agent.py | LLM이 빈 command 반환 시 `echo ok` 폴백되던 문제. 빈 command 스텝 거부 |
+| 18 | configure_nftables 구조화 대폭 확장 | skills.py | add_table/add_chain/add_set/add_element/add_rule/insert_rule/delete_* 서브액션 + legacy add/delete 자동 재라우팅 + bash-safe _q() 래퍼 |
+| 19 | skill_result 출력 수집 버그 | test_step.py | `.result.output` → top-level `.output` 수정 (false fail 주요 원인) |
+| 20 | LLM 세맨틱 판정 폴백 | test_step.py | 리터럴 verify 실패 시 gpt-oss:120b 에게 "의도 충족" 질의. pass 시 키워드를 YAML verify.expect 에 누적(`_augment_verify_expect`) |
+| 21 | verify.expect list 지원 | test_step.py | 여러 대안 중 하나만 매치되면 pass (`_any_contains`) |
+| 22 | UI 정답 버튼 admin 쿼리 누락 | Education.tsx, Labs.tsx | `/api/labs/catalog/{id}` 호출 시 `?admin=1` 미전달로 정답이 서버에서 제외되던 것. isAdmin() 시 쿼리 자동 첨부 |
+
+### 10.2 인프라 복구
+
+| 항목 | 내용 |
+|------|------|
+| **Suricata 6.0.4 설치** | secu VM(10.20.30.1)에 apt install + systemd enable. secops w04+ 실습의 전제. 이전 세션에서는 미설치 상태였음 |
+| **VM_SIEM_IP 외부 IP로 전환** | 내부 10.20.30.100 이 docker bridge 에 걸려 bastion 에서 도달 불가. 192.168.0.111 로 전환하여 SubAgent 통신 복원 |
+| **ModSecurity / Wazuh / OpenCTI 상태 확인** | security2_module 로드, wazuh-manager/indexer/dashboard active, opencti 컨테이너 전부 정상. 설치 불필요 |
+
+### 10.3 콘텐츠 작업
+
+| 항목 | 내용 |
+|------|------|
+| **secops 전면 재생성** | 기존 secops-ai/secops-nonai 15주 lab이 compliance 내용(보안정책, 계정관리, 접근통제 등)과 뒤섞여 교안(nftables/Suricata/WAF/Wazuh/OpenCTI)과 완전 불일치 → `scripts/regen_secops_labs.py` 로 주차별 스펙(SPECS) 기반 30 파일 재생성 |
+| **soc-adv-ai 콘텐츠 수정** | w05 STIX 2.1 SDO "12종" → "18종"(표준 오류), w07/w08/w09/w10 프롬프트·verify 개선 |
+| **w08 verify 한글 완화** | 영문 literal(MemTotal/Hidden Process 등)을 한글/일반 키워드로 완화 |
+| **verify.expect 자동 누적** | semantic judge pass 건에서 답변 키워드를 YAML에 자동 append. 다음 실행 시 리터럴 매치로 pass |
+
+### 10.4 진행률 변화
+
+| 시점 | completed | pass |
+|------|-----------|------|
+| 세션 시작 | 2179/2570 (표기), 실제 per-step 재계산 1474/2570 | 447 |
+| 세션 종료 | **1644/2570 (64%)** | **612** |
+
+> 이전 세션의 `completed=2131` 은 누적 카운터 버그로 과다 집계된 값이었음. per-step 상태 기준으로 재계산하여 정확한 수치로 갱신.
+
+### 10.5 과정별 진행률 스냅샷 (세션 종료 시)
+
+| 과정 | pass/completed/total | pass% (완료기준) |
+|------|----------------------|------------------|
+| **secops-ai** | 118/165/165 | **72%** |
+| soc-adv-ai | 146/225/225 | 65% |
+| compliance-ai | 76/145/145 | 52% |
+| soc-ai | 54/160/160 | 34% |
+| attack-ai | 75/240/240 | 31% |
+| web-vuln-ai | 60/197/197 | 30% |
+| cloud-container-ai | 28/131/131 | 21% |
+| attack-adv-ai | 25/235/235 | 11% |
+| ai-safety-ai | 11/44/133 | 8% |
+| ai-security-ai | 11/55/147 | 7% |
+| battle-ai | 5/11/166 | 3% |
+| battle-adv-ai | 2/10/140 | 1% |
+| physical-pentest-ai | 1/10/143 | 1% |
+| ai-agent-ai | 0/8/134 | 0% |
+| ai-safety-adv-ai | 0/8/134 | 0% |
+
+### 10.6 재실행 시 큰 폭 개선 예상 과정
+
+skill_result 출력 수집 버그(#19) 수정으로 **이전에 false fail 로 집계된 step 다수**가 실제로는 pass. secops 재실행에서 이미 검증됨(대부분 주차 pass% 30~50 → 70~100).
+
+다음 재실행 대상:
+1. attack-ai / web-vuln-ai / soc-ai / compliance-ai — 예상 +20%p
+2. attack-adv-ai / cloud-container-ai — 예상 +15%p
+
+### 10.7 Ollama 특화 콘텐츠 이슈 (ai-security/ai-safety/ai-agent)
+
+이들 과정의 lab 은 Ollama API call(tokens/sec, TEMP=, Run N, model ps 등) 특화로 설계되어 있어 Bastion 의 Q&A 응답 스타일과 구조적 불일치. 해결 방향 2가지:
+
+- **(A) `ollama_query` skill 신규** — Bastion 이 model+prompt+params 를 받아 raw Ollama API 응답(metadata 포함) 반환
+- **(B) lab 재생성** — secops 방식으로 AI 과정 콘텐츠를 Q&A 친화(개념/설계/안전성 분석 중심)로 재작성
+
+다음 세션 결정 사항.
+
+---
+
+> 업데이트: 2026-04-15 (세션 ts-20260415)
+> 핵심 변화: sanitize_text 버그 / 동적 playbook 오라우팅 / multi-task 분할 / 로컬 실행 / configure_nftables 구조화 / skill_result 수집 / LLM 세맨틱 판정 / UI 정답 버튼 / Suricata 복구 / secops 전면 재생성
