@@ -33,11 +33,19 @@ from packages.bastion.skills import SKILLS, execute_skill, preview_skill, skills
 # ── 입력 정제 ──────────────────────────────────────────────────────────────
 
 def sanitize_text(text: str) -> str:
-    """한글 IME 백스페이스 잔류 바이트·제어문자 제거."""
+    """한글 IME 백스페이스 잔류 바이트·제어문자 제거.
+
+    단 \t, \n 은 보존 — 멀티라인 프롬프트가 줄바꿈 의미를 잃으면
+    플래너가 번호 목록 분할을 할 수 없게 된다.
+    """
+    keep_controls = ('\t', '\n')
     result = []
     for ch in text:
+        if ch in keep_controls:
+            result.append(ch)
+            continue
         cp = ord(ch)
-        if cp < 0x20 and ch not in ('\t', '\n'):
+        if cp < 0x20:
             continue
         if cp == 0x7F:
             continue
@@ -46,7 +54,9 @@ def sanitize_text(text: str) -> str:
             continue
         result.append(ch)
     cleaned = re.sub(r'[\u00a0\u200b\u3000\ufeff]+', ' ', ''.join(result))
-    return re.sub(r' {2,}', ' ', cleaned).strip()
+    # 공백만 2개 이상을 1개로 (줄바꿈 영향 없도록 스페이스만 타겟)
+    cleaned = re.sub(r'[ \t]{2,}', ' ', cleaned)
+    return cleaned.strip()
 
 
 # ── JSON 추출 (nested 대응) ────────────────────────────────────────────────
@@ -349,11 +359,67 @@ class BastionAgent:
 
     # ── Public API ──────────────────────────────────────────────────────────
 
+    _MULTITASK_SPLIT = re.compile(r"(?:^|\n)\s*(\d+)[)\.]\s+", re.MULTILINE)
+
+    def _maybe_split_multitask(self, message: str) -> list[str]:
+        """복합 요청을 개별 서브태스크 리스트로 분할.
+
+        감지 조건: 메시지에 `1)` `2)` `3)` ... 또는 `1.` `2.` `3.` 형식의 번호
+        목록이 3개 이상 + '순서대로/차례대로/다음 작업' 등 순차 실행 힌트.
+        반환: 각 서브태스크 문자열 리스트 (분할 불필요 시 빈 리스트).
+        """
+        hints = ("순서대로", "차례대로", "다음 작업", "다음과 같이", "아래 작업", "다음을 수행")
+        if not any(h in message for h in hints):
+            return []
+        matches = list(self._MULTITASK_SPLIT.finditer(message))
+        if len(matches) < 3:
+            return []
+        # 머리말(prefix) 추출: 1) 앞의 공통 지시
+        prefix = message[: matches[0].start()].strip()
+        # 공통 컨텍스트(예: "siem VM(Wazuh)에서") 유지용
+        ctx_line = ""
+        if prefix:
+            # 마지막 문장만 컨텍스트로 사용 (예: "siem VM에서 다음 작업들을 순서대로 수행해줘:")
+            ctx_line = prefix.rstrip(":;, ").split("\n")[-1].strip()
+            # '다음 작업들을 ...' 같은 메타 문구 제거
+            for tail in ("다음 작업들을 순서대로 수행해줘",
+                         "다음 작업들을 순서대로 수행하라",
+                         "다음을 수행해줘", "다음 작업을 수행해줘",
+                         "아래 작업을 수행해줘"):
+                ctx_line = ctx_line.replace(tail, "").rstrip(" :,")
+        subtasks = []
+        for i, m in enumerate(matches):
+            start = m.end()
+            end = matches[i + 1].start() if i + 1 < len(matches) else len(message)
+            body = message[start:end].strip().rstrip(",.;")
+            if not body:
+                continue
+            if ctx_line and ctx_line not in body:
+                sub = f"{ctx_line} {body}".strip()
+            else:
+                sub = body
+            subtasks.append(sub)
+        return subtasks if len(subtasks) >= 3 else []
+
     def chat(self, message: str, approval_callback=None) -> Generator[dict, None, None]:
         """자연어 메시지 처리 — 3단계 상태 머신 (Streaming 포함)"""
         message = sanitize_text(message)
         if not message:
             return
+
+        # ══ Multi-task 분할 ─ "1) ... 2) ... 3) ..." 형식은 각 서브태스크를
+        # 순차적으로 재귀 chat 호출하여 플래너가 개별 라우팅하도록 한다.
+        subtasks = self._maybe_split_multitask(message)
+        if subtasks:
+            yield {"event": "multitask_split", "count": len(subtasks), "tasks": subtasks}
+            self.history.append({"role": "user", "content": message})
+            for i, sub in enumerate(subtasks, 1):
+                yield {"event": "subtask_start", "index": i, "total": len(subtasks), "task": sub}
+                # 재귀 호출: 각 서브태스크는 독립적으로 planning → execute → validate
+                yield from self.chat(sub, approval_callback=approval_callback)
+                yield {"event": "subtask_done", "index": i, "total": len(subtasks)}
+            return
+
         self.history.append({"role": "user", "content": message})
 
         # History 압축 — 12턴 초과 시 오래된 6턴 LLM 요약 (4층 전략 간소화)
@@ -812,16 +878,37 @@ class BastionAgent:
 
         return []
 
+    _QA_ONLY_PATTERNS = re.compile(
+        r"(설명해|정리해|비교|분석해|분석하라|정의하|개념|원리|차이|방법론|프레임워크|"
+        r"모델을?\s*활용|이론|역사|트렌드|동향|요약|백서|보고서\s*작성|"
+        r"예시\s*코드|예시를?\s*보여|샘플을?\s*보여|무엇인가|무엇입니까|"
+        r"어떻게\s*(구성|설계|작동|동작)|왜\s*|장단점|비교표)",
+        re.IGNORECASE,
+    )
+
     def _generate_dynamic_playbook(self, message: str) -> list[dict]:
-        """LLM이 요청 분석 → 동적 Playbook 스텝 생성 (format:json)."""
+        """LLM이 요청 분석 → 동적 Playbook 스텝 생성 (format:json).
+
+        개념/방법론/설명/분석 류 요청은 빈 배열을 반환하여 Q&A로 라우팅.
+        """
+        # Fast-path: Q&A 전용 패턴은 바로 []를 돌려 dynamic playbook을 건너뜀
+        if self._QA_ONLY_PATTERNS.search(message) and not self._CONCRETE_CMD_PATTERNS.search(message):
+            return []
+
         skill_list = "\n".join(
             f"- {name}: {s['description']}"
             for name, s in SKILLS.items()
         )
         prompt = (
-            f"사용자 요청을 분석하고 실행할 작업 단계를 JSON 배열로 생성하세요.\n"
-            f"각 단계 형식: {{\"name\": \"단계 설명\", \"skill\": \"skill명\", \"params\": {{}}}}\n"
-            f"Skill이 필요 없으면 빈 배열 [] 반환.\n\n"
+            f"사용자 요청을 분석하여 실제 인프라에서 실행해야 할 명령/작업 단계만 JSON 배열로 생성하세요.\n"
+            f"각 단계 형식: {{\"name\": \"단계 설명\", \"skill\": \"skill명\", \"params\": {{}}}}\n\n"
+            f"중요 규칙 — 다음의 경우 반드시 빈 배열 [] 을 반환:\n"
+            f"  • 개념/용어/방법론/프레임워크/표준 설명 요청 (예: 'STIX란', 'Diamond Model 분석')\n"
+            f"  • 비교/정리/분류/요약 요청 (예: 'IDS와 IPS 비교')\n"
+            f"  • 예시 코드/샘플 구조 작성 요청 (코드 작성은 LLM이 직접 답변)\n"
+            f"  • 설계/아키텍처/정책 문서 작성 요청\n"
+            f"  • 지식 질문 (무엇인가, 왜, 어떻게 동작)\n\n"
+            f"실행이 정말 필요한 경우에만 (스캔, 설정 변경, 서비스 재시작, 파일 조작, 네트워크 점검) 단계를 생성하세요.\n\n"
             f"사용 가능한 Skill:\n{skill_list}\n\n"
             f"요청: {message}"
         )
