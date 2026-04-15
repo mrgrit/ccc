@@ -901,7 +901,7 @@ class BastionAgent:
         )
         prompt = (
             f"사용자 요청을 분석하여 실제 인프라에서 실행해야 할 명령/작업 단계만 JSON 배열로 생성하세요.\n"
-            f"각 단계 형식: {{\"name\": \"단계 설명\", \"skill\": \"skill명\", \"params\": {{}}}}\n\n"
+            f"각 단계 형식: {{\"name\": \"단계 설명\", \"skill\": \"skill명\", \"params\": {{...}}}}\n\n"
             f"중요 규칙 — 다음의 경우 반드시 빈 배열 [] 을 반환:\n"
             f"  • 개념/용어/방법론/프레임워크/표준 설명 요청 (예: 'STIX란', 'Diamond Model 분석')\n"
             f"  • 비교/정리/분류/요약 요청 (예: 'IDS와 IPS 비교')\n"
@@ -909,6 +909,11 @@ class BastionAgent:
             f"  • 설계/아키텍처/정책 문서 작성 요청\n"
             f"  • 지식 질문 (무엇인가, 왜, 어떻게 동작)\n\n"
             f"실행이 정말 필요한 경우에만 (스캔, 설정 변경, 서비스 재시작, 파일 조작, 네트워크 점검) 단계를 생성하세요.\n\n"
+            f"params 필수 규칙:\n"
+            f"  • skill=\"shell\"  → params에 반드시 \"command\"(실제 실행 셸 명령)와 \"target\"(VM role: attacker/secu/web/siem/manager)을 포함.\n"
+            f"    예: {{\"skill\":\"shell\",\"params\":{{\"target\":\"manager\",\"command\":\"cat /proc/meminfo | head -5\"}}}}\n"
+            f"  • command가 없거나 빈 문자열인 단계는 절대 생성 금지 (플래너가 거부함).\n"
+            f"  • /proc 탐색, ps, netstat, ss, lsmod 같은 로컬 탐색은 target=\"manager\"를 사용.\n\n"
             f"사용 가능한 Skill:\n{skill_list}\n\n"
             f"요청: {message}"
         )
@@ -928,8 +933,15 @@ class BastionAgent:
             if items is not None:
                 valid = []
                 for step in items:
-                    if isinstance(step, dict) and step.get("skill") in SKILLS:
-                        valid.append(step)
+                    if not isinstance(step, dict) or step.get("skill") not in SKILLS:
+                        continue
+                    # shell은 빈 command 거부 — "echo ok" default로 폴백되는 것 방지
+                    if step["skill"] == "shell":
+                        params = step.get("params") or {}
+                        cmd = str(params.get("command", "")).strip()
+                        if not cmd:
+                            continue
+                    valid.append(step)
                 return valid
         except Exception:
             pass
