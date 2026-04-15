@@ -1,274 +1,186 @@
 lab_id: secops-ai-week03
-title: 계정 관리 실습 (AI 지원)
+title: nftables 실전 — NAT, 화이트리스트, 레이트리밋 (AI 지원)
 version: ai
 course: secops-ai
 week: 3
-description: 리눅스 시스템의 사용자 계정 생명주기 관리, 권한 설정, 비활성 계정 관리를 실습합니다. AI SubAgent가 자동으로 명령을
-  실행하고 결과를 검증합니다.
-difficulty: easy
+description: masquerade NAT, 화이트리스트/블랙리스트, 연결 레이트리밋 등 실전 nftables 기법을 적용한다.
+difficulty: medium
 duration_minutes: 120
 objectives:
-- 사용자 계정 생성/수정/삭제 프로세스를 이해한다
-- 비활성 계정을 탐지하고 처리한다
-- 계정 정책을 자동화한다
+- masquerade NAT 룰을 작성할 수 있다
+- set(ip saddr) 기반 화이트리스트·블랙리스트를 구성할 수 있다
+- ct state new limit으로 레이트리밋을 적용할 수 있다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 10.20.30.1 서버에서 현재 활성 사용자 계정 목록을 확인하시오. 시스템 계정은 제외하시오.
-  hint: awk를 사용해 UID 1000 이상만 필터링하세요.
-  category: account_mgmt
-  points: 8
-  answer: 'awk -F: ''$3 >= 1000 && $3 < 65534 {print $1}'' /etc/passwd'
-  answer_detail: UID 1000 이상은 일반 사용자 계정입니다. 65534(nobody)를 제외하여 실제 사용자만 표시합니다.
+  instruction: secu VM에 inet 'whitelist' 테이블을 만들고 input 체인을 생성하시오.
+  hint: nft add table; nft add chain
+  category: configure
+  points: 10
+  answer: sudo nft add table inet whitelist && sudo nft add chain inet whitelist input
+    '{ type filter hook input priority 0 \; policy drop \; }'
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: secu VM에 inet ''whitelist'' 테이블을
+    만들고 input 체인을 생성하시오.'
   verify:
     type: output_contains
-    expect: root
+    expect: whitelist
     field: stdout
   target_vm: secu
-  script: 'awk -F: ''$3 >= 1000 && $3 < 65534 {print $1}'' /etc/passwd'
-  risk_level: low
-  bastion_prompt: 10.20.30.1 서버에서 현재 활성 사용자 계정 목록을 확인해줘
+  script: sudo nft add table inet whitelist && sudo nft add chain inet whitelist input
+    '{ type filter hook input priority 0 \; policy drop \; }'
+  risk_level: medium
+  bastion_prompt: secu VM에 whitelist 테이블과 policy drop의 input 체인을 만들어줘
 - order: 2
-  instruction: '운영팀(ops-team) 계정 3개를 일괄 생성하시오: opsuser1, opsuser2, opsuser3.'
-  hint: for 루프와 useradd를 사용하세요.
-  category: account_mgmt
+  instruction: whitelist 테이블에 set 'allowed_ips'(type ipv4_addr)를 생성하시오.
+  hint: nft add set …
+  category: configure
   points: 10
-  answer: sudo groupadd -f ops-team && for i in 1 2 3; do sudo useradd -m -G ops-team
-    -s /bin/bash opsuser$i 2>/dev/null; done && getent group ops-team
-  answer_detail: 일괄 계정 생성은 스크립트를 통해 자동화할 수 있습니다. -G 옵션으로 보조 그룹, -s로 기본 쉘을 지정합니다.
+  answer: sudo nft add set inet whitelist allowed_ips '{ type ipv4_addr \; }'
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: whitelist 테이블에 set ''allowed_ips''(type
+    ipv4_addr)를 생성하시오.'
   verify:
     type: output_contains
-    expect: ops-team
+    expect: allowed_ips
     field: stdout
   target_vm: secu
-  script: sudo groupadd -f ops-team && for i in 1 2 3; do sudo useradd -m -G ops-team
-    -s /bin/bash opsuser$i 2>/dev/null; done && getent group ops-team
+  script: sudo nft add set inet whitelist allowed_ips '{ type ipv4_addr \; }'
   risk_level: low
-  bastion_prompt: '운영팀(ops-team) 계정 3개를 일괄 생성하시오: opsuser1, opsuser2, opsuser3해줘'
+  bastion_prompt: secu VM whitelist 테이블에 ipv4 set 'allowed_ips'를 만들어줘
 - order: 3
-  instruction: 'opsuser1 계정의 패스워드 만료 정책을 설정하시오: 최대 90일, 최소 7일, 경고 14일.'
-  hint: chage 명령을 사용하세요.
-  category: account_mgmt
+  instruction: allowed_ips set에 10.20.30.201(attacker)을 추가하시오.
+  hint: nft add element …
+  category: configure
   points: 10
-  answer: sudo chage -M 90 -m 7 -W 14 opsuser1 && sudo chage -l opsuser1
-  answer_detail: chage는 패스워드 만료 정책을 관리합니다. -M(최대), -m(최소), -W(경고일)로 세밀하게 제어합니다.
+  answer: sudo nft add element inet whitelist allowed_ips '{ 10.20.30.201 }'
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: allowed_ips set에 10.20.30.201(attacker)을
+    추가하시오.'
   verify:
     type: output_contains
-    expect: Maximum number of days
+    expect: 10.20.30.201
     field: stdout
   target_vm: secu
-  script: sudo chage -M 90 -m 7 -W 14 opsuser1 && sudo chage -l opsuser1
+  script: sudo nft add element inet whitelist allowed_ips '{ 10.20.30.201 }'
   risk_level: low
-  bastion_prompt: 'opsuser1 계정의 패스워드 만료 정책을 설정하시오: 최대 90일, 최소 7일, 경고 14일해줘'
+  bastion_prompt: secu VM whitelist.allowed_ips set에 10.20.30.201을 추가해줘
 - order: 4
-  instruction: 90일 이상 로그인하지 않은 비활성 계정을 검색하시오.
-  hint: lastlog 명령을 사용하세요.
-  category: account_audit
+  instruction: input 체인에서 allowed_ips 에 속하는 소스만 accept 하도록 룰을 추가하시오.
+  hint: ip saddr @allowed_ips accept
+  category: configure
   points: 10
-  answer: lastlog -b 90 | grep -v 'Never logged in'
-  answer_detail: lastlog -b 90은 90일 이상 로그인하지 않은 계정을 표시합니다. 비활성 계정은 보안 위험 요소입니다.
+  answer: sudo nft add rule inet whitelist input ip saddr @allowed_ips accept
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: input 체인에서 allowed_ips 에 속하는 소스만
+    accept 하도록 룰을 추가하시오.'
   verify:
     type: output_contains
-    expect: ''
+    expect: allowed_ips
     field: stdout
   target_vm: secu
-  script: lastlog -b 90 | grep -v 'Never logged in'
-  risk_level: low
-  bastion_prompt: 90일 이상 로그인하지 않은 비활성 계정을 검색해줘
+  script: sudo nft add rule inet whitelist input ip saddr @allowed_ips accept
+  risk_level: medium
+  bastion_prompt: secu VM whitelist.input 체인에 allowed_ips set 기반 accept 룰을 추가해줘
 - order: 5
-  instruction: 한 번도 로그인하지 않은 사용자 계정을 찾아 나열하시오.
-  hint: lastlog 출력에서 'Never logged in'을 필터링하세요.
-  category: account_audit
-  points: 8
-  answer: lastlog | grep 'Never logged in' | awk '{print $1}'
-  answer_detail: 한 번도 로그인하지 않은 계정은 불필요하거나, 생성 후 방치된 계정일 수 있습니다.
+  instruction: SSH tcp/22에 대해 ct state new limit rate 3/minute 를 적용해 브루트포스를 완화하시오.
+  hint: tcp dport 22 ct state new limit rate 3/minute
+  category: configure
+  points: 10
+  answer: sudo nft add rule inet whitelist input tcp dport 22 ct state new limit rate
+    3/minute accept
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: SSH tcp/22에 대해 ct state new limit
+    rate 3/minute 를 적용해 브루트포스를 완화하시오.'
   verify:
     type: output_contains
-    expect: ''
+    expect: limit rate
     field: stdout
   target_vm: secu
-  script: lastlog | grep 'Never logged in' | awk '{print $1}'
-  risk_level: low
-  bastion_prompt: 한 번도 로그인하지 않은 사용자 계정을 찾아 나열해줘
+  script: sudo nft add rule inet whitelist input tcp dport 22 ct state new limit rate
+    3/minute accept
+  risk_level: medium
+  bastion_prompt: secu VM whitelist.input에 SSH 브루트포스 방지용 레이트리밋 룰을 추가해줘
 - order: 6
-  instruction: opsuser3 계정을 비활성화(잠금)하시오.
-  hint: usermod -L 또는 passwd -l 명령을 사용하세요.
-  category: account_mgmt
+  instruction: NAT 테이블과 postrouting 체인을 생성하고 masquerade 룰을 추가하시오.
+  hint: type nat hook postrouting
+  category: configure
   points: 10
-  answer: sudo usermod -L opsuser3 && sudo passwd -S opsuser3
-  answer_detail: usermod -L은 계정을 잠금합니다. 패스워드 해시 앞에 !가 추가되어 로그인이 불가능해집니다.
+  answer: sudo nft add table inet nat && sudo nft add chain inet nat postrouting '{
+    type nat hook postrouting priority 100 \; }' && sudo nft add rule inet nat postrouting
+    oifname "ens33" masquerade
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: NAT 테이블과 postrouting 체인을 생성하고
+    masquerade 룰을 추가하시오.'
   verify:
     type: output_contains
-    expect: L
+    expect: masquerade
     field: stdout
   target_vm: secu
-  script: sudo usermod -L opsuser3 && sudo passwd -S opsuser3
-  risk_level: low
-  bastion_prompt: opsuser3 계정을 비활성화(잠금)해줘
+  script: sudo nft add table inet nat && sudo nft add chain inet nat postrouting '{
+    type nat hook postrouting priority 100 \; }' && sudo nft add rule inet nat postrouting
+    oifname "ens33" masquerade
+  risk_level: medium
+  bastion_prompt: secu VM에 NAT 테이블을 만들고 ens33 인터페이스로 나가는 트래픽에 masquerade를 적용해줘
 - order: 7
-  instruction: 현재 시스템에 접속 중인 사용자를 확인하시오.
-  hint: w 또는 who 명령을 사용하세요.
-  category: account_audit
-  points: 8
-  answer: w
-  answer_detail: w 명령은 현재 접속 중인 사용자, 접속 시간, 수행 중인 작업을 표시합니다.
+  instruction: 작성한 whitelist 테이블의 룰셋을 확인하시오.
+  hint: nft list table inet whitelist
+  category: verify
+  points: 10
+  answer: sudo nft list table inet whitelist
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: 작성한 whitelist 테이블의 룰셋을 확인하시오.'
   verify:
     type: output_contains
-    expect: load average
+    expect: accept
     field: stdout
   target_vm: secu
-  script: w
+  script: sudo nft list table inet whitelist
   risk_level: low
-  bastion_prompt: 현재 시스템에 접속 중인 사용자를 확인해줘
+  bastion_prompt: secu VM whitelist 테이블 룰셋을 보여줘
 - order: 8
-  instruction: 최근 10건의 로그인 기록을 확인하시오.
-  hint: last 명령을 사용하세요.
-  category: account_audit
-  points: 8
-  answer: last -n 10
-  answer_detail: last 명령은 /var/log/wtmp에서 로그인 기록을 읽어 표시합니다. -n으로 표시 건수를 제한합니다.
+  instruction: NAT 테이블의 postrouting 체인에 masquerade가 적용됐는지 확인하시오.
+  hint: nft list table inet nat
+  category: verify
+  points: 10
+  answer: sudo nft list table inet nat
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: NAT 테이블의 postrouting 체인에 masquerade가
+    적용됐는지 확인하시오.'
   verify:
     type: output_contains
-    expect: ''
+    expect: masquerade
     field: stdout
   target_vm: secu
-  script: last -n 10
+  script: sudo nft list table inet nat
   risk_level: low
-  bastion_prompt: 최근 10건의 로그인 기록을 확인해줘
+  bastion_prompt: secu VM nat 테이블의 postrouting 룰을 확인해줘
 - order: 9
-  instruction: 실패한 로그인 시도를 확인하시오.
-  hint: faillog 또는 lastb 명령을 사용하세요.
-  category: account_audit
+  instruction: 실습 종료 후 whitelist, nat 테이블을 모두 삭제하시오.
+  hint: nft delete table …
+  category: cleanup
   points: 10
-  answer: sudo lastb -n 10 2>/dev/null || echo '실패 로그인 기록 없음'
-  answer_detail: lastb는 /var/log/btmp에서 실패한 로그인 시도를 표시합니다. 다수의 실패 시도는 브루트포스 공격의 징후일
-    수 있습니다.
+  answer: sudo nft delete table inet whitelist ; sudo nft delete table inet nat
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: 실습 종료 후 whitelist, nat 테이블을 모두
+    삭제하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: secu
-  script: sudo lastb -n 10 2>/dev/null || echo '실패 로그인 기록 없음'
-  risk_level: low
-  bastion_prompt: 실패한 로그인 시도를 확인해줘
+  script: sudo nft delete table inet whitelist ; sudo nft delete table inet nat
+  risk_level: medium
+  bastion_prompt: secu VM에서 whitelist와 nat 테이블을 모두 삭제해줘
 - order: 10
-  instruction: 패스워드가 설정되지 않은(빈 패스워드) 계정을 검색하시오.
-  hint: /etc/shadow에서 빈 패스워드 필드를 찾으세요.
-  category: account_audit
-  points: 12
-  answer: 'sudo awk -F: ''($2 == "" || $2 == "!") && $3 >= 1000 {print $1}'' /etc/shadow'
-  answer_detail: shadow 파일에서 두 번째 필드가 비어있거나 !인 계정은 패스워드가 설정되지 않은 것입니다. 보안 위험이 높습니다.
-  verify:
-    type: output_contains
-    expect: ''
-    field: stdout
-  target_vm: secu
-  script: 'sudo awk -F: ''($2 == "" || $2 == "!") && $3 >= 1000 {print $1}'' /etc/shadow'
-  risk_level: low
-  bastion_prompt: 패스워드가 설정되지 않은(빈 패스워드) 계정을 검색해줘
-- order: 11
-  instruction: opsuser1에게 특정 시간대(업무시간)에만 로그인을 허용하는 설정을 하시오.
-  hint: /etc/security/time.conf를 설정하세요.
-  category: account_mgmt
-  points: 12
-  answer: echo 'login;*;opsuser1;Al0800-1800' | sudo tee -a /etc/security/time.conf
-  answer_detail: time.conf에서 Al은 모든 요일, 0800-1800은 오전 8시부터 오후 6시까지를 의미합니다. PAM의 pam_time
-    모듈이 이를 적용합니다.
-  verify:
-    type: output_contains
-    expect: opsuser1
-    field: stdout
-  target_vm: secu
-  script: echo 'login;*;opsuser1;Al0800-1800' | sudo tee -a /etc/security/time.conf
-  risk_level: low
-  bastion_prompt: opsuser1에게 특정 시간대(업무시간)에만 로그인을 허용하는 설정을 해줘
-- order: 12
-  instruction: 계정 만료일이 설정되지 않은 사용자 목록을 조회하시오.
-  hint: chage -l 출력을 활용하세요.
-  category: account_audit
+  instruction: nftables 테이블 목록을 확인해 정리되었는지 검증하시오.
+  hint: nft list tables
+  category: analysis
   points: 10
-  answer: 'for user in $(awk -F: ''$3 >= 1000 && $3 < 65534 {print $1}'' /etc/passwd);
-    do expire=$(sudo chage -l $user 2>/dev/null | grep ''Account expires'' | cut -d:
-    -f2); echo "$user: $expire"; done'
-  answer_detail: 계정 만료일이 'never'인 계정은 영구 활성 상태로, 퇴직자 등의 계정이 방치될 수 있습니다.
+  answer: sudo nft list tables
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: nftables 테이블 목록을 확인해 정리되었는지 검증하시오.'
   verify:
     type: output_contains
-    expect: never
+    expect: table
     field: stdout
   target_vm: secu
-  script: 'for user in $(awk -F: ''$3 >= 1000 && $3 < 65534 {print $1}'' /etc/passwd);
-    do expire=$(sudo chage -l $user 2>/dev/null | grep ''Account expires'' | cut -d:
-    -f2); echo "$user: $expire"; done'
+  script: sudo nft list tables
   risk_level: low
-  bastion_prompt: 계정 만료일이 설정되지 않은 사용자 목록을 조회해줘
-- order: 13
-  instruction: opsuser2의 로그인 쉘을 /sbin/nologin으로 변경하여 대화형 로그인을 차단하시오.
-  hint: usermod -s 명령을 사용하세요.
-  category: account_mgmt
-  points: 10
-  answer: sudo usermod -s /sbin/nologin opsuser2 && grep opsuser2 /etc/passwd
-  answer_detail: /sbin/nologin을 쉘로 설정하면 SSH 등 대화형 로그인이 차단됩니다. 서비스 계정에 주로 사용합니다.
-  verify:
-    type: output_contains
-    expect: nologin
-    field: stdout
-  target_vm: secu
-  script: sudo usermod -s /sbin/nologin opsuser2 && grep opsuser2 /etc/passwd
-  risk_level: low
-  bastion_prompt: opsuser2의 로그인 쉘을 /sbin/nologin으로 변경하여 대화형 로그인을 차단해줘
-- order: 14
-  instruction: 불필요한 계정(opsuser3)을 홈 디렉터리 포함하여 완전히 삭제하시오.
-  hint: userdel -r 옵션을 사용하세요.
-  category: account_mgmt
-  points: 12
-  answer: sudo userdel -r opsuser3 2>/dev/null; echo '계정 삭제 완료' && grep -c opsuser3
-    /etc/passwd || echo 'opsuser3 계정 없음 확인'
-  answer_detail: userdel -r은 사용자 계정, 홈 디렉터리, 메일 스풀을 모두 삭제합니다. 삭제 전 데이터 백업 여부를 확인해야
-    합니다.
-  verify:
-    type: output_contains
-    expect: 계정
-    field: stdout
-  target_vm: secu
-  script: sudo userdel -r opsuser3 2>/dev/null; echo '계정 삭제 완료' && grep -c opsuser3
-    /etc/passwd || echo 'opsuser3 계정 없음 확인'
-  risk_level: low
-  bastion_prompt: 불필요한 계정(opsuser3)을 홈 디렉터리 포함하여 완전히 삭제해줘
-- order: 15
-  instruction: 계정 관리 현황을 종합 보고서로 출력하시오.
-  hint: 활성 계정 수, 잠금 계정, 그룹 현황 등을 포함하세요.
-  category: verification
-  points: 12
-  answer: 'echo ''=== 계정 관리 현황 보고서 ==='' && echo ''[활성 사용자]'' && awk -F: ''$3 >= 1000
-    && $3 < 65534 {print $1}'' /etc/passwd && echo ''[그룹 현황]'' && getent group ops-team
-    && echo ''[잠금 계정]'' && sudo awk -F: ''$2 ~ /^!/ && $1 !~ /^(root|daemon|bin)/
-    {print $1}'' /etc/shadow && echo ''=== 보고서 완료 ==='''
-  answer_detail: 정기적인 계정 현황 점검은 보안 운영의 기본입니다.
-  verify:
-    type: output_contains
-    expect: 보고서 완료
-    field: stdout
-  target_vm: secu
-  script: 'echo ''=== 계정 관리 현황 보고서 ==='' && echo ''[활성 사용자]'' && awk -F: ''$3 >= 1000
-    && $3 < 65534 {print $1}'' /etc/passwd && echo ''[그룹 현황]'' && getent group ops-team
-    && echo ''[잠금 계정]'' && sudo awk -F: ''$2 ~ /^!/ && $1 !~ /^(root|daemon|bin)/
-    {print $1}'' /etc/shadow && echo ''=== 보고서 완료 ==='''
-  risk_level: low
-  bastion_prompt: 계정 관리 현황을 종합 보고서로 출력해줘
+  bastion_prompt: secu VM nftables 테이블 목록을 확인해줘
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
-
-    1) 10.20.30.1 서버에서 현재 활성 사용자 계정 목록을 확인해줘
-
-    2) 운영팀(ops-team) 계정 3개를 일괄 생성하시오: opsuser1, opsuser2, opsuser3해줘
-
-    3) opsuser1 계정의 패스워드 만료 정책을 설정하시오: 최대 90일, 최소 7일, 경고 14일해줘
-
-    4) 90일 이상 로그인하지 않은 비활성 계정을 검색해줘
-
-    5) 한 번도 로그인하지 않은 사용자 계정을 찾아 나열해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
+  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
   category: multi_task
   points: 50
   verify:
@@ -276,8 +188,17 @@ steps:
     expect: ''
     field: stdout
   target_vm: secu
-  risk_level: low
   answer: ''
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
-  script: ''
+  answer_detail: ''
+  risk_level: low
+  bastion_prompt: 'secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:
+
+    1) secu VM에 whitelist 테이블과 policy drop의 input 체인을 만들어줘
+
+    2) secu VM whitelist 테이블에 ipv4 set ''allowed_ips''를 만들어줘
+
+    3) secu VM whitelist.allowed_ips set에 10.20.30.201을 추가해줘
+
+    4) secu VM whitelist.input 체인에 allowed_ips set 기반 accept 룰을 추가해줘
+
+    5) secu VM whitelist.input에 SSH 브루트포스 방지용 레이트리밋 룰을 추가해줘'

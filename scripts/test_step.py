@@ -162,12 +162,16 @@ def judge(events, step):
                 return "pass", "qa", meta
             return "qa_fallback", "", meta
         return "no_execution", "", meta
-    # 실행됨: verify 매치 우선, 없으면 playbook 성공 여부
+    # 실행됨: verify 매치 우선
     if match:
         skill = (skill_starts[0].get("skill") if skill_starts else "playbook")
         return "pass", skill, meta
-    if pb_starts and pb_ok and not verify.get("expect"):
-        return "pass", "playbook", meta
+    # expect가 비어 있으면 실행 성공만으로 pass 인정
+    if not verify.get("expect"):
+        skill_ok = any(r.get("success") for r in skill_results) if skill_results else pb_ok
+        if skill_ok:
+            skill = (skill_starts[0].get("skill") if skill_starts else "playbook")
+            return "pass", skill, meta
     skill = (skill_starts[0].get("skill") if skill_starts else "playbook")
     return "fail", skill, meta
 

@@ -1,288 +1,190 @@
 lab_id: secops-ai-week09
-title: 보안 모니터링 실습 (AI 지원)
+title: Wazuh SIEM 설치·구성 (AI 지원)
 version: ai
 course: secops-ai
 week: 9
-description: 로그 분석, SIEM 기초, 이상 탐지를 통한 보안 모니터링을 실습합니다. AI SubAgent가 자동으로 명령을 실행하고
-  결과를 검증합니다.
+description: Wazuh Manager·Indexer·Dashboard 구성 상태를 확인하고 siem의 agent 목록을 조회한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
-- 시스템 로그 분석 기법을 습득한다
-- Wazuh SIEM 기본 사용법을 익힌다
-- 이상 징후를 탐지하고 분석한다
+- Wazuh Manager/Indexer/Dashboard/agent 서비스 상태를 확인한다
+- /var/ossec/etc/ossec.conf 의 주요 설정을 이해한다
+- agent_control / wazuh-wui 로 에이전트 목록을 조회한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 10.20.30.1 서버에서 시스템 로그 파일 위치와 종류를 확인하시오.
-  hint: /var/log/ 디렉터리를 확인하세요.
-  category: log_analysis
-  points: 8
-  answer: ls -lh /var/log/ | head -30
-  answer_detail: /var/log/에는 syslog, auth.log, kern.log 등 다양한 시스템 로그가 위치합니다.
+  instruction: siem VM에서 Wazuh Manager 서비스 상태를 확인하시오.
+  hint: systemctl is-active wazuh-manager
+  category: survey
+  points: 10
+  answer: systemctl is-active wazuh-manager
+  answer_detail: 'Wazuh SIEM 설치·구성: siem VM에서 Wazuh Manager 서비스 상태를 확인하시오.'
   verify:
     type: output_contains
-    expect: syslog
+    expect: active
     field: stdout
-  target_vm: secu
-  script: ls -lh /var/log/ | head -30
+  target_vm: siem
+  script: systemctl is-active wazuh-manager
   risk_level: low
-  bastion_prompt: 10.20.30.1 서버에서 시스템 로그 파일 위치와 종류를 확인해줘
+  bastion_prompt: siem VM의 wazuh-manager 서비스 상태를 확인해줘
 - order: 2
-  instruction: 인증 로그에서 최근 SSH 접속 시도를 분석하시오.
-  hint: /var/log/auth.log를 분석하세요.
-  category: log_analysis
+  instruction: Wazuh Indexer 서비스 상태를 확인하시오.
+  hint: systemctl is-active wazuh-indexer
+  category: survey
   points: 10
-  answer: sudo grep 'sshd' /var/log/auth.log 2>/dev/null | tail -20 || sudo grep 'sshd'
-    /var/log/secure 2>/dev/null | tail -20
-  answer_detail: SSH 인증 로그에서 성공/실패 패턴을 분석하여 비인가 접근 시도를 탐지합니다.
+  answer: systemctl is-active wazuh-indexer || echo inactive
+  answer_detail: 'Wazuh SIEM 설치·구성: Wazuh Indexer 서비스 상태를 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  target_vm: secu
-  script: sudo grep 'sshd' /var/log/auth.log 2>/dev/null | tail -20 || sudo grep 'sshd'
-    /var/log/secure 2>/dev/null | tail -20
+  target_vm: siem
+  script: systemctl is-active wazuh-indexer || echo inactive
   risk_level: low
-  bastion_prompt: 인증 로그에서 최근 SSH 접속 시도를 분석해줘
+  bastion_prompt: siem VM의 wazuh-indexer 서비스 상태를 확인해줘
 - order: 3
-  instruction: 로그인 실패 IP를 추출하고 빈도별로 정렬하시오.
-  hint: grep, awk, sort, uniq -c를 조합하세요.
-  category: log_analysis
-  points: 12
-  answer: sudo grep 'Failed password' /var/log/auth.log 2>/dev/null | awk '{print
-    $(NF-3)}' | sort | uniq -c | sort -rn | head -10 || echo '실패 로그 분석 완료'
-  answer_detail: 로그인 실패가 특정 IP에서 집중되면 브루트포스 공격의 징후입니다.
+  instruction: Wazuh Dashboard 서비스 상태를 확인하시오.
+  hint: systemctl is-active wazuh-dashboard
+  category: survey
+  points: 10
+  answer: systemctl is-active wazuh-dashboard || echo inactive
+  answer_detail: 'Wazuh SIEM 설치·구성: Wazuh Dashboard 서비스 상태를 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  target_vm: secu
-  script: sudo grep 'Failed password' /var/log/auth.log 2>/dev/null | awk '{print
-    $(NF-3)}' | sort | uniq -c | sort -rn | head -10 || echo '실패 로그 분석 완료'
+  target_vm: siem
+  script: systemctl is-active wazuh-dashboard || echo inactive
   risk_level: low
-  bastion_prompt: 로그인 실패 IP를 추출하고 빈도별로 정렬해줘
+  bastion_prompt: siem VM의 wazuh-dashboard 서비스 상태를 확인해줘
 - order: 4
-  instruction: journalctl로 부팅 이후 커널 경고/에러 메시지를 조회하시오.
-  hint: journalctl -p warning을 사용하세요.
-  category: log_analysis
+  instruction: wazuh-control info 로 Wazuh 버전·설치 정보를 확인하시오.
+  hint: /var/ossec/bin/wazuh-control info
+  category: survey
   points: 10
-  answer: journalctl -b -p warning --no-pager | tail -30
-  answer_detail: journalctl -p warning은 warning 이상 레벨의 메시지를 표시합니다. -b는 현재 부팅 이후만 조회합니다.
+  answer: sudo /var/ossec/bin/wazuh-control info 2>&1 | head
+  answer_detail: 'Wazuh SIEM 설치·구성: wazuh-control info 로 Wazuh 버전·설치 정보를 확인하시오.'
   verify:
     type: output_contains
-    expect: ''
+    expect: WAZUH
     field: stdout
-  target_vm: secu
-  script: journalctl -b -p warning --no-pager | tail -30
+  target_vm: siem
+  script: sudo /var/ossec/bin/wazuh-control info 2>&1 | head
   risk_level: low
-  bastion_prompt: journalctl로 부팅 이후 커널 경고/에러 메시지를 조회해줘
+  bastion_prompt: siem VM에서 wazuh-control info 로 설치 정보를 확인해줘
 - order: 5
-  instruction: auditd 로그에서 파일 접근 이벤트를 분석하시오.
-  hint: ausearch를 사용하세요.
-  category: audit_log
+  instruction: agent_control -l 로 등록된 에이전트 목록을 조회하시오.
+  hint: /var/ossec/bin/agent_control -l
+  category: survey
   points: 10
-  answer: sudo ausearch -ts recent -m SYSCALL 2>/dev/null | tail -30 || echo '감사 로그
-    분석 완료'
-  answer_detail: ausearch로 감사 로그를 검색하고 분석합니다. -ts recent는 최근 10분 이내 이벤트를 조회합니다.
+  answer: sudo /var/ossec/bin/agent_control -l 2>&1 | head
+  answer_detail: 'Wazuh SIEM 설치·구성: agent_control -l 로 등록된 에이전트 목록을 조회하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  target_vm: secu
-  script: sudo ausearch -ts recent -m SYSCALL 2>/dev/null | tail -30 || echo '감사 로그
-    분석 완료'
+  target_vm: siem
+  script: sudo /var/ossec/bin/agent_control -l 2>&1 | head
   risk_level: low
-  bastion_prompt: auditd 로그에서 파일 접근 이벤트를 분석해줘
+  bastion_prompt: siem VM에서 agent_control -l 로 에이전트 목록을 보여줘
 - order: 6
-  instruction: aureport로 감사 로그 요약 보고서를 생성하시오.
-  hint: aureport --summary를 사용하세요.
-  category: audit_log
+  instruction: /var/ossec/etc/ossec.conf 에서 <global> 섹션을 확인하시오.
+  hint: awk '/<global>/,/<\/global>/' …
+  category: survey
   points: 10
-  answer: sudo aureport --summary 2>/dev/null || echo '감사 보고서 생성 완료'
-  answer_detail: aureport는 감사 로그의 통계 요약을 제공합니다. 이벤트 유형별 빈도를 파악할 수 있습니다.
+  answer: sudo awk '/<global>/,/<\/global>/' /var/ossec/etc/ossec.conf | head -20
+  answer_detail: 'Wazuh SIEM 설치·구성: /var/ossec/etc/ossec.conf 에서 <global> 섹션을 확인하시오.'
   verify:
     type: output_contains
-    expect: ''
+    expect: global
     field: stdout
-  target_vm: secu
-  script: sudo aureport --summary 2>/dev/null || echo '감사 보고서 생성 완료'
+  target_vm: siem
+  script: sudo awk '/<global>/,/<\/global>/' /var/ossec/etc/ossec.conf | head -20
   risk_level: low
-  bastion_prompt: aureport 명령어로 감사 로그를 요약하는 방법을 설명해줘
+  bastion_prompt: siem VM의 ossec.conf <global> 섹션을 보여줘
 - order: 7
-  instruction: Wazuh 에이전트 상태를 확인하시오.
-  hint: wazuh-agent 서비스를 확인하세요.
-  category: siem
+  instruction: ossec.conf 에서 <alerts>/<log_alert_level> 값을 확인하시오.
+  hint: grep log_alert_level …
+  category: survey
   points: 10
-  answer: sudo systemctl status wazuh-agent 2>/dev/null || echo 'Wazuh 에이전트 확인 완료'
-  answer_detail: Wazuh는 오픈소스 SIEM으로, 호스트 모니터링, 취약점 탐지, 컴플라이언스 점검을 수행합니다.
+  answer: sudo grep -n log_alert_level /var/ossec/etc/ossec.conf
+  answer_detail: 'Wazuh SIEM 설치·구성: ossec.conf 에서 <alerts>/<log_alert_level> 값을 확인하시오.'
   verify:
     type: output_contains
-    expect: Wazuh
+    expect: log_alert_level
     field: stdout
-  target_vm: secu
-  script: sudo systemctl status wazuh-agent 2>/dev/null || echo 'Wazuh 에이전트 확인 완료'
+  target_vm: siem
+  script: sudo grep -n log_alert_level /var/ossec/etc/ossec.conf
   risk_level: low
-  bastion_prompt: Wazuh 에이전트 상태를 확인해줘
+  bastion_prompt: siem VM의 ossec.conf에서 log_alert_level 값을 확인해줘
 - order: 8
-  instruction: Wazuh 알림 로그에서 최근 보안 이벤트를 확인하시오.
-  hint: /var/ossec/logs/alerts/ 디렉터리를 확인하세요.
-  category: siem
+  instruction: Wazuh Manager의 최근 alerts.json 2줄을 확인하시오.
+  hint: tail -2 /var/ossec/logs/alerts/alerts.json
+  category: verify
   points: 10
-  answer: sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5 || echo
-    'Wazuh 알림 로그 확인 완료'
-  answer_detail: Wazuh의 alerts.json에는 탐지된 보안 이벤트가 JSON 형식으로 기록됩니다.
+  answer: sudo tail -2 /var/ossec/logs/alerts/alerts.json 2>/dev/null
+  answer_detail: 'Wazuh SIEM 설치·구성: Wazuh Manager의 최근 alerts.json 2줄을 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  target_vm: secu
-  script: sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5 || echo
-    'Wazuh 알림 로그 확인 완료'
+  target_vm: siem
+  script: sudo tail -2 /var/ossec/logs/alerts/alerts.json 2>/dev/null
   risk_level: low
-  bastion_prompt: Wazuh 알림 로그에서 최근 보안 이벤트를 확인해줘
+  bastion_prompt: siem VM의 wazuh alerts.json 최근 2줄을 보여줘
 - order: 9
-  instruction: 로그 로테이션 설정을 확인하고 보안 로그 보존 기간을 90일로 설정하시오.
-  hint: /etc/logrotate.d/를 확인하세요.
-  category: log_mgmt
+  instruction: Wazuh Indexer API(9200) 가 응답하는지 확인하시오.
+  hint: curl -k https://localhost:9200
+  category: verify
   points: 10
-  answer: cat /etc/logrotate.d/rsyslog 2>/dev/null && echo '로그 로테이션 확인 완료'
-  answer_detail: logrotate는 로그 파일의 크기와 보존 기간을 관리합니다. 보안 로그는 감사 요구사항에 맞게 보존합니다.
+  answer: curl -sk -o /dev/null -w '%{http_code}\n' https://localhost:9200 -u admin:admin
+    2>/dev/null || ss -tlnp | grep 9200
+  answer_detail: 'Wazuh SIEM 설치·구성: Wazuh Indexer API(9200) 가 응답하는지 확인하시오.'
   verify:
     type: output_contains
-    expect: 로그 로테이션 확인 완료
+    expect: '9200'
     field: stdout
-  target_vm: secu
-  script: cat /etc/logrotate.d/rsyslog 2>/dev/null && echo '로그 로테이션 확인 완료'
+  target_vm: siem
+  script: curl -sk -o /dev/null -w '%{http_code}\n' https://localhost:9200 -u admin:admin
+    2>/dev/null || ss -tlnp | grep 9200
   risk_level: low
-  bastion_prompt: 로그 로테이션 설정을 확인하고 보안 로그 보존 기간을 90일로 설정해줘
+  bastion_prompt: siem VM의 Wazuh Indexer(9200) 리스닝/응답 상태를 확인해줘
 - order: 10
-  instruction: '실시간 로그 모니터링을 설정하시오: auth.log의 변경을 실시간으로 추적.'
-  hint: tail -f를 사용하세요.
-  category: monitoring
-  points: 8
-  answer: sudo timeout 3 tail -f /var/log/auth.log 2>/dev/null || echo '실시간 모니터링 테스트
-    완료'
-  answer_detail: tail -f로 로그 파일의 실시간 변경을 모니터링합니다. 보안 이벤트를 즉시 감지할 수 있습니다.
-  verify:
-    type: output_contains
-    expect: 모니터링 테스트 완료
-    field: stdout
-  target_vm: secu
-  script: sudo timeout 3 tail -f /var/log/auth.log 2>/dev/null || echo '실시간 모니터링 테스트
-    완료'
-  risk_level: low
-  bastion_prompt: '실시간 로그 모니터링을 설정하시오: auth.log의 변경을 실시간으로 추적해줘'
-- order: 11
-  instruction: 네트워크 연결 상태를 모니터링하여 의심스러운 외부 연결을 찾으시오.
-  hint: ss -tnp 또는 netstat를 사용하세요.
-  category: monitoring
+  instruction: 최근 1시간 alerts.json 내 alert 수를 집계하시오.
+  hint: wc -l alerts.json
+  category: analysis
   points: 10
-  answer: ss -tnp | grep ESTAB && echo '연결 모니터링 완료'
-  answer_detail: ESTABLISHED 상태의 연결 중 알 수 없는 외부 IP로의 연결은 C2 통신의 징후일 수 있습니다.
+  answer: sudo wc -l /var/ossec/logs/alerts/alerts.json 2>/dev/null
+  answer_detail: 'Wazuh SIEM 설치·구성: 최근 1시간 alerts.json 내 alert 수를 집계하시오.'
   verify:
     type: output_contains
-    expect: 연결 모니터링 완료
+    expect: ''
     field: stdout
-  target_vm: secu
-  script: ss -tnp | grep ESTAB && echo '연결 모니터링 완료'
+  target_vm: siem
+  script: sudo wc -l /var/ossec/logs/alerts/alerts.json 2>/dev/null
   risk_level: low
-  bastion_prompt: 네트워크 연결 상태를 모니터링하여 의심스러운 외부 연결을 찾으시오해줘
-- order: 12
-  instruction: 시스템 리소스 사용량이 비정상적인 프로세스를 탐지하시오.
-  hint: top -bn1 또는 ps aux를 사용하세요.
-  category: monitoring
-  points: 10
-  answer: ps aux --sort=-%mem | head -10 && echo '리소스 모니터링 완료'
-  answer_detail: 메모리/CPU를 과도하게 사용하는 프로세스는 암호화폐 채굴 악성코드나 DoS 공격의 징후일 수 있습니다.
-  verify:
-    type: output_contains
-    expect: 리소스 모니터링 완료
-    field: stdout
-  target_vm: secu
-  script: ps aux --sort=-%mem | head -10 && echo '리소스 모니터링 완료'
-  risk_level: low
-  bastion_prompt: 시스템 리소스 사용량이 비정상적인 프로세스를 탐지해줘
-- order: 13
-  instruction: '로그 기반 알림 스크립트를 작성하시오: SSH 실패가 10회 이상이면 경고.'
-  hint: grep과 wc를 사용하여 카운트하세요.
-  category: alerting
-  points: 12
-  answer: "echo '#!/bin/bash\nCOUNT=$(sudo grep -c \"Failed password\" /var/log/auth.log\
-    \ 2>/dev/null || echo 0)\nif [ \"$COUNT\" -gt 10 ]; then\n  echo \"경고: SSH 실패\
-    \ ${COUNT}회 탐지\"\nelse\n  echo \"정상: SSH 실패 ${COUNT}회\"\nfi' > /tmp/alert_check.sh\
-    \ && chmod +x /tmp/alert_check.sh && bash /tmp/alert_check.sh"
-  answer_detail: 임계값 기반 알림은 보안 모니터링의 기본입니다. 실제 환경에서는 이메일/Slack 알림을 연동합니다.
-  verify:
-    type: output_contains
-    expect: SSH 실패
-    field: stdout
-  target_vm: secu
-  script: "echo '#!/bin/bash\nCOUNT=$(sudo grep -c \"Failed password\" /var/log/auth.log\
-    \ 2>/dev/null || echo 0)\nif [ \"$COUNT\" -gt 10 ]; then\n  echo \"경고: SSH 실패\
-    \ ${COUNT}회 탐지\"\nelse\n  echo \"정상: SSH 실패 ${COUNT}회\"\nfi' > /tmp/alert_check.sh\
-    \ && chmod +x /tmp/alert_check.sh && bash /tmp/alert_check.sh"
-  risk_level: low
-  bastion_prompt: '로그 기반 알림 스크립트를 작성하시오: SSH 실패가 10회 이상이면 경고 구현 방법과 예시를 설명해줘'
-- order: 14
-  instruction: '시스템 무결성 검사를 수행하시오: 주요 바이너리의 해시 변경 여부 확인.'
-  hint: sha256sum으로 주요 바이너리를 확인하세요.
-  category: integrity
-  points: 10
-  answer: for bin in /usr/bin/ssh /usr/bin/sudo /usr/bin/passwd; do sha256sum $bin
-    2>/dev/null; done | tee /tmp/binary_hashes.txt && echo '무결성 검사 완료'
-  answer_detail: 주요 시스템 바이너리의 해시를 정기적으로 확인하여 변조를 탐지합니다.
-  verify:
-    type: output_contains
-    expect: 무결성 검사 완료
-    field: stdout
-  target_vm: secu
-  script: for bin in /usr/bin/ssh /usr/bin/sudo /usr/bin/passwd; do sha256sum $bin
-    2>/dev/null; done | tee /tmp/binary_hashes.txt && echo '무결성 검사 완료'
-  risk_level: low
-  bastion_prompt: '시스템 무결성 검사를 수행하시오: 주요 바이너리의 해시 변경 여부 확인해줘'
-- order: 15
-  instruction: 보안 모니터링 종합 현황 보고서를 생성하시오.
-  hint: 로그 분석 결과, 알림 상태, 모니터링 현황 등을 포함하세요.
-  category: verification
-  points: 10
-  answer: echo '=== 보안 모니터링 보고서 ===' && echo '[로그 파일 현황]' && ls -lh /var/log/auth.log
-    /var/log/syslog 2>/dev/null && echo '[활성 연결]' && ss -tnp | wc -l && echo '[감사
-    이벤트]' && sudo aureport --summary 2>/dev/null | head -5 && echo '=== 보고서 완료 ==='
-  answer_detail: 보안 모니터링 보고서는 현재 보안 상태를 한눈에 파악하게 합니다.
-  verify:
-    type: output_contains
-    expect: 보고서 완료
-    field: stdout
-  target_vm: secu
-  script: echo '=== 보안 모니터링 보고서 ===' && echo '[로그 파일 현황]' && ls -lh /var/log/auth.log
-    /var/log/syslog 2>/dev/null && echo '[활성 연결]' && ss -tnp | wc -l && echo '[감사
-    이벤트]' && sudo aureport --summary 2>/dev/null | head -5 && echo '=== 보고서 완료 ==='
-  risk_level: low
-  bastion_prompt: 보안 모니터링 종합 현황 보고서 작성 방법을 설명해줘
+  bastion_prompt: siem VM의 wazuh alerts.json 라인 수를 확인해줘
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
-
-    1) 10.20.30.1 서버에서 시스템 로그 파일 위치와 종류를 확인해줘
-
-    2) 인증 로그에서 최근 SSH 접속 시도를 분석해줘
-
-    3) 로그인 실패 IP를 추출하고 빈도별로 정렬해줘
-
-    4) journalctl로 부팅 이후 커널 경고/에러 메시지를 조회해줘
-
-    5) auditd 로그에서 파일 접근 이벤트를 분석해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
+  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
   category: multi_task
   points: 50
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  target_vm: secu
-  risk_level: low
+  target_vm: siem
   answer: ''
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
-  script: ''
+  answer_detail: ''
+  risk_level: low
+  bastion_prompt: 'secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:
+
+    1) siem VM의 wazuh-manager 서비스 상태를 확인해줘
+
+    2) siem VM의 wazuh-indexer 서비스 상태를 확인해줘
+
+    3) siem VM의 wazuh-dashboard 서비스 상태를 확인해줘
+
+    4) siem VM에서 wazuh-control info 로 설치 정보를 확인해줘
+
+    5) siem VM에서 agent_control -l 로 에이전트 목록을 보여줘'

@@ -1,196 +1,156 @@
 lab_id: secops-nonai-week07
-title: 네트워크 보안 실습
+title: Apache + ModSecurity WAF
 version: non-ai
 course: secops-nonai
 week: 7
-description: 방화벽 설정, 네트워크 세분화, IDS/IPS 기초를 실습합니다.
+description: web VM의 Apache + ModSecurity WAF 구성을 점검하고 CRS 룰로 SQLi/XSS 탐지가 작동하는지 검증한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
-- nftables 기반 방화벽을 구성한다
-- 네트워크 트래픽 분석 도구를 활용한다
-- 네트워크 보안 모니터링 기초를 이해한다
+- ModSecurity의 기본 구성·엔진 on/off·감사 로그 위치를 확인한다
+- OWASP CRS 룰로 SQLi/XSS 차단을 테스트한다
+- /var/log/apache2/modsec_audit.log 에서 차단 기록을 확인한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 10.20.30.1 서버에서 현재 네트워크 인터페이스와 IP 설정을 확인하시오.
-  hint: ip addr 명령을 사용하세요.
-  category: network
-  points: 8
-  answer: ip addr show
-  answer_detail: ip addr은 모든 네트워크 인터페이스의 IP, MAC 주소, 상태 정보를 표시합니다.
+  instruction: web VM에서 Apache + ModSecurity가 동작 중인지 확인하시오.
+  hint: apachectl -M | grep -i security
+  category: survey
+  points: 10
+  answer: apachectl -M 2>/dev/null | grep -i security
+  answer_detail: 'Apache + ModSecurity WAF: web VM에서 Apache + ModSecurity가 동작 중인지
+    확인하시오.'
   verify:
     type: output_contains
-    expect: inet
+    expect: security
     field: stdout
-  target_vm: secu
+  target_vm: web
 - order: 2
-  instruction: 현재 열려 있는 포트와 리스닝 서비스를 확인하시오.
-  hint: ss -tlnp 명령을 사용하세요.
-  category: network
-  points: 8
-  answer: ss -tlnp
-  answer_detail: ss -t(TCP) -l(리스닝) -n(숫자) -p(프로세스) 옵션으로 서비스 포트를 확인합니다.
+  instruction: modsecurity.conf 에서 SecRuleEngine 값을 확인하시오.
+  hint: grep SecRuleEngine …
+  category: survey
+  points: 10
+  answer: sudo grep -H SecRuleEngine /etc/modsecurity/modsecurity.conf /etc/apache2/mods-enabled/security2.conf
+    2>/dev/null
+  answer_detail: 'Apache + ModSecurity WAF: modsecurity.conf 에서 SecRuleEngine 값을 확인하시오.'
   verify:
     type: output_contains
-    expect: LISTEN
+    expect: SecRuleEngine
     field: stdout
-  target_vm: secu
+  target_vm: web
 - order: 3
-  instruction: nftables 현재 규칙셋을 확인하시오.
-  hint: nft list ruleset 명령을 사용하세요.
-  category: firewall
+  instruction: OWASP CRS 디렉터리의 룰 파일 개수를 확인하시오.
+  hint: ls /usr/share/modsecurity-crs/rules | wc -l
+  category: survey
   points: 10
-  answer: sudo nft list ruleset 2>/dev/null || echo 'nftables 규칙 없음'
-  answer_detail: nftables는 iptables의 후속으로, 모든 규칙을 하나의 명령으로 조회할 수 있습니다.
+  answer: ls /usr/share/modsecurity-crs/rules/ 2>/dev/null | wc -l || ls /etc/modsecurity/crs/rules
+    2>/dev/null | wc -l
+  answer_detail: 'Apache + ModSecurity WAF: OWASP CRS 디렉터리의 룰 파일 개수를 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  target_vm: secu
+  target_vm: web
 - order: 4
-  instruction: 기본 방화벽 테이블과 입력 체인을 생성하시오.
-  hint: nft add table/chain 명령을 사용하세요.
-  category: firewall
-  points: 12
-  answer: sudo nft add table inet filter 2>/dev/null; sudo nft add chain inet filter input '{ type filter hook input priority 0; policy drop; }' 2>/dev/null; echo '방화벽 체인 생성 완료'
-  answer_detail: inet 패밀리는 IPv4/IPv6를 동시에 처리합니다. policy drop은 기본 거부 정책입니다.
+  instruction: SecRuleEngine 이 DetectionOnly 라면 On 으로 바꾸시오(이미 On 이면 건너뜀).
+  hint: sed … SecRuleEngine
+  category: configure
+  points: 10
+  answer: sudo sed -i 's/^SecRuleEngine DetectionOnly/SecRuleEngine On/' /etc/modsecurity/modsecurity.conf
+    2>/dev/null ; grep SecRuleEngine /etc/modsecurity/modsecurity.conf
+  answer_detail: 'Apache + ModSecurity WAF: SecRuleEngine 이 DetectionOnly 라면 On 으로
+    바꾸시오(이미 On 이면 건너뜀).'
   verify:
     type: output_contains
-    expect: 방화벽 체인 생성 완료
+    expect: SecRuleEngine
     field: stdout
-  target_vm: secu
+  target_vm: web
 - order: 5
-  instruction: SSH(22), HTTP(80), HTTPS(443) 포트를 허용하는 규칙을 추가하시오.
-  hint: nft add rule 명령을 사용하세요.
-  category: firewall
-  points: 12
-  answer: sudo nft add rule inet filter input ct state established,related accept 2>/dev/null; sudo nft add rule inet filter input tcp dport {22, 80, 443} accept 2>/dev/null; sudo nft add rule inet filter
-    input iif lo accept 2>/dev/null; echo '허용 규칙 추가 완료'
-  answer_detail: established,related 연결 허용, 필요 포트 명시적 허용, 루프백 허용이 기본 방화벽 구성입니다.
+  instruction: Apache를 재시작해 설정을 반영하시오.
+  hint: systemctl restart apache2
+  category: configure
+  points: 10
+  answer: sudo systemctl restart apache2 && systemctl is-active apache2
+  answer_detail: 'Apache + ModSecurity WAF: Apache를 재시작해 설정을 반영하시오.'
   verify:
     type: output_contains
-    expect: 허용 규칙 추가 완료
+    expect: active
     field: stdout
-  target_vm: secu
+  target_vm: web
 - order: 6
-  instruction: 10.20.30.0/24 네트워크에서만 관리 포트(8000, 8001, 8002)에 접근을 허용하시오.
-  hint: 소스 IP 기반 규칙을 추가하세요.
-  category: firewall
-  points: 12
-  answer: sudo nft add rule inet filter input ip saddr 10.20.30.0/24 tcp dport {8000, 8001, 8002} accept 2>/dev/null; echo '관리 포트 제한 완료'
-  answer_detail: 관리 포트는 내부 네트워크에서만 접근을 허용하여 공격 표면을 줄입니다.
+  instruction: attacker VM에서 SQL Injection payload로 테스트 요청을 보내시오 (403 차단 확인).
+  hint: curl -o /dev/null -w '%{http_code}' '…union select…'
+  category: verify
+  points: 10
+  answer: curl -sS -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80/?id=1%20union%20select%201,2'
+  answer_detail: 'Apache + ModSecurity WAF: attacker VM에서 SQL Injection payload로 테스트
+    요청을 보내시오 (403 차단 확인).'
   verify:
     type: output_contains
-    expect: 관리 포트 제한 완료
+    expect: '403'
     field: stdout
-  target_vm: secu
+  target_vm: attacker
 - order: 7
-  instruction: ICMP ping 요청을 허용하되 rate limiting(초당 5회)을 적용하시오.
-  hint: nft limit rate 옵션을 사용하세요.
-  category: firewall
+  instruction: attacker VM에서 XSS payload 요청을 보내 차단 응답을 확인하시오.
+  hint: curl -w '%{http_code}' '…<script>…'
+  category: verify
   points: 10
-  answer: sudo nft add rule inet filter input icmp type echo-request limit rate 5/second accept 2>/dev/null; echo 'ICMP 제한 완료'
-  answer_detail: rate limiting으로 ICMP flood 공격을 방지하면서 정상적인 ping은 허용합니다.
+  answer: curl -sS -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80/?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E'
+  answer_detail: 'Apache + ModSecurity WAF: attacker VM에서 XSS payload 요청을 보내 차단 응답을
+    확인하시오.'
   verify:
     type: output_contains
-    expect: ICMP 제한 완료
+    expect: '403'
     field: stdout
-  target_vm: secu
+  target_vm: attacker
 - order: 8
-  instruction: 방화벽 규칙을 파일로 저장하여 재부팅 후에도 유지되도록 하시오.
-  hint: nft list ruleset > 파일을 사용하세요.
-  category: firewall
+  instruction: web VM에서 modsec_audit.log 마지막 30줄을 확인해 차단 기록을 찾으시오.
+  hint: tail /var/log/apache2/modsec_audit.log
+  category: analysis
   points: 10
-  answer: sudo nft list ruleset > /tmp/nftables_backup.conf 2>/dev/null && echo '규칙 저장 완료' && wc -l /tmp/nftables_backup.conf
-  answer_detail: nftables 규칙을 파일로 저장하고 /etc/nftables.conf에 배치하면 재부팅 시 자동 로드됩니다.
+  answer: sudo tail -30 /var/log/apache2/modsec_audit.log 2>/dev/null | head -20
+  answer_detail: 'Apache + ModSecurity WAF: web VM에서 modsec_audit.log 마지막 30줄을 확인해
+    차단 기록을 찾으시오.'
   verify:
     type: output_contains
-    expect: 규칙 저장 완료
+    expect: ModSec
     field: stdout
-  target_vm: secu
+  target_vm: web
 - order: 9
-  instruction: tcpdump로 10.20.30.0/24 네트워크의 SSH 트래픽을 캡처하시오(5초간).
-  hint: tcpdump -c 옵션을 사용하세요.
-  category: monitoring
+  instruction: modsec_audit.log 에서 rule id 942(SQLi)에 해당하는 이벤트를 카운트하시오.
+  hint: grep -c '942'
+  category: analysis
   points: 10
-  answer: sudo timeout 5 tcpdump -i any -c 10 port 22 2>/dev/null || echo 'SSH 트래픽 캡처 완료'
-  answer_detail: tcpdump는 네트워크 패킷을 실시간으로 캡처합니다. -c로 패킷 수를 제한합니다.
+  answer: sudo grep -c '\[id \"942' /var/log/apache2/modsec_audit.log 2>/dev/null
+  answer_detail: 'Apache + ModSecurity WAF: modsec_audit.log 에서 rule id 942(SQLi)에
+    해당하는 이벤트를 카운트하시오.'
   verify:
     type: output_contains
-    expect: 캡처 완료
+    expect: ''
     field: stdout
-  target_vm: secu
+  target_vm: web
 - order: 10
-  instruction: ARP 테이블을 확인하여 네트워크 내 장치를 파악하시오.
-  hint: arp -a 또는 ip neigh 명령을 사용하세요.
-  category: network
-  points: 8
-  answer: ip neigh show
-  answer_detail: ARP 테이블은 IP-MAC 매핑을 보여줍니다. 의심스러운 MAC 주소로 ARP 스푸핑을 탐지할 수 있습니다.
+  instruction: 정상 GET 요청(/ 루트)이 200 으로 응답하는지 확인하시오(정상 트래픽 미차단 검증).
+  hint: curl -w '%{http_code}' http://10.20.30.80/
+  category: verify
+  points: 10
+  answer: curl -sS -o /dev/null -w '%{http_code}\n' http://10.20.30.80/
+  answer_detail: 'Apache + ModSecurity WAF: 정상 GET 요청(/ 루트)이 200 으로 응답하는지 확인하시오(정상
+    트래픽 미차단 검증).'
+  verify:
+    type: output_contains
+    expect: '200'
+    field: stdout
+  target_vm: attacker
+- order: 99
+  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
+  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
+  category: multi_task
+  points: 50
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  target_vm: secu
-- order: 11
-  instruction: 라우팅 테이블을 확인하여 네트워크 경로를 분석하시오.
-  hint: ip route 명령을 사용하세요.
-  category: network
-  points: 8
-  answer: ip route show
-  answer_detail: 라우팅 테이블로 트래픽 흐름을 파악하고 비정상 경로를 탐지합니다.
-  verify:
-    type: output_contains
-    expect: default
-    field: stdout
-  target_vm: secu
-- order: 12
-  instruction: 특정 IP(10.20.30.80)로의 연결을 nmap으로 포트 스캔하시오.
-  hint: nmap -sT 옵션을 사용하세요.
-  category: scanning
-  points: 10
-  answer: nmap -sT -p 22,80,443 10.20.30.80 2>/dev/null || echo '포트 스캔 완료'
-  answer_detail: nmap -sT는 TCP 연결 스캔으로, 대상 서버의 열린 포트를 확인합니다.
-  verify:
-    type: output_contains
-    expect: ''
-    field: stdout
-  target_vm: secu
-- order: 13
-  instruction: SYN flood 방지를 위한 커널 파라미터를 설정하시오.
-  hint: sysctl로 tcp_syncookies를 활성화하세요.
-  category: hardening
-  points: 10
-  answer: sudo sysctl -w net.ipv4.tcp_syncookies=1 && sudo sysctl -w net.ipv4.tcp_max_syn_backlog=2048 && echo '방어 설정 완료'
-  answer_detail: SYN cookies를 활성화하면 SYN flood 공격 시에도 정상 연결을 처리할 수 있습니다.
-  verify:
-    type: output_contains
-    expect: 방어 설정 완료
-    field: stdout
-  target_vm: secu
-- order: 14
-  instruction: IP 스푸핑 방지를 위한 rp_filter를 활성화하시오.
-  hint: sysctl로 rp_filter를 설정하세요.
-  category: hardening
-  points: 10
-  answer: sudo sysctl -w net.ipv4.conf.all.rp_filter=1 && sudo sysctl -w net.ipv4.conf.default.rp_filter=1 && echo 'IP 스푸핑 방지 완료'
-  answer_detail: rp_filter(Reverse Path Filtering)는 소스 IP가 도착 인터페이스의 라우팅과 일치하는지 검증합니다.
-  verify:
-    type: output_contains
-    expect: IP 스푸핑 방지 완료
-    field: stdout
-  target_vm: secu
-- order: 15
-  instruction: 네트워크 보안 종합 점검 보고서를 생성하시오.
-  hint: 방화벽 규칙, 열린 포트, 보안 설정 등을 포함하세요.
-  category: verification
-  points: 12
-  answer: echo '=== 네트워크 보안 보고서 ===' && echo '[열린 포트]' && ss -tlnp | grep LISTEN && echo '[방화벽 규칙 수]' && sudo nft list ruleset 2>/dev/null | wc -l && echo '[커널 보안 설정]' && sysctl net.ipv4.tcp_syncookies
-    net.ipv4.conf.all.rp_filter 2>/dev/null && echo '=== 보고서 완료 ==='
-  answer_detail: 네트워크 보안 점검은 방화벽, 포트, 커널 파라미터를 종합적으로 확인합니다.
-  verify:
-    type: output_contains
-    expect: 보고서 완료
-    field: stdout
-  target_vm: secu
+  target_vm: web
+  answer: ''
+  answer_detail: ''

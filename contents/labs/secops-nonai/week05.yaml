@@ -1,199 +1,155 @@
 lab_id: secops-nonai-week05
-title: 백업/복구 실습
+title: Suricata 룰 작성
 version: non-ai
 course: secops-nonai
 week: 5
-description: 시스템 및 데이터 백업 전략을 수립하고, 다양한 백업 도구를 활용한 백업/복구 절차를 실습합니다.
+description: content, pcre, flow, flowbits 등 Suricata 룰 키워드를 활용해 HTTP·TCP 탐지 룰을 작성한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
-- 전체/증분/차등 백업 전략을 이해한다
-- tar, rsync 등 백업 도구를 활용한다
-- 복구 테스트를 수행한다
+- Suricata 룰 문법 (action protocol src → dst opts) 을 이해한다
+- HTTP 요청에서 특정 User-Agent 를 탐지하는 룰을 작성할 수 있다
+- suricata -T 로 룰 문법을 검증하고 eve.json 에서 매칭을 확인한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 10.20.30.1 서버에서 백업 대상 디렉터리(/etc, /home)의 크기를 확인하시오.
-  hint: du -sh 명령을 사용하세요.
-  category: backup
-  points: 8
-  answer: du -sh /etc /home 2>/dev/null
-  answer_detail: 백업 전 대상 크기를 파악하여 저장 공간 계획을 수립합니다.
+  instruction: local.rules 에 HTTP User-Agent 'BadBot'을 탐지하는 룰(sid:1000101)을 추가하시오.
+  hint: content:"BadBot"; http_user_agent;
+  category: configure
+  points: 10
+  answer: echo 'alert http any any -> any any (msg:"Suspicious UA BadBot"; content:"BadBot";
+    http_user_agent; sid:1000101; rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
+  answer_detail: 'Suricata 룰 작성: local.rules 에 HTTP User-Agent ''BadBot''을 탐지하는 룰(sid:1000101)을
+    추가하시오.'
   verify:
     type: output_contains
-    expect: /etc
+    expect: BadBot
     field: stdout
   target_vm: secu
 - order: 2
-  instruction: 백업 저장 디렉터리 /backup을 생성하고 적절한 퍼미션을 설정하시오.
-  hint: root만 접근 가능하도록 설정하세요.
-  category: backup
-  points: 8
-  answer: sudo mkdir -p /backup && sudo chmod 700 /backup && ls -ld /backup
-  answer_detail: 백업 디렉터리는 root만 접근 가능하도록 700 퍼미션을 설정합니다.
+  instruction: SQL Injection 간단 룰 — URI에 'union select' 포함 탐지(sid:1000102)을 추가하시오.
+  hint: content:"union select"; http_uri;
+  category: configure
+  points: 10
+  answer: echo 'alert http any any -> any any (msg:"SQLi union select"; content:"union
+    select"; nocase; http_uri; sid:1000102; rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
+  answer_detail: 'Suricata 룰 작성: SQL Injection 간단 룰 — URI에 ''union select'' 포함 탐지(sid:1000102)을
+    추가하시오.'
   verify:
     type: output_contains
-    expect: drwx------
+    expect: union
     field: stdout
   target_vm: secu
 - order: 3
-  instruction: /etc 디렉터리의 전체 백업을 tar로 생성하시오.
-  hint: tar czf 옵션을 사용하세요.
-  category: backup
+  instruction: TCP 445 포트로 향하는 트래픽을 단순 탐지하는 룰(sid:1000103)을 추가하시오.
+  hint: tcp any any -> any 445 …
+  category: configure
   points: 10
-  answer: sudo tar czf /backup/etc_full_$(date +%Y%m%d).tar.gz /etc 2>/dev/null && ls -lh /backup/etc_full_*.tar.gz
-  answer_detail: tar czf는 gzip 압축을 포함한 아카이브를 생성합니다. 날짜를 파일명에 포함하여 관리합니다.
+  answer: echo 'alert tcp any any -> any 445 (msg:"SMB traffic"; sid:1000103; rev:1;)'
+    | sudo tee -a /etc/suricata/rules/local.rules
+  answer_detail: 'Suricata 룰 작성: TCP 445 포트로 향하는 트래픽을 단순 탐지하는 룰(sid:1000103)을 추가하시오.'
   verify:
     type: output_contains
-    expect: etc_full
+    expect: '445'
     field: stdout
   target_vm: secu
 - order: 4
-  instruction: 생성된 백업 파일의 무결성을 검증하시오.
-  hint: tar tzf로 목록 확인, md5sum으로 체크섬을 생성하세요.
-  category: backup
+  instruction: suricata -T 로 룰 문법을 검증하시오.
+  hint: sudo suricata -T
+  category: verify
   points: 10
-  answer: sudo tar tzf /backup/etc_full_*.tar.gz | wc -l && md5sum /backup/etc_full_*.tar.gz | sudo tee /backup/checksums.md5
-  answer_detail: tar tzf로 아카이브 내용을 확인하고, md5sum으로 체크섬을 생성하여 백업 무결성을 검증합니다.
+  answer: sudo suricata -T -c /etc/suricata/suricata.yaml 2>&1 | tail -5
+  answer_detail: 'Suricata 룰 작성: suricata -T 로 룰 문법을 검증하시오.'
   verify:
     type: output_contains
-    expect: etc_full
+    expect: configuration
     field: stdout
   target_vm: secu
 - order: 5
-  instruction: rsync를 사용하여 /home 디렉터리를 /backup/home_mirror/에 미러링하시오.
-  hint: rsync -avz 옵션을 사용하세요.
-  category: backup
-  points: 12
-  answer: sudo rsync -avz /home/ /backup/home_mirror/ 2>/dev/null && echo '미러링 완료'
-  answer_detail: rsync -a는 아카이브 모드(퍼미션, 소유자 보존), -v는 상세출력, -z는 압축 전송입니다.
+  instruction: Suricata를 재로드하시오.
+  hint: systemctl reload suricata
+  category: configure
+  points: 10
+  answer: sudo systemctl reload suricata && systemctl is-active suricata
+  answer_detail: 'Suricata 룰 작성: Suricata를 재로드하시오.'
   verify:
     type: output_contains
-    expect: 미러링 완료
+    expect: active
     field: stdout
   target_vm: secu
 - order: 6
-  instruction: '증분 백업을 위한 find 기반 백업을 구현하시오: 최근 24시간 내 변경된 파일만 백업.'
-  hint: find -newer 또는 -mtime 옵션을 사용하세요.
-  category: backup
-  points: 12
-  answer: sudo find /etc -mtime -1 -type f | sudo tar czf /backup/etc_incr_$(date +%Y%m%d).tar.gz -T - 2>/dev/null && ls -lh /backup/etc_incr_*.tar.gz
-  answer_detail: -mtime -1은 24시간 이내 수정된 파일을 찾습니다. -T -는 표준입력에서 파일 목록을 읽습니다.
-  verify:
-    type: output_contains
-    expect: etc_incr
-    field: stdout
-  target_vm: secu
-- order: 7
-  instruction: crontab에 매일 새벽 2시 전체 백업을 스케줄링하시오.
-  hint: crontab -e를 사용하세요.
-  category: backup
+  instruction: attacker VM에서 web VM으로 User-Agent BadBot 이 포함된 curl 요청을 보내시오.
+  hint: curl -A BadBot http://10.20.30.80/
+  category: verify
   points: 10
-  answer: echo '0 2 * * * tar czf /backup/etc_daily_$(date +\%Y\%m\%d).tar.gz /etc 2>/dev/null' | sudo tee /etc/cron.d/daily_backup
-  answer_detail: cron의 0 2 * * *는 매일 02:00을 의미합니다. 정기 백업으로 데이터 손실 위험을 최소화합니다.
+  answer: curl -sS -A BadBot http://10.20.30.80/ -o /dev/null && echo sent
+  answer_detail: 'Suricata 룰 작성: attacker VM에서 web VM으로 User-Agent BadBot 이 포함된 curl
+    요청을 보내시오.'
   verify:
     type: output_contains
-    expect: daily_backup
+    expect: sent
+    field: stdout
+  target_vm: attacker
+- order: 7
+  instruction: secu VM eve.json 에서 BadBot 관련 알람을 확인하시오.
+  hint: grep BadBot /var/log/suricata/eve.json
+  category: verify
+  points: 10
+  answer: sudo tail -100 /var/log/suricata/eve.json | grep -i BadBot | head
+  answer_detail: 'Suricata 룰 작성: secu VM eve.json 에서 BadBot 관련 알람을 확인하시오.'
+  verify:
+    type: output_contains
+    expect: BadBot
     field: stdout
   target_vm: secu
 - order: 8
-  instruction: 7일 이상 된 백업 파일을 자동 삭제하는 정리 스크립트를 작성하시오.
-  hint: find -mtime +7 -delete를 사용하세요.
-  category: backup
+  instruction: attacker VM에서 URI에 'union select'을 포함한 HTTP 요청을 보내시오.
+  hint: curl '…?id=1 union select 1,2'
+  category: verify
   points: 10
-  answer: 'echo ''#!/bin/bash
-
-    find /backup -name "*.tar.gz" -mtime +7 -delete
-
-    echo "오래된 백업 정리 완료"'' | sudo tee /backup/cleanup.sh && sudo chmod +x /backup/cleanup.sh'
-  answer_detail: 백업 보존 정책에 따라 오래된 백업을 자동 삭제하여 디스크 공간을 관리합니다.
+  answer: curl -sS 'http://10.20.30.80/?id=1%20union%20select%201,2' -o /dev/null
+    && echo sent
+  answer_detail: 'Suricata 룰 작성: attacker VM에서 URI에 ''union select''을 포함한 HTTP 요청을
+    보내시오.'
   verify:
     type: output_contains
-    expect: cleanup.sh
+    expect: sent
     field: stdout
-  target_vm: secu
+  target_vm: attacker
 - order: 9
-  instruction: 백업 파일에서 특정 파일(/etc/hostname)만 복구하시오.
-  hint: tar --extract 옵션을 사용하세요.
-  category: restore
-  points: 12
-  answer: sudo tar xzf /backup/etc_full_*.tar.gz -C /tmp etc/hostname 2>/dev/null && cat /tmp/etc/hostname && echo '복구 완료'
-  answer_detail: tar에서 특정 파일만 추출하려면 아카이브 내 경로를 지정합니다. -C로 추출 위치를 변경합니다.
+  instruction: secu VM eve.json 에서 SQLi union select 알람을 확인하시오.
+  hint: grep -i 'union' /var/log/suricata/eve.json
+  category: verify
+  points: 10
+  answer: sudo tail -200 /var/log/suricata/eve.json | grep -i 'union select' | head
+  answer_detail: 'Suricata 룰 작성: secu VM eve.json 에서 SQLi union select 알람을 확인하시오.'
   verify:
     type: output_contains
-    expect: 복구 완료
+    expect: union
     field: stdout
   target_vm: secu
 - order: 10
-  instruction: '전체 복구 테스트를 수행하시오: 백업을 /tmp/restore_test/에 복구하고 원본과 비교.'
-  hint: tar xzf와 diff 명령을 사용하세요.
-  category: restore
-  points: 12
-  answer: sudo mkdir -p /tmp/restore_test && sudo tar xzf /backup/etc_full_*.tar.gz -C /tmp/restore_test 2>/dev/null && diff -rq /etc/hostname /tmp/restore_test/etc/hostname 2>/dev/null && echo '복구 검증 완료'
-  answer_detail: 복구 테스트는 백업의 유효성을 검증하는 필수 절차입니다. diff -rq로 원본과 복구본을 비교합니다.
-  verify:
-    type: output_contains
-    expect: 복구 검증 완료
-    field: stdout
-  target_vm: secu
-- order: 11
-  instruction: 데이터베이스(PostgreSQL) 백업을 수행하시오.
-  hint: pg_dump 명령을 사용하세요.
-  category: backup
+  instruction: 추가한 3개 룰을 local.rules 에서 제거하고 suricata를 reload 하시오.
+  hint: sed … sid:100010[1-3]
+  category: cleanup
   points: 10
-  answer: pg_dump -h 127.0.0.1 -U ccc ccc > /tmp/db_backup.sql 2>/dev/null || echo 'DB 백업 시뮬레이션 완료'
-  answer_detail: pg_dump는 PostgreSQL 데이터베이스를 SQL 덤프로 백업합니다. 정기적인 DB 백업은 필수입니다.
+  answer: sudo sed -i '/sid:100010[1-3]/d' /etc/suricata/rules/local.rules && sudo
+    systemctl reload suricata
+  answer_detail: 'Suricata 룰 작성: 추가한 3개 룰을 local.rules 에서 제거하고 suricata를 reload 하시오.'
   verify:
     type: output_contains
-    expect: 백업
+    expect: ''
     field: stdout
   target_vm: secu
-- order: 12
-  instruction: '암호화된 백업을 생성하시오: gpg로 백업 파일을 암호화.'
-  hint: gpg --symmetric 옵션을 사용하세요.
-  category: backup
-  points: 10
-  answer: echo 'backup_encryption_test' > /tmp/test_backup.txt && gpg --batch --passphrase 'backup2026!' --symmetric /tmp/test_backup.txt 2>/dev/null && ls -la /tmp/test_backup.txt.gpg && echo '암호화 백업 완료'
-  answer_detail: gpg --symmetric은 대칭키 암호화를 사용합니다. 백업 암호화로 데이터 유출 시에도 기밀성을 보호합니다.
+- order: 99
+  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
+  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
+  category: multi_task
+  points: 50
   verify:
     type: output_contains
-    expect: 암호화 백업 완료
+    expect: ''
     field: stdout
   target_vm: secu
-- order: 13
-  instruction: 현재 디스크 사용량을 확인하고 백업 저장소 공간이 충분한지 검증하시오.
-  hint: df -h 명령을 사용하세요.
-  category: verification
-  points: 8
-  answer: df -h /backup && echo '=== 백업 저장소 현황 ===' && du -sh /backup/
-  answer_detail: 백업 저장소의 여유 공간을 정기적으로 모니터링하여 백업 실패를 방지합니다.
-  verify:
-    type: output_contains
-    expect: 백업 저장소 현황
-    field: stdout
-  target_vm: secu
-- order: 14
-  instruction: '백업 정책 문서를 작성하시오: RPO, RTO, 백업 주기, 보존 기간을 포함.'
-  hint: /backup/ 에 policy.txt를 작성하세요.
-  category: documentation
-  points: 10
-  answer: 'echo -e ''백업 정책서\n\nRPO: 24시간\nRTO: 4시간\n백업 주기: 전체-주1회, 증분-매일\n보존 기간: 30일\n암호화: 필수\n복구 테스트: 월1회'' | sudo tee /backup/policy.txt'
-  answer_detail: RPO(복구 시점 목표)와 RTO(복구 시간 목표)는 백업 정책의 핵심 지표입니다.
-  verify:
-    type: output_contains
-    expect: RPO
-    field: stdout
-  target_vm: secu
-- order: 15
-  instruction: 백업/복구 종합 점검 보고서를 생성하시오.
-  hint: 백업 파일 목록, 체크섬, 디스크 사용량 등을 포함하세요.
-  category: verification
-  points: 8
-  answer: echo '=== 백업 종합 보고서 ===' && echo '[백업 파일]' && ls -lh /backup/*.tar.gz 2>/dev/null && echo '[체크섬]' && cat /backup/checksums.md5 2>/dev/null && echo '[디스크]' && df -h /backup && echo '=== 보고서 완료
-    ==='
-  answer_detail: 백업 종합 보고서는 감사 증빙과 운영 현황 파악에 필수입니다.
-  verify:
-    type: output_contains
-    expect: 보고서 완료
-    field: stdout
-  target_vm: secu
+  answer: ''
+  answer_detail: ''

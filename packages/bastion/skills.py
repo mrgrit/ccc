@@ -42,10 +42,25 @@ SKILLS: dict[str, dict] = {
         "target_vm": "web",
     },
     "configure_nftables": {
-        "description": "nftables 방화벽 룰 조회/추가/삭제",
+        "description": "nftables 방화벽 관리 — 테이블/체인/set/룰 구조화 조작. 복잡한 이스케이프 없이 개별 서브액션으로 사용",
         "params": {
-            "action": {"type": "string", "enum": ["list", "add", "delete"], "description": "동작", "required": True},
-            "rule": {"type": "string", "description": "추가/삭제할 룰 (예: ip saddr 1.2.3.4 drop)", "required": False},
+            "action": {"type": "string",
+                       "enum": ["list", "list_tables", "list_table",
+                                "add_table", "add_chain", "add_set", "add_element", "add_rule", "insert_rule",
+                                "delete_table", "delete_chain", "delete_element",
+                                "add", "delete", "raw"],
+                       "description": "구조화 서브액션 또는 list/add/delete", "required": True},
+            "family": {"type": "string", "description": "주소 패밀리 (inet/ip/ip6/arp/netdev, 기본 inet)", "required": False},
+            "table": {"type": "string", "description": "테이블 이름", "required": False},
+            "chain": {"type": "string", "description": "체인 이름", "required": False},
+            "set": {"type": "string", "description": "set 이름 (add_set/add_element 용)", "required": False},
+            "set_type": {"type": "string", "description": "set type (예: ipv4_addr)", "required": False},
+            "hook": {"type": "string", "description": "체인 hook (input/output/forward/prerouting/postrouting)", "required": False},
+            "priority": {"type": "integer", "description": "체인 priority (기본 0)", "required": False},
+            "policy": {"type": "string", "description": "체인 기본 정책 (accept/drop)", "required": False},
+            "element": {"type": "string", "description": "add_element/delete_element 의 원소 (예: 10.20.30.1)", "required": False},
+            "rule": {"type": "string", "description": "규칙 본문 (예: 'tcp dport 22 accept')", "required": False},
+            "command": {"type": "string", "description": "action=raw 시 실행할 nft 전체 서브커맨드", "required": False},
         },
         "target_vm": "secu",
         "requires_approval": True,
@@ -344,17 +359,93 @@ def execute_skill(name: str, params: dict[str, Any], vm_ips: dict[str, str],
     elif name == "configure_nftables":
         action = params.get("action", "list")
         ip = vm_ips.get("secu", "")
-        if action == "list":
-            r = run_command(ip, "nft list ruleset", timeout=10)
-        elif action == "add":
-            rule = params.get("rule", "")
-            r = run_command(ip, f"nft add rule inet filter input {rule}", timeout=10)
+        family = params.get("family") or "inet"
+        table = (params.get("table") or "").strip()
+        chain = (params.get("chain") or "").strip()
+        set_name = (params.get("set") or "").strip()
+
+        # LLM이 legacy "add"/"delete" 를 선택했을 때 구조화 서브액션으로 자동 라우팅
+        if action == "add":
+            if params.get("element"):
+                action = "add_element"
+            elif set_name and params.get("set_type"):
+                action = "add_set"
+            elif chain and params.get("rule"):
+                action = "add_rule"
+            elif chain and (params.get("hook") or params.get("policy")):
+                action = "add_chain"
+            elif table and not chain and not params.get("rule"):
+                action = "add_table"
         elif action == "delete":
-            rule = params.get("rule", "")
-            r = run_command(ip, f"nft delete rule inet filter input {rule}", timeout=10)
+            if params.get("element"):
+                action = "delete_element"
+            elif table and not params.get("rule"):
+                action = "delete_table"
+
+        def _q(s: str) -> str:
+            """nft 명령 인자를 bash -c 에 넘길 때 안전하게 싱글쿼트 래핑."""
+            return "'" + s.replace("'", "'\\''") + "'"
+
+        if action in ("list", "list_tables"):
+            cmd = "sudo nft list tables" if action == "list_tables" else "sudo nft list ruleset"
+        elif action == "list_table":
+            cmd = f"sudo nft list table {family} {table}" if table else "sudo nft list ruleset"
+        elif action == "add_table":
+            cmd = f"sudo nft add table {family} {table}"
+        elif action == "add_chain":
+            hook = params.get("hook")
+            priority = params.get("priority", 0)
+            policy = params.get("policy")
+            if hook:
+                body = f"{{ type filter hook {hook} priority {priority} ; "
+                if policy:
+                    body += f"policy {policy} ; "
+                body += "}"
+                cmd = f"sudo nft add chain {family} {table} {chain} {_q(body)}"
+            else:
+                cmd = f"sudo nft add chain {family} {table} {chain}"
+        elif action == "add_set":
+            st = params.get("set_type") or "ipv4_addr"
+            body = f"{{ type {st} ; }}"
+            cmd = f"sudo nft add set {family} {table} {set_name} {_q(body)}"
+        elif action == "add_element":
+            el = (params.get("element") or "").strip()
+            body = f"{{ {el} }}"
+            cmd = f"sudo nft add element {family} {table} {set_name} {_q(body)}"
+        elif action == "delete_element":
+            el = (params.get("element") or "").strip()
+            body = f"{{ {el} }}"
+            cmd = f"sudo nft delete element {family} {table} {set_name} {_q(body)}"
+        elif action == "add_rule":
+            rule = (params.get("rule") or "").strip()
+            cmd = f"sudo nft add rule {family} {table} {chain} {rule}"
+        elif action == "insert_rule":
+            rule = (params.get("rule") or "").strip()
+            cmd = f"sudo nft insert rule {family} {table} {chain} {rule}"
+        elif action == "delete_table":
+            cmd = f"sudo nft delete table {family} {table}"
+        elif action == "delete_chain":
+            cmd = f"sudo nft delete chain {family} {table} {chain}"
+        elif action == "add":
+            rule = (params.get("rule") or "").strip()
+            cmd = f"sudo nft add rule {family} filter input {rule}"
+        elif action == "delete":
+            rule = (params.get("rule") or "").strip()
+            cmd = f"sudo nft delete rule {family} filter input {rule}"
+        elif action == "raw":
+            raw = (params.get("command") or params.get("rule") or "").strip()
+            if not raw:
+                return {"success": False, "output": "", "stderr": "configure_nftables(raw) requires 'command'"}
+            cmd = raw if raw.startswith(("nft ", "sudo ")) else f"sudo nft {raw}"
         else:
             return {"success": False, "error": f"Unknown action: {action}"}
-        return {"success": r.get("exit_code") == 0, "output": r.get("stdout", ""), "stderr": r.get("stderr", "")}
+        r = run_command(ip, cmd, timeout=15)
+        output = r.get("stdout", "") or ""
+        stderr = r.get("stderr", "") or ""
+        success = r.get("exit_code") == 0
+        return {"success": success,
+                "output": output if output else (stderr if not success else ""),
+                "stderr": stderr}
 
     elif name == "analyze_logs":
         target = params.get("target", "siem")

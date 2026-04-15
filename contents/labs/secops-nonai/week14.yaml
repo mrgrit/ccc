@@ -1,289 +1,161 @@
 lab_id: secops-nonai-week14
-title: 보안 자동화 실습
+title: 통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계
 version: non-ai
 course: secops-nonai
 week: 14
-description: 보안 운영 작업을 스크립트와 도구를 활용하여 자동화합니다.
+description: 각 보안 솔루션의 이벤트가 Wazuh SIEM으로 수렴되고 CTI와 연계되는 흐름을 점검한다.
 difficulty: hard
 duration_minutes: 120
 objectives:
-- 보안 점검 자동화 스크립트를 개발한다
-- 자동 대응 체계를 구축한다
-- SOAR 기초 개념을 이해한다
+- Suricata → Wazuh 로 eve.json 이 수집되는지 확인한다
+- ModSecurity → Wazuh 감사 로그 수집 경로를 확인한다
+- CTI → nftables 차단 체인까지 이어지는 end-to-end 흐름을 검증한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 10.20.30.1 서버에서 자동 보안 점검 스크립트 프레임워크를 설계하시오.
-  hint: 함수 기반으로 모듈화하세요.
-  category: automation
+  instruction: secu VM에서 suricata eve.json 이 /var/log/suricata/eve.json 으로 기록되는지 확인하시오.
+  hint: ls -la /var/log/suricata/eve.json
+  category: survey
   points: 10
-  answer: 'echo ''#!/bin/bash
-
-    # 보안 자동 점검 프레임워크
-
-    RESULT_FILE=/tmp/security_scan_$(date +%Y%m%d).json
-
-    PASS=0; FAIL=0
-
-
-    check() { echo "[CHECK] $1"; }
-
-    pass() { echo "  PASS: $1"; ((PASS++)); }
-
-    fail() { echo "  FAIL: $1"; ((FAIL++)); }
-
-
-    echo "프레임워크 초기화 완료"'' > /tmp/sec_framework.sh && chmod +x /tmp/sec_framework.sh && bash /tmp/sec_framework.sh'
-  answer_detail: 모듈화된 점검 프레임워크로 재사용성과 유지보수성을 높입니다.
+  answer: sudo ls -la /var/log/suricata/eve.json 2>/dev/null
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM에서 suricata eve.json 이
+    /var/log/suricata/eve.json 으로 기록되는지 확인하시오.'
   verify:
     type: output_contains
-    expect: 프레임워크 초기화 완료
+    expect: eve.json
     field: stdout
   target_vm: secu
 - order: 2
-  instruction: 패스워드 정책 자동 점검 함수를 구현하시오.
-  hint: pwquality.conf 값을 파싱하여 기준과 비교하세요.
-  category: automation
+  instruction: secu VM에 wazuh-agent 가 설치되어 있는지 확인하시오.
+  hint: systemctl is-active wazuh-agent
+  category: survey
   points: 10
-  answer: "echo '#!/bin/bash\ncheck_password_policy() {\n  MINLEN=$(grep -oP \"minlen = \\K\\d+\" /etc/security/pwquality.conf 2>/dev/null || echo 0)\n  if [ \"$MINLEN\" -ge 12 ]; then\n    echo \"PASS:\
-    \ 패스워드 최소길이 $MINLEN (기준: 12)\"\n  else\n    echo \"FAIL: 패스워드 최소길이 $MINLEN (기준: 12)\"\n  fi\n}\ncheck_password_policy' > /tmp/check_pwd.sh && bash /tmp/check_pwd.sh"
-  answer_detail: 자동 점검 함수는 설정 값을 파싱하고 기준값과 비교하여 PASS/FAIL을 판정합니다.
+  answer: systemctl is-active wazuh-agent || /var/ossec/bin/wazuh-control status 2>/dev/null
+    | head
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM에 wazuh-agent 가 설치되어 있는지
+    확인하시오.'
   verify:
     type: output_contains
-    expect: 패스워드 최소길이
+    expect: wazuh
     field: stdout
   target_vm: secu
 - order: 3
-  instruction: SSH 브루트포스 자동 차단 스크립트를 작성하시오.
-  hint: auth.log에서 실패 횟수를 카운트하고 nftables로 차단하세요.
-  category: auto_response
-  points: 15
-  answer: "echo '#!/bin/bash\nTHRESHOLD=10\nLOG=/var/log/auth.log\necho \"=== SSH 브루트포스 자동 차단 ===\"\nsudo grep \"Failed password\" $LOG 2>/dev/null | awk \"{print \\$(NF-3)}\" | sort | uniq -c | sort -rn\
-    \ | while read count ip; do\n  if [ \"$count\" -gt $THRESHOLD ]; then\n    echo \"차단: $ip ($count회 실패)\"\n  fi\ndone\necho \"자동 차단 스크립트 완료\"' > /tmp/auto_block.sh && bash /tmp/auto_block.sh"
-  answer_detail: 자동 차단 스크립트는 SOAR의 기본 개념으로, 탐지-판단-대응을 자동화합니다.
+  instruction: secu VM 의 ossec.conf 에서 eve.json 을 수집하는 <localfile> 설정을 확인하시오.
+  hint: grep eve.json /var/ossec/etc/ossec.conf
+  category: survey
+  points: 10
+  answer: sudo grep -A2 -B1 eve.json /var/ossec/etc/ossec.conf 2>/dev/null | head
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM 의 ossec.conf 에서 eve.json
+    을 수집하는 <localfile> 설정을 확인하시오.'
   verify:
     type: output_contains
-    expect: 자동 차단 스크립트 완료
+    expect: eve.json
     field: stdout
   target_vm: secu
 - order: 4
-  instruction: 파일 무결성 자동 점검 스크립트를 작성하시오.
-  hint: 주요 파일의 해시를 비교하세요.
-  category: automation
-  points: 12
-  answer: "echo '#!/bin/bash\nBASELINE=/tmp/baseline_hashes.txt\nCURRENT=/tmp/current_hashes.txt\nFILES=\"/usr/bin/ssh /usr/bin/sudo /usr/bin/passwd\"\nfor f in $FILES; do sha256sum $f 2>/dev/null; done\
-    \ > $CURRENT\nif [ -f $BASELINE ]; then\n  diff $BASELINE $CURRENT && echo \"무결성: 정상\" || echo \"경고: 변조 탐지\"\nelse\n  cp $CURRENT $BASELINE\n  echo \"기준선 생성 완료\"\nfi' > /tmp/integrity_check.sh && bash\
-    \ /tmp/integrity_check.sh"
-  answer_detail: 기준선 해시와 현재 해시를 비교하여 파일 변조를 자동 탐지합니다.
+  instruction: siem VM에서 attacker IP(10.20.30.201)에 대한 최근 wazuh alert를 조회하시오.
+  hint: grep 10.20.30.201 alerts.json
+  category: verify
+  points: 10
+  answer: sudo grep 10.20.30.201 /var/ossec/logs/alerts/alerts.json 2>/dev/null |
+    tail -3
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: siem VM에서 attacker IP(10.20.30.201)에
+    대한 최근 wazuh alert를 조회하시오.'
   verify:
     type: output_contains
-    expect: 기준선 생성 완료
+    expect: ''
     field: stdout
-  target_vm: secu
+  target_vm: siem
 - order: 5
-  instruction: '보안 이벤트 알림 자동화를 구현하시오: 이메일/Slack 발송 시뮬레이션.'
-  hint: curl로 webhook을 호출하는 형태로 구현하세요.
-  category: alerting
+  instruction: web VM의 ossec.conf 에서 modsec_audit.log 수집 설정을 확인하시오.
+  hint: grep modsec_audit ossec.conf
+  category: survey
   points: 10
-  answer: "echo '#!/bin/bash\nsend_alert() {\n  SEVERITY=$1\n  MESSAGE=$2\n  TIMESTAMP=$(date -Iseconds)\n  echo \"{\\\"severity\\\":\\\"$SEVERITY\\\",\\\"message\\\":\\\"$MESSAGE\\\",\\\"time\\\":\\\"\
-    $TIMESTAMP\\\"}\"\n}\nsend_alert \"HIGH\" \"SSH 브루트포스 탐지: 10회 이상 실패\"\necho \"알림 발송 시뮬레이션 완료\"' > /tmp/alert_sim.sh && bash /tmp/alert_sim.sh"
-  answer_detail: 보안 이벤트 알림을 자동화하여 대응 시간을 단축합니다.
+  answer: sudo grep -B1 -A2 modsec_audit /var/ossec/etc/ossec.conf 2>/dev/null | head
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: web VM의 ossec.conf 에서 modsec_audit.log
+    수집 설정을 확인하시오.'
   verify:
     type: output_contains
-    expect: 알림 발송 시뮬레이션 완료
+    expect: modsec
     field: stdout
-  target_vm: secu
+  target_vm: web
 - order: 6
-  instruction: '로그 수집 자동화 스크립트를 작성하시오: 여러 서버의 로그를 중앙 수집.'
-  hint: rsync로 원격 로그를 수집하세요.
-  category: automation
+  instruction: attacker VM에서 '<script>alert(1)</script>' payload로 web VM에 요청을 보내 전체
+    체인을 트리거하시오.
+  hint: curl …
+  category: verify
   points: 10
-  answer: "echo '#!/bin/bash\nSERVERS=\"10.20.30.1 10.20.30.80 10.20.30.100\"\nLOG_DIR=/tmp/central_logs\nmkdir -p $LOG_DIR\nfor srv in $SERVERS; do\n  echo \"수집: $srv\"\n  mkdir -p $LOG_DIR/$srv\ndone\n\
-    echo \"로그 수집 자동화 완료\"' > /tmp/log_collect.sh && bash /tmp/log_collect.sh"
-  answer_detail: 중앙 로그 수집은 보안 모니터링의 기반입니다.
+  answer: curl -sS -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80/?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: attacker VM에서 ''<script>alert(1)</script>''
+    payload로 web VM에 요청을 보내 전체 체인을 트리거하시오.'
   verify:
     type: output_contains
-    expect: 로그 수집 자동화 완료
+    expect: ''
     field: stdout
-  target_vm: secu
+  target_vm: attacker
 - order: 7
-  instruction: '취약점 스캔 자동화를 구현하시오: 주기적 nmap 스캔.'
-  hint: 대상 네트워크를 스캔하고 결과를 저장하세요.
-  category: automation
+  instruction: siem VM alerts.json 에서 XSS 또는 Cross-Site 관련 이벤트를 검색하시오.
+  hint: grep -i xss alerts.json
+  category: analysis
   points: 10
-  answer: 'echo ''#!/bin/bash
-
-    TARGET="10.20.30.0/24"
-
-    OUTFILE=/tmp/vuln_scan_$(date +%Y%m%d).txt
-
-    echo "대상: $TARGET" > $OUTFILE
-
-    echo "일시: $(date)" >> $OUTFILE
-
-    nmap -sV -p 22,80,443 10.20.30.1 >> $OUTFILE 2>/dev/null
-
-    echo "취약점 스캔 자동화 완료"'' > /tmp/vuln_scan.sh && bash /tmp/vuln_scan.sh'
-  answer_detail: 정기적인 취약점 스캔 자동화로 새로운 취약점을 조기에 발견합니다.
+  answer: sudo grep -iE 'XSS|Cross-Site|script' /var/ossec/logs/alerts/alerts.json
+    2>/dev/null | tail -3
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: siem VM alerts.json 에서 XSS 또는
+    Cross-Site 관련 이벤트를 검색하시오.'
   verify:
     type: output_contains
-    expect: 취약점 스캔 자동화 완료
+    expect: ''
     field: stdout
-  target_vm: secu
+  target_vm: siem
 - order: 8
-  instruction: '계정 관리 자동화: 비활성 계정 자동 잠금 스크립트를 작성하시오.'
-  hint: lastlog를 파싱하여 90일 미접속 계정을 잠그세요.
-  category: automation
-  points: 12
-  answer: "echo '#!/bin/bash\necho \"=== 비활성 계정 자동 잠금 ===\"\nlastlog -b 90 2>/dev/null | awk \"NR>1 {print \\$1}\" | while read user; do\n  if id \"$user\" &>/dev/null && [ $(id -u \"$user\") -ge 1000 ];\
-    \ then\n    echo \"잠금 대상: $user\"\n  fi\ndone\necho \"비활성 계정 점검 완료\"' > /tmp/lock_inactive.sh && bash /tmp/lock_inactive.sh"
-  answer_detail: 비활성 계정 자동 잠금으로 방치된 계정의 보안 위험을 줄입니다.
+  instruction: secu VM nftables 의 전체 테이블 목록에서 filter/blocklist/cti_ips 관련 상태를 확인하시오.
+  hint: nft list tables
+  category: analysis
+  points: 10
+  answer: sudo nft list tables
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM nftables 의 전체 테이블 목록에서
+    filter/blocklist/cti_ips 관련 상태를 확인하시오.'
   verify:
     type: output_contains
-    expect: 비활성 계정 점검 완료
+    expect: filter
     field: stdout
   target_vm: secu
 - order: 9
-  instruction: 보안 설정 드리프트 탐지 자동화를 구현하시오.
-  hint: 기준 설정과 현재 설정을 비교하세요.
-  category: automation
-  points: 12
-  answer: 'echo ''#!/bin/bash
-
-    BASELINE=/tmp/config_baseline
-
-    mkdir -p $BASELINE
-
-    cp /etc/ssh/sshd_config $BASELINE/ 2>/dev/null
-
-    diff /etc/ssh/sshd_config $BASELINE/sshd_config 2>/dev/null && echo "설정 드리프트 없음" || echo "경고: 설정 변경 탐지"
-
-    echo "드리프트 탐지 완료"'' > /tmp/drift_check.sh && bash /tmp/drift_check.sh'
-  answer_detail: 설정 드리프트 탐지는 의도하지 않은 보안 설정 변경을 자동으로 감지합니다.
+  instruction: secu VM의 Suricata 서비스와 wazuh-agent 서비스 모두 active 인지 확인하시오.
+  hint: systemctl is-active …
+  category: verify
+  points: 10
+  answer: systemctl is-active suricata wazuh-agent 2>&1
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM의 Suricata 서비스와 wazuh-agent
+    서비스 모두 active 인지 확인하시오.'
   verify:
     type: output_contains
-    expect: 드리프트 탐지 완료
+    expect: active
     field: stdout
   target_vm: secu
 - order: 10
-  instruction: 보안 보고서 자동 생성 스크립트를 작성하시오.
-  hint: 점검 결과를 종합하여 HTML 또는 텍스트 보고서를 생성하세요.
+  instruction: siem VM alerts.json 의 최근 100건에서 rule.level 별 분포를 집계하시오.
+  hint: jq '.rule.level' …
   category: reporting
   points: 10
-  answer: 'echo ''#!/bin/bash
-
-    echo "=== 일일 보안 보고서 ==="
-
-    echo "일시: $(date)"
-
-    echo "서버: $(hostname)"
-
-    echo ""
-
-    echo "[패스워드 정책] 준수"
-
-    echo "[방화벽] 활성"
-
-    echo "[감사 로그] 활성"
-
-    echo "[열린 포트] $(ss -tlnp | grep -c LISTEN)개"
-
-    echo "[실행 서비스] $(systemctl list-units --type=service --state=running --no-pager | grep -c running)개"
-
-    echo ""
-
-    echo "보고서 생성 완료"'' > /tmp/daily_report.sh && bash /tmp/daily_report.sh'
-  answer_detail: 일일 보안 보고서 자동 생성으로 운영 효율을 높입니다.
+  answer: sudo tail -100 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.rule.level'
+    2>/dev/null | sort | uniq -c
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: siem VM alerts.json 의 최근 100건에서
+    rule.level 별 분포를 집계하시오.'
   verify:
     type: output_contains
-    expect: 보고서 생성 완료
+    expect: ''
     field: stdout
-  target_vm: secu
-- order: 11
-  instruction: 전체 자동화 스크립트를 cron에 등록하시오.
-  hint: 매일 새벽 1시에 실행되도록 설정하세요.
-  category: scheduling
-  points: 8
-  answer: echo '0 1 * * * /tmp/daily_report.sh > /tmp/daily_report_$(date +\%Y\%m\%d).txt 2>&1' | sudo tee /etc/cron.d/security_automation && echo '자동화 스케줄 설정 완료'
-  answer_detail: cron으로 보안 점검을 스케줄링하여 무인 자동화를 구현합니다.
+  target_vm: siem
+- order: 99
+  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
+  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
+  category: multi_task
+  points: 50
   verify:
     type: output_contains
-    expect: 자동화 스케줄 설정 완료
+    expect: ''
     field: stdout
   target_vm: secu
-- order: 12
-  instruction: '자동화 실행 로그를 관리하시오: 실행 이력 기록.'
-  hint: 실행 시간, 결과, 에러를 로그 파일에 기록하세요.
-  category: logging
-  points: 8
-  answer: 'echo ''#!/bin/bash
-
-    LOGFILE=/tmp/automation.log
-
-    log() { echo "$(date -Iseconds) [$1] $2" >> $LOGFILE; }
-
-    log INFO "자동화 작업 시작"
-
-    log INFO "패스워드 점검 완료"
-
-    log INFO "무결성 점검 완료"
-
-    log INFO "자동화 작업 종료"
-
-    cat $LOGFILE'' > /tmp/auto_log.sh && bash /tmp/auto_log.sh'
-  answer_detail: 자동화 실행 이력을 로그로 관리하여 추적성을 확보합니다.
-  verify:
-    type: output_contains
-    expect: 자동화 작업 종료
-    field: stdout
-  target_vm: secu
-- order: 13
-  instruction: '자동화 성능 측정: 각 점검 항목의 실행 시간을 측정하시오.'
-  hint: time 명령 또는 date 차이를 사용하세요.
-  category: performance
-  points: 8
-  answer: 'echo ''#!/bin/bash
-
-    START=$(date +%s%N)
-
-    ss -tlnp > /dev/null
-
-    END=$(date +%s%N)
-
-    ELAPSED=$(( (END - START) / 1000000 ))
-
-    echo "포트 스캔: ${ELAPSED}ms"
-
-    echo "성능 측정 완료"'' > /tmp/perf_test.sh && bash /tmp/perf_test.sh'
-  answer_detail: 자동화 스크립트의 실행 시간을 측정하여 최적화 대상을 식별합니다.
-  verify:
-    type: output_contains
-    expect: 성능 측정 완료
-    field: stdout
-  target_vm: secu
-- order: 14
-  instruction: Ansible playbook 형태로 보안 설정 자동화를 설계하시오(시뮬레이션).
-  hint: YAML 형식의 playbook 구조를 작성하세요.
-  category: iac
-  points: 10
-  answer: 'echo -e ''---\n- name: 보안 강화 Playbook\n  hosts: all\n  tasks:\n    - name: 패스워드 정책 설정\n      lineinfile:\n        path: /etc/security/pwquality.conf\n        regexp: "^minlen"\n        line:
-    "minlen = 12"\n    - name: SSH root 로그인 차단\n      lineinfile:\n        path: /etc/ssh/sshd_config\n        regexp: "^PermitRootLogin"\n        line: "PermitRootLogin no"'' | tee /tmp/hardening.yml &&
-    echo ''Ansible playbook 작성 완료'''
-  answer_detail: Infrastructure as Code(IaC)를 통해 보안 설정을 일관성 있게 자동 배포합니다.
-  verify:
-    type: output_contains
-    expect: Ansible playbook 작성 완료
-    field: stdout
-  target_vm: secu
-- order: 15
-  instruction: 보안 자동화 종합 보고서를 생성하시오.
-  hint: 자동화된 항목, 커버리지, 효과를 포함하세요.
-  category: verification
-  points: 15
-  answer: 'echo ''=== 보안 자동화 종합 보고서 ==='' && echo ''자동화 항목: 10개'' && echo ''커버리지: 80%'' && echo ''수동 작업 감소: 60%'' && echo ''평균 점검 시간: 5분'' && echo ''=== 보고서 완료 ==='''
-  answer_detail: 보안 자동화의 효과를 정량적으로 측정하여 투자 대비 효과를 입증합니다.
-  verify:
-    type: output_contains
-    expect: 보고서 완료
-    field: stdout
-  target_vm: secu
+  answer: ''
+  answer_detail: ''

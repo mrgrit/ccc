@@ -1,336 +1,206 @@
 lab_id: secops-ai-week13
-title: 컴플라이언스 실습 (AI 지원)
+title: OpenCTI 위협 인텔리전스 활용 (AI 지원)
 version: ai
 course: secops-ai
 week: 13
-description: ISMS-P, PCI-DSS, GDPR 등 주요 보안 컴플라이언스 프레임워크의 기술적 요구사항을 점검합니다. AI SubAgent가
-  자동으로 명령을 실행하고 결과를 검증합니다.
-difficulty: hard
+description: OpenCTI에 CTI feed를 연동하고 IOC(악성 IP)를 nftables blocklist 와 연계한다.
+difficulty: medium
 duration_minutes: 120
 objectives:
-- 주요 컴플라이언스 프레임워크의 기술적 요구사항을 이해한다
-- 컴플라이언스 점검을 자동화한다
-- 증빙 자료를 수집하고 문서화한다
+- OpenCTI GraphQL API 구조를 이해한다
+- IOC를 조회해 nftables set에 주입하는 파이프라인을 설계한다
+- CTI 기반 차단 룰이 적용되는 것을 검증한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 10.20.30.1 서버에서 ISMS-P 2.6.1 접근통제 요구사항을 점검하시오.
-  hint: 패스워드 정책, 계정 잠금 정책을 확인하세요.
-  category: compliance
+  instruction: OpenCTI GraphQL 엔드포인트(/graphql) 가 응답하는지 확인하시오.
+  hint: curl -X POST /graphql
+  category: survey
   points: 10
-  answer: echo '[ISMS-P 2.6.1 접근통제]' && grep -E '(minlen|ucredit|lcredit|dcredit)'
-    /etc/security/pwquality.conf 2>/dev/null && grep PASS_MAX_DAYS /etc/login.defs
-    && echo 'ISMS-P 접근통제 점검 완료'
-  answer_detail: ISMS-P 2.6.1은 식별/인증, 접근권한 관리, 접근통제 영역을 요구합니다.
+  answer: 'curl -sS -o /dev/null -w ''%{http_code}\n'' -X POST http://localhost:8080/graphql
+    -H ''Content-Type: application/json'' -d ''{"query":"{ about { version } }"}'''
+  answer_detail: 'OpenCTI 위협 인텔리전스 활용: OpenCTI GraphQL 엔드포인트(/graphql) 가 응답하는지 확인하시오.'
   verify:
     type: output_contains
-    expect: ISMS-P 접근통제 점검 완료
+    expect: ''
     field: stdout
-  target_vm: secu
-  script: echo '[ISMS-P 2.6.1 접근통제]' && grep -E '(minlen|ucredit|lcredit|dcredit)'
-    /etc/security/pwquality.conf 2>/dev/null && grep PASS_MAX_DAYS /etc/login.defs
-    && echo 'ISMS-P 접근통제 점검 완료'
+  target_vm: siem
+  script: 'curl -sS -o /dev/null -w ''%{http_code}\n'' -X POST http://localhost:8080/graphql
+    -H ''Content-Type: application/json'' -d ''{"query":"{ about { version } }"}'''
   risk_level: low
-  bastion_prompt: 10.20.30.1 서버에서 ISMS-P 2.6.1 접근통제 요구사항을 점검해줘
+  bastion_prompt: siem VM의 OpenCTI /graphql 엔드포인트에 POST 테스트 요청을 보내 응답 코드를 보여줘
 - order: 2
-  instruction: 개인정보 암호화 요구사항(ISMS-P 2.7.1)을 점검하시오.
-  hint: DB 연결 암호화, 파일 암호화 상태를 확인하세요.
-  category: compliance
+  instruction: secu VM에 cti 전용 blocklist set 'cti_ips'(filter 테이블) 를 만드시오.
+  hint: nft add set inet filter cti_ips
+  category: configure
   points: 10
-  answer: echo '[암호화 점검]' && openssl version && echo '[TLS 설정]' && grep -r 'ssl' /etc/postgresql/
-    2>/dev/null | head -5 && echo 'ISMS-P 암호화 점검 완료'
-  answer_detail: ISMS-P 2.7.1은 개인정보의 전송 시 암호화와 저장 시 암호화를 요구합니다.
+  answer: sudo nft add table inet filter 2>/dev/null ; sudo nft 'add set inet filter
+    cti_ips { type ipv4_addr \; }' 2>/dev/null && sudo nft list set inet filter cti_ips
+  answer_detail: 'OpenCTI 위협 인텔리전스 활용: secu VM에 cti 전용 blocklist set ''cti_ips''(filter
+    테이블) 를 만드시오.'
   verify:
     type: output_contains
-    expect: ISMS-P 암호화 점검 완료
+    expect: cti_ips
     field: stdout
   target_vm: secu
-  script: echo '[암호화 점검]' && openssl version && echo '[TLS 설정]' && grep -r 'ssl' /etc/postgresql/
-    2>/dev/null | head -5 && echo 'ISMS-P 암호화 점검 완료'
-  risk_level: low
-  bastion_prompt: 개인정보 암호화 요구사항(ISMS-P 2.7.1)을 점검해줘
+  script: sudo nft add table inet filter 2>/dev/null ; sudo nft 'add set inet filter
+    cti_ips { type ipv4_addr \; }' 2>/dev/null && sudo nft list set inet filter cti_ips
+  risk_level: medium
+  bastion_prompt: secu VM에 filter.cti_ips ipv4 set을 생성해줘
 - order: 3
-  instruction: 로그 관리 요구사항(ISMS-P 2.9.4)을 점검하시오.
-  hint: 감사 로그 설정, 보존 기간, 무결성 보호를 확인하세요.
-  category: compliance
+  instruction: filter.input 체인 초기에 ip saddr @cti_ips drop 룰을 추가하시오.
+  hint: nft insert rule …
+  category: configure
   points: 10
-  answer: echo '[로그 관리]' && sudo systemctl is-active auditd 2>/dev/null && echo '[보존
-    설정]' && cat /etc/logrotate.d/rsyslog 2>/dev/null | head -5 && echo 'ISMS-P 로그
-    관리 점검 완료'
-  answer_detail: ISMS-P 2.9.4는 접근 기록의 저장, 보호, 점검을 요구합니다. 최소 6개월 보존이 필수입니다.
+  answer: sudo nft add chain inet filter input '{ type filter hook input priority
+    0 \; }' 2>/dev/null ; sudo nft insert rule inet filter input ip saddr @cti_ips
+    drop
+  answer_detail: 'OpenCTI 위협 인텔리전스 활용: filter.input 체인 초기에 ip saddr @cti_ips drop
+    룰을 추가하시오.'
   verify:
     type: output_contains
-    expect: ISMS-P 로그 관리 점검 완료
+    expect: cti_ips
     field: stdout
   target_vm: secu
-  script: echo '[로그 관리]' && sudo systemctl is-active auditd 2>/dev/null && echo '[보존
-    설정]' && cat /etc/logrotate.d/rsyslog 2>/dev/null | head -5 && echo 'ISMS-P 로그
-    관리 점검 완료'
-  risk_level: low
-  bastion_prompt: 로그 관리 요구사항(ISMS-P 2.9.4)을 점검해줘
+  script: sudo nft add chain inet filter input '{ type filter hook input priority
+    0 \; }' 2>/dev/null ; sudo nft insert rule inet filter input ip saddr @cti_ips
+    drop
+  risk_level: medium
+  bastion_prompt: secu VM filter.input 체인 맨 앞에 @cti_ips set 기반 drop 룰을 추가해줘
 - order: 4
-  instruction: 'PCI-DSS 요구사항 2: 기본 패스워드 변경 여부를 점검하시오.'
-  hint: 시스템 기본 계정의 패스워드 변경 여부를 확인하세요.
-  category: compliance
+  instruction: 작성한 cti_ips set의 현재 원소를 확인하시오.
+  hint: nft list set inet filter cti_ips
+  category: verify
   points: 10
-  answer: 'echo ''[PCI-DSS Req 2]'' && sudo awk -F: ''($3 >= 1000) {print $1, $2}''
-    /etc/shadow | while read u p; do echo "$u: $([ -z "$p" ] && echo ''NO_PASS'' ||
-    echo ''SET'')"; done && echo ''PCI-DSS 패스워드 점검 완료'''
-  answer_detail: PCI-DSS 요구사항 2는 벤더 제공 기본값(패스워드, 설정 등)을 변경하도록 요구합니다.
+  answer: sudo nft list set inet filter cti_ips
+  answer_detail: 'OpenCTI 위협 인텔리전스 활용: 작성한 cti_ips set의 현재 원소를 확인하시오.'
   verify:
     type: output_contains
-    expect: PCI-DSS 패스워드 점검 완료
+    expect: cti_ips
     field: stdout
   target_vm: secu
-  script: 'echo ''[PCI-DSS Req 2]'' && sudo awk -F: ''($3 >= 1000) {print $1, $2}''
-    /etc/shadow | while read u p; do echo "$u: $([ -z "$p" ] && echo ''NO_PASS'' ||
-    echo ''SET'')"; done && echo ''PCI-DSS 패스워드 점검 완료'''
+  script: sudo nft list set inet filter cti_ips
   risk_level: low
-  bastion_prompt: 'PCI-DSS 요구사항 2: 기본 패스워드 변경 여부를 점검해줘'
+  bastion_prompt: secu VM filter.cti_ips set의 원소 목록을 확인해줘
 - order: 5
-  instruction: 'PCI-DSS 요구사항 6: 보안 패치 적용 현황을 점검하시오.'
-  hint: 미적용 보안 패치 목록을 확인하세요.
-  category: compliance
+  instruction: 샘플 악성 IP 203.0.113.66 을 cti_ips 에 주입하시오(OpenCTI 조회 결과를 가정).
+  hint: nft add element inet filter cti_ips { 203.0.113.66 }
+  category: configure
   points: 10
-  answer: echo '[PCI-DSS Req 6 패치]' && apt list --upgradable 2>/dev/null | head -10
-    && echo 'PCI-DSS 패치 점검 완료'
-  answer_detail: PCI-DSS 요구사항 6은 알려진 취약점에 대한 보안 패치를 1개월 내 적용하도록 요구합니다.
+  answer: sudo nft add element inet filter cti_ips '{ 203.0.113.66 }' && sudo nft
+    list set inet filter cti_ips
+  answer_detail: 'OpenCTI 위협 인텔리전스 활용: 샘플 악성 IP 203.0.113.66 을 cti_ips 에 주입하시오(OpenCTI
+    조회 결과를 가정).'
   verify:
     type: output_contains
-    expect: PCI-DSS 패치 점검 완료
+    expect: 203.0.113.66
     field: stdout
   target_vm: secu
-  script: echo '[PCI-DSS Req 6 패치]' && apt list --upgradable 2>/dev/null | head -10
-    && echo 'PCI-DSS 패치 점검 완료'
-  risk_level: low
-  bastion_prompt: 'PCI-DSS 요구사항 6: 보안 패치 적용 현황을 점검해줘'
+  script: sudo nft add element inet filter cti_ips '{ 203.0.113.66 }' && sudo nft
+    list set inet filter cti_ips
+  risk_level: medium
+  bastion_prompt: secu VM filter.cti_ips set에 203.0.113.66을 추가해줘
 - order: 6
-  instruction: 'PCI-DSS 요구사항 8: 인증 관리를 점검하시오.'
-  hint: MFA, 패스워드 복잡도, 세션 타임아웃을 확인하세요.
-  category: compliance
+  instruction: 203.0.113.66 가 blocklist 로 등록됐는지 확인하시오.
+  hint: nft list set inet filter cti_ips
+  category: verify
   points: 10
-  answer: echo '[PCI-DSS Req 8 인증]' && grep -c 'pam_google_authenticator\|pam_oath'
-    /etc/pam.d/* 2>/dev/null && grep TMOUT /etc/profile /etc/bash.bashrc 2>/dev/null
-    && echo 'PCI-DSS 인증 점검 완료'
-  answer_detail: PCI-DSS 요구사항 8은 고유 ID 할당, MFA, 패스워드 복잡도, 비활성 세션 종료를 요구합니다.
+  answer: sudo nft list set inet filter cti_ips
+  answer_detail: 'OpenCTI 위협 인텔리전스 활용: 203.0.113.66 가 blocklist 로 등록됐는지 확인하시오.'
   verify:
     type: output_contains
-    expect: PCI-DSS 인증 점검 완료
+    expect: 203.0.113.66
     field: stdout
   target_vm: secu
-  script: echo '[PCI-DSS Req 8 인증]' && grep -c 'pam_google_authenticator\|pam_oath'
-    /etc/pam.d/* 2>/dev/null && grep TMOUT /etc/profile /etc/bash.bashrc 2>/dev/null
-    && echo 'PCI-DSS 인증 점검 완료'
+  script: sudo nft list set inet filter cti_ips
   risk_level: low
-  bastion_prompt: 'PCI-DSS 요구사항 8: 인증 관리를 점검해줘'
+  bastion_prompt: secu VM filter.cti_ips set의 내용을 다시 확인해줘
 - order: 7
-  instruction: 'PCI-DSS 요구사항 10: 로그/감사 추적을 점검하시오.'
-  hint: 모든 시스템 접근 로그가 기록되는지 확인하세요.
-  category: compliance
+  instruction: OpenCTI 컨테이너에서 최근 5개 Indicator 생성 이벤트 로그를 조회하시오(platform 컨테이너 로그).
+  hint: docker logs | grep Indicator
+  category: analysis
   points: 10
-  answer: echo '[PCI-DSS Req 10 감사]' && sudo auditctl -l 2>/dev/null | wc -l && ls
-    -la /var/log/auth.log 2>/dev/null && echo 'PCI-DSS 감사 점검 완료'
-  answer_detail: PCI-DSS 요구사항 10은 모든 시스템 구성요소에 대한 접근을 추적하고 모니터링하도록 요구합니다.
+  answer: docker logs --tail 200 $(docker ps --format '{{.Names}}' | grep -i '^opencti$'
+    | head -1) 2>&1 | grep -i indicator | tail -5
+  answer_detail: 'OpenCTI 위협 인텔리전스 활용: OpenCTI 컨테이너에서 최근 5개 Indicator 생성 이벤트 로그를 조회하시오(platform
+    컨테이너 로그).'
   verify:
     type: output_contains
-    expect: PCI-DSS 감사 점검 완료
+    expect: ''
     field: stdout
-  target_vm: secu
-  script: echo '[PCI-DSS Req 10 감사]' && sudo auditctl -l 2>/dev/null | wc -l && ls
-    -la /var/log/auth.log 2>/dev/null && echo 'PCI-DSS 감사 점검 완료'
+  target_vm: siem
+  script: docker logs --tail 200 $(docker ps --format '{{.Names}}' | grep -i '^opencti$'
+    | head -1) 2>&1 | grep -i indicator | tail -5
   risk_level: low
-  bastion_prompt: 'PCI-DSS 요구사항 10: 로그/감사 추적을 점검해줘'
+  bastion_prompt: siem VM의 OpenCTI 플랫폼 로그에서 Indicator 관련 로그 최근 5건을 보여줘
 - order: 8
-  instruction: 'GDPR 기술적 조치: 데이터 암호화 상태를 점검하시오.'
-  hint: 전송 암호화(TLS)와 저장 암호화 상태를 확인하세요.
-  category: compliance
+  instruction: OpenCTI connectors 컨테이너 목록을 확인하시오.
+  hint: docker ps | grep connector
+  category: survey
   points: 10
-  answer: 'echo ''[GDPR 암호화]'' && echo ''전송: TLS'' && openssl s_client -connect 10.20.30.80:443
-    < /dev/null 2>/dev/null | grep ''Protocol'' && echo ''저장: 확인 필요'' && echo ''GDPR
-    암호화 점검 완료'''
-  answer_detail: GDPR Article 32는 개인정보의 암호화를 포함한 적절한 기술적 보호조치를 요구합니다.
+  answer: docker ps --format '{{.Names}}\t{{.Status}}' 2>/dev/null | grep -i connector
+    | head
+  answer_detail: 'OpenCTI 위협 인텔리전스 활용: OpenCTI connectors 컨테이너 목록을 확인하시오.'
   verify:
     type: output_contains
-    expect: GDPR 암호화 점검 완료
+    expect: ''
     field: stdout
-  target_vm: secu
-  script: 'echo ''[GDPR 암호화]'' && echo ''전송: TLS'' && openssl s_client -connect 10.20.30.80:443
-    < /dev/null 2>/dev/null | grep ''Protocol'' && echo ''저장: 확인 필요'' && echo ''GDPR
-    암호화 점검 완료'''
+  target_vm: siem
+  script: docker ps --format '{{.Names}}\t{{.Status}}' 2>/dev/null | grep -i connector
+    | head
   risk_level: low
-  bastion_prompt: 'GDPR 기술적 조치: 데이터 암호화 상태를 점검해줘'
+  bastion_prompt: siem VM에서 opencti connector 관련 컨테이너 목록을 보여줘
 - order: 9
-  instruction: 컴플라이언스 자동 점검 스크립트를 작성하시오.
-  hint: 주요 점검 항목을 스크립트로 자동화하세요.
-  category: automation
-  points: 12
-  answer: 'echo ''#!/bin/bash
-
-    echo "=== 컴플라이언스 자동 점검 ==="
-
-    echo "[패스워드 정책]" && grep minlen /etc/security/pwquality.conf 2>/dev/null
-
-    echo "[감사 로그]" && systemctl is-active auditd 2>/dev/null
-
-    echo "[방화벽]" && sudo nft list ruleset 2>/dev/null | wc -l
-
-    echo "[NTP]" && timedatectl show --property=NTPSynchronized 2>/dev/null
-
-    echo "자동 점검 완료"'' > /tmp/compliance_check.sh && chmod +x /tmp/compliance_check.sh
-    && bash /tmp/compliance_check.sh'
-  answer_detail: 컴플라이언스 점검을 스크립트로 자동화하면 일관성 있는 정기 점검이 가능합니다.
+  instruction: 샘플 IP 203.0.113.66 을 cti_ips 에서 제거하시오.
+  hint: nft delete element …
+  category: cleanup
+  points: 10
+  answer: sudo nft delete element inet filter cti_ips '{ 203.0.113.66 }'
+  answer_detail: 'OpenCTI 위협 인텔리전스 활용: 샘플 IP 203.0.113.66 을 cti_ips 에서 제거하시오.'
   verify:
     type: output_contains
-    expect: 자동 점검 완료
+    expect: ''
     field: stdout
   target_vm: secu
-  script: 'echo ''#!/bin/bash
-
-    echo "=== 컴플라이언스 자동 점검 ==="
-
-    echo "[패스워드 정책]" && grep minlen /etc/security/pwquality.conf 2>/dev/null
-
-    echo "[감사 로그]" && systemctl is-active auditd 2>/dev/null
-
-    echo "[방화벽]" && sudo nft list ruleset 2>/dev/null | wc -l
-
-    echo "[NTP]" && timedatectl show --property=NTPSynchronized 2>/dev/null
-
-    echo "자동 점검 완료"'' > /tmp/compliance_check.sh && chmod +x /tmp/compliance_check.sh
-    && bash /tmp/compliance_check.sh'
-  risk_level: low
-  bastion_prompt: 컴플라이언스 자동 점검 스크립트를 구현 방법을 설명하고 예시 코드를 보여줘
+  script: sudo nft delete element inet filter cti_ips '{ 203.0.113.66 }'
+  risk_level: medium
+  bastion_prompt: secu VM filter.cti_ips set에서 203.0.113.66을 제거해줘
 - order: 10
-  instruction: 점검 결과를 JSON 형식으로 출력하시오.
-  hint: 각 점검 항목의 결과를 구조화하세요.
-  category: automation
+  instruction: filter.input 체인의 현재 룰을 확인해 정리 상태를 점검하시오.
+  hint: nft list chain inet filter input
+  category: analysis
   points: 10
-  answer: echo '{"compliance_check":{"date":"'$(date -I)'","items":[{"id":"PWD-001","name":"패스워드
-    최소길이","status":"pass"},{"id":"LOG-001","name":"감사 로그","status":"pass"},{"id":"FW-001","name":"방화벽
-    정책","status":"pass"}],"total":3,"passed":3}}'
-  answer_detail: 구조화된 JSON 출력은 SIEM이나 GRC 시스템과의 연동에 활용됩니다.
+  answer: sudo nft list chain inet filter input
+  answer_detail: 'OpenCTI 위협 인텔리전스 활용: filter.input 체인의 현재 룰을 확인해 정리 상태를 점검하시오.'
   verify:
     type: output_contains
-    expect: compliance_check
+    expect: cti_ips
     field: stdout
   target_vm: secu
-  script: echo '{"compliance_check":{"date":"'$(date -I)'","items":[{"id":"PWD-001","name":"패스워드
-    최소길이","status":"pass"},{"id":"LOG-001","name":"감사 로그","status":"pass"},{"id":"FW-001","name":"방화벽
-    정책","status":"pass"}],"total":3,"passed":3}}'
+  script: sudo nft list chain inet filter input
   risk_level: low
-  bastion_prompt: 점검 결과를 JSON 형식으로 출력해줘
-- order: 11
-  instruction: '증빙 자료 수집: 현재 보안 설정 스냅샷을 저장하시오.'
-  hint: 주요 설정 파일을 백업하세요.
-  category: evidence
-  points: 10
-  answer: sudo mkdir -p /tmp/compliance_evidence && sudo cp /etc/ssh/sshd_config /etc/security/pwquality.conf
-    /etc/login.defs /tmp/compliance_evidence/ 2>/dev/null && echo '증빙 자료 수집 완료'
-  answer_detail: 컴플라이언스 감사 시 증빙 자료는 설정 파일, 스크린샷, 로그 등으로 구성됩니다.
-  verify:
-    type: output_contains
-    expect: 증빙 자료 수집 완료
-    field: stdout
-  target_vm: secu
-  script: sudo mkdir -p /tmp/compliance_evidence && sudo cp /etc/ssh/sshd_config /etc/security/pwquality.conf
-    /etc/login.defs /tmp/compliance_evidence/ 2>/dev/null && echo '증빙 자료 수집 완료'
-  risk_level: low
-  bastion_prompt: '증빙 자료 수집: 현재 보안 설정 스냅샷을 저장해줘'
-- order: 12
-  instruction: 컴플라이언스 갭 분석 보고서를 작성하시오.
-  hint: 준수/미준수 항목을 분류하고 조치 계획을 수립하세요.
-  category: documentation
-  points: 12
-  answer: 'echo -e ''=== 컴플라이언스 갭 분석 ===\n\n프레임워크: ISMS-P / PCI-DSS\n\n[준수 항목] 8건\n-
-    패스워드 정책\n- 감사 로그\n- 방화벽 설정\n\n[미준수 항목] 2건\n- MFA 미도입 (PCI-DSS 8.3)\n- 데이터 저장 암호화
-    미적용 (ISMS-P 2.7.1)\n\n갭 분석 완료'''
-  answer_detail: 갭 분석은 현재 상태와 요구사항 간의 차이를 식별하여 조치 우선순위를 결정합니다.
-  verify:
-    type: output_contains
-    expect: 갭 분석 완료
-    field: stdout
-  target_vm: secu
-  script: 'echo -e ''=== 컴플라이언스 갭 분석 ===\n\n프레임워크: ISMS-P / PCI-DSS\n\n[준수 항목] 8건\n-
-    패스워드 정책\n- 감사 로그\n- 방화벽 설정\n\n[미준수 항목] 2건\n- MFA 미도입 (PCI-DSS 8.3)\n- 데이터 저장 암호화
-    미적용 (ISMS-P 2.7.1)\n\n갭 분석 완료'''
-  risk_level: low
-  bastion_prompt: 컴플라이언스 갭 분석 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
-- order: 13
-  instruction: '조치 로드맵을 수립하시오: 미준수 항목별 일정.'
-  hint: 단기/중기/장기로 분류하세요.
-  category: planning
-  points: 10
-  answer: echo -e '=== 조치 로드맵 ===\n\n[단기 - 1개월]\n- 패치 적용 프로세스 강화\n- 비활성 계정 정리\n\n[중기
-    - 3개월]\n- MFA 도입\n- 로그 보존 기간 연장\n\n[장기 - 6개월]\n- 데이터 암호화 전면 적용\n- GRC 시스템 도입\n\n로드맵
-    수립 완료'
-  answer_detail: 조치 로드맵은 리소스와 우선순위를 고려하여 실행 가능한 일정을 수립합니다.
-  verify:
-    type: output_contains
-    expect: 로드맵 수립 완료
-    field: stdout
-  target_vm: secu
-  script: echo -e '=== 조치 로드맵 ===\n\n[단기 - 1개월]\n- 패치 적용 프로세스 강화\n- 비활성 계정 정리\n\n[중기
-    - 3개월]\n- MFA 도입\n- 로그 보존 기간 연장\n\n[장기 - 6개월]\n- 데이터 암호화 전면 적용\n- GRC 시스템 도입\n\n로드맵
-    수립 완료'
-  risk_level: low
-  bastion_prompt: '조치 로드맵을 수립하시오: 미준수 항목별 일정해줘'
-- order: 14
-  instruction: 컴플라이언스 대시보드용 요약 데이터를 생성하시오.
-  hint: 준수율, 위험 수준, 주요 지표를 포함하세요.
-  category: reporting
-  points: 8
-  answer: echo '{"dashboard":{"compliance_rate":80,"risk_level":"medium","open_findings":2,"closed_findings":8,"next_audit":"2026-07-01"}}'
-  answer_detail: 컴플라이언스 대시보드는 경영진에게 보안 준수 현황을 시각적으로 보고합니다.
-  verify:
-    type: output_contains
-    expect: dashboard
-    field: stdout
-  target_vm: secu
-  script: echo '{"dashboard":{"compliance_rate":80,"risk_level":"medium","open_findings":2,"closed_findings":8,"next_audit":"2026-07-01"}}'
-  risk_level: low
-  bastion_prompt: 컴플라이언스 대시보드용 요약 데이터를 생성해줘
-- order: 15
-  instruction: 컴플라이언스 종합 보고서를 최종 정리하시오.
-  hint: 전체 점검 결과, 갭 분석, 로드맵을 포함하세요.
-  category: verification
-  points: 8
-  answer: 'echo ''=== 컴플라이언스 종합 보고서 ==='' && echo ''점검 프레임워크: ISMS-P, PCI-DSS, GDPR''
-    && echo ''준수율: 80%'' && echo ''미준수: 2건'' && echo ''다음 점검: 분기별'' && echo ''===
-    보고서 완료 ==='''
-  answer_detail: 컴플라이언스는 지속적인 활동이며 정기 점검과 개선이 필수입니다.
-  verify:
-    type: output_contains
-    expect: 보고서 완료
-    field: stdout
-  target_vm: secu
-  script: 'echo ''=== 컴플라이언스 종합 보고서 ==='' && echo ''점검 프레임워크: ISMS-P, PCI-DSS, GDPR''
-    && echo ''준수율: 80%'' && echo ''미준수: 2건'' && echo ''다음 점검: 분기별'' && echo ''===
-    보고서 완료 ==='''
-  risk_level: low
-  bastion_prompt: 컴플라이언스 종합 보고서를 최종 정리해줘
+  bastion_prompt: secu VM filter.input 체인의 룰을 확인해줘
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
-
-    1) 10.20.30.1 서버에서 ISMS-P 2.6.1 접근통제 요구사항을 점검해줘
-
-    2) 개인정보 암호화 요구사항(ISMS-P 2.7.1)을 점검해줘
-
-    3) 로그 관리 요구사항(ISMS-P 2.9.4)을 점검해줘
-
-    4) PCI-DSS 요구사항 2: 기본 패스워드 변경 여부를 점검해줘
-
-    5) PCI-DSS 요구사항 6: 보안 패치 적용 현황을 점검해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
+  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
   category: multi_task
   points: 50
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  target_vm: secu
-  risk_level: low
+  target_vm: siem
   answer: ''
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
-  script: ''
+  answer_detail: ''
+  risk_level: low
+  bastion_prompt: 'secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:
+
+    1) siem VM의 OpenCTI /graphql 엔드포인트에 POST 테스트 요청을 보내 응답 코드를 보여줘
+
+    2) secu VM에 filter.cti_ips ipv4 set을 생성해줘
+
+    3) secu VM filter.input 체인 맨 앞에 @cti_ips set 기반 drop 룰을 추가해줘
+
+    4) secu VM filter.cti_ips set의 원소 목록을 확인해줘
+
+    5) secu VM filter.cti_ips set에 203.0.113.66을 추가해줘'
