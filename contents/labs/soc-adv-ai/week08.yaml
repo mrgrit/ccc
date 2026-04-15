@@ -27,7 +27,7 @@ steps:
     저장소의 여유 공간이 충분한지 확인한다. LiME 등 덤프 도구는 전체 물리 메모리를 덤프한다.
   verify:
     type: output_contains
-    expect: MemTotal
+    expect: 메모리
   target_vm: siem
   script: 'echo ''=== Memory Status ==='' && free -h && echo '''' && echo ''=== Detailed
     Memory Info ==='' && grep -E ''(MemTotal|MemFree|MemAvailable|Buffers|Cached|Slab)''
@@ -52,7 +52,7 @@ steps:
     바이너리도 (deleted) 표시와 함께 확인 가능하다.
   verify:
     type: output_contains
-    expect: 'PID:'
+    expect: PID
   target_vm: siem
   script: echo '=== Process Analysis from /proc ===' && for pid in $(ls -d /proc/[0-9]*
     2>/dev/null | sed 's|/proc/||'); do exe=$(readlink /proc/$pid/exe 2>/dev/null);
@@ -78,7 +78,7 @@ steps:
     sshd→bash→비정상 자식(측면이동)이 핵심 패턴이다. PPID=1인 비root 프로세스는 부모가 죽은 고아 프로세스로 의심 대상이다.
   verify:
     type: output_contains
-    expect: Process Tree
+    expect: 프로세스
   target_vm: siem
   script: echo '=== Process Tree Analysis ===' && ps auxf 2>/dev/null | head -40 &&
     echo '' && echo '=== Suspicious Parent-Child Patterns ===' && ps -eo pid,ppid,user,args
@@ -104,7 +104,7 @@ steps:
     PID를 열거하면 커널 레벨 루트킷이 아닌 한 숨겨진 프로세스를 발견할 수 있다. 두 목록의 차이가 있으면 루트킷 의심이다.
   verify:
     type: output_contains
-    expect: Hidden Process
+    expect: 프로세스
   target_vm: siem
   script: echo '=== Hidden Process Detection ===' && echo 'PIDs from /proc:' && ls
     -d /proc/[0-9]* 2>/dev/null | sed 's|/proc/||' | sort -n > /tmp/proc_pids.txt
@@ -135,7 +135,7 @@ steps:
     루트킷이 이들을 후킹한 경우 직접 파싱하면 숨겨진 연결을 발견할 수 있다. 비표준 외부 포트의 ESTABLISHED 연결은 C2 의심이다.
   verify:
     type: output_contains
-    expect: Network Connections
+    expect: 연결
   target_vm: siem
   script: "echo '=== Network Connections from /proc/net/tcp ===' && python3 -c \"\n\
     import os, struct, socket\nwith open('/proc/net/tcp') as f:\n    next(f)\n   \
@@ -166,7 +166,7 @@ steps:
     확인할 수 있다. strings로 메모리에서 URL, 비밀번호, IP 등을 추출하면 악성코드의 C2 주소나 설정을 발견할 수 있다.
   verify:
     type: output_contains
-    expect: Memory Map
+    expect: 메모리
   target_vm: siem
   script: echo '=== Memory Map of current shell ===' && head -20 /proc/self/maps &&
     echo '' && echo '=== Interesting strings from process memory ===' && TARGET_PID=$$
@@ -193,7 +193,7 @@ steps:
     경로에서 로드된 모듈은 루트킷 의심 대상이다. /proc/sys/kernel/tainted가 0이 아니면 비공식 모듈이 로드되었음을 의미한다.
   verify:
     type: output_contains
-    expect: Kernel Modules
+    expect: 커널
   target_vm: siem
   script: 'echo ''=== Loaded Kernel Modules ==='' && lsmod | head -20 && echo ''''
     && echo ''=== Module count ==='' && lsmod | wc -l && echo '''' && echo ''=== Unsigned/suspicious
@@ -224,7 +224,7 @@ steps:
     노출되는 경우도 많다.
   verify:
     type: output_contains
-    expect: Bash History
+    expect: history
   target_vm: siem
   script: 'echo ''=== Bash History Analysis ==='' && for hist in /root/.bash_history
     /home/*/.bash_history; do if [ -f "$hist" ]; then user=$(echo $hist | cut -d/
@@ -254,7 +254,7 @@ steps:
     주소가 있으면 후킹되었을 가능성이 높다. /proc/kallsyms 접근에는 root 권한이 필요할 수 있다.
   verify:
     type: output_contains
-    expect: Syscall Table
+    expect: 시스템
   target_vm: siem
   script: echo '=== Syscall Table Integrity Check ===' && echo 'Kernel text range:'
     && grep -E '^[0-9a-f]+ [Tt] (_stext|_etext)$' /proc/kallsyms 2>/dev/null && echo
@@ -367,7 +367,7 @@ steps:
     기반 라이브 분석은 덤프 없이도 핵심 아티팩트를 수집할 수 있으며, 각 단계의 명령과 출력을 증거로 첨부한다.
   verify:
     type: output_contains
-    expect: Memory Forensics
+    expect: 포렌식
   target_vm: siem
   script: 'cat > /tmp/memory_forensics_report.txt << ''EOF''
 

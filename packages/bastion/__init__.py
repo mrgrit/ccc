@@ -994,7 +994,12 @@ echo "NAT masquerade on $EXTERNAL"
 # ── SubAgent Communication (A2A) ─────────────────
 
 def health_check(ip: str) -> dict:
-    """SubAgent 헬스체크"""
+    """SubAgent 헬스체크.
+
+    바스티온 자신(로컬 IP)은 SubAgent가 없으므로 healthy로 즉답.
+    """
+    if _is_local_ip(ip):
+        return {"status": "healthy", "hostname": "bastion", "role": "manager", "local": True}
     try:
         r = httpx.get(f"http://{ip}:{SUBAGENT_PORT}/health", timeout=5.0)
         return r.json()
@@ -1002,8 +1007,40 @@ def health_check(ip: str) -> dict:
         return {"status": "unreachable", "error": str(e)}
 
 
+_LOCAL_IPS = {"127.0.0.1", "localhost", "0.0.0.0", "::1"}
+
+
+def _is_local_ip(ip: str) -> bool:
+    """IP가 이 호스트 자신인지 판정 — 127.x, 바스티온 자체 내부/외부 IP 포함."""
+    if not ip or ip in _LOCAL_IPS:
+        return True
+    try:
+        import subprocess as _sp
+        out = _sp.run(["ip", "-4", "-o", "addr"], capture_output=True, text=True, timeout=2)
+        if out.returncode == 0 and ip in out.stdout:
+            return True
+    except Exception:
+        pass
+    return False
+
+
 def run_command(ip: str, script: str, timeout: int = 60) -> dict:
-    """SubAgent에 명령 실행 (A2A)"""
+    """대상 VM에 명령 실행.
+
+    - IP가 로컬(바스티온 자신)이면 subprocess로 직접 실행
+    - 그 외에는 SubAgent(/a2a/run_script)로 위임
+    """
+    if _is_local_ip(ip):
+        try:
+            import subprocess as _sp
+            r = _sp.run(["bash", "-c", script], capture_output=True, text=True, timeout=timeout)
+            return {
+                "exit_code": r.returncode,
+                "stdout": r.stdout,
+                "stderr": r.stderr,
+            }
+        except Exception as e:
+            return {"exit_code": -1, "stdout": "", "stderr": f"local exec: {e}"}
     try:
         r = httpx.post(
             f"http://{ip}:{SUBAGENT_PORT}/a2a/run_script",
