@@ -14,14 +14,12 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: Wazuh Manager(10.20.30.100)의 API를 호출하여 연결된 에이전트 수와 상태를 확인하라. Technology
-    도메인의 SIEM 역량 평가에 활용한다.
-  hint: curl -sk -u wazuh-wui:wazuh-wui 으로 Wazuh API를 호출한다.
+  instruction: Wazuh Dashboard에 접속하여 연결된 에이전트 수와 상태를 확인하라. 브라우저에서 https://SIEM_IP:443
+    → 로그인(admin/admin) → 왼쪽 'Agents' 메뉴 → 에이전트 수와 Active/Disconnected 상태를 기록하라.
+  hint: Dashboard에 표시되는 에이전트 수와 CLI의 agent_control -l 결과를 비교하세요.
   category: assessment
   points: 10
-  answer: '/var/ossec/bin/agent_control -l 2>/dev/null | head -20 && echo "=== Agent
-    Summary ===" && /var/ossec/bin/agent_control -l 2>/dev/null | grep -c "Active"
-    | xargs -I{} echo "active agents: {}"'
+  answer: Wazuh Dashboard → Agents에서 에이전트 목록 확인. Total agents, Active agents 수치를 메모.
   answer_detail: Wazuh의 agent_control 명령으로 연결된 에이전트 수와 상태를 확인한다. Active 에이전트가 3대 이상이면
     Technology 도메인 Level 2(Managed) 이상으로 판정한다. API 대신 CLI를 사용하면 인증 문제를 우회할 수 있다.
   verify:
@@ -126,16 +124,14 @@ steps:
   bastion_prompt: Suricata의 최근 24시간 알림을 분석하여 카테고리별 발생 건수를 집계하라. eve.json에서 alert 이벤트를
     추출한다해줘
 - order: 6
-  instruction: Wazuh에서 최근 고위험 알림(level >= 10)을 조회하라. 알림의 rule description, level,
-    agent를 확인한다.
-  hint: Wazuh alerts.json 파일에서 level이 10 이상인 항목을 필터링한다.
+  instruction: Wazuh Dashboard에서 최근 고위험 알림(level ≥ 10)을 조회하라. 브라우저에서 Dashboard → 왼쪽
+    'Security events' → 상단 필터에서 'rule.level >= 10' 입력 → 결과에서 rule description, level,
+    agent를 확인하라.
+  hint: 필터 바에 KQL 문법으로 rule.level >= 10 을 입력하세요.
   category: assessment
   points: 10
-  answer: 'tail -200 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c "
-    import sys,json for l in sys.stdin: try: e=json.loads(l) r=e.get(\"rule\",{})
-    if r.get(\"level\",0)>=10: print(f\"Level {r.get(\"level\",0):2d} | {r.get(\"description\",\"\")[:60]}
-    | Agent: {e.get(\"agent\",{}).get(\"name\",\"N/A\")}\") except: pass " 2>/dev/null
-    | tail -10 || echo "No Level 10+ alerts found"'
+  answer: Wazuh Dashboard → Security events → rule.level >= 10 필터 → 이벤트 상세에서 description/level/agent
+    확인.
   answer_detail: Wazuh alert level 10 이상은 High severity에 해당한다. 고위험 알림의 빈도와 유형을 분석하면
     SOC의 탐지 역량과 대응 부하를 판단할 수 있다. 고위험 알림이 적절히 발생하면 Level 3, 상관분석까지 동작하면 Level 4이다.
   verify:
@@ -150,18 +146,12 @@ steps:
   risk_level: low
   bastion_prompt: Wazuh에서 최근 고위험 알림(level >= 10)을 조회해줘
 - order: 7
-  instruction: SOC KPI 기준선을 측정하라. 최근 Wazuh 알림 100건에서 이벤트 발생 시각과 알림 생성 시각의 차이(MTTD
-    시뮬레이션)를 계산하고, 분당 알림 처리량을 산출하라.
-  hint: alerts.json의 timestamp 필드를 파싱하여 시간 차이를 계산한다.
+  instruction: Wazuh Dashboard에서 SOC KPI 기준선을 측정하라. Dashboard → Overview 에서 최근 24시간
+    알림 수, 상위 Rule Groups, 가장 많이 알림을 발생시킨 Agent를 기록하라. 이 수치가 MTTD 시뮬레이션의 기준이 된다.
+  hint: Overview 페이지의 그래프와 패널을 확인하세요.
   category: measurement
   points: 10
-  answer: 'tail -100 /var/ossec/logs/alerts/alerts.json 2>/dev/null | python3 -c "
-    import sys,json from datetime import datetime count=0; levels={} for l in sys.stdin:
-    try: e=json.loads(l); count+=1 lv=e.get(\"rule\",{}).get(\"level\",0) levels[lv]=levels.get(lv,0)+1
-    except: pass print(f\"Total alerts sampled: {count}\") print(f\"Level distribution:\")
-    for lv in sorted(levels.keys()): print(f\"  Level {lv}: {levels[lv]}\") print(f\"Estimated
-    alerts/min: {count/60:.1f} (assuming 1h window)\") print(f\"MTTD estimate: <30s
-    (SIEM internal processing)\") " 2>/dev/null || echo "No alerts data available"'
+  answer: Wazuh Dashboard → Overview → 24h 알림 수, Top Rule Groups, Top Agents 기록.
   answer_detail: MTTD(Mean Time To Detect)는 이벤트 발생부터 SOC이 인지하기까지의 시간이다. SIEM 내부 처리
     시간은 보통 수초이며, 운영적 MTTD(분석관 확인까지)는 별도 측정이 필요하다. 분당 알림률은 SOC 인력 부하를 결정한다.
   verify:
