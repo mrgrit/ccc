@@ -1448,19 +1448,53 @@ def evaluate_lab_submission(lab_id: str, student_id: str, submissions: list[dict
 class AutoVerifyRequest(BaseModel):
     lab_id: str
     student_id: str
-    subagent_url: str  # 학생 인프라의 SubAgent URL
+    subagent_url: str = ""  # 명시적 URL (비면 student_infras DB 에서 자동 조회)
 
 @app.post("/labs/auto-verify", dependencies=[Depends(verify_api_key)])
 def auto_verify_lab_endpoint(body: AutoVerifyRequest):
     """SubAgent를 통해 학생 인프라에서 실습 완료 여부를 자동 검증.
-    학생이 제출한 evidence가 아니라, 실제 인프라 상태를 직접 확인한다."""
+
+    학생이 제출한 evidence가 아니라, 실제 인프라 상태를 직접 확인한다.
+    subagent_url 이 비면 student_infras DB 에서 해당 학생의 VM 목록을 조회해
+    role → SubAgent URL 매핑을 자동으로 구성한다.
+    """
     from packages.lab_engine import load_all_labs, auto_verify_lab
     labs = load_all_labs(_LABS_DIR)
     lab = next((l for l in labs if l.lab_id == body.lab_id), None)
     if not lab:
         raise HTTPException(404, "Lab not found")
 
-    result = auto_verify_lab(lab, body.subagent_url, body.student_id)
+    # 학생 VM SubAgent 매핑 자동 조회
+    vm_subagents: dict[str, str] = {}
+    default_url = body.subagent_url
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT infra_name, ip, subagent_url, vm_config FROM student_infras WHERE student_id=%s AND status IN ('registered','ready')",
+                (body.student_id,)
+            )
+            for row in cur.fetchall():
+                sa_url = row.get("subagent_url") or f"http://{row['ip']}:8002"
+                # vm_config 에서 role 추출
+                cfg = row.get("vm_config") or {}
+                if isinstance(cfg, str):
+                    import json as _j
+                    try: cfg = _j.loads(cfg)
+                    except: cfg = {}
+                vms = cfg.get("vms", [cfg]) if isinstance(cfg, dict) else cfg
+                for vm in (vms if isinstance(vms, list) else [vms]):
+                    role = vm.get("role", "") or row.get("infra_name", "")
+                    if role:
+                        vm_subagents[role] = vm.get("subagent_url") or sa_url
+                # fallback: infra_name 으로도 등록
+                vm_subagents[row["infra_name"]] = sa_url
+                if not default_url:
+                    default_url = sa_url
+    if not default_url:
+        raise HTTPException(400, "학생의 등록된 인프라가 없습니다. /infras/register 또는 subagent_url 파라미터를 사용하세요.")
+
+    result = auto_verify_lab(lab, default_url, body.student_id,
+                             vm_subagents=vm_subagents if vm_subagents else None)
 
     # 통과 시 DB에 기록 + PoW 블록 생성
     if result.passed:

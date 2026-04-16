@@ -250,30 +250,87 @@ def _run_on_subagent(subagent_url: str, command: str, timeout: int = 30) -> dict
 
 
 def _build_verify_command(step: LabStep) -> str | None:
-    """스텝의 verify 규칙을 검증할 수 있는 명령어 생성"""
+    """스텝의 verify 규칙을 검증할 수 있는 명령어 생성.
+
+    시스템 상태 검증 타입:
+      file_exists       — 파일 존재 확인
+      file_contains     — 파일 안에 패턴 존재 (expect="pattern|/path/to/file")
+      service_active    — systemctl is-active
+      service_running   — (alias) systemctl is-active
+      port_open         — ss -tlnp 에서 포트 확인
+      nft_rule_exists   — nftables 룰셋에서 패턴 검색
+      log_contains      — 로그 파일에서 패턴 검색
+      command_output    — 임의 명령 실행 후 expect 가 stdout 에 있는지
+      output_contains   — (기존) answer 명령 실행 후 expect 문자열 포함 확인
+      output_regex      — (기존) answer 명령 실행 후 정규식 매치
+      exit_code         — (기존) answer 명령 실행 후 exit code 확인
+      exit_code_zero    — (alias) exit code == 0
+    """
     if not step.verify:
         return None
 
     vr = step.verify
 
-    if vr.type == "output_contains" and step.answer:
-        # 정답 명령어를 실행하고 기대 출력이 있는지 확인
-        return step.answer
-
-    if vr.type == "exit_code" and step.answer:
-        return step.answer
+    # ── 시스템 상태 검증 (학생 제출 불필요, SubAgent 가 직접 확인) ──
 
     if vr.type == "file_exists":
         return f"test -f {vr.expect} && echo 'FILE_EXISTS_YES' || echo 'FILE_EXISTS_NO'"
 
-    if vr.type == "service_running":
+    if vr.type == "file_contains":
+        # expect 형식: "pattern|/path/to/file" 또는 "pattern" (field 가 path)
+        if "|" in vr.expect:
+            pat, fpath = vr.expect.split("|", 1)
+        elif vr.field and vr.field.startswith("/"):
+            pat, fpath = vr.expect, vr.field
+        else:
+            pat, fpath = vr.expect, ""
+        if not fpath:
+            return None
+        return f"grep -q {_shq(pat)} {_shq(fpath)} && echo 'FILE_CONTAINS_YES' || echo 'FILE_CONTAINS_NO'"
+
+    if vr.type in ("service_running", "service_active"):
         return f"systemctl is-active {vr.expect} 2>/dev/null && echo 'SERVICE_RUNNING_YES' || echo 'SERVICE_RUNNING_NO'"
 
-    # fallback: answer가 있으면 그걸 실행
+    if vr.type == "port_open":
+        return f"ss -tlnp 2>/dev/null | grep -q ':{vr.expect}' && echo 'PORT_OPEN_YES' || echo 'PORT_OPEN_NO'"
+
+    if vr.type == "nft_rule_exists":
+        return f"nft list ruleset 2>/dev/null | grep -qi {_shq(vr.expect)} && echo 'NFT_RULE_YES' || echo 'NFT_RULE_NO'"
+
+    if vr.type == "log_contains":
+        if "|" in vr.expect:
+            pat, lpath = vr.expect.split("|", 1)
+        elif vr.field and vr.field.startswith("/"):
+            pat, lpath = vr.expect, vr.field
+        else:
+            return None
+        return f"grep -qi {_shq(pat)} {_shq(lpath)} && echo 'LOG_CONTAINS_YES' || echo 'LOG_CONTAINS_NO'"
+
+    if vr.type == "command_output":
+        # expect = "expected_text", field = "command to run"
+        cmd = vr.field if vr.field and not vr.field.startswith("std") else step.answer
+        return cmd if cmd else None
+
+    # ── 기존 타입 (answer 명령 실행 기반) ──
+
+    if vr.type == "output_contains" and step.answer:
+        return step.answer
+
+    if vr.type == "output_regex" and step.answer:
+        return step.answer
+
+    if vr.type in ("exit_code", "exit_code_zero") and step.answer:
+        return step.answer
+
     if step.answer:
         return step.answer
 
     return None
+
+
+def _shq(s: str) -> str:
+    """셸 인자 싱글쿼트 래핑 (인젝션 방지)."""
+    return "'" + s.replace("'", "'\\''") + "'"
 
 
 def auto_verify_step(step: LabStep, subagent_url: str) -> StepResult:
@@ -323,9 +380,37 @@ def auto_verify_step(step: LabStep, subagent_url: str) -> StepResult:
         sr.passed = "FILE_EXISTS_YES" in stdout
         sr.message = f"Auto-verified: file {'exists' if sr.passed else 'not found'}"
 
-    elif vr.type == "service_running":
+    elif vr.type in ("service_running", "service_active"):
         sr.passed = "SERVICE_RUNNING_YES" in stdout
-        sr.message = f"Auto-verified: service {'running' if sr.passed else 'not running'}"
+        sr.message = f"Auto-verified: service {'active' if sr.passed else 'not active'}"
+
+    elif vr.type == "file_contains":
+        sr.passed = "FILE_CONTAINS_YES" in stdout
+        sr.message = f"Auto-verified: pattern {'found' if sr.passed else 'not found'} in file"
+
+    elif vr.type == "port_open":
+        sr.passed = "PORT_OPEN_YES" in stdout
+        sr.message = f"Auto-verified: port {vr.expect} {'open' if sr.passed else 'closed'}"
+
+    elif vr.type == "nft_rule_exists":
+        sr.passed = "NFT_RULE_YES" in stdout
+        sr.message = f"Auto-verified: nftables rule {'found' if sr.passed else 'not found'}"
+
+    elif vr.type == "log_contains":
+        sr.passed = "LOG_CONTAINS_YES" in stdout
+        sr.message = f"Auto-verified: pattern {'found' if sr.passed else 'not found'} in log"
+
+    elif vr.type == "command_output":
+        if vr.expect and vr.expect.lower() in stdout.lower():
+            sr.passed = True
+            sr.message = f"Auto-verified: '{vr.expect}' found in command output"
+        else:
+            sr.passed = False
+            sr.message = f"Auto-verify failed: '{vr.expect}' not in command output"
+
+    elif vr.type == "exit_code_zero":
+        sr.passed = result.get("exit_code") == 0
+        sr.message = f"Auto-verified: exit_code={result.get('exit_code')}"
 
     sr.points_earned = step.points if sr.passed else 0
     return sr

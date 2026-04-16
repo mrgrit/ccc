@@ -216,6 +216,12 @@ def judge(events, step):
         if "qa" in stages:
             if match and category not in exec_required_cats:
                 return "pass", "qa", meta
+            # 리터럴 매치 실패 → LLM 세맨틱 판정
+            sem_ok, sem_kw = llm_semantic_judge(step, aggregated)
+            meta["llm_judge"] = {"pass": sem_ok, "keyword": sem_kw}
+            if sem_ok:
+                meta["_semantic_pass_keyword"] = sem_kw
+                return "pass", "qa", meta
             return "qa_fallback", "", meta
         return "no_execution", "", meta
     # 실행됨: verify 매치 우선
