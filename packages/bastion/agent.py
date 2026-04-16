@@ -479,41 +479,46 @@ class BastionAgent:
                     skill_steps[i] = (name, params)
 
         if not skill_steps:
-            # 1-c. 동적 Playbook 생성 (등록된 Playbook·Skill 매칭 없을 때)
-            dyn_steps = self._generate_dynamic_playbook(message)
-            if dyn_steps:
-                yield {"event": "stage", "stage": "executing"}
-                pb_results = []
-                for evt in self._run_dynamic_steps(dyn_steps, "동적 Playbook"):
-                    yield evt
-                    if evt.get("event") == "step_done":
-                        pb_results.append(evt)
-                yield {"event": "stage", "stage": "validating"}
-                analysis = yield from self._stream_analysis_events(message, pb_results)
-                self.evidence_db.add(
-                    playbook_id="dynamic", success=all(r.get("success") for r in pb_results),
-                    output="\n".join(r.get("output", "") for r in pb_results)[:3000],
-                    analysis=analysis, stage="dynamic_playbook", session_id=self.session_id,
-                    **self._test_meta,
-                )
-                self.history.append({"role": "assistant", "content": analysis})
-                return
+            # 1-c. LLM intent classifier — Tool Calling 실패 시 LLM에게 직접 물어봄:
+            #       "이 요청은 인프라 실행이 필요한가, 아니면 지식 답변인가?"
+            #       regex 대신 모델 자체의 판단력 사용 (모델 독립적).
+            intent = self._classify_intent(message)
 
-            # 1-d. shell 자동 fallback — 실행 가능한 작업이면 Q&A 대신 shell로
-            if self._should_execute(message):
-                target = self._infer_target_vm(message)
-                command = self._generate_shell_command(message, target)
+            if intent.get("execute"):
+                target = intent.get("target_vm") or "attacker"
+                command = intent.get("command", "").strip()
+                if not command:
+                    command = self._generate_shell_command(message, target)
                 if command:
                     skill_steps = [("shell", {"target": target, "command": command})]
                     # → STAGE 2로 진행
                 else:
-                    # 명령어 생성 실패 → Q&A
+                    # 명령어 생성 실패 → 동적 Playbook 시도
+                    dyn_steps = self._generate_dynamic_playbook(message)
+                    if dyn_steps:
+                        yield {"event": "stage", "stage": "executing"}
+                        pb_results = []
+                        for evt in self._run_dynamic_steps(dyn_steps, "동적 Playbook"):
+                            yield evt
+                            if evt.get("event") == "step_done":
+                                pb_results.append(evt)
+                        yield {"event": "stage", "stage": "validating"}
+                        analysis = yield from self._stream_analysis_events(message, pb_results)
+                        self.evidence_db.add(
+                            playbook_id="dynamic", success=all(r.get("success") for r in pb_results),
+                            output="\n".join(r.get("output", "") for r in pb_results)[:3000],
+                            analysis=analysis, stage="dynamic_playbook", session_id=self.session_id,
+                            **self._test_meta,
+                        )
+                        self.history.append({"role": "assistant", "content": analysis})
+                        return
+                    # 최후 — Q&A
                     yield {"event": "stage", "stage": "qa"}
                     response = yield from self._stream_qa_events(message)
                     self.history.append({"role": "assistant", "content": response})
                     return
             else:
-                # 순수 Q&A
+                # 순수 Q&A — LLM이 "지식 질문"으로 판정
                 yield {"event": "stage", "stage": "qa"}
                 response = yield from self._stream_qa_events(message)
                 self.history.append({"role": "assistant", "content": response})
@@ -755,28 +760,64 @@ class BastionAgent:
             pass
         return ""
 
-    def _should_execute(self, message: str) -> bool:
-        """메시지가 실행 가능한 작업인지 판단."""
-        # 구체적 명령어가 포함되면 무조건 실행
+    def _classify_intent(self, message: str) -> dict:
+        """LLM에게 요청의 의도를 분류시킨다 (regex 대신 모델 판단력 사용).
+
+        반환: {"execute": bool, "target_vm": "role", "command": "shell cmd 또는 빈 문자열"}
+        - execute=True → 인프라 실행 필요. target_vm + command 포함.
+        - execute=False → 순수 지식/개념 질문. 도구 없이 답변.
+
+        모델 독립적 — 프롬프트 기반이므로 모델이 바뀌어도 동작.
+        """
+        # 빠른 경로: 구체적 명령어 포함 시 LLM 호출 없이 실행 판정
         if self._CONCRETE_CMD_PATTERNS.search(message):
-            return True
-        # 실행 키워드가 포함되면 실행
-        if self._EXEC_KEYWORDS.search(message):
-            return True
-        return False
+            target = self._infer_target_vm(message)
+            return {"execute": True, "target_vm": target, "command": ""}
+
+        vm_info = ", ".join(f"{r}={ip}" for r, ip in self.vm_ips.items())
+        prompt = (
+            "사용자 요청을 분석해 실행 여부를 판단하라.\n\n"
+            "판단 기준:\n"
+            "  • 서버/시스템에 접속·명령 실행·상태 조회가 필요하면 execute=true\n"
+            "  • 개념/이론/정의/비교/설계 설명만 필요하면 execute=false\n"
+            "  • 애매하면 execute=true (실행 우선)\n\n"
+            f"현재 인프라: {vm_info}\n"
+            "VM 역할: attacker(공격도구), secu(방화벽/IPS), web(웹서버/WAF), siem(SIEM/로그), manager(LLM/관리)\n\n"
+            f"요청: {message}\n\n"
+            '정확히 다음 JSON만 출력 (코드블록 금지):\n'
+            '{"execute": true|false, "target_vm": "role", "command": "실행할 셸 명령어(없으면 빈 문자열)"}'
+        )
+        try:
+            r = httpx.post(f"{self.ollama_url}/api/chat", json={
+                "model": self.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False, "format": "json",
+                "options": {"temperature": 0.0, "num_predict": 120},
+            }, timeout=15.0)
+            parsed = json.loads(r.json().get("message", {}).get("content", "{}"))
+            return {
+                "execute": bool(parsed.get("execute", False)),
+                "target_vm": str(parsed.get("target_vm", "attacker")).strip(),
+                "command": str(parsed.get("command", "")).strip(),
+            }
+        except Exception:
+            # LLM 호출 실패 시 안전 기본값: 실행으로 판정 (실행 우선 원칙)
+            return {"execute": True, "target_vm": self._infer_target_vm(message), "command": ""}
+
+    def _should_execute(self, message: str) -> bool:
+        """(하위 호환용) _classify_intent 래퍼."""
+        return self._classify_intent(message).get("execute", False)
 
     def _infer_target_vm(self, message: str) -> str:
-        """메시지에서 대상 VM role을 추론."""
+        """메시지에서 대상 VM role을 추론 (keyword fallback — LLM 호출 아님)."""
         msg_lower = message.lower()
-        # 명시적 VM 언급 확인
         for role in ["attacker", "secu", "web", "siem", "manager"]:
             if role in msg_lower:
                 return role
-        # 키워드 패턴 매칭
         for pattern, role in self._VM_ROUTE_RULES:
             if pattern.search(message):
                 return role
-        return "attacker"  # 기본값
+        return "attacker"
 
     def _select_playbook(self, message: str) -> str | None:
         """LLM으로 정적 Playbook 매칭.
