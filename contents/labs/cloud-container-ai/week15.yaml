@@ -18,10 +18,13 @@ steps:
   hint: OS 정보, 열린 포트, 서비스를 종합 확인하세요.
   category: audit
   points: 10
-  answer: 'echo "=== [1] 호스트 보안 ==="; echo "OS: $(cat /etc/os-release | grep PRETTY
-    | cut -d= -f2)"; echo "커널: $(uname -r)"; echo "Docker: $(docker version --format
-    ''{{.Server.Version}}'' 2>/dev/null)"; echo "열린 포트: $(sudo ss -tlnp | grep -c
-    LISTEN)"; echo "가동시간: $(uptime -p)"'
+  answer: '🤖 프롬프트: WEB 서버(10.20.30.80)의 호스트 보안을 점검하시오. Docker 호스트의 OS, 커널, 서비스 상태를
+    확인해줘
+
+    📎 참고 (CLI): echo "=== [1] 호스트 보안 ==="; echo "OS: $(cat /etc/os-release | grep
+    PRETTY | cut -d= -f2)"; echo "커널: $(uname -r)"; echo "Docker: $(docker version
+    --format ''{{.Server.Version}}'' 2>/dev/null)"; echo "열린 포트: $(sudo ss -tlnp |
+    grep -c LISTEN)"; echo "가동시간: $(uptime -p)"'
   answer_detail: 호스트 보안은 컨테이너 보안의 기초입니다. 호스트가 침해되면 모든 컨테이너가 위험합니다. OS 패치 상태, 불필요한
     서비스 비활성화, 커널 보안 파라미터, Docker 버전의 최신 상태를 확인합니다.
   verify:
@@ -41,7 +44,9 @@ steps:
   hint: daemon.json, 보안 옵션, 로깅을 확인하세요.
   category: audit
   points: 10
-  answer: 'echo "=== [2] 데몬 보안 ==="; echo "보안 옵션: $(docker info --format ''{{.SecurityOptions}}''
+  answer: '🤖 프롬프트: Docker 데몬의 보안 설정을 종합 점검해줘
+
+    📎 참고 (CLI): echo "=== [2] 데몬 보안 ==="; echo "보안 옵션: $(docker info --format ''{{.SecurityOptions}}''
     2>/dev/null)"; echo "로깅: $(docker info --format ''{{.LoggingDriver}}'' 2>/dev/null)";
     echo "소켓 권한: $(stat -c ''%a'' /var/run/docker.sock)"; echo "daemon.json:"; cat
     /etc/docker/daemon.json 2>/dev/null || echo "  미설정"'
@@ -63,9 +68,11 @@ steps:
   hint: 모든 이미지의 태그와 보안 설정을 확인하세요.
   category: audit
   points: 10
-  answer: 'echo "=== [3] 이미지 보안 ==="; echo "이미지 수: $(docker images -q | wc -l)"; echo
-    "latest 태그: $(docker images --format ''{{.Tag}}'' | grep -c latest)개"; echo "미사용:
-    $(docker images -f dangling=true -q | wc -l)개"; echo "--- 이미지 목록 ---"; docker
+  answer: '🤖 프롬프트: 이미지 보안을 종합 점검해줘
+
+    📎 참고 (CLI): echo "=== [3] 이미지 보안 ==="; echo "이미지 수: $(docker images -q | wc -l)";
+    echo "latest 태그: $(docker images --format ''{{.Tag}}'' | grep -c latest)개"; echo
+    "미사용: $(docker images -f dangling=true -q | wc -l)개"; echo "--- 이미지 목록 ---"; docker
     images --format ''{{.Repository}}:{{.Tag}} ({{.Size}})'' | head -5'
   answer_detail: '이미지 보안 점검: latest 태그 비사용(버전 고정), 최소 이미지(alpine, distroless), 정기
     취약점 스캔, 미사용 이미지 정리, multi-stage build, 민감 정보 미포함. 이미지는 소프트웨어 공급망의 핵심이므로 출처와 무결성을
@@ -86,7 +93,9 @@ steps:
   hint: privileged, capabilities, read-only, user, 자원 제한을 확인하세요.
   category: audit
   points: 14
-  answer: 'echo "=== [4] 런타임 보안 ==="; for CID in $(docker ps -q); do NAME=$(docker
+  answer: '🤖 프롬프트: 컨테이너 런타임 보안을 종합 점검해줘
+
+    📎 참고 (CLI): echo "=== [4] 런타임 보안 ==="; for CID in $(docker ps -q); do NAME=$(docker
     inspect --format=''{{.Name}}'' $CID | tr -d ''/''); PRIV=$(docker inspect --format=''{{.HostConfig.Privileged}}''
     $CID); RO=$(docker inspect --format=''{{.HostConfig.ReadonlyRootfs}}'' $CID);
     USER=$(docker inspect --format=''{{.Config.User}}'' $CID); MEM=$(docker inspect
@@ -115,10 +124,12 @@ steps:
   hint: 네트워크 목록, 포트 매핑, ICC를 확인하세요.
   category: audit
   points: 10
-  answer: 'echo "=== [5] 네트워크 보안 ==="; echo "네트워크: $(docker network ls -q | wc -l)개";
-    echo "포트 매핑:"; docker ps --format ''  {{.Names}}: {{.Ports}}'' 2>/dev/null | head
-    -5; echo "host 네트워크 사용: $(docker ps -q 2>/dev/null | xargs -I{} docker inspect
-    --format=''{{.HostConfig.NetworkMode}}'' {} | grep -c host)건"'
+  answer: '🤖 프롬프트: 네트워크 보안을 종합 점검하시오. Docker 네트워크 격리와 포트 노출을 분석해줘
+
+    📎 참고 (CLI): echo "=== [5] 네트워크 보안 ==="; echo "네트워크: $(docker network ls -q | wc
+    -l)개"; echo "포트 매핑:"; docker ps --format ''  {{.Names}}: {{.Ports}}'' 2>/dev/null
+    | head -5; echo "host 네트워크 사용: $(docker ps -q 2>/dev/null | xargs -I{} docker
+    inspect --format=''{{.HostConfig.NetworkMode}}'' {} | grep -c host)건"'
   answer_detail: '네트워크 보안 점검: 사용자 정의 네트워크로 격리, host 네트워크 미사용, 포트 매핑 최소화(127.0.0.1
     바인드 권장), internal 네트워크로 외부 차단, ICC 비활성화(필요시), 네트워크 간 분리.'
   verify:
@@ -137,7 +148,9 @@ steps:
   hint: 볼륨 목록, 위험 마운트, 디스크 사용량을 확인하세요.
   category: audit
   points: 10
-  answer: 'echo "=== [6] 스토리지 보안 ==="; echo "볼륨: $(docker volume ls -q | wc -l)개";
+  answer: '🤖 프롬프트: 스토리지 보안을 종합 점검해줘
+
+    📎 참고 (CLI): echo "=== [6] 스토리지 보안 ==="; echo "볼륨: $(docker volume ls -q | wc -l)개";
     echo "미사용 볼륨: $(docker volume ls -qf dangling=true | wc -l)개"; echo "Docker Root
     권한: $(stat -c ''%a'' /var/lib/docker)"; echo "위험 마운트:"; docker ps -q 2>/dev/null
     | xargs -I{} docker inspect --format=''{{range .Mounts}}{{.Source}} {{end}}''
@@ -163,10 +176,12 @@ steps:
   hint: 로그 드라이버, 로그 크기 제한, 이벤트 추적을 확인하세요.
   category: audit
   points: 10
-  answer: 'echo "=== [7] 모니터링/로깅 ==="; echo "로그 드라이버: $(docker info --format ''{{.LoggingDriver}}''
-    2>/dev/null)"; echo "로그 크기 제한:"; cat /etc/docker/daemon.json 2>/dev/null | grep
-    max-size || echo "  미설정 (무제한)"; echo "로그 총 크기: $(sudo du -sh /var/lib/docker/containers/
-    2>/dev/null | cut -f1)"'
+  answer: '🤖 프롬프트: 모니터링 및 로깅 체계를 종합 점검해줘
+
+    📎 참고 (CLI): echo "=== [7] 모니터링/로깅 ==="; echo "로그 드라이버: $(docker info --format
+    ''{{.LoggingDriver}}'' 2>/dev/null)"; echo "로그 크기 제한:"; cat /etc/docker/daemon.json
+    2>/dev/null | grep max-size || echo "  미설정 (무제한)"; echo "로그 총 크기: $(sudo du -sh
+    /var/lib/docker/containers/ 2>/dev/null | cut -f1)"'
   answer_detail: '모니터링/로깅 점검: 로그 드라이버 설정, 로그 크기 제한(max-size/max-file), 중앙 로그 수집(syslog/fluentd),
     Docker 이벤트 모니터링, 리소스 사용량 추적(cAdvisor/Prometheus).'
   verify:
@@ -185,7 +200,8 @@ steps:
   hint: 7개 영역의 핵심 항목을 자동 판정하여 점수를 계산하세요.
   category: audit
   points: 16
-  answer: "cat << 'SCRIPT' > /tmp/final_assessment.sh\n#!/bin/bash\necho '======================================================'\n\
+  answer: "\U0001F916 프롬프트: 클라우드/컨테이너 보안 종합 평가 스크립트를 작성하고 실행하시오 구현 방법과 예시를 설명해줘\n\U0001F4CE\
+    \ 참고 (CLI): cat << 'SCRIPT' > /tmp/final_assessment.sh\n#!/bin/bash\necho '======================================================'\n\
     echo '  클라우드/컨테이너 보안 종합 평가 보고서'\necho '======================================================'\n\
     echo \"평가일: $(date +%Y-%m-%d)\"\nPASS=0; FAIL=0\ncheck() {\n  if [ \"$2\" = \"\
     PASS\" ]; then\n    PASS=$((PASS+1)); echo \"  [PASS] $1\"\n  else\n    FAIL=$((FAIL+1));\
@@ -269,7 +285,17 @@ steps:
     field: stdout
   target_vm: web
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) WEB 서버(10.20.30.80)의 호스트 보안을 점검하시오. Docker 호스트의 OS, 커널, 서비스 상태를 확인해줘
+
+    2) Docker 데몬의 보안 설정을 종합 점검해줘
+
+    3) 이미지 보안을 종합 점검해줘
+
+    4) 컨테이너 런타임 보안을 종합 점검해줘
+
+    5) 네트워크 보안을 종합 점검하시오. Docker 네트워크 격리와 포트 노출을 분석해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

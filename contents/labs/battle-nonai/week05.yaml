@@ -1,151 +1,161 @@
 lab_id: battle-nonai-week05
-title: "권한 상승(Privilege Escalation) + Blue 탐지"
+title: 권한 상승(Privilege Escalation) + Blue 탐지
 version: non-ai
 course: battle-nonai
 week: 5
-description: "1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Red Phase에서 web 서버 접근 후 권한 상승을 시도하고, Blue Phase에서 권한 상승 시도를 탐지하고 경로를 사전 차단한다."
+description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Red Phase에서 web 서버 접근 후 권한 상승을 시도하고,
+  Blue Phase에서 권한 상승 시도를 탐지하고 경로를 사전 차단한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
-  - Linux 권한 상승 벡터를 체계적으로 열거한다
-  - SUID, sudo, cron 기반 권한 상승을 실습한다
-  - Blue 관점에서 권한 상승 시도를 탐지하고 방어한다
+- Linux 권한 상승 벡터를 체계적으로 열거한다
+- SUID, sudo, cron 기반 권한 상승을 실습한다
+- Blue 관점에서 권한 상승 시도를 탐지하고 방어한다
 prerequisites:
-  - Linux 파일 권한 체계 (rwx, SUID/SGID)
-  - Week 3-4 공격으로 초기 셸 접근 확보
+- Linux 파일 권한 체계 (rwx, SUID/SGID)
+- Week 3-4 공격으로 초기 셸 접근 확보
 infra_requirements:
-  - attacker VM (10.20.30.201)
-  - secu VM (10.20.30.1) — nftables, suricata
-  - web VM (10.20.30.80) — apache, modsecurity, JuiceShop(:3000), DVWA(:8080)
-  - siem VM (10.20.30.100) — wazuh-manager
+- attacker VM (10.20.30.201)
+- secu VM (10.20.30.1) — nftables, suricata
+- web VM (10.20.30.80) — apache, modsecurity, JuiceShop(:3000), DVWA(:8080)
+- siem VM (10.20.30.100) — wazuh-manager
 pass_threshold: 0.6
 steps:
-  - order: 1
-    instruction: "[RED] web 서버에 SSH 접속 후 현재 사용자 정보와 그룹 멤버십을 확인하라."
-    hint: "id, whoami, groups 명령을 사용한다."
-    category: recon
-    points: 5
-    answer: "id && whoami && groups"
-    answer_detail: "id 명령은 UID, GID, 보조 그룹을 모두 표시한다. sudo, adm, docker 등 특수 그룹 멤버십은 권한 상승의 중요한 벡터가 된다."
-    verify:
-      type: output_contains
-      expect: "uid="
-      field: stdout
-    target_vm: attacker
+- order: 1
+  instruction: '[RED] web 서버에 SSH 접속 후 현재 사용자 정보와 그룹 멤버십을 확인하라.'
+  hint: id, whoami, groups 명령을 사용한다.
+  category: recon
+  points: 5
+  answer: id && whoami && groups
+  answer_detail: id 명령은 UID, GID, 보조 그룹을 모두 표시한다. sudo, adm, docker 등 특수 그룹 멤버십은 권한
+    상승의 중요한 벡터가 된다.
+  verify:
+    type: output_contains
+    expect: uid=
+    field: stdout
+  target_vm: attacker
+- order: 2
+  instruction: '[RED] web 서버에서 SUID 비트가 설정된 파일을 검색하라.'
+  hint: find / -perm -4000 명령을 사용한다.
+  category: recon
+  points: 10
+  answer: find / -perm -4000 -type f 2>/dev/null | head -20
+  answer_detail: SUID 비트가 설정된 파일은 실행 시 파일 소유자의 권한으로 동작한다. root 소유의 SUID 바이너리 중 취약한
+    것이 있으면 root 권한을 획득할 수 있다.
+  verify:
+    type: output_contains
+    expect: /usr/
+    field: stdout
+  target_vm: attacker
+- order: 3
+  instruction: '[RED] sudo -l 명령으로 현재 사용자가 sudo로 실행할 수 있는 명령을 확인하라.'
+  hint: sudo -l은 패스워드 입력이 필요할 수 있다.
+  category: recon
+  points: 10
+  answer: sudo -l 2>/dev/null || echo 'sudo check complete'
+  answer_detail: sudo -l은 현재 사용자의 sudoers 설정을 표시한다. NOPASSWD로 특정 명령이 허용되어 있으면 권한 상승이
+    가능하다.
+  verify:
+    type: output_contains
+    expect: complete
+    field: stdout
+  target_vm: attacker
+- order: 4
+  instruction: '[RED] 커널 버전을 확인하고, cron job 목록을 분석하라.'
+  hint: uname -a와 /etc/crontab을 확인한다.
+  category: recon
+  points: 10
+  answer: uname -a && echo '--- crontab ---' && cat /etc/crontab && echo '--- cron.d
+    ---' && ls -la /etc/cron.d/ 2>/dev/null
+  answer_detail: 커널 버전은 커널 익스플로잇 검색의 핵심이다. cron job이 root 권한으로 실행되는 스크립트를 호출하고, 해당
+    스크립트에 쓰기 권한이 있으면 악용 가능하다.
+  verify:
+    type: output_contains
+    expect: Linux
+    field: stdout
+  target_vm: attacker
+- order: 5
+  instruction: '[RED] capabilities가 설정된 바이너리를 검색하여 권한 상승 가능성을 확인하라.'
+  hint: getcap -r / 명령을 사용한다.
+  category: recon
+  points: 10
+  answer: getcap -r / 2>/dev/null | head -10
+  answer_detail: Linux capabilities는 root 권한을 세분화한 것이다. cap_setuid, cap_dac_override
+    등이 설정된 바이너리는 권한 상승에 악용될 수 있다.
+  verify:
+    type: output_contains
+    expect: cap_
+    field: stdout
+  target_vm: attacker
+- order: 6
+  instruction: '[BLUE] web 서버의 auth.log에서 권한 상승 시도(sudo 사용)를 확인하라.'
+  hint: auth.log에서 sudo 관련 로그를 검색한다.
+  category: defense
+  points: 10
+  answer: grep 'sudo' /var/log/auth.log 2>/dev/null | tail -15
+  answer_detail: sudo 로그는 누가 어떤 명령을 어떤 권한으로 실행했는지 기록한다. 비정상적인 명령이나 실패한 시도는 공격 증거이다.
+  verify:
+    type: output_contains
+    expect: sudo
+    field: stdout
+  target_vm: web
+- order: 7
+  instruction: '[BLUE] Wazuh에서 권한 상승 관련 이벤트를 확인하라.'
+  hint: wazuh alerts에서 privilege escalation 관련 알림을 검색한다.
+  category: defense
+  points: 10
+  answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
-  - order: 2
-    instruction: "[RED] web 서버에서 SUID 비트가 설정된 파일을 검색하라."
-    hint: "find / -perm -4000 명령을 사용한다."
-    category: recon
-    points: 10
-    answer: "find / -perm -4000 -type f 2>/dev/null | head -20"
-    answer_detail: "SUID 비트가 설정된 파일은 실행 시 파일 소유자의 권한으로 동작한다. root 소유의 SUID 바이너리 중 취약한 것이 있으면 root 권한을 획득할 수 있다."
-    verify:
-      type: output_contains
-      expect: "/usr/"
-      field: stdout
-    target_vm: attacker
-
-  - order: 3
-    instruction: "[RED] sudo -l 명령으로 현재 사용자가 sudo로 실행할 수 있는 명령을 확인하라."
-    hint: "sudo -l은 패스워드 입력이 필요할 수 있다."
-    category: recon
-    points: 10
-    answer: "sudo -l 2>/dev/null || echo 'sudo check complete'"
-    answer_detail: "sudo -l은 현재 사용자의 sudoers 설정을 표시한다. NOPASSWD로 특정 명령이 허용되어 있으면 권한 상승이 가능하다."
-    verify:
-      type: output_contains
-      expect: "complete"
-      field: stdout
-    target_vm: attacker
-
-  - order: 4
-    instruction: "[RED] 커널 버전을 확인하고, cron job 목록을 분석하라."
-    hint: "uname -a와 /etc/crontab을 확인한다."
-    category: recon
-    points: 10
-    answer: "uname -a && echo '--- crontab ---' && cat /etc/crontab && echo '--- cron.d ---' && ls -la /etc/cron.d/ 2>/dev/null"
-    answer_detail: "커널 버전은 커널 익스플로잇 검색의 핵심이다. cron job이 root 권한으로 실행되는 스크립트를 호출하고, 해당 스크립트에 쓰기 권한이 있으면 악용 가능하다."
-    verify:
-      type: output_contains
-      expect: "Linux"
-      field: stdout
-    target_vm: attacker
-
-  - order: 5
-    instruction: "[RED] capabilities가 설정된 바이너리를 검색하여 권한 상승 가능성을 확인하라."
-    hint: "getcap -r / 명령을 사용한다."
-    category: recon
-    points: 10
-    answer: "getcap -r / 2>/dev/null | head -10"
-    answer_detail: "Linux capabilities는 root 권한을 세분화한 것이다. cap_setuid, cap_dac_override 등이 설정된 바이너리는 권한 상승에 악용될 수 있다."
-    verify:
-      type: output_contains
-      expect: "cap_"
-      field: stdout
-    target_vm: attacker
-
-  - order: 6
-    instruction: "[BLUE] web 서버의 auth.log에서 권한 상승 시도(sudo 사용)를 확인하라."
-    hint: "auth.log에서 sudo 관련 로그를 검색한다."
-    category: defense
-    points: 10
-    answer: "grep 'sudo' /var/log/auth.log 2>/dev/null | tail -15"
-    answer_detail: "sudo 로그는 누가 어떤 명령을 어떤 권한으로 실행했는지 기록한다. 비정상적인 명령이나 실패한 시도는 공격 증거이다."
-    verify:
-      type: output_contains
-      expect: "sudo"
-      field: stdout
-    target_vm: web
-
-  - order: 7
-    instruction: "[BLUE] Wazuh에서 권한 상승 관련 이벤트를 확인하라."
-    hint: "wazuh alerts에서 privilege escalation 관련 알림을 검색한다."
-    category: defense
-    points: 10
-    answer: "sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30 | jq -r 'select(.rule.level >= 7) | \"Level \\(.rule.level): \\(.rule.description)\"' 2>/dev/null | tail -10 || echo 'Wazuh privilege escalation check complete'"
-    answer_detail: "Wazuh는 sudo 실패, SUID 실행, 파일 권한 변경 등을 모니터링한다. rule.level 7 이상은 높은 위험도의 이벤트이다."
-    verify:
-      type: output_contains
-      expect: "complete"
-      field: stdout
-    target_vm: siem
-
-  - order: 8
-    instruction: "[BLUE] 불필요한 SUID 바이너리의 SUID 비트를 제거하여 권한 상승 경로를 차단하라."
-    hint: "chmod u-s로 SUID를 제거한다."
-    category: defense
-    points: 10
-    answer: "echo '=== SUID files on web ===' && find / -perm -4000 -type f 2>/dev/null | wc -l && echo 'Audit complete - review SUID files for unnecessary permissions'"
-    answer_detail: "불필요한 SUID 비트를 제거하면 권한 상승 벡터를 줄일 수 있다. nmap, find, vim 등이 SUID로 설정되어 있으면 즉시 제거해야 한다."
-    verify:
-      type: output_contains
-      expect: "Audit complete"
-      field: stdout
-    target_vm: web
-
-  - order: 9
-    instruction: "[RED] 파일 시스템에서 쓰기 가능한 중요 파일을 찾아 권한 상승에 활용할 수 있는지 확인하라."
-    hint: "world-writable 파일과 /etc/ 디렉토리의 쓰기 권한을 확인한다."
-    category: exploit
-    points: 10
-    answer: "find /etc -writable -type f 2>/dev/null | head -10 && find /tmp /var/tmp -type f -executable 2>/dev/null | head -10"
-    answer_detail: "/etc/passwd가 world-writable이면 UID 0 사용자를 추가하여 root를 획득할 수 있다. /tmp의 실행 파일은 악성 도구일 수 있다."
-    verify:
-      type: output_contains
-      expect: "/"
-      field: stdout
-    target_vm: attacker
-
-  - order: 10
-    instruction: "[BLUE] web 서버에서 최근 수정된 의심스러운 파일을 찾고, 파일 무결성 베이스라인을 생성하라."
-    hint: "find -mtime -1로 최근 24시간 내 변경 파일을 검색한다."
-    category: defense
-    points: 15
-    answer: "find /tmp /var/tmp /dev/shm -type f -mtime -1 2>/dev/null | head -10 && sha256sum /etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config 2>/dev/null > /tmp/integrity_baseline.txt && echo 'Integrity baseline created' && cat /tmp/integrity_baseline.txt"
-    answer_detail: "/tmp, /var/tmp, /dev/shm은 공격자가 도구를 업로드하는 대표적인 디렉토리이다. 주요 설정 파일의 해시 베이스라인을 저장하면 이후 변조를 탐지할 수 있다."
-    verify:
-      type: output_contains
-      expect: "Integrity baseline created"
-      field: stdout
-    target_vm: web
+    📎 참고 (CLI): sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30
+    | jq -r ''select(.rule.level >= 7) | "Level \(.rule.level): \(.rule.description)"''
+    2>/dev/null | tail -10 || echo ''Wazuh privilege escalation check complete'''
+  answer_detail: Wazuh는 sudo 실패, SUID 실행, 파일 권한 변경 등을 모니터링한다. rule.level 7 이상은 높은
+    위험도의 이벤트이다.
+  verify:
+    type: output_contains
+    expect: complete
+    field: stdout
+  target_vm: siem
+- order: 8
+  instruction: '[BLUE] 불필요한 SUID 바이너리의 SUID 비트를 제거하여 권한 상승 경로를 차단하라.'
+  hint: chmod u-s로 SUID를 제거한다.
+  category: defense
+  points: 10
+  answer: echo '=== SUID files on web ===' && find / -perm -4000 -type f 2>/dev/null
+    | wc -l && echo 'Audit complete - review SUID files for unnecessary permissions'
+  answer_detail: 불필요한 SUID 비트를 제거하면 권한 상승 벡터를 줄일 수 있다. nmap, find, vim 등이 SUID로 설정되어
+    있으면 즉시 제거해야 한다.
+  verify:
+    type: output_contains
+    expect: Audit complete
+    field: stdout
+  target_vm: web
+- order: 9
+  instruction: '[RED] 파일 시스템에서 쓰기 가능한 중요 파일을 찾아 권한 상승에 활용할 수 있는지 확인하라.'
+  hint: world-writable 파일과 /etc/ 디렉토리의 쓰기 권한을 확인한다.
+  category: exploit
+  points: 10
+  answer: find /etc -writable -type f 2>/dev/null | head -10 && find /tmp /var/tmp
+    -type f -executable 2>/dev/null | head -10
+  answer_detail: /etc/passwd가 world-writable이면 UID 0 사용자를 추가하여 root를 획득할 수 있다. /tmp의
+    실행 파일은 악성 도구일 수 있다.
+  verify:
+    type: output_contains
+    expect: /
+    field: stdout
+  target_vm: attacker
+- order: 10
+  instruction: '[BLUE] web 서버에서 최근 수정된 의심스러운 파일을 찾고, 파일 무결성 베이스라인을 생성하라.'
+  hint: find -mtime -1로 최근 24시간 내 변경 파일을 검색한다.
+  category: defense
+  points: 15
+  answer: find /tmp /var/tmp /dev/shm -type f -mtime -1 2>/dev/null | head -10 &&
+    sha256sum /etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config 2>/dev/null
+    > /tmp/integrity_baseline.txt && echo 'Integrity baseline created' && cat /tmp/integrity_baseline.txt
+  answer_detail: /tmp, /var/tmp, /dev/shm은 공격자가 도구를 업로드하는 대표적인 디렉토리이다. 주요 설정 파일의 해시
+    베이스라인을 저장하면 이후 변조를 탐지할 수 있다.
+  verify:
+    type: output_contains
+    expect: Integrity baseline created
+    field: stdout
+  target_vm: web

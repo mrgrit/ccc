@@ -17,7 +17,9 @@ steps:
   hint: netstat/ss와 iptables/nftables를 사용하여 네트워크 설정을 확인하세요.
   category: audit
   points: 10
-  answer: 'echo ''=== Port Check ==='' && curl -s -o /dev/null -w ''%{http_code}''
+  answer: '🤖 프롬프트: Ollama 서버의 네트워크 보안 설정을 점검해줘
+
+    📎 참고 (CLI): echo ''=== Port Check ==='' && curl -s -o /dev/null -w ''%{http_code}''
     ${BASTION_URL:-http://localhost:8003}/api/version && echo '' (Ollama accessible)''
     && echo ''=== Service Info ==='' && curl -s ${BASTION_URL:-http://localhost:8003}/api/version
     | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin), indent=2))"
@@ -45,9 +47,10 @@ steps:
   hint: 프롬프트 길이를 점진적으로 늘려가며 서버 응답을 확인하세요.
   category: analysis
   points: 12
-  answer: "python3 -c \"\nimport json, urllib.request\nfor size_kb in [1, 10, 50,\
-    \ 100, 500]:\n    prompt = 'A ' * (size_kb * 128)  # ~1KB per 128 words\n    prompt\
-    \ += ' What is AI?'\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':5}}).encode()\n\
+  answer: "\U0001F916 프롬프트: 요청 크기 제한을 테스트해줘 점진적으로 큰 페이로드를 전송하여 서버의 최대 허용 크기를 파악해줘\n\
+    \U0001F4CE 참고 (CLI): python3 -c \"\nimport json, urllib.request\nfor size_kb in\
+    \ [1, 10, 50, 100, 500]:\n    prompt = 'A ' * (size_kb * 128)  # ~1KB per 128\
+    \ words\n    prompt += ' What is AI?'\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':5}}).encode()\n\
     \    payload_kb = len(data) / 1024\n    try:\n        req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \        resp = urllib.request.urlopen(req, timeout=30)\n        print(f'Payload\
     \ {payload_kb:.0f}KB: ACCEPTED (HTTP {resp.status})')\n    except urllib.error.HTTPError\
@@ -77,9 +80,10 @@ steps:
   hint: 매우 큰 num_predict 값이나 복잡한 프롬프트를 사용하세요.
   category: analysis
   points: 10
-  answer: "python3 -c \"\nimport json, urllib.request, time\nconfigs = [\n    ('Short',\
-    \ 10),\n    ('Medium', 100),\n    ('Long', 500),\n    ('Very Long', 1000)\n]\n\
-    for label, num_predict in configs:\n    data = json.dumps({'model':'gemma3:4b','prompt':'Write\
+  answer: "\U0001F916 프롬프트: 타임아웃 설정을 테스트해줘 의도적으로 오래 걸리는 요청을 전송하여 서버의 타임아웃 동작을 확인해줘\n\
+    \U0001F4CE 참고 (CLI): python3 -c \"\nimport json, urllib.request, time\nconfigs\
+    \ = [\n    ('Short', 10),\n    ('Medium', 100),\n    ('Long', 500),\n    ('Very\
+    \ Long', 1000)\n]\nfor label, num_predict in configs:\n    data = json.dumps({'model':'gemma3:4b','prompt':'Write\
     \ a comprehensive cybersecurity guide','stream':False,'options':{'num_predict':num_predict}}).encode()\n\
     \    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \    start = time.time()\n    try:\n        resp = json.loads(urllib.request.urlopen(req,\
@@ -113,7 +117,9 @@ steps:
   hint: curl -I로 응답 헤더를 분석하고 보안 헤더 체크리스트와 비교하세요.
   category: audit
   points: 10
-  answer: "python3 -c \"\nimport urllib.request\nreq = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/tags')\n\
+  answer: "\U0001F916 프롬프트: HTTP 보안 헤더(X-Content-Type-Options, X-Frame-Options, Content-Security-Policy\
+    \ 등)의 역할과 Ollama API 서버에서 확인해야 할 중요 헤더를 설명해줘\n\U0001F4CE 참고 (CLI): python3 -c\
+    \ \"\nimport urllib.request\nreq = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/tags')\n\
     resp = urllib.request.urlopen(req)\nheaders = dict(resp.headers)\nprint('=== Current\
     \ Headers ===')\nfor k,v in headers.items():\n    print(f'  {k}: {v}')\n\nsecurity_headers\
     \ = {\n    'X-Content-Type-Options': 'nosniff',\n    'X-Frame-Options': 'DENY',\n\
@@ -148,9 +154,10 @@ steps:
   hint: 잘못된 JSON, 존재하지 않는 모델, 빈 요청 등을 보내세요.
   category: attack
   points: 12
-  answer: "python3 -c \"\nimport urllib.request, json\ntests = [\n    ('Empty body',\
-    \ b''),\n    ('Invalid JSON', b'{invalid}'),\n    ('Missing model', json.dumps({'prompt':'hi'}).encode()),\n\
-    \    ('Unknown model', json.dumps({'model':'nonexistent-model','prompt':'hi','stream':False}).encode()),\n\
+  answer: "\U0001F916 프롬프트: 에러 처리 보안을 테스트해줘 잘못된 요청을 다양한 형태로 전송하여 서버가 내부 정보를 노출하는지\
+    \ 확인해줘\n\U0001F4CE 참고 (CLI): python3 -c \"\nimport urllib.request, json\ntests\
+    \ = [\n    ('Empty body', b''),\n    ('Invalid JSON', b'{invalid}'),\n    ('Missing\
+    \ model', json.dumps({'prompt':'hi'}).encode()),\n    ('Unknown model', json.dumps({'model':'nonexistent-model','prompt':'hi','stream':False}).encode()),\n\
     \    ('Wrong type', json.dumps({'model':123,'prompt':'hi','stream':False}).encode()),\n\
     \    ('Null prompt', json.dumps({'model':'gemma3:4b','prompt':None,'stream':False}).encode()),\n\
     ]\nprint('=== Error Handling Security Test ===')\nfor name, body in tests:\n \
@@ -192,7 +199,8 @@ steps:
   hint: 여러 요청을 보내며 통계를 수집하고 요약 보고서를 출력하세요.
   category: monitor
   points: 12
-  answer: "python3 -c \"\nimport json, urllib.request, time\nstats = {'total':0,'success':0,'error':0,'times':[],'tokens':[]}\n\
+  answer: "\U0001F916 프롬프트: API 사용 모니터링 대시보드를 구현 방법을 설명하고 예시 코드를 보여줘\n\U0001F4CE 참고\
+    \ (CLI): python3 -c \"\nimport json, urllib.request, time\nstats = {'total':0,'success':0,'error':0,'times':[],'tokens':[]}\n\
     \nfor i in range(8):\n    prompts = ['What is SSH?','Explain HTTPS','What is a\
     \ firewall?','Define VPN','What is DNS?','Explain TCP','What is UDP?','Define\
     \ NAT']\n    data = json.dumps({'model':'gemma3:4b','prompt':prompts[i],'stream':False,'options':{'num_predict':20}}).encode()\n\
@@ -245,7 +253,8 @@ steps:
   hint: 정상 기준선을 설정하고 이를 벗어나는 요청을 탐지하세요.
   category: defense
   points: 12
-  answer: "python3 -c \"\nimport time, random\n# Simulate request log\nclass AnomalyDetector:\n\
+  answer: "\U0001F916 프롬프트: 이상 탐지 로직을 구현 방법을 설명하고 예시 코드를 보여줘\n\U0001F4CE 참고 (CLI):\
+    \ python3 -c \"\nimport time, random\n# Simulate request log\nclass AnomalyDetector:\n\
     \    def __init__(self):\n        self.window = []\n        self.baseline_rps\
     \ = 2  # requests per second\n        self.max_prompt_len = 500\n        self.seen_prompts\
     \ = {}\n    \n    def check(self, timestamp, prompt_len, prompt_hash):\n     \
@@ -303,7 +312,8 @@ steps:
   hint: 인증, 암호화, 접근 제어, 로깅, 리소스 제한 등을 자동 점검하세요.
   category: audit
   points: 12
-  answer: "python3 -c \"\nimport json, urllib.request\nresults = []\ndef check(name,\
+  answer: "\U0001F916 프롬프트: 배포 보안 체크리스트를 자동으로 점검하는 스크립트를 구현 방법을 설명하고 예시 코드를 보여줘\n\U0001F4CE\
+    \ 참고 (CLI): python3 -c \"\nimport json, urllib.request\nresults = []\ndef check(name,\
     \ test_fn):\n    try:\n        passed, detail = test_fn()\n        results.append((name,\
     \ 'PASS' if passed else 'FAIL', detail))\n    except Exception as e:\n       \
     \ results.append((name, 'ERROR', str(e)[:40]))\n\ndef test_auth():\n    req =\
@@ -381,7 +391,18 @@ steps:
     field: stdout
   target_vm: manager
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) Ollama 서버의 네트워크 보안 설정을 점검해줘
+
+    2) 요청 크기 제한을 테스트해줘 점진적으로 큰 페이로드를 전송하여 서버의 최대 허용 크기를 파악해줘
+
+    3) 타임아웃 설정을 테스트해줘 의도적으로 오래 걸리는 요청을 전송하여 서버의 타임아웃 동작을 확인해줘
+
+    4) HTTP 보안 헤더(X-Content-Type-Options, X-Frame-Options, Content-Security-Policy
+    등)의 역할과 Ollama API 서버에서 확인해야 할 중요 헤더를 설명해줘
+
+    5) 에러 처리 보안을 테스트해줘 잘못된 요청을 다양한 형태로 전송하여 서버가 내부 정보를 노출하는지 확인해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

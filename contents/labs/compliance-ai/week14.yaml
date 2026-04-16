@@ -19,7 +19,9 @@ steps:
   hint: /etc/issue.net에 경고 문구를 작성하고 sshd_config에서 Banner를 설정하세요.
   category: config
   points: 10
-  answer: 'echo ''================================================================
+  answer: '🤖 프롬프트: SECU 서버(10.20.30.1)에 SSH 접속 시 보안 경고 배너를 설정해줘
+
+    📎 참고 (CLI): echo ''================================================================
 
     경고: 본 시스템은 인가된 사용자만 접근할 수 있습니다.
 
@@ -55,7 +57,9 @@ steps:
   hint: /etc/motd 파일에 보안 공지 내용을 작성하세요.
   category: config
   points: 10
-  answer: 'cat << ''EOF'' | sudo tee /etc/motd
+  answer: '🤖 프롬프트: 로그인 후 보안 알림 메시지(MOTD)를 설정해줘
+
+    📎 참고 (CLI): cat << ''EOF'' | sudo tee /etc/motd
 
 
     [보안 공지] 2024년 보안 교육 일정
@@ -103,7 +107,9 @@ steps:
   hint: 각 사용자의 chage 정보를 확인하세요.
   category: audit
   points: 10
-  answer: 'echo ''=== 사용자 패스워드 보안 수준 ==='' && for user in $(awk -F: ''$7 !~ /nologin|false/
+  answer: '🤖 프롬프트: 사용자의 패스워드 보안 수준을 점검해줘
+
+    📎 참고 (CLI): echo ''=== 사용자 패스워드 보안 수준 ==='' && for user in $(awk -F: ''$7 !~ /nologin|false/
     {print $1}'' /etc/passwd); do echo "[$user]"; sudo chage -l $user 2>/dev/null
     | grep -E ''(Last password|Maximum|Password expires)''; echo ''''; done'
   answer_detail: 보안 교육의 효과는 사용자 행동으로 측정할 수 있습니다. 패스워드를 오랫동안 변경하지 않은 사용자, 간단한 패스워드를
@@ -123,7 +129,9 @@ steps:
   hint: auth.log에서 시간대별 로그인을 분석하세요.
   category: audit
   points: 12
-  answer: 'echo ''=== 비정상 시간 로그인 분석 ==='' && sudo grep ''session opened\|Accepted''
+  answer: '🤖 프롬프트: 비정상 시간대(22:00~06:00)의 로그인 시도를 분석해줘
+
+    📎 참고 (CLI): echo ''=== 비정상 시간 로그인 분석 ==='' && sudo grep ''session opened\|Accepted''
     /var/log/auth.log 2>/dev/null | awk ''{print $1, $2, $3}'' | sort | tail -15 &&
     echo ''--- 야간(22-06시) 접속 ---'' && sudo grep ''session opened\|Accepted'' /var/log/auth.log
     2>/dev/null | awk -F: ''{if($1 ~ /[0-5]:/) print}'' | head -5 || echo ''야간 접속
@@ -147,9 +155,11 @@ steps:
   hint: /var/log/auth.log에서 sudo 사용 패턴을 추출하세요.
   category: audit
   points: 10
-  answer: echo '=== sudo 사용 분석 ===' && sudo grep 'sudo:' /var/log/auth.log 2>/dev/null
-    | awk '{for(i=1;i<=NF;i++) if($i=="COMMAND=") {for(j=i;j<=NF;j++) printf $j" ";
-    print ""}}' | sort | uniq -c | sort -rn | head -10
+  answer: '🤖 프롬프트: sudo 명령어 사용 패턴을 분석해줘
+
+    📎 참고 (CLI): echo ''=== sudo 사용 분석 ==='' && sudo grep ''sudo:'' /var/log/auth.log
+    2>/dev/null | awk ''{for(i=1;i<=NF;i++) if($i=="COMMAND=") {for(j=i;j<=NF;j++)
+    printf $j" "; print ""}}'' | sort | uniq -c | sort -rn | head -10'
   answer_detail: 특권 명령 사용 분석은 보안 교육의 효과를 측정하는 지표입니다. 불필요한 sudo 사용이 빈번하면 최소 권한 원칙 교육이
     부족한 것이고, 위험한 명령(rm -rf, chmod 777 등) 사용이 발견되면 즉시 교육이 필요합니다.
   verify:
@@ -167,7 +177,8 @@ steps:
   hint: /opt/security-training/ 디렉터리에 교육 자료를 생성하세요.
   category: config
   points: 10
-  answer: "sudo mkdir -p /opt/security-training && cat << 'EOF' | sudo tee /opt/security-training/security_awareness.txt\n\
+  answer: "\U0001F916 프롬프트: 보안 교육 자료 배포용 디렉터리를 구성해줘\n\U0001F4CE 참고 (CLI): sudo mkdir\
+    \ -p /opt/security-training && cat << 'EOF' | sudo tee /opt/security-training/security_awareness.txt\n\
     === 보안 인식 교육 자료 ===\n\n1. 피싱 이메일 식별법\n   - 발신자 주소 확인\n   - 의심스러운 링크 호버 확인\n  \
     \ - 긴급/위협성 문구 주의\n\n2. 안전한 패스워드 관리\n   - 12자 이상, 3종 이상 문자 조합\n   - 서비스별 다른 패스워드\
     \ 사용\n   - 패스워드 관리자 활용\n\n3. 인시던트 신고\n   - 이상 징후 발견 시 보안팀 즉시 신고\n   - 신고 채널: 내선\
@@ -191,13 +202,13 @@ steps:
   hint: auth.log를 감시하여 실패 횟수를 카운트하는 스크립트를 작성하세요.
   category: config
   points: 12
-  answer: "cat << 'SCRIPT' > /tmp/login_alert.sh\n#!/bin/bash\nTHRESHOLD=5\nFAILED=$(sudo\
-    \ grep -c 'Failed password' /var/log/auth.log 2>/dev/null || echo 0)\nif [ \"\
-    $FAILED\" -ge \"$THRESHOLD\" ]; then\n  echo \"[경고] 로그인 실패 ${FAILED}회 감지!\"\n\
-    \  echo \"상위 실패 IP:\"\n  sudo grep 'Failed password' /var/log/auth.log 2>/dev/null\
-    \ | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn | head -5\nelse\n  echo\
-    \ \"[정상] 로그인 실패 ${FAILED}회 (임계값: ${THRESHOLD})\"\nfi\nSCRIPT\nchmod +x /tmp/login_alert.sh\
-    \ && bash /tmp/login_alert.sh"
+  answer: "\U0001F916 프롬프트: 시스템에 보안 알림 스크립트를 설정해줘\n\U0001F4CE 참고 (CLI): cat << 'SCRIPT'\
+    \ > /tmp/login_alert.sh\n#!/bin/bash\nTHRESHOLD=5\nFAILED=$(sudo grep -c 'Failed\
+    \ password' /var/log/auth.log 2>/dev/null || echo 0)\nif [ \"$FAILED\" -ge \"\
+    $THRESHOLD\" ]; then\n  echo \"[경고] 로그인 실패 ${FAILED}회 감지!\"\n  echo \"상위 실패 IP:\"\
+    \n  sudo grep 'Failed password' /var/log/auth.log 2>/dev/null | awk '{print $(NF-3)}'\
+    \ | sort | uniq -c | sort -rn | head -5\nelse\n  echo \"[정상] 로그인 실패 ${FAILED}회\
+    \ (임계값: ${THRESHOLD})\"\nfi\nSCRIPT\nchmod +x /tmp/login_alert.sh && bash /tmp/login_alert.sh"
   answer_detail: 보안 알림은 기술적 보안 인식의 핵심 도구입니다. 임계값 기반 알림은 실시간 위협 감지와 대응을 가능하게 합니다. 이
     스크립트를 cron에 등록하면 주기적으로 로그인 실패를 감시하고, 이메일/Slack 등으로 알림을 보낼 수 있습니다.
   verify:
@@ -219,7 +230,9 @@ steps:
   hint: 배너, MOTD, 교육 자료, 알림 체계를 종합 점검하세요.
   category: audit
   points: 16
-  answer: 'cat << ''SCRIPT'' > /tmp/awareness_check.sh
+  answer: '🤖 프롬프트: 보안 교육/인식 프로그램 종합 점검 스크립트를 작성하고 실행하시오 구현 방법과 예시를 설명해줘
+
+    📎 참고 (CLI): cat << ''SCRIPT'' > /tmp/awareness_check.sh
 
     #!/bin/bash
 
@@ -337,7 +350,17 @@ steps:
     field: stdout
   target_vm: secu
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) SECU 서버(10.20.30.1)에 SSH 접속 시 보안 경고 배너를 설정해줘
+
+    2) 로그인 후 보안 알림 메시지(MOTD)를 설정해줘
+
+    3) 사용자의 패스워드 보안 수준을 점검해줘
+
+    4) 비정상 시간대(22:00~06:00)의 로그인 시도를 분석해줘
+
+    5) sudo 명령어 사용 패턴을 분석해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

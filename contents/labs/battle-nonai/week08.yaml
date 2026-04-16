@@ -3,7 +3,8 @@ title: 로그 분석 및 위협 헌팅 — 공격 흔적 추적 + Red 흔적 은
 version: non-ai
 course: battle-nonai
 week: 8
-description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Blue Phase에서 시스템/네트워크/애플리케이션 로그를 분석하여 공격 흔적을 추적하고, Red Phase에서 로그 기반 탐지를 회피하는 기법을 이해한다.
+description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Blue Phase에서 시스템/네트워크/애플리케이션 로그를 분석하여
+  공격 흔적을 추적하고, Red Phase에서 로그 기반 탐지를 회피하는 기법을 이해한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -25,8 +26,11 @@ steps:
   hint: grep 'Failed password'와 'Accepted'를 검색한다.
   category: analysis
   points: 10
-  answer: echo '=== Failed ===' && grep 'Failed password' /var/log/auth.log 2>/dev/null | tail -10 && echo '=== Accepted ===' && grep 'Accepted' /var/log/auth.log 2>/dev/null | tail -10
-  answer_detail: Failed password는 브루트포스, Accepted는 성공한 로그인이다. 비정상 시간대, 10.20.30.201에서의 로그인은 침해 지표(IoC)가 된다.
+  answer: echo '=== Failed ===' && grep 'Failed password' /var/log/auth.log 2>/dev/null
+    | tail -10 && echo '=== Accepted ===' && grep 'Accepted' /var/log/auth.log 2>/dev/null
+    | tail -10
+  answer_detail: Failed password는 브루트포스, Accepted는 성공한 로그인이다. 비정상 시간대, 10.20.30.201에서의
+    로그인은 침해 지표(IoC)가 된다.
   verify:
     type: output_contains
     expect: ===
@@ -37,8 +41,10 @@ steps:
   hint: 특정 IP의 요청을 필터링한다.
   category: analysis
   points: 10
-  answer: grep '10.20.30.201' /var/log/apache2/access.log 2>/dev/null | awk '{print $9}' | sort | uniq -c | sort -rn | head -10
-  answer_detail: 공격자 IP의 HTTP 상태 코드 분포를 분석한다. 404 대량이면 디렉토리 스캔, 200 + SQL 키워드면 성공한 SQLi이다.
+  answer: grep '10.20.30.201' /var/log/apache2/access.log 2>/dev/null | awk '{print
+    $9}' | sort | uniq -c | sort -rn | head -10
+  answer_detail: 공격자 IP의 HTTP 상태 코드 분포를 분석한다. 404 대량이면 디렉토리 스캔, 200 + SQL 키워드면 성공한
+    SQLi이다.
   verify:
     type: output_contains
     expect: '200'
@@ -49,8 +55,10 @@ steps:
   hint: UNION, SELECT, script 등의 패턴을 검색한다.
   category: analysis
   points: 10
-  answer: grep -iE '(union|select|script|%27|%3C)' /var/log/apache2/access.log 2>/dev/null | tail -10
-  answer_detail: URL 인코딩된 SQL 키워드(%27=', %3C=<)와 일반 텍스트를 모두 검색해야 한다. 공격 시각과 대상 URL을 확인하여 공격 범위를 파악한다.
+  answer: grep -iE '(union|select|script|%27|%3C)' /var/log/apache2/access.log 2>/dev/null
+    | tail -10
+  answer_detail: URL 인코딩된 SQL 키워드(%27=', %3C=<)와 일반 텍스트를 모두 검색해야 한다. 공격 시각과 대상 URL을
+    확인하여 공격 범위를 파악한다.
   verify:
     type: output_contains
     expect: 10.20.30
@@ -61,8 +69,10 @@ steps:
   hint: jq로 timestamp를 추출하여 시간별 집계한다.
   category: analysis
   points: 10
-  answer: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .timestamp[:13]' 2>/dev/null | sort | uniq -c | sort -k2 | tail -10
-  answer_detail: timestamp의 앞 13자(YYYY-MM-DDTHH)를 추출하면 시간별 집계가 된다. 경보가 급증하는 시간대는 활발한 공격 시점이다.
+  answer: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .timestamp[:13]'
+    2>/dev/null | sort | uniq -c | sort -k2 | tail -10
+  answer_detail: timestamp의 앞 13자(YYYY-MM-DDTHH)를 추출하면 시간별 집계가 된다. 경보가 급증하는 시간대는 활발한
+    공격 시점이다.
   verify:
     type: output_contains
     expect: T
@@ -73,8 +83,13 @@ steps:
   hint: wazuh alerts를 rule.level 기준으로 분류한다.
   category: analysis
   points: 10
-  answer: sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -50 | jq -r '.rule.level' 2>/dev/null | sort | uniq -c | sort -rn || echo 'Wazuh severity analysis complete'
-  answer_detail: 'Wazuh rule.level: 0-3(정보), 4-7(경고), 8-11(높음), 12+(심각). 높은 레벨의 이벤트를 우선 분석해야 한다.'
+  answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
+
+    📎 참고 (CLI): sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -50
+    | jq -r ''.rule.level'' 2>/dev/null | sort | uniq -c | sort -rn || echo ''Wazuh
+    severity analysis complete'''
+  answer_detail: 'Wazuh rule.level: 0-3(정보), 4-7(경고), 8-11(높음), 12+(심각). 높은 레벨의 이벤트를
+    우선 분석해야 한다.'
   verify:
     type: output_contains
     expect: complete
@@ -86,7 +101,8 @@ steps:
   category: recon
   points: 10
   answer: ss -tunapl | grep ESTAB
-  answer_detail: ESTABLISHED 연결은 현재 활성 세션을 보여준다. 공격자는 연결 후 흔적이 남는 위치(로그, 연결 상태)를 파악하여 은닉 전략을 수립한다.
+  answer_detail: ESTABLISHED 연결은 현재 활성 세션을 보여준다. 공격자는 연결 후 흔적이 남는 위치(로그, 연결 상태)를 파악하여
+    은닉 전략을 수립한다.
   verify:
     type: output_contains
     expect: ESTAB
@@ -97,8 +113,11 @@ steps:
   hint: curl -A 옵션으로 User-Agent를 변경한다.
   category: exploit
   points: 10
-  answer: "curl -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' -s http://10.20.30.80:3000/ \\\n  -o /dev/null \\\n  -w '%{http_code}' && echo ' - Stealth request sent'"
-  answer_detail: 기본 curl User-Agent나 Nikto/sqlmap의 User-Agent는 IDS에 의해 탐지된다. 정상 브라우저의 User-Agent로 변조하면 시그니처 기반 탐지를 회피할 수 있다.
+  answer: "curl -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'\
+    \ -s http://10.20.30.80:3000/ \\\n  -o /dev/null \\\n  -w '%{http_code}' && echo\
+    \ ' - Stealth request sent'"
+  answer_detail: 기본 curl User-Agent나 Nikto/sqlmap의 User-Agent는 IDS에 의해 탐지된다. 정상 브라우저의
+    User-Agent로 변조하면 시그니처 기반 탐지를 회피할 수 있다.
   verify:
     type: output_contains
     expect: Stealth request sent
@@ -109,8 +128,10 @@ steps:
   hint: find -mtime -1로 최근 24시간 내 변경 파일을 검색한다.
   category: analysis
   points: 10
-  answer: find /tmp /var/tmp /dev/shm -type f -mtime -1 2>/dev/null && find /var/www -name '*.php' -mtime -1 2>/dev/null && echo 'File audit complete'
-  answer_detail: /tmp, /var/tmp, /dev/shm은 공격자가 도구를 업로드하는 대표적인 디렉토리이다. /var/www의 새 PHP 파일은 웹셸일 수 있다.
+  answer: find /tmp /var/tmp /dev/shm -type f -mtime -1 2>/dev/null && find /var/www
+    -name '*.php' -mtime -1 2>/dev/null && echo 'File audit complete'
+  answer_detail: /tmp, /var/tmp, /dev/shm은 공격자가 도구를 업로드하는 대표적인 디렉토리이다. /var/www의 새
+    PHP 파일은 웹셸일 수 있다.
   verify:
     type: output_contains
     expect: File audit complete
@@ -203,7 +224,8 @@ steps:
     EOF
 
     cat /tmp/attacker_opsec_review.txt'
-  answer_detail: 공격자의 OPSEC(운영보안) 검토는 Red Team 역량 향상의 핵심이다. 어떤 행위가 탐지되었는지 분석하여 다음 공격에서 은밀성을 높인다.
+  answer_detail: 공격자의 OPSEC(운영보안) 검토는 Red Team 역량 향상의 핵심이다. 어떤 행위가 탐지되었는지 분석하여 다음
+    공격에서 은밀성을 높인다.
   verify:
     type: output_contains
     expect: Attacker OPSEC Review

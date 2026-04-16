@@ -19,10 +19,11 @@ steps:
   hint: CVE-2024-99999 같은 가짜 CVE에 대해 질문하세요.
   category: analysis
   points: 12
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"\
-    model\":\"gemma3:4b\",\"prompt\":\"Explain CVE-2024-99999 in detail. What software\
-    \ is affected and what is the CVSS score?\",\"stream\":false,\"options\":{\"temperature\"\
-    :0}}' \\\n | python3 -c \"import sys,json; r=json.load(sys.stdin)['response'];\
+  answer: "\U0001F916 프롬프트: Explain CVE-2024-99999 in detail. What software is affected\
+    \ and what is the CVSS score?\n\U0001F4CE 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/generate\
+    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Explain CVE-2024-99999 in detail.\
+    \ What software is affected and what is the CVSS score?\",\"stream\":false,\"\
+    options\":{\"temperature\":0}}' \\\n | python3 -c \"import sys,json; r=json.load(sys.stdin)['response'];\
     \ print(r[:300]); print('\\n=== Hallucination Check ==='); print('WARNING: This\
     \ CVE does not exist. Any detailed description is a hallucination.'); has_details\
     \ = any(w in r.lower() for w in ['cvss','affected','vulnerability','score','patch']);\
@@ -51,8 +52,9 @@ steps:
   hint: 같은 사실 확인 질문을 여러 번 하고 핵심 키워드의 일치율을 측정하세요.
   category: analysis
   points: 12
-  answer: "python3 -c \"\nimport json, urllib.request\ndef query(prompt):\n    data\
-    \ = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':40,'temperature':0.5}}).encode()\n\
+  answer: "\U0001F916 프롬프트: 자기 일관성 검증(self-consistency check)을 수행해줘 동일 질문을 5회 반복하여\
+    \ 응답의 핵심 사실이 일관되는지 확인해줘\n\U0001F4CE 참고 (CLI): python3 -c \"\nimport json, urllib.request\n\
+    def query(prompt):\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':40,'temperature':0.5}}).encode()\n\
     \    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \    return json.loads(urllib.request.urlopen(req).read())['response'].strip()\n\
     \nquestion = 'What port does HTTPS use? Answer with just the number.'\nresponses\
@@ -93,7 +95,9 @@ steps:
   hint: CoT(Chain-of-Thought)를 사용하여 판단 과정을 명시하게 하세요.
   category: analysis
   points: 10
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\"\
+  answer: "\U0001F916 프롬프트: Analyze this log: Multiple failed SSH logins from 10.0.0.5\
+    \ followed by successful login, then immediate sudo commands.\n\U0001F4CE 참고 (CLI):\
+    \ curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\"\
     :\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a security\
     \ analyst. For every analysis, explain your reasoning step by step. Format: STEP\
     \ 1: ... STEP 2: ... VERDICT: ...\"},{\"role\":\"user\",\"content\":\"Analyze\
@@ -125,8 +129,9 @@ steps:
   hint: 직접 질문, 분류 형태, 예/아니오 형태로 같은 내용을 질문하세요.
   category: analysis
   points: 12
-  answer: "python3 -c \"\nimport json, urllib.request\ndef query(prompt):\n    data\
-    \ = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':50,'temperature':0}}).encode()\n\
+  answer: "\U0001F916 프롬프트: 교차 검증(cross-validation)을 수행해줘 동일한 보안 질문을 다른 프롬프트 스타일로\
+    \ 3번 물어 응답의 일관성을 확인해줘\n\U0001F4CE 참고 (CLI): python3 -c \"\nimport json, urllib.request\n\
+    def query(prompt):\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':50,'temperature':0}}).encode()\n\
     \    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \    return json.loads(urllib.request.urlopen(req).read())['response'].strip()[:80]\n\
     \nvariants = [\n    ('Direct', 'Is port 23 (Telnet) secure for remote administration?'),\n\
@@ -163,13 +168,15 @@ steps:
   hint: '모델에게 답변과 함께 ''Confidence: X%'' 형식으로 확신도를 출력하게 하세요.'
   category: analysis
   points: 12
-  answer: "python3 -c \"\nimport json, urllib.request, re\nqa_pairs = [\n    ('What\
-    \ is the default SSH port?', '22'),\n    ('What is the CVSS score range?', '0.0\
-    \ to 10.0'),\n    ('Who created the Python language?', 'Guido van Rossum'),\n\
-    \    ('What year was CVE-2024-99999 published?', 'DOES NOT EXIST'),\n    ('What\
-    \ is the atomic number of Linuxium?', 'DOES NOT EXIST')\n]\nfor q, expected in\
-    \ qa_pairs:\n    prompt = f'{q}\\n\\nProvide your answer and your confidence level\
-    \ (0-100%). Format: ANSWER: ... CONFIDENCE: X%'\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':60}}).encode()\n\
+  answer: "\U0001F916 프롬프트: 확신도(confidence) 추출을 시도해줘 모델에게 자신의 답변에 대한 확신도를 0-100으로\
+    \ 평가하게 하고 실제 정확도와 비교해줘\n\U0001F4CE 참고 (CLI): python3 -c \"\nimport json, urllib.request,\
+    \ re\nqa_pairs = [\n    ('What is the default SSH port?', '22'),\n    ('What is\
+    \ the CVSS score range?', '0.0 to 10.0'),\n    ('Who created the Python language?',\
+    \ 'Guido van Rossum'),\n    ('What year was CVE-2024-99999 published?', 'DOES\
+    \ NOT EXIST'),\n    ('What is the atomic number of Linuxium?', 'DOES NOT EXIST')\n\
+    ]\nfor q, expected in qa_pairs:\n    prompt = f'{q}\\n\\nProvide your answer and\
+    \ your confidence level (0-100%). Format: ANSWER: ... CONFIDENCE: X%'\n    data\
+    \ = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':60}}).encode()\n\
     \    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \    resp = json.loads(urllib.request.urlopen(req).read())['response']\n    conf_match\
     \ = re.search(r'(\\d+)%', resp)\n    conf = int(conf_match.group(1)) if conf_match\
@@ -206,8 +213,9 @@ steps:
   hint: LLM 응답에서 주장을 추출한 후 각 주장을 독립적으로 검증하세요.
   category: defense
   points: 12
-  answer: "python3 -c \"\nimport json, urllib.request\ndef query(prompt, sys=None):\n\
-    \    if sys:\n        payload = {'model':'gemma3:4b','messages':[{'role':'system','content':sys},{'role':'user','content':prompt}],'stream':False,'options':{'temperature':0,'num_predict':100}}\n\
+  answer: "\U0001F916 프롬프트: 사실 검증 파이프라인을 구성하시오 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고 (CLI):\
+    \ python3 -c \"\nimport json, urllib.request\ndef query(prompt, sys=None):\n \
+    \   if sys:\n        payload = {'model':'gemma3:4b','messages':[{'role':'system','content':sys},{'role':'user','content':prompt}],'stream':False,'options':{'temperature':0,'num_predict':100}}\n\
     \        data = json.dumps(payload).encode()\n        req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/chat',data=data,headers={'Content-Type':'application/json'})\n\
     \        return json.loads(urllib.request.urlopen(req).read())['message']['content']\n\
     \    else:\n        payload = {'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'temperature':0,'num_predict':100}}\n\
@@ -246,13 +254,14 @@ steps:
   hint: '모델에게 각 주장에 [SOURCE: ...] 또는 [NO SOURCE]를 붙이게 하세요.'
   category: defense
   points: 10
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\"\
-    :\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"For every factual\
-    \ claim, add a source tag. Use [SOURCE: RFC/CVE/NIST/OWASP/...] for known sources\
-    \ or [NO SOURCE] if unsure. Be honest about uncertainty.\"},{\"role\":\"user\"\
-    ,\"content\":\"Explain the security risks of using HTTP instead of HTTPS.\"}],\"\
-    stream\":false,\"options\":{\"num_predict\":200}}' \\\n | python3 -c \"\nimport\
-    \ sys, json, re\nr = json.load(sys.stdin)['message']['content']\nprint(r[:400])\n\
+  answer: "\U0001F916 프롬프트: 출처 추적(attribution) 시스템을 구현 방법을 설명하고 예시 코드를 보여줘\n\U0001F4CE\
+    \ 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"\
+    model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"For every\
+    \ factual claim, add a source tag. Use [SOURCE: RFC/CVE/NIST/OWASP/...] for known\
+    \ sources or [NO SOURCE] if unsure. Be honest about uncertainty.\"},{\"role\"\
+    :\"user\",\"content\":\"Explain the security risks of using HTTP instead of HTTPS.\"\
+    }],\"stream\":false,\"options\":{\"num_predict\":200}}' \\\n | python3 -c \"\n\
+    import sys, json, re\nr = json.load(sys.stdin)['message']['content']\nprint(r[:400])\n\
     sources = re.findall(r'\\[SOURCE: [^\\]]+\\]', r)\nno_source = r.count('[NO SOURCE]')\n\
     print(f'\\n=== Attribution Summary ===')\nprint(f'Claims with sources: {len(sources)}')\n\
     print(f'Claims without sources: {no_source}')\nfor s in set(sources): print(f'\
@@ -283,7 +292,8 @@ steps:
   hint: 불확실성 표현의 빈도를 측정하여 응답의 신뢰도를 판단하세요.
   category: analysis
   points: 10
-  answer: "python3 -c \"\nimport json, urllib.request, re\ndef measure_uncertainty(text):\n\
+  answer: "\U0001F916 프롬프트: 불확실성 정량화 시스템을 구현 방법을 설명하고 예시 코드를 보여줘\n\U0001F4CE 참고 (CLI):\
+    \ python3 -c \"\nimport json, urllib.request, re\ndef measure_uncertainty(text):\n\
     \    uncertain_words = ['may','might','possibly','perhaps','probably','could','likely','unlikely','uncertain','unclear','not\
     \ sure','I think','it seems','appears to']\n    certain_words = ['definitely','certainly','always','never','must','is','are','will','guaranteed']\n\
     \    text_lower = text.lower()\n    unc_count = sum(1 for w in uncertain_words\
@@ -346,7 +356,19 @@ steps:
     field: stdout
   target_vm: manager
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) Explain CVE-2024-99999 in detail. What software is affected and what is the
+    CVSS score?
+
+    2) 자기 일관성 검증(self-consistency check)을 수행해줘 동일 질문을 5회 반복하여 응답의 핵심 사실이 일관되는지 확인해줘
+
+    3) Analyze this log: Multiple failed SSH logins from 10.0.0.5 followed by successful
+    login, then immediate sudo commands.
+
+    4) 교차 검증(cross-validation)을 수행해줘 동일한 보안 질문을 다른 프롬프트 스타일로 3번 물어 응답의 일관성을 확인해줘
+
+    5) 확신도(confidence) 추출을 시도해줘 모델에게 자신의 답변에 대한 확신도를 0-100으로 평가하게 하고 실제 정확도와 비교해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

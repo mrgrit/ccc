@@ -19,11 +19,14 @@ steps:
   hint: 각 도구의 프로세스 상태와 로그 수집 상태를 확인한다.
   category: operation
   points: 10
-  answer: echo '=== SOC Environment Check ===' && echo '[Wazuh Manager]' && systemctl
-    is-active wazuh-manager 2>/dev/null && /var/ossec/bin/agent_control -l 2>/dev/null
-    | tail -5 && echo '' && echo '[Wazuh Alerts]' && tail -5 /var/ossec/logs/alerts/alerts.json
-    2>/dev/null | python3 -m json.tool 2>/dev/null | head -10 && echo '' && echo 'Environment
-    check complete'
+  answer: '🤖 프롬프트: SOC 환경 점검을 수행하라. Wazuh Manager, Suricata, nftables의 상태를 확인하고 모든
+    보안 도구가 정상 동작하는지 검증해줘
+
+    📎 참고 (CLI): echo ''=== SOC Environment Check ==='' && echo ''[Wazuh Manager]''
+    && systemctl is-active wazuh-manager 2>/dev/null && /var/ossec/bin/agent_control
+    -l 2>/dev/null | tail -5 && echo '''' && echo ''[Wazuh Alerts]'' && tail -5 /var/ossec/logs/alerts/alerts.json
+    2>/dev/null | python3 -m json.tool 2>/dev/null | head -10 && echo '''' && echo
+    ''Environment check complete'''
   answer_detail: SOC 운영의 첫 임무는 보안 도구 상태 확인이다. Wazuh 에이전트 연결 상태, Suricata 패킷 처리 통계,
     nftables 룰 수를 확인하여 탐지 인프라가 정상 동작하는지 검증한다.
   verify:
@@ -44,7 +47,10 @@ steps:
   hint: eve.json에서 alert 이벤트 중 http 관련 항목을 필터링한다.
   category: detection
   points: 10
-  answer: 'echo "=== Web Attack Analysis ===" && tail -500 /var/log/suricata/eve.json
+  answer: '🤖 프롬프트: 시나리오 1: 외부에서 웹서버 공격이 감지되었다. Suricata eve.json에서 최근 HTTP 관련 알림을
+    분석하고, 공격 유형/소스/성공 여부를 판단해줘
+
+    📎 참고 (CLI): echo "=== Web Attack Analysis ===" && tail -500 /var/log/suricata/eve.json
     2>/dev/null | python3 -c " import sys,json for l in sys.stdin: try: e=json.loads(l)
     if e.get(\"event_type\")==\"alert\" and \"http\" in str(e.get(\"alert\",{}).get(\"category\",\"\")):
     a=e[\"alert\"] print(f\"{e.get(\"timestamp\",\"\")[:19]} | {e.get(\"src_ip\",\"\")}:{e.get(\"src_port\",\"\")}
@@ -72,11 +78,14 @@ steps:
   hint: nft add element로 차단 목록에 추가하고, Suricata 커스텀 룰을 작성한다.
   category: response
   points: 12
-  answer: 'ATTACKER_IP="203.0.113.50" && echo "=== Incident Response: Web Attack ==="
-    && echo "[1] Block attacker IP:" && sudo nft add rule inet filter input ip saddr
-    $ATTACKER_IP drop 2>/dev/null && echo "IP blocked: $ATTACKER_IP" && echo "" &&
-    echo "[2] Deploy Suricata detection rule:" && echo "alert http $ATTACKER_IP any
-    -> \$HOME_NET any (msg:\"CUSTOM: Blocked attacker resumed activity\"; flow:to_server,established;
+  answer: '🤖 프롬프트: 시나리오 1 대응: 공격 소스 IP를 nftables로 차단하고, Suricata에 해당 IP의 추가 탐지 규칙을
+    배포해줘
+
+    📎 참고 (CLI): ATTACKER_IP="203.0.113.50" && echo "=== Incident Response: Web Attack
+    ===" && echo "[1] Block attacker IP:" && sudo nft add rule inet filter input ip
+    saddr $ATTACKER_IP drop 2>/dev/null && echo "IP blocked: $ATTACKER_IP" && echo
+    "" && echo "[2] Deploy Suricata detection rule:" && echo "alert http $ATTACKER_IP
+    any -> \$HOME_NET any (msg:\"CUSTOM: Blocked attacker resumed activity\"; flow:to_server,established;
     sid:9100001; rev:1;)" | sudo tee -a /etc/suricata/rules/local.rules && echo ""
     && echo "[3] Verify block:" && sudo nft list ruleset 2>/dev/null | grep 203.0.113
     && echo "" && echo "Response complete - attacker blocked and monitored"'
@@ -103,8 +112,11 @@ steps:
   hint: eve.json에서 outbound 알림과 ss 명령의 외부 연결을 비교한다.
   category: detection
   points: 10
-  answer: 'echo "=== Outbound Traffic Analysis ===" && echo "[Suricata C2/Trojan alerts]"
-    && grep -i "trojan\|c2\|beacon\|backdoor\|shellcode" /var/log/suricata/fast.log
+  answer: '🤖 프롬프트: 시나리오 2: 내부 서버에서 비정상적인 아웃바운드 트래픽이 감지되었다. Suricata와 시스템 로그를 교차 분석하여
+    C2 통신 여부를 판단해줘
+
+    📎 참고 (CLI): echo "=== Outbound Traffic Analysis ===" && echo "[Suricata C2/Trojan
+    alerts]" && grep -i "trojan\|c2\|beacon\|backdoor\|shellcode" /var/log/suricata/fast.log
     2>/dev/null | tail -5 && echo "" && echo "[Active outbound connections]" && ss
     -tn state established 2>/dev/null | awk "{print \$5}" | grep -vE "^(10\.|127\.|$)"
     | sort | uniq -c | sort -rn | head -10 && echo "" && echo "[DNS query anomaly
@@ -136,9 +148,11 @@ steps:
   hint: 각 서버의 crontab, systemd 서비스, authorized_keys를 일괄 점검한다.
   category: hunting
   points: 10
-  answer: 'echo "=== Threat Hunting: Persistence ===" && echo "--- Local Host ---"
-    && echo "[Crontabs]" && for u in $(cut -f1 -d: /etc/passwd); do crontab -u $u
-    -l 2>/dev/null | grep -v "^#" | grep -v "^$"; done && echo "[Suspicious systemd]"
+  answer: '🤖 프롬프트: 위협 헌팅을 수행해줘
+
+    📎 참고 (CLI): echo "=== Threat Hunting: Persistence ===" && echo "--- Local Host
+    ---" && echo "[Crontabs]" && for u in $(cut -f1 -d: /etc/passwd); do crontab -u
+    $u -l 2>/dev/null | grep -v "^#" | grep -v "^$"; done && echo "[Suspicious systemd]"
     && systemctl list-units --type=service --state=running 2>/dev/null | grep -vE
     "(ssh|cron|rsyslog|wazuh|suricata|nftables|apache|docker|network|system)" | head
     -5 && echo "[SSH keys]" && for f in /home/*/.ssh/authorized_keys /root/.ssh/authorized_keys;
@@ -166,11 +180,14 @@ steps:
   hint: Wazuh CDB 리스트에 IP를 추가하고, Suricata에 IP 기반 탐지 룰을 추가한다.
   category: implementation
   points: 10
-  answer: echo '=== IOC Deployment ===' && echo '203.0.113.50:blocked_attacker' >
-    /tmp/ioc_list.txt && echo '198.51.100.1:c2_suspect' >> /tmp/ioc_list.txt && echo
-    '' && echo '[1] Deploy to Wazuh CDB:' && cat /tmp/ioc_list.txt | sudo tee -a /var/ossec/etc/lists/blocked_ips
-    && echo 'Wazuh CDB updated' && echo '' && echo '[2] IOC list saved for cross-tool
-    deployment:' && cat /tmp/ioc_list.txt && echo '' && echo 'IOC deployment complete'
+  answer: '🤖 프롬프트: IOC를 통합 관리해줘
+
+    📎 참고 (CLI): echo ''=== IOC Deployment ==='' && echo ''203.0.113.50:blocked_attacker''
+    > /tmp/ioc_list.txt && echo ''198.51.100.1:c2_suspect'' >> /tmp/ioc_list.txt &&
+    echo '''' && echo ''[1] Deploy to Wazuh CDB:'' && cat /tmp/ioc_list.txt | sudo
+    tee -a /var/ossec/etc/lists/blocked_ips && echo ''Wazuh CDB updated'' && echo
+    '''' && echo ''[2] IOC list saved for cross-tool deployment:'' && cat /tmp/ioc_list.txt
+    && echo '''' && echo ''IOC deployment complete'''
   answer_detail: IOC를 Wazuh CDB(로그 상관분석), Suricata(네트워크 탐지), nftables(차단)에 동시 배포하면
     다층 방어가 완성된다. 하나의 IOC를 여러 탐지/차단 도구에 적용하여 탐지 확률을 극대화한다.
   verify:
@@ -191,7 +208,9 @@ steps:
   hint: rule.groups 필드에 suricata를 필터링하면 Suricata IDS 이벤트만 볼 수 있습니다.
   category: analysis
   points: 10
-  answer: 'Wazuh Dashboard → Security events → rule.groups: suricata 필터 → src_ip별
+  answer: '🤖 프롬프트: Wazuh 알림과 Suricata 알림을 교차 분석하여 상관관계를 파악해줘
+
+    📎 참고 (CLI): Wazuh Dashboard → Security events → rule.groups: suricata 필터 → src_ip별
     알림 그룹핑.'
   answer_detail: 다중 도구 상관분석은 오탐을 줄이고 실제 위협을 확인하는 핵심 기법이다. 동일 IP가 Suricata(네트워크)와 Wazuh(호스트)
     양쪽에서 알림을 유발하면 실제 공격일 확률이 높다.
@@ -212,18 +231,19 @@ steps:
   hint: 각 인시던트의 시작/종료 타임스탬프를 기반으로 계산한다.
   category: measurement
   points: 10
-  answer: "cat > /tmp/soc_kpi.txt << 'EOF'\n=== SOC KPI Report ===\nDate: 2026-04-06\n\
-    \n[Incident Metrics]\nIncidents handled: 2 (Web Attack, C2 Suspect)\nP1 incidents:\
-    \ 1 (Web SQLi - Critical)\nP2 incidents: 1 (Outbound anomaly - High)\n\n[Time\
-    \ Metrics]\nMTTD (Mean Time to Detect):\n  Scenario 1 (Web Attack): ~5 min (Suricata\
-    \ real-time)\n  Scenario 2 (C2 Traffic): ~10 min (log analysis)\n  Average MTTD:\
-    \ 7.5 min\n\nMTTR (Mean Time to Respond):\n  Scenario 1: ~8 min (block + rule\
-    \ deploy)\n  Scenario 2: ~15 min (analysis + block)\n  Average MTTR: 11.5 min\n\
-    \n[Volume Metrics]\nTotal alerts reviewed: ~200\nFalse positives: ~30%\nTrue positives\
-    \ actioned: 2 incidents\n\n[Hunting Metrics]\nHunting hypotheses tested: 1 (Persistence)\n\
-    Servers scanned: 3\nFindings: 0 confirmed threats\n\n[Benchmarks]\nIndustry avg\
-    \ MTTD: 197 days -> Our MTTD: 7.5 min (excellent)\nIndustry avg MTTR: 69 days\
-    \ -> Our MTTR: 11.5 min (excellent)\nEOF\ncat /tmp/soc_kpi.txt"
+  answer: "\U0001F916 프롬프트: KPI를 측정해줘\n\U0001F4CE 참고 (CLI): cat > /tmp/soc_kpi.txt\
+    \ << 'EOF'\n=== SOC KPI Report ===\nDate: 2026-04-06\n\n[Incident Metrics]\nIncidents\
+    \ handled: 2 (Web Attack, C2 Suspect)\nP1 incidents: 1 (Web SQLi - Critical)\n\
+    P2 incidents: 1 (Outbound anomaly - High)\n\n[Time Metrics]\nMTTD (Mean Time to\
+    \ Detect):\n  Scenario 1 (Web Attack): ~5 min (Suricata real-time)\n  Scenario\
+    \ 2 (C2 Traffic): ~10 min (log analysis)\n  Average MTTD: 7.5 min\n\nMTTR (Mean\
+    \ Time to Respond):\n  Scenario 1: ~8 min (block + rule deploy)\n  Scenario 2:\
+    \ ~15 min (analysis + block)\n  Average MTTR: 11.5 min\n\n[Volume Metrics]\nTotal\
+    \ alerts reviewed: ~200\nFalse positives: ~30%\nTrue positives actioned: 2 incidents\n\
+    \n[Hunting Metrics]\nHunting hypotheses tested: 1 (Persistence)\nServers scanned:\
+    \ 3\nFindings: 0 confirmed threats\n\n[Benchmarks]\nIndustry avg MTTD: 197 days\
+    \ -> Our MTTD: 7.5 min (excellent)\nIndustry avg MTTR: 69 days -> Our MTTR: 11.5\
+    \ min (excellent)\nEOF\ncat /tmp/soc_kpi.txt"
   answer_detail: KPI 측정은 SOC 운영의 성과를 객관적으로 보여준다. MTTD 7.5분, MTTR 11.5분은 산업 평균(MTTD
     197일, MTTR 69일) 대비 매우 우수하지만, 이는 실습 환경의 소규모 특성 때문이다. 실전에서는 알림 볼륨과 복잡성이 증가한다.
   verify:
@@ -250,7 +270,10 @@ steps:
   hint: 5개 도메인 각각의 개선 정도를 비교한다.
   category: assessment
   points: 10
-  answer: 'cat > /tmp/soc_maturity_final.txt << ''EOF''
+  answer: '🤖 프롬프트: SOC 성숙도 재평가를 수행하라. Week 1에서 평가한 SOC-CMM 점수와 15주 학습 후의 점수를 비교하고
+    성장을 정량화해줘
+
+    📎 참고 (CLI): cat > /tmp/soc_maturity_final.txt << ''EOF''
 
     === SOC Maturity Re-Assessment ===
 
@@ -365,7 +388,8 @@ steps:
   hint: 경영진이 투자 효과를 판단할 수 있는 형태로 작성한다.
   category: reporting
   points: 16
-  answer: "cat > /tmp/soc_final_report.txt << 'EOF'\n================================================================\n\
+  answer: "\U0001F916 프롬프트: 최종 종합 보고서를 /tmp/soc_final_report 구현 방법과 예시를 설명해줘\n\U0001F4CE\
+    \ 참고 (CLI): cat > /tmp/soc_final_report.txt << 'EOF'\n================================================================\n\
     \       SOC ADVANCED COURSE - FINAL ASSESSMENT REPORT\n================================================================\n\
     \n1. EXECUTIVE SUMMARY\n\nThe 15-week SOC Advanced course achieved measurable\
     \ improvements\nacross all security operations domains. SOC maturity increased\n\
@@ -440,7 +464,20 @@ steps:
     field: stdout
   target_vm: siem
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) SOC 환경 점검을 수행하라. Wazuh Manager, Suricata, nftables의 상태를 확인하고 모든 보안 도구가 정상 동작하는지
+    검증해줘
+
+    2) 시나리오 1: 외부에서 웹서버 공격이 감지되었다. Suricata eve.json에서 최근 HTTP 관련 알림을 분석하고, 공격 유형/소스/성공
+    여부를 판단해줘
+
+    3) 시나리오 1 대응: 공격 소스 IP를 nftables로 차단하고, Suricata에 해당 IP의 추가 탐지 규칙을 배포해줘
+
+    4) 시나리오 2: 내부 서버에서 비정상적인 아웃바운드 트래픽이 감지되었다. Suricata와 시스템 로그를 교차 분석하여 C2 통신 여부를
+    판단해줘
+
+    5) 위협 헌팅을 수행해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

@@ -19,11 +19,14 @@ steps:
   hint: non-root, read-only, cap-drop ALL, no-new-privileges를 모두 적용하세요.
   category: config
   points: 12
-  answer: docker run -d --name k8s-restricted --read-only --tmpfs /tmp --cap-drop
+  answer: '🤖 프롬프트: WEB 서버(10.20.30.80)에서 K8s의 restricted Pod Security Standard에 해당하는
+    보안 설정으로 컨테이너를 실행해줘
+
+    📎 참고 (CLI): docker run -d --name k8s-restricted --read-only --tmpfs /tmp --cap-drop
     ALL --security-opt no-new-privileges --user 1000:1000 --memory 128m alpine:latest
     sleep 3600 2>/dev/null && docker inspect k8s-restricted --format "Privileged={{.HostConfig.Privileged}}
     ReadOnly={{.HostConfig.ReadonlyRootfs}} User={{.Config.User}} CapDrop={{.HostConfig.CapDrop}}"
-    2>/dev/null
+    2>/dev/null'
   answer_detail: 'K8s Pod Security Standards에는 3개 수준이 있습니다: Privileged(무제한), Baseline(위험
     설정 차단), Restricted(최소 권한). Restricted 수준에서는 non-root 실행, Capability 제거, 읽기 전용
     루트 파일시스템, no-new-privileges가 필수입니다.'
@@ -46,9 +49,12 @@ steps:
   hint: 두 개의 사용자 정의 네트워크를 생성하세요.
   category: config
   points: 10
-  answer: 'docker network create frontend-net 2>/dev/null; docker network create backend-net
-    2>/dev/null; echo "=== 네트워크 격리 ==="; docker network ls --format "{{.Name}}: {{.Driver}}"
-    | grep -E "(frontend|backend|bridge)"'''
+  answer: '🤖 프롬프트: K8s의 Namespace별 격리를 Docker 네트워크로 시뮬레이션하시오. frontend와 backend 네트워크를
+    분리해줘
+
+    📎 참고 (CLI): docker network create frontend-net 2>/dev/null; docker network create
+    backend-net 2>/dev/null; echo "=== 네트워크 격리 ==="; docker network ls --format "{{.Name}}:
+    {{.Driver}}" | grep -E "(frontend|backend|bridge)"'''
   answer_detail: K8s의 Namespace는 리소스를 논리적으로 분리합니다. NetworkPolicy로 Namespace 간 통신을
     제어하듯, Docker에서는 별도 네트워크를 생성하여 컨테이너 그룹을 격리합니다. 서로 다른 Docker 네트워크에 연결된 컨테이너는 기본적으로
     통신할 수 없습니다.
@@ -68,8 +74,10 @@ steps:
   hint: frontend와 backend 네트워크에 각각 컨테이너를 배치하고 ping 테스트를 수행하세요.
   category: config
   points: 12
-  answer: 'docker run -d --name frontend --network frontend-net alpine:latest sleep
-    3600 2>/dev/null; docker run -d --name backend --network backend-net alpine:latest
+  answer: '🤖 프롬프트: 격리된 네트워크에 컨테이너를 배치하고 네트워크 간 통신이 차단되는지 확인해줘
+
+    📎 참고 (CLI): docker run -d --name frontend --network frontend-net alpine:latest
+    sleep 3600 2>/dev/null; docker run -d --name backend --network backend-net alpine:latest
     sleep 3600 2>/dev/null; echo "=== 네트워크 격리 테스트 ==="; BACKEND_IP=$(docker inspect
     backend --format "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}" 2>/dev/null);
     echo "Backend IP: $BACKEND_IP"; docker exec frontend ping -c 2 -W 2 $BACKEND_IP
@@ -94,10 +102,13 @@ steps:
   hint: --memory, --cpus, --pids-limit을 설정한 컨테이너를 실행하세요.
   category: config
   points: 10
-  answer: docker run -d --name resource-limited --memory 64m --memory-swap 64m --cpus
-    0.5 --pids-limit 30 alpine:latest sleep 3600 2>/dev/null; echo "=== 자원 제한 확인 ===";
-    docker inspect resource-limited --format "Memory={{.HostConfig.Memory}} MemSwap={{.HostConfig.MemorySwap}}
-    CPU={{.HostConfig.NanoCpus}} Pids={{.HostConfig.PidsLimit}}" 2>/dev/null
+  answer: '🤖 프롬프트: K8s의 Resource Limits에 대응하는 Docker 자원 제한을 적용하고 검증해줘
+
+    📎 참고 (CLI): docker run -d --name resource-limited --memory 64m --memory-swap 64m
+    --cpus 0.5 --pids-limit 30 alpine:latest sleep 3600 2>/dev/null; echo "=== 자원
+    제한 확인 ==="; docker inspect resource-limited --format "Memory={{.HostConfig.Memory}}
+    MemSwap={{.HostConfig.MemorySwap}} CPU={{.HostConfig.NanoCpus}} Pids={{.HostConfig.PidsLimit}}"
+    2>/dev/null'
   answer_detail: K8s에서는 Pod spec의 resources.limits로 자원을 제한합니다. Memory Limit 초과 시 OOMKilled,
     CPU Limit은 throttling 됩니다. Docker에서도 동일하게 --memory(OOM), --cpus(throttle), --pids-limit(fork
     bomb 방지)을 설정합니다.
@@ -117,7 +128,9 @@ steps:
   hint: docker inspect에서 Healthcheck 설정을 확인하세요.
   category: audit
   points: 10
-  answer: 'docker ps -q | head -5 | xargs -I{} docker inspect --format="{{.Name}}:
+  answer: '🤖 프롬프트: K8s의 readinessProbe에 대응하는 Docker 헬스체크를 확인해줘
+
+    📎 참고 (CLI): docker ps -q | head -5 | xargs -I{} docker inspect --format="{{.Name}}:
     Health={{if .State.Health}}{{.State.Health.Status}}{{else}}미설정{{end}}" {} 2>/dev/null
     || echo "실행 중인 컨테이너 없음"'''
   answer_detail: K8s의 livenessProbe/readinessProbe는 Pod의 정상 동작을 확인합니다. Docker의 HEALTHCHECK는
@@ -138,7 +151,9 @@ steps:
   hint: docker inspect에서 RestartPolicy를 확인하세요.
   category: audit
   points: 8
-  answer: 'docker ps -aq | head -5 | xargs -I{} docker inspect --format="{{.Name}}:
+  answer: '🤖 프롬프트: 컨테이너의 restart policy를 확인하시오. K8s의 restartPolicy에 대응해줘
+
+    📎 참고 (CLI): docker ps -aq | head -5 | xargs -I{} docker inspect --format="{{.Name}}:
     RestartPolicy={{.HostConfig.RestartPolicy.Name}} MaxRetry={{.HostConfig.RestartPolicy.MaximumRetryCount}}"
     {} 2>/dev/null'''
   answer_detail: K8s의 restartPolicy(Always/OnFailure/Never)와 유사하게 Docker도 --restart
@@ -159,9 +174,11 @@ steps:
   hint: docker rm -f와 docker network rm으로 정리하세요.
   category: config
   points: 8
-  answer: docker rm -f k8s-restricted frontend backend resource-limited 2>/dev/null;
+  answer: '🤖 프롬프트: 테스트에 사용한 컨테이너와 네트워크를 정리해줘
+
+    📎 참고 (CLI): docker rm -f k8s-restricted frontend backend resource-limited 2>/dev/null;
     docker network rm frontend-net backend-net 2>/dev/null; echo "=== 정리 완료 ===";
-    docker ps -a --format "{{.Names}}" | head -5
+    docker ps -a --format "{{.Names}}" | head -5'
   answer_detail: 테스트 후 리소스를 정리하는 것은 좋은 습관입니다. K8s에서는 kubectl delete로, Docker에서는 docker
     rm/network rm으로 정리합니다. 프로덕션에서는 자동 정리 정책(TTL, garbage collection)을 설정합니다.
   verify:
@@ -179,7 +196,8 @@ steps:
   hint: 현재 실행 중인 모든 컨테이너의 K8s 보안 기준 준수 여부를 점검하세요.
   category: audit
   points: 10
-  answer: "cat << 'SCRIPT' > /tmp/k8s_sim_check.sh\n#!/bin/bash\nHOST='ccc@10.20.30.80'\n\
+  answer: "\U0001F916 프롬프트: K8s 보안 시뮬레이션 종합 점검 스크립트를 작성하고 실행하시오 구현 방법과 예시를 설명해줘\n\U0001F4CE\
+    \ 참고 (CLI): cat << 'SCRIPT' > /tmp/k8s_sim_check.sh\n#!/bin/bash\nHOST='ccc@10.20.30.80'\n\
     echo '=== K8s Pod Security Standards 시뮬레이션 점검 ==='\n\nfor CID in $(docker ps -q);\
     \ do\n  NAME=$(docker inspect --format=\"{{.Name}}\" $CID)\n  PRIV=$(docker inspect\
     \ --format=\"{{.HostConfig.Privileged}}\" $CID)\n  USER=$(docker inspect --format=\"\
@@ -236,7 +254,18 @@ steps:
     field: stdout
   target_vm: web
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) WEB 서버(10.20.30.80)에서 K8s의 restricted Pod Security Standard에 해당하는 보안 설정으로 컨테이너를
+    실행해줘
+
+    2) K8s의 Namespace별 격리를 Docker 네트워크로 시뮬레이션하시오. frontend와 backend 네트워크를 분리해줘
+
+    3) 격리된 네트워크에 컨테이너를 배치하고 네트워크 간 통신이 차단되는지 확인해줘
+
+    4) K8s의 Resource Limits에 대응하는 Docker 자원 제한을 적용하고 검증해줘
+
+    5) K8s의 readinessProbe에 대응하는 Docker 헬스체크를 확인해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

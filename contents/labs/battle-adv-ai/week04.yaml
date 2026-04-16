@@ -27,9 +27,11 @@ steps:
   hint: nmap -sn으로 호스트 발견 후 SSH/SMB 포트를 스캔한다.
   category: recon
   points: 10
-  answer: nmap -sn --max-retries 1 --host-timeout 15s -T4 10.20.30.0/24 -oG /tmp/lateral_hosts.txt
-    && grep 'Up' /tmp/lateral_hosts.txt && nmap -p 22,445 --max-retries 1 --host-timeout
-    15s -T4 10.20.30.1 10.20.30.80 10.20.30.100
+  answer: '🤖 프롬프트: [RED] 내부 네트워크 10.20.30.0/24의 활성 호스트를 열거하고 각 호스트의 SMB/SSH 서비스를 확인해줘
+
+    📎 참고 (CLI): nmap -sn --max-retries 1 --host-timeout 15s -T4 10.20.30.0/24 -oG
+    /tmp/lateral_hosts.txt && grep ''Up'' /tmp/lateral_hosts.txt && nmap -p 22,445
+    --max-retries 1 --host-timeout 15s -T4 10.20.30.1 10.20.30.80 10.20.30.100'
   answer_detail: 측면 이동의 첫 단계는 내부 호스트 파악이다(T1018). SSH(22)와 SMB(445) 서비스는 측면 이동의 핵심
     경로이다.
   verify:
@@ -47,14 +49,16 @@ steps:
   hint: /etc/shadow에서 해시 형식을 확인하고 PtH 원리를 문서화한다.
   category: exploit
   points: 10
-  answer: "echo '1' | sudo -S cat /etc/shadow 2>/dev/null | grep -v ':\\*:\\|:!:'\
-    \ | head -5; echo '---'; echo 'Hash formats: $1$=MD5, $5$=SHA-256, $6$=SHA-512,\
-    \ $y$=yescrypt'; echo ''; cat > /tmp/pth_simulation.txt << 'EOF'\n=== Pass-the-Hash\
-    \ Attack Simulation ===\n1. NTLM Hash Format: LM_HASH:NT_HASH\n2. Attack Tools:\n\
-    \   pth-smbclient //target/share -U domain/user%hash --pw-nt-hash\n   impacket-psexec\
-    \ -hashes LM:NT user@target\n   impacket-wmiexec -hashes LM:NT user@target\n3.\
-    \ Why it works: NTLM auth uses hash directly - no plaintext needed\n4. Detection:\
-    \ Event ID 4624 Type 3 with NTLM, same hash from multiple IPs\nEOF\ncat /tmp/pth_simulation.txt"
+  answer: "\U0001F916 프롬프트: [RED] 로컬 시스템의 패스워드 해시를 분석하고, Pass-the-Hash 공격의 원리와 Impacket\
+    \ 도구의 측면 이동 기법을 정리해줘\n\U0001F4CE 참고 (CLI): echo '1' | sudo -S cat /etc/shadow\
+    \ 2>/dev/null | grep -v ':\\*:\\|:!:' | head -5; echo '---'; echo 'Hash formats:\
+    \ $1$=MD5, $5$=SHA-256, $6$=SHA-512, $y$=yescrypt'; echo ''; cat > /tmp/pth_simulation.txt\
+    \ << 'EOF'\n=== Pass-the-Hash Attack Simulation ===\n1. NTLM Hash Format: LM_HASH:NT_HASH\n\
+    2. Attack Tools:\n   pth-smbclient //target/share -U domain/user%hash --pw-nt-hash\n\
+    \   impacket-psexec -hashes LM:NT user@target\n   impacket-wmiexec -hashes LM:NT\
+    \ user@target\n3. Why it works: NTLM auth uses hash directly - no plaintext needed\n\
+    4. Detection: Event ID 4624 Type 3 with NTLM, same hash from multiple IPs\nEOF\n\
+    cat /tmp/pth_simulation.txt"
   answer_detail: Pass-the-Hash(T1550.002)는 NTLM 인증의 설계적 취약점을 이용한다. 해시 자체로 인증하므로 평문
     비밀번호가 필요 없다. Impacket의 psexec/wmiexec/smbexec은 각각 다른 프로토콜로 측면 이동을 수행한다.
   verify:
@@ -78,10 +82,12 @@ steps:
   hint: ssh -i 옵션으로 개인키를 지정하여 다른 서버에 접근한다.
   category: exploit
   points: 10
-  answer: ssh-keygen -t ed25519 -f /tmp/lateral_key -N '' -q && echo 'Testing SSH
-    lateral movement:' && ssh -i /tmp/lateral_key -o ConnectTimeout=3 -o StrictHostKeyChecking=no
-    ccc@10.20.30.1 'hostname' 2>&1 | head -5 && ssh -i /tmp/lateral_key -o ConnectTimeout=3
-    -o StrictHostKeyChecking=no ccc@10.20.30.80 'hostname' 2>&1 | head -5
+  answer: '🤖 프롬프트: [RED] SSH 키 기반 측면 이동을 실습해줘
+
+    📎 참고 (CLI): ssh-keygen -t ed25519 -f /tmp/lateral_key -N '''' -q && echo ''Testing
+    SSH lateral movement:'' && ssh -i /tmp/lateral_key -o ConnectTimeout=3 -o StrictHostKeyChecking=no
+    ccc@10.20.30.1 ''hostname'' 2>&1 | head -5 && ssh -i /tmp/lateral_key -o ConnectTimeout=3
+    -o StrictHostKeyChecking=no ccc@10.20.30.80 ''hostname'' 2>&1 | head -5'
   answer_detail: SSH를 이용한 측면 이동(T1021.004)은 Linux 환경에서 가장 흔한 기법이다. authorized_keys에
     등록된 키가 있으면 비밀번호 없이 접근이 가능하다.
   verify:
@@ -100,14 +106,17 @@ steps:
   hint: 내부 호스트 간 통상적이지 않은 포트 연결을 모니터링한다.
   category: defense
   points: 10
-  answer: 'cat > /tmp/lateral_detection_rules.txt << ''EOF'' # Suricata Lateral Movement
-    Detection alert tcp 10.20.30.0/24 any -> 10.20.30.0/24 445 (msg:"LATERAL: Internal
-    SMB connection"; flow:to_server,established; threshold:type both, track by_src,
-    count 3, seconds 60; sid:3000001; rev:1;) alert tcp 10.20.30.0/24 any -> 10.20.30.0/24
-    22 (msg:"LATERAL: Internal SSH connection"; flow:to_server,established; threshold:type
-    both, track by_src, count 5, seconds 60; sid:3000002; rev:1;) alert tcp 10.20.30.0/24
-    any -> 10.20.30.0/24 135 (msg:"LATERAL: Internal WMI/DCOM connection"; flow:to_server,established;
-    sid:3000003; rev:1;) EOF cat /tmp/lateral_detection_rules.txt'
+  answer: '🤖 프롬프트: [BLUE] Phase 전환 — 측면 이동 탐지를 위한 Suricata 규칙을 구현 방법을 설명하고 예시 코드를
+    보여줘
+
+    📎 참고 (CLI): cat > /tmp/lateral_detection_rules.txt << ''EOF'' # Suricata Lateral
+    Movement Detection alert tcp 10.20.30.0/24 any -> 10.20.30.0/24 445 (msg:"LATERAL:
+    Internal SMB connection"; flow:to_server,established; threshold:type both, track
+    by_src, count 3, seconds 60; sid:3000001; rev:1;) alert tcp 10.20.30.0/24 any
+    -> 10.20.30.0/24 22 (msg:"LATERAL: Internal SSH connection"; flow:to_server,established;
+    threshold:type both, track by_src, count 5, seconds 60; sid:3000002; rev:1;) alert
+    tcp 10.20.30.0/24 any -> 10.20.30.0/24 135 (msg:"LATERAL: Internal WMI/DCOM connection";
+    flow:to_server,established; sid:3000003; rev:1;) EOF cat /tmp/lateral_detection_rules.txt'
   answer_detail: 내부 호스트 간 통신의 정상 기준선을 설정하고 이탈을 감지한다. 워크스테이션 간 SMB(445), SSH(22), WMI(135)
     연결은 비정상적이며, threshold로 짧은 시간 내 다수 연결을 감지한다.
   verify:
@@ -131,15 +140,17 @@ steps:
   hint: 서버 역할별로 set을 정의하고, 그룹 간 필요한 포트만 허용한다.
   category: defense
   points: 10
-  answer: "cat > /tmp/segmentation_policy.nft << 'EOF'\n#!/usr/sbin/nft -f\ntable\
-    \ inet segmentation {\n  set control_plane { type ipv4_addr; elements = { 10.20.30.201\
-    \ } }\n  set security_tier { type ipv4_addr; elements = { 10.20.30.1 } }\n  set\
-    \ web_tier { type ipv4_addr; elements = { 10.20.30.80 } }\n  set siem_tier { type\
-    \ ipv4_addr; elements = { 10.20.30.100 } }\n  chain forward {\n    type filter\
-    \ hook forward priority 0; policy drop;\n    ip saddr @control_plane accept\n\
-    \    ip saddr @web_tier ip daddr @security_tier drop\n    ip saddr @web_tier ip\
-    \ daddr @siem_tier drop\n    ip saddr @siem_tier tcp dport { 514, 1514 } accept\n\
-    \    ct state established,related accept\n  }\n}\nEOF\ncat /tmp/segmentation_policy.nft"
+  answer: "\U0001F916 프롬프트: [BLUE] nftables로 서버 역할별 네트워크 세그먼테이션 정책을 구현 방법을 설명하고 예시\
+    \ 코드를 보여줘\n\U0001F4CE 참고 (CLI): cat > /tmp/segmentation_policy.nft << 'EOF'\n\
+    #!/usr/sbin/nft -f\ntable inet segmentation {\n  set control_plane { type ipv4_addr;\
+    \ elements = { 10.20.30.201 } }\n  set security_tier { type ipv4_addr; elements\
+    \ = { 10.20.30.1 } }\n  set web_tier { type ipv4_addr; elements = { 10.20.30.80\
+    \ } }\n  set siem_tier { type ipv4_addr; elements = { 10.20.30.100 } }\n  chain\
+    \ forward {\n    type filter hook forward priority 0; policy drop;\n    ip saddr\
+    \ @control_plane accept\n    ip saddr @web_tier ip daddr @security_tier drop\n\
+    \    ip saddr @web_tier ip daddr @siem_tier drop\n    ip saddr @siem_tier tcp\
+    \ dport { 514, 1514 } accept\n    ct state established,related accept\n  }\n}\n\
+    EOF\ncat /tmp/segmentation_policy.nft"
   answer_detail: 네트워크 세그먼테이션은 측면 이동 방지의 가장 효과적인 방어이다. 기본 정책을 drop으로 설정하고 화이트리스트 방식으로
     필요한 통신만 허용한다.
   verify:
@@ -163,15 +174,16 @@ steps:
   hint: 가짜 SSH 키, 가짜 비밀번호 파일을 배치하여 접근 시도를 탐지한다.
   category: defense
   points: 10
-  answer: "cat > /tmp/honey_tokens.txt << 'EOF'\n=== Honey Token Deployment Plan ===\n\
-    \n1. Fake Credentials:\n   - /home/admin/.ssh/config -> fake host entries pointing\
-    \ to honeypot\n   - /opt/backup/credentials.txt -> fake passwords that trigger\
-    \ alert on use\n\n2. Honey Services:\n   - 10.20.30.250:445 -> SMB honeypot (any\
-    \ auth attempt = alert)\n   - 10.20.30.250:22 -> SSH honeypot (Cowrie)\n\n3. Detection\
-    \ Triggers:\n   - Any login attempt to honeypot IPs -> CRITICAL alert\n   - Any\
-    \ access to honey files -> CRITICAL alert\n\n4. SIEM Rule:\n   IF source_ip IN\
-    \ internal_range AND dest_ip == honeypot_ip\n   THEN alert(\"Lateral Movement\
-    \ Detected\", severity=CRITICAL)\nEOF\ncat /tmp/honey_tokens.txt"
+  answer: "\U0001F916 프롬프트: [BLUE] Honey Token을 이용한 측면 이동 탐지 함정을 구현 방법을 설명하고 예시 코드를\
+    \ 보여줘\n\U0001F4CE 참고 (CLI): cat > /tmp/honey_tokens.txt << 'EOF'\n=== Honey Token\
+    \ Deployment Plan ===\n\n1. Fake Credentials:\n   - /home/admin/.ssh/config ->\
+    \ fake host entries pointing to honeypot\n   - /opt/backup/credentials.txt ->\
+    \ fake passwords that trigger alert on use\n\n2. Honey Services:\n   - 10.20.30.250:445\
+    \ -> SMB honeypot (any auth attempt = alert)\n   - 10.20.30.250:22 -> SSH honeypot\
+    \ (Cowrie)\n\n3. Detection Triggers:\n   - Any login attempt to honeypot IPs ->\
+    \ CRITICAL alert\n   - Any access to honey files -> CRITICAL alert\n\n4. SIEM\
+    \ Rule:\n   IF source_ip IN internal_range AND dest_ip == honeypot_ip\n   THEN\
+    \ alert(\"Lateral Movement Detected\", severity=CRITICAL)\nEOF\ncat /tmp/honey_tokens.txt"
   answer_detail: Honey Token은 공격자를 유인하여 조기 탐지하는 능동적 방어 기법이다. 정상 사용자는 절대 접근하지 않으므로
     접근 시도 자체가 침해 지표가 된다.
   verify:
@@ -195,11 +207,12 @@ steps:
   hint: frequency, timeframe, same_user 조건을 결합한다.
   category: defense
   points: 10
-  answer: "cat > /tmp/wazuh_lateral_rule.xml << 'EOF'\n<group name=\"lateral_movement\"\
-    >\n  <rule id=\"100200\" level=\"12\" frequency=\"3\" timeframe=\"300\">\n   \
-    \ <if_sid>5715</if_sid>\n    <same_user />\n    <description>Lateral Movement:\
-    \ Same user SSH to 3+ hosts in 5 min</description>\n    <mitre><id>T1021.004</id></mitre>\n\
-    \  </rule>\n</group>\nEOF\ncat /tmp/wazuh_lateral_rule.xml"
+  answer: "\U0001F916 프롬프트: [BLUE] Wazuh에서 동일 사용자가 5분 내 3개 이상 호스트에 SSH 로그인하는 측면 이동\
+    \ 패턴을 탐지하는 상관 분석 규칙을 구현 방법을 설명하고 예시 코드를 보여줘\n\U0001F4CE 참고 (CLI): cat > /tmp/wazuh_lateral_rule.xml\
+    \ << 'EOF'\n<group name=\"lateral_movement\">\n  <rule id=\"100200\" level=\"\
+    12\" frequency=\"3\" timeframe=\"300\">\n    <if_sid>5715</if_sid>\n    <same_user\
+    \ />\n    <description>Lateral Movement: Same user SSH to 3+ hosts in 5 min</description>\n\
+    \    <mitre><id>T1021.004</id></mitre>\n  </rule>\n</group>\nEOF\ncat /tmp/wazuh_lateral_rule.xml"
   answer_detail: 동일 사용자의 다중 호스트 SSH 로그인은 측면 이동의 핵심 지표이다. same_user 조건으로 사용자별 추적하고
     frequency/timeframe으로 시간 윈도우를 설정한다.
   verify:
@@ -219,7 +232,8 @@ steps:
   hint: SSH 키와 임시 파일을 삭제하고, 공격 기법별 방어 권고사항을 정리한다.
   category: analysis
   points: 15
-  answer: "rm -f /tmp/lateral_key* /tmp/pth_simulation.txt /tmp/lateral_hosts.txt\
+  answer: "\U0001F916 프롬프트: [RED/BLUE] 환경을 정리하고 측면 이동 심화 종합 보고서를 구현 방법을 설명하고 예시 코드를\
+    \ 보여줘\n\U0001F4CE 참고 (CLI): rm -f /tmp/lateral_key* /tmp/pth_simulation.txt /tmp/lateral_hosts.txt\
     \ 2>/dev/null && cat > /tmp/lateral_report.txt << 'EOF'\n=== Lateral Movement\
     \ Assessment Report ===\nDate: 2026-04-06 | Scope: 10.20.30.0/24\n\n1. Techniques\
     \ Tested:\n   - Pass-the-Hash (T1550.002): Hash reuse simulation\n   - SSH Key\
@@ -265,7 +279,11 @@ steps:
     field: stdout
   target_vm: attacker
   risk_level: low
-  answer: ''
+  answer: "\U0001F916 프롬프트: attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) [RED] 내부 네트워크 10.20.30.0/24의\
+    \ 활성 호스트를 열거하고 각 호스트의 SMB/SSH 서비스를 확인해줘\n2) [RED] 로컬 시스템의 패스워드 해시를 분석하고, Pass-the-Hash\
+    \ 공격의 원리와 Impacket 도구의 측면 이동 기법을 정리해줘\n3) [RED] SSH 키 기반 측면 이동을 실습해줘\n4) [BLUE]\
+    \ Phase 전환 — 측면 이동 탐지를 위한 Suricata 규칙을 \n5) [BLUE] nftables로 서버 역할별 네트워크 세그먼테이션\
+    \ 정책 작업을 수행해줘"
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

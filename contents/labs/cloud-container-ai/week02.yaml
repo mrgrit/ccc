@@ -19,7 +19,10 @@ steps:
   hint: docker network ls로 생성된 네트워크를 확인하세요.
   category: recon
   points: 10
-  answer: docker network ls --format "table {{.Name}}\t{{.Driver}}\t{{.Scope}}"
+  answer: '🤖 프롬프트: WEB 서버(10.20.30.80)에서 Docker 네트워크 목록을 확인하시오. AWS VPC와 유사한 네트워크
+    격리 구조를 파악해줘
+
+    📎 참고 (CLI): docker network ls --format "table {{.Name}}\t{{.Driver}}\t{{.Scope}}"'
   answer_detail: AWS VPC(Virtual Private Cloud)는 클라우드에서 네트워크를 격리합니다. Docker의 bridge
     네트워크는 VPC의 서브넷과 유사합니다. 기본 bridge는 모든 컨테이너가 통신 가능하여 AWS의 기본 보안 그룹과 유사한 상태입니다.
   verify:
@@ -36,7 +39,9 @@ steps:
   hint: docker network create로 새 브리지 네트워크를 생성하세요.
   category: config
   points: 10
-  answer: 'docker network create --driver bridge --subnet 172.20.0.0/24 --gateway
+  answer: '🤖 프롬프트: 사용자 정의 격리 네트워크를 생성하시오. AWS의 프라이빗 서브넷과 유사한 격리 네트워크를 만듭니다해줘
+
+    📎 참고 (CLI): docker network create --driver bridge --subnet 172.20.0.0/24 --gateway
     172.20.0.1 secure-net 2>/dev/null || echo "네트워크 이미 존재" && docker network inspect
     secure-net --format "Name: {{.Name}}
 
@@ -64,8 +69,10 @@ steps:
   hint: docker ps의 PORTS 컬럼이나 docker port 명령을 사용하세요.
   category: audit
   points: 10
-  answer: 'docker ps --format "{{.Names}}: {{.Ports}}" 2>/dev/null && echo "--- iptables
-    NAT 규칙 ---" && sudo iptables -t nat -L DOCKER -n 2>/dev/null | head -10'''
+  answer: '🤖 프롬프트: 컨테이너의 포트 매핑(포트 포워딩)을 확인하시오. AWS 보안 그룹의 인바운드 규칙과 유사해줘
+
+    📎 참고 (CLI): docker ps --format "{{.Names}}: {{.Ports}}" 2>/dev/null && echo "---
+    iptables NAT 규칙 ---" && sudo iptables -t nat -L DOCKER -n 2>/dev/null | head -10'''
   answer_detail: Docker의 포트 매핑(-p 8080:80)은 AWS 보안 그룹의 인바운드 규칙과 유사합니다. 0.0.0.0:8080->80은
     모든 IP에서 접근 가능하며, 127.0.0.1:8080->80은 로컬만 허용합니다. 불필요한 포트 노출은 보안 그룹의 과도한 인바운드 허용과
     같은 위험입니다.
@@ -83,7 +90,9 @@ steps:
   hint: docker inspect로 각 컨테이너의 NetworkMode를 확인하세요.
   category: audit
   points: 10
-  answer: 'docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: NetworkMode={{.HostConfig.NetworkMode}}"
+  answer: '🤖 프롬프트: Docker의 호스트 네트워크 모드 사용 여부를 점검하시오. host 네트워크는 네트워크 격리를 완전히 무력화해줘
+
+    📎 참고 (CLI): docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: NetworkMode={{.HostConfig.NetworkMode}}"
     {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   answer_detail: Docker의 --network host 모드는 컨테이너가 호스트의 네트워크 스택을 그대로 사용하여 네트워크 격리가
     없습니다. AWS에서 보안 그룹 없이 인스턴스를 운영하는 것과 같습니다. 프로덕션에서는 bridge 또는 사용자 정의 네트워크를 사용해야 합니다.
@@ -102,7 +111,9 @@ steps:
   hint: docker network inspect bridge에서 Options를 확인하세요.
   category: audit
   points: 12
-  answer: 'docker network inspect bridge --format "ICC: {{index .Options "com.docker.network.bridge.enable_icc"}}"
+  answer: '🤖 프롬프트: inter-container communication(ICC) 설정을 확인해줘
+
+    📎 참고 (CLI): docker network inspect bridge --format "ICC: {{index .Options "com.docker.network.bridge.enable_icc"}}"
     2>/dev/null; echo "--- bridge 전체 옵션 ---" && docker network inspect bridge --format
     "{{json .Options}}" 2>/dev/null'''
   answer_detail: ICC(Inter-Container Communication)는 같은 네트워크의 컨테이너 간 직접 통신을 허용하는 설정입니다.
@@ -123,8 +134,10 @@ steps:
   hint: iptables -L로 DOCKER 체인을 확인하세요.
   category: audit
   points: 10
-  answer: sudo iptables -L -n --line-numbers 2>/dev/null | head -30 && echo "--- DOCKER
-    체인 ---" && sudo iptables -L DOCKER -n 2>/dev/null | head -10
+  answer: '🤖 프롬프트: 호스트의 방화벽(nftables/iptables)에서 Docker 관련 규칙을 확인해줘
+
+    📎 참고 (CLI): sudo iptables -L -n --line-numbers 2>/dev/null | head -30 && echo
+    "--- DOCKER 체인 ---" && sudo iptables -L DOCKER -n 2>/dev/null | head -10'
   answer_detail: Docker는 자동으로 iptables 규칙을 생성하여 포트 매핑과 네트워크 라우팅을 처리합니다. DOCKER 체인에
     컨테이너별 접근 규칙이 정의됩니다. Docker의 iptables 조작이 호스트 방화벽 규칙과 충돌할 수 있으므로 주의가 필요합니다.
   verify:
@@ -141,9 +154,11 @@ steps:
   hint: docker info에서 Logging Driver를 확인하세요.
   category: audit
   points: 10
-  answer: 'docker info --format "Logging Driver: {{.LoggingDriver}}" 2>/dev/null &&
-    echo "--- 로그 위치 ---" && sudo ls -lh /var/lib/docker/containers/ 2>/dev/null |
-    head -5'''
+  answer: '🤖 프롬프트: Docker 로그 드라이버를 확인하시오. AWS CloudWatch와 유사한 로그 수집 체계를 점검해줘
+
+    📎 참고 (CLI): docker info --format "Logging Driver: {{.LoggingDriver}}" 2>/dev/null
+    && echo "--- 로그 위치 ---" && sudo ls -lh /var/lib/docker/containers/ 2>/dev/null
+    | head -5'''
   answer_detail: Docker 기본 로깅 드라이버는 json-file로, 컨테이너 로그를 JSON 파일로 저장합니다. AWS CloudWatch에
     해당하는 중앙 로그 수집을 위해 syslog, fluentd, awslogs 드라이버를 사용할 수 있습니다. 로그 크기 제한(--log-opt
     max-size)을 설정하지 않으면 디스크를 소진할 수 있습니다.
@@ -162,7 +177,9 @@ steps:
   hint: 네트워크 격리, 포트 노출, ICC, 로깅을 종합 점검하세요.
   category: audit
   points: 18
-  answer: 'cat << ''SCRIPT'' > /tmp/aws_sim_check.sh
+  answer: '🤖 프롬프트: AWS 보안 모델 시뮬레이션 종합 점검 스크립트를 작성하고 실행하시오 구현 방법과 예시를 설명해줘
+
+    📎 참고 (CLI): cat << ''SCRIPT'' > /tmp/aws_sim_check.sh
 
     #!/bin/bash
 
@@ -250,7 +267,17 @@ steps:
     field: stdout
   target_vm: web
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) WEB 서버(10.20.30.80)에서 Docker 네트워크 목록을 확인하시오. AWS VPC와 유사한 네트워크 격리 구조를 파악해줘
+
+    2) 사용자 정의 격리 네트워크를 생성하시오. AWS의 프라이빗 서브넷과 유사한 격리 네트워크를 만듭니다해줘
+
+    3) 컨테이너의 포트 매핑(포트 포워딩)을 확인하시오. AWS 보안 그룹의 인바운드 규칙과 유사해줘
+
+    4) Docker의 호스트 네트워크 모드 사용 여부를 점검하시오. host 네트워크는 네트워크 격리를 완전히 무력화해줘
+
+    5) inter-container communication(ICC) 설정을 확인해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

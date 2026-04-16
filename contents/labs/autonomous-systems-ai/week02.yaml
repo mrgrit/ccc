@@ -17,7 +17,9 @@ steps:
   hint: nmap으로 특정 포트를 스캔하세요.
   category: recon
   points: 10
-  answer: nmap -sV -p 9999,14550,5760 10.20.30.200
+  answer: '🤖 프롬프트: manager(10.20.30.200)에서 드론 관련 포트(9999, 14550, 5760)를 스캔해줘
+
+    📎 참고 (CLI): nmap -sV -p 9999,14550,5760 10.20.30.200'
   answer_detail: 드론 관련 서비스 포트를 식별하여 공격 표면을 파악합니다.
   verify:
     type: output_contains
@@ -32,14 +34,18 @@ steps:
   hint: socket.SOCK_DGRAM으로 UDP 소켓을 생성하세요.
   category: recon
   points: 12
-  answer: python3 -c "import socket,json;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.settimeout(3);s.sendto(json.dumps({'action':'PING'}).encode(),('10.20.30.200',9999));print('Drone ping sent');s.close()"
+  answer: '🤖 프롬프트: Python으로 UDP 소켓을 만들어 가상 드론(10.20.30.200:9999)에 PING 명령을 전송해줘
+
+    📎 참고 (CLI): python3 -c "import socket,json;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.settimeout(3);s.sendto(json.dumps({''action'':''PING''}).encode(),(''10.20.30.200'',9999));print(''Drone
+    ping sent'');s.close()"'
   answer_detail: UDP 소켓으로 드론과의 기본 통신을 테스트합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: attacker
-  script: python3 -c "import socket,json;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.settimeout(3);s.sendto(json.dumps({'action':'PING'}).encode(),('10.20.30.200',9999));print('Drone ping sent');s.close()"
+  script: python3 -c "import socket,json;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.settimeout(3);s.sendto(json.dumps({'action':'PING'}).encode(),('10.20.30.200',9999));print('Drone
+    ping sent');s.close()"
   risk_level: low
   bastion_prompt: Python으로 UDP 소켓을 만들어 가상 드론(10.20.30.200:9999)에 PING 명령을 전송해줘
 - order: 3
@@ -47,29 +53,41 @@ steps:
   hint: MAVLink v2 header fields를 질문하세요.
   category: analysis
   points: 10
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Describe MAVLink v2 packet header structure with field names and sizes\",\"stream\":false,\"options\":{\"num_predict\":150}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
+  answer: "\U0001F916 프롬프트: Describe MAVLink v2 packet header structure with field\
+    \ names and sizes\n\U0001F4CE 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/generate\
+    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Describe MAVLink v2 packet header\
+    \ structure with field names and sizes\",\"stream\":false,\"options\":{\"num_predict\"\
+    :150}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
   answer_detail: MAVLink 프로토콜 이해는 드론 보안 분석의 기본입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Describe MAVLink v2 packet header structure with field names and sizes\",\"stream\":false,\"options\":{\"num_predict\":150}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"\
+    model\":\"gemma3:4b\",\"prompt\":\"Describe MAVLink v2 packet header structure\
+    \ with field names and sizes\",\"stream\":false,\"options\":{\"num_predict\":150}}'\
+    \ \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
   risk_level: low
-  bastion_prompt: Describe MAVLink v2 packet header structure with field names and sizes
+  bastion_prompt: Describe MAVLink v2 packet header structure with field names and
+    sizes
 - order: 4
   instruction: Python으로 MAVLink v2 HEARTBEAT 헤더를 바이너리로 구성하고 각 필드를 출력하시오.
   hint: struct.pack으로 바이너리 데이터를 만드세요.
   category: analysis
   points: 12
-  answer: python3 -c "import struct;h=struct.pack('<BBBBBBBH',0xFD,9,0,0,42,1,1,0);stx,plen,_,_,seq,sysid,compid,msgid=struct.unpack('<BBBBBBBH',h);print(f'STX:0x{stx:02X} Len:{plen} Seq:{seq} SysID:{sysid} MsgID:{msgid} (HEARTBEAT)')"
+  answer: '🤖 프롬프트: Python으로 MAVLink v2 HEARTBEAT 헤더를 바이너리로 구성하고 각 필드를 출력해줘
+
+    📎 참고 (CLI): python3 -c "import struct;h=struct.pack(''<BBBBBBBH'',0xFD,9,0,0,42,1,1,0);stx,plen,_,_,seq,sysid,compid,msgid=struct.unpack(''<BBBBBBBH'',h);print(f''STX:0x{stx:02X}
+    Len:{plen} Seq:{seq} SysID:{sysid} MsgID:{msgid} (HEARTBEAT)'')"'
   answer_detail: MAVLink 패킷의 바이너리 구조를 직접 분석합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: attacker
-  script: python3 -c "import struct;h=struct.pack('<BBBBBBBH',0xFD,9,0,0,42,1,1,0);stx,plen,_,_,seq,sysid,compid,msgid=struct.unpack('<BBBBBBBH',h);print(f'STX:0x{stx:02X} Len:{plen} Seq:{seq} SysID:{sysid} MsgID:{msgid} (HEARTBEAT)')"
+  script: python3 -c "import struct;h=struct.pack('<BBBBBBBH',0xFD,9,0,0,42,1,1,0);stx,plen,_,_,seq,sysid,compid,msgid=struct.unpack('<BBBBBBBH',h);print(f'STX:0x{stx:02X}
+    Len:{plen} Seq:{seq} SysID:{sysid} MsgID:{msgid} (HEARTBEAT)')"
   risk_level: low
   bastion_prompt: Python으로 MAVLink v2 HEARTBEAT 헤더를 바이너리로 구성하고 각 필드를 출력해줘
 - order: 5
@@ -77,41 +95,60 @@ steps:
   hint: socket.bind()로 서버를 만들고 타임아웃을 설정하세요.
   category: config
   points: 12
-  answer: python3 -c "import socket,json;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.bind(('0.0.0.0',19999));s.settimeout(2);print('Drone simulator started on port 19999');s.close()"
+  answer: '🤖 프롬프트: Python으로 가상 드론 시뮬레이터(UDP 서버)를 작성하여 PING 명령에 응답하는 코드를 실행하시오 구현 방법과
+    예시를 설명해줘
+
+    📎 참고 (CLI): python3 -c "import socket,json;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.bind((''0.0.0.0'',19999));s.settimeout(2);print(''Drone
+    simulator started on port 19999'');s.close()"'
   answer_detail: 가상 드론 시뮬레이터는 실제 드론 없이 보안 실습을 가능하게 합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: attacker
-  script: python3 -c "import socket,json;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.bind(('0.0.0.0',19999));s.settimeout(2);print('Drone simulator started on port 19999');s.close()"
+  script: python3 -c "import socket,json;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.bind(('0.0.0.0',19999));s.settimeout(2);print('Drone
+    simulator started on port 19999');s.close()"
   risk_level: low
-  bastion_prompt: Python으로 가상 드론 시뮬레이터(UDP 서버)를 작성하여 PING 명령에 응답하는 코드를 실행하시오 구현 방법과 예시를 설명해줘
+  bastion_prompt: Python으로 가상 드론 시뮬레이터(UDP 서버)를 작성하여 PING 명령에 응답하는 코드를 실행하시오 구현 방법과
+    예시를 설명해줘
 - order: 6
   instruction: LLM에게 WiFi 기반 드론 제어의 보안 취약점 5가지를 질의하시오.
   hint: drone WiFi security vulnerabilities를 질문하세요.
   category: analysis
   points: 12
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a drone security expert.\"},{\"role\":\"user\",\"content\":\"List 5 security vulnerabilities in WiFi-controlled drones with severity rating.\"}],\"stream\":false,\"options\":{\"num_predict\":200}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  answer: "\U0001F916 프롬프트: List 5 security vulnerabilities in WiFi-controlled drones\
+    \ with severity rating.\n\U0001F4CE 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/chat\
+    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\"\
+    :\"You are a drone security expert.\"},{\"role\":\"user\",\"content\":\"List 5\
+    \ security vulnerabilities in WiFi-controlled drones with severity rating.\"}],\"\
+    stream\":false,\"options\":{\"num_predict\":200}}' \\\n | python3 -c \"import\
+    \ sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: WiFi 드론의 보안 취약점을 체계적으로 파악합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a drone security expert.\"},{\"role\":\"user\",\"content\":\"List 5 security vulnerabilities in WiFi-controlled drones with severity rating.\"}],\"stream\":false,\"options\":{\"num_predict\":200}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\"\
+    :\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a drone\
+    \ security expert.\"},{\"role\":\"user\",\"content\":\"List 5 security vulnerabilities\
+    \ in WiFi-controlled drones with severity rating.\"}],\"stream\":false,\"options\"\
+    :{\"num_predict\":200}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   risk_level: low
-  bastion_prompt: List 5 security vulnerabilities in WiFi-controlled drones with severity rating.
+  bastion_prompt: List 5 security vulnerabilities in WiFi-controlled drones with severity
+    rating.
 - order: 7
   instruction: Python으로 드론 텔레메트리 데이터(위도, 경도, 고도, 배터리)를 JSON으로 생성하고 출력하시오.
   hint: json.dumps로 텔레메트리 데이터를 직렬화하세요.
   category: config
   points: 10
-  answer: python3 -c "import json;telemetry={'lat':37.5665,'lon':126.978,'alt':50,'battery':85,'speed':5.2,'heading':180};print('Telemetry:',json.dumps(telemetry,indent=2))"
+  answer: '🤖 프롬프트: Python으로 드론 텔레메트리 데이터(위도, 경도, 고도, 배터리)를 JSON으로 생성하고 출력해줘
+
+    📎 참고 (CLI): python3 -c "import json;telemetry={''lat'':37.5665,''lon'':126.978,''alt'':50,''battery'':85,''speed'':5.2,''heading'':180};print(''Telemetry:'',json.dumps(telemetry,indent=2))"'
   answer_detail: 드론 텔레메트리 데이터 구조를 이해합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: attacker
   script: python3 -c "import json;telemetry={'lat':37.5665,'lon':126.978,'alt':50,'battery':85,'speed':5.2,'heading':180};print('Telemetry:',json.dumps(telemetry,indent=2))"
@@ -122,13 +159,21 @@ steps:
   hint: 각 보안 항목을 딕셔너리로 정의하고 평가하세요.
   category: analysis
   points: 12
-  answer: 'python3 -c " checks={''Authentication'':False,''Encryption'':False,''MAVLink Signing'':False,''Integrity Check'':False} ;score=sum(checks.values())/len(checks)*100 ;print(''=== Drone Comm Security ==='') ;[print(f''  [{\"OK\" if v else \"FAIL\"}] {k}'') for k,v in checks.items()] ;print(f''Score: {score:.0f}% - CRITICAL'')"'
+  answer: '🤖 프롬프트: Python으로 드론 통신의 보안 수준을 평가하는 스크립트를 구현 방법을 설명하고 예시 코드를 보여줘
+
+    📎 참고 (CLI): python3 -c " checks={''Authentication'':False,''Encryption'':False,''MAVLink
+    Signing'':False,''Integrity Check'':False} ;score=sum(checks.values())/len(checks)*100
+    ;print(''=== Drone Comm Security ==='') ;[print(f''  [{\"OK\" if v else \"FAIL\"}]
+    {k}'') for k,v in checks.items()] ;print(f''Score: {score:.0f}% - CRITICAL'')"'
   answer_detail: 드론 통신 보안 평가를 통해 개선점을 도출합니다.
   verify:
     type: output_contains
-    expect: 
+    expect: null
     field: stdout
   target_vm: attacker
-  script: 'python3 -c " checks={''Authentication'':False,''Encryption'':False,''MAVLink Signing'':False,''Integrity Check'':False} ;score=sum(checks.values())/len(checks)*100 ;print(''=== Drone Comm Security ==='') ;[print(f''  [{\"OK\" if v else \"FAIL\"}] {k}'') for k,v in checks.items()] ;print(f''Score: {score:.0f}% - CRITICAL'')"'
+  script: 'python3 -c " checks={''Authentication'':False,''Encryption'':False,''MAVLink
+    Signing'':False,''Integrity Check'':False} ;score=sum(checks.values())/len(checks)*100
+    ;print(''=== Drone Comm Security ==='') ;[print(f''  [{\"OK\" if v else \"FAIL\"}]
+    {k}'') for k,v in checks.items()] ;print(f''Score: {score:.0f}% - CRITICAL'')"'
   risk_level: low
   bastion_prompt: Python으로 드론 통신의 보안 수준을 평가하는 스크립트를 구현 방법을 설명하고 예시 코드를 보여줘

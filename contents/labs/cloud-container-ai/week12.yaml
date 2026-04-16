@@ -18,7 +18,9 @@ steps:
   hint: docker info에서 Logging Driver를 확인하세요.
   category: audit
   points: 10
-  answer: 'docker info --format "Logging: {{.LoggingDriver}}" && echo "--- daemon.json
+  answer: '🤖 프롬프트: WEB 서버(10.20.30.80)에서 Docker의 로깅 드라이버 설정을 확인해줘
+
+    📎 참고 (CLI): docker info --format "Logging: {{.LoggingDriver}}" && echo "--- daemon.json
     로그 설정 ---" && cat /etc/docker/daemon.json 2>/dev/null | grep -A5 log || echo "daemon.json
     로그 설정 없음 (기본값)"'''
   answer_detail: Docker 기본 로깅 드라이버는 json-file로, 컨테이너별 JSON 파일에 로그를 저장합니다. 로그 크기 제한(max-size)과
@@ -39,9 +41,11 @@ steps:
   hint: docker logs 명령으로 컨테이너 로그를 확인하세요.
   category: audit
   points: 10
-  answer: CID=$(docker ps -q | head -1); [ -n "$CID" ] && echo "=== $(docker inspect
-    --format="{{.Name}}" $CID) 로그 ===" && docker logs --tail 20 $CID 2>&1 || echo
-    "실행 중인 컨테이너 없음"
+  answer: '🤖 프롬프트: 실행 중인 컨테이너의 로그를 확인해줘
+
+    📎 참고 (CLI): CID=$(docker ps -q | head -1); [ -n "$CID" ] && echo "=== $(docker
+    inspect --format="{{.Name}}" $CID) 로그 ===" && docker logs --tail 20 $CID 2>&1
+    || echo "실행 중인 컨테이너 없음"'
   answer_detail: '컨테이너 로그에서 보안 이벤트를 식별해야 합니다: 인증 실패(401/403), 비정상 접근 패턴, 에러 급증, 알
     수 없는 경로 접근. docker logs --since로 특정 시간 이후 로그를 필터링할 수 있습니다.'
   verify:
@@ -59,9 +63,11 @@ steps:
   hint: /var/lib/docker/containers/ 하위의 로그 파일 크기를 확인하세요.
   category: audit
   points: 10
-  answer: echo "=== 컨테이너 로그 크기 ==="; sudo find /var/lib/docker/containers/ -name "*-json.log"
-    -exec ls -lh {} \; 2>/dev/null | awk "{print \$5, \$NF}" | head -10 || echo "로그
-    파일 없음"
+  answer: '🤖 프롬프트: 컨테이너별 로그 파일 크기를 확인해줘
+
+    📎 참고 (CLI): echo "=== 컨테이너 로그 크기 ==="; sudo find /var/lib/docker/containers/ -name
+    "*-json.log" -exec ls -lh {} \; 2>/dev/null | awk "{print \$5, \$NF}" | head -10
+    || echo "로그 파일 없음"'
   answer_detail: json-file 드라이버는 기본적으로 로그 크기에 제한이 없어 디스크를 가득 채울 수 있습니다. daemon.json에서
     전역 설정하거나, 컨테이너별로 --log-opt max-size=10m --log-opt max-file=3을 설정하여 로그 크기를 관리해야
     합니다.
@@ -80,9 +86,11 @@ steps:
   hint: docker events --since 또는 docker system events를 사용하세요.
   category: audit
   points: 10
-  answer: echo "=== Docker 이벤트 (최근 1시간) ==="; docker events --since 1h --until 0s
-    --format "{{.Time}} {{.Action}} {{.Actor.Attributes.name}}" 2>/dev/null | head
-    -15 || echo "최근 이벤트 없음"
+  answer: '🤖 프롬프트: 벤트 스트림을확인해줘
+
+    📎 참고 (CLI): echo "=== Docker 이벤트 (최근 1시간) ==="; docker events --since 1h --until
+    0s --format "{{.Time}} {{.Action}} {{.Actor.Attributes.name}}" 2>/dev/null | head
+    -15 || echo "최근 이벤트 없음"'
   answer_detail: Docker 이벤트는 컨테이너 라이프사이클(create, start, stop, destroy), 이미지(pull,
     push), 네트워크(connect, disconnect) 등을 추적합니다. 보안 모니터링에서 비인가 컨테이너 생성, 이미지 pull, 네트워크
     변경을 감지할 수 있습니다.
@@ -101,8 +109,11 @@ steps:
   hint: docker stats --no-stream으로 현재 상태를 캡처하세요.
   category: audit
   points: 10
-  answer: echo "=== 리소스 사용량 스냅샷 ==="; docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.PIDs}}"
-    2>/dev/null || echo "실행 중인 컨테이너 없음"
+  answer: '🤖 프롬프트: 컨테이너 리소스 사용량 스냅샷을 수집해줘
+
+    📎 참고 (CLI): echo "=== 리소스 사용량 스냅샷 ==="; docker stats --no-stream --format "table
+    {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.MemPerc}}\t{{.NetIO}}\t{{.PIDs}}" 2>/dev/null
+    || echo "실행 중인 컨테이너 없음"'
   answer_detail: 리소스 모니터링은 성능과 보안 모두에 중요합니다. 비정상적인 CPU/메모리 급증은 암호화폐 채굴(cryptojacking),
     데이터 유출, DoS 공격의 징후일 수 있습니다. Prometheus + cAdvisor로 시계열 데이터를 수집하고 Grafana로 대시보드를
     구성합니다.
@@ -120,8 +131,10 @@ steps:
   hint: journalctl로 docker 서비스 로그를 확인하세요.
   category: audit
   points: 10
-  answer: echo "=== Docker 데몬 로그 ==="; sudo journalctl -u docker --no-pager -n 20
-    2>/dev/null | tail -15
+  answer: '🤖 프롬프트: 호스트에서 컨테이너 관련 시스템 로그를 확인해줘
+
+    📎 참고 (CLI): echo "=== Docker 데몬 로그 ==="; sudo journalctl -u docker --no-pager
+    -n 20 2>/dev/null | tail -15'
   answer_detail: Docker 데몬 로그에는 컨테이너 시작/중지 실패, 이미지 pull 오류, 네트워크 문제, 보안 관련 경고가 기록됩니다.
     데몬 크래시, OOM Kill, 디스크 부족 등의 시스템 수준 이벤트도 확인할 수 있습니다.
   verify:
@@ -138,7 +151,9 @@ steps:
   hint: 로그 설정, 리소스, 이벤트를 종합 점검하세요.
   category: audit
   points: 10
-  answer: 'cat << ''SCRIPT'' > /tmp/monitoring_check.sh
+  answer: '🤖 프롬프트: 컨테이너 모니터링 보안 점검 스크립트를 작성하고 실행하시오 구현 방법과 예시를 설명해줘
+
+    📎 참고 (CLI): cat << ''SCRIPT'' > /tmp/monitoring_check.sh
 
     #!/bin/bash
 
@@ -234,7 +249,17 @@ steps:
     field: stdout
   target_vm: web
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) WEB 서버(10.20.30.80)에서 Docker의 로깅 드라이버 설정을 확인해줘
+
+    2) 실행 중인 컨테이너의 로그를 확인해줘
+
+    3) 컨테이너별 로그 파일 크기를 확인해줘
+
+    4) 벤트 스트림을확인해줘
+
+    5) 컨테이너 리소스 사용량 스냅샷을 수집해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

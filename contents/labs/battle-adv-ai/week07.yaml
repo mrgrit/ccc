@@ -28,15 +28,17 @@ steps:
   hint: 가설 -> 데이터 소스 -> 분석 방법 -> 탐지 기준의 구조로 계획을 수립한다.
   category: analysis
   points: 10
-  answer: "cat > /tmp/hunting_hypothesis.txt << 'EOF'\n=== Threat Hunting Plan ===\n\
-    Hypothesis: An APT actor is using DNS tunneling for C2\n\nData Sources:\n  1.\
-    \ DNS query logs (Suricata eve.json)\n  2. Network flow data\n  3. Endpoint DNS\
-    \ resolver cache\n\nAnalysis Methods:\n  1. DNS query length distribution\n  2.\
-    \ Shannon entropy of subdomain labels\n  3. Query frequency per unique domain\n\
-    \  4. TXT record query ratio\n\nDetection Criteria:\n  - Subdomain label length\
-    \ > 30 characters\n  - Shannon entropy > 3.5\n  - Query frequency > 100/hour to\
-    \ single domain\n  - TXT query ratio > 20%\n\nExpected Outcome: Identify or rule\
-    \ out DNS tunneling C2\nEOF\ncat /tmp/hunting_hypothesis.txt"
+  answer: "\U0001F916 프롬프트: [BLUE] 위협 헌팅 가설을 수립하라. 'APT 공격자가 DNS 터널링으로 C2 통신을 수행하고\
+    \ 있다'는 가설을 검증하기 위한 데이터 소스, 분석 방법, 탐지 기준을 포함하는 헌팅 계획을 작성해줘\n\U0001F4CE 참고 (CLI):\
+    \ cat > /tmp/hunting_hypothesis.txt << 'EOF'\n=== Threat Hunting Plan ===\nHypothesis:\
+    \ An APT actor is using DNS tunneling for C2\n\nData Sources:\n  1. DNS query\
+    \ logs (Suricata eve.json)\n  2. Network flow data\n  3. Endpoint DNS resolver\
+    \ cache\n\nAnalysis Methods:\n  1. DNS query length distribution\n  2. Shannon\
+    \ entropy of subdomain labels\n  3. Query frequency per unique domain\n  4. TXT\
+    \ record query ratio\n\nDetection Criteria:\n  - Subdomain label length > 30 characters\n\
+    \  - Shannon entropy > 3.5\n  - Query frequency > 100/hour to single domain\n\
+    \  - TXT query ratio > 20%\n\nExpected Outcome: Identify or rule out DNS tunneling\
+    \ C2\nEOF\ncat /tmp/hunting_hypothesis.txt"
   answer_detail: 가설 기반 헌팅은 구체적인 위협 가설을 세우고 데이터를 분석하여 검증한다. 위협이 발견되지 않은 것도 유효한 결과이다.
   verify:
     type: output_contains
@@ -60,12 +62,15 @@ steps:
   hint: tcpdump로 DNS 트래픽을 캡처하고 도메인별 쿼리 빈도를 집계한다.
   category: analysis
   points: 10
-  answer: echo '=== DNS Hunting Execution ===' && timeout 3 tcpdump -i any port 53
-    -nn -c 10 2>/dev/null; echo '---' && echo 'DNS query analysis from Suricata:'
-    && ssh 10.20.30.1 'cat /var/log/suricata/eve.json 2>/dev/null | python3 -c "import
-    sys,json; [print(json.loads(l).get(\"dns\",{}).get(\"rrname\",\"\")) for l in
-    sys.stdin if \"dns\" in l]" 2>/dev/null | sort | uniq -c | sort -rn | head -10'
-    2>&1
+  answer: '🤖 프롬프트: [BLUE] DNS 헌팅을 실행하라. tcpdump로 DNS 쿼리를 캡처하고 Suricata eve.json에서
+    DNS 이벤트를 분석해줘
+
+    📎 참고 (CLI): echo ''=== DNS Hunting Execution ==='' && timeout 3 tcpdump -i any
+    port 53 -nn -c 10 2>/dev/null; echo ''---'' && echo ''DNS query analysis from
+    Suricata:'' && ssh 10.20.30.1 ''cat /var/log/suricata/eve.json 2>/dev/null | python3
+    -c "import sys,json; [print(json.loads(l).get(\"dns\",{}).get(\"rrname\",\"\"))
+    for l in sys.stdin if \"dns\" in l]" 2>/dev/null | sort | uniq -c | sort -rn |
+    head -10'' 2>&1'
   answer_detail: DNS 이벤트에서 도메인별 쿼리 빈도를 집계하면 비정상적으로 자주 조회되는 도메인을 발견할 수 있다.
   verify:
     type: output_contains
@@ -85,15 +90,16 @@ steps:
   hint: Sigma YAML 형식으로 process_creation 이벤트를 탐지한다.
   category: analysis
   points: 10
-  answer: "cat > /tmp/sigma_hunting_rule.yaml << 'EOF'\ntitle: Suspicious Base64 Decode\
-    \ Execution\nid: hunt-001\nstatus: experimental\ndescription: Detects base64 decode\
-    \ commands indicating C2 payload decoding\nauthor: Lab Student\ndate: 2026/04/06\n\
-    logsource:\n  category: process_creation\n  product: linux\ndetection:\n  selection_base64:\n\
-    \    CommandLine|contains:\n      - 'base64 -d'\n      - 'base64 --decode'\n \
-    \ selection_eval:\n    CommandLine|contains:\n      - 'eval $(echo'\n      - 'bash\
-    \ -c \"$(echo'\n  condition: selection_base64 or selection_eval\nfalsepositives:\n\
-    \  - Legitimate admin scripts\nlevel: medium\ntags:\n  - attack.defense_evasion\n\
-    \  - attack.t1140\nEOF\ncat /tmp/sigma_hunting_rule.yaml"
+  answer: "\U0001F916 프롬프트: [BLUE] Sigma 규칙을 작성하여 base64 디코딩 및 동적 실행 명령을 탐지하라 구현 방법과\
+    \ 예시를 설명해줘\n\U0001F4CE 참고 (CLI): cat > /tmp/sigma_hunting_rule.yaml << 'EOF'\n\
+    title: Suspicious Base64 Decode Execution\nid: hunt-001\nstatus: experimental\n\
+    description: Detects base64 decode commands indicating C2 payload decoding\nauthor:\
+    \ Lab Student\ndate: 2026/04/06\nlogsource:\n  category: process_creation\n  product:\
+    \ linux\ndetection:\n  selection_base64:\n    CommandLine|contains:\n      - 'base64\
+    \ -d'\n      - 'base64 --decode'\n  selection_eval:\n    CommandLine|contains:\n\
+    \      - 'eval $(echo'\n      - 'bash -c \"$(echo'\n  condition: selection_base64\
+    \ or selection_eval\nfalsepositives:\n  - Legitimate admin scripts\nlevel: medium\n\
+    tags:\n  - attack.defense_evasion\n  - attack.t1140\nEOF\ncat /tmp/sigma_hunting_rule.yaml"
   answer_detail: Sigma는 SIEM 비의존적 탐지 규칙 형식이다. base64 디코딩 또는 eval 동적 실행을 탐지하여 Deobfuscate/Decode(T1140)
     기법을 헌팅한다.
   verify:
@@ -116,11 +122,14 @@ steps:
   hint: ps auxf로 프로세스 트리를 분석하고, 웹 서버에서 쉘이 스폰된 것을 찾는다.
   category: analysis
   points: 10
-  answer: echo '=== Process Tree Hunting ===' && ps auxf | grep -B2 -A2 -E 'sh$|bash$|python|perl|nc
-    |ncat ' | grep -v grep | head -30 && echo '---' && echo 'Suspicious parent-child
-    patterns:' && echo '  - www-data -> bash/sh (web shell)' && echo '  - mysql ->
-    bash/sh (SQLi RCE)' && echo '  - cron -> bash -> network activity (C2 beacon)'
-    && echo '  - sshd -> bash -> unusual child (lateral movement)'
+  answer: '🤖 프롬프트: [BLUE] 프로세스 트리 헌팅을 수행해줘
+
+    📎 참고 (CLI): echo ''=== Process Tree Hunting ==='' && ps auxf | grep -B2 -A2 -E
+    ''sh$|bash$|python|perl|nc |ncat '' | grep -v grep | head -30 && echo ''---''
+    && echo ''Suspicious parent-child patterns:'' && echo ''  - www-data -> bash/sh
+    (web shell)'' && echo ''  - mysql -> bash/sh (SQLi RCE)'' && echo ''  - cron ->
+    bash -> network activity (C2 beacon)'' && echo ''  - sshd -> bash -> unusual child
+    (lateral movement)'''
   answer_detail: 웹 서버(www-data)가 쉘을 생성하면 웹 쉘이나 RCE를, 데이터베이스가 쉘을 생성하면 SQLi RCE를 의심한다.
   verify:
     type: output_contains
@@ -138,12 +147,14 @@ steps:
   hint: find로 최근 생성/수정된 파일과 특수 권한 파일을 검색한다.
   category: analysis
   points: 10
-  answer: echo '=== File System Hunting ===' && echo '[1] New executables (7d):' &&
-    find /usr/local/bin /opt /home -type f -newer /etc/hostname -executable 2>/dev/null
-    | head -10 && echo '[2] Hidden files in temp:' && find /tmp /var/tmp /dev/shm
-    -name '.*' -type f 2>/dev/null | head -10 && echo '[3] SUID binaries:' && find
-    /usr -perm -4000 -type f 2>/dev/null | head -10 && echo '[4] Modified configs
-    (7d):' && find /etc -name '*.conf' -mtime -7 2>/dev/null | head -10
+  answer: '🤖 프롬프트: [BLUE] 파일 시스템 헌팅 — 최근 생성된 실행 파일, 숨김 파일, SUID 바이너리, 수정된 설정 파일을 조사해줘
+
+    📎 참고 (CLI): echo ''=== File System Hunting ==='' && echo ''[1] New executables
+    (7d):'' && find /usr/local/bin /opt /home -type f -newer /etc/hostname -executable
+    2>/dev/null | head -10 && echo ''[2] Hidden files in temp:'' && find /tmp /var/tmp
+    /dev/shm -name ''.*'' -type f 2>/dev/null | head -10 && echo ''[3] SUID binaries:''
+    && find /usr -perm -4000 -type f 2>/dev/null | head -10 && echo ''[4] Modified
+    configs (7d):'' && find /etc -name ''*.conf'' -mtime -7 2>/dev/null | head -10'
   answer_detail: 새 실행 파일(악성 도구), 숨김 파일(.으로 시작), SUID 비트(권한 상승), 최근 수정된 설정 파일을 조사한다.
     공격자는 /dev/shm(RAM 디스크)에 도구를 숨기는 경우가 많다.
   verify:
@@ -163,12 +174,14 @@ steps:
   hint: Wazuh API 또는 로그 파일에서 알림을 조회한다.
   category: analysis
   points: 10
-  answer: echo '=== Wazuh SIEM Hunting ===' && ssh 10.20.30.100 'cat /var/ossec/logs/alerts/alerts.json
+  answer: '🤖 프롬프트: [BLUE] Wazuh SIEM을 활용하여 최근 보안 알림을 중앙 집중적으로 분석해줘
+
+    📎 참고 (CLI): echo ''=== Wazuh SIEM Hunting ==='' && ssh 10.20.30.100 ''cat /var/ossec/logs/alerts/alerts.json
     2>/dev/null | tail -20 | python3 -c "import sys,json; [print(json.loads(l).get(\"rule\",{}).get(\"description\",\"\"),
-    json.loads(l).get(\"rule\",{}).get(\"level\",0)) for l in sys.stdin]" 2>/dev/null'
-    2>&1 | head -15; echo '---'; echo 'Hunting queries:'; echo '1. High severity (level
-    >= 10)'; echo '2. Repeated alerts from same agent'; echo '3. New alert types not
-    seen before'
+    json.loads(l).get(\"rule\",{}).get(\"level\",0)) for l in sys.stdin]" 2>/dev/null''
+    2>&1 | head -15; echo ''---''; echo ''Hunting queries:''; echo ''1. High severity
+    (level >= 10)''; echo ''2. Repeated alerts from same agent''; echo ''3. New alert
+    types not seen before'''
   answer_detail: Wazuh SIEM은 모든 에이전트의 보안 이벤트를 중앙 수집하여 헌팅에 활용한다. 고위험 알림, 반복 알림, 신규
     알림 유형을 분석한다.
   verify:
@@ -189,16 +202,17 @@ steps:
   hint: T1190, T1053, T1071, T1021, T1048에 대한 헌팅 쿼리를 작성한다.
   category: analysis
   points: 10
-  answer: "cat > /tmp/attack_hunting_matrix.txt << 'EOF'\n=== MITRE ATT&CK Hunting\
-    \ Matrix ===\n\n1. T1190 - Exploit Public-Facing Application\n   Query: grep -E\
-    \ 'UNION|SELECT.*FROM|<script>' /var/log/nginx/access.log\n   Priority: CRITICAL\n\
-    \n2. T1053.003 - Cron Persistence\n   Query: for u in $(cut -f1 -d: /etc/passwd);\
-    \ do crontab -u $u -l 2>/dev/null; done\n   Priority: HIGH\n\n3. T1071.004 - DNS\
-    \ C2\n   Query: Entropy analysis on DNS query logs (entropy > 3.5)\n   Priority:\
-    \ HIGH\n\n4. T1021.004 - SSH Lateral Movement\n   Query: grep 'Accepted publickey'\
-    \ /var/log/auth.log | awk '{print $9,$11}'\n   Priority: MEDIUM\n\n5. T1048 -\
-    \ Data Exfiltration\n   Query: NetFlow analysis (bytes_out/bytes_in > 10, new\
-    \ external IPs)\n   Priority: HIGH\nEOF\ncat /tmp/attack_hunting_matrix.txt"
+  answer: "\U0001F916 프롬프트: [BLUE] MITRE ATT&CK 기반 헌팅 매트릭스를 구현 방법을 설명하고 예시 코드를 보여줘\n\
+    \U0001F4CE 참고 (CLI): cat > /tmp/attack_hunting_matrix.txt << 'EOF'\n=== MITRE\
+    \ ATT&CK Hunting Matrix ===\n\n1. T1190 - Exploit Public-Facing Application\n\
+    \   Query: grep -E 'UNION|SELECT.*FROM|<script>' /var/log/nginx/access.log\n \
+    \  Priority: CRITICAL\n\n2. T1053.003 - Cron Persistence\n   Query: for u in $(cut\
+    \ -f1 -d: /etc/passwd); do crontab -u $u -l 2>/dev/null; done\n   Priority: HIGH\n\
+    \n3. T1071.004 - DNS C2\n   Query: Entropy analysis on DNS query logs (entropy\
+    \ > 3.5)\n   Priority: HIGH\n\n4. T1021.004 - SSH Lateral Movement\n   Query:\
+    \ grep 'Accepted publickey' /var/log/auth.log | awk '{print $9,$11}'\n   Priority:\
+    \ MEDIUM\n\n5. T1048 - Data Exfiltration\n   Query: NetFlow analysis (bytes_out/bytes_in\
+    \ > 10, new external IPs)\n   Priority: HIGH\nEOF\ncat /tmp/attack_hunting_matrix.txt"
   answer_detail: ATT&CK 기반 헌팅 매트릭스는 환경에 가장 위험한 기법을 선정하고 데이터 소스, 분석 방법, 우선순위를 정의한다.
   verify:
     type: output_contains
@@ -221,17 +235,19 @@ steps:
   hint: 가설별 검증 결과, 발견 사항, HMM Level 평가를 정리한다.
   category: analysis
   points: 15
-  answer: "rm -f /tmp/hunting_hypothesis.txt /tmp/sigma_hunting_rule.yaml /tmp/attack_hunting_matrix.txt\
-    \ 2>/dev/null && cat > /tmp/hunting_report.txt << 'EOF'\n=== Threat Hunting Report\
-    \ ===\nHunt ID: HUNT-20260406-001 | Scope: 10.20.30.0/24\n\n1. Hypothesis Results:\n\
-    \   | Hypothesis | Result | Evidence |\n   |-----------|--------|----------|\n\
-    \   | DNS tunneling C2 | Not confirmed | No high-entropy queries |\n   | Unauthorized\
-    \ processes | Clean | Normal parent-child trees |\n   | Data exfiltration | Not\
-    \ confirmed | Normal outbound patterns |\n\n2. Hunting Maturity: HM2 (Procedural)\n\
-    \   - Documented hypotheses and procedures\n   - Sigma rule creation capability\n\
-    \   - Multiple data source analysis\n\n3. Roadmap to HM4:\n   - Automate hunting\
-    \ pipeline (3 months)\n   - Deploy ML anomaly detection (6 months)\n   - Generate\
-    \ and share threat intelligence (12 months)\nEOF\ncat /tmp/hunting_report.txt"
+  answer: "\U0001F916 프롬프트: [RED/BLUE] 환경을 정리하고 헌팅 보고서와 성숙도 평가를 구현 방법을 설명하고 예시 코드를\
+    \ 보여줘\n\U0001F4CE 참고 (CLI): rm -f /tmp/hunting_hypothesis.txt /tmp/sigma_hunting_rule.yaml\
+    \ /tmp/attack_hunting_matrix.txt 2>/dev/null && cat > /tmp/hunting_report.txt\
+    \ << 'EOF'\n=== Threat Hunting Report ===\nHunt ID: HUNT-20260406-001 | Scope:\
+    \ 10.20.30.0/24\n\n1. Hypothesis Results:\n   | Hypothesis | Result | Evidence\
+    \ |\n   |-----------|--------|----------|\n   | DNS tunneling C2 | Not confirmed\
+    \ | No high-entropy queries |\n   | Unauthorized processes | Clean | Normal parent-child\
+    \ trees |\n   | Data exfiltration | Not confirmed | Normal outbound patterns |\n\
+    \n2. Hunting Maturity: HM2 (Procedural)\n   - Documented hypotheses and procedures\n\
+    \   - Sigma rule creation capability\n   - Multiple data source analysis\n\n3.\
+    \ Roadmap to HM4:\n   - Automate hunting pipeline (3 months)\n   - Deploy ML anomaly\
+    \ detection (6 months)\n   - Generate and share threat intelligence (12 months)\n\
+    EOF\ncat /tmp/hunting_report.txt"
   answer_detail: 헌팅 보고서는 가설 검증 결과와 헌팅 성숙도(HMM Level 0~4) 평가를 포함한다. 위협 미발견도 유효한 결과이다.
   verify:
     type: output_contains
@@ -267,7 +283,12 @@ steps:
     field: stdout
   target_vm: secu
   risk_level: low
-  answer: ''
+  answer: "\U0001F916 프롬프트: secu VM(보안게이트웨이)에서 다음 작업들을 순서대로 수행해줘:\n1) [BLUE] 위협 헌팅\
+    \ 가설을 수립하라. 'APT 공격자가 DNS 터널링으로 C2 통신을 수행하고 있다'는 가설을 검증하기 위한 데이터 소스, 분석 방법, 탐지\
+    \ 기준을 포함하는 헌팅 계획을 작성해줘\n2) [BLUE] DNS 헌팅을 실행하라. tcpdump로 DNS 쿼리를 캡처하고 Suricata\
+    \ eve.json에서 DNS 이벤트를 분석해줘\n3) [BLUE] Sigma 규칙을 작성하여 base64 디코딩 및 동적 실행 명령을 탐지하라\
+    \ \n4) [BLUE] 프로세스 트리 헌팅을 수행해줘\n5) [BLUE] 파일 시스템 헌팅 — 최근 생성된 실행 파일, 숨김 파일, SUID\
+    \ 바이너리, 수정된 설정 파일을 조사 작업을 수행해줘"
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

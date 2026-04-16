@@ -25,13 +25,15 @@ steps:
   hint: Suricata fast.log를 모니터링하여 공격 IP를 추출한다.
   category: defense
   points: 10
-  answer: "cat > /tmp/auto_response.sh << 'SCRIPT'\n#!/bin/bash\ntail -Fn0 /var/log/suricata/fast.log\
-    \ | while read line; do\n  IP=$(echo $line | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\\
-    d+' | head -1)\n  if [ -n \"$IP\" ] && [ \"$IP\" != \"10.20.30.1\" ] && [ \"$IP\"\
-    \ != \"10.20.30.80\" ] && [ \"$IP\" != \"10.20.30.100\" ]; then\n    sudo nft\
-    \ add element inet filter blocklist { $IP } 2>/dev/null\n    echo \"$(date): Auto-blocked\
-    \ $IP\" >> /tmp/auto_response.log\n  fi\ndone\nSCRIPT\nchmod +x /tmp/auto_response.sh\
-    \ && echo 'Auto-response script deployed'"
+  answer: "\U0001F916 프롬프트: [BLUE] 라운드 1의 교훈을 반영하여 자동 대응 스크립트를 배포하라. Suricata 경보 시\
+    \ 자동으로 IP를 차단한다해줘\n\U0001F4CE 참고 (CLI): cat > /tmp/auto_response.sh << 'SCRIPT'\n\
+    #!/bin/bash\ntail -Fn0 /var/log/suricata/fast.log | while read line; do\n  IP=$(echo\
+    \ $line | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+' | head -1)\n  if [ -n \"$IP\" ]\
+    \ && [ \"$IP\" != \"10.20.30.1\" ] && [ \"$IP\" != \"10.20.30.80\" ] && [ \"$IP\"\
+    \ != \"10.20.30.100\" ]; then\n    sudo nft add element inet filter blocklist\
+    \ { $IP } 2>/dev/null\n    echo \"$(date): Auto-blocked $IP\" >> /tmp/auto_response.log\n\
+    \  fi\ndone\nSCRIPT\nchmod +x /tmp/auto_response.sh && echo 'Auto-response script\
+    \ deployed'"
   answer_detail: 자동 대응 스크립트는 Suricata 경보에서 공격 IP를 추출하여 즉시 nftables blocklist에 추가한다.
     내부 VM IP는 제외한다.
   verify:
@@ -54,7 +56,8 @@ steps:
   hint: 인코딩, 주석, 대소문자 혼합으로 WAF를 우회한다.
   category: exploit
   points: 10
-  answer: "curl -s 'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1%27%20%2f**%2fuNiOn%2f**%2fsElEcT%201%2c2--%20&Submit=Submit'\
+  answer: "\U0001F916 프롬프트: [RED] 라운드 1에서 차단된 공격이 여전히 막히는지 확인하고, WAF를 우회하는 SQL Injection을\
+    \ 시도해줘\n\U0001F4CE 참고 (CLI): curl -s 'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1%27%20%2f**%2fuNiOn%2f**%2fsElEcT%201%2c2--%20&Submit=Submit'\
     \ -b 'security=low; PHPSESSID=test' \\\n  -o /dev/null \\\n  -w '%{http_code}'\
     \ && echo ' - WAF bypass attempt'"
   answer_detail: 'WAF 우회 기법: 대소문자 혼합(uNiOn), SQL 주석(/**/) 삽입, URL 인코딩. 정교한 WAF는 이런
@@ -74,9 +77,12 @@ steps:
   hint: URL 인코딩을 디코딩하여 분석한다.
   category: defense
   points: 10
-  answer: tail -30 /var/log/apache2/access.log 2>/dev/null | python3 -c "import sys,urllib.parse;
-    [print(urllib.parse.unquote(l.strip())) for l in sys.stdin]" 2>/dev/null | grep
-    -iE '(union|select)' | tail -5 || echo 'WAF bypass detection check complete'
+  answer: '🤖 프롬프트: [BLUE] web 서버 로그에서 WAF 우회 시도를 탐지해줘
+
+    📎 참고 (CLI): tail -30 /var/log/apache2/access.log 2>/dev/null | python3 -c "import
+    sys,urllib.parse; [print(urllib.parse.unquote(l.strip())) for l in sys.stdin]"
+    2>/dev/null | grep -iE ''(union|select)'' | tail -5 || echo ''WAF bypass detection
+    check complete'''
   answer_detail: URL 인코딩된 로그를 디코딩하면 실제 공격 페이로드를 확인할 수 있다. 디코딩 후 SQL 키워드가 발견되면 WAF
     규칙에 변형도 추가해야 한다.
   verify:
@@ -94,8 +100,11 @@ steps:
   hint: gobuster 또는 dirb로 경로 탐색을 수행한다.
   category: recon
   points: 10
-  answer: dirb http://10.20.30.80:3000/ /usr/share/wordlists/dirb/common.txt -r 2>&1
-    | grep 'CODE:200\|CODE:301\|CODE:302' | head -10 || echo 'Directory scan complete'
+  answer: '🤖 프롬프트: [RED] JuiceShop의 다른 취약점을 탐색해줘
+
+    📎 참고 (CLI): dirb http://10.20.30.80:3000/ /usr/share/wordlists/dirb/common.txt
+    -r 2>&1 | grep ''CODE:200\|CODE:301\|CODE:302'' | head -10 || echo ''Directory
+    scan complete'''
   answer_detail: JuiceShop은 REST API 기반으로 /api/, /rest/, /ftp/ 등 다양한 경로가 있다. 숨겨진 관리
     기능이나 디버그 엔드포인트를 발견할 수 있다.
   verify:
@@ -112,8 +121,10 @@ steps:
   hint: curl로 /ftp/ 경로에 접근한다.
   category: exploit
   points: 10
-  answer: curl -s http://10.20.30.80:3000/ftp/ && echo '\n=== FTP directory listing
-    retrieved ==='
+  answer: '🤖 프롬프트: [RED] JuiceShop의 /ftp 디렉토리에서 민감한 파일을 다운로드해줘
+
+    📎 참고 (CLI): curl -s http://10.20.30.80:3000/ftp/ && echo ''\n=== FTP directory
+    listing retrieved ==='''
   answer_detail: JuiceShop의 /ftp/ 경로에는 백업 파일, 설정 파일 등 민감한 파일이 노출될 수 있다. 디렉토리 리스팅은
     정보 유출 취약점이다.
   verify:
@@ -130,9 +141,11 @@ steps:
   hint: eve.json과 wazuh alerts를 병합 분석한다.
   category: defense
   points: 10
-  answer: echo '=== Suricata Alerts ===' && cat /var/log/suricata/eve.json | jq -r
-    'select(.event_type=="alert") | "\(.timestamp[:19]) \(.alert.signature)"' 2>/dev/null
-    | tail -10 && echo '=== Analysis complete ==='
+  answer: '🤖 프롬프트: [BLUE] Suricata와 Wazuh에서 이번 라운드의 종합 알림을 분석해줘
+
+    📎 참고 (CLI): echo ''=== Suricata Alerts ==='' && cat /var/log/suricata/eve.json
+    | jq -r ''select(.event_type=="alert") | "\(.timestamp[:19]) \(.alert.signature)"''
+    2>/dev/null | tail -10 && echo ''=== Analysis complete ==='''
   answer_detail: Suricata(네트워크)와 Wazuh(호스트) 알림을 병합하면 공격의 전체 그림을 파악할 수 있다.
   verify:
     type: output_contains
@@ -149,8 +162,10 @@ steps:
   hint: auto_response.log를 확인한다.
   category: defense
   points: 10
-  answer: cat /tmp/auto_response.log 2>/dev/null || echo 'No auto-blocks yet' && nft
-    list set inet filter blocklist 2>/dev/null
+  answer: '🤖 프롬프트: [BLUE] 자동 대응 로그를 확인하고, 자동 차단된 IP를 검토해줘
+
+    📎 참고 (CLI): cat /tmp/auto_response.log 2>/dev/null || echo ''No auto-blocks yet''
+    && nft list set inet filter blocklist 2>/dev/null'
   answer_detail: 자동 대응 스크립트가 정상 동작했는지 확인한다. 오탐으로 인한 잘못된 차단이 없는지도 검토한다.
   verify:
     type: output_contains
@@ -166,7 +181,9 @@ steps:
   hint: tcpdump로 트래픽을 캡처한다.
   category: recon
   points: 10
-  answer: 'sudo timeout 10 tcpdump -i eth0 -c 50 host 10.20.30.80 -w /tmp/capture_r2.pcap
+  answer: '🤖 프롬프트: [RED] 패킷 캡처로 web 서버의 응답 패턴을 분석해줘
+
+    📎 참고 (CLI): sudo timeout 10 tcpdump -i eth0 -c 50 host 10.20.30.80 -w /tmp/capture_r2.pcap
     2>/dev/null && echo ''Capture saved: /tmp/capture_r2.pcap'' || echo ''Packet capture
     complete'''
   answer_detail: tcpdump로 트래픽을 캡처하면 서비스 구성, 응답 헤더, 평문 데이터 등을 분석할 수 있다.
@@ -185,9 +202,11 @@ steps:
   hint: Week 10의 무결성 스크립트를 실행한다.
   category: defense
   points: 10
-  answer: bash /tmp/integrity_monitor.sh 2>/dev/null || echo 'Running manual check...'
-    && md5sum /etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config 2>/dev/null
-    && echo 'Integrity check complete'
+  answer: '🤖 프롬프트: [BLUE] 파일 무결성 모니터링을 실행하여 web 서버에서 변경된 파일을 탐지해줘
+
+    📎 참고 (CLI): bash /tmp/integrity_monitor.sh 2>/dev/null || echo ''Running manual
+    check...'' && md5sum /etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config
+    2>/dev/null && echo ''Integrity check complete'''
   answer_detail: 파일 무결성 검사로 공격자의 변경 사항(백도어 계정, SSH 키, cron job)을 탐지한다.
   verify:
     type: output_contains
@@ -204,7 +223,9 @@ steps:
   hint: 라운드 1 대비 개선 사항을 분석한다.
   category: analysis
   points: 15
-  answer: 'cat > /tmp/battle_round2_report.txt << ''EOF''
+  answer: '🤖 프롬프트: [BLUE] 서비스 가용성을 최종 확인하고, 라운드 2 비교 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
+
+    📎 참고 (CLI): cat > /tmp/battle_round2_report.txt << ''EOF''
 
     === Battle Round 2 Report ===
 
@@ -310,7 +331,17 @@ steps:
     field: stdout
   target_vm: secu
   risk_level: low
-  answer: ''
+  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
+
+    1) [BLUE] 라운드 1의 교훈을 반영하여 자동 대응 스크립트를 배포하라. Suricata 경보 시 자동으로 IP를 차단한다해줘
+
+    2) [RED] 라운드 1에서 차단된 공격이 여전히 막히는지 확인하고, WAF를 우회하는 SQL Injection을 시도해줘
+
+    3) [BLUE] web 서버 로그에서 WAF 우회 시도를 탐지해줘
+
+    4) [RED] JuiceShop의 다른 취약점을 탐색해줘
+
+    5) [RED] JuiceShop의 /ftp 디렉토리에서 민감한 파일을 다운로드해줘'
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
     다단계 작업.
   script: ''

