@@ -3,7 +3,8 @@ title: 서버리스 보안 개념 실습 (컨테이너 기반)
 version: non-ai
 course: cloud-container-nonai
 week: 9
-description: 서버리스 아키텍처의 보안 개념을 Docker 컨테이너로 시뮬레이션합니다. 단기 실행 컨테이너, 최소 이미지, 함수 격리, 입력 검증을 실습합니다.
+description: 서버리스 아키텍처의 보안 개념을 Docker 컨테이너로 시뮬레이션합니다. 단기 실행 컨테이너, 최소 이미지, 함수 격리, 입력
+  검증을 실습합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -13,13 +14,16 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: WEB 서버(10.20.30.80)에서 서버리스 함수처럼 단기 실행되는 컨테이너를 생성하시오. --rm 옵션으로 실행 후 자동 삭제합니다.
+  instruction: WEB 서버(10.20.30.80)에서 서버리스 함수처럼 단기 실행되는 컨테이너를 생성하시오. --rm 옵션으로 실행 후
+    자동 삭제합니다.
   hint: docker run --rm으로 일회성 컨테이너를 실행하세요.
   category: config
   points: 10
-  answer: 'echo "=== 서버리스 시뮬레이션: 단기 실행 ==="; time docker run --rm --read-only --cap-drop ALL --memory 64m --user 1000 alpine:latest sh -c "echo Hello from serverless function &&
-    date && id" 2>&1'''
-  answer_detail: 서버리스 함수(AWS Lambda 등)는 요청 시 실행되고, 완료 후 자동 종료됩니다. Docker의 --rm은 컨테이너 종료 후 자동 삭제하여 동일한 패턴을 구현합니다. 서버리스의 보안 장점은 짧은 수명(persistence 어려움), 불변 인프라, 자동 스케일링입니다.
+  answer: 'echo "=== 서버리스 시뮬레이션: 단기 실행 ==="; time docker run --rm --read-only --cap-drop
+    ALL --memory 64m --user 1000 alpine:latest sh -c "echo Hello from serverless function
+    && date && id" 2>&1'''
+  answer_detail: 서버리스 함수(AWS Lambda 등)는 요청 시 실행되고, 완료 후 자동 종료됩니다. Docker의 --rm은 컨테이너
+    종료 후 자동 삭제하여 동일한 패턴을 구현합니다. 서버리스의 보안 장점은 짧은 수명(persistence 어려움), 불변 인프라, 자동 스케일링입니다.
   verify:
     type: output_contains
     expect: serverless function
@@ -30,12 +34,18 @@ steps:
   hint: docker images로 크기를 비교하고, 이미지 내 바이너리 수를 확인하세요.
   category: audit
   points: 10
-  answer: 'echo "=== 이미지 크기 비교 ==="; docker images alpine --format "Alpine: {{.Size}}" 2>/dev/null; docker images ubuntu --format "Ubuntu: {{.Size}}" 2>/dev/null; echo "=== 바이너리
-    수 비교 ==="; echo -n "Alpine /usr/bin: "; docker run --rm alpine:latest ls /usr/bin 2>/dev/null | wc -l; echo -n "Alpine /usr/sbin: "; docker run --rm alpine:latest ls /usr/sbin 2>/dev/null | wc -l'''
-  answer_detail: 서버리스/컨테이너 보안에서 이미지 크기 최소화는 공격 표면 축소의 핵심입니다. Alpine(~5MB)은 Ubuntu(~77MB)보다 훨씬 작고, 포함된 바이너리도 적어 악용 가능한 도구가 적습니다. Google의 distroless 이미지는 셸조차 없어 더 안전합니다.
+  answer: 'echo "=== 이미지 크기 비교 ==="; docker images alpine --format "Alpine: {{.Size}}"
+    2>/dev/null; docker images ubuntu --format "Ubuntu: {{.Size}}" 2>/dev/null; echo
+    "=== 바이너리 수 비교 ==="; echo -n "Alpine /usr/bin: "; docker run --rm alpine:latest
+    ls /usr/bin 2>/dev/null | wc -l; echo -n "Alpine /usr/sbin: "; docker run --rm
+    alpine:latest ls /usr/sbin 2>/dev/null | wc -l'''
+  answer_detail: 서버리스/컨테이너 보안에서 이미지 크기 최소화는 공격 표면 축소의 핵심입니다. Alpine(~5MB)은 Ubuntu(~77MB)보다
+    훨씬 작고, 포함된 바이너리도 적어 악용 가능한 도구가 적습니다. Google의 distroless 이미지는 셸조차 없어 더 안전합니다.
   verify:
     type: output_contains
-    expect: 이미지 크기 비교
+    expect:
+    - 이미지 크기 비교
+    - Alpine
     field: stdout
   target_vm: web
 - order: 3
@@ -43,8 +53,11 @@ steps:
   hint: docker run --stop-timeout 또는 timeout 명령을 사용하세요.
   category: config
   points: 10
-  answer: 'echo "=== 타임아웃 시뮬레이션 ==="; timeout 5 docker run --rm alpine:latest sh -c "echo Start && sleep 10 && echo End" 2>&1; echo "종료코드: $? (124=타임아웃)"'''
-  answer_detail: AWS Lambda는 기본 3초, 최대 15분의 타임아웃이 있습니다. 컨테이너에서도 실행 시간을 제한해야 리소스 독점(DoS)이나 무한 루프를 방지합니다. timeout 명령이나 Docker의 --stop-timeout, 오케스트레이터의 activeDeadlineSeconds로 구현합니다.
+  answer: 'echo "=== 타임아웃 시뮬레이션 ==="; timeout 5 docker run --rm alpine:latest sh -c
+    "echo Start && sleep 10 && echo End" 2>&1; echo "종료코드: $? (124=타임아웃)"'''
+  answer_detail: AWS Lambda는 기본 3초, 최대 15분의 타임아웃이 있습니다. 컨테이너에서도 실행 시간을 제한해야 리소스 독점(DoS)이나
+    무한 루프를 방지합니다. timeout 명령이나 Docker의 --stop-timeout, 오케스트레이터의 activeDeadlineSeconds로
+    구현합니다.
   verify:
     type: output_contains
     expect: 종료코드
@@ -55,12 +68,18 @@ steps:
   hint: --read-only로 실행하고 파일 쓰기를 시도하세요.
   category: audit
   points: 10
-  answer: echo "=== 불변 환경 테스트 ==="; docker run --rm --read-only alpine:latest sh -c "touch /test.txt 2>&1 || echo 파일쓰기차단확인" && echo "=== tmpfs만 쓰기 가능 ==="; docker run --rm --read-only
-    --tmpfs /tmp alpine:latest sh -c "echo ok > /tmp/test.txt && cat /tmp/test.txt && echo tmpfs쓰기성공"
-  answer_detail: 서버리스 함수는 /tmp을 제외하고 파일시스템이 읽기 전용입니다. 이는 악성 코드 저장, 설정 변조를 방지합니다. Docker의 --read-only와 --tmpfs /tmp 조합이 동일한 효과를 제공합니다. 불변 인프라(Immutable Infrastructure)는 보안의 핵심 원칙입니다.
+  answer: echo "=== 불변 환경 테스트 ==="; docker run --rm --read-only alpine:latest sh -c
+    "touch /test.txt 2>&1 || echo 파일쓰기차단확인" && echo "=== tmpfs만 쓰기 가능 ==="; docker
+    run --rm --read-only --tmpfs /tmp alpine:latest sh -c "echo ok > /tmp/test.txt
+    && cat /tmp/test.txt && echo tmpfs쓰기성공"
+  answer_detail: 서버리스 함수는 /tmp을 제외하고 파일시스템이 읽기 전용입니다. 이는 악성 코드 저장, 설정 변조를 방지합니다. Docker의
+    --read-only와 --tmpfs /tmp 조합이 동일한 효과를 제공합니다. 불변 인프라(Immutable Infrastructure)는
+    보안의 핵심 원칙입니다.
   verify:
     type: output_contains
-    expect: 파일쓰기차단확인
+    expect:
+    - 파일쓰기차단확인
+    - blocked
     field: stdout
   target_vm: web
 - order: 5
@@ -68,8 +87,10 @@ steps:
   hint: --network none으로 네트워크 없는 컨테이너를 실행하세요.
   category: config
   points: 10
-  answer: echo "=== 네트워크 없는 컨테이너 ==="; docker run --rm --network none alpine:latest sh -c "ip addr 2>/dev/null; ping -c 1 8.8.8.8 2>&1 | head -3; echo 네트워크격리확인"
-  answer_detail: 서버리스 함수에서 불필요한 네트워크 접근을 차단하면 데이터 유출(exfiltration)을 방지합니다. Docker의 --network none은 lo(루프백) 인터페이스만 제공하여 외부 통신이 불가능합니다. 데이터 처리만 하고 네트워크가 불필요한 함수에 적합합니다.
+  answer: echo "=== 네트워크 없는 컨테이너 ==="; docker run --rm --network none alpine:latest
+    sh -c "ip addr 2>/dev/null; ping -c 1 8.8.8.8 2>&1 | head -3; echo 네트워크격리확인"
+  answer_detail: 서버리스 함수에서 불필요한 네트워크 접근을 차단하면 데이터 유출(exfiltration)을 방지합니다. Docker의
+    --network none은 lo(루프백) 인터페이스만 제공하여 외부 통신이 불가능합니다. 데이터 처리만 하고 네트워크가 불필요한 함수에 적합합니다.
   verify:
     type: output_contains
     expect: 네트워크격리확인
@@ -80,9 +101,12 @@ steps:
   hint: 환경 변수가 /proc에서 노출되는지 확인하세요.
   category: audit
   points: 12
-  answer: echo "=== 환경변수 노출 테스트 ==="; docker run --rm -e SECRET_KEY=my-secret-value alpine:latest sh -c "echo [env] && env | grep SECRET && echo [/proc/self/environ] && cat /proc/self/environ
-    | tr \"\\0\" \"\\n\" | grep SECRET"
-  answer_detail: 서버리스 함수와 컨테이너 모두 환경 변수로 설정을 주입합니다. 하지만 환경 변수는 /proc/self/environ, docker inspect, 로그 등에서 노출될 수 있습니다. 민감 정보는 AWS Secrets Manager, Docker Secrets, 마운트된 파일을 사용해야 합니다.
+  answer: echo "=== 환경변수 노출 테스트 ==="; docker run --rm -e SECRET_KEY=my-secret-value
+    alpine:latest sh -c "echo [env] && env | grep SECRET && echo [/proc/self/environ]
+    && cat /proc/self/environ | tr \"\\0\" \"\\n\" | grep SECRET"
+  answer_detail: 서버리스 함수와 컨테이너 모두 환경 변수로 설정을 주입합니다. 하지만 환경 변수는 /proc/self/environ,
+    docker inspect, 로그 등에서 노출될 수 있습니다. 민감 정보는 AWS Secrets Manager, Docker Secrets,
+    마운트된 파일을 사용해야 합니다.
   verify:
     type: output_contains
     expect: SECRET
@@ -93,11 +117,19 @@ steps:
   hint: 단기 실행, 최소 이미지, 불변 환경, 자원 제한을 종합 점검하세요.
   category: audit
   points: 18
-  answer: "cat << 'SCRIPT' > /tmp/serverless_check.sh\n#!/bin/bash\nHOST='ccc@10.20.30.80'\necho '=== 서버리스 보안 원칙 점검 ==='\necho '[최소 이미지]'\ndocker images --format \"{{.Repository}}:{{.Tag}}\
-    \ {{.Size}}\" | head -5 2>/dev/null\necho '[실행 중 컨테이너 보안]'\nfor CID in $(docker ps -q); do\n  NAME=$(docker inspect --format=\"{{.Name}}\" $CID)\n  RO=$(docker inspect --format=\"{{.HostConfig.ReadonlyRootfs}}\"\
-    \ $CID)\n  MEM=$(docker inspect --format=\"{{.HostConfig.Memory}}\" $CID)\n  echo \"$NAME: ReadOnly=$RO Memory=$MEM\"\ndone 2>/dev/null\necho '[자동 삭제 설정]'\ndocker ps -a --filter status=exited\
-    \ --format \"{{.Names}}\" | wc -l 2>/dev/null | xargs -I{} echo \"중지된 컨테이너: {}개 (정리 필요)\"\necho '=== 서버리스 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/serverless_check.sh && bash /tmp/serverless_check.sh"
-  answer_detail: '서버리스 보안의 핵심 원칙: (1) 최소 권한 - 함수에 필요한 최소한의 IAM 권한만 부여, (2) 단기 실행 - 공격자의 persistence를 어렵게 함, (3) 불변 환경 - 코드/바이너리 변조 방지, (4) 입력 검증 - 이벤트 소스의 데이터 검증, (5) 비밀 관리 - 환경 변수 대신 시크릿 매니저 사용.'
+  answer: "cat << 'SCRIPT' > /tmp/serverless_check.sh\n#!/bin/bash\nHOST='ccc@10.20.30.80'\n\
+    echo '=== 서버리스 보안 원칙 점검 ==='\necho '[최소 이미지]'\ndocker images --format \"{{.Repository}}:{{.Tag}}\
+    \ {{.Size}}\" | head -5 2>/dev/null\necho '[실행 중 컨테이너 보안]'\nfor CID in $(docker\
+    \ ps -q); do\n  NAME=$(docker inspect --format=\"{{.Name}}\" $CID)\n  RO=$(docker\
+    \ inspect --format=\"{{.HostConfig.ReadonlyRootfs}}\" $CID)\n  MEM=$(docker inspect\
+    \ --format=\"{{.HostConfig.Memory}}\" $CID)\n  echo \"$NAME: ReadOnly=$RO Memory=$MEM\"\
+    \ndone 2>/dev/null\necho '[자동 삭제 설정]'\ndocker ps -a --filter status=exited --format\
+    \ \"{{.Names}}\" | wc -l 2>/dev/null | xargs -I{} echo \"중지된 컨테이너: {}개 (정리 필요)\"\
+    \necho '=== 서버리스 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/serverless_check.sh && bash\
+    \ /tmp/serverless_check.sh"
+  answer_detail: '서버리스 보안의 핵심 원칙: (1) 최소 권한 - 함수에 필요한 최소한의 IAM 권한만 부여, (2) 단기 실행 -
+    공격자의 persistence를 어렵게 함, (3) 불변 환경 - 코드/바이너리 변조 방지, (4) 입력 검증 - 이벤트 소스의 데이터 검증,
+    (5) 비밀 관리 - 환경 변수 대신 시크릿 매니저 사용.'
   verify:
     type: output_contains
     expect: 서버리스 점검 완료
