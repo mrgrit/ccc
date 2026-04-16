@@ -570,3 +570,54 @@ Gap 분석에서 DL0-DL1로 식별된 기법 3개를 선택하여:
 - 다대다 팀전 운영 및 스코어링 시스템
 - 실시간 관전 및 분석 기법
 - Bastion 기반 자동화 CTF 인프라
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+
+### `/var/log/suricata/eve.json`
+**Suricata 이벤트 로그 (JSON)** (VM: secu)
+
+Suricata가 생성하는 모든 이벤트(alert, flow, dns, http, tls 등)를 JSON 형식으로 기록하는 메인 로그. SIEM 연동의 핵심 데이터 소스.
+
+**주요 내용**:
+- `{"event_type":"alert","src_ip":"10.20.30.201","alert":{"signature":"SQLi attempt","signature_id":1000102}}` — 알림 이벤트
+- `{"event_type":"flow","src_ip":"...","dest_ip":"...","proto":"TCP"}` — 네트워크 흐름 이벤트
+
+**해석**: `event_type`이 `alert`인 항목이 탐지된 공격이다. `signature_id`로 어떤 룰에 매칭됐는지, `src_ip`/`dest_ip`로 공격 출발지/목적지를 파악한다. jq로 필터링: `jq 'select(.event_type=="alert")'`
+
+
+### Wazuh Dashboard UI 가이드
+
+| 메뉴 경로 | 용도 | 핵심 화면 요소 |
+|-----------|------|---------------|
+| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
+| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
+| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
+| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
+| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
+| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
+| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+
+**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+
+**필터 예시**:
+- `rule.level >= 10` — 고위험 이벤트만
+- `rule.groups: syscheck` — FIM 이벤트만
+- `rule.groups: suricata` — Suricata IDS 이벤트만
+- `agent.name: secu` — secu VM 이벤트만
+
+
+### OpenCTI UI 가이드
+
+| 메뉴 경로 | 용도 |
+|-----------|------|
+| **Analysis → Reports** | 위협 보고서 목록 |
+| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
+| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
+| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+
+**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+

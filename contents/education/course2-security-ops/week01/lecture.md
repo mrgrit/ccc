@@ -820,3 +820,55 @@ active
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): nftables(inet filter+ip nat), Suricata 8.0.4(65K룰), Apache+ModSecurity(:8082→403), Wazuh v4.11.2(local_rules 62줄), OpenCTI(200)
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+
+### `/etc/modsecurity/crs/rules`
+**OWASP CRS (Core Rule Set) 룰 디렉터리** (VM: web)
+
+OWASP에서 관리하는 범용 웹 공격 탐지 룰 모음. SQLi(942xxx), XSS(941xxx), RCE(932xxx) 등 공격 유형별 룰 파일이 위치.
+
+**주요 내용**:
+- `REQUEST-942-APPLICATION-ATTACK-SQLI.conf` — SQL Injection 탐지 룰
+- `REQUEST-941-APPLICATION-ATTACK-XSS.conf` — Cross-Site Scripting 탐지 룰
+- `REQUEST-932-APPLICATION-ATTACK-RCE.conf` — Remote Code Execution 탐지 룰
+
+**해석**: 파일명의 번호(942, 941 등)가 rule ID의 앞 3자리와 대응한다. modsec_audit.log에서 `[id "942100"]`이 보이면 SQL Injection 룰에 걸린 것.
+
+
+### Wazuh Dashboard UI 가이드
+
+| 메뉴 경로 | 용도 | 핵심 화면 요소 |
+|-----------|------|---------------|
+| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
+| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
+| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
+| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
+| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
+| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
+| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+
+**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+
+**필터 예시**:
+- `rule.level >= 10` — 고위험 이벤트만
+- `rule.groups: syscheck` — FIM 이벤트만
+- `rule.groups: suricata` — Suricata IDS 이벤트만
+- `agent.name: secu` — secu VM 이벤트만
+
+
+### OpenCTI UI 가이드
+
+| 메뉴 경로 | 용도 |
+|-----------|------|
+| **Analysis → Reports** | 위협 보고서 목록 |
+| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
+| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
+| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+
+**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+

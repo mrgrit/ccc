@@ -385,3 +385,55 @@ for t in d.get('task_results',[]):
 ### 과제 3: IDS 우회 실험 (도전)
 - 작성한 IDS 룰을 우회하는 페이로드 개발
 - 우회에 성공한 경우 룰을 개선하여 재탐지
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+
+### `/etc/suricata/rules/local.rules`
+**Suricata 커스텀 룰 파일** (VM: secu)
+
+관리자가 직접 작성하는 탐지 룰. 기본 룰셋(et/open 등) 외에 조직 환경에 맞는 커스텀 시그니처를 여기에 추가한다.
+
+**주요 내용**:
+- `alert http any any -> any any (msg:"SQLi attempt"; content:"union select"; nocase; http_uri; sid:1000102; rev:1;)` — HTTP URI에서 SQL Injection 탐지
+- `alert icmp any any -> any any (msg:"ICMP ping"; sid:1000001; rev:1;)` — ICMP 핑 탐지
+
+**해석**: 새 룰 추가 후 반드시 `suricata -T`로 문법 검증하고, `systemctl reload suricata`로 반영해야 한다. sid(Signature ID)는 고유해야 하며, 1000000 이상을 커스텀 룰에 사용한다.
+
+### `/etc/suricata/suricata.yaml`
+**Suricata 메인 설정 파일** (VM: secu)
+
+Suricata IDS/IPS의 전체 설정을 관리하는 YAML 파일. 네트워크 변수(HOME_NET, EXTERNAL_NET), 캡처 인터페이스(af-packet), 룰 경로, 로깅 설정 등이 포함된다.
+
+**주요 내용**:
+- `HOME_NET: '[10.20.30.0/24]'` — 내부 네트워크 대역 정의
+- `af-packet: - interface: ens37` — 패킷 캡처 인터페이스
+- `rule-files: - local.rules` — 로드할 룰 파일 목록
+- `stats: enabled: yes` — 성능 통계 활성화
+
+**해석**: `HOME_NET`이 실제 내부 대역과 다르면 탐지가 정상 동작하지 않는다. `af-packet`의 `interface`가 트래픽이 흐르는 NIC와 다르면 패킷을 캡처하지 못한다.
+
+### `/var/log/suricata/eve.json`
+**Suricata 이벤트 로그 (JSON)** (VM: secu)
+
+Suricata가 생성하는 모든 이벤트(alert, flow, dns, http, tls 등)를 JSON 형식으로 기록하는 메인 로그. SIEM 연동의 핵심 데이터 소스.
+
+**주요 내용**:
+- `{"event_type":"alert","src_ip":"10.20.30.201","alert":{"signature":"SQLi attempt","signature_id":1000102}}` — 알림 이벤트
+- `{"event_type":"flow","src_ip":"...","dest_ip":"...","proto":"TCP"}` — 네트워크 흐름 이벤트
+
+**해석**: `event_type`이 `alert`인 항목이 탐지된 공격이다. `signature_id`로 어떤 룰에 매칭됐는지, `src_ip`/`dest_ip`로 공격 출발지/목적지를 파악한다. jq로 필터링: `jq 'select(.event_type=="alert")'`
+
+### `/var/log/suricata/fast.log`
+**Suricata 빠른 알림 로그 (텍스트)** (VM: secu)
+
+알림 이벤트를 한 줄씩 텍스트로 기록하는 간이 로그. 빠른 모니터링에 유용하지만, 상세 분석은 eve.json을 사용.
+
+**주요 내용**:
+- `04/15/2026-12:34:56.789012  [**] [1:1000102:1] SQLi attempt [**] [Classification: ...] [Priority: 1] {TCP} 10.20.30.201:45678 -> 10.20.30.80:80`
+
+**해석**: `[Priority: 1]`은 높은 우선순위(심각한 위협). IP와 포트로 공격자와 대상을 즉시 식별할 수 있다.
+

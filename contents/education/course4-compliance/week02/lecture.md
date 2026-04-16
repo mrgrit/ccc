@@ -440,3 +440,66 @@ ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): PASS_MAX_DAYS=99999, pam_pwquality, auditd, SSH 설정, nftables 점검
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+
+### `/etc/suricata/suricata.yaml`
+**Suricata 메인 설정 파일** (VM: secu)
+
+Suricata IDS/IPS의 전체 설정을 관리하는 YAML 파일. 네트워크 변수(HOME_NET, EXTERNAL_NET), 캡처 인터페이스(af-packet), 룰 경로, 로깅 설정 등이 포함된다.
+
+**주요 내용**:
+- `HOME_NET: '[10.20.30.0/24]'` — 내부 네트워크 대역 정의
+- `af-packet: - interface: ens37` — 패킷 캡처 인터페이스
+- `rule-files: - local.rules` — 로드할 룰 파일 목록
+- `stats: enabled: yes` — 성능 통계 활성화
+
+**해석**: `HOME_NET`이 실제 내부 대역과 다르면 탐지가 정상 동작하지 않는다. `af-packet`의 `interface`가 트래픽이 흐르는 NIC와 다르면 패킷을 캡처하지 못한다.
+
+### `/var/log/suricata/fast.log`
+**Suricata 빠른 알림 로그 (텍스트)** (VM: secu)
+
+알림 이벤트를 한 줄씩 텍스트로 기록하는 간이 로그. 빠른 모니터링에 유용하지만, 상세 분석은 eve.json을 사용.
+
+**주요 내용**:
+- `04/15/2026-12:34:56.789012  [**] [1:1000102:1] SQLi attempt [**] [Classification: ...] [Priority: 1] {TCP} 10.20.30.201:45678 -> 10.20.30.80:80`
+
+**해석**: `[Priority: 1]`은 높은 우선순위(심각한 위협). IP와 포트로 공격자와 대상을 즉시 식별할 수 있다.
+
+
+### Wazuh Dashboard UI 가이드
+
+| 메뉴 경로 | 용도 | 핵심 화면 요소 |
+|-----------|------|---------------|
+| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
+| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
+| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
+| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
+| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
+| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
+| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+
+**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+
+**필터 예시**:
+- `rule.level >= 10` — 고위험 이벤트만
+- `rule.groups: syscheck` — FIM 이벤트만
+- `rule.groups: suricata` — Suricata IDS 이벤트만
+- `agent.name: secu` — secu VM 이벤트만
+
+
+### OpenCTI UI 가이드
+
+| 메뉴 경로 | 용도 |
+|-----------|------|
+| **Analysis → Reports** | 위협 보고서 목록 |
+| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
+| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
+| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+
+**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+

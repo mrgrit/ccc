@@ -972,3 +972,54 @@ INFO
 2. Wazuh에서 탐지한 IOC가 OpenCTI에 자동/수동 동기화되었는지 확인
 3. **Data → Connectors** 에서 Wazuh 연동 커넥터 상태 점검
 4. 누락된 IOC는 수동으로 **+ Create → Indicator** 등록
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+
+### `/var/ossec/logs/ossec.log`
+**Wazuh Manager 시스템 로그** (VM: siem)
+
+Wazuh Manager 데몬의 동작 로그. 에이전트 연결/해제, 룰 로드, 에러 등이 기록된다.
+
+**주요 내용**:
+- `ERROR: ... Could not load rule ...` — 룰 로드 실패
+- `INFO: Agent 'secu' connected` — 에이전트 연결
+
+**해석**: `ERROR` 로그가 반복되면 설정 오류 또는 디스크 부족. 특히 `Could not load rule`은 local_rules.xml 문법 오류.
+
+
+### Wazuh Dashboard UI 가이드
+
+| 메뉴 경로 | 용도 | 핵심 화면 요소 |
+|-----------|------|---------------|
+| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
+| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
+| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
+| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
+| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
+| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
+| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+
+**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+
+**필터 예시**:
+- `rule.level >= 10` — 고위험 이벤트만
+- `rule.groups: syscheck` — FIM 이벤트만
+- `rule.groups: suricata` — Suricata IDS 이벤트만
+- `agent.name: secu` — secu VM 이벤트만
+
+
+### OpenCTI UI 가이드
+
+| 메뉴 경로 | 용도 |
+|-----------|------|
+| **Analysis → Reports** | 위협 보고서 목록 |
+| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
+| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
+| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+
+**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+

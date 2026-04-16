@@ -1172,3 +1172,74 @@ echo 1 | sudo -S nmap -f -p 80 10.20.30.80
 - nmap 없이 bash만으로 호스트 탐색 + 포트 스캔 스크립트를 작성
 - `/dev/tcp`와 `ping`을 활용하여 10.20.30.0/24 대역의 활성 호스트와 상위 20개 포트를 확인
 - 결과를 CSV 형태로 출력하는 스크립트 작성
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+
+### `/var/log/suricata/eve.json`
+**Suricata 이벤트 로그 (JSON)** (VM: secu)
+
+Suricata가 생성하는 모든 이벤트(alert, flow, dns, http, tls 등)를 JSON 형식으로 기록하는 메인 로그. SIEM 연동의 핵심 데이터 소스.
+
+**주요 내용**:
+- `{"event_type":"alert","src_ip":"10.20.30.201","alert":{"signature":"SQLi attempt","signature_id":1000102}}` — 알림 이벤트
+- `{"event_type":"flow","src_ip":"...","dest_ip":"...","proto":"TCP"}` — 네트워크 흐름 이벤트
+
+**해석**: `event_type`이 `alert`인 항목이 탐지된 공격이다. `signature_id`로 어떤 룰에 매칭됐는지, `src_ip`/`dest_ip`로 공격 출발지/목적지를 파악한다. jq로 필터링: `jq 'select(.event_type=="alert")'`
+
+### `/var/log/suricata/fast.log`
+**Suricata 빠른 알림 로그 (텍스트)** (VM: secu)
+
+알림 이벤트를 한 줄씩 텍스트로 기록하는 간이 로그. 빠른 모니터링에 유용하지만, 상세 분석은 eve.json을 사용.
+
+**주요 내용**:
+- `04/15/2026-12:34:56.789012  [**] [1:1000102:1] SQLi attempt [**] [Classification: ...] [Priority: 1] {TCP} 10.20.30.201:45678 -> 10.20.30.80:80`
+
+**해석**: `[Priority: 1]`은 높은 우선순위(심각한 위협). IP와 포트로 공격자와 대상을 즉시 식별할 수 있다.
+
+### `/var/ossec/logs/alerts/alerts.json`
+**Wazuh 알림 로그 (JSON)** (VM: siem)
+
+Wazuh가 생성한 모든 보안 알림을 JSON 형식으로 기록. Dashboard의 Security events 데이터 소스.
+
+**주요 내용**:
+- `{"rule":{"id":"100100","level":10,"description":"Multiple sudo failures"},"agent":{"name":"secu"}}` — 탐지 알림
+
+**해석**: `rule.level` ≥ 10은 즉각 대응이 필요한 고위험 이벤트. `agent.name`으로 어느 VM에서 발생했는지, `rule.id`로 어떤 탐지 룰이 매칭됐는지 파악.
+
+
+### Wazuh Dashboard UI 가이드
+
+| 메뉴 경로 | 용도 | 핵심 화면 요소 |
+|-----------|------|---------------|
+| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
+| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
+| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
+| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
+| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
+| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
+| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+
+**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+
+**필터 예시**:
+- `rule.level >= 10` — 고위험 이벤트만
+- `rule.groups: syscheck` — FIM 이벤트만
+- `rule.groups: suricata` — Suricata IDS 이벤트만
+- `agent.name: secu` — secu VM 이벤트만
+
+
+### OpenCTI UI 가이드
+
+| 메뉴 경로 | 용도 |
+|-----------|------|
+| **Analysis → Reports** | 위협 보고서 목록 |
+| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
+| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
+| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+
+**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+

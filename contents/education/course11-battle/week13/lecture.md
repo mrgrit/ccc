@@ -642,3 +642,42 @@ curl -s -X POST "http://localhost:9100/projects/$PID/completion-report" \
 - 다중 로그 소스를 통합 표시하는 터미널 대시보드 스크립트 작성
 - IDS 알림, SSH 로그, 웹 로그, 연결 상태를 한 화면에 표시
 - 알림 발생 시 색상 강조 또는 소리 알림 기능
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+
+### `/var/log/apache2/modsec_audit.log`
+**ModSecurity 감사 로그** (VM: web)
+
+ModSecurity가 차단하거나 탐지한 요청의 상세 기록. 요청 헤더, 본문, 매칭된 룰 ID, 차단 사유 등이 포함된다.
+
+**주요 내용**:
+- `[id "942100"] [msg "SQL Injection Detected"] [severity "CRITICAL"]` — SQLi 탐지 기록
+- `[id "941100"] [msg "XSS Attack Detected"]` — XSS 탐지 기록
+
+**해석**: `severity`가 CRITICAL이면 심각한 공격 시도. `[id "..."]`로 어떤 CRS 룰에 매칭됐는지 확인. 오탐(false positive)이면 해당 rule ID를 예외 처리.
+
+### `/var/log/suricata/eve.json`
+**Suricata 이벤트 로그 (JSON)** (VM: secu)
+
+Suricata가 생성하는 모든 이벤트(alert, flow, dns, http, tls 등)를 JSON 형식으로 기록하는 메인 로그. SIEM 연동의 핵심 데이터 소스.
+
+**주요 내용**:
+- `{"event_type":"alert","src_ip":"10.20.30.201","alert":{"signature":"SQLi attempt","signature_id":1000102}}` — 알림 이벤트
+- `{"event_type":"flow","src_ip":"...","dest_ip":"...","proto":"TCP"}` — 네트워크 흐름 이벤트
+
+**해석**: `event_type`이 `alert`인 항목이 탐지된 공격이다. `signature_id`로 어떤 룰에 매칭됐는지, `src_ip`/`dest_ip`로 공격 출발지/목적지를 파악한다. jq로 필터링: `jq 'select(.event_type=="alert")'`
+
+### `/var/ossec/logs/alerts/alerts.json`
+**Wazuh 알림 로그 (JSON)** (VM: siem)
+
+Wazuh가 생성한 모든 보안 알림을 JSON 형식으로 기록. Dashboard의 Security events 데이터 소스.
+
+**주요 내용**:
+- `{"rule":{"id":"100100","level":10,"description":"Multiple sudo failures"},"agent":{"name":"secu"}}` — 탐지 알림
+
+**해석**: `rule.level` ≥ 10은 즉각 대응이 필요한 고위험 이벤트. `agent.name`으로 어느 VM에서 발생했는지, `rule.id`로 어떤 탐지 룰이 매칭됐는지 파악.
+

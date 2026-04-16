@@ -782,3 +782,31 @@ curl -s -X POST "http://localhost:9100/projects/$PID/completion-report" \
 - SSH 브루트포스 탐지 시 자동으로 IP를 차단하는 스크립트 작성
 - 임계값: 5분 내 5회 실패 시 자동 차단
 - 차단 로그 기록 및 일정 시간 후 자동 해제 기능 포함
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+
+### `/var/log/suricata/eve.json`
+**Suricata 이벤트 로그 (JSON)** (VM: secu)
+
+Suricata가 생성하는 모든 이벤트(alert, flow, dns, http, tls 등)를 JSON 형식으로 기록하는 메인 로그. SIEM 연동의 핵심 데이터 소스.
+
+**주요 내용**:
+- `{"event_type":"alert","src_ip":"10.20.30.201","alert":{"signature":"SQLi attempt","signature_id":1000102}}` — 알림 이벤트
+- `{"event_type":"flow","src_ip":"...","dest_ip":"...","proto":"TCP"}` — 네트워크 흐름 이벤트
+
+**해석**: `event_type`이 `alert`인 항목이 탐지된 공격이다. `signature_id`로 어떤 룰에 매칭됐는지, `src_ip`/`dest_ip`로 공격 출발지/목적지를 파악한다. jq로 필터링: `jq 'select(.event_type=="alert")'`
+
+### `/var/log/suricata/fast.log`
+**Suricata 빠른 알림 로그 (텍스트)** (VM: secu)
+
+알림 이벤트를 한 줄씩 텍스트로 기록하는 간이 로그. 빠른 모니터링에 유용하지만, 상세 분석은 eve.json을 사용.
+
+**주요 내용**:
+- `04/15/2026-12:34:56.789012  [**] [1:1000102:1] SQLi attempt [**] [Classification: ...] [Priority: 1] {TCP} 10.20.30.201:45678 -> 10.20.30.80:80`
+
+**해석**: `[Priority: 1]`은 높은 우선순위(심각한 위협). IP와 포트로 공격자와 대상을 즉시 식별할 수 있다.
+
