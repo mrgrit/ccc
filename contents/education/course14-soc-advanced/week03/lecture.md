@@ -255,10 +255,10 @@ tags:
      |
      v
 +----------+      +------------+      +-----------+
-| Parser   | ---> | Pipeline   | ---> | Backend   |
+| Parser   | ---> | Pipeline   | ---> | Backend      |
 | (파싱)    |      | (필드변환)  |      | (출력생성) |
 +----------+      +------------+      +-----------+
-                       |                     |
+                       |                             |
                   필드 매핑:            출력 형식:
                   - sigma → wazuh      - Wazuh XML
                   - sigma → splunk     - Splunk SPL

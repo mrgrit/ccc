@@ -709,7 +709,7 @@ print("""
         |
    [VirtualBox/KVM]
         |
-   +----+----+
+   +---------+
    |         |
    [분석 VM]  [네트워크 시뮬레이터]
    Ubuntu 22.04   inetsim/fakenet

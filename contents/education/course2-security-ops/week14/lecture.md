@@ -246,7 +246,7 @@ bash /tmp/check_all.sh
 클라이언트 --> [nftables] --> [Suricata] --> [Apache+ModSecurity WAF] --> [JuiceShop]
                   |              |                |                  |
               방화벽 로그     eve.json         access.log          app.log
-                  +-------+------+--------+------+
+                  +------------------------------+
                                  |
                             Wazuh SIEM
                             (통합 분석)
