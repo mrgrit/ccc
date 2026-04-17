@@ -101,26 +101,28 @@ WAF 로그     --+--> [SIEM] --> 종합 분석 --> 위협 탐지
 
 Wazuh 4.11.2는 3개 컴포넌트로 구성된다:
 
-```
-[Wazuh Dashboard]
-  웹 UI, Kibana 기반
-  https://10.20.30.100
-       |
-       v
-[Wazuh Indexer]
-  로그 저장, OpenSearch 기반
-  :9200
-       |
-       v
-[Wazuh Manager]
-  분석 엔진, 룰 처리
-  :1514 (agent), :1515 (register), :55000 (API)
-       |
-       +---------------------+
-       |          |          |
-       v          v          v
-  [Agent 1]  [Agent 2]  [Agent 3]
-    secu       web        siem
+```mermaid
+graph TD
+    DASH["Wazuh Dashboard<br/>웹 UI (Kibana 기반)<br/>https://SIEM_IP:443"]
+    IDX["Wazuh Indexer<br/>OpenSearch 기반<br/>:9200"]
+    MGR["Wazuh Manager<br/>분석 엔진, 룰 매칭<br/>:1514 / :1515 / :55000"]
+    A1["Agent (secu)<br/>방화벽/IPS 로그"]
+    A2["Agent (web)<br/>웹서버/WAF 로그"]
+    A3["Agent (attacker)<br/>공격 도구 로그"]
+    DASH --> IDX
+    IDX --> MGR
+    MGR --> A1
+    MGR --> A2
+    MGR --> A3
+    A1 -.->|이벤트 전송| MGR
+    A2 -.->|이벤트 전송| MGR
+    A3 -.->|이벤트 전송| MGR
+    style DASH fill:#238636,color:#fff
+    style IDX fill:#21262d,color:#e6edf3
+    style MGR fill:#d29922,color:#fff
+    style A1 fill:#58a6ff,color:#fff
+    style A2 fill:#58a6ff,color:#fff
+    style A3 fill:#58a6ff,color:#fff
 ```
 
 | 컴포넌트 | 역할 | 포트 |
