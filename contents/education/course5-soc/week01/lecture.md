@@ -77,6 +77,23 @@
 
 ---
 
+
+### SOC 운영 흐름
+
+```mermaid
+graph TD
+    LOG[로그 소스<br/>서버, 네트워크, 애플리케이션] -->|수집| SIEM[Wazuh SIEM<br/>로그 집중]
+    SIEM -->|디코딩 + 룰 매칭| ALERT[알림 생성<br/>rule.level 기반]
+    ALERT -->|level >= 7| L1[L1 분석관<br/>초기 분류]
+    L1 -->|에스컬레이션| L2[L2 분석관<br/>심층 분석]
+    L2 -->|인시던트 확정| IR[인시던트 대응<br/>봉쇄/근절/복구]
+    IR -->|사후 분석| DOC[보고서<br/>교훈 반영]
+    ALERT -->|level < 7| AUTO[자동 처리<br/>Active Response]
+    style SIEM fill:#238636,color:#fff
+    style ALERT fill:#d29922,color:#fff
+    style IR fill:#f85149,color:#fff
+```
+
 ## 1. 보안관제센터(SOC)란? (30분)
 
 ### 1.1 정의

@@ -32,6 +32,31 @@
 
 # Part 1: 네트워크 정찰 이론 (40분)
 
+
+### 공방전 구조
+
+```mermaid
+graph LR
+    subgraph Red Team
+        R1[정찰] --> R2[스캐닝] --> R3[익스플로잇] --> R4[권한상승] --> R5[지속성]
+    end
+    subgraph Blue Team
+        B1[모니터링] --> B2[탐지] --> B3[분석] --> B4[차단] --> B5[복구]
+    end
+    R3 -.->|공격 흔적| B2
+    R5 -.->|이상 행위| B1
+    style R1 fill:#f85149,color:#fff
+    style R2 fill:#f85149,color:#fff
+    style R3 fill:#f85149,color:#fff
+    style R4 fill:#f85149,color:#fff
+    style R5 fill:#f85149,color:#fff
+    style B1 fill:#58a6ff,color:#fff
+    style B2 fill:#58a6ff,color:#fff
+    style B3 fill:#58a6ff,color:#fff
+    style B4 fill:#58a6ff,color:#fff
+    style B5 fill:#58a6ff,color:#fff
+```
+
 ## 1.1 정찰(Reconnaissance)이란?
 
 정찰은 공격의 첫 번째 단계로, 대상 시스템과 네트워크에 대한 정보를 체계적으로 수집하는 과정이다. 모든 성공적인 공격은 철저한 정찰에서 시작되며, 방어 역시 자산에 대한 정확한 이해에서 출발한다.

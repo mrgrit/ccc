@@ -72,6 +72,47 @@
 
 ---
 
+
+### 실습 인프라 구조 (Mermaid)
+
+```mermaid
+graph TB
+    subgraph 학생 인프라
+        ATK[attacker<br/>10.20.30.201<br/>nmap, hydra, sqlmap]
+        SECU[secu<br/>10.20.30.1<br/>nftables, Suricata]
+        WEB[web<br/>10.20.30.80<br/>Apache, ModSecurity<br/>JuiceShop:3000]
+        SIEM[siem<br/>10.20.30.100<br/>Wazuh, OpenCTI]
+        MGR[manager<br/>10.20.30.200<br/>Bastion, Ollama]
+    end
+    ATK -->|공격| SECU
+    SECU -->|필터링 후 전달| WEB
+    WEB -.->|로그 전송| SIEM
+    SECU -.->|IDS 알림| SIEM
+    MGR -->|관리| SECU
+    MGR -->|관리| WEB
+    MGR -->|관리| SIEM
+    style ATK fill:#f85149,color:#fff
+    style SECU fill:#d29922,color:#fff
+    style WEB fill:#58a6ff,color:#fff
+    style SIEM fill:#238636,color:#fff
+    style MGR fill:#8b949e,color:#fff
+```
+
+### 트래픽 흐름
+
+```mermaid
+graph LR
+    A[Attacker] -->|1. 공격 시도| FW[nftables<br/>방화벽]
+    FW -->|2. 허용된 트래픽| IDS[Suricata<br/>IDS/IPS]
+    IDS -->|3. 정상 트래픽| WAF[ModSecurity<br/>WAF]
+    WAF -->|4. 안전한 요청| APP[Apache<br/>웹서버]
+    IDS -.->|알림| SIEM[Wazuh<br/>SIEM]
+    WAF -.->|차단 로그| SIEM
+    APP -.->|접근 로그| SIEM
+    style A fill:#f85149,color:#fff
+    style SIEM fill:#238636,color:#fff
+```
+
 ## 1. 보안 솔루션이 왜 필요한가? (20분)
 
 ### 1.1 현대 사이버 위협의 현실

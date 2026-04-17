@@ -1,7 +1,13 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useState, useRef } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import { api } from '../api.ts'
 import { isAdmin } from '../auth.ts'
+import mermaid from 'mermaid'
+
+mermaid.initialize({ startOnLoad: false, theme: 'dark', themeVariables: {
+  primaryColor: '#21262d', primaryTextColor: '#e6edf3', lineColor: '#30363d',
+  secondaryColor: '#161b22', tertiaryColor: '#0d1117',
+}})
 
 export default function Education() {
   const [searchParams, setSearchParams] = useSearchParams()
@@ -13,6 +19,7 @@ export default function Education() {
   const [lecture, setLecture] = useState<string | null>(null)
   const [labDetail, setLabDetail] = useState<any>(null)
   const [showAnswers, setShowAnswers] = useState(false)
+  const lectureRef = useRef<HTMLDivElement>(null)
 
   // URL 파라미터에서 네비게이션 상태 파생
   const courseId = searchParams.get('course')
@@ -52,6 +59,16 @@ export default function Education() {
       setLecture(null)
     }
   }, [viewParam, courseId, weekParam])
+
+  // Mermaid 렌더링 — lecture 변경 시 mermaid.run()
+  useEffect(() => {
+    if (lectureRef.current) {
+      const els = lectureRef.current.querySelectorAll('.mermaid')
+      if (els.length > 0) {
+        mermaid.run({ nodes: els as any }).catch(() => {})
+      }
+    }
+  }, [lecture])
 
   // 실습 로드 — admin일 때는 ?admin=1을 붙여 서버에서 answer 포함해서 받기
   const adminParam = searchParams.get('admin')
@@ -169,7 +186,7 @@ export default function Education() {
               .lecture-content a { color: #58a6ff; text-decoration: none; }
               .lecture-content a:hover { text-decoration: underline; }
             `}</style>
-            <div className="lecture-content" style={{
+            <div className="lecture-content" ref={lectureRef} style={{
               background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: '32px 36px',
               fontSize: 16, color: '#c9d1d9', lineHeight: 1.7, maxWidth: 900,
             }} dangerouslySetInnerHTML={{ __html: markdownToHtml(lecture) }} />
@@ -274,6 +291,8 @@ const actionBtn: React.CSSProperties = {
 function markdownToHtml(md: string): string {
   return md
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    // Mermaid 다이어그램 — mermaid.js로 렌더링
+    .replace(/```mermaid\n([\s\S]*?)```/g, '<div class="mermaid">$1</div>')
     // 코드블록 — monospace, pre 유지 (도형/선 보존)
     .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px 20px;font-size:15px;line-height:1.5;overflow-x:auto;color:#3fb950;margin:12px 0;font-family:\'D2Coding\',\'Nanum Gothic Coding\',Consolas,Monaco,\'Courier New\',monospace;white-space:pre;tab-size:4;letter-spacing:0">$2</pre>')
     // 제목
