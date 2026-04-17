@@ -117,23 +117,33 @@
 >
 > **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
 
-```
-[외부 (인터넷)]
-       |
-       v
-[secu] 10.20.30.1
-  - nftables (FW)
-  - Suricata (IPS)
-  - Wazuh Agent
-       |
-       +--------------------+
-       |                    |
-       v                    v
-[web] 10.20.30.80      [siem] 10.20.30.100
-  - Apache+ModSecurity    - Wazuh Manager
-    WAF                   - Wazuh Indexer
-  - JuiceShop App         - Wazuh Dashboard
-  - Wazuh Agent           - OpenCTI
+```mermaid
+graph TD
+    EXT["외부 (인터넷)"] --> SECU
+    subgraph SECU["secu {{SECU_IP}}"]
+        FW[nftables 방화벽]
+        IPS[Suricata IPS]
+        SA1[Wazuh Agent]
+    end
+    SECU --> WEB
+    SECU --> SIEM
+    subgraph WEB["web {{WEB_IP}}"]
+        WAF[Apache + ModSecurity WAF]
+        APP[JuiceShop App]
+        SA2[Wazuh Agent]
+    end
+    subgraph SIEM["siem {{SIEM_IP}}"]
+        WM[Wazuh Manager]
+        WI[Wazuh Indexer]
+        WD[Wazuh Dashboard]
+        CTI[OpenCTI]
+    end
+    SA1 -.->|로그| WM
+    SA2 -.->|로그| WM
+    style EXT fill:#f85149,color:#fff
+    style SECU fill:#d29922,color:#fff
+    style WEB fill:#58a6ff,color:#fff
+    style SIEM fill:#238636,color:#fff
 ```
 
 ---
