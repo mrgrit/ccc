@@ -37,37 +37,47 @@
 인시던트 대응은 보안 사고가 발생했을 때 피해를 최소화하고, 원인을 규명하며, 재발을 방지하기 위한 체계적인 활동이다. 단순히 "문제를 해결하는 것"이 아니라 준비-탐지-봉쇄-복구-교훈의 순환 과정을 통해 조직의 보안 성숙도를 높이는 것이 핵심이다.
 
 **MITRE ATT&CK 매핑:**
-```
-인시던트 대응은 공격자의 전체 Kill Chain에 대응한다:
-  +-- TA0043 Reconnaissance  → 탐지 단계에서 식별
-  +-- TA0001 Initial Access  → 봉쇄 단계에서 차단
-  +-- TA0003 Persistence     → 근절 단계에서 제거
-  +-- TA0005 Defense Evasion → 분석 단계에서 추적
-  +-- TA0008 Lateral Movement → 격리 단계에서 차단
-  +-- TA0010 Exfiltration    → 네트워크 봉쇄로 차단
-  +-- TA0040 Impact          → 복구 단계에서 대응
+```mermaid
+graph LR
+    subgraph MITRE ATT&CK Kill Chain
+        R[TA0043<br/>Reconnaissance] --> IA[TA0001<br/>Initial Access]
+        IA --> P[TA0003<br/>Persistence]
+        P --> DE[TA0005<br/>Defense Evasion]
+        DE --> LM[TA0008<br/>Lateral Movement]
+        LM --> EX[TA0010<br/>Exfiltration]
+        EX --> IM[TA0040<br/>Impact]
+    end
+    subgraph IR 대응 단계
+        R -.->|탐지| D[탐지 단계]
+        IA -.->|차단| C[봉쇄 단계]
+        P -.->|제거| E[근절 단계]
+        DE -.->|추적| A[분석 단계]
+        LM -.->|격리| C
+        EX -.->|차단| C
+        IM -.->|대응| RC[복구 단계]
+    end
+    style R fill:#f85149,color:#fff
+    style IM fill:#f85149,color:#fff
+    style D fill:#58a6ff,color:#fff
+    style C fill:#58a6ff,color:#fff
+    style E fill:#58a6ff,color:#fff
+    style RC fill:#238636,color:#fff
 ```
 
 ### NIST SP 800-61 Revision 2 개요
 
 NIST(National Institute of Standards and Technology)의 SP 800-61은 인시던트 대응의 사실상 표준 프레임워크이다. 2012년에 Revision 2가 발표되었으며, 전 세계 조직이 이를 기반으로 IR 프로세스를 구축한다.
 
-```
-+----------------------------------------------------------------+
-|                    NIST IR 라이프사이클                        |
-|                                                                |
-|  +----------+   +--------------+   +---------------------+     |
-|  | 1. 준비   |-->| 2. 탐지/분석  |-->| 3. 봉쇄/근절/복구    |  |
-|  |Preparation|   |Detection &   |   |Containment,         |    |
-|  |           |   |Analysis      |   |Eradication, Recovery|    |
-|  +----------+   +--------------+   +----------+----------+     |
-|       ↑                                         |              |
-|       |         +--------------+                |              |
-|       +---------| 4. 사후 활동  |<---------------+             |
-|                 |Post-Incident |                               |
-|                 |Activity      |                               |
-|                 +--------------+                               |
-+----------------------------------------------------------------+
+```mermaid
+graph LR
+    P["1. 준비<br/>Preparation"] --> D["2. 탐지/분석<br/>Detection & Analysis"]
+    D --> C["3. 봉쇄/근절/복구<br/>Containment,<br/>Eradication, Recovery"]
+    C --> PI["4. 사후 활동<br/>Post-Incident Activity"]
+    PI -->|교훈 반영| P
+    style P fill:#58a6ff,color:#fff
+    style D fill:#d29922,color:#fff
+    style C fill:#f85149,color:#fff
+    style PI fill:#238636,color:#fff
 ```
 
 ### 4단계 상세

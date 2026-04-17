@@ -37,15 +37,30 @@
 인프라 하드닝은 시스템의 공격 표면(Attack Surface)을 줄이고 보안 수준을 높이기 위해 불필요한 기능을 제거하고 보안 설정을 강화하는 과정이다. 공방전에서 Blue Team이 방어를 준비하는 핵심 단계이며, "방어는 공격보다 앞서야 한다"는 원칙의 실현이다.
 
 **MITRE ATT&CK 방어 매핑:**
-```
-하드닝으로 차단하는 주요 공격 기법:
-  +-- T1190 Exploit Public App  → 패치 적용, 불필요 서비스 제거
-  +-- T1110 Brute Force         → SSH 강화, 계정 잠금 정책
-  +-- T1059 Command Interpreter → 셸 접근 제한, 실행 권한 관리
-  +-- T1053 Scheduled Task      → cron 접근 제어, 무결성 모니터링
-  +-- T1548 Abuse Elevation     → SUID 정리, sudo 제한
-  +-- T1078 Valid Accounts      → 비밀번호 정책, MFA
-  +-- T1021 Remote Services     → 불필요 원격 서비스 비활성화
+```mermaid
+graph LR
+    subgraph ATT&CK 기법
+        T1190[T1190<br/>Exploit Public App]
+        T1110[T1110<br/>Brute Force]
+        T1059[T1059<br/>Command Interpreter]
+        T1053[T1053<br/>Scheduled Task]
+        T1548[T1548<br/>Abuse Elevation]
+        T1078[T1078<br/>Valid Accounts]
+        T1021[T1021<br/>Remote Services]
+    end
+    subgraph 하드닝 대응
+        T1190 -->|차단| H1[패치 적용 +<br/>불필요 서비스 제거]
+        T1110 -->|차단| H2[SSH 키 인증 +<br/>계정 잠금 정책]
+        T1059 -->|차단| H3[셸 접근 제한 +<br/>실행 권한 관리]
+        T1053 -->|차단| H4[cron 접근 제어 +<br/>무결성 모니터링]
+        T1548 -->|차단| H5[SUID 정리 +<br/>sudo 제한]
+        T1078 -->|차단| H6[비밀번호 정책 + MFA]
+        T1021 -->|차단| H7[원격 서비스<br/>비활성화]
+    end
+    style T1190 fill:#f85149,color:#fff
+    style T1110 fill:#f85149,color:#fff
+    style H1 fill:#238636,color:#fff
+    style H2 fill:#238636,color:#fff
 ```
 
 ### 하드닝의 5대 원칙
@@ -60,31 +75,26 @@
 
 ### 공격 표면 감소 모델
 
-```
-[하드닝 전]
-+----------------------------------------+
-| 공격 표면                              |
-| +----+ +----+ +----+ +----+ +----+     |
-| |SSH | |HTTP| |FTP | |SMTP| |SNMP|     |
-| |:22 | |:80 | |:21 | |:25 | |:161|     |
-| +----+ +----+ +----+ +----+ +----+     |
-| +----+ +----+ +----+                   |
-| |MySQL| |NFS | |X11 |                  |
-| |:3306| |:2049| |:6000|                |
-| +----+ +----+ +----+                   |
-| 열린 포트: 8개, 공격 벡터: 다수        |
-+----------------------------------------+
-
-[하드닝 후]
-+-----------------------------------------+
-| 공격 표면 (최소화)                      |
-| +----+ +----+                           |
-| |SSH | |HTTP|                           |
-| |:22 | |:80 |  (나머지 모두 제거/차단)  |
-| |키인증| |WAF |                         |
-| +----+ +----+                           |
-| 열린 포트: 2개, 추가 보안 적용          |
-+-----------------------------------------+
+```mermaid
+graph TB
+    subgraph 하드닝 전 — 공격 표면 8개 포트
+        S1[SSH :22] --- S2[HTTP :80]
+        S3[FTP :21] --- S4[SMTP :25]
+        S5[SNMP :161] --- S6[MySQL :3306]
+        S7[NFS :2049] --- S8[X11 :6000]
+        style S3 fill:#f85149,color:#fff
+        style S4 fill:#f85149,color:#fff
+        style S5 fill:#f85149,color:#fff
+        style S6 fill:#f85149,color:#fff
+        style S7 fill:#f85149,color:#fff
+        style S8 fill:#f85149,color:#fff
+    end
+    subgraph 하드닝 후 — 공격 표면 2개 포트
+        H1["SSH :22<br/>(키 인증 전용)"]
+        H2["HTTP :80<br/>(WAF 보호)"]
+        style H1 fill:#238636,color:#fff
+        style H2 fill:#238636,color:#fff
+    end
 ```
 
 ## 1.2 CIS Benchmark 개요
