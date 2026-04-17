@@ -653,36 +653,27 @@ print("""
   로그 수집 파이프라인 아키텍처
 ================================================================
 
-[수집 계층]
-+--------+   +--------+   +--------+   +--------+
-| rsyslog|   | Wazuh  |   | filebeat|  | fluentd|
-| (syslog|   | Agent  |   | (파일) |   | (범용) |
-|  514)  |   | (1514) |   |        |   |        |
-+---+----+   +---+----+   +---+----+   +---+----+
-    |             |             |               |
-    v             v             v             v
-+----------------------------------------------------+
-|              로그 버퍼 / 큐                        |
-|  (Kafka, Redis, Wazuh Manager)                     |
-+----------------------------------------------------+
-    |
-    v
-+----------------------------------------------------+
-|              파싱 / 정규화                         |
-|  (Wazuh Decoder, Logstash, Fluentd)                |
-+----------------------------------------------------+
-    |
-    v
-+----------------------------------------------------+
-|              저장 / 인덱싱                         |
-|  (Elasticsearch, Wazuh Indexer)                    |
-+----------------------------------------------------+
-    |
-    v
-+----------------------------------------------------+
-|              분석 / 시각화                         |
-|  (Wazuh Dashboard, Kibana, Grafana)                |
-+----------------------------------------------------+
+```mermaid
+graph TD
+    subgraph 수집 계층
+        R[rsyslog<br/>:514] 
+        W[Wazuh Agent<br/>:1514]
+        F[filebeat<br/>파일]
+        FL[fluentd<br/>범용]
+    end
+    R --> BUF
+    W --> BUF
+    F --> BUF
+    FL --> BUF
+    BUF["로그 버퍼/큐<br/>(Kafka, Redis, Wazuh Manager)"]
+    BUF --> PARSE["파싱/정규화<br/>(Wazuh Decoder, Logstash)"]
+    PARSE --> STORE["저장/인덱싱<br/>(Elasticsearch, Wazuh Indexer)"]
+    STORE --> VIS["분석/시각화<br/>(Wazuh Dashboard, Kibana)"]
+    style BUF fill:#d29922,color:#fff
+    style PARSE fill:#58a6ff,color:#fff
+    style STORE fill:#21262d,color:#e6edf3
+    style VIS fill:#238636,color:#fff
+```
 
 성능 지표:
   - EPS (Events Per Second): 초당 이벤트 처리량
