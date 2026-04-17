@@ -602,15 +602,15 @@ def ssh_run(ip: str, user: str, password: str, commands: list[str], timeout: int
 
 # 내부 IP 고정 (API의 INTERNAL_IPS와 동일)
 INTERNAL_IPS = {
-    "attacker": "10.20.30.201",
-    "secu":     "10.20.30.1",
-    "web":      "10.20.30.80",
-    "siem":     "10.20.30.100",
-    "manager":  "10.20.30.200",
-    "windows":  "10.20.30.50",
+    "attacker": os.getenv("VM_ATTACKER_IP", "10.20.30.201"),
+    "secu":     os.getenv("VM_SECU_IP",     "10.20.30.1"),
+    "web":      os.getenv("VM_WEB_IP",      "10.20.30.80"),
+    "siem":     os.getenv("VM_SIEM_IP",     "10.20.30.100"),
+    "manager":  os.getenv("VM_MANAGER_IP",  "10.20.30.200"),
+    "windows":  os.getenv("VM_WINDOWS_IP",  "10.20.30.50"),
 }
-INTERNAL_SUBNET = "10.20.30.0/24"
-SECU_GW = INTERNAL_IPS["secu"]  # Security Gateway = 기본 게이트웨이
+INTERNAL_SUBNET = os.getenv("VM_INTERNAL_SUBNET", "10.20.30.0/24")
+SECU_GW = INTERNAL_IPS["secu"]
 
 
 def _win_ssh_run(ip: str, user: str, password: str, ps_script: str, timeout: int = 120) -> dict:

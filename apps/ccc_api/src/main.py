@@ -812,14 +812,14 @@ VM_SOFTWARE = {
     "manager": {"os": "Ubuntu", "packages": ["ollama","ccc-bastion"], "subagent": True},
 }
 
-# 내부 IP 고정 할당 (역할별)
+# 내부 IP 할당 — 환경변수로 오버라이드 가능 (다른 네트워크 환경 지원)
 INTERNAL_IPS = {
-    "attacker": "10.20.30.201",
-    "secu":     "10.20.30.1",
-    "web":      "10.20.30.80",
-    "siem":     "10.20.30.100",
-    "manager":  "10.20.30.200",
-    "windows":  "10.20.30.50",
+    "attacker": os.getenv("VM_ATTACKER_IP", "10.20.30.201"),
+    "secu":     os.getenv("VM_SECU_IP",     "10.20.30.1"),
+    "web":      os.getenv("VM_WEB_IP",      "10.20.30.80"),
+    "siem":     os.getenv("VM_SIEM_IP",     "10.20.30.100"),
+    "manager":  os.getenv("VM_MANAGER_IP",  "10.20.30.200"),
+    "windows":  os.getenv("VM_WINDOWS_IP",  "10.20.30.50"),
 }
 
 class VMCredential(BaseModel):

