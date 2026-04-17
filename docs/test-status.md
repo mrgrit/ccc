@@ -1,13 +1,13 @@
 # CCC Bastion 실증 테스트 — 실시간 진행 현황
 
-> 마지막 업데이트: 2026-04-17 20:45
+> 마지막 업데이트: 2026-04-17 21:17
 
-## 전체: 2470/2734 tested, pass=821 (33%), untested=264
+## 전체: 2486/2734 tested, pass=826 (33%), untested=248
 
 | 과정 | Pass/Tested/Total | Pass% |
 |------|-------------------|-------|
-| ai-agent-ai | 18/134/134 | 13% |
-| ai-safety-adv-ai | 9/69/134 | 13% |
+| ai-agent-ai | 19/134/134 | 14% |
+| ai-safety-adv-ai | 13/85/134 | 15% |
 | ai-safety-ai | 27/133/133 | 20% |
 | ai-security-ai | 22/147/147 | 14% |
 | attack-adv-ai | 45/235/235 | 19% |
