@@ -108,28 +108,22 @@
 
 ### Blue Team SOC 운영 구조
 
-```
-[Blue Team SOC 구조]
-
-+----------------------------------------+
-|            SOC 리더 (지휘)             |
-|  - 알림 우선순위 판단                  |
-|  - 차단/관찰 의사결정                  |
-|  - 보고서 작성                         |
-+----------------------------------------+
-        |          |                     |
-   +----+----+ +---+---+ +---+------+
-   |네트워크  | |호스트  | | IR 대응     |
-   |분석가   | |분석가  | |              |
-   |secu     | |web    | |전체           |
-   |Suricata | |logs   | |nftables       |
-   |nftables | |ps, ss | |kill,cp        |
-   +---------+ +-------+ +----------+
-
-통신 흐름:
-  분석가 → SOC 리더: "ALERT: SSH 브루트포스 10.20.30.201"
-  SOC 리더 → IR 대응: "BLOCK: 10.20.30.201 차단 실행"
-  IR 대응 → SOC 리더: "DONE: IP 차단 완료, 서비스 정상"
+```mermaid
+graph TD
+    LEAD["SOC 리더 (지휘)<br/>알림 우선순위 판단<br/>차단/관찰 의사결정<br/>보고서 작성"]
+    NET["네트워크 분석가<br/>secu VM<br/>Suricata, nftables"]
+    HOST["호스트 분석가<br/>web VM<br/>logs, ps, ss"]
+    IR["IR 대응<br/>전체 VM<br/>nftables, kill, cp"]
+    LEAD --> NET
+    LEAD --> HOST
+    LEAD --> IR
+    NET -->|ALERT| LEAD
+    LEAD -->|BLOCK| IR
+    IR -->|DONE| LEAD
+    style LEAD fill:#d29922,color:#fff
+    style NET fill:#58a6ff,color:#fff
+    style HOST fill:#58a6ff,color:#fff
+    style IR fill:#f85149,color:#fff
 ```
 
 ### Blue Team 통신 프로토콜
