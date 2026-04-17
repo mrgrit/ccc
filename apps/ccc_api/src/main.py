@@ -1204,8 +1204,9 @@ def llm_models(body: LLMConnectBody):
 #  Education (교안)
 # ══════════════════════════════════════════════════
 import pathlib as _pathlib
-_EDUCATION_DIR = os.getenv("EDUCATION_DIR", str(_pathlib.Path(__file__).parent.parent.parent.parent / "contents" / "education"))
-_LABS_DIR = str(_pathlib.Path(__file__).parent.parent.parent.parent / "contents" / "labs")
+_CONTENT_DIR = str(_pathlib.Path(__file__).parent.parent.parent.parent / "contents")
+_EDUCATION_DIR = os.getenv("EDUCATION_DIR", os.path.join(_CONTENT_DIR, "education"))
+_LABS_DIR = os.path.join(_CONTENT_DIR, "labs")
 
 # 과목 매핑 (course dir → CCC lab course name) + 그룹
 _COURSE_MAP = {

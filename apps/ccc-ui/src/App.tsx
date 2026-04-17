@@ -35,13 +35,17 @@ export default function App() {
   const searchTimerRef = useRef<any>(null)
 
   const doSearch = useCallback((q: string) => {
-    if (q.length < 2) { setSearchResults([]); return }
+    if (q.length < 2) { setSearchResults([]); setSearchOpen(false); return }
     if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
     searchTimerRef.current = setTimeout(async () => {
       try {
-        const d = await api(`/search?q=${encodeURIComponent(q)}&limit=20`)
+        const d = await api(`/api/search?q=${encodeURIComponent(q)}&limit=20`)
         setSearchResults(d.results || [])
-      } catch { setSearchResults([]) }
+        setSearchOpen(true)
+      } catch (e) {
+        console.error('Search error:', e)
+        setSearchResults([])
+      }
     }, 300)
   }, [])
   const curPwRef = useRef<HTMLInputElement>(null)
@@ -83,18 +87,25 @@ export default function App() {
         </div>
         {/* 검색 */}
         <div style={{ padding: '12px 16px', position: 'relative' }}>
-          <input
-            type="text"
-            placeholder="검색..."
-            value={searchQuery}
-            onChange={e => { setSearchQuery(e.target.value); doSearch(e.target.value); setSearchOpen(true) }}
-            onFocus={() => searchQuery.length >= 2 && setSearchOpen(true)}
-            style={{
-              width: '100%', background: '#0d1117', color: '#e6edf3',
-              border: '1px solid #30363d', borderRadius: 6, padding: '8px 12px',
-              fontSize: 13, outline: 'none',
-            }}
-          />
+          <div style={{ display: 'flex', gap: 4 }}>
+            <input
+              type="text"
+              placeholder="검색..."
+              value={searchQuery}
+              onChange={e => { setSearchQuery(e.target.value); doSearch(e.target.value); setSearchOpen(true) }}
+              onKeyDown={e => { if (e.key === 'Enter') { doSearch(searchQuery); setSearchOpen(true) } }}
+              onFocus={() => searchQuery.length >= 2 && setSearchOpen(true)}
+              style={{
+                flex: 1, background: '#0d1117', color: '#e6edf3',
+                border: '1px solid #30363d', borderRadius: 6, padding: '8px 10px',
+                fontSize: 13, outline: 'none',
+              }}
+            />
+            <button onClick={() => { doSearch(searchQuery); setSearchOpen(true) }} style={{
+              background: '#21262d', border: '1px solid #30363d', borderRadius: 6,
+              color: '#8b949e', padding: '4px 8px', cursor: 'pointer', fontSize: 14,
+            }}>🔍</button>
+          </div>
           {searchOpen && searchResults.length > 0 && (
             <div style={{
               position: 'absolute', left: 8, right: 8, top: 48, zIndex: 100,
