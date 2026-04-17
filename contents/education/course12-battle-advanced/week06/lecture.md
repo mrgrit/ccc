@@ -371,36 +371,23 @@ fail2ban은 로그 파일을 모니터링하여 비정상 패턴(인증 실패 �
 
 ### fail2ban 아키텍처
 
-```
-+---------------------------------------------------------------+
-|                    fail2ban 동작 흐름                         |
-+---------------------------------------------------------------+
-|                                                               |
-|  [로그 파일]                                                  |
-|  /var/log/auth.log -+                                         |
-|  /var/log/nginx/*.log-+                                       |
-|  /var/log/apache/*.log+                                       |
-|                      ▼                                        |
-|  +-------------------------+                                  |
-|  |  fail2ban-server         |                                 |
-|  |  +-----------+          |                                  |
-|  |  | Filter    | 정규식 매칭 (failregex)                     |
-|  |  +-----+-----+          |                                  |
-|  |        ▼                |                                  |
-|  |  +-----------+          |                                  |
-|  |  | Counter   | 실패 횟수 추적 (maxretry/findtime)          |
-|  |  +-----+-----+          |                                  |
-|  |        ▼                |                                  |
-|  |  +-----------+          |                                  |
-|  |  | Action    | 차단 실행 (bantime)                         |
-|  |  +-----------+          |                                  |
-|  +---------+---------------+                                  |
-|            ▼                                                  |
-|  +-------------------+                                        |
-|  | nftables/iptables | → IP 차단 룰 자동 추가/제거            |
-|  +-------------------+                                        |
-|                                                               |
-+---------------------------------------------------------------+
+```mermaid
+graph TD
+    LOG1["/var/log/auth.log"] --> F2B
+    LOG2["/var/log/nginx/*.log"] --> F2B
+    LOG3["/var/log/apache/*.log"] --> F2B
+    subgraph F2B["fail2ban-server"]
+        FILTER["Filter<br/>정규식 매칭 (failregex)"] --> COUNTER["Counter<br/>실패 횟수 추적<br/>(maxretry / findtime)"]
+        COUNTER --> ACTION["Action<br/>차단 실행 (bantime)"]
+    end
+    ACTION --> NFT["nftables/iptables<br/>IP 차단 룰 자동 추가/제거"]
+    style LOG1 fill:#21262d,color:#e6edf3
+    style LOG2 fill:#21262d,color:#e6edf3
+    style LOG3 fill:#21262d,color:#e6edf3
+    style FILTER fill:#d29922,color:#fff
+    style COUNTER fill:#d29922,color:#fff
+    style ACTION fill:#f85149,color:#fff
+    style NFT fill:#238636,color:#fff
 ```
 
 ### fail2ban 핵심 설정
@@ -621,37 +608,23 @@ fail2ban은 범용적이지만, 특수한 탐지 로직(Suricata 알림 연동, 
 
 ### 자동차단 아키텍처
 
-```
-+----------------------------------------------------------------+
-|                 커스텀 자동차단 아키텍처                       |
-+----------------------------------------------------------------+
-|                                                                |
-|  [로그 소스]                                                   |
-|  Suricata eve.json ---+                                        |
-|  auth.log ------------+                                        |
-|  access.log ----------+                                        |
-|  Wazuh alerts --------+                                        |
-|                       ▼                                        |
-|  +----------------------------+                                |
-|  |  auto_block.sh             |                                |
-|  |  +----------+             |                                 |
-|  |  | 로그 파싱 | (tail -F + grep/jq)                          |
-|  |  +----+-----+             |                                 |
-|  |       ▼                   |                                 |
-|  |  +----------+             |                                 |
-|  |  | 판정 로직 | (임계값, 화이트리스트)                       |
-|  |  +----+-----+             |                                 |
-|  |       ▼                   |                                 |
-|  |  +----------+             |                                 |
-|  |  | nft 차단  | → nftables 룰 추가                           |
-|  |  +----+-----+             |                                 |
-|  |       ▼                   |                                 |
-|  |  +----------+             |                                 |
-|  |  | 알림 전송 | → Slack/Webhook                              |
-|  |  +----------+             |                                 |
-|  +----------------------------+                                |
-|                                                                |
-+----------------------------------------------------------------+
+```mermaid
+graph TD
+    S1["Suricata eve.json"] --> SCRIPT
+    S2["auth.log"] --> SCRIPT
+    S3["access.log"] --> SCRIPT
+    S4["Wazuh alerts"] --> SCRIPT
+    subgraph SCRIPT["auto_block.sh"]
+        PARSE["로그 파싱<br/>(tail -F + grep/jq)"] --> JUDGE["판정 로직<br/>(임계값, 화이트리스트)"]
+        JUDGE --> BLOCK["nft 차단<br/>nftables 룰 추가"]
+        BLOCK --> NOTIFY["알림 전송<br/>Slack / Webhook"]
+    end
+    BLOCK --> NFT["nftables<br/>blocklist set"]
+    style S1 fill:#21262d,color:#e6edf3
+    style S4 fill:#21262d,color:#e6edf3
+    style JUDGE fill:#d29922,color:#fff
+    style BLOCK fill:#f85149,color:#fff
+    style NFT fill:#238636,color:#fff
 ```
 
 ### 실습 5: Suricata 연동 자동차단 스크립트
