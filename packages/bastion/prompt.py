@@ -57,10 +57,26 @@ def build_planning_prompt(vm_ips: dict[str, str] = None,
         "  - 명시적 IP가 있으면 그 IP의 VM을 선택\n"
     )
 
-    # VM 인프라 정보
+    # VM 인프라 정보 — 역할 + 설치된 서비스 + 주요 파일 경로
     if vm_ips:
-        vm_lines = "\n".join(f"  {role}: {ip}" for role, ip in vm_ips.items())
-        sections.append(f"현재 인프라 (role: internal_ip):\n{vm_lines}")
+        infra_detail = (
+            "## 현재 인프라 상세\n"
+            f"  attacker ({vm_ips.get('attacker','?')}): 공격 도구 — nmap, hydra, nikto, sqlmap, curl, dirb\n"
+            f"  secu ({vm_ips.get('secu','?')}): 방화벽+IPS — nftables, Suricata\n"
+            f"    - 설정: /etc/suricata/suricata.yaml\n"
+            f"    - 커스텀 룰: /etc/suricata/rules/local.rules\n"
+            f"    - 로그: /var/log/suricata/eve.json, fast.log, stats.log\n"
+            f"  web ({vm_ips.get('web','?')}): 웹서버+WAF — Apache, ModSecurity CRS, JuiceShop(:3000), Docker\n"
+            f"    - ModSec 설정: /etc/modsecurity/modsecurity.conf\n"
+            f"    - 감사 로그: /var/log/apache2/modsec_audit.log\n"
+            f"  siem ({vm_ips.get('siem','?')}): SIEM+CTI — Wazuh Manager, Dashboard(:443), OpenCTI(:8080), Docker\n"
+            f"    - 설정: /var/ossec/etc/ossec.conf\n"
+            f"    - 커스텀 룰: /var/ossec/etc/rules/local_rules.xml\n"
+            f"    - 알림: /var/ossec/logs/alerts/alerts.json\n"
+            f"    - API: https://localhost:55000 (wazuh-wui/wazuh-wui)\n"
+            f"  manager ({vm_ips.get('manager','?')}): Bastion 자체 — Ollama 프록시, Python3\n"
+        )
+        sections.append(infra_detail)
 
     # 이전 실행 컨텍스트
     if prev_context:

