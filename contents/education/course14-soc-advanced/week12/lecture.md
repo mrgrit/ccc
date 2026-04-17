@@ -53,16 +53,35 @@
 
 로그 엔지니어링은 **다양한 소스에서 생성되는 로그를 수집, 파싱, 정규화, 저장, 분석 가능한 형태로 가공**하는 기술이다.
 
-```
-[로그 엔지니어링 파이프라인]
-
-소스            수집          파싱          정규화        저장/분석
-+-------+     +------+     +------+     +-------+     +-------+
-|syslog | --> |rsyslog| --> |decoder| --> |정규화  | --> |Wazuh  |
-|Apache | --> |agent  | --> |parser | --> |필드통일| --> |ES     |
-|Suricata| -> |filebeat|    |regex  |     |시간통일| --> |분석   |
-|nftables| -> |        |    |       |     |        |     |       |
-+-------+     +------+     +------+     +-------+     +-------+
+```mermaid
+graph LR
+    subgraph 소스
+        S1[syslog]
+        S2[Apache]
+        S3[Suricata]
+        S4[nftables]
+    end
+    subgraph 수집
+        C1[rsyslog]
+        C2[agent/filebeat]
+    end
+    subgraph 파싱
+        P[decoder/parser<br/>regex]
+    end
+    subgraph 정규화
+        N[필드 통일<br/>시간 통일]
+    end
+    subgraph 저장/분석
+        W[Wazuh + ES<br/>분석/알림]
+    end
+    S1 --> C1
+    S2 --> C2
+    S3 --> C2
+    S4 --> C1
+    C1 --> P
+    C2 --> P
+    P --> N --> W
+    style W fill:#238636,color:#fff
 ```
 
 ## 1.2 로그 포맷 비교
