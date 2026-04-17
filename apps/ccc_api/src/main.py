@@ -2651,6 +2651,93 @@ async def battle_ws(websocket: WebSocket, bid: str):
         _battle_connections.get(bid, []).remove(websocket)
 
 
+# ── 콘텐츠 검색 ───────────────────────────────────
+
+@app.get("/search", dependencies=[Depends(verify_api_key)])
+def search_content(q: str, limit: int = 30):
+    """교안/실습/Cyber Range 전체 콘텐츠에서 키워드 검색.
+
+    반환: [{type, course, week, title, context, link}, ...]
+    type: lecture | lab_nonai | lab_ai
+    """
+    import re
+    q_lower = q.lower()
+    results = []
+
+    # 1. 교안 검색 (lecture.md)
+    edu_dir = os.path.join(_CONTENT_DIR, "education")
+    if os.path.isdir(edu_dir):
+        for course_dir in sorted(os.listdir(edu_dir)):
+            course_path = os.path.join(edu_dir, course_dir)
+            if not os.path.isdir(course_path):
+                continue
+            for week_dir in sorted(os.listdir(course_path)):
+                lec_path = os.path.join(course_path, week_dir, "lecture.md")
+                if not os.path.exists(lec_path):
+                    continue
+                try:
+                    content = open(lec_path, encoding="utf-8").read()
+                except Exception:
+                    continue
+                if q_lower not in content.lower():
+                    continue
+                # 첫 번째 제목 추출
+                title_match = re.search(r'^#\s+(.+)$', content, re.MULTILINE)
+                title = title_match.group(1) if title_match else week_dir
+                # 매칭 컨텍스트 추출 (키워드 주변 텍스트)
+                idx = content.lower().find(q_lower)
+                start = max(0, idx - 40)
+                end = min(len(content), idx + len(q) + 60)
+                context = content[start:end].replace('\n', ' ').strip()
+                week_num = re.search(r'(\d+)', week_dir)
+                results.append({
+                    "type": "lecture",
+                    "course": course_dir,
+                    "week": int(week_num.group(1)) if week_num else 0,
+                    "title": title[:80],
+                    "context": f"...{context}...",
+                    "link": f"/app/?page=training&course={course_dir}&view=lecture&week={week_num.group(1) if week_num else 1}",
+                })
+
+    # 2. 실습 검색 (lab YAML)
+    if os.path.isdir(_LABS_DIR):
+        for lab_dir in sorted(os.listdir(_LABS_DIR)):
+            lab_path = os.path.join(_LABS_DIR, lab_dir)
+            if not os.path.isdir(lab_path):
+                continue
+            version = "ai" if lab_dir.endswith("-ai") else "non-ai"
+            for yml_file in sorted(os.listdir(lab_path)):
+                if not yml_file.endswith(".yaml"):
+                    continue
+                try:
+                    import yaml
+                    y = yaml.safe_load(open(os.path.join(lab_path, yml_file), encoding="utf-8"))
+                except Exception:
+                    continue
+                # 타이틀 + 전체 step 텍스트에서 검색
+                full_text = y.get("title", "") + " " + y.get("description", "")
+                for s in y.get("steps", []):
+                    full_text += " " + (s.get("instruction", "") or "")
+                    full_text += " " + (s.get("bastion_prompt", "") or "")
+                    full_text += " " + (s.get("hint", "") or "")
+                if q_lower not in full_text.lower():
+                    continue
+                idx = full_text.lower().find(q_lower)
+                context = full_text[max(0, idx - 30):idx + len(q) + 50].replace('\n', ' ').strip()
+                lab_id = y.get("lab_id", "")
+                results.append({
+                    "type": f"lab_{version.replace('-', '')}",
+                    "course": y.get("course", lab_dir),
+                    "week": y.get("week", 0),
+                    "title": y.get("title", yml_file)[:80],
+                    "context": f"...{context}...",
+                    "link": f"/app/?page={'training' if version == 'ai' else 'labs'}&course={y.get('course', lab_dir).replace('-ai', '').replace('-nonai', '')}&view=lab&lab={lab_id}",
+                })
+
+    results.sort(key=lambda r: (r["course"], r["week"], r["type"]))
+    return {"query": q, "total": len(results), "results": results[:limit]}
+
+
 # ── Static files ───────────────────────────────────
 import pathlib
 from fastapi.staticfiles import StaticFiles
