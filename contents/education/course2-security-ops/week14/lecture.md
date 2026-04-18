@@ -120,19 +120,19 @@
 ```mermaid
 graph TD
     EXT["외부 (인터넷)"] --> SECU
-    subgraph SECU["secu {{SECU_IP}}"]
+    subgraph SECU["secu SECU_IP"]
         FW[nftables 방화벽]
         IPS[Suricata IPS]
         SA1[Wazuh Agent]
     end
     SECU --> WEB
     SECU --> SIEM
-    subgraph WEB["web {{WEB_IP}}"]
+    subgraph WEB["web WEB_IP"]
         WAF[Apache + ModSecurity WAF]
         APP[JuiceShop App]
         SA2[Wazuh Agent]
     end
-    subgraph SIEM["siem {{SIEM_IP}}"]
+    subgraph SIEM["siem SIEM_IP"]
         WM[Wazuh Manager]
         WI[Wazuh Indexer]
         WD[Wazuh Dashboard]

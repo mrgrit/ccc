@@ -78,10 +78,10 @@ graph LR
 ```mermaid
 graph TB
     subgraph 하드닝 전 — 공격 표면 8개 포트
-        S1[SSH :22] --- S2[HTTP :80]
-        S3[FTP :21] --- S4[SMTP :25]
-        S5[SNMP :161] --- S6[MySQL :3306]
-        S7[NFS :2049] --- S8[X11 :6000]
+        S1[SSH :22] ~~~ S2[HTTP :80]
+        S3[FTP :21] ~~~ S4[SMTP :25]
+        S5[SNMP :161] ~~~ S6[MySQL :3306]
+        S7[NFS :2049] ~~~ S8[X11 :6000]
         style S3 fill:#f85149,color:#fff
         style S4 fill:#f85149,color:#fff
         style S5 fill:#f85149,color:#fff
