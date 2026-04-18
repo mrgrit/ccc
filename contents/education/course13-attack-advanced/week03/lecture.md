@@ -43,15 +43,15 @@
 
 ## 1.1 네트워크 보안 장비 계층 구조
 
-```
-+---------------------------------------------------------------------+
-|                    네트워크 보안 계층                               |
-+---------------------------------------------------------------------+
-| L7 WAF          | BunkerWeb, ModSecurity    | HTTP 요청/응답 분석   |
-| L4-L7 IDS/IPS   | Suricata, Snort           | 패킷 페이로드 분석    |
-| L3-L4 방화벽     | nftables, iptables        | IP/포트 기반 필터링  |
-| L2 스위치 보안   | 802.1X, MAC 필터링        | MAC 주소 기반        |
-+---------------------------------------------------------------------+
+```mermaid
+graph BT
+    L2["L2 스위치 보안<br/>802.1X, MAC 필터링"] --> L3["L3-L4 방화벽<br/>nftables, iptables<br/>IP/포트 필터링"]
+    L3 --> L4["L4-L7 IDS/IPS<br/>Suricata, Snort<br/>페이로드 분석"]
+    L4 --> L7["L7 WAF<br/>ModSecurity, BunkerWeb<br/>HTTP 분석"]
+    style L2 fill:#21262d,color:#e6edf3
+    style L3 fill:#58a6ff,color:#fff
+    style L4 fill:#d29922,color:#fff
+    style L7 fill:#f85149,color:#fff
 ```
 
 ### 각 보안 장비의 탐지 방식
