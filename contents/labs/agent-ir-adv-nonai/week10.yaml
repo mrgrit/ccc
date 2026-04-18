@@ -1,0 +1,133 @@
+lab_id: agent-ir-adv-nonai-week10
+title: DNS Exfiltration IR (Non-AI)
+version: nonai
+course: agent-ir-adv-nonai
+week: 10
+description: 은밀한 DNS 누출 탐지·차단. 학생이 수동 수행.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 공격 유형의 원리를 이해한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
+- Human vs Agent 대응의 차이를 비교한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: Zeek 긴 쿼리 룰
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 9
+  answer: "\U0001F916 프롬프트: Zeek 긴 쿼리 룰\n\U0001F4CE 참고 (CLI): cat > ~/w10/zeek.zeek <<'Z'\nevent dns_request(c: connection, msg: dns_msg, query: string, qtype: count, qclass: count) {\n  if (|query| > 50) print query;\n}\nZ\ncat ~/w10/zeek.zeek"
+  answer_detail: Zeek.
+  verify:
+    type: output_contains
+    expect: dns_request
+    field: stdout
+  target_vm: secu
+  script: "cat > ~/w10/zeek.zeek <<'Z'\nevent dns_request(c: connection, msg: dns_msg, query: string, qtype: count, qclass: count) {\n  if (|query| > 50) print query;\n}\nZ\ncat ~/w10/zeek.zeek"
+  risk_level: medium
+  bastion_prompt: ''
+- order: 2
+  instruction: 도메인 엔트로피 함수
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 10
+  answer: '🤖 프롬프트: 도메인 엔트로피 함수
+
+    📎 참고 (CLI): cat > ~/w10/entropy.py <<''P''
+
+    import math
+
+    from collections import Counter
+
+    def H(s): c=Counter(s); t=len(s); return -sum((f/t)*math.log2(f/t) for f in c.values()) if t else 0
+
+    print(H(''48454c4c4f.attacker.example''))
+
+    P
+
+    python3 ~/w10/entropy.py'
+  answer_detail: 엔트로피.
+  verify:
+    type: output_contains
+    expect: '3.'
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w10/entropy.py <<''P''
+
+    import math
+
+    from collections import Counter
+
+    def H(s): c=Counter(s); t=len(s); return -sum((f/t)*math.log2(f/t) for f in c.values()) if t else 0
+
+    print(H(''48454c4c4f.attacker.example''))
+
+    P
+
+    python3 ~/w10/entropy.py'
+  risk_level: low
+  bastion_prompt: ''
+- order: 3
+  instruction: RPZ sinkhole 설정
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 11
+  answer: "\U0001F916 프롬프트: RPZ sinkhole 설정\n\U0001F4CE 참고 (CLI): cat > ~/w10/rpz.conf <<'C'\nzone \"rpz\" {\n  type master; file \"rpz.zone\";\n};\nC\ncat ~/w10/rpz.conf"
+  answer_detail: RPZ.
+  verify:
+    type: output_contains
+    expect: rpz
+    field: stdout
+  target_vm: siem
+  script: "cat > ~/w10/rpz.conf <<'C'\nzone \"rpz\" {\n  type master; file \"rpz.zone\";\n};\nC\ncat ~/w10/rpz.conf"
+  risk_level: low
+  bastion_prompt: ''
+- order: 4
+  instruction: DoH 차단 정책
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: DoH 차단 정책
+
+    📎 참고 (CLI): cat > ~/w10/doh.md <<''M''
+
+    - 외부 DoH IP 차단
+
+    - 내부 DNS 강제 (DHCP)
+
+    M
+
+    cat ~/w10/doh.md'
+  answer_detail: DoH.
+  verify:
+    type: output_contains
+    expect: DoH
+    field: stdout
+  target_vm: secu
+  script: 'cat > ~/w10/doh.md <<''M''
+
+    - 외부 DoH IP 차단
+
+    - 내부 DNS 강제 (DHCP)
+
+    M
+
+    cat ~/w10/doh.md'
+  risk_level: medium
+  bastion_prompt: ''
+- order: 5
+  instruction: Bastion 스킬 등록
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 13
+  answer: "\U0001F916 프롬프트: Bastion 스킬 등록\n\U0001F4CE 참고 (CLI): cat > ~/w10/skill.py <<'P'\ndef detect_dns_exfil(events):\n    return [e for e in events if len(e.query)>50]\nP\npython3 -c 'print(\"ok\")'"
+  answer_detail: 스킬.
+  verify:
+    type: output_contains
+    expect: ok
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w10/skill.py <<'P'\ndef detect_dns_exfil(events):\n    return [e for e in events if len(e.query)>50]\nP\npython3 -c 'print(\"ok\")'"
+  risk_level: low
+  bastion_prompt: ''

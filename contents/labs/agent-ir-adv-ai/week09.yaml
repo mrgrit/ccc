@@ -1,0 +1,151 @@
+lab_id: agent-ir-adv-ai-week09
+title: Fileless 악성코드 IR (AI 지원)
+version: ai
+course: agent-ir-adv-ai
+week: 9
+description: LOLBin·인터프리터 기반 공격 대응. AI SubAgent가 자동 실행·검증.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 공격 유형의 원리를 이해한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
+- Human vs Agent 대응의 차이를 비교한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: LOLBAS SIGMA 룰
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 9
+  answer: "\U0001F916 프롬프트: LOLBAS SIGMA 룰\n\U0001F4CE 참고 (CLI): cat > ~/w09/lolbas.yml <<'Y'\ntitle: certutil urlcache\ndetection:\n  selection: { EventID: 1, Image|endswith: certutil.exe, CommandLine|contains: urlcache }\n  condition: selection\nY\ncat ~/w09/lolbas.yml"
+  answer_detail: 룰.
+  verify:
+    type: output_contains
+    expect: urlcache
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w09/lolbas.yml <<'Y'\ntitle: certutil urlcache\ndetection:\n  selection: { EventID: 1, Image|endswith: certutil.exe, CommandLine|contains: urlcache }\n  condition: selection\nY\ncat ~/w09/lolbas.yml"
+  risk_level: low
+  bastion_prompt: LOLBAS SIGMA 룰
+- order: 2
+  instruction: Sysmon 구성
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 10
+  answer: "\U0001F916 프롬프트: Sysmon 구성\n\U0001F4CE 참고 (CLI): cat > ~/w09/sysmon.xml <<'X'\n<Sysmon schemaversion=\"4.70\">\n  <EventFiltering>\n    <RuleGroup><ProcessCreate onmatch=\"include\"><ParentImage condition=\"end with\">powershell.exe</ParentImage></ProcessCreate></RuleGroup>\n  </EventFiltering>\n</Sysmon>\nX\ncat ~/w09/sysmon.xml"
+  answer_detail: Sysmon.
+  verify:
+    type: output_contains
+    expect: powershell.exe
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w09/sysmon.xml <<'X'\n<Sysmon schemaversion=\"4.70\">\n  <EventFiltering>\n    <RuleGroup><ProcessCreate onmatch=\"include\"><ParentImage condition=\"end with\">powershell.exe</ParentImage></ProcessCreate></RuleGroup>\n  </EventFiltering>\n</Sysmon>\nX\ncat ~/w09/sysmon.xml"
+  risk_level: low
+  bastion_prompt: Sysmon 구성
+- order: 3
+  instruction: Volatility 명령
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 11
+  answer: '🤖 프롬프트: Volatility 명령
+
+    📎 참고 (CLI): cat > ~/w09/vol.md <<''M''
+
+    vol -f mem.raw linux.pslist
+
+    vol -f mem.raw linux.bash
+
+    vol -f mem.raw linux.malfind
+
+    M
+
+    cat ~/w09/vol.md'
+  answer_detail: Volatility.
+  verify:
+    type: output_contains
+    expect: malfind
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w09/vol.md <<''M''
+
+    vol -f mem.raw linux.pslist
+
+    vol -f mem.raw linux.bash
+
+    vol -f mem.raw linux.malfind
+
+    M
+
+    cat ~/w09/vol.md'
+  risk_level: low
+  bastion_prompt: Volatility 명령
+- order: 4
+  instruction: AppLocker 정책
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: AppLocker 정책
+
+    📎 참고 (CLI): cat > ~/w09/applocker.md <<''M''
+
+    - Script interpreter 제한
+
+    - Deny all, allow whitelist
+
+    - Packaged apps 제한
+
+    M
+
+    cat ~/w09/applocker.md'
+  answer_detail: AppLocker.
+  verify:
+    type: output_contains
+    expect: whitelist
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w09/applocker.md <<''M''
+
+    - Script interpreter 제한
+
+    - Deny all, allow whitelist
+
+    - Packaged apps 제한
+
+    M
+
+    cat ~/w09/applocker.md'
+  risk_level: low
+  bastion_prompt: AppLocker 정책
+- order: 5
+  instruction: PowerShell Script Block 로깅
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: PowerShell Script Block 로깅
+
+    📎 참고 (CLI): cat > ~/w09/ps_logging.reg <<''R''
+
+    [HKLM\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging]
+
+    EnableScriptBlockLogging=1
+
+    R
+
+    cat ~/w09/ps_logging.reg'
+  answer_detail: 로깅.
+  verify:
+    type: output_contains
+    expect: ScriptBlock
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w09/ps_logging.reg <<''R''
+
+    [HKLM\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging]
+
+    EnableScriptBlockLogging=1
+
+    R
+
+    cat ~/w09/ps_logging.reg'
+  risk_level: low
+  bastion_prompt: PowerShell Script Block 로깅

@@ -1,0 +1,119 @@
+lab_id: agent-ir-adv-ai-week08
+title: K8s Escape IR (AI 지원)
+version: ai
+course: agent-ir-adv-ai
+week: 8
+description: Pod escape → Node → Cluster 대응. AI SubAgent가 자동 실행·검증.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 공격 유형의 원리를 이해한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
+- Human vs Agent 대응의 차이를 비교한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: PSA restricted 템플릿
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 9
+  answer: "\U0001F916 프롬프트: PSA restricted 템플릿\n\U0001F4CE 참고 (CLI): cat > ~/w08/psa.yaml <<'Y'\napiVersion: v1\nkind: Namespace\nmetadata:\n  name: app\n  labels:\n    pod-security.kubernetes.io/enforce: restricted\nY\ncat ~/w08/psa.yaml"
+  answer_detail: PSA.
+  verify:
+    type: output_contains
+    expect: restricted
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w08/psa.yaml <<'Y'\napiVersion: v1\nkind: Namespace\nmetadata:\n  name: app\n  labels:\n    pod-security.kubernetes.io/enforce: restricted\nY\ncat ~/w08/psa.yaml"
+  risk_level: low
+  bastion_prompt: PSA restricted 템플릿
+- order: 2
+  instruction: Falco 룰 점검
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 10
+  answer: "\U0001F916 프롬프트: Falco 룰 점검\n\U0001F4CE 참고 (CLI): cat > ~/w08/falco.yml <<'Y'\n- rule: Terminal shell in container\n  desc: terminal shell run in container\n  condition: spawned_process and container and shell_procs\nY\ncat ~/w08/falco.yml"
+  answer_detail: Falco.
+  verify:
+    type: output_contains
+    expect: shell_procs
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w08/falco.yml <<'Y'\n- rule: Terminal shell in container\n  desc: terminal shell run in container\n  condition: spawned_process and container and shell_procs\nY\ncat ~/w08/falco.yml"
+  risk_level: low
+  bastion_prompt: Falco 룰 점검
+- order: 3
+  instruction: RBAC 감사 명령
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 11
+  answer: '🤖 프롬프트: RBAC 감사 명령
+
+    📎 참고 (CLI): echo ''kubectl auth can-i --list --as=system:serviceaccount:app:default'''
+  answer_detail: RBAC.
+  verify:
+    type: output_contains
+    expect: can-i
+    field: stdout
+  target_vm: bastion
+  script: echo 'kubectl auth can-i --list --as=system:serviceaccount:app:default'
+  risk_level: low
+  bastion_prompt: RBAC 감사 명령
+- order: 4
+  instruction: NetworkPolicy default-deny
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: NetworkPolicy default-deny
+
+    📎 참고 (CLI): cat > ~/w08/netpol.yaml <<''Y''
+
+    apiVersion: networking.k8s.io/v1
+
+    kind: NetworkPolicy
+
+    metadata: { name: default-deny, namespace: app }
+
+    spec: { podSelector: {}, policyTypes: [Ingress, Egress] }
+
+    Y
+
+    cat ~/w08/netpol.yaml'
+  answer_detail: NetPol.
+  verify:
+    type: output_contains
+    expect: default-deny
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w08/netpol.yaml <<''Y''
+
+    apiVersion: networking.k8s.io/v1
+
+    kind: NetworkPolicy
+
+    metadata: { name: default-deny, namespace: app }
+
+    spec: { podSelector: {}, policyTypes: [Ingress, Egress] }
+
+    Y
+
+    cat ~/w08/netpol.yaml'
+  risk_level: low
+  bastion_prompt: NetworkPolicy default-deny
+- order: 5
+  instruction: kube-bench 실행 계획
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: kube-bench 실행 계획
+
+    📎 참고 (CLI): echo ''docker run --rm aquasec/kube-bench:latest'' && echo ''scheduled'''
+  answer_detail: kube-bench.
+  verify:
+    type: output_contains
+    expect: kube-bench
+    field: stdout
+  target_vm: bastion
+  script: echo 'docker run --rm aquasec/kube-bench:latest' && echo 'scheduled'
+  risk_level: low
+  bastion_prompt: kube-bench 실행 계획

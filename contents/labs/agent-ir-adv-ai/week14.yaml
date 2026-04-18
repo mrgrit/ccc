@@ -1,0 +1,165 @@
+lab_id: agent-ir-adv-ai-week14
+title: CI/CD 공급망 오염 IR (AI 지원)
+version: ai
+course: agent-ir-adv-ai
+week: 14
+description: GitHub Actions·Jenkins 파이프라인 사고. AI SubAgent가 자동 실행·검증.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 공격 유형의 원리를 이해한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
+- Human vs Agent 대응의 차이를 비교한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: pull_request_target 감사 스크립트
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 9
+  answer: "\U0001F916 프롬프트: pull_request_target 감사 스크립트\n\U0001F4CE 참고 (CLI): cat > ~/w14/audit.sh <<'S'\n#!/bin/bash\nfor f in .github/workflows/*.yml; do\n  grep -l pull_request_target \"$f\" && echo \"check: $f\"\ndone\nS\ncat ~/w14/audit.sh"
+  answer_detail: 감사.
+  verify:
+    type: output_contains
+    expect: pull_request_target
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w14/audit.sh <<'S'\n#!/bin/bash\nfor f in .github/workflows/*.yml; do\n  grep -l pull_request_target \"$f\" && echo \"check: $f\"\ndone\nS\ncat ~/w14/audit.sh"
+  risk_level: low
+  bastion_prompt: pull_request_target 감사 스크립트
+- order: 2
+  instruction: Action SHA pin 체크
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 10
+  answer: '🤖 프롬프트: Action SHA pin 체크
+
+    📎 참고 (CLI): cat > ~/w14/pin.sh <<''S''
+
+    grep -rE ''uses:.*@v[0-9]'' .github/workflows/ && echo ''found non-pinned''
+
+    S
+
+    cat ~/w14/pin.sh'
+  answer_detail: Pin.
+  verify:
+    type: output_contains
+    expect: non-pinned
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w14/pin.sh <<''S''
+
+    grep -rE ''uses:.*@v[0-9]'' .github/workflows/ && echo ''found non-pinned''
+
+    S
+
+    cat ~/w14/pin.sh'
+  risk_level: low
+  bastion_prompt: Action SHA pin 체크
+- order: 3
+  instruction: OIDC 이행 계획
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 11
+  answer: '🤖 프롬프트: OIDC 이행 계획
+
+    📎 참고 (CLI): cat > ~/w14/oidc_gh.md <<''M''
+
+    - GitHub Actions OIDC 활성
+
+    - AWS Role with trust policy
+
+    - 장기 시크릿 제거
+
+    M
+
+    cat ~/w14/oidc_gh.md'
+  answer_detail: OIDC.
+  verify:
+    type: output_contains
+    expect: OIDC
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w14/oidc_gh.md <<''M''
+
+    - GitHub Actions OIDC 활성
+
+    - AWS Role with trust policy
+
+    - 장기 시크릿 제거
+
+    M
+
+    cat ~/w14/oidc_gh.md'
+  risk_level: low
+  bastion_prompt: OIDC 이행 계획
+- order: 4
+  instruction: cosign 서명
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: cosign 서명
+
+    📎 참고 (CLI): cat > ~/w14/cosign.md <<''M''
+
+    cosign sign --key env://KEY myregistry/app:v1
+
+    cosign verify myregistry/app:v1
+
+    M
+
+    cat ~/w14/cosign.md'
+  answer_detail: cosign.
+  verify:
+    type: output_contains
+    expect: cosign
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w14/cosign.md <<''M''
+
+    cosign sign --key env://KEY myregistry/app:v1
+
+    cosign verify myregistry/app:v1
+
+    M
+
+    cat ~/w14/cosign.md'
+  risk_level: low
+  bastion_prompt: cosign 서명
+- order: 5
+  instruction: ephemeral runner 정책
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: ephemeral runner 정책
+
+    📎 참고 (CLI): cat > ~/w14/runner.md <<''M''
+
+    - Self-hosted: ephemeral 강제
+
+    - 네트워크 격리
+
+    - 매 빌드 재생성
+
+    M
+
+    cat ~/w14/runner.md'
+  answer_detail: Runner.
+  verify:
+    type: output_contains
+    expect: ephemeral
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w14/runner.md <<''M''
+
+    - Self-hosted: ephemeral 강제
+
+    - 네트워크 격리
+
+    - 매 빌드 재생성
+
+    M
+
+    cat ~/w14/runner.md'
+  risk_level: low
+  bastion_prompt: ephemeral runner 정책

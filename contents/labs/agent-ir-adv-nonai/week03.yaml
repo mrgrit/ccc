@@ -1,0 +1,155 @@
+lab_id: agent-ir-adv-nonai-week03
+title: AD Kerberoasting IR (Non-AI)
+version: nonai
+course: agent-ir-adv-nonai
+week: 3
+description: SharpHound·Rubeus·Hashcat 기반 자동화 Kerberoasting 대응. 학생이 수동 수행.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 공격 유형의 원리를 이해한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
+- Human vs Agent 대응의 차이를 비교한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: Event 4769 SIGMA 룰
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 9
+  answer: "\U0001F916 프롬프트: Event 4769 SIGMA 룰\n\U0001F4CE 참고 (CLI): cat > ~/w03/rule.yml <<'Y'\ntitle: Kerberoasting RC4 burst\ndetection:\n  selection: { EventID: 4769, TicketEncryptionType: '0x17' }\n  timeframe: 60s\n  condition: selection | count(ServiceName) by AccountName > 5\nY\ncat ~/w03/rule.yml"
+  answer_detail: 룰.
+  verify:
+    type: output_contains
+    expect: '4769'
+    field: stdout
+  target_vm: siem
+  script: "cat > ~/w03/rule.yml <<'Y'\ntitle: Kerberoasting RC4 burst\ndetection:\n  selection: { EventID: 4769, TicketEncryptionType: '0x17' }\n  timeframe: 60s\n  condition: selection | count(ServiceName) by AccountName > 5\nY\ncat ~/w03/rule.yml"
+  risk_level: low
+  bastion_prompt: ''
+- order: 2
+  instruction: auditd 관련 키 설정
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 10
+  answer: '🤖 프롬프트: auditd 관련 키 설정
+
+    📎 참고 (CLI): cat > ~/w03/audit.rules <<''R''
+
+    -w /etc/krb5.conf -p wa -k krb_conf
+
+    R
+
+    cat ~/w03/audit.rules'
+  answer_detail: 감시 룰.
+  verify:
+    type: output_contains
+    expect: krb_conf
+    field: stdout
+  target_vm: secu
+  script: 'cat > ~/w03/audit.rules <<''R''
+
+    -w /etc/krb5.conf -p wa -k krb_conf
+
+    R
+
+    cat ~/w03/audit.rules'
+  risk_level: medium
+  bastion_prompt: ''
+- order: 3
+  instruction: BloodHound 수집 탐지 스크립트
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 11
+  answer: "\U0001F916 프롬프트: BloodHound 수집 탐지 스크립트\n\U0001F4CE 참고 (CLI): cat > ~/w03/ldap_burst.py <<'P'\ndef detect_ldap_burst(queries, window=60, threshold=100):\n    return sum(1 for q in queries if q.ts_in_last(window)) >= threshold\nP\npython3 -c 'print(\"ok\")'"
+  answer_detail: 스크립트.
+  verify:
+    type: output_contains
+    expect: ok
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w03/ldap_burst.py <<'P'\ndef detect_ldap_burst(queries, window=60, threshold=100):\n    return sum(1 for q in queries if q.ts_in_last(window)) >= threshold\nP\npython3 -c 'print(\"ok\")'"
+  risk_level: low
+  bastion_prompt: ''
+- order: 4
+  instruction: 대응 계획
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: 대응 계획
+
+    📎 참고 (CLI): cat > ~/w03/response.md <<''M''
+
+    1. 의심 세션 종료
+
+    2. 서비스 계정 잠금 (승인 후)
+
+    3. krbtgt 2회 회전 (계획)
+
+    M
+
+    cat ~/w03/response.md'
+  answer_detail: 계획.
+  verify:
+    type: output_contains
+    expect: krbtgt
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w03/response.md <<''M''
+
+    1. 의심 세션 종료
+
+    2. 서비스 계정 잠금 (승인 후)
+
+    3. krbtgt 2회 회전 (계획)
+
+    M
+
+    cat ~/w03/response.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 5
+  instruction: 하드닝 5축 체크
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: 하드닝 5축 체크
+
+    📎 참고 (CLI): cat > ~/w03/harden.md <<''M''
+
+    - 서비스 계정 25자+
+
+    - AES 강제
+
+    - MSA/gMSA
+
+    - 4769 상시 감시
+
+    - Tier 모델
+
+    M
+
+    cat ~/w03/harden.md'
+  answer_detail: 하드닝.
+  verify:
+    type: output_contains
+    expect: gMSA
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w03/harden.md <<''M''
+
+    - 서비스 계정 25자+
+
+    - AES 강제
+
+    - MSA/gMSA
+
+    - 4769 상시 감시
+
+    - Tier 모델
+
+    M
+
+    cat ~/w03/harden.md'
+  risk_level: low
+  bastion_prompt: ''

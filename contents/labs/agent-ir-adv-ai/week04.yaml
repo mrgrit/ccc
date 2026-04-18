@@ -1,0 +1,161 @@
+lab_id: agent-ir-adv-ai-week04
+title: Cloud IAM 자동 Pivot IR (AI 지원)
+version: ai
+course: agent-ir-adv-ai
+week: 4
+description: AWS IAM 키 유출·권한 열거·PE 대응. AI SubAgent가 자동 실행·검증.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 공격 유형의 원리를 이해한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
+- Human vs Agent 대응의 차이를 비교한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: 유출 키 확인·비활성화 시뮬
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 9
+  answer: '🤖 프롬프트: 유출 키 확인·비활성화 시뮬
+
+    📎 참고 (CLI): cat > ~/w04/disable.sh <<''S''
+
+    #!/bin/bash
+
+    KEY=AKIAAAAAAAAAAAAAAAAA
+
+    echo "aws iam update-access-key --access-key-id $KEY --status Inactive"
+
+    S
+
+    cat ~/w04/disable.sh'
+  answer_detail: 비활성화.
+  verify:
+    type: output_contains
+    expect: Inactive
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w04/disable.sh <<''S''
+
+    #!/bin/bash
+
+    KEY=AKIAAAAAAAAAAAAAAAAA
+
+    echo "aws iam update-access-key --access-key-id $KEY --status Inactive"
+
+    S
+
+    cat ~/w04/disable.sh'
+  risk_level: low
+  bastion_prompt: 유출 키 확인·비활성화 시뮬
+- order: 2
+  instruction: IAM 열거 burst 룰
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 10
+  answer: "\U0001F916 프롬프트: IAM 열거 burst 룰\n\U0001F4CE 참고 (CLI): cat > ~/w04/rule.yml <<'Y'\ntitle: IAM Enumeration Burst\ndetection:\n  selection: { eventSource: iam.amazonaws.com, eventName|startswith: [List, Get, Describe] }\n  timeframe: 60s\n  condition: selection | count() by userIdentity.userName > 20\nY\ncat ~/w04/rule.yml"
+  answer_detail: 룰.
+  verify:
+    type: output_contains
+    expect: iam.amazonaws.com
+    field: stdout
+  target_vm: siem
+  script: "cat > ~/w04/rule.yml <<'Y'\ntitle: IAM Enumeration Burst\ndetection:\n  selection: { eventSource: iam.amazonaws.com, eventName|startswith: [List, Get, Describe] }\n  timeframe: 60s\n  condition: selection | count() by userIdentity.userName > 20\nY\ncat ~/w04/rule.yml"
+  risk_level: low
+  bastion_prompt: IAM 열거 burst 룰
+- order: 3
+  instruction: SCP 초안
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 11
+  answer: '🤖 프롬프트: SCP 초안
+
+    📎 참고 (CLI): cat > ~/w04/scp.json <<''J''
+
+    {"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":"iam:CreateAccessKey","Resource":"*","Condition":{"StringNotEquals":{"aws:PrincipalOrgID":"o-xxx"}}}]}
+
+    J
+
+    cat ~/w04/scp.json'
+  answer_detail: SCP.
+  verify:
+    type: output_contains
+    expect: Deny
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w04/scp.json <<''J''
+
+    {"Version":"2012-10-17","Statement":[{"Effect":"Deny","Action":"iam:CreateAccessKey","Resource":"*","Condition":{"StringNotEquals":{"aws:PrincipalOrgID":"o-xxx"}}}]}
+
+    J
+
+    cat ~/w04/scp.json'
+  risk_level: low
+  bastion_prompt: SCP 초안
+- order: 4
+  instruction: OIDC 이행 계획
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: OIDC 이행 계획
+
+    📎 참고 (CLI): cat > ~/w04/oidc.md <<''M''
+
+    1. GitHub OIDC Provider 등록
+
+    2. Role 생성 (신뢰 정책: GitHub subject)
+
+    3. Actions에서 sts:AssumeRoleWithWebIdentity
+
+    M
+
+    cat ~/w04/oidc.md'
+  answer_detail: OIDC.
+  verify:
+    type: output_contains
+    expect: OIDC
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w04/oidc.md <<''M''
+
+    1. GitHub OIDC Provider 등록
+
+    2. Role 생성 (신뢰 정책: GitHub subject)
+
+    3. Actions에서 sts:AssumeRoleWithWebIdentity
+
+    M
+
+    cat ~/w04/oidc.md'
+  risk_level: low
+  bastion_prompt: OIDC 이행 계획
+- order: 5
+  instruction: VPC Endpoint 정책
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: VPC Endpoint 정책
+
+    📎 참고 (CLI): cat > ~/w04/vpce.json <<''J''
+
+    {"Statement":[{"Effect":"Allow","Principal":"*","Action":"s3:*","Resource":"*","Condition":{"StringEquals":{"aws:PrincipalOrgID":"o-xxx"}}}]}
+
+    J
+
+    cat ~/w04/vpce.json'
+  answer_detail: 엔드포인트 정책.
+  verify:
+    type: output_contains
+    expect: aws:PrincipalOrgID
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w04/vpce.json <<''J''
+
+    {"Statement":[{"Effect":"Allow","Principal":"*","Action":"s3:*","Resource":"*","Condition":{"StringEquals":{"aws:PrincipalOrgID":"o-xxx"}}}]}
+
+    J
+
+    cat ~/w04/vpce.json'
+  risk_level: low
+  bastion_prompt: VPC Endpoint 정책

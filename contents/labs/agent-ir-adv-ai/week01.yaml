@@ -1,0 +1,161 @@
+lab_id: agent-ir-adv-ai-week01
+title: Dependency Confusion IR (AI 지원)
+version: ai
+course: agent-ir-adv-ai
+week: 1
+description: PyPI/npm 공급망 공격의 6단계 IR — 공격→탐지→분석→초동대응→보고→재발방지. AI SubAgent가 자동 실행·검증.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 공격 유형의 원리를 이해한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
+- Human vs Agent 대응의 차이를 비교한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: 악성 패키지 구조 만들기 (setup.py + post-install)
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 9
+  answer: '🤖 프롬프트: 악성 패키지 구조 만들기 (setup.py + post-install)
+
+    📎 참고 (CLI): mkdir -p ~/w01/pkg && cat > ~/w01/pkg/setup.py <<''PY''
+
+    from setuptools import setup
+
+    import os
+
+    def ph(): print(''phone-home sim'')
+
+    ph()
+
+    setup(name=''test-dep-conf'', version=''9999.99.99'', packages=[])
+
+    PY
+
+    ls ~/w01/pkg/'
+  answer_detail: 공격 패키지 구조 생성.
+  verify:
+    type: output_contains
+    expect: setup.py
+    field: stdout
+  target_vm: web
+  script: 'mkdir -p ~/w01/pkg && cat > ~/w01/pkg/setup.py <<''PY''
+
+    from setuptools import setup
+
+    import os
+
+    def ph(): print(''phone-home sim'')
+
+    ph()
+
+    setup(name=''test-dep-conf'', version=''9999.99.99'', packages=[])
+
+    PY
+
+    ls ~/w01/pkg/'
+  risk_level: low
+  bastion_prompt: 악성 패키지 구조 만들기 (setup.py + post-install)
+- order: 2
+  instruction: 빌드·검증
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 10
+  answer: '🤖 프롬프트: 빌드·검증
+
+    📎 참고 (CLI): cd ~/w01/pkg && python3 -m build 2>&1 | head -20 || echo ''build_done'''
+  answer_detail: 패키지 빌드.
+  verify:
+    type: output_contains
+    expect: build
+    field: stdout
+  target_vm: web
+  script: cd ~/w01/pkg && python3 -m build 2>&1 | head -20 || echo 'build_done'
+  risk_level: low
+  bastion_prompt: 빌드·검증
+- order: 3
+  instruction: SIGMA 룰 초안 작성
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 11
+  answer: "\U0001F916 프롬프트: SIGMA 룰 초안 작성\n\U0001F4CE 참고 (CLI): mkdir -p ~/w01/detect && cat > ~/w01/detect/rule.yml <<'Y'\ntitle: DepConf external egress\ndetection:\n  selection: { dest_domain: [pypi.org], src_net: ci }\n  condition: selection\nY\ncat ~/w01/detect/rule.yml"
+  answer_detail: 탐지 룰.
+  verify:
+    type: output_contains
+    expect: dest_domain
+    field: stdout
+  target_vm: bastion
+  script: "mkdir -p ~/w01/detect && cat > ~/w01/detect/rule.yml <<'Y'\ntitle: DepConf external egress\ndetection:\n  selection: { dest_domain: [pypi.org], src_net: ci }\n  condition: selection\nY\ncat ~/w01/detect/rule.yml"
+  risk_level: low
+  bastion_prompt: SIGMA 룰 초안 작성
+- order: 4
+  instruction: 분석 타임라인 초안
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: 분석 타임라인 초안
+
+    📎 참고 (CLI): cat > ~/w01/analysis/timeline.md <<''M''
+
+    - T+0: PR merge
+
+    - T+1: pip install
+
+    - T+2: external POST
+
+    M
+
+    mkdir -p ~/w01/analysis && cat ~/w01/analysis/timeline.md 2>/dev/null || echo ''missing'''
+  answer_detail: 타임라인.
+  verify:
+    type: output_contains
+    expect: pip
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w01/analysis/timeline.md <<''M''
+
+    - T+0: PR merge
+
+    - T+1: pip install
+
+    - T+2: external POST
+
+    M
+
+    mkdir -p ~/w01/analysis && cat ~/w01/analysis/timeline.md 2>/dev/null || echo ''missing'''
+  risk_level: low
+  bastion_prompt: 분석 타임라인 초안
+- order: 5
+  instruction: 재발방지 정책 템플릿
+  hint: 본 과정 공통 6단계 절차에 따라 수행
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: 재발방지 정책 템플릿
+
+    📎 참고 (CLI): cat > ~/w01/prevent/npmrc <<''C''
+
+    registry=https://nexus.internal/
+
+    @internal:registry=https://nexus.internal/
+
+    C
+
+    mkdir -p ~/w01/prevent && cat ~/w01/prevent/npmrc 2>/dev/null || echo ''missing'''
+  answer_detail: 정책.
+  verify:
+    type: output_contains
+    expect: nexus
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w01/prevent/npmrc <<''C''
+
+    registry=https://nexus.internal/
+
+    @internal:registry=https://nexus.internal/
+
+    C
+
+    mkdir -p ~/w01/prevent && cat ~/w01/prevent/npmrc 2>/dev/null || echo ''missing'''
+  risk_level: low
+  bastion_prompt: 재발방지 정책 템플릿
