@@ -726,10 +726,20 @@ class BastionAgent:
     # ── PLANNING helpers ────────────────────────────────────────────────────
 
     # 구체적 명령어 패턴 — 이 패턴이 포함되면 Playbook 대신 Skill로 라우팅
+    # 단어 경계(\b)로 부분 매치 방지 (예: "Rule-based"의 "sed" 오탐)
     _CONCRETE_CMD_PATTERNS = re.compile(
-        r'(curl\s|nmap\s|grep\s|sed\s|awk\s|systemctl\s|auditctl\s|chage\s|chmod\s|'
-        r'docker\s|nft\s|hydra\s|nikto\s|sqlmap\s|ping\s|dig\s|nc\s|netcat\s|'
-        r'python3\s|cat\s|echo\s|ls\s|find\s|tail\s|head\s|mkdir\s|useradd\s|usermod\s)',
+        r'(\bcurl\s|\bnmap\s|\bgrep\s|\bsed\s|\bawk\s|\bsystemctl\s|\bauditctl\s|'
+        r'\bchage\s|\bchmod\s|\bdocker\s|\bnft\s|\bhydra\s|\bnikto\s|\bsqlmap\s|'
+        r'\bping\s|\bdig\s|\bnc\s|\bnetcat\s|\bpython3\s|\bcat\s|\becho\s|'
+        r'\bls\s|\bfind\s|\btail\s|\bhead\s|\bmkdir\s|\buseradd\s|\busermod\s|'
+        # 확장 (w19 개선): 추가 시스템·감사·네트워크 명령
+        r'\btcpdump\s|\btshark\s|\bss\s-|\bnetstat\s|\bip\s+(a|r|link|addr|route)|'
+        r'\bjournalctl\s|\bausearch\s|\bdmesg\b|\blast\s|\bwho\s|\bwhoami\b|'
+        r'\brpm\s|\bdpkg\s|\bapt\s|\byum\s|\bdnf\s|\bpip\s|\bnpm\s|\bsnap\s|'
+        r'\bfirewall-cmd\s|\biptables\s|\bufw\s|'
+        r'\bwazuh-control\b|\bwazuh-logtest\b|\bwazuh-analysisd\b|\bossec-control\b|'
+        r'\bsuricata\b|\bsuricatasc\b|'
+        r'\bkubectl\s|\bhelm\s|\bminikube\s|\bk9s\b)',
         re.IGNORECASE
     )
 
@@ -743,7 +753,48 @@ class BastionAgent:
         r'우회해|우회하라|획득해|획득하라|추출해줘|추출하라|'
         r'덤프해|덤프하라|크래킹|브루트포스|'
         r'페이로드|익스플로잇|취약점을?\s*확인|엔드포인트.*요청|'
+        # 확장 (w19 개선): 지시·존댓말·명령형·완료형
+        r'~?하시오|하시라|해보시오|해보세요|해보기|만드시오|만들어보|'
+        r'수정하|수정하시오|변경하|변경하시오|교체하|업데이트하|'
+        r'재시작|재시작하|재시작해|리로드|로드하|'
+        r'존재 여부|상태 확인|상태를 확인|접속 (가능|확인)|응답 (확인|코드)|'
+        r'(룰|규칙|파일|계정|서비스|프로세스|포트|세션)이?\s*(있는지|존재|활성|실행)|'
+        r'(룰|규칙|파일|계정)을?\s*(추가|생성|작성|배포)|'
+        # 확장: 실행 부사구
+        r'에 접속|에서 실행|에서 확인|에서 수행|에 대해 (실행|수행|점검|공격|검증|분석)|'
         r'확인하|설정하|스캔하|실행하|점검하|시오)',
+        re.IGNORECASE
+    )
+
+    # ── w19 개선: 인프라·자산·verify 힌트 감지 패턴 ────────────────────────
+    # 본 과정 인프라의 *구체적* 언급 — 이것이 있으면 QA가 아닌 실행 의도가 강함
+    _INFRA_MENTIONS = re.compile(
+        r'(10\.20\.30\.\d+|'               # 실습 대역
+        r':\d{2,5}\b|'                      # 포트
+        r'/etc/|/var/|/opt/|/tmp/|/home/|/root/|/proc/|/sys/|/dev/|'  # 시스템 경로
+        r'\bcron\b|\bsystemd\b|\bauditd\b|\brsyslog\b|\bnftables\b|'
+        r'\bmodsec|\bWAF\b|\bIPS\b|\bIDS\b|\bSIEM\b|'
+        r'\bossec\b|\bwazuh\b|\bsuricata\b|\bfail2ban\b|'
+        r'(access|auth|error|system|kern)\.log|'
+        r'authorized_keys|crontab|sshd_config|ossec\.conf|local_rules|'
+        r'eve\.json|alerts\.json|ossec\.log|'
+        # 한국어 인프라 용어
+        r'방화벽|침입(차단|탐지)|에이전트의?|데몬|서비스|프로세스|포트|세션|룰셋|'
+        r'(보안|인증|시스템|네트워크|커널|방화벽)\s*(룰|규칙|로그|로그인|설정))',
+        re.IGNORECASE
+    )
+
+    # Verify 가능한 요구 — "출력", "응답", "상태", "확인 가능" 등
+    _VERIFIABLE_ASK = re.compile(
+        r'(출력|결과|응답|응답\s*코드|상태|상태\s*확인|'
+        r'\bresponse\b|\boutput\b|\bstatus\b|\bexit[\s_-]?code\b|'
+        r'활성\s*여부|실행\s*여부|존재\s*여부|로그에\s*(기록|남|출력)|'
+        r'확인\s*(가능|하시오|하라)|검증\s*(가능|하시오)|'
+        r'응답\s*(헤더|본문|문자열)|(종료|반환)\s*(코드|값)|'
+        # 추가: 존재성·행동 동사형 verify
+        r'존재하는지|있는지|실행되는지|활성화(되|됐)는지|'
+        r'기록되는지|기록됐는지|발생하는지|발생했는지|생성됐는지|추가됐는지|삭제됐는지|'
+        r'적용(되|됐)는지|반영(되|됐)는지|동작하는지|동작했는지)',
         re.IGNORECASE
     )
 
@@ -879,8 +930,22 @@ class BastionAgent:
 
         모델 독립적 — 프롬프트 기반이므로 모델이 바뀌어도 동작.
         """
-        # 빠른 경로: 구체적 명령어 포함 시 LLM 호출 없이 실행 판정
+        # ── w19 개선: 빠른 경로 확장 ──
+        # 1. 구체적 명령어 포함 → 즉시 실행
         if self._CONCRETE_CMD_PATTERNS.search(message):
+            target = self._infer_target_vm(message)
+            return {"execute": True, "target_vm": target, "command": ""}
+
+        # 2. 실행 키워드 (강한 한국어 지시형) → 즉시 실행
+        if self._EXEC_KEYWORDS.search(message):
+            target = self._infer_target_vm(message)
+            return {"execute": True, "target_vm": target, "command": ""}
+
+        # 3. 인프라 자산 언급 + verify 요구가 동시에 있으면 실행
+        #    (예: "web에서 access.log에 403 응답이 기록됐는지 확인")
+        has_infra = bool(self._INFRA_MENTIONS.search(message))
+        has_verify = bool(self._VERIFIABLE_ASK.search(message))
+        if has_infra and has_verify:
             target = self._infer_target_vm(message)
             return {"execute": True, "target_vm": target, "command": ""}
 
@@ -905,11 +970,21 @@ class BastionAgent:
                 "options": {"temperature": 0.0, "num_predict": 120},
             }, timeout=15.0)
             parsed = json.loads(r.json().get("message", {}).get("content", "{}"))
-            return {
-                "execute": bool(parsed.get("execute", False)),
-                "target_vm": str(parsed.get("target_vm", "attacker")).strip(),
-                "command": str(parsed.get("command", "")).strip(),
-            }
+            execute = bool(parsed.get("execute", False))
+            target = str(parsed.get("target_vm", "attacker")).strip()
+            command = str(parsed.get("command", "")).strip()
+
+            # ── w19 개선: 오버라이드 층 ──
+            # LLM이 execute=False라고 답했더라도, 메시지에 *인프라 자산*이 있거나
+            # *verify 가능한 요구*가 있으면 False→True로 승격한다.
+            # 근거: 랩 스텝 대부분은 인프라 상태 변경/조회가 수반되며,
+            #       LLM이 일부 추상 질문 스타일을 QA로 오분류하는 경향이 있음.
+            if not execute:
+                if self._INFRA_MENTIONS.search(message) or self._VERIFIABLE_ASK.search(message):
+                    execute = True
+                    target = target or self._infer_target_vm(message)
+
+            return {"execute": execute, "target_vm": target, "command": command}
         except Exception:
             # LLM 호출 실패 시 안전 기본값: 실행으로 판정 (실행 우선 원칙)
             return {"execute": True, "target_vm": self._infer_target_vm(message), "command": ""}
