@@ -69,31 +69,21 @@ SIGMA는 SIEM 벤더에 독립적인 범용 탐지 룰 포맷이다. 하나의 S
 
 ### SIGMA 룰 생태계
 
+```mermaid
+graph TD
+    SIGMA["SIGMA 룰<br/>(YAML)"] --> ENGINE["sigmac / sigma-cli<br/>변환 엔진"]
+    ENGINE --> SPL["Splunk SPL"]
+    ENGINE --> ES["Elasticsearch<br/>Query DSL"]
+    ENGINE --> QR["QRadar AQL"]
+    ENGINE --> WZ["Wazuh 룰 XML"]
+    ENGINE --> SU["Suricata 룰"]
+    ENGINE --> KQL["Microsoft<br/>Sentinel KQL"]
+    ENGINE --> GR["grep 명령"]
+    style SIGMA fill:#f97316,color:#fff
+    style ENGINE fill:#58a6ff,color:#fff
 ```
-+---------------------------------------------------------------+
-|                    SIGMA 룰 생태계                            |
-+---------------------------------------------------------------+
-|                                                               |
-|  [SIGMA 룰 (YAML)]                                            |
-|       |                                                       |
-|       ▼                                                       |
-|  [sigmac / sigma-cli] -- 변환 엔진                            |
-|       |                                                       |
-|       +--> Splunk SPL 쿼리                                    |
-|       +--> Elasticsearch Query DSL                            |
-|       +--> QRadar AQL                                         |
-|       +--> Wazuh 룰 XML                                       |
-|       +--> Suricata 룰                                        |
-|       +--> Microsoft Sentinel KQL                             |
-|       +--> grep 명령 (간이 검색)                              |
-|                                                               |
-|  장점:                                                        |
-|    - Write Once, Deploy Everywhere                            |
-|    - 커뮤니티 공유 (3000+ 룰 공개)                            |
-|    - ATT&CK 매핑 내장                                         |
-|    - Git 기반 버전 관리 가능                                  |
-|                                                               |
-+---------------------------------------------------------------+
+
+> Write Once, Deploy Everywhere — 커뮤니티 3000+ 룰 공유, ATT&CK 매핑 내장
 ```
 
 ### SIGMA 룰 구조

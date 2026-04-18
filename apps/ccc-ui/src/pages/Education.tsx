@@ -289,10 +289,16 @@ const actionBtn: React.CSSProperties = {
 
 // ── Markdown → HTML ──
 function markdownToHtml(md: string): string {
-  return md
+  // 1단계: Mermaid 블록을 이스케이프 전에 먼저 추출 (placeholder로 교체)
+  const mermaidBlocks: string[] = []
+  md = md.replace(/```mermaid\n([\s\S]*?)```/g, (_, code) => {
+    mermaidBlocks.push(code)
+    return `__MERMAID_${mermaidBlocks.length - 1}__`
+  })
+
+  // 2단계: HTML 이스케이프 + 마크다운 변환
+  let html = md
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    // Mermaid 다이어그램 — mermaid.js로 렌더링
-    .replace(/```mermaid\n([\s\S]*?)```/g, '<div class="mermaid">$1</div>')
     // 코드블록 — monospace, pre 유지 (도형/선 보존)
     .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px 20px;font-size:15px;line-height:1.5;overflow-x:auto;color:#3fb950;margin:12px 0;font-family:\'D2Coding\',\'Nanum Gothic Coding\',Consolas,Monaco,\'Courier New\',monospace;white-space:pre;tab-size:4;letter-spacing:0">$2</pre>')
     // 제목
@@ -318,4 +324,11 @@ function markdownToHtml(md: string): string {
     // 줄바꿈
     .replace(/\n\n/g, '<div style="height:10px"></div>')
     .replace(/\n/g, '<br/>')
+
+  // 3단계: Mermaid placeholder → <div class="mermaid"> (이스케이프 안 된 원본 코드)
+  mermaidBlocks.forEach((code, i) => {
+    html = html.replace(`__MERMAID_${i}__`, `<div class="mermaid">${code}</div>`)
+  })
+
+  return html
 }
