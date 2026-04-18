@@ -215,6 +215,11 @@ def skills_to_ollama_tools() -> list[dict]:
 
 # ── Skill 실행 ─────────────────────────────────
 
+def _shq(s: str) -> str:
+    """셸 인자 싱글쿼트 래핑."""
+    return "'" + s.replace("'", "'\\''") + "'"
+
+
 def _resolve_vm_ip(target: str, vm_ips: dict[str, str]) -> str:
     """role 이름 또는 IP를 실제 IP로 변환"""
     if target in vm_ips:

@@ -533,6 +533,7 @@ class BastionAgent:
 
         all_results = []
         for skill_name, params in skill_steps:
+            self._retry_history = []  # 스텝별 retry 히스토리 초기화
             # 파라미터 자동완성 (role→IP)
             params = self._enrich_params(skill_name, params)
 
@@ -554,15 +555,47 @@ class BastionAgent:
                                      "success": False, "output": f"pre-check failed: {pre_msg}"})
                 continue
 
-            yield {"event": "skill_start", "skill": skill_name, "params": params}
-            result = execute_skill(skill_name, params, self.vm_ips, self.ollama_url, self.model)
+            # ── 실행 + 자기 수정 루프 (최대 MAX_RETRY 회) ──
+            MAX_RETRY = 2
+            attempt = 0
+            while attempt <= MAX_RETRY:
+                attempt += 1
+                yield {"event": "skill_start", "skill": skill_name, "params": params,
+                       "attempt": attempt}
+                result = execute_skill(skill_name, params, self.vm_ips, self.ollama_url, self.model)
 
-            output = str(result.get("output", ""))
-            success = result.get("success", False)
-            exit_code = result.get("exit_code", -1 if not success else 0)
+                output = str(result.get("output", ""))
+                stderr = str(result.get("stderr", ""))
+                success = result.get("success", False)
+                exit_code = result.get("exit_code", -1 if not success else 0)
 
-            yield {"event": "skill_result", "skill": skill_name,
-                   "success": success, "output": output[:1000]}
+                yield {"event": "skill_result", "skill": skill_name,
+                       "success": success, "output": output[:1000],
+                       "attempt": attempt}
+
+                if success or attempt > MAX_RETRY:
+                    break
+
+                # ── 실패 → LLM에 에러를 보여주고 수정된 명령/파라미터 요청 ──
+                correction = self._diagnose_and_correct(
+                    message, skill_name, params, output, stderr, exit_code
+                )
+                if not correction:
+                    break  # LLM이 수정 불가 판단
+
+                yield {"event": "self_correct", "skill": skill_name,
+                       "attempt": attempt + 1,
+                       "diagnosis": correction.get("diagnosis", ""),
+                       "action": correction.get("action", "")}
+
+                # 수정된 파라미터로 교체
+                new_skill = correction.get("skill", skill_name)
+                new_params = correction.get("params", params)
+                if new_skill in SKILLS:
+                    skill_name = new_skill
+                    params = self._enrich_params(skill_name, new_params)
+                else:
+                    break
 
             self.evidence_db.add(
                 skill=skill_name, params=params, success=success,
@@ -571,9 +604,10 @@ class BastionAgent:
                 **self._test_meta,
             )
             all_results.append({"skill": skill_name, "params": params,
-                                 "success": success, "output": output})
+                                 "success": success, "output": output,
+                                 "attempts": attempt})
 
-            # Experience Learning — 실행 결과를 카테고리 수준으로 일반화하여 축적
+            # Experience Learning
             self.experience.record(
                 message=message, skill=skill_name,
                 target_vm=params.get("target", ""),
@@ -721,6 +755,82 @@ class BastionAgent:
         (re.compile(r'siem|wazuh|alerts|알림|에이전트.*목록|ossec|로그.*분석', re.I), "siem"),
         (re.compile(r'manager|ollama|LLM|python3.*스크립트|AI|가드레일|PII', re.I), "manager"),
     ]
+
+    def _diagnose_and_correct(self, original_request: str,
+                              skill_name: str, params: dict,
+                              output: str, stderr: str, exit_code: int) -> dict | None:
+        """실패한 실행의 출력을 LLM에 보여주고 수정된 접근을 생성.
+
+        Claude Code의 핵심 능력: 에러를 관찰 → 원인 진단 → 수정된 명령 생성.
+        이것을 Bastion에 이식.
+
+        반환: {"skill": "...", "params": {...}, "diagnosis": "...", "action": "..."} 또는 None
+        """
+        # 이전 실패 이력을 컨텍스트로 축적 (같은 요청의 시도 히스토리)
+        if not hasattr(self, '_retry_history'):
+            self._retry_history = []
+        self._retry_history.append({
+            "skill": skill_name,
+            "params": {k: str(v)[:100] for k, v in params.items()},
+            "output": output[-200:],
+            "stderr": stderr[-200:],
+            "exit_code": exit_code,
+        })
+
+        error_context = f"stdout: {output[-500:]}" if output else ""
+        if stderr:
+            error_context += f"\nstderr: {stderr[-300:]}"
+        if not error_context.strip():
+            error_context = f"exit_code={exit_code}, 출력 없음"
+
+        # 이전 시도 이력 포함
+        history_ctx = ""
+        if len(self._retry_history) > 1:
+            history_ctx = "\n이전 시도 이력:\n"
+            for i, h in enumerate(self._retry_history[:-1], 1):
+                history_ctx += f"  시도 {i}: {h['skill']}({h['params'].get('command','')[:60]}) → 실패: {h['output'][:80]}\n"
+            history_ctx += "위 시도들과 다른 접근을 해야 함.\n"
+
+        prompt = (
+            f"보안 에이전트가 작업을 실행했으나 실패했다. 에러를 분석하고 수정된 접근을 제시하라.\n\n"
+            f"원래 요청: {original_request}\n"
+            f"실행한 Skill: {skill_name}\n"
+            f"파라미터: {json.dumps(params, ensure_ascii=False)}\n"
+            f"결과 (실패):\n{error_context}\n"
+            f"{history_ctx}\n"
+            f"다음 JSON만 출력 (코드블록 금지):\n"
+            f'{{"diagnosis": "실패 원인 한 줄", "action": "수정 내용 한 줄", '
+            f'"skill": "사용할 skill명", "params": {{수정된 파라미터}}}}\n\n'
+            f"수정 불가능하면 정확히 null 출력.\n"
+            f"규칙:\n"
+            f"- 같은 명령을 반복하지 말 것 (다른 접근 시도)\n"
+            f"- 경로가 틀렸으면 대안 경로 시도\n"
+            f"- 권한 문제면 sudo 추가\n"
+            f"- 명령어 구문 오류면 수정\n"
+            f"- 대상 VM이 잘못됐으면 올바른 VM 지정\n"
+            f"- 파일이 없으면 find로 먼저 탐색하거나 대안 명령 사용"
+        )
+        try:
+            r = httpx.post(f"{self.ollama_url}/api/chat", json={
+                "model": self.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False, "format": "json",
+                "options": {"temperature": 0.1, "num_predict": 300},
+            }, timeout=20.0)
+            content = r.json().get("message", {}).get("content", "")
+            if not content or content.strip() == "null":
+                return None
+            parsed = json.loads(content)
+            if not isinstance(parsed, dict) or "skill" not in parsed:
+                return None
+            return {
+                "skill": str(parsed.get("skill", skill_name)),
+                "params": parsed.get("params", params) if isinstance(parsed.get("params"), dict) else params,
+                "diagnosis": str(parsed.get("diagnosis", "")),
+                "action": str(parsed.get("action", "")),
+            }
+        except Exception:
+            return None
 
     def _generate_shell_command(self, message: str, target_vm: str) -> str:
         """자연어 요청을 셸 명령어로 변환. LLM이 적절한 명령어를 생성한다."""
@@ -995,7 +1105,7 @@ class BastionAgent:
 
     def _run_dynamic_steps(self, steps: list[dict],
                            title: str = "동적 Playbook") -> Generator[dict, None, None]:
-        """동적으로 생성된 스텝 실행."""
+        """동적으로 생성된 스텝 실행 — 실패 시 자기 수정 루프 포함."""
         yield {"event": "playbook_start", "title": title, "total_steps": len(steps)}
         passed = 0
         for i, step in enumerate(steps, 1):
@@ -1003,10 +1113,37 @@ class BastionAgent:
             params = self._enrich_params(skill_name, step.get("params", {}))
             name = step.get("name", skill_name)
 
-            yield {"event": "step_start", "step": i, "name": name}
-            result = execute_skill(skill_name, params, self.vm_ips, self.ollama_url, self.model)
-            success = result.get("success", False)
-            output = str(result.get("output", ""))
+            MAX_RETRY = 2
+            attempt = 0
+            success = False
+            output = ""
+            while attempt <= MAX_RETRY:
+                attempt += 1
+                yield {"event": "step_start", "step": i, "name": name, "attempt": attempt}
+                result = execute_skill(skill_name, params, self.vm_ips, self.ollama_url, self.model)
+                success = result.get("success", False)
+                output = str(result.get("output", ""))
+                stderr = str(result.get("stderr", ""))
+
+                if success or attempt > MAX_RETRY:
+                    break
+
+                # 자기 수정
+                correction = self._diagnose_and_correct(
+                    name, skill_name, params, output, stderr,
+                    result.get("exit_code", -1)
+                )
+                if not correction:
+                    break
+                yield {"event": "self_correct", "step": i, "attempt": attempt + 1,
+                       "diagnosis": correction.get("diagnosis", "")}
+                new_skill = correction.get("skill", skill_name)
+                if new_skill in SKILLS:
+                    skill_name = new_skill
+                    params = self._enrich_params(skill_name, correction.get("params", params))
+                else:
+                    break
+
             if success:
                 passed += 1
             self.evidence_db.add(
@@ -1014,7 +1151,6 @@ class BastionAgent:
                 output=output, stage="dynamic", session_id=self.session_id,
                 **self._test_meta,
             )
-            # Experience Learning
             self.experience.record(
                 message=name, skill=skill_name,
                 target_vm=params.get("target", ""),
@@ -1022,7 +1158,7 @@ class BastionAgent:
                 success=success,
             )
             yield {"event": "step_done", "step": i, "name": name,
-                   "success": success, "output": output}
+                   "success": success, "output": output, "attempts": attempt}
         yield {"event": "playbook_done", "passed": passed, "total": len(steps)}
 
     # ── 파라미터 자동완성 ────────────────────────────────────────────────────
