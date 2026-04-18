@@ -342,14 +342,14 @@ tempo_ratio = median( 공격 라이프사이클 시간 )
 본 과목 15주는 이 3-horizon을 **학생 체험 버전**으로 압축한다.
 
 ```mermaid
-flowchart LR
-    H1["이번 주<br/>즉시 조치"]
-    H2["45일<br/>운영 구조 강화"]
-    H3["12개월<br/>운영 모델 전환"]
-    W1["w1~w2<br/>적을 직시"]
-    W2["w3~w7<br/>공격 배우기<br/>+ 탐지·지연"]
-    W3["w8~w10<br/>실전 공방"]
-    W4["w11~w15<br/>Bastion 공동 진화"]
+flowchart TB
+    H1["이번 주 — 즉시 조치"]
+    H2["45일 — 운영 구조 강화"]
+    H3["12개월 — 운영 모델 전환"]
+    W1["w1~w2 · 적을 직시"]
+    W2["w3~w7 · 공격 배우기 + 탐지·지연"]
+    W3["w8~w10 · 실전 공방"]
+    W4["w11~w15 · Bastion 공동 진화"]
     H1 --> W1
     H2 --> W2
     H2 --> W3
@@ -493,11 +493,11 @@ L3→L4가 *가장 기술적 도약*, L4→L5는 *가장 조직적 도약*이다
 ## 3.1 15주 블록
 
 ```mermaid
-flowchart LR
-    B1["**Block 1**<br/>w1~w2<br/>적을 직시"]
-    B2["**Block 2**<br/>w3~w7<br/>공격을 배운다"]
-    B3["**Block 3**<br/>w8~w10<br/>방어 기반"]
-    B4["**Block 4**<br/>w11~w15<br/>Purple · 기말"]
+flowchart TB
+    B1["<b>Block 1</b> · w1~w2<br/>적을 직시"]
+    B2["<b>Block 2</b> · w3~w7<br/>공격을 배운다"]
+    B3["<b>Block 3</b> · w8~w10<br/>방어 기반"]
+    B4["<b>Block 4</b> · w11~w15<br/>Purple · 기말"]
     B1 --> B2 --> B3 --> B4
     style B1 fill:#21262d,stroke:#8b949e,color:#e6edf3
     style B2 fill:#1a0a0a,stroke:#f85149,color:#e6edf3

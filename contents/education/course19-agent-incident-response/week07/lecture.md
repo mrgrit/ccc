@@ -62,19 +62,18 @@
 예시 아키텍처:
 
 ```mermaid
-flowchart LR
+flowchart TB
     Op["사람 오퍼레이터<br/>(목표 설정)"]
     Q["공유 큐 · 스토리지<br/>Redis / SQLite"]
-    R1["R1 정찰 에이전트"]
-    R2["R2 분석 에이전트"]
-    R3["R3 악용 에이전트"]
-    R4["R4 지속성 에이전트"]
+    subgraph Agents["에이전트 팀"]
+      R1["R1 정찰 에이전트"]
+      R2["R2 분석 에이전트"]
+      R3["R3 악용 에이전트"]
+      R4["R4 지속성 에이전트"]
+    end
     Op --> Q
-    Q --> R1 & R2 & R3 & R4
-    R1 -. "자산 리포트" .-> Q
-    R2 -. "취약점 후보" .-> Q
-    R3 -. "성공 증거" .-> Q
-    R4 -. "백도어 좌표" .-> Q
+    Q --> Agents
+    Agents -. "리포트·취약점·증거·좌표" .-> Q
     style Q fill:#21262d,stroke:#f97316,color:#e6edf3
 ```
 
@@ -260,16 +259,16 @@ flowchart TD
 ### 4.3.2 클러스터 판정의 의사 결정
 
 ```mermaid
-flowchart LR
-    S1["세션 A<br/>IP:10.20.30.80<br/>JA3:X"]
-    S2["세션 B<br/>IP:10.20.30.80<br/>JA3:X"]
-    S3["세션 C<br/>IP:10.20.30.81<br/>JA3:X"]
-    S4["세션 D<br/>IP:10.20.30.82<br/>JA3:Y"]
-    C["클러스터 1<br/>(동일 JA3)"]
-    D["단일<br/>(다른 JA3)"]
-    S1 --> C
-    S2 --> C
-    S3 --> C
+flowchart TB
+    subgraph Sessions["관찰된 세션"]
+      S1["세션 A<br/>IP:10.20.30.80<br/>JA3:X"]
+      S2["세션 B<br/>IP:10.20.30.80<br/>JA3:X"]
+      S3["세션 C<br/>IP:10.20.30.81<br/>JA3:X"]
+      S4["세션 D<br/>IP:10.20.30.82<br/>JA3:Y"]
+    end
+    C["클러스터 1<br/>동일 JA3 = X"]
+    D["단일 세션<br/>JA3 = Y"]
+    S1 & S2 & S3 --> C
     S4 --> D
     style C fill:#21262d,stroke:#f97316,color:#e6edf3
     style D fill:#161b22,stroke:#8b949e,color:#c9d1d9
@@ -318,15 +317,17 @@ flowchart TD
 ### 5.2.1 상관관계 스킬의 데이터 흐름
 
 ```mermaid
-flowchart LR
-    Suri["Suricata<br/>eve.json<br/>(JA3·flow_id)"]
-    Apa["Apache<br/>access.log<br/>(UA·req_id·path)"]
-    Wz["Wazuh<br/>alerts.json<br/>(rule·src)"]
+flowchart TB
+    subgraph Inputs["입력 로그"]
+      Suri["Suricata eve.json<br/>JA3 · flow_id"]
+      Apa["Apache access.log<br/>UA · req_id · path"]
+      Wz["Wazuh alerts.json<br/>rule · src"]
+    end
     Norm["① 정규화<br/>공통 키로 변환"]
     Agg["② 집계<br/>5분 윈도우"]
     Cluster["③ 클러스터링<br/>유사도 계산"]
     Out["클러스터 리포트<br/>→ Playbook"]
-    Suri & Apa & Wz --> Norm --> Agg --> Cluster --> Out
+    Inputs --> Norm --> Agg --> Cluster --> Out
     style Cluster fill:#21262d,stroke:#f97316,color:#e6edf3
     style Out fill:#0d1f0d,stroke:#3fb950,color:#e6edf3
 ```
@@ -346,12 +347,12 @@ flowchart LR
 ### 5.2.3 스킬 승격 경로
 
 ```mermaid
-flowchart LR
-    W5["w5 Skill 초안<br/>(종이)"]
-    W7["w7 클러스터 Skill<br/>(종이)"]
-    W11["w11 Bastion 구현<br/>(코드)"]
+flowchart TB
+    W5["w5 Skill 초안<br/>(종이 명세)"]
+    W7["w7 클러스터 Skill<br/>(종이 명세)"]
+    W11["w11 Bastion 구현<br/>(파이썬 코드)"]
     W12["w12 Playbook 승격<br/>(YAML)"]
-    W14["w14 실사고 적용<br/>(실전)"]
+    W14["w14 실사고 적용<br/>(실전 가동)"]
     W5 --> W11
     W7 --> W11
     W11 --> W12 --> W14

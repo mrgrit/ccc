@@ -33,7 +33,7 @@
 
 ## 1.1 한 Round의 5단계
 ```mermaid
-flowchart LR
+flowchart TB
     S1["① 오늘의 Red 시나리오 선정"]
     S2["② 공방 실행"]
     S3["③ 포렌식 복기"]

@@ -58,18 +58,18 @@
 ### 1.2.1 번들 처리 플로우
 
 ```mermaid
-flowchart LR
+flowchart TB
     B["번들 수령<br/>/opt/ctf/w08/&lt;id&gt;"]
-    R1["세션 transcript<br/>정독 (15분)"]
-    R2["pcap 분석<br/>tshark·pyshark"]
-    R3["서버 로그 파싱<br/>awk·jq"]
-    R4["artifacts 검토<br/>diff·sha256"]
+    subgraph Review["증거 검토 (병렬)"]
+      R1["세션 transcript<br/>정독 15분"]
+      R2["pcap 분석<br/>tshark · pyshark"]
+      R3["서버 로그 파싱<br/>awk · jq"]
+      R4["artifacts 검토<br/>diff · sha256"]
+    end
     Q["질문 6개 작성"]
     Y["skill YAML"]
     S["제출"]
-    B --> R1 & R2 & R3 & R4
-    R1 & R2 & R3 & R4 --> Q
-    Q --> Y --> S
+    B --> Review --> Q --> Y --> S
     style B fill:#21262d,stroke:#d29922,color:#e6edf3
     style Y fill:#0d1f0d,stroke:#3fb950,color:#e6edf3
     style S fill:#21262d,stroke:#f97316,color:#e6edf3
@@ -248,13 +248,15 @@ test_cases:
 ### 4.2.2 스킬 제출 파일 구조
 
 ```mermaid
-flowchart LR
-    A["answers.md<br/>(질문 6개)"]
-    S["skill-xxx.yaml<br/>(스킬 명세)"]
-    T["timeline.png<br/>(선택)"]
-    E["evidence/<br/>(선택 증거 스냅샷)"]
-    P["제출 패키지<br/>(tar·zip)"]
-    A & S & T & E --> P
+flowchart TB
+    subgraph Files["제출 파일"]
+      A["answers.md<br/>질문 6개 응답"]
+      S["skill-xxx.yaml<br/>스킬 명세"]
+      T["timeline.png<br/>(선택)"]
+      E["evidence/<br/>(선택 증거)"]
+    end
+    P["제출 패키지<br/>(tar · zip)"]
+    Files --> P
     style S fill:#0d1f0d,stroke:#3fb950,color:#e6edf3
     style P fill:#21262d,stroke:#f97316,color:#e6edf3
 ```
@@ -354,11 +356,11 @@ timeline
 ## 부록 C. 채점 후 피드백 루프
 
 ```mermaid
-flowchart LR
+flowchart TB
     S["학생 제출"]
     G["채점 + 감점 표시"]
-    F["개인 피드백<br/>(강사가 1:1)"]
-    U["수정 제출<br/>(가산점 없음, 학습용)"]
+    F["개인 피드백<br/>(강사 1:1)"]
+    U["수정 제출<br/>(학습용 · 가산 없음)"]
     P["w11 Purple에 반영"]
     S --> G --> F --> U --> P
     style F fill:#21262d,stroke:#f97316,color:#e6edf3
