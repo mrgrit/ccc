@@ -3,113 +3,350 @@ title: CI/CD 공급망 오염 IR (AI 지원)
 version: ai
 course: agent-ir-adv-ai
 week: 14
-description: GitHub Actions·Jenkins 파이프라인 사고. AI SubAgent가 자동 실행·검증.
+description: GitHub Actions pull_request_target·Runner 탈취. SLSA·cosign. AI SubAgent 자동 실행·검증.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 공격 유형의 원리를 이해한다
-- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
-- Human vs Agent 대응의 차이를 비교한다
+- 공격 원리를 이해하고 재현한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계를 수행한다
+- Human vs Agent 대응을 비교한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: pull_request_target 감사 스크립트
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
+  instruction: pull_request_target 예시
+  hint: 6단계 IR 중 공격 단계. target_vm=bastion.
+  category: attack
   points: 9
-  answer: "\U0001F916 프롬프트: pull_request_target 감사 스크립트\n\U0001F4CE 참고 (CLI): cat > ~/w14/audit.sh <<'S'\n#!/bin/bash\nfor f in .github/workflows/*.yml; do\n  grep -l pull_request_target \"$f\" && echo \"check: $f\"\ndone\nS\ncat ~/w14/audit.sh"
-  answer_detail: 감사.
+  answer: "\U0001F916 프롬프트: pull_request_target 예시\n\U0001F4CE 참고 (CLI): mkdir -p ~/w14 && cat > ~/w14/bad-workflow.yml <<'Y'\non: pull_request_target\njobs:\n  test:\n    steps:\n      - uses: actions/checkout@v4\n        with: {ref: ${{ github.event.pull_request.head.sha }}}  # external code\n      - run: npm test\n        env: {API_KEY: ${{ secrets.PROD_API_KEY }}}  # LEAK\nY\ncat ~/w14/bad-workflow.yml"
+  answer_detail: '[공격] 외부 PR에 시크릿 노출.'
   verify:
     type: output_contains
     expect: pull_request_target
     field: stdout
   target_vm: bastion
-  script: "cat > ~/w14/audit.sh <<'S'\n#!/bin/bash\nfor f in .github/workflows/*.yml; do\n  grep -l pull_request_target \"$f\" && echo \"check: $f\"\ndone\nS\ncat ~/w14/audit.sh"
+  script: "mkdir -p ~/w14 && cat > ~/w14/bad-workflow.yml <<'Y'\non: pull_request_target\njobs:\n  test:\n    steps:\n      - uses: actions/checkout@v4\n        with: {ref: ${{ github.event.pull_request.head.sha }}}  # external code\n      - run: npm test\n        env: {API_KEY: ${{ secrets.PROD_API_KEY }}}  # LEAK\nY\ncat ~/w14/bad-workflow.yml"
   risk_level: low
-  bastion_prompt: pull_request_target 감사 스크립트
+  bastion_prompt: pull_request_target 예시
 - order: 2
-  instruction: Action SHA pin 체크
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
+  instruction: Action 태그 이동 공격
+  hint: 6단계 IR 중 공격 단계. target_vm=bastion.
+  category: attack
   points: 10
-  answer: '🤖 프롬프트: Action SHA pin 체크
+  answer: '🤖 프롬프트: Action 태그 이동 공격
 
-    📎 참고 (CLI): cat > ~/w14/pin.sh <<''S''
+    📎 참고 (CLI): cat > ~/w14/tag-attack.md <<''M''
 
-    grep -rE ''uses:.*@v[0-9]'' .github/workflows/ && echo ''found non-pinned''
+    - 공격자가 v1 태그를 악성 commit으로 재발행
 
-    S
+    - uses: bad-user/bad-action@v1 하는 repo가 전부 영향
 
-    cat ~/w14/pin.sh'
-  answer_detail: Pin.
-  verify:
-    type: output_contains
-    expect: non-pinned
-    field: stdout
-  target_vm: bastion
-  script: 'cat > ~/w14/pin.sh <<''S''
-
-    grep -rE ''uses:.*@v[0-9]'' .github/workflows/ && echo ''found non-pinned''
-
-    S
-
-    cat ~/w14/pin.sh'
-  risk_level: low
-  bastion_prompt: Action SHA pin 체크
-- order: 3
-  instruction: OIDC 이행 계획
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
-  points: 11
-  answer: '🤖 프롬프트: OIDC 이행 계획
-
-    📎 참고 (CLI): cat > ~/w14/oidc_gh.md <<''M''
-
-    - GitHub Actions OIDC 활성
-
-    - AWS Role with trust policy
-
-    - 장기 시크릿 제거
+    - SHA pin 필수 이유
 
     M
 
-    cat ~/w14/oidc_gh.md'
-  answer_detail: OIDC.
+    cat ~/w14/tag-attack.md'
+  answer_detail: '[공격] 공급망.'
+  verify:
+    type: output_contains
+    expect: SHA
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w14/tag-attack.md <<''M''
+
+    - 공격자가 v1 태그를 악성 commit으로 재발행
+
+    - uses: bad-user/bad-action@v1 하는 repo가 전부 영향
+
+    - SHA pin 필수 이유
+
+    M
+
+    cat ~/w14/tag-attack.md'
+  risk_level: low
+  bastion_prompt: Action 태그 이동 공격
+- order: 3
+  instruction: 워크플로 감사 스크립트
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
+  category: analysis
+  points: 11
+  answer: "\U0001F916 프롬프트: 워크플로 감사 스크립트\n\U0001F4CE 참고 (CLI): cat > ~/w14/audit.sh <<'S'\n#!/bin/bash\nfor f in .github/workflows/*.yml 2>/dev/null; do\n  grep -l pull_request_target $f && echo check_needed: $f\ndone\nS\ncat ~/w14/audit.sh"
+  answer_detail: '[탐지] 조직 repo 스캔.'
+  verify:
+    type: output_contains
+    expect: pull_request_target
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w14/audit.sh <<'S'\n#!/bin/bash\nfor f in .github/workflows/*.yml 2>/dev/null; do\n  grep -l pull_request_target $f && echo check_needed: $f\ndone\nS\ncat ~/w14/audit.sh"
+  risk_level: low
+  bastion_prompt: 워크플로 감사 스크립트
+- order: 4
+  instruction: Action SHA pin 체크
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: Action SHA pin 체크
+
+    📎 참고 (CLI): cat > ~/w14/pin-check.sh <<''S''
+
+    #!/bin/bash
+
+    grep -rnE ''uses:.*@v[0-9]'' .github/workflows/ 2>/dev/null | head
+
+    S
+
+    cat ~/w14/pin-check.sh'
+  answer_detail: '[탐지] 비고정 Action.'
+  verify:
+    type: output_contains
+    expect: non
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w14/pin-check.sh <<''S''
+
+    #!/bin/bash
+
+    grep -rnE ''uses:.*@v[0-9]'' .github/workflows/ 2>/dev/null | head
+
+    S
+
+    cat ~/w14/pin-check.sh'
+  risk_level: low
+  bastion_prompt: Action SHA pin 체크
+- order: 5
+  instruction: 빌드 로그 복기
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: 빌드 로그 복기
+
+    📎 참고 (CLI): cat > ~/w14/build-log.md <<''M''
+
+    - PR #1234 external contributor merged
+
+    - GitHub Actions test workflow start
+
+    - 이상 egress: runner → attacker.example
+
+    - 빌드 log에 API_KEY 패턴
+
+    M
+
+    cat ~/w14/build-log.md'
+  answer_detail: '[분석] 타임라인.'
+  verify:
+    type: output_contains
+    expect: egress
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w14/build-log.md <<''M''
+
+    - PR #1234 external contributor merged
+
+    - GitHub Actions test workflow start
+
+    - 이상 egress: runner → attacker.example
+
+    - 빌드 log에 API_KEY 패턴
+
+    M
+
+    cat ~/w14/build-log.md'
+  risk_level: low
+  bastion_prompt: 빌드 로그 복기
+- order: 6
+  instruction: 영향 서비스 매핑
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
+  category: analysis
+  points: 14
+  answer: '🤖 프롬프트: 영향 서비스 매핑
+
+    📎 참고 (CLI): cat > ~/w14/impact.md <<''M''
+
+    - 유출 시크릿의 사용처 전부 나열
+
+    - 이미 배포된 아티팩트 재빌드 여부
+
+    - 외부 배포 상태
+
+    M
+
+    cat ~/w14/impact.md'
+  answer_detail: '[분석] 영향 지도.'
+  verify:
+    type: output_contains
+    expect: 아티팩트
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w14/impact.md <<''M''
+
+    - 유출 시크릿의 사용처 전부 나열
+
+    - 이미 배포된 아티팩트 재빌드 여부
+
+    - 외부 배포 상태
+
+    M
+
+    cat ~/w14/impact.md'
+  risk_level: low
+  bastion_prompt: 영향 서비스 매핑
+- order: 7
+  instruction: 빌드 취소 + Runner 격리
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 15
+  answer: '🤖 프롬프트: 빌드 취소 + Runner 격리
+
+    📎 참고 (CLI): cat > ~/w14/contain.sh <<''S''
+
+    #!/bin/bash
+
+    # Example commands
+
+    echo ''gh run cancel <run-id>''
+
+    echo ''remove self-hosted runner''
+
+    echo ''rotate all secrets via vault''
+
+    S
+
+    cat ~/w14/contain.sh'
+  answer_detail: '[초동대응] 즉시 조치.'
+  verify:
+    type: output_contains
+    expect: cancel
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w14/contain.sh <<''S''
+
+    #!/bin/bash
+
+    # Example commands
+
+    echo ''gh run cancel <run-id>''
+
+    echo ''remove self-hosted runner''
+
+    echo ''rotate all secrets via vault''
+
+    S
+
+    cat ~/w14/contain.sh'
+  risk_level: low
+  bastion_prompt: 빌드 취소 + Runner 격리
+- order: 8
+  instruction: Agent Playbook
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 16
+  answer: "\U0001F916 프롬프트: Agent Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w14/agent.yaml <<'Y'\nplaybook_id: pb-cicd-abuse\nsteps:\n  - skill: cancel_build\n  - skill: taint_runner\n  - skill: rotate_exposed_secrets\n  - skill: verify_artifact_signatures\nY\ncat ~/w14/agent.yaml"
+  answer_detail: '[초동대응] 시크릿 자동 회전.'
+  verify:
+    type: output_contains
+    expect: rotate
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w14/agent.yaml <<'Y'\nplaybook_id: pb-cicd-abuse\nsteps:\n  - skill: cancel_build\n  - skill: taint_runner\n  - skill: rotate_exposed_secrets\n  - skill: verify_artifact_signatures\nY\ncat ~/w14/agent.yaml"
+  risk_level: low
+  bastion_prompt: Agent Playbook
+- order: 9
+  instruction: 공급망 영향 공유
+  hint: 6단계 IR 중 보고 단계. target_vm=bastion.
+  category: analysis
+  points: 17
+  answer: '🤖 프롬프트: 공급망 영향 공유
+
+    📎 참고 (CLI): cat > ~/w14/supply-chain.md <<''M''
+
+    - 영향 고객 통지
+
+    - 오염 아티팩트 recall
+
+    - CSA·CERT 공유
+
+    M
+
+    cat ~/w14/supply-chain.md'
+  answer_detail: '[보고] 공급망.'
+  verify:
+    type: output_contains
+    expect: recall
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w14/supply-chain.md <<''M''
+
+    - 영향 고객 통지
+
+    - 오염 아티팩트 recall
+
+    - CSA·CERT 공유
+
+    M
+
+    cat ~/w14/supply-chain.md'
+  risk_level: low
+  bastion_prompt: 공급망 영향 공유
+- order: 10
+  instruction: OIDC 이행
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 18
+  answer: '🤖 프롬프트: OIDC 이행
+
+    📎 참고 (CLI): cat > ~/w14/oidc.md <<''M''
+
+    - GitHub Actions OIDC Provider 등록
+
+    - Role 생성 (신뢰 정책: repo sub)
+
+    - Actions에서 sts:AssumeRoleWithWebIdentity
+
+    - 장기 시크릿 전부 제거
+
+    M
+
+    cat ~/w14/oidc.md'
+  answer_detail: '[재발방지] 정적 키 근절.'
   verify:
     type: output_contains
     expect: OIDC
     field: stdout
   target_vm: bastion
-  script: 'cat > ~/w14/oidc_gh.md <<''M''
+  script: 'cat > ~/w14/oidc.md <<''M''
 
-    - GitHub Actions OIDC 활성
+    - GitHub Actions OIDC Provider 등록
 
-    - AWS Role with trust policy
+    - Role 생성 (신뢰 정책: repo sub)
 
-    - 장기 시크릿 제거
+    - Actions에서 sts:AssumeRoleWithWebIdentity
+
+    - 장기 시크릿 전부 제거
 
     M
 
-    cat ~/w14/oidc_gh.md'
+    cat ~/w14/oidc.md'
   risk_level: low
-  bastion_prompt: OIDC 이행 계획
-- order: 4
+  bastion_prompt: OIDC 이행
+- order: 11
   instruction: cosign 서명
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
   category: analysis
-  points: 12
+  points: 19
   answer: '🤖 프롬프트: cosign 서명
 
     📎 참고 (CLI): cat > ~/w14/cosign.md <<''M''
 
-    cosign sign --key env://KEY myregistry/app:v1
+    - cosign sign --key env://KEY registry/app:v1
 
-    cosign verify myregistry/app:v1
+    - cosign verify registry/app:v1
+
+    - SLSA level 3+
 
     M
 
     cat ~/w14/cosign.md'
-  answer_detail: cosign.
+  answer_detail: '[재발방지] 아티팩트 무결성.'
   verify:
     type: output_contains
     expect: cosign
@@ -117,34 +354,36 @@ steps:
   target_vm: bastion
   script: 'cat > ~/w14/cosign.md <<''M''
 
-    cosign sign --key env://KEY myregistry/app:v1
+    - cosign sign --key env://KEY registry/app:v1
 
-    cosign verify myregistry/app:v1
+    - cosign verify registry/app:v1
+
+    - SLSA level 3+
 
     M
 
     cat ~/w14/cosign.md'
   risk_level: low
   bastion_prompt: cosign 서명
-- order: 5
-  instruction: ephemeral runner 정책
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+- order: 12
+  instruction: ephemeral runner
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
   category: analysis
-  points: 13
-  answer: '🤖 프롬프트: ephemeral runner 정책
+  points: 20
+  answer: '🤖 프롬프트: ephemeral runner
 
     📎 참고 (CLI): cat > ~/w14/runner.md <<''M''
 
     - Self-hosted: ephemeral 강제
 
-    - 네트워크 격리
-
     - 매 빌드 재생성
+
+    - 네트워크 격리 (최소 egress)
 
     M
 
     cat ~/w14/runner.md'
-  answer_detail: Runner.
+  answer_detail: '[재발방지] 지속성 제거.'
   verify:
     type: output_contains
     expect: ephemeral
@@ -154,12 +393,12 @@ steps:
 
     - Self-hosted: ephemeral 강제
 
-    - 네트워크 격리
-
     - 매 빌드 재생성
+
+    - 네트워크 격리 (최소 egress)
 
     M
 
     cat ~/w14/runner.md'
   risk_level: low
-  bastion_prompt: ephemeral runner 정책
+  bastion_prompt: ephemeral runner

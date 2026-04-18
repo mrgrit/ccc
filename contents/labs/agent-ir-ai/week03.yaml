@@ -1,99 +1,269 @@
 lab_id: agent-ir-ai-week03
-title: 초지능 정찰 — 에이전트 정찰을 학생이 직접 의뢰 (AI 지원)
+title: 초지능 정찰 — 방어 관점 신호 수집 (AI 지원)
 version: ai
 course: agent-ir-ai
 week: 3
-description: 학생이 Claude Code(또는 Bastion의 recon 스킬)에게 JuiceShop 정찰을 의뢰하고, 결과를 방어 관점에서 재구성한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: 에이전트 정찰의 전형적 신호 5원자(ReqBurst·FailSeq·FingerQuery·ToolMix·SessionSilence)를 재현·계측한다. AI SubAgent가 자동으로 명령을 실행·검증합니다.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 에이전트 정찰의 단계별 속도·병렬성을 관찰한다
-- ATT&CK Reconnaissance(TA0043) 기법 매핑
-- 정찰 신호 5원자(ReqBurst/FailSeq/FingerQuery/ToolMix/SessionSilence) 수집
+- 에이전트 스타일의 정찰 트래픽을 생성한다
+- 5원자 각각의 측정 지표를 스크립트로 구현한다
+- ATT&CK Reconnaissance(TA0043) 기법에 로그를 매핑한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: web의 `/robots.txt`, `/sitemap.xml`, `/api/`의 존재 여부를 curl로 조사
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: web 타깃의 /robots.txt · /sitemap.xml · /api/ 응답을 하나씩 확인(정찰 초기 패턴 재현).
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: recon
   points: 9
-  answer: '🤖 프롬프트: web의 `/robots.txt`, `/sitemap.xml`, `/api/`의 존재 여부를 curl로 조사
+  answer: '🤖 프롬프트: web 타깃의 /robots.txt · /sitemap.xml · /api/ 응답을 하나씩 확인(정찰 초기 패턴 재현).
 
-    📎 참고 (CLI): for p in /robots.txt /sitemap.xml /api/; do curl -s -o /dev/null -w "%{http_code} $p\n" http://10.20.30.80$p; done'
-  answer_detail: 정찰성 요청에 대한 응답 코드 분포.
+    📎 참고 (CLI): for p in /robots.txt /sitemap.xml /api/; do curl -s -o /dev/null -w ''%{http_code} %{url_effective}\n'' http://10.20.30.80$p; done'
+  answer_detail: 정보 수집형 요청 3종. 응답 코드 분포 기록.
   verify:
     type: output_contains
-    expect: ''
+    expect: '200'
     field: stdout
-  target_vm: web
-  script: for p in /robots.txt /sitemap.xml /api/; do curl -s -o /dev/null -w "%{http_code} $p\n" http://10.20.30.80$p; done
+  target_vm: bastion
+  script: for p in /robots.txt /sitemap.xml /api/; do curl -s -o /dev/null -w '%{http_code} %{url_effective}\n' http://10.20.30.80$p; done
   risk_level: low
-  bastion_prompt: web의 `/robots.txt`, `/sitemap.xml`, `/api/`의 존재 여부를 curl로 조사
+  bastion_prompt: web 타깃의 /robots.txt · /sitemap.xml · /api/ 응답을 하나씩 확인(정찰 초기 패턴 재현).
 - order: 2
-  instruction: JuiceShop의 Score Board 경로 접근이 공격자 시선에 어떻게 보이는지 확인
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: web에 JuiceShop의 score-board 경로 접근을 시도(유명 프레임워크 지문 추출).
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: recon
   points: 10
-  answer: '🤖 프롬프트: JuiceShop의 Score Board 경로 접근이 공격자 시선에 어떻게 보이는지 확인
+  answer: '🤖 프롬프트: web에 JuiceShop의 score-board 경로 접근을 시도(유명 프레임워크 지문 추출).
 
-    📎 참고 (CLI): curl -s -o /dev/null -w "%{http_code}\n" http://10.20.30.80:3000/#/score-board'
-  answer_detail: Score Board 접근 응답.
+    📎 참고 (CLI): curl -s -o /dev/null -w ''%{http_code}\n'' http://10.20.30.80:3000/#/score-board'
+  answer_detail: JuiceShop 특유 경로. 에이전트가 *내부 지식*으로 즉시 시도하는 대표 예.
   verify:
     type: output_contains
     expect: ''
     field: stdout
-  target_vm: web
-  script: curl -s -o /dev/null -w "%{http_code}\n" http://10.20.30.80:3000/#/score-board
+  target_vm: bastion
+  script: curl -s -o /dev/null -w '%{http_code}\n' http://10.20.30.80:3000/#/score-board
   risk_level: low
-  bastion_prompt: JuiceShop의 Score Board 경로 접근이 공격자 시선에 어떻게 보이는지 확인
+  bastion_prompt: web에 JuiceShop의 score-board 경로 접근을 시도(유명 프레임워크 지문 추출).
 - order: 3
-  instruction: '에이전트 정찰 시뮬레이션: 다수 경로 연속 요청 후 access.log에서 ReqBurst 신호 확인'
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: web 로그인 엔드포인트에 20회 반복 요청을 생성(ReqBurst 신호 재현).
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: recon
   points: 11
-  answer: '🤖 프롬프트: 에이전트 정찰 시뮬레이션: 다수 경로 연속 요청 후 access.log에서 ReqBurst 신호 확인
+  answer: '🤖 프롬프트: web 로그인 엔드포인트에 20회 반복 요청을 생성(ReqBurst 신호 재현).
 
-    📎 참고 (CLI): for i in $(seq 1 20); do curl -s -o /dev/null http://10.20.30.80:3000/rest/user/login -X POST -d ''{"email":"a''$i''@x.y"}'' -H ''Content-Type: application/json''; done; sudo tail -30 /var/log/apache2/access.log | awk ''{print $9}'' | sort | uniq -c'
-  answer_detail: 에이전트 유사 정찰 트래픽의 로그 지문 확인.
+    📎 참고 (CLI): for i in $(seq 1 20); do curl -s -o /dev/null -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"a''$i''@x","password":"x"}''; done; echo burst_done'
+  answer_detail: 20회 짧은 간격 요청. 에이전트 ReqBurst 지문 핵심 패턴.
   verify:
     type: output_contains
-    expect: ''
+    expect: burst_done
     field: stdout
-  target_vm: web
-  script: 'for i in $(seq 1 20); do curl -s -o /dev/null http://10.20.30.80:3000/rest/user/login -X POST -d ''{"email":"a''$i''@x.y"}'' -H ''Content-Type: application/json''; done; sudo tail -30 /var/log/apache2/access.log | awk ''{print $9}'' | sort | uniq -c'
+  target_vm: bastion
+  script: 'for i in $(seq 1 20); do curl -s -o /dev/null -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"a''$i''@x","password":"x"}''; done; echo burst_done'
   risk_level: low
-  bastion_prompt: '에이전트 정찰 시뮬레이션: 다수 경로 연속 요청 후 access.log에서 ReqBurst 신호 확인'
+  bastion_prompt: web 로그인 엔드포인트에 20회 반복 요청을 생성(ReqBurst 신호 재현).
 - order: 4
-  instruction: Suricata가 이 정찰을 잡는지 확인
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
+  instruction: secu에서 Suricata 빠른 로그를 확인해 정찰 탐지 발생 여부를 조사.
+  hint: target_vm=secu에서 수행. 아래 CLI 예시 참고.
+  category: analysis
   points: 12
-  answer: '🤖 프롬프트: Suricata가 이 정찰을 잡는지 확인
+  answer: '🤖 프롬프트: secu에서 Suricata 빠른 로그를 확인해 정찰 탐지 발생 여부를 조사.
 
-    📎 참고 (CLI): sudo tail -50 /var/log/suricata/fast.log | grep -Ei ''scan|enum'' || echo ''NO_RECON_ALERT'''
-  answer_detail: 정찰 시그니처가 기본셋에서 거의 안 뜨는 현상 확인.
+    📎 참고 (CLI): sudo tail -20 /var/log/suricata/fast.log | grep -Ei ''scan|recon|enum'' || echo ''NO_RECON_ALERT_YET'''
+  answer_detail: 기본 Suricata 룰셋이 정찰 패턴을 잘 안 잡는 현상을 직접 확인. w5에서 룰 추가의 동기.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: secu
-  script: sudo tail -50 /var/log/suricata/fast.log | grep -Ei 'scan|enum' || echo 'NO_RECON_ALERT'
+  script: sudo tail -20 /var/log/suricata/fast.log | grep -Ei 'scan|recon|enum' || echo 'NO_RECON_ALERT_YET'
   risk_level: medium
-  bastion_prompt: Suricata가 이 정찰을 잡는지 확인
+  bastion_prompt: secu에서 Suricata 빠른 로그를 확인해 정찰 탐지 발생 여부를 조사.
 - order: 5
-  instruction: Bastion에 정찰 Experience 등록
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: web access.log에서 같은 IP의 HTTP 상태 코드 분포를 IP별로 집계(ReqBurst 측정 근거).
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 13
-  answer: '🤖 프롬프트: Bastion에 정찰 Experience 등록
+  answer: '🤖 프롬프트: web access.log에서 같은 IP의 HTTP 상태 코드 분포를 IP별로 집계(ReqBurst 측정 근거).
 
-    📎 참고 (CLI): echo ''{"id":"w03-recon","ttp":"TA0043","signals":["ReqBurst","SessionSilence"]}'' >> ~/ccc/data/bastion/experience/w03.json && tail -1 ~/ccc/data/bastion/experience/w03.json'
-  answer_detail: 정찰 경험 저장.
+    📎 참고 (CLI): sudo tail -200 /var/log/apache2/access.log | awk ''{c[$1"_"$9]++} END{for(k in c) print k, c[k]}'' | sort -rn -k2 | head -10'
+  answer_detail: IP별 코드 분포. 20+ 4xx가 한 IP에 몰리면 정찰 지문.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: sudo tail -200 /var/log/apache2/access.log | awk '{c[$1"_"$9]++} END{for(k in c) print k, c[k]}' | sort -rn -k2 | head -10
+  risk_level: low
+  bastion_prompt: web access.log에서 같은 IP의 HTTP 상태 코드 분포를 IP별로 집계(ReqBurst 측정 근거).
+- order: 6
+  instruction: FailSeq 신호 — 4xx 응답 후 3초 이내 재시도 횟수 계산(Python 스니펫).
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 14
+  answer: '🤖 프롬프트: FailSeq 신호 — 4xx 응답 후 3초 이내 재시도 횟수 계산(Python 스니펫).
+
+    📎 참고 (CLI): python3 -c "import subprocess; out=subprocess.check_output([''sudo'',''tail'',''-500'',''/var/log/apache2/access.log'']).decode(); lines=out.splitlines(); print(''total_lines'', len(lines))"'
+  answer_detail: 재시도 분포 계산의 기본형. 실 데이터에선 datetime 파싱 필요.
+  verify:
+    type: output_contains
+    expect: total_lines
+    field: stdout
+  target_vm: web
+  script: python3 -c "import subprocess; out=subprocess.check_output(['sudo','tail','-500','/var/log/apache2/access.log']).decode(); lines=out.splitlines(); print('total_lines', len(lines))"
+  risk_level: low
+  bastion_prompt: FailSeq 신호 — 4xx 응답 후 3초 이내 재시도 횟수 계산(Python 스니펫).
+- order: 7
+  instruction: FingerQuery 신호 — 정보 목적 경로(/server-status, /.git/config, /actuator/info 등) 확인.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: recon
+  points: 15
+  answer: '🤖 프롬프트: FingerQuery 신호 — 정보 목적 경로(/server-status, /.git/config, /actuator/info 등) 확인.
+
+    📎 참고 (CLI): for p in /server-status /.git/config /actuator/info /package.json /.env; do curl -s -o /dev/null -w ''%{http_code} ''$p''\n'' http://10.20.30.80$p; done'
+  answer_detail: 기술 스택 지문을 노리는 경로 5개. 404로 귀결되는 게 정상, 일부라도 200이면 정보 누출.
+  verify:
+    type: output_contains
+    expect: '404'
+    field: stdout
+  target_vm: bastion
+  script: for p in /server-status /.git/config /actuator/info /package.json /.env; do curl -s -o /dev/null -w '%{http_code} '$p'\n' http://10.20.30.80$p; done
+  risk_level: low
+  bastion_prompt: FingerQuery 신호 — 정보 목적 경로(/server-status, /.git/config, /actuator/info 등) 확인.
+- order: 8
+  instruction: ToolMix 신호 — 같은 IP에서 User-Agent 3종 혼재 감지.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 16
+  answer: '🤖 프롬프트: ToolMix 신호 — 같은 IP에서 User-Agent 3종 혼재 감지.
+
+    📎 참고 (CLI): sudo tail -200 /var/log/apache2/access.log | awk -F''"'' ''{print $6}'' | sort | uniq -c | sort -rn | head'
+  answer_detail: User-Agent 분포. 3종+ 혼재면 에이전트 의심.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: sudo tail -200 /var/log/apache2/access.log | awk -F'"' '{print $6}' | sort | uniq -c | sort -rn | head
+  risk_level: low
+  bastion_prompt: ToolMix 신호 — 같은 IP에서 User-Agent 3종 혼재 감지.
+- order: 9
+  instruction: 정찰 신호 5원자 기준을 파일로 정리.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 17
+  answer: '🤖 프롬프트: 정찰 신호 5원자 기준을 파일로 정리.
+
+    📎 참고 (CLI): cat > ~/ccc/artifacts/w03/signals.md <<''MD''
+
+    # 정찰 5원자
+
+    | 신호 | 임계 | 탐지 위치 |
+
+    |---|---|---|
+
+    | ReqBurst | >=10 uniq paths/120s | web access.log |
+
+    | FailSeq | 4xx→재시도 5회 <3s | web |
+
+    | FingerQuery | 지문 경로 5+/60s | web |
+
+    | ToolMix | UA 3종+/src | web |
+
+    | SessionSilence | 쿠키 없이 10+요청 | web |
+
+    MD
+
+    cat ~/ccc/artifacts/w03/signals.md'
+  answer_detail: 5원자 기준표. w5 SIGMA 룰의 직접 입력.
+  verify:
+    type: output_contains
+    expect: ReqBurst
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ccc/artifacts/w03/signals.md <<''MD''
+
+    # 정찰 5원자
+
+    | 신호 | 임계 | 탐지 위치 |
+
+    |---|---|---|
+
+    | ReqBurst | >=10 uniq paths/120s | web access.log |
+
+    | FailSeq | 4xx→재시도 5회 <3s | web |
+
+    | FingerQuery | 지문 경로 5+/60s | web |
+
+    | ToolMix | UA 3종+/src | web |
+
+    | SessionSilence | 쿠키 없이 10+요청 | web |
+
+    MD
+
+    cat ~/ccc/artifacts/w03/signals.md'
+  risk_level: low
+  bastion_prompt: 정찰 신호 5원자 기준을 파일로 정리.
+- order: 10
+  instruction: ATT&CK 매핑 — 재현한 활동을 Technique ID로 기록.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 18
+  answer: '🤖 프롬프트: ATT&CK 매핑 — 재현한 활동을 Technique ID로 기록.
+
+    📎 참고 (CLI): cat > ~/ccc/artifacts/w03/attck-map.md <<''MD''
+
+    | 활동 | Tactic | Technique |
+
+    |---|---|---|
+
+    | /robots.txt 탐색 | TA0043 | T1595.002 |
+
+    | JuiceShop 지문 | TA0043 | T1592.002 |
+
+    | 반복 로그인 시도 | TA0043→TA0006 | T1110 |
+
+    MD
+
+    cat ~/ccc/artifacts/w03/attck-map.md'
+  answer_detail: ATT&CK 매핑. w13 보고서의 *분석 섹션*에 그대로 사용.
   verify:
     type: output_contains
     expect: TA0043
     field: stdout
   target_vm: bastion
-  script: echo '{"id":"w03-recon","ttp":"TA0043","signals":["ReqBurst","SessionSilence"]}' >> ~/ccc/data/bastion/experience/w03.json && tail -1 ~/ccc/data/bastion/experience/w03.json
+  script: 'cat > ~/ccc/artifacts/w03/attck-map.md <<''MD''
+
+    | 활동 | Tactic | Technique |
+
+    |---|---|---|
+
+    | /robots.txt 탐색 | TA0043 | T1595.002 |
+
+    | JuiceShop 지문 | TA0043 | T1592.002 |
+
+    | 반복 로그인 시도 | TA0043→TA0006 | T1110 |
+
+    MD
+
+    cat ~/ccc/artifacts/w03/attck-map.md'
   risk_level: low
-  bastion_prompt: Bastion에 정찰 Experience 등록
+  bastion_prompt: ATT&CK 매핑 — 재현한 활동을 Technique ID로 기록.
+- order: 11
+  instruction: experience 저장.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 19
+  answer: '🤖 프롬프트: experience 저장.
+
+    📎 참고 (CLI): mkdir -p ~/ccc/data/bastion/experience && echo ''{"id":"w03-recon","signals":["ReqBurst","FailSeq","FingerQuery"],"target":"10.20.30.80"}'' > ~/ccc/data/bastion/experience/w03-recon.json && cat ~/ccc/data/bastion/experience/w03-recon.json'
+  answer_detail: 정찰 시나리오 경험 저장.
+  verify:
+    type: output_contains
+    expect: ReqBurst
+    field: stdout
+  target_vm: bastion
+  script: mkdir -p ~/ccc/data/bastion/experience && echo '{"id":"w03-recon","signals":["ReqBurst","FailSeq","FingerQuery"],"target":"10.20.30.80"}' > ~/ccc/data/bastion/experience/w03-recon.json && cat ~/ccc/data/bastion/experience/w03-recon.json
+  risk_level: low
+  bastion_prompt: experience 저장.

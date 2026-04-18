@@ -1,99 +1,225 @@
 lab_id: agent-ir-ai-week07
-title: 멀티에이전트 병렬 — 세션 클러스터링 (AI 지원)
+title: 규모화 — 다중 에이전트 시뮬레이션 (AI 지원)
 version: ai
 course: agent-ir-ai
 week: 7
-description: 3개 공격 세션을 병렬로 가동하고, 방어 측이 이를 하나의 클러스터로 묶는 로직을 설계한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: 3~5개 병렬 요청을 내서 세션 클러스터링·트리아지 우선순위를 직접 적용한다. AI SubAgent가 자동으로 명령을 실행·검증합니다.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 3개 병렬 공격 트래픽을 생성한다
-- JA3/UA/IAT 유사성으로 세션 클러스터 후보를 추출한다
-- 경보 폭주에서 P0~P3 트리아지를 시연한다
+- 3개 역할 분할 공격 트래픽을 생성한다
+- 세션 클러스터링 알고리즘을 파이썬으로 구현한다
+- 경보 트리아지 P0~P3 분류를 실제 데이터에 적용한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: '병렬 트래픽 1: 정찰'
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: 세션 A — 정찰성 요청(3분 내 15경로).
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
   category: recon
   points: 9
-  answer: '🤖 프롬프트: 병렬 트래픽 1: 정찰
+  answer: '🤖 프롬프트: 세션 A — 정찰성 요청(3분 내 15경로).
 
-    📎 참고 (CLI): for i in $(seq 1 15); do curl -s -o /dev/null http://10.20.30.80/; done; echo ''recon_done'''
-  answer_detail: '세션 A: 단순 GET 반복.'
+    📎 참고 (CLI): for p in / /about /login /admin /api /static/logo.png /robots.txt /sitemap.xml /rest /rest/user /rest/products /api/v1 /api/v2 /docs /.well-known; do curl -s -o /dev/null http://10.20.30.80$p; done; echo session_A_done'
+  answer_detail: 세션 A(정찰) 트래픽. ReqBurst 지문 유발.
   verify:
     type: output_contains
-    expect: recon_done
+    expect: session_A_done
     field: stdout
   target_vm: web
-  script: for i in $(seq 1 15); do curl -s -o /dev/null http://10.20.30.80/; done; echo 'recon_done'
+  script: for p in / /about /login /admin /api /static/logo.png /robots.txt /sitemap.xml /rest /rest/user /rest/products /api/v1 /api/v2 /docs /.well-known; do curl -s -o /dev/null http://10.20.30.80$p; done; echo session_A_done
   risk_level: low
-  bastion_prompt: '병렬 트래픽 1: 정찰'
+  bastion_prompt: 세션 A — 정찰성 요청(3분 내 15경로).
 - order: 2
-  instruction: '병렬 트래픽 2: POST 변형'
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
+  instruction: 세션 B — 로그인 브루트 시도(10회).
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: attack
   points: 10
-  answer: '🤖 프롬프트: 병렬 트래픽 2: POST 변형
+  answer: '🤖 프롬프트: 세션 B — 로그인 브루트 시도(10회).
 
-    📎 참고 (CLI): for i in $(seq 1 10); do curl -s -o /dev/null -X POST http://10.20.30.80:3000/rest/user/login -d ''{"email":"a''$i''","password":"x"}'' -H ''Content-Type: application/json''; done; echo ''web_attack_done'''
-  answer_detail: '세션 B: 로그인 브루트.'
+    📎 참고 (CLI): for i in $(seq 1 10); do curl -s -o /dev/null -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"u''$i''@t.com","password":"pwd''$i''"}''; done; echo session_B_done'
+  answer_detail: 세션 B(브루트) 트래픽. Credential Access 신호.
   verify:
     type: output_contains
-    expect: web_attack_done
+    expect: session_B_done
     field: stdout
   target_vm: web
-  script: 'for i in $(seq 1 10); do curl -s -o /dev/null -X POST http://10.20.30.80:3000/rest/user/login -d ''{"email":"a''$i''","password":"x"}'' -H ''Content-Type: application/json''; done; echo ''web_attack_done'''
+  script: 'for i in $(seq 1 10); do curl -s -o /dev/null -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"u''$i''@t.com","password":"pwd''$i''"}''; done; echo session_B_done'
   risk_level: low
-  bastion_prompt: '병렬 트래픽 2: POST 변형'
+  bastion_prompt: 세션 B — 로그인 브루트 시도(10회).
 - order: 3
-  instruction: '병렬 트래픽 3: API 탐색'
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: 세션 C — API 경로 열거(6경로).
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
   category: recon
   points: 11
-  answer: '🤖 프롬프트: 병렬 트래픽 3: API 탐색
+  answer: '🤖 프롬프트: 세션 C — API 경로 열거(6경로).
 
-    📎 참고 (CLI): for p in /api /rest /admin; do curl -s -o /dev/null -w ''%{http_code}\n'' http://10.20.30.80$p; done'
-  answer_detail: '세션 C: 경로 탐색.'
+    📎 참고 (CLI): for p in /api /rest /internal /admin /actuator /metrics; do curl -s -o /dev/null -w ''%{http_code} ''$p''\n'' http://10.20.30.80$p; done; echo session_C_done'
+  answer_detail: 세션 C(API 탐색) 트래픽.
   verify:
     type: output_contains
-    expect: ''
+    expect: session_C_done
     field: stdout
   target_vm: web
-  script: for p in /api /rest /admin; do curl -s -o /dev/null -w '%{http_code}\n' http://10.20.30.80$p; done
+  script: for p in /api /rest /internal /admin /actuator /metrics; do curl -s -o /dev/null -w '%{http_code} '$p'\n' http://10.20.30.80$p; done; echo session_C_done
   risk_level: low
-  bastion_prompt: '병렬 트래픽 3: API 탐색'
+  bastion_prompt: 세션 C — API 경로 열거(6경로).
 - order: 4
-  instruction: access.log에서 같은 시간대 다수 세션이 관찰되는지 확인
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
+  instruction: access.log에서 3세션 트래픽이 시간대에 겹치는지 확인.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
   points: 12
-  answer: '🤖 프롬프트: access.log에서 같은 시간대 다수 세션이 관찰되는지 확인
+  answer: '🤖 프롬프트: access.log에서 3세션 트래픽이 시간대에 겹치는지 확인.
 
-    📎 참고 (CLI): sudo tail -60 /var/log/apache2/access.log | awk ''{print $1}'' | sort | uniq -c | sort -rn | head'
-  answer_detail: IP별 요청 분포.
+    📎 참고 (CLI): sudo tail -60 /var/log/apache2/access.log | awk ''{print $4}'' | sort -u | tail -5'
+  answer_detail: 시간대 분포. 동시성이 중요 — 같은 창 안에 3세션이 겹치면 클러스터 후보.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: web
-  script: sudo tail -60 /var/log/apache2/access.log | awk '{print $1}' | sort | uniq -c | sort -rn | head
+  script: sudo tail -60 /var/log/apache2/access.log | awk '{print $4}' | sort -u | tail -5
   risk_level: low
-  bastion_prompt: access.log에서 같은 시간대 다수 세션이 관찰되는지 확인
+  bastion_prompt: access.log에서 3세션 트래픽이 시간대에 겹치는지 확인.
 - order: 5
-  instruction: Bastion에 세션 클러스터 규칙 초안 등록
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: 세션 클러스터링 스크립트 작성(IP·UA·경로 유사).
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 13
-  answer: '🤖 프롬프트: Bastion에 세션 클러스터 규칙 초안 등록
-
-    📎 참고 (CLI): echo ''{"id":"w07-cluster","rule":"cluster_by_ja3_ua_iat_sim>=0.7"}'' >> ~/ccc/data/bastion/experience/w07.json && tail -1 ~/ccc/data/bastion/experience/w07.json'
-  answer_detail: 세션 클러스터링 규칙 저장.
+  answer: "\U0001F916 프롬프트: 세션 클러스터링 스크립트 작성(IP·UA·경로 유사).\n\U0001F4CE 참고 (CLI): cat > ~/ccc/scripts/cluster.py <<'PY'\ndef cluster(sessions):\n    groups = {}\n    for s in sessions:\n        key = (s.get('ja3','?'), s.get('ua_class','?'), s.get('ip_24','?'))\n        groups.setdefault(key, []).append(s)\n    return {k:v for k,v in groups.items() if len(v)>=2}\nprint('cluster_test', cluster([{'ja3':'x','ua_class':'curl','ip_24':'10.20.30','id':'s1'},\n                                {'ja3':'x','ua_class':'curl','ip_24':'10.20.30','id':'s2'},\n                                {'ja3':'y','ua_class':'browser','ip_24':'10.20.30','id':'s3'}]))\nPY\npython3 ~/ccc/scripts/cluster.py"
+  answer_detail: 세션 클러스터링 기본. JA3·UA·IP/24 앙상블.
   verify:
     type: output_contains
-    expect: cluster
+    expect: cluster_test
     field: stdout
   target_vm: bastion
-  script: echo '{"id":"w07-cluster","rule":"cluster_by_ja3_ua_iat_sim>=0.7"}' >> ~/ccc/data/bastion/experience/w07.json && tail -1 ~/ccc/data/bastion/experience/w07.json
+  script: "cat > ~/ccc/scripts/cluster.py <<'PY'\ndef cluster(sessions):\n    groups = {}\n    for s in sessions:\n        key = (s.get('ja3','?'), s.get('ua_class','?'), s.get('ip_24','?'))\n        groups.setdefault(key, []).append(s)\n    return {k:v for k,v in groups.items() if len(v)>=2}\nprint('cluster_test', cluster([{'ja3':'x','ua_class':'curl','ip_24':'10.20.30','id':'s1'},\n                                {'ja3':'x','ua_class':'curl','ip_24':'10.20.30','id':'s2'},\n                                {'ja3':'y','ua_class':'browser','ip_24':'10.20.30','id':'s3'}]))\nPY\npython3 ~/ccc/scripts/cluster.py"
   risk_level: low
-  bastion_prompt: Bastion에 세션 클러스터 규칙 초안 등록
+  bastion_prompt: 세션 클러스터링 스크립트 작성(IP·UA·경로 유사).
+- order: 6
+  instruction: 트리아지 P0~P3 분류 스크립트 작성.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 14
+  answer: "\U0001F916 프롬프트: 트리아지 P0~P3 분류 스크립트 작성.\n\U0001F4CE 참고 (CLI): cat > ~/ccc/scripts/triage.py <<'PY'\ndef triage(alert):\n    if alert.get('success') and alert.get('sensitive_data'): return 'P0'\n    if alert.get('cluster_size', 1) >= 3: return 'P1'\n    if alert.get('signature_matched'): return 'P2'\n    return 'P3'\nfor a in [{'success':True, 'sensitive_data':True}, {'cluster_size':4}, {'signature_matched':True}, {}]:\n    print(triage(a), a)\nPY\npython3 ~/ccc/scripts/triage.py"
+  answer_detail: 경보 우선순위 결정의 기본 로직.
+  verify:
+    type: output_contains
+    expect: P0
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/ccc/scripts/triage.py <<'PY'\ndef triage(alert):\n    if alert.get('success') and alert.get('sensitive_data'): return 'P0'\n    if alert.get('cluster_size', 1) >= 3: return 'P1'\n    if alert.get('signature_matched'): return 'P2'\n    return 'P3'\nfor a in [{'success':True, 'sensitive_data':True}, {'cluster_size':4}, {'signature_matched':True}, {}]:\n    print(triage(a), a)\nPY\npython3 ~/ccc/scripts/triage.py"
+  risk_level: low
+  bastion_prompt: 트리아지 P0~P3 분류 스크립트 작성.
+- order: 7
+  instruction: 노이즈 스톰 감지 스크립트 작성.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 15
+  answer: "\U0001F916 프롬프트: 노이즈 스톰 감지 스크립트 작성.\n\U0001F4CE 참고 (CLI): cat > ~/ccc/scripts/noise.py <<'PY'\ndef noise_storm(alert_count_5min, baseline=30):\n    return alert_count_5min > baseline * 5\nprint(noise_storm(200))  # True\nprint(noise_storm(10))   # False\nPY\npython3 ~/ccc/scripts/noise.py"
+  answer_detail: 경보 5배 급증 → 노이즈 스톰. 조용한 세션을 오히려 상향.
+  verify:
+    type: output_contains
+    expect: 'True'
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/ccc/scripts/noise.py <<'PY'\ndef noise_storm(alert_count_5min, baseline=30):\n    return alert_count_5min > baseline * 5\nprint(noise_storm(200))  # True\nprint(noise_storm(10))   # False\nPY\npython3 ~/ccc/scripts/noise.py"
+  risk_level: low
+  bastion_prompt: 노이즈 스톰 감지 스크립트 작성.
+- order: 8
+  instruction: CorrelationEngine 인터페이스 설계 문서.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 16
+  answer: "\U0001F916 프롬프트: CorrelationEngine 인터페이스 설계 문서.\n\U0001F4CE 참고 (CLI): cat > ~/ccc/artifacts/w07/engine.md <<'MD'\n# CorrelationEngine API\n```python\nclass CorrelationEngine:\n    def ingest(self, event): ...\n    def cluster(self, window=300): ...\n    def score_cluster(self, cluster): ...\n    def triage(self, cluster): ...\n    def emit_action(self, cluster, priority): ...\n```\nMD\ncat ~/ccc/artifacts/w07/engine.md"
+  answer_detail: w11에서 Bastion에 실제 구현할 엔진 API. 지금은 *인터페이스*만 고정.
+  verify:
+    type: output_contains
+    expect: CorrelationEngine
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/ccc/artifacts/w07/engine.md <<'MD'\n# CorrelationEngine API\n```python\nclass CorrelationEngine:\n    def ingest(self, event): ...\n    def cluster(self, window=300): ...\n    def score_cluster(self, cluster): ...\n    def triage(self, cluster): ...\n    def emit_action(self, cluster, priority): ...\n```\nMD\ncat ~/ccc/artifacts/w07/engine.md"
+  risk_level: low
+  bastion_prompt: CorrelationEngine 인터페이스 설계 문서.
+- order: 9
+  instruction: 세션 간 유사도 임계값 설정 문서.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 17
+  answer: '🤖 프롬프트: 세션 간 유사도 임계값 설정 문서.
+
+    📎 참고 (CLI): cat > ~/ccc/artifacts/w07/thresholds.md <<''MD''
+
+    | 축 | 느슨 | 표준 | 엄격 |
+
+    |---|---|---|---|
+
+    | JA3 | 일치 | 일치 | 일치 |
+
+    | UA | 일치 | 클래스 | 카테고리 |
+
+    | IAT p-value | >0.1 | >0.2 | >0.3 |
+
+    | 경로 Jaccard | >0.3 | >0.5 | >0.7 |
+
+    MD
+
+    cat ~/ccc/artifacts/w07/thresholds.md'
+  answer_detail: 표준 시작 → 오탐률에 따라 조정. w12 Canary 트래픽으로 검증.
+  verify:
+    type: output_contains
+    expect: 임계
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ccc/artifacts/w07/thresholds.md <<''MD''
+
+    | 축 | 느슨 | 표준 | 엄격 |
+
+    |---|---|---|---|
+
+    | JA3 | 일치 | 일치 | 일치 |
+
+    | UA | 일치 | 클래스 | 카테고리 |
+
+    | IAT p-value | >0.1 | >0.2 | >0.3 |
+
+    | 경로 Jaccard | >0.3 | >0.5 | >0.7 |
+
+    MD
+
+    cat ~/ccc/artifacts/w07/thresholds.md'
+  risk_level: low
+  bastion_prompt: 세션 간 유사도 임계값 설정 문서.
+- order: 10
+  instruction: experience 저장.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 18
+  answer: '🤖 프롬프트: experience 저장.
+
+    📎 참고 (CLI): echo ''{"id":"w07-scale","sessions_launched":3,"cluster_detected":true,"noise_storm":false}'' > ~/ccc/data/bastion/experience/w07-scale.json && cat ~/ccc/data/bastion/experience/w07-scale.json'
+  answer_detail: 멀티세션 실습 결과 기록.
+  verify:
+    type: output_contains
+    expect: cluster_detected
+    field: stdout
+  target_vm: bastion
+  script: echo '{"id":"w07-scale","sessions_launched":3,"cluster_detected":true,"noise_storm":false}' > ~/ccc/data/bastion/experience/w07-scale.json && cat ~/ccc/data/bastion/experience/w07-scale.json
+  risk_level: low
+  bastion_prompt: experience 저장.
+- order: 11
+  instruction: 3세션 타임라인 요약 생성.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 19
+  answer: '🤖 프롬프트: 3세션 타임라인 요약 생성.
+
+    📎 참고 (CLI): sudo tail -100 /var/log/apache2/access.log | awk ''{print $4, $1, $7}'' | tail -30 > ~/ccc/artifacts/w07/timeline.txt && wc -l ~/ccc/artifacts/w07/timeline.txt'
+  answer_detail: IP·경로·시간을 하나로 묶은 원본 타임라인.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: sudo tail -100 /var/log/apache2/access.log | awk '{print $4, $1, $7}' | tail -30 > ~/ccc/artifacts/w07/timeline.txt && wc -l ~/ccc/artifacts/w07/timeline.txt
+  risk_level: low
+  bastion_prompt: 3세션 타임라인 요약 생성.

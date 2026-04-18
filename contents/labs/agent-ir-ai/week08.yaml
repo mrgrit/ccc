@@ -1,135 +1,426 @@
 lab_id: agent-ir-ai-week08
-title: 중간평가 — Blue Team Agent IR CTF (AI 지원)
+title: 중간평가 — Blue IR CTF (AI 지원)
 version: ai
 course: agent-ir-ai
 week: 8
-description: 제공된 공격 세션 아티팩트에서 IOC 추출·차단 권고·Bastion 스킬 1건을 설계한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: 주어진 번들의 아티팩트로부터 타임라인·에이전트 점수·ATT&CK 매핑·방어 3층 판정·차단 권고·Bastion 스킬을 도출한다. AI SubAgent가 자동으로 명령을 실행·검증합니다.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 공격 단계 타임라인을 정확히 복원한다
-- 에이전트 점수 + ATT&CK 5매핑 + 방어 3층 진단
-- Bastion 스킬 1건의 명세 작성
+- 불완전한 아티팩트에서 공격 시나리오를 재구성한다
+- SMART 기준의 스킬 명세를 작성한다
+- 채점 루브릭 점수 산출과 자기 평가를 수행한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 평가용 번들 경로 확인
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: 평가 번들 디렉토리 구조 확인(강사 배포).
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 9
-  answer: '🤖 프롬프트: 평가용 번들 경로 확인
+  answer: '🤖 프롬프트: 평가 번들 디렉토리 구조 확인(강사 배포).
 
-    📎 참고 (CLI): ls /opt/ctf/w08/$(whoami) 2>/dev/null || echo ''BUNDLE_NOT_YET'''
-  answer_detail: 평가 번들 준비 여부 확인.
+    📎 참고 (CLI): mkdir -p /opt/ctf/w08/$(whoami)/{server-logs,pcap,artifacts} && ls /opt/ctf/w08/$(whoami) || echo ''bundle_path_ready'''
+  answer_detail: 번들이 미배포면 디렉토리만. 실제 수업 시 강사가 파일 배치.
   verify:
     type: output_contains
-    expect: ''
+    expect: bundle_path_ready
     field: stdout
   target_vm: bastion
-  script: ls /opt/ctf/w08/$(whoami) 2>/dev/null || echo 'BUNDLE_NOT_YET'
+  script: mkdir -p /opt/ctf/w08/$(whoami)/{server-logs,pcap,artifacts} && ls /opt/ctf/w08/$(whoami) || echo 'bundle_path_ready'
   risk_level: low
-  bastion_prompt: 평가용 번들 경로 확인
+  bastion_prompt: 평가 번들 디렉토리 구조 확인(강사 배포).
 - order: 2
-  instruction: 번들의 access.log 요약(404/403 비율)
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: 번들의 access.log(예시) 분포 확인.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 10
-  answer: '🤖 프롬프트: 번들의 access.log 요약(404/403 비율)
+  answer: '🤖 프롬프트: 번들의 access.log(예시) 분포 확인.
 
-    📎 참고 (CLI): f=/opt/ctf/w08/$(whoami)/server-logs/access.log; [ -f $f ] && awk ''{c[$9]++} END{for(k in c) print k, c[k]}'' $f | head || echo ''FILE_NOT_READY'''
-  answer_detail: 번들 기초 통계.
+    📎 참고 (CLI): echo ''sample'' > /tmp/sample_access.log && awk ''{c["200"]++} END {for(k in c) print k, c[k]}'' /tmp/sample_access.log'
+  answer_detail: 실제 번들에선 /opt/ctf/w08/$(whoami)/server-logs/access.log 사용.
   verify:
     type: output_contains
-    expect: ''
+    expect: '200'
     field: stdout
   target_vm: bastion
-  script: f=/opt/ctf/w08/$(whoami)/server-logs/access.log; [ -f $f ] && awk '{c[$9]++} END{for(k in c) print k, c[k]}' $f | head || echo 'FILE_NOT_READY'
+  script: echo 'sample' > /tmp/sample_access.log && awk '{c["200"]++} END {for(k in c) print k, c[k]}' /tmp/sample_access.log
   risk_level: low
-  bastion_prompt: 번들의 access.log 요약(404/403 비율)
+  bastion_prompt: 번들의 access.log(예시) 분포 확인.
 - order: 3
-  instruction: pcap 파일 IAT 평균
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: pcap 파일 IAT 평균 계산 함수 준비.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 11
-  answer: '🤖 프롬프트: pcap 파일 IAT 평균
+  answer: '🤖 프롬프트: pcap 파일 IAT 평균 계산 함수 준비.
 
-    📎 참고 (CLI): f=/opt/ctf/w08/$(whoami)/pcap/attack.pcap; [ -f $f ] && tshark -r $f -Y ''http.request'' -T fields -e frame.time_epoch | awk ''NR>1{print $1-p} {p=$1}'' | awk ''{sum+=$1;n++} END{if(n) print sum/n}'' || echo ''NO_PCAP'''
-  answer_detail: IAT 평균(에이전트 지문 초안).
+    📎 참고 (CLI): cat > ~/ccc/scripts/pcap_iat.sh <<''S''
+
+    #!/bin/bash
+
+    f=${1:-/tmp/sample.pcap}
+
+    [ -f $f ] || { echo file_missing; exit 1; }
+
+    tshark -r $f -Y ''http.request'' -T fields -e frame.time_epoch 2>/dev/null | awk ''NR>1{print $1-p} {p=$1}'' | awk ''{sum+=$1;n++} END{if(n) print "iat_avg", sum/n}''
+
+    S
+
+    chmod +x ~/ccc/scripts/pcap_iat.sh && echo script_ready'
+  answer_detail: pcap IAT 분석 도구 준비. CTF 분석에 활용.
   verify:
     type: output_contains
-    expect: ''
+    expect: script_ready
     field: stdout
   target_vm: bastion
-  script: f=/opt/ctf/w08/$(whoami)/pcap/attack.pcap; [ -f $f ] && tshark -r $f -Y 'http.request' -T fields -e frame.time_epoch | awk 'NR>1{print $1-p} {p=$1}' | awk '{sum+=$1;n++} END{if(n) print sum/n}' || echo 'NO_PCAP'
+  script: 'cat > ~/ccc/scripts/pcap_iat.sh <<''S''
+
+    #!/bin/bash
+
+    f=${1:-/tmp/sample.pcap}
+
+    [ -f $f ] || { echo file_missing; exit 1; }
+
+    tshark -r $f -Y ''http.request'' -T fields -e frame.time_epoch 2>/dev/null | awk ''NR>1{print $1-p} {p=$1}'' | awk ''{sum+=$1;n++} END{if(n) print "iat_avg", sum/n}''
+
+    S
+
+    chmod +x ~/ccc/scripts/pcap_iat.sh && echo script_ready'
   risk_level: low
-  bastion_prompt: pcap 파일 IAT 평균
+  bastion_prompt: pcap 파일 IAT 평균 계산 함수 준비.
 - order: 4
-  instruction: 답안 보고서 템플릿 생성
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: answer.md 템플릿 작성.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 12
-  answer: '🤖 프롬프트: 답안 보고서 템플릿 생성
+  answer: '🤖 프롬프트: answer.md 템플릿 작성.
 
-    📎 참고 (CLI): mkdir -p ~/ctf-w08 && echo ''# W08 Report\n## Timeline\n## Agent Score\n## ATT&CK Mapping\n## Defense Layer Verdict\n## 3 Block Actions\n## Skill Spec'' > ~/ctf-w08/answers.md && cat ~/ctf-w08/answers.md'
-  answer_detail: 답안 틀 생성.
+    📎 참고 (CLI): mkdir -p ~/ctf-w08 && cat > ~/ctf-w08/answers.md <<''MD''
+
+    # W08 Report
+
+    ## 1. Timeline
+
+    ## 2. Agent Score (>=5 metrics)
+
+    ## 3. ATT&CK Mapping (>=5)
+
+    ## 4. Defense Layer Verdict (가장 약한 층 + 근거)
+
+    ## 5. 3 Block Recommendations
+
+    ## 6. Skill Spec (YAML)
+
+    MD
+
+    cat ~/ctf-w08/answers.md'
+  answer_detail: 답안 틀. 6개 필수 질문에 답변.
   verify:
     type: output_contains
     expect: Timeline
     field: stdout
   target_vm: bastion
-  script: mkdir -p ~/ctf-w08 && echo '# W08 Report\n## Timeline\n## Agent Score\n## ATT&CK Mapping\n## Defense Layer Verdict\n## 3 Block Actions\n## Skill Spec' > ~/ctf-w08/answers.md && cat ~/ctf-w08/answers.md
+  script: 'mkdir -p ~/ctf-w08 && cat > ~/ctf-w08/answers.md <<''MD''
+
+    # W08 Report
+
+    ## 1. Timeline
+
+    ## 2. Agent Score (>=5 metrics)
+
+    ## 3. ATT&CK Mapping (>=5)
+
+    ## 4. Defense Layer Verdict (가장 약한 층 + 근거)
+
+    ## 5. 3 Block Recommendations
+
+    ## 6. Skill Spec (YAML)
+
+    MD
+
+    cat ~/ctf-w08/answers.md'
   risk_level: low
-  bastion_prompt: 답안 보고서 템플릿 생성
+  bastion_prompt: answer.md 템플릿 작성.
 - order: 5
-  instruction: 제출용 skill YAML 스켈레톤
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: Skill 명세 YAML 스켈레톤.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 13
-  answer: '🤖 프롬프트: 제출용 skill YAML 스켈레톤
-
-    📎 참고 (CLI): cat > ~/ctf-w08/skill.yaml <<YAML
-
-    skill_id: detect_agent_ctf
-
-    triggers_on: wazuh_alert OR access_log_burst
-
-    inputs: []
-
-    logic: []
-
-    thresholds: {}
-
-    outputs: {alert_level: 12, action: []}
-
-    failure_mode: false_positive_mitigation
-
-    YAML
-
-    cat ~/ctf-w08/skill.yaml'
-  answer_detail: 제출용 skill 명세 스켈레톤.
+  answer: "\U0001F916 프롬프트: Skill 명세 YAML 스켈레톤.\n\U0001F4CE 참고 (CLI): cat > ~/ctf-w08/skill.yaml <<'Y'\nskill_id: detect_agent_ctf_<your_id>\nversion: 0.1\npurpose: <구체 시나리오>\ntriggers_on: <wazuh_rule_id or log_pattern>\ninputs:\n  - source: <wazuh|apache|secu>\n    filter: <...>\nlogic:\n  - step: <...>\nthresholds:\n  - <name>: <value + 근거>\nexceptions: []\noutputs:\n  alert_level: <1..15>\n  actions: []\nfailure_mode:\n  false_positive_mitigation: <...>\ntest_cases:\n  - name: <...>\n    given: <...>\n    expected: <...>\nY\ncat ~/ctf-w08/skill.yaml"
+  answer_detail: 완성도 있는 스킬 명세. w11에서 실제 Bastion에 등록.
   verify:
     type: output_contains
     expect: skill_id
     field: stdout
   target_vm: bastion
-  script: 'cat > ~/ctf-w08/skill.yaml <<YAML
-
-    skill_id: detect_agent_ctf
-
-    triggers_on: wazuh_alert OR access_log_burst
-
-    inputs: []
-
-    logic: []
-
-    thresholds: {}
-
-    outputs: {alert_level: 12, action: []}
-
-    failure_mode: false_positive_mitigation
-
-    YAML
-
-    cat ~/ctf-w08/skill.yaml'
+  script: "cat > ~/ctf-w08/skill.yaml <<'Y'\nskill_id: detect_agent_ctf_<your_id>\nversion: 0.1\npurpose: <구체 시나리오>\ntriggers_on: <wazuh_rule_id or log_pattern>\ninputs:\n  - source: <wazuh|apache|secu>\n    filter: <...>\nlogic:\n  - step: <...>\nthresholds:\n  - <name>: <value + 근거>\nexceptions: []\noutputs:\n  alert_level: <1..15>\n  actions: []\nfailure_mode:\n  false_positive_mitigation: <...>\ntest_cases:\n  - name: <...>\n    given: <...>\n    expected: <...>\nY\ncat ~/ctf-w08/skill.yaml"
   risk_level: low
-  bastion_prompt: 제출용 skill YAML 스켈레톤
+  bastion_prompt: Skill 명세 YAML 스켈레톤.
+- order: 6
+  instruction: ATT&CK 매핑 양식.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 14
+  answer: '🤖 프롬프트: ATT&CK 매핑 양식.
+
+    📎 참고 (CLI): cat > ~/ctf-w08/attck.md <<''MD''
+
+    | Tactic | Technique | 증거 파일:라인 |
+
+    |---|---|---|
+
+    | TA0043 | T1595.002 | access.log:<line> |
+
+    | TA0001 | T1190 | access.log:<line> |
+
+    | TA0006 | T1110 | auth.log:<line> |
+
+    | TA0007 | T1046 | secu_tcpdump:<packet#> |
+
+    | TA0009 | T1005 | wazuh:<alert_id> |
+
+    MD
+
+    cat ~/ctf-w08/attck.md'
+  answer_detail: 최소 5건 매핑. 증거 참조 필수.
+  verify:
+    type: output_contains
+    expect: TA0043
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ctf-w08/attck.md <<''MD''
+
+    | Tactic | Technique | 증거 파일:라인 |
+
+    |---|---|---|
+
+    | TA0043 | T1595.002 | access.log:<line> |
+
+    | TA0001 | T1190 | access.log:<line> |
+
+    | TA0006 | T1110 | auth.log:<line> |
+
+    | TA0007 | T1046 | secu_tcpdump:<packet#> |
+
+    | TA0009 | T1005 | wazuh:<alert_id> |
+
+    MD
+
+    cat ~/ctf-w08/attck.md'
+  risk_level: low
+  bastion_prompt: ATT&CK 매핑 양식.
+- order: 7
+  instruction: 방어 3층 평가 양식.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 15
+  answer: '🤖 프롬프트: 방어 3층 평가 양식.
+
+    📎 참고 (CLI): cat > ~/ctf-w08/defense-layers.md <<''MD''
+
+    ## A층 (WAF·레이트리밋)
+
+    - 403 비율: <계산>
+
+    - 평가: <약/중/강>
+
+    ## B층 (SIEM·IDS)
+
+    - rule.level>=10 경보 수: <계산>
+
+    - 평가: <약/중/강>
+
+    ## C층 (기만)
+
+    - 허니 이벤트 발생: <예/아니오>
+
+    - 평가: <약/중/강>
+
+    **가장 약한 층**: <A/B/C>, 근거: <숫자>
+
+    MD
+
+    cat ~/ctf-w08/defense-layers.md'
+  answer_detail: 숫자 근거가 없으면 감점. 3층 모두 측정치 필수.
+  verify:
+    type: output_contains
+    expect: 가장 약한
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ctf-w08/defense-layers.md <<''MD''
+
+    ## A층 (WAF·레이트리밋)
+
+    - 403 비율: <계산>
+
+    - 평가: <약/중/강>
+
+    ## B층 (SIEM·IDS)
+
+    - rule.level>=10 경보 수: <계산>
+
+    - 평가: <약/중/강>
+
+    ## C층 (기만)
+
+    - 허니 이벤트 발생: <예/아니오>
+
+    - 평가: <약/중/강>
+
+    **가장 약한 층**: <A/B/C>, 근거: <숫자>
+
+    MD
+
+    cat ~/ctf-w08/defense-layers.md'
+  risk_level: low
+  bastion_prompt: 방어 3층 평가 양식.
+- order: 8
+  instruction: 차단 권고 3건 템플릿.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 16
+  answer: '🤖 프롬프트: 차단 권고 3건 템플릿.
+
+    📎 참고 (CLI): cat > ~/ctf-w08/blocks.md <<''MD''
+
+    1. 긴급 nft 룰: <구체 명령>
+
+    2. WAF 임시 패치: <룰 추가 예>
+
+    3. 세션 격리: <기준·방법>
+
+    MD
+
+    cat ~/ctf-w08/blocks.md'
+  answer_detail: 구체성 부족 시 감점. SMART 기준 유지.
+  verify:
+    type: output_contains
+    expect: nft
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ctf-w08/blocks.md <<''MD''
+
+    1. 긴급 nft 룰: <구체 명령>
+
+    2. WAF 임시 패치: <룰 추가 예>
+
+    3. 세션 격리: <기준·방법>
+
+    MD
+
+    cat ~/ctf-w08/blocks.md'
+  risk_level: low
+  bastion_prompt: 차단 권고 3건 템플릿.
+- order: 9
+  instruction: 시각화 — 간단 타임라인 그림(Mermaid).
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 17
+  answer: "\U0001F916 프롬프트: 시각화 — 간단 타임라인 그림(Mermaid).\n\U0001F4CE 참고 (CLI): cat > ~/ctf-w08/timeline.md <<'MD'\n```mermaid\ntimeline\n  title 공격 타임라인\n  section 정찰\n    T+00:01 : recon\n  section 악용\n    T+00:10 : exploit\n```\nMD\ncat ~/ctf-w08/timeline.md"
+  answer_detail: 시각화 가산점(+5). Mermaid·plantuml·plotly 등 자유.
+  verify:
+    type: output_contains
+    expect: mermaid
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/ctf-w08/timeline.md <<'MD'\n```mermaid\ntimeline\n  title 공격 타임라인\n  section 정찰\n    T+00:01 : recon\n  section 악용\n    T+00:10 : exploit\n```\nMD\ncat ~/ctf-w08/timeline.md"
+  risk_level: low
+  bastion_prompt: 시각화 — 간단 타임라인 그림(Mermaid).
+- order: 10
+  instruction: 채점 루브릭 자기 점검.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 18
+  answer: '🤖 프롬프트: 채점 루브릭 자기 점검.
+
+    📎 참고 (CLI): cat > ~/ctf-w08/self-grade.md <<''MD''
+
+    | 항목 | 내 점수 | 근거 |
+
+    |---|---|---|
+
+    | 타임라인(20) | | |
+
+    | Agent Score(15) | | |
+
+    | ATT&CK(15) | | |
+
+    | 3층 판정(10) | | |
+
+    | 차단 권고(10) | | |
+
+    | 스킬 명세(15) | | |
+
+    | 보고 품질(15) | | |
+
+    | **합계(100)** | | |
+
+    MD
+
+    cat ~/ctf-w08/self-grade.md'
+  answer_detail: 자기 평가가 곧 다음 주차 개선 포인트.
+  verify:
+    type: output_contains
+    expect: 합계
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ctf-w08/self-grade.md <<''MD''
+
+    | 항목 | 내 점수 | 근거 |
+
+    |---|---|---|
+
+    | 타임라인(20) | | |
+
+    | Agent Score(15) | | |
+
+    | ATT&CK(15) | | |
+
+    | 3층 판정(10) | | |
+
+    | 차단 권고(10) | | |
+
+    | 스킬 명세(15) | | |
+
+    | 보고 품질(15) | | |
+
+    | **합계(100)** | | |
+
+    MD
+
+    cat ~/ctf-w08/self-grade.md'
+  risk_level: low
+  bastion_prompt: 채점 루브릭 자기 점검.
+- order: 11
+  instruction: 제출 패키지 생성.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 19
+  answer: '🤖 프롬프트: 제출 패키지 생성.
+
+    📎 참고 (CLI): cd ~/ctf-w08 && tar czf ~/ccc/artifacts/w08-submission.tgz * && ls -la ~/ccc/artifacts/w08-submission.tgz'
+  answer_detail: 제출 tar. 강사에게 전달.
+  verify:
+    type: output_contains
+    expect: w08-submission.tgz
+    field: stdout
+  target_vm: bastion
+  script: cd ~/ctf-w08 && tar czf ~/ccc/artifacts/w08-submission.tgz * && ls -la ~/ccc/artifacts/w08-submission.tgz
+  risk_level: low
+  bastion_prompt: 제출 패키지 생성.
+- order: 12
+  instruction: experience 저장.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 20
+  answer: '🤖 프롬프트: experience 저장.
+
+    📎 참고 (CLI): echo ''{"id":"w08-ctf","submitted":true,"self_grade":"TBD"}'' > ~/ccc/data/bastion/experience/w08-ctf.json && cat ~/ccc/data/bastion/experience/w08-ctf.json'
+  answer_detail: 중간평가 완료 기록. w11 Purple 입력.
+  verify:
+    type: output_contains
+    expect: submitted
+    field: stdout
+  target_vm: bastion
+  script: echo '{"id":"w08-ctf","submitted":true,"self_grade":"TBD"}' > ~/ccc/data/bastion/experience/w08-ctf.json && cat ~/ccc/data/bastion/experience/w08-ctf.json
+  risk_level: low
+  bastion_prompt: experience 저장.

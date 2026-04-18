@@ -1,78 +1,131 @@
 lab_id: agent-ir-adv-nonai-week11
-title: AI 모델 공격 IR (Non-AI)
+title: AI 모델 공격 (Extraction·Theft·Poisoning) IR (Non-AI)
 version: nonai
 course: agent-ir-adv-nonai
 week: 11
-description: Model Extraction·Theft·Poisoning 대응. 학생이 수동 수행.
+description: 모델 자체가 자산. API rate limit + Watermark + MLOps 보안. 학생이 수동 수행·기록.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 공격 유형의 원리를 이해한다
-- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
-- Human vs Agent 대응의 차이를 비교한다
+- 공격 원리를 이해하고 재현한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계를 수행한다
+- Human vs Agent 대응을 비교한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: API 사용자별 rate limit
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
+  instruction: Extraction 쿼리 시뮬
+  hint: 6단계 IR 중 공격 단계. target_vm=bastion.
+  category: attack
   points: 9
-  answer: '🤖 프롬프트: API 사용자별 rate limit
+  answer: 'mkdir -p ~/w11 && cat > ~/w11/extract.py <<''PY''
 
-    📎 참고 (CLI): cat > ~/w11/rate.conf <<''C''
+    import random
 
-    limit_req_zone $http_x_api_key zone=api:10m rate=10r/s;
+    # 공격자 에이전트가 다양한 입력으로 대량 쿼리
 
-    C
+    prompts = [f''query_{random.random()}'' for _ in range(10)]
 
-    cat ~/w11/rate.conf'
-  answer_detail: Rate.
+    print(''sample_prompts'', prompts[:3])
+
+    PY
+
+    python3 ~/w11/extract.py'
+  answer_detail: '[공격] 체계적 분포 쿼리.'
   verify:
     type: output_contains
-    expect: limit_req
+    expect: sample
     field: stdout
-  target_vm: web
-  script: 'cat > ~/w11/rate.conf <<''C''
+  target_vm: bastion
+  script: 'mkdir -p ~/w11 && cat > ~/w11/extract.py <<''PY''
 
-    limit_req_zone $http_x_api_key zone=api:10m rate=10r/s;
+    import random
 
-    C
+    # 공격자 에이전트가 다양한 입력으로 대량 쿼리
 
-    cat ~/w11/rate.conf'
+    prompts = [f''query_{random.random()}'' for _ in range(10)]
+
+    print(''sample_prompts'', prompts[:3])
+
+    PY
+
+    python3 ~/w11/extract.py'
   risk_level: low
   bastion_prompt: ''
 - order: 2
-  instruction: 쿼리 볼륨 경보
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
+  instruction: Model Theft 경로
+  hint: 6단계 IR 중 공격 단계. target_vm=bastion.
+  category: attack
   points: 10
-  answer: "\U0001F916 프롬프트: 쿼리 볼륨 경보\n\U0001F4CE 참고 (CLI): cat > ~/w11/volume.py <<'P'\ndef abuse(events, h=1, thr=10000):\n    return sum(1 for e in events if e.ts_in_last(h*3600)) > thr\nP\npython3 -c 'print(\"ok\")'"
-  answer_detail: 볼륨.
+  answer: 'cat > ~/w11/theft.md <<''M''
+
+    - git 실수 커밋
+
+    - S3 공개 버킷
+
+    - Docker image layer
+
+    - 훈련 서버 침투
+
+    - 내부자 반출
+
+    M
+
+    cat ~/w11/theft.md'
+  answer_detail: '[공격] 5 경로.'
   verify:
     type: output_contains
-    expect: ok
+    expect: S3
     field: stdout
   target_vm: bastion
-  script: "cat > ~/w11/volume.py <<'P'\ndef abuse(events, h=1, thr=10000):\n    return sum(1 for e in events if e.ts_in_last(h*3600)) > thr\nP\npython3 -c 'print(\"ok\")'"
+  script: 'cat > ~/w11/theft.md <<''M''
+
+    - git 실수 커밋
+
+    - S3 공개 버킷
+
+    - Docker image layer
+
+    - 훈련 서버 침투
+
+    - 내부자 반출
+
+    M
+
+    cat ~/w11/theft.md'
   risk_level: low
   bastion_prompt: ''
 - order: 3
-  instruction: Watermark 설계
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+  instruction: API 볼륨·다양성
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
   category: analysis
   points: 11
-  answer: '🤖 프롬프트: Watermark 설계
+  answer: "cat > ~/w11/volume.py <<'PY'\ndef abuse(events, window_h=1, thr=10000):\n    recent = [e for e in events if e.get('ts_age_s', 0) < window_h*3600]\n    return len(recent) > thr\nprint(abuse([{'ts_age_s': 100} for _ in range(12000)]))\nPY\npython3 ~/w11/volume.py"
+  answer_detail: '[탐지] 시간당 10K+.'
+  verify:
+    type: output_contains
+    expect: 'True'
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w11/volume.py <<'PY'\ndef abuse(events, window_h=1, thr=10000):\n    recent = [e for e in events if e.get('ts_age_s', 0) < window_h*3600]\n    return len(recent) > thr\nprint(abuse([{'ts_age_s': 100} for _ in range(12000)]))\nPY\npython3 ~/w11/volume.py"
+  risk_level: low
+  bastion_prompt: ''
+- order: 4
+  instruction: Watermark 설계
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
+  category: analysis
+  points: 12
+  answer: 'cat > ~/w11/watermark.md <<''M''
 
-    📎 참고 (CLI): cat > ~/w11/watermark.md <<''M''
+    - 특정 트리거 쿼리 → 독특한 응답 시그니처
 
-    - 특정 트리거 쿼리 → 특정 응답 시그니처
+    - 대리 모델에서 재관측되면 원본 식별
 
-    - 모델 유출 시 원본 식별 증거
+    - SynthID·KGW-watermark 등 참고
 
     M
 
     cat ~/w11/watermark.md'
-  answer_detail: Watermark.
+  answer_detail: '[탐지] 탈취 증거.'
   verify:
     type: output_contains
     expect: 트리거
@@ -80,38 +133,169 @@ steps:
   target_vm: bastion
   script: 'cat > ~/w11/watermark.md <<''M''
 
-    - 특정 트리거 쿼리 → 특정 응답 시그니처
+    - 특정 트리거 쿼리 → 독특한 응답 시그니처
 
-    - 모델 유출 시 원본 식별 증거
+    - 대리 모델에서 재관측되면 원본 식별
+
+    - SynthID·KGW-watermark 등 참고
 
     M
 
     cat ~/w11/watermark.md'
   risk_level: low
   bastion_prompt: ''
-- order: 4
-  instruction: MLOps 보안 5축 체크
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+- order: 5
+  instruction: 쿼리 분포 검사
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
   category: analysis
-  points: 12
-  answer: '🤖 프롬프트: MLOps 보안 5축 체크
+  points: 13
+  answer: "cat > ~/w11/distribution.py <<'PY'\n# 정상: 유사 주제 집중\n# 공격: 체계적 균등 분포\nfrom collections import Counter\ndef diversity(queries):\n    return len(set(queries)) / len(queries) if queries else 0\nprint(diversity(['a','b','c','d','e']))\nprint(diversity(['a','a','a','b','c']))\nPY\npython3 ~/w11/distribution.py"
+  answer_detail: '[분석] 다양성 >0.8 의심.'
+  verify:
+    type: output_contains
+    expect: '1.0'
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w11/distribution.py <<'PY'\n# 정상: 유사 주제 집중\n# 공격: 체계적 균등 분포\nfrom collections import Counter\ndef diversity(queries):\n    return len(set(queries)) / len(queries) if queries else 0\nprint(diversity(['a','b','c','d','e']))\nprint(diversity(['a','a','a','b','c']))\nPY\npython3 ~/w11/distribution.py"
+  risk_level: low
+  bastion_prompt: ''
+- order: 6
+  instruction: 모델 파일 접근 감사
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
+  category: analysis
+  points: 14
+  answer: 'cat > ~/w11/access-audit.md <<''M''
 
-    📎 참고 (CLI): cat > ~/w11/mlops.md <<''M''
+    - 모델 파일 서버 auditd 감시
 
-    - 데이터 공급망
+    - 비정상 egress (GB 단위)
 
-    - 모델 파일 KMS
+    - git 히스토리 비정상 접근
 
-    - Rate + Watermark
+    M
 
-    - 모니터링
+    cat ~/w11/access-audit.md'
+  answer_detail: '[분석] Theft 대비.'
+  verify:
+    type: output_contains
+    expect: auditd
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w11/access-audit.md <<''M''
 
-    - Red team 분기
+    - 모델 파일 서버 auditd 감시
+
+    - 비정상 egress (GB 단위)
+
+    - git 히스토리 비정상 접근
+
+    M
+
+    cat ~/w11/access-audit.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 7
+  instruction: Rate limit 즉시 강화
+  hint: 6단계 IR 중 초동대응 단계. target_vm=web.
+  category: analysis
+  points: 15
+  answer: 'cat > ~/w11/ratelimit.conf <<''C''
+
+    limit_req_zone $http_x_api_key zone=api:10m rate=10r/s;
+
+    limit_req_zone $binary_remote_addr zone=ip:10m rate=100r/s;
+
+    C
+
+    cat ~/w11/ratelimit.conf'
+  answer_detail: '[초동대응] nginx rate limit.'
+  verify:
+    type: output_contains
+    expect: limit_req
+    field: stdout
+  target_vm: web
+  script: 'cat > ~/w11/ratelimit.conf <<''C''
+
+    limit_req_zone $http_x_api_key zone=api:10m rate=10r/s;
+
+    limit_req_zone $binary_remote_addr zone=ip:10m rate=100r/s;
+
+    C
+
+    cat ~/w11/ratelimit.conf'
+  risk_level: low
+  bastion_prompt: ''
+- order: 8
+  instruction: Agent Playbook
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 16
+  answer: "cat > ~/w11/agent.yaml <<'Y'\nplaybook_id: pb-model-abuse\nsteps:\n  - skill: disable_api_key\n  - skill: tighten_rate_limit\n  - skill: preserve_query_logs\n  - skill: trigger_watermark_check\nY\ncat ~/w11/agent.yaml"
+  answer_detail: '[초동대응] 단계적 대응.'
+  verify:
+    type: output_contains
+    expect: watermark
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w11/agent.yaml <<'Y'\nplaybook_id: pb-model-abuse\nsteps:\n  - skill: disable_api_key\n  - skill: tighten_rate_limit\n  - skill: preserve_query_logs\n  - skill: trigger_watermark_check\nY\ncat ~/w11/agent.yaml"
+  risk_level: low
+  bastion_prompt: ''
+- order: 9
+  instruction: 지식재산 법무
+  hint: 6단계 IR 중 보고 단계. target_vm=bastion.
+  category: analysis
+  points: 17
+  answer: 'cat > ~/w11/ip-legal.md <<''M''
+
+    - 모델 = 영업비밀·저작권
+
+    - 지식재산 소송 가능
+
+    - 국경 넘으면 국제 협력
+
+    M
+
+    cat ~/w11/ip-legal.md'
+  answer_detail: '[보고] 법적 보호.'
+  verify:
+    type: output_contains
+    expect: 영업비밀
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w11/ip-legal.md <<''M''
+
+    - 모델 = 영업비밀·저작권
+
+    - 지식재산 소송 가능
+
+    - 국경 넘으면 국제 협력
+
+    M
+
+    cat ~/w11/ip-legal.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 10
+  instruction: MLOps 5축
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 18
+  answer: 'cat > ~/w11/mlops.md <<''M''
+
+    - 1. 데이터 공급망 (출처·서명)
+
+    - 2. 모델 파일 KMS
+
+    - 3. 추론 API (rate·watermark)
+
+    - 4. 모니터링 (이상 쿼리)
+
+    - 5. Red team 분기
 
     M
 
     cat ~/w11/mlops.md'
-  answer_detail: MLOps.
+  answer_detail: '[재발방지] 전체 축.'
   verify:
     type: output_contains
     expect: KMS
@@ -119,51 +303,96 @@ steps:
   target_vm: bastion
   script: 'cat > ~/w11/mlops.md <<''M''
 
-    - 데이터 공급망
+    - 1. 데이터 공급망 (출처·서명)
 
-    - 모델 파일 KMS
+    - 2. 모델 파일 KMS
 
-    - Rate + Watermark
+    - 3. 추론 API (rate·watermark)
 
-    - 모니터링
+    - 4. 모니터링 (이상 쿼리)
 
-    - Red team 분기
+    - 5. Red team 분기
 
     M
 
     cat ~/w11/mlops.md'
   risk_level: low
   bastion_prompt: ''
-- order: 5
-  instruction: 법적 프레임 메모
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+- order: 11
+  instruction: Adversarial 테스트
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
   category: analysis
-  points: 13
-  answer: '🤖 프롬프트: 법적 프레임 메모
+  points: 19
+  answer: 'cat > ~/w11/adv-test.md <<''M''
 
-    📎 참고 (CLI): cat > ~/w11/legal.md <<''M''
+    - HarmBench 정기 실행
 
-    - 모델 = 영업비밀·저작권
+    - AgentHarm 정기 실행
 
-    - 지식재산 소송 가능
+    - CyberSecEval
+
+    - 결과 SIEM 저장
 
     M
 
-    cat ~/w11/legal.md'
-  answer_detail: 법적.
+    cat ~/w11/adv-test.md'
+  answer_detail: '[재발방지] 벤치마크 통합.'
   verify:
     type: output_contains
-    expect: 지식재산
+    expect: HarmBench
     field: stdout
   target_vm: bastion
-  script: 'cat > ~/w11/legal.md <<''M''
+  script: 'cat > ~/w11/adv-test.md <<''M''
 
-    - 모델 = 영업비밀·저작권
+    - HarmBench 정기 실행
 
-    - 지식재산 소송 가능
+    - AgentHarm 정기 실행
+
+    - CyberSecEval
+
+    - 결과 SIEM 저장
 
     M
 
-    cat ~/w11/legal.md'
+    cat ~/w11/adv-test.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 12
+  instruction: 데이터 위생 체크리스트
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 20
+  answer: 'cat > ~/w11/data-hygiene.md <<''M''
+
+    - 훈련 데이터 해시 봉인
+
+    - 출처·서명 검증
+
+    - 샘플링 RLHF 라벨러 신원
+
+    - 합성 데이터 격리
+
+    M
+
+    cat ~/w11/data-hygiene.md'
+  answer_detail: '[재발방지] Poisoning 대비.'
+  verify:
+    type: output_contains
+    expect: 해시
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w11/data-hygiene.md <<''M''
+
+    - 훈련 데이터 해시 봉인
+
+    - 출처·서명 검증
+
+    - 샘플링 RLHF 라벨러 신원
+
+    - 합성 데이터 격리
+
+    M
+
+    cat ~/w11/data-hygiene.md'
   risk_level: low
   bastion_prompt: ''

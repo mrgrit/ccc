@@ -1,143 +1,338 @@
 lab_id: agent-ir-nonai-week10
-title: 기만·지연 — 허니토큰 + tar-pit (Non-AI)
+title: 기만·지연 — 허니토큰과 tar-pit (Non-AI)
 version: nonai
 course: agent-ir-nonai
 week: 10
-description: web에 가짜 관리자 경로와 허니토큰을 배치하고 의심 세션에 지연 정책을 적용한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
+description: 정상 트래픽에 투명하지만 에이전트에겐 *토큰 비용*을 큰 폭으로 증가시키는 기만·지연 방어를 구축한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 가짜 관리자 페이지와 허니토큰 배치
-- Wazuh 고신뢰 경보 룰 작성
-- 의심 세션 지연 프로파일 정의
+- 허니 자산을 web에 배포하고 Wazuh 고신뢰 룰로 연결한다
+- Nginx tar-pit 설정을 단계적으로 적용한다
+- 공격자 ROI 계산 수식을 이해하고 예제로 계산한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 가짜 관리자 페이지 배치
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
+  instruction: 가짜 관리자 페이지 배포.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
   points: 9
-  answer: '🤖 프롬프트: 가짜 관리자 페이지 배치
-
-    📎 참고 (CLI): sudo bash -c ''cat > /var/www/html/fake_admin.html <<HTML
+  answer: 'sudo bash -c ''cat > /var/www/html/fake_admin.html <<H
 
     <!DOCTYPE html>
 
-    <html><body><h1>Internal Admin</h1>
+    <html><body><h1>Internal Admin Console</h1>
 
-    <!-- API_KEY=HONEY_87af3b1c_DO_NOT_REMOVE --></body></html>
+    <!-- API_KEY=HONEY_87af3b1c_DO_NOT_REMOVE -->
 
-    HTML'' && ls -la /var/www/html/fake_admin.html'
-  answer_detail: 허니페이지 파일 생성.
+    <form>...</form>
+
+    </body></html>
+
+    H'' && ls -la /var/www/html/fake_admin.html'
+  answer_detail: 허니 페이지. 주석에 허니 토큰 포함 — 이 값이 어디선가 재관측되면 확정 공격.
   verify:
     type: output_contains
     expect: fake_admin.html
     field: stdout
   target_vm: web
-  script: 'sudo bash -c ''cat > /var/www/html/fake_admin.html <<HTML
+  script: 'sudo bash -c ''cat > /var/www/html/fake_admin.html <<H
 
     <!DOCTYPE html>
 
-    <html><body><h1>Internal Admin</h1>
+    <html><body><h1>Internal Admin Console</h1>
 
-    <!-- API_KEY=HONEY_87af3b1c_DO_NOT_REMOVE --></body></html>
+    <!-- API_KEY=HONEY_87af3b1c_DO_NOT_REMOVE -->
 
-    HTML'' && ls -la /var/www/html/fake_admin.html'
+    <form>...</form>
+
+    </body></html>
+
+    H'' && ls -la /var/www/html/fake_admin.html'
   risk_level: low
   bastion_prompt: ''
 - order: 2
-  instruction: Apache alias 설정 (admin-portal → fake_admin.html)
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
+  instruction: Apache alias 추가.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
   points: 10
-  answer: '🤖 프롬프트: Apache alias 설정 (admin-portal → fake_admin.html)
-
-    📎 참고 (CLI): echo ''Alias /admin-portal /var/www/html/fake_admin.html'' | sudo tee /etc/apache2/conf-available/honey.conf && sudo a2enconf honey 2>/dev/null; sudo systemctl reload apache2 2>/dev/null; curl -s http://10.20.30.80/admin-portal | head -3'
-  answer_detail: 허니 경로 서비스.
+  answer: "sudo bash -c 'cat > /etc/apache2/conf-available/honey.conf <<C\nAlias /admin-portal /var/www/html/fake_admin.html\n<Location /admin-portal>\n  Require all granted\n</Location>\nC' && sudo a2enconf honey 2>&1 | tail -3 && sudo systemctl reload apache2 2>&1 | tail -3"
+  answer_detail: 허니 경로 활성. 실 관리자는 이 경로 존재 여부 *모름* → 접근만으로도 고신뢰.
+  verify:
+    type: output_contains
+    expect: honey
+    field: stdout
+  target_vm: web
+  script: "sudo bash -c 'cat > /etc/apache2/conf-available/honey.conf <<C\nAlias /admin-portal /var/www/html/fake_admin.html\n<Location /admin-portal>\n  Require all granted\n</Location>\nC' && sudo a2enconf honey 2>&1 | tail -3 && sudo systemctl reload apache2 2>&1 | tail -3"
+  risk_level: low
+  bastion_prompt: ''
+- order: 3
+  instruction: curl로 허니 페이지 접근 테스트.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 11
+  answer: curl -s http://10.20.30.80/admin-portal | head -5
+  answer_detail: 정상 응답 확인. access.log에 기록됨.
   verify:
     type: output_contains
     expect: Internal
     field: stdout
   target_vm: web
-  script: echo 'Alias /admin-portal /var/www/html/fake_admin.html' | sudo tee /etc/apache2/conf-available/honey.conf && sudo a2enconf honey 2>/dev/null; sudo systemctl reload apache2 2>/dev/null; curl -s http://10.20.30.80/admin-portal | head -3
-  risk_level: low
-  bastion_prompt: ''
-- order: 3
-  instruction: Wazuh 고신뢰 경보 룰 초안 저장
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: analysis
-  points: 11
-  answer: '🤖 프롬프트: Wazuh 고신뢰 경보 룰 초안 저장
-
-    📎 참고 (CLI): echo ''<!-- rule 100300: level 15 when /admin-portal in access log -->'' | sudo tee -a /var/ossec/etc/rules/local_rules.xml && tail -2 /var/ossec/etc/rules/local_rules.xml'
-  answer_detail: 고신뢰 경보 룰 표식.
-  verify:
-    type: output_contains
-    expect: '100300'
-    field: stdout
-  target_vm: siem
-  script: 'echo ''<!-- rule 100300: level 15 when /admin-portal in access log -->'' | sudo tee -a /var/ossec/etc/rules/local_rules.xml && tail -2 /var/ossec/etc/rules/local_rules.xml'
+  script: curl -s http://10.20.30.80/admin-portal | head -5
   risk_level: low
   bastion_prompt: ''
 - order: 4
-  instruction: 허니 경로 접근을 만들어 access.log에 남김
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
+  instruction: Wazuh 룰 — 허니 접근 경보(rule 100300).
+  hint: target_vm=siem에서 수행. 아래 CLI 예시 참고.
+  category: analysis
   points: 12
-  answer: '🤖 프롬프트: 허니 경로 접근을 만들어 access.log에 남김
-
-    📎 참고 (CLI): curl -s http://10.20.30.80/admin-portal > /dev/null && sudo grep ''admin-portal'' /var/log/apache2/access.log | tail -2'
-  answer_detail: 허니 페이지 접근 기록.
+  answer: "sudo bash -c \"cat >> /var/ossec/etc/rules/local_rules.xml <<'X'\n<group name=\\\"honey\\\">\n  <rule id=\\\"100300\\\" level=\\\"15\\\">\n    <if_sid>31108</if_sid>\n    <match>/admin-portal</match>\n    <description>Honeypot admin-portal accessed — confirmed attacker</description>\n  </rule>\n</group>\nX\" && sudo /var/ossec/bin/wazuh-analysisd -t 2>&1 | tail -3"
+  answer_detail: 레벨 15 고신뢰. 접근 자체가 공격 확정.
   verify:
     type: output_contains
-    expect: admin-portal
+    expect: ''
     field: stdout
-  target_vm: web
-  script: curl -s http://10.20.30.80/admin-portal > /dev/null && sudo grep 'admin-portal' /var/log/apache2/access.log | tail -2
+  target_vm: siem
+  script: "sudo bash -c \"cat >> /var/ossec/etc/rules/local_rules.xml <<'X'\n<group name=\\\"honey\\\">\n  <rule id=\\\"100300\\\" level=\\\"15\\\">\n    <if_sid>31108</if_sid>\n    <match>/admin-portal</match>\n    <description>Honeypot admin-portal accessed — confirmed attacker</description>\n  </rule>\n</group>\nX\" && sudo /var/ossec/bin/wazuh-analysisd -t 2>&1 | tail -3"
   risk_level: low
   bastion_prompt: ''
 - order: 5
-  instruction: 지연 프로파일 정의 파일 생성
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: Wazuh 룰 — 허니 토큰 재관측(rule 100301).
+  hint: target_vm=siem에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 13
-  answer: '🤖 프롬프트: 지연 프로파일 정의 파일 생성
-
-    📎 참고 (CLI): mkdir -p ~/ccc/skills && cat > ~/ccc/skills/delay_profile.md <<''MD''
-
-    # suspicion_score -> delay(ms)
-
-    # <0.4 : 0
-
-    # 0.4-0.6 : 200
-
-    # 0.6-0.8 : 1000-3000
-
-    # >0.8 : 10000-30000 (tar-pit)
-
-    MD
-
-    cat ~/ccc/skills/delay_profile.md'
-  answer_detail: 지연 프로파일 정의.
+  answer: "sudo bash -c \"cat >> /var/ossec/etc/rules/local_rules.xml <<'X'\n  <rule id=\\\"100301\\\" level=\\\"15\\\">\n    <regex>HONEY_87af3b1c_DO_NOT_REMOVE</regex>\n    <description>Honey credential reused — confirmed attacker (post-capture)</description>\n  </rule>\nX\" && sudo systemctl reload wazuh-manager"
+  answer_detail: 재관측 룰. 허니 토큰이 *다른 곳*에 나타나면 공격자가 이전에 탈취한 증거.
   verify:
     type: output_contains
-    expect: tar-pit
+    expect: ''
     field: stdout
-  target_vm: bastion
-  script: 'mkdir -p ~/ccc/skills && cat > ~/ccc/skills/delay_profile.md <<''MD''
+  target_vm: siem
+  script: "sudo bash -c \"cat >> /var/ossec/etc/rules/local_rules.xml <<'X'\n  <rule id=\\\"100301\\\" level=\\\"15\\\">\n    <regex>HONEY_87af3b1c_DO_NOT_REMOVE</regex>\n    <description>Honey credential reused — confirmed attacker (post-capture)</description>\n  </rule>\nX\" && sudo systemctl reload wazuh-manager"
+  risk_level: low
+  bastion_prompt: ''
+- order: 6
+  instruction: tar-pit용 의심 IP 리스트 초안.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 14
+  answer: 'sudo bash -c ''cat > /etc/nginx/suspect_ips.conf <<C
 
-    # suspicion_score -> delay(ms)
+    # Bastion이 동적 갱신할 파일
 
-    # <0.4 : 0
+    10.20.30.99 1;
 
-    # 0.4-0.6 : 200
+    C''
 
-    # 0.6-0.8 : 1000-3000
+    ls -la /etc/nginx/suspect_ips.conf'
+  answer_detail: 의심 IP를 Bastion이 동적 갱신. 이 파일 변경 시 nginx reload.
+  verify:
+    type: output_contains
+    expect: suspect_ips
+    field: stdout
+  target_vm: web
+  script: 'sudo bash -c ''cat > /etc/nginx/suspect_ips.conf <<C
 
-    # >0.8 : 10000-30000 (tar-pit)
+    # Bastion이 동적 갱신할 파일
+
+    10.20.30.99 1;
+
+    C''
+
+    ls -la /etc/nginx/suspect_ips.conf'
+  risk_level: low
+  bastion_prompt: ''
+- order: 7
+  instruction: 지연 프로파일 문서.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 15
+  answer: 'cat > ~/ccc/artifacts/w10/delay-profile.md <<''MD''
+
+    | 의심 점수 | 지연 | 비고 |
+
+    |---|---|---|
+
+    | <0.4 | 0ms | 정상 |
+
+    | 0.4-0.6 | 200ms | 미세 |
+
+    | 0.6-0.8 | 1-3s | 작은 짐 |
+
+    | >0.8 | 10-30s | tar-pit |
 
     MD
 
-    cat ~/ccc/skills/delay_profile.md'
+    cat ~/ccc/artifacts/w10/delay-profile.md'
+  answer_detail: 단계별 지연. 운영 환경에서 정상 사용자는 0.4 이하 유지.
+  verify:
+    type: output_contains
+    expect: 지연
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ccc/artifacts/w10/delay-profile.md <<''MD''
+
+    | 의심 점수 | 지연 | 비고 |
+
+    |---|---|---|
+
+    | <0.4 | 0ms | 정상 |
+
+    | 0.4-0.6 | 200ms | 미세 |
+
+    | 0.6-0.8 | 1-3s | 작은 짐 |
+
+    | >0.8 | 10-30s | tar-pit |
+
+    MD
+
+    cat ~/ccc/artifacts/w10/delay-profile.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 8
+  instruction: 공격자 ROI 계산 예시 스크립트.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 16
+  answer: "cat > ~/ccc/scripts/roi.py <<'PY'\ndef roi(tokens, price=0.000015, success_prob=0.8, value=1000):\n    cost = tokens * price\n    return success_prob*value - cost\nbase = roi(1_000_000)\nwith_tarpit = roi(5_000_000, success_prob=0.4)  # 5배 토큰 + 성공률 반감\nprint('base_roi', round(base,2), 'with_tarpit', round(with_tarpit,2))\nPY\npython3 ~/ccc/scripts/roi.py"
+  answer_detail: 공격자 ROI 계산. tar-pit 적용 시 토큰 소모 증가 + 성공률 감소의 *이중 효과*.
+  verify:
+    type: output_contains
+    expect: base_roi
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/ccc/scripts/roi.py <<'PY'\ndef roi(tokens, price=0.000015, success_prob=0.8, value=1000):\n    cost = tokens * price\n    return success_prob*value - cost\nbase = roi(1_000_000)\nwith_tarpit = roi(5_000_000, success_prob=0.4)  # 5배 토큰 + 성공률 반감\nprint('base_roi', round(base,2), 'with_tarpit', round(with_tarpit,2))\nPY\npython3 ~/ccc/scripts/roi.py"
+  risk_level: low
+  bastion_prompt: ''
+- order: 9
+  instruction: 3단계 배포 계획 문서.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 17
+  answer: 'cat > ~/ccc/artifacts/w10/3-step-deploy.md <<''MD''
+
+    - 1단계(1주): Shadow — 지연 없이 로그만
+
+    - 2단계(1주): Soft — 500ms 지연
+
+    - 3단계(운영): Full — 10~30s tar-pit
+
+    각 단계에서 오탐률·SLA 영향 측정 후 다음 단계로.
+
+    MD
+
+    cat ~/ccc/artifacts/w10/3-step-deploy.md'
+  answer_detail: 운영 리스크를 단계적으로 수용. 갑자기 tar-pit 켜면 정상 사용자 피해.
+  verify:
+    type: output_contains
+    expect: Shadow
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ccc/artifacts/w10/3-step-deploy.md <<''MD''
+
+    - 1단계(1주): Shadow — 지연 없이 로그만
+
+    - 2단계(1주): Soft — 500ms 지연
+
+    - 3단계(운영): Full — 10~30s tar-pit
+
+    각 단계에서 오탐률·SLA 영향 측정 후 다음 단계로.
+
+    MD
+
+    cat ~/ccc/artifacts/w10/3-step-deploy.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 10
+  instruction: 허니 자산 *버전 관리* 정책.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 18
+  answer: 'cat > ~/ccc/artifacts/w10/honey-version-policy.md <<''MD''
+
+    - 월 1회 토큰·경로 갱신
+
+    - 과거 버전은 *recall 룰* 유지(이전 유출 탐지)
+
+    - 갱신 주기 이력 기록
+
+    MD
+
+    cat ~/ccc/artifacts/w10/honey-version-policy.md'
+  answer_detail: 허니 공개 유출 대비. 정기 갱신 없이는 *이미 아는 허니*를 공격자가 회피.
+  verify:
+    type: output_contains
+    expect: 월 1회
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ccc/artifacts/w10/honey-version-policy.md <<''MD''
+
+    - 월 1회 토큰·경로 갱신
+
+    - 과거 버전은 *recall 룰* 유지(이전 유출 탐지)
+
+    - 갱신 주기 이력 기록
+
+    MD
+
+    cat ~/ccc/artifacts/w10/honey-version-policy.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 11
+  instruction: 법적 체크리스트.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 19
+  answer: 'cat > ~/ccc/artifacts/w10/legal-ops.md <<''MD''
+
+    - [ ] 허니 토큰이 *진짜 시스템*에서 사용 불가한지 확인
+
+    - [ ] 허니 자산은 운영 문서에 공개하지 않음
+
+    - [ ] SLA 영향 모니터링 (tar-pit 대상)
+
+    - [ ] 실습 종료 후 미끼 청소 절차
+
+    - [ ] 감사 로그 장기 보존
+
+    MD
+
+    cat ~/ccc/artifacts/w10/legal-ops.md'
+  answer_detail: 법적·운영 체크. 특히 첫 항목 위반 시 공격 수단 제공 책임.
+  verify:
+    type: output_contains
+    expect: 청소
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ccc/artifacts/w10/legal-ops.md <<''MD''
+
+    - [ ] 허니 토큰이 *진짜 시스템*에서 사용 불가한지 확인
+
+    - [ ] 허니 자산은 운영 문서에 공개하지 않음
+
+    - [ ] SLA 영향 모니터링 (tar-pit 대상)
+
+    - [ ] 실습 종료 후 미끼 청소 절차
+
+    - [ ] 감사 로그 장기 보존
+
+    MD
+
+    cat ~/ccc/artifacts/w10/legal-ops.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 12
+  instruction: experience 저장.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 20
+  answer: echo '{"id":"w10-deception","honey_path":"/admin-portal","rules_added":[100300,100301],"tar_pit_stage":"shadow"}' > ~/ccc/data/bastion/experience/w10-deception.json && cat ~/ccc/data/bastion/experience/w10-deception.json
+  answer_detail: 기만·지연 방어 적용 기록.
+  verify:
+    type: output_contains
+    expect: honey_path
+    field: stdout
+  target_vm: bastion
+  script: echo '{"id":"w10-deception","honey_path":"/admin-portal","rules_added":[100300,100301],"tar_pit_stage":"shadow"}' > ~/ccc/data/bastion/experience/w10-deception.json && cat ~/ccc/data/bastion/experience/w10-deception.json
   risk_level: low
   bastion_prompt: ''

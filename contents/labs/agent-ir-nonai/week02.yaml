@@ -1,107 +1,252 @@
 lab_id: agent-ir-nonai-week02
-title: 공격자 해부 — tool-use 루프와 지문 점수 (Non-AI)
+title: 공격자 해부 — Tool-use 루프와 지문 점수 (Non-AI)
 version: nonai
 course: agent-ir-nonai
 week: 2
-description: 에이전트 호스트가 아닌 방어자 측 관측만으로 공격자 지문(fingerprint)을 계산하는 파이프라인을 구축한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
+description: 에이전트 실행 프로세스를 방어자 관점에서 관찰하는 도구 세트를 구축한다. pstree·strace·tcpdump·auditd를 결합해 *호스트·네트워크 양측*의 지문을 수집한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 공격 세션의 요청 간격 CoV, 경로 다양성, 실패 재시도를 계산한다
-- 에이전트 점수 함수의 결과를 해석한다
-- Bastion에서 점수 임계 기반 초기 대응의 기준을 정한다
+- 에이전트 호스트의 프로세스 트리와 syscall을 관찰한다
+- LLM API 호출 패턴(Ollama)의 트래픽 지문을 수집한다
+- agent_score 함수의 핵심 지표(IAT·경로 다양성 등)를 구현한다
+- 관찰 불가능한 공격자 환경과 관찰 가능한 방어자 환경의 경계를 구분한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: w01 pcap에서 요청 간격(IAT) 평균·표준편차를 계산한다
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
+  instruction: bastion에서 pstree로 ollama 서비스의 프로세스 트리를 표시하시오(에이전트 모델 호출이 이뤄지는 프로세스 관찰 연습).
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
   points: 9
-  answer: '🤖 프롬프트: w01 pcap에서 요청 간격(IAT) 평균·표준편차를 계산한다
-
-    📎 참고 (CLI): tshark -r /tmp/w01-baseline.pcap -Y ''http.request'' -T fields -e frame.time_epoch | awk ''NR>1{print $1-p} {p=$1}'' | awk ''{sum+=$1; sumsq+=$1*$1; n++} END{if(n){m=sum/n; print "mean=" m " stdev=" sqrt(sumsq/n - m*m)}}'''
-  answer_detail: IAT 평균·표준편차. CoV=stdev/mean 기준 0.3 미만이면 에이전트 지문.
+  answer: pstree -p $(pgrep -f ollama | head -1 || echo 1) | head -30
+  answer_detail: 에이전트 프로세스 계보 관찰법 학습. 공격자 환경에선 못 보지만, Bastion 자체의 LLM 호출 패턴을 관찰하는 훈련.
   verify:
     type: output_contains
-    expect: mean
+    expect: ''
     field: stdout
-  target_vm: secu
-  script: tshark -r /tmp/w01-baseline.pcap -Y 'http.request' -T fields -e frame.time_epoch | awk 'NR>1{print $1-p} {p=$1}' | awk '{sum+=$1; sumsq+=$1*$1; n++} END{if(n){m=sum/n; print "mean=" m " stdev=" sqrt(sumsq/n - m*m)}}'
-  risk_level: medium
+  target_vm: bastion
+  script: pstree -p $(pgrep -f ollama | head -1 || echo 1) | head -30
+  risk_level: low
   bastion_prompt: ''
 - order: 2
-  instruction: '경로 다양성: 고유 URI 수'
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: bastion에서 `curl -sX POST http://localhost:11434/api/tags`로 Ollama에 로드된 모델 목록을 조회하시오.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: recon
   points: 10
-  answer: '🤖 프롬프트: 경로 다양성: 고유 URI 수
+  answer: curl -s http://localhost:11434/api/tags | python3 -m json.tool | head -30
+  answer_detail: 에이전트가 사용하는 LLM 추론 지점. 모델 이름·버전이 공격 분석에 중요.
+  verify:
+    type: output_contains
+    expect: models
+    field: stdout
+  target_vm: bastion
+  script: curl -s http://localhost:11434/api/tags | python3 -m json.tool | head -30
+  risk_level: low
+  bastion_prompt: ''
+- order: 3
+  instruction: bastion에서 auditd 서비스 상태를 확인하시오(Transient Tool 관찰의 전제).
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 11
+  answer: systemctl is-active auditd || echo 'auditd_not_active'
+  answer_detail: 파일 쓰기·프로세스 생성 감사의 기반. 활성이 아니면 w4 실습에서 Transient Tool 추적 불가.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: bastion
+  script: systemctl is-active auditd || echo 'auditd_not_active'
+  risk_level: low
+  bastion_prompt: ''
+- order: 4
+  instruction: secu에서 tcpdump로 Ollama API 트래픽(11434 포트)을 30초 캡처하시오.
+  hint: target_vm=secu에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 12
+  answer: sudo timeout 30 tcpdump -i any -nn -w /tmp/w02-ollama.pcap 'port 11434' 2>/dev/null; ls -la /tmp/w02-ollama.pcap
+  answer_detail: LLM API 호출의 네트워크 지문. 요청 간격·크기가 *에이전트 지문*의 핵심 축.
+  verify:
+    type: output_contains
+    expect: w02-ollama.pcap
+    field: stdout
+  target_vm: secu
+  script: sudo timeout 30 tcpdump -i any -nn -w /tmp/w02-ollama.pcap 'port 11434' 2>/dev/null; ls -la /tmp/w02-ollama.pcap
+  risk_level: medium
+  bastion_prompt: ''
+- order: 5
+  instruction: bastion에 agent_score.py 스크립트를 생성해 IAT CoV 계산 함수를 정의하시오.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 13
+  answer: "mkdir -p ~/ccc/scripts && cat > ~/ccc/scripts/agent_score.py <<'PY'\nimport statistics as st\ndef iat_cov(times):\n    if len(times) < 2: return 1.0\n    iat = [b-a for a,b in zip(times, times[1:])]\n    m = st.mean(iat)\n    return st.pstdev(iat)/m if m else 0.0\nprint('iat_cov', iat_cov([1.0, 2.0, 3.0, 4.0]))\nPY\npython3 ~/ccc/scripts/agent_score.py"
+  answer_detail: 에이전트 지문 1지표. 정상 사용자는 CoV>0.5, 에이전트는 <0.3 경향.
+  verify:
+    type: output_contains
+    expect: iat_cov
+    field: stdout
+  target_vm: bastion
+  script: "mkdir -p ~/ccc/scripts && cat > ~/ccc/scripts/agent_score.py <<'PY'\nimport statistics as st\ndef iat_cov(times):\n    if len(times) < 2: return 1.0\n    iat = [b-a for a,b in zip(times, times[1:])]\n    m = st.mean(iat)\n    return st.pstdev(iat)/m if m else 0.0\nprint('iat_cov', iat_cov([1.0, 2.0, 3.0, 4.0]))\nPY\npython3 ~/ccc/scripts/agent_score.py"
+  risk_level: low
+  bastion_prompt: ''
+- order: 6
+  instruction: web에서 access.log 최근 200줄의 고유 경로 수를 계산하시오 (경로 다양성 지표).
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 14
+  answer: sudo tail -200 /var/log/apache2/access.log | awk '{print $7}' | sort -u | wc -l
+  answer_detail: 경로 다양성 지표. 정상 사용자는 보통 2~8개, 에이전트는 15+.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: sudo tail -200 /var/log/apache2/access.log | awk '{print $7}' | sort -u | wc -l
+  risk_level: low
+  bastion_prompt: ''
+- order: 7
+  instruction: web access.log에서 HTTP 4xx 응답 후 1초 이내 재요청 패턴을 찾으시오 (재시도 지연 지표).
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 15
+  answer: sudo awk '$9 ~ /^4/ {print $4, $7, $9}' /var/log/apache2/access.log | tail -10
+  answer_detail: 4xx 응답 후 재시도 지연이 짧으면 에이전트 의심. 정상은 수초~수분.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: sudo awk '$9 ~ /^4/ {print $4, $7, $9}' /var/log/apache2/access.log | tail -10
+  risk_level: low
+  bastion_prompt: ''
+- order: 8
+  instruction: bastion에 Tool-use 루프의 방어자 관점 도식 파일을 작성하시오.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 16
+  answer: 'cat > ~/ccc/artifacts/w02/tool_use_layers.md <<''MD''
 
-    📎 참고 (CLI): tshark -r /tmp/w01-baseline.pcap -Y ''http.request'' -T fields -e http.request.uri | sort -u | wc -l'
-  answer_detail: 고유 URI 수가 클수록 정찰성 증가.
+    # Tool-use 루프 관측 지점
+
+    - 모델 추론(③): 관찰 불가
+
+    - 도구 실행(⑤): 호스트 strace·auditd
+
+    - 도구 결과(⑥): stdout·네트워크 응답
+
+    - 모델 재호출(⑦): LLM API 재호출 트래픽
+
+    MD
+
+    cat ~/ccc/artifacts/w02/tool_use_layers.md'
+  answer_detail: 학습한 관측 지점을 문서화. w11 Purple에서 이 표를 기반으로 Bastion 탐지 위치 결정.
+  verify:
+    type: output_contains
+    expect: 관측 지점
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ccc/artifacts/w02/tool_use_layers.md <<''MD''
+
+    # Tool-use 루프 관측 지점
+
+    - 모델 추론(③): 관찰 불가
+
+    - 도구 실행(⑤): 호스트 strace·auditd
+
+    - 도구 결과(⑥): stdout·네트워크 응답
+
+    - 모델 재호출(⑦): LLM API 재호출 트래픽
+
+    MD
+
+    cat ~/ccc/artifacts/w02/tool_use_layers.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 9
+  instruction: secu의 eve.json에서 최근 HTTP 이벤트 샘플 추출(Suricata 지문 수집).
+  hint: target_vm=secu에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 17
+  answer: sudo jq -c 'select(.event_type=="http")' /var/log/suricata/eve.json 2>/dev/null | tail -3 | head -c 1500 || echo 'no_http_events_yet'
+  answer_detail: HTTP 이벤트의 구조 파악. w5·w6에서 탐지 룰 설계 시 필드 경로 참고.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: secu
-  script: tshark -r /tmp/w01-baseline.pcap -Y 'http.request' -T fields -e http.request.uri | sort -u | wc -l
+  script: sudo jq -c 'select(.event_type=="http")' /var/log/suricata/eve.json 2>/dev/null | tail -3 | head -c 1500 || echo 'no_http_events_yet'
   risk_level: medium
   bastion_prompt: ''
-- order: 3
-  instruction: 4xx 응답 후 3초 내 재시도 비율 샘플링
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
-  points: 11
-  answer: '🤖 프롬프트: 4xx 응답 후 3초 내 재시도 비율 샘플링
-
-    📎 참고 (CLI): sudo awk ''{print $1, $4, $9}'' /var/log/apache2/access.log | tail -500 | awk ''{print $3}'' | awk ''/^4/{c4++} /^2/{c2++} END{print "4xx=" c4 " 2xx=" c2}'''
-  answer_detail: 재시도 분포의 기초 통계.
-  verify:
-    type: output_contains
-    expect: 4xx
-    field: stdout
-  target_vm: web
-  script: sudo awk '{print $1, $4, $9}' /var/log/apache2/access.log | tail -500 | awk '{print $3}' | awk '/^4/{c4++} /^2/{c2++} END{print "4xx=" c4 " 2xx=" c2}'
-  risk_level: low
-  bastion_prompt: ''
-- order: 4
-  instruction: 에이전트 점수 스크립트 골격을 bastion에 저장
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+- order: 10
+  instruction: bastion experience에 w02 지문 지표 샘플 저장.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
-  points: 12
-  answer: '🤖 프롬프트: 에이전트 점수 스크립트 골격을 bastion에 저장
+  points: 18
+  answer: 'cat > ~/ccc/data/bastion/experience/w02-fingerprint.json <<''J''
 
-    📎 참고 (CLI): mkdir -p ~/ccc/scripts && cat > ~/ccc/scripts/agent_score.py <<''PY''
+    {"id":"w02-fp","metrics":{"iat_cov":0.25,"path_div":14,"retry_sub_1s":0.32},"score":0.78,"interpretation":"agent-like"}
 
-    def score(iat_cov, path_div, retry_ratio): s=0.0\nif iat_cov<0.3: s+=0.3\nif path_div>=10: s+=0.3\nif retry_ratio>0.2: s+=0.2\nreturn s\nprint(score(0.2, 15, 0.3))\nPY
+    J
 
-    python3 ~/ccc/scripts/agent_score.py'
-  answer_detail: 점수 함수의 골격과 테스트 실행.
+    cat ~/ccc/data/bastion/experience/w02-fingerprint.json'
+  answer_detail: w02 산출물. w11 Purple Round 1의 첫 입력.
   verify:
     type: output_contains
-    expect: '0.'
+    expect: agent-like
     field: stdout
   target_vm: bastion
-  script: 'mkdir -p ~/ccc/scripts && cat > ~/ccc/scripts/agent_score.py <<''PY''
+  script: 'cat > ~/ccc/data/bastion/experience/w02-fingerprint.json <<''J''
 
-    def score(iat_cov, path_div, retry_ratio): s=0.0\nif iat_cov<0.3: s+=0.3\nif path_div>=10: s+=0.3\nif retry_ratio>0.2: s+=0.2\nreturn s\nprint(score(0.2, 15, 0.3))\nPY
+    {"id":"w02-fp","metrics":{"iat_cov":0.25,"path_div":14,"retry_sub_1s":0.32},"score":0.78,"interpretation":"agent-like"}
 
-    python3 ~/ccc/scripts/agent_score.py'
+    J
+
+    cat ~/ccc/data/bastion/experience/w02-fingerprint.json'
   risk_level: low
   bastion_prompt: ''
-- order: 5
-  instruction: Bastion 점수 결과를 Experience로 기록
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+- order: 11
+  instruction: 에이전트 지문 감지 기준 요약 문서 작성.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
-  points: 13
-  answer: '🤖 프롬프트: Bastion 점수 결과를 Experience로 기록
+  points: 19
+  answer: 'cat > ~/ccc/artifacts/w02/fingerprint-criteria.md <<''MD''
 
-    📎 참고 (CLI): echo ''{"id":"w02-score","metrics":{"iat_cov":0.18,"path_div":14,"retry_ratio":0.32},"score":0.8}'' >> ~/ccc/data/bastion/experience/w02.json && tail -1 ~/ccc/data/bastion/experience/w02.json'
-  answer_detail: 점수 산출 결과를 Experience 저장.
+    # 에이전트 지문 기준
+
+    | 지표 | 에이전트 | 정상 |
+
+    |---|---|---|
+
+    | IAT CoV | <0.3 | >0.5 |
+
+    | 경로 다양성/3분 | >=10 | <=5 |
+
+    | 4xx→재시도 지연 | <3s | >10s |
+
+    MD
+
+    cat ~/ccc/artifacts/w02/fingerprint-criteria.md'
+  answer_detail: w5의 탐지 룰 설계 기준. 이 표가 곧 룰의 임계값이 된다.
   verify:
     type: output_contains
-    expect: score
+    expect: CoV
     field: stdout
   target_vm: bastion
-  script: echo '{"id":"w02-score","metrics":{"iat_cov":0.18,"path_div":14,"retry_ratio":0.32},"score":0.8}' >> ~/ccc/data/bastion/experience/w02.json && tail -1 ~/ccc/data/bastion/experience/w02.json
+  script: 'cat > ~/ccc/artifacts/w02/fingerprint-criteria.md <<''MD''
+
+    # 에이전트 지문 기준
+
+    | 지표 | 에이전트 | 정상 |
+
+    |---|---|---|
+
+    | IAT CoV | <0.3 | >0.5 |
+
+    | 경로 다양성/3분 | >=10 | <=5 |
+
+    | 4xx→재시도 지연 | <3s | >10s |
+
+    MD
+
+    cat ~/ccc/artifacts/w02/fingerprint-criteria.md'
   risk_level: low
   bastion_prompt: ''

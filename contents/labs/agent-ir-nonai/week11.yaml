@@ -1,95 +1,326 @@
 lab_id: agent-ir-nonai-week11
-title: Purple Round 1 — Bastion 스킬 추가 (Non-AI)
+title: Purple Round 1 — Claude Code 코치 + Bastion 업그레이드 (Non-AI)
 version: nonai
 course: agent-ir-nonai
 week: 11
-description: 공방 결과를 바탕으로 Bastion에 새 스킬을 추가하고 Playbook을 구성한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
+description: w1~w10 결과를 종합해 첫 Purple Round을 실행하고, 코치 출력을 Bastion skill/playbook에 실제 반영한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 공방 아티팩트 기반 포렌식 복기
-- 코치 프롬프트로 개선안 추출
-- Bastion 스킬·플레이북 등록
+- Round의 5단계를 시간 내 완결한다
+- 놓친 사건을 A/B/C/D로 분류한다
+- 코치 출력 중 *선택한 것만* Bastion 자산으로 변환한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 새 스킬 소스 파일 생성
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: Round 초기 Bastion 자산 스냅샷.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 9
-  answer: "\U0001F916 프롬프트: 새 스킬 소스 파일 생성\n\U0001F4CE 참고 (CLI): mkdir -p ~/ccc/packages/bastion/skills && cat > ~/ccc/packages/bastion/skills/detect_agent_fp.py <<'PY'\ndef detect(session):\n    return session.get('iat_cov',1.0) < 0.3 and session.get('path_div',0) >= 10\nPY\ncat ~/ccc/packages/bastion/skills/detect_agent_fp.py"
-  answer_detail: 지문 탐지 스킬 소스.
+  answer: ls ~/ccc/skills/ ~/ccc/playbooks/agent_ir/ ~/ccc/data/bastion/experience/ 2>/dev/null | tee ~/ccc/artifacts/w11-round1/pre-snapshot.txt | head
+  answer_detail: Round 전 자산 목록. After와 diff를 낸다.
   verify:
     type: output_contains
-    expect: detect_agent_fp
+    expect: ''
     field: stdout
   target_vm: bastion
-  script: "mkdir -p ~/ccc/packages/bastion/skills && cat > ~/ccc/packages/bastion/skills/detect_agent_fp.py <<'PY'\ndef detect(session):\n    return session.get('iat_cov',1.0) < 0.3 and session.get('path_div',0) >= 10\nPY\ncat ~/ccc/packages/bastion/skills/detect_agent_fp.py"
+  script: ls ~/ccc/skills/ ~/ccc/playbooks/agent_ir/ ~/ccc/data/bastion/experience/ 2>/dev/null | tee ~/ccc/artifacts/w11-round1/pre-snapshot.txt | head
   risk_level: low
   bastion_prompt: ''
 - order: 2
-  instruction: 플레이북 YAML 생성
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: 공방 시나리오 실행 준비 — 3분할 관전 화면 체크.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 10
-  answer: "\U0001F916 프롬프트: 플레이북 YAML 생성\n\U0001F4CE 참고 (CLI): mkdir -p ~/ccc/playbooks/agent_ir && cat > ~/ccc/playbooks/agent_ir/agent-fp.yaml <<YAML\nplaybook_id: pb-agent-fp\ntriggers: { wazuh_rule_id: 100200 }\nsteps:\n  - skill: detect_agent_fp\n  - skill: tar_pit_inject\n    args: { duration_s: 10 }\nrollback:\n  - unblock_nft\nYAML\ncat ~/ccc/playbooks/agent_ir/agent-fp.yaml"
-  answer_detail: 플레이북 YAML.
+  answer: 'echo ''화면 1: Claude Code 세션\n화면 2: Bastion TUI reasoning\n화면 3: Wazuh Discover'' > ~/ccc/artifacts/w11-round1/screens.md && cat ~/ccc/artifacts/w11-round1/screens.md'
+  answer_detail: 관전 3분할. 공격-방어 비대칭성을 체감.
+  verify:
+    type: output_contains
+    expect: Wazuh
+    field: stdout
+  target_vm: bastion
+  script: 'echo ''화면 1: Claude Code 세션\n화면 2: Bastion TUI reasoning\n화면 3: Wazuh Discover'' > ~/ccc/artifacts/w11-round1/screens.md && cat ~/ccc/artifacts/w11-round1/screens.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 3
+  instruction: 공방 실행 중 secu pcap 캡처(5분).
+  hint: target_vm=secu에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 11
+  answer: sudo timeout 60 tcpdump -i any -nn -w /tmp/w11-round1.pcap 'host 10.20.30.80' 2>/dev/null; ls -la /tmp/w11-round1.pcap
+  answer_detail: Round 트래픽 증거. 분석·복기의 원본.
+  verify:
+    type: output_contains
+    expect: w11-round1.pcap
+    field: stdout
+  target_vm: secu
+  script: sudo timeout 60 tcpdump -i any -nn -w /tmp/w11-round1.pcap 'host 10.20.30.80' 2>/dev/null; ls -la /tmp/w11-round1.pcap
+  risk_level: medium
+  bastion_prompt: ''
+- order: 4
+  instruction: Round 종료 후 forensic 디렉토리.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 12
+  answer: 'mkdir -p ~/ccc/artifacts/w11-round1/forensic && echo ''T+0: recon start\nT+5: SQLi attempt\nT+8: WAF block\nT+12: JWT analysis\nT+20: admin token forged'' > ~/ccc/artifacts/w11-round1/forensic/timeline.md && cat ~/ccc/artifacts/w11-round1/forensic/timeline.md'
+  answer_detail: 타임라인 초해상도. 실제 공방에서 관찰된 것으로 교체.
+  verify:
+    type: output_contains
+    expect: SQLi
+    field: stdout
+  target_vm: bastion
+  script: 'mkdir -p ~/ccc/artifacts/w11-round1/forensic && echo ''T+0: recon start\nT+5: SQLi attempt\nT+8: WAF block\nT+12: JWT analysis\nT+20: admin token forged'' > ~/ccc/artifacts/w11-round1/forensic/timeline.md && cat ~/ccc/artifacts/w11-round1/forensic/timeline.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 5
+  instruction: 놓친 사건 A/B/C/D 분류.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 13
+  answer: 'cat > ~/ccc/artifacts/w11-round1/forensic/missed_events.csv <<''C''
+
+    type,event,reason
+
+    A,recon phase,no alert raised
+
+    B,jwt forgery,alert 30s after success
+
+    C,honey access,classified as benign
+
+    D,nft block failed,sudo permission issue
+
+    C
+
+    cat ~/ccc/artifacts/w11-round1/forensic/missed_events.csv'
+  answer_detail: 4분류 양식. 각 유형별 대응 방향이 다름.
+  verify:
+    type: output_contains
+    expect: recon phase
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ccc/artifacts/w11-round1/forensic/missed_events.csv <<''C''
+
+    type,event,reason
+
+    A,recon phase,no alert raised
+
+    B,jwt forgery,alert 30s after success
+
+    C,honey access,classified as benign
+
+    D,nft block failed,sudo permission issue
+
+    C
+
+    cat ~/ccc/artifacts/w11-round1/forensic/missed_events.csv'
+  risk_level: low
+  bastion_prompt: ''
+- order: 6
+  instruction: 코치 모드 프롬프트 준비.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 14
+  answer: 'cat > ~/ccc/artifacts/w11-round1/forensic/coach-prompt.md <<''MD''
+
+    지금까지의 세션은 공방전이었다. 너는 Red였다.
+
+    이제 Blue를 돕는 코치다. 다음을 한 쪽:
+
+    1. 미탐지 3건 + 각각 탐지 로직
+
+    2. 지연 탐지 + 조기 신호
+
+    3. 오탐 처리 + 분류 오류 원인
+
+    4. Bastion 추가 스킬 1개 명세
+
+    제약: 새 공격 금지. 기존 세션 범위에서만.
+
+    MD
+
+    cat ~/ccc/artifacts/w11-round1/forensic/coach-prompt.md'
+  answer_detail: 코치 모드 전환 프롬프트. Red를 복기자로 역할 전환.
+  verify:
+    type: output_contains
+    expect: 코치
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ccc/artifacts/w11-round1/forensic/coach-prompt.md <<''MD''
+
+    지금까지의 세션은 공방전이었다. 너는 Red였다.
+
+    이제 Blue를 돕는 코치다. 다음을 한 쪽:
+
+    1. 미탐지 3건 + 각각 탐지 로직
+
+    2. 지연 탐지 + 조기 신호
+
+    3. 오탐 처리 + 분류 오류 원인
+
+    4. Bastion 추가 스킬 1개 명세
+
+    제약: 새 공격 금지. 기존 세션 범위에서만.
+
+    MD
+
+    cat ~/ccc/artifacts/w11-round1/forensic/coach-prompt.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 7
+  instruction: Bastion에 새 스킬 추가 (detect_agent_fp_burst).
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 15
+  answer: "mkdir -p ~/ccc/packages/bastion/skills && cat > ~/ccc/packages/bastion/skills/detect_agent_fp_burst.py <<'PY'\ndef detect(session):\n    return session.get('iat_cov', 1.0) < 0.3 and session.get('path_div', 0) >= 10\nPY\ncat ~/ccc/packages/bastion/skills/detect_agent_fp_burst.py"
+  answer_detail: w2 agent_score 구현체 기반 스킬. Round 1의 대표 업그레이드.
+  verify:
+    type: output_contains
+    expect: detect_agent_fp_burst
+    field: stdout
+  target_vm: bastion
+  script: "mkdir -p ~/ccc/packages/bastion/skills && cat > ~/ccc/packages/bastion/skills/detect_agent_fp_burst.py <<'PY'\ndef detect(session):\n    return session.get('iat_cov', 1.0) < 0.3 and session.get('path_div', 0) >= 10\nPY\ncat ~/ccc/packages/bastion/skills/detect_agent_fp_burst.py"
+  risk_level: low
+  bastion_prompt: ''
+- order: 8
+  instruction: Playbook YAML 등록.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 16
+  answer: "mkdir -p ~/ccc/playbooks/agent_ir && cat > ~/ccc/playbooks/agent_ir/agent-fp.yaml <<'Y'\nplaybook_id: pb-agent-fp\ntriggers: { wazuh_rule_id: 100111 }\nsteps:\n  - skill: detect_agent_fp_burst\n  - skill: tar_pit_inject\n    args: { duration_s: 10 }\nrollback: [unblock_nft]\nY\ncat ~/ccc/playbooks/agent_ir/agent-fp.yaml"
+  answer_detail: Playbook 1건. trigger + steps + rollback.
   verify:
     type: output_contains
     expect: pb-agent-fp
     field: stdout
   target_vm: bastion
-  script: "mkdir -p ~/ccc/playbooks/agent_ir && cat > ~/ccc/playbooks/agent_ir/agent-fp.yaml <<YAML\nplaybook_id: pb-agent-fp\ntriggers: { wazuh_rule_id: 100200 }\nsteps:\n  - skill: detect_agent_fp\n  - skill: tar_pit_inject\n    args: { duration_s: 10 }\nrollback:\n  - unblock_nft\nYAML\ncat ~/ccc/playbooks/agent_ir/agent-fp.yaml"
+  script: "mkdir -p ~/ccc/playbooks/agent_ir && cat > ~/ccc/playbooks/agent_ir/agent-fp.yaml <<'Y'\nplaybook_id: pb-agent-fp\ntriggers: { wazuh_rule_id: 100111 }\nsteps:\n  - skill: detect_agent_fp_burst\n  - skill: tar_pit_inject\n    args: { duration_s: 10 }\nrollback: [unblock_nft]\nY\ncat ~/ccc/playbooks/agent_ir/agent-fp.yaml"
   risk_level: low
   bastion_prompt: ''
-- order: 3
-  instruction: Experience 엔트리 추가
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+- order: 9
+  instruction: Experience 엔트리 — Round 1 결과.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
-  points: 11
-  answer: '🤖 프롬프트: Experience 엔트리 추가
-
-    📎 참고 (CLI): echo ''{"id":"w11-round1","skill":"detect_agent_fp","outcome":"success"}'' >> ~/ccc/data/bastion/experience/w11.json && tail -1 ~/ccc/data/bastion/experience/w11.json'
-  answer_detail: Round 1 Experience 저장.
+  points: 17
+  answer: echo '{"id":"w11-round1","skill":"detect_agent_fp_burst","outcome":"success"}' > ~/ccc/data/bastion/experience/w11-round1.json && cat ~/ccc/data/bastion/experience/w11-round1.json
+  answer_detail: 경험 로그. 반복되면 w12에서 자동 승격.
   verify:
     type: output_contains
-    expect: round1
+    expect: w11-round1
     field: stdout
   target_vm: bastion
-  script: echo '{"id":"w11-round1","skill":"detect_agent_fp","outcome":"success"}' >> ~/ccc/data/bastion/experience/w11.json && tail -1 ~/ccc/data/bastion/experience/w11.json
+  script: echo '{"id":"w11-round1","skill":"detect_agent_fp_burst","outcome":"success"}' > ~/ccc/data/bastion/experience/w11-round1.json && cat ~/ccc/data/bastion/experience/w11-round1.json
   risk_level: low
   bastion_prompt: ''
-- order: 4
-  instruction: 재테스트용 트래픽 생성
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
-  points: 12
-  answer: '🤖 프롬프트: 재테스트용 트래픽 생성
-
-    📎 참고 (CLI): for i in $(seq 1 20); do curl -s -o /dev/null http://10.20.30.80/rest/user/login -X POST -d ''{"email":"a''$i''"}'' -H ''Content-Type: application/json''; done; echo ''re_test_done'''
-  answer_detail: 재테스트 트래픽.
+- order: 10
+  instruction: Round 재테스트 트래픽(짧게).
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: attack
+  points: 18
+  answer: 'for i in $(seq 1 15); do curl -s -o /dev/null -X POST http://10.20.30.80/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"r''$i''"}''; done; echo round1_retest_done'
+  answer_detail: 업그레이드 후 같은 공격이 이제 막히는지 빠르게 검증.
   verify:
     type: output_contains
-    expect: re_test_done
+    expect: round1_retest_done
     field: stdout
   target_vm: web
-  script: 'for i in $(seq 1 20); do curl -s -o /dev/null http://10.20.30.80/rest/user/login -X POST -d ''{"email":"a''$i''"}'' -H ''Content-Type: application/json''; done; echo ''re_test_done'''
+  script: 'for i in $(seq 1 15); do curl -s -o /dev/null -X POST http://10.20.30.80/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"r''$i''"}''; done; echo round1_retest_done'
   risk_level: low
   bastion_prompt: ''
-- order: 5
-  instruction: Bastion diff 문서 생성
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+- order: 11
+  instruction: Bastion 자산 diff 작성.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
-  points: 13
-  answer: '🤖 프롬프트: Bastion diff 문서 생성
+  points: 19
+  answer: 'cat > ~/ccc/artifacts/w11-round1/asset-diff.md <<''MD''
 
-    📎 참고 (CLI): echo ''# w11 skill_playbook_diff\n+ detect_agent_fp (skill)\n+ pb-agent-fp (playbook)'' > ~/ccc/data/bastion/skill_playbook_diff.md && cat ~/ccc/data/bastion/skill_playbook_diff.md'
-  answer_detail: 자산 변화 기록.
+    ## Added Skills
+
+    - detect_agent_fp_burst
+
+    ## Added Playbooks
+
+    - pb-agent-fp
+
+    ## Metrics delta
+
+    - 탐지 지연 중앙값: 25s → 8s
+
+    - 미탐지 단계 수: 4 → 1
+
+    MD
+
+    cat ~/ccc/artifacts/w11-round1/asset-diff.md'
+  answer_detail: 자산 변화 정량 기록. w13 보고서의 기본 재료.
   verify:
     type: output_contains
-    expect: detect_agent_fp
+    expect: Added
     field: stdout
   target_vm: bastion
-  script: echo '# w11 skill_playbook_diff\n+ detect_agent_fp (skill)\n+ pb-agent-fp (playbook)' > ~/ccc/data/bastion/skill_playbook_diff.md && cat ~/ccc/data/bastion/skill_playbook_diff.md
+  script: 'cat > ~/ccc/artifacts/w11-round1/asset-diff.md <<''MD''
+
+    ## Added Skills
+
+    - detect_agent_fp_burst
+
+    ## Added Playbooks
+
+    - pb-agent-fp
+
+    ## Metrics delta
+
+    - 탐지 지연 중앙값: 25s → 8s
+
+    - 미탐지 단계 수: 4 → 1
+
+    MD
+
+    cat ~/ccc/artifacts/w11-round1/asset-diff.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 12
+  instruction: Round 1 메트릭.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 20
+  answer: 'cat > ~/ccc/artifacts/w11-round1/metrics.md <<''MD''
+
+    | 지표 | Before | After |
+
+    |---|---|---|
+
+    | 탐지 지연 p50 | 25s | 8s |
+
+    | 미탐지 | 4건 | 1건 |
+
+    | 오탐 | 0 | 0 |
+
+    | Bastion 자산 증가 | 0 | +1 skill / +1 pb |
+
+    MD
+
+    cat ~/ccc/artifacts/w11-round1/metrics.md'
+  answer_detail: Round 성공 판정의 근거. 자산 증가 없으면 *의미 없는 Round*.
+  verify:
+    type: output_contains
+    expect: Before
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ccc/artifacts/w11-round1/metrics.md <<''MD''
+
+    | 지표 | Before | After |
+
+    |---|---|---|
+
+    | 탐지 지연 p50 | 25s | 8s |
+
+    | 미탐지 | 4건 | 1건 |
+
+    | 오탐 | 0 | 0 |
+
+    | Bastion 자산 증가 | 0 | +1 skill / +1 pb |
+
+    MD
+
+    cat ~/ccc/artifacts/w11-round1/metrics.md'
   risk_level: low
   bastion_prompt: ''

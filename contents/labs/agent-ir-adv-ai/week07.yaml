@@ -1,23 +1,64 @@
 lab_id: agent-ir-adv-ai-week07
-title: Phishing→Webshell→Pivot IR (AI 지원)
+title: Multi-stage 피싱→웹셸→Pivot IR (AI 지원)
 version: ai
 course: agent-ir-adv-ai
 week: 7
-description: 하이브리드 공격 체인 단절. AI SubAgent가 자동 실행·검증.
+description: 사람+Agent 하이브리드. 체인 단절 전략 + FIDO2 MFA + BEC 탐지. AI SubAgent 자동 실행·검증.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 공격 유형의 원리를 이해한다
-- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
-- Human vs Agent 대응의 차이를 비교한다
+- 공격 원리를 이해하고 재현한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계를 수행한다
+- Human vs Agent 대응을 비교한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 웹셸 예시 (교육용)
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
+  instruction: AI 피싱 메일 템플릿
+  hint: 6단계 IR 중 공격 단계. target_vm=bastion.
+  category: attack
   points: 9
-  answer: '🤖 프롬프트: 웹셸 예시 (교육용)
+  answer: '🤖 프롬프트: AI 피싱 메일 템플릿
+
+    📎 참고 (CLI): mkdir -p ~/w07 && cat > ~/w07/phish.eml <<''E''
+
+    From: ''Security Team <security@company-internal.tk>''
+
+    Subject: 긴급: 비밀번호 만료
+
+    수신자 이름·부서·최근 프로젝트 언급 포함 (LinkedIn 기반)
+
+    링크: https://company-internal.tk/login
+
+    E
+
+    cat ~/w07/phish.eml'
+  answer_detail: '[공격] AI 맞춤 피싱.'
+  verify:
+    type: output_contains
+    expect: 긴급
+    field: stdout
+  target_vm: bastion
+  script: 'mkdir -p ~/w07 && cat > ~/w07/phish.eml <<''E''
+
+    From: ''Security Team <security@company-internal.tk>''
+
+    Subject: 긴급: 비밀번호 만료
+
+    수신자 이름·부서·최근 프로젝트 언급 포함 (LinkedIn 기반)
+
+    링크: https://company-internal.tk/login
+
+    E
+
+    cat ~/w07/phish.eml'
+  risk_level: low
+  bastion_prompt: AI 피싱 메일 템플릿
+- order: 2
+  instruction: 웹셸 삽입 시뮬
+  hint: 6단계 IR 중 공격 단계. target_vm=web.
+  category: attack
+  points: 10
+  answer: '🤖 프롬프트: 웹셸 삽입 시뮬
 
     📎 참고 (CLI): cat > ~/w07/small.php <<''P''
 
@@ -25,11 +66,11 @@ steps:
 
     P
 
-    cat ~/w07/small.php'
-  answer_detail: 웹셸.
+    ls ~/w07/small.php'
+  answer_detail: '[공격] 경량 PHP 웹셸.'
   verify:
     type: output_contains
-    expect: base64_decode
+    expect: small.php
     field: stdout
   target_vm: web
   script: 'cat > ~/w07/small.php <<''P''
@@ -38,84 +79,287 @@ steps:
 
     P
 
-    cat ~/w07/small.php'
+    ls ~/w07/small.php'
   risk_level: low
-  bastion_prompt: 웹셸 예시 (교육용)
-- order: 2
-  instruction: FIM 감시 설정
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+  bastion_prompt: 웹셸 삽입 시뮬
+- order: 3
+  instruction: 웹셸 탐지 FIM
+  hint: 6단계 IR 중 탐지 단계. target_vm=web.
   category: analysis
-  points: 10
-  answer: '🤖 프롬프트: FIM 감시 설정
+  points: 11
+  answer: '🤖 프롬프트: 웹셸 탐지 FIM
 
     📎 참고 (CLI): cat > ~/w07/fim.rules <<''R''
 
     -w /var/www/html -p wa -k webroot_write
 
+    -w /var/www -p wa -k webroot_write
+
     R
 
     cat ~/w07/fim.rules'
-  answer_detail: FIM.
+  answer_detail: '[탐지] auditd/Wazuh FIM.'
   verify:
     type: output_contains
-    expect: webroot_write
+    expect: webroot
     field: stdout
   target_vm: web
   script: 'cat > ~/w07/fim.rules <<''R''
 
     -w /var/www/html -p wa -k webroot_write
 
+    -w /var/www -p wa -k webroot_write
+
     R
 
     cat ~/w07/fim.rules'
   risk_level: low
-  bastion_prompt: FIM 감시 설정
-- order: 3
-  instruction: 이메일 게이트웨이 DMARC 정책
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
-  points: 11
-  answer: '🤖 프롬프트: 이메일 게이트웨이 DMARC 정책
-
-    📎 참고 (CLI): cat > ~/w07/dmarc.txt <<''T''
-
-    v=DMARC1; p=reject; rua=mailto:dmarc@org; adkim=s; aspf=s
-
-    T
-
-    cat ~/w07/dmarc.txt'
-  answer_detail: DMARC.
-  verify:
-    type: output_contains
-    expect: reject
-    field: stdout
-  target_vm: bastion
-  script: 'cat > ~/w07/dmarc.txt <<''T''
-
-    v=DMARC1; p=reject; rua=mailto:dmarc@org; adkim=s; aspf=s
-
-    T
-
-    cat ~/w07/dmarc.txt'
-  risk_level: low
-  bastion_prompt: 이메일 게이트웨이 DMARC 정책
+  bastion_prompt: 웹셸 탐지 FIM
 - order: 4
-  instruction: FIDO2 이행 계획
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+  instruction: 이메일 게이트웨이
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
   category: analysis
   points: 12
-  answer: '🤖 프롬프트: FIDO2 이행 계획
+  answer: '🤖 프롬프트: 이메일 게이트웨이
+
+    📎 참고 (CLI): cat > ~/w07/email-gate.md <<''M''
+
+    - DMARC reject 강제
+
+    - SPF hardfail
+
+    - DKIM 서명 필수
+
+    - AI 분류기 (피싱 점수)
+
+    M
+
+    cat ~/w07/email-gate.md'
+  answer_detail: '[탐지] 4층 방어.'
+  verify:
+    type: output_contains
+    expect: DMARC
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w07/email-gate.md <<''M''
+
+    - DMARC reject 강제
+
+    - SPF hardfail
+
+    - DKIM 서명 필수
+
+    - AI 분류기 (피싱 점수)
+
+    M
+
+    cat ~/w07/email-gate.md'
+  risk_level: low
+  bastion_prompt: 이메일 게이트웨이
+- order: 5
+  instruction: 체인 재구성
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: 체인 재구성
+
+    📎 참고 (CLI): cat > ~/w07/chain.md <<''M''
+
+    - T+0 피싱 메일
+
+    - T+10 클릭
+
+    - T+15 OAuth 동의
+
+    - T+30 메일박스 접근
+
+    - T+60 내부 업로드
+
+    - T+70 웹셸 실행
+
+    M
+
+    cat ~/w07/chain.md'
+  answer_detail: '[분석] 타임라인.'
+  verify:
+    type: output_contains
+    expect: 웹셸
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w07/chain.md <<''M''
+
+    - T+0 피싱 메일
+
+    - T+10 클릭
+
+    - T+15 OAuth 동의
+
+    - T+30 메일박스 접근
+
+    - T+60 내부 업로드
+
+    - T+70 웹셸 실행
+
+    M
+
+    cat ~/w07/chain.md'
+  risk_level: low
+  bastion_prompt: 체인 재구성
+- order: 6
+  instruction: 주체 분리 기술
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
+  category: analysis
+  points: 14
+  answer: '🤖 프롬프트: 주체 분리 기술
+
+    📎 참고 (CLI): cat > ~/w07/subject.md <<''M''
+
+    - Human 단계: 피싱 인프라 (도메인 등록·호스팅)
+
+    - Agent 단계: IAT·경로 다양성 지문
+
+    두 주체를 분리 기술해야 보고 정확.
+
+    M
+
+    cat ~/w07/subject.md'
+  answer_detail: '[분석] 책임·귀속.'
+  verify:
+    type: output_contains
+    expect: 분리
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w07/subject.md <<''M''
+
+    - Human 단계: 피싱 인프라 (도메인 등록·호스팅)
+
+    - Agent 단계: IAT·경로 다양성 지문
+
+    두 주체를 분리 기술해야 보고 정확.
+
+    M
+
+    cat ~/w07/subject.md'
+  risk_level: low
+  bastion_prompt: 주체 분리 기술
+- order: 7
+  instruction: 체인 단절 전략
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 15
+  answer: '🤖 프롬프트: 체인 단절 전략
+
+    📎 참고 (CLI): cat > ~/w07/cut.md <<''M''
+
+    - 피싱: 메일 회수·화이트리스트
+
+    - 발판: 웹셸 격리
+
+    - 에이전트: 세션 종료
+
+    - 유출: egress 차단·도메인 싱크홀
+
+    M
+
+    cat ~/w07/cut.md'
+  answer_detail: '[초동대응] 가장 빠른 단계.'
+  verify:
+    type: output_contains
+    expect: 회수
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w07/cut.md <<''M''
+
+    - 피싱: 메일 회수·화이트리스트
+
+    - 발판: 웹셸 격리
+
+    - 에이전트: 세션 종료
+
+    - 유출: egress 차단·도메인 싱크홀
+
+    M
+
+    cat ~/w07/cut.md'
+  risk_level: low
+  bastion_prompt: 체인 단절 전략
+- order: 8
+  instruction: Agent Playbook
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 16
+  answer: "\U0001F916 프롬프트: Agent Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w07/agent.yaml <<'Y'\nplaybook_id: pb-hybrid-chain\nsteps:\n  - skill: quarantine_webshell_file\n  - skill: block_url_path\n  - skill: sinkhole_attacker_domain\n  - skill: terminate_user_sessions\n  - skill: require_mfa_reauth\nY\ncat ~/w07/agent.yaml"
+  answer_detail: '[초동대응] 수 초 반응.'
+  verify:
+    type: output_contains
+    expect: webshell
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w07/agent.yaml <<'Y'\nplaybook_id: pb-hybrid-chain\nsteps:\n  - skill: quarantine_webshell_file\n  - skill: block_url_path\n  - skill: sinkhole_attacker_domain\n  - skill: terminate_user_sessions\n  - skill: require_mfa_reauth\nY\ncat ~/w07/agent.yaml"
+  risk_level: low
+  bastion_prompt: Agent Playbook
+- order: 9
+  instruction: 임원 브리핑
+  hint: 6단계 IR 중 보고 단계. target_vm=bastion.
+  category: analysis
+  points: 17
+  answer: '🤖 프롬프트: 임원 브리핑
+
+    📎 참고 (CLI): cat > ~/w07/exec.md <<''M''
+
+    # Phishing → Webshell → Pivot
+
+    **What**: AI 피싱 → 웹셸. Bastion 18초 격리.
+
+    **Impact**: 직원 A 메일 30일 접근. 내부 문서 *확인 중*.
+
+    **Ask**: 전사 FIDO2 MFA, 피싱 교육 월 1회.
+
+    M
+
+    cat ~/w07/exec.md'
+  answer_detail: '[보고] 조치 요청.'
+  verify:
+    type: output_contains
+    expect: MFA
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w07/exec.md <<''M''
+
+    # Phishing → Webshell → Pivot
+
+    **What**: AI 피싱 → 웹셸. Bastion 18초 격리.
+
+    **Impact**: 직원 A 메일 30일 접근. 내부 문서 *확인 중*.
+
+    **Ask**: 전사 FIDO2 MFA, 피싱 교육 월 1회.
+
+    M
+
+    cat ~/w07/exec.md'
+  risk_level: low
+  bastion_prompt: 임원 브리핑
+- order: 10
+  instruction: FIDO2 이행
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 18
+  answer: '🤖 프롬프트: FIDO2 이행
 
     📎 참고 (CLI): cat > ~/w07/fido2.md <<''M''
 
-    - 관리자 계정 우선
+    - Phase 1 (30일): 관리자·경영진
 
-    - 전사 확대 6개월
+    - Phase 2 (90일): 재무·법무
+
+    - Phase 3 (180일): 전사
+
+    - 백업 수단: Authenticator app
 
     M
 
     cat ~/w07/fido2.md'
-  answer_detail: FIDO2.
+  answer_detail: '[재발방지] 피싱 저항.'
   verify:
     type: output_contains
     expect: FIDO
@@ -123,53 +367,90 @@ steps:
   target_vm: bastion
   script: 'cat > ~/w07/fido2.md <<''M''
 
-    - 관리자 계정 우선
+    - Phase 1 (30일): 관리자·경영진
 
-    - 전사 확대 6개월
+    - Phase 2 (90일): 재무·법무
+
+    - Phase 3 (180일): 전사
+
+    - 백업 수단: Authenticator app
 
     M
 
     cat ~/w07/fido2.md'
   risk_level: low
-  bastion_prompt: FIDO2 이행 계획
-- order: 5
-  instruction: 체인 단절 전략
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+  bastion_prompt: FIDO2 이행
+- order: 11
+  instruction: BEC 탐지
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
   category: analysis
-  points: 13
-  answer: '🤖 프롬프트: 체인 단절 전략
+  points: 19
+  answer: '🤖 프롬프트: BEC 탐지
 
-    📎 참고 (CLI): cat > ~/w07/chain.md <<''M''
+    📎 참고 (CLI): cat > ~/w07/bec.md <<''M''
 
-    - 피싱 단계: 메일 회수
+    - 내부 메일의 결제 경로 변경 감지
 
-    - 발판: 웹셸 격리
+    - 관리자 재확인 의무
 
-    - 에이전트: 세션 차단
-
-    - 유출: egress 차단
+    - 새 계좌 등록 48h 지연
 
     M
 
-    cat ~/w07/chain.md'
-  answer_detail: 체인.
+    cat ~/w07/bec.md'
+  answer_detail: '[재발방지] 금전 손실 대비.'
   verify:
     type: output_contains
-    expect: egress
+    expect: 지연
     field: stdout
   target_vm: bastion
-  script: 'cat > ~/w07/chain.md <<''M''
+  script: 'cat > ~/w07/bec.md <<''M''
 
-    - 피싱 단계: 메일 회수
+    - 내부 메일의 결제 경로 변경 감지
 
-    - 발판: 웹셸 격리
+    - 관리자 재확인 의무
 
-    - 에이전트: 세션 차단
-
-    - 유출: egress 차단
+    - 새 계좌 등록 48h 지연
 
     M
 
-    cat ~/w07/chain.md'
+    cat ~/w07/bec.md'
   risk_level: low
-  bastion_prompt: 체인 단절 전략
+  bastion_prompt: BEC 탐지
+- order: 12
+  instruction: JIT 특권
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 20
+  answer: '🤖 프롬프트: JIT 특권
+
+    📎 참고 (CLI): cat > ~/w07/jit.md <<''M''
+
+    - 특권 접근 일회 승인
+
+    - 세션 녹화
+
+    - 영구 admin 제거
+
+    M
+
+    cat ~/w07/jit.md'
+  answer_detail: '[재발방지] 유출 영향 최소.'
+  verify:
+    type: output_contains
+    expect: JIT
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w07/jit.md <<''M''
+
+    - 특권 접근 일회 승인
+
+    - 세션 녹화
+
+    - 영구 admin 제거
+
+    M
+
+    cat ~/w07/jit.md'
+  risk_level: low
+  bastion_prompt: JIT 특권

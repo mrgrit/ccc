@@ -1,136 +1,285 @@
 lab_id: agent-ir-adv-nonai-week03
-title: AD Kerberoasting IR (Non-AI)
+title: AD Kerberoasting 자동화 IR (Non-AI)
 version: nonai
 course: agent-ir-adv-nonai
 week: 3
-description: SharpHound·Rubeus·Hashcat 기반 자동화 Kerberoasting 대응. 학생이 수동 수행.
+description: SharpHound·Rubeus·Hashcat 파이프라인이 자동화된 AD 공격. 4769 RC4 burst 탐지·krbtgt 회전·gMSA 도입까지. 학생이 수동 수행·기록.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 공격 유형의 원리를 이해한다
-- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
-- Human vs Agent 대응의 차이를 비교한다
+- 공격 원리를 이해하고 재현한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계를 수행한다
+- Human vs Agent 대응을 비교한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: Event 4769 SIGMA 룰
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+  instruction: SPN 목록 조회 시뮬
+  hint: 6단계 IR 중 공격 단계. target_vm=siem.
   category: analysis
   points: 9
-  answer: "\U0001F916 프롬프트: Event 4769 SIGMA 룰\n\U0001F4CE 참고 (CLI): cat > ~/w03/rule.yml <<'Y'\ntitle: Kerberoasting RC4 burst\ndetection:\n  selection: { EventID: 4769, TicketEncryptionType: '0x17' }\n  timeframe: 60s\n  condition: selection | count(ServiceName) by AccountName > 5\nY\ncat ~/w03/rule.yml"
-  answer_detail: 룰.
+  answer: 'getent passwd | awk -F: ''{print $1}'' | head'
+  answer_detail: '[공격] SPN 식별 첫 단계.'
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: siem
+  script: 'getent passwd | awk -F: ''{print $1}'' | head'
+  risk_level: low
+  bastion_prompt: ''
+- order: 2
+  instruction: RC4 TGS 요청 시뮬(로그 생성용)
+  hint: 6단계 IR 중 공격 단계. target_vm=siem.
+  category: analysis
+  points: 10
+  answer: echo 'simulated TGS request for svc_sql' > /tmp/w03-tgs.txt && cat /tmp/w03-tgs.txt
+  answer_detail: '[공격] 실제는 impacket-GetUserSPNs.'
+  verify:
+    type: output_contains
+    expect: TGS
+    field: stdout
+  target_vm: siem
+  script: echo 'simulated TGS request for svc_sql' > /tmp/w03-tgs.txt && cat /tmp/w03-tgs.txt
+  risk_level: low
+  bastion_prompt: ''
+- order: 3
+  instruction: 4769 RC4 SIGMA
+  hint: 6단계 IR 중 탐지 단계. target_vm=siem.
+  category: analysis
+  points: 11
+  answer: "cat > ~/w03/rule.yml <<'Y'\ntitle: Kerberoasting RC4 burst\ndetection:\n  selection: {EventID: 4769, TicketEncryptionType: '0x17'}\n  timeframe: 60s\n  condition: selection | count(ServiceName) by AccountName > 5\nY\nmkdir -p ~/w03 && cat ~/w03/rule.yml"
+  answer_detail: '[탐지] 4769 + RC4 + 다수 SPN burst.'
   verify:
     type: output_contains
     expect: '4769'
     field: stdout
   target_vm: siem
-  script: "cat > ~/w03/rule.yml <<'Y'\ntitle: Kerberoasting RC4 burst\ndetection:\n  selection: { EventID: 4769, TicketEncryptionType: '0x17' }\n  timeframe: 60s\n  condition: selection | count(ServiceName) by AccountName > 5\nY\ncat ~/w03/rule.yml"
-  risk_level: low
-  bastion_prompt: ''
-- order: 2
-  instruction: auditd 관련 키 설정
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
-  points: 10
-  answer: '🤖 프롬프트: auditd 관련 키 설정
-
-    📎 참고 (CLI): cat > ~/w03/audit.rules <<''R''
-
-    -w /etc/krb5.conf -p wa -k krb_conf
-
-    R
-
-    cat ~/w03/audit.rules'
-  answer_detail: 감시 룰.
-  verify:
-    type: output_contains
-    expect: krb_conf
-    field: stdout
-  target_vm: secu
-  script: 'cat > ~/w03/audit.rules <<''R''
-
-    -w /etc/krb5.conf -p wa -k krb_conf
-
-    R
-
-    cat ~/w03/audit.rules'
-  risk_level: medium
-  bastion_prompt: ''
-- order: 3
-  instruction: BloodHound 수집 탐지 스크립트
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
-  points: 11
-  answer: "\U0001F916 프롬프트: BloodHound 수집 탐지 스크립트\n\U0001F4CE 참고 (CLI): cat > ~/w03/ldap_burst.py <<'P'\ndef detect_ldap_burst(queries, window=60, threshold=100):\n    return sum(1 for q in queries if q.ts_in_last(window)) >= threshold\nP\npython3 -c 'print(\"ok\")'"
-  answer_detail: 스크립트.
-  verify:
-    type: output_contains
-    expect: ok
-    field: stdout
-  target_vm: bastion
-  script: "cat > ~/w03/ldap_burst.py <<'P'\ndef detect_ldap_burst(queries, window=60, threshold=100):\n    return sum(1 for q in queries if q.ts_in_last(window)) >= threshold\nP\npython3 -c 'print(\"ok\")'"
+  script: "cat > ~/w03/rule.yml <<'Y'\ntitle: Kerberoasting RC4 burst\ndetection:\n  selection: {EventID: 4769, TicketEncryptionType: '0x17'}\n  timeframe: 60s\n  condition: selection | count(ServiceName) by AccountName > 5\nY\nmkdir -p ~/w03 && cat ~/w03/rule.yml"
   risk_level: low
   bastion_prompt: ''
 - order: 4
-  instruction: 대응 계획
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+  instruction: BloodHound LDAP burst
+  hint: 6단계 IR 중 탐지 단계. target_vm=siem.
   category: analysis
   points: 12
-  answer: '🤖 프롬프트: 대응 계획
+  answer: 'cat > ~/w03/ldap.md <<''M''
 
-    📎 참고 (CLI): cat > ~/w03/response.md <<''M''
+    - objectClass=* 대량 조회
 
-    1. 의심 세션 종료
+    - ±1분 내 수천 건
 
-    2. 서비스 계정 잠금 (승인 후)
-
-    3. krbtgt 2회 회전 (계획)
+    - 특정 계정이 거의 모든 OU 조회
 
     M
 
-    cat ~/w03/response.md'
-  answer_detail: 계획.
+    cat ~/w03/ldap.md'
+  answer_detail: '[탐지] BloodHound 수집 지문.'
+  verify:
+    type: output_contains
+    expect: objectClass
+    field: stdout
+  target_vm: siem
+  script: 'cat > ~/w03/ldap.md <<''M''
+
+    - objectClass=* 대량 조회
+
+    - ±1분 내 수천 건
+
+    - 특정 계정이 거의 모든 OU 조회
+
+    M
+
+    cat ~/w03/ldap.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 5
+  instruction: 공격 경로 Cypher
+  hint: 6단계 IR 중 분석 단계. target_vm=siem.
+  category: analysis
+  points: 13
+  answer: 'cat > ~/w03/cypher.md <<''M''
+
+    MATCH p=shortestPath((u:User)-[*1..]->(g:Group {name:''DOMAIN ADMINS@...''}))
+
+    RETURN p LIMIT 5
+
+    M
+
+    cat ~/w03/cypher.md'
+  answer_detail: '[분석] Shortest path to Domain Admins.'
+  verify:
+    type: output_contains
+    expect: MATCH
+    field: stdout
+  target_vm: siem
+  script: 'cat > ~/w03/cypher.md <<''M''
+
+    MATCH p=shortestPath((u:User)-[*1..]->(g:Group {name:''DOMAIN ADMINS@...''}))
+
+    RETURN p LIMIT 5
+
+    M
+
+    cat ~/w03/cypher.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 6
+  instruction: 타임라인
+  hint: 6단계 IR 중 분석 단계. target_vm=siem.
+  category: analysis
+  points: 14
+  answer: 'cat > ~/w03/timeline.md <<''M''
+
+    - T+0 초기 로그인
+
+    - T+5 LDAP 대량 조회
+
+    - T+10 4769 burst (12 SPN)
+
+    - T+45 크랙 성공 추정
+
+    - T+60 DCSync 시도
+
+    M
+
+    cat ~/w03/timeline.md'
+  answer_detail: '[분석] 분 단위 타임라인.'
+  verify:
+    type: output_contains
+    expect: T+
+    field: stdout
+  target_vm: siem
+  script: 'cat > ~/w03/timeline.md <<''M''
+
+    - T+0 초기 로그인
+
+    - T+5 LDAP 대량 조회
+
+    - T+10 4769 burst (12 SPN)
+
+    - T+45 크랙 성공 추정
+
+    - T+60 DCSync 시도
+
+    M
+
+    cat ~/w03/timeline.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 7
+  instruction: Human 흐름
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 15
+  answer: 'cat > ~/w03/human.md <<''M''
+
+    1. 이벤트 로그 검토
+
+    2. 의심 계정 목록
+
+    3. 서비스 계정 비밀번호 강제 변경
+
+    4. krbtgt 2회 회전 계획
+
+    M
+
+    cat ~/w03/human.md'
+  answer_detail: '[초동대응] 2~8시간.'
   verify:
     type: output_contains
     expect: krbtgt
     field: stdout
   target_vm: bastion
-  script: 'cat > ~/w03/response.md <<''M''
+  script: 'cat > ~/w03/human.md <<''M''
 
-    1. 의심 세션 종료
+    1. 이벤트 로그 검토
 
-    2. 서비스 계정 잠금 (승인 후)
+    2. 의심 계정 목록
 
-    3. krbtgt 2회 회전 (계획)
+    3. 서비스 계정 비밀번호 강제 변경
+
+    4. krbtgt 2회 회전 계획
 
     M
 
-    cat ~/w03/response.md'
+    cat ~/w03/human.md'
   risk_level: low
   bastion_prompt: ''
-- order: 5
-  instruction: 하드닝 5축 체크
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+- order: 8
+  instruction: Agent Playbook
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
-  points: 13
-  answer: '🤖 프롬프트: 하드닝 5축 체크
+  points: 16
+  answer: "cat > ~/w03/agent.yaml <<'Y'\nplaybook_id: pb-kerberoast\nsteps:\n  - skill: terminate_attacker_session\n  - skill: lock_suspected_spn_accounts\n    args: {human_approval_required: true}\n  - skill: rotate_krbtgt_ticket\n    args: {human_approval_required: true}\nY\ncat ~/w03/agent.yaml"
+  answer_detail: '[초동대응] 사람 승인 필수 필드.'
+  verify:
+    type: output_contains
+    expect: human_approval
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w03/agent.yaml <<'Y'\nplaybook_id: pb-kerberoast\nsteps:\n  - skill: terminate_attacker_session\n  - skill: lock_suspected_spn_accounts\n    args: {human_approval_required: true}\n  - skill: rotate_krbtgt_ticket\n    args: {human_approval_required: true}\nY\ncat ~/w03/agent.yaml"
+  risk_level: low
+  bastion_prompt: ''
+- order: 9
+  instruction: 임원 브리핑
+  hint: 6단계 IR 중 보고 단계. target_vm=bastion.
+  category: analysis
+  points: 17
+  answer: 'cat > ~/w03/exec.md <<''M''
 
-    📎 참고 (CLI): cat > ~/w03/harden.md <<''M''
+    # Kerberoasting Incident
 
-    - 서비스 계정 25자+
+    **What**: RC4 TGS burst. Bastion 세션 종료·권한 제한.
 
-    - AES 강제
+    **Impact**: 12 SPN. 크랙 확인 중. 고객 영향 없음.
 
-    - MSA/gMSA
+    **Ask**: krbtgt 2회 회전 (전사 재인증) D+1 승인.
 
-    - 4769 상시 감시
+    M
 
-    - Tier 모델
+    cat ~/w03/exec.md'
+  answer_detail: '[보고] 도메인 장악 리스크.'
+  verify:
+    type: output_contains
+    expect: SPN
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w03/exec.md <<''M''
+
+    # Kerberoasting Incident
+
+    **What**: RC4 TGS burst. Bastion 세션 종료·권한 제한.
+
+    **Impact**: 12 SPN. 크랙 확인 중. 고객 영향 없음.
+
+    **Ask**: krbtgt 2회 회전 (전사 재인증) D+1 승인.
+
+    M
+
+    cat ~/w03/exec.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 10
+  instruction: AD 하드닝 5축
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 18
+  answer: 'cat > ~/w03/harden.md <<''M''
+
+    - 서비스 계정 25자+ 무작위
+
+    - AES 강제 (RC4 금지)
+
+    - MSA/gMSA 도입
+
+    - 4769 RC4 상시 감시
+
+    - Tier 0/1/2 관리
 
     M
 
     cat ~/w03/harden.md'
-  answer_detail: 하드닝.
+  answer_detail: '[재발방지] 영구 개선.'
   verify:
     type: output_contains
     expect: gMSA
@@ -138,18 +287,88 @@ steps:
   target_vm: bastion
   script: 'cat > ~/w03/harden.md <<''M''
 
-    - 서비스 계정 25자+
+    - 서비스 계정 25자+ 무작위
 
-    - AES 강제
+    - AES 강제 (RC4 금지)
 
-    - MSA/gMSA
+    - MSA/gMSA 도입
 
-    - 4769 상시 감시
+    - 4769 RC4 상시 감시
 
-    - Tier 모델
+    - Tier 0/1/2 관리
 
     M
 
     cat ~/w03/harden.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 11
+  instruction: gMSA 이행 계획
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 19
+  answer: 'cat > ~/w03/gmsa-plan.md <<''M''
+
+    - Phase 1 (30일): 신규 서비스 gMSA
+
+    - Phase 2 (90일): 기존 서비스 순차 전환
+
+    - Phase 3 (180일): 레거시 예외 정리
+
+    M
+
+    cat ~/w03/gmsa-plan.md'
+  answer_detail: '[재발방지] 조직 이행.'
+  verify:
+    type: output_contains
+    expect: Phase
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w03/gmsa-plan.md <<''M''
+
+    - Phase 1 (30일): 신규 서비스 gMSA
+
+    - Phase 2 (90일): 기존 서비스 순차 전환
+
+    - Phase 3 (180일): 레거시 예외 정리
+
+    M
+
+    cat ~/w03/gmsa-plan.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 12
+  instruction: Tier 0 분리 정책
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 20
+  answer: 'cat > ~/w03/tier.md <<''M''
+
+    - Tier 0 관리 PC 전용 (인터넷 격리)
+
+    - DC 접근은 Tier 0만
+
+    - 다른 Tier에서 Tier 0 자격 사용 금지
+
+    M
+
+    cat ~/w03/tier.md'
+  answer_detail: '[재발방지] 영구 구조.'
+  verify:
+    type: output_contains
+    expect: Tier
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w03/tier.md <<''M''
+
+    - Tier 0 관리 PC 전용 (인터넷 격리)
+
+    - DC 접근은 Tier 0만
+
+    - 다른 Tier에서 Tier 0 자격 사용 금지
+
+    M
+
+    cat ~/w03/tier.md'
   risk_level: low
   bastion_prompt: ''

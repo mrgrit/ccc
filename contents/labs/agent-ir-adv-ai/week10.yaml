@@ -1,133 +1,358 @@
 lab_id: agent-ir-adv-ai-week10
-title: DNS Exfiltration IR (AI 지원)
+title: DNS Exfiltration + AI 인코딩 IR (AI 지원)
 version: ai
 course: agent-ir-adv-ai
 week: 10
-description: 은밀한 DNS 누출 탐지·차단. AI SubAgent가 자동 실행·검증.
+description: 저속 은밀한 누출. Zeek·엔트로피·RPZ·DoH 차단. AI SubAgent 자동 실행·검증.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 공격 유형의 원리를 이해한다
-- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
-- Human vs Agent 대응의 차이를 비교한다
+- 공격 원리를 이해하고 재현한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계를 수행한다
+- Human vs Agent 대응을 비교한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: Zeek 긴 쿼리 룰
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
+  instruction: hex 인코딩 서브도메인
+  hint: 6단계 IR 중 공격 단계. target_vm=web.
+  category: attack
   points: 9
-  answer: "\U0001F916 프롬프트: Zeek 긴 쿼리 룰\n\U0001F4CE 참고 (CLI): cat > ~/w10/zeek.zeek <<'Z'\nevent dns_request(c: connection, msg: dns_msg, query: string, qtype: count, qclass: count) {\n  if (|query| > 50) print query;\n}\nZ\ncat ~/w10/zeek.zeek"
-  answer_detail: Zeek.
+  answer: '🤖 프롬프트: hex 인코딩 서브도메인
+
+    📎 참고 (CLI): mkdir -p ~/w10 && echo ''HELLO'' | xxd -p | head -c 20; echo ''.attacker.example'''
+  answer_detail: '[공격] Subdomain 인코딩 기본.'
+  verify:
+    type: output_contains
+    expect: .attacker
+    field: stdout
+  target_vm: web
+  script: mkdir -p ~/w10 && echo 'HELLO' | xxd -p | head -c 20; echo '.attacker.example'
+  risk_level: low
+  bastion_prompt: hex 인코딩 서브도메인
+- order: 2
+  instruction: DoH 엔드포인트 예
+  hint: 6단계 IR 중 공격 단계. target_vm=web.
+  category: attack
+  points: 10
+  answer: '🤖 프롬프트: DoH 엔드포인트 예
+
+    📎 참고 (CLI): cat > ~/w10/doh.md <<''M''
+
+    - https://1.1.1.1/dns-query
+
+    - https://dns.google/dns-query
+
+    - https://doh.opendns.com/dns-query
+
+    M
+
+    cat ~/w10/doh.md'
+  answer_detail: '[공격] 공격자가 사용 가능.'
+  verify:
+    type: output_contains
+    expect: dns-query
+    field: stdout
+  target_vm: web
+  script: 'cat > ~/w10/doh.md <<''M''
+
+    - https://1.1.1.1/dns-query
+
+    - https://dns.google/dns-query
+
+    - https://doh.opendns.com/dns-query
+
+    M
+
+    cat ~/w10/doh.md'
+  risk_level: low
+  bastion_prompt: DoH 엔드포인트 예
+- order: 3
+  instruction: Zeek 긴 쿼리 룰
+  hint: 6단계 IR 중 탐지 단계. target_vm=secu.
+  category: analysis
+  points: 11
+  answer: "\U0001F916 프롬프트: Zeek 긴 쿼리 룰\n\U0001F4CE 참고 (CLI): cat > ~/w10/zeek.zeek <<'Z'\nevent dns_request(c: connection, msg: dns_msg, query: string, qtype: count, qclass: count) {\n  if (|query| > 50) {\n    print fmt(\"long_query: src=%s q=%s\", c$id$orig_h, query);\n  }\n}\nZ\ncat ~/w10/zeek.zeek"
+  answer_detail: '[탐지] 50자 이상 쿼리.'
   verify:
     type: output_contains
     expect: dns_request
     field: stdout
   target_vm: secu
-  script: "cat > ~/w10/zeek.zeek <<'Z'\nevent dns_request(c: connection, msg: dns_msg, query: string, qtype: count, qclass: count) {\n  if (|query| > 50) print query;\n}\nZ\ncat ~/w10/zeek.zeek"
+  script: "cat > ~/w10/zeek.zeek <<'Z'\nevent dns_request(c: connection, msg: dns_msg, query: string, qtype: count, qclass: count) {\n  if (|query| > 50) {\n    print fmt(\"long_query: src=%s q=%s\", c$id$orig_h, query);\n  }\n}\nZ\ncat ~/w10/zeek.zeek"
   risk_level: medium
   bastion_prompt: Zeek 긴 쿼리 룰
-- order: 2
-  instruction: 도메인 엔트로피 함수
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+- order: 4
+  instruction: 엔트로피 기반 탐지
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
   category: analysis
-  points: 10
-  answer: '🤖 프롬프트: 도메인 엔트로피 함수
-
-    📎 참고 (CLI): cat > ~/w10/entropy.py <<''P''
-
-    import math
-
-    from collections import Counter
-
-    def H(s): c=Counter(s); t=len(s); return -sum((f/t)*math.log2(f/t) for f in c.values()) if t else 0
-
-    print(H(''48454c4c4f.attacker.example''))
-
-    P
-
-    python3 ~/w10/entropy.py'
-  answer_detail: 엔트로피.
+  points: 12
+  answer: "\U0001F916 프롬프트: 엔트로피 기반 탐지\n\U0001F4CE 참고 (CLI): cat > ~/w10/entropy.py <<'PY'\nimport math\nfrom collections import Counter\ndef H(s):\n    c = Counter(s); t = len(s)\n    return -sum((f/t)*math.log2(f/t) for f in c.values()) if t else 0\nprint('normal', H('www.google.com'))\nprint('encoded', H('48454c4c4f.attacker.example'))\nPY\npython3 ~/w10/entropy.py"
+  answer_detail: '[탐지] >4.5 의심.'
   verify:
     type: output_contains
-    expect: '3.'
+    expect: normal
     field: stdout
   target_vm: bastion
-  script: 'cat > ~/w10/entropy.py <<''P''
-
-    import math
-
-    from collections import Counter
-
-    def H(s): c=Counter(s); t=len(s); return -sum((f/t)*math.log2(f/t) for f in c.values()) if t else 0
-
-    print(H(''48454c4c4f.attacker.example''))
-
-    P
-
-    python3 ~/w10/entropy.py'
+  script: "cat > ~/w10/entropy.py <<'PY'\nimport math\nfrom collections import Counter\ndef H(s):\n    c = Counter(s); t = len(s)\n    return -sum((f/t)*math.log2(f/t) for f in c.values()) if t else 0\nprint('normal', H('www.google.com'))\nprint('encoded', H('48454c4c4f.attacker.example'))\nPY\npython3 ~/w10/entropy.py"
   risk_level: low
-  bastion_prompt: 도메인 엔트로피 함수
-- order: 3
-  instruction: RPZ sinkhole 설정
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+  bastion_prompt: 엔트로피 기반 탐지
+- order: 5
+  instruction: 재조합 스크립트
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
   category: analysis
-  points: 11
-  answer: "\U0001F916 프롬프트: RPZ sinkhole 설정\n\U0001F4CE 참고 (CLI): cat > ~/w10/rpz.conf <<'C'\nzone \"rpz\" {\n  type master; file \"rpz.zone\";\n};\nC\ncat ~/w10/rpz.conf"
-  answer_detail: RPZ.
+  points: 13
+  answer: '🤖 프롬프트: 재조합 스크립트
+
+    📎 참고 (CLI): cat > ~/w10/reassemble.py <<''PY''
+
+    queries = [''48454c4c4f.attacker.example'', ''20776f726c64.attacker.example'', ''21.attacker.example'']
+
+    hex_parts = [q.split(''.'')[0] for q in queries]
+
+    message = bytes.fromhex(''''.join(hex_parts)).decode()
+
+    print(''message:'', repr(message))
+
+    PY
+
+    python3 ~/w10/reassemble.py'
+  answer_detail: '[분석] 유출 본문 복원.'
+  verify:
+    type: output_contains
+    expect: message
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w10/reassemble.py <<''PY''
+
+    queries = [''48454c4c4f.attacker.example'', ''20776f726c64.attacker.example'', ''21.attacker.example'']
+
+    hex_parts = [q.split(''.'')[0] for q in queries]
+
+    message = bytes.fromhex(''''.join(hex_parts)).decode()
+
+    print(''message:'', repr(message))
+
+    PY
+
+    python3 ~/w10/reassemble.py'
+  risk_level: low
+  bastion_prompt: 재조합 스크립트
+- order: 6
+  instruction: 누출량 추정
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
+  category: analysis
+  points: 14
+  answer: '🤖 프롬프트: 누출량 추정
+
+    📎 참고 (CLI): cat > ~/w10/estimate.md <<''M''
+
+    - 쿼리 당 bytes: 평균 30 (subdomain 길이 기준)
+
+    - 일간 쿼리 수: 1000
+
+    - 추정 일간 누출: ~30 KB
+
+    - 24h 누적: 720 KB
+
+    M
+
+    cat ~/w10/estimate.md'
+  answer_detail: '[분석] 저속 지속.'
+  verify:
+    type: output_contains
+    expect: '720'
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w10/estimate.md <<''M''
+
+    - 쿼리 당 bytes: 평균 30 (subdomain 길이 기준)
+
+    - 일간 쿼리 수: 1000
+
+    - 추정 일간 누출: ~30 KB
+
+    - 24h 누적: 720 KB
+
+    M
+
+    cat ~/w10/estimate.md'
+  risk_level: low
+  bastion_prompt: 누출량 추정
+- order: 7
+  instruction: RPZ sinkhole
+  hint: 6단계 IR 중 초동대응 단계. target_vm=siem.
+  category: analysis
+  points: 15
+  answer: "\U0001F916 프롬프트: RPZ sinkhole\n\U0001F4CE 참고 (CLI): cat > ~/w10/rpz.conf <<'C'\nzone \"rpz\" {\n  type master;\n  file \"rpz.zone\";\n};\nresponse-policy { zone \"rpz\"; };\nC\ncat ~/w10/rpz.conf"
+  answer_detail: '[초동대응] 악성 도메인 응답 조작.'
   verify:
     type: output_contains
     expect: rpz
     field: stdout
   target_vm: siem
-  script: "cat > ~/w10/rpz.conf <<'C'\nzone \"rpz\" {\n  type master; file \"rpz.zone\";\n};\nC\ncat ~/w10/rpz.conf"
+  script: "cat > ~/w10/rpz.conf <<'C'\nzone \"rpz\" {\n  type master;\n  file \"rpz.zone\";\n};\nresponse-policy { zone \"rpz\"; };\nC\ncat ~/w10/rpz.conf"
   risk_level: low
-  bastion_prompt: RPZ sinkhole 설정
-- order: 4
+  bastion_prompt: RPZ sinkhole
+- order: 8
   instruction: DoH 차단 정책
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+  hint: 6단계 IR 중 초동대응 단계. target_vm=secu.
   category: analysis
-  points: 12
+  points: 16
   answer: '🤖 프롬프트: DoH 차단 정책
 
-    📎 참고 (CLI): cat > ~/w10/doh.md <<''M''
+    📎 참고 (CLI): cat > ~/w10/doh-block.md <<''M''
 
-    - 외부 DoH IP 차단
+    - 외부 DoH 엔드포인트 IP 차단 (firewall)
 
-    - 내부 DNS 강제 (DHCP)
+    - 내부 DNS 강제 (DHCP Option 6)
+
+    - TLS SNI 기반 탐지
 
     M
 
-    cat ~/w10/doh.md'
-  answer_detail: DoH.
+    cat ~/w10/doh-block.md'
+  answer_detail: '[초동대응] DoH 우회 차단.'
   verify:
     type: output_contains
-    expect: DoH
+    expect: DHCP
     field: stdout
   target_vm: secu
-  script: 'cat > ~/w10/doh.md <<''M''
+  script: 'cat > ~/w10/doh-block.md <<''M''
 
-    - 외부 DoH IP 차단
+    - 외부 DoH 엔드포인트 IP 차단 (firewall)
 
-    - 내부 DNS 강제 (DHCP)
+    - 내부 DNS 강제 (DHCP Option 6)
+
+    - TLS SNI 기반 탐지
 
     M
 
-    cat ~/w10/doh.md'
+    cat ~/w10/doh-block.md'
   risk_level: medium
   bastion_prompt: DoH 차단 정책
-- order: 5
-  instruction: Bastion 스킬 등록
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+- order: 9
+  instruction: Agent Playbook
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
-  points: 13
-  answer: "\U0001F916 프롬프트: Bastion 스킬 등록\n\U0001F4CE 참고 (CLI): cat > ~/w10/skill.py <<'P'\ndef detect_dns_exfil(events):\n    return [e for e in events if len(e.query)>50]\nP\npython3 -c 'print(\"ok\")'"
-  answer_detail: 스킬.
+  points: 17
+  answer: "\U0001F916 프롬프트: Agent Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w10/agent.yaml <<'Y'\nplaybook_id: pb-dns-exfil\nsteps:\n  - skill: sinkhole_domain\n  - skill: limit_host_egress\n  - skill: block_doh_endpoints\n  - skill: capture_24h_queries\nY\ncat ~/w10/agent.yaml"
+  answer_detail: '[초동대응] 자동 대응.'
   verify:
     type: output_contains
-    expect: ok
+    expect: sinkhole
     field: stdout
   target_vm: bastion
-  script: "cat > ~/w10/skill.py <<'P'\ndef detect_dns_exfil(events):\n    return [e for e in events if len(e.query)>50]\nP\npython3 -c 'print(\"ok\")'"
+  script: "cat > ~/w10/agent.yaml <<'Y'\nplaybook_id: pb-dns-exfil\nsteps:\n  - skill: sinkhole_domain\n  - skill: limit_host_egress\n  - skill: block_doh_endpoints\n  - skill: capture_24h_queries\nY\ncat ~/w10/agent.yaml"
   risk_level: low
-  bastion_prompt: Bastion 스킬 등록
+  bastion_prompt: Agent Playbook
+- order: 10
+  instruction: 법적 고려
+  hint: 6단계 IR 중 보고 단계. target_vm=bastion.
+  category: analysis
+  points: 18
+  answer: '🤖 프롬프트: 법적 고려
+
+    📎 참고 (CLI): cat > ~/w10/legal.md <<''M''
+
+    - 유출 본문에 개인정보?
+
+    - GDPR 72시간·개인정보보호법 34조
+
+    - 고객 개별 통지 필요 여부
+
+    M
+
+    cat ~/w10/legal.md'
+  answer_detail: '[보고] 본문 민감도 확인.'
+  verify:
+    type: output_contains
+    expect: GDPR
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w10/legal.md <<''M''
+
+    - 유출 본문에 개인정보?
+
+    - GDPR 72시간·개인정보보호법 34조
+
+    - 고객 개별 통지 필요 여부
+
+    M
+
+    cat ~/w10/legal.md'
+  risk_level: low
+  bastion_prompt: 법적 고려
+- order: 11
+  instruction: DNS 로깅·상시 분석
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 19
+  answer: '🤖 프롬프트: DNS 로깅·상시 분석
+
+    📎 참고 (CLI): cat > ~/w10/dns-logging.md <<''M''
+
+    - 모든 DNS 쿼리 로깅 (Zeek)
+
+    - 매 5분 엔트로피·빈도 분석
+
+    - 허용 목록 외 도메인 경보
+
+    M
+
+    cat ~/w10/dns-logging.md'
+  answer_detail: '[재발방지] 상시 감시.'
+  verify:
+    type: output_contains
+    expect: 엔트로피
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w10/dns-logging.md <<''M''
+
+    - 모든 DNS 쿼리 로깅 (Zeek)
+
+    - 매 5분 엔트로피·빈도 분석
+
+    - 허용 목록 외 도메인 경보
+
+    M
+
+    cat ~/w10/dns-logging.md'
+  risk_level: low
+  bastion_prompt: DNS 로깅·상시 분석
+- order: 12
+  instruction: egress default-deny
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 20
+  answer: '🤖 프롬프트: egress default-deny
+
+    📎 참고 (CLI): cat > ~/w10/egress.md <<''M''
+
+    - CI runner·서버 egress 기본 차단
+
+    - 허용 도메인 리스트 운영
+
+    - DNS도 내부 리졸버 강제
+
+    M
+
+    cat ~/w10/egress.md'
+  answer_detail: '[재발방지] 화이트리스트.'
+  verify:
+    type: output_contains
+    expect: egress
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w10/egress.md <<''M''
+
+    - CI runner·서버 egress 기본 차단
+
+    - 허용 도메인 리스트 운영
+
+    - DNS도 내부 리졸버 강제
+
+    M
+
+    cat ~/w10/egress.md'
+  risk_level: low
+  bastion_prompt: egress default-deny

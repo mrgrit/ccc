@@ -1,71 +1,121 @@
 lab_id: agent-ir-adv-nonai-week15
-title: 장기 APT 잠복 IR + 종합 회고 (Non-AI)
+title: 장기 APT 잠복 + 과정 회고 IR (Non-AI)
 version: nonai
 course: agent-ir-adv-nonai
 week: 15
-description: 저속 지속 공격 대응 + 과정 전체 통합. 학생이 수동 수행.
+description: 6개월 dwell time. Threat Hunting + Baseline 갱신 + Dwell Time KPI. 학생이 수동 수행·기록.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 공격 유형의 원리를 이해한다
-- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
-- Human vs Agent 대응의 차이를 비교한다
+- 공격 원리를 이해하고 재현한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계를 수행한다
+- Human vs Agent 대응을 비교한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: Long-term drift 스크립트
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
+  instruction: 저속 활동 시뮬
+  hint: 6단계 IR 중 공격 단계. target_vm=bastion.
+  category: attack
   points: 9
-  answer: '🤖 프롬프트: Long-term drift 스크립트
+  answer: 'mkdir -p ~/w15 && cat > ~/w15/slow.md <<''M''
 
-    📎 참고 (CLI): cat > ~/w15/drift.py <<''P''
+    - 주 1회 내부 쿼리
 
-    import statistics
+    - 일당 100MB 유출
 
-    def drift(baseline_vals, recent): return abs(recent - statistics.mean(baseline_vals)) > 2*statistics.stdev(baseline_vals)
+    - 실시간 임계 아래
 
-    P
+    M
 
-    python3 -c ''print("ok")'''
-  answer_detail: Drift.
+    cat ~/w15/slow.md'
+  answer_detail: '[공격] 실시간 룰 우회.'
   verify:
     type: output_contains
-    expect: ok
+    expect: 임계
     field: stdout
   target_vm: bastion
-  script: 'cat > ~/w15/drift.py <<''P''
+  script: 'mkdir -p ~/w15 && cat > ~/w15/slow.md <<''M''
 
-    import statistics
+    - 주 1회 내부 쿼리
 
-    def drift(baseline_vals, recent): return abs(recent - statistics.mean(baseline_vals)) > 2*statistics.stdev(baseline_vals)
+    - 일당 100MB 유출
 
-    P
+    - 실시간 임계 아래
 
-    python3 -c ''print("ok")'''
+    M
+
+    cat ~/w15/slow.md'
   risk_level: low
   bastion_prompt: ''
 - order: 2
-  instruction: Threat Hunting 주기
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
+  instruction: LOLBAS 장기 사용
+  hint: 6단계 IR 중 공격 단계. target_vm=bastion.
+  category: attack
   points: 10
-  answer: '🤖 프롬프트: Threat Hunting 주기
+  answer: 'cat > ~/w15/lolbas-long.md <<''M''
 
-    📎 참고 (CLI): cat > ~/w15/hunt.md <<''M''
+    - 6개월간 certutil 반복
 
-    - 일간: 자동
+    - 낮은 빈도로 분산
 
-    - 주간: 사람
+    - 정상 업무 위장
 
-    - 월간: 팀
+    M
 
-    - 분기: 외부
+    cat ~/w15/lolbas-long.md'
+  answer_detail: '[공격] 정상 도구.'
+  verify:
+    type: output_contains
+    expect: certutil
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w15/lolbas-long.md <<''M''
+
+    - 6개월간 certutil 반복
+
+    - 낮은 빈도로 분산
+
+    - 정상 업무 위장
+
+    M
+
+    cat ~/w15/lolbas-long.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 3
+  instruction: Long-term drift 탐지
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
+  category: analysis
+  points: 11
+  answer: "cat > ~/w15/drift.py <<'PY'\nimport statistics\ndef drift(baseline_vals, recent_val):\n    if not baseline_vals: return False\n    m = statistics.mean(baseline_vals)\n    s = statistics.stdev(baseline_vals) if len(baseline_vals) > 1 else 1\n    return abs(recent_val - m) > 2*s\nprint(drift([10,12,11,13,11,12,13], 25))\nPY\npython3 ~/w15/drift.py"
+  answer_detail: '[탐지] 2σ 이탈.'
+  verify:
+    type: output_contains
+    expect: 'True'
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w15/drift.py <<'PY'\nimport statistics\ndef drift(baseline_vals, recent_val):\n    if not baseline_vals: return False\n    m = statistics.mean(baseline_vals)\n    s = statistics.stdev(baseline_vals) if len(baseline_vals) > 1 else 1\n    return abs(recent_val - m) > 2*s\nprint(drift([10,12,11,13,11,12,13], 25))\nPY\npython3 ~/w15/drift.py"
+  risk_level: low
+  bastion_prompt: ''
+- order: 4
+  instruction: Threat Hunting 주기
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
+  category: analysis
+  points: 12
+  answer: 'cat > ~/w15/hunt.md <<''M''
+
+    - 일간: 자동 (Bastion drift)
+
+    - 주간: 사람 분석가
+
+    - 월간: 팀 회고
+
+    - 분기: 외부 컨설턴트
 
     M
 
     cat ~/w15/hunt.md'
-  answer_detail: 주기.
+  answer_detail: '[탐지] 4 해상도.'
   verify:
     type: output_contains
     expect: 분기
@@ -73,151 +123,320 @@ steps:
   target_vm: bastion
   script: 'cat > ~/w15/hunt.md <<''M''
 
-    - 일간: 자동
+    - 일간: 자동 (Bastion drift)
 
-    - 주간: 사람
+    - 주간: 사람 분석가
 
-    - 월간: 팀
+    - 월간: 팀 회고
 
-    - 분기: 외부
+    - 분기: 외부 컨설턴트
 
     M
 
     cat ~/w15/hunt.md'
   risk_level: low
   bastion_prompt: ''
-- order: 3
-  instruction: Dwell Time KPI
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+- order: 5
+  instruction: 6개월 타임라인
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
   category: analysis
-  points: 11
-  answer: '🤖 프롬프트: Dwell Time KPI
+  points: 13
+  answer: 'cat > ~/w15/long-timeline.md <<''M''
 
-    📎 참고 (CLI): cat > ~/w15/dwell.md <<''M''
+    - T-180d 초기 침투
 
-    - 목표 <=7일
+    - T-120d 지속성
 
-    - 측정 월 1회
+    - T-60d 내부 조사
+
+    - T-14d 타깃 데이터 식별
+
+    - T-7d 점진 유출 시작
+
+    - T+0 탐지
+
+    M
+
+    cat ~/w15/long-timeline.md'
+  answer_detail: '[분석] 장기 서사.'
+  verify:
+    type: output_contains
+    expect: T-
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w15/long-timeline.md <<''M''
+
+    - T-180d 초기 침투
+
+    - T-120d 지속성
+
+    - T-60d 내부 조사
+
+    - T-14d 타깃 데이터 식별
+
+    - T-7d 점진 유출 시작
+
+    - T+0 탐지
+
+    M
+
+    cat ~/w15/long-timeline.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 6
+  instruction: LLM 장기 로그 요약
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
+  category: analysis
+  points: 14
+  answer: 'cat > ~/w15/llm-summary.md <<''M''
+
+    - 6개월 로그 TB 단위
+
+    - 시간·사용자·자원 인덱싱
+
+    - LLM으로 패턴 발견
+
+    - 사람이 최종 해석
+
+    M
+
+    cat ~/w15/llm-summary.md'
+  answer_detail: '[분석] 사람+LLM.'
+  verify:
+    type: output_contains
+    expect: 인덱싱
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w15/llm-summary.md <<''M''
+
+    - 6개월 로그 TB 단위
+
+    - 시간·사용자·자원 인덱싱
+
+    - LLM으로 패턴 발견
+
+    - 사람이 최종 해석
+
+    M
+
+    cat ~/w15/llm-summary.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 7
+  instruction: 관찰 지속 vs 격리
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 15
+  answer: 'cat > ~/w15/decision.md <<''M''
+
+    - 즉시 격리: 안전 우선
+
+    - 관찰 지속: 추가 정보 + 추가 피해 리스크
+
+    - 결정은 *사람* (조직·법적 고려)
+
+    M
+
+    cat ~/w15/decision.md'
+  answer_detail: '[초동대응] Agent 결정 금지.'
+  verify:
+    type: output_contains
+    expect: 사람
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w15/decision.md <<''M''
+
+    - 즉시 격리: 안전 우선
+
+    - 관찰 지속: 추가 정보 + 추가 피해 리스크
+
+    - 결정은 *사람* (조직·법적 고려)
+
+    M
+
+    cat ~/w15/decision.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 8
+  instruction: Agent 보조 Playbook
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 16
+  answer: "cat > ~/w15/agent.yaml <<'Y'\nplaybook_id: pb-long-apt\nsteps:\n  - skill: compile_6m_activity\n  - skill: rank_suspect_accounts\n  - skill: escalate_to_human_lead\n  - skill: prepare_isolation_candidates\nY\ncat ~/w15/agent.yaml"
+  answer_detail: '[초동대응] 사람 주도 보조.'
+  verify:
+    type: output_contains
+    expect: escalate
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w15/agent.yaml <<'Y'\nplaybook_id: pb-long-apt\nsteps:\n  - skill: compile_6m_activity\n  - skill: rank_suspect_accounts\n  - skill: escalate_to_human_lead\n  - skill: prepare_isolation_candidates\nY\ncat ~/w15/agent.yaml"
+  risk_level: low
+  bastion_prompt: ''
+- order: 9
+  instruction: 심각성 브리핑
+  hint: 6단계 IR 중 보고 단계. target_vm=bastion.
+  category: analysis
+  points: 17
+  answer: 'cat > ~/w15/exec.md <<''M''
+
+    # Long-dwell APT
+
+    **Dwell**: 6개월 — 심각한 방어 실패.
+
+    **Impact**: ~30GB 유출 (분석 중).
+
+    **Ask**: 전사 Identity 리빌드 ($XXX K).
+
+    M
+
+    cat ~/w15/exec.md'
+  answer_detail: '[보고] 이사회 급.'
+  verify:
+    type: output_contains
+    expect: 리빌드
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w15/exec.md <<''M''
+
+    # Long-dwell APT
+
+    **Dwell**: 6개월 — 심각한 방어 실패.
+
+    **Impact**: ~30GB 유출 (분석 중).
+
+    **Ask**: 전사 Identity 리빌드 ($XXX K).
+
+    M
+
+    cat ~/w15/exec.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 10
+  instruction: Dwell Time KPI
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 18
+  answer: 'cat > ~/w15/kpi.md <<''M''
+
+    - 업계 평균: 21-200일
+
+    - 목표: 7일
+
+    - 측정: 월 1회
 
     - 연간 리뷰
 
     M
 
-    cat ~/w15/dwell.md'
-  answer_detail: KPI.
+    cat ~/w15/kpi.md'
+  answer_detail: '[재발방지] 조직 KPI.'
   verify:
     type: output_contains
     expect: Dwell
     field: stdout
   target_vm: bastion
-  script: 'cat > ~/w15/dwell.md <<''M''
+  script: 'cat > ~/w15/kpi.md <<''M''
 
-    - 목표 <=7일
+    - 업계 평균: 21-200일
 
-    - 측정 월 1회
+    - 목표: 7일
+
+    - 측정: 월 1회
 
     - 연간 리뷰
 
     M
 
-    cat ~/w15/dwell.md'
+    cat ~/w15/kpi.md'
   risk_level: low
   bastion_prompt: ''
-- order: 4
-  instruction: 과정 회고서
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+- order: 11
+  instruction: Threat Hunting 팀
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
   category: analysis
-  points: 12
-  answer: '🤖 프롬프트: 과정 회고서
+  points: 19
+  answer: 'cat > ~/w15/hunting-team.md <<''M''
 
-    📎 참고 (CLI): cat > ~/w15/retro.md <<''M''
+    - 전담 인력 (최소 1 FTE)
 
-    # C19·C20 회고
+    - Baseline 지속 갱신
 
-    ## 배운 점
+    - 분기 외부 pentest
 
-    - 6단계 IR 절차
+    - Identity 위생 (90일 회전)
 
-    - Human vs Agent 혼성
+    M
 
-    ## 조직 적용
+    cat ~/w15/hunting-team.md'
+  answer_detail: '[재발방지] 상시 조직.'
+  verify:
+    type: output_contains
+    expect: FTE
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w15/hunting-team.md <<''M''
 
-    - 30일 / 1년 / 3년
+    - 전담 인력 (최소 1 FTE)
+
+    - Baseline 지속 갱신
+
+    - 분기 외부 pentest
+
+    - Identity 위생 (90일 회전)
+
+    M
+
+    cat ~/w15/hunting-team.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 12
+  instruction: 과정 회고 제출
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 20
+  answer: 'cat > ~/w15/retro.md <<''M''
+
+    # C20 회고
+
+    ## 가장 충격적 관찰
+
+    - (나의)
+
+    ## 내 조직 적용 30일 조치
+
+    - (구체)
+
+    ## 과정 개선 제안
+
+    - (1개)
 
     M
 
     cat ~/w15/retro.md'
-  answer_detail: 회고.
+  answer_detail: '[재발방지] 과정의 *마지막* 산출.'
   verify:
     type: output_contains
-    expect: 회고
+    expect: 충격적
     field: stdout
   target_vm: bastion
   script: 'cat > ~/w15/retro.md <<''M''
 
-    # C19·C20 회고
+    # C20 회고
 
-    ## 배운 점
+    ## 가장 충격적 관찰
 
-    - 6단계 IR 절차
+    - (나의)
 
-    - Human vs Agent 혼성
+    ## 내 조직 적용 30일 조치
 
-    ## 조직 적용
+    - (구체)
 
-    - 30일 / 1년 / 3년
+    ## 과정 개선 제안
+
+    - (1개)
 
     M
 
     cat ~/w15/retro.md'
-  risk_level: low
-  bastion_prompt: ''
-- order: 5
-  instruction: 조직 작전 계획 제출
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
-  points: 13
-  answer: '🤖 프롬프트: 조직 작전 계획 제출
-
-    📎 참고 (CLI): cat > ~/w15/action.md <<''M''
-
-    # 30일
-
-    - UEBA 기준선
-
-    # 1년
-
-    - Zero Trust 전환
-
-    # 3년
-
-    - Mythos-ready L5
-
-    M
-
-    cat ~/w15/action.md'
-  answer_detail: 계획.
-  verify:
-    type: output_contains
-    expect: Mythos
-    field: stdout
-  target_vm: bastion
-  script: 'cat > ~/w15/action.md <<''M''
-
-    # 30일
-
-    - UEBA 기준선
-
-    # 1년
-
-    - Zero Trust 전환
-
-    # 3년
-
-    - Mythos-ready L5
-
-    M
-
-    cat ~/w15/action.md'
   risk_level: low
   bastion_prompt: ''

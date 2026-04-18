@@ -3,32 +3,341 @@ title: Deepfake Voice 사회공학 IR (AI 지원)
 version: ai
 course: agent-ir-adv-ai
 week: 12
-description: CEO 음성 사기 대응·OOB. AI SubAgent가 자동 실행·검증.
+description: 2024 홍콩 $26M. OOB 검증·코드워드·다중 승인. AI SubAgent 자동 실행·검증.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 공격 유형의 원리를 이해한다
-- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
-- Human vs Agent 대응의 차이를 비교한다
+- 공격 원리를 이해하고 재현한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계를 수행한다
+- Human vs Agent 대응을 비교한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: OOB 검증 정책
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
+  instruction: 음성 복제 필요 샘플
+  hint: 6단계 IR 중 공격 단계. target_vm=bastion.
+  category: attack
   points: 9
-  answer: '🤖 프롬프트: OOB 검증 정책
+  answer: '🤖 프롬프트: 음성 복제 필요 샘플
+
+    📎 참고 (CLI): mkdir -p ~/w12 && cat > ~/w12/sample-needs.md <<''M''
+
+    - 3~10초 깨끗한 음성
+
+    - 공개 영상 (LinkedIn·YouTube·콘퍼런스)
+
+    - 특정 억양 복제 가능
+
+    M
+
+    cat ~/w12/sample-needs.md'
+  answer_detail: '[공격] 공개 영상이 훈련 데이터.'
+  verify:
+    type: output_contains
+    expect: 3~10
+    field: stdout
+  target_vm: bastion
+  script: 'mkdir -p ~/w12 && cat > ~/w12/sample-needs.md <<''M''
+
+    - 3~10초 깨끗한 음성
+
+    - 공개 영상 (LinkedIn·YouTube·콘퍼런스)
+
+    - 특정 억양 복제 가능
+
+    M
+
+    cat ~/w12/sample-needs.md'
+  risk_level: low
+  bastion_prompt: 음성 복제 필요 샘플
+- order: 2
+  instruction: CEO Fraud 시나리오
+  hint: 6단계 IR 중 공격 단계. target_vm=bastion.
+  category: attack
+  points: 10
+  answer: '🤖 프롬프트: CEO Fraud 시나리오
+
+    📎 참고 (CLI): cat > ~/w12/scenario.md <<''M''
+
+    - Context: CEO 해외 출장 (LinkedIn 공개)
+
+    - Call: CFO에게 합성 음성 전화
+
+    - Ask: 긴급 M&A 송금
+
+    - Follow: 가짜 이메일
+
+    M
+
+    cat ~/w12/scenario.md'
+  answer_detail: '[공격] 홍콩 $26M 사건과 동일 패턴.'
+  verify:
+    type: output_contains
+    expect: M&A
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w12/scenario.md <<''M''
+
+    - Context: CEO 해외 출장 (LinkedIn 공개)
+
+    - Call: CFO에게 합성 음성 전화
+
+    - Ask: 긴급 M&A 송금
+
+    - Follow: 가짜 이메일
+
+    M
+
+    cat ~/w12/scenario.md'
+  risk_level: low
+  bastion_prompt: CEO Fraud 시나리오
+- order: 3
+  instruction: 기술 탐지 한계
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
+  category: analysis
+  points: 11
+  answer: '🤖 프롬프트: 기술 탐지 한계
+
+    📎 참고 (CLI): cat > ~/w12/tech-limit.md <<''M''
+
+    - 오디오 artifact 분석
+
+    - 영상 blinking 분석
+
+    - *실시간 완벽 탐지 어려움*
+
+    - 프로세스 방어가 1차
+
+    M
+
+    cat ~/w12/tech-limit.md'
+  answer_detail: '[탐지] 기술은 보조.'
+  verify:
+    type: output_contains
+    expect: 보조
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w12/tech-limit.md <<''M''
+
+    - 오디오 artifact 분석
+
+    - 영상 blinking 분석
+
+    - *실시간 완벽 탐지 어려움*
+
+    - 프로세스 방어가 1차
+
+    M
+
+    cat ~/w12/tech-limit.md'
+  risk_level: low
+  bastion_prompt: 기술 탐지 한계
+- order: 4
+  instruction: 의심 요청 탐지 규칙
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
+  category: analysis
+  points: 12
+  answer: "\U0001F916 프롬프트: 의심 요청 탐지 규칙\n\U0001F4CE 참고 (CLI): cat > ~/w12/detect.py <<'PY'\ndef suspicious(req):\n    if req.get('requestor_role') == 'CEO' and req.get('requestor_traveling'):\n        return True\n    if req.get('channel') in ('phone','email') and req.get('amount', 0) > 10000:\n        return True\n    return False\nprint(suspicious({'requestor_role':'CEO','requestor_traveling':True}))\nPY\npython3 ~/w12/detect.py"
+  answer_detail: '[탐지] 맥락 기반.'
+  verify:
+    type: output_contains
+    expect: 'True'
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w12/detect.py <<'PY'\ndef suspicious(req):\n    if req.get('requestor_role') == 'CEO' and req.get('requestor_traveling'):\n        return True\n    if req.get('channel') in ('phone','email') and req.get('amount', 0) > 10000:\n        return True\n    return False\nprint(suspicious({'requestor_role':'CEO','requestor_traveling':True}))\nPY\npython3 ~/w12/detect.py"
+  risk_level: low
+  bastion_prompt: 의심 요청 탐지 규칙
+- order: 5
+  instruction: 원본 샘플 추적
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: 원본 샘플 추적
+
+    📎 참고 (CLI): cat > ~/w12/trace.md <<''M''
+
+    - LinkedIn public videos
+
+    - 최근 콘퍼런스 발표
+
+    - 팟캐스트 인터뷰
+
+    - 공격자가 어디서 수집?
+
+    M
+
+    cat ~/w12/trace.md'
+  answer_detail: '[분석] 공개 자료 추적.'
+  verify:
+    type: output_contains
+    expect: 콘퍼런스
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w12/trace.md <<''M''
+
+    - LinkedIn public videos
+
+    - 최근 콘퍼런스 발표
+
+    - 팟캐스트 인터뷰
+
+    - 공격자가 어디서 수집?
+
+    M
+
+    cat ~/w12/trace.md'
+  risk_level: low
+  bastion_prompt: 원본 샘플 추적
+- order: 6
+  instruction: 금전 흐름
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
+  category: analysis
+  points: 14
+  answer: '🤖 프롬프트: 금전 흐름
+
+    📎 참고 (CLI): cat > ~/w12/money.md <<''M''
+
+    - 송금 은행·계좌 번호
+
+    - 은행 회수 가능성 (72h)
+
+    - 국제 송금 여부
+
+    - 암호화폐 경로 여부
+
+    M
+
+    cat ~/w12/money.md'
+  answer_detail: '[분석] 시간 민감.'
+  verify:
+    type: output_contains
+    expect: 72h
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w12/money.md <<''M''
+
+    - 송금 은행·계좌 번호
+
+    - 은행 회수 가능성 (72h)
+
+    - 국제 송금 여부
+
+    - 암호화폐 경로 여부
+
+    M
+
+    cat ~/w12/money.md'
+  risk_level: low
+  bastion_prompt: 금전 흐름
+- order: 7
+  instruction: 은행 송금 정지
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 15
+  answer: '🤖 프롬프트: 은행 송금 정지
+
+    📎 참고 (CLI): cat > ~/w12/bank.md <<''M''
+
+    1. 즉시 은행 콜센터
+
+    2. 사기 신고 접수 번호 확보
+
+    3. 수신 은행 swift 회수 요청
+
+    4. 경찰 신고
+
+    M
+
+    cat ~/w12/bank.md'
+  answer_detail: '[초동대응] 72시간 내.'
+  verify:
+    type: output_contains
+    expect: 회수
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w12/bank.md <<''M''
+
+    1. 즉시 은행 콜센터
+
+    2. 사기 신고 접수 번호 확보
+
+    3. 수신 은행 swift 회수 요청
+
+    4. 경찰 신고
+
+    M
+
+    cat ~/w12/bank.md'
+  risk_level: low
+  bastion_prompt: 은행 송금 정지
+- order: 8
+  instruction: Agent Playbook
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 16
+  answer: "\U0001F916 프롬프트: Agent Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w12/agent.yaml <<'Y'\nplaybook_id: pb-vishing\nsteps:\n  - skill: hold_money_transfer\n    args: {until_oob_verified: true}\n  - skill: push_notify_executive\n  - skill: lock_related_channel\n  - skill: alert_finance_legal\nY\ncat ~/w12/agent.yaml"
+  answer_detail: '[초동대응] OOB 확인 전 보류.'
+  verify:
+    type: output_contains
+    expect: hold_money
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w12/agent.yaml <<'Y'\nplaybook_id: pb-vishing\nsteps:\n  - skill: hold_money_transfer\n    args: {until_oob_verified: true}\n  - skill: push_notify_executive\n  - skill: lock_related_channel\n  - skill: alert_finance_legal\nY\ncat ~/w12/agent.yaml"
+  risk_level: low
+  bastion_prompt: Agent Playbook
+- order: 9
+  instruction: 이사회 공유 기준
+  hint: 6단계 IR 중 보고 단계. target_vm=bastion.
+  category: analysis
+  points: 17
+  answer: '🤖 프롬프트: 이사회 공유 기준
+
+    📎 참고 (CLI): cat > ~/w12/board.md <<''M''
+
+    - 금액 > $100K: 즉시 이사회 공유
+
+    - 실 송금 발생: CEO+CISO+법무 동시
+
+    - 범죄 수사: 경찰 공조
+
+    M
+
+    cat ~/w12/board.md'
+  answer_detail: '[보고] 급이 다름.'
+  verify:
+    type: output_contains
+    expect: CEO
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w12/board.md <<''M''
+
+    - 금액 > $100K: 즉시 이사회 공유
+
+    - 실 송금 발생: CEO+CISO+법무 동시
+
+    - 범죄 수사: 경찰 공조
+
+    M
+
+    cat ~/w12/board.md'
+  risk_level: low
+  bastion_prompt: 이사회 공유 기준
+- order: 10
+  instruction: OOB 정책
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 18
+  answer: '🤖 프롬프트: OOB 정책
 
     📎 참고 (CLI): cat > ~/w12/oob.md <<''M''
 
-    - 금액>$10K: 공개 번호로 콜백 + 코드워드
+    - 금액 > $10K: 공개 번호 콜백
 
-    - 금액>$100K: 2인 승인 + 30분 대기
+    - 금액 > $100K: 코드워드 + 2인 승인 + 30분 대기
 
     M
 
     cat ~/w12/oob.md'
-  answer_detail: OOB.
+  answer_detail: '[재발방지] 전사 표준.'
   verify:
     type: output_contains
     expect: 코드워드
@@ -36,128 +345,58 @@ steps:
   target_vm: bastion
   script: 'cat > ~/w12/oob.md <<''M''
 
-    - 금액>$10K: 공개 번호로 콜백 + 코드워드
+    - 금액 > $10K: 공개 번호 콜백
 
-    - 금액>$100K: 2인 승인 + 30분 대기
+    - 금액 > $100K: 코드워드 + 2인 승인 + 30분 대기
 
     M
 
     cat ~/w12/oob.md'
   risk_level: low
-  bastion_prompt: OOB 검증 정책
-- order: 2
+  bastion_prompt: OOB 정책
+- order: 11
   instruction: 코드워드 관리
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
   category: analysis
-  points: 10
+  points: 19
   answer: '🤖 프롬프트: 코드워드 관리
 
     📎 참고 (CLI): cat > ~/w12/codeword.md <<''M''
 
     - 임원별 월 1회 갱신
 
-    - 비공식 공유만 (face-to-face)
+    - face-to-face 공유만
+
+    - 디지털 저장 금지
 
     M
 
     cat ~/w12/codeword.md'
-  answer_detail: 코드워드.
+  answer_detail: '[재발방지] AI 복제 불가 요소.'
   verify:
     type: output_contains
-    expect: 갱신
+    expect: 월 1회
     field: stdout
   target_vm: bastion
   script: 'cat > ~/w12/codeword.md <<''M''
 
     - 임원별 월 1회 갱신
 
-    - 비공식 공유만 (face-to-face)
+    - face-to-face 공유만
+
+    - 디지털 저장 금지
 
     M
 
     cat ~/w12/codeword.md'
   risk_level: low
   bastion_prompt: 코드워드 관리
-- order: 3
-  instruction: 직원 교육 체크리스트
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+- order: 12
+  instruction: 공개 영상 정책
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
   category: analysis
-  points: 11
-  answer: '🤖 프롬프트: 직원 교육 체크리스트
-
-    📎 참고 (CLI): cat > ~/w12/training.md <<''M''
-
-    - 매끄러운 요청 의심
-
-    - OOB 습관
-
-    - 긴급성 유도 함정 인식
-
-    M
-
-    cat ~/w12/training.md'
-  answer_detail: 교육.
-  verify:
-    type: output_contains
-    expect: 긴급성
-    field: stdout
-  target_vm: bastion
-  script: 'cat > ~/w12/training.md <<''M''
-
-    - 매끄러운 요청 의심
-
-    - OOB 습관
-
-    - 긴급성 유도 함정 인식
-
-    M
-
-    cat ~/w12/training.md'
-  risk_level: low
-  bastion_prompt: 직원 교육 체크리스트
-- order: 4
-  instruction: 재무 프로세스 재설계
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
-  points: 12
-  answer: '🤖 프롬프트: 재무 프로세스 재설계
-
-    📎 참고 (CLI): cat > ~/w12/finance.md <<''M''
-
-    - 다중 승인
-
-    - 30분 대기
-
-    - OOB 필수
-
-    M
-
-    cat ~/w12/finance.md'
-  answer_detail: 재무.
-  verify:
-    type: output_contains
-    expect: 다중 승인
-    field: stdout
-  target_vm: bastion
-  script: 'cat > ~/w12/finance.md <<''M''
-
-    - 다중 승인
-
-    - 30분 대기
-
-    - OOB 필수
-
-    M
-
-    cat ~/w12/finance.md'
-  risk_level: low
-  bastion_prompt: 재무 프로세스 재설계
-- order: 5
-  instruction: 공개 영상·SNS 최소화 정책
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
-  points: 13
-  answer: '🤖 프롬프트: 공개 영상·SNS 최소화 정책
+  points: 20
+  answer: '🤖 프롬프트: 공개 영상 정책
 
     📎 참고 (CLI): cat > ~/w12/sns.md <<''M''
 
@@ -165,13 +404,15 @@ steps:
 
     - 공식 발표만
 
+    - 개인 팟캐스트·SNS 자제 권고
+
     M
 
     cat ~/w12/sns.md'
-  answer_detail: SNS.
+  answer_detail: '[재발방지] 훈련 데이터 감소.'
   verify:
     type: output_contains
-    expect: 영상
+    expect: 최소화
     field: stdout
   target_vm: bastion
   script: 'cat > ~/w12/sns.md <<''M''
@@ -180,8 +421,10 @@ steps:
 
     - 공식 발표만
 
+    - 개인 팟캐스트·SNS 자제 권고
+
     M
 
     cat ~/w12/sns.md'
   risk_level: low
-  bastion_prompt: 공개 영상·SNS 최소화 정책
+  bastion_prompt: 공개 영상 정책

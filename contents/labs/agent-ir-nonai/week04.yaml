@@ -1,99 +1,254 @@
 lab_id: agent-ir-nonai-week04
-title: 자동 익스플로잇 — Transient Tool 추적 (Non-AI)
+title: 자동 익스플로잇 — Transient Tool 아티팩트 (Non-AI)
 version: nonai
 course: agent-ir-nonai
 week: 4
-description: 에이전트가 세션 안에서 작성·수정·폐기한 Transient Tool의 흔적을 방어자 관점으로 추적한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
+description: 에이전트가 세션 내 생성한 공격 도구(Transient Tool)의 흔적을 방어자 관점에서 포렌식으로 재구성한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
 difficulty: hard
-duration_minutes: 120
+duration_minutes: 150
 objectives:
-- 공격 세션 아티팩트 번들을 구조화한다
-- 세션 내 도구 진화(버전 증가)를 관찰한다
-- 시그니처 공백(signature gap)에 대응하는 행위 기반 탐지 후보를 제안한다
+- Transient Tool 생성·진화·폐기를 auditd로 추적한다
+- ModSecurity 응답을 비교해 시그니처 공백을 체감한다
+- 3층 방어(메타·응답·기만)의 실무 예시를 각각 구현한다
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: web의 auditd가 /tmp 쓰기를 감시하도록 설정
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
+  instruction: web VM에 auditd로 /tmp 쓰기 감시 룰을 일시적으로 추가.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
   points: 9
-  answer: '🤖 프롬프트: web의 auditd가 /tmp 쓰기를 감시하도록 설정
-
-    📎 참고 (CLI): sudo auditctl -w /tmp -p wa -k tmpwrites 2>&1 | head -3 || true'
-  answer_detail: 임시 도구 쓰기 감시 설정.
+  answer: sudo auditctl -w /tmp -p wa -k tmpwrites && sudo auditctl -l | tail -5
+  answer_detail: Transient Tool이 /tmp에 생성·수정되는 것을 감시. 실제 운영 환경에서는 *적용 범위*를 좁혀야 부하 감당 가능.
   verify:
     type: output_contains
-    expect: ''
+    expect: tmpwrites
     field: stdout
   target_vm: web
-  script: sudo auditctl -w /tmp -p wa -k tmpwrites 2>&1 | head -3 || true
+  script: sudo auditctl -w /tmp -p wa -k tmpwrites && sudo auditctl -l | tail -5
   risk_level: low
   bastion_prompt: ''
 - order: 2
-  instruction: 간단한 공격 스크립트 위장 파일을 3버전 생성(실제 실행 없음)
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
+  instruction: Transient Tool을 3개 버전으로 시뮬레이션 생성 (공격자 자가 수정 루프 재현).
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
   points: 10
-  answer: '🤖 프롬프트: 간단한 공격 스크립트 위장 파일을 3버전 생성(실제 실행 없음)
+  answer: 'for v in 1 2 3; do cat > /tmp/exp_v$v.py <<PY
 
-    📎 참고 (CLI): for v in 1 2 3; do echo "# exploit v$v - $(date +%s)" > /tmp/exp_v$v.py; done; ls -la /tmp/exp_v*.py'
-  answer_detail: Transient Tool의 버전 증가를 모사.
+    # auto-generated exploit v$v — $(date +%s)
+
+    import requests
+
+    r = requests.post(''http://10.20.30.80/test'', data={''q'':''payload_v$v''})
+
+    PY
+
+    done; ls -la /tmp/exp_v*.py'
+  answer_detail: v1→v2→v3 연속 수정. 사람은 같은 파일을 분 단위로 이렇게 고치지 않는 패턴이 지문이 된다.
   verify:
     type: output_contains
     expect: exp_v
     field: stdout
   target_vm: web
-  script: for v in 1 2 3; do echo "# exploit v$v - $(date +%s)" > /tmp/exp_v$v.py; done; ls -la /tmp/exp_v*.py
+  script: 'for v in 1 2 3; do cat > /tmp/exp_v$v.py <<PY
+
+    # auto-generated exploit v$v — $(date +%s)
+
+    import requests
+
+    r = requests.post(''http://10.20.30.80/test'', data={''q'':''payload_v$v''})
+
+    PY
+
+    done; ls -la /tmp/exp_v*.py'
   risk_level: low
   bastion_prompt: ''
 - order: 3
-  instruction: auditd에서 tmpwrites 최근 이벤트 조회
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: recon
+  instruction: auditd 결과를 조회해 생성 이벤트를 확인.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
   points: 11
-  answer: '🤖 프롬프트: auditd에서 tmpwrites 최근 이벤트 조회
-
-    📎 참고 (CLI): sudo ausearch -k tmpwrites --start recent 2>/dev/null | tail -20 | head -20 || echo ''AUDIT_NO_EVENTS'''
-  answer_detail: 파일 쓰기 이벤트 관찰 — Transient Tool 표식.
+  answer: sudo ausearch -k tmpwrites --start recent 2>/dev/null | tail -30 | head -30
+  answer_detail: auditd가 각 파일 write를 기록. 같은 path에 반복 write가 보이면 자가 수정 루프 증거.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: web
-  script: sudo ausearch -k tmpwrites --start recent 2>/dev/null | tail -20 | head -20 || echo 'AUDIT_NO_EVENTS'
+  script: sudo ausearch -k tmpwrites --start recent 2>/dev/null | tail -30 | head -30
   risk_level: low
   bastion_prompt: ''
 - order: 4
-  instruction: 공격 세션 아티팩트 번들 디렉토리 구조 생성
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: analysis
+  instruction: web에서 단일 SQLi 페이로드 시도(WAF 반응 확인).
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: attack
   points: 12
-  answer: '🤖 프롬프트: 공격 세션 아티팩트 번들 디렉토리 구조 생성
-
-    📎 참고 (CLI): mkdir -p ~/ccc/artifacts/w04/{pcap,server-logs,tools,session} && ls ~/ccc/artifacts/w04'
-  answer_detail: 아티팩트 표준 폴더 구조.
+  answer: curl -s -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80:8082/login?q=admin%27%20OR%201=1--'
+  answer_detail: WAF가 있으면 403, 없으면 404/200. w6의 변형 공격 대비.
   verify:
     type: output_contains
-    expect: tools
+    expect: ''
     field: stdout
-  target_vm: bastion
-  script: mkdir -p ~/ccc/artifacts/w04/{pcap,server-logs,tools,session} && ls ~/ccc/artifacts/w04
+  target_vm: web
+  script: curl -s -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80:8082/login?q=admin%27%20OR%201=1--'
   risk_level: low
   bastion_prompt: ''
 - order: 5
-  instruction: Transient Tool 탐지 후보를 Experience로 등록
-  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
-  category: analysis
+  instruction: URL 인코딩 2중 적용한 변형 페이로드로 WAF 우회 시도.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: attack
   points: 13
-  answer: '🤖 프롬프트: Transient Tool 탐지 후보를 Experience로 등록
-
-    📎 참고 (CLI): echo ''{"id":"w04-transient","hint":"same_file_modified_multiple_times_in_short_window"}'' >> ~/ccc/data/bastion/experience/w04.json && tail -1 ~/ccc/data/bastion/experience/w04.json'
-  answer_detail: 행위 기반 탐지 후보 저장.
+  answer: curl -s -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80:8082/login?q=admin%2527%2520OR%25201=1--'
+  answer_detail: 에이전트 회피의 기본. 동일 의미·다른 문자열로 시그니처 회피.
   verify:
     type: output_contains
-    expect: transient
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: curl -s -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80:8082/login?q=admin%2527%2520OR%25201=1--'
+  risk_level: low
+  bastion_prompt: ''
+- order: 6
+  instruction: ModSecurity 감사 로그가 있으면 매칭 룰 분포 조사.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 14
+  answer: sudo tail -50 /var/log/bunkerweb/modsec_audit.log 2>/dev/null | grep -oE 'id "[0-9]+"' | sort | uniq -c | sort -rn | head || echo 'no_modsec_log'
+  answer_detail: 어떤 룰이 얼마나 매칭됐는지. 942xxx (SQLi CRS)가 자주 뜨면 정상.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: sudo tail -50 /var/log/bunkerweb/modsec_audit.log 2>/dev/null | grep -oE 'id "[0-9]+"' | sort | uniq -c | sort -rn | head || echo 'no_modsec_log'
+  risk_level: low
+  bastion_prompt: ''
+- order: 7
+  instruction: 1층 방어 — 응답 엔트로피 측정 함수 작성.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 15
+  answer: "cat > ~/ccc/scripts/entropy.py <<'PY'\nimport math\nfrom collections import Counter\ndef H(s):\n    if not s: return 0.0\n    c = Counter(s); t = len(s)\n    return -sum((f/t)*math.log2(f/t) for f in c.values())\nprint('sample_entropy', H('UNION SELECT user,pass FROM users--'))\nPY\npython3 ~/ccc/scripts/entropy.py"
+  answer_detail: 1층(메타 판별) 핵심 도구. 페이로드 본문 엔트로피가 점진 변화하는 세션 식별.
+  verify:
+    type: output_contains
+    expect: sample_entropy
     field: stdout
   target_vm: bastion
-  script: echo '{"id":"w04-transient","hint":"same_file_modified_multiple_times_in_short_window"}' >> ~/ccc/data/bastion/experience/w04.json && tail -1 ~/ccc/data/bastion/experience/w04.json
+  script: "cat > ~/ccc/scripts/entropy.py <<'PY'\nimport math\nfrom collections import Counter\ndef H(s):\n    if not s: return 0.0\n    c = Counter(s); t = len(s)\n    return -sum((f/t)*math.log2(f/t) for f in c.values())\nprint('sample_entropy', H('UNION SELECT user,pass FROM users--'))\nPY\npython3 ~/ccc/scripts/entropy.py"
+  risk_level: low
+  bastion_prompt: ''
+- order: 8
+  instruction: 2층 방어 — 에러 응답 통일화 HTML 파일 생성.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 16
+  answer: 'sudo bash -c ''cat > /var/www/html/error.html <<H
+
+    <!DOCTYPE html><html><body><h1>Not available</h1><p>Reference: <span id=r></span></p><script>document.getElementById("r").textContent=crypto.randomUUID();</script></body></html>
+
+    H'' && ls /var/www/html/error.html'
+  answer_detail: 403/404/500을 *동일 본문*으로 통일해 공격자에게 단서 최소화.
+  verify:
+    type: output_contains
+    expect: error.html
+    field: stdout
+  target_vm: web
+  script: 'sudo bash -c ''cat > /var/www/html/error.html <<H
+
+    <!DOCTYPE html><html><body><h1>Not available</h1><p>Reference: <span id=r></span></p><script>document.getElementById("r").textContent=crypto.randomUUID();</script></body></html>
+
+    H'' && ls /var/www/html/error.html'
+  risk_level: low
+  bastion_prompt: ''
+- order: 9
+  instruction: 3층 방어 — 허니 API 응답 JSON 파일 생성.
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 17
+  answer: 'sudo bash -c ''cat > /var/www/html/honey-users.json <<J
+
+    {"users":[{"id":1,"email":"admin@example.com","role":"superadmin","api_key":"HONEY_87af3b1c_DO_NOT_REMOVE"}]}
+
+    J'' && cat /var/www/html/honey-users.json'
+  answer_detail: 허니 API 응답. 공격자가 이를 사용하면 재관측 룰로 확정 탐지.
+  verify:
+    type: output_contains
+    expect: HONEY
+    field: stdout
+  target_vm: web
+  script: 'sudo bash -c ''cat > /var/www/html/honey-users.json <<J
+
+    {"users":[{"id":1,"email":"admin@example.com","role":"superadmin","api_key":"HONEY_87af3b1c_DO_NOT_REMOVE"}]}
+
+    J'' && cat /var/www/html/honey-users.json'
+  risk_level: low
+  bastion_prompt: ''
+- order: 10
+  instruction: 아티팩트 번들 구조 준비.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 18
+  answer: mkdir -p ~/ccc/artifacts/w04/{session,tools,pcap,server-logs,timeline}/ && ls ~/ccc/artifacts/w04
+  answer_detail: w04 산출물 표준 구조. w11에서 Bastion 스킬 설계에 이 번들을 입력.
+  verify:
+    type: output_contains
+    expect: timeline
+    field: stdout
+  target_vm: bastion
+  script: mkdir -p ~/ccc/artifacts/w04/{session,tools,pcap,server-logs,timeline}/ && ls ~/ccc/artifacts/w04
+  risk_level: low
+  bastion_prompt: ''
+- order: 11
+  instruction: SMART 제안 탐지 룰 작성.
+  hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 19
+  answer: 'cat > ~/ccc/artifacts/w04/detection-rules.md <<''MD''
+
+    # 탐지 룰 3개 (SMART)
+
+    1. 500 응답 2회 + 동일 경로 재시도 < 3s → 500 유발 스캔 의심
+
+    2. ModSec 942100 3회 < 60s + 동일 src → SQLi 시도 확정
+
+    3. 세션 중 페이로드 Levenshtein 0.05~0.4 변형 5+회 → 변형 진화
+
+    MD
+
+    cat ~/ccc/artifacts/w04/detection-rules.md'
+  answer_detail: SMART(구체·측정가능·실행가능·관련·시간제한) 탐지 룰. w9 Wazuh 변환의 입력.
+  verify:
+    type: output_contains
+    expect: SMART
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ccc/artifacts/w04/detection-rules.md <<''MD''
+
+    # 탐지 룰 3개 (SMART)
+
+    1. 500 응답 2회 + 동일 경로 재시도 < 3s → 500 유발 스캔 의심
+
+    2. ModSec 942100 3회 < 60s + 동일 src → SQLi 시도 확정
+
+    3. 세션 중 페이로드 Levenshtein 0.05~0.4 변형 5+회 → 변형 진화
+
+    MD
+
+    cat ~/ccc/artifacts/w04/detection-rules.md'
+  risk_level: low
+  bastion_prompt: ''
+- order: 12
+  instruction: auditd 감시 해제(실습 후 정리).
+  hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
+  category: analysis
+  points: 20
+  answer: sudo auditctl -W /tmp -p wa -k tmpwrites 2>&1 | head -1 || true && sudo auditctl -l | wc -l
+  answer_detail: 임시 룰 정리. 실 운영은 /etc/audit/rules.d/*.rules로 영속화.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: sudo auditctl -W /tmp -p wa -k tmpwrites 2>&1 | head -1 || true && sudo auditctl -l | wc -l
   risk_level: low
   bastion_prompt: ''
