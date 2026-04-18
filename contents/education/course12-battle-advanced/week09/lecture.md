@@ -280,14 +280,20 @@ AI 공격 에이전트가 수행할 수 있는 공격 유형을 체계적으로 
 
 ### 에이전트 간 데이터 흐름
 
-```
-Recon Agent ──────▶ Analyzer Agent ──────▶ Exploit Agent ──────▶ Post-Exploit
-{ports, services}   {vulns, vectors}       {access_level}        {privesc, loot}
-       │                   │                      │                     │
-       └───────────────────┴──────────────────────┴─────────────────────┘
-                            │
-                     Reporter Agent
-                   {structured_report}
+```mermaid
+graph LR
+    R["Recon Agent<br/>ports, services"] --> A["Analyzer Agent<br/>vulns, vectors"]
+    A --> E["Exploit Agent<br/>access_level"]
+    E --> P["Post-Exploit<br/>privesc, loot"]
+    R -.-> REP["Reporter Agent<br/>structured_report"]
+    A -.-> REP
+    E -.-> REP
+    P -.-> REP
+    style R fill:#58a6ff,color:#fff
+    style A fill:#d29922,color:#fff
+    style E fill:#f85149,color:#fff
+    style P fill:#f85149,color:#fff
+    style REP fill:#238636,color:#fff
 ```
 
 ### Bastion execute-plan으로의 매핑
