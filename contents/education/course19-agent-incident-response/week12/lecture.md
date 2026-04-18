@@ -61,6 +61,43 @@ w11에서 *한 사람·한 Round*로 Bastion을 업그레이드하는 법을 익
 - 성공률 **≥ 임계(예 0.8)**
 - 부작용(오탐·성능) 누적 **≤ 임계**
 
+### 1.3.1 Experience의 "수명 주기"
+
+```mermaid
+flowchart TB
+    C["생성<br/>Skill 실행 직후"]
+    S["저장<br/>data/bastion/experience/*.json"]
+    A["집계<br/>주기적 클러스터링"]
+    P{"승격 조건<br/>만족?"}
+    Sh["Shadow 모드 24h"]
+    AC{"Canary OK?"}
+    Act["활성화"]
+    Re["재시도 or 보류"]
+    Arc["아카이브"]
+    C --> S --> A --> P
+    P -->|Yes| Sh --> AC
+    AC -->|Yes| Act
+    AC -->|No| Re
+    P -->|No| Arc
+    style P fill:#21262d,stroke:#d29922,color:#e6edf3
+    style Act fill:#0d1f0d,stroke:#3fb950,color:#e6edf3
+    style Re fill:#1a0a0a,stroke:#f85149,color:#e6edf3
+```
+
+### 1.3.2 Experience 3유형의 상호 의미
+
+| 유형 | 해석 | 다음 Round 영향 |
+|------|------|-----------------|
+| success | 의도 달성 | 클러스터 승격 유력 |
+| partial | 일부 단계만 | 2~3회 더 관찰 후 판단 |
+| fail | 실행 실패·오탐 | 스킬 디버깅·화이트리스트 검토 |
+
+### 1.3.3 *나쁜 Experience*가 누적될 때의 위험
+
+잘못된 라벨링이 쌓이면 *나쁜 Playbook*이 자동 승격된다. 예: 내부 테스트 트래픽을 반복 *공격*으로 태그 → 내부 IP 차단 Playbook 자동 승격 → 운영 장애.
+
+방지책은 4장의 *Canary + Shadow + 화이트리스트 + 인간 승인* 4층 장치.
+
 ---
 
 # Part 2: 반복 패턴 검출 알고리즘 (30분)
@@ -90,6 +127,48 @@ def promotion_score(cluster):
 
 ## 2.4 결정 규칙
 - `promotion_score ≥ 0.8` && `len(cluster) ≥ 5` → Playbook 후보
+
+### 2.4.1 승격 결정 플로우
+
+```mermaid
+flowchart TB
+    In["Experience 리스트"]
+    B["버킷 해싱<br/>(trigger·steps)"]
+    K{"크기 ≥ 5?"}
+    S{"성공률 ≥ 0.8?"}
+    Sd{"부작용 누적<br/>임계 이하?"}
+    Cand["Playbook 후보<br/>→ 리뷰 큐"]
+    Skip["후보 제외"]
+    In --> B --> K
+    K -->|No| Skip
+    K -->|Yes| S
+    S -->|No| Skip
+    S -->|Yes| Sd
+    Sd -->|No| Skip
+    Sd -->|Yes| Cand
+    style Cand fill:#0d1f0d,stroke:#3fb950,color:#e6edf3
+    style Skip fill:#1a0a0a,stroke:#f85149,color:#e6edf3
+```
+
+### 2.4.2 "부작용 누적 임계" 계산법
+
+```python
+def side_effect_score(cluster):
+    # 오탐 = outcome 'fail' 중 false_positive 표기
+    fp = sum(1 for e in cluster if e.get("fp_flag"))
+    # 성능 영향 = elapsed > 10s 건수
+    slow = sum(1 for e in cluster if e.get("elapsed_s", 0) > 10)
+    # 정상 트래픽 영향 = canary_hit 이벤트
+    canary = sum(1 for e in cluster if e.get("hit_canary"))
+    total = len(cluster)
+    return (fp * 3 + slow + canary * 5) / total
+```
+
+임계: `side_effect_score < 0.3`이면 *부작용 누적 OK*.
+
+### 2.4.3 실제 Experience 데이터에 적용
+
+본인의 w11 Round 1 Experience들을 불러와 위 함수를 *실제로* 돌려 본다. 클러스터가 1개도 승격 기준 미달이면 *정상*이다 — Round 1만으로는 데이터가 충분치 않다. Round 2(이번 주)의 목적이 이를 충분화하는 것.
 
 ---
 
@@ -130,6 +209,63 @@ rollback:
 - 승격 후보는 즉시 활성 아님 — **리뷰 큐**에 적재
 - 학생(관리자)이 TUI에서 *승인*하면 활성화
 
+### 3.3.1 리뷰 큐의 구조
+
+```mermaid
+flowchart TB
+    In["Playbook 후보 생성"]
+    Q["리뷰 큐 (SQLite)"]
+    Rev{"학생 리뷰"}
+    Mod["수정 후 재제출"]
+    App["승인 → Shadow"]
+    Rej["기각 → 아카이브"]
+    Shd["Shadow 24h"]
+    Can{"Canary 통과?"}
+    Prod["활성"]
+    RB["Rollback"]
+    In --> Q --> Rev
+    Rev -->|수정| Mod --> Q
+    Rev -->|승인| App --> Shd --> Can
+    Rev -->|기각| Rej
+    Can -->|Yes| Prod
+    Can -->|No| RB --> Rej
+    style App fill:#21262d,stroke:#d29922,color:#e6edf3
+    style Prod fill:#0d1f0d,stroke:#3fb950,color:#e6edf3
+    style RB fill:#1a0a0a,stroke:#f85149,color:#e6edf3
+```
+
+### 3.3.2 리뷰 체크리스트
+
+학생이 Playbook 후보를 리뷰할 때 확인.
+
+- [ ] `source_experiences` ≥ 5
+- [ ] `avg_success` ≥ 0.8
+- [ ] `rollback` 단계 존재
+- [ ] `verify` 단계 존재
+- [ ] `triggers` 명확, 오남용 가능성 검토
+- [ ] `steps`가 기존 Skill들만 사용
+- [ ] `exceptions`(화이트리스트) 반영
+- [ ] `human_approval_required` 필요성 평가
+
+### 3.3.3 TUI 리뷰 인터페이스 구조
+
+```mermaid
+flowchart TB
+    T["Bastion TUI"]
+    M["메뉴: Review Queue"]
+    L["후보 목록<br/>(우선순위 정렬)"]
+    D["상세 보기<br/>(YAML diff)"]
+    Act{"결정"}
+    A["승인 (enter)"]
+    E["수정 (e)"]
+    R["기각 (r)"]
+    Log["감사 로그"]
+    T --> M --> L --> D --> Act
+    Act --> A & E & R --> Log
+    style Act fill:#21262d,stroke:#f97316,color:#e6edf3
+    style Log fill:#0d1f0d,stroke:#3fb950,color:#e6edf3
+```
+
 ---
 
 # Part 4: 잘못된 승격 방지 (40분)
@@ -147,6 +283,84 @@ rollback:
 ## 4.3 롤백
 - 모든 Playbook에 `rollback` 단계 강제
 - Playbook 활성화 후 7일 내 *부작용 지표*가 임계 초과하면 자동 롤백
+
+### 4.3.1 Canary 트래픽의 설계
+
+Canary는 정상 패턴을 *주기적*으로 흘려 자동 차단되지 않는지 검증한다.
+
+```mermaid
+flowchart TB
+    C["Canary 시나리오 (3종)"]
+    C1["C1. 정상 브라우저 GET /"]
+    C2["C2. 인증된 API /api/health"]
+    C3["C3. 관리자 SSH 로그인"]
+    Sch["스케줄러 (10분 간격)"]
+    Blue["Bastion 자동 대응"]
+    OK["모두 통과 = 정상"]
+    Warn["하나라도 차단 = 경고"]
+    C --> C1 & C2 & C3
+    C1 & C2 & C3 --> Sch --> Blue --> OK
+    Blue -.->|차단| Warn
+    style OK fill:#0d1f0d,stroke:#3fb950,color:#e6edf3
+    style Warn fill:#1a0a0a,stroke:#f85149,color:#e6edf3
+```
+
+### 4.3.2 Canary 실장 코드 예
+
+```python
+# scripts/canary.py
+import requests, time, logging, sys
+
+SCENARIOS = [
+    {"name": "normal_get", "url": "http://10.20.30.80/",
+     "headers": {"User-Agent": "Mozilla/5.0 ..."}},
+    {"name": "api_health", "url": "http://10.20.30.80/api/health",
+     "headers": {"Authorization": "Bearer ${CANARY_TOKEN}"}},
+    # SSH scenario은 paramiko·fabric로 별도
+]
+
+def run_all():
+    results = []
+    for sc in SCENARIOS:
+        try:
+            r = requests.get(sc["url"], headers=sc["headers"], timeout=5)
+            results.append((sc["name"], r.status_code, r.elapsed.total_seconds()))
+        except Exception as e:
+            results.append((sc["name"], "ERROR", str(e)))
+    return results
+
+if __name__ == "__main__":
+    while True:
+        for name, code, elapsed in run_all():
+            logging.info(f"canary {name}: {code} {elapsed}s")
+            if code != 200:
+                # Slack/Wazuh 경보
+                pass
+        time.sleep(600)  # 10분
+```
+
+### 4.3.3 자동 롤백 로직
+
+```mermaid
+flowchart TB
+    Act["Playbook 활성"]
+    Mon["7일간 지표 모니터"]
+    FP{"FP 비율<br/>> 2%?"}
+    Can{"Canary 실패<br/>1회라도?"}
+    Perf{"성능 영향<br/>> 500ms?"}
+    OK["유지"]
+    RB["자동 롤백<br/>+ 리뷰 큐 복귀"]
+    Act --> Mon
+    Mon --> FP & Can & Perf
+    FP -->|Yes| RB
+    Can -->|Yes| RB
+    Perf -->|Yes| RB
+    FP -->|No| OK
+    Can -->|No| OK
+    Perf -->|No| OK
+    style OK fill:#0d1f0d,stroke:#3fb950,color:#e6edf3
+    style RB fill:#1a0a0a,stroke:#f85149,color:#e6edf3
+```
 
 ---
 
@@ -202,11 +416,74 @@ rollback:
 - (c) w11 Round 1
 - (d) w15 기말만
 
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
+**Q6.** "나쁜 Experience" 누적이 만드는 장애의 예는?
+- (a) 디스크 꽉 참
+- (b) **내부 테스트 IP를 공격으로 라벨 → 내부 차단 Playbook 자동 승격 → 운영 장애**
+- (c) 네트워크 지연
+- (d) UI 버그
+
+**Q7.** 승격 후보 *4층 안전장치*에 해당하지 *않는* 것은?
+- (a) Canary 트래픽
+- (b) Shadow 모드
+- (c) 화이트리스트
+- (d) **성능 최적화**
+
+**Q8.** 자동 롤백 트리거에 해당하지 *않는* 것은?
+- (a) FP 비율 > 2%
+- (b) Canary 실패
+- (c) 성능 영향 > 500ms
+- (d) **경보 수 증가**
+
+**Q9.** Canary 시나리오의 *주기*로 권장되는 것은?
+- (a) 1초
+- (b) **10분**
+- (c) 1일
+- (d) 1주
+
+**Q10.** `side_effect_score` 계산에서 가장 큰 가중치를 받는 신호는?
+- (a) 오탐
+- (b) 성능 저하
+- (c) **Canary 히트**
+- (d) 로그 용량
+
+**정답:** Q1:b · Q2:b · Q3:b · Q4:b · Q5:b · Q6:b · Q7:d · Q8:d · Q9:b · Q10:c
 
 ---
 
 ## 과제
-1. 내 Experience 로그에서 클러스터링 결과 요약(JSON)과 드래프트 Playbook YAML 1개.
-2. Canary 트래픽 설계 1쪽 (정상 패턴 3종 + 흘리는 주기).
-3. Round 1·2 측정 비교 표를 `docs/purple-round-2.md`로 정리.
+1. **클러스터링 결과 (필수)**: 본인 Experience 로그 대상 `bastion_promote.py` 실행 결과 요약(JSON) + 드래프트 Playbook YAML 1개.
+2. **Canary 설계 (필수)**: 4.3.1 다이어그램 기반, 정상 패턴 3종 + 흘리는 주기 + 예상 경보 조건 명시 (1쪽).
+3. **Round 2 측정 (필수)**: 5장의 지표 표를 Round 1 대비 비교. `docs/purple-round-2.md`.
+4. **(선택 · 🏅 가산)**: TUI 리뷰 큐 동작 스크린샷 (승인·기각 각 1건 이상).
+5. **(선택 · 🏅 가산)**: 자동 롤백 시뮬레이션 — 의도적 *오탐 폭증* 환경에서 자동 롤백이 발동하는지 검증.
+
+---
+
+## 부록 A. Playbook 승격 *감사 추적*
+
+```mermaid
+flowchart TB
+    P["Playbook 승격"]
+    L1["감사 로그: 후보 생성 시점"]
+    L2["감사 로그: 리뷰 결과"]
+    L3["감사 로그: Shadow 진입"]
+    L4["감사 로그: 활성화"]
+    L5["감사 로그: 발동 이력"]
+    L6["감사 로그: 롤백(있으면)"]
+    P --> L1 --> L2 --> L3 --> L4 --> L5 --> L6
+    style P fill:#21262d,stroke:#f97316,color:#e6edf3
+```
+
+모든 단계가 *타임스탬프와 사용자 ID*로 기록. w13 보고서의 감사 섹션에 사용.
+
+## 부록 B. *영구히 자동 승격하지 않을* Playbook
+
+다음 경우는 *반드시* 사람 승인 필요:
+
+- **외부 IP 차단** (정상 파트너 리스크)
+- **인증 서비스 변경** (가용성 리스크)
+- **정책 변경** (법적 리스크)
+- **데이터 격리** (비즈니스 리스크)
+- **서비스 재시작** (가용성)
+
+Bastion이 이 목록을 내장하고, 해당 Playbook은 *Shadow만* 통과하고 *활성화에는 반드시 승인*.
