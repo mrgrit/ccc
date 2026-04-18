@@ -43,16 +43,17 @@
 
 ## 1.1 Linux 권한 모델
 
-```
-+---------------------------------------------------------------------+
-|                  Linux 권한 계층                                    |
-+---------------------------------------------------------------------+
-| root (UID 0)   | 모든 권한, 커널 수준 제어                          |
-| sudo 그룹      | sudo를 통한 임시 root 권한                         |
-| 서비스 계정     | www-data, postgres 등 제한된 권한                 |
-| 일반 사용자     | 자신의 파일과 프로세스만 접근                     |
-| nobody         | 최소 권한 (서비스 격리용)                          |
-+---------------------------------------------------------------------+
+```mermaid
+graph BT
+    N["nobody<br/>최소 권한"] --> U["일반 사용자<br/>자신의 파일만"]
+    U --> SVC["서비스 계정<br/>www-data, postgres"]
+    SVC --> SUDO["sudo 그룹<br/>임시 root"]
+    SUDO --> ROOT["root (UID 0)<br/>모든 권한"]
+    style N fill:#21262d,color:#e6edf3
+    style U fill:#58a6ff,color:#fff
+    style SVC fill:#d29922,color:#fff
+    style SUDO fill:#f85149,color:#fff
+    style ROOT fill:#f85149,color:#fff
 ```
 
 ### 권한 상승 벡터 분류
