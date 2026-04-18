@@ -1414,6 +1414,69 @@ def get_training_lecture(course_id: str, week: int):
     return get_lecture(course_id, week)
 
 # ══════════════════════════════════════════════════
+#  Papers (admin 전용 — git-ignored)
+# ══════════════════════════════════════════════════
+_PAPERS_DIR = os.path.join(_CONTENT_DIR, "papers")
+
+
+def _require_admin(request: Request):
+    """verify_api_key 통과 후 role==admin/instructor 여부 재검증."""
+    user = getattr(request.state, "user", {})
+    if user.get("role") not in ("admin", "instructor"):
+        raise HTTPException(status_code=403, detail="admin only")
+
+
+def _safe_paper_join(*parts: str) -> str:
+    """Directory traversal 방어: _PAPERS_DIR 밖으로 벗어나면 404."""
+    p = os.path.realpath(os.path.join(_PAPERS_DIR, *parts))
+    base = os.path.realpath(_PAPERS_DIR)
+    if not (p == base or p.startswith(base + os.sep)):
+        raise HTTPException(404, "not found")
+    return p
+
+
+@app.get("/papers", dependencies=[Depends(verify_api_key)])
+def list_papers(request: Request):
+    """논문 디렉토리 목록 — 각 디렉토리의 파일 리스트 포함."""
+    _require_admin(request)
+    if not os.path.isdir(_PAPERS_DIR):
+        return {"papers": []}
+    papers = []
+    for name in sorted(os.listdir(_PAPERS_DIR)):
+        pdir = _safe_paper_join(name)
+        if not os.path.isdir(pdir):
+            continue
+        files = []
+        for root, _, fnames in os.walk(pdir):
+            for fn in sorted(fnames):
+                if fn.startswith("."):
+                    continue
+                rel = os.path.relpath(os.path.join(root, fn), pdir)
+                files.append({
+                    "path": rel,
+                    "size": os.path.getsize(os.path.join(root, fn)),
+                    "mtime": int(os.path.getmtime(os.path.join(root, fn))),
+                })
+        papers.append({"id": name, "files": files})
+    return {"papers": papers}
+
+
+@app.get("/papers/{paper_id}/{file_path:path}", dependencies=[Depends(verify_api_key)])
+def get_paper_file(paper_id: str, file_path: str, request: Request):
+    """특정 논문 파일 내용 반환 (markdown 권장)."""
+    _require_admin(request)
+    p = _safe_paper_join(paper_id, file_path)
+    if not os.path.isfile(p):
+        raise HTTPException(404, "file not found")
+    # 10MB 초과 파일은 거부 (UI 표시용)
+    if os.path.getsize(p) > 10 * 1024 * 1024:
+        raise HTTPException(413, "file too large")
+    with open(p, "r", encoding="utf-8", errors="replace") as f:
+        content = f.read()
+    return {"paper_id": paper_id, "path": file_path, "content": content}
+
+
+# ══════════════════════════════════════════════════
 #  Lab Catalog (lab_engine 연동)
 # ══════════════════════════════════════════════════
 

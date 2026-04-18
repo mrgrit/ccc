@@ -14,6 +14,7 @@ import Admin from './pages/Admin.tsx'
 import Profile from './pages/Profile.tsx'
 import ChatBot from './components/ChatBot.tsx'
 import Search from './pages/Search.tsx'
+import Papers from './pages/Papers.tsx'
 
 const navItems = [
   { to: '/dashboard', label: 'Dashboard', icon: '📊' },
@@ -23,6 +24,7 @@ const navItems = [
   { to: '/battle', label: 'Battlefield', icon: '⚔️' },
   { to: '/leaderboard', label: 'Leaderboard', icon: '🏆' },
   { to: '/blockchain', label: 'Blockchain', icon: '⛓️' },
+  { to: '/papers', label: 'Papers', icon: '📚', adminOnly: true },
   { to: '/admin', label: 'Admin', icon: '⚙️', adminOnly: true },
 ]
 
@@ -149,6 +151,7 @@ export default function App() {
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/blockchain" element={<Blockchain />} />
           <Route path="/admin" element={<Admin />} />
+          <Route path="/papers" element={<Papers />} />
           <Route path="/search" element={<Search />} />
           <Route path="/profile" element={<Profile />} />
         </Routes>
