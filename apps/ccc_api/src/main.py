@@ -1298,6 +1298,7 @@ _COURSE_MAP = {
     "course17-iot-security": {"name": "iot-security", "min_rank": "skilled", "title": "IoT/임베디드 보안 (IoT & Embedded Security)", "group": "실전", "group_color": "#f97316", "icon": "📡", "description": "펌웨어 분석, UART/SPI/JTAG 해킹, BLE/Zigbee, IP Camera, SCADA/PLC, 자동차 CAN 버스"},
     "course18-autonomous-systems": {"name": "autonomous-systems", "min_rank": "expert", "title": "드론/로봇/자율시스템 보안 (CPS Security)", "group": "실전", "group_color": "#f97316", "icon": "🤖", "description": "드론 해킹/방어, 자율주행 AI 공격, ROS2 보안, OT/ICS, GPS 스푸핑, CPS 인시던트 대응"},
     "course19-agent-incident-response": {"name": "agent-ir", "min_rank": "expert", "title": "AI Agent 공격 침해대응 (Agent Incident Response)", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🛰️", "description": "Claude Code 급 코딩 에이전트가 공격자로 투입되는 실세계 위협에 대한 실전 대응 교과. Red=Claude Code · Blue=Bastion 공방과 Purple co-evolution(skill·playbook·experience 업그레이드)으로 에이전트 IR 체계를 구축한다."},
+    "course20-agent-ir-advanced": {"name": "agent-ir-adv", "min_rank": "expert", "title": "AI Agent 공격 침해대응 심화 (Advanced Agent IR)", "group": "AI 보안", "group_color": "#bc8cff", "icon": "🎯", "description": "C19의 후속. 15가지 서로 다른 에이전트 공격 사례(공급망·RAG 인젝션·AD·클라우드·0-day·Fileless·DNS exfil·K8s·CI/CD·Deepfake·Insider·장기 APT 등)를 각각 공격→탐지→분석→초동대응→보고·공유→재발방지의 전 IR 절차로 다룬다. Human 대응 vs Agent 대응을 사례마다 비교."},
 }
 _GROUP_ORDER = ["공격 기술", "방어 운영", "AI 보안", "실전"]
 

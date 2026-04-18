@@ -225,6 +225,31 @@
 | 14 | 모의 실사고 대응 — 다단계 Agentic APT | 킬체인 전 단계 자율 공격 대응 |
 | 15 | 기말 — 종합 Purple 훈련 + 교과 회고 | 총 45분 공방 + 사후 보고 + 교과 개선안 |
 
+### Course 20: AI Agent 공격 침해대응 심화 (Advanced Agent IR)
+**파일:** `course20-agent-ir-advanced/`
+**키워드:** 사례 기반 IR, Human vs Agent 대응, 공격→탐지→분석→초동대응→보고→재발방지
+**포지셔닝:** C19의 후속. 15개 서로 다른 에이전트 공격 사례를 *전체 IR 절차*로 깊이 다룸. 각 주차는 *독립적 사건*이며, 사례 지식의 포트폴리오를 구축한다.
+
+| 주차 | 공격 유형 | 핵심 |
+|------|-----------|------|
+| 1 | 공급망 Dependency Confusion (PyPI/npm) | 에이전트가 내부 패키지명 자동 탐지 후 공개 레지스트리에 악성 동명 패키지 업로드 |
+| 2 | Indirect Prompt Injection via RAG | 고객 문의·웹 크롤 문서에 숨겨진 지시로 에이전트 조작 |
+| 3 | AD Kerberoasting 자동화 | BloodHound+Hashcat 에이전트가 SPN 자동 식별·티켓 요청·오프라인 크랙 |
+| 4 | Cloud IAM 자동 Pivot | 유출 API 키 → IAM 권한 자동 열거 → 자산 확장 |
+| 5 | 0-day 웹 프레임워크 자동 악용 | Spring Boot·Rails류 자동 패턴 탐지·PoC 작성 |
+| 6 | N-day 대규모 악용 (Log4Shell 계열) | 공개 직후 대량 스캔·변형 페이로드 |
+| 7 | Multi-stage 피싱→웹셸→측면이동 | 사람+에이전트 하이브리드 공격 |
+| 8 | 컨테이너·K8s 탈출 + API 악용 | Pod 탈출·서비스어카운트 토큰 남용 |
+| 9 | Fileless·Memory-only 악성코드 | 디스크 흔적 없는 transient implant |
+| 10 | DNS exfiltration + AI 인코딩 | 에이전트가 생성한 covert channel |
+| 11 | AI 모델 자체 공격 (Model Theft·Poisoning) | 서비스 중인 모델에 대한 추출·오염 |
+| 12 | Deepfake 보이스 + AI 사회공학 | 음성·메시지 합성 결합 공격 |
+| 13 | Insider + Agent Weaponization | 내부자가 에이전트 도구화 |
+| 14 | CI/CD 공급망 오염 (GitHub Actions류) | 빌드 파이프라인 탈취 |
+| 15 | 장기 APT (수개월 잠복·느린 누출) | 템포 비대칭의 반전 사례 |
+
+각 주차는 *동일 6단계 절차*로 진행되어, 학생은 학기 말 *어떤 에이전트 공격 유형도 동일 프레임*으로 대응할 수 있는 근육 기억을 얻는다.
+
 ---
 
 ## 논문 아이디어 (4편)
