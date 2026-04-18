@@ -1,0 +1,99 @@
+lab_id: agent-ir-ai-week14
+title: 다단계 Agentic APT 모의 실사고 대응 (AI 지원)
+version: ai
+course: agent-ir-ai
+week: 14
+description: 5개 에이전트 팀의 킬체인 전체를 대응하고 사고 보고서 초안을 마무리한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 킬체인 전 단계 실시간 대응
+- 세션 클러스터 발동 확인
+- 보고서·자산 diff 업데이트
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: 공방 관전용 대시보드 점검
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 9
+  answer: '🤖 프롬프트: 공방 관전용 대시보드 점검
+
+    📎 참고 (CLI): curl -sk https://10.20.30.100/ 2>&1 | head -3'
+  answer_detail: Wazuh 대시보드 접속 확인.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: siem
+  script: curl -sk https://10.20.30.100/ 2>&1 | head -3
+  risk_level: low
+  bastion_prompt: 공방 관전용 대시보드 점검
+- order: 2
+  instruction: 공격 세션 시작 기록
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 10
+  answer: '🤖 프롬프트: 공격 세션 시작 기록
+
+    📎 참고 (CLI): echo "session_start=$(date -Iseconds)" > ~/ccc/reports/w14/session.meta && cat ~/ccc/reports/w14/session.meta'
+  answer_detail: 세션 시작 메타.
+  verify:
+    type: output_contains
+    expect: session_start
+    field: stdout
+  target_vm: bastion
+  script: echo "session_start=$(date -Iseconds)" > ~/ccc/reports/w14/session.meta && cat ~/ccc/reports/w14/session.meta
+  risk_level: low
+  bastion_prompt: 공격 세션 시작 기록
+- order: 3
+  instruction: 키 신호 수집 — Wazuh 최근 5분 경보 수
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 11
+  answer: '🤖 프롬프트: 키 신호 수집 — Wazuh 최근 5분 경보 수
+
+    📎 참고 (CLI): sudo jq -c ''select(.timestamp)'' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -20 | wc -l'
+  answer_detail: 최근 경보 볼륨.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: siem
+  script: sudo jq -c 'select(.timestamp)' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -20 | wc -l
+  risk_level: low
+  bastion_prompt: 키 신호 수집 — Wazuh 최근 5분 경보 수
+- order: 4
+  instruction: Bastion 자산 diff 업데이트
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: Bastion 자산 diff 업데이트
+
+    📎 참고 (CLI): echo ''+ multi-session cluster skill, + exfil alert playbook'' >> ~/ccc/data/bastion/skill_playbook_diff.md && tail -3 ~/ccc/data/bastion/skill_playbook_diff.md'
+  answer_detail: 자산 변화 업데이트.
+  verify:
+    type: output_contains
+    expect: +
+    field: stdout
+  target_vm: bastion
+  script: echo '+ multi-session cluster skill, + exfil alert playbook' >> ~/ccc/data/bastion/skill_playbook_diff.md && tail -3 ~/ccc/data/bastion/skill_playbook_diff.md
+  risk_level: low
+  bastion_prompt: Bastion 자산 diff 업데이트
+- order: 5
+  instruction: 보고서 초안 실시간 작성(w14)
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: 보고서 초안 실시간 작성(w14)
+
+    📎 참고 (CLI): cp ~/ccc/reports/w13/report.md ~/ccc/reports/w14/report.md && echo ''\n## 4.1 Cluster detection fired at T+18:22'' >> ~/ccc/reports/w14/report.md && tail -5 ~/ccc/reports/w14/report.md'
+  answer_detail: 보고서 초안 확장.
+  verify:
+    type: output_contains
+    expect: Cluster
+    field: stdout
+  target_vm: bastion
+  script: cp ~/ccc/reports/w13/report.md ~/ccc/reports/w14/report.md && echo '\n## 4.1 Cluster detection fired at T+18:22' >> ~/ccc/reports/w14/report.md && tail -5 ~/ccc/reports/w14/report.md
+  risk_level: low
+  bastion_prompt: 보고서 초안 실시간 작성(w14)

@@ -1,0 +1,107 @@
+lab_id: agent-ir-ai-week02
+title: 공격자 해부 — tool-use 루프와 지문 점수 (AI 지원)
+version: ai
+course: agent-ir-ai
+week: 2
+description: 에이전트 호스트가 아닌 방어자 측 관측만으로 공격자 지문(fingerprint)을 계산하는 파이프라인을 구축한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 공격 세션의 요청 간격 CoV, 경로 다양성, 실패 재시도를 계산한다
+- 에이전트 점수 함수의 결과를 해석한다
+- Bastion에서 점수 임계 기반 초기 대응의 기준을 정한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: w01 pcap에서 요청 간격(IAT) 평균·표준편차를 계산한다
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 9
+  answer: '🤖 프롬프트: w01 pcap에서 요청 간격(IAT) 평균·표준편차를 계산한다
+
+    📎 참고 (CLI): tshark -r /tmp/w01-baseline.pcap -Y ''http.request'' -T fields -e frame.time_epoch | awk ''NR>1{print $1-p} {p=$1}'' | awk ''{sum+=$1; sumsq+=$1*$1; n++} END{if(n){m=sum/n; print "mean=" m " stdev=" sqrt(sumsq/n - m*m)}}'''
+  answer_detail: IAT 평균·표준편차. CoV=stdev/mean 기준 0.3 미만이면 에이전트 지문.
+  verify:
+    type: output_contains
+    expect: mean
+    field: stdout
+  target_vm: secu
+  script: tshark -r /tmp/w01-baseline.pcap -Y 'http.request' -T fields -e frame.time_epoch | awk 'NR>1{print $1-p} {p=$1}' | awk '{sum+=$1; sumsq+=$1*$1; n++} END{if(n){m=sum/n; print "mean=" m " stdev=" sqrt(sumsq/n - m*m)}}'
+  risk_level: medium
+  bastion_prompt: w01 pcap에서 요청 간격(IAT) 평균·표준편차를 계산한다
+- order: 2
+  instruction: '경로 다양성: 고유 URI 수'
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 10
+  answer: '🤖 프롬프트: 경로 다양성: 고유 URI 수
+
+    📎 참고 (CLI): tshark -r /tmp/w01-baseline.pcap -Y ''http.request'' -T fields -e http.request.uri | sort -u | wc -l'
+  answer_detail: 고유 URI 수가 클수록 정찰성 증가.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: secu
+  script: tshark -r /tmp/w01-baseline.pcap -Y 'http.request' -T fields -e http.request.uri | sort -u | wc -l
+  risk_level: medium
+  bastion_prompt: '경로 다양성: 고유 URI 수'
+- order: 3
+  instruction: 4xx 응답 후 3초 내 재시도 비율 샘플링
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 11
+  answer: '🤖 프롬프트: 4xx 응답 후 3초 내 재시도 비율 샘플링
+
+    📎 참고 (CLI): sudo awk ''{print $1, $4, $9}'' /var/log/apache2/access.log | tail -500 | awk ''{print $3}'' | awk ''/^4/{c4++} /^2/{c2++} END{print "4xx=" c4 " 2xx=" c2}'''
+  answer_detail: 재시도 분포의 기초 통계.
+  verify:
+    type: output_contains
+    expect: 4xx
+    field: stdout
+  target_vm: web
+  script: sudo awk '{print $1, $4, $9}' /var/log/apache2/access.log | tail -500 | awk '{print $3}' | awk '/^4/{c4++} /^2/{c2++} END{print "4xx=" c4 " 2xx=" c2}'
+  risk_level: low
+  bastion_prompt: 4xx 응답 후 3초 내 재시도 비율 샘플링
+- order: 4
+  instruction: 에이전트 점수 스크립트 골격을 bastion에 저장
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: 에이전트 점수 스크립트 골격을 bastion에 저장
+
+    📎 참고 (CLI): mkdir -p ~/ccc/scripts && cat > ~/ccc/scripts/agent_score.py <<''PY''
+
+    def score(iat_cov, path_div, retry_ratio): s=0.0\nif iat_cov<0.3: s+=0.3\nif path_div>=10: s+=0.3\nif retry_ratio>0.2: s+=0.2\nreturn s\nprint(score(0.2, 15, 0.3))\nPY
+
+    python3 ~/ccc/scripts/agent_score.py'
+  answer_detail: 점수 함수의 골격과 테스트 실행.
+  verify:
+    type: output_contains
+    expect: '0.'
+    field: stdout
+  target_vm: bastion
+  script: 'mkdir -p ~/ccc/scripts && cat > ~/ccc/scripts/agent_score.py <<''PY''
+
+    def score(iat_cov, path_div, retry_ratio): s=0.0\nif iat_cov<0.3: s+=0.3\nif path_div>=10: s+=0.3\nif retry_ratio>0.2: s+=0.2\nreturn s\nprint(score(0.2, 15, 0.3))\nPY
+
+    python3 ~/ccc/scripts/agent_score.py'
+  risk_level: low
+  bastion_prompt: 에이전트 점수 스크립트 골격을 bastion에 저장
+- order: 5
+  instruction: Bastion 점수 결과를 Experience로 기록
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: Bastion 점수 결과를 Experience로 기록
+
+    📎 참고 (CLI): echo ''{"id":"w02-score","metrics":{"iat_cov":0.18,"path_div":14,"retry_ratio":0.32},"score":0.8}'' >> ~/ccc/data/bastion/experience/w02.json && tail -1 ~/ccc/data/bastion/experience/w02.json'
+  answer_detail: 점수 산출 결과를 Experience 저장.
+  verify:
+    type: output_contains
+    expect: score
+    field: stdout
+  target_vm: bastion
+  script: echo '{"id":"w02-score","metrics":{"iat_cov":0.18,"path_div":14,"retry_ratio":0.32},"score":0.8}' >> ~/ccc/data/bastion/experience/w02.json && tail -1 ~/ccc/data/bastion/experience/w02.json
+  risk_level: low
+  bastion_prompt: Bastion 점수 결과를 Experience로 기록

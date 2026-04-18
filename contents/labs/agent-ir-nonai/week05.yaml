@@ -1,0 +1,123 @@
+lab_id: agent-ir-nonai-week05
+title: 측면이동·지속성 — 내부 행위 기록 (Non-AI)
+version: nonai
+course: agent-ir-nonai
+week: 5
+description: 측면이동 시도를 관전하고, Bastion이 가진 측면이동 탐지 신호의 초안을 만든다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 측면이동 단계의 관측 가능한 신호를 식별한다
+- 지속성 메커니즘(cron/ssh-key/systemd)의 생성 이벤트를 감지한다
+- Bastion 스킬 초안(detect_internal_scan 등)을 작성한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: web에서 내부 arp 테이블을 조회(정찰 모사)
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 9
+  answer: '🤖 프롬프트: web에서 내부 arp 테이블을 조회(정찰 모사)
+
+    📎 참고 (CLI): ip neigh show | head -10'
+  answer_detail: 내부 ARP 테이블 관찰 (측면이동의 초기 신호).
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: ip neigh show | head -10
+  risk_level: low
+  bastion_prompt: ''
+- order: 2
+  instruction: web의 ssh 디렉토리 권한 확인 (자격증명 접근 경로)
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 10
+  answer: '🤖 프롬프트: web의 ssh 디렉토리 권한 확인 (자격증명 접근 경로)
+
+    📎 참고 (CLI): ls -la ~/.ssh 2>/dev/null | head -10 || echo ''no_ssh_dir'''
+  answer_detail: 자격증명 접근 경로 감사.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: ls -la ~/.ssh 2>/dev/null | head -10 || echo 'no_ssh_dir'
+  risk_level: low
+  bastion_prompt: ''
+- order: 3
+  instruction: web에서 secu로의 접속 시도 (차단 예상) — 탐지 입증용
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 11
+  answer: '🤖 프롬프트: web에서 secu로의 접속 시도 (차단 예상) — 탐지 입증용
+
+    📎 참고 (CLI): timeout 3 ssh -o BatchMode=yes -o StrictHostKeyChecking=no ccc@10.20.30.1 ''echo ok'' 2>&1 | head -5 || echo ''BLOCKED_OR_TIMEOUT'''
+  answer_detail: 차단된 이동 시도의 로그.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: timeout 3 ssh -o BatchMode=yes -o StrictHostKeyChecking=no ccc@10.20.30.1 'echo ok' 2>&1 | head -5 || echo 'BLOCKED_OR_TIMEOUT'
+  risk_level: low
+  bastion_prompt: ''
+- order: 4
+  instruction: secu의 auth.log에서 ssh 접속 시도 흔적 확인
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 12
+  answer: '🤖 프롬프트: secu의 auth.log에서 ssh 접속 시도 흔적 확인
+
+    📎 참고 (CLI): sudo tail -40 /var/log/auth.log | grep -Ei ''sshd|Failed|Accepted'' | tail -10'
+  answer_detail: 내부 측면이동 시그널.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: secu
+  script: sudo tail -40 /var/log/auth.log | grep -Ei 'sshd|Failed|Accepted' | tail -10
+  risk_level: medium
+  bastion_prompt: ''
+- order: 5
+  instruction: Bastion 스킬 초안 파일 생성
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: Bastion 스킬 초안 파일 생성
+
+    📎 참고 (CLI): mkdir -p ~/ccc/skills && cat > ~/ccc/skills/detect_internal_scan.md <<''MD''
+
+    # skill: detect_internal_scan
+
+    # input: secu connection logs (10m window)
+
+    # logic: same src -> >=3 distinct dst OR >=20 new ports
+
+    # action: tar_pit add 10m
+
+    MD
+
+    cat ~/ccc/skills/detect_internal_scan.md'
+  answer_detail: 측면이동 탐지 스킬 명세 초안.
+  verify:
+    type: output_contains
+    expect: detect_internal_scan
+    field: stdout
+  target_vm: bastion
+  script: 'mkdir -p ~/ccc/skills && cat > ~/ccc/skills/detect_internal_scan.md <<''MD''
+
+    # skill: detect_internal_scan
+
+    # input: secu connection logs (10m window)
+
+    # logic: same src -> >=3 distinct dst OR >=20 new ports
+
+    # action: tar_pit add 10m
+
+    MD
+
+    cat ~/ccc/skills/detect_internal_scan.md'
+  risk_level: low
+  bastion_prompt: ''

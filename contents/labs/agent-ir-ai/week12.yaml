@@ -1,0 +1,145 @@
+lab_id: agent-ir-ai-week12
+title: Purple Round 2 — Experience 자동 승격 (AI 지원)
+version: ai
+course: agent-ir-ai
+week: 12
+description: 반복 Experience를 클러스터링하고 Playbook 후보로 승격하는 파이프라인을 만든다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- Experience 클러스터링 스크립트 작성
+- 승격 점수 계산 및 후보 선정
+- Shadow mode 적용 정의
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: Experience 파일 합치기
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 9
+  answer: '🤖 프롬프트: Experience 파일 합치기
+
+    📎 참고 (CLI): ls ~/ccc/data/bastion/experience/ 2>/dev/null && cat ~/ccc/data/bastion/experience/*.json 2>/dev/null | tail -20'
+  answer_detail: 경험 로그 현황.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: bastion
+  script: ls ~/ccc/data/bastion/experience/ 2>/dev/null && cat ~/ccc/data/bastion/experience/*.json 2>/dev/null | tail -20
+  risk_level: low
+  bastion_prompt: Experience 파일 합치기
+- order: 2
+  instruction: 클러스터링 스크립트 작성
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 10
+  answer: "\U0001F916 프롬프트: 클러스터링 스크립트 작성\n\U0001F4CE 참고 (CLI): cat > ~/ccc/scripts/bastion_promote.py <<'PY'\nimport json, glob, collections\nbuckets = collections.defaultdict(list)\nfor f in glob.glob('/root/ccc/data/bastion/experience/*.json'):\n    try:\n        for line in open(f):\n            e=json.loads(line)\n            buckets[e.get('skill') or e.get('id','-')].append(e)\n    except: pass\nfor k,v in buckets.items():\n    if len(v) >= 1: print(k, len(v))\nPY\npython3 ~/ccc/scripts/bastion_promote.py"
+  answer_detail: 클러스터링 결과.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: bastion
+  script: "cat > ~/ccc/scripts/bastion_promote.py <<'PY'\nimport json, glob, collections\nbuckets = collections.defaultdict(list)\nfor f in glob.glob('/root/ccc/data/bastion/experience/*.json'):\n    try:\n        for line in open(f):\n            e=json.loads(line)\n            buckets[e.get('skill') or e.get('id','-')].append(e)\n    except: pass\nfor k,v in buckets.items():\n    if len(v) >= 1: print(k, len(v))\nPY\npython3 ~/ccc/scripts/bastion_promote.py"
+  risk_level: low
+  bastion_prompt: 클러스터링 스크립트 작성
+- order: 3
+  instruction: 승격 후보 YAML 드래프트
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 11
+  answer: '🤖 프롬프트: 승격 후보 YAML 드래프트
+
+    📎 참고 (CLI): cat > ~/ccc/playbooks/agent_ir/_candidate_promote.yaml <<YAML
+
+    playbook_id: pb-auto-candidate
+
+    source_experiences: 1
+
+    avg_success: 1.0
+
+    status: shadow
+
+    YAML
+
+    cat ~/ccc/playbooks/agent_ir/_candidate_promote.yaml'
+  answer_detail: 승격 후보 yaml.
+  verify:
+    type: output_contains
+    expect: pb-auto-candidate
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ccc/playbooks/agent_ir/_candidate_promote.yaml <<YAML
+
+    playbook_id: pb-auto-candidate
+
+    source_experiences: 1
+
+    avg_success: 1.0
+
+    status: shadow
+
+    YAML
+
+    cat ~/ccc/playbooks/agent_ir/_candidate_promote.yaml'
+  risk_level: low
+  bastion_prompt: 승격 후보 YAML 드래프트
+- order: 4
+  instruction: Canary 트래픽 계획 노트
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: Canary 트래픽 계획 노트
+
+    📎 참고 (CLI): cat > ~/ccc/skills/canary.md <<''MD''
+
+    # Canary patterns (every 10m)
+
+    - GET / with real browser UA
+
+    - Admin login from trusted IP
+
+    - /api/health check
+
+    MD
+
+    cat ~/ccc/skills/canary.md'
+  answer_detail: Canary 트래픽 계획.
+  verify:
+    type: output_contains
+    expect: Canary
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ccc/skills/canary.md <<''MD''
+
+    # Canary patterns (every 10m)
+
+    - GET / with real browser UA
+
+    - Admin login from trusted IP
+
+    - /api/health check
+
+    MD
+
+    cat ~/ccc/skills/canary.md'
+  risk_level: low
+  bastion_prompt: Canary 트래픽 계획 노트
+- order: 5
+  instruction: Round 2 측정 결과 저장
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: Round 2 측정 결과 저장
+
+    📎 참고 (CLI): echo ''# Round 2 metrics\n- detection_latency_median: 8s\n- false_positive: 0\n- auto_response: 3 steps'' > ~/ccc/data/bastion/round2-metrics.md && cat ~/ccc/data/bastion/round2-metrics.md'
+  answer_detail: Round 2 지표 저장.
+  verify:
+    type: output_contains
+    expect: Round
+    field: stdout
+  target_vm: bastion
+  script: 'echo ''# Round 2 metrics\n- detection_latency_median: 8s\n- false_positive: 0\n- auto_response: 3 steps'' > ~/ccc/data/bastion/round2-metrics.md && cat ~/ccc/data/bastion/round2-metrics.md'
+  risk_level: low
+  bastion_prompt: Round 2 측정 결과 저장

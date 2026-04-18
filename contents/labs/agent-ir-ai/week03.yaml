@@ -1,0 +1,99 @@
+lab_id: agent-ir-ai-week03
+title: 초지능 정찰 — 에이전트 정찰을 학생이 직접 의뢰 (AI 지원)
+version: ai
+course: agent-ir-ai
+week: 3
+description: 학생이 Claude Code(또는 Bastion의 recon 스킬)에게 JuiceShop 정찰을 의뢰하고, 결과를 방어 관점에서 재구성한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 에이전트 정찰의 단계별 속도·병렬성을 관찰한다
+- ATT&CK Reconnaissance(TA0043) 기법 매핑
+- 정찰 신호 5원자(ReqBurst/FailSeq/FingerQuery/ToolMix/SessionSilence) 수집
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: web의 `/robots.txt`, `/sitemap.xml`, `/api/`의 존재 여부를 curl로 조사
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 9
+  answer: '🤖 프롬프트: web의 `/robots.txt`, `/sitemap.xml`, `/api/`의 존재 여부를 curl로 조사
+
+    📎 참고 (CLI): for p in /robots.txt /sitemap.xml /api/; do curl -s -o /dev/null -w "%{http_code} $p\n" http://10.20.30.80$p; done'
+  answer_detail: 정찰성 요청에 대한 응답 코드 분포.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: for p in /robots.txt /sitemap.xml /api/; do curl -s -o /dev/null -w "%{http_code} $p\n" http://10.20.30.80$p; done
+  risk_level: low
+  bastion_prompt: web의 `/robots.txt`, `/sitemap.xml`, `/api/`의 존재 여부를 curl로 조사
+- order: 2
+  instruction: JuiceShop의 Score Board 경로 접근이 공격자 시선에 어떻게 보이는지 확인
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 10
+  answer: '🤖 프롬프트: JuiceShop의 Score Board 경로 접근이 공격자 시선에 어떻게 보이는지 확인
+
+    📎 참고 (CLI): curl -s -o /dev/null -w "%{http_code}\n" http://10.20.30.80:3000/#/score-board'
+  answer_detail: Score Board 접근 응답.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: curl -s -o /dev/null -w "%{http_code}\n" http://10.20.30.80:3000/#/score-board
+  risk_level: low
+  bastion_prompt: JuiceShop의 Score Board 경로 접근이 공격자 시선에 어떻게 보이는지 확인
+- order: 3
+  instruction: '에이전트 정찰 시뮬레이션: 다수 경로 연속 요청 후 access.log에서 ReqBurst 신호 확인'
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 11
+  answer: '🤖 프롬프트: 에이전트 정찰 시뮬레이션: 다수 경로 연속 요청 후 access.log에서 ReqBurst 신호 확인
+
+    📎 참고 (CLI): for i in $(seq 1 20); do curl -s -o /dev/null http://10.20.30.80:3000/rest/user/login -X POST -d ''{"email":"a''$i''@x.y"}'' -H ''Content-Type: application/json''; done; sudo tail -30 /var/log/apache2/access.log | awk ''{print $9}'' | sort | uniq -c'
+  answer_detail: 에이전트 유사 정찰 트래픽의 로그 지문 확인.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: 'for i in $(seq 1 20); do curl -s -o /dev/null http://10.20.30.80:3000/rest/user/login -X POST -d ''{"email":"a''$i''@x.y"}'' -H ''Content-Type: application/json''; done; sudo tail -30 /var/log/apache2/access.log | awk ''{print $9}'' | sort | uniq -c'
+  risk_level: low
+  bastion_prompt: '에이전트 정찰 시뮬레이션: 다수 경로 연속 요청 후 access.log에서 ReqBurst 신호 확인'
+- order: 4
+  instruction: Suricata가 이 정찰을 잡는지 확인
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 12
+  answer: '🤖 프롬프트: Suricata가 이 정찰을 잡는지 확인
+
+    📎 참고 (CLI): sudo tail -50 /var/log/suricata/fast.log | grep -Ei ''scan|enum'' || echo ''NO_RECON_ALERT'''
+  answer_detail: 정찰 시그니처가 기본셋에서 거의 안 뜨는 현상 확인.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: secu
+  script: sudo tail -50 /var/log/suricata/fast.log | grep -Ei 'scan|enum' || echo 'NO_RECON_ALERT'
+  risk_level: medium
+  bastion_prompt: Suricata가 이 정찰을 잡는지 확인
+- order: 5
+  instruction: Bastion에 정찰 Experience 등록
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: Bastion에 정찰 Experience 등록
+
+    📎 참고 (CLI): echo ''{"id":"w03-recon","ttp":"TA0043","signals":["ReqBurst","SessionSilence"]}'' >> ~/ccc/data/bastion/experience/w03.json && tail -1 ~/ccc/data/bastion/experience/w03.json'
+  answer_detail: 정찰 경험 저장.
+  verify:
+    type: output_contains
+    expect: TA0043
+    field: stdout
+  target_vm: bastion
+  script: echo '{"id":"w03-recon","ttp":"TA0043","signals":["ReqBurst","SessionSilence"]}' >> ~/ccc/data/bastion/experience/w03.json && tail -1 ~/ccc/data/bastion/experience/w03.json
+  risk_level: low
+  bastion_prompt: Bastion에 정찰 Experience 등록

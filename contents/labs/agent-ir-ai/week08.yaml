@@ -1,0 +1,135 @@
+lab_id: agent-ir-ai-week08
+title: 중간평가 — Blue Team Agent IR CTF (AI 지원)
+version: ai
+course: agent-ir-ai
+week: 8
+description: 제공된 공격 세션 아티팩트에서 IOC 추출·차단 권고·Bastion 스킬 1건을 설계한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 공격 단계 타임라인을 정확히 복원한다
+- 에이전트 점수 + ATT&CK 5매핑 + 방어 3층 진단
+- Bastion 스킬 1건의 명세 작성
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: 평가용 번들 경로 확인
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 9
+  answer: '🤖 프롬프트: 평가용 번들 경로 확인
+
+    📎 참고 (CLI): ls /opt/ctf/w08/$(whoami) 2>/dev/null || echo ''BUNDLE_NOT_YET'''
+  answer_detail: 평가 번들 준비 여부 확인.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: bastion
+  script: ls /opt/ctf/w08/$(whoami) 2>/dev/null || echo 'BUNDLE_NOT_YET'
+  risk_level: low
+  bastion_prompt: 평가용 번들 경로 확인
+- order: 2
+  instruction: 번들의 access.log 요약(404/403 비율)
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 10
+  answer: '🤖 프롬프트: 번들의 access.log 요약(404/403 비율)
+
+    📎 참고 (CLI): f=/opt/ctf/w08/$(whoami)/server-logs/access.log; [ -f $f ] && awk ''{c[$9]++} END{for(k in c) print k, c[k]}'' $f | head || echo ''FILE_NOT_READY'''
+  answer_detail: 번들 기초 통계.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: bastion
+  script: f=/opt/ctf/w08/$(whoami)/server-logs/access.log; [ -f $f ] && awk '{c[$9]++} END{for(k in c) print k, c[k]}' $f | head || echo 'FILE_NOT_READY'
+  risk_level: low
+  bastion_prompt: 번들의 access.log 요약(404/403 비율)
+- order: 3
+  instruction: pcap 파일 IAT 평균
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 11
+  answer: '🤖 프롬프트: pcap 파일 IAT 평균
+
+    📎 참고 (CLI): f=/opt/ctf/w08/$(whoami)/pcap/attack.pcap; [ -f $f ] && tshark -r $f -Y ''http.request'' -T fields -e frame.time_epoch | awk ''NR>1{print $1-p} {p=$1}'' | awk ''{sum+=$1;n++} END{if(n) print sum/n}'' || echo ''NO_PCAP'''
+  answer_detail: IAT 평균(에이전트 지문 초안).
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: bastion
+  script: f=/opt/ctf/w08/$(whoami)/pcap/attack.pcap; [ -f $f ] && tshark -r $f -Y 'http.request' -T fields -e frame.time_epoch | awk 'NR>1{print $1-p} {p=$1}' | awk '{sum+=$1;n++} END{if(n) print sum/n}' || echo 'NO_PCAP'
+  risk_level: low
+  bastion_prompt: pcap 파일 IAT 평균
+- order: 4
+  instruction: 답안 보고서 템플릿 생성
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: 답안 보고서 템플릿 생성
+
+    📎 참고 (CLI): mkdir -p ~/ctf-w08 && echo ''# W08 Report\n## Timeline\n## Agent Score\n## ATT&CK Mapping\n## Defense Layer Verdict\n## 3 Block Actions\n## Skill Spec'' > ~/ctf-w08/answers.md && cat ~/ctf-w08/answers.md'
+  answer_detail: 답안 틀 생성.
+  verify:
+    type: output_contains
+    expect: Timeline
+    field: stdout
+  target_vm: bastion
+  script: mkdir -p ~/ctf-w08 && echo '# W08 Report\n## Timeline\n## Agent Score\n## ATT&CK Mapping\n## Defense Layer Verdict\n## 3 Block Actions\n## Skill Spec' > ~/ctf-w08/answers.md && cat ~/ctf-w08/answers.md
+  risk_level: low
+  bastion_prompt: 답안 보고서 템플릿 생성
+- order: 5
+  instruction: 제출용 skill YAML 스켈레톤
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: 제출용 skill YAML 스켈레톤
+
+    📎 참고 (CLI): cat > ~/ctf-w08/skill.yaml <<YAML
+
+    skill_id: detect_agent_ctf
+
+    triggers_on: wazuh_alert OR access_log_burst
+
+    inputs: []
+
+    logic: []
+
+    thresholds: {}
+
+    outputs: {alert_level: 12, action: []}
+
+    failure_mode: false_positive_mitigation
+
+    YAML
+
+    cat ~/ctf-w08/skill.yaml'
+  answer_detail: 제출용 skill 명세 스켈레톤.
+  verify:
+    type: output_contains
+    expect: skill_id
+    field: stdout
+  target_vm: bastion
+  script: 'cat > ~/ctf-w08/skill.yaml <<YAML
+
+    skill_id: detect_agent_ctf
+
+    triggers_on: wazuh_alert OR access_log_burst
+
+    inputs: []
+
+    logic: []
+
+    thresholds: {}
+
+    outputs: {alert_level: 12, action: []}
+
+    failure_mode: false_positive_mitigation
+
+    YAML
+
+    cat ~/ctf-w08/skill.yaml'
+  risk_level: low
+  bastion_prompt: 제출용 skill YAML 스켈레톤

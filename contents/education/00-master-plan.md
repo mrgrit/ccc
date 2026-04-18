@@ -202,6 +202,29 @@
 | 14 | AI Safety 평가 프레임워크 | CyberSecEval, AgentHarm, HarmBench |
 | 15 | 기말: AI 모델 보안 평가 프로젝트 | 대상 모델 종합 보안 평가 + 보고서 |
 
+### Course 19: AI Agent 공격 침해대응 (Agent Incident Response)
+**파일:** `course19-agent-incident-response/`
+**키워드:** Agentic Attack, Claude Code 오용, Bastion 방어, 에이전트 로깅, Purple Team co-evolution
+**포지셔닝:** C5(SOC/IR) × C7~C10(AI 에이전트) × C12(battle-adv)의 통합·심화 과정. 실세계에서 등장한 *코딩 에이전트의 공격 도구화*에 대응하는 전용 교과.
+
+| 주차 | 주제 | 실습 |
+|------|------|------|
+| 1 | 왜 필요한가 — 에이전트 기반 공격의 새로운 위협 지형 | 시뮬레이션 관전 (Claude Code vs 실습 인프라) |
+| 2 | 공격자 해부 — Claude Code의 tool-use 루프와 능력 경계 | 에이전트 동작 트레이싱 |
+| 3 | 공격 시나리오 설계 — Claude Code로 자동 정찰·초기 침투 | 사전 계획 기반 자동 공격 시연 |
+| 4 | 에이전트 텔레메트리 — 호출·도구·토큰 기반 행위 관찰 | /proc·strace·pcap·LLM 호출 로그 분석 |
+| 5 | 에이전트 이상행위 탐지 (Bastion Blue 관점) | 탐지 룰(SIGMA/Wazuh) 작성·검증 |
+| 6 | 에이전트 격리·차단 — 레이트리밋·도구 허용 목록·의미 필터 | nftables + Wazuh active response 연동 |
+| 7 | 프롬프트 인젝션으로부터의 보호 (간접 인젝션 포함) | RAG·웹 크롤 경로 필터링 실습 |
+| 8 | 중간평가 — Blue Team Agent IR CTF | 공격 로그만 주어진 상태에서 IOC 추출·차단 |
+| 9 | 초전 Round 1 — Claude Code vs Bastion (웹 공격) | 실시간 공방 관전 + 구성 조정 |
+| 10 | 초전 Round 2 — 측면이동·지속성 | Bastion 측면이동 탐지 스킬 업그레이드 |
+| 11 | Purple Team (1) — Claude Code 코치 모드 | Bastion 미흡 부분 분석, skill 추가 |
+| 12 | Purple Team (2) — experience → playbook 승격 | 반복 성공 공격 방어 자동화 |
+| 13 | 에이전트 사고 보고서 작성 | 모델 버전·프롬프트 이력·의사결정 로그 포함 보고서 |
+| 14 | 모의 실사고 대응 — 다단계 Agentic APT | 킬체인 전 단계 자율 공격 대응 |
+| 15 | 기말 — 종합 Purple 훈련 + 교과 회고 | 총 45분 공방 + 사후 보고 + 교과 개선안 |
+
 ---
 
 ## 논문 아이디어 (4편)

@@ -1,0 +1,95 @@
+lab_id: agent-ir-nonai-week11
+title: Purple Round 1 — Bastion 스킬 추가 (Non-AI)
+version: nonai
+course: agent-ir-nonai
+week: 11
+description: 공방 결과를 바탕으로 Bastion에 새 스킬을 추가하고 Playbook을 구성한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 공방 아티팩트 기반 포렌식 복기
+- 코치 프롬프트로 개선안 추출
+- Bastion 스킬·플레이북 등록
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: 새 스킬 소스 파일 생성
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 9
+  answer: "\U0001F916 프롬프트: 새 스킬 소스 파일 생성\n\U0001F4CE 참고 (CLI): mkdir -p ~/ccc/packages/bastion/skills && cat > ~/ccc/packages/bastion/skills/detect_agent_fp.py <<'PY'\ndef detect(session):\n    return session.get('iat_cov',1.0) < 0.3 and session.get('path_div',0) >= 10\nPY\ncat ~/ccc/packages/bastion/skills/detect_agent_fp.py"
+  answer_detail: 지문 탐지 스킬 소스.
+  verify:
+    type: output_contains
+    expect: detect_agent_fp
+    field: stdout
+  target_vm: bastion
+  script: "mkdir -p ~/ccc/packages/bastion/skills && cat > ~/ccc/packages/bastion/skills/detect_agent_fp.py <<'PY'\ndef detect(session):\n    return session.get('iat_cov',1.0) < 0.3 and session.get('path_div',0) >= 10\nPY\ncat ~/ccc/packages/bastion/skills/detect_agent_fp.py"
+  risk_level: low
+  bastion_prompt: ''
+- order: 2
+  instruction: 플레이북 YAML 생성
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 10
+  answer: "\U0001F916 프롬프트: 플레이북 YAML 생성\n\U0001F4CE 참고 (CLI): mkdir -p ~/ccc/playbooks/agent_ir && cat > ~/ccc/playbooks/agent_ir/agent-fp.yaml <<YAML\nplaybook_id: pb-agent-fp\ntriggers: { wazuh_rule_id: 100200 }\nsteps:\n  - skill: detect_agent_fp\n  - skill: tar_pit_inject\n    args: { duration_s: 10 }\nrollback:\n  - unblock_nft\nYAML\ncat ~/ccc/playbooks/agent_ir/agent-fp.yaml"
+  answer_detail: 플레이북 YAML.
+  verify:
+    type: output_contains
+    expect: pb-agent-fp
+    field: stdout
+  target_vm: bastion
+  script: "mkdir -p ~/ccc/playbooks/agent_ir && cat > ~/ccc/playbooks/agent_ir/agent-fp.yaml <<YAML\nplaybook_id: pb-agent-fp\ntriggers: { wazuh_rule_id: 100200 }\nsteps:\n  - skill: detect_agent_fp\n  - skill: tar_pit_inject\n    args: { duration_s: 10 }\nrollback:\n  - unblock_nft\nYAML\ncat ~/ccc/playbooks/agent_ir/agent-fp.yaml"
+  risk_level: low
+  bastion_prompt: ''
+- order: 3
+  instruction: Experience 엔트리 추가
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 11
+  answer: '🤖 프롬프트: Experience 엔트리 추가
+
+    📎 참고 (CLI): echo ''{"id":"w11-round1","skill":"detect_agent_fp","outcome":"success"}'' >> ~/ccc/data/bastion/experience/w11.json && tail -1 ~/ccc/data/bastion/experience/w11.json'
+  answer_detail: Round 1 Experience 저장.
+  verify:
+    type: output_contains
+    expect: round1
+    field: stdout
+  target_vm: bastion
+  script: echo '{"id":"w11-round1","skill":"detect_agent_fp","outcome":"success"}' >> ~/ccc/data/bastion/experience/w11.json && tail -1 ~/ccc/data/bastion/experience/w11.json
+  risk_level: low
+  bastion_prompt: ''
+- order: 4
+  instruction: 재테스트용 트래픽 생성
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 12
+  answer: '🤖 프롬프트: 재테스트용 트래픽 생성
+
+    📎 참고 (CLI): for i in $(seq 1 20); do curl -s -o /dev/null http://10.20.30.80/rest/user/login -X POST -d ''{"email":"a''$i''"}'' -H ''Content-Type: application/json''; done; echo ''re_test_done'''
+  answer_detail: 재테스트 트래픽.
+  verify:
+    type: output_contains
+    expect: re_test_done
+    field: stdout
+  target_vm: web
+  script: 'for i in $(seq 1 20); do curl -s -o /dev/null http://10.20.30.80/rest/user/login -X POST -d ''{"email":"a''$i''"}'' -H ''Content-Type: application/json''; done; echo ''re_test_done'''
+  risk_level: low
+  bastion_prompt: ''
+- order: 5
+  instruction: Bastion diff 문서 생성
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: Bastion diff 문서 생성
+
+    📎 참고 (CLI): echo ''# w11 skill_playbook_diff\n+ detect_agent_fp (skill)\n+ pb-agent-fp (playbook)'' > ~/ccc/data/bastion/skill_playbook_diff.md && cat ~/ccc/data/bastion/skill_playbook_diff.md'
+  answer_detail: 자산 변화 기록.
+  verify:
+    type: output_contains
+    expect: detect_agent_fp
+    field: stdout
+  target_vm: bastion
+  script: echo '# w11 skill_playbook_diff\n+ detect_agent_fp (skill)\n+ pb-agent-fp (playbook)' > ~/ccc/data/bastion/skill_playbook_diff.md && cat ~/ccc/data/bastion/skill_playbook_diff.md
+  risk_level: low
+  bastion_prompt: ''

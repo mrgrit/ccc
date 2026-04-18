@@ -1,0 +1,97 @@
+lab_id: agent-ir-nonai-week09
+title: 실시간 탐지 — SIGMA → Wazuh 파이프라인 (Non-AI)
+version: nonai
+course: agent-ir-nonai
+week: 9
+description: 자체 SIGMA 룰을 작성하여 Wazuh local_rules.xml에 병합하고, 회귀 데이터셋에서 지표를 측정한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- SIGMA 룰 초안 작성
+- Wazuh로 변환·병합·문법 검증
+- 정밀도·재현율·탐지 지연 측정
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: siem VM에 접속하고 local_rules.xml 백업
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 9
+  answer: '🤖 프롬프트: siem VM에 접속하고 local_rules.xml 백업
+
+    📎 참고 (CLI): sudo cp /var/ossec/etc/rules/local_rules.xml /tmp/local_rules.xml.bak && ls -la /tmp/local_rules.xml.bak'
+  answer_detail: 수정 전 백업 확보.
+  verify:
+    type: output_contains
+    expect: local_rules.xml.bak
+    field: stdout
+  target_vm: siem
+  script: sudo cp /var/ossec/etc/rules/local_rules.xml /tmp/local_rules.xml.bak && ls -la /tmp/local_rules.xml.bak
+  risk_level: low
+  bastion_prompt: ''
+- order: 2
+  instruction: 샘플 SIGMA 초안을 저장
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 10
+  answer: "\U0001F916 프롬프트: 샘플 SIGMA 초안을 저장\n\U0001F4CE 참고 (CLI): mkdir -p ~/sigma && cat > ~/sigma/agent_burst.yml <<'YML'\ntitle: Agent-like request burst\nlogsource: { product: apache, service: access }\ndetection:\n  selection:\n    cs-uri-stem|contains: ['/rest/']\n  timeframe: 120s\n  condition: selection | count() by c-ip > 60\nfalsepositives: [Internal bots]\nlevel: medium\nYML\ncat ~/sigma/agent_burst.yml"
+  answer_detail: SIGMA 초안.
+  verify:
+    type: output_contains
+    expect: Agent-like
+    field: stdout
+  target_vm: siem
+  script: "mkdir -p ~/sigma && cat > ~/sigma/agent_burst.yml <<'YML'\ntitle: Agent-like request burst\nlogsource: { product: apache, service: access }\ndetection:\n  selection:\n    cs-uri-stem|contains: ['/rest/']\n  timeframe: 120s\n  condition: selection | count() by c-ip > 60\nfalsepositives: [Internal bots]\nlevel: medium\nYML\ncat ~/sigma/agent_burst.yml"
+  risk_level: low
+  bastion_prompt: ''
+- order: 3
+  instruction: Wazuh rule 병합(예시 텍스트 추가)
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 11
+  answer: '🤖 프롬프트: Wazuh rule 병합(예시 텍스트 추가)
+
+    📎 참고 (CLI): echo ''<!-- placeholder by w09 -->'' | sudo tee -a /var/ossec/etc/rules/local_rules.xml && tail -3 /var/ossec/etc/rules/local_rules.xml'
+  answer_detail: 룰 병합 위치 확인.
+  verify:
+    type: output_contains
+    expect: placeholder
+    field: stdout
+  target_vm: siem
+  script: echo '<!-- placeholder by w09 -->' | sudo tee -a /var/ossec/etc/rules/local_rules.xml && tail -3 /var/ossec/etc/rules/local_rules.xml
+  risk_level: low
+  bastion_prompt: ''
+- order: 4
+  instruction: Wazuh 문법 검증
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: Wazuh 문법 검증
+
+    📎 참고 (CLI): sudo /var/ossec/bin/wazuh-analysisd -t 2>&1 | tail -10'
+  answer_detail: 문법 오류 여부 확인.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: siem
+  script: sudo /var/ossec/bin/wazuh-analysisd -t 2>&1 | tail -10
+  risk_level: low
+  bastion_prompt: ''
+- order: 5
+  instruction: logtest로 샘플 입력 확인
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: logtest로 샘플 입력 확인
+
+    📎 참고 (CLI): echo ''test line'' | sudo /var/ossec/bin/wazuh-logtest 2>&1 | head -20'
+  answer_detail: Phase 1~3 매칭 과정 확인.
+  verify:
+    type: output_contains
+    expect: Phase
+    field: stdout
+  target_vm: siem
+  script: echo 'test line' | sudo /var/ossec/bin/wazuh-logtest 2>&1 | head -20
+  risk_level: low
+  bastion_prompt: ''

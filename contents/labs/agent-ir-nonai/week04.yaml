@@ -1,0 +1,99 @@
+lab_id: agent-ir-nonai-week04
+title: 자동 익스플로잇 — Transient Tool 추적 (Non-AI)
+version: nonai
+course: agent-ir-nonai
+week: 4
+description: 에이전트가 세션 안에서 작성·수정·폐기한 Transient Tool의 흔적을 방어자 관점으로 추적한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 공격 세션 아티팩트 번들을 구조화한다
+- 세션 내 도구 진화(버전 증가)를 관찰한다
+- 시그니처 공백(signature gap)에 대응하는 행위 기반 탐지 후보를 제안한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: web의 auditd가 /tmp 쓰기를 감시하도록 설정
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 9
+  answer: '🤖 프롬프트: web의 auditd가 /tmp 쓰기를 감시하도록 설정
+
+    📎 참고 (CLI): sudo auditctl -w /tmp -p wa -k tmpwrites 2>&1 | head -3 || true'
+  answer_detail: 임시 도구 쓰기 감시 설정.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: sudo auditctl -w /tmp -p wa -k tmpwrites 2>&1 | head -3 || true
+  risk_level: low
+  bastion_prompt: ''
+- order: 2
+  instruction: 간단한 공격 스크립트 위장 파일을 3버전 생성(실제 실행 없음)
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 10
+  answer: '🤖 프롬프트: 간단한 공격 스크립트 위장 파일을 3버전 생성(실제 실행 없음)
+
+    📎 참고 (CLI): for v in 1 2 3; do echo "# exploit v$v - $(date +%s)" > /tmp/exp_v$v.py; done; ls -la /tmp/exp_v*.py'
+  answer_detail: Transient Tool의 버전 증가를 모사.
+  verify:
+    type: output_contains
+    expect: exp_v
+    field: stdout
+  target_vm: web
+  script: for v in 1 2 3; do echo "# exploit v$v - $(date +%s)" > /tmp/exp_v$v.py; done; ls -la /tmp/exp_v*.py
+  risk_level: low
+  bastion_prompt: ''
+- order: 3
+  instruction: auditd에서 tmpwrites 최근 이벤트 조회
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 11
+  answer: '🤖 프롬프트: auditd에서 tmpwrites 최근 이벤트 조회
+
+    📎 참고 (CLI): sudo ausearch -k tmpwrites --start recent 2>/dev/null | tail -20 | head -20 || echo ''AUDIT_NO_EVENTS'''
+  answer_detail: 파일 쓰기 이벤트 관찰 — Transient Tool 표식.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: sudo ausearch -k tmpwrites --start recent 2>/dev/null | tail -20 | head -20 || echo 'AUDIT_NO_EVENTS'
+  risk_level: low
+  bastion_prompt: ''
+- order: 4
+  instruction: 공격 세션 아티팩트 번들 디렉토리 구조 생성
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: 공격 세션 아티팩트 번들 디렉토리 구조 생성
+
+    📎 참고 (CLI): mkdir -p ~/ccc/artifacts/w04/{pcap,server-logs,tools,session} && ls ~/ccc/artifacts/w04'
+  answer_detail: 아티팩트 표준 폴더 구조.
+  verify:
+    type: output_contains
+    expect: tools
+    field: stdout
+  target_vm: bastion
+  script: mkdir -p ~/ccc/artifacts/w04/{pcap,server-logs,tools,session} && ls ~/ccc/artifacts/w04
+  risk_level: low
+  bastion_prompt: ''
+- order: 5
+  instruction: Transient Tool 탐지 후보를 Experience로 등록
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: Transient Tool 탐지 후보를 Experience로 등록
+
+    📎 참고 (CLI): echo ''{"id":"w04-transient","hint":"same_file_modified_multiple_times_in_short_window"}'' >> ~/ccc/data/bastion/experience/w04.json && tail -1 ~/ccc/data/bastion/experience/w04.json'
+  answer_detail: 행위 기반 탐지 후보 저장.
+  verify:
+    type: output_contains
+    expect: transient
+    field: stdout
+  target_vm: bastion
+  script: echo '{"id":"w04-transient","hint":"same_file_modified_multiple_times_in_short_window"}' >> ~/ccc/data/bastion/experience/w04.json && tail -1 ~/ccc/data/bastion/experience/w04.json
+  risk_level: low
+  bastion_prompt: ''

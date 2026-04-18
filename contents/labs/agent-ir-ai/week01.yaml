@@ -1,0 +1,99 @@
+lab_id: agent-ir-ai-week01
+title: AI Vulnerability Storm 관전과 기준선 설정 (AI 지원)
+version: ai
+course: agent-ir-ai
+week: 1
+description: 공격 에이전트의 자율 동작을 관전하며, 방어 측이 관찰할 수 있는 신호의 *기준선*을 수집한다. 본 주차는 관전·수집 중심이며 이후 주차 실습의 원천 자료를 남긴다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 과목의 위치·목표·평가를 정확히 이해한다
+- Claude Code 관전 세션에서 방어 측이 볼 수 있는 신호를 식별한다
+- 기준선(Wazuh rule hits, Suricata alerts, access.log 분포)을 수집한다
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: '관전 준비: siem의 Wazuh 대시보드가 정상 접속되는지 확인하라'
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 9
+  answer: '🤖 프롬프트: 관전 준비: siem의 Wazuh 대시보드가 정상 접속되는지 확인하라
+
+    📎 참고 (CLI): curl -sk https://10.20.30.100:443/ -o /tmp/wazuh.html && head -5 /tmp/wazuh.html'
+  answer_detail: Wazuh 대시보드 접속 가능성을 기초로 확인한다.
+  verify:
+    type: output_contains
+    expect: html
+    field: stdout
+  target_vm: siem
+  script: curl -sk https://10.20.30.100:443/ -o /tmp/wazuh.html && head -5 /tmp/wazuh.html
+  risk_level: low
+  bastion_prompt: '관전 준비: siem의 Wazuh 대시보드가 정상 접속되는지 확인하라'
+- order: 2
+  instruction: secu에서 10분간 트래픽 캡처 시작 후 중지, pcap을 /tmp/w01-baseline.pcap 로 저장
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 10
+  answer: '🤖 프롬프트: secu에서 10분간 트래픽 캡처 시작 후 중지, pcap을 /tmp/w01-baseline.pcap 로 저장
+
+    📎 참고 (CLI): sudo timeout 60 tcpdump -i any -nn -w /tmp/w01-baseline.pcap ''host 10.20.30.80'' 2>/dev/null; ls -la /tmp/w01-baseline.pcap'
+  answer_detail: 기준선 트래픽 캡처. 강사 시연 직전 수행한다.
+  verify:
+    type: output_contains
+    expect: w01-baseline.pcap
+    field: stdout
+  target_vm: secu
+  script: sudo timeout 60 tcpdump -i any -nn -w /tmp/w01-baseline.pcap 'host 10.20.30.80' 2>/dev/null; ls -la /tmp/w01-baseline.pcap
+  risk_level: medium
+  bastion_prompt: secu에서 10분간 트래픽 캡처 시작 후 중지, pcap을 /tmp/w01-baseline.pcap 로 저장
+- order: 3
+  instruction: web의 access.log 최근 200줄을 읽어 403/404/200 비율을 간단히 요약하라
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 11
+  answer: '🤖 프롬프트: web의 access.log 최근 200줄을 읽어 403/404/200 비율을 간단히 요약하라
+
+    📎 참고 (CLI): sudo tail -200 /var/log/apache2/access.log | awk ''{c[$9]++} END{for(k in c) print k, c[k]}'''
+  answer_detail: 403/404/200 비율의 기준선 기록.
+  verify:
+    type: output_contains
+    expect: ''
+    field: stdout
+  target_vm: web
+  script: sudo tail -200 /var/log/apache2/access.log | awk '{c[$9]++} END{for(k in c) print k, c[k]}'
+  risk_level: low
+  bastion_prompt: web의 access.log 최근 200줄을 읽어 403/404/200 비율을 간단히 요약하라
+- order: 4
+  instruction: 관전 노트용 디렉토리를 bastion에 만들고 기본 양식을 저장
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 12
+  answer: '🤖 프롬프트: 관전 노트용 디렉토리를 bastion에 만들고 기본 양식을 저장
+
+    📎 참고 (CLI): mkdir -p ~/w01-notes && echo ''T+MM:SS | step | tool | result'' > ~/w01-notes/template.md && cat ~/w01-notes/template.md'
+  answer_detail: 학생 관전 노트의 템플릿.
+  verify:
+    type: output_contains
+    expect: template
+    field: stdout
+  target_vm: bastion
+  script: mkdir -p ~/w01-notes && echo 'T+MM:SS | step | tool | result' > ~/w01-notes/template.md && cat ~/w01-notes/template.md
+  risk_level: low
+  bastion_prompt: 관전 노트용 디렉토리를 bastion에 만들고 기본 양식을 저장
+- order: 5
+  instruction: Bastion에 첫 Experience 엔트리를 메모로 남겨둔다 (관전 시작)
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: Bastion에 첫 Experience 엔트리를 메모로 남겨둔다 (관전 시작)
+
+    📎 참고 (CLI): mkdir -p ~/ccc/data/bastion/experience && echo ''{"id":"w01-baseline","note":"observation_baseline"}'' > ~/ccc/data/bastion/experience/w01.json && cat ~/ccc/data/bastion/experience/w01.json'
+  answer_detail: Bastion Experience 메모(초기 기록).
+  verify:
+    type: output_contains
+    expect: baseline
+    field: stdout
+  target_vm: bastion
+  script: mkdir -p ~/ccc/data/bastion/experience && echo '{"id":"w01-baseline","note":"observation_baseline"}' > ~/ccc/data/bastion/experience/w01.json && cat ~/ccc/data/bastion/experience/w01.json
+  risk_level: low
+  bastion_prompt: Bastion에 첫 Experience 엔트리를 메모로 남겨둔다 (관전 시작)

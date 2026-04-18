@@ -1,0 +1,143 @@
+lab_id: agent-ir-ai-week10
+title: 기만·지연 — 허니토큰 + tar-pit (AI 지원)
+version: ai
+course: agent-ir-ai
+week: 10
+description: web에 가짜 관리자 경로와 허니토큰을 배치하고 의심 세션에 지연 정책을 적용한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+difficulty: hard
+duration_minutes: 120
+objectives:
+- 가짜 관리자 페이지와 허니토큰 배치
+- Wazuh 고신뢰 경보 룰 작성
+- 의심 세션 지연 프로파일 정의
+pass_threshold: 0.6
+steps:
+- order: 1
+  instruction: 가짜 관리자 페이지 배치
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 9
+  answer: '🤖 프롬프트: 가짜 관리자 페이지 배치
+
+    📎 참고 (CLI): sudo bash -c ''cat > /var/www/html/fake_admin.html <<HTML
+
+    <!DOCTYPE html>
+
+    <html><body><h1>Internal Admin</h1>
+
+    <!-- API_KEY=HONEY_87af3b1c_DO_NOT_REMOVE --></body></html>
+
+    HTML'' && ls -la /var/www/html/fake_admin.html'
+  answer_detail: 허니페이지 파일 생성.
+  verify:
+    type: output_contains
+    expect: fake_admin.html
+    field: stdout
+  target_vm: web
+  script: 'sudo bash -c ''cat > /var/www/html/fake_admin.html <<HTML
+
+    <!DOCTYPE html>
+
+    <html><body><h1>Internal Admin</h1>
+
+    <!-- API_KEY=HONEY_87af3b1c_DO_NOT_REMOVE --></body></html>
+
+    HTML'' && ls -la /var/www/html/fake_admin.html'
+  risk_level: low
+  bastion_prompt: 가짜 관리자 페이지 배치
+- order: 2
+  instruction: Apache alias 설정 (admin-portal → fake_admin.html)
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 10
+  answer: '🤖 프롬프트: Apache alias 설정 (admin-portal → fake_admin.html)
+
+    📎 참고 (CLI): echo ''Alias /admin-portal /var/www/html/fake_admin.html'' | sudo tee /etc/apache2/conf-available/honey.conf && sudo a2enconf honey 2>/dev/null; sudo systemctl reload apache2 2>/dev/null; curl -s http://10.20.30.80/admin-portal | head -3'
+  answer_detail: 허니 경로 서비스.
+  verify:
+    type: output_contains
+    expect: Internal
+    field: stdout
+  target_vm: web
+  script: echo 'Alias /admin-portal /var/www/html/fake_admin.html' | sudo tee /etc/apache2/conf-available/honey.conf && sudo a2enconf honey 2>/dev/null; sudo systemctl reload apache2 2>/dev/null; curl -s http://10.20.30.80/admin-portal | head -3
+  risk_level: low
+  bastion_prompt: Apache alias 설정 (admin-portal → fake_admin.html)
+- order: 3
+  instruction: Wazuh 고신뢰 경보 룰 초안 저장
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 11
+  answer: '🤖 프롬프트: Wazuh 고신뢰 경보 룰 초안 저장
+
+    📎 참고 (CLI): echo ''<!-- rule 100300: level 15 when /admin-portal in access log -->'' | sudo tee -a /var/ossec/etc/rules/local_rules.xml && tail -2 /var/ossec/etc/rules/local_rules.xml'
+  answer_detail: 고신뢰 경보 룰 표식.
+  verify:
+    type: output_contains
+    expect: '100300'
+    field: stdout
+  target_vm: siem
+  script: 'echo ''<!-- rule 100300: level 15 when /admin-portal in access log -->'' | sudo tee -a /var/ossec/etc/rules/local_rules.xml && tail -2 /var/ossec/etc/rules/local_rules.xml'
+  risk_level: low
+  bastion_prompt: Wazuh 고신뢰 경보 룰 초안 저장
+- order: 4
+  instruction: 허니 경로 접근을 만들어 access.log에 남김
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: recon
+  points: 12
+  answer: '🤖 프롬프트: 허니 경로 접근을 만들어 access.log에 남김
+
+    📎 참고 (CLI): curl -s http://10.20.30.80/admin-portal > /dev/null && sudo grep ''admin-portal'' /var/log/apache2/access.log | tail -2'
+  answer_detail: 허니 페이지 접근 기록.
+  verify:
+    type: output_contains
+    expect: admin-portal
+    field: stdout
+  target_vm: web
+  script: curl -s http://10.20.30.80/admin-portal > /dev/null && sudo grep 'admin-portal' /var/log/apache2/access.log | tail -2
+  risk_level: low
+  bastion_prompt: 허니 경로 접근을 만들어 access.log에 남김
+- order: 5
+  instruction: 지연 프로파일 정의 파일 생성
+  hint: 리눅스 기본 명령과 실습 호스트 IP를 참고하라
+  category: analysis
+  points: 13
+  answer: '🤖 프롬프트: 지연 프로파일 정의 파일 생성
+
+    📎 참고 (CLI): mkdir -p ~/ccc/skills && cat > ~/ccc/skills/delay_profile.md <<''MD''
+
+    # suspicion_score -> delay(ms)
+
+    # <0.4 : 0
+
+    # 0.4-0.6 : 200
+
+    # 0.6-0.8 : 1000-3000
+
+    # >0.8 : 10000-30000 (tar-pit)
+
+    MD
+
+    cat ~/ccc/skills/delay_profile.md'
+  answer_detail: 지연 프로파일 정의.
+  verify:
+    type: output_contains
+    expect: tar-pit
+    field: stdout
+  target_vm: bastion
+  script: 'mkdir -p ~/ccc/skills && cat > ~/ccc/skills/delay_profile.md <<''MD''
+
+    # suspicion_score -> delay(ms)
+
+    # <0.4 : 0
+
+    # 0.4-0.6 : 200
+
+    # 0.6-0.8 : 1000-3000
+
+    # >0.8 : 10000-30000 (tar-pit)
+
+    MD
+
+    cat ~/ccc/skills/delay_profile.md'
+  risk_level: low
+  bastion_prompt: 지연 프로파일 정의 파일 생성
