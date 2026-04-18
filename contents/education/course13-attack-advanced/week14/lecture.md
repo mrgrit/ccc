@@ -44,18 +44,18 @@
 
 ## 1.1 PTES 7단계
 
-```
-+---------------------------------------------------------------------+
-|                    PTES 7단계                                       |
-+---------------------------------------------------------------------+
-| 1. Pre-engagement     사전 협의: 범위, 규칙, 목표 정의              |
-| 2. Intelligence       정보 수집: OSINT, 스캐닝, 핑거프린팅          |
-| 3. Threat Modeling    위협 모델링: 자산 식별, 공격 벡터 분류        |
-| 4. Vulnerability      취약점 분석: 발견, 검증, 우선순위화           |
-| 5. Exploitation       익스플로잇: 취약점 악용, 초기 접근            |
-| 6. Post-Exploitation  후속: 권한 상승, 측면 이동, 데이터 수집       |
-| 7. Reporting          보고: 발견사항, 위험 평가, 권고               |
-+---------------------------------------------------------------------+
+```mermaid
+graph LR
+    P1["1. Pre-engagement<br/>범위, 규칙"] --> P2["2. Intelligence<br/>OSINT, 스캐닝"]
+    P2 --> P3["3. Threat Modeling<br/>공격 벡터 분류"]
+    P3 --> P4["4. Vulnerability<br/>취약점 분석"]
+    P4 --> P5["5. Exploitation<br/>초기 접근"]
+    P5 --> P6["6. Post-Exploit<br/>권한 상승, 측면 이동"]
+    P6 --> P7["7. Reporting<br/>발견사항, 권고"]
+    style P4 fill:#d29922,color:#fff
+    style P5 fill:#f85149,color:#fff
+    style P6 fill:#f85149,color:#fff
+    style P7 fill:#238636,color:#fff
 ```
 
 ## 1.2 이번 실습 규칙
