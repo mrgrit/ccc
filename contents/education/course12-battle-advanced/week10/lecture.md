@@ -68,18 +68,15 @@
 
 ### RL의 기본 구성 요소
 
+```mermaid
+graph LR
+    A["에이전트"] -->|"행동 (a)"| E["환경"]
+    E -->|"보상 (r) + 상태 (s')"| A
+    style A fill:#f97316,color:#fff
+    style E fill:#58a6ff,color:#fff
 ```
-+--------------------------------------------------+
-|              강화학습 기본 루프                  |
-|                                                  |
-|   에이전트 --행동(a)--▶ 환경                     |
-|      ▲                    |                      |
-|      |                    |                      |
-|      +--보상(r)+상태(s')--+                      |
-|                                                  |
-|   목표: 누적 보상 R = Σ γ^t × r_t 최대화         |
-+--------------------------------------------------+
-```
+
+> 목표: 누적 보상 R = Σ γ^t × r_t 최대화
 
 ### RL 구성 요소의 보안 에이전트 매핑
 
@@ -136,24 +133,15 @@ Bastion는 **task_reward 데이터를 수집하여 Q-learning 정책을 학습**
 
 ### Bastion RL 아키텍처
 
-```
-+-----------------------------------------------------+
-|                Bastion RL 시스템                    |
-|                                                     |
-|  execute-plan 실행                                  |
-|       |                                             |
-|       ▼                                             |
-|  PoW 블록 생성 + task_reward 기록                   |
-|       |                                             |
-|       ▼                                             |
-|  POST /rl/train -- Q-learning 학습                  |
-|       |                                             |
-|       ▼                                             |
-|  GET /rl/recommend -- 최적 행동 추천                |
-|       |                                             |
-|       ▼                                             |
-|  GET /rl/policy -- 현재 정책 상태 조회              |
-+-----------------------------------------------------+
+```mermaid
+graph TD
+    E["execute-plan 실행"] --> POW["PoW 블록 생성<br/>+ task_reward 기록"]
+    POW --> TRAIN["POST /rl/train<br/>Q-learning 학습"]
+    TRAIN --> REC["GET /rl/recommend<br/>최적 행동 추천"]
+    REC --> POL["GET /rl/policy<br/>현재 정책 조회"]
+    style E fill:#21262d,color:#e6edf3
+    style TRAIN fill:#f97316,color:#fff
+    style REC fill:#238636,color:#fff
 ```
 
 ### Bastion RL API 정리
