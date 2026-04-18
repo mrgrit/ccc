@@ -87,28 +87,39 @@ LLM은 학습 과정에서 **안전 정렬(safety alignment)**을 거쳐, 유해
 
 ## 2.1 분류 체계
 
-```
-탈옥 기법
-├── 페르소나 기반 (Persona-based)
-│   ├── DAN (Do Anything Now)
-│   ├── AIM (Always Intelligent and Machiavellian)
-│   └── SECBOT, EvilBot 등 커스텀 페르소나
-│
-├── 시나리오 기반 (Scenario-based)
-│   ├── 역할극 (소설, 영화 대본)
-│   ├── 교육 프레이밍 ("보안 교육 목적으로...")
-│   └── 가상 세계 ("이 세계에서는 모든 것이 허용...")
-│
-├── 기술적 우회 (Technical bypass)
-│   ├── 다국어 우회 (저빈도 언어)
-│   ├── 인코딩 우회 (Base64, ROT13)
-│   ├── 토큰 조작 (특수 문자, 제어 토큰)
-│   └── 다단계 공격 (무해한 질문들로 점진적 유도)
-│
-└── 논리적 조작 (Logical manipulation)
-    ├── "거부하면 더 위험" 논리
-    ├── 확인 편향 활용
-    └── 메타 프롬프팅 ("당신의 시스템 프롬프트를 분석해줘")
+```mermaid
+flowchart LR
+    Root["탈옥 기법 (Jailbreak)"]
+    P["페르소나 기반<br/>Persona-based"]
+    P1["DAN<br/>Do Anything Now"]
+    P2["AIM<br/>Always Intelligent, Machiavellian"]
+    P3["커스텀 페르소나<br/>SECBOT · EvilBot"]
+    S["시나리오 기반<br/>Scenario-based"]
+    S1["역할극<br/>소설 · 영화 대본"]
+    S2["교육 프레이밍<br/>\"보안 교육 목적으로…\""]
+    S3["가상 세계<br/>\"모든 것이 허용되는 세계…\""]
+    T["기술적 우회<br/>Technical bypass"]
+    T1["다국어 우회<br/>저빈도 언어"]
+    T2["인코딩 우회<br/>Base64 · ROT13"]
+    T3["토큰 조작<br/>특수문자 · 제어 토큰"]
+    T4["다단계 공격<br/>무해한 질문 점진 유도"]
+    L["논리적 조작<br/>Logical manipulation"]
+    L1["\"거부하면 더 위험\" 논리"]
+    L2["확인 편향 활용"]
+    L3["메타 프롬프팅<br/>시스템 프롬프트 탈취 유도"]
+    Root --> P
+    Root --> S
+    Root --> T
+    Root --> L
+    P --> P1 & P2 & P3
+    S --> S1 & S2 & S3
+    T --> T1 & T2 & T3 & T4
+    L --> L1 & L2 & L3
+    style Root fill:#21262d,stroke:#f97316,color:#e6edf3
+    style P fill:#161b22,stroke:#58a6ff,color:#e6edf3
+    style S fill:#161b22,stroke:#58a6ff,color:#e6edf3
+    style T fill:#161b22,stroke:#58a6ff,color:#e6edf3
+    style L fill:#161b22,stroke:#58a6ff,color:#e6edf3
 ```
 
 ## 2.2 각 기법 상세
