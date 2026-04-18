@@ -638,26 +638,35 @@ ssh ccc@10.20.30.80 \
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
-### `/var/log/suricata/eve.json`
-**Suricata 이벤트 로그 (JSON)** (VM: secu)
+### Hydra + Hashcat
+> **역할:** 온라인 로그인 무차별(Hydra) + 오프라인 해시 크래킹(Hashcat)  
+> **실행 위치:** `공격자 측 CLI`  
+> **접속/호출:** `hydra -l <u> -P <wl> <proto>://<host>`, `hashcat -m <모드> hash.txt wordlist`
 
-Suricata가 생성하는 모든 이벤트(alert, flow, dns, http, tls 등)를 JSON 형식으로 기록하는 메인 로그. SIEM 연동의 핵심 데이터 소스.
+**주요 경로·파일**
 
-**주요 내용**:
-- `{"event_type":"alert","src_ip":"10.20.30.201","alert":{"signature":"SQLi attempt","signature_id":1000102}}` — 알림 이벤트
-- `{"event_type":"flow","src_ip":"...","dest_ip":"...","proto":"TCP"}` — 네트워크 흐름 이벤트
+| 경로 | 역할 |
+|------|------|
+| `/usr/share/wordlists/rockyou.txt` | 대표 워드리스트 |
+| `/usr/share/hashcat/OneRuleToRuleThemAll.rule` | 룰 기반 변형 |
 
-**해석**: `event_type`이 `alert`인 항목이 탐지된 공격이다. `signature_id`로 어떤 룰에 매칭됐는지, `src_ip`/`dest_ip`로 공격 출발지/목적지를 파악한다. jq로 필터링: `jq 'select(.event_type=="alert")'`
+**핵심 설정·키**
 
-### `/var/log/suricata/fast.log`
-**Suricata 빠른 알림 로그 (텍스트)** (VM: secu)
+- `hydra -t 4` — 동시 접속 수 — IPS 차단 유발 주의
+- `hashcat -m 1800` — sha512crypt(Linux /etc/shadow)
+- `hashcat -m 1000` — NTLM
 
-알림 이벤트를 한 줄씩 텍스트로 기록하는 간이 로그. 빠른 모니터링에 유용하지만, 상세 분석은 eve.json을 사용.
+**로그·확인 명령**
 
-**주요 내용**:
-- `04/15/2026-12:34:56.789012  [**] [1:1000102:1] SQLi attempt [**] [Classification: ...] [Priority: 1] {TCP} 10.20.30.201:45678 -> 10.20.30.80:80`
+- `hydra.restore` — 중단된 공격 재개용 세션
+- `hashcat.potfile` — 이미 크랙된 해시 캐시 (`~/.hashcat/hashcat.potfile`)
 
-**해석**: `[Priority: 1]`은 높은 우선순위(심각한 위협). IP와 포트로 공격자와 대상을 즉시 식별할 수 있다.
+**UI / CLI 요점**
+
+- `hydra -l admin -P rockyou.txt ssh://10.20.30.80 -t 2` — SSH 브루트
+- `hashcat -m 1800 shadow.hash rockyou.txt -r rules/best64.rule` — 룰 적용 크랙
+
+> **해석 팁.** Hydra는 **계정 잠금·fail2ban에 취약**. `-t`를 작게(2~4) 두고, 분산 시간 증가 옵션 사용. Hashcat은 **GPU 활용 시 `-d` 옵션으로 장치 선택**.
 

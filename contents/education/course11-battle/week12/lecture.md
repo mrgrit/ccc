@@ -787,26 +787,100 @@ curl -s -X POST "http://localhost:9100/projects/$PID/completion-report" \
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
-### `/var/log/suricata/eve.json`
-**Suricata 이벤트 로그 (JSON)** (VM: secu)
+### sqlmap
+> **역할:** SQL Injection 탐지·악용 자동화  
+> **실행 위치:** `공격자 측 CLI`  
+> **접속/호출:** `sqlmap -u <url>` 또는 `-r request.txt`
 
-Suricata가 생성하는 모든 이벤트(alert, flow, dns, http, tls 등)를 JSON 형식으로 기록하는 메인 로그. SIEM 연동의 핵심 데이터 소스.
+**주요 경로·파일**
 
-**주요 내용**:
-- `{"event_type":"alert","src_ip":"10.20.30.201","alert":{"signature":"SQLi attempt","signature_id":1000102}}` — 알림 이벤트
-- `{"event_type":"flow","src_ip":"...","dest_ip":"...","proto":"TCP"}` — 네트워크 흐름 이벤트
+| 경로 | 역할 |
+|------|------|
+| `~/.local/share/sqlmap/output/<host>/` | 세션·덤프 결과 |
+| `session.sqlite` | 재실행 시 단계 스킵용 캐시 |
 
-**해석**: `event_type`이 `alert`인 항목이 탐지된 공격이다. `signature_id`로 어떤 룰에 매칭됐는지, `src_ip`/`dest_ip`로 공격 출발지/목적지를 파악한다. jq로 필터링: `jq 'select(.event_type=="alert")'`
+**핵심 설정·키**
 
-### `/var/log/suricata/fast.log`
-**Suricata 빠른 알림 로그 (텍스트)** (VM: secu)
+- `--risk=1~3 --level=1~5` — 탐지 공격 폭 조절
+- `--technique=BEUSTQ` — B)lind E)rror U)nion S)tacked T)ime Q)uery
 
-알림 이벤트를 한 줄씩 텍스트로 기록하는 간이 로그. 빠른 모니터링에 유용하지만, 상세 분석은 eve.json을 사용.
+**로그·확인 명령**
 
-**주요 내용**:
-- `04/15/2026-12:34:56.789012  [**] [1:1000102:1] SQLi attempt [**] [Classification: ...] [Priority: 1] {TCP} 10.20.30.201:45678 -> 10.20.30.80:80`
+- `output/<host>/log` — 요청·응답 로그
 
-**해석**: `[Priority: 1]`은 높은 우선순위(심각한 위협). IP와 포트로 공격자와 대상을 즉시 식별할 수 있다.
+**UI / CLI 요점**
+
+- `sqlmap -u ... --dbs` — DB 목록
+- `sqlmap -u ... -D juice -T users --dump` — 특정 테이블 덤프
+- `sqlmap -r req.txt --batch --crawl=2` — Burp 저장 요청 기반 크롤링
+
+> **해석 팁.** `--batch`로 대화형 프롬프트 자동 Y 처리. WAF가 있을 땐 `--tamper=space2comment,between` 조합으로 우회 시도.
+
+### Wazuh SIEM (4.11.x)
+> **역할:** 에이전트 기반 로그·FIM·SCA 통합 분석 플랫폼  
+> **실행 위치:** `siem (10.20.30.100)`  
+> **접속/호출:** Dashboard `https://10.20.30.100` (admin/admin), Manager API `:55000`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/var/ossec/etc/ossec.conf` | Manager 메인 설정 (원격, 전송, syscheck 등) |
+| `/var/ossec/etc/rules/local_rules.xml` | 커스텀 룰 (id ≥ 100000) |
+| `/var/ossec/etc/decoders/local_decoder.xml` | 커스텀 디코더 |
+| `/var/ossec/logs/alerts/alerts.json` | 실시간 JSON 알림 스트림 |
+| `/var/ossec/logs/archives/archives.json` | 전체 이벤트 아카이브 |
+| `/var/ossec/logs/ossec.log` | Manager 데몬 로그 |
+| `/var/ossec/queue/fim/db/fim.db` | FIM 기준선 SQLite DB |
+
+**핵심 설정·키**
+
+- `<rule id='100100' level='10'>` — 커스텀 룰 — level 10↑은 고위험
+- `<syscheck><directories>...` — FIM 감시 경로
+- `<active-response>` — 자동 대응 (firewall-drop, restart)
+
+**로그·확인 명령**
+
+- `jq 'select(.rule.level>=10)' alerts.json` — 고위험 알림만
+- `grep ERROR ossec.log` — Manager 오류 (룰 문법 오류 등)
+
+**UI / CLI 요점**
+
+- Dashboard → Security events — KQL 필터 `rule.level >= 10`
+- Dashboard → Integrity monitoring — 변경된 파일 해시 비교
+- `/var/ossec/bin/wazuh-logtest` — 룰 매칭 단계별 확인 (Phase 1→3)
+- `/var/ossec/bin/wazuh-analysisd -t` — 룰·설정 문법 검증
+
+> **해석 팁.** Phase 3에서 원하는 `rule.id`가 떠야 커스텀 룰 정상. `local_rules.xml` 수정 후 `systemctl restart wazuh-manager`, 문법 오류가 있으면 **분석 데몬 전체가 기동 실패**하므로 `-t`로 먼저 검증.
+
+### fail2ban
+> **역할:** 로그 패턴 매칭 자동 IP 차단  
+> **실행 위치:** `web/secu/siem`  
+> **접속/호출:** `systemctl status fail2ban`, `fail2ban-client`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/etc/fail2ban/jail.local` | 운영자 jail 설정 |
+| `/etc/fail2ban/filter.d/` | failregex 정의 |
+| `/var/log/fail2ban.log` | 밴/언밴 이력 |
+
+**핵심 설정·키**
+
+- `[sshd] enabled=true maxretry=3 findtime=10m bantime=1h` — 표준 SSH jail
+- `action = nftables-multiport[...]` — 실제 차단은 nftables 연동
+
+**로그·확인 명령**
+
+- ``fail2ban-client status sshd`` — 현재 밴 IP 목록
+
+**UI / CLI 요점**
+
+- `fail2ban-client set sshd banip <ip>` — 수동 밴
+- `fail2ban-regex auth.log /etc/fail2ban/filter.d/sshd.conf` — 필터 검증
+
+> **해석 팁.** 로그 로테이션으로 파일이 갱신되면 **inode 추적 문제**로 탐지 누락 가능 — `logpath` 복수 지정과 `backend=systemd` 고려.
 

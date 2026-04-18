@@ -461,3 +461,78 @@ curl -s http://localhost:8003/v1/chat/completions \
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): Ollama 22모델(gemma3:12b ~5s), Bastion 50프로젝트, execute-plan 병렬, RL train/recommend
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### Ollama + LangChain
+> **역할:** 로컬 LLM 서빙(Ollama) + 체인 오케스트레이션(LangChain)  
+> **실행 위치:** `bastion (LLM 서버)`  
+> **접속/호출:** `OLLAMA_HOST=http://10.20.30.201:11434`, Python `from langchain_ollama import OllamaLLM`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `~/.ollama/models/` | 다운로드된 모델 블롭 |
+| `/etc/systemd/system/ollama.service` | 서비스 유닛 |
+
+**핵심 설정·키**
+
+- `OLLAMA_HOST=0.0.0.0:11434` — 외부 바인드
+- `OLLAMA_KEEP_ALIVE=30m` — 모델 유휴 유지
+- `LLM_MODEL=gemma3:4b (env)` — CCC 기본 모델
+
+**로그·확인 명령**
+
+- `journalctl -u ollama` — 서빙 로그
+- `LangChain `verbose=True`` — 체인 단계 출력
+
+**UI / CLI 요점**
+
+- `ollama list` — 설치된 모델
+- `curl -XPOST $OLLAMA_HOST/api/generate -d '{...}'` — REST 생성
+- LangChain `RunnableSequence | parser` — 체인 조립 문법
+
+> **해석 팁.** Ollama는 **첫 호출에 모델 로드**가 커서 지연이 크다. 성능 실험 시 워밍업 호출을 배제하고 측정하자.
+
+### Wazuh SIEM (4.11.x)
+> **역할:** 에이전트 기반 로그·FIM·SCA 통합 분석 플랫폼  
+> **실행 위치:** `siem (10.20.30.100)`  
+> **접속/호출:** Dashboard `https://10.20.30.100` (admin/admin), Manager API `:55000`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/var/ossec/etc/ossec.conf` | Manager 메인 설정 (원격, 전송, syscheck 등) |
+| `/var/ossec/etc/rules/local_rules.xml` | 커스텀 룰 (id ≥ 100000) |
+| `/var/ossec/etc/decoders/local_decoder.xml` | 커스텀 디코더 |
+| `/var/ossec/logs/alerts/alerts.json` | 실시간 JSON 알림 스트림 |
+| `/var/ossec/logs/archives/archives.json` | 전체 이벤트 아카이브 |
+| `/var/ossec/logs/ossec.log` | Manager 데몬 로그 |
+| `/var/ossec/queue/fim/db/fim.db` | FIM 기준선 SQLite DB |
+
+**핵심 설정·키**
+
+- `<rule id='100100' level='10'>` — 커스텀 룰 — level 10↑은 고위험
+- `<syscheck><directories>...` — FIM 감시 경로
+- `<active-response>` — 자동 대응 (firewall-drop, restart)
+
+**로그·확인 명령**
+
+- `jq 'select(.rule.level>=10)' alerts.json` — 고위험 알림만
+- `grep ERROR ossec.log` — Manager 오류 (룰 문법 오류 등)
+
+**UI / CLI 요점**
+
+- Dashboard → Security events — KQL 필터 `rule.level >= 10`
+- Dashboard → Integrity monitoring — 변경된 파일 해시 비교
+- `/var/ossec/bin/wazuh-logtest` — 룰 매칭 단계별 확인 (Phase 1→3)
+- `/var/ossec/bin/wazuh-analysisd -t` — 룰·설정 문법 검증
+
+> **해석 팁.** Phase 3에서 원하는 `rule.id`가 떠야 커스텀 룰 정상. `local_rules.xml` 수정 후 `systemctl restart wazuh-manager`, 문법 오류가 있으면 **분석 데몬 전체가 기동 실패**하므로 `-t`로 먼저 검증.
+

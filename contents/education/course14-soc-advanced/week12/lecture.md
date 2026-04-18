@@ -987,49 +987,42 @@ INFO
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
-### `/var/ossec/logs/ossec.log`
-**Wazuh Manager 시스템 로그** (VM: siem)
+### Wazuh SIEM (4.11.x)
+> **역할:** 에이전트 기반 로그·FIM·SCA 통합 분석 플랫폼  
+> **실행 위치:** `siem (10.20.30.100)`  
+> **접속/호출:** Dashboard `https://10.20.30.100` (admin/admin), Manager API `:55000`
 
-Wazuh Manager 데몬의 동작 로그. 에이전트 연결/해제, 룰 로드, 에러 등이 기록된다.
+**주요 경로·파일**
 
-**주요 내용**:
-- `ERROR: ... Could not load rule ...` — 룰 로드 실패
-- `INFO: Agent 'secu' connected` — 에이전트 연결
+| 경로 | 역할 |
+|------|------|
+| `/var/ossec/etc/ossec.conf` | Manager 메인 설정 (원격, 전송, syscheck 등) |
+| `/var/ossec/etc/rules/local_rules.xml` | 커스텀 룰 (id ≥ 100000) |
+| `/var/ossec/etc/decoders/local_decoder.xml` | 커스텀 디코더 |
+| `/var/ossec/logs/alerts/alerts.json` | 실시간 JSON 알림 스트림 |
+| `/var/ossec/logs/archives/archives.json` | 전체 이벤트 아카이브 |
+| `/var/ossec/logs/ossec.log` | Manager 데몬 로그 |
+| `/var/ossec/queue/fim/db/fim.db` | FIM 기준선 SQLite DB |
 
-**해석**: `ERROR` 로그가 반복되면 설정 오류 또는 디스크 부족. 특히 `Could not load rule`은 local_rules.xml 문법 오류.
+**핵심 설정·키**
 
+- `<rule id='100100' level='10'>` — 커스텀 룰 — level 10↑은 고위험
+- `<syscheck><directories>...` — FIM 감시 경로
+- `<active-response>` — 자동 대응 (firewall-drop, restart)
 
-### Wazuh Dashboard UI 가이드
+**로그·확인 명령**
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+- `jq 'select(.rule.level>=10)' alerts.json` — 고위험 알림만
+- `grep ERROR ossec.log` — Manager 오류 (룰 문법 오류 등)
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**UI / CLI 요점**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+- Dashboard → Security events — KQL 필터 `rule.level >= 10`
+- Dashboard → Integrity monitoring — 변경된 파일 해시 비교
+- `/var/ossec/bin/wazuh-logtest` — 룰 매칭 단계별 확인 (Phase 1→3)
+- `/var/ossec/bin/wazuh-analysisd -t` — 룰·설정 문법 검증
 
-
-### OpenCTI UI 가이드
-
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
-
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+> **해석 팁.** Phase 3에서 원하는 `rule.id`가 떠야 커스텀 룰 정상. `local_rules.xml` 수정 후 `systemctl restart wazuh-manager`, 문법 오류가 있으면 **분석 데몬 전체가 기동 실패**하므로 `-t`로 먼저 검증.
 

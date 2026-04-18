@@ -718,48 +718,62 @@ sudo tail -20 /var/log/suricata/fast.log
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
-### `/var/log/suricata/fast.log`
-**Suricata 빠른 알림 로그 (텍스트)** (VM: secu)
+### 보고서 도구 (CVSS 계산기·Markdown·ReportLab)
+> **역할:** 취약점 보고서 표준화  
+> **실행 위치:** `작업 PC`  
+> **접속/호출:** FIRST CVSS 계산기 https://www.first.org/cvss/calculator/3.1
 
-알림 이벤트를 한 줄씩 텍스트로 기록하는 간이 로그. 빠른 모니터링에 유용하지만, 상세 분석은 eve.json을 사용.
+**주요 경로·파일**
 
-**주요 내용**:
-- `04/15/2026-12:34:56.789012  [**] [1:1000102:1] SQLi attempt [**] [Classification: ...] [Priority: 1] {TCP} 10.20.30.201:45678 -> 10.20.30.80:80`
+| 경로 | 역할 |
+|------|------|
+| `reports/<project>/` | 재현 스크린샷·증적 저장 |
+| `template.md / template.docx` | 표준 템플릿 |
 
-**해석**: `[Priority: 1]`은 높은 우선순위(심각한 위협). IP와 포트로 공격자와 대상을 즉시 식별할 수 있다.
+**핵심 설정·키**
 
+- `CVSS 3.1 벡터 예: AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H` — Critical 9.8
+- `CWE ID + 권고 (remediation)` — 보고서 필수 항목
 
-### Wazuh Dashboard UI 가이드
+**UI / CLI 요점**
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+- MermaidJS 공격 흐름도 — 교안/보고서 공통 도식
+- Pandoc `md → docx/pdf` — 포맷 변환
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+> **해석 팁.** 보고서 가치는 **재현 절차의 완결성**에 달려 있다. 스크린샷·요청/응답 전체·시간 기록을 포함해야 고객이 독립 검증 가능.
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+### CCC Bastion Agent
+> **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
+> **실행 위치:** `bastion (10.20.30.201)`  
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
 
+**주요 경로·파일**
 
-### OpenCTI UI 가이드
+| 경로 | 역할 |
+|------|------|
+| `packages/bastion/agent.py` | 메인 에이전트 루프 |
+| `packages/bastion/skills.py` | 스킬 정의 |
+| `packages/bastion/playbooks/` | 정적 플레이북 YAML |
+| `data/bastion/experience/` | 수집된 경험 (pass/fail) |
 
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+**핵심 설정·키**
 
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+- `LLM_BASE_URL / LLM_MODEL` — Ollama 연결
+- `CCC_API_KEY` — ccc-api 인증
+- `max_retry=2` — 실패 시 self-correction 재시도
+
+**로그·확인 명령**
+
+- ``docs/test-status.md`` — 현재 테스트 진척 요약
+- ``bastion_test_progress.json`` — 스텝별 pass/fail 원시
+
+**UI / CLI 요점**
+
+- 대화형 TUI 프롬프트 — 자연어 지시 → 계획 → 실행 → 검증
+- `/a2a/mission` (API) — 자율 미션 실행
+- Experience→Playbook 승격 — 반복 성공 패턴 저장
+
+> **해석 팁.** 실패 시 output을 분석해 **근본 원인 교정**이 설계의 핵심. 증상 회피/땜빵은 금지.
 

@@ -697,3 +697,67 @@ Executive Summary는 비기술 경영진이 읽는 유일한 섹션인 경우가
 
 ### 과제 3: Purple Team 연습 설계 (팀)
 이번 실습을 기반으로 Red Team과 Blue Team이 동시에 참여하는 Purple Team 연습 시나리오를 설계하라. 공격 단계별 탐지 기대치와 대응 절차를 포함할 것.
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### 보고서 도구 (CVSS 계산기·Markdown·ReportLab)
+> **역할:** 취약점 보고서 표준화  
+> **실행 위치:** `작업 PC`  
+> **접속/호출:** FIRST CVSS 계산기 https://www.first.org/cvss/calculator/3.1
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `reports/<project>/` | 재현 스크린샷·증적 저장 |
+| `template.md / template.docx` | 표준 템플릿 |
+
+**핵심 설정·키**
+
+- `CVSS 3.1 벡터 예: AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H` — Critical 9.8
+- `CWE ID + 권고 (remediation)` — 보고서 필수 항목
+
+**UI / CLI 요점**
+
+- MermaidJS 공격 흐름도 — 교안/보고서 공통 도식
+- Pandoc `md → docx/pdf` — 포맷 변환
+
+> **해석 팁.** 보고서 가치는 **재현 절차의 완결성**에 달려 있다. 스크린샷·요청/응답 전체·시간 기록을 포함해야 고객이 독립 검증 가능.
+
+### CCC Bastion Agent
+> **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
+> **실행 위치:** `bastion (10.20.30.201)`  
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `packages/bastion/agent.py` | 메인 에이전트 루프 |
+| `packages/bastion/skills.py` | 스킬 정의 |
+| `packages/bastion/playbooks/` | 정적 플레이북 YAML |
+| `data/bastion/experience/` | 수집된 경험 (pass/fail) |
+
+**핵심 설정·키**
+
+- `LLM_BASE_URL / LLM_MODEL` — Ollama 연결
+- `CCC_API_KEY` — ccc-api 인증
+- `max_retry=2` — 실패 시 self-correction 재시도
+
+**로그·확인 명령**
+
+- ``docs/test-status.md`` — 현재 테스트 진척 요약
+- ``bastion_test_progress.json`` — 스텝별 pass/fail 원시
+
+**UI / CLI 요점**
+
+- 대화형 TUI 프롬프트 — 자연어 지시 → 계획 → 실행 → 검증
+- `/a2a/mission` (API) — 자율 미션 실행
+- Experience→Playbook 승격 — 반복 성공 패턴 저장
+
+> **해석 팁.** 실패 시 output을 분석해 **근본 원인 교정**이 설계의 핵심. 증상 회피/땜빵은 금지.
+

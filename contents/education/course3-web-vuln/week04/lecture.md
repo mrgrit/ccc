@@ -537,3 +537,40 @@ print(f'전체 payload: {json.dumps(payload, indent=2)}')
 4. **Submit** 클릭하여 적용
 5. **Brute Force** 메뉴에서 인증 우회 실습 수행
 6. 각 항목 페이지 하단 **View Source** 로 레벨별 인증 로직 비교
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### Burp Suite Community
+> **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
+> **실행 위치:** `작업 PC → web (10.20.30.80:3000)`  
+> **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `Proxy → HTTP history` | 모든 캡처된 요청/응답 |
+| `Intruder` | 페이로드 페이즈·위치 기반 자동화 |
+| `Repeater` | 단건 요청 수동 반복 |
+
+**핵심 설정·키**
+
+- `Proxy listener 127.0.0.1:8080` — 브라우저 프록시 포트
+- `Target → Scope` — in-scope 호스트만 처리
+
+**로그·확인 명령**
+
+- `Logger` — 세션 전체 요청 타임라인
+
+**UI / CLI 요점**
+
+- Ctrl+R — 요청을 Repeater로 전송
+- Ctrl+I — Intruder로 전송 후 위치(§) 설정
+- Intruder Attack type: Sniper/Cluster bomb — 단일/다중 페이로드 조합
+
+> **해석 팁.** Community 버전은 **Intruder 속도 제한**이 있어 대량 브루트포스는 비현실적. 취약점 재현과 보고서 증적 확보에 집중.
+

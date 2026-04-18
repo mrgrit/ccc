@@ -510,38 +510,37 @@ ssh ccc@10.20.30.100 "
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
+### Kubernetes + kubectl
+> **역할:** 컨테이너 오케스트레이션  
+> **실행 위치:** `컨트롤 플레인 / kubeconfig 보유 클라이언트`  
+> **접속/호출:** `kubectl` with `~/.kube/config`
 
-### Wazuh Dashboard UI 가이드
+**주요 경로·파일**
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+| 경로 | 역할 |
+|------|------|
+| `/etc/kubernetes/` | 컨트롤 플레인 설정 (kubeadm) |
+| `/var/lib/etcd/` | etcd 저장소 — 전체 클러스터 시크릿 포함 |
+| `~/.kube/config` | 사용자 인증 정보 |
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**핵심 설정·키**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+- `PodSecurity admission (restricted)` — 네임스페이스별 보안 레벨
+- `NetworkPolicy default-deny` — 파드 간 기본 차단
+- `RBAC Role/RoleBinding` — 최소 권한
 
+**로그·확인 명령**
 
-### OpenCTI UI 가이드
+- ``kubectl logs <pod> -c <container>`` — 파드 로그
+- ``kubectl get events -A`` — 클러스터 이벤트
 
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+**UI / CLI 요점**
 
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+- `kubectl auth can-i --list` — 현재 주체가 가능한 동작 열거
+- `kubectl get pods -A -o wide` — 전체 파드 상태
+- `kubectl describe pod <p>` — 이벤트/이미지/볼륨 상세
+
+> **해석 팁.** etcd 노출·kubeconfig 유출은 **즉각적 클러스터 장악**. `kubectl auth can-i` 결과가 예상보다 많으면 RBAC 재설계 신호.
 

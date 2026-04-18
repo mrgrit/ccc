@@ -511,3 +511,40 @@ echo "보고서 템플릿이 /tmp/recon_report.md에 생성되었습니다."
 4. **Submit** 클릭하여 적용
 5. 좌측 메뉴에서 실습 항목 선택 후 각 레벨에서의 차이점 비교
 6. 각 항목 페이지 하단 **View Source** 로 레벨별 소스 코드 비교 분석
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### gobuster + nikto
+> **역할:** 디렉토리 브루트포싱 + 웹 서버 기본 취약점 스캔  
+> **실행 위치:** `공격자 측 CLI`  
+> **접속/호출:** `gobuster dir -u <url> -w <wordlist>`, `nikto -h <url>`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/usr/share/wordlists/dirb/common.txt` | 기본 워드리스트 |
+| `/usr/share/seclists/` | SecLists — 실전 워드리스트 |
+
+**핵심 설정·키**
+
+- `-t 50` — gobuster 동시 스레드
+- `-x php,html,bak` — 확장자 조합 탐색
+- `-Tuning 9` — nikto 고급 룰 포함
+
+**로그·확인 명령**
+
+- `-o gobuster.out` — 결과 저장
+- ``nikto -o nikto.html -Format htm`` — HTML 리포트
+
+**UI / CLI 요점**
+
+- gobuster 상태 204/301/302 — 존재는 하지만 리다이렉트되는 경로
+- nikto `OSVDB-...` — 공개 취약점 DB 매핑
+
+> **해석 팁.** 응답 크기와 상태코드의 **공통 패턴**을 `-s 200,204,301` / `-b 123`으로 제외하면 오탐이 급감한다.
+

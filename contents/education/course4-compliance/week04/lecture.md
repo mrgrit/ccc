@@ -455,38 +455,37 @@ ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
+### ISO/IEC 27001:2022 (Annex A)
+> **역할:** 정보보호 관리체계 국제 표준 — 93개 통제(A.5~A.8)  
+> **실행 위치:** `문서/증적 (정책·절차·기록)`  
+> **접속/호출:** 표준 문서 + SoA + 리스크 등록부
 
-### Wazuh Dashboard UI 가이드
+**주요 경로·파일**
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+| 경로 | 역할 |
+|------|------|
+| `SoA.xlsx (Statement of Applicability)` | 93개 통제 적용/제외 선언 |
+| `risk_register.xlsx` | 자산·위협·취약점·리스크 점수 |
+| `policies/` | 정책 14종 (접근제어, 백업, 사건대응 등) |
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**핵심 설정·키**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+- `A.5 (조직적)` — 정책, 역할, 정보분류
+- `A.6 (인적)` — 채용·퇴직 시 보안, 인식 교육
+- `A.7 (물리적)` — 보안 구역, 장비, 케이블링
+- `A.8 (기술적)` — 접근·암호화·로깅·개발 보안
 
+**로그·확인 명령**
 
-### OpenCTI UI 가이드
+- `내부심사 보고서` — 부적합(NC)·관찰사항(OB)
+- `경영검토 회의록` — 연 1회 필수
 
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+**UI / CLI 요점**
 
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+- PDCA 사이클 — 수립→운영→검토→개선
+- 2022 개정 — 114→93 통제, 신규 11건(위협 인텔리전스 등)
+
+> **해석 팁.** SoA는 **모든 통제에 대해 포함/제외 사유**를 명시해야 한다. 심사관은 `Justification for exclusion`을 먼저 본다.
 

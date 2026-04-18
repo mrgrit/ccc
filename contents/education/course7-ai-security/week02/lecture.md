@@ -123,7 +123,6 @@ ollama show gemma3:12b
 
 ### 2.2 실습 환경
 
-
 ```
 ├── GPU: NVIDIA DGX Spark
 ├── Ollama 서버: http://localhost:8003
@@ -476,38 +475,36 @@ curl -s http://localhost:8003/v1/chat/completions \
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
+### Ollama + LangChain
+> **역할:** 로컬 LLM 서빙(Ollama) + 체인 오케스트레이션(LangChain)  
+> **실행 위치:** `bastion (LLM 서버)`  
+> **접속/호출:** `OLLAMA_HOST=http://10.20.30.201:11434`, Python `from langchain_ollama import OllamaLLM`
 
-### Wazuh Dashboard UI 가이드
+**주요 경로·파일**
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+| 경로 | 역할 |
+|------|------|
+| `~/.ollama/models/` | 다운로드된 모델 블롭 |
+| `/etc/systemd/system/ollama.service` | 서비스 유닛 |
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**핵심 설정·키**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+- `OLLAMA_HOST=0.0.0.0:11434` — 외부 바인드
+- `OLLAMA_KEEP_ALIVE=30m` — 모델 유휴 유지
+- `LLM_MODEL=gemma3:4b (env)` — CCC 기본 모델
 
+**로그·확인 명령**
 
-### OpenCTI UI 가이드
+- `journalctl -u ollama` — 서빙 로그
+- `LangChain `verbose=True`` — 체인 단계 출력
 
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+**UI / CLI 요점**
 
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+- `ollama list` — 설치된 모델
+- `curl -XPOST $OLLAMA_HOST/api/generate -d '{...}'` — REST 생성
+- LangChain `RunnableSequence | parser` — 체인 조립 문법
+
+> **해석 팁.** Ollama는 **첫 호출에 모델 로드**가 커서 지연이 크다. 성능 실험 시 워밍업 호출을 배제하고 측정하자.
 

@@ -985,38 +985,64 @@ python3 /tmp/pcap_report.py
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
+### Wireshark · tshark
+> **역할:** 네트워크 패킷 분석 GUI/CLI  
+> **실행 위치:** `분석 PC`  
+> **접속/호출:** `wireshark` GUI / `tshark -r <pcap>`
 
-### Wazuh Dashboard UI 가이드
+**주요 경로·파일**
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+| 경로 | 역할 |
+|------|------|
+| `~/.config/wireshark/preferences` | 컬럼·디코더 설정 |
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**핵심 설정·키**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+- `Display filter `http.request.method == POST`` — 디코드 후 필터
+- `Capture filter `tcp port 80` (BPF)` — 커널 레벨 필터
 
+**UI / CLI 요점**
 
-### OpenCTI UI 가이드
+- Statistics → Conversations — 호스트·포트 쌍 통계
+- Follow → TLS Stream — 세션 재구성 (키 제공 시 복호화)
+- File → Export Objects → HTTP — 업/다운로드 파일 복원
 
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+> **해석 팁.** TLS 1.3 트래픽은 **세션 키 로깅(SSLKEYLOGFILE)** 없이는 복호화 불가. 브라우저에서 `export SSLKEYLOGFILE=...` 후 캡처.
 
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+### Suricata IDS/IPS
+> **역할:** 시그니처 기반 네트워크 침입 탐지/차단 엔진  
+> **실행 위치:** `secu (10.20.30.1)`  
+> **접속/호출:** `systemctl status suricata` / `suricatasc` 소켓 / `suricata -T`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/etc/suricata/suricata.yaml` | 메인 설정 (HOME_NET, af-packet, rule-files) |
+| `/etc/suricata/rules/local.rules` | 사용자 커스텀 탐지 룰 |
+| `/var/lib/suricata/rules/suricata.rules` | `suricata-update` 병합 룰 |
+| `/var/log/suricata/eve.json` | JSON 이벤트 (alert/flow/http/dns/tls) |
+| `/var/log/suricata/fast.log` | 알림 1줄 텍스트 로그 |
+| `/var/log/suricata/stats.log` | 엔진 성능 통계 |
+
+**핵심 설정·키**
+
+- `HOME_NET` — 내부 대역 — 틀리면 내부/외부 판별 실패
+- `af-packet.interface` — 캡처 NIC — 트래픽이 흐르는 인터페이스와 일치해야 함
+- `rule-files: ["local.rules"]` — 로드할 룰 파일 목록
+
+**로그·확인 명령**
+
+- `jq 'select(.event_type=="alert")' eve.json` — 알림만 추출
+- `grep 'Priority: 1' fast.log` — 고위험 탐지만 빠르게 확인
+
+**UI / CLI 요점**
+
+- `suricata -T -c /etc/suricata/suricata.yaml` — 설정/룰 문법 검증
+- `suricatasc -c stats` — 실시간 통계 조회 (런타임 소켓)
+- `suricata-update` — 공개 룰셋 다운로드·병합
+
+> **해석 팁.** `stats.log`의 `kernel_drops > 0`이면 누락 발생 → `af-packet threads` 증설. 커스텀 룰 `sid`는 **1,000,000 이상** 할당 권장.
 

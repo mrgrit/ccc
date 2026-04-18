@@ -539,3 +539,80 @@ ENDSSH
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): Wazuh alerts.json/logtest/agent_control, SIGMA 룰, 경보 분석
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### CCC Bastion Agent
+> **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
+> **실행 위치:** `bastion (10.20.30.201)`  
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `packages/bastion/agent.py` | 메인 에이전트 루프 |
+| `packages/bastion/skills.py` | 스킬 정의 |
+| `packages/bastion/playbooks/` | 정적 플레이북 YAML |
+| `data/bastion/experience/` | 수집된 경험 (pass/fail) |
+
+**핵심 설정·키**
+
+- `LLM_BASE_URL / LLM_MODEL` — Ollama 연결
+- `CCC_API_KEY` — ccc-api 인증
+- `max_retry=2` — 실패 시 self-correction 재시도
+
+**로그·확인 명령**
+
+- ``docs/test-status.md`` — 현재 테스트 진척 요약
+- ``bastion_test_progress.json`` — 스텝별 pass/fail 원시
+
+**UI / CLI 요점**
+
+- 대화형 TUI 프롬프트 — 자연어 지시 → 계획 → 실행 → 검증
+- `/a2a/mission` (API) — 자율 미션 실행
+- Experience→Playbook 승격 — 반복 성공 패턴 저장
+
+> **해석 팁.** 실패 시 output을 분석해 **근본 원인 교정**이 설계의 핵심. 증상 회피/땜빵은 금지.
+
+### Wazuh SIEM (4.11.x)
+> **역할:** 에이전트 기반 로그·FIM·SCA 통합 분석 플랫폼  
+> **실행 위치:** `siem (10.20.30.100)`  
+> **접속/호출:** Dashboard `https://10.20.30.100` (admin/admin), Manager API `:55000`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/var/ossec/etc/ossec.conf` | Manager 메인 설정 (원격, 전송, syscheck 등) |
+| `/var/ossec/etc/rules/local_rules.xml` | 커스텀 룰 (id ≥ 100000) |
+| `/var/ossec/etc/decoders/local_decoder.xml` | 커스텀 디코더 |
+| `/var/ossec/logs/alerts/alerts.json` | 실시간 JSON 알림 스트림 |
+| `/var/ossec/logs/archives/archives.json` | 전체 이벤트 아카이브 |
+| `/var/ossec/logs/ossec.log` | Manager 데몬 로그 |
+| `/var/ossec/queue/fim/db/fim.db` | FIM 기준선 SQLite DB |
+
+**핵심 설정·키**
+
+- `<rule id='100100' level='10'>` — 커스텀 룰 — level 10↑은 고위험
+- `<syscheck><directories>...` — FIM 감시 경로
+- `<active-response>` — 자동 대응 (firewall-drop, restart)
+
+**로그·확인 명령**
+
+- `jq 'select(.rule.level>=10)' alerts.json` — 고위험 알림만
+- `grep ERROR ossec.log` — Manager 오류 (룰 문법 오류 등)
+
+**UI / CLI 요점**
+
+- Dashboard → Security events — KQL 필터 `rule.level >= 10`
+- Dashboard → Integrity monitoring — 변경된 파일 해시 비교
+- `/var/ossec/bin/wazuh-logtest` — 룰 매칭 단계별 확인 (Phase 1→3)
+- `/var/ossec/bin/wazuh-analysisd -t` — 룰·설정 문법 검증
+
+> **해석 팁.** Phase 3에서 원하는 `rule.id`가 떠야 커스텀 룰 정상. `local_rules.xml` 수정 후 `systemctl restart wazuh-manager`, 문법 오류가 있으면 **분석 데몬 전체가 기동 실패**하므로 `-t`로 먼저 검증.
+

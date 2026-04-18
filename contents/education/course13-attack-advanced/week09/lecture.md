@@ -722,3 +722,34 @@ Tier 2: 워크스테이션, 사용자 (일반 보안)
 
 ### 과제 3: BloodHound 쿼리 10선 (팀)
 AD 공격 경로를 발견하기 위한 Cypher 쿼리 10개를 작성하라. 각 쿼리의 목적, 예상 결과, 공격 활용 방법을 설명할 것.
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### BloodHound + SharpHound
+> **역할:** Active Directory 공격 경로 그래프 분석  
+> **실행 위치:** `분석 PC (BloodHound GUI) + 도메인 호스트 (SharpHound)`  
+> **접속/호출:** `SharpHound.exe -c All` → `.zip` 업로드
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `BloodHound/customqueries.json` | 커스텀 Cypher 쿼리 |
+| `Neo4j graph.db` | 그래프 저장소 |
+
+**핵심 설정·키**
+
+- `Collection method: All / DCOnly` — 수집 범위
+- `Edge: HasSession, AdminTo, DCSync` — 권한 관계
+
+**UI / CLI 요점**
+
+- `Shortest Paths to Domain Admins` — 핵심 공격 경로 쿼리
+- `Find Kerberoastable Users` — SPN 있는 사용자
+
+> **해석 팁.** SharpHound는 **EDR 탐지 1순위**. 합법 환경에서만 실행하고, 실전 모의에서는 Stealth 컬렉션 모드 사용.
+

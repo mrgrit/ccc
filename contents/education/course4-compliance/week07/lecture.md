@@ -448,38 +448,30 @@ ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
+### NIST Cybersecurity Framework 2.0
+> **역할:** 미국 연방 사이버 보안 프레임워크  
+> **실행 위치:** `전사 거버넌스`  
+> **접속/호출:** NIST 공식 PDF + Profile Tool
 
-### Wazuh Dashboard UI 가이드
+**주요 경로·파일**
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+| 경로 | 역할 |
+|------|------|
+| `Core (6 Functions)` | Govern / Identify / Protect / Detect / Respond / Recover |
+| `Categories / Subcategories` | 기능별 통제 항목 |
+| `Implementation Tiers 1~4` | 성숙도 |
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**핵심 설정·키**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+- `Govern (2.0 신규)` — 거버넌스 — 조직 맥락, 역할, 리스크 전략
+- `Profiles (Current/Target)` — 현재 상태→목표 상태 갭
 
+**UI / CLI 요점**
 
-### OpenCTI UI 가이드
+- https://www.nist.gov/cyberframework — CSF 공식
+- OLIR (매핑) — ISO 27001, CIS Controls와 상호 매핑
 
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
-
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+> **해석 팁.** 2.0의 **Govern**이 이전 1.1 Identify.Governance를 승격시킨 핵심 변화. 이사회 보고가 프레임워크에 공식 편입.
 

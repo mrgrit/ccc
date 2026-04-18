@@ -874,3 +874,41 @@ AI Safety 심화 이후 추천 학습 경로
   ├── AI Safety Research 커뮤니티
   └── Bug Bounty: AI 서비스 대상
 ```
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### Ollama + LangChain
+> **역할:** 로컬 LLM 서빙(Ollama) + 체인 오케스트레이션(LangChain)  
+> **실행 위치:** `bastion (LLM 서버)`  
+> **접속/호출:** `OLLAMA_HOST=http://10.20.30.201:11434`, Python `from langchain_ollama import OllamaLLM`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `~/.ollama/models/` | 다운로드된 모델 블롭 |
+| `/etc/systemd/system/ollama.service` | 서비스 유닛 |
+
+**핵심 설정·키**
+
+- `OLLAMA_HOST=0.0.0.0:11434` — 외부 바인드
+- `OLLAMA_KEEP_ALIVE=30m` — 모델 유휴 유지
+- `LLM_MODEL=gemma3:4b (env)` — CCC 기본 모델
+
+**로그·확인 명령**
+
+- `journalctl -u ollama` — 서빙 로그
+- `LangChain `verbose=True`` — 체인 단계 출력
+
+**UI / CLI 요점**
+
+- `ollama list` — 설치된 모델
+- `curl -XPOST $OLLAMA_HOST/api/generate -d '{...}'` — REST 생성
+- LangChain `RunnableSequence | parser` — 체인 조립 문법
+
+> **해석 팁.** Ollama는 **첫 호출에 모델 로드**가 커서 지연이 크다. 성능 실험 시 워밍업 호출을 배제하고 측정하자.
+

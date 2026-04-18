@@ -641,37 +641,38 @@ curl -s -X POST "http://localhost:9100/projects/$PID/completion-report" \
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
-### `/var/log/apache2/modsec_audit.log`
-**ModSecurity 감사 로그** (VM: web)
+### CCC Bastion Agent
+> **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
+> **실행 위치:** `bastion (10.20.30.201)`  
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
 
-ModSecurity가 차단하거나 탐지한 요청의 상세 기록. 요청 헤더, 본문, 매칭된 룰 ID, 차단 사유 등이 포함된다.
+**주요 경로·파일**
 
-**주요 내용**:
-- `[id "942100"] [msg "SQL Injection Detected"] [severity "CRITICAL"]` — SQLi 탐지 기록
-- `[id "941100"] [msg "XSS Attack Detected"]` — XSS 탐지 기록
+| 경로 | 역할 |
+|------|------|
+| `packages/bastion/agent.py` | 메인 에이전트 루프 |
+| `packages/bastion/skills.py` | 스킬 정의 |
+| `packages/bastion/playbooks/` | 정적 플레이북 YAML |
+| `data/bastion/experience/` | 수집된 경험 (pass/fail) |
 
-**해석**: `severity`가 CRITICAL이면 심각한 공격 시도. `[id "..."]`로 어떤 CRS 룰에 매칭됐는지 확인. 오탐(false positive)이면 해당 rule ID를 예외 처리.
+**핵심 설정·키**
 
-### `/var/log/suricata/eve.json`
-**Suricata 이벤트 로그 (JSON)** (VM: secu)
+- `LLM_BASE_URL / LLM_MODEL` — Ollama 연결
+- `CCC_API_KEY` — ccc-api 인증
+- `max_retry=2` — 실패 시 self-correction 재시도
 
-Suricata가 생성하는 모든 이벤트(alert, flow, dns, http, tls 등)를 JSON 형식으로 기록하는 메인 로그. SIEM 연동의 핵심 데이터 소스.
+**로그·확인 명령**
 
-**주요 내용**:
-- `{"event_type":"alert","src_ip":"10.20.30.201","alert":{"signature":"SQLi attempt","signature_id":1000102}}` — 알림 이벤트
-- `{"event_type":"flow","src_ip":"...","dest_ip":"...","proto":"TCP"}` — 네트워크 흐름 이벤트
+- ``docs/test-status.md`` — 현재 테스트 진척 요약
+- ``bastion_test_progress.json`` — 스텝별 pass/fail 원시
 
-**해석**: `event_type`이 `alert`인 항목이 탐지된 공격이다. `signature_id`로 어떤 룰에 매칭됐는지, `src_ip`/`dest_ip`로 공격 출발지/목적지를 파악한다. jq로 필터링: `jq 'select(.event_type=="alert")'`
+**UI / CLI 요점**
 
-### `/var/ossec/logs/alerts/alerts.json`
-**Wazuh 알림 로그 (JSON)** (VM: siem)
+- 대화형 TUI 프롬프트 — 자연어 지시 → 계획 → 실행 → 검증
+- `/a2a/mission` (API) — 자율 미션 실행
+- Experience→Playbook 승격 — 반복 성공 패턴 저장
 
-Wazuh가 생성한 모든 보안 알림을 JSON 형식으로 기록. Dashboard의 Security events 데이터 소스.
-
-**주요 내용**:
-- `{"rule":{"id":"100100","level":10,"description":"Multiple sudo failures"},"agent":{"name":"secu"}}` — 탐지 알림
-
-**해석**: `rule.level` ≥ 10은 즉각 대응이 필요한 고위험 이벤트. `agent.name`으로 어느 VM에서 발생했는지, `rule.id`로 어떤 탐지 룰이 매칭됐는지 파악.
+> **해석 팁.** 실패 시 output을 분석해 **근본 원인 교정**이 설계의 핵심. 증상 회피/땜빵은 금지.
 

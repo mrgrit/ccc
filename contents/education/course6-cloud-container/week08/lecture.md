@@ -447,38 +447,90 @@ ssh ccc@10.20.30.100 "
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
+### Docker Engine
+> **역할:** 컨테이너 런타임·이미지 관리  
+> **실행 위치:** `모든 VM(공통)`  
+> **접속/호출:** `docker` CLI, `systemctl status docker`
 
-### Wazuh Dashboard UI 가이드
+**주요 경로·파일**
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+| 경로 | 역할 |
+|------|------|
+| `/var/lib/docker/` | 이미지·컨테이너 저장소(overlay2) |
+| `/etc/docker/daemon.json` | 데몬 설정 (log-driver, userns-remap 등) |
+| `/var/run/docker.sock` | Docker API 소켓 — 루트권한 등가 |
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**핵심 설정·키**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+- `{"userns-remap": "default"}` — 컨테이너 root↔호스트 비루트 매핑
+- `{"icc": false}` — 기본 네트워크 내 컨테이너 간 통신 차단
+- `{"no-new-privileges": true}` — setuid 권한 상승 차단
 
+**로그·확인 명령**
 
-### OpenCTI UI 가이드
+- `journalctl -u docker` — 데몬 로그
+- ``docker logs <c>`` — 컨테이너 stdout/stderr
 
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+**UI / CLI 요점**
 
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+- `docker inspect <c> | jq '.[0].HostConfig.Privileged'` — `--privileged` 여부
+- `docker exec -it <c> sh` — 컨테이너 내부 진입
+- `docker system df` — 이미지/볼륨 디스크 사용량
+
+> **해석 팁.** `/var/run/docker.sock`을 컨테이너에 마운트하는 순간 **호스트 루트와 동등**이다. 점검 1순위.
+
+### Docker Bench for Security
+> **역할:** CIS Docker Benchmark 자동 점검 스크립트  
+> **실행 위치:** `Docker 호스트`  
+> **접속/호출:** `docker run --rm --net host --pid host --userns host --cap-add audit_control ... docker/docker-bench-security`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `docker-bench-security.log` | 점검 결과 텍스트 |
+| `docker-bench-security.sh` | 실행 스크립트 |
+
+**핵심 설정·키**
+
+- `--no-colors` — CI 친화 출력
+- `-c check_4` — 특정 섹션만 실행
+
+**로그·확인 명령**
+
+- `결과 [PASS]/[WARN]/[INFO]` — 항목별 상태
+
+**UI / CLI 요점**
+
+- `docker-bench` 섹션 2.14 — live restore 활성 여부
+- 섹션 4 — 컨테이너 이미지/빌드 보안
+
+> **해석 팁.** `[INFO]`는 자동 판단 불가 — 수동 확인 필수. 매 릴리즈 CIS 버전과 Docker 버전 매핑을 맞추자.
+
+### Trivy
+> **역할:** 이미지·파일시스템·IaC·K8s CVE/미스컨피그 스캐너  
+> **실행 위치:** `임의 호스트 / CI`  
+> **접속/호출:** `trivy image <img>` / `trivy fs .` / `trivy config .`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `~/.cache/trivy/` | 취약점 DB 캐시 |
+| `.trivyignore` | 무시할 CVE ID 목록 |
+
+**핵심 설정·키**
+
+- `--severity HIGH,CRITICAL` — 심각도 필터
+- `--ignore-unfixed` — 수정본 없는 CVE 제외
+- `--format sarif` — CI용 SARIF 출력
+
+**UI / CLI 요점**
+
+- `trivy image --exit-code 1 --severity HIGH,CRITICAL <img>` — CI 게이트
+- `trivy k8s --report summary cluster` — 클러스터 전체 요약
+
+> **해석 팁.** `--ignore-unfixed`는 잡음을 크게 줄이지만 **미래 위험**을 숨긴다. 이미지 재빌드 주기와 함께 운영 기준을 정하자.
 

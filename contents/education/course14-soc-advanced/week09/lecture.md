@@ -1079,38 +1079,57 @@ python3 /tmp/malware_classification.py
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
+### SIGMA + YARA
+> **역할:** SIGMA=플랫폼 독립 탐지 룰, YARA=파일/메모리 시그니처  
+> **실행 위치:** `SOC 분석가 PC / siem`  
+> **접속/호출:** `sigmac` 변환기, `yara <rule> <target>`
 
-### Wazuh Dashboard UI 가이드
+**주요 경로·파일**
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+| 경로 | 역할 |
+|------|------|
+| `~/sigma/rules/` | SIGMA 룰 저장 |
+| `~/yara-rules/` | YARA 룰 저장 |
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**핵심 설정·키**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+- `SIGMA logsource:product/service` — 로그 소스 매핑
+- `YARA `strings: $s1 = "..." ascii wide`` — 시그니처 정의
+- `YARA `condition: all of them and filesize < 1MB`` — 매칭 조건
 
+**UI / CLI 요점**
 
-### OpenCTI UI 가이드
+- `sigmac -t elasticsearch-qs rule.yml` — Elastic용 KQL 변환
+- `sigmac -t wazuh rule.yml` — Wazuh XML 룰 변환
+- `yara -r rules.yar /var/tmp/sample.bin` — 재귀 스캔
 
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+> **해석 팁.** SIGMA는 *탐지 의도*, YARA는 *바이너리 패턴*으로 역할 분리. SIGMA 룰은 반드시 **false positive 조건**까지 기술해야 SIEM 운영 가능.
 
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+### Volatility 3
+> **역할:** 메모리 이미지 포렌식 프레임워크  
+> **실행 위치:** `분석 PC`  
+> **접속/호출:** `vol -f mem.raw <plugin>`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `volatility3/volatility3/plugins/` | 플러그인 소스 |
+| `~/symbols/` | 커널 심볼 캐시 |
+
+**핵심 설정·키**
+
+- `windows.pslist / linux.pslist` — 프로세스 열거
+- `windows.malfind` — 주입된 코드 탐지
+- `windows.netscan` — 열린 소켓
+
+**UI / CLI 요점**
+
+- `vol -f mem.raw windows.pstree` — 프로세스 트리
+- `vol -f mem.raw windows.cmdline` — 실행된 명령행
+- `vol -f mem.raw linux.bash` — bash 히스토리 복원
+
+> **해석 팁.** Volatility 3은 **심볼 자동 다운로드**가 필요하므로 오프라인 분석 시 `--symbol-dirs`로 미리 준비. 샘플 복사 시 `md5sum`로 무결성 확인 필수.
 

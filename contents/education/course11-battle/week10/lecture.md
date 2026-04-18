@@ -1046,15 +1046,72 @@ for t in d.get('task_results',[]):
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
-### `/var/log/suricata/fast.log`
-**Suricata 빠른 알림 로그 (텍스트)** (VM: secu)
+### nftables
+> **역할:** Linux 커널 기반 상태 기반 방화벽 (iptables 후속)  
+> **실행 위치:** `secu (10.20.30.1)`  
+> **접속/호출:** `sudo nft ...` CLI + `/etc/nftables.conf` 영속 설정
 
-알림 이벤트를 한 줄씩 텍스트로 기록하는 간이 로그. 빠른 모니터링에 유용하지만, 상세 분석은 eve.json을 사용.
+**주요 경로·파일**
 
-**주요 내용**:
-- `04/15/2026-12:34:56.789012  [**] [1:1000102:1] SQLi attempt [**] [Classification: ...] [Priority: 1] {TCP} 10.20.30.201:45678 -> 10.20.30.80:80`
+| 경로 | 역할 |
+|------|------|
+| `/etc/nftables.conf` | 부팅 시 로드되는 영속 룰셋 |
+| `/var/log/kern.log` | `log prefix` 룰의 패킷 드롭 로그 |
 
-**해석**: `[Priority: 1]`은 높은 우선순위(심각한 위협). IP와 포트로 공격자와 대상을 즉시 식별할 수 있다.
+**핵심 설정·키**
+
+- `table inet filter` — IPv4/IPv6 공통 필터 테이블
+- `chain input { policy drop; }` — 기본 차단 정책
+- `ct state established,related accept` — 응답 트래픽 허용
+
+**로그·확인 명령**
+
+- `journalctl -t kernel -g 'nft'` — 룰에서 `log prefix` 지정한 패킷 드롭
+
+**UI / CLI 요점**
+
+- `sudo nft list ruleset` — 현재 로드된 전체 룰 출력
+- `sudo nft -f /etc/nftables.conf` — 설정 파일 재적용
+- `sudo nft list set inet filter blacklist` — 집합(set) 내용 조회
+
+> **해석 팁.** 룰은 **위→아래 첫 매칭 우선**. `accept`는 해당 체인만 종료, 상위 훅은 계속 평가된다. 변경 후 `nft list ruleset`로 실제 적용 여부 확인.
+
+### Wazuh SIEM (4.11.x)
+> **역할:** 에이전트 기반 로그·FIM·SCA 통합 분석 플랫폼  
+> **실행 위치:** `siem (10.20.30.100)`  
+> **접속/호출:** Dashboard `https://10.20.30.100` (admin/admin), Manager API `:55000`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/var/ossec/etc/ossec.conf` | Manager 메인 설정 (원격, 전송, syscheck 등) |
+| `/var/ossec/etc/rules/local_rules.xml` | 커스텀 룰 (id ≥ 100000) |
+| `/var/ossec/etc/decoders/local_decoder.xml` | 커스텀 디코더 |
+| `/var/ossec/logs/alerts/alerts.json` | 실시간 JSON 알림 스트림 |
+| `/var/ossec/logs/archives/archives.json` | 전체 이벤트 아카이브 |
+| `/var/ossec/logs/ossec.log` | Manager 데몬 로그 |
+| `/var/ossec/queue/fim/db/fim.db` | FIM 기준선 SQLite DB |
+
+**핵심 설정·키**
+
+- `<rule id='100100' level='10'>` — 커스텀 룰 — level 10↑은 고위험
+- `<syscheck><directories>...` — FIM 감시 경로
+- `<active-response>` — 자동 대응 (firewall-drop, restart)
+
+**로그·확인 명령**
+
+- `jq 'select(.rule.level>=10)' alerts.json` — 고위험 알림만
+- `grep ERROR ossec.log` — Manager 오류 (룰 문법 오류 등)
+
+**UI / CLI 요점**
+
+- Dashboard → Security events — KQL 필터 `rule.level >= 10`
+- Dashboard → Integrity monitoring — 변경된 파일 해시 비교
+- `/var/ossec/bin/wazuh-logtest` — 룰 매칭 단계별 확인 (Phase 1→3)
+- `/var/ossec/bin/wazuh-analysisd -t` — 룰·설정 문법 검증
+
+> **해석 팁.** Phase 3에서 원하는 `rule.id`가 떠야 커스텀 룰 정상. `local_rules.xml` 수정 후 `systemctl restart wazuh-manager`, 문법 오류가 있으면 **분석 데몬 전체가 기동 실패**하므로 `-t`로 먼저 검증.
 

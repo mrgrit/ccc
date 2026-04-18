@@ -1266,60 +1266,69 @@ CHECK_EOF
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
-### `/var/log/suricata/eve.json`
-**Suricata 이벤트 로그 (JSON)** (VM: secu)
+### Suricata IDS/IPS
+> **역할:** 시그니처 기반 네트워크 침입 탐지/차단 엔진  
+> **실행 위치:** `secu (10.20.30.1)`  
+> **접속/호출:** `systemctl status suricata` / `suricatasc` 소켓 / `suricata -T`
 
-Suricata가 생성하는 모든 이벤트(alert, flow, dns, http, tls 등)를 JSON 형식으로 기록하는 메인 로그. SIEM 연동의 핵심 데이터 소스.
+**주요 경로·파일**
 
-**주요 내용**:
-- `{"event_type":"alert","src_ip":"10.20.30.201","alert":{"signature":"SQLi attempt","signature_id":1000102}}` — 알림 이벤트
-- `{"event_type":"flow","src_ip":"...","dest_ip":"...","proto":"TCP"}` — 네트워크 흐름 이벤트
+| 경로 | 역할 |
+|------|------|
+| `/etc/suricata/suricata.yaml` | 메인 설정 (HOME_NET, af-packet, rule-files) |
+| `/etc/suricata/rules/local.rules` | 사용자 커스텀 탐지 룰 |
+| `/var/lib/suricata/rules/suricata.rules` | `suricata-update` 병합 룰 |
+| `/var/log/suricata/eve.json` | JSON 이벤트 (alert/flow/http/dns/tls) |
+| `/var/log/suricata/fast.log` | 알림 1줄 텍스트 로그 |
+| `/var/log/suricata/stats.log` | 엔진 성능 통계 |
 
-**해석**: `event_type`이 `alert`인 항목이 탐지된 공격이다. `signature_id`로 어떤 룰에 매칭됐는지, `src_ip`/`dest_ip`로 공격 출발지/목적지를 파악한다. jq로 필터링: `jq 'select(.event_type=="alert")'`
+**핵심 설정·키**
 
-### `/var/log/suricata/stats.log`
-**Suricata 성능 통계 로그** (VM: secu)
+- `HOME_NET` — 내부 대역 — 틀리면 내부/외부 판별 실패
+- `af-packet.interface` — 캡처 NIC — 트래픽이 흐르는 인터페이스와 일치해야 함
+- `rule-files: ["local.rules"]` — 로드할 룰 파일 목록
 
-일정 간격(기본 8초)으로 Suricata 엔진의 성능 통계를 기록. 패킷 처리 수, drop 수, 메모리 사용량 등.
+**로그·확인 명령**
 
-**주요 내용**:
-- `capture.kernel_packets: 12345` — 커널에서 받은 패킷 수
-- `capture.kernel_drops: 0` — 커널에서 drop된 패킷 수
+- `jq 'select(.event_type=="alert")' eve.json` — 알림만 추출
+- `grep 'Priority: 1' fast.log` — 고위험 탐지만 빠르게 확인
 
-**해석**: `kernel_drops`가 0보다 크면 Suricata가 트래픽을 처리하지 못하고 누락하고 있다는 의미. CPU/메모리 증설이나 af-packet threads 조정이 필요.
+**UI / CLI 요점**
 
+- `suricata -T -c /etc/suricata/suricata.yaml` — 설정/룰 문법 검증
+- `suricatasc -c stats` — 실시간 통계 조회 (런타임 소켓)
+- `suricata-update` — 공개 룰셋 다운로드·병합
 
-### Wazuh Dashboard UI 가이드
+> **해석 팁.** `stats.log`의 `kernel_drops > 0`이면 누락 발생 → `af-packet threads` 증설. 커스텀 룰 `sid`는 **1,000,000 이상** 할당 권장.
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+### fail2ban
+> **역할:** 로그 패턴 매칭 자동 IP 차단  
+> **실행 위치:** `web/secu/siem`  
+> **접속/호출:** `systemctl status fail2ban`, `fail2ban-client`
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**주요 경로·파일**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+| 경로 | 역할 |
+|------|------|
+| `/etc/fail2ban/jail.local` | 운영자 jail 설정 |
+| `/etc/fail2ban/filter.d/` | failregex 정의 |
+| `/var/log/fail2ban.log` | 밴/언밴 이력 |
 
+**핵심 설정·키**
 
-### OpenCTI UI 가이드
+- `[sshd] enabled=true maxretry=3 findtime=10m bantime=1h` — 표준 SSH jail
+- `action = nftables-multiport[...]` — 실제 차단은 nftables 연동
 
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+**로그·확인 명령**
 
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+- ``fail2ban-client status sshd`` — 현재 밴 IP 목록
+
+**UI / CLI 요점**
+
+- `fail2ban-client set sshd banip <ip>` — 수동 밴
+- `fail2ban-regex auth.log /etc/fail2ban/filter.d/sshd.conf` — 필터 검증
+
+> **해석 팁.** 로그 로테이션으로 파일이 갱신되면 **inode 추적 문제**로 탐지 누락 가능 — `logpath` 복수 지정과 `backend=systemd` 고려.
 

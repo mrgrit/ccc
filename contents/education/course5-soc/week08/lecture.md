@@ -522,3 +522,73 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): Wazuh alerts.json/logtest/agent_control, SIGMA 룰, 경보 분석
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### Wazuh SIEM (4.11.x)
+> **역할:** 에이전트 기반 로그·FIM·SCA 통합 분석 플랫폼  
+> **실행 위치:** `siem (10.20.30.100)`  
+> **접속/호출:** Dashboard `https://10.20.30.100` (admin/admin), Manager API `:55000`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/var/ossec/etc/ossec.conf` | Manager 메인 설정 (원격, 전송, syscheck 등) |
+| `/var/ossec/etc/rules/local_rules.xml` | 커스텀 룰 (id ≥ 100000) |
+| `/var/ossec/etc/decoders/local_decoder.xml` | 커스텀 디코더 |
+| `/var/ossec/logs/alerts/alerts.json` | 실시간 JSON 알림 스트림 |
+| `/var/ossec/logs/archives/archives.json` | 전체 이벤트 아카이브 |
+| `/var/ossec/logs/ossec.log` | Manager 데몬 로그 |
+| `/var/ossec/queue/fim/db/fim.db` | FIM 기준선 SQLite DB |
+
+**핵심 설정·키**
+
+- `<rule id='100100' level='10'>` — 커스텀 룰 — level 10↑은 고위험
+- `<syscheck><directories>...` — FIM 감시 경로
+- `<active-response>` — 자동 대응 (firewall-drop, restart)
+
+**로그·확인 명령**
+
+- `jq 'select(.rule.level>=10)' alerts.json` — 고위험 알림만
+- `grep ERROR ossec.log` — Manager 오류 (룰 문법 오류 등)
+
+**UI / CLI 요점**
+
+- Dashboard → Security events — KQL 필터 `rule.level >= 10`
+- Dashboard → Integrity monitoring — 변경된 파일 해시 비교
+- `/var/ossec/bin/wazuh-logtest` — 룰 매칭 단계별 확인 (Phase 1→3)
+- `/var/ossec/bin/wazuh-analysisd -t` — 룰·설정 문법 검증
+
+> **해석 팁.** Phase 3에서 원하는 `rule.id`가 떠야 커스텀 룰 정상. `local_rules.xml` 수정 후 `systemctl restart wazuh-manager`, 문법 오류가 있으면 **분석 데몬 전체가 기동 실패**하므로 `-t`로 먼저 검증.
+
+### SIGMA + YARA
+> **역할:** SIGMA=플랫폼 독립 탐지 룰, YARA=파일/메모리 시그니처  
+> **실행 위치:** `SOC 분석가 PC / siem`  
+> **접속/호출:** `sigmac` 변환기, `yara <rule> <target>`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `~/sigma/rules/` | SIGMA 룰 저장 |
+| `~/yara-rules/` | YARA 룰 저장 |
+
+**핵심 설정·키**
+
+- `SIGMA logsource:product/service` — 로그 소스 매핑
+- `YARA `strings: $s1 = "..." ascii wide`` — 시그니처 정의
+- `YARA `condition: all of them and filesize < 1MB`` — 매칭 조건
+
+**UI / CLI 요점**
+
+- `sigmac -t elasticsearch-qs rule.yml` — Elastic용 KQL 변환
+- `sigmac -t wazuh rule.yml` — Wazuh XML 룰 변환
+- `yara -r rules.yar /var/tmp/sample.bin` — 재귀 스캔
+
+> **해석 팁.** SIGMA는 *탐지 의도*, YARA는 *바이너리 패턴*으로 역할 분리. SIGMA 룰은 반드시 **false positive 조건**까지 기술해야 SIEM 운영 가능.
+

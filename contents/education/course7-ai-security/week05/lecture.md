@@ -471,3 +471,67 @@ curl -s http://localhost:8003/v1/chat/completions \
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): Ollama 22모델(gemma3:12b ~5s), Bastion 50프로젝트, execute-plan 병렬, RL train/recommend
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### Ollama + LangChain
+> **역할:** 로컬 LLM 서빙(Ollama) + 체인 오케스트레이션(LangChain)  
+> **실행 위치:** `bastion (LLM 서버)`  
+> **접속/호출:** `OLLAMA_HOST=http://10.20.30.201:11434`, Python `from langchain_ollama import OllamaLLM`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `~/.ollama/models/` | 다운로드된 모델 블롭 |
+| `/etc/systemd/system/ollama.service` | 서비스 유닛 |
+
+**핵심 설정·키**
+
+- `OLLAMA_HOST=0.0.0.0:11434` — 외부 바인드
+- `OLLAMA_KEEP_ALIVE=30m` — 모델 유휴 유지
+- `LLM_MODEL=gemma3:4b (env)` — CCC 기본 모델
+
+**로그·확인 명령**
+
+- `journalctl -u ollama` — 서빙 로그
+- `LangChain `verbose=True`` — 체인 단계 출력
+
+**UI / CLI 요점**
+
+- `ollama list` — 설치된 모델
+- `curl -XPOST $OLLAMA_HOST/api/generate -d '{...}'` — REST 생성
+- LangChain `RunnableSequence | parser` — 체인 조립 문법
+
+> **해석 팁.** Ollama는 **첫 호출에 모델 로드**가 커서 지연이 크다. 성능 실험 시 워밍업 호출을 배제하고 측정하자.
+
+### SIGMA + YARA
+> **역할:** SIGMA=플랫폼 독립 탐지 룰, YARA=파일/메모리 시그니처  
+> **실행 위치:** `SOC 분석가 PC / siem`  
+> **접속/호출:** `sigmac` 변환기, `yara <rule> <target>`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `~/sigma/rules/` | SIGMA 룰 저장 |
+| `~/yara-rules/` | YARA 룰 저장 |
+
+**핵심 설정·키**
+
+- `SIGMA logsource:product/service` — 로그 소스 매핑
+- `YARA `strings: $s1 = "..." ascii wide`` — 시그니처 정의
+- `YARA `condition: all of them and filesize < 1MB`` — 매칭 조건
+
+**UI / CLI 요점**
+
+- `sigmac -t elasticsearch-qs rule.yml` — Elastic용 KQL 변환
+- `sigmac -t wazuh rule.yml` — Wazuh XML 룰 변환
+- `yara -r rules.yar /var/tmp/sample.bin` — 재귀 스캔
+
+> **해석 팁.** SIGMA는 *탐지 의도*, YARA는 *바이너리 패턴*으로 역할 분리. SIGMA 룰은 반드시 **false positive 조건**까지 기술해야 SIEM 운영 가능.
+

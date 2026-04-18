@@ -519,3 +519,69 @@ cursor.execute("SELECT * FROM users WHERE email=?", (email,))
 4. **Submit** 클릭하여 적용
 5. 좌측 메뉴 **SQL Injection** 및 **SQL Injection (Blind)** 에서 레벨별 실습
 6. 각 항목 페이지 하단 **View Source** 로 레벨별 쿼리 처리 방식 비교
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### sqlmap
+> **역할:** SQL Injection 탐지·악용 자동화  
+> **실행 위치:** `공격자 측 CLI`  
+> **접속/호출:** `sqlmap -u <url>` 또는 `-r request.txt`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `~/.local/share/sqlmap/output/<host>/` | 세션·덤프 결과 |
+| `session.sqlite` | 재실행 시 단계 스킵용 캐시 |
+
+**핵심 설정·키**
+
+- `--risk=1~3 --level=1~5` — 탐지 공격 폭 조절
+- `--technique=BEUSTQ` — B)lind E)rror U)nion S)tacked T)ime Q)uery
+
+**로그·확인 명령**
+
+- `output/<host>/log` — 요청·응답 로그
+
+**UI / CLI 요점**
+
+- `sqlmap -u ... --dbs` — DB 목록
+- `sqlmap -u ... -D juice -T users --dump` — 특정 테이블 덤프
+- `sqlmap -r req.txt --batch --crawl=2` — Burp 저장 요청 기반 크롤링
+
+> **해석 팁.** `--batch`로 대화형 프롬프트 자동 Y 처리. WAF가 있을 땐 `--tamper=space2comment,between` 조합으로 우회 시도.
+
+### Burp Suite Community
+> **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
+> **실행 위치:** `작업 PC → web (10.20.30.80:3000)`  
+> **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `Proxy → HTTP history` | 모든 캡처된 요청/응답 |
+| `Intruder` | 페이로드 페이즈·위치 기반 자동화 |
+| `Repeater` | 단건 요청 수동 반복 |
+
+**핵심 설정·키**
+
+- `Proxy listener 127.0.0.1:8080` — 브라우저 프록시 포트
+- `Target → Scope` — in-scope 호스트만 처리
+
+**로그·확인 명령**
+
+- `Logger` — 세션 전체 요청 타임라인
+
+**UI / CLI 요점**
+
+- Ctrl+R — 요청을 Repeater로 전송
+- Ctrl+I — Intruder로 전송 후 위치(§) 설정
+- Intruder Attack type: Sniper/Cluster bomb — 단일/다중 페이로드 조합
+
+> **해석 팁.** Community 버전은 **Intruder 속도 제한**이 있어 대량 브루트포스는 비현실적. 취약점 재현과 보고서 증적 확보에 집중.
+

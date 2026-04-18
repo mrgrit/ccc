@@ -6,7 +6,6 @@
 - JuiceShop에서 실제 SQL Injection 공격을 수행한다
 - SQL Injection 방어 기법을 이해한다
 
-
 ## 실습 환경 (공통)
 
 | 서버 | IP | 역할 | 접속 |
@@ -17,7 +16,6 @@
 | siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
 **Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
-
 
 ## 강의 시간 배분 (3시간)
 
@@ -33,7 +31,6 @@
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
-
 
 ---
 
@@ -73,7 +70,6 @@
 | **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 점수 (0~10점) | 질병 위험도 등급 |
 | **CVE** | Common Vulnerabilities and Exposures | 취약점 고유 식별 번호 | 질병의 고유 코드 (예: COVID-19) |
 | **Bastion** | Bastion | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
-
 
 ---
 
@@ -612,9 +608,7 @@ curl -s -H "X-API-Key: ccc-api-key-2026" \
 
 > **다음 주 예고**: Week 05에서는 OWASP Top 10의 또 다른 Injection 공격인 XSS(Cross-Site Scripting)를 배운다. JavaScript를 이용한 쿠키 탈취와 세션 하이재킹을 실습한다.
 
-
 ---
-
 
 ---
 
@@ -660,38 +654,64 @@ curl -s -H "X-API-Key: ccc-api-key-2026" \
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
+### sqlmap
+> **역할:** SQL Injection 탐지·악용 자동화  
+> **실행 위치:** `공격자 측 CLI`  
+> **접속/호출:** `sqlmap -u <url>` 또는 `-r request.txt`
 
-### Wazuh Dashboard UI 가이드
+**주요 경로·파일**
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+| 경로 | 역할 |
+|------|------|
+| `~/.local/share/sqlmap/output/<host>/` | 세션·덤프 결과 |
+| `session.sqlite` | 재실행 시 단계 스킵용 캐시 |
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**핵심 설정·키**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+- `--risk=1~3 --level=1~5` — 탐지 공격 폭 조절
+- `--technique=BEUSTQ` — B)lind E)rror U)nion S)tacked T)ime Q)uery
 
+**로그·확인 명령**
 
-### OpenCTI UI 가이드
+- `output/<host>/log` — 요청·응답 로그
 
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+**UI / CLI 요점**
 
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+- `sqlmap -u ... --dbs` — DB 목록
+- `sqlmap -u ... -D juice -T users --dump` — 특정 테이블 덤프
+- `sqlmap -r req.txt --batch --crawl=2` — Burp 저장 요청 기반 크롤링
+
+> **해석 팁.** `--batch`로 대화형 프롬프트 자동 Y 처리. WAF가 있을 땐 `--tamper=space2comment,between` 조합으로 우회 시도.
+
+### Burp Suite Community
+> **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
+> **실행 위치:** `작업 PC → web (10.20.30.80:3000)`  
+> **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `Proxy → HTTP history` | 모든 캡처된 요청/응답 |
+| `Intruder` | 페이로드 페이즈·위치 기반 자동화 |
+| `Repeater` | 단건 요청 수동 반복 |
+
+**핵심 설정·키**
+
+- `Proxy listener 127.0.0.1:8080` — 브라우저 프록시 포트
+- `Target → Scope` — in-scope 호스트만 처리
+
+**로그·확인 명령**
+
+- `Logger` — 세션 전체 요청 타임라인
+
+**UI / CLI 요점**
+
+- Ctrl+R — 요청을 Repeater로 전송
+- Ctrl+I — Intruder로 전송 후 위치(§) 설정
+- Intruder Attack type: Sniper/Cluster bomb — 단일/다중 페이로드 조합
+
+> **해석 팁.** Community 버전은 **Intruder 속도 제한**이 있어 대량 브루트포스는 비현실적. 취약점 재현과 보고서 증적 확보에 집중.
 

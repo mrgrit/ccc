@@ -168,23 +168,27 @@ export default function Education() {
           <>
             <style>{`
               .lecture-content table { border-collapse: collapse; width: auto; max-width: 100%; margin: 16px 0; font-size: 14px; }
-              .lecture-content th, .lecture-content td { border: 1px solid #30363d; padding: 8px 14px; text-align: left; white-space: nowrap; }
-              .lecture-content th { background: #21262d; color: #e6edf3; font-weight: 600; }
+              .lecture-content th, .lecture-content td { border: 1px solid #30363d; padding: 8px 14px; text-align: left; vertical-align: top; }
+              .lecture-content th { background: #21262d; color: #e6edf3; font-weight: 600; white-space: nowrap; }
               .lecture-content td { color: #c9d1d9; }
+              .lecture-content td code { white-space: normal; word-break: break-word; }
               .lecture-content tr:hover td { background: #1c2128; }
-              .lecture-content pre { background: #0d1117; border: 1px solid #30363d; border-radius: 6px; padding: 16px; overflow-x: auto; font-size: 14px; }
-              .lecture-content code { background: #21262d; padding: 2px 6px; border-radius: 4px; font-size: 14px; color: #f97316; }
-              .lecture-content pre code { background: none; padding: 0; color: #e6edf3; }
-              .lecture-content h1 { font-size: 28px; border-bottom: 2px solid #f97316; padding-bottom: 8px; margin-top: 40px; }
-              .lecture-content h2 { font-size: 22px; border-bottom: 1px solid #30363d; padding-bottom: 6px; margin-top: 32px; color: #e6edf3; }
-              .lecture-content h3 { font-size: 18px; margin-top: 24px; color: #e6edf3; }
-              .lecture-content blockquote { border-left: 4px solid #f97316; padding: 8px 16px; margin: 16px 0; background: #161b22; color: #8b949e; }
+              .lecture-content pre { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 16px 20px; overflow-x: auto; font-size: 14px; line-height: 1.55; }
+              .lecture-content code { background: #21262d; padding: 2px 7px; border-radius: 4px; font-size: 0.92em; color: #f97316; font-family: 'D2Coding',Consolas,Monaco,monospace; }
+              .lecture-content pre code { background: none; padding: 0; color: inherit; font-size: 14px; }
+              .lecture-content h1 { font-size: 26px; border-bottom: 2px solid #f97316; padding-bottom: 10px; margin: 0 0 18px; color: #e6edf3; font-weight: 700; }
+              .lecture-content h2 { font-size: 22px; border-bottom: 1px solid #30363d; padding-bottom: 8px; margin-top: 32px; color: #e6edf3; font-weight: 700; }
+              .lecture-content h3 { font-size: 19px; margin-top: 24px; color: #e6edf3; font-weight: 600; }
+              .lecture-content h4 { font-size: 17px; margin-top: 20px; color: #c9d1d9; font-weight: 600; }
+              .lecture-content blockquote { border-left: 3px solid #f97316; padding: 10px 16px; margin: 14px 0; background: #161b22; color: #c9d1d9; border-radius: 0 6px 6px 0; }
+              .lecture-content strong { color: #e6edf3; font-weight: 700; }
               .lecture-content img { max-width: 100%; border-radius: 8px; }
               .lecture-content ul, .lecture-content ol { padding-left: 24px; }
               .lecture-content li { margin-bottom: 4px; }
-              .lecture-content hr { border: none; border-top: 1px solid #30363d; margin: 24px 0; }
+              .lecture-content hr { border: none; border-top: 1px solid #30363d; margin: 28px 0; }
               .lecture-content a { color: #58a6ff; text-decoration: none; }
               .lecture-content a:hover { text-decoration: underline; }
+              .lecture-content .mermaid { background: #0d1117; border: 1px solid #30363d; border-radius: 8px; padding: 16px; margin: 14px 0; text-align: center; }
             `}</style>
             <div className="lecture-content" ref={lectureRef} style={{
               background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: '32px 36px',
@@ -288,44 +292,86 @@ const actionBtn: React.CSSProperties = {
 }
 
 // ── Markdown → HTML ──
+// Design tokens (keep in sync with CSS block above):
+//   brand-orange   #f97316 — inline code, h1 accent, blockquote border
+//   fg-bright      #e6edf3 — headings, strong, code-block default text
+//   fg-body        #c9d1d9 — body text
+//   fg-dim         #8b949e — secondary text, blockquote body
+//   semantic-green #3fb950 — ONLY for bash/sh code blocks (shell/terminal)
+//   surface-1      #161b22 — raised block bg
+//   surface-2      #21262d — inline chip bg
+//   surface-0      #0d1117 — code block bg
+//   border         #30363d
 function markdownToHtml(md: string): string {
-  // 1단계: Mermaid 블록을 이스케이프 전에 먼저 추출 (placeholder로 교체)
+  // 1. Mermaid → placeholder (이스케이프 전에 보존)
   const mermaidBlocks: string[] = []
   md = md.replace(/```mermaid\n([\s\S]*?)```/g, (_, code) => {
     mermaidBlocks.push(code)
     return `__MERMAID_${mermaidBlocks.length - 1}__`
   })
 
-  // 2단계: HTML 이스케이프 + 마크다운 변환
+  // 2. 코드블록도 먼저 placeholder화 — 내부의 `**`, `|`, `# ` 오인 방지
+  const codeBlocks: { lang: string; body: string }[] = []
+  md = md.replace(/```(\w*)\n([\s\S]*?)```/g, (_, lang, body) => {
+    codeBlocks.push({ lang: (lang || '').toLowerCase(), body })
+    return `__CODE_${codeBlocks.length - 1}__`
+  })
+
+  // 3. HTML escape + 마크다운 치환
   let html = md
     .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    // 코드블록 — monospace, pre 유지 (도형/선 보존)
-    .replace(/```(\w*)\n([\s\S]*?)```/g, '<pre style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px 20px;font-size:15px;line-height:1.5;overflow-x:auto;color:#3fb950;margin:12px 0;font-family:\'D2Coding\',\'Nanum Gothic Coding\',Consolas,Monaco,\'Courier New\',monospace;white-space:pre;tab-size:4;letter-spacing:0">$2</pre>')
-    // 제목
-    .replace(/^#### (.+)$/gm, '<h4 style="font-size:17px;color:#c9d1d9;margin:18px 0 8px;font-weight:600">$1</h4>')
-    .replace(/^### (.+)$/gm, '<h3 style="font-size:19px;color:#e6edf3;margin:22px 0 10px;font-weight:600">$1</h3>')
-    .replace(/^## (.+)$/gm, '<h2 style="font-size:21px;color:#e6edf3;margin:28px 0 12px;border-bottom:1px solid #30363d;padding-bottom:8px;font-weight:700">$1</h2>')
-    .replace(/^# (.+)$/gm, '<h1 style="font-size:24px;color:#f0883e;margin:0 0 16px;font-weight:700">$1</h1>')
-    // 인라인 코드
-    .replace(/`([^`]+)`/g, '<code style="background:#21262d;padding:2px 7px;border-radius:4px;font-size:15px;color:#d2a8ff;font-family:Consolas,Monaco,monospace">$1</code>')
-    .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#e6edf3">$1</strong>')
-    // 블록쿼트
-    .replace(/^&gt; (.+)$/gm, '<div style="border-left:3px solid #30363d;padding:6px 14px;margin:6px 0;color:#8b949e;font-size:15px">$1</div>')
-    // 리스트
-    .replace(/^\- (.+)$/gm, '<div style="padding:2px 0 2px 20px;font-size:16px">• $1</div>')
-    .replace(/^\d+\. (.+)$/gm, '<div style="padding:2px 0 2px 20px;font-size:16px">$1</div>')
-    // 테이블 구분선 제거
-    .replace(/^\|[\s\-:|]+\|$/gm, '')
-    // 테이블 행
-    .replace(/^\|(.+)\|$/gm, (_, row) => {
-      const cells = row.split('|').map((c: string) => c.trim()).filter(Boolean)
-      return '<div style="display:flex;border-bottom:1px solid #21262d">' + cells.map((c: string) => `<span style="flex:1;padding:6px 12px;font-size:15px">${c}</span>`).join('') + '</div>'
+    // 제목 (h1은 브랜드 오렌지 액센트, h2~h4는 흰색 계열)
+    .replace(/^#### (.+)$/gm, '<h4 style="font-size:17px;color:#c9d1d9;margin:20px 0 8px;font-weight:600">$1</h4>')
+    .replace(/^### (.+)$/gm, '<h3 style="font-size:19px;color:#e6edf3;margin:24px 0 10px;font-weight:600">$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2 style="font-size:22px;color:#e6edf3;margin:32px 0 14px;border-bottom:1px solid #30363d;padding-bottom:8px;font-weight:700">$1</h2>')
+    .replace(/^# (.+)$/gm, '<h1 style="font-size:26px;color:#e6edf3;margin:0 0 18px;padding-bottom:10px;border-bottom:2px solid #f97316;font-weight:700">$1</h1>')
+    // 강조 — 흰색 볼드
+    .replace(/\*\*(.+?)\*\*/g, '<strong style="color:#e6edf3;font-weight:700">$1</strong>')
+    // 인라인 코드 — 브랜드 오렌지(명령/경로/키 공통)
+    .replace(/`([^`]+)`/g, '<code style="background:#21262d;padding:2px 7px;border-radius:4px;font-size:0.92em;color:#f97316;font-family:\'D2Coding\',Consolas,Monaco,monospace">$1</code>')
+    // 블록쿼트 — 브랜드 오렌지 왼쪽 테두리
+    .replace(/((?:^&gt; .+(?:\n|$))+)/gm, (match) => {
+      const body = match.replace(/^&gt; /gm, '').replace(/\n$/, '').replace(/\n/g, '<br/>')
+      return `<div style="border-left:3px solid #f97316;padding:10px 16px;margin:14px 0;background:#161b22;color:#c9d1d9;font-size:15px;border-radius:0 6px 6px 0">${body}</div>`
     })
-    // 줄바꿈
-    .replace(/\n\n/g, '<div style="height:10px"></div>')
+    // 리스트 — 일관된 불릿/번호, 같은 패딩
+    .replace(/^- (.+)$/gm, '<div style="padding:3px 0 3px 22px;font-size:16px;position:relative"><span style="position:absolute;left:6px;color:#f97316">•</span>$1</div>')
+    .replace(/^(\d+)\. (.+)$/gm, '<div style="padding:3px 0 3px 22px;font-size:16px;position:relative"><span style="position:absolute;left:0;color:#f97316;font-weight:600">$1.</span>$2</div>')
+    // 수평선
+    .replace(/^---+$/gm, '<hr style="border:none;border-top:1px solid #30363d;margin:28px 0"/>')
+
+  // 4. 테이블 → 실제 <table> (CSS의 .lecture-content table 스타일 적용)
+  html = html.replace(/((?:^\|.*\|\s*\n)+)/gm, (block) => {
+    const rows = block.trim().split('\n').filter(r => r.trim().startsWith('|'))
+    if (rows.length < 2) return block
+    // 2번째 줄이 구분선인지 (--- | --- 형태) 확인
+    const sep = rows[1]
+    const isHeader = /^\|[\s\-:|]+\|$/.test(sep.trim())
+    if (!isHeader) return block
+    const parseCells = (row: string) => row.trim().replace(/^\||\|$/g, '').split('|').map(c => c.trim())
+    const headers = parseCells(rows[0])
+    const bodyRows = rows.slice(2).map(parseCells)
+    const thead = '<thead><tr>' + headers.map(h => `<th>${h}</th>`).join('') + '</tr></thead>'
+    const tbody = '<tbody>' + bodyRows.map(r => '<tr>' + r.map(c => `<td>${c}</td>`).join('') + '</tr>').join('') + '</tbody>'
+    return `<table>${thead}${tbody}</table>`
+  })
+
+  // 5. 줄바꿈 (테이블·헤더·블록쿼트·리스트로 이미 치환된 라인은 건너뜀)
+  html = html
+    .replace(/\n{2,}/g, '<div style="height:10px"></div>')
     .replace(/\n/g, '<br/>')
 
-  // 3단계: Mermaid placeholder → <div class="mermaid"> (이스케이프 안 된 원본 코드)
+  // 6. 코드블록 복원 — 언어가 bash/sh면 terminal 그린, 그 외는 중립 흰색
+  codeBlocks.forEach(({ lang, body }, i) => {
+    const escaped = body.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+    const isShell = /^(bash|sh|shell|console|terminal|zsh)$/.test(lang)
+    const color = isShell ? '#3fb950' : '#e6edf3'
+    const label = lang ? `<div style="position:absolute;top:6px;right:10px;font-size:11px;color:#8b949e;font-family:system-ui;text-transform:uppercase;letter-spacing:0.5px">${lang}</div>` : ''
+    const pre = `<div style="position:relative;margin:14px 0">${label}<pre style="background:#0d1117;border:1px solid #30363d;border-radius:8px;padding:16px 20px;font-size:14px;line-height:1.55;overflow-x:auto;color:${color};margin:0;font-family:'D2Coding','Nanum Gothic Coding',Consolas,Monaco,'Courier New',monospace;white-space:pre;tab-size:4;letter-spacing:0">${escaped}</pre></div>`
+    html = html.replace(`__CODE_${i}__`, pre)
+  })
+
+  // 7. Mermaid 복원
   mermaidBlocks.forEach((code, i) => {
     html = html.replace(`__MERMAID_${i}__`, `<div class="mermaid">${code}</div>`)
   })

@@ -588,3 +588,42 @@ rule.groups:syscheck
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): nftables(inet filter+ip nat), Suricata 8.0.4(65K룰), Apache+ModSecurity(:8082→403), Wazuh v4.11.2(local_rules 62줄), OpenCTI(200)
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### OpenCTI (Threat Intelligence Platform)
+> **역할:** STIX 2.1 기반 위협 인텔리전스 통합 관리  
+> **실행 위치:** `siem (10.20.30.100)`  
+> **접속/호출:** UI `http://10.20.30.100:8080`, GraphQL `:8080/graphql`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/opt/opencti/config/default.json` | 포트·DB·ElasticSearch 접속 설정 |
+| `/opt/opencti-connectors/` | MITRE/MISP/AlienVault 등 커넥터 |
+| `docker compose ps (프로젝트 경로)` | ElasticSearch/RabbitMQ/Redis 상태 |
+
+**핵심 설정·키**
+
+- `app.admin_email/password` — 초기 관리자 계정 — 변경 필수
+- `connectors: opencti-connector-mitre` — MITRE ATT&CK 동기화
+
+**로그·확인 명령**
+
+- `docker logs opencti` — 메인 플랫폼 로그
+- `docker logs opencti-worker` — 백엔드 인제스트 워커
+
+**UI / CLI 요점**
+
+- Analysis → Reports — 위협 보고서 원문과 IOC
+- Events → Indicators — IOC 검색 (hash/ip/domain)
+- Knowledge → Threat actors — 위협 행위자 프로파일과 TTP
+- Data → Connectors — 외부 소스 동기화 상태
+
+> **해석 팁.** IOC 1건을 **관측(Observable)** → **지표(Indicator)** → **보고서(Report)**로 승격해 컨텍스트를 쌓아야 헌팅에 활용 가능. STIX relationship(`uses`, `indicates`)이 분석의 핵심.
+

@@ -680,73 +680,37 @@ data.srcip:10.20.30.80
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
-### `/etc/modsecurity/crs/rules`
-**OWASP CRS (Core Rule Set) 룰 디렉터리** (VM: web)
+### BunkerWeb WAF (ModSecurity CRS)
+> **역할:** Nginx 기반 웹 방화벽 — OWASP Core Rule Set 통합  
+> **실행 위치:** `web (10.20.30.80)`  
+> **접속/호출:** 리스닝 포트 `:8082` (원본 :80/:3000 프록시)
 
-OWASP에서 관리하는 범용 웹 공격 탐지 룰 모음. SQLi(942xxx), XSS(941xxx), RCE(932xxx) 등 공격 유형별 룰 파일이 위치.
+**주요 경로·파일**
 
-**주요 내용**:
-- `REQUEST-942-APPLICATION-ATTACK-SQLI.conf` — SQL Injection 탐지 룰
-- `REQUEST-941-APPLICATION-ATTACK-XSS.conf` — Cross-Site Scripting 탐지 룰
-- `REQUEST-932-APPLICATION-ATTACK-RCE.conf` — Remote Code Execution 탐지 룰
+| 경로 | 역할 |
+|------|------|
+| `/etc/bunkerweb/variables.env` | 서버 단위 기본 변수 |
+| `/etc/bunkerweb/configs/modsec/` | 커스텀 ModSecurity 룰 |
+| `/var/log/bunkerweb/modsec_audit.log` | ModSec 감사 로그(차단된 요청) |
+| `/var/log/bunkerweb/access.log` | 정상 요청 로그 |
 
-**해석**: 파일명의 번호(942, 941 등)가 rule ID의 앞 3자리와 대응한다. modsec_audit.log에서 `[id "942100"]`이 보이면 SQL Injection 룰에 걸린 것.
+**핵심 설정·키**
 
-### `/etc/modsecurity/modsecurity.conf`
-**ModSecurity WAF 메인 설정 파일** (VM: web)
+- `USE_MODSECURITY=yes` — ModSec 엔진 활성화
+- `USE_MODSECURITY_CRS=yes` — OWASP CRS 활성화
+- `MODSECURITY_CRS_VERSION=4` — CRS 버전
 
-ModSecurity 엔진의 동작 모드, 감사 로그, 요청 본문 크기 등 핵심 설정. Apache의 `security2` 모듈이 이 파일을 로드한다.
+**로그·확인 명령**
 
-**주요 내용**:
-- `SecRuleEngine On` — 탐지+차단 활성화 (DetectionOnly면 탐지만, Off면 비활성)
-- `SecAuditLog /var/log/apache2/modsec_audit.log` — 감사 로그 경로
-- `SecRequestBodyLimit 13107200` — 최대 요청 본문 크기 (바이트)
+- `grep 'Matched Phase' modsec_audit.log` — 룰에 매칭된 단계 확인
+- `grep 'HTTP/1.1" 403' access.log` — WAF가 차단한 요청
 
-**해석**: `SecRuleEngine DetectionOnly`면 공격을 탐지하지만 차단하지 않는다(학습 모드). 운영 환경에서는 반드시 `On`으로 설정.
+**UI / CLI 요점**
 
-### `/var/log/apache2/modsec_audit.log`
-**ModSecurity 감사 로그** (VM: web)
+- `curl -i http://10.20.30.80:8082/?id=1' OR '1'='1` — SQLi 페이로드 테스트
+- 응답 코드 `403 Forbidden` — WAF 차단 정상 동작
 
-ModSecurity가 차단하거나 탐지한 요청의 상세 기록. 요청 헤더, 본문, 매칭된 룰 ID, 차단 사유 등이 포함된다.
-
-**주요 내용**:
-- `[id "942100"] [msg "SQL Injection Detected"] [severity "CRITICAL"]` — SQLi 탐지 기록
-- `[id "941100"] [msg "XSS Attack Detected"]` — XSS 탐지 기록
-
-**해석**: `severity`가 CRITICAL이면 심각한 공격 시도. `[id "..."]`로 어떤 CRS 룰에 매칭됐는지 확인. 오탐(false positive)이면 해당 rule ID를 예외 처리.
-
-
-### Wazuh Dashboard UI 가이드
-
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
-
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
-
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
-
-
-### OpenCTI UI 가이드
-
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
-
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+> **해석 팁.** 오탐 시 `SecRuleRemoveById 942100` 방식으로 특정 룰만 제외. 차단 판정은 **점수 임계값**(기본 5) 기준이므로 단일 룰 1건은 차단되지 않을 수 있다.
 

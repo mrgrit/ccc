@@ -612,3 +612,74 @@ gemma3:12b와 llama3.1:8b에 동일한 보안 로그 5건을 분석시켜 정확
 
 ---
 ---
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### Ollama + LangChain
+> **역할:** 로컬 LLM 서빙(Ollama) + 체인 오케스트레이션(LangChain)  
+> **실행 위치:** `bastion (LLM 서버)`  
+> **접속/호출:** `OLLAMA_HOST=http://10.20.30.201:11434`, Python `from langchain_ollama import OllamaLLM`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `~/.ollama/models/` | 다운로드된 모델 블롭 |
+| `/etc/systemd/system/ollama.service` | 서비스 유닛 |
+
+**핵심 설정·키**
+
+- `OLLAMA_HOST=0.0.0.0:11434` — 외부 바인드
+- `OLLAMA_KEEP_ALIVE=30m` — 모델 유휴 유지
+- `LLM_MODEL=gemma3:4b (env)` — CCC 기본 모델
+
+**로그·확인 명령**
+
+- `journalctl -u ollama` — 서빙 로그
+- `LangChain `verbose=True`` — 체인 단계 출력
+
+**UI / CLI 요점**
+
+- `ollama list` — 설치된 모델
+- `curl -XPOST $OLLAMA_HOST/api/generate -d '{...}'` — REST 생성
+- LangChain `RunnableSequence | parser` — 체인 조립 문법
+
+> **해석 팁.** Ollama는 **첫 호출에 모델 로드**가 커서 지연이 크다. 성능 실험 시 워밍업 호출을 배제하고 측정하자.
+
+### CCC Bastion Agent
+> **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
+> **실행 위치:** `bastion (10.20.30.201)`  
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `packages/bastion/agent.py` | 메인 에이전트 루프 |
+| `packages/bastion/skills.py` | 스킬 정의 |
+| `packages/bastion/playbooks/` | 정적 플레이북 YAML |
+| `data/bastion/experience/` | 수집된 경험 (pass/fail) |
+
+**핵심 설정·키**
+
+- `LLM_BASE_URL / LLM_MODEL` — Ollama 연결
+- `CCC_API_KEY` — ccc-api 인증
+- `max_retry=2` — 실패 시 self-correction 재시도
+
+**로그·확인 명령**
+
+- ``docs/test-status.md`` — 현재 테스트 진척 요약
+- ``bastion_test_progress.json`` — 스텝별 pass/fail 원시
+
+**UI / CLI 요점**
+
+- 대화형 TUI 프롬프트 — 자연어 지시 → 계획 → 실행 → 검증
+- `/a2a/mission` (API) — 자율 미션 실행
+- Experience→Playbook 승격 — 반복 성공 패턴 저장
+
+> **해석 팁.** 실패 시 output을 분석해 **근본 원인 교정**이 설계의 핵심. 증상 회피/땜빵은 금지.
+

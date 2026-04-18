@@ -387,38 +387,92 @@ ssh ccc@10.20.30.100 "
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
+### Kubernetes + kubectl
+> **역할:** 컨테이너 오케스트레이션  
+> **실행 위치:** `컨트롤 플레인 / kubeconfig 보유 클라이언트`  
+> **접속/호출:** `kubectl` with `~/.kube/config`
 
-### Wazuh Dashboard UI 가이드
+**주요 경로·파일**
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+| 경로 | 역할 |
+|------|------|
+| `/etc/kubernetes/` | 컨트롤 플레인 설정 (kubeadm) |
+| `/var/lib/etcd/` | etcd 저장소 — 전체 클러스터 시크릿 포함 |
+| `~/.kube/config` | 사용자 인증 정보 |
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**핵심 설정·키**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+- `PodSecurity admission (restricted)` — 네임스페이스별 보안 레벨
+- `NetworkPolicy default-deny` — 파드 간 기본 차단
+- `RBAC Role/RoleBinding` — 최소 권한
 
+**로그·확인 명령**
 
-### OpenCTI UI 가이드
+- ``kubectl logs <pod> -c <container>`` — 파드 로그
+- ``kubectl get events -A`` — 클러스터 이벤트
 
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+**UI / CLI 요점**
 
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+- `kubectl auth can-i --list` — 현재 주체가 가능한 동작 열거
+- `kubectl get pods -A -o wide` — 전체 파드 상태
+- `kubectl describe pod <p>` — 이벤트/이미지/볼륨 상세
+
+> **해석 팁.** etcd 노출·kubeconfig 유출은 **즉각적 클러스터 장악**. `kubectl auth can-i` 결과가 예상보다 많으면 RBAC 재설계 신호.
+
+### Trivy
+> **역할:** 이미지·파일시스템·IaC·K8s CVE/미스컨피그 스캐너  
+> **실행 위치:** `임의 호스트 / CI`  
+> **접속/호출:** `trivy image <img>` / `trivy fs .` / `trivy config .`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `~/.cache/trivy/` | 취약점 DB 캐시 |
+| `.trivyignore` | 무시할 CVE ID 목록 |
+
+**핵심 설정·키**
+
+- `--severity HIGH,CRITICAL` — 심각도 필터
+- `--ignore-unfixed` — 수정본 없는 CVE 제외
+- `--format sarif` — CI용 SARIF 출력
+
+**UI / CLI 요점**
+
+- `trivy image --exit-code 1 --severity HIGH,CRITICAL <img>` — CI 게이트
+- `trivy k8s --report summary cluster` — 클러스터 전체 요약
+
+> **해석 팁.** `--ignore-unfixed`는 잡음을 크게 줄이지만 **미래 위험**을 숨긴다. 이미지 재빌드 주기와 함께 운영 기준을 정하자.
+
+### kube-bench + Falco
+> **역할:** K8s CIS 점검(kube-bench) + 런타임 이상 행위 탐지(Falco)  
+> **실행 위치:** `클러스터 노드 (DaemonSet)`  
+> **접속/호출:** `kube-bench run`, Falco는 `journalctl -u falco`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/etc/kubernetes/manifests/` | 정적 Pod 매니페스트 (API server 등) |
+| `/etc/falco/falco_rules.yaml` | 기본 탐지 룰 |
+| `/etc/falco/falco_rules.local.yaml` | 커스텀 룰 |
+
+**핵심 설정·키**
+
+- `anonymous-auth=false (API server)` — 익명 요청 차단
+- `Falco `Contains any of privileged_syscalls`` — 커널 차원 의심 호출
+
+**로그·확인 명령**
+
+- `kube-bench `[FAIL]`` — CIS 항목 실패
+- `journalctl -u falco -f` — 실시간 경보 스트림
+
+**UI / CLI 요점**
+
+- `kube-bench run --targets master,node` — 전 구성요소 점검
+- Falco `falcoctl` 룰 관리 — 원격 룰 업데이트
+
+> **해석 팁.** kube-bench의 일부 [FAIL]은 **매니지드 서비스(EKS/GKE)에서 해당 없음**. managed 프로필 지정하면 잡음 감소.
 

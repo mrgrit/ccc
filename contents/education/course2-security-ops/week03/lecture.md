@@ -572,3 +572,40 @@ Week 04에서는 Suricata IPS의 설치와 구성을 다룬다:
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): nftables(inet filter+ip nat), Suricata 8.0.4(65K룰), Apache+ModSecurity(:8082→403), Wazuh v4.11.2(local_rules 62줄), OpenCTI(200)
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### nftables
+> **역할:** Linux 커널 기반 상태 기반 방화벽 (iptables 후속)  
+> **실행 위치:** `secu (10.20.30.1)`  
+> **접속/호출:** `sudo nft ...` CLI + `/etc/nftables.conf` 영속 설정
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/etc/nftables.conf` | 부팅 시 로드되는 영속 룰셋 |
+| `/var/log/kern.log` | `log prefix` 룰의 패킷 드롭 로그 |
+
+**핵심 설정·키**
+
+- `table inet filter` — IPv4/IPv6 공통 필터 테이블
+- `chain input { policy drop; }` — 기본 차단 정책
+- `ct state established,related accept` — 응답 트래픽 허용
+
+**로그·확인 명령**
+
+- `journalctl -t kernel -g 'nft'` — 룰에서 `log prefix` 지정한 패킷 드롭
+
+**UI / CLI 요점**
+
+- `sudo nft list ruleset` — 현재 로드된 전체 룰 출력
+- `sudo nft -f /etc/nftables.conf` — 설정 파일 재적용
+- `sudo nft list set inet filter blacklist` — 집합(set) 내용 조회
+
+> **해석 팁.** 룰은 **위→아래 첫 매칭 우선**. `accept`는 해당 체인만 종료, 상위 훅은 계속 평가된다. 변경 후 `nft list ruleset`로 실제 적용 여부 확인.
+

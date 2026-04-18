@@ -637,3 +637,39 @@ ENDSSH
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): nmap/nikto, SQLi/IDOR/swagger.json, CVSS, 보고서 작성
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### OWASP ZAP
+> **역할:** 오픈소스 자동 웹 취약점 스캐너·프록시  
+> **실행 위치:** `작업 PC / Docker`  
+> **접속/호출:** GUI `zaproxy`, API `http://zap:8090/JSON/...`, Docker `owasp/zap2docker-stable`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `~/.ZAP/session-*` | 세션 저장소 |
+| `context.xml` | 스캔 컨텍스트(범위/인증) |
+
+**핵심 설정·키**
+
+- `Active Scan policy` — 룰별 강도 및 활성화 여부
+- `Authentication: form-based` — 로그인이 필요한 페이지 스캔
+
+**로그·확인 명령**
+
+- `~/.ZAP/zap.log` — 스캐너 실행 로그
+
+**UI / CLI 요점**
+
+- Spider — 링크 탐색 크롤링
+- Active Scan — 실제 페이로드 주입 점검
+- Report → Generate HTML report — 표준 보고서 출력
+
+> **해석 팁.** 인증 필요 페이지는 **Context에 로그인 폼**을 등록하지 않으면 로그아웃 상태로 스캔되어 커버리지가 급감. `zap-baseline.py`는 수동 확인용 경량 모드.
+

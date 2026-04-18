@@ -470,3 +470,98 @@ for c in sorted(data, key=lambda x: x.get('difficulty', 0)):  # 반복문 시작
    - "Upload Size" 챌린지
    - "Upload Type" 챌린지
 9. Score Board에서 해결한 챌린지에 초록색 체크 표시가 되는지 확인
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### Burp Suite Community
+> **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
+> **실행 위치:** `작업 PC → web (10.20.30.80:3000)`  
+> **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `Proxy → HTTP history` | 모든 캡처된 요청/응답 |
+| `Intruder` | 페이로드 페이즈·위치 기반 자동화 |
+| `Repeater` | 단건 요청 수동 반복 |
+
+**핵심 설정·키**
+
+- `Proxy listener 127.0.0.1:8080` — 브라우저 프록시 포트
+- `Target → Scope` — in-scope 호스트만 처리
+
+**로그·확인 명령**
+
+- `Logger` — 세션 전체 요청 타임라인
+
+**UI / CLI 요점**
+
+- Ctrl+R — 요청을 Repeater로 전송
+- Ctrl+I — Intruder로 전송 후 위치(§) 설정
+- Intruder Attack type: Sniper/Cluster bomb — 단일/다중 페이로드 조합
+
+> **해석 팁.** Community 버전은 **Intruder 속도 제한**이 있어 대량 브루트포스는 비현실적. 취약점 재현과 보고서 증적 확보에 집중.
+
+### sqlmap
+> **역할:** SQL Injection 탐지·악용 자동화  
+> **실행 위치:** `공격자 측 CLI`  
+> **접속/호출:** `sqlmap -u <url>` 또는 `-r request.txt`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `~/.local/share/sqlmap/output/<host>/` | 세션·덤프 결과 |
+| `session.sqlite` | 재실행 시 단계 스킵용 캐시 |
+
+**핵심 설정·키**
+
+- `--risk=1~3 --level=1~5` — 탐지 공격 폭 조절
+- `--technique=BEUSTQ` — B)lind E)rror U)nion S)tacked T)ime Q)uery
+
+**로그·확인 명령**
+
+- `output/<host>/log` — 요청·응답 로그
+
+**UI / CLI 요점**
+
+- `sqlmap -u ... --dbs` — DB 목록
+- `sqlmap -u ... -D juice -T users --dump` — 특정 테이블 덤프
+- `sqlmap -r req.txt --batch --crawl=2` — Burp 저장 요청 기반 크롤링
+
+> **해석 팁.** `--batch`로 대화형 프롬프트 자동 Y 처리. WAF가 있을 땐 `--tamper=space2comment,between` 조합으로 우회 시도.
+
+### OWASP ZAP
+> **역할:** 오픈소스 자동 웹 취약점 스캐너·프록시  
+> **실행 위치:** `작업 PC / Docker`  
+> **접속/호출:** GUI `zaproxy`, API `http://zap:8090/JSON/...`, Docker `owasp/zap2docker-stable`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `~/.ZAP/session-*` | 세션 저장소 |
+| `context.xml` | 스캔 컨텍스트(범위/인증) |
+
+**핵심 설정·키**
+
+- `Active Scan policy` — 룰별 강도 및 활성화 여부
+- `Authentication: form-based` — 로그인이 필요한 페이지 스캔
+
+**로그·확인 명령**
+
+- `~/.ZAP/zap.log` — 스캐너 실행 로그
+
+**UI / CLI 요점**
+
+- Spider — 링크 탐색 크롤링
+- Active Scan — 실제 페이로드 주입 점검
+- Report → Generate HTML report — 표준 보고서 출력
+
+> **해석 팁.** 인증 필요 페이지는 **Context에 로그인 폼**을 등록하지 않으면 로그아웃 상태로 스캔되어 커버리지가 급감. `zap-baseline.py`는 수동 확인용 경량 모드.
+

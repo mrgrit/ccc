@@ -72,7 +72,6 @@
 
 ---
 
-
 ### 실습 인프라 구조 (Mermaid)
 
 ```mermaid
@@ -866,50 +865,171 @@ active
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
-### `/etc/modsecurity/crs/rules`
-**OWASP CRS (Core Rule Set) 룰 디렉터리** (VM: web)
+### nftables
+> **역할:** Linux 커널 기반 상태 기반 방화벽 (iptables 후속)  
+> **실행 위치:** `secu (10.20.30.1)`  
+> **접속/호출:** `sudo nft ...` CLI + `/etc/nftables.conf` 영속 설정
 
-OWASP에서 관리하는 범용 웹 공격 탐지 룰 모음. SQLi(942xxx), XSS(941xxx), RCE(932xxx) 등 공격 유형별 룰 파일이 위치.
+**주요 경로·파일**
 
-**주요 내용**:
-- `REQUEST-942-APPLICATION-ATTACK-SQLI.conf` — SQL Injection 탐지 룰
-- `REQUEST-941-APPLICATION-ATTACK-XSS.conf` — Cross-Site Scripting 탐지 룰
-- `REQUEST-932-APPLICATION-ATTACK-RCE.conf` — Remote Code Execution 탐지 룰
+| 경로 | 역할 |
+|------|------|
+| `/etc/nftables.conf` | 부팅 시 로드되는 영속 룰셋 |
+| `/var/log/kern.log` | `log prefix` 룰의 패킷 드롭 로그 |
 
-**해석**: 파일명의 번호(942, 941 등)가 rule ID의 앞 3자리와 대응한다. modsec_audit.log에서 `[id "942100"]`이 보이면 SQL Injection 룰에 걸린 것.
+**핵심 설정·키**
 
+- `table inet filter` — IPv4/IPv6 공통 필터 테이블
+- `chain input { policy drop; }` — 기본 차단 정책
+- `ct state established,related accept` — 응답 트래픽 허용
 
-### Wazuh Dashboard UI 가이드
+**로그·확인 명령**
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+- `journalctl -t kernel -g 'nft'` — 룰에서 `log prefix` 지정한 패킷 드롭
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**UI / CLI 요점**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+- `sudo nft list ruleset` — 현재 로드된 전체 룰 출력
+- `sudo nft -f /etc/nftables.conf` — 설정 파일 재적용
+- `sudo nft list set inet filter blacklist` — 집합(set) 내용 조회
 
+> **해석 팁.** 룰은 **위→아래 첫 매칭 우선**. `accept`는 해당 체인만 종료, 상위 훅은 계속 평가된다. 변경 후 `nft list ruleset`로 실제 적용 여부 확인.
 
-### OpenCTI UI 가이드
+### Suricata IDS/IPS
+> **역할:** 시그니처 기반 네트워크 침입 탐지/차단 엔진  
+> **실행 위치:** `secu (10.20.30.1)`  
+> **접속/호출:** `systemctl status suricata` / `suricatasc` 소켓 / `suricata -T`
 
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+**주요 경로·파일**
 
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+| 경로 | 역할 |
+|------|------|
+| `/etc/suricata/suricata.yaml` | 메인 설정 (HOME_NET, af-packet, rule-files) |
+| `/etc/suricata/rules/local.rules` | 사용자 커스텀 탐지 룰 |
+| `/var/lib/suricata/rules/suricata.rules` | `suricata-update` 병합 룰 |
+| `/var/log/suricata/eve.json` | JSON 이벤트 (alert/flow/http/dns/tls) |
+| `/var/log/suricata/fast.log` | 알림 1줄 텍스트 로그 |
+| `/var/log/suricata/stats.log` | 엔진 성능 통계 |
+
+**핵심 설정·키**
+
+- `HOME_NET` — 내부 대역 — 틀리면 내부/외부 판별 실패
+- `af-packet.interface` — 캡처 NIC — 트래픽이 흐르는 인터페이스와 일치해야 함
+- `rule-files: ["local.rules"]` — 로드할 룰 파일 목록
+
+**로그·확인 명령**
+
+- `jq 'select(.event_type=="alert")' eve.json` — 알림만 추출
+- `grep 'Priority: 1' fast.log` — 고위험 탐지만 빠르게 확인
+
+**UI / CLI 요점**
+
+- `suricata -T -c /etc/suricata/suricata.yaml` — 설정/룰 문법 검증
+- `suricatasc -c stats` — 실시간 통계 조회 (런타임 소켓)
+- `suricata-update` — 공개 룰셋 다운로드·병합
+
+> **해석 팁.** `stats.log`의 `kernel_drops > 0`이면 누락 발생 → `af-packet threads` 증설. 커스텀 룰 `sid`는 **1,000,000 이상** 할당 권장.
+
+### BunkerWeb WAF (ModSecurity CRS)
+> **역할:** Nginx 기반 웹 방화벽 — OWASP Core Rule Set 통합  
+> **실행 위치:** `web (10.20.30.80)`  
+> **접속/호출:** 리스닝 포트 `:8082` (원본 :80/:3000 프록시)
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/etc/bunkerweb/variables.env` | 서버 단위 기본 변수 |
+| `/etc/bunkerweb/configs/modsec/` | 커스텀 ModSecurity 룰 |
+| `/var/log/bunkerweb/modsec_audit.log` | ModSec 감사 로그(차단된 요청) |
+| `/var/log/bunkerweb/access.log` | 정상 요청 로그 |
+
+**핵심 설정·키**
+
+- `USE_MODSECURITY=yes` — ModSec 엔진 활성화
+- `USE_MODSECURITY_CRS=yes` — OWASP CRS 활성화
+- `MODSECURITY_CRS_VERSION=4` — CRS 버전
+
+**로그·확인 명령**
+
+- `grep 'Matched Phase' modsec_audit.log` — 룰에 매칭된 단계 확인
+- `grep 'HTTP/1.1" 403' access.log` — WAF가 차단한 요청
+
+**UI / CLI 요점**
+
+- `curl -i http://10.20.30.80:8082/?id=1' OR '1'='1` — SQLi 페이로드 테스트
+- 응답 코드 `403 Forbidden` — WAF 차단 정상 동작
+
+> **해석 팁.** 오탐 시 `SecRuleRemoveById 942100` 방식으로 특정 룰만 제외. 차단 판정은 **점수 임계값**(기본 5) 기준이므로 단일 룰 1건은 차단되지 않을 수 있다.
+
+### Wazuh SIEM (4.11.x)
+> **역할:** 에이전트 기반 로그·FIM·SCA 통합 분석 플랫폼  
+> **실행 위치:** `siem (10.20.30.100)`  
+> **접속/호출:** Dashboard `https://10.20.30.100` (admin/admin), Manager API `:55000`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/var/ossec/etc/ossec.conf` | Manager 메인 설정 (원격, 전송, syscheck 등) |
+| `/var/ossec/etc/rules/local_rules.xml` | 커스텀 룰 (id ≥ 100000) |
+| `/var/ossec/etc/decoders/local_decoder.xml` | 커스텀 디코더 |
+| `/var/ossec/logs/alerts/alerts.json` | 실시간 JSON 알림 스트림 |
+| `/var/ossec/logs/archives/archives.json` | 전체 이벤트 아카이브 |
+| `/var/ossec/logs/ossec.log` | Manager 데몬 로그 |
+| `/var/ossec/queue/fim/db/fim.db` | FIM 기준선 SQLite DB |
+
+**핵심 설정·키**
+
+- `<rule id='100100' level='10'>` — 커스텀 룰 — level 10↑은 고위험
+- `<syscheck><directories>...` — FIM 감시 경로
+- `<active-response>` — 자동 대응 (firewall-drop, restart)
+
+**로그·확인 명령**
+
+- `jq 'select(.rule.level>=10)' alerts.json` — 고위험 알림만
+- `grep ERROR ossec.log` — Manager 오류 (룰 문법 오류 등)
+
+**UI / CLI 요점**
+
+- Dashboard → Security events — KQL 필터 `rule.level >= 10`
+- Dashboard → Integrity monitoring — 변경된 파일 해시 비교
+- `/var/ossec/bin/wazuh-logtest` — 룰 매칭 단계별 확인 (Phase 1→3)
+- `/var/ossec/bin/wazuh-analysisd -t` — 룰·설정 문법 검증
+
+> **해석 팁.** Phase 3에서 원하는 `rule.id`가 떠야 커스텀 룰 정상. `local_rules.xml` 수정 후 `systemctl restart wazuh-manager`, 문법 오류가 있으면 **분석 데몬 전체가 기동 실패**하므로 `-t`로 먼저 검증.
+
+### OpenCTI (Threat Intelligence Platform)
+> **역할:** STIX 2.1 기반 위협 인텔리전스 통합 관리  
+> **실행 위치:** `siem (10.20.30.100)`  
+> **접속/호출:** UI `http://10.20.30.100:8080`, GraphQL `:8080/graphql`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/opt/opencti/config/default.json` | 포트·DB·ElasticSearch 접속 설정 |
+| `/opt/opencti-connectors/` | MITRE/MISP/AlienVault 등 커넥터 |
+| `docker compose ps (프로젝트 경로)` | ElasticSearch/RabbitMQ/Redis 상태 |
+
+**핵심 설정·키**
+
+- `app.admin_email/password` — 초기 관리자 계정 — 변경 필수
+- `connectors: opencti-connector-mitre` — MITRE ATT&CK 동기화
+
+**로그·확인 명령**
+
+- `docker logs opencti` — 메인 플랫폼 로그
+- `docker logs opencti-worker` — 백엔드 인제스트 워커
+
+**UI / CLI 요점**
+
+- Analysis → Reports — 위협 보고서 원문과 IOC
+- Events → Indicators — IOC 검색 (hash/ip/domain)
+- Knowledge → Threat actors — 위협 행위자 프로파일과 TTP
+- Data → Connectors — 외부 소스 동기화 상태
+
+> **해석 팁.** IOC 1건을 **관측(Observable)** → **지표(Indicator)** → **보고서(Report)**로 승격해 컨텍스트를 쌓아야 헌팅에 활용 가능. STIX relationship(`uses`, `indicates`)이 분석의 핵심.
 

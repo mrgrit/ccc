@@ -476,3 +476,79 @@ ENDSSH
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): Wazuh alerts.json/logtest/agent_control, SIGMA 룰, 경보 분석
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### OpenCTI (Threat Intelligence Platform)
+> **역할:** STIX 2.1 기반 위협 인텔리전스 통합 관리  
+> **실행 위치:** `siem (10.20.30.100)`  
+> **접속/호출:** UI `http://10.20.30.100:8080`, GraphQL `:8080/graphql`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/opt/opencti/config/default.json` | 포트·DB·ElasticSearch 접속 설정 |
+| `/opt/opencti-connectors/` | MITRE/MISP/AlienVault 등 커넥터 |
+| `docker compose ps (프로젝트 경로)` | ElasticSearch/RabbitMQ/Redis 상태 |
+
+**핵심 설정·키**
+
+- `app.admin_email/password` — 초기 관리자 계정 — 변경 필수
+- `connectors: opencti-connector-mitre` — MITRE ATT&CK 동기화
+
+**로그·확인 명령**
+
+- `docker logs opencti` — 메인 플랫폼 로그
+- `docker logs opencti-worker` — 백엔드 인제스트 워커
+
+**UI / CLI 요점**
+
+- Analysis → Reports — 위협 보고서 원문과 IOC
+- Events → Indicators — IOC 검색 (hash/ip/domain)
+- Knowledge → Threat actors — 위협 행위자 프로파일과 TTP
+- Data → Connectors — 외부 소스 동기화 상태
+
+> **해석 팁.** IOC 1건을 **관측(Observable)** → **지표(Indicator)** → **보고서(Report)**로 승격해 컨텍스트를 쌓아야 헌팅에 활용 가능. STIX relationship(`uses`, `indicates`)이 분석의 핵심.
+
+### Wazuh SIEM (4.11.x)
+> **역할:** 에이전트 기반 로그·FIM·SCA 통합 분석 플랫폼  
+> **실행 위치:** `siem (10.20.30.100)`  
+> **접속/호출:** Dashboard `https://10.20.30.100` (admin/admin), Manager API `:55000`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/var/ossec/etc/ossec.conf` | Manager 메인 설정 (원격, 전송, syscheck 등) |
+| `/var/ossec/etc/rules/local_rules.xml` | 커스텀 룰 (id ≥ 100000) |
+| `/var/ossec/etc/decoders/local_decoder.xml` | 커스텀 디코더 |
+| `/var/ossec/logs/alerts/alerts.json` | 실시간 JSON 알림 스트림 |
+| `/var/ossec/logs/archives/archives.json` | 전체 이벤트 아카이브 |
+| `/var/ossec/logs/ossec.log` | Manager 데몬 로그 |
+| `/var/ossec/queue/fim/db/fim.db` | FIM 기준선 SQLite DB |
+
+**핵심 설정·키**
+
+- `<rule id='100100' level='10'>` — 커스텀 룰 — level 10↑은 고위험
+- `<syscheck><directories>...` — FIM 감시 경로
+- `<active-response>` — 자동 대응 (firewall-drop, restart)
+
+**로그·확인 명령**
+
+- `jq 'select(.rule.level>=10)' alerts.json` — 고위험 알림만
+- `grep ERROR ossec.log` — Manager 오류 (룰 문법 오류 등)
+
+**UI / CLI 요점**
+
+- Dashboard → Security events — KQL 필터 `rule.level >= 10`
+- Dashboard → Integrity monitoring — 변경된 파일 해시 비교
+- `/var/ossec/bin/wazuh-logtest` — 룰 매칭 단계별 확인 (Phase 1→3)
+- `/var/ossec/bin/wazuh-analysisd -t` — 룰·설정 문법 검증
+
+> **해석 팁.** Phase 3에서 원하는 `rule.id`가 떠야 커스텀 룰 정상. `local_rules.xml` 수정 후 `systemctl restart wazuh-manager`, 문법 오류가 있으면 **분석 데몬 전체가 기동 실패**하므로 `-t`로 먼저 검증.
+

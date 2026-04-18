@@ -587,3 +587,36 @@ ssh ccc@10.20.30.201 "grep 'Accepted' /var/log/auth.log 2>/dev/null | \
 **정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
 
 ---
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### SIGMA + YARA
+> **역할:** SIGMA=플랫폼 독립 탐지 룰, YARA=파일/메모리 시그니처  
+> **실행 위치:** `SOC 분석가 PC / siem`  
+> **접속/호출:** `sigmac` 변환기, `yara <rule> <target>`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `~/sigma/rules/` | SIGMA 룰 저장 |
+| `~/yara-rules/` | YARA 룰 저장 |
+
+**핵심 설정·키**
+
+- `SIGMA logsource:product/service` — 로그 소스 매핑
+- `YARA `strings: $s1 = "..." ascii wide`` — 시그니처 정의
+- `YARA `condition: all of them and filesize < 1MB`` — 매칭 조건
+
+**UI / CLI 요점**
+
+- `sigmac -t elasticsearch-qs rule.yml` — Elastic용 KQL 변환
+- `sigmac -t wazuh rule.yml` — Wazuh XML 룰 변환
+- `yara -r rules.yar /var/tmp/sample.bin` — 재귀 스캔
+
+> **해석 팁.** SIGMA는 *탐지 의도*, YARA는 *바이너리 패턴*으로 역할 분리. SIGMA 룰은 반드시 **false positive 조건**까지 기술해야 SIEM 운영 가능.
+

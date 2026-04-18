@@ -568,38 +568,60 @@ curl -s -H "X-API-Key: ccc-api-key-2026" \
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
+### Nmap
+> **역할:** 포트 스캔·서비스 탐지·NSE 스크립트  
+> **실행 위치:** `bastion / 공격자 측`  
+> **접속/호출:** `nmap` CLI
 
-### Wazuh Dashboard UI 가이드
+**주요 경로·파일**
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+| 경로 | 역할 |
+|------|------|
+| `/usr/share/nmap/scripts/` | NSE 스크립트 모음 (vuln, default 등) |
+| `/usr/share/nmap/nmap-services` | 포트↔서비스 매핑 |
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**핵심 설정·키**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+- `-sS -sV -O` — SYN 스캔 + 버전 + OS
+- `--script vuln` — 취약점 스크립트 카테고리
+- `-T0..T5` — 스캔 타이밍 — T3 기본, T4 실습용
 
+**로그·확인 명령**
 
-### OpenCTI UI 가이드
+- `-oA scan` — 3가지 포맷(`.nmap/.gnmap/.xml`) 동시 저장
 
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+**UI / CLI 요점**
 
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+- `nmap -sV -p- 10.20.30.80` — 전 포트 + 버전
+- `nmap --script=http-enum 10.20.30.80` — 웹 디렉토리 열거
+- `nmap -sn 10.20.30.0/24` — 호스트 발견(핑 스윕)
+
+> **해석 팁.** IPS가 있는 환경에서 T4 이상은 빠르게 탐지된다. `-T2`로 느리게 + `--max-retries 1`로 재전송 최소화하면 우회 확률↑.
+
+### tcpdump + Wireshark
+> **역할:** 패킷 캡처·오프라인 분석  
+> **실행 위치:** `secu/web (tcpdump) → 분석 PC (Wireshark)`  
+> **접속/호출:** `sudo tcpdump -i <if> -w cap.pcap`, 분석은 `wireshark cap.pcap`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `/var/tmp/cap.pcap` | 실습용 캡처 저장 위치 |
+
+**핵심 설정·키**
+
+- `-i any` — 전 인터페이스
+- `-s 0` — 잘림 없이 전체 패킷 캡처
+- `BPF: 'tcp port 80 and host 10.20.30.80'` — 필터식
+
+**UI / CLI 요점**
+
+- Wireshark `http.request.method == POST` — POST 요청만
+- Wireshark Follow → TCP Stream — 세션 내용 재구성
+- `tshark -r cap.pcap -Y http` — CLI 필터 출력
+
+> **해석 팁.** 실환경 캡처는 **개인정보 포함** 가능성이 커 공유 전 `editcap`/`tcprewrite`로 익명화. BPF는 커널 레벨, Wireshark 필터는 디코드 후 레벨이라는 차이 기억.
 

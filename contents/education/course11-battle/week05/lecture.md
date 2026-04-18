@@ -676,48 +676,33 @@ ssh ccc@10.20.30.100 \
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
-### `/var/ossec/logs/alerts/alerts.json`
-**Wazuh 알림 로그 (JSON)** (VM: siem)
+### LinPEAS / linux-exploit-suggester
+> **역할:** Linux 권한 상승 벡터 자동 열거  
+> **실행 위치:** `침투 대상 호스트 (저권한 셸)`  
+> **접속/호출:** `./linpeas.sh`, `./les.sh`
 
-Wazuh가 생성한 모든 보안 알림을 JSON 형식으로 기록. Dashboard의 Security events 데이터 소스.
+**주요 경로·파일**
 
-**주요 내용**:
-- `{"rule":{"id":"100100","level":10,"description":"Multiple sudo failures"},"agent":{"name":"secu"}}` — 탐지 알림
+| 경로 | 역할 |
+|------|------|
+| `/tmp/linpeas.sh` | 업로드 위치 (실행권한 +x) |
+| `/dev/shm/` | tmpfs — 로그 잔존이 적어 자주 사용 |
 
-**해석**: `rule.level` ≥ 10은 즉각 대응이 필요한 고위험 이벤트. `agent.name`으로 어느 VM에서 발생했는지, `rule.id`로 어떤 탐지 룰이 매칭됐는지 파악.
+**핵심 설정·키**
 
+- `-a` — 심층 분석(파일 내용까지 스캔)
+- `-s` — 빠른 모드
 
-### Wazuh Dashboard UI 가이드
+**로그·확인 명령**
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+- `/tmp/linpeas.out` — 결과 저장
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**UI / CLI 요점**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+- 결과의 빨강/노랑 highlights — Critical/Probable 권한상승 벡터
+- SUID·sudo·cron·capabilities·kernel 섹션 — 체크리스트 핵심
 
-
-### OpenCTI UI 가이드
-
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
-
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+> **해석 팁.** 결과는 **가능성 높은 순**으로 정렬되지만, 실제 exploit은 커널·배포판 버전 의존. `uname -a`/`/etc/os-release`로 대상 확정 후 공개 PoC 선택.
 

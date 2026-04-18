@@ -593,3 +593,34 @@ ENDSSH
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): nmap/nikto, SQLi/IDOR/swagger.json, CVSS, 보고서 작성
+
+---
+
+## 📂 실습 참조 파일 가이드
+
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+
+### 보고서 도구 (CVSS 계산기·Markdown·ReportLab)
+> **역할:** 취약점 보고서 표준화  
+> **실행 위치:** `작업 PC`  
+> **접속/호출:** FIRST CVSS 계산기 https://www.first.org/cvss/calculator/3.1
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `reports/<project>/` | 재현 스크린샷·증적 저장 |
+| `template.md / template.docx` | 표준 템플릿 |
+
+**핵심 설정·키**
+
+- `CVSS 3.1 벡터 예: AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H` — Critical 9.8
+- `CWE ID + 권고 (remediation)` — 보고서 필수 항목
+
+**UI / CLI 요점**
+
+- MermaidJS 공격 흐름도 — 교안/보고서 공통 도식
+- Pandoc `md → docx/pdf` — 포맷 변환
+
+> **해석 팁.** 보고서 가치는 **재현 절차의 완결성**에 달려 있다. 스크린샷·요청/응답 전체·시간 기록을 포함해야 고객이 독립 검증 가능.
+

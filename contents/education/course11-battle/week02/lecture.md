@@ -741,48 +741,65 @@ REPORT
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
-### `/var/log/suricata/fast.log`
-**Suricata 빠른 알림 로그 (텍스트)** (VM: secu)
+### Nmap
+> **역할:** 포트 스캔·서비스 탐지·NSE 스크립트  
+> **실행 위치:** `bastion / 공격자 측`  
+> **접속/호출:** `nmap` CLI
 
-알림 이벤트를 한 줄씩 텍스트로 기록하는 간이 로그. 빠른 모니터링에 유용하지만, 상세 분석은 eve.json을 사용.
+**주요 경로·파일**
 
-**주요 내용**:
-- `04/15/2026-12:34:56.789012  [**] [1:1000102:1] SQLi attempt [**] [Classification: ...] [Priority: 1] {TCP} 10.20.30.201:45678 -> 10.20.30.80:80`
+| 경로 | 역할 |
+|------|------|
+| `/usr/share/nmap/scripts/` | NSE 스크립트 모음 (vuln, default 등) |
+| `/usr/share/nmap/nmap-services` | 포트↔서비스 매핑 |
 
-**해석**: `[Priority: 1]`은 높은 우선순위(심각한 위협). IP와 포트로 공격자와 대상을 즉시 식별할 수 있다.
+**핵심 설정·키**
 
+- `-sS -sV -O` — SYN 스캔 + 버전 + OS
+- `--script vuln` — 취약점 스크립트 카테고리
+- `-T0..T5` — 스캔 타이밍 — T3 기본, T4 실습용
 
-### Wazuh Dashboard UI 가이드
+**로그·확인 명령**
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+- `-oA scan` — 3가지 포맷(`.nmap/.gnmap/.xml`) 동시 저장
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**UI / CLI 요점**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+- `nmap -sV -p- 10.20.30.80` — 전 포트 + 버전
+- `nmap --script=http-enum 10.20.30.80` — 웹 디렉토리 열거
+- `nmap -sn 10.20.30.0/24` — 호스트 발견(핑 스윕)
 
+> **해석 팁.** IPS가 있는 환경에서 T4 이상은 빠르게 탐지된다. `-T2`로 느리게 + `--max-retries 1`로 재전송 최소화하면 우회 확률↑.
 
-### OpenCTI UI 가이드
+### gobuster + nikto
+> **역할:** 디렉토리 브루트포싱 + 웹 서버 기본 취약점 스캔  
+> **실행 위치:** `공격자 측 CLI`  
+> **접속/호출:** `gobuster dir -u <url> -w <wordlist>`, `nikto -h <url>`
 
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+**주요 경로·파일**
 
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+| 경로 | 역할 |
+|------|------|
+| `/usr/share/wordlists/dirb/common.txt` | 기본 워드리스트 |
+| `/usr/share/seclists/` | SecLists — 실전 워드리스트 |
+
+**핵심 설정·키**
+
+- `-t 50` — gobuster 동시 스레드
+- `-x php,html,bak` — 확장자 조합 탐색
+- `-Tuning 9` — nikto 고급 룰 포함
+
+**로그·확인 명령**
+
+- `-o gobuster.out` — 결과 저장
+- ``nikto -o nikto.html -Format htm`` — HTML 리포트
+
+**UI / CLI 요점**
+
+- gobuster 상태 204/301/302 — 존재는 하지만 리다이렉트되는 경로
+- nikto `OSVDB-...` — 공개 취약점 DB 매핑
+
+> **해석 팁.** 응답 크기와 상태코드의 **공통 패턴**을 `-s 200,204,301` / `-b 123`으로 제외하면 오탐이 급감한다.
 

@@ -7,7 +7,6 @@
 - 쿠키, 세션, JWT 토큰의 차이와 동작 원리를 실습한다
 - REST API 구조를 이해하고 직접 호출한다
 
-
 ## 실습 환경 (공통)
 
 | 서버 | IP | 역할 | 접속 |
@@ -18,7 +17,6 @@
 | siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
 **Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
-
 
 ## 강의 시간 배분 (3시간)
 
@@ -34,7 +32,6 @@
 | 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
 
 ---
-
 
 ---
 
@@ -74,7 +71,6 @@
 | **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 점수 (0~10점) | 질병 위험도 등급 |
 | **CVE** | Common Vulnerabilities and Exposures | 취약점 고유 식별 번호 | 질병의 고유 코드 (예: COVID-19) |
 | **Bastion** | Bastion | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
-
 
 ---
 
@@ -863,9 +859,7 @@ curl -s -X POST http://localhost:9100/projects/{프로젝트ID}/execute-plan \
 
 > **다음 주 예고**: Week 04에서는 OWASP Top 10의 첫 번째 취약점인 SQL Injection을 배우고, JuiceShop에서 관리자 로그인을 우회한다.
 
-
 ---
-
 
 ---
 
@@ -911,38 +905,59 @@ curl -s -X POST http://localhost:9100/projects/{프로젝트ID}/execute-plan \
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
+### Burp Suite Community
+> **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
+> **실행 위치:** `작업 PC → web (10.20.30.80:3000)`  
+> **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
 
-### Wazuh Dashboard UI 가이드
+**주요 경로·파일**
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+| 경로 | 역할 |
+|------|------|
+| `Proxy → HTTP history` | 모든 캡처된 요청/응답 |
+| `Intruder` | 페이로드 페이즈·위치 기반 자동화 |
+| `Repeater` | 단건 요청 수동 반복 |
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**핵심 설정·키**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+- `Proxy listener 127.0.0.1:8080` — 브라우저 프록시 포트
+- `Target → Scope` — in-scope 호스트만 처리
 
+**로그·확인 명령**
 
-### OpenCTI UI 가이드
+- `Logger` — 세션 전체 요청 타임라인
 
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+**UI / CLI 요점**
 
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+- Ctrl+R — 요청을 Repeater로 전송
+- Ctrl+I — Intruder로 전송 후 위치(§) 설정
+- Intruder Attack type: Sniper/Cluster bomb — 단일/다중 페이로드 조합
+
+> **해석 팁.** Community 버전은 **Intruder 속도 제한**이 있어 대량 브루트포스는 비현실적. 취약점 재현과 보고서 증적 확보에 집중.
+
+### JWT 분석 — jwt-cli / jwt.io
+> **역할:** JWT 디코드·서명 검증·위조 테스트  
+> **실행 위치:** `공격자 측 CLI`  
+> **접속/호출:** `jwt decode <token>`, 웹: `https://jwt.io`
+
+**주요 경로·파일**
+
+| 경로 | 역할 |
+|------|------|
+| `~/.jwt-cli/` | jwt-cli 설정 |
+
+**핵심 설정·키**
+
+- `alg=none 공격` — 서명 검증 로직이 알고리즘 필드만 신뢰할 때
+- `HS256 secret 브루트` — 약한 HMAC 키
+
+**UI / CLI 요점**
+
+- `jwt decode <token>` — header/payload 출력
+- `jwt encode --alg HS256 -S secret '{...}'` — 새 토큰 생성
+- `hashcat -m 16500 token.txt wordlist.txt` — HS256 키 크래킹
+
+> **해석 팁.** `alg`를 `none` 또는 `HS256`로 바꿔 공개키를 HMAC 시크릿으로 사용하는 고전 취약점은 여전히 발견된다. 서버가 **알고리즘 화이트리스트**를 갖는지 반드시 확인.
 

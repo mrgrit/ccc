@@ -406,60 +406,70 @@ echo 1 | sudo -S kill -USR2 $(pidof suricata) 2>/dev/null
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 사용하는 설정 파일, 로그 파일, 도구의 위치와 역할입니다.
+> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
 
-### `/etc/suricata/rules/local.rules`
-**Suricata 커스텀 룰 파일** (VM: secu)
+### nftables
+> **역할:** Linux 커널 기반 상태 기반 방화벽 (iptables 후속)  
+> **실행 위치:** `secu (10.20.30.1)`  
+> **접속/호출:** `sudo nft ...` CLI + `/etc/nftables.conf` 영속 설정
 
-관리자가 직접 작성하는 탐지 룰. 기본 룰셋(et/open 등) 외에 조직 환경에 맞는 커스텀 시그니처를 여기에 추가한다.
+**주요 경로·파일**
 
-**주요 내용**:
-- `alert http any any -> any any (msg:"SQLi attempt"; content:"union select"; nocase; http_uri; sid:1000102; rev:1;)` — HTTP URI에서 SQL Injection 탐지
-- `alert icmp any any -> any any (msg:"ICMP ping"; sid:1000001; rev:1;)` — ICMP 핑 탐지
+| 경로 | 역할 |
+|------|------|
+| `/etc/nftables.conf` | 부팅 시 로드되는 영속 룰셋 |
+| `/var/log/kern.log` | `log prefix` 룰의 패킷 드롭 로그 |
 
-**해석**: 새 룰 추가 후 반드시 `suricata -T`로 문법 검증하고, `systemctl reload suricata`로 반영해야 한다. sid(Signature ID)는 고유해야 하며, 1000000 이상을 커스텀 룰에 사용한다.
+**핵심 설정·키**
 
-### `/var/log/suricata/eve.json`
-**Suricata 이벤트 로그 (JSON)** (VM: secu)
+- `table inet filter` — IPv4/IPv6 공통 필터 테이블
+- `chain input { policy drop; }` — 기본 차단 정책
+- `ct state established,related accept` — 응답 트래픽 허용
 
-Suricata가 생성하는 모든 이벤트(alert, flow, dns, http, tls 등)를 JSON 형식으로 기록하는 메인 로그. SIEM 연동의 핵심 데이터 소스.
+**로그·확인 명령**
 
-**주요 내용**:
-- `{"event_type":"alert","src_ip":"10.20.30.201","alert":{"signature":"SQLi attempt","signature_id":1000102}}` — 알림 이벤트
-- `{"event_type":"flow","src_ip":"...","dest_ip":"...","proto":"TCP"}` — 네트워크 흐름 이벤트
+- `journalctl -t kernel -g 'nft'` — 룰에서 `log prefix` 지정한 패킷 드롭
 
-**해석**: `event_type`이 `alert`인 항목이 탐지된 공격이다. `signature_id`로 어떤 룰에 매칭됐는지, `src_ip`/`dest_ip`로 공격 출발지/목적지를 파악한다. jq로 필터링: `jq 'select(.event_type=="alert")'`
+**UI / CLI 요점**
 
+- `sudo nft list ruleset` — 현재 로드된 전체 룰 출력
+- `sudo nft -f /etc/nftables.conf` — 설정 파일 재적용
+- `sudo nft list set inet filter blacklist` — 집합(set) 내용 조회
 
-### Wazuh Dashboard UI 가이드
+> **해석 팁.** 룰은 **위→아래 첫 매칭 우선**. `accept`는 해당 체인만 종료, 상위 훅은 계속 평가된다. 변경 후 `nft list ruleset`로 실제 적용 여부 확인.
 
-| 메뉴 경로 | 용도 | 핵심 화면 요소 |
-|-----------|------|---------------|
-| **Dashboard → Overview** | 전체 현황 대시보드 | 24h 알림 수, Top Rule Groups, Top Agents 그래프 |
-| **Dashboard → Agents** | 에이전트 관리 | 에이전트 목록, Active/Disconnected 상태, OS 정보 |
-| **Dashboard → Security events** | 보안 이벤트 검색 | KQL 필터 바 (예: `rule.level >= 10`), 이벤트 테이블 |
-| **Dashboard → Integrity monitoring** | FIM 이벤트 | 변경된 파일 목록, 변경 전후 해시 비교 |
-| **Dashboard → Security configuration assessment** | SCA 스캔 결과 | CIS 벤치마크 항목별 Pass/Fail |
-| **Dashboard → Management → Rules** | 탐지 룰 관리 | 룰 ID로 검색, 룰 내용 조회 |
-| **Dashboard → Management → Configuration** | Agent/Manager 설정 확인 | ossec.conf 의 주요 섹션을 UI로 조회 |
+### Suricata IDS/IPS
+> **역할:** 시그니처 기반 네트워크 침입 탐지/차단 엔진  
+> **실행 위치:** `secu (10.20.30.1)`  
+> **접속/호출:** `systemctl status suricata` / `suricatasc` 소켓 / `suricata -T`
 
-**접속 정보**: `https://SIEM_IP:443` (기본 계정: admin / admin)
+**주요 경로·파일**
 
-**필터 예시**:
-- `rule.level >= 10` — 고위험 이벤트만
-- `rule.groups: syscheck` — FIM 이벤트만
-- `rule.groups: suricata` — Suricata IDS 이벤트만
-- `agent.name: secu` — secu VM 이벤트만
+| 경로 | 역할 |
+|------|------|
+| `/etc/suricata/suricata.yaml` | 메인 설정 (HOME_NET, af-packet, rule-files) |
+| `/etc/suricata/rules/local.rules` | 사용자 커스텀 탐지 룰 |
+| `/var/lib/suricata/rules/suricata.rules` | `suricata-update` 병합 룰 |
+| `/var/log/suricata/eve.json` | JSON 이벤트 (alert/flow/http/dns/tls) |
+| `/var/log/suricata/fast.log` | 알림 1줄 텍스트 로그 |
+| `/var/log/suricata/stats.log` | 엔진 성능 통계 |
 
+**핵심 설정·키**
 
-### OpenCTI UI 가이드
+- `HOME_NET` — 내부 대역 — 틀리면 내부/외부 판별 실패
+- `af-packet.interface` — 캡처 NIC — 트래픽이 흐르는 인터페이스와 일치해야 함
+- `rule-files: ["local.rules"]` — 로드할 룰 파일 목록
 
-| 메뉴 경로 | 용도 |
-|-----------|------|
-| **Analysis → Reports** | 위협 보고서 목록 |
-| **Events → Indicators** | IOC(Indicator of Compromise) 목록 — IP, 해시, 도메인 등 |
-| **Knowledge → Threat actors** | 위협 행위자 프로파일 |
-| **Data → Connectors** | 외부 데이터 소스 연동 상태 |
+**로그·확인 명령**
 
-**접속 정보**: `http://SIEM_IP:8080` (초기 설정 시 admin 계정 생성)
+- `jq 'select(.event_type=="alert")' eve.json` — 알림만 추출
+- `grep 'Priority: 1' fast.log` — 고위험 탐지만 빠르게 확인
+
+**UI / CLI 요점**
+
+- `suricata -T -c /etc/suricata/suricata.yaml` — 설정/룰 문법 검증
+- `suricatasc -c stats` — 실시간 통계 조회 (런타임 소켓)
+- `suricata-update` — 공개 룰셋 다운로드·병합
+
+> **해석 팁.** `stats.log`의 `kernel_drops > 0`이면 누락 발생 → `af-packet threads` 증설. 커스텀 룰 `sid`는 **1,000,000 이상** 할당 권장.
 
