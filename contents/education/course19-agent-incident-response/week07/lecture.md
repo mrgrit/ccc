@@ -50,6 +50,44 @@
 - 공격은 **N개 세션의 조합**이 한 계획을 실행
 - **상관관계 분석 능력**이 곧 방어의 핵심 역량이 됨
 
+### 1.3.1 "다중 에이전트 오케스트레이션"의 기술적 구현
+
+공격자 측 멀티에이전트는 단순히 Claude Code 여러 탭을 여는 것이 아니다. *의미 있는 공격*을 위해 다음 구성요소가 필요하다.
+
+- **공유 스토리지**: 발견 사항·자격증명·진행 상황 기록 (Redis·SQLite)
+- **메시지 큐**: 한 에이전트가 다른 에이전트에게 작업 위임 (RabbitMQ·단순 파일 큐)
+- **스케줄러**: 역할별 실행 시점 조정
+- **오퍼레이터(사람)**: 전체 진행을 감독
+
+예시 아키텍처:
+
+```mermaid
+flowchart LR
+    Op["사람 오퍼레이터<br/>(목표 설정)"]
+    Q["공유 큐 · 스토리지<br/>Redis / SQLite"]
+    R1["R1 정찰 에이전트"]
+    R2["R2 분석 에이전트"]
+    R3["R3 악용 에이전트"]
+    R4["R4 지속성 에이전트"]
+    Op --> Q
+    Q --> R1 & R2 & R3 & R4
+    R1 -. "자산 리포트" .-> Q
+    R2 -. "취약점 후보" .-> Q
+    R3 -. "성공 증거" .-> Q
+    R4 -. "백도어 좌표" .-> Q
+    style Q fill:#21262d,stroke:#f97316,color:#e6edf3
+```
+
+각 에이전트가 *독립 프로세스*로, *독립 Claude Code 세션*으로 돌고, 큐를 통해 *간접 통신*한다. 방어 측은 큐를 볼 수 없으며, *에이전트의 요청 결과*만 본다.
+
+### 1.3.2 사람 오퍼레이터의 *규모*
+
+사람 1명이 5~10개 에이전트를 동시 운영할 수 있다. 오퍼레이터 10명이 조직되면 *50~100 에이전트 팀*. 전통 APT 조직 규모에 *수 개월의 인력비*로 도달 가능하다. 이것이 "비대칭 위협"의 구체적 실체다.
+
+### 1.3.3 실습에서 시뮬레이션 범위
+
+본 실습 인프라의 제한으로 *3개 에이전트*만 병렬 운영. 실세계 위협의 *맛보기* 규모이지만, 방어 관점의 *상관관계 분석* 학습에는 충분하다.
+
 ---
 
 # Part 2: 방어 부담의 정량화 (30분)
@@ -70,6 +108,42 @@
 ## 2.3 "조용한 에이전트 1개"의 위협
 - 다수 에이전트가 *소음*을 만들고, 한 에이전트가 *조용히* 실제 공격
 - 방어의 *저-우선순위 버킷*에 들어가 놓치기 쉬움
+
+### 2.3.1 이 패턴에 대한 방어 — *전역 볼륨이 급증할 때* 동시 *저소음 세션*을 특히 주목
+
+경보 볼륨이 평소보다 *5배 이상 증가*하면, Bastion은 다음 룰을 발동한다.
+
+```
+IF alert_volume_5min > baseline * 5
+THEN
+  # 자동 트리아지 강화
+  for session in all_active_sessions:
+    if session.alert_count < 2 and session.active_duration > 10min:
+      session.priority += 1   # 조용한 세션을 *오히려 상향*
+```
+
+즉 *폭주 = 위장* 이라는 가설을 자동화한다. *관찰력이 분산되는 순간*, 숨은 공격이 드러날 가능성이 올라간다.
+
+### 2.3.2 "볼륨 정점" 탐지 알고리즘
+
+```python
+def detect_noise_storm(alerts, baseline_alerts_per_5min=30):
+    from collections import defaultdict
+    import time
+    now = time.time()
+    recent = [a for a in alerts if now - a.ts < 300]
+    if len(recent) > baseline_alerts_per_5min * 5:
+        # 대량 경보 발생 중. 조용한 세션을 별도 리스트로 반환.
+        sessions_with_few_alerts = [s for s in active_sessions()
+                                    if alert_count(s, 300) < 2
+                                    and session_age(s) > 600]
+        return {"noise_storm": True, "quiet_sessions_to_watch": sessions_with_few_alerts}
+    return None
+```
+
+### 2.3.3 Canary를 이 상황에 활용
+
+w12에서 다룰 Canary 트래픽도 *노이즈 스톰* 감지에 유용하다. 평상시 Canary의 응답 시간이 *지표*가 되므로, 공격 중 응답 시간이 *비정상*이면 조용한 공격의 흔적일 수 있다.
 
 ---
 
@@ -103,6 +177,40 @@
 - siem: 경보 분당 발생량
 - 각 세션 로그
 
+### 3.3.1 *세션 시작의 동시성* 구현 힌트
+
+세 세션을 정확히 같은 시각에 시작하려면:
+
+```bash
+# 교육자 터미널에서 3개 세션을 백그라운드 동시 발사
+# (실제는 Claude Code는 인터랙티브이므로 수동 조율)
+# 실습에서는 강사가 "3-2-1-시작" 구령으로 동시성 확보
+```
+
+실무에서는 공격자가 *스케줄러*로 분·초 단위 정확하게 동시 시작. 본 실습은 *수 초 차이*가 허용되며, 방어 측의 *시간 윈도우*에 함께 들어가는지가 중요.
+
+### 3.3.2 경보 발생량 측정
+
+```bash
+# siem에서 분당 경보 발생량
+sudo jq -c 'select(.timestamp)' /var/ossec/logs/alerts/alerts.json | \
+  awk -F'"timestamp":"' '{split($2, a, "T"); split(a[2], b, ":"); print b[1] ":" b[2]}' | \
+  sort | uniq -c | sort -k2 | tail -20
+```
+
+이 데이터가 *4.1의 트리아지 우선순위*와 2.3.2의 *노이즈 스톰 탐지*의 입력이다.
+
+### 3.3.3 실습 산출물
+
+```
+artifacts/w07/
+  session-A.log / session-B.log / session-C.log
+  pcap/all-traffic.pcap
+  wazuh-alerts-1hour.json
+  alert-volume-by-minute.csv
+  cluster-attempt.json   # Part 4 결과
+```
+
 ---
 
 # Part 4: 경보 폭주 속 트리아지 (30분)
@@ -124,6 +232,73 @@
 - Part 3의 세션 3개가 실제로 **한 클러스터**로 잡히는가
 - IP가 같으면 쉽지만, 다르면? → JA3/JA4 + IAT 조합이 해결의 실마리
 
+### 4.3.1 트리아지 흐름 다이어그램
+
+```mermaid
+flowchart TD
+    Alerts["경보 스트림<br/>수백~수천/시간"]
+    F1{"성공 신호?<br/>(2xx + 민감 데이터)"}
+    F2{"클러스터 소속?<br/>(JA3/UA/IAT 일치)"}
+    F3{"고전 시그니처?"}
+    P0["P0 — 즉시 차단 + 인간 개입"]
+    P1["P1 — 자동 Tar-pit + 2차 분석"]
+    P2["P2 — 로깅 + 배치 대응"]
+    P3["P3 — 관찰만"]
+    Alerts --> F1
+    F1 -->|Yes| P0
+    F1 -->|No| F2
+    F2 -->|Yes| P1
+    F2 -->|No| F3
+    F3 -->|Yes| P2
+    F3 -->|No| P3
+    style P0 fill:#1a0a0a,stroke:#f85149,color:#e6edf3
+    style P1 fill:#21262d,stroke:#d29922,color:#e6edf3
+    style P2 fill:#0d1f0d,stroke:#3fb950,color:#e6edf3
+    style P3 fill:#161b22,stroke:#8b949e,color:#c9d1d9
+```
+
+### 4.3.2 클러스터 판정의 의사 결정
+
+```mermaid
+flowchart LR
+    S1["세션 A<br/>IP:10.20.30.80<br/>JA3:X"]
+    S2["세션 B<br/>IP:10.20.30.80<br/>JA3:X"]
+    S3["세션 C<br/>IP:10.20.30.81<br/>JA3:X"]
+    S4["세션 D<br/>IP:10.20.30.82<br/>JA3:Y"]
+    C["클러스터 1<br/>(동일 JA3)"]
+    D["단일<br/>(다른 JA3)"]
+    S1 --> C
+    S2 --> C
+    S3 --> C
+    S4 --> D
+    style C fill:#21262d,stroke:#f97316,color:#e6edf3
+    style D fill:#161b22,stroke:#8b949e,color:#c9d1d9
+```
+
+IP가 달라도 JA3가 같으면 동일 *도구 프로세스*로 간주.
+
+### 4.3.3 트리아지 실패 케이스 — "P3에 묻힌 P0"
+
+위 흐름도에서 *P3*로 내려간 경보 중 *실제로는 P0급*인 것을 찾아내는 게 어려운 이유:
+
+```mermaid
+flowchart TD
+    A["경보 1000건 (1시간)"]
+    T["1차 트리아지"]
+    P0b["P0: 2건"]
+    P1b["P1: 20건"]
+    P2b["P2: 100건"]
+    P3b["P3: 878건"]
+    H["숨은 P0: 1건<br/>(조용한 공격)"]
+    A --> T
+    T --> P0b & P1b & P2b & P3b
+    P3b -.-> H
+    style H fill:#1a0a0a,stroke:#f85149,color:#e6edf3
+    style P3b fill:#161b22,stroke:#8b949e,color:#c9d1d9
+```
+
+*P3* 878건을 사람이 다 보는 것은 불가능. 자동 *랜덤 샘플링*(5%)이나 *클러스터-외 세션 특별 검토* 같은 전략이 필요.
+
 ---
 
 # Part 5: 세션 간 상관관계 스킬 설계 (30분)
@@ -139,6 +314,52 @@
 
 ## 5.2 그룹 과제
 각 그룹은 위 스킬의 **유사도 임계값**을 w3·w7의 실제 데이터에서 보정한 안을 제시.
+
+### 5.2.1 상관관계 스킬의 데이터 흐름
+
+```mermaid
+flowchart LR
+    Suri["Suricata<br/>eve.json<br/>(JA3·flow_id)"]
+    Apa["Apache<br/>access.log<br/>(UA·req_id·path)"]
+    Wz["Wazuh<br/>alerts.json<br/>(rule·src)"]
+    Norm["① 정규화<br/>공통 키로 변환"]
+    Agg["② 집계<br/>5분 윈도우"]
+    Cluster["③ 클러스터링<br/>유사도 계산"]
+    Out["클러스터 리포트<br/>→ Playbook"]
+    Suri & Apa & Wz --> Norm --> Agg --> Cluster --> Out
+    style Cluster fill:#21262d,stroke:#f97316,color:#e6edf3
+    style Out fill:#0d1f0d,stroke:#3fb950,color:#e6edf3
+```
+
+### 5.2.2 유사도 임계값 보정 예
+
+| 축 | 느슨 | 표준 | 엄격 |
+|----|------|------|------|
+| JA3 | 정확 일치 | 정확 일치 | 정확 일치 |
+| UA | 정확 일치 | 클래스(브라우저·CLI) | 카테고리 |
+| IAT 분포 (KS test p) | p>0.1 | p>0.2 | p>0.3 |
+| 경로 유사도 (Jaccard) | >0.3 | >0.5 | >0.7 |
+| 요구 | 3축 중 2축 일치 | 3축 중 2축 일치 | 3축 중 3축 일치 |
+
+*엄격*은 오탐↓ 탐지율↓, *느슨*은 오탐↑ 탐지율↑. 실무는 *표준*에서 시작해 오탐률을 보고 조정.
+
+### 5.2.3 스킬 승격 경로
+
+```mermaid
+flowchart LR
+    W5["w5 Skill 초안<br/>(종이)"]
+    W7["w7 클러스터 Skill<br/>(종이)"]
+    W11["w11 Bastion 구현<br/>(코드)"]
+    W12["w12 Playbook 승격<br/>(YAML)"]
+    W14["w14 실사고 적용<br/>(실전)"]
+    W5 --> W11
+    W7 --> W11
+    W11 --> W12 --> W14
+    style W11 fill:#21262d,stroke:#f97316,color:#e6edf3
+    style W12 fill:#0d1f0d,stroke:#3fb950,color:#e6edf3
+```
+
+각 주차 산출물이 *Bastion 내부 자산*으로 축적되는 경로가 명확해야 한다.
 
 ---
 
@@ -174,11 +395,70 @@
 - (c) **w11 Purple Round 1**
 - (d) w15
 
-**정답:** Q1:b, Q2:b, Q3:c, Q4:b, Q5:c
+**Q6.** "노이즈 스톰" 탐지가 *조용한 세션을 상향*하는 이유는?
+- (a) 공평성
+- (b) **폭주 = 위장 가설, 관찰력 분산 시 숨은 공격 가능성 상승**
+- (c) 성능 최적화
+- (d) UI 가독성
+
+**Q7.** 다중 에이전트의 *공유 큐*를 방어자가 볼 수 있나?
+- (a) 예, SIEM에서
+- (b) **아니오 — 공격자 측 인프라이므로 불가**
+- (c) 부분적으로
+- (d) 항상 볼 수 있어야 한다
+
+**Q8.** *P3*에 묻힌 *P0*을 찾는 실무 기법은?
+- (a) 전수 검사
+- (b) **샘플링 + 클러스터-외 세션 특별 검토**
+- (c) 오토스케일링
+- (d) 로그 삭제
+
+**Q9.** 스킬 승격 경로 w5·w7 → w11·w12의 의미는?
+- (a) 별개 과제
+- (b) **종이 설계 → 코드 구현 → Playbook 자동화의 누적 경로**
+- (c) 주차 간 시험
+- (d) 학점 변경
+
+**Q10.** 클러스터링 임계값 "표준"을 권장하는 이유는?
+- (a) 법적 요건
+- (b) **오탐·탐지 균형의 시작점, 이후 운영 데이터로 조정**
+- (c) 비용 절감
+- (d) 교수자 편의
+
+**정답:** Q1:b · Q2:b · Q3:c · Q4:b · Q5:c · Q6:b · Q7:b · Q8:b · Q9:b · Q10:b
 
 ---
 
 ## 과제
-1. Part 3의 3세션 타임라인을 하나의 그래프로 합성해 제출.
-2. Part 4의 트리아지 결과(각 경보에 P0~P3 할당) 표.
-3. Part 5 스킬의 유사도 임계값 보정안 1쪽.
+1. **3세션 타임라인 (필수)**: Part 3의 A/B/C 세션의 요청 타임스탬프를 하나의 타임라인 그래프로 합성. 도구 권장: matplotlib·plotly.
+2. **트리아지 P0~P3 할당 (필수)**: Part 4의 결과를 경보별 표로. 할당 근거(4.3.1 흐름도 어느 분기로 흘러갔는지) 명시.
+3. **임계값 보정안 (필수)**: Part 5.2.2 표에서 *본인 관찰 데이터* 기반 선택을 한 줄 근거와 함께 제시.
+4. **(선택 · 🏅 가산)**: "노이즈 스톰" 탐지 스크립트(`detect_noise_storm`)를 본인 데이터에 적용한 결과.
+5. **(선택 · 🏅 가산)**: 다음 주(w8) 준비: w1~w7 산출물(점수 함수·스킬 명세·관전 노트)를 하나의 `summary.md`로 통합.
+
+---
+
+## 부록 A. 실세계 멀티에이전트 공격 사례 *외형*
+
+(모든 사례는 교육용 *가공·단순화*. 실제 공격 조직명 아님.)
+
+**사례 α — 공급망 정찰 캠페인**: 50개 기업을 동시 조사. R1 정찰팀이 각 기업의 외부 API를 병렬 맵핑, R2 분석팀이 공통 라이브러리 취약점을 찾고, R3가 취약한 기업만 순차 공격. 한 주 동안 3개 기업 침투.
+
+**사례 β — 금융 내부 침투**: 피싱으로 1개 발판 확보 후 에이전트 5개 투입. R1이 내부 스캔, R2가 AD 분석, R3가 Kerberoast, R4가 DC 장악, R5가 데이터 수집. 총 4시간.
+
+**사례 γ — 공공 클라우드 침투**: 퍼블릭 S3 스캐너 + IAM 분석 에이전트. 수천 조직의 S3 버킷을 동시 관찰. 잘못된 IAM 정책 보유 조직만 자동 악용.
+
+방어자는 사례마다 *패턴*을 식별해 *본인 조직의 노출*을 조사해야 한다.
+
+## 부록 B. Bastion *상관관계 엔진*의 최소 API 제안
+
+```python
+class CorrelationEngine:
+    def ingest(self, event): ...   # Suricata·Wazuh·Apache·auditd 이벤트
+    def cluster(self, window=300) -> list[Cluster]: ...
+    def score_cluster(self, cluster: Cluster) -> float: ...
+    def triage(self, cluster: Cluster) -> Priority: ...  # P0~P3
+    def emit_action(self, cluster: Cluster, priority: Priority): ...
+```
+
+이 API를 w11에서 구현하고, w12에서 Playbook이 소비한다.
