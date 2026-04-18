@@ -1,13 +1,12 @@
 # CCC Bastion 실증 테스트 — 재테스트 진행 현황
 
-> 마지막 업데이트: 2026-04-19 01:28
+> 마지막 업데이트: 2026-04-19 01:59
 
 ## 요약
 
-- **전체 2,734 케이스 중 1,804 테스트 수행 (66.0%)**
-- **Pass 951 (원래 853 → +98)**, Fail 334, QA-fallback 513, Untested 930
-- 미테스트 과정 순차 점검 계속 — **attack-ai 막바지**(ut=17), **ai-security-ai** 진행(ut=72)
-- **C19 심화(7,641L, 2.25x) + C20 심화과정 신설(6,231L + 30 labs)** 완료 상태 유지
+- **전체 2,734 케이스 중 1,845 테스트 수행 (67.5%)**
+- **Pass 954 (원래 853 → +101)**, Fail 346, QA-fallback 539, Untested 889
+- **attack-ai 1차 점검 완료** (남은 1건), **ai-security-ai** 막바지(ut=50), **web-vuln-ai** 진입
 
 ## 과정별 상태
 
@@ -16,9 +15,9 @@
 | ai-agent-ai | 23 | 0 | 0 | 111 | 134 | 17% |
 | ai-safety-adv-ai | 23 | 0 | 0 | 111 | 134 | 17% |
 | ai-safety-ai | 27 | 0 | 0 | 106 | 133 | 20% |
-| ai-security-ai | 23 | 15 | 37 | 72 | 147 | 16% |
+| ai-security-ai | 25 | 19 | 53 | 50 | 147 | 17% |
 | attack-adv-ai | 53 | 83 | 99 | 0 | 235 | 23% |
-| attack-ai | 75 | 70 | 78 | 17 | 240 | 31% |
+| attack-ai | 76 | 78 | 85 | 1 | 240 | 32% |
 | autonomous-ai | 4 | 0 | 0 | 115 | 119 | 3% |
 | autonomous-systems-ai | 10 | 0 | 0 | 110 | 120 | 8% |
 | battle-adv-ai | 27 | 32 | 81 | 0 | 140 | 19% |
@@ -29,23 +28,18 @@
 | secops-ai | 132 | 20 | 12 | 1 | 165 | 80% |
 | soc-adv-ai | 165 | 11 | 48 | 1 | 225 | 73% |
 | soc-ai | 109 | 26 | 25 | 0 | 160 | 68% |
-| web-vuln-ai | 28 | 0 | 0 | 169 | 197 | 14% |
-| **전체** | **951** | **334** | **513** | **979** | **2734** | **34.8%** |
+| web-vuln-ai | 28 | 0 | 4 | 165 | 197 | 14% |
+| **전체** | **954** | **346** | **539** | **889** | **2734** | **34.9%** |
 
 ## 관찰
 
-- **QA-fallback 513건** (18.8%) — 기본 검증은 실패했으나 LLM 의미 판정에서 부분 성공. 2차 분석으로 *진짜 실패*와 *룰 튜닝 필요*를 분리할 것.
-- **ai-security-ai·attack-ai**가 현재 진행 중 — 남은 1차 점검 완료 시점은 이번 또는 다음 사이클.
-- **미테스트 대형 블록**(ai-agent, ai-safety, autonomous-*, battle-ai, web-vuln) ≈ 930건 — 별도 배치 순회 필요.
-
-## 신규 교과 상태
-
-- **C19 (본과정)**: 상세화 완료 (총 7,641 lines) · LR→TB 다이어그램 전환 적용
-- **C20 (심화과정)**: 15주 6,231 lines 강의 + 15×2 = 30 labs · API 등록·master-plan 반영
+- **1차 점검 완료** (Untested ≤2): attack-adv, attack-ai, battle-adv, cloud-container, compliance, physical-pentest, secops, soc, soc-adv
+- **진행 중**: ai-security-ai(50), web-vuln-ai(165)
+- **미테스트 블록**: ai-agent·ai-safety·ai-safety-adv·autonomous·autonomous-systems·battle — 합계 ≈ 673건
+- **QA-fallback 539** (19.7%) — 다음 단계로 2차 분석(샘플링) 예정
 
 ## 다음 사이클
 
-1. attack-ai 1차 점검 완료 확인
-2. ai-security-ai 1차 점검 마무리
-3. 미테스트 대형 블록 배치 투입 시점 결정
-4. QA-fallback 513건 표본 분석 — 룰 보정 우선순위 선정
+1. ai-security·web-vuln 1차 점검 완료
+2. 미테스트 블록 순차 진입 (ai-agent 우선)
+3. QA-fallback 샘플 100건 수작업 분류 (진짜 실패 vs 룰 튜닝 대상)
