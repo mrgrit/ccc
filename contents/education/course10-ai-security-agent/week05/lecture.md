@@ -86,23 +86,24 @@
 
 ### 1.3 자연어→실행 파이프라인
 
-```
-"secu 서버의 방화벽 규칙을 점검하고 불필요한 포트를 찾아줘"
-    ↓
-[Manager API] Project 생성 (request_text 저장)
-    ↓
-[Master Service] LLM이 계획 수립:
-  Task 1: nft list ruleset (secu)
-  Task 2: ss -tlnp (secu)
-  Task 3: 결과 분석 → 불필요 포트 식별
-    ↓
-[Manager API] execute-plan → SubAgent(secu) 실행
-    ↓
-[SubAgent] 명령 실행 → 결과 반환
-    ↓
-[Manager API] Evidence 기록 + PoW 블록 생성
-    ↓
-[Master Service] 결과 분석 → 완료 보고서
+```mermaid
+sequenceDiagram
+    participant U as 사용자
+    participant MGR as Manager API
+    participant LLM as Master Service (LLM)
+    participant SA as SubAgent (secu)
+
+    U->>MGR: "방화벽 규칙 점검해줘"
+    MGR->>LLM: Project 생성
+    LLM->>LLM: 계획 수립<br/>Task 1: nft list ruleset<br/>Task 2: ss -tlnp<br/>Task 3: 분석
+    LLM->>MGR: execute-plan
+    MGR->>SA: Task 1: nft list ruleset
+    SA-->>MGR: 결과 반환
+    MGR->>SA: Task 2: ss -tlnp
+    SA-->>MGR: 결과 반환
+    MGR->>MGR: Evidence 기록 + PoW 블록
+    MGR->>LLM: 결과 전달
+    LLM-->>U: 분석 완료 보고서
 ```
 
 ---
@@ -111,14 +112,17 @@
 
 ### 2.1 Stage 전환 흐름
 
-```
-created → planning → executing → reporting → completed
-   │          │           │           │          │
-   │          │           │           │          └─ 최종 완료
-   │          │           │           └─ 보고서 작성 중
-   │          │           └─ Task 실행 중
-   │          └─ 계획 수립 중
-   └─ 프로젝트 생성됨
+```mermaid
+graph LR
+    C["created<br/>프로젝트 생성"] --> P["planning<br/>계획 수립"]
+    P --> E["executing<br/>Task 실행"]
+    E --> R["reporting<br/>보고서 작성"]
+    R --> D["completed<br/>최종 완료"]
+    style C fill:#21262d,color:#e6edf3
+    style P fill:#58a6ff,color:#fff
+    style E fill:#d29922,color:#fff
+    style R fill:#238636,color:#fff
+    style D fill:#238636,color:#fff
 ```
 
 ### 2.2 각 Stage에서 호출 가능한 API
