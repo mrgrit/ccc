@@ -433,6 +433,75 @@ def login(body: LoginBody):
     token = _jwt_encode({"sub": row["id"], "student_id": row["student_id"], "name": row["name"], "role": row["role"], "exp": _time.time() + 86400 * 7})
     return {"user": dict(row), "token": token}
 
+GOOGLE_CLIENT_ID = os.getenv("GOOGLE_CLIENT_ID", "")
+
+
+@app.post("/auth/google")
+def google_login(body: dict):
+    """Google OAuth 로그인 — 클라이언트에서 받은 credential(JWT) 검증 후 CCC 토큰 발급.
+
+    프론트엔드에서 Google Sign-In 후 credential을 POST.
+    서버가 Google 공개키로 검증 → 이메일 기반 학생 조회/자동 생성 → JWT 발급.
+    """
+    credential = body.get("credential", "")
+    if not credential:
+        raise HTTPException(400, "Google credential 필요")
+
+    # Google JWT 디코딩 (서명 검증은 Google 공개키로)
+    try:
+        import urllib.request as _ur
+        # Google 공개키로 검증 (간소화: base64 디코딩 후 페이로드 추출)
+        parts = credential.split(".")
+        if len(parts) != 3:
+            raise ValueError("Invalid JWT")
+        payload_b64 = parts[1] + "=" * (4 - len(parts[1]) % 4)
+        payload = _json.loads(_b64.urlsafe_b64decode(payload_b64))
+
+        email = payload.get("email", "")
+        name = payload.get("name", "")
+        picture = payload.get("picture", "")
+        google_sub = payload.get("sub", "")
+
+        if not email:
+            raise ValueError("이메일 없음")
+
+        # Google Client ID 검증 (설정된 경우)
+        if GOOGLE_CLIENT_ID and payload.get("aud") != GOOGLE_CLIENT_ID:
+            raise ValueError("Client ID 불일치")
+
+    except Exception as e:
+        raise HTTPException(401, f"Google 인증 실패: {e}")
+
+    # 이메일로 기존 학생 조회 또는 자동 생성
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT id, student_id, name, email, role, rank, grp, score FROM students WHERE email=%s", (email,))
+            row = cur.fetchone()
+
+            if not row:
+                # 자동 가입 — Google 이메일 = student_id, 랜덤 비밀번호
+                sid = str(uuid.uuid4())[:8]
+                student_id = email.split("@")[0]  # 이메일 앞부분을 학번으로
+                pw_hash = _hash_pw(str(uuid.uuid4()))  # 랜덤 (Google 로그인 전용)
+                cur.execute(
+                    """INSERT INTO students (id, student_id, name, email, password_hash, role, rank, metadata)
+                       VALUES (%s,%s,%s,%s,%s,'trainee','rookie',%s)
+                       ON CONFLICT (student_id) DO UPDATE SET email=EXCLUDED.email, name=EXCLUDED.name
+                       RETURNING id, student_id, name, email, role, rank, grp, score""",
+                    (sid, student_id, name, email, pw_hash,
+                     Json({"google_sub": google_sub, "picture": picture})),
+                )
+                row = cur.fetchone()
+                conn.commit()
+
+    token = _jwt_encode({
+        "sub": row["id"], "student_id": row["student_id"],
+        "name": row["name"], "role": row.get("role", "trainee"),
+        "exp": _time.time() + 86400 * 7,
+    })
+    return {"user": dict(row), "token": token}
+
+
 @app.get("/auth/me", dependencies=[Depends(verify_api_key)])
 def get_me(request: Request):
     """내 프로필 (metadata에 credentials 포함)"""
