@@ -512,16 +512,12 @@ class BastionAgent:
                         )
                         self.history.append({"role": "assistant", "content": analysis})
                         return
-                    # 최후 — Q&A
-                    yield {"event": "stage", "stage": "qa"}
-                    response = yield from self._stream_qa_events(message)
-                    self.history.append({"role": "assistant", "content": response})
+                    # 최후 — Q&A (후속 w21 처리 통합)
+                    yield from self._qa_with_extraction(message)
                     return
             else:
                 # 순수 Q&A — LLM이 "지식 질문"으로 판정
-                yield {"event": "stage", "stage": "qa"}
-                response = yield from self._stream_qa_events(message)
-                self.history.append({"role": "assistant", "content": response})
+                yield from self._qa_with_extraction(message)
                 return
 
         # ══ STAGE 2: EXECUTING — 멀티스텝 Skill ═══════════════════════════
@@ -898,6 +894,98 @@ class BastionAgent:
             }
         except Exception:
             return None
+
+    # w21 개선: QA 응답에서 실행 가능한 셸 명령 추출 (파괴적 명령 차단)
+    _QA_CODE_BLOCK = re.compile(r'```(?:bash|sh|shell)?\s*\n([\s\S]*?)\n```', re.IGNORECASE)
+    _QA_INLINE_CMD = re.compile(
+        r'(?:^|\n)\s*(?:[\$#]\s*|\d+\.\s*)?'
+        r'(\b(?:curl|nmap|grep|sed|awk|systemctl|auditctl|chmod|docker|nft|hydra|nikto|sqlmap|'
+        r'ping|dig|nc|netcat|python3|cat|echo|ls|find|tail|head|mkdir|useradd|usermod|'
+        r'tcpdump|tshark|ss|netstat|ip\s+(?:a|r|link|addr|route)|journalctl|ausearch|dmesg|'
+        r'rpm|dpkg|apt|yum|dnf|pip|npm|snap|firewall-cmd|iptables|ufw|'
+        r'wazuh-control|wazuh-logtest|suricata|suricatasc|kubectl|helm|'
+        r'ossec-control|ossec-analysisd)'
+        r'[^\n]{1,300}?)\s*$',
+        re.MULTILINE | re.IGNORECASE
+    )
+    # 파괴적 명령 차단 — 실행 거부
+    _DESTRUCTIVE = re.compile(
+        r'\b(rm\s+-rf?\s+/|rm\s+-rf?\s+~|dd\s+if=|mkfs|fdisk|'
+        r':(){ :|:& };:|>\s*/dev/sda|shutdown|reboot|halt|poweroff|'
+        r'chmod\s+777\s+/|userdel\s+-r|'
+        r'systemctl\s+(?:stop|disable)\s+(?:ssh|sshd|network)|'
+        r'iptables\s+-F|nft\s+flush\s+ruleset|kill\s+-9\s+1\b)',
+        re.IGNORECASE
+    )
+
+    def _extract_commands_from_qa(self, text: str) -> list[str]:
+        """QA 응답에서 실행 가능한 셸 명령 블록을 추출. 파괴적 명령은 제외."""
+        if not text:
+            return []
+        cmds = []
+        # 1순위: 코드 블록
+        for block in self._QA_CODE_BLOCK.findall(text):
+            for line in block.split('\n'):
+                line = line.strip().lstrip('$# ').strip()
+                if not line or line.startswith('#'):
+                    continue
+                if self._DESTRUCTIVE.search(line):
+                    continue
+                # 너무 긴 or 너무 짧은 라인 제외
+                if 8 <= len(line) <= 400:
+                    cmds.append(line)
+        # 2순위: 인라인 명령 (코드 블록이 없거나 부족할 때)
+        if len(cmds) < 2:
+            for m in self._QA_INLINE_CMD.finditer(text):
+                line = m.group(1).strip()
+                if self._DESTRUCTIVE.search(line):
+                    continue
+                if 8 <= len(line) <= 400 and line not in cmds:
+                    cmds.append(line)
+        # 중복 제거 (순서 유지) + 상위 3개
+        seen = set()
+        unique = []
+        for c in cmds:
+            if c not in seen:
+                seen.add(c)
+                unique.append(c)
+        return unique[:3]
+
+    def _qa_with_extraction(self, message: str) -> Generator[dict, None, None]:
+        """QA 응답 후 명령을 추출해 실행 시도. 기존 QA 종료 경로를 대체."""
+        yield {"event": "stage", "stage": "qa"}
+        response = yield from self._stream_qa_events(message)
+
+        commands = self._extract_commands_from_qa(response or "")
+        if commands:
+            yield {"event": "qa_to_exec", "extracted": len(commands),
+                   "preview": commands[0][:80]}
+            yield {"event": "stage", "stage": "executing"}
+            target = self._infer_target_vm(message)
+            any_success = False
+            for i, cmd in enumerate(commands, 1):
+                params = self._enrich_params("shell", {"target": target, "command": cmd})
+                yield {"event": "skill_start", "skill": "shell", "params": params,
+                       "attempt": 1, "from_qa": True, "idx": i}
+                try:
+                    result = execute_skill("shell", params, self.vm_ips, self.ollama_url, self.model)
+                except Exception as e:
+                    yield {"event": "skill_result", "skill": "shell", "success": False,
+                           "output": f"exec error: {e}", "attempt": 1}
+                    continue
+                output = str(result.get("output", ""))
+                success = result.get("success", False)
+                any_success = any_success or success
+                yield {"event": "skill_result", "skill": "shell",
+                       "success": success, "output": output[:800], "attempt": 1}
+                self.evidence_db.add(
+                    skill="shell", params=params, success=success,
+                    output=output[:2000], stage="qa_extract", session_id=self.session_id,
+                    **self._test_meta,
+                )
+            yield {"event": "stage", "stage": "validating"}
+
+        self.history.append({"role": "assistant", "content": response})
 
     def _verify_output_satisfies(self, request: str, output: str) -> bool:
         """w20 개선: skill이 성공했어도 output이 원래 요청을 만족하는지 LLM이 판정.
