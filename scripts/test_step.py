@@ -133,6 +133,8 @@ def judge(events, step):
     stages = [e.get("stage") for e in events if e.get("event") == "stage"]
     skill_starts = [e for e in events if e.get("event") == "skill_start"]
     skill_results = [e for e in events if e.get("event") == "skill_result"]
+    skill_skips = [e for e in events if e.get("event") == "skill_skip"]
+    precheck_fails = [e for e in events if e.get("event") == "precheck_fail"]
     pb_starts = [e for e in events if e.get("event") == "playbook_start"]
     step_dones = [e for e in events if e.get("event") == "step_done"]
     pb_dones = [e for e in events if e.get("event") == "playbook_done"]
@@ -153,7 +155,9 @@ def judge(events, step):
     for sd in step_dones:
         out_chunks.append(str(sd.get("output", "")))
     aggregated = "\n".join(c for c in out_chunks if c)
-    executed = bool(skill_starts) or bool(pb_starts) or bool(step_dones)
+    # Bastion이 실행을 시도했으면 executed=True (skill_skip·precheck_fail 포함 — 이는 인프라 문제로
+    # skill이 실제 실행은 못 했지만 Bastion은 plan/precheck까지 수행한 상태. no_execution(Bastion 무응답)과 구분)
+    executed = bool(skill_starts) or bool(pb_starts) or bool(step_dones) or bool(skill_skips) or bool(precheck_fails)
 
     verify = step.get("verify") or {}
     vtype = verify.get("type")

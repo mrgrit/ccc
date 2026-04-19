@@ -1,24 +1,28 @@
 # CCC Bastion 실증 테스트 — 재테스트 진행 현황 (엄격 기준)
 
-> 마지막 업데이트: 2026-04-19 14:22
+> 마지막 업데이트: 2026-04-19 15:15
 
 ## 요약
 
 - **전체 3,090 케이스** (2,734 기존 + **356 신규 C19·C20**) · 2,734 테스트 수행 (88.5%)
-- **엄격 Pass 1003 / 3,090 = 32.5%** (997→+6)
-- Fail 639, QA-fallback 897, Error 188, No-exec 7, Untested 356
+- **엄격 Pass 1007 / 3,090 = 32.6%** (1003→+4)
+- Fail 650, QA-fallback 868, Error 188, No-exec 21 (↑, 설명 아래), Untested 356
 
-## 재테스트 루프 중간 결과 (298/1009 = 29.5%)
+## 재테스트 루프 중간 결과 (340/1009 = 33.7%)
 
 | 원래 qa_fb | 재테스트 후 | 건수 | 비율 |
 |-----------|-------------|------|------|
-| → pass | 12 | **4.0%** |
-| → fail | 92 | 30.9% |
-| → qa_fallback | 185 | **62.1%** |
+| → pass | 16 | **4.7%** |
+| → fail | 103 | 30.3% |
+| → no_execution | 14 | **4.1%** (신규) |
+| → qa_fallback | 198 | 58.2% |
 
-- 실행전환율 34.9% (104/298) · pass 전환율 4.0% (12/298)
-- 1009건 완주까지 ~10h 남음 (케이스당 평균 50초)
-- **Path B(bastion_prompt 변형 버그)가 qa_fb 62%에서 고정 출현** → 모델이나 패턴 override로는 해결 안 됨, gen_course*_labs.py 수정 필요
+- 실행전환율 39.1% (133/340), pass 전환율 4.7%
+- **bastion_prompt 수정(14:52) 이후 qa_fb 감소 29건**, 그 중 pass 4 / fail 11 / no_exec 14
+- `no_execution` 급증(7→21)은 **인프라 이슈(SIEM VM 10.20.30.100 unreachable) + test_step.py judge 버그** 합작
+  - Bastion이 precheck 시도 → skill_skip/precheck_fail → 기존 judge가 `no_execution`로 오분류
+  - judge 수정 완료: skill_skip·precheck_fail → `fail`로 재분류 (unit test 통과)
+  - 다음 재테스트 사이클부터 반영
 - **Ollama 0.18.2 → 0.21.0 업데이트 완료** (14:22)
 - gemma4:31b pull 93% 진행 중
 
