@@ -2831,7 +2831,7 @@ def search_content(q: str, limit: int = 30):
                     "week": int(week_num.group(1)) if week_num else 0,
                     "title": title[:80],
                     "context": f"...{context}...",
-                    "link": f"/app/?page=training&course={course_dir}&view=lecture&week={week_num.group(1) if week_num else 1}",
+                    "link": f"/app/training?course={course_dir}&view=lecture&week={week_num.group(1) if week_num else 1}",
                 })
 
     # 2. 실습 검색 (lab YAML)
@@ -2866,7 +2866,7 @@ def search_content(q: str, limit: int = 30):
                     "week": y.get("week", 0),
                     "title": y.get("title", yml_file)[:80],
                     "context": f"...{context}...",
-                    "link": f"/app/?page={'training' if version == 'ai' else 'labs'}&course={y.get('course', lab_dir).replace('-ai', '').replace('-nonai', '')}&view=lab&lab={lab_id}",
+                    "link": f"/app/{'training' if version == 'ai' else 'labs'}?course={y.get('course', lab_dir).replace('-ai', '').replace('-nonai', '')}&view=lab&lab={lab_id}",
                 })
 
     results.sort(key=lambda r: (r["course"], r["week"], r["type"]))
