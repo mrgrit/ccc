@@ -573,6 +573,19 @@ class BastionAgent:
                        "success": success, "output": output[:1000],
                        "attempt": attempt}
 
+                # ── w20 개선: skill 성공이어도 output이 요청을 만족하는지 LLM 검증 ──
+                # 성공이더라도 output이 엉뚱하거나 비어있으면 soft-fail로 처리해 재시도 유도.
+                # MAX_RETRY 초과 시엔 검증 건너뛰고 종료 (무한 retry 방지).
+                if success and attempt <= MAX_RETRY:
+                    if not self._verify_output_satisfies(message, output):
+                        yield {"event": "verify_miss", "skill": skill_name,
+                               "attempt": attempt,
+                               "reason": "output이 요청을 만족하지 않음"}
+                        success = False
+                        # stderr가 비어있다면 "결과 부적합"을 stderr에 기록해 diagnose가 참고
+                        if not stderr:
+                            stderr = "output이 요청 의도를 만족하지 못함 (semantic mismatch)"
+
                 if success or attempt > MAX_RETRY:
                     break
 
@@ -843,7 +856,7 @@ class BastionAgent:
             history_ctx += "위 시도들과 다른 접근을 해야 함.\n"
 
         prompt = (
-            f"보안 에이전트가 작업을 실행했으나 실패했다. 에러를 분석하고 수정된 접근을 제시하라.\n\n"
+            f"보안 에이전트가 작업을 실행했으나 실패했다. 에러를 분석하고 **반드시** 수정된 접근을 제시하라.\n\n"
             f"원래 요청: {original_request}\n"
             f"실행한 Skill: {skill_name}\n"
             f"파라미터: {json.dumps(params, ensure_ascii=False)}\n"
@@ -852,14 +865,17 @@ class BastionAgent:
             f"다음 JSON만 출력 (코드블록 금지):\n"
             f'{{"diagnosis": "실패 원인 한 줄", "action": "수정 내용 한 줄", '
             f'"skill": "사용할 skill명", "params": {{수정된 파라미터}}}}\n\n'
-            f"수정 불가능하면 정확히 null 출력.\n"
-            f"규칙:\n"
-            f"- 같은 명령을 반복하지 말 것 (다른 접근 시도)\n"
-            f"- 경로가 틀렸으면 대안 경로 시도\n"
+            f"**원칙**: 포기하지 말고 반드시 다른 접근을 시도하라. null 반환은 **완전히 불가능한 극소수 경우**에만.\n"
+            f"애매하거나 판단이 서지 않으면 **정보 수집용 탐색 명령**(ls·find·cat·systemctl status·journalctl 등)으로 대체 시도하라.\n\n"
+            f"수정 전략 (순서대로 고려):\n"
+            f"- 경로가 틀렸으면 대안 경로 시도 (/var/log ↔ /var/ossec/logs 등)\n"
             f"- 권한 문제면 sudo 추가\n"
             f"- 명령어 구문 오류면 수정\n"
             f"- 대상 VM이 잘못됐으면 올바른 VM 지정\n"
-            f"- 파일이 없으면 find로 먼저 탐색하거나 대안 명령 사용"
+            f"- 파일이 없으면 find·locate로 먼저 탐색\n"
+            f"- 서비스가 안 돌면 systemctl status로 확인 후 시작\n"
+            f"- 커맨드가 실패하면 같은 목적의 다른 도구 사용 (curl↔wget, ss↔netstat 등)\n"
+            f"- **어떤 경우에도 원래 요청의 핵심 정보를 얻는 방향으로 재시도**"
         )
         try:
             r = httpx.post(f"{self.ollama_url}/api/chat", json={
@@ -882,6 +898,38 @@ class BastionAgent:
             }
         except Exception:
             return None
+
+    def _verify_output_satisfies(self, request: str, output: str) -> bool:
+        """w20 개선: skill이 성공했어도 output이 원래 요청을 만족하는지 LLM이 판정.
+
+        - satisfied=True → 재시도 불필요 (정상 종료)
+        - satisfied=False → soft-fail 처리하여 _diagnose_and_correct 로 재시도
+        - 에러/빈 응답 → True (보수적: 무의미한 재시도 방지)
+
+        비용: skill 성공 건당 LLM 1회 추가 (~5-10s). MAX_RETRY 초과 시엔 호출 안 함.
+        """
+        if not output or not output.strip():
+            return False  # 빈 output은 확실한 실패
+        prompt = (
+            "보안 에이전트가 작업을 수행한 결과를 평가하라.\n"
+            "output이 '요청된 정보 또는 작업 결과'를 담고 있으면 satisfied=true,\n"
+            "엉뚱한 결과·오류 메시지·주제 무관 내용이면 satisfied=false.\n\n"
+            f"요청: {request[:300]}\n\n"
+            f"결과 (tail 800자):\n{output[-800:]}\n\n"
+            '정확히 JSON만 출력: {"satisfied": true|false, "reason": "한 줄 근거"}'
+        )
+        try:
+            r = httpx.post(f"{self.ollama_url}/api/chat", json={
+                "model": self.model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False, "format": "json",
+                "options": {"temperature": 0.0, "num_predict": 100},
+            }, timeout=15.0)
+            content = r.json().get("message", {}).get("content", "")
+            parsed = json.loads(content) if content else {}
+            return bool(parsed.get("satisfied", True))  # 기본 True (보수적)
+        except Exception:
+            return True  # 에러 시 보수적 — 무한 retry 방지
 
     def _generate_shell_command(self, message: str, target_vm: str) -> str:
         """자연어 요청을 셸 명령어로 변환. LLM이 적절한 명령어를 생성한다."""
@@ -1199,6 +1247,14 @@ class BastionAgent:
                 success = result.get("success", False)
                 output = str(result.get("output", ""))
                 stderr = str(result.get("stderr", ""))
+
+                # w20 개선: skill 성공이어도 output이 요청을 만족하지 못하면 soft-fail
+                if success and attempt <= MAX_RETRY:
+                    if not self._verify_output_satisfies(name, output):
+                        yield {"event": "verify_miss", "step": i, "attempt": attempt}
+                        success = False
+                        if not stderr:
+                            stderr = "output이 요청 의도를 만족하지 못함 (semantic mismatch)"
 
                 if success or attempt > MAX_RETRY:
                     break
