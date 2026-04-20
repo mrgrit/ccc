@@ -603,6 +603,69 @@ def refresh_credentials(request: Request):
             conn.commit()
     return {"refreshed": list(creds.keys()), "wazuh_pw_found": bool(wazuh_pw), "siem_ip": siem_ip}
 
+@app.post("/profile/siem-proxy/setup", dependencies=[Depends(verify_api_key)])
+def setup_siem_proxy(request: Request):
+    """secu에 siem 내부망 proxy(DNAT + ARP) 재설정.
+
+    온보딩 순서가 siem → secu로 뒤집혔거나 secu 재온보딩 후 규칙 초기화된 경우 사용.
+    멱등적: 이미 설정되어 있으면 skip.
+    """
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT infra_name, ip FROM student_infras WHERE student_id=%s AND (infra_name LIKE %s OR infra_name LIKE %s)",
+                        (uid, "%-siem", "%-secu"))
+            rows = {r["infra_name"].rsplit("-", 1)[-1]: r["ip"] for r in cur.fetchall()}
+    if "siem" not in rows or "secu" not in rows:
+        raise HTTPException(404, f"need both siem and secu infras: found={list(rows.keys())}")
+
+    siem_ext_ip = rows["siem"]
+    secu_ip = rows["secu"]
+    from packages.bastion import run_command as _rc
+    setup_script = f"""
+set -e
+sudo tee /etc/sysctl.d/99-siem-proxy.conf >/dev/null << SYSCTL_EOF
+net.ipv4.conf.all.proxy_arp=1
+net.ipv4.conf.ens37.proxy_arp=1
+net.ipv4.ip_forward=1
+SYSCTL_EOF
+sudo sysctl -p /etc/sysctl.d/99-siem-proxy.conf >/dev/null
+for port in 1514 1515 55000 443 8080; do
+  if ! sudo nft list chain ip nat prerouting 2>/dev/null | grep -q "daddr 10.20.30.100 tcp dport $port"; then
+    sudo nft add rule ip nat prerouting iifname ens37 ip daddr 10.20.30.100 tcp dport $port dnat to {siem_ext_ip}:$port
+  fi
+done
+if ! sudo nft list chain ip nat postrouting 2>/dev/null | grep -q "daddr {siem_ext_ip} oifname \\"ens33\\" masquerade"; then
+  sudo nft add rule ip nat postrouting ip daddr {siem_ext_ip} oifname ens33 masquerade
+fi
+sudo bash -c 'echo "#!/usr/sbin/nft -f" > /etc/nftables.conf; echo "flush ruleset" >> /etc/nftables.conf; nft list ruleset >> /etc/nftables.conf'
+sudo chmod 755 /etc/nftables.conf
+sudo tee /etc/systemd/system/siem-neigh-proxy.service >/dev/null << NEIGH_EOF
+[Unit]
+Description=SIEM neighbor proxy for 10.20.30.100
+After=network-online.target nftables.service
+Wants=network-online.target
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/ip neigh add proxy 10.20.30.100 dev ens37
+ExecStop=/usr/sbin/ip neigh del proxy 10.20.30.100 dev ens37
+[Install]
+WantedBy=multi-user.target
+NEIGH_EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now siem-neigh-proxy >/dev/null 2>&1
+echo "SIEM_PROXY_OK"
+"""
+    try:
+        r = _rc(secu_ip, setup_script, timeout=45)
+    except Exception as e:
+        raise HTTPException(500, f"secu unreachable: {e}")
+    ok = "SIEM_PROXY_OK" in (r.get("stdout", "") or "")
+    return {"success": ok, "secu_ip": secu_ip, "siem_ext_ip": siem_ext_ip,
+            "stdout": (r.get("stdout", "") or "")[-400:]}
+
 class ChangePasswordBody(BaseModel):
     current_password: str
     new_password: str
@@ -1092,6 +1155,70 @@ def onboard_infra(body: InfraSetupBody, request: Request):
                             yield f"data: {_j.dumps({'event': 'credentials', 'role': 'siem', 'saved': list(_creds.keys())}, ensure_ascii=False)}\n\n"
                     except Exception as _e:
                         yield f"data: {_j.dumps({'event': 'credentials_error', 'role': 'siem', 'error': str(_e)[:200]}, ensure_ascii=False)}\n\n"
+
+                    # SIEM VM은 내부 IP(10.20.30.100)가 Docker bridge에만 존재해 내부망 격리 →
+                    # secu(gateway)에 DNAT + ARP proxy 자동 설정 (agent들이 siem 접근 가능하게)
+                    try:
+                        from packages.bastion import run_command as _rc
+                        siem_ext_ip = vm["ip"]  # siem 외부 IP (192.168.0.x)
+                        # 같은 학생의 secu 찾기
+                        with _conn() as _c3:
+                            with _c3.cursor(cursor_factory=RealDictCursor) as _cur3:
+                                _cur3.execute(
+                                    "SELECT ip FROM student_infras WHERE student_id=%s AND infra_name LIKE %s",
+                                    (uid, "%-secu"),
+                                )
+                                _secu_row = _cur3.fetchone()
+                        if _secu_row:
+                            secu_ip = _secu_row["ip"]
+                            # 멱등적 setup 스크립트: sysctl + nft DNAT + ARP neigh proxy + 영구화
+                            setup_script = f"""
+set -e
+# 1) sysctl 영구
+sudo tee /etc/sysctl.d/99-siem-proxy.conf >/dev/null << SYSCTL_EOF
+net.ipv4.conf.all.proxy_arp=1
+net.ipv4.conf.ens37.proxy_arp=1
+net.ipv4.ip_forward=1
+SYSCTL_EOF
+sudo sysctl -p /etc/sysctl.d/99-siem-proxy.conf >/dev/null
+# 2) nft DNAT (이미 있으면 skip)
+for port in 1514 1515 55000 443 8080; do
+  if ! sudo nft list chain ip nat prerouting 2>/dev/null | grep -q "daddr 10.20.30.100 tcp dport $port"; then
+    sudo nft add rule ip nat prerouting iifname ens37 ip daddr 10.20.30.100 tcp dport $port dnat to {siem_ext_ip}:$port
+  fi
+done
+# postrouting masquerade
+if ! sudo nft list chain ip nat postrouting 2>/dev/null | grep -q "daddr {siem_ext_ip} oifname \\"ens33\\" masquerade"; then
+  sudo nft add rule ip nat postrouting ip daddr {siem_ext_ip} oifname ens33 masquerade
+fi
+# 3) nft 영구화 (/etc/nftables.conf)
+sudo bash -c 'echo "#!/usr/sbin/nft -f" > /etc/nftables.conf; echo "flush ruleset" >> /etc/nftables.conf; nft list ruleset >> /etc/nftables.conf'
+sudo chmod 755 /etc/nftables.conf
+# 4) ARP neigh proxy systemd
+sudo tee /etc/systemd/system/siem-neigh-proxy.service >/dev/null << NEIGH_EOF
+[Unit]
+Description=SIEM neighbor proxy for 10.20.30.100
+After=network-online.target nftables.service
+Wants=network-online.target
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/sbin/ip neigh add proxy 10.20.30.100 dev ens37
+ExecStop=/usr/sbin/ip neigh del proxy 10.20.30.100 dev ens37
+[Install]
+WantedBy=multi-user.target
+NEIGH_EOF
+sudo systemctl daemon-reload
+sudo systemctl enable --now siem-neigh-proxy >/dev/null 2>&1
+echo "SIEM_PROXY_OK"
+"""
+                            r = _rc(secu_ip, setup_script, timeout=30)
+                            ok = "SIEM_PROXY_OK" in (r.get("stdout", "") or "")
+                            yield f"data: {_j.dumps({'event': 'siem_proxy_setup', 'secu_ip': secu_ip, 'siem_ext_ip': siem_ext_ip, 'success': ok}, ensure_ascii=False)}\n\n"
+                        else:
+                            yield f"data: {_j.dumps({'event': 'siem_proxy_skip', 'reason': 'secu infra not found — 학생의 secu를 먼저 온보딩해야 함'}, ensure_ascii=False)}\n\n"
+                    except Exception as _e:
+                        yield f"data: {_j.dumps({'event': 'siem_proxy_error', 'error': str(_e)[:200]}, ensure_ascii=False)}\n\n"
 
                 # early return 에러가 있으면 원인 명시
                 done_data = {'event': 'done', 'role': vm['role'], 'status': status, 'progress': f'{i+1}/{total}'}

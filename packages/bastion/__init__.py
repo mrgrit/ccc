@@ -108,16 +108,32 @@ def build_system_prompt(extra_context: str = "") -> str:
 
 # 역할별 설치 스크립트
 # ── Wazuh Agent 설치 (web, attacker에서 공통 사용) ──
+# - 버전: Wazuh Manager와 일치시키기 위해 4.10.3-1 고정 (더 높으면 manager가 거부)
+# - dpkg lock: unattended-upgrades 경쟁 방지를 위해 최대 90s 대기
+# - SIEM 준비: 10.20.30.100:1515 (authd) 포트 열림까지 최대 60s 대기
+# - agent-auth 실패 시에도 서비스는 시작 (첫 등록은 agent 내장 enrollment로 재시도됨)
 WAZUH_AGENT_INSTALL = """
+# dpkg lock 대기 (최대 90초)
+for i in $(seq 1 30); do
+  fuser /var/lib/dpkg/lock-frontend >/dev/null 2>&1 || break
+  sleep 3
+done
 curl -s https://packages.wazuh.com/key/GPG-KEY-WAZUH | gpg --no-default-keyring --keyring gnupg-ring:/usr/share/keyrings/wazuh.gpg --import 2>/dev/null && chmod 644 /usr/share/keyrings/wazuh.gpg
 echo 'deb [signed-by=/usr/share/keyrings/wazuh.gpg] https://packages.wazuh.com/4.x/apt/ stable main' > /etc/apt/sources.list.d/wazuh.list
 apt-get update -y
-WAZUH_MANAGER="10.20.30.100" apt-get install -y wazuh-agent 2>/dev/null || true
+# 버전 고정 (Manager 4.10.3과 일치). 실패 시 최신 fallback (후속 diagnose가 잡음)
+WAZUH_MANAGER="10.20.30.100" DEBIAN_FRONTEND=noninteractive apt-get install -y --allow-downgrades wazuh-agent=4.10.3-1 2>&1 | tail -3 || \\
+  WAZUH_MANAGER="10.20.30.100" DEBIAN_FRONTEND=noninteractive apt-get install -y wazuh-agent 2>&1 | tail -3
 if [ -f /var/ossec/bin/agent-auth ]; then
-    sed -i 's|<address>.*</address>|<address>10.20.30.100</address>|' /var/ossec/etc/ossec.conf 2>/dev/null || true
-    /var/ossec/bin/agent-auth -m 10.20.30.100 2>/dev/null || true
+    sed -i 's|<address>.*</address>|<address>10.20.30.100</address>|g' /var/ossec/etc/ossec.conf 2>/dev/null || true
+    # SIEM manager 준비 대기 (최대 60초)
+    for i in $(seq 1 20); do
+      (echo > /dev/tcp/10.20.30.100/1515) 2>/dev/null && break
+      sleep 3
+    done
+    /var/ossec/bin/agent-auth -m 10.20.30.100 2>&1 | tail -3 || true
     systemctl daemon-reload
-    systemctl enable --now wazuh-agent 2>/dev/null || true
+    systemctl enable --now wazuh-agent 2>&1 | tail -2
 fi
 """
 
