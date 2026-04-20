@@ -949,7 +949,70 @@ class BastionAgent:
             if c not in seen:
                 seen.add(c)
                 unique.append(c)
+        # w23 개선: 정규식 실패 시 SubAgent(작은 LLM)로 추출 시도
+        if not unique and len(text) > 120:
+            sub_cmds = self._subagent_extract_commands(text)
+            if sub_cmds:
+                unique = sub_cmds
         return unique[:3]
+
+    def _subagent_extract_commands(self, text: str) -> list[str]:
+        """w23: 작은 모델(gemma3:4b 등 SUBAGENT_MODEL)로 설명형 QA 응답에서 실행 가능한
+        명령을 추출. 정규식이 놓친 케이스 구제용 fallback.
+
+        - 응답이 짧거나 명령이 없으면 빈 리스트 반환
+        - 파괴적 명령은 제외
+        - 모델 호출 실패 시 조용히 빈 리스트 (무해)
+        """
+        try:
+            from packages.bastion import LLM_SUBAGENT_MODEL
+            sub_model = LLM_SUBAGENT_MODEL
+        except Exception:
+            sub_model = "gemma3:4b"
+
+        prompt = (
+            "다음 설명 텍스트에서 Linux 셸로 바로 실행 가능한 명령만 최대 3줄 뽑아내라.\n"
+            "규칙:\n"
+            "- 각 줄 하나의 명령, 파이프/리다이렉트 허용\n"
+            "- rm -rf, shutdown, mkfs 등 파괴적 명령은 제외\n"
+            "- 플레이스홀더(<>, {}) 있으면 그 라인은 제외\n"
+            "- 명령이 하나도 없거나 모두 설명문이면 정확히 'none' 출력\n"
+            "- 코드블록 기호, 번호, 주석 없이 명령 자체만 출력\n\n"
+            f"텍스트:\n{text[-2000:]}\n\n"
+            "명령 (최대 3줄):"
+        )
+        try:
+            r = httpx.post(f"{self.ollama_url}/api/chat", json={
+                "model": sub_model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "options": {"temperature": 0.1, "num_predict": 200},
+            }, timeout=15.0)
+            content = r.json().get("message", {}).get("content", "").strip()
+        except Exception:
+            return []
+
+        if not content:
+            return []
+        low = content.lower().strip()
+        if low == "none" or low.startswith("none"):
+            return []
+
+        cmds = []
+        for line in content.split("\n"):
+            line = line.strip().lstrip("0123456789.-*>`$# ").strip()
+            if not line or line.startswith("#"):
+                continue
+            if self._DESTRUCTIVE.search(line):
+                continue
+            # 플레이스홀더 포함 라인 제외
+            if "<" in line and ">" in line:
+                continue
+            if 8 <= len(line) <= 400 and line not in cmds:
+                cmds.append(line)
+            if len(cmds) >= 3:
+                break
+        return cmds
 
     def _qa_with_extraction(self, message: str) -> Generator[dict, None, None]:
         """QA 응답 후 명령을 추출해 실행 시도. 추출 실패 시 ask_user 이벤트로 HITL 유도.
