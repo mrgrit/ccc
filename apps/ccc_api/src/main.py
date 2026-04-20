@@ -2977,6 +2977,108 @@ def threat_digest(day: str):
     return {"day": day, "content": path.read_text(encoding="utf-8")}
 
 
+# ── 관리자: 자동 생성 콘텐츠 목록 + 승인 흐름 ────────
+
+def _approvals_path() -> pathlib.Path:
+    p = pathlib.Path(__file__).resolve().parents[3] / "contents" / ".approvals.json"
+    if not p.exists():
+        p.write_text("{}", encoding="utf-8")
+    return p
+
+
+def _load_approvals() -> dict:
+    import json as _j
+    try:
+        return _j.loads(_approvals_path().read_text(encoding="utf-8"))
+    except Exception:
+        return {}
+
+
+def _save_approvals(d: dict):
+    import json as _j
+    _approvals_path().write_text(_j.dumps(d, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+@app.get("/admin/auto-content", dependencies=[Depends(verify_api_key)])
+def list_auto_content(request: Request):
+    """자동 생성된 threats/battles/rules 일괄 조회 (관리자 전용)."""
+    _require_admin(request)
+    import json as _j
+    root = pathlib.Path(__file__).resolve().parents[3] / "contents"
+    approvals = _load_approvals()
+
+    threats, battles, rules = [], [], []
+    # Threats
+    for p in (root / "threats").glob("*/CVE-*.json") if (root / "threats").exists() else []:
+        try:
+            d = _j.loads(p.read_text(encoding="utf-8"))
+            key = f"threat:{d.get('id','')}"
+            threats.append({
+                "id": d.get("id", ""),
+                "severity": d.get("severity", "?"),
+                "cvss_score": d.get("cvss_score", 0),
+                "summary": d.get("summary", "")[:200],
+                "tags": d.get("tags", []),
+                "courses": d.get("courses", []),
+                "path": str(p.relative_to(root.parent)),
+                "status": approvals.get(key, "pending"),
+            })
+        except Exception:
+            continue
+    # Battles
+    for p in (root / "labs" / "battle-auto").glob("*.yaml") if (root / "labs" / "battle-auto").exists() else []:
+        try:
+            import yaml as _y
+            d = _y.safe_load(p.read_text(encoding="utf-8"))
+            key = f"battle:{p.name}"
+            battles.append({
+                "file": p.name,
+                "lab_id": d.get("lab_id", ""),
+                "title": d.get("title", "")[:120],
+                "difficulty": d.get("difficulty", ""),
+                "steps": len(d.get("steps") or []),
+                "path": str(p.relative_to(root.parent)),
+                "status": approvals.get(key, "pending"),
+            })
+        except Exception:
+            continue
+    # Rules
+    for subdir in ["suricata", "wazuh"]:
+        for p in (root / "rules" / subdir).glob("*") if (root / "rules" / subdir).exists() else []:
+            if p.suffix not in (".rules", ".xml"):
+                continue
+            key = f"rule:{subdir}:{p.name}"
+            content = p.read_text(encoding="utf-8")
+            rules.append({
+                "type": subdir,
+                "file": p.name,
+                "lines": content.count("\n"),
+                "preview": content[:200],
+                "path": str(p.relative_to(root.parent)),
+                "status": approvals.get(key, "pending"),
+            })
+
+    threats.sort(key=lambda x: -float(x.get("cvss_score") or 0))
+    return {"threats": threats, "battles": battles, "rules": rules}
+
+
+@app.post("/admin/auto-content/approve", dependencies=[Depends(verify_api_key)])
+def approve_auto_content(body: dict[str, Any], request: Request):
+    """콘텐츠 승인/거부. body: {key: 'threat:CVE-..' | 'battle:...yaml' | 'rule:suricata:...',
+                              action: 'approve' | 'reject' | 'pending'}"""
+    _require_admin(request)
+    key = str(body.get("key", ""))
+    action = str(body.get("action", ""))
+    if action not in ("approve", "reject", "pending"):
+        raise HTTPException(400, "action must be approve/reject/pending")
+    if not key:
+        raise HTTPException(400, "key required")
+    approvals = _load_approvals()
+    approvals[key] = action
+    _save_approvals(approvals)
+    return {"key": key, "status": action}
+
+
 @app.get("/battles/events/recent", dependencies=[Depends(verify_api_key)])
 def recent_battle_events():
     """최근 대전 이벤트 (UI용)"""
