@@ -1160,6 +1160,35 @@ class BastionAgent:
                 return response
         except Exception:
             pass
+
+        # w24 개선: Manager 모델 실패 시 SubAgent(작은 모델) 재시도
+        # — 작은 모델이 더 직설적인 1줄 명령을 낼 때가 있음 (과도한 안전 필터 적응 유발)
+        try:
+            from packages.bastion import LLM_SUBAGENT_MODEL
+            sub_model = LLM_SUBAGENT_MODEL
+        except Exception:
+            sub_model = "gemma3:4b"
+
+        sub_prompt = (
+            f"요청을 {vm_info}에서 실행할 Linux 셸 명령 딱 1줄로 변환.\n"
+            "설명·주석·코드블록 없이 명령만 출력. 없으면 'none'.\n"
+            f"요청: {message}\n명령:"
+        )
+        try:
+            r = httpx.post(f"{self.ollama_url}/api/generate", json={
+                "model": sub_model, "prompt": sub_prompt, "stream": False,
+                "options": {"temperature": 0.0, "num_predict": 120},
+            }, timeout=12.0)
+            response = r.json().get("response", "").strip()
+            import re as _re
+            response = _re.sub(r'^```\w*\n?', '', response)
+            response = _re.sub(r'\n?```$', '', response)
+            response = response.strip().split('\n')[0]
+            if response and not response.startswith('#') and response.lower() != "none":
+                if not self._DESTRUCTIVE.search(response):
+                    return response
+        except Exception:
+            pass
         return ""
 
     def _classify_intent(self, message: str) -> dict:
