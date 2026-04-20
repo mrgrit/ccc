@@ -560,6 +560,49 @@ def save_credentials(body: dict[str, Any], request: Request):
             conn.commit()
     return {"saved": True}
 
+@app.post("/profile/credentials/refresh", dependencies=[Depends(verify_api_key)])
+def refresh_credentials(request: Request):
+    """본인 siem VM에서 OpenCTI/Wazuh 자격을 다시 수집해 metadata에 저장.
+
+    온보딩 시 siem status != healthy 등으로 누락된 경우 수동 재수집.
+    """
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT ip FROM student_infras WHERE student_id=%s AND infra_name LIKE %s",
+                (uid, "%-siem"),
+            )
+            row = cur.fetchone()
+    if not row:
+        raise HTTPException(404, "siem infra not found for this user")
+
+    siem_ip = row["ip"]
+    from packages.bastion import run_command as _rc
+    creds = {}
+    try:
+        r = _rc(siem_ip,
+                "sudo tar -axf /tmp/wazuh-install-files.tar wazuh-install-files/wazuh-passwords.txt -O "
+                "2>/dev/null | grep -A1 \"indexer_username: 'admin'\" | tail -1 | awk '{print $2}' | tr -d \"'\"",
+                timeout=15)
+        wazuh_pw = (r.get("stdout", "") or "").strip()
+    except Exception as e:
+        wazuh_pw = ""
+    if wazuh_pw:
+        creds["wazuh_dashboard"] = {"url": f"https://{siem_ip}:443", "user": "admin", "password": wazuh_pw}
+        creds["wazuh_api"] = {"url": f"https://{siem_ip}:55000", "user": "wazuh-wui", "password": wazuh_pw}
+    creds["opencti"] = {"url": f"http://{siem_ip}:8080", "user": "admin@opencti.io", "password": "CCC2026!"}
+
+    with _conn() as conn:
+        with conn.cursor() as cur:
+            cur.execute("SELECT metadata FROM students WHERE id=%s", (uid,))
+            meta = (cur.fetchone() or [{}])[0] or {}
+            meta["credentials"] = {**meta.get("credentials", {}), **creds}
+            cur.execute("UPDATE students SET metadata=%s WHERE id=%s", (Json(meta), uid))
+            conn.commit()
+    return {"refreshed": list(creds.keys()), "wazuh_pw_found": bool(wazuh_pw), "siem_ip": siem_ip}
+
 class ChangePasswordBody(BaseModel):
     current_password: str
     new_password: str
@@ -1025,29 +1068,30 @@ def onboard_infra(body: InfraSetupBody, request: Request):
                         step_data['stdout'] = step.get('stdout', '')[:300]
                     yield f"data: {_j.dumps(step_data, ensure_ascii=False)}\n\n"
 
-                # SIEM 온보딩 완료 시 credential 수집 + 저장
-                if vm["role"] == "siem" and status == "healthy":
+                # SIEM 온보딩 시 credential 수집 + 저장 (status 무관 — 설치 성공 시점에 시도)
+                if vm["role"] == "siem":
                     try:
                         from packages.bastion import run_command as _rc
                         _creds = {}
-                        # Wazuh Dashboard 비밀번호
-                        _r = _rc(vm["ip"], "tar -axf /tmp/wazuh-install-files.tar wazuh-install-files/wazuh-passwords.txt -O 2>/dev/null | grep -A1 \"indexer_username: 'admin'\" | tail -1 | awk '{print $2}' | tr -d \"'\"", timeout=10)
+                        # Wazuh Dashboard 비밀번호 (sudo 포함으로 권한 확보)
+                        _r = _rc(vm["ip"], "sudo tar -axf /tmp/wazuh-install-files.tar wazuh-install-files/wazuh-passwords.txt -O 2>/dev/null | grep -A1 \"indexer_username: 'admin'\" | tail -1 | awk '{print $2}' | tr -d \"'\"", timeout=15)
                         wazuh_pw = _r.get("stdout", "").strip()
                         if wazuh_pw:
                             _creds["wazuh_dashboard"] = {"url": f"https://{vm['ip']}:443", "user": "admin", "password": wazuh_pw}
+                            _creds["wazuh_api"] = {"url": f"https://{vm['ip']}:55000", "user": "wazuh-wui", "password": wazuh_pw}
                         _creds["opencti"] = {"url": f"http://{vm['ip']}:8080", "user": "admin@opencti.io", "password": "CCC2026!"}
-                        _creds["wazuh_api"] = {"url": f"https://{vm['ip']}:55000", "user": "wazuh-wui", "password": wazuh_pw}
-                        # DB에 저장
-                        with _conn() as _c2:
-                            with _c2.cursor() as _cur2:
-                                _cur2.execute("SELECT metadata FROM students WHERE id=%s", (uid,))
-                                _meta = (_cur2.fetchone() or [{}])[0] or {}
-                                _meta["credentials"] = {**_meta.get("credentials", {}), **_creds}
-                                _cur2.execute("UPDATE students SET metadata=%s WHERE id=%s", (Json(_meta), uid))
-                                _c2.commit()
-                        yield f"data: {_j.dumps({'event': 'credentials', 'role': 'siem', 'saved': list(_creds.keys())}, ensure_ascii=False)}\n\n"
-                    except Exception:
-                        pass
+                        # DB에 저장 (기존 값과 병합)
+                        if _creds:
+                            with _conn() as _c2:
+                                with _c2.cursor() as _cur2:
+                                    _cur2.execute("SELECT metadata FROM students WHERE id=%s", (uid,))
+                                    _meta = (_cur2.fetchone() or [{}])[0] or {}
+                                    _meta["credentials"] = {**_meta.get("credentials", {}), **_creds}
+                                    _cur2.execute("UPDATE students SET metadata=%s WHERE id=%s", (Json(_meta), uid))
+                                    _c2.commit()
+                            yield f"data: {_j.dumps({'event': 'credentials', 'role': 'siem', 'saved': list(_creds.keys())}, ensure_ascii=False)}\n\n"
+                    except Exception as _e:
+                        yield f"data: {_j.dumps({'event': 'credentials_error', 'role': 'siem', 'error': str(_e)[:200]}, ensure_ascii=False)}\n\n"
 
                 # early return 에러가 있으면 원인 명시
                 done_data = {'event': 'done', 'role': vm['role'], 'status': status, 'progress': f'{i+1}/{total}'}

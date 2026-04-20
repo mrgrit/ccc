@@ -39,9 +39,28 @@ export default function Profile() {
       </div>
 
       {/* 계정 정보 (Credentials) */}
-      {Object.keys(creds).length > 0 && (
-        <div style={{ background: '#161b22', border: '1px solid #f97316', borderRadius: 10, padding: 24, marginBottom: 20 }}>
-          <h3 style={{ fontSize: 18, color: '#f97316', marginBottom: 16 }}>서비스 계정 정보</h3>
+      <div style={{ background: '#161b22', border: `1px solid ${Object.keys(creds).length > 0 ? '#f97316' : '#30363d'}`, borderRadius: 10, padding: 24, marginBottom: 20 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <h3 style={{ fontSize: 18, color: Object.keys(creds).length > 0 ? '#f97316' : '#e6edf3', margin: 0 }}>서비스 계정 정보</h3>
+          <button onClick={async () => {
+            try {
+              const r = await api('/api/profile/credentials/refresh', { method: 'POST', body: '{}' })
+              alert(`재수집 완료: ${(r.refreshed || []).join(', ')}${r.wazuh_pw_found ? '' : ' (Wazuh 비밀번호 추출 실패 — siem VM 확인)'}`)
+              location.reload()
+            } catch (e: any) {
+              try { alert('실패: ' + (JSON.parse(e.message)?.detail || e.message)) } catch { alert('실패: ' + e.message) }
+            }
+          }} style={{
+            background: '#21262d', color: '#58a6ff', border: '1px solid #30363d', borderRadius: 6,
+            padding: '6px 14px', fontSize: 13, cursor: 'pointer'
+          }}>🔄 재수집</button>
+        </div>
+        {Object.keys(creds).length === 0 ? (
+          <div style={{ fontSize: 13, color: '#8b949e' }}>
+            아직 수집된 계정이 없습니다. siem VM 온보딩 후 위 "재수집" 버튼을 눌러주세요.
+          </div>
+        ) : (
+        <>
           <div style={{ fontSize: 13, color: '#8b949e', marginBottom: 12 }}>
             온보딩 시 자동 생성된 계정입니다. 본인과 관리자만 볼 수 있습니다.
           </div>
@@ -61,8 +80,9 @@ export default function Profile() {
               </div>
             ))}
           </div>
-        </div>
-      )}
+        </>
+        )}
+      </div>
 
       {/* 인프라 */}
       {infras.length > 0 && (
