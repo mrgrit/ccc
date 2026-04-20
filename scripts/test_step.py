@@ -87,21 +87,55 @@ def call_bastion(step: dict, course: str, lab_id: str):
 def llm_semantic_judge(step: dict, answer: str) -> tuple[bool, str]:
     """LLM으로 '응답이 step 의도를 적절히 수행했는지' 판정.
 
+    step.verify.semantic (optional, Master가 기술) 을 우선 사용:
+      { intent, success_criteria[], acceptable_methods[], negative_signs[] }
+    없으면 step.instruction fallback.
+
     반환: (pass 여부, 응답에서 뽑은 대표 keyword)
     """
     intent = step.get("instruction", "") or step.get("bastion_prompt", "")
-    answer_trim = (answer or "")[-1500:]
+    answer_trim = (answer or "")[-2500:]
     if not intent or not answer_trim.strip():
         return False, ""
-    prompt = (
-        "너는 보안 실습 채점관이다. 학생이 실습 스텝을 수행한 결과를 평가한다.\n"
-        "아래 형식의 JSON 만 출력하라(코드블록 금지):\n"
-        '{"pass": true|false, "keyword": "응답에서 핵심을 대표하는 한 단어(한글/영문 가능)", "reason": "간단한 이유"}\n\n'
-        f"실습 의도:\n{intent}\n\n"
-        f"학생(Bastion) 응답:\n{answer_trim}\n\n"
-        "기준: 응답이 의도한 작업을 수행·설명했고 현저한 오류가 없으면 pass=true. "
-        "한두 단어 수준의 키워드는 의도와 합치하면 인정. 엉뚱한 주제/에러/무응답은 pass=false."
+    verify = step.get("verify") or {}
+    sem = verify.get("semantic") or {}
+    sem_intent = sem.get("intent", "")
+    sem_success = sem.get("success_criteria") or []
+    sem_methods = sem.get("acceptable_methods") or []
+    sem_negative = sem.get("negative_signs") or []
+    expects = verify.get("expect") or []
+    if isinstance(expects, str):
+        expects = [expects]
+    parts = [
+        "너는 보안 실습의 엄정한 채점관이다. 학생이 실습 스텝을 수행한 결과(Bastion 자동 실행 응답)를 평가한다.",
+        "아래 형식의 JSON 만 출력하라(코드블록/설명 문장 금지):",
+        '{"pass": true|false, "keyword": "응답에서 핵심을 대표하는 단어(한/영)", "reason": "한문장 이유"}',
+        "",
+        f"## 실습 스텝 instruction\n{intent}",
+    ]
+    if sem_intent:
+        parts.append(f"\n## 의도(intent) — Master 기술\n{sem_intent}")
+    if sem_success:
+        parts.append("\n## 합격 기준(success_criteria) — 하나 이상 충족해야 pass")
+        parts.extend(f"- {c}" for c in sem_success)
+    if sem_methods:
+        parts.append("\n## 허용 방법(acceptable_methods) — 이 중 아무 방법이라도 인정")
+        parts.extend(f"- {m}" for m in sem_methods)
+    if sem_negative:
+        parts.append("\n## 불합격 신호(negative_signs)")
+        parts.extend(f"- {n}" for n in sem_negative)
+    if expects:
+        parts.append("\n## 기대 키워드(expect) — 토픽 힌트, 정확 매치는 필수 아님")
+        parts.append(", ".join(expects[:10]))
+    parts.append(f"\n## 학생 응답 (끝 2500자)\n{answer_trim}")
+    parts.append(
+        "\n## 판정 규칙\n"
+        "- success_criteria 중 하나 이상을 충족했거나, acceptable_methods 중 하나의 의도/방법이 응답에 드러나면 pass=true.\n"
+        "- 응답이 전혀 다른 주제를 다루거나 negative_signs에 해당하면 pass=false.\n"
+        "- 단순 무응답/에러 텍스트/도구 실행 실패는 pass=false.\n"
+        "- 의도와 방법이 동일하면 출력 형식이 기대와 달라도 pass=true (예: JSON 대신 표, 영어 키워드 대신 한국어 설명)."
     )
+    prompt = "\n".join(parts)
     try:
         req = urllib.request.Request(
             f"{OLLAMA}/api/chat",
