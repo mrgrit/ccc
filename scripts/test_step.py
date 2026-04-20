@@ -333,6 +333,8 @@ def main():
     ap.add_argument("order", type=int)
     ap.add_argument("--dry", action="store_true", help="don't update progress.json")
     ap.add_argument("--no-augment", action="store_true", help="semantic pass 시 YAML 업데이트 금지")
+    ap.add_argument("--ask", action="store_true",
+                    help="인터랙티브 HITL 모드 — ask_user 이벤트 시 stdin에서 답변 대기")
     args = ap.parse_args()
 
     y, step = load_step(args.course, args.week, args.order)
@@ -345,6 +347,40 @@ def main():
     print("─" * 70)
 
     events, elapsed, err = call_bastion(step, args.course, lab_id)
+
+    # w22 HITL: ask_user 이벤트 시 stdin에서 사람 답변 받아 follow-up 호출
+    if args.ask and events:
+        ask_evt = next((e for e in events if e.get("event") == "ask_user"), None)
+        if ask_evt:
+            print("\n" + "=" * 70)
+            print(f"[ASK_USER] {ask_evt.get('question', '')}")
+            if ask_evt.get("context"):
+                print(f"\n[Bastion context, last 500c]:\n{ask_evt['context']}")
+            print("=" * 70)
+            print("사람처럼 답변 입력 (빈 줄 입력으로 완료, 'skip'으로 포기):")
+            lines = []
+            while True:
+                try:
+                    line = input()
+                except EOFError:
+                    break
+                if line == "":
+                    break
+                lines.append(line)
+            user_answer = "\n".join(lines).strip()
+            if user_answer and user_answer.lower() != "skip":
+                # 2nd call: 사람 답변을 새 message로 보냄 (history 유지)
+                print(f"\n[follow-up → Bastion]: {user_answer}")
+                fu_step = dict(step)
+                fu_step["bastion_prompt"] = user_answer
+                fu_step["instruction"] = user_answer
+                fu_events, fu_elapsed, fu_err = call_bastion(fu_step, args.course, lab_id)
+                if not fu_err:
+                    # 원 이벤트 + 구분자 + follow-up 이벤트
+                    events = events + [{"event": "hitl_followup"}] + fu_events
+                    elapsed += fu_elapsed
+                    print(f"follow-up {len(fu_events)} events, +{fu_elapsed:.1f}s")
+
     if err:
         print(f"ERROR: {err} (elapsed {elapsed:.1f}s)")
         status, skill, meta = "error", "", {}

@@ -952,7 +952,13 @@ class BastionAgent:
         return unique[:3]
 
     def _qa_with_extraction(self, message: str) -> Generator[dict, None, None]:
-        """QA 응답 후 명령을 추출해 실행 시도. 기존 QA 종료 경로를 대체."""
+        """QA 응답 후 명령을 추출해 실행 시도. 추출 실패 시 ask_user 이벤트로 HITL 유도.
+
+        흐름:
+          1. QA stage → LLM 응답 수집
+          2-a. 추출 성공 → executing으로 재투입
+          2-b. 추출 실패·설명형 응답 → ask_user 이벤트 (사람 답변 필요)
+        """
         yield {"event": "stage", "stage": "qa"}
         response = yield from self._stream_qa_events(message)
 
@@ -962,7 +968,6 @@ class BastionAgent:
                    "preview": commands[0][:80]}
             yield {"event": "stage", "stage": "executing"}
             target = self._infer_target_vm(message)
-            any_success = False
             for i, cmd in enumerate(commands, 1):
                 params = self._enrich_params("shell", {"target": target, "command": cmd})
                 yield {"event": "skill_start", "skill": "shell", "params": params,
@@ -975,7 +980,6 @@ class BastionAgent:
                     continue
                 output = str(result.get("output", ""))
                 success = result.get("success", False)
-                any_success = any_success or success
                 yield {"event": "skill_result", "skill": "shell",
                        "success": success, "output": output[:800], "attempt": 1}
                 self.evidence_db.add(
@@ -984,8 +988,46 @@ class BastionAgent:
                     **self._test_meta,
                 )
             yield {"event": "stage", "stage": "validating"}
+        else:
+            # w22 개선: 명령 추출 실패 → 사람에게 구체적 질문 (HITL)
+            if len(response or "") > 80:   # 의미 있는 응답이 있었을 때만
+                question = self._build_ask_user_question(message, response)
+                yield {"event": "ask_user", "question": question,
+                       "context": response[-500:] if response else ""}
 
         self.history.append({"role": "assistant", "content": response})
+
+    def _build_ask_user_question(self, message: str, response: str) -> str:
+        """사람에게 물어볼 구체적 질문 생성. 모호성 유형에 따라 질문 템플릿 선택."""
+        msg_low = (message or "").lower()
+        resp_low = (response or "").lower()
+
+        missing_target = not any(
+            tok in message for tok in ("attacker", "secu", "web", "siem", "manager",
+                                         "10.20.30.", "192.168.0.")
+        )
+        looks_theoretical = any(
+            kw in resp_low for kw in ("개념", "정의", "의미", "원리", "이론")
+        )
+
+        if missing_target:
+            return (
+                "이 요청을 어느 VM에서 어떤 명령으로 실행해야 할까요? "
+                "예: 'siem VM에서 systemctl status ossec' 또는 "
+                "'web VM에서 curl -I http://10.20.30.80'. "
+                "모호하면 'skip'으로 답해주세요."
+            )
+        if looks_theoretical:
+            return (
+                "이 요청은 이론·개념 설명으로 해석되어 실행을 보류했습니다. "
+                "실제 검증이 필요하다면 실행할 구체 명령 1줄을 알려주세요. "
+                "(예: 'grep certified /var/log/suricata/eve.json'). "
+                "이론 답변으로 충분하면 'skip'."
+            )
+        return (
+            "이 작업을 실행하려면 추가 정보가 필요합니다. "
+            "구체 명령 한 줄 또는 'skip'으로 답해주세요."
+        )
 
     def _verify_output_satisfies(self, request: str, output: str) -> bool:
         """w20 개선: skill이 성공했어도 output이 원래 요청을 만족하는지 LLM이 판정.
