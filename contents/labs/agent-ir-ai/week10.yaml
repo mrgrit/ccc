@@ -3,7 +3,8 @@ title: 기만·지연 — 허니토큰과 tar-pit (AI 지원)
 version: ai
 course: agent-ir-ai
 week: 10
-description: 정상 트래픽에 투명하지만 에이전트에겐 *토큰 비용*을 큰 폭으로 증가시키는 기만·지연 방어를 구축한다. AI SubAgent가 자동으로 명령을 실행·검증합니다.
+description: 정상 트래픽에 투명하지만 에이전트에겐 *토큰 비용*을 큰 폭으로 증가시키는 기만·지연 방어를 구축한다. AI SubAgent가
+  자동으로 명령을 실행·검증합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -35,7 +36,9 @@ steps:
   answer_detail: 허니 페이지. 주석에 허니 토큰 포함 — 이 값이 어디선가 재관측되면 확정 공격.
   verify:
     type: output_contains
-    expect: fake_admin.html
+    expect:
+    - fake_admin.html
+    - AdminPanel
     field: stdout
   target_vm: web
   script: 'sudo bash -c ''cat > /var/www/html/fake_admin.html <<H
@@ -58,14 +61,20 @@ steps:
   hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 10
-  answer: "\U0001F916 프롬프트: Apache alias 추가.\n\U0001F4CE 참고 (CLI): sudo bash -c 'cat > /etc/apache2/conf-available/honey.conf <<C\nAlias /admin-portal /var/www/html/fake_admin.html\n<Location /admin-portal>\n  Require all granted\n</Location>\nC' && sudo a2enconf honey 2>&1 | tail -3 && sudo systemctl reload apache2 2>&1 | tail -3"
+  answer: "\U0001F916 프롬프트: Apache alias 추가.\n\U0001F4CE 참고 (CLI): sudo bash -c 'cat\
+    \ > /etc/apache2/conf-available/honey.conf <<C\nAlias /admin-portal /var/www/html/fake_admin.html\n\
+    <Location /admin-portal>\n  Require all granted\n</Location>\nC' && sudo a2enconf\
+    \ honey 2>&1 | tail -3 && sudo systemctl reload apache2 2>&1 | tail -3"
   answer_detail: 허니 경로 활성. 실 관리자는 이 경로 존재 여부 *모름* → 접근만으로도 고신뢰.
   verify:
     type: output_contains
     expect: honey
     field: stdout
   target_vm: web
-  script: "sudo bash -c 'cat > /etc/apache2/conf-available/honey.conf <<C\nAlias /admin-portal /var/www/html/fake_admin.html\n<Location /admin-portal>\n  Require all granted\n</Location>\nC' && sudo a2enconf honey 2>&1 | tail -3 && sudo systemctl reload apache2 2>&1 | tail -3"
+  script: "sudo bash -c 'cat > /etc/apache2/conf-available/honey.conf <<C\nAlias /admin-portal\
+    \ /var/www/html/fake_admin.html\n<Location /admin-portal>\n  Require all granted\n\
+    </Location>\nC' && sudo a2enconf honey 2>&1 | tail -3 && sudo systemctl reload\
+    \ apache2 2>&1 | tail -3"
   risk_level: low
   bastion_prompt: Apache alias 추가.
 - order: 3
@@ -90,14 +99,23 @@ steps:
   hint: target_vm=siem에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 12
-  answer: "\U0001F916 프롬프트: Wazuh 룰 — 허니 접근 경보(rule 100300).\n\U0001F4CE 참고 (CLI): sudo bash -c \"cat >> /var/ossec/etc/rules/local_rules.xml <<'X'\n<group name=\\\"honey\\\">\n  <rule id=\\\"100300\\\" level=\\\"15\\\">\n    <if_sid>31108</if_sid>\n    <match>/admin-portal</match>\n    <description>Honeypot admin-portal accessed — confirmed attacker</description>\n  </rule>\n</group>\nX\" && sudo /var/ossec/bin/wazuh-analysisd -t 2>&1 | tail -3"
+  answer: "\U0001F916 프롬프트: Wazuh 룰 — 허니 접근 경보(rule 100300).\n\U0001F4CE 참고 (CLI):\
+    \ sudo bash -c \"cat >> /var/ossec/etc/rules/local_rules.xml <<'X'\n<group name=\\\
+    \"honey\\\">\n  <rule id=\\\"100300\\\" level=\\\"15\\\">\n    <if_sid>31108</if_sid>\n\
+    \    <match>/admin-portal</match>\n    <description>Honeypot admin-portal accessed\
+    \ — confirmed attacker</description>\n  </rule>\n</group>\nX\" && sudo /var/ossec/bin/wazuh-analysisd\
+    \ -t 2>&1 | tail -3"
   answer_detail: 레벨 15 고신뢰. 접근 자체가 공격 확정.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: siem
-  script: "sudo bash -c \"cat >> /var/ossec/etc/rules/local_rules.xml <<'X'\n<group name=\\\"honey\\\">\n  <rule id=\\\"100300\\\" level=\\\"15\\\">\n    <if_sid>31108</if_sid>\n    <match>/admin-portal</match>\n    <description>Honeypot admin-portal accessed — confirmed attacker</description>\n  </rule>\n</group>\nX\" && sudo /var/ossec/bin/wazuh-analysisd -t 2>&1 | tail -3"
+  script: "sudo bash -c \"cat >> /var/ossec/etc/rules/local_rules.xml <<'X'\n<group\
+    \ name=\\\"honey\\\">\n  <rule id=\\\"100300\\\" level=\\\"15\\\">\n    <if_sid>31108</if_sid>\n\
+    \    <match>/admin-portal</match>\n    <description>Honeypot admin-portal accessed\
+    \ — confirmed attacker</description>\n  </rule>\n</group>\nX\" && sudo /var/ossec/bin/wazuh-analysisd\
+    \ -t 2>&1 | tail -3"
   risk_level: low
   bastion_prompt: Wazuh 룰 — 허니 접근 경보(rule 100300).
 - order: 5
@@ -105,14 +123,21 @@ steps:
   hint: target_vm=siem에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 13
-  answer: "\U0001F916 프롬프트: Wazuh 룰 — 허니 토큰 재관측(rule 100301).\n\U0001F4CE 참고 (CLI): sudo bash -c \"cat >> /var/ossec/etc/rules/local_rules.xml <<'X'\n  <rule id=\\\"100301\\\" level=\\\"15\\\">\n    <regex>HONEY_87af3b1c_DO_NOT_REMOVE</regex>\n    <description>Honey credential reused — confirmed attacker (post-capture)</description>\n  </rule>\nX\" && sudo systemctl reload wazuh-manager"
+  answer: "\U0001F916 프롬프트: Wazuh 룰 — 허니 토큰 재관측(rule 100301).\n\U0001F4CE 참고 (CLI):\
+    \ sudo bash -c \"cat >> /var/ossec/etc/rules/local_rules.xml <<'X'\n  <rule id=\\\
+    \"100301\\\" level=\\\"15\\\">\n    <regex>HONEY_87af3b1c_DO_NOT_REMOVE</regex>\n\
+    \    <description>Honey credential reused — confirmed attacker (post-capture)</description>\n\
+    \  </rule>\nX\" && sudo systemctl reload wazuh-manager"
   answer_detail: 재관측 룰. 허니 토큰이 *다른 곳*에 나타나면 공격자가 이전에 탈취한 증거.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: siem
-  script: "sudo bash -c \"cat >> /var/ossec/etc/rules/local_rules.xml <<'X'\n  <rule id=\\\"100301\\\" level=\\\"15\\\">\n    <regex>HONEY_87af3b1c_DO_NOT_REMOVE</regex>\n    <description>Honey credential reused — confirmed attacker (post-capture)</description>\n  </rule>\nX\" && sudo systemctl reload wazuh-manager"
+  script: "sudo bash -c \"cat >> /var/ossec/etc/rules/local_rules.xml <<'X'\n  <rule\
+    \ id=\\\"100301\\\" level=\\\"15\\\">\n    <regex>HONEY_87af3b1c_DO_NOT_REMOVE</regex>\n\
+    \    <description>Honey credential reused — confirmed attacker (post-capture)</description>\n\
+    \  </rule>\nX\" && sudo systemctl reload wazuh-manager"
   risk_level: low
   bastion_prompt: Wazuh 룰 — 허니 토큰 재관측(rule 100301).
 - order: 6
@@ -134,7 +159,9 @@ steps:
   answer_detail: 의심 IP를 Bastion이 동적 갱신. 이 파일 변경 시 nginx reload.
   verify:
     type: output_contains
-    expect: suspect_ips
+    expect:
+    - suspect_ips
+    - IP리스트
     field: stdout
   target_vm: web
   script: 'sudo bash -c ''cat > /etc/nginx/suspect_ips.conf <<C
@@ -202,14 +229,22 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 16
-  answer: "\U0001F916 프롬프트: 공격자 ROI 계산 예시 스크립트.\n\U0001F4CE 참고 (CLI): cat > ~/ccc/scripts/roi.py <<'PY'\ndef roi(tokens, price=0.000015, success_prob=0.8, value=1000):\n    cost = tokens * price\n    return success_prob*value - cost\nbase = roi(1_000_000)\nwith_tarpit = roi(5_000_000, success_prob=0.4)  # 5배 토큰 + 성공률 반감\nprint('base_roi', round(base,2), 'with_tarpit', round(with_tarpit,2))\nPY\npython3 ~/ccc/scripts/roi.py"
+  answer: "\U0001F916 프롬프트: 공격자 ROI 계산 예시 스크립트.\n\U0001F4CE 참고 (CLI): cat > ~/ccc/scripts/roi.py\
+    \ <<'PY'\ndef roi(tokens, price=0.000015, success_prob=0.8, value=1000):\n   \
+    \ cost = tokens * price\n    return success_prob*value - cost\nbase = roi(1_000_000)\n\
+    with_tarpit = roi(5_000_000, success_prob=0.4)  # 5배 토큰 + 성공률 반감\nprint('base_roi',\
+    \ round(base,2), 'with_tarpit', round(with_tarpit,2))\nPY\npython3 ~/ccc/scripts/roi.py"
   answer_detail: 공격자 ROI 계산. tar-pit 적용 시 토큰 소모 증가 + 성공률 감소의 *이중 효과*.
   verify:
     type: output_contains
     expect: base_roi
     field: stdout
   target_vm: bastion
-  script: "cat > ~/ccc/scripts/roi.py <<'PY'\ndef roi(tokens, price=0.000015, success_prob=0.8, value=1000):\n    cost = tokens * price\n    return success_prob*value - cost\nbase = roi(1_000_000)\nwith_tarpit = roi(5_000_000, success_prob=0.4)  # 5배 토큰 + 성공률 반감\nprint('base_roi', round(base,2), 'with_tarpit', round(with_tarpit,2))\nPY\npython3 ~/ccc/scripts/roi.py"
+  script: "cat > ~/ccc/scripts/roi.py <<'PY'\ndef roi(tokens, price=0.000015, success_prob=0.8,\
+    \ value=1000):\n    cost = tokens * price\n    return success_prob*value - cost\n\
+    base = roi(1_000_000)\nwith_tarpit = roi(5_000_000, success_prob=0.4)  # 5배 토큰\
+    \ + 성공률 반감\nprint('base_roi', round(base,2), 'with_tarpit', round(with_tarpit,2))\n\
+    PY\npython3 ~/ccc/scripts/roi.py"
   risk_level: low
   bastion_prompt: 공격자 ROI 계산 예시 스크립트.
 - order: 9
@@ -235,7 +270,9 @@ steps:
   answer_detail: 운영 리스크를 단계적으로 수용. 갑자기 tar-pit 켜면 정상 사용자 피해.
   verify:
     type: output_contains
-    expect: Shadow
+    expect:
+    - Shadow
+    - 배포계획
     field: stdout
   target_vm: bastion
   script: 'cat > ~/ccc/artifacts/w10/3-step-deploy.md <<''MD''
@@ -315,7 +352,9 @@ steps:
   answer_detail: 법적·운영 체크. 특히 첫 항목 위반 시 공격 수단 제공 책임.
   verify:
     type: output_contains
-    expect: 청소
+    expect:
+    - 청소
+    - 체크리스트
     field: stdout
   target_vm: bastion
   script: 'cat > ~/ccc/artifacts/w10/legal-ops.md <<''MD''
@@ -342,13 +381,15 @@ steps:
   points: 20
   answer: '🤖 프롬프트: experience 저장.
 
-    📎 참고 (CLI): echo ''{"id":"w10-deception","honey_path":"/admin-portal","rules_added":[100300,100301],"tar_pit_stage":"shadow"}'' > ~/ccc/data/bastion/experience/w10-deception.json && cat ~/ccc/data/bastion/experience/w10-deception.json'
+    📎 참고 (CLI): echo ''{"id":"w10-deception","honey_path":"/admin-portal","rules_added":[100300,100301],"tar_pit_stage":"shadow"}''
+    > ~/ccc/data/bastion/experience/w10-deception.json && cat ~/ccc/data/bastion/experience/w10-deception.json'
   answer_detail: 기만·지연 방어 적용 기록.
   verify:
     type: output_contains
     expect: honey_path
     field: stdout
   target_vm: bastion
-  script: echo '{"id":"w10-deception","honey_path":"/admin-portal","rules_added":[100300,100301],"tar_pit_stage":"shadow"}' > ~/ccc/data/bastion/experience/w10-deception.json && cat ~/ccc/data/bastion/experience/w10-deception.json
+  script: echo '{"id":"w10-deception","honey_path":"/admin-portal","rules_added":[100300,100301],"tar_pit_stage":"shadow"}'
+    > ~/ccc/data/bastion/experience/w10-deception.json && cat ~/ccc/data/bastion/experience/w10-deception.json
   risk_level: low
   bastion_prompt: experience 저장.

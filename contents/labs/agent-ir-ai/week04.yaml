@@ -3,7 +3,8 @@ title: 자동 익스플로잇 — Transient Tool 아티팩트 (AI 지원)
 version: ai
 course: agent-ir-ai
 week: 4
-description: 에이전트가 세션 내 생성한 공격 도구(Transient Tool)의 흔적을 방어자 관점에서 포렌식으로 재구성한다. AI SubAgent가 자동으로 명령을 실행·검증합니다.
+description: 에이전트가 세션 내 생성한 공격 도구(Transient Tool)의 흔적을 방어자 관점에서 포렌식으로 재구성한다. AI SubAgent가
+  자동으로 명령을 실행·검증합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -19,8 +20,10 @@ steps:
   points: 9
   answer: '🤖 프롬프트: web VM에 auditd로 /tmp 쓰기 감시 룰을 일시적으로 추가.
 
-    📎 참고 (CLI): sudo auditctl -w /tmp -p wa -k tmpwrites && sudo auditctl -l | tail -5'
-  answer_detail: Transient Tool이 /tmp에 생성·수정되는 것을 감시. 실제 운영 환경에서는 *적용 범위*를 좁혀야 부하 감당 가능.
+    📎 참고 (CLI): sudo auditctl -w /tmp -p wa -k tmpwrites && sudo auditctl -l | tail
+    -5'
+  answer_detail: Transient Tool이 /tmp에 생성·수정되는 것을 감시. 실제 운영 환경에서는 *적용 범위*를 좁혀야 부하
+    감당 가능.
   verify:
     type: output_contains
     expect: tmpwrites
@@ -73,14 +76,16 @@ steps:
   points: 11
   answer: '🤖 프롬프트: auditd 결과를 조회해 생성 이벤트를 확인.
 
-    📎 참고 (CLI): sudo ausearch -k tmpwrites --start recent 2>/dev/null | tail -30 | head -30'
+    📎 참고 (CLI): sudo ausearch -k tmpwrites --start recent 2>/dev/null | tail -30 |
+    head -30'
   answer_detail: auditd가 각 파일 write를 기록. 같은 path에 반복 write가 보이면 자가 수정 루프 증거.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: web
-  script: sudo ausearch -k tmpwrites --start recent 2>/dev/null | tail -30 | head -30
+  script: sudo ausearch -k tmpwrites --start recent 2>/dev/null | tail -30 | head
+    -30
   risk_level: low
   bastion_prompt: auditd 결과를 조회해 생성 이벤트를 확인.
 - order: 4
@@ -124,14 +129,16 @@ steps:
   points: 14
   answer: '🤖 프롬프트: ModSecurity 감사 로그가 있으면 매칭 룰 분포 조사.
 
-    📎 참고 (CLI): sudo tail -50 /var/log/bunkerweb/modsec_audit.log 2>/dev/null | grep -oE ''id "[0-9]+"'' | sort | uniq -c | sort -rn | head || echo ''no_modsec_log'''
+    📎 참고 (CLI): sudo tail -50 /var/log/bunkerweb/modsec_audit.log 2>/dev/null | grep
+    -oE ''id "[0-9]+"'' | sort | uniq -c | sort -rn | head || echo ''no_modsec_log'''
   answer_detail: 어떤 룰이 얼마나 매칭됐는지. 942xxx (SQLi CRS)가 자주 뜨면 정상.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: web
-  script: sudo tail -50 /var/log/bunkerweb/modsec_audit.log 2>/dev/null | grep -oE 'id "[0-9]+"' | sort | uniq -c | sort -rn | head || echo 'no_modsec_log'
+  script: sudo tail -50 /var/log/bunkerweb/modsec_audit.log 2>/dev/null | grep -oE
+    'id "[0-9]+"' | sort | uniq -c | sort -rn | head || echo 'no_modsec_log'
   risk_level: low
   bastion_prompt: ModSecurity 감사 로그가 있으면 매칭 룰 분포 조사.
 - order: 7
@@ -139,14 +146,23 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 15
-  answer: "\U0001F916 프롬프트: 1층 방어 — 응답 엔트로피 측정 함수 작성.\n\U0001F4CE 참고 (CLI): cat > ~/ccc/scripts/entropy.py <<'PY'\nimport math\nfrom collections import Counter\ndef H(s):\n    if not s: return 0.0\n    c = Counter(s); t = len(s)\n    return -sum((f/t)*math.log2(f/t) for f in c.values())\nprint('sample_entropy', H('UNION SELECT user,pass FROM users--'))\nPY\npython3 ~/ccc/scripts/entropy.py"
+  answer: "\U0001F916 프롬프트: 1층 방어 — 응답 엔트로피 측정 함수 작성.\n\U0001F4CE 참고 (CLI): cat >\
+    \ ~/ccc/scripts/entropy.py <<'PY'\nimport math\nfrom collections import Counter\n\
+    def H(s):\n    if not s: return 0.0\n    c = Counter(s); t = len(s)\n    return\
+    \ -sum((f/t)*math.log2(f/t) for f in c.values())\nprint('sample_entropy', H('UNION\
+    \ SELECT user,pass FROM users--'))\nPY\npython3 ~/ccc/scripts/entropy.py"
   answer_detail: 1층(메타 판별) 핵심 도구. 페이로드 본문 엔트로피가 점진 변화하는 세션 식별.
   verify:
     type: output_contains
-    expect: sample_entropy
+    expect:
+    - sample_entropy
+    - entropy
     field: stdout
   target_vm: bastion
-  script: "cat > ~/ccc/scripts/entropy.py <<'PY'\nimport math\nfrom collections import Counter\ndef H(s):\n    if not s: return 0.0\n    c = Counter(s); t = len(s)\n    return -sum((f/t)*math.log2(f/t) for f in c.values())\nprint('sample_entropy', H('UNION SELECT user,pass FROM users--'))\nPY\npython3 ~/ccc/scripts/entropy.py"
+  script: "cat > ~/ccc/scripts/entropy.py <<'PY'\nimport math\nfrom collections import\
+    \ Counter\ndef H(s):\n    if not s: return 0.0\n    c = Counter(s); t = len(s)\n\
+    \    return -sum((f/t)*math.log2(f/t) for f in c.values())\nprint('sample_entropy',\
+    \ H('UNION SELECT user,pass FROM users--'))\nPY\npython3 ~/ccc/scripts/entropy.py"
   risk_level: low
   bastion_prompt: 1층 방어 — 응답 엔트로피 측정 함수 작성.
 - order: 8
@@ -206,14 +222,18 @@ steps:
   points: 18
   answer: '🤖 프롬프트: 아티팩트 번들 구조 준비.
 
-    📎 참고 (CLI): mkdir -p ~/ccc/artifacts/w04/{session,tools,pcap,server-logs,timeline}/ && ls ~/ccc/artifacts/w04'
+    📎 참고 (CLI): mkdir -p ~/ccc/artifacts/w04/{session,tools,pcap,server-logs,timeline}/
+    && ls ~/ccc/artifacts/w04'
   answer_detail: w04 산출물 표준 구조. w11에서 Bastion 스킬 설계에 이 번들을 입력.
   verify:
     type: output_contains
-    expect: timeline
+    expect:
+    - timeline
+    - bundle
     field: stdout
   target_vm: bastion
-  script: mkdir -p ~/ccc/artifacts/w04/{session,tools,pcap,server-logs,timeline}/ && ls ~/ccc/artifacts/w04
+  script: mkdir -p ~/ccc/artifacts/w04/{session,tools,pcap,server-logs,timeline}/
+    && ls ~/ccc/artifacts/w04
   risk_level: low
   bastion_prompt: 아티팩트 번들 구조 준비.
 - order: 11
@@ -264,13 +284,15 @@ steps:
   points: 20
   answer: '🤖 프롬프트: auditd 감시 해제(실습 후 정리).
 
-    📎 참고 (CLI): sudo auditctl -W /tmp -p wa -k tmpwrites 2>&1 | head -1 || true && sudo auditctl -l | wc -l'
+    📎 참고 (CLI): sudo auditctl -W /tmp -p wa -k tmpwrites 2>&1 | head -1 || true &&
+    sudo auditctl -l | wc -l'
   answer_detail: 임시 룰 정리. 실 운영은 /etc/audit/rules.d/*.rules로 영속화.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: web
-  script: sudo auditctl -W /tmp -p wa -k tmpwrites 2>&1 | head -1 || true && sudo auditctl -l | wc -l
+  script: sudo auditctl -W /tmp -p wa -k tmpwrites 2>&1 | head -1 || true && sudo
+    auditctl -l | wc -l
   risk_level: low
   bastion_prompt: auditd 감시 해제(실습 후 정리).

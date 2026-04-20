@@ -3,7 +3,8 @@ title: 공격자 해부 — Tool-use 루프와 지문 점수 (Non-AI)
 version: nonai
 course: agent-ir-nonai
 week: 2
-description: 에이전트 실행 프로세스를 방어자 관점에서 관찰하는 도구 세트를 구축한다. pstree·strace·tcpdump·auditd를 결합해 *호스트·네트워크 양측*의 지문을 수집한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
+description: 에이전트 실행 프로세스를 방어자 관점에서 관찰하는 도구 세트를 구축한다. pstree·strace·tcpdump·auditd를
+  결합해 *호스트·네트워크 양측*의 지문을 수집한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -14,12 +15,14 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: bastion에서 pstree로 ollama 서비스의 프로세스 트리를 표시하시오(에이전트 모델 호출이 이뤄지는 프로세스 관찰 연습).
+  instruction: bastion에서 pstree로 ollama 서비스의 프로세스 트리를 표시하시오(에이전트 모델 호출이 이뤄지는 프로세스
+    관찰 연습).
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 9
   answer: pstree -p $(pgrep -f ollama | head -1 || echo 1) | head -30
-  answer_detail: 에이전트 프로세스 계보 관찰법 학습. 공격자 환경에선 못 보지만, Bastion 자체의 LLM 호출 패턴을 관찰하는 훈련.
+  answer_detail: 에이전트 프로세스 계보 관찰법 학습. 공격자 환경에선 못 보지만, Bastion 자체의 LLM 호출 패턴을 관찰하는
+    훈련.
   verify:
     type: output_contains
     expect: ''
@@ -29,7 +32,8 @@ steps:
   risk_level: low
   bastion_prompt: ''
 - order: 2
-  instruction: bastion에서 `curl -sX POST http://localhost:11434/api/tags`로 Ollama에 로드된 모델 목록을 조회하시오.
+  instruction: bastion에서 `curl -sX POST http://localhost:11434/api/tags`로 Ollama에
+    로드된 모델 목록을 조회하시오.
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: recon
   points: 10
@@ -63,14 +67,16 @@ steps:
   hint: target_vm=secu에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 12
-  answer: sudo timeout 30 tcpdump -i any -nn -w /tmp/w02-ollama.pcap 'port 11434' 2>/dev/null; ls -la /tmp/w02-ollama.pcap
+  answer: sudo timeout 30 tcpdump -i any -nn -w /tmp/w02-ollama.pcap 'port 11434'
+    2>/dev/null; ls -la /tmp/w02-ollama.pcap
   answer_detail: LLM API 호출의 네트워크 지문. 요청 간격·크기가 *에이전트 지문*의 핵심 축.
   verify:
     type: output_contains
     expect: w02-ollama.pcap
     field: stdout
   target_vm: secu
-  script: sudo timeout 30 tcpdump -i any -nn -w /tmp/w02-ollama.pcap 'port 11434' 2>/dev/null; ls -la /tmp/w02-ollama.pcap
+  script: sudo timeout 30 tcpdump -i any -nn -w /tmp/w02-ollama.pcap 'port 11434'
+    2>/dev/null; ls -la /tmp/w02-ollama.pcap
   risk_level: medium
   bastion_prompt: ''
 - order: 5
@@ -78,14 +84,22 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 13
-  answer: "mkdir -p ~/ccc/scripts && cat > ~/ccc/scripts/agent_score.py <<'PY'\nimport statistics as st\ndef iat_cov(times):\n    if len(times) < 2: return 1.0\n    iat = [b-a for a,b in zip(times, times[1:])]\n    m = st.mean(iat)\n    return st.pstdev(iat)/m if m else 0.0\nprint('iat_cov', iat_cov([1.0, 2.0, 3.0, 4.0]))\nPY\npython3 ~/ccc/scripts/agent_score.py"
+  answer: "mkdir -p ~/ccc/scripts && cat > ~/ccc/scripts/agent_score.py <<'PY'\nimport\
+    \ statistics as st\ndef iat_cov(times):\n    if len(times) < 2: return 1.0\n \
+    \   iat = [b-a for a,b in zip(times, times[1:])]\n    m = st.mean(iat)\n    return\
+    \ st.pstdev(iat)/m if m else 0.0\nprint('iat_cov', iat_cov([1.0, 2.0, 3.0, 4.0]))\n\
+    PY\npython3 ~/ccc/scripts/agent_score.py"
   answer_detail: 에이전트 지문 1지표. 정상 사용자는 CoV>0.5, 에이전트는 <0.3 경향.
   verify:
     type: output_contains
     expect: iat_cov
     field: stdout
   target_vm: bastion
-  script: "mkdir -p ~/ccc/scripts && cat > ~/ccc/scripts/agent_score.py <<'PY'\nimport statistics as st\ndef iat_cov(times):\n    if len(times) < 2: return 1.0\n    iat = [b-a for a,b in zip(times, times[1:])]\n    m = st.mean(iat)\n    return st.pstdev(iat)/m if m else 0.0\nprint('iat_cov', iat_cov([1.0, 2.0, 3.0, 4.0]))\nPY\npython3 ~/ccc/scripts/agent_score.py"
+  script: "mkdir -p ~/ccc/scripts && cat > ~/ccc/scripts/agent_score.py <<'PY'\nimport\
+    \ statistics as st\ndef iat_cov(times):\n    if len(times) < 2: return 1.0\n \
+    \   iat = [b-a for a,b in zip(times, times[1:])]\n    m = st.mean(iat)\n    return\
+    \ st.pstdev(iat)/m if m else 0.0\nprint('iat_cov', iat_cov([1.0, 2.0, 3.0, 4.0]))\n\
+    PY\npython3 ~/ccc/scripts/agent_score.py"
   risk_level: low
   bastion_prompt: ''
 - order: 6
@@ -93,14 +107,16 @@ steps:
   hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 14
-  answer: sudo tail -200 /var/log/apache2/access.log | awk '{print $7}' | sort -u | wc -l
+  answer: sudo tail -200 /var/log/apache2/access.log | awk '{print $7}' | sort -u
+    | wc -l
   answer_detail: 경로 다양성 지표. 정상 사용자는 보통 2~8개, 에이전트는 15+.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: web
-  script: sudo tail -200 /var/log/apache2/access.log | awk '{print $7}' | sort -u | wc -l
+  script: sudo tail -200 /var/log/apache2/access.log | awk '{print $7}' | sort -u
+    | wc -l
   risk_level: low
   bastion_prompt: ''
 - order: 7
@@ -108,14 +124,16 @@ steps:
   hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 15
-  answer: sudo awk '$9 ~ /^4/ {print $4, $7, $9}' /var/log/apache2/access.log | tail -10
+  answer: sudo awk '$9 ~ /^4/ {print $4, $7, $9}' /var/log/apache2/access.log | tail
+    -10
   answer_detail: 4xx 응답 후 재시도 지연이 짧으면 에이전트 의심. 정상은 수초~수분.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: web
-  script: sudo awk '$9 ~ /^4/ {print $4, $7, $9}' /var/log/apache2/access.log | tail -10
+  script: sudo awk '$9 ~ /^4/ {print $4, $7, $9}' /var/log/apache2/access.log | tail
+    -10
   risk_level: low
   bastion_prompt: ''
 - order: 8
@@ -141,7 +159,9 @@ steps:
   answer_detail: 학습한 관측 지점을 문서화. w11 Purple에서 이 표를 기반으로 Bastion 탐지 위치 결정.
   verify:
     type: output_contains
-    expect: 관측 지점
+    expect:
+    - 관측 지점
+    - Mermaid
     field: stdout
   target_vm: bastion
   script: 'cat > ~/ccc/artifacts/w02/tool_use_layers.md <<''MD''
@@ -166,14 +186,16 @@ steps:
   hint: target_vm=secu에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 17
-  answer: sudo jq -c 'select(.event_type=="http")' /var/log/suricata/eve.json 2>/dev/null | tail -3 | head -c 1500 || echo 'no_http_events_yet'
+  answer: sudo jq -c 'select(.event_type=="http")' /var/log/suricata/eve.json 2>/dev/null
+    | tail -3 | head -c 1500 || echo 'no_http_events_yet'
   answer_detail: HTTP 이벤트의 구조 파악. w5·w6에서 탐지 룰 설계 시 필드 경로 참고.
   verify:
     type: output_contains
     expect: ''
     field: stdout
   target_vm: secu
-  script: sudo jq -c 'select(.event_type=="http")' /var/log/suricata/eve.json 2>/dev/null | tail -3 | head -c 1500 || echo 'no_http_events_yet'
+  script: sudo jq -c 'select(.event_type=="http")' /var/log/suricata/eve.json 2>/dev/null
+    | tail -3 | head -c 1500 || echo 'no_http_events_yet'
   risk_level: medium
   bastion_prompt: ''
 - order: 10

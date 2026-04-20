@@ -3,7 +3,8 @@ title: AD Kerberoasting 자동화 IR (Non-AI)
 version: nonai
 course: agent-ir-adv-nonai
 week: 3
-description: SharpHound·Rubeus·Hashcat 파이프라인이 자동화된 AD 공격. 4769 RC4 burst 탐지·krbtgt 회전·gMSA 도입까지. 학생이 수동 수행·기록.
+description: SharpHound·Rubeus·Hashcat 파이프라인이 자동화된 AD 공격. 4769 RC4 burst 탐지·krbtgt
+  회전·gMSA 도입까지. 학생이 수동 수행·기록.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -21,7 +22,8 @@ steps:
   answer_detail: '[공격] SPN 식별 첫 단계.'
   verify:
     type: output_contains
-    expect: ''
+    expect:
+    - SPN
     field: stdout
   target_vm: siem
   script: 'getent passwd | awk -F: ''{print $1}'' | head'
@@ -47,14 +49,20 @@ steps:
   hint: 6단계 IR 중 탐지 단계. target_vm=siem.
   category: analysis
   points: 11
-  answer: "cat > ~/w03/rule.yml <<'Y'\ntitle: Kerberoasting RC4 burst\ndetection:\n  selection: {EventID: 4769, TicketEncryptionType: '0x17'}\n  timeframe: 60s\n  condition: selection | count(ServiceName) by AccountName > 5\nY\nmkdir -p ~/w03 && cat ~/w03/rule.yml"
+  answer: "cat > ~/w03/rule.yml <<'Y'\ntitle: Kerberoasting RC4 burst\ndetection:\n\
+    \  selection: {EventID: 4769, TicketEncryptionType: '0x17'}\n  timeframe: 60s\n\
+    \  condition: selection | count(ServiceName) by AccountName > 5\nY\nmkdir -p ~/w03\
+    \ && cat ~/w03/rule.yml"
   answer_detail: '[탐지] 4769 + RC4 + 다수 SPN burst.'
   verify:
     type: output_contains
     expect: '4769'
     field: stdout
   target_vm: siem
-  script: "cat > ~/w03/rule.yml <<'Y'\ntitle: Kerberoasting RC4 burst\ndetection:\n  selection: {EventID: 4769, TicketEncryptionType: '0x17'}\n  timeframe: 60s\n  condition: selection | count(ServiceName) by AccountName > 5\nY\nmkdir -p ~/w03 && cat ~/w03/rule.yml"
+  script: "cat > ~/w03/rule.yml <<'Y'\ntitle: Kerberoasting RC4 burst\ndetection:\n\
+    \  selection: {EventID: 4769, TicketEncryptionType: '0x17'}\n  timeframe: 60s\n\
+    \  condition: selection | count(ServiceName) by AccountName > 5\nY\nmkdir -p ~/w03\
+    \ && cat ~/w03/rule.yml"
   risk_level: low
   bastion_prompt: ''
 - order: 4
@@ -210,14 +218,20 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 16
-  answer: "cat > ~/w03/agent.yaml <<'Y'\nplaybook_id: pb-kerberoast\nsteps:\n  - skill: terminate_attacker_session\n  - skill: lock_suspected_spn_accounts\n    args: {human_approval_required: true}\n  - skill: rotate_krbtgt_ticket\n    args: {human_approval_required: true}\nY\ncat ~/w03/agent.yaml"
+  answer: "cat > ~/w03/agent.yaml <<'Y'\nplaybook_id: pb-kerberoast\nsteps:\n  - skill:\
+    \ terminate_attacker_session\n  - skill: lock_suspected_spn_accounts\n    args:\
+    \ {human_approval_required: true}\n  - skill: rotate_krbtgt_ticket\n    args:\
+    \ {human_approval_required: true}\nY\ncat ~/w03/agent.yaml"
   answer_detail: '[초동대응] 사람 승인 필수 필드.'
   verify:
     type: output_contains
     expect: human_approval
     field: stdout
   target_vm: bastion
-  script: "cat > ~/w03/agent.yaml <<'Y'\nplaybook_id: pb-kerberoast\nsteps:\n  - skill: terminate_attacker_session\n  - skill: lock_suspected_spn_accounts\n    args: {human_approval_required: true}\n  - skill: rotate_krbtgt_ticket\n    args: {human_approval_required: true}\nY\ncat ~/w03/agent.yaml"
+  script: "cat > ~/w03/agent.yaml <<'Y'\nplaybook_id: pb-kerberoast\nsteps:\n  - skill:\
+    \ terminate_attacker_session\n  - skill: lock_suspected_spn_accounts\n    args:\
+    \ {human_approval_required: true}\n  - skill: rotate_krbtgt_ticket\n    args:\
+    \ {human_approval_required: true}\nY\ncat ~/w03/agent.yaml"
   risk_level: low
   bastion_prompt: ''
 - order: 9
@@ -321,7 +335,9 @@ steps:
   answer_detail: '[재발방지] 조직 이행.'
   verify:
     type: output_contains
-    expect: Phase
+    expect:
+    - Phase
+    - gMSA
     field: stdout
   target_vm: bastion
   script: 'cat > ~/w03/gmsa-plan.md <<''M''

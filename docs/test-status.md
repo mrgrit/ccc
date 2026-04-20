@@ -177,3 +177,23 @@ Bastion 응답 수집·분류 결과:
 
 착수 순서: **C19 → C20 → autonomous-ai → error 재테스트**
 예상 소요: 471건 × ~50s ≈ 6.5시간
+## w22 HITL 10건 실증 (2026-04-20)
+
+| # | Course | 1st (auto) | 2nd (HITL) |
+|---|--------|-----------|------------|
+| 1 | agent-ir-adv-ai w2s5 | qa_fb (ask_user✓) | **pass** |
+| 2 | ai-agent-ai w12s2 | qa_fb (ask_user✓) | fail |
+| 3 | ai-safety-adv-ai w14s7 | fail | **pass** |
+| 4 | ai-safety-ai w5s1 | qa_fb (ask_user✓) | fail |
+| 5 | physical-pentest-ai w9s8 | qa_fb (ask_user✓) | **pass** |
+| 6 | agent-ir-ai w9s2 | fail | pass-qa |
+| 7 | attack-ai w13s13 | fail | qa_fallback |
+| 8 | web-vuln-ai w4s12 | qa_fb (ask_user✓) | pass-qa |
+| 9 | cloud-container-ai w14s4 | qa_fb (ask_user✓) | **pass** |
+| 10 | ai-security-ai w14s5 | qa_fb (ask_user✓) | fail |
+
+**요약**:
+- 순수 pass 전환: **4/10 (40%)**
+- pass+pass-qa: **6/10 (60%)**
+- ask_user 이벤트 발동: qa_fb 분기 케이스 7건 전부 정상
+- 기존 재테스트 pass 전환율 8.2% 대비 **5-7배**
