@@ -2977,6 +2977,96 @@ def threat_digest(day: str):
     return {"day": day, "content": path.read_text(encoding="utf-8")}
 
 
+@app.get("/news/recent", dependencies=[Depends(verify_api_key)])
+def recent_news(limit: int = 20, days: int = 7, category: str = ""):
+    """뉴스/커뮤니티 이슈 목록 — AI 에이전트 공격 우선순위 정렬.
+
+    category 필터: ai_agent_attack | ai_under_attack | attack_technique | general
+    """
+    import json as _j
+    import datetime as _dt
+    threats_dir = pathlib.Path(__file__).resolve().parents[3] / "contents" / "threats"
+    if not threats_dir.exists():
+        return []
+    cutoff = _dt.datetime.now() - _dt.timedelta(days=days)
+    items = []
+    for path in threats_dir.glob("*/news/*.json"):
+        try:
+            st = _dt.datetime.fromtimestamp(path.stat().st_mtime)
+            if st < cutoff:
+                continue
+            doc = _j.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        if category and doc.get("category") != category:
+            continue
+        items.append({
+            "title": doc.get("title", ""),
+            "source": doc.get("source", ""),
+            "published": doc.get("published", ""),
+            "link": doc.get("link", ""),
+            "summary": doc.get("summary", "")[:300],
+            "tags": doc.get("tags", []),
+            "severity": doc.get("severity", ""),
+            "category": doc.get("category", "general"),
+            "priority": doc.get("priority", 0),
+            "has_deep": bool(doc.get("deep_analysis_path")),
+        })
+    items.sort(key=lambda x: -x.get("priority", 0))
+    return items[:limit]
+
+
+@app.get("/trending/features", dependencies=[Depends(verify_api_key)])
+def list_features():
+    """지속 화제 특집 목록 (trending/)"""
+    import json as _j
+    trending_dir = pathlib.Path(__file__).resolve().parents[3] / "contents" / "threats" / "trending"
+    if not trending_dir.exists():
+        return []
+    features = []
+    for topic_dir in trending_dir.iterdir():
+        if not topic_dir.is_dir():
+            continue
+        meta_path = topic_dir / "meta.json"
+        if not meta_path.exists():
+            continue
+        try:
+            meta = _j.loads(meta_path.read_text(encoding="utf-8"))
+            features.append({
+                "topic": meta.get("topic", topic_dir.name),
+                "article_count": meta.get("article_count", 0),
+                "day_span": meta.get("day_span", 0),
+                "first_seen": meta.get("first_seen", ""),
+                "last_seen": meta.get("last_seen", ""),
+                "avg_priority": meta.get("avg_priority", 0),
+                "updated": meta.get("updated", ""),
+                "has_analysis": (topic_dir / "analysis.md").exists(),
+            })
+        except Exception:
+            continue
+    features.sort(key=lambda x: (-float(x.get("avg_priority", 0) or 0), -int(x.get("day_span", 0) or 0)))
+    return features
+
+
+@app.get("/trending/features/{topic}", dependencies=[Depends(verify_api_key)])
+def get_feature(topic: str):
+    """특집 상세 — analysis.md + sources.json"""
+    import json as _j
+    trending_dir = pathlib.Path(__file__).resolve().parents[3] / "contents" / "threats" / "trending"
+    topic_dir = trending_dir / topic
+    if not topic_dir.exists():
+        raise HTTPException(404, f"no feature: {topic}")
+    md_path = topic_dir / "analysis.md"
+    sources_path = topic_dir / "sources.json"
+    meta_path = topic_dir / "meta.json"
+    return {
+        "topic": topic,
+        "content": md_path.read_text(encoding="utf-8") if md_path.exists() else "",
+        "sources": _j.loads(sources_path.read_text(encoding="utf-8")) if sources_path.exists() else [],
+        "meta": _j.loads(meta_path.read_text(encoding="utf-8")) if meta_path.exists() else {},
+    }
+
+
 # ── 관리자: 자동 생성 콘텐츠 목록 + 승인 흐름 ────────
 
 def _approvals_path() -> pathlib.Path:
