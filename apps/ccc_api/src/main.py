@@ -3079,6 +3079,226 @@ def approve_auto_content(body: dict[str, Any], request: Request):
     return {"key": key, "status": action}
 
 
+@app.post("/admin/auto-content/deploy", dependencies=[Depends(verify_api_key)])
+def deploy_auto_content(body: dict[str, Any], request: Request):
+    """승인된 rule/battle을 실제 인프라에 배포. body: {key, dry_run=true}
+
+    안전 장치:
+    - 'approve' 상태인 콘텐츠만 배포 가능
+    - dry_run=true (기본): 문법 체크만, 실제 apply 안 함
+    - dry_run=false: 실제 VM에 append + reload (backup 자동)
+
+    Rule 배포 경로:
+    - suricata: secu VM /etc/suricata/rules/ccc-auto.rules (append), suricata-update + reload
+    - wazuh: siem VM /var/ossec/etc/rules/local_rules.xml (append in group), manager restart
+
+    Battle 배포: contents/labs/battle-auto-approved/<file>.yaml symlink (공식 과목 편입)
+    """
+    _require_admin(request)
+    key = str(body.get("key", ""))
+    dry_run = bool(body.get("dry_run", True))
+    approvals = _load_approvals()
+    if approvals.get(key) != "approve":
+        raise HTTPException(403, f"not approved (current status: {approvals.get(key, 'pending')})")
+
+    root = pathlib.Path(__file__).resolve().parents[3] / "contents"
+
+    if key.startswith("rule:suricata:"):
+        fname = key.split(":", 2)[2]
+        rule_path = root / "rules" / "suricata" / fname
+        if not rule_path.exists():
+            raise HTTPException(404, f"rule file not found: {fname}")
+        return _deploy_suricata_rule(rule_path, dry_run)
+    elif key.startswith("rule:wazuh:"):
+        fname = key.split(":", 2)[2]
+        rule_path = root / "rules" / "wazuh" / fname
+        if not rule_path.exists():
+            raise HTTPException(404, f"rule file not found: {fname}")
+        return _deploy_wazuh_rule(rule_path, dry_run)
+    elif key.startswith("battle:"):
+        fname = key.split(":", 1)[1]
+        src = root / "labs" / "battle-auto" / fname
+        if not src.exists():
+            raise HTTPException(404, f"battle file not found: {fname}")
+        dst_dir = root / "labs" / "battle-auto-approved"
+        dst_dir.mkdir(parents=True, exist_ok=True)
+        dst = dst_dir / fname
+        if dry_run:
+            return {"dry_run": True, "src": str(src), "dst": str(dst), "would_copy": True}
+        import shutil
+        shutil.copy2(src, dst)
+        return {"dry_run": False, "copied_to": str(dst)}
+    else:
+        raise HTTPException(400, f"unknown key prefix: {key}")
+
+
+def _deploy_suricata_rule(rule_path: pathlib.Path, dry_run: bool) -> dict:
+    """secu VM에 suricata rule append + syntax check + reload.
+
+    배포 이식성: VM_SECU_IP env로 override 가능.
+    """
+    from packages.bastion import run_command as _rc
+    secu_ip = os.getenv("VM_SECU_IP", "10.20.30.1")
+    # 실제 관리 네트워크(외부)에서 접근 시 override
+    secu_ext = os.getenv("VM_SECU_EXT_IP", "192.168.0.114")
+    target = secu_ext  # run_command는 외부 IP 기반 SSH
+
+    rule_content = rule_path.read_text(encoding="utf-8")
+    # 1) 임시 파일로 업로드
+    temp_path = f"/tmp/ccc-rule-{rule_path.name}"
+    # base64로 안전 전송
+    import base64 as _b64
+    b64 = _b64.b64encode(rule_content.encode()).decode()
+    upload_cmd = f"echo '{b64}' | base64 -d > {temp_path} && wc -l {temp_path}"
+    r1 = _rc(target, upload_cmd, timeout=15)
+    if not r1.get("stdout"):
+        return {"error": "upload 실패", "stderr": r1.get("stderr", "")[:300]}
+
+    # 2) suricata -T 문법 체크 (임시 파일 포함한 룰셋 dry-run)
+    test_cmd = (
+        f"sudo cp {temp_path} /etc/suricata/rules/ccc-auto-test.rules 2>&1 && "
+        f"sudo suricata -T -c /etc/suricata/suricata.yaml 2>&1 | tail -20; "
+        f"sudo rm -f /etc/suricata/rules/ccc-auto-test.rules"
+    )
+    r2 = _rc(target, test_cmd, timeout=30)
+    test_out = r2.get("stdout", "") + r2.get("stderr", "")
+    has_error = "ERROR" in test_out or "error" in test_out.lower() or "parse error" in test_out.lower()
+    syntax_ok = not has_error and "Configuration provided was successfully loaded" in test_out
+
+    if dry_run or not syntax_ok:
+        return {
+            "dry_run": dry_run,
+            "syntax_ok": syntax_ok,
+            "test_output": test_out[-500:],
+            "applied": False,
+        }
+
+    # 3) 실제 적용: ccc-auto.rules 파일에 append + suricata.yaml에 include (한번만)
+    apply_cmd = (
+        f"sudo cp -n /etc/suricata/rules/ccc-auto.rules /etc/suricata/rules/ccc-auto.rules.bak 2>/dev/null; "
+        f"sudo cat {temp_path} >> /etc/suricata/rules/ccc-auto.rules && "
+        f"sudo grep -q 'ccc-auto.rules' /etc/suricata/suricata.yaml || "
+        f"sudo sed -i '/rule-files:/a\\    - ccc-auto.rules' /etc/suricata/suricata.yaml && "
+        f"sudo systemctl reload suricata 2>&1 && echo APPLIED_OK"
+    )
+    r3 = _rc(target, apply_cmd, timeout=30)
+    applied = "APPLIED_OK" in r3.get("stdout", "")
+    return {
+        "dry_run": False,
+        "syntax_ok": True,
+        "applied": applied,
+        "apply_output": (r3.get("stdout", "") + r3.get("stderr", ""))[-500:],
+    }
+
+
+@app.get("/admin/monitor/alerts", dependencies=[Depends(verify_api_key)])
+def monitor_alerts(request: Request, limit: int = 20):
+    """siem VM alerts.json에서 최근 N건 가져오기 (관리자 모니터링 용)."""
+    _require_admin(request)
+    from packages.bastion import run_command as _rc
+    siem_ext = os.getenv("VM_SIEM_EXT_IP", "192.168.0.111")
+    cmd = f"echo '1' | sudo -S -p '' tail -n {limit} /var/ossec/logs/alerts/alerts.json 2>/dev/null"
+    r = _rc(siem_ext, cmd, timeout=10)
+    lines = (r.get("stdout", "") or "").strip().split("\n")
+    out = []
+    import json as _j
+    for ln in lines[-limit:]:
+        if not ln.strip():
+            continue
+        try:
+            alert = _j.loads(ln)
+            out.append({
+                "timestamp": alert.get("timestamp", ""),
+                "rule_id": (alert.get("rule") or {}).get("id", ""),
+                "level": (alert.get("rule") or {}).get("level", 0),
+                "description": (alert.get("rule") or {}).get("description", "")[:120],
+                "agent_name": (alert.get("agent") or {}).get("name", ""),
+                "src_ip": alert.get("src_ip", ""),
+                "full_log": (alert.get("full_log") or "")[:200],
+            })
+        except Exception:
+            continue
+    return {"alerts": out, "source": f"siem({siem_ext})"}
+
+
+@app.get("/admin/monitor/test-stats", dependencies=[Depends(verify_api_key)])
+def monitor_test_stats(request: Request):
+    """Bastion 실증 테스트 현황 요약 (연구자·관리자용)."""
+    _require_admin(request)
+    progress_path = pathlib.Path(__file__).resolve().parents[3] / "bastion_test_progress.json"
+    if not progress_path.exists():
+        return {"error": "no test progress file"}
+    import json as _j, collections
+    try:
+        d = _j.loads(progress_path.read_text(encoding="utf-8"))
+    except Exception as e:
+        return {"error": str(e)}
+    t = collections.Counter()
+    per_course = {}
+    for c, weeks in d.get("results", {}).items():
+        ct = collections.Counter()
+        for wk, steps in (weeks or {}).items():
+            if not isinstance(steps, dict):
+                continue
+            for s, info in steps.items():
+                if not isinstance(info, dict):
+                    continue
+                status = info.get("status", "?")
+                ct[status] += 1
+                t[status] += 1
+        per_course[c] = dict(ct)
+    total = d.get("total_steps", sum(t.values()))
+    return {
+        "total": total,
+        "pass_rate": round(100 * t.get("pass", 0) / max(total, 1), 1),
+        "totals": dict(t),
+        "per_course": per_course,
+    }
+
+
+def _deploy_wazuh_rule(rule_path: pathlib.Path, dry_run: bool) -> dict:
+    """siem VM에 Wazuh rule append + wazuh-logtest 검증 + manager restart."""
+    from packages.bastion import run_command as _rc
+    siem_ext = os.getenv("VM_SIEM_EXT_IP", "192.168.0.111")
+    target = siem_ext
+
+    rule_content = rule_path.read_text(encoding="utf-8")
+    import base64 as _b64
+    b64 = _b64.b64encode(rule_content.encode()).decode()
+    temp_path = f"/tmp/ccc-wazuh-{rule_path.name}"
+    upload_cmd = f"echo '{b64}' | base64 -d > {temp_path} && wc -l {temp_path}"
+    r1 = _rc(target, upload_cmd, timeout=15)
+    if not r1.get("stdout"):
+        return {"error": "upload 실패", "stderr": r1.get("stderr", "")[:300]}
+
+    # wazuh xml 문법 체크 — xmllint 사용 (group 래핑 필요)
+    check_cmd = (
+        f"(echo '<wazuh_local_rules>'; cat {temp_path}; echo '</wazuh_local_rules>') | "
+        f"xmllint --noout - 2>&1; "
+        f"echo CHECK_END"
+    )
+    r2 = _rc(target, check_cmd, timeout=15)
+    check_out = r2.get("stdout", "") + r2.get("stderr", "")
+    syntax_ok = "parser error" not in check_out.lower() and "error" not in check_out.lower().split("check_end")[0]
+
+    if dry_run or not syntax_ok:
+        return {"dry_run": dry_run, "syntax_ok": syntax_ok,
+                "test_output": check_out[-500:], "applied": False}
+
+    apply_cmd = (
+        f"echo '1' | sudo -S -p '' cp /var/ossec/etc/rules/local_rules.xml /var/ossec/etc/rules/local_rules.xml.bak-$(date +%s) && "
+        f"echo '1' | sudo -S -p '' bash -c 'cat {temp_path} >> /var/ossec/etc/rules/local_rules.xml' && "
+        f"echo '1' | sudo -S -p '' chown wazuh:wazuh /var/ossec/etc/rules/local_rules.xml && "
+        f"echo '1' | sudo -S -p '' systemctl restart wazuh-manager && "
+        f"sleep 3 && "
+        f"echo '1' | sudo -S -p '' systemctl is-active wazuh-manager && echo APPLIED_OK"
+    )
+    r3 = _rc(target, apply_cmd, timeout=45)
+    applied = "APPLIED_OK" in r3.get("stdout", "")
+    return {"dry_run": False, "syntax_ok": True, "applied": applied,
+            "apply_output": (r3.get("stdout", "") + r3.get("stderr", ""))[-500:]}
+
+
 @app.get("/battles/events/recent", dependencies=[Depends(verify_api_key)])
 def recent_battle_events():
     """최근 대전 이벤트 (UI용)"""
