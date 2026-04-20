@@ -8,12 +8,11 @@ export default function Dashboard() {
   const [feedback, setFeedback] = useState<string | null>(null)
   const [fbLoading, setFbLoading] = useState(false)
   const [loading, setLoading] = useState(true)
+  const [threats, setThreats] = useState<any[]>([])
 
   useEffect(() => {
-    api('/api/user/stats')
-      .then(setStats)
-      .catch(() => {})
-      .finally(() => setLoading(false))
+    api('/api/user/stats').then(setStats).catch(() => {}).finally(() => setLoading(false))
+    api('/api/threats/recent?limit=5').then(setThreats).catch(() => {})
   }, [])
 
   const getFeedback = async () => {
@@ -85,6 +84,46 @@ export default function Dashboard() {
               <span style={{ fontSize: 13, color: '#3fb950', minWidth: 40 }}>{cp.done}/15</span>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* 오늘의 위협 (CTI) */}
+      {threats.length > 0 && (
+        <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 10, padding: 20, marginBottom: 20 }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14 }}>
+            <h3 style={{ fontSize: 17, color: '#e6edf3', margin: 0 }}>🛡️ 오늘의 위협 (CTI)</h3>
+            <span style={{ fontSize: 12, color: '#8b949e' }}>SubAgent(gemma3:4b) 수집·요약</span>
+          </div>
+          <div style={{ display: 'grid', gap: 10 }}>
+            {threats.map((t: any, i: number) => {
+              const sevColor: Record<string, string> = {
+                CRITICAL: '#f85149', HIGH: '#f97316',
+                MEDIUM: '#d29922', LOW: '#3fb950', UNKNOWN: '#8b949e',
+              }
+              return (
+                <div key={i} style={{
+                  background: '#0d1117', border: '1px solid #21262d', borderLeft: `3px solid ${sevColor[t.severity] || '#8b949e'}`,
+                  borderRadius: 6, padding: '10px 14px', fontSize: 13,
+                }}>
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                    <code style={{ color: '#58a6ff', fontSize: 12, background: '#21262d', padding: '1px 6px', borderRadius: 3 }}>{t.id}</code>
+                    <span style={{ fontSize: 11, color: sevColor[t.severity], fontWeight: 600 }}>
+                      {t.severity} {t.cvss_score ? `· ${t.cvss_score}` : ''}
+                    </span>
+                    {(t.courses || []).slice(0, 3).map((c: string, j: number) => (
+                      <span key={j} style={{ fontSize: 10, background: 'rgba(249,115,22,0.15)', color: '#f97316', padding: '1px 6px', borderRadius: 3 }}>{c}</span>
+                    ))}
+                  </div>
+                  <div style={{ color: '#e6edf3', fontSize: 13, lineHeight: 1.4 }}>{t.summary}</div>
+                  {t.tags?.length > 0 && (
+                    <div style={{ marginTop: 4, fontSize: 11, color: '#8b949e' }}>
+                      {t.tags.slice(0, 5).join(' · ')}
+                    </div>
+                  )}
+                </div>
+              )
+            })}
+          </div>
         </div>
       )}
 

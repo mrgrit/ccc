@@ -2926,6 +2926,57 @@ def blockchain_stats():
             agents = cur.fetchone()["agents"]
     return {"total_blocks": row["total_blocks"], "total_reward": float(row["total_reward"]), "agents": agents}
 
+# ── CTI Threats (SubAgent 수집물) ────────────────────
+
+@app.get("/threats/recent", dependencies=[Depends(verify_api_key)])
+def recent_threats(limit: int = 10, days: int = 7):
+    """최근 수집된 CVE/위협 목록 — collector.py가 저장한 JSON 파일 조회.
+
+    반환: [{id, severity, cvss_score, summary, tags, courses, published, references}, ...]
+    """
+    import glob
+    import json
+    import datetime as _dt
+    # __file__ = .../apps/ccc_api/src/main.py
+    threats_dir = pathlib.Path(__file__).resolve().parents[3] / "contents" / "threats"
+    if not threats_dir.exists():
+        return []
+    cutoff = _dt.datetime.now() - _dt.timedelta(days=days)
+    items = []
+    for path in threats_dir.glob("*/CVE-*.json"):
+        try:
+            st_mtime = _dt.datetime.fromtimestamp(path.stat().st_mtime)
+            if st_mtime < cutoff:
+                continue
+            doc = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        items.append({
+            "id": doc.get("id", ""),
+            "published": doc.get("published", ""),
+            "severity": doc.get("severity", "UNKNOWN"),
+            "cvss_score": doc.get("cvss_score", 0),
+            "summary": doc.get("summary", "")[:300],
+            "impact": doc.get("impact", "")[:120],
+            "tags": doc.get("tags", []),
+            "courses": doc.get("courses", []),
+            "references": (doc.get("references") or [])[:2],
+        })
+    sev_order = {"CRITICAL": 0, "HIGH": 1, "MEDIUM": 2, "LOW": 3, "UNKNOWN": 4}
+    items.sort(key=lambda x: (sev_order.get(x["severity"], 9), -float(x.get("cvss_score") or 0)))
+    return items[:limit]
+
+
+@app.get("/threats/digest/{day}", dependencies=[Depends(verify_api_key)])
+def threat_digest(day: str):
+    """일일 다이제스트 markdown 반환 — day: YYYY-MM-DD"""
+    threats_dir = pathlib.Path(__file__).resolve().parents[3] / "contents" / "threats"
+    path = threats_dir / day / "digest.md"
+    if not path.exists():
+        raise HTTPException(404, f"no digest for {day}")
+    return {"day": day, "content": path.read_text(encoding="utf-8")}
+
+
 @app.get("/battles/events/recent", dependencies=[Depends(verify_api_key)])
 def recent_battle_events():
     """최근 대전 이벤트 (UI용)"""
