@@ -3065,18 +3065,102 @@ def list_auto_content(request: Request):
 @app.post("/admin/auto-content/approve", dependencies=[Depends(verify_api_key)])
 def approve_auto_content(body: dict[str, Any], request: Request):
     """콘텐츠 승인/거부. body: {key: 'threat:CVE-..' | 'battle:...yaml' | 'rule:suricata:...',
-                              action: 'approve' | 'reject' | 'pending'}"""
+                              action: 'approve' | 'reject' | 'pending',
+                              auto_generate: bool=True}
+
+    threat을 승인하면 관련 과목에 '최신 보안이슈' 특강 (lecture + lab) 자동 생성.
+    auto_generate=False로 비활성 가능.
+    """
     _require_admin(request)
     key = str(body.get("key", ""))
     action = str(body.get("action", ""))
+    auto_generate = body.get("auto_generate", True)
     if action not in ("approve", "reject", "pending"):
         raise HTTPException(400, "action must be approve/reject/pending")
     if not key:
         raise HTTPException(400, "key required")
     approvals = _load_approvals()
+    prev = approvals.get(key, "pending")
     approvals[key] = action
     _save_approvals(approvals)
-    return {"key": key, "status": action}
+
+    result: dict[str, Any] = {"key": key, "status": action, "previous": prev}
+
+    # threat 승인 시 3-way 자동 생성: 특강(과목별) + battle + rule
+    if key.startswith("threat:") and action == "approve" and auto_generate and prev != "approve":
+        cve_id = key.split(":", 1)[1]
+
+        def _dyn_import(mod_name: str, rel_path: str):
+            import importlib.util
+            p = pathlib.Path(__file__).resolve().parents[3] / rel_path
+            spec = importlib.util.spec_from_file_location(mod_name, p)
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            return m
+
+        def _load_cve(cid: str):
+            troot = pathlib.Path(os.getenv("CTI_OUT_DIR",
+                str(pathlib.Path(__file__).resolve().parents[3] / "contents" / "threats")))
+            import json as _j
+            for p in troot.glob(f"*/{cid}.json"):
+                try:
+                    return _j.loads(p.read_text(encoding="utf-8"))
+                except Exception:
+                    continue
+            return None
+
+        generation = {}
+        # 1) 특강 (과목별 lecture + lab)
+        try:
+            ts = _dyn_import("threat_special", "apps/battle-factory/threat_special.py")
+            generation["special"] = ts.generate_for_approved_threat(cve_id)
+        except Exception as e:
+            generation["special_error"] = str(e)[:300]
+
+        # 2) Battle 시나리오
+        try:
+            bf = _dyn_import("battle_generator", "apps/battle-factory/generator.py")
+            cve = _load_cve(cve_id)
+            if cve:
+                generation["battle"] = bf.generate_battle(cve)
+            else:
+                generation["battle_error"] = "CVE 파일 없음"
+        except Exception as e:
+            generation["battle_error"] = str(e)[:300]
+
+        # 3) Rule (Suricata + Wazuh)
+        try:
+            rf = _dyn_import("rule_generator", "apps/rule-factory/generator.py")
+            cve = _load_cve(cve_id)
+            if cve:
+                generation["rule"] = rf.generate_rules(cve, validate=False)
+            else:
+                generation["rule_error"] = "CVE 파일 없음"
+        except Exception as e:
+            generation["rule_error"] = str(e)[:300]
+
+        result["generation"] = generation
+
+    return result
+
+
+@app.post("/admin/auto-content/regenerate-special", dependencies=[Depends(verify_api_key)])
+def regenerate_special(body: dict[str, Any], request: Request):
+    """승인된 threat 1건에 대해 '최신 보안이슈' 특강 재생성 (수동)."""
+    _require_admin(request)
+    cve_id = str(body.get("cve_id", ""))
+    if not cve_id:
+        raise HTTPException(400, "cve_id required")
+    try:
+        import importlib.util
+        ts_path = pathlib.Path(__file__).resolve().parents[3] / "apps" / "battle-factory" / "threat_special.py"
+        spec = importlib.util.spec_from_file_location("threat_special", ts_path)
+        ts_mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(ts_mod)
+        rs = ts_mod.generate_for_approved_threat(cve_id)
+        return {"cve_id": cve_id, "results": rs}
+    except Exception as e:
+        raise HTTPException(500, f"생성 실패: {e}")
 
 
 @app.post("/admin/auto-content/deploy", dependencies=[Depends(verify_api_key)])
