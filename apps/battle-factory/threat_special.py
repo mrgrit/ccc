@@ -299,6 +299,95 @@ def generate_for_approved_threat(cve_id: str) -> list[dict]:
     return results
 
 
+# ── News → CVE-like 변환 (news 승인 시 동일 파이프라인 사용) ────
+
+_NEWS_COURSE_KWS = {
+    "C1 attack": ["scan", "exploit", "rce", "shell", "penetration"],
+    "C3 web-vuln": ["web", "http", "xss", "sql", "wordpress", "apache", "nginx", "api"],
+    "C5 soc": ["detection", "siem", "alert", "log", "analyst"],
+    "C6 cloud-container": ["container", "docker", "kubernetes", "k8s", "cloud", "aws"],
+    "C7 ai-security": ["ai", "llm", "ml", "agent", "prompt", "model"],
+    "C8 ai-safety": ["jailbreak", "alignment", "harmful", "bias"],
+    "C10 ai-security-agent": ["ai agent", "agentic", "agent security", "copilot", "agentforce"],
+    "C13 attack-adv": ["apt", "c2", "lateral", "persistence"],
+    "C15 ai-safety-advanced": ["model theft", "backdoor", "poisoning", "guardrail"],
+    "C17 iot": ["iot", "firmware", "embedded"],
+    "C19 agent-ir": ["incident", "forensics", "investigation"],
+    "C20 agent-ir-adv": ["supply chain", "0day", "zero-day", "multi-stage"],
+}
+
+
+def infer_courses_from_news(news: dict) -> list[str]:
+    text = " ".join([
+        str(news.get("title", "")),
+        str(news.get("summary", "")),
+        str(news.get("summary_en", "")),
+        str(news.get("technique", "")),
+        " ".join(news.get("tags") or []),
+    ]).lower()
+    out = []
+    for course, kws in _NEWS_COURSE_KWS.items():
+        if any(k in text for k in kws):
+            out.append(course)
+    # AI 에이전트 공격은 무조건 C10·C19·C20 3개 과목 포함
+    if news.get("category") == "ai_agent_attack":
+        for must in ("C10 ai-security-agent", "C19 agent-ir", "C20 agent-ir-adv"):
+            if must not in out:
+                out.append(must)
+    return out[:5] or ["C5 soc"]  # fallback
+
+
+def news_to_cve_like(news: dict) -> dict:
+    """News 문서를 CVE와 유사한 dict로 변환 — battle/rule generator 공용 인터페이스."""
+    slug = (news.get("_slug", "")
+            or (news.get("link", "") + news.get("title", ""))
+            )
+    import hashlib as _h
+    hashed = _h.sha1(slug.encode()).hexdigest()[:10] if slug else "unknown"
+    news_id = f"NEWS-{hashed}"
+    # severity → CVSS 매핑 (근사)
+    sev_to_score = {"CRITICAL": 9.0, "HIGH": 7.5, "MEDIUM": 5.5, "LOW": 3.0}
+    cvss = sev_to_score.get((news.get("severity") or "").upper(), 5.0)
+    return {
+        "id": news_id,
+        "source": "news",
+        "published": news.get("published", ""),
+        "description_en": news.get("summary_en", "") or news.get("title", ""),
+        "summary": news.get("summary", "") or news.get("title", ""),
+        "severity": news.get("severity") or "MEDIUM",
+        "cvss_score": cvss,
+        "references": [news.get("link", "")] if news.get("link") else [],
+        "impact": news.get("technique", "") or news.get("category", ""),
+        "attack_vector": news.get("technique", "") or "news-reported",
+        "tags": news.get("tags") or [],
+        "courses": news.get("courses") or infer_courses_from_news(news),
+    }
+
+
+def load_news_by_slug(slug: str) -> dict | None:
+    for p in THREATS_DIR.glob(f"*/news/{slug}.json"):
+        try:
+            d = json.loads(p.read_text(encoding="utf-8"))
+            d["_slug"] = slug
+            return d
+        except Exception:
+            continue
+    return None
+
+
+def generate_for_approved_news(slug: str) -> list[dict]:
+    """승인된 뉴스 1건에 대해 관련 과목 모두에 특강 생성."""
+    news = load_news_by_slug(slug)
+    if not news:
+        return [{"ok": False, "error": f"news 파일 없음: {slug}"}]
+    cve_like = news_to_cve_like(news)
+    courses = cve_like["courses"]
+    results = []
+    for course_label in courses:
+        results.append(create_special_content(cve_like, course_label))
+    return results
+
+
 # ── CLI ────────────────────────────────────────────────
 
 def main():

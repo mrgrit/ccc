@@ -184,6 +184,7 @@ function NewsIssuePanel() {
   const [filter, setFilter] = useState<string>('')
   const [loading, setLoading] = useState(true)
   const [selected, setSelected] = useState<any>(null)
+  const [approvals, setApprovals] = useState<Record<string, string>>({})
 
   const load = () => {
     setLoading(true)
@@ -191,12 +192,38 @@ function NewsIssuePanel() {
     Promise.all([
       api('/api/news/recent' + q + (filter?'&':'?') + 'limit=50').catch(() => []),
       api('/api/trending/features').catch(() => []),
-    ]).then(([n, f]) => {
+      api('/api/admin/auto-content').catch(() => ({})),
+    ]).then(([n, f, ac]) => {
       setNews(Array.isArray(n) ? n : [])
       setFeatures(Array.isArray(f) ? f : [])
+      // auto-content의 threats 승인상태는 별도. 여기서는 approvals dict 자체는 API 안에 있음
+      // 각 news item의 key는 "news:<slug>" — 초기값 pending
+      setApprovals({})
     }).finally(() => setLoading(false))
   }
   useEffect(load, [filter])
+
+  const approveNews = async (slug: string, action: 'approve'|'reject'|'pending') => {
+    try {
+      const msg = action === 'approve' ?
+        '뉴스 승인 시 관련 과목 특강 + battle + rule 자동 생성됩니다 (수 분 소요). 계속?' : null
+      if (msg && !confirm(msg)) return
+      const r = await api('/api/admin/auto-content/approve', {method:'POST',
+        body: JSON.stringify({key: `news:${slug}`, action})})
+      setApprovals(prev => ({...prev, [slug]: action}))
+      if (action === 'approve' && r.generation) {
+        const gen = r.generation
+        const summary = [
+          gen.special ? `특강 ${(gen.special || []).filter((x:any)=>x.ok).length}과목` : null,
+          gen.battle?.ok ? `battle OK` : null,
+          gen.rule?.ok ? `rule ${(gen.rule.suricata_count||0)+(gen.rule.wazuh_count||0)}건` : null,
+        ].filter(Boolean).join(' · ')
+        alert(`승인 + 자동 생성 완료\n${summary}`)
+      }
+    } catch (e: any) {
+      try { alert('실패: ' + (JSON.parse(e.message)?.detail || e.message)) } catch { alert('실패: ' + e.message) }
+    }
+  }
 
   const catColor: Record<string, string> = {
     ai_agent_attack: '#f85149',
@@ -283,6 +310,13 @@ function NewsIssuePanel() {
             )}
             {n.has_deep && (
               <div style={{marginTop:4, fontSize:11, color:'#3fb950'}}>📖 상세 분석 있음</div>
+            )}
+            {n.slug && (
+              <div style={{marginTop:6, display:'flex', gap:6, flexWrap:'wrap'}}>
+                <button onClick={() => approveNews(n.slug, 'approve')} style={{...smallBtn, background:'#1f3a2b', borderColor:'#3fb950', color:'#3fb950'}}>✓ 승인+생성</button>
+                <button onClick={() => approveNews(n.slug, 'reject')} style={{...smallBtn, background:'#3a1f1f', borderColor:'#f85149', color:'#f85149'}}>✗ 거부</button>
+                {approvals[n.slug] && <span style={{fontSize:11, color:'#8b949e', alignSelf:'center'}}>상태: {approvals[n.slug]}</span>}
+              </div>
             )}
           </div>
         ))}

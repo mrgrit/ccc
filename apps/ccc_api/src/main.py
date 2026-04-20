@@ -3000,7 +3000,9 @@ def recent_news(limit: int = 20, days: int = 7, category: str = ""):
             continue
         if category and doc.get("category") != category:
             continue
+        slug = path.stem  # 파일명(확장자 제외) = slug
         items.append({
+            "slug": slug,
             "title": doc.get("title", ""),
             "source": doc.get("source", ""),
             "published": doc.get("published", ""),
@@ -3175,6 +3177,40 @@ def approve_auto_content(body: dict[str, Any], request: Request):
     _save_approvals(approvals)
 
     result: dict[str, Any] = {"key": key, "status": action, "previous": prev}
+
+    # news 승인 시 뉴스 기반 3-way 생성 (news → CVE-like 변환)
+    if key.startswith("news:") and action == "approve" and auto_generate and prev != "approve":
+        slug = key.split(":", 1)[1]
+
+        def _dyn_import_news(mod_name: str, rel_path: str):
+            import importlib.util
+            p = pathlib.Path(__file__).resolve().parents[3] / rel_path
+            spec = importlib.util.spec_from_file_location(mod_name, p)
+            m = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(m)
+            return m
+
+        generation = {}
+        try:
+            ts = _dyn_import_news("threat_special", "apps/battle-factory/threat_special.py")
+            generation["special"] = ts.generate_for_approved_news(slug)
+            news = ts.load_news_by_slug(slug)
+            if news:
+                cve_like = ts.news_to_cve_like(news)
+                try:
+                    bf = _dyn_import_news("battle_generator", "apps/battle-factory/generator.py")
+                    generation["battle"] = bf.generate_battle(cve_like)
+                except Exception as e:
+                    generation["battle_error"] = str(e)[:300]
+                try:
+                    rf = _dyn_import_news("rule_generator", "apps/rule-factory/generator.py")
+                    generation["rule"] = rf.generate_rules(cve_like, validate=False)
+                except Exception as e:
+                    generation["rule_error"] = str(e)[:300]
+        except Exception as e:
+            generation["error"] = str(e)[:300]
+        result["generation"] = generation
+        return result
 
     # threat 승인 시 3-way 자동 생성: 특강(과목별) + battle + rule
     if key.startswith("threat:") and action == "approve" and auto_generate and prev != "approve":
