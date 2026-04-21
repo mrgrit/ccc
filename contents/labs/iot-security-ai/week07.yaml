@@ -19,35 +19,39 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Python으로 BLE 디바이스(스마트 도어락) 시뮬레이터를 작성하고 GATT 프로파일을 정의하시오 구현 방법과 예시를 설명해줘
 
-    📎 참고 (CLI): python3 -c "devices={''SmartLock-01'':{''mac'':''AA:BB:CC:DD:EE:01'',''services'':{''Lock Control'':[''Lock
-    Status(R)'',''Lock Command(W)'',''PIN Code(W)''],''Battery'':[''Battery Level(R)'']}}}; [print(f''Device: {n}, MAC: {d[\"mac\"]}'')
-    for n,d in devices.items()]; [print(f''  Service: {s}, Chars: {c}'') for d in devices.values() for s,c in d[''services''].items()];
-    print(''BLE 시뮬레이터 생성 완료'')"'
+    📎 참고 (CLI): python3 -c "devices={''SmartLock-01'':{''mac'':''AA:BB:CC:DD:EE:01'',''services'':{''Lock
+    Control'':[''Lock Status(R)'',''Lock Command(W)'',''PIN Code(W)''],''Battery'':[''Battery Level(R)'']}}};
+    [print(f''Device: {n}, MAC: {d[\"mac\"]}'') for n,d in devices.items()]; [print(f''  Service: {s},
+    Chars: {c}'') for d in devices.values() for s,c in d[''services''].items()]; print(''BLE 시뮬레이터 생성
+    완료'')"'
   answer_detail: GATT 프로파일은 서비스 > 특성 > 디스크립터의 트리 구조입니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w7 s1 — Python으로 BLE 디바이스(스마트 도어락) 시뮬레이터를 작성하고 GATT 프로파일을 정의하시오. (cmd: python3 -c "devices={''SmartLock-01'':{''mac'':''AA:BB:CC:DD:EE:01'',''services'':{''Lock)'
+      intent: 'BLE 스마트 도어락 GATT 프로파일 정의 — python3 dict 로 SmartLock-01 MAC=AA:BB:CC:DD:EE:01 + services
+        계층: Lock Control 서비스 (Lock Status(R) 읽기, Lock Command(W) 쓰기, PIN Code(W) 쓰기) + Battery 서비스 (Battery
+        Level(R)). GATT = Generic Attribute Profile, Service > Characteristic > Descriptor 트리 구조 (BLE
+        Core Spec).'
       success_criteria:
-      - '명령 실행: python3 -c "devices={''SmartLock-01'':{''mac'':''AA:BB:CC:DD:EE:0'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - dict 으로 devices={name:{mac:..., services:{...}}} 중첩 구조 생성
+      - Service/Characteristic 이름과 read/write 권한(R/W) 속성 명시
+      - for 루프로 디바이스와 서비스 각각 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - python dict + print 조합
+      - bleak (Python BLE client library) 로 실제 GATT 스캔
+      - bluetoothctl 대화형 GATT 열거
+      - nRF Connect for Mobile 앱으로 GUI 기반 탐색
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - GATT 트리 구조 이해 없이 평면 리스트
+      - 읽기/쓰기 권한 명시 누락
+      - 서비스와 특성 분리 없이 뭉뚱그림
   target_vm: attacker
-  script: 'python3 -c "devices={''SmartLock-01'':{''mac'':''AA:BB:CC:DD:EE:01'',''services'':{''Lock Control'':[''Lock Status(R)'',''Lock
-    Command(W)'',''PIN Code(W)''],''Battery'':[''Battery Level(R)'']}}}; [print(f''Device: {n}, MAC: {d[\"mac\"]}'') for n,d
-    in devices.items()]; [print(f''  Service: {s}, Chars: {c}'') for d in devices.values() for s,c in d[''services''].items()];
-    print(''BLE 시뮬레이터 생성 완료'')"'
+  script: 'python3 -c "devices={''SmartLock-01'':{''mac'':''AA:BB:CC:DD:EE:01'',''services'':{''Lock Control'':[''Lock
+    Status(R)'',''Lock Command(W)'',''PIN Code(W)''],''Battery'':[''Battery Level(R)'']}}}; [print(f''Device:
+    {n}, MAC: {d[\"mac\"]}'') for n,d in devices.items()]; [print(f''  Service: {s}, Chars: {c}'') for
+    d in devices.values() for s,c in d[''services''].items()]; print(''BLE 시뮬레이터 생성 완료'')"'
   risk_level: low
   bastion_prompt: Python으로 BLE 디바이스(스마트 도어락) 시뮬레이터를 작성하고 GATT 프로파일을 정의하시오.
 - order: 2
@@ -58,32 +62,34 @@ steps:
   answer: '🤖 프롬프트: BLE 디바이스 스캔 결과를 시뮬레이션하시오. 4개 이상의 가상 디바이스를 출력해줘
 
     📎 참고 (CLI): python3 -c "import random; devs=[(''SmartLock-01'',''AA:BB:CC:DD:EE:01'',''Lock''),(''FitBand'',''AA:BB:CC:DD:EE:02'',''Wearable''),(''SmartBulb'',''AA:BB:CC:DD:EE:03'',''Light''),(''iBeacon'',''AA:BB:CC:DD:EE:04'',''Beacon'')];
-    print(''=== BLE Scan Results ===''); [print(f''  {n:15s} | {m} | RSSI: {random.randint(-90,-30)} dBm | {t}'') for n,m,t
-    in devs]; print(''BLE 스캔 완료'')"'
+    print(''=== BLE Scan Results ===''); [print(f''  {n:15s} | {m} | RSSI: {random.randint(-90,-30)} dBm
+    | {t}'') for n,m,t in devs]; print(''BLE 스캔 완료'')"'
   answer_detail: BLE 스캔은 근처의 모든 광고(Advertising) 디바이스를 탐지합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w7 s2 — BLE 디바이스 스캔 결과를 시뮬레이션하시오. 4개 이상의 가상 디바이스를 출력하시오. (cmd: python3 -c "import random; devs=[(''SmartLock-01'',''AA:BB:CC:DD:EE:01'',''Lock''),(''F)'
+      intent: 'BLE 디바이스 스캔 결과 시뮬레이션 — python3 list of tuples 로 4개 디바이스: SmartLock-01(AA:BB:CC:DD:EE:01,
+        Lock) + FitBand(EE:02, Wearable) + SmartBulb(EE:03, Light) + iBeacon(EE:04, Beacon). random.randint(-90,-30)
+        으로 RSSI 값 생성. BLE Advertising 패킷 수신 시뮬레이션으로 주변 IoT 디바이스 정찰(MITRE T1422 Wireless Discovery).'
       success_criteria:
-      - '명령 실행: python3 -c "import random; devs=[(''SmartLock-01'',''AA:BB:CC:D'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - 4종류 이상 디바이스 생성 (Lock/Wearable/Light/Beacon)
+      - MAC 주소 + RSSI + 디바이스 타입 출력
+      - random RSSI 값으로 실제 환경 모사
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - python random + list 로 시뮬레이션
+      - bluetoothctl scan on + devices 명령
+      - bleak.BleakScanner 로 실제 스캔
+      - hcitool lescan (deprecated but common)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 4개 미만 디바이스
+      - RSSI 생략
+      - 디바이스 타입 구분 누락
   target_vm: attacker
   script: 'python3 -c "import random; devs=[(''SmartLock-01'',''AA:BB:CC:DD:EE:01'',''Lock''),(''FitBand'',''AA:BB:CC:DD:EE:02'',''Wearable''),(''SmartBulb'',''AA:BB:CC:DD:EE:03'',''Light''),(''iBeacon'',''AA:BB:CC:DD:EE:04'',''Beacon'')];
-    print(''=== BLE Scan Results ===''); [print(f''  {n:15s} | {m} | RSSI: {random.randint(-90,-30)} dBm | {t}'') for n,m,t
-    in devs]; print(''BLE 스캔 완료'')"'
+    print(''=== BLE Scan Results ===''); [print(f''  {n:15s} | {m} | RSSI: {random.randint(-90,-30)} dBm
+    | {t}'') for n,m,t in devs]; print(''BLE 스캔 완료'')"'
   risk_level: low
   bastion_prompt: BLE 디바이스 스캔 결과를 시뮬레이션하시오. 4개 이상의 가상 디바이스를 출력해줘
 - order: 3
@@ -91,34 +97,36 @@ steps:
   hint: 0000부터 시작하여 올바른 PIN(1234)을 찾으세요.
   category: attack
   points: 12
-  answer: "\U0001F916 프롬프트: BLE PIN 브루트포스 공격을 시뮬레이션하시오. 4자리 PIN을 순차적으로 시도해줘\n\U0001F4CE 참고 (CLI): python3 -c \"correct='1234';\
-    \ attempts=0;\nfor pin in ['0000','1111','1234','9999']:\n    attempts+=1\n    if pin==correct: print(f'[+] PIN Found:\
-    \ {pin} (attempts: {attempts})'); break\n    else: print(f'[-] PIN {pin} failed')\nprint('PIN 브루트포스 완료')\""
+  answer: "\U0001F916 프롬프트: BLE PIN 브루트포스 공격을 시뮬레이션하시오. 4자리 PIN을 순차적으로 시도해줘\n\U0001F4CE 참고 (CLI): python3\
+    \ -c \"correct='1234'; attempts=0;\nfor pin in ['0000','1111','1234','9999']:\n    attempts+=1\n \
+    \   if pin==correct: print(f'[+] PIN Found: {pin} (attempts: {attempts})'); break\n    else: print(f'[-]\
+    \ PIN {pin} failed')\nprint('PIN 브루트포스 완료')\""
   answer_detail: 4자리 PIN은 최대 10,000번 시도로 크래킹 가능합니다. 시도 횟수 제한이 없으면 취약합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w7 s3 — BLE PIN 브루트포스 공격을 시뮬레이션하시오. 4자리 PIN을 순차적으로 시도하시오. (cmd: python3 -c "correct=''1234''; attempts=0;
-        for pin in [''0000'',''1111'',''1234'',''9999''])'
+      intent: BLE 4자리 PIN 브루트포스 시뮬레이션 — python3 correct=1234 정답 설정 후 for pin in [0000,1111,1234,9999]
+        루프로 순차 시도 + attempts 카운터 증가 + 일치 시 [+] PIN Found 출력. 10000개 조합 전수 검색 가능 (시도 제한 없을 시). 실제 Just
+        Works 페어링의 PIN 취약점.
       success_criteria:
-      - '명령 실행: python3 -c "correct=''1234''; attempts=0; for pin in [''0000'','''
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - correct=1234 정답 PIN 설정
+      - for 루프로 여러 PIN 순차 시도 + attempts 카운터
+      - 일치 시 [+] PIN Found + break 로 종료
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - python for + if 조합
+      - crackle/btcrack 으로 실제 BLE 페어링 무차별 공격
+      - ubertooth + Wireshark 로 LTK(Long Term Key) 캡처
+      - mirage (BLE MITM framework) 로 자동화
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - attempts 카운터 누락
+      - 정답 PIN 발견 시 break 없음 (무한 루프)
+      - 시도 제한 없는 디바이스 = 취약 맥락 누락
   target_vm: attacker
-  script: "python3 -c \"correct='1234'; attempts=0;\nfor pin in ['0000','1111','1234','9999']:\n    attempts+=1\n    if pin==correct:\
-    \ print(f'[+] PIN Found: {pin} (attempts: {attempts})'); break\n    else: print(f'[-] PIN {pin} failed')\nprint('PIN 브루트포스\
-    \ 완료')\""
+  script: "python3 -c \"correct='1234'; attempts=0;\nfor pin in ['0000','1111','1234','9999']:\n    attempts+=1\n\
+    \    if pin==correct: print(f'[+] PIN Found: {pin} (attempts: {attempts})'); break\n    else: print(f'[-]\
+    \ PIN {pin} failed')\nprint('PIN 브루트포스 완료')\""
   risk_level: low
   bastion_prompt: BLE PIN 브루트포스 공격을 시뮬레이션하시오. 4자리 PIN을 순차적으로 시도해줘
 - order: 4
@@ -128,34 +136,34 @@ steps:
   points: 12
   answer: '🤖 프롬프트: BLE 디바이스 클로닝(스푸핑) 공격을 시뮬레이션해줘
 
-    📎 참고 (CLI): python3 -c "print(''=== BLE 클로닝 공격 ===''); print(''원본: SmartLock-01 (AA:BB:CC:DD:EE:01) RSSI:-60''); print(''클론:
-    SmartLock-01 (AA:BB:CC:DD:EE:01) RSSI:-20''); print(''[!] 클론이 더 강한 신호 → 피해자 앱이 클론에 연결''); print(''[!] PIN 입력 시 클론이 수집'');
-    print(''BLE 스푸핑 시뮬레이션 완료'')"'
+    📎 참고 (CLI): python3 -c "print(''=== BLE 클로닝 공격 ===''); print(''원본: SmartLock-01 (AA:BB:CC:DD:EE:01)
+    RSSI:-60''); print(''클론: SmartLock-01 (AA:BB:CC:DD:EE:01) RSSI:-20''); print(''[!] 클론이 더 강한 신호 → 피해자
+    앱이 클론에 연결''); print(''[!] PIN 입력 시 클론이 수집''); print(''BLE 스푸핑 시뮬레이션 완료'')"'
   answer_detail: BLE MAC 주소를 스푸핑하여 원본 디바이스를 복제하면 MitM 공격이 가능합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w7 s4 — BLE 디바이스 클로닝(스푸핑) 공격을 시뮬레이션하시오. (cmd: python3 -c "print(''=== BLE 클로닝 공격 ===''); print(''원본:
-        SmartLock-01 (AA:BB:CC:DD:EE)'
+      intent: BLE MAC 클로닝(스푸핑) MITM 공격 — print 으로 원본 SmartLock-01 (AA:BB:CC:DD:EE:01) RSSI=-60 + 클론 동일
+        MAC/이름 + RSSI=-20 (더 강한 신호). 피해자 앱은 RSSI 높은 클론에 연결 → PIN 입력 시 클론이 수집. MITRE T1557 Adversary-in-the-Middle.
       success_criteria:
-      - '명령 실행: python3 -c "print(''=== BLE 클로닝 공격 ===''); print(''원본: SmartLoc'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - 원본 vs 클론 두 디바이스 비교 출력
+      - 동일 MAC/이름으로 클로닝
+      - RSSI 차이(-60 vs -20)로 클론 우세함을 설명
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - print 기반 시나리오 시연
+      - btproxy 로 실제 BLE MITM 구현
+      - bluez + Python 으로 MAC 스푸핑 광고
+      - gattacker 도구로 자동화
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - RSSI 차이 설명 누락
+      - PIN 수집 피해 시나리오 누락
+      - MITM/T1557 맥락 없음
   target_vm: attacker
-  script: 'python3 -c "print(''=== BLE 클로닝 공격 ===''); print(''원본: SmartLock-01 (AA:BB:CC:DD:EE:01) RSSI:-60''); print(''클론:
-    SmartLock-01 (AA:BB:CC:DD:EE:01) RSSI:-20''); print(''[!] 클론이 더 강한 신호 → 피해자 앱이 클론에 연결''); print(''[!] PIN 입력 시 클론이 수집'');
-    print(''BLE 스푸핑 시뮬레이션 완료'')"'
+  script: 'python3 -c "print(''=== BLE 클로닝 공격 ===''); print(''원본: SmartLock-01 (AA:BB:CC:DD:EE:01) RSSI:-60'');
+    print(''클론: SmartLock-01 (AA:BB:CC:DD:EE:01) RSSI:-20''); print(''[!] 클론이 더 강한 신호 → 피해자 앱이 클론에 연결'');
+    print(''[!] PIN 입력 시 클론이 수집''); print(''BLE 스푸핑 시뮬레이션 완료'')"'
   risk_level: low
   bastion_prompt: BLE 디바이스 클로닝(스푸핑) 공격을 시뮬레이션해줘
 - order: 5
@@ -165,33 +173,35 @@ steps:
   points: 10
   answer: '🤖 프롬프트: BLE GATT 퍼징 페이로드를 생성해줘
 
-    📎 참고 (CLI): python3 -c "payloads=[(''Empty'',b''''),(''Max'',b''A''*512),(''Null'',b''\x00''*20),(''SQLi'',b\"'' OR 1=1
-    --\"),(''Overflow'',b''B''*1024)]; print(''=== BLE Fuzzing Payloads ===''); [print(f''  {n:10s}: {len(p):5d} bytes'')
-    for n,p in payloads]; print(''GATT 퍼징 페이로드 생성 완료'')"'
+    📎 참고 (CLI): python3 -c "payloads=[(''Empty'',b''''),(''Max'',b''A''*512),(''Null'',b''\x00''*20),(''SQLi'',b\"''
+    OR 1=1 --\"),(''Overflow'',b''B''*1024)]; print(''=== BLE Fuzzing Payloads ===''); [print(f''  {n:10s}:
+    {len(p):5d} bytes'') for n,p in payloads]; print(''GATT 퍼징 페이로드 생성 완료'')"'
   answer_detail: GATT 특성에 비정상 데이터를 전송하여 크래시나 예상치 못한 동작을 유발합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w7 s5 — BLE GATT 퍼징 페이로드를 생성하시오. 다양한 비정상 입력을 테스트하시오. (cmd: python3 -c "payloads=[(''Empty'',b''''),(''Max'',b''A''*512),(''Null'',b''\x00''*20),(''SQLi'')'
+      intent: 'BLE GATT 퍼징 페이로드 생성 — python3 으로 5종 비정상 입력: Empty(b), Max(A*512, ATT_MTU 한계), Null(\x00*20),
+        SQLi( OR 1=1--), Overflow(B*1024). GATT Characteristic Write 로 전송하여 크래시/예상치 못한 동작 유발. CWE-787
+        Out-of-bounds Write + MITRE T1499.'
       success_criteria:
-      - '명령 실행: python3 -c "payloads=[(''Empty'',b''''),(''Max'',b''A''*512),(''Null'''
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - 5종 payloads 리스트 (Empty/Max/Null/SQLi/Overflow)
+      - 각 페이로드 길이(0/512/20/N/1024) 출력
+      - bytes 타입으로 raw 바이너리 페이로드 구성
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - python list + print 조합
+      - AFL-based BLE fuzzer (sweyntooth 취약점 연구)
+      - gattacker + custom payloads
+      - nRF Connect Mobile 에서 수동 Write 퍼징
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 5종 중 일부 누락
+      - bytes 타입 대신 str 사용
+      - ATT_MTU 제약(512 bytes) 맥락 없음
   target_vm: attacker
-  script: 'python3 -c "payloads=[(''Empty'',b''''),(''Max'',b''A''*512),(''Null'',b''\x00''*20),(''SQLi'',b\"'' OR 1=1 --\"),(''Overflow'',b''B''*1024)];
-    print(''=== BLE Fuzzing Payloads ===''); [print(f''  {n:10s}: {len(p):5d} bytes'') for n,p in payloads]; print(''GATT
-    퍼징 페이로드 생성 완료'')"'
+  script: 'python3 -c "payloads=[(''Empty'',b''''),(''Max'',b''A''*512),(''Null'',b''\x00''*20),(''SQLi'',b\"''
+    OR 1=1 --\"),(''Overflow'',b''B''*1024)]; print(''=== BLE Fuzzing Payloads ===''); [print(f''  {n:10s}:
+    {len(p):5d} bytes'') for n,p in payloads]; print(''GATT 퍼징 페이로드 생성 완료'')"'
   risk_level: low
   bastion_prompt: BLE GATT 퍼징 페이로드를 생성해줘
 - order: 6
@@ -201,33 +211,35 @@ steps:
   points: 10
   answer: '🤖 프롬프트: BLE 보안 강화 방안을 정리해줘
 
-    📎 참고 (CLI): echo ''=== BLE 보안 강화 ==='' && echo ''[페어링] Just Works 금지 → Passkey/Numeric Comparison'' && echo ''[암호화] LE
-    Secure Connections (BLE 4.2+)'' && echo ''[PIN] 6자리 이상 + 시도 횟수 제한 + 잠금'' && echo ''[MAC] Resolvable Private Address 사용''
-    && echo ''[인증] GATT 특성에 인증+암호화 요구'' && echo ''=== BLE 보안 완료 ==='''
+    📎 참고 (CLI): echo ''=== BLE 보안 강화 ==='' && echo ''[페어링] Just Works 금지 → Passkey/Numeric Comparison''
+    && echo ''[암호화] LE Secure Connections (BLE 4.2+)'' && echo ''[PIN] 6자리 이상 + 시도 횟수 제한 + 잠금'' && echo
+    ''[MAC] Resolvable Private Address 사용'' && echo ''[인증] GATT 특성에 인증+암호화 요구'' && echo ''=== BLE 보안 완료
+    ==='''
   answer_detail: BLE 보안은 페어링 방식, 암호화, 접근 제어를 종합적으로 적용해야 합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w7 s6 — BLE 보안 강화 방안을 정리하시오. (cmd: echo ''=== BLE 보안 강화 ==='' && echo ''[페어링] Just Works 금지 → Passkey/Numeric
-        Comparis)'
+      intent: 'BLE 보안 강화 방안 종합 — echo 으로 5개 조치: [페어링] Just Works 금지 → Passkey/Numeric Comparison + [암호화]
+        LE Secure Connections (BLE 4.2+) + [PIN] 6자리 이상 + 시도 제한 + 잠금 + [MAC] Resolvable Private Address
+        사용 + [인증] GATT 특성에 인증+암호화 요구. Bluetooth SIG Security Mode 1/2 적용.'
       success_criteria:
-      - '명령 실행: echo ''=== BLE 보안 강화 ==='' && echo ''[페어링] Just Works 금지 → Pass'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - 페어링/암호화/PIN/MAC/인증 5개 영역 각각 조치
+      - Just Works 금지 + LE Secure Connections 사용 + 6자리 PIN 등 구체적 설정
+      - RPA (Resolvable Private Address) 등 최신 프라이버시 기법 포함
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - echo 평면 출력
+      - BLE Security Whitepaper 기반 체크리스트
+      - Bluetooth SIG compliance checklist 매핑
+      - FIPS 140-2 Level 2 암호 모듈 인증
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 5개 영역 중 일부 누락
+      - Just Works vs Passkey 차이 설명 없음
+      - BLE 4.2 LE Secure Connections 이전 버전 언급만
   target_vm: attacker
-  script: echo '=== BLE 보안 강화 ===' && echo '[페어링] Just Works 금지 → Passkey/Numeric Comparison' && echo '[암호화] LE Secure Connections
-    (BLE 4.2+)' && echo '[PIN] 6자리 이상 + 시도 횟수 제한 + 잠금' && echo '[MAC] Resolvable Private Address 사용' && echo '[인증] GATT 특성에
-    인증+암호화 요구' && echo '=== BLE 보안 완료 ==='
+  script: echo '=== BLE 보안 강화 ===' && echo '[페어링] Just Works 금지 → Passkey/Numeric Comparison' && echo
+    '[암호화] LE Secure Connections (BLE 4.2+)' && echo '[PIN] 6자리 이상 + 시도 횟수 제한 + 잠금' && echo '[MAC] Resolvable
+    Private Address 사용' && echo '[인증] GATT 특성에 인증+암호화 요구' && echo '=== BLE 보안 완료 ==='
   risk_level: low
   bastion_prompt: BLE 보안 강화 방안을 정리해줘
