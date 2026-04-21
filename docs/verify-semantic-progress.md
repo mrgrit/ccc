@@ -48,8 +48,8 @@ per-step semantic 작성 시 필수 포함 요소:
 | agent-ir-adv-ai | 180 | 수동 작성 (신규) |
 | ai-safety-ai | 118 | 수동 작성 (신규) |
 | soc-ai | 145 | 수동 재작성 |
-| soc-adv-ai | 210 | 수동 재작성 **진행 중 (w1-10 완료, w11-15 대기)** |
-| **수동 확정 소계** | **1,743** | |
+| soc-adv-ai | 210 | 수동 재작성 **완료 (w1-15)** |
+| **수동 확정 소계** | **1,813** | |
 | ai-safety-adv-ai | 119 | bulk 자동생성 — **재작성 대기** |
 | secops-ai | 150 | bulk 자동생성 — **재작성 대기** |
 | compliance-ai | 130 | bulk 자동생성 — **재작성 대기** |
@@ -113,17 +113,16 @@ bulk 는 intent 가 unique 하지만 **깊이가 얕아** judge 가 acceptable_m
 
 ## 남은 작업
 
-재작성 대기: **약 1,009 step** (soc-adv-ai w7-15 125 + 7 과목 884).
+재작성 대기: **약 884 step** (7 과목).
 
 권장 순서 (가치/의존도 기준):
 
-1. **soc-adv-ai w7-15** (125) — 이미 시작한 과목 마무리
-2. **secops-ai** (150) — SOC 운영과 인접, 실무 활용도 높음
-3. **cloud-container-ai** (116) / **compliance-ai** (130) — 기업 환경 필수
-4. **iot-security-ai** (109) / **physical-pentest-ai** (128) — 특화 도메인
-5. **ai-security-ai** (132) / **ai-safety-adv-ai** (119) — AI 보안 심화 (기존 bulk 재작성)
+1. **secops-ai** (150) — SOC 운영과 인접, 실무 활용도 높음
+2. **cloud-container-ai** (116) / **compliance-ai** (130) — 기업 환경 필수
+3. **iot-security-ai** (109) / **physical-pentest-ai** (128) — 특화 도메인
+4. **ai-security-ai** (132) / **ai-safety-adv-ai** (119) — AI 보안 심화 (기존 bulk 재작성)
 
-다음 세션 시작 포인트: `soc-adv-ai/week07.yaml` (Network Forensics - 패킷 분석).
+다음 세션 시작 포인트: `secops-ai/week01.yaml`.
 
 ## 리스크 및 완화
 
