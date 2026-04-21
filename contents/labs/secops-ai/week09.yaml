@@ -26,20 +26,23 @@ steps:
     expect: active
     field: stdout
     semantic:
-      intent: 'SecOps w9 s1 — siem VM에서 Wazuh Manager 서비스 상태를 확인하시오. (cmd: systemctl is-active wazuh-manager)'
+      intent: Wazuh Manager daemon 활성 확인 — systemctl is-active wazuh-manager. Wazuh Manager 는 agent 로부터
+        수집된 로그를 decoder + rule 로 분석하여 alert 생성하는 core. wazuh-analysisd·wazuh-logcollector·wazuh-remoted·wazuh-monitord
+        등 multi-daemon 구조. Active 아니면 모든 SOC 탐지 중단. SecOps 과정의 SIEM 허브
       success_criteria:
-      - '명령 실행: systemctl is-active wazuh-manager'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - systemctl is-active wazuh-manager 실행
+      - active 문자열 출력
+      - 상태 판정 결과
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - systemctl is-active wazuh-manager
+      - sudo /var/ossec/bin/wazuh-control status
+      - ps auxf | grep wazuh-
+      - curl -k https://localhost:55000 (Wazuh API health)
+      - journalctl -u wazuh-manager --since 10min
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - wazuh-agent 확인(다른 컴포넌트)
+      - 상태 문자열 확인 안 함
+      - status 대신 start 시도
   target_vm: siem
   script: systemctl is-active wazuh-manager
   risk_level: low
@@ -58,20 +61,23 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w9 s2 — Wazuh Indexer 서비스 상태를 확인하시오. (cmd: systemctl is-active wazuh-indexer || echo inactive)'
+      intent: Wazuh Indexer(OpenSearch fork) 상태 확인 — systemctl is-active wazuh-indexer. Indexer 는 alerts/events
+        저장 + 전문 검색 엔진(OpenSearch 기반, ElasticSearch fork). Dashboard + Manager 모두 Indexer 에 의존. port 9200(REST
+        API) + 9300(cluster 통신) 사용. || echo inactive 로 실패 시 명확한 표시. multi-node 클러스터 시 각 node 별 확인 필요
       success_criteria:
-      - '명령 실행: systemctl is-active wazuh-indexer || echo inactive'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - systemctl is-active wazuh-indexer 실행
+      - active/inactive 출력
+      - '|| echo fallback'
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - systemctl is-active wazuh-indexer || echo inactive
+      - curl -k -u admin:admin https://localhost:9200/_cluster/health
+      - sudo /usr/share/wazuh-indexer/bin/opensearch-cluster-manager
+      - journalctl -u wazuh-indexer -n 20
+      - GET /_cat/nodes?v API
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - indexer 대신 other service 확인
+      - API health 확인 없이 systemctl 만
+      - cluster 모드 고려 없음
   target_vm: siem
   script: systemctl is-active wazuh-indexer || echo inactive
   risk_level: low
@@ -90,20 +96,24 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w9 s3 — Wazuh Dashboard 서비스 상태를 확인하시오. (cmd: systemctl is-active wazuh-dashboard || echo inactive)'
+      intent: Wazuh Dashboard(OpenSearch Dashboards) 상태 확인 — systemctl is-active wazuh-dashboard. Dashboard
+        는 시각화 + 관리 UI, OpenSearch Dashboards(Kibana fork) 기반. port 443 HTTPS 또는 5601 기본. Wazuh 전용 plugin
+        으로 agent 관리·rules/decoders 편집·MITRE ATT&CK 매핑 제공. 중단 시 운영자 UI 접근 불가 but core 탐지는 영향 없음(Manager+Indexer
+        로 지속)
       success_criteria:
-      - '명령 실행: systemctl is-active wazuh-dashboard || echo inactive'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - systemctl is-active wazuh-dashboard 실행
+      - active 또는 inactive 출력
+      - '|| echo fallback'
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - systemctl is-active wazuh-dashboard || echo inactive
+      - curl -k https://localhost/app/wazuh (dashboard URL)
+      - ss -tlnp | grep :443|:5601
+      - journalctl -u wazuh-dashboard
+      - docker ps | grep dashboard (container 모드)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - dashboard 대신 manager 확인
+      - URL 접근 없이 systemctl 만
+      - plugin 설치 상태 확인 누락
   target_vm: siem
   script: systemctl is-active wazuh-dashboard || echo inactive
   risk_level: low
@@ -122,21 +132,24 @@ steps:
     expect: WAZUH
     field: stdout
     semantic:
-      intent: 'SecOps w9 s4 — wazuh-control info 로 Wazuh 버전·설치 정보를 확인하시오. (cmd: sudo /var/ossec/bin/wazuh-control info 2>&1
-        | head)'
+      intent: 'Wazuh 버전·설치 정보 — sudo /var/ossec/bin/wazuh-control info 2>&1 | head. 출력: WAZUH_VERSION=v4.7.x,
+        WAZUH_REVISION=40700, WAZUH_TYPE=server. 버전 별 호환성 이슈: Manager + Indexer + Dashboard + Agent 모두
+        메이저 버전 일치 권장. 업데이트: apt-get install wazuh-manager=4.8.* 로 pin, indexer/dashboard 순차 업그레이드 프로세스.
+        WAZUH_REVISION 은 상세 build 번호'
       success_criteria:
-      - '명령 실행: sudo /var/ossec/bin/wazuh-control info 2>&1 | head'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - wazuh-control info 실행
+      - WAZUH 문자열 포함
+      - 버전·리비전 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo /var/ossec/bin/wazuh-control info
+      - cat /var/ossec/.manifest.json | jq .version
+      - dpkg -l wazuh-manager(배포판)
+      - rpm -q wazuh-manager
+      - curl -k https://localhost:55000/security/user/authenticate -u wazuh-wui:... (API version)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - wazuh-control status(다른 명령)
+      - version 정보 무시
+      - 다른 바이너리 실행
   target_vm: siem
   script: sudo /var/ossec/bin/wazuh-control info 2>&1 | head
   risk_level: low
@@ -155,20 +168,24 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w9 s5 — agent_control -l 로 등록된 에이전트 목록을 조회하시오. (cmd: sudo /var/ossec/bin/agent_control -l 2>&1 | head)'
+      intent: 'Wazuh agent 목록 조회 — sudo /var/ossec/bin/agent_control -l 2>&1 | head. 출력: agent ID·이름·IP·상태(Active/Disconnected/Never
+        connected)·OS. 000 은 Manager 자체. agent 연결 실패 시 Manager remoted 포트(1514/udp·1515/tcp 등록) 확인. 대체
+        관리: Wazuh API POST /agents 로 등록, /var/ossec/bin/manage_agents 대화형 TUI. 대규모 fleet 은 agent_group
+        + automation 권장'
       success_criteria:
-      - '명령 실행: sudo /var/ossec/bin/agent_control -l 2>&1 | head'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - agent_control -l 실행
+      - 에이전트 목록 출력
+      - 상태(Active/Disconnected) 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo /var/ossec/bin/agent_control -l
+      - curl -k -u wazuh-wui:pass https://localhost:55000/agents?limit=10
+      - /var/ossec/bin/manage_agents 대화형
+      - Wazuh Dashboard → Management → Agents
+      - wazuh-ansible playbook 으로 자동화
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - Manager 만 보고 agent 없다고 판단
+      - -l 누락
+      - 권한 에러 무시
   target_vm: siem
   script: sudo /var/ossec/bin/agent_control -l 2>&1 | head
   risk_level: low
@@ -187,21 +204,24 @@ steps:
     expect: global
     field: stdout
     semantic:
-      intent: 'SecOps w9 s6 — /var/ossec/etc/ossec.conf 에서 <global> 섹션을 확인하시오. (cmd: sudo awk ''/<global>/,/<\/global>/''
-        /var/ossec/etc/ossec.conf | head -20)'
+      intent: 'ossec.conf <global> 섹션 확인 — sudo awk /<global>/,/<\/global>/ /var/ossec/etc/ossec.conf
+        | head -20. <global> 블록 포함 내용: jsonout_output(JSON 출력 활성), alerts_log(text alert 파일), logall(모든
+        이벤트 저장), email_notification·smtp_server·email_from, white_list(무시 IP), host_information 등. 주요
+        운영 설정의 최상위 컨테이너. awk 범위 match 로 XML 섹션 추출'
       success_criteria:
-      - '명령 실행: sudo awk ''/<global>/,/<\/global>/'' /var/ossec/etc/ossec.conf'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - awk 로 global 섹션 추출
+      - <global> 태그 포함 출력
+      - ossec.conf 경로 사용
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo awk /<global>/,/<\/global>/ /var/ossec/etc/ossec.conf
+      - sudo xmllint --xpath /ossec_config/global /var/ossec/etc/ossec.conf
+      - sudo sed -n /<global>/,/<\/global>/p ossec.conf
+      - grep -A 30 <global> ossec.conf
+      - Wazuh Dashboard → Management → Configuration 편집
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 다른 섹션(ruleset/syscheck) 확인
+      - awk range 오타
+      - 전체 ossec.conf cat
   target_vm: siem
   script: sudo awk '/<global>/,/<\/global>/' /var/ossec/etc/ossec.conf | head -20
   risk_level: low
@@ -220,20 +240,24 @@ steps:
     expect: log_alert_level
     field: stdout
     semantic:
-      intent: 'SecOps w9 s7 — ossec.conf 에서 <alerts>/<log_alert_level> 값을 확인하시오. (cmd: sudo grep -n log_alert_level /var/ossec/etc/ossec.conf)'
+      intent: log_alert_level 설정 확인 — sudo grep -n log_alert_level /var/ossec/etc/ossec.conf. Wazuh rule
+        level 0-15(0=ignore, 15=critical). <log_alert_level>N</log_alert_level> 은 alerts.log 에 기록할 최소
+        level 임계치 - 기본 3(low)이면 level 3 이상만 기록. 높게 설정 시 저수준 alert 무시(log noise 감소), 낮게 설정 시 모든 alert 기록.
+        <email_alert_level> 은 이메일 기준 별도
       success_criteria:
-      - '명령 실행: sudo grep -n log_alert_level /var/ossec/etc/ossec.conf'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - grep log_alert_level 실행
+      - 설정 값 출력
+      - line number 포함
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo grep -n log_alert_level /var/ossec/etc/ossec.conf
+      - sudo xmllint --xpath //log_alert_level ossec.conf
+      - cat 후 수동 검색
+      - Wazuh Dashboard Configuration editor
+      - /var/ossec/etc/rules/*.xml 에서 rule level 분포
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - email_alert_level 과 혼동
+      - ossec.conf 외 다른 파일
+      - 값 확인 없이 실행
   target_vm: siem
   script: sudo grep -n log_alert_level /var/ossec/etc/ossec.conf
   risk_level: low
@@ -252,21 +276,24 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w9 s8 — Wazuh Manager의 최근 alerts.json 2줄을 확인하시오. (cmd: sudo tail -2 /var/ossec/logs/alerts/alerts.json
-        2>/dev/null)'
+      intent: alerts.json 샘플 확인 — sudo tail -2 /var/ossec/logs/alerts/alerts.json. alerts.json 은 JSON-per-line
+        포맷, 각 alert 는 timestamp, rule.id·description·level, agent.id·name·ip, data.srcip·dstip, decoder.name,
+        input.type 등 구조화 필드. tail -2 로 최근 2개 sample. 운영에서는 jq 파싱 또는 Wazuh Indexer 로 자동 수집. 빈 출력이면 alert
+        생성 없음(0 level 알림만)
       success_criteria:
-      - '명령 실행: sudo tail -2 /var/ossec/logs/alerts/alerts.json 2>/dev/null'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - tail -2 alerts.json 실행
+      - JSON 라인 출력
+      - sudo 권한
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo tail -2 /var/ossec/logs/alerts/alerts.json
+      - sudo tail -2 /var/ossec/logs/alerts/alerts.log (text 포맷)
+      - sudo jq .rule.description /var/ossec/logs/alerts/alerts.json | tail
+      - Wazuh Dashboard Security Events → Latest alerts
+      - API GET /alerts?limit=2
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - ossec.log 와 alerts.json 혼동
+      - 권한 에러
+      - tail 무제한
   target_vm: siem
   script: sudo tail -2 /var/ossec/logs/alerts/alerts.json 2>/dev/null
   risk_level: low
@@ -278,31 +305,35 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM의 Wazuh Indexer(9200) 리스닝/응답 상태를 확인해줘
 
-    📎 참고 (CLI): curl -sk -o /dev/null -w ''%{http_code}\n'' https://localhost:9200 -u admin:admin 2>/dev/null || ss -tlnp
-    | grep 9200'
+    📎 참고 (CLI): curl -sk -o /dev/null -w ''%{http_code}\n'' https://localhost:9200 -u admin:admin 2>/dev/null
+    || ss -tlnp | grep 9200'
   answer_detail: 'Wazuh SIEM 설치·구성: Wazuh Indexer API(9200) 가 응답하는지 확인하시오.'
   verify:
     type: output_contains
     expect: '9200'
     field: stdout
     semantic:
-      intent: 'SecOps w9 s9 — Wazuh Indexer API(9200) 가 응답하는지 확인하시오. (cmd: curl -sk -o /dev/null -w ''%{http_code}\n'' https://localhost:9200
-        -u admin:admin )'
+      intent: Wazuh Indexer API(9200) 응답 확인 — curl -sk -o /dev/null -w %{http_code}\n https://localhost:9200
+        -u admin:admin 또는 fallback ss -tlnp | grep 9200. 인증 성공 시 401(unauthenticated) 또는 200 OK. -sk 는
+        silent + insecure(self-signed cert). 응답 코드로 API live 여부 판단. API down 시 ss 로 포트 LISTEN 확인 - 프로세스
+        존재하지만 API 응답 안 하면 heap 오류 가능성
       success_criteria:
-      - '명령 실행: curl -sk -o /dev/null -w ''%{http_code}\n'' https://localhost:'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - curl https://localhost:9200 또는 ss :9200
+      - 9200 포트 확인 또는 응답 코드
+      - '|| fallback 체인'
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - curl -sk https://localhost:9200 -u admin:admin
+      - curl -sk https://localhost:9200/_cluster/health
+      - ss -tlnp | grep 9200 또는 netstat -tlnp
+      - lsof -i:9200 로 프로세스 확인
+      - systemctl is-active wazuh-indexer
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - HTTP 로 요청(HTTPS 필수)
+      - -k 없이 cert 오류
+      - 포트 확인 없이 판단
   target_vm: siem
-  script: curl -sk -o /dev/null -w '%{http_code}\n' https://localhost:9200 -u admin:admin 2>/dev/null || ss -tlnp | grep 9200
+  script: curl -sk -o /dev/null -w '%{http_code}\n' https://localhost:9200 -u admin:admin 2>/dev/null
+    || ss -tlnp | grep 9200
   risk_level: low
   bastion_prompt: siem VM의 Wazuh Indexer(9200) 리스닝/응답 상태를 확인해줘
 - order: 10
@@ -319,20 +350,23 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w9 s10 — 최근 1시간 alerts.json 내 alert 수를 집계하시오. (cmd: sudo wc -l /var/ossec/logs/alerts/alerts.json 2>/dev/null)'
+      intent: 'alerts.json 라인 수(= alert 이벤트 수) — sudo wc -l /var/ossec/logs/alerts/alerts.json. JSON-per-line
+        이므로 라인 수 = alert 개수. 일별 rotate 되므로 현재 파일은 오늘 생성 alert. 운영 지표로 활용: 평소 대비 급증 시 공격 의심 또는 rule/decoder
+        tuning 필요. 0 이면 rule 미적용 또는 수집 로그 없음. logrotate 설정은 /etc/logrotate.d/wazuh'
       success_criteria:
-      - '명령 실행: sudo wc -l /var/ossec/logs/alerts/alerts.json 2>/dev/null'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - wc -l alerts.json 실행
+      - 숫자(라인 수) 출력
+      - alert 수 카운트
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo wc -l /var/ossec/logs/alerts/alerts.json
+      - sudo du -sh /var/ossec/logs/alerts/(크기 기반 추정)
+      - sudo jq -s length /var/ossec/logs/alerts/alerts.json
+      - Wazuh Dashboard 시간대별 alert count 대시보드
+      - ls -lh /var/ossec/logs/alerts/*.json.gz 로 archived 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 라인 수 0 정상 판정
+      - 잘못된 경로
+      - alerts.log 와 혼동
   target_vm: siem
   script: sudo wc -l /var/ossec/logs/alerts/alerts.json 2>/dev/null
   risk_level: low
