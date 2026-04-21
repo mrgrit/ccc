@@ -19,32 +19,32 @@ steps:
   points: 10
   answer: '🤖 프롬프트: socat으로 가상 시리얼 포트 쌍을 생성해줘
 
-    📎 참고 (CLI): socat -d -d pty,raw,echo=0,link=/tmp/vUART0 pty,raw,echo=0,link=/tmp/vUART1 & sleep 1 && ls -la /tmp/vUART0
-    /tmp/vUART1 && echo ''가상 UART 생성 완료'''
+    📎 참고 (CLI): socat -d -d pty,raw,echo=0,link=/tmp/vUART0 pty,raw,echo=0,link=/tmp/vUART1 & sleep 1
+    && ls -la /tmp/vUART0 /tmp/vUART1 && echo ''가상 UART 생성 완료'''
   answer_detail: socat은 양방향 데이터 전송 도구로, PTY(가상 터미널)를 생성하여 UART를 시뮬레이션합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w3 s1 — socat으로 가상 시리얼 포트 쌍을 생성하시오. (cmd: socat -d -d pty,raw,echo=0,link=/tmp/vUART0 pty,raw,echo=0,link=/tmp/vUART1
-        & sl)'
+      intent: 가상 UART 시리얼 포트 쌍 생성 — socat -d -d pty,raw,echo=0,link=/tmp/vUART0 pty,raw,echo=0,link=/tmp/vUART1
+        으로 PTY 양방향 연결 쌍 생성. raw 모드(echo=0)로 실제 UART 와 동일한 원시 바이트 전송. IoT 하드웨어 분석 도구 체인 베이스.
       success_criteria:
-      - '명령 실행: socat -d -d pty,raw,echo=0,link=/tmp/vUART0 pty,raw,echo=0,l'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - socat -d -d 이중 디버그 모드로 실행
+      - pty,raw,echo=0 옵션으로 raw PTY 2개 생성
+      - link=/tmp/vUART0 과 /tmp/vUART1 심볼릭 링크 생성
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - socat -d -d pty,raw pty,raw
+      - tty0tty 커널 모듈로 가상 시리얼 페어 생성
+      - pty python 모듈로 프로그래밍 생성
+      - QEMU -chardev pty 로 가상 하드웨어 UART
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - pty 대신 file 로 잘못 지정
+      - raw 옵션 없이 line 모드 사용
+      - link 지정 없이 임의 /dev/pts/N 생성
   target_vm: attacker
-  script: socat -d -d pty,raw,echo=0,link=/tmp/vUART0 pty,raw,echo=0,link=/tmp/vUART1 & sleep 1 && ls -la /tmp/vUART0 /tmp/vUART1
-    && echo '가상 UART 생성 완료'
+  script: socat -d -d pty,raw,echo=0,link=/tmp/vUART0 pty,raw,echo=0,link=/tmp/vUART1 & sleep 1 && ls
+    -la /tmp/vUART0 /tmp/vUART1 && echo '가상 UART 생성 완료'
   risk_level: low
   bastion_prompt: socat으로 가상 시리얼 포트 쌍을 생성해줘
 - order: 2
@@ -61,21 +61,21 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w3 s2 — pyserial을 설치하고 가상 UART 포트에 데이터를 전송하시오. (cmd: pip3 install pyserial 2>/dev/null | tail -1 &&
-        echo ''pyserial 설치 완료'')'
+      intent: pyserial Python 시리얼 통신 라이브러리 설치 — pip3 install pyserial 로 UART/RS-232/RS-485 통신 Python 인터페이스
+        확보. serial.Serial() 객체로 read/write 가능. IoT UART 디버그 포트 공격 시 필수.
       success_criteria:
-      - '명령 실행: pip3 install pyserial 2>/dev/null | tail -1 && echo ''pyseria'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - pip3 install pyserial 명령 실행
+      - tail -1 으로 마지막 Successfully installed 메시지 확인
+      - 설치 완료 echo
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - pip3 install pyserial
+      - python -m pip install pyserial --upgrade
+      - apt install python3-serial (Debian/Ubuntu)
+      - minicom/screen 등 시스템 시리얼 터미널 대체
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 설치 없이 import serial 시도 (ModuleNotFoundError)
+      - pyserial vs serial 혼동
+      - UART 통신 목적 맥락 누락
   target_vm: attacker
   script: pip3 install pyserial 2>/dev/null | tail -1 && echo 'pyserial 설치 완료'
   risk_level: low
@@ -85,33 +85,34 @@ steps:
   hint: 여러 보드레이트로 시리얼 포트를 열어보세요.
   category: uart
   points: 12
-  answer: "\U0001F916 프롬프트: 보드레이트 탐지 스크립트를 작성하고 실행하시오 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고 (CLI): python3 -c \"\nimport serial\n\
-    rates = [9600, 19200, 38400, 57600, 115200]\nfor r in rates:\n    print(f'Testing baudrate: {r}')\nprint('보드레이트 탐지 완료')\n\
-    \""
+  answer: "\U0001F916 프롬프트: 보드레이트 탐지 스크립트를 작성하고 실행하시오 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고 (CLI): python3 -c\
+    \ \"\nimport serial\nrates = [9600, 19200, 38400, 57600, 115200]\nfor r in rates:\n    print(f'Testing\
+    \ baudrate: {r}')\nprint('보드레이트 탐지 완료')\n\""
   answer_detail: IoT 디바이스의 UART 포트에 접속할 때 올바른 보드레이트를 찾는 것이 첫 단계입니다. 115200이 가장 일반적입니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w3 s3 — 보드레이트 탐지 스크립트를 작성하고 실행하시오. 일반적인 보드레이트(9600, 115200 등)를 테스트하시오. (cmd: python3 -c " import serial
-        rates = [9600, 19200, 38400, 57600, 115200] for r in )'
+      intent: UART 보드레이트 무차별 탐지 — python3 -c import serial + rates = [9600, 19200, 38400, 57600, 115200]
+        for r in rates 루프로 5개 일반 보드레이트 순차 테스트. IoT 디바이스 미상 UART 포트 연결 시 올바른 baud rate 매칭 필수 (115200 가
+        현대 가장 일반적). baudrate fingerprinting 기법.
       success_criteria:
-      - '명령 실행: python3 -c " import serial rates = [9600, 19200, 38400, 5760'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - import serial 후 rates 리스트에 5개 표준 보드레이트 정의
+      - for 루프로 9600/19200/38400/57600/115200 순차 검사
+      - 각 baudrate 테스트 진행 출력 + 탐지 완료 메시지
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - python3 + pyserial + rates 리스트
+      - baudrate-scanner 툴 대체 사용
+      - stty -F /dev/ttyUSB0 <rate> 으로 시스템 명령 기반
+      - JTAGulator 하드웨어 도구
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 5개 rates 중 일부만 테스트
+      - 115200 누락 (가장 일반적이므로 필수)
+      - 무차별 탐지 fingerprinting 맥락 누락
   target_vm: attacker
-  script: "python3 -c \"\nimport serial\nrates = [9600, 19200, 38400, 57600, 115200]\nfor r in rates:\n    print(f'Testing\
-    \ baudrate: {r}')\nprint('보드레이트 탐지 완료')\n\""
+  script: "python3 -c \"\nimport serial\nrates = [9600, 19200, 38400, 57600, 115200]\nfor r in rates:\n\
+    \    print(f'Testing baudrate: {r}')\nprint('보드레이트 탐지 완료')\n\""
   risk_level: low
   bastion_prompt: 보드레이트 탐지 스크립트를 작성하고 실행하시오. 일반적인 보드레이트(9600, 115200 등)를 테스트하시오.
 - order: 4
@@ -121,34 +122,35 @@ steps:
   points: 12
   answer: '🤖 프롬프트: SPI Flash 덤프를 시뮬레이션하시오. 1MB 크기의 가상 펌웨어 이미지를 생성하고 매직 바이트를 삽입해줘
 
-    📎 참고 (CLI): dd if=/dev/zero of=/tmp/flash_dump.bin bs=1M count=1 2>/dev/null && printf ''\x27\x05\x19\x56'' | dd of=/tmp/flash_dump.bin
-    bs=1 seek=0 conv=notrunc 2>/dev/null && printf ''hsqs'' | dd of=/tmp/flash_dump.bin bs=1 seek=524288 conv=notrunc 2>/dev/null
-    && echo ''SPI Flash 덤프 시뮬레이션 완료'''
+    📎 참고 (CLI): dd if=/dev/zero of=/tmp/flash_dump.bin bs=1M count=1 2>/dev/null && printf ''\x27\x05\x19\x56''
+    | dd of=/tmp/flash_dump.bin bs=1 seek=0 conv=notrunc 2>/dev/null && printf ''hsqs'' | dd of=/tmp/flash_dump.bin
+    bs=1 seek=524288 conv=notrunc 2>/dev/null && echo ''SPI Flash 덤프 시뮬레이션 완료'''
   answer_detail: U-Boot 매직(0x27051956)과 SquashFS 매직(hsqs)을 삽입하여 실제 펌웨어 이미지와 유사한 구조를 만듭니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w3 s4 — SPI Flash 덤프를 시뮬레이션하시오. 1MB 크기의 가상 펌웨어 이미지를 생성하고 매직 바이트를 삽입하시오. (cmd: dd if=/dev/zero of=/tmp/flash_dump.bin
-        bs=1M count=1 2>/dev/null && printf ''\x27)'
+      intent: SPI Flash 펌웨어 이미지 시뮬레이션 — dd if=/dev/zero of=/tmp/flash_dump.bin bs=1M count=1 로 1MB 빈 공간
+        생성 후 printf \x27\x05\x19\x56 | dd seek=0 으로 U-Boot 매직(0x27051956) 삽입 + printf hsqs | dd seek=524288
+        으로 SquashFS 매직(hsqs, 0x68737173) 을 512KB offset 에 삽입. 실제 IoT 펌웨어 구조 모사.
       success_criteria:
-      - '명령 실행: dd if=/dev/zero of=/tmp/flash_dump.bin bs=1M count=1 2>/dev/'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - dd if=/dev/zero 로 1MB 펌웨어 이미지 초기화
+      - U-Boot 헤더 매직(0x27051956) 을 offset 0 에 printf + dd seek 로 기록
+      - SquashFS 매직(hsqs) 을 offset 524288 (512KB) 에 기록하여 2 파티션 구조
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - dd + printf 조합으로 매직 바이트 주입
+      - Python struct.pack 으로 바이너리 생성
+      - binwalk --dd 로 기존 펌웨어 추출
+      - firmware-mod-kit 로 이미지 재구성
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 매직 바이트 중 하나만 삽입
+      - seek offset 계산 실수 (524288 = 0x80000)
+      - conv=notrunc 누락으로 파일 잘림
   target_vm: attacker
-  script: dd if=/dev/zero of=/tmp/flash_dump.bin bs=1M count=1 2>/dev/null && printf '\x27\x05\x19\x56' | dd of=/tmp/flash_dump.bin
-    bs=1 seek=0 conv=notrunc 2>/dev/null && printf 'hsqs' | dd of=/tmp/flash_dump.bin bs=1 seek=524288 conv=notrunc 2>/dev/null
-    && echo 'SPI Flash 덤프 시뮬레이션 완료'
+  script: dd if=/dev/zero of=/tmp/flash_dump.bin bs=1M count=1 2>/dev/null && printf '\x27\x05\x19\x56'
+    | dd of=/tmp/flash_dump.bin bs=1 seek=0 conv=notrunc 2>/dev/null && printf 'hsqs' | dd of=/tmp/flash_dump.bin
+    bs=1 seek=524288 conv=notrunc 2>/dev/null && echo 'SPI Flash 덤프 시뮬레이션 완료'
   risk_level: low
   bastion_prompt: SPI Flash 덤프를 시뮬레이션하시오. 1MB 크기의 가상 펌웨어 이미지를 생성하고 매직 바이트를 삽입해줘
 - order: 5
@@ -158,30 +160,33 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 생성한 Flash 덤프에서 매직 바이트를 검색해줘
 
-    📎 참고 (CLI): xxd /tmp/flash_dump.bin | head -3 && xxd -s 524288 -l 16 /tmp/flash_dump.bin && echo ''매직 바이트 분석 완료'''
+    📎 참고 (CLI): xxd /tmp/flash_dump.bin | head -3 && xxd -s 524288 -l 16 /tmp/flash_dump.bin && echo ''매직
+    바이트 분석 완료'''
   answer_detail: 펌웨어 분석의 첫 단계는 매직 바이트를 찾아 파일시스템과 헤더의 위치를 확인하는 것입니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w3 s5 — 생성한 Flash 덤프에서 매직 바이트를 검색하시오. (cmd: xxd /tmp/flash_dump.bin | head -3 && xxd -s 524288 -l 16
-        /tmp/flash_dump.bin && )'
+      intent: Flash 덤프 매직 바이트 분석 — xxd /tmp/flash_dump.bin | head -3 로 파일 시작 3줄(48 바이트) 16진수 표시하여 U-Boot
+        매직(0x27051956) 확인 + xxd -s 524288 -l 16 으로 offset 512KB 위치 16 바이트 출력하여 SquashFS(hsqs) 매직 검증. binwalk
+        의 기초인 매직 바이트 매핑.
       success_criteria:
-      - '명령 실행: xxd /tmp/flash_dump.bin | head -3 && xxd -s 524288 -l 16 /tm'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - xxd 또는 hexdump 로 바이너리 파일 16진수 뷰
+      - head -3 으로 파일 시작 부분만 검사
+      - xxd -s (seek) + -l (length) 옵션으로 특정 offset 의 16 바이트 추출
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - xxd + head + xxd -s -l 조합
+      - hexdump -C -n 48 + hexdump -C -s 524288 -n 16
+      - binwalk /tmp/flash_dump.bin 으로 자동 식별
+      - file /tmp/flash_dump.bin 으로 파일 타입 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - head -3 없이 전체 덤프
+      - -s/-l 옵션 없이 SquashFS 매직 찾지 못함
+      - 매직 바이트가 어떤 포맷인지 식별 누락
   target_vm: attacker
-  script: xxd /tmp/flash_dump.bin | head -3 && xxd -s 524288 -l 16 /tmp/flash_dump.bin && echo '매직 바이트 분석 완료'
+  script: xxd /tmp/flash_dump.bin | head -3 && xxd -s 524288 -l 16 /tmp/flash_dump.bin && echo '매직 바이트
+    분석 완료'
   risk_level: low
   bastion_prompt: 생성한 Flash 덤프에서 매직 바이트를 검색해줘
 - order: 6
@@ -214,21 +219,22 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w3 s6 — I2C EEPROM 시뮬레이션을 수행하시오. Python으로 가상 EEPROM 데이터를 생성하고 민감 정보를 추출하시오. (cmd: python3 -c " eeprom
-        = bytearray(256) eeprom[0x30:0x36] = b''admin\x00'' eeprom[0x3)'
+      intent: I2C EEPROM 민감 정보 추출 시뮬레이션 — python3 -c 으로 bytearray(256) EEPROM 초기화 + eeprom[0x30:0x36]
+        = admin + eeprom[0x36:0x40] = admin123 으로 username/password 주입. decode + strip(chr(0)) 으로 null-terminated
+        문자열 파싱. IoT 디바이스의 EEPROM 물리 읽기로 하드코딩된 크리덴셜 유출 시나리오.
       success_criteria:
-      - '명령 실행: python3 -c " eeprom = bytearray(256) eeprom[0x30:0x36] = b''a'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - bytearray(256) 으로 가상 EEPROM 메모리 공간 할당
+      - offset 0x30-0x36 에 username + 0x36-0x40 에 password 저장
+      - decode(errors=ignore).strip(chr(0)) 으로 null 제거 후 평문 추출
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - python bytearray + slicing + decode
+      - hexdump 로 실제 EEPROM 덤프 파일 분석 대체
+      - i2c-tools 의 eeprog/eeprom_read 로 실제 하드웨어 읽기
+      - Bus Pirate / Total Phase Aardvark 로 I2C 하드웨어 추출
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - bytearray 초기화 누락
+      - offset 슬라이싱 없이 바이트 단위 접근
+      - null 제거 없이 raw 바이트 출력
   target_vm: attacker
   script: 'python3 -c "
 
@@ -256,32 +262,35 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 하드웨어 보안 점검 체크리스트를 구현 방법을 설명하고 예시 코드를 보여줘
 
-    📎 참고 (CLI): echo ''=== 하드웨어 보안 체크리스트 ==='' && echo ''[UART] 디버그 콘솔 노출 → 비활성화 필요'' && echo ''[SPI] Flash 읽기 보호 미설정 → 보안
-    퓨즈 설정'' && echo ''[I2C] 민감 데이터 평문 저장 → 암호화 필요'' && echo ''[JTAG] 디버그 접근 가능 → JTAG Lock 필요'' && echo ''=== 체크리스트 완료 ==='''
+    📎 참고 (CLI): echo ''=== 하드웨어 보안 체크리스트 ==='' && echo ''[UART] 디버그 콘솔 노출 → 비활성화 필요'' && echo ''[SPI]
+    Flash 읽기 보호 미설정 → 보안 퓨즈 설정'' && echo ''[I2C] 민감 데이터 평문 저장 → 암호화 필요'' && echo ''[JTAG] 디버그 접근 가능 →
+    JTAG Lock 필요'' && echo ''=== 체크리스트 완료 ==='''
   answer_detail: 하드웨어 보안 점검은 IoT 디바이스의 물리적 공격 표면을 평가합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w3 s7 — 하드웨어 보안 점검 체크리스트를 작성하시오. (cmd: echo ''=== 하드웨어 보안 체크리스트 ==='' && echo ''[UART] 디버그 콘솔 노출 → 비활성화
-        필요'' && echo ''[SPI])'
+      intent: '하드웨어 보안 점검 체크리스트 — echo 으로 4개 인터페이스 평가: [UART] 디버그 콘솔 노출 → 비활성화 필요 + [SPI] Flash 읽기 보호
+        미설정 → 보안 퓨즈 설정 + [I2C] 민감 데이터 평문 저장 → 암호화 필요 + [JTAG] 디버그 접근 가능 → JTAG Lock 필요. OWASP IoT I10(물리적
+        보안) + IEC 62443 준거.'
       success_criteria:
-      - '명령 실행: echo ''=== 하드웨어 보안 체크리스트 ==='' && echo ''[UART] 디버그 콘솔 노출 → 비활성'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - echo === 하드웨어 보안 체크리스트 === 마커 출력
+      - UART/SPI/I2C/JTAG 4개 인터페이스 각각 평가 + 권고 조치 명시
+      - 디버그 포트 비활성/보안 퓨즈/암호화/Lock 등 구체적 완화 수단 제시
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - echo 평면 출력
+      - markdown 체크리스트로 파일 저장
+      - OWASP IoT Top 10 매핑 표 작성
+      - IEC 62443-4-2 컴포넌트 보안 요구사항 기반 평가
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 4개 인터페이스 중 일부 누락
+      - 완화 조치 권고 없이 취약점만 나열
+      - OWASP IoT I10/IEC 62443 표준 맥락 누락
   target_vm: attacker
-  script: echo '=== 하드웨어 보안 체크리스트 ===' && echo '[UART] 디버그 콘솔 노출 → 비활성화 필요' && echo '[SPI] Flash 읽기 보호 미설정 → 보안 퓨즈 설정' &&
-    echo '[I2C] 민감 데이터 평문 저장 → 암호화 필요' && echo '[JTAG] 디버그 접근 가능 → JTAG Lock 필요' && echo '=== 체크리스트 완료 ==='
+  script: echo '=== 하드웨어 보안 체크리스트 ===' && echo '[UART] 디버그 콘솔 노출 → 비활성화 필요' && echo '[SPI] Flash 읽기 보호
+    미설정 → 보안 퓨즈 설정' && echo '[I2C] 민감 데이터 평문 저장 → 암호화 필요' && echo '[JTAG] 디버그 접근 가능 → JTAG Lock 필요' &&
+    echo '=== 체크리스트 완료 ==='
   risk_level: low
   bastion_prompt: 하드웨어 보안 점검 체크리스트를 작성하시오.
 - order: 8
@@ -291,28 +300,31 @@ steps:
   points: 8
   answer: '🤖 프롬프트: 실습 환경을 정리해줘
 
-    📎 참고 (CLI): kill %1 2>/dev/null; rm -f /tmp/vUART0 /tmp/vUART1 /tmp/flash_dump.bin 2>/dev/null; echo ''환경 정리 완료'''
+    📎 참고 (CLI): kill %1 2>/dev/null; rm -f /tmp/vUART0 /tmp/vUART1 /tmp/flash_dump.bin 2>/dev/null; echo
+    ''환경 정리 완료'''
   answer_detail: socat 프로세스와 임시 파일을 정리합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w3 s8 — 실습 환경을 정리하시오. (cmd: kill %1 2>/dev/null; rm -f /tmp/vUART0 /tmp/vUART1 /tmp/flash_dump.bin 2>/dev/nu)'
+      intent: 실습 환경 정리 — kill %1 로 백그라운드 socat 프로세스 종료 + rm -f /tmp/vUART0 /tmp/vUART1 /tmp/flash_dump.bin
+        으로 가상 시리얼 심볼릭 링크 및 1MB 플래시 덤프 파일 삭제. 2>/dev/null 로 이미 정리된 케이스 에러 숨김.
       success_criteria:
-      - '명령 실행: kill %1 2>/dev/null; rm -f /tmp/vUART0 /tmp/vUART1 /tmp/flas'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - kill %1 로 jobs 의 첫 번째 백그라운드 프로세스(socat) 종료
+      - rm -f 로 3개 임시 파일 일괄 삭제
+      - 환경 정리 완료 echo 마커
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - kill %1 + rm -f 조합
+      - pkill -f socat 으로 패턴 매치 종료
+      - jobs -p | xargs kill 로 모든 백그라운드 종료
+      - trap cleanup EXIT 로 스크립트 종료 시 자동 정리
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - socat 프로세스 종료 누락 (계속 실행)
+      - 임시 파일 일부만 삭제
+      - 2>/dev/null 없이 에러 메시지 노출
   target_vm: attacker
-  script: kill %1 2>/dev/null; rm -f /tmp/vUART0 /tmp/vUART1 /tmp/flash_dump.bin 2>/dev/null; echo '환경 정리 완료'
+  script: kill %1 2>/dev/null; rm -f /tmp/vUART0 /tmp/vUART1 /tmp/flash_dump.bin 2>/dev/null; echo '환경
+    정리 완료'
   risk_level: low
   bastion_prompt: 실습 환경을 정리해줘
