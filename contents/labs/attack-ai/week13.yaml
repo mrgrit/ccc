@@ -29,20 +29,21 @@ steps:
     expect: '---'
     field: stdout
     semantic:
-      intent: 무선 네트워크 공격 (Wireless) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 무선 네트워크 인터페이스 식별 — ip link show 로 링크 레이어 인터페이스 나열 + iwconfig 로 무선 인터페이스 존재 여부 확인. 실습 VM
+        은 물리 무선 카드가 없어 No wireless interfaces 응답 예상, 실전에서는 wlan0 식별 후 Monitor 모드 전환에 사용
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ip link show 실행 + eth/lo 인터페이스 목록
+      - '--- 구분자 + iwconfig 결과 (또는 No wireless interfaces)'
+      - Monitor 모드 전환의 전제(무선 카드 존재)를 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ip link show + iwconfig
+      - iw dev 로 무선 장치 나열
+      - nmcli device + nmcli radio wifi
+      - rfkill list 로 무선 차단 상태 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(무선 네트워크 공격 (Wireless))와 무관한 기법
+      - 무선 인터페이스 탐지 없이 이더넷만 나열
+      - VM 환경의 무선 카드 부재 언급 없음
+      - Monitor 모드 전환 목적 누락
   target_vm: attacker
   script: ip link show && echo '---' && iwconfig 2>/dev/null || echo 'No wireless interfaces (expected
     in lab VM)'
@@ -69,20 +70,22 @@ steps:
     expect: Wi-Fi Security Protocols
     field: stdout
     semantic:
-      intent: 무선 네트워크 공격 (Wireless) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Wi-Fi 보안 프로토콜 4세대 비교표 — WEP(1997 RC4 40/104bit, IV 충돌/FMS)·WPA(2003 TKIP, dict)·WPA2(2004
+        AES-CCMP, KRACK·PSK dict)·WPA3(2018 AES-GCMP SAE Dragonfly, Dragonblood)의 암호화 방식·키 관리·알려진 취약점
+        정리
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 4개 프로토콜(WEP/WPA/WPA2/WPA3) 모두 포함한 비교표 출력
+      - 각 프로토콜별 암호화 알고리즘 (RC4/TKIP/AES-CCMP/AES-GCMP) 명시
+      - 프로토콜별 대표 취약점(IV 충돌/TKIP·dict/KRACK/Dragonblood) 최소 1개씩 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e 로 비교표 출력
+      - markdown 표 형식으로 열 정렬
+      - python tabulate 또는 rich.table 로 포맷팅
+      - IEEE 802.11 표준 문서 인용
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(무선 네트워크 공격 (Wireless))와 무관한 기법
+      - 3개 이하 프로토콜만 다룸
+      - 암호화 알고리즘 누락 — 이름만 나열
+      - WEP BROKEN / WPA3 가장 안전 같은 결론 없음
   target_vm: attacker
   script: 'echo -e ''=== Wi-Fi Security Protocols ===\n\n| Protocol | Year | Encryption | Key Mgmt | Known
     Vulnerabilities |\n|----------|------|-----------|----------|---------------------|\n| WEP | 1997
@@ -113,20 +116,22 @@ steps:
     expect: Aircrack-ng Suite
     field: stdout
     semantic:
-      intent: 무선 네트워크 공격 (Wireless) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: aircrack-ng suite 5개 구성 요소 역할 정리 — airmon-ng(Monitor 모드 전환)·airodump-ng(스캔·캡처)·aireplay-ng(패킷
+        인젝션/deauth/ARP replay)·aircrack-ng(WEP/WPA 키 크래킹)·airbase-ng(Fake AP/Evil Twin) 각 도구의 용도와 대표 명령
+        예시
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - airmon-ng/airodump-ng/aireplay-ng/aircrack-ng 최소 4개 도구 역할 설명
+      - 각 도구별 사용 명령 예시 (start/capture/-0 deauth/-w wordlist)
+      - Monitor → 스캔 → 캡처 → 크래킹 워크플로 순서 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e 로 5개 도구 구조화 출력
+      - man aircrack-ng 인용
+      - Kali Linux wireless tools 카테고리 참조
+      - hcxtools 추가 (최신 도구)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(무선 네트워크 공격 (Wireless))와 무관한 기법
+      - 도구 3개 이하만 설명
+      - 워크플로 순서 언급 없음
+      - 각 도구의 실행 예시 없음
   target_vm: attacker
   script: 'echo -e ''=== Aircrack-ng Suite ===\n\n1. airmon-ng: 무선 인터페이스를 Monitor 모드로 전환\n   Usage: airmon-ng
     start wlan0\n\n2. airodump-ng: 무선 네트워크 스캐닝 및 패킷 캡처\n   Usage: airodump-ng wlan0mon\n   Usage: airodump-ng
@@ -157,20 +162,22 @@ steps:
     expect: 4-Way Handshake
     field: stdout
     semantic:
-      intent: 무선 네트워크 공격 (Wireless) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: WPA2-PSK 4-Way Handshake 메시지 교환 과정 정리 — PMK=PBKDF2(PSK,SSID,4096,256) 도출, Msg1 AP→Client
+        ANonce, Msg2 Client→AP SNonce+MIC, Msg3 AP→Client GTK+MIC, Msg4 Client→AP ACK. 핸드셰이크 캡처 시 오프라인
+        사전 공격 가능 원리 (Msg1-2 만으로 PMK 검증 가능)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 4-Way Handshake 4개 메시지 모두 설명 (ANonce/SNonce/MIC/GTK)
+      - PMK = PBKDF2(PSK, SSID, 4096, 256) 파생 공식 또는 동등한 설명
+      - 핸드셰이크 캡처 → 오프라인 dict attack 연결 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e 로 메시지 1~4 구조화
+      - IEEE 802.11i-2004 표준 인용
+      - Wireshark EAPOL 필터(eapol) 로 실제 핸드셰이크 분석
+      - scapy 로 EAPOL 프레임 파싱
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(무선 네트워크 공격 (Wireless))와 무관한 기법
+      - 메시지 3개 이하만 설명
+      - PMK/PTK 파생 과정 생략
+      - MIC 검증 또는 offline dict 원리 없음
   target_vm: attacker
   script: 'echo -e ''=== WPA2 4-Way Handshake ===\n\nPMK = PBKDF2(PSK, SSID, 4096, 256)\n\n[Message 1]
     AP -> Client\n  - ANonce (AP random number)\n  - Client derives PTK from PMK + ANonce + SNonce + MACs\n\n[Message
@@ -202,20 +209,22 @@ steps:
     expect: WPA2 Cracking
     field: stdout
     semantic:
-      intent: 무선 네트워크 공격 (Wireless) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: WPA2-PSK 크래킹 4단계 워크플로 시뮬레이션 — airmon-ng start wlan0 (Monitor 모드) → airodump-ng -c 6 --bssid
+        AP -w capture (핸드셰이크 캡처) → aireplay-ng -0 5 -a AP (deauth 강제 재연결) → aircrack-ng -w rockyou capture-01.cap
+        (dict 크래킹). CPU(2K PMK/s) vs GPU hashcat(500K PMK/s) 속도 비교
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 4단계 명령 흐름 (monitor→capture→deauth→crack) 모두 포함
+      - aircrack-ng 과 hashcat 둘 다 예시 제시
+      - CPU vs GPU 속도 비교 또는 강력한 비밀번호는 크래킹 불가 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo 로 4단계 명령 열거
+      - hashcat -m 22000 hash.hc22000 rockyou.txt
+      - hcxdumptool 로 PMKID 공격 (신규 기법)
+      - John the Ripper wpapsk 모드
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(무선 네트워크 공격 (Wireless))와 무관한 기법
+      - 워크플로 단계 2개 이하
+      - deauth 재연결 단계 누락
+      - 속도/현실성 언급 없음
   target_vm: attacker
   script: 'echo ''=== WPA2 Cracking Simulation ==='' && echo ''Step 1: Monitor mode'' && echo ''  airmon-ng
     start wlan0'' && echo ''Step 2: Capture handshake'' && echo ''  airodump-ng -c 6 --bssid AA:BB:CC:DD:EE:FF
@@ -248,20 +257,22 @@ steps:
     expect: Evil Twin Attack
     field: stdout
     semantic:
-      intent: 무선 네트워크 공격 (Wireless) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 'Evil Twin 공격 구성 요소 — Fake AP(airbase-ng -e Target_SSID -c 6) + DHCP(dnsmasq) + NAT(iptables
+        -t nat POSTROUTING MASQUERADE) + Captive Portal(nginx 가짜 로그인) + SSL Strip(HTTPS→HTTP 다운그레이드).
+        동일 SSID로 클라이언트 유인, 자격 증명 수집. 탐지 지표: 다중 BSSID 한 SSID, 예기치 않은 MAC 변경, 인증서 경고'
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 5개 구성 요소(Fake AP/DHCP/NAT/Captive Portal/SSL Strip) 중 최소 3개 설명
+      - airbase-ng + dnsmasq 또는 동등한 도구 명령 예시
+      - 탐지 지표 (다중 BSSID·MAC 변화·인증서 경고) 최소 1개 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - airbase-ng -e SSID -c 채널 wlan0mon + dnsmasq + iptables
+      - hostapd-wpe + Responder (기업 환경용)
+      - WiFi Pineapple 상업 장비 언급
+      - fluxion/wifiphisher 자동화 프레임워크
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(무선 네트워크 공격 (Wireless))와 무관한 기법
+      - Fake AP 생성 언급만, 트래픽 가로채기 설명 없음
+      - 탐지/방어 지표 누락
+      - 동일 SSID 유인 원리 설명 없음
   target_vm: attacker
   script: 'echo -e ''=== Evil Twin Attack ===\n\n[Architecture]\nVictim --> Fake AP(Evil Twin) --> Internet\n                |\n                v\n        Attacker
     captures all traffic\n\n[Components]\n1. Fake AP: airbase-ng -e "Target_SSID" -c 6 wlan0mon\n2. DHCP:
@@ -292,20 +303,22 @@ steps:
     expect: Deauthentication Attack
     field: stdout
     semantic:
-      intent: 무선 네트워크 공격 (Wireless) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 'Deauthentication 공격 원리 — 802.11 관리 프레임(Deauth/Disassociation)이 암호화·인증 없이 전송되는 프로토콜 취약점.
+        aireplay-ng -0 <count> -a AP_BSSID -c CLIENT_MAC 로 spoofed source MAC deauth 프레임 전송. 용도: WPA 핸드셰이크
+        강제·DoS·Evil Twin 유도. 방어: 802.11w PMF(WPA3 필수)·WIDS 탐지'
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 802.11 관리 프레임이 비인증이라는 프로토콜 레벨 취약점 설명
+      - aireplay-ng -0 또는 동등한 deauth 명령 예시
+      - 802.11w(PMF) 방어 또는 WPA3에서 PMF mandatory 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - aireplay-ng -0 <n> -a AP -c CLIENT wlan0mon
+      - mdk4 d (deauth flood 모드)
+      - scapy Dot11Deauth() 수동 프레임 제작
+      - WiFi Pineapple deauth 모듈
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(무선 네트워크 공격 (Wireless))와 무관한 기법
+      - deauth 공격 방법만, 프로토콜 취약성 원리 설명 없음
+      - PMF/802.11w 방어 언급 없음
+      - spoofed MAC 개념 누락
   target_vm: attacker
   script: 'echo -e ''=== Deauthentication Attack ===\n\n[Principle]\n- 802.11 management frames are NOT
     authenticated\n- Anyone can send deauth frames with spoofed source MAC\n\n[Attack]\n  aireplay-ng
@@ -336,20 +349,23 @@ steps:
     expect: WEP Cracking
     field: stdout
     semantic:
-      intent: 무선 네트워크 공격 (Wireless) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 'WEP 크래킹 — RC4 + 24-bit IV 의 근본적 약점. 2^24=16.7M IV 공간, 5000 패킷 후 IV 재사용 확률 상승 → 동일 IV+키
+        = 동일 키스트림. FMS 공격(weak IV 통계 분석, 40K~85K IV 필요) 및 PTW 공격(ARP replay, 20K 패킷 충분)로 키 복원. 명령: airodump
+        → aireplay -3 -b AP (ARP replay) → aircrack-ng capture.cap'
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 24-bit IV 공간 한계 (2^24 또는 16.7M) 설명
+      - FMS 또는 PTW 공격 이름 언급 + 필요 패킷 수
+      - ARP replay (-3) 로 IV 생성 가속 단계 언급
+      - WEP COMPLETELY BROKEN 결론
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - airodump + aireplay -3 + aircrack-ng 워크플로
+      - wesside-ng 자동 WEP 크래킹
+      - hashcat -m 22100 (WEP)
+      - chopchop 공격 (키 없이 패킷 복호화)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(무선 네트워크 공격 (Wireless))와 무관한 기법
+      - RC4 만 언급, IV 재사용 문제 누락
+      - FMS/PTW 공격 이름 없음
+      - ARP replay 가속 단계 누락
   target_vm: attacker
   script: 'echo -e ''=== WEP Cracking ===\n\n[WEP Weakness]\n- RC4 stream cipher with 24-bit IV\n- Only
     2^24 = 16,777,216 possible IVs\n- After ~5000 packets, IV reuse is likely\n- Same IV + same key =
@@ -383,20 +399,22 @@ steps:
     - KRACK
     field: stdout
     semantic:
-      intent: 무선 네트워크 공격 (Wireless) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 'KRACK(Key Reinstallation Attack, CVE-2017-13077) — WPA2 4-Way Handshake 구현 취약점. 공격자가 Msg3
+        재전송 → 클라이언트가 이미 사용 중인 암호화 키 재설치 → nonce 가 0 으로 리셋 → AES-CCMP nonce 재사용 → 키스트림 노출. 영향: 패킷 복호화·재전송·TCP
+        하이재킹. 완화: 클라이언트 OS 패치, 802.11r FT 가장 취약, WPA3 미영향'
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - Msg3 재전송 + 키 재설치 + nonce reset 핵심 메커니즘 설명
+      - CVE-2017-13077 또는 동등한 식별자
+      - 모든 주요 OS 패치 완료 또는 IoT 기기 여전히 취약 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo 로 공격 단계·영향·완화 구조화
+      - krackattacks-scripts (vanhoef) 원저자 PoC 인용
+      - hostapd/wpa_supplicant 패치 로그 참조
+      - Wireshark 로 EAPOL Msg3 재전송 관찰
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(무선 네트워크 공격 (Wireless))와 무관한 기법
+      - 4-Way Handshake 일반 설명만 (KRACK 특유 공격 없음)
+      - nonce 재사용 원리 누락
+      - WPA2 자체가 깨진 것으로 오해 (구현 취약점이 맞음)
   target_vm: attacker
   script: 'echo -e ''=== KRACK Attack (CVE-2017-13077) ===\n\n[Principle]\n- Exploits WPA2 4-Way Handshake
     implementation\n- Attacker replays Message 3 of handshake\n- Client reinstalls already-in-use encryption
@@ -428,20 +446,22 @@ steps:
     expect: WPA3-SAE vs WPA2-PSK
     field: stdout
     semantic:
-      intent: 무선 네트워크 공격 (Wireless) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: WPA3-SAE(Dragonfly) vs WPA2-PSK 비교 — WPA2-PSK 는 PSK→PMK 가 static 이라 핸드셰이크 캡처 시 offline dict
+        가능·Forward Secrecy 없음. WPA3-SAE 는 비밀번호를 Diffie-Hellman 에 사용 → PMK 가 ephemeral(세션별) → offline dict
+        IMPOSSIBLE (공격자는 각 추측마다 AP 와 상호작용 필요, online rate limit). Forward Secrecy, PMF mandatory
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - WPA2 offline dict attack 가능 vs WPA3 불가능 대비
+      - Dragonfly DH 교환 또는 SAE ephemeral PMK 개념
+      - Forward Secrecy + PMF mandatory 차이 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e 로 WPA2 vs WPA3 비교표
+      - Vanhoef Dragonblood 연구 인용 (초기 취약점, 이후 패치)
+      - hostapd SAE 설정 예시
+      - IETF RFC 7664 (Dragonfly)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(무선 네트워크 공격 (Wireless))와 무관한 기법
+      - WPA3 단독 설명 — WPA2 와 비교 없음
+      - offline vs online dict 차이 누락
+      - Forward Secrecy 개념 없음
   target_vm: attacker
   script: 'echo -e ''=== WPA3-SAE vs WPA2-PSK ===\n\n[WPA2-PSK]\n- PSK -> PMK (static, derived from password)\n-
     Offline dictionary attack possible with handshake capture\n- No forward secrecy\n\n[WPA3-SAE (Dragonfly)]\n-
@@ -473,20 +493,23 @@ steps:
     expect: Bluetooth Attacks
     field: stdout
     semantic:
-      intent: 무선 네트워크 공격 (Wireless) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 'Bluetooth 공격 기법 — BlueBorne(CVE-2017-0785, 페어링 없이 RCE, Linux/Android/Windows/iOS 영향)·BlueSmack(oversized
+        L2CAP DoS)·KNOB(Key Negotiation of Bluetooth, 1-byte 키 강제 후 MITM 브루트포스)·BIAS(Bluetooth Impersonation,
+        이전 페어 장치 위장). 방어: 펌웨어 업데이트·미사용 시 비활성·BLE Secure Connections'
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 최소 3개 공격 (BlueBorne·KNOB·BlueSmack 또는 BIAS) 설명
+      - 각 공격의 유형(RCE/DoS/키 협상 공격/impersonation) 구분
+      - BlueBorne CVE-2017-0785 또는 동등한 식별자 언급
+      - 방어책 최소 1개(펌웨어·비활성·BLE SC)
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e 로 4개 공격 구조화
+      - ubertooth / hci tools 언급
+      - btlejack / gattacker 도구
+      - bluing (BIAS PoC) 참조
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(무선 네트워크 공격 (Wireless))와 무관한 기법
+      - 공격 2개 이하만 설명
+      - 각 공격의 대상/방법/영향 구분 없음
+      - 방어 방안 누락
   target_vm: attacker
   script: echo -e '=== Bluetooth Attacks ===\n\n[BlueBorne (CVE-2017-0785)]\n- Remote code execution via
     Bluetooth\n- No pairing required, no user interaction\n- Affects Linux, Android, Windows, iOS\n\n[BlueSmack]\n-
@@ -518,20 +541,22 @@ steps:
     expect: Wireless Security Audit
     field: stdout
     semantic:
-      intent: 무선 네트워크 공격 (Wireless) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 무선 보안 감사 체크리스트 5개 카테고리 — Encryption(WPA3-SAE/WPA2-Enterprise, WEP/TKIP 비활성, PMF 활성)·Authentication(강력
+        PSK 20+자, RADIUS, 게스트 격리)·AP Configuration(기본 패스워드 변경, 펌웨어, WPS 비활성)·Monitoring(WIDS/WIPS, Rogue
+        AP 탐지, Deauth flood 경보)·Physical(AP 위치, 신호 강도, 물리 보안). WPS PIN 브루트포스 주의
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - Encryption·Authentication·AP config·Monitoring·Physical 5개 카테고리 중 최소 4개 포함
+      - 각 카테고리당 최소 2개 체크 항목
+      - WPS 비활성 또는 PMF 활성 등 구체적 권고 포함
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo 로 체크리스트 [  ] 형식 출력
+      - CIS Benchmark for Wireless 참조
+      - PCI-DSS 4.0 wireless requirements
+      - NIST SP 800-153 wireless LAN security
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(무선 네트워크 공격 (Wireless))와 무관한 기법
+      - 카테고리 3개 이하만 커버
+      - 체크 항목 구체성 부족 (일반론만)
+      - WPS·PMF 같은 핵심 설정 누락
   target_vm: attacker
   script: 'echo -e ''=== Wireless Security Audit Checklist ===\n\n[Encryption]\n[ ] WPA3-SAE or WPA2-Enterprise
     in use\n[ ] WEP/WPA-TKIP disabled\n[ ] PMF (802.11w) enabled\n\n[Authentication]\n[ ] Strong PSK (20+
@@ -562,20 +587,22 @@ steps:
     expect: Rogue AP Detection
     field: stdout
     semantic:
-      intent: 무선 네트워크 공격 (Wireless) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 'Rogue AP 탐지 로직 설계 — BSSID 화이트리스트 비교·동일 SSID 다른 신호 강도 이상(Evil Twin 의심)·채널 오버랩 분석·Vendor
+        OUI 불일치. 의사 코드: for ap in scan_results: if ap.bssid not in known_aps → ROGUE 경보, if ap.ssid in
+        known_ssids and ap.signal>threshold → EVIL TWIN 의심. 도구: Kismet·Wazuh·Aruba WIPS·Cisco CleanAir'
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 4가지 탐지 방법 (BSSID 화이트리스트·신호 강도·채널·OUI) 중 최소 2개 설명
+      - 탐지 로직의 의사 코드 또는 알고리즘 제시
+      - 실제 도구 (Kismet/WIPS/Wazuh 등) 최소 1개 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo 로 탐지 방법 + 의사 코드 출력
+      - python scapy 로 probe request 스니핑 + BSSID 비교 예시
+      - Kismet rogue AP alert 설정
+      - Aruba ClearPass / Cisco CleanAir 상업 솔루션
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(무선 네트워크 공격 (Wireless))와 무관한 기법
+      - 탐지 방법 1개만 설명
+      - 의사 코드나 알고리즘 누락
+      - 실제 도구 언급 없음
   target_vm: attacker
   script: 'echo -e ''=== Rogue AP Detection ===\n\n[Methods]\n1. BSSID whitelist comparison\n2. Signal
     strength anomaly (same SSID, different signal)\n3. Channel overlap analysis\n4. Vendor OUI mismatch\n\n[Pseudo
@@ -606,20 +633,23 @@ steps:
     expect: WPA2 GPU Cracking
     field: stdout
     semantic:
-      intent: 무선 네트워크 공격 (Wireless) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 'hashcat WPA2 GPU 크래킹 — hcxpcapngtool capture.pcapng -o hash.hc22000 형식 변환 → hashcat -m
+        22000 hash.hc22000 rockyou.txt dict → -r best64.rule rule 적용 → -a 3 ?d?d?d?d?d?d?d?d 브루트포스. 성능:
+        RTX 4090 2.5M PMK/s, RTX 3080 1.1M, CPU 10K. 8자 비번 시간: 숫자 40s, 소문자 3.4일, 혼합 2.7년. PBKDF2 4096
+        반복이 속도 제한'
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - hashcat -m 22000 WPA2 모드 + hcxpcapngtool 변환 명시
+      - wordlist·rule·brute-force 중 최소 2가지 공격 모드
+      - GPU vs CPU 성능 차이 또는 현실적 크래킹 시간 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - hcxpcapngtool + hashcat -m 22000 + rockyou.txt
+      - -r rules/best64.rule 또는 dive.rule
+      - -a 3 마스크 공격
+      - John the Ripper + --format=wpapsk
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(무선 네트워크 공격 (Wireless))와 무관한 기법
+      - mode 번호(-m 22000) 누락
+      - 변환 도구(hcxpcapngtool) 언급 없음
+      - 성능 수치 또는 현실성 분석 누락
   target_vm: attacker
   script: 'echo -e ''=== WPA2 GPU Cracking with hashcat ===\n\n[Convert capture to hashcat format]\nhcxpcapngtool
     capture.pcapng -o hash.hc22000\n\n[Crack with wordlist]\nhashcat -m 22000 hash.hc22000 /usr/share/wordlists/rockyou.txt\n\n[Crack
@@ -652,20 +682,22 @@ steps:
     expect: Wireless Attack Report
     field: stdout
     semantic:
-      intent: 무선 네트워크 공격 (Wireless) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 무선 공격 종합 보고서 /tmp/wireless_report.txt 작성 — 프로토콜 위험 평가(WEP CRITICAL·WPA-TKIP HIGH·WPA2-PSK
+        MEDIUM·WPA2-Enterprise/WPA3 LOW) + 학습한 5개 공격 시나리오(WPA2 handshake·Evil Twin·Deauth DoS·Rogue AP·Bluetooth)
+        + 8개 방어 권고(WPA3-SAE·WPA2-Enterprise·강력 PSK·PMF·WPS 비활성·WIDS·세그먼트·정기 감사)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - /tmp/wireless_report.txt 파일 생성 후 cat 출력
+      - Protocol Risk Assessment·Attack Scenarios·Recommendations 3개 섹션
+      - 최소 5개 프로토콜 위험도 + 5개 권고 포함
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e ... > /tmp/wireless_report.txt && cat
+      - heredoc (cat <<EOF > /tmp/wireless_report.txt)
+      - tee 로 파일 작성 및 stdout 동시 출력
+      - python 으로 구조화된 리포트 작성
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(무선 네트워크 공격 (Wireless))와 무관한 기법
+      - 파일 미생성 — stdout 만
+      - 위험도 평가 없이 기법 나열만
+      - WPA3 마이그레이션 같은 장기 권고 누락
   target_vm: attacker
   script: 'echo -e ''=== Wireless Attack Report ===\n\n[Protocol Risk Assessment]\n- WEP: CRITICAL - cracked
     in minutes\n- WPA-TKIP: HIGH - deprecated\n- WPA2-PSK: MEDIUM - offline dict attack possible\n- WPA2-Enterprise:
