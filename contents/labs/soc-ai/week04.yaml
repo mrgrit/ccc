@@ -3,8 +3,8 @@ title: 이벤트 분석 - Wazuh 알림과 로그 이벤트 해석 (AI 지원)
 version: ai
 course: soc-ai
 week: 4
-description: Wazuh가 생성하는 보안 알림의 구조를 분석하고, 룰 레벨·카테고리별 이벤트를 분류하여 실제 위협과 오탐을 구분하는 기초 분석 기술을 학습합니다. AI SubAgent가 자동으로 명령을 실행하고
-  결과를 검증합니다.
+description: Wazuh가 생성하는 보안 알림의 구조를 분석하고, 룰 레벨·카테고리별 이벤트를 분류하여 실제 위협과 오탐을 구분하는 기초 분석 기술을 학습합니다. AI SubAgent가
+  자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: easy
 duration_minutes: 120
 objectives:
@@ -21,26 +21,26 @@ steps:
   answer: '🤖 프롬프트: SIEM VM에서 Wazuh 알림 로그의 최근 30줄을 확인하고, 알림 구조를 파악해줘
 
     📎 참고 (CLI): tail -30 /var/ossec/logs/alerts/alerts.log'
-  answer_detail: Wazuh 알림은 타임스탬프, Rule ID, Level, Description, 소스 정보를 포함합니다. 이 구조를 이해해야 이벤트를 효율적으로 분석할 수 있습니다.
+  answer_detail: Wazuh 알림은 타임스탬프, Rule ID, Level, Description, 소스 정보를 포함합니다. 이 구조를 이해해야 이벤트를 효율적으로 분석할
+    수 있습니다.
   verify:
     type: output_contains
     expect: 'Rule:'
     field: stdout
     semantic:
-      intent: 'SOC 운영 w4 s1 — SIEM VM에서 Wazuh 알림 로그의 최근 30줄을 확인하고, 알림 구조를 파악하시오. (cmd: tail -30 /var/ossec/logs/alerts/alerts.log)'
+      intent: 'alerts.log 최근 30줄 구조 파악 — tail -30 /var/ossec/logs/alerts/alerts.log 로 ** Alert <ts>: <loc>
+        Rule: <id> (level <N>) -> <desc> + Src IP 구조 관찰. 각 알림의 5 필드(timestamp/rule/level/desc/srcip) 해석
+        연습'
       success_criteria:
-      - '명령 실행: tail -30 /var/ossec/logs/alerts/alerts.log'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - tail -30 alerts.log
+      - 'Rule: 키워드'
+      - 구조 5 필드 인지
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - tail + less
+      - awk 로 필드 파싱
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - alerts.json 혼동
+      - 구조 분석 없음
   target_vm: siem
   script: tail -30 /var/ossec/logs/alerts/alerts.log
   risk_level: low
@@ -53,27 +53,25 @@ steps:
   answer: '🤖 프롬프트: SIEM VM에서 알림 레벨별 발생 빈도를 집계해줘
 
     📎 참고 (CLI): grep -oP "level \d+" /var/ossec/logs/alerts/alerts.log | sort | uniq -c | sort -rn'
-  answer_detail: 레벨별 빈도를 파악하면 현재 SOC 환경의 보안 상태를 한눈에 볼 수 있습니다. 레벨 0-4는 정보성, 5-7은 낮은 위험, 8-11은 중간, 12 이상은 높은 위험입니다.
+  answer_detail: 레벨별 빈도를 파악하면 현재 SOC 환경의 보안 상태를 한눈에 볼 수 있습니다. 레벨 0-4는 정보성, 5-7은 낮은 위험, 8-11은 중간, 12 이상은
+    높은 위험입니다.
   verify:
     type: output_contains
     expect: level
     field: stdout
     semantic:
-      intent: 'SOC 운영 w4 s2 — SIEM VM에서 알림 레벨별 발생 빈도를 집계하시오. (cmd: grep -oP "level \d+" /var/ossec/logs/alerts/alerts.log
-        | sort | uniq -c | sort -)'
+      intent: level 별 분포 집계 — grep -oP level \d+ alerts.log | sort | uniq -c | sort -rn. 정규식으로 level N
+        패턴만 추출 후 count 정렬. 0-3 info·4-7 warning·8-11 high·12-15 critical 분포로 전체 보안 상태 파악
       success_criteria:
-      - '명령 실행: grep -oP "level \d+" /var/ossec/logs/alerts/alerts.log | sor'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - grep -oP level 정규식
+      - sort + uniq -c 집계
+      - level 키워드 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep -oP + sort uniq -c
+      - awk 로 필드 추출
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 집계 없이 raw
+      - level 범위 이해 없음
   target_vm: siem
   script: grep -oP "level \d+" /var/ossec/logs/alerts/alerts.log | sort | uniq -c | sort -rn
   risk_level: low
@@ -85,7 +83,8 @@ steps:
   points: 10
   answer: '🤖 프롬프트: SIEM VM에서 룰 ID별 알림 발생 빈도 Top 10을 추출해줘
 
-    📎 참고 (CLI): grep -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log | sort | uniq -c | sort -rn | head -10'
+    📎 참고 (CLI): grep -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log | sort | uniq -c | sort -rn | head
+    -10'
   answer_detail: 빈번하게 발생하는 룰 ID를 파악하면 가장 많은 이벤트를 유발하는 활동을 식별할 수 있습니다. 상위 룰을 분석하여 오탐 여부를 판단하고 튜닝 대상을 선정합니다.
   verify:
     type: output_contains
@@ -94,21 +93,17 @@ steps:
     - RuleID
     field: stdout
     semantic:
-      intent: 'SOC 운영 w4 s3 — SIEM VM에서 룰 ID별 알림 발생 빈도 Top 10을 추출하시오. (cmd: grep -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log
-        | sort | uniq -c | sort -)'
+      intent: 'Rule ID Top 10 — grep -oP Rule: \d+ alerts.log | sort | uniq -c | sort -rn | head -10.
+        가장 많이 트리거된 룰 ID 식별 → 오탐 가능성 높은 룰 식별 (tuning 후보) + 실제 공격 반복 여부 판단'
       success_criteria:
-      - '명령 실행: grep -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log | sor'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - Rule ID 추출 + Top 10
+      - 집계 정렬
+      - tuning 관점
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep + uniq -c + head
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - level 만 추출 (Rule ID 아님)
+      - Top N 없음
   target_vm: siem
   script: 'grep -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log | sort | uniq -c | sort -rn | head -10'
   risk_level: low
@@ -121,27 +116,25 @@ steps:
   answer: '🤖 프롬프트: SIEM VM에서 SSH 관련 Wazuh 알림만 필터링하여 확인해줘
 
     📎 참고 (CLI): grep -B 2 -A 3 "sshd\|authentication" /var/ossec/logs/alerts/alerts.log | tail -30'
-  answer_detail: SSH 관련 이벤트는 SOC에서 가장 흔한 모니터링 대상입니다. 로그인 성공/실패, 브루트포스 시도 등이 포함됩니다. Rule 5501(로그인 성공), 5503(실패) 등이 대표적입니다.
+  answer_detail: SSH 관련 이벤트는 SOC에서 가장 흔한 모니터링 대상입니다. 로그인 성공/실패, 브루트포스 시도 등이 포함됩니다. Rule 5501(로그인 성공),
+    5503(실패) 등이 대표적입니다.
   verify:
     type: output_contains
     expect: ssh
     field: stdout
     semantic:
-      intent: 'SOC 운영 w4 s4 — SIEM VM에서 SSH 관련 Wazuh 알림만 필터링하여 확인하시오. (cmd: grep -B 2 -A 3 "sshd\|authentication" /var/ossec/logs/alerts/alerts.log
-        | tail -)'
+      intent: SSH 관련 알림 필터 — grep -B 2 -A 3 sshd|authentication alerts.log | tail -30 으로 Before/After
+        context 포함해 SSH+인증 알림만. 5501(login success)·5503(failed)·5705(invalid user) 관련. SSH 공격 탐지 모듈
       success_criteria:
-      - '명령 실행: grep -B 2 -A 3 "sshd\|authentication" /var/ossec/logs/alerts'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - grep -B -A context
+      - sshd|authentication 패턴
+      - ssh 키워드 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep -B -A
+      - awk + 조건
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - context 없이 단순 grep
+      - SSH 룰 ID 인지 없음
   target_vm: siem
   script: grep -B 2 -A 3 "sshd\|authentication" /var/ossec/logs/alerts/alerts.log | tail -30
   risk_level: low
@@ -154,28 +147,24 @@ steps:
   answer: '🤖 프롬프트: SIEM VM에서 알림 JSON 로그를 활용하여 특정 룰의 상세 정보를 추출해줘
 
     📎 참고 (CLI): grep "5501" /var/ossec/logs/alerts/alerts.json | tail -3'
-  answer_detail: JSON 형식 알림에는 agent.name, rule.id, rule.level, rule.description, data.srcip 등 구조화된 필드가 포함되어 있어 프로그래밍적 분석에
-    유리합니다.
+  answer_detail: JSON 형식 알림에는 agent.name, rule.id, rule.level, rule.description, data.srcip 등 구조화된 필드가
+    포함되어 있어 프로그래밍적 분석에 유리합니다.
   verify:
     type: output_contains
     expect: rule
     field: stdout
     semantic:
-      intent: 'SOC 운영 w4 s5 — SIEM VM에서 알림 JSON 로그를 활용하여 특정 룰의 상세 정보를 추출하시오. 룰 ID 5501의 알림을 검색하시오. (cmd: grep "5501" /var/ossec/logs/alerts/alerts.json
-        | tail -3)'
+      intent: Rule ID 5501 JSON 상세 — grep 5501 alerts.json | tail -3 으로 login success 알림의 JSON 구조 (rule.id=5501,
+        rule.level=3, agent.name, data.srcip, predecoder.timestamp) 확인. 특정 룰 deep-dive 분석
       success_criteria:
-      - '명령 실행: grep "5501" /var/ossec/logs/alerts/alerts.json | tail -3'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - 5501 필터
+      - alerts.json 대상
+      - JSON 필드 인지
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep + tail + jq
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - alerts.log 와 혼동
+      - 필드 분석 없음
   target_vm: siem
   script: grep "5501" /var/ossec/logs/alerts/alerts.json | tail -3
   risk_level: low
@@ -188,27 +177,25 @@ steps:
   answer: '🤖 프롬프트: Wazuh 룰셋에서 SSH 관련 탐지 룰의 내용을 확인해줘
 
     📎 참고 (CLI): head -50 /var/ossec/ruleset/rules/0095-sshd_rules.xml'
-  answer_detail: sshd_rules.xml은 SSH 관련 탐지 룰을 정의합니다. rule id, level, description, match/regex 패턴을 포함하며, 이 룰에 매칭되는 로그가 알림으로
-    생성됩니다.
+  answer_detail: sshd_rules.xml은 SSH 관련 탐지 룰을 정의합니다. rule id, level, description, match/regex 패턴을 포함하며,
+    이 룰에 매칭되는 로그가 알림으로 생성됩니다.
   verify:
     type: output_contains
     expect: <rule
     field: stdout
     semantic:
-      intent: 'SOC 운영 w4 s6 — Wazuh 룰셋에서 SSH 관련 탐지 룰의 내용을 확인하시오. (cmd: head -50 /var/ossec/ruleset/rules/0095-sshd_rules.xml)'
+      intent: sshd 룰 정의 분석 — head -50 /var/ossec/ruleset/rules/0095-sshd_rules.xml 로 SSH 전용 룰 파일 구조 (<rule
+        id=5501 level=3> <if_sid>5500</if_sid> <match>Accepted</match> <description>...</description>).
+        XML 룰 syntax 학습
       success_criteria:
-      - '명령 실행: head -50 /var/ossec/ruleset/rules/0095-sshd_rules.xml'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - ruleset/rules/0095-sshd XML
+      - <rule id=... 구조
+      - XML syntax
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - head + vi 로 구조 학습
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 다른 룰 파일
+      - XML 구조 분석 없음
   target_vm: siem
   script: head -50 /var/ossec/ruleset/rules/0095-sshd_rules.xml
   risk_level: low
@@ -221,27 +208,25 @@ steps:
   answer: '🤖 프롬프트: WEB VM의 auth.log에서 SSH 로그인 시도 기록을 확인해줘
 
     📎 참고 (CLI): grep "sshd" /var/log/auth.log | tail -15'
-  answer_detail: auth.log는 인증 관련 이벤트를 기록합니다. Accepted(성공), Failed password(실패), Invalid user(존재하지 않는 사용자) 등의 패턴으로 SSH 공격 여부를
-    판단합니다.
+  answer_detail: auth.log는 인증 관련 이벤트를 기록합니다. Accepted(성공), Failed password(실패), Invalid user(존재하지 않는 사용자)
+    등의 패턴으로 SSH 공격 여부를 판단합니다.
   verify:
     type: output_contains
     expect: sshd
     field: stdout
     semantic:
-      intent: 'SOC 운영 w4 s7 — WEB VM의 auth.log에서 SSH 로그인 시도 기록을 확인하시오. (cmd: grep "sshd" /var/log/auth.log | tail -15)'
+      intent: auth.log sshd 로그 — grep sshd /var/log/auth.log | tail -15 로 Accepted password/publickey·Failed
+        password·Invalid user 패턴. Wazuh alert 의 원천 데이터. SOC 분석가의 근본 자료
       success_criteria:
-      - '명령 실행: grep "sshd" /var/log/auth.log | tail -15'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - grep sshd auth.log
+      - Accepted/Failed 패턴
+      - 원천 데이터 관점
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep + tail
+      - journalctl -u ssh
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - syslog 와 혼동
+      - 패턴 해석 없음
   target_vm: siem
   script: grep "sshd" /var/log/auth.log | tail -15
   risk_level: low
@@ -254,27 +239,25 @@ steps:
   answer: '🤖 프롬프트: SIEM VM에서 레벨 10 이상의 고위험 알림을 검색해줘
 
     📎 참고 (CLI): grep -E "level 1[0-5]" /var/ossec/logs/alerts/alerts.log | tail -10'
-  answer_detail: 레벨 10 이상의 알림은 즉시 조사가 필요한 고위험 이벤트입니다. 레벨 12는 높은 중요도, 레벨 14-15는 공격 탐지를 의미합니다. SOC에서는 이 레벨의 알림을 우선 처리합니다.
+  answer_detail: 레벨 10 이상의 알림은 즉시 조사가 필요한 고위험 이벤트입니다. 레벨 12는 높은 중요도, 레벨 14-15는 공격 탐지를 의미합니다. SOC에서는 이
+    레벨의 알림을 우선 처리합니다.
   verify:
     type: output_contains
     expect: level
     field: stdout
     semantic:
-      intent: 'SOC 운영 w4 s8 — SIEM VM에서 레벨 10 이상의 고위험 알림을 검색하시오. (cmd: grep -E "level 1[0-5]" /var/ossec/logs/alerts/alerts.log
-        | tail -10)'
+      intent: level 10+ 고위험만 — grep -E level 1[0-5] alerts.log | tail -10 로 level 10-15 범위 필터 → 즉시 대응
+        임계치. SOC tier 1/2 escalation 기준. level 10 high·12 critical·14-15 policy violation/attack
       success_criteria:
-      - '명령 실행: grep -E "level 1[0-5]" /var/ossec/logs/alerts/alerts.log | t'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - level 10-15 범위
+      - grep -E 정규식
+      - escalation 기준
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep -E + tail
+      - awk $N >= 10
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - level 7+ 로 범위 넓음
+      - escalation 기준 없음
   target_vm: siem
   script: grep -E "level 1[0-5]" /var/ossec/logs/alerts/alerts.log | tail -10
   risk_level: low
@@ -286,32 +269,29 @@ steps:
   points: 12
   answer: '🤖 프롬프트: SIEM VM에서 오늘 발생한 알림의 시간대별 분포를 확인해줘
 
-    📎 참고 (CLI): grep -oP "\d{4} \w+ \d+ \d{2}" /var/ossec/logs/alerts/alerts.log | awk "{print \$NF}" | sort | uniq -c | sort
-    -k2 -n'
+    📎 참고 (CLI): grep -oP "\d{4} \w+ \d+ \d{2}" /var/ossec/logs/alerts/alerts.log | awk "{print \$NF}"
+    | sort | uniq -c | sort -k2 -n'
   answer_detail: 시간대별 알림 분포를 분석하면 특정 시간에 집중되는 이벤트 패턴을 발견할 수 있습니다. 비업무 시간대의 급증은 공격 징후일 수 있습니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w4 s9 — SIEM VM에서 오늘 발생한 알림의 시간대별 분포를 확인하시오. (cmd: grep -oP "\d{4} \w+ \d+ \d{2}" /var/ossec/logs/alerts/alerts.log
-        | awk "{print \)'
+      intent: 시간대별 분포 — grep -oP \d{4} \w+ \d+ \d{2} alerts.log (YYYY Month DD HH 추출) + awk {print $NF}
+        로 HH 추출 + sort -k2 -n 으로 시간순 집계. 비업무 시간 (22-06h) 급증 = 공격 징후 의심
       success_criteria:
-      - '명령 실행: grep -oP "\d{4} \w+ \d+ \d{2}" /var/ossec/logs/alerts/alerts'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - 시간 정규식 추출
+      - 시간별 집계
+      - 업무시간 vs 비업무 분석
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep -oP + awk + sort
+      - python pandas resample
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 날짜만 (시간 제외)
+      - 분포 해석 없음
   target_vm: siem
-  script: grep -oP "\d{4} \w+ \d+ \d{2}" /var/ossec/logs/alerts/alerts.log | awk "{print \$NF}" | sort | uniq -c | sort -k2
-    -n
+  script: grep -oP "\d{4} \w+ \d+ \d{2}" /var/ossec/logs/alerts/alerts.log | awk "{print \$NF}" | sort
+    | uniq -c | sort -k2 -n
   risk_level: low
   bastion_prompt: SIEM VM에서 오늘 발생한 알림의 시간대별 분포를 확인해줘
 - order: 10
@@ -321,28 +301,27 @@ steps:
   points: 10
   answer: '🤖 프롬프트: SECU VM의 Suricata 로그에서 최근 탐지된 이벤트를 확인해줘
 
-    📎 참고 (CLI): tail -20 /var/log/suricata/fast.log 2>/dev/null || tail -20 /var/log/suricata/eve.json 2>/dev/null'
-  answer_detail: Suricata의 fast.log는 간단한 알림을, eve.json은 상세한 JSON 형식의 이벤트를 기록합니다. IDS 이벤트와 SIEM 알림을 교차 분석하면 위협 탐지 정확도가 높아집니다.
+    📎 참고 (CLI): tail -20 /var/log/suricata/fast.log 2>/dev/null || tail -20 /var/log/suricata/eve.json
+    2>/dev/null'
+  answer_detail: Suricata의 fast.log는 간단한 알림을, eve.json은 상세한 JSON 형식의 이벤트를 기록합니다. IDS 이벤트와 SIEM 알림을 교차
+    분석하면 위협 탐지 정확도가 높아집니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w4 s10 — SECU VM의 Suricata 로그에서 최근 탐지된 이벤트를 확인하시오. (cmd: tail -20 /var/log/suricata/fast.log 2>/dev/null
-        || tail -20 /var/log/suricata/ev)'
+      intent: Suricata fast.log 이벤트 — tail -20 /var/log/suricata/fast.log (한 줄 포맷 alert 로그) || eve.json
+        fallback. IDS 이벤트와 Wazuh alert 교차 분석 → 네트워크 + 호스트 레이어 상관. Suricata+Wazuh 통합 분석
       success_criteria:
-      - '명령 실행: tail -20 /var/log/suricata/fast.log 2>/dev/null || tail -20 '
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - fast.log 또는 eve.json
+      - '|| fallback 처리'
+      - 두 SIEM 소스 통합 관점
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - tail fast.log || tail eve.json
+      - jq eve.json select alert
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - Wazuh 재확인
+      - Suricata 개념 없음
   target_vm: siem
   script: tail -20 /var/log/suricata/fast.log 2>/dev/null || tail -20 /var/log/suricata/eve.json 2>/dev/null
   risk_level: low
