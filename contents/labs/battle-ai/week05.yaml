@@ -35,20 +35,21 @@ steps:
     expect: uid=
     field: stdout
     semantic:
-      intent: '[RED] 권한 상승(Privilege Escalation) + Blue 탐지 - 공격 기법 실행'
+      intent: '[RED] 초기 셸 정찰 — id + whoami + groups 로 UID/GID + 보조 그룹(sudo/adm/docker/www-data) 확인. 특수
+        그룹 멤버십은 권한 상승 벡터의 출발점. uid=<N>(<user>) 형식 출력'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - id + whoami 또는 groups 명령 실행
+      - uid= 키워드 포함 출력
+      - 그룹 멤버십의 권한 상승 벡터 가능성 언급
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - id && whoami && groups
+      - cat /etc/passwd | grep $USER
+      - getent group | grep $USER
+      - sudo -l (권한 확인까지)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - id 없이 whoami 만 (UID 정보 부족)
+      - 그룹 멤버십 분석 없음
+      - 원격 VM 아닌 attacker 로컬
   target_vm: attacker
   script: id && whoami && groups
   risk_level: low
@@ -68,20 +69,22 @@ steps:
     expect: /usr/
     field: stdout
     semantic:
-      intent: '[RED] 권한 상승(Privilege Escalation) + Blue 탐지 - 공격 기법 실행'
+      intent: '[RED] SUID 바이너리 열거 — find / -perm -4000 -type f 2>/dev/null | head -20 으로 setuid 비트 설정된
+        파일 탐색. 실행 시 파일 소유자(주로 root)의 EUID 로 실행되는 바이너리. nmap·find·vim·cp·bash 같은 GTFOBins 악용 대상 발견 시 root
+        escalation 가능'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - find / -perm -4000 -type f 또는 동등한 명령
+      - /usr/ 경로 포함 결과 (대부분의 SUID 가 /usr/bin 소재)
+      - SUID 개념 + 권한 상승 활용 언급
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - find / -perm -4000 -type f 2>/dev/null
+      - find / -perm -u+s -type f
+      - linpeas.sh 자동 열거
+      - GTFOBins 사이트 검색 (nmap·vim·find 등)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - -perm 조건 없이 전체 파일 find
+      - 2>/dev/null 없음 — 대량 permission denied 에러
+      - GTFOBins 같은 악용 가능 바이너리 개념 언급 없음
   target_vm: attacker
   script: find / -perm -4000 -type f 2>/dev/null | head -20
   risk_level: low
@@ -100,20 +103,22 @@ steps:
     expect: complete
     field: stdout
     semantic:
-      intent: '[RED] 권한 상승(Privilege Escalation) + Blue 탐지 - 공격 기법 실행'
+      intent: '[RED] sudo -l sudoers 권한 조회 — 현재 사용자가 sudo 로 실행 가능한 명령 + NOPASSWD 설정 여부 확인. NOPASSWD 로
+        허용된 명령이 vi/vim/less/awk 같은 GTFOBins 대상이면 즉시 root escalation. complete fallback 로 sudo 미설정 경우 안전
+        종료'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - sudo -l 명령 실행
+      - complete 키워드 출력 (fallback OR sudo 결과)
+      - NOPASSWD / GTFOBins 악용 개념 인지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - sudo -l 2>/dev/null || echo complete
+      - sudo -nl (비패스워드 테스트)
+      - cat /etc/sudoers (읽기 가능 시)
+      - ls /etc/sudoers.d/
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - sudo 실행 없이 개념 설명만
+      - NOPASSWD 악용 가능성 분석 없음
+      - 비밀번호 미입력 시 명령 실패 대응 없음
   target_vm: attacker
   script: sudo -l 2>/dev/null || echo 'sudo check complete'
   risk_level: low
@@ -134,20 +139,22 @@ steps:
     expect: Linux
     field: stdout
     semantic:
-      intent: '[RED] 권한 상승(Privilege Escalation) + Blue 탐지 - 공격 기법 실행'
+      intent: '[RED] 커널 버전 + cron job 정찰 — uname -a (커널 버전 → searchsploit / exploit-db 매칭 후 커널 익스플로잇 검색)
+        + cat /etc/crontab + ls /etc/cron.d/ (root 실행 스크립트 식별). cron 이 호출하는 스크립트가 사용자 쓰기 가능하면 root escalation'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - uname -a 또는 동등한 커널 정보
+      - /etc/crontab 또는 cron.d/ 조회
+      - Linux 키워드 + 커널 정보 출력
+      - 커널 exploit + cron path traversal 두 벡터 언급
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - uname -a + cat /etc/crontab + ls /etc/cron.d
+      - crontab -l (사용자별)
+      - systemctl list-timers (systemd timers 대체)
+      - linux-exploit-suggester.sh 자동 매칭
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 커널 또는 cron 중 한쪽만
+      - exploit 매칭 후속 단계 언급 없음
+      - cron 스크립트 쓰기 권한 검사 누락
   target_vm: attacker
   script: uname -a && echo '--- crontab ---' && cat /etc/crontab && echo '--- cron.d ---' && ls -la /etc/cron.d/
     2>/dev/null
@@ -168,20 +175,22 @@ steps:
     expect: cap_
     field: stdout
     semantic:
-      intent: '[RED] 권한 상승(Privilege Escalation) + Blue 탐지 - 공격 기법 실행'
+      intent: '[RED] Linux capabilities 열거 — getcap -r / 2>/dev/null | head -10 으로 POSIX file capabilities
+        설정된 바이너리 탐색. cap_setuid+ep(root 변신) / cap_dac_override+ep(권한 우회) / cap_sys_admin+ep(광범위 관리) 같은
+        위험 설정은 SUID 대체 권한 상승 벡터'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - getcap -r / 명령
+      - cap_ 키워드 포함 (cap_setuid, cap_net_admin 등)
+      - capabilities 가 SUID 대체 세분화 권한 개념 인지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - getcap -r / 2>/dev/null
+      - linpeas.sh 자동 capabilities 섹션
+      - find / -exec getcap {} + (felow)
+      - capsh --print (현재 프로세스 caps)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - SUID 재확인 (capabilities 아님)
+      - cap_setuid 같은 위험 cap 인식 없음
+      - getcap 결과 해석 없음
   target_vm: attacker
   script: getcap -r / 2>/dev/null | head -10
   risk_level: low
@@ -200,20 +209,22 @@ steps:
     expect: sudo
     field: stdout
     semantic:
-      intent: '[BLUE] 권한 상승(Privilege Escalation) + Blue 탐지 - 탐지·방어 구현'
+      intent: '[BLUE] /var/log/auth.log sudo 이벤트 분석 — grep sudo /var/log/auth.log | tail -15 로 sudo: user:
+        TTY=... USER=root COMMAND=... 형식 기록 확인. sudo 실패(NOT in sudoers/incorrect password) 또는 비정상 COMMAND
+        는 권한 상승 시도 증거'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - grep sudo /var/log/auth.log 실행
+      - sudo 키워드 포함 출력
+      - sudo 실패 vs 성공 로그 형식 인지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - grep sudo /var/log/auth.log
+      - journalctl _COMM=sudo --since 1h
+      - ausearch -c sudo (auditd)
+      - pam_tally2 --user <user> 실패 카운트
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - auth.log 아닌 다른 로그 조회
+      - sudo 필터 없이 전체 덤프
+      - 실패/성공 구분 없음
   target_vm: web
   script: grep 'sudo' /var/log/auth.log 2>/dev/null | tail -15
   risk_level: low
@@ -234,20 +245,21 @@ steps:
     expect: complete
     field: stdout
     semantic:
-      intent: '[BLUE] 권한 상승(Privilege Escalation) + Blue 탐지 - 탐지·방어 구현'
+      intent: '[BLUE] Wazuh 권한 상승 경보 (level>=7) — jq select(.rule.level >= 7) alerts.json 으로 높은 위험도 이벤트만
+        필터. Wazuh 는 sudo 실패·SUID 실행·passwd 파일 변경·adduser 이벤트 등을 rule.level 로 분류. level 7+ 는 사건 대응 필요 임계치'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - jq select(.rule.level >= 7) 필터
+      - complete 키워드 또는 Wazuh 관련 출력
+      - rule.level 7+ = 높은 위험도 임계치 인지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - jq select(.rule.level >= 7) alerts.json
+      - Wazuh Kibana dashboard severity 필터
+      - Wazuh API /alerts?rule.level>=7
+      - ossec-alert-digest --level 7
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - level 필터 없이 전체 경보
+      - 권한 상승 관련 rule.id 식별 없음
+      - 완전히 다른 로그 조회
   target_vm: siem
   script: 'sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30 | jq -r ''select(.rule.level
     >= 7) | "Level \(.rule.level): \(.rule.description)"'' 2>/dev/null | tail -10 || echo ''Wazuh privilege
@@ -271,20 +283,22 @@ steps:
     - SUID
     field: stdout
     semantic:
-      intent: '[BLUE] 권한 상승(Privilege Escalation) + Blue 탐지 - 탐지·방어 구현'
+      intent: '[BLUE] SUID 감사 (Audit) — find / -perm -4000 -type f | wc -l 로 SUID 바이너리 총 개수 확인 → 불필요한
+        SUID 검토. 실전: 운영에 필요 없는 SUID(nmap/vim/find/cp/bash)는 chmod u-s 로 제거. 현재 단계는 baseline 카운트만 (실제 제거는
+        approval 필요)'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - find / -perm -4000 -type f 열거 + wc -l 카운트
+      - Audit complete 또는 SUID 키워드 출력
+      - chmod u-s 로 SUID 제거 방안 언급
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - find -perm -4000 | wc -l
+      - AIDE / Tripwire 로 SUID 변경 모니터
+      - Lynis 보안 감사 도구
+      - Wazuh rootcheck 모듈
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - SUID 변경 없이 열거만
+      - 불필요 SUID 식별 기준 없음
+      - baseline 개념 없음
   target_vm: web
   script: echo '=== SUID files on web ===' && find / -perm -4000 -type f 2>/dev/null | wc -l && echo 'Audit
     complete - review SUID files for unnecessary permissions'
@@ -305,20 +319,22 @@ steps:
     expect: /
     field: stdout
     semantic:
-      intent: '[RED] 권한 상승(Privilege Escalation) + Blue 탐지 - 공격 기법 실행'
+      intent: '[RED] 쓰기 가능 파일 정찰 — find /etc -writable -type f 2>/dev/null (/etc 내 사용자 쓰기 가능 파일, /etc/passwd
+        쓰기 가능 시 UID 0 계정 추가로 root) + find /tmp /var/tmp -type f -executable (공격자 업로드 도구 탐지). 잘못된 chmod
+        777 설정 + 악성 바이너리 드롭 경로 확인'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - find /etc -writable 실행
+      - find /tmp /var/tmp -executable 실행
+      - /etc/passwd world-writable 악용 시나리오 언급
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - find /etc -writable -type f 2>/dev/null
+      - find / -perm -o+w -type f
+      - ls -la /etc/passwd /etc/shadow
+      - linpeas.sh writable files 섹션
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 쓰기 가능 파일 검색 없이 일반 ls
+      - /etc/passwd 같은 중요 파일 집중 없음
+      - /tmp 의 업로드 도구 탐지 누락
   target_vm: attacker
   script: find /etc -writable -type f 2>/dev/null | head -10 && find /tmp /var/tmp -type f -executable
     2>/dev/null | head -10
@@ -341,20 +357,23 @@ steps:
     expect: Integrity baseline created
     field: stdout
     semantic:
-      intent: '[BLUE] 권한 상승(Privilege Escalation) + Blue 탐지 - 탐지·방어 구현'
+      intent: '[BLUE] 파일 무결성 베이스라인 + 최근 변경 파일 탐지 — find /tmp /var/tmp /dev/shm -type f -mtime -1 (24시간
+        내 업로드된 의심 도구) + sha256sum /etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config > /tmp/integrity_baseline.txt
+        (중요 설정 해시 저장). 향후 변조 탐지용 baseline. FIM (File Integrity Monitoring) 기초'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - find ... -mtime -1 최근 변경 파일 탐지
+      - sha256sum 으로 중요 설정 파일 해시
+      - /tmp/integrity_baseline.txt 생성 + Integrity baseline created 메시지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - find -mtime -1 + sha256sum + redirect
+      - aide --init / aide --check
+      - Tripwire policy 설정
+      - Wazuh syscheck 모듈 활성화
+      - auditd -w /etc/passwd -p wa
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - baseline 파일 생성 없음
+      - sha256sum 없이 mtime 확인만
+      - 중요 설정 파일(/etc/passwd/shadow) 제외
   target_vm: web
   script: find /tmp /var/tmp /dev/shm -type f -mtime -1 2>/dev/null | head -10 && sha256sum /etc/passwd
     /etc/shadow /etc/crontab /etc/ssh/sshd_config 2>/dev/null > /tmp/integrity_baseline.txt && echo 'Integrity
