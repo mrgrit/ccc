@@ -31,20 +31,20 @@ steps:
     expect: Port forwarding
     field: stdout
     semantic:
-      intent: 측면 이동 (Lateral Movement) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: SSH -L 로컬 포트 포워딩 — web VM 을 피봇으로 SIEM(Wazuh 443) 에 로컬 8443 포트 매핑 (MITRE T1572)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sshpass + ssh -f -N -L 8443:<siem>:443 ccc@<web> 실행
+      - curl -sk https://localhost:8443 로 터널 검증
+      - Port forwarding 성공 메시지 출력
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh -L <local>:<target>:<port> <user>@<jump>
+      - chisel client 로 TCP 터널
+      - ligolo-ng agent tunnel
+      - socat TCP-LISTEN:<local>,fork TCP:<target>:<port>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(측면 이동 (Lateral Movement))와 무관한 기법
+      - -L 옵션 없이 SSH 접속만
+      - 터널 검증(curl) 없음
+      - MITRE T1572 언급 없음
   target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no -f -N -L 8443:10.20.30.100:443 ccc@10.20.30.80 2>/dev/null
     && sleep 1 && curl -sk https://localhost:8443 | head -20 && echo 'Port forwarding to SIEM:443 established'
@@ -67,20 +67,20 @@ steps:
     expect: SOCKS proxy established
     field: stdout
     semantic:
-      intent: 측면 이동 (Lateral Movement) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: SSH -D SOCKS 동적 프록시 — 1080 포트에서 전체 내부망으로 터널 라우팅 (proxychains 와 결합 시 모든 도구 터널 경유)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh -f -N -D 1080 ccc@<web> 실행
+      - ss -tlnp | grep 1080 으로 SOCKS 리스닝 확인
+      - proxychains 연계 활용 가능성 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh -D 1080 <user>@<jump>
+      - chisel client --proxy
+      - Tor 기반 SOCKS 대체
+      - dynamic SSH + proxychains nmap/curl
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(측면 이동 (Lateral Movement))와 무관한 기법
+      - -L 정적 포워딩만
+      - 리스닝 포트 확인 없음
+      - proxychains 언급 없음
   target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no -f -N -D 1080 ccc@10.20.30.80 2>/dev/null && sleep
     1 && echo 'SOCKS proxy established on port 1080' && ss -tlnp | grep 1080
@@ -101,20 +101,20 @@ steps:
     expect: Nmap scan report
     field: stdout
     semantic:
-      intent: 측면 이동 (Lateral Movement) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 피봇 호스트(web)에서 내부망 nmap -sn — attacker 에서 직접 보이지 않는 서브넷·호스트 발견
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh ccc@<web> nmap -sn 10.20.30.0/24 실행
+      - 출력에 Nmap scan report 최소 3개 (호스트 발견)
+      - 피봇팅이 직접 스캔보다 더 많은 호스트 발견 가능성 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh + nmap -sn 원격 실행
+      - proxychains nmap -sT -Pn <cidr>
+      - masscan 을 웹서버에 업로드 후 실행
+      - 임시 bash 스캐너 스크립트 drop
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(측면 이동 (Lateral Movement))와 무관한 기법
+      - attacker 에서 직접 스캔 (피봇 의미 없음)
+      - -sn 대신 -sS 사용 (root 필요)
+      - 피봇팅 원리 설명 없음
   target_vm: attacker
   script: ssh ccc@10.20.30.80 'nmap -sn 10.20.30.0/24 2>/dev/null' 2>/dev/null
   risk_level: low
@@ -135,20 +135,20 @@ steps:
     expect: Credential reuse
     field: stdout
     semantic:
-      intent: 측면 이동 (Lateral Movement) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 자격증명 재사용(Credential Reuse) — web 에서 획득한 비번으로 secu 에 SSH 시도, 측면 이동 최빈 벡터 (MITRE T1078)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh ccc@<web> ssh ccc@<secu> hostname 로 연쇄 접속
+      - 'Credential reuse confirmed: web -> secu 메시지 출력'
+      - 각 시스템 고유 비번·MFA 필요성 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh 중첩 실행 (피봇 경유)
+      - sshpass 로 자동화
+      - crackmapexec smb <subnet> -u <user> -p <pw>
+      - Kerberoast 티켓 재사용 (AD 환경)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(측면 이동 (Lateral Movement))와 무관한 기법
+      - 단일 호스트만 접속
+      - 접속 성공 여부 검증 없음
+      - T1078 맥락 언급 없음
   target_vm: attacker
   script: 'ssh ccc@10.20.30.80 ''ssh ccc@10.20.30.1 hostname 2>/dev/null'' 2>/dev/null && echo ''Credential
     reuse confirmed: web -> secu'''
@@ -172,20 +172,20 @@ steps:
     expect: Remote Port Forwarding
     field: stdout
     semantic:
-      intent: 측면 이동 (Lateral Movement) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: SSH -R 리모트(역방향) 포트 포워딩 — 피봇(web) 내부 서비스를 attacker 측 포트로 매핑, 내부 → 외부 노출
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh -R <remote_port>:<internal>:<svc_port> <user>@<attacker> 명령 제시
+      - attacker:9090 → siem:443 경유 흐름 설명
+      - SSH 세션 모니터링(-R flag) 탐지 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh -R 9090:10.20.30.100:443 ccc@<attacker>
+      - chisel reverse tunnel (server ↔ client 반전)
+      - ligolo-ng agent 연결 후 tunnel
+      - autossh 로 영속화
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(측면 이동 (Lateral Movement))와 무관한 기법
+      - -L 로 시도 (방향 반대)
+      - 흐름 설명 없음
+      - 탐지 방법 누락
   target_vm: attacker
   script: 'echo ''=== Remote Port Forwarding ==='' && echo ''Command: ssh -R 9090:10.20.30.100:443 ccc@10.20.30.201''
     && echo ''Effect: attacker:9090 -> siem:443 via web server'' && echo ''---'' && echo ''This allows
@@ -209,20 +209,20 @@ steps:
     expect: '---'
     field: stdout
     semantic:
-      intent: 측면 이동 (Lateral Movement) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: ~/.ssh/known_hosts + /etc/ssh/ssh_known_hosts 조회 — 이전 SSH 접속 이력에서 다음 피봇 대상 후보 식별
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh + cat ~/.ssh/known_hosts, /etc/ssh/ssh_known_hosts 실행
+      - 출력에 호스트명/해시 라인 + --- 구분자
+      - 관리자 자주 접속 서버가 다음 대상이 될 수 있음 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh ccc@<web> cat ~/.ssh/known_hosts
+      - ssh-keygen -H 로 해시된 known_hosts 검사
+      - ssh-keygen -F <hostname>
+      - LinEnum .ssh 섹션
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(측면 이동 (Lateral Movement))와 무관한 기법
+      - known_hosts 대신 authorized_keys 확인
+      - 해시된 호스트명의 해석 불가 언급 없음
+      - 다음 대상 식별 맥락 없음
   target_vm: attacker
   script: ssh ccc@10.20.30.80 'cat ~/.ssh/known_hosts 2>/dev/null; echo ---; cat /etc/ssh/ssh_known_hosts
     2>/dev/null' 2>/dev/null | head -20
@@ -244,20 +244,20 @@ steps:
     expect: Wazuh
     field: stdout
     semantic:
-      intent: 측면 이동 (Lateral Movement) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: SSH ProxyJump(-J) — 중간 호스트(web) 경유로 SIEM 에 직접 접속, 다단계 네트워크에서 깊숙한 시스템 접근
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh -J ccc@<web> ccc@<siem> 명령 실행
+      - SIEM 에서 hostname 및 /var/ossec/etc/ 또는 Wazuh 관련 디렉터리 확인
+      - 기존 -L + 추가 ssh 대비 -J 의 편의성 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh -J <user>@<jump> <user>@<target>
+      - ~/.ssh/config 의 ProxyCommand 설정
+      - ssh -o ProxyJump=<user>@<jump> <target>
+      - SSH 체인 (ssh → ssh → ssh)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(측면 이동 (Lateral Movement))와 무관한 기법
+      - -J 없이 단일 호스트만 접속
+      - SIEM 에서 Wazuh 확인 없음
+      - 다단계 네트워크 맥락 언급 없음
   target_vm: attacker
   script: sshpass -p1 ssh -o StrictHostKeyChecking=no -J ccc@10.20.30.80 ccc@10.20.30.100 'hostname &&
     ls /var/ossec/etc/ 2>/dev/null || echo "Wazuh directory check"' 2>/dev/null
@@ -280,20 +280,20 @@ steps:
     expect: '---'
     field: stdout
     semantic:
-      intent: 측면 이동 (Lateral Movement) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: web VM 설정·스크립트·히스토리에서 평문 비밀번호 검색 — grep -r password /etc/ /home/ 로 credential harvesting
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - grep -rl password /etc/ 와 /home/ 및 find .conf 실행
+      - 각 섹션 --- 구분자와 발견된 파일 경로 목록
+      - 설정파일 평문 비번의 위험성(DB/API 연결 정보) 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - grep -rl pattern <dir>
+      - grep -rE (password|secret|token|api_key)
+      - find / -name *.conf -exec grep -l ...
+      - LinPEAS credential 섹션
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(측면 이동 (Lateral Movement))와 무관한 기법
+      - 현재 디렉터리만 검색
+      - '--- 구분자로 결과 분리 없음'
+      - 평문 저장 위험성 언급 없음
   target_vm: attacker
   script: ssh ccc@10.20.30.80 'grep -rl "password" /etc/ 2>/dev/null | head -5; echo ---; grep -rl "pass"
     /home/ 2>/dev/null | head -5; echo ---; find / -name "*.conf" -exec grep -l "password" {} \; 2>/dev/null
@@ -316,20 +316,20 @@ steps:
     expect: inet
     field: stdout
     semantic:
-      intent: 측면 이동 (Lateral Movement) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: ip addr + ip route 로 피봇 호스트의 다중 인터페이스·라우팅 확인 — 추가 서브넷(내부망) 연결 여부 파악
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh + ip addr show; ip route show 실행
+      - 출력에 inet 주소 + default gateway + 추가 라우트 최소 1개
+      - dual-homed 호스트의 피봇 가치 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ip addr; ip route
+      - ifconfig; netstat -rn (구형)
+      - nmcli -g IP4.ADDRESS,IP4.GATEWAY device show
+      - route -n
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(측면 이동 (Lateral Movement))와 무관한 기법
+      - ip addr 만 (라우팅 누락)
+      - 추가 서브넷 해석 없음
+      - 피봇 포인트 맥락 언급 없음
   target_vm: attacker
   script: ssh ccc@10.20.30.80 'ip addr show 2>/dev/null; echo ===; ip route show 2>/dev/null' 2>/dev/null
   risk_level: low
@@ -353,20 +353,21 @@ steps:
     expect: Alternative Pivoting Tools
     field: stdout
     semantic:
-      intent: 측면 이동 (Lateral Movement) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: SSH 대안 터널링 도구 정리 — socat(TCP 릴레이)·chisel(HTTP/WebSocket)·ligolo-ng(에이전트)·rpivot(reverse
+        SOCKS) 4종 비교
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - === Alternative Pivoting Tools === 헤더 + 4개 도구 명령 예시
+      - 각 도구의 사용 시나리오 (SSH 차단/제한 도구 환경) 설명
+      - HTTP/WebSocket 기반의 방화벽 우회 장점 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo 로 각 도구 명령 출력
+      - 실제 socat TCP-LISTEN 실행
+      - chisel 서버/클라이언트 예시
+      - ligolo-ng proxy/agent 구성
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(측면 이동 (Lateral Movement))와 무관한 기법
+      - 도구 2개 이하
+      - 사용 시나리오 없음
+      - SSH 대비 장점 설명 없음
   target_vm: attacker
   script: 'echo ''=== Alternative Pivoting Tools ==='' && echo ''1. socat: socat TCP-LISTEN:8080,fork
     TCP:10.20.30.100:443'' && echo ''2. chisel: chisel server -p 8080 --reverse (server) / chisel client
@@ -390,20 +391,20 @@ steps:
     expect: PORT
     field: stdout
     semantic:
-      intent: 측면 이동 (Lateral Movement) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 피봇 호스트(web) 에서 secu 방화벽 서버로 nmap 포트 스캔 — 내부 관리 인터페이스(8080/8443) 접근 가능성 평가
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh ccc@<web> + nmap -sT -p 22,80,443,8080,8443 <secu> 실행
+      - 출력에 PORT STATE SERVICE 테이블과 <secu> 결과
+      - 내부 관리 인터페이스 발견 시 공격 확장 가능성 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh + nmap -sT -p <ports> <internal>
+      - proxychains nmap 대체
+      - socat + nc -zv 수동 체크
+      - masscan --rate
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(측면 이동 (Lateral Movement))와 무관한 기법
+      - attacker 에서 직접 스캔
+      - 외부 포트만 스캔
+      - 관리 인터페이스 맥락 언급 없음
   target_vm: attacker
   script: ssh ccc@10.20.30.80 'nmap -sT -p 22,80,443,8080,8443 10.20.30.1 2>/dev/null' 2>/dev/null
   risk_level: low
@@ -422,20 +423,20 @@ steps:
     expect: 10.20.30
     field: stdout
     semantic:
-      intent: 측면 이동 (Lateral Movement) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 피봇 호스트의 ARP 테이블 조회 — 최근 L2 통신 호스트에서 게이트웨이·서버 통신 패턴과 중요 시스템 식별
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh + ip neigh show 실행
+      - 출력에 10.20.30.x IP + MAC 매핑 최소 2개
+      - gateway·자주 통신하는 호스트가 핵심 시스템일 가능성 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ip neigh show
+      - arp -a
+      - arp -n | grep -v incomplete
+      - nmap -PR (ARP ping) 으로 보강
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(측면 이동 (Lateral Movement))와 무관한 기법
+      - 캐시 비어 있어도 트래픽 유발 없이 종료
+      - MAC 해석 없이 IP 만
+      - 중요 시스템 식별 맥락 없음
   target_vm: attacker
   script: ssh ccc@10.20.30.80 'ip neigh show 2>/dev/null' 2>/dev/null
   risk_level: low
@@ -458,20 +459,20 @@ steps:
     expect: sshuttle VPN
     field: stdout
     semantic:
-      intent: 측면 이동 (Lateral Movement) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: sshuttle VPN-over-SSH — SOCKS 와 달리 투명한 라우팅, iptables 자동 설정으로 모든 TCP 트래픽을 지정 대역으로 전달
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sshuttle -r <user>@<pivot> <cidr> 명령 제시
+      - SOCKS 대비 장점(투명·자동 iptables) 최소 2개 언급
+      - === sshuttle VPN-over-SSH === 헤더 출력
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sshuttle -r ccc@<pivot> <cidr>
+      - sshuttle -vvr --dns ccc@<pivot> 0/0 (전체 트래픽)
+      - WireGuard over SSH 대체
+      - OpenVPN client-to-site
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(측면 이동 (Lateral Movement))와 무관한 기법
+      - SSH -D 와 혼동
+      - iptables 자동 설정 언급 없음
+      - SOCKS 비교 없음
   target_vm: attacker
   script: 'echo ''=== sshuttle VPN-over-SSH ==='' && echo ''Command: sshuttle -r ccc@10.20.30.80 10.20.30.0/24''
     && echo ''Effect: All traffic to 10.20.30.0/24 routed through web server'' && echo ''---'' && echo
@@ -499,20 +500,21 @@ steps:
     expect: Lateral Movement IoCs
     field: stdout
     semantic:
-      intent: 측면 이동 (Lateral Movement) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 측면 이동 IoC 정리 — 네트워크 기반(비정상 SSH·포트 포워딩·SOCKS·내부 스캐닝) + 호스트 기반(authorized_keys·auth.log·ssh
+        -L/-D 프로세스) 탐지 지표
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - '[Network-based] [Host-based] [Detection Tools] 3 섹션 이상'
+      - 각 섹션 최소 3개 IoC
+      - Wazuh/Suricata/Zeek 탐지 도구 매핑
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - markdown 또는 echo -e 다줄
+      - Sigma 룰 예시
+      - MITRE ATT&CK TA0008 매핑
+      - NetFlow 기반 탐지 예시
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(측면 이동 (Lateral Movement))와 무관한 기법
+      - IoC 나열만 (네트워크/호스트 구분 없음)
+      - 탐지 도구 누락
+      - ssh -L/-D 프로세스 모니터링 언급 없음
   target_vm: attacker
   script: 'echo -e ''=== Lateral Movement IoCs ===\n\n[Network-based]\n1. Unusual SSH connections between
     servers\n2. Port forwarding traffic patterns\n3. SOCKS proxy traffic on non-standard ports\n4. Increased
@@ -544,20 +546,21 @@ steps:
     expect: Lateral Movement Report
     field: stdout
     semantic:
-      intent: 측면 이동 (Lateral Movement) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 측면 이동 리포트 — 공격 경로 다이어그램(attacker→web→secu/siem) + 사용 기법(T1572/T1078/T1021.004/T1046) ATT&CK
+        매핑 + 방어(키 인증·세분화·MFA)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - '[Attack Path] 섹션에 다이어그램 + [Techniques Used] 최소 4개 T-ID + [Credentials Obtained] + [Recommendations]'
+      - Lateral Movement Report 헤더 + 파일 저장
+      - 제로 트러스트 아키텍처 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e 다줄 다이어그램
+      - mermaid graph
+      - markdown 구조화
+      - python jinja2 템플릿
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(측면 이동 (Lateral Movement))와 무관한 기법
+      - 공격 경로 다이어그램 없음
+      - T-ID 매핑 없음
+      - 파일 저장 없음
   target_vm: attacker
   script: echo -e '=== Lateral Movement Report ===\n\n[Attack Path]\nattacker(201) --SSH--> web(80) --SSH-->
     secu(1)\n                              \\--SSH--> siem(100)\n\n[Techniques Used]\n1. SSH Local Port
