@@ -17,30 +17,41 @@ steps:
   hint: 간소화된 분류기에 sign gradient 방향으로 섭동을 가하세요.
   category: attack
   points: 12
-  answer: '🤖 프롬프트: Python으로 FGSM 적대적 공격을 수치 시뮬레이션하시오. epsilon 0.1~0.5에서 분류 결과 변화를
-    관찰해줘
+  answer: '🤖 프롬프트: Python으로 FGSM 적대적 공격을 수치 시뮬레이션하시오. epsilon 0.1~0.5에서 분류 결과 변화를 관찰해줘
 
     📎 참고 (CLI): python3 -c "import math;w=[0.8,-0.3,0.5,0.2,-0.4];b=-0.5;x=[0.9,0.2,0.7,0.5,0.3];logit=sum(wi*xi
-    for wi,xi in zip(w,x))+b;p=1/(1+math.exp(-logit));print(f''Original: STOP_SIGN
-    (p={p:.3f})'');[print(f''  eps={e}: {\"EVADED\" if 1/(1+math.exp(-(sum(wi*(xi+e*(1
-    if wi>0 else -1)) for wi,xi in zip(w,x))+b)))<0.5 else \"DETECTED\"}'') for e
-    in [0.1,0.2,0.3,0.5]]"'
+    for wi,xi in zip(w,x))+b;p=1/(1+math.exp(-logit));print(f''Original: STOP_SIGN (p={p:.3f})'');[print(f''  eps={e}:
+    {\"EVADED\" if 1/(1+math.exp(-(sum(wi*(xi+e*(1 if wi>0 else -1)) for wi,xi in zip(w,x))+b)))<0.5 else
+    \"DETECTED\"}'') for e in [0.1,0.2,0.3,0.5]]"'
   answer_detail: FGSM은 가장 기본적인 적대적 공격 알고리즘입니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: FGSM(Fast Gradient Sign Method) 적대적 공격 수치 시뮬 — epsilon 0.1~0.5에서 분류 결과 변화 관찰
+      success_criteria:
+      - python 으로 epsilon 3 값 이상 시도
+      - 각 epsilon 에서 분류 결과 변화 표
+      - 적대적 샘플의 원리(gradient 방향 perturbation) 설명
+      acceptable_methods:
+      - numpy 로 gradient sign 계산
+      - torch autograd 기반
+      - cleverhans 라이브러리
+      - foolbox 도구
+      negative_signs:
+      - epsilon 1개만
+      - 변화 관찰 없음
+      - 원리 설명 부재
   target_vm: attacker
   script: 'python3 -c "import math;w=[0.8,-0.3,0.5,0.2,-0.4];b=-0.5;x=[0.9,0.2,0.7,0.5,0.3];logit=sum(wi*xi
-    for wi,xi in zip(w,x))+b;p=1/(1+math.exp(-logit));print(f''Original: STOP_SIGN
-    (p={p:.3f})'');[print(f''  eps={e}: {\"EVADED\" if 1/(1+math.exp(-(sum(wi*(xi+e*(1
-    if wi>0 else -1)) for wi,xi in zip(w,x))+b)))<0.5 else \"DETECTED\"}'') for e
-    in [0.1,0.2,0.3,0.5]]"'
+    for wi,xi in zip(w,x))+b;p=1/(1+math.exp(-logit));print(f''Original: STOP_SIGN (p={p:.3f})'');[print(f''  eps={e}:
+    {\"EVADED\" if 1/(1+math.exp(-(sum(wi*(xi+e*(1 if wi>0 else -1)) for wi,xi in zip(w,x))+b)))<0.5 else
+    \"DETECTED\"}'') for e in [0.1,0.2,0.3,0.5]]"'
   risk_level: low
   bastion_prompt: Python으로 FGSM 적대적 공격을 수치 시뮬레이션하시오. epsilon 0.1~0.5에서 분류 결과 변화를 관찰해줘
 - order: 2
-  instruction: Python으로 가상 CAN 버스 트래픽을 생성하고 분석하시오. 엔진(0x100), 브레이크(0x200), 조향(0x300)
-    ECU 메시지를 시뮬레이션하라.
+  instruction: Python으로 가상 CAN 버스 트래픽을 생성하고 분석하시오. 엔진(0x100), 브레이크(0x200), 조향(0x300) ECU 메시지를 시뮬레이션하라.
   hint: struct.pack으로 CAN 프레임 데이터를 구성하세요.
   category: config
   points: 12
@@ -48,18 +59,33 @@ steps:
 
     📎 참고 (CLI): python3 -c "import struct;msgs=[(0x100,struct.pack(''>HH'',6000,2500)+b''\x00''*4,''Engine:
     60km/h 2500rpm''),(0x200,b''\x00''*8,''Brake: released''),(0x300,struct.pack(''>h'',0)+b''\x00''*6,''Steer:
-    0 deg'')];print(''=== CAN Bus Traffic ==='');[print(f''  ID:0x{m[0]:03X} Data:{m[1].hex()}
-    | {m[2]}'') for m in msgs]"'
+    0 deg'')];print(''=== CAN Bus Traffic ==='');[print(f''  ID:0x{m[0]:03X} Data:{m[1].hex()} | {m[2]}'')
+    for m in msgs]"'
   answer_detail: CAN 메시지 구조를 이해하면 인젝션 공격을 수행할 수 있습니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: 가상 CAN 버스 트래픽 생성·분석 — 엔진(0x100)/브레이크(0x200)/조향(0x300) ECU 메시지
+      success_criteria:
+      - 3 ECU ID 모두 메시지 생성
+      - 각 메시지 payload 구조(byte 0-7) 정의
+      - CAN 프로토콜 특성(11/29bit ID, 우선순위) 언급
+      acceptable_methods:
+      - python can-utils 시뮬
+      - python-can 라이브러리
+      - cantools 로 DBC 파싱
+      - ICSim 시뮬레이터
+      negative_signs:
+      - ECU 1-2개만
+      - payload 구조 없음
+      - CAN 특성 언급 없음
   target_vm: attacker
   script: 'python3 -c "import struct;msgs=[(0x100,struct.pack(''>HH'',6000,2500)+b''\x00''*4,''Engine:
     60km/h 2500rpm''),(0x200,b''\x00''*8,''Brake: released''),(0x300,struct.pack(''>h'',0)+b''\x00''*6,''Steer:
-    0 deg'')];print(''=== CAN Bus Traffic ==='');[print(f''  ID:0x{m[0]:03X} Data:{m[1].hex()}
-    | {m[2]}'') for m in msgs]"'
+    0 deg'')];print(''=== CAN Bus Traffic ==='');[print(f''  ID:0x{m[0]:03X} Data:{m[1].hex()} | {m[2]}'')
+    for m in msgs]"'
   risk_level: low
   bastion_prompt: Python으로 가상 CAN 버스 트래픽을 생성하고 분석해줘
 - order: 3
@@ -70,19 +96,32 @@ steps:
   answer: '🤖 프롬프트: CAN 버스 인젝션 공격을 시뮬레이션해줘
 
     📎 참고 (CLI): python3 -c "import struct;print(''=== CAN Injection Attack ==='');steer=struct.pack(''>h'',450)+b''\x00''*6;print(f''  [INJECT]
-    ID:0x300 Data:{steer.hex()} — Force right turn 45deg'');brake=b''\x00''*8;print(f''  [INJECT]
-    ID:0x200 Data:{brake.hex()} — Disable brakes'');print(''  [CRITICAL] Vehicle steering
-    and brakes compromised!'')"'
+    ID:0x300 Data:{steer.hex()} — Force right turn 45deg'');brake=b''\x00''*8;print(f''  [INJECT] ID:0x200
+    Data:{brake.hex()} — Disable brakes'');print(''  [CRITICAL] Vehicle steering and brakes compromised!'')"'
   answer_detail: CAN 인젝션은 차량 제어를 직접 탈취하는 치명적 공격입니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: CAN 버스 인젝션 공격 — 조향 45도 우회전 + 브레이크 비활성화 명령 주입
+      success_criteria:
+      - 조향/브레이크 메시지 각각 주입
+      - 인증 없는 CAN 의 치명적 위험 설명
+      - Miller-Valasek Jeep 해킹 사례 언급
+      acceptable_methods:
+      - python can send
+      - can-utils cansend
+      - scapy CAN 레이어
+      - CAN bus attack tool
+      negative_signs:
+      - 주입 1종만
+      - 위험 설명 없음
+      - 사례 언급 없음
   target_vm: attacker
   script: python3 -c "import struct;print('=== CAN Injection Attack ===');steer=struct.pack('>h',450)+b'\x00'*6;print(f'  [INJECT]
-    ID:0x300 Data:{steer.hex()} — Force right turn 45deg');brake=b'\x00'*8;print(f'  [INJECT]
-    ID:0x200 Data:{brake.hex()} — Disable brakes');print('  [CRITICAL] Vehicle steering
-    and brakes compromised!')"
+    ID:0x300 Data:{steer.hex()} — Force right turn 45deg');brake=b'\x00'*8;print(f'  [INJECT] ID:0x200
+    Data:{brake.hex()} — Disable brakes');print('  [CRITICAL] Vehicle steering and brakes compromised!')"
   risk_level: low
   bastion_prompt: CAN 버스 인젝션 공격을 시뮬레이션해줘
 - order: 4
@@ -94,42 +133,69 @@ steps:
 
     📎 참고 (CLI): python3 -c "import hmac,hashlib;key=b''mfg_key'';fw=b''firmware_v2.2'';sig=hmac.new(key,fw,hashlib.sha256).hexdigest()[:32];print(''===
     OTA Verification ==='');print(f''  [PASS] Legit: sig matches'');fake_sig=hmac.new(b''fake'',fw,hashlib.sha256).hexdigest()[:32];print(f''  [FAIL]
-    Tampered: sig mismatch'');print(f''  [FAIL] Rollback: v1.9 < current v2.1'');print(''  OTA
-    security: signature + version + hash required'')"'
+    Tampered: sig mismatch'');print(f''  [FAIL] Rollback: v1.9 < current v2.1'');print(''  OTA security:
+    signature + version + hash required'')"'
   answer_detail: OTA 보안은 서명, 해시, 롤백 방지의 3중 검증이 필요합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: OTA 업데이트 서명 검증 — 정상/변조/롤백 3 케이스 각각 검증
+      success_criteria:
+      - RSA 또는 Ed25519 서명 검증 로직
+      - 3 케이스 모두 테스트 결과
+      - rollback 방지(version check) 포함
+      acceptable_methods:
+      - cryptography RSA
+      - PyNaCl Ed25519
+      - UPTANE 프레임워크 언급
+      - TUF spec 참조
+      negative_signs:
+      - 서명 검증 없음
+      - 2 케이스 이하
+      - rollback 누락
   target_vm: attacker
   script: 'python3 -c "import hmac,hashlib;key=b''mfg_key'';fw=b''firmware_v2.2'';sig=hmac.new(key,fw,hashlib.sha256).hexdigest()[:32];print(''===
     OTA Verification ==='');print(f''  [PASS] Legit: sig matches'');fake_sig=hmac.new(b''fake'',fw,hashlib.sha256).hexdigest()[:32];print(f''  [FAIL]
-    Tampered: sig mismatch'');print(f''  [FAIL] Rollback: v1.9 < current v2.1'');print(''  OTA
-    security: signature + version + hash required'')"'
+    Tampered: sig mismatch'');print(f''  [FAIL] Rollback: v1.9 < current v2.1'');print(''  OTA security:
+    signature + version + hash required'')"'
   risk_level: low
   bastion_prompt: Python으로 OTA 업데이트 서명 검증 시스템을 구현하시오. 정상/변조/롤백 업데이트를 각각 검증하라.
 - order: 5
-  instruction: CAN 버스 DoS 공격 시뮬레이션을 수행하시오. 최고 우선순위(ID=0x000) 프레임을 대량 전송하여 다른 ECU 통신을
-    차단하라.
+  instruction: CAN 버스 DoS 공격 시뮬레이션을 수행하시오. 최고 우선순위(ID=0x000) 프레임을 대량 전송하여 다른 ECU 통신을 차단하라.
   hint: 가장 낮은 CAN ID가 가장 높은 우선순위입니다.
   category: attack
   points: 12
   answer: '🤖 프롬프트: CAN 버스 DoS 공격 시뮬레이션을 수행해줘
 
-    📎 참고 (CLI): python3 -c "print(''=== CAN Bus DoS Attack ==='');[print(f''  Frame
-    {i}: ID=0x000 Data=FFFFFFFFFFFFFFFF (highest priority)'') for i in range(5)];print(''  [!]
-    Legitimate ECU messages blocked by arbitration'');print(''  [!] Safety-critical
-    messages (brake, airbag) cannot transmit'')"'
+    📎 참고 (CLI): python3 -c "print(''=== CAN Bus DoS Attack ==='');[print(f''  Frame {i}: ID=0x000 Data=FFFFFFFFFFFFFFFF
+    (highest priority)'') for i in range(5)];print(''  [!] Legitimate ECU messages blocked by arbitration'');print(''  [!]
+    Safety-critical messages (brake, airbag) cannot transmit'')"'
   answer_detail: CAN DoS는 안전 시스템 통신을 차단하여 생명을 위협합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: CAN DoS — 최고 우선순위 ID 0x000 프레임 대량 전송으로 다른 ECU 통신 차단
+      success_criteria:
+      - ID=0x000 프레임 100회 이상 전송 로직
+      - 다른 메시지 지연·차단 시뮬
+      - CAN arbitration 원리 설명
+      acceptable_methods:
+      - python can bus simulation
+      - cansend 반복
+      - busload 측정
+      - socketcan 커널 모듈
+      negative_signs:
+      - 우선순위 개념 없음
+      - 단발 전송만
+      - arbitration 원리 누락
   target_vm: attacker
-  script: 'python3 -c "print(''=== CAN Bus DoS Attack ==='');[print(f''  Frame {i}:
-    ID=0x000 Data=FFFFFFFFFFFFFFFF (highest priority)'') for i in range(5)];print(''  [!]
-    Legitimate ECU messages blocked by arbitration'');print(''  [!] Safety-critical
-    messages (brake, airbag) cannot transmit'')"'
+  script: 'python3 -c "print(''=== CAN Bus DoS Attack ==='');[print(f''  Frame {i}: ID=0x000 Data=FFFFFFFFFFFFFFFF
+    (highest priority)'') for i in range(5)];print(''  [!] Legitimate ECU messages blocked by arbitration'');print(''  [!]
+    Safety-critical messages (brake, airbag) cannot transmit'')"'
   risk_level: low
   bastion_prompt: CAN 버스 DoS 공격 시뮬레이션을 수행해줘
 - order: 6
@@ -137,23 +203,36 @@ steps:
   hint: AUTOSAR SecOC CAN authentication을 질문하세요.
   category: analysis
   points: 10
-  answer: "\U0001F916 프롬프트: AUTOSAR SecOC의 CAN 버스 인증 원리와 메시지 인젝션 방어 방법을 설명해줘\n\U0001F4CE\
-    \ 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"\
-    model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are\
-    \ an automotive cybersecurity expert.\"},{\"role\":\"user\",\"content\":\"AUTOSAR\
-    \ SecOC의 CAN 버스 인증 원리와 메시지 인젝션 방어 방법을 설명해줘\"}],\"stream\":false,\"options\":{\"\
+  answer: "\U0001F916 프롬프트: AUTOSAR SecOC의 CAN 버스 인증 원리와 메시지 인젝션 방어 방법을 설명해줘\n\U0001F4CE 참고 (CLI): curl\
+    \ -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\"\
+    :[{\"role\":\"system\",\"content\":\"You are an automotive cybersecurity expert.\"},{\"role\":\"user\"\
+    ,\"content\":\"AUTOSAR SecOC의 CAN 버스 인증 원리와 메시지 인젝션 방어 방법을 설명해줘\"}],\"stream\":false,\"options\":{\"\
     num_predict\":150}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: SecOC는 CAN 메시지 인증의 산업 표준입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: LLM 에 CAN 인증(SecOC Secure Onboard Communication) 원리 질의 — AUTOSAR 표준
+      success_criteria:
+      - SecOC 개요(HMAC-MAC, freshness counter) 언급
+      - truncated MAC 4byte 구조 설명
+      - AUTOSAR 4.2+ 표준 언급
+      acceptable_methods:
+      - Ollama 호출
+      - AUTOSAR spec 참조
+      - Vector CAPL 도구 언급
+      - Bosch SecOC 구현 예
+      negative_signs:
+      - SecOC 개념 누락
+      - MAC 구조 설명 없음
+      - AUTOSAR 언급 없음
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\"\
-    :\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are an automotive\
-    \ cybersecurity expert.\"},{\"role\":\"user\",\"content\":\"AUTOSAR SecOC의 CAN\
-    \ 버스 인증 원리와 메시지 인젝션 방어 방법을 설명해줘\"}],\"stream\":false,\"options\":{\"num_predict\"\
-    :150}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
+    messages\":[{\"role\":\"system\",\"content\":\"You are an automotive cybersecurity expert.\"},{\"\
+    role\":\"user\",\"content\":\"AUTOSAR SecOC의 CAN 버스 인증 원리와 메시지 인젝션 방어 방법을 설명해줘\"}],\"stream\":false,\"\
+    options\":{\"num_predict\":150}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   risk_level: low
   bastion_prompt: AUTOSAR SecOC의 CAN 버스 인증 원리와 메시지 인젝션 방어 방법을 설명해줘
 - order: 7
@@ -164,48 +243,73 @@ steps:
   answer: '🤖 프롬프트: Python으로 CAN IDS를 구현 방법을 설명하고 예시 코드를 보여줘
 
     📎 참고 (CLI): python3 -c "alerts=[];normal_ids={0x100,0x200,0x300,0x400};traffic=[(0x100,60),(0x200,0),(0x000,100),(0x300,450)];print(''===
-    CAN IDS ==='');exec(''\\nfor aid,val in traffic:\\n  if aid not in normal_ids:
-    alerts.append(f\"Unknown ID 0x{aid:03X}\")\\n  if aid==0x200 and val==0: alerts.append(\"Brake
-    zero while moving\")\\n  if aid==0x300 and abs(val)>300: alerts.append(f\"Steering
-    {val/10}deg exceeds limit\")\\n  print(f\"  ID:0x{aid:03X} val={val} alerts={len(alerts)}\")\\n'');[print(f''  [!]
-    {a}'') for a in alerts]"'
+    CAN IDS ==='');exec(''\\nfor aid,val in traffic:\\n  if aid not in normal_ids: alerts.append(f\"Unknown
+    ID 0x{aid:03X}\")\\n  if aid==0x200 and val==0: alerts.append(\"Brake zero while moving\")\\n  if
+    aid==0x300 and abs(val)>300: alerts.append(f\"Steering {val/10}deg exceeds limit\")\\n  print(f\"  ID:0x{aid:03X}
+    val={val} alerts={len(alerts)}\")\\n'');[print(f''  [!] {a}'') for a in alerts]"'
   answer_detail: CAN IDS는 인젝션 공격과 이상 트래픽을 실시간 탐지합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: CAN IDS — 메시지 빈도 이상·알 수 없는 ID·데이터 범위 위반 3 룰
+      success_criteria:
+      - 3 룰 각각 구현
+      - 테스트 트래픽으로 탐지 시나리오
+      - false positive 완화 임계값
+      acceptable_methods:
+      - python dict + 임계값
+      - sklearn IsolationForest
+      - Suricata 동등 룰
+      - ICSim + IDS 연계
+      negative_signs:
+      - 룰 1-2개만
+      - 테스트 누락
+      - 임계값 없음
   target_vm: attacker
   script: 'python3 -c "alerts=[];normal_ids={0x100,0x200,0x300,0x400};traffic=[(0x100,60),(0x200,0),(0x000,100),(0x300,450)];print(''===
-    CAN IDS ==='');exec(''\\nfor aid,val in traffic:\\n  if aid not in normal_ids:
-    alerts.append(f\"Unknown ID 0x{aid:03X}\")\\n  if aid==0x200 and val==0: alerts.append(\"Brake
-    zero while moving\")\\n  if aid==0x300 and abs(val)>300: alerts.append(f\"Steering
-    {val/10}deg exceeds limit\")\\n  print(f\"  ID:0x{aid:03X} val={val} alerts={len(alerts)}\")\\n'');[print(f''  [!]
-    {a}'') for a in alerts]"'
+    CAN IDS ==='');exec(''\\nfor aid,val in traffic:\\n  if aid not in normal_ids: alerts.append(f\"Unknown
+    ID 0x{aid:03X}\")\\n  if aid==0x200 and val==0: alerts.append(\"Brake zero while moving\")\\n  if
+    aid==0x300 and abs(val)>300: alerts.append(f\"Steering {val/10}deg exceeds limit\")\\n  print(f\"  ID:0x{aid:03X}
+    val={val} alerts={len(alerts)}\")\\n'');[print(f''  [!] {a}'') for a in alerts]"'
   risk_level: low
   bastion_prompt: Python으로 CAN IDS를 구현하시오. 메시지 빈도 이상, 알 수 없는 ID, 데이터 범위 위반을 탐지하라.
 - order: 8
-  instruction: 자율주행 공격 종합 보고서를 Python으로 생성하시오. 적대적 패치, CAN 인젝션, OTA 변조 공격의 위험도와 대응
-    방안을 출력하라.
+  instruction: 자율주행 공격 종합 보고서를 Python으로 생성하시오. 적대적 패치, CAN 인젝션, OTA 변조 공격의 위험도와 대응 방안을 출력하라.
   hint: 3가지 공격을 위험도와 함께 정리하세요.
   category: analysis
   points: 10
   answer: '🤖 프롬프트: 자율주행 공격 종합 보고서를 Python으로 생성해줘
 
-    📎 참고 (CLI): python3 -c "attacks=[(''Adversarial Patch'',''CRITICAL'',''Ensemble
-    + input preprocessing''),(''CAN Injection'',''CRITICAL'',''SecOC + Gateway IDS''),(''OTA
-    Tampering'',''HIGH'',''Code signing + Uptane framework'')];print(''=== AV Attack
-    Report ==='');[print(f''  [{s}] {a} → Defense: {d}'') for a,s,d in attacks];print(f''  Total
-    critical: {sum(1 for _,s,_ in attacks if s==\"CRITICAL\")}'')"'
+    📎 참고 (CLI): python3 -c "attacks=[(''Adversarial Patch'',''CRITICAL'',''Ensemble + input preprocessing''),(''CAN
+    Injection'',''CRITICAL'',''SecOC + Gateway IDS''),(''OTA Tampering'',''HIGH'',''Code signing + Uptane
+    framework'')];print(''=== AV Attack Report ==='');[print(f''  [{s}] {a} → Defense: {d}'') for a,s,d
+    in attacks];print(f''  Total critical: {sum(1 for _,s,_ in attacks if s==\"CRITICAL\")}'')"'
   answer_detail: 종합 보고서로 자율주행 보안 개선 방향을 제시합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: 자율주행 공격 종합 리포트 — 적대적 패치/CAN 인젝션/OTA 변조의 위험도·대응 방안
+      success_criteria:
+      - 3 공격 유형 각각 정리
+      - 위험도 등급 + 대응 방안 최소 1개씩
+      - python 으로 dict/json 출력
+      acceptable_methods:
+      - python dict 출력
+      - markdown 표
+      - json 저장
+      - Sigma/ATT&CK ID 매핑
+      negative_signs:
+      - 공격 2종 이하
+      - 위험도 누락
+      - 대응 방안 없음
   target_vm: attacker
-  script: 'python3 -c "attacks=[(''Adversarial Patch'',''CRITICAL'',''Ensemble + input
-    preprocessing''),(''CAN Injection'',''CRITICAL'',''SecOC + Gateway IDS''),(''OTA
-    Tampering'',''HIGH'',''Code signing + Uptane framework'')];print(''=== AV Attack
-    Report ==='');[print(f''  [{s}] {a} → Defense: {d}'') for a,s,d in attacks];print(f''  Total
-    critical: {sum(1 for _,s,_ in attacks if s==\"CRITICAL\")}'')"'
+  script: 'python3 -c "attacks=[(''Adversarial Patch'',''CRITICAL'',''Ensemble + input preprocessing''),(''CAN
+    Injection'',''CRITICAL'',''SecOC + Gateway IDS''),(''OTA Tampering'',''HIGH'',''Code signing + Uptane
+    framework'')];print(''=== AV Attack Report ==='');[print(f''  [{s}] {a} → Defense: {d}'') for a,s,d
+    in attacks];print(f''  Total critical: {sum(1 for _,s,_ in attacks if s==\"CRITICAL\")}'')"'
   risk_level: low
   bastion_prompt: 자율주행 공격 종합 보고서를 Python으로 생성해줘
