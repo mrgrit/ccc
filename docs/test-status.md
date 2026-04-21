@@ -1,24 +1,23 @@
 # CCC Bastion 실증 테스트 — 최종 보고서
 
-> 작성: 2026-04-20 15:18 (error=0 완주) · 최종 갱신: 2026-04-21 07:57 (야간 재테스트 2차 **완주**)
-> 대상: 전체 19개 AI 과목 × 15주 × 평균 11스텝 = **3,090 케이스**
+> 작성: 2026-04-20 15:18 · 최종 갱신: 2026-04-21 16:45 (verify.semantic 3 과목 100% + judge 버그 수정)
+> 대상: 전체 20개 AI 과목 × 15주 × 평균 10~15스텝 = **3,090 케이스**
 
 ## 1. 핵심 수치
 
-| 지표 | 수정 전 | 1차 완주 | **야간 2차 완주** |
-|------|---------|---------|---------|
-| **엄격 Pass** | 997 (32.3%) | 1,284 (41.6%) | **1,390 (44.98%)** |
-| Fail | 535 | 1,031 | 1,486 |
-| QA-fallback | 876 | 751 | 190 |
-| Error | 0 → 188(outage) | 0 | 0 |
-| No-execution | 7 | 23 | 23 |
-| Untested | 693 | 1 | 1 |
+| 지표 | 수정 전 | 1차 완주 | 야간 2차 완주 | **현재 (semantic + fix)** |
+|------|---------|---------|---------|---------|
+| **엄격 Pass** | 997 (32.3%) | 1,284 (41.6%) | 1,390 (44.98%) | **1,406 (45.50%)** |
+| Fail | 535 | 1,031 | 1,486 | 1,520 |
+| QA-fallback | 876 | 751 | 190 | **140** |
+| Error | 0 → 188(outage) | 0 | 0 | 0 |
+| No-execution | 7 | 23 | 23 | 23 |
 
-**야간 2차 재테스트** (QAFB2, w19~w24 개선 누적 후): 751/751 완주 (12h). qa_fb 704→190(−514), pass 1,290→**1,390**(+100, +3.23%p).
-**3차(QAFB3) 진행 중**: 잔존 190 qa_fb 재돌림 시작 (예상 3~4h).
+**qa_fallback 개선폭**: 876 → 140 (**−84%**)
+**총 개선폭**: 32.3% → 45.5% (**+13.2%p**)
 
 - **엄격 기준**: QA-fb·Fail·No-exec·Error·Untested 모두 "비 pass"로 계산
-- **단일 모델 · single-shot 재테스트 기준 41.6%** (HITL 개입 없이)
+- **단일 모델 · single-shot · 자동 HITL 없음** 기준
 
 ## 2. 개선 히스토리
 
@@ -32,6 +31,8 @@
 | **w22** | `ask_user` 이벤트 + HITL 인터랙티브 모드 (test_step `--ask`) | HITL 50% pass 전환 실증 |
 | **w23** | 정규식 실패 시 **SubAgent(gemma3:4b)로 명령 추출 fallback** | 전환율 20→60% |
 | **w24** | `_generate_shell_command` Manager 실패 시 **SubAgent fallback** | 전환율 60→75% |
+| **w25** | `verify.semantic` 필드 + LLM 엄정 판정기 (`scripts/test_step.py`) | 의도·방법 기반 채점 |
+| **w26** | judge `num_predict 120→800` 버그 수정 | gpt-oss reasoning 토큰 소진 → 빈 응답 버그 해결 |
 
 ### 2.2 Lab/하네스 개선
 
@@ -123,17 +124,38 @@ gpt-oss:120b 유지 결론. 자세한 보고: `docs/model-comparison-report.md`
 - HITL 10건 샘플 추정: **pass 60%+** 가능
 - 전수 HITL 적용 시 확정 수치 요망
 
-## 7. 논문용 핵심 수치
+## 7. verify.semantic 시스템 (w25 추가)
+
+### 7.1 설계
+각 lab step 의 `verify.semantic` 필드 — `intent`, `success_criteria[]`, `acceptable_methods[]`, `negative_signs[]` 구조로 **Master(Claude Code)가 엄정한 합격 기준을 기술**, Bastion 응답을 LLM judge 가 판정.
+
+### 7.2 보안 설계
+위험 payload 자동 SHA256 hash redaction — RCE·reverse shell·SQLi UNION 등 공격 기법 원본은 `contents/.sensitive/<hash>.txt` (gitignored), admin-only API `/admin/sensitive/{h}` 로만 조회 가능.
+
+### 7.3 커버리지 (2026-04-21 현재)
+| 과목 | Steps | Coverage |
+|------|-------|----------|
+| attack-adv-ai | 220/220 | ✅ 100% |
+| web-vuln-ai | 182/182 | ✅ 100% |
+| autonomous-systems-ai | 120/120 | ✅ 100% |
+| 나머지 17 AI 과목 | 0/2,452 | 0% |
+| **누적** | **522/2,974** | **17.5%** |
+
+### 7.4 버그 수정 (w26)
+`llm_semantic_judge` 의 `num_predict=120` 이 gpt-oss:120b reasoning 토큰으로 소진되어 content='' 반환 → json.loads 예외 → False 폴백. 146건 retest 에서 semantic 판정이 단 한 번도 동작 못한 상태. 800 으로 확장 후 정상 동작 확인.
+
+## 8. 논문용 핵심 수치
 
 | 항목 | 수치 | 비고 |
 |------|------|------|
-| 테스트 케이스 | 3,090 | 19과목 × 15주 평균 |
-| 최종 pass rate | **41.6%** | 단일 모델 single-shot |
-| 개선폭 | **+9.3%p** | 28시간 집중 개선 |
-| 구조 건강 과목 (C19·C20) | 40-51% pass | 버그 없는 generator |
-| 기존 과목 최고 | 80-84% pass | secops·soc-adv |
+| 테스트 케이스 | 3,090 | 20과목 × 15주 평균 |
+| 최종 pass rate | **45.5%** | 단일 모델 single-shot |
+| 개선폭 | **+13.2%p** | 32.3% → 45.5% |
+| qa_fb 감소폭 | **−84%** | 876 → 140 |
+| 기존 과목 최고 | 82-86% pass | secops·soc-adv |
 | 두 모델 협업 실행 진입율 | 75% | w24 기준 |
 | HITL pass 전환율 | 40-60% | 10건 샘플 |
+| verify.semantic 커버 | 17.5% | 3/20 과목 완료 |
 | Top-tier 모델 비교 | gpt-oss:120b 우세 | 10건 샘플 |
 
 ## 8. 관련 산출물
