@@ -38,20 +38,20 @@ steps:
     type: output_contains
     expect: Insider Recon
     semantic:
-      intent: '[RED] 내부자 위협 시나리오 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] 내부자 위협 정찰 — 정상 사용자 권한(whoami/id) 으로 sudo -l + find / -readable 2>/dev/null | head
+        + ss -tunapl (접근 가능 자산 맵핑). 외부 공격자와 달리 유효 자격 증명 보유로 initial foothold 불필요. MITRE T1078 Valid Accounts'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - sudo -l + 접근 가능 파일 + 네트워크 연결
+      - 정상 사용자 권한 내 정찰
+      - T1078 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - sudo -l + find -readable + ss
+      - BloodHound (AD 환경)
+      - enum4linux (Windows)
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 외부 공격자 정찰 (nmap 대량)
+      - 권한 상승 시도 (내부자 아님)
+      - 자격 증명 악용 개념 없음
   target_vm: attacker
   script: echo '=== Insider Recon (Legitimate User) ===' && echo '[1] Current privileges:' && id && echo
     '[2] Sudo permissions:' && echo '1' | sudo -S -l 2>&1 | tail -10 && echo '[3] Accessible config files:'
@@ -75,20 +75,22 @@ steps:
     type: output_contains
     expect: Data staged
     semantic:
-      intent: '[RED] 내부자 위협 시나리오 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] 내부자 데이터 스테이징 — mkdir /tmp/.stage + cp /etc/passwd /etc/hosts /etc/ssh/sshd_config
+        /var/log/*.log /tmp/.stage/ + tar czf /tmp/exfil.tar.gz /tmp/.stage/. 유출 대상 파일들을 하나의 아카이브로 집약
+        후 외부 전송 대기. MITRE T1074.001 Data Staged: Local'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - 민감 파일 수집 (/etc/passwd·설정·로그)
+      - tar 또는 zip 아카이브 생성
+      - T1074.001 매핑
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cp + tar czf
+      - rsync staging dir
+      - zip -r archive.zip files
+      - dd 로 raw 추출
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 파일 1개만 복사
+      - 아카이브 생성 없음
+      - Staging 개념 없음
   target_vm: attacker
   script: mkdir -p /tmp/insider_staging && cp /etc/passwd /tmp/insider_staging/ 2>/dev/null && cp /etc/hosts
     /tmp/insider_staging/ 2>/dev/null && echo "INSIDER_EXFIL_DATA" > /tmp/insider_staging/secret.txt &&
@@ -114,20 +116,22 @@ steps:
     type: output_contains
     expect: Off-hours
     semantic:
-      intent: '[RED] 내부자 위협 시나리오 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] 비인가 시간대 접근 — export FAKE_TIME=2026-04-21 02:30:00 (새벽 2시 시뮬) + ssh ccc@secu whoami
+        (업무 외 시간 내부 이동). 실제 시계 조작 대신 로그 타임스탬프 시뮬레이션. 내부자의 비정상 접근 패턴: 야간·주말 사용자별 base hour 벗어남. MITRE T1078.003
+        Local Accounts 변형'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - 업무 외 시간 시뮬레이션 (export 또는 date 조작)
+      - SSH 내부 접근 실행
+      - 비정상 시간 패턴 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - 환경 변수 + ssh
+      - at <time> command
+      - cron 예약 실행
+      - date -s 로컬 시간 조작 (root)
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 일반 시간에 접근
+      - 시간대 시뮬 없음
+      - 비정상 패턴 의미 없음
   target_vm: attacker
   script: 'echo "=== Insider Off-hours Access ===" && echo "Simulated time: 02:30 AM (off-hours)" && ssh
     -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.80 "hostname && echo access_at_$(date
@@ -156,20 +160,22 @@ steps:
     type: output_contains
     expect: User Behavior Analysis
     semantic:
-      intent: '[BLUE] 내부자 위협 시나리오 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] UBA User Behavior Analytics — auth.log 파싱 + awk 로 사용자별 로그인 시간 hour 추출 + 사용자의 정상
+        시간대(9-18h) baseline 비교 + 야간(22-6h) 로그인 anomaly 표시. 각 사용자의 historical baseline 이탈 탐지. ML 없는 statistical
+        UBA'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - auth.log 사용자별 시간 추출
+      - 정상 시간대 vs 이상 시간대 비교
+      - UBA 개념 + baseline 이탈
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - awk 로 Accepted 시간 추출 + 분류
+      - python pandas + 시간대 통계
+      - Elastic ML anomaly detection
+      - Splunk UBA 모듈
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - baseline 없이 단순 시간 나열
+      - 사용자별 구분 없음
+      - UBA 개념 없음
   target_vm: secu
   script: 'echo "=== User Behavior Analysis ===" && echo "[1] Login time distribution:" && grep "Accepted\|session
     opened" /var/log/auth.log 2>/dev/null | awk "{print \$1,\$2,\$3}" | cut -d: -f1 | sort | uniq -c |
@@ -200,20 +206,22 @@ steps:
     type: output_contains
     expect: insider_threat
     semantic:
-      intent: '[BLUE] 내부자 위협 시나리오 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Wazuh 내부자 위협 룰 — 3종 탐지: (1) 대량 파일 접근 (auditd 로 /etc·/home 5분 내 50+ 읽기) (2) 업무 외
+        시간 SSH (Accepted password + hour NOT IN 9-18) (3) 민감 디렉토리 접근 (/etc/shadow·.ssh 접근). local_rules.xml
+        에 composite rule. 내부자 특유의 간접 탐지 신호'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - 3종 내부자 룰 (대량 파일·야간 SSH·민감 dir)
+      - local_rules.xml 추가
+      - 내부자 vs 외부자 구분 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - Wazuh composite rule
+      - auditd + Elastic SIEM
+      - Splunk UBA
+      - Microsoft Defender Insider Risk
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 1종만
+      - 외부 공격 룰 재사용
+      - 내부자 특성 반영 없음
   target_vm: siem
   script: 'cat > /tmp/insider_threat_rules.xml << ''EOF'' <group name="insider_threat"> <rule id="100500"
     level="12" frequency="20" timeframe="300"> <if_sid>554</if_sid> <match>open|read</match> <description>INSIDER:
@@ -260,20 +268,22 @@ steps:
     - Insider Threat
     - 플레이북
     semantic:
-      intent: '[BLUE] 내부자 위협 시나리오 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 내부자 위협 IR 플레이북 /tmp/insider_ir_playbook.md — 일반 외부 IR 과 차별화된 특성: (1) 법적 절차 (증거 보전·chain
+        of custody 엄격) · (2) HR 협력 (즉시 해고 전 수집·고지) · (3) 접근 박탈 (AD/LDAP 계정 비활성·SSH 키 revoke·VPN 토큰 회수)
+        · (4) 감사 (이미 유출된 데이터 범위 파악) · (5) 재발 방지 (기술적·정책적 통제 강화). EEOC/ADA 고려 필수'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - /tmp/insider_ir_playbook.md
+      - 법적·HR 특성 반영
+      - 최소 4 단계 (접근 박탈·증거·HR·법적)
+      - 외부 IR 과 차별화
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 단계별 섹션
+      - CERT Insider Threat Best Practices
+      - NIST SP 800-61 + insider 변형
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 외부 IR 과 동일
+      - 법적/HR 절차 없음
+      - 접근 박탈 세부 없음
   target_vm: siem
   script: 'cat > /tmp/ir_insider_playbook.txt << ''EOF'' === IR Playbook: Insider Threat === Playbook
     ID: IR-INSIDER-001 | Sensitivity: CONFIDENTIAL
@@ -325,20 +335,22 @@ steps:
     type: output_contains
     expect: Insider Threat Prevention
     semantic:
-      intent: '[BLUE] 내부자 위협 시나리오 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 접근 제어 강화 정책 /tmp/access_control_policy.md — 3원칙: (1) Least Privilege (sudo 룰 개별화·역할별
+        RBAC·default deny) (2) Separation of Duties (개발·운영·보안 계정 분리·4-eyes principle) (3) Periodic Access
+        Review (분기별 권한 리뷰·비활성 계정 disable·PAM Privileged Access Management). 내부자 위협 구조적 방지'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - 3원칙 Least Privilege + SoD + Access Review
+      - 각 원칙 구체 통제 방안
+      - PAM 도구 언급
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - RBAC + PAM (CyberArk/Thycotic)
+      - Linux sudoers.d 별도 파일
+      - AD 역할 그룹 + gMSA
+      - IGA (Identity Governance)
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 3원칙 2개 이하
+      - 구체 통제 없음
+      - PAM 개념 없음
   target_vm: secu
   script: 'cat > /tmp/insider_prevention.txt << ''EOF'' === Insider Threat Prevention Policy ===
 
@@ -388,20 +400,22 @@ steps:
     type: output_contains
     expect: Insider Threat Assessment
     semantic:
-      intent: '[RED/BLUE] 내부자 위협 시나리오 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] 내부자 위협 평가 보고서 /tmp/insider_threat_report.txt — 공격 시나리오 재현 (데이터 수집·staging·야간
+        접근) + 탐지 결과 (UBA·Wazuh 룰 성과) + 방어 매트릭스 (기술적 FIM/UBA + 관리적 Access Review + 물리적 DLP) + 핵심 통계 (Ponemon
+        Institute 내부자 연간 $17.4M 손실). 환경 정리 (/tmp/.stage 삭제·exfil.tar.gz rm)'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - /tmp/insider_threat_report.txt 보고서
+      - 시나리오·탐지·방어 3요소
+      - 산업 통계 인용 (Ponemon 등)
+      - 정리 수행
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 3요소 구조
+      - Ponemon Cost of Insider Threats 리포트
+      - Verizon DBIR insider 통계
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 통계 없음
+      - 방어 매트릭스 부재
+      - 정리 누락
   target_vm: attacker
   script: 'rm -rf /tmp/insider_staging /tmp/insider_archive.tar.gz /tmp/insider_*.txt /tmp/insider_*.xml
     /tmp/ir_insider_*.txt 2>/dev/null && cat > /tmp/insider_report.txt << ''EOF'' === Insider Threat Assessment
