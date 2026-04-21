@@ -3,8 +3,7 @@ title: 인증/세션 취약점 실습 (AI 지원)
 version: ai
 course: web-vuln-ai
 week: 6
-description: 인증 메커니즘과 세션 관리의 취약점을 분석하고 공격과 방어를 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를
-  검증합니다.
+description: 인증 메커니즘과 세션 관리의 취약점을 분석하고 공격과 방어를 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -18,18 +17,32 @@ steps:
   hint: 로그인 메커니즘 분석 관련 도구와 기법을 활용하세요.
   category: auth
   points: 8
-  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 로그인 메커니즘 분석을(를) 수행해줘\n\U0001F4CE 참고 (CLI):\
-    \ curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '로그인 메커니즘 분석 완료'"
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 로그인 메커니즘 분석을(를) 수행해줘\n\U0001F4CE 참고 (CLI): curl -s -X POST\
+    \ http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json' \\\n  -d '{}' 2>/dev/null\
+    \ \\\n | head -5 && echo '로그인 메커니즘 분석 완료'"
   answer_detail: 로그인 메커니즘 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 로그인 메커니즘 분석 — 로그인 엔드포인트·필드명·응답 코드·세션 쿠키 설정 파악
+      success_criteria:
+      - curl 로 정상/잘못된 자격증명 시도 후 응답 비교
+      - Set-Cookie 헤더에서 세션 쿠키명과 속성 확인
+      - 응답 본문 또는 상태 코드 차이 (타이밍 차이 포함) 기록
+      acceptable_methods:
+      - curl -v -d username=test -d password=test <login>
+      - Burp Proxy + Repeater
+      - python requests session 로 쿠키 추적
+      - mitmproxy 로 요청 기록
+      negative_signs:
+      - 단일 시도만
+      - 쿠키/응답 분석 없음
+      - 타이밍 차이 언급 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '로그인 메커니즘\
-    \ 분석 완료'"
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '로그인 메커니즘 분석 완료'"
   risk_level: low
   bastion_prompt: 10.20.30.80 대상으로 로그인 메커니즘 분석을(를) 수행해줘
 - order: 2
@@ -37,19 +50,32 @@ steps:
   hint: 브루트포스 공격 시뮬레이션 관련 도구와 기법을 활용하세요.
   category: auth
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 브루트포스 공격 시뮬레이션을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '브루트포스 공격\
-    \ 시뮬레이션 완료'"
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 브루트포스 공격 시뮬레이션을(를) 수행해줘\n\U0001F4CE 참고 (CLI): curl -s -X\
+    \ POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\
+    \ 2>/dev/null \\\n | head -5 && echo '브루트포스 공격 시뮬레이션 완료'"
   answer_detail: 브루트포스 공격 시뮬레이션은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 브루트포스 시뮬레이션 — 계정 잠금·Rate Limit 검증 (hydra/medusa 또는 수동 반복)
+      success_criteria:
+      - 최소 10회 반복 시도 후 응답 코드·본문 변화
+      - Rate Limiting 또는 계정 잠금 여부 판정
+      - 429 또는 Retry-After 헤더 해석
+      acceptable_methods:
+      - hydra -l <user> -P wordlist.txt <url>
+      - for i in 1..20; do curl ...; done
+      - Burp Intruder sniper 모드
+      - medusa -h <host> -U users.txt -P passes.txt
+      negative_signs:
+      - 단일 시도로 판정
+      - Rate Limit 해석 없음
+      - 429/계정 잠금 언급 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '브루트포스 공격\
-    \ 시뮬레이션 완료'"
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '브루트포스 공격 시뮬레이션 완료'"
   risk_level: low
   bastion_prompt: 10.20.30.80 대상으로 브루트포스 공격 시뮬레이션을(를) 수행해줘
 - order: 3
@@ -57,18 +83,32 @@ steps:
   hint: 패스워드 정책 검증 관련 도구와 기법을 활용하세요.
   category: auth
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 패스워드 정책 검증을(를) 수행해줘\n\U0001F4CE 참고 (CLI):\
-    \ curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 정책 검증 완료'"
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 패스워드 정책 검증을(를) 수행해줘\n\U0001F4CE 참고 (CLI): curl -s -X POST\
+    \ http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json' \\\n  -d '{}' 2>/dev/null\
+    \ \\\n | head -5 && echo '패스워드 정책 검증 완료'"
   answer_detail: 패스워드 정책 검증은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 패스워드 정책 검증 — 짧은/공용/약한 패스워드 허용 여부, haveibeenpwned API 등 유출 이력 체크
+      success_criteria:
+      - 최소 3가지 약한 패스워드(1234/password/admin) 시도
+      - 정책(최소 길이·복잡도·유출 차단) 미비점 식별
+      - NIST SP 800-63B 권고 언급
+      acceptable_methods:
+      - API 회원가입/변경으로 테스트 비밀번호 시도
+      - haveibeenpwned API 조회
+      - zxcvbn 복잡도 추정
+      - OWASP ASVS v4 V2 참조
+      negative_signs:
+      - 단일 패스워드만 테스트
+      - 유출 이력 체크 없음
+      - 표준 기준 없이 주관 평가
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 정책\
-    \ 검증 완료'"
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 정책 검증 완료'"
   risk_level: low
   bastion_prompt: 10.20.30.80 대상으로 패스워드 정책 검증을(를) 수행해줘
 - order: 4
@@ -76,19 +116,32 @@ steps:
   hint: 세션 토큰 엔트로피 분석 관련 도구와 기법을 활용하세요.
   category: session
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 세션 토큰 엔트로피 분석을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 토큰 엔트로피\
-    \ 분석 완료'"
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 세션 토큰 엔트로피 분석을(를) 수행해줘\n\U0001F4CE 참고 (CLI): curl -s -X POST\
+    \ http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json' \\\n  -d '{}' 2>/dev/null\
+    \ \\\n | head -5 && echo '세션 토큰 엔트로피 분석 완료'"
   answer_detail: 세션 토큰 엔트로피 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 세션 토큰 엔트로피 분석 — 여러 토큰 수집 후 길이·charset·변이 관찰, Burp Sequencer 로 랜덤성 검증
+      success_criteria:
+      - 최소 5개 세션 토큰 수집
+      - 길이·charset(hex/base64) 일관성 확인
+      - 추측 가능성(증가형 vs 랜덤) 판정
+      acceptable_methods:
+      - repeat curl -c cookies.txt login 으로 토큰 여러 개 생성
+      - Burp Sequencer 자동 랜덤성 분석
+      - python으로 엔트로피 계산 (math.log2 * len)
+      - dieharder/ent 통계 테스트
+      negative_signs:
+      - 단일 토큰만 관찰
+      - 랜덤성 평가 없음
+      - 예측 가능성 판정 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 토큰 엔트로피\
-    \ 분석 완료'"
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 토큰 엔트로피 분석 완료'"
   risk_level: low
   bastion_prompt: 10.20.30.80 대상으로 세션 토큰 엔트로피 분석을(를) 수행해줘
 - order: 5
@@ -96,19 +149,32 @@ steps:
   hint: 세션 고정 공격 테스트 관련 도구와 기법을 활용하세요.
   category: session
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 세션 고정 공격 테스트을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 고정 공격\
-    \ 테스트 완료'"
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 세션 고정 공격 테스트을(를) 수행해줘\n\U0001F4CE 참고 (CLI): curl -s -X POST\
+    \ http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json' \\\n  -d '{}' 2>/dev/null\
+    \ \\\n | head -5 && echo '세션 고정 공격 테스트 완료'"
   answer_detail: 세션 고정 공격 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 세션 고정(Session Fixation) — 로그인 전 제공한 세션 ID 가 로그인 후에도 유지되는지 검증 (재생성 안하면 취약)
+      success_criteria:
+      - 미인증 상태 세션 쿠키 획득
+      - 해당 쿠키 지참 로그인 후 세션 ID 변경 여부 확인
+      - 변경되지 않으면 Session Fixation 취약 판정
+      acceptable_methods:
+      - curl -c cookies.txt <login_page> 후 -b cookies.txt 로 로그인
+      - Burp Repeater 로 쿠키 비교
+      - python requests session 으로 로그인 전후 비교
+      - OWASP Testing Guide WSTG-SESS-03 참조
+      negative_signs:
+      - 쿠키 비교 없음
+      - 로그인 전후 동일 여부 판정 누락
+      - 세션 재생성 권고 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 고정 공격\
-    \ 테스트 완료'"
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 고정 공격 테스트 완료'"
   risk_level: low
   bastion_prompt: 10.20.30.80 대상으로 세션 고정 공격 테스트을(를) 수행해줘
 - order: 6
@@ -116,19 +182,32 @@ steps:
   hint: 세션 하이재킹 시뮬레이션 관련 도구와 기법을 활용하세요.
   category: session
   points: 12
-  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 세션 하이재킹 시뮬레이션을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 하이재킹\
-    \ 시뮬레이션 완료'"
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 세션 하이재킹 시뮬레이션을(를) 수행해줘\n\U0001F4CE 참고 (CLI): curl -s -X POST\
+    \ http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json' \\\n  -d '{}' 2>/dev/null\
+    \ \\\n | head -5 && echo '세션 하이재킹 시뮬레이션 완료'"
   answer_detail: 세션 하이재킹 시뮬레이션은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 세션 하이재킹 시뮬레이션 — 타인의 세션 쿠키 탈취 가정 후 해당 쿠키로 요청해 권한 이관 여부 확인
+      success_criteria:
+      - 쿠키 복제 후 curl -b 또는 브라우저 DevTools 로 대체 로그인
+      - 세션 소유자 식별 응답(프로필 페이지 등) 확인
+      - HttpOnly/Secure 누락이 탈취 경로 확장 설명
+      acceptable_methods:
+      - curl -b "session=<hijacked>" <protected_url>
+      - browser cookie editor extension
+      - python requests cookies={...}
+      - BeEF cookie steal module
+      negative_signs:
+      - 쿠키 재사용 없이 개념만
+      - 권한 이관 확인 없음
+      - HttpOnly/Secure 언급 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 하이재킹\
-    \ 시뮬레이션 완료'"
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '세션 하이재킹 시뮬레이션 완료'"
   risk_level: low
   bastion_prompt: 10.20.30.80 대상으로 세션 하이재킹 시뮬레이션을(를) 수행해줘
 - order: 7
@@ -136,19 +215,32 @@ steps:
   hint: JWT 토큰 구조 분석 관련 도구와 기법을 활용하세요.
   category: jwt
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 JWT 토큰 구조 분석을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 토큰 구조\
-    \ 분석 완료'"
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 JWT 토큰 구조 분석을(를) 수행해줘\n\U0001F4CE 참고 (CLI): curl -s -X POST\
+    \ http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json' \\\n  -d '{}' 2>/dev/null\
+    \ \\\n | head -5 && echo 'JWT 토큰 구조 분석 완료'"
   answer_detail: JWT 토큰 구조 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: JWT 토큰 구조 분석 — 3부(Header.Payload.Signature) Base64URL 디코드 후 alg·type·클레임 확인
+      success_criteria:
+      - JWT Base64URL 디코드 명령 또는 jwt.io 예시
+      - Header alg·Payload (iat, exp, sub) 클레임 최소 2개 해석
+      - 서명 검증 필요성 설명
+      acceptable_methods:
+      - echo <jwt> | cut -d. -f1 | base64 -d
+      - python jose/PyJWT 라이브러리
+      - jwt_tool --decode
+      - jwt.io 페이스트
+      negative_signs:
+      - Base64 디코드 없음
+      - 클레임 해석 없음
+      - 서명 개념 누락
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 토큰 구조\
-    \ 분석 완료'"
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 토큰 구조 분석 완료'"
   risk_level: low
   bastion_prompt: 10.20.30.80 대상으로 JWT 토큰 구조 분석을(를) 수행해줘
 - order: 8
@@ -156,19 +248,32 @@ steps:
   hint: JWT 서명 검증 우회 테스트 관련 도구와 기법을 활용하세요.
   category: jwt
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 JWT 서명 검증 우회 테스트을(를) 수행해줘\n\U0001F4CE\
-    \ 참고 (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 서명 검증\
-    \ 우회 테스트 완료'"
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 JWT 서명 검증 우회 테스트을(를) 수행해줘\n\U0001F4CE 참고 (CLI): curl -s -X\
+    \ POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\
+    \ 2>/dev/null \\\n | head -5 && echo 'JWT 서명 검증 우회 테스트 완료'"
   answer_detail: JWT 서명 검증 우회 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: JWT 서명 검증 우회 — alg:none, 공개키 혼동(HS256 with RSA pubkey), 약한 HMAC 키 크래킹
+      success_criteria:
+      - alg:none 변조 후 서명 제거 공격 예시
+      - HS256↔RS256 알고리즘 confusion 개념
+      - jwt_tool 또는 hashcat 로 HMAC 키 brute
+      acceptable_methods:
+      - jwt_tool <token> -X a none
+      - jwt_tool <token> -X k <pubkey.pem>
+      - hashcat -m 16500 jwt_hashes
+      - python PyJWT decode without verify
+      negative_signs:
+      - 알고리즘 조작 없이 일반 decode 만
+      - 공개키 혼동 개념 누락
+      - 약한 키 공격 언급 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 서명 검증\
-    \ 우회 테스트 완료'"
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 서명 검증 우회 테스트 완료'"
   risk_level: low
   bastion_prompt: 10.20.30.80 대상으로 JWT 서명 검증 우회 테스트을(를) 수행해줘
 - order: 9
@@ -176,19 +281,32 @@ steps:
   hint: JWT 알고리즘 변조 공격 관련 도구와 기법을 활용하세요.
   category: jwt
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 JWT 알고리즘 변조 공격을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 알고리즘\
-    \ 변조 공격 완료'"
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 JWT 알고리즘 변조 공격을(를) 수행해줘\n\U0001F4CE 참고 (CLI): curl -s -X\
+    \ POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\
+    \ 2>/dev/null \\\n | head -5 && echo 'JWT 알고리즘 변조 공격 완료'"
   answer_detail: JWT 알고리즘 변조 공격은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: JWT 알고리즘 변조 — header alg 를 none/HS256/RS256 간 변조 후 서명 재계산·무효화
+      success_criteria:
+      - Header alg 변경 방법(base64 재인코딩) 설명
+      - 서버가 alg 값을 신뢰하면 인증 우회 성공
+      - '방어: alg 화이트리스트, 서명 알고리즘 서버 강제'
+      acceptable_methods:
+      - jwt_tool -X 옵션
+      - python jose 로 수동 재서명
+      - Burp JWT Editor extension
+      - curl -H Authorization:Bearer <forged>
+      negative_signs:
+      - Header 변조 시도 없음
+      - 서명 재생성 단계 누락
+      - 방어 기법 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 알고리즘\
-    \ 변조 공격 완료'"
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'JWT 알고리즘 변조 공격 완료'"
   risk_level: low
   bastion_prompt: 10.20.30.80 대상으로 JWT 알고리즘 변조 공격을(를) 수행해줘
 - order: 10
@@ -196,19 +314,32 @@ steps:
   hint: 패스워드 리셋 취약점 분석 관련 도구와 기법을 활용하세요.
   category: auth
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 패스워드 리셋 취약점 분석을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 리셋\
-    \ 취약점 분석 완료'"
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 패스워드 리셋 취약점 분석을(를) 수행해줘\n\U0001F4CE 참고 (CLI): curl -s -X\
+    \ POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json' \\\n  -d '{}'\
+    \ 2>/dev/null \\\n | head -5 && echo '패스워드 리셋 취약점 분석 완료'"
   answer_detail: 패스워드 리셋 취약점 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 패스워드 리셋 취약점 — 리셋 토큰 추측·재사용·호스트헤더 변조로 피싱 링크 주입
+      success_criteria:
+      - 리셋 토큰 엔트로피 분석 (짧거나 순차적이면 취약)
+      - Host 헤더 변조로 리셋 링크 도메인 탈취 가능성 테스트
+      - 토큰 만료·1회 사용·이메일 인증 필수 방어 언급
+      acceptable_methods:
+      - curl -H Host:evil.com /reset
+      - 여러 리셋 요청 후 토큰 비교
+      - Burp Collaborator 로 콜백 수신
+      - python requests 로 자동 재사용 테스트
+      negative_signs:
+      - 토큰 엔트로피 분석 없음
+      - Host 헤더 공격 개념 부재
+      - 방어 언급 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 리셋\
-    \ 취약점 분석 완료'"
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '패스워드 리셋 취약점 분석 완료'"
   risk_level: low
   bastion_prompt: 10.20.30.80 대상으로 패스워드 리셋 취약점 분석을(를) 수행해줘
 - order: 11
@@ -216,19 +347,32 @@ steps:
   hint: 2FA 우회 가능성 분석 관련 도구와 기법을 활용하세요.
   category: auth
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 2FA 우회 가능성 분석을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '2FA 우회 가능성\
-    \ 분석 완료'"
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 2FA 우회 가능성 분석을(를) 수행해줘\n\U0001F4CE 참고 (CLI): curl -s -X POST\
+    \ http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json' \\\n  -d '{}' 2>/dev/null\
+    \ \\\n | head -5 && echo '2FA 우회 가능성 분석 완료'"
   answer_detail: 2FA 우회 가능성 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 2FA 우회 가능성 분석 — 응답 조작, SMS 재전송 abuse, 백업 코드 무제한 시도, OAuth 우회
+      success_criteria:
+      - 2FA 엔드포인트 응답 코드/본문 분석
+      - 우회 기법 최소 2가지 (HTTP verb swap, response manipulation, 백업 코드) 제시
+      - 방어 (rate limit on 2FA, device trust, backup code 제한) 언급
+      acceptable_methods:
+      - Burp Repeater 로 응답 코드 변경
+      - python requests 로 2FA 우회 시도
+      - OWASP ASVS V2.8 참조
+      - yubikey 등 FIDO2 제안
+      negative_signs:
+      - 우회 기법 1개만
+      - rate limit 관점 없음
+      - FIDO2/하드웨어 토큰 언급 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '2FA 우회 가능성\
-    \ 분석 완료'"
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo '2FA 우회 가능성 분석 완료'"
   risk_level: low
   bastion_prompt: 10.20.30.80 대상으로 2FA 우회 가능성 분석을(를) 수행해줘
 - order: 12
@@ -236,19 +380,32 @@ steps:
   hint: OAuth 취약점 분석 관련 도구와 기법을 활용하세요.
   category: auth
   points: 10
-  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 OAuth 취약점 분석을(를) 수행해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'OAuth 취약점\
-    \ 분석 완료'"
+  answer: "\U0001F916 프롬프트: 10.20.30.80 대상으로 OAuth 취약점 분석을(를) 수행해줘\n\U0001F4CE 참고 (CLI): curl -s -X POST\
+    \ http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json' \\\n  -d '{}' 2>/dev/null\
+    \ \\\n | head -5 && echo 'OAuth 취약점 분석 완료'"
   answer_detail: OAuth 취약점 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: OAuth 취약점 — redirect_uri 변조, state 누락으로 CSRF, 토큰 탈취, Open Redirect 악용
+      success_criteria:
+      - redirect_uri 조작으로 토큰 다른 도메인 전달 시도
+      - state 매개변수 부재가 CSRF 를 유발함 설명
+      - implicit flow vs authorization code + PKCE 비교
+      acceptable_methods:
+      - curl 로 redirect_uri=https://evil.com 시도
+      - Burp 로 state 제거 후 재전송
+      - OAuth 2.0 Security BCP 참조
+      - PKCE 강제 확인
+      negative_signs:
+      - redirect_uri 공격 언급 없음
+      - state/PKCE 누락
+      - OAuth Flow 차이 설명 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'OAuth 취약점\
-    \ 분석 완료'"
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{}' 2>/dev/null \\\n | head -5 && echo 'OAuth 취약점 분석 완료'"
   risk_level: low
   bastion_prompt: 10.20.30.80 대상으로 OAuth 취약점 분석을(를) 수행해줘
 - order: 13
@@ -264,6 +421,21 @@ steps:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 안전한 세션 관리 — HttpOnly/Secure/SameSite 쿠키 + 랜덤 세션 ID(>=128bit) + 로그인 후 세션 재생성 + 적절한 만료
+      success_criteria:
+      - 쿠키 속성 3개(HttpOnly/Secure/SameSite) 설정 권장
+      - 세션 ID 엔트로피 >=128bit 권고
+      - 로그아웃·비활성 타임아웃·절대 만료 언급
+      acceptable_methods:
+      - OWASP Session Management Cheat Sheet
+      - Express-session 설정 예
+      - Django SESSION_COOKIE_* 설정
+      - iron-session / NextAuth 등 라이브러리
+      negative_signs:
+      - 방어 요소 2개 이하
+      - 세션 재생성 누락
+      - 만료 정책 없음
   target_vm: attacker
   script: echo '=== 안전한 세션 관리 구현 방안 ===' && echo '조치 방안 정리 완료'
   risk_level: low
@@ -281,6 +453,21 @@ steps:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 인증 강화 권고 — MFA 의무화, 패스워드리스, WebAuthn/FIDO2, 로그인 이상행위 탐지(UEBA)
+      success_criteria:
+      - MFA 종류 2개 이상 언급 (TOTP, FIDO2, Push)
+      - WebAuthn/Passkey 개념
+      - 이상행위(UEBA) 로그인 탐지 지표 제시
+      acceptable_methods:
+      - Google/Microsoft Account 2FA 옵션
+      - NIST SP 800-63B AAL1-3 레벨
+      - Auth0/Okta 스몰빌
+      - Wazuh 또는 Splunk UEBA 상관규칙
+      negative_signs:
+      - MFA 1가지만
+      - WebAuthn/Passkey 누락
+      - UEBA 개념 없음
   target_vm: attacker
   script: echo '=== 인증 강화 권고 작성 ===' && echo '조치 방안 정리 완료'
   risk_level: low
@@ -292,16 +479,30 @@ steps:
   points: 8
   answer: '🤖 프롬프트: 인증/세션 취약점 실습 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
 
-    📎 참고 (CLI): echo ''=== 인증/세션 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.30.80''
-    && echo ''=== 보고서 완료 ==='''
+    📎 참고 (CLI): echo ''=== 인증/세션 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''=== 보고서
+    완료 ==='''
   answer_detail: 취약점 진단 보고서는 발견사항, 위험도, 재현 방법, 조치 권고를 포함합니다.
   verify:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+    semantic:
+      intent: 인증/세션 실습 종합 리포트 — 분석·Exploit·방어 전략을 /tmp/auth_session_report.txt 로 정리
+      success_criteria:
+      - 4 섹션 이상 (로그인/세션/JWT/OAuth·MFA)
+      - PoC 또는 탐지 로그 1개 이상
+      - 파일 저장 후 cat 확인
+      acceptable_methods:
+      - heredoc markdown
+      - echo -e 다줄
+      - json/yaml 구조화
+      - python 템플릿
+      negative_signs:
+      - 섹션 2 미만
+      - PoC 없음
+      - 파일 저장 없음
   target_vm: attacker
-  script: 'echo ''=== 인증/세션 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.30.80'' &&
-    echo ''=== 보고서 완료 ==='''
+  script: 'echo ''=== 인증/세션 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''=== 보고서 완료 ==='''
   risk_level: low
   bastion_prompt: 인증/세션 취약점 실습 종합 보고서를 작성하시오.
 - order: 99
@@ -337,6 +538,5 @@ steps:
     4) 10.20.30.80 대상으로 세션 토큰 엔트로피 분석을(를) 수행해줘
 
     5) 10.20.30.80 대상으로 세션 고정 공격 테스트을(를) 수행해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
   script: ''
