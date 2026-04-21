@@ -3,8 +3,8 @@ title: CI/CD 파이프라인 보안 실습 (AI 지원)
 version: ai
 course: cloud-container-ai
 week: 10
-description: CI/CD 파이프라인에서 Docker 이미지 빌드와 배포의 보안을 점검합니다. Dockerfile 보안 분석, 이미지 서명,
-  레지스트리 보안, 빌드 아티팩트 검증을 수행합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: CI/CD 파이프라인에서 Docker 이미지 빌드와 배포의 보안을 점검합니다. Dockerfile 보안 분석, 이미지 서명, 레지스트리 보안, 빌드 아티팩트 검증을 수행합니다. AI SubAgent가
+  자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -51,13 +51,28 @@ steps:
     grep -q "USER" /tmp/test.Dockerfile || echo "  -> 위험: USER 미지정 (root 실행)"
 
     grep -q "HEALTHCHECK" /tmp/test.Dockerfile || echo "  -> 권고: HEALTHCHECK 미설정"'''
-  answer_detail: 'Dockerfile 보안 모범 사례: (1) 특정 태그 사용(latest 금지), (2) 민감 정보 하드코딩 금지,
-    (3) ADD 대신 COPY 사용, (4) USER로 비root 지정, (5) 불필요한 포트 노출 금지, (6) HEALTHCHECK 설정,
-    (7) multi-stage build로 빌드 도구 제거.'
+  answer_detail: 'Dockerfile 보안 모범 사례: (1) 특정 태그 사용(latest 금지), (2) 민감 정보 하드코딩 금지, (3) ADD 대신 COPY 사용, (4) USER로 비root 지정,
+    (5) 불필요한 포트 노출 금지, (6) HEALTHCHECK 설정, (7) multi-stage build로 빌드 도구 제거.'
   verify:
     type: output_contains
     expect: Dockerfile 보안 분석
     field: stdout
+    semantic:
+      intent: '클라우드·컨테이너 w10 s1 — WEB 서버({{WEB_IP}})에서 Dockerfile 보안 점검을 수행하시오. 보안 모범 사례 위반 항목을 식별합니다. (cmd: cat << "DFILE"
+        > /tmp/test.Dockerfile FROM ubuntu:latest RUN apt-get update && a)'
+      success_criteria:
+      - '명령 실행: cat << "DFILE" > /tmp/test.Dockerfile FROM ubuntu:latest RUN'
+      - 결과 출력 또는 로그 확인
+      - 클라우드·컨테이너 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 클라우드·컨테이너 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 클라우드·컨테이너와 무관한 기법
   target_vm: web
   script: 'cat << "DFILE" > /tmp/test.Dockerfile
 
@@ -113,8 +128,7 @@ steps:
 
     EXPOSE 8080
 
-    HEALTHCHECK --interval=30s --timeout=3s CMD wget -q --spider http://localhost:8080/
-    || exit 1
+    HEALTHCHECK --interval=30s --timeout=3s CMD wget -q --spider http://localhost:8080/ || exit 1
 
     USER appuser
 
@@ -127,13 +141,28 @@ steps:
     echo "=== 보안 Dockerfile ==="
 
     cat /tmp/secure.Dockerfile'''
-  answer_detail: '보안 Dockerfile의 핵심: alpine(최소 이미지), 특정 버전 태그(3.19), adduser(비root
-    사용자), COPY(ADD 대신), --no-cache(캐시 제거로 이미지 최소화), HEALTHCHECK(상태 확인), USER(비root
-    실행), tini(PID 1 init 프로세스로 좀비 프로세스 방지).'
+  answer_detail: '보안 Dockerfile의 핵심: alpine(최소 이미지), 특정 버전 태그(3.19), adduser(비root 사용자), COPY(ADD 대신), --no-cache(캐시 제거로 이미지
+    최소화), HEALTHCHECK(상태 확인), USER(비root 실행), tini(PID 1 init 프로세스로 좀비 프로세스 방지).'
   verify:
     type: output_contains
     expect: 보안 Dockerfile
     field: stdout
+    semantic:
+      intent: '클라우드·컨테이너 w10 s2 — 보안이 적용된 Dockerfile을 작성하시오. (cmd: cat << "DFILE" > /tmp/secure.Dockerfile FROM alpine:3.19
+        RUN addgroup -S appgrou)'
+      success_criteria:
+      - '명령 실행: cat << "DFILE" > /tmp/secure.Dockerfile FROM alpine:3.19 RUN'
+      - 결과 출력 또는 로그 확인
+      - 클라우드·컨테이너 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 클라우드·컨테이너 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 클라우드·컨테이너와 무관한 기법
   target_vm: web
   script: 'cat << "DFILE" > /tmp/secure.Dockerfile
 
@@ -149,8 +178,7 @@ steps:
 
     EXPOSE 8080
 
-    HEALTHCHECK --interval=30s --timeout=3s CMD wget -q --spider http://localhost:8080/
-    || exit 1
+    HEALTHCHECK --interval=30s --timeout=3s CMD wget -q --spider http://localhost:8080/ || exit 1
 
     USER appuser
 
@@ -172,20 +200,33 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 미지의 레이어 수와 크기를분석해줘
 
-    📎 참고 (CLI): for IMG in $(docker images --format "{{.Repository}}:{{.Tag}}" | head
-    -3); do echo "=== $IMG ==="; docker history $IMG --format "{{.Size}}\t{{.CreatedBy}}"
-    2>/dev/null | head -5; echo ""; done'
-  answer_detail: 각 RUN 명령은 새 레이어를 생성합니다. RUN apt-get update && apt-get install &&
-    apt-get clean처럼 체이닝하면 레이어 수를 줄이고 불필요한 파일(캐시, 임시 파일)이 레이어에 남지 않습니다. CI/CD에서 이미지
-    크기는 빌드/배포 속도와 보안에 직접 영향을 미칩니다.
+    📎 참고 (CLI): for IMG in $(docker images --format "{{.Repository}}:{{.Tag}}" | head -3); do echo "=== $IMG ==="; docker
+    history $IMG --format "{{.Size}}\t{{.CreatedBy}}" 2>/dev/null | head -5; echo ""; done'
+  answer_detail: 각 RUN 명령은 새 레이어를 생성합니다. RUN apt-get update && apt-get install && apt-get clean처럼 체이닝하면 레이어 수를 줄이고 불필요한 파일(캐시,
+    임시 파일)이 레이어에 남지 않습니다. CI/CD에서 이미지 크기는 빌드/배포 속도와 보안에 직접 영향을 미칩니다.
   verify:
     type: output_contains
     expect: ===
     field: stdout
+    semantic:
+      intent: '클라우드·컨테이너 w10 s3 — Docker 이미지의 레이어 수와 크기를 분석하시오. 레이어 최적화는 보안과 성능에 모두 중요합니다. (cmd: for IMG in $(docker images
+        --format "{{.Repository}}:{{.Tag}}" | head -3); do ec)'
+      success_criteria:
+      - '명령 실행: for IMG in $(docker images --format "{{.Repository}}:{{.Tag}'
+      - 결과 출력 또는 로그 확인
+      - 클라우드·컨테이너 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 클라우드·컨테이너 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 클라우드·컨테이너와 무관한 기법
   target_vm: web
-  script: for IMG in $(docker images --format "{{.Repository}}:{{.Tag}}" | head -3);
-    do echo "=== $IMG ==="; docker history $IMG --format "{{.Size}}\t{{.CreatedBy}}"
-    2>/dev/null | head -5; echo ""; done
+  script: for IMG in $(docker images --format "{{.Repository}}:{{.Tag}}" | head -3); do echo "=== $IMG ==="; docker history
+    $IMG --format "{{.Size}}\t{{.CreatedBy}}" 2>/dev/null | head -5; echo ""; done
   risk_level: low
   bastion_prompt: 미지의 레이어 수와 크기를분석해줘
 - order: 4
@@ -195,20 +236,33 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Docker Content Trust(이미지 서명) 설정을 확인해줘
 
-    📎 참고 (CLI): echo "DOCKER_CONTENT_TRUST=${DOCKER_CONTENT_TRUST:-미설정(비활성)}" && echo
-    "--- Docker Notary 상태 ---" && docker trust inspect --pretty alpine:latest 2>/dev/null
-    || echo "Content Trust 서명 정보 없음"'
-  answer_detail: Docker Content Trust(DCT)는 이미지 서명과 검증을 제공합니다. DOCKER_CONTENT_TRUST=1을
-    설정하면 서명되지 않은 이미지의 pull/run이 차단됩니다. CI/CD에서 빌드한 이미지에 서명하고, 배포 시 서명을 검증하면 공급망(supply
-    chain) 공격을 방지할 수 있습니다.
+    📎 참고 (CLI): echo "DOCKER_CONTENT_TRUST=${DOCKER_CONTENT_TRUST:-미설정(비활성)}" && echo "--- Docker Notary 상태 ---" && docker
+    trust inspect --pretty alpine:latest 2>/dev/null || echo "Content Trust 서명 정보 없음"'
+  answer_detail: Docker Content Trust(DCT)는 이미지 서명과 검증을 제공합니다. DOCKER_CONTENT_TRUST=1을 설정하면 서명되지 않은 이미지의 pull/run이 차단됩니다.
+    CI/CD에서 빌드한 이미지에 서명하고, 배포 시 서명을 검증하면 공급망(supply chain) 공격을 방지할 수 있습니다.
   verify:
     type: output_contains
     expect: DOCKER_CONTENT_TRUST
     field: stdout
+    semantic:
+      intent: '클라우드·컨테이너 w10 s4 — Docker Content Trust(이미지 서명) 설정을 확인하시오. (cmd: echo "DOCKER_CONTENT_TRUST=${DOCKER_CONTENT_TRUST:-미설정(비활성)}"
+        && echo "--- Docke)'
+      success_criteria:
+      - '명령 실행: echo "DOCKER_CONTENT_TRUST=${DOCKER_CONTENT_TRUST:-미설정(비활성)}'
+      - 결과 출력 또는 로그 확인
+      - 클라우드·컨테이너 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 클라우드·컨테이너 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 클라우드·컨테이너와 무관한 기법
   target_vm: web
-  script: echo "DOCKER_CONTENT_TRUST=${DOCKER_CONTENT_TRUST:-미설정(비활성)}" && echo "---
-    Docker Notary 상태 ---" && docker trust inspect --pretty alpine:latest 2>/dev/null
-    || echo "Content Trust 서명 정보 없음"
+  script: echo "DOCKER_CONTENT_TRUST=${DOCKER_CONTENT_TRUST:-미설정(비활성)}" && echo "--- Docker Notary 상태 ---" && docker trust
+    inspect --pretty alpine:latest 2>/dev/null || echo "Content Trust 서명 정보 없음"
   risk_level: low
   bastion_prompt: Docker Content Trust(이미지 서명) 설정을 확인해줘
 - order: 5
@@ -218,20 +272,33 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 이미지 빌드 시 사용하는 Docker BuildKit의 보안 기능을 확인해줘
 
-    📎 참고 (CLI): echo "DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-미설정}" && echo "--- 빌드 캐시
-    ---" && docker builder prune --dry-run 2>/dev/null || echo "BuildKit 캐시 없음" &&
-    echo "--- 빌더 정보 ---" && docker buildx ls 2>/dev/null || echo "buildx 미설치"'
-  answer_detail: BuildKit(DOCKER_BUILDKIT=1)은 Docker의 차세대 빌드 엔진으로, --secret(빌드 시 민감
-    정보 안전 전달), --ssh(SSH 에이전트 포워딩), 병렬 빌드, 캐시 최적화를 제공합니다. CI/CD 파이프라인에서 빌드 속도와 보안을
-    동시에 향상시킵니다.
+    📎 참고 (CLI): echo "DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-미설정}" && echo "--- 빌드 캐시 ---" && docker builder prune --dry-run 2>/dev/null
+    || echo "BuildKit 캐시 없음" && echo "--- 빌더 정보 ---" && docker buildx ls 2>/dev/null || echo "buildx 미설치"'
+  answer_detail: BuildKit(DOCKER_BUILDKIT=1)은 Docker의 차세대 빌드 엔진으로, --secret(빌드 시 민감 정보 안전 전달), --ssh(SSH 에이전트 포워딩), 병렬 빌드,
+    캐시 최적화를 제공합니다. CI/CD 파이프라인에서 빌드 속도와 보안을 동시에 향상시킵니다.
   verify:
     type: output_contains
     expect: DOCKER_BUILDKIT
     field: stdout
+    semantic:
+      intent: '클라우드·컨테이너 w10 s5 — 이미지 빌드 시 사용하는 Docker BuildKit의 보안 기능을 확인하시오. (cmd: echo "DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-미설정}"
+        && echo "--- 빌드 캐시 ---" && docker)'
+      success_criteria:
+      - '명령 실행: echo "DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-미설정}" && echo "--- '
+      - 결과 출력 또는 로그 확인
+      - 클라우드·컨테이너 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 클라우드·컨테이너 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 클라우드·컨테이너와 무관한 기법
   target_vm: web
-  script: echo "DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-미설정}" && echo "--- 빌드 캐시 ---" &&
-    docker builder prune --dry-run 2>/dev/null || echo "BuildKit 캐시 없음" && echo "---
-    빌더 정보 ---" && docker buildx ls 2>/dev/null || echo "buildx 미설치"
+  script: echo "DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-미설정}" && echo "--- 빌드 캐시 ---" && docker builder prune --dry-run 2>/dev/null
+    || echo "BuildKit 캐시 없음" && echo "--- 빌더 정보 ---" && docker buildx ls 2>/dev/null || echo "buildx 미설치"
   risk_level: low
   bastion_prompt: 이미지 빌드 시 사용하는 Docker BuildKit의 보안 기능을 확인해줘
 - order: 6
@@ -241,20 +308,33 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 레지스트리에서 이미지를 pull할 때의 보안 설정을 확인해줘
 
-    📎 참고 (CLI): echo "=== 레지스트리 보안 ==="; cat /etc/docker/daemon.json 2>/dev/null |
-    grep -i "insecure\|registry" || echo "insecure-registries 미설정 (안전)"; echo "---
-    인증 정보 ---"; ls -la ~/.docker/config.json 2>/dev/null || echo "Docker 로그인 정보 없음"'
-  answer_detail: insecure-registries는 HTTPS 없이 레지스트리에 접근을 허용하여 MITM 공격에 취약합니다. CI/CD에서는
-    반드시 HTTPS 레지스트리를 사용하고, ~/.docker/config.json의 인증 정보는 credential helper로 안전하게 관리해야
-    합니다.
+    📎 참고 (CLI): echo "=== 레지스트리 보안 ==="; cat /etc/docker/daemon.json 2>/dev/null | grep -i "insecure\|registry" || echo "insecure-registries
+    미설정 (안전)"; echo "--- 인증 정보 ---"; ls -la ~/.docker/config.json 2>/dev/null || echo "Docker 로그인 정보 없음"'
+  answer_detail: insecure-registries는 HTTPS 없이 레지스트리에 접근을 허용하여 MITM 공격에 취약합니다. CI/CD에서는 반드시 HTTPS 레지스트리를 사용하고, ~/.docker/config.json의
+    인증 정보는 credential helper로 안전하게 관리해야 합니다.
   verify:
     type: output_contains
     expect: 레지스트리 보안
     field: stdout
+    semantic:
+      intent: '클라우드·컨테이너 w10 s6 — 레지스트리에서 이미지를 pull할 때의 보안 설정을 확인하시오. (cmd: echo "=== 레지스트리 보안 ==="; cat /etc/docker/daemon.json
+        2>/dev/null | grep -i "inse)'
+      success_criteria:
+      - '명령 실행: echo "=== 레지스트리 보안 ==="; cat /etc/docker/daemon.json 2>/dev/'
+      - 결과 출력 또는 로그 확인
+      - 클라우드·컨테이너 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 클라우드·컨테이너 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 클라우드·컨테이너와 무관한 기법
   target_vm: web
-  script: echo "=== 레지스트리 보안 ==="; cat /etc/docker/daemon.json 2>/dev/null | grep
-    -i "insecure\|registry" || echo "insecure-registries 미설정 (안전)"; echo "--- 인증 정보
-    ---"; ls -la ~/.docker/config.json 2>/dev/null || echo "Docker 로그인 정보 없음"
+  script: echo "=== 레지스트리 보안 ==="; cat /etc/docker/daemon.json 2>/dev/null | grep -i "insecure\|registry" || echo "insecure-registries
+    미설정 (안전)"; echo "--- 인증 정보 ---"; ls -la ~/.docker/config.json 2>/dev/null || echo "Docker 로그인 정보 없음"
   risk_level: low
   bastion_prompt: 레지스트리에서 이미지를 pull할 때의 보안 설정을 확인해줘
 - order: 7
@@ -272,8 +352,8 @@ steps:
 
     echo ''[이미지 태그 점검]''
 
-    docker images --format "{{.Repository}}:{{.Tag}}" | grep ":latest" | wc -l 2>/dev/null
-    | xargs -I{} echo "latest 태그 사용: {}개"
+    docker images --format "{{.Repository}}:{{.Tag}}" | grep ":latest" | wc -l 2>/dev/null | xargs -I{} echo "latest 태그 사용:
+    {}개"
 
     echo ''[Content Trust]''
 
@@ -281,13 +361,11 @@ steps:
 
     echo ''[insecure-registries]''
 
-    grep -c insecure /etc/docker/daemon.json 2>/dev/null || echo 0 | xargs -I{} echo
-    "{}건"
+    grep -c insecure /etc/docker/daemon.json 2>/dev/null || echo 0 | xargs -I{} echo "{}건"
 
     echo ''[빌드 캐시]''
 
-    docker system df --format "Build Cache: {{.Size}}" 2>/dev/null | tail -1 || echo
-    ''정보 없음''
+    docker system df --format "Build Cache: {{.Size}}" 2>/dev/null | tail -1 || echo ''정보 없음''
 
     echo ''[이미지 수]''
 
@@ -298,13 +376,28 @@ steps:
     SCRIPT
 
     chmod +x /tmp/cicd_security.sh && bash /tmp/cicd_security.sh'
-  answer_detail: CI/CD 보안은 소프트웨어 공급망(Supply Chain) 보안의 핵심입니다. SLSA(Supply-chain Levels
-    for Software Artifacts) 프레임워크에서는 빌드의 무결성, 소스의 출처, 아티팩트의 검증을 요구합니다. Docker 환경에서는
-    이미지 서명(DCT), 베이스 이미지 관리, 취약점 스캔, 비밀 관리가 핵심 요소입니다.
+  answer_detail: CI/CD 보안은 소프트웨어 공급망(Supply Chain) 보안의 핵심입니다. SLSA(Supply-chain Levels for Software Artifacts) 프레임워크에서는 빌드의
+    무결성, 소스의 출처, 아티팩트의 검증을 요구합니다. Docker 환경에서는 이미지 서명(DCT), 베이스 이미지 관리, 취약점 스캔, 비밀 관리가 핵심 요소입니다.
   verify:
     type: output_contains
     expect: CI/CD 점검 완료
     field: stdout
+    semantic:
+      intent: '클라우드·컨테이너 w10 s7 — CI/CD 보안 종합 점검 스크립트를 작성하고 실행하시오. (cmd: cat << ''SCRIPT'' > /tmp/cicd_security.sh #!/bin/bash
+        echo ''=== CI/CD 파이프라인 보안 점검 )'
+      success_criteria:
+      - '명령 실행: cat << ''SCRIPT'' > /tmp/cicd_security.sh #!/bin/bash echo ''=='
+      - 결과 출력 또는 로그 확인
+      - 클라우드·컨테이너 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 클라우드·컨테이너 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 클라우드·컨테이너와 무관한 기법
   target_vm: web
   script: 'cat << ''SCRIPT'' > /tmp/cicd_security.sh
 
@@ -314,8 +407,8 @@ steps:
 
     echo ''[이미지 태그 점검]''
 
-    docker images --format "{{.Repository}}:{{.Tag}}" | grep ":latest" | wc -l 2>/dev/null
-    | xargs -I{} echo "latest 태그 사용: {}개"
+    docker images --format "{{.Repository}}:{{.Tag}}" | grep ":latest" | wc -l 2>/dev/null | xargs -I{} echo "latest 태그 사용:
+    {}개"
 
     echo ''[Content Trust]''
 
@@ -323,13 +416,11 @@ steps:
 
     echo ''[insecure-registries]''
 
-    grep -c insecure /etc/docker/daemon.json 2>/dev/null || echo 0 | xargs -I{} echo
-    "{}건"
+    grep -c insecure /etc/docker/daemon.json 2>/dev/null || echo 0 | xargs -I{} echo "{}건"
 
     echo ''[빌드 캐시]''
 
-    docker system df --format "Build Cache: {{.Size}}" 2>/dev/null | tail -1 || echo
-    ''정보 없음''
+    docker system df --format "Build Cache: {{.Size}}" 2>/dev/null | tail -1 || echo ''정보 없음''
 
     echo ''[이미지 수]''
 
@@ -344,9 +435,8 @@ steps:
   bastion_prompt: CI/CD 보안 종합 점검 스크립트를 작성하고 실행하시오.
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: "web VM에서 다음 작업들을 순서대로 수행해줘:\n1) WEB 서버(10.20.30.80)에서 Dockerfile\
-    \ 보안 점검을 수행해줘\n2) 보안이 적용된 Dockerfile을 \n3) 미지의 레이어 수와 크기를분석해줘\n4) Docker Content\
-    \ Trust(이미지 서명) 설정을 확인해줘\n5) 이미지 빌드 시 사용하는 Docker BuildKit의 보안 기능을 확인 작업을 수행해줘"
+  bastion_prompt: "web VM에서 다음 작업들을 순서대로 수행해줘:\n1) WEB 서버(10.20.30.80)에서 Dockerfile 보안 점검을 수행해줘\n2) 보안이 적용된 Dockerfile을 \n\
+    3) 미지의 레이어 수와 크기를분석해줘\n4) Docker Content Trust(이미지 서명) 설정을 확인해줘\n5) 이미지 빌드 시 사용하는 Docker BuildKit의 보안 기능을 확인 작업을 수행해줘"
   hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
   category: multi_task
   points: 50
@@ -356,10 +446,7 @@ steps:
     field: stdout
   target_vm: web
   risk_level: low
-  answer: "\U0001F916 프롬프트: web VM에서 다음 작업들을 순서대로 수행해줘:\n1) WEB 서버(10.20.30.80)에서\
-    \ Dockerfile 보안 점검을 수행해줘\n2) 보안이 적용된 Dockerfile을 \n3) 미지의 레이어 수와 크기를분석해줘\n4) Docker\
-    \ Content Trust(이미지 서명) 설정을 확인해줘\n5) 이미지 빌드 시 사용하는 Docker BuildKit의 보안 기능을 확인\
-    \ 작업을 수행해줘"
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: "\U0001F916 프롬프트: web VM에서 다음 작업들을 순서대로 수행해줘:\n1) WEB 서버(10.20.30.80)에서 Dockerfile 보안 점검을 수행해줘\n2) 보안이 적용된 Dockerfile을\
+    \ \n3) 미지의 레이어 수와 크기를분석해줘\n4) Docker Content Trust(이미지 서명) 설정을 확인해줘\n5) 이미지 빌드 시 사용하는 Docker BuildKit의 보안 기능을 확인 작업을 수행해줘"
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
   script: ''

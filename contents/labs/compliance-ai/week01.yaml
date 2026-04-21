@@ -3,8 +3,8 @@ title: 개인정보보호법 기술적 보호조치 점검 (AI 지원)
 version: ai
 course: compliance-ai
 week: 1
-description: 개인정보보호법 제29조(안전조치 의무)에 따른 기술적 보호조치가 시스템에 올바르게 적용되어 있는지 점검합니다. 패스워드 정책,
-  접근 통제, 암호화 설정, 접속기록 관리를 실제 시스템에서 확인합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: 개인정보보호법 제29조(안전조치 의무)에 따른 기술적 보호조치가 시스템에 올바르게 적용되어 있는지 점검합니다. 패스워드 정책, 접근 통제, 암호화 설정, 접속기록 관리를 실제 시스템에서 확인합니다.
+  AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: easy
 duration_minutes: 120
 objectives:
@@ -14,50 +14,76 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: SECU 서버({{SECU_IP}})에 접속하여 현재 패스워드 최소 길이 정책을 확인하시오. 개인정보보호법 안전조치 기준에서는
-    최소 8자 이상을 요구합니다.
+  instruction: SECU 서버({{SECU_IP}})에 접속하여 현재 패스워드 최소 길이 정책을 확인하시오. 개인정보보호법 안전조치 기준에서는 최소 8자 이상을 요구합니다.
   hint: /etc/security/pwquality.conf 또는 /etc/login.defs 파일에서 패스워드 길이 설정을 확인하세요.
   category: audit
   points: 10
   answer: '🤖 프롬프트: SECU 서버(10.20.30.1)에 접속하여 현재 패스워드 최소 길이 정책을 확인해줘
 
-    📎 참고 (CLI): grep -i "minlen" /etc/security/pwquality.conf 2>/dev/null; grep -E
-    "^PASS_" /etc/login.defs 2>/dev/null; echo "=== Password length policy check done
-    ==="'
-  answer_detail: 개인정보보호법 안전조치 기준 제5조에 따라 비밀번호는 영문, 숫자, 특수문자 중 2종류 이상을 조합하여 최소 10자리
-    이상 또는 3종류 이상 조합 시 최소 8자리 이상으로 설정해야 합니다. pwquality.conf 또는 login.defs의 PASS_MIN_LEN
-    값으로 이를 강제합니다.
+    📎 참고 (CLI): grep -i "minlen" /etc/security/pwquality.conf 2>/dev/null; grep -E "^PASS_" /etc/login.defs 2>/dev/null; echo
+    "=== Password length policy check done ==="'
+  answer_detail: 개인정보보호법 안전조치 기준 제5조에 따라 비밀번호는 영문, 숫자, 특수문자 중 2종류 이상을 조합하여 최소 10자리 이상 또는 3종류 이상 조합 시 최소 8자리 이상으로 설정해야 합니다.
+    pwquality.conf 또는 login.defs의 PASS_MIN_LEN 값으로 이를 강제합니다.
   verify:
     type: output_contains
     expect: PASS_
     field: stdout
+    semantic:
+      intent: '컴플라이언스 w1 s1 — SECU 서버({{SECU_IP}})에 접속하여 현재 패스워드 최소 길이 정책을 확인하시오. 개인정보보호법 안전조치 기준에서는 최소 8자 이상을 요구합니다. (cmd:
+        grep -i "minlen" /etc/security/pwquality.conf 2>/dev/null; grep -E "^PASS_" /etc)'
+      success_criteria:
+      - '명령 실행: grep -i "minlen" /etc/security/pwquality.conf 2>/dev/null; g'
+      - 결과 출력 또는 로그 확인
+      - 컴플라이언스 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 컴플라이언스 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 컴플라이언스와 무관한 기법
   target_vm: secu
-  script: grep -i "minlen" /etc/security/pwquality.conf 2>/dev/null; grep -E "^PASS_"
-    /etc/login.defs 2>/dev/null; echo "=== Password length policy check done ==="
+  script: grep -i "minlen" /etc/security/pwquality.conf 2>/dev/null; grep -E "^PASS_" /etc/login.defs 2>/dev/null; echo "===
+    Password length policy check done ==="
   risk_level: low
   bastion_prompt: SECU 서버(10.20.30.1)에 접속하여 현재 패스워드 최소 길이 정책을 확인해줘
 - order: 2
   instruction: 패스워드 복잡도 설정을 확인하시오. 대문자, 소문자, 숫자, 특수문자 요구 설정이 되어 있는지 점검합니다.
-  hint: pwquality.conf에서 ucredit, lcredit, dcredit, ocredit 값을 확인하세요. 파일이 없으면 PAM
-    설정을 확인합니다.
+  hint: pwquality.conf에서 ucredit, lcredit, dcredit, ocredit 값을 확인하세요. 파일이 없으면 PAM 설정을 확인합니다.
   category: audit
   points: 10
   answer: '🤖 프롬프트: 패스워드 복잡도 설정을 확인해줘
 
-    📎 참고 (CLI): grep -E ''(ucredit|lcredit|dcredit|ocredit)'' /etc/security/pwquality.conf
-    2>/dev/null || echo "pwquality.conf not found - checking PAM config" && grep -r
-    ''pam_pwquality\|pam_cracklib\|minlen\|credit'' /etc/pam.d/ 2>/dev/null | head
-    -5; echo "=== Password complexity check complete ==="'
-  answer_detail: pwquality.conf에서 ucredit=-1(대문자 최소 1개), lcredit=-1(소문자 최소 1개), dcredit=-1(숫자
-    최소 1개), ocredit=-1(특수문자 최소 1개)로 설정해야 합니다. 파일이 없으면 libpam-pwquality 패키지가 미설치된 것입니다.
+    📎 참고 (CLI): grep -E ''(ucredit|lcredit|dcredit|ocredit)'' /etc/security/pwquality.conf 2>/dev/null || echo "pwquality.conf
+    not found - checking PAM config" && grep -r ''pam_pwquality\|pam_cracklib\|minlen\|credit'' /etc/pam.d/ 2>/dev/null |
+    head -5; echo "=== Password complexity check complete ==="'
+  answer_detail: pwquality.conf에서 ucredit=-1(대문자 최소 1개), lcredit=-1(소문자 최소 1개), dcredit=-1(숫자 최소 1개), ocredit=-1(특수문자 최소 1개)로
+    설정해야 합니다. 파일이 없으면 libpam-pwquality 패키지가 미설치된 것입니다.
   verify:
     type: output_contains
     expect: check complete
     field: stdout
+    semantic:
+      intent: '컴플라이언스 w1 s2 — 패스워드 복잡도 설정을 확인하시오. 대문자, 소문자, 숫자, 특수문자 요구 설정이 되어 있는지 점검합니다. (cmd: grep -E ''(ucredit|lcredit|dcredit|ocredit)''
+        /etc/security/pwquality.conf 2>/dev/)'
+      success_criteria:
+      - '명령 실행: grep -E ''(ucredit|lcredit|dcredit|ocredit)'' /etc/security/pw'
+      - 결과 출력 또는 로그 확인
+      - 컴플라이언스 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 컴플라이언스 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 컴플라이언스와 무관한 기법
   target_vm: secu
-  script: grep -E '(ucredit|lcredit|dcredit|ocredit)' /etc/security/pwquality.conf
-    2>/dev/null || echo "pwquality.conf not found - checking PAM config" && grep -r
-    'pam_pwquality\|pam_cracklib\|minlen\|credit' /etc/pam.d/ 2>/dev/null | head -5;
+  script: grep -E '(ucredit|lcredit|dcredit|ocredit)' /etc/security/pwquality.conf 2>/dev/null || echo "pwquality.conf not
+    found - checking PAM config" && grep -r 'pam_pwquality\|pam_cracklib\|minlen\|credit' /etc/pam.d/ 2>/dev/null | head -5;
     echo "=== Password complexity check complete ==="
   risk_level: low
   bastion_prompt: 패스워드 복잡도 설정을 확인해줘
@@ -69,12 +95,28 @@ steps:
   answer: '🤖 프롬프트: 패스워드 최대 사용 기간(PASS_MAX_DAYS)을 확인해줘
 
     📎 참고 (CLI): grep -E ''^PASS_'' /etc/login.defs'
-  answer_detail: login.defs에서 PASS_MAX_DAYS는 패스워드 최대 사용일(권장 90일), PASS_MIN_DAYS는 최소
-    변경 간격, PASS_WARN_AGE는 만료 경고 시작일을 의미합니다. 개인정보 처리 시스템의 경우 90일 이내 변경을 권고합니다.
+  answer_detail: login.defs에서 PASS_MAX_DAYS는 패스워드 최대 사용일(권장 90일), PASS_MIN_DAYS는 최소 변경 간격, PASS_WARN_AGE는 만료 경고 시작일을 의미합니다.
+    개인정보 처리 시스템의 경우 90일 이내 변경을 권고합니다.
   verify:
     type: output_contains
     expect: PASS_MAX_DAYS
     field: stdout
+    semantic:
+      intent: '컴플라이언스 w1 s3 — 패스워드 최대 사용 기간(PASS_MAX_DAYS)을 확인하시오. 안전조치 기준에서는 반기별 1회 이상 변경을 권고합니다. (cmd: grep -E ''^PASS_''
+        /etc/login.defs)'
+      success_criteria:
+      - '명령 실행: grep -E ''^PASS_'' /etc/login.defs'
+      - 결과 출력 또는 로그 확인
+      - 컴플라이언스 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 컴플라이언스 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 컴플라이언스와 무관한 기법
   target_vm: secu
   script: grep -E '^PASS_' /etc/login.defs
   risk_level: low
@@ -86,17 +128,31 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 시스템의 SSH 접근 통제 설정을 점검하시오. root 직접 로그인 차단 여부와 허용된 인증 방식을 확인해줘
 
-    📎 참고 (CLI): grep -E ''(PermitRootLogin|PasswordAuthentication|MaxAuthTries)''
-    /etc/ssh/sshd_config | grep -v ''^#'''
-  answer_detail: 개인정보보호법 안전조치 기준 제6조(접근통제)에 따라 불법적인 접근을 차단해야 합니다. PermitRootLogin
-    no로 root 직접 접속을 차단하고, MaxAuthTries로 인증 시도 횟수를 제한하여 무차별 대입 공격을 방지합니다.
+    📎 참고 (CLI): grep -E ''(PermitRootLogin|PasswordAuthentication|MaxAuthTries)'' /etc/ssh/sshd_config | grep -v ''^#'''
+  answer_detail: 개인정보보호법 안전조치 기준 제6조(접근통제)에 따라 불법적인 접근을 차단해야 합니다. PermitRootLogin no로 root 직접 접속을 차단하고, MaxAuthTries로 인증 시도
+    횟수를 제한하여 무차별 대입 공격을 방지합니다.
   verify:
     type: output_contains
     expect: PermitRootLogin
     field: stdout
+    semantic:
+      intent: '컴플라이언스 w1 s4 — 시스템의 SSH 접근 통제 설정을 점검하시오. root 직접 로그인 차단 여부와 허용된 인증 방식을 확인합니다. (cmd: grep -E ''(PermitRootLogin|PasswordAuthentication|MaxAuthTries)''
+        /etc/ssh/sshd_co)'
+      success_criteria:
+      - '명령 실행: grep -E ''(PermitRootLogin|PasswordAuthentication|MaxAuthTrie'
+      - 결과 출력 또는 로그 확인
+      - 컴플라이언스 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 컴플라이언스 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 컴플라이언스와 무관한 기법
   target_vm: secu
-  script: grep -E '(PermitRootLogin|PasswordAuthentication|MaxAuthTries)' /etc/ssh/sshd_config
-    | grep -v '^#'
+  script: grep -E '(PermitRootLogin|PasswordAuthentication|MaxAuthTries)' /etc/ssh/sshd_config | grep -v '^#'
   risk_level: low
   bastion_prompt: 시스템의 SSH 접근 통제 설정을 점검하시오. root 직접 로그인 차단 여부와 허용된 인증 방식을 확인해줘
 - order: 5
@@ -107,38 +163,66 @@ steps:
   answer: '🤖 프롬프트: 개인정보 처리 시스템의 접속기록(로그) 보관 설정을 점검해줘
 
     📎 참고 (CLI): cat /etc/logrotate.conf | grep -A 2 ''rotate'''
-  answer_detail: 안전조치 기준 제8조에 따라 개인정보 취급자의 접속기록은 최소 1년, 5만명 이상 처리 시 2년 이상 보관해야 합니다.
-    logrotate의 rotate 값이 52(주간 회전 시 1년) 이상인지 확인해야 합니다.
+  answer_detail: 안전조치 기준 제8조에 따라 개인정보 취급자의 접속기록은 최소 1년, 5만명 이상 처리 시 2년 이상 보관해야 합니다. logrotate의 rotate 값이 52(주간 회전 시 1년) 이상인지
+    확인해야 합니다.
   verify:
     type: output_contains
     expect: rotate
     field: stdout
+    semantic:
+      intent: '컴플라이언스 w1 s5 — 개인정보 처리 시스템의 접속기록(로그) 보관 설정을 점검하시오. 법령에서는 최소 1년(5만명 이상 시 2년) 보관을 요구합니다. (cmd: cat /etc/logrotate.conf
+        | grep -A 2 ''rotate'')'
+      success_criteria:
+      - '명령 실행: cat /etc/logrotate.conf | grep -A 2 ''rotate'''
+      - 결과 출력 또는 로그 확인
+      - 컴플라이언스 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 컴플라이언스 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 컴플라이언스와 무관한 기법
   target_vm: secu
   script: cat /etc/logrotate.conf | grep -A 2 'rotate'
   risk_level: low
   bastion_prompt: 개인정보 처리 시스템의 접속기록(로그) 보관 설정을 점검해줘
 - order: 6
-  instruction: auditd 감사 시스템이 활성화되어 있는지 확인하고, /etc/passwd와 /etc/shadow에 대한 감사 규칙이
-    설정되어 있는지 점검하시오.
+  instruction: auditd 감사 시스템이 활성화되어 있는지 확인하고, /etc/passwd와 /etc/shadow에 대한 감사 규칙이 설정되어 있는지 점검하시오.
   hint: systemctl status auditd로 상태를 확인하고, auditctl -l로 규칙을 확인하세요.
   category: audit
   points: 12
-  answer: '🤖 프롬프트: auditd 감사 시스템이 활성화되어 있는지 확인하고, /etc/passwd와 /etc/shadow에 대한 감사
-    규칙이 설정되어 있는지 점검해줘
+  answer: '🤖 프롬프트: auditd 감사 시스템이 활성화되어 있는지 확인하고, /etc/passwd와 /etc/shadow에 대한 감사 규칙이 설정되어 있는지 점검해줘
 
     📎 참고 (CLI): sudo systemctl is-active auditd && sudo auditctl -l | grep -E ''(passwd|shadow)'''
-  answer_detail: 개인정보보호법 안전조치 기준 제8조에 따라 접속기록에는 식별자, 접속일시, 접속지 IP, 처리 내용 등이 포함되어야
-    합니다. auditd로 주요 인증 파일(/etc/passwd, /etc/shadow)의 변경을 추적하면 비인가 계정 생성이나 패스워드 변경을
-    감지할 수 있습니다.
+  answer_detail: 개인정보보호법 안전조치 기준 제8조에 따라 접속기록에는 식별자, 접속일시, 접속지 IP, 처리 내용 등이 포함되어야 합니다. auditd로 주요 인증 파일(/etc/passwd, /etc/shadow)의
+    변경을 추적하면 비인가 계정 생성이나 패스워드 변경을 감지할 수 있습니다.
   verify:
     type: output_contains
     expect: active
     field: stdout
+    semantic:
+      intent: '컴플라이언스 w1 s6 — auditd 감사 시스템이 활성화되어 있는지 확인하고, /etc/passwd와 /etc/shadow에 대한 감사 규칙이 설정되어 있는지 점검하시오. (cmd: sudo
+        systemctl is-active auditd && sudo auditctl -l | grep -E ''(passwd|shadow)'')'
+      success_criteria:
+      - '명령 실행: sudo systemctl is-active auditd && sudo auditctl -l | grep -'
+      - 결과 출력 또는 로그 확인
+      - 컴플라이언스 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 컴플라이언스 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 컴플라이언스와 무관한 기법
   target_vm: secu
   script: sudo systemctl is-active auditd && sudo auditctl -l | grep -E '(passwd|shadow)'
   risk_level: low
-  bastion_prompt: auditd 감사 시스템이 활성화되어 있는지 확인하고, /etc/passwd와 /etc/shadow에 대한 감사 규칙이
-    설정되어 있는지 점검해줘
+  bastion_prompt: auditd 감사 시스템이 활성화되어 있는지 확인하고, /etc/passwd와 /etc/shadow에 대한 감사 규칙이 설정되어 있는지 점검해줘
 - order: 7
   instruction: 개인정보가 포함될 수 있는 로그 파일의 접근 권한을 점검하시오. 로그 파일은 640 이하 권한이어야 합니다.
   hint: /var/log/ 디렉터리의 주요 로그 파일 권한을 확인하세요.
@@ -146,17 +230,32 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 개인정보가 포함될 수 있는 로그 파일의 접근 권한을 점검하시오. 로그 파일은 640 이하 권한이어야
 
-    📎 참고 (CLI): stat -c ''%a %n'' /var/log/auth.log /var/log/syslog /var/log/kern.log
-    2>/dev/null || ls -la /var/log/auth.log /var/log/syslog'
-  answer_detail: 개인정보보호법 안전조치 기준 제5조에 따라 접속기록을 안전하게 보관해야 합니다. 로그 파일 권한이 640(소유자 읽기/쓰기,
-    그룹 읽기) 이하여야 일반 사용자의 로그 열람이나 위변조를 방지할 수 있습니다.
+    📎 참고 (CLI): stat -c ''%a %n'' /var/log/auth.log /var/log/syslog /var/log/kern.log 2>/dev/null || ls -la /var/log/auth.log
+    /var/log/syslog'
+  answer_detail: 개인정보보호법 안전조치 기준 제5조에 따라 접속기록을 안전하게 보관해야 합니다. 로그 파일 권한이 640(소유자 읽기/쓰기, 그룹 읽기) 이하여야 일반 사용자의 로그 열람이나 위변조를 방지할
+    수 있습니다.
   verify:
     type: output_contains
     expect: auth.log
     field: stdout
+    semantic:
+      intent: '컴플라이언스 w1 s7 — 개인정보가 포함될 수 있는 로그 파일의 접근 권한을 점검하시오. 로그 파일은 640 이하 권한이어야 합니다. (cmd: stat -c ''%a %n'' /var/log/auth.log
+        /var/log/syslog /var/log/kern.log 2>/dev/null )'
+      success_criteria:
+      - '명령 실행: stat -c ''%a %n'' /var/log/auth.log /var/log/syslog /var/log/k'
+      - 결과 출력 또는 로그 확인
+      - 컴플라이언스 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 컴플라이언스 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 컴플라이언스와 무관한 기법
   target_vm: secu
-  script: stat -c '%a %n' /var/log/auth.log /var/log/syslog /var/log/kern.log 2>/dev/null
-    || ls -la /var/log/auth.log /var/log/syslog
+  script: stat -c '%a %n' /var/log/auth.log /var/log/syslog /var/log/kern.log 2>/dev/null || ls -la /var/log/auth.log /var/log/syslog
   risk_level: low
   bastion_prompt: 개인정보가 포함될 수 있는 로그 파일의 접근 권한을 점검하시오. 로그 파일은 640 이하 권한이어야
 - order: 8
@@ -166,21 +265,35 @@ steps:
   points: 12
   answer: '🤖 프롬프트: WEB 서버(10.20.30.80)의 Apache에서 SSL/TLS 설정을 확인해줘
 
-    📎 참고 (CLI): grep -r "SSLProtocol\|SSLCipherSuite" /etc/apache2/sites-enabled/
-    2>/dev/null || grep -r "SSLProtocol\|SSLCipherSuite" /etc/apache2/mods-enabled/ssl.conf
-    2>/dev/null || echo "SSL config not found in sites-enabled - checking mods:" &&
-    ls /etc/apache2/mods-enabled/ 2>/dev/null | grep ssl'
-  answer_detail: 안전조치 기준 제7조에 따라 개인정보를 정보통신망으로 전송할 때 암호화해야 합니다. SSLProtocol에서 TLSv1.2
-    이상만 허용하고, 취약한 암호 스위트(RC4, DES 등)를 비활성화해야 합니다.
+    📎 참고 (CLI): grep -r "SSLProtocol\|SSLCipherSuite" /etc/apache2/sites-enabled/ 2>/dev/null || grep -r "SSLProtocol\|SSLCipherSuite"
+    /etc/apache2/mods-enabled/ssl.conf 2>/dev/null || echo "SSL config not found in sites-enabled - checking mods:" && ls
+    /etc/apache2/mods-enabled/ 2>/dev/null | grep ssl'
+  answer_detail: 안전조치 기준 제7조에 따라 개인정보를 정보통신망으로 전송할 때 암호화해야 합니다. SSLProtocol에서 TLSv1.2 이상만 허용하고, 취약한 암호 스위트(RC4, DES 등)를 비활성화해야
+    합니다.
   verify:
     type: output_contains
     expect: SSL
     field: stdout
+    semantic:
+      intent: '컴플라이언스 w1 s8 — WEB 서버({{WEB_IP}})의 Apache에서 SSL/TLS 설정을 확인하시오. 개인정보 전송 시 암호화는 필수입니다. (cmd: grep -r "SSLProtocol\|SSLCipherSuite"
+        /etc/apache2/sites-enabled/ 2>/dev/null ||)'
+      success_criteria:
+      - '명령 실행: grep -r "SSLProtocol\|SSLCipherSuite" /etc/apache2/sites-ena'
+      - 결과 출력 또는 로그 확인
+      - 컴플라이언스 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 컴플라이언스 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 컴플라이언스와 무관한 기법
   target_vm: web
-  script: grep -r "SSLProtocol\|SSLCipherSuite" /etc/apache2/sites-enabled/ 2>/dev/null
-    || grep -r "SSLProtocol\|SSLCipherSuite" /etc/apache2/mods-enabled/ssl.conf 2>/dev/null
-    || echo "SSL config not found in sites-enabled - checking mods:" && ls /etc/apache2/mods-enabled/
-    2>/dev/null | grep ssl
+  script: grep -r "SSLProtocol\|SSLCipherSuite" /etc/apache2/sites-enabled/ 2>/dev/null || grep -r "SSLProtocol\|SSLCipherSuite"
+    /etc/apache2/mods-enabled/ssl.conf 2>/dev/null || echo "SSL config not found in sites-enabled - checking mods:" && ls
+    /etc/apache2/mods-enabled/ 2>/dev/null | grep ssl
   risk_level: low
   bastion_prompt: WEB 서버(10.20.30.80)의 Apache에서 SSL/TLS 설정을 확인해줘
 - order: 9
@@ -190,17 +303,31 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 시스템에 불필요한 SUID/SGID 파일이 있는지 점검해줘
 
-    📎 참고 (CLI): sudo find /usr -perm -4000 -type f -exec ls -la {} \; 2>/dev/null
-    | head -20'
-  answer_detail: SUID(Set User ID) 파일은 실행 시 소유자 권한으로 동작하므로 권한 상승 공격에 악용될 수 있습니다. 개인정보
-    처리 시스템에서는 불필요한 SUID 파일을 제거하여 안전조치 기준 제5조(접근 권한 관리)를 준수해야 합니다.
+    📎 참고 (CLI): sudo find /usr -perm -4000 -type f -exec ls -la {} \; 2>/dev/null | head -20'
+  answer_detail: SUID(Set User ID) 파일은 실행 시 소유자 권한으로 동작하므로 권한 상승 공격에 악용될 수 있습니다. 개인정보 처리 시스템에서는 불필요한 SUID 파일을 제거하여 안전조치 기준
+    제5조(접근 권한 관리)를 준수해야 합니다.
   verify:
     type: output_contains
     expect: root
     field: stdout
+    semantic:
+      intent: '컴플라이언스 w1 s9 — 시스템에 불필요한 SUID/SGID 파일이 있는지 점검하시오. 최소 권한 원칙 위반 여부를 확인합니다. (cmd: sudo find /usr -perm -4000 -type
+        f -exec ls -la {} \; 2>/dev/null | head -20)'
+      success_criteria:
+      - '명령 실행: sudo find /usr -perm -4000 -type f -exec ls -la {} \; 2>/dev'
+      - 결과 출력 또는 로그 확인
+      - 컴플라이언스 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 컴플라이언스 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 컴플라이언스와 무관한 기법
   target_vm: secu
-  script: sudo find /usr -perm -4000 -type f -exec ls -la {} \; 2>/dev/null | head
-    -20
+  script: sudo find /usr -perm -4000 -type f -exec ls -la {} \; 2>/dev/null | head -20
   risk_level: low
   bastion_prompt: 시스템에 불필요한 SUID/SGID 파일이 있는지 점검해줘
 - order: 10
@@ -216,8 +343,8 @@ steps:
 
     echo ''=== 개인정보보호법 안전조치 점검 ===''\necho ''[1] 패스워드 정책''
 
-    grep -E ''(minlen|credit)'' /etc/security/pwquality.conf 2>/dev/null | grep -v
-    ''^#''; grep -E ''^PASS_'' /etc/login.defs 2>/dev/null
+    grep -E ''(minlen|credit)'' /etc/security/pwquality.conf 2>/dev/null | grep -v ''^#''; grep -E ''^PASS_'' /etc/login.defs
+    2>/dev/null
 
     echo ''[2] 패스워드 만료''
 
@@ -240,13 +367,28 @@ steps:
     SCRIPT
 
     chmod +x /tmp/privacy_audit.sh && bash /tmp/privacy_audit.sh'
-  answer_detail: 컴플라이언스 점검은 수동으로 하면 누락이 발생하기 쉽습니다. 점검 항목을 스크립트로 자동화하면 일관성 있는 점검이 가능하고,
-    정기 감사 시 증적으로도 활용할 수 있습니다. 이 스크립트는 안전조치 기준의 주요 항목(접근 권한 관리, 접근 통제, 접속기록 보관)을 한
-    번에 확인합니다.
+  answer_detail: 컴플라이언스 점검은 수동으로 하면 누락이 발생하기 쉽습니다. 점검 항목을 스크립트로 자동화하면 일관성 있는 점검이 가능하고, 정기 감사 시 증적으로도 활용할 수 있습니다. 이 스크립트는 안전조치
+    기준의 주요 항목(접근 권한 관리, 접근 통제, 접속기록 보관)을 한 번에 확인합니다.
   verify:
     type: output_contains
     expect: 점검 완료
     field: stdout
+    semantic:
+      intent: '컴플라이언스 w1 s10 — 개인정보보호법 안전조치 기준 준수 여부를 종합 점검하는 스크립트를 작성하고 실행하시오. (cmd: cat << ''SCRIPT'' > /tmp/privacy_audit.sh
+        #!/bin/bash echo ''=== 개인정보보호법 안전조치 점검 ==)'
+      success_criteria:
+      - '명령 실행: cat << ''SCRIPT'' > /tmp/privacy_audit.sh #!/bin/bash echo ''=='
+      - 결과 출력 또는 로그 확인
+      - 컴플라이언스 실습 맥락 유지
+      acceptable_methods:
+      - 제시된 CLI 명령 그대로 실행
+      - 동등한 대체 도구 사용
+      - 컴플라이언스 관련 도구 체인
+      - 결과를 파일/로그에 저장
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 결과 확인 누락
+      - 컴플라이언스와 무관한 기법
   target_vm: secu
   script: 'cat << ''SCRIPT'' > /tmp/privacy_audit.sh
 
@@ -254,8 +396,8 @@ steps:
 
     echo ''=== 개인정보보호법 안전조치 점검 ===''\necho ''[1] 패스워드 정책''
 
-    grep -E ''(minlen|credit)'' /etc/security/pwquality.conf 2>/dev/null | grep -v
-    ''^#''; grep -E ''^PASS_'' /etc/login.defs 2>/dev/null
+    grep -E ''(minlen|credit)'' /etc/security/pwquality.conf 2>/dev/null | grep -v ''^#''; grep -E ''^PASS_'' /etc/login.defs
+    2>/dev/null
 
     echo ''[2] 패스워드 만료''
 
@@ -313,6 +455,5 @@ steps:
     4) 시스템의 SSH 접근 통제 설정을 점검하시오. root 직접 로그인 차단 여부와 허용된 인증 방식을 확인해줘
 
     5) 개인정보 처리 시스템의 접속기록(로그) 보관 설정을 점검해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
   script: ''
