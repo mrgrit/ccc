@@ -3,8 +3,8 @@ title: 컨테이너 네트워크 보안 실습 (AI 지원)
 version: ai
 course: cloud-container-ai
 week: 7
-description: Docker 환경에서 네트워크 보안을 강화합니다. 네트워크 격리, DNS 보안, 트래픽 모니터링, iptables 규칙 분석을 수행합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를
-  검증합니다.
+description: Docker 환경에서 네트워크 보안을 강화합니다. 네트워크 격리, DNS 보안, 트래픽 모니터링, iptables 규칙 분석을 수행합니다. AI SubAgent가
+  자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -20,33 +20,38 @@ steps:
   points: 10
   answer: '🤖 프롬프트: WEB 서버(10.20.30.80)에서 Docker가 생성한 iptables 규칙을 분석해줘
 
-    📎 참고 (CLI): sudo iptables -L -n -v --line-numbers 2>/dev/null | head -30 && echo "=== DOCKER 체인 ===" && sudo iptables
-    -L DOCKER -n -v 2>/dev/null && echo "=== DOCKER-ISOLATION ===" && sudo iptables -L DOCKER-ISOLATION-STAGE-1 -n 2>/dev/null'
-  answer_detail: Docker는 DOCKER, DOCKER-ISOLATION-STAGE-1/2, DOCKER-USER 체인을 자동 생성합니다. DOCKER-ISOLATION은 네트워크 간 격리를 담당하고,
-    DOCKER-USER는 사용자 정의 규칙을 위한 체인입니다. 호스트 방화벽 규칙은 DOCKER-USER에 추가해야 Docker와 충돌하지 않습니다.
+    📎 참고 (CLI): sudo iptables -L -n -v --line-numbers 2>/dev/null | head -30 && echo "=== DOCKER 체인 ==="
+    && sudo iptables -L DOCKER -n -v 2>/dev/null && echo "=== DOCKER-ISOLATION ===" && sudo iptables -L
+    DOCKER-ISOLATION-STAGE-1 -n 2>/dev/null'
+  answer_detail: Docker는 DOCKER, DOCKER-ISOLATION-STAGE-1/2, DOCKER-USER 체인을 자동 생성합니다. DOCKER-ISOLATION은
+    네트워크 간 격리를 담당하고, DOCKER-USER는 사용자 정의 규칙을 위한 체인입니다. 호스트 방화벽 규칙은 DOCKER-USER에 추가해야 Docker와 충돌하지 않습니다.
   verify:
     type: output_contains
     expect: DOCKER
     field: stdout
     semantic:
-      intent: '클라우드·컨테이너 w7 s1 — WEB 서버({{WEB_IP}})에서 Docker가 생성한 iptables 규칙을 분석하시오. (cmd: sudo iptables -L -n -v --line-numbers
-        2>/dev/null | head -30 && echo "=== DOCKER)'
+      intent: 'Docker iptables 규칙 분석 — sudo iptables -L -n -v --line-numbers + iptables -L DOCKER -n -v
+        + iptables -L DOCKER-ISOLATION-STAGE-1. Docker 가 자동 생성하는 4 chain: (1) DOCKER: 각 컨테이너 publish 포트
+        ACCEPT 룰 (2) DOCKER-ISOLATION-STAGE-1/2: network 간 격리(inter-bridge 차단) (3) DOCKER-USER: 관리자 수동
+        룰(restart 보존). FORWARD chain 은 자동 JUMP 체인 호출. 수동 룰은 반드시 DOCKER-USER 에 추가(DOCKER chain 직접 수정 금지)'
       success_criteria:
-      - '명령 실행: sudo iptables -L -n -v --line-numbers 2>/dev/null | head -30'
-      - 결과 출력 또는 로그 확인
-      - 클라우드·컨테이너 실습 맥락 유지
+      - iptables -L 실행
+      - DOCKER 또는 DOCKER-ISOLATION 체인 출력
+      - Docker 관련 chain 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 클라우드·컨테이너 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo iptables -L -n -v + DOCKER/DOCKER-USER chain 조회
+      - sudo nft list ruleset | grep docker (nftables 백엔드)
+      - iptables-save | grep -E DOCKER
+      - sudo iptables -t nat -L DOCKER -n(NAT chain)
+      - Calico/Cilium iptables rules 비교(K8s)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 클라우드·컨테이너와 무관한 기법
+      - DOCKER-USER 개념 이해 없음
+      - FORWARD chain 자동 JUMP 무시
+      - 수동 수정 시 DOCKER chain 직접 편집(잘못된 관행)
   target_vm: web
-  script: sudo iptables -L -n -v --line-numbers 2>/dev/null | head -30 && echo "=== DOCKER 체인 ===" && sudo iptables -L DOCKER
-    -n -v 2>/dev/null && echo "=== DOCKER-ISOLATION ===" && sudo iptables -L DOCKER-ISOLATION-STAGE-1 -n 2>/dev/null
+  script: sudo iptables -L -n -v --line-numbers 2>/dev/null | head -30 && echo "=== DOCKER 체인 ===" &&
+    sudo iptables -L DOCKER -n -v 2>/dev/null && echo "=== DOCKER-ISOLATION ===" && sudo iptables -L DOCKER-ISOLATION-STAGE-1
+    -n 2>/dev/null
   risk_level: low
   bastion_prompt: WEB 서버(10.20.30.80)에서 Docker가 생성한 iptables 규칙을 분석해줘
 - order: 2
@@ -56,37 +61,40 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 격리된 내부 네트워크(internal)를 생성해줘
 
-    📎 참고 (CLI): docker network create --internal --subnet 172.30.0.0/24 isolated-net 2>/dev/null || echo "이미 존재"; docker network
-    inspect isolated-net --format "Name: {{.Name}}
+    📎 참고 (CLI): docker network create --internal --subnet 172.30.0.0/24 isolated-net 2>/dev/null || echo
+    "이미 존재"; docker network inspect isolated-net --format "Name: {{.Name}}
 
     Internal: {{.Internal}}
 
     Subnet: {{(index .IPAM.Config 0).Subnet}}"'''
-  answer_detail: --internal 옵션은 네트워크의 외부 통신을 완전히 차단합니다. 데이터베이스, 캐시 등 외부 접근이 불필요한 서비스는 internal 네트워크에 배치합니다. 클라우드의 프라이빗 서브넷(인터넷
-    게이트웨이 없음)과 동일한 개념입니다.
+  answer_detail: --internal 옵션은 네트워크의 외부 통신을 완전히 차단합니다. 데이터베이스, 캐시 등 외부 접근이 불필요한 서비스는 internal 네트워크에 배치합니다.
+    클라우드의 프라이빗 서브넷(인터넷 게이트웨이 없음)과 동일한 개념입니다.
   verify:
     type: output_contains
     expect: Internal
     field: stdout
     semantic:
-      intent: '클라우드·컨테이너 w7 s2 — 격리된 내부 네트워크(internal)를 생성하시오. 외부 통신이 불가능한 네트워크입니다. (cmd: docker network create --internal
-        --subnet 172.30.0.0/24 isolated-net 2>/dev/null)'
+      intent: internal(외부 차단) 네트워크 생성 — docker network create --internal --subnet 172.30.0.0/24 isolated-net.
+        --internal 플래그는 이 네트워크의 컨테이너에게 outbound NAT 없음(MASQUERADE 룰 제외) = 외부 인터넷 불가, internal-net 내 컨테이너끼리만
+        통신. DB·cache·worker 처럼 인터넷 접근 불필요한 서비스 배치. AWS private subnet + no NAT Gateway 와 동일 효과. Zero Trust
+        네트워크 설계 원칙
       success_criteria:
-      - '명령 실행: docker network create --internal --subnet 172.30.0.0/24 isol'
-      - 결과 출력 또는 로그 확인
-      - 클라우드·컨테이너 실습 맥락 유지
+      - docker network create --internal 실행
+      - Internal 필드 true 출력
+      - subnet 지정
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 클라우드·컨테이너 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker network create --internal --subnet ...
+      - /etc/docker/daemon.json 에 network 선언
+      - 'K8s NetworkPolicy egress: [] 로 외부 차단'
+      - Cilium egress policy
+      - AWS VPC private subnet + no IGW
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 클라우드·컨테이너와 무관한 기법
+      - --internal 없이 network 생성(외부 통신 가능)
+      - subnet 충돌(기본 172.17 과)
+      - Internal 플래그 값 검증 누락
   target_vm: web
-  script: 'docker network create --internal --subnet 172.30.0.0/24 isolated-net 2>/dev/null || echo "이미 존재"; docker network
-    inspect isolated-net --format "Name: {{.Name}}
+  script: 'docker network create --internal --subnet 172.30.0.0/24 isolated-net 2>/dev/null || echo "이미
+    존재"; docker network inspect isolated-net --format "Name: {{.Name}}
 
     Internal: {{.Internal}}
 
@@ -100,9 +108,10 @@ steps:
   points: 10
   answer: '🤖 프롬프트: internal 네트워크에서 외부 통신이 실제로 차단되는지 확인해줘
 
-    📎 참고 (CLI): docker run --rm --network isolated-net alpine:latest ping -c 2 -W 3 8.8.8.8 2>&1; echo "종료코드: $?"'''
-  answer_detail: internal 네트워크의 컨테이너는 같은 네트워크 내의 다른 컨테이너와만 통신 가능하고, 외부(인터넷)로 나갈 수 없습니다. ping 실패(Network unreachable)가 확인되면
-    격리가 정상 동작하는 것입니다.
+    📎 참고 (CLI): docker run --rm --network isolated-net alpine:latest ping -c 2 -W 3 8.8.8.8 2>&1; echo
+    "종료코드: $?"'''
+  answer_detail: internal 네트워크의 컨테이너는 같은 네트워크 내의 다른 컨테이너와만 통신 가능하고, 외부(인터넷)로 나갈 수 없습니다. ping 실패(Network
+    unreachable)가 확인되면 격리가 정상 동작하는 것입니다.
   verify:
     type: output_contains
     expect:
@@ -110,23 +119,27 @@ steps:
     - blocked
     field: stdout
     semantic:
-      intent: '클라우드·컨테이너 w7 s3 — internal 네트워크에서 외부 통신이 실제로 차단되는지 확인하시오. (cmd: docker run --rm --network isolated-net alpine:latest
-        ping -c 2 -W 3 8.8.8.8 2>&1)'
+      intent: 'internal 격리 실증 테스트(외부 ping 실패 예상) — docker run --rm --network isolated-net alpine ping
+        -c 2 -W 3 8.8.8.8; echo 종료코드: $?. 기대 결과: Network unreachable 또는 100% packet loss, ping exit code
+        != 0. internal network 는 MASQUERADE 없어서 outbound routing 자체가 성립 안 됨. Negative test 로 격리 검증. 통과
+        시(ping 성공) 설정 문제 - internal 플래그 누락 또는 host network 혼용'
       success_criteria:
-      - '명령 실행: docker run --rm --network isolated-net alpine:latest ping -c'
-      - 결과 출력 또는 로그 확인
-      - 클라우드·컨테이너 실습 맥락 유지
+      - ping -c 2 -W 3 실행 + 종료코드 확인
+      - 종료코드 또는 blocked 출력
+      - 격리 검증 결과
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 클라우드·컨테이너 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker run + ping + $? 확인
+      - wget --timeout=3 http://external 으로 HTTP 테스트
+      - curl --max-time 3 -s -o /dev/null -w %{http_code}
+      - dig @8.8.8.8 (DNS 조회 실패)
+      - tcptraceroute <external-ip>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 클라우드·컨테이너와 무관한 기법
+      - ping 성공 정상 판정(격리 실패)
+      - 종료코드 미검증
+      - timeout 너무 짧음(1s)
   target_vm: web
-  script: 'docker run --rm --network isolated-net alpine:latest ping -c 2 -W 3 8.8.8.8 2>&1; echo "종료코드: $?"'''
+  script: 'docker run --rm --network isolated-net alpine:latest ping -c 2 -W 3 8.8.8.8 2>&1; echo "종료코드:
+    $?"'''
   risk_level: low
   bastion_prompt: internal 네트워크에서 외부 통신이 실제로 차단되는지 확인해줘
 - order: 4
@@ -136,33 +149,37 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Docker의 DNS 설정을 확인해줘
 
-    📎 참고 (CLI): echo "=== bridge 네트워크 DNS ==="; docker run --rm alpine:latest cat /etc/resolv.conf; echo "=== 사용자 정의 네트워크
-    DNS ==="; docker run --rm --network isolated-net alpine:latest cat /etc/resolv.conf 2>/dev/null'
-  answer_detail: 사용자 정의 네트워크에서는 Docker 내장 DNS(127.0.0.11)가 컨테이너 이름으로 서비스 디스커버리를 제공합니다. 기본 bridge에서는 --link를 써야 하지만, 사용자 정의
-    네트워크에서는 자동입니다. DNS 스푸핑 방지를 위해 신뢰할 수 있는 DNS 서버를 사용해야 합니다.
+    📎 참고 (CLI): echo "=== bridge 네트워크 DNS ==="; docker run --rm alpine:latest cat /etc/resolv.conf; echo
+    "=== 사용자 정의 네트워크 DNS ==="; docker run --rm --network isolated-net alpine:latest cat /etc/resolv.conf
+    2>/dev/null'
+  answer_detail: 사용자 정의 네트워크에서는 Docker 내장 DNS(127.0.0.11)가 컨테이너 이름으로 서비스 디스커버리를 제공합니다. 기본 bridge에서는 --link를
+    써야 하지만, 사용자 정의 네트워크에서는 자동입니다. DNS 스푸핑 방지를 위해 신뢰할 수 있는 DNS 서버를 사용해야 합니다.
   verify:
     type: output_contains
     expect: nameserver
     field: stdout
     semantic:
-      intent: '클라우드·컨테이너 w7 s4 — Docker의 DNS 설정을 확인하시오. 사용자 정의 네트워크의 내장 DNS를 점검합니다. (cmd: echo "=== bridge 네트워크 DNS ===";
-        docker run --rm alpine:latest cat /etc/resolv.co)'
+      intent: 'Docker 내장 DNS 설정 확인 — docker run --rm alpine cat /etc/resolv.conf. 사용자 정의 network 의 nameserver
+        는 127.0.0.11(Docker embedded DNS resolver) - 컨테이너 이름 기반 service discovery 제공. 기본 bridge 는 host
+        DNS 직접 상속(DNS 기반 service discovery 없음, --link 필요). 위험: DNS rebinding 공격 대응 필요. daemon.json: dns:
+        [<trusted>] 로 외부 resolver 고정'
       success_criteria:
-      - '명령 실행: echo "=== bridge 네트워크 DNS ==="; docker run --rm alpine:lates'
-      - 결과 출력 또는 로그 확인
-      - 클라우드·컨테이너 실습 맥락 유지
+      - cat /etc/resolv.conf 실행(bridge + user-defined)
+      - nameserver 키워드 포함
+      - 127.0.0.11 또는 외부 resolver
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 클라우드·컨테이너 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker run --rm alpine cat /etc/resolv.conf
+      - docker inspect --format {{.NetworkSettings.DNS}}
+      - dig @127.0.0.11 container_name 컨테이너 내부
+      - daemon.json dns + dns-search 설정
+      - CoreDNS 로 K8s DNS 대응
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 클라우드·컨테이너와 무관한 기법
+      - bridge 와 user-defined 구분 없음
+      - DNS rebinding 위협 미인지
+      - 127.0.0.11 역할 이해 없음
   target_vm: web
-  script: echo "=== bridge 네트워크 DNS ==="; docker run --rm alpine:latest cat /etc/resolv.conf; echo "=== 사용자 정의 네트워크 DNS ===";
-    docker run --rm --network isolated-net alpine:latest cat /etc/resolv.conf 2>/dev/null
+  script: echo "=== bridge 네트워크 DNS ==="; docker run --rm alpine:latest cat /etc/resolv.conf; echo "===
+    사용자 정의 네트워크 DNS ==="; docker run --rm --network isolated-net alpine:latest cat /etc/resolv.conf 2>/dev/null
   risk_level: low
   bastion_prompt: Docker의 DNS 설정을 확인해줘
 - order: 5
@@ -172,33 +189,38 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 컨테이너의 네트워크 인터페이스와 IP 정보를 상세히 확인해줘
 
-    📎 참고 (CLI): docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range \$net, \$cfg := .NetworkSettings.Networks}}  Network={{\$net}}
-    IP={{\$cfg.IPAddress}} GW={{\$cfg.Gateway}}\n{{end}}" {} 2>/dev/null || echo "컨테이너 없음"'
-  answer_detail: 각 컨테이너는 연결된 네트워크마다 IP 주소를 받습니다. 하나의 컨테이너가 여러 네트워크에 연결되면 네트워크 간 브릿지 역할을 할 수 있어 격리가 무력화될 수 있습니다. 이를 K8s에서는
-    NetworkPolicy로 제어합니다.
+    📎 참고 (CLI): docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range \$net,
+    \$cfg := .NetworkSettings.Networks}}  Network={{\$net}} IP={{\$cfg.IPAddress}} GW={{\$cfg.Gateway}}\n{{end}}"
+    {} 2>/dev/null || echo "컨테이너 없음"'
+  answer_detail: 각 컨테이너는 연결된 네트워크마다 IP 주소를 받습니다. 하나의 컨테이너가 여러 네트워크에 연결되면 네트워크 간 브릿지 역할을 할 수 있어 격리가 무력화될
+    수 있습니다. 이를 K8s에서는 NetworkPolicy로 제어합니다.
   verify:
     type: output_contains
     expect: Network
     field: stdout
     semantic:
-      intent: '클라우드·컨테이너 w7 s5 — 컨테이너의 네트워크 인터페이스와 IP 정보를 상세히 확인하시오. (cmd: docker ps -q | head -3 | xargs -I{} docker inspect
-        --format="{{.Name}}:\n{{range)'
+      intent: 컨테이너 네트워크 인터페이스·IP 상세 감사 — docker inspect --format={{.Name}}:{{range $net, $cfg := .NetworkSettings.Networks}}
+        Network={{$net}} IP={{$cfg.IPAddress}} GW={{$cfg.Gateway}}{{end}}. 컨테이너가 여러 network 에 연결되면 bridge
+        역할로 격리 무력화 위험 - multi-homed container. 각 network 별 IP + Gateway 확인. docker network connect <net>
+        <c> 로 추가 연결, disconnect 로 해제. K8s 는 Pod 당 single IP 가 원칙(CNI plugin)
       success_criteria:
-      - '명령 실행: docker ps -q | head -3 | xargs -I{} docker inspect --format='
-      - 결과 출력 또는 로그 확인
-      - 클라우드·컨테이너 실습 맥락 유지
+      - docker inspect NetworkSettings.Networks 조회
+      - Network 키워드 출력
+      - IP/Gateway 정보
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 클라우드·컨테이너 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker inspect --format NetworkSettings 파이프라인
+      - docker container inspect <c> | jq .NetworkSettings.Networks
+      - docker exec <c> ip addr show
+      - ip netns exec <pid> ip addr (namespace 직접)
+      - K8s kubectl get pods -o wide (Pod IP)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 클라우드·컨테이너와 무관한 기법
+      - multi-homed 위험 이해 없음
+      - IP 만 확인하고 Gateway 무시
+      - 여러 network 연결 감지 못 함
   target_vm: web
-  script: docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range \$net, \$cfg := .NetworkSettings.Networks}}  Network={{\$net}}
-    IP={{\$cfg.IPAddress}} GW={{\$cfg.Gateway}}\n{{end}}" {} 2>/dev/null || echo "컨테이너 없음"
+  script: docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range \$net, \$cfg
+    := .NetworkSettings.Networks}}  Network={{\$net}} IP={{\$cfg.IPAddress}} GW={{\$cfg.Gateway}}\n{{end}}"
+    {} 2>/dev/null || echo "컨테이너 없음"
   risk_level: low
   bastion_prompt: 컨테이너의 네트워크 인터페이스와 IP 정보를 상세히 확인해줘
 - order: 6
@@ -208,35 +230,38 @@ steps:
   points: 12
   answer: '🤖 프롬프트: 호스트에서 컨테이너 네트워크 트래픽을 모니터링해줘
 
-    📎 참고 (CLI): echo "=== Docker 네트워크 인터페이스 ==="; ip link show type bridge; echo "--- veth 인터페이스 ---"; ip link show type veth
-    2>/dev/null | head -10; echo "--- 트래픽 캡처 테스트 ---"; sudo timeout 3 tcpdump -i docker0 -c 5 -n 2>/dev/null || echo "트래픽
-    없음 또는 docker0 없음"'
-  answer_detail: 호스트에서 docker0(기본 브릿지) 인터페이스의 트래픽을 모니터링하면 컨테이너 간 통신을 관찰할 수 있습니다. 이는 클라우드의 VPC Flow Logs와 유사합니다. 암호화되지 않은 컨테이너
-    간 통신은 호스트에서 평문으로 캡처할 수 있어 민감 데이터 전송 시 TLS가 필요합니다.
+    📎 참고 (CLI): echo "=== Docker 네트워크 인터페이스 ==="; ip link show type bridge; echo "--- veth 인터페이스 ---";
+    ip link show type veth 2>/dev/null | head -10; echo "--- 트래픽 캡처 테스트 ---"; sudo timeout 3 tcpdump -i
+    docker0 -c 5 -n 2>/dev/null || echo "트래픽 없음 또는 docker0 없음"'
+  answer_detail: 호스트에서 docker0(기본 브릿지) 인터페이스의 트래픽을 모니터링하면 컨테이너 간 통신을 관찰할 수 있습니다. 이는 클라우드의 VPC Flow Logs와
+    유사합니다. 암호화되지 않은 컨테이너 간 통신은 호스트에서 평문으로 캡처할 수 있어 민감 데이터 전송 시 TLS가 필요합니다.
   verify:
     type: output_contains
     expect: Docker 네트워크 인터페이스
     field: stdout
     semantic:
-      intent: '클라우드·컨테이너 w7 s6 — 호스트에서 컨테이너 네트워크 트래픽을 모니터링하시오. (cmd: echo "=== Docker 네트워크 인터페이스 ==="; ip link show type bridge;
-        echo "--- veth 인터페이스)'
+      intent: 호스트 컨테이너 트래픽 모니터링 — ip link show type bridge + ip link show type veth + sudo tcpdump -i
+        docker0 -c 5. docker0 은 기본 bridge interface, veth pair 가 호스트-컨테이너 연결(eth0 in container ↔ vethXXXX
+        on host). tcpdump -i docker0 로 inter-container 트래픽 평문 캡처 가능 - 민감 데이터 TLS 필요. -c 5 로 5 packet 만
+        캡처. 클라우드 VPC Flow Logs 대응. Falco/Cilium Hubble 로 runtime 관찰성
       success_criteria:
-      - '명령 실행: echo "=== Docker 네트워크 인터페이스 ==="; ip link show type bridge; '
-      - 결과 출력 또는 로그 확인
-      - 클라우드·컨테이너 실습 맥락 유지
+      - ip link show bridge/veth 실행
+      - Docker 네트워크 인터페이스 문자열 출력
+      - tcpdump 또는 대체 캡처
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 클라우드·컨테이너 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - ip link show + tcpdump -i docker0
+      - tshark -i docker0 -c 10
+      - Wireshark remote capture via ssh
+      - Cilium Hubble observe(K8s)
+      - Falco + network events rule
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 클라우드·컨테이너와 무관한 기법
+      - veth pair 구조 이해 없음
+      - 평문 캡처 가능성 미인지
+      - TLS 필요성 언급 없음
   target_vm: web
-  script: echo "=== Docker 네트워크 인터페이스 ==="; ip link show type bridge; echo "--- veth 인터페이스 ---"; ip link show type veth 2>/dev/null
-    | head -10; echo "--- 트래픽 캡처 테스트 ---"; sudo timeout 3 tcpdump -i docker0 -c 5 -n 2>/dev/null || echo "트래픽 없음 또는 docker0
-    없음"
+  script: echo "=== Docker 네트워크 인터페이스 ==="; ip link show type bridge; echo "--- veth 인터페이스 ---"; ip link
+    show type veth 2>/dev/null | head -10; echo "--- 트래픽 캡처 테스트 ---"; sudo timeout 3 tcpdump -i docker0
+    -c 5 -n 2>/dev/null || echo "트래픽 없음 또는 docker0 없음"
   risk_level: low
   bastion_prompt: 호스트에서 컨테이너 네트워크 트래픽을 모니터링해줘
 - order: 7
@@ -246,30 +271,35 @@ steps:
   points: 8
   answer: '🤖 프롬프트: 테스트 네트워크를 정리해줘
 
-    📎 참고 (CLI): docker network rm isolated-net secure-net 2>/dev/null; echo "=== 네트워크 정리 후 ==="; docker network ls'
-  answer_detail: 미사용 네트워크는 보안 점검을 복잡하게 하고, 실수로 잘못된 네트워크에 컨테이너를 배치할 수 있습니다. 정기적으로 docker network prune으로 미사용 네트워크를 정리해야 합니다.
+    📎 참고 (CLI): docker network rm isolated-net secure-net 2>/dev/null; echo "=== 네트워크 정리 후 ==="; docker
+    network ls'
+  answer_detail: 미사용 네트워크는 보안 점검을 복잡하게 하고, 실수로 잘못된 네트워크에 컨테이너를 배치할 수 있습니다. 정기적으로 docker network prune으로
+    미사용 네트워크를 정리해야 합니다.
   verify:
     type: output_contains
     expect: 네트워크 정리 후
     field: stdout
     semantic:
-      intent: '클라우드·컨테이너 w7 s7 — 테스트 네트워크를 정리하시오. (cmd: docker network rm isolated-net secure-net 2>/dev/null; echo "=== 네트워크
-        정리 후 ===";)'
+      intent: 테스트 network cleanup — docker network rm isolated-net secure-net && docker network ls. 여러
+        network 일괄 삭제. in-use network(컨테이너 연결) 는 rm 실패 - 먼저 disconnect 또는 컨테이너 제거. docker network prune
+        -f 로 dangling 일괄. 미사용 network 방치 시 (1) 디스크/메모리 소모 (2) 혼동으로 잘못된 network 에 배포 위험. 정기 GC 필요
       success_criteria:
-      - '명령 실행: docker network rm isolated-net secure-net 2>/dev/null; echo '
-      - 결과 출력 또는 로그 확인
-      - 클라우드·컨테이너 실습 맥락 유지
+      - docker network rm 실행
+      - network 정리 후 ls 검증
+      - 네트워크 정리 후 문자열 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 클라우드·컨테이너 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker network rm <n1> <n2> + docker network ls
+      - docker network prune -f(dangling 전체)
+      - docker compose down(compose 관리)
+      - terraform destroy 또는 IaC cleanup
+      - cron 자동 정리 스크립트
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 클라우드·컨테이너와 무관한 기법
+      - in-use 에러 무시
+      - cleanup 후 검증 누락
+      - prune 실수로 production 삭제
   target_vm: web
-  script: docker network rm isolated-net secure-net 2>/dev/null; echo "=== 네트워크 정리 후 ==="; docker network ls
+  script: docker network rm isolated-net secure-net 2>/dev/null; echo "=== 네트워크 정리 후 ==="; docker network
+    ls
   risk_level: low
   bastion_prompt: 테스트 네트워크를 정리해줘
 - order: 8
@@ -295,8 +325,8 @@ steps:
 
     echo ''[host 네트워크 사용]''
 
-    docker ps -q | xargs -I{} docker inspect --format="{{.HostConfig.NetworkMode}}" {} 2>/dev/null | grep -c host | xargs
-    -I{} echo "{}건"
+    docker ps -q | xargs -I{} docker inspect --format="{{.HostConfig.NetworkMode}}" {} 2>/dev/null | grep
+    -c host | xargs -I{} echo "{}건"
 
     echo ''[iptables DOCKER 규칙]''
 
@@ -307,28 +337,31 @@ steps:
     SCRIPT
 
     chmod +x /tmp/network_security.sh && bash /tmp/network_security.sh'
-  answer_detail: 컨테이너 네트워크 보안의 핵심은 마이크로세그멘테이션(네트워크 격리), 최소 포트 노출, 내부 트래픽 암호화, DNS 보안입니다. 클라우드의 VPC, 서브넷, 보안 그룹, NACL과 동일한
-    계층적 네트워크 보안을 Docker 환경에서도 구현해야 합니다.
+  answer_detail: 컨테이너 네트워크 보안의 핵심은 마이크로세그멘테이션(네트워크 격리), 최소 포트 노출, 내부 트래픽 암호화, DNS 보안입니다. 클라우드의 VPC, 서브넷,
+    보안 그룹, NACL과 동일한 계층적 네트워크 보안을 Docker 환경에서도 구현해야 합니다.
   verify:
     type: output_contains
     expect: 네트워크 점검 완료
     field: stdout
     semantic:
-      intent: '클라우드·컨테이너 w7 s8 — 네트워크 보안 종합 점검 스크립트를 작성하고 실행하시오. (cmd: cat << ''SCRIPT'' > /tmp/network_security.sh #!/bin/bash
-        echo ''=== 컨테이너 네트워크 보안 점검)'
+      intent: '네트워크 보안 종합 점검 스크립트 — /tmp/network_security.sh heredoc. 4 지표: network 목록(driver), 포트 노출,
+        host NetworkMode 사용 수, iptables DOCKER chain 룰 수. 핵심 원칙: microsegmentation(network 격리), 최소 포트
+        노출, 내부 트래픽 암호화(TLS), DNS 보안. AWS VPC/Subnet/SG/NACL 계층적 보안 대응. Kubernetes NetworkPolicy + Cilium/Calico
+        CNI 로 enforce'
       success_criteria:
-      - '명령 실행: cat << ''SCRIPT'' > /tmp/network_security.sh #!/bin/bash echo '
-      - 결과 출력 또는 로그 확인
-      - 클라우드·컨테이너 실습 맥락 유지
+      - /tmp/network_security.sh 생성
+      - bash 실행
+      - 네트워크 점검 완료 문자열 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 클라우드·컨테이너 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - heredoc + 4 지표 리포트
+      - Cilium Hubble 로 실시간 flow 관찰
+      - Kubernetes NetworkPolicy 감사
+      - Prisma Cloud / Sysdig 로 network audit
+      - tcpdump 기반 baseline 분석
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 클라우드·컨테이너와 무관한 기법
+      - 단일 지표만
+      - microsegmentation 언급 없음
+      - 자동화 연계 없음
   target_vm: web
   script: 'cat << ''SCRIPT'' > /tmp/network_security.sh
 
@@ -346,8 +379,8 @@ steps:
 
     echo ''[host 네트워크 사용]''
 
-    docker ps -q | xargs -I{} docker inspect --format="{{.HostConfig.NetworkMode}}" {} 2>/dev/null | grep -c host | xargs
-    -I{} echo "{}건"
+    docker ps -q | xargs -I{} docker inspect --format="{{.HostConfig.NetworkMode}}" {} 2>/dev/null | grep
+    -c host | xargs -I{} echo "{}건"
 
     echo ''[iptables DOCKER 규칙]''
 
