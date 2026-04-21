@@ -84,6 +84,57 @@ def call_bastion(step: dict, course: str, lab_id: str):
     return events, time.time() - t0, None
 
 
+def llm_auto_hitl_answer(step: dict, question: str, bastion_context: str) -> str:
+    """자동 HITL — Claude Code(Master) 역할의 얕은·간단한 답변 생성.
+
+    원칙 (사용자 지침):
+      - **human 수준으로, 간단히** (1-2 문장)
+      - 정답을 알려주는 게 아님 — 답을 맞추는데 개입하지 않음
+      - **얕은 수준**에서 질문에 답하고 오류를 지적
+      - 예: "그 명령 써보세요", "타겟 IP 바꿔보세요", "연결 안 되면 방화벽 확인"
+      - answer_detail / acceptable_methods / semantic 사용 금지 — 공개 정보(instruction, target_vm, category)만
+    """
+    instruction = step.get("instruction", "")
+    category = step.get("category", "")
+    target = step.get("target_vm", "")
+    prompt = (
+        "너는 보안 엔지니어 동료다. AI 에이전트(Bastion)가 실습 중 막혀서 물어봤다. "
+        "너는 **얕은 수준에서 간단히** 답해라. 정답을 찍어주지 말고, 사람처럼 한두 문장으로 힌트를 주거나 오류를 지적해라.\n"
+        "- OK: '그 명령 써보세요', '타겟 IP가 맞나요?', '방화벽 정책을 확인해보세요', '권한 문제 같은데 sudo 붙여보세요'\n"
+        "- NOT OK: 긴 해설, 완전한 명령/코드, 정답이 될 수 있는 지식\n\n"
+        f"[대상 VM] {target}   [카테고리] {category}\n"
+        f"[공개 실습 지시]\n{instruction[:400]}\n\n"
+        f"[에이전트 질문]\n{question}\n\n"
+        f"[에이전트가 낸 응답 일부 (마지막 300자)]\n{(bastion_context or '')[-300:]}\n\n"
+        'JSON 만 출력 (코드블록 금지): {"answer": "1-2 문장의 얕은 힌트나 오류 지적"}'
+    )
+    try:
+        req = urllib.request.Request(
+            f"{OLLAMA}/api/chat",
+            data=json.dumps({
+                "model": JUDGE_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "format": "json",
+                "options": {"temperature": 0.3, "num_predict": 400},
+            }).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=60) as r:
+            body = json.loads(r.read())
+        content = body.get("message", {}).get("content", "")
+        if not content:
+            return ""
+        parsed = json.loads(content)
+        ans = str(parsed.get("answer", "")).strip()
+        # 길이 가드 — 150자 이상이면 잘라냄 (human 수준 강제)
+        if len(ans) > 200:
+            ans = ans[:200].rsplit(' ', 1)[0] + '...'
+        return ans
+    except Exception:
+        return ""
+
+
 def llm_semantic_judge(step: dict, answer: str) -> tuple[bool, str]:
     """LLM으로 '응답이 step 의도를 적절히 수행했는지' 판정.
 
@@ -369,6 +420,8 @@ def main():
     ap.add_argument("--no-augment", action="store_true", help="semantic pass 시 YAML 업데이트 금지")
     ap.add_argument("--ask", action="store_true",
                     help="인터랙티브 HITL 모드 — ask_user 이벤트 시 stdin에서 답변 대기")
+    ap.add_argument("--auto-hitl", action="store_true",
+                    help="자동 HITL — ask_user 이벤트 시 LLM 이 instruction·category 기반으로 답변 생성 (answer_detail·acceptable_methods 사용 금지, 데이터 유출 방지)")
     args = ap.parse_args()
 
     y, step = load_step(args.course, args.week, args.order)
@@ -382,28 +435,36 @@ def main():
 
     events, elapsed, err = call_bastion(step, args.course, lab_id)
 
-    # w22 HITL: ask_user 이벤트 시 stdin에서 사람 답변 받아 follow-up 호출
-    if args.ask and events:
+    # w22 HITL (interactive) / w27 auto-HITL: ask_user 이벤트 시 답변 받아 follow-up 호출
+    if (args.ask or args.auto_hitl) and events:
         ask_evt = next((e for e in events if e.get("event") == "ask_user"), None)
         if ask_evt:
+            question = ask_evt.get("question", "")
+            context = ask_evt.get("context", "")
             print("\n" + "=" * 70)
-            print(f"[ASK_USER] {ask_evt.get('question', '')}")
-            if ask_evt.get("context"):
-                print(f"\n[Bastion context, last 500c]:\n{ask_evt['context']}")
+            print(f"[ASK_USER] {question}")
+            if context:
+                print(f"\n[Bastion context, last 500c]:\n{context}")
             print("=" * 70)
-            print("사람처럼 답변 입력 (빈 줄 입력으로 완료, 'skip'으로 포기):")
-            lines = []
-            while True:
-                try:
-                    line = input()
-                except EOFError:
-                    break
-                if line == "":
-                    break
-                lines.append(line)
-            user_answer = "\n".join(lines).strip()
+            user_answer = ""
+            if args.auto_hitl:
+                # LLM 이 instruction·category 기반으로 답변 생성 (answer_detail 사용 금지)
+                user_answer = llm_auto_hitl_answer(step, question, context)
+                print(f"[AUTO-HITL LLM 답변] {user_answer!r}")
+            else:
+                print("사람처럼 답변 입력 (빈 줄 입력으로 완료, 'skip'으로 포기):")
+                lines = []
+                while True:
+                    try:
+                        line = input()
+                    except EOFError:
+                        break
+                    if line == "":
+                        break
+                    lines.append(line)
+                user_answer = "\n".join(lines).strip()
             if user_answer and user_answer.lower() != "skip":
-                # 2nd call: 사람 답변을 새 message로 보냄 (history 유지)
+                # 2nd call: 답변을 새 message로 보냄 (history 유지)
                 print(f"\n[follow-up → Bastion]: {user_answer}")
                 fu_step = dict(step)
                 fu_step["bastion_prompt"] = user_answer
@@ -411,7 +472,7 @@ def main():
                 fu_events, fu_elapsed, fu_err = call_bastion(fu_step, args.course, lab_id)
                 if not fu_err:
                     # 원 이벤트 + 구분자 + follow-up 이벤트
-                    events = events + [{"event": "hitl_followup"}] + fu_events
+                    events = events + [{"event": "hitl_followup", "auto": args.auto_hitl}] + fu_events
                     elapsed += fu_elapsed
                     print(f"follow-up {len(fu_events)} events, +{fu_elapsed:.1f}s")
 
