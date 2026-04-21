@@ -26,21 +26,24 @@ steps:
     expect: directories
     field: stdout
     semantic:
-      intent: 'SecOps w11 s1 — ossec.conf의 <syscheck> 섹션에서 감시 디렉터리 목록을 확인하시오. (cmd: sudo grep -E ''<directories'' /var/ossec/etc/ossec.conf
-        | head -10)'
+      intent: 'Wazuh syscheck(FIM) 감시 디렉토리 확인 — sudo grep -E <directories /var/ossec/etc/ossec.conf |
+        head -10. FIM 은 파일 무결성 모니터링(MITRE T1562.004 방어) - <directories check_all="yes">/etc,/usr/bin,/usr/sbin</directories>
+        형태. check_all 속성: size·perm·owner·group·md5·sha1·sha256 체크. realtime="yes" 속성으로 inotify 기반 실시간
+        감시. 기본 디렉토리: /etc, /usr/bin, /usr/sbin, /bin, /sbin, /boot. Windows 환경은 registry keys 도 모니터링'
       success_criteria:
-      - '명령 실행: sudo grep -E ''<directories'' /var/ossec/etc/ossec.conf | head'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - grep <directories ossec.conf 실행
+      - directories 태그 라인 출력
+      - 감시 경로 정보 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo grep -E <directories /var/ossec/etc/ossec.conf
+      - sudo awk /<syscheck>/,/<\/syscheck>/ /var/ossec/etc/ossec.conf
+      - sudo xmllint --xpath //syscheck/directories ossec.conf
+      - Wazuh Dashboard Configuration Integrity Monitoring
+      - agent-level 설정은 agent.conf 에서
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - <directories> 대신 다른 태그
+      - 전체 syscheck 블록 cat(과다)
+      - realtime 속성 미인지
   target_vm: siem
   script: sudo grep -E '<directories' /var/ossec/etc/ossec.conf | head -10
   risk_level: low
@@ -59,21 +62,24 @@ steps:
     expect: fim
     field: stdout
     semantic:
-      intent: 'SecOps w11 s2 — FIM 데이터베이스(/var/ossec/queue/fim/db/fim.db)의 존재를 확인하시오. (cmd: sudo ls -la /var/ossec/queue/fim/db/fim.db
-        2>/dev/null || echo ''no fim.db'')'
+      intent: FIM baseline database 존재 확인 — sudo ls -la /var/ossec/queue/fim/db/fim.db || echo no fim.db.
+        fim.db 는 SQLite 기반 baseline 해시 저장소 - 각 감시 파일의 SHA-256 + 메타데이터 저장. 파일 변경 시 baseline 과 비교하여 alert
+        생성. 크기 MB~GB 단위 가능(감시 파일 수에 비례). 초기 스캔 시 생성되므로 없으면 syscheck 초기화 실패 가능성. realtime 감시 이벤트 pipeline
+        의 anchor
       success_criteria:
-      - '명령 실행: sudo ls -la /var/ossec/queue/fim/db/fim.db 2>/dev/null || ec'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - ls fim.db 실행
+      - 파일 존재 또는 no fim.db 출력
+      - fim 키워드 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo ls -la /var/ossec/queue/fim/db/fim.db
+      - sudo sqlite3 fim.db .schema(schema 확인)
+      - sudo sqlite3 fim.db "SELECT count(*) FROM file_entry"(레코드 수)
+      - sudo stat /var/ossec/queue/fim/db/fim.db
+      - Wazuh Dashboard Security events 로 간접 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 잘못된 경로
+      - 파일 없어도 정상 판정
+      - 권한 에러 무시
   target_vm: siem
   script: sudo ls -la /var/ossec/queue/fim/db/fim.db 2>/dev/null || echo 'no fim.db'
   risk_level: low
@@ -92,21 +98,23 @@ steps:
     expect: ccc-fim
     field: stdout
     semantic:
-      intent: 'SecOps w11 s3 — test 파일 /etc/ccc-fim-test 를 생성해 FIM 이벤트를 발생시키시오. (cmd: sudo touch /etc/ccc-fim-test && ls -la
-        /etc/ccc-fim-test)'
+      intent: FIM 이벤트 트리거 - 테스트 파일 생성 — sudo touch /etc/ccc-fim-test && ls -la /etc/ccc-fim-test. /etc/
+        는 FIM 감시 디렉토리(표준 설정). touch 로 새 파일 생성 → inotify event → wazuh-syscheckd 감지 → alert 생성. realtime=yes
+        시 즉시, 아니면 다음 scan interval 에 감지. 실습 후 rm 로 cleanup 필요. 실운영에서는 temp 디렉토리 사용 권장
       success_criteria:
-      - '명령 실행: sudo touch /etc/ccc-fim-test && ls -la /etc/ccc-fim-test'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - touch /etc/ccc-fim-test 실행
+      - ls -la 로 파일 생성 확인
+      - ccc-fim 문자열 포함
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo touch /etc/ccc-fim-test && ls -la /etc/ccc-fim-test
+      - echo > /etc/ccc-fim-test(쓰기)
+      - stat /etc/ccc-fim-test 로 inode 정보
+      - '기존 파일 수정: echo test >> /etc/test-existing'
+      - chmod 으로 permission 변경(FIM 감지)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 감시 디렉토리 외 위치(/tmp)
+      - ls 없이 touch 만(생성 확인 없음)
+      - cleanup 계획 없음
   target_vm: siem
   script: sudo touch /etc/ccc-fim-test && ls -la /etc/ccc-fim-test
   risk_level: medium
@@ -119,27 +127,31 @@ steps:
   answer: '🤖 프롬프트: siem VM의 wazuh alerts.json에서 /etc/ccc-fim-test 관련 이벤트를 찾아줘
 
     📎 참고 (CLI): sleep 10 && sudo grep ccc-fim-test /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail'
-  answer_detail: 'Wazuh FIM / SCA / Active Response: alerts.json 에서 /etc/ccc-fim-test 관련 이벤트를 검색하시오(FIM 이벤트 지연 반영 가능).'
+  answer_detail: 'Wazuh FIM / SCA / Active Response: alerts.json 에서 /etc/ccc-fim-test 관련 이벤트를 검색하시오(FIM
+    이벤트 지연 반영 가능).'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w11 s4 — alerts.json 에서 /etc/ccc-fim-test 관련 이벤트를 검색하시오(FIM 이벤트 지연 반영 가능). (cmd: sleep 10 && sudo grep
-        ccc-fim-test /var/ossec/logs/alerts/alerts.json 2>/dev/nul)'
+      intent: 'FIM alert 검색 - alerts.json 에서 /etc/ccc-fim-test — sleep 10 && sudo grep ccc-fim-test /var/ossec/logs/alerts/alerts.json
+        | tail. sleep 10 으로 FIM detection + rule 처리 대기(realtime=yes 시 수초, scan mode 면 시간 단위). Alert 구조:
+        rule.id=554(syscheck new file detected) 또는 550 (changed)·553(deleted), syscheck.path=/etc/ccc-fim-test,
+        agent.name, changed_attributes(size/perm/hash). 관련 rule 그룹: syscheck'
       success_criteria:
-      - '명령 실행: sleep 10 && sudo grep ccc-fim-test /var/ossec/logs/alerts/al'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - sleep + grep ccc-fim-test 실행
+      - syscheck alert 매칭 또는 빈 결과
+      - tail 결과
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sleep 10 && sudo grep ccc-fim-test alerts.json | tail
+      - sudo jq select(.rule.id=="554") alerts.json | grep ccc-fim-test
+      - Wazuh Dashboard Security Events Module Integrity Monitoring
+      - Wazuh API GET /syscheck/<agent_id>
+      - sudo tail -f alerts.json 으로 실시간
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - sleep 없이 즉시 grep(아직 이벤트 없음)
+      - alerts.log 와 혼동
+      - realtime 설정 안 한 채 즉각 기대
   target_vm: siem
   script: sleep 10 && sudo grep ccc-fim-test /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail
   risk_level: low
@@ -158,21 +170,24 @@ steps:
     expect: sca
     field: stdout
     semantic:
-      intent: 'SecOps w11 s5 — SCA 모듈의 활성 여부를 ossec.conf 에서 확인하시오. (cmd: sudo awk ''/<sca>/,/<\/sca>/'' /var/ossec/etc/ossec.conf
-        | head)'
+      intent: 'SCA(Security Configuration Assessment) 설정 확인 — sudo awk /<sca>/,/<\/sca>/ /var/ossec/etc/ossec.conf
+        | head. SCA 는 CIS Benchmark 기반 보안 설정 감사 모듈. 주요 설정: <enabled>yes</enabled>, <scan_on_start>yes</scan_on_start>,
+        <interval>12h</interval>, <policies><policy>cis_debian10.yml</policy></policies>. Policy 파일은 /var/ossec/ruleset/sca/
+        에 저장(CIS Ubuntu/Debian/RHEL 등). 결과는 alerts.json + wazuh-db API 통해 노출'
       success_criteria:
-      - '명령 실행: sudo awk ''/<sca>/,/<\/sca>/'' /var/ossec/etc/ossec.conf | hea'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - awk sca 섹션 추출 실행
+      - <sca> 또는 <enabled> 출력
+      - sca 키워드 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo awk /<sca>/,/<\/sca>/ ossec.conf
+      - sudo grep -A 5 <sca> ossec.conf
+      - sudo xmllint --xpath //sca ossec.conf
+      - Wazuh Dashboard Security Configuration Assessment
+      - Wazuh API GET /sca/<agent_id>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 다른 섹션(vulnerability-detector) 확인
+      - awk range 오타
+      - enabled 값 확인 없음
   target_vm: siem
   script: sudo awk '/<sca>/,/<\/sca>/' /var/ossec/etc/ossec.conf | head
   risk_level: low
@@ -185,27 +200,31 @@ steps:
   answer: '🤖 프롬프트: siem VM의 wazuh alerts.json에서 SCA 관련 이벤트 최근 3건을 보여줘
 
     📎 참고 (CLI): sudo grep ''"sca"'' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3'
-  answer_detail: 'Wazuh FIM / SCA / Active Response: SCA 최근 스캔 결과(/var/ossec/logs/alerts/alerts.json) 에서 ''sca''를 필터링하시오.'
+  answer_detail: 'Wazuh FIM / SCA / Active Response: SCA 최근 스캔 결과(/var/ossec/logs/alerts/alerts.json)
+    에서 ''sca''를 필터링하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w11 s6 — SCA 최근 스캔 결과(/var/ossec/logs/alerts/alerts.json) 에서 ''sca''를 필터링하시오. (cmd: sudo grep ''"sca"''
-        /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3)'
+      intent: SCA alert 검색 — sudo grep "sca" /var/ossec/logs/alerts/alerts.json | tail -3. SCA 이벤트는 alerts.json
+        에 data.sca.check 필드 포함(CIS rule id, description, result=passed/failed, compliance 매핑). rule.id
+        19000+ 범위 또는 rule.groups 에 sca 포함. 실패한 check 로 시스템 hardening gap 식별. 주기적 scan 으로 configuration
+        drift 감지
       success_criteria:
-      - '명령 실행: sudo grep ''"sca"'' /var/ossec/logs/alerts/alerts.json 2>/dev/'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - grep sca alerts.json 실행
+      - SCA alert 또는 빈 결과
+      - tail 결과 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo grep "sca" /var/ossec/logs/alerts/alerts.json | tail -3
+      - sudo jq select(.rule.groups[]?=="sca") alerts.json
+      - Wazuh Dashboard SCA 모듈 직접 조회
+      - curl Wazuh API /sca/<agent>/checks?result=failed
+      - 'policy file parsing: cat /var/ossec/ruleset/sca/cis_*.yml'
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - sca 필터 없이 alerts.json 전체
+      - 빈 결과 정상 판정
+      - API 활용 없이 grep 만
   target_vm: siem
   script: sudo grep '"sca"' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3
   risk_level: low
@@ -217,28 +236,33 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM의 ossec.conf에서 active-response 블록 설정을 보여줘
 
-    📎 참고 (CLI): sudo awk ''/<active-response>/,/<\/active-response>/'' /var/ossec/etc/ossec.conf | head -15'
-  answer_detail: 'Wazuh FIM / SCA / Active Response: Active Response 설정(<active-response>)에서 command 목록을 확인하시오.'
+    📎 참고 (CLI): sudo awk ''/<active-response>/,/<\/active-response>/'' /var/ossec/etc/ossec.conf | head
+    -15'
+  answer_detail: 'Wazuh FIM / SCA / Active Response: Active Response 설정(<active-response>)에서 command 목록을
+    확인하시오.'
   verify:
     type: output_contains
     expect: active-response
     field: stdout
     semantic:
-      intent: 'SecOps w11 s7 — Active Response 설정(<active-response>)에서 command 목록을 확인하시오. (cmd: sudo awk ''/<active-response>/,/<\/active-response>/''
-        /var/ossec/etc/ossec.conf |)'
+      intent: 'Active Response 설정 확인 — sudo awk /<active-response>/,/<\/active-response>/ /var/ossec/etc/ossec.conf
+        | head -15. Active Response 는 alert 발생 시 자동 대응 트리거 - <command>·<location>·<rules_id> 또는 <level>·<timeout>
+        설정. 기본 command: firewall-drop(IP 차단), disable-account, restart-wazuh. location: local(agent 측),
+        server(manager), defined-agent. MITRE D3-NTA(Network Traffic Analysis) 통합 대응'
       success_criteria:
-      - '명령 실행: sudo awk ''/<active-response>/,/<\/active-response>/'' /var/os'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - awk active-response 추출 실행
+      - active-response 태그 포함
+      - command 또는 설정 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo awk /<active-response>/,/<\/active-response>/ ossec.conf
+      - sudo xmllint --xpath //active-response ossec.conf
+      - ls /var/ossec/active-response/bin/ 로 스크립트 확인
+      - Wazuh Dashboard Active Response
+      - 'Custom AR script 작성: /var/ossec/active-response/bin/'
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - active-response 블록 아닌 다른
+      - AR script 실행 경로 미인지
+      - level/rule_id 조건 이해 부족
   target_vm: siem
   script: sudo awk '/<active-response>/,/<\/active-response>/' /var/ossec/etc/ossec.conf | head -15
   risk_level: low
@@ -250,34 +274,38 @@ steps:
   points: 10
   answer: '🤖 프롬프트: secu VM에 filter.blocklist ipv4 set을 만들고 input 체인에 saddr @blocklist drop 룰을 추가해줘
 
-    📎 참고 (CLI): sudo nft add table inet filter 2>/dev/null ; sudo nft ''add set inet filter blocklist { type ipv4_addr \;
-    }'' 2>/dev/null ; sudo nft add rule inet filter input ip saddr @blocklist drop 2>/dev/null ; sudo nft list set inet filter
-    blocklist'
-  answer_detail: 'Wazuh FIM / SCA / Active Response: secu VM에 blocklist set (type ipv4_addr) 을 만들고 nftables 에 blocklist drop
-    룰을 추가하시오.'
+    📎 참고 (CLI): sudo nft add table inet filter 2>/dev/null ; sudo nft ''add set inet filter blocklist
+    { type ipv4_addr \; }'' 2>/dev/null ; sudo nft add rule inet filter input ip saddr @blocklist drop
+    2>/dev/null ; sudo nft list set inet filter blocklist'
+  answer_detail: 'Wazuh FIM / SCA / Active Response: secu VM에 blocklist set (type ipv4_addr) 을 만들고 nftables
+    에 blocklist drop 룰을 추가하시오.'
   verify:
     type: output_contains
     expect: blocklist
     field: stdout
     semantic:
-      intent: 'SecOps w11 s8 — secu VM에 blocklist set (type ipv4_addr) 을 만들고 nftables 에 blocklist drop 룰을 추가하시오. (cmd: sudo
-        nft add table inet filter 2>/dev/null ; sudo nft ''add set inet filter block)'
+      intent: nftables blocklist set + drop 룰 구성 — sudo nft add table inet filter 2>/dev/null ; sudo nft
+        "add set inet filter blocklist { type ipv4_addr ; }" ; sudo nft add rule inet filter input ip
+        saddr @blocklist drop ; sudo nft list set inet filter blocklist. Active Response 통합 기반 - Wazuh
+        가 alert 시 이 set 에 공격자 IP 추가해 자동 차단. set 기반이면 O(1) lookup, 수천 IP 도 효율. idempotent 한 패턴(이미 있으면 무시)
       success_criteria:
-      - '명령 실행: sudo nft add table inet filter 2>/dev/null ; sudo nft ''add s'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft add set + nft add rule 실행
+      - blocklist 이름 + type ipv4_addr
+      - nft list set 으로 검증
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft add set + add rule + list set 체인
+      - /etc/nftables.conf 에 set 선언 포함 permanent 설정
+      - 'timeout 추가: set { type ipv4_addr ; timeout 1h ; }'
+      - Wazuh firewall-drop 스크립트와 통합 - script 가 nft add element 호출
+      - ipset + iptables legacy 대체
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - table 없이 set 생성(에러)
+      - drop 룰 누락(set 만으로는 차단 안 됨)
+      - list set 검증 없음
   target_vm: secu
-  script: sudo nft add table inet filter 2>/dev/null ; sudo nft 'add set inet filter blocklist { type ipv4_addr \; }' 2>/dev/null
-    ; sudo nft add rule inet filter input ip saddr @blocklist drop 2>/dev/null ; sudo nft list set inet filter blocklist
+  script: sudo nft add table inet filter 2>/dev/null ; sudo nft 'add set inet filter blocklist { type
+    ipv4_addr \; }' 2>/dev/null ; sudo nft add rule inet filter input ip saddr @blocklist drop 2>/dev/null
+    ; sudo nft list set inet filter blocklist
   risk_level: medium
   bastion_prompt: secu VM에 filter.blocklist ipv4 set을 만들고 input 체인에 saddr @blocklist drop 룰을 추가해줘
 - order: 9
@@ -287,30 +315,35 @@ steps:
   points: 10
   answer: '🤖 프롬프트: secu VM의 filter.blocklist set에 10.20.30.201을 추가해줘
 
-    📎 참고 (CLI): sudo nft add element inet filter blocklist ''{ 10.20.30.201 }'' && sudo nft list set inet filter blocklist'
+    📎 참고 (CLI): sudo nft add element inet filter blocklist ''{ 10.20.30.201 }'' && sudo nft list set inet
+    filter blocklist'
   answer_detail: 'Wazuh FIM / SCA / Active Response: blocklist set 에 10.20.30.201 을 임시로 추가해 공격자 차단을 시뮬레이션하시오.'
   verify:
     type: output_contains
     expect: 10.20.30.201
     field: stdout
     semantic:
-      intent: 'SecOps w11 s9 — blocklist set 에 {{ATTACKER_IP}} 을 임시로 추가해 공격자 차단을 시뮬레이션하시오. (cmd: sudo nft add element inet
-        filter blocklist ''{ 10.20.30.201 }'' && sudo nft list s)'
+      intent: attacker IP 10.20.30.201 를 blocklist 에 추가(차단 시뮬레이션) — sudo nft add element inet filter blocklist
+        { 10.20.30.201 } && sudo nft list set inet filter blocklist. element 는 실시간 set 추가 - rule 재작성 없이
+        효력. Wazuh Active Response firewall-drop 스크립트가 실제로 수행하는 동작과 동일. 이후 공격자 IP 의 패킷은 s8 의 drop 룰에 의해
+        즉시 drop. timeout 지정 없으면 영구 차단
       success_criteria:
-      - '명령 실행: sudo nft add element inet filter blocklist ''{ 10.20.30.201 }'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft add element 실행
+      - 10.20.30.201 IP 추가 확인
+      - list set 으로 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft add element inet filter blocklist { 10.20.30.201 }
+      - '여러 IP: { ip1, ip2, ip3 }'
+      - 'timeout: { 10.20.30.201 timeout 1h }'
+      - Wazuh firewall-drop 스크립트 트리거 재현
+      - 'Active Response 시뮬레이션: echo test:dstip=10.20.30.201 | wazuh-logtest'
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - element 대신 rule 추가
+      - list 검증 없음
+      - 잘못된 set 이름
   target_vm: secu
-  script: sudo nft add element inet filter blocklist '{ 10.20.30.201 }' && sudo nft list set inet filter blocklist
+  script: sudo nft add element inet filter blocklist '{ 10.20.30.201 }' && sudo nft list set inet filter
+    blocklist
   risk_level: medium
   bastion_prompt: secu VM의 filter.blocklist set에 10.20.30.201을 추가해줘
 - order: 10
@@ -327,21 +360,23 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w11 s10 — blocklist 에서 {{ATTACKER_IP}}을 제거해 원상 복구하시오. (cmd: sudo nft delete element inet filter blocklist
-        ''{ 10.20.30.201 }'')'
+      intent: blocklist cleanup - 원상 복구 — sudo nft delete element inet filter blocklist { 10.20.30.201
+        }. 실습 후 정리. delete element 는 특정 element 만 제거(set 자체는 유지). 실 Active Response 에서는 timeout 또는 manual
+        removal 로 차단 해제. 잘못하면 정당한 IP 가 차단 유지 → 비즈니스 영향. Wazuh 의 경우 <timeout> 옵션으로 자동 해제 권장(일시 차단)
       success_criteria:
-      - '명령 실행: sudo nft delete element inet filter blocklist ''{ 10.20.30.20'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft delete element 실행
+      - 10.20.30.201 IP 제거
+      - 에러 없이 종료
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft delete element inet filter blocklist { 10.20.30.201 }
+      - sudo nft flush set inet filter blocklist(set 전체 비움)
+      - timeout 옵션으로 자동 해제 기대
+      - destroy element 로 idempotent 삭제
+      - Wazuh Active Response timeout 기반 해제
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - set 자체 삭제(blocklist set 소실)
+      - flush 와 delete element 혼동
+      - 검증 없이 진행
   target_vm: secu
   script: sudo nft delete element inet filter blocklist '{ 10.20.30.201 }'
   risk_level: medium
