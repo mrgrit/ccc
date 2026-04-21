@@ -37,20 +37,21 @@ steps:
     expect: ===
     field: stdout
     semantic:
-      intent: '[BLUE] 로그 분석 및 위협 헌팅 - 탐지·방어 구현'
+      intent: '[BLUE] auth.log SSH 로그인 성공/실패 이중 분석 — grep Failed password (실패) + grep Accepted (성공) 을
+        === 구분자로 분리 출력. Failed 는 브루트포스 시도, Accepted 는 인증 성공 지점. 비정상 시간대·공격자 IP 에서의 Accepted 는 침해 지표(IoC)'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - Failed 와 Accepted 두 패턴 모두 grep
+      - === 구분자로 구조화 출력
+      - IoC 또는 침해 지표 개념
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - grep Failed + grep Accepted + echo 구분자
+      - journalctl _COMM=sshd | grep -E Failed|Accepted
+      - lastb + last 결합
+      - awk 로 시간·IP 필드 구조화
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - Failed 만 조회 (Accepted 누락)
+      - == 구분자 없이 합쳐진 출력
+      - 비정상 시간/IP 상관 분석 없음
   target_vm: web
   script: echo '=== Failed ===' && grep 'Failed password' /var/log/auth.log 2>/dev/null | tail -10 &&
     echo '=== Accepted ===' && grep 'Accepted' /var/log/auth.log 2>/dev/null | tail -10
@@ -71,20 +72,22 @@ steps:
     expect: '200'
     field: stdout
     semantic:
-      intent: '[BLUE] 로그 분석 및 위협 헌팅 - 탐지·방어 구현'
+      intent: '[BLUE] 특정 IP(10.20.30.201) 웹 요청 상태코드 집계 — grep 10.20.30.201 access.log | awk {print $9}
+        | sort | uniq -c. 공격자 IP 한정 → HTTP 상태 분포로 공격 성격 판별: 404 대량 = 디렉토리 스캔, 200 + SQL 키워드 URL = 성공한
+        SQLi, 401/403 집중 = 인증 우회 시도'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - grep IP + awk $9 + 집계 파이프라인
+      - 200 또는 상태코드 숫자 출력
+      - 공격자 IP 한정 + 상태 분포 해석
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - grep IP + awk $9 + sort uniq -c
+      - awk $1 == IP {print $9}
+      - goaccess 로 IP 필터 시각화
+      - ELK 질의 source.ip=... | stats count by http.status
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - IP 필터 없이 전체 access.log
+      - 상태코드 필드 오인 (awk $9 실수)
+      - 분포 해석 없음
   target_vm: web
   script: grep '10.20.30.201' /var/log/apache2/access.log 2>/dev/null | awk '{print $9}' | sort | uniq
     -c | sort -rn | head -10
@@ -105,20 +108,22 @@ steps:
     expect: 10.20.30
     field: stdout
     semantic:
-      intent: '[BLUE] 로그 분석 및 위협 헌팅 - 탐지·방어 구현'
+      intent: '[BLUE] access.log SQLi + XSS 공격 패턴 통합 검색 — grep -iE (union|select|script|%27|%3C) 로 union·select
+        (SQL 키워드), script (XSS 태그), %27 (URL 인코딩된 ''), %3C (URL 인코딩된 <) 탐색. URL 인코딩된 페이로드와 평문 페이로드 모두
+        커버. 공격 시각·대상 URL 식별로 공격 범위 파악'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - union|select|script|%27|%3C 패턴 그룹 검색
+      - 10.20.30 IP 포함 출력
+      - URL 인코딩과 평문 둘 다 커버 개념
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - grep -iE (union|select|script|%27|%3C) access.log
+      - awk /UNION|SELECT|<script/I
+      - python 정규식 로그 파싱
+      - logwatch / fail2ban 필터 활용
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 단일 패턴만 (SQL 또는 XSS 중 하나)
+      - URL 인코딩 패턴 누락
+      - case-sensitive 검색 — 우회 페이로드 놓침
   target_vm: web
   script: grep -iE '(union|select|script|%27|%3C)' /var/log/apache2/access.log 2>/dev/null | tail -10
   risk_level: low
@@ -138,20 +143,22 @@ steps:
     expect: T
     field: stdout
     semantic:
-      intent: '[BLUE] 로그 분석 및 위협 헌팅 - 탐지·방어 구현'
+      intent: '[BLUE] eve.json 시간대별 경보 추이 — jq select(.event_type==alert) .timestamp[:13] 로 ISO8601 timestamp(YYYY-MM-DDTHH:mm:ss+TZ)
+        의 앞 13자(시간 단위) 추출 → sort | uniq -c 시간별 빈도 집계. 경보 급증 시간대 = 활발한 공격 윈도우. 공격 phase 타임라인 재구성 기초'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - jq .timestamp[:13] 또는 동등한 시간 분할
+      - sort | uniq -c 시간별 집계
+      - T 키워드 포함 (ISO8601)
+      - 경보 시간 분포 해석
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - jq .timestamp[:13] + sort uniq -c
+      - date -d <ts> +%Y-%m-%dT%H 변환
+      - Python datetime strftime
+      - Kibana histogram 시각화
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - timestamp 전체 문자열 (시간 그룹 없음)
+      - timestamp 제외하고 다른 필드 집계
+      - 시간대 해석 없음
   target_vm: secu
   script: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .timestamp[:13]' 2>/dev/null
     | sort | uniq -c | sort -k2 | tail -10
@@ -172,20 +179,22 @@ steps:
     expect: complete
     field: stdout
     semantic:
-      intent: '[BLUE] 로그 분석 및 위협 헌팅 - 탐지·방어 구현'
+      intent: '[BLUE] Wazuh 심각도(rule.level) 분포 분석 — jq .rule.level alerts.json | sort | uniq -c | sort
+        -rn. Wazuh 레벨 가이드: 0-3=정보, 4-7=경고, 8-11=높음, 12+=심각. 높은 레벨 이벤트부터 우선 분석. 전체 경보 볼륨 대비 높은 위험 이벤트 비율
+        파악'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - jq .rule.level + sort | uniq -c 집계
+      - complete 키워드 또는 숫자 분포 출력
+      - 레벨 가이드 (0-3/4-7/8-11/12+) 인지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - jq .rule.level + sort uniq -c
+      - Kibana rule.level 필터 + 시각화
+      - python pandas value_counts + bar chart
+      - Wazuh API /alerts?rule.level>7&aggregate=level
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - level 필터 없음
+      - 레벨 가이드 해석 없음 (숫자만)
+      - Wazuh 가 아닌 Suricata 재분석
   target_vm: siem
   script: sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -50 | jq -r '.rule.level' 2>/dev/null
     | sort | uniq -c | sort -rn || echo 'Wazuh severity analysis complete'
@@ -207,20 +216,21 @@ steps:
     - 포트
     field: stdout
     semantic:
-      intent: '[RED] 로그 분석 및 위협 헌팅 - 공격 기법 실행'
+      intent: '[RED] ss -tunapl | grep ESTAB 네트워크 연결 정찰 — 현재 활성 TCP/UDP 연결 + 프로세스명 + LISTEN 상태 나열. 공격자
+        관점에서 자신의 세션이 남기는 흔적(ESTABLISHED 연결) 확인 → 은닉 전략 수립. netstat/ss 의 포렌식 활용 인지'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - ss 또는 netstat 실행
+      - ESTAB 또는 포트 키워드 출력
+      - 공격자 관점에서 흔적 관찰 목적
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - ss -tunapl
+      - netstat -tulnp (레거시)
+      - lsof -i
+      - /proc/net/tcp 직접 파싱
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - ps aux (프로세스만, 연결 없음)
+      - ESTABLISHED 필터 없음
+      - 방어 관점 (포렌식) 언급 없음
   target_vm: attacker
   script: ss -tunapl | grep ESTAB
   risk_level: low
@@ -240,20 +250,23 @@ steps:
     expect: Stealth request sent
     field: stdout
     semantic:
-      intent: '[RED] 로그 분석 및 위협 헌팅 - 공격 기법 실행'
+      intent: '[RED] curl -A User-Agent 위장 — curl -A Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36
+        http://<target>:3000/ -w %{http_code} 로 Chrome UA 위장해 정상 브라우저 가장. curl/Nikto/sqlmap 기본 UA는 IDS
+        블랙리스트. Stealth request sent 메시지로 회피 시도 기록'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - 'curl -A 또는 -H User-Agent: 옵션'
+      - Mozilla/Chrome 등 정상 브라우저 UA
+      - Stealth request sent 메시지
+      - IDS UA 블랙리스트 회피 개념
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl -A <UA> <url>
+      - 'curl -H User-Agent: <UA>'
+      - 'python requests headers={User-Agent: ...}'
+      - Burp Proxy Match and Replace
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 기본 curl UA 사용
+      - 회피 의도 설명 없음
+      - 공격 실행 단계 누락 (UA 만 변경)
   target_vm: attacker
   script: "curl -A 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36' -s http://10.20.30.80:3000/\
     \ \\\n  -o /dev/null \\\n  -w '%{http_code}' && echo ' - Stealth request sent'"
@@ -274,20 +287,23 @@ steps:
     expect: File audit complete
     field: stdout
     semantic:
-      intent: '[BLUE] 로그 분석 및 위협 헌팅 - 탐지·방어 구현'
+      intent: '[BLUE] 최근 변경 의심 파일 탐지 — find /tmp /var/tmp /dev/shm -type f -mtime -1 (24시간 내 공격자 업로드 도구)
+        + find /var/www -name *.php -mtime -1 (웹셸 업로드 탐지). File audit complete 메시지. 공격자 drop 경로 + 웹셸 업로드
+        패턴 커버'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - find ... -mtime -1 명령 사용
+      - /tmp·/var/tmp·/dev/shm + /var/www PHP 두 영역 검사
+      - File audit complete 메시지
+      - 웹셸 업로드 시나리오 인지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - find -mtime -1 + -name *.php
+      - find -newer /etc/passwd (기준 파일)
+      - aide --check FIM
+      - Wazuh rootcheck + syscheck
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 시간 필터 없음 (-mtime 누락)
+      - 웹셸 디렉토리(/var/www) 제외
+      - 한 영역만 검사
   target_vm: web
   script: find /tmp /var/tmp /dev/shm -type f -mtime -1 2>/dev/null && find /var/www -name '*.php' -mtime
     -1 2>/dev/null && echo 'File audit complete'
@@ -344,20 +360,23 @@ steps:
     expect: Threat Hunting Report
     field: stdout
     semantic:
-      intent: '[BLUE] 로그 분석 및 위협 헌팅 - 탐지·방어 구현'
+      intent: '[BLUE] 위협 헌팅 보고서 /tmp/threat_hunting_report.txt — Attack Timeline 4 phases (T1046 nmap
+        스캔·T1190 SQLi·T1110.001 SSH brute·T1059.007 XSS) + IoC (공격자 IP·SQL 패턴·SSH 실패·Suricata SID 1000001-1000004)
+        + Recommendations (방화벽 차단·패치·SSH 강화). MITRE ATT&CK TTP 매핑 포함된 구조화된 위협 헌팅 산출물'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - /tmp/threat_hunting_report.txt 파일 생성
+      - Attack Timeline + IoC + Recommendations 3개 섹션
+      - MITRE T1xxx ATT&CK ID 매핑
+      - Threat Hunting Report 키워드
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file << EOF heredoc + cat 출력
+      - markdown 포맷 + pandoc
+      - STIX/TAXII 표준 포맷 (상업 환경)
+      - ThreatConnect/MISP 위협 인텔 플랫폼
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 파일 미생성
+      - Timeline 또는 IoC 중 한쪽만
+      - ATT&CK ID 매핑 없음
   target_vm: secu
   script: 'cat > /tmp/threat_hunting_report.txt << ''EOF''
 
@@ -445,20 +464,23 @@ steps:
     expect: Attacker OPSEC Review
     field: stdout
     semantic:
-      intent: '[RED] 로그 분석 및 위협 헌팅 - 공격 기법 실행'
+      intent: '[RED] 공격자 OPSEC 검토 /tmp/attacker_opsec_review.txt — Traces Left (auth.log/access.log/Suricata/Wazuh/ModSecurity
+        각 로그에서 남긴 증거 분석) + Improvement Areas (slow scan·IP 로테이션·페이로드 인코딩·정상 UA·도구 대체). Red Team 역량 향상:
+        탐지된 흔적 사후 분석 → 다음 공격 은밀성 개선'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - /tmp/attacker_opsec_review.txt 파일 생성
+      - Traces Left + Improvement Areas 두 섹션
+      - 최소 3개 로그 종류별 흔적 분석
+      - Attacker OPSEC Review 키워드
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file << EOF heredoc
+      - markdown 리뷰 작성
+      - Red Team 자체 after-action report 형식
+      - Atomic Red Team 테스트 프레임워크 참조
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 파일 미생성
+      - Improvement Areas 없이 흔적만
+      - Red Team 관점(공격 개선) 아닌 Blue 관점
   target_vm: attacker
   script: 'cat > /tmp/attacker_opsec_review.txt << ''EOF''
 
