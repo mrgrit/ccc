@@ -26,21 +26,24 @@ steps:
     expect: opencti
     field: stdout
     semantic:
-      intent: 'SecOps w12 s1 — siem VM에서 docker compose로 관리되는 컨테이너 목록을 확인하시오. (cmd: docker ps --format ''{{.Names}}\t{{.Status}}''
-        2>/dev/null | head)'
+      intent: 'docker ps 컨테이너 전체 목록 — docker ps --format {{.Names}}\t{{.Status}} | head. Running 상태의 모든
+        컨테이너 표시. OpenCTI 스택은 여러 컨테이너: opencti(platform), opencti-redis, opencti-elastic, opencti-rabbitmq,
+        opencti-minio, opencti-worker, opencti-connector-*. --format 으로 tab 구분 출력(깔끔), head 로 처음 10개만.
+        전체 확인: docker ps -a(exited 포함)'
       success_criteria:
-      - '명령 실행: docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | h'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - docker ps 실행
+      - 컨테이너 이름·상태 출력
+      - opencti 관련 포함
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker ps --format {{.Names}}\t{{.Status}}
+      - docker ps -a (전체)
+      - docker compose ps(compose 관리)
+      - docker inspect 로 단일 컨테이너 상세
+      - kubectl get pods(K8s 환경)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - running 외 포함하여 혼동
+      - format 없이 긴 출력
+      - head 누락
   target_vm: siem
   script: docker ps --format '{{.Names}}\t{{.Status}}' 2>/dev/null | head
   risk_level: low
@@ -59,21 +62,23 @@ steps:
     expect: opencti
     field: stdout
     semantic:
-      intent: 'SecOps w12 s2 — opencti 관련 컨테이너만 필터링하시오. (cmd: docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null |
-        grep -i opencti)'
+      intent: 'OpenCTI 컨테이너 필터링 — docker ps --format {{.Names}}\t{{.Status}} | grep -i opencti. OpenCTI
+        스택 관련 컨테이너 명시적 확인 - 이름에 opencti prefix 가진 여러 컨테이너(platform, worker, connector-*, depedencies).
+        grep -i 로 대소문자 무시. 각 컨테이너 Up 상태인지·restarting 여부 확인. 이름 pattern: opencti-<role>(docker-compose
+        로 자동 생성)'
       success_criteria:
-      - '명령 실행: docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | g'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - grep -i opencti 필터링
+      - opencti 문자열 매칭
+      - 컨테이너 목록 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker ps --format {{.Names}}\t{{.Status}} | grep -i opencti
+      - docker compose -f docker-compose.yml ps
+      - docker ps --filter name=opencti
+      - docker inspect --format {{.Name}} $(docker ps -q) | grep opencti
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - opencti 매칭 없이 일반 grep
+      - 필터 없이 전체 docker ps
+      - 대소문자 구분 (기본)
   target_vm: siem
   script: docker ps --format '{{.Names}}\t{{.Status}}' 2>/dev/null | grep -i opencti
   risk_level: low
@@ -85,30 +90,35 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM의 opencti 플랫폼 컨테이너 로그 20줄을 보여줘
 
-    📎 참고 (CLI): docker logs --tail 20 $(docker ps --format ''{{.Names}}'' | grep -i ''^opencti$'' | head -1) 2>&1 | tail -20'
+    📎 참고 (CLI): docker logs --tail 20 $(docker ps --format ''{{.Names}}'' | grep -i ''^opencti$'' | head
+    -1) 2>&1 | tail -20'
   answer_detail: 'OpenCTI 설치·구성: OpenCTI 플랫폼 컨테이너의 최근 로그 20줄을 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w12 s3 — OpenCTI 플랫폼 컨테이너의 최근 로그 20줄을 확인하시오. (cmd: docker logs --tail 20 $(docker ps --format ''{{.Names}}''
-        | grep -i ''^opencti$'' | )'
+      intent: 'OpenCTI platform 로그 확인 — docker logs --tail 20 $(docker ps --format {{.Names}} | grep -i
+        ^opencti$ | head -1) 2>&1 | tail -20. OpenCTI platform 컨테이너(주 API+UI) 로그 조회. ^opencti$ anchor
+        로 정확 매칭(opencti-worker/connector 제외). stdout+stderr 합쳐(2>&1). 시작 시 INFO 다수, 안정 후 간헐적 로그. ERROR
+        다수면 config 또는 dependency 이슈. 실시간 확인: docker logs -f'
       success_criteria:
-      - '명령 실행: docker logs --tail 20 $(docker ps --format ''{{.Names}}'' | gr'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - docker logs --tail 20 실행
+      - opencti 정확 매칭 ^opencti$
+      - 로그 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker logs --tail 20 <container>
+      - docker logs --since 5m <container>
+      - docker logs -f <container>(follow)
+      - docker compose logs opencti
+      - kubectl logs -l app=opencti (K8s)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - container 이름 오타
+      - 모든 컨테이너 로그 한번에
+      - stderr 무시
   target_vm: siem
-  script: docker logs --tail 20 $(docker ps --format '{{.Names}}' | grep -i '^opencti$' | head -1) 2>&1 | tail -20
+  script: docker logs --tail 20 $(docker ps --format '{{.Names}}' | grep -i '^opencti$' | head -1) 2>&1
+    | tail -20
   risk_level: low
   bastion_prompt: siem VM의 opencti 플랫폼 컨테이너 로그 20줄을 보여줘
 - order: 4
@@ -125,20 +135,24 @@ steps:
     expect: '8080'
     field: stdout
     semantic:
-      intent: 'SecOps w12 s4 — OpenCTI 웹 UI 포트(8080) 가 리스닝 중인지 확인하시오. (cmd: ss -tlnp 2>/dev/null | grep '':8080'')'
+      intent: 'OpenCTI 웹 포트 8080 리스닝 확인 — ss -tlnp 2>/dev/null | grep :8080. OpenCTI default HTTP port
+        8080(또는 docker-compose 에서 다른 포트 매핑). LISTEN 상태 확인. Docker proxy 가 host:8080 → container:8080 포워딩
+        담당. 포트 미LISTEN 시 (1) container 종료 (2) 다른 서비스 충돌 (3) compose 설정 문제. 포트 점유 프로세스: 보통 docker-proxy
+        또는 opencti node.js'
       success_criteria:
-      - '명령 실행: ss -tlnp 2>/dev/null | grep '':8080'''
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - ss -tlnp 실행
+      - :8080 포트 매칭
+      - LISTEN 상태 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - ss -tlnp | grep :8080
+      - netstat -tlnp | grep 8080
+      - lsof -i:8080
+      - curl http://localhost:8080 응답 확인
+      - docker port <container> 로 매핑 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 다른 포트 확인
+      - :8080 매칭 실패
+      - LISTEN 외 상태(TIME_WAIT)
   target_vm: siem
   script: ss -tlnp 2>/dev/null | grep ':8080'
   risk_level: low
@@ -157,21 +171,24 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w12 s5 — OpenCTI 의존 서비스(redis, elastic, rabbitmq, minio) 컨테이너 상태를 확인하시오. (cmd: docker ps --format ''{{.Names}}\t{{.Status}}''
-        2>/dev/null | grep -Ei ''redis|elast)'
+      intent: 'OpenCTI 의존 서비스 상태 — docker ps --format {{.Names}}\t{{.Status}} | grep -Ei redis|elastic|rabbit|minio.
+        OpenCTI 는 multi-service 아키텍처: Redis(cache + pub/sub), ElasticSearch(graph+search index), RabbitMQ(message
+        queue for connectors), MinIO(S3-compatible object storage for files). 모두 Up 상태여야 정상 동작. 하나라도 Down
+        시 platform restart/crash 유발. 의존성 실패 시 platform 로그에서 ECONNREFUSED 등 관찰'
       success_criteria:
-      - '명령 실행: docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | g'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - grep -Ei redis elastic rabbit minio 실행
+      - 최소 2개 의존 컨테이너 확인
+      - Up 상태 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker ps --format ... | grep -Ei redis|elastic|rabbit|minio
+      - docker compose ps -a 로 전체
+      - curl http://localhost:9200/_cluster/health(elastic)
+      - docker exec redis redis-cli ping
+      - docker exec minio mc admin info
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 일부만 확인(모두 필요)
+      - Up 아닌 상태 무시
+      - regex 오타
   target_vm: siem
   script: docker ps --format '{{.Names}}\t{{.Status}}' 2>/dev/null | grep -Ei 'redis|elastic|rabbit|minio'
   risk_level: low
@@ -190,21 +207,24 @@ steps:
     expect: compose
     field: stdout
     semantic:
-      intent: 'SecOps w12 s6 — OpenCTI docker-compose.yml 파일 위치를 찾으시오. (cmd: find / -name ''docker-compose*.yml'' 2>/dev/null
-        | grep -i cti | head)'
+      intent: OpenCTI docker-compose.yml 위치 탐색 — find / -name docker-compose*.yml 2>/dev/null | grep -i
+        cti | head. OpenCTI 설치 경로가 환경마다 다름(/opt/opencti, /home/user/opencti, /srv/opencti 등). find 로 전체
+        파일시스템 스캔, grep 로 cti 관련만. 찾은 후 해당 디렉토리에서 docker compose up/down/logs 실행. 2>/dev/null 로 permission
+        denied 노이즈 숨김
       success_criteria:
-      - '명령 실행: find / -name ''docker-compose*.yml'' 2>/dev/null | grep -i cti'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - find + grep 실행
+      - compose 파일 경로 출력
+      - cti 관련 결과
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - find / -name docker-compose*.yml 2>/dev/null | grep cti
+      - locate docker-compose | grep opencti
+      - ps auxf | grep docker-compose 로 실행 중인 파일 경로
+      - systemctl cat opencti (service 파일 경로 확인)
+      - docker inspect --format {{.Config.Labels}} opencti
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - find / 전체 스캔 너무 느림(권한 많은 디렉토리)
+      - compose 확장자(yaml) 놓침
+      - permission denied 출력 노출
   target_vm: siem
   script: find / -name 'docker-compose*.yml' 2>/dev/null | grep -i cti | head
   risk_level: low
@@ -223,21 +243,24 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w12 s7 — localhost:8080 에 HTTP 요청을 보내 응답 코드를 확인하시오. (cmd: curl -sS -o /dev/null -w ''%{http_code}\n''
-        http://localhost:8080)'
+      intent: 'OpenCTI UI HTTP 응답 확인 — curl -sS -o /dev/null -w %{http_code}\n http://localhost:8080.
+        200 OK 응답이면 platform UI 서빙 정상, 302 Redirect 는 login page 로 리다이렉트(정상). 5xx 는 backend 오류(ElasticSearch
+        등). Connection refused 는 container down. -sS 로 progress 숨김 + error 만. %{http_code} 로 응답 코드만 추출.
+        브라우저 접근: http://<siem-ip>:8080'
       success_criteria:
-      - '명령 실행: curl -sS -o /dev/null -w ''%{http_code}\n'' http://localhost:8'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - curl http://localhost:8080 실행
+      - HTTP 응답 코드 출력
+      - '%{http_code} 포맷'
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - curl -sS -o /dev/null -w %{http_code} http://localhost:8080
+      - curl -v http://localhost:8080 (상세)
+      - curl --resolve 로 hostname 테스트
+      - wget -qO- http://localhost:8080/graphql(API endpoint)
+      - docker exec opencti curl -v localhost:4000(내부)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 응답 코드 확인 없음
+      - HTTPS 로 요청(HTTP 포트)
+      - Connection refused 무시
   target_vm: siem
   script: curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8080
   risk_level: low
@@ -249,31 +272,35 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM opencti 플랫폼 로그에서 ERROR 횟수를 세어줘
 
-    📎 참고 (CLI): docker logs --tail 50 $(docker ps --format ''{{.Names}}'' | grep -i ''^opencti$'' | head -1) 2>&1 | grep -c
-    ERROR'
+    📎 참고 (CLI): docker logs --tail 50 $(docker ps --format ''{{.Names}}'' | grep -i ''^opencti$'' | head
+    -1) 2>&1 | grep -c ERROR'
   answer_detail: 'OpenCTI 설치·구성: OpenCTI 플랫폼 컨테이너에서 ''ERROR'' 로그를 최근 50줄에서 카운트하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w12 s8 — OpenCTI 플랫폼 컨테이너에서 ''ERROR'' 로그를 최근 50줄에서 카운트하시오. (cmd: docker logs --tail 50 $(docker ps --format
-        ''{{.Names}}'' | grep -i ''^opencti$'' | )'
+      intent: 'ERROR 로그 카운트 — docker logs --tail 50 <opencti container> 2>&1 | grep -c ERROR. 최근 50 라인
+        중 ERROR 발생 빈도. 0 또는 낮은 수 = 정상, 지속적 증가 = 설정/환경 문제. grep -c 는 매칭 라인 수 출력. 주요 ERROR 패턴: ECONNREFUSED(의존성
+        fail), UnhandledPromiseRejection, Elasticsearch connection failed. 이후 상세 분석: docker logs | grep
+        -A 5 ERROR'
       success_criteria:
-      - '명령 실행: docker logs --tail 50 $(docker ps --format ''{{.Names}}'' | gr'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - docker logs + grep -c ERROR 실행
+      - ERROR 카운트 숫자 출력
+      - 50 라인 범위
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker logs --tail 50 <container> 2>&1 | grep -c ERROR
+      - docker logs --since 1h 2>&1 | grep -c ERROR
+      - docker logs | grep -iE error|critical|fatal
+      - Elastic Kibana 또는 Loki 로 중앙 집계
+      - Prometheus docker exporter + alert
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - --tail 없이 전체 로그
+      - ERROR 외 WARN 혼동
+      - 0 카운트 아닌데 정상 판정
   target_vm: siem
-  script: docker logs --tail 50 $(docker ps --format '{{.Names}}' | grep -i '^opencti$' | head -1) 2>&1 | grep -c ERROR
+  script: docker logs --tail 50 $(docker ps --format '{{.Names}}' | grep -i '^opencti$' | head -1) 2>&1
+    | grep -c ERROR
   risk_level: low
   bastion_prompt: siem VM opencti 플랫폼 로그에서 ERROR 횟수를 세어줘
 - order: 9
@@ -283,28 +310,32 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM의 docker stats로 컨테이너별 CPU/메모리 사용량을 보여줘
 
-    📎 참고 (CLI): docker stats --no-stream --format ''{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}'' 2>/dev/null | head'
+    📎 참고 (CLI): docker stats --no-stream --format ''{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}'' 2>/dev/null
+    | head'
   answer_detail: 'OpenCTI 설치·구성: 컨테이너별 CPU/Memory 사용량(docker stats --no-stream)을 조회하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w12 s9 — 컨테이너별 CPU/Memory 사용량(docker stats --no-stream)을 조회하시오. (cmd: docker stats --no-stream --format
-        ''{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}'' 2>/de)'
+      intent: 'docker stats 컨테이너 리소스 현황 — docker stats --no-stream --format {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}
+        | head. --no-stream 으로 1회 snapshot 만(연속 업데이트 회피). OpenCTI stack 은 메모리 집약적: ElasticSearch(4GB+),
+        RabbitMQ(1GB), platform(2GB+), MinIO(512MB), Redis(256MB). 합계 host 자원의 주의. CPU% 는 평상시 낮음, 이벤트
+        발생 시 스파이크'
       success_criteria:
-      - '명령 실행: docker stats --no-stream --format ''{{.Name}}\t{{.CPUPerc}}\t'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - docker stats --no-stream 실행
+      - CPU·메모리 정보 출력
+      - 컨테이너별 구분
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker stats --no-stream --format Table ...
+      - docker stats <container> 특정
+      - cat /sys/fs/cgroup/memory/docker/.../memory.usage_in_bytes
+      - systemctl status docker 로 전체 리소스
+      - Prometheus cadvisor 로 시계열 모니터링
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - --no-stream 없이 인터랙티브 모드
+      - format 없이 wide 출력
+      - 컨테이너 구분 없음
   target_vm: siem
   script: docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' 2>/dev/null | head
   risk_level: low
@@ -316,31 +347,35 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM의 opencti 컨테이너 재시작 횟수를 확인해줘
 
-    📎 참고 (CLI): docker inspect $(docker ps --format ''{{.Names}}'' | grep -i opencti | head -1) --format ''{{.RestartCount}}''
-    2>/dev/null'
+    📎 참고 (CLI): docker inspect $(docker ps --format ''{{.Names}}'' | grep -i opencti | head -1) --format
+    ''{{.RestartCount}}'' 2>/dev/null'
   answer_detail: 'OpenCTI 설치·구성: OpenCTI 재기동이 필요하지 않은지 컨테이너 재시작 횟수를 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w12 s10 — OpenCTI 재기동이 필요하지 않은지 컨테이너 재시작 횟수를 확인하시오. (cmd: docker inspect $(docker ps --format ''{{.Names}}''
-        | grep -i opencti | head -1) --)'
+      intent: OpenCTI RestartCount 확인 — docker inspect <opencti> --format {{.RestartCount}}. 컨테이너 안정성
+        지표 - 0 이면 시작 후 재시작 없음(가장 건전), 1+ 면 어느 정도 crash 발생. 높은 RestartCount 는 memory 부족·dependency fail·unhandled
+        exception 가능성. restart policy(always/on-failure:N)에 따라 자동 재시작 발생. 주기적 모니터링으로 stability regression
+        조기 감지
       success_criteria:
-      - '명령 실행: docker inspect $(docker ps --format ''{{.Names}}'' | grep -i o'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - docker inspect --format RestartCount 실행
+      - 숫자(재시작 횟수) 출력
+      - opencti 컨테이너 대상
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker inspect --format {{.RestartCount}} opencti
+      - docker inspect --format {{.State.StartedAt}} 로 마지막 시작 시각
+      - docker events --filter container=opencti 로 재시작 이벤트
+      - kubectl describe pod 로 Restart Count(K8s)
+      - Prometheus container_start_time_seconds 알림
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - --format 없이 긴 JSON 출력
+      - State 대신 Health 확인
+      - 0 아닌데 정상 판정
   target_vm: siem
-  script: docker inspect $(docker ps --format '{{.Names}}' | grep -i opencti | head -1) --format '{{.RestartCount}}' 2>/dev/null
+  script: docker inspect $(docker ps --format '{{.Names}}' | grep -i opencti | head -1) --format '{{.RestartCount}}'
+    2>/dev/null
   risk_level: low
   bastion_prompt: siem VM의 opencti 컨테이너 재시작 횟수를 확인해줘
 - order: 99
