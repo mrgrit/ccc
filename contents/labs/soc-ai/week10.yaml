@@ -3,8 +3,8 @@ title: 악성코드 분석 - 의심 파일 정적 분석과 행위 기반 탐지
 version: ai
 course: soc-ai
 week: 10
-description: 의심스러운 파일의 정적 분석(해시, 문자열, 파일 타입)과 시스템 행위 기반 탐지(프로세스, 네트워크, 파일 변경)를 통한 악성코드 분석 기초를 학습합니다. AI SubAgent가 자동으로 명령을
-  실행하고 결과를 검증합니다.
+description: 의심스러운 파일의 정적 분석(해시, 문자열, 파일 타입)과 시스템 행위 기반 탐지(프로세스, 네트워크, 파일 변경)를 통한 악성코드 분석 기초를 학습합니다. AI
+  SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 150
 objectives:
@@ -21,27 +21,22 @@ steps:
   answer: '🤖 프롬프트: WEB VM에서 /tmp과 /var/tmp 디렉토리에 최근 생성된 의심스러운 파일이 있는지 확인해줘
 
     📎 참고 (CLI): find /tmp /var/tmp -type f -mtime -7 -ls 2>/dev/null'
-  answer_detail: /tmp과 /var/tmp은 악성코드가 자주 사용하는 디렉토리입니다. 실행 권한이 있는 파일, 이상한 이름의 파일, 숨김 파일(.으로 시작)이 있으면 의심해야 합니다.
+  answer_detail: /tmp과 /var/tmp은 악성코드가 자주 사용하는 디렉토리입니다. 실행 권한이 있는 파일, 이상한 이름의 파일, 숨김 파일(.으로 시작)이 있으면 의심해야
+    합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w10 s1 — WEB VM에서 /tmp과 /var/tmp 디렉토리에 최근 생성된 의심스러운 파일이 있는지 확인하시오. (cmd: find /tmp /var/tmp -type f
-        -mtime -7 -ls 2>/dev/null)'
+      intent: /tmp /var/tmp 의심 파일 — find /tmp /var/tmp -type f -mtime -7 -ls 로 7일 내 생성된 모든 파일. 공격자 업로드
+        흔적 (exploit·웹셸·스크립트). 포렌식 분석 대상
       success_criteria:
-      - '명령 실행: find /tmp /var/tmp -type f -mtime -7 -ls 2>/dev/null'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - find -mtime -7 + -ls
+      - /tmp + /var/tmp 둘 다
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - find + stat
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 한 경로만
   target_vm: siem
   script: find /tmp /var/tmp -type f -mtime -7 -ls 2>/dev/null
   risk_level: low
@@ -54,27 +49,22 @@ steps:
   answer: '🤖 프롬프트: WEB VM에서 실행 가능한 파일 중 최근 수정된 것을 검색하시오. /usr/local/bin과 /opt 디렉토리를 확인해줘
 
     📎 참고 (CLI): find /usr/local/bin /opt -type f -executable -mtime -30 -ls 2>/dev/null | head -15'
-  answer_detail: 공격자는 정상 경로에 악성 바이너리를 배치하여 은닉합니다. 최근 수정된 실행 파일은 변조 여부를 확인해야 합니다. file 명령으로 파일 유형, md5sum으로 해시를 비교합니다.
+  answer_detail: 공격자는 정상 경로에 악성 바이너리를 배치하여 은닉합니다. 최근 수정된 실행 파일은 변조 여부를 확인해야 합니다. file 명령으로 파일 유형, md5sum으로
+    해시를 비교합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w10 s2 — WEB VM에서 실행 가능한 파일 중 최근 수정된 것을 검색하시오. /usr/local/bin과 /opt 디렉토리를 확인하시오. (cmd: find /usr/local/bin
-        /opt -type f -executable -mtime -30 -ls 2>/dev/null | head -)'
+      intent: 실행 가능 파일 최근 수정 — find /usr/local/bin /opt -type f -executable -mtime -30 로 관리자용 디렉토리의 최근
+        실행 파일. 배포 외 수정은 의심. 공식 패키지 vs 수동 설치 구분
       success_criteria:
-      - '명령 실행: find /usr/local/bin /opt -type f -executable -mtime -30 -ls '
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - find -executable -mtime
+      - 관리자 경로
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - find -perm /111 대체
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - /usr/bin 확인
   target_vm: siem
   script: find /usr/local/bin /opt -type f -executable -mtime -30 -ls 2>/dev/null | head -15
   risk_level: low
@@ -86,7 +76,8 @@ steps:
   points: 12
   answer: '🤖 프롬프트: WEB VM에서 Apache 웹서버 바이너리의 무결성을 확인하시오. dpkg로 패키지 파일의 변조 여부를 검증해줘
 
-    📎 참고 (CLI): dpkg --verify apache2 2>/dev/null || rpm -V httpd 2>/dev/null; echo "hash: $(md5sum /usr/sbin/apache2 2>/dev/null)"'
+    📎 참고 (CLI): dpkg --verify apache2 2>/dev/null || rpm -V httpd 2>/dev/null; echo "hash: $(md5sum /usr/sbin/apache2
+    2>/dev/null)"'
   answer_detail: dpkg --verify는 설치된 패키지 파일의 해시를 원본과 비교합니다. 출력이 없으면 변조가 없는 것이고, '5'가 표시되면 MD5 해시가 변경된 것입니다.
   verify:
     type: output_contains
@@ -95,23 +86,19 @@ steps:
     - dpkg
     field: stdout
     semantic:
-      intent: 'SOC 운영 w10 s3 — WEB VM에서 Apache 웹서버 바이너리의 무결성을 확인하시오. dpkg로 패키지 파일의 변조 여부를 검증하시오. (cmd: dpkg --verify apache2
-        2>/dev/null || rpm -V httpd 2>/dev/null; echo "hash: $(md5)'
+      intent: Apache 바이너리 무결성 — dpkg --verify apache2 || rpm -V httpd + md5sum 바이너리. 패키지 관리자 검증으로 변조 탐지.
+        웹셸·supply chain 공격 대응
       success_criteria:
-      - '명령 실행: dpkg --verify apache2 2>/dev/null || rpm -V httpd 2>/dev/nul'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - dpkg --verify 또는 rpm -V
+      - 해시 비교
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - debsums + dpkg
+      - rpm -Va
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 무결성 검증 없음
   target_vm: siem
-  script: 'dpkg --verify apache2 2>/dev/null || rpm -V httpd 2>/dev/null; echo "hash: $(md5sum /usr/sbin/apache2 2>/dev/null)"'
+  script: 'dpkg --verify apache2 2>/dev/null || rpm -V httpd 2>/dev/null; echo "hash: $(md5sum /usr/sbin/apache2
+    2>/dev/null)"'
   risk_level: low
   bastion_prompt: WEB VM에서 Apache 웹서버 바이너리의 무결성을 확인하시오. dpkg로 패키지 파일의 변조 여부를 검증해줘
 - order: 4
@@ -122,27 +109,22 @@ steps:
   answer: '🤖 프롬프트: WEB VM에서 setuid/setgid 비트가 설정된 파일 목록을 확인해줘
 
     📎 참고 (CLI): find / -perm -4000 -type f -ls 2>/dev/null | head -20'
-  answer_detail: setuid 파일은 실행 시 파일 소유자 권한으로 동작합니다. 알려진 시스템 파일(passwd, su, sudo 등) 외에 비정상적인 setuid 파일이 있으면 권한 상승 백도어일 수 있습니다.
+  answer_detail: setuid 파일은 실행 시 파일 소유자 권한으로 동작합니다. 알려진 시스템 파일(passwd, su, sudo 등) 외에 비정상적인 setuid 파일이
+    있으면 권한 상승 백도어일 수 있습니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w10 s4 — WEB VM에서 setuid/setgid 비트가 설정된 파일 목록을 확인하시오. 비정상적인 setuid 파일은 권한 상승 백도어일 수 있습니다. (cmd: find
-        / -perm -4000 -type f -ls 2>/dev/null | head -20)'
+      intent: SUID 파일 목록 — find / -perm -4000 -type f -ls | head -20. setuid 바이너리 = 실행 시 소유자 권한으로. 비정상
+        SUID 는 권한 상승 백도어 의심. GTFOBins 매칭
       success_criteria:
-      - '명령 실행: find / -perm -4000 -type f -ls 2>/dev/null | head -20'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - -perm -4000
+      - SUID 목록
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - find + getcap
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - SUID 개념 없음
   target_vm: siem
   script: find / -perm -4000 -type f -ls 2>/dev/null | head -20
   risk_level: low
@@ -161,21 +143,15 @@ steps:
     expect: root
     field: stdout
     semantic:
-      intent: 'SOC 운영 w10 s5 — WEB VM에서 /etc/passwd 파일을 분석하여 UID 0(root 권한)을 가진 계정이 root 외에 있는지 확인하시오. (cmd: awk -F: "\$3==0"
-        /etc/passwd)'
+      intent: 'UID 0 백도어 계정 — awk -F: $3==0 /etc/passwd 로 root 외 UID 0 계정 검색. MITRE T1136 Create Account
+        탐지. 계정 조작 공격 signature'
       success_criteria:
-      - '명령 실행: awk -F: "\$3==0" /etc/passwd'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - 'awk -F: $3==0'
+      - root 외 UID 0 식별
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - awk + passwd
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 일반 계정 확인
   target_vm: siem
   script: 'awk -F: "\$3==0" /etc/passwd'
   risk_level: low
@@ -187,30 +163,27 @@ steps:
   points: 12
   answer: '🤖 프롬프트: SIEM VM에서 Wazuh의 rootcheck(루트킷 탐지) 결과를 확인해줘
 
-    📎 참고 (CLI): grep -i "rootcheck\|rootkit" /var/ossec/logs/alerts/alerts.log | tail -10 || echo "No rootcheck alerts found"'
-  answer_detail: Wazuh rootcheck는 알려진 루트킷 시그니처, 숨겨진 파일/프로세스, 커널 모듈 변조 등을 주기적으로 검사합니다. 탐지 결과는 알림으로 생성되어 SOC에서 분석합니다.
+    📎 참고 (CLI): grep -i "rootcheck\|rootkit" /var/ossec/logs/alerts/alerts.log | tail -10 || echo "No
+    rootcheck alerts found"'
+  answer_detail: Wazuh rootcheck는 알려진 루트킷 시그니처, 숨겨진 파일/프로세스, 커널 모듈 변조 등을 주기적으로 검사합니다. 탐지 결과는 알림으로 생성되어
+    SOC에서 분석합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w10 s6 — SIEM VM에서 Wazuh의 rootcheck(루트킷 탐지) 결과를 확인하시오. (cmd: grep -i "rootcheck\|rootkit" /var/ossec/logs/alerts/alerts.log
-        | tail -10 || ech)'
+      intent: Wazuh rootcheck — grep -i rootcheck|rootkit alerts.log | tail -10. ossec rootcheck 모듈이 탐지한
+        루트킷 signature·숨김 프로세스·변조 SUID 이벤트. HIDS 관점 분석
       success_criteria:
-      - '명령 실행: grep -i "rootcheck\|rootkit" /var/ossec/logs/alerts/alerts.l'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - rootcheck/rootkit 필터
+      - alerts.log 조회
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep alerts
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - rootcheck 개념 없음
   target_vm: siem
-  script: grep -i "rootcheck\|rootkit" /var/ossec/logs/alerts/alerts.log | tail -10 || echo "No rootcheck alerts found"
+  script: grep -i "rootcheck\|rootkit" /var/ossec/logs/alerts/alerts.log | tail -10 || echo "No rootcheck
+    alerts found"
   risk_level: low
   bastion_prompt: SIEM VM에서 Wazuh의 rootcheck(루트킷 탐지) 결과를 확인해줘
 - order: 7
@@ -221,26 +194,22 @@ steps:
   answer: '🤖 프롬프트: WEB VM에서 현재 로드된 커널 모듈 목록을 확인해줘
 
     📎 참고 (CLI): lsmod | head -30'
-  answer_detail: 루트킷은 커널 모듈로 설치될 수 있습니다. 알 수 없는 모듈, 최근 로드된 모듈, 설명이 없는 모듈은 의심 대상입니다. modinfo로 각 모듈의 상세 정보를 확인할 수 있습니다.
+  answer_detail: 루트킷은 커널 모듈로 설치될 수 있습니다. 알 수 없는 모듈, 최근 로드된 모듈, 설명이 없는 모듈은 의심 대상입니다. modinfo로 각 모듈의 상세
+    정보를 확인할 수 있습니다.
   verify:
     type: output_contains
     expect: Module
     field: stdout
     semantic:
-      intent: 'SOC 운영 w10 s7 — WEB VM에서 현재 로드된 커널 모듈 목록을 확인하시오. 비정상적인 모듈이 있는지 분석하시오. (cmd: lsmod | head -30)'
+      intent: 커널 모듈 lsmod — lsmod | head -30 으로 로드된 모듈 목록. 비정상 모듈 (미서명·이상 이름·최근 로드) 은 LKM 루트킷 의심. T1014
+        대응
       success_criteria:
-      - '명령 실행: lsmod | head -30'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - lsmod 실행
+      - 커널 모듈 목록
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - lsmod + cat /proc/modules
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 모듈 분석 없음
   target_vm: siem
   script: lsmod | head -30
   risk_level: low
@@ -253,28 +222,22 @@ steps:
   answer: '🤖 프롬프트: WEB VM에서 열린 파일과 네트워크 연결을 프로세스별로 확인해줘
 
     📎 참고 (CLI): lsof -i -P -n 2>/dev/null | grep -v "localhost\|127.0.0" | head -20'
-  answer_detail: lsof -i는 네트워크 연결을 가진 프로세스를 보여줍니다. localhost가 아닌 외부 연결, 특히 비표준 포트를 사용하는 프로세스는 C2(Command & Control) 통신 가능성이
-    있습니다.
+  answer_detail: lsof -i는 네트워크 연결을 가진 프로세스를 보여줍니다. localhost가 아닌 외부 연결, 특히 비표준 포트를 사용하는 프로세스는 C2(Command
+    & Control) 통신 가능성이 있습니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w10 s8 — WEB VM에서 열린 파일과 네트워크 연결을 프로세스별로 확인하시오. 의심스러운 외부 연결을 가진 프로세스를 찾으시오. (cmd: lsof -i -P -n 2>/dev/null
-        | grep -v "localhost\|127.0.0" | head -20)'
+      intent: 외부 연결 프로세스 — lsof -i -P -n | grep -v localhost|127.0.0 로 외부 네트워크 연결 프로세스. reverse shell
+        + C2 beacon 탐지. 내부 연결 필터링
       success_criteria:
-      - '명령 실행: lsof -i -P -n 2>/dev/null | grep -v "localhost\|127.0.0" | h'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - lsof -i + grep -v 로컬
+      - 외부 연결
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - lsof + ss
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 로컬 포함 전체
   target_vm: siem
   script: lsof -i -P -n 2>/dev/null | grep -v "localhost\|127.0.0" | head -20
   risk_level: low
@@ -286,30 +249,27 @@ steps:
   points: 10
   answer: '🤖 프롬프트: WEB VM에서 systemd 서비스 중 최근 추가되거나 수정된 유닛 파일을 확인해줘
 
-    📎 참고 (CLI): find /etc/systemd/system /lib/systemd/system -mtime -30 -name "*.service" -ls 2>/dev/null | head -10'
-  answer_detail: 공격자는 systemd 서비스를 생성하여 악성코드의 지속성을 확보합니다. 최근 생성/수정된 서비스 파일의 ExecStart 경로를 확인하여 악성 바이너리 실행 여부를 판단합니다.
+    📎 참고 (CLI): find /etc/systemd/system /lib/systemd/system -mtime -30 -name "*.service" -ls 2>/dev/null
+    | head -10'
+  answer_detail: 공격자는 systemd 서비스를 생성하여 악성코드의 지속성을 확보합니다. 최근 생성/수정된 서비스 파일의 ExecStart 경로를 확인하여 악성 바이너리
+    실행 여부를 판단합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w10 s9 — WEB VM에서 systemd 서비스 중 최근 추가되거나 수정된 유닛 파일을 확인하시오. (cmd: find /etc/systemd/system /lib/systemd/system
-        -mtime -30 -name "*.service" -ls 2>)'
+      intent: systemd 서비스 최근 변경 — find /etc/systemd/system /lib/systemd/system -mtime -30 -name *.service.
+        최근 생성·수정된 서비스 유닛 파일. T1543.002 Systemd Service 지속성 탐지
       success_criteria:
-      - '명령 실행: find /etc/systemd/system /lib/systemd/system -mtime -30 -nam'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - find -mtime -30 *.service
+      - systemd 2 경로
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - find + stat
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 경로 1개만
   target_vm: siem
-  script: find /etc/systemd/system /lib/systemd/system -mtime -30 -name "*.service" -ls 2>/dev/null | head -10
+  script: find /etc/systemd/system /lib/systemd/system -mtime -30 -name "*.service" -ls 2>/dev/null |
+    head -10
   risk_level: low
   bastion_prompt: WEB VM에서 systemd 서비스 중 최근 추가되거나 수정된 유닛 파일을 확인해줘
 - order: 99

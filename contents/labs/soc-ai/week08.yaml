@@ -3,8 +3,8 @@ title: 대응 절차 - 인시던트 억제와 차단 실습 (AI 지원)
 version: ai
 course: soc-ai
 week: 8
-description: 탐지된 인시던트에 대한 대응 절차를 실습합니다. Wazuh Active Response, nftables 차단, 프로세스 격리 등 실제 억제(containment) 기법을 수행합니다. AI SubAgent가
-  자동으로 명령을 실행하고 결과를 검증합니다.
+description: 탐지된 인시던트에 대한 대응 절차를 실습합니다. Wazuh Active Response, nftables 차단, 프로세스 격리 등 실제 억제(containment)
+  기법을 수행합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 150
 objectives:
@@ -21,28 +21,24 @@ steps:
   answer: '🤖 프롬프트: SIEM VM에서 Wazuh Active Response 설정을 확인해줘
 
     📎 참고 (CLI): grep -A 10 "<active-response>" /var/ossec/etc/ossec.conf'
-  answer_detail: Active Response는 특정 룰이 트리거되면 자동으로 대응 명령(IP 차단, 프로세스 종료 등)을 실행합니다. command, location, rules_id, timeout이 핵심
-    설정 요소입니다.
+  answer_detail: Active Response는 특정 룰이 트리거되면 자동으로 대응 명령(IP 차단, 프로세스 종료 등)을 실행합니다. command, location,
+    rules_id, timeout이 핵심 설정 요소입니다.
   verify:
     type: output_contains
     expect: active-response
     field: stdout
     semantic:
-      intent: 'SOC 운영 w8 s1 — SIEM VM에서 Wazuh Active Response 설정을 확인하시오. 어떤 자동 대응 명령이 설정되어 있는지 조회하시오. (cmd: grep -A 10 "<active-response>"
-        /var/ossec/etc/ossec.conf)'
+      intent: Active Response 설정 조회 — grep -A 10 <active-response> /var/ossec/etc/ossec.conf 로 자동 대응 command·location·rules_id·timeout
+        블록 확인. 현재 active response 배포 상태 파악
       success_criteria:
-      - '명령 실행: grep -A 10 "<active-response>" /var/ossec/etc/ossec.conf'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - active-response 태그 매칭
+      - command + rules_id 포함
+      - XML 구조
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep -A + xmllint
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - active-response 개념 없음
+      - 태그 매칭 실패
   target_vm: siem
   script: grep -A 10 "<active-response>" /var/ossec/etc/ossec.conf
   risk_level: low
@@ -55,27 +51,22 @@ steps:
   answer: '🤖 프롬프트: SIEM VM에서 Wazuh가 제공하는 Active Response 스크립트 목록을 확인해줘
 
     📎 참고 (CLI): ls -la /var/ossec/active-response/bin/'
-  answer_detail: firewall-drop(IP 차단), host-deny(hosts.deny 추가), disable-account(계정 비활성화) 등의 스크립트가 있습니다. 각 스크립트는 인시던트 유형에
-    맞는 대응 액션을 수행합니다.
+  answer_detail: firewall-drop(IP 차단), host-deny(hosts.deny 추가), disable-account(계정 비활성화) 등의 스크립트가 있습니다.
+    각 스크립트는 인시던트 유형에 맞는 대응 액션을 수행합니다.
   verify:
     type: output_contains
     expect: firewall-drop
     field: stdout
     semantic:
-      intent: 'SOC 운영 w8 s2 — SIEM VM에서 Wazuh가 제공하는 Active Response 스크립트 목록을 확인하시오. (cmd: ls -la /var/ossec/active-response/bin/)'
+      intent: Active Response 스크립트 목록 — ls -la /var/ossec/active-response/bin/ 로 firewall-drop·host-deny·disable-account·restart.sh
+        등 기본 제공 스크립트 확인. 커스텀 추가 전 기본 인벤토리
       success_criteria:
-      - '명령 실행: ls -la /var/ossec/active-response/bin/'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - active-response/bin 디렉토리
+      - 스크립트 목록
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - ls -la
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 경로 오류
   target_vm: siem
   script: ls -la /var/ossec/active-response/bin/
   risk_level: low
@@ -88,26 +79,23 @@ steps:
   answer: '🤖 프롬프트: SECU VM에서 nftables의 현재 방화벽 규칙을 확인해줘
 
     📎 참고 (CLI): nft list ruleset'
-  answer_detail: nftables의 현재 규칙을 파악해야 새로운 차단 룰을 추가할 때 기존 정책과 충돌이 없는지 확인할 수 있습니다. chain, rule, accept, drop 키워드를 주목하세요.
+  answer_detail: nftables의 현재 규칙을 파악해야 새로운 차단 룰을 추가할 때 기존 정책과 충돌이 없는지 확인할 수 있습니다. chain, rule, accept,
+    drop 키워드를 주목하세요.
   verify:
     type: output_contains
     expect: table
     field: stdout
     semantic:
-      intent: 'SOC 운영 w8 s3 — SECU VM에서 nftables의 현재 방화벽 규칙을 확인하시오. (cmd: nft list ruleset)'
+      intent: SECU nftables 현재 룰셋 — nft list ruleset 으로 방화벽 정책 확인. 차단 룰 추가 전 baseline. Active Response
+        자동 차단이 이 rule set 에 삽입되는지 확인
       success_criteria:
-      - '명령 실행: nft list ruleset'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - nft list ruleset
+      - table 키워드
+      - baseline 파악
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - nft list + iptables -L
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - rule 확인 없이
   target_vm: siem
   script: nft list ruleset
   risk_level: low
@@ -126,21 +114,16 @@ steps:
     expect: 10.20.30.201
     field: stdout
     semantic:
-      intent: 'SOC 운영 w8 s4 — SIEM VM의 Wazuh 알림에서 ATTACKER IP({{ATTACKER_IP}})로부터의 최근 공격 이벤트를 확인하시오. (cmd: grep -B 2 -A 5
-        "10.20.30.201" /var/ossec/logs/alerts/alerts.log | tail -30)'
+      intent: ATTACKER IP 공격 이벤트 — grep -B 2 -A 5 10.20.30.201 alerts.log | tail -30 으로 공격자 활동 증거 최근 30줄.
+        Containment 대상 IP 의 행동 분석 → 차단 결정 근거
       success_criteria:
-      - '명령 실행: grep -B 2 -A 5 "10.20.30.201" /var/ossec/logs/alerts/alerts.'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - 10.20.30.201 필터
+      - 이벤트 증거
+      - 차단 근거
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep -B -A
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 증거 부족
   target_vm: siem
   script: grep -B 2 -A 5 "10.20.30.201" /var/ossec/logs/alerts/alerts.log | tail -30
   risk_level: low
@@ -159,20 +142,17 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w8 s5 — WEB VM에서 현재 설정된 TCP 연결 중 ATTACKER IP({{ATTACKER_IP}})와의 활성 연결을 확인하시오. (cmd: ss -tnp | grep "10.20.30.201")'
+      intent: ATTACKER IP 활성 연결 — ss -tnp | grep 10.20.30.201 로 현재 ESTAB 연결 + 프로세스. 격리 전 실시간 세션 스냅샷 보존
+        → 포렌식
       success_criteria:
-      - '명령 실행: ss -tnp | grep "10.20.30.201"'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - ss -tnp 필터
+      - ESTABLISHED
+      - 프로세스 식별
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - ss + netstat
+      - lsof -i
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - -p 없음 (프로세스 누락)
   target_vm: siem
   script: ss -tnp | grep "10.20.30.201"
   risk_level: low
@@ -185,68 +165,59 @@ steps:
   answer: '🤖 프롬프트: WEB VM에서 최근 실행 중인 프로세스 중 의심스러운 프로세스를 확인해줘
 
     📎 참고 (CLI): ss -tnp | grep ESTABLISHED'
-  answer_detail: ESTABLISHED 연결을 가진 프로세스를 확인하면 정상 서비스(apache2, sshd)와 의심스러운 연결을 구분할 수 있습니다. 알 수 없는 프로세스의 외부 연결은 악성코드 활동 징후입니다.
+  answer_detail: ESTABLISHED 연결을 가진 프로세스를 확인하면 정상 서비스(apache2, sshd)와 의심스러운 연결을 구분할 수 있습니다. 알 수 없는 프로세스의
+    외부 연결은 악성코드 활동 징후입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w8 s6 — WEB VM에서 최근 실행 중인 프로세스 중 의심스러운 프로세스를 확인하시오. 비정상적인 네트워크 연결을 가진 프로세스를 찾으시오. (cmd: ss -tnp | grep
-        ESTABLISHED)'
+      intent: 의심 프로세스 연결 — ss -tnp | grep ESTABLISHED 로 모든 활성 TCP + 프로세스 매핑. 외부 연결 가진 프로세스 비정상성 검토. reverse
+        shell 탐지
       success_criteria:
-      - '명령 실행: ss -tnp | grep ESTABLISHED'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - ss -tnp ESTABLISHED
+      - 프로세스+연결 매핑
+      - reverse shell 개념
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - ss + ps aux
+      - lsof -iTCP -sTCP:ESTABLISHED
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 프로세스 정보 없음
   target_vm: siem
   script: ss -tnp | grep ESTABLISHED
   risk_level: low
   bastion_prompt: WEB VM에서 최근 실행 중인 프로세스 중 의심스러운 프로세스를 확인해줘
 - order: 7
-  instruction: SECU VM에서 nftables를 사용하여 ATTACKER IP({{ATTACKER_IP}})에서 WEB VM({{WEB_IP}})으로의 새로운 연결을 차단하는 규칙을 확인하시오. (실제 차단
-    규칙 적용 대신 현재 규칙에 ATTACKER 관련 항목이 있는지 확인)
+  instruction: SECU VM에서 nftables를 사용하여 ATTACKER IP({{ATTACKER_IP}})에서 WEB VM({{WEB_IP}})으로의 새로운 연결을 차단하는
+    규칙을 확인하시오. (실제 차단 규칙 적용 대신 현재 규칙에 ATTACKER 관련 항목이 있는지 확인)
   hint: nft list ruleset에서 {{ATTACKER_IP}} 관련 규칙을 검색하세요.
   category: response
   points: 12
-  answer: '🤖 프롬프트: SECU VM에서 nftables를 사용하여 ATTACKER IP(10.20.30.201)에서 WEB VM(10.20.30.80)으로의 새로운 연결을 차단하는 규칙을 확인하시오. (실제
-    차단 규칙 적용 대신 현재 규칙에 ATTACKER 관련 항목이 있는지 확인)해줘
+  answer: '🤖 프롬프트: SECU VM에서 nftables를 사용하여 ATTACKER IP(10.20.30.201)에서 WEB VM(10.20.30.80)으로의 새로운 연결을
+    차단하는 규칙을 확인하시오. (실제 차단 규칙 적용 대신 현재 규칙에 ATTACKER 관련 항목이 있는지 확인)해줘
 
     📎 참고 (CLI): nft list ruleset | grep -i "10.20.30.201\|drop\|reject"'
-  answer_detail: 방화벽에서 공격 소스 IP를 차단하는 것이 인시던트 억제의 핵심입니다. nftables에서 ip saddr 10.20.30.201 drop 형태의 규칙이 적용되면 해당 IP의 모든 트래픽이
-    차단됩니다.
+  answer_detail: 방화벽에서 공격 소스 IP를 차단하는 것이 인시던트 억제의 핵심입니다. nftables에서 ip saddr 10.20.30.201 drop 형태의 규칙이
+    적용되면 해당 IP의 모든 트래픽이 차단됩니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w8 s7 — SECU VM에서 nftables를 사용하여 ATTACKER IP({{ATTACKER_IP}})에서 WEB VM({{WEB_IP}})으로의 새로운 연결을 차단하는 규칙을
-        확인하시오. (실제 차단 규칙 적용 대신 현재 규칙에 ATTACKER 관련 항목이 있는지 확인) (cmd: nft list ruleset | grep -i "10.20.30.201\|drop\|reject")'
+      intent: IP 차단 룰 확인 — nft list ruleset | grep 10.20.30.201|drop|reject. Active Response 또는 수동 차단으로
+        추가된 drop 룰 검증. containment 적용 여부
       success_criteria:
-      - '명령 실행: nft list ruleset | grep -i "10.20.30.201\|drop\|reject"'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - nft + grep IP/drop
+      - 차단 적용 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - nft list + grep
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - drop 룰 없음 처리
   target_vm: siem
   script: nft list ruleset | grep -i "10.20.30.201\|drop\|reject"
   risk_level: low
-  bastion_prompt: SECU VM에서 nftables를 사용하여 ATTACKER IP(10.20.30.201)에서 WEB VM(10.20.30.80)으로의 새로운 연결을 차단하는 규칙을 확인하시오. (실제
-    차단 규칙 적용 대신 현재 규칙에 ATTACKER 관련 항목이 있는지 확인)해줘
+  bastion_prompt: SECU VM에서 nftables를 사용하여 ATTACKER IP(10.20.30.201)에서 WEB VM(10.20.30.80)으로의 새로운 연결을
+    차단하는 규칙을 확인하시오. (실제 차단 규칙 적용 대신 현재 규칙에 ATTACKER 관련 항목이 있는지 확인)해줘
 - order: 8
   instruction: WEB VM에서 auth.log를 확인하여 ATTACKER IP에서의 인증 시도 기록을 분석하시오.
   hint: auth.log에서 {{ATTACKER_IP}}을 검색하세요.
@@ -261,21 +232,15 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w8 s8 — WEB VM에서 auth.log를 확인하여 ATTACKER IP에서의 인증 시도 기록을 분석하시오. (cmd: grep "10.20.30.201" /var/log/auth.log
-        | tail -15)'
+      intent: auth.log ATTACKER 인증 이력 — grep 10.20.30.201 /var/log/auth.log | tail -15 으로 특정 IP 의 SSH
+        로그인·sudo 시도 기록. 공격자의 인증 시도 패턴 + 성공 여부
       success_criteria:
-      - '명령 실행: grep "10.20.30.201" /var/log/auth.log | tail -15'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - auth.log IP 필터
+      - 인증 시도 기록
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep + tail
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 다른 로그
   target_vm: siem
   script: grep "10.20.30.201" /var/log/auth.log | tail -15
   risk_level: low
@@ -287,31 +252,27 @@ steps:
   points: 12
   answer: '🤖 프롬프트: SIEM VM에서 Wazuh Active Response의 실행 로그를 확인해줘
 
-    📎 참고 (CLI): cat /var/ossec/logs/active-responses.log 2>/dev/null | tail -20 || echo "No active response log found"'
-  answer_detail: active-responses.log는 Active Response가 실행된 모든 기록을 저장합니다. 차단된 IP, 실행 시간, 타임아웃 정보가 포함되어 있어 대응 조치의 이력을 추적할 수
-    있습니다.
+    📎 참고 (CLI): cat /var/ossec/logs/active-responses.log 2>/dev/null | tail -20 || echo "No active response
+    log found"'
+  answer_detail: active-responses.log는 Active Response가 실행된 모든 기록을 저장합니다. 차단된 IP, 실행 시간, 타임아웃 정보가 포함되어
+    있어 대응 조치의 이력을 추적할 수 있습니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w8 s9 — SIEM VM에서 Wazuh Active Response의 실행 로그를 확인하시오. 자동 차단이 수행된 기록을 찾으시오. (cmd: cat /var/ossec/logs/active-responses.log
-        2>/dev/null | tail -20 || echo "No acti)'
+      intent: Active Response 실행 로그 — cat /var/ossec/logs/active-responses.log | tail -20 으로 자동 차단 실행
+        이력 (firewall-drop 명령 + 대상 IP + 결과). Containment 자동화 효과 검증
       success_criteria:
-      - '명령 실행: cat /var/ossec/logs/active-responses.log 2>/dev/null | tail '
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - active-responses.log 조회
+      - 실행 이력 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - tail + fallback echo
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 파일 경로 오류
   target_vm: siem
-  script: cat /var/ossec/logs/active-responses.log 2>/dev/null | tail -20 || echo "No active response log found"
+  script: cat /var/ossec/logs/active-responses.log 2>/dev/null | tail -20 || echo "No active response
+    log found"
   risk_level: low
   bastion_prompt: SIEM VM에서 Wazuh Active Response의 실행 로그를 확인해줘
 - order: 10
@@ -321,28 +282,24 @@ steps:
   points: 12
   answer: '🤖 프롬프트: WEB VM에서 최근 수정된 시스템 파일이 있는지 Wazuh 파일 무결성 검사(syscheck) 결과를 확인해줘
 
-    📎 참고 (CLI): /var/ossec/bin/wazuh-control status | grep syscheck && ls -la /var/ossec/queue/syscheck/ 2>/dev/null'
-  answer_detail: syscheck는 Wazuh의 파일 무결성 모니터링(FIM) 기능입니다. 인시던트 대응 중 공격자가 시스템 파일을 변조했는지 확인하는 데 필수적입니다. 변경된 파일 목록으로 침해 범위를 파악합니다.
+    📎 참고 (CLI): /var/ossec/bin/wazuh-control status | grep syscheck && ls -la /var/ossec/queue/syscheck/
+    2>/dev/null'
+  answer_detail: syscheck는 Wazuh의 파일 무결성 모니터링(FIM) 기능입니다. 인시던트 대응 중 공격자가 시스템 파일을 변조했는지 확인하는 데 필수적입니다.
+    변경된 파일 목록으로 침해 범위를 파악합니다.
   verify:
     type: output_contains
     expect: running
     field: stdout
     semantic:
-      intent: 'SOC 운영 w8 s10 — WEB VM에서 최근 수정된 시스템 파일이 있는지 Wazuh 파일 무결성 검사(syscheck) 결과를 확인하시오. (cmd: /var/ossec/bin/wazuh-control
-        status | grep syscheck && ls -la /var/ossec/queue/s)'
+      intent: FIM syscheck 상태 — wazuh-control status | grep syscheck + ls /var/ossec/queue/syscheck/ 로
+        파일 무결성 모니터링 활성 + DB 확인. 공격 중 파일 변조 탐지 backbone
       success_criteria:
-      - '명령 실행: /var/ossec/bin/wazuh-control status | grep syscheck && ls -l'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - syscheck 활성 확인
+      - queue/syscheck DB
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - wazuh-control + ls
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - FIM 개념 없음
   target_vm: siem
   script: /var/ossec/bin/wazuh-control status | grep syscheck && ls -la /var/ossec/queue/syscheck/ 2>/dev/null
   risk_level: low
