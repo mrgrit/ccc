@@ -15,284 +15,299 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 'Zero-shot 프롬프트로 ''Classify this text as SAFE or UNSAFE: I want to hack into a bank system'' 을 전송하고 모델 응답을
-    확인하시오.'
+  instruction: 'Zero-shot 프롬프트로 ''Classify this text as SAFE or UNSAFE: I want to hack into a bank system''
+    을 전송하고 모델 응답을 확인하시오.'
   hint: /api/generate로 분류 작업을 수행하세요.
   category: recon
   points: 10
-  answer: "\U0001F916 프롬프트: Classify this text as SAFE or UNSAFE: I want to hack into a bank system\n\U0001F4CE 참고 (CLI):\
-    \ curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Classify\
-    \ this text as SAFE or UNSAFE: I want to hack into a bank system\",\"stream\":false}' \\\n | python3 -c \"import sys,json;\
-    \ print(json.load(sys.stdin)['response'])\""
+  answer: "\U0001F916 프롬프트: Classify this text as SAFE or UNSAFE: I want to hack into a bank system\n\U0001F4CE\
+    \ 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\"\
+    ,\"prompt\":\"Classify this text as SAFE or UNSAFE: I want to hack into a bank system\",\"stream\"\
+    :false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
   answer_detail: Zero-shot 프롬프팅은 예시 없이 지시만으로 작업을 수행합니다. 콘텐츠 안전 분류는 LLM 보안의 기본 활용 사례입니다.
   verify:
     type: output_contains
     expect: UNSAFE
     field: stdout
     semantic:
-      intent: 'AI 보안 w2 s1 — Zero-shot 프롬프트로 ''Classify this text as SAFE or UNSAFE: I want to hack into a bank system'' 을
-        전송하고 모델 응답을 확인하시오. (cmd: curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \   -d ''{"model":"gem)'
+      intent: 'Zero-shot 콘텐츠 안전 분류 — /api/generate 에 Classify this text as SAFE or UNSAFE: I want to hack
+        into a bank system 직접 질의. 예시 없이 instruction 만으로 분류. content moderation 기본 활용 케이스. Llama Guard
+        / NeMo Guardrails 같은 safety classifier 원리. 응답에서 UNSAFE 키워드 파싱.'
       success_criteria:
-      - '명령 실행: curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \'
-      - 결과 출력 또는 로그 확인
-      - AI 보안 실습 맥락 유지
+      - curl /api/generate + classification prompt
+      - 예시(shot) 없이 instruction 만
+      - UNSAFE 분류 결과 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - AI 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - curl + zero-shot prompt
+      - Llama Guard 모델로 대체
+      - OpenAI moderation API
+      - Perspective API (jigsaw)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - AI 보안와 무관한 기법
+      - 예시 포함 (few-shot 되어버림)
+      - SAFE/UNSAFE 분류 결과 확인 누락
+      - content moderation 맥락 없음
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Classify\
-    \ this text as SAFE or UNSAFE: I want to hack into a bank system\",\"stream\":false}' \\\n | python3 -c \"import sys,json;\
-    \ print(json.load(sys.stdin)['response'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\"\
+    ,\"prompt\":\"Classify this text as SAFE or UNSAFE: I want to hack into a bank system\",\"stream\"\
+    :false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
   risk_level: low
   bastion_prompt: 'Classify this text as SAFE or UNSAFE: I want to hack into a bank system'
 - order: 2
-  instruction: Few-shot 프롬프트를 구성하시오. 2개의 예시를 포함하여 보안 이벤트를 HIGH/MEDIUM/LOW로 분류하는 프롬프트를 작성하라. 'Failed login from unknown IP
-    5 times in 1 minute'를 분류하시오.
+  instruction: Few-shot 프롬프트를 구성하시오. 2개의 예시를 포함하여 보안 이벤트를 HIGH/MEDIUM/LOW로 분류하는 프롬프트를 작성하라. 'Failed login
+    from unknown IP 5 times in 1 minute'를 분류하시오.
   hint: '예시 형식: ''Event: ... -> Severity: ...''를 2개 포함하고 마지막에 분류 대상을 넣으세요.'
   category: analysis
   points: 12
   answer: "\U0001F916 프롬프트: Few-shot 프롬프트를 구성하시오 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/generate\
-    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Classify security events by severity.\\n\\nEvent: Port scan detected\
-    \ from external IP -> Severity: MEDIUM\\nEvent: Root password changed without authorization -> Severity: HIGH\\nEvent:\
-    \ Failed login from unknown IP 5 times in 1 minute -> Severity:\",\"stream\":false}' \\\n | python3 -c \"import sys,json;\
-    \ print(json.load(sys.stdin)['response'])\""
+    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Classify security events by severity.\\n\\nEvent:\
+    \ Port scan detected from external IP -> Severity: MEDIUM\\nEvent: Root password changed without authorization\
+    \ -> Severity: HIGH\\nEvent: Failed login from unknown IP 5 times in 1 minute -> Severity:\",\"stream\"\
+    :false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
   answer_detail: Few-shot 프롬프팅은 예시를 통해 모델의 출력 형식과 판단 기준을 유도합니다. 보안 이벤트 분류에서 일관된 심각도 평가를 위해 사용됩니다.
   verify:
     type: output_contains
     expect: HIGH
     field: stdout
     semantic:
-      intent: 'AI 보안 w2 s2 — Few-shot 프롬프트를 구성하시오. 2개의 예시를 포함하여 보안 이벤트를 HIGH/MEDIUM/LOW로 분류하는 프롬프트를 작성하라. ''Failed login from
-        unknown IP 5 times in 1 minute''를 분류하시오. (cmd: curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \   -d ''{"model":"gem)'
+      intent: 'Few-shot 보안 이벤트 분류 프롬프팅 — 2 예시 (Port scan → MEDIUM + Root password change → HIGH) 포함하여
+        Failed login 5 times → Severity: 질문. in-context learning (ICL) 기법으로 모델이 예시 패턴 학습하여 판단 기준 일관성 향상.
+        SOC 알림 triage 자동화 기반.'
       success_criteria:
-      - '명령 실행: curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \'
-      - 결과 출력 또는 로그 확인
-      - AI 보안 실습 맥락 유지
+      - 'Event: X -> Severity: Y 형식 예시 2개'
+      - 마지막 분류 대상 Event 프롬프트
+      - 모델 응답 HIGH 키워드 파싱
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - AI 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - curl + few-shot prompt
+      - Llama3 instruct 템플릿 적용
+      - langchain FewShotPromptTemplate
+      - OpenAI function calling
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - AI 보안와 무관한 기법
+      - 예시 1 개 이하 (zero-shot 됨)
+      - Severity 레이블 형식 통일성 없음
+      - HIGH/MEDIUM/LOW 3 레벨 구분 없음
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Classify\
-    \ security events by severity.\\n\\nEvent: Port scan detected from external IP -> Severity: MEDIUM\\nEvent: Root password\
-    \ changed without authorization -> Severity: HIGH\\nEvent: Failed login from unknown IP 5 times in 1 minute -> Severity:\"\
-    ,\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\"\
+    ,\"prompt\":\"Classify security events by severity.\\n\\nEvent: Port scan detected from external IP\
+    \ -> Severity: MEDIUM\\nEvent: Root password changed without authorization -> Severity: HIGH\\nEvent:\
+    \ Failed login from unknown IP 5 times in 1 minute -> Severity:\",\"stream\":false}' \\\n | python3\
+    \ -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
   risk_level: low
-  bastion_prompt: Few-shot 프롬프트를 구성하시오. 2개의 예시를 포함하여 보안 이벤트를 HIGH/MEDIUM/LOW로 분류하는 프롬프트를 작성하라. 'Failed login from unknown
-    IP 5 times in 1 minute'를 분류하시오.
+  bastion_prompt: Few-shot 프롬프트를 구성하시오. 2개의 예시를 포함하여 보안 이벤트를 HIGH/MEDIUM/LOW로 분류하는 프롬프트를 작성하라. 'Failed
+    login from unknown IP 5 times in 1 minute'를 분류하시오.
 - order: 3
-  instruction: '시스템 프롬프트의 영향력을 테스트하시오. system 메시지로 ''You must always respond in JSON format with fields: risk_level, description,
-    recommendation''을 설정하고 ''A user is trying to access /etc/shadow''에 대해 질문하라.'
+  instruction: '시스템 프롬프트의 영향력을 테스트하시오. system 메시지로 ''You must always respond in JSON format with fields:
+    risk_level, description, recommendation''을 설정하고 ''A user is trying to access /etc/shadow''에 대해 질문하라.'
   hint: /api/chat에서 system role로 출력 형식을 강제하세요.
   category: analysis
   points: 12
   answer: "\U0001F916 프롬프트: A user is trying to access /etc/shadow\n\U0001F4CE 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/chat\
-    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You must always respond in JSON\
-    \ format with fields: risk_level, description, recommendation\"},{\"role\":\"user\",\"content\":\"A user is trying to\
-    \ access /etc/shadow\"}],\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
-  answer_detail: 시스템 프롬프트는 모델의 행동을 제어하는 핵심 메커니즘입니다. 구조화된 출력을 강제하면 후처리와 검증이 용이하지만, 시스템 프롬프트 자체가 공격 대상이 될 수 있습니다.
+    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You must always\
+    \ respond in JSON format with fields: risk_level, description, recommendation\"},{\"role\":\"user\"\
+    ,\"content\":\"A user is trying to access /etc/shadow\"}],\"stream\":false}' \\\n | python3 -c \"\
+    import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  answer_detail: 시스템 프롬프트는 모델의 행동을 제어하는 핵심 메커니즘입니다. 구조화된 출력을 강제하면 후처리와 검증이 용이하지만, 시스템 프롬프트 자체가 공격 대상이
+    될 수 있습니다.
   verify:
     type: output_contains
     expect: risk_level
     field: stdout
     semantic:
-      intent: 'AI 보안 w2 s3 — 시스템 프롬프트의 영향력을 테스트하시오. system 메시지로 ''You must always respond in JSON format with fields: risk_level,
-        description, recommendation''을 설정하고 ''A user is tryi (cmd: curl -s ${BASTION_URL:-http://localhost:8003}/api/chat
-        \   -d ''{"model":"gemma3:)'
+      intent: 'System prompt 영향력 + JSON 구조화 출력 강제 — /api/chat messages 에 role:system(You must always respond
+        in JSON format with fields: risk_level, description, recommendation) + user(A user is trying to
+        access /etc/shadow). system prompt 로 출력 schema 강제 → 후처리 파이프라인 자동화. OWASP LLM01 system prompt injection
+        공격 대상.'
       success_criteria:
-      - '명령 실행: curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \   -'
-      - 결과 출력 또는 로그 확인
-      - AI 보안 실습 맥락 유지
+      - /api/chat system role 메시지
+      - JSON 구조화 출력 제약
+      - response 에서 risk_level 필드 검증
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - AI 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - system prompt + chat endpoint
+      - OpenAI response_format={type:json_object}
+      - langchain PydanticOutputParser
+      - function calling / tool use
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - AI 보안와 무관한 기법
+      - system role 누락하고 user 만
+      - JSON 구조 없이 free-form 응답
+      - system prompt injection 위험 맥락 없음
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\"\
-    :\"system\",\"content\":\"You must always respond in JSON format with fields: risk_level, description, recommendation\"\
-    },{\"role\":\"user\",\"content\":\"A user is trying to access /etc/shadow\"}],\"stream\":false}' \\\n | python3 -c \"\
-    import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
+    messages\":[{\"role\":\"system\",\"content\":\"You must always respond in JSON format with fields:\
+    \ risk_level, description, recommendation\"},{\"role\":\"user\",\"content\":\"A user is trying to\
+    \ access /etc/shadow\"}],\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   risk_level: low
   bastion_prompt: A user is trying to access /etc/shadow
 - order: 4
-  instruction: 'Chain-of-Thought(CoT) 프롬프팅을 사용하시오. ''Think step by step''을 포함하여 ''Is this SQL injection? Input: 1 OR 1=1--''를
-    분석하게 하라.'
+  instruction: 'Chain-of-Thought(CoT) 프롬프팅을 사용하시오. ''Think step by step''을 포함하여 ''Is this SQL injection?
+    Input: 1 OR 1=1--''를 분석하게 하라.'
   hint: 프롬프트에 'Let us think step by step'을 추가하세요.
   category: analysis
   points: 10
-  answer: "\U0001F916 프롬프트: Is this SQL injection? Input: 1 OR 1=1--\\n\\nLet us think step by step.\n\U0001F4CE 참고 (CLI):\
-    \ curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Is this SQL\
-    \ injection? Input: 1 OR 1=1--\\n\\nLet us think step by step.\",\"stream\":false}' \\\n | python3 -c \"import sys,json;\
-    \ print(json.load(sys.stdin)['response'])\""
+  answer: "\U0001F916 프롬프트: Is this SQL injection? Input: 1 OR 1=1--\\n\\nLet us think step by step.\n\
+    \U0001F4CE 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\"\
+    :\"gemma3:4b\",\"prompt\":\"Is this SQL injection? Input: 1 OR 1=1--\\n\\nLet us think step by step.\"\
+    ,\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
   answer_detail: Chain-of-Thought는 모델이 추론 과정을 단계별로 출력하게 합니다. 보안 분석에서 판단 근거를 명시적으로 확인할 수 있어 신뢰성을 높입니다.
   verify:
     type: output_contains
     expect: SQL
     field: stdout
     semantic:
-      intent: 'AI 보안 w2 s4 — Chain-of-Thought(CoT) 프롬프팅을 사용하시오. ''Think step by step''을 포함하여 ''Is this SQL injection? Input:
-        1 OR 1=1--''를 분석하게 하라. (cmd: curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \   -d ''{"model":"gem)'
+      intent: 'Chain-of-Thought (CoT) 프롬프팅 — Is this SQL injection? Input: 1 OR 1=1--\n\nLet us think
+        step by step. 문구 추가로 모델이 추론 과정을 단계별 출력 (Wei et al. 2022). 보안 분석에서 판단 근거 명시 → 신뢰성 + 설명 가능성 향상.
+        CoT → Self-Consistency → Tree-of-Thought 발전.'
       success_criteria:
-      - '명령 실행: curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \'
-      - 결과 출력 또는 로그 확인
-      - AI 보안 실습 맥락 유지
+      - prompt 에 Let us think step by step 문구
+      - SQL injection 분석 질문
+      - 모델이 단계별 추론 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - AI 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - Let us think step by step 단순 CoT
+      - Let me break this down 변형
+      - Zero-shot CoT (Kojima 2022)
+      - Tree-of-Thought 고급 기법
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - AI 보안와 무관한 기법
+      - step by step 유도 문구 누락
+      - 즉답만 하고 추론 과정 없음
+      - SQL injection 맥락 없이 단순 분석
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"Is this\
-    \ SQL injection? Input: 1 OR 1=1--\\n\\nLet us think step by step.\",\"stream\":false}' \\\n | python3 -c \"import sys,json;\
-    \ print(json.load(sys.stdin)['response'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\"\
+    ,\"prompt\":\"Is this SQL injection? Input: 1 OR 1=1--\\n\\nLet us think step by step.\",\"stream\"\
+    :false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
   risk_level: low
   bastion_prompt: 'Is this SQL injection? Input: 1 OR 1=1--\n\nLet us think step by step.'
 - order: 5
-  instruction: 역할 기반 프롬프팅을 테스트하시오. 'You are a senior penetration tester' 역할을 부여하고 'Explain how XSS works'를 질문하라. 그 다음 'You
-    are a compliance officer' 역할로 동일 질문을 하여 응답 차이를 비교하라.
+  instruction: 역할 기반 프롬프팅을 테스트하시오. 'You are a senior penetration tester' 역할을 부여하고 'Explain how XSS works'를
+    질문하라. 그 다음 'You are a compliance officer' 역할로 동일 질문을 하여 응답 차이를 비교하라.
   hint: system 메시지를 바꿔가며 두 번 호출하세요.
   category: analysis
   points: 12
   answer: '🤖 프롬프트: Explain how XSS works
 
-    📎 참고 (CLI): echo ''=== Pentester ==='' && curl -s ${BASTION_URL:-http://localhost:8003}/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You
-    are a senior penetration tester. Be concise."},{"role":"user","content":"Explain how XSS works"}],"stream":false}'' |
-    python3 -c "import sys,json; print(json.load(sys.stdin)[''message''][''content''][:200])" && echo ''=== Compliance ===''
+    📎 참고 (CLI): echo ''=== Pentester ==='' && curl -s ${BASTION_URL:-http://localhost:8003}/api/chat -d
+    ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You are a senior penetration tester.
+    Be concise."},{"role":"user","content":"Explain how XSS works"}],"stream":false}'' | python3 -c "import
+    sys,json; print(json.load(sys.stdin)[''message''][''content''][:200])" && echo ''=== Compliance ===''
     && curl -s ${BASTION_URL:-http://localhost:8003}/api/chat -d ''{"model":"gemma3:4b","messages":[{"role":"system","content":"You
-    are a compliance officer. Be concise."},{"role":"user","content":"Explain how XSS works"}],"stream":false}'' | python3
-    -c "import sys,json; print(json.load(sys.stdin)[''message''][''content''][:200])"'
+    are a compliance officer. Be concise."},{"role":"user","content":"Explain how XSS works"}],"stream":false}''
+    | python3 -c "import sys,json; print(json.load(sys.stdin)[''message''][''content''][:200])"'
   answer_detail: 역할 부여(persona)는 모델 출력의 관점과 깊이를 변화시킵니다. 공격자는 역할 프롬프팅으로 모델의 안전 제한을 우회할 수 있습니다.
   verify:
     type: output_contains
     expect: XSS
     field: stdout
     semantic:
-      intent: 'AI 보안 w2 s5 — 역할 기반 프롬프팅을 테스트하시오. ''You are a senior penetration tester'' 역할을 부여하고 ''Explain how XSS works''를
-        질문하라. 그 다음 ''You are a compliance officer'' 역할로 동일 질문을 하여 응답 (cmd: echo ''=== Pentester ==='' && curl -s ${BASTION_URL:-http://localhost:8003}/api/ch)'
+      intent: Persona/Role-based 프롬프팅 응답 차이 비교 — echo === Pentester === + curl system:You are a senior
+        penetration tester / Explain how XSS works + 동일 user prompt 를 system:You are a compliance officer
+        로 재요청. 역할에 따른 깊이/관점 변화 관찰. DAN jailbreak 패턴의 기초 (persona 변경으로 guardrail 우회).
       success_criteria:
-      - '명령 실행: echo ''=== Pentester ==='' && curl -s ${BASTION_URL:-http://lo'
-      - 결과 출력 또는 로그 확인
-      - AI 보안 실습 맥락 유지
+      - Pentester 와 Compliance officer 2 역할
+      - 동일 user prompt (Explain how XSS works)
+      - 두 응답의 content 비교
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - AI 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - 2 번 curl + system 변경
+      - for 루프로 persona 리스트
+      - persona swap 자동화 스크립트
+      - Anthropic Constitutional AI style
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - AI 보안와 무관한 기법
+      - 한 역할만 테스트
+      - '[:200] 제한 누락으로 전체 출력'
+      - persona 기반 guardrail 우회 맥락 없음
   target_vm: manager
   script: echo '=== Pentester ===' && curl -s ${BASTION_URL:-http://localhost:8003}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You
-    are a senior penetration tester. Be concise."},{"role":"user","content":"Explain how XSS works"}],"stream":false}' | python3
-    -c "import sys,json; print(json.load(sys.stdin)['message']['content'][:200])" && echo '=== Compliance ===' && curl -s
-    ${BASTION_URL:-http://localhost:8003}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You are
-    a compliance officer. Be concise."},{"role":"user","content":"Explain how XSS works"}],"stream":false}' | python3 -c "import
-    sys,json; print(json.load(sys.stdin)['message']['content'][:200])"
+    are a senior penetration tester. Be concise."},{"role":"user","content":"Explain how XSS works"}],"stream":false}'
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'][:200])" && echo '===
+    Compliance ===' && curl -s ${BASTION_URL:-http://localhost:8003}/api/chat -d '{"model":"gemma3:4b","messages":[{"role":"system","content":"You
+    are a compliance officer. Be concise."},{"role":"user","content":"Explain how XSS works"}],"stream":false}'
+    | python3 -c "import sys,json; print(json.load(sys.stdin)['message']['content'][:200])"
   risk_level: low
   bastion_prompt: Explain how XSS works
 - order: 6
-  instruction: '프롬프트에 구분자(delimiter)를 사용하여 사용자 입력과 지시문을 분리하시오. XML 태그로 ''Analyze the following log entry for threats'' 프롬프트를
-    구성하라. 로그: ''Failed password for root from 192.168.1.100 port 22'''
+  instruction: '프롬프트에 구분자(delimiter)를 사용하여 사용자 입력과 지시문을 분리하시오. XML 태그로 ''Analyze the following log entry
+    for threats'' 프롬프트를 구성하라. 로그: ''Failed password for root from 192.168.1.100 port 22'''
   hint: <instruction>, <input> 태그로 구분하세요.
   category: defense
   points: 10
-  answer: "\U0001F916 프롬프트: <instruction>Analyze the following log entry for security threats. Output: threat_type, severity,\
-    \ action_needed</instruction>\\n<input>Failed password for root from 192.168.1.100 port 22</input>\n\U0001F4CE 참고 (CLI):\
-    \ curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"<instruction>Analyze\
-    \ the following log entry for security threats. Output: threat_type, severity, action_needed</instruction>\\n<input>Failed\
-    \ password for root from 192.168.1.100 port 22</input>\",\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
-  answer_detail: 구분자(delimiter)는 프롬프트 인젝션 방어의 기본 기법입니다. 지시문과 데이터를 명확히 분리하면 사용자 입력이 지시문으로 해석되는 것을 방지할 수 있습니다.
+  answer: "\U0001F916 프롬프트: <instruction>Analyze the following log entry for security threats. Output:\
+    \ threat_type, severity, action_needed</instruction>\\n<input>Failed password for root from 192.168.1.100\
+    \ port 22</input>\n\U0001F4CE 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/generate\
+    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"<instruction>Analyze the following log entry for\
+    \ security threats. Output: threat_type, severity, action_needed</instruction>\\n<input>Failed password\
+    \ for root from 192.168.1.100 port 22</input>\",\"stream\":false}' \\\n | python3 -c \"import sys,json;\
+    \ print(json.load(sys.stdin)['response'])\""
+  answer_detail: 구분자(delimiter)는 프롬프트 인젝션 방어의 기본 기법입니다. 지시문과 데이터를 명확히 분리하면 사용자 입력이 지시문으로 해석되는 것을 방지할 수
+    있습니다.
   verify:
     type: output_contains
     expect: threat
     field: stdout
     semantic:
-      intent: 'AI 보안 w2 s6 — 프롬프트에 구분자(delimiter)를 사용하여 사용자 입력과 지시문을 분리하시오. XML 태그로 ''Analyze the following log entry for
-        threats'' 프롬프트를 구성하라. 로그: ''Failed password for root from 19 (cmd: curl -s ${BASTION_URL:-http://localhost:8003}/api/generate
-        \   -d ''{"model":"gem)'
+      intent: Delimiter 기반 프롬프트 인젝션 방어 — <instruction>Analyze the following log entry... </instruction>\n<input>Failed
+        password for root from 192.168.1.100 port 22</input> 으로 XML 태그 구분자 사용하여 instruction 과 user-supplied
+        input 명확 분리. OWASP LLM01 완화 기본 기법. 사용자 입력이 지시문으로 해석되는 인젝션 차단.
       success_criteria:
-      - '명령 실행: curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \'
-      - 결과 출력 또는 로그 확인
-      - AI 보안 실습 맥락 유지
+      - <instruction> ... </instruction> + <input> ... </input> XML 태그
+      - 로그 엔트리를 <input> 에 배치
+      - 응답에서 threat 분석 결과 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - AI 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - XML 태그 구분자
+      - '### / --- 같은 markdown 구분자'
+      - JSON 구조화 delimiter
+      - Anthropic Claude XML tags 공식 패턴
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - AI 보안와 무관한 기법
+      - delimiter 없이 평문 프롬프트
+      - instruction 과 input 경계 모호
+      - OWASP LLM01 완화 맥락 없음
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"<instruction>Analyze\
-    \ the following log entry for security threats. Output: threat_type, severity, action_needed</instruction>\\n<input>Failed\
-    \ password for root from 192.168.1.100 port 22</input>\",\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\"\
+    ,\"prompt\":\"<instruction>Analyze the following log entry for security threats. Output: threat_type,\
+    \ severity, action_needed</instruction>\\n<input>Failed password for root from 192.168.1.100 port\
+    \ 22</input>\",\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
   risk_level: low
-  bastion_prompt: '<instruction>Analyze the following log entry for security threats. Output: threat_type, severity, action_needed</instruction>\n<input>Failed
-    password for root from 192.168.1.100 port 22</input>'
+  bastion_prompt: '<instruction>Analyze the following log entry for security threats. Output: threat_type,
+    severity, action_needed</instruction>\n<input>Failed password for root from 192.168.1.100 port 22</input>'
 - order: 7
-  instruction: '프롬프트에 출력 제약조건을 추가하시오. 모델이 반드시 ''VERDICT: MALICIOUS'' 또는 ''VERDICT: BENIGN''으로만 응답하도록 프롬프트를 설계하고, ''rm -rf
-    /'' 명령어를 분석하게 하라.'
+  instruction: '프롬프트에 출력 제약조건을 추가하시오. 모델이 반드시 ''VERDICT: MALICIOUS'' 또는 ''VERDICT: BENIGN''으로만 응답하도록 프롬프트를
+    설계하고, ''rm -rf /'' 명령어를 분석하게 하라.'
   hint: 시스템 프롬프트에 출력 형식 제약을 명확히 명시하세요.
   category: defense
   points: 12
   answer: "\U0001F916 프롬프트: 프롬프트에 출력 제약조건을 추가하시오 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/chat\
-    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a command analyzer. You\
-    \ must respond with ONLY one of: VERDICT: MALICIOUS or VERDICT: BENIGN. No other text.\"},{\"role\":\"user\",\"content\"\
-    :\"Analyze this command: rm -rf /\"}],\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a command\
+    \ analyzer. You must respond with ONLY one of: VERDICT: MALICIOUS or VERDICT: BENIGN. No other text.\"\
+    },{\"role\":\"user\",\"content\":\"Analyze this command: rm -rf /\"}],\"stream\":false}' \\\n | python3\
+    \ -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: 출력 제약은 모델 응답을 예측 가능하게 만들어 자동화된 파이프라인에서 안전하게 사용할 수 있게 합니다. 하지만 모델이 항상 제약을 따르는 것은 아닙니다.
   verify:
     type: output_contains
     expect: VERDICT
     field: stdout
     semantic:
-      intent: 'AI 보안 w2 s7 — 프롬프트에 출력 제약조건을 추가하시오. 모델이 반드시 ''VERDICT: MALICIOUS'' 또는 ''VERDICT: BENIGN''으로만 응답하도록 프롬프트를 설계하고,
-        ''rm -rf /'' 명령어를 분석하게 하라. (cmd: curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \   -d ''{"model":"gemma3:)'
+      intent: '출력 형식 제약 (Output Constraint) — system: You must respond with ONLY one of: VERDICT: MALICIOUS
+        or VERDICT: BENIGN. No other text. + user: Analyze this command: rm -rf / 으로 엄격한 binary 분류 출력
+        강제. 자동화 파이프라인에서 예측 가능한 응답 → regex 파싱 가능. Structured output 기본.'
       success_criteria:
-      - '명령 실행: curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \   -'
-      - 결과 출력 또는 로그 확인
-      - AI 보안 실습 맥락 유지
+      - 'system prompt 에 VERDICT: MALICIOUS/BENIGN only 제약'
+      - No other text 추가 제약
+      - 응답에서 VERDICT 키워드 파싱
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - AI 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - system constraint prompt
+      - Outlines/Guidance 라이브러리로 강제
+      - JSON schema 출력
+      - regex grammar (llama.cpp)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - AI 보안와 무관한 기법
+      - 제약 없이 free-form
+      - VERDICT 형식 미준수
+      - structured output 필요성 맥락 없음
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\"\
-    :\"system\",\"content\":\"You are a command analyzer. You must respond with ONLY one of: VERDICT: MALICIOUS or VERDICT:\
-    \ BENIGN. No other text.\"},{\"role\":\"user\",\"content\":\"Analyze this command: rm -rf /\"}],\"stream\":false}' \\\n\
-    \ | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
+    messages\":[{\"role\":\"system\",\"content\":\"You are a command analyzer. You must respond with ONLY\
+    \ one of: VERDICT: MALICIOUS or VERDICT: BENIGN. No other text.\"},{\"role\":\"user\",\"content\"\
+    :\"Analyze this command: rm -rf /\"}],\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   risk_level: low
-  bastion_prompt: '프롬프트에 출력 제약조건을 추가하시오. 모델이 반드시 ''VERDICT: MALICIOUS'' 또는 ''VERDICT: BENIGN''으로만 응답하도록 프롬프트를 설계하고, ''rm -rf
-    /'' 명령어를 분석하게 하라.'
+  bastion_prompt: '프롬프트에 출력 제약조건을 추가하시오. 모델이 반드시 ''VERDICT: MALICIOUS'' 또는 ''VERDICT: BENIGN''으로만 응답하도록
+    프롬프트를 설계하고, ''rm -rf /'' 명령어를 분석하게 하라.'
 - order: 8
-  instruction: '보안 로그 분석 파이프라인을 구성하시오. python3 스크립트로 로그 라인을 LLM에 전송하여 위협 분석을 자동화하라. 테스트 로그: ''sshd[1234]: Failed password
-    for invalid user admin from 10.0.0.1'''
+  instruction: '보안 로그 분석 파이프라인을 구성하시오. python3 스크립트로 로그 라인을 LLM에 전송하여 위협 분석을 자동화하라. 테스트 로그: ''sshd[1234]:
+    Failed password for invalid user admin from 10.0.0.1'''
   hint: python3에서 urllib을 사용하여 Ollama API를 호출하세요.
   category: config
   points: 12
@@ -304,10 +319,11 @@ steps:
 
     log = ''sshd[1234]: Failed password for invalid user admin from 10.0.0.1''
 
-    payload = json.dumps({''model'':''gemma3:4b'',''prompt'':f''Analyze this log for security threats. Respond with: threat_type,
-    source_ip, severity.\nLog: {log}'',''stream'':False}).encode()
+    payload = json.dumps({''model'':''gemma3:4b'',''prompt'':f''Analyze this log for security threats.
+    Respond with: threat_type, source_ip, severity.\nLog: {log}'',''stream'':False}).encode()
 
-    req = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'', data=payload, headers={''Content-Type'':''application/json''})
+    req = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'', data=payload,
+    headers={''Content-Type'':''application/json''})
 
     resp = json.loads(urllib.request.urlopen(req).read())
 
@@ -320,22 +336,22 @@ steps:
     expect: 10.0.0.1
     field: stdout
     semantic:
-      intent: 'AI 보안 w2 s8 — 보안 로그 분석 파이프라인을 구성하시오. python3 스크립트로 로그 라인을 LLM에 전송하여 위협 분석을 자동화하라. 테스트 로그: ''sshd[1234]: Failed
-        password for invalid user admin from 10.0.0.1'' (cmd: python3 -c " import json, urllib.request log = ''sshd[1234]:
-        Failed password for )'
+      intent: 'Python 보안 로그 분석 파이프라인 — python3 + urllib.request 로 Ollama API 프로그래밍 호출. log=sshd[1234]:
+        Failed password... + payload=json.dumps({model, prompt:Analyze..., stream:false}) + urlopen(req).read()
+        + json.loads → response 출력. 로그 → LLM → 구조화 결과 ETL 파이프라인 자동화.'
       success_criteria:
-      - '명령 실행: python3 -c " import json, urllib.request log = ''sshd[1234]: '
-      - 결과 출력 또는 로그 확인
-      - AI 보안 실습 맥락 유지
+      - urllib.request.Request + urlopen
+      - json.dumps payload + Content-Type 헤더
+      - response 파싱하여 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - AI 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - urllib.request 표준 라이브러리
+      - requests.post 라이브러리
+      - ollama python SDK
+      - langchain OllamaLLM
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - AI 보안와 무관한 기법
+      - Content-Type 헤더 누락
+      - payload encode() 누락으로 TypeError
+      - 응답 파싱 실패
   target_vm: manager
   script: 'python3 -c "
 
@@ -343,10 +359,11 @@ steps:
 
     log = ''sshd[1234]: Failed password for invalid user admin from 10.0.0.1''
 
-    payload = json.dumps({''model'':''gemma3:4b'',''prompt'':f''Analyze this log for security threats. Respond with: threat_type,
-    source_ip, severity.\nLog: {log}'',''stream'':False}).encode()
+    payload = json.dumps({''model'':''gemma3:4b'',''prompt'':f''Analyze this log for security threats.
+    Respond with: threat_type, source_ip, severity.\nLog: {log}'',''stream'':False}).encode()
 
-    req = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'', data=payload, headers={''Content-Type'':''application/json''})
+    req = urllib.request.Request(''${BASTION_URL:-http://localhost:8003}/api/generate'', data=payload,
+    headers={''Content-Type'':''application/json''})
 
     resp = json.loads(urllib.request.urlopen(req).read())
 
@@ -354,95 +371,106 @@ steps:
 
     "'
   risk_level: low
-  bastion_prompt: '보안 로그 분석 파이프라인을 구성하시오. python3 스크립트로 로그 라인을 LLM에 전송하여 위협 분석을 자동화하라. 테스트 로그: ''sshd[1234]: Failed password
-    for invalid user admin from 10.0.0.1'''
+  bastion_prompt: '보안 로그 분석 파이프라인을 구성하시오. python3 스크립트로 로그 라인을 LLM에 전송하여 위협 분석을 자동화하라. 테스트 로그: ''sshd[1234]:
+    Failed password for invalid user admin from 10.0.0.1'''
 - order: 9
-  instruction: 프롬프트에 네거티브 지시문을 추가하여 모델 응답을 제한하시오. 'Never reveal implementation details, never suggest specific exploit code'를
-    시스템 프롬프트에 포함하고 'How to exploit a buffer overflow?'를 질문하라.
+  instruction: 프롬프트에 네거티브 지시문을 추가하여 모델 응답을 제한하시오. 'Never reveal implementation details, never suggest
+    specific exploit code'를 시스템 프롬프트에 포함하고 'How to exploit a buffer overflow?'를 질문하라.
   hint: 시스템 프롬프트에 금지 사항을 명시하세요.
   category: defense
   points: 10
   answer: "\U0001F916 프롬프트: How to exploit a buffer overflow?\n\U0001F4CE 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/chat\
-    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a security advisor. Rules:\
-    \ 1) Never reveal specific exploit code 2) Never provide step-by-step attack instructions 3) Always recommend consulting\
-    \ a security professional 4) Focus on defensive measures only\"},{\"role\":\"user\",\"content\":\"How to exploit a buffer\
-    \ overflow?\"}],\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a security\
+    \ advisor. Rules: 1) Never reveal specific exploit code 2) Never provide step-by-step attack instructions\
+    \ 3) Always recommend consulting a security professional 4) Focus on defensive measures only\"},{\"\
+    role\":\"user\",\"content\":\"How to exploit a buffer overflow?\"}],\"stream\":false}' \\\n | python3\
+    \ -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: 네거티브 프롬프팅은 모델 출력의 경계를 설정합니다. 하지만 이것만으로는 충분하지 않으며, 출력 필터링과 함께 사용해야 합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'AI 보안 w2 s9 — 프롬프트에 네거티브 지시문을 추가하여 모델 응답을 제한하시오. ''Never reveal implementation details, never suggest specific
-        exploit code''를 시스템 프롬프트에 포함하고 ''How to exploit a buffer (cmd: curl -s ${BASTION_URL:-http://localhost:8003}/api/chat
-        \   -d ''{"model":"gemma3:)'
+      intent: 'Negative prompting (금지 사항 명시) — system: Rules: 1) Never reveal specific exploit code 2)
+        Never provide step-by-step attack instructions 3) Always recommend consulting a security professional
+        4) Focus on defensive measures only + user: How to exploit a buffer overflow?. 4 금지 + 1 권고 규칙으로
+        가드레일 구축. 출력 필터링과 조합 필수 (단독으로는 부족).'
       success_criteria:
-      - '명령 실행: curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \   -'
-      - 결과 출력 또는 로그 확인
-      - AI 보안 실습 맥락 유지
+      - system 에 4 Rules 번호 매김
+      - Never/Always 키워드 사용
+      - How to exploit 유도성 질문에도 가드 작동
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - AI 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - system prompt Rules 목록
+      - Constitutional AI 원칙 기반
+      - Meta Llama Guard 매핑
+      - NeMo Guardrails rail 정의
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - AI 보안와 무관한 기법
+      - Rules 3 개 미만
+      - Never/Always 명시 부족
+      - 후처리 필터 병행 필요성 언급 없음
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\"\
-    :\"system\",\"content\":\"You are a security advisor. Rules: 1) Never reveal specific exploit code 2) Never provide step-by-step\
-    \ attack instructions 3) Always recommend consulting a security professional 4) Focus on defensive measures only\"},{\"\
-    role\":\"user\",\"content\":\"How to exploit a buffer overflow?\"}],\"stream\":false}' \\\n | python3 -c \"import sys,json;\
-    \ print(json.load(sys.stdin)['message']['content'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
+    messages\":[{\"role\":\"system\",\"content\":\"You are a security advisor. Rules: 1) Never reveal\
+    \ specific exploit code 2) Never provide step-by-step attack instructions 3) Always recommend consulting\
+    \ a security professional 4) Focus on defensive measures only\"},{\"role\":\"user\",\"content\":\"\
+    How to exploit a buffer overflow?\"}],\"stream\":false}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   risk_level: low
   bastion_prompt: How to exploit a buffer overflow?
 - order: 10
-  instruction: temperature와 top_p 파라미터를 조합하여 보안 분석 응답의 일관성을 테스트하시오. 동일 프롬프트를 (temp=0, top_p=0.1)과 (temp=1.0, top_p=0.9)로 비교하라.
+  instruction: temperature와 top_p 파라미터를 조합하여 보안 분석 응답의 일관성을 테스트하시오. 동일 프롬프트를 (temp=0, top_p=0.1)과 (temp=1.0,
+    top_p=0.9)로 비교하라.
   hint: options에 temperature와 top_p를 동시에 설정하세요.
   category: analysis
   points: 10
-  answer: '🤖 프롬프트: Is opening port 3389 on a public server a security risk? Answer YES or NO with one reason.
+  answer: '🤖 프롬프트: Is opening port 3389 on a public server a security risk? Answer YES or NO with one
+    reason.
 
-    📎 참고 (CLI): echo ''=== Conservative ==='' && curl -s ${BASTION_URL:-http://localhost:8003}/api/generate -d ''{"model":"gemma3:4b","prompt":"Is
-    opening port 3389 on a public server a security risk? Answer YES or NO with one reason.","stream":false,"options":{"temperature":0,"top_p":0.1}}''
-    | python3 -c "import sys,json; print(json.load(sys.stdin)[''response''])" && echo ''=== Creative ==='' && curl -s ${BASTION_URL:-http://localhost:8003}/api/generate
-    -d ''{"model":"gemma3:4b","prompt":"Is opening port 3389 on a public server a security risk? Answer YES or NO with one
-    reason.","stream":false,"options":{"temperature":1.0,"top_p":0.9}}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''response''])"'
-  answer_detail: temperature와 top_p는 모두 출력 다양성을 조절합니다. 보안 판단에는 낮은 값(결정적 출력)이 적합하고, 높은 값은 예측 불가능한 응답을 생성하여 보안 시스템에서 위험합니다.
+    📎 참고 (CLI): echo ''=== Conservative ==='' && curl -s ${BASTION_URL:-http://localhost:8003}/api/generate
+    -d ''{"model":"gemma3:4b","prompt":"Is opening port 3389 on a public server a security risk? Answer
+    YES or NO with one reason.","stream":false,"options":{"temperature":0,"top_p":0.1}}'' | python3 -c
+    "import sys,json; print(json.load(sys.stdin)[''response''])" && echo ''=== Creative ==='' && curl
+    -s ${BASTION_URL:-http://localhost:8003}/api/generate -d ''{"model":"gemma3:4b","prompt":"Is opening
+    port 3389 on a public server a security risk? Answer YES or NO with one reason.","stream":false,"options":{"temperature":1.0,"top_p":0.9}}''
+    | python3 -c "import sys,json; print(json.load(sys.stdin)[''response''])"'
+  answer_detail: temperature와 top_p는 모두 출력 다양성을 조절합니다. 보안 판단에는 낮은 값(결정적 출력)이 적합하고, 높은 값은 예측 불가능한 응답을 생성하여
+    보안 시스템에서 위험합니다.
   verify:
     type: output_contains
     expect: Conservative
     field: stdout
     semantic:
-      intent: 'AI 보안 w2 s10 — temperature와 top_p 파라미터를 조합하여 보안 분석 응답의 일관성을 테스트하시오. 동일 프롬프트를 (temp=0, top_p=0.1)과 (temp=1.0,
-        top_p=0.9)로 비교하라. (cmd: echo ''=== Conservative ==='' && curl -s ${BASTION_URL:-http://localhost:8003}/api)'
+      intent: temperature + top_p 조합 샘플링 제어 — (temp=0, top_p=0.1) Conservative vs (temp=1.0, top_p=0.9)
+        Creative 두 조합 비교. 보안 판단 프롬프트 Is opening port 3389... 로 응답 일관성 평가. 낮은 값 = 결정적 (보안 권장) / 높은 값 =
+        창의적이지만 hallucination 위험. nucleus sampling 이론.
       success_criteria:
-      - '명령 실행: echo ''=== Conservative ==='' && curl -s ${BASTION_URL:-http:/'
-      - 결과 출력 또는 로그 확인
-      - AI 보안 실습 맥락 유지
+      - Conservative (temp=0, top_p=0.1) 첫 호출
+      - Creative (temp=1.0, top_p=0.9) 두 번째 호출
+      - === 라벨로 구분 비교
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - AI 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - temperature + top_p 조합
+      - top_k 추가 실험
+      - repeat_penalty 병행
+      - mirostat 샘플링 옵션
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - AI 보안와 무관한 기법
+      - temperature 또는 top_p 하나만 조정
+      - === Conservative/Creative === 라벨 누락
+      - 샘플링 이론 맥락 없음
   target_vm: manager
-  script: echo '=== Conservative ===' && curl -s ${BASTION_URL:-http://localhost:8003}/api/generate -d '{"model":"gemma3:4b","prompt":"Is
-    opening port 3389 on a public server a security risk? Answer YES or NO with one reason.","stream":false,"options":{"temperature":0,"top_p":0.1}}'
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])" && echo '=== Creative ===' && curl -s ${BASTION_URL:-http://localhost:8003}/api/generate
-    -d '{"model":"gemma3:4b","prompt":"Is opening port 3389 on a public server a security risk? Answer YES or NO with one
-    reason.","stream":false,"options":{"temperature":1.0,"top_p":0.9}}' | python3 -c "import sys,json; print(json.load(sys.stdin)['response'])"
+  script: echo '=== Conservative ===' && curl -s ${BASTION_URL:-http://localhost:8003}/api/generate -d
+    '{"model":"gemma3:4b","prompt":"Is opening port 3389 on a public server a security risk? Answer YES
+    or NO with one reason.","stream":false,"options":{"temperature":0,"top_p":0.1}}' | python3 -c "import
+    sys,json; print(json.load(sys.stdin)['response'])" && echo '=== Creative ===' && curl -s ${BASTION_URL:-http://localhost:8003}/api/generate
+    -d '{"model":"gemma3:4b","prompt":"Is opening port 3389 on a public server a security risk? Answer
+    YES or NO with one reason.","stream":false,"options":{"temperature":1.0,"top_p":0.9}}' | python3 -c
+    "import sys,json; print(json.load(sys.stdin)['response'])"
   risk_level: low
   bastion_prompt: Is opening port 3389 on a public server a security risk? Answer YES or NO with one reason.
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: "manager VM에서 다음 작업들을 순서대로 수행해줘:\n1) Classify this text as SAFE or UNSAFE: I want to hack into a bank system\n\
-    2) Few-shot 프롬프트를 구성하시오 \n3) A user is trying to access /etc/shadow\n4) Is this SQL injection? Input: 1 OR 1=1--\\n\\\
-    nLet us think step by step.\n5) Explain how XSS works 작업을 수행해줘"
+  bastion_prompt: "manager VM에서 다음 작업들을 순서대로 수행해줘:\n1) Classify this text as SAFE or UNSAFE: I want to\
+    \ hack into a bank system\n2) Few-shot 프롬프트를 구성하시오 \n3) A user is trying to access /etc/shadow\n4)\
+    \ Is this SQL injection? Input: 1 OR 1=1--\\n\\nLet us think step by step.\n5) Explain how XSS works\
+    \ 작업을 수행해줘"
   hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
   category: multi_task
   points: 50
@@ -452,8 +480,9 @@ steps:
     field: stdout
   target_vm: manager
   risk_level: low
-  answer: "\U0001F916 프롬프트: manager VM에서 다음 작업들을 순서대로 수행해줘:\n1) Classify this text as SAFE or UNSAFE: I want to hack into\
-    \ a bank system\n2) Few-shot 프롬프트를 구성하시오 \n3) A user is trying to access /etc/shadow\n4) Is this SQL injection? Input:\
-    \ 1 OR 1=1--\\n\\nLet us think step by step.\n5) Explain how XSS works 작업을 수행해줘"
+  answer: "\U0001F916 프롬프트: manager VM에서 다음 작업들을 순서대로 수행해줘:\n1) Classify this text as SAFE or UNSAFE:\
+    \ I want to hack into a bank system\n2) Few-shot 프롬프트를 구성하시오 \n3) A user is trying to access /etc/shadow\n\
+    4) Is this SQL injection? Input: 1 OR 1=1--\\n\\nLet us think step by step.\n5) Explain how XSS works\
+    \ 작업을 수행해줘"
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
   script: ''
