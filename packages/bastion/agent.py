@@ -1237,9 +1237,10 @@ class BastionAgent:
                 "model": self.model,
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False, "format": "json",
-                "options": {"temperature": 0.0, "num_predict": 120},
-            }, timeout=15.0)
-            parsed = json.loads(r.json().get("message", {}).get("content", "{}"))
+                "options": {"temperature": 0.0, "num_predict": 600},
+            }, timeout=20.0)
+            content = r.json().get("message", {}).get("content", "")
+            parsed = json.loads(content) if content else {}
             execute = bool(parsed.get("execute", False))
             target = str(parsed.get("target_vm", "attacker")).strip()
             command = str(parsed.get("command", "")).strip()
