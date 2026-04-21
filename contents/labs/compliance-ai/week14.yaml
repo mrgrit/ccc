@@ -3,8 +3,8 @@ title: 보안 교육/인식 프로그램 점검 실습 (AI 지원)
 version: ai
 course: compliance-ai
 week: 14
-description: 보안 교육 및 인식 프로그램의 기술적 지원 체계를 점검합니다. 사용자 보안 설정 확인, 보안 경고 메시지 구성, 교육 자료 배포 체계, 보안 인식 수준 측정을 수행합니다. AI SubAgent가
-  자동으로 명령을 실행하고 결과를 검증합니다.
+description: 보안 교육 및 인식 프로그램의 기술적 지원 체계를 점검합니다. 사용자 보안 설정 확인, 보안 경고 메시지 구성, 교육 자료 배포 체계, 보안 인식 수준 측정을
+  수행합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -28,10 +28,10 @@ steps:
 
     보안 정책을 준수하십시오.
 
-    ================================================================'' | sudo tee /etc/issue.net && sudo sed -i ''s/^#\?Banner.*/Banner
-    \/etc\/issue.net/'' /etc/ssh/sshd_config && grep ''^Banner'' /etc/ssh/sshd_config'
-  answer_detail: 로그인 배너는 법적 고지(legal notice) 역할을 합니다. 비인가 접근 시도자에게 경고를 표시하면, 법적 분쟁 시 '접근이 허가되지 않았음을 인지했다'는 증거가 됩니다. 대부분의 컴플라이언스
-    프레임워크에서 배너 설정을 요구합니다.
+    ================================================================'' | sudo tee /etc/issue.net && sudo
+    sed -i ''s/^#\?Banner.*/Banner \/etc\/issue.net/'' /etc/ssh/sshd_config && grep ''^Banner'' /etc/ssh/sshd_config'
+  answer_detail: 로그인 배너는 법적 고지(legal notice) 역할을 합니다. 비인가 접근 시도자에게 경고를 표시하면, 법적 분쟁 시 '접근이 허가되지 않았음을 인지했다'는
+    증거가 됩니다. 대부분의 컴플라이언스 프레임워크에서 배너 설정을 요구합니다.
   verify:
     type: output_contains
     expect:
@@ -39,21 +39,22 @@ steps:
     - Banner
     field: stdout
     semantic:
-      intent: '컴플라이언스 w14 s1 — SECU 서버({{SECU_IP}})에 SSH 접속 시 보안 경고 배너를 설정하시오. 모든 사용자에게 보안 정책을 알리는 첫 번째 방법입니다. (cmd: echo
-        ''================================================================ 경고: 본 시스템)'
+      intent: SSH 로그인 배너 법적 고지 설정 — echo 으로 비인가 접근 경고 문구 생성 후 sudo tee /etc/issue.net 으로 파일 작성, sudo sed
+        -i s/^#\?Banner.*/Banner \/etc\/issue.net/ /etc/ssh/sshd_config 으로 Banner 활성화, grep ^Banner 로
+        적용 검증. 법적 분쟁 시 접근 불허 고지 증거.
       success_criteria:
-      - '명령 실행: echo ''======================================================'
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - echo + tee 로 /etc/issue.net 경고 문구 작성
+      - sed -i 로 sshd_config 의 Banner 지시어 활성화 (/etc/issue.net 지정)
+      - grep ^Banner 로 최종 적용값 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - echo | tee + sed + grep 조합
+      - /etc/ssh/sshd_config.d/50-banner.conf drop-in 파일 생성
+      - Ansible lineinfile + copy 모듈로 멱등 관리
+      - OpenSSH 대체 시 /etc/issue 도 함께 설정
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - issue.net 파일 작성 없이 Banner 지시어만 설정
+      - sshd reload 고려 누락
+      - 법적 고지 중요성 맥락 누락
   target_vm: secu
   script: 'echo ''================================================================
 
@@ -63,8 +64,8 @@ steps:
 
     보안 정책을 준수하십시오.
 
-    ================================================================'' | sudo tee /etc/issue.net && sudo sed -i ''s/^#\?Banner.*/Banner
-    \/etc\/issue.net/'' /etc/ssh/sshd_config && grep ''^Banner'' /etc/ssh/sshd_config'
+    ================================================================'' | sudo tee /etc/issue.net && sudo
+    sed -i ''s/^#\?Banner.*/Banner \/etc\/issue.net/'' /etc/ssh/sshd_config && grep ''^Banner'' /etc/ssh/sshd_config'
   risk_level: low
   bastion_prompt: SECU 서버(10.20.30.1)에 SSH 접속 시 보안 경고 배너를 설정해줘
 - order: 2
@@ -91,28 +92,28 @@ steps:
     EOF
 
     cat /etc/motd'
-  answer_detail: MOTD(Message of the Day)는 로그인 성공 후 표시되는 메시지입니다. 보안 교육 일정, 최신 위협 정보, 보안 팁 등을 전달하여 사용자의 보안 인식을 높입니다. 동적 MOTD는
-    /etc/update-motd.d/ 스크립트로 구현합니다.
+  answer_detail: MOTD(Message of the Day)는 로그인 성공 후 표시되는 메시지입니다. 보안 교육 일정, 최신 위협 정보, 보안 팁 등을 전달하여 사용자의
+    보안 인식을 높입니다. 동적 MOTD는 /etc/update-motd.d/ 스크립트로 구현합니다.
   verify:
     type: output_contains
     expect: 보안 공지
     field: stdout
     semantic:
-      intent: '컴플라이언스 w14 s2 — 로그인 후 보안 알림 메시지(MOTD)를 설정하시오. 최신 보안 공지를 사용자에게 전달합니다. (cmd: cat << ''EOF'' | sudo tee /etc/motd  [보안
-        공지] 2024년 보안 교육 일정 - 정기 보안 교육: 매 분기 첫째주 -)'
+      intent: 로그인 후 MOTD 보안 공지 설정 — heredoc + sudo tee /etc/motd 로 보안 교육 일정(분기별 정기, 매월 피싱 훈련), 이메일 신고
+        채널(security@company.com), 패스워드 변경 안내(90일) 4개 항목 작성. 로그인 성공 후 표시되어 보안 인식 제고.
       success_criteria:
-      - '명령 실행: cat << ''EOF'' | sudo tee /etc/motd  [보안 공지] 2024년 보안 교육 일정 - '
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - cat << EOF | sudo tee /etc/motd 으로 공지 내용 작성
+      - 보안 교육 일정/피싱 훈련/신고 채널/패스워드 안내 4개 정보 포함
+      - cat /etc/motd 로 작성 결과 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - heredoc | tee /etc/motd
+      - /etc/update-motd.d/ 아래 스크립트 파일로 동적 MOTD 구현
+      - pam_motd.so 모듈 설정 확인
+      - Ansible template 으로 MOTD 관리
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - 4개 정보 중 일부만 포함
+      - cat 으로 저장 결과 확인 누락
+      - 보안 인식 제고 목적 맥락 누락
   target_vm: secu
   script: 'cat << ''EOF'' | sudo tee /etc/motd
 
@@ -140,33 +141,36 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 사용자의 패스워드 보안 수준을 점검해줘
 
-    📎 참고 (CLI): echo ''=== 사용자 패스워드 보안 수준 ==='' && for user in $(awk -F: ''$7 !~ /nologin|false/ {print $1}'' /etc/passwd);
-    do echo "[$user]"; sudo chage -l $user 2>/dev/null | grep -E ''(Last password|Maximum|Password expires)''; echo '''';
-    done'
-  answer_detail: 보안 교육의 효과는 사용자 행동으로 측정할 수 있습니다. 패스워드를 오랫동안 변경하지 않은 사용자, 간단한 패스워드를 사용하는 사용자를 식별하여 추가 교육 대상으로 선정합니다.
+    📎 참고 (CLI): echo ''=== 사용자 패스워드 보안 수준 ==='' && for user in $(awk -F: ''$7 !~ /nologin|false/ {print
+    $1}'' /etc/passwd); do echo "[$user]"; sudo chage -l $user 2>/dev/null | grep -E ''(Last password|Maximum|Password
+    expires)''; echo ''''; done'
+  answer_detail: 보안 교육의 효과는 사용자 행동으로 측정할 수 있습니다. 패스워드를 오랫동안 변경하지 않은 사용자, 간단한 패스워드를 사용하는 사용자를 식별하여 추가 교육
+    대상으로 선정합니다.
   verify:
     type: output_contains
     expect: 사용자 패스워드 보안 수준
     field: stdout
     semantic:
-      intent: '컴플라이언스 w14 s3 — 사용자의 패스워드 보안 수준을 점검하시오. 패스워드 변경 이력과 복잡도 설정을 확인합니다. (cmd: echo ''=== 사용자 패스워드 보안 수준 ==='' &&
-        for user in $(awk -F: ''$7 !~ /nologin|false/ {p)'
+      intent: '사용자 패스워드 보안 수준 점검 — awk -F: $7 !~ /nologin|false/ /etc/passwd 로 활성 사용자 추출 후 for 루프에서 sudo
+        chage -l $user | grep -E Last password|Maximum|Password expires 로 각 계정의 최종 변경일/최대 사용일/만료일 3개 속성
+        확인. 장기 미변경 사용자 식별하여 추가 교육 대상 도출.'
       success_criteria:
-      - '명령 실행: echo ''=== 사용자 패스워드 보안 수준 ==='' && for user in $(awk -F: ''$7 !'
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - awk 로 활성 계정 추출
+      - for 루프에서 chage -l <user> 실행
+      - Last password change/Maximum/Password expires 3개 필드 grep 으로 핵심 속성만 추출
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - awk + for + chage -l + grep -E 조합
+      - getent shadow 로 shadow 파일 직접 조회
+      - pam_tally2 / faillock 로 실패 카운트 확인
+      - rkhunter/chkrootkit 보완 보안 점검
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - 활성 사용자 필터 없이 전체 passwd 나열
+      - chage 실행 없이 설명만
+      - 교육 대상 도출 맥락 누락
   target_vm: secu
-  script: 'echo ''=== 사용자 패스워드 보안 수준 ==='' && for user in $(awk -F: ''$7 !~ /nologin|false/ {print $1}'' /etc/passwd); do
-    echo "[$user]"; sudo chage -l $user 2>/dev/null | grep -E ''(Last password|Maximum|Password expires)''; echo ''''; done'
+  script: 'echo ''=== 사용자 패스워드 보안 수준 ==='' && for user in $(awk -F: ''$7 !~ /nologin|false/ {print $1}''
+    /etc/passwd); do echo "[$user]"; sudo chage -l $user 2>/dev/null | grep -E ''(Last password|Maximum|Password
+    expires)''; echo ''''; done'
   risk_level: low
   bastion_prompt: 사용자의 패스워드 보안 수준을 점검해줘
 - order: 4
@@ -176,35 +180,38 @@ steps:
   points: 12
   answer: '🤖 프롬프트: 비정상 시간대(22:00~06:00)의 로그인 시도를 분석해줘
 
-    📎 참고 (CLI): echo ''=== 비정상 시간 로그인 분석 ==='' && sudo grep ''session opened\|Accepted'' /var/log/auth.log 2>/dev/null | awk
-    ''{print $1, $2, $3}'' | sort | tail -15 && echo ''--- 야간(22-06시) 접속 ---'' && sudo grep ''session opened\|Accepted'' /var/log/auth.log
-    2>/dev/null | awk -F: ''{if($1 ~ /[0-5]:/) print}'' | head -5 || echo ''야간 접속 없음'''
-  answer_detail: 비정상 시간대의 접속은 계정 탈취나 비인가 접근의 징후일 수 있습니다. 보안 교육에서 '업무 시간 외 접속 시 보안팀에 사전 통보' 정책을 안내하고, 기술적으로 야간 접속을 모니터링하여 이상
-    징후를 탐지합니다.
+    📎 참고 (CLI): echo ''=== 비정상 시간 로그인 분석 ==='' && sudo grep ''session opened\|Accepted'' /var/log/auth.log
+    2>/dev/null | awk ''{print $1, $2, $3}'' | sort | tail -15 && echo ''--- 야간(22-06시) 접속 ---'' && sudo
+    grep ''session opened\|Accepted'' /var/log/auth.log 2>/dev/null | awk -F: ''{if($1 ~ /[0-5]:/) print}''
+    | head -5 || echo ''야간 접속 없음'''
+  answer_detail: 비정상 시간대의 접속은 계정 탈취나 비인가 접근의 징후일 수 있습니다. 보안 교육에서 '업무 시간 외 접속 시 보안팀에 사전 통보' 정책을 안내하고, 기술적으로
+    야간 접속을 모니터링하여 이상 징후를 탐지합니다.
   verify:
     type: output_contains
     expect: 비정상 시간 로그인 분석
     field: stdout
     semantic:
-      intent: '컴플라이언스 w14 s4 — 비정상 시간대(22:00~06:00)의 로그인 시도를 분석하시오. 사용자 보안 행동 모니터링. (cmd: echo ''=== 비정상 시간 로그인 분석 ==='' &&
-        sudo grep ''session opened\|Accepted'' /var/log/au)'
+      intent: '비정상 시간대(22:00-06:00) 로그인 분석 — sudo grep session opened|Accepted /var/log/auth.log 으로 성공
+        로그인 전체 추출 후 awk 로 date/time 필드만 sort | tail -15 상위 15건 확인, 추가로 awk -F: 시간대 필드 [0-5]:  로 야간 접속만
+        필터. 업무 시간 외 접속은 계정 탈취 징후.'
       success_criteria:
-      - '명령 실행: echo ''=== 비정상 시간 로그인 분석 ==='' && sudo grep ''session opened\|A'
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - grep session opened|Accepted 로 성공 로그인 추출
+      - awk {print $1, $2, $3} 로 date/time 필드만 정렬 후 tail -15
+      - 'awk -F: 으로 시간대 00-05 범위 필터링하여 야간 접속 식별'
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep + awk + sort + tail 조합
+      - journalctl _COMM=sshd --since/--until 로 시간 범위 조회
+      - aureport --auth 로 audit 기반 로그인 이벤트 분석
+      - ELK/Wazuh 에서 KQL 시간대 필터 쿼리
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - 시간대 필터 없이 전체 로그인만 조회
+      - 야간 시간대(22-06) 필터 누락
+      - 계정 탈취 징후 맥락 누락
   target_vm: secu
-  script: 'echo ''=== 비정상 시간 로그인 분석 ==='' && sudo grep ''session opened\|Accepted'' /var/log/auth.log 2>/dev/null | awk ''{print
-    $1, $2, $3}'' | sort | tail -15 && echo ''--- 야간(22-06시) 접속 ---'' && sudo grep ''session opened\|Accepted'' /var/log/auth.log
-    2>/dev/null | awk -F: ''{if($1 ~ /[0-5]:/) print}'' | head -5 || echo ''야간 접속 없음'''
+  script: 'echo ''=== 비정상 시간 로그인 분석 ==='' && sudo grep ''session opened\|Accepted'' /var/log/auth.log
+    2>/dev/null | awk ''{print $1, $2, $3}'' | sort | tail -15 && echo ''--- 야간(22-06시) 접속 ---'' && sudo
+    grep ''session opened\|Accepted'' /var/log/auth.log 2>/dev/null | awk -F: ''{if($1 ~ /[0-5]:/) print}''
+    | head -5 || echo ''야간 접속 없음'''
   risk_level: low
   bastion_prompt: 비정상 시간대(22:00~06:00)의 로그인 시도를 분석해줘
 - order: 5
@@ -214,33 +221,36 @@ steps:
   points: 10
   answer: '🤖 프롬프트: sudo 명령어 사용 패턴을 분석해줘
 
-    📎 참고 (CLI): echo ''=== sudo 사용 분석 ==='' && sudo grep ''sudo:'' /var/log/auth.log 2>/dev/null | awk ''{for(i=1;i<=NF;i++)
-    if($i=="COMMAND=") {for(j=i;j<=NF;j++) printf $j" "; print ""}}'' | sort | uniq -c | sort -rn | head -10'
-  answer_detail: 특권 명령 사용 분석은 보안 교육의 효과를 측정하는 지표입니다. 불필요한 sudo 사용이 빈번하면 최소 권한 원칙 교육이 부족한 것이고, 위험한 명령(rm -rf, chmod 777 등)
-    사용이 발견되면 즉시 교육이 필요합니다.
+    📎 참고 (CLI): echo ''=== sudo 사용 분석 ==='' && sudo grep ''sudo:'' /var/log/auth.log 2>/dev/null | awk
+    ''{for(i=1;i<=NF;i++) if($i=="COMMAND=") {for(j=i;j<=NF;j++) printf $j" "; print ""}}'' | sort | uniq
+    -c | sort -rn | head -10'
+  answer_detail: 특권 명령 사용 분석은 보안 교육의 효과를 측정하는 지표입니다. 불필요한 sudo 사용이 빈번하면 최소 권한 원칙 교육이 부족한 것이고, 위험한 명령(rm
+    -rf, chmod 777 등) 사용이 발견되면 즉시 교육이 필요합니다.
   verify:
     type: output_contains
     expect: sudo 사용 분석
     field: stdout
     semantic:
-      intent: '컴플라이언스 w14 s5 — sudo 명령어 사용 패턴을 분석하시오. 특권 명령 사용의 적절성을 평가합니다. (cmd: echo ''=== sudo 사용 분석 ==='' && sudo grep
-        ''sudo:'' /var/log/auth.log 2>/dev/null | a)'
+      intent: 'sudo 명령어 사용 패턴 분석 — sudo grep sudo: /var/log/auth.log 으로 sudo 실행 로그 전량 추출 후 awk 로 COMMAND=
+        필드 이후 명령어만 파싱, sort | uniq -c | sort -rn | head -10 으로 최빈 명령어 Top 10 집계. 불필요한 sudo 사용 빈도로 최소 권한
+        교육 효과 평가, 위험 명령(rm -rf/chmod 777) 식별.'
       success_criteria:
-      - '명령 실행: echo ''=== sudo 사용 분석 ==='' && sudo grep ''sudo:'' /var/log/auth'
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - 'grep sudo: /var/log/auth.log 로 sudo 이벤트 전량 추출'
+      - awk 로 COMMAND= 이후 실행 명령어 파싱
+      - sort | uniq -c | sort -rn | head -10 으로 명령어별 사용 빈도 Top 10
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep + awk + sort | uniq -c 조합
+      - sudoreplay -l 로 세션 재생 로그 조회
+      - ausearch -m USER_CMD 로 audit 기반 sudo 조회
+      - Elastic/Splunk stats count by command Top N 쿼리
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - 최빈 명령어 집계 없이 원본 로그만 덤프
+      - Top 10 제한 없이 전체 명령어 나열
+      - 위험 명령(rm -rf 등) 식별 맥락 누락
   target_vm: secu
-  script: echo '=== sudo 사용 분석 ===' && sudo grep 'sudo:' /var/log/auth.log 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="COMMAND=")
-    {for(j=i;j<=NF;j++) printf $j" "; print ""}}' | sort | uniq -c | sort -rn | head -10
+  script: echo '=== sudo 사용 분석 ===' && sudo grep 'sudo:' /var/log/auth.log 2>/dev/null | awk '{for(i=1;i<=NF;i++)
+    if($i=="COMMAND=") {for(j=i;j<=NF;j++) printf $j" "; print ""}}' | sort | uniq -c | sort -rn | head
+    -10
   risk_level: low
   bastion_prompt: sudo 명령어 사용 패턴을 분석해줘
 - order: 6
@@ -248,37 +258,39 @@ steps:
   hint: /opt/security-training/ 디렉터리에 교육 자료를 생성하세요.
   category: config
   points: 10
-  answer: "\U0001F916 프롬프트: 보안 교육 자료 배포용 디렉터리를 구성해줘\n\U0001F4CE 참고 (CLI): sudo mkdir -p /opt/security-training && cat << 'EOF'\
-    \ | sudo tee /opt/security-training/security_awareness.txt\n=== 보안 인식 교육 자료 ===\n\n1. 피싱 이메일 식별법\n   - 발신자 주소 확인\n   -\
-    \ 의심스러운 링크 호버 확인\n   - 긴급/위협성 문구 주의\n\n2. 안전한 패스워드 관리\n   - 12자 이상, 3종 이상 문자 조합\n   - 서비스별 다른 패스워드 사용\n   - 패스워드 관리자 활용\n\
-    \n3. 인시던트 신고\n   - 이상 징후 발견 시 보안팀 즉시 신고\n   - 신고 채널: 내선 1234, security@company.com\nEOF\nls -la /opt/security-training/"
-  answer_detail: 보안 교육 자료는 접근하기 쉬운 위치에 항상 이용 가능해야 합니다. 파일 시스템, 인트라넷, 이메일 등 다양한 채널로 배포하며, 정기적으로 내용을 갱신합니다. NIST SP 800-50에
-    따르면 보안 인식 프로그램은 역할별로 차별화된 교육을 제공해야 합니다.
+  answer: "\U0001F916 프롬프트: 보안 교육 자료 배포용 디렉터리를 구성해줘\n\U0001F4CE 참고 (CLI): sudo mkdir -p /opt/security-training\
+    \ && cat << 'EOF' | sudo tee /opt/security-training/security_awareness.txt\n=== 보안 인식 교육 자료 ===\n\n\
+    1. 피싱 이메일 식별법\n   - 발신자 주소 확인\n   - 의심스러운 링크 호버 확인\n   - 긴급/위협성 문구 주의\n\n2. 안전한 패스워드 관리\n   - 12자\
+    \ 이상, 3종 이상 문자 조합\n   - 서비스별 다른 패스워드 사용\n   - 패스워드 관리자 활용\n\n3. 인시던트 신고\n   - 이상 징후 발견 시 보안팀 즉시 신고\n\
+    \   - 신고 채널: 내선 1234, security@company.com\nEOF\nls -la /opt/security-training/"
+  answer_detail: 보안 교육 자료는 접근하기 쉬운 위치에 항상 이용 가능해야 합니다. 파일 시스템, 인트라넷, 이메일 등 다양한 채널로 배포하며, 정기적으로 내용을 갱신합니다.
+    NIST SP 800-50에 따르면 보안 인식 프로그램은 역할별로 차별화된 교육을 제공해야 합니다.
   verify:
     type: output_contains
     expect: security_awareness
     field: stdout
     semantic:
-      intent: '컴플라이언스 w14 s6 — 보안 교육 자료 배포용 디렉터리를 구성하시오. 교육 자료를 시스템에서 접근 가능하게 합니다. (cmd: sudo mkdir -p /opt/security-training
-        && cat << ''EOF'' | sudo tee /opt/security-tr)'
+      intent: '보안 교육 자료 배포 디렉터리 구성 — sudo mkdir -p /opt/security-training 생성 후 heredoc + sudo tee 로 /opt/security-training/security_awareness.txt
+        작성. 3개 섹션: (1) 피싱 이메일 식별법(발신자/링크 호버/긴급 문구) (2) 안전한 패스워드 관리(12자/서비스별 분리/매니저) (3) 인시던트 신고(채널 내선
+        1234/email). NIST SP 800-50 준거.'
       success_criteria:
-      - '명령 실행: sudo mkdir -p /opt/security-training && cat << ''EOF'' | sudo '
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - mkdir -p /opt/security-training 디렉터리 생성
+      - heredoc | tee 로 security_awareness.txt 파일 작성
+      - 피싱/패스워드/신고 3개 섹션 구조화 및 ls 로 생성 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - mkdir + heredoc | tee + ls 조합
+      - markdown 파일로 git 저장소에 버전 관리
+      - Confluence/Notion 로 인트라넷 배포
+      - LMS(Moodle/Articulate) 과정 콘텐츠로 대체
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - 3개 섹션 중 일부 누락
+      - 신고 채널(내선/이메일) 누락
+      - 역할별 차별화 교육 맥락 누락
   target_vm: secu
   script: "sudo mkdir -p /opt/security-training && cat << 'EOF' | sudo tee /opt/security-training/security_awareness.txt\n\
-    === 보안 인식 교육 자료 ===\n\n1. 피싱 이메일 식별법\n   - 발신자 주소 확인\n   - 의심스러운 링크 호버 확인\n   - 긴급/위협성 문구 주의\n\n2. 안전한 패스워드 관리\n   - 12자\
-    \ 이상, 3종 이상 문자 조합\n   - 서비스별 다른 패스워드 사용\n   - 패스워드 관리자 활용\n\n3. 인시던트 신고\n   - 이상 징후 발견 시 보안팀 즉시 신고\n   - 신고 채널: 내선 1234,\
-    \ security@company.com\nEOF\nls -la /opt/security-training/"
+    === 보안 인식 교육 자료 ===\n\n1. 피싱 이메일 식별법\n   - 발신자 주소 확인\n   - 의심스러운 링크 호버 확인\n   - 긴급/위협성 문구 주의\n\n2.\
+    \ 안전한 패스워드 관리\n   - 12자 이상, 3종 이상 문자 조합\n   - 서비스별 다른 패스워드 사용\n   - 패스워드 관리자 활용\n\n3. 인시던트 신고\n  \
+    \ - 이상 징후 발견 시 보안팀 즉시 신고\n   - 신고 채널: 내선 1234, security@company.com\nEOF\nls -la /opt/security-training/"
   risk_level: low
   bastion_prompt: 보안 교육 자료 배포용 디렉터리를 구성해줘
 - order: 7
@@ -286,39 +298,41 @@ steps:
   hint: auth.log를 감시하여 실패 횟수를 카운트하는 스크립트를 작성하세요.
   category: config
   points: 12
-  answer: "\U0001F916 프롬프트: 시스템에 보안 알림 스크립트를 설정해줘\n\U0001F4CE 참고 (CLI): cat << 'SCRIPT' > /tmp/login_alert.sh\n#!/bin/bash\n\
-    THRESHOLD=5\nFAILED=$(sudo grep -c 'Failed password' /var/log/auth.log 2>/dev/null || echo 0)\nif [ \"$FAILED\" -ge \"\
-    $THRESHOLD\" ]; then\n  echo \"[경고] 로그인 실패 ${FAILED}회 감지!\"\n  echo \"상위 실패 IP:\"\n  sudo grep 'Failed password' /var/log/auth.log\
-    \ 2>/dev/null | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn | head -5\nelse\n  echo \"[정상] 로그인 실패 ${FAILED}회 (임계값:\
-    \ ${THRESHOLD})\"\nfi\nSCRIPT\nchmod +x /tmp/login_alert.sh && bash /tmp/login_alert.sh"
-  answer_detail: 보안 알림은 기술적 보안 인식의 핵심 도구입니다. 임계값 기반 알림은 실시간 위협 감지와 대응을 가능하게 합니다. 이 스크립트를 cron에 등록하면 주기적으로 로그인 실패를 감시하고, 이메일/Slack
-    등으로 알림을 보낼 수 있습니다.
+  answer: "\U0001F916 프롬프트: 시스템에 보안 알림 스크립트를 설정해줘\n\U0001F4CE 참고 (CLI): cat << 'SCRIPT' > /tmp/login_alert.sh\n\
+    #!/bin/bash\nTHRESHOLD=5\nFAILED=$(sudo grep -c 'Failed password' /var/log/auth.log 2>/dev/null ||\
+    \ echo 0)\nif [ \"$FAILED\" -ge \"$THRESHOLD\" ]; then\n  echo \"[경고] 로그인 실패 ${FAILED}회 감지!\"\n  echo\
+    \ \"상위 실패 IP:\"\n  sudo grep 'Failed password' /var/log/auth.log 2>/dev/null | awk '{print $(NF-3)}'\
+    \ | sort | uniq -c | sort -rn | head -5\nelse\n  echo \"[정상] 로그인 실패 ${FAILED}회 (임계값: ${THRESHOLD})\"\
+    \nfi\nSCRIPT\nchmod +x /tmp/login_alert.sh && bash /tmp/login_alert.sh"
+  answer_detail: 보안 알림은 기술적 보안 인식의 핵심 도구입니다. 임계값 기반 알림은 실시간 위협 감지와 대응을 가능하게 합니다. 이 스크립트를 cron에 등록하면 주기적으로
+    로그인 실패를 감시하고, 이메일/Slack 등으로 알림을 보낼 수 있습니다.
   verify:
     type: output_contains
     expect: 로그인 실패
     field: stdout
     semantic:
-      intent: '컴플라이언스 w14 s7 — 시스템에 보안 알림 스크립트를 설정하시오. 로그인 실패 5회 이상 시 관리자에게 알림을 보내는 모니터링을 구성합니다. (cmd: cat << ''SCRIPT'' >
-        /tmp/login_alert.sh #!/bin/bash THRESHOLD=5 FAILED=$(sudo grep)'
+      intent: 로그인 실패 임계값 기반 보안 알림 스크립트 — /tmp/login_alert.sh heredoc 작성. THRESHOLD=5 설정 후 sudo grep -c
+        Failed password /var/log/auth.log 으로 실패 횟수 카운트. 임계값 초과 시 [경고] 메시지 + awk {print $(NF-3)} | sort
+        | uniq -c | sort -rn | head -5 으로 상위 5개 실패 IP 집계. cron 등록으로 주기 실행.
       success_criteria:
-      - '명령 실행: cat << ''SCRIPT'' > /tmp/login_alert.sh #!/bin/bash THRESHOLD='
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - heredoc 으로 /tmp/login_alert.sh 작성 후 chmod +x && bash 실행
+      - grep -c Failed password 로 실패 횟수 카운트
+      - 임계값 초과 시 경고 출력 + 상위 5개 공격 IP 집계 표시
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - heredoc + 조건문 + awk 집계 조합
+      - fail2ban-client status sshd 로 대체 모니터링
+      - Wazuh rule 31100 (authentication_failure) 활용
+      - Prometheus alertmanager 룰로 이메일/Slack 알림
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - 임계값 비교 없이 카운트만 출력
+      - 상위 IP 집계 누락
+      - cron 주기 실행 맥락 누락
   target_vm: secu
-  script: "cat << 'SCRIPT' > /tmp/login_alert.sh\n#!/bin/bash\nTHRESHOLD=5\nFAILED=$(sudo grep -c 'Failed password' /var/log/auth.log\
-    \ 2>/dev/null || echo 0)\nif [ \"$FAILED\" -ge \"$THRESHOLD\" ]; then\n  echo \"[경고] 로그인 실패 ${FAILED}회 감지!\"\n  echo \"\
-    상위 실패 IP:\"\n  sudo grep 'Failed password' /var/log/auth.log 2>/dev/null | awk '{print $(NF-3)}' | sort | uniq -c | sort\
-    \ -rn | head -5\nelse\n  echo \"[정상] 로그인 실패 ${FAILED}회 (임계값: ${THRESHOLD})\"\nfi\nSCRIPT\nchmod +x /tmp/login_alert.sh\
-    \ && bash /tmp/login_alert.sh"
+  script: "cat << 'SCRIPT' > /tmp/login_alert.sh\n#!/bin/bash\nTHRESHOLD=5\nFAILED=$(sudo grep -c 'Failed\
+    \ password' /var/log/auth.log 2>/dev/null || echo 0)\nif [ \"$FAILED\" -ge \"$THRESHOLD\" ]; then\n\
+    \  echo \"[경고] 로그인 실패 ${FAILED}회 감지!\"\n  echo \"상위 실패 IP:\"\n  sudo grep 'Failed password' /var/log/auth.log\
+    \ 2>/dev/null | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn | head -5\nelse\n  echo \"[정상] 로그인\
+    \ 실패 ${FAILED}회 (임계값: ${THRESHOLD})\"\nfi\nSCRIPT\nchmod +x /tmp/login_alert.sh && bash /tmp/login_alert.sh"
   risk_level: low
   bastion_prompt: 시스템에 보안 알림 스크립트를 설정해줘
 - order: 8
@@ -367,28 +381,30 @@ steps:
     SCRIPT
 
     chmod +x /tmp/awareness_check.sh && bash /tmp/awareness_check.sh'
-  answer_detail: 보안 교육/인식 프로그램은 기술적 통제만으로 해결할 수 없는 인적 보안(human factor)을 다룹니다. 피싱, 소셜 엔지니어링, 내부자 위협 등은 사용자 교육 없이는 방어할 수 없습니다.
-    기술적 통제(배너, MOTD, 알림)와 관리적 통제(정기 교육, 모의 훈련)를 병행해야 합니다.
+  answer_detail: 보안 교육/인식 프로그램은 기술적 통제만으로 해결할 수 없는 인적 보안(human factor)을 다룹니다. 피싱, 소셜 엔지니어링, 내부자 위협 등은
+    사용자 교육 없이는 방어할 수 없습니다. 기술적 통제(배너, MOTD, 알림)와 관리적 통제(정기 교육, 모의 훈련)를 병행해야 합니다.
   verify:
     type: output_contains
     expect: 교육/인식 점검 완료
     field: stdout
     semantic:
-      intent: '컴플라이언스 w14 s8 — 보안 교육/인식 프로그램 종합 점검 스크립트를 작성하고 실행하시오. (cmd: cat << ''SCRIPT'' > /tmp/awareness_check.sh #!/bin/bash
-        echo ''=== 보안 교육/인식 프로그램 점검)'
+      intent: '보안 교육/인식 프로그램 종합 점검 스크립트 — /tmp/awareness_check.sh heredoc 작성. 5 섹션: (1) SSH 배너 grep Banner
+        sshd_config + cat issue.net (2) MOTD 파일 존재 [-s /etc/motd] (3) 교육 자료 수 ls /opt/security-training/*.txt
+        | wc -l (4) 정책 문서 수 ls /opt/security-policy/*.txt | wc -l (5) 활성 계정 수 + 금일 로그인 실패 건수. 인적 보안 증적
+        자동화.'
       success_criteria:
-      - '명령 실행: cat << ''SCRIPT'' > /tmp/awareness_check.sh #!/bin/bash echo '''
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - heredoc 으로 /tmp/awareness_check.sh 작성 후 chmod +x && bash 실행
+      - 5 섹션 각각 설정 유무/개수/현황 수치화
+      - 교육/인식 점검 완료 마커 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - heredoc + 조건문 + wc -l 카운터 조합
+      - Ansible tasks 로 각 점검 항목 fact 수집
+      - OpenSCAP 커스텀 XCCDF 프로파일로 체크
+      - Splunk/Wazuh 대시보드로 시각화
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - 5 섹션 중 일부 누락
+      - 파일 개수 wc -l 집계 실패
+      - 점검 완료 마커 출력 누락
   target_vm: secu
   script: 'cat << ''SCRIPT'' > /tmp/awareness_check.sh
 
