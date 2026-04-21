@@ -144,7 +144,7 @@ def llm_semantic_judge(step: dict, answer: str) -> tuple[bool, str]:
                 "messages": [{"role": "user", "content": prompt}],
                 "stream": False,
                 "format": "json",
-                "options": {"temperature": 0.0, "num_predict": 120},
+                "options": {"temperature": 0.0, "num_predict": 800},
             }).encode(),
             headers={"Content-Type": "application/json"},
         )
