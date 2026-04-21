@@ -17,6 +17,27 @@
 
 **Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
+## 실습용 LLM 모델 준비 (필수, 1회 셋업)
+
+본 과목의 실습은 **전용 LLM 모델 3종** 을 대상으로 한다.
+
+| 모델 | 기반 | 용도 |
+|------|------|------|
+| `ccc-vulnerable:4b` | gemma3:4b | 약한 안전장치 — 공격 대상 |
+| `ccc-unsafe:2b` | huihui_ai/exaone3.5-abliterated:2.4b | 안전장치 제거 — 공격 성공 관찰 |
+| `ccc-safety-qlora:4b` | QLoRA 파인튜닝 결과 | 파인튜닝 실증 |
+
+```bash
+# 강사 사전 셋업
+ollama create ccc-vulnerable:4b -f /home/opsclaw/ccc/finetune/modelfile_vulnerable.txt
+ollama pull huihui_ai/exaone3.5-abliterated:2.4b
+ollama list | grep ccc-
+```
+
+**재현 가능 상세 가이드 (Modelfile·QLoRA·데이터셋·재학습 사이클):**
+
+**→ [../shared/ai-safety-model-setup.md](../shared/ai-safety-model-setup.md)**
+
 ## 강의 시간 배분 (3시간)
 
 | 시간 | 내용 | 유형 |

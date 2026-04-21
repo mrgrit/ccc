@@ -18,6 +18,43 @@
 
 **Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
 
+## 실습용 LLM 모델 준비 (필수, 1회 셋업)
+
+본 과목의 실습은 **전용 LLM 모델 3종** 을 대상으로 수행한다. Ollama 서버에 사전 등록이 필요하다.
+
+| 모델 | 기반 | 용도 |
+|------|------|------|
+| `ccc-vulnerable:4b` | gemma3:4b | 학생이 탈옥/우회를 시도할 대상 (약한 안전장치) |
+| `ccc-unsafe:2b` | huihui_ai/exaone3.5-abliterated:2.4b | 공격 성공 응답 관찰 (안전장치 제거) |
+| `ccc-safety-qlora:4b` | QLoRA 파인튜닝 결과 | 파인튜닝 실증 — 학생 직접 학습 가능 |
+
+### 빠른 셋업 (강사 수업 전)
+
+```bash
+# 1) ccc-vulnerable:4b — Modelfile 기반
+ollama create ccc-vulnerable:4b -f /home/opsclaw/ccc/finetune/modelfile_vulnerable.txt
+
+# 2) ccc-unsafe:2b — abliterated 모델 pull + Modelfile
+ollama pull huihui_ai/exaone3.5-abliterated:2.4b
+# (unsafe Modelfile 은 가이드 문서 §3.2 참조)
+
+# 3) 등록 확인
+ollama list | grep -E "ccc-(vulnerable|unsafe)"
+```
+
+### 재현 가능한 상세 가이드
+
+모델 제작·재파인튜닝·데이터셋 추가 워크플로우는 다음 문서에 정리되어 있다:
+
+**→ [../shared/ai-safety-model-setup.md](../shared/ai-safety-model-setup.md)** (재현성 체크리스트 포함)
+
+주요 내용:
+- Phase 1: Ollama Modelfile 기반 (10분) — 시스템 프롬프트로 행동 규정
+- Phase 2: QLoRA 실 파인튜닝 (30~60분) — 가중치 수정으로 행동 학습
+- 학습 데이터셋: `/home/opsclaw/ccc/finetune/dataset/` (JSONL 30샘플)
+- 학습 스크립트: `/home/opsclaw/ccc/finetune/scripts/qlora_finetune.py`
+- 실패 수집 → 샘플 추가 → 재학습 → Ollama 재등록 사이클
+
 ## 강의 시간 배분 (3시간)
 
 | 시간 | 내용 | 유형 |
