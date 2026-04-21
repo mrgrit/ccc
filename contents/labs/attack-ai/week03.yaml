@@ -28,20 +28,20 @@ steps:
     expect: 'Server:'
     field: stdout
     semantic:
-      intent: 취약점 스캐닝 (Vulnerability Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Nikto 로 JuiceShop(포트 3000) 웹 서버 취약점 스캔 — 6700+ 알려진 문제 패턴 자동 점검
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - nikto -h http://<IP>:3000 실행
+      - '응답에 Server: 헤더와 발견 사항 최소 1개 (/OSVDB-xxxxx/ 또는 Interesting 라인)'
+      - Nikto 한계(서명 기반·인증 없는 페이지 위주) 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - nikto -h http://10.20.30.80:3000
+      - nikto -h <url> -Tuning 1,2,3 (선택 체크)
+      - wapiti -u <url>
+      - skipfish -o /tmp/skipfish <url>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(취약점 스캐닝 (Vulnerability Scanning))와 무관한 기법
+      - 포트 3000 대신 80 스캔
+      - Nikto 실행 없이 개념 설명
+      - Server 헤더 없고 발견사항 0이어도 해석 없이 종료
   target_vm: attacker
   script: nikto -h http://10.20.30.80:3000
   risk_level: low
@@ -61,20 +61,20 @@ steps:
     expect: nikto
     field: stdout
     semantic:
-      intent: 취약점 스캐닝 (Vulnerability Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Apache(포트 80) Nikto 스캔 + 결과 파일(-o) 저장 — 동일 호스트의 다른 웹 서버 독립 점검
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - nikto -h http://<IP>:80 -o /tmp/nikto_apache.txt 실행
+      - cat 으로 결과 파일 내용 확인
+      - Apache vs Node.js 취약점 패턴 차이 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - nikto -h http://10.20.30.80:80 -o /tmp/nikto_apache.txt
+      - nikto -h <url> -Format htm -o <file>
+      - wapiti -u <url> -o /tmp/wapiti (HTML 보고서)
+      - arachni_console --url <url>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(취약점 스캐닝 (Vulnerability Scanning))와 무관한 기법
+      - -o 없이 stdout 만
+      - 포트 80 대신 3000 스캔
+      - 결과 파일 저장 후 검증 없음
   target_vm: attacker
   script: nikto -h http://10.20.30.80:80 -o /tmp/nikto_apache.txt && cat /tmp/nikto_apache.txt
   risk_level: low
@@ -94,20 +94,20 @@ steps:
     expect: Exploit
     field: stdout
     semantic:
-      intent: 취약점 스캐닝 (Vulnerability Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: searchsploit 으로 Exploit-DB 오프라인 검색 — juice shop 관련 공개 익스플로잇 PoC 찾기
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - searchsploit juice shop 실행
+      - 결과 테이블에 Exploit Title 컬럼과 경로 최소 1개
+      - PoC 경로가 /usr/share/exploitdb 하위임을 설명
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - searchsploit juice shop
+      - searchsploit -t juice
+      - searchsploit --cve <CVE-ID>
+      - Exploit-DB 웹(exploit-db.com) 검색
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(취약점 스캐닝 (Vulnerability Scanning))와 무관한 기법
+      - 검색 키워드 부적절 (juice 대신 JuiceShop 하이픈 없이)
+      - 결과 없어도 대체 키워드 시도 없음
+      - Exploit 컬럼 대신 Title 만 출력
   target_vm: attacker
   script: searchsploit juice shop
   risk_level: low
@@ -126,20 +126,20 @@ steps:
     expect: Title
     field: stdout
     semantic:
-      intent: 취약점 스캐닝 (Vulnerability Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Node.js 관련 searchsploit 검색 — JuiceShop 백엔드 런타임에 적용 가능한 익스플로잇 선별
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - searchsploit nodejs 실행
+      - Title 컬럼과 Path 컬럼이 있는 결과 표 출력
+      - Node 버전 매칭의 중요성 언급 (버전별 CVE 다름)
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - searchsploit nodejs
+      - searchsploit node.js
+      - searchsploit npm
+      - NVD CVE 검색 (nvd.nist.gov) 대체
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(취약점 스캐닝 (Vulnerability Scanning))와 무관한 기법
+      - 다른 런타임(PHP/Java) 검색
+      - 결과에서 JuiceShop 과 관련 있을 법한 CVE 지목 없음
+      - 버전 매칭 원칙 언급 없음
   target_vm: attacker
   script: searchsploit nodejs
   risk_level: low
@@ -159,20 +159,20 @@ steps:
     expect: '3000'
     field: stdout
     semantic:
-      intent: 취약점 스캐닝 (Vulnerability Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: nmap http-sql-injection NSE — 웹 폼·URL 파라미터에 SQLi 페이로드 자동 테스트 (빠른 초기 탐색)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - nmap --script http-sql-injection -p 3000 <IP> 실행
+      - 스크립트 출력에 Possible sqli 라인 또는 no exploits found 명시
+      - NSE 와 sqlmap 의 역할 차이 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - nmap --script http-sql-injection -p 3000 10.20.30.80
+      - sqlmap -u <url>?id=1 --batch (정밀 도구)
+      - Burp Active Scan
+      - wapiti --module sql
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(취약점 스캐닝 (Vulnerability Scanning))와 무관한 기법
+      - --script 없이 일반 스캔
+      - port 미지정
+      - 결과 해석 없음
   target_vm: attacker
   script: nmap --script http-sql-injection -p 3000 10.20.30.80
   risk_level: low
@@ -193,20 +193,20 @@ steps:
     expect: question
     field: stdout
     semantic:
-      intent: 취약점 스캐닝 (Vulnerability Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /api/SecurityQuestions 인증 없는 접근 — 보안 질문 목록 노출은 PW 재설정 공격의 사전 정보
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl 로 /api/SecurityQuestions GET
+      - JSON 응답에 question 필드 포함된 배열 (최소 3건)
+      - 보안 질문 노출이 소셜 엔지니어링·OSINT 답변 추측으로 이어지는 위험 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -s <url>/api/SecurityQuestions | python3 -m json.tool
+      - curl + jq .data[].question
+      - python requests.get
+      - Burp Repeater
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(취약점 스캐닝 (Vulnerability Scanning))와 무관한 기법
+      - 다른 엔드포인트 조회
+      - question 필드 해석 없이 raw JSON 만
+      - PW 재설정 공격 맥락 언급 없음
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/api/SecurityQuestions | python3 -m json.tool
   risk_level: low
@@ -226,20 +226,20 @@ steps:
     expect: email
     field: stdout
     semantic:
-      intent: 취약점 스캐닝 (Vulnerability Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /api/Users 인증 없는 사용자 목록 노출 — Broken Access Control(OWASP A01) 실증, 이메일·id 유출 확인
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl 로 /api/Users 요청
+      - JSON 응답에 email 필드와 최소 1개 사용자 항목
+      - Broken Access Control / OWASP A01 또는 후속 공격(브루트포스·피싱) 활용 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -s <url>/api/Users | python3 -m json.tool
+      - curl + jq .data[].email
+      - Burp Autorize 로 권한 우회 자동 테스트
+      - python requests.get 반복
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(취약점 스캐닝 (Vulnerability Scanning))와 무관한 기법
+      - 인증 토큰 포함 요청 (인증 없는 노출 확인 의도 벗어남)
+      - email 필드 없고 종료
+      - OWASP A01 맥락 언급 없음
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/api/Users | python3 -m json.tool | head -30
   risk_level: low
@@ -259,20 +259,21 @@ steps:
     expect: TLS
     field: stdout
     semantic:
-      intent: 취약점 스캐닝 (Vulnerability Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: ssl-enum-ciphers NSE — Wazuh 443 의 SSL/TLS 프로토콜·cipher suite·grade 점검 (SSLv3/RC4/DES 같은
+        약한 요소 식별)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - nmap --script ssl-enum-ciphers -p 443 <SIEM_IP> 실행
+      - 출력에 TLS 버전·cipher suites·least strength(grade) 표시
+      - 약한 요소 1개 식별 또는 전부 강력함 판정
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - nmap --script ssl-enum-ciphers -p 443 10.20.30.100
+      - sslscan <host>:443
+      - testssl.sh <host>:443
+      - openssl s_client -connect <host>:443 -cipher ...
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(취약점 스캐닝 (Vulnerability Scanning))와 무관한 기법
+      - --script 없이 단순 포트 스캔
+      - TLS 프로토콜 결과 해석 없음
+      - 약한 cipher 의 공격 시나리오(BEAST/POODLE/Sweet32) 언급 없음
   target_vm: attacker
   script: nmap --script ssl-enum-ciphers -p 443 10.20.30.100
   risk_level: low
@@ -292,20 +293,20 @@ steps:
     expect: error
     field: stdout
     semantic:
-      intent: 취약점 스캐닝 (Vulnerability Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop 검색 파라미터에 URL 인코딩된 apostrophe (%27) 주입 — SQL 에러 메시지 유발해 SQLi 징후 확인
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl 로 /rest/products/search?q=%27 요청
+      - 응답 JSON 에 error·SQLITE_ERROR·SequelizeDatabaseError 등 SQL 관련 에러 키워드
+      - 상세 에러 노출 = Information Disclosure + SQLi 징후 판정
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -s <url>/rest/products/search?q=%27 | python3 -m json.tool
+      - Burp Repeater 로 파라미터 변조
+      - sqlmap -u <url>?q=FUZZ --batch
+      - wfuzz -z list,\\0x27 -u <url>?q=FUZZ
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(취약점 스캐닝 (Vulnerability Scanning))와 무관한 기법
+      - 정상 검색어 만 시도
+      - 에러 메시지 없어도 SQLi 단정
+      - 응답 해석 없이 raw JSON 만
   target_vm: attacker
   script: curl -s 'http://10.20.30.80:3000/rest/products/search?q=%27' | python3 -m json.tool
   risk_level: low
@@ -325,20 +326,20 @@ steps:
     expect: FOUND
     field: stdout
     semantic:
-      intent: 취약점 스캐닝 (Vulnerability Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: dirb/gobuster 디렉터리 브루트포싱 — 공통 wordlist 로 관리자 패널·백업·API 문서 등 숨겨진 경로 열거
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - dirb <url> <wordlist> 또는 gobuster dir 실행
+      - 결과에 FOUND 라인 또는 발견 URL 최소 1개
+      - 200/301/403 상태별 의미(존재/리다이렉트/차단=존재확인) 해석
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - dirb http://<host>:3000 /usr/share/wordlists/dirb/common.txt -r
+      - gobuster dir -u http://<host>:3000 -w common.txt -x php,html,bak
+      - ffuf -u http://<host>:3000/FUZZ -w wordlist
+      - dirsearch -u http://<host>:3000 -e php,html
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(취약점 스캐닝 (Vulnerability Scanning))와 무관한 기법
+      - wordlist 미지정으로 실행 실패
+      - FOUND 결과 0이어도 재시도 없이 종료
+      - 상태 코드 의미 해석 없음
   target_vm: attacker
   script: dirb http://10.20.30.80:3000 /usr/share/wordlists/dirb/common.txt -r
   risk_level: low
@@ -359,20 +360,21 @@ steps:
     expect: config
     field: stdout
     semantic:
-      intent: 취약점 스캐닝 (Vulnerability Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /rest/admin/application-configuration 인증 없는 접근 — DB 연결 정보·비밀 키·내부 경로 등 Security
+        Misconfiguration 실증
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl 로 /rest/admin/application-configuration GET
+      - JSON 응답에 config 키와 application/server/logging 등 서브 객체 확인
+      - 관리자 API 가 인증 없이 노출된 심각한 정보 유출 판정
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -s <url>/rest/admin/application-configuration | python3 -m json.tool
+      - curl + jq .config 키 탐색
+      - Burp Repeater 로 반복 확인
+      - python requests.get 후 json parse
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(취약점 스캐닝 (Vulnerability Scanning))와 무관한 기법
+      - 토큰 포함 요청
+      - config 키 존재 확인 안 됨
+      - 유출된 필드 위험성 해석 없음
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/rest/admin/application-configuration | python3 -m json.tool
     | head -30
@@ -393,20 +395,21 @@ steps:
     expect: header
     field: stdout
     semantic:
-      intent: 취약점 스캐닝 (Vulnerability Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: nmap http-headers NSE — 응답 헤더 수집 후 X-Frame-Options/CSP/X-Content-Type-Options/HSTS 등 보안
+        헤더 누락 점검
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - nmap --script http-headers -p 3000 <IP> 실행
+      - '출력에 | http-headers: 라인과 헤더 목록'
+      - 보안 헤더 누락 시 해당 공격 벡터(Clickjacking/XSS/MIME sniffing) 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - nmap --script http-headers -p 3000 10.20.30.80
+      - curl -I <url> | grep -iE security-headers
+      - securityheaders.com 또는 Mozilla Observatory
+      - httpie http --headers <url>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(취약점 스캐닝 (Vulnerability Scanning))와 무관한 기법
+      - http-headers 가 아닌 default 스크립트 실행
+      - 헤더 나열만 하고 보안 헤더 특정 없음
+      - 누락 헤더의 공격 벡터 언급 없음
   target_vm: attacker
   script: nmap --script http-headers -p 3000 10.20.30.80
   risk_level: low
@@ -426,20 +429,20 @@ steps:
     expect: Apache
     field: stdout
     semantic:
-      intent: 취약점 스캐닝 (Vulnerability Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Apache 2.4 관련 searchsploit 검색 — 웹 서버 버전 매칭 공개 CVE/PoC 찾아 포트 80 공격 후보 선정
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - searchsploit apache 2.4 실행
+      - 결과 테이블에 Apache 관련 Title 최소 1개
+      - 정확한 마이너 버전(2.4.x) 매칭의 중요성 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - searchsploit apache 2.4
+      - searchsploit --cve <apache-cve>
+      - NVD/CPE 검색으로 cpe:/a:apache:http_server:2.4.x
+      - Metasploit msfconsole search apache
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(취약점 스캐닝 (Vulnerability Scanning))와 무관한 기법
+      - apache 만 검색 (버전 미지정)
+      - 결과 목록 해석 없이 raw 출력
+      - 버전 매칭의 중요성 언급 없음
   target_vm: attacker
   script: searchsploit apache 2.4
   risk_level: low
@@ -459,20 +462,21 @@ steps:
     expect: api
     field: stdout
     semantic:
-      intent: 취약점 스캐닝 (Vulnerability Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /api-docs /metrics 등 디버그·문서 엔드포인트 노출 점검 — Swagger/Prometheus 유출 시 Security Misconfiguration(OWASP
+        A05)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl 로 /api-docs 또는 /metrics 접근
+      - '응답에 OpenAPI 스펙(paths/components) 또는 # HELP / # TYPE (Prometheus) 키워드'
+      - 프로덕션 노출의 위험(API 구조 유출·내부 상태) 해석
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -s <url>/api-docs/ | head -50
+      - curl -s <url>/api-docs/swagger.json
+      - curl -s <url>/metrics
+      - Burp 사이트맵에서 /docs·/actuator·/debug 등 유사 경로 탐색
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(취약점 스캐닝 (Vulnerability Scanning))와 무관한 기법
+      - 루트 페이지만 조회
+      - 404 응답만 받고 다른 후보 경로 시도 없음
+      - OpenAPI/Prometheus 구분 없이 raw HTML 만 출력
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/api-docs/ | head -50
   risk_level: low
@@ -496,20 +500,20 @@ steps:
     expect: Vulnerability Assessment Report
     field: stdout
     semantic:
-      intent: 취약점 스캐닝 (Vulnerability Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 취약점 스캔 결과 CVSS 위험도별 분류 리포트 — Critical/High/Medium/Low 섹션으로 /tmp/vuln_report.txt 작성
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - echo -e 또는 heredoc 으로 리포트 파일 생성
+      - CRITICAL/HIGH/MEDIUM/LOW 4 섹션 이상 포함
+      - 각 섹션에 최소 1개 발견사항 + OWASP Top 10 매핑 또는 CVSS 근거
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e 다줄 > /tmp/vuln_report.txt
+      - cat > /tmp/vuln_report.txt << EOF ... EOF
+      - python jinja2 템플릿으로 markdown 생성
+      - dradis·serpico 리포트 도구
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(취약점 스캐닝 (Vulnerability Scanning))와 무관한 기법
+      - 위험도 분류 3단계 이하
+      - 파일 저장 없이 화면 출력만
+      - 이전 스텝의 구체 발견사항 반영 없이 일반론만
   target_vm: attacker
   script: 'echo -e ''=== Vulnerability Assessment Report ===\nTarget: 10.20.30.80\nDate: $(date)\n\n[CRITICAL]\n-
     SQL Injection in /rest/products/search (OWASP A03)\n- User data exposure via /api/Users (OWASP A01)\n\n[HIGH]\n-
