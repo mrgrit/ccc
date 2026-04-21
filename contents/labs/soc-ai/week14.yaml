@@ -3,8 +3,8 @@ title: 레드팀 연동 - 공격 시뮬레이션과 탐지 검증 (AI 지원)
 version: ai
 course: soc-ai
 week: 14
-description: ATTACKER VM에서 실제 공격 도구(nmap, hydra, sqlmap)를 사용하여 공격을 시뮬레이션하고, SOC 입장에서 각 공격 단계가 SIEM에 어떻게 탐지되는지 검증합니다. AI SubAgent가
-  자동으로 명령을 실행하고 결과를 검증합니다.
+description: ATTACKER VM에서 실제 공격 도구(nmap, hydra, sqlmap)를 사용하여 공격을 시뮬레이션하고, SOC 입장에서 각 공격 단계가 SIEM에 어떻게
+  탐지되는지 검증합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 180
 objectives:
@@ -21,27 +21,23 @@ steps:
   answer: '🤖 프롬프트: ATTACKER VM에서 WEB VM(10.20.30.80)에 대한 포트 스캔을 실행하고, 개방된 포트를 확인해줘
 
     📎 참고 (CLI): nmap -sT -p 1-10000 --open 10.20.30.80 2>/dev/null | head -30'
-  answer_detail: nmap -sT는 TCP Connect 스캔으로, 가장 기본적인 포트 스캔 방식입니다. SOC에서는 이 스캔이 Wazuh 알림이나 Suricata 이벤트로 탐지되는지 확인해야 합니다.
+  answer_detail: nmap -sT는 TCP Connect 스캔으로, 가장 기본적인 포트 스캔 방식입니다. SOC에서는 이 스캔이 Wazuh 알림이나 Suricata 이벤트로
+    탐지되는지 확인해야 합니다.
   verify:
     type: output_contains
     expect: open
     field: stdout
     semantic:
-      intent: 'SOC 운영 w14 s1 — ATTACKER VM에서 WEB VM({{WEB_IP}})에 대한 포트 스캔을 실행하고, 개방된 포트를 확인하시오. (cmd: nmap -sT -p 1-10000
-        --open 10.20.30.80 2>/dev/null | head -30)'
+      intent: ATTACKER nmap 포트 스캔 — nmap -sT -p 1-10000 --open 10.20.30.80 | head -30 으로 TCP connect 스캔
+        상위 10000 포트. 레드팀 시뮬레이션 첫 공격. SIEM 탐지 대상 생성
       success_criteria:
-      - '명령 실행: nmap -sT -p 1-10000 --open 10.20.30.80 2>/dev/null | head -3'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - nmap -sT 전체 포트
+      - open 포트 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - nmap -sT/-sS
+      - masscan
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 일부 포트만
   target_vm: siem
   script: nmap -sT -p 1-10000 --open 10.20.30.80 2>/dev/null | head -30
   risk_level: low
@@ -54,27 +50,22 @@ steps:
   answer: '🤖 프롬프트: 포트 스캔 후 SIEM VM에서 해당 공격이 탐지되었는지 Wazuh 알림을 확인해줘
 
     📎 참고 (CLI): grep -B 2 -A 5 "10.20.30.201" /var/ossec/logs/alerts/alerts.log | tail -30'
-  answer_detail: 포트 스캔은 정찰(Reconnaissance) 단계로, SOC에서 공격의 시작을 알리는 지표입니다. Wazuh가 다수의 연결 시도를 브루트포스나 스캔으로 탐지했는지 확인합니다.
+  answer_detail: 포트 스캔은 정찰(Reconnaissance) 단계로, SOC에서 공격의 시작을 알리는 지표입니다. Wazuh가 다수의 연결 시도를 브루트포스나 스캔으로
+    탐지했는지 확인합니다.
   verify:
     type: output_contains
     expect: 10.20.30.201
     field: stdout
     semantic:
-      intent: 'SOC 운영 w14 s2 — 포트 스캔 후 SIEM VM에서 해당 공격이 탐지되었는지 Wazuh 알림을 확인하시오. (cmd: grep -B 2 -A 5 "10.20.30.201" /var/ossec/logs/alerts/alerts.log
-        | tail -30)'
+      intent: Wazuh 스캔 탐지 검증 — grep -B 2 -A 5 10.20.30.201 alerts.log | tail -30 으로 s1 공격 직후 알림 수신. 레드팀
+        vs 블루팀 MTTD 측정
       success_criteria:
-      - '명령 실행: grep -B 2 -A 5 "10.20.30.201" /var/ossec/logs/alerts/alerts.'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - s1 스캔 직후 알림
+      - MTTD 관점
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep context
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - s1 연관 없음
   target_vm: siem
   script: grep -B 2 -A 5 "10.20.30.201" /var/ossec/logs/alerts/alerts.log | tail -30
   risk_level: low
@@ -93,21 +84,15 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w14 s3 — 포트 스캔이 SECU VM의 Suricata IDS에서도 탐지되었는지 확인하시오. (cmd: grep "10.20.30.201" /var/log/suricata/fast.log
-        2>/dev/null | tail -10)'
+      intent: Suricata 스캔 탐지 — grep 10.20.30.201 fast.log | tail -10 으로 네트워크 IDS 레이어 탐지 확인. Wazuh+Suricata
+        상관
       success_criteria:
-      - '명령 실행: grep "10.20.30.201" /var/log/suricata/fast.log 2>/dev/null |'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - Suricata fast.log
+      - IDS 탐지
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep + tail
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - host 만 (network 누락)
   target_vm: siem
   script: grep "10.20.30.201" /var/log/suricata/fast.log 2>/dev/null | tail -10
   risk_level: low
@@ -119,30 +104,27 @@ steps:
   points: 12
   answer: '🤖 프롬프트: ATTACKER VM에서 WEB VM의 SSH 서비스에 대한 브루트포스 공격을 시뮬레이션하시오. (5회 제한)해줘
 
-    📎 참고 (CLI): hydra -l admin -P /dev/null -t 1 -f -V ssh://10.20.30.80 2>&1 | head -10 || echo "hydra test completed"'
-  answer_detail: hydra는 패스워드 브루트포스 공격 도구입니다. SOC 관점에서 이 공격이 Wazuh의 SSH 브루트포스 탐지 룰(5712)에 의해 탐지되는지 확인하는 것이 목적입니다.
+    📎 참고 (CLI): hydra -l admin -P /dev/null -t 1 -f -V ssh://10.20.30.80 2>&1 | head -10 || echo "hydra
+    test completed"'
+  answer_detail: hydra는 패스워드 브루트포스 공격 도구입니다. SOC 관점에서 이 공격이 Wazuh의 SSH 브루트포스 탐지 룰(5712)에 의해 탐지되는지 확인하는
+    것이 목적입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w14 s4 — ATTACKER VM에서 WEB VM의 SSH 서비스에 대한 브루트포스 공격을 시뮬레이션하시오. (5회 제한) (cmd: hydra -l admin -P /dev/null
-        -t 1 -f -V ssh://10.20.30.80 2>&1 | head -10 || echo)'
+      intent: SSH 브루트포스 시뮬 — hydra -l admin -P /dev/null -t 1 -f -V ssh://10.20.30.80 | head -10. 빈 사전
+        5회 시도로 인증 실패 이벤트 생성 (실제 공격 아님). 탐지 검증용
       success_criteria:
-      - '명령 실행: hydra -l admin -P /dev/null -t 1 -f -V ssh://10.20.30.80 2>&'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - hydra SSH 시도
+      - 5회 이내
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - hydra + -t 1
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 실제 대규모 공격
   target_vm: siem
-  script: hydra -l admin -P /dev/null -t 1 -f -V ssh://10.20.30.80 2>&1 | head -10 || echo "hydra test completed"
+  script: hydra -l admin -P /dev/null -t 1 -f -V ssh://10.20.30.80 2>&1 | head -10 || echo "hydra test
+    completed"
   risk_level: low
   bastion_prompt: ATTACKER VM에서 WEB VM의 SSH 서비스에 대한 브루트포스 공격을 시뮬레이션하시오. (5회 제한)해줘
 - order: 5
@@ -159,56 +141,47 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w14 s5 — SSH 브루트포스 공격 후 SIEM VM에서 관련 Wazuh 알림이 생성되었는지 확인하시오. (cmd: grep -B 2 -A 5 "authentication\|ssh\|brute"
-        /var/ossec/logs/alerts/alerts.log | )'
+      intent: 브루트포스 알림 확인 — grep -B 2 -A 5 authentication|ssh|brute alerts.log. 5712/5551 같은 SSH 룰 트리거
+        여부. Wazuh 상관 룰 동작 검증
       success_criteria:
-      - '명령 실행: grep -B 2 -A 5 "authentication\|ssh\|brute" /var/ossec/logs/'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - SSH/brute 필터
+      - s4 관련 알림
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep + context
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - s4 연관 없음
   target_vm: siem
   script: grep -B 2 -A 5 "authentication\|ssh\|brute" /var/ossec/logs/alerts/alerts.log | tail -30
   risk_level: low
   bastion_prompt: SSH 브루트포스 공격 후 SIEM VM에서 관련 Wazuh 알림이 생성되었는지 확인해줘
 - order: 6
-  instruction: 브라우저에서 WEB VM의 JuiceShop(http://WEB_IP:3000)에 접속하여 웹 애플리케이션이 정상 동작하는지 확인하시오. 메인 페이지가 로드되면 정상.
+  instruction: 브라우저에서 WEB VM의 JuiceShop(http://WEB_IP:3000)에 접속하여 웹 애플리케이션이 정상 동작하는지 확인하시오. 메인 페이지가 로드되면
+    정상.
   hint: WEB VM의 IP를 브라우저 주소창에 입력. 포트 3000번.
   category: detection
   points: 8
   answer: '🤖 프롬프트: ATTACKER VM에서 WEB VM의 JuiceShop(3000번 포트)에 HTTP 요청을 보내 웹 애플리케이션 접근을 확인해줘
 
-    📎 참고 (CLI): 브라우저에서 http://WEB_IP:3000 접속 → JuiceShop 메인 페이지 확인. CLI 대안: curl -so /dev/null -w ''%{http_code}'' http://10.20.30.80:3000'
+    📎 참고 (CLI): 브라우저에서 http://WEB_IP:3000 접속 → JuiceShop 메인 페이지 확인. CLI 대안: curl -so /dev/null -w ''%{http_code}''
+    http://10.20.30.80:3000'
   answer_detail: JuiceShop은 의도적으로 취약한 웹 애플리케이션입니다. 공격 시뮬레이션의 대상으로, 이 접근이 Apache/Wazuh 로그에 기록되는지 확인합니다.
   verify:
     type: port_open
     expect: '3000'
     field: stdout
     semantic:
-      intent: 'SOC 운영 w14 s6 — 브라우저에서 WEB VM의 JuiceShop(http://WEB_IP:3000)에 접속하여 웹 애플리케이션이 정상 동작하는지 확인하시오. 메인 페이지가 로드되면 정상.
-        (cmd: curl -s \   -o /dev/null \   -w "HTTP Status: %{http_code}\nSize: %{size_downloa)'
+      intent: 'JuiceShop 정상 접속 — curl -s -w HTTP Status: %{http_code} http://10.20.30.80:3000. 정상 응답 확인.
+        200 HTTP 상태 + 사이즈 = 서비스 가동. 이후 공격 시뮬 전 baseline'
       success_criteria:
-      - '명령 실행: curl -s \   -o /dev/null \   -w "HTTP Status: %{http_code}\n'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - curl JuiceShop
+      - HTTP 200 또는 정상 응답
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - curl -w
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 응답 확인 없음
   target_vm: siem
-  script: "curl -s \\\n  -o /dev/null \\\n  -w \"HTTP Status: %{http_code}\\nSize: %{size_download} bytes\\n\" http://10.20.30.80:3000/"
+  script: "curl -s \\\n  -o /dev/null \\\n  -w \"HTTP Status: %{http_code}\\nSize: %{size_download} bytes\\\
+    n\" http://10.20.30.80:3000/"
   risk_level: low
   bastion_prompt: ATTACKER VM에서 WEB VM의 JuiceShop(3000번 포트)에 HTTP 요청을 보내 웹 애플리케이션 접근을 확인해줘
 - order: 7
@@ -216,29 +189,24 @@ steps:
   hint: curl로 SQL Injection 페이로드가 포함된 URL을 요청하세요.
   category: detection
   points: 12
-  answer: "\U0001F916 프롬프트: ATTACKER VM에서 WEB VM의 웹서버에 SQL Injection 패턴을 포함한 요청을 보내시오해줘\n\U0001F4CE 참고 (CLI): curl -s \\\n\
-    \  -o /dev/null \\\n  -w \"Status: %{http_code}\" \"http://10.20.30.80/index.html?id=1%27%20OR%201=1--\""
-  answer_detail: SQL Injection 패턴(1' OR 1=1--)을 URL에 포함하여 전송합니다. ModSecurity WAF가 이를 차단하거나, Wazuh가 Apache 로그에서 탐지해야 합니다.
+  answer: "\U0001F916 프롬프트: ATTACKER VM에서 WEB VM의 웹서버에 SQL Injection 패턴을 포함한 요청을 보내시오해줘\n\U0001F4CE 참고\
+    \ (CLI): curl -s \\\n  -o /dev/null \\\n  -w \"Status: %{http_code}\" \"http://10.20.30.80/index.html?id=1%27%20OR%201=1--\""
+  answer_detail: SQL Injection 패턴(1' OR 1=1--)을 URL에 포함하여 전송합니다. ModSecurity WAF가 이를 차단하거나, Wazuh가 Apache
+    로그에서 탐지해야 합니다.
   verify:
     type: output_contains
     expect: Status
     field: stdout
     semantic:
-      intent: 'SOC 운영 w14 s7 — ATTACKER VM에서 WEB VM의 웹서버에 SQL Injection 패턴을 포함한 요청을 보내시오. (cmd: curl -s \   -o /dev/null \   -w
-        "Status: %{http_code}" "http://10.20.30.80/index)'
+      intent: SQL Injection payload 전송 — curl -s http://web/?id=1 OR 1=1-- 같은 패턴 URL. 단순 GET SQLi 시뮬.
+        응답 상태코드 200/403 확인으로 WAF 차단 여부
       success_criteria:
-      - '명령 실행: curl -s \   -o /dev/null \   -w "Status: %{http_code}" "http'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - SQLi URL 포함 curl
+      - 상태코드 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - curl + URL
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - SQLi 패턴 없음
   target_vm: siem
   script: "curl -s \\\n  -o /dev/null \\\n  -w \"Status: %{http_code}\" \"http://10.20.30.80/index.html?id=1%27%20OR%201=1--\""
   risk_level: low
@@ -250,28 +218,24 @@ steps:
   points: 12
   answer: '🤖 프롬프트: SQL Injection 시도 후 SIEM VM에서 웹 공격 관련 Wazuh 알림을 확인해줘
 
-    📎 참고 (CLI): grep -B 2 -A 5 -i "sql\|injection\|attack\|web" /var/ossec/logs/alerts/alerts.log | tail -30'
-  answer_detail: SQL Injection 시도가 Wazuh 알림으로 생성되었는지 확인합니다. 탐지가 안 되었다면 웹 공격 탐지 룰이 부족하거나, Apache 로그 모니터링 설정이 미흡한 것입니다.
+    📎 참고 (CLI): grep -B 2 -A 5 -i "sql\|injection\|attack\|web" /var/ossec/logs/alerts/alerts.log | tail
+    -30'
+  answer_detail: SQL Injection 시도가 Wazuh 알림으로 생성되었는지 확인합니다. 탐지가 안 되었다면 웹 공격 탐지 룰이 부족하거나, Apache 로그 모니터링
+    설정이 미흡한 것입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SOC 운영 w14 s8 — SQL Injection 시도 후 SIEM VM에서 웹 공격 관련 Wazuh 알림을 확인하시오. (cmd: grep -B 2 -A 5 -i "sql\|injection\|attack\|web"
-        /var/ossec/logs/alerts/alerts.lo)'
+      intent: SQLi 알림 확인 — grep -B 2 -A 5 -i sql|injection|attack|web alerts.log. s7 공격 후 웹 공격 탐지 룰(31100
+        대역) 트리거. MTTD 측정
       success_criteria:
-      - '명령 실행: grep -B 2 -A 5 -i "sql\|injection\|attack\|web" /var/ossec/l'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - SQL/injection/web 필터
+      - s7 관련 알림
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep -iE
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 키워드 부족
   target_vm: siem
   script: grep -B 2 -A 5 -i "sql\|injection\|attack\|web" /var/ossec/logs/alerts/alerts.log | tail -30
   risk_level: low
@@ -283,30 +247,26 @@ steps:
   points: 8
   answer: '🤖 프롬프트: ATTACKER VM에서 사용 가능한 공격 도구 목록을 확인해줘
 
-    📎 참고 (CLI): which nmap hydra sqlmap nikto curl 2>/dev/null; echo "=== nmap ==="; nmap --version 2>/dev/null | head -2'
+    📎 참고 (CLI): which nmap hydra sqlmap nikto curl 2>/dev/null; echo "=== nmap ==="; nmap --version 2>/dev/null
+    | head -2'
   answer_detail: ATTACKER VM에 설치된 도구를 파악하면 시뮬레이션 가능한 공격 시나리오를 계획할 수 있습니다. 각 도구는 공격 라이프사이클의 서로 다른 단계에 사용됩니다.
   verify:
     type: output_contains
     expect: nmap
     field: stdout
     semantic:
-      intent: 'SOC 운영 w14 s9 — ATTACKER VM에서 사용 가능한 공격 도구 목록을 확인하시오. (cmd: which nmap hydra sqlmap nikto curl 2>/dev/null;
-        echo "=== nmap ==="; nmap --vers)'
+      intent: ATTACKER 도구 인벤토리 — which nmap hydra sqlmap nikto curl + nmap --version. 공격 자원 확인. 다음 실습
+        계획 기초
       success_criteria:
-      - '명령 실행: which nmap hydra sqlmap nikto curl 2>/dev/null; echo "=== nm'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - which 여러 도구
+      - 버전 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - which + version
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 도구 인벤토리 없음
   target_vm: siem
-  script: which nmap hydra sqlmap nikto curl 2>/dev/null; echo "=== nmap ==="; nmap --version 2>/dev/null | head -2
+  script: which nmap hydra sqlmap nikto curl 2>/dev/null; echo "=== nmap ==="; nmap --version 2>/dev/null
+    | head -2
   risk_level: low
   bastion_prompt: ATTACKER VM에서 사용 가능한 공격 도구 목록을 확인해줘
 - order: 10
@@ -318,27 +278,22 @@ steps:
 
     📎 참고 (CLI): echo "=== 공격 탐지 요약 ==="; echo "ATTACKER(10.20.30.201) 관련 알림:"; grep "10.20.30.201" /var/ossec/logs/alerts/alerts.log
     | grep -oP "Rule: \d+ \(level \d+\)" | sort | uniq -c | sort -rn'
-  answer_detail: 레드팀 연동의 최종 산출물은 탐지 커버리지 보고서입니다. 탐지된 공격 유형, 미탐지 항목, 각 탐지의 레벨을 정리하여 SOC의 탐지 능력을 평가하고 개선점을 도출합니다.
+  answer_detail: 레드팀 연동의 최종 산출물은 탐지 커버리지 보고서입니다. 탐지된 공격 유형, 미탐지 항목, 각 탐지의 레벨을 정리하여 SOC의 탐지 능력을 평가하고 개선점을
+    도출합니다.
   verify:
     type: output_contains
     expect: 공격 탐지
     field: stdout
     semantic:
-      intent: 'SOC 운영 w14 s10 — 전체 공격 시뮬레이션의 탐지 결과를 요약하시오. SIEM에서 탐지된 알림의 룰 ID와 레벨을 정리하시오. (cmd: echo "=== 공격 탐지 요약 ===";
-        echo "ATTACKER(10.20.30.201) 관련 알림:"; grep "10.20.30.20)'
+      intent: 공격 시뮬 탐지 요약 — echo === 공격 탐지 요약 === + ATTACKER 관련 알림 + Rule ID 정리. Red vs Blue 종합 결과 보고.
+        MTTD·탐지율 평가
       success_criteria:
-      - '명령 실행: echo "=== 공격 탐지 요약 ==="; echo "ATTACKER(10.20.30.201) 관련 알림:'
-      - 결과 출력 또는 로그 확인
-      - SOC 운영 실습 맥락 유지
+      - 전체 시뮬 종합
+      - Rule ID+level
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SOC 운영 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - echo + grep + awk
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SOC 운영와 무관한 기법
+      - 요약 없이 raw
   target_vm: siem
   script: 'echo "=== 공격 탐지 요약 ==="; echo "ATTACKER(10.20.30.201) 관련 알림:"; grep "10.20.30.201" /var/ossec/logs/alerts/alerts.log
     | grep -oP "Rule: \d+ \(level \d+\)" | sort | uniq -c | sort -rn'
