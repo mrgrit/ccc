@@ -35,20 +35,21 @@ steps:
     expect: table
     field: stdout
     semantic:
-      intent: '[BLUE] 방화벽 구축 및 트래픽 제어 - 탐지·방어 구현'
+      intent: '[BLUE] nft list ruleset 현재 방화벽 룰 확인 — secu VM 의 모든 nftables 테이블·체인·룰 출력으로 현재 보호 상태 파악.
+        룰셋 설계 전 baseline 확인 단계'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - sudo nft list ruleset 실행
+      - table 키워드 포함 출력 (또는 빈 ruleset)
+      - 현재 상태 baseline 파악 목적
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - sudo nft list ruleset
+      - sudo nft list tables + list chains
+      - iptables -L -n -v (레거시)
+      - firewalld --list-all (대체 프론트엔드)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - iptables 만 사용 (nftables 기반 실습 아님)
+      - sudo 없이 실행 — 권한 오류
+      - baseline 인식 없이 바로 룰 추가
   target_vm: secu
   script: sudo nft list ruleset
   risk_level: low
@@ -73,20 +74,23 @@ steps:
     - nftables
     field: stdout
     semantic:
-      intent: '[BLUE] 방화벽 구축 및 트래픽 제어 - 탐지·방어 구현'
+      intent: '[BLUE] nftables 기본 체인 + default drop 정책 — nft flush ruleset (초기화) + add table inet filter
+        (IPv4/6 공통) + input(drop)/forward(drop)/output(accept) 3개 체인 + type filter hook input priority
+        0 훅 바인딩. input drop 정책으로 화이트리스트 방식 (명시 허용 외 모두 차단)'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - nft flush + add table + add chain 순서
+      - inet filter table (ip/ip6 아닌 inet)
+      - input policy drop 설정
+      - Base chains created 메시지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nft flush + nft add table/chain (스크립트)
+      - /etc/nftables.conf 편집 후 nft -f
+      - iptables -P INPUT DROP (레거시)
+      - firewalld --set-default-zone=drop
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - policy accept (화이트리스트 아님)
+      - ip 패밀리만 (IPv6 커버 안 함)
+      - forward 정책 미설정 (라우팅 시 필요)
   target_vm: secu
   requires_approval: true
   script: sudo nft flush ruleset && sudo nft add table inet filter && sudo nft add chain inet filter input
@@ -112,20 +116,22 @@ steps:
     expect: Service rules applied
     field: stdout
     semantic:
-      intent: '[BLUE] 방화벽 구축 및 트래픽 제어 - 탐지·방어 구현'
+      intent: '[BLUE] 서비스 허용 룰 — iifname lo accept (로컬 루프백 필수) + ct state established,related accept (stateful
+        응답 허용, 아웃바운드 응답 복귀) + tcp dport {22,80,3000,8080} accept (서비스 포트) + icmp echo-request limit rate
+        5/second accept (ping DoS 방지). 가용성 유지 핵심 룰'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - lo iifname + established,related + tcp dport 세트 + icmp limit 4가지 중 최소 3개
+      - 포트 {22,80,3000,8080} 세트 표기법
+      - Service rules applied 또는 동등한 성공 메시지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nft add rule ... ct state established,related accept
+      - iptables -A INPUT -m state --state ESTABLISHED,RELATED -j ACCEPT
+      - nftables.conf 의 한 블록으로 정의
+      - systemd-networkd 인터페이스 기반 정책
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - ct state established 없음 (아웃바운드 응답 차단됨)
+      - lo 허용 없음 (로컬 서비스 깨짐)
+      - icmp 무제한 허용 (DoS)
   target_vm: secu
   script: sudo nft add rule inet filter input iifname lo accept && sudo nft add rule inet filter input
     ct state established,related accept && sudo nft add rule inet filter input tcp dport { 22, 80, 3000,
@@ -148,20 +154,22 @@ steps:
     expect: SSH rate limiting applied
     field: stdout
     semantic:
-      intent: '[BLUE] 방화벽 구축 및 트래픽 제어 - 탐지·방어 구현'
+      intent: '[BLUE] SSH 새 연결 rate limit — nft add rule inet filter input tcp dport 22 ct state new limit
+        rate 3/minute accept. ct state new 조건으로 기존 세션 유지하면서 새 TCP SYN 만 제한. 분당 3회로 hydra 브루트포스 효율 1/20
+        이하로 감속. w4 s9 와 유사하지만 단일 서비스 포트에 통합'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - tcp dport 22 + ct state new + limit rate 조합
+      - SSH rate limiting applied 메시지
+      - 분당 3회 등 구체 수치
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nft add rule ... tcp dport 22 ct state new limit rate 3/minute accept
+      - iptables -A INPUT -p tcp --dport 22 --syn -m limit --limit 3/min -j ACCEPT
+      - sshguard + nftables 통합
+      - fail2ban jail sshd (보완)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - ct state 조건 없음 (기존 세션 영향)
+      - rate 지나치게 높음 (보호 효과 없음)
+      - 모든 포트 대상 (SSH 특화 아님)
   target_vm: secu
   script: sudo nft add rule inet filter input tcp dport 22 ct state new limit rate 3/minute accept &&
     echo 'SSH rate limiting applied'
@@ -182,20 +190,23 @@ steps:
     expect: Firewall backup saved
     field: stdout
     semantic:
-      intent: '[BLUE] 방화벽 구축 및 트래픽 제어 - 탐지·방어 구현'
+      intent: '[BLUE] 방화벽 로깅 + 백업 — nft add rule inet filter input log prefix [NFT-DROP]  flags all counter
+        drop 으로 차단 패킷을 커널 로그(dmesg/kern.log) 에 [NFT-DROP] 태그로 기록 + counter 로 적중 카운트. nft list ruleset
+        | tee /tmp/nftables_backup.conf 로 설정 백업 → nft -f <file> 로 복원 가능'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - log prefix + counter + drop 룰 추가
+      - tee 또는 > 로 백업 파일 생성 (/tmp/nftables_backup.conf)
+      - Firewall backup saved 메시지
+      - nft -f 로 복원 가능성 언급
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nft add rule ... log prefix counter drop + tee backup
+      - /etc/nftables.conf 편집 후 systemctl restart
+      - nft export json > backup.json
+      - rsyslog 로 NFT-DROP 필터링 후 원격 전송
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - log 없이 drop 만 (감사 추적 불가)
+      - 백업 파일 미생성
+      - log prefix 없음 — 로그 필터링 어려움
   target_vm: secu
   script: sudo nft add rule inet filter input log prefix "[NFT-DROP] " flags all counter drop && sudo
     nft list ruleset | tee /tmp/nftables_backup.conf && echo 'Firewall backup saved'
@@ -215,20 +226,21 @@ steps:
     expect: open
     field: stdout
     semantic:
-      intent: '[RED] 방화벽 구축 및 트래픽 제어 - 공격 기법 실행'
+      intent: '[RED] 방화벽 적용 후 스캔 검증 — nmap -sS -p 22,80,443,3000,3306,8080,8443 로 7개 포트 SYN 스캔. 허용된 {22,80,3000,8080}
+        open, 차단된 {443,3306,8443} filtered (drop 정책으로 응답 없음). 공격자 관점에서 방어 정책 검증'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - nmap -sS + 7개 포트 (허용+차단 혼합)
+      - open 키워드 포함 출력 (허용 포트)
+      - filtered vs open 구분으로 방화벽 동작 검증
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nmap -sS -p <list> <target>
+      - nmap -sA (ACK scan) 필터 탐지
+      - hping3 --scan 대체
+      - nc -zv <IP> <port> 포트별 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - -sT (connect scan) 으로 오히려 추적 가능
+      - 허용 포트만 스캔 (차단 검증 없음)
+      - 결과 해석 없음 (open/filtered 의미 설명 누락)
   target_vm: attacker
   script: nmap -sS -p 22,80,443,3000,3306,8080,8443 -T4 --max-retries 1 --host-timeout 15s 10.20.30.80
   risk_level: low
@@ -249,20 +261,23 @@ steps:
     expect: complete
     field: stdout
     semantic:
-      intent: '[RED] 방화벽 구축 및 트래픽 제어 - 공격 기법 실행'
+      intent: '[RED] rate limit 우회 — hydra -l ccc -p wrongpassword ssh://<target> -t 1 -w 30 -f 로 -t 1
+        (동시 1 연결) + -w 30 (30초 대기) 로 분당 2회 이하 페이스로 시도. nftables limit rate 3/minute 우회 가능. 방화벽 rate limit
+        의 한계 실증 → fail2ban 같은 보완책 필요성 입증'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - hydra -t 1 -w <sec> 느린 공격 플래그
+      - ssh:// + 단일 사용자 + 잘못된 비밀번호
+      - Slow brute force test complete 메시지
+      - rate limit 우회 개념 + fail2ban 보완 필요성 언급
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - hydra -t 1 -w 30 ssh://<target>
+      - ncrack --interactive ssh:<target>
+      - python paramiko 로 slow brute
+      - metasploit ssh_login with BruteforceSpeed
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - -t 4 이상 (rate limit 에 걸림)
+      - 시간 지연 없는 실행
+      - rate limit 한계 분석 없음
   target_vm: attacker
   script: hydra -l ccc -p wrongpassword ssh://10.20.30.80 -t 1 -w 30 -f 2>&1 | head -10 && echo 'Slow
     brute force test complete'
@@ -285,20 +300,22 @@ steps:
     - 분석
     field: stdout
     semantic:
-      intent: '[BLUE] 방화벽 구축 및 트래픽 제어 - 탐지·방어 구현'
+      intent: '[BLUE] 방화벽 차단 로그 분석 — journalctl -k (커널 로그) 또는 /var/log/kern.log 에서 [NFT-DROP] 접두사 grep.
+        차단된 패킷의 src/dst IP, sport/dport, proto 확인. s5 에서 설정한 log prefix 로 필터링 용이. 공격 패턴(포트 스캔 분포/IP 집중도)
+        분석 기초'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - journalctl -k 또는 /var/log/kern.log 조회
+      - NFT-DROP 패턴 grep
+      - complete 또는 분석 키워드 출력
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - journalctl -k | grep NFT-DROP
+      - dmesg | grep NFT-DROP
+      - rsyslog :msg, contains, NFT-DROP 으로 별도 파일
+      - awk 로 src IP 필드 집계
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 로그 조회 없이 nft 룰 재확인
+      - NFT-DROP 필터 없음 — 전체 커널 로그
+      - 패턴 분석 없음 — raw 출력만
   target_vm: secu
   script: sudo journalctl -k --no-pager | grep 'NFT-DROP' | tail -10 || sudo grep 'NFT-DROP' /var/log/kern.log
     2>/dev/null | tail -10 || echo 'Firewall log check complete'
@@ -320,20 +337,23 @@ steps:
     expect: Blocklist configured
     field: stdout
     semantic:
-      intent: '[BLUE] 방화벽 구축 및 트래픽 제어 - 탐지·방어 구현'
+      intent: '[BLUE] nftables IP set 블랙리스트 — nft add set inet filter blocklist { type ipv4_addr; } (IPv4
+        주소 집합) + nft add element inet filter blocklist { 10.20.30.201 } (IP 추가) + nft insert rule input
+        ip saddr @blocklist drop (set 참조 룰). 다수 IP 를 효율적으로 관리, 동적 추가/제거 가능. fail2ban·IPS 통합 기반'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - nft add set 으로 set 생성
+      - nft add element 로 IP 추가
+      - '@blocklist 참조 룰 insert'
+      - Blocklist configured 메시지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nft add set + add element + insert rule
+      - ipset (iptables 호환)
+      - ipdeny/spamhaus 공개 블랙리스트 연동
+      - dyn timeout interval 으로 자동 만료
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 개별 IP 별 룰 다수 추가 (set 아님)
+      - set 참조 룰 없음 (블랙리스트 미적용)
+      - 동적 관리 개념 없음
   target_vm: secu
   requires_approval: true
   script: sudo nft add set inet filter blocklist '{ type ipv4_addr; }' && sudo nft add element inet filter
@@ -356,20 +376,22 @@ steps:
     expect: Firewall
     field: stdout
     semantic:
-      intent: '[RED] 방화벽 구축 및 트래픽 제어 - 공격 기법 실행'
+      intent: '[RED] 블랙리스트 적용 후 접근 검증 — curl -s --connect-timeout 5 http://<web>/ 로 HTTP 접속 시도. 공격자 IP
+        가 block 리스트에 등록되면 --connect-timeout 5 경과 후 실패 → Access BLOCKED - Firewall effective 출력. 공격자는 IP
+        변경/프록시/CDN 경유로만 우회 가능'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - curl --connect-timeout + && echo OK || echo BLOCKED 패턴
+      - Firewall 키워드 포함 출력
+      - BLOCKED 결과 (방화벽 유효) + 우회 수단 설명
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl --connect-timeout 5 로 타임아웃 제어
+      - wget --timeout=5 --tries=1
+      - nc -w 5 -zv <IP> <port>
+      - proxychains + SOCKS5 로 우회 시도
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 타임아웃 없음 — 무한 대기
+      - 차단 결과 해석 없음
+      - 우회 수단(프록시/IP 변경) 언급 없음
   target_vm: attacker
   script: curl -s --connect-timeout 5 http://10.20.30.80/ && echo 'Access OK' || echo 'Access BLOCKED
     - Firewall effective'
