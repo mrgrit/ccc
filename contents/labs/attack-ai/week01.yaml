@@ -28,20 +28,20 @@ steps:
     expect: bytes from 10.20.30.80
     field: stdout
     semantic:
-      intent: 정보수집 기초 (Reconnaissance) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: ICMP ping 으로 대상 호스트 생존 확인 — 회수 제한(-c 3) + TTL·응답시간 기록
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ping -c 3 또는 동등 명령으로 ICMP Echo 3 회 전송
+      - 응답에 bytes from <IP> 또는 time= 응답시간 포함
+      - 활성 여부(최소 1 응답) 판정
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ping -c 3 <IP>
+      - hping3 -1 -c 3 <IP> (ICMP mode)
+      - nmap -sn <IP>
+      - fping <IP>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(정보수집 기초 (Reconnaissance))와 무관한 기법
+      - -c 없이 무제한 ping
+      - 전혀 다른 IP 대상
+      - 응답 없이 타임아웃만 받고 판정 생략
   target_vm: attacker
   script: ping -c 3 10.20.30.80
   risk_level: low
@@ -61,20 +61,20 @@ steps:
     expect: IN
     field: stdout
     semantic:
-      intent: 정보수집 기초 (Reconnaissance) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 역방향 DNS(PTR) 조회 — IP 로부터 호스트명을 얻어 내부 명명 규칙·서버 역할 추정
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - dig -x <IP> 또는 nslookup <IP> 실행
+      - 응답에 IN + PTR 레코드 또는 NXDOMAIN 해석 포함
+      - 호스트명 획득 시 역할 추정 또는 명명 규칙 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - dig -x 10.20.30.80
+      - dig PTR 80.30.20.10.in-addr.arpa
+      - nslookup 10.20.30.80
+      - host 10.20.30.80
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(정보수집 기초 (Reconnaissance))와 무관한 기법
+      - 정방향 DNS(A/AAAA) 조회만 수행
+      - DNS 서버 지정 없이 localhost 조회해 실패
+      - 결과 해석 없이 raw 출력만
   target_vm: attacker
   script: dig -x 10.20.30.80
   risk_level: low
@@ -94,20 +94,20 @@ steps:
     expect: HTTP/
     field: stdout
     semantic:
-      intent: 정보수집 기초 (Reconnaissance) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: HTTP HEAD 요청으로 응답 헤더만 수집해 Server/X-Powered-By 헤더에서 웹 서버 소프트웨어·버전 정보 파악
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl -I 또는 HEAD 요청으로 응답 헤더 획득
+      - 응답에 HTTP/1.x 또는 HTTP/2 상태 라인 포함
+      - Server 또는 X-Powered-By 등 기술 스택 힌트 헤더 최소 1개 해석
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -I http://10.20.30.80:3000
+      - curl -sI <url>
+      - wget --server-response --spider <url>
+      - python3 requests.head(url).headers
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(정보수집 기초 (Reconnaissance))와 무관한 기법
+      - GET 으로 본문까지 다운로드해 헤더만 확인하라는 의도 벗어남
+      - 응답 헤더는 받았으나 서버 식별 시도 없음
+      - 연결 실패만 받고 포트 확인 없이 종료
   target_vm: attacker
   script: curl -I http://10.20.30.80:3000
   risk_level: low
@@ -127,20 +127,20 @@ steps:
     expect: Disallow
     field: stdout
     semantic:
-      intent: 정보수집 기초 (Reconnaissance) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: robots.txt 파일 확인 — Disallow 엔트리에서 크롤러 차단 경로를 찾아 관리자/백업 등 숨겨진 경로 힌트 획득
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl 또는 wget 으로 /robots.txt 다운로드
+      - 응답에 Disallow 또는 Allow 지시문 포함
+      - Disallow 경로 중 최소 1개를 실제 탐색 후보로 해석
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -s http://<target>/robots.txt
+      - wget -qO- http://<target>/robots.txt
+      - python urllib.request.urlopen(<url>/robots.txt).read()
+      - humans.txt · sitemap.xml 추가 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(정보수집 기초 (Reconnaissance))와 무관한 기법
+      - 404 응답만 받고 종료
+      - 파일 내용 출력 후 해석 없이 단순 출력만
+      - 루트 / 조회만 하고 /robots.txt 미시도
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/robots.txt
   risk_level: low
@@ -160,20 +160,21 @@ steps:
     expect: Server
     field: stdout
     semantic:
-      intent: 정보수집 기초 (Reconnaissance) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 웹 기술 스택 패시브 핑거프린팅 — HTTP 응답 헤더(Server·X-Powered-By·X-Frame·Content-Type·Set-Cookie)만으로 서버·프레임워크·세션
+        방식 추정
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl -sI 로 헤더 수집 후 grep 등으로 주요 헤더 필터
+      - Server 또는 X-Powered-By 값 해석(예 nginx/1.18, Express, PHP/7.4)
+      - 쿠키명(PHPSESSID·JSESSIONID·connect.sid 등)으로 서버사이드 추정 또는 추가 CVE 조회 가능성 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -sI <url> | grep -iE pattern
+      - whatweb <url>
+      - wappalyzer 브라우저 확장 또는 CLI
+      - httpx -title -tech-detect -status-code
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(정보수집 기초 (Reconnaissance))와 무관한 기법
+      - 헤더 수집만 하고 필터/해석 없음
+      - 패시브 아닌 포트 스캔·주입 수행
+      - 단일 헤더만 보고 기술 스택 단정
   target_vm: attacker
   script: curl -sI http://10.20.30.80:3000 | grep -iE "(Server|X-Powered-By|X-Frame|Content-Type|Set-Cookie)"
   risk_level: low
@@ -192,20 +193,20 @@ steps:
     expect: .md
     field: stdout
     semantic:
-      intent: 정보수집 기초 (Reconnaissance) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /ftp 디렉터리 리스팅 노출 취약점 활용 — 공개된 파일 목록에서 .md·.txt 등 내부 파일 확인
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl 로 /ftp 경로 GET 요청
+      - 응답에서 파일 이름 목록 (.md, .txt, .pdf 등 확장자 포함) 확인
+      - 노출된 파일 중 민감 가능성 파일(backup/config/exfiltration) 지목
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -s http://<host>:3000/ftp
+      - curl -s http://<host>:3000/ftp | grep -oE href="[^"]+"
+      - browser 직접 접속 후 목록 확인
+      - wget -r -l1 --no-parent http://<host>:3000/ftp
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(정보수집 기초 (Reconnaissance))와 무관한 기법
+      - /ftp 대신 루트만 조회
+      - 파일명 추출 없이 raw HTML 만 출력
+      - 디렉터리 리스팅 개념 언급 없음
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/ftp
   risk_level: low
@@ -225,20 +226,20 @@ steps:
     expect: 10.20.30
     field: stdout
     semantic:
-      intent: 정보수집 기초 (Reconnaissance) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 네트워크 경로 및 연결성 확인 — ping 으로 RTT 측정 + ip route get 으로 목적지까지의 라우팅 경로 파악
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ping -c 1 또는 동등 명령으로 대상까지 ICMP 응답 수신
+      - ip route get <IP> 또는 traceroute 로 다음 홉·소스 IP 확인
+      - 라우팅 경로(via, dev) 또는 RTT 결과 해석
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ping -c 1 <IP> 와 ip route get <IP> 조합
+      - traceroute <IP> 또는 mtr -r -c 3 <IP>
+      - tcptraceroute <IP>:<port>
+      - ip -4 neigh (인접 호스트 ARP)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(정보수집 기초 (Reconnaissance))와 무관한 기법
+      - ping 없이 라우팅 조회만
+      - 결과 해석 없이 raw 출력
+      - 다른 네트워크 대상 조회
   target_vm: attacker
   script: ping -c 1 10.20.30.80 && echo "--- Routing ---" && ip route get 10.20.30.80
   risk_level: low
@@ -258,20 +259,20 @@ steps:
     expect: HTTP/
     field: stdout
     semantic:
-      intent: 정보수집 기초 (Reconnaissance) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: netcat 수동 배너 그래빙 — nc 로 TCP 연결 후 HEAD / HTTP/1.0 요청 전송해 raw 응답의 서버 배너 확인
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - nc 로 대상 포트(3000) 에 TCP 연결
+      - HTTP HEAD 또는 GET 요청 수동 전송 (\r\n 줄바꿈 포함)
+      - 응답의 Status Line(HTTP/1.x) + Server 헤더 획득
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e HEAD / HTTP/1.0\r\n\r\n | nc -w 3 <IP> 3000
+      - printf ... | ncat <IP> 3000
+      - telnet <IP> 3000 + 수동 입력
+      - openssl s_client -connect <IP>:443 (TLS 포트용 대안)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(정보수집 기초 (Reconnaissance))와 무관한 기법
+      - curl 로만 수행해 수동 프로토콜 학습 의도 벗어남
+      - 연결 실패만 받고 재시도/다른 포트 시도 없음
+      - \r\n 없이 HTTP 요청 잘못 구성해 서버가 대기만
   target_vm: attacker
   script: echo -e 'HEAD / HTTP/1.0\r\n\r\n' | nc -w 3 10.20.30.80 3000
   risk_level: low
@@ -294,20 +295,20 @@ steps:
     expect: 'Total products:'
     field: stdout
     semantic:
-      intent: 정보수집 기초 (Reconnaissance) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop REST API 탐색 — /api/Products JSON 응답 파싱해 data 배열 길이(제품 수) 출력
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl 로 /api/Products GET 요청
+      - python3 로 JSON 파싱 후 data 키의 리스트 길이 계산
+      - 'Total products: <N> 형식 또는 동등한 숫자 출력'
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -s ... | python3 -c import sys,json; json.load(sys.stdin)
+      - curl -s ... | jq .data | length
+      - python requests.get 후 response.json()
+      - httpie http <url>/api/Products 후 jq
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(정보수집 기초 (Reconnaissance))와 무관한 기법
+      - HTML 응답을 JSON 으로 파싱 시도 실패
+      - data 필드 대신 전체 응답 크기만 측정
+      - API 호출 없이 개념만
   target_vm: attacker
   script: 'curl -s http://10.20.30.80:3000/api/Products | python3 -c "import sys,json; d=json.load(sys.stdin);
     print(\"Total products: \" + str(len(d.get(\"data\",[]))))"'
@@ -329,20 +330,20 @@ steps:
     expect: HTTP/
     field: stdout
     semantic:
-      intent: 정보수집 기초 (Reconnaissance) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 포트 80 Apache 서버 헤더 확인 — 포트 3000 과 별도의 HTTP 서비스의 기술 스택 비교
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl -I http://<IP>:80 실행
+      - 응답 상태 라인(HTTP/) 과 Server 헤더 확인 (예 Apache/2.4.x 또는 nginx)
+      - 포트 80 과 3000 의 서버 종류 차이 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -I http://<IP>:80
+      - curl -I http://<IP> (80은 기본)
+      - wget --server-response --spider http://<IP>
+      - nmap -sV -p 80 <IP> 로 서비스 버전 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(정보수집 기초 (Reconnaissance))와 무관한 기법
+      - 포트 3000 재확인만 (80 누락)
+      - Server 헤더 없는 응답 해석 없이 종료
+      - HTTPS(443) 로 시도해 대상 서비스 잘못 지정
   target_vm: attacker
   script: curl -I http://10.20.30.80:80
   risk_level: low
@@ -362,20 +363,20 @@ steps:
     expect: Nmap scan report
     field: stdout
     semantic:
-      intent: 정보수집 기초 (Reconnaissance) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Ping Sweep / ARP Scan — 10.20.30.0/24 대역의 활성 호스트 목록 작성 (포트 스캔 없이 호스트 발견만)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - nmap -sn 또는 arp-scan 으로 CIDR 스캔
+      - 응답에 Nmap scan report for 또는 Host is up 라인 최소 2개
+      - 활성 호스트 IP 목록 추출
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - nmap -sn 10.20.30.0/24
+      - arp-scan --interface=<iface> --localnet
+      - fping -g 10.20.30.0/24 -a 2>/dev/null
+      - for i in $(seq 1 254); do ping -c1 -W1 10.20.30.$i; done
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(정보수집 기초 (Reconnaissance))와 무관한 기법
+      - 단일 IP 만 ping (/24 미스캔)
+      - 포트 스캔까지 수행 (의도 초과)
+      - 결과에서 활성 호스트 추출 없이 raw 만 남김
   target_vm: attacker
   script: nmap -sn 10.20.30.0/24
   risk_level: low
@@ -395,20 +396,20 @@ steps:
     expect: version
     field: stdout
     semantic:
-      intent: 정보수집 기초 (Reconnaissance) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop 인증 없는 버전 노출 엔드포인트 /rest/admin/application-version 확인 — 노출된 버전으로 CVE 매핑 가능성
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl 로 /rest/admin/application-version GET 요청
+      - JSON 응답에 version 필드와 값(예 14.x) 포함
+      - 인증 없는 노출이 보안 설정 미흡임을 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -s http://<host>:3000/rest/admin/application-version
+      - python requests.get(url).json()
+      - httpie http <url>/rest/admin/application-version
+      - Burp Repeater 로 인증 헤더 유무 비교
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(정보수집 기초 (Reconnaissance))와 무관한 기법
+      - 다른 엔드포인트 조회
+      - 인증 토큰 포함해 요청 (인증 없는 노출 확인 의도 벗어남)
+      - 응답에서 버전 값 해석 없음
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/rest/admin/application-version
   risk_level: low
@@ -428,20 +429,20 @@ steps:
     expect: admin
     field: stdout
     semantic:
-      intent: 정보수집 기초 (Reconnaissance) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JavaScript 번들(main.js) 정적 분석 — admin 키워드 grep 으로 하드코딩된 관리자 경로·API 식별
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl 로 /main.js 다운로드
+      - grep -i admin 으로 필터
+      - 매칭된 라인 최소 1개 (/api/..., /admin/... 경로 추정)
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -s http://<host>:3000/main.js | grep -i admin
+      - curl -s ... | head -c 1000 후 수동 분석
+      - LinkFinder 도구
+      - browser dev tools Source 탭
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(정보수집 기초 (Reconnaissance))와 무관한 기법
+      - main.js 파일 없이 HTML 만 확인
+      - admin 매칭 결과 해석 없이 raw 출력
+      - 파일이 미존재해도 종료 (다른 JS 번들 시도 없음)
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/main.js | grep -i 'admin' | head -20
   risk_level: low
@@ -461,20 +462,20 @@ steps:
     expect: data
     field: stdout
     semantic:
-      intent: 정보수집 기초 (Reconnaissance) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 인증 없는 /rest/memories 엔드포인트 접근 — 사용자 업로드 파일 메타데이터(사용자명·이메일·파일명) 수집
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl 로 /rest/memories GET 요청
+      - JSON 응답에 data 배열과 최소 1개 항목
+      - 노출된 필드(user/image/caption 등)에서 부가 정보 추출
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -s .../rest/memories | python3 -m json.tool
+      - curl -s ... | jq .data[0]
+      - python requests + json parse
+      - Burp Repeater 로 반복 요청
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(정보수집 기초 (Reconnaissance))와 무관한 기법
+      - 인증 필요하다고 판단해 토큰 생성 시도 (불필요)
+      - 응답 JSON 해석 없이 raw 출력
+      - data 필드 외 무관 영역만 확인
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/rest/memories | python3 -m json.tool | head -30
   risk_level: low
@@ -497,20 +498,20 @@ steps:
     expect: Recon Report
     field: stdout
     semantic:
-      intent: 정보수집 기초 (Reconnaissance) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 정찰 결과 종합 리포트 작성 — 대상 IP·포트·기술스택·API·네트워크 대역을 /tmp/recon_report.txt 에 구조화
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - echo -e 또는 heredoc 으로 리포트 파일 생성
+      - Target/Ports/Tech/APIs/Network 5 카테고리 이상 포함
+      - cat 으로 파일 내용 검증 출력
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e 다줄 > /tmp/recon_report.txt
+      - cat > /tmp/recon_report.txt << EOF ... EOF
+      - python 으로 json/markdown 리포트 생성
+      - tee 명령으로 동시에 stdout+파일
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(정보수집 기초 (Reconnaissance))와 무관한 기법
+      - 파일 저장 없이 화면 출력만
+      - 카테고리 3개 이하 (구조화 부족)
+      - 이전 스텝 결과 반영 없이 일반론만
   target_vm: attacker
   script: 'echo -e ''=== Recon Report ===\nTarget: 10.20.30.80\nPorts: 80(Apache), 3000(JuiceShop)\nTech:
     Node.js, Express, Angular\nAPIs: /api/Products, /rest/admin/application-version, /ftp, /rest/memories\nNetwork:
