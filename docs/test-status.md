@@ -165,3 +165,78 @@ gpt-oss:120b 유지 결론. 자세한 보고: `docs/model-comparison-report.md`
 - 코드 개선 커밋 히스토리: git log (w19~w24 세대)
 - Lab YAML: `contents/labs/<course>/week*.yaml` (678건 bastion_prompt 수정 반영)
 - 논문 제안서: `contents/papers/agent-ir-curriculum/proposal.md` (git-ignored)
+
+---
+
+## 9. 2026-04-22 재테스트 — verify.semantic 수동 재작성 효과 검증
+
+**배경**: 2026-04-21 세션에서 soc-adv-ai (210 step) + secops-ai (150 step) + cloud-container-ai (116 step) = **476 step** 을 per-step 고유 semantic 으로 수동 재작성. 재작성 전 fail/qa_fallback/no_execution 상태였던 114 건 중 86 건을 재실행 (cloud w2 s7/s8 은 Bastion hang 으로 skip, 34 건은 시간 부족으로 미실행).
+
+### 9.1 재테스트 결과 (86건)
+
+| 과목 | 재테스트 | 신규 PASS | 여전히 FAIL | qa_fallback | 개선율 |
+|------|----------|-----------|-------------|-------------|--------|
+| soc-adv-ai | 39 | 15 | 21 | 3 | **38%** |
+| secops-ai | 29 | 13 | 16 | 0 | **45%** |
+| cloud-container-ai | 18 | 5 | 13 | 0 | **28%** |
+| **합계** | **86** | **33** | **50** | **3** | **38%** |
+
+### 9.2 과목 전체 pass rate 변화 (재작성+재테스트 반영)
+
+| 과목 | 재테스트 이전 | **현재** | Δ |
+|------|--------------|---------|---|
+| soc-adv-ai | 171/210 (81%) | **186/210 (89%)** | +15, +8%p |
+| secops-ai | 121/150 (81%) | **134/150 (89%)** | +13, +8%p |
+| cloud-container-ai | 62/116 (53%) | **67/116 (58%)** | +5, +5%p |
+
+### 9.3 Fail 원인 분류 (50건)
+
+1. **인프라 문제** (semantic 무관, 판정 불가):
+   - Wazuh API 401 Unauthorized (soc-adv-ai w1 s1, w2 s8) — Bastion wazuh_api skill 에 토큰 미설정
+   - 비율: 약 10%
+
+2. **verify.expect 미스매치** (semantic judge fallback 도 실패):
+   - skill 실행 성공·stdout 있으나 `verify.expect` 키워드 부재
+   - semantic judge 가 관대 판정 못 함 (LLM 출력의 intent 충실도 부족 또는 judge 판정 임계치)
+   - 비율: 약 80%
+   - 예: soc-adv-ai w13 s7 (`shell` 3회 실행했으나 expect 매치 실패)
+
+3. **qa_fallback** (skill 실행 자체 안 함):
+   - Bastion Intent 분류기가 "답변형" 으로 오인
+   - 비율: 약 6% (soc-adv-ai 3건)
+   - 예: soc-adv-ai w2 s3/s5, w13 s5
+
+### 9.4 semantic 재작성으로 구제된 패턴 (15~45% 개선)
+
+성공 사례의 공통점:
+- **framework/reporting category**: NIST SP 800-61, CIS Docker Benchmark 같은 표준 기반 질문 → semantic intent 의 핵심 키워드가 LLM 출력에 자연 포함 → judge pass
+- **단순 실행 확인**: systemctl/grep/find 기반 조회 → shell 결과가 expect 키워드 포함
+- **하드닝 run 예시**: docker run --cap-drop ALL 같은 복합 옵션 실행 → inspect 검증이 expect 매치
+
+### 9.5 다음 세션 verify 개선 방향
+
+1. **`verify.expect` 강화 (최우선)**:
+   - 현재 expect 는 단일 키워드(예: `NIST`) → 너무 엄격
+   - semantic intent 의 핵심 키워드 2-3개를 list 로 추가 (`[NIST, 4단계, 대응]`)
+   - `output_contains` 단계에서 더 많이 pass → semantic judge fallback 부담 감소
+   - 효과: fail 50건 중 약 40건 구제 가능 추정
+
+2. **qa_fallback 방지**:
+   - instruction 에 명시적 action 동사 강화: "설명하라" 대신 "출력하라/실행하라/조회하라"
+   - target_vm + 구체 명령어 예시를 hint 에 포함 → Intent 분류기가 "실행형" 으로 분류
+
+3. **인프라 설정 preflight 분리**:
+   - Wazuh API token 같은 auth 필요한 step 은 별도 w0 setup step 으로 분리
+   - 또는 Bastion 설정에서 토큰 자동 주입
+
+### 9.6 논문 기여도 변경
+
+| 지표 | 2026-04-20 기준 | **2026-04-22 기준** |
+|------|----------------|---------------------|
+| 전체 pass rate | 45.5% | **46.6%** (신규 33 pass 반영) |
+| soc-adv-ai pass | 81% | **89%** |
+| secops-ai pass | 81% | **89%** |
+| verify.semantic 수동 재작성 step | 0 | **476** (3 과목 15주차 전량) |
+| 수동 재작성 후 개선율 | N/A | **38%** (이전 fail 재테스트 기준) |
+
+**결론**: 수동 semantic 재작성은 특히 framework/reporting 중심 과목(soc-adv·secops)에서 **81% → 89% (+8%p)** 로 뚜렷한 개선 효과. cloud-container-ai 는 docker run/inspect 같은 구체 명령 실행 위주라 semantic fallback 보다 verify.expect 정확성이 더 중요 → 다음 세션에서 expect 필드 보강으로 추가 개선 가능.
