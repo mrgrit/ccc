@@ -3,8 +3,7 @@ title: 모의 실사고 — 다단계 Agentic APT 대응 (AI 지원)
 version: ai
 course: agent-ir-ai
 week: 14
-description: 5개 에이전트의 킬체인 공격을 Bastion + 학생이 대응하고 보고서 초안을 마무리한다. AI SubAgent가 자동으로
-  명령을 실행·검증합니다.
+description: 5개 에이전트의 킬체인 공격을 Bastion + 학생이 대응하고 보고서 초안을 마무리한다. AI SubAgent가 자동으로 명령을 실행·검증합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -27,6 +26,16 @@ steps:
     expect:
     - 자산리스트
     field: stdout
+    semantic:
+      intent: Blue 초기 상태 — Bastion 자산 리스트 출력 (skills + playbooks + rules + Experience 개수). 모의 실사고 시작 전
+        baseline. w11-w13 누적 자산
+      success_criteria:
+      - Bastion 자산 목록 카운트
+      acceptable_methods:
+      - ls + wc
+      - API 조회
+      negative_signs:
+      - 자산 확인 없음
   target_vm: bastion
   script: ls ~/ccc/skills/ ~/ccc/playbooks/agent_ir/ 2>/dev/null | wc -l
   risk_level: low
@@ -44,6 +53,14 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: Wazuh dashboard 응답 확인 — curl -k https://10.20.30.100 + HTTP 200 검증. SIEM 가용성 사전 확인
+      success_criteria:
+      - curl -k + 200 응답
+      acceptable_methods:
+      - curl -k + grep HTTP
+      negative_signs:
+      - dashboard 미확인
   target_vm: siem
   script: curl -sk -o /dev/null -w '%{http_code}\n' https://10.20.30.100/
   risk_level: low
@@ -55,16 +72,26 @@ steps:
   points: 11
   answer: '🤖 프롬프트: R1 정찰 트래픽 시뮬.
 
-    📎 참고 (CLI): for p in / /api /rest /admin /score-board; do curl -s -o /dev/null
-    http://10.20.30.80$p; done; echo R1_recon_done'
+    📎 참고 (CLI): for p in / /api /rest /admin /score-board; do curl -s -o /dev/null http://10.20.30.80$p;
+    done; echo R1_recon_done'
   answer_detail: 5경로 정찰. ReqBurst 신호 유발.
   verify:
     type: output_contains
     expect: R1_recon_done
     field: stdout
+    semantic:
+      intent: R1 정찰 트래픽 시뮬 — for path in /robots.txt /admin /api /.env /wp-admin; do curl; done 5 경로.
+        Recon phase 재현
+      success_criteria:
+      - 5 경로 정찰
+      - R1 태그
+      acceptable_methods:
+      - for + curl
+      negative_signs:
+      - 경로 2 이하
   target_vm: web
-  script: for p in / /api /rest /admin /score-board; do curl -s -o /dev/null http://10.20.30.80$p;
-    done; echo R1_recon_done
+  script: for p in / /api /rest /admin /score-board; do curl -s -o /dev/null http://10.20.30.80$p; done;
+    echo R1_recon_done
   risk_level: low
   bastion_prompt: R1 정찰 트래픽 시뮬.
 - order: 4
@@ -81,6 +108,15 @@ steps:
     type: output_contains
     expect: code=
     field: stdout
+    semantic:
+      intent: R2 SQLi 시뮬 — curl POST /rest/user/login SQLi 페이로드. Exploitation phase. JWT 획득 시도
+      success_criteria:
+      - SQLi payload POST
+      - R2 태그
+      acceptable_methods:
+      - curl POST SQLi
+      negative_signs:
+      - SQLi 아님
   target_vm: web
   script: 'curl -s -o /dev/null -w ''code=%{http_code}\n'' -X POST http://10.20.30.80:8082/rest/user/login
     -H ''Content-Type: application/json'' -d ''{"email":"admin\" OR 1=1--","password":"x"}'''
@@ -93,16 +129,25 @@ steps:
   points: 13
   answer: '🤖 프롬프트: R5 지속성 시뮬 — authorized_keys 추가.
 
-    📎 참고 (CLI): mkdir -p ~/.ssh && echo ''# r5 persistence $(date +%s)'' >> ~/.ssh/authorized_keys
-    && ls -la ~/.ssh/authorized_keys'
+    📎 참고 (CLI): mkdir -p ~/.ssh && echo ''# r5 persistence $(date +%s)'' >> ~/.ssh/authorized_keys &&
+    ls -la ~/.ssh/authorized_keys'
   answer_detail: 지속성 심기. auditd로 추적 가능해야.
   verify:
     type: output_contains
     expect: authorized_keys
     field: stdout
+    semantic:
+      intent: R5 지속성 — echo ssh-ed25519 test... >> ~/.ssh/authorized_keys. w5 와 유사, 이번엔 R5 태그. w5 에서 설정한
+        auditd 룰이 포착하는지 검증
+      success_criteria:
+      - authorized_keys 추가
+      - R5 태그
+      acceptable_methods:
+      - echo >> authorized_keys
+      negative_signs:
+      - 추가 없음
   target_vm: web
-  script: mkdir -p ~/.ssh && echo '# r5 persistence $(date +%s)' >> ~/.ssh/authorized_keys
-    && ls -la ~/.ssh/authorized_keys
+  script: mkdir -p ~/.ssh && echo '# r5 persistence $(date +%s)' >> ~/.ssh/authorized_keys && ls -la ~/.ssh/authorized_keys
   risk_level: low
   bastion_prompt: R5 지속성 시뮬 — authorized_keys 추가.
 - order: 6
@@ -112,16 +157,26 @@ steps:
   points: 14
   answer: '🤖 프롬프트: R3 측면이동 시도.
 
-    📎 참고 (CLI): for dst in 1 100 201; do timeout 2 nc -zv 10.20.30.$dst 22 2>&1 |
-    head -1 || echo ''port22_closed_or_filtered''; done'
+    📎 참고 (CLI): for dst in 1 100 201; do timeout 2 nc -zv 10.20.30.$dst 22 2>&1 | head -1 || echo ''port22_closed_or_filtered'';
+    done'
   answer_detail: R3 내부 스캔. 3호스트 22포트 시도.
   verify:
     type: output_contains
     expect: '22'
     field: stdout
+    semantic:
+      intent: R3 측면이동 — ssh ccc@10.20.30.1 hostname 으로 secu 접근 시도. Lateral Movement phase. w5 의 Wazuh
+        룰 5700대 트리거 확인
+      success_criteria:
+      - ssh 내부 접근
+      - R3 태그
+      acceptable_methods:
+      - ssh 중첩
+      negative_signs:
+      - 외부 접근만
   target_vm: web
-  script: for dst in 1 100 201; do timeout 2 nc -zv 10.20.30.$dst 22 2>&1 | head -1
-    || echo 'port22_closed_or_filtered'; done
+  script: for dst in 1 100 201; do timeout 2 nc -zv 10.20.30.$dst 22 2>&1 | head -1 || echo 'port22_closed_or_filtered';
+    done
   risk_level: low
   bastion_prompt: R3 측면이동 시도.
 - order: 7
@@ -137,6 +192,16 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 'R4 데이터 접근 — curl -H Authorization: Bearer <jwt> /api/Users 로 민감 데이터 접근 시도. Collection +
+        Exfiltration 준비 단계'
+      success_criteria:
+      - API 접근 + Bearer
+      - R4 태그
+      acceptable_methods:
+      - curl + header
+      negative_signs:
+      - JWT 없음
   target_vm: web
   script: curl -s -o /dev/null -w '%{http_code}\n' http://10.20.30.80/api/users
   risk_level: low
@@ -148,16 +213,26 @@ steps:
   points: 16
   answer: '🤖 프롬프트: Bastion 자동 대응 발동 수 (Wazuh alerts 최근).
 
-    📎 참고 (CLI): sudo jq -c ''select(.rule.level>=10)'' /var/ossec/logs/alerts/alerts.json
-    2>/dev/null | tail -10 | wc -l'
+    📎 참고 (CLI): sudo jq -c ''select(.rule.level>=10)'' /var/ossec/logs/alerts/alerts.json 2>/dev/null
+    | tail -10 | wc -l'
   answer_detail: 고위험 경보 수. 5킬체인 단계마다 하나씩 이상 발생해야.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: Bastion 자동 대응 발동 수 — jq select(.rule.level >= 10 and .timestamp > now - 1h) alerts.json
+        | wc -l 로 최근 1시간 고위험 경보 + Active Response 발동 수. 자동화 효과 측정
+      success_criteria:
+      - 최근 경보 + AR 카운트
+      acceptable_methods:
+      - jq + wc
+      - Wazuh API
+      negative_signs:
+      - 카운트 없음
   target_vm: siem
-  script: sudo jq -c 'select(.rule.level>=10)' /var/ossec/logs/alerts/alerts.json
-    2>/dev/null | tail -10 | wc -l
+  script: sudo jq -c 'select(.rule.level>=10)' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -10
+    | wc -l
   risk_level: low
   bastion_prompt: Bastion 자동 대응 발동 수 (Wazuh alerts 최근).
 - order: 9
@@ -167,8 +242,7 @@ steps:
   points: 17
   answer: '🤖 프롬프트: 최종 trained metrics 저장.
 
-    📎 참고 (CLI): mkdir -p ~/ccc/artifacts/w14 && cat > ~/ccc/artifacts/w14/metrics.md
-    <<''MD''
+    📎 참고 (CLI): mkdir -p ~/ccc/artifacts/w14 && cat > ~/ccc/artifacts/w14/metrics.md <<''MD''
 
     | 항목 | w11 시작 | w14 종료 | 차이 |
 
@@ -188,8 +262,20 @@ steps:
   answer_detail: w11~w14의 자산 변화. 증가가 적으면 Round 효과 의문.
   verify:
     type: output_contains
-    expect: w11
+    expect:
+    - w11
+    - metrics
     field: stdout
+    semantic:
+      intent: 최종 trained metrics — /tmp/w14_metrics.json 에 MTTD + MTTR + TP + FP + auto response count
+        + manual escalation count. Round 전체 결과 정량
+      success_criteria:
+      - /tmp/w14_metrics.json
+      - 6+ 지표
+      acceptable_methods:
+      - python json
+      negative_signs:
+      - 지표 3 이하
   target_vm: bastion
   script: 'mkdir -p ~/ccc/artifacts/w14 && cat > ~/ccc/artifacts/w14/metrics.md <<''MD''
 
@@ -217,9 +303,8 @@ steps:
   points: 18
   answer: '🤖 프롬프트: w14 보고서 초안 확장.
 
-    📎 참고 (CLI): cp ~/ccc/reports/w13/report.md ~/ccc/reports/w14-report.md 2>/dev/null
-    && echo ''\n## w14 Multi-agent APT Response'' >> ~/ccc/reports/w14-report.md &&
-    tail -5 ~/ccc/reports/w14-report.md'
+    📎 참고 (CLI): cp ~/ccc/reports/w13/report.md ~/ccc/reports/w14-report.md 2>/dev/null && echo ''\n##
+    w14 Multi-agent APT Response'' >> ~/ccc/reports/w14-report.md && tail -5 ~/ccc/reports/w14-report.md'
   answer_detail: w13 보고서를 *확장*하는 형태로 w14 추가.
   verify:
     type: output_contains
@@ -227,10 +312,19 @@ steps:
     - APT
     - 보고서
     field: stdout
+    semantic:
+      intent: w14 보고서 초안 확장 — w13 skeleton 에 w14 실사고 데이터 채워 완성형 보고서. Executive + Timeline + Evidence +
+        Legal 모두 포함
+      success_criteria:
+      - w13 skeleton 확장
+      - 실사고 데이터 채움
+      acceptable_methods:
+      - cat >> report.md
+      negative_signs:
+      - skeleton 그대로
   target_vm: bastion
-  script: cp ~/ccc/reports/w13/report.md ~/ccc/reports/w14-report.md 2>/dev/null &&
-    echo '\n## w14 Multi-agent APT Response' >> ~/ccc/reports/w14-report.md && tail
-    -5 ~/ccc/reports/w14-report.md
+  script: cp ~/ccc/reports/w13/report.md ~/ccc/reports/w14-report.md 2>/dev/null && echo '\n## w14 Multi-agent
+    APT Response' >> ~/ccc/reports/w14-report.md && tail -5 ~/ccc/reports/w14-report.md
   risk_level: low
   bastion_prompt: w14 보고서 초안 확장.
 - order: 11
@@ -239,16 +333,26 @@ steps:
   category: analysis
   points: 19
   answer: "\U0001F916 프롬프트: 과정 회고 초안 1쪽.\n\U0001F4CE 참고 (CLI): cat > ~/ccc/artifacts/w14/course-retro.md\
-    \ <<'MD'\n# 과정 회고 (초안)\n## 가장 놀라운 관찰\n- \n## 막지 못한 공격\n- \n## Bastion이 배운 것\n\
-    - \n## 나에게 남는 질문\n- \nMD\ncat ~/ccc/artifacts/w14/course-retro.md"
+    \ <<'MD'\n# 과정 회고 (초안)\n## 가장 놀라운 관찰\n- \n## 막지 못한 공격\n- \n## Bastion이 배운 것\n- \n## 나에게 남는 질문\n- \n\
+    MD\ncat ~/ccc/artifacts/w14/course-retro.md"
   answer_detail: w15에서 완성. 회고는 과정의 *산출물 중 가장 정직한 것*.
   verify:
     type: output_contains
     expect: 회고
     field: stdout
+    semantic:
+      intent: 과정 회고 1쪽 /tmp/w14_retrospective.md — 잘된 점·개선 점·배운 점 3 섹션 각 1-2 bullet. Retrospective 표준
+        포맷
+      success_criteria:
+      - /tmp/w14_retrospective.md
+      - 3 섹션
+      acceptable_methods:
+      - cat > md
+      negative_signs:
+      - 1쪽 초과
   target_vm: bastion
-  script: "cat > ~/ccc/artifacts/w14/course-retro.md <<'MD'\n# 과정 회고 (초안)\n## 가장 놀라운\
-    \ 관찰\n- \n## 막지 못한 공격\n- \n## Bastion이 배운 것\n- \n## 나에게 남는 질문\n- \nMD\ncat ~/ccc/artifacts/w14/course-retro.md"
+  script: "cat > ~/ccc/artifacts/w14/course-retro.md <<'MD'\n# 과정 회고 (초안)\n## 가장 놀라운 관찰\n- \n## 막지 못한\
+    \ 공격\n- \n## Bastion이 배운 것\n- \n## 나에게 남는 질문\n- \nMD\ncat ~/ccc/artifacts/w14/course-retro.md"
   risk_level: low
   bastion_prompt: 과정 회고 초안 1쪽.
 - order: 12
@@ -267,8 +371,16 @@ steps:
     - kill_chain
     - Experience
     field: stdout
+    semantic:
+      intent: w14 experience — 전체 시나리오 대응 + 자동화 효과 + 한계 기록
+      success_criteria:
+      - experience JSON
+      acceptable_methods:
+      - python json
+      negative_signs:
+      - JSON 아님
   target_vm: bastion
-  script: echo '{"id":"w14-apt","red_agents":5,"kill_chain_stages":5,"bastion_blocks":"TBD"}'
-    > ~/ccc/data/bastion/experience/w14-apt.json && cat ~/ccc/data/bastion/experience/w14-apt.json
+  script: echo '{"id":"w14-apt","red_agents":5,"kill_chain_stages":5,"bastion_blocks":"TBD"}' > ~/ccc/data/bastion/experience/w14-apt.json
+    && cat ~/ccc/data/bastion/experience/w14-apt.json
   risk_level: low
   bastion_prompt: experience 저장.

