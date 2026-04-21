@@ -3,8 +3,8 @@ title: PCI-DSS 요구사항 점검 실습 (AI 지원)
 version: ai
 course: compliance-ai
 week: 6
-description: PCI-DSS(Payment Card Industry Data Security Standard) v4.0의 주요 요구사항을 시스템에서 점검합니다. 방화벽, 패스워드 정책, 암호화, 취약점 관리,
-  접근 통제, 로그 모니터링 등을 확인합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: PCI-DSS(Payment Card Industry Data Security Standard) v4.0의 주요 요구사항을 시스템에서 점검합니다. 방화벽, 패스워드
+  정책, 암호화, 취약점 관리, 접근 통제, 로그 모니터링 등을 확인합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -21,28 +21,31 @@ steps:
   answer: '🤖 프롬프트: SECU 서버(10.20.30.1)에서 방화벽 규칙을 확인하시오. PCI-DSS Req.1: 네트워크 보안 통제를 설치하고 유지관리해줘
 
     📎 참고 (CLI): sudo nft list ruleset | head -30'
-  answer_detail: PCI-DSS Requirement 1은 카드소유자 데이터 환경(CDE)과 다른 네트워크 사이에 방화벽을 설치하고 유지할 것을 요구합니다. 인바운드/아웃바운드 트래픽 모두 명시적으로 허용된
-    것만 통과해야 하며, 기본 정책은 deny-all이어야 합니다.
+  answer_detail: PCI-DSS Requirement 1은 카드소유자 데이터 환경(CDE)과 다른 네트워크 사이에 방화벽을 설치하고 유지할 것을 요구합니다. 인바운드/아웃바운드
+    트래픽 모두 명시적으로 허용된 것만 통과해야 하며, 기본 정책은 deny-all이어야 합니다.
   verify:
     type: output_contains
     expect: table
     field: stdout
     semantic:
-      intent: '컴플라이언스 w6 s1 — SECU 서버({{SECU_IP}})에서 방화벽 규칙을 확인하시오. PCI-DSS Req.1: 네트워크 보안 통제를 설치하고 유지관리. (cmd: sudo nft list
-        ruleset | head -30)'
+      intent: 'PCI-DSS v4.0 Req.1 Network Security Controls — sudo nft list ruleset | head -30. CDE(Cardholder
+        Data Environment) segmentation 필수. deny-all + explicit allow. NSC(Network Security Controls =
+        방화벽) 인·아웃바운드 모두 통제. DMZ 격리, 내부 네트워크와 CDE 분리. Req.1.2 NSC 설정 review 6개월마다. Cloud: AWS SG + NACL,
+        Azure NSG 매핑'
       success_criteria:
-      - '명령 실행: sudo nft list ruleset | head -30'
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - nft list ruleset 실행
+      - table 키워드 포함
+      - 방화벽 규칙 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft list ruleset
+      - iptables-nft -L -n -v
+      - ufw status verbose
+      - firewalld --list-all
+      - AWS CLI describe-security-groups
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - 빈 ruleset 정상 판정
+      - CDE segmentation 이해 없음
+      - default-allow policy
   target_vm: secu
   script: sudo nft list ruleset | head -30
   risk_level: low
@@ -56,31 +59,33 @@ steps:
 
     📎 참고 (CLI): sudo chage -l root | grep ''Last password change'' && echo ''---'' && grep -E ''^(admin|guest|test|user):''
     /etc/passwd 2>/dev/null || echo ''기본 계정 없음'''
-  answer_detail: PCI-DSS Requirement 2는 시스템의 벤더 기본 비밀번호와 보안 파라미터를 변경할 것을 요구합니다. 기본 계정(admin, guest, test 등)은 삭제하거나 비활성화하고,
-    기본 비밀번호는 반드시 변경해야 합니다.
+  answer_detail: PCI-DSS Requirement 2는 시스템의 벤더 기본 비밀번호와 보안 파라미터를 변경할 것을 요구합니다. 기본 계정(admin, guest, test
+    등)은 삭제하거나 비활성화하고, 기본 비밀번호는 반드시 변경해야 합니다.
   verify:
     type: output_contains
     expect: Last password change
     field: stdout
     semantic:
-      intent: '컴플라이언스 w6 s2 — 시스템의 기본 계정(default account) 비밀번호가 변경되었는지 확인하시오. PCI-DSS Req.2: 벤더 기본값을 사용하지 않을 것. (cmd: sudo
-        chage -l root | grep ''Last password change'' && echo ''---'' && grep -E ''^(adm)'
+      intent: 'PCI-DSS Req.2 벤더 기본값 변경 — sudo chage -l root | grep Last password change + grep -E ^(admin|guest|test|user):
+        /etc/passwd. 기본 계정: admin/guest/test/oracle/postgres 등 모두 삭제 또는 비활성. 기본 PW 변경(PCI-DSS Req.2.2.2).
+        하드닝 baseline: CIS Benchmark. SSH 기본포트 변경 22→2222 보안 효과 제한적, config 관리가 핵심. Ansible hardening role'
       success_criteria:
-      - '명령 실행: sudo chage -l root | grep ''Last password change'' && echo ''--'
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - chage -l root 실행
+      - Last password change 키워드
+      - 기본 계정 존재 여부
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - chage -l root + grep /etc/passwd
+      - 'cat /etc/shadow | awk -F: length($2)>1(PW 설정된 계정)'
+      - last root 로 로그인 이력
+      - passwd -S root(lock 여부)
+      - aide integrity check baseline
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - 기본 계정 존재 무시
+      - root PW 기본값 유지
+      - CIS hardening 미적용
   target_vm: secu
-  script: sudo chage -l root | grep 'Last password change' && echo '---' && grep -E '^(admin|guest|test|user):' /etc/passwd
-    2>/dev/null || echo '기본 계정 없음'
+  script: sudo chage -l root | grep 'Last password change' && echo '---' && grep -E '^(admin|guest|test|user):'
+    /etc/passwd 2>/dev/null || echo '기본 계정 없음'
   risk_level: low
   bastion_prompt: '시스템의 기본 계정(default account) 비밀번호가 변경되었는지 확인하시오. PCI-DSS Req.2: 벤더 기본값을 사용하지 않을 것해줘'
 - order: 3
@@ -90,33 +95,36 @@ steps:
   points: 12
   answer: '🤖 프롬프트: 저장된 데이터의 보호 상태를 점검해줘
 
-    📎 참고 (CLI): sudo grep -rn ''[0-9]\{4\}[- ]\?[0-9]\{4\}[- ]\?[0-9]\{4\}[- ]\?[0-9]\{4\}'' /var/log/ /tmp/ /var/www/ 2>/dev/null
-    | head -10 || echo ''카드번호 패턴 미발견'''
-  answer_detail: PCI-DSS Requirement 3은 저장된 카드소유자 데이터를 보호할 것을 요구합니다. PAN(Primary Account Number)은 평문으로 저장하면 안 되며, 저장 시 암호화하거나
-    토큰화해야 합니다. 로그, 임시 파일 등에 카드 번호가 평문으로 기록되는 경우가 흔합니다.
+    📎 참고 (CLI): sudo grep -rn ''[0-9]\{4\}[- ]\?[0-9]\{4\}[- ]\?[0-9]\{4\}[- ]\?[0-9]\{4\}'' /var/log/
+    /tmp/ /var/www/ 2>/dev/null | head -10 || echo ''카드번호 패턴 미발견'''
+  answer_detail: PCI-DSS Requirement 3은 저장된 카드소유자 데이터를 보호할 것을 요구합니다. PAN(Primary Account Number)은 평문으로
+    저장하면 안 되며, 저장 시 암호화하거나 토큰화해야 합니다. 로그, 임시 파일 등에 카드 번호가 평문으로 기록되는 경우가 흔합니다.
   verify:
     type: output_contains
     expect: 카드번호
     field: stdout
     semantic:
-      intent: '컴플라이언스 w6 s3 — 저장된 데이터의 보호 상태를 점검하시오. PCI-DSS Req.3: 저장된 계정 데이터 보호. 파일 시스템에서 카드 번호 패턴을 검색합니다. (cmd: sudo grep
-        -rn ''[0-9]\{4\}[- ]\?[0-9]\{4\}[- ]\?[0-9]\{4\}[- ]\?[0-9]\{4\}'' /var/)'
+      intent: PCI-DSS Req.3 저장된 계정 데이터 보호 - PAN 패턴 스캔 — sudo grep -rn [0-9]{4}[- ]?[0-9]{4}[- ]?[0-9]{4}[-
+        ]?[0-9]{4} /var/log/ /tmp/ /var/www/. 16자리 카드번호 패턴. PAN(Primary Account Number)은 평문 저장 금지(Req.3.5).
+        저장 시 암호화(AES-256) 또는 truncation(마스킹 last4) 또는 tokenization. Luhn algorithm 으로 valid PAN 검증. Microsoft
+        Presidio / AWS Macie / DLP 도구 자동 스캔
       success_criteria:
-      - '명령 실행: sudo grep -rn ''[0-9]\{4\}[- ]\?[0-9]\{4\}[- ]\?[0-9]\{4\}[- '
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - grep 16자리 패턴 실행
+      - 카드번호 키워드 포함
+      - 패턴 매칭 결과
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - grep -rn 16-digit 패턴 /var/log /tmp /var/www
+      - pycred-detector python tool
+      - AWS Macie PII discovery
+      - Microsoft Presidio credit_card recognizer
+      - OpenPCI Data Discovery
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - PAN 발견 후 조치 없음
+      - Luhn 검증 없음
+      - DLP 연계 없음
   target_vm: secu
-  script: sudo grep -rn '[0-9]\{4\}[- ]\?[0-9]\{4\}[- ]\?[0-9]\{4\}[- ]\?[0-9]\{4\}' /var/log/ /tmp/ /var/www/ 2>/dev/null
-    | head -10 || echo '카드번호 패턴 미발견'
+  script: sudo grep -rn '[0-9]\{4\}[- ]\?[0-9]\{4\}[- ]\?[0-9]\{4\}[- ]\?[0-9]\{4\}' /var/log/ /tmp/ /var/www/
+    2>/dev/null | head -10 || echo '카드번호 패턴 미발견'
   risk_level: low
   bastion_prompt: 저장된 데이터의 보호 상태를 점검해줘
 - order: 4
@@ -126,33 +134,37 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 전송 구간 암호화 설정을 점검하시오. PCI-DSS Req.4: 개방형 공중 네트워크에서 카드소유자 데이터 전송 시 암호화해줘
 
-    📎 참고 (CLI): openssl ciphers -v ''HIGH:!aNULL:!MD5'' | head -10 && echo ''--- TLS 버전 ---'' && openssl s_client -connect
-    10.20.30.80:443 -tls1_2 </dev/null 2>&1 | grep -E ''(Protocol|Cipher|Verify)'' | head -5'
-  answer_detail: PCI-DSS Requirement 4는 개방형 네트워크에서 카드 데이터 전송 시 강력한 암호화를 요구합니다. TLS 1.2 이상만 허용하고, 취약한 암호 스위트(RC4, DES, MD5
-    등)를 비활성화해야 합니다.
+    📎 참고 (CLI): openssl ciphers -v ''HIGH:!aNULL:!MD5'' | head -10 && echo ''--- TLS 버전 ---'' && openssl
+    s_client -connect 10.20.30.80:443 -tls1_2 </dev/null 2>&1 | grep -E ''(Protocol|Cipher|Verify)'' |
+    head -5'
+  answer_detail: PCI-DSS Requirement 4는 개방형 네트워크에서 카드 데이터 전송 시 강력한 암호화를 요구합니다. TLS 1.2 이상만 허용하고, 취약한 암호
+    스위트(RC4, DES, MD5 등)를 비활성화해야 합니다.
   verify:
     type: output_contains
     expect: TLS
     field: stdout
     semantic:
-      intent: '컴플라이언스 w6 s4 — 전송 구간 암호화 설정을 점검하시오. PCI-DSS Req.4: 개방형 공중 네트워크에서 카드소유자 데이터 전송 시 암호화. (cmd: openssl ciphers
-        -v ''HIGH:!aNULL:!MD5'' | head -10 && echo ''--- TLS 버전 ---'' && ope)'
+      intent: 'PCI-DSS Req.4 전송 암호화 - TLS — openssl ciphers -v HIGH:!aNULL:!MD5 | head -10 + openssl s_client
+        -connect 10.20.30.80:443 -tls1_2. 허용 cipher: AES128/256-GCM, ChaCha20-Poly1305. 제거 대상: DES/3DES/RC4/EXP/MD5/NULL.
+        Req.4.2.1 TLS 1.2 이상 강제(TLS 1.0/1.1 deprecated). PFS(Perfect Forward Secrecy) 활성 - ECDHE 키 교환.
+        testssl.sh <host> 로 자동 등급 검증'
       success_criteria:
-      - '명령 실행: openssl ciphers -v ''HIGH:!aNULL:!MD5'' | head -10 && echo ''--'
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - openssl ciphers + s_client 실행
+      - TLS 키워드 포함
+      - cipher 리스트 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - openssl ciphers + openssl s_client -tls1_2
+      - testssl.sh <host>
+      - sslscan <host>
+      - nmap --script ssl-enum-ciphers
+      - SSL Labs API
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - TLS 1.0/1.1 허용
+      - RC4/DES cipher 허용
+      - PFS 미활성
   target_vm: secu
-  script: openssl ciphers -v 'HIGH:!aNULL:!MD5' | head -10 && echo '--- TLS 버전 ---' && openssl s_client -connect 10.20.30.80:443
-    -tls1_2 </dev/null 2>&1 | grep -E '(Protocol|Cipher|Verify)' | head -5
+  script: openssl ciphers -v 'HIGH:!aNULL:!MD5' | head -10 && echo '--- TLS 버전 ---' && openssl s_client
+    -connect 10.20.30.80:443 -tls1_2 </dev/null 2>&1 | grep -E '(Protocol|Cipher|Verify)' | head -5
   risk_level: low
   bastion_prompt: '전송 구간 암호화 설정을 점검하시오. PCI-DSS Req.4: 개방형 공중 네트워크에서 카드소유자 데이터 전송 시 암호화해줘'
 - order: 5
@@ -162,33 +174,36 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 악성 소프트웨어 방지 설정을 확인하시오. PCI-DSS Req.5: 악성 소프트웨어로부터 시스템과 네트워크 보호해줘
 
-    📎 참고 (CLI): which clamscan 2>/dev/null && clamscan --version 2>/dev/null || echo ''ClamAV 미설치'' && dpkg -l | grep -i ''clamav\|antivirus''
-    2>/dev/null'
-  answer_detail: PCI-DSS Requirement 5는 모든 시스템에서 악성 소프트웨어를 탐지·방지할 것을 요구합니다. ClamAV는 리눅스용 오픈소스 안티바이러스로, 정기 검사와 실시간 감시(clamd)를
-    제공합니다. 바이러스 정의 파일의 최신 상태 유지가 중요합니다.
+    📎 참고 (CLI): which clamscan 2>/dev/null && clamscan --version 2>/dev/null || echo ''ClamAV 미설치'' &&
+    dpkg -l | grep -i ''clamav\|antivirus'' 2>/dev/null'
+  answer_detail: PCI-DSS Requirement 5는 모든 시스템에서 악성 소프트웨어를 탐지·방지할 것을 요구합니다. ClamAV는 리눅스용 오픈소스 안티바이러스로,
+    정기 검사와 실시간 감시(clamd)를 제공합니다. 바이러스 정의 파일의 최신 상태 유지가 중요합니다.
   verify:
     type: output_contains
     expect: clam
     field: stdout
     semantic:
-      intent: '컴플라이언스 w6 s5 — 악성 소프트웨어 방지 설정을 확인하시오. PCI-DSS Req.5: 악성 소프트웨어로부터 시스템과 네트워크 보호. (cmd: which clamscan 2>/dev/null
-        && clamscan --version 2>/dev/null || echo ''ClamAV 미설치)'
+      intent: 'PCI-DSS Req.5 anti-malware — which clamscan + clamscan --version + dpkg -l | grep clamav.
+        ClamAV: daemonized(clamd) + 실시간 watch(clamonacc) + freshclam 자동 DB 업데이트. EDR 대체(Crowdstrike/SentinelOne/Elastic
+        Security) 가능. PCI-DSS Req.5.3.1 active scanning, Req.5.3.2 DAT 파일 최신. 스케줄: daily full scan + realtime.
+        격리(quarantine) 디렉토리 /var/quarantine'
       success_criteria:
-      - '명령 실행: which clamscan 2>/dev/null && clamscan --version 2>/dev/null'
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - which clamscan 실행
+      - clam 키워드 포함
+      - 설치 상태 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - which clamscan + clamscan --version
+      - systemctl status clamav-daemon clamav-freshclam
+      - dpkg -l | grep -E clamav|sophos|mcafee
+      - rkhunter / chkrootkit 추가 점검
+      - EDR agent 설치 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - ClamAV 미설치 정상 판정
+      - freshclam 미활성
+      - EDR 대안 언급 없음
   target_vm: secu
-  script: which clamscan 2>/dev/null && clamscan --version 2>/dev/null || echo 'ClamAV 미설치' && dpkg -l | grep -i 'clamav\|antivirus'
-    2>/dev/null
+  script: which clamscan 2>/dev/null && clamscan --version 2>/dev/null || echo 'ClamAV 미설치' && dpkg -l
+    | grep -i 'clamav\|antivirus' 2>/dev/null
   risk_level: low
   bastion_prompt: '악성 소프트웨어 방지 설정을 확인하시오. PCI-DSS Req.5: 악성 소프트웨어로부터 시스템과 네트워크 보호해줘'
 - order: 6
@@ -198,31 +213,36 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 시스템 계정의 접근 권한을 점검하시오. PCI-DSS Req.7: 비즈니스 필요성에 따른 접근 제한해줘
 
-    📎 참고 (CLI): getent group sudo && echo ''--- 로그인 가능 계정 ---'' && awk -F: ''$7 !~ /nologin|false/ {print $1, $7}'' /etc/passwd'
-  answer_detail: PCI-DSS Requirement 7은 카드소유자 데이터에 대한 접근을 업무 필요성(need to know)에 따라 제한할 것을 요구합니다. 모든 사용자에게 sudo 권한을 부여하면 이
-    원칙에 위반됩니다.
+    📎 참고 (CLI): getent group sudo && echo ''--- 로그인 가능 계정 ---'' && awk -F: ''$7 !~ /nologin|false/ {print
+    $1, $7}'' /etc/passwd'
+  answer_detail: PCI-DSS Requirement 7은 카드소유자 데이터에 대한 접근을 업무 필요성(need to know)에 따라 제한할 것을 요구합니다. 모든 사용자에게
+    sudo 권한을 부여하면 이 원칙에 위반됩니다.
   verify:
     type: output_contains
     expect: sudo
     field: stdout
     semantic:
-      intent: '컴플라이언스 w6 s6 — 시스템 계정의 접근 권한을 점검하시오. PCI-DSS Req.7: 비즈니스 필요성에 따른 접근 제한. (cmd: getent group sudo && echo ''---
-        로그인 가능 계정 ---'' && awk -F: ''$7 !~ /nologin|false/ )'
+      intent: 'PCI-DSS Req.7 need-to-know 접근 제한 — getent group sudo + awk /etc/passwd. RBAC(Role-Based
+        Access Control) 기반 최소 권한. Req.7.2.1 RBAC 정책 문서화 + Req.7.2.4 사용자별 권한 6개월 review. sudo 그룹 최소화. 개발/운영
+        분리(SoD, Segregation of Duties). privileged account: root password vault(CyberArk/HashiCorp Vault)
+        + JIT access'
       success_criteria:
-      - '명령 실행: getent group sudo && echo ''--- 로그인 가능 계정 ---'' && awk -F: ''$7'
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - getent group sudo + awk 실행
+      - sudo 키워드 포함
+      - 그룹 + 로그인 계정 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - getent group sudo + awk /etc/passwd
+      - ldapsearch 로 AD 그룹(기업 환경)
+      - PAM PAM_ACCESS 로 group 기반 제한
+      - CyberArk/Vault 통합
+      - Access Review tool 정기 실행
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - 모든 사용자 sudo 허용 정상 판정
+      - RBAC 개념 이해 없음
+      - SoD 위반(개발자가 prod 접근)
   target_vm: secu
-  script: 'getent group sudo && echo ''--- 로그인 가능 계정 ---'' && awk -F: ''$7 !~ /nologin|false/ {print $1, $7}'' /etc/passwd'
+  script: 'getent group sudo && echo ''--- 로그인 가능 계정 ---'' && awk -F: ''$7 !~ /nologin|false/ {print $1,
+    $7}'' /etc/passwd'
   risk_level: low
   bastion_prompt: '시스템 계정의 접근 권한을 점검하시오. PCI-DSS Req.7: 비즈니스 필요성에 따른 접근 제한해줘'
 - order: 7
@@ -232,33 +252,36 @@ steps:
   points: 12
   answer: '🤖 프롬프트: 로그 및 모니터링 설정을 점검하시오. PCI-DSS Req.10: 시스템 구성 요소에 대한 모든 접근을 로깅하고 모니터링해줘
 
-    📎 참고 (CLI): sudo auditctl -l | wc -l && echo ''감사 규칙 수'' && grep -r ''auth'' /etc/rsyslog.d/ 2>/dev/null | grep -v ''^#''
-    && echo ''--- 로그 파일 목록 ---'' && ls -la /var/log/auth.log /var/log/syslog 2>/dev/null'
-  answer_detail: PCI-DSS Requirement 10은 모든 시스템 구성 요소에 대한 접근을 추적하고 모니터링할 수 있는 메커니즘을 요구합니다. 로그에는 사용자 식별, 이벤트 유형, 일시, 성공/실패,
-    데이터 식별, 시스템 구성 요소가 포함되어야 합니다.
+    📎 참고 (CLI): sudo auditctl -l | wc -l && echo ''감사 규칙 수'' && grep -r ''auth'' /etc/rsyslog.d/ 2>/dev/null
+    | grep -v ''^#'' && echo ''--- 로그 파일 목록 ---'' && ls -la /var/log/auth.log /var/log/syslog 2>/dev/null'
+  answer_detail: PCI-DSS Requirement 10은 모든 시스템 구성 요소에 대한 접근을 추적하고 모니터링할 수 있는 메커니즘을 요구합니다. 로그에는 사용자 식별,
+    이벤트 유형, 일시, 성공/실패, 데이터 식별, 시스템 구성 요소가 포함되어야 합니다.
   verify:
     type: output_contains
     expect: 감사 규칙 수
     field: stdout
     semantic:
-      intent: '컴플라이언스 w6 s7 — 로그 및 모니터링 설정을 점검하시오. PCI-DSS Req.10: 시스템 구성 요소에 대한 모든 접근을 로깅하고 모니터링. (cmd: sudo auditctl -l
-        | wc -l && echo ''감사 규칙 수'' && grep -r ''auth'' /etc/rsyslog.d/ 2>/)'
+      intent: 'PCI-DSS Req.10 Log all access and monitor — sudo auditctl -l | wc -l + grep auth /etc/rsyslog.d/
+        + ls auth.log. Req.10 은 가장 감사 부담 큰 요구사항. 필수 로그 필드: user identification, event type, date/time,
+        success/failure, origination, affected data/system. Req.10.4 매일 로그 review(SIEM 자동화). Req.10.7
+        보관 1년(3개월 즉시 조회 가능). Wazuh / Splunk ES / Elastic Security 활용'
       success_criteria:
-      - '명령 실행: sudo auditctl -l | wc -l && echo ''감사 규칙 수'' && grep -r ''auth'''
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - auditctl + grep rsyslog + ls auth.log 실행
+      - 감사 규칙 수 문자열
+      - 로그 구성 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - auditctl -l + grep rsyslog + ls auth.log
+      - systemctl status rsyslog auditd
+      - SIEM 통합 Wazuh + Elastic
+      - Splunk ES correlation searches
+      - Sigma rule PCI-DSS 카탈로그
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - 감사 규칙 수 부족(< 20)
+      - SIEM 연계 없음
+      - 일일 review 절차 없음
   target_vm: secu
-  script: sudo auditctl -l | wc -l && echo '감사 규칙 수' && grep -r 'auth' /etc/rsyslog.d/ 2>/dev/null | grep -v '^#' && echo
-    '--- 로그 파일 목록 ---' && ls -la /var/log/auth.log /var/log/syslog 2>/dev/null
+  script: sudo auditctl -l | wc -l && echo '감사 규칙 수' && grep -r 'auth' /etc/rsyslog.d/ 2>/dev/null | grep
+    -v '^#' && echo '--- 로그 파일 목록 ---' && ls -la /var/log/auth.log /var/log/syslog 2>/dev/null
   risk_level: low
   bastion_prompt: '로그 및 모니터링 설정을 점검하시오. PCI-DSS Req.10: 시스템 구성 요소에 대한 모든 접근을 로깅하고 모니터링해줘'
 - order: 8
@@ -268,33 +291,36 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 시스템의 취약점 스캔 이력을 확인하시오. PCI-DSS Req.11: 보안 시스템 및 프로세스를 정기적으로 테스트해줘
 
-    📎 참고 (CLI): ls -lt /var/log/apt/history.log 2>/dev/null && tail -30 /var/log/apt/history.log 2>/dev/null | grep -A2 ''Start-Date''
-    | tail -9'
-  answer_detail: PCI-DSS Requirement 11은 분기별 내부 취약점 스캔, 연간 침투 테스트, 무선 AP 탐지 등을 요구합니다. apt 업데이트 이력으로 최근 패치 적용 현황을 파악할 수 있으며,
-    정기적인 취약점 스캔 프로세스가 수립되어 있어야 합니다.
+    📎 참고 (CLI): ls -lt /var/log/apt/history.log 2>/dev/null && tail -30 /var/log/apt/history.log 2>/dev/null
+    | grep -A2 ''Start-Date'' | tail -9'
+  answer_detail: PCI-DSS Requirement 11은 분기별 내부 취약점 스캔, 연간 침투 테스트, 무선 AP 탐지 등을 요구합니다. apt 업데이트 이력으로 최근
+    패치 적용 현황을 파악할 수 있으며, 정기적인 취약점 스캔 프로세스가 수립되어 있어야 합니다.
   verify:
     type: output_contains
     expect: history
     field: stdout
     semantic:
-      intent: '컴플라이언스 w6 s8 — 시스템의 취약점 스캔 이력을 확인하시오. PCI-DSS Req.11: 보안 시스템 및 프로세스를 정기적으로 테스트. (cmd: ls -lt /var/log/apt/history.log
-        2>/dev/null && tail -30 /var/log/apt/history.log)'
+      intent: 'PCI-DSS Req.11 정기 보안 테스트 — ls -lt /var/log/apt/history.log + tail -30. Req.11.3 취약점 스캔:
+        내부 분기, 외부 ASV(Approved Scanning Vendor) 분기. Req.11.4 침투 테스트: 연간 + segmentation test. Req.11.5
+        IDS/IPS. Req.11.6 file integrity monitoring(AIDE/Tripwire/Wazuh FIM). 도구: Nessus, Qualys VMDR,
+        OpenVAS, Nexpose'
       success_criteria:
-      - '명령 실행: ls -lt /var/log/apt/history.log 2>/dev/null && tail -30 /var'
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - apt history.log 실행
+      - history 키워드 포함
+      - 업데이트 이력 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - ls -lt + tail apt/history.log
+      - zgrep apt/history.log.*.gz 로 과거 이력
+      - unattended-upgrades.log 확인
+      - OpenVAS 또는 Nessus 스캔 결과
+      - AIDE baseline check
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - 업데이트 이력 부족(분기 이상 간격)
+      - 외부 ASV 스캔 언급 없음
+      - penetration test 언급 없음
   target_vm: secu
-  script: ls -lt /var/log/apt/history.log 2>/dev/null && tail -30 /var/log/apt/history.log 2>/dev/null | grep -A2 'Start-Date'
-    | tail -9
+  script: ls -lt /var/log/apt/history.log 2>/dev/null && tail -30 /var/log/apt/history.log 2>/dev/null
+    | grep -A2 'Start-Date' | tail -9
   risk_level: low
   bastion_prompt: '시스템의 취약점 스캔 이력을 확인하시오. PCI-DSS Req.11: 보안 시스템 및 프로세스를 정기적으로 테스트해줘'
 - order: 9
@@ -343,28 +369,31 @@ steps:
     SCRIPT
 
     chmod +x /tmp/pcidss_audit.sh && bash /tmp/pcidss_audit.sh'
-  answer_detail: 'PCI-DSS v4.0은 12대 요구사항으로 구성됩니다: 네트워크 보안, 기본값 변경, 저장 데이터 보호, 전송 암호화, 악성코드 방지, 보안 개발, 접근 제한, 사용자 식별, 물리적 보안,
-    로깅/모니터링, 보안 테스트, 정보보안 정책. 이 스크립트는 기술적으로 검증 가능한 핵심 항목을 자동 점검합니다.'
+  answer_detail: 'PCI-DSS v4.0은 12대 요구사항으로 구성됩니다: 네트워크 보안, 기본값 변경, 저장 데이터 보호, 전송 암호화, 악성코드 방지, 보안 개발,
+    접근 제한, 사용자 식별, 물리적 보안, 로깅/모니터링, 보안 테스트, 정보보안 정책. 이 스크립트는 기술적으로 검증 가능한 핵심 항목을 자동 점검합니다.'
   verify:
     type: output_contains
     expect: PCI-DSS 점검 완료
     field: stdout
     semantic:
-      intent: '컴플라이언스 w6 s9 — PCI-DSS 종합 준수 점검 스크립트를 작성하고 실행하시오. (cmd: cat << ''SCRIPT'' > /tmp/pcidss_audit.sh #!/bin/bash
-        echo ''=== PCI-DSS v4.0 기술적 요구)'
+      intent: 'PCI-DSS 종합 점검 스크립트 — /tmp/pcidss_audit.sh heredoc 6 섹션: Req.1 방화벽·Req.2 기본값·Req.5 malware·Req.7
+        접근제한·Req.8 사용자식별·Req.10 로깅. PCI-DSS v4.0 12 요구사항 전체(1 네트워크·2 기본값·3 데이터 보호·4 전송·5 악성코드·6 보안개발·7
+        접근제한·8 사용자식별·9 물리·10 로깅·11 테스트·12 정책). Approved Scanning Vendor(ASV) 분기 외부 스캔. QSA(Qualified Security
+        Assessor) 감사'
       success_criteria:
-      - '명령 실행: cat << ''SCRIPT'' > /tmp/pcidss_audit.sh #!/bin/bash echo ''==='
-      - 결과 출력 또는 로그 확인
-      - 컴플라이언스 실습 맥락 유지
+      - /tmp/pcidss_audit.sh 생성
+      - bash 실행
+      - PCI-DSS 점검 완료 문자열
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 컴플라이언스 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - heredoc 6 섹션 스크립트
+      - OpenSCAP + pci-dss profile
+      - Tenable Security Center PCI 대시보드
+      - Qualys Policy Compliance
+      - Chef InSpec pci-dss profile
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 컴플라이언스와 무관한 기법
+      - 6 섹션 부족
+      - ASV/QSA 역할 미인지
+      - policy compliance tool 없음
   target_vm: secu
   script: 'cat << ''SCRIPT'' > /tmp/pcidss_audit.sh
 
