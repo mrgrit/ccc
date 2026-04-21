@@ -36,20 +36,21 @@ steps:
     type: output_contains
     expect: suricata
     semantic:
-      intent: '[BLUE] 고급 탐지 공학 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Suricata IPS 동작 상태 + 룰 통계 — systemctl status suricata (프로세스 상태) + suricatasc -c
+        iface-stat <iface> (인터페이스 통계) + suricatasc -c ruleset-stats (로드된 룰 수·적중 수). IPS 운영 상태 baseline.
+        룰셋 정상 로드 확인'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - systemctl status + suricatasc 명령
+      - active 또는 loaded 상태 출력
+      - 룰 통계 수치 확인
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - systemctl status + suricatasc -c rule-stats
+      - stats.log + eve.json stats event
+      - Wazuh 통합 시 API 조회
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - status 없이 프로세스만
+      - 룰 통계 누락
+      - loaded rules 수 미확인
   target_vm: secu
   script: ssh 10.20.30.1 'suricatasc -c uptime 2>/dev/null; cat /var/log/suricata/stats.log 2>/dev/null
     | tail -10; echo "---"; tail -5 /var/log/suricata/eve.json 2>/dev/null | python3 -m json.tool 2>/dev/null
@@ -77,20 +78,21 @@ steps:
     type: output_contains
     expect: SCAN
     semantic:
-      intent: '[BLUE] 고급 탐지 공학 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 스캔 탐지 4종 룰 — alert tcp flags:S,12 (SYN scan 정상) + alert tcp flags:0 (NULL scan 모든
+        flag 없음) + alert tcp flags:FPU (XMAS FIN/PSH/URG) + alert icmp itype:8 (ping sweep) + threshold
+        기반 빈도 제한. 각 스캔 기법의 고유 packet 특성 활용. /etc/suricata/rules/local.rules 추가'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - 4종 스캔 룰 (SYN/NULL/XMAS/ICMP) 모두
+      - 각각 flags 또는 itype 특성
+      - threshold 빈도 제한
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - alert tcp flags 조합 + threshold
+      - ET SCAN 룰셋 활용
+      - Zeek scan.bro 스크립트
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 스캔 유형 1-2종만
+      - flags 조건 없음
+      - threshold 없음 (오탐)
   target_vm: secu
   script: 'cat > /tmp/portscan_detection.rules << ''EOF'' alert tcp any any -> 10.20.30.0/24 any (msg:"SCAN:
     SYN scan detected"; flags:S; threshold:type both, track by_src, count 20, seconds 5; classtype:attempted-recon;
@@ -122,20 +124,23 @@ steps:
     type: output_contains
     expect: fail2ban
     semantic:
-      intent: '[BLUE] 고급 탐지 공학 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] fail2ban SSH 자동 차단 — /etc/fail2ban/jail.local 에 [sshd] enabled=true + maxretry=5
+        + findtime=300 (5분) + bantime=1800 (30분) + banaction=nftables. 5분 내 5회 실패 시 30분 자동 차단. nftables
+        백엔드로 차단. systemctl restart fail2ban 적용'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - jail.local 또는 jail.d/sshd.conf 편집
+      - maxretry=5 + findtime=300 + bantime=1800
+      - nftables 백엔드 활용
+      - fail2ban-client status 확인
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - /etc/fail2ban/jail.local + systemctl restart
+      - fail2ban-client start sshd
+      - Wazuh Active Response 대체
+      - custom filter regex
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - fail2ban 미설정
+      - nftables 연동 없음
+      - status 확인 누락
   target_vm: secu
   script: 'cat > /tmp/fail2ban_jail.conf << ''EOF'' [DEFAULT] bantime = 1800 findtime = 300 maxretry =
     5 banaction = nftables-multiport
@@ -164,20 +169,22 @@ steps:
     type: output_contains
     expect: active-response
     semantic:
-      intent: '[BLUE] 고급 탐지 공학 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Wazuh Active Response firewall-drop — /var/ossec/etc/ossec.conf 의 <active-response>
+        블록에 <command>firewall-drop</command> + <rules_id>특정 sid</rules_id> + <timeout>600</timeout>. 특정
+        Wazuh 룰 매칭 시 10분간 IP 차단 (nftables/iptables 연동). MITRE D3FEND Network Traffic Filtering'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - ossec.conf active-response 블록
+      - firewall-drop 명령 + rules_id 매핑
+      - timeout 설정 (자동 unban)
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - ossec.conf + systemctl restart wazuh-manager
+      - active-response scripts (/var/ossec/active-response/bin/)
+      - agent.conf 분산 설정
+      - custom active response 스크립트
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - active-response 블록 없음
+      - 룰 매핑 없이 모든 경보 차단
+      - timeout 없음 (영구 차단)
   target_vm: siem
   script: "cat > /tmp/wazuh_active_response.xml << 'EOF'\n<ossec_config>\n  <active-response>\n    <command>firewall-drop</command>\n\
     \    <location>local</location>\n    <rules_id>100100,100300</rules_id>\n    <timeout>3600</timeout>\n\
@@ -207,20 +214,22 @@ steps:
     type: output_contains
     expect: Process Anomaly Monitor
     semantic:
-      intent: '[BLUE] 고급 탐지 공학 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 의심 프로세스 실시간 모니터링 — /tmp/proc_monitor.sh 에 while true 루프 + ps -eo pid,user,comm 로
+        nc/bash -i/sh -i (reverse shell) · xmrig/minerd (크립토 마이닝) · sudo|su 권한 상승 명령 패턴 grep + 발견 시 alert
+        로그. MITRE T1059 Command and Scripting Interpreter 탐지'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - while true 프로세스 모니터링 스크립트
+      - 최소 3종 패턴 (reverse shell/miner/privesc)
+      - 발견 시 로깅 처리
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - bash while + ps -eo + grep
+      - auditd + aureport -x
+      - osquery SELECT from processes
+      - Falco 런타임 보안 모니터
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 일회성 스캔 (실시간 아님)
+      - 패턴 1종만
+      - 로깅 처리 없음
   target_vm: secu
   script: 'cat > /tmp/process_monitor.sh << ''SCRIPT'' #!/bin/bash echo "=== Real-time Process Anomaly
     Monitor ===" echo "[1] Reverse Shell Indicators:" ps aux | grep -iE "nc -e|ncat -e|bash -i|/dev/tcp|python.*socket|perl.*socket"
@@ -250,20 +259,22 @@ steps:
     type: output_contains
     expect: Attack simulation complete
     semantic:
-      intent: '[RED] 고급 탐지 공학 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] 라이브 공격 시뮬레이션 3단계 — nmap -sS --top-ports 1000 (포트 스캔, s2 룰 트리거) + curl SQLi payload
+        (s2 SQLi 룰 트리거) + hydra -L users -P passwords ssh:// (브루트포스, s3 fail2ban 트리거). 순차 실행으로 전체 탐지·차단
+        체인 검증'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - 3단계 공격 순차 실행
+      - 각 단계가 다른 룰 트리거
+      - live 탐지 맥락
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nmap + curl + hydra 순차
+      - bash script 로 자동화
+      - ansible playbook
+      - msfconsole resource
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 단일 공격만
+      - 순차성 없음
+      - 탐지 결과 확인 없음
   target_vm: attacker
   script: echo '=== Live Attack Simulation ===' && echo '[1] Port scan:' && nmap -sS --top-ports 100 --max-retries
     1 --host-timeout 15s -T4 10.20.30.80 2>&1 | tail -5 && echo '[2] SQL Injection:' && curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%20OR%201=1--'
@@ -288,20 +299,21 @@ steps:
     type: output_contains
     expect: Detection Results
     semantic:
-      intent: '[BLUE] 고급 탐지 공학 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 공격 시뮬레이션 탐지 결과 교차 확인 — tail -20 /var/log/suricata/fast.log (Suricata 탐지) + tail
+        /var/log/apache2/modsec_audit.log (WAF 차단) + tail /var/log/auth.log (SSH 실패) + fail2ban-client
+        status sshd (차단된 IP). 4개 방어 계층의 동시 반응 검증'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - Suricata + ModSec + auth.log + fail2ban 4개 소스
+      - s6 RED 공격과 연관 확인
+      - 각 계층 독립 반응 검증
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - tail 각 로그 + fail2ban-client status
+      - Wazuh integrated view
+      - ELK 대시보드
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 1-2개 계층만 확인
+      - s6 공격과 연관 없음
+      - 차단 상태 미확인
   target_vm: secu
   script: echo '=== Detection Results ===' && echo '[Suricata Alerts]:' && ssh 10.20.30.1 'tail -50 /var/log/suricata/eve.json
     2>/dev/null | python3 -c "import sys,json; [print(json.loads(l).get(\"alert\",{}).get(\"signature\",\"\"))
@@ -332,20 +344,22 @@ steps:
     type: output_contains
     expect: Detection Engineering Assessment
     semantic:
-      intent: '[RED/BLUE] 고급 탐지 공학 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] 실시간 방어 평가 보고서 /tmp/realtime_defense_report.txt — KPI: True Positive rate (탐지율)·False
+        Positive rate (오탐률)·MTTD (평균 탐지 시간)·MTTR (평균 대응 시간)·차단 IP 수. 각 방어 계층(Suricata/fail2ban/Wazuh AR/ModSec)
+        별 효과 비교. 개선 권고 (tuning·새 시그니처·자동화). 환경 정리'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - /tmp/realtime_defense_report.txt 파일 생성
+      - TP/FP/MTTD/MTTR KPI
+      - 4개 방어 계층 효과 비교
+      - 개선 권고 + 정리
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 표 포맷
+      - python stats 계산
+      - Grafana 대시보드 JSON
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - KPI 없이 서술만
+      - 계층 비교 없음
+      - 정리 누락
   target_vm: attacker
   script: "rm -f /tmp/process_monitor.sh /tmp/fail2ban_*.conf /tmp/portscan_*.rules /tmp/wazuh_active_*.xml\
     \ 2>/dev/null && cat > /tmp/detection_engineering_report.txt << 'EOF'\n=== Detection Engineering Assessment\
