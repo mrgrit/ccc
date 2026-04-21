@@ -37,6 +37,16 @@ steps:
     type: output_contains
     expect: 긴급
     field: stdout
+    semantic:
+      intent: AI 피싱 메일 템플릿 — LLM 으로 생성한 맞춤형 피싱 (대상 이름·회사·현재 진행 프로젝트 반영). Spear phishing at scale. GPT-4
+        기반 한국어 자연스러움
+      success_criteria:
+      - LLM 생성 피싱 샘플
+      - spear phishing 맞춤형
+      acceptable_methods:
+      - LLM prompt + 샘플
+      negative_signs:
+      - generic 템플릿만
   target_vm: bastion
   script: 'mkdir -p ~/w07 && cat > ~/w07/phish.eml <<''E''
 
@@ -72,6 +82,16 @@ steps:
     type: output_contains
     expect: small.php
     field: stdout
+    semantic:
+      intent: 웹셸 삽입 시뮬 — 피싱 링크 → credential 탈취 → 웹 관리자 로그인 → PHP 웹셸 업로드 (c.php + <?php system($_GET[cmd]);
+        ?>). multi-stage chain
+      success_criteria:
+      - 피싱 → cred → 웹셸 체인
+      - PHP 웹셸 코드
+      acceptable_methods:
+      - cat > c.php + Apache
+      negative_signs:
+      - 단일 stage만
   target_vm: web
   script: 'cat > ~/w07/small.php <<''P''
 
@@ -101,8 +121,21 @@ steps:
   answer_detail: '[탐지] auditd/Wazuh FIM.'
   verify:
     type: output_contains
-    expect: webroot
+    expect:
+    - webroot
+    - FIM
     field: stdout
+    semantic:
+      intent: 웹셸 탐지 FIM — inotifywait -m /var/www --format %w%f%e 로 실시간 파일 생성 감시 + grep .php$. 웹 디렉토리
+        신규 PHP = 높은 의심도
+      success_criteria:
+      - inotify 실시간 감시
+      - .php 신규 파일 필터
+      acceptable_methods:
+      - inotifywait
+      - auditd + Wazuh syscheck
+      negative_signs:
+      - 주기적만 (실시간 아님)
   target_vm: web
   script: 'cat > ~/w07/fim.rules <<''R''
 
@@ -140,6 +173,16 @@ steps:
     type: output_contains
     expect: DMARC
     field: stdout
+    semantic:
+      intent: 이메일 게이트웨이 — SPF + DKIM + DMARC + 첨부 sandbox (hybrid-analysis) + link rewriting (Proofpoint).
+        피싱 1차 방어 레이어. secure email gateway
+      success_criteria:
+      - SPF/DKIM/DMARC
+      - sandbox + link rewriting
+      acceptable_methods:
+      - SEG 설정 문서
+      negative_signs:
+      - 1-2 요소만
   target_vm: bastion
   script: 'cat > ~/w07/email-gate.md <<''M''
 
@@ -187,6 +230,16 @@ steps:
     - 웹셸
     - 재구성
     field: stdout
+    semantic:
+      intent: 체인 재구성 — 메일 로그 (delivery) → 피싱 클릭 (proxy log) → 자격 유출 (IdP login 이상 IP) → 웹셸 업로드 (FIM) →
+        명령 실행 (EDR). 5+ 로그 소스 상관
+      success_criteria:
+      - 5+ 로그 소스
+      - 체인 재구성 타임라인
+      acceptable_methods:
+      - jq + timestamp 정렬
+      negative_signs:
+      - 3 소스 이하
   target_vm: bastion
   script: 'cat > ~/w07/chain.md <<''M''
 
@@ -230,6 +283,17 @@ steps:
     type: output_contains
     expect: 분리
     field: stdout
+    semantic:
+      intent: '주체 분리 — 공격 주체 identification: IP address → session cookie → account → real person. IR 에서
+        가장 어려운 부분. cookie·IP correlation 기반'
+      success_criteria:
+      - IP + session + account 연결
+      - 주체 식별 방법론
+      acceptable_methods:
+      - jq + correlation
+      - Wazuh ruleset
+      negative_signs:
+      - IP 만 (주체 아님)
   target_vm: bastion
   script: 'cat > ~/w07/subject.md <<''M''
 
@@ -271,6 +335,16 @@ steps:
     - 회수
     - 체인단절
     field: stdout
+    semantic:
+      intent: 체인 단절 전략 /tmp/chain_break.md — (1) 이메일 차단 (2) credential rotation (3) 세션 kill (4) 웹셸 quarantine
+        (5) lateral 차단 (network segment). 각 체인 단계 끊는 조치
+      success_criteria:
+      - /tmp/chain_break.md
+      - 5 단계 break
+      acceptable_methods:
+      - cat > md
+      negative_signs:
+      - 단계 3 이하
   target_vm: bastion
   script: 'cat > ~/w07/cut.md <<''M''
 
@@ -292,10 +366,10 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 16
-  answer: "\U0001F916 프롬프트: Agent Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w07/agent.yaml\
-    \ <<'Y'\nplaybook_id: pb-hybrid-chain\nsteps:\n  - skill: quarantine_webshell_file\n\
-    \  - skill: block_url_path\n  - skill: sinkhole_attacker_domain\n  - skill: terminate_user_sessions\n\
-    \  - skill: require_mfa_reauth\nY\ncat ~/w07/agent.yaml"
+  answer: "\U0001F916 프롬프트: Agent Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w07/agent.yaml <<'Y'\nplaybook_id:\
+    \ pb-hybrid-chain\nsteps:\n  - skill: quarantine_webshell_file\n  - skill: block_url_path\n  - skill:\
+    \ sinkhole_attacker_domain\n  - skill: terminate_user_sessions\n  - skill: require_mfa_reauth\nY\n\
+    cat ~/w07/agent.yaml"
   answer_detail: '[초동대응] 수 초 반응.'
   verify:
     type: output_contains
@@ -303,10 +377,20 @@ steps:
     - webshell
     - Playbook
     field: stdout
+    semantic:
+      intent: 'Agent Playbook — multi-stage chain 자동 대응: 피싱 감지 → 사용자 cred reset → 세션 kill → 웹셸 quarantine
+        → lateral blocking 연쇄. 복합 단계 자동화'
+      success_criteria:
+      - multi-stage 자동
+      - 5+ 연쇄 조치
+      acceptable_methods:
+      - playbook YAML + on-failure
+      negative_signs:
+      - 단일 조치만
   target_vm: bastion
-  script: "cat > ~/w07/agent.yaml <<'Y'\nplaybook_id: pb-hybrid-chain\nsteps:\n  -\
-    \ skill: quarantine_webshell_file\n  - skill: block_url_path\n  - skill: sinkhole_attacker_domain\n\
-    \  - skill: terminate_user_sessions\n  - skill: require_mfa_reauth\nY\ncat ~/w07/agent.yaml"
+  script: "cat > ~/w07/agent.yaml <<'Y'\nplaybook_id: pb-hybrid-chain\nsteps:\n  - skill: quarantine_webshell_file\n\
+    \  - skill: block_url_path\n  - skill: sinkhole_attacker_domain\n  - skill: terminate_user_sessions\n\
+    \  - skill: require_mfa_reauth\nY\ncat ~/w07/agent.yaml"
   risk_level: low
   bastion_prompt: Agent Playbook
 - order: 9
@@ -336,6 +420,14 @@ steps:
     - MFA
     - 브리핑
     field: stdout
+    semantic:
+      intent: 임원 브리핑 — 피싱→웹셸→Pivot 연쇄 사고 + 영향 범위 + 투자 필요 (SEG·FIDO2·EDR)
+      success_criteria:
+      - 1쪽 + 연쇄 사고 설명
+      acceptable_methods:
+      - cat > md
+      negative_signs:
+      - 1 기법만
   target_vm: bastion
   script: 'cat > ~/w07/exec.md <<''M''
 
@@ -377,6 +469,16 @@ steps:
     type: output_contains
     expect: FIDO
     field: stdout
+    semantic:
+      intent: 'FIDO2 이행 /tmp/fido2_migration.md — 단계별: pilot (admin) → wave 1 (finance) → wave 2 (all)
+        + hardware token 예산 + YubiKey/Windows Hello 지원. phishing-resistant MFA'
+      success_criteria:
+      - /tmp/fido2_migration.md
+      - 단계별 roll-out
+      acceptable_methods:
+      - cat > md
+      negative_signs:
+      - FIDO2 개념 없음
   target_vm: bastion
   script: 'cat > ~/w07/fido2.md <<''M''
 
@@ -416,6 +518,16 @@ steps:
     type: output_contains
     expect: 지연
     field: stdout
+    semantic:
+      intent: 'BEC 탐지 — Business Email Compromise: CEO/CFO 사칭 + wire transfer 요청 + 외부 domain 유사도 (typosquatting).
+        SEG + DMARC + behavioral analytics 조합 탐지'
+      success_criteria:
+      - BEC 3+ 탐지 지표
+      - typosquatting + behavioral
+      acceptable_methods:
+      - cat > md + 탐지 로직
+      negative_signs:
+      - BEC 개념 없음
   target_vm: bastion
   script: 'cat > ~/w07/bec.md <<''M''
 
@@ -453,6 +565,16 @@ steps:
     type: output_contains
     expect: JIT
     field: stdout
+    semantic:
+      intent: JIT Just-In-Time 특권 — PAM Privileged Access Management 으로 평소 admin 권한 없음, 필요 시 요청 → 승인 →
+        시간 제한 권한 부여. Standing privilege 제거. 피해 범위 제한
+      success_criteria:
+      - JIT 개념 + PAM
+      - time-boxed 권한
+      acceptable_methods:
+      - CyberArk/BeyondTrust PAM
+      negative_signs:
+      - JIT 개념 없음
   target_vm: bastion
   script: 'cat > ~/w07/jit.md <<''M''
 
