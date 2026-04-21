@@ -19,32 +19,35 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Python으로 LoRaWAN 패킷 구조체를 생성하시오. DevAddr, FCnt, 페이로드를 포함해줘
 
-    📎 참고 (CLI): python3 -c "import struct,binascii; dev_addr=struct.pack(''<I'',0x26011234); fcnt=struct.pack(''<H'',1); payload=b''{\"t\":25.3}'';
-    pkt=dev_addr+fcnt+payload; print(f''LoRa Packet: {binascii.hexlify(pkt).decode()}''); print(''LoRa 패킷 생성 완료'')"'
+    📎 참고 (CLI): python3 -c "import struct,binascii; dev_addr=struct.pack(''<I'',0x26011234); fcnt=struct.pack(''<H'',1);
+    payload=b''{\"t\":25.3}''; pkt=dev_addr+fcnt+payload; print(f''LoRa Packet: {binascii.hexlify(pkt).decode()}'');
+    print(''LoRa 패킷 생성 완료'')"'
   answer_detail: LoRaWAN 패킷은 DevAddr(4B), FCnt(2B), 페이로드로 구성됩니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w6 s1 — Python으로 LoRaWAN 패킷 구조체를 생성하시오. DevAddr, FCnt, 페이로드를 포함하시오. (cmd: python3 -c "import struct,binascii;
-        dev_addr=struct.pack(''<I'',0x26011234); fcnt=)'
+      intent: LoRaWAN 패킷 구조체 Python 생성 — struct.pack(<I, 0x26011234) 으로 DevAddr 4바이트 little-endian + struct.pack(<H,
+        1) 으로 FCnt 2바이트 + bytes 페이로드 {t:25.3} 결합하여 LoRaWAN PHYPayload 기초 포맷 재현. binascii.hexlify 로 hex
+        출력. LoRaWAN 1.0.x MAC Layer 이해.
       success_criteria:
-      - '명령 실행: python3 -c "import struct,binascii; dev_addr=struct.pack(''<I'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - struct.pack(<I) 으로 DevAddr 4바이트 little-endian 인코딩
+      - struct.pack(<H) 으로 FCnt 2바이트 + payload bytes 연결
+      - binascii.hexlify 로 결합 패킷 hex 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - python3 struct + binascii 조합
+      - scapy LoRaWAN 레이어 (PhyPayload) 사용
+      - pycayenne 또는 LoRa-Packet 라이브러리
+      - 공식 LoRaWAN Chirpstack 에뮬레이터
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - struct.pack 포맷(<I/<H) 실수로 endianness 오류
+      - DevAddr/FCnt 중 일부 누락
+      - LoRaWAN MAC 구조 맥락 없이 단순 byte 연결
   target_vm: attacker
-  script: 'python3 -c "import struct,binascii; dev_addr=struct.pack(''<I'',0x26011234); fcnt=struct.pack(''<H'',1); payload=b''{\"t\":25.3}'';
-    pkt=dev_addr+fcnt+payload; print(f''LoRa Packet: {binascii.hexlify(pkt).decode()}''); print(''LoRa 패킷 생성 완료'')"'
+  script: 'python3 -c "import struct,binascii; dev_addr=struct.pack(''<I'',0x26011234); fcnt=struct.pack(''<H'',1);
+    payload=b''{\"t\":25.3}''; pkt=dev_addr+fcnt+payload; print(f''LoRa Packet: {binascii.hexlify(pkt).decode()}'');
+    print(''LoRa 패킷 생성 완료'')"'
   risk_level: low
   bastion_prompt: Python으로 LoRaWAN 패킷 구조체를 생성하시오. DevAddr, FCnt, 페이로드를 포함해줘
 - order: 2
@@ -54,32 +57,35 @@ steps:
   points: 12
   answer: '🤖 프롬프트: LoRa 프레임 카운터(FCnt) 리플레이 공격을 시뮬레이션해줘
 
-    📎 참고 (CLI): python3 -c "print(''=== LoRa 리플레이 공격 ===''); print(''원본 패킷: FCnt=5''); print(''리플레이 패킷: FCnt=5 (동일)''); print(''서버
-    검증: 현재 FCnt>5 → 거부''); print(''ABP 리셋 시: FCnt=0 → 리플레이 가능!''); print(''리플레이 공격 시뮬레이션 완료'')"'
+    📎 참고 (CLI): python3 -c "print(''=== LoRa 리플레이 공격 ===''); print(''원본 패킷: FCnt=5''); print(''리플레이 패킷:
+    FCnt=5 (동일)''); print(''서버 검증: 현재 FCnt>5 → 거부''); print(''ABP 리셋 시: FCnt=0 → 리플레이 가능!''); print(''리플레이
+    공격 시뮬레이션 완료'')"'
   answer_detail: ABP 모드에서 디바이스 리셋 시 FCnt가 0으로 초기화되면 리플레이 공격이 가능합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w6 s2 — LoRa 프레임 카운터(FCnt) 리플레이 공격을 시뮬레이션하시오. (cmd: python3 -c "print(''=== LoRa 리플레이 공격 ===''); print(''원본
-        패킷: FCnt=5''); print(''리플레이 패)'
+      intent: LoRaWAN FCnt 리플레이 공격 시뮬레이션 — print 문으로 ABP(Activation By Personalization) 모드에서 디바이스 리셋 시
+        FCnt 가 0 으로 초기화되어 발생하는 리플레이 취약점 설명. 원본 FCnt=5 패킷 재전송, 서버 FCnt 검증 규칙(현재 FCnt > 원본 거부), ABP 리셋 시나리오에서
+        FCnt=0 리플레이 성공.
       success_criteria:
-      - '명령 실행: python3 -c "print(''=== LoRa 리플레이 공격 ===''); print(''원본 패킷: FCn'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - print 문으로 === LoRa 리플레이 공격 === 시나리오 출력
+      - 원본/리플레이 FCnt 비교 + 서버 검증 로직 시연
+      - ABP 리셋 시 FCnt=0 → 리플레이 가능 취약 시나리오 명시
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - python3 print 기반 시연
+      - LoRaWAN-Server + Chirpstack 실제 환경에서 재현
+      - scapy 패킷 생성 후 gateway 재전송
+      - MITM 프록시로 무선 리플레이
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - FCnt 검증 규칙 언급 누락
+      - ABP vs OTAA 차이 설명 없음
+      - 리플레이 성공 조건(리셋) 누락
   target_vm: attacker
-  script: 'python3 -c "print(''=== LoRa 리플레이 공격 ===''); print(''원본 패킷: FCnt=5''); print(''리플레이 패킷: FCnt=5 (동일)''); print(''서버
-    검증: 현재 FCnt>5 → 거부''); print(''ABP 리셋 시: FCnt=0 → 리플레이 가능!''); print(''리플레이 공격 시뮬레이션 완료'')"'
+  script: 'python3 -c "print(''=== LoRa 리플레이 공격 ===''); print(''원본 패킷: FCnt=5''); print(''리플레이 패킷: FCnt=5
+    (동일)''); print(''서버 검증: 현재 FCnt>5 → 거부''); print(''ABP 리셋 시: FCnt=0 → 리플레이 가능!''); print(''리플레이 공격
+    시뮬레이션 완료'')"'
   risk_level: low
   bastion_prompt: LoRa 프레임 카운터(FCnt) 리플레이 공격을 시뮬레이션해줘
 - order: 3
@@ -89,36 +95,39 @@ steps:
   points: 12
   answer: '🤖 프롬프트: Zigbee 기본 Trust Center Link Key(ZigBeeAlliance09)를 이용한 네트워크 키 복호화를 시뮬레이션해줘
 
-    📎 참고 (CLI): python3 -c "import os,binascii; tclk=b''ZigBeeAlliance09''; nwk_key=os.urandom(16); enc_key=bytes(a^b for
-    a,b in zip(nwk_key,tclk)); dec_key=bytes(a^b for a,b in zip(enc_key,tclk)); print(f''Network Key: {binascii.hexlify(nwk_key).decode()}'');
-    print(f''Encrypted:   {binascii.hexlify(enc_key).decode()}''); print(f''Decrypted:   {binascii.hexlify(dec_key).decode()}'');
-    print(f''Match: {nwk_key==dec_key}''); print(''Zigbee 키 복호화 완료'')"'
+    📎 참고 (CLI): python3 -c "import os,binascii; tclk=b''ZigBeeAlliance09''; nwk_key=os.urandom(16); enc_key=bytes(a^b
+    for a,b in zip(nwk_key,tclk)); dec_key=bytes(a^b for a,b in zip(enc_key,tclk)); print(f''Network Key:
+    {binascii.hexlify(nwk_key).decode()}''); print(f''Encrypted:   {binascii.hexlify(enc_key).decode()}'');
+    print(f''Decrypted:   {binascii.hexlify(dec_key).decode()}''); print(f''Match: {nwk_key==dec_key}'');
+    print(''Zigbee 키 복호화 완료'')"'
   answer_detail: Zigbee의 기본 TCLK가 공개되어 있어, 조인 과정에서 전송되는 네트워크 키를 복호화할 수 있습니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w6 s3 — Zigbee 기본 Trust Center Link Key(ZigBeeAlliance09)를 이용한 네트워크 키 복호화를 시뮬레이션하시오. (cmd: python3 -c
-        "import os,binascii; tclk=b''ZigBeeAlliance09''; nwk_key=os.urandom(16))'
+      intent: Zigbee Trust Center Link Key(ZigBeeAlliance09) 기반 네트워크 키 복호화 — python3 으로 tclk=ZigBeeAlliance09
+        (공개 기본 TCLK) + nwk_key=os.urandom(16) 생성 후 XOR 암호화/복호화 (실제는 AES-CCM*). 공개 TCLK 사용으로 인한 네트워크 키
+        스니핑 취약점 증명. KillerBee 도구 원리.
       success_criteria:
-      - '명령 실행: python3 -c "import os,binascii; tclk=b''ZigBeeAlliance09''; nw'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - tclk=b ZigBeeAlliance09 공개 기본 키 사용
+      - XOR a^b for zip(nwk_key, tclk) 로 암호화/복호화 쌍 구현
+      - 원본 키와 복호화 결과 Match 비교로 성공 검증
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - python XOR 기반 간소화 시연
+      - 실제 AES-128-CCM* 로 Zigbee 표준 준수
+      - KillerBee 프레임워크 zbgoodfind 로 키 복구
+      - Wireshark + Zigbee dissector 로 복호화 분석
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - XOR 으로만 시연하고 AES-CCM 언급 누락
+      - 기본 TCLK 공개 취약점 맥락 없음
+      - Install Code 사용 권장 언급 누락
   target_vm: attacker
-  script: 'python3 -c "import os,binascii; tclk=b''ZigBeeAlliance09''; nwk_key=os.urandom(16); enc_key=bytes(a^b for a,b in
-    zip(nwk_key,tclk)); dec_key=bytes(a^b for a,b in zip(enc_key,tclk)); print(f''Network Key: {binascii.hexlify(nwk_key).decode()}'');
-    print(f''Encrypted:   {binascii.hexlify(enc_key).decode()}''); print(f''Decrypted:   {binascii.hexlify(dec_key).decode()}'');
-    print(f''Match: {nwk_key==dec_key}''); print(''Zigbee 키 복호화 완료'')"'
+  script: 'python3 -c "import os,binascii; tclk=b''ZigBeeAlliance09''; nwk_key=os.urandom(16); enc_key=bytes(a^b
+    for a,b in zip(nwk_key,tclk)); dec_key=bytes(a^b for a,b in zip(enc_key,tclk)); print(f''Network Key:
+    {binascii.hexlify(nwk_key).decode()}''); print(f''Encrypted:   {binascii.hexlify(enc_key).decode()}'');
+    print(f''Decrypted:   {binascii.hexlify(dec_key).decode()}''); print(f''Match: {nwk_key==dec_key}'');
+    print(''Zigbee 키 복호화 완료'')"'
   risk_level: low
   bastion_prompt: Zigbee 기본 Trust Center Link Key(ZigBeeAlliance09)를 이용한 네트워크 키 복호화를 시뮬레이션해줘
 - order: 4
@@ -137,21 +146,22 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w6 s4 — Zigbee On/Off 클러스터의 ZCL 명령 프레임을 생성하시오. (cmd: python3 -c "import struct,binascii; on_cmd=struct.pack(''BBB'',0x01,0x01,0x01);
-        of)'
+      intent: 'Zigbee ZCL(Cluster Library) On/Off 클러스터 명령 프레임 생성 — python3 struct.pack(BBB, 0x01, 0x01,
+        0x01) 으로 ON 명령 + struct.pack(BBB, 0x01, 0x02, 0x00) 으로 OFF 명령 생성. 3바이트 포맷: Frame Control(0x01)
+        + Command ID(0x01=ON, 0x02=OFF) + Payload. Zigbee 조명/스마트 콘센트 제어 프로토콜.'
       success_criteria:
-      - '명령 실행: python3 -c "import struct,binascii; on_cmd=struct.pack(''BBB'''
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - struct.pack(BBB) 으로 3바이트 Unsigned Char 정수 패킹
+      - ON(0x01, 0x01, 0x01) 과 OFF(0x01, 0x02, 0x00) 2개 명령 생성
+      - binascii.hexlify 로 hex 덤프 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - struct.pack(BBB) 수동 생성
+      - zigpy-zigbee 라이브러리 ZCL 메시지 빌더
+      - Sonoff Zigbee 3.0 USB dongle + Zigbee2MQTT 로 실제 전송
+      - Z-Stack SDK 에 따른 TI CC2531 기반 전송
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - ZCL 프레임 구조 이해 없이 임의 바이트 사용
+      - ON 또는 OFF 중 하나만 생성
+      - Zigbee Cluster ID 와 Attribute 개념 누락
   target_vm: attacker
   script: 'python3 -c "import struct,binascii; on_cmd=struct.pack(''BBB'',0x01,0x01,0x01); off_cmd=struct.pack(''BBB'',0x01,0x02,0x00);
     print(f''ON command: {binascii.hexlify(on_cmd).decode()}''); print(f''OFF command: {binascii.hexlify(off_cmd).decode()}'');
@@ -165,33 +175,35 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 무선 재밍 공격의 유형과 대책을 정리해줘
 
-    📎 참고 (CLI): echo ''=== 무선 재밍 공격 유형 ==='' && echo ''[Constant] 연속 방해 - 탐지 쉬움'' && echo ''[Random] 불규칙 방해 - 에너지 효율적'' &&
-    echo ''[Deceptive] 유효 패킷 위장 - 탐지 어려움'' && echo ''[Reactive] 통신 감지 시 방해 - 가장 효과적'' && echo ''[대책] 주파수 도약, 확산 스펙트럼, 채널 전환''
-    && echo ''재밍 분석 완료'''
+    📎 참고 (CLI): echo ''=== 무선 재밍 공격 유형 ==='' && echo ''[Constant] 연속 방해 - 탐지 쉬움'' && echo ''[Random] 불규칙
+    방해 - 에너지 효율적'' && echo ''[Deceptive] 유효 패킷 위장 - 탐지 어려움'' && echo ''[Reactive] 통신 감지 시 방해 - 가장 효과적''
+    && echo ''[대책] 주파수 도약, 확산 스펙트럼, 채널 전환'' && echo ''재밍 분석 완료'''
   answer_detail: 재밍 유형에 따라 탐지 난이도와 대응 방법이 다릅니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w6 s5 — 무선 재밍 공격의 유형과 대책을 정리하시오. (cmd: echo ''=== 무선 재밍 공격 유형 ==='' && echo ''[Constant] 연속 방해 - 탐지
-        쉬움'' && echo ''[Random] )'
+      intent: '무선 재밍 공격 4 유형 분석 — echo 으로 [Constant] 연속 방해-탐지 쉬움 + [Random] 불규칙-에너지 효율 + [Deceptive] 유효
+        패킷 위장-탐지 어려움 + [Reactive] 통신 감지 시 방해-가장 효과적. 대책: 주파수 도약(FHSS), 확산 스펙트럼(DSSS), 채널 전환. IEEE 802.15.4/IEEE
+        802.11 물리 계층 공격.'
       success_criteria:
-      - '명령 실행: echo ''=== 무선 재밍 공격 유형 ==='' && echo ''[Constant] 연속 방해 - 탐지 쉬움'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - echo === 무선 재밍 공격 유형 === 마커 출력
+      - Constant/Random/Deceptive/Reactive 4 유형 각각 설명
+      - '대책: FHSS/DSSS/채널 전환 등 물리 계층 방어 기법 명시'
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - echo 평면 출력
+      - HackRF/SDR 로 실제 재밍 시뮬레이션
+      - GNU Radio 기반 protocol-aware jamming 구현
+      - IEEE 802.15.4 Channel Hopping (Zigbee 3.0) 시연
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 4 유형 중 일부 누락
+      - 대책 제시 없이 공격 유형만 설명
+      - FHSS/DSSS 등 물리 계층 대응 맥락 없음
   target_vm: attacker
-  script: echo '=== 무선 재밍 공격 유형 ===' && echo '[Constant] 연속 방해 - 탐지 쉬움' && echo '[Random] 불규칙 방해 - 에너지 효율적' && echo '[Deceptive]
-    유효 패킷 위장 - 탐지 어려움' && echo '[Reactive] 통신 감지 시 방해 - 가장 효과적' && echo '[대책] 주파수 도약, 확산 스펙트럼, 채널 전환' && echo '재밍 분석 완료'
+  script: echo '=== 무선 재밍 공격 유형 ===' && echo '[Constant] 연속 방해 - 탐지 쉬움' && echo '[Random] 불규칙 방해 - 에너지
+    효율적' && echo '[Deceptive] 유효 패킷 위장 - 탐지 어려움' && echo '[Reactive] 통신 감지 시 방해 - 가장 효과적' && echo '[대책]
+    주파수 도약, 확산 스펙트럼, 채널 전환' && echo '재밍 분석 완료'
   risk_level: low
   bastion_prompt: 무선 재밍 공격의 유형과 대책을 정리해줘
 - order: 6
@@ -202,33 +214,34 @@ steps:
   answer: '🤖 프롬프트: 롤링 코드 방어 메커니즘을 Python으로 구현 방법을 설명하고 예시 코드를 보여줘
 
     📎 참고 (CLI): python3 -c "import hmac,hashlib; secret=b''device_secret''; counter=0; codes=[]; [codes.append(hmac.new(secret,str(i).encode(),hashlib.sha256).hexdigest()[:8])
-    for i in range(5)]; print(''Rolling Codes:''); [print(f''  Counter {i}: {c}'') for i,c in enumerate(codes)]; print(''롤링
-    코드 구현 완료'')"'
+    for i in range(5)]; print(''Rolling Codes:''); [print(f''  Counter {i}: {c}'') for i,c in enumerate(codes)];
+    print(''롤링 코드 구현 완료'')"'
   answer_detail: 롤링 코드는 비밀 키와 카운터로 매번 다른 코드를 생성하여 리플레이 공격을 방지합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w6 s6 — 롤링 코드 방어 메커니즘을 Python으로 구현하시오. (cmd: python3 -c "import hmac,hashlib; secret=b''device_secret'';
-        counter=0; codes=[]; [)'
+      intent: '롤링 코드 (HMAC-based OTP) 방어 메커니즘 — python3 hmac.new(secret, str(i).encode(), hashlib.sha256).hexdigest()[:8]
+        로 counter 증가 시마다 다른 8자 코드 5개 생성. 리플레이 공격 방지: 동일 counter 의 재사용 코드는 서버가 거부. HOTP (RFC 4226) 원리로
+        차량 스마트키/개라지 도어/IoT 리모컨 보안.'
       success_criteria:
-      - '명령 실행: python3 -c "import hmac,hashlib; secret=b''device_secret''; co'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - hmac.new + hashlib.sha256 로 HMAC-SHA256 계산
+      - secret=device_secret + str(i) counter 값 입력
+      - 5개 연속 counter(0-4) 의 서로 다른 8자 hex 코드 생성
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - hmac + hashlib 조합
+      - cryptography 라이브러리 HMAC 클래스
+      - PyOTP 으로 TOTP/HOTP 표준 구현
+      - KeeLoq 롤링 코드 (차량 리모컨 실제 사용)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - counter 없이 고정 코드 생성
+      - HMAC 이 아닌 단순 hash (SHA256 만)
+      - 리플레이 방지 원리 맥락 누락
   target_vm: attacker
   script: 'python3 -c "import hmac,hashlib; secret=b''device_secret''; counter=0; codes=[]; [codes.append(hmac.new(secret,str(i).encode(),hashlib.sha256).hexdigest()[:8])
-    for i in range(5)]; print(''Rolling Codes:''); [print(f''  Counter {i}: {c}'') for i,c in enumerate(codes)]; print(''롤링
-    코드 구현 완료'')"'
+    for i in range(5)]; print(''Rolling Codes:''); [print(f''  Counter {i}: {c}'') for i,c in enumerate(codes)];
+    print(''롤링 코드 구현 완료'')"'
   risk_level: low
   bastion_prompt: 롤링 코드 방어 메커니즘을 Python으로 구현하시오.
 - order: 7
@@ -238,31 +251,32 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 무선 프로토콜 보안 분석 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
 
-    📎 참고 (CLI): echo ''=== 무선 프로토콜 보안 보고서 ==='' && echo ''[LoRa] ABP 리셋 시 리플레이 취약 → OTAA 사용 권장'' && echo ''[Zigbee] 기본 TCLK
-    공개 → Install Code 사용'' && echo ''[공통] 암호화 키 관리 강화 필요'' && echo ''=== 보고서 완료 ==='''
+    📎 참고 (CLI): echo ''=== 무선 프로토콜 보안 보고서 ==='' && echo ''[LoRa] ABP 리셋 시 리플레이 취약 → OTAA 사용 권장'' && echo
+    ''[Zigbee] 기본 TCLK 공개 → Install Code 사용'' && echo ''[공통] 암호화 키 관리 강화 필요'' && echo ''=== 보고서 완료 ==='''
   answer_detail: 각 프로토콜의 보안 특성을 이해하고 적절한 대책을 적용해야 합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w6 s7 — 무선 프로토콜 보안 분석 보고서를 작성하시오. (cmd: echo ''=== 무선 프로토콜 보안 보고서 ==='' && echo ''[LoRa] ABP 리셋 시 리플레이
-        취약 → OTAA 사용 권장'' && )'
+      intent: '무선 프로토콜 보안 분석 종합 보고서 — echo 으로 3개 항목: [LoRa] ABP 리셋 시 리플레이 취약 → OTAA(Over-The-Air Activation)
+        사용 권장 + [Zigbee] 기본 TCLK 공개 → Install Code 사용 권장 + [공통] 암호화 키 관리 강화 필요. LoRaWAN 1.0.4 + Zigbee
+        3.0 Security 모범 사례.'
       success_criteria:
-      - '명령 실행: echo ''=== 무선 프로토콜 보안 보고서 ==='' && echo ''[LoRa] ABP 리셋 시 리플레이 '
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - echo === 무선 프로토콜 보안 보고서 === 마커 출력
+      - LoRa + Zigbee 2개 프로토콜 각각 취약점 + 권고 조치
+      - '공통 권고: 암호화 키 관리 강화'
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - echo 평면 출력
+      - markdown 보안 분석 리포트 파일 저장
+      - LoRaWAN Alliance Security Guide 매핑
+      - Zigbee 3.0 Security Trust Model 준수 체크
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - LoRa 또는 Zigbee 한쪽만 평가
+      - OTAA/Install Code 등 구체적 대체안 없음
+      - 공통 권고(키 관리) 누락
   target_vm: attacker
-  script: echo '=== 무선 프로토콜 보안 보고서 ===' && echo '[LoRa] ABP 리셋 시 리플레이 취약 → OTAA 사용 권장' && echo '[Zigbee] 기본 TCLK 공개 → Install
-    Code 사용' && echo '[공통] 암호화 키 관리 강화 필요' && echo '=== 보고서 완료 ==='
+  script: echo '=== 무선 프로토콜 보안 보고서 ===' && echo '[LoRa] ABP 리셋 시 리플레이 취약 → OTAA 사용 권장' && echo '[Zigbee]
+    기본 TCLK 공개 → Install Code 사용' && echo '[공통] 암호화 키 관리 강화 필요' && echo '=== 보고서 완료 ==='
   risk_level: low
   bastion_prompt: 무선 프로토콜 보안 분석 보고서를 작성하시오.
