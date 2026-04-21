@@ -35,20 +35,21 @@ steps:
     expect: Suricata
     field: stdout
     semantic:
-      intent: '[BLUE] IDS/IPS 구축 - 탐지·방어 구현'
+      intent: '[BLUE] Suricata 버전 확인 — suricata -V 로 설치된 IDS/IPS 엔진의 버전 정보 출력. 릴리스 노트·CVE·지원 기능(AF_PACKET,
+        DPDK, JA3/JA4, file extraction) 확인의 기초. 룰 문법 호환성 점검의 출발점'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - suricata -V 명령 실행
+      - Suricata 키워드 포함 출력 + 버전 번호
+      - 버전에 따른 기능 호환성 개념
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - suricata -V
+      - suricata --version
+      - dpkg -l | grep suricata (Debian/Ubuntu)
+      - rpm -q suricata (RHEL)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - systemctl status (버전 정보 부족)
+      - 룰 파일 조회 (버전 아님)
+      - 설치 여부 불확실
   target_vm: secu
   script: suricata -V
   risk_level: low
@@ -69,20 +70,23 @@ steps:
     expect: SCAN Nmap
     field: stdout
     semantic:
-      intent: '[BLUE] IDS/IPS 구축 - 탐지·방어 구현'
+      intent: '[BLUE] Suricata SYN 스캔 탐지 룰 — alert tcp 10.20.30.201 any -> 10.20.30.80 any (msg:SCAN Nmap
+        SYN Scan; flags:S,12; threshold: type both, track by_src, count 20, seconds 5; classtype:attempted-recon;
+        sid:1000001;) 을 /etc/suricata/rules/local.rules 에 저장. flags:S,12 는 SYN 비트 + reserved 무시. threshold
+        로 5초 내 20 SYN 초과 시 트리거'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - alert tcp + flags:S,12 + threshold 3요소 포함
+      - sid:1000001 또는 unique SID + classtype
+      - SCAN Nmap 키워드 포함 + /etc/suricata/rules/local.rules 저장
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - echo alert tcp ... | sudo tee /etc/suricata/rules/local.rules
+      - /etc/suricata/rules/ 직접 편집
+      - emerging-threats ET SCAN 룰 참조
+      - suricata-update 로 룰 배포
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - threshold 없음 (1 패킷에도 트리거)
+      - sid 충돌 (1000000 이하)
+      - flags:S 만 (나머지 플래그 신경 안 씀)
   target_vm: secu
   script: 'echo ''alert tcp 10.20.30.201 any -> 10.20.30.80 any (msg:"SCAN Nmap SYN Scan from Attacker";
     flags:S,12; threshold: type both, track by_src, count 20, seconds 5; classtype:attempted-recon; sid:1000001;
@@ -106,20 +110,24 @@ steps:
     expect: SQL Injection
     field: stdout
     semantic:
-      intent: '[BLUE] IDS/IPS 구축 - 탐지·방어 구현'
+      intent: '[BLUE] SQL Injection HTTP 탐지 룰 — alert http ... (msg:WEB-ATTACK SQL Injection - UNION SELECT;
+        flow:to_server,established; content:UNION; nocase; content:SELECT; nocase; distance:0; within:20;
+        sid:1000002;). content 키워드로 UNION + SELECT 연속 패턴 탐지. distance:0 within:20 = 두 키워드 간격 20바이트 이내
+        근접 매칭'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - alert http + content:UNION + content:SELECT 2중 매칭
+      - distance/within 또는 pcre 근접 매칭
+      - nocase 대소문자 무시 + flow:to_server 방향 제한
+      - SQL Injection 키워드 + sid:1000002
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - content + distance + within 조합
+      - pcre:/UNION\s+SELECT/i 정규식 매칭
+      - http.uri; content:... 최신 sticky buffer
+      - suricata-update + ET WEB SQL rules
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 단일 content:UNION (오탐 많음)
+      - flow 방향 제한 없음
+      - distance/within 없음 (너무 멀리 매칭)
   target_vm: secu
   script: echo 'alert http 10.20.30.201 any -> 10.20.30.80 any (msg:"WEB-ATTACK SQL Injection Attempt
     - UNION SELECT"; flow:to_server,established; content:"UNION"; nocase; content:"SELECT"; nocase; distance:0;
@@ -144,20 +152,23 @@ steps:
     expect: SSH Brute Force
     field: stdout
     semantic:
-      intent: '[BLUE] IDS/IPS 구축 - 탐지·방어 구현'
+      intent: '[BLUE] XSS + SSH 브루트포스 룰 2종 — (1) alert http (msg:WEB-ATTACK XSS Script Tag; content:<script;
+        nocase; sid:1000003;) (2) alert tcp ... 22 (msg:ATTACK SSH Brute Force; flags:S,12; threshold:
+        type both, track by_src, count 5, seconds 30; sid:1000004;). tee -a 로 기존 룰 파일에 append'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - XSS 룰 (content:<script) + SSH 브루트포스 룰 (flags:S,12 + threshold) 모두 포함
+      - sid:1000003 + sid:1000004 또는 고유 SID
+      - SSH Brute Force 키워드 포함
+      - tee -a 로 append (s2 룰 덮어쓰기 방지)
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - echo alert ... | sudo tee -a local.rules
+      - 여러 줄 heredoc 으로 일괄 추가
+      - suricata-update + local rules 병합
+      - 룰 템플릿 파일 git 관리
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 룰 1종만 추가 (XSS OR SSH)
+      - tee (덮어쓰기) 사용 — 이전 룰 손실
+      - threshold 없이 단일 SYN 트리거
   target_vm: secu
   script: 'echo ''alert http 10.20.30.201 any -> 10.20.30.80 any (msg:"WEB-ATTACK XSS Script Tag"; flow:to_server,established;
     content:"<script"; nocase; classtype:web-application-attack; sid:1000003; rev:1;)'' | sudo tee -a
@@ -181,20 +192,22 @@ steps:
     expect: Suricata restarted
     field: stdout
     semantic:
-      intent: '[BLUE] IDS/IPS 구축 - 탐지·방어 구현'
+      intent: '[BLUE] Suricata 룰 검증 + 재시작 — suricata -T -c /etc/suricata/suricata.yaml (dry-run, 룰·설정
+        문법 검사) → systemctl restart suricata 로 룰 reload. 실전 팁: -T 없이 바로 재시작하면 문법 오류 시 서비스 다운. 운영 환경에서는
+        반드시 먼저 테스트'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - suricata -T 설정 검증 실행
+      - systemctl restart suricata 재시작
+      - Suricata restarted 메시지 + 서비스 정상화 확인
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - suricata -T -c yaml + systemctl restart
+      - suricatasc -c reload-rules (무중단 reload)
+      - kill -USR2 <pid> 로 룰 재로드 신호
+      - kibana dashboard 로 rule load 상태 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - -T 테스트 없이 바로 재시작
+      - 재시작만 (검증 없음)
+      - 서비스 상태 확인 누락
   target_vm: secu
   script: sudo suricata -T -c /etc/suricata/suricata.yaml 2>&1 | tail -5 && sudo systemctl restart suricata
     && echo 'Suricata restarted with custom rules'
@@ -214,20 +227,21 @@ steps:
     expect: open
     field: stdout
     semantic:
-      intent: '[RED] IDS/IPS 구축 - 공격 기법 실행'
+      intent: '[RED] 커스텀 룰 트리거 유발 — nmap -sS -T4 --top-ports 50 로 top 50 포트 SYN 스캔 (T4 = 공격적 속도). 5초 내
+        20 SYN 초과 쉬움 → s2 에서 작성한 SID 1000001 룰 트리거. IDS 탐지 검증의 공격자 관점 실행'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - nmap -sS 스캔 실행
+      - open 키워드 포함 (스캔 성공 + 탐지 유발)
+      - 룰 트리거 목적 명시 (s2 SYN scan 룰)
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nmap -sS -T4 --top-ports N
+      - masscan --rate 100 (빠른 스캔)
+      - hping3 -S --rand-source 다수 SYN
+      - scapy 로 수동 SYN flood
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 느린 스캔 (-T1/-T2) — 트리거 안 됨
+      - UDP 스캔 (TCP SYN 룰 아님)
+      - 룰 트리거 검증 목적 누락
   target_vm: attacker
   script: nmap -sS -T4 --top-ports 50 --max-retries 1 --host-timeout 15s 10.20.30.80
   risk_level: low
@@ -246,20 +260,22 @@ steps:
     expect: 10.20.30
     field: stdout
     semantic:
-      intent: '[BLUE] IDS/IPS 구축 - 탐지·방어 구현'
+      intent: '[BLUE] fast.log 최근 경보 확인 — tail -20 /var/log/suricata/fast.log 로 s6 에서 유발한 SID 1000001
+        경보 검출 확인. fast.log 형식: timestamp [**] [gid:sid:rev] msg [**] [Classification: ...] [Priority:
+        N] {PROTO} src_ip:sport -> dst_ip:dport'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - tail /var/log/suricata/fast.log
+      - 10.20.30 IP 포함 출력 (공격자 또는 대상)
+      - s6 공격과 경보 연관 분석
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - tail -N /var/log/suricata/fast.log
+      - grep sid:1000001 fast.log
+      - watch -n 1 tail fast.log (실시간)
+      - eve.json 의 동일 이벤트 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - fast.log 아닌 다른 파일
+      - s6 공격 시도와 연관 분석 없음
+      - SID 1000001 검증 누락
   target_vm: secu
   script: tail -20 /var/log/suricata/fast.log
   risk_level: low
@@ -280,20 +296,23 @@ steps:
     expect: Slow scan complete
     field: stdout
     semantic:
-      intent: '[RED] IDS/IPS 구축 - 공격 기법 실행'
+      intent: '[RED] IDS 회피 — nmap -sS -T2 -p 80,3000,8080 --host-timeout 30s 로 -T2 (polite 타이밍, 400ms
+        지연) + 특정 포트 3개만. 5초당 20 패킷 미만 유지 → s2 룰의 threshold count 20 seconds 5 조건 미충족 → 탐지 회피. Slow scan
+        complete 메시지. IDS threshold 기반 탐지의 한계 실증'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - -T2 또는 -T1 polite/sneaky 타이밍
+      - 포트 개수 제한 (3-5개)
+      - Slow scan complete 또는 동등 메시지
+      - threshold 기반 탐지 한계 인식
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nmap -T1/-T2 slow scan
+      - nmap --scan-delay 5s --max-rate 1
+      - masscan --rate 1 극저속
+      - 수동 nc -zv 로 포트별 개별 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - -T4/-T5 빠른 스캔 (탐지됨)
+      - 포트 전체 스캔 (threshold 초과)
+      - 회피 의도 없이 일반 스캔
   target_vm: attacker
   script: nmap -sS -T2 -p 80,3000,8080 --max-retries 1 --host-timeout 30s 10.20.30.80 && echo 'Slow scan
     complete'
@@ -314,20 +333,23 @@ steps:
     expect: '1000'
     field: stdout
     semantic:
-      intent: '[BLUE] IDS/IPS 구축 - 탐지·방어 구현'
+      intent: '[BLUE] eve.json SID 별 집계 — jq select(.event_type==alert) .alert.signature_id eve.json |
+        sort | uniq -c | sort -rn | head -10. 가장 많이 트리거된 SID 식별 → 과도한 알림은 threshold 조정·룰 비활성화, 낮은 탐지 건수는
+        미탐지 가능성. 1000 시리즈 SID(커스텀 룰) 확인'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - jq + .alert.signature_id 추출
+      - sort + uniq -c 집계
+      - 1000 또는 sid 숫자 출력 (커스텀 룰)
+      - 과도한 알림 vs 미탐지 분석 개념
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - jq .alert.signature_id + sort uniq -c
+      - grep sid:[0-9]+ eve.json + awk
+      - Kibana aggregation
+      - suricatasc -c dump-counters
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - signature_id 아닌 다른 필드 집계
+      - 정렬 없이 raw 목록
+      - 낮은 건수 룰의 의미 해석 없음
   target_vm: secu
   script: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .alert.signature_id'
     2>/dev/null | sort | uniq -c | sort -rn | head -10
@@ -349,20 +371,23 @@ steps:
     expect: IDS evasion test complete
     field: stdout
     semantic:
-      intent: '[RED] IDS/IPS 구축 - 공격 기법 실행'
+      intent: '[RED] IDS 탐지 우회 SQLi 변형 — curl -X POST /rest/user/login -d {email: admin@juice-sh.op''--,
+        password: x} 로 UNION SELECT 패턴 대신 email 필드의 ''-- 주석으로 인증 우회. s3 의 SID 1000002 룰(UNION + SELECT
+        매칭)은 이 변형을 놓침. IDS evasion test complete 메시지. 시그니처 기반 탐지의 근본 한계 실증'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - UNION SELECT 없는 변형 페이로드 (주석/반전 등)
+      - JuiceShop /rest/user/login POST
+      - IDS evasion test complete 메시지
+      - 커스텀 룰의 패턴 매칭 한계 인식
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - '''-- 주석 변형 (UNION 없음)'
+      - OR 1=1 로 WHERE 우회
+      - 대소문자 혼합 UnIoN 변형
+      - URL 이중 인코딩
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - UNION SELECT 그대로 사용 (탐지됨)
+      - 회피 원리 설명 없음
+      - 시그니처 한계 언급 없음
   target_vm: attacker
   script: "curl -s -X POST http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type: application/json'\
     \ \\\n  -d '{\"email\":\"admin@juice-sh.op'--\",\"password\":\"x\"}' && echo '\\n=== IDS evasion test\
