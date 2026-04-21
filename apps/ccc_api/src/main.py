@@ -3466,6 +3466,42 @@ def monitor_test_stats(request: Request):
     }
 
 
+@app.get("/admin/sensitive", dependencies=[Depends(verify_api_key)])
+def list_sensitive(request: Request):
+    """위험 payload hash 목록 (admin only). verify.semantic 에서 <SENSITIVE:xxx> 로 redact 된 원본 색인."""
+    _require_admin(request)
+    sdir = pathlib.Path(__file__).resolve().parents[3] / "contents" / ".sensitive"
+    if not sdir.exists():
+        return {"items": []}
+    items = []
+    for f in sorted(sdir.glob("*.txt")):
+        try:
+            content = f.read_text(encoding="utf-8")
+            items.append({
+                "hash": f.stem,
+                "preview": content[:120],
+                "size": len(content),
+                "mtime": f.stat().st_mtime,
+            })
+        except Exception:
+            continue
+    return {"items": items, "count": len(items)}
+
+
+@app.get("/admin/sensitive/{h}", dependencies=[Depends(verify_api_key)])
+def get_sensitive(h: str, request: Request):
+    """위험 payload hash → 원본 텍스트 복원 (admin only)."""
+    _require_admin(request)
+    if not h.isalnum() or len(h) > 64:
+        raise HTTPException(400, "invalid hash")
+    sdir = pathlib.Path(__file__).resolve().parents[3] / "contents" / ".sensitive"
+    target = sdir / f"{h}.txt"
+    if not target.exists():
+        raise HTTPException(404, f"sensitive hash not found: {h}")
+    content = target.read_text(encoding="utf-8")
+    return {"hash": h, "content": content}
+
+
 def _deploy_wazuh_rule(rule_path: pathlib.Path, dry_run: bool) -> dict:
     """siem VM에 Wazuh rule append + wazuh-logtest 검증 + manager restart."""
     from packages.bastion import run_command as _rc
