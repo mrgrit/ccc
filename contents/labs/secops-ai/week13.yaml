@@ -19,32 +19,35 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM의 OpenCTI /graphql 엔드포인트에 POST 테스트 요청을 보내 응답 코드를 보여줘
 
-    📎 참고 (CLI): curl -sS -o /dev/null -w ''%{http_code}\n'' -X POST http://localhost:8080/graphql -H ''Content-Type: application/json''
-    -d ''{"query":"{ about { version } }"}'''
+    📎 참고 (CLI): curl -sS -o /dev/null -w ''%{http_code}\n'' -X POST http://localhost:8080/graphql -H ''Content-Type:
+    application/json'' -d ''{"query":"{ about { version } }"}'''
   answer_detail: 'OpenCTI 위협 인텔리전스 활용: OpenCTI GraphQL 엔드포인트(/graphql) 가 응답하는지 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w13 s1 — OpenCTI GraphQL 엔드포인트(/graphql) 가 응답하는지 확인하시오. (cmd: curl -sS -o /dev/null -w ''%{http_code}\n''
-        -X POST http://localhost:8080/graphql )'
+      intent: OpenCTI GraphQL API 응답 확인 — curl -sS -o /dev/null -w %{http_code}\n -X POST http://localhost:8080/graphql
+        -H Content-Type:application/json -d {"query":"{ about { version } }"}. GraphQL 단일 endpoint - POST
+        로 모든 쿼리, body 에 query string. about.version 은 public schema(인증 없이 접근 가능). 응답 200 + JSON data.
+        실제 CTI 조회는 Bearer token 필요. 401 Unauthorized 도 API 동작 정상 신호
       success_criteria:
-      - '명령 실행: curl -sS -o /dev/null -w ''%{http_code}\n'' -X POST http://loc'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - POST /graphql 요청
+      - Content-Type JSON + query body
+      - HTTP 응답 코드 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - curl -X POST http://localhost:8080/graphql -H Content-Type:application/json -d {query body}
+      - 'curl -H Authorization: Bearer <token> 로 인증된 요청'
+      - GraphiQL 웹 UI http://localhost:8080/graphql
+      - 'Python pycti SDK: OpenCTIApiClient'
+      - wget --post-data
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - GET 요청(GraphQL 은 POST)
+      - Content-Type 누락
+      - body 없이 요청
   target_vm: siem
-  script: 'curl -sS -o /dev/null -w ''%{http_code}\n'' -X POST http://localhost:8080/graphql -H ''Content-Type: application/json''
-    -d ''{"query":"{ about { version } }"}'''
+  script: 'curl -sS -o /dev/null -w ''%{http_code}\n'' -X POST http://localhost:8080/graphql -H ''Content-Type:
+    application/json'' -d ''{"query":"{ about { version } }"}'''
   risk_level: low
   bastion_prompt: siem VM의 OpenCTI /graphql 엔드포인트에 POST 테스트 요청을 보내 응답 코드를 보여줘
 - order: 2
@@ -54,32 +57,35 @@ steps:
   points: 10
   answer: '🤖 프롬프트: secu VM에 filter.cti_ips ipv4 set을 생성해줘
 
-    📎 참고 (CLI): sudo nft add table inet filter 2>/dev/null ; sudo nft ''add set inet filter cti_ips { type ipv4_addr \; }''
-    2>/dev/null && sudo nft list set inet filter cti_ips'
+    📎 참고 (CLI): sudo nft add table inet filter 2>/dev/null ; sudo nft ''add set inet filter cti_ips {
+    type ipv4_addr \; }'' 2>/dev/null && sudo nft list set inet filter cti_ips'
   answer_detail: 'OpenCTI 위협 인텔리전스 활용: secu VM에 cti 전용 blocklist set ''cti_ips''(filter 테이블) 를 만드시오.'
   verify:
     type: output_contains
     expect: cti_ips
     field: stdout
     semantic:
-      intent: 'SecOps w13 s2 — secu VM에 cti 전용 blocklist set ''cti_ips''(filter 테이블) 를 만드시오. (cmd: sudo nft add table inet
-        filter 2>/dev/null ; sudo nft ''add set inet filter cti_i)'
+      intent: 'CTI 전용 blocklist set 생성 — sudo nft add table inet filter 2>/dev/null ; sudo nft add set
+        inet filter cti_ips { type ipv4_addr ; } && sudo nft list set inet filter cti_ips. CTI feed 에서
+        가져온 IOC 저장 전용 set. 목적: (1) OpenCTI 일반 blocklist 와 분리 (2) 자동 업데이트 시 전용 cleanup 가능. timeout 추가 권장
+        - CTI IOC 는 신뢰도 시간에 따라 감소, timeout 30d 로 자동 만료'
       success_criteria:
-      - '명령 실행: sudo nft add table inet filter 2>/dev/null ; sudo nft ''add s'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft add table + add set 실행
+      - type ipv4_addr + set 이름 cti_ips
+      - list set 으로 검증
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft add table + add set + list set 체인
+      - 'timeout 옵션 추가: set cti_ips { type ipv4_addr ; timeout 30d ; }'
+      - flags interval 로 CIDR 지원
+      - /etc/nftables.conf 에 영구 정의
+      - ipset + iptables legacy 대체
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - table 없이 set 생성(에러)
+      - type 미지정
+      - timeout 없이(영구 차단)
   target_vm: secu
-  script: sudo nft add table inet filter 2>/dev/null ; sudo nft 'add set inet filter cti_ips { type ipv4_addr \; }' 2>/dev/null
-    && sudo nft list set inet filter cti_ips
+  script: sudo nft add table inet filter 2>/dev/null ; sudo nft 'add set inet filter cti_ips { type ipv4_addr
+    \; }' 2>/dev/null && sudo nft list set inet filter cti_ips
   risk_level: medium
   bastion_prompt: secu VM에 filter.cti_ips ipv4 set을 생성해줘
 - order: 3
@@ -89,32 +95,34 @@ steps:
   points: 10
   answer: '🤖 프롬프트: secu VM filter.input 체인 맨 앞에 @cti_ips set 기반 drop 룰을 추가해줘
 
-    📎 참고 (CLI): sudo nft add chain inet filter input ''{ type filter hook input priority 0 \; }'' 2>/dev/null ; sudo nft insert
-    rule inet filter input ip saddr @cti_ips drop'
+    📎 참고 (CLI): sudo nft add chain inet filter input ''{ type filter hook input priority 0 \; }'' 2>/dev/null
+    ; sudo nft insert rule inet filter input ip saddr @cti_ips drop'
   answer_detail: 'OpenCTI 위협 인텔리전스 활용: filter.input 체인 초기에 ip saddr @cti_ips drop 룰을 추가하시오.'
   verify:
     type: output_contains
     expect: cti_ips
     field: stdout
     semantic:
-      intent: 'SecOps w13 s3 — filter.input 체인 초기에 ip saddr @cti_ips drop 룰을 추가하시오. (cmd: sudo nft add chain inet filter input
-        ''{ type filter hook input priority 0 \; }'' )'
+      intent: input chain 맨 앞에 CTI drop 룰 삽입 — sudo nft insert rule inet filter input ip saddr @cti_ips
+        drop. insert rule = 위치 0 에 prepend, add rule = append 와 대비. 성능 이유 - CTI blocklist 는 가장 먼저 평가되어
+        악성 트래픽 빠르게 drop. 이후 룰은 정상 트래픽만 평가. @cti_ips 가 빈 set 이면 no-op. add chain ... 은 chain 없을 때 보장, 2>/dev/null
+        로 exists 에러 무시
       success_criteria:
-      - '명령 실행: sudo nft add chain inet filter input ''{ type filter hook inp'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft insert rule 로 prepend
+      - ip saddr @cti_ips drop expression
+      - input chain 지정
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft insert rule inet filter input ip saddr @cti_ips drop
+      - sudo nft add rule ... index 0(위치 지정)
+      - iptables -I INPUT 1 로 prepend
+      - '룰 순서: CTI drop → allow 룰 → 기본 drop'
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - add rule(append) 로 순서 오류
+      - '@ 없이 set 참조'
+      - drop 대신 accept
   target_vm: secu
-  script: sudo nft add chain inet filter input '{ type filter hook input priority 0 \; }' 2>/dev/null ; sudo nft insert rule
-    inet filter input ip saddr @cti_ips drop
+  script: sudo nft add chain inet filter input '{ type filter hook input priority 0 \; }' 2>/dev/null
+    ; sudo nft insert rule inet filter input ip saddr @cti_ips drop
   risk_level: medium
   bastion_prompt: secu VM filter.input 체인 맨 앞에 @cti_ips set 기반 drop 룰을 추가해줘
 - order: 4
@@ -131,20 +139,23 @@ steps:
     expect: cti_ips
     field: stdout
     semantic:
-      intent: 'SecOps w13 s4 — 작성한 cti_ips set의 현재 원소를 확인하시오. (cmd: sudo nft list set inet filter cti_ips)'
+      intent: 'cti_ips set 내용 확인 — sudo nft list set inet filter cti_ips. 현재 set 에 등록된 element 수 확인. 출력:
+        set cti_ips { type ipv4_addr; elements = { ip1, ip2, ip3 } }. 빈 set 이면 elements 생략. timeout 설정
+        시 elements = { ip1 expires Nhms } 형태로 남은 시간 표시. 대용량 set(수천 IP) 은 출력 길 수 있음 - counter 확인은 nft list
+        sets'
       success_criteria:
-      - '명령 실행: sudo nft list set inet filter cti_ips'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft list set inet filter cti_ips 실행
+      - set 구조 출력
+      - cti_ips 키워드 포함
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft list set inet filter cti_ips
+      - sudo nft -j list set inet filter cti_ips | jq
+      - sudo nft list sets 로 모든 set 요약
+      - sudo ipset list cti_ips(ipset 대체)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 다른 set 확인
+      - 출력 구조 이해 없이 실행
+      - 비어있을 때 정상 판정
   target_vm: secu
   script: sudo nft list set inet filter cti_ips
   risk_level: low
@@ -156,30 +167,35 @@ steps:
   points: 10
   answer: '🤖 프롬프트: secu VM filter.cti_ips set에 203.0.113.66을 추가해줘
 
-    📎 참고 (CLI): sudo nft add element inet filter cti_ips ''{ 203.0.113.66 }'' && sudo nft list set inet filter cti_ips'
+    📎 참고 (CLI): sudo nft add element inet filter cti_ips ''{ 203.0.113.66 }'' && sudo nft list set inet
+    filter cti_ips'
   answer_detail: 'OpenCTI 위협 인텔리전스 활용: 샘플 악성 IP 203.0.113.66 을 cti_ips 에 주입하시오(OpenCTI 조회 결과를 가정).'
   verify:
     type: output_contains
     expect: 203.0.113.66
     field: stdout
     semantic:
-      intent: 'SecOps w13 s5 — 샘플 악성 IP 203.0.113.66 을 cti_ips 에 주입하시오(OpenCTI 조회 결과를 가정). (cmd: sudo nft add element inet
-        filter cti_ips ''{ 203.0.113.66 }'' && sudo nft list set)'
+      intent: '샘플 악성 IP 주입(OpenCTI 조회 결과 시뮬) — sudo nft add element inet filter cti_ips { 203.0.113.66
+        } && sudo nft list set inet filter cti_ips. 203.0.113.66 은 TEST-NET-3(RFC 5737) 문서용 IP. 실제 환경은
+        OpenCTI pycti 로 indicator list 조회 후 nft 명령 자동화: python3 -c import pycti; ips = api.indicator.list(filters=pattern_type=ipv4-addr);
+        for ip in ips: subprocess.run([nft, add, element, ...]). Airgap CTI feed 도 동일 패턴'
       success_criteria:
-      - '명령 실행: sudo nft add element inet filter cti_ips ''{ 203.0.113.66 }'' '
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft add element 실행
+      - 203.0.113.66 IP 추가
+      - list set 로 검증
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft add element inet filter cti_ips { 203.0.113.66 }
+      - 'timeout 추가: { 203.0.113.66 timeout 30d }'
+      - Python script + pycti SDK + subprocess
+      - MISP + PyMISP API 로 자동화
+      - Ansible module community.general.nftables_set
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - list set 검증 누락
+      - 잘못된 IP 포맷
+      - element 대신 rule 추가
   target_vm: secu
-  script: sudo nft add element inet filter cti_ips '{ 203.0.113.66 }' && sudo nft list set inet filter cti_ips
+  script: sudo nft add element inet filter cti_ips '{ 203.0.113.66 }' && sudo nft list set inet filter
+    cti_ips
   risk_level: medium
   bastion_prompt: secu VM filter.cti_ips set에 203.0.113.66을 추가해줘
 - order: 6
@@ -196,20 +212,22 @@ steps:
     expect: 203.0.113.66
     field: stdout
     semantic:
-      intent: 'SecOps w13 s6 — 203.0.113.66 가 blocklist 로 등록됐는지 확인하시오. (cmd: sudo nft list set inet filter cti_ips)'
+      intent: blocklist 등록 검증(재확인) — sudo nft list set inet filter cti_ips. s5 실행 후 실제 203.0.113.66 이
+        elements = { ... } 안에 있는지 명시적 재확인. audit trail 로 변경 사항 증거 확보. diff 접근 - 전후 출력 비교 가능. 시간대별 스냅샷
+        저장 시 OpenCTI 연동 상태 감사
       success_criteria:
-      - '명령 실행: sudo nft list set inet filter cti_ips'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - list set cti_ips 재실행
+      - 203.0.113.66 elements 에 포함
+      - 검증 완료
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft list set inet filter cti_ips
+      - sudo nft -j list set ... | jq .nftables[].set.elem
+      - sudo nft get element inet filter cti_ips { 203.0.113.66 }(존재 여부)
+      - diff before.txt after.txt 로 변화 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - set 내용 확인 없이 판정
+      - 다른 set 조회
+      - grep 없이 긴 출력
   target_vm: secu
   script: sudo nft list set inet filter cti_ips
   risk_level: low
@@ -221,32 +239,35 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM의 OpenCTI 플랫폼 로그에서 Indicator 관련 로그 최근 5건을 보여줘
 
-    📎 참고 (CLI): docker logs --tail 200 $(docker ps --format ''{{.Names}}'' | grep -i ''^opencti$'' | head -1) 2>&1 | grep
-    -i indicator | tail -5'
+    📎 참고 (CLI): docker logs --tail 200 $(docker ps --format ''{{.Names}}'' | grep -i ''^opencti$'' | head
+    -1) 2>&1 | grep -i indicator | tail -5'
   answer_detail: 'OpenCTI 위협 인텔리전스 활용: OpenCTI 컨테이너에서 최근 5개 Indicator 생성 이벤트 로그를 조회하시오(platform 컨테이너 로그).'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w13 s7 — OpenCTI 컨테이너에서 최근 5개 Indicator 생성 이벤트 로그를 조회하시오(platform 컨테이너 로그). (cmd: docker logs --tail
-        200 $(docker ps --format ''{{.Names}}'' | grep -i ''^opencti$'' |)'
+      intent: OpenCTI Indicator 생성 로그 조회 — docker logs --tail 200 <opencti> 2>&1 | grep -i indicator |
+        tail -5. OpenCTI 에서 새 STIX 2.1 Indicator 객체 생성 시 platform 로그에 기록(Indicator created, Indicator
+        updated, pattern evaluation). CTI feed 수신 → parser → Indicator 생성 → observed-data 연결 → relationship
+        생성. 로그에서 indicator ID + pattern + confidence 확인. ERROR level 로그면 parse 실패
       success_criteria:
-      - '명령 실행: docker logs --tail 200 $(docker ps --format ''{{.Names}}'' | g'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - docker logs grep indicator 실행
+      - 최근 5건 또는 빈 결과
+      - tail 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker logs --tail 200 <opencti> 2>&1 | grep -i indicator | tail -5
+      - docker logs | grep -E Indicator|Observed
+      - 'curl Bearer <token> -d "{query: indicators{edges{node{id pattern}}}}" http://localhost:8080/graphql'
+      - Python pycti opencti_api_client.indicator.list()
+      - Kibana audit log
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - platform 외 연계 컨테이너 혼동
+      - grep 없이 긴 로그
+      - tail 누락
   target_vm: siem
-  script: docker logs --tail 200 $(docker ps --format '{{.Names}}' | grep -i '^opencti$' | head -1) 2>&1 | grep -i indicator
-    | tail -5
+  script: docker logs --tail 200 $(docker ps --format '{{.Names}}' | grep -i '^opencti$' | head -1) 2>&1
+    | grep -i indicator | tail -5
   risk_level: low
   bastion_prompt: siem VM의 OpenCTI 플랫폼 로그에서 Indicator 관련 로그 최근 5건을 보여줘
 - order: 8
@@ -263,21 +284,25 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w13 s8 — OpenCTI connectors 컨테이너 목록을 확인하시오. (cmd: docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null
-        | grep -i connector | h)'
+      intent: 'OpenCTI connectors 목록 — docker ps --format {{.Names}}\t{{.Status}} | grep -i connector
+        | head. OpenCTI connector 는 독립 컨테이너 - import/export/enrichment/stream 유형. 예: connector-misp(MISP
+        import), connector-alienvault-otx(OTX), connector-mitre-atlas, connector-abuse-ssl, connector-virustotal(enrichment),
+        connector-export-csv. 각 connector 는 RabbitMQ queue 로 platform 과 통신. 활성 connector 수 = 외부 TI 소스
+        통합 수'
       success_criteria:
-      - '명령 실행: docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | g'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - docker ps + grep connector 실행
+      - connector 컨테이너 목록 출력
+      - Up 상태 포함
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker ps --format ... | grep -i connector
+      - docker compose -f opencti-compose.yml ps connector-*
+      - docker compose logs connector-misp -f (특정 connector)
+      - OpenCTI Dashboard Data Connectors 화면
+      - curl GraphQL { connectors { name active } }
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - platform 또는 worker 와 혼동
+      - Exited 상태 무시
+      - connector 없어도 정상 판정
   target_vm: siem
   script: docker ps --format '{{.Names}}\t{{.Status}}' 2>/dev/null | grep -i connector | head
   risk_level: low
@@ -296,21 +321,23 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w13 s9 — 샘플 IP 203.0.113.66 을 cti_ips 에서 제거하시오. (cmd: sudo nft delete element inet filter cti_ips ''{
-        203.0.113.66 }'')'
+      intent: 샘플 IP 제거(cleanup) — sudo nft delete element inet filter cti_ips { 203.0.113.66 }. 실습 후 원상
+        복구. delete element 는 특정 IP 만 제거(set 유지). 실운영에서는 (1) timeout 자동 만료 (2) CTI feed 삭제 이벤트 수신 시 자동
+        삭제 (3) False Positive 판정 시 수동 제거. 잘못 삭제 시 악성 IP 재활성화 위험 - 2차 확인 절차 권장
       success_criteria:
-      - '명령 실행: sudo nft delete element inet filter cti_ips ''{ 203.0.113.66 '
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft delete element 실행
+      - 203.0.113.66 제거
+      - 에러 없이 종료
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft delete element inet filter cti_ips { 203.0.113.66 }
+      - sudo nft flush set inet filter cti_ips(전체 비움)
+      - timeout 기반 자동 만료(실운영 권장)
+      - OpenCTI stream listener + auto remove script
+      - destroy element 로 idempotent
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - set 자체 삭제
+      - 다른 IP 오타 제거
+      - 검증 없이 완료 판정
   target_vm: secu
   script: sudo nft delete element inet filter cti_ips '{ 203.0.113.66 }'
   risk_level: medium
@@ -329,20 +356,22 @@ steps:
     expect: cti_ips
     field: stdout
     semantic:
-      intent: 'SecOps w13 s10 — filter.input 체인의 현재 룰을 확인해 정리 상태를 점검하시오. (cmd: sudo nft list chain inet filter input)'
+      intent: input chain 룰 최종 점검 — sudo nft list chain inet filter input. cleanup 후 chain 에 @cti_ips
+        drop 룰이 여전히 있는지 확인(set 만 비웠고 rule 은 유지). 룰은 유지해야 다음 CTI 추가 시 자동 차단 가동. list chain 은 해당 chain 의
+        모든 rule + counter 출력. counter 값으로 drop 횟수 관찰 가능(매칭 빈도 지표)
       success_criteria:
-      - '명령 실행: sudo nft list chain inet filter input'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft list chain inet filter input
+      - cti_ips 문자열 포함
+      - chain 룰 구조 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft list chain inet filter input
+      - sudo nft -a list chain inet filter input(handle)
+      - sudo nft list ruleset | grep -A 10 chain input
+      - Wazuh AR custom script 연동
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 다른 chain 확인
+      - cti_ips 룰 삭제됐는지 미인지
+      - handle 확인 없음
   target_vm: secu
   script: sudo nft list chain inet filter input
   risk_level: low
