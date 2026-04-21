@@ -26,20 +26,22 @@ steps:
     expect: table
     field: stdout
     semantic:
-      intent: 'SecOps w1 s1 — secu VM({{SECU_IP}})의 nftables 테이블 목록을 확인하시오. (cmd: nft list tables)'
+      intent: 'secu VM nftables 테이블 목록 확인 — nft list tables 로 현재 로드된 netfilter tables (family + name)
+        열거. 기본 family: inet(IPv4+IPv6 공통), ip/ip6, arp, bridge, netdev. CCC 환경의 방화벽 룰셋 구조 파악의 시작점. iptables-nft
+        compatibility 모드 시 filter/nat/mangle 등 legacy 테이블 매핑 확인'
       success_criteria:
-      - '명령 실행: nft list tables'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft list tables 실행
+      - 테이블 family 와 name 출력
+      - table 키워드 포함
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - nft list tables
+      - iptables-nft -L (compat 모드)
+      - cat /etc/nftables.conf 로 선언 확인
+      - systemctl status nftables 에서 로드 상태 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - nft 명령어 없이 개념 설명
+      - family 구분 없이 table 이름만
+      - 에러 숨김(2>/dev/null 만)
   target_vm: secu
   script: nft list tables
   risk_level: low
@@ -58,20 +60,23 @@ steps:
     expect: suricata
     field: stdout
     semantic:
-      intent: 'SecOps w1 s2 — secu VM에서 Suricata 서비스 상태를 확인하시오. (cmd: systemctl status suricata --no-pager | head -15)'
+      intent: 'secu VM Suricata 서비스 상태 확인 — systemctl status suricata --no-pager | head -15 로 Active:
+        active (running), Main PID, 최근 log line 출력. Suricata 는 IDS/IPS 로 네트워크 트래픽 실시간 분석 + alert 생성. --no-pager
+        로 ssh 세션에서 pager block 방지. 비활성이면 Suricata 탐지 공백 발생'
       success_criteria:
-      - '명령 실행: systemctl status suricata --no-pager | head -15'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - systemctl 또는 service 명령 실행
+      - active 또는 inactive 상태 출력
+      - suricata 문자열 포함
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - systemctl status suricata --no-pager
+      - systemctl is-active suricata
+      - ps auxf | grep -i suricata
+      - suricatasc -c uptime 으로 ring 상태
+      - journalctl -u suricata -n 20
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 다른 서비스(wazuh 등) 확인
+      - active/inactive 판정 결과 누락
+      - pager 에러로 출력 중단
   target_vm: secu
   script: systemctl status suricata --no-pager | head -15
   risk_level: low
@@ -90,21 +95,23 @@ steps:
     expect: security
     field: stdout
     semantic:
-      intent: 'SecOps w1 s3 — web VM({{WEB_IP}})에서 Apache + ModSecurity 모듈 로드 상태를 확인하시오. (cmd: apachectl -M 2>/dev/null |
-        grep -i security)'
+      intent: web VM Apache ModSecurity 모듈 로드 확인 — apachectl -M 2>/dev/null | grep -i security 로 security2_module
+        로드 여부 검사. ModSecurity 는 Apache/Nginx 용 WAF, OWASP CRS(Core Rule Set) 와 함께 SQLi·XSS·RFI 등 Layer-7
+        공격 차단. 모듈 없으면 WAF 기능 OFF. apache2 의 경우 mods-enabled/security2.conf 존재 + LoadModule 지시어 확인
       success_criteria:
-      - '명령 실행: apachectl -M 2>/dev/null | grep -i security'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - apachectl -M 또는 apache2ctl -M 실행
+      - security2_module 또는 mod_security 문자열 포함
+      - 출력에 security 키워드
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - apachectl -M | grep -i security
+      - apache2ctl -M | grep security
+      - ls /etc/apache2/mods-enabled/ | grep security
+      - httpd -t -D DUMP_MODULES
+      - 'curl localhost -H X-Attack: test; grep 차단 로그'
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 모듈 이름 미확인
+      - Nginx 에서 검색(잘못된 VM)
+      - security 키워드 매칭 실패
   target_vm: web
   script: apachectl -M 2>/dev/null | grep -i security
   risk_level: low
@@ -123,21 +130,23 @@ steps:
     expect: active
     field: stdout
     semantic:
-      intent: 'SecOps w1 s4 — siem VM({{SECU_IP}}00)에서 Wazuh Manager 서비스 상태를 확인하시오. (cmd: systemctl is-active wazuh-manager
-        || echo inactive)'
+      intent: 'siem VM Wazuh Manager 서비스 상태 — systemctl is-active wazuh-manager 로 active/inactive/failed
+        판정. Wazuh Manager 는 SIEM 의 핵심 엔진: 에이전트 로그 수신 → decoder/rule 매칭 → alert 생성 → alerts.json 저장. 비활성이면
+        모든 SOC 탐지 기능 마비. || echo inactive 로 실패 시 명확한 출력'
       success_criteria:
-      - '명령 실행: systemctl is-active wazuh-manager || echo inactive'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - systemctl is-active wazuh-manager 실행
+      - active/inactive 문자열 출력
+      - 상태 판정 결과 명확
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - systemctl is-active wazuh-manager
+      - systemctl status wazuh-manager --no-pager
+      - /var/ossec/bin/wazuh-control status
+      - ps auxf | grep wazuh
+      - curl -k https://localhost:55000 Wazuh API health
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - wazuh-agent 확인(서버 측 아님)
+      - active 판정 없이 로그만 출력
+      - 에러 무시
   target_vm: siem
   script: systemctl is-active wazuh-manager || echo inactive
   risk_level: low
@@ -156,21 +165,23 @@ steps:
     expect: '9200'
     field: stdout
     semantic:
-      intent: 'SecOps w1 s5 — siem VM에서 Wazuh Indexer(OpenSearch) 포트(9200) 리스닝 상태를 확인하시오. (cmd: ss -tlnp 2>/dev/null | grep
-        -E '':9200|wazuh'')'
+      intent: siem VM Wazuh Indexer(OpenSearch) 9200 포트 리스닝 확인 — ss -tlnp 2>/dev/null | grep -E ":9200|wazuh"
+        로 TCP listening 소켓 검사. Wazuh Indexer 는 OpenSearch fork 로 alerts/events 저장, Wazuh Dashboard 가 9200
+        API 로 조회. 리스닝 없으면 dashboard 쿼리 실패 + 인덱싱 중단. 로컬만(127.0.0.1) vs 외부(0.0.0.0) 바인딩 구분
       success_criteria:
-      - '명령 실행: ss -tlnp 2>/dev/null | grep -E '':9200|wazuh'''
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - ss 또는 netstat 실행
+      - :9200 포트 LISTEN 확인
+      - java 또는 wazuh 프로세스 매핑
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - ss -tlnp | grep :9200
+      - netstat -tlnp | grep 9200
+      - lsof -i:9200
+      - curl -k -u admin:pass https://localhost:9200 로 API 응답
+      - systemctl status wazuh-indexer
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 다른 포트 확인
+      - 9200 LISTEN 판정 없음
+      - 프로세스 매핑(PID) 누락
   target_vm: siem
   script: ss -tlnp 2>/dev/null | grep -E ':9200|wazuh'
   risk_level: low
@@ -182,30 +193,34 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM에서 OpenCTI가 동작 중인지 확인해줘
 
-    📎 참고 (CLI): docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | grep -i opencti || systemctl is-active opencti'
+    📎 참고 (CLI): docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | grep -i opencti || systemctl
+    is-active opencti'
   answer_detail: '보안 솔루션 인프라 점검: siem VM에서 OpenCTI 서비스(또는 docker 컨테이너) 상태를 확인하시오.'
   verify:
     type: output_contains
     expect: opencti
     field: stdout
     semantic:
-      intent: 'SecOps w1 s6 — siem VM에서 OpenCTI 서비스(또는 docker 컨테이너) 상태를 확인하시오. (cmd: docker ps --format ''{{.Names}}\t{{.Status}}''
-        2>/dev/null | grep -i opencti || sy)'
+      intent: 'siem VM OpenCTI 서비스/컨테이너 상태 — docker ps --format으로 opencti 컨테이너 목록, 또는 systemctl is-active
+        opencti(native 설치 시). OpenCTI 는 CTI 플랫폼, STIX 2.1 기반 threat intelligence 관리(MITRE ATT&CK·IOC·actors·campaigns).
+        다중 컨테이너(platform·worker·elastic·redis·rabbitmq·minio) 구성. 헬스체크: curl localhost:8080/graphql'
       success_criteria:
-      - '명령 실행: docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | g'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - docker ps 또는 systemctl 실행
+      - opencti 컨테이너/서비스 이름 출력
+      - 상태(Up/active) 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker ps --format Table 필터링
+      - docker compose ps in opencti 디렉토리
+      - systemctl is-active opencti
+      - curl -s localhost:8080/health
+      - journalctl -u opencti 로 최근 로그
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 컨테이너 이름 없이 서비스 확인만
+      - Up 상태 판정 누락
+      - OpenCTI vs 다른 플랫폼 혼동
   target_vm: siem
-  script: docker ps --format '{{.Names}}\t{{.Status}}' 2>/dev/null | grep -i opencti || systemctl is-active opencti
+  script: docker ps --format '{{.Names}}\t{{.Status}}' 2>/dev/null | grep -i opencti || systemctl is-active
+    opencti
   risk_level: low
   bastion_prompt: siem VM에서 OpenCTI가 동작 중인지 확인해줘
 - order: 7
@@ -222,20 +237,23 @@ steps:
     expect: bytes
     field: stdout
     semantic:
-      intent: 'SecOps w1 s7 — attacker VM({{ATTACKER_IP}})에서 secu VM으로 ping이 가능한지 확인하시오. (cmd: ping -c 2 10.20.30.1)'
+      intent: attacker VM → secu VM ICMP 도달성 검증 — ping -c 2 10.20.30.1 로 2 패킷 전송, bytes from 응답·RTT·loss
+        확인. 네트워크 연결성 baseline (CCC VM 간 내부 10.20.30.0/24 네트워크). 방화벽 INPUT chain 에서 ICMP 허용 여부와도 연관. 0%
+        loss 정상, 100% loss 면 라우팅/방화벽 점검 필요
       success_criteria:
-      - '명령 실행: ping -c 2 10.20.30.1'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - ping -c 2 실행
+      - bytes from 또는 응답 시간 출력
+      - 0% packet loss 또는 도달 가능 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - ping -c 2 <IP>
+      - ping6 <IPv6> (IPv6 환경)
+      - fping -c 2 <IP>
+      - traceroute <IP> 로 hop 점검
+      - nc -zv <IP> <port> 로 TCP 도달성
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - ping 0 패킷 전송
+      - 100% loss 무시
+      - DNS 조회 실패(IP 직접 사용 안 함)
   target_vm: attacker
   script: ping -c 2 10.20.30.1
   risk_level: low
@@ -254,21 +272,23 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w1 s8 — secu VM에서 Suricata 기본 룰셋 수(/etc/suricata/rules 내 .rules 파일 합계)를 확인하시오. (cmd: ls /etc/suricata/rules/*.rules
-        2>/dev/null | wc -l)'
+      intent: secu VM Suricata 룰셋 개수 확인 — ls /etc/suricata/rules/*.rules 2>/dev/null | wc -l 로 .rules
+        파일 수 카운트. Emerging Threats Open 룰셋 보통 30-60개 파일(emerging-exploit.rules, emerging-malware.rules,
+        emerging-web_server.rules 등). suricata-update 로 카테고리별 ruleset 로드. 파일 수 0 이면 룰셋 로드 실패
       success_criteria:
-      - '명령 실행: ls /etc/suricata/rules/*.rules 2>/dev/null | wc -l'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - ls | wc -l 또는 find | wc -l 실행
+      - 숫자(룰 파일 개수) 출력
+      - 비정상(0) 여부 판정 가능
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - ls /etc/suricata/rules/*.rules | wc -l
+      - find /etc/suricata/rules -name *.rules | wc -l
+      - suricata-update list-sources
+      - grep -c alert /etc/suricata/rules/*.rules 로 총 룰 개수
+      - cat /var/log/suricata/suricata.log | grep loaded
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 파일 리스트만 출력(개수 없음)
+      - 다른 디렉토리 검사
+      - 0 개인데 정상 판정
   target_vm: secu
   script: ls /etc/suricata/rules/*.rules 2>/dev/null | wc -l
   risk_level: low
@@ -280,32 +300,34 @@ steps:
   points: 10
   answer: '🤖 프롬프트: web VM의 ModSecurity CRS 룰 디렉터리 내용을 확인해줘
 
-    📎 참고 (CLI): ls /etc/modsecurity/crs/rules/ 2>/dev/null | head -5 || ls /usr/share/modsecurity-crs/rules/ 2>/dev/null |
-    head -5'
+    📎 참고 (CLI): ls /etc/modsecurity/crs/rules/ 2>/dev/null | head -5 || ls /usr/share/modsecurity-crs/rules/
+    2>/dev/null | head -5'
   answer_detail: '보안 솔루션 인프라 점검: web VM에서 ModSecurity CRS 룰 디렉터리 목록을 확인하시오.'
   verify:
     type: output_contains
     expect: rules
     field: stdout
     semantic:
-      intent: 'SecOps w1 s9 — web VM에서 ModSecurity CRS 룰 디렉터리 목록을 확인하시오. (cmd: ls /etc/modsecurity/crs/rules/ 2>/dev/null
-        | head -5 || ls /usr/share/modsecurit)'
+      intent: 'web VM ModSecurity CRS 룰 디렉토리 확인 — ls /etc/modsecurity/crs/rules/ 또는 /usr/share/modsecurity-crs/rules/
+        head -5. OWASP CRS(Core Rule Set) 룰 파일 구성: REQUEST-901-INITIALIZATION·REQUEST-942-APPLICATION-ATTACK-SQLI·REQUEST-941-APPLICATION-ATTACK-XSS
+        등 번호 체계로 분류. 디렉토리 없으면 CRS 미설치, Apache <IncludeOptional> 으로 로드'
       success_criteria:
-      - '명령 실행: ls /etc/modsecurity/crs/rules/ 2>/dev/null | head -5 || ls /'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - ls 명령으로 rules 디렉토리 내용 출력
+      - REQUEST-9xx 또는 RESPONSE 파일명 포함
+      - rules 문자열 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - ls /etc/modsecurity/crs/rules/ | head
+      - ls /usr/share/modsecurity-crs/rules/
+      - find / -name *APPLICATION-ATTACK* 2>/dev/null
+      - cat /etc/apache2/mods-enabled/security2.conf | grep IncludeOptional
+      - apt list --installed | grep modsec
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 파일 내용 확인만(리스트 안 함)
+      - Suricata 룰 검사
+      - 빈 출력 무시
   target_vm: web
-  script: ls /etc/modsecurity/crs/rules/ 2>/dev/null | head -5 || ls /usr/share/modsecurity-crs/rules/ 2>/dev/null | head
-    -5
+  script: ls /etc/modsecurity/crs/rules/ 2>/dev/null | head -5 || ls /usr/share/modsecurity-crs/rules/
+    2>/dev/null | head -5
   risk_level: low
   bastion_prompt: web VM의 ModSecurity CRS 룰 디렉터리 내용을 확인해줘
 - order: 10
@@ -322,21 +344,23 @@ steps:
     expect: alert
     field: stdout
     semantic:
-      intent: 'SecOps w1 s10 — siem VM에서 Wazuh Manager의 최근 alert 파일 존재 여부를 확인하시오. (cmd: ls /var/ossec/logs/alerts/ 2>/dev/null
-        | head -3)'
+      intent: siem VM Wazuh alerts 로그 디렉토리 확인 — ls /var/ossec/logs/alerts/ 2>/dev/null | head -3 으로 alerts.json(실시간
+        append)·alerts.log(syslog 포맷)·연/월/일별 디렉토리 구조 확인. Wazuh Manager 의 alert 출력 저장 위치. 파일이 비어있거나 디렉토리가
+        없으면 alert pipeline 문제(decoder·rule 없음·analysisd 중단)
       success_criteria:
-      - '명령 실행: ls /var/ossec/logs/alerts/ 2>/dev/null | head -3'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - ls /var/ossec/logs/alerts 실행
+      - alerts.json 또는 alerts.log 파일명 확인
+      - alert 문자열 포함
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - ls /var/ossec/logs/alerts/ | head
+      - tail -1 /var/ossec/logs/alerts/alerts.json
+      - find /var/ossec/logs -name alerts.* -mtime -1
+      - wc -l /var/ossec/logs/alerts/alerts.json
+      - jq . /var/ossec/logs/alerts/alerts.json | head
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 다른 경로 탐색(ossec 외부)
+      - 파일 내용 열람만(존재 확인 없음)
+      - 권한 에러(sudo 없이) 무시
   target_vm: siem
   script: ls /var/ossec/logs/alerts/ 2>/dev/null | head -3
   risk_level: low
