@@ -51,13 +51,13 @@ per-step semantic 작성 시 필수 포함 요소:
 | soc-adv-ai | 210 | 수동 재작성 **완료 (w1-15)** |
 | secops-ai | 150 | 수동 재작성 **완료 (w1-15)** |
 | cloud-container-ai | 116 | 수동 재작성 **완료 (w1-15)** |
-| **수동 확정 소계** | **2,079** | |
-| ai-safety-adv-ai | 119 | bulk 자동생성 — **재작성 대기** |
-| compliance-ai | 130 | bulk 자동생성 — **재작성 대기** |
-| physical-pentest-ai | 128 | bulk 자동생성 — **재작성 대기** |
-| iot-security-ai | 109 | bulk 자동생성 — **재작성 대기** |
-| ai-security-ai | 132 | bulk 자동생성 — **재작성 대기** |
-| **bulk (재작성 대기) 소계** | **618** | |
+| compliance-ai | 127 | 수동 재작성 **완료 (w1-15)** |
+| iot-security-ai | 109 | 수동 재작성 **완료 (w1-15)** |
+| physical-pentest-ai | 128 | 수동 재작성 **완료 (w1-15)** |
+| ai-security-ai | 121 | 수동 재작성 **완료 (w1-15)** |
+| **수동 확정 소계** | **2,545** | |
+| ai-safety-adv-ai | 119 | bulk 자동생성 — **재작성 대기 (마지막 과목)** |
+| **bulk (재작성 대기) 소계** | **119** | |
 
 ### 수동 vs bulk 품질 차이
 
@@ -113,15 +113,9 @@ bulk 는 intent 가 unique 하지만 **깊이가 얕아** judge 가 acceptable_m
 
 ## 남은 작업
 
-재작성 대기: **약 618 step** (5 과목).
+재작성 대기: **119 step** (1 과목 — ai-safety-adv-ai).
 
-권장 순서 (가치/의존도 기준):
-
-1. **compliance-ai** (130) — 기업 환경 필수
-2. **iot-security-ai** (109) / **physical-pentest-ai** (128) — 특화 도메인
-3. **ai-security-ai** (132) / **ai-safety-adv-ai** (119) — AI 보안 심화 (기존 bulk 재작성)
-
-다음 세션 시작 포인트: `compliance-ai/week01.yaml`.
+다음 세션 시작 포인트: `ai-safety-adv-ai/week01.yaml`.
 
 ## 리스크 및 완화
 
