@@ -28,20 +28,20 @@ steps:
     expect: uid=
     field: stdout
     semantic:
-      intent: 권한 상승 (Privilege Escalation) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: id/whoami/groups 로 현재 사용자 UID/GID/그룹 확인 — 권한 상승 경로 탐색의 첫 단계 (docker/lxd/disk 그룹 확인)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - id && whoami && groups 실행
+      - 출력에 uid=<N>, gid=<N>, groups= 라인 포함
+      - 특수 그룹(docker·lxd·disk·sudo) 소속 여부 해석
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - id; whoami; groups
+      - getent passwd $(whoami)
+      - cat /etc/passwd | grep ^$(whoami)
+      - sudo -l 로 sudo 권한 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(권한 상승 (Privilege Escalation))와 무관한 기법
+      - id 출력 해석 없음
+      - 특수 그룹 언급 없음
+      - 단일 명령만 실행
   target_vm: web
   script: id && whoami && groups
   risk_level: low
@@ -61,20 +61,20 @@ steps:
     expect: sudo
     field: stdout
     semantic:
-      intent: 권한 상승 (Privilege Escalation) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: sudo -l 로 현재 사용자의 sudo 허용 명령 열거 — NOPASSWD·와일드카드·GTFOBins 악용 가능 바이너리 탐색
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo -l 실행 (비밀번호 필요 시 -S 로 stdin 제공)
+      - 출력에 User <user> may run 또는 (root) NOPASSWD 라인
+      - GTFOBins 에서 악용 가능한 바이너리(vim/find/python) 식별
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo <pw> | sudo -S -l
+      - sudo -l (대화형)
+      - cat /etc/sudoers 또는 /etc/sudoers.d/*
+      - LinPEAS 의 sudo 섹션
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(권한 상승 (Privilege Escalation))와 무관한 기법
+      - sudo 없이 로컬 명령만
+      - 결과 해석 없이 raw 출력
+      - GTFOBins 맥락 언급 없음
   target_vm: web
   script: echo 1 | sudo -S -l 2>/dev/null
   risk_level: low
@@ -94,20 +94,20 @@ steps:
     expect: /usr
     field: stdout
     semantic:
-      intent: 권한 상승 (Privilege Escalation) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: find / -perm -4000 -type f — SUID 바이너리 전수 조사, 표준(passwd/ping/su) 외 비정상 SUID 식별
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - find / -perm -4000 -type f 2>/dev/null 실행
+      - 출력에 /usr/bin 또는 /usr/sbin SUID 경로 최소 3개
+      - GTFOBins 에서 악용 가능 바이너리 대응 매핑
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - find / -perm -4000 -type f 2>/dev/null | sort
+      - find / -perm /u=s -type f
+      - getcap -r / (capability 버전)
+      - LinEnum / LinPEAS 자동
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(권한 상승 (Privilege Escalation))와 무관한 기법
+      - -perm 옵션 없이 모든 파일
+      - 출력 해석 없이 raw
+      - GTFOBins 언급 없음
   target_vm: web
   script: find / -perm -4000 -type f 2>/dev/null | sort
   risk_level: low
@@ -127,20 +127,20 @@ steps:
     expect: /
     field: stdout
     semantic:
-      intent: 권한 상승 (Privilege Escalation) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: find / -writable — world-writable 파일 검색, root 소유 시 악성 코드 삽입 후 root 실행 가능성
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - find / -writable -type f -not -path /proc -not -path /sys 2>/dev/null 실행
+      - 출력에 쓰기 가능 파일 목록 (루트 디렉터리 경로)
+      - root 소유 world-writable 의 위험성 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - find / -writable -type f -not -path ...
+      - find / -perm -o+w -type f
+      - find / -type f -perm -002 2>/dev/null
+      - LinPEAS world-writable 섹션
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(권한 상승 (Privilege Escalation))와 무관한 기법
+      - 모든 파일 출력 (필터 없음)
+      - root 소유 여부 확인 없음
+      - 악용 시나리오 설명 없음
   target_vm: web
   script: find / -writable -type f -not -path "/proc/*" -not -path "/sys/*" 2>/dev/null | head -20
   risk_level: low
@@ -159,20 +159,20 @@ steps:
     expect: root
     field: stdout
     semantic:
-      intent: 권한 상승 (Privilege Escalation) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: /etc/passwd 에서 /bin/bash 또는 /bin/sh 쉘 할당된 사용자 필터 — 로그인 가능 계정 목록
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - grep -E /bin/(bash|sh|zsh)$ /etc/passwd 실행
+      - 결과에 root 및 일반 사용자 계정 최소 2개
+      - 불필요 계정 정리의 보안 원칙 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - grep -E shells /etc/passwd
+      - 'awk -F: $7 ~ /bash$|sh$/ /etc/passwd'
+      - getent passwd + filter
+      - cat /etc/shells 로 허용 쉘 목록 확인 후 비교
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(권한 상승 (Privilege Escalation))와 무관한 기법
+      - /etc/passwd 전체 출력
+      - 쉘 없는 계정까지 포함
+      - 보안 원칙 언급 없음
   target_vm: web
   script: grep -E "/bin/(bash|sh|zsh)$" /etc/passwd
   risk_level: low
@@ -193,20 +193,21 @@ steps:
     expect: cron
     field: stdout
     semantic:
-      intent: 권한 상승 (Privilege Escalation) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: crontab + /etc/cron.d + /var/spool/cron/crontabs 조회 — root 권한 cronjob 검색 후 world-writable
+        스크립트 의존 여부 평가
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - cat /etc/crontab 과 ls -la /etc/cron.d, /var/spool/cron/crontabs 실행
+      - 출력에 cron 키워드와 스케줄 라인 최소 1개
+      - world-writable + root 실행 조합의 위험성 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - cat /etc/crontab; ls /etc/cron.d /var/spool/cron/crontabs
+      - pspy 로 실시간 cron 관찰
+      - find / -iname "*cron*" -perm -o+w
+      - LinPEAS cron 섹션
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(권한 상승 (Privilege Escalation))와 무관한 기법
+      - crontab -l 만 (시스템 cron 누락)
+      - 쓰기 권한 검사 없음
+      - root 권한 영향 언급 없음
   target_vm: web
   script: cat /etc/crontab 2>/dev/null; echo ---; ls -la /etc/cron.d/ 2>/dev/null; echo ---; ls -la /var/spool/cron/crontabs/
     2>/dev/null
@@ -227,20 +228,21 @@ steps:
     expect: cap
     field: stdout
     semantic:
-      intent: 권한 상승 (Privilege Escalation) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: getcap -r / — Linux Capability 설정 바이너리 열거, cap_setuid/cap_dac_override 같은 위험 capability
+        식별 (SUID 대안)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - getcap -r / 2>/dev/null 실행
+      - 출력에 cap_ 키워드 포함된 capability 라인 최소 1개
+      - cap_setuid·cap_dac_override·cap_sys_admin 의 악용 시나리오 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - getcap -r /
+      - find / -type f -exec getcap 명령 반복
+      - capsh --print
+      - LinPEAS capability 섹션
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(권한 상승 (Privilege Escalation))와 무관한 기법
+      - SUID 만 검사 (capability 누락)
+      - cap_ 해석 없이 raw 출력
+      - Linux Capability 개념 설명 없음
   target_vm: web
   script: getcap -r / 2>/dev/null
   risk_level: low
@@ -260,20 +262,20 @@ steps:
     expect: shadow
     field: stdout
     semantic:
-      intent: 권한 상승 (Privilege Escalation) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: /etc/shadow 읽기 권한 확인 — 일반 사용자가 읽을 수 있으면 오프라인 해시 크래킹(john/hashcat) 가능, 표준은 root:shadow 0640
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ls -la /etc/shadow 로 권한 확인
+      - 일반 사용자의 cat 시도 후 Permission denied 또는 성공 여부
+      - 표준 0640 권한 + shadow 그룹 소속 여부 해석
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ls -la /etc/shadow; cat /etc/shadow 2>/dev/null
+      - stat /etc/shadow
+      - getfacl /etc/shadow (ACL 확인)
+      - LinPEAS 자동 감지
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(권한 상승 (Privilege Escalation))와 무관한 기법
+      - /etc/passwd 만 확인
+      - 권한 숫자 해석 없음
+      - 오프라인 크래킹 맥락 언급 없음
   target_vm: web
   script: ls -la /etc/shadow; cat /etc/shadow 2>/dev/null || echo "Permission denied (normal)"
   risk_level: low
@@ -296,20 +298,20 @@ steps:
     - 검증
     field: stdout
     semantic:
-      intent: 권한 상승 (Privilege Escalation) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: env + /proc/1/environ 에서 민감 환경변수(PASSWORD·API_KEY·TOKEN) 검색 — 프로세스 환경변수 유출 통한 자격증명 획득
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - env | grep -iE pass|key|secret|token 실행
+      - /proc/1/environ 도 tr \\0 \\n 후 grep (권한 있을 때)
+      - Docker 컨테이너 환경변수 시크릿 위험 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - env + grep 필터
+      - printenv 각 변수별
+      - cat /proc/<pid>/environ | tr \\0 \\n
+      - find /proc -name environ -readable
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(권한 상승 (Privilege Escalation))와 무관한 기법
+      - env 전체 출력 (필터 없음)
+      - /proc/1/environ 접근 안 시도
+      - Docker 시크릿 맥락 언급 없음
   target_vm: web
   script: env | grep -iE "(pass|key|secret|token|api)"; echo '---'; cat /proc/1/environ 2>/dev/null |
     tr "\0" "\n" | grep -iE "(pass|key|secret)" || echo "Cannot read /proc/1/environ"
@@ -331,20 +333,20 @@ steps:
     expect: ->
     field: stdout
     semantic:
-      intent: 권한 상승 (Privilege Escalation) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: PATH 하이재킹 — $PATH 각 디렉터리의 쓰기 권한 확인, 앞쪽 writable 디렉터리에 악성 동명 바이너리 배치 가능성 판단
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 'IFS=: for d in $PATH; do test -w $d; done 실행'
+      - 각 디렉터리 <path> -> WRITABLE/not writable 형식 출력
+      - 앞쪽 writable 디렉터리의 하이재킹 악용 원리 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - for loop + test -w
+      - 'echo $PATH | tr : \\n | while read; do ... done'
+      - find $PATH -type d -writable
+      - LinPEAS PATH 섹션
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(권한 상승 (Privilege Escalation))와 무관한 기법
+      - PATH 만 출력하고 쓰기 검사 없음
+      - 디렉터리 순서 무시 (앞쪽 우선 원칙 무시)
+      - 하이재킹 원리 설명 없음
   target_vm: web
   script: IFS=:; for d in $PATH; do echo -n "$d -> "; test -w "$d" && echo "WRITABLE" || echo "not writable";
     done
@@ -366,20 +368,21 @@ steps:
     expect: docker
     field: stdout
     semantic:
-      intent: 권한 상승 (Privilege Escalation) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Docker 소켓(/var/run/docker.sock) 접근 권한 확인 — 접근 가능하면 docker run --privileged -v /:/mnt chroot
+        으로 호스트 root 획득
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ls -la /var/run/docker.sock 으로 소유권·권한 확인
+      - docker ps 실행 후 성공/Permission denied 판정
+      - docker 그룹 == root 권한 동등함 설명
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ls -la /var/run/docker.sock; docker ps
+      - groups | grep docker
+      - docker run --rm alpine id (컨테이너 탈출 테스트)
+      - podman/crictl 등 컨테이너 런타임 소켓 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(권한 상승 (Privilege Escalation))와 무관한 기법
+      - docker 명령 없이 소켓 ls 만
+      - 컨테이너 탈출 맥락 없음
+      - docker 그룹 권한 위험 언급 없음
   target_vm: web
   script: ls -la /var/run/docker.sock 2>/dev/null; docker ps 2>/dev/null || echo "Docker not accessible"
   risk_level: low
@@ -400,20 +403,20 @@ steps:
     expect: LISTEN
     field: stdout
     semantic:
-      intent: 권한 상승 (Privilege Escalation) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: ss -tlnp 로 리스닝 포트 목록 수집 — 127.0.0.1 전용 서비스 식별, SSH -L 포트 포워딩으로 접근 가능성 평가
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ss -tlnp 실행
+      - 출력에 LISTEN 상태 항목과 Local Address 컬럼
+      - 127.0.0.1 바인딩 서비스 구분과 포트 포워딩 접근 가능성 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ss -tlnp
+      - netstat -tlnp
+      - lsof -i -sTCP:LISTEN -P
+      - fuser 또는 /proc/net/tcp 파싱
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(권한 상승 (Privilege Escalation))와 무관한 기법
+      - 모든 연결 출력 (LISTEN 필터 없음)
+      - 127.0.0.1 vs 0.0.0.0 구분 없음
+      - 포트 포워딩 맥락 언급 없음
   target_vm: web
   script: ss -tlnp 2>/dev/null
   risk_level: low
@@ -436,20 +439,20 @@ steps:
     - 없음
     field: stdout
     semantic:
-      intent: 권한 상승 (Privilege Escalation) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: ~/.bash_history 에서 민감 명령 검색 — 이전 세션의 비밀번호 인라인 사용(mysql -p<pw>) 자격증명 수집
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - cat ~/.bash_history | grep -iE pass|key|secret|token|mysql 실행
+      - 추가로 history 끝부분(tail -20) 도 확인
+      - 히스토리에 인라인 비번 저장이 일반적 실수임 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - cat ~/.bash_history + grep
+      - history 명령 직접 확인
+      - find ~ -name ".*_history" (zsh/python 등)
+      - LinPEAS history 섹션
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(권한 상승 (Privilege Escalation))와 무관한 기법
+      - 파일 경로 오류로 조회 실패
+      - 필터 없이 전체 출력
+      - 자격증명 수집 맥락 언급 없음
   target_vm: web
   script: cat ~/.bash_history 2>/dev/null | grep -iE "(pass|key|secret|token|mysql|psql)" | head -10;
     echo ---; cat ~/.bash_history 2>/dev/null | tail -20
@@ -472,20 +475,20 @@ steps:
     expect: Kernel
     field: stdout
     semantic:
-      intent: 권한 상승 (Privilege Escalation) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: LinPEAS 주요 검사 항목 수동 재현 — Kernel/SUID/Sudo/Cron/Listening 5개 카테고리 원라이너로 한 번에 확인
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - echo 구분자로 Kernel/SUID/Sudo/Cron/Listening 섹션 나누고 각각 검사 명령 실행
+      - 출력에 === Kernel === 같은 헤더 최소 3개
+      - LinPEAS 와 수동 검사의 차이(수동은 조용한 운영) 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - bash 원라이너로 각 섹션 검사
+      - shell script 파일로 저장 후 실행
+      - python 으로 구조화 결과
+      - 실제 LinPEAS.sh 다운로드 후 실행
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(권한 상승 (Privilege Escalation))와 무관한 기법
+      - 섹션 3개 이하
+      - 명령 없이 개념만
+      - 결과 해석 없음
   target_vm: web
   script: echo "=== Kernel ==="; uname -a; echo "=== SUID ==="; find / -perm -4000 -type f 2>/dev/null
     | wc -l; echo "=== Sudo ==="; echo 1 | sudo -S -l 2>/dev/null | tail -5; echo "=== Cron ==="; ls /etc/cron.d/
@@ -512,20 +515,20 @@ steps:
     expect: Privilege Escalation Report
     field: stdout
     semantic:
-      intent: 권한 상승 (Privilege Escalation) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 권한 상승 리포트 — 발견 벡터(sudo·SUID·cron·capability·PATH) + 성공 기법 + 방어 권고(SELinux·감사) 를 /tmp/privesc_report.txt
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - '[Vectors Found] [Successful Techniques] [Recommendations] 3 섹션 이상'
+      - Vectors 5개 이상 + Recommendations 4개 이상
+      - 파일 저장 후 cat 확인
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - heredoc > /tmp/privesc_report.txt
+      - echo -e 다줄
+      - python markdown
+      - PTES 리포트 템플릿
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(권한 상승 (Privilege Escalation))와 무관한 기법
+      - 섹션 2 미만
+      - 파일 저장 없음
+      - 방어 권고 없음
   target_vm: attacker
   script: 'echo -e ''=== Privilege Escalation Report ===\n\n[Vectors Found]\n1. sudo misconfig: 위험한 바이너리
     NOPASSWD 허용\n2. SUID binaries: 비표준 SUID 파일 발견\n3. Writable cron scripts: root cronjob 조작 가능\n4. Capabilities:
