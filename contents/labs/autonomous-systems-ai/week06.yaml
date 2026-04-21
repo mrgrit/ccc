@@ -26,20 +26,21 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 자율주행 기초 실습 — 인지/의사결정/센서 퓨전/공격표면/적대적 공격 관련 Python 시뮬레이션 또는 LLM 질의
+      intent: 'SAE J3016 자율주행 6단계(L0~L5) 표 형식 설명 — LLM(gemma3:4b) 에 Ollama /api/generate 호출 + jq response
+        파싱. L0 운전자 완전 제어 → L5 완전 자율. 각 레벨별 운전자 개입·환경·기술 차이. 보안 관점: 고등급(L3+)일수록 AI/센서 의존도 증가 → 공격 표면 확대'
       success_criteria:
-      - 관련 Python 코드 작성 또는 LLM 호출 실행
-      - 결과 출력(객체 목록, 판단 결과, 계층 매핑 등)
-      - 자율주행 보안 맥락(SAE 레벨, 적대적 공격, 센서 퓨전) 언급
+      - curl Ollama /api/generate + python json 파싱
+      - SAE 또는 L0~L5 키워드 포함 응답
+      - 자율주행 레벨 설명 구조
       acceptable_methods:
-      - python dict/class 로 시뮬
-      - Ollama 호출
-      - numpy 연산
-      - pytorch 적대적 공격 라이브러리 언급
+      - curl Ollama + response 파싱
+      - ollama run gemma3 직접
+      - 로컬 LLM 호출 (bastion URL)
+      - SAE J3016 표준 인용
       negative_signs:
       - 실행 없이 개념만
-      - 출력 결과 없음
-      - 자율주행 맥락 부재
+      - L0~L5 구분 없음
+      - API 호출 실패
   target_vm: manager
   script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\"\
     ,\"prompt\":\"SAE 자율주행 레벨 L0~L5를 표 형식으로 간결하게 설명해줘\",\"stream\":false,\"options\":{\"num_predict\"\
@@ -62,20 +63,21 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 자율주행 기초 실습 — 인지/의사결정/센서 퓨전/공격표면/적대적 공격 관련 Python 시뮬레이션 또는 LLM 질의
+      intent: 가상 객체 탐지기 시뮬 — python3 에서 5개 도로 객체(차량/보행자/정지표지판/신호등/자전거) + 위치(ahead/crosswalk/right/overhead/left)
+        + random.uniform(0.75, 0.99) 신뢰도 출력. AI 인지 파이프라인의 결과 형태 이해. YOLO·Faster R-CNN 출력 모방
       success_criteria:
-      - 관련 Python 코드 작성 또는 LLM 호출 실행
-      - 결과 출력(객체 목록, 판단 결과, 계층 매핑 등)
-      - 자율주행 보안 맥락(SAE 레벨, 적대적 공격, 센서 퓨전) 언급
+      - python3 로 5개 객체 리스트
+      - 위치 + 신뢰도 함께 출력
+      - Object Detection 또는 유사 키워드
       acceptable_methods:
-      - python dict/class 로 시뮬
-      - Ollama 호출
-      - numpy 연산
-      - pytorch 적대적 공격 라이브러리 언급
+      - python random + list comprehension
+      - 실제 YOLO 모델 호출
+      - numpy 배열 시뮬
+      - pandas DataFrame
       negative_signs:
-      - 실행 없이 개념만
-      - 출력 결과 없음
-      - 자율주행 맥락 부재
+      - 객체 3개 이하
+      - 신뢰도 없음
+      - 탐지 개념 없이 단순 출력
   target_vm: attacker
   script: python3 -c "import random;random.seed(1);objects=[('car','ahead'),('pedestrian','crosswalk'),('stop_sign','right'),('traffic_light','overhead'),('bicycle','left')];print('===
     Object Detection ===');[print(f'  {o[0]:15} at {o[1]:10} conf={random.uniform(0.75,0.99):.3f}') for
@@ -98,20 +100,21 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 자율주행 기초 실습 — 인지/의사결정/센서 퓨전/공격표면/적대적 공격 관련 Python 시뮬레이션 또는 LLM 질의
+      intent: '자율주행 의사결정 트리 — detections=[(stop_sign, 25m, 0.95), (pedestrian, 15m, 0.88), (car, 40m,
+        0.92)] 입력 + 규칙 기반 판단: stop_sign < 30m → STOP, pedestrian < 20m → BRAKE, 그 외 MAINTAIN. 객체 인지 결과를
+        차량 제어 명령으로 변환하는 단계. planning layer 의 기본'
       success_criteria:
-      - 관련 Python 코드 작성 또는 LLM 호출 실행
-      - 결과 출력(객체 목록, 판단 결과, 계층 매핑 등)
-      - 자율주행 보안 맥락(SAE 레벨, 적대적 공격, 센서 퓨전) 언급
+      - python3 detections 리스트 + 거리 조건
+      - STOP/BRAKE/MAINTAIN 3개 판단
+      - Decision Making 또는 유사 출력
       acceptable_methods:
-      - python dict/class 로 시뮬
-      - Ollama 호출
-      - numpy 연산
-      - pytorch 적대적 공격 라이브러리 언급
+      - if/else 또는 dict mapping
+      - state machine 구현
+      - 실제 Autoware 의사결정 로직 언급
       negative_signs:
-      - 실행 없이 개념만
-      - 출력 결과 없음
-      - 자율주행 맥락 부재
+      - 거리 조건 없음
+      - 3가지 행동 중 일부만
+      - planning 개념 없음
   target_vm: attacker
   script: python3 -c "detections=[('stop_sign',25,0.95),('pedestrian',15,0.88),('car',40,0.92)];print('===
     Decision Making ===');[print(f'  {d[0]} at {d[1]}m → {\"STOP\" if d[0]==\"stop_sign\" and d[1]<30
@@ -134,20 +137,22 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 자율주행 기초 실습 — 인지/의사결정/센서 퓨전/공격표면/적대적 공격 관련 Python 시뮬레이션 또는 LLM 질의
+      intent: '센서 퓨전 시뮬 — camera(class+conf=0.85) + lidar(conf=0.95 + dist=32.5m) + radar(speed=45km/h
+        + dist=33.0m) 3 센서 출력 결합 → Fused: car at 32.8m moving 45km/h conf=0.93. 각 센서 약점 상호 보완: 카메라(class
+        강함, dist 약함) + LiDAR(dist 강함) + radar(속도). Early/Late/Mid fusion 개념'
       success_criteria:
-      - 관련 Python 코드 작성 또는 LLM 호출 실행
-      - 결과 출력(객체 목록, 판단 결과, 계층 매핑 등)
-      - 자율주행 보안 맥락(SAE 레벨, 적대적 공격, 센서 퓨전) 언급
+      - 3 센서(camera/lidar/radar) 출력
+      - fused 결과 (dist + speed + class)
+      - 센서 퓨전 개념
       acceptable_methods:
-      - python dict/class 로 시뮬
-      - Ollama 호출
-      - numpy 연산
-      - pytorch 적대적 공격 라이브러리 언급
+      - python dict 조합
+      - Kalman Filter 센서 퓨전
+      - ROS sensor_msgs
+      - 실제 MATLAB Sensor Fusion toolbox
       negative_signs:
-      - 실행 없이 개념만
-      - 출력 결과 없음
-      - 자율주행 맥락 부재
+      - 센서 1-2개만
+      - 융합 결과 없음
+      - 상호 보완 개념 없음
   target_vm: attacker
   script: 'python3 -c "camera={''class'':''car'',''conf'':0.85,''dist'':None};lidar={''class'':''object'',''conf'':0.95,''dist'':32.5};radar={''class'':''moving'',''conf'':0.80,''dist'':33.0,''speed'':45};print(''===
     Sensor Fusion ==='');print(f''  Camera: {camera}'');print(f''  LiDAR:  {lidar}'');print(f''  Radar:  {radar}'');print(f''  Fused:
@@ -172,20 +177,21 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 자율주행 기초 실습 — 인지/의사결정/센서 퓨전/공격표면/적대적 공격 관련 Python 시뮬레이션 또는 LLM 질의
+      intent: AV 공격 표면 4계층 매핑 — Perception(Adversarial patch·LiDAR spoofing·Camera blinding) + Communication(V2X
+        forgery·CAN injection·GPS spoofing) + Software(OTA tampering·Model poisoning) + Physical(OBD-II·Sensor
+        tampering). 각 계층의 대표 공격 벡터 + 총 벡터 수 출력. 자율주행 위협 모델링 기초
       success_criteria:
-      - 관련 Python 코드 작성 또는 LLM 호출 실행
-      - 결과 출력(객체 목록, 판단 결과, 계층 매핑 등)
-      - 자율주행 보안 맥락(SAE 레벨, 적대적 공격, 센서 퓨전) 언급
+      - 4계층 (Perception/Communication/Software/Physical)
+      - 각 계층별 2+ 공격 벡터
+      - 총 벡터 수 집계
       acceptable_methods:
-      - python dict/class 로 시뮬
-      - Ollama 호출
-      - numpy 연산
-      - pytorch 적대적 공격 라이브러리 언급
+      - python dict + count
+      - ISO/SAE 21434 AV threat model
+      - STRIDE for AV
       negative_signs:
-      - 실행 없이 개념만
-      - 출력 결과 없음
-      - 자율주행 맥락 부재
+      - 계층 2개 이하
+      - 공격 벡터 추상적
+      - threat model 개념 없음
   target_vm: attacker
   script: 'python3 -c "surface={''Perception'':[''Adversarial patch'',''LiDAR spoofing'',''Camera blinding''],''Communication'':[''V2X
     forgery'',''CAN injection'',''GPS spoofing''],''Software'':[''OTA tampering'',''Model poisoning''],''Physical'':[''OBD-II
@@ -210,20 +216,21 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 자율주행 기초 실습 — 인지/의사결정/센서 퓨전/공격표면/적대적 공격 관련 Python 시뮬레이션 또는 LLM 질의
+      intent: '적대적 패치 공격 원리 + 방어 LLM 질의 — curl Ollama /api/chat + system role: AV security researcher
+        + 적대적 패치 3 방어 기술. 원리: 특정 패턴이 CNN feature map 오인 유도 → class label 오분류. 방어: adversarial training·input
+        preprocessing (blur/squeeze)·certified defense. AI 모델 방어 기법 이론'
       success_criteria:
-      - 관련 Python 코드 작성 또는 LLM 호출 실행
-      - 결과 출력(객체 목록, 판단 결과, 계층 매핑 등)
-      - 자율주행 보안 맥락(SAE 레벨, 적대적 공격, 센서 퓨전) 언급
+      - curl Ollama /api/chat + system role
+      - 적대적 패치 원리 + 방어 응답
+      - AV security context
       acceptable_methods:
-      - python dict/class 로 시뮬
-      - Ollama 호출
-      - numpy 연산
-      - pytorch 적대적 공격 라이브러리 언급
+      - curl Ollama /api/chat
+      - ollama run + prompt
+      - Python openai 호환 클라이언트
       negative_signs:
-      - 실행 없이 개념만
-      - 출력 결과 없음
-      - 자율주행 맥락 부재
+      - 단순 /api/generate (system role 없음)
+      - 방어 언급 없음
+      - AI security 개념 없음
   target_vm: manager
   script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
     messages\":[{\"role\":\"system\",\"content\":\"You are an autonomous vehicle security researcher.\"\
@@ -247,20 +254,21 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 자율주행 기초 실습 — 인지/의사결정/센서 퓨전/공격표면/적대적 공격 관련 Python 시뮬레이션 또는 LLM 질의
+      intent: '적대적 공격 시 의사결정 변화 시뮬 — python3 print 로 Normal: stop_sign → STOP 와 Attack: speed_limit →
+        MAINTAIN SPEED 대비 + [DANGER] Vehicle does NOT stop + [Impact] collision. 인지 오류가 물리 세계(교차로 충돌)로
+        전파되는 심각성 입증. 안전 영향 평가'
       success_criteria:
-      - 관련 Python 코드 작성 또는 LLM 호출 실행
-      - 결과 출력(객체 목록, 판단 결과, 계층 매핑 등)
-      - 자율주행 보안 맥락(SAE 레벨, 적대적 공격, 센서 퓨전) 언급
+      - Normal vs Attack 두 시나리오 대비
+      - DANGER 또는 Impact 문구
+      - 물리 영향 설명
       acceptable_methods:
-      - python dict/class 로 시뮬
-      - Ollama 호출
-      - numpy 연산
-      - pytorch 적대적 공격 라이브러리 언급
+      - python print 시뮬
+      - CARLA simulator 실제 실험
+      - Autoware dummy 시나리오
       negative_signs:
-      - 실행 없이 개념만
-      - 출력 결과 없음
-      - 자율주행 맥락 부재
+      - Normal 또는 Attack 한쪽만
+      - 물리 영향 누락
+      - safety impact 없음
   target_vm: attacker
   script: python3 -c "print('=== Adversarial Impact on Decision ===');print('  [Normal]  stop_sign detected
     → STOP');print('  [Attack]  speed_limit detected → MAINTAIN SPEED');print('  [DANGER]  Vehicle does
@@ -285,20 +293,22 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 자율주행 기초 실습 — 인지/의사결정/센서 퓨전/공격표면/적대적 공격 관련 Python 시뮬레이션 또는 LLM 질의
+      intent: AV 보안 체크리스트 — 8 항목 checks=[(Input validation, True), (Sensor fusion cross-check, True),
+        (Adversarial training, False), (CAN authentication, False), (OTA signing, True), (AI model integrity,
+        False), (Failsafe mode, True), (V2X authentication, False)] → OK/!! 표시 + Score N/8 백분율. ISO/SAE
+        21434 cybersecurity engineering 자가 평가. 현재 상태 4/8=50%
       success_criteria:
-      - 관련 Python 코드 작성 또는 LLM 호출 실행
-      - 결과 출력(객체 목록, 판단 결과, 계층 매핑 등)
-      - 자율주행 보안 맥락(SAE 레벨, 적대적 공격, 센서 퓨전) 언급
+      - 8개 체크 항목
+      - True/False + OK/!! 마크
+      - Score + 백분율 계산
       acceptable_methods:
-      - python dict/class 로 시뮬
-      - Ollama 호출
-      - numpy 연산
-      - pytorch 적대적 공격 라이브러리 언급
+      - python list + comprehension
+      - ISO/SAE 21434 control set
+      - NIST Cybersecurity Framework
       negative_signs:
-      - 실행 없이 개념만
-      - 출력 결과 없음
-      - 자율주행 맥락 부재
+      - 항목 5개 이하
+      - 점수 계산 없음
+      - ISO/SAE 표준 없음
   target_vm: attacker
   script: 'python3 -c "checks=[(''Input validation'',True),(''Sensor fusion cross-check'',True),(''Adversarial
     training'',False),(''CAN authentication'',False),(''OTA signing'',True),(''AI model integrity'',False),(''Failsafe
