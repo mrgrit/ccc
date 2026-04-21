@@ -3,8 +3,8 @@ title: Docker 보안 심화 점검 (AI 지원)
 version: ai
 course: cloud-container-ai
 week: 4
-description: Docker 컨테이너의 심화 보안 설정을 점검합니다. 리눅스 Capabilities, Seccomp 프로파일, 읽기 전용 파일시스템, no-new-privileges 등 런타임 보안 옵션을 확인합니다.
-  AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: Docker 컨테이너의 심화 보안 설정을 점검합니다. 리눅스 Capabilities, Seccomp 프로파일, 읽기 전용 파일시스템, no-new-privileges
+  등 런타임 보안 옵션을 확인합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -20,33 +20,37 @@ steps:
   points: 12
   answer: '🤖 프롬프트: WEB 서버(10.20.30.80)에서 실행 중인 컨테이너의 리눅스 Capabilities를 확인해줘
 
-    📎 참고 (CLI): docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: CapAdd={{.HostConfig.CapAdd}} CapDrop={{.HostConfig.CapDrop}}"
-    {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
-  answer_detail: 리눅스 Capabilities는 root 권한을 세분화합니다. Docker는 기본적으로 14개 Capability를 부여하는데, NET_RAW(원시 소켓), SYS_CHROOT 등이 포함됩니다.
-    --cap-drop ALL로 모든 Capability를 제거하고 필요한 것만 --cap-add로 추가하는 것이 최선의 관행입니다.
+    📎 참고 (CLI): docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: CapAdd={{.HostConfig.CapAdd}}
+    CapDrop={{.HostConfig.CapDrop}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  answer_detail: 리눅스 Capabilities는 root 권한을 세분화합니다. Docker는 기본적으로 14개 Capability를 부여하는데, NET_RAW(원시 소켓),
+    SYS_CHROOT 등이 포함됩니다. --cap-drop ALL로 모든 Capability를 제거하고 필요한 것만 --cap-add로 추가하는 것이 최선의 관행입니다.
   verify:
     type: output_contains
     expect: Cap
     field: stdout
     semantic:
-      intent: '클라우드·컨테이너 w4 s1 — WEB 서버({{WEB_IP}})에서 실행 중인 컨테이너의 리눅스 Capabilities를 확인하시오. (cmd: docker ps -q | head -3 |
-        xargs -I{} docker inspect --format="{{.Name}}: CapAdd={)'
+      intent: '컨테이너 Linux Capabilities 감사 — docker inspect --format={{.Name}}: CapAdd={{.HostConfig.CapAdd}}
+        CapDrop={{.HostConfig.CapDrop}}. Linux 는 root 권한을 40+ capability 로 세분화. Docker 기본 부여 14개(CAP_CHOWN,
+        CAP_SETUID, CAP_SETGID, CAP_NET_BIND_SERVICE, CAP_SYS_CHROOT, CAP_NET_RAW 등). 최선: --cap-drop ALL
+        후 필요한 것만 --cap-add. 위험 capability: CAP_SYS_ADMIN(exorbitant), CAP_NET_ADMIN(firewall), CAP_SYS_PTRACE(trace),
+        CAP_DAC_OVERRIDE(DAC bypass)'
       success_criteria:
-      - '명령 실행: docker ps -q | head -3 | xargs -I{} docker inspect --format='
-      - 결과 출력 또는 로그 확인
-      - 클라우드·컨테이너 실습 맥락 유지
+      - docker inspect CapAdd/CapDrop 조회
+      - Cap 키워드 출력
+      - capability 목록 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 클라우드·컨테이너 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker inspect --format {{.HostConfig.CapAdd}}
+      - capsh --print(컨테이너 내부)
+      - cat /proc/<pid>/status | grep Cap
+      - AppArmor/SELinux 프로파일로 보완
+      - docker-bench CIS 5.3 cap-drop 평가
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 클라우드·컨테이너와 무관한 기법
+      - cap-drop ALL 관행 인지 없음
+      - dangerous cap 예시 없음
+      - 컨테이너 없으면 정상 판정
   target_vm: web
-  script: 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: CapAdd={{.HostConfig.CapAdd}} CapDrop={{.HostConfig.CapDrop}}"
-    {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  script: 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: CapAdd={{.HostConfig.CapAdd}}
+    CapDrop={{.HostConfig.CapDrop}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   risk_level: low
   bastion_prompt: WEB 서버(10.20.30.80)에서 실행 중인 컨테이너의 리눅스 Capabilities를 확인해줘
 - order: 2
@@ -56,33 +60,36 @@ steps:
   points: 12
   answer: '🤖 프롬프트: 컨테이너의 privileged 모드 사용 여부를 점검하시오. privileged 모드는 호스트의 모든 장치와 Capability에 접근해줘
 
-    📎 참고 (CLI): docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: Privileged={{.HostConfig.Privileged}}" {} 2>/dev/null
-    || echo "실행 중인 컨테이너 없음"'''
-  answer_detail: privileged 모드(--privileged)는 컨테이너에 호스트의 모든 Capability, 장치, 커널 모듈 접근을 부여합니다. 이는 컨테이너 격리를 완전히 무력화하므로 프로덕션에서
-    절대 사용하면 안 됩니다. 컨테이너 탈출 공격의 주요 벡터입니다.
+    📎 참고 (CLI): docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: Privileged={{.HostConfig.Privileged}}"
+    {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  answer_detail: privileged 모드(--privileged)는 컨테이너에 호스트의 모든 Capability, 장치, 커널 모듈 접근을 부여합니다. 이는 컨테이너 격리를
+    완전히 무력화하므로 프로덕션에서 절대 사용하면 안 됩니다. 컨테이너 탈출 공격의 주요 벡터입니다.
   verify:
     type: output_contains
     expect: Privileged
     field: stdout
     semantic:
-      intent: '클라우드·컨테이너 w4 s2 — 컨테이너의 privileged 모드 사용 여부를 점검하시오. privileged 모드는 호스트의 모든 장치와 Capability에 접근합니다. (cmd: docker
-        ps -q | xargs -I{} docker inspect --format="{{.Name}}: Privileged={{.Host)'
+      intent: 'privileged 모드 사용 감사 — docker inspect --format={{.Name}}: Privileged={{.HostConfig.Privileged}}.
+        --privileged 는 호스트의 모든 capability + /dev 전체 접근 + AppArmor/Seccomp 비활성화 = container isolation 완전
+        무력화. 필요 시에만(docker-in-docker, device driver 테스트) 사용, 프로덕션 금지. 대안: 특정 capability 또는 device 개별 허용(--device
+        /dev/kvm). Container escape 최대 공격 벡터. CIS 5.4'
       success_criteria:
-      - '명령 실행: docker ps -q | xargs -I{} docker inspect --format="{{.Name}}'
-      - 결과 출력 또는 로그 확인
-      - 클라우드·컨테이너 실습 맥락 유지
+      - docker inspect Privileged 조회
+      - Privileged 필드 출력
+      - true/false 값 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 클라우드·컨테이너 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker inspect --format Privileged={{.HostConfig.Privileged}}
+      - docker inspect <c> | jq .HostConfig.Privileged
+      - kubectl get pods -o jsonpath securityContext.privileged
+      - docker-bench CIS 5.4 평가
+      - OPA/Gatekeeper 로 admission 차단
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 클라우드·컨테이너와 무관한 기법
+      - privileged true 정상 판정
+      - container escape 위협 미인지
+      - 대체 방법(cap-add) 미제시
   target_vm: web
-  script: 'docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: Privileged={{.HostConfig.Privileged}}" {} 2>/dev/null
-    || echo "실행 중인 컨테이너 없음"'''
+  script: 'docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: Privileged={{.HostConfig.Privileged}}"
+    {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   risk_level: low
   bastion_prompt: 컨테이너의 privileged 모드 사용 여부를 점검하시오. privileged 모드는 호스트의 모든 장치와 Capability에 접근해줘
 - order: 3
@@ -92,33 +99,36 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 컨테이너의 사용자(실행 UID) 설정을 확인하시오. root로 실행되는 컨테이너를 식별해줘
 
-    📎 참고 (CLI): docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: User={{.Config.User}}" {} 2>/dev/null
-    || echo "실행 중인 컨테이너 없음"'''
-  answer_detail: 컨테이너 내부에서 root(UID 0)로 프로세스가 실행되면, 컨테이너 탈출 시 호스트에서도 root 권한을 얻게 됩니다. Dockerfile에서 USER 지시어로 비root 사용자를 지정하거나,
-    --user 플래그로 실행 UID를 변경해야 합니다.
+    📎 참고 (CLI): docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: User={{.Config.User}}"
+    {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  answer_detail: 컨테이너 내부에서 root(UID 0)로 프로세스가 실행되면, 컨테이너 탈출 시 호스트에서도 root 권한을 얻게 됩니다. Dockerfile에서 USER
+    지시어로 비root 사용자를 지정하거나, --user 플래그로 실행 UID를 변경해야 합니다.
   verify:
     type: output_contains
     expect: User
     field: stdout
     semantic:
-      intent: '클라우드·컨테이너 w4 s3 — 컨테이너의 사용자(실행 UID) 설정을 확인하시오. root로 실행되는 컨테이너를 식별합니다. (cmd: docker ps -q | head -3 | xargs
-        -I{} docker inspect --format="{{.Name}}: User={{.)'
+      intent: '컨테이너 User(UID) 설정 감사 — docker inspect --format={{.Name}}: User={{.Config.User}}. 빈 문자열
+        = root(UID 0) 실행 위험. Dockerfile: USER 101 또는 USER nginx 지시어로 비루트 설정. runtime: docker run --user
+        1000:1000. UID 매핑 때 subuid/subgid 고려(userns-remap). Kubernetes: securityContext.runAsUser: 1000
+        + runAsNonRoot: true. MITRE T1611 Escape 방어. CIS 4.1'
       success_criteria:
-      - '명령 실행: docker ps -q | head -3 | xargs -I{} docker inspect --format='
-      - 결과 출력 또는 로그 확인
-      - 클라우드·컨테이너 실습 맥락 유지
+      - docker inspect User 조회
+      - User 필드 출력
+      - 비루트 여부 판정 가능
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 클라우드·컨테이너 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker inspect --format User={{.Config.User}}
+      - docker top <container> 로 실제 실행 UID
+      - docker exec <c> id
+      - 'Kubernetes securityContext.runAsNonRoot: true'
+      - Pod Security Standard restricted profile
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 클라우드·컨테이너와 무관한 기법
+      - User 비어 있으면 정상 판정(root)
+      - runAsNonRoot admission policy 부재
+      - USER 지시어 Dockerfile 부재
   target_vm: web
-  script: 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: User={{.Config.User}}" {} 2>/dev/null ||
-    echo "실행 중인 컨테이너 없음"'''
+  script: 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: User={{.Config.User}}"
+    {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   risk_level: low
   bastion_prompt: 컨테이너의 사용자(실행 UID) 설정을 확인하시오. root로 실행되는 컨테이너를 식별해줘
 - order: 4
@@ -128,33 +138,36 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 컨테이너의 읽기 전용 파일시스템(ReadonlyRootfs) 설정을 점검해줘
 
-    📎 참고 (CLI): docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: ReadOnly={{.HostConfig.ReadonlyRootfs}}" {}
-    2>/dev/null || echo "실행 중인 컨테이너 없음"'''
-  answer_detail: 읽기 전용 파일시스템(--read-only)은 컨테이너 내부에서 파일 쓰기를 차단합니다. 공격자가 컨테이너에 침입해도 악성 코드를 저장하거나 설정을 변경할 수 없습니다. /tmp 같은 쓰기
-    필요 경로만 tmpfs로 마운트합니다.
+    📎 참고 (CLI): docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: ReadOnly={{.HostConfig.ReadonlyRootfs}}"
+    {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  answer_detail: 읽기 전용 파일시스템(--read-only)은 컨테이너 내부에서 파일 쓰기를 차단합니다. 공격자가 컨테이너에 침입해도 악성 코드를 저장하거나 설정을 변경할
+    수 없습니다. /tmp 같은 쓰기 필요 경로만 tmpfs로 마운트합니다.
   verify:
     type: output_contains
     expect: ReadOnly
     field: stdout
     semantic:
-      intent: '클라우드·컨테이너 w4 s4 — 컨테이너의 읽기 전용 파일시스템(ReadonlyRootfs) 설정을 점검하시오. (cmd: docker ps -q | xargs -I{} docker inspect
-        --format="{{.Name}}: ReadOnly={{.HostCo)'
+      intent: 'ReadonlyRootfs 읽기전용 파일시스템 설정 — docker inspect --format={{.Name}}: ReadOnly={{.HostConfig.ReadonlyRootfs}}.
+        --read-only 플래그로 컨테이너 rootfs 쓰기 차단 - 악성 코드 저장·파일 변조 방지(immutable infrastructure). 쓰기 필요 경로: --tmpfs
+        /tmp + --tmpfs /var/run 처럼 메모리 임시 볼륨. Immutable container 원칙. Kubernetes securityContext.readOnlyRootFilesystem:
+        true. CIS 5.12'
       success_criteria:
-      - '명령 실행: docker ps -q | xargs -I{} docker inspect --format="{{.Name}}'
-      - 결과 출력 또는 로그 확인
-      - 클라우드·컨테이너 실습 맥락 유지
+      - docker inspect ReadonlyRootfs 조회
+      - ReadOnly 키워드 포함
+      - true/false 값 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 클라우드·컨테이너 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker inspect --format ReadOnly={{.HostConfig.ReadonlyRootfs}}
+      - kubectl get pods -o jsonpath securityContext.readOnlyRootFilesystem
+      - /run/docker container inspect 조회
+      - docker run --read-only --tmpfs /tmp 로 실행 예시
+      - Falco rule 로 runtime write 탐지
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 클라우드·컨테이너와 무관한 기법
+      - false 정상 판정
+      - tmpfs 대안 미인지
+      - immutable 개념 이해 없음
   target_vm: web
-  script: 'docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: ReadOnly={{.HostConfig.ReadonlyRootfs}}" {} 2>/dev/null
-    || echo "실행 중인 컨테이너 없음"'''
+  script: 'docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: ReadOnly={{.HostConfig.ReadonlyRootfs}}"
+    {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   risk_level: low
   bastion_prompt: 컨테이너의 읽기 전용 파일시스템(ReadonlyRootfs) 설정을 점검해줘
 - order: 5
@@ -164,33 +177,36 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 컨테이너의 no-new-privileges 설정을 확인하시오. SUID를 통한 권한 상승을 방지해줘
 
-    📎 참고 (CLI): docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: SecurityOpt={{.HostConfig.SecurityOpt}}" {}
-    2>/dev/null || echo "실행 중인 컨테이너 없음"'''
-  answer_detail: no-new-privileges(--security-opt=no-new-privileges)는 컨테이너 내부에서 SUID/SGID 바이너리를 통한 권한 상승을 방지합니다. 프로세스가 exec
-    시 추가 권한을 획득할 수 없게 하여, setuid root 바이너리를 악용한 탈출을 차단합니다.
+    📎 참고 (CLI): docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: SecurityOpt={{.HostConfig.SecurityOpt}}"
+    {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  answer_detail: no-new-privileges(--security-opt=no-new-privileges)는 컨테이너 내부에서 SUID/SGID 바이너리를 통한 권한
+    상승을 방지합니다. 프로세스가 exec 시 추가 권한을 획득할 수 없게 하여, setuid root 바이너리를 악용한 탈출을 차단합니다.
   verify:
     type: output_contains
     expect: SecurityOpt
     field: stdout
     semantic:
-      intent: '클라우드·컨테이너 w4 s5 — 컨테이너의 no-new-privileges 설정을 확인하시오. SUID를 통한 권한 상승을 방지합니다. (cmd: docker ps -q | xargs -I{}
-        docker inspect --format="{{.Name}}: SecurityOpt={{.Hos)'
+      intent: 'no-new-privileges SecurityOpt 감사 — docker inspect --format={{.Name}}: SecurityOpt={{.HostConfig.SecurityOpt}}.
+        --security-opt no-new-privileges 는 PR_SET_NO_NEW_PRIVS prctl 설정 - SUID/SGID 바이너리 실행 시 UID/capability
+        상승 차단. setuid root 바이너리(예: sudo, ping)를 통한 container escape 방지. SecurityOpt 배열에 [no-new-privileges:true]
+        포함 시 적용. Kubernetes: allowPrivilegeEscalation: false. CIS 5.25'
       success_criteria:
-      - '명령 실행: docker ps -q | xargs -I{} docker inspect --format="{{.Name}}'
-      - 결과 출력 또는 로그 확인
-      - 클라우드·컨테이너 실습 맥락 유지
+      - docker inspect SecurityOpt 조회
+      - SecurityOpt 필드 출력
+      - no-new-privileges 포함 여부
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 클라우드·컨테이너 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker inspect --format SecurityOpt
+      - cat /proc/<pid>/status | grep NoNewPrivs
+      - docker run --security-opt no-new-privileges=true
+      - 'Kubernetes allowPrivilegeEscalation: false'
+      - AppArmor/SELinux 별도 profile
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 클라우드·컨테이너와 무관한 기법
+      - SecurityOpt null 정상 판정
+      - setuid escape 위협 미인지
+      - K8s admission 연계 없음
   target_vm: web
-  script: 'docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: SecurityOpt={{.HostConfig.SecurityOpt}}" {} 2>/dev/null
-    || echo "실행 중인 컨테이너 없음"'''
+  script: 'docker ps -q | xargs -I{} docker inspect --format="{{.Name}}: SecurityOpt={{.HostConfig.SecurityOpt}}"
+    {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
   risk_level: low
   bastion_prompt: 컨테이너의 no-new-privileges 설정을 확인하시오. SUID를 통한 권한 상승을 방지해줘
 - order: 6
@@ -200,33 +216,38 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 컨테이너의 자원 제한(CPU, 메모리) 설정을 점검해줘
 
-    📎 참고 (CLI): docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: Memory={{.HostConfig.Memory}} CPU={{.HostConfig.NanoCpus}}
-    PidsLimit={{.HostConfig.PidsLimit}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
-  answer_detail: 자원 제한이 없으면(Memory=0) 하나의 컨테이너가 호스트 전체 자원을 소모하여 다른 컨테이너와 호스트에 영향을 미칩니다(DoS). --memory, --cpus, --pids-limit으로
-    제한을 설정해야 합니다. PidsLimit은 Fork Bomb 공격을 방지합니다.
+    📎 참고 (CLI): docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: Memory={{.HostConfig.Memory}}
+    CPU={{.HostConfig.NanoCpus}} PidsLimit={{.HostConfig.PidsLimit}}" {} 2>/dev/null || echo "실행 중인 컨테이너
+    없음"'''
+  answer_detail: 자원 제한이 없으면(Memory=0) 하나의 컨테이너가 호스트 전체 자원을 소모하여 다른 컨테이너와 호스트에 영향을 미칩니다(DoS). --memory,
+    --cpus, --pids-limit으로 제한을 설정해야 합니다. PidsLimit은 Fork Bomb 공격을 방지합니다.
   verify:
     type: output_contains
     expect: Memory
     field: stdout
     semantic:
-      intent: '클라우드·컨테이너 w4 s6 — 컨테이너의 자원 제한(CPU, 메모리) 설정을 점검하시오. (cmd: docker ps -q | head -3 | xargs -I{} docker inspect
-        --format="{{.Name}}: Memory={)'
+      intent: '컨테이너 자원 제한 감사 — docker inspect --format={{.Name}}: Memory={{.HostConfig.Memory}} CPU={{.HostConfig.NanoCpus}}
+        PidsLimit={{.HostConfig.PidsLimit}}. Memory=0 은 제한 없음(DoS 위험). 권장: --memory=512m(bytes 단위), --cpus=0.5(or
+        --nanocpus), --pids-limit=100(Fork Bomb 방어). OOM killer 대응: --memory-swap=-1 으로 비활성화 또는 동일. Kubernetes:
+        resources.limits/requests. cgroup v1 vs v2 차이 이해 필요. CIS 5.10-5.12'
       success_criteria:
-      - '명령 실행: docker ps -q | head -3 | xargs -I{} docker inspect --format='
-      - 결과 출력 또는 로그 확인
-      - 클라우드·컨테이너 실습 맥락 유지
+      - docker inspect Memory/CPU/PidsLimit 조회
+      - Memory 키워드 출력
+      - 3가지 제한 값 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 클라우드·컨테이너 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker inspect --format Memory={{...}} CPU={{...}} PidsLimit={{...}}
+      - cat /sys/fs/cgroup/<c>/memory.max
+      - docker stats --no-stream 로 실제 사용
+      - Kubernetes resources.limits/requests YAML
+      - Falco rule 로 resource abuse 탐지
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 클라우드·컨테이너와 무관한 기법
+      - 0 값 정상 판정(= 무제한)
+      - cgroup 이해 없음
+      - DoS 공격 벡터 미인지
   target_vm: web
-  script: 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: Memory={{.HostConfig.Memory}} CPU={{.HostConfig.NanoCpus}}
-    PidsLimit={{.HostConfig.PidsLimit}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  script: 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: Memory={{.HostConfig.Memory}}
+    CPU={{.HostConfig.NanoCpus}} PidsLimit={{.HostConfig.PidsLimit}}" {} 2>/dev/null || echo "실행 중인 컨테이너
+    없음"'''
   risk_level: low
   bastion_prompt: 컨테이너의 자원 제한(CPU, 메모리) 설정을 점검해줘
 - order: 7
@@ -236,39 +257,46 @@ steps:
   points: 14
   answer: '🤖 프롬프트: 보안 설정이 적용된 테스트 컨테이너를 실행하고 설정을 검증해줘
 
-    📎 참고 (CLI): docker run -d --name secure-test --read-only --tmpfs /tmp --tmpfs /var/cache/nginx --tmpfs /var/run --cap-drop
-    ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges --memory 128m --pids-limit 50 --user 101:101 nginx:latest
-    2>/dev/null; docker inspect secure-test --format "ReadOnly={{.HostConfig.ReadonlyRootfs}} Privileged={{.HostConfig.Privileged}}
-    CapDrop={{.HostConfig.CapDrop}} Memory={{.HostConfig.Memory}} NoNewPriv={{.HostConfig.SecurityOpt}}" 2>/dev/null && docker
-    rm -f secure-test 2>/dev/null || echo ''테스트 완료'''
-  answer_detail: '이 컨테이너에는 모든 주요 보안 옵션이 적용되어 있습니다: --read-only(파일시스템 보호), --cap-drop ALL(최소 권한), --security-opt no-new-privileges(권한
-    상승 방지), --memory(자원 제한), --pids-limit(Fork Bomb 방지), --user(비root 실행). 프로덕션 컨테이너는 이러한 설정을 기본으로 적용해야 합니다.'
+    📎 참고 (CLI): docker run -d --name secure-test --read-only --tmpfs /tmp --tmpfs /var/cache/nginx --tmpfs
+    /var/run --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges --memory 128m
+    --pids-limit 50 --user 101:101 nginx:latest 2>/dev/null; docker inspect secure-test --format "ReadOnly={{.HostConfig.ReadonlyRootfs}}
+    Privileged={{.HostConfig.Privileged}} CapDrop={{.HostConfig.CapDrop}} Memory={{.HostConfig.Memory}}
+    NoNewPriv={{.HostConfig.SecurityOpt}}" 2>/dev/null && docker rm -f secure-test 2>/dev/null || echo
+    ''테스트 완료'''
+  answer_detail: '이 컨테이너에는 모든 주요 보안 옵션이 적용되어 있습니다: --read-only(파일시스템 보호), --cap-drop ALL(최소 권한), --security-opt
+    no-new-privileges(권한 상승 방지), --memory(자원 제한), --pids-limit(Fork Bomb 방지), --user(비root 실행). 프로덕션 컨테이너는
+    이러한 설정을 기본으로 적용해야 합니다.'
   verify:
     type: output_contains
     expect: ReadOnly
     field: stdout
     semantic:
-      intent: '클라우드·컨테이너 w4 s7 — 보안 설정이 적용된 테스트 컨테이너를 실행하고 설정을 검증하시오. (cmd: docker run -d --name secure-test --read-only --tmpfs
-        /tmp --tmpfs /var/cache/ngi)'
+      intent: '보안 설정 통합 적용 테스트 컨테이너 — docker run -d --name secure-test --read-only --tmpfs /tmp --tmpfs
+        /var/cache/nginx --tmpfs /var/run --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges
+        --memory 128m --pids-limit 50 --user 101:101 nginx:latest. 모든 baseline 보안 옵션 조합: (1) read-only
+        + tmpfs (2) cap-drop ALL + 최소 필요 cap (3) no-new-privileges (4) memory+pids limit (5) non-root
+        user 101. inspect 로 검증 후 rm. 실 배포 template. CIS Docker Benchmark 준수'
       success_criteria:
-      - '명령 실행: docker run -d --name secure-test --read-only --tmpfs /tmp --'
-      - 결과 출력 또는 로그 확인
-      - 클라우드·컨테이너 실습 맥락 유지
+      - docker run + 보안 옵션 6개 이상 적용
+      - inspect 로 검증
+      - ReadOnly 키워드 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 클라우드·컨테이너 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - docker run --read-only --tmpfs --cap-drop --security-opt --memory --pids-limit --user
+      - Kubernetes PodSecurityContext 등가 설정
+      - OPA/Gatekeeper admission policy 차단
+      - docker-compose v3 security_opt 섹션
+      - Helm chart values 기본값 강화
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 클라우드·컨테이너와 무관한 기법
+      - 일부 옵션만 적용
+      - tmpfs 없이 read-only(쓰기 불가 오류)
+      - 검증 없이 실행만
   target_vm: web
-  script: docker run -d --name secure-test --read-only --tmpfs /tmp --tmpfs /var/cache/nginx --tmpfs /var/run --cap-drop ALL
-    --cap-add NET_BIND_SERVICE --security-opt no-new-privileges --memory 128m --pids-limit 50 --user 101:101 nginx:latest
-    2>/dev/null; docker inspect secure-test --format "ReadOnly={{.HostConfig.ReadonlyRootfs}} Privileged={{.HostConfig.Privileged}}
-    CapDrop={{.HostConfig.CapDrop}} Memory={{.HostConfig.Memory}} NoNewPriv={{.HostConfig.SecurityOpt}}" 2>/dev/null && docker
-    rm -f secure-test 2>/dev/null || echo '테스트 완료'
+  script: docker run -d --name secure-test --read-only --tmpfs /tmp --tmpfs /var/cache/nginx --tmpfs /var/run
+    --cap-drop ALL --cap-add NET_BIND_SERVICE --security-opt no-new-privileges --memory 128m --pids-limit
+    50 --user 101:101 nginx:latest 2>/dev/null; docker inspect secure-test --format "ReadOnly={{.HostConfig.ReadonlyRootfs}}
+    Privileged={{.HostConfig.Privileged}} CapDrop={{.HostConfig.CapDrop}} Memory={{.HostConfig.Memory}}
+    NoNewPriv={{.HostConfig.SecurityOpt}}" 2>/dev/null && docker rm -f secure-test 2>/dev/null || echo
+    '테스트 완료'
   risk_level: low
   bastion_prompt: 보안 설정이 적용된 테스트 컨테이너를 실행하고 설정을 검증해줘
 - order: 8
@@ -276,48 +304,54 @@ steps:
   hint: 모든 실행 중인 컨테이너의 보안 설정을 일괄 점검하세요.
   category: audit
   points: 12
-  answer: "\U0001F916 프롬프트: Docker 보안 심화 종합 점검 스크립트를 작성하고 실행하시오 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고 (CLI): cat << 'SCRIPT' > /tmp/docker_security.sh\n\
-    #!/bin/bash\nHOST='ccc@10.20.30.80'\necho '=== Docker 보안 심화 점검 ==='\nfor CID in $(docker ps -q); do\n  NAME=$(docker inspect\
-    \ --format=\"{{.Name}}\" $CID)\n  PRIV=$(docker inspect --format=\"{{.HostConfig.Privileged}}\" $CID)\n  RO=$(docker inspect\
-    \ --format=\"{{.HostConfig.ReadonlyRootfs}}\" $CID)\n  USER=$(docker inspect --format=\"{{.Config.User}}\" $CID)\n  MEM=$(docker\
-    \ inspect --format=\"{{.HostConfig.Memory}}\" $CID)\n  CAP=$(docker inspect --format=\"{{.HostConfig.CapDrop}}\" $CID)\n\
-    \  echo \"$NAME:\"\n  echo \"  Privileged=$PRIV $([ \"$PRIV\" = \"true\" ] && echo \"[위험]\" || echo \"[양호]\")\"  \n  echo\
-    \ \"  ReadOnly=$RO $([ \"$RO\" = \"true\" ] && echo \"[양호]\" || echo \"[권고]\")\"  \n  echo \"  User=$USER $([ -z \"$USER\"\
-    \ ] && echo \"[권고:root]\" || echo \"[양호]\")\"  \n  echo \"  Memory=$MEM $([ \"$MEM\" = \"0\" ] && echo \"[권고:무제한]\" ||\
-    \ echo \"[양호]\")\"  \ndone 2>/dev/null\necho '=== Docker 보안 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/docker_security.sh && bash\
-    \ /tmp/docker_security.sh"
-  answer_detail: Docker 보안의 핵심 원칙은 최소 권한, 격리 강화, 자원 제한입니다. CIS Docker Benchmark에서는 이러한 설정을 체계적으로 점검하는 가이드를 제공합니다. 컨테이너 보안은
-    빌드 시(이미지), 배포 시(레지스트리), 런타임(실행 중) 전 단계에서 적용해야 합니다.
+  answer: "\U0001F916 프롬프트: Docker 보안 심화 종합 점검 스크립트를 작성하고 실행하시오 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고 (CLI):\
+    \ cat << 'SCRIPT' > /tmp/docker_security.sh\n#!/bin/bash\nHOST='ccc@10.20.30.80'\necho '=== Docker\
+    \ 보안 심화 점검 ==='\nfor CID in $(docker ps -q); do\n  NAME=$(docker inspect --format=\"{{.Name}}\" $CID)\n\
+    \  PRIV=$(docker inspect --format=\"{{.HostConfig.Privileged}}\" $CID)\n  RO=$(docker inspect --format=\"\
+    {{.HostConfig.ReadonlyRootfs}}\" $CID)\n  USER=$(docker inspect --format=\"{{.Config.User}}\" $CID)\n\
+    \  MEM=$(docker inspect --format=\"{{.HostConfig.Memory}}\" $CID)\n  CAP=$(docker inspect --format=\"\
+    {{.HostConfig.CapDrop}}\" $CID)\n  echo \"$NAME:\"\n  echo \"  Privileged=$PRIV $([ \"$PRIV\" = \"\
+    true\" ] && echo \"[위험]\" || echo \"[양호]\")\"  \n  echo \"  ReadOnly=$RO $([ \"$RO\" = \"true\" ]\
+    \ && echo \"[양호]\" || echo \"[권고]\")\"  \n  echo \"  User=$USER $([ -z \"$USER\" ] && echo \"[권고:root]\"\
+    \ || echo \"[양호]\")\"  \n  echo \"  Memory=$MEM $([ \"$MEM\" = \"0\" ] && echo \"[권고:무제한]\" || echo\
+    \ \"[양호]\")\"  \ndone 2>/dev/null\necho '=== Docker 보안 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/docker_security.sh\
+    \ && bash /tmp/docker_security.sh"
+  answer_detail: Docker 보안의 핵심 원칙은 최소 권한, 격리 강화, 자원 제한입니다. CIS Docker Benchmark에서는 이러한 설정을 체계적으로 점검하는
+    가이드를 제공합니다. 컨테이너 보안은 빌드 시(이미지), 배포 시(레지스트리), 런타임(실행 중) 전 단계에서 적용해야 합니다.
   verify:
     type: output_contains
     expect: Docker 보안 점검 완료
     field: stdout
     semantic:
-      intent: '클라우드·컨테이너 w4 s8 — Docker 보안 심화 종합 점검 스크립트를 작성하고 실행하시오. (cmd: cat << ''SCRIPT'' > /tmp/docker_security.sh #!/bin/bash
-        HOST=''ccc@10.20.30.80'' ech)'
+      intent: 'Docker 보안 종합 점검 스크립트 — /tmp/docker_security.sh heredoc. for loop 로 모든 running container
+        의 Privileged/ReadOnly/User/Memory/CapDrop 점검 + [위험]/[양호]/[권고] 판정. 리포트 스타일 출력으로 보안 상태 한눈에 파악. 자동화
+        패턴. 실무 확장: JSON 출력 + Prometheus metrics 로 시계열 모니터링. docker-bench-security 같은 오픈 도구로 보완'
       success_criteria:
-      - '명령 실행: cat << ''SCRIPT'' > /tmp/docker_security.sh #!/bin/bash HOST='''
-      - 결과 출력 또는 로그 확인
-      - 클라우드·컨테이너 실습 맥락 유지
+      - /tmp/docker_security.sh 생성
+      - bash 실행
+      - Docker 보안 점검 완료 문자열
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - 클라우드·컨테이너 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - heredoc + for 루프 + inspect + conditional echo
+      - docker-bench-security 컨테이너 실행
+      - trivy config / kubesec 로 K8s 평가
+      - Ansible docker security role
+      - Prometheus node_exporter textfile + cron
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - 클라우드·컨테이너와 무관한 기법
+      - 단일 컨테이너만 점검
+      - 판정 로직 없이 값 출력
+      - automation 연동 부재
   target_vm: web
-  script: "cat << 'SCRIPT' > /tmp/docker_security.sh\n#!/bin/bash\nHOST='ccc@10.20.30.80'\necho '=== Docker 보안 심화 점검 ==='\n\
-    for CID in $(docker ps -q); do\n  NAME=$(docker inspect --format=\"{{.Name}}\" $CID)\n  PRIV=$(docker inspect --format=\"\
-    {{.HostConfig.Privileged}}\" $CID)\n  RO=$(docker inspect --format=\"{{.HostConfig.ReadonlyRootfs}}\" $CID)\n  USER=$(docker\
-    \ inspect --format=\"{{.Config.User}}\" $CID)\n  MEM=$(docker inspect --format=\"{{.HostConfig.Memory}}\" $CID)\n  CAP=$(docker\
-    \ inspect --format=\"{{.HostConfig.CapDrop}}\" $CID)\n  echo \"$NAME:\"\n  echo \"  Privileged=$PRIV $([ \"$PRIV\" = \"\
-    true\" ] && echo \"[위험]\" || echo \"[양호]\")\"  \n  echo \"  ReadOnly=$RO $([ \"$RO\" = \"true\" ] && echo \"[양호]\" ||\
-    \ echo \"[권고]\")\"  \n  echo \"  User=$USER $([ -z \"$USER\" ] && echo \"[권고:root]\" || echo \"[양호]\")\"  \n  echo \"\
-    \  Memory=$MEM $([ \"$MEM\" = \"0\" ] && echo \"[권고:무제한]\" || echo \"[양호]\")\"  \ndone 2>/dev/null\necho '=== Docker 보안\
-    \ 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/docker_security.sh && bash /tmp/docker_security.sh"
+  script: "cat << 'SCRIPT' > /tmp/docker_security.sh\n#!/bin/bash\nHOST='ccc@10.20.30.80'\necho '=== Docker\
+    \ 보안 심화 점검 ==='\nfor CID in $(docker ps -q); do\n  NAME=$(docker inspect --format=\"{{.Name}}\" $CID)\n\
+    \  PRIV=$(docker inspect --format=\"{{.HostConfig.Privileged}}\" $CID)\n  RO=$(docker inspect --format=\"\
+    {{.HostConfig.ReadonlyRootfs}}\" $CID)\n  USER=$(docker inspect --format=\"{{.Config.User}}\" $CID)\n\
+    \  MEM=$(docker inspect --format=\"{{.HostConfig.Memory}}\" $CID)\n  CAP=$(docker inspect --format=\"\
+    {{.HostConfig.CapDrop}}\" $CID)\n  echo \"$NAME:\"\n  echo \"  Privileged=$PRIV $([ \"$PRIV\" = \"\
+    true\" ] && echo \"[위험]\" || echo \"[양호]\")\"  \n  echo \"  ReadOnly=$RO $([ \"$RO\" = \"true\" ]\
+    \ && echo \"[양호]\" || echo \"[권고]\")\"  \n  echo \"  User=$USER $([ -z \"$USER\" ] && echo \"[권고:root]\"\
+    \ || echo \"[양호]\")\"  \n  echo \"  Memory=$MEM $([ \"$MEM\" = \"0\" ] && echo \"[권고:무제한]\" || echo\
+    \ \"[양호]\")\"  \ndone 2>/dev/null\necho '=== Docker 보안 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/docker_security.sh\
+    \ && bash /tmp/docker_security.sh"
   risk_level: low
   bastion_prompt: Docker 보안 심화 종합 점검 스크립트를 작성하고 실행하시오.
 - order: 99
