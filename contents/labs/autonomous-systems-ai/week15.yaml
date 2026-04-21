@@ -26,20 +26,18 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 종합 평가 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: 전체 CPS 정찰 — nmap -sV -p 22,80,443,502,9999,11434 10.20.30.0/24 로 SSH·웹·Modbus ICS·드론·LLM
+        서비스 동시 식별. 종합 시험 첫 정찰. 전체 CPS 자산 지도화
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - nmap 다중 포트 스캔
+      - 6+ 서비스 식별
+      - /24 대역
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - nmap -sV -p <list>
+      - masscan + nmap
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 포트 3개 이하
+      - 서비스 탐지 없음
   target_vm: attacker
   script: nmap -sV -p 22,80,443,502,3000,9999,11434 10.20.30.0/24
   risk_level: low
@@ -60,20 +58,18 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 종합 평가 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: 드론 침투 테스트 — nc/curl 로 9999 포트 PING 명령 + AUTH 스니핑 (tcpdump MAVLink) + 명령 인젝션 (RC override·set_mode
+        GUIDED). 드론 시뮬레이터 대상 블랙박스 테스트
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - PING + AUTH + 인젝션 3 시도
+      - MAVLink 또는 드론 프로토콜
+      - 블랙박스 pentest
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - nc/curl + tcpdump + pymavlink
+      - pymavlink + SITL
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 한 기법만
+      - 드론 프로토콜 언급 없음
   target_vm: attacker
   script: 'python3 -c "import socket,json;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.settimeout(2);cmds=[(''PING'',{''action'':''PING''}),(''ARM'',{''action'':''ARM''}),(''TAKEOFF'',{''action'':''TAKEOFF'',''altitude'':50})];print(''===
     Drone Pentest ==='');[print(f''  [{c[0]}] Sent: {json.dumps(c[1])}'') for c in cmds];s.close();print(''  [!]
@@ -97,20 +93,18 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 종합 평가 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: Modbus PLC 침투 — pymodbus read_holding_registers(0, 10) + write_register(0, 9999) + write_coil(0,
+        True) 3 작업. CIA (Confidentiality·Integrity·Availability) 각각 검증. 미인증 상태 확인
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - Modbus 읽기 + 쓰기 + Coil 3 동작
+      - pymodbus 또는 raw
+      - CIA 영향 평가
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - pymodbus Client
+      - smod 자동화 도구
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 읽기만
+      - CIA 평가 없음
   target_vm: attacker
   script: 'python3 -c "print(''=== Modbus Pentest ==='');tests=[(''Read Registers (FC03)'',''All registers
     readable'',''HIGH''),(''Write Register (FC06)'',''Process values writable'',''CRITICAL''),(''Write
@@ -135,20 +129,18 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 종합 평가 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: 전체 CPS CRITICAL 취약점 — 드론(WiFi 기본 pw·MAVLink 무인증) + ICS(Modbus 무인증·기본 slave ID) + AV(CAN
+        무인증·V2X 미서명) + ROS2(DDS Discovery 공개·UART debug). 각 영역 2+ CRITICAL. CVSS 9+ 수준
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - 4 영역 CRITICAL 취약점
+      - 각 영역 2+
+      - CVSS 9+ 등급
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - python dict + 표
+      - OWASP IoT Top 10
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 영역 2 이하
+      - CVSS 없음
   target_vm: attacker
   script: 'python3 -c "vulns={''Drone'':[''Plaintext auth'',''No MAVLink signing''],''ICS'':[''No Modbus
     auth'',''Flat OT network''],''AV'':[''CAN no auth'',''Adversarial AI vulnerable''],''Robot'':[''No
@@ -174,20 +166,19 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 종합 평가 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: 'CPS 방어 아키텍처 — 6 영역: Network(nftables/VLAN/DPI) + Drone(OTA 서명·MAVLink 암호화) + ICS(OPC-UA·allowlist·PAM)
+        + Robot(DDS Security·UART lock) + Vehicle(SecOC·Domain Isolation·V2X PKI) + AI(Adversarial training·Ensemble·FIM).
+        각 영역 3+ 조치. IEC 62443 + ISO/SAE 21434 통합'
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - 6 영역 × 3+ 조치
+      - 표준 통합 (IEC/ISO)
+      - defense-in-depth
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - python dict
+      - NIST Cybersecurity Framework + IEC 62443
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 영역 3 이하
+      - 조치 1-2개만
   target_vm: attacker
   script: 'python3 -c "defenses={''Network'':[''IT/OT segmentation'',''CPS-aware IDS''],''Drone'':[''MAVLink
     signing'',''Encrypted channel''],''ICS'':[''Modbus auth → OPC-UA'',''PLC integrity''],''Robot'':[''DDS
@@ -214,20 +205,18 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 종합 평가 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: 'CPS 보안 Executive Summary LLM — 비기술 경영진 대상 1쪽: 현재 위험 수준·비즈니스 영향·즉시 조치 3·예산·일정·규제 준수 (IEC
+        62443 Level 3 목표). 기술 용어 최소화'
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - LLM 호출 + Executive Summary
+      - 비즈니스 영향 중심
+      - 규제 언급
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - curl Ollama /api/chat
+      - 'system role: CISO advisor'
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 기술 용어 남발
+      - LLM 호출 없음
   target_vm: manager
   script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
     messages\":[{\"role\":\"system\",\"content\":\"You are a CPS security consultant writing an executive\
@@ -256,20 +245,18 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 종합 평가 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: 'CPS 보안 점수 18 항목 — 6 영역 × 3 항목 = 18: Network(FW·VLAN·DPI) + Drone(OTA·Crypto·AuthN) + ICS(OPC-UA·allowlist·PAM)
+        + Robot(DDS·UART·FW) + Vehicle(SecOC·Domain·V2X) + AI(Adv train·Ensemble·FIM). True/False + Score/18'
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - 18 항목 (6×3)
+      - True/False + 점수
+      - 영역 균형
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - python list + score
+      - balanced scorecard
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 항목 10 이하
+      - 영역 불균형
   target_vm: attacker
   script: 'python3 -c "areas=[(''Network'',[(''Segmentation'',True),(''IDS'',True),(''Firewall'',True)]),(''Drone'',[(''Signing'',False),(''Encryption'',False),(''IDS'',False)]),(''ICS'',[(''Auth'',False),(''Monitoring'',True),(''Segmentation'',False)]),(''Robot'',[(''DDS
     Sec'',False),(''Secure Boot'',False),(''ACL'',False)]),(''Vehicle'',[(''SecOC'',False),(''Gateway'',False),(''V2X
@@ -297,20 +284,19 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 종합 평가 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: 'CPS 보안 로드맵 /tmp/roadmap.md — 단기 (1개월: allowlist·nftables·default pw 변경) + 중기 (3개월: OPC-UA
+        마이그·SIEM·drone FW OTA 서명) + 장기 (6개월: IEC 62443 Level 3 인증·SecOC 전체 배포·Zero Trust). 우선순위·예산·책임자.
+        Gartner CARTA adaptive'
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - /tmp/roadmap.md
+      - 단기/중기/장기 3 타임라인
+      - 예산·책임자
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - cat > file + 타임라인
+      - OKR 프레임워크
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 타임라인 1개만
+      - 책임자 없음
   target_vm: attacker
   script: python3 -c "roadmap={'Short-term (1mo)':['Network segmentation','Deploy CPS IDS','Rotate all
     credentials'],'Mid-term (3mo)':['MAVLink signing','Modbus→OPC-UA migration','DDS Security deployment'],'Long-term

@@ -28,20 +28,18 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: ROS2 기반 로봇 보안 실습 — DDS 프로토콜·UART·펌웨어·공격표면·DDS Security 관련 Python 시뮬 또는 LLM 질의
+      intent: ROS2 토픽 기반 통신 시뮬 — /scan(LaserScan) /cmd_vel(Twist) /odom(Odometry) 3 토픽 + Publisher + Subscriber
+        Python 코드 (rclpy 없어도 dict 시뮬). 로봇 미들웨어 동작 원리 이해
       success_criteria:
-      - ROS2/DDS 관련 코드 또는 질의 실행
-      - 토픽·메시지·보안 필드 등 ROS2 개념 포함
-      - 결과 출력
+      - 3 토픽 모두
+      - pub/sub 구조
+      - ROS2 개념
       acceptable_methods:
-      - python 으로 ROS2 토픽 시뮬
-      - rospy/rclpy 사용
-      - Ollama 호출
-      - DDS Security spec 참조
+      - python rclpy 또는 시뮬
+      - ros2 topic pub CLI
       negative_signs:
-      - ROS 개념 누락
-      - 실행 없이 개념만
-      - 출력 없음
+      - 토픽 1개만
+      - pub/sub 개념 없음
   target_vm: attacker
   script: 'python3 -c "topics={''/scan'':{''ranges'':[1.5,2.0,3.1]},'' /cmd_vel'':{''linear'':{''x'':0.5},''angular'':{''z'':0.1}},''
     /odom'':{''x'':3.14,''y'':1.59}};import json;print(''=== ROS2 Topic Simulation ==='');[print(f''  {t}:
@@ -64,20 +62,16 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: ROS2 기반 로봇 보안 실습 — DDS 프로토콜·UART·펌웨어·공격표면·DDS Security 관련 Python 시뮬 또는 LLM 질의
+      intent: 'ROS2 DDS 보안 취약점 LLM 질의 — DDS (Data Distribution Service) Discovery 프로토콜 취약점: 미인증 토픽 발견,
+        plaintext data, DoS via flooding, sub/pub spoofing. Ollama curl'
       success_criteria:
-      - ROS2/DDS 관련 코드 또는 질의 실행
-      - 토픽·메시지·보안 필드 등 ROS2 개념 포함
-      - 결과 출력
+      - Ollama LLM 호출
+      - DDS 취약점 4+
       acceptable_methods:
-      - python 으로 ROS2 토픽 시뮬
-      - rospy/rclpy 사용
-      - Ollama 호출
-      - DDS Security spec 참조
+      - curl Ollama /api/chat
       negative_signs:
-      - ROS 개념 누락
-      - 실행 없이 개념만
-      - 출력 없음
+      - DDS 개념 없음
+      - LLM 호출 없음
   target_vm: manager
   script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
     messages\":[{\"role\":\"system\",\"content\":\"You are a robot security researcher.\"},{\"role\":\"\
@@ -101,20 +95,18 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: ROS2 기반 로봇 보안 실습 — DDS 프로토콜·UART·펌웨어·공격표면·DDS Security 관련 Python 시뮬 또는 LLM 질의
+      intent: DDS Discovery 시뮬 — 네트워크에서 ROS2 Node + Topic 발견 시뮬 (multicast 239.255.0.1:7400, participant
+        discovery) + Python dict 노드 목록 출력. ROS2 CVE-2019-19625 유사
       success_criteria:
-      - ROS2/DDS 관련 코드 또는 질의 실행
-      - 토픽·메시지·보안 필드 등 ROS2 개념 포함
-      - 결과 출력
+      - multicast 주소 + 포트
+      - Node/Topic 발견
+      - Discovery 개념
       acceptable_methods:
-      - python 으로 ROS2 토픽 시뮬
-      - rospy/rclpy 사용
-      - Ollama 호출
-      - DDS Security spec 참조
+      - python dict + tabulate
+      - ros2 node list CLI
       negative_signs:
-      - ROS 개념 누락
-      - 실행 없이 개념만
-      - 출력 없음
+      - Discovery 개념 없음
+      - multicast 누락
   target_vm: attacker
   script: 'python3 -c "nodes=[(''lidar_driver'',['' /scan'']),(''nav_controller'',[''/cmd_vel'',''/odom'']),(''camera_node'',[''/camera/image'']),(''arm_ctrl'',[''/joint_states''])];print(''===
     DDS Discovery ==='');[print(f''  Node: {n[0]} Topics: {n[1]}'') for n in nodes];print(''  [!] All
@@ -139,20 +131,17 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: ROS2 기반 로봇 보안 실습 — DDS 프로토콜·UART·펌웨어·공격표면·DDS Security 관련 Python 시뮬 또는 LLM 질의
+      intent: UART 부트로그 분석 시뮬 — U-Boot → 커널 → init 부트 과정에서 노출되는 정보 (보드 정보·IP·패스워드 hash·kernel command
+        line) 식별. 임베디드 시스템 부트 과정 보안
       success_criteria:
-      - ROS2/DDS 관련 코드 또는 질의 실행
-      - 토픽·메시지·보안 필드 등 ROS2 개념 포함
-      - 결과 출력
+      - 부트 단계 3+ (U-Boot/kernel/init)
+      - 노출 정보 식별
       acceptable_methods:
-      - python 으로 ROS2 토픽 시뮬
-      - rospy/rclpy 사용
-      - Ollama 호출
-      - DDS Security spec 참조
+      - python 시뮬 bootlog
+      - 실제 minicom + UART
       negative_signs:
-      - ROS 개념 누락
-      - 실행 없이 개념만
-      - 출력 없음
+      - 부트 단계 1개만
+      - 노출 정보 없음
   target_vm: attacker
   script: 'python3 -c "logs=[''U-Boot 2024.01'',''DRAM: 2GiB'',''Linux 5.15.0-robot'',''Firmware v2.3.1'',''WiFi:
     192.168.1.100'',''Default pwd: robot123'',''ROS2 starting''];print(''=== UART Boot Log Analysis ==='');[print(f''  {\"[VULN]\"
@@ -176,20 +165,18 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: ROS2 기반 로봇 보안 실습 — DDS 프로토콜·UART·펌웨어·공격표면·DDS Security 관련 Python 시뮬 또는 LLM 질의
+      intent: '펌웨어 분석 시뮬 — 섹션: bootloader(U-Boot)·kernel(Linux zImage)·rootfs(squashfs) 각각 size·entropy·문자열
+        분석. 보안 문제: 하드코딩 cred·미서명·debug symbol. binwalk/firmwalker 방법론'
       success_criteria:
-      - ROS2/DDS 관련 코드 또는 질의 실행
-      - 토픽·메시지·보안 필드 등 ROS2 개념 포함
-      - 결과 출력
+      - 3 섹션 (bootloader/kernel/rootfs)
+      - 엔트로피 + 문자열 분석
+      - 보안 문제 식별
       acceptable_methods:
-      - python 으로 ROS2 토픽 시뮬
-      - rospy/rclpy 사용
-      - Ollama 호출
-      - DDS Security spec 참조
+      - python + binwalk style
+      - 실제 binwalk + strings
       negative_signs:
-      - ROS 개념 누락
-      - 실행 없이 개념만
-      - 출력 없음
+      - 섹션 1-2개만
+      - 보안 분석 없음
   target_vm: attacker
   script: python3 -c "sections=[('bootloader',0x0,0x10000,False),('kernel',0x10000,0x400000,False),('rootfs',0x410000,0xA00000,False),('config',0xE10000,0x100000,True)];strings=['robot123','API_KEY=sk-robot','ssh_host_rsa_key'];print('===
     Firmware Analysis ===');[print(f'  {s[0]:12} off=0x{s[1]:06X} size=0x{s[2]:06X} enc={s[3]}') for s
@@ -213,20 +200,17 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: ROS2 기반 로봇 보안 실습 — DDS 프로토콜·UART·펌웨어·공격표면·DDS Security 관련 Python 시뮬 또는 LLM 질의
+      intent: 로봇 4계층 공격 표면 — 통신(DDS/WiFi/Bluetooth) + 물리(UART/JTAG/SWD) + SW(ROS2 노드/Gazebo 플러그인) + AI(비전
+        adversarial·SLAM 교란). 각 계층 2+ 벡터. ISO/IEC 21434 robotics
       success_criteria:
-      - ROS2/DDS 관련 코드 또는 질의 실행
-      - 토픽·메시지·보안 필드 등 ROS2 개념 포함
-      - 결과 출력
+      - 4 계층 + 2+ 벡터
+      - Python dict + count
       acceptable_methods:
-      - python 으로 ROS2 토픽 시뮬
-      - rospy/rclpy 사용
-      - Ollama 호출
-      - DDS Security spec 참조
+      - python + dict
+      - STRIDE threat model
       negative_signs:
-      - ROS 개념 누락
-      - 실행 없이 개념만
-      - 출력 없음
+      - 계층 2개 이하
+      - 벡터 1-2개만
   target_vm: attacker
   script: 'python3 -c "surface={''Communication'':[''DDS topic injection'',''WiFi MitM''],''Physical'':[''UART
     root shell'',''JTAG debug''],''Software'':[''Firmware backdoor'',''Default credentials''],''AI'':[''Adversarial
@@ -250,20 +234,17 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: ROS2 기반 로봇 보안 실습 — DDS 프로토콜·UART·펌웨어·공격표면·DDS Security 관련 Python 시뮬 또는 LLM 질의
+      intent: ROS2 DDS Security 설정 — Governance (domain별 접근 정책) + Permissions (노드별 read/write 토픽 제한) +
+        PKI (SROS2 sros2 CLI). 거버넌스/퍼미션 XML 시뮬 출력. OMG DDS Security 1.1
       success_criteria:
-      - ROS2/DDS 관련 코드 또는 질의 실행
-      - 토픽·메시지·보안 필드 등 ROS2 개념 포함
-      - 결과 출력
+      - Governance + Permissions 모두
+      - ROS2 Security 개념
       acceptable_methods:
-      - python 으로 ROS2 토픽 시뮬
-      - rospy/rclpy 사용
-      - Ollama 호출
-      - DDS Security spec 참조
+      - python dict XML 생성
+      - sros2 CLI 예시
       negative_signs:
-      - ROS 개념 누락
-      - 실행 없이 개념만
-      - 출력 없음
+      - DDS Security 개념 없음
+      - 거버넌스 또는 퍼미션 한쪽만
   target_vm: attacker
   script: 'python3 -c "gov={''auth_required'':True,''discovery_protection'':True,''topics'':{''/cmd_vel'':''ENCRYPT'',''/scan'':''SIGN'',''/emergency_stop'':''ENCRYPT''}};perms={''nav_ctrl'':[''pub:/cmd_vel'',''sub:/scan''],''lidar'':[''pub:/scan'']};print(''===
     DDS Security Config ==='');print(''  Governance:'');[print(f''    {k}: {v}'') for k,v in gov[''topics''].items()];print(''  Permissions:'');[print(f''    {k}:
@@ -287,20 +268,16 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: ROS2 기반 로봇 보안 실습 — DDS 프로토콜·UART·펌웨어·공격표면·DDS Security 관련 Python 시뮬 또는 LLM 질의
+      intent: 로봇 보안 8 항목 평가 — DDS Security 활성·Discovery 암호화·UART lock·JTAG disable·펌웨어 서명·ROS2 노드 인증·AI
+        방어·원격 접근 제어. True/False + Score. 로봇 보안 baseline
       success_criteria:
-      - ROS2/DDS 관련 코드 또는 질의 실행
-      - 토픽·메시지·보안 필드 등 ROS2 개념 포함
-      - 결과 출력
+      - 8 항목 + 점수
+      - 로봇 특화
       acceptable_methods:
-      - python 으로 ROS2 토픽 시뮬
-      - rospy/rclpy 사용
-      - Ollama 호출
-      - DDS Security spec 참조
+      - python list + score
       negative_signs:
-      - ROS 개념 누락
-      - 실행 없이 개념만
-      - 출력 없음
+      - 항목 5 이하
+      - 점수 없음
   target_vm: attacker
   script: 'python3 -c "items=[(''DDS Security'',False),(''UART Disabled'',False),(''Secure Boot'',False),(''Encrypted
     Firmware'',False),(''No Default Creds'',False),(''Topic ACL'',False),(''Network Segmentation'',True),(''Logging'',True)];score=sum(v

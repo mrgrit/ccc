@@ -30,20 +30,21 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: AI 모델 공격/방어 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: FGSM 5 특징 수치 시뮬 — w=[0.8,-0.3,0.5,0.2,-0.4] + x=[0.9,0.2,0.7,0.5,0.3] logit + sigmoid prob
+        + epsilon 0.1/0.2/0.3/0.5 별 perturbation sign(w) 방향 → prob < 0.5 EVADED vs DETECTED. Goodfellow
+        2014 FGSM 공식
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - epsilon 3+ 값 + 각 EVADED/DETECTED
+      - gradient sign 원리
+      - 수치 시뮬
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - python + math.exp
+      - numpy + sigmoid
+      - torch autograd (실제)
+      - cleverhans
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - epsilon 1개만
+      - sign 원리 없음
   target_vm: attacker
   script: 'python3 -c "import math;w=[0.8,-0.3,0.5,0.2,-0.4];b=-0.5;x=[0.9,0.2,0.7,0.5,0.3];p0=1/(1+math.exp(-(sum(wi*xi
     for wi,xi in zip(w,x))+b)));print(f''=== FGSM Attack ==='');print(f''  Original: p={p0:.3f} → STOP_SIGN'');[print(f''  eps={e}:
@@ -69,20 +70,19 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: AI 모델 공격/방어 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: PGD vs FGSM 비교 — FGSM 1-step vs PGD iter=10/20/40 별 success rate 출력. PGD 가 iterative 하게
+        epsilon-ball 내 다시 projection 해 더 강력. Madry 2017 PGD
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - FGSM 1-step vs PGD iter
+      - iter 별 성공률 변화
+      - PGD 원리
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - python loop + sign
+      - torch PGD
+      - cleverhans PGD
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - FGSM 또는 PGD 한쪽만
+      - iteration 없음
   target_vm: attacker
   script: python3 -c "print('=== FGSM vs PGD Comparison ===');print(f'  {\"Method\":<10} {\"Steps\":<8}
     {\"Success\":<10} {\"L2 Norm\":<10}');data=[('FGSM',1,'60%','0.45'),('PGD-5',5,'75%','0.38'),('PGD-10',10,'85%','0.32'),('PGD-20',20,'92%','0.28')];[print(f'  {d[0]:<10}
@@ -107,20 +107,19 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: AI 모델 공격/방어 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: Gaussian Noise 방어 — 입력 x + numpy.random.normal(0, 0.1, shape) 노이즈 추가 → FGSM 공격 전후 prob 비교.
+        방어 전 성공률 80% → 방어 후 20% 변화. 가장 간단한 input preprocessing 방어
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - 가우시안 노이즈 추가
+      - 방어 전/후 성공률 비교
+      - preprocessing 개념
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - numpy.random.normal
+      - torch.randn_like
+      - cleverhans defense
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 노이즈 추가 없음
+      - 전/후 비교 없음
   target_vm: attacker
   script: 'python3 -c "import random;random.seed(42);x_adv=[1.2,-0.1,1.0,0.7,0.0];print(''=== Gaussian
     Noise Defense ==='');results=[];[results.append(sum(1 for _ in range(10) if sum([0.8,-0.3,0.5,0.2,-0.4][j]*(x_adv[j]+random.gauss(0,s))
@@ -145,20 +144,19 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: AI 모델 공격/방어 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: Feature Squeezing — bit depth reduction (8bit → 4bit 색상) + median filter 로 adversarial perturbation
+        제거. 원본 vs squeezed 예측 차이 > 임계치 → adversarial 탐지. Xu et al. 2017
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - bit reduction 또는 median filter
+      - 원본 vs squeezed 비교
+      - 탐지 임계치
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - numpy round + median
+      - opencv median filter
+      - torch transforms
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - squeezing 개념 없음
+      - 비교 없음
   target_vm: attacker
   script: 'python3 -c "x_adv=[1.23,-0.15,1.02,0.73,0.04];squeezed=[round(x,1) for x in x_adv];print(''===
     Feature Squeezing ==='');print(f''  Before: {x_adv}'');print(f''  After:  {squeezed}'');print(f''  Diff:
@@ -183,20 +181,19 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: AI 모델 공격/방어 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: Ensemble 방어 — 3 모델 (model_a/b/c) 각각 예측 → majority vote (2 이상 동의) → adversarial 탐지 (모델 간
+        불일치 시). 단일 모델 대비 transfer attack 저항력 강화
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - 3 모델 예측
+      - 다수결 vote
+      - 불일치 탐지
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - python list + Counter
+      - torch ensemble
+      - scikit-learn VotingClassifier
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 단일 모델만
+      - 투표 없음
   target_vm: attacker
   script: 'python3 -c "import math;models=[[0.8,-0.3,0.5,0.2,-0.4],[0.7,-0.2,0.6,0.1,-0.3],[0.9,-0.4,0.4,0.3,-0.5]];x_adv=[1.2,-0.1,1.0,0.7,0.0];votes=[1/(1+math.exp(-(sum(w*x
     for w,x in zip(m,x_adv))-0.5)))>0.5 for m in models];print(''=== Ensemble Defense ==='');[print(f''  Model
@@ -221,20 +218,17 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: AI 모델 공격/방어 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: CPS AI 공격 위험성 LLM 질의 — CPS 특성 (실시간·물리 영향·failsafe 부족) + 적대적 공격 특수성 (센서 spoofing · sensor
+        fusion 교란 · actuator 직접 영향) → 일반 IT 대비 위험 10배. 생명·재산·인프라 피해
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - LLM 호출
+      - CPS 특성 + AI 위험성 증폭 설명
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - curl Ollama
+      - NIST AI RMF
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 일반 AI 보안만
+      - CPS 특성 없음
   target_vm: manager
   script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
     messages\":[{\"role\":\"system\",\"content\":\"You are an AI safety researcher.\"},{\"role\":\"user\"\
@@ -263,20 +257,19 @@ steps:
     - 탐지
     field: stdout
     semantic:
-      intent: AI 모델 공격/방어 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: 적대적 입력 탐지 — 입력 변환 (crop/resize/rotate) 전후 예측 차이 > 임계치 → adversarial 판정. 변환 후 예측 대량 flip
+        은 adversarial 특유 (정상 입력은 견고). MagNet 유사 방법
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - 입력 변환 + 예측 차이
+      - 임계치 기반 판정
+      - detection 개념
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - python + 변환 반복
+      - torch transforms
+      - MagNet / Defense-GAN
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 변환 없이 단일 예측
+      - 임계치 없음
   target_vm: attacker
   script: 'python3 -c "import math;x_adv=[1.2,-0.1,1.0,0.7,0.0];x_squeezed=[round(x,1) for x in x_adv];x_normal=[0.9,0.2,0.7,0.5,0.3];n_squeezed=[round(x,1)
     for x in x_normal];d_adv=math.sqrt(sum((a-b)**2 for a,b in zip(x_adv,x_squeezed)));d_normal=math.sqrt(sum((a-b)**2
@@ -304,20 +297,19 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: AI 모델 공격/방어 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: CPS AI 보안 10 체크리스트 — (1) Input validation (2) Adversarial training (3) Model integrity hash
+        (4) Ensemble (5) Feature squeezing (6) Monitoring (7) Failsafe fallback (8) Sensor redundancy
+        (9) Certified defense (10) Supply chain audit. True/False + Score
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - 10 항목
+      - True/False + Score
+      - CPS AI 특화
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - python list + score
+      - NIST AI RMF GOVERN/MAP/MEASURE/MANAGE
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 항목 5 이하
+      - 점수 없음
   target_vm: attacker
   script: 'python3 -c "items=[(''Robustness test'',''필수'',False),(''Input validation'',''필수'',True),(''Ensemble
     models'',''권장'',False),(''Adversarial training'',''권장'',False),(''Real-time monitoring'',''필수'',True),(''Sensor

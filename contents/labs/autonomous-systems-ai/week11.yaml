@@ -27,20 +27,17 @@ steps:
     - Modbus
     field: stdout
     semantic:
-      intent: OT/ICS 보안 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: Modbus(502) 스캔 — nmap -p 502 --script modbus-discover 10.20.30.0/24 로 Modbus TCP 서비스 + Slave
+        ID 열거. ICS 정찰 첫 단계
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - 포트 502 스캔
+      - modbus-discover 스크립트
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - nmap --script modbus
+      - pymodbus ReadDeviceInfo
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 일반 포트 스캔만
+      - Modbus 개념 없음
   target_vm: attacker
   script: nmap -sV -p 502 10.20.30.200
   risk_level: low
@@ -62,20 +59,19 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: OT/ICS 보안 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: Modbus TCP Holding Register 읽기 — python pymodbus ModbusTcpClient + read_holding_registers(0,
+        5) 로 register 0~4 값 조회. FC=3 (Read Holding Registers) 기본 동작
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - pymodbus 또는 raw TCP
+      - Holding Register 0-4 읽기
+      - FC=3 개념
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - pymodbus Client
+      - raw TCP + struct.pack
+      - modbus-cli 도구
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 읽기 없이 접속만
+      - FC 개념 없음
   target_vm: attacker
   script: 'python3 -c "import struct;fc=0x03;addr=0;count=5;pdu=struct.pack(''>BHH'',fc,addr,count);mbap=struct.pack(''>HHHB'',1,0,len(pdu)+1,1);print(''===
     Modbus Read Registers ==='');print(f''  FC:0x{fc:02X} Addr:{addr} Count:{count}'');print(f''  MBAP:{mbap.hex()}
@@ -99,20 +95,19 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: OT/ICS 보안 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: Modbus 레지스터 변조 — write_register(water_level_addr, 999) + write_register(temp_addr, 90) 로
+        FC=6 (Write Single) 수위/온도를 위험 값으로 조작. Stuxnet 스타일 물리 공격
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - write_register + 위험 값
+      - FC=6 사용
+      - 물리 공격 개념
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - pymodbus write_register
+      - raw TCP FC=6
+      - smod 도구
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 읽기만
+      - 위험 값 설정 없음
   target_vm: attacker
   script: 'python3 -c "attacks=[(0,250,999,''Water level → overflow risk''),(1,350,900,''Temperature →
     equipment damage''),(2,700,200,''pH → highly acidic'')];print(''=== Modbus Write Attack ==='');[print(f''  Reg[{a}]:
@@ -135,20 +130,18 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: OT/ICS 보안 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: Modbus Coil 제어 공격 — write_coil(pump, False) + write_coil(valve, False) + write_coil(estop,
+        True) 로 FC=5 (Write Single Coil) 펌프 OFF·밸브 닫기·긴급정지. Discrete output 조작
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - write_coil 3회
+      - FC=5 사용
+      - pump/valve/estop 조작
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - pymodbus write_coil
+      - raw TCP FC=5
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - Coil 제어 없음
+      - FC=5 아닌 다른 FC
   target_vm: attacker
   script: 'python3 -c "attacks=[(0,True,False,''Pump 1 OFF''),(2,True,False,''Valve 1 CLOSED''),(10,False,True,''Emergency
     STOP'')];print(''=== Coil Control Attack ==='');[print(f''  Coil[{c}]: {o}→{n} [{d}]'') for c,o,n,d
@@ -171,20 +164,18 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: OT/ICS 보안 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: Stuxnet HMI 기만 — PLC 실제 값 (temp=95 위험) vs HMI 표시 (temp=25 정상) 이중 기록. PLC write 시 HMI 에는
+        이전 정상 값 전송. 운영자 조기 탐지 방해. 가장 악명 높은 CPS 공격 재현
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - PLC 실제 vs HMI 표시 차이
+      - 기만 원리
+      - Stuxnet 개념
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - python 이중 상태 시뮬
+      - modbus response 조작
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 단일 값만
+      - HMI 기만 개념 없음
   target_vm: attacker
   script: 'python3 -c "print(''=== Stuxnet-Style HMI Deception ==='');real={''level'':99.9,''temp'':90,''pH'':2.0,''pressure'':50};fake={''level'':25.0,''temp'':35,''pH'':7.0,''pressure'':15};print(''  Real
     PLC values:'');[print(f''    {k}: {v}'') for k,v in real.items()];print(''  HMI display (fake):'');[print(f''    {k}:
@@ -208,20 +199,18 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: OT/ICS 보안 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: ICS 트래픽 모니터링 — python 패킷 필터 + 비인가 출발지(allowlist 외 IP) + 위험한 값 쓰기(register 999) + 비정상 FC(6/16
+        write) 탐지. 화이트리스트 기반 ICS IDS. Modbus protocol-aware
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - 3 탐지 조건 (IP·값·FC)
+      - protocol-aware 분석
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - python + scapy
+      - Snort ICS preproc
+      - Zeek + ICS 플러그인
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 조건 1개만
+      - signature-only (proto 분석 아님)
   target_vm: attacker
   script: 'python3 -c "allowed={''10.20.30.200''};alerts=[];pkts=[(''10.20.30.200'',0x03,0,0),(''10.20.30.201'',0x06,0,999),(''10.20.30.201'',0x05,10,1)];print(''===
     ICS Monitor ==='');[((alerts.append(f''Unauth:{s}'') if s not in allowed else None),(alerts.append(f''Danger:Reg[{a}]={v}'')
@@ -245,20 +234,17 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: OT/ICS 보안 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: Modbus 보안 강화 + OPC-UA 마이그레이션 LLM — Modbus 한계(미암호화·미인증) + OPC-UA 장점(X.509 인증·암호화·role-based)
+        + 마이그레이션 경로 (gateway·bridge·단계적 교체). IEC 62443 기반 권고
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - Modbus 한계 + OPC-UA 장점
+      - 마이그레이션 경로
+      - IEC 62443 참조
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - curl Ollama /api/chat
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - Modbus 또는 OPC-UA 한쪽만
+      - 마이그레이션 경로 없음
   target_vm: manager
   script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
     messages\":[{\"role\":\"system\",\"content\":\"You are an ICS security consultant.\"},{\"role\":\"\
@@ -283,20 +269,18 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: OT/ICS 보안 주제의 해당 스텝 — 요구된 Python 구현/LLM 질의/네트워크 도구 실행
+      intent: ICS 보안 평가 보고서 /tmp/ics_report.txt — Modbus 취약점 + 공격 시연 (레지스터 변조·Coil 제어·HMI 기만) + IDS 룰
+        + 권고 (allowlist·OPC-UA·air gap). IEC 62443-2-1 CSMS 준거
       success_criteria:
-      - instruction 의 요구 작업을 실제 수행 (python code, LLM 호출, 도구 명령)
-      - 결과 출력에 해당 주제 특유 정보(레지스터·CAN ID·토픽·CVSS·IR 단계 등) 포함
-      - 보안 맥락(공격 원리 또는 방어 기법)과의 연결 최소 1개
+      - /tmp/ics_report.txt 파일
+      - 취약점+시연+IDS+권고 4섹션
+      - IEC 62443 준거
       acceptable_methods:
-      - python 스크립트로 시뮬/계산/출력
-      - Ollama API 로 LLM 호출
-      - nmap/ssh/curl 등 인프라 도구 사용
-      - json/dict/markdown 구조화 출력
+      - cat > file heredoc
+      - IEC 62443 템플릿
       negative_signs:
-      - 실행·호출 없이 개념 설명만
-      - 결과 출력 누락
-      - 주제 특유 개념(CAN/Modbus/ROS2/CPS) 부재
+      - 섹션 2 이하
+      - IEC 참조 없음
   target_vm: attacker
   script: python3 -c "print('=== ICS Security Assessment ===');vulns=[('No Modbus auth','CRITICAL'),('No
     encryption','HIGH'),('Flat OT network','CRITICAL'),('No IDS','HIGH')];print('  Findings:');[print(f'    [{s}]
