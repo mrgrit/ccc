@@ -26,20 +26,22 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w2 s1 — secu VM에 inet 계열 테이블 ''lab''을 생성하시오. (cmd: sudo nft add table inet lab)'
+      intent: 'inet family lab 테이블 생성 — sudo nft add table inet lab 로 IPv4+IPv6 공통 필터링 가능한 inet 테이블 생성.
+        nftables 의 계층: table → chain → rule. inet family 는 ip + ip6 통합 관리로 운영 효율적. 생성 후 nft list tables
+        | grep lab 로 존재 확인. 기존 동일 이름 있으면 idempotent 하게 유지(에러 없음)'
       success_criteria:
-      - '명령 실행: sudo nft add table inet lab'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft add table inet lab 실행
+      - sudo 또는 root 권한 사용
+      - 에러 없이 종료 또는 기존 존재 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft add table inet lab
+      - echo add table inet lab | sudo nft -f -
+      - /etc/nftables.conf 에 table inet lab {} 추가 후 systemctl restart nftables
+      - nft create table inet lab(idempotent 아님)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - ip 또는 ip6 family 만 사용(v4/v6 분리 필요 시 제외 OK)
+      - sudo 없이 permission denied 무시
+      - nft 없이 iptables 로 대체
   target_vm: secu
   script: sudo nft add table inet lab
   risk_level: low
@@ -51,28 +53,31 @@ steps:
   points: 10
   answer: '🤖 프롬프트: secu VM의 lab 테이블에 input hook 체인을 만들어줘
 
-    📎 참고 (CLI): sudo nft add chain inet lab input ''{ type filter hook input priority 0 \; policy accept \; }'''
+    📎 참고 (CLI): sudo nft add chain inet lab input ''{ type filter hook input priority 0 \; policy accept
+    \; }'''
   answer_detail: 'nftables 방화벽 기초: lab 테이블에 input 체인(hook input, priority 0, policy accept)을 생성하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w2 s2 — lab 테이블에 input 체인(hook input, priority 0, policy accept)을 생성하시오. (cmd: sudo nft add chain inet
-        lab input ''{ type filter hook input priority 0 \; policy)'
+      intent: lab 테이블 input chain 생성 — nft add chain inet lab input { type filter hook input priority
+        0 ; policy accept ; }. hook=input(호스트로 들어오는 트래픽), priority=0(netfilter filter priority), policy=accept(체인
+        끝까지 매칭 없을 때 기본). semicolon 은 쉘에서 backslash 이스케이프 또는 single quote 로 감싸기. Base chain 이어야 hook 실제
+        동작, regular chain 은 jump 대상만 됨
       success_criteria:
-      - '명령 실행: sudo nft add chain inet lab input ''{ type filter hook input '
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft add chain inet lab input 실행
+      - type filter hook input priority 0 필수 요소
+      - policy accept 또는 drop 지정
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft add chain inet lab input { type filter hook input priority 0 ; policy accept ; }
+      - /etc/nftables.conf 에 chain 블록 정의 후 nft -f 로드
+      - nft edit 명령어 사용
+      - 'base chain priority: -300(raw), -150(mangle), -100(dstnat), 0(filter), 100(srcnat)'
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - hook 지정 없이 regular chain 생성(동작 안 함)
+      - semicolon 이스케이프 실수로 문법 오류
+      - priority 누락
   target_vm: secu
   script: sudo nft add chain inet lab input '{ type filter hook input priority 0 \; policy accept \; }'
   risk_level: low
@@ -93,21 +98,23 @@ steps:
     - 차단
     field: stdout
     semantic:
-      intent: 'SecOps w2 s3 — lab 테이블 input 체인에 tcp 포트 23(telnet) 차단 룰을 추가하시오. (cmd: sudo nft add rule inet lab input tcp
-        dport 23 drop)'
+      intent: 'telnet(tcp/23) drop 룰 추가 — nft add rule inet lab input tcp dport 23 drop. Telnet 은 평문 프로토콜,
+        원칙적으로 차단 권장(대체: SSH). 입력 체인에서 destination port 23 매칭 시 drop(silent discard) - reject 와 다르게 RST
+        응답 없음. 공격자의 port scan 에 stealth 효과. CIS Benchmark 에서도 telnet 차단 권장'
       success_criteria:
-      - '명령 실행: sudo nft add rule inet lab input tcp dport 23 drop'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft add rule ... tcp dport 23 drop 실행
+      - drop 또는 reject action 지정
+      - telnet 포트 23 명시
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft add rule inet lab input tcp dport 23 drop
+      - sudo nft add rule inet lab input tcp dport 23 reject
+      - iptables -A INPUT -p tcp --dport 23 -j DROP
+      - ufw deny 23/tcp
+      - firewalld rich-rule 로 차단
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - udp 포트 차단
+      - accept action(차단 아님)
+      - 다른 포트(22/80) 차단
   target_vm: secu
   script: sudo nft add rule inet lab input tcp dport 23 drop
   risk_level: low
@@ -126,20 +133,22 @@ steps:
     expect: dport 23
     field: stdout
     semantic:
-      intent: 'SecOps w2 s4 — nft list table inet lab 으로 작성한 룰을 확인하시오. (cmd: sudo nft list table inet lab)'
+      intent: 'lab 테이블 룰셋 출력 — sudo nft list table inet lab 로 lab 테이블의 모든 chain + rule 시각화. 출력 포맷: table
+        inet lab { chain input { type filter hook input priority filter; policy accept; tcp dport 23 drop
+        } } + handle 번호(룰 수정/삭제 시 참조). -a 옵션 추가하면 handle 표시, -j 로 JSON 포맷'
       success_criteria:
-      - '명령 실행: sudo nft list table inet lab'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft list table inet lab 실행
+      - chain input 또는 rule 구조 출력
+      - dport 23 또는 drop 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft list table inet lab
+      - sudo nft -a list table inet lab(handle 번호 표시)
+      - sudo nft -j list table inet lab | jq
+      - sudo nft list chain inet lab input(특정 chain 만)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 다른 테이블 출력
+      - 룰 내용 확인 없이 테이블명만
+      - 에러 숨김
   target_vm: secu
   script: sudo nft list table inet lab
   risk_level: low
@@ -158,21 +167,23 @@ steps:
     expect: established
     field: stdout
     semantic:
-      intent: 'SecOps w2 s5 — established, related 연결을 허용하는 상태 기반 룰을 input 체인 맨 앞에 삽입하시오. (cmd: sudo nft insert rule inet
-        lab input ct state established,related accept)'
+      intent: Stateful firewall - ct state established,related accept 룰 맨 앞 삽입 — nft insert rule(= add
+        at position 0). Conntrack 의 established(이미 allow 된 outbound 응답), related(FTP data·ICMP error 같은
+        연관 연결) 를 최우선 허용하여 성능 + 정확성 향상. 안 하면 outbound 응답마다 룰 재매칭, stateful firewall 핵심 패턴. first rule 위치
+        중요(성능상)
       success_criteria:
-      - '명령 실행: sudo nft insert rule inet lab input ct state established,rel'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft insert rule 명령 사용(append 아닌 prepend)
+      - ct state established,related accept 전체 expression
+      - input chain 지정
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft insert rule inet lab input ct state established,related accept
+      - /etc/nftables.conf 에 첫 룰로 배치 후 reload
+      - nft add rule ... index 0 ... 형태
+      - iptables -I INPUT 1 -m state --state ESTABLISHED,RELATED -j ACCEPT
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - add 로 맨 뒤 추가(순서 중요한데)
+      - ct state 없이 단순 accept
+      - new 포함(정상 SYN 도 허용하게 됨)
   target_vm: secu
   script: sudo nft insert rule inet lab input ct state established,related accept
   risk_level: low
@@ -191,20 +202,22 @@ steps:
     expect: lo
     field: stdout
     semantic:
-      intent: 'SecOps w2 s6 — loopback(lo)에서 들어오는 트래픽을 허용하는 룰을 추가하시오. (cmd: sudo nft add rule inet lab input iifname lo accept)'
+      intent: loopback 인터페이스 허용 — nft add rule inet lab input iifname lo accept. 많은 앱이 localhost(127.0.0.1)로
+        IPC 통신(DB/API/monitoring). lo interface 트래픽 차단 시 시스템 오동작. iifname=input interface name. 보통 stateful
+        + loopback 이 firewall 의 기본 2줄. RFC 5735 loopback 주소
       success_criteria:
-      - '명령 실행: sudo nft add rule inet lab input iifname lo accept'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft add rule ... iifname lo accept 실행
+      - lo 또는 loopback 문자열
+      - accept action
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft add rule inet lab input iifname lo accept
+      - iptables -A INPUT -i lo -j ACCEPT
+      - nft add rule ... iif lo accept (interface index)
+      - ip addr show lo 로 127.0.0.1 확인 후 source/dest 기반 룰
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - lo 인터페이스 드롭
+      - iifname 오타(iifnamelo 등)
+      - accept 대신 jump/return
   target_vm: secu
   script: sudo nft add rule inet lab input iifname lo accept
   risk_level: low
@@ -225,20 +238,23 @@ steps:
     - SSH
     field: stdout
     semantic:
-      intent: 'SecOps w2 s7 — tcp 22(ssh) 포트를 허용하는 룰을 추가하시오. (cmd: sudo nft add rule inet lab input tcp dport 22 accept)'
+      intent: 'SSH(tcp/22) 허용 룰 추가 — nft add rule inet lab input tcp dport 22 accept. 원격 관리의 기본 프로토콜,
+        차단 시 원격 잠김 위험(local console 필요). ct state 룰 + loopback + ssh 3개가 서버 firewall 의 최소 세트. 추가 보안: brute-force
+        방어 위해 rate limit(limit rate 5/minute)·fail2ban 연계'
       success_criteria:
-      - '명령 실행: sudo nft add rule inet lab input tcp dport 22 accept'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft add rule ... tcp dport 22 accept 실행
+      - accept 또는 ACCEPT 명시
+      - SSH 포트 22 정확
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft add rule inet lab input tcp dport 22 accept
+      - sudo nft add rule inet lab input tcp dport 22 ct state new accept
+      - iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+      - ufw allow 22/tcp
+      - 'rate limit 포함: tcp dport 22 limit rate 5/minute accept'
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - drop/reject action
+      - 잘못된 포트 번호(2222 등)
+      - udp dport 22(SSH는 TCP)
   target_vm: secu
   script: sudo nft add rule inet lab input tcp dport 22 accept
   risk_level: low
@@ -257,20 +273,23 @@ steps:
     expect: table inet lab
     field: stdout
     semantic:
-      intent: 'SecOps w2 s8 — 전체 룰셋(모든 테이블)을 nft list ruleset 명령으로 확인하시오. (cmd: sudo nft list ruleset)'
+      intent: 전체 ruleset 확인 — sudo nft list ruleset 로 모든 table·chain·rule 출력. Firewall 전체 상태 감사의 표준 명령.
+        실제 운영에서는 | grep 필터 또는 -j JSON + jq 파싱. 현재 lab 테이블 외에도 기존 filter/nat 테이블이 함께 출력됨. 변경 후 이 명령으로 예상한
+        대로 반영됐는지 검증
       success_criteria:
-      - '명령 실행: sudo nft list ruleset'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft list ruleset 실행
+      - table inet lab 포함 출력
+      - 전체 테이블 목록 표시
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft list ruleset
+      - sudo nft -a list ruleset(handle 포함)
+      - sudo nft -j list ruleset | jq
+      - sudo nft list ruleset > /etc/nftables.conf.backup 으로 백업
+      - iptables-save 로 legacy 덤프
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - 특정 테이블만 확인(전체 아님)
+      - 출력 없이 단순 실행만
+      - 다른 방화벽 도구(iptables -L) 사용하여 누락
   target_vm: secu
   script: sudo nft list ruleset
   risk_level: low
@@ -289,20 +308,22 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'SecOps w2 s9 — 실습 종료 후 lab 테이블을 삭제하시오. (cmd: sudo nft delete table inet lab)'
+      intent: 'lab 테이블 cleanup — sudo nft delete table inet lab. Chain·rule·set 을 포함한 전체 테이블 제거(cascading
+        delete). 실습 후 환경 정리, production 에서는 주의 필수(다른 테이블 오타 주의). 대안: nft flush table(룰만 비우고 테이블은 유지).
+        Idempotent 위해 delete 대신 destroy(신규 nftables) 사용 가능'
       success_criteria:
-      - '명령 실행: sudo nft delete table inet lab'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft delete table inet lab 실행
+      - sudo 권한 사용
+      - 에러 없이 종료
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft delete table inet lab
+      - sudo nft destroy table inet lab(없어도 에러 안 남)
+      - sudo nft flush table inet lab(룰만 삭제, 테이블 유지)
+      - echo delete table inet lab | sudo nft -f -
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - delete 대신 flush(테이블 남음)
+      - 다른 테이블 삭제(오타)
+      - 확인 없이 running 룰 제거
   target_vm: secu
   script: sudo nft delete table inet lab
   risk_level: low
@@ -321,20 +342,21 @@ steps:
     expect: table
     field: stdout
     semantic:
-      intent: 'SecOps w2 s10 — lab 테이블이 삭제되었는지 nft list tables 로 확인하시오. (cmd: sudo nft list tables | grep -v '' lab$'' | tail)'
+      intent: lab 테이블 삭제 검증 — sudo nft list tables 로 테이블 목록 재확인, lab 이 없어졌는지 검증. 명령 실행 후 검증은 필수 관행(trust
+        but verify). grep -v lab 또는 | grep -c lab 으로 기계적 확인. 삭제 실패 시 syntax·dependency 오류 가능성
       success_criteria:
-      - '명령 실행: sudo nft list tables | grep -v '' lab$'' | tail'
-      - 결과 출력 또는 로그 확인
-      - SecOps 실습 맥락 유지
+      - nft list tables 재실행
+      - 출력에 lab 테이블 부재
+      - table 키워드 확인
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - SecOps 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - sudo nft list tables | grep -v lab
+      - sudo nft list tables | grep -c lab (0 이어야)
+      - sudo nft list table inet lab 2>&1 | grep No such(없음 확인)
+      - diff before.txt after.txt 로 변화 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - SecOps와 무관한 기법
+      - list ruleset 으로 대체(overkill)
+      - 삭제 전 목록과 비교 없음
+      - lab 남아있는데 성공 판정
   target_vm: secu
   script: sudo nft list tables | grep -v ' lab$' | tail
   risk_level: low
