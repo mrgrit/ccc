@@ -3,8 +3,8 @@ title: IAM 및 접근 제어 실습 (AI 지원)
 version: ai
 course: cloud-container-ai
 week: 6
-description: 클라우드 IAM(Identity and Access Management) 개념을 Docker 환경의 사용자/그룹 관리, 소켓 접근 제어, 컨테이너 사용자 매핑으로
-  실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: 클라우드 IAM(Identity and Access Management) 개념을 Docker 환경의 사용자/그룹 관리, 소켓
+  접근 제어, 컨테이너 사용자 매핑으로 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -14,25 +14,29 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: WEB 서버({{WEB_IP}})에서 Docker 그룹에 속한 사용자를 확인하시오. Docker 접근 = root 권한과 동일합니다.
+  instruction: WEB 서버({{WEB_IP}})에서 Docker 그룹에 속한 사용자를 확인하시오. Docker 접근 = root 권한과
+    동일합니다.
   hint: getent group docker 명령을 사용하세요.
   category: audit
   points: 10
-  answer: '🤖 프롬프트: WEB 서버(10.20.30.80)에서 Docker 그룹에 속한 사용자를 확인하시오. Docker 접근 = root 권한과 동일해줘
+  answer: '🤖 프롬프트: WEB 서버(10.20.30.80)에서 Docker 그룹에 속한 사용자를 확인하시오. Docker 접근 = root
+    권한과 동일해줘
 
-    📎 참고 (CLI): getent group docker && echo "--- 로그인 가능 계정 ---" && awk -F: "\$7 !~ /nologin|false/ {print
-    \$1}" /etc/passwd'''
-  answer_detail: 클라우드 IAM에서 Admin 역할은 모든 리소스에 접근할 수 있듯, Docker 그룹 멤버는 모든 컨테이너와 이미지를 제어할 수 있습니다. docker
-    그룹 = root 동등 권한이므로, 최소한의 사용자만 포함해야 합니다. AWS의 IAM 정책과 동일한 최소 권한 원칙입니다.
+    📎 참고 (CLI): getent group docker && echo "--- 로그인 가능 계정 ---" && awk -F: "\$7 !~
+    /nologin|false/ {print \$1}" /etc/passwd'''
+  answer_detail: 클라우드 IAM에서 Admin 역할은 모든 리소스에 접근할 수 있듯, Docker 그룹 멤버는 모든 컨테이너와 이미지를
+    제어할 수 있습니다. docker 그룹 = root 동등 권한이므로, 최소한의 사용자만 포함해야 합니다. AWS의 IAM 정책과 동일한 최소
+    권한 원칙입니다.
   verify:
     type: output_contains
     expect: docker
     field: stdout
     semantic:
-      intent: 'Docker 그룹 멤버 감사(= cloud IAM 관리자 권한 검토) — getent group docker && awk -F: $7 !~ /nologin|false/
-        {print $1} /etc/passwd. docker 그룹 = effective root(소켓 접근 = 컨테이너 생성 = 호스트 마운트 가능). /etc/passwd
-        에서 login shell 없는 시스템 계정 제외. IAM 최소 권한 원칙: docker 그룹 멤버는 최소, 정기적 Access Review. AWS IAM admin
-        role 과 동일 위험성. Rootless Docker 로 대체 고려'
+      intent: 'Docker 그룹 멤버 감사(= cloud IAM 관리자 권한 검토) — getent group docker && awk
+        -F: $7 !~ /nologin|false/ {print $1} /etc/passwd. docker 그룹 = effective root(소켓
+        접근 = 컨테이너 생성 = 호스트 마운트 가능). /etc/passwd 에서 login shell 없는 시스템 계정 제외. IAM 최소
+        권한 원칙: docker 그룹 멤버는 최소, 정기적 Access Review. AWS IAM admin role 과 동일 위험성. Rootless
+        Docker 로 대체 고려'
       success_criteria:
       - getent group docker 실행
       - docker 문자열 포함
@@ -48,10 +52,11 @@ steps:
       - 로그인 계정 필터 누락
       - docker 그룹 위험성 인지 없음
   target_vm: web
-  script: 'getent group docker && echo "--- 로그인 가능 계정 ---" && awk -F: "\$7 !~ /nologin|false/ {print \$1}"
-    /etc/passwd'''
+  script: 'getent group docker && echo "--- 로그인 가능 계정 ---" && awk -F: "\$7 !~ /nologin|false/
+    {print \$1}" /etc/passwd'''
   risk_level: low
-  bastion_prompt: WEB 서버(10.20.30.80)에서 Docker 그룹에 속한 사용자를 확인하시오. Docker 접근 = root 권한과 동일해줘
+  bastion_prompt: WEB 서버(10.20.30.80)에서 Docker 그룹에 속한 사용자를 확인하시오. Docker 접근 = root
+    권한과 동일해줘
 - order: 2
   instruction: 컨테이너 내부의 사용자가 호스트에서 어떤 UID로 매핑되는지 확인하시오.
   hint: 컨테이너에서 id 명령을 실행하고, 호스트에서 동일 프로세스의 UID를 확인하세요.
@@ -59,20 +64,22 @@ steps:
   points: 12
   answer: '🤖 프롬프트: 컨테이너 내부의 사용자가 호스트에서 어떤 UID로 매핑되는지 확인해줘
 
-    📎 참고 (CLI): docker run -d --name uid-test alpine:latest sleep 300 2>/dev/null; echo "=== 컨테이너 내부 UID
-    ==="; docker exec uid-test id; echo "=== 호스트에서 본 UID ==="; docker top uid-test -o uid,pid,cmd; docker
-    rm -f uid-test 2>/dev/null 2>/dev/null'
-  answer_detail: 기본적으로 컨테이너의 root(UID 0)는 호스트의 root(UID 0)와 동일합니다. User Namespace Remapping을 사용하면 컨테이너의
-    UID 0을 호스트의 비특권 UID로 매핑하여, 컨테이너 탈출 시에도 호스트 root 권한을 얻지 못하게 합니다.
+    📎 참고 (CLI): docker run -d --name uid-test alpine:latest sleep 300 2>/dev/null;
+    echo "=== 컨테이너 내부 UID ==="; docker exec uid-test id; echo "=== 호스트에서 본 UID ===";
+    docker top uid-test -o uid,pid,cmd; docker rm -f uid-test 2>/dev/null 2>/dev/null'
+  answer_detail: 기본적으로 컨테이너의 root(UID 0)는 호스트의 root(UID 0)와 동일합니다. User Namespace
+    Remapping을 사용하면 컨테이너의 UID 0을 호스트의 비특권 UID로 매핑하여, 컨테이너 탈출 시에도 호스트 root 권한을 얻지 못하게
+    합니다.
   verify:
     type: output_contains
     expect: uid=
     field: stdout
     semantic:
-      intent: '컨테이너 내부 UID → 호스트 UID 매핑 실증 — docker run + docker exec id + docker top uid,pid,cmd. 기본
-        상태: container UID 0 = host UID 0(동일, no remapping). userns-remap 활성화 시 container UID 0 → host
-        UID 165536+(subuid). MITRE T1611 Container Escape to Host 기본 원리. /etc/subuid + /etc/subgid 로 range
-        정의. daemon.json userns-remap: default 설정'
+      intent: '컨테이너 내부 UID → 호스트 UID 매핑 실증 — docker run + docker exec id + docker
+        top uid,pid,cmd. 기본 상태: container UID 0 = host UID 0(동일, no remapping). userns-remap
+        활성화 시 container UID 0 → host UID 165536+(subuid). MITRE T1611 Container Escape
+        to Host 기본 원리. /etc/subuid + /etc/subgid 로 range 정의. daemon.json userns-remap:
+        default 설정'
       success_criteria:
       - 컨테이너 생성 + id 실행
       - uid= 문자열 포함
@@ -88,9 +95,9 @@ steps:
       - cleanup 생략(uid-test 잔존)
       - userns-remap 미활용 상태 인지 없음
   target_vm: web
-  script: docker run -d --name uid-test alpine:latest sleep 300 2>/dev/null; echo "=== 컨테이너 내부 UID ===";
-    docker exec uid-test id; echo "=== 호스트에서 본 UID ==="; docker top uid-test -o uid,pid,cmd; docker rm
-    -f uid-test 2>/dev/null 2>/dev/null
+  script: docker run -d --name uid-test alpine:latest sleep 300 2>/dev/null; echo
+    "=== 컨테이너 내부 UID ==="; docker exec uid-test id; echo "=== 호스트에서 본 UID ==="; docker
+    top uid-test -o uid,pid,cmd; docker rm -f uid-test 2>/dev/null 2>/dev/null
   risk_level: low
   bastion_prompt: 컨테이너 내부의 사용자가 호스트에서 어떤 UID로 매핑되는지 확인해줘
 - order: 3
@@ -100,19 +107,25 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 비root 사용자로 실행되는 컨테이너를 생성하고 권한 제한을 확인해줘
 
-    📎 참고 (CLI): docker run --rm --user 1000:1000 alpine:latest sh -c "id && echo --- && whoami 2>/dev/null
-    || echo nobody && echo --- && cat /etc/shadow 2>&1 | head -3"'
-  answer_detail: IAM에서 일반 사용자 역할은 관리 작업을 수행할 수 없듯, 비root 컨테이너는 시스템 파일 수정, 포트 바인딩(1024 이하), 패키지 설치 등이 제한됩니다.
-    이는 컨테이너 침해 시 피해를 최소화하는 핵심 방어입니다.
+    📎 참고 (CLI): docker run --rm --user 1000:1000 alpine:latest sh -c "id && echo ---
+    && whoami 2>/dev/null || echo nobody && echo --- && cat /etc/shadow 2>&1 | head
+    -3"'
+  answer_detail: IAM에서 일반 사용자 역할은 관리 작업을 수행할 수 없듯, 비root 컨테이너는 시스템 파일 수정, 포트 바인딩(1024
+    이하), 패키지 설치 등이 제한됩니다. 이는 컨테이너 침해 시 피해를 최소화하는 핵심 방어입니다.
   verify:
     type: output_contains
-    expect: uid=1000
+    expect:
+    - uid=1000
+    - user
+    - UID
+    - whoami
     field: stdout
     semantic:
-      intent: '비루트 UID 컨테이너 실행 + 권한 제한 검증 — docker run --rm --user 1000:1000 alpine sh -c id && whoami
-        && cat /etc/shadow. --user UID:GID 로 runtime UID 변경. 일반 UID 1000 으로는 /etc/shadow 읽기 불가(400 root
-        root). 1024 이하 포트 bind 불가. Setuid 실행 제한. 컨테이너 침해 시 피해 최소화. Dockerfile USER 지시어 + runtime --user
-        조합. Kubernetes securityContext.runAsUser: 1000 대응'
+      intent: '비루트 UID 컨테이너 실행 + 권한 제한 검증 — docker run --rm --user 1000:1000 alpine
+        sh -c id && whoami && cat /etc/shadow. --user UID:GID 로 runtime UID 변경. 일반
+        UID 1000 으로는 /etc/shadow 읽기 불가(400 root root). 1024 이하 포트 bind 불가. Setuid
+        실행 제한. 컨테이너 침해 시 피해 최소화. Dockerfile USER 지시어 + runtime --user 조합. Kubernetes
+        securityContext.runAsUser: 1000 대응'
       success_criteria:
       - docker run --user 1000:1000 실행
       - uid=1000 출력
@@ -128,8 +141,8 @@ steps:
       - 권한 제한 검증 없음
       - shadow 읽기 성공 정상 판정
   target_vm: web
-  script: docker run --rm --user 1000:1000 alpine:latest sh -c "id && echo --- && whoami 2>/dev/null ||
-    echo nobody && echo --- && cat /etc/shadow 2>&1 | head -3"
+  script: docker run --rm --user 1000:1000 alpine:latest sh -c "id && echo --- &&
+    whoami 2>/dev/null || echo nobody && echo --- && cat /etc/shadow 2>&1 | head -3"
   risk_level: low
   bastion_prompt: 비root 사용자로 실행되는 컨테이너를 생성하고 권한 제한을 확인해줘
 - order: 4
@@ -140,19 +153,21 @@ steps:
   answer: '🤖 프롬프트: Docker 소켓을 마운트한 컨테이너가 호스트를 완전히 제어할 수 있음을 확인해줘
 
     📎 참고 (CLI): echo "=== Docker 소켓 마운트 위험성 ==="; docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
-    docker:cli docker ps --format "{{.Names}}" 2>/dev/null | head -5 || echo "docker:cli 이미지 없음 - 소켓 권한
-    확인"; echo "--- 소켓 권한 ---"; ls -la /var/run/docker.sock'
-  answer_detail: Docker 소켓(/var/run/docker.sock)을 컨테이너에 마운트하면, 해당 컨테이너는 새 컨테이너를 생성하고 호스트 파일시스템을 마운트할 수
-    있어 사실상 root 권한을 가집니다. 이는 AWS에서 IAM 관리자 권한을 실수로 애플리케이션에 부여하는 것과 같습니다.
+    docker:cli docker ps --format "{{.Names}}" 2>/dev/null | head -5 || echo "docker:cli
+    이미지 없음 - 소켓 권한 확인"; echo "--- 소켓 권한 ---"; ls -la /var/run/docker.sock'
+  answer_detail: Docker 소켓(/var/run/docker.sock)을 컨테이너에 마운트하면, 해당 컨테이너는 새 컨테이너를 생성하고
+    호스트 파일시스템을 마운트할 수 있어 사실상 root 권한을 가집니다. 이는 AWS에서 IAM 관리자 권한을 실수로 애플리케이션에 부여하는
+    것과 같습니다.
   verify:
     type: output_contains
     expect: docker.sock
     field: stdout
     semantic:
       intent: 'Docker socket 마운트 위험성 실증 — docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
-        docker:cli docker ps. 컨테이너 내부에서 docker CLI 로 호스트 daemon 제어. 위험: (1) 새 컨테이너 --privileged 실행 (2)
-        / 호스트 파일시스템 마운트 (3) escape to host. CI/CD 시스템(Jenkins/GitLab runner) 에서 흔한 anti-pattern. 대안: Docker-in-Docker(dind),
-        Sysbox, Kaniko(rootless build). K8s: controlplane 에서 socket mount 절대 금지'
+        docker:cli docker ps. 컨테이너 내부에서 docker CLI 로 호스트 daemon 제어. 위험: (1) 새 컨테이너
+        --privileged 실행 (2) / 호스트 파일시스템 마운트 (3) escape to host. CI/CD 시스템(Jenkins/GitLab
+        runner) 에서 흔한 anti-pattern. 대안: Docker-in-Docker(dind), Sysbox, Kaniko(rootless
+        build). K8s: controlplane 에서 socket mount 절대 금지'
       success_criteria:
       - docker.sock 마운트 시연
       - ls -la /var/run/docker.sock 권한 확인
@@ -169,8 +184,8 @@ steps:
       - 대안(kaniko 등) 언급 없음
   target_vm: web
   script: echo "=== Docker 소켓 마운트 위험성 ==="; docker run --rm -v /var/run/docker.sock:/var/run/docker.sock
-    docker:cli docker ps --format "{{.Names}}" 2>/dev/null | head -5 || echo "docker:cli 이미지 없음 - 소켓 권한
-    확인"; echo "--- 소켓 권한 ---"; ls -la /var/run/docker.sock
+    docker:cli docker ps --format "{{.Names}}" 2>/dev/null | head -5 || echo "docker:cli
+    이미지 없음 - 소켓 권한 확인"; echo "--- 소켓 권한 ---"; ls -la /var/run/docker.sock
   risk_level: low
   bastion_prompt: Docker 소켓을 마운트한 컨테이너가 호스트를 완전히 제어할 수 있음을 확인해줘
 - order: 5
@@ -180,21 +195,23 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 컨테이너의 환경 변수에 민감 정보(비밀번호, API 키)가 노출되는지 점검해줘
 
-    📎 참고 (CLI): docker ps -q | head -5 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range .Config.Env}}  {{.}}\n{{end}}"
-    {} 2>/dev/null | grep -iE "(PASSWORD|SECRET|KEY|TOKEN|API)" && echo "민감 환경변수 발견!" || echo "민감 환경변수
-    미발견"'
-  answer_detail: docker inspect로 누구나 환경 변수를 볼 수 있으므로, 환경 변수에 비밀번호나 API 키를 저장하면 안 됩니다. 클라우드에서는 AWS Secrets
-    Manager, K8s에서는 Secrets(암호화), Docker에서는 Docker Secrets을 사용해야 합니다.
+    📎 참고 (CLI): docker ps -q | head -5 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range
+    .Config.Env}}  {{.}}\n{{end}}" {} 2>/dev/null | grep -iE "(PASSWORD|SECRET|KEY|TOKEN|API)"
+    && echo "민감 환경변수 발견!" || echo "민감 환경변수 미발견"'
+  answer_detail: docker inspect로 누구나 환경 변수를 볼 수 있으므로, 환경 변수에 비밀번호나 API 키를 저장하면 안 됩니다.
+    클라우드에서는 AWS Secrets Manager, K8s에서는 Secrets(암호화), Docker에서는 Docker Secrets을 사용해야
+    합니다.
   verify:
     type: output_contains
     expect: 환경변수
     field: stdout
     semantic:
-      intent: '환경변수 민감 정보 노출 스캔 — docker inspect --format={{range .Config.Env}}{{.}}{{end}} + grep -iE
-        (PASSWORD|SECRET|KEY|TOKEN|API). docker inspect 는 인증 없이 누구나 접근 가능(docker group) - 환경변수로 secret
-        저장 시 노출. 올바른 방법: Docker Secrets(swarm), Docker BuildKit --secret(빌드 시), HashiCorp Vault / AWS
-        Secrets Manager / K8s Secrets(암호화 저장), 파일 마운트(--mount type=bind). Twelve-Factor App config 원칙이지만
-        secret 은 별도 관리. MITRE T1552.001'
+      intent: '환경변수 민감 정보 노출 스캔 — docker inspect --format={{range .Config.Env}}{{.}}{{end}}
+        + grep -iE (PASSWORD|SECRET|KEY|TOKEN|API). docker inspect 는 인증 없이 누구나 접근
+        가능(docker group) - 환경변수로 secret 저장 시 노출. 올바른 방법: Docker Secrets(swarm), Docker
+        BuildKit --secret(빌드 시), HashiCorp Vault / AWS Secrets Manager / K8s Secrets(암호화
+        저장), 파일 마운트(--mount type=bind). Twelve-Factor App config 원칙이지만 secret 은 별도
+        관리. MITRE T1552.001'
       success_criteria:
       - docker inspect Env 조회 + grep 패턴
       - 환경변수 문자열 출력
@@ -210,9 +227,9 @@ steps:
       - grep pattern 부족(PASS 만)
       - Secret Manager 대안 언급 없음
   target_vm: web
-  script: docker ps -q | head -5 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range .Config.Env}}  {{.}}\n{{end}}"
-    {} 2>/dev/null | grep -iE "(PASSWORD|SECRET|KEY|TOKEN|API)" && echo "민감 환경변수 발견!" || echo "민감 환경변수
-    미발견"
+  script: docker ps -q | head -5 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range
+    .Config.Env}}  {{.}}\n{{end}}" {} 2>/dev/null | grep -iE "(PASSWORD|SECRET|KEY|TOKEN|API)"
+    && echo "민감 환경변수 발견!" || echo "민감 환경변수 미발견"
   risk_level: low
   bastion_prompt: 컨테이너의 환경 변수에 민감 정보(비밀번호, API 키)가 노출되는지 점검해줘
 - order: 6
@@ -222,19 +239,20 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Docker의 Authorization Plugin 설정을 확인해줘
 
-    📎 참고 (CLI): docker info --format "Plugins: {{.Plugins}}" 2>/dev/null && echo "--- Authorization ---"
-    && docker info 2>/dev/null | grep -A2 "Authorization"'''
-  answer_detail: Docker Authorization Plugin(OPA, Casbin 등)은 IAM 정책 엔진처럼 API 요청별 접근 제어를 제공합니다. 예를 들어 특정
-    사용자만 특정 이미지를 실행하거나, --privileged를 사용하지 못하게 할 수 있습니다.
+    📎 참고 (CLI): docker info --format "Plugins: {{.Plugins}}" 2>/dev/null && echo "---
+    Authorization ---" && docker info 2>/dev/null | grep -A2 "Authorization"'''
+  answer_detail: Docker Authorization Plugin(OPA, Casbin 등)은 IAM 정책 엔진처럼 API 요청별 접근
+    제어를 제공합니다. 예를 들어 특정 사용자만 특정 이미지를 실행하거나, --privileged를 사용하지 못하게 할 수 있습니다.
   verify:
     type: output_contains
     expect: Plugins
     field: stdout
     semantic:
-      intent: 'Authorization Plugin 설정 확인 — docker info --format Plugins: {{.Plugins}} + grep Authorization.
-        Docker AuthZ plugin API 로 fine-grained 접근 제어 - 특정 user 만 특정 image 실행, --privileged 차단, --mount
-        화이트리스트. 대표 plugin: open-policy-agent/opa-docker-authz, twistlock-authz, casbin. daemon.json: authorization-plugins:
-        [opa]. 미사용 시 docker group = all-or-nothing root. Kubernetes RBAC/OPA Gatekeeper 와 대응'
+      intent: 'Authorization Plugin 설정 확인 — docker info --format Plugins: {{.Plugins}}
+        + grep Authorization. Docker AuthZ plugin API 로 fine-grained 접근 제어 - 특정 user
+        만 특정 image 실행, --privileged 차단, --mount 화이트리스트. 대표 plugin: open-policy-agent/opa-docker-authz,
+        twistlock-authz, casbin. daemon.json: authorization-plugins: [opa]. 미사용 시
+        docker group = all-or-nothing root. Kubernetes RBAC/OPA Gatekeeper 와 대응'
       success_criteria:
       - docker info Plugins 조회
       - Plugins 키워드 출력
@@ -250,8 +268,8 @@ steps:
       - fine-grained access control 대안 없음
       - K8s RBAC 연관성 없음
   target_vm: web
-  script: 'docker info --format "Plugins: {{.Plugins}}" 2>/dev/null && echo "--- Authorization ---" &&
-    docker info 2>/dev/null | grep -A2 "Authorization"'''
+  script: 'docker info --format "Plugins: {{.Plugins}}" 2>/dev/null && echo "--- Authorization
+    ---" && docker info 2>/dev/null | grep -A2 "Authorization"'''
   risk_level: low
   bastion_prompt: Docker의 Authorization Plugin 설정을 확인해줘
 - order: 7
@@ -261,20 +279,25 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 호스트 시스템의 sudo 설정을 점검하시오. Docker 접근과 sudo 권한의 관계를 분석해줘
 
-    📎 참고 (CLI): echo "=== sudo/docker 권한 분석 ==="; echo "[sudo 그룹]" && getent group sudo; echo "[docker
-    그룹]" && getent group docker; echo "[sudoers]" && sudo grep -v "^#\|^$\|^Defaults" /etc/sudoers 2>/dev/null
-    | head -5'
-  answer_detail: sudo와 docker 그룹 모두 root 동등 권한을 제공합니다. IAM에서는 이러한 권한을 가진 사용자를 정기적으로 검토(Access Review)해야
-    합니다. 불필요한 사용자를 제거하고, 가능하면 시간 제한 권한(Just-In-Time Access)을 적용합니다.
+    📎 참고 (CLI): echo "=== sudo/docker 권한 분석 ==="; echo "[sudo 그룹]" && getent group
+    sudo; echo "[docker 그룹]" && getent group docker; echo "[sudoers]" && sudo grep
+    -v "^#\|^$\|^Defaults" /etc/sudoers 2>/dev/null | head -5'
+  answer_detail: sudo와 docker 그룹 모두 root 동등 권한을 제공합니다. IAM에서는 이러한 권한을 가진 사용자를 정기적으로
+    검토(Access Review)해야 합니다. 불필요한 사용자를 제거하고, 가능하면 시간 제한 권한(Just-In-Time Access)을 적용합니다.
   verify:
     type: output_contains
-    expect: sudo/docker 권한 분석
+    expect:
+    - sudo/docker 권한 분석
+    - sudo
+    - docker
+    - getent
     field: stdout
     semantic:
-      intent: 'sudo + docker 그룹 교차 분석 — getent group sudo + getent group docker + sudo grep -v ^# /etc/sudoers.
-        sudo = 간헐적 root(명령마다 인증), docker group = 영구적 root(socket 인증 없음). 동일 사용자가 양쪽 모두면 multiple escalation
-        path. IAM Access Review 관점: (1) sudo 그룹 멤버 최소화 (2) sudoers NOPASSWD 엄격 관리 (3) docker 그룹 멤버 별도
-        승인. JIT(Just-In-Time) Access: CyberArk, Teleport 도입 검토'
+      intent: 'sudo + docker 그룹 교차 분석 — getent group sudo + getent group docker +
+        sudo grep -v ^# /etc/sudoers. sudo = 간헐적 root(명령마다 인증), docker group = 영구적
+        root(socket 인증 없음). 동일 사용자가 양쪽 모두면 multiple escalation path. IAM Access Review
+        관점: (1) sudo 그룹 멤버 최소화 (2) sudoers NOPASSWD 엄격 관리 (3) docker 그룹 멤버 별도 승인.
+        JIT(Just-In-Time) Access: CyberArk, Teleport 도입 검토'
       success_criteria:
       - sudo 그룹 + docker 그룹 + sudoers 3가지 출력
       - sudo/docker 권한 분석 문자열 포함
@@ -290,9 +313,9 @@ steps:
       - 교차 분석 관점 없이 나열
       - Access Review 개념 이해 없음
   target_vm: web
-  script: echo "=== sudo/docker 권한 분석 ==="; echo "[sudo 그룹]" && getent group sudo; echo "[docker 그룹]"
-    && getent group docker; echo "[sudoers]" && sudo grep -v "^#\|^$\|^Defaults" /etc/sudoers 2>/dev/null
-    | head -5
+  script: echo "=== sudo/docker 권한 분석 ==="; echo "[sudo 그룹]" && getent group sudo;
+    echo "[docker 그룹]" && getent group docker; echo "[sudoers]" && sudo grep -v "^#\|^$\|^Defaults"
+    /etc/sudoers 2>/dev/null | head -5
   risk_level: low
   bastion_prompt: 호스트 시스템의 sudo 설정을 점검하시오. Docker 접근과 sudo 권한의 관계를 분석해줘
 - order: 8
@@ -319,30 +342,36 @@ steps:
 
     echo ''[민감 환경변수]''
 
-    docker ps -q | xargs -I{} docker inspect --format="{{range .Config.Env}}{{.}}\n{{end}}" {} 2>/dev/null
-    | grep -icE "(PASS|SECRET|KEY|TOKEN)" 2>/dev/null | xargs -I{} echo "{}건 발견"
+    docker ps -q | xargs -I{} docker inspect --format="{{range .Config.Env}}{{.}}\n{{end}}"
+    {} 2>/dev/null | grep -icE "(PASS|SECRET|KEY|TOKEN)" 2>/dev/null | xargs -I{}
+    echo "{}건 발견"
 
     echo ''[Privileged 컨테이너]''
 
-    docker ps -q | xargs -I{} docker inspect --format="{{.Name}}:{{.HostConfig.Privileged}}" {} 2>/dev/null
-    | grep true || echo ''없음''
+    docker ps -q | xargs -I{} docker inspect --format="{{.Name}}:{{.HostConfig.Privileged}}"
+    {} 2>/dev/null | grep true || echo ''없음''
 
     echo ''=== IAM 점검 완료 ===''
 
     SCRIPT
 
     chmod +x /tmp/iam_check.sh && bash /tmp/iam_check.sh'
-  answer_detail: IAM은 클라우드 보안의 가장 중요한 영역입니다. 잘못된 IAM 설정은 전체 인프라 침해로 이어질 수 있습니다. 핵심 원칙은 최소 권한(Least Privilege),
-    직무 분리(SoD), 정기 검토(Access Review), 임시 권한(JIT)입니다.
+  answer_detail: IAM은 클라우드 보안의 가장 중요한 영역입니다. 잘못된 IAM 설정은 전체 인프라 침해로 이어질 수 있습니다. 핵심
+    원칙은 최소 권한(Least Privilege), 직무 분리(SoD), 정기 검토(Access Review), 임시 권한(JIT)입니다.
   verify:
     type: output_contains
-    expect: IAM 점검 완료
+    expect:
+    - IAM 점검 완료
+    - Docker
+    - User
+    - Privileged
     field: stdout
     semantic:
-      intent: 'IAM 종합 점검 스크립트 — /tmp/iam_check.sh heredoc. 4 지표: Docker 그룹 멤버, 컨테이너 실행 사용자(root 기본/비루트),
-        민감 환경변수 카운트, Privileged 컨테이너. IAM 핵심 원칙 4가지: Least Privilege, Separation of Duties, Access Review,
-        JIT Access. 실무 자동화: cron 주기적 실행 + Wazuh/Splunk 로 결과 집계 + Slack alert. AWS IAM Access Analyzer,
-        GCP IAM Recommender 같은 클라우드 도구 병행'
+      intent: 'IAM 종합 점검 스크립트 — /tmp/iam_check.sh heredoc. 4 지표: Docker 그룹 멤버, 컨테이너
+        실행 사용자(root 기본/비루트), 민감 환경변수 카운트, Privileged 컨테이너. IAM 핵심 원칙 4가지: Least Privilege,
+        Separation of Duties, Access Review, JIT Access. 실무 자동화: cron 주기적 실행 + Wazuh/Splunk
+        로 결과 집계 + Slack alert. AWS IAM Access Analyzer, GCP IAM Recommender 같은 클라우드
+        도구 병행'
       success_criteria:
       - /tmp/iam_check.sh 생성
       - bash 실행
@@ -375,13 +404,14 @@ steps:
 
     echo ''[민감 환경변수]''
 
-    docker ps -q | xargs -I{} docker inspect --format="{{range .Config.Env}}{{.}}\n{{end}}" {} 2>/dev/null
-    | grep -icE "(PASS|SECRET|KEY|TOKEN)" 2>/dev/null | xargs -I{} echo "{}건 발견"
+    docker ps -q | xargs -I{} docker inspect --format="{{range .Config.Env}}{{.}}\n{{end}}"
+    {} 2>/dev/null | grep -icE "(PASS|SECRET|KEY|TOKEN)" 2>/dev/null | xargs -I{}
+    echo "{}건 발견"
 
     echo ''[Privileged 컨테이너]''
 
-    docker ps -q | xargs -I{} docker inspect --format="{{.Name}}:{{.HostConfig.Privileged}}" {} 2>/dev/null
-    | grep true || echo ''없음''
+    docker ps -q | xargs -I{} docker inspect --format="{{.Name}}:{{.HostConfig.Privileged}}"
+    {} 2>/dev/null | grep true || echo ''없음''
 
     echo ''=== IAM 점검 완료 ===''
 
@@ -423,5 +453,6 @@ steps:
     4) Docker 소켓을 마운트한 컨테이너가 호스트를 완전히 제어할 수 있음을 확인해줘
 
     5) 컨테이너의 환경 변수에 민감 정보(비밀번호, API 키)가 노출되는지 점검해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
   script: ''
