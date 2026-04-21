@@ -35,20 +35,22 @@ steps:
     expect: Monitoring ready
     field: stdout
     semantic:
-      intent: '[BLUE] 실전 공방전 3 - 탐지·방어 구현'
+      intent: '[BLUE] Round 3 멀티소스 모니터링 시작 — tmux/screen 으로 tail -f /var/log/suricata/fast.log + tail
+        -f auth.log + tail -f apache2/access.log + Wazuh alerts.json 동시 감시. 다중 벡터 공격 탐지를 위한 ALL-SEEING
+        대시보드. 단일 소스 놓침 방지'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - 다중 로그 소스 동시 tail
+      - tmux/screen/split-screen 활용 또는 병행 실행
+      - ALL-SEEING 다중 감시 개념
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - tmux new-session + tail -f 패널
+      - multitail /path1 /path2 /path3
+      - Kibana 대시보드 다중 패널
+      - Grafana Loki 통합 조회
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 단일 소스만 감시
+      - 실시간이 아닌 snapshot
+      - 병행 실행 없음
   target_vm: secu
   script: sudo systemctl status suricata | head -3 && echo '---' && nft list ruleset | grep -c 'rule'
     && echo ' rules active' && echo '--- Monitoring ready ---'
@@ -70,20 +72,21 @@ steps:
     expect: open
     field: stdout
     semantic:
-      intent: '[RED] 실전 공방전 3 - 공격 기법 실행'
+      intent: '[RED] 다중 벡터 1 — nmap 빠른 정찰 + JuiceShop /rest/user/login SQLi 동시 실행 (bash & 백그라운드). 방어측
+        우선순위 분산 유도 + 단일 IP 에서 복합 공격으로 탐지·차단 순서 혼란. Round 3 테마: 동시 다중 벡터'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - nmap + curl SQLi 병렬 실행 (&)
+      - JuiceShop + web 스캔 동시
+      - 동시성/병행 공격 개념
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - command1 & command2 & wait
+      - GNU parallel
+      - tmux 다중 패널
+      - python asyncio 병렬
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 순차 실행 (동시 아님)
+      - 단일 벡터만
+      - 방어측 부하 유도 의도 없음
   target_vm: attacker
   script: 'nmap -sV -p 80,3000,8080 -T4 --max-retries 1 --host-timeout 15s 10.20.30.80 && curl -s -X POST
     http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"'' or
@@ -107,20 +110,20 @@ steps:
     expect: Multi-vector attack complete
     field: stdout
     semantic:
-      intent: '[RED] 실전 공방전 3 - 공격 기법 실행'
+      intent: '[RED] 다중 벡터 2 — DVWA /vulnerabilities/sqli/ + /vulnerabilities/exec/ 에 SQLi + Command Injection
+        연속 공격. SQLi 로 DB 덤프 → Command Injection 으로 쉘 시도. 기본 인증 세션 쿠키 재사용. 복합 공격 체이닝'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - DVWA SQLi + Command Injection 연속 실행
+      - 쿠키(-b /tmp/dvwa_cookies.txt) 세션 재사용
+      - 공격 체이닝 개념 (SQLi → CMD)
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl -b cookie + 두 엔드포인트 연속
+      - bash 스크립트로 파이프라인화
+      - metasploit resource script
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 단일 공격만
+      - 쿠키 재사용 없음 (세션 끊어짐)
+      - 체이닝 의도 없음
   target_vm: attacker
   script: "curl -c /tmp/dvwa_r3.txt \\\n  -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php\
     \ && curl -b /tmp/dvwa_r3.txt \"http://10.20.30.80:8080/vulnerabilities/sqli/?id=%27+OR+%271%27%3D%271&Submit=Submit\"\
@@ -144,20 +147,20 @@ steps:
     expect: Alert classification complete
     field: stdout
     semantic:
-      intent: '[BLUE] 실전 공방전 3 - 탐지·방어 구현'
+      intent: '[BLUE] 다중 벡터 경보 분류 — jq .alert.category eve.json | sort | uniq -c 로 카테고리별 집계 (attempted-recon·web-application-attack·attempted-admin
+        등). Round 3 의 병렬 공격이 여러 카테고리에 분산 트리거 → 동시성 관점 공격자 의도 파악'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - jq .alert.category 또는 classtype 추출
+      - 카테고리별 경보 집계 + 분류
+      - 다중 벡터 특유의 분산 트리거 패턴
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - jq .alert.category + sort uniq -c
+      - Kibana aggregation by alert.category
+      - Wazuh rule groups 분류
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - classtype 구분 없이 총계
+      - 다중 벡터 맥락 없음
+      - 공격자 의도 추론 없음
   target_vm: secu
   script: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .alert.signature' 2>/dev/null
     | sort | uniq -c | sort -rn | head -10 && echo '=== Alert classification complete ==='
@@ -179,20 +182,21 @@ steps:
     expect: IP blocked
     field: stdout
     semantic:
-      intent: '[BLUE] 실전 공방전 3 - 탐지·방어 구현'
+      intent: '[BLUE] 자동 차단 + ModSec 차단 로그 교차 확인 — nft add element @blocklist 자동 차단 (s1 auto_response
+        연동) + tail /var/log/apache2/modsec_audit.log (ModSec 계층의 차단 이력). 네트워크 계층(nftables) + 애플리케이션 계층(ModSec)
+        이중 방어 효과 검증. 계층적 방어 Defense-in-Depth'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - nft add element @blocklist 차단
+      - modsec_audit.log 조회
+      - 네트워크 + 앱 계층 이중 방어 개념
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nft + modsec 교차 확인
+      - iptables + CRS
+      - Cloudflare + WAF 상용
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 한 계층만 활용
+      - 이중 방어 개념 없음
+      - 계층별 효과 분석 없음
   target_vm: secu
   requires_approval: true
   script: sudo nft add element inet filter blocklist { 10.20.30.201 } 2>/dev/null && echo 'IP blocked'
@@ -215,20 +219,22 @@ steps:
     expect: complete
     field: stdout
     semantic:
-      intent: '[RED] 실전 공방전 3 - 공격 기법 실행'
+      intent: '[RED] 다중 벡터 3 SSH 브루트포스 — hydra -L users.txt -P passwords.txt ssh://<web> -t 2 -w 10 -f
+        로 사용자 리스트 + 비밀번호 리스트 조합 시도. 웹 공격 차단된 상황에서 다른 프로토콜로 벡터 확장. nftables SSH rate limit (분당 3회) 우회 위한
+        저속 공격'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - hydra -L + -P + ssh:// 조합
+      - -t 낮은 스레드 + -w 대기로 rate limit 우회
+      - 다른 프로토콜(SSH)로 벡터 확장
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - hydra -L users -P passwords ssh://<target>
+      - ncrack -u users -P passwords ssh:<target>
+      - medusa -U users -P passwords -M ssh
+      - python paramiko slow
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - -p 단일 비밀번호 (브루트포스 아님)
+      - -t 높은 스레드 (rate limit 걸림)
+      - 웹 공격 재시도 (프로토콜 전환 아님)
   target_vm: attacker
   script: hydra -l ccc -P /usr/share/wordlists/metasploit/unix_passwords.txt ssh://10.20.30.80 -t 2 -f
     -w 5 2>&1 | tail -5 || echo 'SSH brute force attempt complete'
@@ -250,20 +256,22 @@ steps:
     expect: complete
     field: stdout
     semantic:
-      intent: '[BLUE] 실전 공방전 3 - 탐지·방어 구현'
+      intent: '[BLUE] Wazuh SIEM 종합 위협 분석 — /var/ossec/logs/alerts/alerts.json 전체 조회 + jq group_by(.rule.groups[])
+        | map({group: .[0].rule.groups[], count: length}) 같은 복합 집계. MITRE ATT&CK 그룹별 이벤트 분포 → 공격자 TTP
+        전체 프로파일 생성. SIEM 기반 위협 헌팅의 정점'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - Wazuh alerts.json 전체 종합 분석
+      - rule.groups 또는 MITRE ATT&CK 기반 분류
+      - 공격자 TTP 프로파일 생성
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - jq group_by + map + aggregation
+      - Wazuh rule.mitre 필드 활용
+      - ELK + ATT&CK Navigator
+      - Kibana threat hunting 대시보드
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 단순 rule.level 집계만
+      - ATT&CK 매핑 없음
+      - TTP 프로파일 없음
   target_vm: siem
   requires_approval: true
   script: sudo nft delete element inet filter blocklist { 10.20.30.201 } 2>/dev/null && echo 'Block removed'
@@ -287,20 +295,22 @@ steps:
     expect: JuiceShop API enumeration complete
     field: stdout
     semantic:
-      intent: '[RED] 실전 공방전 3 - 공격 기법 실행'
+      intent: '[RED] JuiceShop 챌린지 복합 공격 — XSS (<img src=x onerror=alert(1)> reflected·stored) + 권한 우회
+        (/api/Users/1 다른 사용자 접근·/rest/user/change-password bypass) + CSRF 토큰 우회. JuiceShop 공식 챌린지 10+
+        시도. 다양한 OWASP Top 10 커버리지'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - JuiceShop /api 또는 /rest 엔드포인트 공격
+      - XSS + 권한 우회 최소 2개 카테고리
+      - OWASP Top 10 커버리지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl -X PUT /api/Users/1 수정
+      - <img onerror=alert(1)> XSS
+      - CSRF 토큰 없이 POST
+      - juice-shop-ctf CLI 로 챌린지 목록
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - SQLi 재시도 (챌린지 아님)
+      - XSS 또는 권한 우회 중 한 카테고리만
+      - OWASP 맥락 없음
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/api/Products | jq '.[0:3]' 2>/dev/null && echo '\n=== JuiceShop
     API enumeration complete ==='
@@ -322,20 +332,20 @@ steps:
     expect: Services OK
     field: stdout
     semantic:
-      intent: '[BLUE] 실전 공방전 3 - 탐지·방어 구현'
+      intent: '[BLUE] Round 3 서비스 가용성 + FIM 최종 검증 — curl Apache/JuiceShop/DVWA 3종 상태 체크 + bash /tmp/integrity_monitor.sh
+        FIM 실행. Round 3 격렬한 다중 벡터 공격 후에도 가용성 유지 + 주요 설정 파일 무결성 유지 확인. Blue 팀 성공 증거'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - 3개 서비스 curl 가용성 체크
+      - FIM 실행 + ALERT 또는 No changes 결과
+      - Round 3 격렬 공격 후 상태 검증
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl + bash integrity_monitor
+      - service_watchdog.sh 결과 조회
+      - aide --check
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 가용성 또는 FIM 한쪽만
+      - Round 3 맥락 없음
+      - No changes/ALERT 분기 처리 없음
   target_vm: secu
   script: "curl -so /dev/null \\\n  -w 'Apache:%{http_code} ' http://10.20.30.80/ && curl -so /dev/null\
     \ \\\n  -w 'JuiceShop:%{http_code} ' http://10.20.30.80:3000/ && curl -so /dev/null \\\n  -w 'DVWA:%{http_code}'\
@@ -405,20 +415,22 @@ steps:
     expect: /tmp/battle_round3_report.txt
     field: filesystem
     semantic:
-      intent: 실전 공방전 3 공방전 실습 스텝
+      intent: '[공통] Round 3 종합 보고서 /tmp/round3_report.txt — 다중 벡터 공격 분석 (웹+SSH+여러 엔드포인트 동시) + 계층 방어 효과
+        (nftables/Suricata/ModSec/Wazuh 각 계층별 차단·탐지 비율) + 공격자 TTP 전체 맵 + Round 1-2-3 진화 그래프. 공방전 핵심 교훈
+        도출'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 공방전 맥락 언급
+      - /tmp/round3_report.txt 파일 생성
+      - 다중 벡터 + 계층 방어 분석
+      - Round 1-2-3 진화 비교
+      - 공격자 TTP 맵
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file << EOF heredoc
+      - markdown + pandoc
+      - MITRE ATT&CK Navigator JSON
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 단일 라운드만 분석
+      - 계층 방어 개념 없음
+      - TTP 맵 누락
   target_vm: attacker
   script: 'cat > /tmp/battle_round3_report.txt << ''EOF''
 
