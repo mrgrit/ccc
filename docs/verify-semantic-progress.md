@@ -55,9 +55,9 @@ per-step semantic 작성 시 필수 포함 요소:
 | iot-security-ai | 109 | 수동 재작성 **완료 (w1-15)** |
 | physical-pentest-ai | 128 | 수동 재작성 **완료 (w1-15)** |
 | ai-security-ai | 121 | 수동 재작성 **완료 (w1-15)** |
-| **수동 확정 소계** | **2,545** | |
-| ai-safety-adv-ai | 119 | bulk 자동생성 — **재작성 대기 (마지막 과목)** |
-| **bulk (재작성 대기) 소계** | **119** | |
+| ai-safety-adv-ai | 118 | 수동 재작성 **완료 (w1-15)** |
+| **수동 확정 소계** | **2,663** | |
+| **bulk (재작성 대기) 소계** | **0** | |
 
 ### 수동 vs bulk 품질 차이
 
@@ -113,9 +113,9 @@ bulk 는 intent 가 unique 하지만 **깊이가 얕아** judge 가 acceptable_m
 
 ## 남은 작업
 
-재작성 대기: **119 step** (1 과목 — ai-safety-adv-ai).
+재작성 대기: **0 step** — 17 과목 전체 완료 (2026-04-22).
 
-다음 세션 시작 포인트: `ai-safety-adv-ai/week01.yaml`.
+프로젝트 완료 상태. 다음 단계는 수동 재작성 semantic 기반 Bastion 실증 테스트 재실행 + 전체 pass rate 측정.
 
 ## 리스크 및 완화
 
