@@ -43,20 +43,22 @@ steps:
     - Threat Hunting Plan
     - DNS
     semantic:
-      intent: '[BLUE] 위협 헌팅 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 위협 헌팅 가설 수립 /tmp/threat_hypothesis.txt — 가설 문장 (APT C2 DNS 터널링 중) + 데이터 소스 (Suricata
+        dns.log·tcpdump pcap·eve.json·Wazuh alerts) + 헌팅 쿼리 (엔트로피 > 3.5 + 쿼리 길이 > 50 DNS 필터) + 예상 발견 (base64
+        서브도메인·반복 도메인). Hypothesis-driven hunting 기초'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - /tmp/threat_hypothesis.txt 파일
+      - 가설 + 데이터 소스 + 쿼리 + 예상 발견 4요소
+      - Hypothesis-driven hunting 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 구조화된 헌팅 계획
+      - MITRE Threat Hunting Triangle
+      - SANS PEAK hunting framework
+      - TaHiTI 방법론
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 가설 없이 탐색만
+      - 쿼리 없음
+      - 데이터 소스 지정 안 함
   target_vm: secu
   script: "cat > /tmp/hunting_hypothesis.txt << 'EOF'\n=== Threat Hunting Plan ===\nHypothesis: An APT\
     \ actor is using DNS tunneling for C2\n\nData Sources:\n  1. DNS query logs (Suricata eve.json)\n\
@@ -84,20 +86,21 @@ steps:
     type: output_contains
     expect: DNS Hunting
     semantic:
-      intent: '[BLUE] 위협 헌팅 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] DNS 헌팅 실행 — sudo tcpdump -i any -s 0 -w /tmp/dns.pcap port 53 (DNS 쿼리 캡처) + jq select(.event_type==dns)
+        eve.json | jq .dns.query 로 쿼리 목록 추출 + python entropy 계산. 가설 검증: 비정상 DNS 패턴 존재 여부'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - tcpdump + jq DNS 이벤트 추출
+      - 쿼리 문자열 엔트로피 계산
+      - 가설(s1) 검증 연관
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - tcpdump + tshark + jq + python
+      - Zeek dns.log + awk
+      - Splunk SPL + stats
+      - RITA DNS 분석
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - DNS 만 조회 (엔트로피 없음)
+      - 가설 맥락 없음
+      - 캡처 없이 메모리만
   target_vm: secu
   script: echo '=== DNS Hunting Execution ===' && timeout 3 tcpdump -i any port 53 -nn -c 10 2>/dev/null;
     echo '---' && echo 'DNS query analysis from Suricata:' && ssh 10.20.30.1 'cat /var/log/suricata/eve.json
@@ -124,20 +127,22 @@ steps:
     type: output_contains
     expect: Suspicious Base64
     semantic:
-      intent: '[BLUE] 위협 헌팅 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Sigma 규칙 — base64 인코딩 디코딩 + 동적 실행 탐지 YAML. /tmp/sigma_base64_exec.yml 에 detection.selection.CommandLine|contains:
+        [base64, echo|base64, eval, exec, python3 -c] + condition:selection. Sigma 는 크로스 플랫폼 SIEM 룰 (Splunk/Elastic/Chronicle
+        변환 가능)'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - /tmp/sigma_*.yml 파일 생성
+      - Sigma 포맷 (title/detection/condition)
+      - base64 + exec 패턴 탐지
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - Sigma YAML + sigmac 변환
+      - 공식 sigma 저장소 템플릿
+      - Uncoder.io 변환기
+      - Sigma rule Hub
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - Sigma 포맷 아닌 일반 grep
+      - condition 없음
+      - 크로스 플랫폼 개념 없음
   target_vm: secu
   script: "cat > /tmp/sigma_hunting_rule.yaml << 'EOF'\ntitle: Suspicious Base64 Decode Execution\nid:\
     \ hunt-001\nstatus: experimental\ndescription: Detects base64 decode commands indicating C2 payload\
@@ -165,20 +170,22 @@ steps:
     type: output_contains
     expect: Process Tree Hunting
     semantic:
-      intent: '[BLUE] 위협 헌팅 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 프로세스 트리 헌팅 — ps -ef --forest 또는 pstree -p 로 부모-자식 관계 + awk 로 비정상 조합 탐지: apache2/nginx
+        → sh/bash (웹셸), sshd → nc/python3 -c (reverse shell), cron → curl|bash (drive-by). 프로세스 lineage
+        기반 행위 기반 탐지. MITRE T1059 + T1055'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - ps --forest 또는 pstree
+      - 비정상 parent-child 조합 최소 2종
+      - 프로세스 lineage 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - pstree + grep
+      - auditd execve 이벤트
+      - osquery SELECT p.name, p.path FROM processes p
+      - Sysmon on Linux (Sysdig)
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - ps aux 만 (forest 없음)
+      - lineage 개념 없음
+      - 비정상 조합 식별 없음
   target_vm: secu
   script: echo '=== Process Tree Hunting ===' && ps auxf | grep -B2 -A2 -E 'sh$|bash$|python|perl|nc |ncat
     ' | grep -v grep | head -30 && echo '---' && echo 'Suspicious parent-child patterns:' && echo '  -
@@ -204,20 +211,22 @@ steps:
     type: output_contains
     expect: File System Hunting
     semantic:
-      intent: '[BLUE] 위협 헌팅 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 파일 시스템 헌팅 — find / -type f -newer /etc/shadow -executable 2>/dev/null (기준 파일 이후
+        새 실행 파일) + find / -name .* -type f -not -path */.*/* (최상위 숨김 파일) + find / -perm -4000 -newer /etc/shadow
+        (새 SUID) + find /etc -newer /etc/shadow (최근 설정 변경). 4가지 FS 헌팅 기법 통합'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - 4가지 FS 헌팅 (신규 실행·숨김·SUID·설정)
+      - find 기준 파일 (-newer) 활용
+      - 침해 지표 연결
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - find -newer + -perm -4000 조합
+      - AIDE/Tripwire FIM diff
+      - tripwire --check
+      - osquery file_events 테이블
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - find 1가지만
+      - 기준 시점 없음
+      - IoC 연결 없음
   target_vm: secu
   script: echo '=== File System Hunting ===' && echo '[1] New executables (7d):' && find /usr/local/bin
     /opt /home -type f -newer /etc/hostname -executable 2>/dev/null | head -10 && echo '[2] Hidden files
@@ -243,20 +252,22 @@ steps:
     type: output_contains
     expect: Wazuh SIEM Hunting
     semantic:
-      intent: '[BLUE] 위협 헌팅 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Wazuh 중앙 집중 헌팅 — sudo cat /var/ossec/logs/alerts/alerts.json | jq select(.rule.level
+        >= 7) | group_by(.rule.groups[]?) 로 최근 알림을 MITRE 그룹별 분류 + MITRE ATT&CK TTP 매핑. 분산된 모든 agent 로그를
+        Wazuh 매니저에서 통합 분석. SIEM 기반 헌팅의 핵심'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - Wazuh alerts.json 중앙 조회
+      - level >= 7 필터 + rule.groups 매핑
+      - 중앙 집중 분석 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - jq + Wazuh query API
+      - Kibana dashboard
+      - Elastic SIEM Timeline
+      - Splunk search
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 개별 agent 로그만
+      - MITRE 매핑 없음
+      - 중앙 집중 개념 없음
   target_vm: siem
   script: echo '=== Wazuh SIEM Hunting ===' && ssh 10.20.30.100 'cat /var/ossec/logs/alerts/alerts.json
     2>/dev/null | tail -20 | python3 -c "import sys,json; [print(json.loads(l).get(\"rule\",{}).get(\"description\",\"\"),
@@ -284,20 +295,22 @@ steps:
     type: output_contains
     expect: ATT&CK Hunting Matrix
     semantic:
-      intent: '[BLUE] 위협 헌팅 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] MITRE ATT&CK 헌팅 매트릭스 /tmp/attack_hunting_matrix.txt — 환경 위험도 Top 5 기법: T1059 Command
+        Interpreter · T1071.004 DNS C2 · T1053.003 Cron Persistence · T1078 Valid Accounts · T1041 Exfiltration.
+        각 기법별 헌팅 쿼리 (jq/grep/find) + 예상 증거 + 대응 절차. 환경 특화 위협 우선순위'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - /tmp/attack_hunting_matrix.txt 파일
+      - Top 5 기법 + 각각의 헌팅 쿼리
+      - 환경 특화 위험도 평가
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - ATT&CK Navigator layer JSON
+      - DeTT&CT coverage
+      - MITRE ATT&CK Evaluations
+      - custom hunting playbook
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - Top 5 미만
+      - 쿼리 없이 기법 나열만
+      - 환경 특화 없음
   target_vm: secu
   script: "cat > /tmp/attack_hunting_matrix.txt << 'EOF'\n=== MITRE ATT&CK Hunting Matrix ===\n\n1. T1190\
     \ - Exploit Public-Facing Application\n   Query: grep -E 'UNION|SELECT.*FROM|<script>' /var/log/nginx/access.log\n\
@@ -329,20 +342,22 @@ steps:
     type: output_contains
     expect: Threat Hunting Report
     semantic:
-      intent: '[RED/BLUE] 위협 헌팅 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] 헌팅 보고서 + 성숙도 평가 /tmp/hunting_report.txt — 실행한 헌팅 기법 요약 + 발견 (TP/FP 분류) + 성숙도
+        평가 (HMM Hunting Maturity Model 5단계: Initial/Minimal/Procedural/Innovative/Leading) 현재 단계 자가 평가
+        + 다음 단계 향상 계획. 환경 정리 (tcpdump 종료·임시 파일 rm)'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - /tmp/hunting_report.txt 보고서
+      - HMM 5단계 평가
+      - 현재 단계 + 향상 계획
+      - 정리 수행
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - HMM 프레임워크 (Sqrrl)
+      - SANS hunting maturity
+      - custom 성숙도 지표
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - HMM 개념 없음
+      - 성숙도 평가 없이 서술만
+      - 정리 누락
   target_vm: attacker
   script: "rm -f /tmp/hunting_hypothesis.txt /tmp/sigma_hunting_rule.yaml /tmp/attack_hunting_matrix.txt\
     \ 2>/dev/null && cat > /tmp/hunting_report.txt << 'EOF'\n=== Threat Hunting Report ===\nHunt ID: HUNT-20260406-001\
