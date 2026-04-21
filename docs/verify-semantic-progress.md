@@ -50,14 +50,14 @@ per-step semantic 작성 시 필수 포함 요소:
 | soc-ai | 145 | 수동 재작성 |
 | soc-adv-ai | 210 | 수동 재작성 **완료 (w1-15)** |
 | secops-ai | 150 | 수동 재작성 **완료 (w1-15)** |
-| cloud-container-ai | 116 | 수동 재작성 **진행 중 (w1-5 완료 42, w6-15 대기)** |
-| **수동 확정 소계** | **2,005** | |
+| cloud-container-ai | 116 | 수동 재작성 **완료 (w1-15)** |
+| **수동 확정 소계** | **2,079** | |
 | ai-safety-adv-ai | 119 | bulk 자동생성 — **재작성 대기** |
 | compliance-ai | 130 | bulk 자동생성 — **재작성 대기** |
 | physical-pentest-ai | 128 | bulk 자동생성 — **재작성 대기** |
 | iot-security-ai | 109 | bulk 자동생성 — **재작성 대기** |
 | ai-security-ai | 132 | bulk 자동생성 — **재작성 대기** |
-| **bulk (재작성 대기) 소계** | **618 + cloud 99** | |
+| **bulk (재작성 대기) 소계** | **618** | |
 
 ### 수동 vs bulk 품질 차이
 
@@ -113,16 +113,15 @@ bulk 는 intent 가 unique 하지만 **깊이가 얕아** judge 가 acceptable_m
 
 ## 남은 작업
 
-재작성 대기: **약 692 step** (cloud 74 + 다른 5 과목 618).
+재작성 대기: **약 618 step** (5 과목).
 
 권장 순서 (가치/의존도 기준):
 
-1. **cloud-container-ai w6-15** (~74) — 이미 시작한 과목 마무리
-2. **compliance-ai** (130) — 기업 환경 필수
-3. **iot-security-ai** (109) / **physical-pentest-ai** (128) — 특화 도메인
-4. **ai-security-ai** (132) / **ai-safety-adv-ai** (119) — AI 보안 심화 (기존 bulk 재작성)
+1. **compliance-ai** (130) — 기업 환경 필수
+2. **iot-security-ai** (109) / **physical-pentest-ai** (128) — 특화 도메인
+3. **ai-security-ai** (132) / **ai-safety-adv-ai** (119) — AI 보안 심화 (기존 bulk 재작성)
 
-다음 세션 시작 포인트: `cloud-container-ai/week06.yaml`.
+다음 세션 시작 포인트: `compliance-ai/week01.yaml`.
 
 ## 리스크 및 완화
 
