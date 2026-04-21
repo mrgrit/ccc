@@ -35,20 +35,23 @@ steps:
     expect: All services checked
     field: stdout
     semantic:
-      intent: '[BLUE] 공방전 준비 - 탐지·방어 구현'
+      intent: '[BLUE] 공방전 전 서비스 가용성 검증 — curl -w Apache:%{http_code} 포트 80 + JuiceShop:%{http_code} 포트
+        3000 + DVWA:%{http_code} 포트 8080 3개 서비스 순차 HEAD 체크. 공방전 시작 전 baseline 확인 → 200/302 응답 = 정상, 기타
+        = 서비스 장애. All services checked 메시지'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - curl -w 로 HTTP 상태코드 포맷팅 출력
+      - Apache/JuiceShop/DVWA 3개 서비스 모두 검증
+      - All services checked 메시지
+      - HTTP 200/302 정상 응답 개념
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl -so /dev/null -w %{http_code}
+      - curl -I HEAD 요청
+      - wget --spider
+      - nc -zv <IP> <port>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 1-2개 서비스만 검증
+      - 상태코드 확인 없이 curl -s 단순 호출
+      - baseline 목적 설명 없음
   target_vm: secu
   script: "curl -so /dev/null \\\n  -w 'Apache:%{http_code} ' http://10.20.30.80/ && curl -so /dev/null\
     \ \\\n  -w 'JuiceShop:%{http_code} ' http://10.20.30.80:3000/ && curl -so /dev/null \\\n  -w 'DVWA:%{http_code}'\
@@ -74,20 +77,23 @@ steps:
     expect: Firewall deployed
     field: stdout
     semantic:
-      intent: '[BLUE] 공방전 준비 - 탐지·방어 구현'
+      intent: '[BLUE] 통합 방화벽 룰셋 배포 — nft flush + nft -f - heredoc 로 table inet filter (set blocklist +
+        input drop + forward accept + output accept). 화이트리스트(lo/established/dport {22,80,3000,8080}/ICMP
+        rate) + blocklist set 미리 생성 → 공방전 중 즉시 nft add element 로 IP 차단 가능. w6 룰의 확장판 (blocklist 통합)'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - nft flush + nft -f heredoc 블록 적용
+      - set blocklist + ip saddr @blocklist drop 포함
+      - 화이트리스트(lo/established/dport) 복합
+      - Firewall deployed 메시지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nft -f - << EOF table inet filter { ... } EOF
+      - /etc/nftables.conf + systemctl restart
+      - netfilter-persistent save
+      - ansible nftables 모듈
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - set blocklist 없음 (즉시 차단 불가)
+      - 개별 add rule 여러 번 (한번에 EOF 블록 아님)
+      - 화이트리스트 불완전
   target_vm: secu
   requires_approval: true
   script: "sudo nft flush ruleset && sudo nft -f - << 'EOF'\ntable inet filter {\n  set blocklist {\n\
@@ -115,20 +121,23 @@ steps:
     expect: active
     field: stdout
     semantic:
-      intent: '[BLUE] 공방전 준비 - 탐지·방어 구현'
+      intent: '[BLUE] suricata-update ET Open 룰 갱신 — sudo suricata-update 로 emergingthreats.net ET Open
+        룰셋 다운로드 → /var/lib/suricata/rules/suricata.rules 에 저장 → systemctl restart suricata 로 reload →
+        status 로 active 확인. 최신 CVE·TTP 커버 가능한 룰셋 배포. 공방전 전 룰셋 최신화 필수'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - suricata-update 실행
+      - systemctl restart + status 확인
+      - active 키워드 출력
+      - ET Open 룰셋 개념 인지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - suricata-update + systemctl restart
+      - suricatasc -c reload-rules (무중단)
+      - pulledpork 룰 관리 (대체)
+      - Proofpoint ETOpen 직접 다운로드
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - -update 없이 재시작만
+      - 재시작 후 active 확인 누락
+      - ET Open/룰셋 개념 언급 없음
   target_vm: secu
   script: sudo suricata-update 2>&1 | tail -5 && sudo systemctl restart suricata && sudo systemctl status
     suricata | head -5
@@ -149,20 +158,23 @@ steps:
     expect: 'nmap:'
     field: stdout
     semantic:
-      intent: '[RED] 공방전 준비 - 공격 기법 실행'
+      intent: '[RED] 공격 도구 인벤토리 — for tool in nmap sqlmap hydra nikto gobuster dirb john hashcat searchsploit
+        curl; do which $tool; done. 10개 공격 도구(네트워크·SQLi·브루트포스·웹 스캐너·디렉토리·해시·exploit·HTTP) 설치 여부 일괄 확인.
+        NOT FOUND 출력되면 apt install 로 보완'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - for 루프로 도구 리스트 순회
+      - which 명령으로 설치 확인
+      - 'nmap: 키워드 포함 출력'
+      - 10개 도구 모두 점검
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - for tool in ...; do which $tool; done
+      - dpkg -l | grep -E (nmap|sqlmap|...)
+      - apt list --installed | grep ...
+      - command -v <tool>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 도구 5개 이하만 점검
+      - NOT FOUND 처리 누락 (스크립트 실패)
+      - 인벤토리 결과 저장 없음
   target_vm: attacker
   script: 'for tool in nmap sqlmap hydra nikto gobuster dirb john hashcat searchsploit curl; do echo -n
     "$tool: "; which $tool 2>/dev/null || echo ''NOT FOUND''; done'
@@ -183,20 +195,22 @@ steps:
     expect: open
     field: stdout
     semantic:
-      intent: '[RED] 공방전 준비 - 공격 기법 실행'
+      intent: '[RED] 공방전 사전 정찰 — nmap -sV -T4 --top-ports 100 -oN /tmp/battle_recon.txt 10.20.30.80 로
+        웹 서버의 상위 100 포트 버전 탐지 + 파일 저장. tail -20 으로 결과 확인. 공방전 시작 시 빠른 정찰로 공격 표면 파악, 결과를 파일로 저장해 후속 단계(Playbook
+        작성)에서 참조'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - nmap -sV --top-ports 100 -oN /tmp/battle_recon.txt
+      - open 키워드 출력
+      - 결과 파일 저장 + tail 로 확인
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nmap -sV --top-ports 100 -oN <file>
+      - nmap -oA <basename> (multi-format)
+      - masscan --top-ports 100
+      - rustscan -a <target>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 파일 저장 없음 (stdout 만)
+      - 서비스 탐지(-sV) 생략
+      - 결과 tail/cat 확인 누락
   target_vm: attacker
   script: nmap -sV -T4 --top-ports 100 --max-retries 1 --host-timeout 15s 10.20.30.80 -oN /tmp/battle_recon.txt
     && tail -20 /tmp/battle_recon.txt
@@ -253,20 +267,23 @@ steps:
     expect: Red Phase Attack Playbook
     field: stdout
     semantic:
-      intent: '[RED] 공방전 준비 - 공격 기법 실행'
+      intent: '[RED] 공격 Playbook /tmp/attack_playbook.txt — Phase 1 Quick Wins (0-15m: JuiceShop SQLi·DVWA
+        기본 자격·버전 탐지) + Phase 2 Web Exploitation (15-40m: DVWA SQLi·XSS·Command Injection) + Phase 3 System
+        Access (40-60m: SSH 브루트·권한 상승·지속성). 시간 제한 내 최대 효과 = Quick Win 먼저, 복잡 공격 나중. 구조화된 전략 문서'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - /tmp/attack_playbook.txt 파일 생성
+      - Phase 1/2/3 시간대별 구분 (0-15m, 15-40m, 40-60m)
+      - Red Phase Attack Playbook 키워드
+      - Target + Defense 명시
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file << EOF heredoc
+      - MITRE ATT&CK Navigator 매핑
+      - Atomic Red Team 테스트 계획
+      - Cobalt Strike / Sliver 자동화
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - Phase 구분 없이 평면 목록
+      - 시간 배분 없음
+      - defense 고려 없이 공격만
   target_vm: attacker
   script: 'cat > /tmp/attack_playbook.txt << ''EOF''
 
@@ -365,20 +382,23 @@ steps:
     expect: Blue Phase Defense Playbook
     field: stdout
     semantic:
-      intent: '[BLUE] 공방전 준비 - 탐지·방어 구현'
+      intent: '[BLUE] 방어 Playbook /tmp/defense_playbook.txt — Phase 1 Pre-game Hardening (방화벽 배포·Suricata
+        룰·ModSec·서비스 검증) + Phase 2 Ongoing Monitoring (fast.log·auth·access·Wazuh dashboard) + Phase 3
+        On Detection Response (blocklist·프로세스 kill·파일 복원·문서화). 탐지-대응 MTTR 최소화가 목표. 공격 Playbook 과 대칭 구조'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - /tmp/defense_playbook.txt 파일 생성
+      - Pre-game/Monitoring/Response 3단계
+      - Blue Phase Defense Playbook 키워드
+      - nftables·Suricata·Wazuh·ModSec 방어 레이어 언급
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file << EOF heredoc
+      - SOAR 플레이북 (Shuffle/TheHive)
+      - NIST SP 800-61 IR 단계 매핑
+      - MITRE D3FEND 방어 기법 매핑
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 3단계 구분 없음
+      - Red Playbook 대비 대칭성 없음
+      - MTTR 개념 언급 없음
   target_vm: secu
   script: 'cat > /tmp/defense_playbook.txt << ''EOF''
 
@@ -443,20 +463,23 @@ steps:
     expect: Watchdog script created
     field: stdout
     semantic:
-      intent: '[BLUE] 공방전 준비 - 탐지·방어 구현'
+      intent: '[BLUE] 서비스 watchdog 스크립트 — /tmp/service_watchdog.sh 에 while true 무한 루프 + curl -w %{http_code}
+        로 3개 서비스 체크 + HTTP 200/302 아니면 DOWN 기록 /tmp/watchdog.log + sleep 30 주기. chmod +x 로 실행 권한. 공방전
+        중 서비스 가용성 실시간 모니터링, 다운타임 증거 확보'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - /tmp/service_watchdog.sh 스크립트 파일 생성
+      - while true 루프 + 3개 서비스 체크 + sleep 30
+      - HTTP 200/302 이상 상태 로깅
+      - Watchdog script created 메시지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file << SCRIPT heredoc + chmod +x
+      - systemd service unit 으로 daemonize
+      - Prometheus blackbox_exporter
+      - Uptime Kuma / Zabbix (상용)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 스크립트 파일 미생성
+      - 무한 루프 아닌 단일 체크
+      - 로그 파일 기록 없음
   target_vm: secu
   script: "cat > /tmp/service_watchdog.sh << 'SCRIPT'\n#!/bin/bash\nwhile true; do\n  for url in http://10.20.30.80/\
     \ http://10.20.30.80:3000/ http://10.20.30.80:8080/; do\n    code=$(curl -so /dev/null -w '%{http_code}'\
@@ -483,20 +506,25 @@ steps:
     expect: Baseline created
     field: stdout
     semantic:
-      intent: '[BLUE] 공방전 준비 - 탐지·방어 구현'
+      intent: '[BLUE] FIM (파일 무결성 모니터링) 스크립트 — /tmp/integrity_monitor.sh 에 FILES=/etc/passwd /etc/shadow
+        /etc/crontab /etc/ssh/sshd_config 변수 + 최초 실행 시 md5sum > baseline.txt (Baseline created) + 이후 실행
+        시 current vs baseline diff → 일치 No changes, 불일치 ALERT. 공격자의 설정 변경 즉시 탐지'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - /tmp/integrity_monitor.sh 스크립트 파일 생성
+      - md5sum 로 4개 주요 설정 파일 해시
+      - baseline vs current diff 로직
+      - Baseline created 메시지
+      - 첫 실행 vs 후속 실행 분기
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - md5sum + diff 로 수동 FIM
+      - AIDE --init / --check
+      - Tripwire policy
+      - Wazuh syscheck 모듈 활성화
+      - auditd -w <file> -p wa
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - baseline 저장 없이 현재 해시만
+      - diff 비교 로직 없음
+      - FIM 개념 인지 없음
   target_vm: web
   script: "cat > /tmp/integrity_monitor.sh << 'SCRIPT'\n#!/bin/bash\nFILES=\"/etc/passwd /etc/shadow /etc/crontab\
     \ /etc/ssh/sshd_config\"\nBASELINE=/tmp/integrity_baseline.txt\nif [ ! -f $BASELINE ]; then\n  for\
@@ -568,20 +596,23 @@ steps:
     expect: READY FOR BATTLE
     field: stdout
     semantic:
-      intent: 공방전 준비 공방전 실습 스텝
+      intent: '[공통] 공방전 준비 체크리스트 /tmp/battle_readiness.txt — RED PHASE(Recon saved·Playbook·Tools·Target)
+        + BLUE PHASE(Firewall·Suricata·Wazuh·ModSec·Watchdog·FIM·Playbook) + INFRASTRUCTURE(4개 VM 역할·IP)
+        + STATUS: READY FOR BATTLE 선언. 공방전 시작 전 최종 점검. Red/Blue 양측 + 인프라 통합 점검'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 공방전 맥락 언급
+      - /tmp/battle_readiness.txt 파일 생성
+      - '[RED PHASE] + [BLUE PHASE] + [INFRASTRUCTURE] 섹션'
+      - '[x] 체크박스로 항목별 준비 완료'
+      - READY FOR BATTLE 최종 선언
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file << EOF heredoc
+      - Ansible playbook check mode
+      - ansible-inventory --list 로 호스트 검증
+      - terraform plan (IaC 준비)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - Red 또는 Blue 한쪽만 체크
+      - READY 선언 없음
+      - 인프라 VM 역할 명시 없음
   target_vm: attacker
   script: 'cat > /tmp/battle_readiness.txt << ''EOF''
 
