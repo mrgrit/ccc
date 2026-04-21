@@ -17,14 +17,30 @@ steps:
   hint: 6단계 IR 중 공격 단계. target_vm=bastion.
   category: attack
   points: 9
-  answer: "\U0001F916 프롬프트: pull_request_target 예시\n\U0001F4CE 참고 (CLI): mkdir -p ~/w14 && cat > ~/w14/bad-workflow.yml <<'Y'\non: pull_request_target\njobs:\n  test:\n    steps:\n      - uses: actions/checkout@v4\n        with: {ref: ${{ github.event.pull_request.head.sha }}}  # external code\n      - run: npm test\n        env: {API_KEY: ${{ secrets.PROD_API_KEY }}}  # LEAK\nY\ncat ~/w14/bad-workflow.yml"
+  answer: "\U0001F916 프롬프트: pull_request_target 예시\n\U0001F4CE 참고 (CLI): mkdir -p ~/w14 && cat > ~/w14/bad-workflow.yml\
+    \ <<'Y'\non: pull_request_target\njobs:\n  test:\n    steps:\n      - uses: actions/checkout@v4\n\
+    \        with: {ref: ${{ github.event.pull_request.head.sha }}}  # external code\n      - run: npm\
+    \ test\n        env: {API_KEY: ${{ secrets.PROD_API_KEY }}}  # LEAK\nY\ncat ~/w14/bad-workflow.yml"
   answer_detail: '[공격] 외부 PR에 시크릿 노출.'
   verify:
     type: output_contains
     expect: pull_request_target
     field: stdout
+    semantic:
+      intent: 'pull_request_target 예시 — GitHub Actions workflow 에 on: pull_request_target 은 fork PR 에서도
+        secrets 접근 가능. 악의적 fork PR이 secrets 유출. 2021+ 유명 취약점'
+      success_criteria:
+      - pull_request_target 위험 설명
+      - secrets 접근
+      acceptable_methods:
+      - cat > yml + workflow 예
+      negative_signs:
+      - pull_request (안전 버전) 사용
   target_vm: bastion
-  script: "mkdir -p ~/w14 && cat > ~/w14/bad-workflow.yml <<'Y'\non: pull_request_target\njobs:\n  test:\n    steps:\n      - uses: actions/checkout@v4\n        with: {ref: ${{ github.event.pull_request.head.sha }}}  # external code\n      - run: npm test\n        env: {API_KEY: ${{ secrets.PROD_API_KEY }}}  # LEAK\nY\ncat ~/w14/bad-workflow.yml"
+  script: "mkdir -p ~/w14 && cat > ~/w14/bad-workflow.yml <<'Y'\non: pull_request_target\njobs:\n  test:\n\
+    \    steps:\n      - uses: actions/checkout@v4\n        with: {ref: ${{ github.event.pull_request.head.sha\
+    \ }}}  # external code\n      - run: npm test\n        env: {API_KEY: ${{ secrets.PROD_API_KEY }}}\
+    \  # LEAK\nY\ncat ~/w14/bad-workflow.yml"
   risk_level: low
   bastion_prompt: pull_request_target 예시
 - order: 2
@@ -50,6 +66,16 @@ steps:
     type: output_contains
     expect: SHA
     field: stdout
+    semantic:
+      intent: 'Action 태그 이동 공격 — uses: org/action@v1 에서 태그 v1 이 malicious commit 으로 재이동 (mutable tag).
+        SHA pin 하지 않으면 supply chain 취약. tj-actions/changed-files 2025 사건'
+      success_criteria:
+      - mutable tag 개념
+      - SHA pin 필요
+      acceptable_methods:
+      - cat > md + tj-actions 사례
+      negative_signs:
+      - tag 이동 개념 없음
   target_vm: bastion
   script: 'cat > ~/w14/tag-attack.md <<''M''
 
@@ -69,14 +95,27 @@ steps:
   hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
   category: analysis
   points: 11
-  answer: "\U0001F916 프롬프트: 워크플로 감사 스크립트\n\U0001F4CE 참고 (CLI): cat > ~/w14/audit.sh <<'S'\n#!/bin/bash\nfor f in .github/workflows/*.yml 2>/dev/null; do\n  grep -l pull_request_target $f && echo check_needed: $f\ndone\nS\ncat ~/w14/audit.sh"
+  answer: "\U0001F916 프롬프트: 워크플로 감사 스크립트\n\U0001F4CE 참고 (CLI): cat > ~/w14/audit.sh <<'S'\n#!/bin/bash\n\
+    for f in .github/workflows/*.yml 2>/dev/null; do\n  grep -l pull_request_target $f && echo check_needed:\
+    \ $f\ndone\nS\ncat ~/w14/audit.sh"
   answer_detail: '[탐지] 조직 repo 스캔.'
   verify:
     type: output_contains
     expect: pull_request_target
     field: stdout
+    semantic:
+      intent: '워크플로 감사 스크립트 — find .github/workflows -name *.yml + grep -l pull_request_target + grep
+        uses: .* without @sha. 조직 전체 repo 검사'
+      success_criteria:
+      - find + grep
+      - pull_request_target + unpinned actions
+      acceptable_methods:
+      - shell script + GitHub API
+      negative_signs:
+      - 감사 없음
   target_vm: bastion
-  script: "cat > ~/w14/audit.sh <<'S'\n#!/bin/bash\nfor f in .github/workflows/*.yml 2>/dev/null; do\n  grep -l pull_request_target $f && echo check_needed: $f\ndone\nS\ncat ~/w14/audit.sh"
+  script: "cat > ~/w14/audit.sh <<'S'\n#!/bin/bash\nfor f in .github/workflows/*.yml 2>/dev/null; do\n\
+    \  grep -l pull_request_target $f && echo check_needed: $f\ndone\nS\ncat ~/w14/audit.sh"
   risk_level: low
   bastion_prompt: 워크플로 감사 스크립트
 - order: 4
@@ -98,8 +137,21 @@ steps:
   answer_detail: '[탐지] 비고정 Action.'
   verify:
     type: output_contains
-    expect: non
+    expect:
+    - non
+    - SHA
     field: stdout
+    semantic:
+      intent: 'Action SHA pin 체크 — python regex uses: [^@]+@([a-f0-9]{40}) 매칭 검사. SHA (40 char) 아닌 tag/branch
+        는 mutable 위험. 자동화 체크'
+      success_criteria:
+      - regex SHA 매칭
+      - 40자 해시 검증
+      acceptable_methods:
+      - python re
+      - dependabot
+      negative_signs:
+      - SHA 검증 없음
   target_vm: bastion
   script: 'cat > ~/w14/pin-check.sh <<''S''
 
@@ -137,6 +189,16 @@ steps:
     type: output_contains
     expect: egress
     field: stdout
+    semantic:
+      intent: '빌드 로그 복기 — 최근 빌드 로그에서 의심 활동: exfil to external URL + base64 decode + env dump. gh run view
+        <id> --log. CI 환경 감사'
+      success_criteria:
+      - gh run view 로그
+      - 의심 활동 패턴
+      acceptable_methods:
+      - gh CLI + grep
+      negative_signs:
+      - 로그 조회 없음
   target_vm: bastion
   script: 'cat > ~/w14/build-log.md <<''M''
 
@@ -174,8 +236,19 @@ steps:
   answer_detail: '[분석] 영향 지도.'
   verify:
     type: output_contains
-    expect: 아티팩트
+    expect:
+    - 아티팩트
+    - 매핑
     field: stdout
+    semantic:
+      intent: 영향 서비스 매핑 — 오염된 CI 로 빌드된 artifact 목록 + 배포 환경 (prod/staging/dev) + 사용 서비스. blast radius 정량
+      success_criteria:
+      - 영향 artifact 목록
+      - 배포 환경 매핑
+      acceptable_methods:
+      - CI 파이프라인 추적
+      negative_signs:
+      - 영향 범위 추정 없음
   target_vm: bastion
   script: 'cat > ~/w14/impact.md <<''M''
 
@@ -217,6 +290,16 @@ steps:
     type: output_contains
     expect: cancel
     field: stdout
+    semantic:
+      intent: 빌드 취소 + Runner 격리 — gh run cancel --all + Runner labels 변경 + self-hosted runner 네트워크 분리.
+        추가 오염 차단
+      success_criteria:
+      - gh run cancel
+      - Runner 격리
+      acceptable_methods:
+      - gh CLI + networking
+      negative_signs:
+      - 격리 없음
   target_vm: bastion
   script: 'cat > ~/w14/contain.sh <<''S''
 
@@ -240,14 +323,29 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 16
-  answer: "\U0001F916 프롬프트: Agent Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w14/agent.yaml <<'Y'\nplaybook_id: pb-cicd-abuse\nsteps:\n  - skill: cancel_build\n  - skill: taint_runner\n  - skill: rotate_exposed_secrets\n  - skill: verify_artifact_signatures\nY\ncat ~/w14/agent.yaml"
+  answer: "\U0001F916 프롬프트: Agent Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w14/agent.yaml <<'Y'\nplaybook_id:\
+    \ pb-cicd-abuse\nsteps:\n  - skill: cancel_build\n  - skill: taint_runner\n  - skill: rotate_exposed_secrets\n\
+    \  - skill: verify_artifact_signatures\nY\ncat ~/w14/agent.yaml"
   answer_detail: '[초동대응] 시크릿 자동 회전.'
   verify:
     type: output_contains
-    expect: rotate
+    expect:
+    - rotate
+    - Playbook
     field: stdout
+    semantic:
+      intent: Agent Playbook — CI suspicious activity → runs cancel + runner isolate + artifact quarantine
+        + notify devops
+      success_criteria:
+      - CI 특화 playbook
+      acceptable_methods:
+      - cat > yaml
+      negative_signs:
+      - 일반
   target_vm: bastion
-  script: "cat > ~/w14/agent.yaml <<'Y'\nplaybook_id: pb-cicd-abuse\nsteps:\n  - skill: cancel_build\n  - skill: taint_runner\n  - skill: rotate_exposed_secrets\n  - skill: verify_artifact_signatures\nY\ncat ~/w14/agent.yaml"
+  script: "cat > ~/w14/agent.yaml <<'Y'\nplaybook_id: pb-cicd-abuse\nsteps:\n  - skill: cancel_build\n\
+    \  - skill: taint_runner\n  - skill: rotate_exposed_secrets\n  - skill: verify_artifact_signatures\n\
+    Y\ncat ~/w14/agent.yaml"
   risk_level: low
   bastion_prompt: Agent Playbook
 - order: 9
@@ -273,6 +371,16 @@ steps:
     type: output_contains
     expect: recall
     field: stdout
+    semantic:
+      intent: 공급망 영향 공유 /tmp/supply_chain_disclosure.md — downstream 고객·OSS community 에 영향 공유 + CVE 요청
+        + patch 일정. coordinated disclosure. trust 유지
+      success_criteria:
+      - /tmp/supply_chain_disclosure.md
+      - downstream + CVE
+      acceptable_methods:
+      - cat > md
+      negative_signs:
+      - 공유 없음
   target_vm: bastion
   script: 'cat > ~/w14/supply-chain.md <<''M''
 
@@ -312,6 +420,16 @@ steps:
     type: output_contains
     expect: OIDC
     field: stdout
+    semantic:
+      intent: 'OIDC 이행 /tmp/gha_oidc.md — long-lived secrets → OIDC short-lived token. permissions: id-token:
+        write + AssumeRoleWithWebIdentity. 근본 제거'
+      success_criteria:
+      - /tmp/gha_oidc.md
+      - OIDC 단계
+      acceptable_methods:
+      - cat > md
+      negative_signs:
+      - OIDC 개념 없음
   target_vm: bastion
   script: 'cat > ~/w14/oidc.md <<''M''
 
@@ -351,6 +469,16 @@ steps:
     type: output_contains
     expect: cosign
     field: stdout
+    semantic:
+      intent: cosign 서명 — cosign sign --key cosign.key <image> + cosign verify. Artifact 서명 + SBOM attestation.
+        Sigstore ecosystem. Supply chain integrity
+      success_criteria:
+      - cosign sign + verify
+      - SBOM attestation
+      acceptable_methods:
+      - cosign + rekor
+      negative_signs:
+      - 서명 없음
   target_vm: bastion
   script: 'cat > ~/w14/cosign.md <<''M''
 
@@ -388,6 +516,16 @@ steps:
     type: output_contains
     expect: ephemeral
     field: stdout
+    semantic:
+      intent: ephemeral runner — self-hosted runner 대신 GitHub-hosted 또는 Kubernetes ephemeral runner (per-job
+        container). 오염 시 영향 최소. actions-runner-controller
+      success_criteria:
+      - ephemeral runner 개념
+      - per-job isolation
+      acceptable_methods:
+      - ARC actions-runner-controller
+      negative_signs:
+      - persistent runner
   target_vm: bastion
   script: 'cat > ~/w14/runner.md <<''M''
 
