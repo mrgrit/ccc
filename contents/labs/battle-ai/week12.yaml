@@ -38,20 +38,22 @@ steps:
     expect: Auto-response script deployed
     field: stdout
     semantic:
-      intent: '[BLUE] 실전 공방전 2 - 탐지·방어 구현'
+      intent: '[BLUE] Round 2 자동 대응 배포 — Suricata eve.json tail -f 모니터링 + alert 이벤트 감지 시 src_ip 추출 → nft
+        add element @blocklist { <ip> } 자동 차단 스크립트 /tmp/auto_response.sh 데몬화. Round 1 교훈: 수동 대응 지연 → 자동화로
+        MTTR 초 단위 축소. SOAR 기초 개념'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - /tmp/auto_response.sh 또는 유사 스크립트 생성
+      - tail -f eve.json + jq src_ip + nft add element 파이프라인
+      - 자동 차단 (unattended) 개념
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - bash while read + jq + nft add element
+      - systemd service 로 daemonize
+      - Fail2ban filter + action
+      - Wazuh active response 모듈
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 수동 확인 (자동화 아님)
+      - 스크립트 파일 미생성
+      - MTTR 단축 목적 없음
   target_vm: secu
   script: "cat > /tmp/auto_response.sh << 'SCRIPT'\n#!/bin/bash\ntail -Fn0 /var/log/suricata/fast.log\
     \ | while read line; do\n  IP=$(echo $line | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+' | head -1)\n  if\
@@ -77,20 +79,21 @@ steps:
     expect: WAF bypass attempt
     field: stdout
     semantic:
-      intent: '[RED] 실전 공방전 2 - 공격 기법 실행'
+      intent: '[RED] Round 2 차단 재검증 + WAF 우회 SQLi — curl 로 이전 차단 IP 접근 시도 (403/차단 확인) 후 UNION 없는 변형 SQLi
+        (대소문자 혼합·주석 /**/·URL 인코딩·이중 인코딩) 시도. ModSec/Suricata 시그니처 기반 탐지 회피. Round 2 공격 고도화'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - 차단 상태 확인 (curl --connect-timeout)
+      - UNION 없는 SQLi 변형 페이로드
+      - Round 2 공격 고도화 맥락
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl 차단 체크 + 변형 페이로드
+      - sqlmap --tamper=space2comment
+      - '%27+UNION 대신 +oR+1=1--'
+      - Burp Intruder payload list
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 기본 UNION 페이로드 (탐지됨)
+      - 차단 체크 누락
+      - WAF 우회 개념 없음
   target_vm: attacker
   script: "curl -s 'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1%27%20%2f**%2fuNiOn%2f**%2fsElEcT%201%2c2--%20&Submit=Submit'\
     \ -b 'security=low; PHPSESSID=test' \\\n  -o /dev/null \\\n  -w '%{http_code}' && echo ' - WAF bypass\
@@ -113,20 +116,21 @@ steps:
     expect: complete
     field: stdout
     semantic:
-      intent: '[BLUE] 실전 공방전 2 - 탐지·방어 구현'
+      intent: '[BLUE] WAF 우회 시도 탐지 — modsec_audit.log 에서 grep -E (SQL|Injection|id 9) 로 ModSec 탐지 이벤트
+        + access.log 에서 /**/·%25 같은 이중 인코딩 패턴 추가 grep. Round 2 공격자의 회피 기법 역분석 → 룰셋 보강 근거'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - modsec_audit.log + access.log 교차 조회
+      - /**/·%25·%2527 같은 이중 인코딩 패턴 탐지
+      - WAF 우회 기법 역분석 개념
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - grep -E (%25|/\*\*/|nocase) log
+      - jq modsec event + classify
+      - auditd 로 파일 접근 로그
+      - Wazuh ModSec 통합
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 일반 SQLi 패턴만
+      - 이중 인코딩/주석 우회 패턴 누락
+      - 회피 대응 계획 없음
   target_vm: web
   script: tail -30 /var/log/apache2/access.log 2>/dev/null | python3 -c "import sys,urllib.parse; [print(urllib.parse.unquote(l.strip()))
     for l in sys.stdin]" 2>/dev/null | grep -iE '(union|select)' | tail -5 || echo 'WAF bypass detection
@@ -149,20 +153,22 @@ steps:
     expect: complete
     field: stdout
     semantic:
-      intent: '[RED] 실전 공방전 2 - 공격 기법 실행'
+      intent: '[RED] JuiceShop 숨겨진 경로 브루트포스 — gobuster dir -u http://<web>:3000 -w common.txt -t 20 로
+        /admin·/api·/ftp·/rest·/graphql 등 공개되지 않은 엔드포인트 탐색. UNION/SQLi 차단 환경에서 새 공격 벡터 확보 목적. HTTP 상태
+        200/301/403 응답 = 실존 자원'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - gobuster 또는 dirb 실행 + 3000 포트
+      - wordlist(common.txt 등) 사용
+      - 숨겨진 경로 (/admin·/ftp·/api) 발견
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - gobuster dir -u <url>:3000 -w common.txt -t 20
+      - dirb http://<url>:3000/ common.txt
+      - ffuf -u <url>/FUZZ -w wordlist
+      - feroxbuster -u <url>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - wordlist 없이 추측
+      - 3000 포트 대신 다른 서비스
+      - 발견 경로 기록 없음
   target_vm: attacker
   script: dirb http://10.20.30.80:3000/ /usr/share/wordlists/dirb/common.txt -r 2>&1 | grep 'CODE:200\|CODE:301\|CODE:302'
     | head -10 || echo 'Directory scan complete'
@@ -182,20 +188,22 @@ steps:
     expect: FTP directory listing
     field: stdout
     semantic:
-      intent: '[RED] 실전 공방전 2 - 공격 기법 실행'
+      intent: '[RED] JuiceShop /ftp 디렉토리 민감 파일 다운로드 — curl http://<web>:3000/ftp/ (디렉토리 리스팅) + curl http://<web>:3000/ftp/legal.md
+        / acquisitions.md / coupons_2013.md.bak (민감 파일). JuiceShop 유명 취약점: /ftp 가 public 하게 노출. Path Traversal(%2e%2e%2f)·Null
+        byte(%00) 로 원본 파일 추출 가능'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - curl http://<web>:3000/ftp/ 디렉토리 조회
+      - 민감 파일 다운로드 (acquisitions·coupons·legal)
+      - Path Traversal 또는 Null byte 변형 언급
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl /ftp/<file>
+      - curl %2e%2e%2f path traversal
+      - '%2500 null byte 필터 우회'
+      - wget -r recursive
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - /ftp 외 다른 경로
+      - 파일 다운로드 없이 조회만
+      - JuiceShop 특유 취약점 인지 없음
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/ftp/ && echo '\n=== FTP directory listing retrieved ==='
   risk_level: medium
@@ -216,20 +224,22 @@ steps:
     expect: Analysis complete
     field: stdout
     semantic:
-      intent: '[BLUE] 실전 공방전 2 - 탐지·방어 구현'
+      intent: '[BLUE] Round 2 Suricata + Wazuh 교차 분석 — jq select(.event_type==alert) eve.json + jq select(.rule.level
+        >= 5) alerts.json 두 소스 이벤트를 timestamp 기준 정렬해 네트워크(Suricata) + 호스트(Wazuh) 관점 통합. 공격자 TTP 전체 윤곽
+        파악. 단일 소스 한계 보완'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - Suricata eve.json + Wazuh alerts.json 둘 다 조회
+      - timestamp 기준 정렬 또는 교차 상관 분석
+      - 네트워크 + 호스트 관점 통합
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - jq 두 소스 + sort -k1 (timestamp)
+      - Wazuh 에 Suricata 통합 설정
+      - Elastic Stack 으로 양쪽 필드 통합
+      - SIEM correlation rule
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 단일 소스만 분석
+      - timestamp 정렬 없음
+      - 상관 분석 개념 없음
   target_vm: secu
   script: echo '=== Suricata Alerts ===' && cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert")
     | "\(.timestamp[:19]) \(.alert.signature)"' 2>/dev/null | tail -10 && echo '=== Analysis complete
@@ -251,20 +261,22 @@ steps:
     expect: blocklist
     field: stdout
     semantic:
-      intent: '[BLUE] 실전 공방전 2 - 탐지·방어 구현'
+      intent: '[BLUE] 자동 대응 로그 + 자동 차단 IP 검토 — tail /var/log/auto_response.log (s1 에서 배포한 자동화 스크립트 로그)
+        + nft list set inet filter blocklist 로 현재 blocklist 상태. 자동 차단된 IP 가 false positive 인지 검증 (정상 사용자
+        차단 여부). 자동화 시스템의 오탐 관리'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - /var/log/auto_response.log 또는 자동 대응 이력 조회
+      - nft list set blocklist 현재 목록 확인
+      - false positive 검토 개념
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - tail auto_response.log + nft list set
+      - journalctl -u auto_response
+      - Wazuh Active Response 이력
+      - fail2ban-client status
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 자동 대응 이력 누락
+      - blocklist 현재 상태 미확인
+      - false positive 검토 없음
   target_vm: secu
   script: cat /tmp/auto_response.log 2>/dev/null || echo 'No auto-blocks yet' && nft list set inet filter
     blocklist 2>/dev/null
@@ -285,20 +297,22 @@ steps:
     expect: complete
     field: stdout
     semantic:
-      intent: '[RED] 실전 공방전 2 - 공격 기법 실행'
+      intent: '[RED] 패킷 캡처 응답 패턴 분석 — sudo tcpdump -i <iface> -n -w /tmp/web_response.pcap host 10.20.30.80
+        (또는 tshark) 로 web 서버 응답 패킷 캡처 → 응답 시간·TCP 창·TLS 핸드셰이크·헤더 분석. 서비스 fingerprinting 심화 (nmap -sV 보다
+        상세한 구현 세부). 방어 장비 배치 추정 (방화벽·WAF·프록시)'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - tcpdump 또는 tshark 실행
+      - web 서버(10.20.30.80) 대상 캡처
+      - 응답 패턴·TCP 창·TLS 핸드셰이크 분석
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - tcpdump -w file.pcap + wireshark 분석
+      - tshark -T fields -e ...
+      - scapy sniff() 로 프로그래밍
+      - tcpflow 로 스트림 재조립
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 패킷 캡처 없음 (HTTP 레벨 분석만)
+      - 응답 패턴 해석 없음
+      - 방어 장비 추정 없음
   target_vm: attacker
   script: 'sudo timeout 10 tcpdump -i eth0 -c 50 host 10.20.30.80 -w /tmp/capture_r2.pcap 2>/dev/null
     && echo ''Capture saved: /tmp/capture_r2.pcap'' || echo ''Packet capture complete'''
@@ -319,20 +333,21 @@ steps:
     expect: Integrity check complete
     field: stdout
     semantic:
-      intent: '[BLUE] 실전 공방전 2 - 탐지·방어 구현'
+      intent: '[BLUE] FIM 실행으로 변경 파일 탐지 — bash /tmp/integrity_monitor.sh (w10 s9 배포) 로 현재 /etc/passwd·shadow·crontab·sshd_config
+        md5sum 과 baseline 비교 → ALERT: File integrity violation 또는 No changes. 공격자의 설정 변조 지속성 탐지'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - /tmp/integrity_monitor.sh 실행
+      - baseline vs current md5sum diff
+      - ALERT 또는 No changes 결과
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - bash /tmp/integrity_monitor.sh
+      - aide --check
+      - tripwire --check
+      - Wazuh syscheck 결과 조회
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - FIM 미실행 (설정만)
+      - baseline 없이 현재 해시만
+      - ALERT 조건 처리 없음
   target_vm: web
   script: bash /tmp/integrity_monitor.sh 2>/dev/null || echo 'Running manual check...' && md5sum /etc/passwd
     /etc/shadow /etc/crontab /etc/ssh/sshd_config 2>/dev/null && echo 'Integrity check complete'
@@ -389,20 +404,22 @@ steps:
     expect: /tmp/battle_round2_report.txt
     field: filesystem
     semantic:
-      intent: '[BLUE] 실전 공방전 2 - 탐지·방어 구현'
+      intent: '[BLUE] Round 2 비교 보고서 — /tmp/round2_comparison_report.txt 에 Round 1 vs Round 2 KPI 비교 (탐지
+        시간·차단 시간·가용성·차단된 IP 수·자동 대응 효과) + 개선 사항 (자동화로 MTTR 축소 / 룰셋 추가 효과) + 잔여 취약점 (WAF 우회 가능성·/ftp 노출).
+        라운드 간 개선 추세 정량 분석'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - /tmp/round2_comparison_report.txt 파일 생성
+      - Round 1 vs Round 2 지표 비교
+      - 개선점 + 잔여 취약점 서술
+      - 가용성 최종 확인
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file << EOF heredoc + 비교표
+      - markdown 표 포맷
+      - python pandas 로 통계 처리
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - Round 1 비교 없음 (Round 2 단독)
+      - 정량 지표 없음
+      - 개선점/취약점 서술 누락
   target_vm: attacker
   script: 'cat > /tmp/battle_round2_report.txt << ''EOF''
 
