@@ -35,20 +35,22 @@ steps:
     expect: Portfolio
     field: stdout
     semantic:
-      intent: 공방전 분석 및 최종 보고서 작성 공방전 실습 스텝
+      intent: '[공통] 15주 전체 산출물 취합 — ls /tmp/*.txt /tmp/*.pcap /tmp/*.log 으로 수집된 모든 보고서·증거·스크립트 목록화. week01
+        recon.xml·week02 attack_plan·week08 threat_hunting·week09 IR·week10 playbook·week11-13 round 보고서·week14
+        APT 매핑 등 총 산출물 인벤토리. 최종 보고서 자료 수집 단계'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 공방전 맥락 언급
+      - ls /tmp/*.txt 또는 /tmp/*.log 등 산출물 목록
+      - 주차별 보고서 최소 10종 식별
+      - 최종 보고서 자료 수집 목적
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - ls /tmp/*.{txt,log,pcap,sh} + wc -l
+      - find /tmp -mtime -100 -type f
+      - tree /tmp/
+      - git log --all --oneline 로 커밋 이력
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 산출물 수집 없이 스킵
+      - 주차별 구분 없음
+      - 인벤토리 카운트 없음
   target_vm: attacker
   script: mkdir -p /tmp/final_portfolio && cp /tmp/*report*.txt /tmp/*playbook*.txt /tmp/*mapping*.txt
     /tmp/final_portfolio/ 2>/dev/null; echo '=== Portfolio ===' && ls -la /tmp/final_portfolio/ 2>/dev/null
@@ -116,20 +118,20 @@ steps:
     - 요약
     field: stdout
     semantic:
-      intent: 공방전 분석 및 최종 보고서 작성 공방전 실습 스텝
+      intent: '[공통] 주차별 학습 요약 /tmp/weekly_summary.txt — W1 정찰·W2 취약점·W3 웹 공격·W4 패스워드·W5 권한 상승·W6 방화벽·W7
+        IDS·W8 로그 분석·W9 IR·W10 준비·W11-13 교전·W14 APT 각각 핵심 성과와 교훈. 15주 여정 compressive 요약'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 공방전 맥락 언급
+      - /tmp/weekly_summary.txt 파일 생성
+      - 15주 각각 핵심 성과 요약 (최소 10주)
+      - 주차별 교훈/기법 언급
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file << EOF heredoc + 15주 나열
+      - markdown 표 포맷
+      - 학습 목표 vs 실제 성과 대조
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 주차 5주 이하만
+      - 교훈 없이 제목만
+      - 전체 여정 관점 없음
   target_vm: attacker
   script: 'cat > /tmp/final_portfolio/weekly_summary.txt << ''EOF''
 
@@ -237,20 +239,20 @@ steps:
     - 분석
     field: stdout
     semantic:
-      intent: 공방전 분석 및 최종 보고서 작성 공방전 실습 스텝
+      intent: '[공통] 공방전 (Round 1-4) 정량 분석 — 각 라운드의 Red 공격 시도 수·성공 비율·Blue 탐지 건수·차단 MTTR·가용성 유지율을 /tmp/battle_quantitative.txt
+        에 정리. Round 1 vs 2 vs 3 vs 4(APT) 진화 추세 분석. 정량 지표 기반 성과 측정'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 공방전 맥락 언급
+      - /tmp/battle_quantitative.txt 또는 정량 데이터
+      - Round 별 Red 공격·Blue 탐지·MTTR·가용성 지표
+      - Round 간 진화 추세
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file heredoc 표 형식
+      - python pandas 로 통계 계산
+      - Grafana 대시보드 JSON export
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 정성적 서술만 (숫자 없음)
+      - Round 간 비교 없음
+      - 가용성·MTTR 누락
   target_vm: attacker
   script: 'cat > /tmp/final_portfolio/battle_stats.txt << ''EOF''
 
@@ -344,20 +346,21 @@ steps:
     - 자기평가
     field: stdout
     semantic:
-      intent: 공방전 분석 및 최종 보고서 작성 공방전 실습 스텝
+      intent: '[공통] Red Team 역량 자가 평가 /tmp/red_skill_assessment.txt — 5단계 평가 영역(Reconnaissance/Vulnerability
+        Discovery/Web Exploitation/Privilege Escalation/Persistence&Evasion) 각각 1-5점 + 증거 (수행한 공격 사례)
+        + 개선 목표 (다음 학습). 구체적 역량 매트릭스 기반 자기 성찰'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 공방전 맥락 언급
+      - /tmp/red_skill_assessment.txt 파일 생성
+      - 최소 4개 Red 역량 영역 + 점수
+      - 근거 + 개선 목표 포함
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file heredoc 표 + 점수
+      - OSCP/CRTP 등 자격증 기준 자가 평가
+      - MITRE ATT&CK coverage 기반
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 점수 없는 서술만
+      - 근거/개선 목표 누락
+      - 역량 영역 2개 이하
   target_vm: attacker
   script: 'cat > /tmp/final_portfolio/red_skill_assessment.txt << ''EOF''
 
@@ -442,20 +445,22 @@ steps:
     - 자기평가
     field: stdout
     semantic:
-      intent: 공방전 분석 및 최종 보고서 작성 공방전 실습 스텝
+      intent: '[공통] Blue Team 역량 자가 평가 /tmp/blue_skill_assessment.txt — 5영역(Network Defense·IDS/WAF Rule
+        Writing·Log Analysis·Incident Response·Threat Hunting) 점수 + 증거 (배포한 룰·탐지 사례·IR 대응) + 개선 (Threat
+        Hunting 심화·SOAR·EDR). Red 와 대칭 구조 자가 성찰'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 공방전 맥락 언급
+      - /tmp/blue_skill_assessment.txt 파일 생성
+      - Blue 5영역 + 점수
+      - 근거 + 개선 목표
+      - Red 평가와 대칭 구조
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file heredoc + 점수 표
+      - SOC Analyst Tier 1-3 역량 매핑
+      - SANS Blue Team 자격증 기준
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - Red 와 대칭성 없음
+      - 점수 없는 서술만
+      - 영역 분류 없음
   target_vm: attacker
   script: 'cat > /tmp/final_portfolio/blue_skill_assessment.txt << ''EOF''
 
@@ -511,20 +516,21 @@ steps:
     expect: Top 5 Attack Techniques
     field: stdout
     semantic:
-      intent: 공방전 분석 및 최종 보고서 작성 공방전 실습 스텝
+      intent: '[공통] Red Top 5 효과적 공격 — JuiceShop /rest/user/login SQLi 인증 우회 + DVWA Command Injection
+        + DVWA UNION SELECT DB dump + Hydra SSH brute (rate limit 우회) + JuiceShop /ftp path traversal
+        상위 5개. 각 기법의 성공 이유 + Blue 측 탐지 난이도 + 실전 중요도. 공격 레퍼런스 knowledge base'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 공방전 맥락 언급
+      - Top 5 공격 기법 순위
+      - 각 기법의 성공 이유 설명
+      - 탐지 난이도 + 실전 중요도
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file heredoc + 5개 나열
+      - 각 기법마다 MITRE ATT&CK ID 추가
+      - score·탐지 회피·재현성 기준
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - Top 5 미만
+      - 성공 이유 분석 없음
+      - 탐지 난이도 누락
   target_vm: attacker
   script: "cat > /tmp/final_portfolio/top5_attacks.txt << 'EOF'\n=== Top 5 Attack Techniques ===\n\n1.\
     \ JuiceShop SQL Injection Auth Bypass\n   Success: 4/4 rounds | Impact: Critical\n   -> ModSecurity\
@@ -555,20 +561,21 @@ steps:
     expect: Top 5 Defense Techniques
     field: stdout
     semantic:
-      intent: 공방전 분석 및 최종 보고서 작성 공방전 실습 스텝
+      intent: '[공통] Blue Top 5 효과적 방어 — nftables 기본 drop + @blocklist + Suricata custom rule (SYN scan
+        / UNION SELECT) + ModSec WAF CRS + 자동 대응 스크립트 (SOAR) + FIM baseline diff 상위 5개. 각 방어의 탐지 범위 +
+        우회 가능성 + 계층 기여. Defense-in-Depth 실증'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 공방전 맥락 언급
+      - Top 5 방어 기법 순위
+      - 각 방어의 탐지 범위 + 우회 가능성
+      - Defense-in-Depth 기여
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file heredoc + 5개 나열
+      - 각 기법마다 MITRE D3FEND 매핑
+      - Red Top 5 와 대응 관계
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - Top 5 미만
+      - 우회 가능성 언급 없음
+      - 계층 기여 분석 없음
   target_vm: attacker
   script: "cat > /tmp/final_portfolio/top5_defenses.txt << 'EOF'\n=== Top 5 Defense Techniques ===\n\n\
     1. nftables IP Blocklist\n   Effectiveness: 100% (once applied) | Effort: Low\n   -> Instantly blocks\
@@ -646,20 +653,21 @@ steps:
     - 로드맵
     field: stdout
     semantic:
-      intent: 공방전 분석 및 최종 보고서 작성 공방전 실습 스텝
+      intent: '[공통] 향후 학습 로드맵 /tmp/learning_roadmap.txt — 단기 (1-3개월: OSCP 준비·C2 framework Sliver/Mythic·HackTheBox)
+        + 중기 (3-6개월: Active Directory 공격·Cloud Security·Kubernetes) + 장기 (6-12개월: Red Team 전문가·CISSP/CISM·Threat
+        Research) 단계별 학습 경로 + 실습 환경 + 자격증 + 프로젝트 목표. 개인 커리어 패스'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 공방전 맥락 언급
+      - /tmp/learning_roadmap.txt 파일 생성
+      - 단기/중기/장기 3단계 구분
+      - 자격증·실습 환경·프로젝트 구체화
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file heredoc + 3단계 타임라인
+      - SANS learning path 참조
+      - CompTIA security stack 로드맵
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 일회성 목표만 (로드맵 아님)
+      - 자격증 없이 서술만
+      - 단계 구분 없음
   target_vm: attacker
   script: 'cat > /tmp/final_portfolio/learning_roadmap.txt << ''EOF''
 
@@ -769,20 +777,23 @@ steps:
     expect: MITRE ATT&CK Coverage Map
     field: stdout
     semantic:
-      intent: 공방전 분석 및 최종 보고서 작성 공방전 실습 스텝
+      intent: '[공통] MITRE ATT&CK 커버리지 맵 /tmp/attack_coverage_map.txt — 전체 15주에서 다룬 기법을 14 Tactics (Initial
+        Access/Execution/Persistence/Privilege Escalation/Defense Evasion/Credential Access/Discovery/Lateral
+        Movement/Collection/C2/Exfiltration/Impact/Reconnaissance/Resource Development) 매트릭스에 매핑 + 각 셀에
+        주차 번호 + 커버된 Technique (T1xxx) 개수 집계. 교육 과정의 ATT&CK 커버리지 시각화'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 공방전 맥락 언급
+      - /tmp/attack_coverage_map.txt 파일 생성
+      - 14 Tactics 매트릭스 + 주차·기법 매핑
+      - ATT&CK 커버리지 정량화
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file heredoc + Tactic 별 표
+      - MITRE ATT&CK Navigator JSON 생성
+      - DeTT&CT for blue coverage
+      - enterprise-attack.json 참조
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - Tactics 구분 없음
+      - 주차 매핑 없음
+      - 커버리지 카운트 없음
   target_vm: attacker
   script: 'cat > /tmp/final_portfolio/attack_coverage.txt << ''EOF''
 
@@ -864,20 +875,21 @@ steps:
     expect: CYBER BATTLE COURSE - FINAL ASSESSMENT REPORT
     field: stdout
     semantic:
-      intent: 공방전 분석 및 최종 보고서 작성 공방전 실습 스텝
+      intent: '[공통] 최종 종합 보고서 /tmp/final_capstone_report.txt — Executive Summary (전체 15주 + 공방전 4라운드 +
+        APT 시뮬레이션 성과 요약) + Technical Achievements (Red·Blue 기술 역량 + 제작한 룰/스크립트/보고서 목록) + Key Findings
+        (OWASP Top 10 실습·Defense-in-Depth 효과·자동화 ROI) + Recommendations (조직 적용 가능 방안). 경영진·기술진 양측 대상 문서'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 공방전 맥락 언급
+      - /tmp/final_capstone_report.txt 파일 생성
+      - Executive Summary + Technical + Findings + Recommendations 4섹션
+      - 양측 관점 (경영진·기술진) 대상
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file << EOF heredoc 구조화
+      - markdown + pandoc PDF
+      - ISO 27001·SOC 2 준거 보고서 형식
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 단일 관점만
+      - 4 섹션 미충족
+      - Executive Summary 없이 기술 내용만
   target_vm: attacker
   script: "cat > /tmp/final_portfolio/FINAL_REPORT.txt << 'EOF'\n================================================================\n\
     \      CYBER BATTLE COURSE - FINAL ASSESSMENT REPORT\n================================================================\n\
