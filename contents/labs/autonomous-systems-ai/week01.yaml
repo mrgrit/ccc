@@ -25,18 +25,31 @@ steps:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: CPS 실습 네트워크 활성 호스트 스캔으로 자산 식별 — nmap -sn 10.20.30.0/24
+      success_criteria:
+      - nmap 호스트 탐지 실행
+      - 활성 호스트 최소 3개 이상 식별
+      - 각 호스트의 IP + 역할 추정
+      acceptable_methods:
+      - nmap -sn 10.20.30.0/24
+      - fping -g 10.20.30.0/24
+      - arp-scan -l
+      - masscan --rate 1000 -p1-65535
+      negative_signs:
+      - 단일 호스트만
+      - IP 나열 없이 개념만
+      - 역할 추정 없음
   target_vm: attacker
   script: nmap -sn 10.20.30.0/24
   risk_level: low
   bastion_prompt: 전체 VM(secu, web, siem, attacker) 상태를 점검해서 활성 호스트와 IP 목록을 알려줘
 - order: 2
-  instruction: manager({{MANAGER_IP}})에서 OT 관련 포트(502-Modbus, 9999-드론시뮬, 11434-LLM)를
-    스캔하시오.
+  instruction: manager({{MANAGER_IP}})에서 OT 관련 포트(502-Modbus, 9999-드론시뮬, 11434-LLM)를 스캔하시오.
   hint: nmap -p 옵션으로 특정 포트를 스캔하세요.
   category: recon
   points: 10
-  answer: '🤖 프롬프트: manager(10.20.30.200)에서 OT 관련 포트(502-Modbus, 9999-드론시뮬, 11434-LLM)를
-    스캔해줘
+  answer: '🤖 프롬프트: manager(10.20.30.200)에서 OT 관련 포트(502-Modbus, 9999-드론시뮬, 11434-LLM)를 스캔해줘
 
     📎 참고 (CLI): nmap -sV -p 502,9999,11434 10.20.30.200'
   answer_detail: OT 프로토콜 포트 식별은 CPS 환경 매핑에 필수적입니다.
@@ -44,32 +57,59 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: OT 관련 포트 스캔 — Modbus(502), 드론 시뮬(9999), LLM(11434) 포트 개방 여부 확인
+      success_criteria:
+      - nmap 으로 3개 포트 모두 스캔
+      - 각 포트 상태(open/closed/filtered) 기록
+      - OT 프로토콜 특징 언급
+      acceptable_methods:
+      - nmap -p 502,9999,11434 <manager>
+      - nc -zv <host> 502
+      - python socket.connect 으로 개별 확인
+      - nmap --script modbus-discover
+      negative_signs:
+      - 포트 1-2개만
+      - OT 프로토콜 언급 없음
+      - 상태 해석 없음
   target_vm: attacker
   script: nmap -sV -p 502,9999,11434 10.20.30.200
   risk_level: low
-  bastion_prompt: manager(10.20.30.200)에서 OT 관련 포트(502-Modbus, 9999-드론시뮬, 11434-LLM)를
-    스캔해줘
+  bastion_prompt: manager(10.20.30.200)에서 OT 관련 포트(502-Modbus, 9999-드론시뮬, 11434-LLM)를 스캔해줘
 - order: 3
   instruction: LLM에게 CPS 보안의 핵심 원칙 3가지를 질의하시오.
   hint: Ollama API /api/generate를 사용하세요.
   category: analysis
   points: 12
-  answer: "\U0001F916 프롬프트: List 3 key principles of cyber-physical system security\
-    \ in 3 sentences\n\U0001F4CE 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/generate\
-    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"prompt\":\"List 3 key principles of cyber-physical\
-    \ system security in 3 sentences\",\"stream\":false,\"options\":{\"num_predict\"\
-    :100}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
+  answer: "\U0001F916 프롬프트: List 3 key principles of cyber-physical system security in 3 sentences\n\U0001F4CE\
+    \ 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\"\
+    ,\"prompt\":\"List 3 key principles of cyber-physical system security in 3 sentences\",\"stream\"\
+    :false,\"options\":{\"num_predict\":100}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
   answer_detail: LLM을 활용하여 CPS 보안 개념을 빠르게 정리합니다.
   verify:
     type: output_contains
     expect:
     - 원칙
     field: stdout
+    semantic:
+      intent: LLM 에 CPS 보안 핵심 원칙 3가지 질의 — Ollama API 호출 후 응답 분석
+      success_criteria:
+      - Ollama 호출 명령 (curl /api/generate 또는 ollama run)
+      - 응답에서 원칙 3개 이상 추출
+      - 원칙의 CPS 맥락 해석
+      acceptable_methods:
+      - curl <ollama>/api/generate -d {model,prompt}
+      - ollama run <model> <prompt>
+      - python requests.post
+      - ollama chat 인터랙티브
+      negative_signs:
+      - LLM 호출 없이 개념 나열
+      - 원칙 2개 이하
+      - 해석 없음
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"\
-    model\":\"gemma3:4b\",\"prompt\":\"List 3 key principles of cyber-physical system\
-    \ security in 3 sentences\",\"stream\":false,\"options\":{\"num_predict\":100}}'\
-    \ \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\"\
+    ,\"prompt\":\"List 3 key principles of cyber-physical system security in 3 sentences\",\"stream\"\
+    :false,\"options\":{\"num_predict\":100}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
   risk_level: low
   bastion_prompt: List 3 key principles of cyber-physical system security in 3 sentences
 - order: 4
@@ -77,28 +117,41 @@ steps:
   hint: system role에 보안 분석가를 설정하세요.
   category: analysis
   points: 12
-  answer: "\U0001F916 프롬프트: Apply STRIDE threat model to a WiFi-controlled drone system.\
-    \ List one threat per category.\n\U0001F4CE 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/chat\
-    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\"\
-    :\"You are a CPS threat modeling expert.\"},{\"role\":\"user\",\"content\":\"\
-    Apply STRIDE threat model to a WiFi-controlled drone system. List one threat per\
-    \ category.\"}],\"stream\":false,\"options\":{\"num_predict\":200}}' \\\n | python3\
-    \ -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  answer: "\U0001F916 프롬프트: Apply STRIDE threat model to a WiFi-controlled drone system. List one threat\
+    \ per category.\n\U0001F4CE 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n\
+    \  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a CPS threat\
+    \ modeling expert.\"},{\"role\":\"user\",\"content\":\"Apply STRIDE threat model to a WiFi-controlled\
+    \ drone system. List one threat per category.\"}],\"stream\":false,\"options\":{\"num_predict\":200}}'\
+    \ \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: STRIDE를 CPS에 적용하면 체계적 위협 식별이 가능합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: LLM 에 STRIDE 를 드론 시스템에 적용한 위협 분석 요청 — Spoofing/Tampering/Repudiation/InfoDisclosure/DoS/EoP
+        6 카테고리
+      success_criteria:
+      - LLM 호출 후 STRIDE 6 카테고리 언급
+      - 드론 특화 위협 예시 (GPS 스푸핑, 펌웨어 변조 등) 최소 2개
+      - 구체적 방어 제안 포함
+      acceptable_methods:
+      - curl <ollama>/api/generate -d <prompt>
+      - ollama run <model>
+      - Microsoft STRIDE 문서 참조
+      - python 으로 API 래퍼
+      negative_signs:
+      - STRIDE 카테고리 4개 이하
+      - 드론 특화 예시 없음
+      - 방어 제안 누락
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\"\
-    :\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a CPS\
-    \ threat modeling expert.\"},{\"role\":\"user\",\"content\":\"Apply STRIDE threat\
-    \ model to a WiFi-controlled drone system. List one threat per category.\"}],\"\
-    stream\":false,\"options\":{\"num_predict\":200}}' \\\n | python3 -c \"import\
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
+    messages\":[{\"role\":\"system\",\"content\":\"You are a CPS threat modeling expert.\"},{\"role\"\
+    :\"user\",\"content\":\"Apply STRIDE threat model to a WiFi-controlled drone system. List one threat\
+    \ per category.\"}],\"stream\":false,\"options\":{\"num_predict\":200}}' \\\n | python3 -c \"import\
     \ sys,json; print(json.load(sys.stdin)['message']['content'])\""
   risk_level: low
-  bastion_prompt: Apply STRIDE threat model to a WiFi-controlled drone system. List
-    one threat per category.
+  bastion_prompt: Apply STRIDE threat model to a WiFi-controlled drone system. List one threat per category.
 - order: 5
   instruction: Python으로 CPS 자산-위협 매핑 테이블을 생성하시오. 드론의 5가지 자산에 대해 STRIDE 위협을 매핑하라.
   hint: 딕셔너리로 자산별 위협을 정의하세요.
@@ -113,6 +166,21 @@ steps:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: Python 으로 CPS 자산-위협 매핑 테이블 생성 — 드론 5 자산(GPS/통신/펌웨어/배터리/센서) × STRIDE 매핑
+      success_criteria:
+      - python 딕셔너리 또는 표 형식으로 매핑
+      - 5개 이상 자산, 각 자산마다 STRIDE 항목 최소 1개
+      - 결과 출력 또는 파일 저장
+      acceptable_methods:
+      - python dict of dict 구조
+      - pandas DataFrame
+      - csv 저장
+      - json.dump
+      negative_signs:
+      - 자산 3개 미만
+      - STRIDE 매핑 누락
+      - 출력 없음
   target_vm: attacker
   script: 'python3 -c " assets={''GPS'':[''Spoofing'',''DoS''],''WiFi'':[''Spoofing'',''Tampering'',''DoS''],''FC'':[''Tampering'',''EoP''],''Camera'':[''InfoDisc'',''DoS''],''Firmware'':[''Tampering'',''EoP'']}
     ;print(''=== CPS Asset-Threat Map ==='') ;[print(f''  {a}: {t}'') for a,t in assets.items()]"'
@@ -123,29 +191,41 @@ steps:
   hint: 사이버 킬 체인 프레임워크를 적용하여 질문하세요.
   category: analysis
   points: 12
-  answer: "\U0001F916 프롬프트: Describe the Stuxnet cyber kill chain in 5 steps. Focus\
-    \ on how it crossed from cyber to physical domain.\n\U0001F4CE 참고 (CLI): curl\
-    \ -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\"\
-    ,\"messages\":[{\"role\":\"system\",\"content\":\"You are an ICS security historian.\"\
-    },{\"role\":\"user\",\"content\":\"Describe the Stuxnet cyber kill chain in 5\
-    \ steps. Focus on how it crossed from cyber to physical domain.\"}],\"stream\"\
-    :false,\"options\":{\"num_predict\":200}}' \\\n | python3 -c \"import sys,json;\
-    \ print(json.load(sys.stdin)['message']['content'])\""
+  answer: "\U0001F916 프롬프트: Describe the Stuxnet cyber kill chain in 5 steps. Focus on how it crossed\
+    \ from cyber to physical domain.\n\U0001F4CE 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/chat\
+    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are an ICS\
+    \ security historian.\"},{\"role\":\"user\",\"content\":\"Describe the Stuxnet cyber kill chain in\
+    \ 5 steps. Focus on how it crossed from cyber to physical domain.\"}],\"stream\":false,\"options\"\
+    :{\"num_predict\":200}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: Stuxnet은 CPS 보안 역사에서 가장 중요한 사례입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: LLM 에 Stuxnet 공격 킬체인 분석 요청 — 정찰·무기화·전달·설치·C2·PLC 조작 단계
+      success_criteria:
+      - LLM 호출 후 Stuxnet 주요 단계 최소 4개 추출
+      - USB 전파, 4 zero-day, PLC rootkit, Siemens 표적 등 핵심 요소 언급
+      - CPS 보안 시사점 제시
+      acceptable_methods:
+      - curl <ollama>/api/generate -d <prompt>
+      - ollama run <model> <prompt>
+      - STUXNET 사건 분석 문서 참조
+      - MITRE ATT&CK for ICS 매핑
+      negative_signs:
+      - 단계 3개 이하
+      - 핵심 요소 누락
+      - CPS 시사점 없음
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\"\
-    :\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are an ICS\
-    \ security historian.\"},{\"role\":\"user\",\"content\":\"Describe the Stuxnet\
-    \ cyber kill chain in 5 steps. Focus on how it crossed from cyber to physical\
-    \ domain.\"}],\"stream\":false,\"options\":{\"num_predict\":200}}' \\\n | python3\
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
+    messages\":[{\"role\":\"system\",\"content\":\"You are an ICS security historian.\"},{\"role\":\"\
+    user\",\"content\":\"Describe the Stuxnet cyber kill chain in 5 steps. Focus on how it crossed from\
+    \ cyber to physical domain.\"}],\"stream\":false,\"options\":{\"num_predict\":200}}' \\\n | python3\
     \ -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   risk_level: low
-  bastion_prompt: Describe the Stuxnet cyber kill chain in 5 steps. Focus on how it
-    crossed from cyber to physical domain.
+  bastion_prompt: Describe the Stuxnet cyber kill chain in 5 steps. Focus on how it crossed from cyber
+    to physical domain.
 - order: 7
   instruction: secu({{SECU_IP}}) 방화벽에서 Modbus(502) 포트에 대한 현재 nftables 규칙을 확인하시오.
   hint: nft list ruleset 명령으로 확인하세요.
@@ -153,16 +233,30 @@ steps:
   points: 10
   answer: '🤖 프롬프트: secu(10.20.30.1) 방화벽에서 Modbus(502) 포트에 대한 현재 nftables 규칙을 확인해줘
 
-    📎 참고 (CLI): ssh ccc@10.20.30.1 ''sudo nft list ruleset'' 2>/dev/null | head -30
-    || echo "Firewall rules checked"'
+    📎 참고 (CLI): ssh ccc@10.20.30.1 ''sudo nft list ruleset'' 2>/dev/null | head -30 || echo "Firewall
+    rules checked"'
   answer_detail: OT 프로토콜에 대한 방화벽 규칙은 CPS 보안의 기본입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: secu VM nftables 규칙에서 Modbus(502) 포트 처리 방식 확인
+      success_criteria:
+      - ssh secu + sudo nft list ruleset 실행
+      - 502 포트 관련 규칙(accept/drop) 찾기
+      - 현재 정책 해석 (방화벽이 OT 포트 차단 중?)
+      acceptable_methods:
+      - ssh ccc@<secu> sudo nft list ruleset | grep 502
+      - ssh + cat /etc/nftables.conf
+      - tcpdump 로 실제 트래픽 흐름 확인
+      - iptables-legacy 대체 확인
+      negative_signs:
+      - nftables 실행 없음
+      - 502 포트 특정 확인 없음
+      - 정책 해석 누락
   target_vm: attacker
-  script: ssh ccc@10.20.30.1 'sudo nft list ruleset' 2>/dev/null | head -30 || echo
-    "Firewall rules checked"
+  script: ssh ccc@10.20.30.1 'sudo nft list ruleset' 2>/dev/null | head -30 || echo "Firewall rules checked"
   risk_level: low
   bastion_prompt: secu(10.20.30.1) 방화벽에서 Modbus(502) 포트에 대한 현재 nftables 규칙을 확인해줘
 - order: 8
@@ -172,19 +266,34 @@ steps:
   points: 12
   answer: '🤖 프롬프트: Python으로 CPS 보안 점수 평가기를 만들어 현재 환경의 보안 수준을 평가하시오. 6가지 보안 항목을 체크해줘
 
-    📎 참고 (CLI): python3 -c " checks={''Network Segmentation'':False,''Modbus Auth'':False,''Drone
-    Encryption'':False,''IDS Deployed'':True,''Firewall'':True,''SIEM'':True} ;score=sum(checks.values())/len(checks)*100
-    ;print(''=== CPS Security Assessment ==='') ;[print(f''  [{\"PASS\" if v else
-    \"FAIL\"}] {k}'') for k,v in checks.items()] ;print(f''Score: {score:.0f}%'')"'
+    📎 참고 (CLI): python3 -c " checks={''Network Segmentation'':False,''Modbus Auth'':False,''Drone Encryption'':False,''IDS
+    Deployed'':True,''Firewall'':True,''SIEM'':True} ;score=sum(checks.values())/len(checks)*100 ;print(''===
+    CPS Security Assessment ==='') ;[print(f''  [{\"PASS\" if v else \"FAIL\"}] {k}'') for k,v in checks.items()]
+    ;print(f''Score: {score:.0f}%'')"'
   answer_detail: 보안 평가는 현재 상태를 파악하고 개선 방향을 설정합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: Python 으로 CPS 보안 점수 평가기 구현 — 6 항목 체크(패스워드·방화벽·TLS·로그·펌웨어·접근제어) 후 점수 산출
+      success_criteria:
+      - 6 항목 체크 로직 Python 코드
+      - 각 항목 결과를 0/1 또는 점수로 기록
+      - 총점 및 보안 수준 등급(A/B/C) 반환
+      acceptable_methods:
+      - python 스크립트 함수 기반
+      - check list + score 계산
+      - json 결과 출력
+      - argparse 로 대상 지정
+      negative_signs:
+      - 항목 3개 이하
+      - 점수 계산 없음
+      - 출력 없음
   target_vm: attacker
-  script: 'python3 -c " checks={''Network Segmentation'':False,''Modbus Auth'':False,''Drone
-    Encryption'':False,''IDS Deployed'':True,''Firewall'':True,''SIEM'':True} ;score=sum(checks.values())/len(checks)*100
-    ;print(''=== CPS Security Assessment ==='') ;[print(f''  [{\"PASS\" if v else
-    \"FAIL\"}] {k}'') for k,v in checks.items()] ;print(f''Score: {score:.0f}%'')"'
+  script: 'python3 -c " checks={''Network Segmentation'':False,''Modbus Auth'':False,''Drone Encryption'':False,''IDS
+    Deployed'':True,''Firewall'':True,''SIEM'':True} ;score=sum(checks.values())/len(checks)*100 ;print(''===
+    CPS Security Assessment ==='') ;[print(f''  [{\"PASS\" if v else \"FAIL\"}] {k}'') for k,v in checks.items()]
+    ;print(f''Score: {score:.0f}%'')"'
   risk_level: low
   bastion_prompt: Python으로 CPS 보안 점수 평가기를 만들어 현재 환경의 보안 수준을 평가하시오. 6가지 보안 항목을 체크해줘
