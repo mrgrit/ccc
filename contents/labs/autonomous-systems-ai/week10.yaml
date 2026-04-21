@@ -13,57 +13,79 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: Python으로 DDS SPDP Discovery를 시뮬레이션하시오. 멀티캐스트(239.255.0.1:7400)로 참여자를
-    발견하는 과정을 출력하라.
+  instruction: Python으로 DDS SPDP Discovery를 시뮬레이션하시오. 멀티캐스트(239.255.0.1:7400)로 참여자를 발견하는 과정을 출력하라.
   hint: 참여자 이름, IP, GUID를 출력하세요.
   category: recon
   points: 12
   answer: '🤖 프롬프트: Python으로 DDS SPDP Discovery를 시뮬레이션해줘
 
     📎 참고 (CLI): python3 -c "nodes=[(''lidar_driver'',''192.168.1.10'',''GUID_0001''),(''nav_controller'',''192.168.1.10'',''GUID_0002''),(''arm_controller'',''192.168.1.10'',''GUID_0003'')];print(''===
-    DDS SPDP Discovery (239.255.0.1:7400) ==='');[print(f''  Participant: {n[0]} IP:{n[1]}
-    GUID:{n[2]}'') for n in nodes];print(''  [!] All participants discoverable via
-    multicast'')"'
+    DDS SPDP Discovery (239.255.0.1:7400) ==='');[print(f''  Participant: {n[0]} IP:{n[1]} GUID:{n[2]}'')
+    for n in nodes];print(''  [!] All participants discoverable via multicast'')"'
   answer_detail: DDS Discovery 과정은 공격 정찰의 첫 단계입니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: DDS SPDP Discovery — 멀티캐스트 239.255.0.1:7400 로 ROS2 참여자 발견
+      success_criteria:
+      - 멀티캐스트 주소/포트 명시
+      - Discovery 메시지 형식 설명
+      - 발견된 노드 목록 출력
+      acceptable_methods:
+      - python socket 멀티캐스트
+      - ros2 daemon / ros2 node list
+      - wireshark DDS dissector
+      - CycloneDDS 사용
+      negative_signs:
+      - 멀티캐스트 주소 누락
+      - 노드 목록 없음
+      - Discovery 개념 부재
   target_vm: attacker
   script: 'python3 -c "nodes=[(''lidar_driver'',''192.168.1.10'',''GUID_0001''),(''nav_controller'',''192.168.1.10'',''GUID_0002''),(''arm_controller'',''192.168.1.10'',''GUID_0003'')];print(''===
-    DDS SPDP Discovery (239.255.0.1:7400) ==='');[print(f''  Participant: {n[0]} IP:{n[1]}
-    GUID:{n[2]}'') for n in nodes];print(''  [!] All participants discoverable via
-    multicast'')"'
+    DDS SPDP Discovery (239.255.0.1:7400) ==='');[print(f''  Participant: {n[0]} IP:{n[1]} GUID:{n[2]}'')
+    for n in nodes];print(''  [!] All participants discoverable via multicast'')"'
   risk_level: low
   bastion_prompt: Python으로 DDS SPDP Discovery를 시뮬레이션해줘
 - order: 2
-  instruction: 스니핑된 ROS2 토픽 데이터를 분석하시오. /scan, /cmd_vel, /odom, /camera/image 토픽의
-    데이터를 출력하라.
+  instruction: 스니핑된 ROS2 토픽 데이터를 분석하시오. /scan, /cmd_vel, /odom, /camera/image 토픽의 데이터를 출력하라.
   hint: 각 토픽의 데이터를 JSON으로 출력하세요.
   category: recon
   points: 10
-  answer: '🤖 프롬프트: 스니핑된 ROS2 토픽 데이터를 분석하시오. /scan, /cmd_vel, /odom, /camera/image
-    토픽의 데이터를 출력해줘
+  answer: '🤖 프롬프트: 스니핑된 ROS2 토픽 데이터를 분석하시오. /scan, /cmd_vel, /odom, /camera/image 토픽의 데이터를 출력해줘
 
-    📎 참고 (CLI): python3 -c "import json;sniffed={''/scan'':{''ranges'':[1.5,2.3,4.1]},''
-    /cmd_vel'':{''linear_x'':0.5,''angular_z'':0.2},'' /odom'':{''x'':3.14,''y'':1.59},''
-    /camera'':{''width'':640,''height'':480}};print(''=== Sniffed ROS2 Topics ==='');[print(f''  {t}:
-    {json.dumps(d)}'') for t,d in sniffed.items()];print(''  [!] All data captured
-    without authentication'')"'
+    📎 참고 (CLI): python3 -c "import json;sniffed={''/scan'':{''ranges'':[1.5,2.3,4.1]},'' /cmd_vel'':{''linear_x'':0.5,''angular_z'':0.2},''
+    /odom'':{''x'':3.14,''y'':1.59},'' /camera'':{''width'':640,''height'':480}};print(''=== Sniffed ROS2
+    Topics ==='');[print(f''  {t}: {json.dumps(d)}'') for t,d in sniffed.items()];print(''  [!] All data
+    captured without authentication'')"'
   answer_detail: 토픽 스니핑으로 로봇의 센서 데이터와 위치를 파악합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: ROS2 토픽 데이터 스니핑 — /scan /cmd_vel /odom /camera/image 토픽 데이터 분석
+      success_criteria:
+      - 4 토픽 중 3 이상 출력
+      - 각 토픽 메시지 타입(LaserScan/Twist/Odometry/Image) 언급
+      - 암호화 부재 위험 설명
+      acceptable_methods:
+      - ros2 topic echo
+      - python rclpy subscriber
+      - wireshark + DDS plugin
+      - tcpdump 캡처
+      negative_signs:
+      - 토픽 2개 이하
+      - 메시지 타입 누락
+      - 위험 설명 없음
   target_vm: attacker
-  script: 'python3 -c "import json;sniffed={''/scan'':{''ranges'':[1.5,2.3,4.1]},''
-    /cmd_vel'':{''linear_x'':0.5,''angular_z'':0.2},'' /odom'':{''x'':3.14,''y'':1.59},''
-    /camera'':{''width'':640,''height'':480}};print(''=== Sniffed ROS2 Topics ==='');[print(f''  {t}:
-    {json.dumps(d)}'') for t,d in sniffed.items()];print(''  [!] All data captured
-    without authentication'')"'
+  script: 'python3 -c "import json;sniffed={''/scan'':{''ranges'':[1.5,2.3,4.1]},'' /cmd_vel'':{''linear_x'':0.5,''angular_z'':0.2},''
+    /odom'':{''x'':3.14,''y'':1.59},'' /camera'':{''width'':640,''height'':480}};print(''=== Sniffed ROS2
+    Topics ==='');[print(f''  {t}: {json.dumps(d)}'') for t,d in sniffed.items()];print(''  [!] All data
+    captured without authentication'')"'
   risk_level: low
-  bastion_prompt: 스니핑된 ROS2 토픽 데이터를 분석하시오. /scan, /cmd_vel, /odom, /camera/image 토픽의
-    데이터를 출력해줘
+  bastion_prompt: 스니핑된 ROS2 토픽 데이터를 분석하시오. /scan, /cmd_vel, /odom, /camera/image 토픽의 데이터를 출력해줘
 - order: 3
   instruction: /cmd_vel 토픽에 속도 명령을 인젝션하는 공격을 시뮬레이션하시오. 전진, 후진, 회전, 급정지 4가지 명령을 인젝션하라.
   hint: linear.x와 angular.z 값을 변경하세요.
@@ -71,20 +93,33 @@ steps:
   points: 12
   answer: '🤖 프롬프트: /cmd_vel 토픽에 속도 명령을 인젝션하는 공격을 시뮬레이션해줘
 
-    📎 참고 (CLI): python3 -c "attacks=[(2.0,0,''Full speed forward''),(- 1.0,0,''Reverse''),(
-    0,3.14,''Spin''),(0,0,''Emergency stop'')];print(''=== cmd_vel Injection ==='');[print(f''  [INJECT]
-    linear={a[0]:+.1f} angular={a[1]:+.2f} — {a[2]}'') for a in attacks];print(''  [!]
-    Robot movement fully controlled by attacker'')"'
+    📎 참고 (CLI): python3 -c "attacks=[(2.0,0,''Full speed forward''),(- 1.0,0,''Reverse''),( 0,3.14,''Spin''),(0,0,''Emergency
+    stop'')];print(''=== cmd_vel Injection ==='');[print(f''  [INJECT] linear={a[0]:+.1f} angular={a[1]:+.2f}
+    — {a[2]}'') for a in attacks];print(''  [!] Robot movement fully controlled by attacker'')"'
   answer_detail: /cmd_vel 인젝션은 로봇 이동을 직접 제어하는 치명적 공격입니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: /cmd_vel 인젝션 — 전진/후진/회전/급정지 4 명령 주입
+      success_criteria:
+      - 4 명령 각각 Twist 메시지 payload 생성
+      - 인증 없는 ROS2 의 위험 시연
+      - 로봇 물리적 피해 가능성 경고
+      acceptable_methods:
+      - ros2 topic pub /cmd_vel geometry_msgs/Twist
+      - python rclpy publisher
+      - CycloneDDS direct write
+      - ROS bridge 악용
+      negative_signs:
+      - 명령 2개 이하
+      - Twist 구조 누락
+      - 위험 경고 없음
   target_vm: attacker
-  script: python3 -c "attacks=[(2.0,0,'Full speed forward'),(- 1.0,0,'Reverse'),(
-    0,3.14,'Spin'),(0,0,'Emergency stop')];print('=== cmd_vel Injection ===');[print(f'  [INJECT]
-    linear={a[0]:+.1f} angular={a[1]:+.2f} — {a[2]}') for a in attacks];print('  [!]
-    Robot movement fully controlled by attacker')"
+  script: python3 -c "attacks=[(2.0,0,'Full speed forward'),(- 1.0,0,'Reverse'),( 0,3.14,'Spin'),(0,0,'Emergency
+    stop')];print('=== cmd_vel Injection ===');[print(f'  [INJECT] linear={a[0]:+.1f} angular={a[1]:+.2f}
+    — {a[2]}') for a in attacks];print('  [!] Robot movement fully controlled by attacker')"
   risk_level: low
   bastion_prompt: /cmd_vel 토픽에 속도 명령을 인젝션하는 공격을 시뮬레이션해줘
 - order: 4
@@ -95,19 +130,32 @@ steps:
   answer: '🤖 프롬프트: 가짜 /scan 데이터를 인젝션하여 로봇을 속이는 공격을 시뮬레이션해줘
 
     📎 참고 (CLI): python3 -c "fake_scan={''ranges'':[0.1]*360,''angle_min'':-3.14,''angle_max'':3.14};print(''===
-    Fake Sensor Injection ==='');print(f''  Injected /scan: all ranges = 0.1m'');print(f''  [!]
-    Robot thinks surrounded by obstacles'');print(f''  [!] Navigation stops — robot
-    is stuck'')"'
+    Fake Sensor Injection ==='');print(f''  Injected /scan: all ranges = 0.1m'');print(f''  [!] Robot
+    thinks surrounded by obstacles'');print(f''  [!] Navigation stops — robot is stuck'')"'
   answer_detail: 센서 데이터 위조로 로봇의 인지 시스템을 교란합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: 가짜 /scan 데이터 인젝션 — 모든 방향 가까운 장애물 주입으로 로봇 기만
+      success_criteria:
+      - LaserScan ranges 배열에 짧은 거리 주입
+      - 로봇 반응(정지·회피) 예상 결과
+      - 센서 인증·교차검증 권고
+      acceptable_methods:
+      - ros2 topic pub /scan sensor_msgs/LaserScan
+      - python rclpy 로 센서 데이터 주입
+      - CycloneDDS write
+      - 테스트 rosbag 재생
+      negative_signs:
+      - LaserScan 구조 없음
+      - 반응 예상 없음
+      - 방어 권고 누락
   target_vm: attacker
   script: 'python3 -c "fake_scan={''ranges'':[0.1]*360,''angle_min'':-3.14,''angle_max'':3.14};print(''===
-    Fake Sensor Injection ==='');print(f''  Injected /scan: all ranges = 0.1m'');print(f''  [!]
-    Robot thinks surrounded by obstacles'');print(f''  [!] Navigation stops — robot
-    is stuck'')"'
+    Fake Sensor Injection ==='');print(f''  Injected /scan: all ranges = 0.1m'');print(f''  [!] Robot
+    thinks surrounded by obstacles'');print(f''  [!] Navigation stops — robot is stuck'')"'
   risk_level: low
   bastion_prompt: 가짜 /scan 데이터를 인젝션하여 로봇을 속이는 공격을 시뮬레이션해줘
 - order: 5
@@ -118,17 +166,32 @@ steps:
   answer: '🤖 프롬프트: ROS2 토픽별 접근 제어(ACL) 정책을 Python으로 구현 방법을 설명하고 예시 코드를 보여줘
 
     📎 참고 (CLI): python3 -c "acl={''nav_ctrl'':{''pub'':[''/cmd_vel''],''sub'':[''/scan'',''/odom'']},''lidar'':{''pub'':[''/scan''],''sub'':[]},''camera'':{''pub'':[''/camera/image''],''sub'':[]},''safety'':{''pub'':[''/emergency_stop''],''sub'':[''/cmd_vel'']}};print(''===
-    ROS2 Topic ACL ==='');[print(f''  {n}: pub={p[\"pub\"]} sub={p[\"sub\"]}'') for
-    n,p in acl.items()];print(''  [OK] Least-privilege access control'')"'
+    ROS2 Topic ACL ==='');[print(f''  {n}: pub={p[\"pub\"]} sub={p[\"sub\"]}'') for n,p in acl.items()];print(''  [OK]
+    Least-privilege access control'')"'
   answer_detail: 토픽 ACL로 인가되지 않은 토픽 접근을 차단합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: ROS2 토픽 ACL — 노드별 발행/구독 권한 정의
+      success_criteria:
+      - ACL 정책 표 (노드 × 토픽 × 읽기/쓰기)
+      - DDS Permissions XML 구조 언급
+      - 최소 권한 원칙 적용
+      acceptable_methods:
+      - python dict 기반 정책
+      - DDS permissions.xml 예시
+      - SROS2 도구
+      - yaml 정책 파일
+      negative_signs:
+      - 정책 단일 항목
+      - DDS Permissions 개념 없음
+      - 최소 권한 원칙 누락
   target_vm: attacker
   script: 'python3 -c "acl={''nav_ctrl'':{''pub'':[''/cmd_vel''],''sub'':[''/scan'',''/odom'']},''lidar'':{''pub'':[''/scan''],''sub'':[]},''camera'':{''pub'':[''/camera/image''],''sub'':[]},''safety'':{''pub'':[''/emergency_stop''],''sub'':[''/cmd_vel'']}};print(''===
-    ROS2 Topic ACL ==='');[print(f''  {n}: pub={p[\"pub\"]} sub={p[\"sub\"]}'') for
-    n,p in acl.items()];print(''  [OK] Least-privilege access control'')"'
+    ROS2 Topic ACL ==='');[print(f''  {n}: pub={p[\"pub\"]} sub={p[\"sub\"]}'') for n,p in acl.items()];print(''  [OK]
+    Least-privilege access control'')"'
   risk_level: low
   bastion_prompt: ROS2 토픽별 접근 제어(ACL) 정책을 Python으로 설계하시오. 노드별 발행/구독 권한을 정의하라.
 - order: 6
@@ -136,28 +199,41 @@ steps:
   hint: SROS2 DDS security configuration을 질문하세요.
   category: analysis
   points: 10
-  answer: "\U0001F916 프롬프트: How do you configure DDS Security in ROS2 using SROS2?\
-    \ List the 3 main security plugins and their purposes.\n\U0001F4CE 참고 (CLI): curl\
-    \ -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\"\
-    ,\"messages\":[{\"role\":\"system\",\"content\":\"You are a ROS2 security engineer.\"\
-    },{\"role\":\"user\",\"content\":\"How do you configure DDS Security in ROS2 using\
-    \ SROS2? List the 3 main security plugins and their purposes.\"}],\"stream\":false,\"\
-    options\":{\"num_predict\":150}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  answer: "\U0001F916 프롬프트: How do you configure DDS Security in ROS2 using SROS2? List the 3 main security\
+    \ plugins and their purposes.\n\U0001F4CE 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/chat\
+    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a ROS2\
+    \ security engineer.\"},{\"role\":\"user\",\"content\":\"How do you configure DDS Security in ROS2\
+    \ using SROS2? List the 3 main security plugins and their purposes.\"}],\"stream\":false,\"options\"\
+    :{\"num_predict\":150}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: SROS2는 ROS2의 공식 보안 도구입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: LLM 에 DDS Security 플러그인 설정 방법 질의 — 5 플러그인(Auth/AccessControl/Crypto/Logging/Tagging)
+      success_criteria:
+      - 5 플러그인 중 3개 이상 언급
+      - 각 플러그인 역할 설명
+      - 거버넌스/퍼미션 문서 구조 언급
+      acceptable_methods:
+      - Ollama 호출
+      - OMG DDS Security spec 참조
+      - SROS2 튜토리얼 링크
+      - Eclipse Cyclone DDS 가이드
+      negative_signs:
+      - 플러그인 2개 이하
+      - 거버넌스 개념 없음
+      - spec 참조 없음
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\"\
-    :\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a ROS2\
-    \ security engineer.\"},{\"role\":\"user\",\"content\":\"How do you configure\
-    \ DDS Security in ROS2 using SROS2? List the 3 main security plugins and their\
-    \ purposes.\"}],\"stream\":false,\"options\":{\"num_predict\":150}}' \\\n | python3\
-    \ -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
+    messages\":[{\"role\":\"system\",\"content\":\"You are a ROS2 security engineer.\"},{\"role\":\"user\"\
+    ,\"content\":\"How do you configure DDS Security in ROS2 using SROS2? List the 3 main security plugins\
+    \ and their purposes.\"}],\"stream\":false,\"options\":{\"num_predict\":150}}' \\\n | python3 -c \"\
+    import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   risk_level: low
-  bastion_prompt: How do you configure DDS Security in ROS2 using SROS2? List the
-    3 main security plugins and their purposes.
+  bastion_prompt: How do you configure DDS Security in ROS2 using SROS2? List the 3 main security plugins
+    and their purposes.
 - order: 7
   instruction: DDS Security 적용 전후 공격 성공률을 비교하는 시뮬레이션을 수행하시오.
   hint: 보안 적용 전/후 각 공격의 성공 여부를 비교하세요.
@@ -165,9 +241,8 @@ steps:
   points: 12
   answer: '🤖 프롬프트: DDS Security 적용 전후 공격 성공률을 비교하는 시뮬레이션을 수행해줘
 
-    📎 참고 (CLI): python3 -c "attacks=[(''Topic Sniffing'',''POSSIBLE'',''BLOCKED''),(''Command
-    Injection'',''POSSIBLE'',''BLOCKED''),(''Discovery Scan'',''POSSIBLE'',''BLOCKED''),(''Node
-    Spoofing'',''POSSIBLE'',''BLOCKED''),(''DoS Flooding'',''POSSIBLE'',''MITIGATED'')];print(''===
+    📎 참고 (CLI): python3 -c "attacks=[(''Topic Sniffing'',''POSSIBLE'',''BLOCKED''),(''Command Injection'',''POSSIBLE'',''BLOCKED''),(''Discovery
+    Scan'',''POSSIBLE'',''BLOCKED''),(''Node Spoofing'',''POSSIBLE'',''BLOCKED''),(''DoS Flooding'',''POSSIBLE'',''MITIGATED'')];print(''===
     DDS Security Comparison ==='');print(f''  {\"Attack\":<22} {\"Before\":<12} {\"After\":<12}'');[print(f''  {a[0]:<22}
     {a[1]:<12} {a[2]:<12}'') for a in attacks]"'
   answer_detail: DDS Security는 ROS2의 주요 공격 벡터를 효과적으로 차단합니다.
@@ -175,6 +250,21 @@ steps:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: DDS Security 적용 전후 공격 성공률 비교 시뮬 — 인젝션/스푸핑/도청 테스트
+      success_criteria:
+      - 적용 전 성공률·적용 후 성공률 각각 출력
+      - 최소 3 공격 유형
+      - 보안 효과 정량화
+      acceptable_methods:
+      - python random 기반 시뮬
+      - 실제 DDS security 테스트
+      - pandas 로 비교 표
+      - matplotlib bar chart
+      negative_signs:
+      - 공격 유형 2 이하
+      - 수치 비교 없음
+      - 효과 정량화 부재
   target_vm: attacker
   script: python3 -c "attacks=[('Topic Sniffing','POSSIBLE','BLOCKED'),('Command Injection','POSSIBLE','BLOCKED'),('Discovery
     Scan','POSSIBLE','BLOCKED'),('Node Spoofing','POSSIBLE','BLOCKED'),('DoS Flooding','POSSIBLE','MITIGATED')];print('===
@@ -189,23 +279,35 @@ steps:
   points: 10
   answer: '🤖 프롬프트: ROS2 보안 감사 보고서를 Python으로 생성해줘
 
-    📎 참고 (CLI): python3 -c "print(''=== ROS2 Security Audit Report ==='');vulns=[(''No
-    DDS auth'',''CRITICAL''),(''Topic open access'',''CRITICAL''),(''Plaintext data'',''HIGH''),(''Discovery
-    exposed'',''HIGH'')];print(''  Vulnerabilities:'');[print(f''    [{s}] {v}'')
-    for v,s in vulns];print(''  Recommendations:'');print(''    1. Enable SROS2 DDS
-    Security'');print(''    2. Implement topic-level ACL'');print(''    3. Encrypt
-    sensitive topics'');print(''    4. Segment robot network'')"'
+    📎 참고 (CLI): python3 -c "print(''=== ROS2 Security Audit Report ==='');vulns=[(''No DDS auth'',''CRITICAL''),(''Topic
+    open access'',''CRITICAL''),(''Plaintext data'',''HIGH''),(''Discovery exposed'',''HIGH'')];print(''  Vulnerabilities:'');[print(f''    [{s}]
+    {v}'') for v,s in vulns];print(''  Recommendations:'');print(''    1. Enable SROS2 DDS Security'');print(''    2.
+    Implement topic-level ACL'');print(''    3. Encrypt sensitive topics'');print(''    4. Segment robot
+    network'')"'
   answer_detail: 보안 감사 보고서로 ROS2 환경의 보안 수준을 평가합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
+    semantic:
+      intent: ROS2 보안 감사 보고서 — 취약점·공격 시연·권고를 Python 으로 생성
+      success_criteria:
+      - 3 섹션 이상 (취약점/공격/권고)
+      - 각 섹션 항목 최소 2개
+      - 결과 파일 저장 또는 cat 출력
+      acceptable_methods:
+      - python 으로 markdown 생성
+      - json 구조화
+      - heredoc 으로 저장
+      - jinja2 템플릿
+      negative_signs:
+      - 섹션 2 미만
+      - 파일 저장 없음
+      - 항목 부족
   target_vm: attacker
-  script: python3 -c "print('=== ROS2 Security Audit Report ===');vulns=[('No DDS
-    auth','CRITICAL'),('Topic open access','CRITICAL'),('Plaintext data','HIGH'),('Discovery
-    exposed','HIGH')];print('  Vulnerabilities:');[print(f'    [{s}] {v}') for v,s
-    in vulns];print('  Recommendations:');print('    1. Enable SROS2 DDS Security');print('    2.
-    Implement topic-level ACL');print('    3. Encrypt sensitive topics');print('    4.
-    Segment robot network')"
+  script: python3 -c "print('=== ROS2 Security Audit Report ===');vulns=[('No DDS auth','CRITICAL'),('Topic
+    open access','CRITICAL'),('Plaintext data','HIGH'),('Discovery exposed','HIGH')];print('  Vulnerabilities:');[print(f'    [{s}]
+    {v}') for v,s in vulns];print('  Recommendations:');print('    1. Enable SROS2 DDS Security');print('    2.
+    Implement topic-level ACL');print('    3. Encrypt sensitive topics');print('    4. Segment robot network')"
   risk_level: low
   bastion_prompt: ROS2 보안 감사 보고서를 Python으로 생성해줘
