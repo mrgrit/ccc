@@ -28,20 +28,20 @@ steps:
     expect: open
     field: stdout
     semantic:
-      intent: 포트스캐닝 기초 (Port Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: nmap TCP Connect 스캔(-sT) — OS connect() 시스템 콜로 완전한 3-way handshake 수행, 기본 Top 1000 포트
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - nmap -sT <IP> 명령 실행
+      - 결과에 PORT STATE SERVICE 테이블과 최소 1개 open 포트
+      - 연결 로그가 남는 non-stealth 방식임을 인지
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - nmap -sT 10.20.30.80
+      - nmap --top-ports 1000 -sT <IP>
+      - python3 socket.connect_ex 반복 구현
+      - unicornscan -m T -Ir 160 <IP>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(포트스캐닝 기초 (Port Scanning))와 무관한 기법
+      - -sS SYN 스캔으로 대체 수행 (의도 벗어남)
+      - 특정 포트만 -p 로 지정해 Top 1000 스캔 안 함
+      - 결과에 open 포트 없고 해석도 없음
   target_vm: attacker
   script: nmap -sT 10.20.30.80
   risk_level: low
@@ -61,20 +61,20 @@ steps:
     expect: open
     field: stdout
     semantic:
-      intent: 포트스캐닝 기초 (Port Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: SYN Half-open 스캔(-sS) — root 권한으로 SYN-ACK 만 확인 후 RST 로 연결 중단, 로그 미기록의 스텔스 기법
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo nmap -sS <IP> 실행
+      - open 포트 목록 출력
+      - SYN 과 Connect 스캔의 로그 차이 언급 (stealth 속성)
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo nmap -sS 10.20.30.80
+      - hping3 -S -p <port> <IP> 단일 포트 SYN
+      - masscan --rate 1000 10.20.30.80
+      - scapy 로 수동 SYN 패킷 생성
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(포트스캐닝 기초 (Port Scanning))와 무관한 기법
+      - sudo 없이 실행해 TCP Connect 로 강등됨
+      - open 결과 없이 종료
+      - 스텔스 원리 언급 없음
   target_vm: attacker
   script: sudo nmap -sS 10.20.30.80
   risk_level: low
@@ -94,20 +94,20 @@ steps:
     expect: open
     field: stdout
     semantic:
-      intent: 포트스캐닝 기초 (Port Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 전체 포트(1-65535) 범위 SYN 스캔 + T4 타이밍 — 숨겨진 비표준 포트 탐색
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo nmap -sS -p- 또는 -p 1-65535 실행
+      - T3 이상 타이밍 적용(-T4 권장)
+      - 기본 Top 1000 에 없는 포트 최소 1개 발견 또는 전체 스캔 완료 확인
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo nmap -sS -p- -T4 <IP>
+      - masscan -p1-65535 --rate 10000 <IP>
+      - rustscan -a <IP> -r 1-65535
+      - unicornscan -mT -Ir 1000 -p 1-65535 <IP>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(포트스캐닝 기초 (Port Scanning))와 무관한 기법
+      - 기본 1000 포트만 스캔
+      - 타이밍 T1/T2 로 너무 느림 (실습 시간 초과)
+      - 완료 전 Ctrl+C 로 중단
   target_vm: attacker
   script: sudo nmap -sS -p- -T4 10.20.30.80
   risk_level: low
@@ -127,20 +127,20 @@ steps:
     expect: VERSION
     field: stdout
     semantic:
-      intent: 포트스캐닝 기초 (Port Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 서비스 버전 탐지(-sV) — 열린 포트에 프로브 전송해 서비스명·버전 식별 (CVE 매핑 용도)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo nmap -sV <IP> 실행
+      - 결과 테이블에 VERSION 컬럼과 구체 버전(예 nginx 1.18.0) 최소 1개
+      - 버전 기반 CVE 조회 가능성 또는 CPE 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo nmap -sV 10.20.30.80
+      - nmap -sV --version-intensity 5 <IP>
+      - amap -bqv <IP> <port>
+      - whatweb <url> (웹 포트 한정)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(포트스캐닝 기초 (Port Scanning))와 무관한 기법
+      - -sV 없이 포트 상태만 확인
+      - VERSION 컬럼 비어있어도 그냥 종료
+      - CVE 활용 가능성 언급 없음
   target_vm: attacker
   script: sudo nmap -sV 10.20.30.80
   risk_level: low
@@ -160,20 +160,20 @@ steps:
     expect: OS
     field: stdout
     semantic:
-      intent: 포트스캐닝 기초 (Port Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: OS fingerprinting(-O) — TCP/IP 스택 특성으로 운영체제 추정
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo nmap -O <IP> 실행
+      - 결과에 OS details 또는 Running 섹션에 추정 OS 언급 (Linux/Windows/BSD 등)
+      - CPE/Aggressive OS guesses 해석
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo nmap -O 10.20.30.80
+      - sudo nmap -A <IP> (-O + -sV + -sC + traceroute)
+      - p0f 수동 피델리티 분석
+      - xprobe2 <IP>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(포트스캐닝 기초 (Port Scanning))와 무관한 기법
+      - -O 없이 실행
+      - OS details 비어있어도 해석 없이 종료
+      - 열린 포트 없어 fingerprint 불가한데 대체 시도 없음
   target_vm: attacker
   script: sudo nmap -O 10.20.30.80
   risk_level: low
@@ -193,20 +193,20 @@ steps:
     expect: PORT
     field: stdout
     semantic:
-      intent: 포트스캐닝 기초 (Port Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: UDP 스캔(-sU) Top 20 — TCP 에 없는 DNS(53)·SNMP(161)·DHCP(67·68) 등 UDP 서비스 탐지
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo nmap -sU --top-ports 20 <IP> 실행
+      - 결과에 PORT STATE SERVICE 테이블 + UDP 컬럼
+      - open|filtered 상태의 UDP 포트 최소 1개 해석 또는 모두 closed 시 그 의미 해석
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo nmap -sU --top-ports 20 10.20.30.80
+      - sudo nmap -sU -p 53,161,123,67,68 <IP>
+      - unicornscan -mU -Ir 160 <IP>
+      - amap -U <IP> <port>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(포트스캐닝 기초 (Port Scanning))와 무관한 기법
+      - -sT / -sS 수행 (TCP)
+      - --top-ports 누락해 전 UDP 범위 시도 (느림)
+      - open|filtered 의 의미 해석 없음
   target_vm: attacker
   script: sudo nmap -sU --top-ports 20 10.20.30.80
   risk_level: low
@@ -226,20 +226,20 @@ steps:
     expect: open
     field: stdout
     semantic:
-      intent: 포트스캐닝 기초 (Port Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: NSE 기본 스크립트(-sC) 실행 — default 카테고리 Lua 스크립트로 정보 수집·취약점 지문 자동 수행
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo nmap -sC -sV <IP> 실행
+      - '응답에 | script-name: 형태의 NSE 결과 최소 1개'
+      - -sV 결합으로 버전 탐지도 동시 수행
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo nmap -sC -sV 10.20.30.80
+      - sudo nmap --script default <IP>
+      - 'sudo nmap -A <IP> (comprehensive: OS+version+scripts+traceroute)'
+      - --script=banner,ssl-cert,http-title 등 개별 선택
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(포트스캐닝 기초 (Port Scanning))와 무관한 기법
+      - -sC 없이 포트 상태만
+      - default 외 다른 카테고리(vuln/exploit) 임의 적용
+      - NSE 결과 해석 없이 raw 출력만
   target_vm: attacker
   script: sudo nmap -sC -sV 10.20.30.80
   risk_level: low
@@ -259,20 +259,20 @@ steps:
     expect: '3000'
     field: stdout
     semantic:
-      intent: 포트스캐닝 기초 (Port Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: http-enum NSE — 알려진 웹 경로(관리자·백업·설정)에 HTTP 요청 보내 존재하는 디렉터리·파일 자동 열거
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - nmap --script http-enum -p 3000 <IP> 실행
+      - 응답에 /admin, /api-docs 등 디렉터리 최소 1개 발견 또는 http-enum 스크립트 실행 완료
+      - port 3000 (대상 웹 서비스) 지정
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - nmap --script http-enum -p 3000 10.20.30.80
+      - nikto -h <url>:3000
+      - dirsearch -u <url>:3000
+      - gobuster dir -u <url>:3000 -w common.txt
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(포트스캐닝 기초 (Port Scanning))와 무관한 기법
+      - 포트 지정 없이 기본 80 스캔
+      - http-enum 이 아닌 일반 default 스크립트만
+      - 경로 결과 해석 없음
   target_vm: attacker
   script: nmap --script http-enum -p 3000 10.20.30.80
   risk_level: low
@@ -292,20 +292,20 @@ steps:
     expect: PORT
     field: stdout
     semantic:
-      intent: 포트스캐닝 기초 (Port Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: ACK 스캔(-sA) — 방화벽 필터링 규칙 매핑 (RST 응답=unfiltered, 무응답=filtered), 포트 개방 상태 판별 아님
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo nmap -sA <IP> 실행
+      - 결과 테이블에 unfiltered 또는 filtered 상태 구분
+      - 상태기반/무상태 방화벽 판별 논리 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo nmap -sA 10.20.30.1
+      - sudo nmap -sA -p 22,80,443 <IP>
+      - hping3 -A -p <port> <IP> 단일 포트
+      - scapy ACK 패킷 수동 + RST 수신 확인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(포트스캐닝 기초 (Port Scanning))와 무관한 기법
+      - -sS 또는 -sT 로 대체 (open/closed 만 확인)
+      - unfiltered/filtered 차이 해석 없음
+      - 방화벽 규칙 매핑 맥락 누락
   target_vm: attacker
   script: sudo nmap -sA 10.20.30.1
   risk_level: low
@@ -325,20 +325,20 @@ steps:
     expect: Nmap scan report
     field: stdout
     semantic:
-      intent: 포트스캐닝 기초 (Port Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Fast 모드(-F) 전체 /24 대역 스캔 — 상위 100개 포트로 속도 극대화해 네트워크 개요 빠르게 파악
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo nmap -sS -F 10.20.30.0/24 실행
+      - Nmap scan report for 라인이 여러 호스트에 대해 출력
+      - 활성 호스트별 open 포트 요약
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo nmap -sS -F 10.20.30.0/24
+      - masscan -p22,80,443,3000 --rate 10000 <cidr>
+      - rustscan -a <cidr> --top 100
+      - zmap -p 443 <cidr>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(포트스캐닝 기초 (Port Scanning))와 무관한 기법
+      - 단일 IP 만 스캔
+      - -F 없이 기본 Top 1000 수행 (시간 초과)
+      - 결과 집계 없이 raw 출력만
   target_vm: attacker
   script: sudo nmap -sS -F 10.20.30.0/24
   risk_level: low
@@ -358,20 +358,20 @@ steps:
     expect: xml
     field: stdout
     semantic:
-      intent: 포트스캐닝 기초 (Port Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 스캔 결과 XML 저장(-oX) — 머신 판독 가능한 형식으로 출력해 Metasploit·searchsploit 등 연계 자동화 기반 마련
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo nmap -sV -oX /tmp/scan_result.xml <IP> 실행
+      - 생성된 XML 파일의 머리(head) 20 줄 출력해 <nmaprun> 태그 확인
+      - -oX 외 -oN(normal), -oG(grepable), -oA(all) 형식 차이 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo nmap -sV -oX <file> <IP>
+      - sudo nmap -sV -oA /tmp/scan (세 형식 동시 저장)
+      - nmap + xsltproc nmap.xml -> HTML 보고서
+      - msfconsole db_import /tmp/scan_result.xml
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(포트스캐닝 기초 (Port Scanning))와 무관한 기법
+      - -oX 없이 stdout 만 확인
+      - 파일 저장 경로 오류로 실패 후 포기
+      - XML 구조 검증 없음 (head/file 미실행)
   target_vm: attacker
   script: sudo nmap -sV -oX /tmp/scan_result.xml 10.20.30.80 && head -20 /tmp/scan_result.xml
   risk_level: low
@@ -391,20 +391,20 @@ steps:
     expect: '3000'
     field: stdout
     semantic:
-      intent: 포트스캐닝 기초 (Port Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: NSE vuln 카테고리 — 알려진 CVE(Heartbleed, ShellShock, http-vuln-*) 자동 탐지 스크립트 실행
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - nmap --script vuln -p 3000 <IP> 실행
+      - 스크립트 결과에 VULNERABLE 또는 http-vuln-* 최소 1개 또는 NOT VULNERABLE 판정
+      - 전문 스캐너(OpenVAS/Nessus) 대비 커버리지 한계 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - nmap --script vuln -p 3000 10.20.30.80
+      - nmap --script http-vuln-cve* -p 3000 <IP>
+      - nikto -h <host>:3000
+      - wapiti -u http://<host>:3000
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(포트스캐닝 기초 (Port Scanning))와 무관한 기법
+      - default/safe 카테고리로 대체
+      - port 미지정
+      - 결과에서 CVE 해석 없이 raw 출력만
   target_vm: attacker
   script: nmap --script vuln -p 3000 10.20.30.80
   risk_level: low
@@ -424,20 +424,20 @@ steps:
     expect: open
     field: stdout
     semantic:
-      intent: 포트스캐닝 기초 (Port Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 특정 포트만 지정 스캔(-p 443,9400) — Wazuh/OpenCTI 가용성 확인 + 불필요 트래픽 최소화
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - nmap -p 443,9400 <SIEM_IP> 실행
+      - 응답에 두 포트 상태(open/closed/filtered) 각각 확인
+      - 선택적 스캔의 장점(속도·스텔스) 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - nmap -sT -p 443,9400 10.20.30.100
+      - nmap -p 443,9400 --reason <IP>
+      - nc -zv <IP> 443; nc -zv <IP> 9400
+      - python socket.connect_ex 병렬 2개 포트
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(포트스캐닝 기초 (Port Scanning))와 무관한 기법
+      - 전 포트 스캔 수행 (-p- 또는 default 1000)
+      - 포트 1개만 스캔
+      - 결과 해석 없이 raw 출력만
   target_vm: attacker
   script: nmap -sT -p 443,9400 10.20.30.100
   risk_level: low
@@ -458,20 +458,20 @@ steps:
     expect: hping
     field: stdout
     semantic:
-      intent: 포트스캐닝 기초 (Port Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Idle(Zombie) 스캔 선행 — hping3 로 Zombie 후보의 IP ID 순차 증가성 확인 (증가 패턴이 예측 가능하면 좀비로 사용 가능)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo hping3 -S -p 22 -c 3 <IP> 실행
+      - 응답에 id= 필드가 3회 표시, 각 값 기록
+      - IP ID 가 순차 증가(예 +1,+1) 하는지 판정 — Zombie 적격성 평가
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo hping3 -S -p 22 -c 3 <IP>
+      - nmap --script ipidseq <IP>
+      - scapy 로 TCP SYN 3회 후 IP ID 비교
+      - nmap -sI <zombie>:<port> <target> (실제 Idle 스캔)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(포트스캐닝 기초 (Port Scanning))와 무관한 기법
+      - IP ID 관찰 없이 hping 단순 실행
+      - nmap SYN 스캔으로 대체
+      - Zombie 적격성 평가 누락
   target_vm: attacker
   script: sudo hping3 -S -p 22 -c 3 10.20.30.1
   risk_level: low
@@ -492,20 +492,20 @@ steps:
     expect: open
     field: stdout
     semantic:
-      intent: 포트스캐닝 기초 (Port Scanning) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 전 스캔 결과 종합 — 다중 호스트(Firewall·Web·SIEM) 의 전체 포트·서비스·버전을 /tmp/port_scan_report.txt 에 정리
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo nmap -sV -p- -oN /tmp/port_scan_report.txt <IP1> <IP2> <IP3> 실행
+      - /tmp/port_scan_report.txt 에 Nmap scan report 섹션 3개 이상
+      - head/cat 으로 파일 내용 검증 후 각 호스트별 open 포트 요약
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo nmap -sV -p- -T4 -oN <file> <IP1> <IP2> <IP3>
+      - sudo nmap -sV -oA /tmp/scan (normal + XML + grepable)
+      - 개별 스캔 후 cat 으로 합치기
+      - python 으로 XML 파싱 후 markdown 리포트
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(포트스캐닝 기초 (Port Scanning))와 무관한 기법
+      - 단일 호스트만 스캔
+      - 파일 저장 없이 stdout 만
+      - 버전 탐지(-sV) 누락
   target_vm: attacker
   script: sudo nmap -sV -p- -T4 -oN /tmp/port_scan_report.txt 10.20.30.1 10.20.30.80 10.20.30.100 && head
     -50 /tmp/port_scan_report.txt
