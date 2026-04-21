@@ -35,20 +35,22 @@ steps:
     expect: 'inet '
     field: stdout
     semantic:
-      intent: '[RED] 정찰(Reconnaissance) 기초 - 공격 기법 실행'
+      intent: '[RED] attacker VM 자체 IP/네트워크 인터페이스 조회 — ip addr show 로 10.20.30.201 인터페이스 + MAC + 상태 확인.
+        후속 정찰의 출발점(공격자 IP 식별) 및 대상 네트워크 대역(10.20.30.0/24) 추정'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - ip addr show 또는 ifconfig 실행
+      - inet 또는 10.20.30.201 주소 출력 포함
+      - 후속 정찰의 출발점 역할 언급
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - ip addr show
+      - ip -br addr
+      - ifconfig (net-tools)
+      - hostname -I
+      - ipconfig (Windows)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 원격 호스트 조회 (attacker 자체 아님)
+      - MAC/IP 없이 hostname 만
+      - 후속 정찰 연결 설명 없음
   target_vm: attacker
   script: ip addr show
   risk_level: low
@@ -68,20 +70,22 @@ steps:
     expect: Host is up
     field: stdout
     semantic:
-      intent: '[RED] 정찰(Reconnaissance) 기초 - 공격 기법 실행'
+      intent: '[RED] nmap -sn Ping Sweep — 10.20.30.0/24 대역 256 개 IP 에 ICMP/TCP SYN ping 만 전송 (포트 스캔 없음)으로
+        활성 호스트 발견. -T4 공격적 타이밍 + --max-retries 1 + --host-timeout 15s. secu(.1)·web(.80)·siem(.100) 3개
+        호스트 식별 예상. MITRE T1018 Remote System Discovery'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - nmap -sn <CIDR> 명령 실행 (/24 범위)
+      - Host is up 라인 최소 2개 이상 (3호스트 중)
+      - Ping Sweep 이 포트 스캔 없이 호스트만 발견하는 개념 반영
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nmap -sn -T4 10.20.30.0/24
+      - fping -g 10.20.30.0/24
+      - arp-scan -l (L2 대역)
+      - for i in {1..254}; do ping -c1 -W1 10.20.30.$i; done
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - nmap -sS/-sV 사용 (포트 스캔 포함)
+      - 단일 호스트만 조회 (/24 범위 아님)
+      - Host is up 없음
   target_vm: attacker
   script: nmap -sn -T4 --max-retries 1 --host-timeout 15s 10.20.30.0/24
   risk_level: low
@@ -101,20 +105,22 @@ steps:
     expect: open
     field: stdout
     semantic:
-      intent: '[RED] 정찰(Reconnaissance) 기초 - 공격 기법 실행'
+      intent: '[RED] web 서버(10.20.30.80) --top-ports 100 스캔 — nmap -sV -T4 --top-ports 100 로 상위 100개 공통
+        포트(nmap-services 빈도 기반) 탐색. 22(SSH)·80(Apache)·3000(JuiceShop)·8080(DVWA) 열림 예상. 서비스 종류 식별로 공격
+        표면 분석'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - nmap -sV --top-ports 100 + 대상 IP 10.20.30.80
+      - open 키워드 포함 + 최소 3개 포트 식별
+      - 서비스 명(ssh/http/apache 등) 포함
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nmap -sV --top-ports 100 <IP>
+      - nmap -p- 전체 65535 포트 (느림)
+      - masscan --top-ports 100 --rate 1000
+      - rustscan -a <IP> --top
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 단일 포트만 스캔
+      - --top-ports 옵션 없음 (기본 1000)
+      - 서비스 탐지(-sV) 없이 포트만
   target_vm: attacker
   script: nmap -sV -T4 --top-ports 100 --max-retries 1 --host-timeout 15s 10.20.30.80
   risk_level: low
@@ -133,20 +139,21 @@ steps:
     expect: VERSION
     field: stdout
     semantic:
-      intent: '[RED] 정찰(Reconnaissance) 기초 - 공격 기법 실행'
+      intent: '[RED] 특정 포트 대상 정밀 서비스 버전 탐지 — nmap -sV -p 22,80,3000,8080 로 SSH(OpenSSH)·Apache·Node.js(JuiceShop)·DVWA(PHP)
+        버전 식별. 각 프로브에 응답 매칭해 서비스명+버전+OS hint 추출. 후속 CVE 매칭·exploit 선정의 핵심 정보'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - nmap -sV -p 22,80,3000,8080 또는 동등한 포트 지정
+      - VERSION 또는 버전 문자열(Apache/OpenSSH/Node) 출력
+      - s3 의 top-100 과 달리 특정 포트 정밀 탐지 성격 명시
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nmap -sV -p <포트목록> <IP>
+      - nmap --version-intensity 9 -p <포트>
+      - banner grabbing nc <IP> <port>
+      - curl -sI <http 포트>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - -sV 없이 SYN 스캔만
+      - top-ports 와 중복된 접근 (특정 포트 아님)
+      - 버전 정보 없이 open/closed 만
   target_vm: attacker
   script: nmap -sV -p 22,80,3000,8080 -T4 --max-retries 1 --host-timeout 15s 10.20.30.80
   risk_level: low
@@ -167,20 +174,22 @@ steps:
     expect: http
     field: stdout
     semantic:
-      intent: '[RED] 정찰(Reconnaissance) 기초 - 공격 기법 실행'
+      intent: '[RED] nmap NSE (Nmap Scripting Engine) HTTP 열거 — --script http-enum(알려진 경로 admin/backup/login
+        탐색) + http-headers(응답 헤더 수집) 동시 실행. 포트 80·3000·8080 대상. 서비스 버전보다 한 단계 깊은 웹 애플리케이션 레벨 정보(기술스택·프레임워크·민감
+        경로) 수집'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - nmap --script http-enum 또는 http-headers 실행
+      - http 키워드 포함 + 경로/헤더 정보 출력
+      - NSE 스크립트가 웹 애플리케이션 레벨 열거임을 인지
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nmap --script http-enum,http-headers
+      - nmap --script=http-* -p 80 <IP>
+      - gobuster dir -u <url> -w wordlist
+      - ffuf -u <url>/FUZZ -w wordlist
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - NSE 스크립트 없이 일반 포트 스캔
+      - http-title 만 (enum/headers 아님)
+      - 포트 지정 없이 기본 포트만
   target_vm: attacker
   script: nmap --script http-enum,http-headers -p 80,3000,8080 -T4 --max-retries 1 --host-timeout 15s
     10.20.30.80
@@ -203,20 +212,22 @@ steps:
     expect: Server
     field: stdout
     semantic:
-      intent: '[RED] 정찰(Reconnaissance) 기초 - 공격 기법 실행'
+      intent: '[RED] curl -sI 세 서비스별 HTTP 응답 헤더 수집 — Port 80(Apache), 3000(JuiceShop Express), 8080(DVWA
+        Apache+PHP) 각각 HEAD 요청으로 Server/X-Powered-By/Set-Cookie/X-Frame-Options 등 수집. 각 서비스 고유의 기술 스택과
+        보안 설정 누락 지점 식별'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - curl -sI 로 3개 포트(80/3000/8080) 모두 요청
+      - Server 헤더 또는 유사 메타데이터 출력
+      - 포트별 서비스 구분(Apache/JuiceShop/DVWA) 출력 구조
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl -sI http://<IP>:<port>
+      - curl -v http://<IP>:<port> 2>&1 | grep ^<
+      - wget --spider -S <url>
+      - httpie http HEAD <url>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 단일 포트만 조회
+      - 응답 본문까지 받음 (-sI 아님)
+      - Server 헤더 확인 누락
   target_vm: attacker
   script: echo '=== Port 80 ===' && curl -sI http://10.20.30.80/ | head -5 && echo '=== Port 3000 (JuiceShop)
     ===' && curl -sI http://10.20.30.80:3000/ | head -5 && echo '=== Port 8080 (DVWA) ===' && curl -sI
@@ -238,20 +249,21 @@ steps:
     expect: 10.20.30
     field: stdout
     semantic:
-      intent: '[BLUE] 정찰(Reconnaissance) 기초 - 탐지·방어 구현'
+      intent: '[BLUE] Suricata fast.log 정찰 스캔 경보 확인 — tail -30 /var/log/suricata/fast.log 로 한 줄 간단 경보
+        형식 조회. 이전 RED 단계의 nmap 스캔(s2~s5)이 트리거한 SCAN 카테고리 시그니처 검출. src_ip=10.20.30.201(공격자) 식별'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - tail /var/log/suricata/fast.log 또는 cat 명령
+      - 10.20.30 IP 출력 (공격자 또는 대상)
+      - 이전 RED 스캔 단계와의 시간 연관 분석
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - tail -N /var/log/suricata/fast.log
+      - grep SCAN /var/log/suricata/fast.log
+      - suricata-update + 룰 갱신 후 재확인
+      - journalctl -u suricata
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 다른 로그 파일 조회 (fast.log 아님)
+      - RED 공격 단계와 연관 분석 없음
+      - 공격자 IP 식별 누락
   target_vm: secu
   script: tail -30 /var/log/suricata/fast.log | head -20
   risk_level: low
@@ -272,20 +284,22 @@ steps:
     expect: 10.20.30
     field: stdout
     semantic:
-      intent: '[BLUE] 정찰(Reconnaissance) 기초 - 탐지·방어 구현'
+      intent: '[BLUE] Suricata eve.json JSON Lines 파싱 — jq 로 .event_type==alert 필터 후 .src_ip 추출 → sort
+        | uniq -c | sort -rn 로 공격자 IP 별 경보 건수 상위 집계. 가장 활동이 많은 공격자 IP(10.20.30.201) 식별. 네트워크 보안 가시성 확보를
+        위한 기본 분석 워크플로'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - jq -r select(.event_type=='alert') .src_ip 파싱
+      - sort | uniq -c | sort -rn 집계 파이프라인
+      - 공격자 IP 10.20.30 식별
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - jq + sort + uniq -c + sort -rn
+      - python json.loads 로 스크립트
+      - Elastic Stack / Filebeat + Kibana 질의
+      - Splunk search event_type=alert | stats count by src_ip
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - fast.log 만 조회 (eve.json JSON 파싱 없음)
+      - 집계 없이 raw 출력만
+      - 공격자 IP 식별 누락
   target_vm: secu
   script: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .src_ip' 2>/dev/null
     | sort | uniq -c | sort -rn | head -5
@@ -307,20 +321,23 @@ steps:
     expect: complete
     field: stdout
     semantic:
-      intent: '[BLUE] 정찰(Reconnaissance) 기초 - 탐지·방어 구현'
+      intent: '[BLUE] Wazuh HIDS alerts.json 조회 — /var/ossec/logs/alerts/alerts.json 에서 tail -20 + jq
+        .rule.description 으로 최근 룰 기반 경보 상위 10개 분석. Wazuh(호스트 기반) + Suricata(네트워크 기반) 병행으로 탐지 가시성 확장. 파일
+        변경·인증 실패·정책 위반 카테고리'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - sudo cat 또는 tail /var/ossec/logs/alerts/alerts.json
+      - jq .rule.description 또는 동등한 필드 추출
+      - Wazuh 가 HIDS (네트워크 IDS Suricata 와 다른 계층) 성격 반영
+      - complete 또는 Wazuh 관련 출력
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - jq .rule.description /var/ossec/logs/alerts/alerts.json
+      - Wazuh dashboard (Kibana) 검색
+      - /var/ossec/logs/ossec.log 원본 로그
+      - Wazuh API /security/alerts
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - Suricata 로그 재조회 (HIDS 구분 없음)
+      - jq 없이 raw 로그 덤프
+      - 호스트 기반 탐지 개념 언급 없음
   target_vm: siem
   script: sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -20 | jq -r '.rule.description'
     2>/dev/null | head -10 || echo 'Wazuh alerts check complete'
@@ -340,20 +357,21 @@ steps:
     expect: /tmp/recon_week01.xml
     field: filesystem
     semantic:
-      intent: '[RED] 정찰(Reconnaissance) 기초 - 공격 기법 실행'
+      intent: '[RED] nmap -oX /tmp/recon_week01.xml XML 출력 저장 — 정찰 결과를 구조화된 XML 포맷으로 보존해 후속 도구(searchsploit,
+        metasploit db_import, vulscan) 연동·자동화 파이프라인 파싱 가능. -oA(all formats) 대안. 팀 협업 시 결과 공유 기반'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - nmap -oX <path> 또는 -oA <basename> 실행
+      - /tmp/recon_week01.xml 파일 생성
+      - 후속 도구 import 또는 자동화 활용성 언급
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nmap -sV -oX /tmp/recon_week01.xml <IP>
+      - nmap -oA /tmp/recon_week01 (xml+nmap+gnmap 동시)
+      - masscan -oX + xmlstarlet 변환
+      - python-nmap 로 결과 DB 적재
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 파일 미생성 (stdout 만)
+      - XML 대신 기본 텍스트 출력
+      - 후속 활용 목적 없음
   target_vm: attacker
   script: nmap -sV -T4 --max-retries 1 --host-timeout 15s -oX /tmp/recon_week01.xml 10.20.30.80
   risk_level: low
