@@ -3,8 +3,7 @@ title: HTTP 기초 실습 (AI 지원)
 version: ai
 course: web-vuln-ai
 week: 1
-description: HTTP 프로토콜의 구조, 요청/응답 메시지, 헤더 분석 등 웹 보안의 기초를 실습합니다. AI SubAgent가 자동으로
-  명령을 실행하고 결과를 검증합니다.
+description: HTTP 프로토콜의 구조, 요청/응답 메시지, 헤더 분석 등 웹 보안의 기초를 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: easy
 duration_minutes: 120
 objectives:
@@ -21,12 +20,26 @@ steps:
   answer: '🤖 프롬프트: curl을 사용하여 대상 웹 서버(http://10.20.30.80)에 GET 요청을 보내고 응답 헤더를 확인해줘
 
     📎 참고 (CLI): curl -I http://10.20.30.80'
-  answer_detail: curl -I는 HEAD 요청으로 응답 헤더만 받습니다. Server, Content-Type, Set-Cookie
-    등 보안 관련 헤더를 확인합니다.
+  answer_detail: curl -I는 HEAD 요청으로 응답 헤더만 받습니다. Server, Content-Type, Set-Cookie 등 보안 관련 헤더를 확인합니다.
   verify:
     type: output_contains
     expect: HTTP/
     field: stdout
+    semantic:
+      intent: curl GET 요청으로 대상 웹서버 응답 헤더 수집 — 기본 HTTP 통신 흐름 이해
+      success_criteria:
+      - curl -I 또는 curl -v 로 헤더 획득
+      - Server/Content-Type/Status 코드 등 주요 헤더 3개 이상 확인
+      - 응답 상태 코드 해석
+      acceptable_methods:
+      - curl -sI <url>
+      - curl -v <url> 2>&1 | head
+      - wget --server-response --spider <url>
+      - python requests.head(url).headers
+      negative_signs:
+      - 본문만 다운로드하고 헤더 무시
+      - 단일 헤더만 확인
+      - 상태 코드 해석 없음
   target_vm: attacker
   script: curl -I http://10.20.30.80
   risk_level: low
@@ -38,18 +51,33 @@ steps:
   points: 8
   answer: '🤖 프롬프트: HTTP 응답 코드 종류를 확인하시오: 존재하는 페이지와 존재하지 않는 페이지의 응답 코드 차이를 확인해줘
 
-    📎 참고 (CLI): echo ''존재하는 페이지:'' && curl -o /dev/null -s -w ''%{http_code}'' http://10.20.30.80/
-    && echo '''' && echo ''존재하지 않는 페이지:'' && curl -o /dev/null -s -w ''%{http_code}''
-    http://10.20.30.80/nonexistent && echo '''''
+    📎 참고 (CLI): echo ''존재하는 페이지:'' && curl -o /dev/null -s -w ''%{http_code}'' http://10.20.30.80/ &&
+    echo '''' && echo ''존재하지 않는 페이지:'' && curl -o /dev/null -s -w ''%{http_code}'' http://10.20.30.80/nonexistent
+    && echo '''''
   answer_detail: 200은 성공, 404는 페이지 없음, 301/302는 리다이렉트, 500은 서버 에러입니다.
   verify:
     type: output_contains
     expect: '200'
     field: stdout
+    semantic:
+      intent: HTTP 응답 코드 비교 — 존재 페이지(200) vs 비존재(404) 응답 코드와 Content-Length 차이
+      success_criteria:
+      - 최소 2개 경로(루트 + 존재하지 않는 경로) 테스트
+      - 각 응답 코드 명시 (200/404/403/500)
+      - Content-Length 또는 본문 길이 차이 비교
+      acceptable_methods:
+      - curl -o /dev/null -w %{http_code}\n <url>
+      - curl -I <url>
+      - for path in / /nonexistent; do curl ...; done
+      - python requests.get status_code
+      negative_signs:
+      - 단일 URL 만 테스트
+      - 응답 코드 해석 없음
+      - Content 비교 없음
   target_vm: attacker
-  script: echo '존재하는 페이지:' && curl -o /dev/null -s -w '%{http_code}' http://10.20.30.80/
-    && echo '' && echo '존재하지 않는 페이지:' && curl -o /dev/null -s -w '%{http_code}' http://10.20.30.80/nonexistent
-    && echo ''
+  script: echo '존재하는 페이지:' && curl -o /dev/null -s -w '%{http_code}' http://10.20.30.80/ && echo '' &&
+    echo '존재하지 않는 페이지:' && curl -o /dev/null -s -w '%{http_code}' http://10.20.30.80/nonexistent && echo
+    ''
   risk_level: low
   bastion_prompt: 'HTTP 응답 코드 종류를 확인하시오: 존재하는 페이지와 존재하지 않는 페이지의 응답 코드 차이를 확인해줘'
 - order: 3
@@ -57,31 +85,41 @@ steps:
   hint: curl -X OPTIONS를 사용하세요.
   category: http_basics
   points: 10
-  answer: '🤖 프롬프트: HTTP 요청 메서드(GET, POST, PUT, DELETE, OPTIONS)를 테스트하여 서버가 허용하는 메서드를
-    확인해줘
+  answer: '🤖 프롬프트: HTTP 요청 메서드(GET, POST, PUT, DELETE, OPTIONS)를 테스트하여 서버가 허용하는 메서드를 확인해줘
 
-    📎 참고 (CLI): curl -s -X OPTIONS http://10.20.30.80/ -I 2>/dev/null | grep -i allow
-    && echo ''OPTIONS 확인 완료'''
-  answer_detail: OPTIONS 메서드로 서버가 허용하는 HTTP 메서드를 확인합니다. 불필요한 메서드(PUT, DELETE)는 비활성화해야
-    합니다.
+    📎 참고 (CLI): curl -s -X OPTIONS http://10.20.30.80/ -I 2>/dev/null | grep -i allow && echo ''OPTIONS
+    확인 완료'''
+  answer_detail: OPTIONS 메서드로 서버가 허용하는 HTTP 메서드를 확인합니다. 불필요한 메서드(PUT, DELETE)는 비활성화해야 합니다.
   verify:
     type: output_contains
     expect: OPTIONS 확인 완료
     field: stdout
+    semantic:
+      intent: HTTP 메서드(GET/POST/PUT/DELETE/OPTIONS) 테스트 — 서버 허용 메서드 파악, OPTIONS Allow 헤더 확인
+      success_criteria:
+      - 5개 주요 메서드 시도 또는 OPTIONS 요청으로 Allow 헤더 수집
+      - 각 메서드 응답 코드(200/405) 해석
+      - PUT/DELETE 허용 시 위험(unintended resource modification) 언급
+      acceptable_methods:
+      - curl -X <METHOD> <url>
+      - curl -X OPTIONS <url> -I
+      - python requests.request(method, url)
+      - nmap --script http-methods -p 80 <target>
+      negative_signs:
+      - GET 만 사용
+      - OPTIONS 확인 없음
+      - 허용 메서드의 보안 영향 누락
   target_vm: attacker
-  script: curl -s -X OPTIONS http://10.20.30.80/ -I 2>/dev/null | grep -i allow &&
-    echo 'OPTIONS 확인 완료'
+  script: curl -s -X OPTIONS http://10.20.30.80/ -I 2>/dev/null | grep -i allow && echo 'OPTIONS 확인 완료'
   risk_level: low
-  bastion_prompt: HTTP 요청 메서드(GET, POST, PUT, DELETE, OPTIONS)를 테스트하여 서버가 허용하는 메서드를
-    확인해줘
+  bastion_prompt: HTTP 요청 메서드(GET, POST, PUT, DELETE, OPTIONS)를 테스트하여 서버가 허용하는 메서드를 확인해줘
 - order: 4
-  instruction: 응답 헤더에서 보안 헤더(X-Frame-Options, X-XSS-Protection, Content-Security-Policy
-    등)의 존재 여부를 확인하시오.
+  instruction: 응답 헤더에서 보안 헤더(X-Frame-Options, X-XSS-Protection, Content-Security-Policy 등)의 존재 여부를 확인하시오.
   hint: curl -I로 헤더를 분석하세요.
   category: security_headers
   points: 12
-  answer: '🤖 프롬프트: 응답 헤더에서 보안 헤더(X-Frame-Options, X-XSS-Protection, Content-Security-Policy
-    등)의 존재 여부를 확인해줘
+  answer: '🤖 프롬프트: 응답 헤더에서 보안 헤더(X-Frame-Options, X-XSS-Protection, Content-Security-Policy 등)의 존재 여부를
+    확인해줘
 
     📎 참고 (CLI): curl -sI http://10.20.30.80 | grep -iE ''(x-frame|x-xss|content-security|strict-transport|x-content-type)''
     && echo ''보안 헤더 분석 완료'' || echo ''보안 헤더 미설정 탐지'''
@@ -90,12 +128,28 @@ steps:
     type: output_contains
     expect: 보안 헤더
     field: stdout
+    semantic:
+      intent: 보안 헤더 점검 — X-Frame-Options, CSP, HSTS, X-Content-Type-Options, X-XSS-Protection, Referrer-Policy
+        존재 여부
+      success_criteria:
+      - 6개 주요 보안 헤더 중 4개 이상 확인 (grep 또는 -iE 패턴)
+      - 누락된 헤더의 공격 벡터 설명(클릭재킹/XSS/MIME sniffing)
+      - securityheaders.com 또는 Mozilla Observatory 언급
+      acceptable_methods:
+      - curl -sI <url> | grep -iE <pattern>
+      - securityheaders.com API
+      - OWASP ZAP 자동 점검
+      - nikto -h <url>
+      negative_signs:
+      - 보안 헤더 2개 이하
+      - 누락 의미 해석 없음
+      - 자동화 도구 언급 없음
   target_vm: attacker
   script: curl -sI http://10.20.30.80 | grep -iE '(x-frame|x-xss|content-security|strict-transport|x-content-type)'
     && echo '보안 헤더 분석 완료' || echo '보안 헤더 미설정 탐지'
   risk_level: low
-  bastion_prompt: 응답 헤더에서 보안 헤더(X-Frame-Options, X-XSS-Protection, Content-Security-Policy
-    등)의 존재 여부를 확인해줘
+  bastion_prompt: 응답 헤더에서 보안 헤더(X-Frame-Options, X-XSS-Protection, Content-Security-Policy 등)의 존재 여부를
+    확인해줘
 - order: 5
   instruction: 쿠키 속성(HttpOnly, Secure, SameSite)을 분석하시오.
   hint: curl -c 옵션으로 쿠키를 저장하세요.
@@ -103,17 +157,30 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 쿠키 속성(HttpOnly, Secure, SameSite)을 분석해줘
 
-    📎 참고 (CLI): curl -sI http://10.20.30.80 | grep -i ''set-cookie'' && echo ''쿠키
-    분석 완료'' || echo ''쿠키 없음'''
-  answer_detail: HttpOnly는 JavaScript 접근 차단, Secure는 HTTPS만 전송, SameSite는 CSRF 방지
-    속성입니다.
+    📎 참고 (CLI): curl -sI http://10.20.30.80 | grep -i ''set-cookie'' && echo ''쿠키 분석 완료'' || echo ''쿠키
+    없음'''
+  answer_detail: HttpOnly는 JavaScript 접근 차단, Secure는 HTTPS만 전송, SameSite는 CSRF 방지 속성입니다.
   verify:
     type: output_contains
     expect: 쿠키
     field: stdout
+    semantic:
+      intent: 쿠키 보안 속성 분석 — HttpOnly(XSS 방어), Secure(HTTPS only), SameSite(CSRF 방어) 여부
+      success_criteria:
+      - Set-Cookie 헤더 수집 (curl -c 또는 -I)
+      - HttpOnly/Secure/SameSite 각 속성 확인
+      - 누락 속성의 공격(XSS 쿠키 탈취, CSRF) 시나리오 설명
+      acceptable_methods:
+      - curl -I <url> | grep -i set-cookie
+      - curl -c cookies.txt <url>; cat cookies.txt
+      - python requests 로 cookies dict 확인
+      - browser dev tools Application > Cookies
+      negative_signs:
+      - 쿠키 수집만 하고 속성 분석 없음
+      - 속성 하나만 언급
+      - 공격 시나리오 누락
   target_vm: attacker
-  script: curl -sI http://10.20.30.80 | grep -i 'set-cookie' && echo '쿠키 분석 완료' ||
-    echo '쿠키 없음'
+  script: curl -sI http://10.20.30.80 | grep -i 'set-cookie' && echo '쿠키 분석 완료' || echo '쿠키 없음'
   risk_level: low
   bastion_prompt: 쿠키 속성(HttpOnly, Secure, SameSite)을 분석해줘
 - order: 6
@@ -131,6 +198,21 @@ steps:
     - 배너 수집 완료
     - Apache
     field: stdout
+    semantic:
+      intent: 서버 배너 수집 — Server, X-Powered-By, Via 헤더로 웹서버 종류·버전 식별 (Nginx/Apache/IIS)
+      success_criteria:
+      - Server 헤더 값 수집 및 해석 (nginx/1.18.0 등)
+      - X-Powered-By 또는 기술 스택 힌트 헤더 확인
+      - 버전 기반 CVE 조회 가능성 언급
+      acceptable_methods:
+      - curl -sI <url>
+      - whatweb <url>
+      - nmap -sV -p 80,443 <target>
+      - telnet <host> 80 후 HEAD / HTTP/1.1
+      negative_signs:
+      - 배너 수집 후 해석 없음
+      - 버전 정보 확인 없음
+      - CVE 매핑 언급 없음
   target_vm: attacker
   script: curl -sI http://10.20.30.80 | grep -i 'server' && echo '배너 수집 완료'
   risk_level: low
@@ -142,8 +224,7 @@ steps:
   points: 10
   answer: '🤖 프롬프트: robots.txt 파일을 확인하여 숨겨진 경로를 찾으시오해줘
 
-    📎 참고 (CLI): curl -s http://10.20.30.80/robots.txt 2>/dev/null && echo ''robots.txt
-    확인 완료'''
+    📎 참고 (CLI): curl -s http://10.20.30.80/robots.txt 2>/dev/null && echo ''robots.txt 확인 완료'''
   answer_detail: robots.txt에는 크롤러 접근을 제한하는 경로가 포함되며, 민감한 디렉터리 정보를 노출할 수 있습니다.
   verify:
     type: output_contains
@@ -151,9 +232,23 @@ steps:
     - robots.txt 확인 완료
     - ftp
     field: stdout
+    semantic:
+      intent: robots.txt 확인 — 숨겨진 경로(/admin, /api, Disallow 항목) 식별
+      success_criteria:
+      - curl <url>/robots.txt 로 파일 획득 시도
+      - Disallow 엔트리 파싱 및 목록화
+      - robots.txt 가 정찰 실패가 아닌 경로 힌트로 쓰임 언급
+      acceptable_methods:
+      - curl -s <url>/robots.txt
+      - wget -O - <url>/robots.txt
+      - python urllib.request 로 파싱
+      - humans.txt, sitemap.xml 추가 확인
+      negative_signs:
+      - 404 응답만 받고 종료
+      - robots 외 다른 메타 파일 무시
+      - 경로 해석 없음
   target_vm: attacker
-  script: curl -s http://10.20.30.80/robots.txt 2>/dev/null && echo 'robots.txt 확인
-    완료'
+  script: curl -s http://10.20.30.80/robots.txt 2>/dev/null && echo 'robots.txt 확인 완료'
   risk_level: low
   bastion_prompt: robots.txt 파일을 확인하여 숨겨진 경로를 찾으시오해줘
 - order: 8
@@ -163,16 +258,30 @@ steps:
   points: 10
   answer: '🤖 프롬프트: HTTP 리다이렉트 동작을 분석하시오: HTTP에서 HTTPS로의 리다이렉트 여부해줘
 
-    📎 참고 (CLI): curl -sI -L http://10.20.30.80 2>&1 | grep -iE ''(location|HTTP/)''
-    && echo ''리다이렉트 분석 완료'''
+    📎 참고 (CLI): curl -sI -L http://10.20.30.80 2>&1 | grep -iE ''(location|HTTP/)'' && echo ''리다이렉트 분석
+    완료'''
   answer_detail: HTTP→HTTPS 리다이렉트가 없으면 중간자 공격에 취약합니다.
   verify:
     type: output_contains
     expect: 리다이렉트 분석 완료
     field: stdout
+    semantic:
+      intent: HTTP→HTTPS 리다이렉트 확인 — 301/302 응답과 Location 헤더 분석, HSTS 적용 여부
+      success_criteria:
+      - curl -L 또는 -I 로 리다이렉트 체인 추적
+      - Location 헤더 분석 (https:// 프리픽스)
+      - HSTS 헤더 존재 여부 검증
+      acceptable_methods:
+      - curl -IL <http://url>
+      - curl -I <http://url> + Location 추출
+      - browser dev tools Network 탭
+      - sslyze --resume_attempts
+      negative_signs:
+      - 단일 응답만 확인 (리다이렉트 체인 X)
+      - HSTS 언급 없음
+      - Mixed Content 위험 누락
   target_vm: attacker
-  script: curl -sI -L http://10.20.30.80 2>&1 | grep -iE '(location|HTTP/)' && echo
-    '리다이렉트 분석 완료'
+  script: curl -sI -L http://10.20.30.80 2>&1 | grep -iE '(location|HTTP/)' && echo '리다이렉트 분석 완료'
   risk_level: low
   bastion_prompt: 'HTTP 리다이렉트 동작을 분석하시오: HTTP에서 HTTPS로의 리다이렉트 여부해줘'
 - order: 9
@@ -180,19 +289,33 @@ steps:
   hint: curl -d 옵션으로 데이터를 전송하세요.
   category: http_basics
   points: 10
-  answer: "\U0001F916 프롬프트: POST 요청을 전송하고 요청/응답을 분석해줘\n\U0001F4CE 참고 (CLI): curl -s\
-    \ -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d '{\"email\":\"test@test.com\",\"password\":\"test\"}' 2>/dev/null \\\
-    \n | head -5 && echo 'POST 분석 완료'"
+  answer: "\U0001F916 프롬프트: POST 요청을 전송하고 요청/응답을 분석해줘\n\U0001F4CE 참고 (CLI): curl -s -X POST http://10.20.30.80/rest/user/login\
+    \ \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"test@test.com\",\"password\":\"\
+    test\"}' 2>/dev/null \\\n | head -5 && echo 'POST 분석 완료'"
   answer_detail: POST 요청은 로그인, 폼 제출 등에 사용됩니다. 요청 본문과 응답 구조를 분석합니다.
   verify:
     type: output_contains
     expect: POST 분석 완료
     field: stdout
+    semantic:
+      intent: POST 요청 구성·전송 — -X POST -d 로 form data 또는 JSON 전송 후 응답 분석
+      success_criteria:
+      - curl -X POST -d 또는 --data-urlencode 로 바디 전송
+      - Content-Type 명시(application/x-www-form-urlencoded 또는 application/json)
+      - 응답 코드와 본문 일부 확인
+      acceptable_methods:
+      - curl -X POST -d param=value <url>
+      - curl -H Content-Type:application/json -d {json} <url>
+      - python requests.post(url, data=...)
+      - wget --post-data <url>
+      negative_signs:
+      - GET 요청으로 대체
+      - Content-Type 없음
+      - 응답 해석 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{\"email\":\"test@test.com\",\"password\":\"test\"\
-    }' 2>/dev/null \\\n | head -5 && echo 'POST 분석 완료'"
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{\"email\":\"test@test.com\",\"password\":\"test\"}' 2>/dev/null \\\n | head -5 && echo\
+    \ 'POST 분석 완료'"
   risk_level: low
   bastion_prompt: POST 요청을 전송하고 요청/응답을 분석해줘
 - order: 10
@@ -202,16 +325,29 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 웹 서버의 디렉터리 목록 노출(Directory Listing) 여부를 확인해줘
 
-    📎 참고 (CLI): curl -s http://10.20.30.80/ftp/ 2>/dev/null | head -20 && echo ''디렉터리
-    리스팅 확인 완료'''
+    📎 참고 (CLI): curl -s http://10.20.30.80/ftp/ 2>/dev/null | head -20 && echo ''디렉터리 리스팅 확인 완료'''
   answer_detail: 디렉터리 리스팅이 활성화되면 파일 목록이 노출되어 민감 정보 유출 위험이 있습니다.
   verify:
     type: output_contains
     expect: 디렉터리 리스팅 확인 완료
     field: stdout
+    semantic:
+      intent: 디렉터리 리스팅(Directory Listing) 확인 — Index of 페이지 노출 시 파일·경로 유출 가능
+      success_criteria:
+      - curl <url>/some/dir/ 로 /Index of/ 텍스트 또는 autoindex 확인
+      - Nginx autoindex, Apache Options +Indexes 설정 차이 설명
+      - 노출 시 방어(Options -Indexes, nginx autoindex off) 제시
+      acceptable_methods:
+      - curl <url>/images/ 등 흔한 경로 시도
+      - gobuster dir -u <url> 로 경로 탐색
+      - dirsearch -u <url>
+      - nikto 로 Indexing 검출
+      negative_signs:
+      - 루트만 확인
+      - Index of 패턴 언급 없음
+      - 방어책 누락
   target_vm: attacker
-  script: curl -s http://10.20.30.80/ftp/ 2>/dev/null | head -20 && echo '디렉터리 리스팅
-    확인 완료'
+  script: curl -s http://10.20.30.80/ftp/ 2>/dev/null | head -20 && echo '디렉터리 리스팅 확인 완료'
   risk_level: low
   bastion_prompt: 웹 서버의 디렉터리 목록 노출(Directory Listing) 여부를 확인해줘
 - order: 11
@@ -219,10 +355,9 @@ steps:
   hint: curl -H 옵션을 사용하세요.
   category: http_basics
   points: 8
-  answer: "\U0001F916 프롬프트: HTTP 요청에 사용자 정의 헤더를 추가하여 전송해줘\n\U0001F4CE 참고 (CLI): curl\
-    \ -s \\\n  -H 'X-Custom-Header: SecurityTest' \\\n  -H 'User-Agent: SecurityScanner/1.0'\
-    \ http://10.20.30.80 \\\n  -o /dev/null \\\n  -w '%{http_code}' && echo '' &&\
-    \ echo '커스텀 헤더 테스트 완료'"
+  answer: "\U0001F916 프롬프트: HTTP 요청에 사용자 정의 헤더를 추가하여 전송해줘\n\U0001F4CE 참고 (CLI): curl -s \\\n  -H 'X-Custom-Header:\
+    \ SecurityTest' \\\n  -H 'User-Agent: SecurityScanner/1.0' http://10.20.30.80 \\\n  -o /dev/null \\\
+    \n  -w '%{http_code}' && echo '' && echo '커스텀 헤더 테스트 완료'"
   answer_detail: 커스텀 헤더는 WAF 우회, 인증 토큰 전달 등에 사용됩니다.
   verify:
     type: output_contains
@@ -230,10 +365,24 @@ steps:
     - 커스텀 헤더 테스트 완료
     - Header
     field: stdout
+    semantic:
+      intent: 사용자 정의 헤더 전송 — curl -H 로 X-Forwarded-For, X-Real-IP, Authorization 등 추가 헤더 삽입
+      success_criteria:
+      - curl -H <header>:<value> 구문 사용
+      - X-Forwarded-For 등 최소 2개 커스텀 헤더 테스트
+      - 서버의 헤더 처리 방식 해석 (신뢰하는 헤더 악용 위험 언급)
+      acceptable_methods:
+      - curl -H X-Forwarded-For:1.2.3.4 <url>
+      - python requests headers={...}
+      - Burp Repeater로 헤더 수정
+      - mitmproxy addon 으로 헤더 주입
+      negative_signs:
+      - 커스텀 헤더 없이 기본 요청만
+      - 서버 반응 해석 없음
+      - 보안 영향 언급 없음
   target_vm: attacker
-  script: "curl -s \\\n  -H 'X-Custom-Header: SecurityTest' \\\n  -H 'User-Agent:\
-    \ SecurityScanner/1.0' http://10.20.30.80 \\\n  -o /dev/null \\\n  -w '%{http_code}'\
-    \ && echo '' && echo '커스텀 헤더 테스트 완료'"
+  script: "curl -s \\\n  -H 'X-Custom-Header: SecurityTest' \\\n  -H 'User-Agent: SecurityScanner/1.0'\
+    \ http://10.20.30.80 \\\n  -o /dev/null \\\n  -w '%{http_code}' && echo '' && echo '커스텀 헤더 테스트 완료'"
   risk_level: low
   bastion_prompt: HTTP 요청에 사용자 정의 헤더를 추가하여 전송해줘
 - order: 12
@@ -243,16 +392,31 @@ steps:
   points: 10
   answer: '🤖 프롬프트: HTTPS 연결의 TLS 인증서 정보를 확인해줘
 
-    📎 참고 (CLI): echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | openssl
-    x509 -text -noout 2>/dev/null | head -15 || echo ''TLS 인증서 확인 완료'''
+    📎 참고 (CLI): echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | openssl x509 -text -noout
+    2>/dev/null | head -15 || echo ''TLS 인증서 확인 완료'''
   answer_detail: TLS 인증서의 유효기간, 발급자, CN/SAN을 확인하여 위조 인증서를 탐지합니다.
   verify:
     type: output_contains
     expect: 인증서 확인 완료
     field: stdout
+    semantic:
+      intent: TLS 인증서 정보 확인 — openssl s_client 또는 curl -v 로 Subject/Issuer/SAN/유효기간 수집
+      success_criteria:
+      - openssl s_client -connect <host>:443 또는 curl -vI <https-url>
+      - Subject/Issuer/Not Before-After 필드 확인
+      - 자체 서명/만료 인증서의 보안 영향 언급
+      acceptable_methods:
+      - openssl s_client -connect <host>:443 -showcerts < /dev/null
+      - curl -vI <https://...>
+      - nmap --script ssl-cert -p 443
+      - sslyze <host>:443
+      negative_signs:
+      - HTTP 요청만 수행 (HTTPS 검증 없음)
+      - 인증서 필드 해석 없음
+      - 만료/자체서명 체크 누락
   target_vm: attacker
-  script: echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | openssl x509
-    -text -noout 2>/dev/null | head -15 || echo 'TLS 인증서 확인 완료'
+  script: echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | openssl x509 -text -noout 2>/dev/null
+    | head -15 || echo 'TLS 인증서 확인 완료'
   risk_level: low
   bastion_prompt: HTTPS 연결의 TLS 인증서 정보를 확인해줘
 - order: 13
@@ -262,18 +426,31 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 웹 애플리케이션의 기술 스택을 식별해줘
 
-    📎 참고 (CLI): curl -sI http://10.20.30.80 | grep -iE ''(server|x-powered|set-cookie)''
-    && curl -s http://10.20.30.80 | grep -ioE ''(angular|react|vue|jquery|express)''
-    | sort -u && echo ''기술 스택 식별 완료'''
+    📎 참고 (CLI): curl -sI http://10.20.30.80 | grep -iE ''(server|x-powered|set-cookie)'' && curl -s http://10.20.30.80
+    | grep -ioE ''(angular|react|vue|jquery|express)'' | sort -u && echo ''기술 스택 식별 완료'''
   answer_detail: 기술 스택 식별로 프레임워크별 알려진 취약점을 매칭할 수 있습니다.
   verify:
     type: output_contains
     expect: 기술 스택 식별 완료
     field: stdout
+    semantic:
+      intent: 웹 기술 스택 식별 — whatweb/wappalyzer 또는 수동 HTML 분석으로 Framework/CMS/Library 판별
+      success_criteria:
+      - whatweb 또는 wappalyzer CLI 실행 또는 HTML 의 meta/script 태그 분석
+      - 최소 1개 프레임워크/라이브러리 명시 (Angular, React, WordPress, jQuery 등)
+      - 버전 기반 CVE 조회 가능성 언급
+      acceptable_methods:
+      - whatweb -a 3 <url>
+      - curl <url> 응답에서 ng- 속성, data-reactroot, wp-content, jquery 등 패턴 grep
+      - wappalyzer Chrome/Firefox extension
+      - builtwith.com 조회
+      negative_signs:
+      - HTML 내 태그 분석 없음
+      - 프레임워크 이름만 나열하고 버전 확인 없음
+      - CVE 또는 보안 영향 누락
   target_vm: attacker
-  script: curl -sI http://10.20.30.80 | grep -iE '(server|x-powered|set-cookie)' &&
-    curl -s http://10.20.30.80 | grep -ioE '(angular|react|vue|jquery|express)' |
-    sort -u && echo '기술 스택 식별 완료'
+  script: curl -sI http://10.20.30.80 | grep -iE '(server|x-powered|set-cookie)' && curl -s http://10.20.30.80
+    | grep -ioE '(angular|react|vue|jquery|express)' | sort -u && echo '기술 스택 식별 완료'
   risk_level: low
   bastion_prompt: 웹 애플리케이션의 기술 스택을 식별해줘
 - order: 14
@@ -283,14 +460,28 @@ steps:
   points: 12
   answer: '🤖 프롬프트: 웹 서버의 에러 페이지를 분석하여 정보 누출 여부를 확인해줘
 
-    📎 참고 (CLI): curl -s ''http://10.20.30.80/%00'' 2>/dev/null | head -20 && curl
-    -s ''http://10.20.30.80/api/error'' 2>/dev/null | head -10 && echo ''에러 페이지 분석
-    완료'''
+    📎 참고 (CLI): curl -s ''http://10.20.30.80/%00'' 2>/dev/null | head -20 && curl -s ''http://10.20.30.80/api/error''
+    2>/dev/null | head -10 && echo ''에러 페이지 분석 완료'''
   answer_detail: 상세 에러 메시지는 서버 경로, 스택 트레이스, DB 정보 등을 노출할 수 있습니다.
   verify:
     type: output_contains
     expect: 에러 페이지 분석 완료
     field: stdout
+    semantic:
+      intent: 에러 페이지 정보 누출 — 500 에러·스택 트레이스·debug 정보 노출 여부 확인
+      success_criteria:
+      - 강제 에러 유발 시도 (잘못된 파라미터, 경로, 타입)
+      - 응답에서 stack trace, SQL 에러, 환경 정보 노출 여부 검증
+      - 방어 조치(debug off, 일반화된 에러 메시지, 보안 로깅) 언급
+      acceptable_methods:
+      - curl 로 SQL 메타문자 포함 경로 요청
+      - 큰 페이로드 또는 잘못된 Content-Type POST
+      - ZAP Active Scan error triggering
+      - wfuzz 로 경로·파라미터 퍼징
+      negative_signs:
+      - 에러 페이지 유발 없음
+      - 스택 트레이스 해석 없이 단순 404 만 확인
+      - 방어 조치 언급 없음
   target_vm: attacker
   script: curl -s 'http://10.20.30.80/%00' 2>/dev/null | head -20 && curl -s 'http://10.20.30.80/api/error'
     2>/dev/null | head -10 && echo '에러 페이지 분석 완료'
@@ -303,22 +494,35 @@ steps:
   points: 12
   answer: '🤖 프롬프트: HTTP 기초 분석 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
 
-    📎 참고 (CLI): echo ''=== HTTP 기초 분석 보고서 ==='' && echo ''대상: http://10.20.30.80''
-    && echo ''[서버 정보]'' && curl -sI http://10.20.30.80 | grep -i server && echo ''[보안
-    헤더]'' && curl -sI http://10.20.30.80 | grep -icE ''(x-frame|x-xss|csp|hsts)''
-    && echo ''[응답 코드]'' && curl -o /dev/null -s -w ''%{http_code}'' http://10.20.30.80
-    && echo '''' && echo ''=== 보고서 완료 ==='''
+    📎 참고 (CLI): echo ''=== HTTP 기초 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''[서버 정보]''
+    && curl -sI http://10.20.30.80 | grep -i server && echo ''[보안 헤더]'' && curl -sI http://10.20.30.80
+    | grep -icE ''(x-frame|x-xss|csp|hsts)'' && echo ''[응답 코드]'' && curl -o /dev/null -s -w ''%{http_code}''
+    http://10.20.30.80 && echo '''' && echo ''=== 보고서 완료 ==='''
   answer_detail: HTTP 분석 결과를 체계적으로 정리하여 후속 취약점 진단의 기초 자료로 활용합니다.
   verify:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+    semantic:
+      intent: HTTP 기초 분석 종합 보고서 — 수집한 헤더/쿠키/메서드/기술스택/에러 정보를 /tmp/http_analysis_report.txt 로 정리
+      success_criteria:
+      - 5개 이상 카테고리 포함 (헤더·쿠키·메서드·배너·에러)
+      - 각 카테고리 발견사항과 위험도 기재
+      - 파일 생성 후 cat 확인
+      acceptable_methods:
+      - heredoc markdown 보고서
+      - echo -e 다줄 출력
+      - python 템플릿 렌더링
+      - json/yaml 구조화 후 저장
+      negative_signs:
+      - 카테고리 3개 미만
+      - 위험도 평가 없음
+      - 파일 저장 없음
   target_vm: attacker
-  script: 'echo ''=== HTTP 기초 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo
-    ''[서버 정보]'' && curl -sI http://10.20.30.80 | grep -i server && echo ''[보안 헤더]''
-    && curl -sI http://10.20.30.80 | grep -icE ''(x-frame|x-xss|csp|hsts)'' && echo
-    ''[응답 코드]'' && curl -o /dev/null -s -w ''%{http_code}'' http://10.20.30.80 &&
-    echo '''' && echo ''=== 보고서 완료 ==='''
+  script: 'echo ''=== HTTP 기초 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''[서버 정보]'' && curl
+    -sI http://10.20.30.80 | grep -i server && echo ''[보안 헤더]'' && curl -sI http://10.20.30.80 | grep
+    -icE ''(x-frame|x-xss|csp|hsts)'' && echo ''[응답 코드]'' && curl -o /dev/null -s -w ''%{http_code}''
+    http://10.20.30.80 && echo '''' && echo ''=== 보고서 완료 ==='''
   risk_level: low
   bastion_prompt: HTTP 기초 분석 종합 보고서를 작성하시오.
 - order: 99
@@ -331,8 +535,7 @@ steps:
 
     3) HTTP 요청 메서드(GET, POST, PUT, DELETE, OPTIONS)를 테스트하여 서버가 허용하는 메서드를 확인해줘
 
-    4) 응답 헤더에서 보안 헤더(X-Frame-Options, X-XSS-Protection, Content-Security-Policy 등)의
-    존재 여부를 확인해줘
+    4) 응답 헤더에서 보안 헤더(X-Frame-Options, X-XSS-Protection, Content-Security-Policy 등)의 존재 여부를 확인해줘
 
     5) 쿠키 속성(HttpOnly, Secure, SameSite)을 분석해줘'
   hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
@@ -352,10 +555,8 @@ steps:
 
     3) HTTP 요청 메서드(GET, POST, PUT, DELETE, OPTIONS)를 테스트하여 서버가 허용하는 메서드를 확인해줘
 
-    4) 응답 헤더에서 보안 헤더(X-Frame-Options, X-XSS-Protection, Content-Security-Policy 등)의
-    존재 여부를 확인해줘
+    4) 응답 헤더에서 보안 헤더(X-Frame-Options, X-XSS-Protection, Content-Security-Policy 등)의 존재 여부를 확인해줘
 
     5) 쿠키 속성(HttpOnly, Secure, SameSite)을 분석해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
   script: ''
