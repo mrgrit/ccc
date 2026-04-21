@@ -37,20 +37,21 @@ steps:
     type: output_contains
     expect: Up
     semantic:
-      intent: '[RED] 측면 이동 심화 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] 내부 네트워크 호스트 열거 + SMB/SSH 확인 — nmap -sn 10.20.30.0/24 활성 호스트 + nmap -p 22,445 --open
+        (SSH 22, SMB 445) 서비스 버전. 측면 이동 벡터의 출발점: 접근 가능 서비스 지도화. Active Directory 환경에서는 SMB 가 주요 측면 경로'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - nmap -sn + -p 22,445 조합
+      - 활성 호스트 + SMB/SSH 서비스 식별
+      - 측면 이동 벡터 맵 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nmap -sn + nmap --open -p 22,445
+      - crackmapexec smb <range>
+      - enum4linux-ng <host>
+      - rpcclient -U -N <host>
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 내부 대역 아닌 외부 스캔
+      - SMB(445) 포함 안 함
+      - 호스트 맵 없음
   target_vm: attacker
   script: nmap -sn --max-retries 1 --host-timeout 15s -T4 10.20.30.0/24 -oG /tmp/lateral_hosts.txt &&
     grep 'Up' /tmp/lateral_hosts.txt && nmap -p 22,445 --max-retries 1 --host-timeout 15s -T4 10.20.30.1
@@ -76,20 +77,23 @@ steps:
     type: output_contains
     expect: Pass-the-Hash
     semantic:
-      intent: '[RED] 측면 이동 심화 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] 패스워드 해시 분석 + Pass-the-Hash 원리 — sudo cat /etc/shadow | awk -F: {print $1:$2} | head
+        -5 (Linux shadow hash $6$salt$hash SHA-512) + Pass-the-Hash 원리 설명 (NTLM hash 로 SMB 인증 가능, 평문 없이)
+        + Impacket 도구(psexec/wmiexec/smbclient) 측면 이동 기법 정리. MITRE T1550.002 Pass-the-Hash'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - /etc/shadow 또는 Linux 해시 형식 설명
+      - Pass-the-Hash 원리 (평문 없이 인증)
+      - Impacket 도구 나열 (psexec/wmiexec/smbclient)
+      - T1550.002 매핑
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat /etc/shadow + Impacket 설명
+      - hashcat -m 1800 (SHA-512 shadow)
+      - secretsdump.py 로 NTLM 추출 (Windows)
+      - crackmapexec --hashes
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - Pass-the-Hash 원리 없음
+      - Impacket 도구 생략
+      - Windows vs Linux 해시 구분 없음
   target_vm: attacker
   script: "echo '1' | sudo -S cat /etc/shadow 2>/dev/null | grep -v ':\\*:\\|:!:' | head -5; echo '---';\
     \ echo 'Hash formats: $1$=MD5, $5$=SHA-256, $6$=SHA-512, $y$=yescrypt'; echo ''; cat > /tmp/pth_simulation.txt\
@@ -117,20 +121,21 @@ steps:
     type: output_contains
     expect: SSH lateral
     semantic:
-      intent: '[RED] 측면 이동 심화 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] SSH 키 기반 측면 이동 — ssh-keygen -t ed25519 -f /tmp/lateral_key -N + ssh-copy-id -i ~/.ssh/lateral_key.pub
+        ccc@secu + ssh-copy-id ccc@web (키 배포). 비밀번호 없이 다수 호스트 간 이동. 공격자는 피해자에서 이 키를 authorized_keys 에
+        주입. MITRE T1021.004 SSH + T1098.004'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - ssh-keygen ed25519 키 생성
+      - 다수 호스트(secu/web)에 키 배포
+      - T1021.004 + T1098.004 매핑
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - ssh-keygen + ssh-copy-id
+      - cat pub | ssh target cat >> authorized_keys
+      - authorized_keys 직접 편집
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 단일 호스트만 배포
+      - SSH 키 대신 비밀번호
+      - 측면 이동 개념 없음
   target_vm: attacker
   script: ssh-keygen -t ed25519 -f /tmp/lateral_key -N '' -q && echo 'Testing SSH lateral movement:' &&
     ssh -i /tmp/lateral_key -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.1 'hostname'
@@ -158,20 +163,22 @@ steps:
     type: output_contains
     expect: LATERAL
     semantic:
-      intent: '[BLUE] 측면 이동 심화 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 측면 이동 Suricata 룰 — alert tcp <internal_net> any -> <internal_net> 22 (msg: Internal
+        SSH lateral; flow:to_server,established; threshold: count 3, seconds 60;) + alert tcp ... -> ...
+        445 (SMB 측면). 내부→내부 통신 (정상은 드묾) 임계치 기반 탐지. Zero Trust 원칙: 내부 통신도 검사'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - 내부→내부 SSH/SMB 연결 탐지 룰
+      - threshold 기반 빈도 검사
+      - 내부 통신 특화 탐지 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - alert tcp <int> -> <int> + threshold
+      - Zeek notice framework
+      - Wazuh SSH 로그 + source IP 필터
+      - Elastic Detection rule
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 외부 통신만 탐지
+      - 내부 정상 트래픽 구분 없음
+      - Zero Trust 맥락 없음
   target_vm: secu
   script: 'cat > /tmp/lateral_detection_rules.txt << ''EOF'' # Suricata Lateral Movement Detection alert
     tcp 10.20.30.0/24 any -> 10.20.30.0/24 445 (msg:"LATERAL: Internal SMB connection"; flow:to_server,established;
@@ -201,20 +208,23 @@ steps:
     type: output_contains
     expect: segmentation
     semantic:
-      intent: '[BLUE] 측면 이동 심화 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] nftables 네트워크 세그먼테이션 — 3계층 정책: control_plane(관리자 접속만 SSH) / security_tier(secu↔siem
+        제한된 통신) / application_tier(web 외부 노출, 내부 제한). nft add rule forward 조건(iif/oif interface + 허용 서비스)으로
+        서버 역할별 트래픽 제어. East-West Traffic 최소화'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - 3계층 세그먼테이션 설계
+      - nft forward 체인 룰 (interface 기반)
+      - East-West 트래픽 제한 개념
+      - Zero Trust 네트워크 분할
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - nft add chain forward + 인터페이스 기반 정책
+      - VLAN 기반 분리 (dot1q)
+      - Calico network policy (Kubernetes)
+      - SDN 컨트롤러 기반 정책
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - flat network 유지
+      - 세그먼테이션 원리 없음
+      - East-West 개념 없음
   target_vm: secu
   script: "cat > /tmp/segmentation_policy.nft << 'EOF'\n#!/usr/sbin/nft -f\ntable inet segmentation {\n\
     \  set control_plane { type ipv4_addr; elements = { 10.20.30.201 } }\n  set security_tier { type ipv4_addr;\
@@ -244,20 +254,22 @@ steps:
     type: output_contains
     expect: Honey Token
     semantic:
-      intent: '[BLUE] 측면 이동 심화 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Honey Token 함정 설계 — /tmp/fake_credentials.txt (가짜 admin:P@ssw0rd123) + /home/ccc/.ssh/honey_key
+        (사용 안 되는 가짜 SSH 키) + //honeyserver/shared (SMB 가짜 공유). 파일 접근 이벤트 = 공격자 활동 신호 (정상 사용자는 이 파일을 알
+        수 없음). 탐지 정밀도 100% (false positive 없음)'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - 최소 2종 honey token (자격 증명·SSH 키·공유 등)
+      - 정상 사용자는 알 수 없는 위치/이름
+      - auditd -w 로 접근 감시 설정 언급
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - honey token 파일 + auditd 감시
+      - Thinkst Canary 상용 솔루션
+      - Canarytokens.org 무료 서비스
+      - Wazuh FIM 알림
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 실제 사용하는 파일을 honey token 으로 지정
+      - 감시 설정 없음
+      - false positive 발생 가능
   target_vm: siem
   script: "cat > /tmp/honey_tokens.txt << 'EOF'\n=== Honey Token Deployment Plan ===\n\n1. Fake Credentials:\n\
     \   - /home/admin/.ssh/config -> fake host entries pointing to honeypot\n   - /opt/backup/credentials.txt\
@@ -285,20 +297,22 @@ steps:
     type: output_contains
     expect: lateral_movement
     semantic:
-      intent: '[BLUE] 측면 이동 심화 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Wazuh 측면 이동 correlation — frequency=3 timeframe=300 + same_user + different_hosts
+        조건으로 동일 사용자가 5분 내 3개 이상 호스트에 SSH 성공 시 경보. 측면 이동의 signature pattern: 빠른 다중 호스트 접근. 기존 단일 호스트 SSH
+        경보로는 놓침'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - frequency=3 timeframe=300 correlation
+      - same_user + different_hosts 조건
+      - 측면 이동 pattern 특화 탐지
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - Wazuh if_matched_sid + field 조건
+      - Elastic SIEM multi-host correlation
+      - Splunk transaction by user
+      - Sigma rule
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 단일 호스트 룰만
+      - 사용자/호스트 필드 구분 없음
+      - 측면 이동 맥락 없음
   target_vm: siem
   script: "cat > /tmp/wazuh_lateral_rule.xml << 'EOF'\n<group name=\"lateral_movement\">\n  <rule id=\"\
     100200\" level=\"12\" frequency=\"3\" timeframe=\"300\">\n    <if_sid>5715</if_sid>\n    <same_user\
@@ -326,20 +340,22 @@ steps:
     type: output_contains
     expect: Lateral Movement Assessment
     semantic:
-      intent: '[RED/BLUE] 측면 이동 심화 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] 측면 이동 종합 보고서 + Zero Trust 전략 /tmp/lateral_report.txt — 공격 기법 (PtH/SSH key/SMB/Pivoting)
+        vs 방어 (네트워크 세그먼트·Honey Token·MFA·SSH 키 중앙 관리·PAM). Zero Trust 5 원칙 (Never Trust/Verify Explicitly/Least
+        Privilege/Assume Breach/Continuous Verification) 적용 방안. 정리 (rm fake creds/honey key)'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - /tmp/lateral_report.txt 파일 생성
+      - 공격 기법 + 방어 매핑
+      - Zero Trust 원칙 언급
+      - 환경 정리 포함
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 표
+      - NIST SP 800-207 Zero Trust 참조
+      - Google BeyondCorp 모델 인용
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - Zero Trust 언급 없음
+      - 공격 또는 방어 한쪽만
+      - 정리 누락
   target_vm: attacker
   script: "rm -f /tmp/lateral_key* /tmp/pth_simulation.txt /tmp/lateral_hosts.txt 2>/dev/null && cat >\
     \ /tmp/lateral_report.txt << 'EOF'\n=== Lateral Movement Assessment Report ===\nDate: 2026-04-06 |\
