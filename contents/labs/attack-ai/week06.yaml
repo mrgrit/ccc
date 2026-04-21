@@ -28,20 +28,20 @@ steps:
     expect: tcpdump
     field: stdout
     semantic:
-      intent: 네트워크 공격 (Network Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: tcpdump 로 특정 호스트·포트 필터로 HTTP 트래픽 10개 패킷 캡처 — host <IP> and port 3000
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo tcpdump -c 10 host <IP> and port 3000 실행
+      - '출력에 tcpdump: listening 라인과 캡처된 패킷 라인'
+      - -c 10 제한과 host/port 필터 사용 의미 설명
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo tcpdump -c 10 -i any host <IP> and port 3000 -nn
+      - sudo tcpdump -c 10 -i eth0 host <IP>
+      - wireshark-cli tshark -c 10 host <IP>
+      - python scapy sniff(count=10, filter)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(네트워크 공격 (Network Attacks))와 무관한 기법
+      - -c 누락으로 무제한 캡처
+      - 필터 없이 모든 트래픽 캡처
+      - sudo 없어 권한 오류
   target_vm: attacker
   script: sudo tcpdump -c 10 -i any host 10.20.30.80 and port 3000 -nn
   risk_level: low
@@ -62,20 +62,20 @@ steps:
     expect: tcpdump
     field: stdout
     semantic:
-      intent: 네트워크 공격 (Network Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: tcpdump -A ASCII 모드 로 HTTP 평문 payload 관찰 — URL·헤더·쿠키·폼 데이터가 노출되는 HTTPS 필요성 실증
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - tcpdump -A -c 5 host <IP> and port 3000 실행
+      - curl 로 동시에 요청 발생시켜 패킷 캡처
+      - 응답에 GET / HTTP/1.1 또는 Host/User-Agent 헤더 평문 포함
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - curl ... & sudo tcpdump -A -c 5 ...
+      - tcpdump -A -i any port 3000 + 별도 터미널에서 요청
+      - tshark -O http -c 5
+      - scapy sniff + Raw 레이어 출력
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(네트워크 공격 (Network Attacks))와 무관한 기법
+      - -A 없이 16진수만 확인 (ASCII 미확인)
+      - 트래픽 유발 없이 캡처 시도
+      - 평문 노출의 HTTPS 필요성 언급 없음
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/ > /dev/null & sudo tcpdump -c 5 -A -i any host 10.20.30.80
     and port 3000 -nn 2>&1 | head -50
@@ -96,20 +96,20 @@ steps:
     expect: 10.20.30
     field: stdout
     semantic:
-      intent: 네트워크 공격 (Network Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: ARP 테이블(ARP 캐시) 조회 — 실습 네트워크의 IP↔MAC 매핑 수집, 나중에 ARP 스푸핑 탐지 기준선
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ip neigh show 또는 arp -a 실행
+      - 출력에 10.20.30.x IP 와 MAC 주소 최소 1개 매핑
+      - ARP 캐시가 ARP 스푸핑 탐지에 활용되는 원리 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ip neigh show
+      - arp -a
+      - arp -n
+      - ip -4 neigh | grep lladdr
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(네트워크 공격 (Network Attacks))와 무관한 기법
+      - ARP 테이블 비어있어도 트래픽 유발 없이 종료
+      - MAC 주소 없이 IP 만 출력
+      - ARP 스푸핑 탐지 맥락 없음
   target_vm: attacker
   script: ip neigh show && echo '---' && arp -a 2>/dev/null
   risk_level: low
@@ -128,20 +128,20 @@ steps:
     expect: Nmap scan report
     field: stdout
     semantic:
-      intent: 네트워크 공격 (Network Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: nmap -sn /24 호스트 발견 — ARP 요청으로 MAC 주소 자동 수집 (같은 L2 세그먼트 필요)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo nmap -sn 10.20.30.0/24 실행
+      - Nmap scan report 라인 최소 3개 + MAC Address 표시
+      - 같은 세그먼트에서만 MAC 수집 가능함을 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo nmap -sn 10.20.30.0/24
+      - arp-scan --interface=<if> --localnet
+      - netdiscover -r 10.20.30.0/24
+      - fping -g 10.20.30.0/24 + arp 테이블
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(네트워크 공격 (Network Attacks))와 무관한 기법
+      - 루트 권한 없이 -sn 실행해 MAC 수집 실패
+      - 단일 IP 만 스캔
+      - MAC 수집 결과 해석 없음
   target_vm: attacker
   script: sudo nmap -sn 10.20.30.0/24
   risk_level: low
@@ -161,20 +161,20 @@ steps:
     expect: ARP
     field: stdout
     semantic:
-      intent: 네트워크 공격 (Network Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: tcpdump 로 ARP 패킷 필터링 캡처 — Request/Reply 관찰 후 비정상 gratuitous ARP 로 스푸핑 탐지
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo tcpdump -c 10 -i any arp -nn 실행
+      - 출력에 ARP 라인(Request/Reply) 최소 1개
+      - gratuitous ARP·과도한 ARP 응답이 스푸핑 징후임을 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo tcpdump -c 10 -i any arp -nn
+      - tshark -f arp -c 10
+      - arpwatch 도구 사용
+      - scapy sniff(filter=arp)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(네트워크 공격 (Network Attacks))와 무관한 기법
+      - arp 필터 없이 모든 트래픽 캡처
+      - Request 와 Reply 구분 없이 raw 출력만
+      - 스푸핑 탐지 원리 언급 없음
   target_vm: attacker
   script: sudo tcpdump -c 10 -i any arp -nn
   risk_level: low
@@ -195,20 +195,20 @@ steps:
     expect: '53'
     field: stdout
     semantic:
-      intent: 네트워크 공격 (Network Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: DNS 쿼리 패킷 캡처 — tcpdump port 53 필터링 + dig 동시 실행해 UDP 53 평문 DNS 요청/응답 관찰
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo tcpdump -c 4 port 53 실행
+      - dig 명령으로 DNS 쿼리 동시 유발
+      - 캡처 출력에 53 포트 + A 레코드 또는 DNS 요청 라인
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - dig <domain> @8.8.8.8 & sudo tcpdump -c 4 port 53
+      - tshark -Y dns -c 4
+      - dnstop / dnsscan 도구
+      - python scapy sniff(filter=udp port 53)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(네트워크 공격 (Network Attacks))와 무관한 기법
+      - dig 없이 DNS 트래픽 유발 안 됨
+      - port 53 필터 누락으로 모든 트래픽 캡처
+      - DNS 스푸핑 맥락 설명 없음
   target_vm: attacker
   script: dig google.com @8.8.8.8 > /dev/null 2>&1 & sudo tcpdump -c 4 -i any port 53 -nn 2>&1 | head
     -20
@@ -231,20 +231,20 @@ steps:
     expect: Response
     field: stdout
     semantic:
-      intent: 네트워크 공격 (Network Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: scapy 로 커스텀 ICMP 패킷 생성·전송 — IP(dst)/ICMP() 레이어 조합 후 sr1() 로 응답(TTL·소스 IP) 수신
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - python3 + scapy.all import * 후 IP()/ICMP() 패킷 생성
+      - sr1(pkt, timeout=3) 로 응답 수신
+      - '응답에 Response from: <IP>, TTL: <val> 형식 출력'
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo python3 -c 로 scapy 인라인 실행
+      - scapy 대화형 쉘에서 send/sr1
+      - hping3 -1 -c 1 <IP>
+      - fping 단발 실행
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(네트워크 공격 (Network Attacks))와 무관한 기법
+      - scapy 대신 일반 ping 실행
+      - 응답 해석 없이 패킷만 송신
+      - TTL/소스 IP 의미 설명 없음
   target_vm: attacker
   script: 'sudo python3 -c "from scapy.all import *; pkt=IP(dst=''10.20.30.80'')/ICMP(); resp=sr1(pkt,
     timeout=3, verbose=0); print(f''Response from: {resp.src}, TTL: {resp.ttl}'') if resp else print(''No
@@ -267,20 +267,20 @@ steps:
     expect: 'MAC:'
     field: stdout
     semantic:
-      intent: 네트워크 공격 (Network Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: scapy 로 ARP Request 브로드캐스트 — srp(Ether(dst=ff..)/ARP(pdst=<IP>)) 로 대상 MAC 주소 확인
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - Ether(dst=ff:ff:ff:ff:ff:ff)/ARP(pdst=<IP>) 패킷 구성
+      - srp() 로 L2 전송·응답 수신
+      - '출력에 IP: <ip>, MAC: <mac> 형식'
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo python3 -c from scapy.all import *; srp(Ether/ARP)
+      - arping -c 1 <IP>
+      - arp-scan --interface=<if> --localnet
+      - nmap -sn <subnet>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(네트워크 공격 (Network Attacks))와 무관한 기법
+      - ARP 대신 ICMP/TCP 로 시도
+      - MAC 주소 출력 없이 종료
+      - ARP 스푸핑 연계 맥락 없음
   target_vm: attacker
   script: 'sudo python3 -c "from scapy.all import *; ans,_=srp(Ether(dst=''ff:ff:ff:ff:ff:ff'')/ARP(pdst=''10.20.30.80''),
     timeout=3, verbose=0); [print(f''IP: {r[1].psrc}, MAC: {r[1].hwsrc}'') for r in ans]"'
@@ -302,20 +302,20 @@ steps:
     expect: 'Captured:'
     field: stdout
     semantic:
-      intent: 네트워크 공격 (Network Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: tcpdump -w 로 pcap 파일 저장 — 후속 Wireshark/tshark 분석·포렌식 증거 확보용 20개 패킷 캡처
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo tcpdump -c 20 -w /tmp/capture.pcap host <IP>
+      - curl 등으로 트래픽 유발
+      - tcpdump -r /tmp/capture.pcap | wc -l 로 저장된 패킷 수 확인
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo tcpdump -c 20 -i any -w /tmp/capture.pcap host <IP>
+      - tshark -c 20 -w /tmp/capture.pcap
+      - dumpcap -c 20 -w /tmp/capture.pcap
+      - wireshark GUI 캡처 후 Save
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(네트워크 공격 (Network Attacks))와 무관한 기법
+      - -w 없이 stdout 만 (파일 저장 없음)
+      - 캡처된 패킷 수 확인 없음
+      - pcap 포맷 사용 의미 설명 없음
   target_vm: attacker
   script: curl -s http://10.20.30.80:3000/ > /dev/null & sudo tcpdump -c 20 -i any host 10.20.30.80 -w
     /tmp/capture.pcap 2>&1; echo 'Captured:' && tcpdump -r /tmp/capture.pcap 2>/dev/null | wc -l
@@ -336,20 +336,20 @@ steps:
     expect: TRACEROUTE
     field: stdout
     semantic:
-      intent: 네트워크 공격 (Network Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: nmap --traceroute — 대상까지의 중간 hop(라우터) 식별해 MITM 가능 위치 파악, 네트워크 토폴로지 추정
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo nmap --traceroute -sn <IP> 실행
+      - 출력에 TRACEROUTE 섹션과 HOP·RTT·ADDRESS 테이블
+      - 각 hop 해석 (방화벽·라우터 위치 추정)
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo nmap --traceroute -sn 10.20.30.80
+      - traceroute <IP>
+      - mtr -r -c 3 <IP>
+      - tcptraceroute <IP>:<port>
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(네트워크 공격 (Network Attacks))와 무관한 기법
+      - --traceroute 없이 일반 스캔만
+      - hop 해석 없이 raw 출력
+      - MITM 맥락 설명 없음
   target_vm: attacker
   script: sudo nmap --traceroute -sn 10.20.30.80
   risk_level: low
@@ -369,20 +369,20 @@ steps:
     expect: ESTAB
     field: stdout
     semantic:
-      intent: 네트워크 공격 (Network Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: ss/netstat 로 현 시스템의 TCP ESTABLISHED 연결 목록 — C2 서버 의심 연결·데이터 유출 징후 탐지
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ss -tn state established 실행
+      - 출력에 ESTAB 상태 컬럼과 Local·Peer 주소 최소 1개
+      - 알려지지 않은 외부 IP 연결이 IoC 가 될 수 있음 언급
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ss -tn state established
+      - netstat -an | grep ESTABLISHED
+      - lsof -i -n -P | grep ESTABLISHED
+      - nethogs 또는 iftop
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(네트워크 공격 (Network Attacks))와 무관한 기법
+      - ss 전체 출력 (state 필터 없음)
+      - LISTEN 포트만 보고 ESTABLISHED 누락
+      - IoC 맥락 언급 없음
   target_vm: attacker
   script: ss -tn state established
   risk_level: low
@@ -402,20 +402,20 @@ steps:
     expect: hping
     field: stdout
     semantic:
-      intent: 네트워크 공격 (Network Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: hping3 SYN Flood 시뮬 — --rand-source 로 위조 IP, -S 플래그로 SYN 패킷 5회 전송해 TCP 연결 큐 고갈 시도 (교육용 5개만)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - sudo hping3 --rand-source -S -p 3000 -c 5 <IP>
+      - 출력에 HPING + 전송 통계(packets transmitted)
+      - SYN Flood 원리(위조 IP + SYN 대량 + ACK 미수신) 설명
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo hping3 --rand-source -S -p <port> -c 5 <IP>
+      - sudo hping3 --faster -S -p 3000 <IP>
+      - scapy IP()/TCP(flags=S) 반복 send
+      - t50 multi-protocol flooder
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(네트워크 공격 (Network Attacks))와 무관한 기법
+      - -c 제한 없이 무제한 전송 (실제 DoS)
+      - --rand-source 없음 (소스 IP 고정)
+      - SYN cookie 방어 언급 없음
   target_vm: attacker
   script: sudo hping3 --rand-source -S -p 3000 -c 5 10.20.30.80
   risk_level: medium
@@ -435,20 +435,20 @@ steps:
     expect: table
     field: stdout
     semantic:
-      intent: 네트워크 공격 (Network Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: secu VM 의 nftables 방화벽 규칙 원격 확인 — SSH 로 nft list ruleset 실행해 정책 파악 (공격 시도 전 방어 수준 평가)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - ssh ccc@<secu_ip> sudo nft list ruleset 실행
+      - 출력에 table/chain 키워드 포함 (inet filter / nat 등)
+      - 허용/차단 정책·rate limit 설정 해석
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - ssh ccc@10.20.30.1 sudo nft list ruleset
+      - ssh ccc@<secu> cat /etc/nftables.conf
+      - iptables-legacy 확인
+      - nft -j list ruleset (JSON)
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(네트워크 공격 (Network Attacks))와 무관한 기법
+      - SSH 연결 없이 로컬에서만 확인
+      - table/chain 해석 없이 raw 출력만
+      - 방화벽 정책의 공격 영향 평가 없음
   target_vm: attacker
   script: ssh ccc@10.20.30.1 'sudo nft list ruleset' 2>/dev/null | head -40
   risk_level: low
@@ -470,20 +470,21 @@ steps:
     expect: Response
     field: stdout
     semantic:
-      intent: 네트워크 공격 (Network Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: scapy 로 TCP SYN 패킷 수동 생성 — IP/TCP(flags=S) 로 handshake 1단계, 응답의 flags·seq·ack 확인 (ISN 랜덤화
+        덕분에 시퀀스 예측 불가)
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - IP(dst)/TCP(dport=3000, flags=S) 패킷 구성
+      - sr1() 로 SYN-ACK 응답 수신
+      - '출력에 Response flags: SA, Seq: <N>, Ack: <N+1> 확인'
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - sudo python3 + scapy 인라인 스크립트
+      - hping3 -S -p 3000 -c 1 <IP>
+      - nmap -sS -p 3000 <IP> (low-level 유사)
+      - scapy 대화형 셸 sr1
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(네트워크 공격 (Network Attacks))와 무관한 기법
+      - flags=S 누락
+      - sr1 응답 분석 없이 send 만
+      - ISN 랜덤화 맥락 언급 없음
   target_vm: attacker
   script: 'sudo python3 -c "from scapy.all import *; pkt=IP(dst=''10.20.30.80'')/TCP(dport=3000, flags=''S'');
     resp=sr1(pkt, timeout=3, verbose=0); print(f''Response flags: {resp[TCP].flags}, Seq: {resp[TCP].seq},
@@ -509,20 +510,20 @@ steps:
     expect: Network Attack Report
     field: stdout
     semantic:
-      intent: 네트워크 공격 (Network Attacks) 주제의 실습 스텝 — 해당 기법의 공격 명령 실행 또는 원리 실증
+      intent: 네트워크 공격 리포트 — 공격 유형·캡처 증거·계층별 방어(L2 DAI/L3 필터/L4 SYN cookie/L7 HTTPS) 를 /tmp/network_attack_report.txt
       success_criteria:
-      - instruction 의 핵심 공격 기법 실행 또는 PoC 구성
-      - 대상 VM 에 대한 결과 확인 (출력·응답·로그)
-      - 해당 기법의 MITRE ATT&CK 기법 또는 CVE·도구 최소 1개 언급
+      - '[Attacks Performed] [Findings] [Recommendations] 3 섹션 이상'
+      - L2/L3/L4/L7 계층별 방어 중 최소 3개
+      - 파일 저장 후 cat 으로 검증
       acceptable_methods:
-      - <SENSITIVE:623a50469317aead>
-      - 수동 payload 구성 (curl·python·netcat)
-      - Burp Repeater / ffuf / wfuzz 등 웹 퍼저
-      - defensor 관점에서 탐지 지표 제시도 인정
+      - echo -e > /tmp/network_attack_report.txt
+      - heredoc 다줄 리포트
+      - python markdown 템플릿
+      - mermaid 계층 다이어그램 첨부
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 대상 VM·결과 누락
-      - 해당 주제(네트워크 공격 (Network Attacks))와 무관한 기법
+      - 계층 구분 없이 나열
+      - 파일 저장 없음
+      - 구체 수행 내용 없이 일반론
   target_vm: attacker
   script: 'echo -e ''=== Network Attack Report ===\n\n[Attacks Performed]\n1. Packet Sniffing: HTTP 평문
     트래픽 캡처 성공\n2. ARP Recon: MAC 주소 매핑 수집\n3. SYN Flood Simulation: 5 packets sent\n4. Custom Packet Crafting:
