@@ -44,20 +44,24 @@ steps:
     type: output_contains
     expect: SOAR Architecture
     semantic:
-      intent: '[BLUE] SOAR 구축 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] SOAR 아키텍처 설계 /tmp/soar_architecture.txt — 3계층 (Detection: Suricata eve.json + Wazuh
+        alerts · Decision: jq 룰 엔진 or Python classifier · Response: nftables/process kill/notify) + 각
+        계층 인터페이스 (JSON event bus) + 데이터 흐름 다이어그램. SOAR Security Orchestration Automation and Response
+        핵심 개념'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - /tmp/soar_architecture.txt 설계 문서
+      - 3계층 (Detect/Decide/Respond)
+      - 데이터 흐름 + 인터페이스 정의
+      - SOAR 개념 반영
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + ASCII diagram
+      - mermaid graph TD
+      - TheHive + Cortex 참조
+      - Shuffle workflow designer
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 계층 구분 없음
+      - SOAR 개념 없음
+      - 인터페이스 정의 누락
   target_vm: siem
   script: "cat > /tmp/soar_architecture.txt << 'EOF'\n=== SOAR Architecture Design ===\n\n[Suricata eve.json]\
     \ ---> [Wazuh SIEM] ---> [Active Response] ---> [nftables/kill]\n       |                     |  \
@@ -94,20 +98,23 @@ steps:
     type: output_contains
     expect: SOAR Auto IP Blocker
     semantic:
-      intent: '[BLUE] SOAR 구축 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 자동 IP 차단 스크립트 /tmp/auto_block.sh — tail -f eve.json | jq -r select(.event_type==alert
+        and .alert.severity==1) .src_ip | while read ip; do nft add element inet filter blocklist { $ip
+        }; done. severity 1 (Critical) 경보만 자동 차단 (FP 위험 최소화). 실시간 MTTR 초 단위'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - /tmp/auto_block.sh 스크립트
+      - tail -f + jq severity==1 필터
+      - nft add element 자동 차단
+      - 실시간 처리
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - bash tail -f + while read + nft
+      - python watchdog 라이브러리
+      - Wazuh active-response 스크립트
+      - Elastic Alerting webhook
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - severity 필터 없음 (모든 경보 차단)
+      - 실시간 아님
+      - nft 연동 없음
   target_vm: secu
   script: 'cat > /tmp/auto_block.sh << ''SCRIPT'' #!/bin/bash # SOAR Auto IP Blocker LOGFILE="/var/log/suricata/eve.json"
     echo "=== SOAR Auto IP Blocker ===" echo "Monitoring: $LOGFILE" echo "Trigger: severity == 1 (Critical)"
@@ -143,20 +150,23 @@ steps:
     type: output_contains
     expect: IR Playbook
     semantic:
-      intent: '[BLUE] SOAR 구축 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] SQLi IR 플레이북 /tmp/ir_playbook_sqli.md — 6단계: (1) 확인 access.log grep + Suricata ·
+        (2) 격리 WAF 차단 rule + IP block · (3) 증거 수집 pcap + access.log + modsec_audit · (4) 분석 payload 디컴파일
+        + DB 영향 평가 · (5) 복구 DB 백업 복원 + patch · (6) 보고 CISO + 규제 기관. NIST SP 800-61 framework'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - /tmp/ir_playbook_sqli.md 파일
+      - 6단계 (확인·격리·수집·분석·복구·보고)
+      - 각 단계 구체 명령/도구
+      - SQLi 특화
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 6단계 구조
+      - TheHive case template
+      - NIST SP 800-61 준거
+      - Atlassian ITIL runbook
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 단계 5개 이하
+      - 각 단계 구체 명령 없음
+      - SQLi 특화 아닌 범용
   target_vm: siem
   script: "cat > /tmp/ir_playbook_sqli.txt << 'EOF'\n=== IR Playbook: SQL Injection Attack ===\nPlaybook\
     \ ID: IR-WEB-001 | Severity: CRITICAL\n\nTRIGGER: Wazuh rule 100101 or Suricata SID 1000001\n\nStep\
@@ -192,20 +202,22 @@ steps:
     type: output_contains
     expect: SOAR Automated IR
     semantic:
-      intent: '[BLUE] SOAR 구축 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 통합 IR 자동화 스크립트 /tmp/auto_ir.sh — 탐지 (eve.json 파싱) → 격리 (nft add blocklist) → 증거
+        수집 (mkdir /tmp/evidence·cp access.log·ps auxf 스냅샷) → 알림 (curl webhook slack/teams). 4단계를 단일 스크립트로
+        통합. IR 자동화로 MTTR 분 단위 → 초 단위'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - /tmp/auto_ir.sh 스크립트
+      - 4단계 통합 (탐지·격리·수집·알림)
+      - 슬랙/teams webhook 알림
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - bash script 4단계
+      - python script 통합
+      - Ansible playbook
+      - Shuffle workflow
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 4단계 중 2단계 이하
+      - webhook 알림 누락
+      - 통합 아닌 개별 실행
   target_vm: siem
   script: 'cat > /tmp/soar_workflow.sh << ''SCRIPT'' #!/bin/bash SUSPECT_IP=${1:-203.0.113.50} TIMESTAMP=$(date
     -u "+%Y-%m-%dT%H:%M:%SZ") echo "=== SOAR Automated IR Workflow ===" echo "Time: $TIMESTAMP" echo "Suspect
@@ -234,20 +246,23 @@ steps:
     type: output_contains
     expect: timestamp
     semantic:
-      intent: '[BLUE] SOAR 구축 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 실시간 대시보드 데이터 수집 /tmp/dashboard_collect.sh — 시스템(uptime/loadavg/mem) + 네트워크(ss -s
+        통계/tcp 연결 수) + 보안(Suricata alerts count/Wazuh level>=7 count/차단 IP 수) 지표를 JSON 으로 출력. Prometheus
+        exporter 대안. 5분 주기 수집 + 시계열 저장'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - /tmp/dashboard_collect.sh 스크립트
+      - 시스템·네트워크·보안 3종 지표
+      - JSON 출력 포맷
+      - 주기적 수집
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - bash + jq 로 JSON 구성
+      - Python Flask + JSON 엔드포인트
+      - Prometheus node_exporter
+      - Grafana loki loki-push
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 1종 지표만
+      - JSON 아닌 평문
+      - 주기적 수집 개념 없음
   target_vm: siem
   script: "python3 -c \"\nimport json, subprocess, time\ndef run(cmd):\n    try: return subprocess.check_output(cmd,\
     \ shell=True, timeout=5).decode().strip()\n    except: return '0'\ndashboard = {\n    'timestamp':\
@@ -273,20 +288,21 @@ steps:
     type: output_contains
     expect: SOAR Validation
     semantic:
-      intent: '[RED] SOAR 구축 공격 단계 실습 — 실제 공격 명령/스크립트 실행 및 결과 확인'
+      intent: '[RED] SOAR 검증용 라이브 공격 — nmap -sS --top-ports 50 (포트 스캔 → Suricata 탐지 → auto_block.sh 트리거)
+        + curl SQLi payload (→ ModSec 차단 → Wazuh level 10 경보 → Active Response). 2개 공격 순차 실행 후 10-30초
+        대기 → SOAR 자동 대응 관찰'
       success_criteria:
-      - 공격 명령/스크립트 실제 실행 또는 유효 페이로드 생성
-      - 목표 기법이 작동함을 출력·로그로 확인
-      - MITRE ATT&CK 기법 ID 또는 명칭 1개 이상 언급
+      - nmap + SQLi 순차 실행
+      - 10-30초 대기 (자동 대응 시간)
+      - SOAR 파이프라인 엔드 투 엔드 검증
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - bash sequential + sleep
+      - ansible with pause
+      - msfconsole resource
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 단일 공격만
+      - 대기 시간 없음
+      - SOAR 검증 의도 없음
   target_vm: attacker
   script: echo '=== SOAR Validation Attack ===' && echo '[1] Port scan:' && nmap -sS --top-ports 50 --max-retries
     1 --host-timeout 15s -T4 10.20.30.80 2>&1 | tail -5 && echo '[2] SQLi:' && curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%20UNION%20SELECT%201--'
@@ -311,20 +327,21 @@ steps:
     type: output_contains
     expect: SOAR validation
     semantic:
-      intent: '[BLUE] SOAR 구축 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] SOAR 검증 결과 확인 — s6 공격 후 tail /var/log/suricata/fast.log (Suricata 탐지 건수) + tail
+        /var/log/auto_block.log (자동 차단 이력) + tail /var/ossec/logs/active-responses.log (Wazuh AR 실행 로그)
+        + nft list set blocklist (현재 차단 IP). 자동화 체인 E2E 동작 확인'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - Suricata + auto_block + Wazuh AR + nft 4개 확인
+      - s6 공격 IP 가 blocklist 에 등록
+      - E2E 자동화 체인 검증
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - tail 복수 로그 + nft list
+      - journalctl 통합 조회
+      - Kibana dashboard
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 일부 로그만 확인
+      - E2E 검증 안 됨
+      - 차단 IP 미검증
   target_vm: siem
   script: echo '=== SOAR Validation Results ===' && echo '[Suricata]:' && ssh 10.20.30.1 'tail -30 /var/log/suricata/eve.json
     2>/dev/null | python3 -c "import sys,json; [print(json.loads(l).get(\"alert\",{}).get(\"signature\",\"\"))
@@ -355,20 +372,22 @@ steps:
     type: output_contains
     expect: SOAR Implementation
     semantic:
-      intent: '[RED/BLUE] SOAR 구축 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] SOAR 구축 보고서 /tmp/soar_report.txt — MTTD (평균 탐지 시간: 수동 분 → SOAR 초) + MTTR (대응
+        시간 개선) + 자동화 커버리지 (총 경보 중 자동 처리 %) + ROI (analyst 시간 절감) + 한계 (false positive 위험·복잡 시나리오 수동 필요)
+        + 향후 (ML 기반 분류·SIEM 통합·자동 복구). 환경 정리'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - /tmp/soar_report.txt 보고서
+      - MTTD/MTTR 개선 수치
+      - 자동화 커버리지 + ROI
+      - 한계 + 향후 계획
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file + 정량 표
+      - Gartner SOAR MQ 벤치마크
+      - Splunk SOAR ROI 계산기
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - MTTD/MTTR 수치 없음
+      - 한계 언급 없음
+      - 정리 누락
   target_vm: attacker
   script: "rm -f /tmp/auto_block.sh /tmp/soar_workflow.sh /tmp/soar_architecture.txt /tmp/ir_playbook_sqli.txt\
     \ 2>/dev/null && cat > /tmp/soar_report.txt << 'EOF'\n=== SOAR Implementation Report ===\nDate: 2026-04-06\
