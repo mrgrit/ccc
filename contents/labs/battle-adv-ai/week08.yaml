@@ -38,20 +38,22 @@ steps:
     type: output_contains
     expect: Process Forensic
     semantic:
-      intent: '[BLUE] 포렌식 분석 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 메모리 포렌식 /proc 아티팩트 — for pid in $(ls /proc/ | grep ^[0-9]); do cat /proc/$pid/cmdline;
+        readlink /proc/$pid/exe; cat /proc/$pid/net/tcp | head; done > /tmp/forensics/proc_dump.txt. PID·실행
+        경로·명령줄·네트워크 연결을 휘발성 증거로 보존. /proc 은 Linux 메모리 포렌식 핵심'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - /proc/<pid>/cmdline + exe + net/tcp 수집
+      - /tmp/forensics/ 에 저장
+      - 메모리 포렌식 휘발성 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - for pid + cat /proc/<pid>/*
+      - LiME 로 RAM 덤프 + Volatility
+      - AVML + MemProcFS
+      - osquery processes + process_open_sockets
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - ps aux 만 (상세 /proc 없음)
+      - 파일 저장 없이 화면 출력
+      - 휘발성 개념 없음
   target_vm: secu
   script: 'echo ''=== Process Forensic Analysis ==='' && for pid in $(ls /proc/ | grep -E ''^[0-9]+$''
     | head -20); do exe=$(readlink /proc/$pid/exe 2>/dev/null) && cmdline=$(tr ''\0'' '' '' < /proc/$pid/cmdline
@@ -75,20 +77,22 @@ steps:
     type: output_contains
     expect: Hidden Process Detection
     semantic:
-      intent: '[BLUE] 포렌식 분석 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 숨겨진 프로세스 탐지 — diff <(ls /proc/ | grep ^[0-9] | sort) <(ps -eo pid --no-headers |
+        awk {print $1} | sort) 로 /proc 실제 PID vs ps 보고 PID 비교. ps 가 숨긴 PID 발견 시 LKM 루트킷 의심. kernel-level
+        rootkit 탐지 기본 기법. MITRE T1014 Rootkit'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - /proc vs ps 출력 diff
+      - 숨겨진 PID 탐지 로직
+      - T1014 Rootkit 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - diff <(ls /proc) <(ps)
+      - chkrootkit / rkhunter 자동 탐지
+      - LKM 모듈 조회 lsmod
+      - unhide 도구
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 단일 소스만 (비교 없음)
+      - 루트킷 개념 없음
+      - PID 차이 해석 없음
   target_vm: secu
   script: 'echo "=== Hidden Process Detection ===" && PROC_PIDS=$(ls -d /proc/[0-9]* 2>/dev/null | sed
     "s|/proc/||" | sort -n) && PS_PIDS=$(ps -eo pid --no-headers | tr -d " " | sort -n) && HIDDEN=$(comm
@@ -113,20 +117,22 @@ steps:
     type: output_contains
     expect: Disk Artifact
     semantic:
-      intent: '[BLUE] 포렌식 분석 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 디스크 아티팩트 수집 — find / -mtime -1 -type f 2>/dev/null | head -50 (24시간 내 수정) + ls -la
+        /tmp/*.{sh,py,elf} 2>/dev/null + find / -perm -4000 -type f 2>/dev/null (모든 SUID). 저장소 베이스 포렌식
+        3종 아티팩트'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - -mtime -1 최근 수정 파일
+      - /tmp 스크립트/바이너리
+      - SUID 바이너리 목록
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - find -mtime + -perm + -type
+      - dd 로 디스크 이미지 (전체 포렌식)
+      - Autopsy GUI
+      - Sleuth Kit CLI
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 1가지 아티팩트만
+      - 시간 필터 없음
+      - 저장 없이 stdout
   target_vm: secu
   script: echo '=== Disk Artifact Collection ===' && echo '[1] Recently modified (24h):' && find / -mtime
     -1 -type f -not -path '/proc/*' -not -path '/sys/*' -not -path '/run/*' 2>/dev/null | head -15 &&
@@ -150,20 +156,21 @@ steps:
     type: output_contains
     expect: File System Timeline
     semantic:
-      intent: '[BLUE] 포렌식 분석 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] FS 타임라인 MAC 타임스탬프 — stat 또는 find -printf %T@ %p\n /tmp /var/log 대상 + sort -n 으로
+        시간순 정렬 → /tmp/timeline.txt. Modification·Access·Change (MAC) 타임스탬프 기반 사건 재구성. 포렌식 타임라인의 표준 기법'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - MAC timestamp 추출 (stat/find -printf)
+      - sort -n 시간순 정렬
+      - 타임라인 파일 생성
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - find -printf + sort
+      - stat + awk
+      - log2timeline (plaso)
+      - mactime 도구
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 정렬 없음
+      - MAC 개념 없음
+      - 타임라인 파일 미생성
   target_vm: secu
   script: echo "=== File System Timeline ===" && find /tmp /var/log -maxdepth 2 -type f -printf "%T+ %p\n"
     2>/dev/null | sort -r | head -20 && echo "---" && echo "Focus on clusters of modifications within
@@ -189,20 +196,22 @@ steps:
     type: output_contains
     expect: Entropy
     semantic:
-      intent: '[BLUE] 포렌식 분석 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] 정적 분석 시뮬레이션 — sha256sum <suspect_file> (해시) + strings -n 8 <file> | head (문자열 추출)
+        + readelf -h <file> (ELF 헤더 — arch/entry/type) + python shannon entropy (패킹 여부: 엔트로피 7.5+ = 패킹/암호화
+        의심). 실행 없는 정적 분석 핵심 단계'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - sha256sum + strings + readelf + entropy 4종
+      - 정적 분석 (실행 없음) 개념
+      - 패킹 엔트로피 기준
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - sha256 + strings + readelf + python entropy
+      - VirusTotal API (해시 제출)
+      - YARA 룰 매칭
+      - capa 행위 추출
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 동적 분석 (실행)
+      - 1-2종만
+      - 엔트로피 누락
   target_vm: secu
   script: "echo '=== Static Analysis + Entropy ===' && SAMPLE=/usr/bin/curl && sha256sum $SAMPLE && file\
     \ $SAMPLE && strings $SAMPLE | grep -iE 'http|socket|connect|exec' | head -5 && python3 -c \"\nimport\
@@ -232,20 +241,22 @@ steps:
     type: output_contains
     expect: Chain of Custody
     semantic:
-      intent: '[BLUE] 포렌식 분석 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] Chain of Custody — find /tmp/forensics -type f | xargs sha256sum > /tmp/forensics/chain_of_custody.txt
+        로 모든 아티팩트 SHA256 기록 + 수집자·시각·위치·해시 메타데이터. 증거 무결성 보장 + 법정 제출 가능 조건. ISO/IEC 27037 + RFC 3227 준거'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - 전체 아티팩트 sha256 계산
+      - chain_of_custody.txt 파일
+      - 수집자/시각 메타데이터
+      - 법적 무결성 개념
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - sha256sum -b + 메타 기록
+      - dc3dd 로 dd + hash 자동
+      - GPG 서명으로 무결성
+      - Magnet AXIOM Chain of Custody
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 해시 없이 파일 목록만
+      - 메타 없음
+      - 법적 무결성 개념 없음
   target_vm: secu
   script: 'echo "=== Chain of Custody Record ===" > /tmp/evidence_custody.txt && echo "Investigator: Lab
     Student" >> /tmp/evidence_custody.txt && echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)" >> /tmp/evidence_custody.txt
@@ -271,20 +282,22 @@ steps:
     type: output_contains
     expect: bundle
     semantic:
-      intent: '[BLUE] 포렌식 분석 방어·탐지 단계 — 탐지 규칙·모니터링·대응 체계 구현'
+      intent: '[BLUE] STIX 형식 IoC 문서화 /tmp/ioc.json — STIX 2.1 bundle 포맷 (type/spec_version/objects) +
+        indicator objects (pattern: [file:hashes.SHA-256 = ...] [ipv4-addr:value = ...] [domain-name:value
+        = ...]) + labels (malicious-activity) + valid_from. threat intelligence 표준 교환 포맷'
       success_criteria:
-      - Suricata/Wazuh/auditd/nftables 등 방어 도구 룰·설정 제시
-      - 탐지 시나리오 테스트 및 결과 로그
-      - false positive 또는 tuning 고려 언급
+      - /tmp/ioc.json 파일 생성
+      - STIX 2.1 포맷 (bundle/indicators)
+      - hash·IP·domain pattern
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - python stix2 라이브러리
+      - 수동 STIX JSON 작성
+      - MISP export STIX
+      - OpenCTI stix2 변환
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - STIX 아닌 임의 포맷
+      - pattern 없음
+      - threat intel 개념 없음
   target_vm: siem
   script: cat > /tmp/forensic_ioc.json << 'EOF' {"type":"bundle","id":"bundle--forensic-001","objects":[{"type":"indicator","id":"indicator--f001","name":"Suspicious
     crontab modification","pattern":"[file:name = 'crontabs' AND file:parent_directory_ref.path = '/var/spool/cron']","pattern_type":"stix","indicator_types":["malicious-activity"],"valid_from":"2026-04-06T00:00:00Z"},{"type":"indicator","id":"indicator--f002","name":"DNS
@@ -316,20 +329,23 @@ steps:
     type: output_contains
     expect: Digital Forensic Investigation
     semantic:
-      intent: '[RED/BLUE] 포렌식 분석 통합 — Phase 전환 또는 종합 보고서·환경 정리'
+      intent: '[RED/BLUE] NIST SP 800-86 포렌식 보고서 — Collection (증거 수집 방법·도구·시각) + Examination (자동화 분석 결과·해시
+        매칭) + Analysis (수동 분석·타임라인·공격 재구성) + Reporting (결론·권고·참고 문헌) 4단계 구조. /tmp/forensic_report_nist.txt.
+        법적 인정 문서 형식'
       success_criteria:
-      - RED/BLUE 양쪽 산출물 모두 포함 또는 정리
-      - 보고서 파일 저장 또는 markdown 출력
-      - MITRE ATT&CK 매핑 + 개선 권고
+      - Collection·Examination·Analysis·Reporting 4단계
+      - /tmp/forensic_report_nist.txt 파일
+      - NIST SP 800-86 표준 준거
+      - 정리 수행
       acceptable_methods:
-      - 실제 도구(nmap/msfvenom/sqlmap/hydra/curl/ssh) 실행
-      - 방어 규칙 파일(.rules/XML) 작성 또는 편집
-      - Python 스크립트로 자동화 구현
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file 4개 섹션
+      - NIST SP 800-86 Computer Forensics Guide 참조
+      - Kroll on-demand 템플릿
+      - SANS DFIR 보고서 형식
       negative_signs:
-      - 실행 없이 개념만 서술
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 일반 응답
+      - 4단계 구조 없음
+      - NIST 표준 언급 없음
+      - 법적 문서 형식 무시
   target_vm: attacker
   script: "rm -f /tmp/forensic_*.txt /tmp/forensic_*.json /tmp/evidence_*.txt 2>/dev/null && cat > /tmp/forensic_report.txt\
     \ << 'EOF'\n=== Digital Forensic Investigation Report ===\nCase ID: FORENSIC-20260406-001\nMethodology:\
