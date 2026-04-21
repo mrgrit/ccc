@@ -131,6 +131,29 @@ bulk 는 intent 가 unique 하지만 **깊이가 얕아** judge 가 acceptable_m
 - **품질 일관성**: 과목마다 도구 체인이 달라 semantic 깊이 편차 가능 → 메모리 `feedback_no_template_semantic.md` 로 다음 세션에서 기준 복원
 - **테스트 부재**: 재작성한 semantic 으로 실제 judge 품질 향상 여부 아직 미측정 → 전체 완료 후 bastion 실증 테스트 재실행 필요
 
+## Autonomous 실행 가이드 (다음 세션용)
+
+사용자 지시로 **밤사이 매 시간마다 이어서 작업 + 보고서 업데이트 + push** 자동 실행 설정. durable cron 이 매시간 fire 하여 다음 주차 재작성을 이어감.
+
+**세션 진입 시 체크리스트**:
+
+1. 메모리 확인
+   - `feedback_no_template_semantic.md` — 템플릿 금지 원칙
+   - `project_verify_semantic_rewrite.md` — 다음 시작 지점
+2. `git log --oneline -30` 으로 마지막 커밋 확인
+3. 이 파일 (`docs/verify-semantic-progress.md`) 의 "현재 상태" 테이블 읽기
+4. 다음 주차의 `Read` → step 수동 작성 → commit
+5. 보고서 업데이트 (수동 확정 step 수 증가 반영)
+6. `git push origin main`
+
+**절대 금지**:
+- `scripts/bulk_add_semantic.py` 호출
+- topic 변수 루프 (`for topic in list; do add_semantic ...`)
+- instruction 문자열을 그대로 intent 에 복붙
+- Read 없이 작성
+
+**품질 gate**: 커밋 전 작성한 semantic 의 intent 를 다시 읽고, "이 intent 를 보고 모르는 사람이 step 의 목적·구체 명령·성공 판정을 추론할 수 있는가?" 자문. No 면 재작성.
+
 ---
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
