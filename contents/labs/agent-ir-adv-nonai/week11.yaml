@@ -35,6 +35,21 @@ steps:
     type: output_contains
     expect: sample
     field: stdout
+    semantic:
+      intent: '[공격] Extraction 쿼리 — cat > extract.py: random prompts 10 + sample_prompts 3. 체계적 분포 쿼리.
+        MITRE ATLAS AML.T0024.'
+      success_criteria:
+      - sample 키워드
+      - random prompts
+      - 대량
+      acceptable_methods:
+      - KnockoffNets
+      - Active Learning extraction
+      - Query-based
+      negative_signs:
+      - 단일 쿼리
+      - 분포 없음
+      - 대량 아님
   target_vm: bastion
   script: 'mkdir -p ~/w11 && cat > ~/w11/extract.py <<''PY''
 
@@ -76,6 +91,21 @@ steps:
     type: output_contains
     expect: S3
     field: stdout
+    semantic:
+      intent: '[공격] Model Theft 5 경로 — cat > theft.md: git 커밋 / S3 공개 / Docker layer / 훈련 서버 침투 / 내부자
+        반출. 5 탈취 경로.'
+      success_criteria:
+      - S3 키워드
+      - 5 경로
+      - 다양한 벡터
+      acceptable_methods:
+      - ATLAS AML.T0037 Chain of Trust
+      - Supply chain analysis
+      - OWASP ML
+      negative_signs:
+      - 경로 3개 이하
+      - S3 없음
+      - 내부자 없음
   target_vm: bastion
   script: 'cat > ~/w11/theft.md <<''M''
 
@@ -99,10 +129,9 @@ steps:
   hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
   category: analysis
   points: 11
-  answer: "cat > ~/w11/volume.py <<'PY'\ndef abuse(events, window_h=1, thr=10000):\n\
-    \    recent = [e for e in events if e.get('ts_age_s', 0) < window_h*3600]\n  \
-    \  return len(recent) > thr\nprint(abuse([{'ts_age_s': 100} for _ in range(12000)]))\n\
-    PY\npython3 ~/w11/volume.py"
+  answer: "cat > ~/w11/volume.py <<'PY'\ndef abuse(events, window_h=1, thr=10000):\n    recent = [e for\
+    \ e in events if e.get('ts_age_s', 0) < window_h*3600]\n    return len(recent) > thr\nprint(abuse([{'ts_age_s':\
+    \ 100} for _ in range(12000)]))\nPY\npython3 ~/w11/volume.py"
   answer_detail: '[탐지] 시간당 10K+.'
   verify:
     type: output_contains
@@ -110,11 +139,25 @@ steps:
     - 'True'
     - 지표
     field: stdout
+    semantic:
+      intent: '[탐지] API 볼륨 — cat > volume.py: def abuse(events, window_h=1, thr=10000) 시간당 10K+. 대량 쿼리
+        탐지.'
+      success_criteria:
+      - True/지표
+      - thr=10000
+      - window_h
+      acceptable_methods:
+      - volume 탐지
+      - Prometheus rate
+      - ELK threshold
+      negative_signs:
+      - thr 없음
+      - window 없음
+      - 함수 없음
   target_vm: bastion
-  script: "cat > ~/w11/volume.py <<'PY'\ndef abuse(events, window_h=1, thr=10000):\n\
-    \    recent = [e for e in events if e.get('ts_age_s', 0) < window_h*3600]\n  \
-    \  return len(recent) > thr\nprint(abuse([{'ts_age_s': 100} for _ in range(12000)]))\n\
-    PY\npython3 ~/w11/volume.py"
+  script: "cat > ~/w11/volume.py <<'PY'\ndef abuse(events, window_h=1, thr=10000):\n    recent = [e for\
+    \ e in events if e.get('ts_age_s', 0) < window_h*3600]\n    return len(recent) > thr\nprint(abuse([{'ts_age_s':\
+    \ 100} for _ in range(12000)]))\nPY\npython3 ~/w11/volume.py"
   risk_level: low
   bastion_prompt: ''
 - order: 4
@@ -138,6 +181,21 @@ steps:
     type: output_contains
     expect: 트리거
     field: stdout
+    semantic:
+      intent: '[탐지] Watermark 설계 — cat > watermark.md: 트리거 쿼리 → 독특한 응답 / 대리 모델 재관측 원본 식별 / SynthID·KGW-watermark
+        참고. 탈취 증거.'
+      success_criteria:
+      - 트리거 키워드
+      - 시그니처 재관측
+      - SynthID 참조
+      acceptable_methods:
+      - SynthID
+      - KGW watermark
+      - BackdoorWatermark
+      negative_signs:
+      - 트리거 없음
+      - 시그니처 없음
+      - 참조 누락
   target_vm: bastion
   script: 'cat > ~/w11/watermark.md <<''M''
 
@@ -157,20 +215,33 @@ steps:
   hint: 6단계 IR 중 분석 단계. target_vm=bastion.
   category: analysis
   points: 13
-  answer: "cat > ~/w11/distribution.py <<'PY'\n# 정상: 유사 주제 집중\n# 공격: 체계적 균등 분포\nfrom\
-    \ collections import Counter\ndef diversity(queries):\n    return len(set(queries))\
-    \ / len(queries) if queries else 0\nprint(diversity(['a','b','c','d','e']))\n\
-    print(diversity(['a','a','a','b','c']))\nPY\npython3 ~/w11/distribution.py"
+  answer: "cat > ~/w11/distribution.py <<'PY'\n# 정상: 유사 주제 집중\n# 공격: 체계적 균등 분포\nfrom collections import\
+    \ Counter\ndef diversity(queries):\n    return len(set(queries)) / len(queries) if queries else 0\n\
+    print(diversity(['a','b','c','d','e']))\nprint(diversity(['a','a','a','b','c']))\nPY\npython3 ~/w11/distribution.py"
   answer_detail: '[분석] 다양성 >0.8 의심.'
   verify:
     type: output_contains
     expect: '1.0'
     field: stdout
+    semantic:
+      intent: '[분석] 쿼리 분포 검사 — cat > distribution.py: def diversity(queries) = len(set)/len. 균등 >0.8 의심.
+        정상 유사 주제 집중.'
+      success_criteria:
+      - 1.0 출력
+      - def diversity
+      - set/len 비율
+      acceptable_methods:
+      - set diversity
+      - KL divergence
+      - chi-square test
+      negative_signs:
+      - diversity 없음
+      - 비율 계산 없음
+      - 임계 없음
   target_vm: bastion
-  script: "cat > ~/w11/distribution.py <<'PY'\n# 정상: 유사 주제 집중\n# 공격: 체계적 균등 분포\nfrom\
-    \ collections import Counter\ndef diversity(queries):\n    return len(set(queries))\
-    \ / len(queries) if queries else 0\nprint(diversity(['a','b','c','d','e']))\n\
-    print(diversity(['a','a','a','b','c']))\nPY\npython3 ~/w11/distribution.py"
+  script: "cat > ~/w11/distribution.py <<'PY'\n# 정상: 유사 주제 집중\n# 공격: 체계적 균등 분포\nfrom collections import\
+    \ Counter\ndef diversity(queries):\n    return len(set(queries)) / len(queries) if queries else 0\n\
+    print(diversity(['a','b','c','d','e']))\nprint(diversity(['a','a','a','b','c']))\nPY\npython3 ~/w11/distribution.py"
   risk_level: low
   bastion_prompt: ''
 - order: 6
@@ -194,6 +265,21 @@ steps:
     type: output_contains
     expect: auditd
     field: stdout
+    semantic:
+      intent: '[분석] 모델 파일 접근 감사 — cat > access-audit.md: 모델 서버 auditd / 비정상 egress GB 단위 / git 히스토리 비정상.
+        Theft 대비.'
+      success_criteria:
+      - auditd 키워드
+      - 3 축
+      - GB egress
+      acceptable_methods:
+      - auditd -w
+      - EDR process
+      - NetFlow egress
+      negative_signs:
+      - 감사 없음
+      - 축 1-2개
+      - egress 누락
   target_vm: bastion
   script: 'cat > ~/w11/access-audit.md <<''M''
 
@@ -227,6 +313,21 @@ steps:
     type: output_contains
     expect: limit_req
     field: stdout
+    semantic:
+      intent: '[초동] Rate limit — cat > ratelimit.conf: limit_req_zone $http_x_api_key zone=api:10m rate=10r/s
+        + $binary_remote_addr zone=ip rate=100r/s. nginx rate limit.'
+      success_criteria:
+      - limit_req 키워드
+      - api:10m + ip:10m
+      - rate r/s
+      acceptable_methods:
+      - nginx limit_req
+      - HAProxy stick-table
+      - Kong rate-limiting
+      negative_signs:
+      - zone 없음
+      - rate 없음
+      - api_key 없음
   target_vm: web
   script: 'cat > ~/w11/ratelimit.conf <<''C''
 
@@ -244,9 +345,9 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 16
-  answer: "cat > ~/w11/agent.yaml <<'Y'\nplaybook_id: pb-model-abuse\nsteps:\n  -\
-    \ skill: disable_api_key\n  - skill: tighten_rate_limit\n  - skill: preserve_query_logs\n\
-    \  - skill: trigger_watermark_check\nY\ncat ~/w11/agent.yaml"
+  answer: "cat > ~/w11/agent.yaml <<'Y'\nplaybook_id: pb-model-abuse\nsteps:\n  - skill: disable_api_key\n\
+    \  - skill: tighten_rate_limit\n  - skill: preserve_query_logs\n  - skill: trigger_watermark_check\n\
+    Y\ncat ~/w11/agent.yaml"
   answer_detail: '[초동대응] 단계적 대응.'
   verify:
     type: output_contains
@@ -254,10 +355,25 @@ steps:
     - watermark
     - Playbook
     field: stdout
+    semantic:
+      intent: '[초동] Agent Playbook — cat > agent.yaml: pb-model-abuse + disable_api_key / tighten_rate_limit
+        / preserve_query_logs / trigger_watermark_check. 단계적 대응.'
+      success_criteria:
+      - watermark/Playbook
+      - 4 steps
+      - preserve_logs
+      acceptable_methods:
+      - Bastion Playbook
+      - API gateway rules
+      - Auth0 automation
+      negative_signs:
+      - steps 2개 이하
+      - watermark 없음
+      - preserve 누락
   target_vm: bastion
-  script: "cat > ~/w11/agent.yaml <<'Y'\nplaybook_id: pb-model-abuse\nsteps:\n  -\
-    \ skill: disable_api_key\n  - skill: tighten_rate_limit\n  - skill: preserve_query_logs\n\
-    \  - skill: trigger_watermark_check\nY\ncat ~/w11/agent.yaml"
+  script: "cat > ~/w11/agent.yaml <<'Y'\nplaybook_id: pb-model-abuse\nsteps:\n  - skill: disable_api_key\n\
+    \  - skill: tighten_rate_limit\n  - skill: preserve_query_logs\n  - skill: trigger_watermark_check\n\
+    Y\ncat ~/w11/agent.yaml"
   risk_level: low
   bastion_prompt: ''
 - order: 9
@@ -281,6 +397,20 @@ steps:
     type: output_contains
     expect: 영업비밀
     field: stdout
+    semantic:
+      intent: '[보고] 지식재산 법무 — cat > ip-legal.md: 모델 영업비밀·저작권 / 지식재산 소송 / 국경 국제 협력. 법적 보호.'
+      success_criteria:
+      - 영업비밀 키워드
+      - 3 축
+      - 소송
+      acceptable_methods:
+      - 영업비밀보호법
+      - DMCA
+      - TRIPS
+      negative_signs:
+      - 영업비밀 없음
+      - 소송 없음
+      - 국제 없음
   target_vm: bastion
   script: 'cat > ~/w11/ip-legal.md <<''M''
 
@@ -322,6 +452,21 @@ steps:
     - KMS
     - MLOps
     field: stdout
+    semantic:
+      intent: '[재발방지] MLOps 5축 — cat > mlops.md: 1 데이터 공급망 출처·서명 / 2 모델 파일 KMS / 3 추론 API rate+watermark
+        / 4 모니터링 / 5 Red team. 전체 축.'
+      success_criteria:
+      - KMS/MLOps
+      - 5 축
+      - 전체 라이프사이클
+      acceptable_methods:
+      - NIST AI RMF Manage
+      - MITRE ATLAS Mitigation
+      - MLOps maturity
+      negative_signs:
+      - 축 3개 이하
+      - KMS 없음
+      - Red team 없음
   target_vm: bastion
   script: 'cat > ~/w11/mlops.md <<''M''
 
@@ -363,6 +508,21 @@ steps:
     type: output_contains
     expect: HarmBench
     field: stdout
+    semantic:
+      intent: '[재발방지] Adversarial 테스트 — cat > adv-test.md: HarmBench 정기 / AgentHarm 정기 / CyberSecEval
+        / 결과 SIEM. 벤치마크 통합.'
+      success_criteria:
+      - HarmBench 키워드
+      - 4 벤치마크
+      - 정기 실행
+      acceptable_methods:
+      - HarmBench
+      - AgentHarm
+      - CyberSecEval
+      negative_signs:
+      - 벤치 1-2개
+      - 정기 없음
+      - SIEM 없음
   target_vm: bastion
   script: 'cat > ~/w11/adv-test.md <<''M''
 
@@ -402,6 +562,21 @@ steps:
     type: output_contains
     expect: 해시
     field: stdout
+    semantic:
+      intent: '[재발방지] 데이터 위생 — cat > data-hygiene.md: 훈련 데이터 해시 봉인 / 출처·서명 / RLHF 라벨러 신원 / 합성 데이터 격리.
+        Poisoning 대비.'
+      success_criteria:
+      - 해시 키워드
+      - 4 위생 축
+      - 라벨러 신원
+      acceptable_methods:
+      - Data provenance
+      - SBOM-ML
+      - C2PA
+      negative_signs:
+      - 해시 없음
+      - 라벨러 없음
+      - 격리 없음
   target_vm: bastion
   script: 'cat > ~/w11/data-hygiene.md <<''M''
 
