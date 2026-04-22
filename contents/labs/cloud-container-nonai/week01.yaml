@@ -3,8 +3,7 @@ title: 클라우드 기초 및 가상화 보안 점검
 version: non-ai
 course: cloud-container-nonai
 week: 1
-description: 클라우드 컴퓨팅의 기초 개념을 학습하고, WEB 서버(10.20.30.80)의 Docker 환경에서 가상화/컨테이너 기술의
-  보안 기초를 점검합니다.
+description: 클라우드 컴퓨팅의 기초 개념을 학습하고, WEB 서버(10.20.30.80)의 Docker 환경에서 가상화/컨테이너 기술의 보안 기초를 점검합니다.
 difficulty: easy
 duration_minutes: 120
 objectives:
@@ -18,35 +17,66 @@ steps:
   hint: docker version과 docker info 명령을 사용하세요.
   category: recon
   points: 10
-  answer: 'docker version --format ''Server: {{.Server.Version}}'' && echo ''---''
-    && docker info --format ''OS: {{.OperatingSystem}}
+  answer: 'docker version --format ''Server: {{.Server.Version}}'' && echo ''---'' && docker info --format
+    ''OS: {{.OperatingSystem}}
 
     Kernel: {{.KernelVersion}}
 
     Driver: {{.Driver}}
 
     Runtime: {{.DefaultRuntime}}'''
-  answer_detail: Docker 엔진은 클라이언트-서버 아키텍처로, dockerd(데몬)가 컨테이너를 관리합니다. Storage Driver(overlay2
-    등)는 이미지 레이어를 관리하고, Runtime(runc)은 컨테이너를 실행합니다. 버전이 오래되면 알려진 취약점(CVE)이 존재할 수 있습니다.
+  answer_detail: Docker 엔진은 클라이언트-서버 아키텍처로, dockerd(데몬)가 컨테이너를 관리합니다. Storage Driver(overlay2 등)는 이미지
+    레이어를 관리하고, Runtime(runc)은 컨테이너를 실행합니다. 버전이 오래되면 알려진 취약점(CVE)이 존재할 수 있습니다.
   verify:
     type: output_contains
     expect: Server
     field: stdout
+    semantic:
+      intent: Docker 엔진 버전·정보 — docker version + docker info 로 Server Version + OS + Kernel + Driver +
+        Runtime 확인. dockerd 데몬 정보 수집. CVE 대응 기초 데이터 (버전별 알려진 취약점).
+      success_criteria:
+      - Server 키워드
+      - docker version/info 명령
+      - OS/Kernel/Driver 조합 출력
+      acceptable_methods:
+      - docker version --format
+      - docker info --format
+      - docker system info
+      - kubectl version (k8s 대체)
+      negative_signs:
+      - version 만 + info 없음
+      - Server 정보 누락
+      - CVE 맥락 없음
   target_vm: web
 - order: 2
-  instruction: Docker의 보안 옵션(Security Options)을 확인하시오. AppArmor, Seccomp 등이 활성화되어
-    있는지 점검합니다.
+  instruction: Docker의 보안 옵션(Security Options)을 확인하시오. AppArmor, Seccomp 등이 활성화되어 있는지 점검합니다.
   hint: docker info에서 Security Options 항목을 확인하세요.
   category: audit
   points: 10
   answer: docker info 2>/dev/null | grep -A5 "Security Options"
-  answer_detail: Docker의 보안은 여러 리눅스 보안 기술에 의존합니다. AppArmor/SELinux는 MAC(필수 접근 통제),
-    Seccomp은 시스템 콜 필터링, Namespaces는 격리, Cgroups는 자원 제한을 제공합니다. 이것들이 비활성화되어 있으면 컨테이너
-    탈출 위험이 높아집니다.
+  answer_detail: Docker의 보안은 여러 리눅스 보안 기술에 의존합니다. AppArmor/SELinux는 MAC(필수 접근 통제), Seccomp은 시스템 콜 필터링,
+    Namespaces는 격리, Cgroups는 자원 제한을 제공합니다. 이것들이 비활성화되어 있으면 컨테이너 탈출 위험이 높아집니다.
   verify:
     type: output_contains
     expect: Security
     field: stdout
+    semantic:
+      intent: Docker Security Options — docker info | grep -A5 'Security Options'. AppArmor (MAC) + Seccomp
+        (syscall 필터) + Namespaces (격리) + Cgroups (자원). 비활성 = 컨테이너 탈출 위험. MITRE ATT&CK T1611 Escape to
+        Host 방어 기반.
+      success_criteria:
+      - Security 키워드
+      - docker info + grep
+      - AppArmor/Seccomp 확인
+      acceptable_methods:
+      - docker info | grep Security Options
+      - docker info --format '{{.SecurityOptions}}'
+      - aa-status (AppArmor)
+      - seccomp --list-profiles
+      negative_signs:
+      - Security Options 섹션 누락
+      - 4가지 보안 기술 구분 없음
+      - 탈출 위험 맥락 없음
   target_vm: web
 - order: 3
   instruction: 현재 실행 중인 컨테이너 목록과 상태를 확인하시오.
@@ -54,92 +84,183 @@ steps:
   category: recon
   points: 8
   answer: docker ps -a --format "table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}\t{{.Ports}}"
-  answer_detail: docker ps는 실행 중인 컨테이너를, -a 옵션은 중지된 컨테이너까지 모두 표시합니다. 컨테이너의 상태(Up/Exited),
-    사용 이미지, 포트 매핑 정보는 보안 점검의 기초 정보입니다. 중지된 컨테이너에도 민감 데이터가 남아 있을 수 있습니다.
+  answer_detail: docker ps는 실행 중인 컨테이너를, -a 옵션은 중지된 컨테이너까지 모두 표시합니다. 컨테이너의 상태(Up/Exited), 사용 이미지, 포트 매핑
+    정보는 보안 점검의 기초 정보입니다. 중지된 컨테이너에도 민감 데이터가 남아 있을 수 있습니다.
   verify:
     type: output_contains
     expect:
     - IMAGE
     - docker
     field: stdout
+    semantic:
+      intent: 컨테이너 목록 — docker ps -a --format 'table {{.ID}}\t{{.Image}}\t{{.Status}}\t{{.Names}}\t{{.Ports}}'.
+        -a = 중지 포함. Status (Up/Exited) + Image + 포트 매핑. 중지된 컨테이너도 민감 데이터 존재 가능. 보안 인벤토리 기초.
+      success_criteria:
+      - IMAGE 키워드 또는 docker
+      - docker ps -a 실행
+      - 포맷 지정 출력
+      acceptable_methods:
+      - docker ps -a --format
+      - docker container ls -a
+      - crictl ps (containerd)
+      - kubectl get pods (k8s)
+      negative_signs:
+      - -a 없이 실행 중인 것만
+      - 포맷 지정 없이 기본
+      - 중지 컨테이너 위험 맥락 없음
   target_vm: web
 - order: 4
   instruction: 호스트 시스템의 커널 네임스페이스 지원을 확인하시오. 네임스페이스는 컨테이너 격리의 핵심입니다.
   hint: /proc/self/ns/ 디렉터리와 lsns 명령을 사용하세요.
   category: audit
   points: 10
-  answer: ls -la /proc/self/ns/ && echo "--- 네임스페이스 목록 ---" && lsns --output-all 2>/dev/null
-    | head -15
-  answer_detail: 리눅스 네임스페이스는 PID(프로세스), NET(네트워크), MNT(파일시스템), UTS(호스트명), IPC(프로세스간
-    통신), USER(사용자)를 격리합니다. 각 컨테이너는 자체 네임스페이스를 가져 다른 컨테이너와 호스트로부터 격리됩니다.
+  answer: ls -la /proc/self/ns/ && echo "--- 네임스페이스 목록 ---" && lsns --output-all 2>/dev/null | head -15
+  answer_detail: 리눅스 네임스페이스는 PID(프로세스), NET(네트워크), MNT(파일시스템), UTS(호스트명), IPC(프로세스간 통신), USER(사용자)를 격리합니다.
+    각 컨테이너는 자체 네임스페이스를 가져 다른 컨테이너와 호스트로부터 격리됩니다.
   verify:
     type: output_contains
     expect:
     - ns
     - 네임스페이스
     field: stdout
+    semantic:
+      intent: 커널 네임스페이스 — ls -la /proc/self/ns/ + lsns --output-all | head -15. Linux namespaces 6종 (PID/NET/MNT/UTS/IPC/USER).
+        컨테이너 격리 핵심. /proc/PID/ns 가상 파일 = 각 namespace 식별자.
+      success_criteria:
+      - ns 키워드 또는 네임스페이스
+      - /proc/self/ns/ 조회
+      - lsns 또는 namespace 유형
+      acceptable_methods:
+      - ls -la /proc/self/ns/
+      - lsns --output-all
+      - unshare --list (미리 확인)
+      - nsenter 으로 진입
+      negative_signs:
+      - namespace 6종 언급 없음
+      - /proc 조회 없음
+      - 격리 개념 없음
   target_vm: web
 - order: 5
   instruction: Docker 네트워크 목록과 기본 bridge 네트워크의 구성을 확인하시오.
   hint: docker network ls와 docker network inspect bridge를 사용하세요.
   category: recon
   points: 10
-  answer: 'docker network ls && echo ''--- bridge 네트워크 상세 ---'' && docker network
-    inspect bridge --format ''Subnet: {{(index .IPAM.Config 0).Subnet}}
+  answer: 'docker network ls && echo ''--- bridge 네트워크 상세 ---'' && docker network inspect bridge --format
+    ''Subnet: {{(index .IPAM.Config 0).Subnet}}
 
     Gateway: {{(index .IPAM.Config 0).Gateway}}'' 2>/dev/null'
-  answer_detail: Docker의 기본 bridge 네트워크에서는 모든 컨테이너가 서로 통신할 수 있어 보안상 취약합니다. 클라우드 환경에서는
-    VPC, 서브넷과 유사하게 Docker에서도 네트워크를 분리하여 마이크로세그멘테이션을 구현해야 합니다.
+  answer_detail: Docker의 기본 bridge 네트워크에서는 모든 컨테이너가 서로 통신할 수 있어 보안상 취약합니다. 클라우드 환경에서는 VPC, 서브넷과 유사하게 Docker에서도
+    네트워크를 분리하여 마이크로세그멘테이션을 구현해야 합니다.
   verify:
     type: output_contains
     expect: bridge
     field: stdout
+    semantic:
+      intent: 'Docker 네트워크 + bridge — docker network ls + docker network inspect bridge --format ''Subnet:
+        {{Subnet}} Gateway: {{Gateway}}''. 기본 bridge 는 모든 컨테이너 간 통신 허용 (micro-segmentation 부재). VPC 와
+        유사하게 커스텀 네트워크 분리 권장.'
+      success_criteria:
+      - bridge 키워드
+      - docker network ls + inspect
+      - Subnet/Gateway 확인
+      acceptable_methods:
+      - docker network ls + inspect
+      - iptables -L DOCKER (규칙)
+      - bridge-utils brctl show
+      - ip link show docker0
+      negative_signs:
+      - ls 만 + inspect 없음
+      - micro-segmentation 맥락 없음
+      - VPC 유비 없음
   target_vm: web
 - order: 6
   instruction: Docker 데몬의 설정 파일(daemon.json)을 확인하시오.
   hint: /etc/docker/daemon.json 파일을 확인하세요.
   category: audit
   points: 10
-  answer: 'cat /etc/docker/daemon.json 2>/dev/null || echo ''daemon.json 미존재 (기본 설정
-    사용)'' && echo ''--- Docker 루트 ---'' && docker info --format ''Root Dir: {{.DockerRootDir}}''
-    2>/dev/null'
-  answer_detail: daemon.json은 Docker 데몬의 전역 설정 파일입니다. 로깅 드라이버(json-file, syslog),
-    저장소 드라이버(overlay2), TLS 인증, 레지스트리 미러 등을 설정합니다. 파일이 없으면 모든 설정이 기본값으로 동작하는데, 프로덕션에서는
-    보안 설정을 명시해야 합니다.
+  answer: 'cat /etc/docker/daemon.json 2>/dev/null || echo ''daemon.json 미존재 (기본 설정 사용)'' && echo ''---
+    Docker 루트 ---'' && docker info --format ''Root Dir: {{.DockerRootDir}}'' 2>/dev/null'
+  answer_detail: daemon.json은 Docker 데몬의 전역 설정 파일입니다. 로깅 드라이버(json-file, syslog), 저장소 드라이버(overlay2),
+    TLS 인증, 레지스트리 미러 등을 설정합니다. 파일이 없으면 모든 설정이 기본값으로 동작하는데, 프로덕션에서는 보안 설정을 명시해야 합니다.
   verify:
     type: output_contains
     expect: Docker
     field: stdout
+    semantic:
+      intent: daemon.json 설정 — cat /etc/docker/daemon.json + docker info --format '{{.DockerRootDir}}'.
+        dockerd 전역 설정 (로깅/스토리지 드라이버/TLS 인증/레지스트리 미러). 미존재 = 기본값. 프로덕션 보안 명시 필수.
+      success_criteria:
+      - Docker 키워드
+      - /etc/docker/daemon.json 조회
+      - Root Dir 확인
+      acceptable_methods:
+      - cat daemon.json
+      - docker info --format DockerRootDir
+      - jq < daemon.json (JSON 검증)
+      - systemd drop-in override
+      negative_signs:
+      - daemon.json 경로 혼동
+      - 기본값 위험 언급 없음
+      - Docker 설정 개념 없음
   target_vm: web
 - order: 7
   instruction: Docker 소켓의 접근 권한을 확인하시오. Docker 소켓 접근은 사실상 root 권한과 동일합니다.
   hint: /var/run/docker.sock의 소유자와 권한을 확인하세요.
   category: audit
   points: 12
-  answer: stat -c "%a %U:%G %n" /var/run/docker.sock && echo "--- docker 그룹 멤버 ---"
-    && getent group docker
-  answer_detail: Docker 소켓(/var/run/docker.sock)에 접근할 수 있는 사용자는 컨테이너를 통해 호스트의 root
-    권한을 획득할 수 있습니다. 이는 클라우드 환경에서 공유 책임 모델(Shared Responsibility Model)의 핵심 포인트입니다.
-    docker 그룹에 불필요한 사용자가 포함되어 있으면 위험합니다.
+  answer: stat -c "%a %U:%G %n" /var/run/docker.sock && echo "--- docker 그룹 멤버 ---" && getent group docker
+  answer_detail: Docker 소켓(/var/run/docker.sock)에 접근할 수 있는 사용자는 컨테이너를 통해 호스트의 root 권한을 획득할 수 있습니다. 이는
+    클라우드 환경에서 공유 책임 모델(Shared Responsibility Model)의 핵심 포인트입니다. docker 그룹에 불필요한 사용자가 포함되어 있으면 위험합니다.
   verify:
     type: output_contains
     expect: docker.sock
     field: stdout
+    semantic:
+      intent: Docker 소켓 권한 — stat -c '%a %U:%G %n' /var/run/docker.sock + getent group docker. 소켓 접근 =
+        root 동급. docker 그룹 = 무제한 컨테이너 생성 권한. MITRE ATT&CK T1611 Escape to Host 주요 경로. 최소 권한 필수.
+      success_criteria:
+      - docker.sock 키워드
+      - stat 명령
+      - docker 그룹 조회
+      acceptable_methods:
+      - stat -c + getent group
+      - ls -la /var/run/docker.sock
+      - docker context ls
+      - rootless Docker 전환
+      negative_signs:
+      - 소켓 위험성 맥락 없음
+      - 그룹 멤버 조회 없음
+      - root 동급 개념 없음
   target_vm: web
 - order: 8
   instruction: 호스트에서 컨테이너 프로세스가 어떻게 보이는지 확인하시오. 호스트-컨테이너 격리 수준을 평가합니다.
   hint: 호스트에서 ps aux로 컨테이너 프로세스를 확인하세요.
   category: audit
   points: 10
-  answer: ps aux | grep -E "(docker|containerd|container)" | grep -v grep | head -10
-    && echo "--- cgroup 마운트 ---" && mount | grep cgroup | head -5
-  answer_detail: 컨테이너의 프로세스는 호스트에서 일반 프로세스로 보입니다. 이는 컨테이너가 VM과 달리 커널을 공유하기 때문입니다.
-    클라우드의 IaaS(VM 기반)와 CaaS(컨테이너 기반)의 핵심 차이이며, 컨테이너는 격리 수준이 낮아 추가 보안 조치(seccomp, apparmor)가
-    필수입니다.
+  answer: ps aux | grep -E "(docker|containerd|container)" | grep -v grep | head -10 && echo "--- cgroup
+    마운트 ---" && mount | grep cgroup | head -5
+  answer_detail: 컨테이너의 프로세스는 호스트에서 일반 프로세스로 보입니다. 이는 컨테이너가 VM과 달리 커널을 공유하기 때문입니다. 클라우드의 IaaS(VM 기반)와 CaaS(컨테이너
+    기반)의 핵심 차이이며, 컨테이너는 격리 수준이 낮아 추가 보안 조치(seccomp, apparmor)가 필수입니다.
   verify:
     type: output_contains
     expect: docker
     field: stdout
+    semantic:
+      intent: 컨테이너 프로세스 호스트 가시성 — ps aux | grep -E '(docker|containerd|container)' + mount | grep cgroup.
+        컨테이너 프로세스 = 호스트에서 일반 프로세스로 보임. VM 과 달리 커널 공유. cgroup 마운트 확인. IaaS vs CaaS 격리 수준 차이.
+      success_criteria:
+      - docker 키워드
+      - ps aux grep + cgroup 마운트
+      - 호스트 가시성 확인
+      acceptable_methods:
+      - ps aux + grep + mount grep
+      - pstree -p (프로세스 트리)
+      - systemd-cgls (cgroup 계층)
+      - crictl ps (containerd)
+      negative_signs:
+      - 컨테이너 격리 개념 혼동
+      - cgroup 마운트 확인 없음
+      - VM vs 컨테이너 맥락 없음
   target_vm: web
 - order: 9
   instruction: 클라우드/컨테이너 보안 기초 점검 스크립트를 작성하고 실행하시오.
@@ -177,10 +298,26 @@ steps:
     SCRIPT
 
     chmod +x /tmp/cloud_basic_check.sh && bash /tmp/cloud_basic_check.sh'
-  answer_detail: 클라우드 보안의 공유 책임 모델에서 IaaS 사용 시 OS, 미들웨어, 애플리케이션 보안은 고객 책임입니다. Docker
-    환경에서는 호스트 OS 보안, Docker 데몬 설정, 이미지 보안, 네트워크 격리, 런타임 보안을 모두 고객이 관리해야 합니다.
+  answer_detail: 클라우드 보안의 공유 책임 모델에서 IaaS 사용 시 OS, 미들웨어, 애플리케이션 보안은 고객 책임입니다. Docker 환경에서는 호스트 OS 보안,
+    Docker 데몬 설정, 이미지 보안, 네트워크 격리, 런타임 보안을 모두 고객이 관리해야 합니다.
   verify:
     type: output_contains
     expect: 기초 점검 완료
     field: stdout
+    semantic:
+      intent: '클라우드 보안 종합 점검 스크립트 — /tmp/cloud_basic_check.sh: Docker 버전 + SecurityOptions + 네트워크 + 소켓
+        권한 + 실행 컨테이너 수. 5개 기초 점검 자동화. ''기초 점검 완료'' 마크. 주기적 audit 템플릿.'
+      success_criteria:
+      - 기초 점검 완료 키워드
+      - /tmp/*.sh 스크립트
+      - 5개 이상 체크 항목
+      acceptable_methods:
+      - bash heredoc + chmod + 실행
+      - CIS Docker Benchmark 자동화
+      - docker-bench-security
+      - Trivy + Syft scan
+      negative_signs:
+      - 점검 항목 3개 이하
+      - 스크립트 파일 저장 없이 inline
+      - CIS benchmark 맥락 없음
   target_vm: web
