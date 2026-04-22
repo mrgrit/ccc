@@ -21,8 +21,25 @@ steps:
   answer_detail: 드론 관련 서비스 포트를 식별하여 공격 표면을 파악합니다.
   verify:
     type: output_contains
-    expect: 10.20.30.200
+    expect:
+    - 10.20.30.200
+    - 포트스캔
     field: stdout
+    semantic:
+      intent: '[정찰] 드론 포트 스캔 — nmap -sV -p 9999,14550,5760 10.20.30.200. 9999 드론시뮬 + 14550 MAVLink UDP
+        + 5760 TCP. 드론 서비스 포트 식별. MITRE ICS T0841.'
+      success_criteria:
+      - 10.20.30.200 포함
+      - 9999/14550/5760
+      - -sV
+      acceptable_methods:
+      - nmap -sV -p
+      - rustscan
+      - masscan
+      negative_signs:
+      - 포트 1-2개
+      - -sV 없음
+      - 드론 포트 누락
   target_vm: attacker
 - order: 2
   instruction: Python으로 UDP 소켓을 만들어 가상 드론({{MANAGER_IP}}:9999)에 PING 명령을 전송하시오.
@@ -38,21 +55,51 @@ steps:
     - ping sent
     - PING
     field: stdout
+    semantic:
+      intent: '[정찰] 드론 UDP PING — python3 socket AF_INET+SOCK_DGRAM + sendto json.dumps({action:PING})
+        10.20.30.200:9999. UDP 드론 통신 테스트. 비연결형 프로토콜.'
+      success_criteria:
+      - ping sent 출력
+      - UDP SOCK_DGRAM
+      - 9999 포트
+      acceptable_methods:
+      - socket UDP sendto
+      - scapy UDP
+      - netcat -u
+      negative_signs:
+      - TCP 사용
+      - 타임아웃 없음
+      - JSON 페이로드 없음
   target_vm: attacker
 - order: 3
   instruction: LLM에게 MAVLink v2 패킷 구조를 설명하도록 요청하시오.
   hint: MAVLink v2 header fields를 질문하세요.
   category: analysis
   points: 10
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"\
-    model\":\"gemma3:4b\",\"prompt\":\"Describe MAVLink v2 packet header structure\
-    \ with field names and sizes\",\"stream\":false,\"options\":{\"num_predict\":150}}'\
-    \ \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
+  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/generate \\\n  -d '{\"model\":\"gemma3:4b\"\
+    ,\"prompt\":\"Describe MAVLink v2 packet header structure with field names and sizes\",\"stream\"\
+    :false,\"options\":{\"num_predict\":150}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['response'])\""
   answer_detail: MAVLink 프로토콜 이해는 드론 보안 분석의 기본입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[분석] MAVLink v2 패킷 구조 — curl /api/generate prompt=''MAVLink v2 packet header structure
+        with field names and sizes'' num_predict:150. STX(0xFD)/LEN/INCOMPAT/COMPAT/SEQ/SYSID/COMPID/MSGID.
+        MAVLink 공식 프로토콜.'
+      success_criteria:
+      - MAVLink 맥락
+      - /api/generate
+      - response 추출
+      acceptable_methods:
+      - curl + json
+      - ollama
+      - pymavlink 참조
+      negative_signs:
+      - MAVLink 용어 없음
+      - 응답 없음
+      - num_predict 없음
   target_vm: manager
 - order: 4
   instruction: Python으로 MAVLink v2 HEARTBEAT 헤더를 바이너리로 구성하고 각 필드를 출력하시오.
@@ -66,6 +113,21 @@ steps:
     type: output_contains
     expect: HEARTBEAT
     field: stdout
+    semantic:
+      intent: '[분석] MAVLink HEARTBEAT 바이너리 — python3 struct.pack(''<BBBBBBBH'',0xFD,9,0,0,42,1,1,0) +
+        unpack + 필드 출력. STX 0xFD/PLEN 9/SEQ 42/SysID 1/CompID 1/MsgID 0 HEARTBEAT. pymavlink dialects.'
+      success_criteria:
+      - HEARTBEAT 키워드
+      - struct.pack + unpack
+      - STX 0xFD
+      acceptable_methods:
+      - struct.pack/unpack
+      - pymavlink
+      - scapy MAVLink layer
+      negative_signs:
+      - unpack 없음
+      - HEARTBEAT 미언급
+      - 필드 추출 없음
   target_vm: attacker
 - order: 5
   instruction: Python으로 가상 드론 시뮬레이터(UDP 서버)를 작성하여 PING 명령에 응답하는 코드를 실행하시오.
@@ -81,23 +143,53 @@ steps:
     - simulator started
     - PONG
     field: stdout
+    semantic:
+      intent: '[설정] 드론 시뮬레이터 — python3 socket.bind(''0.0.0.0'',19999) + settimeout(2). UDP 서버 PING/PONG
+        응답 시뮬. ArduPilot SITL 대체.'
+      success_criteria:
+      - simulator started 출력
+      - socket.bind
+      - UDP port 19999
+      acceptable_methods:
+      - socket UDP bind
+      - ArduPilot SITL
+      - JMAVSim
+      negative_signs:
+      - bind 없음
+      - TCP 사용
+      - 타임아웃 없음
   target_vm: attacker
 - order: 6
   instruction: LLM에게 WiFi 기반 드론 제어의 보안 취약점 5가지를 질의하시오.
   hint: drone WiFi security vulnerabilities를 질문하세요.
   category: analysis
   points: 12
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\"\
-    :\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a drone\
-    \ security expert.\"},{\"role\":\"user\",\"content\":\"List 5 security vulnerabilities\
-    \ in WiFi-controlled drones with severity rating.\"}],\"stream\":false,\"options\"\
-    :{\"num_predict\":200}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
+    messages\":[{\"role\":\"system\",\"content\":\"You are a drone security expert.\"},{\"role\":\"user\"\
+    ,\"content\":\"List 5 security vulnerabilities in WiFi-controlled drones with severity rating.\"}],\"\
+    stream\":false,\"options\":{\"num_predict\":200}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: WiFi 드론의 보안 취약점을 체계적으로 파악합니다.
   verify:
     type: output_contains
     expect:
     - 취약점
     field: stdout
+    semantic:
+      intent: '[분석] WiFi 드론 취약점 5종 — curl /api/chat system=drone security expert + List 5 security vulnerabilities
+        in WiFi-controlled drones with severity. WPA2 KRACK/Deauth/Default creds/Open MAVLink/Firmware.
+        MITRE ATT&CK.'
+      success_criteria:
+      - 취약점 출력
+      - 5 종류
+      - severity 평가
+      acceptable_methods:
+      - LLM 취약점 목록
+      - CVE 검색
+      - Dronesploit
+      negative_signs:
+      - 취약점 3개 이하
+      - severity 없음
+      - system 누락
   target_vm: manager
 - order: 7
   instruction: Python으로 드론 텔레메트리 데이터(위도, 경도, 고도, 배터리)를 JSON으로 생성하고 출력하시오.
@@ -110,19 +202,49 @@ steps:
     type: output_contains
     expect: 'Telemetry:'
     field: stdout
+    semantic:
+      intent: '[설정] 드론 텔레메트리 JSON — python3 telemetry {lat 37.5665/lon 126.978/alt 50/battery 85/speed
+        5.2/heading 180} + json.dumps indent=2. 드론 상태 직렬화. MAVLink GLOBAL_POSITION_INT 대응.'
+      success_criteria:
+      - 'Telemetry: 출력'
+      - lat/lon/alt/battery 필드
+      - json.dumps indent
+      acceptable_methods:
+      - json.dumps indent
+      - MAVLink GLOBAL_POSITION
+      - ROS2 msg
+      negative_signs:
+      - 필드 3개 이하
+      - indent 없음
+      - GPS 좌표 없음
   target_vm: attacker
 - order: 8
   instruction: Python으로 드론 통신의 보안 수준을 평가하는 스크립트를 작성하시오. 인증, 암호화, 서명, 무결성 4가지 항목을 체크하라.
   hint: 각 보안 항목을 딕셔너리로 정의하고 평가하세요.
   category: analysis
   points: 12
-  answer: 'python3 -c " checks={''Authentication'':False,''Encryption'':False,''MAVLink
-    Signing'':False,''Integrity Check'':False} ;score=sum(checks.values())/len(checks)*100
-    ;print(''=== Drone Comm Security ==='') ;[print(f''  [{\"OK\" if v else \"FAIL\"}]
-    {k}'') for k,v in checks.items()] ;print(f''Score: {score:.0f}% - CRITICAL'')"'
+  answer: 'python3 -c " checks={''Authentication'':False,''Encryption'':False,''MAVLink Signing'':False,''Integrity
+    Check'':False} ;score=sum(checks.values())/len(checks)*100 ;print(''=== Drone Comm Security ==='')
+    ;[print(f''  [{\"OK\" if v else \"FAIL\"}] {k}'') for k,v in checks.items()] ;print(f''Score: {score:.0f}%
+    - CRITICAL'')"'
   answer_detail: 드론 통신 보안 평가를 통해 개선점을 도출합니다.
   verify:
     type: output_contains
     expect: Drone Comm Security
     field: stdout
+    semantic:
+      intent: '[분석] 드론 통신 보안 평가 — python3 checks 4 항목 (Authentication/Encryption/MAVLink Signing/Integrity
+        Check) + 모두 False = CRITICAL. Score 0%. MAVLink v2 signing 부재 확인.'
+      success_criteria:
+      - Drone Comm Security 키워드
+      - 4 항목 + OK/FAIL
+      - Score %
+      acceptable_methods:
+      - checks dict + score
+      - MAVLink signing 체크
+      - NIST SP 800-82
+      negative_signs:
+      - 항목 2개 이하
+      - '% 없음'
+      - CRITICAL 미언급
   target_vm: attacker
