@@ -23,6 +23,22 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 기본 룰 파일 수 — sudo ls /var/ossec/ruleset/rules/ | wc -l. Wazuh 기본 룰셋 볼륨 (보통 100+ XML 파일).
+        SSH/SUDO/APACHE 등 카테고리별 파일.
+      success_criteria:
+      - ls 또는 wc -l
+      - 기본 룰 경로 /var/ossec/ruleset/rules/
+      - 숫자 출력
+      acceptable_methods:
+      - ls + wc -l
+      - find + -type f
+      - grep -c '<rule id'
+      - Wazuh API /rules/files
+      negative_signs:
+      - 커스텀 경로 혼동
+      - 파일 수 집계 없음
+      - 기본 vs 커스텀 구분 없음
   target_vm: siem
 - order: 2
   instruction: local_rules.xml 의 현재 내용을 확인하시오.
@@ -35,22 +51,53 @@ steps:
     type: output_contains
     expect: rules
     field: stdout
+    semantic:
+      intent: 'local_rules.xml 현재 내용 — sudo cat /var/ossec/etc/rules/local_rules.xml | head -30. 커스텀 룰
+        전용 파일. 기본: <group name=''local,syslog,''> 빈 그룹 주석. 커스텀 룰 추가 위치.'
+      success_criteria:
+      - rules 키워드
+      - cat local_rules.xml 실행
+      - 파일 내용 출력
+      acceptable_methods:
+      - cat local_rules.xml
+      - less local_rules.xml
+      - Wazuh API /rules/files/local_rules.xml
+      - xmllint --format
+      negative_signs:
+      - 기본 rules 경로와 혼동
+      - 파일 존재 확인 없음
+      - XML 구조 해석 없음
   target_vm: siem
 - order: 3
   instruction: local_rules.xml 에 '여러 번 sudo 실패' 탐지 룰(rule id 100100, level 10)을 추가하시오.
   hint: <rule id="100100" level="10">…
   category: configure
   points: 10
-  answer: "sudo bash -c 'cat >> /var/ossec/etc/rules/local_rules.xml <<EOF\n<group\
-    \ name=\"local,syslog,sudo,\">\n  <rule id=\"100100\" level=\"10\" frequency=\"\
-    3\" timeframe=\"120\">\n    <if_matched_sid>5402</if_matched_sid>\n    <description>Multiple\
-    \ sudo failures (custom)</description>\n  </rule>\n</group>\nEOF'"
-  answer_detail: 'Wazuh 탐지 룰 작성: local_rules.xml 에 ''여러 번 sudo 실패'' 탐지 룰(rule id 100100,
-    level 10)을 추가하시오.'
+  answer: "sudo bash -c 'cat >> /var/ossec/etc/rules/local_rules.xml <<EOF\n<group name=\"local,syslog,sudo,\"\
+    >\n  <rule id=\"100100\" level=\"10\" frequency=\"3\" timeframe=\"120\">\n    <if_matched_sid>5402</if_matched_sid>\n\
+    \    <description>Multiple sudo failures (custom)</description>\n  </rule>\n</group>\nEOF'"
+  answer_detail: 'Wazuh 탐지 룰 작성: local_rules.xml 에 ''여러 번 sudo 실패'' 탐지 룰(rule id 100100, level 10)을 추가하시오.'
   verify:
     type: output_contains
     expect: '100100'
     field: stdout
+    semantic:
+      intent: sudo 실패 빈도 룰 100100 — <rule id=100100 level=10 frequency=3 timeframe=120> + <if_matched_sid>5402</if_matched_sid>
+        + <description>Multiple sudo failures. if_matched_sid 5402 기반 + 2분 내 3회 = 브루트포스 상관. MITRE ATT&CK
+        T1548.003 Abuse Elevation Control Mechanism.
+      success_criteria:
+      - 100100 키워드
+      - frequency + timeframe
+      - if_matched_sid 5402
+      acceptable_methods:
+      - cat >> local_rules.xml heredoc
+      - xmlstarlet edit
+      - Ansible lineinfile blockinfile
+      - Dashboard UI Rules editor
+      negative_signs:
+      - frequency/timeframe 없음
+      - if_matched_sid 누락
+      - 5402 (sudo 실패) 맥락 없음
   target_vm: siem
 - order: 4
   instruction: wazuh-analysisd -t 로 룰 문법을 검증하시오.
@@ -65,6 +112,22 @@ steps:
     type: output_contains
     expect: Configuration
     field: stdout
+    semantic:
+      intent: 룰 문법 검증 — sudo /var/ossec/bin/wazuh-analysisd -t 2>&1 | tail. -t = test mode (설정 + 룰 파싱
+        검증). Configuration 성공 메시지 또는 XML parse error. 배포 전 필수.
+      success_criteria:
+      - Configuration 키워드
+      - wazuh-analysisd -t 실행
+      - 검증 메시지
+      acceptable_methods:
+      - wazuh-analysisd -t
+      - xmllint --noout local_rules.xml (구문만)
+      - wazuh-logtest 룰 로드 테스트
+      - CI/CD 자동 검증
+      negative_signs:
+      - -t 없이 실제 실행
+      - 에러 무시
+      - 검증 단계 건너뜀
   target_vm: siem
 - order: 5
   instruction: Wazuh Manager 를 재시작해 새 룰을 로드하시오.
@@ -79,36 +142,85 @@ steps:
     type: output_contains
     expect: active
     field: stdout
+    semantic:
+      intent: Wazuh Manager 재시작 — sudo systemctl restart wazuh-manager && systemctl is-active wazuh-manager.
+        새 룰 반영 필요 재시작. active 검증. reload 대안 가능 하지만 일부 설정은 restart 필요.
+      success_criteria:
+      - active 키워드
+      - systemctl restart wazuh-manager
+      - 상태 검증
+      acceptable_methods:
+      - systemctl restart + is-active
+      - /var/ossec/bin/wazuh-control restart
+      - Wazuh API POST /manager/restart
+      - Ansible service
+      negative_signs:
+      - restart 후 검증 없음
+      - reload 만 (일부 설정 미반영)
+      - active 확인 누락
   target_vm: siem
 - order: 6
-  instruction: 'wazuh-logtest 로 ''Feb 1 12:34:56 host sudo: user : 3 incorrect password
-    attempts'' 로그를 넣어 새 룰이 매칭되는지 테스트하시오.'
+  instruction: 'wazuh-logtest 로 ''Feb 1 12:34:56 host sudo: user : 3 incorrect password attempts'' 로그를
+    넣어 새 룰이 매칭되는지 테스트하시오.'
   hint: echo '…' | /var/ossec/bin/wazuh-logtest
   category: verify
   points: 10
   answer: '🖥️ UI: Dashboard → Management → Rules → 룰 목록 검색
 
-    📎 참고 (CLI): echo ''Feb 01 12:34:56 host sudo:    root : 3 incorrect password attempts''
-    | sudo /var/ossec/bin/wazuh-logtest 2>&1 | tail -15'
-  answer_detail: 'Wazuh 탐지 룰 작성: wazuh-logtest 로 ''Feb 1 12:34:56 host sudo: user
-    : 3 incorrect password attempts'' 로그를 넣어 새 룰이 매칭되는지 테스트하시오.'
+    📎 참고 (CLI): echo ''Feb 01 12:34:56 host sudo:    root : 3 incorrect password attempts'' | sudo /var/ossec/bin/wazuh-logtest
+    2>&1 | tail -15'
+  answer_detail: 'Wazuh 탐지 룰 작성: wazuh-logtest 로 ''Feb 1 12:34:56 host sudo: user : 3 incorrect password
+    attempts'' 로그를 넣어 새 룰이 매칭되는지 테스트하시오.'
   verify:
     type: output_contains
     expect: sudo
     field: stdout
+    semantic:
+      intent: 'wazuh-logtest 룰 매칭 — echo ''Feb 01 12:34:56 host sudo:    root : 3 incorrect password attempts''
+        | sudo /var/ossec/bin/wazuh-logtest 2>&1 | tail -15. 샘플 로그 입력 → 디코더 + 룰 매칭 추적. 룰 작동 전/후 검증 표준
+        도구. TDD for detection.'
+      success_criteria:
+      - sudo 키워드
+      - wazuh-logtest 실행
+      - 샘플 로그 매칭 출력
+      acceptable_methods:
+      - echo | wazuh-logtest
+      - /var/ossec/bin/wazuh-logtest 인터랙티브
+      - pytest + wazuh-logtest wrapper
+      - Wazuh API /decoders/parents
+      negative_signs:
+      - logtest 없이 실제 환경 테스트
+      - 샘플 로그 형식 오류
+      - 매칭 결과 해석 없음
   target_vm: siem
 - order: 7
   instruction: alerts.json 에서 rule.id=100100 의 최근 항목을 검색하시오.
   hint: grep 100100 …
   category: analysis
   points: 10
-  answer: sudo grep '"id":"100100"' /var/ossec/logs/alerts/alerts.json 2>/dev/null
-    | tail -5 || echo 'no hits yet'
+  answer: sudo grep '"id":"100100"' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5 || echo 'no
+    hits yet'
   answer_detail: 'Wazuh 탐지 룰 작성: alerts.json 에서 rule.id=100100 의 최근 항목을 검색하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: alerts.json rule.id 100100 조회 — sudo grep '"id":"100100"' /var/ossec/logs/alerts/alerts.json
+        | tail -5. 커스텀 룰 실제 발생 이벤트 확인. 없으면 'no hits yet' 출력. 룰 production 배포 후 동작 검증.
+      success_criteria:
+      - grep 명령 실행
+      - 100100 rule ID 매칭
+      - alerts.json 경로
+      acceptable_methods:
+      - grep '"id":"100100"'
+      - jq 'select(.rule.id=="100100")'
+      - Kibana rule.id 필터
+      - Wazuh Indexer DSL 쿼리
+      negative_signs:
+      - 룰 ID 오타
+      - alerts.json 경로 혼동
+      - 매칭 결과 해석 없음
   target_vm: siem
 - order: 8
   instruction: /var/ossec/logs/ossec.log 의 오류(ERROR) 라인을 5개 출력하시오.
@@ -121,6 +233,22 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: ossec.log ERROR 라인 — sudo grep -i ERROR /var/ossec/logs/ossec.log | tail -5. Wazuh Manager
+        데몬 운영 로그. ERROR/WARNING 라인 추적 = 문제 진단. 설정 오류 / 룰 파싱 / 네트워크 문제 등 원인 파악.
+      success_criteria:
+      - grep ERROR 명령
+      - ossec.log 경로
+      - 에러 라인 출력
+      acceptable_methods:
+      - grep -i ERROR ossec.log
+      - journalctl -u wazuh-manager
+      - Wazuh API /manager/logs
+      - Kibana ossec.log 인덱스
+      negative_signs:
+      - grep 없이 전체 덤프
+      - ossec.log 경로 혼동
+      - 에러 심각도 해석 없음
   target_vm: siem
 - order: 9
   instruction: 추가했던 custom 룰 그룹을 local_rules.xml 에서 제거하시오.
@@ -133,6 +261,22 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 커스텀 룰 그룹 제거 — sudo sed -i '/<rule id="100100"/,/<\/group>/d' /var/ossec/etc/rules/local_rules.xml.
+        sed range /시작패턴/,/종료패턴/d = 시작부터 종료까지 삭제. XML 블록 cleanup. 실습 정리.
+      success_criteria:
+      - sed 명령
+      - rule id=100100 to /group 범위
+      - local_rules.xml 대상
+      acceptable_methods:
+      - sed -i range /d
+      - xmlstarlet ed -d XPath
+      - Ansible blockinfile state=absent
+      - Python xml.etree.ElementTree remove
+      negative_signs:
+      - sed range 오류
+      - group 닫기 태그 누락
+      - 다른 룰까지 삭제 위험
   target_vm: siem
 - order: 10
   instruction: Wazuh Manager 를 reload(restart) 하여 정리된 상태로 복귀하시오.
@@ -147,6 +291,22 @@ steps:
     type: output_contains
     expect: active
     field: stdout
+    semantic:
+      intent: Wazuh Manager restart 정리 — sudo systemctl restart wazuh-manager && systemctl is-active wazuh-manager.
+        룰 제거 반영 위해 재시작. active 검증. 실습 완료 상태 복귀.
+      success_criteria:
+      - active 키워드
+      - systemctl restart
+      - 상태 검증
+      acceptable_methods:
+      - systemctl restart + is-active
+      - wazuh-control restart
+      - Wazuh API POST /manager/restart
+      - Ansible service module
+      negative_signs:
+      - restart 없이 cleanup 만
+      - 상태 확인 누락
+      - reload 대신 restart 필요성 모름
   target_vm: siem
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
