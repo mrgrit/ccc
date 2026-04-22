@@ -3,8 +3,7 @@ title: Cloud IAM 자동 Pivot IR (Non-AI)
 version: nonai
 course: agent-ir-adv-nonai
 week: 4
-description: 유출 API 키 → 권한 열거 → PE 체인 → 자산 확장. 6단계 IR + SCP·OIDC·VPC Endpoint 예방.
-  학생이 수동 수행·기록.
+description: 유출 API 키 → 권한 열거 → PE 체인 → 자산 확장. 6단계 IR + SCP·OIDC·VPC Endpoint 예방. 학생이 수동 수행·기록.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -18,16 +17,29 @@ steps:
   hint: 6단계 IR 중 공격 단계. target_vm=bastion.
   category: analysis
   points: 9
-  answer: 'echo ''aws sts get-caller-identity  # simulated'' > /tmp/w04-check.sh &&
-    cat /tmp/w04-check.sh'
+  answer: 'echo ''aws sts get-caller-identity  # simulated'' > /tmp/w04-check.sh && cat /tmp/w04-check.sh'
   answer_detail: '[공격] 공격 첫 단계.'
   verify:
     type: output_contains
     expect: sts
     field: stdout
+    semantic:
+      intent: '[공격] IAM 키 유효성 — echo ''aws sts get-caller-identity'' > w04-check.sh. 유출 키 검증. MITRE T1078.004
+        Valid Accounts Cloud.'
+      success_criteria:
+      - sts 키워드
+      - get-caller-identity
+      - 시뮬
+      acceptable_methods:
+      - aws sts
+      - PACU list
+      - CloudBrute
+      negative_signs:
+      - sts 없음
+      - identity 확인 없음
+      - 시뮬 맥락 없음
   target_vm: bastion
-  script: 'echo ''aws sts get-caller-identity  # simulated'' > /tmp/w04-check.sh &&
-    cat /tmp/w04-check.sh'
+  script: 'echo ''aws sts get-caller-identity  # simulated'' > /tmp/w04-check.sh && cat /tmp/w04-check.sh'
   risk_level: low
   bastion_prompt: ''
 - order: 2
@@ -53,6 +65,21 @@ steps:
     type: output_contains
     expect: list-roles
     field: stdout
+    semantic:
+      intent: '[공격] IAM 권한 열거 — cat > w04-enum.sh: aws iam get-user + list-attached-user-policies + list-roles.
+        Get/List/Describe 20+회. MITRE T1087.004 + T1069.003.'
+      success_criteria:
+      - list-roles 키워드
+      - 3+ API
+      - 열거
+      acceptable_methods:
+      - aws iam list/get
+      - PACU iam__enum
+      - CloudMapper
+      negative_signs:
+      - API 1-2개
+      - 열거 맥락 없음
+      - bulk 없음
   target_vm: bastion
   script: 'cat > /tmp/w04-enum.sh <<''S''
 
@@ -74,20 +101,33 @@ steps:
   hint: 6단계 IR 중 탐지 단계. target_vm=siem.
   category: analysis
   points: 11
-  answer: "mkdir -p ~/w04 && cat > ~/w04/rule.yml <<'Y'\ntitle: IAM Enumeration Burst\n\
-    detection:\n  selection: {eventSource: iam.amazonaws.com, eventName|startswith:\
-    \ [List, Get, Describe]}\n  timeframe: 60s\n  condition: selection | count() by\
-    \ userIdentity.userName > 20\nY\ncat ~/w04/rule.yml"
+  answer: "mkdir -p ~/w04 && cat > ~/w04/rule.yml <<'Y'\ntitle: IAM Enumeration Burst\ndetection:\n  selection:\
+    \ {eventSource: iam.amazonaws.com, eventName|startswith: [List, Get, Describe]}\n  timeframe: 60s\n\
+    \  condition: selection | count() by userIdentity.userName > 20\nY\ncat ~/w04/rule.yml"
   answer_detail: '[탐지] 60초 20+회.'
   verify:
     type: output_contains
     expect: Enumeration
     field: stdout
+    semantic:
+      intent: '[탐지] IAM 열거 burst SIGMA — cat > rule.yml: eventSource iam.amazonaws.com + eventName startswith
+        List/Get/Describe + timeframe 60s + count() > 20. CloudTrail 기반.'
+      success_criteria:
+      - Enumeration 키워드
+      - List/Get/Describe
+      - timeframe + count
+      acceptable_methods:
+      - SIGMA CloudTrail
+      - CloudWatch Insights
+      - Elastic cloudtrail
+      negative_signs:
+      - eventName 누락
+      - timeframe 없음
+      - count 없음
   target_vm: siem
-  script: "mkdir -p ~/w04 && cat > ~/w04/rule.yml <<'Y'\ntitle: IAM Enumeration Burst\n\
-    detection:\n  selection: {eventSource: iam.amazonaws.com, eventName|startswith:\
-    \ [List, Get, Describe]}\n  timeframe: 60s\n  condition: selection | count() by\
-    \ userIdentity.userName > 20\nY\ncat ~/w04/rule.yml"
+  script: "mkdir -p ~/w04 && cat > ~/w04/rule.yml <<'Y'\ntitle: IAM Enumeration Burst\ndetection:\n  selection:\
+    \ {eventSource: iam.amazonaws.com, eventName|startswith: [List, Get, Describe]}\n  timeframe: 60s\n\
+    \  condition: selection | count() by userIdentity.userName > 20\nY\ncat ~/w04/rule.yml"
   risk_level: low
   bastion_prompt: ''
 - order: 4
@@ -111,6 +151,21 @@ steps:
     type: output_contains
     expect: Recon
     field: stdout
+    semantic:
+      intent: '[탐지] GuardDuty 경보 — cat > guardduty.md: Recon:IAMUser/UserPermissions / UnauthorizedAccess:IAMUser/MaliciousIPCaller
+        / Persistence:IAMUser/NetworkPermissions. 3 GuardDuty finding type.'
+      success_criteria:
+      - Recon 키워드
+      - 3 finding type
+      - GuardDuty 고신뢰
+      acceptable_methods:
+      - GuardDuty finding
+      - AWS Security Hub
+      - CloudWatch
+      negative_signs:
+      - finding 1-2개
+      - GuardDuty 없음
+      - 구체성 없음
   target_vm: siem
   script: 'cat > ~/w04/guardduty.md <<''M''
 
@@ -148,6 +203,21 @@ steps:
     type: output_contains
     expect: PassRole
     field: stdout
+    semantic:
+      intent: '[분석] PE 조합 — cat > pe.md: PE-1 iam:PassRole + lambda:CreateFunction / PE-2 CreateAccessKey
+        on other / PE-3 UpdateAssumeRolePolicy / PE-4 ec2:RunInstances + PassRole. 21개 중 4개.'
+      success_criteria:
+      - PassRole 키워드
+      - 4 PE 조합
+      - 권한 에스컬
+      acceptable_methods:
+      - PE chains
+      - PACU aws_escalate
+      - CloudSploit
+      negative_signs:
+      - 조합 1-2개
+      - PassRole 없음
+      - 구체 액션 없음
   target_vm: bastion
   script: 'cat > ~/w04/pe.md <<''M''
 
@@ -189,6 +259,21 @@ steps:
     type: output_contains
     expect: HIGH
     field: stdout
+    semantic:
+      intent: '[분석] 영향 평가 — cat > impact.md: 표 3 자산 (S3 고객 HIGH 확인 중 / RDS HIGH 접근 없음 / DynamoDB MED 접근
+        없음). 민감도 + 접근 여부.'
+      success_criteria:
+      - HIGH 키워드
+      - 3 자산
+      - 민감도 + 접근
+      acceptable_methods:
+      - Markdown 매트릭스
+      - CloudTrail 조회
+      - CSPM 도구
+      negative_signs:
+      - 자산 2개 이하
+      - 민감도 없음
+      - 접근 미확인
   target_vm: bastion
   script: 'cat > ~/w04/impact.md <<''M''
 
@@ -228,6 +313,21 @@ steps:
     type: output_contains
     expect: Inactive
     field: stdout
+    semantic:
+      intent: '[초동] 키 비활성화 스크립트 — cat > disable.sh: aws iam update-access-key --access-key-id $KEY --status
+        Inactive. 1분 내 즉시 비활성.'
+      success_criteria:
+      - Inactive 키워드
+      - update-access-key
+      - 즉시 비활성화
+      acceptable_methods:
+      - aws iam update-access-key
+      - Terraform destroy key
+      - AWS SDK
+      negative_signs:
+      - delete 사용
+      - KEY 파라미터 없음
+      - 시간 맥락 없음
   target_vm: bastion
   script: 'cat > ~/w04/disable.sh <<''S''
 
@@ -247,10 +347,10 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 16
-  answer: "cat > ~/w04/agent.yaml <<'Y'\nplaybook_id: pb-aws-key-compromise\nsteps:\n\
-    \  - skill: disable_access_key\n  - skill: snapshot_recent_activity\n    args:\
-    \ {window: 900}\n  - skill: expire_user_sessions\n  - skill: list_created_resources\n\
-    \  - skill: set_critical_assets_readonly\n  - skill: alert_oncall\nY\ncat ~/w04/agent.yaml"
+  answer: "cat > ~/w04/agent.yaml <<'Y'\nplaybook_id: pb-aws-key-compromise\nsteps:\n  - skill: disable_access_key\n\
+    \  - skill: snapshot_recent_activity\n    args: {window: 900}\n  - skill: expire_user_sessions\n \
+    \ - skill: list_created_resources\n  - skill: set_critical_assets_readonly\n  - skill: alert_oncall\n\
+    Y\ncat ~/w04/agent.yaml"
   answer_detail: '[초동대응] 비파괴 우선 자동.'
   verify:
     type: output_contains
@@ -258,11 +358,27 @@ steps:
     - disable_access_key
     - Playbook
     field: stdout
+    semantic:
+      intent: '[초동] Agent Playbook — cat > agent.yaml: pb-aws-key-compromise + disable_access_key / snapshot_recent_activity
+        window 900 / expire_user_sessions / list_created_resources / set_critical_assets_readonly / alert_oncall.
+        비파괴 우선 6 steps.'
+      success_criteria:
+      - disable_access_key/Playbook
+      - 6 steps
+      - 비파괴 우선
+      acceptable_methods:
+      - Bastion Playbook
+      - AWS SOAR
+      - Shuffle cloud
+      negative_signs:
+      - steps 3개 이하
+      - alert 누락
+      - 비파괴 개념 없음
   target_vm: bastion
-  script: "cat > ~/w04/agent.yaml <<'Y'\nplaybook_id: pb-aws-key-compromise\nsteps:\n\
-    \  - skill: disable_access_key\n  - skill: snapshot_recent_activity\n    args:\
-    \ {window: 900}\n  - skill: expire_user_sessions\n  - skill: list_created_resources\n\
-    \  - skill: set_critical_assets_readonly\n  - skill: alert_oncall\nY\ncat ~/w04/agent.yaml"
+  script: "cat > ~/w04/agent.yaml <<'Y'\nplaybook_id: pb-aws-key-compromise\nsteps:\n  - skill: disable_access_key\n\
+    \  - skill: snapshot_recent_activity\n    args: {window: 900}\n  - skill: expire_user_sessions\n \
+    \ - skill: list_created_resources\n  - skill: set_critical_assets_readonly\n  - skill: alert_oncall\n\
+    Y\ncat ~/w04/agent.yaml"
   risk_level: low
   bastion_prompt: ''
 - order: 9
@@ -288,6 +404,21 @@ steps:
     type: output_contains
     expect: 키
     field: stdout
+    semantic:
+      intent: '[보고] 브리핑 — cat > exec.md: What IAM 열거 burst PE 시도 37초 비활성 / Impact S3 1 버킷 목록만 다운로드 없음
+        / Ask 개발자 PC 전수 스캔. 숫자 근거.'
+      success_criteria:
+      - 키 키워드
+      - What+Impact+Ask
+      - 37초
+      acceptable_methods:
+      - Markdown 1쪽
+      - CxO brief
+      - AWS Well-Architected
+      negative_signs:
+      - 수치 없음
+      - 섹션 부족
+      - Ask 없음
   target_vm: bastion
   script: 'cat > ~/w04/exec.md <<''M''
 
@@ -309,20 +440,33 @@ steps:
   hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
   category: analysis
   points: 18
-  answer: "cat > ~/w04/scp.json <<'J'\n{\n  \"Version\":\"2012-10-17\",\n  \"Statement\"\
-    :[\n    {\"Effect\":\"Deny\",\"Action\":\"iam:CreateAccessKey\",\"Resource\":\"\
-    *\",\n     \"Condition\":{\"StringNotEquals\":{\"aws:PrincipalOrgID\":\"o-xxx\"\
-    }}}\n  ]\n}\nJ\ncat ~/w04/scp.json"
+  answer: "cat > ~/w04/scp.json <<'J'\n{\n  \"Version\":\"2012-10-17\",\n  \"Statement\":[\n    {\"Effect\"\
+    :\"Deny\",\"Action\":\"iam:CreateAccessKey\",\"Resource\":\"*\",\n     \"Condition\":{\"StringNotEquals\"\
+    :{\"aws:PrincipalOrgID\":\"o-xxx\"}}}\n  ]\n}\nJ\ncat ~/w04/scp.json"
   answer_detail: '[재발방지] 계정 수준 하드 제한.'
   verify:
     type: output_contains
     expect: Deny
     field: stdout
+    semantic:
+      intent: '[재발방지] SCP 초안 — cat > scp.json: Version 2012-10-17 + Effect Deny + Action iam:CreateAccessKey
+        + StringNotEquals aws:PrincipalOrgID. 계정 수준 하드 제한.'
+      success_criteria:
+      - Deny 키워드
+      - SCP JSON
+      - PrincipalOrgID
+      acceptable_methods:
+      - AWS SCP
+      - Azure Policy
+      - GCP Org Policy
+      negative_signs:
+      - Deny 없음
+      - Condition 없음
+      - JSON 형식 오류
   target_vm: bastion
-  script: "cat > ~/w04/scp.json <<'J'\n{\n  \"Version\":\"2012-10-17\",\n  \"Statement\"\
-    :[\n    {\"Effect\":\"Deny\",\"Action\":\"iam:CreateAccessKey\",\"Resource\":\"\
-    *\",\n     \"Condition\":{\"StringNotEquals\":{\"aws:PrincipalOrgID\":\"o-xxx\"\
-    }}}\n  ]\n}\nJ\ncat ~/w04/scp.json"
+  script: "cat > ~/w04/scp.json <<'J'\n{\n  \"Version\":\"2012-10-17\",\n  \"Statement\":[\n    {\"Effect\"\
+    :\"Deny\",\"Action\":\"iam:CreateAccessKey\",\"Resource\":\"*\",\n     \"Condition\":{\"StringNotEquals\"\
+    :{\"aws:PrincipalOrgID\":\"o-xxx\"}}}\n  ]\n}\nJ\ncat ~/w04/scp.json"
   risk_level: low
   bastion_prompt: ''
 - order: 11
@@ -348,6 +492,21 @@ steps:
     type: output_contains
     expect: OIDC
     field: stdout
+    semantic:
+      intent: '[재발방지] GitHub Actions OIDC — cat > oidc.md: 1 OIDC Provider 등록 / 2 IAM Role + Trust Policy
+        repo sub / 3 CI workflow aws-actions/configure-aws-credentials / 4 장기 Access Key 폐기. 정적 키 제거.'
+      success_criteria:
+      - OIDC 키워드
+      - 4 단계
+      - 장기 키 폐기
+      acceptable_methods:
+      - GitHub OIDC
+      - Workload Identity Federation
+      - IRSA
+      negative_signs:
+      - OIDC 누락
+      - 단계 2개 이하
+      - 키 폐기 없음
   target_vm: bastion
   script: 'cat > ~/w04/oidc.md <<''M''
 
@@ -383,6 +542,21 @@ steps:
     - PrincipalOrgID
     - EndpointPolicy
     field: stdout
+    semantic:
+      intent: '[재발방지] VPC Endpoint 정책 — cat > vpce.json: Allow + Principal * + s3:* + Condition StringEquals
+        aws:PrincipalOrgID. VPC 내부 유지. S3 egress 제한.'
+      success_criteria:
+      - PrincipalOrgID/EndpointPolicy
+      - VPC Endpoint
+      - Condition
+      acceptable_methods:
+      - VPC Endpoint Policy
+      - Private Link
+      - Gateway endpoint
+      negative_signs:
+      - Condition 없음
+      - Principal 없음
+      - JSON 형식 오류
   target_vm: bastion
   script: 'cat > ~/w04/vpce.json <<''J''
 
