@@ -13,220 +13,450 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: YARA 룰의 기본 구조를 분석하라. meta, strings, condition 섹션의 역할과 문법을 정리하고, 문자열
-    유형(text, hex, regex)의 차이를 설명하라.
+  instruction: YARA 룰의 기본 구조를 분석하라. meta, strings, condition 섹션의 역할과 문법을 정리하고, 문자열 유형(text, hex, regex)의
+    차이를 설명하라.
   hint: YARA 공식 문서의 Writing rules 섹션을 참조하라
   category: analysis
   points: 8
-  answer: 'meta: 룰 메타데이터(author, description, date), strings: 탐지 패턴 정의(text=$s1=''string'',
-    hex=$h1={6A 40 68}, regex=$r1=/pattern/), condition: 논리 조건식'
-  answer_detail: YARA는 패턴 매칭 기반의 악성코드 탐지 도구이다. text 문자열은 ASCII/Wide 인코딩을 지원하고, hex
-    패턴은 바이트 시퀀스 매칭에, regex는 복잡한 패턴에 사용된다.
+  answer: 'meta: 룰 메타데이터(author, description, date), strings: 탐지 패턴 정의(text=$s1=''string'', hex=$h1={6A
+    40 68}, regex=$r1=/pattern/), condition: 논리 조건식'
+  answer_detail: YARA는 패턴 매칭 기반의 악성코드 탐지 도구이다. text 문자열은 ASCII/Wide 인코딩을 지원하고, hex 패턴은 바이트 시퀀스 매칭에, regex는
+    복잡한 패턴에 사용된다.
   verify:
     type: output_contains
     expect: strings
+    semantic:
+      intent: YARA 룰 기본 구조 — meta 섹션 (author/description/date/reference) + strings 섹션 3 유형 ($s1='text'
+        + $h1={6A 40 68} hex + $r1=/pattern/ regex) + condition 논리식. 파일 패턴 매칭 도구. VirusTotal + crowdsourced
+        YARA 표준.
+      success_criteria:
+      - strings 키워드
+      - meta/strings/condition 3 섹션 구분
+      - text/hex/regex 3 유형 설명
+      acceptable_methods:
+      - YARA 공식 Writing rules 가이드
+      - VirusTotal Intelligence YARA editor
+      - yara-python 라이브러리
+      - Yara-CI / Yextend 환경
+      negative_signs:
+      - 3 섹션 중 1개 이상 누락
+      - 문자열 유형 구분 없음
+      - condition 문법 없음
   target_vm: siem
 - order: 2
-  instruction: PE 파일 구조를 분석하는 YARA 룰을 작성하라. PE 헤더(MZ magic), 섹션 수, 임포트 테이블을 조건으로 사용하는
-    룰을 작성하라.
+  instruction: PE 파일 구조를 분석하는 YARA 룰을 작성하라. PE 헤더(MZ magic), 섹션 수, 임포트 테이블을 조건으로 사용하는 룰을 작성하라.
   hint: import 'pe' 모듈을 사용하라
   category: implementation
   points: 10
-  answer: 'import ''pe''. rule suspicious_pe { condition: pe.number_of_sections >
-    7 and pe.imports(''kernel32.dll'',''VirtualAlloc'') and pe.imports(''kernel32.dll'',''WriteProcessMemory'')
-    }'
-  answer_detail: PE 모듈은 실행 파일의 구조적 특성을 분석한다. 비정상적으로 많은 섹션, 프로세스 인젝션 관련 API 임포트 등은
-    악성코드의 일반적 특성이다.
+  answer: 'import ''pe''. rule suspicious_pe { condition: pe.number_of_sections > 7 and pe.imports(''kernel32.dll'',''VirtualAlloc'')
+    and pe.imports(''kernel32.dll'',''WriteProcessMemory'') }'
+  answer_detail: PE 모듈은 실행 파일의 구조적 특성을 분석한다. 비정상적으로 많은 섹션, 프로세스 인젝션 관련 API 임포트 등은 악성코드의 일반적 특성이다.
   verify:
     type: output_contains
     expect: pe
+    semantic:
+      intent: PE 구조 YARA 룰 — import 'pe' 모듈 + condition pe.number_of_sections > 7 + pe.imports('kernel32.dll','VirtualAlloc')
+        + pe.imports('kernel32.dll','WriteProcessMemory') 결합. Process Injection 일반 특성 탐지. MITRE ATT&CK
+        T1055 Process Injection.
+      success_criteria:
+      - pe 키워드 또는 import 'pe'
+      - sections/imports 조합
+      - VirtualAlloc/WriteProcessMemory 등 인젝션 API
+      acceptable_methods:
+      - YARA pe 모듈 공식 문서
+      - pefile Python + sample 분석 후 룰 작성
+      - CAPA FLARE 툴 + rule export
+      - Yara-Rules/rules/malware/ 참조
+      negative_signs:
+      - pe 모듈 미사용
+      - sections + imports 조합 없음
+      - Process Injection 맥락 없음
   target_vm: siem
 - order: 3
-  instruction: 패커/프로텍터 탐지 룰을 작성하라. UPX, Themida, VMProtect 등 주요 패커의 시그니처를 YARA 룰로
-    작성하라.
+  instruction: 패커/프로텍터 탐지 룰을 작성하라. UPX, Themida, VMProtect 등 주요 패커의 시그니처를 YARA 룰로 작성하라.
   hint: 각 패커의 EP(Entry Point) 시그니처와 섹션명을 활용하라
   category: implementation
   points: 10
-  answer: 'rule upx_packed { strings: $upx0 = ''UPX0'' $upx1 = ''UPX1'' $upx2 = ''UPX!''
-    condition: uint16(0) == 0x5A4D and 2 of ($upx*) }'
-  answer_detail: 패킹된 파일은 분석을 회피하거나 탐지를 우회하기 위해 사용된다. 패커 탐지는 악성코드 분석의 첫 단계이며, 알려진 패커의
-    시그니처(섹션명, 매직 바이트)를 활용한다.
+  answer: 'rule upx_packed { strings: $upx0 = ''UPX0'' $upx1 = ''UPX1'' $upx2 = ''UPX!'' condition: uint16(0)
+    == 0x5A4D and 2 of ($upx*) }'
+  answer_detail: 패킹된 파일은 분석을 회피하거나 탐지를 우회하기 위해 사용된다. 패커 탐지는 악성코드 분석의 첫 단계이며, 알려진 패커의 시그니처(섹션명, 매직 바이트)를
+    활용한다.
   verify:
     type: output_contains
     expect: UPX
+    semantic:
+      intent: 패커 탐지 UPX 룰 — strings $upx0='UPX0' $upx1='UPX1' $upx2='UPX!' + condition uint16(0)==0x5A4D
+        (MZ magic) + 2 of ($upx*). UPX/Themida/VMProtect 패커 섹션명 시그니처 기반. 악성코드 분석 1단계. MITRE T1027.002
+        Software Packing.
+      success_criteria:
+      - UPX 키워드
+      - MZ magic 0x5A4D 확인
+      - 섹션명 시그니처
+      acceptable_methods:
+      - DIE (Detect It Easy) + YARA rule export
+      - PEiD signatures 참조
+      - Yara-Rules packers/ 디렉토리
+      - pestudio manual 분석 후 룰 작성
+      negative_signs:
+      - MZ magic 확인 없음
+      - UPX 외 패커 언급 없음
+      - T1027.002 맥락 없음
   target_vm: siem
 - order: 4
-  instruction: 웹쉘 탐지 YARA 룰을 작성하라. PHP, JSP, ASP 웹쉘의 공통 패턴(eval, exec, system, passthru,
-    base64_decode 등)을 탐지하는 룰을 작성하라.
+  instruction: 웹쉘 탐지 YARA 룰을 작성하라. PHP, JSP, ASP 웹쉘의 공통 패턴(eval, exec, system, passthru, base64_decode
+    등)을 탐지하는 룰을 작성하라.
   hint: 다양한 인코딩과 난독화 패턴을 고려하라
   category: implementation
   points: 12
-  answer: 'rule webshell_php { strings: $e1=''eval('' $e2=''base64_decode('' $e3=''system(''
-    $e4=''passthru('' $e5=''shell_exec('' $obs1=/\$[a-z]=str_rot13/ condition: filesize
-    < 100KB and 3 of them }'
-  answer_detail: 웹쉘 탐지는 SOC의 핵심 임무이다. 공격자는 난독화(base64, rot13, 변수명 치환)를 사용하므로, 다양한
-    패턴을 조합하여 탐지율을 높여야 한다. filesize 조건으로 오탐을 줄인다.
+  answer: 'rule webshell_php { strings: $e1=''eval('' $e2=''base64_decode('' $e3=''system('' $e4=''passthru(''
+    $e5=''shell_exec('' $obs1=/\$[a-z]=str_rot13/ condition: filesize < 100KB and 3 of them }'
+  answer_detail: 웹쉘 탐지는 SOC의 핵심 임무이다. 공격자는 난독화(base64, rot13, 변수명 치환)를 사용하므로, 다양한 패턴을 조합하여 탐지율을 높여야 한다.
+    filesize 조건으로 오탐을 줄인다.
   verify:
     type: output_contains
     expect: webshell
+    semantic:
+      intent: '웹쉘 YARA 룰 — PHP/JSP/ASP 공통 패턴: $e1=''eval('' + $e2=''base64_decode('' + $e3=''system(''
+        + $e4=''passthru('' + $e5=''shell_exec('' + $obs1=/\$[a-z]=str_rot13/ 난독화 + condition filesize<100KB
+        and 3 of them. MITRE ATT&CK T1505.003 Server Software Component: Web Shell.'
+      success_criteria:
+      - webshell 키워드
+      - eval/system/exec/passthru/base64 등 5개 이상 패턴
+      - filesize 제약 + N of them
+      acceptable_methods:
+      - Yara-Rules/rules/webshells/ 참조
+      - NeoPi / Shell Detector signatures + YARA 변환
+      - 자체 honeypot log 에서 패턴 추출
+      - PHP Malware Finder 프로젝트
+      negative_signs:
+      - eval/system 단일 패턴
+      - filesize 제약 없음
+      - 난독화 (rot13/base64) 고려 없음
   target_vm: siem
 - order: 5
-  instruction: 랜섬웨어 탐지 룰을 작성하라. 파일 암호화 관련 API 호출(CryptEncrypt, CryptGenKey), 랜섬노트
-    문자열, 확장자 변경 패턴을 탐지하라.
+  instruction: 랜섬웨어 탐지 룰을 작성하라. 파일 암호화 관련 API 호출(CryptEncrypt, CryptGenKey), 랜섬노트 문자열, 확장자 변경 패턴을 탐지하라.
   hint: 랜섬웨어 패밀리별 공통 특성과 고유 특성을 구분하라
   category: implementation
   points: 12
-  answer: 'rule ransomware_generic { strings: $api1=''CryptEncrypt'' $api2=''CryptGenKey''
-    $note1=''Your files have been encrypted'' $note2=''Bitcoin'' $ext1=''.locked''
-    $ext2=''.encrypted'' condition: uint16(0)==0x5A4D and (2 of ($api*) or 2 of ($note*))
-    }'
-  answer_detail: 랜섬웨어 탐지는 암호화 API 사용, 랜섬노트 문자열, 특정 파일 확장자 등 다층 접근이 필요하다. 제너릭(generic)
-    룰로 알려지지 않은 변종도 탐지하되, 정상 암호화 소프트웨어와의 오탐을 주의해야 한다.
+  answer: 'rule ransomware_generic { strings: $api1=''CryptEncrypt'' $api2=''CryptGenKey'' $note1=''Your
+    files have been encrypted'' $note2=''Bitcoin'' $ext1=''.locked'' $ext2=''.encrypted'' condition: uint16(0)==0x5A4D
+    and (2 of ($api*) or 2 of ($note*)) }'
+  answer_detail: 랜섬웨어 탐지는 암호화 API 사용, 랜섬노트 문자열, 특정 파일 확장자 등 다층 접근이 필요하다. 제너릭(generic) 룰로 알려지지 않은 변종도 탐지하되,
+    정상 암호화 소프트웨어와의 오탐을 주의해야 한다.
   verify:
     type: output_contains
     expect: ransomware
+    semantic:
+      intent: 랜섬웨어 탐지 룰 — $api1='CryptEncrypt' $api2='CryptGenKey' (Windows crypto API) + $note1='Your
+        files have been encrypted' $note2='Bitcoin' (랜섬노트) + $ext1='.locked' $ext2='.encrypted' (확장자 변경)
+        + condition MZ + (2 of ($api*) or 2 of ($note*)). MITRE ATT&CK T1486 Data Encrypted for Impact.
+      success_criteria:
+      - ransomware 키워드
+      - API + 랜섬노트 + 확장자 3 카테고리
+      - MZ 헤더 + N of 조합
+      acceptable_methods:
+      - Yara-Rules/rules/ransomware/ 참조
+      - Hasherezade/CryptoRansom-stubs 프로젝트
+      - FireEye WildFire report + 룰 추출
+      - CAPA FLARE + ransom capabilities
+      negative_signs:
+      - 단일 카테고리만
+      - MZ 헤더 확인 없음
+      - T1486 맥락 없음
   target_vm: siem
 - order: 6
-  instruction: YARA의 고급 조건식을 활용하라. for 반복문, of 연산자, 정규식 카운트(#), 문자열 오프셋(@)을 사용하는 룰을
-    작성하라.
-  hint: 'for any i in (0..pe.number_of_sections-1) : (pe.sections[i].name == ''.rsrc'')
-    형태를 활용하라'
+  instruction: YARA의 고급 조건식을 활용하라. for 반복문, of 연산자, 정규식 카운트(#), 문자열 오프셋(@)을 사용하는 룰을 작성하라.
+  hint: 'for any i in (0..pe.number_of_sections-1) : (pe.sections[i].name == ''.rsrc'') 형태를 활용하라'
   category: implementation
   points: 10
-  answer: 'condition: for any i in (0..pe.number_of_sections-1) : (pe.sections[i].raw_data_size
-    == 0 and pe.sections[i].virtual_size > 0x10000) → 언패킹 섹션 탐지'
-  answer_detail: YARA의 고급 조건식은 PE 구조의 동적 분석을 가능하게 한다. for 반복으로 모든 섹션을 순회하고, raw_data_size==0이면서
-    virtual_size가 큰 섹션은 런타임에 언패킹되는 의심 섹션이다.
+  answer: 'condition: for any i in (0..pe.number_of_sections-1) : (pe.sections[i].raw_data_size == 0 and
+    pe.sections[i].virtual_size > 0x10000) → 언패킹 섹션 탐지'
+  answer_detail: YARA의 고급 조건식은 PE 구조의 동적 분석을 가능하게 한다. for 반복으로 모든 섹션을 순회하고, raw_data_size==0이면서 virtual_size가
+    큰 섹션은 런타임에 언패킹되는 의심 섹션이다.
   verify:
     type: output_contains
     expect: for
+    semantic:
+      intent: 'YARA 고급 조건식 — for any i in (0..pe.number_of_sections-1) : (pe.sections[i].raw_data_size
+        == 0 and pe.sections[i].virtual_size > 0x10000). 모든 섹션 순회 + raw 0 이지만 virtual 큰 섹션 = 런타임 언패킹 의심
+        섹션. MITRE T1027.002 + Process Hollowing 준비 단계.'
+      success_criteria:
+      - for 반복문
+      - pe.sections[i] 순회
+      - raw_data_size / virtual_size 비교
+      acceptable_methods:
+      - YARA for/of/# /@ 연산자 사용
+      - pe.sections 모듈 속성 참조
+      - virustotal intelligence 고급 YARA
+      - capa + yara rule generator
+      negative_signs:
+      - for 반복 없음
+      - raw_data_size / virtual_size 비교 누락
+      - 언패킹 의도 언급 없음
   target_vm: siem
 - order: 7
   instruction: YARA 모듈(math, hash, cuckoo)을 활용한 룰을 작성하라. 엔트로피 분석으로 패킹/암호화된 섹션을 탐지하라.
   hint: import 'math', math.entropy(offset, size) > 7.0은 높은 엔트로피를 의미한다
   category: implementation
   points: 10
-  answer: 'import ''math'' import ''pe''. condition: pe.number_of_sections > 0 and
-    for any i in (0..pe.number_of_sections-1): (math.entropy(pe.sections[i].raw_data_offset,
-    pe.sections[i].raw_data_size) > 7.5)'
-  answer_detail: 엔트로피가 7.5 이상이면 암호화 또는 압축된 데이터일 가능성이 높다. 정상 실행 파일의 코드 섹션은 보통 5~6 수준이며,
-    리소스 섹션은 다양하다. 전체 파일이 아닌 섹션별 엔트로피를 측정하면 정확도가 높아진다.
+  answer: 'import ''math'' import ''pe''. condition: pe.number_of_sections > 0 and for any i in (0..pe.number_of_sections-1):
+    (math.entropy(pe.sections[i].raw_data_offset, pe.sections[i].raw_data_size) > 7.5)'
+  answer_detail: 엔트로피가 7.5 이상이면 암호화 또는 압축된 데이터일 가능성이 높다. 정상 실행 파일의 코드 섹션은 보통 5~6 수준이며, 리소스 섹션은 다양하다. 전체
+    파일이 아닌 섹션별 엔트로피를 측정하면 정확도가 높아진다.
   verify:
     type: output_contains
     expect: entropy
+    semantic:
+      intent: 'YARA 엔트로피 분석 — import ''math'' + import ''pe'' + for any i in (0..pe.number_of_sections-1):
+        math.entropy(pe.sections[i].raw_data_offset, raw_data_size) > 7.5. 섹션별 Shannon entropy 계산 → 7.5+
+        = 암호화/압축. 코드 섹션 일반 5~6 + 패킹/암호화 7.5+. packed/encrypted detection 정량.'
+      success_criteria:
+      - entropy 키워드
+      - math.entropy() 함수 사용
+      - 임계치 7.5 이상
+      acceptable_methods:
+      - YARA math 모듈 entropy
+      - pefile + scipy.stats entropy 사전 계산
+      - DIE (Detect It Easy) entropy 결과 기반
+      - Mandiant Capa + entropy anomaly
+      negative_signs:
+      - entropy 임계치 없음
+      - 섹션별 아닌 전체 파일만
+      - math 모듈 import 누락
   target_vm: siem
 - order: 8
-  instruction: 실습 환경의 웹서버({{WEB_IP}})에서 의심 파일을 스캔하라. /var/www/ 디렉토리에서 작성한 웹쉘 탐지 룰로
-    YARA 스캔을 수행하라.
+  instruction: 실습 환경의 웹서버({{WEB_IP}})에서 의심 파일을 스캔하라. /var/www/ 디렉토리에서 작성한 웹쉘 탐지 룰로 YARA 스캔을 수행하라.
   hint: yara -r webshell_rules.yar /var/www/ 명령을 사용하라
   category: operation
   points: 10
   answer: yara 스캔 결과에서 탐지된 파일 목록과 매칭된 룰 이름을 보고
-  answer_detail: 실제 환경에서의 YARA 스캔은 파일시스템 전체를 대상으로 하므로, 성능(CPU/IO)에 주의해야 한다. 재귀 스캔(-r)과
-    프로세스 우선순위 조절(nice)을 활용하고, 대용량 디렉토리는 분할 스캔한다.
+  answer_detail: 실제 환경에서의 YARA 스캔은 파일시스템 전체를 대상으로 하므로, 성능(CPU/IO)에 주의해야 한다. 재귀 스캔(-r)과 프로세스 우선순위 조절(nice)을
+    활용하고, 대용량 디렉토리는 분할 스캔한다.
   verify:
     type: output_contains
     expect: yara
+    semantic:
+      intent: '웹서버 YARA 실 스캔 — yara -r webshell_rules.yar /var/www/ 재귀 스캔 + 결과 파일 목록 + 매칭된 룰명. 대용량 디렉토리
+        대응: nice -n 10 + ionice -c 2 -n 7 I/O 제한. 프로덕션 환경 주의 포인트.'
+      success_criteria:
+      - yara 키워드 또는 yara 명령 실행
+      - 재귀 -r 또는 디렉토리 스캔
+      - 탐지 결과 포맷 (파일명 + 룰명)
+      acceptable_methods:
+      - yara -r -p num_threads rules.yar /var/www/
+      - yara-scan in Docker 격리 환경
+      - Velociraptor YARA 아티팩트
+      - Wazuh active-response + yara 통합
+      negative_signs:
+      - 단일 파일 스캔만
+      - -r 재귀 없음
+      - 결과 포맷 누락
   target_vm: siem
 - order: 9
-  instruction: YARA 룰 최적화를 수행하라. 작성한 룰의 스캔 성능을 측정하고, 문자열 패턴 순서 최적화, 불필요한 정규식 제거, 파일
-    크기 조건 추가로 성능을 개선하라.
+  instruction: YARA 룰 최적화를 수행하라. 작성한 룰의 스캔 성능을 측정하고, 문자열 패턴 순서 최적화, 불필요한 정규식 제거, 파일 크기 조건 추가로 성능을 개선하라.
   hint: 가장 고유한(unique) 문자열을 첫 번째 조건으로 배치하면 early-exit가 빨라진다
   category: optimization
   points: 10
-  answer: '최적화 전: 스캔 시간 X초, 최적화 후: Y초. 방법: 1) filesize 조건 선행, 2) 고유 hex 패턴 우선, 3)
-    regex→text 변환, 4) 와일드카드 최소화'
-  answer_detail: YARA 성능은 룰의 품질에 크게 좌우된다. condition의 첫 번째 조건이 빠르게 필터링하면 나머지 조건 평가를
-    건너뛸 수 있다. 정규식은 text 문자열보다 10~100배 느리므로 가능하면 text로 대체한다.
+  answer: '최적화 전: 스캔 시간 X초, 최적화 후: Y초. 방법: 1) filesize 조건 선행, 2) 고유 hex 패턴 우선, 3) regex→text 변환, 4) 와일드카드
+    최소화'
+  answer_detail: YARA 성능은 룰의 품질에 크게 좌우된다. condition의 첫 번째 조건이 빠르게 필터링하면 나머지 조건 평가를 건너뛸 수 있다. 정규식은 text
+    문자열보다 10~100배 느리므로 가능하면 text로 대체한다.
   verify:
     type: output_contains
     expect: 최적화
+    semantic:
+      intent: YARA 룰 성능 최적화 — (1) filesize 조건 선행 (빠른 필터링) + (2) 고유 hex 패턴 우선 (unique string) + (3) regex→text
+        변환 (10-100x 빠름) + (4) 와일드카드 최소화. early-exit 극대화 + condition 순서 중요. 프로덕션 스캔 속도 10배 이상 차이.
+      success_criteria:
+      - 최적화 키워드
+      - 최적화 전/후 시간 수치
+      - 4개 중 3개 이상 기법
+      acceptable_methods:
+      - yara --scan-bytes --threads N 벤치마크
+      - yara-python + timeit 측정
+      - valgrind callgrind profiling
+      - YARA Language Server + rule linter
+      negative_signs:
+      - 시간 수치 없이 서술만
+      - regex vs text 차이 언급 없음
+      - filesize 선행 개념 없음
   target_vm: siem
 - order: 10
-  instruction: YARA와 Wazuh를 연동하라. Wazuh의 active response 또는 wodle을 활용하여 새로운 파일 생성
-    시 자동으로 YARA 스캔이 실행되도록 설정하라.
+  instruction: YARA와 Wazuh를 연동하라. Wazuh의 active response 또는 wodle을 활용하여 새로운 파일 생성 시 자동으로 YARA 스캔이 실행되도록
+    설정하라.
   hint: ossec.conf의 syscheck + active-response 또는 command wodle을 활용하라
   category: integration
   points: 10
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
-    📎 참고 (CLI): 설정: 1) syscheck로 파일 변경 감지, 2) active-response로 YARA 스캔 트리거, 3) 스캔
-    결과를 Wazuh 로그로 전송, 4) 탐지 시 알림 생성'
-  answer_detail: YARA와 SIEM의 연동은 실시간 악성코드 탐지의 핵심이다. 파일 무결성 모니터링(FIM)이 변경을 감지하면 YARA
-    스캔을 실행하고, 결과를 SIEM에 피드백하는 자동화 파이프라인을 구축한다.
+    📎 참고 (CLI): 설정: 1) syscheck로 파일 변경 감지, 2) active-response로 YARA 스캔 트리거, 3) 스캔 결과를 Wazuh 로그로 전송, 4)
+    탐지 시 알림 생성'
+  answer_detail: YARA와 SIEM의 연동은 실시간 악성코드 탐지의 핵심이다. 파일 무결성 모니터링(FIM)이 변경을 감지하면 YARA 스캔을 실행하고, 결과를 SIEM에
+    피드백하는 자동화 파이프라인을 구축한다.
   verify:
     type: output_contains
     expect: Wazuh
+    semantic:
+      intent: YARA + Wazuh 연동 — ossec.conf <syscheck> 파일 변경 감지 → <active-response> 로 yara 스캔 트리거 → 결과
+        /var/ossec/logs/active-responses.log → Wazuh rule 매칭 → Dashboard 알림. FIM + 악성코드 탐지 실시간 파이프라인.
+        MITRE D3FEND Analyze + Respond.
+      success_criteria:
+      - Wazuh 키워드
+      - syscheck + active-response 연동 구조
+      - YARA 스캔 자동 트리거
+      acceptable_methods:
+      - ossec.conf syscheck + active-response
+      - command wodle + yara CLI
+      - Velociraptor + Wazuh 통합
+      - osquery file_events + YARA 래퍼
+      negative_signs:
+      - 단방향 (YARA 만)
+      - automation 맥락 없음
+      - FIM + active-response 구조 누락
   target_vm: siem
 - order: 11
-  instruction: 커뮤니티 YARA 룰을 평가하라. Awesome YARA, YARA-Rules, Malpedia 등에서 수집한 룰의 품질을
-    평가하는 기준(커버리지, 오탐률, 유지보수성)을 정의하라.
+  instruction: 커뮤니티 YARA 룰을 평가하라. Awesome YARA, YARA-Rules, Malpedia 등에서 수집한 룰의 품질을 평가하는 기준(커버리지, 오탐률,
+    유지보수성)을 정의하라.
   hint: 룰의 meta 정보, 문자열 수, 조건 복잡도, 최종 수정일을 평가 기준에 포함하라
   category: analysis
   points: 8
-  answer: '평가 기준: 1) 정확도(테스트 샘플 탐지율), 2) 오탐률(정상 파일 오탐 수), 3) 유지보수성(meta 완성도, 문서화),
-    4) 성능(스캔 속도), 5) 최신성(최종 업데이트)'
-  answer_detail: 커뮤니티 룰은 무료로 풍부한 탐지 역량을 제공하지만, 품질이 균일하지 않다. 자체 테스트 환경에서 검증하고, 오탐이
-    많은 룰은 수정하거나 제외해야 한다.
+  answer: '평가 기준: 1) 정확도(테스트 샘플 탐지율), 2) 오탐률(정상 파일 오탐 수), 3) 유지보수성(meta 완성도, 문서화), 4) 성능(스캔 속도), 5) 최신성(최종
+    업데이트)'
+  answer_detail: 커뮤니티 룰은 무료로 풍부한 탐지 역량을 제공하지만, 품질이 균일하지 않다. 자체 테스트 환경에서 검증하고, 오탐이 많은 룰은 수정하거나 제외해야 한다.
   verify:
     type: output_contains
     expect: 평가
+    semantic:
+      intent: '커뮤니티 YARA 룰 평가 — 5 기준: (1) 정확도 (테스트 샘플 탐지율) + (2) 오탐률 (goodware 오탐 수) + (3) 유지보수성 (meta
+        완성도) + (4) 성능 (스캔 속도) + (5) 최신성 (최종 수정일). Awesome YARA / YARA-Rules / Malpedia 소스. 자체 환경 검증 필수.'
+      success_criteria:
+      - 평가 키워드
+      - 5개 이상 평가 기준
+      - 커뮤니티 소스 2개 이상 (Awesome YARA/Malpedia 등)
+      acceptable_methods:
+      - pytest harness + goodware/malware corpus
+      - VirusTotal Intelligence retrohunt 평가
+      - YARA rule linter + static analysis
+      - MITRE ATT&CK coverage mapping
+      negative_signs:
+      - 평가 기준 2개 이하
+      - 자체 검증 없이 그대로 사용
+      - goodware 오탐 언급 없음
   target_vm: siem
 - order: 12
-  instruction: YARA 룰로 메모리 스캔을 수행하라. 실행 중인 프로세스의 메모리를 YARA로 스캔하는 방법을 구현하고, 파일 스캔과의
-    차이점을 분석하라.
+  instruction: YARA 룰로 메모리 스캔을 수행하라. 실행 중인 프로세스의 메모리를 YARA로 스캔하는 방법을 구현하고, 파일 스캔과의 차이점을 분석하라.
   hint: yara -p PID 또는 /proc/PID/mem을 활용하라
   category: implementation
   points: 10
-  answer: 'yara rules.yar -p $(pidof target_process). 차이점: 1) 언패킹된 코드 탐지 가능, 2) 실행
-    시에만 존재하는 문자열 탐지, 3) 메모리 매핑된 파일 포함'
-  answer_detail: 메모리 스캔은 파일 스캔으로 탐지하지 못하는 fileless 악성코드와 언패킹된 페이로드를 탐지한다. 단, 프로세스
-    메모리는 동적이므로 스캔 시점에 따라 결과가 달라질 수 있다.
+  answer: 'yara rules.yar -p $(pidof target_process). 차이점: 1) 언패킹된 코드 탐지 가능, 2) 실행 시에만 존재하는 문자열 탐지, 3)
+    메모리 매핑된 파일 포함'
+  answer_detail: 메모리 스캔은 파일 스캔으로 탐지하지 못하는 fileless 악성코드와 언패킹된 페이로드를 탐지한다. 단, 프로세스 메모리는 동적이므로 스캔 시점에 따라
+    결과가 달라질 수 있다.
   verify:
     type: output_contains
     expect: 메모리
+    semantic:
+      intent: 'YARA 메모리 스캔 — yara rules.yar -p $(pidof target_process) 또는 /proc/PID/mem 활용. 파일 스캔과 차이:
+        (1) 언패킹된 코드 탐지 + (2) 실행 시만 존재하는 문자열 + (3) 메모리 매핑 파일 포함. fileless 악성코드 탐지. MITRE T1055 Process
+        Injection + T1620 Reflective Code Loading.'
+      success_criteria:
+      - 메모리 키워드
+      - -p PID 또는 /proc 방법
+      - 파일 vs 메모리 스캔 차이
+      acceptable_methods:
+      - yara -p PID 표준
+      - Volatility + yarascan plugin
+      - Rekall Memory Forensics
+      - procdump + offline YARA
+      negative_signs:
+      - 메모리 스캔 방법 없음
+      - 파일 vs 메모리 차이 없음
+      - fileless 맥락 없음
   target_vm: siem
 - order: 13
-  instruction: YARA 룰의 자동 생성 도구를 활용하라. yarGen 또는 유사 도구를 사용하여 악성코드 샘플에서 자동으로 YARA 룰을
-    생성하고, 생성된 룰의 품질을 평가하라.
+  instruction: YARA 룰의 자동 생성 도구를 활용하라. yarGen 또는 유사 도구를 사용하여 악성코드 샘플에서 자동으로 YARA 룰을 생성하고, 생성된 룰의 품질을 평가하라.
   hint: yarGen은 goodware 문자열 DB를 기반으로 악성코드 고유 문자열을 추출한다
   category: automation
   points: 10
-  answer: yarGen 실행 → 자동 생성된 룰 확인 → 문자열 품질 평가(고유성, 오탐 가능성) → 수동 튜닝(불필요 문자열 제거, 조건
-    강화)
-  answer_detail: 자동 생성 도구는 초기 룰 작성의 시작점을 제공한다. 그러나 자동 생성된 룰은 반드시 전문가의 검토와 튜닝이 필요하다.
-    goodware DB의 품질이 생성된 룰의 오탐률에 직접 영향을 미친다.
+  answer: yarGen 실행 → 자동 생성된 룰 확인 → 문자열 품질 평가(고유성, 오탐 가능성) → 수동 튜닝(불필요 문자열 제거, 조건 강화)
+  answer_detail: 자동 생성 도구는 초기 룰 작성의 시작점을 제공한다. 그러나 자동 생성된 룰은 반드시 전문가의 검토와 튜닝이 필요하다. goodware DB의 품질이 생성된
+    룰의 오탐률에 직접 영향을 미친다.
   verify:
     type: output_contains
     expect: yarGen
+    semantic:
+      intent: yarGen 자동 생성 — goodware 문자열 DB 기반 악성코드 고유 문자열 추출 + YARA 룰 자동 생성 + 평가 (고유성/오탐 가능성) + 수동 튜닝
+        (불필요 문자열 제거/조건 강화). 초기 룰 작성 시작점. 전문가 검토 필수.
+      success_criteria:
+      - yarGen 키워드
+      - goodware DB 기반 개념
+      - 자동 생성 후 수동 튜닝 단계
+      acceptable_methods:
+      - Neo23x0/yarGen GitHub
+      - yargen-ng Python 포크
+      - MalwareBazaar 자동 수집 + yarGen pipeline
+      - AutoYARA (Jang-Jaccard 2021)
+      negative_signs:
+      - goodware DB 개념 없음
+      - 튜닝 단계 누락
+      - 자동 생성만 믿고 배포
   target_vm: siem
 - order: 14
-  instruction: 위협 인텔리전스 피드와 YARA를 연동하라. IOC(해시, IP, 도메인)를 YARA 룰로 변환하는 파이프라인을 설계하고,
-    자동 업데이트 방안을 수립하라.
+  instruction: 위협 인텔리전스 피드와 YARA를 연동하라. IOC(해시, IP, 도메인)를 YARA 룰로 변환하는 파이프라인을 설계하고, 자동 업데이트 방안을 수립하라.
   hint: MISP, OTX 등의 TI 피드에서 YARA 룰을 자동 추출/변환하는 워크플로우를 설계하라
   category: integration
   points: 10
-  answer: '파이프라인: TI피드(MISP/OTX) → IOC 추출 → YARA 룰 자동 생성 → 검증 → 배포. 자동 업데이트: cron으로
-    주기적 동기화, 신규 IOC 추가, 만료 IOC 제거'
-  answer_detail: TI 피드 연동은 YARA 룰의 최신성을 유지하는 핵심이다. 자동화된 파이프라인으로 신속하게 새로운 위협을 탐지할 수
-    있지만, 자동 생성된 룰의 품질 관리가 중요하다.
+  answer: '파이프라인: TI피드(MISP/OTX) → IOC 추출 → YARA 룰 자동 생성 → 검증 → 배포. 자동 업데이트: cron으로 주기적 동기화, 신규 IOC 추가,
+    만료 IOC 제거'
+  answer_detail: TI 피드 연동은 YARA 룰의 최신성을 유지하는 핵심이다. 자동화된 파이프라인으로 신속하게 새로운 위협을 탐지할 수 있지만, 자동 생성된 룰의 품질 관리가
+    중요하다.
   verify:
     type: output_contains
     expect: 피드
+    semantic:
+      intent: TI 피드 + YARA 파이프라인 — MISP/OTX → IOC (hash/IP/domain) 추출 → YARA 룰 자동 변환 → 검증 → 배포. cron 주기
+        동기화 + 신규 IOC 추가 + 만료 IOC 제거. 자동 업데이트 + 최신성 유지. CTI-driven detection.
+      success_criteria:
+      - 피드 키워드 또는 feed
+      - TI 소스 (MISP/OTX/AlienVault) 명시
+      - IOC → YARA 변환 파이프라인
+      acceptable_methods:
+      - MISP modules + YARA export
+      - OpenCTI + YARA generator
+      - AlienVault OTX pulse → YARA script
+      - TheHive + Cortex YARA analyzer
+      negative_signs:
+      - TI 소스 명시 없음
+      - 자동화 파이프라인 없음
+      - IOC 만료 관리 누락
   target_vm: siem
 - order: 15
-  instruction: YARA 탐지 체계 종합 보고서를 작성하라. 작성한 룰셋 목록, 탐지 범위(악성코드 유형별), Wazuh 연동 상태, 성능
-    벤치마크, 운영 절차를 포함하라.
+  instruction: YARA 탐지 체계 종합 보고서를 작성하라. 작성한 룰셋 목록, 탐지 범위(악성코드 유형별), Wazuh 연동 상태, 성능 벤치마크, 운영 절차를 포함하라.
   hint: 악성코드 유형별(랜섬웨어, 웹쉘, 트로이목마, 패커) 탐지 커버리지를 분석하라
   category: reporting
   points: 20
   answer: '🖥️ UI: Dashboard → Management → Rules → 룰 목록 검색
 
-    📎 참고 (CLI): 총 N개 YARA 룰 작성, 탐지 범위: 웹쉘 90%, 랜섬웨어 70%, 패커 80%, 범용 악성코드 50%. Wazuh
-    연동 완료, 평균 스캔 속도: 100MB/s'
-  answer_detail: YARA 탐지 체계 보고서는 현재 역량과 한계를 명확히 제시해야 한다. 파일 기반 탐지의 한계(fileless, 제로데이)를
-    인식하고, 행위 기반 탐지와의 보완 관계를 설명한다.
+    📎 참고 (CLI): 총 N개 YARA 룰 작성, 탐지 범위: 웹쉘 90%, 랜섬웨어 70%, 패커 80%, 범용 악성코드 50%. Wazuh 연동 완료, 평균 스캔 속도: 100MB/s'
+  answer_detail: YARA 탐지 체계 보고서는 현재 역량과 한계를 명확히 제시해야 한다. 파일 기반 탐지의 한계(fileless, 제로데이)를 인식하고, 행위 기반 탐지와의
+    보완 관계를 설명한다.
   verify:
     type: output_contains
     expect: YARA
+    semantic:
+      intent: YARA 탐지 체계 종합 보고서 — N개 룰 + 악성코드 유형별 커버리지 (웹쉘 90%/랜섬웨어 70%/패커 80%/범용 50%) + Wazuh 연동 상태 +
+        평균 스캔 속도 (100MB/s) + 운영 절차. 파일 기반 한계 (fileless/제로데이) 인식 + 행위 기반 보완 명시.
+      success_criteria:
+      - YARA 키워드
+      - 악성코드 유형 3개 이상 커버리지 %
+      - 한계 + 보완 방향
+      acceptable_methods:
+      - Markdown 섹션 + 표
+      - Jinja2 자동 보고서
+      - DBIR 스타일 통계 포맷
+      - DML (Detection Maturity Level) 평가
+      negative_signs:
+      - 유형별 % 수치 없음
+      - 한계 언급 없음
+      - 행위 기반 보완 맥락 없음
   target_vm: siem
