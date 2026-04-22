@@ -30,17 +30,23 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 안전 모니터링 개념 — curl /api/generate 'Explain safety monitoring in cybersecurity in 3 sentences'.
-        실시간 메트릭 수집 + 이상 탐지 + 경보. MLOps 관점.
+      intent: '안전 모니터링 개념 — curl /api/generate ''Explain safety monitoring in cybersecurity in 3 sentences''
+        + num_predict:80. LLM 실시간 모니터링: 요청 메트릭 (RPS/latency/error rate) + 프롬프트 이상 탐지 + 응답 품질 모니터링 + 비용
+        추적. SRE 4 Golden Signals (Latency/Traffic/Errors/Saturation) + OpenTelemetry tracing.'
       success_criteria:
-      - safety monitoring 키워드
-      - 개념 설명
+      - safety monitoring 키워드 (한/영)
+      - curl /api/generate + 3 sentences + num_predict:80
+      - 실시간 메트릭 맥락
       acceptable_methods:
-      - curl 개념
+      - curl /api/generate
       - Prometheus + Grafana
-      - Langfuse observability
+      - Langfuse LLM observability
+      - Datadog LLM monitoring
+      - Helicone proxy
       negative_signs:
-      - 모니터링 맥락 없음
+      - 3 sentences 없음
+      - SRE/Golden Signals 맥락 없음
+      - LLM 관찰성 맥락 없음
   target_vm: manager
 - order: 2
   instruction: LLM에 safety monitoring 보안 시나리오 생성을 요청하시오. 공격 벡터, 영향, 대응을 포함하는 시나리오를 만들어라.
@@ -58,16 +64,21 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 모니터링 시나리오 — curl /api/chat + 'safety monitoring scenario + vector + impact + mitigation'.
-        비정상 패턴 + 실시간 경보 시나리오.
+      intent: '모니터링 시나리오 — curl /api/chat + ''safety monitoring scenario + vector + impact + mitigation''
+        + num_predict:120. 모니터링 공백 시나리오: 이상 징후 미탐지 → 장기 공격 + PII 유출 누적 + 비용 폭증. NIST SP 800-137 (ISCM)
+        원칙.'
       success_criteria:
-      - 시나리오
+      - 시나리오 생성
       - vector + impact + mitigation
+      - 모니터링 공백 맥락
       acceptable_methods:
-      - curl 시나리오
-      - SIEM 상관 분석
+      - curl /api/chat system+user
+      - NIST SP 800-137 ISCM
+      - MITRE ATT&CK T1562 Impair Defenses
+      - Elastic SIEM use case
       negative_signs:
       - 3요소 누락
+      - ISCM/모니터링 맥락 없음
   target_vm: manager
 - order: 3
   instruction: safety monitoring에 대한 보안 정책을 LLM으로 평가하시오. 정책의 취약점을 분석하라.
@@ -86,15 +97,22 @@ steps:
     expect: 'Analysis:'
     field: stdout
     semantic:
-      intent: 모니터링 정책 분석 — python3 + policy + LLM auditor. 모니터링 정책 + 메트릭 수집 요건.
+      intent: '모니터링 정책 감사 — python3 + policy ''No auth + No rate limit + plaintext logs'' + system ''security
+        auditor'' + LLM 분석 + Policy/Analysis 출력. 모니터링 관점: plaintext logs = 프라이버시 위반 + No rate limit =
+        이상 탐지 어려움 + No auth = attribution 불가.'
       success_criteria:
       - 'Analysis: 키워드'
-      - 정책 + LLM
+      - policy 텍스트 + auditor
+      - 모니터링 gap 식별
       acceptable_methods:
-      - python LLM 감사
-      - NIST SP 800-137 CM
+      - python + LLM auditor
+      - NIST SP 800-137 감사
+      - ELK observability audit
+      - Splunk use case
       negative_signs:
       - 정책 없음
+      - 모니터링 관점 없음
+      - Attribution/log privacy 맥락 없음
   target_vm: manager
 - order: 4
   instruction: safety monitoring 맥락에서 프롬프트 인젝션을 시도하시오. system 프롬프트에 비밀을 넣고 유출을 시도하라.
@@ -113,15 +131,20 @@ steps:
     expect: SAFE
     field: stdout
     semantic:
-      intent: 모니터링 인젝션 — python3 + sys='safety monitoring expert' + 3개 공격. 모니터링 회피 시도.
+      intent: '모니터링 맥락 인젝션 — python3 + system ''safety monitoring expert. Secret: FLAG_HIDDEN'' + 3 attacks
+        (Ignore role/System prompt/List rules) + FLAG_HIDDEN 유출 판정. 모니터링 전문가 페르소나 하 민감정보 (로그 해시/내부 IP)
+        유출 시도.'
       success_criteria:
       - SAFE 키워드
-      - 3개 공격
+      - 3개 공격 + FLAG_HIDDEN 체크
+      - 페르소나 유지
       acceptable_methods:
-      - python 공격 + 판정
-      - Log evasion detection
+      - python 공격 루프
+      - garak promptinject
+      - PyRIT system prompt leak probe
       negative_signs:
       - 공격 2개 이하
+      - FLAG 판정 없음
   target_vm: manager
 - order: 5
   instruction: safety monitoring 분석 자동화 파이프라인을 구축하시오. LLM API를 호출하여 보안 항목을 자동 분석하라.
@@ -140,14 +163,18 @@ steps:
     expect: Analysis
     field: stdout
     semantic:
-      intent: 모니터링 파이프라인 — python3 + analyze + 3개 items. 모니터링 커버리지 위험 평가.
+      intent: 모니터링 항목 위험 분석 — python3 + analyze(item) + 'security analyst, risk HIGH/MEDIUM/LOW' + temperature:0
+        + 3 items (Open SSH/Strong password/Unpatched Apache 2.4.49). 각 항목 모니터링 필요 여부 + 대시보드 알람 우선순위 평가.
       success_criteria:
       - Analysis 키워드
       - 3개 items + 등급
+      - temperature:0 결정성
       acceptable_methods:
-      - python LLM 분석
-      - Grafana dashboard audit
+      - python LLM 반복 분석
+      - Grafana alert rule prioritization
+      - PagerDuty severity mapping
       negative_signs:
+      - items 2개 이하
       - 등급 없음
   target_vm: manager
 - order: 6
@@ -165,16 +192,21 @@ steps:
     expect: FLAGGED
     field: stdout
     semantic:
-      intent: 모니터링 가드레일 — python3 + rules + FLAGGED/ALLOWED. 이상 패턴 탐지 규칙.
+      intent: 모니터링 가드레일 — python3 + rules 3개 (password|credential|secret → credentials + rm -rf|drop table
+        → destructive + hack|exploit → offensive) + FLAGGED(name)/ALLOWED + 4 tests. 모니터링 로그에서 탐지할 위험
+        패턴 규칙.
       success_criteria:
       - FLAGGED 키워드
-      - 3개 이상 규칙
+      - 3개 규칙 + 카테고리명
+      - ALLOWED 판정
       acceptable_methods:
-      - python re 규칙
-      - SIEM rules
+      - python re + 카테고리
       - Wazuh ruleset
+      - Sigma rules
+      - SIEM correlation rules
       negative_signs:
       - 규칙 2개 이하
+      - 카테고리 없음
   target_vm: manager
 - order: 7
   instruction: safety monitoring 모니터링 시스템을 구현하시오. 요청 통계와 보안 메트릭을 수집하라.
@@ -194,16 +226,21 @@ steps:
     expect: Monitoring
     field: stdout
     semantic:
-      intent: 모니터링 메트릭 — python3 + metrics + 3개 호출. 요청/토큰/에러 추적. Prometheus 스타일.
+      intent: 모니터링 메트릭 수집 — python3 + metrics {requests/tokens/errors} + 3 프롬프트 + try/except 에러 추적. LLM
+        사용 통계 = SRE 기본 (Traffic/Errors). 토큰 집계로 비용 모니터링.
       success_criteria:
       - Monitoring 키워드
-      - metrics + 호출
+      - metrics 3필드 (requests/tokens/errors)
+      - try/except 에러 카운트
       acceptable_methods:
       - python metrics 집계
-      - Prometheus exporter
-      - Langfuse tracing
+      - Prometheus Counter 메트릭
+      - Langfuse cost tracking
+      - Helicone observability
       negative_signs:
-      - 메트릭 없음
+      - 메트릭 2개 이하
+      - 에러 처리 없음
+      - SRE 맥락 없음
   target_vm: manager
 - order: 8
   instruction: safety monitoring 보안 평가 보고서를 생성하시오. 발견사항과 권고를 정리하라.
@@ -222,14 +259,15 @@ steps:
     field: stdout
     semantic:
       intent: 모니터링 평가 보고서 — python3 + Findings + Guardrails + Recommendations. 안전 모니터링 주간 종합. Prometheus
-        + Alertmanager 권장.
+        + Alertmanager + Langfuse 권장. SLO 기반 알림.
       success_criteria:
       - Assessment 키워드
-      - Findings + Recommendations
+      - Findings + Guardrails + Recommendations 3섹션
       acceptable_methods:
       - echo 보고서
-      - NIST CM standard
-      - Observability best practices
+      - SRE SLO/SLI framework
+      - Google SRE workbook
       negative_signs:
       - 섹션 2개 이하
+      - Recommendations 없음
   target_vm: manager
