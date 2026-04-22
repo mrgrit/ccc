@@ -3,8 +3,7 @@ title: 장기 APT 잠복 + 과정 회고 IR (Non-AI)
 version: nonai
 course: agent-ir-adv-nonai
 week: 15
-description: 6개월 dwell time. Threat Hunting + Baseline 갱신 + Dwell Time KPI. 학생이 수동
-  수행·기록.
+description: 6개월 dwell time. Threat Hunting + Baseline 갱신 + Dwell Time KPI. 학생이 수동 수행·기록.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -34,6 +33,20 @@ steps:
     type: output_contains
     expect: 임계
     field: stdout
+    semantic:
+      intent: '[공격] 저속 활동 — cat > slow.md: 주 1회 내부 쿼리 / 일당 100MB 유출 / 실시간 임계 아래. Low-and-slow APT.'
+      success_criteria:
+      - 임계 키워드
+      - 저속 3 특성
+      - 실시간 우회
+      acceptable_methods:
+      - Low-and-slow
+      - Pacing attack
+      - Beaconing
+      negative_signs:
+      - 저속 맥락 없음
+      - 임계 언급 없음
+      - 단일 특성
   target_vm: bastion
   script: 'mkdir -p ~/w15 && cat > ~/w15/slow.md <<''M''
 
@@ -69,6 +82,20 @@ steps:
     type: output_contains
     expect: certutil
     field: stdout
+    semantic:
+      intent: '[공격] LOLBAS 장기 — cat > lolbas-long.md: 6개월 certutil 반복 / 낮은 빈도 분산 / 정상 업무 위장. 정상 도구 악용.'
+      success_criteria:
+      - certutil 키워드
+      - 6개월 지속
+      - 위장
+      acceptable_methods:
+      - LOLBAS 악용
+      - Living off the land
+      - 정상 도구 위장
+      negative_signs:
+      - certutil 없음
+      - 기간 없음
+      - 위장 맥락 없음
   target_vm: bastion
   script: 'cat > ~/w15/lolbas-long.md <<''M''
 
@@ -88,11 +115,10 @@ steps:
   hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
   category: analysis
   points: 11
-  answer: "cat > ~/w15/drift.py <<'PY'\nimport statistics\ndef drift(baseline_vals,\
-    \ recent_val):\n    if not baseline_vals: return False\n    m = statistics.mean(baseline_vals)\n\
-    \    s = statistics.stdev(baseline_vals) if len(baseline_vals) > 1 else 1\n  \
-    \  return abs(recent_val - m) > 2*s\nprint(drift([10,12,11,13,11,12,13], 25))\n\
-    PY\npython3 ~/w15/drift.py"
+  answer: "cat > ~/w15/drift.py <<'PY'\nimport statistics\ndef drift(baseline_vals, recent_val):\n   \
+    \ if not baseline_vals: return False\n    m = statistics.mean(baseline_vals)\n    s = statistics.stdev(baseline_vals)\
+    \ if len(baseline_vals) > 1 else 1\n    return abs(recent_val - m) > 2*s\nprint(drift([10,12,11,13,11,12,13],\
+    \ 25))\nPY\npython3 ~/w15/drift.py"
   answer_detail: '[탐지] 2σ 이탈.'
   verify:
     type: output_contains
@@ -100,12 +126,26 @@ steps:
     - 'True'
     - Drift
     field: stdout
+    semantic:
+      intent: '[탐지] Long-term drift — cat > drift.py: def drift(baseline_vals, recent_val): mean + stdev
+        + abs > 2*s. 2σ 이탈.'
+      success_criteria:
+      - True/Drift
+      - statistics mean/stdev
+      - 2 sigma
+      acceptable_methods:
+      - Z-score
+      - EWMA
+      - Statistical Process Control
+      negative_signs:
+      - 통계 없음
+      - 2σ 없음
+      - 함수 단순
   target_vm: bastion
-  script: "cat > ~/w15/drift.py <<'PY'\nimport statistics\ndef drift(baseline_vals,\
-    \ recent_val):\n    if not baseline_vals: return False\n    m = statistics.mean(baseline_vals)\n\
-    \    s = statistics.stdev(baseline_vals) if len(baseline_vals) > 1 else 1\n  \
-    \  return abs(recent_val - m) > 2*s\nprint(drift([10,12,11,13,11,12,13], 25))\n\
-    PY\npython3 ~/w15/drift.py"
+  script: "cat > ~/w15/drift.py <<'PY'\nimport statistics\ndef drift(baseline_vals, recent_val):\n   \
+    \ if not baseline_vals: return False\n    m = statistics.mean(baseline_vals)\n    s = statistics.stdev(baseline_vals)\
+    \ if len(baseline_vals) > 1 else 1\n    return abs(recent_val - m) > 2*s\nprint(drift([10,12,11,13,11,12,13],\
+    \ 25))\nPY\npython3 ~/w15/drift.py"
   risk_level: low
   bastion_prompt: ''
 - order: 4
@@ -133,6 +173,20 @@ steps:
     - 분기
     - 주기
     field: stdout
+    semantic:
+      intent: '[탐지] Threat Hunting 주기 — cat > hunt.md: 일간 자동 Bastion / 주간 사람 / 월간 팀 회고 / 분기 외부. 4 해상도.'
+      success_criteria:
+      - 분기/주기
+      - 4 해상도
+      - 주기별 담당
+      acceptable_methods:
+      - HMM Level
+      - SANS Threat Hunt
+      - Sqrrl maturity
+      negative_signs:
+      - 주기 2개 이하
+      - 담당 없음
+      - 외부 없음
   target_vm: bastion
   script: 'cat > ~/w15/hunt.md <<''M''
 
@@ -178,6 +232,21 @@ steps:
     - T-
     - 로드맵
     field: stdout
+    semantic:
+      intent: '[분석] 6개월 타임라인 — cat > long-timeline.md: T-180d 초기 / T-120d 지속성 / T-60d 내부 조사 / T-14d 타깃
+        / T-7d 유출 / T+0 탐지. 장기 서사.'
+      success_criteria:
+      - T-/로드맵
+      - 6 단계
+      - T-180d ~ T+0
+      acceptable_methods:
+      - Plaso long timeline
+      - Dwell time analysis
+      - Diamond Model
+      negative_signs:
+      - 단계 3개 이하
+      - 기간 없음
+      - T+0 없음
   target_vm: bastion
   script: 'cat > ~/w15/long-timeline.md <<''M''
 
@@ -221,6 +290,21 @@ steps:
     type: output_contains
     expect: 인덱싱
     field: stdout
+    semantic:
+      intent: '[분석] LLM 장기 로그 요약 — cat > llm-summary.md: 6개월 로그 TB / 시간·사용자·자원 인덱싱 / LLM 패턴 발견 / 사람 최종
+        해석. 사람+LLM.'
+      success_criteria:
+      - 인덱싱 키워드
+      - 4 단계
+      - TB 규모
+      acceptable_methods:
+      - RAG long-term
+      - LLM summarization
+      - vector search
+      negative_signs:
+      - LLM 없음
+      - 사람 해석 누락
+      - TB 맥락 없음
   target_vm: bastion
   script: 'cat > ~/w15/llm-summary.md <<''M''
 
@@ -258,6 +342,21 @@ steps:
     type: output_contains
     expect: 사람
     field: stdout
+    semantic:
+      intent: '[초동] 관찰 vs 격리 — cat > decision.md: 즉시 격리 안전 우선 / 관찰 지속 추가 정보 + 피해 리스크 / 결정은 사람. Agent 결정
+        금지.'
+      success_criteria:
+      - 사람 키워드
+      - 3 옵션
+      - 법적 고려
+      acceptable_methods:
+      - Human-in-the-Loop
+      - Board 결정
+      - Legal counsel
+      negative_signs:
+      - Agent 결정
+      - 옵션 1개
+      - 사람 결정 없음
   target_vm: bastion
   script: 'cat > ~/w15/decision.md <<''M''
 
@@ -277,18 +376,33 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 16
-  answer: "cat > ~/w15/agent.yaml <<'Y'\nplaybook_id: pb-long-apt\nsteps:\n  - skill:\
-    \ compile_6m_activity\n  - skill: rank_suspect_accounts\n  - skill: escalate_to_human_lead\n\
-    \  - skill: prepare_isolation_candidates\nY\ncat ~/w15/agent.yaml"
+  answer: "cat > ~/w15/agent.yaml <<'Y'\nplaybook_id: pb-long-apt\nsteps:\n  - skill: compile_6m_activity\n\
+    \  - skill: rank_suspect_accounts\n  - skill: escalate_to_human_lead\n  - skill: prepare_isolation_candidates\n\
+    Y\ncat ~/w15/agent.yaml"
   answer_detail: '[초동대응] 사람 주도 보조.'
   verify:
     type: output_contains
     expect: escalate
     field: stdout
+    semantic:
+      intent: '[초동] Agent 보조 Playbook — cat > agent.yaml: pb-long-apt + compile_6m_activity / rank_suspect_accounts
+        / escalate_to_human_lead / prepare_isolation_candidates. 사람 주도 보조.'
+      success_criteria:
+      - escalate 키워드
+      - 4 steps
+      - human_lead
+      acceptable_methods:
+      - Bastion HITL Playbook
+      - LLM-assisted triage
+      - RAG evidence
+      negative_signs:
+      - escalate 없음
+      - steps 2개 이하
+      - 자율 결정
   target_vm: bastion
-  script: "cat > ~/w15/agent.yaml <<'Y'\nplaybook_id: pb-long-apt\nsteps:\n  - skill:\
-    \ compile_6m_activity\n  - skill: rank_suspect_accounts\n  - skill: escalate_to_human_lead\n\
-    \  - skill: prepare_isolation_candidates\nY\ncat ~/w15/agent.yaml"
+  script: "cat > ~/w15/agent.yaml <<'Y'\nplaybook_id: pb-long-apt\nsteps:\n  - skill: compile_6m_activity\n\
+    \  - skill: rank_suspect_accounts\n  - skill: escalate_to_human_lead\n  - skill: prepare_isolation_candidates\n\
+    Y\ncat ~/w15/agent.yaml"
   risk_level: low
   bastion_prompt: ''
 - order: 9
@@ -312,8 +426,25 @@ steps:
   answer_detail: '[보고] 이사회 급.'
   verify:
     type: output_contains
-    expect: 리빌드
+    expect:
+    - 리빌드
+    - 심각성
     field: stdout
+    semantic:
+      intent: '[보고] 심각성 브리핑 — cat > exec.md: Long-dwell 6개월 방어 실패 / Impact ~30GB 유출 / Ask 전사 Identity
+        리빌드 $XXX K. 이사회 급.'
+      success_criteria:
+      - 리빌드/심각성
+      - Dwell+Impact+Ask
+      - $ 규모
+      acceptable_methods:
+      - Board-level brief
+      - Identity rebuild
+      - Zero Trust 이행
+      negative_signs:
+      - 리빌드 없음
+      - 규모 없음
+      - 섹션 부족
   target_vm: bastion
   script: 'cat > ~/w15/exec.md <<''M''
 
@@ -353,6 +484,20 @@ steps:
     type: output_contains
     expect: Dwell
     field: stdout
+    semantic:
+      intent: '[재발방지] Dwell Time KPI — cat > kpi.md: 업계 평균 21-200일 / 목표 7일 / 측정 월 1회 / 연간 리뷰. 조직 KPI.'
+      success_criteria:
+      - Dwell 키워드
+      - KPI 수치
+      - 목표 7일
+      acceptable_methods:
+      - Mandiant M-Trends Dwell Time
+      - MITRE ATT&CK Coverage
+      - NIST Tier
+      negative_signs:
+      - 목표 없음
+      - 주기 없음
+      - 업계 비교 없음
   target_vm: bastion
   script: 'cat > ~/w15/kpi.md <<''M''
 
@@ -394,6 +539,21 @@ steps:
     - FTE
     - 팀구축
     field: stdout
+    semantic:
+      intent: '[재발방지] Threat Hunting 팀 — cat > hunting-team.md: 전담 FTE / Baseline 지속 / 분기 외부 pentest /
+        Identity 90일 회전. 상시 조직.'
+      success_criteria:
+      - FTE/팀구축
+      - 4 구성
+      - 외부 pentest
+      acceptable_methods:
+      - Threat Hunting Team
+      - Red team 상시
+      - Identity rotation
+      negative_signs:
+      - FTE 없음
+      - 구성 2개 이하
+      - 외부 없음
   target_vm: bastion
   script: 'cat > ~/w15/hunting-team.md <<''M''
 
@@ -439,6 +599,20 @@ steps:
     type: output_contains
     expect: 충격적
     field: stdout
+    semantic:
+      intent: '[회고] 과정 회고 — cat > retro.md: C20 회고 / 가장 충격적 관찰 / 내 조직 30일 조치 / 과정 개선 제안. 과정 마지막 산출.'
+      success_criteria:
+      - 충격적 키워드
+      - 3 섹션
+      - 조직 적용
+      acceptable_methods:
+      - Markdown retrospective
+      - Start/Stop/Continue
+      - After-action review
+      negative_signs:
+      - 섹션 1-2개
+      - 개선 제안 없음
+      - 조직 적용 없음
   target_vm: bastion
   script: 'cat > ~/w15/retro.md <<''M''
 
