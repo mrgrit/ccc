@@ -23,6 +23,21 @@ steps:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 업로드 기능 식별 — curl http://10.20.30.80 + form action / input type=file 검색. JuiceShop /api/Complaints
+        또는 프로필. 진단 첫 단계. CWE-434.
+      success_criteria:
+      - 업로드 기능 식별 완료 키워드
+      - curl + 응답 분석
+      - form/input 검색
+      acceptable_methods:
+      - curl + grep
+      - Burp passive scan
+      - OWASP ZAP spider
+      negative_signs:
+      - 식별 없음
+      - 단순 GET
+      - 업로드 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: '{{WEB_IP}} 대상으로 허용 파일 유형 확인을(를) 수행하시오.'
@@ -35,45 +50,101 @@ steps:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 허용 파일 유형 — accept 속성 + Content-Type 화이트리스트 확인. .jpg/.png 허용 / .php/.jsp 차단 정책 분석. CWE-434.
+      success_criteria:
+      - 허용 파일 유형 확인 완료 키워드
+      - 유형 점검
+      - 필터 분석
+      acceptable_methods:
+      - form accept 속성 확인
+      - Burp upload 분석
+      - 수동 테스트
+      negative_signs:
+      - 유형 미점검
+      - 단순 curl
+      - 필터 분석 없음
   target_vm: attacker
 - order: 3
   instruction: '{{WEB_IP}} 대상으로 확장자 필터 우회(이중 확장자)을(를) 수행하시오.'
   hint: 확장자 필터 우회(이중 확장자) 관련 도구와 기법을 활용하세요.
   category: bypass
   points: 10
-  answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '확장자 필터 우회(이중
-    확장자) 완료'
+  answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '확장자 필터 우회(이중 확장자) 완료'
   answer_detail: 확장자 필터 우회(이중 확장자)은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 이중 확장자 우회 — file.php.jpg / file.jpg.php / shell.php%00.jpg (NULL byte). 서버 파싱 차이 악용. Apache
+        mod_mime + Nginx 변형. CWE-434 + CWE-44.
+      success_criteria:
+      - 확장자 필터 우회 완료 키워드
+      - 이중 확장자 또는 NULL byte
+      - 파싱 차이 분석
+      acceptable_methods:
+      - 이중 확장자
+      - NULL byte truncation
+      - .phtml/.phar 변형
+      negative_signs:
+      - 우회 기법 없음
+      - 단일 확장자만
+      - 파싱 맥락 없음
   target_vm: attacker
 - order: 4
   instruction: '{{WEB_IP}} 대상으로 Content-Type 변조 업로드을(를) 수행하시오.'
   hint: Content-Type 변조 업로드 관련 도구와 기법을 활용하세요.
   category: bypass
   points: 10
-  answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'Content-Type
-    변조 업로드 완료'
+  answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'Content-Type 변조 업로드 완료'
   answer_detail: Content-Type 변조 업로드은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 'Content-Type 변조 — multipart upload Content-Type: image/jpeg + 실제 .php 파일. 서버 MIME 검증만 시
+        우회. Burp Repeater로 Content-Type 변조. CWE-434.'
+      success_criteria:
+      - Content-Type 변조 완료 키워드
+      - MIME 검증 우회
+      - image/jpeg 위장
+      acceptable_methods:
+      - Burp Content-Type 변조
+      - curl --form 명시
+      - Python requests
+      negative_signs:
+      - Content-Type 미변조
+      - 단순 업로드
+      - MIME 검증 맥락 없음
   target_vm: attacker
 - order: 5
   instruction: '{{WEB_IP}} 대상으로 매직 바이트 조작 업로드을(를) 수행하시오.'
   hint: 매직 바이트 조작 업로드 관련 도구와 기법을 활용하세요.
   category: bypass
   points: 10
-  answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '매직 바이트 조작 업로드
-    완료'
+  answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '매직 바이트 조작 업로드 완료'
   answer_detail: 매직 바이트 조작 업로드은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 매직 바이트 조작 — JPEG 매직 (FF D8 FF) + PHP 코드 추가. file 명령 검증 우회. exiftool로 EXIF에 페이로드 삽입. CWE-434
+        + magic bytes spoofing.
+      success_criteria:
+      - 매직 바이트 조작 완료 키워드
+      - GIF89a/JPEG 매직
+      - 페이로드 삽입
+      acceptable_methods:
+      - printf 매직 + cat 페이로드
+      - exiftool EXIF 삽입
+      - polyglot 파일 생성
+      negative_signs:
+      - 매직 바이트 없음
+      - 단순 텍스트
+      - file 검증 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: '{{WEB_IP}} 대상으로 웹쉘 업로드 시도을(를) 수행하시오.'
@@ -86,58 +157,129 @@ steps:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: '웹쉘 업로드 — <?php system($_GET[''cmd'']); ?> shell.php 업로드 + curl /uploads/shell.php?cmd=id.
+        RCE 획득 = 서버 장악. WebShell 종류: c99/r57/Weevely. CWE-434.'
+      success_criteria:
+      - 웹쉘 업로드 시도 완료 키워드
+      - PHP/JSP 웹쉘
+      - RCE 검증
+      acceptable_methods:
+      - 수동 webshell
+      - Weevely 자동
+      - msfvenom php/meterpreter
+      negative_signs:
+      - 웹쉘 미업로드
+      - RCE 검증 없음
+      - 장악 맥락 없음
   target_vm: attacker
 - order: 7
   instruction: '{{WEB_IP}} 대상으로 이미지 파일 내 코드 삽입을(를) 수행하시오.'
   hint: 이미지 파일 내 코드 삽입 관련 도구와 기법을 활용하세요.
   category: exploit
   points: 10
-  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '이미지 파일 내 코드 삽입
-    완료'
+  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '이미지 파일 내 코드 삽입 완료'
   answer_detail: 이미지 파일 내 코드 삽입은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 이미지 코드 삽입 — exiftool '-Comment=<?php system($_GET[c]); ?>' image.jpg 또는 GIMP. EXIF 메타데이터
+        또는 픽셀 데이터에 페이로드. include 시 PHP 실행. CWE-434 + Image Polyglot.
+      success_criteria:
+      - 이미지 코드 삽입 완료 키워드
+      - exiftool 또는 매직+코드
+      - 이미지 + PHP
+      acceptable_methods:
+      - exiftool -Comment
+      - stegide 페이로드
+      - 수동 cat 결합
+      negative_signs:
+      - 이미지 없음
+      - 코드 미삽입
+      - polyglot 맥락 없음
   target_vm: attacker
 - order: 8
   instruction: '{{WEB_IP}} 대상으로 ZIP 파일 업로드 취약점 테스트을(를) 수행하시오.'
   hint: ZIP 파일 업로드 취약점 테스트 관련 도구와 기법을 활용하세요.
   category: exploit
   points: 10
-  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'ZIP 파일 업로드 취약점
-    테스트 완료'
+  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'ZIP 파일 업로드 취약점 테스트 완료'
   answer_detail: ZIP 파일 업로드 취약점 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 'ZIP 업로드 — Zip Slip (CVE-2018-1002201): ../../../etc/passwd 경로 ZIP. 추출 시 임의 위치 파일 쓰기. RCE
+        또는 시스템 변조. ZIP/TAR 일반 취약점. CWE-22.'
+      success_criteria:
+      - ZIP 파일 업로드 완료 키워드
+      - Zip Slip 또는 Path Traversal
+      - ../ 경로 패턴
+      acceptable_methods:
+      - Zip Slip 페이로드
+      - tar with ../
+      - evilarc 자동
+      negative_signs:
+      - Zip Slip 맥락 없음
+      - 단순 ZIP
+      - Path Traversal 누락
   target_vm: attacker
 - order: 9
   instruction: '{{WEB_IP}} 대상으로 업로드 경로 추측을(를) 수행하시오.'
   hint: 업로드 경로 추측 관련 도구와 기법을 활용하세요.
   category: recon
   points: 10
-  answer: nmap -sV -p 80,443 10.20.30.80 2>/dev/null | head -10 && echo '업로드 경로 추측
-    완료'
+  answer: nmap -sV -p 80,443 10.20.30.80 2>/dev/null | head -10 && echo '업로드 경로 추측 완료'
   answer_detail: 업로드 경로 추측은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 업로드 경로 추측 — nmap -sV -p 80,443 + /uploads, /upload, /files, /media, /ftp 시도. 업로드 위치 파악 =
+        웹쉘 실행 위치 특정. OWASP A05 Security Misconfiguration.
+      success_criteria:
+      - 업로드 경로 추측 완료 키워드
+      - /uploads 등 경로
+      - 경로 스캔
+      acceptable_methods:
+      - curl 경로 루프
+      - dirb/gobuster
+      - ffuf -w wordlist
+      negative_signs:
+      - 경로 1개만
+      - 단순 스캔
+      - 업로드 맥락 없음
   target_vm: attacker
 - order: 10
   instruction: '{{WEB_IP}} 대상으로 업로드된 파일 실행 확인을(를) 수행하시오.'
   hint: 업로드된 파일 실행 확인 관련 도구와 기법을 활용하세요.
   category: exploit
   points: 10
-  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '업로드된 파일 실행 확인
-    완료'
+  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '업로드된 파일 실행 확인 완료'
   answer_detail: 업로드된 파일 실행 확인은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 업로드 파일 실행 — curl http://10.20.30.80/uploads/shell.php?cmd=id. 응답에 uid/gid 출력 = RCE 성공. MITRE
+        T1505.003 Web Shell.
+      success_criteria:
+      - 업로드된 파일 실행 확인 완료 키워드
+      - uploads 경로 + 웹쉘
+      - RCE 검증
+      acceptable_methods:
+      - curl 웹쉘 호출
+      - Weevely 세션
+      - msfconsole post-exploit
+      negative_signs:
+      - 실행 미검증
+      - 단순 GET
+      - RCE 맥락 없음
   target_vm: attacker
 - order: 11
   instruction: '{{WEB_IP}} 대상으로 파일 크기 제한 테스트을(를) 수행하시오.'
@@ -150,6 +292,21 @@ steps:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 파일 크기 제한 — MAX_FILE_SIZE + HTTP Content-Length 검증. 대용량 업로드 → DoS. 제한 미설정 = 서비스 영향. upload_max_filesize
+        PHP + client_max_body_size Nginx.
+      success_criteria:
+      - 파일 크기 제한 테스트 완료 키워드
+      - 크기 테스트
+      - DoS 맥락
+      acceptable_methods:
+      - dd if=/dev/urandom bs=1M count=100
+      - curl 대용량 업로드
+      - Burp Repeater
+      negative_signs:
+      - 크기 미테스트
+      - 단순 업로드
+      - DoS 맥락 없음
   target_vm: attacker
 - order: 12
   instruction: '{{WEB_IP}} 대상으로 업로드 디렉터리 권한 확인을(를) 수행하시오.'
@@ -162,6 +319,21 @@ steps:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 업로드 디렉터리 권한 — chmod 755 + 실행 권한 제거 + Options -ExecCGI -Indexes (Apache). 업로드 디렉터리에 스크립트
+        실행 차단 = 웹쉘 무력화. CWE-732 + Defense in Depth.
+      success_criteria:
+      - 조치 방안 정리 완료 키워드
+      - 권한 설정 분석
+      - Apache Options 또는 Nginx
+      acceptable_methods:
+      - Apache .htaccess
+      - Nginx location block
+      - chmod + chown
+      negative_signs:
+      - 권한 분석 없음
+      - 단순 ls
+      - 웹쉘 방어 맥락 없음
   target_vm: attacker
 - order: 13
   instruction: '{{WEB_IP}} 대상으로 안전한 업로드 구현 방안 정리을(를) 수행하시오.'
@@ -174,6 +346,21 @@ steps:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 안전 업로드 — [1] 화이트리스트 확장자 + [2] MIME + 매직바이트 이중 검증 + [3] 랜덤 파일명 + [4] 업로드 디렉터리 실행 차단 + [5]
+        CDN/S3 분리 + [6] 안티바이러스 스캔. OWASP File Upload Cheatsheet.
+      success_criteria:
+      - 조치 방안 정리 완료 키워드
+      - 5가지 이상 안전 구현
+      - 화이트리스트 + 이중 검증
+      acceptable_methods:
+      - OWASP Cheatsheet
+      - 파일 처리 서비스 분리
+      - ClamAV 연동
+      negative_signs:
+      - 방어 2종 이하
+      - 블랙리스트만
+      - CDN 분리 맥락 없음
   target_vm: attacker
 - order: 14
   instruction: '{{WEB_IP}} 대상으로 업로드 모니터링 설정을(를) 수행하시오.'
@@ -186,17 +373,47 @@ steps:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 업로드 모니터링 — Wazuh FIM (syscheck) + auditd 업로드 디렉터리 감시 + ClamAV 스캔 이벤트. 실시간 이상 탐지. MITRE T1505.003
+        대응. SOC 통합.
+      success_criteria:
+      - 조치 방안 정리 완료 키워드
+      - FIM 또는 모니터링 도구
+      - 실시간 탐지
+      acceptable_methods:
+      - Wazuh syscheck
+      - auditd -w 디렉터리
+      - inotifywait + 알림
+      negative_signs:
+      - 모니터링 미설정
+      - 단순 로그
+      - 실시간 맥락 없음
   target_vm: attacker
 - order: 15
   instruction: 파일 업로드 취약점 실습 종합 보고서를 작성하시오.
   hint: 발견 취약점, 영향, 조치를 포함하세요.
   category: verification
   points: 8
-  answer: 'echo ''=== 파일 업로드 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.30.80'' &&
-    echo ''=== 보고서 완료 ==='''
+  answer: 'echo ''=== 파일 업로드 취약점 실습 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''=== 보고서 완료
+    ==='''
   answer_detail: 취약점 진단 보고서는 발견사항, 위험도, 재현 방법, 조치 권고를 포함합니다.
   verify:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+    semantic:
+      intent: 파일 업로드 보고서 — 대상 + 발견(확장자 우회/웹쉘 업로드)/영향(RCE)/조치(화이트리스트+실행 차단+FIM). CWE-434 + OWASP A04 Insecure
+        Design.
+      success_criteria:
+      - 보고서 완료 키워드
+      - 발견/영향/조치 3섹션
+      - 웹쉘 → RCE 영향
+      acceptable_methods:
+      - echo > 보고서
+      - DefectDojo Finding
+      - PTES Upload 보고
+      negative_signs:
+      - 섹션 부족
+      - RCE 영향 누락
+      - 조치 없음
   target_vm: attacker
