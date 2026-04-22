@@ -3,8 +3,8 @@ title: 대응 절차 - 인시던트 억제와 차단 실습
 version: non-ai
 course: soc-nonai
 week: 8
-description: 탐지된 인시던트에 대한 대응 절차를 실습합니다. Wazuh Active Response, nftables 차단, 프로세스 격리
-  등 실제 억제(containment) 기법을 수행합니다.
+description: 탐지된 인시던트에 대한 대응 절차를 실습합니다. Wazuh Active Response, nftables 차단, 프로세스 격리 등 실제 억제(containment)
+  기법을 수행합니다.
 difficulty: medium
 duration_minutes: 150
 objectives:
@@ -21,12 +21,27 @@ steps:
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
     📎 참고 (CLI): grep -A 10 "<active-response>" /var/ossec/etc/ossec.conf'
-  answer_detail: Active Response는 특정 룰이 트리거되면 자동으로 대응 명령(IP 차단, 프로세스 종료 등)을 실행합니다.
-    command, location, rules_id, timeout이 핵심 설정 요소입니다.
+  answer_detail: Active Response는 특정 룰이 트리거되면 자동으로 대응 명령(IP 차단, 프로세스 종료 등)을 실행합니다. command, location,
+    rules_id, timeout이 핵심 설정 요소입니다.
   verify:
     type: output_contains
     expect: active-response
     field: stdout
+    semantic:
+      intent: Active Response 설정 — grep -A 10 '<active-response>' /var/ossec/etc/ossec.conf. 자동 대응 (IP
+        차단/프로세스 종료). command/location/rules_id/timeout 설정. NIST IR Containment 자동화.
+      success_criteria:
+      - grep active-response
+      - active-response 키워드
+      - -A 컨텍스트
+      acceptable_methods:
+      - grep ossec.conf
+      - Wazuh API GET /manager/configuration
+      - Dashboard AR 설정
+      negative_signs:
+      - AR 미확인
+      - 단순 cat
+      - command 누락
   target_vm: siem
 - order: 2
   instruction: SIEM VM에서 Wazuh가 제공하는 Active Response 스크립트 목록을 확인하시오.
@@ -36,12 +51,27 @@ steps:
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
     📎 참고 (CLI): ls -la /var/ossec/active-response/bin/'
-  answer_detail: firewall-drop(IP 차단), host-deny(hosts.deny 추가), disable-account(계정
-    비활성화) 등의 스크립트가 있습니다. 각 스크립트는 인시던트 유형에 맞는 대응 액션을 수행합니다.
+  answer_detail: firewall-drop(IP 차단), host-deny(hosts.deny 추가), disable-account(계정 비활성화) 등의 스크립트가 있습니다.
+    각 스크립트는 인시던트 유형에 맞는 대응 액션을 수행합니다.
   verify:
     type: output_contains
     expect: firewall-drop
     field: stdout
+    semantic:
+      intent: AR 스크립트 목록 — ls -la /var/ossec/active-response/bin/. firewall-drop(IP 차단)/host-deny(hosts.deny)/disable-account(계정
+        비활성). 인시던트 대응 액션 도구. SOAR Playbook 기초.
+      success_criteria:
+      - ls active-response/bin/
+      - firewall-drop 키워드
+      - 스크립트 목록
+      acceptable_methods:
+      - ls bin/
+      - find -type f
+      - Wazuh AR 문서
+      negative_signs:
+      - 스크립트 미확인
+      - 단일 스크립트만
+      - 대응 맥락 없음
   target_vm: siem
 - order: 3
   instruction: SECU VM에서 nftables의 현재 방화벽 규칙을 확인하시오.
@@ -49,12 +79,27 @@ steps:
   category: setup
   points: 8
   answer: nft list ruleset
-  answer_detail: nftables의 현재 규칙을 파악해야 새로운 차단 룰을 추가할 때 기존 정책과 충돌이 없는지 확인할 수 있습니다.
-    chain, rule, accept, drop 키워드를 주목하세요.
+  answer_detail: nftables의 현재 규칙을 파악해야 새로운 차단 룰을 추가할 때 기존 정책과 충돌이 없는지 확인할 수 있습니다. chain, rule, accept,
+    drop 키워드를 주목하세요.
   verify:
     type: output_contains
     expect: table
     field: stdout
+    semantic:
+      intent: nftables 룰 — nft list ruleset. chain/rule/accept/drop. 신규 차단 추가 전 기존 정책 충돌 점검. 인시던트 대응 사전
+        분석.
+      success_criteria:
+      - nft list ruleset
+      - table 키워드
+      - 정책 표시
+      acceptable_methods:
+      - nft list ruleset
+      - nft list table inet filter
+      - ufw status verbose
+      negative_signs:
+      - 룰 미확인
+      - 단순 nft만
+      - 충돌 분석 맥락 없음
   target_vm: siem
 - order: 4
   instruction: SIEM VM의 Wazuh 알림에서 ATTACKER IP({{ATTACKER_IP}})로부터의 최근 공격 이벤트를 확인하시오.
@@ -63,14 +108,27 @@ steps:
   points: 10
   answer: '🖥️ UI: Dashboard → Security events → 필터 적용 후 이벤트 확인
 
-    📎 참고 (CLI): grep -B 2 -A 5 "10.20.30.201" /var/ossec/logs/alerts/alerts.log |
-    tail -30'
-  answer_detail: 대응 절차의 첫 단계는 탐지된 이벤트를 분석하여 실제 위협인지 확인하는 것입니다. ATTACKER IP에서의 이벤트
-    유형, 빈도, 대상을 파악합니다.
+    📎 참고 (CLI): grep -B 2 -A 5 "10.20.30.201" /var/ossec/logs/alerts/alerts.log | tail -30'
+  answer_detail: 대응 절차의 첫 단계는 탐지된 이벤트를 분석하여 실제 위협인지 확인하는 것입니다. ATTACKER IP에서의 이벤트 유형, 빈도, 대상을 파악합니다.
   verify:
     type: output_contains
     expect: 10.20.30.201
     field: stdout
+    semantic:
+      intent: ATTACKER 알림 분석 — grep -B 2 -A 5 '10.20.30.201' alerts.log | tail -30. 대응 첫 단계 = 탐지 이벤트 분석
+        (실제 위협 확인). 유형/빈도/대상. NIST IR Detection & Analysis.
+      success_criteria:
+      - grep 10.20.30.201
+      - 10.20.30.201 키워드
+      - 컨텍스트
+      acceptable_methods:
+      - grep + 컨텍스트
+      - Wazuh API IP 필터
+      - Dashboard alert search
+      negative_signs:
+      - IP 누락
+      - 컨텍스트 없음
+      - 단순 grep
   target_vm: siem
 - order: 5
   instruction: WEB VM에서 현재 설정된 TCP 연결 중 ATTACKER IP({{ATTACKER_IP}})와의 활성 연결을 확인하시오.
@@ -78,40 +136,83 @@ steps:
   category: analysis
   points: 10
   answer: ss -tnp | grep "10.20.30.201"
-  answer_detail: 활성 연결을 확인하여 공격자가 현재 시스템에 접속 중인지 파악합니다. ESTABLISHED 상태의 연결이 있다면 즉시
-    억제 조치가 필요합니다.
+  answer_detail: 활성 연결을 확인하여 공격자가 현재 시스템에 접속 중인지 파악합니다. ESTABLISHED 상태의 연결이 있다면 즉시 억제 조치가 필요합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: ATTACKER 활성 연결 — ss -tnp | grep '10.20.30.201'. ESTABLISHED = 현재 접속 중 → 즉시 억제 필요. 인시던트 대응
+        시급도 판단.
+      success_criteria:
+      - ss -tnp + grep IP
+      - 10.20.30.201 검색
+      - 활성 연결 분석
+      acceptable_methods:
+      - ss -tnp
+      - netstat -tnp
+      - lsof -i :80
+      negative_signs:
+      - 활성 연결 미점검
+      - IP 누락
+      - ESTABLISHED 맥락 없음
   target_vm: siem
 - order: 6
-  instruction: WEB VM에서 최근 실행 중인 프로세스 중 의심스러운 프로세스를 확인하시오. 비정상적인 네트워크 연결을 가진 프로세스를
-    찾으시오.
+  instruction: WEB VM에서 최근 실행 중인 프로세스 중 의심스러운 프로세스를 확인하시오. 비정상적인 네트워크 연결을 가진 프로세스를 찾으시오.
   hint: ss -tnp 또는 lsof -i로 네트워크 연결이 있는 프로세스를 확인하세요.
   category: analysis
   points: 10
   answer: ss -tnp | grep ESTABLISHED
-  answer_detail: ESTABLISHED 연결을 가진 프로세스를 확인하면 정상 서비스(apache2, sshd)와 의심스러운 연결을 구분할
-    수 있습니다. 알 수 없는 프로세스의 외부 연결은 악성코드 활동 징후입니다.
+  answer_detail: ESTABLISHED 연결을 가진 프로세스를 확인하면 정상 서비스(apache2, sshd)와 의심스러운 연결을 구분할 수 있습니다. 알 수 없는 프로세스의
+    외부 연결은 악성코드 활동 징후입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 의심 프로세스 분석 — ss -tnp | grep ESTABLISHED. 정상(apache2/sshd) vs 알 수 없는 외부 연결 = 악성코드 활동 징후.
+        프로세스 격리 대상 식별.
+      success_criteria:
+      - ss -tnp + ESTABLISHED 필터
+      - ESTABLISHED 키워드
+      - 프로세스 정보
+      acceptable_methods:
+      - ss -tnp ESTABLISHED
+      - netstat -tnp
+      - lsof -nP +c 0
+      negative_signs:
+      - ESTABLISHED 필터 없음
+      - 프로세스 정보 없음
+      - 정상/이상 구분 없음
   target_vm: siem
 - order: 7
-  instruction: SECU VM에서 nftables를 사용하여 ATTACKER IP({{ATTACKER_IP}})에서 WEB VM({{WEB_IP}})으로의
-    새로운 연결을 차단하는 규칙을 확인하시오. (실제 차단 규칙 적용 대신 현재 규칙에 ATTACKER 관련 항목이 있는지 확인)
+  instruction: SECU VM에서 nftables를 사용하여 ATTACKER IP({{ATTACKER_IP}})에서 WEB VM({{WEB_IP}})으로의 새로운 연결을 차단하는
+    규칙을 확인하시오. (실제 차단 규칙 적용 대신 현재 규칙에 ATTACKER 관련 항목이 있는지 확인)
   hint: nft list ruleset에서 {{ATTACKER_IP}} 관련 규칙을 검색하세요.
   category: response
   points: 12
   answer: nft list ruleset | grep -i "10.20.30.201\|drop\|reject"
-  answer_detail: 방화벽에서 공격 소스 IP를 차단하는 것이 인시던트 억제의 핵심입니다. nftables에서 ip saddr 10.20.30.201
-    drop 형태의 규칙이 적용되면 해당 IP의 모든 트래픽이 차단됩니다.
+  answer_detail: 방화벽에서 공격 소스 IP를 차단하는 것이 인시던트 억제의 핵심입니다. nftables에서 ip saddr 10.20.30.201 drop 형태의 규칙이
+    적용되면 해당 IP의 모든 트래픽이 차단됩니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: ATTACKER 차단 룰 확인 — nft list ruleset | grep -i '10.20.30.201|drop|reject'. ip saddr 10.20.30.201
+        drop 형태 룰. 인시던트 억제 핵심. NIST IR Containment.
+      success_criteria:
+      - nft list + grep IP/drop
+      - 차단 룰 검색
+      - 결과 확인
+      acceptable_methods:
+      - nft list + grep
+      - iptables -L -n | grep
+      - Wazuh AR firewall-drop
+      negative_signs:
+      - 차단 룰 미점검
+      - 단순 nft list
+      - IP/drop 키워드 없음
   target_vm: siem
 - order: 8
   instruction: WEB VM에서 auth.log를 확인하여 ATTACKER IP에서의 인증 시도 기록을 분석하시오.
@@ -119,12 +220,26 @@ steps:
   category: analysis
   points: 10
   answer: grep "10.20.30.201" /var/log/auth.log | tail -15
-  answer_detail: 인시던트 대응에서 공격자의 인증 시도 기록은 침해 범위를 판단하는 핵심 정보입니다. 성공한 로그인이 있다면 해당 계정의
-    비밀번호 변경과 세션 종료가 필요합니다.
+  answer_detail: 인시던트 대응에서 공격자의 인증 시도 기록은 침해 범위를 판단하는 핵심 정보입니다. 성공한 로그인이 있다면 해당 계정의 비밀번호 변경과 세션 종료가 필요합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: ATTACKER auth.log — grep '10.20.30.201' /var/log/auth.log | tail -15. 인증 시도 기록 = 침해 범위 판단.
+        성공 로그인 발견 시 비번 변경/세션 종료 필요. NIST IR 격리/제거.
+      success_criteria:
+      - grep IP auth.log
+      - ATTACKER IP 검색
+      - tail 최근 시도
+      acceptable_methods:
+      - grep auth.log
+      - lastlog -u user
+      - journalctl auth
+      negative_signs:
+      - IP 누락
+      - auth.log 미확인
+      - 침해 범위 맥락 없음
   target_vm: siem
 - order: 9
   instruction: SIEM VM에서 Wazuh Active Response의 실행 로그를 확인하시오. 자동 차단이 수행된 기록을 찾으시오.
@@ -133,14 +248,29 @@ steps:
   points: 12
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
-    📎 참고 (CLI): cat /var/ossec/logs/active-responses.log 2>/dev/null | tail -20 ||
-    echo "No active response log found"'
-  answer_detail: active-responses.log는 Active Response가 실행된 모든 기록을 저장합니다. 차단된 IP,
-    실행 시간, 타임아웃 정보가 포함되어 있어 대응 조치의 이력을 추적할 수 있습니다.
+    📎 참고 (CLI): cat /var/ossec/logs/active-responses.log 2>/dev/null | tail -20 || echo "No active response
+    log found"'
+  answer_detail: active-responses.log는 Active Response가 실행된 모든 기록을 저장합니다. 차단된 IP, 실행 시간, 타임아웃 정보가 포함되어
+    있어 대응 조치의 이력을 추적할 수 있습니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: AR 실행 로그 — cat /var/ossec/logs/active-responses.log | tail -20. 차단된 IP/실행 시간/타임아웃. 대응 조치
+        이력 추적. 사후 검토/감사 자료. NIST IR Lessons Learned.
+      success_criteria:
+      - active-responses.log 확인
+      - tail 또는 cat
+      - AR 실행 기록
+      acceptable_methods:
+      - cat active-responses.log
+      - Wazuh API GET /active-response/log
+      - Dashboard AR history
+      negative_signs:
+      - 로그 경로 없음
+      - 단순 ls
+      - 이력 추적 맥락 없음
   target_vm: siem
 - order: 10
   instruction: WEB VM에서 최근 수정된 시스템 파일이 있는지 Wazuh 파일 무결성 검사(syscheck) 결과를 확인하시오.
@@ -151,10 +281,25 @@ steps:
 
     📎 참고 (CLI): /var/ossec/bin/wazuh-control status | grep syscheck && ls -la /var/ossec/queue/syscheck/
     2>/dev/null'
-  answer_detail: syscheck는 Wazuh의 파일 무결성 모니터링(FIM) 기능입니다. 인시던트 대응 중 공격자가 시스템 파일을 변조했는지
-    확인하는 데 필수적입니다. 변경된 파일 목록으로 침해 범위를 파악합니다.
+  answer_detail: syscheck는 Wazuh의 파일 무결성 모니터링(FIM) 기능입니다. 인시던트 대응 중 공격자가 시스템 파일을 변조했는지 확인하는 데 필수적입니다.
+    변경된 파일 목록으로 침해 범위를 파악합니다.
   verify:
     type: output_contains
     expect: running
     field: stdout
+    semantic:
+      intent: FIM syscheck — wazuh-control status | grep syscheck + ls /var/ossec/queue/syscheck/. Wazuh
+        File Integrity Monitoring. 공격자 시스템 파일 변조 확인. 침해 범위 파악. NIST CSF Detect/Respond.
+      success_criteria:
+      - wazuh-control status syscheck
+      - running 키워드
+      - FIM 상태
+      acceptable_methods:
+      - wazuh-control + grep
+      - Dashboard FIM dashboard
+      - Wazuh API syscheck
+      negative_signs:
+      - syscheck 미확인
+      - running 검증 없음
+      - 단순 ps만
   target_vm: siem
