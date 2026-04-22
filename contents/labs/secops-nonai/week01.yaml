@@ -3,8 +3,7 @@ title: 보안 솔루션 인프라 점검
 version: non-ai
 course: secops-nonai
 week: 1
-description: 실습 환경의 보안 솔루션(nftables, Suricata, ModSecurity, Wazuh, OpenCTI)이 각 VM에
-  어떻게 배치·동작하는지 확인한다.
+description: 실습 환경의 보안 솔루션(nftables, Suricata, ModSecurity, Wazuh, OpenCTI)이 각 VM에 어떻게 배치·동작하는지 확인한다.
 difficulty: easy
 duration_minutes: 120
 objectives:
@@ -24,6 +23,22 @@ steps:
     type: output_contains
     expect: table
     field: stdout
+    semantic:
+      intent: secu VM nftables 테이블 목록 — nft list tables 실행 + 결과에 table 키워드. IPv4/IPv6/inet family 테이블
+        확인. 방화벽 설정 첫 점검. MITRE D3FEND Network Hardening.
+      success_criteria:
+      - table 키워드
+      - nft list 명령 실행
+      - 테이블 family 확인
+      acceptable_methods:
+      - nft list tables
+      - iptables -L (legacy)
+      - firewall-cmd --list-all (firewalld)
+      - /etc/nftables.conf 직접 조회
+      negative_signs:
+      - 명령 실행 없이 이론
+      - nft list 이외 도구
+      - 결과 확인 누락
   target_vm: secu
 - order: 2
   instruction: secu VM에서 Suricata 서비스 상태를 확인하시오.
@@ -36,6 +51,22 @@ steps:
     type: output_contains
     expect: suricata
     field: stdout
+    semantic:
+      intent: Suricata 서비스 상태 — systemctl is-active suricata 또는 systemctl status suricata --no-pager |
+        head -15. IDS 데몬 가동 확인. 패킷 캡처 + 룰 매칭 + alert 생성 전제. 비활성 시 네트워크 IDS 기능 부재.
+      success_criteria:
+      - suricata 키워드
+      - systemctl 또는 status 실행
+      - active 또는 running 출력
+      acceptable_methods:
+      - systemctl is-active suricata
+      - systemctl status suricata --no-pager
+      - ps aux | grep suricata
+      - suricatasc -c version
+      negative_signs:
+      - 명령 실행 없이 이론
+      - Wazuh/other 서비스 혼동
+      - 상태 해석 누락
   target_vm: secu
 - order: 3
   instruction: web VM({{WEB_IP}})에서 Apache + ModSecurity 모듈 로드 상태를 확인하시오.
@@ -43,12 +74,27 @@ steps:
   category: survey
   points: 10
   answer: apachectl -M 2>/dev/null | grep -i security
-  answer_detail: '보안 솔루션 인프라 점검: web VM(10.20.30.80)에서 Apache + ModSecurity 모듈 로드
-    상태를 확인하시오.'
+  answer_detail: '보안 솔루션 인프라 점검: web VM(10.20.30.80)에서 Apache + ModSecurity 모듈 로드 상태를 확인하시오.'
   verify:
     type: output_contains
     expect: security
     field: stdout
+    semantic:
+      intent: web VM Apache ModSecurity 모듈 — apachectl -M 2>/dev/null | grep -i security. WAF 기능 (ModSecurity/security2_module)
+        로드 확인. OWASP CRS 전제. 로드 안 되면 웹 공격 필터링 불가.
+      success_criteria:
+      - security 키워드
+      - apachectl -M 명령
+      - ModSecurity 모듈 확인
+      acceptable_methods:
+      - apachectl -M | grep security
+      - apache2ctl -M (Debian)
+      - httpd -M (RHEL)
+      - /etc/apache2/mods-enabled/ 디렉토리 조회
+      negative_signs:
+      - apachectl 미사용
+      - grep security 필터 없음
+      - WAF 맥락 없음
   target_vm: web
 - order: 4
   instruction: siem VM({{SECU_IP}}00)에서 Wazuh Manager 서비스 상태를 확인하시오.
@@ -63,6 +109,22 @@ steps:
     type: output_contains
     expect: active
     field: stdout
+    semantic:
+      intent: 'Wazuh Manager 서비스 상태 — systemctl is-active wazuh-manager 또는 UI Dashboard Management → Status.
+        SIEM 핵심 엔진: 로그 수집 + 디코딩 + 룰 매칭 + alert. 비활성 시 모든 SOC 기능 마비.'
+      success_criteria:
+      - active 키워드
+      - wazuh-manager 서비스 대상
+      - systemctl 또는 UI 확인
+      acceptable_methods:
+      - systemctl is-active wazuh-manager
+      - systemctl status wazuh-manager --no-pager
+      - /var/ossec/bin/wazuh-control status
+      - Wazuh API /manager/status
+      negative_signs:
+      - wazuh-agent 확인 (다른 데몬)
+      - systemctl 없이 ps
+      - active/inactive 상태 해석 누락
   target_vm: siem
 - order: 5
   instruction: siem VM에서 Wazuh Indexer(OpenSearch) 포트(9200) 리스닝 상태를 확인하시오.
@@ -72,12 +134,27 @@ steps:
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
     📎 참고 (CLI): ss -tlnp 2>/dev/null | grep -E '':9200|wazuh'''
-  answer_detail: '보안 솔루션 인프라 점검: siem VM에서 Wazuh Indexer(OpenSearch) 포트(9200) 리스닝
-    상태를 확인하시오.'
+  answer_detail: '보안 솔루션 인프라 점검: siem VM에서 Wazuh Indexer(OpenSearch) 포트(9200) 리스닝 상태를 확인하시오.'
   verify:
     type: output_contains
     expect: '9200'
     field: stdout
+    semantic:
+      intent: Wazuh Indexer 9200 포트 리스닝 — ss -tlnp | grep ':9200'. OpenSearch (Indexer) 백엔드 포트 확인. 알림
+        인덱싱 + Dashboard 쿼리 전제. 비리스닝 시 Dashboard 작동 불가.
+      success_criteria:
+      - 9200 키워드
+      - ss 또는 netstat 명령
+      - 리스닝 상태 (LISTEN) 확인
+      acceptable_methods:
+      - ss -tlnp | grep 9200
+      - netstat -tlnp | grep 9200
+      - lsof -i :9200
+      - curl -k https://localhost:9200 응답
+      negative_signs:
+      - 포트 확인 없이 서비스 체크만
+      - 9200 아닌 다른 포트
+      - 리스닝 vs 실제 응답 구분 없음
   target_vm: siem
 - order: 6
   instruction: siem VM에서 OpenCTI 서비스(또는 docker 컨테이너) 상태를 확인하시오.
@@ -86,13 +163,30 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://SIEM_IP:8080 접속 → 해당 메뉴 탐색
 
-    📎 참고 (CLI): docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | grep
-    -i opencti || systemctl is-active opencti'
+    📎 참고 (CLI): docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | grep -i opencti || systemctl
+    is-active opencti'
   answer_detail: '보안 솔루션 인프라 점검: siem VM에서 OpenCTI 서비스(또는 docker 컨테이너) 상태를 확인하시오.'
   verify:
     type: output_contains
     expect: opencti
     field: stdout
+    semantic:
+      intent: OpenCTI 서비스 상태 — docker ps --format '{{.Names}}\t{{.Status}}' | grep -i opencti 또는 systemctl
+        is-active opencti. TI 플랫폼 CTI DB + Web UI :8080. Docker compose 기반 multi-container. 비가동 시 위협 인텔리전스
+        연동 불가.
+      success_criteria:
+      - opencti 키워드
+      - docker ps 또는 systemctl
+      - 컨테이너 상태 확인
+      acceptable_methods:
+      - docker ps | grep opencti
+      - docker compose ps
+      - systemctl is-active opencti
+      - curl http://localhost:8080 UI 응답
+      negative_signs:
+      - docker 없이 systemctl 만 + 미가동
+      - 컨테이너 상태 확인 누락
+      - UI 포트 8080 맥락 없음
   target_vm: siem
 - order: 7
   instruction: attacker VM({{ATTACKER_IP}})에서 secu VM으로 ping이 가능한지 확인하시오.
@@ -100,12 +194,27 @@ steps:
   category: survey
   points: 10
   answer: ping -c 2 10.20.30.1
-  answer_detail: '보안 솔루션 인프라 점검: attacker VM(10.20.30.201)에서 secu VM으로 ping이 가능한지
-    확인하시오.'
+  answer_detail: '보안 솔루션 인프라 점검: attacker VM(10.20.30.201)에서 secu VM으로 ping이 가능한지 확인하시오.'
   verify:
     type: output_contains
     expect: bytes
     field: stdout
+    semantic:
+      intent: attacker → secu 네트워크 연결 확인 — ping -c 2 10.20.30.1. 실습 네트워크 라우팅/방화벽 통과 확인. ICMP 차단 여부 확인.
+        Red vs Blue 트래픽 가능성 검증.
+      success_criteria:
+      - bytes 키워드 또는 ping 응답
+      - ping -c N 명령
+      - secu IP 대상
+      acceptable_methods:
+      - ping -c 2 10.20.30.1
+      - ping -c 4 -W 2
+      - hping3 -c 2 (방화벽 ICMP 차단 시)
+      - fping 10.20.30.1
+      negative_signs:
+      - ping 없이 traceroute
+      - 대상 IP 혼동
+      - 응답 bytes 확인 누락
   target_vm: attacker
 - order: 8
   instruction: secu VM에서 Suricata 기본 룰셋 수(/etc/suricata/rules 내 .rules 파일 합계)를 확인하시오.
@@ -113,12 +222,27 @@ steps:
   category: analysis
   points: 10
   answer: ls /etc/suricata/rules/*.rules 2>/dev/null | wc -l
-  answer_detail: '보안 솔루션 인프라 점검: secu VM에서 Suricata 기본 룰셋 수(/etc/suricata/rules 내
-    .rules 파일 합계)를 확인하시오.'
+  answer_detail: '보안 솔루션 인프라 점검: secu VM에서 Suricata 기본 룰셋 수(/etc/suricata/rules 내 .rules 파일 합계)를 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: Suricata 룰셋 파일 수 — ls /etc/suricata/rules/*.rules | wc -l. ET Open 룰셋 30,000+ 개 포함 예상. IDS
+        coverage 기반 정량. 적으면 탐지 범위 제한.
+      success_criteria:
+      - ls 명령 실행
+      - '*.rules 파일 카운트'
+      - wc -l 수치
+      acceptable_methods:
+      - ls /etc/suricata/rules/*.rules | wc -l
+      - find /etc/suricata/rules -name '*.rules' | wc -l
+      - suricata-update list-sources
+      - /etc/suricata/suricata.yaml 의 rule-files 섹션 조회
+      negative_signs:
+      - 파일 카운트 없이 목록만
+      - '*.rules 필터 누락'
+      - 총 수치 누락
   target_vm: secu
 - order: 9
   instruction: web VM에서 ModSecurity CRS 룰 디렉터리 목록을 확인하시오.
@@ -132,6 +256,22 @@ steps:
     type: output_contains
     expect: rules
     field: stdout
+    semantic:
+      intent: ModSecurity CRS 룰 디렉터리 — ls /etc/modsecurity/crs/rules/ 또는 /usr/share/modsecurity-crs/rules/.
+        OWASP Core Rule Set 파일 목록 (REQUEST-*.conf/RESPONSE-*.conf). WAF 탐지 룰 핵심 디렉토리. CRS v3.x / v4.x.
+      success_criteria:
+      - rules 키워드
+      - ls 디렉토리 조회
+      - CRS 또는 modsecurity 경로
+      acceptable_methods:
+      - ls /etc/modsecurity/crs/rules/
+      - ls /usr/share/modsecurity-crs/rules/
+      - find / -name 'REQUEST-*.conf' 2>/dev/null
+      - apt list --installed | grep modsecurity
+      negative_signs:
+      - 디렉토리 미확인
+      - CRS 경로 혼동
+      - 파일 없음 응답 무시
   target_vm: web
 - order: 10
   instruction: siem VM에서 Wazuh Manager의 최근 alert 파일 존재 여부를 확인하시오.
@@ -146,6 +286,22 @@ steps:
     type: output_contains
     expect: alert
     field: stdout
+    semantic:
+      intent: Wazuh alert 파일 존재 — ls /var/ossec/logs/alerts/ | head -3. alerts.json (JSON 이벤트) + alerts.log
+        (텍스트) + archives/ (일별 백업) 확인. SIEM 이 실제 알림 생성하는지 검증. 로그 로테이션 포함 확인.
+      success_criteria:
+      - alert 키워드
+      - ls /var/ossec/logs/alerts/ 조회
+      - 파일 존재 확인
+      acceptable_methods:
+      - ls /var/ossec/logs/alerts/
+      - find /var/ossec/logs/alerts -type f
+      - stat /var/ossec/logs/alerts/alerts.json
+      - Dashboard Security events UI 대체
+      negative_signs:
+      - 경로 혼동 (/var/log/wazuh)
+      - 파일 존재 확인 없이 내용만
+      - alerts.json / alerts.log 구분 없음
   target_vm: siem
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
