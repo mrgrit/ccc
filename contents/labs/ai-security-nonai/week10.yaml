@@ -20,63 +20,103 @@ steps:
   hint: netstat/ss와 iptables/nftables를 사용하여 네트워크 설정을 확인하세요.
   category: audit
   points: 10
-  answer: 'echo ''=== Port Check ==='' && curl -s -o /dev/null -w ''%{http_code}''
-    ${BASTION_URL:-http://localhost:8003}/api/version && echo '' (Ollama accessible)''
-    && echo ''=== Service Info ==='' && curl -s ${BASTION_URL:-http://localhost:8003}/api/version
-    | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin), indent=2))"
-    && echo ''=== Network Exposure ==='' && for port in 11434 8080 443 80; do timeout
-    2 bash -c "echo >/dev/tcp/10.20.30.200/$port" 2>/dev/null && echo "Port $port:
-    OPEN" || echo "Port $port: CLOSED"; done'
-  answer_detail: 배포 보안의 첫 단계는 네트워크 노출 범위를 파악하는 것입니다. LLM 서버가 불필요한 포트를 열고 있거나 모든 인터페이스에서
-    접근 가능하면 공격 표면이 넓어집니다.
+  answer: 'echo ''=== Port Check ==='' && curl -s -o /dev/null -w ''%{http_code}'' ${BASTION_URL:-http://localhost:8003}/api/version
+    && echo '' (Ollama accessible)'' && echo ''=== Service Info ==='' && curl -s ${BASTION_URL:-http://localhost:8003}/api/version
+    | python3 -c "import sys,json; print(json.dumps(json.load(sys.stdin), indent=2))" && echo ''=== Network
+    Exposure ==='' && for port in 11434 8080 443 80; do timeout 2 bash -c "echo >/dev/tcp/10.20.30.200/$port"
+    2>/dev/null && echo "Port $port: OPEN" || echo "Port $port: CLOSED"; done'
+  answer_detail: 배포 보안의 첫 단계는 네트워크 노출 범위를 파악하는 것입니다. LLM 서버가 불필요한 포트를 열고 있거나 모든 인터페이스에서 접근 가능하면 공격 표면이
+    넓어집니다.
   verify:
     type: output_contains
     expect: Ollama accessible
     field: stdout
+    semantic:
+      intent: 네트워크 보안 점검 — curl + HTTP 코드 + /api/version + for port in 11434/8080/443/80 timeout bash
+        /dev/tcp. Ollama 접근성 + 포트 노출. 배포 보안 1단계 네트워크 정찰.
+      success_criteria:
+      - Ollama accessible 키워드
+      - 포트 스캔 + /api/version
+      - Network Exposure 체크
+      acceptable_methods:
+      - curl + tcp test
+      - nmap -p 11434
+      - ss -tlnp
+      - iptables -L
+      negative_signs:
+      - 포트 점검 없음
+      - 네트워크 노출 맥락 없음
+      - 배포 보안 맥락 없음
   target_vm: manager
 - order: 2
   instruction: 요청 크기 제한을 테스트하시오. 점진적으로 큰 페이로드를 전송하여 서버의 최대 허용 크기를 파악하라.
   hint: 프롬프트 길이를 점진적으로 늘려가며 서버 응답을 확인하세요.
   category: analysis
   points: 12
-  answer: "python3 -c \"\nimport json, urllib.request\nfor size_kb in [1, 10, 50,\
-    \ 100, 500]:\n    prompt = 'A ' * (size_kb * 128)  # ~1KB per 128 words\n    prompt\
-    \ += ' What is AI?'\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':5}}).encode()\n\
+  answer: "python3 -c \"\nimport json, urllib.request\nfor size_kb in [1, 10, 50, 100, 500]:\n    prompt\
+    \ = 'A ' * (size_kb * 128)  # ~1KB per 128 words\n    prompt += ' What is AI?'\n    data = json.dumps({'model':'gemma3:4b','prompt':prompt,'stream':False,'options':{'num_predict':5}}).encode()\n\
     \    payload_kb = len(data) / 1024\n    try:\n        req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
-    \        resp = urllib.request.urlopen(req, timeout=30)\n        print(f'Payload\
-    \ {payload_kb:.0f}KB: ACCEPTED (HTTP {resp.status})')\n    except urllib.error.HTTPError\
-    \ as e:\n        print(f'Payload {payload_kb:.0f}KB: REJECTED (HTTP {e.code})')\n\
-    \    except Exception as e:\n        print(f'Payload {payload_kb:.0f}KB: ERROR\
-    \ ({str(e)[:40]})')\n\""
-  answer_detail: 요청 크기 제한이 없으면 공격자가 매우 긴 프롬프트로 메모리를 고갈시킬 수 있습니다. 서버 레벨과 프록시 레벨 모두에서
-    페이로드 크기를 제한해야 합니다.
+    \        resp = urllib.request.urlopen(req, timeout=30)\n        print(f'Payload {payload_kb:.0f}KB:\
+    \ ACCEPTED (HTTP {resp.status})')\n    except urllib.error.HTTPError as e:\n        print(f'Payload\
+    \ {payload_kb:.0f}KB: REJECTED (HTTP {e.code})')\n    except Exception as e:\n        print(f'Payload\
+    \ {payload_kb:.0f}KB: ERROR ({str(e)[:40]})')\n\""
+  answer_detail: 요청 크기 제한이 없으면 공격자가 매우 긴 프롬프트로 메모리를 고갈시킬 수 있습니다. 서버 레벨과 프록시 레벨 모두에서 페이로드 크기를 제한해야 합니다.
   verify:
     type: output_contains
     expect: Payload
     field: stdout
+    semantic:
+      intent: 요청 크기 한계 테스트 — python3 + size_kb [1, 10, 50, 100, 500] + ACCEPTED/REJECTED. 서버 최대 페이로드 확인.
+        메모리 고갈 방어. Nginx/proxy 레벨 제한.
+      success_criteria:
+      - Payload 키워드
+      - 5개 이상 크기 단계
+      - ACCEPTED/REJECTED 판정
+      acceptable_methods:
+      - python 크기 점진 증가
+      - Nginx client_max_body_size
+      - Envoy request size limit
+      - AWS API Gateway size limit
+      negative_signs:
+      - 크기 단계 3개 이하
+      - 판정 없음
+      - 메모리 고갈 맥락 없음
   target_vm: manager
 - order: 3
   instruction: 타임아웃 설정을 테스트하시오. 의도적으로 오래 걸리는 요청을 전송하여 서버의 타임아웃 동작을 확인하라.
   hint: 매우 큰 num_predict 값이나 복잡한 프롬프트를 사용하세요.
   category: analysis
   points: 10
-  answer: "python3 -c \"\nimport json, urllib.request, time\nconfigs = [\n    ('Short',\
-    \ 10),\n    ('Medium', 100),\n    ('Long', 500),\n    ('Very Long', 1000)\n]\n\
-    for label, num_predict in configs:\n    data = json.dumps({'model':'gemma3:4b','prompt':'Write\
-    \ a comprehensive cybersecurity guide','stream':False,'options':{'num_predict':num_predict}}).encode()\n\
+  answer: "python3 -c \"\nimport json, urllib.request, time\nconfigs = [\n    ('Short', 10),\n    ('Medium',\
+    \ 100),\n    ('Long', 500),\n    ('Very Long', 1000)\n]\nfor label, num_predict in configs:\n    data\
+    \ = json.dumps({'model':'gemma3:4b','prompt':'Write a comprehensive cybersecurity guide','stream':False,'options':{'num_predict':num_predict}}).encode()\n\
     \    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
-    \    start = time.time()\n    try:\n        resp = json.loads(urllib.request.urlopen(req,\
-    \ timeout=60).read())\n        elapsed = time.time() - start\n        tokens =\
-    \ resp.get('eval_count', 0)\n        print(f'{label:10s} (predict={num_predict:4d}):\
-    \ {elapsed:.1f}s, {tokens} tokens')\n    except Exception as e:\n        elapsed\
-    \ = time.time() - start\n        print(f'{label:10s} (predict={num_predict:4d}):\
-    \ TIMEOUT/ERROR after {elapsed:.1f}s - {str(e)[:30]}')\n\""
-  answer_detail: 타임아웃 설정은 리소스 남용 방어의 핵심입니다. 적절한 타임아웃 없이는 단일 요청이 GPU를 장시간 점유하여 서비스
-    거부(DoS) 상태를 유발할 수 있습니다.
+    \    start = time.time()\n    try:\n        resp = json.loads(urllib.request.urlopen(req, timeout=60).read())\n\
+    \        elapsed = time.time() - start\n        tokens = resp.get('eval_count', 0)\n        print(f'{label:10s}\
+    \ (predict={num_predict:4d}): {elapsed:.1f}s, {tokens} tokens')\n    except Exception as e:\n    \
+    \    elapsed = time.time() - start\n        print(f'{label:10s} (predict={num_predict:4d}): TIMEOUT/ERROR\
+    \ after {elapsed:.1f}s - {str(e)[:30]}')\n\""
+  answer_detail: 타임아웃 설정은 리소스 남용 방어의 핵심입니다. 적절한 타임아웃 없이는 단일 요청이 GPU를 장시간 점유하여 서비스 거부(DoS) 상태를 유발할 수 있습니다.
   verify:
     type: output_contains
     expect: tokens
     field: stdout
+    semantic:
+      intent: 타임아웃 설정 — python3 + num_predict [10, 100, 500, 1000] + timeout=60 + 시간/토큰 측정. 오래 걸리는 요청
+        GPU 장기 점유 방어. DoS 예방.
+      success_criteria:
+      - tokens 키워드
+      - 4개 이상 단계 + timeout
+      - elapsed + token count
+      acceptable_methods:
+      - python timeout + 측정
+      - Nginx proxy_read_timeout
+      - FastAPI timeout_keep_alive
+      - AWS Lambda timeout
+      negative_signs:
+      - timeout 없음
+      - 단계 2개 이하
+      - DoS 방어 맥락 없음
   target_vm: manager
 - order: 4
   instruction: 보안 헤더 분석을 수행하시오. Ollama API 응답에서 보안 관련 HTTP 헤더를 확인하고 부족한 헤더를 식별하라.
@@ -84,48 +124,74 @@ steps:
   category: audit
   points: 10
   answer: "python3 -c \"\nimport urllib.request\nreq = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/tags')\n\
-    resp = urllib.request.urlopen(req)\nheaders = dict(resp.headers)\nprint('=== Current\
-    \ Headers ===')\nfor k,v in headers.items():\n    print(f'  {k}: {v}')\n\nsecurity_headers\
-    \ = {\n    'X-Content-Type-Options': 'nosniff',\n    'X-Frame-Options': 'DENY',\n\
-    \    'Content-Security-Policy': 'any',\n    'Strict-Transport-Security': 'any',\n\
-    \    'X-XSS-Protection': '1',\n    'Cache-Control': 'no-store',\n}\nprint('\\\
-    n=== Security Header Audit ===')\nfor h, expected in security_headers.items():\n\
-    \    actual = headers.get(h, None)\n    if actual:\n        print(f'  [PASS] {h}:\
-    \ {actual}')\n    else:\n        print(f'  [FAIL] {h}: MISSING (recommended: {expected})')\n\
-    \""
-  answer_detail: 보안 헤더는 API 응답의 보안성을 강화합니다. X-Content-Type-Options, CORS, CSP 등이 누락되면
-    XSS, 클릭재킹, MIME 스니핑 등의 공격에 취약합니다.
+    resp = urllib.request.urlopen(req)\nheaders = dict(resp.headers)\nprint('=== Current Headers ===')\n\
+    for k,v in headers.items():\n    print(f'  {k}: {v}')\n\nsecurity_headers = {\n    'X-Content-Type-Options':\
+    \ 'nosniff',\n    'X-Frame-Options': 'DENY',\n    'Content-Security-Policy': 'any',\n    'Strict-Transport-Security':\
+    \ 'any',\n    'X-XSS-Protection': '1',\n    'Cache-Control': 'no-store',\n}\nprint('\\n=== Security\
+    \ Header Audit ===')\nfor h, expected in security_headers.items():\n    actual = headers.get(h, None)\n\
+    \    if actual:\n        print(f'  [PASS] {h}: {actual}')\n    else:\n        print(f'  [FAIL] {h}:\
+    \ MISSING (recommended: {expected})')\n\""
+  answer_detail: 보안 헤더는 API 응답의 보안성을 강화합니다. X-Content-Type-Options, CORS, CSP 등이 누락되면 XSS, 클릭재킹, MIME
+    스니핑 등의 공격에 취약합니다.
   verify:
     type: output_contains
     expect: Security Header Audit
     field: stdout
+    semantic:
+      intent: 보안 헤더 점검 — python3 + headers 추출 + security_headers 체크 (X-Content-Type-Options nosniff +
+        X-Frame-Options DENY + CSP + HSTS + X-XSS + Cache-Control). PASS/FAIL 매핑. OWASP Secure Headers.
+      success_criteria:
+      - Security Header Audit 키워드
+      - 6개 이상 보안 헤더 체크
+      - PASS/FAIL 판정
+      acceptable_methods:
+      - python 헤더 체크
+      - Mozilla Observatory
+      - securityheaders.com
+      - NGINX add_header
+      negative_signs:
+      - 헤더 3개 이하
+      - PASS/FAIL 없음
+      - OWASP Secure Headers 맥락 없음
   target_vm: manager
 - order: 5
   instruction: 에러 처리 보안을 테스트하시오. 잘못된 요청을 다양한 형태로 전송하여 서버가 내부 정보를 노출하는지 확인하라.
   hint: 잘못된 JSON, 존재하지 않는 모델, 빈 요청 등을 보내세요.
   category: attack
   points: 12
-  answer: "python3 -c \"\nimport urllib.request, json\ntests = [\n    ('Empty body',\
-    \ b''),\n    ('Invalid JSON', b'{invalid}'),\n    ('Missing model', json.dumps({'prompt':'hi'}).encode()),\n\
-    \    ('Unknown model', json.dumps({'model':'nonexistent-model','prompt':'hi','stream':False}).encode()),\n\
-    \    ('Wrong type', json.dumps({'model':123,'prompt':'hi','stream':False}).encode()),\n\
-    \    ('Null prompt', json.dumps({'model':'gemma3:4b','prompt':None,'stream':False}).encode()),\n\
-    ]\nprint('=== Error Handling Security Test ===')\nfor name, body in tests:\n \
-    \   try:\n        req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',\
-    \ data=body, headers={'Content-Type':'application/json'})\n        resp = urllib.request.urlopen(req,\
-    \ timeout=5)\n        content = resp.read().decode()[:100]\n        print(f'[{resp.status}]\
-    \ {name}: {content}')\n    except urllib.error.HTTPError as e:\n        body_text\
-    \ = e.read().decode()[:100]\n        # Check for info leakage\n        leaks =\
-    \ [w for w in ['stack','trace','internal','panic','goroutine','file'] if w in\
-    \ body_text.lower()]\n        leak_status = f'INFO LEAK: {leaks}' if leaks else\
-    \ 'OK'\n        print(f'[{e.code}] {name}: {body_text[:60]} | {leak_status}')\n\
-    \    except Exception as e:\n        print(f'[ERR] {name}: {str(e)[:60]}')\n\""
-  answer_detail: 에러 응답에서 스택 트레이스, 내부 경로, 코드 정보가 노출되면 공격자에게 유용한 정보를 제공합니다. 에러 메시지는
-    최소한의 정보만 포함해야 합니다.
+  answer: "python3 -c \"\nimport urllib.request, json\ntests = [\n    ('Empty body', b''),\n    ('Invalid\
+    \ JSON', b'{invalid}'),\n    ('Missing model', json.dumps({'prompt':'hi'}).encode()),\n    ('Unknown\
+    \ model', json.dumps({'model':'nonexistent-model','prompt':'hi','stream':False}).encode()),\n    ('Wrong\
+    \ type', json.dumps({'model':123,'prompt':'hi','stream':False}).encode()),\n    ('Null prompt', json.dumps({'model':'gemma3:4b','prompt':None,'stream':False}).encode()),\n\
+    ]\nprint('=== Error Handling Security Test ===')\nfor name, body in tests:\n    try:\n        req\
+    \ = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate', data=body, headers={'Content-Type':'application/json'})\n\
+    \        resp = urllib.request.urlopen(req, timeout=5)\n        content = resp.read().decode()[:100]\n\
+    \        print(f'[{resp.status}] {name}: {content}')\n    except urllib.error.HTTPError as e:\n  \
+    \      body_text = e.read().decode()[:100]\n        # Check for info leakage\n        leaks = [w for\
+    \ w in ['stack','trace','internal','panic','goroutine','file'] if w in body_text.lower()]\n      \
+    \  leak_status = f'INFO LEAK: {leaks}' if leaks else 'OK'\n        print(f'[{e.code}] {name}: {body_text[:60]}\
+    \ | {leak_status}')\n    except Exception as e:\n        print(f'[ERR] {name}: {str(e)[:60]}')\n\""
+  answer_detail: 에러 응답에서 스택 트레이스, 내부 경로, 코드 정보가 노출되면 공격자에게 유용한 정보를 제공합니다. 에러 메시지는 최소한의 정보만 포함해야 합니다.
   verify:
     type: output_contains
     expect: Error Handling
     field: stdout
+    semantic:
+      intent: 에러 처리 보안 — python3 + 6개 tests (Empty/Invalid JSON/Missing model/Unknown/Wrong type/Null)
+        + leak words (stack/trace/internal/panic/goroutine). 에러 응답 정보 노출 점검.
+      success_criteria:
+      - Error Handling 키워드
+      - 6개 이상 잘못된 요청
+      - INFO LEAK 탐지
+      acceptable_methods:
+      - python 에러 케이스 순회
+      - Burp Intruder + 에러 유도
+      - Nikto -Tuning 5
+      - OWASP error handling guide
+      negative_signs:
+      - 에러 케이스 3개 이하
+      - 정보 노출 탐지 없음
+      - stack trace 노출 맥락 없음
   target_vm: manager
 - order: 6
   instruction: API 사용 모니터링 대시보드를 구현하시오. 요청 빈도, 평균 응답 시간, 에러율을 추적하는 모니터링 스크립트를 작성하라.
@@ -133,98 +199,131 @@ steps:
   category: monitor
   points: 12
   answer: "python3 -c \"\nimport json, urllib.request, time\nstats = {'total':0,'success':0,'error':0,'times':[],'tokens':[]}\n\
-    \nfor i in range(8):\n    prompts = ['What is SSH?','Explain HTTPS','What is a\
-    \ firewall?','Define VPN','What is DNS?','Explain TCP','What is UDP?','Define\
-    \ NAT']\n    data = json.dumps({'model':'gemma3:4b','prompt':prompts[i],'stream':False,'options':{'num_predict':20}}).encode()\n\
+    \nfor i in range(8):\n    prompts = ['What is SSH?','Explain HTTPS','What is a firewall?','Define\
+    \ VPN','What is DNS?','Explain TCP','What is UDP?','Define NAT']\n    data = json.dumps({'model':'gemma3:4b','prompt':prompts[i],'stream':False,'options':{'num_predict':20}}).encode()\n\
     \    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/generate',data=data,headers={'Content-Type':'application/json'})\n\
-    \    start = time.time()\n    try:\n        resp = json.loads(urllib.request.urlopen(req,\
-    \ timeout=30).read())\n        elapsed = time.time() - start\n        stats['success']\
-    \ += 1\n        stats['times'].append(elapsed)\n        stats['tokens'].append(resp.get('eval_count',0))\n\
-    \    except:\n        stats['error'] += 1\n    stats['total'] += 1\n\nprint('='*50)\n\
-    print('  LLM API Monitoring Dashboard')\nprint('='*50)\nprint(f'Total requests:\
-    \    {stats[\\\"total\\\"]}')\nprint(f'Successful:        {stats[\\\"success\\\
-    \"]}')\nprint(f'Errors:            {stats[\\\"error\\\"]}')\nprint(f'Error rate:\
-    \        {stats[\\\"error\\\"]*100/max(stats[\\\"total\\\"],1):.1f}%')\nif stats['times']:\n\
-    \    print(f'Avg response time: {sum(stats[\\\"times\\\"])/len(stats[\\\"times\\\
-    \"]):.2f}s')\n    print(f'Max response time: {max(stats[\\\"times\\\"]):.2f}s')\n\
-    \    print(f'Min response time: {min(stats[\\\"times\\\"]):.2f}s')\nif stats['tokens']:\n\
-    \    print(f'Avg tokens/req:    {sum(stats[\\\"tokens\\\"])//len(stats[\\\"tokens\\\
-    \"])}')\n    print(f'Total tokens:      {sum(stats[\\\"tokens\\\"])}')\nprint('='*50)\n\
-    \""
-  answer_detail: API 모니터링은 비정상 사용 패턴(DoS 시도, 대량 데이터 추출, 성능 저하)을 실시간으로 탐지합니다. 요청률,
-    응답시간, 에러율은 핵심 모니터링 지표입니다.
+    \    start = time.time()\n    try:\n        resp = json.loads(urllib.request.urlopen(req, timeout=30).read())\n\
+    \        elapsed = time.time() - start\n        stats['success'] += 1\n        stats['times'].append(elapsed)\n\
+    \        stats['tokens'].append(resp.get('eval_count',0))\n    except:\n        stats['error'] +=\
+    \ 1\n    stats['total'] += 1\n\nprint('='*50)\nprint('  LLM API Monitoring Dashboard')\nprint('='*50)\n\
+    print(f'Total requests:    {stats[\\\"total\\\"]}')\nprint(f'Successful:        {stats[\\\"success\\\
+    \"]}')\nprint(f'Errors:            {stats[\\\"error\\\"]}')\nprint(f'Error rate:        {stats[\\\"\
+    error\\\"]*100/max(stats[\\\"total\\\"],1):.1f}%')\nif stats['times']:\n    print(f'Avg response time:\
+    \ {sum(stats[\\\"times\\\"])/len(stats[\\\"times\\\"]):.2f}s')\n    print(f'Max response time: {max(stats[\\\
+    \"times\\\"]):.2f}s')\n    print(f'Min response time: {min(stats[\\\"times\\\"]):.2f}s')\nif stats['tokens']:\n\
+    \    print(f'Avg tokens/req:    {sum(stats[\\\"tokens\\\"])//len(stats[\\\"tokens\\\"])}')\n    print(f'Total\
+    \ tokens:      {sum(stats[\\\"tokens\\\"])}')\nprint('='*50)\n\""
+  answer_detail: API 모니터링은 비정상 사용 패턴(DoS 시도, 대량 데이터 추출, 성능 저하)을 실시간으로 탐지합니다. 요청률, 응답시간, 에러율은 핵심 모니터링 지표입니다.
   verify:
     type: output_contains
-    expect: Monitoring Dashboard
+    expect:
+    - Monitoring Dashboard
+    - Prometheus
     field: stdout
+    semantic:
+      intent: API 모니터링 대시보드 — python3 + stats {total/success/error/times/tokens} + 8개 요청 순회 + avg/max/min
+        response time + error rate. 비정상 패턴 실시간 탐지.
+      success_criteria:
+      - Monitoring Dashboard 또는 Prometheus 키워드
+      - avg + max + min time
+      - error rate %
+      acceptable_methods:
+      - python stats 집계
+      - Prometheus node_exporter
+      - Grafana 대시보드
+      - Langfuse LLM observability
+      negative_signs:
+      - 통계 2개 이하
+      - 대시보드 맥락 없음
+      - 모니터링 지표 맥락 없음
   target_vm: manager
 - order: 7
-  instruction: 이상 탐지 로직을 구현하시오. 요청 패턴에서 비정상적인 행위(갑작스러운 요청 증가, 비정상적으로 긴 프롬프트, 반복 요청)를
-    탐지하라.
+  instruction: 이상 탐지 로직을 구현하시오. 요청 패턴에서 비정상적인 행위(갑작스러운 요청 증가, 비정상적으로 긴 프롬프트, 반복 요청)를 탐지하라.
   hint: 정상 기준선을 설정하고 이를 벗어나는 요청을 탐지하세요.
   category: defense
   points: 12
-  answer: "python3 -c \"\nimport time, random\n# Simulate request log\nclass AnomalyDetector:\n\
-    \    def __init__(self):\n        self.window = []\n        self.baseline_rps\
-    \ = 2  # requests per second\n        self.max_prompt_len = 500\n        self.seen_prompts\
-    \ = {}\n    \n    def check(self, timestamp, prompt_len, prompt_hash):\n     \
-    \   alerts = []\n        # Check 1: Rate spike\n        self.window = [t for t\
-    \ in self.window if timestamp - t < 10]\n        self.window.append(timestamp)\n\
-    \        rps = len(self.window) / 10\n        if rps > self.baseline_rps * 3:\n\
-    \            alerts.append(f'RATE_SPIKE: {rps:.1f} rps (baseline: {self.baseline_rps})')\n\
-    \        # Check 2: Long prompt\n        if prompt_len > self.max_prompt_len:\n\
-    \            alerts.append(f'LONG_PROMPT: {prompt_len} chars')\n        # Check\
-    \ 3: Duplicate prompts\n        self.seen_prompts[prompt_hash] = self.seen_prompts.get(prompt_hash,\
-    \ 0) + 1\n        if self.seen_prompts[prompt_hash] > 3:\n            alerts.append(f'DUPLICATE:\
-    \ prompt seen {self.seen_prompts[prompt_hash]} times')\n        return alerts\n\
-    \ndetector = AnomalyDetector()\nsimulated_requests = [\n    (0.0, 50, 'abc1'),\
-    \ (0.5, 50, 'abc2'), (1.0, 50, 'abc3'),  # normal\n    (1.1, 50, 'abc4'), (1.2,\
-    \ 50, 'abc5'), (1.3, 50, 'abc6'),  # rate spike\n    (1.4, 50, 'abc7'), (1.5,\
-    \ 50, 'abc8'), (1.6, 50, 'abc9'),\n    (5.0, 2000, 'def1'),  # long prompt\n \
-    \   (6.0, 50, 'abc1'), (7.0, 50, 'abc1'), (8.0, 50, 'abc1'), (9.0, 50, 'abc1'),\
-    \  # duplicate\n]\nprint('=== Anomaly Detection Log ===')\nfor ts, plen, phash\
-    \ in simulated_requests:\n    alerts = detector.check(ts, plen, phash)\n    if\
-    \ alerts:\n        for a in alerts:\n            print(f'  [{ts:5.1f}s] ALERT:\
-    \ {a}')\n    else:\n        print(f'  [{ts:5.1f}s] OK (len={plen})')\n\""
-  answer_detail: 이상 탐지는 요청률 급증, 비정상적 프롬프트 길이, 반복 요청 등을 모니터링합니다. 기준선(baseline) 대비 이상치를
-    탐지하여 자동으로 경보를 발생시킵니다.
+  answer: "python3 -c \"\nimport time, random\n# Simulate request log\nclass AnomalyDetector:\n    def\
+    \ __init__(self):\n        self.window = []\n        self.baseline_rps = 2  # requests per second\n\
+    \        self.max_prompt_len = 500\n        self.seen_prompts = {}\n    \n    def check(self, timestamp,\
+    \ prompt_len, prompt_hash):\n        alerts = []\n        # Check 1: Rate spike\n        self.window\
+    \ = [t for t in self.window if timestamp - t < 10]\n        self.window.append(timestamp)\n      \
+    \  rps = len(self.window) / 10\n        if rps > self.baseline_rps * 3:\n            alerts.append(f'RATE_SPIKE:\
+    \ {rps:.1f} rps (baseline: {self.baseline_rps})')\n        # Check 2: Long prompt\n        if prompt_len\
+    \ > self.max_prompt_len:\n            alerts.append(f'LONG_PROMPT: {prompt_len} chars')\n        #\
+    \ Check 3: Duplicate prompts\n        self.seen_prompts[prompt_hash] = self.seen_prompts.get(prompt_hash,\
+    \ 0) + 1\n        if self.seen_prompts[prompt_hash] > 3:\n            alerts.append(f'DUPLICATE: prompt\
+    \ seen {self.seen_prompts[prompt_hash]} times')\n        return alerts\n\ndetector = AnomalyDetector()\n\
+    simulated_requests = [\n    (0.0, 50, 'abc1'), (0.5, 50, 'abc2'), (1.0, 50, 'abc3'),  # normal\n \
+    \   (1.1, 50, 'abc4'), (1.2, 50, 'abc5'), (1.3, 50, 'abc6'),  # rate spike\n    (1.4, 50, 'abc7'),\
+    \ (1.5, 50, 'abc8'), (1.6, 50, 'abc9'),\n    (5.0, 2000, 'def1'),  # long prompt\n    (6.0, 50, 'abc1'),\
+    \ (7.0, 50, 'abc1'), (8.0, 50, 'abc1'), (9.0, 50, 'abc1'),  # duplicate\n]\nprint('=== Anomaly Detection\
+    \ Log ===')\nfor ts, plen, phash in simulated_requests:\n    alerts = detector.check(ts, plen, phash)\n\
+    \    if alerts:\n        for a in alerts:\n            print(f'  [{ts:5.1f}s] ALERT: {a}')\n    else:\n\
+    \        print(f'  [{ts:5.1f}s] OK (len={plen})')\n\""
+  answer_detail: 이상 탐지는 요청률 급증, 비정상적 프롬프트 길이, 반복 요청 등을 모니터링합니다. 기준선(baseline) 대비 이상치를 탐지하여 자동으로 경보를 발생시킵니다.
   verify:
     type: output_contains
     expect: ALERT
     field: stdout
+    semantic:
+      intent: 이상 탐지 로직 — python3 + AnomalyDetector + 3개 체크 (RATE_SPIKE/LONG_PROMPT/DUPLICATE) + 시뮬 12
+        요청 + ALERT. 기준선 대비 이상치 자동 경보.
+      success_criteria:
+      - ALERT 키워드
+      - 3개 이상 anomaly 체크
+      - 기준선 기반 탐지
+      acceptable_methods:
+      - python 슬라이딩 윈도우
+      - Wazuh anomaly rules
+      - Elastic ML anomaly
+      - Prometheus Alertmanager
+      negative_signs:
+      - 체크 2개 이하
+      - 기준선 없음
+      - 자동 경보 맥락 없음
   target_vm: manager
 - order: 8
   instruction: 배포 보안 체크리스트를 자동으로 점검하는 스크립트를 작성하시오. Ollama 서버의 보안 설정을 종합 평가하라.
   hint: 인증, 암호화, 접근 제어, 로깅, 리소스 제한 등을 자동 점검하세요.
   category: audit
   points: 12
-  answer: "python3 -c \"\nimport json, urllib.request\nresults = []\ndef check(name,\
-    \ test_fn):\n    try:\n        passed, detail = test_fn()\n        results.append((name,\
-    \ 'PASS' if passed else 'FAIL', detail))\n    except Exception as e:\n       \
-    \ results.append((name, 'ERROR', str(e)[:40]))\n\ndef test_auth():\n    req =\
-    \ urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/tags')\n \
-    \   resp = urllib.request.urlopen(req, timeout=5)\n    return False, 'No authentication\
-    \ required'\n\ndef test_https():\n    return False, 'Using HTTP (port 11434)'\n\
-    \ndef test_model_info():\n    data = json.dumps({'name':'gemma3:4b'}).encode()\n\
+  answer: "python3 -c \"\nimport json, urllib.request\nresults = []\ndef check(name, test_fn):\n    try:\n\
+    \        passed, detail = test_fn()\n        results.append((name, 'PASS' if passed else 'FAIL', detail))\n\
+    \    except Exception as e:\n        results.append((name, 'ERROR', str(e)[:40]))\n\ndef test_auth():\n\
+    \    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/tags')\n    resp = urllib.request.urlopen(req,\
+    \ timeout=5)\n    return False, 'No authentication required'\n\ndef test_https():\n    return False,\
+    \ 'Using HTTP (port 11434)'\n\ndef test_model_info():\n    data = json.dumps({'name':'gemma3:4b'}).encode()\n\
     \    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/show',data=data,headers={'Content-Type':'application/json'})\n\
-    \    try:\n        resp = urllib.request.urlopen(req, timeout=5)\n        return\
-    \ False, 'Model details exposed without auth'\n    except: return True, 'Model\
-    \ info restricted'\n\ndef test_mgmt_api():\n    data = json.dumps({'name':'test'}).encode()\n\
-    \    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/pull',data=data,headers={'Content-Type':'application/json'})\n\
-    \    try:\n        resp = urllib.request.urlopen(req, timeout=5)\n        return\
-    \ False, 'Management API accessible'\n    except urllib.error.HTTPError as e:\n\
-    \        return e.code == 403, f'HTTP {e.code}'\n    except: return True, 'Blocked'\n\
-    \ncheck('Authentication', test_auth)\ncheck('HTTPS/TLS', test_https)\ncheck('Model\
-    \ Info Exposure', test_model_info)\ncheck('Management API', test_mgmt_api)\n\n\
-    print('='*55)\nprint('  Deployment Security Checklist')\nprint('='*55)\nfor name,\
-    \ status, detail in results:\n    icon = 'PASS' if status=='PASS' else 'FAIL'\n\
-    \    print(f'  [{icon:4s}] {name:25s} {detail}')\n\npassed = sum(1 for _,s,_ in\
-    \ results if s=='PASS')\ntotal = len(results)\nprint(f'\\n  Score: {passed}/{total}\
+    \    try:\n        resp = urllib.request.urlopen(req, timeout=5)\n        return False, 'Model details\
+    \ exposed without auth'\n    except: return True, 'Model info restricted'\n\ndef test_mgmt_api():\n\
+    \    data = json.dumps({'name':'test'}).encode()\n    req = urllib.request.Request('${BASTION_URL:-http://localhost:8003}/api/pull',data=data,headers={'Content-Type':'application/json'})\n\
+    \    try:\n        resp = urllib.request.urlopen(req, timeout=5)\n        return False, 'Management\
+    \ API accessible'\n    except urllib.error.HTTPError as e:\n        return e.code == 403, f'HTTP {e.code}'\n\
+    \    except: return True, 'Blocked'\n\ncheck('Authentication', test_auth)\ncheck('HTTPS/TLS', test_https)\n\
+    check('Model Info Exposure', test_model_info)\ncheck('Management API', test_mgmt_api)\n\nprint('='*55)\n\
+    print('  Deployment Security Checklist')\nprint('='*55)\nfor name, status, detail in results:\n  \
+    \  icon = 'PASS' if status=='PASS' else 'FAIL'\n    print(f'  [{icon:4s}] {name:25s} {detail}')\n\n\
+    passed = sum(1 for _,s,_ in results if s=='PASS')\ntotal = len(results)\nprint(f'\\n  Score: {passed}/{total}\
     \ ({passed*100//total}%)')\nprint('='*55)\n\""
-  answer_detail: 배포 보안 체크리스트는 운영 환경의 보안 설정을 체계적으로 점검합니다. 자동화된 검사로 정기적인 보안 감사를 수행하고
-    미비점을 추적합니다.
+  answer_detail: 배포 보안 체크리스트는 운영 환경의 보안 설정을 체계적으로 점검합니다. 자동화된 검사로 정기적인 보안 감사를 수행하고 미비점을 추적합니다.
   verify:
     type: output_contains
     expect: Deployment Security
     field: stdout
+    semantic:
+      intent: 배포 보안 체크리스트 — python3 + check(Authentication/HTTPS/Model Info/Management API) + PASS/FAIL
+        + Score 점수. 자동 감사 스크립트. 정기 보안 점검.
+      success_criteria:
+      - Deployment Security 키워드
+      - 4개 이상 체크 항목
+      - Score 점수
+      acceptable_methods:
+      - python check 함수 배열
+      - Checkov IaC 감사
+      - kube-score K8s 감사
+      - Trivy config scan
+      negative_signs:
+      - 체크 2개 이하
+      - 점수 집계 없음
+      - 자동 감사 맥락 없음
   target_vm: manager
