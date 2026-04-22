@@ -260,11 +260,14 @@ def _init_db():
                     points INT DEFAULT 10,
                     verify_type TEXT DEFAULT '',
                     verify_expect TEXT DEFAULT '',
+                    verify_semantic JSONB DEFAULT '{}'::jsonb,
                     status TEXT DEFAULT 'pending',
                     answer TEXT DEFAULT '',
                     submitted_at TIMESTAMPTZ,
                     UNIQUE(battle_id, team, mission_order)
                 );
+                -- 기존 DB 호환: verify_semantic 컬럼이 없으면 추가
+                ALTER TABLE battle_missions ADD COLUMN IF NOT EXISTS verify_semantic JSONB DEFAULT '{}'::jsonb;
                 -- PoW 블록 (레거시 호환)
                 CREATE TABLE IF NOT EXISTS pow_blocks (
                     id SERIAL PRIMARY KEY,
@@ -2113,14 +2116,24 @@ def ready_battle(bid: str, request: Request):
                 scenario = _load_scenario(battle["scenario_id"])
                 if scenario:
                     for m in scenario.get("red_missions", []):
+                        _v = m.get("verify", {}) or {}
+                        _expect = _v.get("expect", "")
+                        if isinstance(_expect, list):
+                            _expect = "|".join(str(e) for e in _expect)
+                        _sem = _v.get("semantic") if isinstance(_v.get("semantic"), dict) else {}
                         cur.execute(
-                            "INSERT INTO battle_missions (battle_id, team, mission_order, instruction, hint, points, verify_type, verify_expect) VALUES (%s,'red',%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-                            (bid, m["order"], m["instruction"], m.get("hint",""), m.get("points",10), m.get("verify",{}).get("type",""), m.get("verify",{}).get("expect","")),
+                            "INSERT INTO battle_missions (battle_id, team, mission_order, instruction, hint, points, verify_type, verify_expect, verify_semantic) VALUES (%s,'red',%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                            (bid, m["order"], m["instruction"], m.get("hint",""), m.get("points",10), _v.get("type",""), str(_expect), _json.dumps(_sem)),
                         )
                     for m in scenario.get("blue_missions", []):
+                        _v = m.get("verify", {}) or {}
+                        _expect = _v.get("expect", "")
+                        if isinstance(_expect, list):
+                            _expect = "|".join(str(e) for e in _expect)
+                        _sem = _v.get("semantic") if isinstance(_v.get("semantic"), dict) else {}
                         cur.execute(
-                            "INSERT INTO battle_missions (battle_id, team, mission_order, instruction, hint, points, verify_type, verify_expect) VALUES (%s,'blue',%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
-                            (bid, m["order"], m["instruction"], m.get("hint",""), m.get("points",10), m.get("verify",{}).get("type",""), m.get("verify",{}).get("expect","")),
+                            "INSERT INTO battle_missions (battle_id, team, mission_order, instruction, hint, points, verify_type, verify_expect, verify_semantic) VALUES (%s,'blue',%s,%s,%s,%s,%s,%s,%s) ON CONFLICT DO NOTHING",
+                            (bid, m["order"], m["instruction"], m.get("hint",""), m.get("points",10), _v.get("type",""), str(_expect), _json.dumps(_sem)),
                         )
                 conn.commit()
                 cur.execute("SELECT * FROM battles WHERE id=%s", (bid,))
@@ -2186,22 +2199,40 @@ def submit_mission(bid: str, body: MissionSubmitBody, request: Request):
                 raise HTTPException(404, "Mission not found")
             if mission["status"] == "completed":
                 return {"status": "already_completed", "points": mission["points"]}
-            # 검증
-            passed = False
-            msg = ""
-            if mission["verify_type"] == "output_contains":
-                if mission["verify_expect"].lower() in body.answer.lower():
-                    passed = True
-                    msg = f"Found '{mission['verify_expect']}'"
-                else:
-                    msg = f"'{mission['verify_expect']}' not found"
-            elif mission["verify_type"]:
-                # 기타 검증 타입은 일단 통과
-                passed = bool(body.answer.strip())
-                msg = "Answer submitted"
+            # 검증 — semantic-first
+            from packages.lab_engine.semantic_judge import semantic_first_judge, has_semantic
+            _verify_dict = {
+                "type": mission.get("verify_type", ""),
+                "expect": mission.get("verify_expect", ""),
+                "semantic": mission.get("verify_semantic") or {},
+            }
+            if has_semantic(_verify_dict):
+                passed, _kw, _reason, _meta = semantic_first_judge(
+                    mission.get("instruction", ""),
+                    _verify_dict,
+                    body.answer or "",
+                )
+                msg = _reason or ("semantic_pass" if passed else "semantic_fail")
             else:
-                passed = bool(body.answer.strip())
-                msg = "No verification rule"
+                # semantic 없는 legacy mission — 기존 keyword 로직 (빈 expect 는 문자열 존재만 체크)
+                passed = False
+                msg = ""
+                if mission["verify_type"] == "output_contains":
+                    expect_str = mission["verify_expect"] or ""
+                    if expect_str and expect_str.lower() in body.answer.lower():
+                        passed = True
+                        msg = f"Found '{expect_str}'"
+                    elif not expect_str:
+                        passed = bool(body.answer.strip())
+                        msg = "Answer submitted (no expect defined)"
+                    else:
+                        msg = f"'{expect_str}' not found"
+                elif mission["verify_type"]:
+                    passed = bool(body.answer.strip())
+                    msg = "Answer submitted"
+                else:
+                    passed = bool(body.answer.strip())
+                    msg = "No verification rule"
             if passed:
                 cur.execute("UPDATE battle_missions SET status='completed', answer=%s, submitted_at=now() WHERE id=%s", (body.answer, mission["id"]))
                 # 이벤트 기록

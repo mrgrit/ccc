@@ -22,6 +22,9 @@ class VerifyRule:
     type: str          # output_contains | output_regex | exit_code | file_exists | service_running
     expect: str = ""
     field: str = "stdout"  # stdout | stderr | exit_code
+    # semantic-first 채점용 — LLM 이 의도/기준/허용방법/부정신호 기반으로 판정.
+    # 블록 있으면 LLM 판정이 1차, keyword 매치는 semantic 없을 때만 사용.
+    semantic: dict[str, Any] | None = None
 
 @dataclass
 class LabStep:
@@ -31,6 +34,8 @@ class LabStep:
     category: str = ""         # recon | exploit | defense | analysis | response
     points: int = 10
     verify: VerifyRule | None = None
+    # YAML verify 블록 원본 (semantic / list 형태 expect 보존 → semantic_first_judge 로 전달)
+    verify_raw: dict[str, Any] = field(default_factory=dict)
     # 정답 (admin만 볼 수 있음)
     answer: str = ""           # 정답/풀이 (명령어, 설명, 예상 결과 등)
     answer_detail: str = ""    # 상세 해설
@@ -97,11 +102,17 @@ def load_lab(yaml_path: str) -> Lab:
         verify = None
         if "verify" in s and s["verify"]:
             v = s["verify"]
+            # expect can be str or list — 원본 유지 (semantic_judge.keyword_match 가 처리)
+            expect_raw = v.get("expect", "")
             verify = VerifyRule(
                 type=v.get("type", "output_contains"),
-                expect=str(v.get("expect", "")),
+                expect=expect_raw if isinstance(expect_raw, str) else "",
                 field=v.get("field", "stdout"),
+                semantic=v.get("semantic") if isinstance(v.get("semantic"), dict) else None,
             )
+            # list 형태 expect 는 semantic dict 로 옮겨 keyword_match 가 사용 가능하도록 원본 보관.
+            # VerifyRule.expect 는 str 이라 list 를 담을 수 없어 별도 필드 없이 _raw_verify 를 LabStep 에 둠.
+        verify_raw = s.get("verify") if isinstance(s.get("verify"), dict) else {}
         steps.append(LabStep(
             order=s.get("order", 0),
             instruction=s.get("instruction", ""),
@@ -109,10 +120,13 @@ def load_lab(yaml_path: str) -> Lab:
             category=s.get("category", ""),
             points=s.get("points", 10),
             verify=verify,
+            verify_raw=verify_raw,
             answer=s.get("answer", ""),
             answer_detail=s.get("answer_detail", ""),
             script=s.get("script", ""),
             risk_level=s.get("risk_level", "low"),
+            target_vm=s.get("target_vm", ""),
+            bastion_prompt=s.get("bastion_prompt", ""),
         ))
 
     return Lab(
@@ -188,10 +202,16 @@ def verify_step(rule: VerifyRule, evidence: dict[str, Any]) -> tuple[bool, str]:
 
 def evaluate_lab(lab: Lab, submissions: list[dict[str, Any]], student_id: str = "") -> LabResult:
     """
-    실습 전체 평가.
+    실습 전체 평가 — semantic-first.
+
     submissions: 각 스텝의 evidence dict 리스트.
       [{"stdout": "...", "exit_code": 0}, ...]
+
+    step.verify_raw.semantic 있으면 LLM 판정이 1차.
+    없으면 기존 keyword-based verify_step fallback.
     """
+    from .semantic_judge import semantic_first_judge, has_semantic
+
     result = LabResult(
         lab_id=lab.lab_id,
         student_id=student_id,
@@ -202,7 +222,23 @@ def evaluate_lab(lab: Lab, submissions: list[dict[str, Any]], student_id: str = 
         evidence = submissions[i] if i < len(submissions) else {}
         sr = StepResult(order=step.order, evidence=evidence)
 
-        if step.verify:
+        # semantic 있으면 semantic-first judge
+        if has_semantic(step.verify_raw):
+            stdout = str(evidence.get("stdout", ""))
+            stderr = str(evidence.get("stderr", ""))
+            answer = f"{stdout}\n{stderr}".strip() if stderr else stdout
+            exit_code = evidence.get("exit_code")
+            passed, kw, reason, meta = semantic_first_judge(
+                step.instruction, step.verify_raw, answer,
+                exit_code=exit_code if isinstance(exit_code, int) else None,
+            )
+            sr.passed = passed
+            sr.points_earned = step.points if passed else 0
+            sr.message = reason or ("semantic_pass" if passed else "semantic_fail")
+            sr.evidence = dict(evidence)
+            sr.evidence["_judge"] = {"keyword": kw, "reason": reason, **meta}
+        elif step.verify:
+            # 기존 keyword 기반 fallback
             passed, msg = verify_step(step.verify, evidence)
             sr.passed = passed
             sr.points_earned = step.points if passed else 0
@@ -334,7 +370,13 @@ def _shq(s: str) -> str:
 
 
 def auto_verify_step(step: LabStep, subagent_url: str) -> StepResult:
-    """SubAgent에서 자동으로 스텝 검증 (학생 인프라에 직접 확인)"""
+    """SubAgent에서 자동으로 스텝 검증 — semantic-first.
+
+    verify_raw.semantic 있으면 LLM 이 stdout + exit_code 를 보고 1차 판정.
+    없으면 기존 type-specific keyword 로직.
+    """
+    from .semantic_judge import semantic_first_judge, has_semantic
+
     sr = StepResult(order=step.order)
 
     cmd = _build_verify_command(step)
@@ -344,6 +386,23 @@ def auto_verify_step(step: LabStep, subagent_url: str) -> StepResult:
 
     result = _run_on_subagent(subagent_url, cmd)
     sr.evidence = result
+
+    # semantic 있으면 semantic-first
+    if has_semantic(step.verify_raw):
+        stdout = str(result.get("stdout", ""))
+        stderr = str(result.get("stderr", ""))
+        answer = f"{stdout}\n{stderr}".strip() if stderr else stdout
+        exit_code = result.get("exit_code")
+        passed, kw, reason, meta = semantic_first_judge(
+            step.instruction, step.verify_raw, answer,
+            exit_code=exit_code if isinstance(exit_code, int) else None,
+        )
+        sr.passed = passed
+        sr.points_earned = step.points if passed else 0
+        sr.message = reason or ("semantic_pass" if passed else "semantic_fail")
+        sr.evidence = dict(result)
+        sr.evidence["_judge"] = {"keyword": kw, "reason": reason, **meta}
+        return sr
 
     if not step.verify:
         sr.passed = result.get("exit_code") == 0
