@@ -3,9 +3,8 @@ title: SOAR 구축 — 보안 자동화 오케스트레이션과 대응 체계
 version: non-ai
 course: battle-adv-nonai
 week: 9
-description: SOAR(Security Orchestration, Automation and Response) 체계를 구축한다. 자동화된
-  IR 워크플로우, Wazuh-nftables 연동 차단, 실시간 대시보드 데이터 수집, IR 플레이북을 구현하여 탐지에서 대응까지의 전 과정을
-  자동화한다.
+description: SOAR(Security Orchestration, Automation and Response) 체계를 구축한다. 자동화된 IR 워크플로우, Wazuh-nftables
+  연동 차단, 실시간 대시보드 데이터 수집, IR 플레이북을 구현하여 탐지에서 대응까지의 전 과정을 자동화한다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -23,174 +22,276 @@ infra_requirements:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: '[BLUE] SOAR 아키텍처를 설계하라. 탐지(Suricata/Wazuh) -> 판단(규칙 엔진) -> 대응(nftables/프로세스
-    종료) -> 알림(로그/보고)의 자동화 파이프라인을 문서화하라.'
+  instruction: '[BLUE] SOAR 아키텍처를 설계하라. 탐지(Suricata/Wazuh) -> 판단(규칙 엔진) -> 대응(nftables/프로세스 종료) -> 알림(로그/보고)의
+    자동화 파이프라인을 문서화하라.'
   hint: 각 단계의 입력, 처리, 출력을 정의한다.
   category: defense
   points: 10
-  answer: "\U0001F5A5️ UI: Dashboard → Security events → 필터 적용 후 이벤트 확인\n\U0001F4CE\
-    \ 참고 (CLI): cat > /tmp/soar_architecture.txt << 'EOF'\n=== SOAR Architecture Design\
-    \ ===\n\n[Suricata eve.json] ---> [Wazuh SIEM] ---> [Active Response] ---> [nftables/kill]\n\
-    \       |                     |                   |                    |\n   Detect\
-    \              Correlate            Decide              Execute\n\n1. Detection\
-    \ Layer:\n   - Suricata IDS: Network alerts -> eve.json\n   - Wazuh agents: Host\
-    \ alerts -> alerts.json\n   - WAF: Web attack logs\n\n2. Correlation Engine:\n\
-    \   - Wazuh rules: pattern matching + frequency\n   - Custom rules: multi-event\
-    \ correlation\n   - Severity classification: P1-P4\n\n3. Decision Engine:\n  \
-    \ - P1 Critical: Auto-block + isolate + alert\n   - P2 High: Auto-block + investigate\n\
-    \   - P3 Medium: Rate-limit + monitor\n   - P4 Low: Log only\n\n4. Response Actions:\n\
-    \   - nft add element inet filter blocklist { IP }\n   - kill -9 PID (malicious\
-    \ process)\n   - Slack notification to #security-incidents\n   - Evidence collection\
-    \ to /evidence/\nEOF\ncat /tmp/soar_architecture.txt"
-  answer_detail: SOAR는 Detection -> Correlation -> Decision -> Response의 4단계 자동화 파이프라인이다.
-    위협 심각도에 따라 자동/반자동/수동 대응을 분류한다.
+  answer: "\U0001F5A5️ UI: Dashboard → Security events → 필터 적용 후 이벤트 확인\n\U0001F4CE 참고 (CLI): cat > /tmp/soar_architecture.txt\
+    \ << 'EOF'\n=== SOAR Architecture Design ===\n\n[Suricata eve.json] ---> [Wazuh SIEM] ---> [Active\
+    \ Response] ---> [nftables/kill]\n       |                     |                   |             \
+    \       |\n   Detect              Correlate            Decide              Execute\n\n1. Detection\
+    \ Layer:\n   - Suricata IDS: Network alerts -> eve.json\n   - Wazuh agents: Host alerts -> alerts.json\n\
+    \   - WAF: Web attack logs\n\n2. Correlation Engine:\n   - Wazuh rules: pattern matching + frequency\n\
+    \   - Custom rules: multi-event correlation\n   - Severity classification: P1-P4\n\n3. Decision Engine:\n\
+    \   - P1 Critical: Auto-block + isolate + alert\n   - P2 High: Auto-block + investigate\n   - P3 Medium:\
+    \ Rate-limit + monitor\n   - P4 Low: Log only\n\n4. Response Actions:\n   - nft add element inet filter\
+    \ blocklist { IP }\n   - kill -9 PID (malicious process)\n   - Slack notification to #security-incidents\n\
+    \   - Evidence collection to /evidence/\nEOF\ncat /tmp/soar_architecture.txt"
+  answer_detail: SOAR는 Detection -> Correlation -> Decision -> Response의 4단계 자동화 파이프라인이다. 위협 심각도에 따라 자동/반자동/수동
+    대응을 분류한다.
   verify:
     type: output_contains
     expect: SOAR Architecture
+    semantic:
+      intent: '[BLUE] SOAR 4단계 아키텍처 설계 — cat > soar_architecture.txt: Detection(Suricata/Wazuh) → Correlation(규칙)
+        → Decision(P1-P4) → Response(nft/kill). P1 Critical 자동 차단+격리, P2 High 자동 차단, P3 Medium rate-limit,
+        P4 Log. NIST CSF Respond.'
+      success_criteria:
+      - SOAR Architecture Design 키워드
+      - 4단계 파이프라인
+      - P1-P4 분류
+      acceptable_methods:
+      - cat > 아키텍처 문서
+      - Gartner SOAR 정의
+      - NIST SP 800-61 IR
+      negative_signs:
+      - 단계 2개 이하
+      - 심각도 분류 없음
+      - 실행 액션 누락
   target_vm: siem
 - order: 2
-  instruction: '[BLUE] 자동 IP 차단 스크립트를 작성하라. Suricata eve.json에서 severity 1(Critical)
-    이벤트 발생 시 nftables로 해당 IP를 즉시 차단하는 스크립트를 구현하라.'
+  instruction: '[BLUE] 자동 IP 차단 스크립트를 작성하라. Suricata eve.json에서 severity 1(Critical) 이벤트 발생 시 nftables로
+    해당 IP를 즉시 차단하는 스크립트를 구현하라.'
   hint: tail -f와 jq로 eve.json을 실시간 파싱하여 nft add element로 차단한다.
   category: defense
   points: 10
-  answer: 'cat > /tmp/auto_block.sh << ''SCRIPT'' #!/bin/bash # SOAR Auto IP Blocker
-    LOGFILE="/var/log/suricata/eve.json" echo "=== SOAR Auto IP Blocker ===" echo
-    "Monitoring: $LOGFILE" echo "Trigger: severity == 1 (Critical)" echo "Action:
-    nft add element inet filter blocklist { IP }" echo "" echo "Logic (pseudocode):"
-    echo "  tail -f $LOGFILE | while read line; do" echo "    EVENT=$(echo $line |
-    jq -r .event_type)" echo "    if [ $EVENT = alert ]; then" echo "      SEV=$(echo
-    $line | jq -r .alert.severity)" echo "      SRC=$(echo $line | jq -r .src_ip)"
-    echo "      if [ $SEV = 1 ]; then" echo "        nft add element inet filter blocklist
-    { $SRC }" echo "      fi" echo "    fi" echo "  done" echo "" echo "Script structure
-    verified - ready for deployment" SCRIPT bash /tmp/auto_block.sh'
-  answer_detail: 자동 IP 차단은 SOAR의 핵심 기능이다. eve.json에서 severity 1 알림을 파싱하고 공격 출발지 IP를
-    nftables set에 추가하여 즉시 차단한다.
+  answer: 'cat > /tmp/auto_block.sh << ''SCRIPT'' #!/bin/bash # SOAR Auto IP Blocker LOGFILE="/var/log/suricata/eve.json"
+    echo "=== SOAR Auto IP Blocker ===" echo "Monitoring: $LOGFILE" echo "Trigger: severity == 1 (Critical)"
+    echo "Action: nft add element inet filter blocklist { IP }" echo "" echo "Logic (pseudocode):" echo
+    "  tail -f $LOGFILE | while read line; do" echo "    EVENT=$(echo $line | jq -r .event_type)" echo
+    "    if [ $EVENT = alert ]; then" echo "      SEV=$(echo $line | jq -r .alert.severity)" echo "      SRC=$(echo
+    $line | jq -r .src_ip)" echo "      if [ $SEV = 1 ]; then" echo "        nft add element inet filter
+    blocklist { $SRC }" echo "      fi" echo "    fi" echo "  done" echo "" echo "Script structure verified
+    - ready for deployment" SCRIPT bash /tmp/auto_block.sh'
+  answer_detail: 자동 IP 차단은 SOAR의 핵심 기능이다. eve.json에서 severity 1 알림을 파싱하고 공격 출발지 IP를 nftables set에 추가하여
+    즉시 차단한다.
   verify:
     type: output_contains
     expect: SOAR Auto IP Blocker
+    semantic:
+      intent: '[BLUE] 자동 IP 차단 스크립트 — cat > auto_block.sh: tail -f eve.json | jq .event_type + .alert.severity
+        → severity==1 시 nft add element inet filter blocklist {SRC}. Suricata→nftables 연동. MITRE D3-NTF
+        (Network Traffic Filtering).'
+      success_criteria:
+      - SOAR Auto IP Blocker 키워드
+      - eve.json + jq severity 파싱
+      - nft add element 차단
+      acceptable_methods:
+      - tail -f + jq + nft
+      - Wazuh AR firewall-drop
+      - fail2ban
+      negative_signs:
+      - severity 필터 없음
+      - nftables 없음
+      - 실시간 파싱 없음
   target_vm: secu
 - order: 3
-  instruction: '[BLUE] SQL Injection 공격 발생 시의 IR 플레이북을 작성하라. 확인 -> 격리 -> 증거 수집 ->
-    분석 -> 복구 -> 보고의 단계를 정의하라.'
+  instruction: '[BLUE] SQL Injection 공격 발생 시의 IR 플레이북을 작성하라. 확인 -> 격리 -> 증거 수집 -> 분석 -> 복구 -> 보고의 단계를
+    정의하라.'
   hint: 각 단계의 SLA, 담당자, 구체적 명령어를 포함한다.
   category: response
   points: 10
-  answer: "cat > /tmp/ir_playbook_sqli.txt << 'EOF'\n=== IR Playbook: SQL Injection\
-    \ Attack ===\nPlaybook ID: IR-WEB-001 | Severity: CRITICAL\n\nTRIGGER: Wazuh rule\
-    \ 100101 or Suricata SID 1000001\n\nStep 1: CONFIRM (2 min)\n  - Review alert\
-    \ (source IP, payload, target URL)\n  - Check WAF logs for matching request\n\
-    \  - Verify: Is this a true positive?\n\nStep 2: CONTAIN (5 min)\n  - Block source\
-    \ IP: nft add element inet filter blocklist { SRC_IP }\n  - Enable WAF paranoia\
-    \ level 3\n  - Notify SOC lead\n\nStep 3: COLLECT (10 min)\n  - Export WAF access\
-    \ logs: last 1 hour\n  - Export Suricata eve.json: last 1 hour\n  - Record: Source\
-    \ IP, payload, response codes\n\nStep 4: ANALYZE (20 min)\n  - Was injection successful?\n\
-    \  - Were any records extracted?\n  - Timeline: First to last attempt\n\nStep\
-    \ 5: REMEDIATE (30 min)\n  - Patch endpoint (parameterized queries)\n  - Rotate\
-    \ database credentials\n  - Update WAF rules\n\nStep 6: REPORT\n  - Incident report\
-    \ to management\n  - Update IOC database\nEOF\ncat /tmp/ir_playbook_sqli.txt"
+  answer: "cat > /tmp/ir_playbook_sqli.txt << 'EOF'\n=== IR Playbook: SQL Injection Attack ===\nPlaybook\
+    \ ID: IR-WEB-001 | Severity: CRITICAL\n\nTRIGGER: Wazuh rule 100101 or Suricata SID 1000001\n\nStep\
+    \ 1: CONFIRM (2 min)\n  - Review alert (source IP, payload, target URL)\n  - Check WAF logs for matching\
+    \ request\n  - Verify: Is this a true positive?\n\nStep 2: CONTAIN (5 min)\n  - Block source IP: nft\
+    \ add element inet filter blocklist { SRC_IP }\n  - Enable WAF paranoia level 3\n  - Notify SOC lead\n\
+    \nStep 3: COLLECT (10 min)\n  - Export WAF access logs: last 1 hour\n  - Export Suricata eve.json:\
+    \ last 1 hour\n  - Record: Source IP, payload, response codes\n\nStep 4: ANALYZE (20 min)\n  - Was\
+    \ injection successful?\n  - Were any records extracted?\n  - Timeline: First to last attempt\n\n\
+    Step 5: REMEDIATE (30 min)\n  - Patch endpoint (parameterized queries)\n  - Rotate database credentials\n\
+    \  - Update WAF rules\n\nStep 6: REPORT\n  - Incident report to management\n  - Update IOC database\n\
+    EOF\ncat /tmp/ir_playbook_sqli.txt"
   answer_detail: IR 플레이북은 각 단계의 SLA(확인 2분, 격리 5분)를 정의하여 일관된 대응을 보장한다.
   verify:
     type: output_contains
     expect: IR Playbook
+    semantic:
+      intent: '[BLUE] IR Playbook SQLi — cat > ir_playbook_sqli.txt: IR-WEB-001 CRITICAL. Trigger Wazuh
+        100101/Suricata SID. 6단계 CONFIRM(2m)→CONTAIN(5m nft+WAF PL3)→COLLECT(10m logs)→ANALYZE(20m timeline)→REMEDIATE(30m
+        patch+rotate)→REPORT. NIST SP 800-61 SLA.'
+      success_criteria:
+      - IR Playbook SQL Injection 키워드
+      - 6단계 SLA 정의
+      - 구체적 명령어
+      acceptable_methods:
+      - cat > 플레이북 + SLA
+      - NIST SP 800-61 IR Handbook
+      - SANS IR 6-step
+      negative_signs:
+      - 단계 3개 이하
+      - SLA 없음
+      - 명령어 추상적
   target_vm: siem
 - order: 4
   instruction: '[BLUE] 자동화된 IR 워크플로우를 구현하라. 탐지 -> 격리 -> 증거수집 -> 알림을 하나의 스크립트로 자동화하라.'
   hint: 스크립트에서 nft 차단, 로그 수집, 알림 전송을 연결한다.
   category: response
   points: 10
-  answer: 'cat > /tmp/soar_workflow.sh << ''SCRIPT'' #!/bin/bash SUSPECT_IP=${1:-203.0.113.50}
-    TIMESTAMP=$(date -u "+%Y-%m-%dT%H:%M:%SZ") echo "=== SOAR Automated IR Workflow
-    ===" echo "Time: $TIMESTAMP" echo "Suspect IP: $SUSPECT_IP" echo "" echo "Phase
-    1: CONTAIN" echo "  [1.1] nft add element inet filter blocklist { $SUSPECT_IP
-    }" echo "  [1.2] ss -K dst $SUSPECT_IP" echo "" echo "Phase 2: COLLECT EVIDENCE"
-    echo "  [2.1] tcpdump -i any host $SUSPECT_IP -w /evidence/pcap.pcap" echo "  [2.2]
-    ps auxf > /evidence/processes.txt" echo "  [2.3] journalctl --since \"1 hour ago\"
-    > /evidence/journal.txt" echo "" echo "Phase 3: NOTIFY" echo "  [3.1] Slack #security-incidents"
-    echo "  [3.2] Create incident ticket" echo "" echo "SOAR workflow completed in
-    <10 seconds" SCRIPT bash /tmp/soar_workflow.sh'
-  answer_detail: SOAR 자동화는 알림부터 차단, 증거 수집, 알림 전송까지 10초 이내에 완료한다. 수동 대응 대비 극적으로 빠른
-    대응이 가능하다.
+  answer: 'cat > /tmp/soar_workflow.sh << ''SCRIPT'' #!/bin/bash SUSPECT_IP=${1:-203.0.113.50} TIMESTAMP=$(date
+    -u "+%Y-%m-%dT%H:%M:%SZ") echo "=== SOAR Automated IR Workflow ===" echo "Time: $TIMESTAMP" echo "Suspect
+    IP: $SUSPECT_IP" echo "" echo "Phase 1: CONTAIN" echo "  [1.1] nft add element inet filter blocklist
+    { $SUSPECT_IP }" echo "  [1.2] ss -K dst $SUSPECT_IP" echo "" echo "Phase 2: COLLECT EVIDENCE" echo
+    "  [2.1] tcpdump -i any host $SUSPECT_IP -w /evidence/pcap.pcap" echo "  [2.2] ps auxf > /evidence/processes.txt"
+    echo "  [2.3] journalctl --since \"1 hour ago\" > /evidence/journal.txt" echo "" echo "Phase 3: NOTIFY"
+    echo "  [3.1] Slack #security-incidents" echo "  [3.2] Create incident ticket" echo "" echo "SOAR
+    workflow completed in <10 seconds" SCRIPT bash /tmp/soar_workflow.sh'
+  answer_detail: SOAR 자동화는 알림부터 차단, 증거 수집, 알림 전송까지 10초 이내에 완료한다. 수동 대응 대비 극적으로 빠른 대응이 가능하다.
   verify:
     type: output_contains
     expect: SOAR Automated IR
+    semantic:
+      intent: '[BLUE] SOAR IR 자동화 스크립트 — cat > soar_workflow.sh: 3 Phase (CONTAIN nft+ss -K / COLLECT
+        tcpdump+ps+journalctl / NOTIFY Slack+ticket). <10초 완료. 수동 대비 180x. MITRE D3-NI (Network Isolation).'
+      success_criteria:
+      - SOAR Automated IR Workflow 키워드
+      - 3 Phase 자동화
+      - 10초 내 완료
+      acceptable_methods:
+      - shell script + nft+tcpdump+Slack
+      - TheHive/Cortex 연동
+      - Shuffle SOAR
+      negative_signs:
+      - Phase 1개 이하
+      - 증거 수집 없음
+      - 알림 없음
   target_vm: siem
 - order: 5
-  instruction: '[BLUE] 실시간 보안 대시보드를 위한 데이터 수집 스크립트를 작성하라. 시스템, 네트워크, 보안 지표를 JSON으로
-    출력하라.'
+  instruction: '[BLUE] 실시간 보안 대시보드를 위한 데이터 수집 스크립트를 작성하라. 시스템, 네트워크, 보안 지표를 JSON으로 출력하라.'
   hint: 시스템 리소스, 네트워크 상태, 보안 카운터를 JSON으로 출력한다.
   category: defense
   points: 10
-  answer: "python3 -c \"\nimport json, subprocess, time\ndef run(cmd):\n    try: return\
-    \ subprocess.check_output(cmd, shell=True, timeout=5).decode().strip()\n    except:\
-    \ return '0'\ndashboard = {\n    'timestamp': time.strftime('%Y-%m-%dT%H:%M:%SZ'),\n\
-    \    'network': {\n        'established': int(run('ss -tn state established |\
-    \ wc -l') or 0),\n        'listening': int(run('ss -tln | wc -l') or 0),\n   \
-    \ },\n    'security': {\n        'failed_ssh': run('grep -c Failed /var/log/auth.log\
-    \ 2>/dev/null || echo 0'),\n    }\n}\nprint(json.dumps(dashboard, indent=2))\n\
-    \""
+  answer: "python3 -c \"\nimport json, subprocess, time\ndef run(cmd):\n    try: return subprocess.check_output(cmd,\
+    \ shell=True, timeout=5).decode().strip()\n    except: return '0'\ndashboard = {\n    'timestamp':\
+    \ time.strftime('%Y-%m-%dT%H:%M:%SZ'),\n    'network': {\n        'established': int(run('ss -tn state\
+    \ established | wc -l') or 0),\n        'listening': int(run('ss -tln | wc -l') or 0),\n    },\n \
+    \   'security': {\n        'failed_ssh': run('grep -c Failed /var/log/auth.log 2>/dev/null || echo\
+    \ 0'),\n    }\n}\nprint(json.dumps(dashboard, indent=2))\n\""
   answer_detail: 대시보드 데이터는 네트워크(연결 수), 보안(실패 인증)의 핵심 지표를 JSON으로 수집하여 Grafana 등과 연동한다.
   verify:
     type: output_contains
     expect: timestamp
+    semantic:
+      intent: '[BLUE] 보안 대시보드 데이터 수집 — python3 JSON: timestamp + network(ss -tn established/listening)
+        + security(grep -c Failed /var/log/auth.log). Grafana/Kibana 연동용. Prometheus node_exporter 대체.'
+      success_criteria:
+      - timestamp + JSON 출력
+      - network + security 지표
+      - json.dumps indent
+      acceptable_methods:
+      - python3 + subprocess + json
+      - node_exporter + Prometheus
+      - Telegraf + InfluxDB
+      negative_signs:
+      - JSON 미출력
+      - 지표 1개
+      - timestamp 없음
   target_vm: siem
 - order: 6
-  instruction: '[RED] SOAR 체계를 검증하기 위한 라이브 공격 시뮬레이션을 수행하라. 포트 스캔과 SQLi를 실행하고 자동 탐지/차단이
-    동작하는지 확인하라.'
+  instruction: '[RED] SOAR 체계를 검증하기 위한 라이브 공격 시뮬레이션을 수행하라. 포트 스캔과 SQLi를 실행하고 자동 탐지/차단이 동작하는지 확인하라.'
   hint: nmap과 curl SQLi를 순차 실행한다.
   category: exploit
   points: 10
-  answer: echo '=== SOAR Validation Attack ===' && echo '[1] Port scan:' && nmap -sS
-    --top-ports 50 --max-retries 1 --host-timeout 15s -T4 10.20.30.80 2>&1 | tail
-    -5 && echo '[2] SQLi:' && curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%20UNION%20SELECT%201--'
+  answer: echo '=== SOAR Validation Attack ===' && echo '[1] Port scan:' && nmap -sS --top-ports 50 --max-retries
+    1 --host-timeout 15s -T4 10.20.30.80 2>&1 | tail -5 && echo '[2] SQLi:' && curl -s 'http://10.20.30.80:3000/rest/products/search?q=test%27%20UNION%20SELECT%201--'
     2>&1 | head -3 && echo '=== Verify SOAR detected and responded ==='
   answer_detail: SOAR 검증을 위해 실제 공격을 수행하고 자동 탐지/차단 파이프라인이 동작하는지 확인한다.
   verify:
     type: output_contains
     expect: SOAR Validation
+    semantic:
+      intent: '[RED] SOAR 검증용 라이브 공격 — nmap -sS --top-ports 50 10.20.30.80 + curl SQLi UNION SELECT. 포트스캔
+        + SQLi로 자동 탐지/차단 파이프라인 동작 확인. MITRE T1046 + T1190.'
+      success_criteria:
+      - SOAR Validation Attack 키워드
+      - nmap + curl SQLi
+      - T1046 + T1190
+      acceptable_methods:
+      - nmap + curl
+      - Atomic Red Team 테스트
+      - CALDERA 시뮬레이션
+      negative_signs:
+      - 단일 공격
+      - SOAR 트리거 없음
+      - 검증 목적 불명
   target_vm: attacker
 - order: 7
-  instruction: '[BLUE] SOAR 검증 결과를 확인하라. Suricata 알림과 Wazuh Active Response 실행 여부를
-    점검하라.'
+  instruction: '[BLUE] SOAR 검증 결과를 확인하라. Suricata 알림과 Wazuh Active Response 실행 여부를 점검하라.'
   hint: eve.json에서 알림을 확인하고 Active Response 로그를 조회한다.
   category: analysis
   points: 10
   answer: '🖥️ UI: Dashboard → Security events → 필터 적용 후 이벤트 확인
 
-    📎 참고 (CLI): echo ''=== SOAR Validation Results ==='' && echo ''[Suricata]:'' &&
-    ssh 10.20.30.1 ''tail -30 /var/log/suricata/eve.json 2>/dev/null | python3 -c
-    "import sys,json; [print(json.loads(l).get(\"alert\",{}).get(\"signature\",\"\"))
-    for l in sys.stdin if \"alert\" in l]" 2>/dev/null'' | tail -5 && echo ''[Wazuh
-    AR]:'' && ssh 10.20.30.100 ''tail -10 /var/ossec/logs/active-responses.log 2>/dev/null''
-    2>&1 | head -5 && echo ''[nftables]:'' && ssh 10.20.30.1 ''nft list set inet filter
-    blocklist 2>/dev/null'' 2>&1 | head -5 && echo ''SOAR validation complete'''
-  answer_detail: SOAR 검증에서 Suricata 알림 발생, Wazuh Active Response 실행, nftables 차단 목록
-    갱신을 확인한다.
+    📎 참고 (CLI): echo ''=== SOAR Validation Results ==='' && echo ''[Suricata]:'' && ssh 10.20.30.1 ''tail
+    -30 /var/log/suricata/eve.json 2>/dev/null | python3 -c "import sys,json; [print(json.loads(l).get(\"alert\",{}).get(\"signature\",\"\"))
+    for l in sys.stdin if \"alert\" in l]" 2>/dev/null'' | tail -5 && echo ''[Wazuh AR]:'' && ssh 10.20.30.100
+    ''tail -10 /var/ossec/logs/active-responses.log 2>/dev/null'' 2>&1 | head -5 && echo ''[nftables]:''
+    && ssh 10.20.30.1 ''nft list set inet filter blocklist 2>/dev/null'' 2>&1 | head -5 && echo ''SOAR
+    validation complete'''
+  answer_detail: SOAR 검증에서 Suricata 알림 발생, Wazuh Active Response 실행, nftables 차단 목록 갱신을 확인한다.
   verify:
     type: output_contains
     expect: SOAR validation
+    semantic:
+      intent: '[BLUE] SOAR 검증 결과 확인 — tail eve.json + /var/ossec/logs/active-responses.log + nft list
+        set blocklist. Suricata 알림 + Wazuh AR 실행 + nftables 차단 확인. 3-Way 검증.'
+      success_criteria:
+      - SOAR validation 키워드
+      - Suricata + Wazuh AR + nftables 3종 확인
+      - tail/nft list 조회
+      acceptable_methods:
+      - eve.json + active-responses + nft list
+      - Wazuh Dashboard 연동
+      - Kibana 쿼리
+      negative_signs:
+      - 검증 1종만
+      - AR 로그 미확인
+      - 차단 확인 없음
   target_vm: siem
 - order: 8
-  instruction: '[RED/BLUE] 환경을 정리하고 SOAR 체계 구축 보고서를 작성하라. 자동화 효과, MTTD/MTTR 개선, 향후
-    계획을 포함하라.'
+  instruction: '[RED/BLUE] 환경을 정리하고 SOAR 체계 구축 보고서를 작성하라. 자동화 효과, MTTD/MTTR 개선, 향후 계획을 포함하라.'
   hint: 수동 대응 대비 자동화의 시간/정확도 개선을 정량화한다.
   category: analysis
   points: 15
-  answer: "rm -f /tmp/auto_block.sh /tmp/soar_workflow.sh /tmp/soar_architecture.txt\
-    \ /tmp/ir_playbook_sqli.txt 2>/dev/null && cat > /tmp/soar_report.txt << 'EOF'\n\
-    === SOAR Implementation Report ===\nDate: 2026-04-06 | Scope: 10.20.30.0/24\n\n\
-    1. SOAR Components Deployed:\n   - Auto IP blocker (Suricata -> nftables)\n  \
-    \ - Wazuh Active Response (firewall-drop)\n   - IR Playbook (SQL Injection)\n\
-    \   - Dashboard data collector\n\n2. Performance Improvement:\n   | Metric | Manual\
-    \ | SOAR | Improvement |\n   |--------|--------|------|-------------|\n   | MTTD\
-    \ | 15 min | 5s | 180x faster |\n   | MTTR | 45 min | 10s | 270x faster |\n  \
-    \ | Evidence collection | 30 min | 60s | 30x faster |\n   | False positive rate\
-    \ | 15% | 8% | -47% |\n\n3. Recommendations:\n   - Add DNS anomaly auto-response\n\
-    \   - Implement Slack webhook notifications\n   - Create 10+ IR playbooks for\
-    \ common incidents\n   - Deploy SOAR platform (Shuffle, TheHive)\nEOF\ncat /tmp/soar_report.txt"
-  answer_detail: SOAR 보고서는 배포된 컴포넌트, 수동 대비 자동화 개선(MTTD 180x, MTTR 270x), 향후 계획을 포함한다.
-    자동화는 대응 속도를 극적으로 개선한다.
+  answer: "rm -f /tmp/auto_block.sh /tmp/soar_workflow.sh /tmp/soar_architecture.txt /tmp/ir_playbook_sqli.txt\
+    \ 2>/dev/null && cat > /tmp/soar_report.txt << 'EOF'\n=== SOAR Implementation Report ===\nDate: 2026-04-06\
+    \ | Scope: 10.20.30.0/24\n\n1. SOAR Components Deployed:\n   - Auto IP blocker (Suricata -> nftables)\n\
+    \   - Wazuh Active Response (firewall-drop)\n   - IR Playbook (SQL Injection)\n   - Dashboard data\
+    \ collector\n\n2. Performance Improvement:\n   | Metric | Manual | SOAR | Improvement |\n   |--------|--------|------|-------------|\n\
+    \   | MTTD | 15 min | 5s | 180x faster |\n   | MTTR | 45 min | 10s | 270x faster |\n   | Evidence\
+    \ collection | 30 min | 60s | 30x faster |\n   | False positive rate | 15% | 8% | -47% |\n\n3. Recommendations:\n\
+    \   - Add DNS anomaly auto-response\n   - Implement Slack webhook notifications\n   - Create 10+ IR\
+    \ playbooks for common incidents\n   - Deploy SOAR platform (Shuffle, TheHive)\nEOF\ncat /tmp/soar_report.txt"
+  answer_detail: SOAR 보고서는 배포된 컴포넌트, 수동 대비 자동화 개선(MTTD 180x, MTTR 270x), 향후 계획을 포함한다. 자동화는 대응 속도를 극적으로
+    개선한다.
   verify:
     type: output_contains
     expect: SOAR Implementation
+    semantic:
+      intent: '[RED/BLUE] SOAR 구축 보고서 — cat > soar_report.txt: 컴포넌트 4종 (auto_block/Wazuh AR/IR Playbook/Dashboard)
+        + 성능 표 (MTTD 15m→5s 180x / MTTR 45m→10s 270x / Evidence 30m→60s 30x / FP 15%→8% -47%) + 권고 (Shuffle/TheHive).
+        NIST CSF RS.RP.'
+      success_criteria:
+      - SOAR Implementation Report 키워드
+      - MTTD/MTTR 정량 비교
+      - 향후 계획
+      acceptable_methods:
+      - cat > 보고서 + 표
+      - NIST CSF Respond 매트릭스
+      - Gartner SOAR 평가
+      negative_signs:
+      - 수치 미정량화
+      - 컴포넌트 1-2개
+      - 권고 없음
   target_vm: attacker
