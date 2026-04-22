@@ -3,8 +3,7 @@ title: SIEM 기초 - Wazuh 매니저 구조와 기본 운용
 version: non-ai
 course: soc-nonai
 week: 2
-description: Wazuh SIEM의 핵심 구성 요소(매니저, 에이전트, 디코더, 룰셋)를 탐색하고, 알림 생성 파이프라인과 기본 운용 명령어를
-  학습합니다.
+description: Wazuh SIEM의 핵심 구성 요소(매니저, 에이전트, 디코더, 룰셋)를 탐색하고, 알림 생성 파이프라인과 기본 운용 명령어를 학습합니다.
 difficulty: easy
 duration_minutes: 90
 objectives:
@@ -21,12 +20,27 @@ steps:
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
     📎 참고 (CLI): /var/ossec/bin/wazuh-control info'
-  answer_detail: wazuh-control info는 설치된 Wazuh의 버전, 타입(manager/agent), 경로 정보를 출력합니다.
-    SIEM 운영 시 버전 관리는 패치 및 호환성 관리에 필수입니다.
+  answer_detail: wazuh-control info는 설치된 Wazuh의 버전, 타입(manager/agent), 경로 정보를 출력합니다. SIEM 운영 시 버전 관리는
+    패치 및 호환성 관리에 필수입니다.
   verify:
     type: output_contains
     expect: WAZUH_VERSION
     field: stdout
+    semantic:
+      intent: Wazuh 버전 — /var/ossec/bin/wazuh-control info. 버전/타입(manager/agent)/경로. 패치/호환성 관리. WAZUH_VERSION
+        변수 출력. Wazuh 4.x.
+      success_criteria:
+      - wazuh-control info
+      - WAZUH_VERSION 키워드
+      - /var/ossec/bin 경로
+      acceptable_methods:
+      - wazuh-control info
+      - /var/ossec/bin/manage_agents -V
+      - Dashboard About
+      negative_signs:
+      - 버전 미확인
+      - wazuh-control 누락
+      - Wazuh 경로 없음
   target_vm: siem
 - order: 2
   instruction: Wazuh 매니저의 주요 디렉토리 구조를 확인하시오. /var/ossec/ 하위의 핵심 디렉토리 목록을 조회하시오.
@@ -36,12 +50,27 @@ steps:
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
     📎 참고 (CLI): ls /var/ossec/'
-  answer_detail: bin(실행파일), etc(설정), logs(로그), ruleset(탐지룰), queue(큐) 등이 Wazuh의 핵심
-    디렉토리입니다. 각 디렉토리의 역할을 이해해야 SIEM을 효과적으로 운용할 수 있습니다.
+  answer_detail: bin(실행파일), etc(설정), logs(로그), ruleset(탐지룰), queue(큐) 등이 Wazuh의 핵심 디렉토리입니다. 각 디렉토리의 역할을
+    이해해야 SIEM을 효과적으로 운용할 수 있습니다.
   verify:
     type: output_contains
     expect: ruleset
     field: stdout
+    semantic:
+      intent: Wazuh 디렉터리 구조 — ls /var/ossec/. bin(실행) + etc(설정) + logs(로그) + ruleset(룰) + queue(큐). 핵심
+        디렉터리 역할 이해. SIEM 운용 기초.
+      success_criteria:
+      - ls /var/ossec/
+      - ruleset 키워드 출력
+      - 디렉터리 목록
+      acceptable_methods:
+      - ls /var/ossec
+      - find /var/ossec -maxdepth 1 -type d
+      - tree -L 1 /var/ossec
+      negative_signs:
+      - 경로 없음
+      - 단일 디렉터리만
+      - 구조 맥락 없음
   target_vm: siem
 - order: 3
   instruction: Wazuh 매니저에서 현재 활성화된 에이전트 수와 상세 정보를 확인하시오.
@@ -51,12 +80,27 @@ steps:
   answer: '🖥️ UI: Dashboard → Agents → 에이전트 목록/상태 확인
 
     📎 참고 (CLI): /var/ossec/bin/agent_control -l'
-  answer_detail: agent_control -l은 등록된 모든 에이전트를 ID, 이름, IP, 상태와 함께 출력합니다. SOC 운영에서
-    에이전트 상태 모니터링은 로그 수집 누락을 방지하는 핵심 업무입니다.
+  answer_detail: agent_control -l은 등록된 모든 에이전트를 ID, 이름, IP, 상태와 함께 출력합니다. SOC 운영에서 에이전트 상태 모니터링은 로그 수집
+    누락을 방지하는 핵심 업무입니다.
   verify:
     type: output_contains
     expect: Active
     field: stdout
+    semantic:
+      intent: '에이전트 활성 수/정보 — /var/ossec/bin/agent_control -l. ID/이름/IP/상태. SOC 운영: 에이전트 모니터링 = 로그 수집
+        누락 방지. Active 정상.'
+      success_criteria:
+      - agent_control -l
+      - Active 키워드
+      - 에이전트 목록
+      acceptable_methods:
+      - agent_control -l
+      - Wazuh API GET /agents
+      - Dashboard Agents 메뉴
+      negative_signs:
+      - 에이전트 미확인
+      - Active 검증 없음
+      - 수량 미확인
   target_vm: siem
 - order: 4
   instruction: Wazuh의 기본 룰셋 디렉토리에서 룰 파일 목록을 확인하시오.
@@ -66,12 +110,27 @@ steps:
   answer: '🖥️ UI: Dashboard → Management → Rules → 룰 목록 검색
 
     📎 참고 (CLI): ls /var/ossec/ruleset/rules/ | head -20'
-  answer_detail: ruleset/rules/ 디렉토리에는 Wazuh 기본 탐지 룰 XML 파일들이 있습니다. 0010-rules_config.xml부터
-    시작하여 syslog, sshd, web 등 다양한 카테고리별 룰이 존재합니다.
+  answer_detail: ruleset/rules/ 디렉토리에는 Wazuh 기본 탐지 룰 XML 파일들이 있습니다. 0010-rules_config.xml부터 시작하여 syslog,
+    sshd, web 등 다양한 카테고리별 룰이 존재합니다.
   verify:
     type: output_contains
     expect: .xml
     field: stdout
+    semantic:
+      intent: Wazuh 룰 파일 — ls /var/ossec/ruleset/rules/ | head -20. 0010-rules_config.xml + syslog/sshd/web
+        카테고리별 XML 룰. 기본 탐지 룰셋. Wazuh 4.x ruleset 구조.
+      success_criteria:
+      - ls ruleset/rules/
+      - .xml 키워드
+      - 다수 룰 파일
+      acceptable_methods:
+      - ls ruleset/rules
+      - find ruleset/rules -name *.xml
+      - Dashboard Management Rules
+      negative_signs:
+      - .xml 없음
+      - 단일 파일
+      - 룰 카테고리 맥락 없음
   target_vm: siem
 - order: 5
   instruction: Wazuh의 디코더(decoder) 파일 목록을 확인하시오. 디코더는 로그를 파싱하는 역할을 합니다.
@@ -81,12 +140,26 @@ steps:
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
     📎 참고 (CLI): ls /var/ossec/ruleset/decoders/ | head -20'
-  answer_detail: 디코더는 수신된 원시 로그를 구조화된 필드로 파싱합니다. 로그 -> 디코더(파싱) -> 룰(매칭) -> 알림(생성)
-    순서가 Wazuh의 이벤트 처리 파이프라인입니다.
+  answer_detail: 디코더는 수신된 원시 로그를 구조화된 필드로 파싱합니다. 로그 -> 디코더(파싱) -> 룰(매칭) -> 알림(생성) 순서가 Wazuh의 이벤트 처리 파이프라인입니다.
   verify:
     type: output_contains
     expect: .xml
     field: stdout
+    semantic:
+      intent: 'Wazuh 디코더 — ls /var/ossec/ruleset/decoders/ | head -20. 디코더 = 원시 로그 파싱 → 구조화 필드. 파이프라인:
+        로그 → 디코더 → 룰 → 알림. Wazuh 이벤트 처리 핵심.'
+      success_criteria:
+      - ls ruleset/decoders/
+      - .xml 키워드
+      - 디코더 파일
+      acceptable_methods:
+      - ls decoders/
+      - find decoders/ -name *.xml
+      - Dashboard Decoders
+      negative_signs:
+      - .xml 없음
+      - 단일 파일
+      - 파이프라인 맥락 없음
   target_vm: siem
 - order: 6
   instruction: Wazuh 알림 로그 파일에서 최근 알림 10건을 확인하시오.
@@ -96,12 +169,27 @@ steps:
   answer: '🖥️ UI: Dashboard → Security events → 필터 적용 후 이벤트 확인
 
     📎 참고 (CLI): tail -20 /var/ossec/logs/alerts/alerts.log'
-  answer_detail: alerts.log는 Wazuh가 생성한 모든 보안 알림을 기록합니다. 각 알림에는 룰 ID, 레벨, 설명, 소스 IP
-    등이 포함되어 있어 SOC 분석가가 이벤트를 판단하는 핵심 데이터입니다.
+  answer_detail: alerts.log는 Wazuh가 생성한 모든 보안 알림을 기록합니다. 각 알림에는 룰 ID, 레벨, 설명, 소스 IP 등이 포함되어 있어 SOC 분석가가
+    이벤트를 판단하는 핵심 데이터입니다.
   verify:
     type: output_contains
     expect: 'Rule:'
     field: stdout
+    semantic:
+      intent: 알림 로그 확인 — tail -20 /var/ossec/logs/alerts/alerts.log. Rule ID/Level/설명/소스 IP. SOC 분석가 이벤트
+        판단 핵심 데이터. NIST SP 800-92 로그 관리.
+      success_criteria:
+      - alerts.log tail
+      - 'Rule: 키워드'
+      - 최근 알림 출력
+      acceptable_methods:
+      - tail alerts.log
+      - Dashboard Security Events
+      - Wazuh API alerts
+      negative_signs:
+      - 로그 경로 없음
+      - Rule 정보 없음
+      - 단순 cat 전체
   target_vm: siem
 - order: 7
   instruction: Wazuh 알림을 JSON 형식으로 확인하시오. JSON 알림이 더 상세한 필드 정보를 제공합니다.
@@ -111,12 +199,27 @@ steps:
   answer: '🖥️ UI: Dashboard → Security events → 필터 적용 후 이벤트 확인
 
     📎 참고 (CLI): tail -5 /var/ossec/logs/alerts/alerts.json'
-  answer_detail: alerts.json은 알림을 JSON 구조로 저장합니다. rule.id, rule.level, rule.description,
-    agent.name, data 등의 필드가 포함되어 있어 프로그래밍적 분석이나 SIEM 대시보드 연동에 유리합니다.
+  answer_detail: alerts.json은 알림을 JSON 구조로 저장합니다. rule.id, rule.level, rule.description, agent.name, data
+    등의 필드가 포함되어 있어 프로그래밍적 분석이나 SIEM 대시보드 연동에 유리합니다.
   verify:
     type: output_contains
     expect: rule
     field: stdout
+    semantic:
+      intent: 'JSON 알림 — tail -5 /var/ossec/logs/alerts/alerts.json. JSON 구조: rule.id/level/description
+        + agent.name + data 필드. 프로그래밍 분석/SIEM 대시보드 연동 유리.'
+      success_criteria:
+      - alerts.json tail
+      - rule 키워드 출력
+      - JSON 구조
+      acceptable_methods:
+      - tail alerts.json
+      - jq '.' alerts.json
+      - Wazuh API events JSON
+      negative_signs:
+      - json 경로 없음
+      - rule 필드 없음
+      - 단순 텍스트만
   target_vm: siem
 - order: 8
   instruction: Wazuh 매니저의 ossec.conf에서 로그 분석(logall) 설정을 확인하시오.
@@ -126,12 +229,26 @@ steps:
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
     📎 참고 (CLI): grep -i "logall" /var/ossec/etc/ossec.conf'
-  answer_detail: logall을 yes로 설정하면 룰에 매칭되지 않는 이벤트도 모두 기록합니다. SOC 구축 초기에는 모든 로그를 수집하여
-    베이스라인을 수립하는 것이 중요합니다.
+  answer_detail: logall을 yes로 설정하면 룰에 매칭되지 않는 이벤트도 모두 기록합니다. SOC 구축 초기에는 모든 로그를 수집하여 베이스라인을 수립하는 것이 중요합니다.
   verify:
     type: output_contains
     expect: logall
     field: stdout
+    semantic:
+      intent: logall 설정 — grep -i 'logall' /var/ossec/etc/ossec.conf. logall=yes → 룰 미매칭 이벤트도 모두 기록. SOC
+        초기 베이스라인 수립. 디스크 공간 트레이드오프.
+      success_criteria:
+      - grep logall ossec.conf
+      - logall 키워드 출력
+      - 설정값 표시
+      acceptable_methods:
+      - grep ossec.conf
+      - Wazuh API configuration
+      - Dashboard 설정 view
+      negative_signs:
+      - logall 검색 없음
+      - ossec.conf 누락
+      - 베이스라인 맥락 없음
   target_vm: siem
 - order: 9
   instruction: Wazuh에서 오늘 발생한 알림 중 레벨 7 이상의 알림 수를 세시오.
@@ -141,12 +258,27 @@ steps:
   answer: '🖥️ UI: Dashboard → Security events → 필터 적용 후 이벤트 확인
 
     📎 참고 (CLI): grep -c "level [7-9]\|level 1[0-5]" /var/ossec/logs/alerts/alerts.log'
-  answer_detail: Wazuh 알림 레벨은 0-15까지이며, 레벨 7 이상은 주의가 필요한 이벤트입니다. SOC에서는 레벨별로 대응 우선순위를
-    분류합니다. 레벨 10 이상이면 즉시 대응이 필요합니다.
+  answer_detail: Wazuh 알림 레벨은 0-15까지이며, 레벨 7 이상은 주의가 필요한 이벤트입니다. SOC에서는 레벨별로 대응 우선순위를 분류합니다. 레벨 10 이상이면
+    즉시 대응이 필요합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 레벨 7+ 알림 카운트 — grep -c 'level [7-9]\|level 1[0-5]' alerts.log. Wazuh 레벨 0-15 / 7+ 주의 / 10+
+        즉시 대응. SOC 우선순위 분류 기초.
+      success_criteria:
+      - grep -c level 7-15
+      - alerts.log 경로
+      - 카운트 출력
+      acceptable_methods:
+      - grep -c
+      - awk 레벨 필터
+      - Dashboard severity filter
+      negative_signs:
+      - 레벨 필터 없음
+      - 단순 cat
+      - 우선순위 맥락 없음
   target_vm: siem
 - order: 10
   instruction: Wazuh 매니저의 내부 상태(stats)를 확인하여 분석 엔진이 처리한 이벤트 통계를 조회하시오.
@@ -155,12 +287,27 @@ steps:
   points: 10
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
-    📎 참고 (CLI): /var/ossec/bin/wazuh-analysisd -t 2>&1; cat /var/ossec/var/run/wazuh-analysisd.state
-    2>/dev/null || echo "stats available via API"'
-  answer_detail: analysisd.state 파일은 분석 엔진의 실시간 통계(초당 이벤트 수, 총 처리 이벤트, 알림 생성 수 등)를
-    보여줍니다. SOC 운영에서 SIEM의 처리 성능을 모니터링하는 데 사용됩니다.
+    📎 참고 (CLI): /var/ossec/bin/wazuh-analysisd -t 2>&1; cat /var/ossec/var/run/wazuh-analysisd.state 2>/dev/null
+    || echo "stats available via API"'
+  answer_detail: analysisd.state 파일은 분석 엔진의 실시간 통계(초당 이벤트 수, 총 처리 이벤트, 알림 생성 수 등)를 보여줍니다. SOC 운영에서 SIEM의
+    처리 성능을 모니터링하는 데 사용됩니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 분석 엔진 통계 — wazuh-analysisd -t + cat /var/ossec/var/run/wazuh-analysisd.state. 초당 EPS + 총
+        이벤트 + 알림 생성 통계. SIEM 처리 성능 모니터링. 용량 계획.
+      success_criteria:
+      - wazuh-analysisd 실행
+      - state 파일 또는 stats
+      - 통계 정보
+      acceptable_methods:
+      - analysisd state 파일
+      - Wazuh API stats
+      - Dashboard performance
+      negative_signs:
+      - state 파일 없음
+      - 통계 미확인
+      - 단순 ps만
   target_vm: siem
