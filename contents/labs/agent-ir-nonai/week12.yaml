@@ -3,8 +3,7 @@ title: Purple Round 2 — Experience → Playbook 자동 승격 (Non-AI)
 version: nonai
 course: agent-ir-nonai
 week: 12
-description: 반복 Experience를 클러스터링해 Playbook 후보로 자동 승격하는 파이프라인을 구현한다. 학생이 각 단계를 수동으로
-  수행하고 결과를 기록합니다.
+description: 반복 Experience를 클러스터링해 Playbook 후보로 자동 승격하는 파이프라인을 구현한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -25,6 +24,21 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[입력] Experience 파일 목록 — ls ~/ccc/data/bastion/experience/*.json | wc -l + head. 클러스터링 입력
+        데이터셋.'
+      success_criteria:
+      - ls + wc
+      - experience 개수
+      - head
+      acceptable_methods:
+      - ls + wc -l
+      - find -type f
+      - jq 목록
+      negative_signs:
+      - 개수 미확인
+      - 목록 없음
+      - 경로 오류
   target_vm: bastion
   script: ls ~/ccc/data/bastion/experience/*.json 2>/dev/null | wc -l && ls ~/ccc/data/bastion/experience/
     | head
@@ -35,30 +49,41 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 10
-  answer: "cat > ~/ccc/scripts/bastion_promote.py <<'PY'\nimport json, glob, collections\n\
-    buckets = collections.defaultdict(list)\nfor f in glob.glob('$HOME/ccc/data/bastion/experience/*.json'.replace('$HOME',\
-    \ __import__('os').path.expanduser('~'))):\n    try:\n        data = open(f).read().strip()\n\
-    \        # single-line or multi-line JSON\n        for line in data.splitlines()\
-    \ if '\\n' in data else [data]:\n            if not line.strip(): continue\n \
-    \           e = json.loads(line)\n            key = e.get('skill') or e.get('id','-')\n\
-    \            buckets[key].append(e)\n    except Exception as ex:\n        print('skip',\
-    \ f, ex)\nprint('clusters:')\nfor k,v in buckets.items():\n    print(' ', k, len(v))\n\
-    PY\npython3 ~/ccc/scripts/bastion_promote.py"
+  answer: "cat > ~/ccc/scripts/bastion_promote.py <<'PY'\nimport json, glob, collections\nbuckets = collections.defaultdict(list)\n\
+    for f in glob.glob('$HOME/ccc/data/bastion/experience/*.json'.replace('$HOME', __import__('os').path.expanduser('~'))):\n\
+    \    try:\n        data = open(f).read().strip()\n        # single-line or multi-line JSON\n     \
+    \   for line in data.splitlines() if '\\n' in data else [data]:\n            if not line.strip():\
+    \ continue\n            e = json.loads(line)\n            key = e.get('skill') or e.get('id','-')\n\
+    \            buckets[key].append(e)\n    except Exception as ex:\n        print('skip', f, ex)\nprint('clusters:')\n\
+    for k,v in buckets.items():\n    print(' ', k, len(v))\nPY\npython3 ~/ccc/scripts/bastion_promote.py"
   answer_detail: 현재 Experience를 skill 키로 그룹화. 반복 나타나는 skill이 승격 후보.
   verify:
     type: output_contains
     expect: clusters
     field: stdout
+    semantic:
+      intent: '[클러스터] bastion_promote.py — cat > bastion_promote.py: json + glob + collections.defaultdict
+        + e.get(''skill'') 키 그룹화 + 반복 skill 승격 후보. Experience → Playbook 파이프라인 기초.'
+      success_criteria:
+      - clusters 출력
+      - glob + defaultdict
+      - skill 키
+      acceptable_methods:
+      - defaultdict 클러스터
+      - sklearn DBSCAN
+      - pandas groupby
+      negative_signs:
+      - 그룹화 없음
+      - skill 키 없음
+      - Experience 파싱 없음
   target_vm: bastion
-  script: "cat > ~/ccc/scripts/bastion_promote.py <<'PY'\nimport json, glob, collections\n\
-    buckets = collections.defaultdict(list)\nfor f in glob.glob('$HOME/ccc/data/bastion/experience/*.json'.replace('$HOME',\
-    \ __import__('os').path.expanduser('~'))):\n    try:\n        data = open(f).read().strip()\n\
-    \        # single-line or multi-line JSON\n        for line in data.splitlines()\
-    \ if '\\n' in data else [data]:\n            if not line.strip(): continue\n \
-    \           e = json.loads(line)\n            key = e.get('skill') or e.get('id','-')\n\
-    \            buckets[key].append(e)\n    except Exception as ex:\n        print('skip',\
-    \ f, ex)\nprint('clusters:')\nfor k,v in buckets.items():\n    print(' ', k, len(v))\n\
-    PY\npython3 ~/ccc/scripts/bastion_promote.py"
+  script: "cat > ~/ccc/scripts/bastion_promote.py <<'PY'\nimport json, glob, collections\nbuckets = collections.defaultdict(list)\n\
+    for f in glob.glob('$HOME/ccc/data/bastion/experience/*.json'.replace('$HOME', __import__('os').path.expanduser('~'))):\n\
+    \    try:\n        data = open(f).read().strip()\n        # single-line or multi-line JSON\n     \
+    \   for line in data.splitlines() if '\\n' in data else [data]:\n            if not line.strip():\
+    \ continue\n            e = json.loads(line)\n            key = e.get('skill') or e.get('id','-')\n\
+    \            buckets[key].append(e)\n    except Exception as ex:\n        print('skip', f, ex)\nprint('clusters:')\n\
+    for k,v in buckets.items():\n    print(' ', k, len(v))\nPY\npython3 ~/ccc/scripts/bastion_promote.py"
   risk_level: low
   bastion_prompt: ''
 - order: 3
@@ -66,20 +91,35 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 11
-  answer: "cat > ~/ccc/scripts/promotion_score.py <<'PY'\ndef promotion_score(cluster):\n\
-    \    succ = sum(1 for e in cluster if e.get('outcome') == 'success')\n    return\
-    \ succ/len(cluster) if cluster else 0\nsample = [{'outcome':'success'}]*8 + [{'outcome':'fail'}]*2\n\
-    print('score', promotion_score(sample))  # 0.8\nPY\npython3 ~/ccc/scripts/promotion_score.py"
+  answer: "cat > ~/ccc/scripts/promotion_score.py <<'PY'\ndef promotion_score(cluster):\n    succ = sum(1\
+    \ for e in cluster if e.get('outcome') == 'success')\n    return succ/len(cluster) if cluster else\
+    \ 0\nsample = [{'outcome':'success'}]*8 + [{'outcome':'fail'}]*2\nprint('score', promotion_score(sample))\
+    \  # 0.8\nPY\npython3 ~/ccc/scripts/promotion_score.py"
   answer_detail: 성공률. 0.8+ && 5건+이 승격 조건.
   verify:
     type: output_contains
     expect: '0.8'
     field: stdout
+    semantic:
+      intent: '[점수] 승격 점수 — cat > promotion_score.py: def promotion_score(cluster): sum(outcome==''success'')/len.
+        0.8+ && 5+건 승격 조건. 성공률 계산.'
+      success_criteria:
+      - 0.8 출력
+      - def promotion_score
+      - success 비율
+      acceptable_methods:
+      - 비율 계산
+      - 비율 + 최소 샘플
+      - 베이지안 평가
+      negative_signs:
+      - 함수 없음
+      - 샘플 수 기준 없음
+      - 조건 없음
   target_vm: bastion
-  script: "cat > ~/ccc/scripts/promotion_score.py <<'PY'\ndef promotion_score(cluster):\n\
-    \    succ = sum(1 for e in cluster if e.get('outcome') == 'success')\n    return\
-    \ succ/len(cluster) if cluster else 0\nsample = [{'outcome':'success'}]*8 + [{'outcome':'fail'}]*2\n\
-    print('score', promotion_score(sample))  # 0.8\nPY\npython3 ~/ccc/scripts/promotion_score.py"
+  script: "cat > ~/ccc/scripts/promotion_score.py <<'PY'\ndef promotion_score(cluster):\n    succ = sum(1\
+    \ for e in cluster if e.get('outcome') == 'success')\n    return succ/len(cluster) if cluster else\
+    \ 0\nsample = [{'outcome':'success'}]*8 + [{'outcome':'fail'}]*2\nprint('score', promotion_score(sample))\
+    \  # 0.8\nPY\npython3 ~/ccc/scripts/promotion_score.py"
   risk_level: low
   bastion_prompt: ''
 - order: 4
@@ -87,11 +127,10 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 12
-  answer: "cat > ~/ccc/scripts/side_effect.py <<'PY'\ndef side_effect_score(cluster):\n\
-    \    fp = sum(1 for e in cluster if e.get('fp_flag'))\n    slow = sum(1 for e\
-    \ in cluster if e.get('elapsed_s',0) > 10)\n    canary = sum(1 for e in cluster\
-    \ if e.get('hit_canary'))\n    tot = len(cluster) or 1\n    return (fp*3 + slow\
-    \ + canary*5) / tot\ntest = [{'fp_flag':True},{'elapsed_s':15},{'hit_canary':True}]\n\
+  answer: "cat > ~/ccc/scripts/side_effect.py <<'PY'\ndef side_effect_score(cluster):\n    fp = sum(1\
+    \ for e in cluster if e.get('fp_flag'))\n    slow = sum(1 for e in cluster if e.get('elapsed_s',0)\
+    \ > 10)\n    canary = sum(1 for e in cluster if e.get('hit_canary'))\n    tot = len(cluster) or 1\n\
+    \    return (fp*3 + slow + canary*5) / tot\ntest = [{'fp_flag':True},{'elapsed_s':15},{'hit_canary':True}]\n\
     print('side_effect', side_effect_score(test))  # (3+1+5)/3\nPY\npython3 ~/ccc/scripts/side_effect.py"
   answer_detail: 부작용 누적 임계. <0.3이면 승격 가능.
   verify:
@@ -100,12 +139,26 @@ steps:
     - side_effect
     - 함수
     field: stdout
+    semantic:
+      intent: '[점수] 부작용 점수 — cat > side_effect.py: def side_effect_score(cluster): fp*3 + slow + canary*5
+        / total. <0.3 승격 가능. FP/slow/canary 가중치.'
+      success_criteria:
+      - side_effect/함수
+      - fp*3 + slow + canary*5
+      - 가중치
+      acceptable_methods:
+      - 가중 부작용
+      - SHAP 피처
+      - risk scoring
+      negative_signs:
+      - 가중치 없음
+      - 항목 1개
+      - 임계 없음
   target_vm: bastion
-  script: "cat > ~/ccc/scripts/side_effect.py <<'PY'\ndef side_effect_score(cluster):\n\
-    \    fp = sum(1 for e in cluster if e.get('fp_flag'))\n    slow = sum(1 for e\
-    \ in cluster if e.get('elapsed_s',0) > 10)\n    canary = sum(1 for e in cluster\
-    \ if e.get('hit_canary'))\n    tot = len(cluster) or 1\n    return (fp*3 + slow\
-    \ + canary*5) / tot\ntest = [{'fp_flag':True},{'elapsed_s':15},{'hit_canary':True}]\n\
+  script: "cat > ~/ccc/scripts/side_effect.py <<'PY'\ndef side_effect_score(cluster):\n    fp = sum(1\
+    \ for e in cluster if e.get('fp_flag'))\n    slow = sum(1 for e in cluster if e.get('elapsed_s',0)\
+    \ > 10)\n    canary = sum(1 for e in cluster if e.get('hit_canary'))\n    tot = len(cluster) or 1\n\
+    \    return (fp*3 + slow + canary*5) / tot\ntest = [{'fp_flag':True},{'elapsed_s':15},{'hit_canary':True}]\n\
     print('side_effect', side_effect_score(test))  # (3+1+5)/3\nPY\npython3 ~/ccc/scripts/side_effect.py"
   risk_level: low
   bastion_prompt: ''
@@ -115,23 +168,37 @@ steps:
   category: analysis
   points: 13
   answer: "mkdir -p ~/ccc/playbooks/agent_ir && cat > ~/ccc/playbooks/agent_ir/_candidate_pb_auto.yaml\
-    \ <<'Y'\nplaybook_id: pb-auto-fp-burst\nsource_experiences: 7\navg_success: 0.86\n\
-    status: shadow\ntriggers: { wazuh_rule_id: 100111 }\nsteps:\n  - skill: detect_agent_fp_burst\n\
-    \    args: {window: 180}\n  - skill: tar_pit_inject\n    args: {duration_s: 10}\n\
-    \  - skill: nft_block\n    args: {ttl: 86400}\nverify:\n  - alert_count_after_5m:\
-    \ \"<=1\"\nrollback: [unblock_nft]\nY\ncat ~/ccc/playbooks/agent_ir/_candidate_pb_auto.yaml"
+    \ <<'Y'\nplaybook_id: pb-auto-fp-burst\nsource_experiences: 7\navg_success: 0.86\nstatus: shadow\n\
+    triggers: { wazuh_rule_id: 100111 }\nsteps:\n  - skill: detect_agent_fp_burst\n    args: {window:\
+    \ 180}\n  - skill: tar_pit_inject\n    args: {duration_s: 10}\n  - skill: nft_block\n    args: {ttl:\
+    \ 86400}\nverify:\n  - alert_count_after_5m: \"<=1\"\nrollback: [unblock_nft]\nY\ncat ~/ccc/playbooks/agent_ir/_candidate_pb_auto.yaml"
   answer_detail: 자동 승격 후보. *shadow* 상태로 시작.
   verify:
     type: output_contains
     expect: shadow
     field: stdout
+    semantic:
+      intent: '[후보] 승격 Playbook YAML — cat > _candidate_pb_auto.yaml: playbook_id pb-auto-fp-burst + source_experiences
+        7 + avg_success 0.86 + status shadow + triggers + steps (detect/tar_pit/nft_block) + verify alert_count
+        + rollback. shadow 상태 시작.'
+      success_criteria:
+      - shadow 상태
+      - source_experiences + avg_success
+      - steps 3 + rollback
+      acceptable_methods:
+      - Playbook YAML
+      - Shuffle spec
+      - Ansible role
+      negative_signs:
+      - status 없음
+      - steps 1-2개
+      - source 추적 없음
   target_vm: bastion
   script: "mkdir -p ~/ccc/playbooks/agent_ir && cat > ~/ccc/playbooks/agent_ir/_candidate_pb_auto.yaml\
-    \ <<'Y'\nplaybook_id: pb-auto-fp-burst\nsource_experiences: 7\navg_success: 0.86\n\
-    status: shadow\ntriggers: { wazuh_rule_id: 100111 }\nsteps:\n  - skill: detect_agent_fp_burst\n\
-    \    args: {window: 180}\n  - skill: tar_pit_inject\n    args: {duration_s: 10}\n\
-    \  - skill: nft_block\n    args: {ttl: 86400}\nverify:\n  - alert_count_after_5m:\
-    \ \"<=1\"\nrollback: [unblock_nft]\nY\ncat ~/ccc/playbooks/agent_ir/_candidate_pb_auto.yaml"
+    \ <<'Y'\nplaybook_id: pb-auto-fp-burst\nsource_experiences: 7\navg_success: 0.86\nstatus: shadow\n\
+    triggers: { wazuh_rule_id: 100111 }\nsteps:\n  - skill: detect_agent_fp_burst\n    args: {window:\
+    \ 180}\n  - skill: tar_pit_inject\n    args: {duration_s: 10}\n  - skill: nft_block\n    args: {ttl:\
+    \ 86400}\nverify:\n  - alert_count_after_5m: \"<=1\"\nrollback: [unblock_nft]\nY\ncat ~/ccc/playbooks/agent_ir/_candidate_pb_auto.yaml"
   risk_level: low
   bastion_prompt: ''
 - order: 6
@@ -139,26 +206,37 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 14
-  answer: "cat > ~/ccc/scripts/canary.py <<'PY'\nimport requests, time\ndef canary():\n\
-    \    results = []\n    for scenario in [{'name':'normal_get','url':'http://10.20.30.80/'},\n\
-    \                     {'name':'api_health','url':'http://10.20.30.80/health'}]:\n\
-    \        try:\n            r = requests.get(scenario['url'], timeout=5)\n    \
-    \        results.append((scenario['name'], r.status_code))\n        except Exception\
-    \ as e:\n            results.append((scenario['name'], 'ERROR'))\n    return results\n\
-    print(canary())\nPY\npython3 ~/ccc/scripts/canary.py 2>&1 | head -5"
+  answer: "cat > ~/ccc/scripts/canary.py <<'PY'\nimport requests, time\ndef canary():\n    results = []\n\
+    \    for scenario in [{'name':'normal_get','url':'http://10.20.30.80/'},\n                     {'name':'api_health','url':'http://10.20.30.80/health'}]:\n\
+    \        try:\n            r = requests.get(scenario['url'], timeout=5)\n            results.append((scenario['name'],\
+    \ r.status_code))\n        except Exception as e:\n            results.append((scenario['name'], 'ERROR'))\n\
+    \    return results\nprint(canary())\nPY\npython3 ~/ccc/scripts/canary.py 2>&1 | head -5"
   answer_detail: 정상 트래픽 시뮬. 자동 차단되면 Playbook 문제.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[Canary] 정상 트래픽 스크립트 — cat > canary.py: requests + 2 시나리오 (normal_get / api_health) + status_code
+        + ERROR catch. 정상 트래픽 자동 차단 검증.'
+      success_criteria:
+      - canary 시나리오
+      - requests.get + try/except
+      - status_code
+      acceptable_methods:
+      - requests 테스트
+      - httpx client
+      - curl loop
+      negative_signs:
+      - 시나리오 1개
+      - try/except 없음
+      - status 미확인
   target_vm: bastion
-  script: "cat > ~/ccc/scripts/canary.py <<'PY'\nimport requests, time\ndef canary():\n\
-    \    results = []\n    for scenario in [{'name':'normal_get','url':'http://10.20.30.80/'},\n\
-    \                     {'name':'api_health','url':'http://10.20.30.80/health'}]:\n\
-    \        try:\n            r = requests.get(scenario['url'], timeout=5)\n    \
-    \        results.append((scenario['name'], r.status_code))\n        except Exception\
-    \ as e:\n            results.append((scenario['name'], 'ERROR'))\n    return results\n\
-    print(canary())\nPY\npython3 ~/ccc/scripts/canary.py 2>&1 | head -5"
+  script: "cat > ~/ccc/scripts/canary.py <<'PY'\nimport requests, time\ndef canary():\n    results = []\n\
+    \    for scenario in [{'name':'normal_get','url':'http://10.20.30.80/'},\n                     {'name':'api_health','url':'http://10.20.30.80/health'}]:\n\
+    \        try:\n            r = requests.get(scenario['url'], timeout=5)\n            results.append((scenario['name'],\
+    \ r.status_code))\n        except Exception as e:\n            results.append((scenario['name'], 'ERROR'))\n\
+    \    return results\nprint(canary())\nPY\npython3 ~/ccc/scripts/canary.py 2>&1 | head -5"
   risk_level: low
   bastion_prompt: ''
 - order: 7
@@ -184,6 +262,21 @@ steps:
     type: output_contains
     expect: 롤백
     field: stdout
+    semantic:
+      intent: '[롤백] 자동 조건 — cat > rollback-trigger.md: FP>2% 즉시 / Canary 실패 1회 즉시 / 성능 영향 >500ms 즉시 /
+        review queue 복귀. 3 롤백 트리거.'
+      success_criteria:
+      - 롤백 키워드
+      - 3 트리거
+      - 정량 임계
+      acceptable_methods:
+      - Markdown 정책
+      - SRE runbook
+      - PagerDuty rule
+      negative_signs:
+      - 트리거 1개
+      - 임계 없음
+      - review queue 없음
   target_vm: bastion
   script: 'cat > ~/ccc/artifacts/w12-round2/rollback-trigger.md <<''MD''
 
@@ -205,23 +298,36 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 16
-  answer: "cat > ~/ccc/scripts/review_queue.sql <<'S'\nCREATE TABLE IF NOT EXISTS\
-    \ review_queue (\n  id INTEGER PRIMARY KEY,\n  playbook_id TEXT,\n  status TEXT,\
-    \ -- pending|approved|rejected\n  created_at TEXT,\n  reviewer TEXT,\n  reviewed_at\
-    \ TEXT,\n  notes TEXT\n);\nS\nmkdir -p ~/ccc/data/bastion && sqlite3 ~/ccc/data/bastion/review.db\
-    \ < ~/ccc/scripts/review_queue.sql 2>&1 | head -3 || echo 'sqlite3_maybe_missing'"
+  answer: "cat > ~/ccc/scripts/review_queue.sql <<'S'\nCREATE TABLE IF NOT EXISTS review_queue (\n  id\
+    \ INTEGER PRIMARY KEY,\n  playbook_id TEXT,\n  status TEXT, -- pending|approved|rejected\n  created_at\
+    \ TEXT,\n  reviewer TEXT,\n  reviewed_at TEXT,\n  notes TEXT\n);\nS\nmkdir -p ~/ccc/data/bastion &&\
+    \ sqlite3 ~/ccc/data/bastion/review.db < ~/ccc/scripts/review_queue.sql 2>&1 | head -3 || echo 'sqlite3_maybe_missing'"
   answer_detail: 리뷰 큐 저장소. 승격 후보가 여기 쌓이고 학생이 *수동* 승인.
   verify:
     type: output_contains
     expect:
     - 스키마
     field: stdout
+    semantic:
+      intent: '[리뷰 큐] sqlite 스키마 — cat > review_queue.sql: CREATE TABLE review_queue (id, playbook_id,
+        status pending|approved|rejected, created_at, reviewer, reviewed_at, notes). 수동 승인 저장소.'
+      success_criteria:
+      - 스키마 키워드
+      - sqlite3 테이블
+      - status 컬럼
+      acceptable_methods:
+      - sqlite CREATE
+      - PostgreSQL schema
+      - JSON file queue
+      negative_signs:
+      - 컬럼 3개 이하
+      - status 없음
+      - sqlite3 없음
   target_vm: bastion
-  script: "cat > ~/ccc/scripts/review_queue.sql <<'S'\nCREATE TABLE IF NOT EXISTS\
-    \ review_queue (\n  id INTEGER PRIMARY KEY,\n  playbook_id TEXT,\n  status TEXT,\
-    \ -- pending|approved|rejected\n  created_at TEXT,\n  reviewer TEXT,\n  reviewed_at\
-    \ TEXT,\n  notes TEXT\n);\nS\nmkdir -p ~/ccc/data/bastion && sqlite3 ~/ccc/data/bastion/review.db\
-    \ < ~/ccc/scripts/review_queue.sql 2>&1 | head -3 || echo 'sqlite3_maybe_missing'"
+  script: "cat > ~/ccc/scripts/review_queue.sql <<'S'\nCREATE TABLE IF NOT EXISTS review_queue (\n  id\
+    \ INTEGER PRIMARY KEY,\n  playbook_id TEXT,\n  status TEXT, -- pending|approved|rejected\n  created_at\
+    \ TEXT,\n  reviewer TEXT,\n  reviewed_at TEXT,\n  notes TEXT\n);\nS\nmkdir -p ~/ccc/data/bastion &&\
+    \ sqlite3 ~/ccc/data/bastion/review.db < ~/ccc/scripts/review_queue.sql 2>&1 | head -3 || echo 'sqlite3_maybe_missing'"
   risk_level: low
   bastion_prompt: ''
 - order: 9
@@ -229,18 +335,31 @@ steps:
   hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
   category: attack
   points: 17
-  answer: 'for i in $(seq 1 20); do curl -s -o /dev/null http://10.20.30.80/rest/user/login
-    -X POST -d ''{"email":"r2-''$i''"}'' -H ''Content-Type: application/json''; done;
-    echo round2_done'
+  answer: 'for i in $(seq 1 20); do curl -s -o /dev/null http://10.20.30.80/rest/user/login -X POST -d
+    ''{"email":"r2-''$i''"}'' -H ''Content-Type: application/json''; done; echo round2_done'
   answer_detail: Round 2 공격 트래픽. Bastion 자산 증가로 인해 탐지·대응이 더 빨라야 정상.
   verify:
     type: output_contains
     expect: round2_done
     field: stdout
+    semantic:
+      intent: '[재공격] Round 2 트래픽 — for i in 1..20; curl -X POST /rest/user/login email=r2-$i. w11 동일 시나리오
+        반복. Bastion 자산 증가로 탐지·대응 개선 검증.'
+      success_criteria:
+      - round2_done
+      - 20 반복
+      - POST JSON
+      acceptable_methods:
+      - for + seq
+      - hey -c
+      - Locust load
+      negative_signs:
+      - 반복 10회 이하
+      - POST 없음
+      - 완료 마커 없음
   target_vm: web
-  script: 'for i in $(seq 1 20); do curl -s -o /dev/null http://10.20.30.80/rest/user/login
-    -X POST -d ''{"email":"r2-''$i''"}'' -H ''Content-Type: application/json''; done;
-    echo round2_done'
+  script: 'for i in $(seq 1 20); do curl -s -o /dev/null http://10.20.30.80/rest/user/login -X POST -d
+    ''{"email":"r2-''$i''"}'' -H ''Content-Type: application/json''; done; echo round2_done'
   risk_level: low
   bastion_prompt: ''
 - order: 10
@@ -270,6 +389,21 @@ steps:
     type: output_contains
     expect: Round
     field: stdout
+    semantic:
+      intent: '[메트릭] Round 1 vs 2 비교 — cat > metrics.md: 표 4 지표 (탐지 지연 p50 8s→6s / 미탐지 1→0 / 자동 대응 2→4
+        / 분석가 개입 3→1). 자동 대응 증가 핵심.'
+      success_criteria:
+      - Round 키워드
+      - Round1 vs Round2
+      - 4 지표 delta
+      acceptable_methods:
+      - Markdown 표
+      - CSV metrics
+      - Grafana 비교
+      negative_signs:
+      - 지표 2개 이하
+      - delta 없음
+      - 비교 없음
   target_vm: bastion
   script: 'cat > ~/ccc/artifacts/w12-round2/metrics.md <<''MD''
 
@@ -317,6 +451,21 @@ steps:
     type: output_contains
     expect: 외부 IP
     field: stdout
+    semantic:
+      intent: '[금지] nogo-auto 자동 승격 금지 — cat > nogo-auto.yaml: 외부 IP 장기 차단 / 인증 서비스 변경 / 정책 변경 / 데이터 격리
+        / 서비스 재시작. 5 영구 수동 승인 Playbook.'
+      success_criteria:
+      - 외부 IP 키워드
+      - 5 금지 항목
+      - 수동 승인 필수
+      acceptable_methods:
+      - YAML 금지 목록
+      - OPA forbidden
+      - IAM explicit deny
+      negative_signs:
+      - 항목 3개 이하
+      - 이유 없음
+      - 수동 승인 맥락 없음
   target_vm: bastion
   script: 'cat > ~/ccc/data/bastion/nogo-auto.yaml <<''Y''
 
@@ -342,8 +491,8 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 20
-  answer: echo '{"id":"w12-round2","auto_promoted":1,"shadow_mode":true,"canary_ok":true}'
-    > ~/ccc/data/bastion/experience/w12-round2.json && cat ~/ccc/data/bastion/experience/w12-round2.json
+  answer: echo '{"id":"w12-round2","auto_promoted":1,"shadow_mode":true,"canary_ok":true}' > ~/ccc/data/bastion/experience/w12-round2.json
+    && cat ~/ccc/data/bastion/experience/w12-round2.json
   answer_detail: Round 2 결과. w13 보고서의 핵심 근거.
   verify:
     type: output_contains
@@ -351,8 +500,23 @@ steps:
     - auto_promoted
     - experience
     field: stdout
+    semantic:
+      intent: '[기록] w12 Round 2 Experience — echo ''{id: w12-round2, auto_promoted: 1, shadow_mode: true,
+        canary_ok: true}'' > w12-round2.json. 자동 승격 결과.'
+      success_criteria:
+      - auto_promoted/experience
+      - shadow_mode
+      - canary_ok
+      acceptable_methods:
+      - echo JSON
+      - jq -n
+      - python dumps
+      negative_signs:
+      - auto_promoted 없음
+      - shadow 없음
+      - JSON 아님
   target_vm: bastion
-  script: echo '{"id":"w12-round2","auto_promoted":1,"shadow_mode":true,"canary_ok":true}'
-    > ~/ccc/data/bastion/experience/w12-round2.json && cat ~/ccc/data/bastion/experience/w12-round2.json
+  script: echo '{"id":"w12-round2","auto_promoted":1,"shadow_mode":true,"canary_ok":true}' > ~/ccc/data/bastion/experience/w12-round2.json
+    && cat ~/ccc/data/bastion/experience/w12-round2.json
   risk_level: low
   bastion_prompt: ''
