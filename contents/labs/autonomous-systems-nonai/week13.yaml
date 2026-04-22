@@ -17,100 +17,245 @@ steps:
   hint: 간소화된 선형 분류기에 sign gradient 방향 섭동을 가하세요.
   category: attack
   points: 12
-  answer: 'python3 -c "import math;w=[0.8,-0.3,0.5,0.2,-0.4];b=-0.5;x=[0.9,0.2,0.7,0.5,0.3];p0=1/(1+math.exp(-(sum(wi*xi for wi,xi in zip(w,x))+b)));print(f''=== FGSM Attack ==='');print(f''  Original: p={p0:.3f} → STOP_SIGN'');[print(f''  eps={e}: p={1/(1+math.exp(-(sum(wi*(xi-e*(1 if wi>0 else -1)) for wi,xi in zip(w,x))+b))):.3f} → {\"EVADED\" if 1/(1+math.exp(-(sum(wi*(xi-e*(1 if wi>0 else -1))
-    for wi,xi in zip(w,x))+b)))<0.5 else \"DETECTED\"}'') for e in [0.1,0.2,0.3,0.5]]"'
+  answer: 'python3 -c "import math;w=[0.8,-0.3,0.5,0.2,-0.4];b=-0.5;x=[0.9,0.2,0.7,0.5,0.3];p0=1/(1+math.exp(-(sum(wi*xi
+    for wi,xi in zip(w,x))+b)));print(f''=== FGSM Attack ==='');print(f''  Original: p={p0:.3f} → STOP_SIGN'');[print(f''  eps={e}:
+    p={1/(1+math.exp(-(sum(wi*(xi-e*(1 if wi>0 else -1)) for wi,xi in zip(w,x))+b))):.3f} → {\"EVADED\"
+    if 1/(1+math.exp(-(sum(wi*(xi-e*(1 if wi>0 else -1)) for wi,xi in zip(w,x))+b)))<0.5 else \"DETECTED\"}'')
+    for e in [0.1,0.2,0.3,0.5]]"'
   answer_detail: FGSM은 그래디언트 부호 방향으로 섭동을 가하는 공격입니다.
   verify:
     type: output_contains
     expect: FGSM Attack
     field: stdout
+    semantic:
+      intent: '[공격] FGSM 수치 시뮬 — python3 w/b 선형 분류기 + x_adv = x - eps*sign(w) + sigmoid + epsilon 4레벨
+        EVADED/DETECTED. Goodfellow FGSM. MITRE ATLAS AML.T0043.'
+      success_criteria:
+      - FGSM Attack 키워드
+      - epsilon 4+ 레벨
+      - EVADED/DETECTED
+      acceptable_methods:
+      - FGSM sign(grad)
+      - CleverHans FGSM
+      - ART adversarial
+      negative_signs:
+      - epsilon 1개
+      - sign 없음
+      - sigmoid 없음
   target_vm: attacker
 - order: 2
   instruction: PGD 공격과 FGSM 공격의 차이를 시뮬레이션으로 비교하시오. 반복 횟수에 따른 공격 성공률 변화를 출력하라.
   hint: PGD는 FGSM을 반복 적용하는 것과 유사합니다.
   category: attack
   points: 12
-  answer: python3 -c "print('=== FGSM vs PGD Comparison ===');print(f'  {\"Method\":<10} {\"Steps\":<8} {\"Success\":<10} {\"L2 Norm\":<10}');data=[('FGSM',1,'60%','0.45'),('PGD-5',5,'75%','0.38'),('PGD-10',10,'85%','0.32'),('PGD-20',20,'92%','0.28')];[print(f'  {d[0]:<10} {d[1]:<8} {d[2]:<10} {d[3]:<10}') for d in data];print('  [*] PGD achieves higher success with smaller perturbation')"
+  answer: python3 -c "print('=== FGSM vs PGD Comparison ===');print(f'  {\"Method\":<10} {\"Steps\":<8}
+    {\"Success\":<10} {\"L2 Norm\":<10}');data=[('FGSM',1,'60%','0.45'),('PGD-5',5,'75%','0.38'),('PGD-10',10,'85%','0.32'),('PGD-20',20,'92%','0.28')];[print(f'  {d[0]:<10}
+    {d[1]:<8} {d[2]:<10} {d[3]:<10}') for d in data];print('  [*] PGD achieves higher success with smaller
+    perturbation')"
   answer_detail: PGD는 반복 최적화로 FGSM보다 강력한 공격입니다.
   verify:
     type: output_contains
     expect: FGSM vs PGD
     field: stdout
+    semantic:
+      intent: '[공격] FGSM vs PGD 비교 — python3 표 Method/Steps/Success/L2 (FGSM 60%/PGD-5 75%/PGD-10 85%/PGD-20
+        92%). 반복 최적화 PGD 효과. Madry PGD 논문.'
+      success_criteria:
+      - FGSM vs PGD 키워드
+      - 반복 수 비교
+      - 성공률 증가
+      acceptable_methods:
+      - Madry PGD
+      - foolbox PGD
+      - ART ProjectedGradientDescent
+      negative_signs:
+      - 방법 1종
+      - Steps 미비교
+      - 성공률 고정
   target_vm: attacker
 - order: 3
   instruction: 가우시안 노이즈 방어 기법을 구현하시오. 적대적 입력에 노이즈를 추가하여 공격 성공률 변화를 측정하라.
   hint: random.gauss로 노이즈를 추가하세요.
   category: config
   points: 12
-  answer: 'python3 -c "import random;random.seed(42);x_adv=[1.2,-0.1,1.0,0.7,0.0];print(''=== Gaussian Noise Defense ==='');results=[];[results.append(sum(1 for _ in range(10) if sum([0.8,-0.3,0.5,0.2,-0.4][j]*(x_adv[j]+random.gauss(0,s)) for j in range(5))-0.5>0)) for s in [0.05,0.1,0.2]];print(f''  sigma=0.05: recovery {results[0]*10}%'');print(f''  sigma=0.10: recovery {results[1]*10}%'');print(f''  sigma=0.20:
-    recovery {results[2]*10}%'')"'
+  answer: 'python3 -c "import random;random.seed(42);x_adv=[1.2,-0.1,1.0,0.7,0.0];print(''=== Gaussian
+    Noise Defense ==='');results=[];[results.append(sum(1 for _ in range(10) if sum([0.8,-0.3,0.5,0.2,-0.4][j]*(x_adv[j]+random.gauss(0,s))
+    for j in range(5))-0.5>0)) for s in [0.05,0.1,0.2]];print(f''  sigma=0.05: recovery {results[0]*10}%'');print(f''  sigma=0.10:
+    recovery {results[1]*10}%'');print(f''  sigma=0.20: recovery {results[2]*10}%'')"'
   answer_detail: 가우시안 노이즈는 적대적 섭동을 상쇄하는 간단한 방어입니다.
   verify:
     type: output_contains
     expect: Gaussian Noise
     field: stdout
+    semantic:
+      intent: '[방어] 가우시안 노이즈 방어 — python3 x_adv + random.gauss(0, sigma) 3레벨 (0.05/0.10/0.20) + recovery%.
+        입력 노이즈로 섭동 상쇄. Randomized smoothing 기초.'
+      success_criteria:
+      - Gaussian Noise 키워드
+      - 3 sigma 레벨
+      - recovery %
+      acceptable_methods:
+      - random.gauss
+      - Randomized Smoothing
+      - Certified defense
+      negative_signs:
+      - sigma 1개
+      - recovery 없음
+      - 노이즈 없음
   target_vm: attacker
 - order: 4
   instruction: Feature Squeezing 방어를 구현하고 효과를 측정하시오.
   hint: 입력 정밀도를 줄여서 적대적 섭동을 제거하세요.
   category: config
   points: 12
-  answer: 'python3 -c "x_adv=[1.23,-0.15,1.02,0.73,0.04];squeezed=[round(x,1) for x in x_adv];print(''=== Feature Squeezing ==='');print(f''  Before: {x_adv}'');print(f''  After:  {squeezed}'');print(f''  Diff: {[round(a-b,2) for a,b in zip(x_adv,squeezed)]}'');print(''  [OK] Small perturbations removed by precision reduction'')"'
+  answer: 'python3 -c "x_adv=[1.23,-0.15,1.02,0.73,0.04];squeezed=[round(x,1) for x in x_adv];print(''===
+    Feature Squeezing ==='');print(f''  Before: {x_adv}'');print(f''  After:  {squeezed}'');print(f''  Diff:
+    {[round(a-b,2) for a,b in zip(x_adv,squeezed)]}'');print(''  [OK] Small perturbations removed by precision
+    reduction'')"'
   answer_detail: Feature Squeezing은 소수점 이하 섭동을 제거합니다.
   verify:
     type: output_contains
     expect: Feature Squeezing
     field: stdout
+    semantic:
+      intent: '[방어] Feature Squeezing — python3 round(x,1) 정밀도 축소 + Before/After/Diff 비교. Xu et al. Feature
+        Squeezing 2017. 색상 깊이 축소 효과.'
+      success_criteria:
+      - Feature Squeezing 키워드
+      - round + 정밀도
+      - Before/After
+      acceptable_methods:
+      - round precision
+      - bit depth reduction
+      - Median filter
+      negative_signs:
+      - 축소 없음
+      - 비교 없음
+      - Diff 누락
   target_vm: attacker
 - order: 5
   instruction: 앙상블 방어를 구현하시오. 3개 모델의 투표로 적대적 입력을 탐지하라.
   hint: 각 모델의 예측 결과를 다수결로 결합하세요.
   category: config
   points: 12
-  answer: 'python3 -c "import math;models=[[0.8,-0.3,0.5,0.2,-0.4],[0.7,-0.2,0.6,0.1,-0.3],[0.9,-0.4,0.4,0.3,-0.5]];x_adv=[1.2,-0.1,1.0,0.7,0.0];votes=[1/(1+math.exp(-(sum(w*x for w,x in zip(m,x_adv))-0.5)))>0.5 for m in models];print(''=== Ensemble Defense ==='');[print(f''  Model {i+1}: {\"STOP\" if v else \"NOT_STOP\"}'') for i,v in enumerate(votes)];majority=sum(votes)>len(votes)/2;print(f''  Majority
+  answer: 'python3 -c "import math;models=[[0.8,-0.3,0.5,0.2,-0.4],[0.7,-0.2,0.6,0.1,-0.3],[0.9,-0.4,0.4,0.3,-0.5]];x_adv=[1.2,-0.1,1.0,0.7,0.0];votes=[1/(1+math.exp(-(sum(w*x
+    for w,x in zip(m,x_adv))-0.5)))>0.5 for m in models];print(''=== Ensemble Defense ==='');[print(f''  Model
+    {i+1}: {\"STOP\" if v else \"NOT_STOP\"}'') for i,v in enumerate(votes)];majority=sum(votes)>len(votes)/2;print(f''  Majority
     vote: {\"STOP_SIGN\" if majority else \"NOT_STOP\"}'');print(f''  Agreement: {sum(votes)}/{len(votes)}'')"'
   answer_detail: 앙상블은 단일 모델 공격의 전이성을 줄여줍니다.
   verify:
     type: output_contains
     expect: Ensemble Defense
     field: stdout
+    semantic:
+      intent: '[방어] 앙상블 방어 — python3 models 3개 가중치 + votes 투표 + majority. 3 모델 다수결 투표. Ensemble defense
+        + attack 전이성 감소.'
+      success_criteria:
+      - Ensemble Defense 키워드
+      - 3 모델 투표
+      - majority
+      acceptable_methods:
+      - 앙상블 투표
+      - Bagging + Adv training
+      - MACER certified
+      negative_signs:
+      - 모델 1-2개
+      - 투표 없음
+      - 다수결 누락
   target_vm: attacker
 - order: 6
   instruction: LLM에게 CPS 환경에서 AI 적대적 공격이 특히 위험한 이유를 질의하시오.
   hint: adversarial ML risks in cyber-physical systems를 질문하세요.
   category: analysis
   points: 10
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are an AI safety researcher.\"},{\"role\":\"user\",\"content\":\"Why are adversarial ML attacks more dangerous in CPS (drones, autonomous vehicles, robots) than in typical IT systems? Give 3 specific reasons.\"}],\"stream\":false,\"options\":{\"num_predict\"\
-    :150}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
+    messages\":[{\"role\":\"system\",\"content\":\"You are an AI safety researcher.\"},{\"role\":\"user\"\
+    ,\"content\":\"Why are adversarial ML attacks more dangerous in CPS (drones, autonomous vehicles,\
+    \ robots) than in typical IT systems? Give 3 specific reasons.\"}],\"stream\":false,\"options\":{\"\
+    num_predict\":150}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: CPS에서 AI 공격은 물리적 피해로 직결됩니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[분석] CPS AI 공격 위험 — curl /api/chat system=AI safety researcher + adversarial ML in CPS
+        vs IT + 3 reasons. 물리적 피해/실시간 제약/안전 중요도. MITRE ATLAS CPS.'
+      success_criteria:
+      - CPS AI 위험 맥락
+      - 3 reasons
+      - system role
+      acceptable_methods:
+      - LLM 분석
+      - NIST AI 100-2
+      - ENISA AI
+      negative_signs:
+      - reasons 1-2개
+      - CPS 맥락 없음
+      - system 누락
   target_vm: manager
 - order: 7
   instruction: 적대적 공격 탐지 시스템을 구현하시오. 입력 변환 전후의 차이로 적대적 입력을 판별하라.
   hint: 원본과 변환된 입력의 L2 거리를 측정하세요.
   category: config
   points: 10
-  answer: 'python3 -c "import math;x_adv=[1.2,-0.1,1.0,0.7,0.0];x_squeezed=[round(x,1) for x in x_adv];x_normal=[0.9,0.2,0.7,0.5,0.3];n_squeezed=[round(x,1) for x in x_normal];d_adv=math.sqrt(sum((a-b)**2 for a,b in zip(x_adv,x_squeezed)));d_normal=math.sqrt(sum((a-b)**2 for a,b in zip(x_normal,n_squeezed)));thresh=0.1;print(''=== Adversarial Detection ==='');print(f''  Normal input diff:  {d_normal:.4f}
-    → {\"OK\" if d_normal<thresh else \"SUSPICIOUS\"}'');print(f''  Adversarial diff:   {d_adv:.4f} → {\"OK\" if d_adv<thresh else \"SUSPICIOUS\"}'');print(f''  Threshold: {thresh}'')"'
+  answer: 'python3 -c "import math;x_adv=[1.2,-0.1,1.0,0.7,0.0];x_squeezed=[round(x,1) for x in x_adv];x_normal=[0.9,0.2,0.7,0.5,0.3];n_squeezed=[round(x,1)
+    for x in x_normal];d_adv=math.sqrt(sum((a-b)**2 for a,b in zip(x_adv,x_squeezed)));d_normal=math.sqrt(sum((a-b)**2
+    for a,b in zip(x_normal,n_squeezed)));thresh=0.1;print(''=== Adversarial Detection ==='');print(f''  Normal
+    input diff:  {d_normal:.4f} → {\"OK\" if d_normal<thresh else \"SUSPICIOUS\"}'');print(f''  Adversarial
+    diff:   {d_adv:.4f} → {\"OK\" if d_adv<thresh else \"SUSPICIOUS\"}'');print(f''  Threshold: {thresh}'')"'
   answer_detail: 변환 일관성 검사로 적대적 입력을 탐지합니다.
   verify:
     type: output_contains
-    expect: Adversarial Detection
+    expect:
+    - Adversarial Detection
+    - 탐지
     field: stdout
+    semantic:
+      intent: '[방어] 적대적 탐지 — python3 normal/adv + round squeezed + L2 거리 비교 + threshold 0.1 OK/SUSPICIOUS.
+        변환 일관성 기반 탐지. Xu Feature Squeezing detection.'
+      success_criteria:
+      - Adversarial Detection 키워드
+      - L2 거리 비교
+      - threshold
+      acceptable_methods:
+      - L2 distance + threshold
+      - Feature Squeezing detection
+      - Mahalanobis distance
+      negative_signs:
+      - 거리 미계산
+      - threshold 없음
+      - 비교 없음
   target_vm: attacker
 - order: 8
   instruction: CPS AI 보안 체크리스트를 Python으로 생성하시오. 10가지 항목을 평가하라.
   hint: 필수/권장 항목을 구분하세요.
   category: analysis
   points: 10
-  answer: 'python3 -c "items=[(''Robustness test'',''필수'',False),(''Input validation'',''필수'',True),(''Ensemble models'',''권장'',False),(''Adversarial training'',''권장'',False),(''Real-time monitoring'',''필수'',True),(''Sensor fusion verify'',''필수'',True),(''Model integrity'',''필수'',False),(''Explainability'',''권장'',False),(''Physical attack test'',''권장'',False),(''Failsafe mode'',''필수'',True)];ok=sum(v
-    for _,_,v in items);print(''=== CPS AI Security Checklist ==='');[print(f''  [{\"OK\" if v else \"!!\"} ] [{r}] {n}'') for n,r,v in items];print(f''  Score: {ok}/{len(items)}'')"'
+  answer: 'python3 -c "items=[(''Robustness test'',''필수'',False),(''Input validation'',''필수'',True),(''Ensemble
+    models'',''권장'',False),(''Adversarial training'',''권장'',False),(''Real-time monitoring'',''필수'',True),(''Sensor
+    fusion verify'',''필수'',True),(''Model integrity'',''필수'',False),(''Explainability'',''권장'',False),(''Physical
+    attack test'',''권장'',False),(''Failsafe mode'',''필수'',True)];ok=sum(v for _,_,v in items);print(''===
+    CPS AI Security Checklist ==='');[print(f''  [{\"OK\" if v else \"!!\"} ] [{r}] {n}'') for n,r,v in
+    items];print(f''  Score: {ok}/{len(items)}'')"'
   answer_detail: AI 보안 체크리스트로 CPS 시스템의 AI 보안 수준을 평가합니다.
   verify:
     type: output_contains
     expect: AI Security Checklist
     field: stdout
+    semantic:
+      intent: '[분석] CPS AI 보안 체크리스트 — python3 items 10 (Robustness/Input val/Ensemble/Adv training/Monitoring/Sensor
+        fusion/Model integrity/XAI/Physical test/Failsafe) + 필수/권장 + OK/FAIL. NIST AI RMF + AML.T.'
+      success_criteria:
+      - AI Security Checklist 키워드
+      - 10 항목
+      - 필수/권장
+      acceptable_methods:
+      - 10 항목 체크
+      - NIST AI RMF
+      - MITRE ATLAS
+      negative_signs:
+      - 항목 5개 이하
+      - 필수/권장 없음
+      - Score 없음
   target_vm: attacker
