@@ -3,8 +3,7 @@ title: 위협 인텔리전스 - IoC 기반 탐지와 로그 매칭
 version: non-ai
 course: soc-nonai
 week: 11
-description: '침해 지표(IoC: IP, 해시, 도메인)를 수집하고, Wazuh CDB 리스트와 로그 분석에 활용하여 알려진 위협을 탐지하는
-  위협 인텔리전스 기법을 학습합니다.'
+description: '침해 지표(IoC: IP, 해시, 도메인)를 수집하고, Wazuh CDB 리스트와 로그 분석에 활용하여 알려진 위협을 탐지하는 위협 인텔리전스 기법을 학습합니다.'
 difficulty: medium
 duration_minutes: 150
 objectives:
@@ -14,20 +13,34 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: SIEM VM에서 Wazuh의 CDB(Constant DataBase) 리스트 디렉토리를 확인하시오. 어떤 리스트가 존재하는지
-    파악하시오.
+  instruction: SIEM VM에서 Wazuh의 CDB(Constant DataBase) 리스트 디렉토리를 확인하시오. 어떤 리스트가 존재하는지 파악하시오.
   hint: /var/ossec/etc/lists/ 디렉토리를 확인하세요.
   category: setup
   points: 8
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
     📎 참고 (CLI): ls -la /var/ossec/etc/lists/'
-  answer_detail: CDB 리스트는 Wazuh에서 IP, 도메인, 해시 등의 IoC를 key:value 형태로 저장하는 데이터베이스입니다.
-    룰에서 list 옵션으로 참조하여 실시간 매칭에 사용합니다.
+  answer_detail: CDB 리스트는 Wazuh에서 IP, 도메인, 해시 등의 IoC를 key:value 형태로 저장하는 데이터베이스입니다. 룰에서 list 옵션으로 참조하여
+    실시간 매칭에 사용합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: Wazuh CDB 리스트 — ls -la /var/ossec/etc/lists/. Constant DataBase = IoC key:value 저장. IP/도메인/해시
+        블랙리스트. 룰에서 list 옵션으로 참조. 위협 인텔리전스.
+      success_criteria:
+      - ls /var/ossec/etc/lists/
+      - 디렉터리 내용
+      - CDB 리스트 파일
+      acceptable_methods:
+      - ls -la
+      - find lists/
+      - Wazuh API GET /lists
+      negative_signs:
+      - lists 경로 없음
+      - 단순 ls
+      - CDB 맥락 없음
   target_vm: siem
 - order: 2
   instruction: SIEM VM에서 Wazuh 룰셋에 포함된 기본 CDB 리스트의 내용을 확인하시오.
@@ -36,14 +49,28 @@ steps:
   points: 8
   answer: '🖥️ UI: Dashboard → Management → Rules → 룰 목록 검색
 
-    📎 참고 (CLI): for f in /var/ossec/etc/lists/*; do echo "=== $f ==="; head -5 "$f"
-    2>/dev/null; done'
-  answer_detail: CDB 리스트는 'key:value' 형식입니다. 예를 들어 IP 블랙리스트는 '10.20.30.201:attacker'
-    형태로 저장됩니다. 이 리스트에 매칭되는 이벤트가 발생하면 알림이 트리거됩니다.
+    📎 참고 (CLI): for f in /var/ossec/etc/lists/*; do echo "=== $f ==="; head -5 "$f" 2>/dev/null; done'
+  answer_detail: CDB 리스트는 'key:value' 형식입니다. 예를 들어 IP 블랙리스트는 '10.20.30.201:attacker' 형태로 저장됩니다. 이 리스트에
+    매칭되는 이벤트가 발생하면 알림이 트리거됩니다.
   verify:
     type: output_contains
     expect: ===
     field: stdout
+    semantic:
+      intent: 'CDB 리스트 내용 — for f in /var/ossec/etc/lists/*; do echo === $f; head -5 $f; done. ''key:value''
+        형식 (예: 10.20.30.201:attacker). 매칭 → 알림 트리거. STIX/TAXII 표준 IoC.'
+      success_criteria:
+      - for + head 다중 파일
+      - === 구분자
+      - CDB 형식 표시
+      acceptable_methods:
+      - for 루프 head
+      - cat 다중 파일
+      - Dashboard CDB view
+      negative_signs:
+      - 단일 파일
+      - key:value 형식 없음
+      - 구조 미설명
   target_vm: siem
 - order: 3
   instruction: SIEM VM의 Wazuh 알림 로그에서 ATTACKER IP({{ATTACKER_IP}})의 모든 활동 이력을 추출하시오.
@@ -52,15 +79,29 @@ steps:
   points: 10
   answer: '🖥️ UI: Dashboard → Security events → 필터 적용 후 이벤트 확인
 
-    📎 참고 (CLI): grep -c "10.20.30.201" /var/ossec/logs/alerts/alerts.log && echo "events
-    from attacker" && grep "10.20.30.201" /var/ossec/logs/alerts/alerts.log | grep
-    -oP "Rule: \d+" | sort | uniq -c | sort -rn'
-  answer_detail: 특정 IP의 과거 활동을 추적하는 것이 위협 인텔리전스의 핵심입니다. 해당 IP가 트리거한 룰 유형과 빈도를 분석하면
-    공격 패턴과 의도를 파악할 수 있습니다.
+    📎 참고 (CLI): grep -c "10.20.30.201" /var/ossec/logs/alerts/alerts.log && echo "events from attacker"
+    && grep "10.20.30.201" /var/ossec/logs/alerts/alerts.log | grep -oP "Rule: \d+" | sort | uniq -c |
+    sort -rn'
+  answer_detail: 특정 IP의 과거 활동을 추적하는 것이 위협 인텔리전스의 핵심입니다. 해당 IP가 트리거한 룰 유형과 빈도를 분석하면 공격 패턴과 의도를 파악할 수 있습니다.
   verify:
     type: output_contains
     expect: events
     field: stdout
+    semantic:
+      intent: 'ATTACKER IP 활동 — grep -c ''10.20.30.201'' alerts.log + grep + grep -oP ''Rule: \d+'' |
+        sort | uniq -c. 트리거 룰 유형/빈도 분석 = 공격 패턴/의도 파악. 위협 인텔리전스 핵심.'
+      success_criteria:
+      - grep IP + Rule 추출
+      - events 또는 룰 통계
+      - 빈도 정렬
+      acceptable_methods:
+      - grep + 집계
+      - Wazuh API IP filter
+      - Dashboard search IP
+      negative_signs:
+      - IP 누락
+      - 룰 ID 미추출
+      - 패턴 분석 없음
   target_vm: siem
 - order: 4
   instruction: SIEM VM에서 Wazuh 룰셋 중 CDB 리스트를 참조하는 룰의 예시를 찾으시오.
@@ -70,27 +111,55 @@ steps:
   answer: '🖥️ UI: Dashboard → Management → Rules → 룰 목록 검색
 
     📎 참고 (CLI): grep -rn "<list" /var/ossec/ruleset/rules/*.xml | head -10'
-  answer_detail: Wazuh 룰에서 <list field="srcip" lookup="address_match">etc/lists/blacklist</list>
-    형태로 CDB를 참조합니다. 이렇게 하면 알려진 악성 IP에서의 이벤트를 자동 탐지합니다.
+  answer_detail: Wazuh 룰에서 <list field="srcip" lookup="address_match">etc/lists/blacklist</list> 형태로 CDB를
+    참조합니다. 이렇게 하면 알려진 악성 IP에서의 이벤트를 자동 탐지합니다.
   verify:
     type: output_contains
     expect: list
     field: stdout
+    semantic:
+      intent: CDB 참조 룰 — grep -rn '<list' /var/ossec/ruleset/rules/*.xml. <list field=srcip lookup=address_match>etc/lists/blacklist</list>.
+        알려진 악성 IP 자동 탐지. CDB + 룰 통합.
+      success_criteria:
+      - grep <list 룰 파일
+      - list 키워드
+      - 룰셋 검색
+      acceptable_methods:
+      - grep -rn <list
+      - Dashboard rules + list
+      - Wazuh API rule details
+      negative_signs:
+      - <list 검색 없음
+      - 단순 grep
+      - CDB-룰 통합 맥락 없음
   target_vm: siem
 - order: 5
-  instruction: WEB VM의 Apache 접근 로그에서 알려진 공격 패턴(SQL Injection, XSS, 디렉토리 트래버설) 시도를
-    검색하시오.
+  instruction: WEB VM의 Apache 접근 로그에서 알려진 공격 패턴(SQL Injection, XSS, 디렉토리 트래버설) 시도를 검색하시오.
   hint: access.log에서 select, union, script, ../ 등의 패턴을 검색하세요.
   category: detection
   points: 12
-  answer: grep -iE "(select|union|script|alert\(|\.\./)" /var/log/apache2/access.log
-    | tail -10
-  answer_detail: 웹 로그에서 공격 시그니처를 직접 검색하는 것은 IoC 기반 탐지의 기본입니다. SQL Injection(select,
-    union), XSS(script, alert), Path Traversal(../) 패턴이 대표적입니다.
+  answer: grep -iE "(select|union|script|alert\(|\.\./)" /var/log/apache2/access.log | tail -10
+  answer_detail: 웹 로그에서 공격 시그니처를 직접 검색하는 것은 IoC 기반 탐지의 기본입니다. SQL Injection(select, union), XSS(script,
+    alert), Path Traversal(../) 패턴이 대표적입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 공격 패턴 검색 — grep -iE '(select|union|script|alert\(|\.\./)' access.log. SQLi(select/union)
+        + XSS(script/alert) + Path Traversal(../). IoC 기반 직접 탐지. OWASP Top 10.
+      success_criteria:
+      - grep -iE 다중 패턴
+      - SQLi + XSS + Traversal
+      - access.log 검색
+      acceptable_methods:
+      - grep -iE
+      - ModSecurity audit log
+      - WAF 룰 매칭 분석
+      negative_signs:
+      - 패턴 1-2개
+      - 단순 grep
+      - OWASP 맥락 없음
   target_vm: siem
 - order: 6
   instruction: WEB VM의 Apache 에러 로그에서 ModSecurity가 탐지/차단한 요청을 확인하시오.
@@ -99,26 +168,56 @@ steps:
   points: 12
   answer: grep -i "modsecurity\|ModSecurity" /var/log/apache2/error.log /var/log/apache2/modsec_audit.log
     2>/dev/null | tail -10
-  answer_detail: ModSecurity WAF가 차단한 요청에는 공격 유형(SQL Injection, XSS 등), 소스 IP, 요청
-    URL이 포함됩니다. 이 정보를 IoC로 활용하여 동일 공격자의 다른 시도를 추적합니다.
+  answer_detail: ModSecurity WAF가 차단한 요청에는 공격 유형(SQL Injection, XSS 등), 소스 IP, 요청 URL이 포함됩니다. 이 정보를 IoC로
+    활용하여 동일 공격자의 다른 시도를 추적합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: ModSecurity 차단 — grep -i 'modsecurity|ModSecurity' /var/log/apache2/error.log + modsec_audit.log.
+        WAF 차단 요청 = 공격 유형/소스 IP/URL. IoC로 동일 공격자 다른 시도 추적. OWASP CRS.
+      success_criteria:
+      - grep modsecurity
+      - error.log 또는 audit.log
+      - 차단 정보
+      acceptable_methods:
+      - grep error.log
+      - modsec_audit.log 분석
+      - Wazuh ModSecurity 통합
+      negative_signs:
+      - 로그 미점검
+      - 차단 정보 없음
+      - IoC 활용 맥락 없음
   target_vm: siem
 - order: 7
   instruction: SECU VM에서 Suricata가 탐지한 이벤트의 시그니처 ID(SID)별 발생 횟수를 집계하시오.
   hint: eve.json 또는 fast.log에서 SID를 추출하여 집계하세요.
   category: analysis
   points: 12
-  answer: grep -oP "\[\d+:\d+:\d+\]" /var/log/suricata/fast.log 2>/dev/null | sort
-    | uniq -c | sort -rn | head -10 || echo "check eve.json"
-  answer_detail: Suricata SID별 빈도를 분석하면 가장 활발한 위협 유형을 파악할 수 있습니다. 특정 SID의 급증은 진행 중인
-    공격을 나타냅니다. SID를 기반으로 위협 인텔리전스 DB를 조회합니다.
+  answer: grep -oP "\[\d+:\d+:\d+\]" /var/log/suricata/fast.log 2>/dev/null | sort | uniq -c | sort -rn
+    | head -10 || echo "check eve.json"
+  answer_detail: Suricata SID별 빈도를 분석하면 가장 활발한 위협 유형을 파악할 수 있습니다. 특정 SID의 급증은 진행 중인 공격을 나타냅니다. SID를 기반으로
+    위협 인텔리전스 DB를 조회합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: Suricata SID별 — grep -oP '\[\d+:\d+:\d+\]' fast.log | sort | uniq -c | sort -rn | head -10.
+        SID 빈도 = 활발 위협 유형. 급증 = 진행 공격. 위협 인텔리전스 DB 조회. ET Open + Pro 시그니처.
+      success_criteria:
+      - SID 추출 + 집계
+      - Top 10 정렬
+      - Suricata 로그
+      acceptable_methods:
+      - grep -oP + 집계
+      - jq eve.json
+      - evebox/scirius 분석
+      negative_signs:
+      - SID 미추출
+      - 단순 grep
+      - 위협 DB 맥락 없음
   target_vm: siem
 - order: 8
   instruction: SIEM VM에서 ossec.conf의 룰셋 설정을 확인하여 CDB 리스트가 올바르게 참조되고 있는지 검증하시오.
@@ -126,12 +225,26 @@ steps:
   category: setup
   points: 10
   answer: grep -A 20 "<ruleset>" /var/ossec/etc/ossec.conf | head -25
-  answer_detail: ossec.conf의 ruleset 섹션에서 list와 decoder, rule_dir 경로가 올바르게 설정되어야 CDB
-    리스트와 탐지 룰이 정상 동작합니다.
+  answer_detail: ossec.conf의 ruleset 섹션에서 list와 decoder, rule_dir 경로가 올바르게 설정되어야 CDB 리스트와 탐지 룰이 정상 동작합니다.
   verify:
     type: output_contains
     expect: ruleset
     field: stdout
+    semantic:
+      intent: ossec.conf ruleset — grep -A 20 '<ruleset>' /var/ossec/etc/ossec.conf. list/decoder/rule_dir
+        경로 검증. CDB 리스트 + 탐지 룰 정상 동작 전제. SOC 설정 검증.
+      success_criteria:
+      - grep ruleset ossec.conf
+      - ruleset 키워드
+      - -A 컨텍스트
+      acceptable_methods:
+      - grep -A ruleset
+      - Wazuh API config
+      - Dashboard ruleset view
+      negative_signs:
+      - ruleset 미점검
+      - 단순 grep
+      - list/decoder/rule_dir 누락
   target_vm: siem
 - order: 9
   instruction: SIEM VM의 Wazuh 알림에서 파일 무결성 변경(syscheck) 이벤트를 추출하고, 변경된 파일 경로를 목록화하시오.
@@ -140,12 +253,27 @@ steps:
   points: 12
   answer: '🖥️ UI: Dashboard → Security events → 필터 적용 후 이벤트 확인
 
-    📎 참고 (CLI): grep "syscheck" /var/ossec/logs/alerts/alerts.json | grep -oP "\"path\":\"[^\"]+\""
-    | sort -u | head -15'
-  answer_detail: 파일 해시 변경은 강력한 IoC입니다. syscheck가 탐지한 변경 파일의 경로, 이전/이후 해시, 변경 시간을 분석하여
-    악성코드 설치나 설정 변조를 식별합니다.
+    📎 참고 (CLI): grep "syscheck" /var/ossec/logs/alerts/alerts.json | grep -oP "\"path\":\"[^\"]+\"" |
+    sort -u | head -15'
+  answer_detail: 파일 해시 변경은 강력한 IoC입니다. syscheck가 탐지한 변경 파일의 경로, 이전/이후 해시, 변경 시간을 분석하여 악성코드 설치나 설정 변조를
+    식별합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: FIM 변경 파일 — grep 'syscheck' alerts.json | grep -oP '"path":"[^"]+"' | sort -u | head -15.
+        파일 해시 변경 = 강력 IoC. 경로/이전-이후 해시/시간 분석 → 악성코드 설치/설정 변조. NIST SP 800-86.
+      success_criteria:
+      - grep syscheck + path 추출
+      - JSON path 필드
+      - 고유 경로 정렬
+      acceptable_methods:
+      - grep -oP path
+      - jq syscheck path
+      - Wazuh API integrity
+      negative_signs:
+      - path 미추출
+      - 단순 grep
+      - IoC 활용 맥락 없음
   target_vm: siem
