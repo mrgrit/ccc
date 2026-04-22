@@ -3,8 +3,8 @@ title: 메모리 포렌식 - 휘발성 데이터 분석
 version: non-ai
 course: soc-adv-nonai
 week: 8
-description: Linux 시스템의 메모리 아티팩트를 수집하고 분석하여 악성코드 흔적, 숨겨진 프로세스, C2 연결을 식별한다. /proc
-  파일시스템과 실시간 메모리 분석 기법을 실습한다.
+description: Linux 시스템의 메모리 아티팩트를 수집하고 분석하여 악성코드 흔적, 숨겨진 프로세스, C2 연결을 식별한다. /proc 파일시스템과 실시간 메모리 분석 기법을
+  실습한다.
 difficulty: hard
 duration_minutes: 120
 objectives:
@@ -14,176 +14,310 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 현재 시스템의 메모리 상태를 확인하라. 전체 메모리, 사용량, 커널 슬랩 캐시 정보를 수집하고, 메모리 덤프 수집에 필요한
-    공간을 추정하라.
+  instruction: 현재 시스템의 메모리 상태를 확인하라. 전체 메모리, 사용량, 커널 슬랩 캐시 정보를 수집하고, 메모리 덤프 수집에 필요한 공간을 추정하라.
   hint: free -h와 /proc/meminfo를 확인한다.
   category: collection
   points: 10
-  answer: 'echo ''=== Memory Status ==='' && free -h && echo '''' && echo ''=== Detailed
-    Memory Info ==='' && grep -E ''(MemTotal|MemFree|MemAvailable|Buffers|Cached|Slab)''
-    /proc/meminfo && echo '''' && echo ''=== Dump size estimate ==='' && awk ''/MemTotal/{printf
-    "Required dump space: %.1f GB\n", $2/1024/1024}'' /proc/meminfo'
-  answer_detail: 메모리 포렌식의 첫 단계는 수집 대상의 메모리 크기를 파악하는 것이다. MemTotal로 전체 크기를 확인하고, 덤프
-    저장소의 여유 공간이 충분한지 확인한다. LiME 등 덤프 도구는 전체 물리 메모리를 덤프한다.
+  answer: 'echo ''=== Memory Status ==='' && free -h && echo '''' && echo ''=== Detailed Memory Info ===''
+    && grep -E ''(MemTotal|MemFree|MemAvailable|Buffers|Cached|Slab)'' /proc/meminfo && echo '''' && echo
+    ''=== Dump size estimate ==='' && awk ''/MemTotal/{printf "Required dump space: %.1f GB\n", $2/1024/1024}''
+    /proc/meminfo'
+  answer_detail: 메모리 포렌식의 첫 단계는 수집 대상의 메모리 크기를 파악하는 것이다. MemTotal로 전체 크기를 확인하고, 덤프 저장소의 여유 공간이 충분한지 확인한다.
+    LiME 등 덤프 도구는 전체 물리 메모리를 덤프한다.
   verify:
     type: output_contains
     expect: 메모리
+    semantic:
+      intent: 메모리 상태 확인 — free -h + /proc/meminfo 에서 MemTotal/MemFree/MemAvailable/Buffers/Cached/Slab
+        추출 + awk 로 dump 예상 공간 (MemTotal GB) 계산. LiME/AVML 덤프 전 저장소 용량 계획. MITRE D3FEND Volatile Memory
+        collection.
+      success_criteria:
+      - 메모리 키워드
+      - free 또는 /proc/meminfo 사용
+      - dump 공간 계산
+      acceptable_methods:
+      - free -h + awk 추정
+      - /proc/meminfo | grep 필터
+      - vmstat / cat /sys/devices/system/memory/
+      - LiME dmesg 메모리 정보
+      negative_signs:
+      - free/meminfo 미사용
+      - dump 공간 계산 없음
+      - 전체 메모리 크기 미출력
   target_vm: siem
 - order: 2
-  instruction: /proc 파일시스템에서 모든 실행 중인 프로세스의 PID, 실행 경로, 커맨드라인을 추출하라. 비정상적인 프로세스(웹서버에서
-    셸 실행 등)를 식별하라.
+  instruction: /proc 파일시스템에서 모든 실행 중인 프로세스의 PID, 실행 경로, 커맨드라인을 추출하라. 비정상적인 프로세스(웹서버에서 셸 실행 등)를 식별하라.
   hint: /proc/[PID]/exe와 /proc/[PID]/cmdline에서 정보를 추출한다.
   category: analysis
   points: 10
-  answer: echo '=== Process Analysis from /proc ===' && for pid in $(ls -d /proc/[0-9]*
-    2>/dev/null | sed 's|/proc/||'); do exe=$(readlink /proc/$pid/exe 2>/dev/null);
-    cmd=$(tr '\0' ' ' < /proc/$pid/cmdline 2>/dev/null); ppid=$(awk '/^PPid:/{print
-    $2}' /proc/$pid/status 2>/dev/null); user=$(awk '/^Uid:/{print $2}' /proc/$pid/status
-    2>/dev/null); if [ -n "$exe" ]; then echo "PID:$pid PPID:$ppid UID:$user EXE:$exe
+  answer: echo '=== Process Analysis from /proc ===' && for pid in $(ls -d /proc/[0-9]* 2>/dev/null |
+    sed 's|/proc/||'); do exe=$(readlink /proc/$pid/exe 2>/dev/null); cmd=$(tr '\0' ' ' < /proc/$pid/cmdline
+    2>/dev/null); ppid=$(awk '/^PPid:/{print $2}' /proc/$pid/status 2>/dev/null); user=$(awk '/^Uid:/{print
+    $2}' /proc/$pid/status 2>/dev/null); if [ -n "$exe" ]; then echo "PID:$pid PPID:$ppid UID:$user EXE:$exe
     CMD:${cmd:0:80}"; fi; done 2>/dev/null | head -30
-  answer_detail: /proc 파일시스템은 리눅스 커널이 메모리에서 직접 생성하는 가상 파일시스템이다. /proc/PID/exe는 실행
-    파일 경로, /proc/PID/cmdline은 실행 인자, /proc/PID/status는 PID/PPID/UID 정보를 제공한다. 삭제된
-    바이너리도 (deleted) 표시와 함께 확인 가능하다.
+  answer_detail: /proc 파일시스템은 리눅스 커널이 메모리에서 직접 생성하는 가상 파일시스템이다. /proc/PID/exe는 실행 파일 경로, /proc/PID/cmdline은
+    실행 인자, /proc/PID/status는 PID/PPID/UID 정보를 제공한다. 삭제된 바이너리도 (deleted) 표시와 함께 확인 가능하다.
   verify:
     type: output_contains
     expect: PID
+    semantic:
+      intent: '/proc/PID 프로세스 추출 — for pid in /proc/[0-9]*: readlink /proc/$pid/exe (실행 경로) + cmdline
+        (인자) + status (PPID/UID). 웹서버에서 셸 실행 등 비정상 패턴 식별. 가상 파일시스템 직접 조회로 ps 우회. MITRE D3FEND Process
+        Code Segment Verification.'
+      success_criteria:
+      - PID 키워드
+      - /proc/[PID]/exe + cmdline 추출
+      - 비정상 프로세스 식별
+      acceptable_methods:
+      - bash for loop + /proc/PID 조회
+      - Python os.listdir('/proc')
+      - eBPF bcc execsnoop
+      - Sysdig drscope filter
+      negative_signs:
+      - ps 명령만 사용 (루트킷 우회 불가)
+      - cmdline/status 누락
+      - 비정상 패턴 예시 없음
   target_vm: siem
 - order: 3
-  instruction: 프로세스 트리를 분석하여 비정상적인 부모-자식 관계를 탐지하라. 웹서버(apache/nginx)나 서비스 프로세스에서 셸이
-    스폰된 패턴을 찾아라.
+  instruction: 프로세스 트리를 분석하여 비정상적인 부모-자식 관계를 탐지하라. 웹서버(apache/nginx)나 서비스 프로세스에서 셸이 스폰된 패턴을 찾아라.
   hint: ps auxf로 프로세스 트리를 확인하고 의심 패턴을 grep으로 검색한다.
   category: analysis
   points: 10
-  answer: echo '=== Process Tree Analysis ===' && ps auxf 2>/dev/null | head -40 &&
-    echo '' && echo '=== Suspicious Parent-Child Patterns ===' && ps -eo pid,ppid,user,args
-    --forest 2>/dev/null | grep -B2 -A2 -E '(www-data|apache|nginx|mysql|nobody).*(sh|bash|python|perl|nc
-    |ncat)' || echo 'No suspicious patterns found' && echo '' && echo '=== Orphan
-    processes (PPID=1) ===' && ps -eo pid,ppid,user,args 2>/dev/null | awk '$2==1
-    && $3!="root"' | head -10
-  answer_detail: 프로세스 트리 분석은 공격자의 실행 경로를 추적한다. www-data→bash(웹쉘), mysql→sh(SQLi RCE),
-    sshd→bash→비정상 자식(측면이동)이 핵심 패턴이다. PPID=1인 비root 프로세스는 부모가 죽은 고아 프로세스로 의심 대상이다.
+  answer: echo '=== Process Tree Analysis ===' && ps auxf 2>/dev/null | head -40 && echo '' && echo '===
+    Suspicious Parent-Child Patterns ===' && ps -eo pid,ppid,user,args --forest 2>/dev/null | grep -B2
+    -A2 -E '(www-data|apache|nginx|mysql|nobody).*(sh|bash|python|perl|nc |ncat)' || echo 'No suspicious
+    patterns found' && echo '' && echo '=== Orphan processes (PPID=1) ===' && ps -eo pid,ppid,user,args
+    2>/dev/null | awk '$2==1 && $3!="root"' | head -10
+  answer_detail: 프로세스 트리 분석은 공격자의 실행 경로를 추적한다. www-data→bash(웹쉘), mysql→sh(SQLi RCE), sshd→bash→비정상 자식(측면이동)이
+    핵심 패턴이다. PPID=1인 비root 프로세스는 부모가 죽은 고아 프로세스로 의심 대상이다.
   verify:
     type: output_contains
     expect: 프로세스
+    semantic:
+      intent: 프로세스 트리 분석 — ps auxf 또는 ps -eo pid,ppid,user,args --forest + grep '(www-data|apache|nginx|mysql|nobody).*(sh|bash|python|nc)'
+        비정상 자식 탐지 + PPID=1 non-root 고아 프로세스. 공격자 실행 경로 추적. MITRE ATT&CK T1059 + T1543 Create System Process.
+      success_criteria:
+      - 프로세스 키워드
+      - ps auxf 또는 --forest 트리
+      - 비정상 부모-자식 패턴 (www-data → sh 등)
+      acceptable_methods:
+      - ps auxf + grep 패턴
+      - pstree -p 트리 시각화
+      - Sysdig forest view
+      - eBPF traceproc
+      negative_signs:
+      - ps aux 단순 출력만
+      - 트리 구조 없이 플랫 리스트
+      - 비정상 패턴 예시 없음
   target_vm: siem
 - order: 4
   instruction: 숨겨진 프로세스를 탐지하라. /proc에서 직접 열거한 PID 목록과 ps 명령 결과를 비교하여 차이가 있는지 확인하라.
   hint: /proc/[0-9]* 디렉토리와 ps -eo pid 출력을 비교한다.
   category: detection
   points: 12
-  answer: echo '=== Hidden Process Detection ===' && echo 'PIDs from /proc:' && ls
-    -d /proc/[0-9]* 2>/dev/null | sed 's|/proc/||' | sort -n > /tmp/proc_pids.txt
-    && wc -l /tmp/proc_pids.txt && echo 'PIDs from ps:' && ps -eo pid --no-headers
-    | awk '{print $1}' | sort -n > /tmp/ps_pids.txt && wc -l /tmp/ps_pids.txt && echo
-    '=== PIDs in /proc but NOT in ps (potentially hidden) ===' && comm -23 /tmp/proc_pids.txt
-    /tmp/ps_pids.txt && echo '=== PIDs in ps but NOT in /proc (anomaly) ===' && comm
-    -13 /tmp/proc_pids.txt /tmp/ps_pids.txt && rm -f /tmp/proc_pids.txt /tmp/ps_pids.txt
-  answer_detail: 루트킷은 ps 명령을 조작(LD_PRELOAD, libc 후킹)하여 프로세스를 숨긴다. /proc 파일시스템에서 직접
-    PID를 열거하면 커널 레벨 루트킷이 아닌 한 숨겨진 프로세스를 발견할 수 있다. 두 목록의 차이가 있으면 루트킷 의심이다.
+  answer: echo '=== Hidden Process Detection ===' && echo 'PIDs from /proc:' && ls -d /proc/[0-9]* 2>/dev/null
+    | sed 's|/proc/||' | sort -n > /tmp/proc_pids.txt && wc -l /tmp/proc_pids.txt && echo 'PIDs from ps:'
+    && ps -eo pid --no-headers | awk '{print $1}' | sort -n > /tmp/ps_pids.txt && wc -l /tmp/ps_pids.txt
+    && echo '=== PIDs in /proc but NOT in ps (potentially hidden) ===' && comm -23 /tmp/proc_pids.txt
+    /tmp/ps_pids.txt && echo '=== PIDs in ps but NOT in /proc (anomaly) ===' && comm -13 /tmp/proc_pids.txt
+    /tmp/ps_pids.txt && rm -f /tmp/proc_pids.txt /tmp/ps_pids.txt
+  answer_detail: 루트킷은 ps 명령을 조작(LD_PRELOAD, libc 후킹)하여 프로세스를 숨긴다. /proc 파일시스템에서 직접 PID를 열거하면 커널 레벨 루트킷이
+    아닌 한 숨겨진 프로세스를 발견할 수 있다. 두 목록의 차이가 있으면 루트킷 의심이다.
   verify:
     type: output_contains
     expect: 프로세스
+    semantic:
+      intent: 숨겨진 프로세스 탐지 — /proc/[0-9]* 직접 열거 PID 목록 + ps -eo pid 출력 비교 (comm -23/-13). 차이 발견 → LD_PRELOAD/libc
+        후킹 루트킷 의심. 커널 레벨 아닌 user-space 루트킷 탐지. MITRE ATT&CK T1014 Rootkit.
+      success_criteria:
+      - 프로세스 키워드
+      - /proc 직접 열거 + ps 비교
+      - comm 차이 분석
+      acceptable_methods:
+      - ls /proc/[0-9]* vs ps -eo pid + comm
+      - Sysdig / Falco 동적 비교
+      - chkrootkit / rkhunter 전용 도구
+      - unhide.rb / unhide-linux
+      negative_signs:
+      - /proc 또는 ps 단일만
+      - 비교 로직 없음
+      - 루트킷 우회 맥락 없음
   target_vm: siem
 - order: 5
-  instruction: 네트워크 연결을 메모리 관점에서 분석하라. /proc/net/tcp에서 직접 TCP 연결을 파싱하고, 각 연결의 소유 프로세스를
-    매핑하라.
+  instruction: 네트워크 연결을 메모리 관점에서 분석하라. /proc/net/tcp에서 직접 TCP 연결을 파싱하고, 각 연결의 소유 프로세스를 매핑하라.
   hint: /proc/net/tcp의 16진수 주소를 IP:Port로 변환한다.
   category: analysis
   points: 10
-  answer: "echo '=== Network Connections from /proc/net/tcp ===' && python3 -c \"\n\
-    import os, struct, socket\nwith open('/proc/net/tcp') as f:\n    next(f)\n   \
-    \ for line in f:\n        parts = line.split()\n        local = parts[1].split(':')\n\
-    \        remote = parts[2].split(':')\n        state = int(parts[3], 16)\n   \
-    \     uid = parts[7]\n        inode = parts[9]\n        lip = socket.inet_ntoa(struct.pack('<I',\
+  answer: "echo '=== Network Connections from /proc/net/tcp ===' && python3 -c \"\nimport os, struct,\
+    \ socket\nwith open('/proc/net/tcp') as f:\n    next(f)\n    for line in f:\n        parts = line.split()\n\
+    \        local = parts[1].split(':')\n        remote = parts[2].split(':')\n        state = int(parts[3],\
+    \ 16)\n        uid = parts[7]\n        inode = parts[9]\n        lip = socket.inet_ntoa(struct.pack('<I',\
     \ int(local[0], 16)))\n        lport = int(local[1], 16)\n        rip = socket.inet_ntoa(struct.pack('<I',\
     \ int(remote[0], 16)))\n        rport = int(remote[1], 16)\n        states = {1:'ESTABLISHED',2:'SYN_SENT',6:'TIME_WAIT',10:'LISTEN'}\n\
-    \        sname = states.get(state, hex(state))\n        if rip != '0.0.0.0':\n\
-    \            print(f'{lip}:{lport} -> {rip}:{rport}  {sname}  UID:{uid}')\" 2>/dev/null\
-    \ | head -20"
-  answer_detail: /proc/net/tcp는 커널이 관리하는 TCP 연결 테이블의 원본이다. ss나 netstat도 이 파일을 읽지만,
-    루트킷이 이들을 후킹한 경우 직접 파싱하면 숨겨진 연결을 발견할 수 있다. 비표준 외부 포트의 ESTABLISHED 연결은 C2 의심이다.
+    \        sname = states.get(state, hex(state))\n        if rip != '0.0.0.0':\n            print(f'{lip}:{lport}\
+    \ -> {rip}:{rport}  {sname}  UID:{uid}')\" 2>/dev/null | head -20"
+  answer_detail: /proc/net/tcp는 커널이 관리하는 TCP 연결 테이블의 원본이다. ss나 netstat도 이 파일을 읽지만, 루트킷이 이들을 후킹한 경우 직접
+    파싱하면 숨겨진 연결을 발견할 수 있다. 비표준 외부 포트의 ESTABLISHED 연결은 C2 의심이다.
   verify:
     type: output_contains
     expect: 연결
+    semantic:
+      intent: /proc/net/tcp TCP 연결 파싱 — python struct/socket 로 16진수 IP:Port 변환 + state 매핑 (1 ESTABLISHED
+        / 2 SYN_SENT / 6 TIME_WAIT / 10 LISTEN) + UID + inode. 커널 원본 테이블 직접 조회. ss/netstat 후킹된 경우에도 숨겨진
+        연결 발견. C2 ESTABLISHED 의심.
+      success_criteria:
+      - 연결 키워드
+      - /proc/net/tcp 파싱
+      - ESTABLISHED 또는 state 분석
+      acceptable_methods:
+      - python3 /proc/net/tcp 파싱
+      - awk + inet_ntoa 변환
+      - ss -tulpn + /proc/net/tcp 대조
+      - Sysdig event_type=connect
+      negative_signs:
+      - ss/netstat 만 사용
+      - state 매핑 없이 출력만
+      - UID/inode 누락
   target_vm: siem
 - order: 6
-  instruction: 의심 프로세스의 메모리 맵과 문자열을 추출하라. /proc/PID/maps에서 메모리 영역을 확인하고, /proc/PID/mem
-    또는 strings로 유의미한 문자열을 추출하라.
+  instruction: 의심 프로세스의 메모리 맵과 문자열을 추출하라. /proc/PID/maps에서 메모리 영역을 확인하고, /proc/PID/mem 또는 strings로 유의미한
+    문자열을 추출하라.
   hint: /proc/self을 대상으로 실습한다. maps에서 힙/스택 영역을 확인한다.
   category: extraction
   points: 10
-  answer: echo '=== Memory Map of current shell ===' && head -20 /proc/self/maps &&
-    echo '' && echo '=== Interesting strings from process memory ===' && TARGET_PID=$$
-    && strings /proc/$TARGET_PID/mem 2>/dev/null | grep -iE '(password|token|secret|http://|https://|10\.20\.30\.)'
-    | sort -u | head -20 || echo 'Direct mem read restricted - using /proc/PID/environ
-    instead:' && cat /proc/$TARGET_PID/environ 2>/dev/null | tr '\0' '\n' | grep -iE
-    '(pass|key|token|secret)' | head -10
-  answer_detail: /proc/PID/maps는 프로세스의 가상 메모리 레이아웃을 보여준다. [heap], [stack], 매핑된 라이브러리를
-    확인할 수 있다. strings로 메모리에서 URL, 비밀번호, IP 등을 추출하면 악성코드의 C2 주소나 설정을 발견할 수 있다.
+  answer: echo '=== Memory Map of current shell ===' && head -20 /proc/self/maps && echo '' && echo '===
+    Interesting strings from process memory ===' && TARGET_PID=$$ && strings /proc/$TARGET_PID/mem 2>/dev/null
+    | grep -iE '(password|token|secret|http://|https://|10\.20\.30\.)' | sort -u | head -20 || echo 'Direct
+    mem read restricted - using /proc/PID/environ instead:' && cat /proc/$TARGET_PID/environ 2>/dev/null
+    | tr '\0' '\n' | grep -iE '(pass|key|token|secret)' | head -10
+  answer_detail: /proc/PID/maps는 프로세스의 가상 메모리 레이아웃을 보여준다. [heap], [stack], 매핑된 라이브러리를 확인할 수 있다. strings로
+    메모리에서 URL, 비밀번호, IP 등을 추출하면 악성코드의 C2 주소나 설정을 발견할 수 있다.
   verify:
     type: output_contains
     expect: 메모리
+    semantic:
+      intent: '프로세스 메모리 맵 + 문자열 추출 — /proc/PID/maps (가상 메모리 레이아웃: [heap]/[stack]/라이브러리) + strings /proc/PID/mem
+        | grep -iE ''(password|token|secret|http://|10\.20\.30)'' 로 credentials/C2 주소/설정 추출. /proc/PID/environ
+        fallback. 악성코드 런타임 정보 복원.'
+      success_criteria:
+      - 메모리 키워드
+      - /proc/PID/maps + strings 조합
+      - '[heap]/[stack] 영역 구분'
+      acceptable_methods:
+      - strings /proc/PID/mem + grep
+      - gcore PID + readelf strings
+      - volatility3 linux_memmap
+      - pmemsave (QEMU)
+      negative_signs:
+      - maps 미확인
+      - strings 검색 필터 없음
+      - 환경변수/credentials 추출 맥락 없음
   target_vm: siem
 - order: 7
   instruction: 로드된 커널 모듈을 분석하라. 현재 커널 모듈 목록을 확인하고, 서명되지 않았거나 비정상 경로에서 로드된 의심 모듈을 식별하라.
   hint: lsmod와 /proc/modules를 비교하고, modinfo로 각 모듈의 출처를 확인한다.
   category: detection
   points: 10
-  answer: 'echo ''=== Loaded Kernel Modules ==='' && lsmod | head -20 && echo ''''
-    && echo ''=== Module count ==='' && lsmod | wc -l && echo '''' && echo ''=== Unsigned/suspicious
-    modules ==='' && for mod in $(lsmod | awk ''NR>1{print $1}'' | head -20); do info=$(modinfo
-    $mod 2>/dev/null | grep -E ''(filename|signer|sig_id)''); if ! echo "$info" |
-    grep -q ''signer''; then echo "UNSIGNED: $mod - $(echo $info | grep filename)";
-    fi; done 2>/dev/null | head -10 && echo '''' && echo ''=== Tainted kernel check
-    ==='' && cat /proc/sys/kernel/tainted'
-  answer_detail: 커널 루트킷은 커널 모듈(LKM)로 설치되어 시스템 호출을 후킹한다. 서명되지 않은 모듈, /lib/modules 외
-    경로에서 로드된 모듈은 루트킷 의심 대상이다. /proc/sys/kernel/tainted가 0이 아니면 비공식 모듈이 로드되었음을 의미한다.
+  answer: 'echo ''=== Loaded Kernel Modules ==='' && lsmod | head -20 && echo '''' && echo ''=== Module
+    count ==='' && lsmod | wc -l && echo '''' && echo ''=== Unsigned/suspicious modules ==='' && for mod
+    in $(lsmod | awk ''NR>1{print $1}'' | head -20); do info=$(modinfo $mod 2>/dev/null | grep -E ''(filename|signer|sig_id)'');
+    if ! echo "$info" | grep -q ''signer''; then echo "UNSIGNED: $mod - $(echo $info | grep filename)";
+    fi; done 2>/dev/null | head -10 && echo '''' && echo ''=== Tainted kernel check ==='' && cat /proc/sys/kernel/tainted'
+  answer_detail: 커널 루트킷은 커널 모듈(LKM)로 설치되어 시스템 호출을 후킹한다. 서명되지 않은 모듈, /lib/modules 외 경로에서 로드된 모듈은 루트킷 의심
+    대상이다. /proc/sys/kernel/tainted가 0이 아니면 비공식 모듈이 로드되었음을 의미한다.
   verify:
     type: output_contains
     expect: 커널
+    semantic:
+      intent: 커널 모듈 분석 — lsmod + modinfo (filename/signer/sig_id) + /proc/sys/kernel/tainted 플래그 확인. Unsigned
+        모듈 또는 /lib/modules 외 경로 → 루트킷 의심. MITRE ATT&CK T1547.006 Kernel Modules. Kernel signing enforcement
+        (module.sig_enforce=1).
+      success_criteria:
+      - 커널 키워드
+      - lsmod + modinfo 조합
+      - tainted 또는 signer 확인
+      acceptable_methods:
+      - lsmod + modinfo + grep signer
+      - /proc/modules 직접 읽기
+      - chkrootkit + /proc/kallsyms
+      - Tracee eBPF runtime
+      negative_signs:
+      - lsmod 만 출력
+      - signer/tainted 확인 없음
+      - T1547.006 맥락 없음
   target_vm: siem
 - order: 8
-  instruction: bash 히스토리와 환경변수를 메모리에서 추출하라. 모든 사용자의 bash_history를 수집하고, 의심 명령(wget,
-    curl, nc, base64, chmod +x)을 필터링하라.
+  instruction: bash 히스토리와 환경변수를 메모리에서 추출하라. 모든 사용자의 bash_history를 수집하고, 의심 명령(wget, curl, nc, base64,
+    chmod +x)을 필터링하라.
   hint: /home/*/.bash_history와 /root/.bash_history를 검색한다.
   category: extraction
   points: 10
-  answer: 'echo ''=== Bash History Analysis ==='' && for hist in /root/.bash_history
-    /home/*/.bash_history; do if [ -f "$hist" ]; then user=$(echo $hist | cut -d/
-    -f3); echo "--- User: $user ---"; grep -inE ''(wget|curl.*http|nc -|ncat|base64|chmod
-    \+x|python.*-c|perl.*-e|eval|/dev/tcp|mkfifo)'' "$hist" 2>/dev/null | tail -10;
-    fi; done && echo '''' && echo ''=== Suspicious env vars across processes ===''
-    && for pid in $(ls -d /proc/[0-9]* 2>/dev/null | sed ''s|/proc/||'' | head -50);
-    do envs=$(cat /proc/$pid/environ 2>/dev/null | tr ''\0'' ''\n'' | grep -iE ''(password|secret|token|key=)'');
-    if [ -n "$envs" ]; then exe=$(readlink /proc/$pid/exe 2>/dev/null); echo "PID:$pid
-    ($exe): $envs"; fi; done 2>/dev/null | head -10'
-  answer_detail: bash 히스토리는 공격자의 행동을 직접 보여주는 핵심 증거이다. wget/curl(다운로드), nc/ncat(리버스셸),
-    base64(인코딩), chmod +x(실행권한), /dev/tcp(bash 네트워크)는 대표적 공격 명령이다. 환경변수에서 비밀번호나 토큰이
-    노출되는 경우도 많다.
+  answer: 'echo ''=== Bash History Analysis ==='' && for hist in /root/.bash_history /home/*/.bash_history;
+    do if [ -f "$hist" ]; then user=$(echo $hist | cut -d/ -f3); echo "--- User: $user ---"; grep -inE
+    ''(wget|curl.*http|nc -|ncat|base64|chmod \+x|python.*-c|perl.*-e|eval|/dev/tcp|mkfifo)'' "$hist"
+    2>/dev/null | tail -10; fi; done && echo '''' && echo ''=== Suspicious env vars across processes ===''
+    && for pid in $(ls -d /proc/[0-9]* 2>/dev/null | sed ''s|/proc/||'' | head -50); do envs=$(cat /proc/$pid/environ
+    2>/dev/null | tr ''\0'' ''\n'' | grep -iE ''(password|secret|token|key=)''); if [ -n "$envs" ]; then
+    exe=$(readlink /proc/$pid/exe 2>/dev/null); echo "PID:$pid ($exe): $envs"; fi; done 2>/dev/null |
+    head -10'
+  answer_detail: bash 히스토리는 공격자의 행동을 직접 보여주는 핵심 증거이다. wget/curl(다운로드), nc/ncat(리버스셸), base64(인코딩), chmod
+    +x(실행권한), /dev/tcp(bash 네트워크)는 대표적 공격 명령이다. 환경변수에서 비밀번호나 토큰이 노출되는 경우도 많다.
   verify:
     type: output_contains
     expect: 히스토리
+    semantic:
+      intent: bash 히스토리 + 환경변수 포렌식 — /root/.bash_history + /home/*/.bash_history grep -iE '(wget|curl|nc|ncat|base64|chmod
+        \+x|python -c|perl -e|/dev/tcp|mkfifo)' 의심 명령 필터 + /proc/PID/environ password/secret/token 노출
+        확인. 공격자 행동 증거 + credential 노출. MITRE ATT&CK T1552.001.
+      success_criteria:
+      - 히스토리 키워드
+      - .bash_history 검색 + 의심 명령
+      - 환경변수 secret 검사
+      acceptable_methods:
+      - bash history grep 패턴
+      - Linux audit d logger
+      - sysdig events_type=execve
+      - osquery shell_history table
+      negative_signs:
+      - 의심 패턴 2개 이하
+      - 환경변수 검사 없음
+      - 공격자 행동 맥락 없음
   target_vm: siem
-  bastion_prompt: bash 히스토리와 환경변수를 메모리에서 추출해줘. /proc/PID/environ과 .bash_history 파일
-    분석 방법을 설명하고 히스토리 추출 예시를 보여줘
+  bastion_prompt: bash 히스토리와 환경변수를 메모리에서 추출해줘. /proc/PID/environ과 .bash_history 파일 분석 방법을 설명하고 히스토리 추출
+    예시를 보여줘
 - order: 9
-  instruction: 시스템 콜 테이블 무결성을 검증하라. /proc/kallsyms에서 시스템 콜 핸들러 주소가 커널 텍스트 영역 내에 있는지
-    확인하라.
+  instruction: 시스템 콜 테이블 무결성을 검증하라. /proc/kallsyms에서 시스템 콜 핸들러 주소가 커널 텍스트 영역 내에 있는지 확인하라.
   hint: /proc/kallsyms에서 sys_call_table과 커널 텍스트 범위(_stext~_etext)를 확인한다.
   category: detection
   points: 10
-  answer: echo '=== Syscall Table Integrity Check ===' && echo 'Kernel text range:'
-    && grep -E '^[0-9a-f]+ [Tt] (_stext|_etext)$' /proc/kallsyms 2>/dev/null && echo
-    '' && echo 'System call table:' && grep 'sys_call_table' /proc/kallsyms 2>/dev/null
-    && echo '' && echo 'Sample syscall handlers:' && grep -E '__x64_sys_(read|write|open|execve|connect)'
-    /proc/kallsyms 2>/dev/null | head -10 && echo '' && echo 'Kernel tainted flags:'
-    && cat /proc/sys/kernel/tainted && echo '' && echo '(0 = clean, non-zero = potentially
-    modified)'
-  answer_detail: 시스템 콜 후킹은 루트킷의 핵심 기법이다. 정상적인 핸들러 주소는 _stext~_etext 범위 내에 있다. 범위 밖
-    주소가 있으면 후킹되었을 가능성이 높다. /proc/kallsyms 접근에는 root 권한이 필요할 수 있다.
+  answer: echo '=== Syscall Table Integrity Check ===' && echo 'Kernel text range:' && grep -E '^[0-9a-f]+
+    [Tt] (_stext|_etext)$' /proc/kallsyms 2>/dev/null && echo '' && echo 'System call table:' && grep
+    'sys_call_table' /proc/kallsyms 2>/dev/null && echo '' && echo 'Sample syscall handlers:' && grep
+    -E '__x64_sys_(read|write|open|execve|connect)' /proc/kallsyms 2>/dev/null | head -10 && echo '' &&
+    echo 'Kernel tainted flags:' && cat /proc/sys/kernel/tainted && echo '' && echo '(0 = clean, non-zero
+    = potentially modified)'
+  answer_detail: 시스템 콜 후킹은 루트킷의 핵심 기법이다. 정상적인 핸들러 주소는 _stext~_etext 범위 내에 있다. 범위 밖 주소가 있으면 후킹되었을 가능성이
+    높다. /proc/kallsyms 접근에는 root 권한이 필요할 수 있다.
   verify:
     type: output_contains
     expect: 시스템
+    semantic:
+      intent: 시스템 콜 테이블 무결성 검증 — /proc/kallsyms _stext~_etext 커널 텍스트 범위 + sys_call_table + __x64_sys_*
+        핸들러 주소 조회 + 범위 밖 주소 → 후킹 의심. /proc/sys/kernel/tainted 플래그. 커널 루트킷 (Diamorphine/Reptile) 탐지. MITRE
+        T1014 Rootkit + T1547.006 Kernel Modules.
+      success_criteria:
+      - 시스템 키워드
+      - kallsyms + sys_call_table
+      - _stext/_etext 범위 검증
+      acceptable_methods:
+      - grep kallsyms + awk 주소 비교
+      - readelf + vmlinux 분석
+      - Volatility linux_check_syscall
+      - tracee / falco 런타임 탐지
+      negative_signs:
+      - kallsyms 조회 없음
+      - 텍스트 범위 비교 없음
+      - 루트킷 후킹 맥락 없음
   target_vm: siem
 - order: 10
   instruction: 메모리 포렌식 종합 보고서를 작성하라. 수집 절차, 분석 결과, 발견된 의심 활동, 타임라인, 권고사항을 /tmp/memory_forensics_report.txt에
@@ -282,9 +416,26 @@ steps:
     EOF
 
     cat /tmp/memory_forensics_report.txt'
-  answer_detail: 메모리 포렌식 보고서는 휘발성 증거의 특성상 재현이 어려우므로, 분석 과정과 결과를 상세히 기록해야 한다. /proc
-    기반 라이브 분석은 덤프 없이도 핵심 아티팩트를 수집할 수 있으며, 각 단계의 명령과 출력을 증거로 첨부한다.
+  answer_detail: 메모리 포렌식 보고서는 휘발성 증거의 특성상 재현이 어려우므로, 분석 과정과 결과를 상세히 기록해야 한다. /proc 기반 라이브 분석은 덤프 없이도 핵심
+    아티팩트를 수집할 수 있으며, 각 단계의 명령과 출력을 증거로 첨부한다.
   verify:
     type: output_contains
     expect: 포렌식
+    semantic:
+      intent: 메모리 포렌식 종합 보고서 /tmp/memory_forensics_report.txt — 7 섹션 (Collection/Process/Network/Kernel/Credential/Timeline/Recommendations).
+        LiME 도입 + auditd execve + 모듈 서명 강제 + 환경변수 정리 + 주기 baseline 비교 권고. CLEAN vs COMPROMISED 결론. SANS
+        DFIR report style.
+      success_criteria:
+      - 포렌식 키워드
+      - /tmp/memory_forensics_report.txt 파일
+      - 7 섹션 중 5개 이상
+      acceptable_methods:
+      - cat > heredoc 7 섹션 구조
+      - markdown + 섹션 헤더
+      - SANS DFIR template
+      - Volatility plugin + 보고서 자동 생성
+      negative_signs:
+      - 섹션 3개 이하
+      - 권고 누락
+      - CLEAN/COMPROMISED 결론 없음
   target_vm: siem
