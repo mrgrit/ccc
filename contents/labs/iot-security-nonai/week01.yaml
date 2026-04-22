@@ -13,58 +13,117 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: Docker로 Mosquitto MQTT 브로커를 실행하시오. 컨테이너 이름은 mqtt-broker, 포트는 1883으로
-    설정하시오.
+  instruction: Docker로 Mosquitto MQTT 브로커를 실행하시오. 컨테이너 이름은 mqtt-broker, 포트는 1883으로 설정하시오.
   hint: docker run -d --name mqtt-broker -p 1883:1883 eclipse-mosquitto:2 명령을 사용하세요.
   category: setup
   points: 8
-  answer: docker run -d --name mqtt-broker -p 1883:1883 eclipse-mosquitto:2 mosquitto
-    -c /dev/null -p 1883 -v && echo 'MQTT 브로커 실행 완료'
-  answer_detail: Eclipse Mosquitto는 가장 널리 사용되는 오픈소스 MQTT 브로커입니다. -c /dev/null로 기본
-    설정 없이 실행합니다.
+  answer: docker run -d --name mqtt-broker -p 1883:1883 eclipse-mosquitto:2 mosquitto -c /dev/null -p
+    1883 -v && echo 'MQTT 브로커 실행 완료'
+  answer_detail: Eclipse Mosquitto는 가장 널리 사용되는 오픈소스 MQTT 브로커입니다. -c /dev/null로 기본 설정 없이 실행합니다.
   verify:
     type: output_contains
     expect: MQTT 브로커 실행 완료
     field: stdout
+    semantic:
+      intent: Mosquitto MQTT 브로커 구축 — docker run -d --name mqtt-broker -p 1883:1883 eclipse-mosquitto:2
+        + mosquitto -c /dev/null -p 1883 -v. IoT 발행/구독 미들웨어. 기본 포트 1883 (평문) / 8883 (TLS).
+      success_criteria:
+      - MQTT 브로커 실행 완료 키워드
+      - docker run -p 1883:1883 eclipse-mosquitto
+      - --name mqtt-broker 지정
+      acceptable_methods:
+      - docker run eclipse-mosquitto:2
+      - docker-compose mqtt stack
+      - apt install mosquitto + systemctl
+      - HiveMQ / EMQX 대체 브로커
+      negative_signs:
+      - 포트 1883 맥락 없음
+      - eclipse-mosquitto 이미지 없음
+      - 브로커 실행 확인 없음
   target_vm: attacker
 - order: 2
   instruction: MQTT 브로커가 정상적으로 동작하는지 확인하시오.
   hint: docker ps 명령으로 컨테이너 상태를 확인하세요.
   category: setup
   points: 8
-  answer: docker ps --filter name=mqtt-broker --format '{{.Names}} {{.Status}}' &&
-    echo 'MQTT 상태 확인 완료'
+  answer: docker ps --filter name=mqtt-broker --format '{{.Names}} {{.Status}}' && echo 'MQTT 상태 확인 완료'
   answer_detail: docker ps로 컨테이너 상태를 확인합니다. Up 상태이면 정상 동작입니다.
   verify:
     type: output_contains
     expect: MQTT 상태 확인 완료
     field: stdout
+    semantic:
+      intent: MQTT 브로커 상태 — docker ps --filter name=mqtt-broker --format '{{.Names}} {{.Status}}'. Up
+        상태 = 정상 동작. 컨테이너 실행 검증 단계.
+      success_criteria:
+      - MQTT 상태 확인 완료 키워드
+      - docker ps --filter name=mqtt-broker
+      - Up 상태 확인
+      acceptable_methods:
+      - docker ps --filter name
+      - docker inspect mqtt-broker --format State.Status
+      - docker container ls
+      - crictl ps (containerd)
+      negative_signs:
+      - docker ps 미사용
+      - 컨테이너 이름 필터 없음
+      - Up 상태 맥락 없음
   target_vm: attacker
 - order: 3
   instruction: nmap으로 대상 서버({{WEB_IP}})의 IoT 관련 포트(1883, 5683, 8080, 8883)를 스캔하시오.
   hint: nmap -sV -p 1883,5683,8080,8883 명령을 사용하세요.
   category: recon
   points: 10
-  answer: nmap -sV -p 1883,5683,8080,8883 10.20.30.80 2>/dev/null && echo 'IoT 포트
-    스캔 완료'
+  answer: nmap -sV -p 1883,5683,8080,8883 10.20.30.80 2>/dev/null && echo 'IoT 포트 스캔 완료'
   answer_detail: MQTT(1883), CoAP(5683), HTTP(8080), MQTT-TLS(8883) 등 IoT 관련 포트를 스캔합니다.
   verify:
     type: output_contains
     expect: IoT 포트 스캔 완료
     field: stdout
+    semantic:
+      intent: IoT 포트 정찰 — nmap -sV -p 1883,5683,8080,8883 10.20.30.80. MQTT(1883) + CoAP(5683) + HTTP(8080)
+        + MQTT-TLS(8883). 버전 탐지(-sV) + 프로토콜 식별. IoT 공격 표면 매핑.
+      success_criteria:
+      - IoT 포트 스캔 완료 키워드
+      - nmap -sV -p 1883,5683,8080,8883
+      - IoT 프로토콜 포트 매핑
+      acceptable_methods:
+      - nmap -sV -p 다중 포트
+      - masscan --rate=1000 -p1883,8883
+      - rustscan + nmap
+      - Shodan 사전 수집 (원격 대신)
+      negative_signs:
+      - IoT 포트 4개 중 2개 이하
+      - -sV 버전 탐지 없음
+      - MQTT/CoAP 프로토콜 맥락 없음
   target_vm: attacker
 - order: 4
   instruction: mosquitto_sub 명령으로 MQTT 브로커의 모든 토픽(#)을 구독하시오.
   hint: mosquitto_sub -h localhost -t "#" -v -C 5 명령으로 5개 메시지까지 수신합니다.
   category: mqtt
   points: 10
-  answer: mosquitto_sub -h localhost -t '#' -v -C 1 -W 3 2>/dev/null; echo 'MQTT 구독
-    테스트 완료'
+  answer: mosquitto_sub -h localhost -t '#' -v -C 1 -W 3 2>/dev/null; echo 'MQTT 구독 테스트 완료'
   answer_detail: '# 은 모든 토픽을 구독하는 와일드카드입니다. -C 1은 1개 메시지 수신 후 종료합니다.'
   verify:
     type: output_contains
     expect: MQTT 구독 테스트 완료
     field: stdout
+    semantic:
+      intent: MQTT 와일드카드 구독 — mosquitto_sub -h localhost -t '#' -v -C 1 -W 3. '#' = 모든 토픽 구독. -C 1 1개
+        메시지 후 종료, -W 3 3초 대기. 인증 없으면 모든 IoT 데이터 유출 가능.
+      success_criteria:
+      - MQTT 구독 테스트 완료 키워드
+      - mosquitto_sub -t '#'
+      - 와일드카드 구독 실행
+      acceptable_methods:
+      - mosquitto_sub -t '#' -v
+      - paho-mqtt Python subscribe
+      - mqtt-explorer GUI
+      - HiveMQ Websocket Client
+      negative_signs:
+      - '''#'' 와일드카드 미사용'
+      - 모든 토픽 구독 맥락 없음
+      - 인증 부재 위험 맥락 없음
   target_vm: attacker
 - order: 5
   instruction: mosquitto_pub 명령으로 IoT 센서 데이터를 발행하시오. 토픽은 iot/sensor/temp, 메시지는 {"value":25.3,"unit":"C"}으로
@@ -72,64 +131,125 @@ steps:
   hint: mosquitto_pub -h localhost -t "iot/sensor/temp" -m '메시지' 명령을 사용하세요.
   category: mqtt
   points: 10
-  answer: mosquitto_pub -h localhost -t 'iot/sensor/temp' -m '{"value":25.3,"unit":"C"}'
-    && echo 'MQTT 발행 완료'
+  answer: mosquitto_pub -h localhost -t 'iot/sensor/temp' -m '{"value":25.3,"unit":"C"}' && echo 'MQTT
+    발행 완료'
   answer_detail: mosquitto_pub으로 특정 토픽에 메시지를 발행합니다. IoT 센서가 데이터를 전송하는 것을 시뮬레이션합니다.
   verify:
     type: output_contains
     expect: MQTT 발행 완료
     field: stdout
+    semantic:
+      intent: MQTT 센서 데이터 발행 — mosquitto_pub -h localhost -t 'iot/sensor/temp' -m '{"value":25.3,"unit":"C"}'.
+        IoT 센서 데이터 전송 시뮬레이션. 토픽 계층 구조 (iot/sensor/temp).
+      success_criteria:
+      - MQTT 발행 완료 키워드
+      - mosquitto_pub -t iot/sensor/temp -m JSON
+      - 온도 센서 메시지
+      acceptable_methods:
+      - mosquitto_pub -t + -m
+      - paho-mqtt client.publish()
+      - MQTT.fx / MQTT Explorer publish
+      - Node-RED mqtt out 노드
+      negative_signs:
+      - 토픽 계층 구조 맥락 없음
+      - JSON 페이로드 없음
+      - pub 동작 없음
   target_vm: attacker
 - order: 6
   instruction: MQTT 시스템 토픽($SYS)을 구독하여 브로커 정보를 수집하시오.
   hint: mosquitto_sub -h localhost -t '$SYS/#' -v -C 10 명령을 사용하세요.
   category: recon
   points: 12
-  answer: mosquitto_sub -h localhost -t '$SYS/#' -v -C 5 -W 5 2>/dev/null; echo 'SYS
-    토픽 수집 완료'
+  answer: mosquitto_sub -h localhost -t '$SYS/#' -v -C 5 -W 5 2>/dev/null; echo 'SYS 토픽 수집 완료'
   answer_detail: $SYS 토픽은 MQTT 브로커의 상태 정보(연결 수, 메시지 수, 버전 등)를 제공합니다.
   verify:
     type: output_contains
     expect: SYS 토픽 수집 완료
     field: stdout
+    semantic:
+      intent: MQTT 브로커 정보 수집 — mosquitto_sub -h localhost -t '$SYS/#' -v -C 5 -W 5. $SYS 시스템 토픽 = 브로커
+        상태 (연결 수, 메시지 수, 버전). 정찰 단계에서 브로커 지문(fingerprint) 파악.
+      success_criteria:
+      - SYS 토픽 수집 완료 키워드
+      - mosquitto_sub -t '$SYS/#'
+      - 브로커 상태 정보 수집
+      acceptable_methods:
+      - mosquitto_sub -t '$SYS/#'
+      - paho-mqtt $SYS subscribe
+      - MQTT.fx $SYS 토픽 뷰어
+      - Wireshark MQTT dissector
+      negative_signs:
+      - $SYS 토픽 미사용
+      - 브로커 지문 맥락 없음
+      - 정찰 목적 맥락 없음
   target_vm: attacker
 - order: 7
   instruction: 5개의 서로 다른 IoT 토픽에 센서 데이터를 발행하시오 (temp, humidity, pressure, light, motion).
   hint: for 루프로 여러 토픽에 발행하세요.
   category: mqtt
   points: 10
-  answer: "for topic in temp humidity pressure light motion; do\n  mosquitto_pub -h\
-    \ localhost -t \"iot/sensor/$topic\" -m \"{\\\"value\\\":$RANDOM,\\\"sensor\\\"\
-    :\\\"$topic\\\"}\";\ndone && echo '다중 토픽 발행 완료'\n"
+  answer: "for topic in temp humidity pressure light motion; do\n  mosquitto_pub -h localhost -t \"iot/sensor/$topic\"\
+    \ -m \"{\\\"value\\\":$RANDOM,\\\"sensor\\\":\\\"$topic\\\"}\";\ndone && echo '다중 토픽 발행 완료'\n"
   answer_detail: 실제 IoT 환경에서는 다양한 센서가 각기 다른 토픽으로 데이터를 발행합니다.
   verify:
     type: output_contains
     expect: 다중 토픽 발행 완료
     field: stdout
+    semantic:
+      intent: 다중 센서 토픽 발행 — for topic in temp humidity pressure light motion + mosquitto_pub -t iot/sensor/$topic.
+        5개 센서 동시 시뮬레이션. 실제 IoT = 다양한 센서가 각기 다른 토픽으로 발행.
+      success_criteria:
+      - 다중 토픽 발행 완료 키워드
+      - for + 5개 토픽 + mosquitto_pub
+      - 센서 다양화 시뮬레이션
+      acceptable_methods:
+      - for 루프 + mosquitto_pub
+      - xargs + mosquitto_pub
+      - Python paho-mqtt 루프
+      - Node-RED flow 5개 mqtt out
+      negative_signs:
+      - 토픽 2개 이하
+      - for 루프 없음
+      - 센서 시뮬레이션 맥락 없음
   target_vm: attacker
 - order: 8
   instruction: MQTT 브로커에 인증 없이 접근 가능한지 확인하고, OWASP IoT Top 10 I1 취약점과 연결하시오.
   hint: mosquitto_sub로 인증 없이 접근 가능 여부를 확인하세요.
   category: vulnerability
   points: 12
-  answer: mosquitto_sub -h localhost -t '#' -v -C 1 -W 3 2>/dev/null && echo '[취약]
-    MQTT 미인증 접근 가능 - OWASP IoT I1' || echo '[안전] MQTT 인증 필요'
-  answer_detail: OWASP IoT Top 10 I1은 취약한 비밀번호/인증 부재입니다. MQTT 브로커에 인증 없이 접근 가능하면 Critical
-    취약점입니다.
+  answer: mosquitto_sub -h localhost -t '#' -v -C 1 -W 3 2>/dev/null && echo '[취약] MQTT 미인증 접근 가능 - OWASP
+    IoT I1' || echo '[안전] MQTT 인증 필요'
+  answer_detail: OWASP IoT Top 10 I1은 취약한 비밀번호/인증 부재입니다. MQTT 브로커에 인증 없이 접근 가능하면 Critical 취약점입니다.
   verify:
     type: output_contains
     expect: OWASP IoT I1
     field: stdout
+    semantic:
+      intent: MQTT 미인증 취약점 — mosquitto_sub -t '#' -C 1 -W 3 + 성공 시 [취약] OWASP IoT I1. I1 Weak/Guessable/Hardcoded
+        Passwords. 인증 없이 접근 가능 = Critical.
+      success_criteria:
+      - OWASP IoT I1 키워드
+      - mosquitto_sub 인증 없이 구독 시도
+      - I1 취약점 매핑
+      acceptable_methods:
+      - mosquitto_sub 인증 없이 + 판정
+      - hydra mqtt 인증 테스트
+      - nuclei mqtt-templates
+      - MQTT.fx 익명 접속 테스트
+      negative_signs:
+      - OWASP IoT I1 매핑 없음
+      - 인증 부재 Critical 맥락 없음
+      - 판정 로직 없음
   target_vm: attacker
 - order: 9
   instruction: IoT 공격 표면 분석 보고서를 작성하시오. 발견된 서비스, 프로토콜, 취약점을 정리하시오.
   hint: echo 명령으로 보고서를 출력하세요.
   category: verification
   points: 10
-  answer: 'echo ''=== IoT 공격 표면 분석 보고서 ==='' && echo ''[서비스] MQTT Broker: localhost:1883''
-    && echo ''[인증] 미인증 접근 가능 (Critical)'' && echo ''[암호화] TLS 미적용 (High)'' && echo
-    ''[토픽] 와일드카드 구독 가능 (High)'' && echo ''[OWASP] I1 - Weak Authentication'' && echo
-    ''[OWASP] I7 - Insecure Data Transfer'' && echo ''=== 분석 보고서 완료 ===''
+  answer: 'echo ''=== IoT 공격 표면 분석 보고서 ==='' && echo ''[서비스] MQTT Broker: localhost:1883'' && echo ''[인증]
+    미인증 접근 가능 (Critical)'' && echo ''[암호화] TLS 미적용 (High)'' && echo ''[토픽] 와일드카드 구독 가능 (High)'' && echo
+    ''[OWASP] I1 - Weak Authentication'' && echo ''[OWASP] I7 - Insecure Data Transfer'' && echo ''===
+    분석 보고서 완료 ===''
 
     '
   answer_detail: 체계적인 공격 표면 분석은 IoT 보안 점검의 기초입니다.
@@ -137,17 +257,48 @@ steps:
     type: output_contains
     expect: 분석 보고서 완료
     field: stdout
+    semantic:
+      intent: IoT 공격 표면 분석 보고서 — 서비스(MQTT Broker:1883) + 인증(미인증 Critical) + 암호화(TLS 미적용 High) + 토픽(와일드카드
+        High) + OWASP I1/I7 매핑. 체계적 공격 표면 분석 = IoT 보안 점검 기초.
+      success_criteria:
+      - 분석 보고서 완료 키워드
+      - 서비스 + 인증 + 암호화 + OWASP 통합
+      - Critical/High 등급
+      acceptable_methods:
+      - echo 통합 보고서
+      - OWASP IoT Top 10 템플릿
+      - NIST IoT Cybersecurity 프레임워크
+      - ENISA Baseline IoT Recommendations
+      negative_signs:
+      - OWASP 매핑 없음
+      - 심각도 구분 없음
+      - 5개 영역 이하
   target_vm: attacker
 - order: 10
   instruction: 실습 환경을 정리하시오. mqtt-broker 컨테이너를 중지하고 제거하시오.
   hint: docker stop && docker rm 명령을 사용하세요.
   category: cleanup
   points: 10
-  answer: docker stop mqtt-broker 2>/dev/null; docker rm mqtt-broker 2>/dev/null;
-    echo '환경 정리 완료'
+  answer: docker stop mqtt-broker 2>/dev/null; docker rm mqtt-broker 2>/dev/null; echo '환경 정리 완료'
   answer_detail: 실습 후 컨테이너를 정리하여 리소스를 확보합니다.
   verify:
     type: output_contains
     expect: 환경 정리 완료
     field: stdout
+    semantic:
+      intent: 실습 환경 정리 — docker stop mqtt-broker + docker rm mqtt-broker. 리소스 확보 + 다음 실습 충돌 방지. CI/CD
+        테스트 환경 정리 원칙.
+      success_criteria:
+      - 환경 정리 완료 키워드
+      - docker stop + docker rm mqtt-broker
+      - 리소스 회수
+      acceptable_methods:
+      - docker stop + rm
+      - docker rm -f (강제)
+      - docker-compose down
+      - docker system prune (전체 정리)
+      negative_signs:
+      - stop 또는 rm 중 누락
+      - 컨테이너 이름 없음
+      - 리소스 정리 맥락 없음
   target_vm: attacker
