@@ -18,44 +18,85 @@ steps:
   category: http_basics
   points: 8
   answer: curl -I http://10.20.30.80
-  answer_detail: curl -I는 HEAD 요청으로 응답 헤더만 받습니다. Server, Content-Type, Set-Cookie
-    등 보안 관련 헤더를 확인합니다.
+  answer_detail: curl -I는 HEAD 요청으로 응답 헤더만 받습니다. Server, Content-Type, Set-Cookie 등 보안 관련 헤더를 확인합니다.
   verify:
     type: output_contains
     expect: HTTP/
     field: stdout
+    semantic:
+      intent: HTTP HEAD 요청 — curl -I http://10.20.30.80. HEAD 요청 = 응답 헤더만. Server/Content-Type/Set-Cookie
+        보안 헤더 확인. RFC 7231 HTTP 1.1.
+      success_criteria:
+      - curl -I
+      - HTTP/ 키워드
+      - 응답 헤더
+      acceptable_methods:
+      - curl -I
+      - wget --server-response
+      - httpie HEAD
+      negative_signs:
+      - -I 옵션 없음
+      - GET 본문만
+      - 헤더 분석 없음
   target_vm: attacker
 - order: 2
   instruction: 'HTTP 응답 코드 종류를 확인하시오: 존재하는 페이지와 존재하지 않는 페이지의 응답 코드 차이.'
   hint: curl -o /dev/null -w '%{http_code}' 옵션을 사용하세요.
   category: http_basics
   points: 8
-  answer: echo '존재하는 페이지:' && curl -o /dev/null -s -w '%{http_code}' http://10.20.30.80/
-    && echo '' && echo '존재하지 않는 페이지:' && curl -o /dev/null -s -w '%{http_code}' http://10.20.30.80/nonexistent
-    && echo ''
+  answer: echo '존재하는 페이지:' && curl -o /dev/null -s -w '%{http_code}' http://10.20.30.80/ && echo '' &&
+    echo '존재하지 않는 페이지:' && curl -o /dev/null -s -w '%{http_code}' http://10.20.30.80/nonexistent && echo
+    ''
   answer_detail: 200은 성공, 404는 페이지 없음, 301/302는 리다이렉트, 500은 서버 에러입니다.
   verify:
     type: output_contains
     expect: '200'
     field: stdout
+    semantic:
+      intent: 응답 코드 비교 — curl -o /dev/null -w '%{http_code}' / vs /nonexistent. 200 성공 / 404 미존재 / 301-302
+        redirect / 500 서버 오류. RFC 7231 Status Codes.
+      success_criteria:
+      - 존재 + 미존재 페이지 비교
+      - 200 키워드
+      - 응답 코드 출력
+      acceptable_methods:
+      - curl -w
+      - wget -S
+      - httpie 응답
+      negative_signs:
+      - 단일 페이지만
+      - 코드 미비교
+      - 단순 GET
   target_vm: attacker
 - order: 3
   instruction: HTTP 요청 메서드(GET, POST, PUT, DELETE, OPTIONS)를 테스트하여 서버가 허용하는 메서드를 확인하시오.
   hint: curl -X OPTIONS를 사용하세요.
   category: http_basics
   points: 10
-  answer: curl -s -X OPTIONS http://10.20.30.80/ -I 2>/dev/null | grep -i allow &&
-    echo 'OPTIONS 확인 완료'
-  answer_detail: OPTIONS 메서드로 서버가 허용하는 HTTP 메서드를 확인합니다. 불필요한 메서드(PUT, DELETE)는 비활성화해야
-    합니다.
+  answer: curl -s -X OPTIONS http://10.20.30.80/ -I 2>/dev/null | grep -i allow && echo 'OPTIONS 확인 완료'
+  answer_detail: OPTIONS 메서드로 서버가 허용하는 HTTP 메서드를 확인합니다. 불필요한 메서드(PUT, DELETE)는 비활성화해야 합니다.
   verify:
     type: output_contains
     expect: OPTIONS 확인 완료
     field: stdout
+    semantic:
+      intent: OPTIONS 메서드 — curl -s -X OPTIONS http://10.20.30.80/ -I | grep -i allow. 허용 메서드 확인. PUT/DELETE
+        불필요 → 비활성화 권장. RFC 7231 + OWASP A05 Misconfiguration.
+      success_criteria:
+      - curl -X OPTIONS
+      - OPTIONS 확인 키워드
+      - Allow 헤더
+      acceptable_methods:
+      - curl OPTIONS
+      - nmap http-methods
+      - Burp method scan
+      negative_signs:
+      - OPTIONS 없음
+      - 메서드 분석 없음
+      - Allow 누락
   target_vm: attacker
 - order: 4
-  instruction: 응답 헤더에서 보안 헤더(X-Frame-Options, X-XSS-Protection, Content-Security-Policy
-    등)의 존재 여부를 확인하시오.
+  instruction: 응답 헤더에서 보안 헤더(X-Frame-Options, X-XSS-Protection, Content-Security-Policy 등)의 존재 여부를 확인하시오.
   hint: curl -I로 헤더를 분석하세요.
   category: security_headers
   points: 12
@@ -66,20 +107,48 @@ steps:
     type: output_contains
     expect: 보안 헤더
     field: stdout
+    semantic:
+      intent: 보안 헤더 확인 — curl -sI + grep -iE '(x-frame|x-xss|content-security|strict-transport|x-content-type)'.
+        X-Frame=클릭재킹 / CSP=XSS / HSTS=다운그레이드. OWASP Secure Headers Project.
+      success_criteria:
+      - curl -sI + grep 보안 헤더
+      - 보안 헤더 키워드
+      - 5종 이상 패턴
+      acceptable_methods:
+      - curl + grep
+      - securityheaders.com 점수
+      - Mozilla Observatory
+      negative_signs:
+      - 보안 헤더 미점검
+      - 단순 grep
+      - OWASP 맥락 없음
   target_vm: attacker
 - order: 5
   instruction: 쿠키 속성(HttpOnly, Secure, SameSite)을 분석하시오.
   hint: curl -c 옵션으로 쿠키를 저장하세요.
   category: security_headers
   points: 10
-  answer: curl -sI http://10.20.30.80 | grep -i 'set-cookie' && echo '쿠키 분석 완료' ||
-    echo '쿠키 없음'
-  answer_detail: HttpOnly는 JavaScript 접근 차단, Secure는 HTTPS만 전송, SameSite는 CSRF 방지
-    속성입니다.
+  answer: curl -sI http://10.20.30.80 | grep -i 'set-cookie' && echo '쿠키 분석 완료' || echo '쿠키 없음'
+  answer_detail: HttpOnly는 JavaScript 접근 차단, Secure는 HTTPS만 전송, SameSite는 CSRF 방지 속성입니다.
   verify:
     type: output_contains
     expect: 쿠키
     field: stdout
+    semantic:
+      intent: 쿠키 속성 — curl -sI | grep -i 'set-cookie'. HttpOnly(JS 차단) + Secure(HTTPS만) + SameSite(CSRF
+        방지). RFC 6265 + OWASP Session Management.
+      success_criteria:
+      - curl -sI + grep set-cookie
+      - 쿠키 분석 키워드
+      - Set-Cookie 헤더
+      acceptable_methods:
+      - curl + grep cookie
+      - wget --save-cookies
+      - Burp cookie 분석
+      negative_signs:
+      - 쿠키 미점검
+      - 단순 GET
+      - 속성 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: 서버 배너 정보를 수집하여 웹 서버 종류와 버전을 파악하시오.
@@ -94,14 +163,28 @@ steps:
     - 배너 수집 완료
     - Apache
     field: stdout
+    semantic:
+      intent: 서버 배너 수집 — curl -sI | grep -i 'server'. Apache/Nginx 등 종류 + 버전 → 알려진 CVE 매칭. OWASP A05 Security
+        Misconfiguration. ServerTokens Prod 권장.
+      success_criteria:
+      - curl -sI + grep server
+      - Apache 또는 배너 키워드
+      - Server 헤더
+      acceptable_methods:
+      - curl + grep
+      - whatweb 자동
+      - wapiti 핑거프린팅
+      negative_signs:
+      - 배너 미수집
+      - Server 누락
+      - CVE 매칭 맥락 없음
   target_vm: attacker
 - order: 7
   instruction: robots.txt 파일을 확인하여 숨겨진 경로를 찾으시오.
   hint: http://{{WEB_IP}}/robots.txt에 접근하세요.
   category: recon
   points: 10
-  answer: curl -s http://10.20.30.80/robots.txt 2>/dev/null && echo 'robots.txt 확인
-    완료'
+  answer: curl -s http://10.20.30.80/robots.txt 2>/dev/null && echo 'robots.txt 확인 완료'
   answer_detail: robots.txt에는 크롤러 접근을 제한하는 경로가 포함되며, 민감한 디렉터리 정보를 노출할 수 있습니다.
   verify:
     type: output_contains
@@ -109,55 +192,112 @@ steps:
     - robots.txt 확인 완료
     - ftp
     field: stdout
+    semantic:
+      intent: robots.txt 확인 — curl -s http://10.20.30.80/robots.txt. 크롤러 제한 경로 = 민감 디렉터리 노출. JuiceShop
+        /ftp 등. 정찰의 기본. OWASP A05.
+      success_criteria:
+      - curl /robots.txt
+      - robots.txt 키워드 또는 ftp
+      - 응답 분석
+      acceptable_methods:
+      - curl robots.txt
+      - wget robots.txt
+      - Burp passive scan
+      negative_signs:
+      - robots.txt 미접근
+      - 단순 GET
+      - 민감 경로 맥락 없음
   target_vm: attacker
 - order: 8
   instruction: 'HTTP 리다이렉트 동작을 분석하시오: HTTP에서 HTTPS로의 리다이렉트 여부.'
   hint: curl -L -v 옵션을 사용하세요.
   category: http_basics
   points: 10
-  answer: curl -sI -L http://10.20.30.80 2>&1 | grep -iE '(location|HTTP/)' && echo
-    '리다이렉트 분석 완료'
+  answer: curl -sI -L http://10.20.30.80 2>&1 | grep -iE '(location|HTTP/)' && echo '리다이렉트 분석 완료'
   answer_detail: HTTP→HTTPS 리다이렉트가 없으면 중간자 공격에 취약합니다.
   verify:
     type: output_contains
     expect: 리다이렉트 분석 완료
     field: stdout
+    semantic:
+      intent: HTTP 리다이렉트 — curl -sI -L | grep -iE '(location|HTTP/)'. HTTP→HTTPS 리다이렉트 없음 = MITM 취약. HSTS
+        Strict-Transport-Security로 강제. RFC 7231 3xx.
+      success_criteria:
+      - curl -L + Location 추적
+      - 리다이렉트 분석 키워드
+      - 여러 HTTP 응답
+      acceptable_methods:
+      - curl -L
+      - wget --max-redirect
+      - openssl s_client 검증
+      negative_signs:
+      - 리다이렉트 미추적
+      - 단순 curl
+      - HSTS 맥락 없음
   target_vm: attacker
 - order: 9
   instruction: POST 요청을 전송하고 요청/응답을 분석하시오.
   hint: curl -d 옵션으로 데이터를 전송하세요.
   category: http_basics
   points: 10
-  answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{\"email\":\"test@test.com\",\"password\":\"test\"\
-    }' 2>/dev/null \\\n | head -5 && echo 'POST 분석 완료'"
+  answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{\"email\":\"test@test.com\",\"password\":\"test\"}' 2>/dev/null \\\n | head -5 && echo\
+    \ 'POST 분석 완료'"
   answer_detail: POST 요청은 로그인, 폼 제출 등에 사용됩니다. 요청 본문과 응답 구조를 분석합니다.
   verify:
     type: output_contains
     expect: POST 분석 완료
     field: stdout
+    semantic:
+      intent: 'POST 요청 분석 — curl -s -X POST /rest/user/login -H ''Content-Type: application/json'' -d
+        ''{...}''. 로그인/폼 제출 패턴. 요청 본문 + 응답 구조 분석. RFC 7231 POST.'
+      success_criteria:
+      - curl -X POST + -d JSON
+      - POST 분석 키워드
+      - Content-Type 명시
+      acceptable_methods:
+      - curl POST + JSON
+      - Postman 요청
+      - Burp Repeater
+      negative_signs:
+      - POST 없음
+      - 본문 없음
+      - Content-Type 누락
   target_vm: attacker
 - order: 10
   instruction: 웹 서버의 디렉터리 목록 노출(Directory Listing) 여부를 확인하시오.
   hint: 다양한 경로에 접근해보세요.
   category: recon
   points: 10
-  answer: curl -s http://10.20.30.80/ftp/ 2>/dev/null | head -20 && echo '디렉터리 리스팅
-    확인 완료'
+  answer: curl -s http://10.20.30.80/ftp/ 2>/dev/null | head -20 && echo '디렉터리 리스팅 확인 완료'
   answer_detail: 디렉터리 리스팅이 활성화되면 파일 목록이 노출되어 민감 정보 유출 위험이 있습니다.
   verify:
     type: output_contains
     expect: 디렉터리 리스팅 확인 완료
     field: stdout
+    semantic:
+      intent: 디렉터리 리스팅 — curl -s http://10.20.30.80/ftp/ | head -20. 파일 목록 노출 = 민감 정보 유출. JuiceShop /ftp
+        디렉터리. Apache Options -Indexes로 비활성. OWASP A05.
+      success_criteria:
+      - curl /ftp/ 또는 디렉터리
+      - 디렉터리 리스팅 키워드
+      - 응답 분석
+      acceptable_methods:
+      - curl 디렉터리
+      - wget -r --no-recursion
+      - dirb 자동 스캔
+      negative_signs:
+      - 리스팅 미점검
+      - 단순 GET
+      - Indexes 옵션 맥락 없음
   target_vm: attacker
 - order: 11
   instruction: HTTP 요청에 사용자 정의 헤더를 추가하여 전송하시오.
   hint: curl -H 옵션을 사용하세요.
   category: http_basics
   points: 8
-  answer: "curl -s \\\n  -H 'X-Custom-Header: SecurityTest' \\\n  -H 'User-Agent:\
-    \ SecurityScanner/1.0' http://10.20.30.80 \\\n  -o /dev/null \\\n  -w '%{http_code}'\
-    \ && echo '' && echo '커스텀 헤더 테스트 완료'"
+  answer: "curl -s \\\n  -H 'X-Custom-Header: SecurityTest' \\\n  -H 'User-Agent: SecurityScanner/1.0'\
+    \ http://10.20.30.80 \\\n  -o /dev/null \\\n  -w '%{http_code}' && echo '' && echo '커스텀 헤더 테스트 완료'"
   answer_detail: 커스텀 헤더는 WAF 우회, 인증 토큰 전달 등에 사용됩니다.
   verify:
     type: output_contains
@@ -165,33 +305,77 @@ steps:
     - 커스텀 헤더 테스트 완료
     - Header
     field: stdout
+    semantic:
+      intent: '커스텀 헤더 — curl -H ''X-Custom-Header: SecurityTest'' -H ''User-Agent: SecurityScanner/1.0''.
+        WAF 우회 (UA 위장) + 인증 토큰 전달. RFC 7230 헤더 확장.'
+      success_criteria:
+      - curl -H 다중 헤더
+      - 커스텀 헤더 또는 Header 키워드
+      - User-Agent 변경
+      acceptable_methods:
+      - curl -H
+      - wget --header
+      - Burp Match and Replace
+      negative_signs:
+      - -H 없음
+      - 단일 헤더만
+      - WAF 우회 맥락 없음
   target_vm: attacker
 - order: 12
   instruction: HTTPS 연결의 TLS 인증서 정보를 확인하시오.
   hint: openssl s_client를 사용하세요.
   category: tls
   points: 10
-  answer: echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | openssl x509
-    -text -noout 2>/dev/null | head -15 || echo 'TLS 인증서 확인 완료'
+  answer: echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | openssl x509 -text -noout 2>/dev/null
+    | head -15 || echo 'TLS 인증서 확인 완료'
   answer_detail: TLS 인증서의 유효기간, 발급자, CN/SAN을 확인하여 위조 인증서를 탐지합니다.
   verify:
     type: output_contains
     expect: 인증서 확인 완료
     field: stdout
+    semantic:
+      intent: TLS 인증서 — echo | openssl s_client -connect 10.20.30.80:443 | openssl x509 -text -noout |
+        head -15. 유효기간/발급자/CN/SAN. 위조 인증서 탐지. RFC 5246 TLS + RFC 5280 X.509.
+      success_criteria:
+      - openssl s_client
+      - x509 인증서 파싱
+      - 인증서 확인 키워드
+      acceptable_methods:
+      - openssl s_client + x509
+      - curl -v --tlsv1.2
+      - nmap --script ssl-cert
+      negative_signs:
+      - openssl 미사용
+      - 단순 curl
+      - 인증서 분석 없음
   target_vm: attacker
 - order: 13
   instruction: 웹 애플리케이션의 기술 스택을 식별하시오.
   hint: 응답 헤더, HTML 소스, 쿠키 이름 등에서 단서를 찾으세요.
   category: fingerprinting
   points: 10
-  answer: curl -sI http://10.20.30.80 | grep -iE '(server|x-powered|set-cookie)' &&
-    curl -s http://10.20.30.80 | grep -ioE '(angular|react|vue|jquery|express)' |
-    sort -u && echo '기술 스택 식별 완료'
+  answer: curl -sI http://10.20.30.80 | grep -iE '(server|x-powered|set-cookie)' && curl -s http://10.20.30.80
+    | grep -ioE '(angular|react|vue|jquery|express)' | sort -u && echo '기술 스택 식별 완료'
   answer_detail: 기술 스택 식별로 프레임워크별 알려진 취약점을 매칭할 수 있습니다.
   verify:
     type: output_contains
     expect: 기술 스택 식별 완료
     field: stdout
+    semantic:
+      intent: 기술 스택 식별 — curl -sI + grep '(server|x-powered|set-cookie)' + curl -s | grep -ioE '(angular|react|vue|jquery|express)'.
+        헤더 + JS 라이브러리 핑거프린팅. CVE 매칭. wapiti/whatweb 자동.
+      success_criteria:
+      - 헤더 + JS 라이브러리 grep
+      - 기술 스택 키워드
+      - 다중 식별
+      acceptable_methods:
+      - 수동 grep
+      - whatweb / wappalyzer
+      - BuiltWith 분석
+      negative_signs:
+      - 스택 미식별
+      - 단일 패턴
+      - 프레임워크 분석 없음
   target_vm: attacker
 - order: 14
   instruction: 웹 서버의 에러 페이지를 분석하여 정보 누출 여부를 확인하시오.
@@ -205,20 +389,49 @@ steps:
     type: output_contains
     expect: 에러 페이지 분석 완료
     field: stdout
+    semantic:
+      intent: 에러 페이지 분석 — curl -s 'http://10.20.30.80/%00' + /api/error. 잘못된 경로/파라미터로 에러 유발. 상세 에러 = 서버
+        경로/스택 트레이스/DB 정보 노출. CWE-209 Information Exposure.
+      success_criteria:
+      - 에러 유발 (NULL byte 또는 잘못 경로)
+      - 에러 페이지 분석 키워드
+      - 응답 분석
+      acceptable_methods:
+      - '%00 / 잘못 경로'
+      - 잘못된 파라미터
+      - Burp 에러 분석
+      negative_signs:
+      - 에러 미유발
+      - 단순 GET
+      - 정보 노출 맥락 없음
   target_vm: attacker
 - order: 15
   instruction: HTTP 기초 분석 종합 보고서를 작성하시오.
   hint: 서버 정보, 보안 헤더, 취약점 요약을 포함하세요.
   category: verification
   points: 12
-  answer: 'echo ''=== HTTP 기초 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo
-    ''[서버 정보]'' && curl -sI http://10.20.30.80 | grep -i server && echo ''[보안 헤더]''
-    && curl -sI http://10.20.30.80 | grep -icE ''(x-frame|x-xss|csp|hsts)'' && echo
-    ''[응답 코드]'' && curl -o /dev/null -s -w ''%{http_code}'' http://10.20.30.80 &&
-    echo '''' && echo ''=== 보고서 완료 ==='''
+  answer: 'echo ''=== HTTP 기초 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''[서버 정보]'' && curl
+    -sI http://10.20.30.80 | grep -i server && echo ''[보안 헤더]'' && curl -sI http://10.20.30.80 | grep
+    -icE ''(x-frame|x-xss|csp|hsts)'' && echo ''[응답 코드]'' && curl -o /dev/null -s -w ''%{http_code}''
+    http://10.20.30.80 && echo '''' && echo ''=== 보고서 완료 ==='''
   answer_detail: HTTP 분석 결과를 체계적으로 정리하여 후속 취약점 진단의 기초 자료로 활용합니다.
   verify:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+    semantic:
+      intent: 'HTTP 분석 보고서 — echo + curl 종합: [서버 정보] + [보안 헤더 카운트] + [응답 코드]. HTTP 분석 결과 체계화. 후속 취약점 진단
+        기초. PTES Reporting.'
+      success_criteria:
+      - 보고서 완료 키워드
+      - 서버/헤더/응답 3섹션
+      - 통합 출력
+      acceptable_methods:
+      - echo + 통합
+      - 스크립트 + 보고서 생성
+      - Burp Reporting
+      negative_signs:
+      - 섹션 1개
+      - 통합 안 됨
+      - 체계 부족
   target_vm: attacker
