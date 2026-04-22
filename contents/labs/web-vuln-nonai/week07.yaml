@@ -17,156 +17,323 @@ steps:
   hint: SSRF 취약점 포인트 식별 관련 도구와 기법을 활용하세요.
   category: ssrf
   points: 8
-  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'SSRF 취약점 포인트 식별
-    완료'
+  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'SSRF 취약점 포인트 식별 완료'
   answer_detail: SSRF 취약점 포인트 식별은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: SSRF 식별 — URL 파라미터 + image/fetch/preview 기능 점검. JuiceShop /profile/image/url. OWASP A10:2021
+        SSRF + CWE-918.
+      success_criteria:
+      - SSRF 취약점 포인트 식별 완료 키워드
+      - URL 파라미터 점검
+      - OWASP A10
+      acceptable_methods:
+      - 수동 URL 파라미터 점검
+      - Burp Intruder
+      - SSRFmap 자동
+      negative_signs:
+      - 식별 없음
+      - 단순 GET
+      - SSRF 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: '{{WEB_IP}} 대상으로 내부 네트워크 포트 스캔을(를) 수행하시오.'
   hint: 내부 네트워크 포트 스캔 관련 도구와 기법을 활용하세요.
   category: ssrf
   points: 10
-  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '내부 네트워크 포트 스캔
-    완료'
+  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '내부 네트워크 포트 스캔 완료'
   answer_detail: 내부 네트워크 포트 스캔은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: SSRF 내부 포트 스캔 — url=http://127.0.0.1:22/80/3000/8080 for 루프. 응답 차이/시간 지연 분석. 방화벽 뒤 서비스 탐색.
+        CWE-918.
+      success_criteria:
+      - 내부 네트워크 포트 스캔 완료 키워드
+      - 다중 포트 시도
+      - SSRF 엔드포인트
+      acceptable_methods:
+      - SSRF url 파라미터 + 포트
+      - SSRFmap --ssrf-port
+      - Burp Intruder port list
+      negative_signs:
+      - 단일 포트
+      - SSRF 없음
+      - 응답 분석 없음
   target_vm: attacker
 - order: 3
   instruction: '{{WEB_IP}} 대상으로 localhost 서비스 접근 테스트을(를) 수행하시오.'
   hint: localhost 서비스 접근 테스트 관련 도구와 기법을 활용하세요.
   category: ssrf
   points: 10
-  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'localhost 서비스
-    접근 테스트 완료'
+  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'localhost 서비스 접근 테스트 완료'
   answer_detail: localhost 서비스 접근 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: localhost 접근 — url=http://localhost:포트 또는 http://127.0.0.1. 내부 전용 서비스(관리 패널/DB) 접근. SSRF
+        → 내부 서비스 장악. CWE-918.
+      success_criteria:
+      - localhost 서비스 접근 테스트 완료 키워드
+      - localhost/127.0.0.1 접근
+      - 내부 서비스 시도
+      acceptable_methods:
+      - localhost 직접
+      - 127.0.0.1 IP
+      - 0.0.0.0 우회
+      negative_signs:
+      - localhost 미시도
+      - 단순 GET
+      - 내부 접근 맥락 없음
   target_vm: attacker
 - order: 4
   instruction: '{{WEB_IP}} 대상으로 클라우드 메타데이터 접근 시도을(를) 수행하시오.'
   hint: 클라우드 메타데이터 접근 시도 관련 도구와 기법을 활용하세요.
   category: ssrf
   points: 10
-  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '클라우드 메타데이터 접근
-    시도 완료'
+  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '클라우드 메타데이터 접근 시도 완료'
   answer_detail: 클라우드 메타데이터 접근 시도은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 클라우드 메타데이터 — url=http://169.254.169.254/latest/meta-data/iam/security-credentials/. AWS
+        IMDS. IAM 임시 자격증명 탈취. Capital One 2019. IMDSv2 대응. CWE-918 + MITRE T1552.005.
+      success_criteria:
+      - 클라우드 메타데이터 접근 시도 완료 키워드
+      - 169.254.169.254 IP
+      - IMDS/meta-data 경로
+      acceptable_methods:
+      - AWS IMDS URL
+      - GCP metadata.google.internal
+      - Azure IMDS
+      negative_signs:
+      - 메타데이터 IP 없음
+      - 단순 SSRF
+      - IMDS 맥락 없음
   target_vm: attacker
 - order: 5
   instruction: '{{WEB_IP}} 대상으로 프로토콜 스키마 변경 테스트을(를) 수행하시오.'
   hint: 프로토콜 스키마 변경 테스트 관련 도구와 기법을 활용하세요.
   category: ssrf
   points: 10
-  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '프로토콜 스키마 변경 테스트
-    완료'
+  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo '프로토콜 스키마 변경 테스트 완료'
   answer_detail: 프로토콜 스키마 변경 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 프로토콜 스키마 변경 — file:// /etc/passwd 파일 읽기 + gopher:// 내부 서비스 통신 + dict:// 정보 노출. http/https
+        외 스키마 허용 시 악용. CWE-918.
+      success_criteria:
+      - 프로토콜 스키마 변경 테스트 완료 키워드
+      - file://, gopher://, dict:// 3종
+      - 대체 스키마
+      acceptable_methods:
+      - file:// 파일 접근
+      - gopher:// 범용
+      - dict:// 정보 누출
+      negative_signs:
+      - http만
+      - 스키마 변경 없음
+      - 대체 프로토콜 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: '{{WEB_IP}} 대상으로 DNS 리바인딩 공격 분석을(를) 수행하시오.'
   hint: DNS 리바인딩 공격 분석 관련 도구와 기법을 활용하세요.
   category: ssrf
   points: 12
-  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'DNS 리바인딩 공격 분석
-    완료'
+  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'DNS 리바인딩 공격 분석 완료'
   answer_detail: DNS 리바인딩 공격 분석은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: DNS 리바인딩 — 공격자 도메인이 짧은 TTL → 외부 IP에서 내부 IP로 변경. 검증 후 DNS 응답 변조. rbndr.us 도구. TOCTOU 공격.
+        CWE-367 + CWE-918.
+      success_criteria:
+      - DNS 리바인딩 공격 분석 완료 키워드
+      - 짧은 TTL + IP 변경
+      - TOCTOU 맥락
+      acceptable_methods:
+      - rbndr.us
+      - Singularity of Origin
+      - 수동 TTL=0 DNS 서버
+      negative_signs:
+      - DNS 리바인딩 맥락 없음
+      - TTL 누락
+      - TOCTOU 없음
   target_vm: attacker
 - order: 7
   instruction: '{{WEB_IP}} 대상으로 리다이렉트 기반 SSRF 우회을(를) 수행하시오.'
   hint: 리다이렉트 기반 SSRF 우회 관련 도구와 기법을 활용하세요.
   category: bypass
   points: 10
-  answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '리다이렉트 기반 SSRF
-    우회 완료'
+  answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo '리다이렉트 기반 SSRF 우회 완료'
   answer_detail: 리다이렉트 기반 SSRF 우회은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 리다이렉트 우회 — 공격자 서버 302 redirect → 내부 IP. 검증 서버가 초기 URL만 확인 시 우회. 체인 검증 필요. CWE-918 + CWE-601.
+      success_criteria:
+      - 리다이렉트 기반 SSRF 우회 완료 키워드
+      - 302 체인 활용
+      - 우회 원리
+      acceptable_methods:
+      - 공격자 서버 + 302
+      - url2img / openSSRF
+      - Python Flask redirect
+      negative_signs:
+      - 리다이렉트 없음
+      - 단순 SSRF
+      - 체인 맥락 없음
   target_vm: attacker
 - order: 8
   instruction: '{{WEB_IP}} 대상으로 URL 파서 차이 악용을(를) 수행하시오.'
   hint: URL 파서 차이 악용 관련 도구와 기법을 활용하세요.
   category: bypass
   points: 10
-  answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'URL 파서 차이 악용
-    완료'
+  answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'URL 파서 차이 악용 완료'
   answer_detail: URL 파서 차이 악용은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: URL 파서 차이 — http://expected.com@internal/ 또는 http://expected.com#@internal/ (파서별 다른 해석).
+        @ 사용자 정보 부분 악용. CWE-918 + CWE-20.
+      success_criteria:
+      - URL 파서 차이 악용 완료 키워드
+      - '@ 또는 # 활용'
+      - 파서 차이 설명
+      acceptable_methods:
+      - '@ userinfo 트릭'
+      - '# fragment 혼동'
+      - URL parser confusion
+      negative_signs:
+      - '@ 미사용'
+      - 단순 URL
+      - 파서 차이 맥락 없음
   target_vm: attacker
 - order: 9
   instruction: '{{WEB_IP}} 대상으로 IP 주소 변환 우회 기법을(를) 수행하시오.'
   hint: IP 주소 변환 우회 기법 관련 도구와 기법을 활용하세요.
   category: bypass
   points: 10
-  answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'IP 주소 변환 우회
-    기법 완료'
+  answer: curl -sI http://10.20.30.80 2>/dev/null | head -10 && echo 'IP 주소 변환 우회 기법 완료'
   answer_detail: IP 주소 변환 우회 기법은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: IP 변환 우회 — 127.0.0.1 = 0x7f000001 (16진수) / 2130706433 (10진수) / 0177.0.0.1 (8진수) / [::1]
+        (IPv6) / 127.1 (축약). 블랙리스트 우회. 화이트리스트 필수. CWE-918.
+      success_criteria:
+      - IP 주소 변환 우회 기법 완료 키워드
+      - 변환 형태 3개 이상
+      - 블랙리스트 우회
+      acceptable_methods:
+      - 다양한 IP 표현
+      - DNS 리바인딩 (rbndr.us)
+      - SSRFmap automation
+      negative_signs:
+      - 변환 2개 이하
+      - 단순 127.0.0.1만
+      - 화이트리스트 맥락 없음
   target_vm: attacker
 - order: 10
   instruction: '{{WEB_IP}} 대상으로 SSRF로 내부 API 호출을(를) 수행하시오.'
   hint: SSRF로 내부 API 호출 관련 도구와 기법을 활용하세요.
   category: ssrf
   points: 10
-  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'SSRF로 내부 API 호출
-    완료'
+  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'SSRF로 내부 API 호출 완료'
   answer_detail: SSRF로 내부 API 호출은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 내부 API 호출 — url=http://internal-api/admin/users 또는 http://redis:6379/flushall. SSRF로 인증
+        없이 내부 API/DB 접근. Cluster 내부 서비스. CWE-918 + CWE-284.
+      success_criteria:
+      - SSRF로 내부 API 호출 완료 키워드
+      - 내부 서비스 URL
+      - API 접근 맥락
+      acceptable_methods:
+      - 내부 API URL
+      - Redis gopher://
+      - Consul/Vault API
+      negative_signs:
+      - 내부 API 없음
+      - 외부만
+      - SSRF 체인 맥락 없음
   target_vm: attacker
 - order: 11
   instruction: '{{WEB_IP}} 대상으로 SSRF 체인 공격 설계을(를) 수행하시오.'
   hint: SSRF 체인 공격 설계 관련 도구와 기법을 활용하세요.
   category: ssrf
   points: 10
-  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'SSRF 체인 공격 설계
-    완료'
+  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'SSRF 체인 공격 설계 완료'
   answer_detail: SSRF 체인 공격 설계은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: SSRF 체인 공격 — SSRF → 메타데이터 IAM 토큰 탈취 → AWS API 호출 → S3 접근/DB 덤프. 다단계 공격. Capital One 시나리오.
+        MITRE T1190 + T1552.005 + T1530.
+      success_criteria:
+      - SSRF 체인 공격 설계 완료 키워드
+      - 다단계 흐름
+      - 메타데이터 → 클라우드 리소스
+      acceptable_methods:
+      - SSRF → IMDS → AWS API
+      - Pacu 자동
+      - BloodHound cloud
+      negative_signs:
+      - 단계 1개
+      - 체인 맥락 없음
+      - Capital One 누락
   target_vm: attacker
 - order: 12
   instruction: '{{WEB_IP}} 대상으로 Blind SSRF 탐지 기법을(를) 수행하시오.'
   hint: Blind SSRF 탐지 기법 관련 도구와 기법을 활용하세요.
   category: ssrf
   points: 10
-  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'Blind SSRF 탐지
-    기법 완료'
+  answer: curl -s http://10.20.30.80 2>/dev/null | head -5 && echo 'Blind SSRF 탐지 기법 완료'
   answer_detail: Blind SSRF 탐지 기법은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: Blind SSRF — 응답 본문 없음 → 외부 서버로 콜백(Burp Collaborator/interactsh). OOB DNS/HTTP. 응답 시간 차이
+        기반 추론도 가능. CWE-918 + OOB.
+      success_criteria:
+      - Blind SSRF 탐지 기법 완료 키워드
+      - OOB 콜백
+      - Burp Collaborator 또는 interactsh
+      acceptable_methods:
+      - Burp Collaborator
+      - interactsh OOB
+      - 수동 netcat 리스너
+      negative_signs:
+      - OOB 맥락 없음
+      - 응답 분석만
+      - Blind 원리 없음
   target_vm: attacker
 - order: 13
   instruction: '{{WEB_IP}} 대상으로 SSRF 방어: URL 화이트리스트을(를) 수행하시오.'
@@ -179,6 +346,21 @@ steps:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: SSRF 방어 화이트리스트 — [1] URL 스킴 http/https만 + [2] 도메인 화이트리스트 + [3] 내부 IP 대역 차단 (127/10/172.16-31/192.168/169.254)
+        + [4] DNS 해상도 재검증 + [5] IMDSv2 강제. OWASP SSRF Cheatsheet.
+      success_criteria:
+      - 조치 방안 정리 완료 키워드
+      - 화이트리스트 + 내부 IP 차단
+      - IMDSv2 또는 DNS 재검증
+      acceptable_methods:
+      - OWASP SSRF Prevention Cheatsheet
+      - Snyk SSRF 분석
+      - netfilter egress
+      negative_signs:
+      - 블랙리스트만
+      - 방어 2종 이하
+      - IMDSv2 누락
   target_vm: attacker
 - order: 14
   instruction: '{{WEB_IP}} 대상으로 네트워크 격리 설정 확인을(를) 수행하시오.'
@@ -191,17 +373,46 @@ steps:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: 네트워크 격리 — VPC Security Group egress 제한 + 메타데이터 hop limit=1 + 프라이빗 서브넷 + NAT Gateway. 클라우드
+        SSRF 대응. Zero Trust Network. AWS Well-Architected Security.
+      success_criteria:
+      - 조치 방안 정리 완료 키워드
+      - 네트워크 격리 기법
+      - 클라우드 아키텍처
+      acceptable_methods:
+      - VPC SG + egress
+      - AWS WAF + IMDS hop limit
+      - Network Policy (K8s)
+      negative_signs:
+      - 네트워크 격리 없음
+      - SG 미설정
+      - 격리 맥락 없음
   target_vm: attacker
 - order: 15
   instruction: SSRF 실습 종합 보고서를 작성하시오.
   hint: 발견 취약점, 영향, 조치를 포함하세요.
   category: verification
   points: 8
-  answer: 'echo ''=== SSRF 실습 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo
-    ''=== 보고서 완료 ==='''
+  answer: 'echo ''=== SSRF 실습 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''=== 보고서 완료 ==='''
   answer_detail: 취약점 진단 보고서는 발견사항, 위험도, 재현 방법, 조치 권고를 포함합니다.
   verify:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+    semantic:
+      intent: SSRF 보고서 — 대상 + 발견(URL 파라미터 SSRF) + 영향(내부 API/메타데이터/클라우드 장악) + 조치(화이트리스트+IMDSv2+네트워크 격리).
+        CWE-918 + OWASP A10.
+      success_criteria:
+      - 보고서 완료 키워드
+      - 발견/영향/조치 3섹션
+      - OWASP A10 매핑
+      acceptable_methods:
+      - echo > 보고서
+      - DefectDojo SSRF Finding
+      - PTES SSRF 보고
+      negative_signs:
+      - 섹션 부족
+      - OWASP 누락
+      - 영향 없음
   target_vm: attacker
