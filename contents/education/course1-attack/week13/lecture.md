@@ -1,586 +1,374 @@
-# Week 13: MITRE ATT&CK 프레임워크
+# Week 13: MITRE ATT&CK 종합 매핑
 
 ## 학습 목표
-- MITRE ATT&CK 프레임워크의 구조(전술, 기법, 하위기법)를 이해한다
-- Cyber Kill Chain과 ATT&CK의 관계를 설명할 수 있다
-- ATT&CK Navigator를 활용하여 공격 매핑을 시각화할 수 있다
-- 본 과정(Week 02~12)에서 수행한 모든 공격을 ATT&CK에 매핑한다
+- ATT&CK의 3계층(전술/기법/하위기법) 구조와 ID 체계(TAxxxx / Txxxx / Txxxx.xxx)를 이해한다
+- Cyber Kill Chain 7단계와 ATT&CK 14전술의 매핑을 설명한다
+- 본 과정 Week 02~12에서 수행한 모든 공격을 ATT&CK에 매핑한 표를 작성한다
+- ATT&CK Navigator로 "커버된 기법"을 시각화한 Layer JSON을 만든다
+- Bastion에게 자연어로 "지난 실습들을 ATT&CK으로 매핑해줘" 를 요청한다
+- 방어 커버리지(어느 전술에 탐지 룰이 있는가)를 평가한다
 
-## 실습 환경 (공통)
+## 실습 환경
 
-| 서버 | IP | 역할 | 접속 |
-|------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
-
-**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+| 호스트 | IP | 역할 |
+|--------|-----|------|
+| manager | 10.20.30.200 | Bastion :8003 |
+| web | 10.20.30.80 | 과거 공격 표적 (이번 주는 재실행 없음) |
+| 학생 브라우저 | - | ATT&CK Navigator 웹 GUI |
 
 ## 강의 시간 배분 (3시간)
 
-| 시간 | 내용 | 유형 |
-|------|------|------|
-| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
-| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
-| 1:10-1:20 | 휴식 | - |
-| 1:20-2:00 | 실습 (Part 3) | 실습 |
-| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
-| 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 시간 | 내용 |
+|------|------|
+| 0:00-0:30 | ATT&CK 구조·ID 체계 (Part 1) |
+| 0:30-1:00 | 14 전술 개요 + Kill Chain 비교 (Part 2~3) |
+| 1:00-1:10 | 휴식 |
+| 1:10-2:00 | Week 02~12 전체 매핑 (Part 4) |
+| 2:00-2:30 | ATT&CK Navigator Layer 작성 (Part 5) |
+| 2:30-2:40 | 휴식 |
+| 2:40-3:10 | 방어 커버리지 평가 (Part 6) |
+| 3:10-3:30 | Bastion 자동 매핑 (Part 7) |
+| 3:30-3:40 | 과제 |
 
 ---
 
----
+# Part 1: ATT&CK 구조
 
-## 용어 해설 (이 과목에서 자주 나오는 용어)
+## 1.1 ATT&CK이란
 
-> 대학 1~2학년이 처음 접할 수 있는 보안/IT 용어를 정리한다.
-> 강의 중 모르는 용어가 나오면 이 표를 참고하라.
+MITRE ATT&CK (Adversarial Tactics, Techniques, and Common Knowledge) — 실제 관찰된 공격자 행동을 체계적으로 분류한 공개 지식 기반.
 
-| 용어 | 영문 | 설명 | 비유 |
-|------|------|------|------|
-| **페이로드** | Payload | 공격에 사용되는 실제 데이터/코드. 예: `' OR 1=1--` | 미사일의 탄두 |
-| **익스플로잇** | Exploit | 취약점을 악용하는 기법 또는 코드 | 열쇠 없이 문을 여는 방법 |
-| **셸** | Shell | 운영체제와 사용자를 연결하는 명령어 해석기 (bash, sh 등) | OS에게 말 걸 수 있는 창구 |
-| **리버스 셸** | Reverse Shell | 대상 서버가 공격자에게 역방향 연결을 맺는 것 | 도둑이 집에서 밖으로 전화를 거는 것 |
-| **포트** | Port | 서버에서 특정 서비스를 식별하는 번호 (0~65535) | 아파트 호수 |
-| **데몬** | Daemon | 백그라운드에서 실행되는 서비스 프로그램 | 24시간 근무하는 경비원 |
-| **패킷** | Packet | 네트워크로 전송되는 데이터의 단위 | 택배 상자 하나 |
-| **프록시** | Proxy | 클라이언트와 서버 사이에서 중개하는 서버 | 대리인, 중간 거래자 |
-| **해시** | Hash | 임의 길이 데이터를 고정 길이 값으로 변환하는 함수 (SHA-256 등) | 지문 (고유하지만 원본 복원 불가) |
-| **토큰** | Token | 인증 정보를 담은 문자열 (JWT, API Key 등) | 놀이공원 입장권 |
-| **JWT** | JSON Web Token | Base64로 인코딩된 JSON 기반 인증 토큰 | 이름·권한이 적힌 입장권 |
-| **Base64** | Base64 | 바이너리 데이터를 텍스트로 인코딩하는 방법 | 암호가 아닌 "포장" (누구나 풀 수 있음) |
-| **CORS** | Cross-Origin Resource Sharing | 다른 도메인에서의 API 호출 허용 설정 | "외부인 출입 허용" 표지판 |
-| **API** | Application Programming Interface | 프로그램 간 통신 규약 | 식당의 메뉴판 (주문 양식) |
-| **REST** | Representational State Transfer | URL + HTTP 메서드로 자원을 조작하는 API 스타일 | 도서관 대출 시스템 (책 이름으로 검색/대출/반납) |
-| **SSH** | Secure Shell | 원격 서버에 안전하게 접속하는 프로토콜 | 암호화된 전화선 |
-| **sudo** | SuperUser DO | 관리자(root) 권한으로 명령 실행 | "사장님 권한으로 실행" |
-| **SUID** | Set User ID | 실행 시 파일 소유자 권한으로 실행되는 특수 권한 | 다른 사람의 사원증을 빌려 출입 |
-| **IPS** | Intrusion Prevention System | 네트워크 침입 방지 시스템 (악성 트래픽 차단) | 공항 보안 검색대 |
-| **SIEM** | Security Information and Event Management | 보안 로그를 수집·분석하는 통합 관제 시스템 | CCTV 관제실 |
-| **WAF** | Web Application Firewall | 웹 공격을 탐지·차단하는 방화벽 | 웹사이트 전용 경비원 |
-| **nftables** | nftables | Linux 커널 방화벽 프레임워크 (iptables 후계) | 건물 출입구 차단기 |
-| **Suricata** | Suricata | 오픈소스 IDS/IPS 엔진 | 공항 X-ray 검색기 |
-| **Wazuh** | Wazuh | 오픈소스 SIEM 플랫폼 | CCTV + AI 관제 시스템 |
-| **ATT&CK** | MITRE ATT&CK | 실제 공격 전술·기법을 분류한 데이터베이스 | 범죄 수법 백과사전 |
-| **OWASP** | Open Web Application Security Project | 웹 보안 취약점 연구 국제 단체 | 웹 보안의 표준 기관 |
-| **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 점수 (0~10점) | 질병 위험도 등급 |
-| **CVE** | Common Vulnerabilities and Exposures | 취약점 고유 식별 번호 | 질병의 고유 코드 (예: COVID-19) |
-| **Bastion** | Bastion | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
+- **URL:** https://attack.mitre.org
+- **업데이트:** 주기적 (보통 6개월 단위)
+- **도메인:** Enterprise / Mobile / ICS (본 과정은 Enterprise)
 
----
-
-# Week 13: MITRE ATT&CK 프레임워크
-
-## 학습 목표
-
-- MITRE ATT&CK 프레임워크의 구조(전술, 기법, 하위기법)를 이해한다
-- Cyber Kill Chain과 ATT&CK의 관계를 설명할 수 있다
-- ATT&CK Navigator를 활용하여 공격 매핑을 시각화할 수 있다
-- 본 과정(Week 02~12)에서 수행한 모든 공격을 ATT&CK에 매핑한다
-
----
-
-## 1. MITRE ATT&CK 개요
-
-### 1.1 ATT&CK이란?
-
-MITRE ATT&CK (Adversarial Tactics, Techniques, and Common Knowledge)은 실제 사이버 공격에서 관찰된 공격자 행동을 체계적으로 분류한 지식 기반이다.
-
-- **목적**: 공격자가 "무엇을" "어떻게" 하는지 표준화된 언어로 기술
-- **활용**: 위협 인텔리전스, 방어 체계 평가, 침투 테스트 계획, 보안 교육
-- **URL**: https://attack.mitre.org
-
-### 1.2 ATT&CK 구조
+## 1.2 3계층 구조
 
 ```
-ATT&CK 매트릭스
-+-- 전술 (Tactics)          -- "왜?" (공격자의 목적)
-    +-- 기법 (Techniques)       -- "무엇을?" (구체적 방법)
-        +-- 하위기법 (Sub-techniques) -- "어떻게?" (세부 변형)
-        +-- 절차 (Procedures)         -- "누가, 어떤 도구로?"
+전술 (Tactic)       = "왜?" (공격자의 목적)
+  └ 기법 (Technique)   = "무엇을?" (구체적 방법)
+      └ 하위기법 (Sub-technique) = "어떻게?" (변형)
+          └ 절차 (Procedure)         = "누가·어떤 도구로?"
 ```
 
 **예시:**
 ```
-전술: Initial Access (초기 접근)
-  +-- 기법: T1190 - Exploit Public-Facing Application
-       +-- 하위기법: 없음 (기법 자체가 구체적)
-       +-- 절차: SQL Injection으로 JuiceShop 공격 (Week 05)
+TA0001 Initial Access (초기 접근)
+  └ T1190 Exploit Public-Facing Application
+      └ 하위기법: 없음
+          └ 절차: JuiceShop `' OR 1=1--` SQL Injection (Week 04)
 ```
 
-### 1.3 ATT&CK ID 체계
+## 1.3 ID 체계
 
-```
-T1059.001
-
-각 필드 설명:
-  T      --> Technique
-  1059   --> 기법 번호 (Command and Scripting Interpreter)
-  .001   --> 하위기법 번호 (PowerShell)
-```
-
-- **TA00XX**: 전술 (Tactic)
-- **T1XXX**: 기법 (Technique)
-- **T1XXX.XXX**: 하위기법 (Sub-technique)
+| 접두 | 의미 | 예 |
+|------|------|-----|
+| TAxxxx | Tactic | TA0001 Initial Access |
+| Txxxx | Technique | T1190 Exploit Public-Facing App |
+| Txxxx.xxx | Sub-technique | T1059.004 Unix Shell |
+| Gxxxx | Group (APT) | G0016 APT29 |
+| Sxxxx | Software | S0002 Mimikatz |
+| Mxxxx | Mitigation | M1042 Disable or Remove Feature |
 
 ---
 
-## 2. 14가지 전술 (Tactics)
+# Part 2: 14 전술 (Enterprise)
 
-> **이 실습을 왜 하는가?**
-> "MITRE ATT&CK 프레임워크" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
-> 사이버보안 공격/웹해킹/침투테스트 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
-> 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
->
-> **이걸 하면 무엇을 알 수 있는가?**
-> - 이 기술이 실제 시스템에서 어떻게 동작하는지 직접 확인
-> - 정상과 비정상 결과를 구분하는 눈을 기름
-> - 실무에서 바로 활용할 수 있는 명령어와 절차를 체득
->
-> **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
+| # | ID | 전술명 | 본 과정 실습 |
+|---|-----|--------|---------------|
+| 1 | TA0043 | Reconnaissance (정찰) | Week 02 |
+| 2 | TA0042 | Resource Development | — (인프라 제공됨) |
+| 3 | TA0001 | Initial Access | Week 04 (SQLi), Week 06 (인증 우회) |
+| 4 | TA0002 | Execution | Week 05 (XSS JS 실행), Week 07 (업로드) |
+| 5 | TA0003 | Persistence | Week 12 |
+| 6 | TA0004 | Privilege Escalation | Week 11 |
+| 7 | TA0005 | Defense Evasion | Week 10, Week 12 |
+| 8 | TA0006 | Credential Access | Week 04 (해시 추출), Week 06 (보안 질문) |
+| 9 | TA0007 | Discovery | Week 02, Week 09 |
+| 10 | TA0008 | Lateral Movement | — (단일 타깃) |
+| 11 | TA0009 | Collection | Week 07 (/ftp 파일), Week 04 (DB 덤프) |
+| 12 | TA0011 | Command and Control | Week 10 (터널링 개념) |
+| 13 | TA0010 | Exfiltration | — (실제 외부 유출 없음) |
+| 14 | TA0040 | Impact | — (파괴적 공격 없음) |
 
-ATT&CK Enterprise 매트릭스의 14가지 전술이다. 공격의 단계별 목적을 나타낸다.
-
-| # | 전술 ID | 전술명 | 설명 | 본 과정 해당 주차 |
-|---|---------|--------|------|-------------------|
-| 1 | TA0043 | Reconnaissance (정찰) | 대상 정보 수집 | Week 02, 09 |
-| 2 | TA0042 | Resource Development (자원 개발) | 공격 인프라 준비 | - |
-| 3 | TA0001 | Initial Access (초기 접근) | 네트워크 진입 | Week 03, 04, 05 |
-| 4 | TA0002 | Execution (실행) | 악성 코드 실행 | Week 06, 07, 08 |
-| 5 | TA0003 | Persistence (지속성) | 접근 유지 | Week 12 |
-| 6 | TA0004 | Privilege Escalation (권한 상승) | 높은 권한 획득 | Week 11 |
-| 7 | TA0005 | Defense Evasion (방어 회피) | 탐지 우회 | Week 10, 12 |
-| 8 | TA0006 | Credential Access (자격증명 접근) | 비밀번호/토큰 탈취 | Week 04, 05 |
-| 9 | TA0007 | Discovery (탐색) | 환경 정보 수집 | Week 02, 09 |
-| 10 | TA0008 | Lateral Movement (수평 이동) | 다른 시스템으로 이동 | Week 09 |
-| 11 | TA0009 | Collection (수집) | 목표 데이터 수집 | Week 07 |
-| 12 | TA0011 | Command and Control (C2) | 원격 제어 채널 | Week 10 |
-| 13 | TA0010 | Exfiltration (유출) | 데이터 외부 전송 | Week 07 |
-| 14 | TA0040 | Impact (영향) | 시스템 파괴/조작 | Week 08 |
+**본 과정 미실습 전술:** TA0042, TA0008, TA0010, TA0040. 운영 원칙상 교육 환경에서 다루지 않음. 실제 APT는 14전술 전부 사용.
 
 ---
 
-## 3. Cyber Kill Chain과 ATT&CK 비교
+# Part 3: Cyber Kill Chain vs ATT&CK
 
-### 3.1 Lockheed Martin Kill Chain
+## 3.1 Lockheed Martin Kill Chain (7단계)
 
 ```
-1. Reconnaissance (정찰)
-   ↓
-2. Weaponization (무기화)
-   ↓
-3. Delivery (전달)
-   ↓
-4. Exploitation (공격 실행)
-   ↓
-5. Installation (설치)
-   ↓
-6. Command & Control (C2)
-   ↓
-7. Actions on Objectives (목표 달성)
+1. Reconnaissance → 2. Weaponization → 3. Delivery
+  → 4. Exploitation → 5. Installation → 6. C2
+  → 7. Actions on Objectives
 ```
 
-### 3.2 Kill Chain vs ATT&CK 매핑
+**한계:** 7단계 선형 구조. 실제 APT는 반복·병렬 전환 빈번. C2 중 다시 정찰 등.
 
-| Kill Chain | ATT&CK 전술 |
-|------------|-------------|
+## 3.2 매핑 표
+
+| Kill Chain | ATT&CK Tactic |
+|------------|---------------|
 | Reconnaissance | TA0043 Reconnaissance |
 | Weaponization | TA0042 Resource Development |
 | Delivery | TA0001 Initial Access |
 | Exploitation | TA0002 Execution |
-| Installation | TA0003 Persistence, TA0004 Privilege Escalation |
+| Installation | TA0003 Persistence, TA0004 Priv Esc |
 | C2 | TA0011 Command and Control |
-| Actions | TA0009~TA0010, TA0040 Collection/Exfiltration/Impact |
+| Actions on Objectives | TA0009 Collection, TA0010 Exfiltration, TA0040 Impact |
 
-**ATT&CK의 장점:**
-- Kill Chain은 7단계 선형 구조 → ATT&CK은 14전술 병렬/반복 구조
-- Kill Chain은 "단계"만 표현 → ATT&CK은 "구체적 기법"까지 분류
-- ATT&CK은 실제 APT 그룹의 절차(Procedure)까지 매핑
+## 3.3 ATT&CK의 강점
+
+- **병렬·반복 허용** — 14 전술은 시점이 아닌 **목적**
+- **기법 수준 세밀도** — 600+ Technique, 1800+ Sub-technique
+- **공개 APT 그룹·멀웨어 매핑** — G0016 APT29, S0002 Mimikatz 등
+- **방어 관점 통합** — 각 기법에 Detection·Mitigation 연동
 
 ---
 
-## 4. ATT&CK Navigator
+# Part 4: 본 과정 공격의 ATT&CK 매핑
 
-### 4.1 Navigator란?
+## 4.1 전체 매트릭스 (Week 02~12)
 
-ATT&CK Navigator는 ATT&CK 매트릭스를 웹 브라우저에서 시각화하고 편집할 수 있는 도구이다.
+| 주차 | 공격 | ATT&CK ID | 전술 |
+|------|------|-----------|------|
+| **Week 02** | nmap 포트 스캔 | T1595.002 Vulnerability Scanning | Reconnaissance |
+| Week 02 | nmap -sV 서비스 탐지 | T1046 Network Service Discovery | Discovery |
+| Week 02 | robots.txt·/ftp 탐색 | T1595.003 Wordlist Scanning | Reconnaissance |
+| Week 02 | HTTP 헤더 수집 | T1592.004 Client Configurations | Reconnaissance |
+| **Week 03** | JWT 디코딩 | T1552.005 Cloud Instance Metadata (유사 개념) | Credential Access |
+| Week 03 | REST API 엔드포인트 열거 | T1595 Active Scanning | Reconnaissance |
+| **Week 04** | SQL Injection `' OR 1=1--` | T1190 Exploit Public-Facing App | Initial Access |
+| Week 04 | 관리자 계정 탈취 | T1078 Valid Accounts | Initial Access |
+| Week 04 | UNION으로 DB 덤프 | T1005 Data from Local System | Collection |
+| Week 04 | MD5 해시 획득 | T1003.008 /etc/passwd and /etc/shadow (유사) | Credential Access |
+| **Week 05** | DOM/Reflected/Stored XSS | T1059.007 JavaScript | Execution |
+| Week 05 | localStorage JWT 탈취 | T1539 Steal Web Session Cookie | Credential Access |
+| **Week 06** | 보안 질문 답변 brute | T1110.003 Password Spraying | Credential Access |
+| Week 06 | JWT alg=none 위조 | T1550.001 Application Access Token | Defense Evasion |
+| Week 06 | IDOR (basket/1) | T1552 Unsecured Credentials (접근제어 부재) | Credential Access |
+| Week 06 | 수직 권한상승 (customer→admin 기능) | T1078 Valid Accounts | Initial Access |
+| **Week 07** | SSRF 내부 IP 스캔 | T1595.002 + T1210 Exploit Remote Services | Reconnaissance |
+| Week 07 | `/ftp` 경로 탐색 + %2500 | T1083 File and Directory Discovery | Discovery |
+| Week 07 | package.json.bak 수집 | T1005 Data from Local System | Collection |
+| Week 07 | 파일 업로드 검증 우회 | T1608.001 Upload Malware | Resource Development |
+| **Week 09** | tcpdump 패킷 캡처 | T1040 Network Sniffing | Credential Access |
+| Week 09 | ARP 스푸핑 (개념) | T1557.002 ARP Cache Poisoning | Credential Access |
+| **Week 10** | URL 인코딩 IPS 우회 | T1027 Obfuscated Files or Information | Defense Evasion |
+| Week 10 | 공백 대체 (/**/) | T1027 | Defense Evasion |
+| Week 10 | sqlmap --tamper | T1027 | Defense Evasion |
+| Week 10 | ICMP 터널링 (개념) | T1572 Protocol Tunneling | Command and Control |
+| Week 10 | HTTP C2 비콘 (개념) | T1071.001 Web Protocols | Command and Control |
+| Week 10 | nmap -T1 -f -D | T1562.004 Disable or Modify System Firewall (회피) | Defense Evasion |
+| **Week 11** | SUID 바이너리 악용 | T1548.001 Setuid and Setgid | Privilege Escalation |
+| Week 11 | sudo NOPASSWD 악용 | T1548.003 Sudo and Sudo Caching | Privilege Escalation |
+| Week 11 | cron 악용 (PrivEsc) | T1053.003 Cron | Privilege Escalation |
+| Week 11 | PATH 하이재킹 | T1574.007 PATH Interception | Privilege Escalation |
+| Week 11 | 커널 익스플로잇 (개념) | T1068 Exploitation for PrivEsc | Privilege Escalation |
+| **Week 12** | SSH 키 인젝션 | T1098.004 SSH Authorized Keys | Persistence |
+| Week 12 | cron 백도어 | T1053.003 Cron | Persistence |
+| Week 12 | systemd 서비스 백도어 | T1543.002 Systemd Service | Persistence |
+| Week 12 | .bashrc 수정 | T1546.004 Unix Shell Configuration Modification | Persistence |
+| Week 12 | 새 계정 생성 | T1136.001 Local Account | Persistence |
+| Week 12 | 히스토리 비활성화 | T1070.003 Clear Command History | Defense Evasion |
+| Week 12 | 로그 삭제 | T1070.002 Clear Linux or Mac System Logs | Defense Evasion |
+| Week 12 | 타임스탬프 조작 | T1070.006 Timestomp | Defense Evasion |
+| Week 12 | /dev/shm 메모리 실행 | T1059.004 Unix Shell | Execution |
 
-- **URL**: https://mitre-attack.github.io/attack-navigator/
-- **용도**: 공격 시나리오 매핑, 방어 커버리지 분석, 보고서 작성
+## 4.2 전술별 커버리지 히트맵
 
-### 4.2 Navigator 사용법
+```
+Reconnaissance       ████████░░ 4 기법 (T1595.002/003, T1592.004, T1046)
+Initial Access       ████████░░ 3 기법 (T1190, T1078 x2)
+Execution            ██████░░░░ 2 기법 (T1059.007, T1059.004)
+Persistence          ████████░░ 5 기법 (T1098.004, T1053.003, T1543.002, T1546.004, T1136.001)
+Privilege Escalation ████████░░ 5 기법 (T1548.001, T1548.003, T1053.003, T1574.007, T1068)
+Defense Evasion      ████████░░ 5 기법 (T1027, T1562.004, T1070.002/003/006, T1550.001)
+Credential Access    ████████░░ 5 기법 (T1040, T1557.002, T1552, T1539, T1110.003)
+Discovery            ████░░░░░░ 2 기법 (T1083, T1046)
+Collection           ████░░░░░░ 2 기법 (T1005, T1083)
+Command and Control  ████░░░░░░ 2 기법 (T1572, T1071.001)
+Lateral Movement     ░░░░░░░░░░ 0 (단일 타깃)
+Exfiltration         ░░░░░░░░░░ 0 (시뮬만)
+Impact               ░░░░░░░░░░ 0 (비파괴적)
+Resource Development ██░░░░░░░░ 1 (T1608.001)
+```
 
-1. 웹 브라우저에서 Navigator 접속
-2. "Create New Layer" → "Enterprise" 선택
-3. 사용한 기법 셀을 클릭하여 색상 표시
-4. 코멘트 추가로 상세 설명 작성
-5. JSON으로 내보내기 가능
+**결론:** 본 과정은 **9 전술 × 약 35 기법**을 다룸. 실무 APT는 14 전술 전부 활용하므로, **심화 과정**(Course 11~20)에서 Lateral Movement·Exfiltration·Impact 등 추가 학습.
 
-### 4.3 Layer JSON 구조
+---
+
+# Part 5: ATT&CK Navigator Layer 작성
+
+## 5.1 Navigator 사용법
+
+1. 브라우저에서 https://mitre-attack.github.io/attack-navigator/ 접속
+2. **Create New Layer** → **Enterprise ATT&CK** 선택
+3. 사용한 기법 셀을 클릭 → 색·코멘트 입력
+4. **File → Export as JSON** → 공유 가능
+
+## 5.2 Layer JSON 구조 (예시)
 
 ```json
 {
-  "name": "Course 1 Attack Mapping",
+  "name": "CCC Course1 Attack — Week 02~12",
   "versions": {
     "attack": "14",
-    "navigator": "4.9"
+    "navigator": "4.9",
+    "layer": "4.5"
   },
   "domain": "enterprise-attack",
+  "description": "CCC 모의해킹 과정 Week 02~12의 공격 기법 매핑",
   "techniques": [
     {
       "techniqueID": "T1190",
+      "score": 1,
       "color": "#ff6666",
-      "comment": "Week 05: SQL Injection on JuiceShop",
-      "score": 1
+      "comment": "Week 04: JuiceShop SQLi ' OR 1=1--"
     },
     {
-      "techniqueID": "T1059.004",
+      "techniqueID": "T1059.007",
+      "score": 1,
+      "color": "#ff9933",
+      "comment": "Week 05: DOM/Reflected/Stored XSS"
+    },
+    {
+      "techniqueID": "T1548.003",
+      "score": 1,
       "color": "#ff6666",
-      "comment": "Week 06: Bash command execution",
-      "score": 1
+      "comment": "Week 11: sudo NOPASSWD:ALL 악용"
     }
-  ]
-}
-```
-
----
-
-## 5. 본 과정 공격의 ATT&CK 매핑
-
-### 5.1 전체 매핑 표
-
-이 표는 Week 02부터 Week 12까지 수행한 모든 공격을 ATT&CK 기법에 매핑한 것이다.
-
-| 주차 | 공격 내용 | ATT&CK 기법 ID | 기법명 | 전술 |
-|------|-----------|-----------------|--------|------|
-| **Week 02** | 웹 정찰, 디렉토리 스캔 | T1595.002 | Active Scanning: Vulnerability Scanning | Reconnaissance |
-| Week 02 | robots.txt, 소스코드 분석 | T1592.004 | Gather Victim Host Information: Client Configurations | Reconnaissance |
-| **Week 03** | HTML/JS 분석, 쿠키 조작 | T1189 | Drive-by Compromise | Initial Access |
-| **Week 04** | XSS (Reflected, Stored) | T1059.007 | Command and Scripting Interpreter: JavaScript | Execution |
-| Week 04 | 세션 토큰 탈취 | T1539 | Steal Web Session Cookie | Credential Access |
-| **Week 05** | SQL Injection | T1190 | Exploit Public-Facing Application | Initial Access |
-| Week 05 | DB 데이터 추출 | T1005 | Data from Local System | Collection |
-| Week 05 | 인증 우회 | T1078 | Valid Accounts | Initial Access |
-| **Week 06** | OS Command Injection | T1059.004 | Command and Scripting Interpreter: Unix Shell | Execution |
-| **Week 07** | 파일 업로드 공격 | T1105 | Ingress Tool Transfer | Command and Control |
-| Week 07 | 디렉토리 트래버설 | T1083 | File and Directory Discovery | Discovery |
-| Week 07 | 민감 파일 읽기 | T1530 | Data from Cloud Storage | Collection |
-| **Week 08** | CSRF 공격 | T1185 | Browser Session Forgery | Collection |
-| Week 08 | SSRF 공격 | T1090 | Proxy | Command and Control |
-| **Week 09** | 포트 스캐닝 | T1046 | Network Service Scanning | Discovery |
-| Week 09 | 패킷 캡처 | T1040 | Network Sniffing | Credential Access |
-| Week 09 | ARP 스푸핑 | T1557.002 | Adversary-in-the-Middle: ARP Cache Poisoning | Credential Access |
-| **Week 10** | 방화벽 우회 | T1562.004 | Impair Defenses: Disable or Modify System Firewall | Defense Evasion |
-| Week 10 | IPS 우회 (인코딩) | T1027 | Obfuscated Files or Information | Defense Evasion |
-| Week 10 | ICMP 터널링 | T1572 | Protocol Tunneling | Command and Control |
-| Week 10 | HTTP C2 비콘 | T1071.001 | Application Layer Protocol: Web Protocols | Command and Control |
-| **Week 11** | SUID 악용 | T1548.001 | Abuse Elevation Control: Setuid and Setgid | Privilege Escalation |
-| Week 11 | sudo 악용 | T1548.003 | Abuse Elevation Control: Sudo and Sudo Caching | Privilege Escalation |
-| Week 11 | Cron 악용 | T1053.003 | Scheduled Task/Job: Cron | Privilege Escalation |
-| Week 11 | PATH 하이재킹 | T1574.007 | Hijack Execution Flow: Path Interception | Privilege Escalation |
-| **Week 12** | SSH 키 인젝션 | T1098.004 | Account Manipulation: SSH Authorized Keys | Persistence |
-| Week 12 | Cron 백도어 | T1053.003 | Scheduled Task/Job: Cron | Persistence |
-| Week 12 | systemd 서비스 | T1543.002 | Create or Modify System Process: Systemd Service | Persistence |
-| Week 12 | 히스토리 삭제 | T1070.003 | Indicator Removal: Clear Command History | Defense Evasion |
-| Week 12 | 로그 삭제 | T1070.002 | Indicator Removal: Clear Linux or Mac System Logs | Defense Evasion |
-| Week 12 | 타임스탬프 조작 | T1070.006 | Indicator Removal: Timestomp | Defense Evasion |
-
-### 5.2 전술별 커버리지
-
-```
-Reconnaissance      ████░░░░░░ 2개 기법
-Resource Development░░░░░░░░░░ 0개 (미실습)
-Initial Access      ███░░░░░░░ 3개 기법
-Execution           ██░░░░░░░░ 2개 기법
-Persistence         ███░░░░░░░ 3개 기법
-Privilege Escalation████░░░░░░ 4개 기법
-Defense Evasion     ████░░░░░░ 4개 기법
-Credential Access   ███░░░░░░░ 3개 기법
-Discovery           ██░░░░░░░░ 2개 기법
-Lateral Movement    ░░░░░░░░░░ 0개 (미실습)
-Collection          ███░░░░░░░ 3개 기법
-Command and Control ███░░░░░░░ 3개 기법
-Exfiltration        ░░░░░░░░░░ 0개 (미실습)
-Impact              ░░░░░░░░░░ 0개 (미실습)
-```
-
----
-
-## 6. 실습
-
-### 실습 1: ATT&CK 매트릭스 탐색
-
-> **실습 목적**: MITRE ATT&CK 프레임워크를 사용하여 공격 기법을 체계적으로 분류하고 매핑한다
->
-> **배우는 것**: ATT&CK 매트릭스에서 전술(Tactic)과 기법(Technique)의 관계를 이해하고, 실제 공격을 ATT&CK ID로 매핑하는 방법을 배운다
->
-> **결과 해석**: 각 기법 ID(예: T1190)와 연관된 탐지 방법, 완화 조치를 확인하여 방어 전략을 수립할 수 있다
->
-> **실전 활용**: SOC 분석가와 침투 테스터 모두 ATT&CK 프레임워크로 공격을 문서화하고 커뮤니케이션한다
-
-```bash
-# ATT&CK 데이터를 커맨드라인에서 조회
-# T1190 (SQL Injection 관련) 정보 확인
-
-# ATT&CK STIX 데이터 다운로드 (JSON)
-curl -sL "https://raw.githubusercontent.com/mitre/ctt/master/enterprise-attack/enterprise-attack.json" \
-  -o /tmp/attack.json 2>/dev/null && echo "다운로드 완료" || echo "오프라인 환경"
-
-# 또는 간단한 조회
-echo "=== T1190: Exploit Public-Facing Application ==="
-echo "전술: Initial Access (TA0001)"
-echo "설명: 인터넷에 노출된 애플리케이션의 취약점을 악용하여 초기 접근 획득"
-echo "예시: SQL Injection, Command Injection, File Upload"
-echo "방어: WAF, 입력 검증, 정기 패치, 침투 테스트"
-echo ""
-echo "=== 본 과정 관련 ==="
-echo "Week 05: JuiceShop SQL Injection → T1190"
-echo "Week 06: Command Injection → T1190 + T1059.004"
-```
-
-### 실습 2: Bastion로 ATT&CK 기반 공격 체인 실행
-
-Bastion Manager API를 호출하여 작업을 수행합니다.
-
-```bash
-# Bastion 프로젝트 생성: ATT&CK 매핑된 공격 체인
-curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{                                                # 요청 데이터(body)
-    "name": "week13-attack-mapping",
-    "request_text": "ATT&CK 기반 공격 체인 실행 및 매핑",
-    "master_mode": "external"
-  }' | python3 -m json.tool
-
-# 프로젝트 ID 확인 후 Stage 전환 (예: id=1)
-curl -s -X POST http://localhost:9100/projects/1/plan \
-  -H "X-API-Key: ccc-api-key-2026"                 # API 인증 키
-curl -s -X POST http://localhost:9100/projects/1/execute \
-  -H "X-API-Key: ccc-api-key-2026"                 # API 인증 키
-
-# ATT&CK 기법별 태스크 실행
-curl -s -X POST http://localhost:9100/projects/1/execute-plan \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{                                                # 요청 데이터(body)
-    "tasks": [
-      {
-        "order": 1,
-        "instruction_prompt": "nmap -sT -p 22,80,3000 10.20.30.80",
-        "risk_level": "low",
-        "subagent_url": "http://localhost:8002"
-      },
-      {
-        "order": 2,
-        "instruction_prompt": "curl -s http://10.20.30.80:3000/rest/products/search?q=test",
-        "risk_level": "low",
-        "subagent_url": "http://localhost:8002"
-      },
-      {
-        "order": 3,
-        "instruction_prompt": "curl -s http://10.20.30.80:3000/rest/products/search?q=test%27%20OR%201=1--",
-        "risk_level": "medium",
-        "subagent_url": "http://localhost:8002"
-      }
-    ],
-    "subagent_url": "http://localhost:8002"
-  }' | python3 -m json.tool
-
-# 결과 확인
-curl -s -H "X-API-Key: ccc-api-key-2026" \
-  http://localhost:9100/projects/1/evidence/summary | python3 -m json.tool
-
-# ATT&CK 매핑 기록
-echo "Task 1 → T1046 (Network Service Scanning)"
-echo "Task 2 → T1595.002 (Active Scanning: Vulnerability Scanning)"
-echo "Task 3 → T1190 (Exploit Public-Facing Application)"
-```
-
-### 실습 3: ATT&CK Navigator Layer 생성
-
-본 과정에서 사용한 기법을 Navigator Layer JSON으로 작성한다.
-
-```bash
-# Navigator Layer JSON 생성
-cat > /tmp/course1_attack_layer.json << 'LAYER'
-{
-  "name": "Course 1 - 사이버보안 공격 실습 매핑",
-  "versions": {
-    "attack": "14",
-    "navigator": "4.9.1"
-  },
-  "domain": "enterprise-attack",
-  "description": "Week 02~12에서 실습한 공격 기법 매핑",
-  "sorting": 0,
-  "layout": {
-    "layout": "side",
-    "aggregateFunction": "average",
-    "showID": true,
-    "showName": true
-  },
-  "techniques": [
-    {"techniqueID": "T1595", "tactic": "reconnaissance", "color": "#ff6666", "comment": "W02: 웹 정찰, 디렉토리 스캔", "score": 1},
-    {"techniqueID": "T1592", "tactic": "reconnaissance", "color": "#ff6666", "comment": "W02: robots.txt, 소스코드 분석", "score": 1},
-    {"techniqueID": "T1190", "tactic": "initial-access", "color": "#ff3333", "comment": "W05: SQL Injection, W06: Command Injection", "score": 3},
-    {"techniqueID": "T1078", "tactic": "initial-access", "color": "#ff3333", "comment": "W05: 인증 우회", "score": 2},
-    {"techniqueID": "T1059", "tactic": "execution", "color": "#ff9900", "comment": "W04: XSS(JS), W06: Command Injection(Bash)", "score": 2},
-    {"techniqueID": "T1053", "tactic": "persistence", "color": "#cc33ff", "comment": "W12: Cron 백도어", "score": 2},
-    {"techniqueID": "T1098", "tactic": "persistence", "color": "#cc33ff", "comment": "W12: SSH 키 인젝션", "score": 2},
-    {"techniqueID": "T1543", "tactic": "persistence", "color": "#cc33ff", "comment": "W12: systemd 서비스 백도어", "score": 1},
-    {"techniqueID": "T1548", "tactic": "privilege-escalation", "color": "#ff6600", "comment": "W11: SUID, sudo 악용", "score": 3},
-    {"techniqueID": "T1574", "tactic": "privilege-escalation", "color": "#ff6600", "comment": "W11: PATH 하이재킹", "score": 1},
-    {"techniqueID": "T1027", "tactic": "defense-evasion", "color": "#3399ff", "comment": "W10: 인코딩 기반 IPS 우회", "score": 1},
-    {"techniqueID": "T1070", "tactic": "defense-evasion", "color": "#3399ff", "comment": "W12: 로그 삭제, 히스토리 제거, 타임스탬프 조작", "score": 3},
-    {"techniqueID": "T1562", "tactic": "defense-evasion", "color": "#3399ff", "comment": "W10: 방화벽 우회 시도", "score": 1},
-    {"techniqueID": "T1539", "tactic": "credential-access", "color": "#ffcc00", "comment": "W04: XSS를 통한 세션 토큰 탈취", "score": 2},
-    {"techniqueID": "T1040", "tactic": "credential-access", "color": "#ffcc00", "comment": "W09: 패킷 스니핑", "score": 1},
-    {"techniqueID": "T1557", "tactic": "credential-access", "color": "#ffcc00", "comment": "W09: ARP 스푸핑", "score": 1},
-    {"techniqueID": "T1046", "tactic": "discovery", "color": "#66cc66", "comment": "W09: nmap 포트 스캐닝", "score": 2},
-    {"techniqueID": "T1083", "tactic": "discovery", "color": "#66cc66", "comment": "W07: 디렉토리 트래버설", "score": 1},
-    {"techniqueID": "T1005", "tactic": "collection", "color": "#9966cc", "comment": "W05: DB 데이터 추출", "score": 2},
-    {"techniqueID": "T1185", "tactic": "collection", "color": "#9966cc", "comment": "W08: CSRF 공격", "score": 1},
-    {"techniqueID": "T1071", "tactic": "command-and-control", "color": "#cc6699", "comment": "W10: HTTP C2 비콘", "score": 1},
-    {"techniqueID": "T1572", "tactic": "command-and-control", "color": "#cc6699", "comment": "W10: ICMP 터널링", "score": 1},
-    {"techniqueID": "T1105", "tactic": "command-and-control", "color": "#cc6699", "comment": "W07: 파일 업로드(웹쉘)", "score": 2}
   ],
   "gradient": {
-    "colors": ["#ffffff", "#ff6666"],
+    "colors": ["#ff6666", "#ff9933", "#ffff99"],
     "minValue": 0,
-    "maxValue": 3
+    "maxValue": 2
   }
 }
-LAYER
-
-echo "Navigator Layer 파일 생성: /tmp/course1_attack_layer.json"
-echo "ATT&CK Navigator에서 'Open Existing Layer' → 이 JSON 파일을 업로드하면 시각화됨"
-wc -l /tmp/course1_attack_layer.json                   # 줄/단어/바이트 수 카운트
 ```
 
-### 실습 4: 주차별 공격 체인 분석
+## 5.3 과제용 템플릿
+
+Part 4의 전체 매트릭스에서 35개 기법을 복사해 Layer JSON 생성 → 과제 제출.
+
+---
+
+# Part 6: 방어 커버리지 평가
+
+## 6.1 공격-방어 매핑
+
+| 공격 기법 | 탐지 (Detection) | 완화 (Mitigation) |
+|-----------|-----------------|-------------------|
+| T1190 SQLi | WAF 로그, Suricata HTTP 룰 | M1050 Exploit Protection, 매개변수화 쿼리 |
+| T1098.004 SSH keys | Wazuh FIM (`authorized_keys`) | M1032 Multi-factor Auth |
+| T1548.003 Sudo | auditd, Wazuh sudo 룰 | M1026 Privileged Account Mgmt |
+| T1053.003 Cron | `crontab -l` 모니터링, FIM | M1022 Restrict File and Directory Permissions |
+| T1070.002 Log Clear | journal 백업, 원격 syslog | M1029 Remote Data Storage |
+
+## 6.2 현재 실습 환경의 탐지 커버리지
+
+우리 인프라(secu + siem)가 **탐지하는** 것:
+
+✓ Suricata — T1190, T1046, T1027, T1557.002
+✓ Wazuh FIM — T1098.004, T1543.002, T1546.004
+✓ Wazuh auth.log — T1078, T1110.003, T1548.003
+
+**약한 부분:**
+- T1072.006 Timestomp — ctime 변화 감시 필요 (기본 미구성)
+- T1572 Protocol Tunneling — ICMP 페이로드 엔트로피 감시 필요
+- T1539 Steal Web Session Cookie (localStorage) — 브라우저 단 감지 어려움
+
+---
+
+# Part 7: Bastion 자동 매핑
 
 ```bash
-# 전체 공격 체인을 Kill Chain 단계별로 정리
-cat << 'CHAIN'
-============================================
-  Course 1 전체 공격 체인 (Kill Chain 매핑)
-============================================
-
-[1. Reconnaissance - 정찰]
-  Week 02: 웹 정찰 → robots.txt, 디렉토리 스캔, 기술 스택 파악
-  Week 09: 네트워크 정찰 → 포트 스캐닝, 서비스 버전 탐지
-
-[2. Weaponization - 무기화]
-  (본 과정에서 도구 직접 개발은 미포함)
-
-[3. Delivery + Exploitation - 전달 + 공격 실행]
-  Week 03: 클라이언트 측 공격 → HTML/JS 분석, 쿠키 조작
-  Week 04: XSS → 스크립트 인젝션, 세션 탈취
-  Week 05: SQL Injection → DB 데이터 추출, 인증 우회
-  Week 06: Command Injection → OS 명령 실행
-  Week 07: 파일 업로드 → 웹쉘, 디렉토리 트래버설
-  Week 08: CSRF/SSRF → 요청 위조
-
-[4. Installation - 설치 (지속성)]
-  Week 12: SSH 키 인젝션, Cron 백도어, systemd 서비스
-
-[5. Privilege Escalation - 권한 상승]
-  Week 11: SUID, sudo, Cron, PATH 하이재킹
-
-[6. Command & Control - C2]
-  Week 10: ICMP 터널링, HTTP C2 비콘
-
-[7. Defense Evasion - 방어 회피]
-  Week 10: IPS 우회 (인코딩, 분할)
-  Week 12: 로그 삭제, 히스토리 제거, 타임스탬프 조작
-
-[8. Actions on Objectives - 목표 달성]
-  Week 05: 데이터 탈취 (DB)
-  Week 07: 파일 탈취 (디렉토리 트래버설)
-CHAIN
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "지난 11주 동안 /evidence에 기록된 작업들을 분석해서 MITRE ATT&CK 기법으로 매핑해줘. 각 기법ID, 전술, 사용된 Skill, 타임스탬프를 표로 정리하고, 본 과정에서 미실습된 전술 목록도 제시해줘."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
 ```
 
----
-
-## 7. 방어 매핑: Detection Coverage
-
-ATT&CK을 방어자 관점에서 활용하는 방법이다.
-
-### 7.1 탐지 데이터 소스
-
-| ATT&CK 기법 | 탐지 데이터 소스 | 실습 환경의 탐지 도구 |
-|-------------|-----------------|---------------------|
-| T1190 (웹 공격) | HTTP 로그, WAF 로그 | Apache+ModSecurity (web), Suricata (secu) |
-| T1046 (포트 스캔) | 네트워크 플로우, IDS | Suricata (secu) |
-| T1548 (권한 상승) | sudo 로그, 프로세스 모니터링 | Wazuh (siem) |
-| T1053 (Cron) | 파일 변경 감시 | Wazuh FIM (siem) |
-| T1098 (SSH 키) | 파일 변경 감시 | Wazuh FIM (siem) |
-| T1070 (로그 삭제) | 로그 무결성 검사 | Wazuh (siem) |
-
-### 7.2 탐지 갭 분석
-
-```
-본 실습 환경의 탐지 커버리지:
-
-  탐지 가능:    ████████░░ 80%
-  탐지 불가/미확인: ██░░░░░░░░ 20%
-
-탐지 갭:
-  - ICMP 터널링 (T1572): Suricata 규칙 부재 시 미탐지
-  - PATH 하이재킹 (T1574): 호스트 기반 모니터링 필요
-  - 메모리 실행 (/dev/shm): 디스크 기반 검사로는 탐지 불가
-```
+**결과 활용:** Bastion이 생성한 표를 Navigator Layer JSON 변환에 활용 → 과제 작성 시간 단축.
 
 ---
 
-## 8. 실습 과제
+## 과제 (다음 주까지)
 
-1. **ATT&CK 매핑 완성**: 본 과정 전체 공격을 ATT&CK Navigator Layer JSON으로 작성하고, 각 기법에 대한 코멘트(어떤 도구/명령을 사용했는지)를 추가하라.
-2. **방어 갭 분석**: 실습 환경(secu + Wazuh)에서 탐지 가능한 기법과 불가능한 기법을 분류하고, 탐지 갭을 해소할 방법을 3가지 이상 제안하라.
-3. **APT 그룹 연구**: MITRE ATT&CK에서 한국을 대상으로 활동하는 APT 그룹(예: Lazarus, Kimsuky)을 1개 선택하여, 해당 그룹이 사용하는 기법을 본 과정에서 실습한 기법과 비교하라.
+### 과제 1: 전체 매핑 표 (40점)
+Part 4의 35개 기법을 **본인이 직접 실습한 증거**(스크린샷·evidence 로그)와 함께 표로 재작성.
+- 실습 안 한 기법은 제외
+- 각 기법에 1줄 증거 링크
+
+### 과제 2: ATT&CK Navigator Layer (30점)
+- Part 5 템플릿으로 Layer JSON 생성
+- Navigator에서 렌더링한 스크린샷
+- 색상 배정(빈도별/중요도별) 근거 설명
+
+### 과제 3: 방어 커버리지 갭 분석 (20점)
+- 현재 Suricata/Wazuh가 탐지 **못 하는** 기법 5개 선정
+- 각 기법별 **탐지 룰 1개**씩 설계 (Suricata 또는 Wazuh)
+
+### 과제 4: Bastion 자동 매핑 (10점)
+- Part 7 자연어 요청 실행 결과 캡처
+- Bastion 매핑 vs 본인 매핑 차이 비교
+
+---
+
+## 다음 주 예고
+
+**Week 14: Bastion 자연어 자동 침투 테스트**
 
 ---
 
-## 9. 핵심 정리
+## 용어 해설 (이번 주 추가분)
 
-- MITRE ATT&CK은 사이버 공격을 **14가지 전술과 수백 가지 기법**으로 체계화한 프레임워크이다
-- **전술(Tactic)**은 공격의 목적, **기법(Technique)**은 구체적 방법을 나타낸다
-- ATT&CK Navigator로 공격과 방어를 **시각화**하여 갭 분석이 가능하다
-- 본 과정에서 **22개 이상의 ATT&CK 기법**을 직접 실습했다
-- 동일한 프레임워크를 **공격자와 방어자 모두** 활용할 수 있다
+| 용어 | 영문 | 설명 |
+|------|------|------|
+| **MITRE ATT&CK** | - | 공격자 TTP 공개 지식 기반 |
+| **Tactic** | - | 공격 목적 (14개) |
+| **Technique** | - | 구체적 방법 (600+) |
+| **Sub-technique** | - | 기법의 변형 (1800+) |
+| **Procedure** | - | 실제 절차 (그룹/멀웨어 사례) |
+| **Cyber Kill Chain** | - | Lockheed Martin 7단계 공격 모델 |
+| **ATT&CK Navigator** | - | 매트릭스 웹 시각화 도구 |
+| **Layer JSON** | - | Navigator가 사용하는 매핑 파일 |
+| **Heat map** | - | 기법 사용 빈도·심각도 색상 표시 |
+| **APT Group (Gxxxx)** | - | ATT&CK이 추적하는 공격 그룹 |
+| **Detection / Mitigation** | - | 각 기법의 탐지·완화 방안 |
 
-**다음 주 예고**: Week 14에서는 Bastion 플랫폼을 활용하여 이 모든 공격을 자동화하는 방법을 학습한다.
+---
+
+## 📂 실습 참조 파일 가이드
+
+### MITRE ATT&CK 공식 리소스 (이번 주 사용)
+
+| 리소스 | URL | 용도 |
+|--------|-----|------|
+| ATT&CK Matrix | https://attack.mitre.org/matrices/enterprise/ | 전체 매트릭스 탐색 |
+| Navigator | https://mitre-attack.github.io/attack-navigator/ | Layer 작성 |
+| Technique 페이지 | `https://attack.mitre.org/techniques/Txxxx/` | 기법 상세 |
+| STIX JSON | https://github.com/mitre/cti | 프로그래밍 접근 |
+
+### Bastion API (이번 주 중심)
+
+| 메서드 | 경로 | 용도 |
+|--------|------|------|
+| POST | `/ask` | 자동 매핑 요청 |
+| GET | `/evidence?limit=N` | 과거 실습 이력 |
+
+### 우리 실습 환경의 탐지 도구
+
+| 도구 | 위치 | 담당 ATT&CK |
+|------|------|-------------|
+| Suricata | secu:/etc/suricata/ | T1190, T1046, T1027, T1557.002 (네트워크 계층) |
+| Wazuh | siem:/var/ossec/ | FIM, auth, sudo (호스트 계층) |
+| auditd (개별 호스트) | /etc/audit/ | 시스템 콜·파일 접근 (세밀한 탐지) |
 
 ---
 
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** 이 공격 기법이 OWASP Top 10에서 분류되는 카테고리는?
-- (a) Broken Access Control(A01)  (b) **Injection(A03)**  (c) Cryptographic Failures(A02)  (d) SSRF(A10)
-
-**Q2.** 공격자가 가장 먼저 실행하는 정찰 활동은?
-- (a) 랜섬웨어 배포  (b) **포트 스캔 및 서비스 핑거프린팅**  (c) DDoS 공격  (d) 방화벽 비활성화
-
-**Q3.** SQLi에서 '--'의 역할은?
-- (a) 문자열 연결  (b) **SQL 주석 (이후 쿼리 무시)**  (c) 변수 선언  (d) 함수 호출
-
-**Q4.** MITRE ATT&CK에서 이 기법의 전술(Tactic)은?
-- (a) Impact만  (b) **해당 전술 ID 확인 필요**  (c) 모든 전술  (d) 해당 없음
-
-**Q5.** 방어자가 이 공격을 탐지하기 위해 확인해야 하는 로그는?
-- (a) CPU 사용률만  (b) **SIEM 경보 + 해당 서비스 로그**  (c) 디스크 용량만  (d) 네트워크 대역폭만
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
-
----
----
-
-> **실습 환경 검증 완료** (2026-03-28): JuiceShop SQLi/XSS/IDOR, nmap, 경로탐색(%2500), sudo NOPASSWD, SSH키, crontab
+> **참고:** 본 과정은 Enterprise 도메인만 다룸. ICS(산업제어)·Mobile 도메인은 Course 17(IoT), Course 18(자율시스템)에서 학습.
