@@ -3,8 +3,8 @@ title: Dependency Confusion IR — 공격부터 재발방지까지 (Non-AI)
 version: nonai
 course: agent-ir-adv-nonai
 week: 1
-description: PyPI/npm 내부 패키지명을 공개 레지스트리에 악성 버전으로 올려 CI runner를 탈취하는 공격. 공격→탐지→분석→초동대응→보고→재발방지
-  6단계 전체를 실행한다. 학생이 수동 수행·기록.
+description: PyPI/npm 내부 패키지명을 공개 레지스트리에 악성 버전으로 올려 CI runner를 탈취하는 공격. 공격→탐지→분석→초동대응→보고→재발방지 6단계 전체를
+  실행한다. 학생이 수동 수행·기록.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -40,6 +40,21 @@ steps:
     type: output_contains
     expect: setup.py
     field: stdout
+    semantic:
+      intent: '[공격] 공격 setup.py — cat > setup.py: from setuptools import setup + os.environ 유출 + version
+        9999.99.99 + phone-home.json. Dependency Confusion PyPI 악성 패키지. MITRE T1195.002.'
+      success_criteria:
+      - setup.py 파일
+      - version 9999
+      - 환경변수 수집
+      acceptable_methods:
+      - setup.py post-install
+      - python -m build
+      - pip package
+      negative_signs:
+      - version 낮음
+      - 환경변수 수집 없음
+      - phone-home 없음
   target_vm: web
   script: 'mkdir -p ~/w01-depconf/pkg && cat > ~/w01-depconf/pkg/setup.py <<''PY''
 
@@ -72,6 +87,21 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[공격] 패키지 빌드 — cd pkg && python3 -m build || tar czf malicious-pkg.tar.gz. 공격 아티팩트 생성. pypi.org
+        업로드 전 단계.'
+      success_criteria:
+      - build/tar 생성
+      - ls 확인
+      - 아티팩트
+      acceptable_methods:
+      - python -m build
+      - setup.py sdist
+      - tar 대체
+      negative_signs:
+      - 빌드 없음
+      - 확인 없음
+      - 대체 없음
   target_vm: web
   script: cd ~/w01-depconf/pkg && (python3 -m build 2>&1 | tail -5 || tar czf ../malicious-pkg.tar.gz
     setup.py) && ls ~/w01-depconf/
@@ -82,16 +112,31 @@ steps:
   hint: 6단계 IR 중 공격 단계. target_vm=web.
   category: analysis
   points: 11
-  answer: python3 -c "exec(open('$HOME/w01-depconf/pkg/setup.py').read())" 2>&1 |
-    head -3 && ls /tmp/phone-home.json 2>/dev/null || echo 'sim_complete'
+  answer: python3 -c "exec(open('$HOME/w01-depconf/pkg/setup.py').read())" 2>&1 | head -3 && ls /tmp/phone-home.json
+    2>/dev/null || echo 'sim_complete'
   answer_detail: '[공격] post-install 실행 시뮬. /tmp/phone-home.json에 민감 환경변수가 기록됨.'
   verify:
     type: output_contains
     expect: sim
     field: stdout
+    semantic:
+      intent: '[공격] CI 재현 — python3 -c exec(open setup.py).read() + ls phone-home.json + sim_complete.
+        post-install 실행 시뮬. 민감 환경변수 수집 증명.'
+      success_criteria:
+      - sim 마커
+      - exec setup.py
+      - phone-home.json
+      acceptable_methods:
+      - python exec
+      - pip install -e
+      - setup.py install
+      negative_signs:
+      - exec 없음
+      - phone-home 확인 없음
+      - 결과 미기록
   target_vm: web
-  script: python3 -c "exec(open('$HOME/w01-depconf/pkg/setup.py').read())" 2>&1 |
-    head -3 && ls /tmp/phone-home.json 2>/dev/null || echo 'sim_complete'
+  script: python3 -c "exec(open('$HOME/w01-depconf/pkg/setup.py').read())" 2>&1 | head -3 && ls /tmp/phone-home.json
+    2>/dev/null || echo 'sim_complete'
   risk_level: low
   bastion_prompt: ''
 - order: 4
@@ -99,20 +144,36 @@ steps:
   hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
   category: analysis
   points: 12
-  answer: "mkdir -p ~/w01-depconf/detect && cat > ~/w01-depconf/detect/rule.yml <<'Y'\n\
-    title: DepConf external egress\nlogsource: {product: suricata, category: flow}\n\
-    detection:\n  selection: {dest_domain: [pypi.org, registry.npmjs.org], src_network:\
-    \ internal_ci}\n  condition: selection\nlevel: medium\nY\ncat ~/w01-depconf/detect/rule.yml"
+  answer: "mkdir -p ~/w01-depconf/detect && cat > ~/w01-depconf/detect/rule.yml <<'Y'\ntitle: DepConf\
+    \ external egress\nlogsource: {product: suricata, category: flow}\ndetection:\n  selection: {dest_domain:\
+    \ [pypi.org, registry.npmjs.org], src_network: internal_ci}\n  condition: selection\nlevel: medium\n\
+    Y\ncat ~/w01-depconf/detect/rule.yml"
   answer_detail: '[탐지] 탐지 룰. internal CI → 공개 레지스트리 egress가 의심 신호.'
   verify:
     type: output_contains
     expect: dest_domain
     field: stdout
+    semantic:
+      intent: '[탐지] SIGMA egress 룰 — cat > rule.yml: title DepConf external egress + logsource suricata
+        flow + dest_domain pypi.org/registry.npmjs.org + src_network internal_ci. CI → 공개 레지스트리 egress
+        탐지.'
+      success_criteria:
+      - dest_domain 키워드
+      - pypi/npm
+      - internal_ci
+      acceptable_methods:
+      - SIGMA flow
+      - Zeek conn.log
+      - Suricata HTTP rule
+      negative_signs:
+      - logsource 없음
+      - domain 단순
+      - src_network 없음
   target_vm: bastion
-  script: "mkdir -p ~/w01-depconf/detect && cat > ~/w01-depconf/detect/rule.yml <<'Y'\n\
-    title: DepConf external egress\nlogsource: {product: suricata, category: flow}\n\
-    detection:\n  selection: {dest_domain: [pypi.org, registry.npmjs.org], src_network:\
-    \ internal_ci}\n  condition: selection\nlevel: medium\nY\ncat ~/w01-depconf/detect/rule.yml"
+  script: "mkdir -p ~/w01-depconf/detect && cat > ~/w01-depconf/detect/rule.yml <<'Y'\ntitle: DepConf\
+    \ external egress\nlogsource: {product: suricata, category: flow}\ndetection:\n  selection: {dest_domain:\
+    \ [pypi.org, registry.npmjs.org], src_network: internal_ci}\n  condition: selection\nlevel: medium\n\
+    Y\ncat ~/w01-depconf/detect/rule.yml"
   risk_level: low
   bastion_prompt: ''
 - order: 5
@@ -120,10 +181,9 @@ steps:
   hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
   category: analysis
   points: 13
-  answer: "cat > ~/w01-depconf/detect/wazuh-100801.xml <<'X'\n<rule id=\"100801\"\
-    \ level=\"10\">\n  <if_sid>60000</if_sid>\n  <match>pypi.org</match>\n  <field\
-    \ name=\"src_ip\">10\\.20\\.30\\.80</field>\n  <description>DepConf suspect —\
-    \ CI accessed public PyPI</description>\n</rule>\nX\ncat ~/w01-depconf/detect/wazuh-100801.xml"
+  answer: "cat > ~/w01-depconf/detect/wazuh-100801.xml <<'X'\n<rule id=\"100801\" level=\"10\">\n  <if_sid>60000</if_sid>\n\
+    \  <match>pypi.org</match>\n  <field name=\"src_ip\">10\\.20\\.30\\.80</field>\n  <description>DepConf\
+    \ suspect — CI accessed public PyPI</description>\n</rule>\nX\ncat ~/w01-depconf/detect/wazuh-100801.xml"
   answer_detail: '[탐지] SIGMA → Wazuh 수동 변환. SID 100801.'
   verify:
     type: output_contains
@@ -131,11 +191,25 @@ steps:
     - '100801'
     - 템플릿
     field: stdout
+    semantic:
+      intent: '[탐지] Wazuh rule 100801 — cat > wazuh-100801.xml: if_sid 60000 + match pypi.org + field
+        src_ip 10.20.30.80 + DepConf suspect. SID 100801 level 10. SIGMA→Wazuh 수동 변환.'
+      success_criteria:
+      - 100801/템플릿
+      - match + field
+      - level 10
+      acceptable_methods:
+      - Wazuh XML
+      - sigma-cli -t wazuh
+      - 수동 변환
+      negative_signs:
+      - match 없음
+      - field 없음
+      - level 누락
   target_vm: bastion
-  script: "cat > ~/w01-depconf/detect/wazuh-100801.xml <<'X'\n<rule id=\"100801\"\
-    \ level=\"10\">\n  <if_sid>60000</if_sid>\n  <match>pypi.org</match>\n  <field\
-    \ name=\"src_ip\">10\\.20\\.30\\.80</field>\n  <description>DepConf suspect —\
-    \ CI accessed public PyPI</description>\n</rule>\nX\ncat ~/w01-depconf/detect/wazuh-100801.xml"
+  script: "cat > ~/w01-depconf/detect/wazuh-100801.xml <<'X'\n<rule id=\"100801\" level=\"10\">\n  <if_sid>60000</if_sid>\n\
+    \  <match>pypi.org</match>\n  <field name=\"src_ip\">10\\.20\\.30\\.80</field>\n  <description>DepConf\
+    \ suspect — CI accessed public PyPI</description>\n</rule>\nX\ncat ~/w01-depconf/detect/wazuh-100801.xml"
   risk_level: low
   bastion_prompt: ''
 - order: 6
@@ -161,6 +235,21 @@ steps:
     type: output_contains
     expect: internal-company-utils
     field: stdout
+    semantic:
+      intent: '[분석] IOC CSV — cat > ioc.csv: type/value/note + package internal-company-utils@9999 + domain
+        attacker.example + sha256 TBD. OpenCTI 업로드. STIX/TAXII 호환.'
+      success_criteria:
+      - internal-company-utils 키워드
+      - type+value+note
+      - 3 IOC
+      acceptable_methods:
+      - CSV IOC
+      - STIX 2.1 JSON
+      - MISP attribute
+      negative_signs:
+      - IOC 1-2개
+      - CSV 형식 오류
+      - note 없음
   target_vm: bastion
   script: 'cat > ~/w01-depconf/analysis/ioc.csv <<''C''
 
@@ -200,8 +289,25 @@ steps:
   answer_detail: '[분석] 타임라인. 분 단위 해상도.'
   verify:
     type: output_contains
-    expect: CI
+    expect:
+    - CI
+    - 타임라인
     field: stdout
+    semantic:
+      intent: '[분석] 공격 타임라인 — cat > timeline.md: T+0 PR merge / T+1 CI pip install / T+2 setup.py post-install
+        / T+3 외부 POST / T+4 Bastion egress anomaly 경보. 분 단위 해상도.'
+      success_criteria:
+      - CI/타임라인
+      - 5 단계
+      - 분 단위
+      acceptable_methods:
+      - Markdown timeline
+      - Plaso super timeline
+      - Elastic timeline
+      negative_signs:
+      - 단계 3개 이하
+      - 시간 해상도 없음
+      - 경보 없음
   target_vm: bastion
   script: 'cat > ~/w01-depconf/analysis/timeline.md <<''M''
 
@@ -245,6 +351,21 @@ steps:
     type: output_contains
     expect: 중단
     field: stdout
+    semantic:
+      intent: '[초동] Human 대응 5단계 — cat > human-mode.md: 알림 수신 / CI 빌드 중단 / egress 임시 차단 / 자격증명 회전 / 배포
+        차단·공지. 수동 흐름.'
+      success_criteria:
+      - 중단 키워드
+      - 5 단계
+      - Human 모드
+      acceptable_methods:
+      - NIST IR 플레이북
+      - SANS IR cycle
+      - ATT&CK D3FEND
+      negative_signs:
+      - 단계 3개 이하
+      - 수동 맥락 없음
+      - 순서 없음
   target_vm: bastion
   script: 'cat > ~/w01-depconf/response/human-mode.md <<''M''
 
@@ -268,10 +389,10 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 17
-  answer: "cat > ~/w01-depconf/response/agent-mode.yaml <<'Y'\nplaybook_id: pb-depconf-contain\n\
-    triggers: [wazuh_rule_id_100801]\nsteps:\n  - skill: block_egress\n    args: {src:\
-    \ $src_ip, duration_sec: 3600}\n  - skill: pause_ci_queue\n  - skill: rotate_secrets\n\
-    \    args: {scope: ci_env}\n  - skill: notify_operator\nY\ncat ~/w01-depconf/response/agent-mode.yaml"
+  answer: "cat > ~/w01-depconf/response/agent-mode.yaml <<'Y'\nplaybook_id: pb-depconf-contain\ntriggers:\
+    \ [wazuh_rule_id_100801]\nsteps:\n  - skill: block_egress\n    args: {src: $src_ip, duration_sec:\
+    \ 3600}\n  - skill: pause_ci_queue\n  - skill: rotate_secrets\n    args: {scope: ci_env}\n  - skill:\
+    \ notify_operator\nY\ncat ~/w01-depconf/response/agent-mode.yaml"
   answer_detail: '[초동대응] Agent Playbook. 5~30초 내 자동 대응.'
   verify:
     type: output_contains
@@ -279,11 +400,27 @@ steps:
     - block_egress
     - Playbook
     field: stdout
+    semantic:
+      intent: '[초동] Agent Playbook — cat > agent-mode.yaml: playbook_id pb-depconf-contain + triggers
+        wazuh_100801 + steps (block_egress/pause_ci_queue/rotate_secrets/notify_operator). 5-30초 내 자동
+        대응.'
+      success_criteria:
+      - block_egress/Playbook
+      - 4 steps
+      - triggers
+      acceptable_methods:
+      - Bastion Playbook YAML
+      - Shuffle SOAR
+      - Ansible playbook
+      negative_signs:
+      - steps 2개 이하
+      - triggers 없음
+      - rotate 누락
   target_vm: bastion
-  script: "cat > ~/w01-depconf/response/agent-mode.yaml <<'Y'\nplaybook_id: pb-depconf-contain\n\
-    triggers: [wazuh_rule_id_100801]\nsteps:\n  - skill: block_egress\n    args: {src:\
-    \ $src_ip, duration_sec: 3600}\n  - skill: pause_ci_queue\n  - skill: rotate_secrets\n\
-    \    args: {scope: ci_env}\n  - skill: notify_operator\nY\ncat ~/w01-depconf/response/agent-mode.yaml"
+  script: "cat > ~/w01-depconf/response/agent-mode.yaml <<'Y'\nplaybook_id: pb-depconf-contain\ntriggers:\
+    \ [wazuh_rule_id_100801]\nsteps:\n  - skill: block_egress\n    args: {src: $src_ip, duration_sec:\
+    \ 3600}\n  - skill: pause_ci_queue\n  - skill: rotate_secrets\n    args: {scope: ci_env}\n  - skill:\
+    \ notify_operator\nY\ncat ~/w01-depconf/response/agent-mode.yaml"
   risk_level: low
   bastion_prompt: ''
 - order: 10
@@ -315,6 +452,21 @@ steps:
     type: output_contains
     expect: Agent
     field: stdout
+    semantic:
+      intent: '[비교] Human vs Agent — cat > comparison.md: 표 5 축 (첫 조치 10-30분 vs 5-30초 / 일관성 / 정책 / 법적
+        / 24시간). Human+Agent 혼성 Tier 0/1/2.'
+      success_criteria:
+      - Agent/Human
+      - 5 축 비교
+      - 정량 시간
+      acceptable_methods:
+      - Markdown 표 비교
+      - Gartner SOC 분석
+      - Human-Agent Teaming
+      negative_signs:
+      - 축 2개 이하
+      - 정량 없음
+      - 혼성 언급 없음
   target_vm: bastion
   script: 'cat > ~/w01-depconf/response/comparison.md <<''M''
 
@@ -364,6 +516,21 @@ steps:
     - Impact
     - 브리핑
     field: stdout
+    semantic:
+      intent: '[보고] 임원 브리핑 1쪽 — cat > exec-brief.md: What(외부 악성 패키지 + Bastion 28초 차단) / Impact(CI 1건/자격증명
+        1건/고객 영향 없음) / Status(억제+포렌식) / Ask(내부 레지스트리 강제 승인). 3분 이해용.'
+      success_criteria:
+      - Impact/브리핑
+      - What+Impact+Status+Ask
+      - 3분
+      acceptable_methods:
+      - Markdown 1쪽
+      - Situation-Task-Action-Result
+      - CxO brief
+      negative_signs:
+      - 섹션 2개 이하
+      - Ask 없음
+      - 정량 없음
   target_vm: bastion
   script: 'cat > ~/w01-depconf/report/exec-brief.md <<''M''
 
@@ -387,8 +554,7 @@ steps:
   hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
   category: analysis
   points: 20
-  answer: 'mkdir -p ~/w01-depconf/prevent && cat > ~/w01-depconf/prevent/pip.conf
-    <<''C''
+  answer: 'mkdir -p ~/w01-depconf/prevent && cat > ~/w01-depconf/prevent/pip.conf <<''C''
 
     [global]
 
@@ -414,9 +580,23 @@ steps:
     type: output_contains
     expect: internal
     field: stdout
+    semantic:
+      intent: '[재발방지] .npmrc + pip.conf 정책 — cat > pip.conf: index-url devpi.internal/simple + cat > .npmrc:
+        registry nexus.internal + @internal:registry + always-auth. 내부 레지스트리 강제.'
+      success_criteria:
+      - internal 키워드
+      - pip.conf + .npmrc
+      - index-url/registry
+      acceptable_methods:
+      - internal repo 정책
+      - SLSA framework
+      - scope registry
+      negative_signs:
+      - 단일 정책
+      - internal 누락
+      - always-auth 없음
   target_vm: bastion
-  script: 'mkdir -p ~/w01-depconf/prevent && cat > ~/w01-depconf/prevent/pip.conf
-    <<''C''
+  script: 'mkdir -p ~/w01-depconf/prevent && cat > ~/w01-depconf/prevent/pip.conf <<''C''
 
     [global]
 
