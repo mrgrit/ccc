@@ -17,98 +17,239 @@ steps:
   hint: random.gauss로 GPS 노이즈를 시뮬레이션하세요.
   category: config
   points: 10
-  answer: 'python3 -c "import random;random.seed(42);print(''=== GPS Receiver Simulation ==='');[print(f''  Fix {i}: Lat={37.5665+random.gauss(0,0.00003):.6f} Lon={126.978+random.gauss(0,0.00003):.6f} Sats=8 SNR={45+random.gauss(0,2):.1f}'') for i in range(5)]"'
+  answer: 'python3 -c "import random;random.seed(42);print(''=== GPS Receiver Simulation ==='');[print(f''  Fix
+    {i}: Lat={37.5665+random.gauss(0,0.00003):.6f} Lon={126.978+random.gauss(0,0.00003):.6f} Sats=8 SNR={45+random.gauss(0,2):.1f}'')
+    for i in range(5)]"'
   answer_detail: GPS 정상 데이터의 특성을 이해합니다.
   verify:
     type: output_contains
     expect: GPS Receiver
     field: stdout
+    semantic:
+      intent: '[설정] GPS 수신기 시뮬 — python3 random.gauss 노이즈 + 5 fix (Lat 37.5665/Lon 126.978/Sats=8/SNR=45).
+        정상 GPS 특성 구현. NMEA 0183 GGA/RMC 구조.'
+      success_criteria:
+      - GPS Receiver 키워드
+      - 5 fix + lat/lon/sats/snr
+      - 노이즈 시뮬
+      acceptable_methods:
+      - random.gauss 노이즈
+      - NMEA 파서
+      - gpsd
+      negative_signs:
+      - fix 1-2개
+      - SNR/Sats 누락
+      - 노이즈 없음
   target_vm: attacker
 - order: 2
   instruction: Python으로 GPS 스푸핑 공격을 시뮬레이션하시오. 서울시청 위치를 인천공항으로 점진적으로 이동시키는 공격을 구현하라.
   hint: 5단계로 위치를 점진적으로 변경하세요.
   category: attack
   points: 12
-  answer: 'python3 -c "start=(37.5665,126.978);end=(37.446,126.453);steps=5;print(''=== GPS Spoofing (Gradual) ==='');[print(f''  Step {i}: Lat={start[0]+(end[0]-start[0])*i/steps:.4f} Lon={start[1]+(end[1]-start[1])*i/steps:.4f} Drift={((start[0]+(end[0]-start[0])*i/steps-start[0])**2+(start[1]+(end[1]-start[1])*i/steps-start[1])**2)**0.5*111000:.0f}m'') for i in range(steps+1)];print(''  [!] Position
-    shifted ~40km to Incheon Airport'')"'
+  answer: 'python3 -c "start=(37.5665,126.978);end=(37.446,126.453);steps=5;print(''=== GPS Spoofing (Gradual)
+    ==='');[print(f''  Step {i}: Lat={start[0]+(end[0]-start[0])*i/steps:.4f} Lon={start[1]+(end[1]-start[1])*i/steps:.4f}
+    Drift={((start[0]+(end[0]-start[0])*i/steps-start[0])**2+(start[1]+(end[1]-start[1])*i/steps-start[1])**2)**0.5*111000:.0f}m'')
+    for i in range(steps+1)];print(''  [!] Position shifted ~40km to Incheon Airport'')"'
   answer_detail: 점진적 GPS 스푸핑은 탐지가 어려운 고급 공격입니다.
   verify:
     type: output_contains
     expect: GPS Spoofing
     field: stdout
+    semantic:
+      intent: '[공격] GPS 점진 스푸핑 — python3 start=(37.5665,126.978) 서울시청 + end=(37.446,126.453) 인천공항 + 5
+        steps 점진 이동 + drift ~40km. HackRF + gps-sdr-sim. MITRE ICS T0830.'
+      success_criteria:
+      - GPS Spoofing 키워드
+      - start→end 점진
+      - drift 거리 계산
+      acceptable_methods:
+      - gps-sdr-sim
+      - HackRF + osqzss
+      - BladeRF
+      negative_signs:
+      - step 1개
+      - 거리 미계산
+      - 점진성 없음
   target_vm: attacker
 - order: 3
   instruction: GPS 스푸핑 탐지 알고리즘을 구현하시오. 속도 이상, SNR 이상, 위치 점프 3가지 탐지 규칙을 적용하라.
   hint: 이전 위치와 비교하여 물리적으로 불가능한 이동을 탐지하세요.
   category: config
   points: 12
-  answer: 'python3 -c "import json; readings=[(37.5,126.9,44),(37.5,126.9,45),(37.8,127.0,55)]; alerts=[abs(readings[i][0]-readings[i-1][0])*111000 for i in range(1,len(readings)) if abs(readings[i][0]-readings[i-1][0])*111000>100]; print(f''=== GPS Spoof Detection ===''); print(f''Alerts: {len(alerts)}''); [print(f''SPEED_ALERT: {a:.0f}m jump'') for a in alerts]"'
+  answer: 'python3 -c "import json; readings=[(37.5,126.9,44),(37.5,126.9,45),(37.8,127.0,55)]; alerts=[abs(readings[i][0]-readings[i-1][0])*111000
+    for i in range(1,len(readings)) if abs(readings[i][0]-readings[i-1][0])*111000>100]; print(f''===
+    GPS Spoof Detection ===''); print(f''Alerts: {len(alerts)}''); [print(f''SPEED_ALERT: {a:.0f}m jump'')
+    for a in alerts]"'
   answer_detail: 다중 탐지 규칙을 결합하면 GPS 스푸핑 탐지율이 높아집니다.
   verify:
     type: output_contains
     expect: Spoof Detection
     field: stdout
+    semantic:
+      intent: '[탐지] GPS 스푸핑 탐지 — python3 readings 3개 + 물리적 이동 거리 계산 (abs(lat diff)*111000) + 100m 이상 점프
+        SPEED_ALERT. 3 탐지 규칙 (속도/SNR/위치 점프).'
+      success_criteria:
+      - Spoof Detection 키워드
+      - SPEED_ALERT
+      - 물리적 거리 계산
+      acceptable_methods:
+      - 거리 계산 + 임계값
+      - Haversine formula
+      - Kalman filter residual
+      negative_signs:
+      - 규칙 1종
+      - 물리적 임계 없음
+      - alerts 없음
   target_vm: attacker
 - order: 4
   instruction: LLM에게 GPS 재밍과 스푸핑의 차이와 각각의 방어 방법을 질의하시오.
   hint: GPS jamming vs spoofing defense를 질문하세요.
   category: analysis
   points: 10
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a GNSS security expert.\"},{\"role\":\"user\",\"content\":\"Compare GPS jamming and spoofing attacks. For each, explain detection method and countermeasure in 3 sentences.\"}],\"stream\":false,\"options\":{\"num_predict\":150}}' \\\n | python3\
-    \ -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
+    messages\":[{\"role\":\"system\",\"content\":\"You are a GNSS security expert.\"},{\"role\":\"user\"\
+    ,\"content\":\"Compare GPS jamming and spoofing attacks. For each, explain detection method and countermeasure\
+    \ in 3 sentences.\"}],\"stream\":false,\"options\":{\"num_predict\":150}}' \\\n | python3 -c \"import\
+    \ sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: 재밍과 스푸핑은 서로 다른 탐지/방어 전략이 필요합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[분석] GPS 재밍 vs 스푸핑 — curl /api/chat system=GNSS security expert + Compare jamming and spoofing
+        + detection + countermeasure. Jamming(DoS) vs Spoofing(오정보). SNR 기반 vs 일관성 기반.'
+      success_criteria:
+      - 재밍 vs 스푸핑 비교
+      - 탐지+대응
+      - system role
+      acceptable_methods:
+      - LLM 비교
+      - NIST IR 8323
+      - GNSS security 문헌
+      negative_signs:
+      - 한 종류만
+      - 대응 없음
+      - system 누락
   target_vm: manager
 - order: 5
   instruction: Python으로 GPS+INS 센서 퓨전 시뮬레이터를 구현하시오. GPS 스푸핑 탐지 시 INS로 자동 전환하는 로직을 구현하라.
   hint: GPS 신뢰도에 따라 가중치를 동적으로 변경하세요.
   category: config
   points: 12
-  answer: python3 -c " data=[(37.5666,37.5666,44),(37.5667,37.5667,45),(37.59,37.5668,56),(37.61,37.5669,57)] ;print('=== GPS+INS Fusion ===') ;[print(f'  GPS:{g:.4f} INS:{i:.4f} SNR:{s} -> Fused:{0.7*g+0.3*i if s<52 else 0.1*g+0.9*i:.4f} GPS_OK:{\"Y\" if s<52 else \"N\"}') for g,i,s in data] ;print('  [OK] System auto-switches to INS when GPS spoofed')"
+  answer: python3 -c " data=[(37.5666,37.5666,44),(37.5667,37.5667,45),(37.59,37.5668,56),(37.61,37.5669,57)]
+    ;print('=== GPS+INS Fusion ===') ;[print(f'  GPS:{g:.4f} INS:{i:.4f} SNR:{s} -> Fused:{0.7*g+0.3*i
+    if s<52 else 0.1*g+0.9*i:.4f} GPS_OK:{\"Y\" if s<52 else \"N\"}') for g,i,s in data] ;print('  [OK]
+    System auto-switches to INS when GPS spoofed')"
   answer_detail: 센서 퓨전은 GPS 스푸핑 공격을 완화하는 핵심 기술입니다.
   verify:
     type: output_contains
     expect: GPS+INS Fusion
     field: stdout
+    semantic:
+      intent: '[설정] GPS+INS 센서 퓨전 — python3 data (GPS/INS/SNR) + 가중치 동적 (SNR<52 0.7/0.3 / else 0.1/0.9).
+        GPS 신뢰도 기반 자동 전환. Kalman filter 기반.'
+      success_criteria:
+      - GPS+INS Fusion 키워드
+      - 가중치 동적
+      - GPS_OK Y/N
+      acceptable_methods:
+      - 가중 평균
+      - Extended Kalman Filter
+      - Complementary filter
+      negative_signs:
+      - 단일 센서
+      - 가중치 고정
+      - 자동 전환 없음
   target_vm: attacker
 - order: 6
   instruction: Python으로 GPS 위성 기하학(GDOP) 분석 시뮬레이터를 작성하시오. 위성 배치에 따른 측위 정확도를 계산하라.
   hint: 위성 앙각과 방위각으로 GDOP를 추정하세요.
   category: analysis
   points: 10
-  answer: 'python3 -c "sats=[(45,0),(30,90),(60,180),(25,270),(50,45)];print(''=== Satellite Geometry ==='');[print(f''  SV{i+1}: Elev={e}° Azim={a}°'') for i,(e,a) in enumerate(sats)];gdop=1.8;print(f''  GDOP: {gdop} (Good if <6)'');print(f''  Estimated accuracy: {gdop*3:.1f}m'')"'
+  answer: 'python3 -c "sats=[(45,0),(30,90),(60,180),(25,270),(50,45)];print(''=== Satellite Geometry
+    ==='');[print(f''  SV{i+1}: Elev={e}° Azim={a}°'') for i,(e,a) in enumerate(sats)];gdop=1.8;print(f''  GDOP:
+    {gdop} (Good if <6)'');print(f''  Estimated accuracy: {gdop*3:.1f}m'')"'
   answer_detail: 위성 기하학은 GPS 정확도와 스푸핑 탐지에 영향을 줍니다.
   verify:
     type: output_contains
     expect: Satellite Geometry
     field: stdout
+    semantic:
+      intent: '[분석] GPS GDOP 위성 기하학 — python3 sats 5개 (Elev/Azim) + GDOP=1.8 Good if <6 + accuracy=GDOP*3m.
+        위성 배치 정확도 분석. GDOP/PDOP/HDOP/VDOP.'
+      success_criteria:
+      - Satellite Geometry 키워드
+      - 5 위성 + Elev/Azim
+      - GDOP 수치
+      acceptable_methods:
+      - GDOP 계산
+      - skyplot 분석
+      - RINEX 파싱
+      negative_signs:
+      - 위성 2개 이하
+      - GDOP 없음
+      - 기준값 없음
   target_vm: attacker
 - order: 7
   instruction: GPS 스푸핑 방어 전략을 Python으로 정리하시오. 5가지 방어 기술과 효과를 출력하라.
   hint: 각 방어 기술의 이름, 설명, 효과를 리스트로 만드세요.
   category: analysis
   points: 12
-  answer: 'python3 -c "defenses=[(''Multi-antenna AoA'',''Verify signal direction'',''HIGH''),(''GPS+INS Fusion'',''Cross-validate with inertial nav'',''HIGH''),(''SNR Monitoring'',''Detect abnormal signal strength'',''MEDIUM''),(''Multi-GNSS'',''Use GPS+GLONASS+Galileo'',''HIGH''),(''Cryptographic Auth'',''Military GPS P(Y) code'',''VERY HIGH'')];print(''=== GPS Anti-Spoofing Defenses ==='');[print(f''  [{e}]
-    {n}: {d}'') for n,d,e in defenses]"'
+  answer: 'python3 -c "defenses=[(''Multi-antenna AoA'',''Verify signal direction'',''HIGH''),(''GPS+INS
+    Fusion'',''Cross-validate with inertial nav'',''HIGH''),(''SNR Monitoring'',''Detect abnormal signal
+    strength'',''MEDIUM''),(''Multi-GNSS'',''Use GPS+GLONASS+Galileo'',''HIGH''),(''Cryptographic Auth'',''Military
+    GPS P(Y) code'',''VERY HIGH'')];print(''=== GPS Anti-Spoofing Defenses ==='');[print(f''  [{e}] {n}:
+    {d}'') for n,d,e in defenses]"'
   answer_detail: 다중 방어 기술의 조합이 GPS 보안의 핵심입니다.
   verify:
     type: output_contains
     expect: Anti-Spoofing
     field: stdout
+    semantic:
+      intent: '[방어] GPS 안티스푸핑 5종 — python3 defenses (Multi-antenna AoA HIGH / GPS+INS HIGH / SNR MEDIUM
+        / Multi-GNSS HIGH / Crypto P(Y) VERY HIGH). 5 방어 기술 + 효과. NIST IR 8323.'
+      success_criteria:
+      - Anti-Spoofing 키워드
+      - 5 방어 + 효과
+      - HIGH/MEDIUM/VERY HIGH
+      acceptable_methods:
+      - 5 방어 리스트
+      - NIST IR 8323
+      - GPS World 기사
+      negative_signs:
+      - 방어 3개 이하
+      - 효과 등급 없음
+      - Multi-GNSS 누락
   target_vm: attacker
 - order: 8
   instruction: LLM에게 RQ-170 드론 GPS 스푸핑 포획 사건의 기술적 분석을 요청하시오.
   hint: RQ-170 GPS spoofing Iran incident를 질문하세요.
   category: analysis
   points: 12
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a military drone security analyst.\"},{\"role\":\"user\",\"content\":\"Analyze the 2011 RQ-170 drone capture by Iran. How was GPS spoofing allegedly used and what lessons were learned?\"}],\"stream\":false,\"options\":{\"num_predict\":200}}' \\\
-    \n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
+    messages\":[{\"role\":\"system\",\"content\":\"You are a military drone security analyst.\"},{\"role\"\
+    :\"user\",\"content\":\"Analyze the 2011 RQ-170 drone capture by Iran. How was GPS spoofing allegedly\
+    \ used and what lessons were learned?\"}],\"stream\":false,\"options\":{\"num_predict\":200}}' \\\n\
+    \ | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: 실제 GPS 스푸핑 사례에서 교훈을 도출합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[분석] RQ-170 포획 사건 — curl /api/chat system=military drone analyst + 2011 RQ-170 drone capture
+        by Iran + GPS spoofing + lessons. 실제 군용 드론 스푸핑 사례. CIA Sentinel.'
+      success_criteria:
+      - RQ-170 맥락
+      - lessons 도출
+      - system role
+      acceptable_methods:
+      - LLM 사례 분석
+      - Iran 2011 사건 연구
+      - DoD AAR
+      negative_signs:
+      - 사건 맥락 없음
+      - lessons 없음
+      - system 누락
   target_vm: manager
