@@ -3,8 +3,7 @@ title: 실전 공방전 2 — Red Phase → Blue Phase → 판정 (라운드 2, 
 version: non-ai
 course: battle-nonai
 week: 12
-description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. 라운드 1의 교훈을 반영하여 Blue는 더 강한 하드닝을, Red는
-  더 정교한 우회 기법을 사용한다.
+description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. 라운드 1의 교훈을 반영하여 Blue는 더 강한 하드닝을, Red는 더 정교한 우회 기법을 사용한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -26,18 +25,31 @@ steps:
   category: defense
   points: 10
   answer: "cat > /tmp/auto_response.sh << 'SCRIPT'\n#!/bin/bash\ntail -Fn0 /var/log/suricata/fast.log\
-    \ | while read line; do\n  IP=$(echo $line | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\\
-    d+' | head -1)\n  if [ -n \"$IP\" ] && [ \"$IP\" != \"10.20.30.1\" ] && [ \"$IP\"\
-    \ != \"10.20.30.80\" ] && [ \"$IP\" != \"10.20.30.100\" ]; then\n    sudo nft\
-    \ add element inet filter blocklist { $IP } 2>/dev/null\n    echo \"$(date): Auto-blocked\
-    \ $IP\" >> /tmp/auto_response.log\n  fi\ndone\nSCRIPT\nchmod +x /tmp/auto_response.sh\
+    \ | while read line; do\n  IP=$(echo $line | grep -oP '\\d+\\.\\d+\\.\\d+\\.\\d+' | head -1)\n  if\
+    \ [ -n \"$IP\" ] && [ \"$IP\" != \"10.20.30.1\" ] && [ \"$IP\" != \"10.20.30.80\" ] && [ \"$IP\" !=\
+    \ \"10.20.30.100\" ]; then\n    sudo nft add element inet filter blocklist { $IP } 2>/dev/null\n \
+    \   echo \"$(date): Auto-blocked $IP\" >> /tmp/auto_response.log\n  fi\ndone\nSCRIPT\nchmod +x /tmp/auto_response.sh\
     \ && echo 'Auto-response script deployed'"
-  answer_detail: 자동 대응 스크립트는 Suricata 경보에서 공격 IP를 추출하여 즉시 nftables blocklist에 추가한다.
-    내부 VM IP는 제외한다.
+  answer_detail: 자동 대응 스크립트는 Suricata 경보에서 공격 IP를 추출하여 즉시 nftables blocklist에 추가한다. 내부 VM IP는 제외한다.
   verify:
     type: output_contains
     expect: Auto-response script deployed
     field: stdout
+    semantic:
+      intent: '[BLUE] 자동 대응 스크립트 — tail -Fn0 fast.log | while read; IP 추출 + nft add element blocklist.
+        Suricata 경보 → 즉시 IP 차단. 내부 VM 제외. 대응 시간 ↓. SOAR 기본.'
+      success_criteria:
+      - Auto-response script deployed 키워드
+      - tail -F + IP 추출 + nft
+      - 내부 VM 제외
+      acceptable_methods:
+      - tail -F + nft
+      - Wazuh Active Response
+      - Suricata-update + fwupd
+      negative_signs:
+      - tail -F 없음
+      - nft 자동 추가 없음
+      - 내부 IP 포함
   target_vm: secu
 - order: 2
   instruction: '[RED] 라운드 1에서 차단된 공격이 여전히 막히는지 확인하고, WAF를 우회하는 SQL Injection을 시도하라.'
@@ -45,29 +57,58 @@ steps:
   category: exploit
   points: 10
   answer: "curl -s 'http://10.20.30.80:8080/vulnerabilities/sqli/?id=1%27%20%2f**%2fuNiOn%2f**%2fsElEcT%201%2c2--%20&Submit=Submit'\
-    \ -b 'security=low; PHPSESSID=test' \\\n  -o /dev/null \\\n  -w '%{http_code}'\
-    \ && echo ' - WAF bypass attempt'"
-  answer_detail: 'WAF 우회 기법: 대소문자 혼합(uNiOn), SQL 주석(/**/) 삽입, URL 인코딩. 정교한 WAF는 이런
-    우회도 탐지하지만, 기본 정규식 필터는 우회 가능하다.'
+    \ -b 'security=low; PHPSESSID=test' \\\n  -o /dev/null \\\n  -w '%{http_code}' && echo ' - WAF bypass\
+    \ attempt'"
+  answer_detail: 'WAF 우회 기법: 대소문자 혼합(uNiOn), SQL 주석(/**/) 삽입, URL 인코딩. 정교한 WAF는 이런 우회도 탐지하지만, 기본 정규식 필터는
+    우회 가능하다.'
   verify:
     type: output_contains
     expect: WAF bypass attempt
     field: stdout
+    semantic:
+      intent: '[RED] WAF 우회 SQLi — ?id=1%27%20/**/uNiOn/**/sElEcT%201,2--. 대소문자 혼합 + SQL 주석(/**/) + URL
+        인코딩. 정규식 기반 WAF 우회. OWASP WAF Bypass Cheatsheet.'
+      success_criteria:
+      - WAF bypass attempt 키워드
+      - 인코딩 + 주석 + 대소문자 변형
+      - SQLi 페이로드
+      acceptable_methods:
+      - 수동 변형 페이로드
+      - sqlmap --tamper
+      - wfuzz payload processing
+      negative_signs:
+      - 변형 없음
+      - 단순 SQLi
+      - 우회 맥락 없음
   target_vm: attacker
 - order: 3
   instruction: '[BLUE] web 서버 로그에서 WAF 우회 시도를 탐지하라.'
   hint: URL 인코딩을 디코딩하여 분석한다.
   category: defense
   points: 10
-  answer: tail -30 /var/log/apache2/access.log 2>/dev/null | python3 -c "import sys,urllib.parse;
-    [print(urllib.parse.unquote(l.strip())) for l in sys.stdin]" 2>/dev/null | grep
-    -iE '(union|select)' | tail -5 || echo 'WAF bypass detection check complete'
-  answer_detail: URL 인코딩된 로그를 디코딩하면 실제 공격 페이로드를 확인할 수 있다. 디코딩 후 SQL 키워드가 발견되면 WAF
-    규칙에 변형도 추가해야 한다.
+  answer: tail -30 /var/log/apache2/access.log 2>/dev/null | python3 -c "import sys,urllib.parse; [print(urllib.parse.unquote(l.strip()))
+    for l in sys.stdin]" 2>/dev/null | grep -iE '(union|select)' | tail -5 || echo 'WAF bypass detection
+    check complete'
+  answer_detail: URL 인코딩된 로그를 디코딩하면 실제 공격 페이로드를 확인할 수 있다. 디코딩 후 SQL 키워드가 발견되면 WAF 규칙에 변형도 추가해야 한다.
   verify:
     type: output_contains
     expect: complete
     field: stdout
+    semantic:
+      intent: '[BLUE] URL 디코딩 분석 — tail access.log | python3 urllib.parse.unquote + grep -iE ''union|select''.
+        인코딩된 로그 → 실제 페이로드 복원. 디코딩 후 SQL 키워드 발견. WAF 룰 강화 근거.'
+      success_criteria:
+      - complete 키워드
+      - python3 urllib.parse.unquote
+      - SQL 키워드 grep
+      acceptable_methods:
+      - python3 unquote
+      - urlencode/urldecode 도구
+      - Wazuh decoder regex
+      negative_signs:
+      - 디코딩 없음
+      - 단순 grep
+      - 원본 페이로드 미복원
   target_vm: web
 - order: 4
   instruction: '[RED] JuiceShop의 다른 취약점을 탐색하라. 디렉토리 브루트포스로 숨겨진 경로를 찾는다.'
@@ -76,15 +117,29 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
 
-    📎 참고 (CLI): dirb http://10.20.30.80:3000/ /usr/share/wordlists/dirb/common.txt
-    -r 2>&1 | grep ''CODE:200\|CODE:301\|CODE:302'' | head -10 || echo ''Directory
-    scan complete'''
-  answer_detail: JuiceShop은 REST API 기반으로 /api/, /rest/, /ftp/ 등 다양한 경로가 있다. 숨겨진 관리
-    기능이나 디버그 엔드포인트를 발견할 수 있다.
+    📎 참고 (CLI): dirb http://10.20.30.80:3000/ /usr/share/wordlists/dirb/common.txt -r 2>&1 | grep ''CODE:200\|CODE:301\|CODE:302''
+    | head -10 || echo ''Directory scan complete'''
+  answer_detail: JuiceShop은 REST API 기반으로 /api/, /rest/, /ftp/ 등 다양한 경로가 있다. 숨겨진 관리 기능이나 디버그 엔드포인트를 발견할
+    수 있다.
   verify:
     type: output_contains
     expect: complete
     field: stdout
+    semantic:
+      intent: '[RED] JuiceShop 디렉터리 브루트 — dirb http://10.20.30.80:3000/ wordlist -r | grep ''CODE:200|301|302''.
+        REST API (/api/, /rest/, /ftp/). 숨은 관리/디버그 엔드포인트 발견. MITRE T1595.002.'
+      success_criteria:
+      - complete 키워드
+      - dirb + wordlist
+      - 200/301/302 필터
+      acceptable_methods:
+      - dirb -r
+      - gobuster dir
+      - ffuf -w
+      negative_signs:
+      - dirb 없음
+      - wordlist 없음
+      - 상태 코드 필터 없음
   target_vm: attacker
 - order: 5
   instruction: '[RED] JuiceShop의 /ftp 디렉토리에서 민감한 파일을 다운로드하라.'
@@ -93,14 +148,31 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
 
-    📎 참고 (CLI): curl -s http://10.20.30.80:3000/ftp/ && echo ''\n=== FTP directory
-    listing retrieved ==='''
-  answer_detail: JuiceShop의 /ftp/ 경로에는 백업 파일, 설정 파일 등 민감한 파일이 노출될 수 있다. 디렉토리 리스팅은
-    정보 유출 취약점이다.
+    📎 참고 (CLI): curl -s http://10.20.30.80:3000/ftp/ && echo ''\n=== FTP directory listing retrieved ==='''
+  answer_detail: JuiceShop의 /ftp/ 경로에는 백업 파일, 설정 파일 등 민감한 파일이 노출될 수 있다. 디렉토리 리스팅은 정보 유출 취약점이다.
   verify:
     type: output_contains
     expect: FTP directory listing
     field: stdout
+    semantic:
+      intent: '[RED] /ftp 민감 파일 — curl http://10.20.30.80:3000/ftp/. 백업 파일/설정 파일 노출. 디렉터리 리스팅 취약점 = 정보
+        유출. CWE-548 + OWASP A05.'
+      source_criteria:
+      - FTP directory listing 키워드
+      - /ftp/ 접근
+      - 리스팅 노출
+      success_criteria:
+      - FTP directory listing 키워드
+      - /ftp/ 접근
+      - 리스팅 노출
+      acceptable_methods:
+      - curl 디렉터리
+      - wget -r
+      - browser 직접 접근
+      negative_signs:
+      - /ftp/ 미접근
+      - 단순 GET
+      - 디렉터리 리스팅 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: '[BLUE] Suricata와 Wazuh에서 이번 라운드의 종합 알림을 분석하라.'
@@ -109,55 +181,113 @@ steps:
   points: 10
   answer: '🖥️ UI: Dashboard → Security events → 필터 적용 후 이벤트 확인
 
-    📎 참고 (CLI): echo ''=== Suricata Alerts ==='' && cat /var/log/suricata/eve.json
-    | jq -r ''select(.event_type=="alert") | "\(.timestamp[:19]) \(.alert.signature)"''
-    2>/dev/null | tail -10 && echo ''=== Analysis complete ==='''
+    📎 참고 (CLI): echo ''=== Suricata Alerts ==='' && cat /var/log/suricata/eve.json | jq -r ''select(.event_type=="alert")
+    | "\(.timestamp[:19]) \(.alert.signature)"'' 2>/dev/null | tail -10 && echo ''=== Analysis complete
+    ==='''
   answer_detail: Suricata(네트워크)와 Wazuh(호스트) 알림을 병합하면 공격의 전체 그림을 파악할 수 있다.
   verify:
     type: output_contains
     expect: Analysis complete
     field: stdout
+    semantic:
+      intent: '[BLUE] Suricata + Wazuh 종합 — jq .timestamp + .alert.signature. 네트워크(Suricata) + 호스트(Wazuh)
+        병합 분석. 공격 전체 그림. 크로스-도메인 상관. SOC 사고 분석.'
+      success_criteria:
+      - Analysis complete 키워드
+      - jq signature + timestamp
+      - 종합 분석
+      acceptable_methods:
+      - jq + 병합
+      - ELK 통합 대시보드
+      - Wazuh + Suricata 플러그인
+      negative_signs:
+      - 단일 소스만
+      - timestamp 미추출
+      - 상관 맥락 없음
   target_vm: secu
 - order: 7
   instruction: '[BLUE] 자동 대응 로그를 확인하고, 자동 차단된 IP를 검토하라.'
   hint: auto_response.log를 확인한다.
   category: defense
   points: 10
-  answer: cat /tmp/auto_response.log 2>/dev/null || echo 'No auto-blocks yet' && nft
-    list set inet filter blocklist 2>/dev/null
+  answer: cat /tmp/auto_response.log 2>/dev/null || echo 'No auto-blocks yet' && nft list set inet filter
+    blocklist 2>/dev/null
   answer_detail: 자동 대응 스크립트가 정상 동작했는지 확인한다. 오탐으로 인한 잘못된 차단이 없는지도 검토한다.
   verify:
     type: output_contains
     expect: blocklist
     field: stdout
+    semantic:
+      intent: '[BLUE] 자동 대응 로그 확인 — cat /tmp/auto_response.log + nft list set inet filter blocklist. 자동
+        차단 정상 동작 검증. 오탐 검토. 대응 이력 기록. Purple Team 검증.'
+      success_criteria:
+      - blocklist 키워드
+      - auto_response.log + nft list set
+      - 오탐 검토
+      acceptable_methods:
+      - cat log + nft list set
+      - Wazuh Active Response log
+      - Ansible audit
+      negative_signs:
+      - 로그 미확인
+      - 단순 cat
+      - 오탐 맥락 없음
   target_vm: secu
 - order: 8
   instruction: '[RED] 패킷 캡처로 web 서버의 응답 패턴을 분석하라.'
   hint: tcpdump로 트래픽을 캡처한다.
   category: recon
   points: 10
-  answer: 'sudo timeout 10 tcpdump -i eth0 -c 50 host 10.20.30.80 -w /tmp/capture_r2.pcap
-    2>/dev/null && echo ''Capture saved: /tmp/capture_r2.pcap'' || echo ''Packet capture
-    complete'''
+  answer: 'sudo timeout 10 tcpdump -i eth0 -c 50 host 10.20.30.80 -w /tmp/capture_r2.pcap 2>/dev/null
+    && echo ''Capture saved: /tmp/capture_r2.pcap'' || echo ''Packet capture complete'''
   answer_detail: tcpdump로 트래픽을 캡처하면 서비스 구성, 응답 헤더, 평문 데이터 등을 분석할 수 있다.
   verify:
     type: output_contains
     expect: complete
     field: stdout
+    semantic:
+      intent: '[RED] 패킷 캡처 — sudo timeout 10 tcpdump -i eth0 -c 50 host 10.20.30.80 -w /tmp/capture_r2.pcap.
+        트래픽 분석. 서비스 구성/응답 헤더/평문 데이터. Wireshark 후속 분석. MITRE T1040.'
+      success_criteria:
+      - complete 키워드
+      - tcpdump + -w .pcap
+      - -c 50 또는 timeout
+      acceptable_methods:
+      - tcpdump
+      - tshark
+      - Wireshark CLI
+      negative_signs:
+      - 캡처 없음
+      - 저장 없음
+      - 호스트 필터 없음
   target_vm: attacker
 - order: 9
   instruction: '[BLUE] 파일 무결성 모니터링을 실행하여 web 서버에서 변경된 파일을 탐지하라.'
   hint: Week 10의 무결성 스크립트를 실행한다.
   category: defense
   points: 10
-  answer: bash /tmp/integrity_monitor.sh 2>/dev/null || echo 'Running manual check...'
-    && md5sum /etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config 2>/dev/null
-    && echo 'Integrity check complete'
+  answer: bash /tmp/integrity_monitor.sh 2>/dev/null || echo 'Running manual check...' && md5sum /etc/passwd
+    /etc/shadow /etc/crontab /etc/ssh/sshd_config 2>/dev/null && echo 'Integrity check complete'
   answer_detail: 파일 무결성 검사로 공격자의 변경 사항(백도어 계정, SSH 키, cron job)을 탐지한다.
   verify:
     type: output_contains
     expect: Integrity check complete
     field: stdout
+    semantic:
+      intent: '[BLUE] FIM 검사 — bash /tmp/integrity_monitor.sh + md5sum 주요 파일. 공격자 변경 (백도어 계정/SSH 키/cron)
+        탐지. AIDE/Tripwire 대체. MITRE T1098 탐지.'
+      success_criteria:
+      - Integrity check complete 키워드
+      - md5sum 다중 파일
+      - 베이스라인 비교
+      acceptable_methods:
+      - md5sum + diff
+      - AIDE --check
+      - Wazuh syscheck
+      negative_signs:
+      - 해시 없음
+      - 단순 ls
+      - 변조 탐지 맥락 없음
   target_vm: web
 - order: 10
   instruction: '[BLUE] 서비스 가용성을 최종 확인하고, 라운드 2 비교 보고서를 작성하라.'
@@ -207,4 +337,20 @@ steps:
     type: file_exists
     expect: /tmp/battle_round2_report.txt
     field: filesystem
+    semantic:
+      intent: '[BLUE] Round 2 보고서 — echo > /tmp/battle_round2_report.txt: Round 1 대비 개선 (자동 대응/WAF 분석/Red
+        은닉) + Round 2 결과 (FTP/WAF 우회 부분/자동 차단) + 교훈 (자동화/다층/디렉터리/인코딩/Defense in Depth). AAR (After Action
+        Review).'
+      success_criteria:
+      - Battle Round 2 Report 키워드
+      - Round 1 대비 개선
+      - Key Takeaways
+      acceptable_methods:
+      - echo > AAR
+      - Purple Team 사후 분석
+      - MITRE ATT&CK 매핑 업데이트
+      negative_signs:
+      - 개선 사항 없음
+      - Takeaways 없음
+      - 체계 부족
   target_vm: attacker
