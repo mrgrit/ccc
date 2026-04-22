@@ -17,41 +17,87 @@ steps:
   hint: nft add table inet exam; nft add chain …
   category: configure
   points: 10
-  answer: sudo nft add table inet exam && sudo nft add chain inet exam input '{ type
-    filter hook input priority 0 \; policy drop \; }'
-  answer_detail: '중간고사 — 방화벽 + IPS 구성 실기: secu VM에 ''exam'' nftables 테이블과 policy drop
-    input 체인을 만드시오.'
+  answer: sudo nft add table inet exam && sudo nft add chain inet exam input '{ type filter hook input
+    priority 0 \; policy drop \; }'
+  answer_detail: '중간고사 — 방화벽 + IPS 구성 실기: secu VM에 ''exam'' nftables 테이블과 policy drop input 체인을 만드시오.'
   verify:
     type: output_contains
     expect: exam
     field: stdout
+    semantic:
+      intent: exam 테이블 policy drop 체인 — nft add table inet exam + nft add chain inet exam input '{ type
+        filter hook input priority 0 \; policy drop \; }'. deny-all default. zero-trust 중간고사 문제.
+      success_criteria:
+      - exam 키워드
+      - policy drop 체인
+      - hook input 지정
+      acceptable_methods:
+      - nft add table + add chain policy drop
+      - /etc/nftables.conf 배치
+      - ansible nftables
+      - nft -f script
+      negative_signs:
+      - policy accept (화이트리스트 불가)
+      - hook 누락
+      - 테이블 이름 혼동
   target_vm: secu
 - order: 2
   instruction: established,related 상태와 loopback 을 허용하시오.
   hint: ct state established,related accept; iifname lo accept
   category: configure
   points: 10
-  answer: sudo nft add rule inet exam input ct state established,related accept &&
-    sudo nft add rule inet exam input iifname lo accept
+  answer: sudo nft add rule inet exam input ct state established,related accept && sudo nft add rule inet
+    exam input iifname lo accept
   answer_detail: '중간고사 — 방화벽 + IPS 구성 실기: established,related 상태와 loopback 을 허용하시오.'
   verify:
     type: output_contains
     expect: lo
     field: stdout
+    semantic:
+      intent: Stateful + loopback 허용 — nft add rule + ct state established,related accept + iifname lo
+        accept. 2 필수 기초 룰. stateful 로 응답 패킷 허용 + loopback 로컬 통신 보장.
+      success_criteria:
+      - lo 키워드
+      - ct state + iifname lo
+      - 2 룰 모두 적용
+      acceptable_methods:
+      - nft add rule 2개 순차
+      - /etc/nftables.conf 동시 정의
+      - script 파일 -f 실행
+      - ansible 룰 다중 추가
+      negative_signs:
+      - 2 룰 중 1개만
+      - ct state 누락 (응답 차단)
+      - loopback 없이 로컬 서비스 불가
   target_vm: secu
 - order: 3
   instruction: 소스 IP 10.20.30.0/24 에서 SSH(22) 를 허용하되 new 연결은 5/minute 로 제한하시오.
   hint: ip saddr 10.20.30.0/24 tcp dport 22 ct state new limit rate 5/minute accept
   category: configure
   points: 10
-  answer: sudo nft add rule inet exam input ip saddr 10.20.30.0/24 tcp dport 22 ct
-    state new limit rate 5/minute accept
-  answer_detail: '중간고사 — 방화벽 + IPS 구성 실기: 소스 IP 10.20.30.0/24 에서 SSH(22) 를 허용하되 new
-    연결은 5/minute 로 제한하시오.'
+  answer: sudo nft add rule inet exam input ip saddr 10.20.30.0/24 tcp dport 22 ct state new limit rate
+    5/minute accept
+  answer_detail: '중간고사 — 방화벽 + IPS 구성 실기: 소스 IP 10.20.30.0/24 에서 SSH(22) 를 허용하되 new 연결은 5/minute 로 제한하시오.'
   verify:
     type: output_contains
     expect: limit rate
     field: stdout
+    semantic:
+      intent: SSH 레이트리밋 + 소스 제한 — nft add rule input ip saddr 10.20.30.0/24 tcp dport 22 ct state new
+        limit rate 5/minute accept. saddr 10.20.30.0/24 = 내부 대역만 + new 연결 분당 5회 제한 = 브루트포스 완화. Defense-in-Depth.
+      success_criteria:
+      - limit rate 키워드
+      - ip saddr CIDR + dport 22
+      - ct state new 조건
+      acceptable_methods:
+      - nft add rule + saddr + rate
+      - nft table set 으로 허용 대역 관리
+      - fail2ban 병행
+      - SSH CA 인증서 + rate limit
+      negative_signs:
+      - rate 없이 단순 accept
+      - saddr 제한 없이 전역 허용
+      - ct state 누락
   target_vm: secu
 - order: 4
   instruction: icmp echo-request 를 허용하는 룰을 추가하시오.
@@ -64,21 +110,52 @@ steps:
     type: output_contains
     expect: echo-request
     field: stdout
+    semantic:
+      intent: ICMP echo-request 허용 — nft add rule inet exam input icmp type echo-request accept. type
+        echo-request = ping 요청만 허용 (응답은 ct state established 로). 네트워크 진단 기본. 전체 icmp accept 대신 type 제한.
+      success_criteria:
+      - echo-request 키워드
+      - icmp type 지정
+      - accept 동작
+      acceptable_methods:
+      - nft + icmp type echo-request
+      - iptables -A INPUT -p icmp --icmp-type echo-request
+      - icmp-type 별 세분화
+      - ICMPv6 별도 처리
+      negative_signs:
+      - icmp 전체 accept (type 제한 없음)
+      - echo-reply 누락
+      - type 개념 없음
   target_vm: secu
 - order: 5
   instruction: Suricata local.rules 에 '.exe' 파일 요청 탐지 룰(sid:1000201)을 추가하시오.
   hint: content:".exe"; http_uri;
   category: configure
   points: 10
-  answer: echo 'alert http any any -> any any (msg:"Exam Rule - exe download"; content:".exe";
-    http_uri; sid:1000201; rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
-    && sudo systemctl reload suricata
-  answer_detail: '중간고사 — 방화벽 + IPS 구성 실기: Suricata local.rules 에 ''.exe'' 파일 요청 탐지
-    룰(sid:1000201)을 추가하시오.'
+  answer: echo 'alert http any any -> any any (msg:"Exam Rule - exe download"; content:".exe"; http_uri;
+    sid:1000201; rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules && sudo systemctl reload suricata
+  answer_detail: '중간고사 — 방화벽 + IPS 구성 실기: Suricata local.rules 에 ''.exe'' 파일 요청 탐지 룰(sid:1000201)을 추가하시오.'
   verify:
     type: output_contains
     expect: '1000201'
     field: stdout
+    semantic:
+      intent: .exe 다운로드 탐지 Suricata 룰 — alert http any any -> any any (msg:"Exam Rule - exe download";
+        content:".exe"; http_uri; sid:1000201;). content .exe + http_uri 수정자. 악성 실행파일 다운로드 탐지 기본 패턴. MITRE
+        ATT&CK T1566 Phishing / T1105 Ingress Tool Transfer.
+      success_criteria:
+      - 1000201 sid
+      - http_uri 수정자
+      - content '.exe' 매칭
+      acceptable_methods:
+      - alert http + content + http_uri
+      - Suricata file_data keyword 고급
+      - Zeek file.log MIME
+      - ET-Open emerging-malware.rules
+      negative_signs:
+      - http_uri 수정자 누락
+      - sid 혼동
+      - T1105 맥락 없음
   target_vm: secu
 - order: 6
   instruction: exam 테이블 전체 룰셋을 확인하시오.
@@ -91,6 +168,22 @@ steps:
     type: output_contains
     expect: exam
     field: stdout
+    semantic:
+      intent: exam 테이블 룰셋 확인 — sudo nft list table inet exam. 작성한 모든 룰 (stateful + lo + SSH rate limit
+        + icmp echo-request) 확인. 체인 구조 + 룰 순서 검증.
+      success_criteria:
+      - exam 키워드
+      - nft list table
+      - 전체 룰 출력
+      acceptable_methods:
+      - sudo nft list table inet exam
+      - nft -j list (JSON)
+      - nft -n list (숫자)
+      - diff 로 기대 룰셋과 비교
+      negative_signs:
+      - list 실행 안 함
+      - 다른 테이블 혼동
+      - 순서 검증 없음
   target_vm: secu
 - order: 7
   instruction: attacker VM에서 secu 로 ping 이 성공하는지 확인하시오(허용 룰 검증).
@@ -98,12 +191,27 @@ steps:
   category: verify
   points: 10
   answer: ping -c 2 10.20.30.1
-  answer_detail: '중간고사 — 방화벽 + IPS 구성 실기: attacker VM에서 secu 로 ping 이 성공하는지 확인하시오(허용
-    룰 검증).'
+  answer_detail: '중간고사 — 방화벽 + IPS 구성 실기: attacker VM에서 secu 로 ping 이 성공하는지 확인하시오(허용 룰 검증).'
   verify:
     type: output_contains
     expect: bytes
     field: stdout
+    semantic:
+      intent: attacker → secu ping 검증 — ping -c 2 10.20.30.1. icmp echo-request 허용 룰 (s4) 동작 검증. bytes
+        응답 = policy drop 에도 ICMP 허용 룰 우선 적용 확인. 네트워크 방어 테스트 기초.
+      success_criteria:
+      - bytes 키워드
+      - ping -c N
+      - secu IP 대상
+      acceptable_methods:
+      - ping -c 2 + bytes 확인
+      - hping3 -c 2 --icmp
+      - fping 대체
+      - mtr 테스트
+      negative_signs:
+      - 무한 ping
+      - 대상 IP 혼동
+      - 응답 없이 실패 무시
   target_vm: attacker
 - order: 8
   instruction: attacker VM에서 web VM으로 '/malware.exe' 요청을 보내시오(Suricata 룰 트리거).
@@ -111,26 +219,57 @@ steps:
   category: verify
   points: 10
   answer: curl -sS -o /dev/null -w '%{http_code}\n' http://10.20.30.80/malware.exe
-  answer_detail: '중간고사 — 방화벽 + IPS 구성 실기: attacker VM에서 web VM으로 ''/malware.exe''
-    요청을 보내시오(Suricata 룰 트리거).'
+  answer_detail: '중간고사 — 방화벽 + IPS 구성 실기: attacker VM에서 web VM으로 ''/malware.exe'' 요청을 보내시오(Suricata 룰
+    트리거).'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 악성 .exe 요청 테스트 — curl -sS -o /dev/null -w '%{http_code}\n' http://10.20.30.80/malware.exe.
+        작성한 Suricata 룰 (sid:1000201) 트리거. 404 응답 예상 (파일 없음) 이지만 IDS 는 URI 패턴 매칭. MITRE T1105 테스트.
+      success_criteria:
+      - curl 요청 실행
+      - .exe URL 포함
+      - 응답 코드 또는 실행 확인
+      acceptable_methods:
+      - curl malware.exe URL
+      - wget malware.exe
+      - httpie HEAD request
+      - Burp repeater
+      negative_signs:
+      - URL .exe 없음
+      - 요청 실패
+      - IDS 트리거 의도 없음
   target_vm: attacker
 - order: 9
   instruction: secu VM eve.json 에서 sid:1000201 알람이 기록됐는지 확인하시오.
   hint: grep 1000201 /var/log/suricata/eve.json
   category: verify
   points: 10
-  answer: sudo grep -c '"signature_id":1000201' /var/log/suricata/eve.json 2>/dev/null
-    || sudo grep 1000201 /var/log/suricata/eve.json | head
-  answer_detail: '중간고사 — 방화벽 + IPS 구성 실기: secu VM eve.json 에서 sid:1000201 알람이 기록됐는지
-    확인하시오.'
+  answer: sudo grep -c '"signature_id":1000201' /var/log/suricata/eve.json 2>/dev/null || sudo grep 1000201
+    /var/log/suricata/eve.json | head
+  answer_detail: '중간고사 — 방화벽 + IPS 구성 실기: secu VM eve.json 에서 sid:1000201 알람이 기록됐는지 확인하시오.'
   verify:
     type: output_contains
     expect: '1000201'
     field: stdout
+    semantic:
+      intent: eve.json sid 1000201 매칭 확인 — sudo grep -c '"signature_id":1000201' /var/log/suricata/eve.json
+        또는 grep 1000201 eve.json | head. signature_id 매칭으로 커스텀 룰 동작 검증. count = 트리거 횟수.
+      success_criteria:
+      - 1000201 키워드
+      - eve.json grep 또는 jq
+      - 카운트 또는 매칭 결과
+      acceptable_methods:
+      - grep -c signature_id eve.json
+      - jq 'select(.alert.signature_id==1000201)'
+      - Kibana alert.signature_id 필터
+      - fast.log 대체 grep
+      negative_signs:
+      - sid 오타
+      - eve.json 경로 혼동
+      - 매칭 확인 누락
   target_vm: secu
 - order: 10
   instruction: '실습 종료: exam 테이블과 sid:1000201 룰을 모두 제거하고 reload 하시오.'
@@ -139,12 +278,27 @@ steps:
   points: 10
   answer: sudo nft delete table inet exam && sudo sed -i '/sid:1000201/d' /etc/suricata/rules/local.rules
     && sudo systemctl reload suricata
-  answer_detail: '중간고사 — 방화벽 + IPS 구성 실기: 실습 종료: exam 테이블과 sid:1000201 룰을 모두 제거하고
-    reload 하시오.'
+  answer_detail: '중간고사 — 방화벽 + IPS 구성 실기: 실습 종료: exam 테이블과 sid:1000201 룰을 모두 제거하고 reload 하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '실습 cleanup — sudo nft delete table inet exam + sudo sed -i ''/sid:1000201/d'' /etc/suricata/rules/local.rules
+        + sudo systemctl reload suricata. 2 도구 정리: nftables 테이블 삭제 + Suricata 룰 삭제 + reload. 프로덕션 영향 제거.'
+      success_criteria:
+      - nft delete + sed 명령
+      - exam 테이블 + sid:1000201 대상
+      - reload 반영
+      acceptable_methods:
+      - nft delete + sed + reload 체인
+      - ansible 2 task 순차
+      - git revert + 재적용
+      - /etc/nftables.conf + local.rules 동시 편집
+      negative_signs:
+      - nft 또는 Suricata 만 cleanup
+      - reload 누락
+      - 에러 무시
   target_vm: secu
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
