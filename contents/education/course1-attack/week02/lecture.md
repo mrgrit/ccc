@@ -1,4 +1,4 @@
-# Week 02: 정보수집과 정찰 (Reconnaissance) — 상세 버전
+# Week 02: 정보수집과 정찰 (Reconnaissance)
 
 ## 학습 목표
 - 침투 테스트의 첫 단계인 **정보수집(Reconnaissance)**의 개념과 분류를 이해한다
@@ -13,10 +13,12 @@
 
 | 호스트 | IP | 역할 | 접속 |
 |--------|-----|------|------|
-| bastion | 10.20.30.201 | 실습 기지 (공격 출발점) | `ssh ccc@10.20.30.201` |
+| manager | 10.20.30.200 | Bastion 에이전트 호스트 | `ssh ccc@10.20.30.200` |
 | secu | 10.20.30.1 | 방화벽/IPS | `ssh ccc@10.20.30.1` |
 | web | 10.20.30.80 | 웹 서버 (대상) | `ssh ccc@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM 모니터링 | `ssh ccc@10.20.30.100` |
+
+이번 주는 주로 **manager**에서 web 서버를 대상으로 정찰한다. Bastion API는 `http://10.20.30.200:8003`.
 
 ## 강의 시간 배분 (3시간)
 
@@ -25,11 +27,11 @@
 | 0:00-0:30 | 정보수집 개론 (이론) | 강의 |
 | 0:30-1:10 | nmap 심화 실습 | 실습 |
 | 1:10-1:20 | 휴식 | - |
-| 1:20-1:50 | DNS/WHOIS 정보 수집 실습 | 실습 |
+| 1:20-1:50 | DNS/hosts/ARP 정보 수집 실습 | 실습 |
 | 1:50-2:30 | 웹 서버 핑거프린팅 + 디렉토리 열거 | 실습 |
 | 2:30-2:40 | 휴식 | - |
-| 2:40-3:10 | Bastion 정찰 자동화 실습 | 실습 |
-| 3:10-3:30 | ATT&CK 매핑 + 복습 퀴즈 + 과제 | 토론/퀴즈 |
+| 2:40-3:20 | Bastion 정찰 자동화 | 실습 |
+| 3:20-3:40 | ATT&CK 매핑 + 과제 안내 | 정리 |
 
 ---
 
@@ -109,6 +111,8 @@
 
 ### TCP 3-Way Handshake 복습
 
+포트 스캔은 TCP 핸드셰이크를 어떻게 변형하느냐에 따라 분류된다.
+
 ```
 클라이언트                             서버
 
@@ -118,8 +122,6 @@
 
        [연결 수립]
 ```
-
-각 nmap 스캔은 이 핸드셰이크를 어떻게 변형하느냐에 따라 다르다.
 
 ### 스캔 유형별 비교
 
@@ -135,134 +137,185 @@
 
 ## 실습 2.1: TCP Connect 스캔 (기본)
 
-> **실습 목적**: nmap 포트 스캔을 통해 대상 시스템의 열린 포트와 서비스를 식별하는 정찰 기법을 직접 수행한다
->
-> **배우는 것**: TCP Connect, SYN, UDP 등 스캔 방식별 동작 원리와 차이를 이해하고, 스캔 결과에서 공격 표면을 파악하는 방법을 배운다
->
-> **결과 해석**: open/closed/filtered 상태가 표시되며, open 포트는 해당 서비스가 접근 가능함을 의미한다
->
-> **실전 활용**: 모의해킹 초기 단계에서 대상 네트워크의 공격 표면을 체계적으로 파악하는 데 사용된다
+**이것은 무엇인가?** `-sT`는 운영체제의 일반 소켓 API (connect())로 TCP 연결을 완전히 맺는 스캔이다. 가장 기본적이고 안전하다 (sudo 불필요).
+
+**왜 이것부터 배우는가?** 실제 운영 환경에서 비특권 계정으로 빠르게 확인할 때 유용하며, 모든 스캔 방식을 이해하는 기준점이 된다.
 
 ```bash
-# 가장 기본적인 스캔 (sudo 불필요)
 nmap -sT -p 22,80,443,3000,8002 10.20.30.80
-# 예상 출력:
-# PORT     STATE  SERVICE
-# 22/tcp   open   ssh
-# 80/tcp   open   http
-# 443/tcp  closed https
-# 3000/tcp open   ppp
-# 8002/tcp open   teradataordbms
 ```
 
-> **왜 이렇게 하는가?**
-> TCP Connect는 완전한 연결을 맺으므로 가장 정확하지만, 서버 로그에 연결이 기록된다.
-> 은밀한 스캔이 필요하면 SYN 스캔을 사용한다.
+**명령 분해:**
+- `-sT`: TCP Connect 스캔
+- `-p 22,80,443,3000,8002`: 지정된 5개 포트만 스캔 (속도 확보)
+- `10.20.30.80`: 대상 IP
+
+**예상 출력:**
+```
+PORT     STATE  SERVICE
+22/tcp   open   ssh
+80/tcp   open   http
+443/tcp  closed https
+3000/tcp open   ppp
+8002/tcp open   teradataordbms
+```
+
+**결과 해석:**
+- `open`: 포트가 열려있고 서비스 응답 중
+- `closed`: 포트는 닫혀있으나 호스트는 살아있음 (RST 응답)
+- `filtered`: 방화벽이 패킷을 차단 (응답 없음)
+- `SERVICE` 컬럼의 이름은 포트 번호 기반 추정일 뿐 — 실제 서비스는 `-sV`로 확인 필요 (`3000/tcp ppp`는 잘못된 추정, 실제는 Node.js)
+
+**이 스캔이 서버에 남기는 흔적:**
+- web 서버 access 로그에 원격 IP 연결 시도 기록
+- Suricata 같은 IPS가 탐지 (다수 포트 연속 접근 패턴)
 
 ## 실습 2.2: SYN 스캔 (스텔스)
 
+**이것은 무엇인가?** `-sS`는 SYN만 보내고 SYN/ACK를 받으면 즉시 RST로 끊는다. 3-way가 완성되지 않으므로 일부 로깅 시스템에 기록이 남지 않는다.
+
+**왜 "스텔스"라 부르는가?** 옛날 서버는 완료된 연결만 로그했다. 현대 IDS/IPS(Suricata 등)는 SYN 스캔 패턴(대량 SYN)을 탐지하므로 완전한 스텔스는 아니다.
+
 ```bash
-# SYN 스캔 (sudo 필요, 더 빠르고 은밀)
+# sudo 필요 (raw socket)
 echo 1 | sudo -S nmap -sS -p 1-1000 10.20.30.80 2>/dev/null
-# 예상 출력: (TCP Connect보다 빠르게 결과 나옴)
-# PORT     STATE SERVICE
-# 22/tcp   open  ssh
-# 80/tcp   open  http
-# ...
 ```
 
-> **SYN 스캔이 "스텔스"인 이유:**
-> 3-way 핸드셰이크를 완료하지 않고 RST를 보내므로, 일부 서버에서 연결 로그가 남지 않는다.
-> 다만 현대 IDS/IPS(Suricata 등)는 SYN 스캔도 탐지한다.
+**명령 분해:**
+- `echo 1 | sudo -S`: "1"을 표준입력으로 sudo에 전달 (실습 환경 비밀번호)
+- `-sS`: SYN 스캔
+- `-p 1-1000`: 1번부터 1000번까지 전 포트
+
+**예상 출력:**
+```
+PORT     STATE SERVICE
+22/tcp   open  ssh
+80/tcp   open  http
+3000/tcp open  ppp
+```
+
+**결과 해석:** `-sT`와 동일한 포트 리스트가 나와야 한다. 차이는 **속도**와 **로그**: SYN 스캔이 2-3배 빠르다.
 
 ## 실습 2.3: 서비스 버전 탐지
 
+**이것은 무엇인가?** `-sV`는 열린 포트에 실제로 연결하여 "뭐라고 응답하는지"를 분석하고 서비스 종류와 버전을 식별한다.
+
+**왜 버전이 중요한가?** 버전이 특정되면 해당 버전의 알려진 취약점(CVE)을 검색할 수 있다. 예: `Apache 2.4.49` → **CVE-2021-41773**(경로 순회). 이 정보가 Week 04~07 공격 실습의 출발점이 된다.
+
 ```bash
-# 주요 포트의 서비스 버전 확인
 nmap -sV -p 22,80,3000,8002 10.20.30.80
-# 예상 출력:
-# PORT     STATE SERVICE     VERSION
-# 22/tcp   open  ssh         OpenSSH 8.9p1 Ubuntu 3ubuntu0.x (Ubuntu Linux; protocol 2.0)
-# 80/tcp   open  http        Apache httpd 2.4.52 ((Ubuntu))
-# 3000/tcp open  http        Node.js Express framework
-# 8002/tcp open  http        Uvicorn
 ```
 
-> **왜 버전이 중요한가?**
-> 소프트웨어 버전을 알면 CVE 데이터베이스에서 알려진 취약점을 검색할 수 있다.
-> 예: Apache 2.4.49 → CVE-2021-41773 (경로 순회 취약점)
-> Week 04~07에서 이 정보를 활용한다.
+**예상 출력:**
+```
+PORT     STATE SERVICE     VERSION
+22/tcp   open  ssh         OpenSSH 8.9p1 Ubuntu 3ubuntu0.x (Ubuntu Linux; protocol 2.0)
+80/tcp   open  http        Apache httpd 2.4.52 ((Ubuntu))
+3000/tcp open  http        Node.js Express framework
+8002/tcp open  http        Uvicorn
+```
+
+**결과 해석:**
+- `OpenSSH 8.9p1`: Ubuntu 22.04 기본 SSH 서버. 브루트포스 시도 대상
+- `Apache 2.4.52`: 표준 웹 서버. CVE 검색 → 해당 버전의 취약점 확인
+- `Node.js Express`: JuiceShop — 100+ 웹 취약점 실습용 앱
+- `Uvicorn`: Python ASGI 서버. **:8002는 SubAgent** (Bastion 원격 실행용) — 외부 공격 대상 아님
 
 ## 실습 2.4: OS 탐지
 
+**이것은 무엇인가?** `-O`는 TCP/IP 스택의 동작 차이(TTL, 윈도우 크기, 플래그 순서 등)를 지문(fingerprint)으로 사용하여 운영체제를 추정한다.
+
 ```bash
 echo 1 | sudo -S nmap -O 10.20.30.80 2>/dev/null | grep -A5 "OS details\|Running\|OS CPE"
-# 예상 출력:
-# Running: Linux 5.X|6.X
-# OS CPE: cpe:/o:linux:linux_kernel:5 cpe:/o:linux:linux_kernel:6
-# OS details: Linux 5.15 - 6.8
 ```
 
-## 실습 2.5: 종합 스캔 (-A)
+**예상 출력:**
+```
+Running: Linux 5.X|6.X
+OS CPE: cpe:/o:linux:linux_kernel:5 cpe:/o:linux:linux_kernel:6
+OS details: Linux 5.15 - 6.8
+```
+
+**결과 해석:**
+- `Linux 5.15 - 6.8` 범위로 좁혀진다 (정확한 버전은 `uname`이 필요)
+- OS가 확정되면 해당 OS 고유 공격(커널 권한상승, OS 명령 등) 경로가 열린다
+
+## 실습 2.5: 종합 스캔
+
+**이것은 무엇인가?** `-A`는 "공격적(Aggressive)" 종합 스캔. 한 번에 여러 기능을 실행한다.
+
+**-A에 포함되는 것:**
+- `-sV`: 서비스 버전 탐지
+- `-O`: OS 탐지
+- `-sC`: 기본 NSE 스크립트 (HTTP 타이틀, SSH 키 등)
+- `--traceroute`: 경로 추적
 
 ```bash
-# -A = -sV + -O + -sC + --traceroute (종합)
 echo 1 | sudo -S nmap -A -p 22,80,3000 10.20.30.80 2>/dev/null
-# 이 명령은 모든 것을 한 번에 수행:
-# - 서비스 버전 (-sV)
-# - OS 탐지 (-O)
-# - 기본 스크립트 (-sC): HTTP 타이틀, SSH 키 등
-# - traceroute
 ```
 
-## 실습 2.6: nmap 스크립트 엔진 (NSE)
+**언제 -A를 쓰고 언제 쓰지 말아야 하는가?**
+- **사용 권장:** 허가받은 단일 타깃을 철저히 조사할 때
+- **사용 자제:** 대량 호스트 스캔, 은밀성 필요, IDS 회피 시 → 개별 옵션을 선택적으로 사용
+
+## 실습 2.6: NSE (Nmap Script Engine)
+
+NSE는 Lua 스크립트로 작성된 nmap 확장 기능이다. 약 600개의 공식 스크립트가 있다.
 
 ```bash
-# HTTP 관련 스크립트 실행
+# HTTP 관련 정보 수집
 nmap --script=http-title,http-headers,http-robots.txt -p 80,3000 10.20.30.80
-# 예상 출력:
-# PORT     STATE SERVICE
-# 80/tcp   open  http
-# | http-title: Apache2 Ubuntu Default Page: It works
-# | http-headers:
-# |   Server: Apache/2.4.52 (Ubuntu)
-# | http-robots.txt: ...
-# 3000/tcp open  ppp
-# | http-title: OWASP Juice Shop
+```
 
-# 취약점 스캔 스크립트
+**예상 출력:**
+```
+80/tcp   open  http
+| http-title: Apache2 Ubuntu Default Page: It works
+| http-headers:
+|   Server: Apache/2.4.52 (Ubuntu)
+3000/tcp open  http
+| http-title: OWASP Juice Shop
+```
+
+**NSE 스크립트 카테고리:**
+- `auth`: 인증 관련 (기본 패스워드 확인)
+- `default`: 기본 실행 스크립트
+- `discovery`: 서비스/자산 발견
+- `vuln`: 알려진 취약점 탐지 (비공격적)
+- `exploit`: 취약점 실제 악용 (⚠️ 허가 없이 사용 금지)
+
+```bash
+# 취약점 스캐닝 (보고만, 악용하지 않음)
 nmap --script=vuln -p 80,3000 10.20.30.80 2>/dev/null | head -30
 ```
 
-> **NSE 스크립트 카테고리:**
-> - `auth`: 인증 관련 (기본 패스워드 확인)
-> - `default`: 기본 실행 스크립트
-> - `discovery`: 서비스 발견
-> - `vuln`: 취약점 탐지
-> - `exploit`: 취약점 악용 (주의!)
-
-## 실습 2.7: 전체 내부 네트워크 스캔
+## 실습 2.7: 네트워크 전체 호스트 발견
 
 ```bash
-# 10.20.30.0/24 네트워크에서 살아있는 호스트 발견
 nmap -sn 10.20.30.0/24
-# 예상 출력:
-# Nmap scan report for 10.20.30.1 (secu)
-# Host is up (0.001s latency).
-# Nmap scan report for 10.20.30.80 (web)
-# Host is up (0.001s latency).
-# Nmap scan report for 10.20.30.100 (siem)
-# Host is up (0.001s latency).
-# Nmap scan report for 10.20.30.201 (bastion)
-# Host is up (0.0001s latency).
 ```
 
-> **-sn 옵션:** 포트 스캔 없이 호스트 발견만 수행 (ping sweep)
-> 네트워크에 어떤 서버가 있는지 먼저 파악하는 것이 정보수집의 첫걸음이다.
+**명령 분해:**
+- `-sn`: ping sweep. 포트 스캔을 하지 않고 "살아있는 호스트"만 식별
+- `10.20.30.0/24`: 10.20.30.0~10.20.30.255 범위
+
+**예상 출력:**
+```
+Nmap scan report for 10.20.30.1 (secu)
+Host is up (0.001s latency).
+Nmap scan report for 10.20.30.80 (web)
+Host is up (0.001s latency).
+Nmap scan report for 10.20.30.100 (siem)
+Host is up (0.001s latency).
+Nmap scan report for 10.20.30.200 (manager)
+Host is up (0.0001s latency).
+```
+
+**왜 이것을 먼저 하는가?** 수백~수천 IP가 있는 네트워크에서 "어디가 살아있는지" 모르고 전체 포트 스캔하면 시간 낭비. 먼저 호스트 발견으로 목록을 좁힌다.
 
 ---
 
-# Part 3: DNS/WHOIS 정보 수집 (30분)
+# Part 3: DNS/hosts/ARP 정보 수집 (30분)
 
 ## 3.1 DNS 기초 개념
 
@@ -289,50 +342,91 @@ DNS 서버 → "IP는 93.184.216.34야"
 | PTR | IP→도메인 (역방향) | 93.184.216.34 → example.com | 서버 용도 확인 |
 | SOA | 권한 시작 | 도메인 관리 정보 | DNS 관리자 정보 |
 
-## 실습 3.1: dig 명령어
+## 실습 3.1: dig 명령어 (외부 DNS 접근 가능한 경우)
+
+**이것은 무엇인가?** `dig`는 Domain Information Groper. DNS 조회의 표준 도구이다.
 
 ```bash
-# A 레코드 조회 (실습 환경에는 DNS가 없으므로 외부 예시)
-# 내부 네트워크의 역방향 조회
-dig -x 10.20.30.80 @10.20.30.1 2>/dev/null || echo "DNS 서버 없음 (실습 환경)"
-
-# 외부 도메인 예시 (인터넷 연결 시)
+# 내부 네트워크(10.20.30.0/24)에는 DNS 서버가 없으므로 외부 예시
 dig google.com A +short 2>/dev/null || echo "외부 DNS 접근 불가"
-dig google.com MX +short 2>/dev/null || echo "외부 DNS 접근 불가"
-dig google.com TXT +short 2>/dev/null || echo "외부 DNS 접근 불가"
+dig google.com MX +short 2>/dev/null
+dig google.com TXT +short 2>/dev/null
 ```
 
-> **실습 환경 참고:** 우리 내부 네트워크(10.20.30.0/24)에는 별도 DNS 서버가 없다.
-> 실제 모의해킹에서는 DNS 조회가 중요한 정보수집 방법이지만,
-> 이 실습에서는 IP 기반으로 직접 접근한다.
+**명령 분해:**
+- `dig 도메인 레코드타입`: 해당 레코드만 조회
+- `+short`: 간결 출력 (답만)
+
+**예상 출력 (인터넷 가능 시):**
+```
+142.250.66.46
+10 smtp.google.com.
+"v=spf1 include:_spf.google.com ~all"
+```
+
+**결과 해석:**
+- A 레코드: 도메인의 IPv4 주소
+- MX 레코드: 메일 서버. 우선순위(10) + FQDN
+- TXT 레코드: SPF (메일 발송 정책) — 스푸핑 방어 설정 확인
+
+> **실습 환경 참고:** 내부망에는 DNS가 없어 dig로 실습할 대상이 없다. 대신 `/etc/hosts`와 ARP로 대체한다.
 
 ## 실습 3.2: /etc/hosts 파일 분석
 
+**이것은 무엇인가?** `/etc/hosts`는 DNS 질의 전에 참조되는 로컬 호스트 매핑 파일이다. 공격자/방어자 모두에게 네트워크 구조의 단서가 된다.
+
 ```bash
-# 각 서버의 hosts 파일 확인
-echo "=== bastion ===" && cat /etc/hosts | grep -v "^#" | grep -v "^$"
-echo "=== web ===" && ssh ccc@10.20.30.80 "cat /etc/hosts | grep -v '^#' | grep -v '^$'" 2>/dev/null
-echo "=== secu ===" && ssh ccc@10.20.30.1 "cat /etc/hosts | grep -v '^#' | grep -v '^$'" 2>/dev/null
-echo "=== siem ===" && ssh ccc@10.20.30.100 "cat /etc/hosts | grep -v '^#' | grep -v '^$'" 2>/dev/null
+# 각 서버의 hosts 파일 확인 (주석과 빈 줄 제거)
+for host in "localhost" "10.20.30.1" "10.20.30.80" "10.20.30.100"; do
+    if [ "$host" = "localhost" ]; then
+        echo "=== $(hostname) ==="
+        cat /etc/hosts | grep -v "^#" | grep -v "^$"
+    else
+        echo "=== $host ==="
+        ssh ccc@$host "cat /etc/hosts | grep -v '^#' | grep -v '^$'" 2>/dev/null
+    fi
+    echo
+done
 ```
 
-> **왜 hosts 파일을 확인하는가?**
-> /etc/hosts는 로컬 DNS 오버라이드이다. 여기에 내부 서버명과 IP가 매핑되어 있으면
-> 네트워크 구조를 파악하는 데 유용한 정보를 제공한다.
+**예상 출력:**
+```
+=== manager ===
+127.0.0.1  localhost
+10.20.30.1    secu
+10.20.30.80   web
+10.20.30.100  siem
+10.20.30.200  manager
+
+=== 10.20.30.80 ===
+127.0.0.1  localhost
+127.0.1.1  web
+...
+```
+
+**결과 해석:**
+- manager의 hosts에 전체 서버 맵이 있음 → 침투 성공 시 공격자가 확보할 첫 정보
+- 실제 운영 환경에서는 내부 DNS로 옮기거나, hosts에 민감 매핑을 두지 않아야 한다
 
 ## 실습 3.3: ARP 테이블로 내부 호스트 발견
 
-```bash
-# ARP 테이블 확인 (같은 네트워크의 MAC 주소)
-arp -a
-# 예상 출력:
-# ? (10.20.30.1) at xx:xx:xx:xx:xx:xx [ether] on ens37
-# ? (10.20.30.80) at xx:xx:xx:xx:xx:xx [ether] on ens37
-# ? (10.20.30.100) at xx:xx:xx:xx:xx:xx [ether] on ens37
+**이것은 무엇인가?** ARP(Address Resolution Protocol)는 IP를 MAC 주소로 변환한다. ARP 테이블은 "최근 통신한 이웃 노드" 목록이다.
 
-# 또는 ip neigh show
-ip neigh show
+```bash
+arp -a 2>/dev/null || ip neigh show
 ```
+
+**예상 출력:**
+```
+? (10.20.30.1) at xx:xx:xx:xx:xx:xx [ether] on ens37
+? (10.20.30.80) at xx:xx:xx:xx:xx:xx [ether] on ens37
+? (10.20.30.100) at xx:xx:xx:xx:xx:xx [ether] on ens37
+```
+
+**왜 ARP가 정찰에 유용한가?**
+- ping sweep으로 인해 호스트 존재가 ARP 테이블에 쌓임
+- MAC 주소 OUI(앞 3바이트)로 **제조사** 식별 가능 (VMware, 실제 하드웨어 구분)
+- `52:54:00:xx:xx:xx` → KVM/QEMU 가상머신 지문
 
 ---
 
@@ -342,244 +436,335 @@ ip neigh show
 
 ### 실습 4.1: curl로 헤더 분석
 
+**이것은 무엇인가?** HTTP 응답 헤더는 웹 서버의 기술 스택을 알려주는 첫 단서다. `-I` 옵션은 HEAD 요청만 보내 본문 없이 헤더만 받는다.
+
 ```bash
-# JuiceShop 헤더 분석
 echo "=== JuiceShop (3000) ==="
-curl -s -I http://10.20.30.80:3000 2>/dev/null
-# 예상 출력:
-# HTTP/1.1 200 OK
-# X-Powered-By: Express          ← Node.js Express 프레임워크
-# Access-Control-Allow-Origin: * ← CORS 완전 개방 (보안 이슈!)
-# X-Content-Type-Options: nosniff
-# X-Frame-Options: SAMEORIGIN
-# Feature-Policy: payment 'self'
+curl -s -I http://10.20.30.80:3000
 
-echo ""
 echo "=== Apache (80) ==="
-curl -s -I http://10.20.30.80:80 2>/dev/null
-# 예상 출력:
-# HTTP/1.1 200 OK
-# Server: Apache/2.4.52 (Ubuntu) ← 서버 소프트웨어+버전 노출
+curl -s -I http://10.20.30.80:80
 ```
 
-> **보안 분석 포인트:**
-> - `X-Powered-By: Express` → 기술 스택 노출 (제거 권장)
-> - `Access-Control-Allow-Origin: *` → 모든 도메인에서 API 호출 가능 (위험)
-> - `Server: Apache/2.4.52` → 버전 노출 → CVE 검색 가능
+**예상 출력 (JuiceShop):**
+```
+HTTP/1.1 200 OK
+X-Powered-By: Express
+Access-Control-Allow-Origin: *
+X-Content-Type-Options: nosniff
+X-Frame-Options: SAMEORIGIN
+Feature-Policy: payment 'self'
+```
 
-### 실습 4.2: 상세 핑거프린팅
+**보안 이슈 분석:**
+| 헤더 | 값 | 위험도 | 이유 |
+|------|------|--------|------|
+| `X-Powered-By` | `Express` | 낮음 | 기술 스택 노출 → 표적 공격 용이 |
+| `Access-Control-Allow-Origin` | `*` | **높음** | 모든 도메인에서 API 호출 허용 → CSRF/탈취 |
+| `Server` (Apache) | `Apache/2.4.52` | 중간 | 버전 노출 → CVE 검색 가능 |
+
+**반대로 "좋은" 헤더 (JuiceShop은 일부만 적용):**
+- `Strict-Transport-Security`: HTTPS 강제
+- `Content-Security-Policy`: XSS 방어
+- `X-Frame-Options: DENY`: 클릭재킹 방어
+
+### 실습 4.2: 민감 API 노출 확인
+
+**이것은 무엇인가?** JuiceShop은 의도적으로 `/rest/admin/application-configuration` 같은 **인증 없이 접근 가능한 설정 API**가 있다. 실제 서비스에도 종종 발견되는 실수 패턴이다.
 
 ```bash
-# JuiceShop 설정 파일 접근 시도
-curl -s http://10.20.30.80:3000/rest/admin/application-configuration 2>/dev/null | python3 -m json.tool | head -30
-# 예상 출력: 서버 설정 JSON (DB URL, OAuth 키 등 민감 정보 노출)
+# 애플리케이션 설정 노출
+curl -s http://10.20.30.80:3000/rest/admin/application-configuration | python3 -m json.tool | head -30
 
-# JuiceShop API 엔드포인트 발견
-curl -s http://10.20.30.80:3000/api/SecurityQuestions 2>/dev/null | python3 -m json.tool | head -20
-# 예상 출력: 보안 질문 목록
+# API 엔드포인트 확인
+curl -s http://10.20.30.80:3000/api/SecurityQuestions | python3 -m json.tool | head -20
 
-# robots.txt 확인
-curl -s http://10.20.30.80:3000/robots.txt 2>/dev/null
-# 예상 출력: Disallow 경로들 (숨기려는 페이지들)
-
-curl -s http://10.20.30.80:80/robots.txt 2>/dev/null
+# robots.txt
+curl -s http://10.20.30.80:3000/robots.txt
+curl -s http://10.20.30.80:80/robots.txt
 ```
+
+**결과 해석:**
+- `application-configuration` JSON에 OAuth 키, DB URL 등이 보이면 → **심각한 정보 노출**
+- `robots.txt`의 `Disallow` 경로는 "숨기고 싶은" 페이지 — 역설적으로 공격 우선 대상
 
 ## 4.2 디렉토리/파일 열거
 
 ### 실습 4.3: 수동 경로 탐색
 
+**이것은 무엇인가?** 알려진 관리자 경로 리스트를 순회하며 HTTP 상태 코드로 존재 여부를 판단한다.
+
+**상태 코드 판단 기준:**
+- `200 OK`: 페이지 존재, 열림
+- `301/302`: 리다이렉트 (존재함)
+- `401/403`: 페이지 있으나 권한 필요 (존재함, 보호됨)
+- `404`: 존재하지 않음
+
 ```bash
-# 일반적인 경로들을 curl로 확인
 PATHS=("/admin" "/login" "/api" "/ftp" "/backup" "/.git" "/.env" "/wp-admin" "/phpmyadmin" "/robots.txt" "/sitemap.xml" "/swagger.json" "/api-docs")
 
 echo "=== JuiceShop (3000) 경로 탐색 ==="
-for path in "${PATHS[@]}"; do                          # 반복문 시작
-  code=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000$path" 2>/dev/null)
-  if [ "$code" != "404" ] && [ "$code" != "000" ]; then
-    echo "  $path → HTTP $code"
-  fi
-done
-
-echo ""
-echo "=== Apache (80) 경로 탐색 ==="
-for path in "${PATHS[@]}"; do                          # 반복문 시작
-  code=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80$path" 2>/dev/null)
+for path in "${PATHS[@]}"; do
+  code=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000$path")
   if [ "$code" != "404" ] && [ "$code" != "000" ]; then
     echo "  $path → HTTP $code"
   fi
 done
 ```
 
-> **왜 이렇게 하는가?**
-> 웹 서버에는 일반 사용자에게는 보이지 않지만 URL을 직접 입력하면 접근 가능한
-> 관리자 페이지, API 문서, 백업 파일 등이 있을 수 있다.
-> /ftp/, /.git/, /.env 등은 자주 노출되는 민감 경로이다.
+**명령 분해:**
+- `curl -o /dev/null`: 본문은 버린다 (상태만 보면 됨)
+- `-w "%{http_code}"`: 상태 코드만 stdout에 출력
+- if 조건: 404도 000(연결실패)도 아니면 "뭔가 있음"
 
-### 실습 4.4: FTP 디렉토리 열거
+**예상 출력:**
+```
+  /api → HTTP 200
+  /ftp → HTTP 200
+  /robots.txt → HTTP 200
+  /swagger.json → HTTP 200
+```
+
+**결과 해석:**
+- `/ftp → 200`: **디렉토리 리스팅 활성** (매우 위험) → 실습 4.4에서 파고든다
+- `/swagger.json`: API 문서 공개 → 전체 엔드포인트 구조 노출
+- `/api → 200`: API 루트 응답 → 하위 경로 열거 대상
+
+### 실습 4.4: FTP 디렉토리 파일 확인
+
+**이것은 무엇인가?** JuiceShop의 `/ftp` 경로는 Week 05 경로 순회(Path Traversal) 실습의 포석이다. 파일 리스트가 JSON으로 노출된다.
 
 ```bash
-# JuiceShop FTP 디렉토리 (Week 01에서 발견)
-curl -s http://10.20.30.80:3000/ftp/ 2>/dev/null | python3 -c "  # silent 모드
+# 디렉토리 리스팅
+curl -s http://10.20.30.80:3000/ftp/ | python3 -c "
 import sys, json
 try:
     data = json.load(sys.stdin)
-    for item in data:                                  # 반복문 시작
+    for item in data:
         print(f'  {item}')
 except:
     print(sys.stdin.read()[:500])
 "
-
-# FTP 내 파일 하나씩 접근
-curl -s http://10.20.30.80:3000/ftp/acquisitions.md 2>/dev/null | head -10  # silent 모드
-curl -s http://10.20.30.80:3000/ftp/legal.md 2>/dev/null | head -10  # silent 모드
 ```
 
-### 실습 4.5: gobuster 디렉토리 열거 (설치되어 있는 경우)
+**예상 출력 (일부):**
+```
+  {'name': 'acquisitions.md', 'type': 'file', 'size': 1050}
+  {'name': 'eastere.gg', 'type': 'file', ...}
+  {'name': 'legal.md', ...}
+  ...
+```
+
+**파일 내용 확인:**
+```bash
+curl -s http://10.20.30.80:3000/ftp/acquisitions.md | head -10
+curl -s http://10.20.30.80:3000/ftp/legal.md | head -10
+```
+
+**결과 해석:** 정상 파일도 있지만, 이 중 일부는 **"확장자 필터 우회"**로 금지된 파일(.key 등)에 접근하는 챌린지로 연결된다. Week 05에서 `%00`, `%2500` 인코딩 트릭으로 공략한다.
+
+### 실습 4.5: 단어 목록 기반 디렉토리 열거
+
+**이것은 무엇인가?** `gobuster`, `dirb`, `ffuf` 같은 전용 도구가 쓰는 방식의 축약판. 단어 목록을 순회하며 응답 상태로 존재 여부를 추정한다.
 
 ```bash
-# gobuster가 없으면 간단한 bash 스크립트로 대체
 WORDLIST=("admin" "api" "backup" "config" "console" "dashboard" "db" "debug" "docs" "download" "ftp" "git" "help" "images" "js" "login" "logout" "metrics" "panel" "portal" "private" "public" "rest" "search" "secret" "server-status" "setup" "static" "status" "swagger" "test" "upload" "users" "vendor" "wp-admin")
 
 echo "=== 디렉토리 열거: JuiceShop ==="
-for dir in "${WORDLIST[@]}"; do                        # 반복문 시작
-  code=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000/$dir" 2>/dev/null)
+for dir in "${WORDLIST[@]}"; do
+  code=$(curl -s -o /dev/null -w "%{http_code}" "http://10.20.30.80:3000/$dir")
   if [ "$code" = "200" ] || [ "$code" = "301" ] || [ "$code" = "302" ] || [ "$code" = "403" ]; then
     echo "  /$dir → HTTP $code"
   fi
 done
 ```
 
+**전용 도구와의 차이:**
+- 전용 도구는 SecLists 같은 **수만 단어**의 대형 사전을 쓴다
+- 전용 도구는 **병렬 스레드**로 수십 배 빠르다
+- 위 스크립트는 개념 이해용 — 실무에선 gobuster/ffuf 사용
+
 ## 4.3 nikto — 웹 취약점 스캐너
 
+**이것은 무엇인가?** nikto는 6,700개 이상의 알려진 웹 취약점(오래된 CGI, 기본 파일, 서버 잘못된 설정)을 체크하는 전용 스캐너다.
+
 ```bash
-# nikto가 설치되어 있으면 실행 (없으면 건너뜀)
+# nikto 설치 여부 확인
 which nikto >/dev/null 2>&1 && {
   echo "=== nikto 스캔 (Apache) ==="
-  nikto -h http://10.20.30.80:80 -maxtime 60s 2>/dev/null | head -30  # 웹 서버 취약점 스캐너
-} || echo "nikto 미설치 — 건너뜀"
+  nikto -h http://10.20.30.80:80 -maxtime 60s 2>/dev/null | head -30
+} || echo "nikto 미설치 — apt install nikto로 설치 가능"
 ```
+
+**-maxtime의 의미:** 60초 제한으로 테스트 시간 제한. 전체 스캔은 10분 이상 걸릴 수 있음.
+
+**nikto 결과의 한계:**
+- **FP(False Positive) 많음**: "오래된 취약점 가능성"을 폭넓게 보고
+- 수동 검증 필수
+- IPS가 즉시 차단 (패턴 매우 뚜렷)
 
 ---
 
-# Part 5: Bastion로 정찰 자동화 (30분)
+# Part 5: Bastion로 정찰 자동화 (40분)
 
-## 실습 5.1: Bastion 정찰 프로젝트
+## 5.1 왜 자동화인가?
 
-Bastion Manager API를 호출하여 작업을 수행합니다.
+위에서 학생이 수동으로 실행한 정찰 단계들을:
+1. `nmap -sn 10.20.30.0/24` — 호스트 발견
+2. `nmap -sV` — 서비스 버전
+3. `curl -I` — HTTP 헤더
+4. 경로 탐색
+5. robots.txt/swagger.json 수집
+
+이 작업을 매번 타이핑하는 대신 **Bastion에게 자연어로 한 번 지시**하면, Bastion가 필요한 Skill들을 선택하여 순차/병렬 실행하고 모든 결과를 evidence로 남긴다.
+
+## 실습 5.1: Bastion 헬스 + Skill 확인
+
+먼저 Bastion이 어떤 정찰용 Skill을 보유하고 있는지 확인한다.
 
 ```bash
-# 프로젝트 생성
-RESULT=$(curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{"name":"week02-recon","request_text":"Week 02: 정보수집 자동화","master_mode":"external"}')  # 요청 데이터(body)
-PID=$(echo $RESULT | python3 -c "import sys,json; print(json.load(sys.stdin)['project']['id'])")
-echo "Project: $PID"
+# Bastion 헬스
+curl -s http://10.20.30.200:8003/health | python3 -m json.tool
 
-# Stage 전환
-curl -s -X POST "http://localhost:9100/projects/$PID/plan" -H "X-API-Key: ccc-api-key-2026" > /dev/null  # silent 모드 / POST 요청 / API 인증 / Bastion 프로젝트
-curl -s -X POST "http://localhost:9100/projects/$PID/execute" -H "X-API-Key: ccc-api-key-2026" > /dev/null  # silent 모드 / POST 요청 / API 인증 / Bastion 프로젝트
-
-# 정찰 태스크 병렬 실행
-curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{                                                # 요청 데이터(body)
-    "tasks": [
-      {"order":1,"title":"네트워크 호스트 발견","instruction_prompt":"nmap -sn 10.20.30.0/24 2>/dev/null","risk_level":"low","subagent_url":"http://localhost:8002"},
-      {"order":2,"title":"web 포트스캔","instruction_prompt":"nmap -sV -p 22,80,443,3000,8002,8080,8081,8082 10.20.30.80 2>/dev/null","risk_level":"low","subagent_url":"http://localhost:8002"},
-      {"order":3,"title":"JuiceShop 헤더","instruction_prompt":"curl -s -I http://10.20.30.80:3000","risk_level":"low","subagent_url":"http://localhost:8002"},
-      {"order":4,"title":"JuiceShop FTP 열거","instruction_prompt":"curl -s http://10.20.30.80:3000/ftp/","risk_level":"low","subagent_url":"http://localhost:8002"},
-      {"order":5,"title":"siem 포트 확인","instruction_prompt":"nmap -sV -p 22,443,1514,9400,55000 10.20.30.100 2>/dev/null","risk_level":"low","subagent_url":"http://localhost:8002"}
-    ],
-    "subagent_url":"http://localhost:8002",
-    "parallel":true
-  }' | python3 -c "
-import sys,json
-d=json.load(sys.stdin)
-print(f'결과: {d[\"overall\"]} (성공:{d[\"tasks_ok\"]}, 실패:{d[\"tasks_failed\"]})')
-for t in d.get('task_results',[]):                     # 반복문 시작
-    print(f'  [{t[\"order\"]}] {t[\"title\"]} → {t[\"status\"]}')
+# 보유 Skill 목록
+curl -s http://10.20.30.200:8003/skills | python3 -c "
+import sys, json
+skills = json.load(sys.stdin)
+for s in skills:
+    print(f\"  [{s.get('name','?'):25s}] {s.get('description','')[:60]}\")
 "
 ```
 
-### 결과 확인
+**확인 포인트:** `skills` 목록에 `nmap`, `curl`, `ssh_exec`, `http_probe` 등 정찰 관련 Skill이 있는가?
 
-Bastion Manager API를 호출하여 작업을 수행합니다.
+## 실습 5.2: 자연어 정찰 지시 (/ask)
+
+**이것은 무엇인가?** `/ask`는 간단한 질문-답변 API. Bastion가 내부에서 필요한 Skill을 실행하고 자연어 요약을 반환한다.
 
 ```bash
-# Evidence 요약
-curl -s "http://localhost:9100/projects/$PID/evidence/summary" \
-  -H "X-API-Key: ccc-api-key-2026" | python3 -c "  # API 인증 키
-import sys,json; d=json.load(sys.stdin)
-print(f'증적: {d[\"total\"]}건, 성공률: {d[\"success_rate\"]*100:.0f}%')
-"
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "10.20.30.0/24 네트워크의 살아있는 호스트를 전부 찾아서 IP와 역할(secu/web/siem/manager)을 표로 정리해줘."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
+```
 
-# Replay 타임라인
-curl -s "http://localhost:9100/projects/$PID/replay" \
-  -H "X-API-Key: ccc-api-key-2026" | python3 -c "  # API 인증 키
-import sys,json; d=json.load(sys.stdin)
-print(f'총 보상: {d[\"total_reward\"]}')
-for s in d['timeline']:                                # 반복문 시작
-    print(f'  [{s[\"task_order\"]}] {s[\"task_title\"]:25s} reward={s[\"total_reward\"]}')
+**예상 응답 (자연어):**
+```
+10.20.30.0/24 네트워크 호스트 스캔 결과:
+
+| IP             | 역할      | 상태   |
+|----------------|-----------|--------|
+| 10.20.30.1     | secu      | up     |
+| 10.20.30.80    | web       | up     |
+| 10.20.30.100   | siem      | up     |
+| 10.20.30.200   | manager   | up     |
+```
+
+**내부 동작:** Bastion의 LLM이 "호스트 발견" 의도를 인식 → `nmap -sn` Skill 실행 → 결과를 자연어로 요약 → evidence DB에 기록.
+
+## 실습 5.3: 복합 정찰 지시
+
+더 복잡한 요청도 한 번에 가능하다.
+
+```bash
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "web 서버(10.20.30.80)의 주요 포트(22, 80, 3000)에서 서비스 버전을 탐지하고, HTTP 응답에서 X-Powered-By와 Server 헤더를 추출해서 공격 표면 요약 보고서를 만들어줘. 발견된 보안 이슈가 있으면 표시해줘."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
+```
+
+**예상 응답 (요약):**
+```
+web 서버 공격 표면 요약 (10.20.30.80)
+
+포트 스캔 결과:
+- 22/tcp: OpenSSH 8.9p1
+- 80/tcp: Apache httpd 2.4.52 (Ubuntu)
+- 3000/tcp: Node.js Express (JuiceShop)
+
+HTTP 헤더 분석:
+- :80 → Server: Apache/2.4.52 (Ubuntu)
+- :3000 → X-Powered-By: Express, Access-Control-Allow-Origin: *
+
+보안 이슈:
+1. 서버 버전 노출 (:80 Server 헤더)
+2. CORS 완전 개방 (:3000 Access-Control-Allow-Origin: *)
+3. Express 프레임워크 노출 (기술 스택 식별 가능)
+```
+
+## 실습 5.4: Evidence 확인
+
+이전 두 요청이 evidence DB에 기록되어 있다.
+
+```bash
+curl -s "http://10.20.30.200:8003/evidence?limit=10" | python3 -c "
+import sys, json
+events = json.load(sys.stdin)
+for e in events[:10]:
+    msg = e.get('user_message','')[:60]
+    skill = e.get('skill','?')
+    success = e.get('success', False)
+    marker = '✓' if success else '✗'
+    print(f'  {marker} [{skill:15s}] {msg}')
 "
 ```
 
-> **직접 실행 vs Bastion 비교:**
-> 위 5개 정찰 태스크를 직접 SSH로 실행하면 → 아무 기록도 남지 않음
-> Bastion로 실행하면 → 5건 evidence + 5건 PoW 블록 + 5건 reward + replay 가능
+**결과 해석:**
+- 방금 수행한 정찰 작업들이 `user_message`, `skill`, `success`로 기록되어 있음
+- 감사 시 "누가 언제 무엇을 했는지" 완전 추적 가능
+- 성공/실패율, 사용된 Skill 빈도 등으로 Bastion 활용도 측정 가능
+
+## 실습 5.5: 수동 vs Bastion 비교 (15분)
+
+학생이 직접 수동으로 nmap + curl 5개를 실행한 뒤, Bastion 한 번의 `/ask`와 비교한다.
+
+| 비교 항목 | 수동 실행 | Bastion 경유 |
+|----------|-----------|--------------|
+| 타이핑 명령 수 | 5+ | 1 |
+| 기록 | 쉘 히스토리만 | evidence DB에 영구 저장 |
+| 재현성 | 수동 재입력 | evidence에서 재실행 가능 |
+| 결과 요약 | 직접 수작업 | LLM이 자연어 요약 |
+| 협업 | 공유 어려움 | evidence 공유로 즉시 공유 |
+| 단점 | 빠름, 세밀 제어 | LLM 해석 오차 가능 |
+
+**결론:** 빠른 1회성 확인은 수동, 반복/기록/공유가 필요하면 Bastion.
 
 ---
 
-# Part 6: ATT&CK 매핑 + 복습 + 과제 (20분)
+# Part 6: ATT&CK 매핑 정리 (20분)
 
 ## 6.1 오늘 실습의 ATT&CK 매핑
 
 | 실습 | ATT&CK 기법 | 전술 |
 |------|------------|------|
-| nmap 포트 스캔 | T1046 Network Service Scanning | Discovery |
+| nmap 포트 스캔 (-sT, -sS) | T1046 Network Service Scanning | Discovery |
 | nmap -sV 서비스 탐지 | T1046 | Discovery |
 | nmap -O OS 탐지 | T1046 | Discovery |
-| 네트워크 호스트 발견 | T1046 | Discovery |
+| nmap -sn 네트워크 호스트 발견 | T1046 / T1018 | Discovery |
 | HTTP 헤더 분석 | T1592 Gather Victim Host Info | Reconnaissance |
-| robots.txt 확인 | T1595.003 Wordlist Scanning | Reconnaissance |
+| robots.txt / swagger.json 확인 | T1595.003 Wordlist Scanning | Reconnaissance |
 | FTP 디렉토리 열거 | T1595.003 | Reconnaissance |
-| 설정 파일 접근 | T1592.004 Client Configurations | Reconnaissance |
+| 설정 API 무인증 접근 | T1592.004 Client Configurations | Reconnaissance |
+| /etc/hosts 조회 | T1016 System Network Configuration | Discovery |
+| ARP 테이블 조회 | T1016 | Discovery |
+| Bastion 자연어 정찰 | (여러 기법 조합) | Reconnaissance |
 
-## 자가 점검 퀴즈 (10문항)
+## 6.2 탐지 관점 (Blue Team의 시각)
 
-**Q1.** 수동적 정찰과 능동적 정찰의 가장 큰 차이는?
-- (a) 속도  (b) 대상 시스템에 패킷 도달 여부  (c) 도구의 종류  (d) 법적 허용 여부
+오늘 실습한 공격 기법들을 방어자는 어떻게 탐지하는가?
 
-**Q2.** nmap -sS 스캔의 특징은?
-- (a) UDP 스캔  (b) TCP 3-way 완료  (c) SYN만 보내고 RST  (d) FIN만 전송
+| 공격 | 탐지 로그/신호 | 탐지 도구 |
+|------|---------------|----------|
+| nmap SYN 스캔 | 짧은 시간 내 다수 포트 SYN 패킷 | Suricata alert (포트 스캔 서명) |
+| nmap -A | 비표준 패킷 조합 (FIN/XMAS) | Suricata rule (malformed flags) |
+| 경로 브루트포스 | 대량 404 응답 | Apache access log 분석 |
+| /robots.txt, /admin 연속 접근 | 웹 크롤링 패턴 | ModSecurity OWASP CRS |
 
-**Q3.** HTTP 헤더의 `X-Powered-By: Express`는 무엇을 의미하는가?
-- (a) 전원 공급  (b) Node.js Express 사용  (c) 보안 기능  (d) 캐시 설정
-
-**Q4.** nmap에서 서비스 버전을 탐지하는 옵션은?
-- (a) -sS  (b) -O  (c) -sV  (d) -sn
-
-**Q5.** robots.txt의 보안 관점에서의 의미는?
-- (a) 검색 엔진 최적화  (b) 숨기려는 경로 정보 노출  (c) 방화벽 설정  (d) 서버 성능
-
-**Q6.** T1046은 어떤 ATT&CK 기법인가?
-- (a) SQL Injection  (b) Network Service Scanning  (c) 피싱  (d) 랜섬웨어
-
-**Q7.** `Access-Control-Allow-Origin: *`가 보안 이슈인 이유는?
-- (a) 느려짐  (b) 모든 도메인에서 API 호출 가능  (c) 암호화 비활성  (d) 로그 미생성
-
-**Q8.** ARP 테이블에서 확인할 수 있는 정보는?
-- (a) DNS 레코드  (b) 같은 네트워크의 MAC 주소  (c) SSL 인증서  (d) 방화벽 룰
-
-**Q9.** nmap -sn 10.20.30.0/24의 용도는?
-- (a) 포트 스캔  (b) 취약점 스캔  (c) 호스트 발견 (ping sweep)  (d) OS 탐지
-
-**Q10.** 정보수집 단계에서 가장 중요한 것은?
-- (a) 빠른 공격  (b) 공격 표면 파악  (c) 데이터 삭제  (d) 권한 상승
-
-**정답:** Q1:b, Q2:c, Q3:b, Q4:c, Q5:b, Q6:b, Q7:b, Q8:b, Q9:c, Q10:b
+Week 08 이후 (SOC 과정) 에서 이 탐지를 실습한다.
 
 ---
 
@@ -587,30 +772,32 @@ for s in d['timeline']:                                # 반복문 시작
 
 ### 과제 1: 종합 정보수집 보고서 (60점)
 
-web 서버(10.20.30.80)에 대해 다음 정보를 수집하고 보고서를 작성하라.
+web 서버(10.20.30.80)에 대해 다음 정보를 수집하고 md 보고서를 작성하라.
 
 | 항목 | 수집 방법 | 배점 |
 |------|---------|------|
-| 열린 포트 + 서비스 버전 | nmap -sV | 15점 |
-| OS 정보 | nmap -O 또는 기타 | 5점 |
-| HTTP 응답 헤더 분석 (80, 3000) | curl -I | 10점 |
-| 발견된 웹 경로 (최소 10개) | 수동 탐색 or 스크립트 | 15점 |
-| FTP 디렉토리 내용 | curl /ftp/ | 5점 |
+| 열린 포트 + 서비스 버전 | `nmap -sV` | 15점 |
+| OS 정보 | `nmap -O` 또는 HTTP 헤더 추론 | 5점 |
+| HTTP 응답 헤더 분석 (:80, :3000) | `curl -I` | 10점 |
+| 발견된 웹 경로 (최소 10개) | 수동 탐색 또는 스크립트 | 15점 |
+| FTP 디렉토리 내용 | `curl /ftp/` | 5점 |
 | 보안 이슈 식별 (최소 3개) | 위 결과 분석 | 10점 |
 
 **보안 이슈 예시:**
 - 서버 버전 노출 (Server 헤더)
-- CORS 완전 개방
+- CORS 완전 개방 (`Access-Control-Allow-Origin: *`)
 - FTP 디렉토리 리스팅
-- 관리자 설정 API 무인증 접근
+- 관리자 설정 API 무인증 접근 (`/rest/admin/application-configuration`)
 
-### 과제 2: Bastion 자동화 (40점)
+### 과제 2: Bastion 자연어 정찰 (40점)
 
-Bastion execute-plan으로 과제 1의 정보수집을 자동화하라.
+Bastion `/ask` API로 정찰을 수행하고 evidence를 제출하라.
 
-- 최소 5개 태스크, parallel=true — 20점
-- evidence/summary 결과 캡처 — 10점
-- replay 결과에서 ATT&CK 기법 매핑 — 10점
+**요구사항 (각 10점):**
+1. 자연어 1회 요청으로 **네트워크 전체 호스트 발견** 결과 제출
+2. 자연어 1회 요청으로 **web 서버 공격 표면 요약** 결과 제출
+3. 자연어 1회 요청으로 **secu/web/siem 3대 서버의 SSH 버전 비교** 결과 제출
+4. 위 3개 요청이 `/evidence`에 기록된 스크린샷
 
 ---
 
@@ -624,79 +811,115 @@ Bastion execute-plan으로 과제 1의 정보수집을 자동화하라.
 
 ---
 
-## 용어 해설 (이 과목에서 자주 나오는 용어)
-
-> 대학 1~2학년이 처음 접할 수 있는 보안/IT 용어를 정리한다.
-> 강의 중 모르는 용어가 나오면 이 표를 참고하라.
+## 용어 해설 (이번 주 추가분)
 
 | 용어 | 영문 | 설명 | 비유 |
 |------|------|------|------|
-| **페이로드** | Payload | 공격에 사용되는 실제 데이터/코드. 예: `' OR 1=1--` | 미사일의 탄두 |
-| **익스플로잇** | Exploit | 취약점을 악용하는 기법 또는 코드 | 열쇠 없이 문을 여는 방법 |
-| **셸** | Shell | 운영체제와 사용자를 연결하는 명령어 해석기 (bash, sh 등) | OS에게 말 걸 수 있는 창구 |
-| **리버스 셸** | Reverse Shell | 대상 서버가 공격자에게 역방향 연결을 맺는 것 | 도둑이 집에서 밖으로 전화를 거는 것 |
-| **포트** | Port | 서버에서 특정 서비스를 식별하는 번호 (0~65535) | 아파트 호수 |
-| **데몬** | Daemon | 백그라운드에서 실행되는 서비스 프로그램 | 24시간 근무하는 경비원 |
-| **패킷** | Packet | 네트워크로 전송되는 데이터의 단위 | 택배 상자 하나 |
-| **프록시** | Proxy | 클라이언트와 서버 사이에서 중개하는 서버 | 대리인, 중간 거래자 |
-| **해시** | Hash | 임의 길이 데이터를 고정 길이 값으로 변환하는 함수 (SHA-256 등) | 지문 (고유하지만 원본 복원 불가) |
-| **토큰** | Token | 인증 정보를 담은 문자열 (JWT, API Key 등) | 놀이공원 입장권 |
-| **JWT** | JSON Web Token | Base64로 인코딩된 JSON 기반 인증 토큰 | 이름·권한이 적힌 입장권 |
-| **Base64** | Base64 | 바이너리 데이터를 텍스트로 인코딩하는 방법 | 암호가 아닌 "포장" (누구나 풀 수 있음) |
-| **CORS** | Cross-Origin Resource Sharing | 다른 도메인에서의 API 호출 허용 설정 | "외부인 출입 허용" 표지판 |
-| **API** | Application Programming Interface | 프로그램 간 통신 규약 | 식당의 메뉴판 (주문 양식) |
-| **REST** | Representational State Transfer | URL + HTTP 메서드로 자원을 조작하는 API 스타일 | 도서관 대출 시스템 (책 이름으로 검색/대출/반납) |
-| **SSH** | Secure Shell | 원격 서버에 안전하게 접속하는 프로토콜 | 암호화된 전화선 |
-| **sudo** | SuperUser DO | 관리자(root) 권한으로 명령 실행 | "사장님 권한으로 실행" |
-| **SUID** | Set User ID | 실행 시 파일 소유자 권한으로 실행되는 특수 권한 | 다른 사람의 사원증을 빌려 출입 |
-| **IPS** | Intrusion Prevention System | 네트워크 침입 방지 시스템 (악성 트래픽 차단) | 공항 보안 검색대 |
-| **SIEM** | Security Information and Event Management | 보안 로그를 수집·분석하는 통합 관제 시스템 | CCTV 관제실 |
-| **WAF** | Web Application Firewall | 웹 공격을 탐지·차단하는 방화벽 | 웹사이트 전용 경비원 |
-| **nftables** | nftables | Linux 커널 방화벽 프레임워크 (iptables 후계) | 건물 출입구 차단기 |
-| **Suricata** | Suricata | 오픈소스 IDS/IPS 엔진 | 공항 X-ray 검색기 |
-| **Wazuh** | Wazuh | 오픈소스 SIEM 플랫폼 | CCTV + AI 관제 시스템 |
-| **ATT&CK** | MITRE ATT&CK | 실제 공격 전술·기법을 분류한 데이터베이스 | 범죄 수법 백과사전 |
-| **OWASP** | Open Web Application Security Project | 웹 보안 취약점 연구 국제 단체 | 웹 보안의 표준 기관 |
-| **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 점수 (0~10점) | 질병 위험도 등급 |
-| **CVE** | Common Vulnerabilities and Exposures | 취약점 고유 식별 번호 | 질병의 고유 코드 (예: COVID-19) |
-| **Bastion** | Bastion | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
----
-
-> **실습 환경 검증 완료** (2026-03-28): JuiceShop SQLi/XSS/IDOR, nmap, 경로탐색(%2500), sudo NOPASSWD, SSH키, crontab
+| **정찰** | Reconnaissance | 대상 시스템에 대한 정보를 수집하는 단계 | 건물 주변 답사 |
+| **수동 정찰** | Passive Recon | 대상에 패킷을 보내지 않고 정보 수집 | 건물 외부 관찰만 |
+| **능동 정찰** | Active Recon | 대상에 직접 패킷을 보내 정보 수집 | 건물 안에 들어가 확인 |
+| **OSINT** | Open Source Intelligence | 공개된 정보를 수집·분석 | 신문·뉴스로 정보 수집 |
+| **DNS** | Domain Name System | 도메인을 IP로 변환하는 시스템 | 전화번호부 |
+| **ARP** | Address Resolution Protocol | IP를 MAC 주소로 변환 | 방 호수 → 사람 얼굴 |
+| **NSE** | Nmap Scripting Engine | nmap의 Lua 스크립트 확장 | nmap 플러그인 |
+| **배너 그래빙** | Banner Grabbing | 서비스 연결 시 나오는 안내 문자열 수집 | 가게 간판 촬영 |
+| **핑거프린팅** | Fingerprinting | 지문으로 대상 시스템 식별 | 필체 감정 |
+| **디렉토리 열거** | Directory Enumeration | 웹 서버의 숨겨진 경로를 순차 시도 | 문 하나씩 두드려보기 |
 
 ---
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+> 이번 주 실습에서 실제로 조작하는 솔루션의 기능·경로·파일·설정 요점.
 
 ### Nmap
-> **역할:** 포트 스캔·서비스 탐지·NSE 스크립트  
-> **실행 위치:** `bastion / 공격자 측`  
-> **접속/호출:** `nmap` CLI
+
+> **역할:** 포트 스캔·서비스 탐지·OS 탐지·NSE 스크립트
+> **실행 위치:** manager (10.20.30.200) 또는 학생 PC
+> **호출:** `nmap` CLI
 
 **주요 경로·파일**
 
 | 경로 | 역할 |
 |------|------|
-| `/usr/share/nmap/scripts/` | NSE 스크립트 모음 (vuln, default 등) |
-| `/usr/share/nmap/nmap-services` | 포트↔서비스 매핑 |
+| `/usr/share/nmap/scripts/` | NSE Lua 스크립트 모음 (vuln, default, discovery 등) |
+| `/usr/share/nmap/nmap-services` | 포트↔서비스 이름 매핑 (추정용 — 실제 서비스는 -sV로 확인) |
+| `/usr/share/nmap/nmap-os-db` | OS 탐지용 TCP/IP 스택 지문 DB |
 
-**핵심 설정·키**
+**핵심 옵션**
 
-- `-sS -sV -O` — SYN 스캔 + 버전 + OS
-- `--script vuln` — 취약점 스크립트 카테고리
-- `-T0..T5` — 스캔 타이밍 — T3 기본, T4 실습용
+| 옵션 | 의미 | 사용 시점 |
+|------|------|----------|
+| `-sT` | TCP Connect 스캔 | sudo 없이 기본 스캔 |
+| `-sS` | SYN 스캔 (스텔스) | sudo 가능 + 은밀성 필요 시 |
+| `-sV` | 서비스 버전 탐지 | CVE 매칭 필요 시 |
+| `-O` | OS 탐지 | 타깃 OS 확정 필요 시 |
+| `-A` | 종합 스캔 (sV+O+sC+traceroute) | 단일 타깃 정밀 조사 |
+| `--script vuln` | 취약점 카테고리 | 알려진 취약점 확인 |
+| `-T0..T5` | 타이밍 (느림↔빠름) | T2는 IDS 회피, T4는 실습 기본 |
+| `-oA 파일명` | 3포맷 저장 (.nmap/.gnmap/.xml) | 결과 보관·스크립트 파싱 |
+| `-p 범위` | 특정 포트만 (예: 1-1000, 22,80) | 속도 확보 |
+| `-p-` | 전 포트(1-65535) | 철저한 조사 |
 
-**로그·확인 명령**
+**결과 해석 포인트**
 
-- `-oA scan` — 3가지 포맷(`.nmap/.gnmap/.xml`) 동시 저장
+- `open`: 서비스 응답 중
+- `closed`: 호스트는 살아있으나 포트 닫힘 (RST 응답)
+- `filtered`: 방화벽 차단 (응답 없음)
+- SERVICE 컬럼은 포트 기반 추정 → 실제는 -sV로 확인
+- -sV의 `fingerprint` 출력은 DB에 없는 서비스 지문 (nmap dev에 제출 가능)
 
-**UI / CLI 요점**
+**실습 환경 주의**
 
-- `nmap -sV -p- 10.20.30.80` — 전 포트 + 버전
-- `nmap --script=http-enum 10.20.30.80` — 웹 디렉토리 열거
-- `nmap -sn 10.20.30.0/24` — 호스트 발견(핑 스윕)
+- secu(10.20.30.1)에 Suricata가 떠 있어 대량/빠른 스캔은 alert 발생
+- `-T2` + `--max-retries 1`로 느리게 + 재전송 최소화하면 탐지 회피 가능 (Week 09 주제)
 
-> **해석 팁.** IPS가 있는 환경에서 T4 이상은 빠르게 탐지된다. `-T2`로 느리게 + `--max-retries 1`로 재전송 최소화하면 우회 확률↑.
+### curl
 
+> **역할:** HTTP 클라이언트 (GET/POST/HEAD 등)
+> **실행 위치:** manager 또는 학생 PC
+> **호출:** `curl` CLI
+
+**핵심 옵션**
+
+| 옵션 | 의미 |
+|------|------|
+| `-s` | silent (진행률 숨김) |
+| `-I` | HEAD 요청 (헤더만) |
+| `-X METHOD` | HTTP 메서드 지정 (GET/POST/PUT/DELETE) |
+| `-H "헤더: 값"` | 커스텀 헤더 추가 |
+| `-d '본문'` | 요청 본문 전송 (POST/PUT) |
+| `-o 파일` | 응답 저장 |
+| `-w "포맷"` | 상태 코드·응답시간 등 정보만 출력 |
+| `-k` | SSL 인증서 검증 무시 (실습 환경) |
+| `-L` | 리다이렉트 자동 따라감 |
+
+**정찰에 자주 쓰는 패턴**
+
+```bash
+# 상태 코드만
+curl -s -o /dev/null -w "%{http_code}" URL
+
+# 응답 시간 측정
+curl -s -o /dev/null -w "%{time_total}s\n" URL
+
+# 리다이렉트 체인
+curl -s -I -L URL | grep -i '^HTTP\|^Location'
+```
+
+### Bastion API (:8003)
+
+이번 주 사용하는 엔드포인트만 정리.
+
+| 메서드 | 경로 | 용도 |
+|--------|------|------|
+| GET | `/health` | Bastion 가동 확인 |
+| GET | `/skills` | 사용 가능한 Skill 목록 |
+| POST | `/ask` | 자연어 질문 (단답형) |
+| GET | `/evidence?limit=N` | 최근 N건 작업 기록 |
+
+> `/chat`, `/playbooks`, `/assets`, `/onboard`는 이번 주 사용하지 않음.
+
+---
+
+> **실습 환경 검증 완료** (2026-03-28): JuiceShop SQLi/XSS/IDOR, nmap, 경로탐색(%2500), sudo NOPASSWD, SSH키, crontab
