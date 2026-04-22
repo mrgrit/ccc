@@ -3,8 +3,7 @@ title: 포렌식 기초 - 시스템 아티팩트 수집과 타임라인 분석
 version: non-ai
 course: soc-nonai
 week: 9
-description: 인시던트 발생 후 디지털 포렌식 관점에서 시스템 아티팩트를 수집하고, 타임라인을 구성하여 공격 경로를 재구성하는 기초 기법을
-  학습합니다.
+description: 인시던트 발생 후 디지털 포렌식 관점에서 시스템 아티팩트를 수집하고, 타임라인을 구성하여 공격 경로를 재구성하는 기초 기법을 학습합니다.
 difficulty: medium
 duration_minutes: 150
 objectives:
@@ -18,16 +17,31 @@ steps:
   hint: uptime, who, free 명령을 사용하세요.
   category: analysis
   points: 5
-  answer: echo "=== UPTIME ==="; uptime; echo "=== LOGGED USERS ==="; who; echo "===
-    MEMORY ==="; free -h
-  answer_detail: 포렌식에서는 휘발성 데이터부터 수집합니다(RFC 3227 증거 수집 순서). 업타임으로 마지막 재부팅 시점, who로
-    현재 접속자, free로 메모리 상태를 파악합니다.
+  answer: echo "=== UPTIME ==="; uptime; echo "=== LOGGED USERS ==="; who; echo "=== MEMORY ==="; free
+    -h
+  answer_detail: 포렌식에서는 휘발성 데이터부터 수집합니다(RFC 3227 증거 수집 순서). 업타임으로 마지막 재부팅 시점, who로 현재 접속자, free로 메모리 상태를
+    파악합니다.
   verify:
     type: output_contains
     expect:
     - UPTIME
     - 시스템정보
     field: stdout
+    semantic:
+      intent: 휘발성 정보 수집 — uptime + who + free -h. RFC 3227 증거 수집 순서 (휘발성 우선). 마지막 재부팅/현재 접속자/메모리 상태. 포렌식
+        첫 단계.
+      success_criteria:
+      - uptime + who + free
+      - UPTIME 또는 시스템정보
+      - 3종 정보
+      acceptable_methods:
+      - uptime + who + free
+      - w 명령
+      - vmstat + ps
+      negative_signs:
+      - 1종 정보만
+      - RFC 3227 맥락 없음
+      - 휘발성 우선 누락
   target_vm: siem
 - order: 2
   instruction: WEB VM에서 현재 네트워크 연결 상태를 수집하시오. 모든 TCP/UDP 연결과 리스닝 포트를 기록하시오.
@@ -35,12 +49,27 @@ steps:
   category: analysis
   points: 8
   answer: ss -tunap
-  answer_detail: 네트워크 연결은 휘발성 데이터입니다. 공격자의 원격 접속(reverse shell 등)이 ESTABLISHED 상태로
-    남아있을 수 있습니다. 모든 연결의 소스/대상 IP와 프로세스를 기록합니다.
+  answer_detail: 네트워크 연결은 휘발성 데이터입니다. 공격자의 원격 접속(reverse shell 등)이 ESTABLISHED 상태로 남아있을 수 있습니다. 모든 연결의
+    소스/대상 IP와 프로세스를 기록합니다.
   verify:
     type: output_contains
     expect: LISTEN
     field: stdout
+    semantic:
+      intent: 네트워크 연결 — ss -tunap. TCP/UDP/리스닝/프로세스. reverse shell ESTABLISHED 확인. 휘발성 데이터 우선 수집. RFC
+        3227.
+      success_criteria:
+      - ss -tunap
+      - LISTEN 키워드
+      - 프로세스 정보
+      acceptable_methods:
+      - ss -tunap
+      - netstat -anp
+      - lsof -i
+      negative_signs:
+      - 프로세스 정보 없음
+      - LISTEN 미확인
+      - 단순 ss
   target_vm: siem
 - order: 3
   instruction: WEB VM에서 현재 실행 중인 모든 프로세스를 수집하시오. 프로세스 트리 형태로 확인하시오.
@@ -48,12 +77,27 @@ steps:
   category: analysis
   points: 8
   answer: ps auxf --cols 200 | head -50
-  answer_detail: 프로세스 목록은 포렌식의 핵심 아티팩트입니다. 비정상적인 프로세스(이상한 이름, root 권한, 높은 리소스 사용)를
-    식별합니다. PPID를 통해 프로세스 생성 관계도 파악합니다.
+  answer_detail: 프로세스 목록은 포렌식의 핵심 아티팩트입니다. 비정상적인 프로세스(이상한 이름, root 권한, 높은 리소스 사용)를 식별합니다. PPID를 통해 프로세스
+    생성 관계도 파악합니다.
   verify:
     type: output_contains
     expect: root
     field: stdout
+    semantic:
+      intent: 프로세스 트리 — ps auxf --cols 200 | head -50. 비정상 프로세스(이상 이름/root/높은 리소스) 식별. PPID 통한 부모-자식 관계
+        추적. MITRE T1057 Process Discovery.
+      success_criteria:
+      - ps auxf 트리 형식
+      - root 키워드
+      - 프로세스 목록
+      acceptable_methods:
+      - ps auxf
+      - pstree -ap
+      - htop -t
+      negative_signs:
+      - 트리 형식 아님
+      - PPID 누락
+      - 단순 ps
   target_vm: siem
 - order: 4
   instruction: WEB VM에서 최근 24시간 내 수정된 파일을 /etc 디렉토리에서 검색하시오.
@@ -61,12 +105,27 @@ steps:
   category: analysis
   points: 10
   answer: find /etc -mtime -1 -type f -ls 2>/dev/null | head -20
-  answer_detail: 공격자는 지속성 확보를 위해 /etc 하위의 설정 파일(crontab, passwd, ssh 설정 등)을 변조할 수
-    있습니다. 최근 변경된 설정 파일은 포렌식 분석의 핵심 대상입니다.
+  answer_detail: 공격자는 지속성 확보를 위해 /etc 하위의 설정 파일(crontab, passwd, ssh 설정 등)을 변조할 수 있습니다. 최근 변경된 설정 파일은
+    포렌식 분석의 핵심 대상입니다.
   verify:
     type: output_contains
     expect: /etc
     field: stdout
+    semantic:
+      intent: 최근 24h 변경 파일 — find /etc -mtime -1 -type f -ls. 공격자 지속성 확보 (crontab/passwd/ssh 변조) 의심. /etc
+        설정 변경 = 포렌식 핵심. MITRE T1098.
+      success_criteria:
+      - find -mtime -1 /etc
+      - /etc 키워드
+      - 최근 변경 파일
+      acceptable_methods:
+      - find -mtime
+      - stat 메타데이터
+      - auditd 변경 추적
+      negative_signs:
+      - mtime 옵션 없음
+      - 전체 시스템 (느림)
+      - 변조 맥락 없음
   target_vm: siem
 - order: 5
   instruction: WEB VM에서 사용자 계정 관련 파일(passwd, shadow, group)의 최근 수정 시간을 확인하시오.
@@ -74,59 +133,116 @@ steps:
   category: analysis
   points: 10
   answer: stat /etc/passwd /etc/shadow /etc/group 2>/dev/null | grep -E "File:|Modify:"
-  answer_detail: passwd와 shadow 파일의 수정 시간이 예상 시점과 다르면 계정 추가/변경이 발생한 것입니다. 공격자가 백도어
-    계정을 생성했을 가능성을 조사해야 합니다.
+  answer_detail: passwd와 shadow 파일의 수정 시간이 예상 시점과 다르면 계정 추가/변경이 발생한 것입니다. 공격자가 백도어 계정을 생성했을 가능성을 조사해야
+    합니다.
   verify:
     type: output_contains
     expect:
     - Modify
     - 수정시간
     field: stdout
+    semantic:
+      intent: 사용자 파일 메타데이터 — stat /etc/passwd /etc/shadow /etc/group | grep -E 'File:|Modify:'. 예상 시점
+        ≠ 수정 시간 = 계정 추가/변경. 백도어 계정 의심. MITRE T1136 Create Account.
+      success_criteria:
+      - stat passwd/shadow/group
+      - Modify 키워드 또는 수정시간
+      - 메타데이터 분석
+      acceptable_methods:
+      - stat 명령
+      - ls -la --full-time
+      - auditd 감시
+      negative_signs:
+      - 3개 파일 미점검
+      - Modify 시간 누락
+      - 백도어 계정 맥락 없음
   target_vm: siem
 - order: 6
   instruction: WEB VM에서 cron 작업(예약된 작업)을 확인하시오. 시스템 전체와 사용자별 crontab을 모두 검사하시오.
   hint: /etc/crontab, /etc/cron.d/, 사용자 crontab을 확인하세요.
   category: analysis
   points: 10
-  answer: cat /etc/crontab && echo "=== cron.d ==="; ls -la /etc/cron.d/ && echo "===
-    user crontab ==="; crontab -l 2>/dev/null || echo "no user crontab"
-  answer_detail: 공격자는 지속성(persistence)을 위해 cron에 악성 스크립트를 등록합니다. 비정상적인 스크립트 경로나 외부
-    URL 다운로드 명령이 있으면 의심해야 합니다.
+  answer: cat /etc/crontab && echo "=== cron.d ==="; ls -la /etc/cron.d/ && echo "=== user crontab ===";
+    crontab -l 2>/dev/null || echo "no user crontab"
+  answer_detail: 공격자는 지속성(persistence)을 위해 cron에 악성 스크립트를 등록합니다. 비정상적인 스크립트 경로나 외부 URL 다운로드 명령이 있으면 의심해야
+    합니다.
   verify:
     type: output_contains
     expect: cron
     field: stdout
+    semantic:
+      intent: cron 작업 — cat /etc/crontab + ls /etc/cron.d/ + crontab -l. 시스템 + 사용자별. 비정상 스크립트/외부 URL 다운로드
+        = 지속성 의심. MITRE T1053.003 Cron.
+      success_criteria:
+      - crontab + cron.d + 사용자 crontab
+      - cron 키워드
+      - 3종 모두 점검
+      acceptable_methods:
+      - 3종 cron 검사
+      - for user in /home; do crontab -u; done
+      - Wazuh syscheck
+      negative_signs:
+      - cron 1종만
+      - 사용자 crontab 누락
+      - 지속성 맥락 없음
   target_vm: siem
 - order: 7
   instruction: WEB VM에서 bash 히스토리를 확인하여 최근 실행된 명령어를 분석하시오.
   hint: 각 사용자의 .bash_history 파일을 확인하세요.
   category: analysis
   points: 10
-  answer: cat /root/.bash_history 2>/dev/null | tail -30; for user in $(ls /home/);
-    do echo "=== $user ==="; cat /home/$user/.bash_history 2>/dev/null | tail -10;
-    done
-  answer_detail: bash_history에는 사용자가 실행한 명령이 기록됩니다. 공격자가 히스토리를 삭제할 수 있지만, 남아있다면 공격
-    단계를 재구성하는 데 매우 유용한 아티팩트입니다.
+  answer: cat /root/.bash_history 2>/dev/null | tail -30; for user in $(ls /home/); do echo "=== $user
+    ==="; cat /home/$user/.bash_history 2>/dev/null | tail -10; done
+  answer_detail: bash_history에는 사용자가 실행한 명령이 기록됩니다. 공격자가 히스토리를 삭제할 수 있지만, 남아있다면 공격 단계를 재구성하는 데 매우 유용한
+    아티팩트입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: bash 히스토리 — cat /root/.bash_history + 사용자별 .bash_history. 공격 명령 재구성 핵심 아티팩트. 삭제 가능하지만 남으면
+        단계 재구성. MITRE T1059.004.
+      success_criteria:
+      - bash_history 다중 사용자
+      - tail 최근 명령
+      - /root + /home 각각
+      acceptable_methods:
+      - cat .bash_history
+      - history 명령
+      - auditd execve 로그
+      negative_signs:
+      - root만 점검
+      - 단일 사용자
+      - 재구성 맥락 없음
   target_vm: siem
 - order: 8
-  instruction: WEB VM에서 SSH 관련 아티팩트를 수집하시오. authorized_keys, known_hosts, sshd 설정을
-    확인하시오.
+  instruction: WEB VM에서 SSH 관련 아티팩트를 수집하시오. authorized_keys, known_hosts, sshd 설정을 확인하시오.
   hint: /root/.ssh/와 /etc/ssh/ 디렉토리를 확인하세요.
   category: analysis
   points: 12
-  answer: echo "=== authorized_keys ==="; cat /root/.ssh/authorized_keys 2>/dev/null;
-    echo "=== sshd_config ==="; grep -v "^#" /etc/ssh/sshd_config | grep -v "^$" |
-    head -20
-  answer_detail: authorized_keys에 알 수 없는 공개키가 있으면 공격자가 SSH 백도어를 설치한 것입니다. sshd_config에서
-    PermitRootLogin, PasswordAuthentication 설정도 변조 여부를 확인합니다.
+  answer: echo "=== authorized_keys ==="; cat /root/.ssh/authorized_keys 2>/dev/null; echo "=== sshd_config
+    ==="; grep -v "^#" /etc/ssh/sshd_config | grep -v "^$" | head -20
+  answer_detail: authorized_keys에 알 수 없는 공개키가 있으면 공격자가 SSH 백도어를 설치한 것입니다. sshd_config에서 PermitRootLogin,
+    PasswordAuthentication 설정도 변조 여부를 확인합니다.
   verify:
     type: output_contains
     expect: sshd_config
     field: stdout
+    semantic:
+      intent: SSH 아티팩트 — cat /root/.ssh/authorized_keys + grep -v '#' /etc/ssh/sshd_config. 알 수 없는 공개키
+        = SSH 백도어. PermitRootLogin/PasswordAuthentication 변조 점검. MITRE T1098.004.
+      success_criteria:
+      - authorized_keys + sshd_config
+      - sshd_config 키워드
+      - 주석 제외 설정
+      acceptable_methods:
+      - cat 두 파일
+      - 'grep -v # 정리'
+      - find ~/.ssh -name authorized_keys
+      negative_signs:
+      - 키 파일 미점검
+      - sshd_config 누락
+      - 백도어 맥락 없음
   target_vm: siem
 - order: 9
   instruction: SIEM VM에서 WEB VM 에이전트의 Wazuh 파일 무결성 모니터링(syscheck) 알림을 확인하시오.
@@ -135,26 +251,54 @@ steps:
   points: 12
   answer: '🖥️ UI: Dashboard → Agents → 에이전트 목록/상태 확인
 
-    📎 참고 (CLI): grep -B 2 -A 5 "syscheck\|integrity" /var/ossec/logs/alerts/alerts.log
-    | tail -30'
-  answer_detail: Wazuh syscheck는 파일 변경(추가/수정/삭제)을 탐지하여 알림을 생성합니다. 포렌식에서 syscheck 알림은
-    공격자의 파일 변조 타임라인을 구성하는 핵심 데이터입니다.
+    📎 참고 (CLI): grep -B 2 -A 5 "syscheck\|integrity" /var/ossec/logs/alerts/alerts.log | tail -30'
+  answer_detail: Wazuh syscheck는 파일 변경(추가/수정/삭제)을 탐지하여 알림을 생성합니다. 포렌식에서 syscheck 알림은 공격자의 파일 변조 타임라인을
+    구성하는 핵심 데이터입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: Wazuh syscheck FIM 알림 — grep -B 2 -A 5 'syscheck|integrity' alerts.log | tail -30. 파일 변경
+        (추가/수정/삭제) 알림. 공격자 변조 타임라인. 포렌식 핵심 데이터. NIST SP 800-86 포렌식.
+      success_criteria:
+      - grep syscheck/integrity
+      - FIM 알림
+      - tail 컨텍스트
+      acceptable_methods:
+      - grep syscheck
+      - Dashboard FIM
+      - Wazuh API integrity
+      negative_signs:
+      - FIM 미점검
+      - 단순 grep
+      - 타임라인 맥락 없음
   target_vm: siem
 - order: 10
   instruction: WEB VM에서 최근 로그인 기록(wtmp)과 마지막 접속 기록(lastlog)을 수집하시오.
   hint: last와 lastlog 명령을 사용하세요.
   category: analysis
   points: 10
-  answer: echo "=== LAST LOGINS ==="; last -20; echo "=== LASTLOG ==="; lastlog |
-    grep -v "Never"
-  answer_detail: wtmp(last 명령)은 로그인/로그아웃 기록, lastlog는 각 사용자의 마지막 접속 정보를 보여줍니다. 비정상적인
-    시간대 접속이나 알 수 없는 소스 IP가 있으면 침해 증거입니다.
+  answer: echo "=== LAST LOGINS ==="; last -20; echo "=== LASTLOG ==="; lastlog | grep -v "Never"
+  answer_detail: wtmp(last 명령)은 로그인/로그아웃 기록, lastlog는 각 사용자의 마지막 접속 정보를 보여줍니다. 비정상적인 시간대 접속이나 알 수 없는 소스
+    IP가 있으면 침해 증거입니다.
   verify:
     type: output_contains
     expect: LAST
     field: stdout
+    semantic:
+      intent: wtmp/lastlog — last -20 + lastlog | grep -v Never. wtmp 로그인/아웃 / lastlog 마지막 접속. 비정상 시간대
+        + 알 수 없는 IP = 침해 증거. MITRE T1078 Valid Accounts.
+      success_criteria:
+      - last + lastlog
+      - LAST 또는 로그인 키워드
+      - 이력 표시
+      acceptable_methods:
+      - last + lastlog
+      - utmpdump
+      - journalctl _COMM=login
+      negative_signs:
+      - last만 점검
+      - lastlog 누락
+      - 비정상 분석 맥락 없음
   target_vm: siem
