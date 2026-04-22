@@ -3,8 +3,8 @@ title: 패스워드 공격 — 크래킹, 브루트포스, 스프레이
 version: non-ai
 course: battle-nonai
 week: 4
-description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Red Phase에서 패스워드 해시 크래킹과 온라인 브루트포스를
-  수행하고, Blue Phase에서 브루트포스 공격을 탐지하고 차단한다.
+description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Red Phase에서 패스워드 해시 크래킹과 온라인 브루트포스를 수행하고, Blue Phase에서 브루트포스
+  공격을 탐지하고 차단한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -26,14 +26,28 @@ steps:
   hint: echo -n과 md5sum, sha1sum, sha256sum을 사용한다.
   category: analysis
   points: 5
-  answer: echo -n 'password123' | md5sum && echo -n 'password123' | sha1sum && echo
-    -n 'password123' | sha256sum
-  answer_detail: 같은 평문이라도 해시 알고리즘에 따라 완전히 다른 해시값이 생성된다. MD5는 32자, SHA1은 40자, SHA256은
-    64자의 16진수 문자열을 출력한다.
+  answer: echo -n 'password123' | md5sum && echo -n 'password123' | sha1sum && echo -n 'password123' |
+    sha256sum
+  answer_detail: 같은 평문이라도 해시 알고리즘에 따라 완전히 다른 해시값이 생성된다. MD5는 32자, SHA1은 40자, SHA256은 64자의 16진수 문자열을 출력한다.
   verify:
     type: output_contains
     expect: 482c811da5d5b4bc6d497ffa98491e38
     field: stdout
+    semantic:
+      intent: '[RED] 해시 유형 생성 — echo -n ''password123'' | md5sum/sha1sum/sha256sum. MD5 32자/SHA1 40자/SHA256
+        64자 hex. 동일 평문 다른 해시. 해시 식별 기초.'
+      success_criteria:
+      - 482c811da5d5b4bc6d497ffa98491e38 키워드 (MD5 password123)
+      - 3종 해시 생성
+      - echo -n + hashsum
+      acceptable_methods:
+      - md5sum/sha1sum/sha256sum
+      - openssl dgst
+      - python hashlib
+      negative_signs:
+      - 해시 1종만
+      - echo -n 누락 (newline 포함)
+      - 식별 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: '[RED] Week 3에서 추출한 DVWA 사용자 패스워드 해시를 John the Ripper용 파일로 준비하라.'
@@ -51,12 +65,26 @@ steps:
     smithye:5f4dcc3b5aa765d61d8327deb882cf99
 
     EOF'
-  answer_detail: John the Ripper는 user:hash 형식의 입력을 기대한다. DVWA의 패스워드 해시는 MD5(unsalted)로,
-    현대 기준으로는 매우 취약하다.
+  answer_detail: John the Ripper는 user:hash 형식의 입력을 기대한다. DVWA의 패스워드 해시는 MD5(unsalted)로, 현대 기준으로는 매우 취약하다.
   verify:
     type: file_exists
     expect: /tmp/dvwa_hashes.txt
     field: filesystem
+    semantic:
+      intent: '[RED] John 입력 준비 — cat > /tmp/dvwa_hashes.txt: admin/gordonb/pablo/smithye MD5 unsalted.
+        user:hash 형식. MD5 unsalted = 매우 취약. CWE-327.'
+      success_criteria:
+      - /tmp/dvwa_hashes.txt 파일 생성
+      - user:hash 형식
+      - file_exists 검증
+      acceptable_methods:
+      - cat > 파일
+      - echo > 파일
+      - heredoc
+      negative_signs:
+      - 파일 저장 없음
+      - 형식 맞지 않음
+      - MD5 맥락 없음
   target_vm: attacker
 - order: 3
   instruction: '[RED] John the Ripper의 기본 워드리스트로 해시 크래킹을 시도하라.'
@@ -64,12 +92,27 @@ steps:
   category: exploit
   points: 10
   answer: john --format=raw-md5 --wordlist=/usr/share/wordlists/rockyou.txt /tmp/dvwa_hashes.txt
-  answer_detail: John the Ripper는 워드리스트의 각 단어를 해시하여 대상 해시와 비교한다. rockyou.txt는 1,400만개
-    이상의 실제 유출 패스워드를 포함한다.
+  answer_detail: John the Ripper는 워드리스트의 각 단어를 해시하여 대상 해시와 비교한다. rockyou.txt는 1,400만개 이상의 실제 유출 패스워드를
+    포함한다.
   verify:
     type: output_contains
     expect: Loaded
     field: stdout
+    semantic:
+      intent: '[RED] John 크래킹 — john --format=raw-md5 --wordlist=rockyou.txt hashes. rockyou.txt 1,400만
+        실제 유출 비번. 워드리스트 비교. CWE-916.'
+      success_criteria:
+      - john --format=raw-md5
+      - Loaded 키워드
+      - rockyou.txt 경로
+      acceptable_methods:
+      - john --wordlist
+      - hashcat -m 0
+      - john --incremental
+      negative_signs:
+      - 포맷 없음
+      - 워드리스트 없음
+      - 단순 john
   target_vm: attacker
 - order: 4
   instruction: '[RED] 크래킹 결과를 확인하라.'
@@ -77,26 +120,55 @@ steps:
   category: exploit
   points: 10
   answer: john --show --format=raw-md5 /tmp/dvwa_hashes.txt
-  answer_detail: --show 옵션은 이미 크래킹된 해시의 결과를 표시한다. password, abc123, letmein 등 약한 패스워드가
-    즉시 크래킹된다.
+  answer_detail: --show 옵션은 이미 크래킹된 해시의 결과를 표시한다. password, abc123, letmein 등 약한 패스워드가 즉시 크래킹된다.
   verify:
     type: output_contains
     expect: password
     field: stdout
+    semantic:
+      intent: '[RED] 크래킹 결과 — john --show --format=raw-md5. password/abc123/letmein 약한 비번 즉시 복원. john.pot
+        캐시. 결과 확인 표준 명령.'
+      success_criteria:
+      - --show 옵션
+      - password 키워드
+      - 크래킹 결과
+      acceptable_methods:
+      - john --show
+      - cat john.pot
+      - hashcat --show
+      negative_signs:
+      - --show 없음
+      - 결과 미확인
+      - 단순 john
   target_vm: attacker
 - order: 5
   instruction: '[RED] Hydra를 사용하여 web 서버 SSH 서비스에 온라인 브루트포스를 수행하라.'
   hint: hydra -l user -P wordlist ssh://target 형식을 사용한다.
   category: exploit
   points: 10
-  answer: hydra -l ccc -P /usr/share/wordlists/metasploit/unix_passwords.txt ssh://10.20.30.80
-    -t 4 -f -w 5
-  answer_detail: Hydra는 온라인 패스워드 브루트포스 도구이다. -t 4는 동시 연결 수, -f는 첫 번째 성공 시 중지한다. SSH는
-    느리므로 스레드 수를 제한해야 한다.
+  answer: hydra -l ccc -P /usr/share/wordlists/metasploit/unix_passwords.txt ssh://10.20.30.80 -t 4 -f
+    -w 5
+  answer_detail: Hydra는 온라인 패스워드 브루트포스 도구이다. -t 4는 동시 연결 수, -f는 첫 번째 성공 시 중지한다. SSH는 느리므로 스레드 수를 제한해야
+    한다.
   verify:
     type: output_contains
     expect: 'host:'
     field: stdout
+    semantic:
+      intent: '[RED] Hydra SSH 브루트포스 — hydra -l ccc -P unix_passwords.txt ssh://10.20.30.80 -t 4 -f -w
+        5. 온라인 공격. -t 4 동시 연결/-f 성공 시 중단/-w 5 타임아웃. SSH 느림 → 스레드 제한. MITRE T1110.001.'
+      success_criteria:
+      - 'host: 키워드'
+      - hydra -l + -P + ssh://
+      - -t + -f 옵션
+      acceptable_methods:
+      - hydra ssh
+      - medusa -h
+      - ncrack -p 22
+      negative_signs:
+      - -t/-f 없음
+      - 단일 비번
+      - 온라인 브루트포스 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: '[BLUE] auth.log에서 SSH 브루트포스 공격 흔적을 확인하라.'
@@ -104,55 +176,113 @@ steps:
   category: defense
   points: 10
   answer: grep 'Failed password' /var/log/auth.log | tail -20
-  answer_detail: auth.log의 'Failed password'는 SSH 로그인 실패를 나타낸다. 10.20.30.201에서 대량의
-    실패 기록이 있으면 브루트포스 공격 증거이다.
+  answer_detail: auth.log의 'Failed password'는 SSH 로그인 실패를 나타낸다. 10.20.30.201에서 대량의 실패 기록이 있으면 브루트포스 공격
+    증거이다.
   verify:
     type: output_contains
     expect: Failed
     field: stdout
+    semantic:
+      intent: '[BLUE] auth.log Failed password — grep ''Failed password'' /var/log/auth.log | tail -20.
+        SSH 로그인 실패. 10.20.30.201 대량 = 브루트포스 증거. MITRE T1110.'
+      success_criteria:
+      - grep Failed password
+      - Failed 키워드
+      - tail 최근 시도
+      acceptable_methods:
+      - grep auth.log
+      - journalctl sshd
+      - lastb
+      negative_signs:
+      - Failed 검색 없음
+      - 단순 cat
+      - 브루트포스 맥락 없음
   target_vm: web
 - order: 7
   instruction: '[BLUE] SSH 로그인 실패를 IP별로 집계하여 공격 IP를 식별하라.'
   hint: awk와 sort를 조합한다.
   category: defense
   points: 10
-  answer: grep 'Failed password' /var/log/auth.log | awk '{print $(NF-3)}' | sort
-    | uniq -c | sort -rn | head -10
-  answer_detail: awk로 IP 필드를 추출하고 sort | uniq -c | sort -rn으로 빈도 내림차순 정렬한다. 10.20.30.201이
-    최상위 공격 IP로 나타나야 한다.
+  answer: grep 'Failed password' /var/log/auth.log | awk '{print $(NF-3)}' | sort | uniq -c | sort -rn
+    | head -10
+  answer_detail: awk로 IP 필드를 추출하고 sort | uniq -c | sort -rn으로 빈도 내림차순 정렬한다. 10.20.30.201이 최상위 공격 IP로 나타나야
+    한다.
   verify:
     type: output_contains
     expect: 10.20.30
     field: stdout
+    semantic:
+      intent: '[BLUE] SSH 실패 IP 집계 — grep Failed + awk ''{print $(NF-3)}'' + sort | uniq -c | sort -rn.
+        IP별 빈도. 10.20.30.201 top 공격자. MITRE T1110.'
+      success_criteria:
+      - awk IP 추출 + uniq -c
+      - 10.20.30 키워드
+      - 상위 공격 IP
+      acceptable_methods:
+      - grep + awk + sort
+      - Wazuh Dashboard failed_logins
+      - Splunk SSH 대시보드
+      negative_signs:
+      - 집계 없음
+      - IP 미추출
+      - 상위 공격자 맥락 없음
   target_vm: web
 - order: 8
   instruction: '[BLUE] Suricata에서 SSH 브루트포스 탐지 알림을 확인하라.'
   hint: eve.json에서 SSH 관련 알림을 검색한다.
   category: defense
   points: 10
-  answer: tail -100 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert"
-    and (.alert.signature | test("SSH|brute"; "i"))) | "\(.timestamp) \(.alert.signature)"'
-    2>/dev/null | tail -5 || grep -i ssh /var/log/suricata/fast.log | tail -5
-  answer_detail: Suricata는 SSH 연결 빈도를 기반으로 브루트포스를 탐지한다. threshold 설정에 따라 일정 횟수 이상의
-    시도가 감지되면 알림이 발생한다.
+  answer: tail -100 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert" and (.alert.signature
+    | test("SSH|brute"; "i"))) | "\(.timestamp) \(.alert.signature)"' 2>/dev/null | tail -5 || grep -i
+    ssh /var/log/suricata/fast.log | tail -5
+  answer_detail: Suricata는 SSH 연결 빈도를 기반으로 브루트포스를 탐지한다. threshold 설정에 따라 일정 횟수 이상의 시도가 감지되면 알림이 발생한다.
   verify:
     type: output_contains
     expect: 10.20.30
     field: stdout
+    semantic:
+      intent: '[BLUE] Suricata SSH 브루트 — jq ''.alert.signature | test("SSH|brute"; "i")'' eve.json 또는
+        grep -i ssh fast.log. 연결 빈도 기반 탐지. threshold 룰. MITRE T1110.'
+      success_criteria:
+      - 10.20.30 키워드
+      - jq 알림 필터 또는 fast.log grep
+      - SSH/brute 탐지
+      acceptable_methods:
+      - jq eve.json ssh
+      - grep fast.log
+      - Dashboard alert filter
+      negative_signs:
+      - SSH 필터 없음
+      - threshold 맥락 없음
+      - 단순 cat
   target_vm: secu
 - order: 9
   instruction: '[BLUE] 공격자 IP({{ATTACKER_IP}})의 SSH 접근을 nftables로 rate limiting하라.'
   hint: nft add rule로 SSH 접근 빈도를 제한한다.
   category: defense
   points: 10
-  answer: sudo nft add rule inet filter input ip saddr 10.20.30.201 tcp dport 22 ct
-    state new limit rate over 3/minute drop && nft list ruleset | grep '10.20.30.201'
-  answer_detail: SSH 브루트포스 방어는 새로운 연결(ct state new)의 빈도를 제한하는 것이다. 분당 3회 초과 시 차단하면
-    사전 공격의 효율을 크게 떨어뜨린다.
+  answer: sudo nft add rule inet filter input ip saddr 10.20.30.201 tcp dport 22 ct state new limit rate
+    over 3/minute drop && nft list ruleset | grep '10.20.30.201'
+  answer_detail: SSH 브루트포스 방어는 새로운 연결(ct state new)의 빈도를 제한하는 것이다. 분당 3회 초과 시 차단하면 사전 공격의 효율을 크게 떨어뜨린다.
   verify:
     type: output_contains
     expect: 10.20.30.201
     field: stdout
+    semantic:
+      intent: '[BLUE] nftables SSH rate limit — nft add rule inet filter input ip saddr 10.20.30.201 tcp
+        dport 22 ct state new limit rate over 3/minute drop. 분당 3회 이상 새 연결 차단. 사전 공격 효율↓. MITRE D3FEND.'
+      success_criteria:
+      - nft add rule + tcp dport 22
+      - 10.20.30.201 키워드
+      - limit rate + drop
+      acceptable_methods:
+      - nft rate limit
+      - fail2ban ssh
+      - sshguard
+      negative_signs:
+      - rate limit 없음
+      - ct state new 누락
+      - SSH 포트 없음
   target_vm: secu
   requires_approval: true
 - order: 10
@@ -160,12 +290,26 @@ steps:
   hint: hydra -L userlist -p password 형식을 사용한다.
   category: exploit
   points: 15
-  answer: echo -e 'root\nccc\nadmin\nwww-data\nservice' > /tmp/users.txt && hydra
-    -L /tmp/users.txt -p ccc ssh://10.20.30.80 -t 4 -f -w 5
-  answer_detail: 패스워드 스프레이는 하나의 패스워드를 여러 계정에 시도하는 기법이다. 계정 잠금을 우회하기 위해 사용되며, -L은 사용자
-    목록 파일이다.
+  answer: echo -e 'root\nccc\nadmin\nwww-data\nservice' > /tmp/users.txt && hydra -L /tmp/users.txt -p
+    ccc ssh://10.20.30.80 -t 4 -f -w 5
+  answer_detail: 패스워드 스프레이는 하나의 패스워드를 여러 계정에 시도하는 기법이다. 계정 잠금을 우회하기 위해 사용되며, -L은 사용자 목록 파일이다.
   verify:
     type: output_contains
     expect: 'host:'
     field: stdout
+    semantic:
+      intent: '[RED] 패스워드 스프레이 — hydra -L users.txt -p ccc ssh://target -t 4 -f -w 5. 1비번 × 다수 계정 → 계정
+        잠금 우회. -L 사용자 목록 파일. MITRE T1110.003.'
+      success_criteria:
+      - 'host: 키워드'
+      - -L 사용자 목록 + -p 단일 비번
+      - 스프레이 패턴
+      acceptable_methods:
+      - hydra -L + -p
+      - CrackMapExec --pass
+      - Spray365
+      negative_signs:
+      - -L 없음
+      - 다수 비번 (스프레이 아님)
+      - 잠금 우회 맥락 없음
   target_vm: attacker
