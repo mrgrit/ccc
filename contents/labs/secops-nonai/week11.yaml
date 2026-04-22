@@ -3,8 +3,7 @@ title: Wazuh FIM / SCA / Active Response
 version: non-ai
 course: secops-nonai
 week: 11
-description: File Integrity Monitoring, Security Configuration Assessment, Active
-  Response 기능을 구성·검증한다.
+description: File Integrity Monitoring, Security Configuration Assessment, Active Response 기능을 구성·검증한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -19,12 +18,28 @@ steps:
   category: survey
   points: 10
   answer: sudo grep -E '<directories' /var/ossec/etc/ossec.conf | head -10
-  answer_detail: 'Wazuh FIM / SCA / Active Response: ossec.conf의 <syscheck> 섹션에서 감시
-    디렉터리 목록을 확인하시오.'
+  answer_detail: 'Wazuh FIM / SCA / Active Response: ossec.conf의 <syscheck> 섹션에서 감시 디렉터리 목록을 확인하시오.'
   verify:
     type: output_contains
     expect: directories
     field: stdout
+    semantic:
+      intent: FIM 감시 디렉터리 — sudo grep -E '<directories' /var/ossec/etc/ossec.conf | head -10. <syscheck><directories
+        check_all="yes">/etc,/usr/bin,/usr/sbin</directories> 형식. 파일 무결성 모니터링 (File Integrity Monitoring).
+        MITRE ATT&CK T1070 Indicator Removal 탐지 + T1543 Service Create.
+      success_criteria:
+      - directories 키워드
+      - grep ossec.conf
+      - 감시 경로 출력
+      acceptable_methods:
+      - grep <directories ossec.conf
+      - awk '/<syscheck>/,/<\/syscheck>/'
+      - Wazuh API /syscheck/configuration
+      - xmllint --xpath
+      negative_signs:
+      - syscheck 섹션 없음
+      - 감시 경로 언급 없음
+      - FIM 개념 없음
   target_vm: siem
 - order: 2
   instruction: FIM 데이터베이스(/var/ossec/queue/fim/db/fim.db)의 존재를 확인하시오.
@@ -32,12 +47,27 @@ steps:
   category: verify
   points: 10
   answer: sudo ls -la /var/ossec/queue/fim/db/fim.db 2>/dev/null || echo 'no fim.db'
-  answer_detail: 'Wazuh FIM / SCA / Active Response: FIM 데이터베이스(/var/ossec/queue/fim/db/fim.db)의
-    존재를 확인하시오.'
+  answer_detail: 'Wazuh FIM / SCA / Active Response: FIM 데이터베이스(/var/ossec/queue/fim/db/fim.db)의 존재를 확인하시오.'
   verify:
     type: output_contains
     expect: fim
     field: stdout
+    semantic:
+      intent: FIM DB 존재 확인 — sudo ls -la /var/ossec/queue/fim/db/fim.db. SQLite 기반 FIM 상태 DB. 파일 해시 +
+        메타데이터 저장 + 변경 비교 baseline. 삭제 시 재스캔 필수.
+      success_criteria:
+      - fim 키워드
+      - ls -la 실행
+      - fim.db 경로 확인
+      acceptable_methods:
+      - ls -la fim.db
+      - sqlite3 fim.db .tables (내부 조회)
+      - stat fim.db
+      - find /var/ossec -name 'fim.db'
+      negative_signs:
+      - 경로 혼동
+      - 파일 존재 여부 확인 없음
+      - SQLite 기반 언급 없음
   target_vm: siem
 - order: 3
   instruction: test 파일 /etc/ccc-fim-test 를 생성해 FIM 이벤트를 발생시키시오.
@@ -45,26 +75,57 @@ steps:
   category: verify
   points: 10
   answer: sudo touch /etc/ccc-fim-test && ls -la /etc/ccc-fim-test
-  answer_detail: 'Wazuh FIM / SCA / Active Response: test 파일 /etc/ccc-fim-test 를 생성해
-    FIM 이벤트를 발생시키시오.'
+  answer_detail: 'Wazuh FIM / SCA / Active Response: test 파일 /etc/ccc-fim-test 를 생성해 FIM 이벤트를 발생시키시오.'
   verify:
     type: output_contains
     expect: ccc-fim
     field: stdout
+    semantic:
+      intent: FIM 이벤트 유발 — sudo touch /etc/ccc-fim-test && ls -la /etc/ccc-fim-test. /etc/ 아래 파일 생성 =
+        FIM 감시 디렉토리 이벤트 발생. syscheck daemon 이 주기 스캔 시 탐지. 실제 트리거 테스트.
+      success_criteria:
+      - ccc-fim 키워드
+      - touch /etc/ccc-fim-test
+      - 파일 생성 확인
+      acceptable_methods:
+      - touch /etc/ccc-fim-test + ls
+      - echo 'test' > /etc/ccc-fim-test
+      - ansible file module
+      - sudo-modified-file trigger
+      negative_signs:
+      - FIM 감시 외 경로
+      - 파일 생성 확인 없음
+      - 트리거 의도 없음
   target_vm: siem
 - order: 4
   instruction: alerts.json 에서 /etc/ccc-fim-test 관련 이벤트를 검색하시오(FIM 이벤트 지연 반영 가능).
   hint: grep ccc-fim-test …
   category: analysis
   points: 10
-  answer: sleep 10 && sudo grep ccc-fim-test /var/ossec/logs/alerts/alerts.json 2>/dev/null
-    | tail
-  answer_detail: 'Wazuh FIM / SCA / Active Response: alerts.json 에서 /etc/ccc-fim-test
-    관련 이벤트를 검색하시오(FIM 이벤트 지연 반영 가능).'
+  answer: sleep 10 && sudo grep ccc-fim-test /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail
+  answer_detail: 'Wazuh FIM / SCA / Active Response: alerts.json 에서 /etc/ccc-fim-test 관련 이벤트를 검색하시오(FIM
+    이벤트 지연 반영 가능).'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: FIM alert 확인 — sleep 10 && sudo grep ccc-fim-test /var/ossec/logs/alerts/alerts.json | tail.
+        syscheck 주기 탐지 지연 (기본 12h + realtime 옵션 설정 시 즉시). sleep 10 대기 후 alerts 조회. FIM alert rule 550
+        (new file) / 553 (modified).
+      success_criteria:
+      - ccc-fim-test 키워드
+      - alerts.json grep
+      - sleep 대기 포함
+      acceptable_methods:
+      - sleep + grep alerts.json
+      - tail -f alerts.json + trigger
+      - curl Wazuh API /alerts filter
+      - Kibana Security events 검색
+      negative_signs:
+      - 대기 없이 즉시 조회 (지연 고려 없음)
+      - grep 필터 없음
+      - syscheck 스캔 주기 이해 없음
   target_vm: siem
 - order: 5
   instruction: SCA 모듈의 활성 여부를 ossec.conf 에서 확인하시오.
@@ -72,70 +133,149 @@ steps:
   category: survey
   points: 10
   answer: sudo awk '/<sca>/,/<\/sca>/' /var/ossec/etc/ossec.conf | head
-  answer_detail: 'Wazuh FIM / SCA / Active Response: SCA 모듈의 활성 여부를 ossec.conf 에서
-    확인하시오.'
+  answer_detail: 'Wazuh FIM / SCA / Active Response: SCA 모듈의 활성 여부를 ossec.conf 에서 확인하시오.'
   verify:
     type: output_contains
     expect: sca
     field: stdout
+    semantic:
+      intent: SCA 활성 확인 — sudo awk '/<sca>/,/<\/sca>/' /var/ossec/etc/ossec.conf | head. Security Configuration
+        Assessment. CIS Benchmark 기반 baseline scan. <sca><enabled>yes</enabled><interval>12h</interval>
+        주기. 컴플라이언스 점검.
+      success_criteria:
+      - sca 키워드
+      - awk 범위 추출
+      - SCA 설정 출력
+      acceptable_methods:
+      - awk SCA 섹션
+      - grep -A5 '<sca>'
+      - Wazuh API /sca/list
+      - Dashboard SCA module
+      negative_signs:
+      - SCA 개념 없음
+      - CIS 맥락 없음
+      - 활성/비활성 구분 없음
   target_vm: siem
 - order: 6
   instruction: SCA 최근 스캔 결과(/var/ossec/logs/alerts/alerts.json) 에서 'sca'를 필터링하시오.
   hint: grep sca … alerts.json
   category: analysis
   points: 10
-  answer: sudo grep '"sca"' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail
-    -3
+  answer: sudo grep '"sca"' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3
   answer_detail: 'Wazuh FIM / SCA / Active Response: SCA 최근 스캔 결과(/var/ossec/logs/alerts/alerts.json)
     에서 ''sca''를 필터링하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: SCA 결과 필터 — sudo grep '"sca"' /var/ossec/logs/alerts/alerts.json | tail -3. SCA 스캔 후 결과
+        alerts.json 에 sca.check 필드 포함 이벤트 생성. CIS 체크 result (pass/failed) 추적. 컴플라이언스 수치 기초.
+      success_criteria:
+      - sca grep 또는 jq
+      - alerts.json 필터
+      - sca 이벤트 확인
+      acceptable_methods:
+      - grep '"sca"' alerts.json
+      - jq 'select(.data.sca)'
+      - Wazuh API /sca/{agent_id}/checks
+      - Dashboard SCA UI
+      negative_signs:
+      - sca 키워드 없이 검색
+      - JSON 구조 이해 없음
+      - CIS 맥락 없음
   target_vm: siem
 - order: 7
   instruction: Active Response 설정(<active-response>)에서 command 목록을 확인하시오.
   hint: awk active-response
   category: survey
   points: 10
-  answer: sudo awk '/<active-response>/,/<\/active-response>/' /var/ossec/etc/ossec.conf
-    | head -15
-  answer_detail: 'Wazuh FIM / SCA / Active Response: Active Response 설정(<active-response>)에서
-    command 목록을 확인하시오.'
+  answer: sudo awk '/<active-response>/,/<\/active-response>/' /var/ossec/etc/ossec.conf | head -15
+  answer_detail: 'Wazuh FIM / SCA / Active Response: Active Response 설정(<active-response>)에서 command 목록을
+    확인하시오.'
   verify:
     type: output_contains
     expect: active-response
     field: stdout
+    semantic:
+      intent: Active Response 설정 확인 — sudo awk '/<active-response>/,/<\/active-response>/' /var/ossec/etc/ossec.conf
+        | head -15. <command>/<location>/<rules_id>/<timeout> 구조. firewall-drop 스크립트 연동 = 자동 차단. MITRE
+        D3FEND Respond + 자동화.
+      success_criteria:
+      - active-response 키워드
+      - awk 범위 추출
+      - command 또는 설정 출력
+      acceptable_methods:
+      - awk active-response 섹션
+      - grep -A20 '<active-response>'
+      - Wazuh API /active-response/configuration
+      - ls /var/ossec/active-response/bin/
+      negative_signs:
+      - 섹션 범위 오류
+      - command 확인 없음
+      - Active Response 개념 없음
   target_vm: siem
 - order: 8
-  instruction: secu VM에 blocklist set (type ipv4_addr) 을 만들고 nftables 에 blocklist
-    drop 룰을 추가하시오.
+  instruction: secu VM에 blocklist set (type ipv4_addr) 을 만들고 nftables 에 blocklist drop 룰을 추가하시오.
   hint: nft add set; nft add rule
   category: configure
   points: 10
-  answer: sudo nft add table inet filter 2>/dev/null ; sudo nft 'add set inet filter
-    blocklist { type ipv4_addr \; }' 2>/dev/null ; sudo nft add rule inet filter input
-    ip saddr @blocklist drop 2>/dev/null ; sudo nft list set inet filter blocklist
-  answer_detail: 'Wazuh FIM / SCA / Active Response: secu VM에 blocklist set (type
-    ipv4_addr) 을 만들고 nftables 에 blocklist drop 룰을 추가하시오.'
+  answer: sudo nft add table inet filter 2>/dev/null ; sudo nft 'add set inet filter blocklist { type
+    ipv4_addr \; }' 2>/dev/null ; sudo nft add rule inet filter input ip saddr @blocklist drop 2>/dev/null
+    ; sudo nft list set inet filter blocklist
+  answer_detail: 'Wazuh FIM / SCA / Active Response: secu VM에 blocklist set (type ipv4_addr) 을 만들고 nftables
+    에 blocklist drop 룰을 추가하시오.'
   verify:
     type: output_contains
     expect: blocklist
     field: stdout
+    semantic:
+      intent: nftables blocklist set — sudo nft add table inet filter + nft 'add set inet filter blocklist
+        { type ipv4_addr \; }' + nft add rule inet filter input ip saddr @blocklist drop + nft list set
+        inet filter blocklist. Active Response 차단 대상 set. 동적 IP 추가/제거 가능.
+      success_criteria:
+      - blocklist 키워드
+      - nft add set + 룰
+      - type ipv4_addr
+      acceptable_methods:
+      - nft add set + add rule + @ 참조
+      - ipset legacy 대체
+      - iptables + ipset match-set
+      - Wazuh Active Response firewall-drop
+      negative_signs:
+      - set 없이 단일 rule
+      - table 존재 확인 없이
+      - 블록 룰 누락
   target_vm: secu
 - order: 9
   instruction: blocklist set 에 {{ATTACKER_IP}} 을 임시로 추가해 공격자 차단을 시뮬레이션하시오.
   hint: nft add element inet filter blocklist { {{ATTACKER_IP}} }
   category: configure
   points: 10
-  answer: sudo nft add element inet filter blocklist '{ 10.20.30.201 }' && sudo nft
-    list set inet filter blocklist
-  answer_detail: 'Wazuh FIM / SCA / Active Response: blocklist set 에 10.20.30.201
-    을 임시로 추가해 공격자 차단을 시뮬레이션하시오.'
+  answer: sudo nft add element inet filter blocklist '{ 10.20.30.201 }' && sudo nft list set inet filter
+    blocklist
+  answer_detail: 'Wazuh FIM / SCA / Active Response: blocklist set 에 10.20.30.201 을 임시로 추가해 공격자 차단을 시뮬레이션하시오.'
   verify:
     type: output_contains
     expect: 10.20.30.201
     field: stdout
+    semantic:
+      intent: blocklist IP 추가 — sudo nft add element inet filter blocklist '{ 10.20.30.201 }' && sudo
+        nft list set inet filter blocklist. attacker IP 동적 차단 시뮬레이션. Active Response 가 수행하는 차단 작업과 동일
+        패턴. 트리거 후 자동 풀리 (timeout 설정 가능).
+      success_criteria:
+      - 10.20.30.201 키워드
+      - nft add element
+      - set 상태 확인
+      acceptable_methods:
+      - nft add element + list set
+      - Active Response 자동 트리거
+      - ansible firewall module
+      - 스크립트 기반 대량 추가
+      negative_signs:
+      - IP 혼동
+      - set 이름 혼동
+      - 상태 확인 누락
   target_vm: secu
 - order: 10
   instruction: blocklist 에서 {{ATTACKER_IP}}을 제거해 원상 복구하시오.
@@ -143,12 +283,27 @@ steps:
   category: cleanup
   points: 10
   answer: sudo nft delete element inet filter blocklist '{ 10.20.30.201 }'
-  answer_detail: 'Wazuh FIM / SCA / Active Response: blocklist 에서 10.20.30.201을 제거해
-    원상 복구하시오.'
+  answer_detail: 'Wazuh FIM / SCA / Active Response: blocklist 에서 10.20.30.201을 제거해 원상 복구하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: blocklist IP 제거 — sudo nft delete element inet filter blocklist '{ 10.20.30.201 }'. 차단 해제
+        + 정상 상태 복구. Active Response timeout 시 자동 제거되는 메커니즘과 동일.
+      success_criteria:
+      - nft delete element
+      - 10.20.30.201 IP
+      - set 에서 제거
+      acceptable_methods:
+      - nft delete element
+      - nft flush set (전체)
+      - Active Response 자동 timeout
+      - Ansible absent state
+      negative_signs:
+      - flush set (전체 삭제 과도)
+      - delete element 문법 오류
+      - 정상 복구 확인 없음
   target_vm: secu
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
