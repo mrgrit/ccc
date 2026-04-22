@@ -501,8 +501,13 @@ def auto_verify_lab(lab: Lab, subagent_url: str, student_id: str = "",
 
 # ── Validation (YAML 무결성 검증) ──────────────────
 
-def validate_lab(lab: Lab) -> list[str]:
-    """Lab YAML 무결성 검증. 오류 목록 반환 (빈 리스트 = 정상)"""
+def validate_lab(lab: Lab, *, require_semantic: bool = False) -> list[str]:
+    """Lab YAML 무결성 검증. 오류 목록 반환 (빈 리스트 = 정상).
+
+    require_semantic=True 이면 신규 콘텐츠 생성·리뷰 시 verify.semantic 필수화.
+    기본값은 False (기존 YAML 로딩 시 하위호환).
+    semantic 부재는 "warning:" 접두로 반환 (치명 오류와 구분).
+    """
     errors = []
 
     if not lab.lab_id:
@@ -526,8 +531,27 @@ def validate_lab(lab: Lab) -> list[str]:
             errors.append(f"{prefix}: AI lab must have 'script' field")
 
         if step.verify:
-            if step.verify.type not in ("output_contains", "output_regex", "exit_code", "file_exists", "service_running"):
+            if step.verify.type not in ("output_contains", "output_regex", "exit_code", "exit_code_zero",
+                                         "file_exists", "file_contains", "service_running", "service_active",
+                                         "port_open", "nft_rule_exists", "log_contains", "command_output"):
                 errors.append(f"{prefix}: unknown verify type '{step.verify.type}'")
+
+        # semantic 체크 — 신규 콘텐츠는 필수, 레거시는 warning
+        sem = step.verify_raw.get("semantic") if step.verify_raw else None
+        if not isinstance(sem, dict) or not (sem.get("intent") or sem.get("success_criteria")):
+            msg = f"{prefix}: verify.semantic missing (intent+success_criteria required for LLM judge)"
+            errors.append(msg if require_semantic else f"warning: {msg}")
+        else:
+            # semantic 있으면 최소 품질 체크
+            sc = sem.get("success_criteria") or []
+            am = sem.get("acceptable_methods") or []
+            ns = sem.get("negative_signs") or []
+            if not isinstance(sc, list) or len(sc) < 3:
+                errors.append(f"warning: {prefix}: semantic.success_criteria should have 3+ items (got {len(sc) if isinstance(sc, list) else 'non-list'})")
+            if not isinstance(am, list) or len(am) < 3:
+                errors.append(f"warning: {prefix}: semantic.acceptable_methods should have 3+ items")
+            if not isinstance(ns, list) or len(ns) < 3:
+                errors.append(f"warning: {prefix}: semantic.negative_signs should have 3+ items")
 
     if lab.total_points <= 0 and lab.steps:
         errors.append("total_points is 0 or negative")

@@ -154,7 +154,17 @@ _SCHEMA_JSON = """스키마:
       "points": 10,
       "answer": "프롬프트: ...",
       "answer_detail": "...",
-      "verify": {"type": "output_contains", "expect": "...", "field": "stdout"},
+      "verify": {
+        "type": "output_contains",
+        "expect": "...",
+        "field": "stdout",
+        "semantic": {
+          "intent": "한 줄 요약 — 이 step 의 목적 + 구체 명령/옵션/임계치/MITRE ID 포함",
+          "success_criteria": ["실행 여부 기준", "결과 형태 기준", "개념 언급 기준"],
+          "acceptable_methods": ["제시 명령", "동등 대체 도구1", "동등 대체 도구2"],
+          "negative_signs": ["흔한 실수1", "흔한 실수2", "부족한 응답 패턴"]
+        }
+      },
       "target_vm": "attacker|web|secu|siem",
       "script": "shell 명령 한 줄",
       "risk_level": "low|medium|high",
@@ -171,6 +181,11 @@ SYSTEM_PROMPT = (
     "## 규칙\n"
     "- category: RED 단계(recon, scan, exploit, lateral, persistence) / BLUE 단계(detect, analyze, contain, remediate)\n"
     "- verify.type=output_contains 권장, expect는 실제 명령 출력에 나올 구체 키워드 (예: '200 OK', 'alert', 'ESTABLISHED')\n"
+    "- **verify.semantic 은 필수** (LLM 채점 근거) — intent 1줄, success_criteria 3개+, acceptable_methods 3~4개, negative_signs 3개\n"
+    "- semantic.intent 는 step 의 instruction 을 복붙하지 말고 '왜/무엇을/어떻게' 한 줄로 요약 + MITRE ATT&CK ID/CVE/도구명/임계치 포함\n"
+    "- success_criteria 는 '실행된 증거' + '결과 키워드' + '개념 언급' 3축으로 작성\n"
+    "- acceptable_methods 는 동일 목적의 대체 도구/명령 (학생이 다른 방법 써도 pass 인정 근거)\n"
+    "- negative_signs 는 흔한 오답/얕은 응답 패턴\n"
     "- target_vm: attacker/web/secu/siem\n"
     "- risk_level: low/medium/high\n"
     "- bastion_prompt: 실행형 지시문 (QA형 '~설명해줘' 금지)\n"
