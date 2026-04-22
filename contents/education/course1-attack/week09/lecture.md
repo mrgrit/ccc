@@ -1,627 +1,533 @@
-# Week 09: 네트워크 공격 기초
+# Week 09: 네트워크 공격 기초 + 패킷 분석
 
 ## 학습 목표
-- TCP/IP 네트워크 계층 모델을 이해한다
-- 포트 스캐닝 기법(SYN, Connect, UDP)의 원리와 차이를 설명할 수 있다
-- tcpdump로 네트워크 패킷을 캡처하고 분석할 수 있다
-- ARP 스푸핑의 개념과 위험성을 이해한다
-- 실습 환경에서 스캔과 패킷 캡처를 직접 수행한다
+- TCP/IP 4계층 모델과 각 계층 주요 프로토콜을 설명한다
+- TCP 3-Way Handshake를 이해하고 스캔 기법(SYN/Connect/UDP)과의 관계를 파악한다
+- tcpdump로 실제 패킷을 캡처하고 nmap 스캔 트래픽을 해석한다
+- Wireshark 오프라인 분석으로 HTTP 세션을 재구성한다
+- ARP의 동작 원리와 ARP 스푸핑이 왜 가능한지 이해한다
+- IPS/IDS가 스캔을 탐지하는 관점을 설명한다
 
-## 실습 환경 (공통)
+## 실습 환경
 
-| 서버 | IP | 역할 | 접속 |
-|------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
-
-**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+| 호스트 | IP | 역할 |
+|--------|-----|------|
+| manager | 10.20.30.200 | 공격 수행 (nmap·tcpdump·Bastion API :8003) |
+| secu | 10.20.30.1 | 경로상 패킷 캡처 (방화벽/IPS) |
+| web | 10.20.30.80 | 대상 서버 |
+| siem | 10.20.30.100 | Wazuh — 탐지 로그 확인 |
 
 ## 강의 시간 배분 (3시간)
 
 | 시간 | 내용 | 유형 |
 |------|------|------|
-| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
-| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
-| 1:10-1:20 | 휴식 | - |
-| 1:20-2:00 | 실습 (Part 3) | 실습 |
-| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
-| 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 0:00-0:30 | TCP/IP 모델·3-Way Handshake (Part 1) | 강의 |
+| 0:30-1:00 | 포트 스캔 3유형 이론 (Part 2) | 강의 |
+| 1:00-1:10 | 휴식 | - |
+| 1:10-1:50 | tcpdump 패킷 캡처 실습 (Part 3) | 실습 |
+| 1:50-2:30 | Wireshark 오프라인 분석 (Part 4) | 실습 |
+| 2:30-2:40 | 휴식 | - |
+| 2:40-3:10 | ARP 스푸핑·Suricata 탐지 (Part 5~6) | 실습 |
+| 3:10-3:30 | Bastion 자동화 (Part 7) | 실습 |
+| 3:30-3:40 | 정리 + 과제 | 정리 |
 
 ---
 
----
+# Part 1: TCP/IP 모델
 
-## 용어 해설 (이 과목에서 자주 나오는 용어)
-
-> 대학 1~2학년이 처음 접할 수 있는 보안/IT 용어를 정리한다.
-> 강의 중 모르는 용어가 나오면 이 표를 참고하라.
-
-| 용어 | 영문 | 설명 | 비유 |
-|------|------|------|------|
-| **페이로드** | Payload | 공격에 사용되는 실제 데이터/코드. 예: `' OR 1=1--` | 미사일의 탄두 |
-| **익스플로잇** | Exploit | 취약점을 악용하는 기법 또는 코드 | 열쇠 없이 문을 여는 방법 |
-| **셸** | Shell | 운영체제와 사용자를 연결하는 명령어 해석기 (bash, sh 등) | OS에게 말 걸 수 있는 창구 |
-| **리버스 셸** | Reverse Shell | 대상 서버가 공격자에게 역방향 연결을 맺는 것 | 도둑이 집에서 밖으로 전화를 거는 것 |
-| **포트** | Port | 서버에서 특정 서비스를 식별하는 번호 (0~65535) | 아파트 호수 |
-| **데몬** | Daemon | 백그라운드에서 실행되는 서비스 프로그램 | 24시간 근무하는 경비원 |
-| **패킷** | Packet | 네트워크로 전송되는 데이터의 단위 | 택배 상자 하나 |
-| **프록시** | Proxy | 클라이언트와 서버 사이에서 중개하는 서버 | 대리인, 중간 거래자 |
-| **해시** | Hash | 임의 길이 데이터를 고정 길이 값으로 변환하는 함수 (SHA-256 등) | 지문 (고유하지만 원본 복원 불가) |
-| **토큰** | Token | 인증 정보를 담은 문자열 (JWT, API Key 등) | 놀이공원 입장권 |
-| **JWT** | JSON Web Token | Base64로 인코딩된 JSON 기반 인증 토큰 | 이름·권한이 적힌 입장권 |
-| **Base64** | Base64 | 바이너리 데이터를 텍스트로 인코딩하는 방법 | 암호가 아닌 "포장" (누구나 풀 수 있음) |
-| **CORS** | Cross-Origin Resource Sharing | 다른 도메인에서의 API 호출 허용 설정 | "외부인 출입 허용" 표지판 |
-| **API** | Application Programming Interface | 프로그램 간 통신 규약 | 식당의 메뉴판 (주문 양식) |
-| **REST** | Representational State Transfer | URL + HTTP 메서드로 자원을 조작하는 API 스타일 | 도서관 대출 시스템 (책 이름으로 검색/대출/반납) |
-| **SSH** | Secure Shell | 원격 서버에 안전하게 접속하는 프로토콜 | 암호화된 전화선 |
-| **sudo** | SuperUser DO | 관리자(root) 권한으로 명령 실행 | "사장님 권한으로 실행" |
-| **SUID** | Set User ID | 실행 시 파일 소유자 권한으로 실행되는 특수 권한 | 다른 사람의 사원증을 빌려 출입 |
-| **IPS** | Intrusion Prevention System | 네트워크 침입 방지 시스템 (악성 트래픽 차단) | 공항 보안 검색대 |
-| **SIEM** | Security Information and Event Management | 보안 로그를 수집·분석하는 통합 관제 시스템 | CCTV 관제실 |
-| **WAF** | Web Application Firewall | 웹 공격을 탐지·차단하는 방화벽 | 웹사이트 전용 경비원 |
-| **nftables** | nftables | Linux 커널 방화벽 프레임워크 (iptables 후계) | 건물 출입구 차단기 |
-| **Suricata** | Suricata | 오픈소스 IDS/IPS 엔진 | 공항 X-ray 검색기 |
-| **Wazuh** | Wazuh | 오픈소스 SIEM 플랫폼 | CCTV + AI 관제 시스템 |
-| **ATT&CK** | MITRE ATT&CK | 실제 공격 전술·기법을 분류한 데이터베이스 | 범죄 수법 백과사전 |
-| **OWASP** | Open Web Application Security Project | 웹 보안 취약점 연구 국제 단체 | 웹 보안의 표준 기관 |
-| **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 점수 (0~10점) | 질병 위험도 등급 |
-| **CVE** | Common Vulnerabilities and Exposures | 취약점 고유 식별 번호 | 질병의 고유 코드 (예: COVID-19) |
-| **Bastion** | Bastion | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
-
----
-
-# Week 09: 네트워크 공격 기초
-
-## 학습 목표
-
-- TCP/IP 네트워크 계층 모델을 이해한다
-- 포트 스캐닝 기법(SYN, Connect, UDP)의 원리와 차이를 설명할 수 있다
-- tcpdump로 네트워크 패킷을 캡처하고 분석할 수 있다
-- ARP 스푸핑의 개념과 위험성을 이해한다
-- 실습 환경에서 스캔과 패킷 캡처를 직접 수행한다
-
----
-
-## 1. 네트워크 계층 모델
-
-### 1.1 OSI 7계층 vs TCP/IP 4계층
+## 1.1 OSI 7계층 vs TCP/IP 4계층
 
 ```
 OSI 7계층                          TCP/IP 4계층
 -------------------------------    -------------------
 7. 응용 (Application)    ]
-6. 표현 (Presentation)   ]--->     응용 계층 (HTTP, DNS, SSH)
+6. 표현 (Presentation)   ]--->     응용 계층  (HTTP, DNS, SSH)
 5. 세션 (Session)        ]
-4. 전송 (Transport)      --->      전송 계층 (TCP, UDP)
+4. 전송 (Transport)      --->      전송 계층  (TCP, UDP)
 3. 네트워크 (Network)    --->      인터넷 계층 (IP, ICMP, ARP)
 2. 데이터링크 (Link)     ]
 1. 물리 (Physical)       ]--->     네트워크 접근 계층 (Ethernet)
 ```
 
-### 1.2 핵심 프로토콜 정리
+## 1.2 핵심 프로토콜 정리
 
 | 프로토콜 | 계층 | 역할 | 포트 |
 |----------|------|------|------|
-| TCP | 전송 | 연결 지향, 신뢰성 보장 | - |
-| UDP | 전송 | 비연결, 빠른 전송 | - |
+| TCP | 전송 | 연결 지향, 신뢰성 보장 | (포트는 서비스별) |
+| UDP | 전송 | 비연결, 빠름, 비신뢰 | (포트는 서비스별) |
 | IP | 인터넷 | 주소 지정, 라우팅 | - |
 | ARP | 인터넷 | IP → MAC 주소 변환 | - |
 | ICMP | 인터넷 | 오류 보고, ping | - |
 | HTTP | 응용 | 웹 통신 | 80/443 |
 | SSH | 응용 | 암호화 원격 접속 | 22 |
-| DNS | 응용 | 도메인 → IP 변환 | 53 |
+| DNS | 응용 | 도메인 → IP 변환 | 53 (TCP/UDP) |
 
-### 1.3 TCP 3-Way Handshake
+## 1.3 TCP 3-Way Handshake
 
-TCP 연결이 수립되는 과정이다. 공격자가 이 과정을 악용하여 스캔을 수행한다.
+TCP 연결 수립 절차. 공격자의 스캔 기법들은 이 절차를 어떻게 변형하느냐로 구분된다.
 
 ```
 클라이언트                             서버
-
-  1단계: 연결 요청
-    ---- SYN (seq=100) ----------->
-
-  2단계: 요청 수락
-    <--- SYN+ACK (seq=200, ack=101) --
-
-  3단계: 연결 확립
-    ---- ACK (ack=201) ----------->
+  ---- SYN (seq=100) ------------>     "연결 원함"
+  <--- SYN+ACK (seq=200, ack=101) --   "준비됨, 시작 번호 200"
+  ---- ACK (ack=201) -------------->   "확인. 통신 시작"
+       [연결 수립]
 ```
 
-- **SYN**: "연결하고 싶다" (SYNchronize)
-- **SYN+ACK**: "알겠다, 나도 준비됐다"
-- **ACK**: "확인했다, 통신 시작하자" (ACKnowledge)
+**세 플래그의 역할:**
+- `SYN`: 시퀀스 번호 동기화 (SYNchronize)
+- `ACK`: 상대의 시퀀스 번호 확인 (ACKnowledge)
+- `RST`: 즉시 연결 중단 (ReSeT)
 
-### 1.4 ARP (Address Resolution Protocol)
+## 1.4 ARP (Address Resolution Protocol)
 
-같은 네트워크 내에서 IP 주소를 MAC 주소로 변환하는 프로토콜이다.
+같은 네트워크 내에서 IP → MAC 주소를 매핑하는 2계층 프로토콜.
 
 ```
-ARP 요청 (브로드캐스트):
-  "10.20.30.80의 MAC 주소를 아는 사람?"
+ARP 요청 (브로드캐스트, FF:FF:FF:FF:FF:FF):
+  "10.20.30.80의 MAC 주소가 뭐야?"
 
 ARP 응답 (유니캐스트):
-  "내가 10.20.30.80이다. MAC은 AA:BB:CC:DD:EE:FF"
+  "나다. 내 MAC은 aa:bb:cc:dd:ee:ff"
 ```
 
-**문제점**: ARP에는 인증이 없다. 누구나 거짓 ARP 응답을 보낼 수 있다.
+**근본 결함:** ARP에는 인증이 없다. 누구나 거짓 응답으로 "내가 그 IP다"라고 주장 가능 → ARP 스푸핑의 원인.
 
 ---
 
-## 2. 포트 스캐닝 기법
+# Part 2: 포트 스캐닝 3유형
 
-### 2.1 포트 스캐닝이란?
-
-> **이 실습을 왜 하는가?**
-> 포트 스캐닝은 침투 테스트의 **가장 기본적인 정찰 활동**이다.
-> "열린 포트 = 실행 중인 서비스 = 잠재적 공격 표면"이다.
-> 22번(SSH), 80번(HTTP), 3306(MySQL) 등 각 포트에 대응하는 서비스를 파악하면
-> 어떤 공격을 시도할 수 있는지 판단할 수 있다.
->
-> **실무 활용:** 모의해킹 보고서의 첫 섹션은 항상 "포트 스캔 결과"이다.
-> nmap 결과를 기반으로 공격 우선순위를 정한다.
->
-> **주의:** 허가 없는 포트 스캐닝은 **불법**이다. 실습 환경(10.20.30.0/24)에서만 수행한다.
->
-> **검증 완료:** web 서버(10.20.30.80)에서 22, 80, 3000, 8002 포트 열림 확인.
-
-대상 시스템에서 열려 있는 포트(서비스)를 찾는 정찰 기법이다. 침투 테스트의 첫 단계이다.
-
-### 2.2 TCP SYN 스캔 (Half-Open Scan)
+## 2.1 SYN 스캔 (Half-Open, `-sS`)
 
 ```
 공격자                               대상
-
   ---- SYN --------------------->
-  <--- SYN+ACK (포트 열림) ------    --> 열려 있다!
-  ---- RST --------------------->    --> 연결 완료하지 않고 끊음
+  <--- SYN+ACK (포트 열림) ------      → 열림
+  ---- RST --------------------->      → 연결 완료하지 않고 끊음
 
-  <--- RST (포트 닫힘) ----------    --> 닫혀 있다!
+  <--- RST (포트 닫힘) ----------      → 닫힘
 ```
 
-- 3-Way Handshake를 완료하지 않아 로그에 기록되지 않을 수 있다
-- root 권한 필요 (raw socket 사용)
+- 3-Way를 완료하지 **않음** → 서버 애플리케이션 로그에 연결 기록 안 남을 수 있음
+- **root 권한 필요** (raw socket)
+- 빠르고 은밀
 
-### 2.3 TCP Connect 스캔
+## 2.2 Connect 스캔 (`-sT`)
 
 ```
 공격자                               대상
-
   ---- SYN --------------------->
-  <--- SYN+ACK ------------------    --> 열려 있다!
-  ---- ACK --------------------->    --> 완전한 연결 수립
-  ---- RST --------------------->    --> 연결 종료
+  <--- SYN+ACK ------------------      → 열림
+  ---- ACK --------------------->      → 완전한 연결
+  ---- FIN/RST ------------------>     → 연결 종료
 ```
 
-- 완전한 TCP 연결을 수립하므로 로그에 기록된다
+- 완전한 TCP 연결 수립 → **애플리케이션 로그에 기록됨**
 - 일반 사용자 권한으로 실행 가능
+- 느리고 눈에 띔
 
-### 2.4 UDP 스캔
+## 2.3 UDP 스캔 (`-sU`)
 
 ```
 공격자                               대상
-
   ---- UDP 패킷 ----------------->
-  <--- ICMP Port Unreachable -----   --> 닫혀 있다!
-       (응답 없음)                   --> 열려 있거나 필터됨
+  <--- ICMP Port Unreachable -----     → 닫힘
+       (응답 없음)                     → 열림 또는 필터
 ```
 
-- UDP는 비연결이므로 응답이 없으면 열림/필터 구분이 어렵다
-- 스캔 속도가 매우 느리다 (ICMP rate limiting)
+- UDP는 연결 없음 → "응답 없음"을 "열림"과 "필터"로 구분 불가
+- ICMP rate limiting 때문에 매우 느림
 
-### 2.5 nmap 포트 스캔 명령어
-
-> **실습 목적**: nmap을 사용한 다양한 포트 스캔 기법으로 네트워크 공격의 기초인 서비스 열거를 수행한다
->
-> **배우는 것**: SYN/UDP/ACK 스캔 등 각 방식의 TCP 플래그 동작과 방화벽 우회 특성을 이해한다
->
-> **결과 해석**: open/closed/filtered 결과에서 방화벽 규칙과 실제 서비스 동작 상태를 유추할 수 있다
->
-> **실전 활용**: 네트워크 침투 테스트에서 방화벽 뒤의 서비스를 식별하고 공격 경로를 설계하는 데 활용된다
+## 2.4 nmap 스캔 기본 명령
 
 ```bash
-# SYN 스캔 (기본, root 필요)
-nmap -sS 10.20.30.80
-
-# Connect 스캔 (일반 사용자 가능)
-nmap -sT 10.20.30.80
-
-# UDP 스캔
-nmap -sU 10.20.30.80
-
-# 특정 포트만 스캔
-nmap -p 22,80,3000 10.20.30.80
-
-# 전체 포트 스캔 + 서비스 버전
-nmap -sV -p- 10.20.30.80
-
-# OS 탐지
-nmap -O 10.20.30.80
-
-# 빠른 스캔 (상위 100개 포트)
-nmap -F 10.20.30.80
+nmap -sT -F 10.20.30.80          # Connect 스캔, 상위 100 포트
+sudo nmap -sS -p 22,80,3000 10.20.30.80    # SYN 스캔, 지정 포트
+nmap -sV -p 22,80,3000 10.20.30.80         # 서비스 버전 탐지
+sudo nmap -sU -p 53 10.20.30.80            # UDP 스캔
+sudo nmap -O 10.20.30.80                   # OS 탐지
 ```
+
+Week 02에서 상세 학습. 이번 주는 **탐지 관점**으로 보는 차이를 추가.
 
 ---
 
-## 3. tcpdump 패킷 캡처
+# Part 3: tcpdump로 패킷 캡처
 
-### 3.1 tcpdump 기본 사용법
+## 3.1 tcpdump 기초
 
-tcpdump는 네트워크 인터페이스를 통과하는 패킷을 실시간으로 캡처하는 도구이다.
+**이것은 무엇인가?** 네트워크 인터페이스를 통과하는 패킷을 실시간 캡처하는 CLI 도구. Linux 표준 장착.
 
-```bash
-# 기본 캡처 (모든 패킷)
-sudo tcpdump -i eth0
+**왜 필요한가:** nmap이 "무엇"을 보내는지를 실제 바이트로 확인할 수 있는 것이 tcpdump. 추상적 설명을 **실체**로 만든다.
 
-# 특정 호스트 필터
-sudo tcpdump -i eth0 host 10.20.30.80
+## 3.2 기본 옵션
 
-# 특정 포트 필터
-sudo tcpdump -i eth0 port 22
+| 옵션 | 의미 |
+|------|------|
+| `-i <iface>` | 캡처할 인터페이스 (`any`는 전부) |
+| `-nn` | DNS/포트 이름 변환 안 함 (속도·혼동 방지) |
+| `-c <N>` | N개 패킷 캡처 후 종료 |
+| `-w <file>` | pcap 파일로 저장 (Wireshark 분석용) |
+| `-r <file>` | 저장된 pcap 읽기 |
+| `-v`/`-vv`/`-vvv` | 상세도 |
+| `-X` | 16진수 + ASCII 내용 출력 |
+| `-s 0` | 잘림 없이 전체 패킷 |
 
-# TCP SYN 패킷만 캡처
-sudo tcpdump -i eth0 'tcp[tcpflags] & tcp-syn != 0'
+## 3.3 BPF 필터식
 
-# 패킷 내용 출력 (hex + ASCII)
-sudo tcpdump -i eth0 -X port 80
+tcpdump는 Berkeley Packet Filter(BPF) 구문으로 조건 필터링.
 
-# 파일로 저장
-sudo tcpdump -i eth0 -w /tmp/capture.pcap
+| 필터식 | 의미 |
+|--------|------|
+| `host 10.20.30.80` | 특정 호스트가 송신/수신 |
+| `src 10.20.30.80` / `dst 10.20.30.80` | 방향 구분 |
+| `port 80` | 포트 (TCP/UDP) |
+| `tcp port 80` | TCP 80만 |
+| `tcp[tcpflags] & tcp-syn != 0` | SYN 플래그 세워진 패킷만 |
+| `not arp` | ARP 제외 |
+| 조합: `host X and (port 80 or port 443)` | AND/OR |
 
-# 저장된 파일 읽기
-sudo tcpdump -r /tmp/capture.pcap
+## 3.4 실습 — nmap 스캔을 실시간 관찰
 
-# 패킷 수 제한
-sudo tcpdump -i eth0 -c 50 host 10.20.30.80
-```
-
-### 3.2 tcpdump 출력 해석
-
-```
-14:23:01.123456 IP 10.20.30.201.45678 > 10.20.30.80.22: Flags [S], seq 12345
-
-각 필드 설명:
-  14:23:01.123456    --> 타임스탬프
-  IP                 --> 프로토콜
-  10.20.30.201.45678 --> 출발지 IP:포트
-  10.20.30.80.22     --> 목적지 IP:포트
-  Flags [S]          --> TCP 플래그 (S=SYN)
-  seq 12345          --> 시퀀스 번호
-```
-
-**TCP 플래그 기호:**
-- `[S]` = SYN
-- `[S.]` = SYN+ACK
-- `[.]` = ACK
-- `[R]` = RST
-- `[F]` = FIN
-- `[P.]` = PUSH+ACK
-
----
-
-## 4. ARP 스푸핑 개념
-
-### 4.1 ARP 스푸핑 원리
-
-공격자가 거짓 ARP 응답을 보내 자신의 MAC 주소를 다른 호스트의 IP에 연결시킨다.
-
-```
-정상 상태:
-  PC-A (10.20.30.201) → 게이트웨이 (10.20.30.1)
-  ARP 테이블: 10.20.30.1 = GW의 실제 MAC
-
-공격 후:
-  PC-A (10.20.30.201) → 공격자 (10.20.30.xxx) → 게이트웨이 (10.20.30.1)
-  ARP 테이블: 10.20.30.1 = 공격자의 MAC  ← 조작됨!
-```
-
-### 4.2 ARP 스푸핑의 영향
-
-- **도청(Sniffing)**: 중간에서 모든 트래픽을 볼 수 있다
-- **변조(Tampering)**: 패킷 내용을 수정할 수 있다
-- **세션 하이재킹**: 로그인 세션을 탈취할 수 있다
-- **서비스 거부(DoS)**: 트래픽을 전달하지 않으면 통신 불가
-
-### 4.3 ARP 테이블 확인
+**Step 1: 터미널 1 (secu 서버에서 캡처 시작)**
 
 ```bash
-# 현재 ARP 테이블 확인
-arp -a
-
-# 또는
-ip neigh show
-
-# 예시 출력:
-# 10.20.30.1 dev eth0 lladdr aa:bb:cc:dd:ee:ff REACHABLE
-# 10.20.30.80 dev eth0 lladdr 11:22:33:44:55:66 STALE
-```
-
-### 4.4 방어 방법
-
-- **정적 ARP 엔트리**: `arp -s 10.20.30.1 aa:bb:cc:dd:ee:ff`
-- **Dynamic ARP Inspection (DAI)**: 스위치 레벨에서 검증
-- **ARP 감시 도구**: arpwatch, arpalert
-
-> **주의**: 실습 환경에서만 ARP 스푸핑을 수행한다. 실제 네트워크에서는 불법이다.
-
----
-
-## 5. 실습
-
-### 실습 환경
-
-| 서버 | IP | 역할 |
-|------|-----|------|
-| bastion | 10.20.30.201 | 공격자 (스캔 수행) |
-| secu | 10.20.30.1 | 방화벽/IPS (패킷 모니터링) |
-| web | 10.20.30.80 | 대상 서버 (JuiceShop) |
-| siem | 10.20.30.100 | SIEM (로그 수집) |
-
-### 실습 1: secu 서버에서 tcpdump로 패킷 모니터링 준비
-
-secu 서버에 SSH 접속 후 패킷 캡처를 시작한다.
-
-```bash
-# 터미널 1: secu 서버 접속
 ssh ccc@10.20.30.1
 
-# 네트워크 인터페이스 확인
-ip addr show
+# 인터페이스 확인
+ip addr show | grep inet
 
-# 10.20.30.0/24 네트워크 인터페이스에서 캡처 시작
-# (인터페이스 이름은 환경에 따라 다를 수 있음: eth0, ens18 등)
-sudo tcpdump -i eth0 host 10.20.30.80 -nn -c 100
-
-# 출력 예시:
-# tcpdump: verbose output suppressed, use -v or -vv for full protocol decode
-# listening on eth0, link-type EN10MB (Ethernet), capture size 262144 bytes
-# (패킷 대기 중...)
+# 10.20.30.80 대상 TCP 패킷 캡처
+sudo tcpdump -i any host 10.20.30.80 -nn -c 50
 ```
 
-### 실습 2: bastion에서 web 서버 포트 스캔
-
-다른 터미널을 열고 bastion에서 스캔을 수행한다.
+**Step 2: 터미널 2 (manager에서 스캔)**
 
 ```bash
-# 터미널 2: bastion에서 실행
-
-# 2-1. 기본 ping 테스트 (ICMP)
+# ICMP ping 3회
 ping -c 3 10.20.30.80
 
-# 예상 출력:
-# PING 10.20.30.80 (10.20.30.80) 56(84) bytes of data.
-# 64 bytes from 10.20.30.80: icmp_seq=1 ttl=64 time=0.5 ms
-# 64 bytes from 10.20.30.80: icmp_seq=2 ttl=64 time=0.4 ms
-# 64 bytes from 10.20.30.80: icmp_seq=3 ttl=64 time=0.4 ms
+# TCP Connect 스캔 (sudo 없이)
+nmap -sT -p 22,80,3000 10.20.30.80
 
-# 2-2. TCP Connect 스캔 (상위 포트)
-nmap -sT -F 10.20.30.80
-
-# 예상 출력:
-# Starting Nmap 7.94 ...
-# PORT     STATE SERVICE
-# 22/tcp   open  ssh
-# 80/tcp   open  http
-# 3000/tcp open  ppp
-# Nmap done: 1 IP address (1 host up) scanned in 1.23 seconds
-
-# 2-3. SYN 스캔 (root 필요)
-sudo nmap -sS -p 22,80,3000,443,8080 10.20.30.80
-
-# 예상 출력:
-# PORT     STATE  SERVICE
-# 22/tcp   open   ssh
-# 80/tcp   open   http
-# 443/tcp  closed https
-# 3000/tcp open   ppp
-# 8080/tcp closed http-proxy
-
-# 2-4. 서비스 버전 탐지
-nmap -sV -p 22,80,3000 10.20.30.80
-
-# 예상 출력:
-# PORT     STATE SERVICE VERSION
-# 22/tcp   open  ssh     OpenSSH 8.x
-# 80/tcp   open  http    nginx
-# 3000/tcp open  http    Node.js (OWASP Juice Shop)
+# SYN 스캔 (sudo)
+sudo nmap -sS -p 22,80,3000 10.20.30.80
 ```
 
-### 실습 3: secu에서 캡처된 패킷 분석
+**Step 3: 터미널 1에서 캡처된 패킷 관찰**
 
-터미널 1로 돌아가서 캡처된 패킷을 확인한다.
-
-```bash
-# secu의 tcpdump 출력 예시:
-# 14:30:01.123 IP 10.20.30.201.45678 > 10.20.30.80.22: Flags [S], seq 1234
-# 14:30:01.124 IP 10.20.30.80.22 > 10.20.30.201.45678: Flags [S.], seq 5678, ack 1235
-# 14:30:01.125 IP 10.20.30.201.45678 > 10.20.30.80.22: Flags [.], ack 5679
-# 14:30:01.200 IP 10.20.30.201.45679 > 10.20.30.80.80: Flags [S], seq 2345
-# ...
+**예상 출력 (Connect 스캔 중):**
+```
+14:30:01.123  IP 10.20.30.200.45678 > 10.20.30.80.22: Flags [S], seq 1234
+14:30:01.124  IP 10.20.30.80.22 > 10.20.30.200.45678: Flags [S.], seq 5678, ack 1235
+14:30:01.125  IP 10.20.30.200.45678 > 10.20.30.80.22: Flags [.], ack 5679
+14:30:01.126  IP 10.20.30.200.45678 > 10.20.30.80.22: Flags [F.], seq 1235
+14:30:01.127  IP 10.20.30.80.22 > 10.20.30.200.45678: Flags [F.], seq 5679
+14:30:01.128  IP 10.20.30.200.45678 > 10.20.30.80.22: Flags [.], ack 5680
 ```
 
-**분석 포인트:**
-1. SYN 스캔과 Connect 스캔의 패킷 차이를 비교한다
-2. 열린 포트와 닫힌 포트의 응답 차이를 확인한다
-3. 스캔 속도(패킷 간격)를 관찰한다
+**결과 해석:**
+- `Flags [S]` → SYN만, `Flags [S.]` → SYN+ACK, `Flags [.]` → ACK만
+- Connect 스캔은 `S → S. → . → F. → F. → .` 6개 패킷으로 완전한 연결+종료
+- SYN 스캔은 `S → S. → R` 3개로 끝남 → 실습해서 직접 비교
 
-### 실습 4: TCP SYN 패킷만 필터링
+## 3.5 SYN 패킷만 필터링
 
 ```bash
-# secu에서 SYN 패킷만 캡처
-ssh ccc@10.20.30.1 \
-  "sudo tcpdump -i eth0 'tcp[tcpflags] & tcp-syn != 0' -nn -c 30"
-
-# 동시에 bastion에서 스캔 실행
-nmap -sS -p 1-100 10.20.30.80
+ssh ccc@10.20.30.1 "sudo tcpdump -i any 'tcp[tcpflags] & tcp-syn != 0' -nn -c 30" &
+# 동시에 manager에서
+sudo nmap -sS -p 1-100 10.20.30.80
 ```
 
-### 실습 5: ARP 테이블 확인
+**결과 해석:** 1-100 포트 스캔 시 100개의 SYN 패킷이 빠르게(수백 ms 내) 잡힘. **이 밀집도가 Suricata에게 "포트 스캔" 지문**.
+
+---
+
+# Part 4: Wireshark 오프라인 분석
+
+## 4.1 pcap 파일로 저장
+
+**이것은 무엇인가?** tcpdump는 콘솔 출력이 흐른다. 깊이 분석하려면 pcap 파일로 저장 후 Wireshark GUI로 본다.
 
 ```bash
-# bastion에서 ARP 테이블 확인
+# secu에서 저장
+ssh ccc@10.20.30.1 "sudo tcpdump -i any -w /tmp/scan.pcap host 10.20.30.80 -c 200"
+
+# manager에서 스캔 실행
+sudo nmap -sS -p 1-1000 10.20.30.80
+
+# pcap 가져오기
+scp ccc@10.20.30.1:/tmp/scan.pcap /tmp/
+```
+
+## 4.2 tshark로 CLI 분석
+
+**Wireshark가 없어도 CLI로 같은 분석 가능:**
+
+```bash
+# HTTP 요청만 추출
+tshark -r /tmp/scan.pcap -Y http 2>/dev/null | head -10
+
+# SYN 패킷 수
+tshark -r /tmp/scan.pcap -Y 'tcp.flags.syn == 1 and tcp.flags.ack == 0' | wc -l
+
+# 패킷별 시간 분포
+tshark -r /tmp/scan.pcap -T fields -e frame.time_relative -e tcp.dstport 2>/dev/null | head -20
+```
+
+**결과 해석:**
+- SYN 개수 = 스캔된 포트 수
+- 시간 분포로 스캔 속도(패킷/초) 측정 → IPS 회피 시 참고
+
+## 4.3 Wireshark GUI 사용 (학생 PC에서)
+
+학생 PC에 Wireshark 설치 후 pcap 열기.
+
+**주요 필터:**
+- `http.request.method == POST`: POST 요청만
+- `tcp.flags.syn == 1 and tcp.flags.ack == 0`: SYN 스캔 패킷
+- `ip.addr == 10.20.30.80`: 특정 IP 관련 전부
+- `tcp.port == 3000`: JuiceShop 통신만
+
+**Follow TCP Stream:** 오른쪽 클릭 → Follow → TCP Stream → 한 세션의 전체 주고받음 재구성. HTTP 평문이면 JSON 요청·응답 읽을 수 있음.
+
+---
+
+# Part 5: ARP 스푸핑 (개념 + 관찰)
+
+## 5.1 정상 vs 공격 상태
+
+```
+[정상]
+  PC-A ─ ARP ─ "10.20.30.1 MAC은?"
+         ← GW가 자기 MAC 응답
+  PC-A ARP 테이블: 10.20.30.1 → GW_MAC
+
+[ARP 스푸핑]
+  공격자 → PC-A에게 계속 가짜 ARP 전송:
+         "10.20.30.1 MAC은 내 MAC(공격자_MAC)이야"
+  PC-A ARP 테이블: 10.20.30.1 → 공격자_MAC  ← 조작
+  이제 PC-A → GW 트래픽이 공격자를 거쳐 감 (MITM)
+```
+
+## 5.2 ARP 테이블 확인
+
+```bash
+# 현재 ARP 캐시
+arp -a
+# 또는
 ip neigh show
-
-# 예상 출력:
-# 10.20.30.1 dev eth0 lladdr xx:xx:xx:xx:xx:xx REACHABLE
-# 10.20.30.80 dev eth0 lladdr yy:yy:yy:yy:yy:yy STALE
-
-# web 서버에서도 확인
-ssh ccc@10.20.30.80 "ip neigh show"
 ```
 
-### 실습 6: Bastion로 스캔 자동화
+**예상 출력:**
+```
+10.20.30.1 dev eth0 lladdr 52:54:00:xx:xx:xx REACHABLE
+10.20.30.80 dev eth0 lladdr 52:54:00:yy:yy:yy REACHABLE
+10.20.30.100 dev eth0 lladdr 52:54:00:zz:zz:zz STALE
+```
 
-Bastion Manager API를 호출하여 작업을 수행합니다.
+**결과 해석:**
+- `52:54:00:` 프리픽스 → KVM/QEMU 가상머신의 OUI
+- `REACHABLE` / `STALE` → 최근 통신 여부
+- 동일 MAC이 여러 IP에 붙어 있으면 **ARP 스푸핑 의심**
+
+## 5.3 공격의 영향
+
+| 피해 | 설명 |
+|------|------|
+| **도청 (Sniffing)** | 중간에서 평문 트래픽 관찰 |
+| **변조** | 요청·응답 내용 수정 |
+| **세션 하이재킹** | 쿠키·토큰 탈취 |
+| **DoS** | 트래픽 전달 안 함 → 통신 불가 |
+
+## 5.4 방어
+
+- **정적 ARP 엔트리**: `arp -s 10.20.30.1 <실제_GW_MAC>`
+- **DAI (Dynamic ARP Inspection)**: 스위치 레벨 검증 (실제 스위치 필요)
+- **arpwatch** / **arpalert**: ARP 변화 감지 → 관리자 알림
+- **암호화 트래픽**: HTTPS·SSH 일관성 (평문이면 스푸핑 피해 큼)
+
+> **주의:** 실습 환경 외 네트워크에서 ARP 스푸핑은 **불법**. 이 섹션은 이해·탐지를 위한 것.
+
+---
+
+# Part 6: Suricata IPS의 스캔 탐지
+
+## 6.1 secu의 Suricata 룰 확인
 
 ```bash
-# Bastion 프로젝트 생성
-curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{                                                # 요청 데이터(body)
-    "name": "week09-network-scan",
-    "request_text": "네트워크 스캔 실습",
-    "master_mode": "external"
-  }' | python3 -m json.tool
+ssh ccc@10.20.30.1 "sudo ls /etc/suricata/rules/ | head -20"
+```
 
-# 프로젝트 ID 확인 후 (예: id=1)
-# Stage 전환
-curl -s -X POST http://localhost:9100/projects/1/plan \
-  -H "X-API-Key: ccc-api-key-2026"                 # API 인증 키
-curl -s -X POST http://localhost:9100/projects/1/execute \
-  -H "X-API-Key: ccc-api-key-2026"                 # API 인증 키
+## 6.2 스캔 탐지 시도
 
-# nmap 스캔 실행
-curl -s -X POST http://localhost:9100/projects/1/execute-plan \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{                                                # 요청 데이터(body)
-    "tasks": [
-      {
-        "order": 1,
-        "instruction_prompt": "nmap -sT -F 10.20.30.80",
-        "risk_level": "low",
-        "subagent_url": "http://localhost:8002"
-      }
-    ],
-    "subagent_url": "http://localhost:8002"
-  }' | python3 -m json.tool
+**Step 1: 스캔 실행 (manager)**
 
-# 결과 확인
-curl -s -H "X-API-Key: ccc-api-key-2026" \
-  http://localhost:9100/projects/1/evidence/summary | python3 -m json.tool
+```bash
+sudo nmap -sS -p 1-1000 10.20.30.80
+```
+
+**Step 2: Suricata alert 확인 (secu)**
+
+```bash
+ssh ccc@10.20.30.1 "sudo tail -20 /var/log/suricata/fast.log" 2>/dev/null
+```
+
+**예상 alert:**
+```
+04/23/2026-14:35:01.123456 [**] [1:2010935:3] ET SCAN Possible Nmap Scan (tcp syn) [**]
+04/23/2026-14:35:01.234567 [**] [1:2002920:3] ET SCAN Unusual number of SYNs from external [**]
+```
+
+**결과 해석:**
+- SID 2010935 / 2002920 → Emerging Threats 룰셋의 스캔 탐지 룰
+- Week 10에서 이 룰들을 어떻게 **우회**할지 배움 (타이밍 조절, 단편화, 디코이 IP 등)
+
+## 6.3 Wazuh에서도 확인
+
+```bash
+ssh ccc@10.20.30.100 \
+  "sudo grep -iE 'scan|nmap' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5"
+```
+
+Wazuh는 Suricata alert 파일을 감시하여 자체 알림으로 변환. 단일 창구에서 전체 이벤트 관리.
+
+---
+
+# Part 7: Bastion 자연어 패킷 분석
+
+Bastion이 manager에 있으므로 로컬 tcpdump와 연동 가능.
+
+```bash
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "10.20.30.80에 nmap -sS -p 22,80,3000 스캔을 실행하고, 스캔 중 secu(10.20.30.1)에서 /var/log/suricata/fast.log를 모니터링해서 어떤 alert가 생성되는지 요약해줘."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
+```
+
+Evidence 확인:
+
+```bash
+curl -s "http://10.20.30.200:8003/evidence?limit=5" | python3 -c "
+import sys, json
+for e in json.load(sys.stdin)[:5]:
+    msg = e.get('user_message','')[:70]
+    ok = '✓' if e.get('success') else '✗'
+    print(f'  {ok} {msg}')
+"
 ```
 
 ---
 
-## 6. 실습 과제
+## 과제 (다음 주까지)
 
-1. **패킷 분석 보고서**: secu에서 캡처한 패킷에서 SYN 스캔과 Connect 스캔의 차이점을 5가지 이상 서술하라.
-2. **포트 스캔 결과 정리**: web 서버(10.20.30.80)의 열린 포트 목록과 각 서비스를 표로 정리하라.
-3. **ARP 테이블 분석**: 각 서버의 ARP 테이블을 수집하고, ARP 스푸핑 시 어떤 항목이 변경될지 설명하라.
+### 과제 1: 스캔 기법 비교 보고서 (50점)
+
+1. secu에서 tcpdump 캡처 후 다음 3스캔 실행 → 각각의 pcap을 30패킷 이상 수집 (15점)
+   - `nmap -sT -p 22,80,3000 10.20.30.80`
+   - `sudo nmap -sS -p 22,80,3000 10.20.30.80`
+   - `sudo nmap -sU -p 53,123 10.20.30.80`
+2. 각 pcap에서 관찰되는 플래그 시퀀스 정리 (10점)
+3. 같은 포트 3개를 스캔할 때 **패킷 수**·**완료 시간** 비교 (10점)
+4. Suricata `fast.log`에서 생성된 alert 정리 (10점)
+5. 어떤 스캔이 IPS 탐지를 가장 잘 회피했는가 분석 (5점)
+
+### 과제 2: Wireshark 분석 (30점)
+
+1. HTTP 세션 1건을 Wireshark Follow TCP Stream으로 재구성 (10점)
+2. JuiceShop 로그인 요청·응답의 헤더·본문 추출 (10점)
+3. `tshark`로 CLI에서 SYN 패킷 수 카운트 (10점)
+
+### 과제 3: ARP 테이블 수집 (20점)
+
+1. 4개 VM(manager, secu, web, siem)의 ARP 테이블을 수집 (10점)
+2. OUI(`52:54:00:`)로 VM 환경 판단 (5점)
+3. ARP 스푸핑 시 PC-A에서 관찰 가능한 변화 서술 (5점)
+
+---
+
+## 다음 주 예고
+
+**Week 10: IPS·방화벽 우회**
+- nftables 룰 읽기
+- Suricata 룰 우회 (타이밍, 단편화, 디코이)
+- `--tamper` 옵션으로 sqlmap WAF 우회
+- User-Agent 조작
 
 ---
 
-## 7. 핵심 정리
+## 용어 해설 (이번 주 추가분)
 
-| 스캔 유형 | 원리 | 장점 | 단점 |
-|-----------|------|------|------|
-| SYN 스캔 | 반개방 연결 | 빠름, 은밀 | root 필요 |
-| Connect 스캔 | 완전 연결 | 권한 불필요 | 로그 기록됨 |
-| UDP 스캔 | UDP 패킷 전송 | UDP 서비스 발견 | 매우 느림 |
-
-**다음 주 예고**: Week 10에서는 IPS/방화벽 우회 기법을 학습한다. secu의 nftables와 Suricata 규칙을 분석하고, 이를 우회하는 다양한 기법을 실습한다.
-
----
-
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** 이 공격 기법이 OWASP Top 10에서 분류되는 카테고리는?
-- (a) Broken Access Control(A01)  (b) **Injection(A03)**  (c) Cryptographic Failures(A02)  (d) SSRF(A10)
-
-**Q2.** 공격자가 가장 먼저 실행하는 정찰 활동은?
-- (a) 랜섬웨어 배포  (b) **포트 스캔 및 서비스 핑거프린팅**  (c) DDoS 공격  (d) 방화벽 비활성화
-
-**Q3.** SQLi에서 '--'의 역할은?
-- (a) 문자열 연결  (b) **SQL 주석 (이후 쿼리 무시)**  (c) 변수 선언  (d) 함수 호출
-
-**Q4.** MITRE ATT&CK에서 이 기법의 전술(Tactic)은?
-- (a) Impact만  (b) **해당 전술 ID 확인 필요**  (c) 모든 전술  (d) 해당 없음
-
-**Q5.** 방어자가 이 공격을 탐지하기 위해 확인해야 하는 로그는?
-- (a) CPU 사용률만  (b) **SIEM 경보 + 해당 서비스 로그**  (c) 디스크 용량만  (d) 네트워크 대역폭만
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
-
----
+| 용어 | 영문 | 설명 |
+|------|------|------|
+| **TCP 3-Way Handshake** | - | SYN → SYN+ACK → ACK 로 연결 수립 |
+| **SYN 스캔** | Half-Open | 3-Way 완료 안 하는 은밀 스캔 |
+| **Connect 스캔** | Full Connect | 완전 연결 후 종료 |
+| **pcap** | Packet Capture | 패킷 저장 표준 포맷 |
+| **BPF** | Berkeley Packet Filter | 커널 레벨 패킷 필터 구문 |
+| **OUI** | Organizationally Unique Identifier | MAC 주소 앞 3바이트로 제조사 식별 |
+| **ARP 스푸핑** | ARP Spoofing | 거짓 ARP 응답으로 MITM 수행 |
+| **Emerging Threats** | ET 룰셋 | Suricata의 대표적 공개 룰 집합 |
 
 ---
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+> 이번 주 실제로 사용하는 도구만.
 
-### Nmap
-> **역할:** 포트 스캔·서비스 탐지·NSE 스크립트  
-> **실행 위치:** `bastion / 공격자 측`  
-> **접속/호출:** `nmap` CLI
+### Nmap — 이번 주는 탐지 관점 복습
 
-**주요 경로·파일**
+| 옵션 | 이번 주 사용 |
+|------|---------------|
+| `-sT` | Connect 스캔 (로그 남음 확인용) |
+| `-sS` | SYN 스캔 (sudo) |
+| `-sU` | UDP 스캔 |
+| `-p 22,80,3000` | 제한적 스캔 (속도·노이즈 줄임) |
+| `-F` | 상위 100 포트 (빠른 확인) |
+
+### tcpdump
+
+| 옵션 | 이번 주 사용 |
+|------|---------------|
+| `-i any` | 전 인터페이스 (secu의 양방향 캡처) |
+| `-nn` | 이름 변환 안 함 |
+| `-c N` | N개만 |
+| `-w 파일` | pcap 저장 |
+| `-r 파일` | pcap 읽기 |
+| BPF: `host IP` | 특정 호스트 |
+| BPF: `tcp[tcpflags] & tcp-syn != 0` | SYN만 |
+
+### Wireshark / tshark
+
+| 도구 | 용도 |
+|------|------|
+| `wireshark 파일.pcap` | GUI 분석 |
+| `tshark -r 파일 -Y 'filter'` | CLI 분석 |
+| Wireshark "Follow TCP Stream" | 세션 재구성 |
+| Wireshark 필터: `http.request.method == POST` | POST만 |
+| Wireshark 필터: `tcp.flags.syn == 1 and tcp.flags.ack == 0` | SYN 스캔 |
+
+### Suricata (secu:10.20.30.1)
 
 | 경로 | 역할 |
 |------|------|
-| `/usr/share/nmap/scripts/` | NSE 스크립트 모음 (vuln, default 등) |
-| `/usr/share/nmap/nmap-services` | 포트↔서비스 매핑 |
+| `/etc/suricata/rules/` | 룰 파일 디렉토리 |
+| `/var/log/suricata/fast.log` | 단순 alert 텍스트 로그 |
+| `/var/log/suricata/eve.json` | 구조화 JSON 로그 |
 
-**핵심 설정·키**
+**이번 주 확인 대상 SID:**
+- `2010935` ET SCAN Nmap SYN scan
+- `2002920` ET SCAN Unusual SYN number
 
-- `-sS -sV -O` — SYN 스캔 + 버전 + OS
-- `--script vuln` — 취약점 스크립트 카테고리
-- `-T0..T5` — 스캔 타이밍 — T3 기본, T4 실습용
+### Bastion API
 
-**로그·확인 명령**
+| 메서드 | 경로 | 용도 |
+|--------|------|------|
+| POST | `/ask` | 자연어 스캔+모니터링 자동화 |
+| GET | `/evidence?limit=N` | 기록 조회 |
 
-- `-oA scan` — 3가지 포맷(`.nmap/.gnmap/.xml`) 동시 저장
+---
 
-**UI / CLI 요점**
-
-- `nmap -sV -p- 10.20.30.80` — 전 포트 + 버전
-- `nmap --script=http-enum 10.20.30.80` — 웹 디렉토리 열거
-- `nmap -sn 10.20.30.0/24` — 호스트 발견(핑 스윕)
-
-> **해석 팁.** IPS가 있는 환경에서 T4 이상은 빠르게 탐지된다. `-T2`로 느리게 + `--max-retries 1`로 재전송 최소화하면 우회 확률↑.
-
-### tcpdump + Wireshark
-> **역할:** 패킷 캡처·오프라인 분석  
-> **실행 위치:** `secu/web (tcpdump) → 분석 PC (Wireshark)`  
-> **접속/호출:** `sudo tcpdump -i <if> -w cap.pcap`, 분석은 `wireshark cap.pcap`
-
-**주요 경로·파일**
-
-| 경로 | 역할 |
-|------|------|
-| `/var/tmp/cap.pcap` | 실습용 캡처 저장 위치 |
-
-**핵심 설정·키**
-
-- `-i any` — 전 인터페이스
-- `-s 0` — 잘림 없이 전체 패킷 캡처
-- `BPF: 'tcp port 80 and host 10.20.30.80'` — 필터식
-
-**UI / CLI 요점**
-
-- Wireshark `http.request.method == POST` — POST 요청만
-- Wireshark Follow → TCP Stream — 세션 내용 재구성
-- `tshark -r cap.pcap -Y http` — CLI 필터 출력
-
-> **해석 팁.** 실환경 캡처는 **개인정보 포함** 가능성이 커 공유 전 `editcap`/`tcprewrite`로 익명화. BPF는 커널 레벨, Wireshark 필터는 디코드 후 레벨이라는 차이 기억.
-
+> **실습 환경 검증 완료** (2026-03-28): JuiceShop SQLi/XSS/IDOR, nmap, 경로탐색(%2500), sudo NOPASSWD, SSH키, crontab
