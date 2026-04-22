@@ -17,14 +17,30 @@ steps:
   hint: nft add table; nft add chain
   category: configure
   points: 10
-  answer: sudo nft add table inet whitelist && sudo nft add chain inet whitelist input
-    '{ type filter hook input priority 0 \; policy drop \; }'
-  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: secu VM에 inet ''whitelist'' 테이블을
-    만들고 input 체인을 생성하시오.'
+  answer: sudo nft add table inet whitelist && sudo nft add chain inet whitelist input '{ type filter
+    hook input priority 0 \; policy drop \; }'
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: secu VM에 inet ''whitelist'' 테이블을 만들고 input 체인을 생성하시오.'
   verify:
     type: output_contains
     expect: whitelist
     field: stdout
+    semantic:
+      intent: whitelist 테이블 + policy drop — sudo nft add table inet whitelist && sudo nft add chain inet
+        whitelist input '{ type filter hook input priority 0 \; policy drop \; }'. policy drop = 기본 차단
+        (deny-all). 화이트리스트 IP 만 허용 전제. zero-trust 네트워크 원칙.
+      success_criteria:
+      - whitelist 키워드
+      - policy drop 체인
+      - add table + add chain
+      acceptable_methods:
+      - nft add table inet whitelist + add chain policy drop
+      - iptables -P INPUT DROP (legacy)
+      - firewalld drop zone
+      - NIST SP 800-41 deny-all default
+      negative_signs:
+      - policy accept (화이트리스트 의미 없음)
+      - 테이블 이름 혼동
+      - drop 개념 없음
   target_vm: secu
 - order: 2
   instruction: whitelist 테이블에 set 'allowed_ips'(type ipv4_addr)를 생성하시오.
@@ -32,12 +48,28 @@ steps:
   category: configure
   points: 10
   answer: sudo nft add set inet whitelist allowed_ips '{ type ipv4_addr \; }'
-  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: whitelist 테이블에 set ''allowed_ips''(type
-    ipv4_addr)를 생성하시오.'
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: whitelist 테이블에 set ''allowed_ips''(type ipv4_addr)를
+    생성하시오.'
   verify:
     type: output_contains
     expect: allowed_ips
     field: stdout
+    semantic:
+      intent: nftables set 'allowed_ips' — sudo nft add set inet whitelist allowed_ips '{ type ipv4_addr
+        \; }'. set = 고속 IP 조회 자료구조 (해시 기반). type ipv4_addr = IPv4. 대량 IP 관리 효율화. CDB / ipset 과 유사.
+      success_criteria:
+      - allowed_ips 키워드
+      - nft add set 명령
+      - type ipv4_addr
+      acceptable_methods:
+      - nft add set + type ipv4_addr
+      - ipset create (legacy)
+      - nft add set + flags interval (CIDR)
+      - JSON API nft -j
+      negative_signs:
+      - type 지정 없음
+      - set 개념 없음
+      - ipv4_addr 대신 기본 타입
   target_vm: secu
 - order: 3
   instruction: allowed_ips set에 {{ATTACKER_IP}}(attacker)을 추가하시오.
@@ -45,12 +77,27 @@ steps:
   category: configure
   points: 10
   answer: sudo nft add element inet whitelist allowed_ips '{ 10.20.30.201 }'
-  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: allowed_ips set에 10.20.30.201(attacker)을
-    추가하시오.'
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: allowed_ips set에 10.20.30.201(attacker)을 추가하시오.'
   verify:
     type: output_contains
     expect: 10.20.30.201
     field: stdout
+    semantic:
+      intent: IP set 요소 추가 — sudo nft add element inet whitelist allowed_ips '{ 10.20.30.201 }'. attacker
+        IP 를 화이트리스트에 등록. set 요소 추가 = DB INSERT. 대량 추가 시 stdin 파일 기반 효율.
+      success_criteria:
+      - 10.20.30.201 키워드
+      - nft add element 명령
+      - set 에 IP 삽입
+      acceptable_methods:
+      - nft add element + set 이름 + IP
+      - echo 'IP' | nft add element file
+      - ansible ad-hoc 대량 등록
+      - ipset add legacy 명령
+      negative_signs:
+      - IP 혼동
+      - set 이름 혼동
+      - add element 구문 없음
   target_vm: secu
 - order: 4
   instruction: input 체인에서 allowed_ips 에 속하는 소스만 accept 하도록 룰을 추가하시오.
@@ -58,41 +105,88 @@ steps:
   category: configure
   points: 10
   answer: sudo nft add rule inet whitelist input ip saddr @allowed_ips accept
-  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: input 체인에서 allowed_ips 에 속하는 소스만
-    accept 하도록 룰을 추가하시오.'
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: input 체인에서 allowed_ips 에 속하는 소스만 accept 하도록 룰을 추가하시오.'
   verify:
     type: output_contains
     expect: allowed_ips
     field: stdout
+    semantic:
+      intent: 화이트리스트 룰 — sudo nft add rule inet whitelist input ip saddr @allowed_ips accept. ip saddr
+        @allowed_ips = set 내 IP 매칭. policy drop 기본 + 화이트리스트만 accept = zero-trust 구현. set 참조는 @ 접두어.
+      success_criteria:
+      - allowed_ips 키워드
+      - ip saddr @ 구문
+      - accept 동작
+      acceptable_methods:
+      - nft add rule ip saddr @set accept
+      - iptables + ipset match set
+      - firewalld source address rule
+      - XDP/eBPF 대량 처리 최적화
+      negative_signs:
+      - '@ 접두어 없음'
+      - saddr 대신 daddr 혼동
+      - accept 없이 drop
   target_vm: secu
 - order: 5
   instruction: SSH tcp/22에 대해 ct state new limit rate 3/minute 를 적용해 브루트포스를 완화하시오.
   hint: tcp dport 22 ct state new limit rate 3/minute
   category: configure
   points: 10
-  answer: sudo nft add rule inet whitelist input tcp dport 22 ct state new limit rate
-    3/minute accept
-  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: SSH tcp/22에 대해 ct state new limit
-    rate 3/minute 를 적용해 브루트포스를 완화하시오.'
+  answer: sudo nft add rule inet whitelist input tcp dport 22 ct state new limit rate 3/minute accept
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: SSH tcp/22에 대해 ct state new limit rate 3/minute 를
+    적용해 브루트포스를 완화하시오.'
   verify:
     type: output_contains
     expect: limit rate
     field: stdout
+    semantic:
+      intent: SSH 레이트리밋 — sudo nft add rule inet whitelist input tcp dport 22 ct state new limit rate
+        3/minute accept. ct state new = 새 연결만 제한 (established 영향 없음). rate 3/minute = 분당 3회 신규 연결. SSH
+        브루트포스 완화. fail2ban 과 중복 방어.
+      success_criteria:
+      - limit rate 키워드
+      - ct state new 조건
+      - rate N/minute 또는 /second
+      acceptable_methods:
+      - nft limit rate N/minute
+      - iptables -m limit --limit
+      - fail2ban + nftables backend
+      - sshd_config MaxAuthTries 병행
+      negative_signs:
+      - ct state 조건 없이
+      - limit 없이 단순 accept
+      - rate 단위 혼동
   target_vm: secu
 - order: 6
   instruction: NAT 테이블과 postrouting 체인을 생성하고 masquerade 룰을 추가하시오.
   hint: type nat hook postrouting
   category: configure
   points: 10
-  answer: sudo nft add table inet nat && sudo nft add chain inet nat postrouting '{
-    type nat hook postrouting priority 100 \; }' && sudo nft add rule inet nat postrouting
-    oifname "ens33" masquerade
-  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: NAT 테이블과 postrouting 체인을 생성하고
-    masquerade 룰을 추가하시오.'
+  answer: sudo nft add table inet nat && sudo nft add chain inet nat postrouting '{ type nat hook postrouting
+    priority 100 \; }' && sudo nft add rule inet nat postrouting oifname "ens33" masquerade
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: NAT 테이블과 postrouting 체인을 생성하고 masquerade 룰을 추가하시오.'
   verify:
     type: output_contains
     expect: masquerade
     field: stdout
+    semantic:
+      intent: NAT masquerade — sudo nft add table inet nat + sudo nft add chain inet nat postrouting '{
+        type nat hook postrouting priority 100 \; }' + sudo nft add rule inet nat postrouting oifname
+        "ens33" masquerade. hook postrouting = 패킷 송신 직전. masquerade = 동적 SNAT (외부 IP 자동). internal → external
+        라우팅.
+      success_criteria:
+      - masquerade 키워드
+      - type nat + hook postrouting
+      - oifname 또는 인터페이스
+      acceptable_methods:
+      - nft add chain type nat + masquerade
+      - iptables -t nat -A POSTROUTING -j MASQUERADE
+      - firewalld --add-masquerade
+      - IP forwarding + masquerade 조합
+      negative_signs:
+      - type filter (NAT 아님)
+      - hook postrouting 누락
+      - SNAT 대신 DNAT 혼동
   target_vm: secu
 - order: 7
   instruction: 작성한 whitelist 테이블의 룰셋을 확인하시오.
@@ -105,6 +199,22 @@ steps:
     type: output_contains
     expect: accept
     field: stdout
+    semantic:
+      intent: whitelist 테이블 룰셋 확인 — sudo nft list table inet whitelist. 작성한 set + 룰 전체 확인. accept 룰 (화이트리스트
+        + SSH rate limit) + drop policy 검증. 트러블슈팅 기본.
+      success_criteria:
+      - accept 키워드
+      - nft list table inet whitelist
+      - set + rule 조합 출력
+      acceptable_methods:
+      - sudo nft list table inet whitelist
+      - nft -j list table (JSON)
+      - nft -n list table (숫자)
+      - ansible assert 룰 존재
+      negative_signs:
+      - list 실행 안 함
+      - 테이블 이름 혼동
+      - accept 규칙 누락 확인 없음
   target_vm: secu
 - order: 8
   instruction: NAT 테이블의 postrouting 체인에 masquerade가 적용됐는지 확인하시오.
@@ -112,12 +222,27 @@ steps:
   category: verify
   points: 10
   answer: sudo nft list table inet nat
-  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: NAT 테이블의 postrouting 체인에 masquerade가
-    적용됐는지 확인하시오.'
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: NAT 테이블의 postrouting 체인에 masquerade가 적용됐는지 확인하시오.'
   verify:
     type: output_contains
     expect: masquerade
     field: stdout
+    semantic:
+      intent: NAT 테이블 masquerade 확인 — sudo nft list table inet nat. postrouting 체인에 masquerade 룰 적용 확인.
+        oifname + masquerade 출력. NAT 동작 검증.
+      success_criteria:
+      - masquerade 키워드
+      - nft list table inet nat
+      - postrouting 체인 확인
+      acceptable_methods:
+      - sudo nft list table inet nat
+      - nft -j list table nat
+      - grep masquerade 필터
+      - conntrack -L 활성 연결 확인
+      negative_signs:
+      - NAT 테이블 아닌 filter
+      - masquerade 출력 누락
+      - list 명령 실행 안 함
   target_vm: secu
 - order: 9
   instruction: 실습 종료 후 whitelist, nat 테이블을 모두 삭제하시오.
@@ -125,12 +250,27 @@ steps:
   category: cleanup
   points: 10
   answer: sudo nft delete table inet whitelist ; sudo nft delete table inet nat
-  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: 실습 종료 후 whitelist, nat 테이블을 모두
-    삭제하시오.'
+  answer_detail: 'nftables 실전 — NAT, 화이트리스트, 레이트리밋: 실습 종료 후 whitelist, nat 테이블을 모두 삭제하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 테이블 cleanup — sudo nft delete table inet whitelist ; sudo nft delete table inet nat. 실습
+        2개 테이블 정리. 프로덕션 영향 방지. ; 로 연속 실행 (첫 번째 실패해도 두 번째 실행).
+      success_criteria:
+      - nft delete table 명령
+      - whitelist + nat 2개 대상
+      - 삭제 실행
+      acceptable_methods:
+      - nft delete table + 각 이름
+      - nft flush ruleset (전체)
+      - systemctl restart nftables (설정 초기화)
+      - /etc/nftables.conf 재로드
+      negative_signs:
+      - 단일 테이블만 삭제
+      - flush 로 전체 삭제 (과도)
+      - cleanup 의도 없음
   target_vm: secu
 - order: 10
   instruction: nftables 테이블 목록을 확인해 정리되었는지 검증하시오.
@@ -143,6 +283,22 @@ steps:
     type: output_contains
     expect: table
     field: stdout
+    semantic:
+      intent: 테이블 정리 검증 — sudo nft list tables. 삭제 후 남은 테이블 목록 확인. whitelist + nat 이 목록에 없어야 함. 운영 상태
+        정리 완료 검증.
+      success_criteria:
+      - table 키워드
+      - nft list tables 명령
+      - 실습 테이블 부재 확인
+      acceptable_methods:
+      - nft list tables
+      - nft -j list tables (JSON)
+      - grep -c 'whitelist\|nat' 0
+      - ansible assert
+      negative_signs:
+      - list tables 실행 안 함
+      - 부재 검증 없이 단순 나열
+      - 실습 테이블 잔존 무시
   target_vm: secu
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
