@@ -17,14 +17,33 @@ steps:
   hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
   category: recon
   points: 9
-  answer: for p in / /about /login /admin /api /static/logo.png /robots.txt /sitemap.xml /rest /rest/user /rest/products /api/v1 /api/v2 /docs /.well-known; do curl -s -o /dev/null http://10.20.30.80$p; done; echo session_A_done
+  answer: for p in / /about /login /admin /api /static/logo.png /robots.txt /sitemap.xml /rest /rest/user
+    /rest/products /api/v1 /api/v2 /docs /.well-known; do curl -s -o /dev/null http://10.20.30.80$p; done;
+    echo session_A_done
   answer_detail: 세션 A(정찰) 트래픽. ReqBurst 지문 유발.
   verify:
     type: output_contains
     expect: session_A_done
     field: stdout
+    semantic:
+      intent: '[세션A] 정찰 15경로 — for p in / /about /login... 15경로; curl -s. 3분 내 15 고유 경로. ReqBurst 지문 유발.
+        MITRE T1595.'
+      success_criteria:
+      - session_A_done
+      - 15 경로 순회
+      - curl -s
+      acceptable_methods:
+      - for + curl
+      - gobuster dir
+      - ffuf
+      negative_signs:
+      - 경로 10개 이하
+      - for 없음
+      - 완료 마커 없음
   target_vm: web
-  script: for p in / /about /login /admin /api /static/logo.png /robots.txt /sitemap.xml /rest /rest/user /rest/products /api/v1 /api/v2 /docs /.well-known; do curl -s -o /dev/null http://10.20.30.80$p; done; echo session_A_done
+  script: for p in / /about /login /admin /api /static/logo.png /robots.txt /sitemap.xml /rest /rest/user
+    /rest/products /api/v1 /api/v2 /docs /.well-known; do curl -s -o /dev/null http://10.20.30.80$p; done;
+    echo session_A_done
   risk_level: low
   bastion_prompt: ''
 - order: 2
@@ -32,14 +51,33 @@ steps:
   hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
   category: attack
   points: 10
-  answer: 'for i in $(seq 1 10); do curl -s -o /dev/null -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"u''$i''@t.com","password":"pwd''$i''"}''; done; echo session_B_done'
+  answer: 'for i in $(seq 1 10); do curl -s -o /dev/null -X POST http://10.20.30.80:3000/rest/user/login
+    -H ''Content-Type: application/json'' -d ''{"email":"u''$i''@t.com","password":"pwd''$i''"}''; done;
+    echo session_B_done'
   answer_detail: 세션 B(브루트) 트래픽. Credential Access 신호.
   verify:
     type: output_contains
     expect: session_B_done
     field: stdout
+    semantic:
+      intent: '[세션B] 로그인 브루트 10회 — for i in 1..10; curl -X POST /rest/user/login email=u$i pwd=pwd$i.
+        Credential Access. MITRE T1110.'
+      success_criteria:
+      - session_B_done
+      - 10 반복
+      - POST JSON
+      acceptable_methods:
+      - for + seq
+      - hydra
+      - patator
+      negative_signs:
+      - 반복 5회 이하
+      - POST 없음
+      - 마커 없음
   target_vm: web
-  script: 'for i in $(seq 1 10); do curl -s -o /dev/null -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"u''$i''@t.com","password":"pwd''$i''"}''; done; echo session_B_done'
+  script: 'for i in $(seq 1 10); do curl -s -o /dev/null -X POST http://10.20.30.80:3000/rest/user/login
+    -H ''Content-Type: application/json'' -d ''{"email":"u''$i''@t.com","password":"pwd''$i''"}''; done;
+    echo session_B_done'
   risk_level: low
   bastion_prompt: ''
 - order: 3
@@ -47,14 +85,31 @@ steps:
   hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
   category: recon
   points: 11
-  answer: for p in /api /rest /internal /admin /actuator /metrics; do curl -s -o /dev/null -w '%{http_code} '$p'\n' http://10.20.30.80$p; done; echo session_C_done
+  answer: for p in /api /rest /internal /admin /actuator /metrics; do curl -s -o /dev/null -w '%{http_code}
+    '$p'\n' http://10.20.30.80$p; done; echo session_C_done
   answer_detail: 세션 C(API 탐색) 트래픽.
   verify:
     type: output_contains
     expect: session_C_done
     field: stdout
+    semantic:
+      intent: '[세션C] API 열거 6경로 — for p in /api /rest /internal /admin /actuator /metrics; curl -w ''%{http_code}''.
+        API 탐색. MITRE T1590.'
+      success_criteria:
+      - session_C_done
+      - 6 API 경로
+      - HTTP 코드
+      acceptable_methods:
+      - for + curl -w
+      - kiterunner API scan
+      - ffuf -H
+      negative_signs:
+      - 경로 3개 이하
+      - API 아닌
+      - 완료 마커 없음
   target_vm: web
-  script: for p in /api /rest /internal /admin /actuator /metrics; do curl -s -o /dev/null -w '%{http_code} '$p'\n' http://10.20.30.80$p; done; echo session_C_done
+  script: for p in /api /rest /internal /admin /actuator /metrics; do curl -s -o /dev/null -w '%{http_code}
+    '$p'\n' http://10.20.30.80$p; done; echo session_C_done
   risk_level: low
   bastion_prompt: ''
 - order: 4
@@ -68,6 +123,21 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[분석] 시간대 겹침 확인 — sudo tail -60 access.log | awk ''{print $4}'' | sort -u | tail -5. 3 세션
+        시간대 동시성. 같은 창 = 클러스터 후보.'
+      success_criteria:
+      - 시간 $4 추출
+      - sort -u
+      - tail 5
+      acceptable_methods:
+      - awk $4 + sort -u
+      - date parsing
+      - ELK time bucket
+      negative_signs:
+      - 시간 필드 없음
+      - sort -u 누락
+      - 집계 없음
   target_vm: web
   script: sudo tail -60 /var/log/apache2/access.log | awk '{print $4}' | sort -u | tail -5
   risk_level: low
@@ -77,14 +147,41 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 13
-  answer: "cat > ~/ccc/scripts/cluster.py <<'PY'\ndef cluster(sessions):\n    groups = {}\n    for s in sessions:\n        key = (s.get('ja3','?'), s.get('ua_class','?'), s.get('ip_24','?'))\n        groups.setdefault(key, []).append(s)\n    return {k:v for k,v in groups.items() if len(v)>=2}\nprint('cluster_test', cluster([{'ja3':'x','ua_class':'curl','ip_24':'10.20.30','id':'s1'},\n                                {'ja3':'x','ua_class':'curl','ip_24':'10.20.30','id':'s2'},\n                                {'ja3':'y','ua_class':'browser','ip_24':'10.20.30','id':'s3'}]))\nPY\npython3 ~/ccc/scripts/cluster.py"
+  answer: "cat > ~/ccc/scripts/cluster.py <<'PY'\ndef cluster(sessions):\n    groups = {}\n    for s in\
+    \ sessions:\n        key = (s.get('ja3','?'), s.get('ua_class','?'), s.get('ip_24','?'))\n       \
+    \ groups.setdefault(key, []).append(s)\n    return {k:v for k,v in groups.items() if len(v)>=2}\n\
+    print('cluster_test', cluster([{'ja3':'x','ua_class':'curl','ip_24':'10.20.30','id':'s1'},\n     \
+    \                           {'ja3':'x','ua_class':'curl','ip_24':'10.20.30','id':'s2'},\n        \
+    \                        {'ja3':'y','ua_class':'browser','ip_24':'10.20.30','id':'s3'}]))\nPY\npython3\
+    \ ~/ccc/scripts/cluster.py"
   answer_detail: 세션 클러스터링 기본. JA3·UA·IP/24 앙상블.
   verify:
     type: output_contains
     expect: cluster_test
     field: stdout
+    semantic:
+      intent: '[설계] 세션 클러스터링 — cat > cluster.py: def cluster + key=(ja3, ua_class, ip_24) + groupby +
+        len>=2. JA3+UA+IP/24 앙상블 클러스터링. 3 세션 묶음.'
+      success_criteria:
+      - cluster_test 출력
+      - JA3+UA+IP key
+      - groupby 로직
+      acceptable_methods:
+      - dict groupby
+      - pandas groupby
+      - Spark agg
+      negative_signs:
+      - 축 1종
+      - 그룹화 없음
+      - 테스트 없음
   target_vm: bastion
-  script: "cat > ~/ccc/scripts/cluster.py <<'PY'\ndef cluster(sessions):\n    groups = {}\n    for s in sessions:\n        key = (s.get('ja3','?'), s.get('ua_class','?'), s.get('ip_24','?'))\n        groups.setdefault(key, []).append(s)\n    return {k:v for k,v in groups.items() if len(v)>=2}\nprint('cluster_test', cluster([{'ja3':'x','ua_class':'curl','ip_24':'10.20.30','id':'s1'},\n                                {'ja3':'x','ua_class':'curl','ip_24':'10.20.30','id':'s2'},\n                                {'ja3':'y','ua_class':'browser','ip_24':'10.20.30','id':'s3'}]))\nPY\npython3 ~/ccc/scripts/cluster.py"
+  script: "cat > ~/ccc/scripts/cluster.py <<'PY'\ndef cluster(sessions):\n    groups = {}\n    for s in\
+    \ sessions:\n        key = (s.get('ja3','?'), s.get('ua_class','?'), s.get('ip_24','?'))\n       \
+    \ groups.setdefault(key, []).append(s)\n    return {k:v for k,v in groups.items() if len(v)>=2}\n\
+    print('cluster_test', cluster([{'ja3':'x','ua_class':'curl','ip_24':'10.20.30','id':'s1'},\n     \
+    \                           {'ja3':'x','ua_class':'curl','ip_24':'10.20.30','id':'s2'},\n        \
+    \                        {'ja3':'y','ua_class':'browser','ip_24':'10.20.30','id':'s3'}]))\nPY\npython3\
+    \ ~/ccc/scripts/cluster.py"
   risk_level: low
   bastion_prompt: ''
 - order: 6
@@ -92,14 +189,35 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 14
-  answer: "cat > ~/ccc/scripts/triage.py <<'PY'\ndef triage(alert):\n    if alert.get('success') and alert.get('sensitive_data'): return 'P0'\n    if alert.get('cluster_size', 1) >= 3: return 'P1'\n    if alert.get('signature_matched'): return 'P2'\n    return 'P3'\nfor a in [{'success':True, 'sensitive_data':True}, {'cluster_size':4}, {'signature_matched':True}, {}]:\n    print(triage(a), a)\nPY\npython3 ~/ccc/scripts/triage.py"
+  answer: "cat > ~/ccc/scripts/triage.py <<'PY'\ndef triage(alert):\n    if alert.get('success') and alert.get('sensitive_data'):\
+    \ return 'P0'\n    if alert.get('cluster_size', 1) >= 3: return 'P1'\n    if alert.get('signature_matched'):\
+    \ return 'P2'\n    return 'P3'\nfor a in [{'success':True, 'sensitive_data':True}, {'cluster_size':4},\
+    \ {'signature_matched':True}, {}]:\n    print(triage(a), a)\nPY\npython3 ~/ccc/scripts/triage.py"
   answer_detail: 경보 우선순위 결정의 기본 로직.
   verify:
     type: output_contains
     expect: P0
     field: stdout
+    semantic:
+      intent: '[설계] 트리아지 P0-P3 — cat > triage.py: def triage(alert): success+sensitive=P0/cluster>=3=P1/signature=P2/else=P3.
+        4 레벨 우선순위. NIST SP 800-61 IR priority.'
+      success_criteria:
+      - P0 출력
+      - 4 레벨
+      - 규칙 기반 분류
+      acceptable_methods:
+      - if-else 분류
+      - decision tree
+      - MISRA severity
+      negative_signs:
+      - P0-P3 부족
+      - 규칙 없음
+      - 테스트 없음
   target_vm: bastion
-  script: "cat > ~/ccc/scripts/triage.py <<'PY'\ndef triage(alert):\n    if alert.get('success') and alert.get('sensitive_data'): return 'P0'\n    if alert.get('cluster_size', 1) >= 3: return 'P1'\n    if alert.get('signature_matched'): return 'P2'\n    return 'P3'\nfor a in [{'success':True, 'sensitive_data':True}, {'cluster_size':4}, {'signature_matched':True}, {}]:\n    print(triage(a), a)\nPY\npython3 ~/ccc/scripts/triage.py"
+  script: "cat > ~/ccc/scripts/triage.py <<'PY'\ndef triage(alert):\n    if alert.get('success') and alert.get('sensitive_data'):\
+    \ return 'P0'\n    if alert.get('cluster_size', 1) >= 3: return 'P1'\n    if alert.get('signature_matched'):\
+    \ return 'P2'\n    return 'P3'\nfor a in [{'success':True, 'sensitive_data':True}, {'cluster_size':4},\
+    \ {'signature_matched':True}, {}]:\n    print(triage(a), a)\nPY\npython3 ~/ccc/scripts/triage.py"
   risk_level: low
   bastion_prompt: ''
 - order: 7
@@ -107,14 +225,33 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 15
-  answer: "cat > ~/ccc/scripts/noise.py <<'PY'\ndef noise_storm(alert_count_5min, baseline=30):\n    return alert_count_5min > baseline * 5\nprint(noise_storm(200))  # True\nprint(noise_storm(10))   # False\nPY\npython3 ~/ccc/scripts/noise.py"
+  answer: "cat > ~/ccc/scripts/noise.py <<'PY'\ndef noise_storm(alert_count_5min, baseline=30):\n    return\
+    \ alert_count_5min > baseline * 5\nprint(noise_storm(200))  # True\nprint(noise_storm(10))   # False\n\
+    PY\npython3 ~/ccc/scripts/noise.py"
   answer_detail: 경보 5배 급증 → 노이즈 스톰. 조용한 세션을 오히려 상향.
   verify:
     type: output_contains
     expect: 'True'
     field: stdout
+    semantic:
+      intent: '[설계] 노이즈 스톰 탐지 — cat > noise.py: def noise_storm(alert_count_5min, baseline=30): return
+        count > baseline * 5. 경보 5배 급증 탐지. 조용한 세션 역상향.'
+      success_criteria:
+      - True 출력 200
+      - baseline * 5
+      - 5min window
+      acceptable_methods:
+      - baseline 비교
+      - Z-score 이상
+      - Prometheus alert
+      negative_signs:
+      - baseline 없음
+      - 배수 없음
+      - window 없음
   target_vm: bastion
-  script: "cat > ~/ccc/scripts/noise.py <<'PY'\ndef noise_storm(alert_count_5min, baseline=30):\n    return alert_count_5min > baseline * 5\nprint(noise_storm(200))  # True\nprint(noise_storm(10))   # False\nPY\npython3 ~/ccc/scripts/noise.py"
+  script: "cat > ~/ccc/scripts/noise.py <<'PY'\ndef noise_storm(alert_count_5min, baseline=30):\n    return\
+    \ alert_count_5min > baseline * 5\nprint(noise_storm(200))  # True\nprint(noise_storm(10))   # False\n\
+    PY\npython3 ~/ccc/scripts/noise.py"
   risk_level: low
   bastion_prompt: ''
 - order: 8
@@ -122,14 +259,35 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 16
-  answer: "cat > ~/ccc/artifacts/w07/engine.md <<'MD'\n# CorrelationEngine API\n```python\nclass CorrelationEngine:\n    def ingest(self, event): ...\n    def cluster(self, window=300): ...\n    def score_cluster(self, cluster): ...\n    def triage(self, cluster): ...\n    def emit_action(self, cluster, priority): ...\n```\nMD\ncat ~/ccc/artifacts/w07/engine.md"
+  answer: "cat > ~/ccc/artifacts/w07/engine.md <<'MD'\n# CorrelationEngine API\n```python\nclass CorrelationEngine:\n\
+    \    def ingest(self, event): ...\n    def cluster(self, window=300): ...\n    def score_cluster(self,\
+    \ cluster): ...\n    def triage(self, cluster): ...\n    def emit_action(self, cluster, priority):\
+    \ ...\n```\nMD\ncat ~/ccc/artifacts/w07/engine.md"
   answer_detail: w11에서 Bastion에 실제 구현할 엔진 API. 지금은 *인터페이스*만 고정.
   verify:
     type: output_contains
     expect: CorrelationEngine
     field: stdout
+    semantic:
+      intent: '[설계] CorrelationEngine API — cat > engine.md: class CorrelationEngine + ingest/cluster/score_cluster/triage/emit_action
+        5 메서드. 인터페이스 고정. w11 Bastion 실제 구현.'
+      success_criteria:
+      - CorrelationEngine 키워드
+      - 5 메서드
+      - class 정의
+      acceptable_methods:
+      - Python class 설계
+      - UML diagram
+      - OpenAPI spec
+      negative_signs:
+      - 메서드 3개 이하
+      - class 없음
+      - API 없음
   target_vm: bastion
-  script: "cat > ~/ccc/artifacts/w07/engine.md <<'MD'\n# CorrelationEngine API\n```python\nclass CorrelationEngine:\n    def ingest(self, event): ...\n    def cluster(self, window=300): ...\n    def score_cluster(self, cluster): ...\n    def triage(self, cluster): ...\n    def emit_action(self, cluster, priority): ...\n```\nMD\ncat ~/ccc/artifacts/w07/engine.md"
+  script: "cat > ~/ccc/artifacts/w07/engine.md <<'MD'\n# CorrelationEngine API\n```python\nclass CorrelationEngine:\n\
+    \    def ingest(self, event): ...\n    def cluster(self, window=300): ...\n    def score_cluster(self,\
+    \ cluster): ...\n    def triage(self, cluster): ...\n    def emit_action(self, cluster, priority):\
+    \ ...\n```\nMD\ncat ~/ccc/artifacts/w07/engine.md"
   risk_level: low
   bastion_prompt: ''
 - order: 9
@@ -159,6 +317,21 @@ steps:
     type: output_contains
     expect: 임계
     field: stdout
+    semantic:
+      intent: '[문서] 유사도 임계값 — cat > thresholds.md: 표 4 축 (JA3/UA/IAT p-value/경로 Jaccard) × 3 엄격도 (느슨/표준/엄격).
+        w12 Canary 검증. 조정 기준.'
+      success_criteria:
+      - 임계 키워드
+      - 4 축 × 3 엄격도
+      - 표 형식
+      acceptable_methods:
+      - Markdown 표
+      - YAML threshold
+      - CSV calibration
+      negative_signs:
+      - 축 2개 이하
+      - 엄격도 1-2개
+      - 임계 없음
   target_vm: bastion
   script: 'cat > ~/ccc/artifacts/w07/thresholds.md <<''MD''
 
@@ -184,14 +357,33 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 18
-  answer: echo '{"id":"w07-scale","sessions_launched":3,"cluster_detected":true,"noise_storm":false}' > ~/ccc/data/bastion/experience/w07-scale.json && cat ~/ccc/data/bastion/experience/w07-scale.json
+  answer: echo '{"id":"w07-scale","sessions_launched":3,"cluster_detected":true,"noise_storm":false}'
+    > ~/ccc/data/bastion/experience/w07-scale.json && cat ~/ccc/data/bastion/experience/w07-scale.json
   answer_detail: 멀티세션 실습 결과 기록.
   verify:
     type: output_contains
-    expect: cluster_detected
+    expect:
+    - cluster_detected
+    - 저장
     field: stdout
+    semantic:
+      intent: '[기록] w07 규모화 Experience — echo ''{id: w07-scale, sessions_launched: 3, cluster_detected:
+        true, noise_storm: false}'' > w07-scale.json. 멀티세션 결과.'
+      success_criteria:
+      - cluster_detected/저장
+      - JSON 저장
+      - 3 sessions
+      acceptable_methods:
+      - echo JSON
+      - jq -n
+      - python dumps
+      negative_signs:
+      - 필드 누락
+      - JSON 아님
+      - 결과 미기록
   target_vm: bastion
-  script: echo '{"id":"w07-scale","sessions_launched":3,"cluster_detected":true,"noise_storm":false}' > ~/ccc/data/bastion/experience/w07-scale.json && cat ~/ccc/data/bastion/experience/w07-scale.json
+  script: echo '{"id":"w07-scale","sessions_launched":3,"cluster_detected":true,"noise_storm":false}'
+    > ~/ccc/data/bastion/experience/w07-scale.json && cat ~/ccc/data/bastion/experience/w07-scale.json
   risk_level: low
   bastion_prompt: ''
 - order: 11
@@ -199,13 +391,30 @@ steps:
   hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 19
-  answer: sudo tail -100 /var/log/apache2/access.log | awk '{print $4, $1, $7}' | tail -30 > ~/ccc/artifacts/w07/timeline.txt && wc -l ~/ccc/artifacts/w07/timeline.txt
+  answer: sudo tail -100 /var/log/apache2/access.log | awk '{print $4, $1, $7}' | tail -30 > ~/ccc/artifacts/w07/timeline.txt
+    && wc -l ~/ccc/artifacts/w07/timeline.txt
   answer_detail: IP·경로·시간을 하나로 묶은 원본 타임라인.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[분석] 3세션 타임라인 — sudo tail -100 access.log | awk ''{print $4, $1, $7}'' | tail -30 > timeline.txt
+        + wc -l. IP+경로+시간 원본 타임라인. w8 CTF 입력.'
+      success_criteria:
+      - timeline.txt 저장
+      - awk 3 필드
+      - wc -l
+      acceptable_methods:
+      - awk + tail
+      - logstash pipeline
+      - ELK timeline
+      negative_signs:
+      - 필드 1-2개
+      - 파일 저장 없음
+      - wc 확인 없음
   target_vm: web
-  script: sudo tail -100 /var/log/apache2/access.log | awk '{print $4, $1, $7}' | tail -30 > ~/ccc/artifacts/w07/timeline.txt && wc -l ~/ccc/artifacts/w07/timeline.txt
+  script: sudo tail -100 /var/log/apache2/access.log | awk '{print $4, $1, $7}' | tail -30 > ~/ccc/artifacts/w07/timeline.txt
+    && wc -l ~/ccc/artifacts/w07/timeline.txt
   risk_level: low
   bastion_prompt: ''
