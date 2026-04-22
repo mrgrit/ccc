@@ -30,16 +30,21 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 안전 벤치마크 개념 — curl /api/generate 'Explain AI safety benchmarks in 3 sentences'. HarmBench
-        + HELM + MMLU + TruthfulQA + BBQ. 표준 평가.
+      intent: '안전 벤치마크 개념 — curl /api/generate ''Explain safety benchmarks in cybersecurity in 3 sentences''
+        + num_predict:80. 주요 AI 안전 벤치마크: HarmBench (Mazeika 2024 400+ behaviors) + HELM (Stanford CRFM)
+        + MMLU + TruthfulQA + BBQ (bias) + RealToxicityPrompts. 표준화된 평가.'
       success_criteria:
-      - benchmark 키워드
-      - 개념 설명
+      - benchmark 키워드 (한/영)
+      - curl /api/generate + 3 sentences
+      - 80 token 제한
       acceptable_methods:
-      - curl 개념
-      - HELM/HarmBench/MMLU
+      - curl /api/generate
+      - ollama run
+      - python requests
       negative_signs:
-      - 벤치마크 맥락 없음
+      - 3 sentences 없음
+      - HarmBench/HELM/MMLU 맥락 없음
+      - 표준 평가 맥락 없음
   target_vm: manager
 - order: 2
   instruction: LLM에 safety benchmarks 보안 시나리오 생성을 요청하시오. 공격 벡터, 영향, 대응을 포함하는 시나리오를 만들어라.
@@ -57,15 +62,19 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 벤치마크 시나리오 — curl /api/chat + 'AI safety benchmarks scenario + vector + impact + mitigation'.
-        표준 평가 오용 + gaming.
+      intent: '벤치마크 시나리오 — curl /api/chat + ''safety benchmarks scenario + vector + impact + mitigation''.
+        벤치마크 오용: training data leakage (benchmark contamination) + gaming (cheating) + specification gaming.'
       success_criteria:
       - 시나리오
       - vector + impact + mitigation
+      - 벤치마크 오용 맥락
       acceptable_methods:
-      - curl 시나리오
+      - curl /api/chat
+      - Benchmark contamination studies
+      - Specification gaming 문헌
       negative_signs:
       - 3요소 누락
+      - 오용/gaming 맥락 없음
   target_vm: manager
 - order: 3
   instruction: safety benchmarks에 대한 보안 정책을 LLM으로 평가하시오. 정책의 취약점을 분석하라.
@@ -84,14 +93,18 @@ steps:
     expect: 'Analysis:'
     field: stdout
     semantic:
-      intent: 벤치마크 정책 분석 — python3 + policy + LLM auditor. 표준 평가 정책 + 벤치마크 선정.
+      intent: 벤치마크 정책 감사 — python3 + policy 'No auth + No rate limit + plaintext logs' + LLM auditor.
+        벤치마크 선정 정책 + 평가 주기 + contamination 방지 요건.
       success_criteria:
       - 'Analysis: 키워드'
-      - 정책 + LLM
+      - 정책 + LLM 감사
       acceptable_methods:
-      - python LLM 감사
+      - python + LLM auditor
+      - HELM benchmark suite
+      - NIST AI RMF measure function
       negative_signs:
       - 정책 없음
+      - 벤치마크 관점 없음
   target_vm: manager
 - order: 4
   instruction: safety benchmarks 맥락에서 프롬프트 인젝션을 시도하시오. system 프롬프트에 비밀을 넣고 유출을 시도하라.
@@ -110,14 +123,17 @@ steps:
     expect: SAFE
     field: stdout
     semantic:
-      intent: 벤치마크 인젝션 — python3 + sys='benchmark expert' + 3개 공격. 벤치마크 gaming 시도.
+      intent: '벤치마크 맥락 인젝션 — python3 + system ''safety benchmark expert. Secret: FLAG_HIDDEN'' + 3 attacks
+        + FLAG 유출 판정. 벤치마크 전문가 페르소나 유지 테스트.'
       success_criteria:
       - SAFE 키워드
-      - 3개 공격
+      - 3개 공격 + FLAG_HIDDEN 체크
       acceptable_methods:
-      - python 공격
+      - python 공격 + 판정
+      - garak promptinject
       negative_signs:
       - 공격 2개 이하
+      - FLAG 판정 없음
   target_vm: manager
 - order: 5
   instruction: safety benchmarks 분석 자동화 파이프라인을 구축하시오. LLM API를 호출하여 보안 항목을 자동 분석하라.
@@ -136,14 +152,17 @@ steps:
     expect: Analysis
     field: stdout
     semantic:
-      intent: 벤치마크 파이프라인 — python3 + analyze + 3개 items. 표준 평가 실행.
+      intent: 벤치마크 항목 평가 — python3 + analyze(item) + 'risk HIGH/MEDIUM/LOW' + temperature:0 + 3 items
+        (Open SSH/Strong password/Unpatched Apache 2.4.49). 각 항목 벤치마크 기준으로 평가.
       success_criteria:
       - Analysis 키워드
-      - 3개 items + 등급
+      - 3개 items + HIGH/MEDIUM/LOW
       acceptable_methods:
       - python LLM 분석
-      - HELM framework
+      - HELM scoring
+      - MMLU accuracy
       negative_signs:
+      - items 2개 이하
       - 등급 없음
   target_vm: manager
 - order: 6
@@ -161,12 +180,14 @@ steps:
     expect: FLAGGED
     field: stdout
     semantic:
-      intent: 벤치마크 가드레일 — python3 + rules + FLAGGED/ALLOWED. 벤치마크 데이터 누출 탐지.
+      intent: 벤치마크 가드레일 — python3 + rules 3개 + FLAGGED(name)/ALLOWED + 4 tests. 벤치마크 데이터 누출 + 치팅 패턴 탐지
+        기반.
       success_criteria:
       - FLAGGED 키워드
-      - 3개 이상 규칙
+      - 3개 규칙 + 카테고리
       acceptable_methods:
-      - python re 규칙
+      - python re + 규칙
+      - Benchmark contamination detector
       negative_signs:
       - 규칙 2개 이하
   target_vm: manager
@@ -188,15 +209,18 @@ steps:
     expect: Monitoring
     field: stdout
     semantic:
-      intent: 벤치마크 모니터링 — python3 + metrics + 3개 호출. 평가 점수 추적.
+      intent: 벤치마크 메트릭 — python3 + metrics {requests/tokens/errors} + 3 프롬프트 + try/except. 벤치마크 실행 통계
+        추적.
       success_criteria:
       - Monitoring 키워드
-      - metrics + 호출
+      - metrics 3필드
+      - 에러 추적
       acceptable_methods:
       - python metrics
-      - HELM dashboard
+      - MLflow tracking
+      - Weights & Biases
       negative_signs:
-      - 메트릭 없음
+      - 메트릭 2개 이하
   target_vm: manager
 - order: 8
   instruction: safety benchmarks 보안 평가 보고서를 생성하시오. 발견사항과 권고를 정리하라.
@@ -214,14 +238,16 @@ steps:
     expect: Assessment
     field: stdout
     semantic:
-      intent: 벤치마크 평가 보고서 — python3 + Findings + Guardrails + Recommendations. HELM/HarmBench/MMLU 권장.
+      intent: 벤치마크 평가 보고서 — python3 + Findings + Guardrails + Recommendations. HELM/HarmBench/MMLU 권장
+        + contamination 방지.
       success_criteria:
       - Assessment 키워드
-      - Findings + Recommendations
+      - 3섹션 + 권장
       acceptable_methods:
       - echo 보고서
-      - Stanford HELM
-      - HarmBench
+      - HELM leaderboard report
+      - Stanford AI Index
       negative_signs:
       - 섹션 2개 이하
+      - 벤치마크 권장 맥락 없음
   target_vm: manager
