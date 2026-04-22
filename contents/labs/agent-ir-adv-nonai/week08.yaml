@@ -3,8 +3,7 @@ title: K8s Pod Escape + API 악용 IR (Non-AI)
 version: nonai
 course: agent-ir-adv-nonai
 week: 8
-description: privileged·hostPath·capability로 탈출. PSA restricted·Falco·NetworkPolicy
-  방어. 학생이 수동 수행·기록.
+description: privileged·hostPath·capability로 탈출. PSA restricted·Falco·NetworkPolicy 방어. 학생이 수동 수행·기록.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -18,22 +17,35 @@ steps:
   hint: 6단계 IR 중 공격 단계. target_vm=bastion.
   category: attack
   points: 9
-  answer: "mkdir -p ~/w08 && cat > ~/w08/bad-pod.yaml <<'Y'\napiVersion: v1\nkind:\
-    \ Pod\nmetadata: {name: bad-pod}\nspec:\n  containers:\n    - name: c\n      image:\
-    \ alpine\n      securityContext: {privileged: true}\n      volumeMounts: [{name:\
-    \ host, mountPath: /host}]\n  volumes:\n    - name: host\n      hostPath: {path:\
-    \ /}\nY\ncat ~/w08/bad-pod.yaml"
+  answer: "mkdir -p ~/w08 && cat > ~/w08/bad-pod.yaml <<'Y'\napiVersion: v1\nkind: Pod\nmetadata: {name:\
+    \ bad-pod}\nspec:\n  containers:\n    - name: c\n      image: alpine\n      securityContext: {privileged:\
+    \ true}\n      volumeMounts: [{name: host, mountPath: /host}]\n  volumes:\n    - name: host\n    \
+    \  hostPath: {path: /}\nY\ncat ~/w08/bad-pod.yaml"
   answer_detail: '[공격] privileged+hostPath=완전 호스트 접근.'
   verify:
     type: output_contains
     expect: privileged
     field: stdout
+    semantic:
+      intent: '[공격] privileged Pod — cat > bad-pod.yaml: securityContext privileged true + hostPath /.
+        완전 호스트 접근. MITRE T1611 Escape to Host.'
+      success_criteria:
+      - privileged 키워드
+      - hostPath /
+      - securityContext
+      acceptable_methods:
+      - privileged Pod
+      - hostPID/hostNetwork
+      - capabilities SYS_ADMIN
+      negative_signs:
+      - privileged 없음
+      - hostPath 없음
+      - YAML 아님
   target_vm: bastion
-  script: "mkdir -p ~/w08 && cat > ~/w08/bad-pod.yaml <<'Y'\napiVersion: v1\nkind:\
-    \ Pod\nmetadata: {name: bad-pod}\nspec:\n  containers:\n    - name: c\n      image:\
-    \ alpine\n      securityContext: {privileged: true}\n      volumeMounts: [{name:\
-    \ host, mountPath: /host}]\n  volumes:\n    - name: host\n      hostPath: {path:\
-    \ /}\nY\ncat ~/w08/bad-pod.yaml"
+  script: "mkdir -p ~/w08 && cat > ~/w08/bad-pod.yaml <<'Y'\napiVersion: v1\nkind: Pod\nmetadata: {name:\
+    \ bad-pod}\nspec:\n  containers:\n    - name: c\n      image: alpine\n      securityContext: {privileged:\
+    \ true}\n      volumeMounts: [{name: host, mountPath: /host}]\n  volumes:\n    - name: host\n    \
+    \  hostPath: {path: /}\nY\ncat ~/w08/bad-pod.yaml"
   risk_level: low
   bastion_prompt: ''
 - order: 2
@@ -57,6 +69,21 @@ steps:
     type: output_contains
     expect: can-i
     field: stdout
+    semantic:
+      intent: '[공격] kubectl 권한 열거 — cat > enum.sh: kubectl auth can-i --list + cat /var/run/secrets/.../token.
+        SA 토큰 + can-i. MITRE T1613.'
+      success_criteria:
+      - can-i 키워드
+      - serviceaccount/token
+      - 권한 열거
+      acceptable_methods:
+      - kubectl auth
+      - PACU k8s
+      - kube-hunter
+      negative_signs:
+      - can-i 없음
+      - token 경로 없음
+      - 열거 없음
   target_vm: bastion
   script: 'cat > ~/w08/enum.sh <<''S''
 
@@ -76,20 +103,33 @@ steps:
   hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
   category: analysis
   points: 11
-  answer: "cat > ~/w08/audit-policy.yaml <<'Y'\napiVersion: audit.k8s.io/v1\nkind:\
-    \ Policy\nrules:\n  - level: RequestResponse\n    verbs: [create, update, patch,\
-    \ delete]\n    resources:\n      - group: ''\n        resources: [pods, secrets,\
-    \ configmaps]\nY\ncat ~/w08/audit-policy.yaml"
+  answer: "cat > ~/w08/audit-policy.yaml <<'Y'\napiVersion: audit.k8s.io/v1\nkind: Policy\nrules:\n  -\
+    \ level: RequestResponse\n    verbs: [create, update, patch, delete]\n    resources:\n      - group:\
+    \ ''\n        resources: [pods, secrets, configmaps]\nY\ncat ~/w08/audit-policy.yaml"
   answer_detail: '[탐지] API 호출 전수 감사.'
   verify:
     type: output_contains
     expect: RequestResponse
     field: stdout
+    semantic:
+      intent: '[탐지] kube-audit policy — cat > audit-policy.yaml: level RequestResponse + verbs create/update/patch/delete
+        + resources pods/secrets/configmaps. API 호출 전수.'
+      success_criteria:
+      - RequestResponse 키워드
+      - verbs + resources
+      - audit.k8s.io/v1
+      acceptable_methods:
+      - audit.k8s.io policy
+      - Falco Audit
+      - Kyverno audit
+      negative_signs:
+      - level 없음
+      - resources 없음
+      - verbs 누락
   target_vm: bastion
-  script: "cat > ~/w08/audit-policy.yaml <<'Y'\napiVersion: audit.k8s.io/v1\nkind:\
-    \ Policy\nrules:\n  - level: RequestResponse\n    verbs: [create, update, patch,\
-    \ delete]\n    resources:\n      - group: ''\n        resources: [pods, secrets,\
-    \ configmaps]\nY\ncat ~/w08/audit-policy.yaml"
+  script: "cat > ~/w08/audit-policy.yaml <<'Y'\napiVersion: audit.k8s.io/v1\nkind: Policy\nrules:\n  -\
+    \ level: RequestResponse\n    verbs: [create, update, patch, delete]\n    resources:\n      - group:\
+    \ ''\n        resources: [pods, secrets, configmaps]\nY\ncat ~/w08/audit-policy.yaml"
   risk_level: low
   bastion_prompt: ''
 - order: 4
@@ -97,18 +137,33 @@ steps:
   hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
   category: analysis
   points: 12
-  answer: "cat > ~/w08/falco.yml <<'Y'\n- rule: Terminal shell in container\n  condition:\
-    \ spawned_process and container and shell_procs\n- rule: Contact K8s API Server\
-    \ From Pod\n  condition: (k8s_api_server)\nY\ncat ~/w08/falco.yml"
+  answer: "cat > ~/w08/falco.yml <<'Y'\n- rule: Terminal shell in container\n  condition: spawned_process\
+    \ and container and shell_procs\n- rule: Contact K8s API Server From Pod\n  condition: (k8s_api_server)\n\
+    Y\ncat ~/w08/falco.yml"
   answer_detail: '[탐지] 런타임 이상.'
   verify:
     type: output_contains
     expect: shell_procs
     field: stdout
+    semantic:
+      intent: '[탐지] Falco 룰 — cat > falco.yml: Terminal shell in container spawned_process + shell_procs
+        / Contact K8s API Server From Pod. 런타임 이상 탐지.'
+      success_criteria:
+      - shell_procs 키워드
+      - Falco rule + condition
+      - K8s API Server
+      acceptable_methods:
+      - Falco rules
+      - Tracee runtime
+      - Tetragon eBPF
+      negative_signs:
+      - shell_procs 없음
+      - condition 없음
+      - 런타임 맥락 없음
   target_vm: bastion
-  script: "cat > ~/w08/falco.yml <<'Y'\n- rule: Terminal shell in container\n  condition:\
-    \ spawned_process and container and shell_procs\n- rule: Contact K8s API Server\
-    \ From Pod\n  condition: (k8s_api_server)\nY\ncat ~/w08/falco.yml"
+  script: "cat > ~/w08/falco.yml <<'Y'\n- rule: Terminal shell in container\n  condition: spawned_process\
+    \ and container and shell_procs\n- rule: Contact K8s API Server From Pod\n  condition: (k8s_api_server)\n\
+    Y\ncat ~/w08/falco.yml"
   risk_level: low
   bastion_prompt: ''
 - order: 5
@@ -132,6 +187,21 @@ steps:
     type: output_contains
     expect: privileged
     field: stdout
+    semantic:
+      intent: '[분석] 감사 로그 쿼리 — cat > query.md: 권한 열거 burst verb=list / privileged Pod spec.securityContext.privileged=true
+        / SA 토큰 읽기 path=/var/run/secrets. 3 신호.'
+      success_criteria:
+      - privileged 키워드
+      - 3 신호
+      - verb/path 필드
+      acceptable_methods:
+      - kube-audit jq
+      - Falco rules
+      - OPA audit
+      negative_signs:
+      - 신호 1-2개
+      - 필드 없음
+      - 쿼리 없음
   target_vm: bastion
   script: 'cat > ~/w08/query.md <<''M''
 
@@ -169,6 +239,21 @@ steps:
     type: output_contains
     expect: Pod
     field: stdout
+    semantic:
+      intent: '[분석] 범위 확산 — cat > scope.md: Pod → Node privileged 탈출 / Node → 클러스터 kubelet token / 동일
+        namespace 다른 Pod / 클러스터 전체. 4 단계.'
+      success_criteria:
+      - Pod 키워드
+      - 4 단계 확산
+      - 범위 평가
+      acceptable_methods:
+      - Blast radius 분석
+      - MITRE ATT&CK Containers
+      - Kube-hunter scope
+      negative_signs:
+      - 단계 2개 이하
+      - 확산 없음
+      - Node 없음
   target_vm: bastion
   script: 'cat > ~/w08/scope.md <<''M''
 
@@ -190,10 +275,9 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 15
-  answer: "cat > ~/w08/netpol-quarantine.yaml <<'Y'\napiVersion: networking.k8s.io/v1\n\
-    kind: NetworkPolicy\nmetadata: {name: quarantine-bad-pod, namespace: default}\n\
-    spec:\n  podSelector: {matchLabels: {quarantine: 'true'}}\n  policyTypes: [Ingress,\
-    \ Egress]\nY\ncat ~/w08/netpol-quarantine.yaml"
+  answer: "cat > ~/w08/netpol-quarantine.yaml <<'Y'\napiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\n\
+    metadata: {name: quarantine-bad-pod, namespace: default}\nspec:\n  podSelector: {matchLabels: {quarantine:\
+    \ 'true'}}\n  policyTypes: [Ingress, Egress]\nY\ncat ~/w08/netpol-quarantine.yaml"
   answer_detail: '[초동대응] NetworkPolicy deny all.'
   verify:
     type: output_contains
@@ -201,11 +285,25 @@ steps:
     - quarantine
     - 격리
     field: stdout
+    semantic:
+      intent: '[초동] Pod 격리 NetworkPolicy — cat > netpol-quarantine.yaml: podSelector matchLabels quarantine:true
+        + policyTypes Ingress+Egress (빈 to/from=deny all). 격리.'
+      success_criteria:
+      - quarantine/격리
+      - NetworkPolicy
+      - podSelector + policyTypes
+      acceptable_methods:
+      - NetworkPolicy deny
+      - Cilium policy
+      - Calico rule
+      negative_signs:
+      - deny all 아님
+      - label 없음
+      - policyTypes 누락
   target_vm: bastion
-  script: "cat > ~/w08/netpol-quarantine.yaml <<'Y'\napiVersion: networking.k8s.io/v1\n\
-    kind: NetworkPolicy\nmetadata: {name: quarantine-bad-pod, namespace: default}\n\
-    spec:\n  podSelector: {matchLabels: {quarantine: 'true'}}\n  policyTypes: [Ingress,\
-    \ Egress]\nY\ncat ~/w08/netpol-quarantine.yaml"
+  script: "cat > ~/w08/netpol-quarantine.yaml <<'Y'\napiVersion: networking.k8s.io/v1\nkind: NetworkPolicy\n\
+    metadata: {name: quarantine-bad-pod, namespace: default}\nspec:\n  podSelector: {matchLabels: {quarantine:\
+    \ 'true'}}\n  policyTypes: [Ingress, Egress]\nY\ncat ~/w08/netpol-quarantine.yaml"
   risk_level: low
   bastion_prompt: ''
 - order: 8
@@ -213,9 +311,9 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 16
-  answer: "cat > ~/w08/agent.yaml <<'Y'\nplaybook_id: pb-k8s-escape\nsteps:\n  - skill:\
-    \ label_pod_quarantine\n  - skill: apply_netpol_deny\n  - skill: rotate_sa_token\n\
-    \  - skill: taint_node\n    args: {human_approval_required: true}\nY\ncat ~/w08/agent.yaml"
+  answer: "cat > ~/w08/agent.yaml <<'Y'\nplaybook_id: pb-k8s-escape\nsteps:\n  - skill: label_pod_quarantine\n\
+    \  - skill: apply_netpol_deny\n  - skill: rotate_sa_token\n  - skill: taint_node\n    args: {human_approval_required:\
+    \ true}\nY\ncat ~/w08/agent.yaml"
   answer_detail: '[초동대응] 노드는 사람 승인.'
   verify:
     type: output_contains
@@ -223,10 +321,25 @@ steps:
     - quarantine
     - Playbook
     field: stdout
+    semantic:
+      intent: '[초동] Agent Playbook — cat > agent.yaml: pb-k8s-escape + label_pod_quarantine / apply_netpol_deny
+        / rotate_sa_token / taint_node human_approval_required. 노드는 사람 승인.'
+      success_criteria:
+      - quarantine/Playbook
+      - 4 steps + human_approval
+      - taint_node
+      acceptable_methods:
+      - Bastion Playbook
+      - SOAR k8s
+      - kubectl label + taint
+      negative_signs:
+      - approval 누락
+      - steps 2개 이하
+      - rotate 없음
   target_vm: bastion
-  script: "cat > ~/w08/agent.yaml <<'Y'\nplaybook_id: pb-k8s-escape\nsteps:\n  - skill:\
-    \ label_pod_quarantine\n  - skill: apply_netpol_deny\n  - skill: rotate_sa_token\n\
-    \  - skill: taint_node\n    args: {human_approval_required: true}\nY\ncat ~/w08/agent.yaml"
+  script: "cat > ~/w08/agent.yaml <<'Y'\nplaybook_id: pb-k8s-escape\nsteps:\n  - skill: label_pod_quarantine\n\
+    \  - skill: apply_netpol_deny\n  - skill: rotate_sa_token\n  - skill: taint_node\n    args: {human_approval_required:\
+    \ true}\nY\ncat ~/w08/agent.yaml"
   risk_level: low
   bastion_prompt: ''
 - order: 9
@@ -254,6 +367,21 @@ steps:
     - PSA
     - 브리핑
     field: stdout
+    semantic:
+      intent: '[보고] 브리핑 — cat > exec.md: What 취약 Pod privileged 시도 Bastion 격리 / Impact 1 Pod 확산 없음 / Ask
+        PSA baseline→restricted D+7. 긴급 정책.'
+      success_criteria:
+      - PSA/브리핑
+      - What+Impact+Ask
+      - restricted 전환
+      acceptable_methods:
+      - Markdown 1쪽
+      - PSA migration
+      - CxO brief
+      negative_signs:
+      - PSA 없음
+      - 섹션 부족
+      - Ask 없음
   target_vm: bastion
   script: 'cat > ~/w08/exec.md <<''M''
 
@@ -275,18 +403,31 @@ steps:
   hint: 6단계 IR 중 재발방지 단계. target_vm=bastion.
   category: analysis
   points: 18
-  answer: "cat > ~/w08/psa.yaml <<'Y'\napiVersion: v1\nkind: Namespace\nmetadata:\n\
-    \  name: app\n  labels:\n    pod-security.kubernetes.io/enforce: restricted\n\
-    Y\ncat ~/w08/psa.yaml"
+  answer: "cat > ~/w08/psa.yaml <<'Y'\napiVersion: v1\nkind: Namespace\nmetadata:\n  name: app\n  labels:\n\
+    \    pod-security.kubernetes.io/enforce: restricted\nY\ncat ~/w08/psa.yaml"
   answer_detail: '[재발방지] privileged·hostPath 금지.'
   verify:
     type: output_contains
     expect: restricted
     field: stdout
+    semantic:
+      intent: '[재발방지] PSA restricted — cat > psa.yaml: Namespace labels pod-security.kubernetes.io/enforce:
+        restricted. privileged+hostPath 금지. K8s Pod Security Admission.'
+      success_criteria:
+      - restricted 키워드
+      - pod-security label
+      - enforce
+      acceptable_methods:
+      - PSA labels
+      - Kyverno policy
+      - OPA Gatekeeper
+      negative_signs:
+      - enforce 없음
+      - baseline만
+      - restricted 누락
   target_vm: bastion
-  script: "cat > ~/w08/psa.yaml <<'Y'\napiVersion: v1\nkind: Namespace\nmetadata:\n\
-    \  name: app\n  labels:\n    pod-security.kubernetes.io/enforce: restricted\n\
-    Y\ncat ~/w08/psa.yaml"
+  script: "cat > ~/w08/psa.yaml <<'Y'\napiVersion: v1\nkind: Namespace\nmetadata:\n  name: app\n  labels:\n\
+    \    pod-security.kubernetes.io/enforce: restricted\nY\ncat ~/w08/psa.yaml"
   risk_level: low
   bastion_prompt: ''
 - order: 11
@@ -310,6 +451,21 @@ steps:
     type: output_contains
     expect: can-i
     field: stdout
+    semantic:
+      intent: '[재발방지] RBAC 최소 권한 — cat > rbac.md: kubectl auth can-i --list --as=<sa> / 광범위 권한 제거 / 정기
+        재검토 분기별. RBAC 감사.'
+      success_criteria:
+      - can-i 키워드
+      - --as=<sa>
+      - 정기 재검토
+      acceptable_methods:
+      - kubectl auth can-i
+      - rbac-tool
+      - rakkess
+      negative_signs:
+      - --as 없음
+      - 주기 없음
+      - 재검토 없음
   target_vm: bastion
   script: 'cat > ~/w08/rbac.md <<''M''
 
@@ -345,6 +501,21 @@ steps:
     type: output_contains
     expect: kube-bench
     field: stdout
+    semantic:
+      intent: '[재발방지] kube-bench — cat > kube-bench.md: docker run --rm aquasec/kube-bench:latest / master·node·etcd
+        전체 / FAIL 우선순위. CIS 벤치마크.'
+      success_criteria:
+      - kube-bench 키워드
+      - CIS 벤치마크
+      - FAIL 우선순위
+      acceptable_methods:
+      - kube-bench
+      - Trivy cluster
+      - kubeaudit
+      negative_signs:
+      - 도구 없음
+      - 컴포넌트 일부
+      - 우선순위 없음
   target_vm: bastion
   script: 'cat > ~/w08/kube-bench.md <<''M''
 
