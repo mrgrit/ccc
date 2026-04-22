@@ -3,8 +3,7 @@ title: 탐지 룰 엔지니어링 — SIGMA → Wazuh (Non-AI)
 version: nonai
 course: agent-ir-nonai
 week: 9
-description: w8에서 설계한 스킬을 SIGMA 룰로 변환해 Wazuh에 적용하고 회귀 테스트까지 실행한다. 학생이 각 단계를 수동으로 수행하고
-  결과를 기록합니다.
+description: w8에서 설계한 스킬을 SIGMA 룰로 변환해 Wazuh에 적용하고 회귀 테스트까지 실행한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -18,16 +17,29 @@ steps:
   hint: target_vm=siem에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 9
-  answer: sudo cp /var/ossec/etc/rules/local_rules.xml /tmp/local_rules.xml.bak &&
-    ls -la /tmp/local_rules.xml.bak
+  answer: sudo cp /var/ossec/etc/rules/local_rules.xml /tmp/local_rules.xml.bak && ls -la /tmp/local_rules.xml.bak
   answer_detail: 수정 전 원본 보존. 롤백용.
   verify:
     type: output_contains
     expect: local_rules.xml.bak
     field: stdout
+    semantic:
+      intent: '[Wazuh] local_rules.xml 백업 — sudo cp /var/ossec/etc/rules/local_rules.xml /tmp/local_rules.xml.bak
+        + ls. 수정 전 원본 보존. 롤백용.'
+      success_criteria:
+      - local_rules.xml.bak 파일
+      - cp + ls
+      - 백업 경로
+      acceptable_methods:
+      - cp 백업
+      - git commit 버전
+      - rsync -a
+      negative_signs:
+      - cp 없음
+      - 확인 없음
+      - 경로 오류
   target_vm: siem
-  script: sudo cp /var/ossec/etc/rules/local_rules.xml /tmp/local_rules.xml.bak &&
-    ls -la /tmp/local_rules.xml.bak
+  script: sudo cp /var/ossec/etc/rules/local_rules.xml /tmp/local_rules.xml.bak && ls -la /tmp/local_rules.xml.bak
   risk_level: low
   bastion_prompt: ''
 - order: 2
@@ -35,22 +47,37 @@ steps:
   hint: target_vm=siem에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 10
-  answer: "mkdir -p ~/sigma && cat > ~/sigma/agent_burst.yml <<'Y'\ntitle: Agent-like\
-    \ request burst on JuiceShop\nstatus: experimental\nlogsource:\n  product: apache\n\
-    \  service: access\ndetection:\n  selection:\n    cs-uri-stem|contains:\n    \
-    \  - \"/rest/\"\n  timeframe: 120s\n  condition: selection | count() by c-ip >\
-    \ 60\nfalsepositives:\n  - 내부 모니터링 bots\nlevel: medium\nY\ncat ~/sigma/agent_burst.yml"
+  answer: "mkdir -p ~/sigma && cat > ~/sigma/agent_burst.yml <<'Y'\ntitle: Agent-like request burst on\
+    \ JuiceShop\nstatus: experimental\nlogsource:\n  product: apache\n  service: access\ndetection:\n\
+    \  selection:\n    cs-uri-stem|contains:\n      - \"/rest/\"\n  timeframe: 120s\n  condition: selection\
+    \ | count() by c-ip > 60\nfalsepositives:\n  - 내부 모니터링 bots\nlevel: medium\nY\ncat ~/sigma/agent_burst.yml"
   answer_detail: SIGMA 구조. timeframe·count·falsepositives 필수.
   verify:
     type: output_contains
-    expect: Agent-like
+    expect:
+    - Agent-like
+    - 템플릿
     field: stdout
+    semantic:
+      intent: '[SIGMA] 룰 초안 — cat > agent_burst.yml: title + logsource apache access + detection selection
+        /rest/ + timeframe 120s + count() by c-ip > 60 + falsepositives + level medium. SIGMA 표준 구조.'
+      success_criteria:
+      - Agent-like/템플릿
+      - SIGMA 필수 필드
+      - timeframe + count
+      acceptable_methods:
+      - SIGMA 공식 스펙
+      - sigma-cli 변환
+      - uncoder.io
+      negative_signs:
+      - timeframe 없음
+      - count 없음
+      - falsepositives 누락
   target_vm: siem
-  script: "mkdir -p ~/sigma && cat > ~/sigma/agent_burst.yml <<'Y'\ntitle: Agent-like\
-    \ request burst on JuiceShop\nstatus: experimental\nlogsource:\n  product: apache\n\
-    \  service: access\ndetection:\n  selection:\n    cs-uri-stem|contains:\n    \
-    \  - \"/rest/\"\n  timeframe: 120s\n  condition: selection | count() by c-ip >\
-    \ 60\nfalsepositives:\n  - 내부 모니터링 bots\nlevel: medium\nY\ncat ~/sigma/agent_burst.yml"
+  script: "mkdir -p ~/sigma && cat > ~/sigma/agent_burst.yml <<'Y'\ntitle: Agent-like request burst on\
+    \ JuiceShop\nstatus: experimental\nlogsource:\n  product: apache\n  service: access\ndetection:\n\
+    \  selection:\n    cs-uri-stem|contains:\n      - \"/rest/\"\n  timeframe: 120s\n  condition: selection\
+    \ | count() by c-ip > 60\nfalsepositives:\n  - 내부 모니터링 bots\nlevel: medium\nY\ncat ~/sigma/agent_burst.yml"
   risk_level: low
   bastion_prompt: ''
 - order: 3
@@ -58,25 +85,39 @@ steps:
   hint: target_vm=siem에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 11
-  answer: "sudo bash -c \"cat >> /var/ossec/etc/rules/local_rules.xml <<'X'\n\n<group\
-    \ name=\\\"agent_ir\\\">\n  <rule id=\\\"100110\\\" level=\\\"5\\\">\n    <if_sid>31108</if_sid>\n\
-    \    <description>Apache access /rest/ endpoint</description>\n  </rule>\n  <rule\
-    \ id=\\\"100111\\\" level=\\\"10\\\" frequency=\\\"60\\\" timeframe=\\\"120\\\"\
-    >\n    <if_matched_sid>100110</if_matched_sid>\n    <same_source_ip/>\n    <description>Agent-like\
-    \ burst (60+/120s on /rest/)</description>\n    <mitre><id>T1595.002</id></mitre>\n\
+  answer: "sudo bash -c \"cat >> /var/ossec/etc/rules/local_rules.xml <<'X'\n\n<group name=\\\"agent_ir\\\
+    \">\n  <rule id=\\\"100110\\\" level=\\\"5\\\">\n    <if_sid>31108</if_sid>\n    <description>Apache\
+    \ access /rest/ endpoint</description>\n  </rule>\n  <rule id=\\\"100111\\\" level=\\\"10\\\" frequency=\\\
+    \"60\\\" timeframe=\\\"120\\\">\n    <if_matched_sid>100110</if_matched_sid>\n    <same_source_ip/>\n\
+    \    <description>Agent-like burst (60+/120s on /rest/)</description>\n    <mitre><id>T1595.002</id></mitre>\n\
     \  </rule>\n</group>\nX\"\nsudo tail -20 /var/ossec/etc/rules/local_rules.xml"
   answer_detail: SIGMA → Wazuh 수동 변환. `if_matched_sid`·`frequency`·`timeframe` 사용.
   verify:
     type: output_contains
     expect: agent_ir
     field: stdout
+    semantic:
+      intent: '[Wazuh] SIGMA→XML 수동 변환 — sudo cat >> local_rules.xml: group agent_ir + rule 100110 (if_sid
+        31108 /rest/) + rule 100111 (frequency 60 timeframe 120 if_matched_sid 100110 same_source_ip +
+        MITRE T1595.002). 2 룰.'
+      success_criteria:
+      - agent_ir 키워드
+      - frequency + timeframe
+      - MITRE T1595.002
+      acceptable_methods:
+      - Wazuh XML rules
+      - sigma-cli -t wazuh
+      - 수동 변환
+      negative_signs:
+      - 룰 1개
+      - frequency 없음
+      - MITRE 누락
   target_vm: siem
-  script: "sudo bash -c \"cat >> /var/ossec/etc/rules/local_rules.xml <<'X'\n\n<group\
-    \ name=\\\"agent_ir\\\">\n  <rule id=\\\"100110\\\" level=\\\"5\\\">\n    <if_sid>31108</if_sid>\n\
-    \    <description>Apache access /rest/ endpoint</description>\n  </rule>\n  <rule\
-    \ id=\\\"100111\\\" level=\\\"10\\\" frequency=\\\"60\\\" timeframe=\\\"120\\\"\
-    >\n    <if_matched_sid>100110</if_matched_sid>\n    <same_source_ip/>\n    <description>Agent-like\
-    \ burst (60+/120s on /rest/)</description>\n    <mitre><id>T1595.002</id></mitre>\n\
+  script: "sudo bash -c \"cat >> /var/ossec/etc/rules/local_rules.xml <<'X'\n\n<group name=\\\"agent_ir\\\
+    \">\n  <rule id=\\\"100110\\\" level=\\\"5\\\">\n    <if_sid>31108</if_sid>\n    <description>Apache\
+    \ access /rest/ endpoint</description>\n  </rule>\n  <rule id=\\\"100111\\\" level=\\\"10\\\" frequency=\\\
+    \"60\\\" timeframe=\\\"120\\\">\n    <if_matched_sid>100110</if_matched_sid>\n    <same_source_ip/>\n\
+    \    <description>Agent-like burst (60+/120s on /rest/)</description>\n    <mitre><id>T1595.002</id></mitre>\n\
     \  </rule>\n</group>\nX\"\nsudo tail -20 /var/ossec/etc/rules/local_rules.xml"
   risk_level: low
   bastion_prompt: ''
@@ -91,6 +132,21 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[검증] Wazuh 룰 문법 검사 — sudo /var/ossec/bin/wazuh-analysisd -t | tail -5. 문법 오류 시 전체 분석 데몬
+        기동 실패. 재시작 전 필수 검증.'
+      success_criteria:
+      - wazuh-analysisd -t
+      - tail 5
+      - 문법 검증
+      acceptable_methods:
+      - analysisd -t
+      - rules_checker.py
+      - Wazuh docker test
+      negative_signs:
+      - -t 없음
+      - tail 없음
+      - 검증 건너뜀
   target_vm: siem
   script: sudo /var/ossec/bin/wazuh-analysisd -t 2>&1 | tail -5
   risk_level: low
@@ -106,6 +162,21 @@ steps:
     type: output_contains
     expect: active
     field: stdout
+    semantic:
+      intent: '[적용] Wazuh manager 재시작 — sudo systemctl restart wazuh-manager + sleep 3 + is-active. 문법
+        검증 통과 후 재시작. active 확인.'
+      success_criteria:
+      - active 응답
+      - systemctl restart
+      - is-active
+      acceptable_methods:
+      - systemctl restart + is-active
+      - wazuh-control restart
+      - ossec-control restart
+      negative_signs:
+      - restart 없음
+      - is-active 확인 없음
+      - sleep 누락
   target_vm: siem
   script: sudo systemctl restart wazuh-manager && sleep 3 && systemctl is-active wazuh-manager
   risk_level: low
@@ -115,18 +186,31 @@ steps:
   hint: target_vm=siem에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 14
-  answer: echo '10.20.30.80 - - [19/Apr/2026:10:00:00 +0900] "GET /rest/user/login
-    HTTP/1.1" 200 123' | sudo /var/ossec/bin/wazuh-logtest 2>&1 | tail -30 | head
-    -30 || echo 'logtest_sample_run'
+  answer: echo '10.20.30.80 - - [19/Apr/2026:10:00:00 +0900] "GET /rest/user/login HTTP/1.1" 200 123'
+    | sudo /var/ossec/bin/wazuh-logtest 2>&1 | tail -30 | head -30 || echo 'logtest_sample_run'
   answer_detail: Phase 1~3 매칭 확인. Phase 3에 100110/100111 중 하나라도 뜨면 성공.
   verify:
     type: output_contains
     expect: Phase
     field: stdout
+    semantic:
+      intent: '[검증] wazuh-logtest 샘플 투입 — echo ''10.20.30.80 - - [19/Apr/2026...] GET /rest/user/login''
+        | sudo wazuh-logtest | tail -30. Phase 1~3 매칭 확인. Phase 3 100110/100111 필수.'
+      success_criteria:
+      - Phase 출력
+      - wazuh-logtest 실행
+      - 샘플 로그 투입
+      acceptable_methods:
+      - wazuh-logtest stdin
+      - ossec-logtest
+      - Wazuh ruleset test
+      negative_signs:
+      - logtest 없음
+      - Phase 출력 없음
+      - 샘플 없음
   target_vm: siem
-  script: echo '10.20.30.80 - - [19/Apr/2026:10:00:00 +0900] "GET /rest/user/login
-    HTTP/1.1" 200 123' | sudo /var/ossec/bin/wazuh-logtest 2>&1 | tail -30 | head
-    -30 || echo 'logtest_sample_run'
+  script: echo '10.20.30.80 - - [19/Apr/2026:10:00:00 +0900] "GET /rest/user/login HTTP/1.1" 200 123'
+    | sudo /var/ossec/bin/wazuh-logtest 2>&1 | tail -30 | head -30 || echo 'logtest_sample_run'
   risk_level: low
   bastion_prompt: ''
 - order: 7
@@ -134,16 +218,29 @@ steps:
   hint: target_vm=secu에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 15
-  answer: '[ -f /tmp/w01-baseline.pcap ] && tcpreplay --help 2>&1 | head -3 || echo
-    ''tcpreplay_maybe_missing'''
+  answer: '[ -f /tmp/w01-baseline.pcap ] && tcpreplay --help 2>&1 | head -3 || echo ''tcpreplay_maybe_missing'''
   answer_detail: tcpreplay로 pcap 재생. 실제 회귀 테스트에서 활용. 도구 없으면 설치.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[회귀] pcap 재생 도구 확인 — [ -f /tmp/w01-baseline.pcap ] && tcpreplay --help | head. tcpreplay로
+        pcap 재생. 회귀 테스트 도구.'
+      success_criteria:
+      - tcpreplay 체크
+      - pcap 존재
+      - --help
+      acceptable_methods:
+      - tcpreplay --help
+      - tcpreplay-edit
+      - bittwist
+      negative_signs:
+      - tcpreplay 없이
+      - pcap 체크 없음
+      - 대체 없음
   target_vm: secu
-  script: '[ -f /tmp/w01-baseline.pcap ] && tcpreplay --help 2>&1 | head -3 || echo
-    ''tcpreplay_maybe_missing'''
+  script: '[ -f /tmp/w01-baseline.pcap ] && tcpreplay --help 2>&1 | head -3 || echo ''tcpreplay_maybe_missing'''
   risk_level: medium
   bastion_prompt: ''
 - order: 8
@@ -151,18 +248,33 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 16
-  answer: "cat > ~/ccc/scripts/metrics.py <<'PY'\ndef metrics(tp, fp, fn):\n    p\
-    \ = tp/(tp+fp) if (tp+fp) else 0\n    r = tp/(tp+fn) if (tp+fn) else 0\n    return\
-    \ p, r\nprint('precision,recall', metrics(18, 2, 5))\nPY\npython3 ~/ccc/scripts/metrics.py"
+  answer: "cat > ~/ccc/scripts/metrics.py <<'PY'\ndef metrics(tp, fp, fn):\n    p = tp/(tp+fp) if (tp+fp)\
+    \ else 0\n    r = tp/(tp+fn) if (tp+fn) else 0\n    return p, r\nprint('precision,recall', metrics(18,\
+    \ 2, 5))\nPY\npython3 ~/ccc/scripts/metrics.py"
   answer_detail: P = TP/(TP+FP), R = TP/(TP+FN). 목표 P>=0.9, R>=0.7.
   verify:
     type: output_contains
     expect: precision
     field: stdout
+    semantic:
+      intent: '[지표] Precision/Recall 스크립트 — cat > metrics.py: def metrics(tp, fp, fn): p=tp/(tp+fp) r=tp/(tp+fn).
+        목표 P>=0.9 R>=0.7. 기본 classification metrics.'
+      success_criteria:
+      - precision 키워드
+      - P=TP/(TP+FP) R=TP/(TP+FN)
+      - 목표값
+      acceptable_methods:
+      - sklearn.metrics
+      - 수식 구현
+      - confusion matrix
+      negative_signs:
+      - 공식 없음
+      - 목표값 없음
+      - NaN 처리 없음
   target_vm: bastion
-  script: "cat > ~/ccc/scripts/metrics.py <<'PY'\ndef metrics(tp, fp, fn):\n    p\
-    \ = tp/(tp+fp) if (tp+fp) else 0\n    r = tp/(tp+fn) if (tp+fn) else 0\n    return\
-    \ p, r\nprint('precision,recall', metrics(18, 2, 5))\nPY\npython3 ~/ccc/scripts/metrics.py"
+  script: "cat > ~/ccc/scripts/metrics.py <<'PY'\ndef metrics(tp, fp, fn):\n    p = tp/(tp+fp) if (tp+fp)\
+    \ else 0\n    r = tp/(tp+fn) if (tp+fn) else 0\n    return p, r\nprint('precision,recall', metrics(18,\
+    \ 2, 5))\nPY\npython3 ~/ccc/scripts/metrics.py"
   risk_level: low
   bastion_prompt: ''
 - order: 9
@@ -170,9 +282,8 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 17
-  answer: "cat > ~/ccc/scripts/latency.py <<'PY'\ndef latency(attack_ts, alert_ts):\n\
-    \    return (alert_ts - attack_ts).total_seconds()\nprint('목표 p50 <= 10s')\nPY\n\
-    python3 ~/ccc/scripts/latency.py"
+  answer: "cat > ~/ccc/scripts/latency.py <<'PY'\ndef latency(attack_ts, alert_ts):\n    return (alert_ts\
+    \ - attack_ts).total_seconds()\nprint('목표 p50 <= 10s')\nPY\npython3 ~/ccc/scripts/latency.py"
   answer_detail: 공격 요청 시각 ↔ 경보 발생 시각. 중앙값 <=10s 목표.
   verify:
     type: output_contains
@@ -180,10 +291,24 @@ steps:
     - 목표
     - ping
     field: stdout
+    semantic:
+      intent: '[지표] 탐지 지연 스크립트 — cat > latency.py: def latency(attack_ts, alert_ts): (alert - attack).total_seconds().
+        목표 p50 <=10s. MTTD 측정.'
+      success_criteria:
+      - 목표/ping 키워드
+      - total_seconds
+      - p50 10s
+      acceptable_methods:
+      - datetime.diff
+      - MTTD 분석
+      - percentile 계산
+      negative_signs:
+      - 함수 없음
+      - 목표값 없음
+      - 단위 불명
   target_vm: bastion
-  script: "cat > ~/ccc/scripts/latency.py <<'PY'\ndef latency(attack_ts, alert_ts):\n\
-    \    return (alert_ts - attack_ts).total_seconds()\nprint('목표 p50 <= 10s')\nPY\n\
-    python3 ~/ccc/scripts/latency.py"
+  script: "cat > ~/ccc/scripts/latency.py <<'PY'\ndef latency(attack_ts, alert_ts):\n    return (alert_ts\
+    \ - attack_ts).total_seconds()\nprint('목표 p50 <= 10s')\nPY\npython3 ~/ccc/scripts/latency.py"
   risk_level: low
   bastion_prompt: ''
 - order: 10
@@ -215,6 +340,21 @@ steps:
     - Precision
     - 템플릿
     field: stdout
+    semantic:
+      intent: '[문서] 회귀 지표 리포트 — cat > regression.md: 표 4 지표 (Precision >=90% / Recall >=70% / Latency
+        p50 <=10s / FP/일 <=2) + 내 결과. w11 Before/After 비교 기준.'
+      success_criteria:
+      - Precision/템플릿
+      - 4 지표 + 목표
+      - 표 형식
+      acceptable_methods:
+      - Markdown 표
+      - YAML metrics
+      - CSV baseline
+      negative_signs:
+      - 지표 2개 이하
+      - 목표값 없음
+      - 결과 칸 없음
   target_vm: bastion
   script: 'cat > ~/ccc/artifacts/w09/regression.md <<''MD''
 
@@ -258,6 +398,21 @@ steps:
     type: output_contains
     expect: cron_ready
     field: stdout
+    semantic:
+      intent: '[자동화] 회귀 cron 스크립트 — cat > regression_cron.sh: #!/bin/bash DATE=date -Iseconds + echo Regression
+        report $DATE > detection-regression.md + chmod +x. 매주 금요일 cron 실행. 정밀도 하락 Slack 알림.'
+      success_criteria:
+      - cron_ready
+      - bash 스크립트
+      - date + 리포트 생성
+      acceptable_methods:
+      - bash + date
+      - Python cron script
+      - systemd timer
+      negative_signs:
+      - chmod 없음
+      - date 없음
+      - 리포트 생성 없음
   target_vm: bastion
   script: 'cat > ~/ccc/scripts/regression_cron.sh <<''S''
 
@@ -279,8 +434,8 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 20
-  answer: echo '{"id":"w09-rule","sigma_yml":"agent_burst.yml","wazuh_rule_id":100111}'
-    > ~/ccc/data/bastion/experience/w09-rule.json && cat ~/ccc/data/bastion/experience/w09-rule.json
+  answer: echo '{"id":"w09-rule","sigma_yml":"agent_burst.yml","wazuh_rule_id":100111}' > ~/ccc/data/bastion/experience/w09-rule.json
+    && cat ~/ccc/data/bastion/experience/w09-rule.json
   answer_detail: 탐지 룰 엔지니어링 결과 기록. w11 Purple Round 1의 Blue 초기 상태.
   verify:
     type: output_contains
@@ -288,8 +443,23 @@ steps:
     - wazuh_rule_id
     - experience
     field: stdout
+    semantic:
+      intent: '[기록] w09 룰 Experience — echo ''{id: w09-rule, sigma_yml: agent_burst.yml, wazuh_rule_id:
+        100111}'' > w09-rule.json. 탐지 룰 엔지니어링 결과. w11 Blue 초기 상태.'
+      success_criteria:
+      - wazuh_rule_id/experience
+      - JSON
+      - sigma + rule id
+      acceptable_methods:
+      - echo JSON
+      - jq -n
+      - python dumps
+      negative_signs:
+      - rule_id 없음
+      - sigma 연결 없음
+      - JSON 아님
   target_vm: bastion
-  script: echo '{"id":"w09-rule","sigma_yml":"agent_burst.yml","wazuh_rule_id":100111}'
-    > ~/ccc/data/bastion/experience/w09-rule.json && cat ~/ccc/data/bastion/experience/w09-rule.json
+  script: echo '{"id":"w09-rule","sigma_yml":"agent_burst.yml","wazuh_rule_id":100111}' > ~/ccc/data/bastion/experience/w09-rule.json
+    && cat ~/ccc/data/bastion/experience/w09-rule.json
   risk_level: low
   bastion_prompt: ''
