@@ -25,6 +25,22 @@ steps:
     type: output_contains
     expect: active
     field: stdout
+    semantic:
+      intent: 'Wazuh Manager 서비스 — systemctl is-active wazuh-manager. SIEM 핵심 데몬: 로그 수집 + 디코딩 + 룰 매칭 +
+        alert 생성. active 확인. 비활성 = SOC 기능 전무.'
+      success_criteria:
+      - active 키워드
+      - systemctl is-active
+      - wazuh-manager 대상
+      acceptable_methods:
+      - systemctl is-active wazuh-manager
+      - /var/ossec/bin/wazuh-control status
+      - systemctl status --no-pager
+      - Wazuh API /manager/status
+      negative_signs:
+      - wazuh-agent 혼동
+      - ps aux 로만 확인
+      - active 상태 해석 누락
   target_vm: siem
 - order: 2
   instruction: Wazuh Indexer 서비스 상태를 확인하시오.
@@ -39,6 +55,22 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: Wazuh Indexer 서비스 — systemctl is-active wazuh-indexer. OpenSearch 기반 백엔드 데이터베이스. alert 인덱싱
+        + 검색. :9200 REST API. 비활성 시 Dashboard 검색 + 대시보드 조회 불가.
+      success_criteria:
+      - systemctl 명령
+      - wazuh-indexer 대상
+      - 상태 출력
+      acceptable_methods:
+      - systemctl is-active wazuh-indexer
+      - curl -k https://localhost:9200/_cluster/health
+      - ps aux | grep opensearch
+      - journalctl -u wazuh-indexer
+      negative_signs:
+      - indexer 아닌 manager 확인
+      - OpenSearch 맥락 없음
+      - 포트 9200 언급 없음
   target_vm: siem
 - order: 3
   instruction: Wazuh Dashboard 서비스 상태를 확인하시오.
@@ -53,6 +85,22 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: Wazuh Dashboard 서비스 — systemctl is-active wazuh-dashboard. OpenSearch Dashboards 기반 웹 UI
+        (:443). Security events / Agents / Rules / Decoders 관리. 비활성 시 브라우저 UI 접근 불가.
+      success_criteria:
+      - systemctl 명령
+      - wazuh-dashboard 대상
+      - 상태 확인
+      acceptable_methods:
+      - systemctl is-active wazuh-dashboard
+      - curl -k https://localhost:443/
+      - journalctl -u wazuh-dashboard
+      - ss -tlnp | grep 443
+      negative_signs:
+      - indexer 와 혼동
+      - 443 포트 언급 없음
+      - UI 역할 이해 없음
   target_vm: siem
 - order: 4
   instruction: wazuh-control info 로 Wazuh 버전·설치 정보를 확인하시오.
@@ -67,6 +115,22 @@ steps:
     type: output_contains
     expect: WAZUH
     field: stdout
+    semantic:
+      intent: Wazuh 버전·설치 정보 — sudo /var/ossec/bin/wazuh-control info | head. WAZUH_VERSION / WAZUH_REVISION
+        / WAZUH_TYPE (manager/agent) 확인. 버전 호환성 (agent ↔ manager 동일 major 권장) 검증 기초.
+      success_criteria:
+      - WAZUH 키워드
+      - wazuh-control info 실행
+      - 버전 정보 출력
+      acceptable_methods:
+      - /var/ossec/bin/wazuh-control info
+      - cat /var/ossec/etc/ossec-init.conf | grep VERSION
+      - dpkg -l wazuh-manager
+      - Wazuh API GET /manager/info
+      negative_signs:
+      - wazuh-control status (다른 명령)
+      - 버전 정보 누락
+      - 설치 타입 (manager/agent) 확인 없음
   target_vm: siem
 - order: 5
   instruction: agent_control -l 로 등록된 에이전트 목록을 조회하시오.
@@ -79,6 +143,22 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: agent_control -l 에이전트 목록 — sudo /var/ossec/bin/agent_control -l. ID / 이름 / IP / status (Active/Disconnected/Never
+        connected) 출력. SIEM 에 등록된 agents 인벤토리. Active 수 = 모니터링 가능 자산.
+      success_criteria:
+      - agent_control 실행
+      - -l 리스트 옵션
+      - agent 정보 출력
+      acceptable_methods:
+      - agent_control -l
+      - curl Wazuh API /agents
+      - Dashboard Agents UI
+      - manage_agents 대체
+      negative_signs:
+      - agent_control 경로 오류
+      - list 없이 status 만
+      - agent 등록 여부 확인 없음
   target_vm: siem
 - order: 6
   instruction: /var/ossec/etc/ossec.conf 에서 <global> 섹션을 확인하시오.
@@ -91,6 +171,22 @@ steps:
     type: output_contains
     expect: global
     field: stdout
+    semantic:
+      intent: ossec.conf <global> 섹션 — sudo awk '/<global>/,/<\/global>/' /var/ossec/etc/ossec.conf |
+        head -20. 전역 설정 (email/jsonout_output/alerts_log 등). XML 섹션 awk 범위 추출. 설정 파악 기초.
+      success_criteria:
+      - global 키워드
+      - awk 범위 추출
+      - XML 섹션 출력
+      acceptable_methods:
+      - awk '/<global>/,/<\/global>/'
+      - sed -n '/global/,/\/global/p'
+      - xmllint --xpath '//global' --
+      - Python xml.etree
+      negative_signs:
+      - awk 범위 문법 오류
+      - 전체 ossec.conf 덤프
+      - 섹션 의미 없음
   target_vm: siem
 - order: 7
   instruction: ossec.conf 에서 <alerts>/<log_alert_level> 값을 확인하시오.
@@ -103,6 +199,22 @@ steps:
     type: output_contains
     expect: log_alert_level
     field: stdout
+    semantic:
+      intent: log_alert_level 설정 — sudo grep -n log_alert_level /var/ossec/etc/ossec.conf. <alerts> 섹션
+        + <log_alert_level>N</log_alert_level> = 이 level 이상만 alerts.log 기록. 기본 3. alert 볼륨 제어 + 스토리지 효율.
+      success_criteria:
+      - log_alert_level 키워드
+      - grep 명령
+      - 설정 값 확인
+      acceptable_methods:
+      - grep -n log_alert_level
+      - awk '/<alerts>/,/<\/alerts>/' 추출
+      - yq XML 쿼리 (제한)
+      - Python xml.etree
+      negative_signs:
+      - log_alert_level 의미 없음
+      - 설정값 확인 없음
+      - level 개념 이해 없음
   target_vm: siem
 - order: 8
   instruction: Wazuh Manager의 최근 alerts.json 2줄을 확인하시오.
@@ -117,6 +229,22 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 'alerts.json 최근 이벤트 — sudo tail -2 /var/ossec/logs/alerts/alerts.json. JSON Lines 형식 (한
+        줄 = 한 alert). 실시간 이벤트 확인 + alert 생성 가동 중 검증. JSON 구조: timestamp/rule/agent/data.'
+      success_criteria:
+      - tail 명령
+      - alerts.json 경로
+      - 2줄 이상 출력
+      acceptable_methods:
+      - tail -2 alerts.json
+      - tail -f (실시간)
+      - jq 마지막 이벤트
+      - Wazuh Indexer 최신 쿼리
+      negative_signs:
+      - 경로 혼동
+      - 파일 존재 확인 없음
+      - JSON 형식 해석 없음
   target_vm: siem
 - order: 9
   instruction: Wazuh Indexer API(9200) 가 응답하는지 확인하시오.
@@ -125,13 +253,30 @@ steps:
   points: 10
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
-    📎 참고 (CLI): curl -sk -o /dev/null -w ''%{http_code}\n'' https://localhost:9200
-    -u admin:admin 2>/dev/null || ss -tlnp | grep 9200'
+    📎 참고 (CLI): curl -sk -o /dev/null -w ''%{http_code}\n'' https://localhost:9200 -u admin:admin 2>/dev/null
+    || ss -tlnp | grep 9200'
   answer_detail: 'Wazuh SIEM 설치·구성: Wazuh Indexer API(9200) 가 응답하는지 확인하시오.'
   verify:
     type: output_contains
     expect: '9200'
     field: stdout
+    semantic:
+      intent: Indexer API 9200 응답 확인 — curl -sk -o /dev/null -w '%{http_code}\n' https://localhost:9200
+        -u admin:admin || ss -tlnp | grep 9200. HTTPS 200 응답 = Indexer 정상. HTTP 대체 (ss + LISTEN 확인). admin:admin
+        기본 인증.
+      success_criteria:
+      - 9200 키워드
+      - curl 또는 ss 명령
+      - 응답 또는 LISTEN 확인
+      acceptable_methods:
+      - curl -sk https://localhost:9200
+      - ss -tlnp | grep 9200
+      - netstat -tlnp | grep 9200
+      - Wazuh API /manager/configuration
+      negative_signs:
+      - 9200 아닌 다른 포트
+      - 인증 없이 응답 확인
+      - 응답 해석 없음
   target_vm: siem
 - order: 10
   instruction: 최근 1시간 alerts.json 내 alert 수를 집계하시오.
@@ -144,6 +289,22 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: alerts.json 라인 수 집계 — sudo wc -l /var/ossec/logs/alerts/alerts.json. JSON Lines 형식 = 1줄
+        1 alert 이므로 wc -l = 총 알림 수. SOC 부하 지표 + 로테이션 고려.
+      success_criteria:
+      - wc -l 명령
+      - alerts.json 경로
+      - 숫자 출력
+      acceptable_methods:
+      - wc -l alerts.json
+      - grep -c '^{' alerts.json
+      - jq -s 'length' (메모리 부담)
+      - Indexer aggregation 쿼리
+      negative_signs:
+      - 파일 경로 혼동
+      - wc 출력 해석 없음
+      - JSON Lines 이해 없음
   target_vm: siem
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
