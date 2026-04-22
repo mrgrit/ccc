@@ -3,8 +3,8 @@ title: CI/CD 파이프라인 보안 실습
 version: non-ai
 course: cloud-container-nonai
 week: 10
-description: CI/CD 파이프라인에서 Docker 이미지 빌드와 배포의 보안을 점검합니다. Dockerfile 보안 분석, 이미지 서명,
-  레지스트리 보안, 빌드 아티팩트 검증을 수행합니다.
+description: CI/CD 파이프라인에서 Docker 이미지 빌드와 배포의 보안을 점검합니다. Dockerfile 보안 분석, 이미지 서명, 레지스트리 보안, 빌드 아티팩트 검증을
+  수행합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -49,13 +49,29 @@ steps:
     grep -q "USER" /tmp/test.Dockerfile || echo "  -> 위험: USER 미지정 (root 실행)"
 
     grep -q "HEALTHCHECK" /tmp/test.Dockerfile || echo "  -> 권고: HEALTHCHECK 미설정"'''
-  answer_detail: 'Dockerfile 보안 모범 사례: (1) 특정 태그 사용(latest 금지), (2) 민감 정보 하드코딩 금지,
-    (3) ADD 대신 COPY 사용, (4) USER로 비root 지정, (5) 불필요한 포트 노출 금지, (6) HEALTHCHECK 설정,
-    (7) multi-stage build로 빌드 도구 제거.'
+  answer_detail: 'Dockerfile 보안 모범 사례: (1) 특정 태그 사용(latest 금지), (2) 민감 정보 하드코딩 금지, (3) ADD 대신 COPY 사용,
+    (4) USER로 비root 지정, (5) 불필요한 포트 노출 금지, (6) HEALTHCHECK 설정, (7) multi-stage build로 빌드 도구 제거.'
   verify:
     type: output_contains
     expect: Dockerfile 보안 분석
     field: stdout
+    semantic:
+      intent: 'Dockerfile 보안 분석 — /tmp/test.Dockerfile + grep 위반 사항: latest 태그 + PASSWORD/SECRET hardcoded
+        + ADD http + EXPOSE 22 + USER 미지정 + HEALTHCHECK 미설정. 6 주요 위반 탐지. Hadolint 자동 분석 대체. CIS Docker
+        Image Policy.'
+      success_criteria:
+      - Dockerfile 보안 분석 키워드
+      - 6 항목 중 3개 이상 탐지
+      - grep 위반 식별
+      acceptable_methods:
+      - Hadolint 자동 분석
+      - Dockle 이미지 점검
+      - Trivy config scan
+      - Conftest + OPA Rego
+      negative_signs:
+      - 위반 항목 2개 이하
+      - 자동 도구 (Hadolint) 언급 없음
+      - 모범 사례 맥락 없음
   target_vm: web
 - order: 2
   instruction: 보안이 적용된 Dockerfile을 작성하시오.
@@ -76,8 +92,7 @@ steps:
 
     EXPOSE 8080
 
-    HEALTHCHECK --interval=30s --timeout=3s CMD wget -q --spider http://localhost:8080/
-    || exit 1
+    HEALTHCHECK --interval=30s --timeout=3s CMD wget -q --spider http://localhost:8080/ || exit 1
 
     USER appuser
 
@@ -90,77 +105,154 @@ steps:
     echo "=== 보안 Dockerfile ==="
 
     cat /tmp/secure.Dockerfile'''
-  answer_detail: '보안 Dockerfile의 핵심: alpine(최소 이미지), 특정 버전 태그(3.19), adduser(비root
-    사용자), COPY(ADD 대신), --no-cache(캐시 제거로 이미지 최소화), HEALTHCHECK(상태 확인), USER(비root
-    실행), tini(PID 1 init 프로세스로 좀비 프로세스 방지).'
+  answer_detail: '보안 Dockerfile의 핵심: alpine(최소 이미지), 특정 버전 태그(3.19), adduser(비root 사용자), COPY(ADD 대신),
+    --no-cache(캐시 제거로 이미지 최소화), HEALTHCHECK(상태 확인), USER(비root 실행), tini(PID 1 init 프로세스로 좀비 프로세스 방지).'
   verify:
     type: output_contains
     expect: 보안 Dockerfile
     field: stdout
+    semantic:
+      intent: 보안 Dockerfile 작성 — FROM alpine:3.19 (특정 버전) + RUN addgroup/adduser (비root) + COPY --chown
+        + apk add --no-cache + EXPOSE 8080 (필요만) + HEALTHCHECK + USER appuser + ENTRYPOINT tini (PID 1
+        init). 7 모범 사례 적용.
+      success_criteria:
+      - 보안 Dockerfile 키워드
+      - 7 요소 중 5개 이상
+      - USER appuser 비root
+      acceptable_methods:
+      - Dockerfile 작성 + cat 확인
+      - multi-stage build (SDK → runtime)
+      - BuildKit --secret
+      - Chainguard images (secure base)
+      negative_signs:
+      - 특정 버전 태그 없음
+      - USER 미지정
+      - HEALTHCHECK 누락
   target_vm: web
 - order: 3
   instruction: Docker 이미지의 레이어 수와 크기를 분석하시오. 레이어 최적화는 보안과 성능에 모두 중요합니다.
   hint: docker history로 레이어를 분석하세요.
   category: audit
   points: 10
-  answer: for IMG in $(docker images --format "{{.Repository}}:{{.Tag}}" | head -3);
-    do echo "=== $IMG ==="; docker history $IMG --format "{{.Size}}\t{{.CreatedBy}}"
-    2>/dev/null | head -5; echo ""; done
-  answer_detail: 각 RUN 명령은 새 레이어를 생성합니다. RUN apt-get update && apt-get install &&
-    apt-get clean처럼 체이닝하면 레이어 수를 줄이고 불필요한 파일(캐시, 임시 파일)이 레이어에 남지 않습니다. CI/CD에서 이미지
-    크기는 빌드/배포 속도와 보안에 직접 영향을 미칩니다.
+  answer: for IMG in $(docker images --format "{{.Repository}}:{{.Tag}}" | head -3); do echo "=== $IMG
+    ==="; docker history $IMG --format "{{.Size}}\t{{.CreatedBy}}" 2>/dev/null | head -5; echo ""; done
+  answer_detail: 각 RUN 명령은 새 레이어를 생성합니다. RUN apt-get update && apt-get install && apt-get clean처럼 체이닝하면
+    레이어 수를 줄이고 불필요한 파일(캐시, 임시 파일)이 레이어에 남지 않습니다. CI/CD에서 이미지 크기는 빌드/배포 속도와 보안에 직접 영향을 미칩니다.
   verify:
     type: output_contains
     expect: ===
     field: stdout
+    semantic:
+      intent: '이미지 레이어 분석 — for IMG: docker history --format ''{{.Size}}\t{{.CreatedBy}}'' 5 레이어. 각 RUN
+        명령 = 새 레이어. apt-get update && install && clean 체이닝 = 레이어 수 감소 + 불필요 캐시 제거. CI/CD 빌드·배포 속도 + 보안.'
+      success_criteria:
+      - === 키워드 (이미지 구분)
+      - docker history --format
+      - 여러 이미지 비교
+      acceptable_methods:
+      - docker history --format 반복
+      - dive (레이어 상세 분석)
+      - Syft SBOM
+      - Trivy filesystem scan
+      negative_signs:
+      - 단일 이미지만
+      - 레이어 최적화 맥락 없음
+      - 체이닝 기법 언급 없음
   target_vm: web
 - order: 4
   instruction: Docker Content Trust(이미지 서명) 설정을 확인하시오.
   hint: DOCKER_CONTENT_TRUST 환경 변수를 확인하세요.
   category: audit
   points: 10
-  answer: echo "DOCKER_CONTENT_TRUST=${DOCKER_CONTENT_TRUST:-미설정(비활성)}" && echo "---
-    Docker Notary 상태 ---" && docker trust inspect --pretty alpine:latest 2>/dev/null
-    || echo "Content Trust 서명 정보 없음"
-  answer_detail: Docker Content Trust(DCT)는 이미지 서명과 검증을 제공합니다. DOCKER_CONTENT_TRUST=1을
-    설정하면 서명되지 않은 이미지의 pull/run이 차단됩니다. CI/CD에서 빌드한 이미지에 서명하고, 배포 시 서명을 검증하면 공급망(supply
-    chain) 공격을 방지할 수 있습니다.
+  answer: echo "DOCKER_CONTENT_TRUST=${DOCKER_CONTENT_TRUST:-미설정(비활성)}" && echo "--- Docker Notary 상태
+    ---" && docker trust inspect --pretty alpine:latest 2>/dev/null || echo "Content Trust 서명 정보 없음"
+  answer_detail: Docker Content Trust(DCT)는 이미지 서명과 검증을 제공합니다. DOCKER_CONTENT_TRUST=1을 설정하면 서명되지 않은 이미지의
+    pull/run이 차단됩니다. CI/CD에서 빌드한 이미지에 서명하고, 배포 시 서명을 검증하면 공급망(supply chain) 공격을 방지할 수 있습니다.
   verify:
     type: output_contains
     expect: DOCKER_CONTENT_TRUST
     field: stdout
+    semantic:
+      intent: Docker Content Trust — echo DOCKER_CONTENT_TRUST=${DOCKER_CONTENT_TRUST:-미설정} + docker trust
+        inspect --pretty alpine. DCT=1 = 서명 검증 강제 (미서명 pull/run 차단). Notary 서명 + 공급망 공격 방어. Cosign / Sigstore
+        대안.
+      success_criteria:
+      - DOCKER_CONTENT_TRUST 키워드
+      - 환경변수 확인
+      - docker trust inspect
+      acceptable_methods:
+      - DOCKER_CONTENT_TRUST=1
+      - Cosign 서명 (Sigstore)
+      - Notary v2 + OCI aritfact
+      - Kubernetes admission controller (Kyverno/OPA)
+      negative_signs:
+      - 서명 개념 없음
+      - Notary / Cosign 언급 없음
+      - 공급망 공격 맥락 없음
   target_vm: web
 - order: 5
   instruction: 이미지 빌드 시 사용하는 Docker BuildKit의 보안 기능을 확인하시오.
   hint: DOCKER_BUILDKIT 환경 변수와 빌드 캐시를 확인하세요.
   category: audit
   points: 10
-  answer: echo "DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-미설정}" && echo "--- 빌드 캐시 ---" &&
-    docker builder prune --dry-run 2>/dev/null || echo "BuildKit 캐시 없음" && echo "---
-    빌더 정보 ---" && docker buildx ls 2>/dev/null || echo "buildx 미설치"
-  answer_detail: BuildKit(DOCKER_BUILDKIT=1)은 Docker의 차세대 빌드 엔진으로, --secret(빌드 시 민감
-    정보 안전 전달), --ssh(SSH 에이전트 포워딩), 병렬 빌드, 캐시 최적화를 제공합니다. CI/CD 파이프라인에서 빌드 속도와 보안을
-    동시에 향상시킵니다.
+  answer: echo "DOCKER_BUILDKIT=${DOCKER_BUILDKIT:-미설정}" && echo "--- 빌드 캐시 ---" && docker builder prune
+    --dry-run 2>/dev/null || echo "BuildKit 캐시 없음" && echo "--- 빌더 정보 ---" && docker buildx ls 2>/dev/null
+    || echo "buildx 미설치"
+  answer_detail: BuildKit(DOCKER_BUILDKIT=1)은 Docker의 차세대 빌드 엔진으로, --secret(빌드 시 민감 정보 안전 전달), --ssh(SSH
+    에이전트 포워딩), 병렬 빌드, 캐시 최적화를 제공합니다. CI/CD 파이프라인에서 빌드 속도와 보안을 동시에 향상시킵니다.
   verify:
     type: output_contains
     expect: DOCKER_BUILDKIT
     field: stdout
+    semantic:
+      intent: 'BuildKit 보안 — echo DOCKER_BUILDKIT=${DOCKER_BUILDKIT} + docker builder prune --dry-run
+        + docker buildx ls. BuildKit = 차세대 엔진: --secret (민감정보 안전 전달) + --ssh (SSH agent 포워딩) + 병렬 빌드 +
+        캐시 최적화. 빌드 속도 + 보안 동시.'
+      success_criteria:
+      - DOCKER_BUILDKIT 키워드
+      - 환경변수 + buildx
+      - BuildKit 기능
+      acceptable_methods:
+      - DOCKER_BUILDKIT=1 export
+      - docker buildx create + use
+      - docker build --secret id=mysecret
+      - 'Dockerfile # syntax=docker/dockerfile:1'
+      negative_signs:
+      - BuildKit 개념 없음
+      - --secret 언급 없음
+      - buildx 미사용
   target_vm: web
 - order: 6
   instruction: 레지스트리에서 이미지를 pull할 때의 보안 설정을 확인하시오.
   hint: daemon.json에서 insecure-registries를 확인하세요.
   category: audit
   points: 10
-  answer: echo "=== 레지스트리 보안 ==="; cat /etc/docker/daemon.json 2>/dev/null | grep
-    -i "insecure\|registry" || echo "insecure-registries 미설정 (안전)"; echo "--- 인증 정보
-    ---"; ls -la ~/.docker/config.json 2>/dev/null || echo "Docker 로그인 정보 없음"
-  answer_detail: insecure-registries는 HTTPS 없이 레지스트리에 접근을 허용하여 MITM 공격에 취약합니다. CI/CD에서는
-    반드시 HTTPS 레지스트리를 사용하고, ~/.docker/config.json의 인증 정보는 credential helper로 안전하게 관리해야
-    합니다.
+  answer: echo "=== 레지스트리 보안 ==="; cat /etc/docker/daemon.json 2>/dev/null | grep -i "insecure\|registry"
+    || echo "insecure-registries 미설정 (안전)"; echo "--- 인증 정보 ---"; ls -la ~/.docker/config.json 2>/dev/null
+    || echo "Docker 로그인 정보 없음"
+  answer_detail: insecure-registries는 HTTPS 없이 레지스트리에 접근을 허용하여 MITM 공격에 취약합니다. CI/CD에서는 반드시 HTTPS 레지스트리를
+    사용하고, ~/.docker/config.json의 인증 정보는 credential helper로 안전하게 관리해야 합니다.
   verify:
     type: output_contains
     expect: 레지스트리 보안
     field: stdout
+    semantic:
+      intent: 레지스트리 보안 — cat /etc/docker/daemon.json | grep -i 'insecure\|registry' + ls ~/.docker/config.json.
+        insecure-registries = HTTP 허용 = MITM 취약. HTTPS + credential helper 필수. Harbor / Artifactory +
+        RBAC 권장.
+      success_criteria:
+      - 레지스트리 보안 키워드
+      - daemon.json + config.json 조회
+      - insecure 설정 확인
+      acceptable_methods:
+      - cat daemon.json grep
+      - docker logout/login + config.json
+      - credential helpers (docker-credential-*)
+      - Harbor image retention + RBAC
+      negative_signs:
+      - insecure-registries 위험 맥락 없음
+      - HTTPS 필수성 없음
+      - credential helper 언급 없음
   target_vm: web
 - order: 7
   instruction: CI/CD 보안 종합 점검 스크립트를 작성하고 실행하시오.
@@ -175,8 +267,8 @@ steps:
 
     echo ''[이미지 태그 점검]''
 
-    docker images --format "{{.Repository}}:{{.Tag}}" | grep ":latest" | wc -l 2>/dev/null
-    | xargs -I{} echo "latest 태그 사용: {}개"
+    docker images --format "{{.Repository}}:{{.Tag}}" | grep ":latest" | wc -l 2>/dev/null | xargs -I{}
+    echo "latest 태그 사용: {}개"
 
     echo ''[Content Trust]''
 
@@ -184,13 +276,11 @@ steps:
 
     echo ''[insecure-registries]''
 
-    grep -c insecure /etc/docker/daemon.json 2>/dev/null || echo 0 | xargs -I{} echo
-    "{}건"
+    grep -c insecure /etc/docker/daemon.json 2>/dev/null || echo 0 | xargs -I{} echo "{}건"
 
     echo ''[빌드 캐시]''
 
-    docker system df --format "Build Cache: {{.Size}}" 2>/dev/null | tail -1 || echo
-    ''정보 없음''
+    docker system df --format "Build Cache: {{.Size}}" 2>/dev/null | tail -1 || echo ''정보 없음''
 
     echo ''[이미지 수]''
 
@@ -201,11 +291,28 @@ steps:
     SCRIPT
 
     chmod +x /tmp/cicd_security.sh && bash /tmp/cicd_security.sh'
-  answer_detail: CI/CD 보안은 소프트웨어 공급망(Supply Chain) 보안의 핵심입니다. SLSA(Supply-chain Levels
-    for Software Artifacts) 프레임워크에서는 빌드의 무결성, 소스의 출처, 아티팩트의 검증을 요구합니다. Docker 환경에서는
-    이미지 서명(DCT), 베이스 이미지 관리, 취약점 스캔, 비밀 관리가 핵심 요소입니다.
+  answer_detail: CI/CD 보안은 소프트웨어 공급망(Supply Chain) 보안의 핵심입니다. SLSA(Supply-chain Levels for Software Artifacts)
+    프레임워크에서는 빌드의 무결성, 소스의 출처, 아티팩트의 검증을 요구합니다. Docker 환경에서는 이미지 서명(DCT), 베이스 이미지 관리, 취약점 스캔, 비밀 관리가 핵심
+    요소입니다.
   verify:
     type: output_contains
     expect: CI/CD 점검 완료
     field: stdout
+    semantic:
+      intent: 'CI/CD 보안 종합 점검 — /tmp/cicd_security.sh: latest 태그 + Content Trust + insecure-registries
+        + 빌드 캐시 + 이미지 수. SLSA (Supply-chain Levels for Software Artifacts) 프레임워크. 빌드 무결성 + 소스 출처 + 아티팩트
+        검증. 공급망 보안.'
+      success_criteria:
+      - CI/CD 점검 완료 키워드
+      - /tmp/cicd_security.sh
+      - 5 항목 점검
+      acceptable_methods:
+      - bash + 다중 docker 명령
+      - SLSA Framework audit
+      - Grype / Trivy CI 통합
+      - in-toto attestation
+      negative_signs:
+      - SLSA 맥락 없음
+      - 항목 3개 이하
+      - 공급망 공격 맥락 없음
   target_vm: web
