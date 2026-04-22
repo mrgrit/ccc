@@ -17,16 +17,31 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 9
-  answer: ls ~/ccc/skills/*.py ~/ccc/skills/*.yaml ~/ccc/playbooks/agent_ir/*.yaml
-    2>/dev/null | tee ~/ccc/final/asset-snapshot.txt | wc -l
+  answer: ls ~/ccc/skills/*.py ~/ccc/skills/*.yaml ~/ccc/playbooks/agent_ir/*.yaml 2>/dev/null | tee ~/ccc/final/asset-snapshot.txt
+    | wc -l
   answer_detail: 학기 말 최종 자산 수.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[스냅샷] 최종 자산 — ls ~/ccc/skills/*.py *.yaml ~/ccc/playbooks/agent_ir/*.yaml | tee asset-snapshot.txt
+        | wc -l. 학기 말 최종 자산 수.'
+      success_criteria:
+      - ls + tee + wc
+      - 최종 자산
+      - 파일 카운트
+      acceptable_methods:
+      - ls + tee
+      - find + save
+      - git inventory
+      negative_signs:
+      - 스냅샷 없음
+      - 카운트 없음
+      - 저장 없음
   target_vm: bastion
-  script: ls ~/ccc/skills/*.py ~/ccc/skills/*.yaml ~/ccc/playbooks/agent_ir/*.yaml
-    2>/dev/null | tee ~/ccc/final/asset-snapshot.txt | wc -l
+  script: ls ~/ccc/skills/*.py ~/ccc/skills/*.yaml ~/ccc/playbooks/agent_ir/*.yaml 2>/dev/null | tee ~/ccc/final/asset-snapshot.txt
+    | wc -l
   risk_level: low
   bastion_prompt: ''
 - order: 2
@@ -34,16 +49,31 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 10
-  answer: mkdir -p ~/ccc/final && echo '3분할 화면 + Canary 실행 + pcap 캡처' > ~/ccc/final/final-setup.md
-    && cat ~/ccc/final/final-setup.md
+  answer: mkdir -p ~/ccc/final && echo '3분할 화면 + Canary 실행 + pcap 캡처' > ~/ccc/final/final-setup.md &&
+    cat ~/ccc/final/final-setup.md
   answer_detail: 기말 환경 체크.
   verify:
     type: output_contains
     expect: Canary
     field: stdout
+    semantic:
+      intent: '[기말] 관전 준비 — mkdir ~/ccc/final + echo ''3분할 화면 + Canary 실행 + pcap 캡처'' > final-setup.md.
+        기말 환경 체크.'
+      success_criteria:
+      - Canary 키워드
+      - 3분할 + pcap
+      - 준비 문서
+      acceptable_methods:
+      - Markdown 체크
+      - tmux 레이아웃
+      - 환경 확인 스크립트
+      negative_signs:
+      - 준비 없음
+      - 요소 1-2개
+      - 문서 없음
   target_vm: bastion
-  script: mkdir -p ~/ccc/final && echo '3분할 화면 + Canary 실행 + pcap 캡처' > ~/ccc/final/final-setup.md
-    && cat ~/ccc/final/final-setup.md
+  script: mkdir -p ~/ccc/final && echo '3분할 화면 + Canary 실행 + pcap 캡처' > ~/ccc/final/final-setup.md &&
+    cat ~/ccc/final/final-setup.md
   risk_level: low
   bastion_prompt: ''
 - order: 3
@@ -51,18 +81,31 @@ steps:
   hint: target_vm=web에서 수행. 아래 CLI 예시 참고.
   category: attack
   points: 11
-  answer: 'for i in $(seq 1 30); do curl -s -o /dev/null http://10.20.30.80/rest/user/login
-    -X POST -d ''{"email":"final-''$i''"}'' -H ''Content-Type: application/json'';
-    done; echo final_attack_sim_done'
+  answer: 'for i in $(seq 1 30); do curl -s -o /dev/null http://10.20.30.80/rest/user/login -X POST -d
+    ''{"email":"final-''$i''"}'' -H ''Content-Type: application/json''; done; echo final_attack_sim_done'
   answer_detail: 강사 커스텀 공격 시나리오.
   verify:
     type: output_contains
     expect: final_attack_sim_done
     field: stdout
+    semantic:
+      intent: '[공방] 기말 트래픽 30회 — for i in 1..30; curl -X POST /rest/user/login email=final-$i. 강사 커스텀
+        공격 시나리오.'
+      success_criteria:
+      - final_attack_sim_done
+      - 30 반복
+      - POST JSON
+      acceptable_methods:
+      - for + seq
+      - hey -n
+      - Locust
+      negative_signs:
+      - 반복 10회 이하
+      - POST 없음
+      - 완료 마커 없음
   target_vm: web
-  script: 'for i in $(seq 1 30); do curl -s -o /dev/null http://10.20.30.80/rest/user/login
-    -X POST -d ''{"email":"final-''$i''"}'' -H ''Content-Type: application/json'';
-    done; echo final_attack_sim_done'
+  script: 'for i in $(seq 1 30); do curl -s -o /dev/null http://10.20.30.80/rest/user/login -X POST -d
+    ''{"email":"final-''$i''"}'' -H ''Content-Type: application/json''; done; echo final_attack_sim_done'
   risk_level: low
   bastion_prompt: ''
 - order: 4
@@ -88,6 +131,21 @@ steps:
     type: output_contains
     expect: L1
     field: stdout
+    semantic:
+      intent: '[Mythos L1] Observer 증거 — cat > mythos-l1.md: SIEM 에이전트 이벤트 질의 / alerts.json 매칭 이력 / egress
+        30일 보존. L1 증거 3종. 실제 파일·정책 링크.'
+      success_criteria:
+      - L1 키워드
+      - Observer 증거 3종
+      - 링크/파일
+      acceptable_methods:
+      - Markdown 증거
+      - CMMC level check
+      - NIST AI RMF Map
+      negative_signs:
+      - 증거 1-2개
+      - 링크 없음
+      - Observer 맥락 없음
   target_vm: bastion
   script: 'cat > ~/ccc/final/mythos-l1.md <<''MD''
 
@@ -133,6 +191,21 @@ steps:
     type: output_contains
     expect: Observer
     field: stdout
+    semantic:
+      intent: '[Mythos L1-L5] 전체 증거 — cat > mythos-all.md: 표 5 레벨 (L1 Observer / L2 Reactor / L3 Defender
+        / L4 Co-evolver / L5 Mythos-ready). 실습 L3-L4 조직 L1-L2 일반적.'
+      success_criteria:
+      - Observer 키워드
+      - 5 레벨
+      - 증거 칸
+      acceptable_methods:
+      - Markdown 5레벨 표
+      - CMMC 맵
+      - NIST Tier
+      negative_signs:
+      - 레벨 3개 이하
+      - 증거 칸 없음
+      - 설명 없음
   target_vm: bastion
   script: 'cat > ~/ccc/final/mythos-all.md <<''MD''
 
@@ -178,6 +251,21 @@ steps:
     type: output_contains
     expect: 30일
     field: stdout
+    semantic:
+      intent: '[30일 계획] 즉시 조치 — cat > plan-30.md: 에이전트 호출 가시성 (로깅/프록시) + egress default-deny + skill 1-2개
+        SIEM 이식. 예산 최소. 즉시 실행.'
+      success_criteria:
+      - 30일 키워드
+      - 3 조치
+      - 즉시 실행
+      acceptable_methods:
+      - Markdown 계획
+      - OKR format
+      - Kanban
+      negative_signs:
+      - 조치 1-2개
+      - 30일 맥락 없음
+      - 구체성 없음
   target_vm: bastion
   script: 'cat > ~/ccc/final/plan-30.md <<''MD''
 
@@ -217,6 +305,20 @@ steps:
     type: output_contains
     expect: 90일
     field: stdout
+    semantic:
+      intent: '[90일 계획] 중기 — cat > plan-90.md: VulnOps 전담 1명 + Purple 월 1회 시범 + 허니/tar-pit 일부 적용. 예산 중간.'
+      success_criteria:
+      - 90일 키워드
+      - 3 중기 조치
+      - 인력 + 프로세스
+      acceptable_methods:
+      - Markdown 중기 계획
+      - RACI matrix
+      - OKR quarterly
+      negative_signs:
+      - 조치 1-2개
+      - 인력 없음
+      - 프로세스 없음
   target_vm: bastion
   script: 'cat > ~/ccc/final/plan-90.md <<''MD''
 
@@ -256,6 +358,21 @@ steps:
     type: output_contains
     expect: 365일
     field: stdout
+    semantic:
+      intent: '[365일 계획] 장기 — cat > plan-365.md: Co-evolution 자동 승격 루프 + OpenCTI 연동 확장 + Mythos L3+ 진입.
+        전사 이해 필요.'
+      success_criteria:
+      - 365일 키워드
+      - 3 장기 조치
+      - Mythos L3+
+      acceptable_methods:
+      - Markdown 장기
+      - roadmap.md
+      - NIST Tier 향상
+      negative_signs:
+      - 조치 1-2개
+      - L3 없음
+      - 장기 맥락 없음
   target_vm: bastion
   script: 'cat > ~/ccc/final/plan-365.md <<''MD''
 
@@ -301,6 +418,21 @@ steps:
     type: output_contains
     expect: 도입
     field: stdout
+    semantic:
+      intent: '[브리핑] 의사결정자 1쪽 — cat > exec-brief.md: 한 줄 (L1→L3 12개월 $XXXK / 미조치 Dependency Confusion
+        $YM 손실) + 요청 3 (예산 / 인력 / 정책 승인). 의사결정자용 숫자 중심.'
+      success_criteria:
+      - 도입 키워드
+      - 한 줄 + 요청 3
+      - 숫자 포함
+      acceptable_methods:
+      - Markdown 1쪽
+      - executive summary
+      - CxO briefing
+      negative_signs:
+      - 숫자 없음
+      - 요청 2개 이하
+      - 한 줄 요약 없음
   target_vm: bastion
   script: 'cat > ~/ccc/final/exec-brief.md <<''MD''
 
@@ -352,6 +484,21 @@ steps:
     type: output_contains
     expect: 근본적
     field: stdout
+    semantic:
+      intent: '[회고] 과정 보고서 — cat > course-retrospective.md: 근본적 통찰 1 (Bastion 학습이 성공) + 즉시 조치 1 (다음 주)
+        + 과정 개선 제안 1. 3문항 명확.'
+      success_criteria:
+      - 근본적 키워드
+      - 3 섹션
+      - 통찰+조치+제안
+      acceptable_methods:
+      - Markdown 3 섹션
+      - AAR format
+      - Start/Stop/Continue
+      negative_signs:
+      - 섹션 1-2개
+      - 조치 없음
+      - 통찰 없음
   target_vm: bastion
   script: 'cat > ~/ccc/final/course-retrospective.md <<''MD''
 
@@ -385,6 +532,21 @@ steps:
     type: output_contains
     expect: w15-final.tgz
     field: stdout
+    semantic:
+      intent: '[제출] 기말 패키지 — cd ~/ccc/final && tar czf ~/ccc/artifacts/w15-final.tgz * + ls -la. 모든 산출물
+        포함.'
+      success_criteria:
+      - w15-final.tgz 파일
+      - tar czf
+      - ls -la
+      acceptable_methods:
+      - tar czf
+      - zip -r
+      - git bundle
+      negative_signs:
+      - tar 없음
+      - 확인 없음
+      - 패키지 누락
   target_vm: bastion
   script: cd ~/ccc/final && tar czf ~/ccc/artifacts/w15-final.tgz * && ls -la ~/ccc/artifacts/w15-final.tgz
   risk_level: low
@@ -394,8 +556,8 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 20
-  answer: echo '{"id":"w15-final","completed":true,"mythos_self":"L3 체험 / L2 조직","ts":"'$(date
-    -Iseconds)'"}' > ~/ccc/data/bastion/experience/w15-final.json && cat ~/ccc/data/bastion/experience/w15-final.json
+  answer: echo '{"id":"w15-final","completed":true,"mythos_self":"L3 체험 / L2 조직","ts":"'$(date -Iseconds)'"}'
+    > ~/ccc/data/bastion/experience/w15-final.json && cat ~/ccc/data/bastion/experience/w15-final.json
   answer_detail: 최종 경험 기록. 다음 코호트의 *레퍼런스*가 된다.
   verify:
     type: output_contains
@@ -403,8 +565,23 @@ steps:
     - completed
     - 완료
     field: stdout
+    semantic:
+      intent: '[완료] w15 최종 Experience — echo ''{id: w15-final, completed: true, mythos_self: "L3 체험/L2
+        조직", ts: date -Iseconds}'' > w15-final.json. 과정 종료 기록.'
+      success_criteria:
+      - completed/완료 키워드
+      - mythos_self
+      - ts 포함
+      acceptable_methods:
+      - echo JSON + date
+      - jq -n
+      - python dumps
+      negative_signs:
+      - ts 없음
+      - mythos 없음
+      - completed 없음
   target_vm: bastion
-  script: echo '{"id":"w15-final","completed":true,"mythos_self":"L3 체험 / L2 조직","ts":"'$(date
-    -Iseconds)'"}' > ~/ccc/data/bastion/experience/w15-final.json && cat ~/ccc/data/bastion/experience/w15-final.json
+  script: echo '{"id":"w15-final","completed":true,"mythos_self":"L3 체험 / L2 조직","ts":"'$(date -Iseconds)'"}'
+    > ~/ccc/data/bastion/experience/w15-final.json && cat ~/ccc/data/bastion/experience/w15-final.json
   risk_level: low
   bastion_prompt: ''
