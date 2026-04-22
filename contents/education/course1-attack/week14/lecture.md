@@ -1,622 +1,516 @@
-# Week 14: 자동화 침투 테스트 (Bastion 활용)
+# Week 14: Bastion 자연어 자동 침투 테스트
 
 ## 학습 목표
-- Bastion 플랫폼의 아키텍처와 API를 이해한다
-- execute-plan API로 다단계 공격을 자동 실행할 수 있다
-- Playbook 기반 공격 재현의 장점을 설명할 수 있다
-- PoW(Proof of Work) 증거 체인의 원리와 감사 활용을 이해한다
-- 수동 침투 테스트와 자동화 테스트의 차이를 비교한다
+- Bastion 에이전트의 실제 아키텍처(LLM + Skill + Evidence DB)를 이해한다
+- `/chat` (스트리밍)과 `/ask` (단답) 엔드포인트의 차이를 구분한다
+- 자연어 지시로 다단계 공격 시나리오(정찰→취약점→악용→보고)를 실행한다
+- Bastion이 선택한 Skill과 실제 실행 결과를 Evidence DB에서 검증한다
+- 수동 침투 테스트와 자연어 자동화의 차이·한계를 비교한다
+- 자동화 결과를 모의해킹 보고서 형식으로 정리한다
 
-## 실습 환경 (공통)
+## 실습 환경
 
-| 서버 | IP | 역할 | 접속 |
-|------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
-
-**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+| 호스트 | IP | 역할 |
+|--------|-----|------|
+| manager | 10.20.30.200 | **Bastion 에이전트 호스트** (:8003 API, :11434 Ollama) |
+| secu | 10.20.30.1 | 표적 (방화벽) |
+| web | 10.20.30.80 | 표적 (JuiceShop :3000) |
+| siem | 10.20.30.100 | 표적 (Wazuh) |
 
 ## 강의 시간 배분 (3시간)
 
-| 시간 | 내용 | 유형 |
-|------|------|------|
-| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
-| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
-| 1:10-1:20 | 휴식 | - |
-| 1:20-2:00 | 실습 (Part 3) | 실습 |
-| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
-| 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
-
----
-
----
-
-## 용어 해설 (이 과목에서 자주 나오는 용어)
-
-> 대학 1~2학년이 처음 접할 수 있는 보안/IT 용어를 정리한다.
-> 강의 중 모르는 용어가 나오면 이 표를 참고하라.
-
-| 용어 | 영문 | 설명 | 비유 |
-|------|------|------|------|
-| **페이로드** | Payload | 공격에 사용되는 실제 데이터/코드. 예: `' OR 1=1--` | 미사일의 탄두 |
-| **익스플로잇** | Exploit | 취약점을 악용하는 기법 또는 코드 | 열쇠 없이 문을 여는 방법 |
-| **셸** | Shell | 운영체제와 사용자를 연결하는 명령어 해석기 (bash, sh 등) | OS에게 말 걸 수 있는 창구 |
-| **리버스 셸** | Reverse Shell | 대상 서버가 공격자에게 역방향 연결을 맺는 것 | 도둑이 집에서 밖으로 전화를 거는 것 |
-| **포트** | Port | 서버에서 특정 서비스를 식별하는 번호 (0~65535) | 아파트 호수 |
-| **데몬** | Daemon | 백그라운드에서 실행되는 서비스 프로그램 | 24시간 근무하는 경비원 |
-| **패킷** | Packet | 네트워크로 전송되는 데이터의 단위 | 택배 상자 하나 |
-| **프록시** | Proxy | 클라이언트와 서버 사이에서 중개하는 서버 | 대리인, 중간 거래자 |
-| **해시** | Hash | 임의 길이 데이터를 고정 길이 값으로 변환하는 함수 (SHA-256 등) | 지문 (고유하지만 원본 복원 불가) |
-| **토큰** | Token | 인증 정보를 담은 문자열 (JWT, API Key 등) | 놀이공원 입장권 |
-| **JWT** | JSON Web Token | Base64로 인코딩된 JSON 기반 인증 토큰 | 이름·권한이 적힌 입장권 |
-| **Base64** | Base64 | 바이너리 데이터를 텍스트로 인코딩하는 방법 | 암호가 아닌 "포장" (누구나 풀 수 있음) |
-| **CORS** | Cross-Origin Resource Sharing | 다른 도메인에서의 API 호출 허용 설정 | "외부인 출입 허용" 표지판 |
-| **API** | Application Programming Interface | 프로그램 간 통신 규약 | 식당의 메뉴판 (주문 양식) |
-| **REST** | Representational State Transfer | URL + HTTP 메서드로 자원을 조작하는 API 스타일 | 도서관 대출 시스템 (책 이름으로 검색/대출/반납) |
-| **SSH** | Secure Shell | 원격 서버에 안전하게 접속하는 프로토콜 | 암호화된 전화선 |
-| **sudo** | SuperUser DO | 관리자(root) 권한으로 명령 실행 | "사장님 권한으로 실행" |
-| **SUID** | Set User ID | 실행 시 파일 소유자 권한으로 실행되는 특수 권한 | 다른 사람의 사원증을 빌려 출입 |
-| **IPS** | Intrusion Prevention System | 네트워크 침입 방지 시스템 (악성 트래픽 차단) | 공항 보안 검색대 |
-| **SIEM** | Security Information and Event Management | 보안 로그를 수집·분석하는 통합 관제 시스템 | CCTV 관제실 |
-| **WAF** | Web Application Firewall | 웹 공격을 탐지·차단하는 방화벽 | 웹사이트 전용 경비원 |
-| **nftables** | nftables | Linux 커널 방화벽 프레임워크 (iptables 후계) | 건물 출입구 차단기 |
-| **Suricata** | Suricata | 오픈소스 IDS/IPS 엔진 | 공항 X-ray 검색기 |
-| **Wazuh** | Wazuh | 오픈소스 SIEM 플랫폼 | CCTV + AI 관제 시스템 |
-| **ATT&CK** | MITRE ATT&CK | 실제 공격 전술·기법을 분류한 데이터베이스 | 범죄 수법 백과사전 |
-| **OWASP** | Open Web Application Security Project | 웹 보안 취약점 연구 국제 단체 | 웹 보안의 표준 기관 |
-| **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 점수 (0~10점) | 질병 위험도 등급 |
-| **CVE** | Common Vulnerabilities and Exposures | 취약점 고유 식별 번호 | 질병의 고유 코드 (예: COVID-19) |
-| **Bastion** | Bastion | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
-
----
-
-# Week 14: 자동화 침투 테스트 (Bastion 활용)
-
-## 학습 목표
-
-- Bastion 플랫폼의 아키텍처와 API를 이해한다
-- execute-plan API로 다단계 공격을 자동 실행할 수 있다
-- Playbook 기반 공격 재현의 장점을 설명할 수 있다
-- PoW(Proof of Work) 증거 체인의 원리와 감사 활용을 이해한다
-- 수동 침투 테스트와 자동화 테스트의 차이를 비교한다
-
----
-
-## 1. Bastion 플랫폼 개요
-
-### 1.1 아키텍처
-
-```
-[Claude Code (외부 마스터)]
-  계획 수립 --> API 호출 --> 결과 분석
-       |
-       | HTTP API
-       v
-[Manager API (:8000)]
-  프로젝트 관리 / 태스크 분배 / 증거 기록
-  PoW 블록체인 / 보상 시스템
-       |
-       +---------------------------+
-       |             |             |
-       v             v             v
-  [SubAgent]    [SubAgent]    [SubAgent]
-   secu:8002     web:8002     siem:8002
-```
-
-### 1.2 핵심 개념
-
-| 개념 | 설명 |
+| 시간 | 내용 |
 |------|------|
-| **Project** | 작업 단위. 한 번의 침투 테스트 = 하나의 프로젝트 |
-| **Stage** | 프로젝트 상태: created → planning → executing → completed |
-| **Task** | 개별 실행 명령. execute-plan에 배열로 전달 |
-| **Evidence** | 각 Task의 실행 결과 (stdout, stderr, exit_code) |
-| **PoW Block** | Task 실행의 암호학적 증명. 변조 불가능한 감사 증적 |
-| **SubAgent** | 실제 명령을 실행하는 에이전트 (각 서버에 배포) |
+| 0:00-0:30 | Bastion 실제 아키텍처 (Part 1) |
+| 0:30-1:00 | /chat vs /ask, Skill·Evidence 구조 (Part 2) |
+| 1:00-1:10 | 휴식 |
+| 1:10-1:50 | 단일 지시 자동화 (Part 3) |
+| 1:50-2:30 | 다단계 킬체인 자동화 (Part 4) |
+| 2:30-2:40 | 휴식 |
+| 2:40-3:10 | Evidence 검증·보고서 생성 (Part 5) |
+| 3:10-3:30 | 수동 vs 자동 비교 + 한계 (Part 6) |
+| 3:30-3:40 | 과제 |
 
-### 1.3 API 인증
+---
 
-모든 API 호출에 인증 헤더가 필요하다.
+# Part 1: Bastion 실제 아키텍처
 
-> **실습 목적**: Bastion API를 사용하여 자동화된 침투 테스트를 수행하고 증적을 체계적으로 관리한다
->
-> **배우는 것**: API 인증, 프로젝트 생성, 태스크 디스패치 등 자동화 침투 테스트 파이프라인 구축 방법을 배운다
->
-> **결과 해석**: API 응답의 exit_code가 0이면 명령 실행 성공이며, evidence에서 전체 실행 이력을 확인할 수 있다
->
-> **실전 활용**: 대규모 인프라의 정기 침투 테스트를 자동화하여 일관성 있는 점검과 증적 관리를 수행한다
+## 1.1 구성요소
+
+```
+[학생/Claude Code/CLI] → HTTP (:8003)
+                              ↓
+                         [Bastion Agent]
+                           ┌───────────────────┐
+                           │ LLM (Ollama)      │  ← 자연어 해석 (:11434)
+                           │ Skill Registry    │  ← 실행 가능한 Python 함수들
+                           │ Playbook Store    │  ← Skill 조합 시나리오
+                           │ Evidence DB       │  ← 실행 이력 (SQLite)
+                           └───────────────────┘
+                              ↓
+                         실행 결과 (자연어 요약)
+```
+
+**핵심 차이 (이전 주차 대비):**
+- ~~Project/Stage/Task/PoW-Block~~ 구조 **없음** (기존 교안은 오류)
+- 실제는 **대화형 Agent**: 학생이 자연어로 요청 → LLM이 의도 파악 → Skill 실행 → 결과 반환
+
+## 1.2 제공 엔드포인트 (실측)
 
 ```bash
-# 환경 변수 설정
-export BASTION_API_KEY="ccc-api-key-2026"
-
-# 모든 curl 요청에 포함
--H "X-API-Key: $BASTION_API_KEY"
+curl -s http://10.20.30.200:8003/health | python3 -m json.tool
 ```
 
----
-
-## 2. Bastion API 워크플로우
-
-> **이 실습을 왜 하는가?**
-> "자동화 침투 테스트 (Bastion 활용)" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
-> 사이버보안 공격/웹해킹/침투테스트 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
-> 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
->
-> **이걸 하면 무엇을 알 수 있는가?**
-> - 이 기술이 실제 시스템에서 어떻게 동작하는지 직접 확인
-> - 정상과 비정상 결과를 구분하는 눈을 기름
-> - 실무에서 바로 활용할 수 있는 명령어와 절차를 체득
->
-> **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
-
-### 2.1 기본 흐름
-
-```
-1. 프로젝트 생성 (POST /projects)
-   ↓
-2. 계획 단계 전환 (POST /projects/{id}/plan)
-   ↓
-3. 실행 단계 전환 (POST /projects/{id}/execute)
-   ↓
-4. 태스크 실행 (POST /projects/{id}/execute-plan)
-   ↓
-5. 결과 확인 (GET /projects/{id}/evidence/summary)
-   ↓
-6. 완료 보고서 (POST /projects/{id}/completion-report)
-```
-
-### 2.2 주요 API 엔드포인트
-
-| 메서드 | 경로 | 설명 |
-|--------|------|------|
-| POST | /projects | 프로젝트 생성 |
-| POST | /projects/{id}/plan | 계획 단계 전환 |
-| POST | /projects/{id}/execute | 실행 단계 전환 |
-| POST | /projects/{id}/execute-plan | 태스크 배열 실행 |
-| POST | /projects/{id}/dispatch | 단일 명령 실행 |
-| GET | /projects/{id}/evidence/summary | 증거 요약 |
-| POST | /projects/{id}/completion-report | 완료 보고서 생성 |
-| GET | /pow/blocks | PoW 블록 조회 |
-| GET | /pow/verify | 체인 무결성 검증 |
-| GET | /pow/leaderboard | 보상 랭킹 |
-| GET | /projects/{id}/replay | 작업 재생 |
-
----
-
-## 3. execute-plan: 다단계 공격 실행
-
-### 3.1 Task 구조
-
+**예상 출력:**
 ```json
 {
-  "tasks": [
-    {
-      "order": 1,
-      "instruction_prompt": "실행할 명령어",
-      "risk_level": "low|medium|high|critical",
-      "subagent_url": "http://대상서버:8002"
-    }
-  ],
-  "subagent_url": "http://기본서버:8002"
+    "status": "ok",
+    "model": "gemma3:4b",
+    "llm": "http://localhost:11434",
+    "skills": 12,
+    "playbooks": 5
 }
 ```
 
-### 3.2 risk_level 설명
+| 엔드포인트 | 메서드 | 용도 |
+|-----------|--------|------|
+| `/health` | GET | 가동 상태·모델 정보 |
+| `/skills` | GET | 보유 Skill 목록 |
+| `/playbooks` | GET | Playbook 목록 |
+| `/chat` | POST | 자연어 요청 (NDJSON 스트림) |
+| `/ask` | POST | 자연어 질문 (단답형) |
+| `/evidence` | GET | 실행 이력 (limit 파라미터) |
+| `/assets` | GET | 관리 대상 자산 목록 |
+| `/onboard` | POST | 새 VM 온보딩 |
 
-| 레벨 | 설명 | 동작 |
+## 1.3 핵심 데이터 구조
+
+**Skill 객체:**
+```json
+{
+  "name": "ssh_exec",
+  "description": "원격 VM에 SSH로 명령 실행",
+  "params": ["host", "cmd"],
+  "risk_level": "medium"
+}
+```
+
+**Evidence 레코드:**
+```json
+{
+  "timestamp": "2026-04-23T14:30:22",
+  "user_message": "web 서버의 포트 스캔해줘",
+  "skill": "nmap_scan",
+  "params": {"target": "10.20.30.80", "ports": "22,80,3000"},
+  "output": "PORT STATE SERVICE\n22/tcp open ssh\n...",
+  "success": true
+}
+```
+
+---
+
+# Part 2: /chat vs /ask
+
+## 2.1 /ask — 단답형
+
+**이것은 무엇인가?** 가장 간단한 인터페이스. 자연어 질문 → 자연어 답변 + skill_outputs 배열만 반환.
+
+```bash
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 서버의 주요 포트를 스캔해줘"}'
+```
+
+**응답 구조:**
+```json
+{
+  "answer": "web 서버(10.20.30.80) 스캔 결과:\n- 22/tcp SSH\n- 80/tcp HTTP\n- 3000/tcp Node.js\n...",
+  "success": true,
+  "skill_outputs": [
+    {"skill": "nmap_scan", "output": "...", "success": true}
+  ],
+  "event_count": 7
+}
+```
+
+**언제 쓰나:** 빠른 점검, 스크립트에서 한 번 호출하고 결과만 필요할 때.
+
+## 2.2 /chat — 스트리밍
+
+**이것은 무엇인가?** NDJSON(한 줄당 한 JSON) 스트림으로 **이벤트 진행상황**을 실시간 반환. TUI·대화형 UI에 적합.
+
+```bash
+curl -N -s -X POST http://10.20.30.200:8003/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 서버 공격 표면 요약해줘", "stream": true}' \
+  | head -20
+```
+
+**명령 분해:**
+- `-N`: no-buffer (스트림을 즉시 출력)
+- `"stream": true`: NDJSON 스트림 요청
+
+**이벤트 유형:**
+- `thought`: LLM의 추론 단계
+- `skill_call`: Skill 호출 결정
+- `skill_result`: Skill 실행 결과
+- `stream_token`: 최종 응답 토큰 단위
+- `done`: 완료
+
+**언제 쓰나:** UI에서 "생각 중..." 표시, Skill 호출 과정을 사용자에게 보여줄 때.
+
+## 2.3 Skill 목록 확인
+
+```bash
+curl -s http://10.20.30.200:8003/skills | python3 -c "
+import sys, json
+for s in json.load(sys.stdin):
+    print(f\"  [{s.get('name','?'):20s}] {s.get('description','')[:50]}\")
+"
+```
+
+**예상 출력 (일부):**
+```
+  [ssh_exec            ] 원격 VM에 SSH로 명령 실행
+  [nmap_scan           ] 포트 스캔
+  [http_probe          ] HTTP 요청 + 헤더 수집
+  [wazuh_query         ] Wazuh alert 검색
+  [suricata_rules_show ] Suricata 룰 덤프
+  [nft_show            ] nftables 룰 조회
+  ...
+```
+
+---
+
+# Part 3: 단일 지시 자동화
+
+## 3.1 정찰 자동화
+
+```bash
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "10.20.30.0/24 네트워크 호스트 발견 후, web(10.20.30.80)의 열린 포트와 서비스 버전을 nmap -sV로 확인하고 결과를 표로 정리해줘."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
+```
+
+**예상 응답:**
+```
+네트워크 스캔 결과:
+- 10.20.30.1 (secu)   up
+- 10.20.30.80 (web)   up
+- 10.20.30.100 (siem) up
+- 10.20.30.200 (manager) up
+
+web 서버 포트:
+| 포트 | 서비스 | 버전 |
+|-----|--------|------|
+| 22  | SSH    | OpenSSH 8.9p1 |
+| 80  | HTTP   | Apache 2.4.52 |
+| 3000| HTTP   | Node.js Express (JuiceShop) |
+```
+
+**내부 동작:** LLM이 의도 파악 → `nmap_scan` Skill 호출 → 결과를 표로 가공 → 자연어 응답.
+
+## 3.2 웹 공격 점검
+
+```bash
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "JuiceShop(http://10.20.30.80:3000) 로그인 API에 '"'"' OR 1=1-- 페이로드로 SQL Injection을 시도하고, 성공 시 받은 JWT의 role 필드를 디코딩해서 보여줘."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
+```
+
+## 3.3 방어 설정 조회
+
+```bash
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "secu 서버(10.20.30.1)의 nftables 룰셋 전체를 조회하고, forward chain의 기본 정책이 무엇인지 알려줘."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
+```
+
+---
+
+# Part 4: 다단계 킬체인 자동화
+
+## 4.1 Week 02~13 통합 시나리오
+
+**이것은 무엇인가?** 단일 `/ask`로 여러 단계의 공격을 연쇄 실행. LLM이 내부에서 Skill들을 조합.
+
+```bash
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "JuiceShop에 대한 전체 킬체인을 자동 실행해줘: (1) web 포트 스캔, (2) HTTP 보안 헤더 수집, (3) /ftp 파일 목록, (4) SQLi로 admin 로그인 시도, (5) 성공 시 JWT에서 role 확인, (6) admin 토큰으로 /api/Users 호출, (7) MITRE ATT&CK 기법으로 매핑한 결론. 각 단계를 번호 매겨서 결과를 보여줘."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
+```
+
+**예상 응답 (자연어):**
+```
+JuiceShop 전체 킬체인 결과:
+
+1. 포트 스캔 (T1046)
+   22 SSH, 80 Apache, 3000 Node.js
+
+2. 보안 헤더 (T1592)
+   CSP 부재, HSTS 부재, CORS 완전 개방
+
+3. /ftp 파일 목록 (T1083)
+   8개 파일: legal.md, package.json.bak, coupons_2013.md.bak 등
+
+4. SQLi 관리자 로그인 (T1190)
+   페이로드: ' OR 1=1--
+   결과: HTTP 200, JWT 토큰 발급
+
+5. JWT 디코딩
+   role: admin, id: 1, email: admin@juice-sh.op
+
+6. /api/Users
+   21명 이메일 + MD5 해시 덤프 성공
+
+7. ATT&CK 매핑
+   Reconnaissance → T1595
+   Initial Access → T1190
+   Credential Access → T1552
+   Discovery → T1083
+
+결론: CRITICAL 취약점 다수 발견, admin 권한 탈취 성공.
+```
+
+## 4.2 스트리밍 모드로 "생각 과정" 관찰
+
+```bash
+curl -N -s -X POST http://10.20.30.200:8003/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 서버 공격 체인 실행해줘", "stream": true}' \
+  | head -30
+```
+
+**출력 (NDJSON, 이벤트별 1줄):**
+```
+{"event":"thought","content":"포트 스캔부터 시작해야겠군요"}
+{"event":"skill_call","skill":"nmap_scan","params":{"target":"10.20.30.80"}}
+{"event":"skill_result","skill":"nmap_scan","success":true,"output":"..."}
+{"event":"thought","content":"JuiceShop이 있네요. HTTP 헤더 확인."}
+{"event":"skill_call","skill":"http_probe","params":{"url":"..."}}
+...
+{"event":"stream_token","token":"결론"}
+{"event":"stream_token","token":":"}
+...
+{"event":"done"}
+```
+
+**결과 해석:** LLM의 **ReAct 루프**(Thought → Action → Observation → Thought → ...)를 관찰 가능. 한 번의 `/chat` 호출이 내부적으로 3~10회의 Skill 호출로 이어짐.
+
+---
+
+# Part 5: Evidence 검증·보고서 생성
+
+## 5.1 Evidence 조회
+
+**이것은 무엇인가?** Bastion의 모든 작업은 **SQLite Evidence DB**에 영구 저장. 감사·재현·학습용.
+
+```bash
+# 최근 20건
+curl -s "http://10.20.30.200:8003/evidence?limit=20" | python3 -c "
+import sys, json
+events = json.load(sys.stdin)
+print(f'총 {len(events)}건 이력')
+print('-' * 80)
+for e in events[:10]:
+    ts = e.get('timestamp','')[:19]
+    skill = e.get('skill','?')
+    ok = '✓' if e.get('success') else '✗'
+    msg = e.get('user_message','')[:50]
+    print(f'{ts} {ok} [{skill:15s}] {msg}')
+"
+```
+
+## 5.2 Skill별 통계
+
+```bash
+curl -s "http://10.20.30.200:8003/evidence?limit=100" | python3 -c "
+import sys, json
+from collections import Counter
+events = json.load(sys.stdin)
+skills = Counter(e.get('skill','?') for e in events)
+success = Counter(e.get('skill','?') for e in events if e.get('success'))
+print(f'{\"Skill\":<20s} {\"Total\":>6s} {\"Success\":>8s}  Rate')
+for s, total in skills.most_common():
+    rate = (success[s] / total * 100) if total else 0
+    print(f'{s:<20s} {total:>6d} {success[s]:>8d} {rate:>5.0f}%')
+"
+```
+
+**결과 해석:** 어떤 Skill이 자주 호출되는지, 실패율은 어느 정도인지 → Skill 품질 개선·추가 필요 여부 판단.
+
+## 5.3 자산(Assets) 확인
+
+```bash
+curl -s http://10.20.30.200:8003/assets | python3 -m json.tool
+```
+
+**결과 해석:** Bastion이 알고 있는 관리 대상 VM 목록. 역할·IP·상태(healthy/unreachable). 이 목록이 없으면 `/ask`에서 "web 서버"가 어딘지 모름.
+
+## 5.4 /ask로 직접 보고서 요청
+
+```bash
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "오늘 수행한 최근 20건의 evidence를 분석해서 (1) 발견한 취약점 목록 (2) 각 취약점의 CVSS 심각도 (3) 방어 권고 3가지를 포함한 모의해킹 보고서를 한국어로 작성해줘."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
+```
+
+**예상 응답:** 자동으로 `/evidence` 조회 Skill → 분석 → 보고서 자연어 생성.
+
+---
+
+# Part 6: 수동 vs 자동 비교
+
+## 6.1 비교 매트릭스
+
+| 항목 | 수동 (Week 02~13) | Bastion 자연어 |
+|------|-------------------|----------------|
+| 타이핑 | 명령별 매번 | 자연어 1회 |
+| 학습 곡선 | nmap/curl/sqlmap 등 개별 도구 | 자연어만 |
+| 재현성 | 쉘 히스토리 (불완전) | Evidence DB (완전) |
+| 공유 | 스크립트 작성 | `/evidence` 공유만으로 |
+| 창의적 탐색 | 높음 | LLM 의도 해석 한계 |
+| 정밀 제어 | 높음 (옵션 조합 자유) | 중간 (LLM 선택에 의존) |
+| 속도 | 익숙하면 빠름 | LLM 응답 대기 |
+| 증거 | 부분적 | 모든 호출 자동 기록 |
+| 한계 | 작업자 지식 한계 | LLM 지식 한계, hallucination |
+
+## 6.2 Bastion이 못 하는 것
+
+- **전혀 새로운 Skill**이 필요한 작업 (Skill 레지스트리에 없으면 실패)
+- **복잡한 상호작용형 툴** (msfconsole 같은 인터랙티브)
+- **매우 세밀한 타이밍 제어** (스텔스 스캔 미세 조정)
+- **LLM hallucination 리스크**: 존재하지 않는 명령을 생성하거나, 실제와 다른 결과 요약
+
+→ **수동과 자동의 적절한 조합**이 실무 현실.
+
+## 6.3 자동화에 적합한 작업
+
+✓ 반복적 정찰·헤더 점검
+✓ 대량 호스트 동시 확인
+✓ 보고서 자동 생성
+✓ 증적 중심 감사 대응
+
+## 6.4 자동화가 위험한 작업
+
+✗ 운영 시스템에 파괴적 변경
+✗ 검증되지 않은 Skill 호출
+✗ 외부 공개 시스템 스캔 (탐지·법적 문제)
+
+---
+
+## 과제 (다음 주까지)
+
+### 과제 1: 단일 지시 자동화 (30점)
+다음 5개 자연어 지시를 각각 실행 후 응답·`/evidence` 기록을 제출 (각 6점):
+
+1. `10.20.30.0/24 네트워크 맵을 그려줘 (각 호스트 역할·IP·주요 포트)`
+2. `JuiceShop의 보안 헤더 점검 + 누락된 헤더 위험도 분석`
+3. `secu의 nftables forward chain 정책 + 의심 룰 3개 선정`
+4. `web 서버에서 SUID 바이너리 전수 검사 + GTFOBins 연동 위험도`
+5. `최근 1시간 동안 Wazuh에서 level>=5 alert 상위 5건 요약`
+
+### 과제 2: 킬체인 자동화 (30점)
+`/chat` 스트리밍 모드로 **전체 킬체인 1회 실행** + 관찰 이벤트 로그 제출.
+
+- `thought`, `skill_call`, `skill_result` 이벤트 몇 개 발생했는가?
+- Bastion이 호출한 Skill 이름 전체 목록
+- 최종 `answer`에서 ATT&CK 기법 매핑
+
+### 과제 3: 보고서 (25점)
+`/ask`로 "최근 50건 evidence 분석 후 모의해킹 보고서 작성" 실행 + 결과 md로 편집하여 제출.
+- Exec Summary / Findings / CVSS / Remediations 4섹션 포함
+- 보고서의 정확도·누락·환각 사례 본인 코멘트 추가
+
+### 과제 4: 수동 vs 자동 비교 (15점)
+같은 시나리오(예: web 서버 SQLi 탐지)를 **수동(Week 04)**과 **Bastion(/ask)** 두 방식으로 실행 후 비교표 작성.
+- 소요 시간·타이핑 수·발견 누락·hallucination 사례
+
+---
+
+## 다음 주 예고
+
+**Week 15: 최종 프로젝트 — PTES 보고서 작성**
+- PTES 방법론 (Pre-engagement → Recon → Threat → Exploit → Post-exploit → Reporting)
+- 전체 인프라 대상 침투 테스트 시험
+- CVSS v3.1 기반 보고서
+- 방어 권고 포함
+
+---
+
+## 용어 해설 (이번 주 추가분)
+
+| 용어 | 영문 | 설명 |
 |------|------|------|
-| low | 읽기 전용 (스캔, 조회) | 즉시 실행 |
-| medium | 제한적 변경 (파일 생성) | 즉시 실행 |
-| high | 시스템 변경 (설정 수정) | 즉시 실행 |
-| critical | 파괴적 변경 (삭제, 초기화) | dry_run 강제, confirmed:true 필요 |
-
-### 3.3 SubAgent URL 목록
-
-| 서버 | SubAgent URL |
-|------|-------------|
-| bastion (로컬) | http://localhost:8002 |
-| secu | http://10.20.30.1:8002 또는 http://10.20.30.1:8002 |
-| web | http://10.20.30.80:8002 또는 http://10.20.30.80:8002 |
-| siem | http://10.20.30.100:8002 또는 http://10.20.30.100:8002 |
-
----
-
-## 4. PoW 증거 체인
-
-### 4.1 PoW(Proof of Work)란?
-
-각 Task 실행 결과를 암호학적 해시로 연결한 블록체인 구조이다.
-
-```
-Block 1              Block 2              Block 3
-┌──────────────┐    ┌──────────────┐    ┌──────────────┐
-│ prev_hash: 0 │←───│ prev_hash    │←───│ prev_hash    │
-│ task: nmap   │    │ task: curl   │    │ task: sqlmap  │
-│ result: ...  │    │ result: ...  │    │ result: ...   │
-│ nonce: 12345 │    │ nonce: 67890 │    │ nonce: 11111  │
-│ hash: abc... │    │ hash: def... │    │ hash: ghi...  │
-└──────────────┘    └──────────────┘    └──────────────┘
-```
-
-### 4.2 PoW의 감사 활용
-
-- **변조 감지**: 하나의 블록이라도 수정되면 해시 체인이 깨짐
-- **실행 증명**: 특정 시간에 특정 명령이 실행되었음을 증명
-- **감사 추적**: 침투 테스트의 모든 단계를 투명하게 기록
-- **보고서 작성**: 자동화된 증거 수집으로 보고서 품질 향상
-
----
-
-## 5. 실습
-
-### 실습 1: 프로젝트 생성 및 기본 워크플로우
-
-Bastion Manager API를 호출하여 작업을 수행합니다.
-
-```bash
-# 환경 변수 설정
-export BASTION_API_KEY="ccc-api-key-2026"          # 환경 변수 설정
-
-# 1. 프로젝트 생성
-PROJECT=$(curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{                                                # 요청 데이터(body)
-    "name": "week14-automated-pentest",
-    "request_text": "JuiceShop 대상 자동화 침투 테스트",
-    "master_mode": "external"
-  }')
-
-echo "$PROJECT" | python3 -m json.tool
-
-# 프로젝트 ID 추출
-PROJECT_ID=$(echo "$PROJECT" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-echo "프로젝트 ID: $PROJECT_ID"
-
-# 2. Stage 전환: created → planning → executing
-curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/plan" \
-  -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool  # API 인증 키
-
-curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute" \
-  -H "X-API-Key: $BASTION_API_KEY" | python3 -m json.tool  # API 인증 키
-```
-
-### 실습 2: 정찰 단계 자동화 (T1046, T1595)
-
-Bastion Manager API를 호출하여 작업을 수행합니다.
-
-```bash
-# 정찰 태스크 실행
-curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{                                                # 요청 데이터(body)
-    "tasks": [
-      {
-        "order": 1,
-        "instruction_prompt": "nmap -sT -p 22,80,3000,443,8080 10.20.30.80",
-        "risk_level": "low",
-        "subagent_url": "http://localhost:8002"
-      },
-      {
-        "order": 2,
-        "instruction_prompt": "curl -s -o /dev/null -w \"%{http_code}\" http://10.20.30.80:3000/",
-        "risk_level": "low",
-        "subagent_url": "http://localhost:8002"
-      },
-      {
-        "order": 3,
-        "instruction_prompt": "curl -s http://10.20.30.80:3000/rest/products/search?q=test | head -c 500",
-        "risk_level": "low",
-        "subagent_url": "http://localhost:8002"
-      }
-    ],
-    "subagent_url": "http://localhost:8002"
-  }' | python3 -m json.tool
-
-# 예상 출력:
-# {
-#   "project_id": "...",
-#   "results": [
-#     {"order": 1, "status": "success", "exit_code": 0, ...},
-#     {"order": 2, "status": "success", "exit_code": 0, ...},
-#     {"order": 3, "status": "success", "exit_code": 0, ...}
-#   ]
-# }
-```
-
-### 실습 3: 웹 공격 단계 자동화 (T1190)
-
-Bastion Manager API를 호출하여 작업을 수행합니다.
-
-```bash
-# SQL Injection 테스트 태스크
-curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{                                                # 요청 데이터(body)
-    "tasks": [
-      {
-        "order": 4,
-        "instruction_prompt": "curl -s \"http://10.20.30.80:3000/rest/products/search?q=test%27%20OR%201=1--\" | python3 -c \"import sys,json; data=json.load(sys.stdin); print(f\\\"결과 수: {len(data.get(\\\\\\\"data\\\\\\\", []))}개\\\")\" 2>/dev/null || echo \"응답 파싱 실패\"",
-        "risk_level": "medium",
-        "subagent_url": "http://localhost:8002"
-      },
-      {
-        "order": 5,
-        "instruction_prompt": "curl -s -X POST http://10.20.30.80:3000/rest/user/login -H \"Content-Type: application/json\" -d '{\"email\":\"admin@juice-sh.op\",\"password\":\"admin123\"}' | head -c 300",
-        "risk_level": "medium",
-        "subagent_url": "http://localhost:8002"
-      },
-      {
-        "order": 6,
-        "instruction_prompt": "curl -s -X POST http://10.20.30.80:3000/rest/user/login -H \"Content-Type: application/json\" -d '{\"email\":\"\\\" or 1=1--\",\"password\":\"a\"}' | head -c 300",
-        "risk_level": "medium",
-        "subagent_url": "http://localhost:8002"
-      }
-    ],
-    "subagent_url": "http://localhost:8002"
-  }' | python3 -m json.tool
-```
-
-### 실습 4: 증거 확인
-
-Bastion Manager API를 호출하여 작업을 수행합니다.
-
-```bash
-# 증거 요약 조회
-echo "===== 증거 요약 ====="
-curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:9100/projects/$PROJECT_ID/evidence/summary" | python3 -m json.tool
-
-# 프로젝트 재생 (모든 태스크 타임라인)
-echo ""
-echo "===== 작업 재생 ====="
-curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:9100/projects/$PROJECT_ID/replay" | python3 -m json.tool
-```
-
-### 실습 5: PoW 체인 검증
-
-```bash
-# PoW 블록 조회
-echo "===== PoW 블록 ====="
-curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:9100/pow/blocks?agent_id=http://localhost:8002" | python3 -m json.tool
-
-# 체인 무결성 검증
-echo ""
-echo "===== 체인 무결성 검증 ====="
-curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:9100/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
-
-# 예상 출력:
-# {
-#   "valid": true,
-#   "blocks": 6,
-#   "orphans": 0,
-#   "tampered": []
-# }
-
-# 보상 랭킹
-echo ""
-echo "===== 보상 랭킹 ====="
-curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:9100/pow/leaderboard" | python3 -m json.tool
-```
-
-### 실습 6: 완료 보고서 생성
-
-Bastion Manager API를 호출하여 작업을 수행합니다.
-
-```bash
-# 완료 보고서 작성
-curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/completion-report" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{                                                # 요청 데이터(body)
-    "summary": "JuiceShop 대상 자동화 침투 테스트 완료",
-    "outcome": "success",
-    "work_details": [
-      "정찰: nmap 포트 스캔 (22, 80, 3000 포트 발견)",
-      "웹 분석: REST API 엔드포인트 확인",
-      "SQL Injection: 제품 검색 API에서 SQLi 취약점 확인",
-      "인증 우회: 로그인 API에서 SQL Injection으로 인증 우회 시도",
-      "증거: 모든 실행 결과가 PoW 체인에 기록됨"
-    ]
-  }' | python3 -m json.tool
-
-# 예상 출력:
-# {
-#   "project_id": "...",
-#   "status": "completed",
-#   "report": { ... }
-# }
-```
-
-### 실습 7: 다중 서버 공격 자동화
-
-Bastion Manager API를 호출하여 작업을 수행합니다.
-
-```bash
-# 새 프로젝트: 전체 인프라 스캔
-PROJECT2=$(curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{                                                # 요청 데이터(body)
-    "name": "week14-multi-server-scan",
-    "request_text": "전체 인프라 정찰 스캔",
-    "master_mode": "external"
-  }')
-PID2=$(echo "$PROJECT2" | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-
-curl -s -X POST "http://localhost:9100/projects/$PID2/plan" \
-  -H "X-API-Key: $BASTION_API_KEY" > /dev/null         # API 인증 키
-curl -s -X POST "http://localhost:9100/projects/$PID2/execute" \
-  -H "X-API-Key: $BASTION_API_KEY" > /dev/null         # API 인증 키
-
-# 각 서버별 SubAgent로 명령 분배
-curl -s -X POST "http://localhost:9100/projects/$PID2/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{                                                # 요청 데이터(body)
-    "tasks": [
-      {
-        "order": 1,
-        "instruction_prompt": "hostname && ip addr show | grep inet | head -5",
-        "risk_level": "low",
-        "subagent_url": "http://localhost:8002"
-      },
-      {
-        "order": 2,
-        "instruction_prompt": "hostname && ip addr show | grep inet | head -5",
-        "risk_level": "low",
-        "subagent_url": "http://10.20.30.1:8002"
-      },
-      {
-        "order": 3,
-        "instruction_prompt": "hostname && ip addr show | grep inet | head -5",
-        "risk_level": "low",
-        "subagent_url": "http://10.20.30.80:8002"
-      },
-      {
-        "order": 4,
-        "instruction_prompt": "hostname && ip addr show | grep inet | head -5",
-        "risk_level": "low",
-        "subagent_url": "http://10.20.30.100:8002"
-      }
-    ],
-    "subagent_url": "http://localhost:8002"
-  }' | python3 -m json.tool
-
-echo ""
-echo "===== 전체 서버 정보 수집 결과 ====="
-curl -s -H "X-API-Key: $BASTION_API_KEY" \
-  "http://localhost:9100/projects/$PID2/evidence/summary" | python3 -m json.tool
-```
-
----
-
-## 6. 수동 vs 자동화 침투 테스트 비교
-
-| 항목 | 수동 테스트 | Bastion 자동화 |
-|------|------------|---------------|
-| **속도** | 느림 (사람이 직접 입력) | 빠름 (API 일괄 실행) |
-| **재현성** | 낮음 (매번 다르게 실행) | 높음 (동일 Playbook 재실행) |
-| **증거 수집** | 수동 스크린샷/메모 | 자동 PoW 체인 기록 |
-| **다중 서버** | 번거로움 (서버별 SSH) | 간편 (SubAgent URL만 변경) |
-| **창의성** | 높음 (즉흥적 판단) | 낮음 (사전 정의된 시나리오) |
-| **비용** | 높음 (전문가 시간) | 낮음 (한 번 작성, 반복 사용) |
-| **오류 가능성** | 있음 (타이핑 실수) | 낮음 (검증된 명령어) |
-| **감사 추적** | 부분적 | 완전 (블록체인 증명) |
-
-### 최선의 접근: 하이브리드
-
-```
-자동화로 할 일:
-  - 정찰 스캔 (포트, 서비스, 버전)
-  - 알려진 취약점 테스트 (SQLi, XSS 패턴)
-  - 반복적인 확인 작업
-  - 증거 수집 및 기록
-
-수동으로 할 일:
-  - 비즈니스 로직 취약점 분석
-  - 다단계 공격 체인 설계
-  - 예상치 못한 취약점 탐색
-  - 결과 해석 및 위험도 평가
-```
-
----
-
-## 7. 실습 과제
-
-1. **자동화 공격 체인**: Bastion를 사용하여 JuiceShop에 대한 5단계 이상의 공격 체인을 설계하고 실행하라. 각 단계의 ATT&CK 기법 ID를 명시할 것.
-2. **PoW 검증 보고서**: 실행된 모든 태스크의 PoW 블록을 조회하고, 체인 무결성이 유지되었음을 확인하는 보고서를 작성하라.
-3. **비교 분석**: 동일한 공격을 수동(Week 05 방식)과 자동화(Bastion)로 각각 수행하고, 소요 시간, 정확도, 증거 품질을 비교하라.
-
----
-
-## 8. 핵심 정리
-
-- Bastion는 **프로젝트 → 계획 → 실행 → 증거 → 보고**의 체계적 워크플로우를 제공한다
-- **execute-plan**으로 다단계 공격을 한 번에 자동 실행할 수 있다
-- **PoW 체인**은 변조 불가능한 감사 증적을 자동 생성한다
-- **SubAgent**를 통해 여러 서버에 동시에 명령을 분배할 수 있다
-- 자동화는 수동 테스트를 **대체하는 것이 아니라 보완**하는 것이다
-
-**다음 주 예고**: Week 15(기말)에서는 전체 인프라에 대한 종합 침투 테스트를 수행하고, 전문적인 보고서를 작성한다.
-
----
-
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** 이 공격 기법이 OWASP Top 10에서 분류되는 카테고리는?
-- (a) Broken Access Control(A01)  (b) **Injection(A03)**  (c) Cryptographic Failures(A02)  (d) SSRF(A10)
-
-**Q2.** 공격자가 가장 먼저 실행하는 정찰 활동은?
-- (a) 랜섬웨어 배포  (b) **포트 스캔 및 서비스 핑거프린팅**  (c) DDoS 공격  (d) 방화벽 비활성화
-
-**Q3.** SQLi에서 '--'의 역할은?
-- (a) 문자열 연결  (b) **SQL 주석 (이후 쿼리 무시)**  (c) 변수 선언  (d) 함수 호출
-
-**Q4.** MITRE ATT&CK에서 이 기법의 전술(Tactic)은?
-- (a) Impact만  (b) **해당 전술 ID 확인 필요**  (c) 모든 전술  (d) 해당 없음
-
-**Q5.** 방어자가 이 공격을 탐지하기 위해 확인해야 하는 로그는?
-- (a) CPU 사용률만  (b) **SIEM 경보 + 해당 서비스 로그**  (c) 디스크 용량만  (d) 네트워크 대역폭만
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
-
----
----
-
-> **실습 환경 검증 완료** (2026-03-28): JuiceShop SQLi/XSS/IDOR, nmap, 경로탐색(%2500), sudo NOPASSWD, SSH키, crontab
+| **Bastion Agent** | - | LLM 기반 보안 운영 에이전트 (:8003) |
+| **Skill** | - | Bastion이 실행 가능한 Python 함수 단위 |
+| **Playbook** | - | Skill 조합 시나리오 |
+| **Evidence DB** | - | SQLite 기반 작업 이력 영구 저장 |
+| **NDJSON** | Newline-Delimited JSON | 한 줄당 한 JSON 스트림 포맷 |
+| **ReAct 루프** | - | LLM Agent의 Thought→Action→Observation 패턴 |
+| **Hallucination** | - | LLM이 실제와 다른 내용을 생성하는 현상 |
+| **`/ask`** | - | 단답형 엔드포인트 |
+| **`/chat`** | - | 스트리밍 이벤트 엔드포인트 |
+| **`/evidence`** | - | 이력 조회 엔드포인트 |
 
 ---
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+### Bastion API (이번 주 중심)
 
-### CCC Bastion Agent
-> **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
-> **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+| 메서드 | 경로 | 이번 주 사용 |
+|--------|------|--------------|
+| GET | `/health` | 가동 확인 |
+| GET | `/skills` | 보유 Skill 확인 |
+| GET | `/playbooks` | Playbook 확인 |
+| POST | `/ask` | 단일 지시 (Part 3, 과제 1·3·4) |
+| POST | `/chat` | 스트리밍 지시 (Part 4, 과제 2) |
+| GET | `/evidence?limit=N` | 이력·통계 (Part 5) |
+| GET | `/assets` | 자산 목록 (Part 5) |
 
-**주요 경로·파일**
+**요청 옵션 (`/chat`, `/ask` 공통):**
+```json
+{
+  "message": "자연어 지시",
+  "stream": true,            // chat만
+  "auto_approve": true,      // high risk 자동 승인
+  "course": "attack-ai",     // Evidence 메타데이터
+  "lab_id": "w14_t1",
+  "test_session": "..."
+}
+```
 
-| 경로 | 역할 |
+### curl 이번 주 패턴
+
+| 패턴 | 용도 |
 |------|------|
-| `packages/bastion/agent.py` | 메인 에이전트 루프 |
-| `packages/bastion/skills.py` | 스킬 정의 |
-| `packages/bastion/playbooks/` | 정적 플레이북 YAML |
-| `data/bastion/experience/` | 수집된 경험 (pass/fail) |
+| `curl -X POST /ask -d '{"message":"..."}'` | 단답 자동화 |
+| `curl -N -X POST /chat -d '{...,"stream":true}'` | 스트림 실시간 |
+| `curl /evidence?limit=N` | 이력 |
+| `curl /health` | 가동 확인 |
 
-**핵심 설정·키**
+### python3 후처리
 
-- `LLM_BASE_URL / LLM_MODEL` — Ollama 연결
-- `CCC_API_KEY` — ccc-api 인증
-- `max_retry=2` — 실패 시 self-correction 재시도
+- `json.load(sys.stdin)` → JSON 파싱
+- `collections.Counter` → Skill 빈도 통계
+- NDJSON 스트림은 한 줄씩 `json.loads` 후 `.get("event")`로 분기
 
-**로그·확인 명령**
+---
 
-- ``docs/test-status.md`` — 현재 테스트 진척 요약
-- ``bastion_test_progress.json`` — 스텝별 pass/fail 원시
-
-**UI / CLI 요점**
-
-- 대화형 TUI 프롬프트 — 자연어 지시 → 계획 → 실행 → 검증
-- `/a2a/mission` (API) — 자율 미션 실행
-- Experience→Playbook 승격 — 반복 성공 패턴 저장
-
-> **해석 팁.** 실패 시 output을 분석해 **근본 원인 교정**이 설계의 핵심. 증상 회피/땜빵은 금지.
-
+> **참고:** Bastion API는 외부 노출 금지(내부망만). 자연어 요청에 파괴적 명령이 포함되면 `auto_approve: false`로 사전 승인 대화를 유도할 수 있다.
