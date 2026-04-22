@@ -3,8 +3,7 @@ title: 정보보호관리체계(ISMS) 기술 점검 실습
 version: non-ai
 course: compliance-nonai
 week: 9
-description: 정보보호관리체계(ISMS) 수립을 위한 기술적 현황 점검을 수행합니다. 자산 식별, 보안 설정 기준선(baseline) 수립,
-  통제 구현 상태 확인을 실습합니다.
+description: 정보보호관리체계(ISMS) 수립을 위한 기술적 현황 점검을 수행합니다. 자산 식별, 보안 설정 기준선(baseline) 수립, 통제 구현 상태 확인을 실습합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -18,75 +17,153 @@ steps:
   hint: 시스템 하드웨어 정보와 설치된 주요 소프트웨어를 확인하세요.
   category: audit
   points: 10
-  answer: echo '=== 하드웨어 ===' && cat /proc/cpuinfo | grep 'model name' | head -1 &&
-    free -h | head -2 && df -h / && echo '=== 소프트웨어 ===' && dpkg -l | grep -E '(openssh|apache|mysql|nginx|suricata|auditd|nftables)'
+  answer: echo '=== 하드웨어 ===' && cat /proc/cpuinfo | grep 'model name' | head -1 && free -h | head -2
+    && df -h / && echo '=== 소프트웨어 ===' && dpkg -l | grep -E '(openssh|apache|mysql|nginx|suricata|auditd|nftables)'
     | head -10
-  answer_detail: ISMS 수립의 첫 단계는 보호해야 할 정보자산을 식별하는 것입니다. 정보자산에는 하드웨어(서버, 네트워크 장비),
-    소프트웨어(OS, 미들웨어, 애플리케이션), 데이터(DB, 파일), 서비스 등이 포함됩니다.
+  answer_detail: ISMS 수립의 첫 단계는 보호해야 할 정보자산을 식별하는 것입니다. 정보자산에는 하드웨어(서버, 네트워크 장비), 소프트웨어(OS, 미들웨어, 애플리케이션),
+    데이터(DB, 파일), 서비스 등이 포함됩니다.
   verify:
     type: output_contains
     expect: 하드웨어
     field: stdout
+    semantic:
+      intent: ISMS 하드웨어/소프트웨어 자산 식별 — /proc/cpuinfo model name + free -h + df -h + dpkg -l | grep (openssh|apache|mysql|nginx|suricata|auditd|nftables).
+        ISMS 수립 1단계 정보자산 식별 (하드웨어/소프트웨어/데이터/서비스).
+      success_criteria:
+      - 하드웨어 섹션 키워드
+      - CPU + 메모리 + 소프트웨어 목록
+      - 자산 분류 확인
+      acceptable_methods:
+      - /proc/cpuinfo + free + dpkg -l 조합
+      - lshw -short / inxi
+      - facter (Puppet)
+      - OSQuery SELECT * FROM hardware_events
+      negative_signs:
+      - 자산 유형 구분 없음
+      - ISMS 수립 1단계 맥락 없음
+      - 하드웨어/소프트웨어 모두 없음
   target_vm: secu
 - order: 2
   instruction: 네트워크 자산을 식별하시오. 현재 서버가 통신하는 네트워크 대역과 활성 연결을 확인합니다.
   hint: ip addr과 ss 명령으로 네트워크 정보를 확인하세요.
   category: audit
   points: 10
-  answer: ip addr show | grep 'inet ' && echo '--- 활성 연결 ---' && ss -tn | grep ESTAB
-    | head -10 && echo '--- 라우팅 ---' && ip route
-  answer_detail: 네트워크 자산 식별은 서버의 IP 주소, 서브넷, 게이트웨이, 통신 대상을 파악하는 것입니다. ISMS에서는 네트워크
-    토폴로지를 문서화하고, 각 네트워크 세그먼트의 보안 등급을 정의해야 합니다.
+  answer: ip addr show | grep 'inet ' && echo '--- 활성 연결 ---' && ss -tn | grep ESTAB | head -10 && echo
+    '--- 라우팅 ---' && ip route
+  answer_detail: 네트워크 자산 식별은 서버의 IP 주소, 서브넷, 게이트웨이, 통신 대상을 파악하는 것입니다. ISMS에서는 네트워크 토폴로지를 문서화하고, 각 네트워크
+    세그먼트의 보안 등급을 정의해야 합니다.
   verify:
     type: output_contains
     expect: inet
     field: stdout
+    semantic:
+      intent: ISMS 네트워크 자산 — ip addr show | grep 'inet ' + ss -tn | grep ESTAB + ip route. 네트워크 토폴로지 문서화
+        + 세그먼트별 보안 등급 정의. 통신 대상 + 라우팅 파악.
+      success_criteria:
+      - inet 키워드
+      - ip addr + ss + ip route
+      - 네트워크 토폴로지 확인
+      acceptable_methods:
+      - ip addr + ss + ip route
+      - ifconfig + netstat -an
+      - nmcli device show
+      - nmap -sn 서브넷 스캔
+      negative_signs:
+      - IP/라우팅 미확인
+      - ISMS 토폴로지 맥락 없음
+      - 세그먼트 보안 등급 맥락 없음
   target_vm: secu
 - order: 3
   instruction: 서비스 자산을 식별하시오. 현재 실행 중인 서비스 목록과 포트를 확인합니다.
   hint: systemctl과 ss로 활성 서비스와 열린 포트를 확인하세요.
   category: audit
   points: 10
-  answer: systemctl list-units --type=service --state=running --no-pager | head -20
-    && echo '--- 열린 포트 ---' && sudo ss -tlnp | column -t
-  answer_detail: 서비스 자산 식별은 시스템에서 제공하는 모든 서비스를 파악하는 것입니다. 각 서비스의 용도, 관리자, 중요도를 문서화하고,
-    불필요한 서비스는 비활성화합니다. 이는 공격 표면을 줄이는 기본 조치입니다.
+  answer: systemctl list-units --type=service --state=running --no-pager | head -20 && echo '--- 열린 포트
+    ---' && sudo ss -tlnp | column -t
+  answer_detail: 서비스 자산 식별은 시스템에서 제공하는 모든 서비스를 파악하는 것입니다. 각 서비스의 용도, 관리자, 중요도를 문서화하고, 불필요한 서비스는 비활성화합니다.
+    이는 공격 표면을 줄이는 기본 조치입니다.
   verify:
     type: output_contains
     expect: 열린 포트
     field: stdout
+    semantic:
+      intent: ISMS 서비스 자산 — systemctl list-units --type=service --state=running + sudo ss -tlnp. 실행 서비스
+        + 열린 포트 매핑. 불필요 서비스 비활성화 = 공격 표면 축소. MITRE ATT&CK T1046 네트워크 서비스 탐지 대응.
+      success_criteria:
+      - 열린 포트 섹션 키워드
+      - systemctl running + ss -tlnp
+      - 서비스 목록 + 포트 매핑
+      acceptable_methods:
+      - systemctl list-units + ss -tlnp
+      - service --status-all (SysV)
+      - sudo lsof -i -P -n
+      - netstat -tulnp
+      negative_signs:
+      - 서비스 목록 없음
+      - 공격 표면 축소 맥락 없음
+      - 열린 포트 미확인
   target_vm: secu
 - order: 4
-  instruction: 보안 설정 기준선(baseline)을 위한 현재 설정을 수집하시오. 패스워드 정책, SSH 설정, 방화벽 정책을 한 번에
-    수집합니다.
+  instruction: 보안 설정 기준선(baseline)을 위한 현재 설정을 수집하시오. 패스워드 정책, SSH 설정, 방화벽 정책을 한 번에 수집합니다.
   hint: 주요 보안 설정 파일의 내용을 수집하는 스크립트를 작성하세요.
   category: config
   points: 12
-  answer: echo '=== 보안 기준선 수집 ===' && echo '[패스워드]' && grep -E '^(PASS_|minlen|credit)'
-    /etc/login.defs /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' && echo
-    '[SSH]' && grep -E '^(PermitRoot|MaxAuth|PasswordAuth|ClientAlive)' /etc/ssh/sshd_config
-    2>/dev/null && echo '[방화벽]' && sudo nft list ruleset 2>/dev/null | grep -c 'rule'
-  answer_detail: 보안 설정 기준선(baseline)은 조직이 정한 최소 보안 설정 기준입니다. 현재 시스템의 설정을 수집하여 기준선과
-    비교하고, 미달 항목을 식별하여 조치합니다. CIS Benchmark가 대표적인 기준선 프레임워크입니다.
+  answer: echo '=== 보안 기준선 수집 ===' && echo '[패스워드]' && grep -E '^(PASS_|minlen|credit)' /etc/login.defs
+    /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' && echo '[SSH]' && grep -E '^(PermitRoot|MaxAuth|PasswordAuth|ClientAlive)'
+    /etc/ssh/sshd_config 2>/dev/null && echo '[방화벽]' && sudo nft list ruleset 2>/dev/null | grep -c 'rule'
+  answer_detail: 보안 설정 기준선(baseline)은 조직이 정한 최소 보안 설정 기준입니다. 현재 시스템의 설정을 수집하여 기준선과 비교하고, 미달 항목을 식별하여 조치합니다.
+    CIS Benchmark가 대표적인 기준선 프레임워크입니다.
   verify:
     type: output_contains
     expect: 보안 기준선 수집
     field: stdout
+    semantic:
+      intent: ISMS 보안 기준선 수집 — [패스워드] login.defs + pwquality.conf + [SSH] sshd_config PermitRoot/MaxAuth/PasswordAuth/ClientAlive
+        + [방화벽] nft rule 수. CIS Benchmark 기준선 프레임워크 비교. 미달 항목 식별 → 조치.
+      success_criteria:
+      - 보안 기준선 수집 섹션 키워드
+      - 패스워드 + SSH + 방화벽 통합 수집
+      - 기준선 비교 가능
+      acceptable_methods:
+      - grep -E 다중 파일 통합 스크립트
+      - OpenSCAP + CIS profile
+      - Lynis audit system
+      - Ansible hardening 플레이북
+      negative_signs:
+      - 3개 영역 통합 없음
+      - CIS Benchmark 맥락 없음
+      - 기준선 비교 맥락 없음
   target_vm: secu
 - order: 5
   instruction: WEB 서버({{WEB_IP}})의 자산과 보안 설정을 원격으로 수집하시오.
   hint: SSH로 WEB 서버에 접속하여 주요 정보를 수집하세요.
   category: audit
   points: 10
-  answer: ssh ccc@10.20.30.80 'echo "=== WEB 서버 자산 ==="; echo "[OS]"; cat /etc/os-release
-    | head -3; echo "[서비스]"; systemctl is-active apache2 docker 2>/dev/null; echo
-    "[포트]"; sudo ss -tlnp 2>/dev/null | head -10'
-  answer_detail: ISMS에서는 모든 정보자산에 대해 보안 현황을 파악해야 합니다. 원격 서버의 자산 정보를 SSH로 수집하면 중앙에서
-    전체 시스템의 보안 현황을 관리할 수 있습니다.
+  answer: ssh ccc@10.20.30.80 'echo "=== WEB 서버 자산 ==="; echo "[OS]"; cat /etc/os-release | head -3; echo
+    "[서비스]"; systemctl is-active apache2 docker 2>/dev/null; echo "[포트]"; sudo ss -tlnp 2>/dev/null |
+    head -10'
+  answer_detail: ISMS에서는 모든 정보자산에 대해 보안 현황을 파악해야 합니다. 원격 서버의 자산 정보를 SSH로 수집하면 중앙에서 전체 시스템의 보안 현황을 관리할
+    수 있습니다.
   verify:
     type: output_contains
     expect: WEB 서버 자산
     field: stdout
+    semantic:
+      intent: WEB 서버 원격 자산 수집 — ssh ccc@10.20.30.80 'OS + systemctl apache2/docker + ss -tlnp'. ISMS 중앙
+        자산 관리 원칙. 원격 SSH 접속으로 다수 서버 현황 통합 수집.
+      success_criteria:
+      - WEB 서버 자산 섹션 키워드
+      - SSH 원격 실행 + OS + 서비스 + 포트
+      - 중앙 수집 구조
+      acceptable_methods:
+      - ssh + 원격 인벤토리 수집
+      - Ansible ad-hoc (-m setup)
+      - SaltStack grains
+      - osquery fleet
+      negative_signs:
+      - WEB 서버 원격 수집 없음
+      - 중앙 관리 맥락 없음
+      - OS/서비스/포트 중 2개 미만
   target_vm: secu
 - order: 6
   instruction: SIEM 서버({{SECU_IP}}00)의 Wazuh 연동 상태를 확인하시오. ISMS의 로그 중앙 관리 요구사항.
@@ -95,15 +172,31 @@ steps:
   points: 12
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
-    📎 참고 (CLI): sudo systemctl status wazuh-agent --no-pager 2>/dev/null | head -5
-    || echo ''wazuh-agent 미설치'' && sudo cat /var/ossec/etc/ossec.conf 2>/dev/null
-    | grep -A3 ''<server>'' | head -5 || echo ''ossec.conf 없음'''
-  answer_detail: ISMS는 보안 로그의 중앙 수집과 모니터링을 요구합니다. Wazuh는 오픈소스 SIEM/XDR로, 에이전트가 각 서버에서
-    로그를 수집하여 매니저(10.20.30.100)로 전송합니다. 에이전트가 active 상태이고 매니저와 연결되어야 합니다.
+    📎 참고 (CLI): sudo systemctl status wazuh-agent --no-pager 2>/dev/null | head -5 || echo ''wazuh-agent
+    미설치'' && sudo cat /var/ossec/etc/ossec.conf 2>/dev/null | grep -A3 ''<server>'' | head -5 || echo
+    ''ossec.conf 없음'''
+  answer_detail: ISMS는 보안 로그의 중앙 수집과 모니터링을 요구합니다. Wazuh는 오픈소스 SIEM/XDR로, 에이전트가 각 서버에서 로그를 수집하여 매니저(10.20.30.100)로
+    전송합니다. 에이전트가 active 상태이고 매니저와 연결되어야 합니다.
   verify:
     type: output_contains
     expect: wazuh
     field: stdout
+    semantic:
+      intent: Wazuh 에이전트 상태 — sudo systemctl status wazuh-agent + ossec.conf <server>. ISMS 로그 중앙 관리 요구.
+        SIEM Manager(10.20.30.100) 연동. 에이전트 active + manager 연결 확인.
+      success_criteria:
+      - wazuh 키워드
+      - systemctl status wazuh-agent + ossec.conf <server>
+      - SIEM 연동 확인
+      acceptable_methods:
+      - systemctl + ossec.conf grep
+      - /var/ossec/bin/agent_control -l
+      - Wazuh Dashboard Agent view
+      - splunk forwarder status (대체 SIEM)
+      negative_signs:
+      - wazuh-agent 상태 미확인
+      - ISMS 로그 중앙 관리 맥락 없음
+      - Manager 연결 맥락 없음
   target_vm: secu
 - order: 7
   instruction: 정보자산 목록과 보안 등급을 정리하는 자산 관리 파일을 생성하시오.
@@ -123,12 +216,28 @@ steps:
     EOF
 
     cat /tmp/asset_inventory.csv'
-  answer_detail: ISMS에서 자산 목록은 관리체계의 기본 문서입니다. 각 자산의 보안 등급은 기밀성, 무결성, 가용성(CIA) 평가를
-    통해 결정하며, 등급에 따라 적용할 보호조치 수준이 달라집니다.
+  answer_detail: ISMS에서 자산 목록은 관리체계의 기본 문서입니다. 각 자산의 보안 등급은 기밀성, 무결성, 가용성(CIA) 평가를 통해 결정하며, 등급에 따라 적용할
+    보호조치 수준이 달라집니다.
   verify:
     type: output_contains
     expect: SECU서버
     field: stdout
+    semantic:
+      intent: 'ISMS 자산 인벤토리 — /tmp/asset_inventory.csv: 자산명, 유형, IP, 보안등급, 운영서비스, 관리자. SECU(상)/WEB(상)/SIEM(최상).
+        CIA(기밀성/무결성/가용성) 평가 → 보안 등급 → 보호조치 수준.'
+      success_criteria:
+      - SECU서버 키워드
+      - asset_inventory.csv 생성
+      - 자산별 보안등급 필드
+      acceptable_methods:
+      - cat << EOF > CSV 생성
+      - CMDB (GLPI/iTop/Snipe-IT)
+      - NetBox DCIM
+      - Excel/Google Sheet + 보안등급
+      negative_signs:
+      - 자산 3개 미만
+      - CIA 등급 맥락 없음
+      - 보안등급 필드 없음
   target_vm: secu
 - order: 8
   instruction: 전체 인프라의 ISMS 기술적 현황 점검 스크립트를 작성하고 실행하시오.
@@ -155,9 +264,8 @@ steps:
 
     echo ''[WEB 서버 - 10.20.30.80]''
 
-    ssh ccc@10.20.30.80 ''echo "Apache: $(systemctl is-active apache2 2>/dev/null)";
-    echo "Docker: $(systemctl is-active docker 2>/dev/null)"; echo "컨테이너: $(docker
-    ps -q 2>/dev/null | wc -l)개"'' 2>/dev/null
+    ssh ccc@10.20.30.80 ''echo "Apache: $(systemctl is-active apache2 2>/dev/null)"; echo "Docker: $(systemctl
+    is-active docker 2>/dev/null)"; echo "컨테이너: $(docker ps -q 2>/dev/null | wc -l)개"'' 2>/dev/null
 
     echo ''''
 
@@ -174,10 +282,26 @@ steps:
     SCRIPT
 
     chmod +x /tmp/isms_baseline.sh && bash /tmp/isms_baseline.sh'
-  answer_detail: ISMS 수립은 정보자산 식별 -> 위험 평가 -> 보호대책 선정 -> 구현 -> 모니터링의 PDCA(Plan-Do-Check-Act)
-    사이클을 따릅니다. 기술적 현황 점검은 Check 단계에 해당하며, 정기적으로 수행하여 보호대책의 효과성을 평가합니다.
+  answer_detail: ISMS 수립은 정보자산 식별 -> 위험 평가 -> 보호대책 선정 -> 구현 -> 모니터링의 PDCA(Plan-Do-Check-Act) 사이클을 따릅니다.
+    기술적 현황 점검은 Check 단계에 해당하며, 정기적으로 수행하여 보호대책의 효과성을 평가합니다.
   verify:
     type: output_contains
     expect: ISMS 현황 점검 완료
     field: stdout
+    semantic:
+      intent: 'ISMS 기술 현황 종합 — /tmp/isms_baseline.sh: [SECU] 방화벽/IDS/감사 + [WEB] SSH 원격 Apache/Docker +
+        [자산 요약] 3대 통합. PDCA Check 단계. 정기 수행 → 보호대책 효과성 평가.'
+      success_criteria:
+      - ISMS 현황 점검 완료 키워드
+      - /tmp/isms_baseline.sh
+      - 3대 서버 통합 점검
+      acceptable_methods:
+      - bash + SSH 다중 서버 통합
+      - Ansible playbook 다중 호스트
+      - OpenSCAP scan + ARF 보고서
+      - DefectDojo / DASH 통합 대시보드
+      negative_signs:
+      - 단일 서버만 점검
+      - PDCA 맥락 없음
+      - 보호대책 효과성 맥락 없음
   target_vm: secu
