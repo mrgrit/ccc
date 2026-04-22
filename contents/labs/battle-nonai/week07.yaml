@@ -3,8 +3,8 @@ title: IDS/IPS 구축 — Suricata 기반 침입 탐지 + Red 우회 시도
 version: non-ai
 course: battle-nonai
 week: 7
-description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Blue Phase에서 Suricata 커스텀 룰을 작성하여 공격을
-  탐지하고, Red Phase에서 IDS 탐지를 회피하는 기법을 시도한다.
+description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Blue Phase에서 Suricata 커스텀 룰을 작성하여 공격을 탐지하고, Red Phase에서
+  IDS 탐지를 회피하는 기법을 시도한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -32,68 +32,138 @@ steps:
     type: output_contains
     expect: Suricata
     field: stdout
+    semantic:
+      intent: '[BLUE] Suricata 버전 — suricata -V. 설치 버전/기능 확인. NIDS 기초. ET Open 룰셋 호환성.'
+      success_criteria:
+      - suricata -V
+      - Suricata 키워드
+      - 버전 정보
+      acceptable_methods:
+      - suricata -V
+      - suricata --version
+      - apt show suricata
+      negative_signs:
+      - 버전 미확인
+      - 단순 which
+      - NIDS 맥락 없음
   target_vm: secu
 - order: 2
   instruction: '[BLUE] Nmap SYN 스캔을 탐지하는 커스텀 Suricata 룰을 작성하라.'
   hint: flags:S로 SYN 패킷을 매칭하고 threshold로 빈도를 설정한다.
   category: defense
   points: 10
-  answer: 'echo ''alert tcp 10.20.30.201 any -> 10.20.30.80 any (msg:"SCAN Nmap SYN
-    Scan from Attacker"; flags:S,12; threshold: type both, track by_src, count 20,
-    seconds 5; classtype:attempted-recon; sid:1000001; rev:1;)'' | sudo tee /etc/suricata/rules/local.rules'
-  answer_detail: 이 룰은 10.20.30.201에서 5초 안에 20개 이상의 SYN 패킷을 보내면 탐지한다. flags:S,12는 SYN
-    플래그가 설정된 패킷을 매칭한다.
+  answer: 'echo ''alert tcp 10.20.30.201 any -> 10.20.30.80 any (msg:"SCAN Nmap SYN Scan from Attacker";
+    flags:S,12; threshold: type both, track by_src, count 20, seconds 5; classtype:attempted-recon; sid:1000001;
+    rev:1;)'' | sudo tee /etc/suricata/rules/local.rules'
+  answer_detail: 이 룰은 10.20.30.201에서 5초 안에 20개 이상의 SYN 패킷을 보내면 탐지한다. flags:S,12는 SYN 플래그가 설정된 패킷을 매칭한다.
   verify:
     type: output_contains
     expect: SCAN Nmap
     field: stdout
+    semantic:
+      intent: '[BLUE] Nmap SYN 탐지 룰 — alert tcp 10.20.30.201 any -> 10.20.30.80 any (flags:S,12; threshold:
+        count 20, seconds 5; sid:1000001). 5초 내 20+ SYN 패킷 탐지. Suricata 룰 문법. MITRE T1046 탐지.'
+      success_criteria:
+      - SCAN Nmap 키워드
+      - flags:S,12 + threshold
+      - alert tcp 룰
+      acceptable_methods:
+      - Suricata alert tcp
+      - Snort 변형
+      - Zeek scan 탐지
+      negative_signs:
+      - flags 없음
+      - threshold 없음
+      - sid 미지정
   target_vm: secu
 - order: 3
   instruction: '[BLUE] SQL Injection 시도를 탐지하는 HTTP 룰을 추가하라.'
   hint: content 키워드로 SQL 구문을 매칭한다.
   category: defense
   points: 10
-  answer: echo 'alert http 10.20.30.201 any -> 10.20.30.80 any (msg:"WEB-ATTACK SQL
-    Injection Attempt - UNION SELECT"; flow:to_server,established; content:"UNION";
-    nocase; content:"SELECT"; nocase; distance:0; within:20; classtype:web-application-attack;
-    sid:1000002; rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
-  answer_detail: content 키워드로 HTTP 요청에서 'UNION'과 'SELECT'를 연속으로 탐지한다. nocase는 대소문자
-    무시, distance:0;within:20은 근접 매칭이다.
+  answer: echo 'alert http 10.20.30.201 any -> 10.20.30.80 any (msg:"WEB-ATTACK SQL Injection Attempt
+    - UNION SELECT"; flow:to_server,established; content:"UNION"; nocase; content:"SELECT"; nocase; distance:0;
+    within:20; classtype:web-application-attack; sid:1000002; rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
+  answer_detail: content 키워드로 HTTP 요청에서 'UNION'과 'SELECT'를 연속으로 탐지한다. nocase는 대소문자 무시, distance:0;within:20은
+    근접 매칭이다.
   verify:
     type: output_contains
     expect: SQL Injection
     field: stdout
+    semantic:
+      intent: '[BLUE] SQL Injection 룰 — alert http + content:UNION nocase + content:SELECT nocase + distance:0
+        within:20 + sid:1000002. 근접 매칭 + 대소문자 무시. OWASP A03 탐지.'
+      success_criteria:
+      - SQL Injection 키워드
+      - content UNION + SELECT
+      - nocase + distance/within
+      acceptable_methods:
+      - Suricata content
+      - PCRE 룰
+      - OWASP CRS alternative
+      negative_signs:
+      - content 없음
+      - 근접 매칭 없음
+      - 단일 패턴
   target_vm: secu
 - order: 4
   instruction: '[BLUE] XSS 공격과 SSH 브루트포스 탐지 룰을 추가하라.'
   hint: <script 태그와 SSH 연결 빈도를 탐지한다.
   category: defense
   points: 10
-  answer: 'echo ''alert http 10.20.30.201 any -> 10.20.30.80 any (msg:"WEB-ATTACK
-    XSS Script Tag"; flow:to_server,established; content:"<script"; nocase; classtype:web-application-attack;
-    sid:1000003; rev:1;)'' | sudo tee -a /etc/suricata/rules/local.rules && echo ''alert
-    tcp 10.20.30.201 any -> 10.20.30.80 22 (msg:"ATTACK SSH Brute Force Attempt";
-    flow:to_server; flags:S,12; threshold: type both, track by_src, count 5, seconds
-    30; classtype:attempted-admin; sid:1000004; rev:1;)'' | sudo tee -a /etc/suricata/rules/local.rules'
+  answer: 'echo ''alert http 10.20.30.201 any -> 10.20.30.80 any (msg:"WEB-ATTACK XSS Script Tag"; flow:to_server,established;
+    content:"<script"; nocase; classtype:web-application-attack; sid:1000003; rev:1;)'' | sudo tee -a
+    /etc/suricata/rules/local.rules && echo ''alert tcp 10.20.30.201 any -> 10.20.30.80 22 (msg:"ATTACK
+    SSH Brute Force Attempt"; flow:to_server; flags:S,12; threshold: type both, track by_src, count 5,
+    seconds 30; classtype:attempted-admin; sid:1000004; rev:1;)'' | sudo tee -a /etc/suricata/rules/local.rules'
   answer_detail: XSS 룰은 script 태그를 탐지하고, SSH 룰은 30초 내 5회 이상의 SYN을 탐지한다.
   verify:
     type: output_contains
     expect: SSH Brute Force
     field: stdout
+    semantic:
+      intent: '[BLUE] XSS + SSH 브루트 룰 — content:<script nocase + ssh dport 22 threshold 5/30s. 추가 탐지 룰.
+        sid:1000003/1000004. OWASP A03 + MITRE T1110.'
+      success_criteria:
+      - SSH Brute Force 키워드
+      - XSS <script + SSH threshold
+      - 2 룰 추가
+      acceptable_methods:
+      - alert http content + alert tcp threshold
+      - PCRE 확장
+      - OWASP CRS 변환
+      negative_signs:
+      - 룰 1개
+      - threshold 없음
+      - sid 중복
   target_vm: secu
 - order: 5
   instruction: '[BLUE] Suricata 룰 문법을 검증하고 서비스를 재시작하라.'
   hint: suricata -T 옵션으로 설정을 테스트한다.
   category: defense
   points: 10
-  answer: sudo suricata -T -c /etc/suricata/suricata.yaml 2>&1 | tail -5 && sudo systemctl
-    restart suricata && echo 'Suricata restarted with custom rules'
-  answer_detail: -T 옵션은 설정 파일과 룰을 로드하여 문법 오류를 검사한다(dry-run). 룰 배포 전 반드시 테스트하여 서비스
-    중단을 방지한다.
+  answer: sudo suricata -T -c /etc/suricata/suricata.yaml 2>&1 | tail -5 && sudo systemctl restart suricata
+    && echo 'Suricata restarted with custom rules'
+  answer_detail: -T 옵션은 설정 파일과 룰을 로드하여 문법 오류를 검사한다(dry-run). 룰 배포 전 반드시 테스트하여 서비스 중단을 방지한다.
   verify:
     type: output_contains
     expect: Suricata restarted
     field: stdout
+    semantic:
+      intent: '[BLUE] 룰 검증 + 재시작 — suricata -T -c /etc/suricata/suricata.yaml + systemctl restart suricata.
+        -T = dry-run 문법 검사. 배포 전 검증 필수. 서비스 중단 방지.'
+      success_criteria:
+      - Suricata restarted 키워드
+      - suricata -T + systemctl restart
+      - 검증 + 재시작
+      acceptable_methods:
+      - suricata -T
+      - systemctl restart
+      - kill -USR2 (룰 재로드)
+      negative_signs:
+      - -T 없음
+      - 재시작 누락
+      - 배포 전 검증 맥락 없음
   target_vm: secu
 - order: 6
   instruction: '[RED] web 서버에 nmap 스캔을 실행하여 IDS 탐지를 유발하라.'
@@ -101,12 +171,25 @@ steps:
   category: recon
   points: 10
   answer: nmap -sS -T4 --top-ports 50 --max-retries 1 --host-timeout 15s 10.20.30.80
-  answer_detail: SYN 스캔은 Suricata의 SID 1000001 룰을 트리거한다. IDS가 정상 동작하면 fast.log에 알림이
-    기록된다.
+  answer_detail: SYN 스캔은 Suricata의 SID 1000001 룰을 트리거한다. IDS가 정상 동작하면 fast.log에 알림이 기록된다.
   verify:
     type: output_contains
     expect: open
     field: stdout
+    semantic:
+      intent: '[RED] nmap SYN 스캔 유발 — nmap -sS -T4 --top-ports 50. SID 1000001 트리거. IDS 탐지 검증. MITRE T1046.'
+      success_criteria:
+      - nmap -sS -T4
+      - open 키워드
+      - --top-ports 스캔
+      acceptable_methods:
+      - nmap -sS
+      - hping3 SYN
+      - scapy SYN flood
+      negative_signs:
+      - -sS 없음
+      - 속도 -T0
+      - 트리거 맥락 없음
   target_vm: attacker
 - order: 7
   instruction: '[BLUE] Suricata fast.log에서 방금 발생한 경보를 확인하라.'
@@ -119,20 +202,50 @@ steps:
     type: output_contains
     expect: 10.20.30
     field: stdout
+    semantic:
+      intent: '[BLUE] fast.log 경보 확인 — tail -20 /var/log/suricata/fast.log. SID 1000001 트리거 검증. 한 줄 간단한
+        경보 형식. NIDS 기본 검증.'
+      success_criteria:
+      - tail fast.log
+      - 10.20.30 키워드
+      - 최근 경보
+      acceptable_methods:
+      - tail fast.log
+      - evebox
+      - Dashboard Suricata
+      negative_signs:
+      - log 미확인
+      - 단순 ls
+      - SID 맥락 없음
   target_vm: secu
 - order: 8
   instruction: '[RED] IDS 탐지를 회피하기 위해 느린 속도로 스캔을 수행하라.'
   hint: nmap -T1 또는 -T2로 속도를 줄인다.
   category: recon
   points: 10
-  answer: nmap -sS -T2 -p 80,3000,8080 --max-retries 1 --host-timeout 30s 10.20.30.80
-    && echo 'Slow scan complete'
-  answer_detail: -T2(polite) 속도로 스캔하면 threshold 기반 탐지를 우회할 수 있다. 5초에 20개 미만으로 패킷을
-    보내면 SID 1000001이 트리거되지 않는다.
+  answer: nmap -sS -T2 -p 80,3000,8080 --max-retries 1 --host-timeout 30s 10.20.30.80 && echo 'Slow scan
+    complete'
+  answer_detail: -T2(polite) 속도로 스캔하면 threshold 기반 탐지를 우회할 수 있다. 5초에 20개 미만으로 패킷을 보내면 SID 1000001이 트리거되지
+    않는다.
   verify:
     type: output_contains
     expect: Slow scan complete
     field: stdout
+    semantic:
+      intent: '[RED] IDS 회피 — nmap -sS -T2 -p 80,3000,8080. -T2 polite = 5초 내 20개 미만 패킷 → threshold 미트리거.
+        MITRE T1497 회피.'
+      success_criteria:
+      - Slow scan complete 키워드
+      - nmap -T2 또는 -T1
+      - threshold 회피
+      acceptable_methods:
+      - nmap -T2 -T1 -T0
+      - --scan-delay
+      - --max-rate 낮춤
+      negative_signs:
+      - -T4/-T5 (빠름)
+      - threshold 맥락 없음
+      - 회피 의도 없음
   target_vm: attacker
 - order: 9
   instruction: '[BLUE] eve.json 로그에서 경보를 분석하여 SID별 탐지 건수를 집계하라.'
@@ -141,26 +254,54 @@ steps:
   points: 10
   answer: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .alert.signature_id'
     2>/dev/null | sort | uniq -c | sort -rn | head -10
-  answer_detail: SID별 집계로 어떤 룰이 가장 많이 트리거되는지 파악한다. 과도한 트리거는 threshold 조정이 필요하고, 미탐지는
-    룰 추가가 필요하다.
+  answer_detail: SID별 집계로 어떤 룰이 가장 많이 트리거되는지 파악한다. 과도한 트리거는 threshold 조정이 필요하고, 미탐지는 룰 추가가 필요하다.
   verify:
     type: output_contains
     expect: '1000'
     field: stdout
+    semantic:
+      intent: '[BLUE] SID 집계 — jq .alert.signature_id eve.json | sort | uniq -c | sort -rn. 룰 트리거 빈도 분석.
+        과도 트리거 = threshold 조정 / 미탐지 = 룰 추가. 튜닝 기초.'
+      success_criteria:
+      - 1000 키워드 (커스텀 SID 범위)
+      - jq signature_id 추출
+      - 빈도 집계
+      acceptable_methods:
+      - jq + 집계
+      - Dashboard SID pie chart
+      - Splunk stats count
+      negative_signs:
+      - SID 미추출
+      - 집계 없음
+      - 튜닝 맥락 없음
   target_vm: secu
 - order: 10
   instruction: '[RED] WAF 우회를 위해 인코딩된 SQL Injection 페이로드로 JuiceShop을 공격하라.'
   hint: URL 인코딩, 대소문자 혼합으로 탐지를 우회한다.
   category: exploit
   points: 15
-  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): curl\
-    \ -s -X POST http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d '{\"email\":\"admin@juice-sh.op'--\",\"password\":\"x\"}' && echo '\\\
-    n=== IDS evasion test complete ==='"
-  answer_detail: JuiceShop의 다른 SQLi 벡터를 사용하면 UNION SELECT 패턴 없이 인증을 우회할 수 있다. IDS
-    룰이 특정 패턴에만 의존하면 변형 공격을 놓친다.
+  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): curl -s -X POST http://10.20.30.80:3000/rest/user/login\
+    \ \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"admin@juice-sh.op'--\",\"password\"\
+    :\"x\"}' && echo '\\n=== IDS evasion test complete ==='"
+  answer_detail: JuiceShop의 다른 SQLi 벡터를 사용하면 UNION SELECT 패턴 없이 인증을 우회할 수 있다. IDS 룰이 특정 패턴에만 의존하면 변형 공격을
+    놓친다.
   verify:
     type: output_contains
     expect: IDS evasion test complete
     field: stdout
+    semantic:
+      intent: '[RED] WAF/IDS 우회 SQLi — email=admin@juice-sh.op''--. UNION SELECT 없이 인증 우회. 특정 패턴 의존 룰
+        회피. 변형 공격. MITRE T1562.'
+      success_criteria:
+      - IDS evasion test complete 키워드
+      - admin'-- 변형 페이로드
+      - UNION 없이 SQLi
+      acceptable_methods:
+      - ''' -- 인증 우회'
+      - sqlmap --tamper
+      - Burp 변형
+      negative_signs:
+      - UNION 페이로드만
+      - 변형 없음
+      - 회피 의도 맥락 없음
   target_vm: attacker
