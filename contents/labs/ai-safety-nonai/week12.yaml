@@ -30,16 +30,21 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: AI 규제와 윤리 개념 — curl /api/generate 'Explain AI regulation and ethics in 3 sentences'. EU
-        AI Act + GDPR + NIST + ISO 42001. AI 거버넌스.
+      intent: AI 규제와 윤리 개념 — curl /api/generate 'Explain AI regulation and ethics in cybersecurity in
+        3 sentences' + num_predict:80. EU AI Act 2024 (고위험 분류) + GDPR Art. 22 자동화 결정 + NIST AI RMF 1.0
+        + ISO/IEC 42001:2023 + Responsible Scaling Policy. AI 거버넌스 4대 프레임워크.
       success_criteria:
-      - regulation 키워드
-      - 개념 설명
+      - regulation 또는 ethics 키워드 (한/영)
+      - curl /api/generate + 3 sentences
+      - EU AI Act/GDPR/NIST RMF/ISO 42001 관련 맥락
       acceptable_methods:
-      - curl 개념
-      - EU AI Act 2024
+      - curl /api/generate
+      - ollama run gemma3:4b
+      - LangChain OllamaLLM
       negative_signs:
-      - 규제 맥락 없음
+      - 3 sentences 제약 없음
+      - 주요 프레임워크 맥락 없음
+      - AI 거버넌스 맥락 없음
   target_vm: manager
 - order: 2
   instruction: LLM에 AI regulation 보안 시나리오 생성을 요청하시오. 공격 벡터, 영향, 대응을 포함하는 시나리오를 만들어라.
@@ -57,15 +62,21 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 규제 시나리오 — curl /api/chat + 'AI regulation scenario + vector + impact + mitigation'. 고위험
-        AI 분류 + 컴플라이언스.
+      intent: 규제 시나리오 — curl /api/chat + system 'scenario generator' + user 'AI regulation/ethics scenario
+        + attack vector + impact + mitigation'. 고위험 AI 미승인 배포 + GDPR Art.22 위반 + DPIA 미수행 사례. Regulatory
+        violation 시나리오.
       success_criteria:
-      - 시나리오
-      - vector + impact + mitigation
+      - 시나리오 생성
+      - vector + impact + mitigation 3요소
+      - curl system+user
       acceptable_methods:
-      - curl 시나리오
+      - curl /api/chat
+      - GDPR DPIA templates
+      - EU AI Act risk classification
       negative_signs:
       - 3요소 누락
+      - 규제 위반 맥락 없음
+      - GDPR/EU AI Act 맥락 없음
   target_vm: manager
 - order: 3
   instruction: AI regulation에 대한 보안 정책을 LLM으로 평가하시오. 정책의 취약점을 분석하라.
@@ -84,14 +95,21 @@ steps:
     expect: 'Analysis:'
     field: stdout
     semantic:
-      intent: 규제 정책 분석 — python3 + policy + LLM auditor. EU AI Act + GDPR 준수 평가.
+      intent: '규제 준수 정책 감사 — python3 + policy ''No auth + No rate limit + plaintext logs'' + system ''security
+        auditor'' + LLM 분석. 규제 준수 관점: plaintext logs = GDPR Art.32 위반 + No auth = NIS2 Directive 위반. Gap
+        분석.'
       success_criteria:
       - 'Analysis: 키워드'
-      - 정책 + LLM
+      - 정책 + LLM auditor
+      - 규제 gap 식별
       acceptable_methods:
-      - python LLM 감사
+      - python + LLM auditor
+      - OneTrust GRC
+      - AI Verify Singapore
       negative_signs:
       - 규제 관점 없음
+      - 정책 없음
+      - Gap 분석 맥락 없음
   target_vm: manager
 - order: 4
   instruction: AI regulation 맥락에서 프롬프트 인젝션을 시도하시오. system 프롬프트에 비밀을 넣고 유출을 시도하라.
@@ -110,14 +128,19 @@ steps:
     expect: SAFE
     field: stdout
     semantic:
-      intent: 규제 인젝션 — python3 + sys='AI regulation expert' + 3개 공격. 규제 우회 시도.
+      intent: '규제 맥락 인젝션 — python3 + system ''AI regulation expert. Secret: FLAG_HIDDEN'' + 3 attacks
+        (Ignore role/System prompt/List rules) + FLAG_HIDDEN 유출 판정. 규제 전문가 페르소나 하에 민감정보 유출 시도.'
       success_criteria:
       - SAFE 키워드
-      - 3개 공격
+      - 3개 공격 + FLAG_HIDDEN 체크
+      - 페르소나 유지
       acceptable_methods:
-      - python 공격
+      - python 공격 + 판정
+      - garak promptinject
+      - PyRIT system leak
       negative_signs:
       - 공격 2개 이하
+      - FLAG 판정 없음
   target_vm: manager
 - order: 5
   instruction: AI regulation 분석 자동화 파이프라인을 구축하시오. LLM API를 호출하여 보안 항목을 자동 분석하라.
@@ -136,15 +159,20 @@ steps:
     expect: Analysis
     field: stdout
     semantic:
-      intent: 규제 파이프라인 — python3 + analyze + 3개 items. 규제 준수 위험 평가.
+      intent: 규제 자동 위험 평가 — python3 + analyze(item) + 'risk HIGH/MEDIUM/LOW' + temperature:0 + 3 items
+        (Open SSH/Strong password/Unpatched Apache 2.4.49). 각 항목 EU AI Act 위험 분류 + GDPR DPIA 필요성 관점 평가.
       success_criteria:
       - Analysis 키워드
-      - 3개 items + 등급
+      - 3개 items + HIGH/MEDIUM/LOW
+      - 규제 관점
       acceptable_methods:
       - python LLM 분석
-      - OneTrust GRC
+      - AI Verify toolkit
+      - Microsoft RAI impact assessment
       negative_signs:
-      - 등급 없음
+      - items 2개 이하
+      - 규제 관점 없음
+      - temperature:0 없음
   target_vm: manager
 - order: 6
   instruction: AI regulation 관련 가드레일을 구현하시오. 입출력 필터를 설계하고 테스트하라.
@@ -161,14 +189,20 @@ steps:
     expect: FLAGGED
     field: stdout
     semantic:
-      intent: 규제 가드레일 — python3 + rules + FLAGGED/ALLOWED. 규제 위반 탐지.
+      intent: 규제 가드레일 — python3 + rules 3개 (password|credential|secret → credentials/rm -rf|drop table
+        → destructive/hack|exploit → offensive) + FLAGGED/ALLOWED + 4 tests. GDPR Art.32 기술적 조치 + NIS2
+        사이버 위생 대응.
       success_criteria:
       - FLAGGED 키워드
-      - 3개 이상 규칙
+      - 3개 규칙 + 카테고리명
+      - ALLOWED 판정
       acceptable_methods:
-      - python re 규칙
+      - python re + 규칙
+      - NeMo Guardrails content rail
+      - Microsoft Presidio
       negative_signs:
       - 규칙 2개 이하
+      - 규제 대응 맥락 없음
   target_vm: manager
 - order: 7
   instruction: AI regulation 모니터링 시스템을 구현하시오. 요청 통계와 보안 메트릭을 수집하라.
@@ -188,14 +222,19 @@ steps:
     expect: Monitoring
     field: stdout
     semantic:
-      intent: 규제 모니터링 — python3 + metrics + 3개 호출. 준수율 추적.
+      intent: 규제 준수 모니터링 — python3 + metrics {requests/tokens/errors} + 3 프롬프트 + try/except. GDPR Art.30
+        처리 활동 기록 요건 + NIS2 사건 로깅.
       success_criteria:
       - Monitoring 키워드
-      - metrics + 호출
+      - metrics 3필드
+      - 에러 추적
       acceptable_methods:
       - python metrics
+      - GDPR Article 30 records
+      - SIEM + compliance logs
       negative_signs:
-      - 메트릭 없음
+      - 메트릭 2개 이하
+      - 규제 기록 맥락 없음
   target_vm: manager
 - order: 8
   instruction: AI regulation 보안 평가 보고서를 생성하시오. 발견사항과 권고를 정리하라.
@@ -213,12 +252,16 @@ steps:
     expect: Assessment
     field: stdout
     semantic:
-      intent: 규제 평가 보고서 — python3 + Findings + Guardrails + Recommendations. EU AI Act + GDPR + NIST 권장.
+      intent: 규제 평가 보고서 — python3 + Findings + Guardrails + Recommendations. GDPR/EU AI Act/NIST AI RMF
+        준수율 + semantic detection 권고.
       success_criteria:
       - Assessment 키워드
-      - Findings + Recommendations
+      - Findings + Guardrails + Recommendations 3섹션
       acceptable_methods:
       - echo 보고서
+      - GRC 평가 템플릿
+      - Microsoft RAI Impact Assessment
       negative_signs:
       - 섹션 2개 이하
+      - 규제 프레임워크 맥락 없음
   target_vm: manager
