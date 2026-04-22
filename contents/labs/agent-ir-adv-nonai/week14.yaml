@@ -17,14 +17,35 @@ steps:
   hint: 6단계 IR 중 공격 단계. target_vm=bastion.
   category: attack
   points: 9
-  answer: "mkdir -p ~/w14 && cat > ~/w14/bad-workflow.yml <<'Y'\non: pull_request_target\njobs:\n  test:\n    steps:\n      - uses: actions/checkout@v4\n        with: {ref: ${{ github.event.pull_request.head.sha }}}  # external code\n      - run: npm test\n        env: {API_KEY: ${{ secrets.PROD_API_KEY }}}  # LEAK\nY\ncat ~/w14/bad-workflow.yml"
+  answer: "mkdir -p ~/w14 && cat > ~/w14/bad-workflow.yml <<'Y'\non: pull_request_target\njobs:\n  test:\n\
+    \    steps:\n      - uses: actions/checkout@v4\n        with: {ref: ${{ github.event.pull_request.head.sha\
+    \ }}}  # external code\n      - run: npm test\n        env: {API_KEY: ${{ secrets.PROD_API_KEY }}}\
+    \  # LEAK\nY\ncat ~/w14/bad-workflow.yml"
   answer_detail: '[공격] 외부 PR에 시크릿 노출.'
   verify:
     type: output_contains
     expect: pull_request_target
     field: stdout
+    semantic:
+      intent: '[공격] pull_request_target — cat > bad-workflow.yml: on pull_request_target + checkout ref
+        pull_request.head.sha + env API_KEY secrets.PROD_API_KEY LEAK. 외부 PR 시크릿 노출. GitHub Actions CVE.'
+      success_criteria:
+      - pull_request_target 키워드
+      - secrets LEAK
+      - external PR
+      acceptable_methods:
+      - pull_request_target abuse
+      - workflow_run 악용
+      - GitHub OIDC 오남용
+      negative_signs:
+      - secrets 누락
+      - external 맥락 없음
+      - pull_request_target 없음
   target_vm: bastion
-  script: "mkdir -p ~/w14 && cat > ~/w14/bad-workflow.yml <<'Y'\non: pull_request_target\njobs:\n  test:\n    steps:\n      - uses: actions/checkout@v4\n        with: {ref: ${{ github.event.pull_request.head.sha }}}  # external code\n      - run: npm test\n        env: {API_KEY: ${{ secrets.PROD_API_KEY }}}  # LEAK\nY\ncat ~/w14/bad-workflow.yml"
+  script: "mkdir -p ~/w14 && cat > ~/w14/bad-workflow.yml <<'Y'\non: pull_request_target\njobs:\n  test:\n\
+    \    steps:\n      - uses: actions/checkout@v4\n        with: {ref: ${{ github.event.pull_request.head.sha\
+    \ }}}  # external code\n      - run: npm test\n        env: {API_KEY: ${{ secrets.PROD_API_KEY }}}\
+    \  # LEAK\nY\ncat ~/w14/bad-workflow.yml"
   risk_level: low
   bastion_prompt: ''
 - order: 2
@@ -48,6 +69,21 @@ steps:
     type: output_contains
     expect: SHA
     field: stdout
+    semantic:
+      intent: '[공격] Action 태그 이동 — cat > tag-attack.md: v1 태그 악성 commit 재발행 / uses:@v1 repo 전부 영향 / SHA
+        pin 필수. 공급망 공격.'
+      success_criteria:
+      - SHA 키워드
+      - 태그 이동
+      - pin 필수
+      acceptable_methods:
+      - SHA pinning
+      - Immutable actions
+      - Dependabot
+      negative_signs:
+      - SHA pin 없음
+      - 태그 없음
+      - 공급망 맥락 없음
   target_vm: bastion
   script: 'cat > ~/w14/tag-attack.md <<''M''
 
@@ -67,14 +103,31 @@ steps:
   hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
   category: analysis
   points: 11
-  answer: "cat > ~/w14/audit.sh <<'S'\n#!/bin/bash\nfor f in .github/workflows/*.yml 2>/dev/null; do\n  grep -l pull_request_target $f && echo check_needed: $f\ndone\nS\ncat ~/w14/audit.sh"
+  answer: "cat > ~/w14/audit.sh <<'S'\n#!/bin/bash\nfor f in .github/workflows/*.yml 2>/dev/null; do\n\
+    \  grep -l pull_request_target $f && echo check_needed: $f\ndone\nS\ncat ~/w14/audit.sh"
   answer_detail: '[탐지] 조직 repo 스캔.'
   verify:
     type: output_contains
     expect: pull_request_target
     field: stdout
+    semantic:
+      intent: '[탐지] 워크플로 감사 — cat > audit.sh: grep -l pull_request_target .github/workflows/*.yml + check_needed.
+        조직 repo 스캔.'
+      success_criteria:
+      - pull_request_target 키워드
+      - grep -l
+      - .github/workflows
+      acceptable_methods:
+      - grep workflow 검사
+      - Trivy config
+      - Actions lint
+      negative_signs:
+      - grep 없음
+      - 경로 오류
+      - 체크 없음
   target_vm: bastion
-  script: "cat > ~/w14/audit.sh <<'S'\n#!/bin/bash\nfor f in .github/workflows/*.yml 2>/dev/null; do\n  grep -l pull_request_target $f && echo check_needed: $f\ndone\nS\ncat ~/w14/audit.sh"
+  script: "cat > ~/w14/audit.sh <<'S'\n#!/bin/bash\nfor f in .github/workflows/*.yml 2>/dev/null; do\n\
+    \  grep -l pull_request_target $f && echo check_needed: $f\ndone\nS\ncat ~/w14/audit.sh"
   risk_level: low
   bastion_prompt: ''
 - order: 4
@@ -94,8 +147,25 @@ steps:
   answer_detail: '[탐지] 비고정 Action.'
   verify:
     type: output_contains
-    expect: non
+    expect:
+    - non
+    - SHA
     field: stdout
+    semantic:
+      intent: '[탐지] SHA pin 체크 — cat > pin-check.sh: grep -rnE ''uses:.*@v[0-9]'' .github/workflows/.
+        비고정 Action 탐지. 태그 대신 SHA 강제.'
+      success_criteria:
+      - non/SHA
+      - grep -rnE + regex
+      - uses:@v
+      acceptable_methods:
+      - grep uses 태그
+      - action-pinner
+      - Renovate bot
+      negative_signs:
+      - grep 없음
+      - regex 단순
+      - 검사 없음
   target_vm: bastion
   script: 'cat > ~/w14/pin-check.sh <<''S''
 
@@ -131,6 +201,21 @@ steps:
     type: output_contains
     expect: egress
     field: stdout
+    semantic:
+      intent: '[분석] 빌드 로그 복기 — cat > build-log.md: PR #1234 external merged / Actions test start / runner
+        → attacker.example egress / API_KEY 패턴. 타임라인.'
+      success_criteria:
+      - egress 키워드
+      - 4 단계
+      - 빌드 로그
+      acceptable_methods:
+      - Actions log analysis
+      - Runner NetFlow
+      - Audit log
+      negative_signs:
+      - 단계 2개 이하
+      - egress 없음
+      - API_KEY 없음
   target_vm: bastion
   script: 'cat > ~/w14/build-log.md <<''M''
 
@@ -166,8 +251,24 @@ steps:
   answer_detail: '[분석] 영향 지도.'
   verify:
     type: output_contains
-    expect: 아티팩트
+    expect:
+    - 아티팩트
+    - 매핑
     field: stdout
+    semantic:
+      intent: '[분석] 영향 서비스 — cat > impact.md: 유출 시크릿 사용처 / 배포된 아티팩트 재빌드 / 외부 배포 상태. 영향 지도.'
+      success_criteria:
+      - 아티팩트/매핑
+      - 3 축
+      - 재빌드
+      acceptable_methods:
+      - SBOM 기반 추적
+      - Artifact graph
+      - Sigstore
+      negative_signs:
+      - 축 2개 이하
+      - 재빌드 없음
+      - 외부 배포 없음
   target_vm: bastion
   script: 'cat > ~/w14/impact.md <<''M''
 
@@ -207,6 +308,21 @@ steps:
     type: output_contains
     expect: cancel
     field: stdout
+    semantic:
+      intent: '[초동] 빌드 취소 + Runner 격리 — cat > contain.sh: gh run cancel + remove self-hosted runner +
+        rotate secrets via vault. 즉시 조치.'
+      success_criteria:
+      - cancel 키워드
+      - 3 조치
+      - rotate secrets
+      acceptable_methods:
+      - gh run cancel
+      - runner kill
+      - HashiCorp Vault rotate
+      negative_signs:
+      - 조치 1-2개
+      - rotate 없음
+      - runner 제거 없음
   target_vm: bastion
   script: 'cat > ~/w14/contain.sh <<''S''
 
@@ -230,14 +346,35 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 16
-  answer: "cat > ~/w14/agent.yaml <<'Y'\nplaybook_id: pb-cicd-abuse\nsteps:\n  - skill: cancel_build\n  - skill: taint_runner\n  - skill: rotate_exposed_secrets\n  - skill: verify_artifact_signatures\nY\ncat ~/w14/agent.yaml"
+  answer: "cat > ~/w14/agent.yaml <<'Y'\nplaybook_id: pb-cicd-abuse\nsteps:\n  - skill: cancel_build\n\
+    \  - skill: taint_runner\n  - skill: rotate_exposed_secrets\n  - skill: verify_artifact_signatures\n\
+    Y\ncat ~/w14/agent.yaml"
   answer_detail: '[초동대응] 시크릿 자동 회전.'
   verify:
     type: output_contains
-    expect: rotate
+    expect:
+    - rotate
+    - Playbook
     field: stdout
+    semantic:
+      intent: '[초동] Agent Playbook — cat > agent.yaml: pb-cicd-abuse + cancel_build / taint_runner / rotate_exposed_secrets
+        / verify_artifact_signatures. 시크릿 자동 회전.'
+      success_criteria:
+      - rotate/Playbook
+      - 4 steps
+      - verify signatures
+      acceptable_methods:
+      - Bastion Playbook
+      - GitHub Actions API
+      - HashiCorp Vault
+      negative_signs:
+      - rotate 없음
+      - verify 없음
+      - steps 2개 이하
   target_vm: bastion
-  script: "cat > ~/w14/agent.yaml <<'Y'\nplaybook_id: pb-cicd-abuse\nsteps:\n  - skill: cancel_build\n  - skill: taint_runner\n  - skill: rotate_exposed_secrets\n  - skill: verify_artifact_signatures\nY\ncat ~/w14/agent.yaml"
+  script: "cat > ~/w14/agent.yaml <<'Y'\nplaybook_id: pb-cicd-abuse\nsteps:\n  - skill: cancel_build\n\
+    \  - skill: taint_runner\n  - skill: rotate_exposed_secrets\n  - skill: verify_artifact_signatures\n\
+    Y\ncat ~/w14/agent.yaml"
   risk_level: low
   bastion_prompt: ''
 - order: 9
@@ -261,6 +398,20 @@ steps:
     type: output_contains
     expect: recall
     field: stdout
+    semantic:
+      intent: '[보고] 공급망 영향 — cat > supply-chain.md: 영향 고객 통지 / 오염 아티팩트 recall / CSA·CERT 공유. 공급망.'
+      success_criteria:
+      - recall 키워드
+      - 3 조치
+      - CERT 공유
+      acceptable_methods:
+      - VEX advisory
+      - CSA 보고
+      - CERT coordination
+      negative_signs:
+      - recall 없음
+      - 조치 1-2개
+      - 공유 없음
   target_vm: bastion
   script: 'cat > ~/w14/supply-chain.md <<''M''
 
@@ -298,6 +449,21 @@ steps:
     type: output_contains
     expect: OIDC
     field: stdout
+    semantic:
+      intent: '[재발방지] OIDC 이행 — cat > oidc.md: GitHub Actions OIDC Provider / Role repo sub trust / Actions
+        sts AssumeRoleWithWebIdentity / 장기 시크릿 제거. 정적 키 근절.'
+      success_criteria:
+      - OIDC 키워드
+      - 4 단계
+      - 장기 시크릿 제거
+      acceptable_methods:
+      - GitHub OIDC
+      - Workload Identity Federation
+      - IRSA
+      negative_signs:
+      - OIDC 없음
+      - 단계 2개 이하
+      - 시크릿 제거 없음
   target_vm: bastion
   script: 'cat > ~/w14/oidc.md <<''M''
 
@@ -335,6 +501,21 @@ steps:
     type: output_contains
     expect: cosign
     field: stdout
+    semantic:
+      intent: '[재발방지] cosign 서명 — cat > cosign.md: cosign sign --key env://KEY / cosign verify / SLSA
+        level 3+. 아티팩트 무결성.'
+      success_criteria:
+      - cosign 키워드
+      - sign + verify
+      - SLSA 3+
+      acceptable_methods:
+      - cosign Sigstore
+      - GPG sign
+      - SLSA provenance
+      negative_signs:
+      - cosign 없음
+      - verify 없음
+      - SLSA 없음
   target_vm: bastion
   script: 'cat > ~/w14/cosign.md <<''M''
 
@@ -370,6 +551,21 @@ steps:
     type: output_contains
     expect: ephemeral
     field: stdout
+    semantic:
+      intent: '[재발방지] ephemeral runner — cat > runner.md: Self-hosted ephemeral 강제 / 매 빌드 재생성 / 네트워크 격리
+        최소 egress. 지속성 제거.'
+      success_criteria:
+      - ephemeral 키워드
+      - 재생성 + 격리
+      - 매 빌드
+      acceptable_methods:
+      - ARC (Actions Runner Controller)
+      - ephemeral mode
+      - gVisor sandbox
+      negative_signs:
+      - ephemeral 없음
+      - 격리 없음
+      - 재생성 없음
   target_vm: bastion
   script: 'cat > ~/w14/runner.md <<''M''
 
