@@ -17,24 +17,58 @@ steps:
   hint: docker run -d --name cowrie -p 2222:2222 cowrie/cowrie 명령을 사용하세요.
   category: setup
   points: 10
-  answer: docker run -d --name cowrie-lab -p 2222:2222 cowrie/cowrie:latest 2>/dev/null && sleep 2 && echo 'Cowrie 허니팟 배포 완료' || echo 'Cowrie 허니팟 배포 완료'
+  answer: docker run -d --name cowrie-lab -p 2222:2222 cowrie/cowrie:latest 2>/dev/null && sleep 2 &&
+    echo 'Cowrie 허니팟 배포 완료' || echo 'Cowrie 허니팟 배포 완료'
   answer_detail: Cowrie는 SSH/Telnet 허니팟으로 IoT 봇넷의 공격을 포착합니다.
   verify:
     type: output_contains
     expect: Cowrie 허니팟 배포 완료
     field: stdout
+    semantic:
+      intent: Cowrie SSH 허니팟 배포 — docker run -d --name cowrie-lab -p 2222:2222 cowrie/cowrie:latest. SSH/Telnet
+        저상호작용 허니팟. Mirai 등 IoT 봇넷 포착. 2222 외부 노출 + 가짜 쉘.
+      success_criteria:
+      - Cowrie 허니팟 배포 완료 키워드
+      - docker run cowrie/cowrie
+      - -p 2222:2222
+      acceptable_methods:
+      - docker run cowrie/cowrie
+      - docker-compose cowrie stack
+      - 직접 설치 (virtualenv + cowrie)
+      - T-Pot 통합 허니팟 플랫폼
+      negative_signs:
+      - 포트 2222 없음
+      - cowrie 이미지 없음
+      - IoT 봇넷 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: Cowrie 허니팟에 SSH로 접속하여 공격을 시뮬레이션하시오.
   hint: ssh -p 2222 root@localhost로 접속하세요.
   category: attack_sim
   points: 10
-  answer: sshpass -p 'root' ssh -p 2222 -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@localhost 'uname -a; exit' 2>/dev/null; echo 'Cowrie 공격 시뮬레이션 완료'
+  answer: sshpass -p 'root' ssh -p 2222 -o StrictHostKeyChecking=no -o ConnectTimeout=5 root@localhost
+    'uname -a; exit' 2>/dev/null; echo 'Cowrie 공격 시뮬레이션 완료'
   answer_detail: Cowrie는 다양한 비밀번호를 수락하고 가짜 쉘을 제공하며 모든 명령을 로깅합니다.
   verify:
     type: output_contains
     expect: Cowrie 공격 시뮬레이션 완료
     field: stdout
+    semantic:
+      intent: Cowrie 공격 시뮬레이션 — sshpass -p 'root' ssh -p 2222 -o StrictHostKeyChecking=no root@localhost
+        'uname -a; exit'. Cowrie는 다양한 비밀번호 수락 + 가짜 쉘 + 모든 명령 로깅. Mirai 공격 행동 재현.
+      success_criteria:
+      - Cowrie 공격 시뮬레이션 완료 키워드
+      - sshpass + ssh -p 2222
+      - root 계정 + 명령 실행
+      acceptable_methods:
+      - sshpass + ssh -p 2222
+      - ssh root@localhost -p 2222
+      - expect 스크립트
+      - paramiko Python SSH
+      negative_signs:
+      - -p 2222 없음
+      - root 계정 없음
+      - 가짜 쉘 맥락 없음
   target_vm: attacker
 - order: 3
   instruction: Cowrie 로그를 확인하시오.
@@ -47,30 +81,81 @@ steps:
     type: output_contains
     expect: Cowrie 로그 확인 완료
     field: stdout
+    semantic:
+      intent: Cowrie 로그 확인 — docker logs cowrie-lab --tail 20. JSON 구조 로그 (로그인 시도 + 명령어 + 다운로드 URL). Elasticsearch/Splunk
+        수집 → 위협 인텔리전스 분석.
+      success_criteria:
+      - Cowrie 로그 확인 완료 키워드
+      - docker logs cowrie-lab
+      - --tail 옵션
+      acceptable_methods:
+      - docker logs + tail
+      - docker exec cat var/log/cowrie/cowrie.json
+      - jq '.' cowrie.json
+      - T-Pot Kibana 대시보드
+      negative_signs:
+      - docker logs 미사용
+      - JSON 구조 맥락 없음
+      - 로그 분석 목적 없음
   target_vm: attacker
 - order: 4
   instruction: Python으로 간단한 MQTT 허니팟을 작성하시오. 모든 CONNECT 이벤트를 로깅하시오.
   hint: socket 라이브러리로 TCP 서버를 만들고 MQTT 패킷을 파싱하세요.
   category: setup
   points: 12
-  answer: "python3 -c \"import socket,json; print('MQTT Honeypot: 모든 연결을 수락하고 로깅'); event={'event':'MQTT_CONNECT','client':'attacker','username':'admin','password':'admin123'}; print(json.dumps(event)); print('MQTT 허니팟 시뮬레이션 완료')\""
+  answer: 'python3 -c "import socket,json; print(''MQTT Honeypot: 모든 연결을 수락하고 로깅''); event={''event'':''MQTT_CONNECT'',''client'':''attacker'',''username'':''admin'',''password'':''admin123''};
+    print(json.dumps(event)); print(''MQTT 허니팟 시뮬레이션 완료'')"'
   answer_detail: MQTT 허니팟은 인증 없이 모든 연결을 수락하고, 공격자의 인증 시도를 기록합니다.
   verify:
     type: output_contains
     expect: MQTT 허니팟 시뮬레이션 완료
     field: stdout
+    semantic:
+      intent: MQTT 허니팟 시뮬 — python3 + event={'event':'MQTT_CONNECT','client':'attacker','username':'admin','password':'admin123'}.
+        인증 시도 로깅. 실제 socket + MQTT 패킷 파싱 확장 가능.
+      success_criteria:
+      - MQTT 허니팟 시뮬레이션 완료 키워드
+      - MQTT_CONNECT 이벤트 + 크리덴셜 로그
+      - JSON 로그 형식
+      acceptable_methods:
+      - python socket + MQTT parser
+      - Conpot ICS 허니팟
+      - HoneyMQ 전용 도구
+      - Mosquitto-auth-plug + 로그
+      negative_signs:
+      - CONNECT 이벤트 없음
+      - 인증 크리덴셜 로그 없음
+      - JSON 구조 없음
   target_vm: attacker
 - order: 5
   instruction: 허니팟 로그 분석 보고서를 작성하시오.
   hint: 공격 소스 IP, 사용된 비밀번호, 명령어 패턴을 분석하세요.
   category: analysis
   points: 12
-  answer: echo '=== 허니팟 분석 보고서 ===' && echo '[Cowrie] SSH 로그인 시도 탐지' && echo '[비밀번호] root, admin, 1234 등 기본 비밀번호 사용' && echo '[명령어] uname, wget, curl 등 정보 수집/다운로드' && echo '[MQTT] admin/admin123 인증 시도' && echo '[대응] IP 차단, 시그니처 업데이트' && echo '=== 분석 완료 ==='
+  answer: echo '=== 허니팟 분석 보고서 ===' && echo '[Cowrie] SSH 로그인 시도 탐지' && echo '[비밀번호] root, admin, 1234
+    등 기본 비밀번호 사용' && echo '[명령어] uname, wget, curl 등 정보 수집/다운로드' && echo '[MQTT] admin/admin123 인증 시도'
+    && echo '[대응] IP 차단, 시그니처 업데이트' && echo '=== 분석 완료 ==='
   answer_detail: 허니팟 데이터를 분석하여 공격 패턴을 파악하고 방어 전략을 수립합니다.
   verify:
     type: output_contains
     expect: 분석 완료
     field: stdout
+    semantic:
+      intent: 허니팟 분석 보고서 — [Cowrie] SSH 로그인 시도 + [비밀번호] root/admin/1234 기본 + [명령어] uname/wget/curl 정보
+        수집/다운로드 + [MQTT] admin/admin123 + [대응] IP 차단 + 시그니처 업데이트. Mirai 패턴 지표 + TTP 추출.
+      success_criteria:
+      - 분석 완료 키워드
+      - 5개 이상 분석 영역
+      - 대응 방안 포함
+      acceptable_methods:
+      - echo 보고서
+      - Kibana Dashboard (T-Pot)
+      - OpenCTI IoC 자동 추출
+      - MISP Event 생성
+      negative_signs:
+      - Cowrie/MQTT 영역 중 누락
+      - 대응 방안 없음
+      - TTP/IoC 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: 실습 환경을 정리하시오.
@@ -83,4 +168,19 @@ steps:
     type: output_contains
     expect: 환경 정리 완료
     field: stdout
+    semantic:
+      intent: 허니팟 환경 정리 — docker stop cowrie-lab + docker rm cowrie-lab. 리소스 회수 + 포트 해제. 다음 실습 충돌 방지.
+      success_criteria:
+      - 환경 정리 완료 키워드
+      - docker stop + rm cowrie-lab
+      - 컨테이너 회수
+      acceptable_methods:
+      - docker stop + rm
+      - docker rm -f (강제)
+      - docker-compose down -v
+      - docker system prune -a
+      negative_signs:
+      - stop/rm 중 누락
+      - 컨테이너 이름 없음
+      - 리소스 회수 맥락 없음
   target_vm: attacker
