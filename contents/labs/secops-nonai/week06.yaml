@@ -3,8 +3,7 @@ title: Suricata 운영 — 튜닝·알람 분석
 version: non-ai
 course: secops-nonai
 week: 6
-description: suricata-update로 룰셋을 갱신하고, stats.log / fast.log / eve.json 을 활용해 운영 상태를
-  점검한다.
+description: suricata-update로 룰셋을 갱신하고, stats.log / fast.log / eve.json 을 활용해 운영 상태를 점검한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -19,12 +18,27 @@ steps:
   category: configure
   points: 10
   answer: sudo suricata-update list-sources 2>&1 | head
-  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: secu VM에서 suricata-update list-sources 로
-    사용 가능한 룰셋 소스를 확인하시오.'
+  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: secu VM에서 suricata-update list-sources 로 사용 가능한 룰셋 소스를 확인하시오.'
   verify:
     type: output_contains
     expect: source
     field: stdout
+    semantic:
+      intent: suricata-update 룰셋 소스 — sudo suricata-update list-sources. 사용 가능한 공식/커뮤니티 룰셋 목록 (et/open
+        Free + et/pro 상용 + ptrules 등). 룰셋 소스 관리 도구. scirius 대안.
+      success_criteria:
+      - source 키워드
+      - suricata-update list-sources
+      - 목록 출력
+      acceptable_methods:
+      - suricata-update list-sources
+      - scirius rule management UI
+      - 수동 git clone + 병합
+      - OISF 공식 문서
+      negative_signs:
+      - list-sources 실행 없음
+      - 도구 존재 언급만
+      - 소스 정보 없음
   target_vm: secu
 - order: 2
   instruction: et/open 룰셋을 enable 하시오.
@@ -37,6 +51,22 @@ steps:
     type: output_contains
     expect: et/open
     field: stdout
+    semantic:
+      intent: ET Open 룰셋 활성화 — sudo suricata-update enable-source et/open. Emerging Threats Open 무료 룰셋
+        (30,000+ 룰). 활성화 후 suricata-update 실행 시 다운로드. 기본 IDS 커버리지.
+      success_criteria:
+      - et/open 키워드
+      - enable-source 명령
+      - 활성화 성공
+      acceptable_methods:
+      - suricata-update enable-source et/open
+      - disable-source 로 토글
+      - --url 옵션으로 커스텀 source
+      - scirius UI 활성화
+      negative_signs:
+      - enable-source 대신 add
+      - 다른 소스 활성화
+      - 활성화 확인 누락
   target_vm: secu
 - order: 3
   instruction: suricata-update 를 실행해 룰셋을 다운로드·병합하시오.
@@ -49,6 +79,22 @@ steps:
     type: output_contains
     expect: rules
     field: stdout
+    semantic:
+      intent: suricata-update 룰셋 다운로드 — sudo suricata-update 2>&1 | tail -10. 활성 소스에서 룰 다운로드 + 로컬 병합 +
+        /var/lib/suricata/rules/suricata.rules 생성. N rules loaded 메시지. 주기 실행 (cron/systemd timer) 권장.
+      success_criteria:
+      - rules 키워드
+      - suricata-update 실행
+      - 다운로드/병합 완료
+      acceptable_methods:
+      - suricata-update
+      - systemd timer 자동 실행
+      - cron 매일 실행
+      - scirius 통한 자동 업데이트
+      negative_signs:
+      - update 실행 없이 이론
+      - 병합 결과 확인 누락
+      - cron/timer 주기 언급 없음
   target_vm: secu
 - order: 4
   instruction: 갱신된 룰 파일 위치(/var/lib/suricata/rules/suricata.rules)의 룰 개수를 확인하시오.
@@ -56,40 +102,88 @@ steps:
   category: verify
   points: 10
   answer: sudo wc -l /var/lib/suricata/rules/suricata.rules
-  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: 갱신된 룰 파일 위치(/var/lib/suricata/rules/suricata.rules)의
-    룰 개수를 확인하시오.'
+  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: 갱신된 룰 파일 위치(/var/lib/suricata/rules/suricata.rules)의 룰 개수를 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 병합된 룰 파일 크기 — sudo wc -l /var/lib/suricata/rules/suricata.rules. ET Open 활성화 후 룰 수 (~30,000+
+        기대). 룰셋 볼륨 파악 = 메모리 예상 + 성능 영향 평가.
+      success_criteria:
+      - wc -l 명령
+      - /var/lib/suricata/rules/suricata.rules 경로
+      - 숫자 출력
+      acceptable_methods:
+      - wc -l suricata.rules
+      - grep -c '^alert' 카운트
+      - suricata-update --dump-sample-configs
+      - DuBhe/ntopng 룰 통계
+      negative_signs:
+      - 파일 경로 혼동
+      - wc -l 실행 안 함
+      - 룰 규모 해석 없음
   target_vm: secu
 - order: 5
   instruction: eve.json 의 최근 50줄에서 event_type=alert 만 필터링해 상위 5개 signature 를 집계하시오.
   hint: jq 필터 + sort | uniq
   category: analysis
   points: 10
-  answer: sudo tail -500 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert")
-    | .alert.signature' 2>/dev/null | sort | uniq -c | sort -rn | head
-  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: eve.json 의 최근 50줄에서 event_type=alert 만 필터링해
-    상위 5개 signature 를 집계하시오.'
+  answer: sudo tail -500 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .alert.signature'
+    2>/dev/null | sort | uniq -c | sort -rn | head
+  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: eve.json 의 최근 50줄에서 event_type=alert 만 필터링해 상위 5개 signature
+    를 집계하시오.'
   verify:
     type: output_contains
     expect: alert
     field: stdout
+    semantic:
+      intent: Top signature 집계 — sudo tail -500 eve.json | jq -r 'select(.event_type=="alert") | .alert.signature'
+        | sort | uniq -c | sort -rn | head. event_type=alert 필터 → signature 추출 → 빈도 집계 → Top 5. 주요 탐지
+        시그니처 파악 + 오탐 후보 식별.
+      success_criteria:
+      - alert 키워드
+      - jq + sort + uniq 파이프라인
+      - Top 집계
+      acceptable_methods:
+      - jq select + sort + uniq -c
+      - python json Counter
+      - Kibana Lens top signatures
+      - Elasticsearch aggs terms
+      negative_signs:
+      - jq 없이 grep 만
+      - 집계 없이 alert 목록만
+      - Top N 추출 없음
   target_vm: secu
 - order: 6
   instruction: eve.json 에서 alert 를 가장 많이 발생시킨 source IP top 5 를 추출하시오.
   hint: jq '.src_ip' …
   category: analysis
   points: 10
-  answer: sudo tail -500 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert")
-    | .src_ip' 2>/dev/null | sort | uniq -c | sort -rn | head
-  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: eve.json 에서 alert 를 가장 많이 발생시킨 source IP
-    top 5 를 추출하시오.'
+  answer: sudo tail -500 /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | .src_ip' 2>/dev/null
+    | sort | uniq -c | sort -rn | head
+  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: eve.json 에서 alert 를 가장 많이 발생시킨 source IP top 5 를 추출하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: Top source IP 집계 — sudo tail -500 eve.json | jq -r 'select(.event_type=="alert") | .src_ip'
+        | sort | uniq -c | sort -rn | head. 공격 발생 IP 순위. Threat actor 식별 + 차단 우선순위 결정. MITRE D3FEND Detect
+        + Evict.
+      success_criteria:
+      - src_ip 추출 + 집계
+      - jq + sort + uniq -c
+      - Top IP 출력
+      acceptable_methods:
+      - jq .src_ip + sort + uniq
+      - grep fast.log 파싱
+      - Elasticsearch aggs
+      - Kibana Lens IP count
+      negative_signs:
+      - src_ip 아닌 dest_ip 혼동
+      - 집계 없이 목록
+      - alert 필터 없음
   target_vm: secu
 - order: 7
   instruction: /var/log/suricata/stats.log 에서 'kernel_drops' 항목을 확인해 drop 여부를 점검하시오.
@@ -97,12 +191,29 @@ steps:
   category: analysis
   points: 10
   answer: sudo grep kernel_drops /var/log/suricata/stats.log | tail
-  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: /var/log/suricata/stats.log 에서 ''kernel_drops''
-    항목을 확인해 drop 여부를 점검하시오.'
+  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: /var/log/suricata/stats.log 에서 ''kernel_drops'' 항목을 확인해 drop
+    여부를 점검하시오.'
   verify:
     type: output_contains
     expect: kernel_drops
     field: stdout
+    semantic:
+      intent: 'kernel_drops 성능 점검 — sudo grep kernel_drops /var/log/suricata/stats.log | tail. kernel_drops
+        = Suricata 큐 overflow 로 패킷 손실. 0 초과 = 탐지 gap. 원인: CPU 부족 / 큐 크기 / af-packet threads. 튜닝 우선순위 판단
+        지표.'
+      success_criteria:
+      - kernel_drops 키워드
+      - stats.log grep
+      - drop 수치 확인
+      acceptable_methods:
+      - grep kernel_drops stats.log
+      - suricatasc -c dump-counters | grep drops
+      - Prometheus suricata_exporter
+      - Grafana dashboard
+      negative_signs:
+      - stats.log 경로 혼동
+      - kernel_drops 의미 설명 없음
+      - tuning 시사점 없음
   target_vm: secu
 - order: 8
   instruction: /var/log/suricata/fast.log 마지막 20줄을 출력해 최근 알람을 확인하시오.
@@ -110,12 +221,28 @@ steps:
   category: analysis
   points: 10
   answer: sudo tail -20 /var/log/suricata/fast.log
-  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: /var/log/suricata/fast.log 마지막 20줄을 출력해
-    최근 알람을 확인하시오.'
+  answer_detail: 'Suricata 운영 — 튜닝·알람 분석: /var/log/suricata/fast.log 마지막 20줄을 출력해 최근 알람을 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: fast.log 최근 알람 — sudo tail -20 /var/log/suricata/fast.log. fast.log = 텍스트 형식 간단 alert (timestamp
+        / sid / classification / src:port → dst:port). 빠른 triage + tail -f 실시간 모니터링. eve.json 은 상세 / fast.log
+        는 요약.
+      success_criteria:
+      - fast.log 경로 또는 tail 실행
+      - 20줄 출력
+      - alert 형식 확인
+      acceptable_methods:
+      - tail -20 fast.log
+      - tail -f 실시간
+      - multitail fast.log eve.json
+      - watch -n 1 tail
+      negative_signs:
+      - eve.json 과 혼동
+      - tail 라인 수 없음
+      - fast.log 형식 이해 없음
   target_vm: secu
 - order: 9
   instruction: suricata.yaml의 threshold 설정 파일 경로를 확인하시오.
@@ -128,6 +255,23 @@ steps:
     type: output_contains
     expect: threshold
     field: stdout
+    semantic:
+      intent: threshold 설정 경로 — grep -n threshold-file /etc/suricata/suricata.yaml. threshold.config 로
+        특정 sid 의 alert 빈도 제한 (type limit/both/threshold + count + seconds). 오탐 튜닝 + 스톰 방지. per-rule 튜닝
+        핵심.
+      success_criteria:
+      - threshold 키워드
+      - grep suricata.yaml
+      - 설정 경로 확인
+      acceptable_methods:
+      - grep threshold-file suricata.yaml
+      - yq '.threshold-file'
+      - /etc/suricata/threshold.config 직접 확인
+      - suricata-update --enable-threshold
+      negative_signs:
+      - threshold 개념 설명 없음
+      - 설정 경로 확인 없음
+      - 튜닝 맥락 없음
   target_vm: secu
 - order: 10
   instruction: suricatasc 로 Suricata 엔진의 uptime 을 질의하시오.
@@ -140,6 +284,22 @@ steps:
     type: output_contains
     expect: uptime
     field: stdout
+    semantic:
+      intent: 'suricatasc uptime 질의 — sudo suricatasc -c uptime. Unix socket 을 통한 런타임 IPC. 엔진 실행 시간 (초)
+        반환. suricatasc 다른 명령: reload-rules / dump-counters / shutdown. 운영 헬스체크.'
+      success_criteria:
+      - uptime 키워드
+      - suricatasc -c 명령
+      - 실행 시간 반환
+      acceptable_methods:
+      - suricatasc -c uptime
+      - suricatasc -c version
+      - suricatasc 인터랙티브
+      - curl /api/status (HTTP JSON API)
+      negative_signs:
+      - systemctl uptime (다른 의미)
+      - suricatasc 실행 없이 이론
+      - IPC 소켓 개념 없음
   target_vm: secu
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
