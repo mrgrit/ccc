@@ -13,213 +13,431 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: 네트워크 포렌식의 법적 요건을 정리하라. 디지털 증거의 무결성 보장(해시 체인), 적법한 수집 절차, 증거 보관 체인(Chain
-    of Custody)을 설명하라.
+  instruction: 네트워크 포렌식의 법적 요건을 정리하라. 디지털 증거의 무결성 보장(해시 체인), 적법한 수집 절차, 증거 보관 체인(Chain of Custody)을 설명하라.
   hint: ISO 27037, RFC 3227을 참고하라
   category: framework
   points: 8
-  answer: '법적 요건: 1) 증거 무결성(SHA-256 해시), 2) 적법 수집(영장/동의), 3) Chain of Custody(수집자/시간/장소/방법
-    기록), 4) 원본 보존(분석은 사본으로)'
-  answer_detail: 네트워크 증거는 법적 절차에서 사용될 수 있으므로, 수집부터 분석까지 엄격한 절차를 준수해야 한다. 무결성 해시는 증거
-    변조를 입증하는 핵심이다.
+  answer: '법적 요건: 1) 증거 무결성(SHA-256 해시), 2) 적법 수집(영장/동의), 3) Chain of Custody(수집자/시간/장소/방법 기록), 4) 원본
+    보존(분석은 사본으로)'
+  answer_detail: 네트워크 증거는 법적 절차에서 사용될 수 있으므로, 수집부터 분석까지 엄격한 절차를 준수해야 한다. 무결성 해시는 증거 변조를 입증하는 핵심이다.
   verify:
     type: output_contains
     expect: Chain of Custody
+    semantic:
+      intent: 네트워크 포렌식 법적 요건 — (1) 증거 무결성 (SHA-256 해시) + (2) 적법 수집 (영장/동의) + (3) Chain of Custody (수집자/시간/장소/방법
+        기록) + (4) 원본 보존 (분석은 사본으로). ISO/IEC 27037 + RFC 3227 best practice. 법정 수용 가능성.
+      success_criteria:
+      - Chain of Custody 키워드
+      - SHA-256 또는 해시 무결성
+      - ISO 27037 또는 RFC 3227 맥락
+      acceptable_methods:
+      - ISO/IEC 27037:2012 Incident 증거 수집
+      - RFC 3227 Guidelines for Evidence Collection
+      - SWGDE / NIST SP 800-86 Forensic Tech
+      - Daubert Standard 법정 기준
+      negative_signs:
+      - Chain of Custody 개념 없음
+      - 해시 무결성 없음
+      - 법적 수용성 맥락 부족
   target_vm: siem
-  bastion_prompt: 네트워크 포렌식의 법적 요건을 정리해줘. Chain of Custody, 증거 무결성, 해시 검증, 법정 인정 기준을
-    포함해서
+  bastion_prompt: 네트워크 포렌식의 법적 요건을 정리해줘. Chain of Custody, 증거 무결성, 해시 검증, 법정 인정 기준을 포함해서
 - order: 2
-  instruction: 실습 환경에서 패킷 캡처를 수행하라. secu 서버({{SECU_IP}})에서 tcpdump를 사용하여 10.20.30.0/24
-    네트워크의 트래픽을 5분간 캡처하라.
+  instruction: 실습 환경에서 패킷 캡처를 수행하라. secu 서버({{SECU_IP}})에서 tcpdump를 사용하여 10.20.30.0/24 네트워크의 트래픽을 5분간
+    캡처하라.
   hint: tcpdump -i eth0 -w /tmp/capture.pcap -c 10000 net 10.20.30.0/24
   category: collection
   points: 10
   answer: 'tcpdump 캡처 완료: N개 패킷, M MB 파일 크기. 캡처 파일 해시: SHA-256(capture.pcap)'
-  answer_detail: 패킷 캡처는 네트워크 포렌식의 첫 단계이다. 캡처 범위(필터), 기간, 파일 크기를 사전에 계획하고, 캡처 즉시 해시를
-    생성하여 무결성을 보장한다.
+  answer_detail: 패킷 캡처는 네트워크 포렌식의 첫 단계이다. 캡처 범위(필터), 기간, 파일 크기를 사전에 계획하고, 캡처 즉시 해시를 생성하여 무결성을 보장한다.
   verify:
     type: output_contains
     expect: tcpdump
+    semantic:
+      intent: 패킷 캡처 실습 — secu 서버 tcpdump -i eth0 -w /tmp/capture.pcap -c 10000 net 10.20.30.0/24 5분 캡처
+        + 캡처 즉시 sha256sum 으로 해시 생성. 범위/기간/파일 크기 사전 계획 + 무결성 보장.
+      success_criteria:
+      - tcpdump 키워드
+      - -w 파일 저장 + 네트워크 필터
+      - 패킷 수 또는 파일 크기 명시
+      acceptable_methods:
+      - tcpdump -i -w -c net X.X.X.X/Y
+      - tshark -i -w -c
+      - Wireshark capture GUI
+      - dumpcap (Wireshark CLI 전용)
+      negative_signs:
+      - 필터 없이 전체 캡처
+      - 해시 생성 누락
+      - 파일 저장 없이 stdout만
   target_vm: siem
 - order: 3
-  instruction: 캡처 파일의 기본 통계를 분석하라. 프로토콜 분포, 소스/목적지 IP Top 10, 포트 분포, 시간대별 트래픽 볼륨을
-    확인하라.
+  instruction: 캡처 파일의 기본 통계를 분석하라. 프로토콜 분포, 소스/목적지 IP Top 10, 포트 분포, 시간대별 트래픽 볼륨을 확인하라.
   hint: tshark -r capture.pcap -q -z conv,ip 또는 -z io,stat,1 등을 사용하라
   category: analysis
   points: 10
-  answer: '프로토콜: TCP 65%, UDP 20%, ICMP 10%, 기타 5%. Top IP: 10.20.30.80(웹서버), 10.20.30.1(방화벽).
-    주요 포트: 80, 443, 22, 53'
-  answer_detail: 기본 통계 분석은 전체 트래픽 패턴을 파악하는 데 필수적이다. 비정상적으로 높은 비율의 프로토콜이나 예상치 못한 포트
-    사용은 추가 조사의 단서가 된다.
+  answer: '프로토콜: TCP 65%, UDP 20%, ICMP 10%, 기타 5%. Top IP: 10.20.30.80(웹서버), 10.20.30.1(방화벽). 주요 포트:
+    80, 443, 22, 53'
+  answer_detail: 기본 통계 분석은 전체 트래픽 패턴을 파악하는 데 필수적이다. 비정상적으로 높은 비율의 프로토콜이나 예상치 못한 포트 사용은 추가 조사의 단서가 된다.
   verify:
     type: output_contains
     expect: 프로토콜
+    semantic:
+      intent: PCAP 기본 통계 — tshark -r capture.pcap -q -z conv,ip (대화별 통계) + -z io,stat,1 (시간대별) + -z ptype,tree
+        (프로토콜 분포). TCP 65%/UDP 20%/ICMP 10% 등 분포 + Top IP + 주요 포트 (80/443/22/53). triage 첫 단계.
+      success_criteria:
+      - 프로토콜 키워드 또는 TCP/UDP 분포
+      - Top IP / 포트 집계
+      - 통계 명령 사용 (tshark -z)
+      acceptable_methods:
+      - tshark -q -z conv,ip / -z io,stat
+      - capinfos 파일 요약
+      - Moloch/Arkime 대시보드
+      - Wireshark Statistics 메뉴
+      negative_signs:
+      - 통계 명령 없음
+      - 프로토콜 분포 누락
+      - Top IP/Port 누락
   target_vm: siem
   bastion_prompt: 캡처 파일의 기본 통계를 분석해줘. 프로토콜 분포, 패킷 수, 대역폭 사용률, 주요 통신 엔드포인트를 포함해서
 - order: 4
-  instruction: HTTP 트래픽을 상세 분석하라. 웹서버({{WEB_IP}})로의 HTTP 요청에서 SQL Injection, XSS,
-    디렉토리 트래버설 공격 시도를 식별하라.
-  hint: tshark -r capture.pcap -Y 'http.request' -T fields -e http.request.uri 로 URI를
-    추출하라
+  instruction: HTTP 트래픽을 상세 분석하라. 웹서버({{WEB_IP}})로의 HTTP 요청에서 SQL Injection, XSS, 디렉토리 트래버설 공격 시도를 식별하라.
+  hint: tshark -r capture.pcap -Y 'http.request' -T fields -e http.request.uri 로 URI를 추출하라
   category: analysis
   points: 12
   answer: '공격 식별: SQLi(UNION SELECT, OR 1=1), XSS(<script>), Directory Traversal(../../../etc/passwd).
     공격 IP, 시간, 요청 URI를 기록'
-  answer_detail: HTTP 페이로드 분석은 웹 공격의 구체적 내용을 파악한다. URL 인코딩, 이중 인코딩 등 우회 기법도 디코딩하여
-    분석해야 하며, 성공 여부(응답 코드)도 함께 확인한다.
+  answer_detail: HTTP 페이로드 분석은 웹 공격의 구체적 내용을 파악한다. URL 인코딩, 이중 인코딩 등 우회 기법도 디코딩하여 분석해야 하며, 성공 여부(응답 코드)도
+    함께 확인한다.
   verify:
     type: output_contains
     expect: SQL
+    semantic:
+      intent: 'HTTP 공격 분석 — tshark -Y ''http.request'' -T fields -e http.request.uri + 패턴 매칭: SQLi (UNION
+        SELECT, OR 1=1) + XSS (<script>) + Directory Traversal (../../../etc/passwd). 공격 IP + 시간 + URI
+        기록 + URL 인코딩/이중 인코딩 디코딩 + 응답 코드 확인. MITRE ATT&CK T1190.'
+      success_criteria:
+      - SQL 키워드
+      - SQLi/XSS/Traversal 3 공격 유형
+      - URI 추출 + 패턴 매칭
+      acceptable_methods:
+      - tshark -Y 'http.request' + pattern grep
+      - Zeek http.log + regex
+      - Wireshark HTTP Object Export
+      - mitmproxy + 커스텀 스크립트
+      negative_signs:
+      - 공격 유형 1개만
+      - URI 추출 없이 덤프만
+      - 인코딩 디코딩 언급 없음
   target_vm: siem
-  bastion_prompt: HTTP 트래픽을 상세 분석해줘. User-Agent, URL, SQL Injection/XSS 공격 시그니처 탐지를
-    포함해서
+  bastion_prompt: HTTP 트래픽을 상세 분석해줘. User-Agent, URL, SQL Injection/XSS 공격 시그니처 탐지를 포함해서
 - order: 5
-  instruction: DNS 트래픽을 분석하라. DNS 쿼리/응답 패턴에서 비정상적인 활동(높은 NXDOMAIN 비율, 긴 서브도메인, TXT
-    레코드 남용)을 식별하라.
+  instruction: DNS 트래픽을 분석하라. DNS 쿼리/응답 패턴에서 비정상적인 활동(높은 NXDOMAIN 비율, 긴 서브도메인, TXT 레코드 남용)을 식별하라.
   hint: tshark -r capture.pcap -Y 'dns' -T fields -e dns.qry.name -e dns.flags.rcode
   category: analysis
   points: 10
-  answer: 'DNS 분석: 전체 쿼리 N개, NXDOMAIN 비율 X%, 평균 도메인 길이 Y자, 최대 도메인 길이 Z자, TXT 레코드 쿼리
-    비율 W%'
-  answer_detail: DNS 분석은 C2 통신, 데이터 유출, DGA(Domain Generation Algorithm) 탐지에 핵심적이다.
-    NXDOMAIN 비율이 30% 이상이면 DGA 의심, TXT 레코드 남용은 데이터 유출 의심이다.
+  answer: 'DNS 분석: 전체 쿼리 N개, NXDOMAIN 비율 X%, 평균 도메인 길이 Y자, 최대 도메인 길이 Z자, TXT 레코드 쿼리 비율 W%'
+  answer_detail: DNS 분석은 C2 통신, 데이터 유출, DGA(Domain Generation Algorithm) 탐지에 핵심적이다. NXDOMAIN 비율이 30% 이상이면
+    DGA 의심, TXT 레코드 남용은 데이터 유출 의심이다.
   verify:
     type: output_contains
     expect: DNS
+    semantic:
+      intent: DNS 포렌식 분석 — tshark -Y 'dns' -T fields -e dns.qry.name -e dns.flags.rcode + (1) NXDOMAIN
+        비율 > 30% → DGA 의심 + (2) 평균 도메인 길이 이상치 + (3) TXT 레코드 남용 (데이터 유출). MITRE ATT&CK T1568.002 DGA +
+        T1071.004 DNS + T1048.003 Exfil over unencrypted.
+      success_criteria:
+      - DNS 키워드
+      - NXDOMAIN 비율 또는 도메인 길이
+      - TXT 레코드 분석
+      acceptable_methods:
+      - tshark -Y 'dns' + pandas
+      - Zeek dns.log + unique_count NXDOMAIN
+      - passivetotal DNS analytics
+      - Splunk DNS TA (Data Analytics)
+      negative_signs:
+      - NXDOMAIN 분석 없음
+      - TXT 레코드 언급 없음
+      - DGA 탐지 개념 없음
   target_vm: siem
 - order: 6
-  instruction: TCP 세션을 재구성하라. 특정 의심 IP와의 TCP 연결을 follow하여 전체 통신 내용을 추출하고, 데이터 전송 패턴을
-    분석하라.
+  instruction: TCP 세션을 재구성하라. 특정 의심 IP와의 TCP 연결을 follow하여 전체 통신 내용을 추출하고, 데이터 전송 패턴을 분석하라.
   hint: tshark -r capture.pcap -z follow,tcp,ascii,stream_index 또는 tcpflow를 사용하라
   category: analysis
   points: 10
   answer: 'TCP 세션 재구성: 스트림 수 N개, 의심 세션에서 전송된 데이터 내용, 파일 다운로드/업로드 식별'
-  answer_detail: TCP 세션 재구성은 개별 패킷이 아닌 전체 통신의 맥락을 파악한다. 파일 전송, 셸 명령, 인증 시도 등 애플리케이션
-    레벨의 행위를 재현할 수 있다.
+  answer_detail: TCP 세션 재구성은 개별 패킷이 아닌 전체 통신의 맥락을 파악한다. 파일 전송, 셸 명령, 인증 시도 등 애플리케이션 레벨의 행위를 재현할 수 있다.
   verify:
     type: output_contains
     expect: TCP
+    semantic:
+      intent: TCP 세션 재구성 — tshark -z follow,tcp,ascii,stream_index 또는 tcpflow -r capture.pcap + 전체 통신
+        내용 추출 + 애플리케이션 레벨 행위 재현 (셸 명령/파일 전송/인증). 개별 패킷이 아닌 전체 맥락 파악. Wireshark Follow Stream GUI.
+      success_criteria:
+      - TCP 키워드
+      - stream follow 또는 세션 재구성
+      - 애플리케이션 레벨 분석
+      acceptable_methods:
+      - tshark -z follow,tcp,ascii,N
+      - tcpflow + directory output
+      - Wireshark Follow TCP Stream
+      - chaosreader pcap2txt
+      negative_signs:
+      - 패킷 덤프만
+      - stream 재구성 없음
+      - 앱 레벨 맥락 없음
   target_vm: siem
 - order: 7
-  instruction: 패킷에서 파일을 추출하라. HTTP 트래픽에서 전송된 파일(이미지, 실행파일, 문서)을 추출하고, 각 파일의 해시와 유형을
-    확인하라.
+  instruction: 패킷에서 파일을 추출하라. HTTP 트래픽에서 전송된 파일(이미지, 실행파일, 문서)을 추출하고, 각 파일의 해시와 유형을 확인하라.
   hint: tshark --export-objects http,/tmp/extracted/ 또는 foremost를 사용하라
   category: extraction
   points: 10
   answer: '추출된 파일: HTML N개, 이미지 M개, 기타 K개. 각 파일의 SHA-256 해시, MIME 유형, 크기 기록'
-  answer_detail: 파일 추출(carving)은 악성코드 다운로드, 데이터 유출 증거를 확보한다. 추출된 파일은 YARA 스캔과 VirusTotal
-    조회로 악성 여부를 판별한다.
+  answer_detail: 파일 추출(carving)은 악성코드 다운로드, 데이터 유출 증거를 확보한다. 추출된 파일은 YARA 스캔과 VirusTotal 조회로 악성 여부를 판별한다.
   verify:
     type: output_contains
     expect: 추출
+    semantic:
+      intent: 패킷 파일 추출 (carving) — tshark --export-objects http,/tmp/extracted/ HTTP 객체 추출 또는 foremost
+        + SHA-256 해시 + MIME 유형 + 크기 기록. 추출 후 YARA 스캔 + VT 조회로 악성 판별. 악성 다운로드 증거 확보.
+      success_criteria:
+      - 추출 키워드
+      - export-objects 또는 foremost 도구
+      - 해시 + MIME 유형 메타데이터
+      acceptable_methods:
+      - tshark --export-objects http,PATH
+      - foremost -i capture.pcap -o output/
+      - NetworkMiner export
+      - chaosreader + binwalk
+      negative_signs:
+      - 도구 사용 없이 이론
+      - 해시 생성 누락
+      - VT/YARA 후속 분석 없음
   target_vm: siem
 - order: 8
-  instruction: Suricata 알림과 패킷 캡처를 상관분석하라. Suricata가 생성한 알림의 타임스탬프와 캡처 파일을 매칭하여 알림의
-    원인 패킷을 특정하라.
+  instruction: Suricata 알림과 패킷 캡처를 상관분석하라. Suricata가 생성한 알림의 타임스탬프와 캡처 파일을 매칭하여 알림의 원인 패킷을 특정하라.
   hint: Suricata eve.json의 flow_id로 관련 패킷을 추적할 수 있다
   category: correlation
   points: 10
   answer: '상관분석: Suricata 알림 N건에 대해 원인 패킷 특정, 각 알림의 트리거 패킷 내용, 전후 컨텍스트(5패킷) 확인'
-  answer_detail: IDS 알림만으로는 공격의 전체 맥락을 파악하기 어렵다. 원본 패킷과 결합하면 알림의 진양성 여부를 판단하고, 공격의
-    전체 시퀀스를 재구성할 수 있다.
+  answer_detail: IDS 알림만으로는 공격의 전체 맥락을 파악하기 어렵다. 원본 패킷과 결합하면 알림의 진양성 여부를 판단하고, 공격의 전체 시퀀스를 재구성할 수 있다.
   verify:
     type: output_contains
     expect: Suricata
+    semantic:
+      intent: Suricata 알림 ↔ 패킷 상관분석 — eve.json flow_id + timestamp 매칭 → 원인 패킷 특정 + 전후 5 패킷 컨텍스트 확인 → 알림
+        진양성 판단 + 공격 시퀀스 재구성. IDS + 원시 패킷 결합 분석. Arkime (Moloch) 패턴.
+      success_criteria:
+      - Suricata 키워드
+      - flow_id 또는 timestamp 매칭
+      - 원인 패킷 특정 + 컨텍스트
+      acceptable_methods:
+      - eve.json flow_id 기반 tshark 필터
+      - Arkime/Moloch full-PCAP + alert 매칭
+      - Zeek notice.log + conn 상관
+      - SELKS 통합 대시보드
+      negative_signs:
+      - Suricata 알림만 본문
+      - 원시 패킷 미확인
+      - flow_id 매칭 개념 없음
   target_vm: siem
 - order: 9
-  instruction: 암호화 트래픽 분석 방안을 설계하라. TLS 핸드셰이크 메타데이터(JA3/JA3S, SNI, 인증서)를 활용한 위협 탐지
-    기법을 구현하라.
+  instruction: 암호화 트래픽 분석 방안을 설계하라. TLS 핸드셰이크 메타데이터(JA3/JA3S, SNI, 인증서)를 활용한 위협 탐지 기법을 구현하라.
   hint: JA3 해시는 TLS Client Hello의 fingerprint이다
   category: analysis
   points: 10
-  answer: 'TLS 메타데이터 분석: 1) JA3 해시로 클라이언트 fingerprint(알려진 악성 도구 식별), 2) SNI로 목적지 도메인
-    확인, 3) 인증서 유효성/발급자 검증, 4) 자체 서명 인증서 탐지'
-  answer_detail: 암호화 트래픽은 내용을 볼 수 없지만, 메타데이터 분석으로 위협을 탐지할 수 있다. JA3는 Cobalt Strike,
-    Metasploit 등 악성 도구의 고유한 TLS fingerprint를 식별한다.
+  answer: 'TLS 메타데이터 분석: 1) JA3 해시로 클라이언트 fingerprint(알려진 악성 도구 식별), 2) SNI로 목적지 도메인 확인, 3) 인증서 유효성/발급자
+    검증, 4) 자체 서명 인증서 탐지'
+  answer_detail: 암호화 트래픽은 내용을 볼 수 없지만, 메타데이터 분석으로 위협을 탐지할 수 있다. JA3는 Cobalt Strike, Metasploit 등 악성 도구의
+    고유한 TLS fingerprint를 식별한다.
   verify:
     type: output_contains
     expect: JA3
+    semantic:
+      intent: 암호화 트래픽 TLS 분석 — JA3/JA3S 클라이언트 fingerprint (Cobalt Strike/Metasploit 등 악성 도구 식별) + SNI
+        목적지 도메인 + 인증서 발급자/유효성 + 자체 서명 탐지. 페이로드 없이 메타데이터만으로 위협 탐지. Salesforce JA3 research.
+      success_criteria:
+      - JA3 키워드
+      - SNI / 인증서 분석
+      - 악성 fingerprint 매칭 개념
+      acceptable_methods:
+      - Zeek ssl.log JA3 필드
+      - Suricata TLS fingerprinting rules
+      - tshark -Y 'tls.handshake.type == 1'
+      - ja3er.com 악성 JA3 DB 조회
+      negative_signs:
+      - JA3 개념 없음
+      - SNI 언급 없음
+      - 자체 서명 인증서 탐지 누락
   target_vm: siem
 - order: 10
-  instruction: NetFlow/IPFIX 데이터를 활용한 네트워크 포렌식을 수행하라. 패킷 캡처가 불가능한 환경에서 플로우 데이터만으로
-    이상 행위를 탐지하는 방법을 실습하라.
+  instruction: NetFlow/IPFIX 데이터를 활용한 네트워크 포렌식을 수행하라. 패킷 캡처가 불가능한 환경에서 플로우 데이터만으로 이상 행위를 탐지하는 방법을 실습하라.
   hint: '플로우 데이터: 소스/목적지 IP/Port, 프로토콜, 바이트 수, 패킷 수, 시작/종료 시간'
   category: analysis
   points: 10
-  answer: '플로우 분석: 1) 장시간 연결(C2 의심), 2) 대용량 전송(유출 의심), 3) 다수 포트 접속(스캔), 4) 비정상 프로토콜,
-    5) 야간 통신'
-  answer_detail: NetFlow는 패킷 전체를 캡처하지 않으므로 저장 비용이 적고 장기간 보관이 가능하다. 페이로드 분석은 불가능하지만,
-    통신 패턴 분석으로 이상 행위를 탐지할 수 있다.
+  answer: '플로우 분석: 1) 장시간 연결(C2 의심), 2) 대용량 전송(유출 의심), 3) 다수 포트 접속(스캔), 4) 비정상 프로토콜, 5) 야간 통신'
+  answer_detail: NetFlow는 패킷 전체를 캡처하지 않으므로 저장 비용이 적고 장기간 보관이 가능하다. 페이로드 분석은 불가능하지만, 통신 패턴 분석으로 이상 행위를
+    탐지할 수 있다.
   verify:
     type: output_contains
     expect: NetFlow
+    semantic:
+      intent: NetFlow/IPFIX 포렌식 — 플로우 데이터 (src/dst IP·Port, protocol, bytes, packets, 시작/종료 시간) 로 (1)
+        장시간 연결 C2 의심 + (2) 대용량 전송 유출 + (3) 다수 포트 스캔 + (4) 비정상 프로토콜 + (5) 야간 통신. 패킷 없이 패턴 분석. PCAP 대안 저장
+        전략.
+      success_criteria:
+      - NetFlow 키워드
+      - 플로우 필드 (src/dst/bytes/packets)
+      - 5개 이상 이상 행위 패턴
+      acceptable_methods:
+      - nfdump / nfcapd
+      - SiLK Analysis Suite (rwfilter)
+      - ntop / ntopng
+      - ElastiFlow + Elasticsearch
+      negative_signs:
+      - 플로우 필드 언급 없음
+      - PCAP 와 혼동
+      - 이상 패턴 3개 이하
   target_vm: siem
 - order: 11
-  instruction: 공격 타임라인을 재구성하라. 수집한 네트워크 증거를 시간순으로 정리하여 공격의 전체 시퀀스(정찰→침투→횡적이동→유출)를
-    재구성하라.
+  instruction: 공격 타임라인을 재구성하라. 수집한 네트워크 증거를 시간순으로 정리하여 공격의 전체 시퀀스(정찰→침투→횡적이동→유출)를 재구성하라.
   hint: 모든 증거의 타임스탬프를 UTC로 통일하고 시간순으로 정렬하라
   category: reconstruction
   points: 12
-  answer: '타임라인: T1-포트스캔(소스IP), T2-웹공격시도(SQLi), T3-웹쉘업로드, T4-내부스캔(횡적이동), T5-데이터전송(유출).
-    각 단계의 패킷 증거 첨부'
-  answer_detail: 공격 타임라인 재구성은 포렌식의 핵심 산출물이다. 각 단계를 패킷 증거로 뒷받침하고, 시간 간격을 분석하여 공격자의
-    행동 패턴(자동화/수동)을 판단한다.
+  answer: '타임라인: T1-포트스캔(소스IP), T2-웹공격시도(SQLi), T3-웹쉘업로드, T4-내부스캔(횡적이동), T5-데이터전송(유출). 각 단계의 패킷 증거 첨부'
+  answer_detail: 공격 타임라인 재구성은 포렌식의 핵심 산출물이다. 각 단계를 패킷 증거로 뒷받침하고, 시간 간격을 분석하여 공격자의 행동 패턴(자동화/수동)을 판단한다.
   verify:
     type: output_contains
     expect: 타임라인
+    semantic:
+      intent: '공격 타임라인 재구성 — UTC 통일 타임스탬프 + 시간순 정렬: T1 포트스캔 → T2 웹공격 (SQLi) → T3 웹쉘 업로드 → T4 내부 스캔 (횡적)
+        → T5 데이터 전송 (유출). 각 단계 패킷 증거 첨부 + 시간 간격 분석 (자동화 vs 수동). Kill Chain 재구성.'
+      success_criteria:
+      - 타임라인 키워드
+      - 5단계 Kill Chain 재구성
+      - UTC 시간 + 증거 첨부
+      acceptable_methods:
+      - log2timeline plaso + mactime
+      - Elastic Security Timeline
+      - TimeSketch 협업 타임라인
+      - Excel/Pandas 시간 정렬
+      negative_signs:
+      - 단계 3개 이하
+      - UTC 통일 없음
+      - 증거 첨부 누락
   target_vm: siem
   bastion_prompt: 공격 타임라인을 재구성해줘. 시간순으로 공격 단계(정찰→침투→권한상승→이동→목표)의 타임라인을 정리해서
 - order: 12
-  instruction: 패킷 캡처의 효율적 저장 전략을 수립하라. 전체 패킷 캡처(Full PCAP) vs 선택적 캡처, 보관 기간, 스토리지
-    용량 계산을 수행하라.
+  instruction: 패킷 캡처의 효율적 저장 전략을 수립하라. 전체 패킷 캡처(Full PCAP) vs 선택적 캡처, 보관 기간, 스토리지 용량 계산을 수행하라.
   hint: 1Gbps 링크에서 전체 캡처 시 하루 약 10TB의 스토리지가 필요하다
   category: planning
   points: 8
-  answer: '저장 전략: 1) Full PCAP은 DMZ/핵심구간만, 2) 내부는 NetFlow+선택적 캡처, 3) 보관: Full PCAP
-    7일, NetFlow 90일. 스토리지: 100Mbps 평균 → 하루 ~1TB'
-  answer_detail: 스토리지 비용과 포렌식 가치의 균형이 핵심이다. 모든 트래픽의 Full PCAP은 비현실적이므로, 핵심 구간은 Full
-    PCAP, 나머지는 메타데이터로 보완하는 하이브리드 전략이 효과적이다.
+  answer: '저장 전략: 1) Full PCAP은 DMZ/핵심구간만, 2) 내부는 NetFlow+선택적 캡처, 3) 보관: Full PCAP 7일, NetFlow 90일. 스토리지:
+    100Mbps 평균 → 하루 ~1TB'
+  answer_detail: 스토리지 비용과 포렌식 가치의 균형이 핵심이다. 모든 트래픽의 Full PCAP은 비현실적이므로, 핵심 구간은 Full PCAP, 나머지는 메타데이터로
+    보완하는 하이브리드 전략이 효과적이다.
   verify:
     type: output_contains
     expect: 스토리지
+    semantic:
+      intent: 'PCAP 저장 전략 — Full PCAP DMZ/핵심 구간 + 내부 NetFlow + 선택 캡처 혼합. 보관: Full PCAP 7일 + NetFlow 90일.
+        스토리지 계산: 100Mbps 평균 → 하루 ~1TB (1Gbps 전체 캡처 시 ~10TB/일). 비용 vs 포렌식 가치 균형.'
+      success_criteria:
+      - 스토리지 키워드
+      - Full PCAP + NetFlow 혼합 전략
+      - 보관 기간 수치
+      acceptable_methods:
+      - Arkime/Moloch + S3 cold storage
+      - Zeek + NetFlow 이중 저장
+      - HDFS + Spark 분석
+      - Object storage tier (hot/cold)
+      negative_signs:
+      - Full PCAP 전량 저장 (비현실적)
+      - NetFlow 대안 언급 없음
+      - 스토리지 계산 수치 없음
   target_vm: siem
 - order: 13
-  instruction: Wireshark 디스플레이 필터와 프로파일을 최적화하라. 보안 분석에 특화된 커스텀 프로파일(컬럼 구성, 색상 규칙,
-    필터 매크로)을 설계하라.
+  instruction: Wireshark 디스플레이 필터와 프로파일을 최적화하라. 보안 분석에 특화된 커스텀 프로파일(컬럼 구성, 색상 규칙, 필터 매크로)을 설계하라.
   hint: Time(delta), Source, Destination, Protocol, Info 외에 TTL, Window Size 등을 추가하라
   category: optimization
   points: 8
-  answer: '커스텀 프로파일: 컬럼(Time Delta, Src, Dst, SrcPort, DstPort, Protocol, TTL, Win
-    Size, Info), 색상규칙(SYN스캔=빨강, DNS=파랑, HTTP오류=주황), 필터북마크(악성포트, 내부→외부)'
-  answer_detail: 분석 프로파일 최적화는 포렌식 효율을 크게 높인다. 보안 분석에 필요한 필드를 한눈에 볼 수 있도록 구성하고, 색상
-    규칙으로 이상 트래픽을 시각적으로 식별한다.
+  answer: '커스텀 프로파일: 컬럼(Time Delta, Src, Dst, SrcPort, DstPort, Protocol, TTL, Win Size, Info), 색상규칙(SYN스캔=빨강,
+    DNS=파랑, HTTP오류=주황), 필터북마크(악성포트, 내부→외부)'
+  answer_detail: 분석 프로파일 최적화는 포렌식 효율을 크게 높인다. 보안 분석에 필요한 필드를 한눈에 볼 수 있도록 구성하고, 색상 규칙으로 이상 트래픽을 시각적으로 식별한다.
   verify:
     type: output_contains
     expect: 프로파일
+    semantic:
+      intent: Wireshark 커스텀 프로파일 — 컬럼 (Time Delta + Src + Dst + SrcPort + DstPort + Protocol + TTL + Window
+        Size + Info) + 색상 규칙 (SYN스캔 빨강/DNS 파랑/HTTP오류 주황) + 필터 북마크 (악성 포트/내부→외부). 보안 분석 특화. 시각적 triage
+        효율.
+      success_criteria:
+      - 프로파일 키워드
+      - 컬럼 + 색상 규칙 + 필터 3요소
+      - 보안 특화 필드 (TTL 등)
+      acceptable_methods:
+      - Wireshark Profile Import/Export
+      - tshark +z custom statistics
+      - 커스텀 preferences file
+      - zsh alias + tshark functions
+      negative_signs:
+      - 기본 프로파일만
+      - 색상 규칙 없음
+      - 보안 특화 필드 없음
   target_vm: siem
 - order: 14
   instruction: 증거 보고서 템플릿을 작성하라. 법적 요건을 충족하는 네트워크 포렌식 보고서의 구조와 필수 포함 항목을 정의하라.
   hint: 사건 개요, 증거 목록, 분석 방법론, 발견사항, 결론, 부록(원시 데이터)의 구조를 따르라
   category: reporting
   points: 8
-  answer: '보고서 구조: 1) 사건 개요, 2) 증거 목록(해시값 포함), 3) 분석 도구/방법론, 4) 타임라인, 5) 상세 발견사항(패킷
-    증거 첨부), 6) 결론/권고, 7) 부록(해시 목록, 원시 데이터 참조)'
-  answer_detail: 법적 효력이 있는 포렌식 보고서는 객관적 사실에 기반하고, 분석 과정을 재현 가능하게 기술해야 한다. 의견과 사실을
-    명확히 구분하고, 모든 주장은 증거로 뒷받침해야 한다.
+  answer: '보고서 구조: 1) 사건 개요, 2) 증거 목록(해시값 포함), 3) 분석 도구/방법론, 4) 타임라인, 5) 상세 발견사항(패킷 증거 첨부), 6) 결론/권고,
+    7) 부록(해시 목록, 원시 데이터 참조)'
+  answer_detail: 법적 효력이 있는 포렌식 보고서는 객관적 사실에 기반하고, 분석 과정을 재현 가능하게 기술해야 한다. 의견과 사실을 명확히 구분하고, 모든 주장은 증거로
+    뒷받침해야 한다.
   verify:
     type: output_contains
     expect: 보고서
+    semantic:
+      intent: 증거 보고서 템플릿 — 7 섹션 (1) 사건 개요 + (2) 증거 목록 (SHA-256 해시) + (3) 분석 도구·방법론 + (4) 타임라인 + (5) 상세
+        발견사항 (패킷 증거) + (6) 결론·권고 + (7) 부록 (해시 목록/원시 데이터 참조). Daubert Standard 법정 재현성 요건. 의견 vs 사실 분리.
+      success_criteria:
+      - 보고서 키워드
+      - 7 섹션 중 5개 이상
+      - 해시 목록 + Chain of Custody 연계
+      acceptable_methods:
+      - SANS DFIR 보고서 템플릿
+      - NIST SP 800-86 포렌식 프로세스
+      - Daubert Standard 재현성
+      - 법정 제출용 검증 가능 형식
+      negative_signs:
+      - 섹션 3개 이하
+      - 해시 목록 누락
+      - 의견 vs 사실 구분 없음
   target_vm: siem
 - order: 15
   instruction: 네트워크 포렌식 종합 보고서를 작성하라. 캡처 환경, 분석 결과, 공격 타임라인, 추출된 증거, 개선 권고사항을 포함하라.
   hint: 기술적 세부사항과 경영진 요약을 모두 포함하라
   category: reporting
   points: 14
-  answer: '종합: 캡처 N분/M패킷, 공격 시도 K건 식별, 성공 침해 L건, 유출 데이터 XMB 추정. 권고: 방화벽 룰 강화, IDS
-    시그니처 추가, 암호화 트래픽 검사 도입'
-  answer_detail: 종합 보고서는 기술팀의 세부 분석과 경영진의 의사결정 지원을 모두 포함해야 한다. 발견된 위협의 비즈니스 영향과 구체적
-    개선 방안을 제시하여 후속 조치를 이끌어낸다.
+  answer: '종합: 캡처 N분/M패킷, 공격 시도 K건 식별, 성공 침해 L건, 유출 데이터 XMB 추정. 권고: 방화벽 룰 강화, IDS 시그니처 추가, 암호화 트래픽 검사
+    도입'
+  answer_detail: 종합 보고서는 기술팀의 세부 분석과 경영진의 의사결정 지원을 모두 포함해야 한다. 발견된 위협의 비즈니스 영향과 구체적 개선 방안을 제시하여 후속 조치를
+    이끌어낸다.
   verify:
     type: output_contains
     expect: 포렌식
+    semantic:
+      intent: 네트워크 포렌식 종합 보고서 — 캡처 N분/M패킷 + 공격 시도 K건 + 성공 침해 L건 + 유출 데이터 XMB 추정 + 권고 (방화벽 강화/IDS 시그니처/암호화
+        트래픽 검사). 기술팀 세부 + 경영진 요약 이중 구조. 비즈니스 영향 포함.
+      success_criteria:
+      - 포렌식 키워드
+      - 정량 수치 (N/M/K/L)
+      - 기술 + 경영진 이중 구조
+      acceptable_methods:
+      - Markdown + Executive Summary
+      - SANS incident report template
+      - NIST SP 800-61 IR report
+      - OpenCTI Report + STIX bundle
+      negative_signs:
+      - 수치 없음
+      - 단일 대상 보고서
+      - 권고/개선 누락
   target_vm: siem
