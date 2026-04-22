@@ -17,16 +17,29 @@ steps:
   hint: 6단계 IR 중 공격 단계. target_vm=web.
   category: attack
   points: 9
-  answer: echo '${T(java.lang.Runtime).getRuntime().exec("id")}' > /tmp/w05-ssti.txt
-    && cat /tmp/w05-ssti.txt
+  answer: echo '${T(java.lang.Runtime).getRuntime().exec("id")}' > /tmp/w05-ssti.txt && cat /tmp/w05-ssti.txt
   answer_detail: '[공격] Spring SSTI 예.'
   verify:
     type: output_contains
     expect: Runtime
     field: stdout
+    semantic:
+      intent: '[공격] SSTI Spring — echo ''${T(java.lang.Runtime).getRuntime().exec("id")}'' > w05-ssti.txt.
+        Spring SpEL 페이로드. CVE-2022-22965 Spring4Shell. MITRE T1190.'
+      success_criteria:
+      - Runtime 키워드
+      - SpEL 문법
+      - Spring SSTI
+      acceptable_methods:
+      - SpEL ${T()}
+      - Thymeleaf ${...}
+      - Velocity template
+      negative_signs:
+      - SpEL 없음
+      - Runtime 없음
+      - SSTI 맥락 없음
   target_vm: web
-  script: echo '${T(java.lang.Runtime).getRuntime().exec("id")}' > /tmp/w05-ssti.txt
-    && cat /tmp/w05-ssti.txt
+  script: echo '${T(java.lang.Runtime).getRuntime().exec("id")}' > /tmp/w05-ssti.txt && cat /tmp/w05-ssti.txt
   risk_level: low
   bastion_prompt: ''
 - order: 2
@@ -40,6 +53,21 @@ steps:
     type: output_contains
     expect: ysoserial
     field: stdout
+    semantic:
+      intent: '[공격] Java Deserialization — echo ''ysoserial CommonsCollections5 ...'' > w05-deser.txt.
+        ysoserial CommonsCollections 가젯 체인. MITRE T1055 Java.'
+      success_criteria:
+      - ysoserial 키워드
+      - CommonsCollections
+      - 가젯
+      acceptable_methods:
+      - ysoserial CC5/CC6
+      - marshalsec
+      - SerialBytes
+      negative_signs:
+      - ysoserial 누락
+      - 가젯 체인 없음
+      - Java 맥락 없음
   target_vm: web
   script: echo 'ysoserial CommonsCollections5 ...' > /tmp/w05-deser.txt && cat /tmp/w05-deser.txt
   risk_level: low
@@ -69,6 +97,21 @@ steps:
     type: output_contains
     expect: OOB
     field: stdout
+    semantic:
+      intent: '[탐지] 행위 지표 5 — cat > indicators.md: URL >1KB / 템플릿 ${..} {{..}} / 응답 p95×3 / OOB callback
+        / 응답 크기 이상. 시그니처 없는 탐지.'
+      success_criteria:
+      - OOB 키워드
+      - 5 지표
+      - 템플릿 문법 포함
+      acceptable_methods:
+      - 행위 기반 IDS
+      - RASP indicator
+      - Anomaly detection
+      negative_signs:
+      - 지표 3개 이하
+      - OOB 없음
+      - 시그니처 없이 맥락 없음
   target_vm: bastion
   script: 'mkdir -p ~/w05 && cat > ~/w05/indicators.md <<''M''
 
@@ -92,20 +135,35 @@ steps:
   hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
   category: analysis
   points: 12
-  answer: "cat > ~/w05/entropy.py <<'PY'\nimport math\nfrom collections import Counter\n\
-    def H(s):\n    if not s: return 0\n    c = Counter(s); t = len(s)\n    return\
-    \ -sum((f/t)*math.log2(f/t) for f in c.values())\nprint(H('normal_request'))\n\
-    print(H('aaaaaaabbbbbbb${T(x)}${T(y)}'))\nPY\npython3 ~/w05/entropy.py"
+  answer: "cat > ~/w05/entropy.py <<'PY'\nimport math\nfrom collections import Counter\ndef H(s):\n  \
+    \  if not s: return 0\n    c = Counter(s); t = len(s)\n    return -sum((f/t)*math.log2(f/t) for f\
+    \ in c.values())\nprint(H('normal_request'))\nprint(H('aaaaaaabbbbbbb${T(x)}${T(y)}'))\nPY\npython3\
+    \ ~/w05/entropy.py"
   answer_detail: '[탐지] 엔트로피>4.5 의심.'
   verify:
     type: output_contains
     expect: '0.'
     field: stdout
+    semantic:
+      intent: '[탐지] 엔트로피 함수 — cat > entropy.py: Shannon H(s) Counter + 정상 vs 악성 비교. H>4.5 의심. payload
+        엔트로피 탐지.'
+      success_criteria:
+      - 0. 출력
+      - Shannon + Counter
+      - 비교 사례
+      acceptable_methods:
+      - Shannon entropy
+      - scipy.stats
+      - YARA entropy
+      negative_signs:
+      - 공식 없음
+      - 비교 없음
+      - H 임계 없음
   target_vm: bastion
-  script: "cat > ~/w05/entropy.py <<'PY'\nimport math\nfrom collections import Counter\n\
-    def H(s):\n    if not s: return 0\n    c = Counter(s); t = len(s)\n    return\
-    \ -sum((f/t)*math.log2(f/t) for f in c.values())\nprint(H('normal_request'))\n\
-    print(H('aaaaaaabbbbbbb${T(x)}${T(y)}'))\nPY\npython3 ~/w05/entropy.py"
+  script: "cat > ~/w05/entropy.py <<'PY'\nimport math\nfrom collections import Counter\ndef H(s):\n  \
+    \  if not s: return 0\n    c = Counter(s); t = len(s)\n    return -sum((f/t)*math.log2(f/t) for f\
+    \ in c.values())\nprint(H('normal_request'))\nprint(H('aaaaaaabbbbbbb${T(x)}${T(y)}'))\nPY\npython3\
+    \ ~/w05/entropy.py"
   risk_level: low
   bastion_prompt: ''
 - order: 5
@@ -131,6 +189,21 @@ steps:
     type: output_contains
     expect: 가설
     field: stdout
+    semantic:
+      intent: '[분석] 재현성 양식 — cat > reproduce.md: 동일 요청 재발송 / 가설 SSTI|Deser|IDOR / 범위 다른 엔드포인트 / 벤더 확인
+        upstream 패치. 0-day 분석 4축.'
+      success_criteria:
+      - 가설 키워드
+      - 4 축 분석
+      - 재현 + 범위 + 벤더
+      acceptable_methods:
+      - NIST IR 분석
+      - Bug triage flowchart
+      - CWE 매핑
+      negative_signs:
+      - 축 2개 이하
+      - 재현성 없음
+      - 벤더 없음
   target_vm: bastion
   script: 'cat > ~/w05/reproduce.md <<''M''
 
@@ -166,6 +239,21 @@ steps:
     type: output_contains
     expect: 유사
     field: stdout
+    semantic:
+      intent: '[분석] Experience DB 유사 사건 — cat > history.md: 과거 Spring SSTI 3건 유사도 높음 / 당시 대응 WAF 룰 + RASP
+        활성. Experience DB 활용.'
+      success_criteria:
+      - 유사 키워드
+      - 과거 사건
+      - 대응 이력
+      acceptable_methods:
+      - Experience DB 검색
+      - MITRE ATT&CK history
+      - Incident 재활용
+      negative_signs:
+      - 유사 사건 없음
+      - 대응 이력 없음
+      - 활용 맥락 없음
   target_vm: bastion
   script: 'cat > ~/w05/history.md <<''M''
 
@@ -203,6 +291,21 @@ steps:
     type: output_contains
     expect: 긴급 룰
     field: stdout
+    semantic:
+      intent: '[초동] Human — cat > human.md: 1 영향 판단 / 2 WAF 긴급 룰 / 3 IP 차단 / 4 엔드포인트 임시 비활성 / 5 벤더 문의.
+        1-8시간.'
+      success_criteria:
+      - 긴급 룰 키워드
+      - 5 단계
+      - 1-8h
+      acceptable_methods:
+      - NIST IR Containment
+      - WAF Virtual Patch
+      - DART runbook
+      negative_signs:
+      - 단계 3개 이하
+      - WAF 없음
+      - 벤더 누락
   target_vm: bastion
   script: 'cat > ~/w05/human.md <<''M''
 
@@ -226,18 +329,35 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 16
-  answer: "cat > ~/w05/agent.yaml <<'Y'\nplaybook_id: pb-zero-day\nsteps:\n  - skill:\
-    \ block_matching_requests\n  - skill: isolate_session\n  - skill: activate_rasp\n\
-    \  - skill: verify_canary\n  - skill: notify_highsev\nY\ncat ~/w05/agent.yaml"
+  answer: "cat > ~/w05/agent.yaml <<'Y'\nplaybook_id: pb-zero-day\nsteps:\n  - skill: block_matching_requests\n\
+    \  - skill: isolate_session\n  - skill: activate_rasp\n  - skill: verify_canary\n  - skill: notify_highsev\n\
+    Y\ncat ~/w05/agent.yaml"
   answer_detail: '[초동대응] 의심 점수 >0.8.'
   verify:
     type: output_contains
-    expect: rasp
+    expect:
+    - rasp
+    - Playbook
     field: stdout
+    semantic:
+      intent: '[초동] Agent Playbook — cat > agent.yaml: pb-zero-day + block_matching_requests / isolate_session
+        / activate_rasp / verify_canary / notify_highsev. 의심 점수 >0.8 발동.'
+      success_criteria:
+      - rasp/Playbook
+      - 5 steps
+      - 의심 점수
+      acceptable_methods:
+      - RASP 동적 패치
+      - Signal Sciences
+      - imunify360
+      negative_signs:
+      - steps 3개 이하
+      - rasp 없음
+      - canary 없음
   target_vm: bastion
-  script: "cat > ~/w05/agent.yaml <<'Y'\nplaybook_id: pb-zero-day\nsteps:\n  - skill:\
-    \ block_matching_requests\n  - skill: isolate_session\n  - skill: activate_rasp\n\
-    \  - skill: verify_canary\n  - skill: notify_highsev\nY\ncat ~/w05/agent.yaml"
+  script: "cat > ~/w05/agent.yaml <<'Y'\nplaybook_id: pb-zero-day\nsteps:\n  - skill: block_matching_requests\n\
+    \  - skill: isolate_session\n  - skill: activate_rasp\n  - skill: verify_canary\n  - skill: notify_highsev\n\
+    Y\ncat ~/w05/agent.yaml"
   risk_level: low
   bastion_prompt: ''
 - order: 9
@@ -265,6 +385,21 @@ steps:
     - embargo
     - 책임
     field: stdout
+    semantic:
+      intent: '[보고] Responsible Disclosure — cat > disclosure.md: 벤더 Security 팀 연락 D+1 / 90일 embargo /
+        CVE 요청 / 공개 blog 사후. 업계 관행.'
+      success_criteria:
+      - embargo/책임
+      - 4 단계
+      - CVE 요청
+      acceptable_methods:
+      - RFC 9116 security.txt
+      - MITRE CVE
+      - Vendor PSIRT
+      negative_signs:
+      - embargo 누락
+      - CVE 없음
+      - disclosure 아님
   target_vm: bastion
   script: 'cat > ~/w05/disclosure.md <<''M''
 
@@ -306,6 +441,21 @@ steps:
     type: output_contains
     expect: RASP
     field: stdout
+    semantic:
+      intent: '[재발방지] SDLC 5 단계 — cat > sdlc.md: 개발 SBOM+SAST / 빌드 SCA / 테스트 DAST+IAST / 배포 RASP+WAAP
+        / 운영 Bug Bounty. 다층 방어. Shift-left + Right.'
+      success_criteria:
+      - RASP 키워드
+      - 5 단계
+      - SAST/SCA/DAST
+      acceptable_methods:
+      - NIST SSDF
+      - OWASP SAMM
+      - BSIMM
+      negative_signs:
+      - 단계 3개 이하
+      - RASP 없음
+      - SDLC 맥락 없음
   target_vm: bastion
   script: 'cat > ~/w05/sdlc.md <<''M''
 
@@ -347,6 +497,21 @@ steps:
     type: output_contains
     expect: Contrast
     field: stdout
+    semantic:
+      intent: '[재발방지] RASP 벤더 비교 — cat > rasp-vendor.md: Contrast Security / Imperva RASP / Sqreen (Datadog)
+        / OpenRASP 오픈소스. 4 벤더. 선택 참고.'
+      success_criteria:
+      - Contrast 키워드
+      - 4 벤더
+      - 상용+오픈소스
+      acceptable_methods:
+      - RASP vendor 비교
+      - Gartner MQ RASP
+      - OpenRASP
+      negative_signs:
+      - 벤더 2개 이하
+      - 오픈소스 없음
+      - 상용만
   target_vm: bastion
   script: 'cat > ~/w05/rasp-vendor.md <<''M''
 
@@ -386,6 +551,21 @@ steps:
     type: output_contains
     expect: Assume
     field: stdout
+    semantic:
+      intent: '[재발방지] Assume Breach — cat > assume-breach.md: Least privilege / 네트워크 세그먼트 / EDR+RASP+WAAP+IPS
+        다층 / 언제든 침투될 수 있다. 철학.'
+      success_criteria:
+      - Assume 키워드
+      - Least privilege + 세그먼트
+      - 다층 철학
+      acceptable_methods:
+      - Zero Trust 철학
+      - Microsoft Assume Breach
+      - Forrester ZTX
+      negative_signs:
+      - Assume 없음
+      - 원칙 1-2개
+      - 철학 없음
   target_vm: bastion
   script: 'cat > ~/w05/assume-breach.md <<''M''
 
