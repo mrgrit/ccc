@@ -18,12 +18,27 @@ steps:
   category: survey
   points: 10
   answer: apachectl -M 2>/dev/null | grep -i security
-  answer_detail: 'Apache + ModSecurity WAF: web VM에서 Apache + ModSecurity가 동작 중인지
-    확인하시오.'
+  answer_detail: 'Apache + ModSecurity WAF: web VM에서 Apache + ModSecurity가 동작 중인지 확인하시오.'
   verify:
     type: output_contains
     expect: security
     field: stdout
+    semantic:
+      intent: Apache + ModSecurity 로드 확인 — apachectl -M | grep -i security. security2_module 로드 확인 + WAF
+        기능 활성 확인. 로드 안 되면 룰 적용 불가.
+      success_criteria:
+      - security 키워드
+      - apachectl -M 명령
+      - 모듈 로드 확인
+      acceptable_methods:
+      - apachectl -M | grep security
+      - a2query -m security2
+      - /etc/apache2/mods-enabled/security2.load
+      - httpd -M (RHEL)
+      negative_signs:
+      - 모듈 확인 없이 서비스만
+      - grep security 필터 없음
+      - WAF 개념 없음
   target_vm: web
 - order: 2
   instruction: modsecurity.conf 에서 SecRuleEngine 값을 확인하시오.
@@ -37,19 +52,51 @@ steps:
     type: output_contains
     expect: SecRuleEngine
     field: stdout
+    semantic:
+      intent: 'SecRuleEngine 설정 확인 — grep SecRuleEngine /etc/modsecurity/modsecurity.conf + /etc/apache2/mods-enabled/security2.conf.
+        SecRuleEngine: On (차단) / DetectionOnly (탐지만) / Off (비활성). On 설정 = 실제 차단 동작. 운영/테스트 모드 구분.'
+      success_criteria:
+      - SecRuleEngine 키워드
+      - grep 파일 조회
+      - 설정 값 확인
+      acceptable_methods:
+      - grep SecRuleEngine 여러 파일
+      - augtool get /files/.../SecRuleEngine
+      - Ansible modsecurity_collection
+      - awk '/SecRuleEngine/'
+      negative_signs:
+      - On/DetectionOnly/Off 구분 없음
+      - grep 실행 없음
+      - 의미 해석 없음
   target_vm: web
 - order: 3
   instruction: OWASP CRS 디렉터리의 룰 파일 개수를 확인하시오.
   hint: ls /usr/share/modsecurity-crs/rules | wc -l
   category: survey
   points: 10
-  answer: ls /usr/share/modsecurity-crs/rules/ 2>/dev/null | wc -l || ls /etc/modsecurity/crs/rules
-    2>/dev/null | wc -l
+  answer: ls /usr/share/modsecurity-crs/rules/ 2>/dev/null | wc -l || ls /etc/modsecurity/crs/rules 2>/dev/null
+    | wc -l
   answer_detail: 'Apache + ModSecurity WAF: OWASP CRS 디렉터리의 룰 파일 개수를 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: OWASP CRS 룰 파일 수 — ls /usr/share/modsecurity-crs/rules/ | wc -l 또는 /etc/modsecurity/crs/rules/.
+        REQUEST-*.conf / RESPONSE-*.conf + 기본 CRS v3/v4 = 약 30 파일. 룰셋 볼륨 파악.
+      success_criteria:
+      - wc -l 또는 ls 명령
+      - CRS 경로 조회
+      - 파일 수 출력
+      acceptable_methods:
+      - ls /usr/share/modsecurity-crs/rules/ | wc -l
+      - find /etc/modsecurity -name '*.conf' | wc -l
+      - apt list --installed | grep modsecurity-crs
+      - dpkg -L modsecurity-crs
+      negative_signs:
+      - CRS 경로 혼동
+      - 파일 수 집계 없음
+      - 버전 (v3/v4) 구분 없음
   target_vm: web
 - order: 4
   instruction: SecRuleEngine 이 DetectionOnly 라면 On 으로 바꾸시오(이미 On 이면 건너뜀).
@@ -58,12 +105,27 @@ steps:
   points: 10
   answer: sudo sed -i 's/^SecRuleEngine DetectionOnly/SecRuleEngine On/' /etc/modsecurity/modsecurity.conf
     2>/dev/null ; grep SecRuleEngine /etc/modsecurity/modsecurity.conf
-  answer_detail: 'Apache + ModSecurity WAF: SecRuleEngine 이 DetectionOnly 라면 On 으로
-    바꾸시오(이미 On 이면 건너뜀).'
+  answer_detail: 'Apache + ModSecurity WAF: SecRuleEngine 이 DetectionOnly 라면 On 으로 바꾸시오(이미 On 이면 건너뜀).'
   verify:
     type: output_contains
     expect: SecRuleEngine
     field: stdout
+    semantic:
+      intent: SecRuleEngine DetectionOnly → On 변경 — sudo sed -i 's/^SecRuleEngine DetectionOnly/SecRuleEngine
+        On/' /etc/modsecurity/modsecurity.conf. 탐지 모드 → 차단 모드. 운영 배포 시 필수 단계. DetectionOnly 는 개발/테스트 모드.
+      success_criteria:
+      - SecRuleEngine 키워드
+      - sed -i 편집
+      - 값 확인 (grep 후 확인)
+      acceptable_methods:
+      - sed -i 인플레이스 편집
+      - augtool set
+      - ansible lineinfile regexp
+      - 직접 vi 편집 후 grep
+      negative_signs:
+      - DetectionOnly 그대로
+      - sed 실패 후 확인 안 함
+      - On/Off 구분 없음
   target_vm: web
 - order: 5
   instruction: Apache를 재시작해 설정을 반영하시오.
@@ -78,6 +140,22 @@ steps:
     - active
     - 재시작
     field: stdout
+    semantic:
+      intent: Apache 재시작 — sudo systemctl restart apache2 && systemctl is-active apache2. 설정 반영 + 활성 상태
+        검증. graceful reload (systemctl reload) 대안. 운영 환경 다운타임 최소화 고려.
+      success_criteria:
+      - active 키워드 또는 재시작
+      - systemctl restart 명령
+      - 상태 검증
+      acceptable_methods:
+      - systemctl restart + is-active
+      - systemctl reload apache2 (graceful)
+      - apachectl graceful
+      - apache2ctl restart
+      negative_signs:
+      - restart 후 상태 확인 없음
+      - reload vs restart 구분 없음
+      - 에러 시 대응 없음
   target_vm: web
 - order: 6
   instruction: attacker VM에서 SQL Injection payload로 테스트 요청을 보내시오 (403 차단 확인).
@@ -85,12 +163,28 @@ steps:
   category: verify
   points: 10
   answer: curl -sS -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80/?id=1%20union%20select%201,2'
-  answer_detail: 'Apache + ModSecurity WAF: attacker VM에서 SQL Injection payload로 테스트
-    요청을 보내시오 (403 차단 확인).'
+  answer_detail: 'Apache + ModSecurity WAF: attacker VM에서 SQL Injection payload로 테스트 요청을 보내시오 (403 차단
+    확인).'
   verify:
     type: output_contains
     expect: '403'
     field: stdout
+    semantic:
+      intent: SQLi 차단 테스트 — curl -sS -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80/?id=1%20union%20select%201,2'.
+        %{http_code} 응답 코드 확인. 403 = ModSecurity 차단 성공. 200 = 차단 실패 → 룰/엔진 점검 필요. OWASP CRS 942110 SQLi.
+      success_criteria:
+      - 403 키워드
+      - curl -w '%{http_code}' 옵션
+      - SQLi payload URL
+      acceptable_methods:
+      - curl -w '%{http_code}'
+      - wget --server-response
+      - httpie http --print=h
+      - Python requests response.status_code
+      negative_signs:
+      - 응답 코드 확인 없음
+      - SQLi payload 아닌 다른 요청
+      - 인코딩 문제로 요청 실패
   target_vm: attacker
 - order: 7
   instruction: attacker VM에서 XSS payload 요청을 보내 차단 응답을 확인하시오.
@@ -98,12 +192,27 @@ steps:
   category: verify
   points: 10
   answer: curl -sS -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80/?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E'
-  answer_detail: 'Apache + ModSecurity WAF: attacker VM에서 XSS payload 요청을 보내 차단 응답을
-    확인하시오.'
+  answer_detail: 'Apache + ModSecurity WAF: attacker VM에서 XSS payload 요청을 보내 차단 응답을 확인하시오.'
   verify:
     type: output_contains
     expect: '403'
     field: stdout
+    semantic:
+      intent: XSS 차단 테스트 — curl -sS -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80/?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E'.
+        URL 인코딩 <script>alert(1)</script>. 403 응답 = CRS 941xxx XSS 차단 성공. OWASP Top 10 A03 Injection.
+      success_criteria:
+      - 403 키워드
+      - curl XSS payload
+      - 응답 코드 확인
+      acceptable_methods:
+      - curl + URL encoded script
+      - Burp Intruder XSS payloads
+      - OWASP ZAP active scan
+      - XSS Hunter 페이로드
+      negative_signs:
+      - 응답 코드 확인 없음
+      - payload 인코딩 오류
+      - 403 대신 200 차단 실패 무시
   target_vm: attacker
 - order: 8
   instruction: web VM에서 modsec_audit.log 마지막 30줄을 확인해 차단 기록을 찾으시오.
@@ -111,12 +220,27 @@ steps:
   category: analysis
   points: 10
   answer: sudo tail -30 /var/log/apache2/modsec_audit.log 2>/dev/null | head -20
-  answer_detail: 'Apache + ModSecurity WAF: web VM에서 modsec_audit.log 마지막 30줄을 확인해
-    차단 기록을 찾으시오.'
+  answer_detail: 'Apache + ModSecurity WAF: web VM에서 modsec_audit.log 마지막 30줄을 확인해 차단 기록을 찾으시오.'
   verify:
     type: output_contains
     expect: ModSec
     field: stdout
+    semantic:
+      intent: modsec_audit.log 차단 기록 — sudo tail -30 /var/log/apache2/modsec_audit.log | head -20. ModSecurity
+        감사 로그 = A/B/C/F/H 섹션 구조 (Audit Log Parts). ModSec 키워드 매칭. 차단 원인 룰 id + message 확인.
+      success_criteria:
+      - ModSec 키워드
+      - tail /var/log/apache2/modsec_audit.log
+      - 차단 기록 확인
+      acceptable_methods:
+      - tail modsec_audit.log
+      - awk 섹션 추출 (A/B/C/F/H)
+      - modsec-audit-viewer GUI
+      - ElasticSearch 인덱싱 + Kibana
+      negative_signs:
+      - 경로 혼동
+      - 섹션 구조 맥락 없음
+      - 차단 원인 분석 없음
   target_vm: web
 - order: 9
   instruction: modsec_audit.log 에서 rule id 942(SQLi)에 해당하는 이벤트를 카운트하시오.
@@ -124,12 +248,27 @@ steps:
   category: analysis
   points: 10
   answer: sudo grep -c '\[id \"942' /var/log/apache2/modsec_audit.log 2>/dev/null
-  answer_detail: 'Apache + ModSecurity WAF: modsec_audit.log 에서 rule id 942(SQLi)에
-    해당하는 이벤트를 카운트하시오.'
+  answer_detail: 'Apache + ModSecurity WAF: modsec_audit.log 에서 rule id 942(SQLi)에 해당하는 이벤트를 카운트하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: CRS rule id 942 SQLi 카운트 — sudo grep -c '\[id "942' /var/log/apache2/modsec_audit.log. CRS
+        942xxx 카테고리 = SQL Injection. grep -c = 매칭 줄 수. 차단 빈도 파악 + 공격 트렌드 지표.
+      success_criteria:
+      - grep -c 카운트
+      - 942 또는 SQLi 키워드
+      - audit.log 조회
+      acceptable_methods:
+      - grep -c '\[id "942' audit.log
+      - awk '/942xxx/' 카운트
+      - ElasticSearch aggs by rule_id
+      - Grafana modsec dashboard
+      negative_signs:
+      - 카테고리 번호 (942) 혼동
+      - grep -c 없이 전체 출력
+      - SQLi 맥락 없음
   target_vm: web
 - order: 10
   instruction: 정상 GET 요청(/ 루트)이 200 으로 응답하는지 확인하시오(정상 트래픽 미차단 검증).
@@ -137,12 +276,27 @@ steps:
   category: verify
   points: 10
   answer: curl -sS -o /dev/null -w '%{http_code}\n' http://10.20.30.80/
-  answer_detail: 'Apache + ModSecurity WAF: 정상 GET 요청(/ 루트)이 200 으로 응답하는지 확인하시오(정상
-    트래픽 미차단 검증).'
+  answer_detail: 'Apache + ModSecurity WAF: 정상 GET 요청(/ 루트)이 200 으로 응답하는지 확인하시오(정상 트래픽 미차단 검증).'
   verify:
     type: output_contains
     expect: '200'
     field: stdout
+    semantic:
+      intent: 정상 요청 허용 검증 — curl -sS -o /dev/null -w '%{http_code}\n' http://10.20.30.80/. 200 응답 = WAF
+        정상 트래픽 허용 (오차단 없음). False Positive 최소화 검증. CRS 튜닝 품질 지표.
+      success_criteria:
+      - 200 키워드
+      - 정상 GET 요청
+      - 응답 코드 확인
+      acceptable_methods:
+      - curl -w '%{http_code}'
+      - httpie http GET
+      - wget --server-response
+      - browser + 네트워크 탭
+      negative_signs:
+      - 200 확인 없이 차단 테스트만
+      - 경로 오타로 404
+      - false positive 개념 없음
   target_vm: attacker
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
