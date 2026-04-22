@@ -17,24 +17,60 @@ steps:
   hint: openssl req -new -x509로 CA 인증서를 만드세요.
   category: auth
   points: 10
-  answer: openssl req -new -x509 -days 3650 -keyout /tmp/iot_ca.key -out /tmp/iot_ca.crt -subj '/CN=IoT-CA/O=SecLab' -nodes 2>/dev/null && echo 'CA 인증서 생성 완료'
+  answer: openssl req -new -x509 -days 3650 -keyout /tmp/iot_ca.key -out /tmp/iot_ca.crt -subj '/CN=IoT-CA/O=SecLab'
+    -nodes 2>/dev/null && echo 'CA 인증서 생성 완료'
   answer_detail: PKI의 신뢰 루트인 CA 인증서를 생성합니다.
   verify:
     type: output_contains
     expect: CA 인증서 생성 완료
     field: stdout
+    semantic:
+      intent: IoT CA 인증서 — openssl req -new -x509 -days 3650 -keyout /tmp/iot_ca.key -out /tmp/iot_ca.crt
+        -subj '/CN=IoT-CA/O=SecLab' -nodes. PKI 신뢰 루트. 10년 유효 기간. Self-signed CA.
+      success_criteria:
+      - CA 인증서 생성 완료 키워드
+      - openssl req -new -x509 + CA.key + CA.crt
+      - /CN=IoT-CA subj
+      acceptable_methods:
+      - openssl req -new -x509
+      - cfssl gencert -initca
+      - step-ca init
+      - HashiCorp Vault PKI
+      negative_signs:
+      - x509 CA 인증서 없음
+      - PKI 루트 맥락 없음
+      - Self-signed 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: IoT 디바이스용 인증서를 CA로 서명하여 발급하시오.
   hint: openssl genrsa, req, x509 명령을 순서대로 사용하세요.
   category: auth
   points: 12
-  answer: openssl genrsa -out /tmp/device01.key 2048 2>/dev/null && openssl req -new -key /tmp/device01.key -out /tmp/device01.csr -subj '/CN=sensor-01/O=IoTFactory' 2>/dev/null && openssl x509 -req -in /tmp/device01.csr -CA /tmp/iot_ca.crt -CAkey /tmp/iot_ca.key -CAcreateserial -out /tmp/device01.crt -days 365 2>/dev/null && echo '디바이스 인증서 발급 완료'
+  answer: openssl genrsa -out /tmp/device01.key 2048 2>/dev/null && openssl req -new -key /tmp/device01.key
+    -out /tmp/device01.csr -subj '/CN=sensor-01/O=IoTFactory' 2>/dev/null && openssl x509 -req -in /tmp/device01.csr
+    -CA /tmp/iot_ca.crt -CAkey /tmp/iot_ca.key -CAcreateserial -out /tmp/device01.crt -days 365 2>/dev/null
+    && echo '디바이스 인증서 발급 완료'
   answer_detail: 각 IoT 디바이스에 고유한 인증서를 발급하여 디바이스 인증에 사용합니다.
   verify:
     type: output_contains
     expect: 디바이스 인증서 발급 완료
     field: stdout
+    semantic:
+      intent: '디바이스 인증서 발급 — openssl genrsa 2048 + openssl req -new -key + openssl x509 -req -CA iot_ca.crt
+        -CAkey iot_ca.key -CAcreateserial. 3단계: RSA 키 → CSR → CA 서명. 디바이스별 고유 인증서.'
+      success_criteria:
+      - 디바이스 인증서 발급 완료 키워드
+      - genrsa + req -new + x509 -req 3단계
+      - CA 서명
+      acceptable_methods:
+      - openssl genrsa + req + x509 -req
+      - cfssl gencert + ca 서명
+      - step certificate create
+      - Azure IoT DPS X.509
+      negative_signs:
+      - 3단계 중 누락
+      - 디바이스별 고유 맥락 없음
+      - CSR → CA 서명 흐름 없음
   target_vm: attacker
 - order: 3
   instruction: 발급된 디바이스 인증서를 CA로 검증하시오.
@@ -47,40 +83,109 @@ steps:
     type: output_contains
     expect: 인증서 검증 완료
     field: stdout
+    semantic:
+      intent: 인증서 검증 — openssl verify -CAfile /tmp/iot_ca.crt /tmp/device01.crt. 체인 검증 (디바이스 → CA). 유효
+        기간 + 서명 + 폐기 여부 확인 기반.
+      success_criteria:
+      - 인증서 검증 완료 키워드
+      - openssl verify -CAfile
+      - 체인 검증 수행
+      acceptable_methods:
+      - openssl verify -CAfile
+      - openssl s_client -CAfile + 연결 테스트
+      - certtool --verify-chain (GnuTLS)
+      - Cert Manager (K8s)
+      negative_signs:
+      - -CAfile 미지정
+      - 체인 검증 맥락 없음
+      - PKI 신뢰 체인 맥락 없음
   target_vm: attacker
 - order: 4
   instruction: 펌웨어 파일에 디지털 서명을 생성하시오.
   hint: openssl dgst -sha256 -sign 명령으로 서명합니다.
   category: firmware
   points: 12
-  answer: dd if=/dev/urandom of=/tmp/firmware_v2.bin bs=1K count=100 2>/dev/null && openssl dgst -sha256 -sign /tmp/iot_ca.key -out /tmp/firmware_v2.sig /tmp/firmware_v2.bin 2>/dev/null && echo '펌웨어 서명 완료'
+  answer: dd if=/dev/urandom of=/tmp/firmware_v2.bin bs=1K count=100 2>/dev/null && openssl dgst -sha256
+    -sign /tmp/iot_ca.key -out /tmp/firmware_v2.sig /tmp/firmware_v2.bin 2>/dev/null && echo '펌웨어 서명 완료'
   answer_detail: 펌웨어에 디지털 서명을 생성하여 무결성과 진본성을 보장합니다.
   verify:
     type: output_contains
     expect: 펌웨어 서명 완료
     field: stdout
+    semantic:
+      intent: 펌웨어 디지털 서명 — dd if=/dev/urandom of=/tmp/firmware_v2.bin bs=1K count=100 + openssl dgst -sha256
+        -sign /tmp/iot_ca.key -out /tmp/firmware_v2.sig. 무결성 + 진본성 보장. Secure Boot 전제.
+      success_criteria:
+      - 펌웨어 서명 완료 키워드
+      - openssl dgst -sha256 -sign
+      - 펌웨어.bin + .sig 생성
+      acceptable_methods:
+      - openssl dgst -sha256 -sign
+      - sign-ef / mkimage -l
+      - cosign sign-blob (Sigstore)
+      - U-Boot FIT image signing
+      negative_signs:
+      - -sign 미사용
+      - SHA-256 맥락 없음
+      - Secure Boot 맥락 없음
   target_vm: attacker
 - order: 5
   instruction: 펌웨어 서명을 검증하시오. 정상 파일과 변조된 파일의 검증 결과를 비교하시오.
   hint: openssl dgst -sha256 -verify 명령으로 서명을 검증하세요.
   category: firmware
   points: 12
-  answer: openssl dgst -sha256 -verify <(openssl x509 -in /tmp/iot_ca.crt -pubkey -noout 2>/dev/null) -signature /tmp/firmware_v2.sig /tmp/firmware_v2.bin 2>/dev/null && echo '서명 검증 성공' || echo '서명 검증 결과 확인'; echo '펌웨어 서명 검증 완료'
+  answer: openssl dgst -sha256 -verify <(openssl x509 -in /tmp/iot_ca.crt -pubkey -noout 2>/dev/null)
+    -signature /tmp/firmware_v2.sig /tmp/firmware_v2.bin 2>/dev/null && echo '서명 검증 성공' || echo '서명 검증
+    결과 확인'; echo '펌웨어 서명 검증 완료'
   answer_detail: 올바른 서명은 Verified OK를 반환하고, 변조된 파일은 실패합니다.
   verify:
     type: output_contains
     expect: 펌웨어 서명 검증 완료
     field: stdout
+    semantic:
+      intent: 펌웨어 서명 검증 — openssl dgst -sha256 -verify <(openssl x509 -in iot_ca.crt -pubkey -noout) -signature
+        firmware_v2.sig firmware_v2.bin. 정상 = Verified OK + 변조 파일 = 실패. OTA 업데이트 롤백 공격 방지.
+      success_criteria:
+      - 펌웨어 서명 검증 완료 키워드
+      - openssl dgst -verify + pubkey 추출
+      - 서명 검증 로직
+      acceptable_methods:
+      - openssl dgst -verify
+      - cosign verify-blob
+      - U-Boot bootm (검증 포함)
+      - TPM2 PCR + Secure Boot
+      negative_signs:
+      - -verify 미사용
+      - pubkey 추출 없음
+      - 변조 탐지 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: IoT 보안 감사 체크리스트를 작성하고 평가하시오.
   hint: 인증, 암호화, 업데이트, 네트워크 보안 항목을 포함하세요.
   category: verification
   points: 10
-  answer: "echo '=== IoT 보안 감사 ===' && echo '[O] 디바이스 인증서 기반 인증' && echo '[O] 펌웨어 디지털 서명' && echo '[X] 저장 데이터 암호화 (미구현)' && echo '[O] 전송 데이터 암호화 (TLS)' && echo '[X] 자동 업데이트 메커니즘 (미구현)' && echo '점수: 3/5 (60%)' && echo '=== 감사 완료 ==='"
+  answer: 'echo ''=== IoT 보안 감사 ==='' && echo ''[O] 디바이스 인증서 기반 인증'' && echo ''[O] 펌웨어 디지털 서명'' && echo
+    ''[X] 저장 데이터 암호화 (미구현)'' && echo ''[O] 전송 데이터 암호화 (TLS)'' && echo ''[X] 자동 업데이트 메커니즘 (미구현)'' && echo
+    ''점수: 3/5 (60%)'' && echo ''=== 감사 완료 ==='''
   answer_detail: 보안 감사 체크리스트로 IoT 시스템의 보안 수준을 체계적으로 평가합니다.
   verify:
     type: output_contains
     expect: 감사 완료
     field: stdout
+    semantic:
+      intent: IoT 보안 감사 — [O] 디바이스 인증서 인증 + [O] 펌웨어 디지털 서명 + [X] 저장 데이터 암호화 + [O] 전송 데이터 암호화(TLS) + [X]
+        자동 업데이트. 5항목 중 3건 완료. 점수 60%. 체크리스트 기반 체계 평가.
+      success_criteria:
+      - 감사 완료 키워드
+      - 5개 감사 항목 + O/X + 점수
+      - 3/5 판정
+      acceptable_methods:
+      - echo 체크리스트 + 점수
+      - OWASP IoT Security Verification Standard (ISVS)
+      - ETSI EN 303 645 소비자 IoT
+      - NIST IR 8425 IoT 기준
+      negative_signs:
+      - 체크 항목 3개 이하
+      - 점수/판정 없음
+      - ISVS/ETSI 맥락 없음
   target_vm: attacker
