@@ -3,7 +3,8 @@ title: 사고 보고서 — 에이전트 IR 특수 섹션 (Non-AI)
 version: nonai
 course: agent-ir-nonai
 week: 13
-description: 전통 NIST SP 800-61 IR 보고서에 모델·프롬프트·Transient Tool·의사결정 로그 섹션을 추가한 에이전트 IR 보고서 템플릿을 완성한다. 학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
+description: 전통 NIST SP 800-61 IR 보고서에 모델·프롬프트·Transient Tool·의사결정 로그 섹션을 추가한 에이전트 IR 보고서 템플릿을 완성한다. 학생이
+  각 단계를 수동으로 수행하고 결과를 기록합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -61,6 +62,21 @@ steps:
     type: output_contains
     expect: '1'
     field: stdout
+    semantic:
+      intent: '[보고서] 9 섹션 골격 — cat > report.md: 1 Exec / 2 개요(타임라인+영향) / 3 공격자(Model+Prompt+Transient)
+        / 4 탐지·분석 / 5 Bastion 의사결정 / 6 복구 / 7 자산 diff / 8 법적 / 부록 A/B/C. NIST SP 800-61 + 에이전트 전용 섹션.'
+      success_criteria:
+      - 숫자 1 출력
+      - 9 섹션 골격
+      - Executive Summary 포함
+      acceptable_methods:
+      - Markdown 9 섹션
+      - Jupyter template
+      - LaTeX 보고서
+      negative_signs:
+      - 섹션 5개 이하
+      - 에이전트 섹션 누락
+      - 부록 없음
   target_vm: bastion
   script: 'mkdir -p ~/ccc/reports/w13 && cat > ~/ccc/reports/w13/report.md <<''MD''
 
@@ -125,6 +141,21 @@ steps:
     type: output_contains
     expect: Executive
     field: stdout
+    semantic:
+      intent: '[섹션 1] Executive Summary — cat >> report.md: ''6개월 잠복 APT (D+2). Bastion 자동 차단. 외부 유출 없음.
+        주요 자산 회전 완료. 리빌드 계획 승인 요청.'' 3분 내 의사결정자 전달.'
+      success_criteria:
+      - Executive 키워드
+      - 3분 전달 요지
+      - 승인 요청
+      acceptable_methods:
+      - Markdown append
+      - LLM 요약
+      - template fill
+      negative_signs:
+      - 기술 상세만
+      - 승인 요청 없음
+      - 3분 요약 아님
   target_vm: bastion
   script: 'cat >> ~/ccc/reports/w13/report.md <<''MD''
 
@@ -170,6 +201,21 @@ steps:
     type: output_contains
     expect: Model
     field: stdout
+    semantic:
+      intent: '[섹션 3.1] 모델 정보 — cat >> report.md: 표 (모델명/버전/API 제공자/Tool-use 활성). 에이전트 IR 전용 섹션. 전통 IR
+        보고서에 없음.'
+      success_criteria:
+      - Model 키워드
+      - 모델명 + 버전 + 제공자 + Tool-use
+      - 표 형식
+      acceptable_methods:
+      - Markdown 표
+      - LLM 카드
+      - MITRE ATLAS profile
+      negative_signs:
+      - 필드 2개 이하
+      - 표 없음
+      - 에이전트 특수성 없음
   target_vm: bastion
   script: 'cat >> ~/ccc/reports/w13/report.md <<''MD''
 
@@ -221,6 +267,21 @@ steps:
     type: output_contains
     expect: Transient
     field: stdout
+    semantic:
+      intent: '[섹션 3.3] Transient Tools — cat >> report.md: 표 (파일 + 수명 + sha256 해시) × exp_v1/v3/dumper.py.
+        세션 내 도구 기록. 파일 사라져도 기록 유지.'
+      success_criteria:
+      - Transient 키워드
+      - 3 파일 + 수명 + 해시
+      - 표 형식
+      acceptable_methods:
+      - Markdown 표
+      - sha256sum 기록
+      - Chain of Custody
+      negative_signs:
+      - 파일 1개
+      - 해시 없음
+      - 수명 없음
   target_vm: bastion
   script: 'cat >> ~/ccc/reports/w13/report.md <<''MD''
 
@@ -247,14 +308,35 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 13
-  answer: "cat > ~/ccc/reports/w13/decision-sample.json <<'J'\n{\n  \"ts\": \"2026-04-19T01:02:03+0900\",\n  \"decision\": \"block_ip\",\n  \"src\": \"10.xxx.xxx.50\",\n  \"reason\": \"agent_score=0.83, JWT anomaly\",\n  \"user_email\": \"[REDACTED_EMAIL]\",\n  \"model_chain\": \"(요약) 허니 경로 접근 감지 → 차단 권고\"\n}\nJ\ncat ~/ccc/reports/w13/decision-sample.json"
+  answer: "cat > ~/ccc/reports/w13/decision-sample.json <<'J'\n{\n  \"ts\": \"2026-04-19T01:02:03+0900\"\
+    ,\n  \"decision\": \"block_ip\",\n  \"src\": \"10.xxx.xxx.50\",\n  \"reason\": \"agent_score=0.83,\
+    \ JWT anomaly\",\n  \"user_email\": \"[REDACTED_EMAIL]\",\n  \"model_chain\": \"(요약) 허니 경로 접근 감지 →\
+    \ 차단 권고\"\n}\nJ\ncat ~/ccc/reports/w13/decision-sample.json"
   answer_detail: IP·이메일 마스킹. 모델 추론 체인은 요약.
   verify:
     type: output_contains
     expect: REDACTED
     field: stdout
+    semantic:
+      intent: '[섹션 5] 의사결정 로그 마스킹 — cat > decision-sample.json: ts + decision block_ip + src 10.xxx.xxx.50
+        + reason agent_score 0.83 + user_email [REDACTED_EMAIL] + model_chain 요약. IP/이메일 마스킹.'
+      success_criteria:
+      - REDACTED 출력
+      - 마스킹 적용
+      - model_chain 요약
+      acceptable_methods:
+      - sed 마스킹
+      - Presidio redaction
+      - JSON masking
+      negative_signs:
+      - 마스킹 없음
+      - model_chain 평문
+      - REDACTED 누락
   target_vm: bastion
-  script: "cat > ~/ccc/reports/w13/decision-sample.json <<'J'\n{\n  \"ts\": \"2026-04-19T01:02:03+0900\",\n  \"decision\": \"block_ip\",\n  \"src\": \"10.xxx.xxx.50\",\n  \"reason\": \"agent_score=0.83, JWT anomaly\",\n  \"user_email\": \"[REDACTED_EMAIL]\",\n  \"model_chain\": \"(요약) 허니 경로 접근 감지 → 차단 권고\"\n}\nJ\ncat ~/ccc/reports/w13/decision-sample.json"
+  script: "cat > ~/ccc/reports/w13/decision-sample.json <<'J'\n{\n  \"ts\": \"2026-04-19T01:02:03+0900\"\
+    ,\n  \"decision\": \"block_ip\",\n  \"src\": \"10.xxx.xxx.50\",\n  \"reason\": \"agent_score=0.83,\
+    \ JWT anomaly\",\n  \"user_email\": \"[REDACTED_EMAIL]\",\n  \"model_chain\": \"(요약) 허니 경로 접근 감지 →\
+    \ 차단 권고\"\n}\nJ\ncat ~/ccc/reports/w13/decision-sample.json"
   risk_level: low
   bastion_prompt: ''
 - order: 6
@@ -262,14 +344,33 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 14
-  answer: mkdir -p ~/ccc/reports/w13/evidence && echo 'sample pcap' > ~/ccc/reports/w13/evidence/attack.pcap && sha256sum ~/ccc/reports/w13/evidence/attack.pcap > ~/ccc/reports/w13/evidence/SHA256SUMS && cat ~/ccc/reports/w13/evidence/SHA256SUMS
+  answer: mkdir -p ~/ccc/reports/w13/evidence && echo 'sample pcap' > ~/ccc/reports/w13/evidence/attack.pcap
+    && sha256sum ~/ccc/reports/w13/evidence/attack.pcap > ~/ccc/reports/w13/evidence/SHA256SUMS && cat
+    ~/ccc/reports/w13/evidence/SHA256SUMS
   answer_detail: 증적 무결성. 사건 직후 봉인해야 향후 위변조 검증 가능.
   verify:
     type: output_contains
     expect: attack.pcap
     field: stdout
+    semantic:
+      intent: '[증적] 해시 봉인 — mkdir evidence + echo sample pcap > attack.pcap + sha256sum > SHA256SUMS.
+        증적 무결성. Chain of Custody.'
+      success_criteria:
+      - attack.pcap 파일
+      - sha256sum SHA256SUMS
+      - 봉인
+      acceptable_methods:
+      - sha256sum
+      - GPG sign
+      - HMAC integrity
+      negative_signs:
+      - 해시 없음
+      - 봉인 파일 없음
+      - 증적 개념 없음
   target_vm: bastion
-  script: mkdir -p ~/ccc/reports/w13/evidence && echo 'sample pcap' > ~/ccc/reports/w13/evidence/attack.pcap && sha256sum ~/ccc/reports/w13/evidence/attack.pcap > ~/ccc/reports/w13/evidence/SHA256SUMS && cat ~/ccc/reports/w13/evidence/SHA256SUMS
+  script: mkdir -p ~/ccc/reports/w13/evidence && echo 'sample pcap' > ~/ccc/reports/w13/evidence/attack.pcap
+    && sha256sum ~/ccc/reports/w13/evidence/attack.pcap > ~/ccc/reports/w13/evidence/SHA256SUMS && cat
+    ~/ccc/reports/w13/evidence/SHA256SUMS
   risk_level: low
   bastion_prompt: ''
 - order: 7
@@ -297,6 +398,21 @@ steps:
     type: output_contains
     expect: 봉인
     field: stdout
+    semantic:
+      intent: '[체크리스트] 증적 — cat > evidence-checklist.md: [x] pcap sha256 / [x] Wazuh alerts / [ ] 오프사이트
+        복제 / [x] 마스킹 / [ ] 법무 감사 로그. 증적 절차 5 항목.'
+      success_criteria:
+      - 봉인 키워드
+      - 5 체크 항목
+      - x/빈 구분
+      acceptable_methods:
+      - Markdown 체크박스
+      - ISO 27037 지침
+      - NIST SP 800-86
+      negative_signs:
+      - 항목 3개 이하
+      - 체크 없음
+      - 절차 없음
   target_vm: bastion
   script: 'cat > ~/ccc/reports/w13/evidence-checklist.md <<''MD''
 
@@ -320,14 +436,31 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 16
-  answer: cp ~/ccc/artifacts/w11-round1/asset-diff.md ~/ccc/reports/w13/ 2>/dev/null; cat ~/ccc/reports/w13/asset-diff.md 2>/dev/null | head -15 || echo 'asset-diff_placeholder'
+  answer: cp ~/ccc/artifacts/w11-round1/asset-diff.md ~/ccc/reports/w13/ 2>/dev/null; cat ~/ccc/reports/w13/asset-diff.md
+    2>/dev/null | head -15 || echo 'asset-diff_placeholder'
   answer_detail: w11 자산 diff를 보고서에 첨부.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[섹션 7] 자산 diff 삽입 — cp ~/ccc/artifacts/w11-round1/asset-diff.md ~/ccc/reports/w13/ + cat
+        head -15. w11 자산 diff 첨부. Purple Round 근거.'
+      success_criteria:
+      - cp + cat head
+      - asset-diff 삽입
+      - w11 재사용
+      acceptable_methods:
+      - cp 재활용
+      - include directive
+      - symlink
+      negative_signs:
+      - cp 없음
+      - 재사용 없음
+      - 누락
   target_vm: bastion
-  script: cp ~/ccc/artifacts/w11-round1/asset-diff.md ~/ccc/reports/w13/ 2>/dev/null; cat ~/ccc/reports/w13/asset-diff.md 2>/dev/null | head -15 || echo 'asset-diff_placeholder'
+  script: cp ~/ccc/artifacts/w11-round1/asset-diff.md ~/ccc/reports/w13/ 2>/dev/null; cat ~/ccc/reports/w13/asset-diff.md
+    2>/dev/null | head -15 || echo 'asset-diff_placeholder'
   risk_level: low
   bastion_prompt: ''
 - order: 9
@@ -353,6 +486,21 @@ steps:
     type: output_contains
     expect: GDPR
     field: stdout
+    semantic:
+      intent: '[법적] 한국 기준 — cat > legal.md: GDPR 33조 72시간 / 개인정보보호법 34조 유출 통지 / ISMS-P 증적 3년 / 정보통신망법
+        48조의2 접근 기록 6개월. 4 법규.'
+      success_criteria:
+      - GDPR 키워드
+      - 4 법규
+      - 조항 인용
+      acceptable_methods:
+      - 법적 목록
+      - ISO 27001 annex A
+      - K-ISMS 요구사항
+      negative_signs:
+      - 법규 1-2개
+      - 조항 누락
+      - 기간 없음
   target_vm: bastion
   script: 'cat > ~/ccc/reports/w13/legal.md <<''MD''
 
@@ -402,6 +550,21 @@ steps:
     type: output_contains
     expect: 재작성
     field: stdout
+    semantic:
+      intent: '[루브릭] 자가 평가 — cat > self-rubric.md: 6 항목 × 5/3/1점 (Exec/타임라인/Profile/Decision/Asset/Legal)
+        + 내 점수 __/30. 21점 이하 재작성.'
+      success_criteria:
+      - 재작성 키워드
+      - 6 항목 × 3 레벨
+      - /30
+      acceptable_methods:
+      - Markdown 루브릭
+      - Google Form
+      - 평가 스프레드시트
+      negative_signs:
+      - 항목 3개 이하
+      - 레벨 2개 이하
+      - 합계 없음
   target_vm: bastion
   script: 'cat > ~/ccc/reports/w13/self-rubric.md <<''MD''
 
@@ -433,14 +596,31 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 19
-  answer: sed 's/10\.[0-9]*\.[0-9]*\.[0-9]*/10.XXX.XXX.XXX/g; s/admin@example.com/user@example.org/g' ~/ccc/reports/w13/report.md > ~/ccc/reports/w13/report-anonymized.md && wc -l ~/ccc/reports/w13/report-anonymized.md
+  answer: sed 's/10\.[0-9]*\.[0-9]*\.[0-9]*/10.XXX.XXX.XXX/g; s/admin@example.com/user@example.org/g'
+    ~/ccc/reports/w13/report.md > ~/ccc/reports/w13/report-anonymized.md && wc -l ~/ccc/reports/w13/report-anonymized.md
   answer_detail: 내부 IP·이메일 일괄 마스킹. 외부 공유 전에는 사람 리뷰 1회 필수.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[익명화] 외부 공유 사본 — sed ''s/10\.[0-9]*\.[0-9]*\.[0-9]*/10.XXX.XXX.XXX/g; s/admin@example.com/user@example.org/g''
+        report.md > report-anonymized.md. IP+이메일 일괄 마스킹.'
+      success_criteria:
+      - sed 2 규칙
+      - IP 마스킹
+      - 이메일 치환
+      acceptable_methods:
+      - sed regex
+      - Presidio
+      - aws-redact
+      negative_signs:
+      - 마스킹 1종
+      - regex 없음
+      - 사본 없음
   target_vm: bastion
-  script: sed 's/10\.[0-9]*\.[0-9]*\.[0-9]*/10.XXX.XXX.XXX/g; s/admin@example.com/user@example.org/g' ~/ccc/reports/w13/report.md > ~/ccc/reports/w13/report-anonymized.md && wc -l ~/ccc/reports/w13/report-anonymized.md
+  script: sed 's/10\.[0-9]*\.[0-9]*\.[0-9]*/10.XXX.XXX.XXX/g; s/admin@example.com/user@example.org/g'
+    ~/ccc/reports/w13/report.md > ~/ccc/reports/w13/report-anonymized.md && wc -l ~/ccc/reports/w13/report-anonymized.md
   risk_level: low
   bastion_prompt: ''
 - order: 12
@@ -448,13 +628,32 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 20
-  answer: echo '{"id":"w13-report","sections":9,"self_grade":"TBD","evidence_sealed":true}' > ~/ccc/data/bastion/experience/w13-report.json && cat ~/ccc/data/bastion/experience/w13-report.json
+  answer: echo '{"id":"w13-report","sections":9,"self_grade":"TBD","evidence_sealed":true}' > ~/ccc/data/bastion/experience/w13-report.json
+    && cat ~/ccc/data/bastion/experience/w13-report.json
   answer_detail: 보고서 작성 완료 기록.
   verify:
     type: output_contains
-    expect: sections
+    expect:
+    - sections
+    - 저장
     field: stdout
+    semantic:
+      intent: '[기록] w13 보고서 Experience — echo ''{id: w13-report, sections: 9, self_grade: TBD, evidence_sealed:
+        true}'' > w13-report.json. 보고서 작성 완료 기록.'
+      success_criteria:
+      - sections/저장
+      - 9 섹션
+      - evidence_sealed
+      acceptable_methods:
+      - echo JSON
+      - jq -n
+      - python dumps
+      negative_signs:
+      - sections 없음
+      - sealed 없음
+      - JSON 아님
   target_vm: bastion
-  script: echo '{"id":"w13-report","sections":9,"self_grade":"TBD","evidence_sealed":true}' > ~/ccc/data/bastion/experience/w13-report.json && cat ~/ccc/data/bastion/experience/w13-report.json
+  script: echo '{"id":"w13-report","sections":9,"self_grade":"TBD","evidence_sealed":true}' > ~/ccc/data/bastion/experience/w13-report.json
+    && cat ~/ccc/data/bastion/experience/w13-report.json
   risk_level: low
   bastion_prompt: ''
