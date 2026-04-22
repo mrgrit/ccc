@@ -18,12 +18,28 @@ steps:
   category: survey
   points: 10
   answer: sudo ls -la /var/log/suricata/eve.json 2>/dev/null
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM에서 suricata eve.json 이
-    /var/log/suricata/eve.json 으로 기록되는지 확인하시오.'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM에서 suricata eve.json 이 /var/log/suricata/eve.json
+    으로 기록되는지 확인하시오.'
   verify:
     type: output_contains
     expect: eve.json
     field: stdout
+    semantic:
+      intent: eve.json 기록 확인 — sudo ls -la /var/log/suricata/eve.json. Suricata 실시간 JSON 로그 파일. 통합 아키텍처의
+        핵심 데이터 소스. SIEM 수집 전제. 파일 크기 + 권한 + 시간 확인.
+      success_criteria:
+      - eve.json 키워드
+      - ls -la 실행
+      - 파일 정보 출력
+      acceptable_methods:
+      - ls -la eve.json
+      - stat eve.json
+      - du -h eve.json 크기
+      - logrotate 상태 확인
+      negative_signs:
+      - 파일 존재 확인 없음
+      - 경로 혼동
+      - 권한 확인 없음
   target_vm: secu
 - order: 2
   instruction: secu VM에 wazuh-agent 가 설치되어 있는지 확인하시오.
@@ -32,14 +48,28 @@ steps:
   points: 10
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
-    📎 참고 (CLI): systemctl is-active wazuh-agent || /var/ossec/bin/wazuh-control status
-    2>/dev/null | head'
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM에 wazuh-agent 가 설치되어 있는지
-    확인하시오.'
+    📎 참고 (CLI): systemctl is-active wazuh-agent || /var/ossec/bin/wazuh-control status 2>/dev/null | head'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM에 wazuh-agent 가 설치되어 있는지 확인하시오.'
   verify:
     type: output_contains
     expect: wazuh
     field: stdout
+    semantic:
+      intent: secu wazuh-agent 확인 — systemctl is-active wazuh-agent || wazuh-control status. Wazuh 에이전트
+        = 로컬 로그 수집 → Manager 전송. 비활성 시 Suricata eve.json 이 SIEM 로 전달 안 됨. 통합 흐름 첫 관문.
+      success_criteria:
+      - wazuh 키워드
+      - is-active 또는 wazuh-control
+      - 상태 확인
+      acceptable_methods:
+      - systemctl is-active wazuh-agent
+      - /var/ossec/bin/wazuh-control status
+      - ps aux | grep wazuh
+      - agent_control -l 에서 secu 확인
+      negative_signs:
+      - wazuh-manager 확인 (다른 서버)
+      - 상태 확인 없이 설치만
+      - ossec-control (legacy) 사용
   target_vm: secu
 - order: 3
   instruction: secu VM 의 ossec.conf 에서 eve.json 을 수집하는 <localfile> 설정을 확인하시오.
@@ -47,12 +77,29 @@ steps:
   category: survey
   points: 10
   answer: sudo grep -A2 -B1 eve.json /var/ossec/etc/ossec.conf 2>/dev/null | head
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM 의 ossec.conf 에서 eve.json
-    을 수집하는 <localfile> 설정을 확인하시오.'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM 의 ossec.conf 에서 eve.json 을 수집하는 <localfile>
+    설정을 확인하시오.'
   verify:
     type: output_contains
     expect: eve.json
     field: stdout
+    semantic:
+      intent: eve.json localfile 설정 — sudo grep -A2 -B1 eve.json /var/ossec/etc/ossec.conf. Wazuh agent
+        ossec.conf 에 <localfile><location>/var/log/suricata/eve.json</location><log_format>json</log_format></localfile>
+        등록. Suricata → Wazuh 연동 설정. 누락 시 수집 안 됨.
+      success_criteria:
+      - eve.json 키워드
+      - ossec.conf grep
+      - localfile 설정 확인
+      acceptable_methods:
+      - grep eve.json ossec.conf
+      - awk '/<localfile>/,/<\/localfile>/'
+      - xmllint --xpath
+      - Wazuh API /manager/configuration
+      negative_signs:
+      - 설정 확인 없이 파일만
+      - log_format 누락
+      - Suricata 연동 개념 없음
   target_vm: secu
 - order: 4
   instruction: siem VM에서 attacker IP({{ATTACKER_IP}})에 대한 최근 wazuh alert를 조회하시오.
@@ -61,14 +108,29 @@ steps:
   points: 10
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
-    📎 참고 (CLI): sudo grep 10.20.30.201 /var/ossec/logs/alerts/alerts.json 2>/dev/null
-    | tail -3'
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: siem VM에서 attacker IP(10.20.30.201)에
-    대한 최근 wazuh alert를 조회하시오.'
+    📎 참고 (CLI): sudo grep 10.20.30.201 /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -3'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: siem VM에서 attacker IP(10.20.30.201)에 대한 최근 wazuh alert를
+    조회하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 'attacker IP alert 조회 — sudo grep 10.20.30.201 /var/ossec/logs/alerts/alerts.json | tail
+        -3. attacker VM IP 관련 최근 알림. 통합 아키텍처 end-to-end 검증: attacker → web/secu → Wazuh. Kill Chain 추적.'
+      success_criteria:
+      - attacker IP 10.20.30.201
+      - alerts.json grep
+      - 최근 이벤트 출력
+      acceptable_methods:
+      - grep 10.20.30.201 alerts.json
+      - jq 'select(.agent.ip=="10.20.30.201")'
+      - Kibana src_ip 필터
+      - Wazuh API /alerts?q=agent.ip
+      negative_signs:
+      - IP 혼동
+      - tail 범위 없음
+      - 필터 없이 전체 덤프
   target_vm: siem
 - order: 5
   instruction: web VM의 ossec.conf 에서 modsec_audit.log 수집 설정을 확인하시오.
@@ -76,40 +138,86 @@ steps:
   category: survey
   points: 10
   answer: sudo grep -B1 -A2 modsec_audit /var/ossec/etc/ossec.conf 2>/dev/null | head
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: web VM의 ossec.conf 에서 modsec_audit.log
-    수집 설정을 확인하시오.'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: web VM의 ossec.conf 에서 modsec_audit.log 수집 설정을 확인하시오.'
   verify:
     type: output_contains
     expect: modsec
     field: stdout
+    semantic:
+      intent: web modsec_audit 수집 설정 — sudo grep -B1 -A2 modsec_audit /var/ossec/etc/ossec.conf. ModSecurity
+        감사 로그를 Wazuh 가 수집하는 <localfile> 확인. 경로 /var/log/apache2/modsec_audit.log. WAF 이벤트 SIEM 통합.
+      success_criteria:
+      - modsec 키워드
+      - ossec.conf grep
+      - localfile 설정
+      acceptable_methods:
+      - grep modsec_audit ossec.conf
+      - awk localfile 섹션
+      - dpkg -L modsecurity-crs + 기본 경로
+      - Wazuh Dashboard Management Agents config
+      negative_signs:
+      - ModSec 경로 혼동
+      - 설정 확인 없음
+      - web VM 아닌 다른 VM
   target_vm: web
 - order: 6
-  instruction: attacker VM에서 '<script>alert(1)</script>' payload로 web VM에 요청을 보내 전체
-    체인을 트리거하시오.
+  instruction: attacker VM에서 '<script>alert(1)</script>' payload로 web VM에 요청을 보내 전체 체인을 트리거하시오.
   hint: curl …
   category: verify
   points: 10
   answer: curl -sS -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80/?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E'
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: attacker VM에서 ''<script>alert(1)</script>''
-    payload로 web VM에 요청을 보내 전체 체인을 트리거하시오.'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: attacker VM에서 ''<script>alert(1)</script>'' payload로
+    web VM에 요청을 보내 전체 체인을 트리거하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: XSS 공격 트리거 — curl -sS -o /dev/null -w '%{http_code}\n' 'http://10.20.30.80/?q=%3Cscript%3Ealert(1)%3C%2Fscript%3E'.
+        URL 인코딩 <script>alert(1)</script>. 통합 체인 (WAF 차단 → ModSec 로그 → Wazuh 수집 → alerts.json) end-to-end
+        트리거.
+      success_criteria:
+      - curl + XSS payload
+      - web VM 대상
+      - 응답 코드 확인
+      acceptable_methods:
+      - curl URL-encoded XSS
+      - Burp Intruder + payload
+      - OWASP ZAP active scan
+      - XSS Hunter 페이로드
+      negative_signs:
+      - XSS 없이 일반 요청
+      - URL 인코딩 오류
+      - 응답 코드 무시
   target_vm: attacker
 - order: 7
   instruction: siem VM alerts.json 에서 XSS 또는 Cross-Site 관련 이벤트를 검색하시오.
   hint: grep -i xss alerts.json
   category: analysis
   points: 10
-  answer: sudo grep -iE 'XSS|Cross-Site|script' /var/ossec/logs/alerts/alerts.json
-    2>/dev/null | tail -3
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: siem VM alerts.json 에서 XSS 또는
-    Cross-Site 관련 이벤트를 검색하시오.'
+  answer: sudo grep -iE 'XSS|Cross-Site|script' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail
+    -3
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: siem VM alerts.json 에서 XSS 또는 Cross-Site 관련 이벤트를 검색하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: SIEM XSS alert 검색 — sudo grep -iE 'XSS|Cross-Site|script' /var/ossec/logs/alerts/alerts.json
+        | tail -3. ModSecurity → Wazuh 통합 검증. XSS/Cross-Site/script 키워드 매칭. 통합 흐름 최종 확인.
+      success_criteria:
+      - alerts.json grep 실행
+      - XSS/Cross-Site 키워드
+      - 통합 흐름 검증
+      acceptable_methods:
+      - grep -iE 'XSS|Cross-Site|script'
+      - jq 'select(.rule.description | contains("XSS"))'
+      - Kibana KQL rule.groups:xss
+      - Wazuh Dashboard 필터
+      negative_signs:
+      - grep 대소문자 구분
+      - ModSec 연계 확인 없음
+      - 통합 흐름 맥락 없음
   target_vm: siem
 - order: 8
   instruction: secu VM nftables 의 전체 테이블 목록에서 filter/blocklist/cti_ips 관련 상태를 확인하시오.
@@ -117,12 +225,28 @@ steps:
   category: analysis
   points: 10
   answer: sudo nft list tables
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM nftables 의 전체 테이블 목록에서
-    filter/blocklist/cti_ips 관련 상태를 확인하시오.'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM nftables 의 전체 테이블 목록에서 filter/blocklist/cti_ips
+    관련 상태를 확인하시오.'
   verify:
     type: output_contains
     expect: filter
     field: stdout
+    semantic:
+      intent: nftables 테이블 목록 — sudo nft list tables. filter / blocklist / cti_ips 관련 테이블 확인. 방화벽 전체 구성
+        파악. CTI 통합 상태 점검 기초.
+      success_criteria:
+      - filter 키워드
+      - nft list tables 명령
+      - 테이블 목록
+      acceptable_methods:
+      - nft list tables
+      - nft -j list tables
+      - nft list ruleset | grep 'table '
+      - Dashboard Agent Configuration
+      negative_signs:
+      - list tables 실행 없음
+      - filter 누락
+      - list ruleset 과 혼동
   target_vm: secu
 - order: 9
   instruction: secu VM의 Suricata 서비스와 wazuh-agent 서비스 모두 active 인지 확인하시오.
@@ -132,26 +256,57 @@ steps:
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
     📎 참고 (CLI): systemctl is-active suricata wazuh-agent 2>&1'
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM의 Suricata 서비스와 wazuh-agent
-    서비스 모두 active 인지 확인하시오.'
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: secu VM의 Suricata 서비스와 wazuh-agent 서비스 모두 active 인지
+    확인하시오.'
   verify:
     type: output_contains
     expect: active
     field: stdout
+    semantic:
+      intent: Suricata + wazuh-agent 동시 활성 — systemctl is-active suricata wazuh-agent. 두 서비스 모두 active
+        필요 (IDS 탐지 + SIEM 전달 체인). 단일 실패 시 통합 중단. 운영 헬스체크.
+      success_criteria:
+      - active 키워드
+      - is-active 2개 서비스
+      - 둘 다 active 확인
+      acceptable_methods:
+      - systemctl is-active svc1 svc2
+      - ansible service 모듈 + 상태 체크
+      - /var/ossec/bin/wazuh-control status
+      - Prometheus node_exporter
+      negative_signs:
+      - 단일 서비스 확인
+      - active 해석 없음
+      - 통합 체인 의존 이해 없음
   target_vm: secu
 - order: 10
   instruction: siem VM alerts.json 의 최근 100건에서 rule.level 별 분포를 집계하시오.
   hint: jq '.rule.level' …
   category: reporting
   points: 10
-  answer: sudo tail -100 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.rule.level'
-    2>/dev/null | sort | uniq -c
-  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: siem VM alerts.json 의 최근 100건에서
-    rule.level 별 분포를 집계하시오.'
+  answer: sudo tail -100 /var/ossec/logs/alerts/alerts.json 2>/dev/null | jq -r '.rule.level' 2>/dev/null
+    | sort | uniq -c
+  answer_detail: '통합 보안 아키텍처 — 방화벽·IPS·SIEM·CTI 연계: siem VM alerts.json 의 최근 100건에서 rule.level 별 분포를 집계하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: rule.level 분포 집계 — sudo tail -100 alerts.json | jq -r '.rule.level' | sort | uniq -c. 최근
+        100 알림 심각도별 분포. level 0-15 스펙트럼. 대응 우선순위 + 대시보드 KPI 기초.
+      success_criteria:
+      - jq + sort + uniq
+      - rule.level 추출
+      - 분포 집계
+      acceptable_methods:
+      - tail + jq + sort + uniq -c
+      - Elasticsearch aggs by rule.level
+      - Kibana Lens histogram
+      - python Counter
+      negative_signs:
+      - 분포 집계 없이 목록
+      - level 필드 이해 없음
+      - tail 100 범위 없음
   target_vm: siem
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
