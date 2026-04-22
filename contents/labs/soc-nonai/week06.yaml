@@ -3,8 +3,7 @@ title: 위협 탐지 룰 - Wazuh 커스텀 룰 작성과 Suricata 시그니처
 version: non-ai
 course: soc-nonai
 week: 6
-description: Wazuh 커스텀 탐지 룰과 Suricata 시그니처를 작성하여 특정 위협 패턴을 탐지하는 방법을 학습합니다. 룰 작성, 테스트,
-  배포의 전체 과정을 실습합니다.
+description: Wazuh 커스텀 탐지 룰과 Suricata 시그니처를 작성하여 특정 위협 패턴을 탐지하는 방법을 학습합니다. 룰 작성, 테스트, 배포의 전체 과정을 실습합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -21,12 +20,27 @@ steps:
   answer: '🖥️ UI: Dashboard → Management → Rules → 룰 목록 검색
 
     📎 참고 (CLI): cat /var/ossec/etc/rules/local_rules.xml'
-  answer_detail: local_rules.xml은 사용자 정의 탐지 룰을 작성하는 파일입니다. /var/ossec/ruleset/rules/의
-    기본 룰과 달리 업데이트 시 덮어쓰이지 않아 커스텀 룰은 반드시 이곳에 작성해야 합니다.
+  answer_detail: local_rules.xml은 사용자 정의 탐지 룰을 작성하는 파일입니다. /var/ossec/ruleset/rules/의 기본 룰과 달리 업데이트 시
+    덮어쓰이지 않아 커스텀 룰은 반드시 이곳에 작성해야 합니다.
   verify:
     type: output_contains
     expect: local_rules
     field: stdout
+    semantic:
+      intent: 커스텀 룰 위치 — cat /var/ossec/etc/rules/local_rules.xml. 사용자 정의 룰 (업데이트 시 보존). /var/ossec/ruleset/rules와
+        분리. 커스텀 룰 = local_rules.xml 작성 필수.
+      success_criteria:
+      - cat local_rules.xml
+      - local_rules 키워드
+      - 커스텀 룰 경로
+      acceptable_methods:
+      - cat local_rules
+      - Wazuh API GET /rules?relative_dirname=etc/rules
+      - Dashboard custom rules
+      negative_signs:
+      - 경로 누락
+      - ruleset/rules 혼동
+      - 커스텀 vs 기본 차이 없음
   target_vm: siem
 - order: 2
   instruction: Wazuh 기본 룰셋에서 웹 공격 탐지 룰(web rules)의 구조를 분석하시오.
@@ -36,12 +50,27 @@ steps:
   answer: '🖥️ UI: Dashboard → Management → Rules → 룰 목록 검색
 
     📎 참고 (CLI): ls /var/ossec/ruleset/rules/ | grep -i web'
-  answer_detail: 0250-apache_rules.xml, 0260-nginx_rules.xml 등의 웹 관련 룰 파일이 존재합니다.
-    이 파일들의 구조를 참고하여 커스텀 룰을 작성합니다.
+  answer_detail: 0250-apache_rules.xml, 0260-nginx_rules.xml 등의 웹 관련 룰 파일이 존재합니다. 이 파일들의 구조를 참고하여 커스텀
+    룰을 작성합니다.
   verify:
     type: output_contains
     expect: .xml
     field: stdout
+    semantic:
+      intent: 웹 룰 분석 — ls /var/ossec/ruleset/rules/ | grep -i web. 0250-apache_rules.xml + 0260-nginx_rules.xml.
+        기본 룰 구조 참고하여 커스텀 작성. Wazuh ruleset.
+      success_criteria:
+      - ls + grep web
+      - .xml 키워드
+      - 웹 룰 파일
+      acceptable_methods:
+      - ls + grep
+      - find -name *web*
+      - Wazuh API rules filter
+      negative_signs:
+      - 웹 룰 미확인
+      - 단순 ls
+      - 기본 룰 맥락 없음
   target_vm: siem
 - order: 3
   instruction: Wazuh Apache 룰 파일에서 SQL Injection 탐지 룰의 패턴을 확인하시오.
@@ -50,14 +79,28 @@ steps:
   points: 10
   answer: '🖥️ UI: Dashboard → Management → Rules → 룰 목록 검색
 
-    📎 참고 (CLI): grep -i -A 5 "sql\|injection" /var/ossec/ruleset/rules/0250-apache_rules.xml
-    | head -30'
-  answer_detail: Wazuh의 웹 공격 탐지 룰은 match 또는 regex 태그로 로그 패턴을 매칭합니다. SQL Injection은
-    SELECT, UNION, OR 1=1 등의 패턴을 탐지합니다.
+    📎 참고 (CLI): grep -i -A 5 "sql\|injection" /var/ossec/ruleset/rules/0250-apache_rules.xml | head -30'
+  answer_detail: Wazuh의 웹 공격 탐지 룰은 match 또는 regex 태그로 로그 패턴을 매칭합니다. SQL Injection은 SELECT, UNION, OR 1=1
+    등의 패턴을 탐지합니다.
   verify:
     type: output_contains
     expect: <rule
     field: stdout
+    semantic:
+      intent: SQL Injection 룰 — grep -i -A 5 'sql|injection' /var/ossec/ruleset/rules/0250-apache_rules.xml.
+        match/regex 태그. SELECT/UNION/OR 1=1 패턴. OWASP A03 Injection 탐지.
+      success_criteria:
+      - grep sql/injection 룰
+      - <rule 키워드
+      - Apache 룰 파일
+      acceptable_methods:
+      - grep + apache_rules
+      - Dashboard rules sql injection 검색
+      - Wazuh API rule_groups
+      negative_signs:
+      - SQL 패턴 누락
+      - <rule 없음
+      - match/regex 맥락 없음
   target_vm: siem
 - order: 4
   instruction: Wazuh 로그 테스트 도구(wazuh-logtest)를 사용하여 샘플 로그가 어떤 룰에 매칭되는지 테스트하시오.
@@ -66,15 +109,29 @@ steps:
   points: 12
   answer: '🖥️ UI: Dashboard → Management → Rules → 룰 목록 검색
 
-    📎 참고 (CLI): echo "Apr  6 10:00:00 web sshd[1234]: Failed password for invalid
-    user admin from 10.20.30.201 port 22 ssh2" | /var/ossec/bin/wazuh-logtest 2>&1
-    | head -30'
-  answer_detail: wazuh-logtest는 로그 라인을 입력하면 디코더 매칭, 룰 매칭 결과를 보여줍니다. 커스텀 룰 작성 전후로 반드시
-    이 도구로 테스트하여 의도한 대로 동작하는지 확인해야 합니다.
+    📎 참고 (CLI): echo "Apr  6 10:00:00 web sshd[1234]: Failed password for invalid user admin from 10.20.30.201
+    port 22 ssh2" | /var/ossec/bin/wazuh-logtest 2>&1 | head -30'
+  answer_detail: wazuh-logtest는 로그 라인을 입력하면 디코더 매칭, 룰 매칭 결과를 보여줍니다. 커스텀 룰 작성 전후로 반드시 이 도구로 테스트하여 의도한 대로
+    동작하는지 확인해야 합니다.
   verify:
     type: output_contains
     expect: Rule
     field: stdout
+    semantic:
+      intent: 'wazuh-logtest — echo ''...sshd[1234]: Failed password for invalid user admin from 10.20.30.201...''
+        | /var/ossec/bin/wazuh-logtest. 디코더 매칭 + 룰 매칭 결과. 커스텀 룰 작성 전후 검증 필수. SOC 룰 개발 워크플로.'
+      success_criteria:
+      - wazuh-logtest 실행
+      - Rule 키워드
+      - 샘플 로그 + 매칭 결과
+      acceptable_methods:
+      - echo | wazuh-logtest
+      - wazuh-logtest 대화형
+      - Dashboard ruleset test
+      negative_signs:
+      - 로그 입력 없음
+      - 단순 wazuh-logtest 실행
+      - 매칭 결과 없음
   target_vm: siem
 - order: 5
   instruction: SECU VM에서 현재 Suricata에 로드된 룰 파일 목록을 확인하시오.
@@ -82,55 +139,113 @@ steps:
   category: setup
   points: 8
   answer: grep -A 20 "rule-files" /etc/suricata/suricata.yaml | head -25
-  answer_detail: suricata.yaml의 rule-files 섹션에 로드할 룰 파일이 지정됩니다. 기본 룰과 커스텀 룰 파일이 모두
-    여기에 등록되어야 Suricata가 해당 시그니처를 사용합니다.
+  answer_detail: suricata.yaml의 rule-files 섹션에 로드할 룰 파일이 지정됩니다. 기본 룰과 커스텀 룰 파일이 모두 여기에 등록되어야 Suricata가
+    해당 시그니처를 사용합니다.
   verify:
     type: output_contains
     expect: rule
     field: stdout
+    semantic:
+      intent: Suricata 룰 파일 목록 — grep -A 20 'rule-files' /etc/suricata/suricata.yaml. 기본 + 커스텀 룰 등록. 누락
+        시 시그니처 미사용. NIST SP 800-94 IDS 시그니처 관리.
+      success_criteria:
+      - grep rule-files suricata.yaml
+      - rule 키워드
+      - -A 컨텍스트
+      acceptable_methods:
+      - grep yaml
+      - suricata-update list-sources
+      - yq .rule-files yaml
+      negative_signs:
+      - yaml 미점검
+      - rule-files 누락
+      - 단순 ls
   target_vm: siem
 - order: 6
   instruction: SECU VM에서 Suricata 룰 파일 중 하나를 열어 시그니처 문법 구조를 확인하시오.
   hint: /etc/suricata/rules/ 또는 /var/lib/suricata/rules/ 디렉토리를 확인하세요.
   category: analysis
   points: 10
-  answer: ls /etc/suricata/rules/ /var/lib/suricata/rules/ 2>/dev/null | head -10
-    && head -10 /etc/suricata/rules/local.rules 2>/dev/null || head -10 /var/lib/suricata/rules/suricata.rules
-    2>/dev/null
-  answer_detail: Suricata 룰은 'action protocol src_ip src_port -> dst_ip dst_port (options)'
-    형식입니다. alert, msg, content, sid, rev 등이 핵심 키워드입니다.
+  answer: ls /etc/suricata/rules/ /var/lib/suricata/rules/ 2>/dev/null | head -10 && head -10 /etc/suricata/rules/local.rules
+    2>/dev/null || head -10 /var/lib/suricata/rules/suricata.rules 2>/dev/null
+  answer_detail: Suricata 룰은 'action protocol src_ip src_port -> dst_ip dst_port (options)' 형식입니다. alert,
+    msg, content, sid, rev 등이 핵심 키워드입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 'Suricata 시그니처 — ls /etc/suricata/rules/ + head local.rules 또는 suricata.rules. 형식: ''action
+        protocol src_ip src_port -> dst_ip dst_port (options)''. alert/msg/content/sid/rev 핵심. Suricata
+        Rules.'
+      success_criteria:
+      - ls + head rules 파일
+      - 룰 형식 표시
+      - Suricata 룰 디렉터리
+      acceptable_methods:
+      - head local.rules
+      - suricata --dump-config
+      - suricata -T 검증
+      negative_signs:
+      - 룰 파일 없음
+      - 형식 미표시
+      - 단순 ls
   target_vm: siem
 - order: 7
   instruction: SECU VM에서 Suricata가 현재 로드한 룰 수와 시그니처 통계를 확인하시오.
   hint: Suricata 로그에서 rules loaded 메시지를 검색하세요.
   category: analysis
   points: 8
-  answer: grep -i "rules loaded\|signatures" /var/log/suricata/suricata.log | tail
-    -5
-  answer_detail: Suricata 시작 시 로드된 룰 수가 로그에 기록됩니다. 룰 수가 0이면 시그니처 파일 경로 설정에 문제가 있는
-    것입니다.
+  answer: grep -i "rules loaded\|signatures" /var/log/suricata/suricata.log | tail -5
+  answer_detail: Suricata 시작 시 로드된 룰 수가 로그에 기록됩니다. 룰 수가 0이면 시그니처 파일 경로 설정에 문제가 있는 것입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: Suricata 룰 통계 — grep -i 'rules loaded|signatures' /var/log/suricata/suricata.log | tail
+        -5. 시작 시 로드 룰 수 기록. 0 = 시그니처 경로 문제. SOC 트러블슈팅.
+      success_criteria:
+      - grep rules loaded
+      - suricata.log 경로
+      - tail 최근 통계
+      acceptable_methods:
+      - grep + suricata.log
+      - suricata -T 검증
+      - stats.log 분석
+      negative_signs:
+      - 로그 미점검
+      - 룰 수 없음
+      - 트러블슈팅 맥락 없음
   target_vm: siem
 - order: 8
   instruction: WEB VM에서 ModSecurity의 설정 상태와 활성화된 룰셋을 확인하시오.
   hint: Apache의 modsecurity 관련 설정 파일을 확인하세요.
   category: analysis
   points: 10
-  answer: cat /etc/modsecurity/modsecurity.conf 2>/dev/null | grep -i "SecRuleEngine\|SecAuditLog"
-    || ls /etc/apache2/mods-enabled/ | grep security
-  answer_detail: ModSecurity는 웹 애플리케이션 방화벽(WAF)입니다. SecRuleEngine이 On이면 차단 모드, DetectionOnly이면
-    탐지만 합니다. SOC에서는 WAF 로그도 중요한 이벤트 소스입니다.
+  answer: cat /etc/modsecurity/modsecurity.conf 2>/dev/null | grep -i "SecRuleEngine\|SecAuditLog" ||
+    ls /etc/apache2/mods-enabled/ | grep security
+  answer_detail: ModSecurity는 웹 애플리케이션 방화벽(WAF)입니다. SecRuleEngine이 On이면 차단 모드, DetectionOnly이면 탐지만 합니다.
+    SOC에서는 WAF 로그도 중요한 이벤트 소스입니다.
   verify:
     type: output_contains
     expect: Sec
     field: stdout
+    semantic:
+      intent: ModSecurity WAF — cat /etc/modsecurity/modsecurity.conf | grep 'SecRuleEngine|SecAuditLog'.
+        SecRuleEngine On=차단/DetectionOnly=탐지만. WAF 로그 = SOC 이벤트 소스. OWASP CRS.
+      success_criteria:
+      - modsecurity.conf 또는 모듈 확인
+      - Sec 키워드
+      - SecRuleEngine 모드
+      acceptable_methods:
+      - grep SecRuleEngine
+      - modsecurity-recommended.conf
+      - Apache mods-enabled
+      negative_signs:
+      - WAF 미확인
+      - Sec 설정 없음
+      - 차단/탐지 모드 누락
   target_vm: siem
 - order: 9
   instruction: Wazuh의 룰 설정 검증 명령을 실행하여 현재 룰셋에 문법 오류가 없는지 확인하시오.
@@ -140,10 +255,25 @@ steps:
   answer: '🖥️ UI: Dashboard → Management → Rules → 룰 목록 검색
 
     📎 참고 (CLI): /var/ossec/bin/wazuh-analysisd -t 2>&1'
-  answer_detail: wazuh-analysisd -t는 모든 디코더와 룰 파일의 문법을 검증합니다. 커스텀 룰 추가 후 반드시 이 명령으로
-    오류가 없는지 확인한 뒤 서비스를 재시작해야 합니다.
+  answer_detail: wazuh-analysisd -t는 모든 디코더와 룰 파일의 문법을 검증합니다. 커스텀 룰 추가 후 반드시 이 명령으로 오류가 없는지 확인한 뒤 서비스를
+    재시작해야 합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: Wazuh 룰 검증 — /var/ossec/bin/wazuh-analysisd -t. 모든 디코더/룰 파일 문법 검증. 커스텀 룰 추가 후 필수. 오류 없을
+        시 서비스 재시작 안전. SOC 룰 변경 검증 워크플로.
+      success_criteria:
+      - wazuh-analysisd -t 실행
+      - 검증 결과 출력
+      - 문법 오류 점검
+      acceptable_methods:
+      - wazuh-analysisd -t
+      - Wazuh API ruleset test
+      - Dashboard ruleset validate
+      negative_signs:
+      - -t 옵션 없음
+      - 검증 없음
+      - 재시작 워크플로 누락
   target_vm: siem
