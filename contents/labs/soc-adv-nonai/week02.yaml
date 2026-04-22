@@ -13,221 +13,462 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: Wazuh의 룰 구조를 분석하라. /var/ossec/ruleset/rules/ 디렉토리에서 기본 룰 파일 목록을 확인하고,
-    룰의 XML 구조(level, group, description, match, decoded_as)를 설명하라.
+  instruction: Wazuh의 룰 구조를 분석하라. /var/ossec/ruleset/rules/ 디렉토리에서 기본 룰 파일 목록을 확인하고, 룰의 XML 구조(level,
+    group, description, match, decoded_as)를 설명하라.
   hint: 0010-rules_config.xml 파일을 시작점으로 참조하라
   category: analysis
   points: 8
   answer: '🖥️ UI: Dashboard → Management → Rules → 룰 목록 검색
 
-    📎 참고 (CLI): Wazuh 룰 구조: <rule id=''N'' level=''N''> 하위에 <description>, <match>,
-    <decoded_as>, <group>, <if_sid>, <frequency>, <timeframe> 등의 요소로 구성'
-  answer_detail: Wazuh 룰은 XML 기반이며, 단일 이벤트 매칭(match/regex)과 상관분석(if_sid+frequency+timeframe)을
-    지원한다. level은 0~15이며 높을수록 심각한 이벤트를 의미한다.
+    📎 참고 (CLI): Wazuh 룰 구조: <rule id=''N'' level=''N''> 하위에 <description>, <match>, <decoded_as>, <group>,
+    <if_sid>, <frequency>, <timeframe> 등의 요소로 구성'
+  answer_detail: Wazuh 룰은 XML 기반이며, 단일 이벤트 매칭(match/regex)과 상관분석(if_sid+frequency+timeframe)을 지원한다. level은
+    0~15이며 높을수록 심각한 이벤트를 의미한다.
   verify:
     type: output_contains
     expect: rule
+    semantic:
+      intent: Wazuh 룰 XML 구조 분석 — /var/ossec/ruleset/rules/ 목록 + 0010-rules_config.xml 참조 + <rule id level>
+        하위 <description>/<match>/<decoded_as>/<group>/<if_sid>/<frequency>/<timeframe> 요소 해설. level 0-15
+        심각도 체계. 단순 매칭 vs 상관분석 구분 기반.
+      success_criteria:
+      - rule XML 키워드 (rule 또는 level)
+      - 기본 룰셋 경로 조회
+      - XML 요소 구조 설명
+      acceptable_methods:
+      - Dashboard UI Management→Rules 브라우징
+      - cat /var/ossec/ruleset/rules/0010-rules_config.xml
+      - less + xmllint --format
+      - Wazuh API /rules?search=... 조회
+      negative_signs:
+      - XML 요소 구분 없이 텍스트 덤프만
+      - level 체계 (0-15) 언급 없음
+      - decoded_as / if_sid 개념 누락
   target_vm: siem
 - order: 2
-  instruction: SSH 브루트포스 탐지 룰을 분석하라. 기본 제공되는 SSH 관련 룰(0095-sshd_rules.xml)에서 브루트포스
-    탐지 로직을 찾고, frequency와 timeframe 값을 확인하라.
+  instruction: SSH 브루트포스 탐지 룰을 분석하라. 기본 제공되는 SSH 관련 룰(0095-sshd_rules.xml)에서 브루트포스 탐지 로직을 찾고, frequency와
+    timeframe 값을 확인하라.
   hint: rule id 5712 주변을 확인하라
   category: analysis
   points: 8
-  answer: 'rule 5712: if_sid=5710(인증실패), frequency=8, timeframe=120 → 2분 내 8회 인증 실패
-    시 level 10 알림'
-  answer_detail: '상관분석의 기본은 단일 이벤트(5710: 인증 실패)를 기반으로 빈도 기반 룰(5712)을 생성하는 것이다. frequency와
-    timeframe의 조합으로 정상 실패와 공격을 구분한다.'
+  answer: 'rule 5712: if_sid=5710(인증실패), frequency=8, timeframe=120 → 2분 내 8회 인증 실패 시 level 10 알림'
+  answer_detail: '상관분석의 기본은 단일 이벤트(5710: 인증 실패)를 기반으로 빈도 기반 룰(5712)을 생성하는 것이다. frequency와 timeframe의 조합으로
+    정상 실패와 공격을 구분한다.'
   verify:
     type: output_contains
     expect: frequency
+    semantic:
+      intent: SSH 브루트포스 탐지 룰 분석 — 0095-sshd_rules.xml 에서 rule id 5712 (if_sid=5710 인증실패 기반) + frequency=8
+        + timeframe=120 조합 = 2분 내 8회 실패 → level 10 alert. 상관분석 기본 패턴 (빈도 기반 임계치). MITRE ATT&CK T1110 Brute
+        Force.
+      success_criteria:
+      - frequency 키워드 또는 5712 룰 ID
+      - timeframe 값 (120)
+      - if_sid 5710 연결 구조
+      acceptable_methods:
+      - less 0095-sshd_rules.xml + /5712 검색
+      - grep -A5 'rule id="5712"' 0095-sshd_rules.xml
+      - Dashboard UI → Management → Rules → 5712 필터
+      - xmlstarlet sel 로 룰 노드 추출
+      negative_signs:
+      - 5712 룰 ID 언급 없음
+      - frequency/timeframe 수치 없음
+      - MITRE T1110 맥락 없음
   target_vm: siem
 - order: 3
-  instruction: 커스텀 상관분석 룰을 작성하라. 동일 소스 IP에서 3분 내 5회 이상 다른 포트에 대한 연결 시도가 발생하면 포트 스캔으로
-    탐지하는 룰을 /var/ossec/etc/rules/local_rules.xml에 작성하라.
-  hint: <if_sid>, <same_source_ip>, <frequency>, <timeframe>, <different_dstport>
-    요소를 활용하라
+  instruction: 커스텀 상관분석 룰을 작성하라. 동일 소스 IP에서 3분 내 5회 이상 다른 포트에 대한 연결 시도가 발생하면 포트 스캔으로 탐지하는 룰을 /var/ossec/etc/rules/local_rules.xml에
+    작성하라.
+  hint: <if_sid>, <same_source_ip>, <frequency>, <timeframe>, <different_dstport> 요소를 활용하라
   category: implementation
   points: 12
   answer: <rule id='100001' level='10' frequency='5' timeframe='180'><if_sid>기본_방화벽_룰_id</if_sid><same_source_ip/><description>포트
     스캔 탐지</description></rule>
-  answer_detail: 포트 스캔 탐지는 동일 출발지에서 짧은 시간 내 다수 포트 접근을 감지하는 상관분석이다. Wazuh의 same_source_ip와
-    frequency/timeframe 조합으로 구현한다. 오탐 방지를 위해 whitelist와 임계값을 적절히 설정해야 한다.
+  answer_detail: 포트 스캔 탐지는 동일 출발지에서 짧은 시간 내 다수 포트 접근을 감지하는 상관분석이다. Wazuh의 same_source_ip와 frequency/timeframe
+    조합으로 구현한다. 오탐 방지를 위해 whitelist와 임계값을 적절히 설정해야 한다.
   verify:
     type: output_contains
     expect: '100001'
+    semantic:
+      intent: 포트 스캔 커스텀 룰 작성 — /var/ossec/etc/rules/local_rules.xml 에 <rule id=100001 level=10 frequency=5
+        timeframe=180> + <same_source_ip/> + <different_dstport/> 활용. 3분 내 동일 IP 5회 이상 다른 포트 접근 = scan
+        탐지. MITRE ATT&CK T1046 Network Service Scanning.
+      success_criteria:
+      - rule id 100001 명시 또는 100001 키워드
+      - frequency + timeframe 값
+      - same_source_ip / different_dstport 요소
+      acceptable_methods:
+      - nano/vi /var/ossec/etc/rules/local_rules.xml
+      - cat > 에 heredoc XML
+      - Ansible template + deploy
+      - Dashboard UI Management→Rules→Custom Rules
+      negative_signs:
+      - 룰 ID 누락
+      - frequency/timeframe 없이 match 만
+      - same_source_ip 요소 누락
   target_vm: siem
 - order: 4
-  instruction: 다단계 공격 시나리오를 설계하라. 정찰(포트스캔) → 침투(SSH 브루트포스 성공) → 권한상승(sudo 실행) → 데이터유출(대량
-    파일 접근) 시나리오의 각 단계별 탐지 룰 ID를 매핑하라.
+  instruction: 다단계 공격 시나리오를 설계하라. 정찰(포트스캔) → 침투(SSH 브루트포스 성공) → 권한상승(sudo 실행) → 데이터유출(대량 파일 접근) 시나리오의
+    각 단계별 탐지 룰 ID를 매핑하라.
   hint: 각 단계에 해당하는 기본 룰 ID를 찾고, 이를 연결하는 상관 룰을 설계하라
   category: design
   points: 12
-  answer: '정찰: 100001(포트스캔), 침투: 5715(SSH 로그인 성공), 권한상승: 5401(sudo 실행), 유출: 커스텀 룰(대량
-    read 이벤트). 상관룰: if_sid 체인으로 연결'
-  answer_detail: 킬체인 기반 상관분석은 개별 이벤트를 연결하여 공격 시나리오를 탐지한다. 각 단계의 선행 조건(if_sid)을 체인으로
-    연결하면 단일 이벤트로는 탐지하기 어려운 APT 공격을 탐지할 수 있다.
+  answer: '정찰: 100001(포트스캔), 침투: 5715(SSH 로그인 성공), 권한상승: 5401(sudo 실행), 유출: 커스텀 룰(대량 read 이벤트). 상관룰: if_sid
+    체인으로 연결'
+  answer_detail: 킬체인 기반 상관분석은 개별 이벤트를 연결하여 공격 시나리오를 탐지한다. 각 단계의 선행 조건(if_sid)을 체인으로 연결하면 단일 이벤트로는 탐지하기
+    어려운 APT 공격을 탐지할 수 있다.
   verify:
     type: output_contains
     expect: 킬체인
+    semantic:
+      intent: 다단계 Kill Chain 매핑 — 정찰(포트스캔 100001) → 침투(SSH 로그인 성공 5715) → 권한상승(sudo 5401) → 유출(대량 read
+        커스텀). if_sid 체인으로 단계 연결. Lockheed Martin Cyber Kill Chain + MITRE ATT&CK Tactics (Recon/Initial
+        Access/PrivEsc/Exfiltration) 상관 탐지.
+      success_criteria:
+      - 킬체인 키워드 또는 Kill Chain 구조
+      - 각 단계 룰 ID 매핑 (5715/5401 등)
+      - if_sid 체인 연결 방식 언급
+      acceptable_methods:
+      - markdown 표 (Stage | Rule ID | Rule Desc)
+      - mermaid flowchart (Recon → Init → PrivEsc → Exfil)
+      - JSON mapping + jq 검증
+      - ATT&CK Navigator JSON export
+      negative_signs:
+      - 단계 3개 이하
+      - 룰 ID 매핑 없음
+      - Kill Chain / ATT&CK 맥락 없음
   target_vm: siem
 - order: 5
-  instruction: 웹 공격 상관분석 룰을 작성하라. 동일 IP에서 1분 내 SQL Injection 시도 3회 이상 + XSS 시도 2회
-    이상이 발생하면 level 12 알림을 생성하는 복합 룰을 작성하라.
+  instruction: 웹 공격 상관분석 룰을 작성하라. 동일 IP에서 1분 내 SQL Injection 시도 3회 이상 + XSS 시도 2회 이상이 발생하면 level 12 알림을
+    생성하는 복합 룰을 작성하라.
   hint: Wazuh의 web access 관련 룰 그룹(web, attack)을 활용하라
   category: implementation
   points: 12
   answer: <rule id='100010' level='12' frequency='5' timeframe='60'><if_group>web|attack</if_group><same_source_ip/><description>복합
     웹 공격 탐지 - SQLi+XSS</description></rule>
-  answer_detail: 웹 공격은 종종 여러 유형을 혼합하여 시도된다. if_group을 사용하면 특정 그룹에 속하는 모든 룰을 기반으로 상관분석할
-    수 있어 유연한 탐지가 가능하다.
+  answer_detail: 웹 공격은 종종 여러 유형을 혼합하여 시도된다. if_group을 사용하면 특정 그룹에 속하는 모든 룰을 기반으로 상관분석할 수 있어 유연한 탐지가 가능하다.
   verify:
     type: output_contains
     expect: '100010'
+    semantic:
+      intent: 복합 웹 공격 룰 작성 — <rule id=100010 level=12 frequency=5 timeframe=60> + <if_group>web|attack</if_group>
+        + <same_source_ip/>. 1분 내 동일 IP 에서 SQLi + XSS 혼합 공격 5회 이상 탐지. if_group 으로 유연한 그룹 기반 상관분석. MITRE
+        T1190 Exploit Public-Facing Application.
+      success_criteria:
+      - rule id 100010 또는 100010 키워드
+      - if_group web 또는 attack 그룹
+      - frequency=5 timeframe=60 조합
+      acceptable_methods:
+      - local_rules.xml 편집
+      - cat > heredoc XML
+      - Dashboard UI Rules→Custom
+      - REST API PUT /rules/100010
+      negative_signs:
+      - 룰 ID 누락
+      - if_group 없이 단일 if_sid
+      - SQLi + XSS 혼합 의도 없음
   target_vm: siem
 - order: 6
   instruction: 시간 기반 상관분석을 구현하라. 업무 시간 외(22:00~06:00)에 발생하는 관리자 계정 로그인을 탐지하는 룰을 작성하라.
   hint: <time> 요소를 사용하여 시간 범위를 지정할 수 있다
   category: implementation
   points: 10
-  answer: <rule id='100020' level='10'><if_sid>5715</if_sid><user>root|admin</user><time>10pm
-    - 6am</time><description>업무시간 외 관리자 로그인</description></rule>
-  answer_detail: 시간 기반 탐지는 정상 업무 패턴에서 벗어나는 활동을 식별한다. 야간 관리자 로그인은 침해 지표일 수 있으며, <time>
-    요소로 간단하게 구현할 수 있다.
+  answer: <rule id='100020' level='10'><if_sid>5715</if_sid><user>root|admin</user><time>10pm - 6am</time><description>업무시간
+    외 관리자 로그인</description></rule>
+  answer_detail: 시간 기반 탐지는 정상 업무 패턴에서 벗어나는 활동을 식별한다. 야간 관리자 로그인은 침해 지표일 수 있으며, <time> 요소로 간단하게 구현할 수 있다.
   verify:
     type: output_contains
     expect: time
+    semantic:
+      intent: 시간 기반 관리자 로그인 이상 탐지 — <rule id=100020 level=10> + <if_sid>5715</if_sid> + <user>root|admin</user>
+        + <time>10pm - 6am</time>. 업무 외 시간(22시-06시) root/admin 로그인 성공 시 알림. UEBA 기반 행위 이상 탐지. MITRE T1078
+        Valid Accounts.
+      success_criteria:
+      - time 키워드 또는 <time> 요소
+      - user root/admin 지정
+      - if_sid 5715 (로그인 성공) 기반
+      acceptable_methods:
+      - local_rules.xml 에 <time> 요소 추가
+      - CDB business_hours 리스트 + if_match 조합
+      - Elasticsearch query + cron 탐지
+      - Grafana alert + time window
+      negative_signs:
+      - time 요소 누락
+      - user 조건 없음
+      - 업무 외 시간대 명시 없음
   target_vm: siem
 - order: 7
-  instruction: GeoIP 기반 상관분석을 설계하라. 해외 IP에서의 로그인 성공을 탐지하고, 특히 이전에 접속 이력이 없는 국가에서의
-    접속을 우선 알림하는 방안을 설계하라.
+  instruction: GeoIP 기반 상관분석을 설계하라. 해외 IP에서의 로그인 성공을 탐지하고, 특히 이전에 접속 이력이 없는 국가에서의 접속을 우선 알림하는 방안을 설계하라.
   hint: Wazuh의 GeoIP 연동과 CDB(constant database) lookup을 활용하라
   category: design
   points: 10
-  answer: 1) GeoIP DB 연동으로 srcip→국가 매핑, 2) CDB에 허용 국가 목록 등록, 3) 로그인 성공 + CDB 미매칭 국가
-    → level 10 알림
-  answer_detail: GeoIP 기반 탐지는 지리적 이상을 식별한다. CDB(list) lookup을 활용하면 허용/차단 국가를 효율적으로
-    관리할 수 있으며, impossible travel(물리적으로 불가능한 이동) 탐지의 기반이 된다.
+  answer: 1) GeoIP DB 연동으로 srcip→국가 매핑, 2) CDB에 허용 국가 목록 등록, 3) 로그인 성공 + CDB 미매칭 국가 → level 10 알림
+  answer_detail: GeoIP 기반 탐지는 지리적 이상을 식별한다. CDB(list) lookup을 활용하면 허용/차단 국가를 효율적으로 관리할 수 있으며, impossible
+    travel(물리적으로 불가능한 이동) 탐지의 기반이 된다.
   verify:
     type: output_contains
     expect: GeoIP
+    semantic:
+      intent: GeoIP + CDB 기반 이상 위치 탐지 설계 — (1) Wazuh GeoIP DB 연동 (src_ip → country) + (2) CDB allowed_countries.list
+        등록 + (3) login success + CDB 미매칭 국가 → level 10. impossible travel 탐지 기반. MITRE T1078 + T1021 Remote
+        Services.
+      success_criteria:
+      - GeoIP 키워드
+      - CDB list lookup 설계
+      - 허용 국가 기반 상관 판정
+      acceptable_methods:
+      - ossec.conf GeoIP 설정 + maxmind DB
+      - CDB allowed_countries.list + list lookup
+      - Python geoip2 + 사전 처리
+      - Elasticsearch GeoIP processor + Kibana alert
+      negative_signs:
+      - GeoIP 언급 없음
+      - CDB / 허용 리스트 개념 없음
+      - impossible travel 맥락 없음
   target_vm: siem
 - order: 8
-  instruction: 오탐 분석 및 튜닝을 수행하라. Wazuh 알림에서 최근 발생한 알림 중 오탐(false positive)을 식별하고,
-    해당 룰에 예외 처리를 추가하라.
+  instruction: 오탐 분석 및 튜닝을 수행하라. Wazuh 알림에서 최근 발생한 알림 중 오탐(false positive)을 식별하고, 해당 룰에 예외 처리를 추가하라.
   hint: if_sid + srcip/user 조합으로 특정 조건의 오탐을 제외할 수 있다
   category: tuning
   points: 10
   answer: '🖥️ UI: Dashboard → Security events → 필터 적용 후 이벤트 확인
 
     📎 참고 (CLI): 오탐 식별: 내부 스캐너 IP의 포트스캔 알림 → 예외 룰 추가: <rule id=''100099'' level=''0''><if_sid>100001</if_sid><srcip>10.20.30.X</srcip></rule>'
-  answer_detail: 오탐 튜닝은 SOC 운영의 핵심이다. level=0으로 설정하면 해당 조건의 알림이 억제된다. 오탐 제외 시 반드시
-    문서화하고, 정기적으로 제외 목록을 검토하여 실제 공격이 숨겨지지 않도록 한다.
+  answer_detail: 오탐 튜닝은 SOC 운영의 핵심이다. level=0으로 설정하면 해당 조건의 알림이 억제된다. 오탐 제외 시 반드시 문서화하고, 정기적으로 제외 목록을
+    검토하여 실제 공격이 숨겨지지 않도록 한다.
   verify:
     type: output_contains
     expect: level
+    semantic:
+      intent: '오탐 튜닝 — Security events 오탐 식별 후 예외 룰 작성: <rule id=100099 level=0> + <if_sid>100001</if_sid>
+        + <srcip>10.20.30.X</srcip> → 내부 스캐너 IP 포트스캔 알림 억제. level=0 으로 suppress. 튜닝 문서화 + 정기 재검토 필수.'
+      success_criteria:
+      - level=0 또는 level 키워드
+      - if_sid + srcip 조합 예외 구조
+      - 오탐 억제 개념
+      acceptable_methods:
+      - local_rules.xml 예외 룰 추가
+      - CDB whitelist_ips.list + if_match
+      - <options>no_log</options>
+      - Dashboard UI → Rules → Override
+      negative_signs:
+      - level=0 개념 없음
+      - 예외 조건 (srcip/user) 없이 suppress
+      - 문서화 필요성 언급 없음
   target_vm: siem
 - order: 9
-  instruction: 알림 우선순위 체계를 설계하라. Wazuh level(0~15)을 SOC Tier 에스컬레이션에 매핑하는 정책을 수립하라.
-    level별 대응 담당자와 SLA를 정의하라.
+  instruction: 알림 우선순위 체계를 설계하라. Wazuh level(0~15)을 SOC Tier 에스컬레이션에 매핑하는 정책을 수립하라. level별 대응 담당자와 SLA를
+    정의하라.
   hint: 'level 1~5: 정보, 6~9: Tier1 처리, 10~12: Tier2 에스컬레이션, 13~15: Tier3+긴급대응'
   category: design
   points: 10
   answer: '🖥️ UI: Dashboard → Security events → 필터 적용 후 이벤트 확인
 
-    📎 참고 (CLI): Level 1-5: 자동 기록(SLA 없음), Level 6-9: Tier1 30분 내 확인, Level 10-12:
-    Tier2 15분 내 분석, Level 13-15: Tier3 즉시 대응+경영진 보고'
-  answer_detail: 알림 우선순위 체계는 SOC의 대응 효율을 결정한다. 과도한 에스컬레이션은 피로도를 높이고, 부족한 에스컬레이션은 위험을
-    초래한다. SLA는 조직의 리스크 허용 범위와 인력 규모에 맞게 설정한다.
+    📎 참고 (CLI): Level 1-5: 자동 기록(SLA 없음), Level 6-9: Tier1 30분 내 확인, Level 10-12: Tier2 15분 내 분석, Level
+    13-15: Tier3 즉시 대응+경영진 보고'
+  answer_detail: 알림 우선순위 체계는 SOC의 대응 효율을 결정한다. 과도한 에스컬레이션은 피로도를 높이고, 부족한 에스컬레이션은 위험을 초래한다. SLA는 조직의 리스크
+    허용 범위와 인력 규모에 맞게 설정한다.
   verify:
     type: output_contains
     expect: SLA
+    semantic:
+      intent: 알림 우선순위 + Tier SLA 정책 — Level 1-5 자동 기록 (SLA 없음) / 6-9 Tier1 30분 / 10-12 Tier2 15분 / 13-15
+        Tier3 즉시 대응 + 경영진 보고. Wazuh level → SOC Tier escalation 매핑. SANS Incident Response Tier 모델 + MTTD/MTTR
+        SLA.
+      success_criteria:
+      - SLA 키워드 또는 SLA 시간 명시
+      - Tier 1/2/3 구분
+      - level 범위별 담당자 매핑
+      acceptable_methods:
+      - markdown 표 (Level | Tier | SLA | 담당)
+      - JSON policy (level_range → tier → sla_minutes)
+      - Wazuh active-response + Slack/PagerDuty webhook
+      - SOAR 플레이북 (TheHive/Shuffle)
+      negative_signs:
+      - Tier 구분 없이 단일 대응
+      - SLA 시간 명시 없음
+      - level 범위 매핑 불명확
   target_vm: siem
 - order: 10
-  instruction: Suricata와 Wazuh의 연동 상관분석을 설계하라. Suricata IDS 알림과 Wazuh 호스트 로그를 결합하여
-    네트워크+호스트 복합 탐지 룰을 작성하라.
+  instruction: Suricata와 Wazuh의 연동 상관분석을 설계하라. Suricata IDS 알림과 Wazuh 호스트 로그를 결합하여 네트워크+호스트 복합 탐지 룰을 작성하라.
   hint: Suricata 알림은 Wazuh의 suricata 디코더를 통해 수집된다
   category: implementation
   points: 10
   answer: '🖥️ UI: Dashboard → Security events → 필터 적용 후 이벤트 확인
 
-    📎 참고 (CLI): Suricata 악성 트래픽 탐지(86601) + 동일 목적지 호스트에서 프로세스 생성(5902) → level 13
-    복합 알림'
-  answer_detail: 네트워크 IDS와 호스트 HIDS의 연동은 탐지 정확도를 크게 높인다. 네트워크에서 의심 트래픽이 탐지되고 동시에 대상
-    호스트에서 이상 행위가 발생하면 실제 침해일 가능성이 매우 높다.
+    📎 참고 (CLI): Suricata 악성 트래픽 탐지(86601) + 동일 목적지 호스트에서 프로세스 생성(5902) → level 13 복합 알림'
+  answer_detail: 네트워크 IDS와 호스트 HIDS의 연동은 탐지 정확도를 크게 높인다. 네트워크에서 의심 트래픽이 탐지되고 동시에 대상 호스트에서 이상 행위가 발생하면
+    실제 침해일 가능성이 매우 높다.
   verify:
     type: output_contains
     expect: Suricata
+    semantic:
+      intent: Suricata + Wazuh 복합 탐지 — Suricata IDS 알림 (86601 malicious) + 동일 목적지 호스트 Wazuh 프로세스 생성 (5902)
+        → level 13 복합 상관 룰. 네트워크 HIDS 연동으로 탐지 정확도 향상. Wazuh suricata 디코더 경유 이벤트 수집. MITRE ATT&CK T1046
+        + T1059.
+      success_criteria:
+      - Suricata 키워드
+      - Wazuh 호스트 로그 결합 구조
+      - 복합 탐지 rule ID (86601 등)
+      acceptable_methods:
+      - local_rules.xml + if_sid 86601 + if_sid 5902 체인
+      - Suricata eve.json → Wazuh 통합 로그 파이프라인
+      - Elastic SIEM correlation rule (KQL)
+      - SIGMA rule + sigma2wazuh 변환
+      negative_signs:
+      - Suricata 또는 Wazuh 단독 룰
+      - 복합 탐지 의도 없음
+      - 네트워크 + 호스트 결합 구조 누락
   target_vm: siem
 - order: 11
-  instruction: 대시보드용 상관분석 메트릭을 정의하라. 시간대별 알림 분포, 소스IP Top 10, 룰 ID별 빈도, 심각도 분포를 집계하는
-    Wazuh API 쿼리를 작성하라.
+  instruction: 대시보드용 상관분석 메트릭을 정의하라. 시간대별 알림 분포, 소스IP Top 10, 룰 ID별 빈도, 심각도 분포를 집계하는 Wazuh API 쿼리를 작성하라.
   hint: Wazuh API의 /alerts endpoint에서 group_by 파라미터를 활용하라
   category: measurement
   points: 8
   answer: '🖥️ UI: Dashboard → Security events → 필터 적용 후 이벤트 확인
 
-    📎 참고 (CLI): 시간대별: timestamp 기준 히스토그램, Top IP: agent.ip 기준 집계, 룰별: rule.id 기준 카운트,
-    심각도: rule.level 기준 분포'
-  answer_detail: 대시보드 메트릭은 SOC 운영 현황을 한눈에 파악할 수 있게 한다. 실시간 알림 추이, 주요 공격원, 빈발 탐지 유형,
-    심각도 분포는 SOC 관리자의 핵심 정보이다.
+    📎 참고 (CLI): 시간대별: timestamp 기준 히스토그램, Top IP: agent.ip 기준 집계, 룰별: rule.id 기준 카운트, 심각도: rule.level
+    기준 분포'
+  answer_detail: 대시보드 메트릭은 SOC 운영 현황을 한눈에 파악할 수 있게 한다. 실시간 알림 추이, 주요 공격원, 빈발 탐지 유형, 심각도 분포는 SOC 관리자의 핵심
+    정보이다.
   verify:
     type: output_contains
     expect: 대시보드
+    semantic:
+      intent: 대시보드 메트릭 집계 — Wazuh API /alerts + group_by 로 (1) 시간대별 히스토그램 (timestamp) + (2) Top 10 Source
+        IP (agent.ip) + (3) 룰 ID별 빈도 (rule.id) + (4) 심각도 분포 (rule.level). Grafana + Kibana 대시보드 패널 4개
+        기본. SOC 관리자 한눈 파악용.
+      success_criteria:
+      - 대시보드 키워드
+      - group_by / 집계 방식 명시
+      - 4개 메트릭 중 3개 이상
+      acceptable_methods:
+      - curl Wazuh API + jq group_by
+      - Kibana Discover + Aggregation bucket
+      - Grafana + Prometheus metric alert_events_total
+      - OpenSearch Dashboards 커스텀 visualization
+      negative_signs:
+      - 단일 메트릭
+      - 대시보드 / 시각화 맥락 없음
+      - API 쿼리 구조 없음
   target_vm: siem
 - order: 12
-  instruction: 룰 테스트 방법론을 수립하라. 작성한 커스텀 룰을 안전하게 테스트하는 절차를 정의하고, Wazuh의 ossec-logtest
-    도구를 활용한 테스트를 수행하라.
+  instruction: 룰 테스트 방법론을 수립하라. 작성한 커스텀 룰을 안전하게 테스트하는 절차를 정의하고, Wazuh의 ossec-logtest 도구를 활용한 테스트를 수행하라.
   hint: /var/ossec/bin/wazuh-logtest 또는 ossec-logtest를 사용하라
   category: testing
   points: 10
   answer: '🖥️ UI: Dashboard → Management → Rules → 룰 목록 검색
 
-    📎 참고 (CLI): 1) ossec-logtest로 샘플 로그 입력 → 디코딩/룰 매칭 확인, 2) level=0 테스트 룰로 프로덕션 영향
-    없이 검증, 3) 테스트 완료 후 level 원복'
-  answer_detail: 룰 테스트는 프로덕션 환경에 배포하기 전 필수 단계이다. ossec-logtest는 로그를 입력하면 어떤 디코더와 룰이
-    매칭되는지 보여주므로, 룰 로직을 사전에 검증할 수 있다.
+    📎 참고 (CLI): 1) ossec-logtest로 샘플 로그 입력 → 디코딩/룰 매칭 확인, 2) level=0 테스트 룰로 프로덕션 영향 없이 검증, 3) 테스트 완료 후
+    level 원복'
+  answer_detail: 룰 테스트는 프로덕션 환경에 배포하기 전 필수 단계이다. ossec-logtest는 로그를 입력하면 어떤 디코더와 룰이 매칭되는지 보여주므로, 룰 로직을
+    사전에 검증할 수 있다.
   verify:
     type: output_contains
     expect: logtest
+    semantic:
+      intent: 룰 테스트 방법론 — /var/ossec/bin/wazuh-logtest (신버전) 또는 ossec-logtest (구) + 샘플 로그 입력 → 디코더/룰 매칭
+        추적 + level=0 테스트 룰로 프로덕션 영향 없이 검증 + 테스트 후 level 원복. TDD for detection rules.
+      success_criteria:
+      - logtest 키워드 또는 wazuh-logtest 실행
+      - 샘플 로그 입력 절차
+      - level=0 안전 테스트 패턴
+      acceptable_methods:
+      - /var/ossec/bin/wazuh-logtest 인터랙티브
+      - echo 'log line' | wazuh-logtest
+      - pytest + wazuh-logtest wrapper
+      - Docker 격리 환경 테스트
+      negative_signs:
+      - logtest 도구 미사용
+      - 프로덕션 직접 배포
+      - level=0 안전 패턴 언급 없음
   target_vm: siem
 - order: 13
   instruction: 상관분석 룰의 성능 영향을 분석하라. 룰 수 증가에 따른 CPU/메모리 사용량 변화를 예측하고, 룰 최적화 방안을 제시하라.
   hint: if_sid 체인이 깊어질수록 성능 부하가 증가한다
   category: optimization
   points: 10
-  answer: '성능 영향 요인: 1) 룰 수(선형 증가), 2) if_sid 체인 깊이(지수적 증가 가능), 3) frequency 룰의 메모리
-    사용. 최적화: atomic 룰 우선, 체인 깊이 3 이하 유지, 불필요한 frequency 룰 제거'
-  answer_detail: 상관분석 룰은 단순 매칭 룰보다 리소스를 많이 사용한다. 특히 frequency 룰은 이벤트를 메모리에 보관해야 하므로
-    timeframe이 길수록 메모리 사용량이 증가한다. 룰 수가 수천 개를 초과하면 성능 모니터링이 필수적이다.
+  answer: '성능 영향 요인: 1) 룰 수(선형 증가), 2) if_sid 체인 깊이(지수적 증가 가능), 3) frequency 룰의 메모리 사용. 최적화: atomic 룰
+    우선, 체인 깊이 3 이하 유지, 불필요한 frequency 룰 제거'
+  answer_detail: 상관분석 룰은 단순 매칭 룰보다 리소스를 많이 사용한다. 특히 frequency 룰은 이벤트를 메모리에 보관해야 하므로 timeframe이 길수록 메모리
+    사용량이 증가한다. 룰 수가 수천 개를 초과하면 성능 모니터링이 필수적이다.
   verify:
     type: output_contains
     expect: 최적화
+    semantic:
+      intent: '상관분석 룰 성능 영향 — (1) 룰 수 선형 증가 CPU + (2) if_sid 체인 깊이 지수적 증가 메모리 + (3) frequency 룰 event
+        메모리 보관 (timeframe 길수록 증가). 최적화: atomic 룰 우선 + 체인 깊이 ≤ 3 + 불필요 frequency 제거. wazuh-analysisd 성능
+        튜닝.'
+      success_criteria:
+      - 최적화 키워드
+      - 성능 영향 3개 요인 분석
+      - 구체 튜닝 권고 (체인≤3 등)
+      acceptable_methods:
+      - top/htop wazuh-analysisd 관찰
+      - ossec-control status + stats 모니터링
+      - Prometheus node_exporter + wazuh exporter
+      - flamegraph (perf + FlameGraph) 프로파일링
+      negative_signs:
+      - 성능 요인 1개만
+      - 정량 수치 없이 서술만
+      - 튜닝 권고 누락
   target_vm: siem
 - order: 14
   instruction: 룰 버전 관리 체계를 수립하라. Git을 활용한 룰 변경 이력 관리, 코드 리뷰 프로세스, 배포 절차를 정의하라.
   hint: local_rules.xml을 Git으로 관리하고, PR 기반 리뷰를 적용하라
   category: governance
   points: 10
-  answer: 1) /var/ossec/etc/rules/를 Git 저장소로 관리, 2) 변경 시 branch→PR→리뷰→머지, 3) CI/CD로
-    ossec-logtest 자동 실행, 4) 배포 시 Wazuh Manager 재시작
-  answer_detail: 룰 관리는 소프트웨어 개발과 동일한 수준의 변경 관리가 필요하다. 무분별한 룰 추가는 오탐 증가와 성능 저하를 초래하므로,
-    리뷰 프로세스를 통해 품질을 보장한다.
+  answer: 1) /var/ossec/etc/rules/를 Git 저장소로 관리, 2) 변경 시 branch→PR→리뷰→머지, 3) CI/CD로 ossec-logtest 자동 실행,
+    4) 배포 시 Wazuh Manager 재시작
+  answer_detail: 룰 관리는 소프트웨어 개발과 동일한 수준의 변경 관리가 필요하다. 무분별한 룰 추가는 오탐 증가와 성능 저하를 초래하므로, 리뷰 프로세스를 통해 품질을
+    보장한다.
   verify:
     type: output_contains
     expect: Git
+    semantic:
+      intent: 룰 Git 버전 관리 + PR 리뷰 프로세스 — /var/ossec/etc/rules/ 를 Git repo + branch → PR → 리뷰 → merge +
+        CI 에서 wazuh-logtest 자동 실행 + 배포 시 wazuh-manager 재시작. Detection-as-Code + SIGMA rule 포팅 호환성. SRE
+        방식 detection engineering.
+      success_criteria:
+      - Git 키워드
+      - PR/리뷰 프로세스
+      - CI wazuh-logtest 자동화
+      acceptable_methods:
+      - git init + .gitignore
+      - GitHub Actions + matrix sample logs
+      - GitLab CI + k8s wazuh test env
+      - Detection-as-Code (Panther/Elastic Detection Engineering)
+      negative_signs:
+      - Git 사용 없이 직접 편집
+      - CI 자동 테스트 없음
+      - PR 리뷰 프로세스 누락
   target_vm: siem
 - order: 15
-  instruction: 종합 상관분석 보고서를 작성하라. 설계한 룰셋의 커버리지(MITRE ATT&CK 매핑), 예상 탐지율, 오탐률, 성능 영향을
-    포함한 보고서를 작성하라.
+  instruction: 종합 상관분석 보고서를 작성하라. 설계한 룰셋의 커버리지(MITRE ATT&CK 매핑), 예상 탐지율, 오탐률, 성능 영향을 포함한 보고서를 작성하라.
   hint: MITRE ATT&CK 매트릭스의 Tactic별로 탐지 가능한 Technique을 매핑하라
   category: reporting
   points: 20
-  answer: '커버리지: Initial Access 60%, Execution 70%, Persistence 50%, Privilege Escalation
-    60%, Defense Evasion 30%, Lateral Movement 40%. 전체 예상 탐지율 55%, 오탐률 목표 <5%'
-  answer_detail: MITRE ATT&CK 매핑은 룰셋의 탐지 범위를 객관적으로 평가한다. Defense Evasion과 Lateral
-    Movement는 일반적으로 커버리지가 낮아 추가 투자가 필요하다. 보고서에는 현재 커버리지와 개선 계획을 포함해야 한다.
+  answer: '커버리지: Initial Access 60%, Execution 70%, Persistence 50%, Privilege Escalation 60%, Defense
+    Evasion 30%, Lateral Movement 40%. 전체 예상 탐지율 55%, 오탐률 목표 <5%'
+  answer_detail: MITRE ATT&CK 매핑은 룰셋의 탐지 범위를 객관적으로 평가한다. Defense Evasion과 Lateral Movement는 일반적으로 커버리지가
+    낮아 추가 투자가 필요하다. 보고서에는 현재 커버리지와 개선 계획을 포함해야 한다.
   verify:
     type: output_contains
     expect: ATT&CK
+    semantic:
+      intent: MITRE ATT&CK 매핑 종합 보고서 — Tactic 별 커버리지 (Initial Access 60%, Execution 70%, Persistence 50%,
+        PrivEsc 60%, Defense Evasion 30%, Lateral Movement 40%) + 전체 55% + 오탐률 목표 <5%. ATT&CK Navigator
+        JSON export + gap 분석. Defense Evasion + Lateral 저커버리지 → 추가 투자 포인트.
+      success_criteria:
+      - ATT&CK 키워드
+      - Tactic 5개 이상 커버리지 수치
+      - 오탐률 목표 + 전체 커버리지
+      acceptable_methods:
+      - MITRE ATT&CK Navigator JSON layer
+      - markdown 표 (Tactic | % | Techniques Covered)
+      - DeTT&CT detect coverage visualization
+      - Atomic Red Team + ATT&CK evaluations
+      negative_signs:
+      - Tactic 수치 없이 서술만
+      - ATT&CK 매핑 누락
+      - 오탐률 목표 언급 없음
   target_vm: siem
