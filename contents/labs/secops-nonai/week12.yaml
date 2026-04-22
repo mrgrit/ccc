@@ -23,6 +23,22 @@ steps:
     type: output_contains
     expect: opencti
     field: stdout
+    semantic:
+      intent: docker 컨테이너 목록 — docker ps --format '{{.Names}}\t{{.Status}}' | head. siem VM docker compose
+        기반 OpenCTI 스택. opencti + redis + elastic + rabbitmq + minio 다중 컨테이너. Status 열 확인.
+      success_criteria:
+      - opencti 키워드
+      - docker ps 명령
+      - 컨테이너 목록 출력
+      acceptable_methods:
+      - docker ps --format
+      - docker compose ps
+      - docker container ls
+      - crictl ps (containerd)
+      negative_signs:
+      - docker 명령 실행 없음
+      - opencti 필터 없음
+      - 상태 컬럼 누락
   target_vm: siem
 - order: 2
   instruction: opencti 관련 컨테이너만 필터링하시오.
@@ -31,13 +47,28 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://SIEM_IP:8080 접속 → 해당 메뉴 탐색
 
-    📎 참고 (CLI): docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | grep
-    -i opencti'
+    📎 참고 (CLI): docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | grep -i opencti'
   answer_detail: 'OpenCTI 설치·구성: opencti 관련 컨테이너만 필터링하시오.'
   verify:
     type: output_contains
     expect: opencti
     field: stdout
+    semantic:
+      intent: OpenCTI 컨테이너 필터 — docker ps | grep -i opencti. opencti 메인 컨테이너 + opencti-worker + opencti-connector-*
+        등. 서비스 집합 확인. 모든 컨테이너 Up 상태 전제.
+      success_criteria:
+      - opencti 키워드
+      - grep 필터
+      - 컨테이너 상태
+      acceptable_methods:
+      - docker ps | grep opencti
+      - docker compose ps opencti
+      - docker ps --filter name=opencti
+      - kubectl get pods (k8s 대체)
+      negative_signs:
+      - 필터 없이 전체
+      - opencti 컨테이너 부재 무시
+      - Up 상태 확인 없음
   target_vm: siem
 - order: 3
   instruction: OpenCTI 플랫폼 컨테이너의 최근 로그 20줄을 확인하시오.
@@ -46,13 +77,29 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://SIEM_IP:8080 접속 → 해당 메뉴 탐색
 
-    📎 참고 (CLI): docker logs --tail 20 $(docker ps --format ''{{.Names}}'' | grep -i
-    ''^opencti$'' | head -1) 2>&1 | tail -20'
+    📎 참고 (CLI): docker logs --tail 20 $(docker ps --format ''{{.Names}}'' | grep -i ''^opencti$'' | head
+    -1) 2>&1 | tail -20'
   answer_detail: 'OpenCTI 설치·구성: OpenCTI 플랫폼 컨테이너의 최근 로그 20줄을 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: OpenCTI 컨테이너 로그 — docker logs --tail 20 $(docker ps --format '{{.Names}}' | grep -i '^opencti$'
+        | head -1) 2>&1 | tail -20. 메인 opencti 컨테이너 최근 로그. 시작 메시지 + 에러 확인. 부팅 완료 여부 판단.
+      success_criteria:
+      - docker logs 명령
+      - 컨테이너 이름 지정
+      - tail 20줄 이상
+      acceptable_methods:
+      - docker logs --tail 20
+      - docker compose logs opencti --tail 20
+      - journalctl --follow (호스트 daemon)
+      - kubectl logs (k8s)
+      negative_signs:
+      - tail 제한 없이 전체
+      - 정확한 컨테이너 이름 없이
+      - 에러 없이 정상 확인만
   target_vm: siem
 - order: 4
   instruction: OpenCTI 웹 UI 포트(8080) 가 리스닝 중인지 확인하시오.
@@ -67,6 +114,22 @@ steps:
     type: output_contains
     expect: '8080'
     field: stdout
+    semantic:
+      intent: 8080 포트 리스닝 — ss -tlnp | grep ':8080'. OpenCTI Web UI 포트. 리스닝 = 외부 접근 가능 상태. Nginx/Apache
+        리버스 프록시 대체 구성 가능.
+      success_criteria:
+      - 8080 키워드
+      - ss 또는 netstat 명령
+      - LISTEN 상태 확인
+      acceptable_methods:
+      - ss -tlnp | grep 8080
+      - netstat -tlnp | grep 8080
+      - lsof -i :8080
+      - curl http://localhost:8080 응답
+      negative_signs:
+      - 포트 확인 없이 docker ps
+      - 다른 포트 혼동
+      - LISTEN 해석 없음
   target_vm: siem
 - order: 5
   instruction: OpenCTI 의존 서비스(redis, elastic, rabbitmq, minio) 컨테이너 상태를 확인하시오.
@@ -75,14 +138,28 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://SIEM_IP:8080 접속 → 해당 메뉴 탐색
 
-    📎 참고 (CLI): docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | grep
-    -Ei ''redis|elastic|rabbit|minio'''
-  answer_detail: 'OpenCTI 설치·구성: OpenCTI 의존 서비스(redis, elastic, rabbitmq, minio) 컨테이너
-    상태를 확인하시오.'
+    📎 참고 (CLI): docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | grep -Ei ''redis|elastic|rabbit|minio'''
+  answer_detail: 'OpenCTI 설치·구성: OpenCTI 의존 서비스(redis, elastic, rabbitmq, minio) 컨테이너 상태를 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '의존 서비스 확인 — docker ps | grep -Ei ''redis|elastic|rabbit|minio''. OpenCTI 스택 4 의존 서비스: redis
+        (캐시) + elasticsearch (검색) + rabbitmq (메시지 큐) + minio (S3 호환 오브젝트 스토리지). 모두 Up 상태 전제.'
+      success_criteria:
+      - docker ps 명령
+      - 4 서비스 중 2개 이상
+      - grep -E 다중 필터
+      acceptable_methods:
+      - docker ps | grep -E pattern
+      - docker compose ps 전체
+      - docker inspect network
+      - kubectl get pods -l
+      negative_signs:
+      - 단일 서비스 확인
+      - 필터 없이 전체
+      - 의존성 이해 없음
   target_vm: siem
 - order: 6
   instruction: OpenCTI docker-compose.yml 파일 위치를 찾으시오.
@@ -97,6 +174,23 @@ steps:
     type: output_contains
     expect: compose
     field: stdout
+    semantic:
+      intent: docker-compose.yml 위치 — find / -name 'docker-compose*.yml' 2>/dev/null | grep -i cti | head.
+        OpenCTI 배포 설정 파일 (services/environment/depends_on/volumes). 설정 수정 시 참조. /opt/opencti 또는 /root/opencti
+        일반적 경로.
+      success_criteria:
+      - compose 키워드
+      - find 명령
+      - 파일 경로 출력
+      acceptable_methods:
+      - find + grep cti
+      - locate docker-compose
+      - ls /opt/opencti/
+      - git clone OpenCTI 공식
+      negative_signs:
+      - find 없이 추측
+      - compose 파일 발견 실패 무시
+      - 경로 출력 누락
   target_vm: siem
 - order: 7
   instruction: localhost:8080 에 HTTP 요청을 보내 응답 코드를 확인하시오.
@@ -109,6 +203,22 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: OpenCTI HTTP 응답 — curl -sS -o /dev/null -w '%{http_code}\n' http://localhost:8080. 200/302
+        응답 = Web UI 정상. 503 = 부팅 미완료 또는 의존 서비스 문제. 엔드포인트 가용성 검증.
+      success_criteria:
+      - curl -w '%{http_code}' 옵션
+      - localhost:8080 대상
+      - 응답 코드 출력
+      acceptable_methods:
+      - curl -w http_code
+      - wget --server-response
+      - httpie http --print=h
+      - nc localhost 8080 < /dev/null
+      negative_signs:
+      - 응답 코드 없이 body만
+      - 포트 혼동
+      - 연결 실패 무시
   target_vm: siem
 - order: 8
   instruction: OpenCTI 플랫폼 컨테이너에서 'ERROR' 로그를 최근 50줄에서 카운트하시오.
@@ -117,26 +227,57 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://SIEM_IP:8080 접속 → 해당 메뉴 탐색
 
-    📎 참고 (CLI): docker logs --tail 50 $(docker ps --format ''{{.Names}}'' | grep -i
-    ''^opencti$'' | head -1) 2>&1 | grep -c ERROR'
+    📎 참고 (CLI): docker logs --tail 50 $(docker ps --format ''{{.Names}}'' | grep -i ''^opencti$'' | head
+    -1) 2>&1 | grep -c ERROR'
   answer_detail: 'OpenCTI 설치·구성: OpenCTI 플랫폼 컨테이너에서 ''ERROR'' 로그를 최근 50줄에서 카운트하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: ERROR 로그 카운트 — docker logs --tail 50 opencti | grep -c ERROR. 최근 50줄 내 ERROR 발생 횟수. 0 =
+        안정 상태. N > 5 = 문제 조사 필요. 운영 health check 정량 지표.
+      success_criteria:
+      - docker logs + grep -c
+      - ERROR 카운트
+      - 컨테이너 지정
+      acceptable_methods:
+      - docker logs --tail 50 | grep -c ERROR
+      - docker logs --since 1h | grep -c
+      - journalctl --priority err
+      - promtail + Grafana Loki
+      negative_signs:
+      - grep -c 없이 라인 보기만
+      - 기간/라인 제한 없음
+      - 0이 아니어도 무시
   target_vm: siem
 - order: 9
   instruction: 컨테이너별 CPU/Memory 사용량(docker stats --no-stream)을 조회하시오.
   hint: docker stats --no-stream
   category: analysis
   points: 10
-  answer: docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}'
-    2>/dev/null | head
+  answer: docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' 2>/dev/null | head
   answer_detail: 'OpenCTI 설치·구성: 컨테이너별 CPU/Memory 사용량(docker stats --no-stream)을 조회하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 컨테이너 리소스 사용량 — docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}'
+        | head. 1회 스냅샷. CPU% + Memory 사용. 모든 컨테이너 리소스 압박 확인. OpenCTI 는 RAM 요구 큼 (8GB+).
+      success_criteria:
+      - docker stats 명령
+      - --no-stream 옵션
+      - CPU/Memory 출력
+      acceptable_methods:
+      - docker stats --no-stream + --format
+      - docker stats (연속)
+      - ctop (TUI)
+      - Prometheus cadvisor
+      negative_signs:
+      - --no-stream 없이 (지속)
+      - CPU 또는 Memory 누락
+      - 컨테이너별 분리 없음
   target_vm: siem
 - order: 10
   instruction: OpenCTI 재기동이 필요하지 않은지 컨테이너 재시작 횟수를 확인하시오.
@@ -145,13 +286,29 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://SIEM_IP:8080 접속 → 해당 메뉴 탐색
 
-    📎 참고 (CLI): docker inspect $(docker ps --format ''{{.Names}}'' | grep -i opencti
-    | head -1) --format ''{{.RestartCount}}'' 2>/dev/null'
+    📎 참고 (CLI): docker inspect $(docker ps --format ''{{.Names}}'' | grep -i opencti | head -1) --format
+    ''{{.RestartCount}}'' 2>/dev/null'
   answer_detail: 'OpenCTI 설치·구성: OpenCTI 재기동이 필요하지 않은지 컨테이너 재시작 횟수를 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: RestartCount 확인 — docker inspect opencti --format '{{.RestartCount}}'. 컨테이너 재시작 횟수 = 안정성
+        지표. 0 = 안정 / N > 3 = 반복 크래시 (depends_on 문제 / OOM 등). 운영 헬스체크.
+      success_criteria:
+      - docker inspect 명령
+      - RestartCount 필드
+      - 숫자 출력
+      acceptable_methods:
+      - docker inspect --format '{{.RestartCount}}'
+      - docker events --filter restart
+      - docker logs + 시작 로그 카운트
+      - kubectl describe pod restartCount
+      negative_signs:
+      - inspect 대신 ps 만
+      - RestartCount 필드 몰라서
+      - 0 이 아니어도 무시
   target_vm: siem
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
