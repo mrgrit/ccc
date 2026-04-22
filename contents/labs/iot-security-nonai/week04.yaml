@@ -17,36 +17,89 @@ steps:
   hint: sudo apt install -y binwalk를 사용하세요.
   category: setup
   points: 8
-  answer: which binwalk 2>/dev/null && echo 'binwalk 설치 확인 완료' || (sudo apt install -y binwalk 2>/dev/null && echo 'binwalk 설치 확인 완료')
+  answer: which binwalk 2>/dev/null && echo 'binwalk 설치 확인 완료' || (sudo apt install -y binwalk 2>/dev/null
+    && echo 'binwalk 설치 확인 완료')
   answer_detail: binwalk는 펌웨어 이미지의 시그니처를 분석하고 내장된 파일시스템을 추출하는 도구입니다.
   verify:
     type: output_contains
     expect: binwalk 설치 확인 완료
     field: stdout
+    semantic:
+      intent: binwalk 설치 — which binwalk || sudo apt install -y binwalk. 펌웨어 시그니처 분석 + 내장 파일시스템 추출 도구.
+        매직 바이트 기반 자동 식별.
+      success_criteria:
+      - binwalk 설치 확인 완료 키워드
+      - which binwalk 또는 apt install binwalk
+      - binwalk 명령 사용 가능
+      acceptable_methods:
+      - which + apt install binwalk
+      - pip install binwalk
+      - binwalk-ng (개선판)
+      - firmware-mod-kit
+      negative_signs:
+      - binwalk 도구 언급 없음
+      - 설치 확인 없음
+      - 펌웨어 분석 도구 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: 가상 IoT 펌웨어 이미지를 생성하시오. /etc/passwd, 설정 파일 등을 포함하는 디렉터리 구조를 만드시오.
   hint: mkdir -p로 디렉터리를 만들고 설정 파일을 생성하세요.
   category: setup
   points: 10
-  answer: mkdir -p /tmp/fw_rootfs/{etc,www,bin} && echo 'root:x:0:0:root:/root:/bin/sh' > /tmp/fw_rootfs/etc/passwd && echo 'mqtt_password=IoTSecret123' > /tmp/fw_rootfs/etc/config.ini && echo 'api_key=sk-iot-abcdef123456' >> /tmp/fw_rootfs/etc/config.ini && echo '가상 루트 파일시스템 생성 완료'
+  answer: mkdir -p /tmp/fw_rootfs/{etc,www,bin} && echo 'root:x:0:0:root:/root:/bin/sh' > /tmp/fw_rootfs/etc/passwd
+    && echo 'mqtt_password=IoTSecret123' > /tmp/fw_rootfs/etc/config.ini && echo 'api_key=sk-iot-abcdef123456'
+    >> /tmp/fw_rootfs/etc/config.ini && echo '가상 루트 파일시스템 생성 완료'
   answer_detail: IoT 펌웨어의 루트 파일시스템에는 시스템 설정, 인증 정보, 웹 인터페이스 파일 등이 포함됩니다.
   verify:
     type: output_contains
     expect: 가상 루트 파일시스템 생성 완료
     field: stdout
+    semantic:
+      intent: 가상 루트 파일시스템 — mkdir -p /tmp/fw_rootfs/{etc,www,bin} + /etc/passwd root + /etc/config.ini
+        mqtt_password=IoTSecret123 + api_key=sk-iot-abcdef123456. IoT 펌웨어 구조 재현. 하드코딩 크리덴셜 삽입 (OWASP IoT
+        I1).
+      success_criteria:
+      - 가상 루트 파일시스템 생성 완료 키워드
+      - mkdir etc/www/bin + passwd + config.ini
+      - 하드코딩 크리덴셜 삽입
+      acceptable_methods:
+      - mkdir + echo 파일 생성
+      - debootstrap minimal rootfs
+      - alpine minirootfs tar 추출
+      - buildroot 시뮬레이션
+      negative_signs:
+      - etc/www/bin 구조 없음
+      - 하드코딩 크리덴셜 없음
+      - IoT 펌웨어 구조 맥락 없음
   target_vm: attacker
 - order: 3
   instruction: 생성한 루트 파일시스템을 SquashFS로 패키징하시오.
   hint: mksquashfs 명령을 사용하세요.
   category: firmware
   points: 10
-  answer: mksquashfs /tmp/fw_rootfs /tmp/rootfs.sqsh -noappend -comp gzip 2>/dev/null && ls -lh /tmp/rootfs.sqsh && echo 'SquashFS 패키징 완료'
+  answer: mksquashfs /tmp/fw_rootfs /tmp/rootfs.sqsh -noappend -comp gzip 2>/dev/null && ls -lh /tmp/rootfs.sqsh
+    && echo 'SquashFS 패키징 완료'
   answer_detail: SquashFS는 IoT 펌웨어에서 가장 많이 사용되는 읽기 전용 파일시스템입니다.
   verify:
     type: output_contains
     expect: SquashFS 패키징 완료
     field: stdout
+    semantic:
+      intent: SquashFS 패키징 — mksquashfs /tmp/fw_rootfs /tmp/rootfs.sqsh -noappend -comp gzip. SquashFS
+        = IoT 펌웨어 표준 읽기 전용 파일시스템. gzip 압축. 매직 hsqs 시그니처.
+      success_criteria:
+      - SquashFS 패키징 완료 키워드
+      - mksquashfs + -comp gzip
+      - rootfs.sqsh 생성
+      acceptable_methods:
+      - mksquashfs + gzip
+      - mksquashfs -comp xz (더 높은 압축)
+      - cramfs / jffs2 (대체 FS)
+      - cpio + gzip (initrd 형식)
+      negative_signs:
+      - mksquashfs 미사용
+      - SquashFS 맥락 없음
+      - IoT 표준 FS 언급 없음
   target_vm: attacker
 - order: 4
   instruction: binwalk로 생성한 SquashFS 이미지를 분석하시오.
@@ -59,42 +112,109 @@ steps:
     type: output_contains
     expect: binwalk 시그니처 분석 완료
     field: stdout
+    semantic:
+      intent: binwalk 시그니처 분석 — binwalk /tmp/rootfs.sqsh. 매직 바이트 검색 → 파일시스템/압축 데이터/헤더 자동 식별. 바이너리 첫 인식
+        단계.
+      success_criteria:
+      - binwalk 시그니처 분석 완료 키워드
+      - binwalk /tmp/rootfs.sqsh
+      - 매직 시그니처 출력
+      acceptable_methods:
+      - binwalk (기본 스캔)
+      - binwalk --signature
+      - unblob (모던 대체)
+      - file /tmp/rootfs.sqsh (기초)
+      negative_signs:
+      - binwalk 실행 없음
+      - 매직 시그니처 맥락 없음
+      - 파일시스템 식별 목적 없음
   target_vm: attacker
 - order: 5
   instruction: binwalk -e 옵션으로 파일시스템을 추출하시오.
   hint: binwalk -e /tmp/rootfs.sqsh -C /tmp/fw_extract/ 명령을 사용하세요.
   category: firmware
   points: 10
-  answer: rm -rf /tmp/fw_extract 2>/dev/null; binwalk -e /tmp/rootfs.sqsh -C /tmp/fw_extract/ 2>/dev/null; find /tmp/fw_extract/ -type f 2>/dev/null | head -10; echo '파일시스템 추출 완료'
+  answer: rm -rf /tmp/fw_extract 2>/dev/null; binwalk -e /tmp/rootfs.sqsh -C /tmp/fw_extract/ 2>/dev/null;
+    find /tmp/fw_extract/ -type f 2>/dev/null | head -10; echo '파일시스템 추출 완료'
   answer_detail: binwalk -e는 식별된 파일시스템을 자동으로 추출합니다.
   verify:
     type: output_contains
     expect: 파일시스템 추출 완료
     field: stdout
+    semantic:
+      intent: 파일시스템 추출 — rm -rf /tmp/fw_extract + binwalk -e /tmp/rootfs.sqsh -C /tmp/fw_extract/ + find.
+        binwalk -e 자동 추출. IoT 펌웨어 리버싱 핵심 단계.
+      success_criteria:
+      - 파일시스템 추출 완료 키워드
+      - binwalk -e + -C /tmp/fw_extract
+      - find 추출 파일 확인
+      acceptable_methods:
+      - binwalk -e + find
+      - binwalk --extract --matryoshka (재귀)
+      - unblob --extract
+      - unsquashfs /tmp/rootfs.sqsh
+      negative_signs:
+      - binwalk -e 미사용
+      - 추출 디렉터리 확인 없음
+      - 리버싱 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: 추출된 파일시스템에서 하드코딩된 비밀번호와 API 키를 검색하시오.
   hint: grep -r 'password\|api_key\|secret' 명령을 사용하세요.
   category: analysis
   points: 12
-  answer: grep -r -i 'password\|api_key\|secret\|psk' /tmp/fw_extract/ 2>/dev/null; grep -r -i 'password\|api_key\|secret\|psk' /tmp/fw_rootfs/ 2>/dev/null; echo '민감 정보 검색 완료'
+  answer: grep -r -i 'password\|api_key\|secret\|psk' /tmp/fw_extract/ 2>/dev/null; grep -r -i 'password\|api_key\|secret\|psk'
+    /tmp/fw_rootfs/ 2>/dev/null; echo '민감 정보 검색 완료'
   answer_detail: 펌웨어에서 하드코딩된 인증 정보를 찾는 것은 IoT 보안 점검의 핵심 단계입니다.
   verify:
     type: output_contains
     expect: 민감 정보 검색 완료
     field: stdout
+    semantic:
+      intent: 하드코딩 크리덴셜 검색 — grep -r -iE '(password|api_key|secret|psk)' /tmp/fw_extract/ + /tmp/fw_rootfs/.
+        OWASP IoT Top 10 I1 + CWE-798 Hardcoded Credentials. IoT 펌웨어 점검 핵심.
+      success_criteria:
+      - 민감 정보 검색 완료 키워드
+      - grep -r + password/api_key/secret/psk
+      - 추출+원본 2곳 검색
+      acceptable_methods:
+      - grep -r + 키워드 정규식
+      - trufflehog filesystem scan
+      - gitleaks --source=/tmp/fw_extract
+      - detect-secrets scan
+      negative_signs:
+      - 키워드 2개 이하
+      - 재귀 -r 없음
+      - CWE-798 맥락 없음
   target_vm: attacker
 - order: 7
   instruction: strings 명령으로 바이너리에서 읽을 수 있는 문자열을 추출하시오.
   hint: strings /tmp/rootfs.sqsh | grep -i password를 사용하세요.
   category: analysis
   points: 10
-  answer: strings /tmp/rootfs.sqsh | grep -iE '(password|key|secret|admin)' | head -10 && echo 'strings 분석 완료'
+  answer: strings /tmp/rootfs.sqsh | grep -iE '(password|key|secret|admin)' | head -10 && echo 'strings
+    분석 완료'
   answer_detail: strings 명령은 바이너리 파일에서 출력 가능한 문자열을 추출합니다.
   verify:
     type: output_contains
     expect: strings 분석 완료
     field: stdout
+    semantic:
+      intent: strings 바이너리 분석 — strings /tmp/rootfs.sqsh | grep -iE '(password|key|secret|admin)'. 바이너리
+        인쇄 가능 문자열 추출. 압축/암호화 전 문자열 노출 확인.
+      success_criteria:
+      - strings 분석 완료 키워드
+      - strings + grep -iE 다중 키워드
+      - 바이너리 문자열 추출
+      acceptable_methods:
+      - strings + grep
+      - strings -n 8 (최소 길이)
+      - rabin2 -z (radare2)
+      - floss (FLARE Obfuscated Strings)
+      negative_signs:
+      - strings 미사용
+      - 키워드 검색 없음
+      - 바이너리 분석 맥락 없음
   target_vm: attacker
 - order: 8
   instruction: binwalk -E 옵션으로 엔트로피 분석을 수행하시오.
@@ -107,16 +227,50 @@ steps:
     type: output_contains
     expect: 엔트로피 분석 완료
     field: stdout
+    semantic:
+      intent: 엔트로피 분석 — binwalk -E /tmp/rootfs.sqsh. Shannon 엔트로피 그래프. 높은 엔트로피 (≥7.5) = 암호화/압축 영역. 낮은
+        엔트로피 = 평문. 암호화 영역 식별 → 키 탐색 전략.
+      success_criteria:
+      - 엔트로피 분석 완료 키워드
+      - binwalk -E
+      - 엔트로피 값 출력
+      acceptable_methods:
+      - binwalk -E
+      - ent (엔트로피 계산)
+      - radare2 iE (섹션 엔트로피)
+      - binviz 시각화
+      negative_signs:
+      - -E 옵션 없음
+      - Shannon 엔트로피 맥락 없음
+      - 암호화 영역 식별 맥락 없음
   target_vm: attacker
 - order: 9
   instruction: 펌웨어 분석 보고서를 작성하시오.
   hint: 발견된 파일시스템, 민감 정보, 보안 문제를 정리하세요.
   category: verification
   points: 10
-  answer: echo '=== 펌웨어 분석 보고서 ===' && echo '[파일시스템] SquashFS (gzip 압축)' && echo '[민감정보] MQTT 비밀번호 하드코딩' && echo '[민감정보] API 키 하드코딩' && echo '[권장] 민감 정보 암호화 저장' && echo '[권장] 보안 부트 체인 구현' && echo '=== 보고서 완료 ==='
+  answer: echo '=== 펌웨어 분석 보고서 ===' && echo '[파일시스템] SquashFS (gzip 압축)' && echo '[민감정보] MQTT 비밀번호 하드코딩'
+    && echo '[민감정보] API 키 하드코딩' && echo '[권장] 민감 정보 암호화 저장' && echo '[권장] 보안 부트 체인 구현' && echo '=== 보고서
+    완료 ==='
   answer_detail: 체계적인 펌웨어 분석 보고서는 취약점 관리와 보안 개선에 활용됩니다.
   verify:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+    semantic:
+      intent: 펌웨어 분석 보고서 — [파일시스템] SquashFS gzip + [민감정보] MQTT 비밀번호/API 키 하드코딩 + [권장] 암호화 저장 + 보안 부트 체인.
+        OWASP IoT I1 + NIST SP 800-193 보안 부트.
+      success_criteria:
+      - 보고서 완료 키워드
+      - 파일시스템 + 민감정보 2개 + 권장 2개
+      - 보안 부트 체인 언급
+      acceptable_methods:
+      - echo 구조화 보고서
+      - DefectDojo Finding
+      - EMBA (Enhanced Bin Analyzer)
+      - FACT firmware framework
+      negative_signs:
+      - 민감 정보 발견 내역 없음
+      - 보안 부트 맥락 없음
+      - 권장 사항 없음
   target_vm: attacker
