@@ -3,8 +3,8 @@ title: ISO 27001 통제 항목 점검 실습
 version: non-ai
 course: compliance-nonai
 week: 4
-description: ISO 27001 Annex A 통제 항목 중 기술적 통제(A.8)를 중심으로 시스템 설정을 점검합니다. 접근 통제, 암호화,
-  운영 보안, 통신 보안 관련 설정을 검증합니다.
+description: ISO 27001 Annex A 통제 항목 중 기술적 통제(A.8)를 중심으로 시스템 설정을 점검합니다. 접근 통제, 암호화, 운영 보안, 통신 보안 관련 설정을
+  검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -14,63 +14,123 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: SECU 서버({{SECU_IP}})에서 사용자 인증 방식을 점검하시오. ISO 27001 A.8.5(보안 인증). PAM
-    설정에서 인증 모듈 구성을 확인합니다.
+  instruction: SECU 서버({{SECU_IP}})에서 사용자 인증 방식을 점검하시오. ISO 27001 A.8.5(보안 인증). PAM 설정에서 인증 모듈 구성을 확인합니다.
   hint: /etc/pam.d/common-auth 파일을 확인하세요.
   category: audit
   points: 10
   answer: cat /etc/pam.d/common-auth
-  answer_detail: ISO 27001 A.8.5는 안전한 인증 기술을 요구합니다. PAM(Pluggable Authentication Modules)은
-    리눅스의 인증 프레임워크로, common-auth에서 인증 순서와 모듈을 정의합니다. pam_unix.so(로컬 인증), pam_faillock.so(잠금)
-    등이 설정됩니다.
+  answer_detail: ISO 27001 A.8.5는 안전한 인증 기술을 요구합니다. PAM(Pluggable Authentication Modules)은 리눅스의 인증 프레임워크로,
+    common-auth에서 인증 순서와 모듈을 정의합니다. pam_unix.so(로컬 인증), pam_faillock.so(잠금) 등이 설정됩니다.
   verify:
     type: output_contains
     expect: pam_unix
     field: stdout
+    semantic:
+      intent: ISO 27001 A.8.5 PAM 인증 — cat /etc/pam.d/common-auth. pam_unix (로컬 인증) + pam_faillock (잠금)
+        + pam_pwquality (복잡도). Pluggable Authentication Modules = Linux 인증 프레임워크. 안전한 인증 기술 요구.
+      success_criteria:
+      - pam_unix 키워드
+      - common-auth 조회
+      - PAM 모듈 확인
+      acceptable_methods:
+      - cat /etc/pam.d/common-auth
+      - pam-auth-update --list
+      - authselect current (RHEL)
+      - Ansible pam_mod
+      negative_signs:
+      - PAM 개념 없음
+      - common-auth 경로 혼동
+      - A.8.5 맥락 없음
   target_vm: secu
 - order: 2
-  instruction: 시스템의 암호화 알고리즘 설정을 점검하시오. ISO 27001 A.8.24(암호 사용). SSH에서 사용 중인 암호 알고리즘을
-    확인합니다.
+  instruction: 시스템의 암호화 알고리즘 설정을 점검하시오. ISO 27001 A.8.24(암호 사용). SSH에서 사용 중인 암호 알고리즘을 확인합니다.
   hint: sshd_config에서 Ciphers, MACs, KexAlgorithms를 확인하세요.
   category: audit
   points: 10
   answer: grep -E '(Ciphers|MACs|KexAlgorithms)' /etc/ssh/sshd_config | grep -v '^#'
-  answer_detail: ISO 27001 A.8.24는 적절한 암호화 통제를 요구합니다. SSH에서 aes128-ctr, aes256-gcm
-    등 강력한 암호 알고리즘만 허용하고, arcfour, blowfish 등 취약한 알고리즘은 비활성화해야 합니다.
+  answer_detail: ISO 27001 A.8.24는 적절한 암호화 통제를 요구합니다. SSH에서 aes128-ctr, aes256-gcm 등 강력한 암호 알고리즘만 허용하고,
+    arcfour, blowfish 등 취약한 알고리즘은 비활성화해야 합니다.
   verify:
     type: output_contains
     expect: ssh
     field: stdout
+    semantic:
+      intent: ISO 27001 A.8.24 SSH 암호 알고리즘 — grep -E '(Ciphers|MACs|KexAlgorithms)' /etc/ssh/sshd_config.
+        aes128-ctr/aes256-gcm (강력) + arcfour/blowfish/3DES (취약) 비활성. 암호화 통제 요구. Mozilla SSH Guidelines.
+      success_criteria:
+      - ssh 키워드
+      - Ciphers/MACs/KexAlgorithms 중 확인
+      - sshd_config 조회
+      acceptable_methods:
+      - grep Ciphers sshd_config
+      - sshd -T | grep cipher
+      - ssh-audit tool
+      - Mozilla OpenSSH config generator
+      negative_signs:
+      - 암호 알고리즘 목록 없음
+      - A.8.24 맥락 없음
+      - 취약 cipher 언급 없음
   target_vm: secu
 - order: 3
-  instruction: 시스템의 커널 보안 파라미터를 점검하시오. ISO 27001 A.8.9(구성 관리). IP 포워딩, ICMP 리다이렉트
-    등 네트워크 보안 설정을 확인합니다.
+  instruction: 시스템의 커널 보안 파라미터를 점검하시오. ISO 27001 A.8.9(구성 관리). IP 포워딩, ICMP 리다이렉트 등 네트워크 보안 설정을 확인합니다.
   hint: sysctl로 net.ipv4 관련 설정을 확인하세요.
   category: audit
   points: 12
   answer: sysctl net.ipv4.ip_forward net.ipv4.conf.all.accept_redirects net.ipv4.conf.all.send_redirects
     net.ipv4.conf.all.accept_source_route
-  answer_detail: ISO 27001 A.8.9 구성 관리는 시스템 보안 설정의 적절한 관리를 요구합니다. ip_forward=0(라우터
-    기능 비활성), accept_redirects=0(ICMP 리다이렉트 무시), accept_source_route=0(소스 라우팅 차단)이
-    보안 권장 설정입니다.
+  answer_detail: ISO 27001 A.8.9 구성 관리는 시스템 보안 설정의 적절한 관리를 요구합니다. ip_forward=0(라우터 기능 비활성), accept_redirects=0(ICMP
+    리다이렉트 무시), accept_source_route=0(소스 라우팅 차단)이 보안 권장 설정입니다.
   verify:
     type: output_contains
     expect: net.ipv4
     field: stdout
+    semantic:
+      intent: ISO 27001 A.8.9 커널 보안 파라미터 — sysctl net.ipv4.ip_forward/accept_redirects/send_redirects/accept_source_route.
+        ip_forward=0 + accept_redirects=0 (ICMP 리다이렉트 무시) + accept_source_route=0 (소스 라우팅 차단). 네트워크 보안
+        기초.
+      success_criteria:
+      - net.ipv4 키워드
+      - sysctl 명령
+      - 커널 파라미터 4개
+      acceptable_methods:
+      - sysctl net.ipv4.*
+      - cat /etc/sysctl.conf
+      - sysctl -a | grep net.ipv4
+      - CIS Benchmark 3.x
+      negative_signs:
+      - 파라미터 2개 이하
+      - 커널 보안 맥락 없음
+      - A.8.9 구성 관리 없음
   target_vm: secu
 - order: 4
   instruction: 파일 시스템의 중요 디렉터리 권한을 점검하시오. ISO 27001 A.8.3(정보 접근 제한).
   hint: /etc, /var/log, /tmp 등 주요 디렉터리의 권한을 확인하세요.
   category: audit
   points: 10
-  answer: stat -c '%a %U:%G %n' /etc/shadow /etc/gshadow /etc/passwd /etc/ssh/sshd_config
-    /var/log/auth.log 2>/dev/null
-  answer_detail: ISO 27001 A.8.3은 정보에 대한 접근을 최소 권한 원칙에 따라 제한할 것을 요구합니다. /etc/shadow는
-    640 이하, sshd_config는 600 이하여야 합니다. 세계 쓰기 가능(world-writable) 권한은 특히 위험합니다.
+  answer: stat -c '%a %U:%G %n' /etc/shadow /etc/gshadow /etc/passwd /etc/ssh/sshd_config /var/log/auth.log
+    2>/dev/null
+  answer_detail: ISO 27001 A.8.3은 정보에 대한 접근을 최소 권한 원칙에 따라 제한할 것을 요구합니다. /etc/shadow는 640 이하, sshd_config는
+    600 이하여야 합니다. 세계 쓰기 가능(world-writable) 권한은 특히 위험합니다.
   verify:
     type: output_contains
     expect: shadow
     field: stdout
+    semantic:
+      intent: ISO 27001 A.8.3 중요 파일 권한 — stat -c '%a %U:%G %n' /etc/shadow /etc/gshadow /etc/passwd /etc/ssh/sshd_config
+        /var/log/auth.log. shadow 640 + sshd_config 600 이하 + world-writable 금지. 최소 권한 원칙.
+      success_criteria:
+      - shadow 키워드
+      - stat -c 권한
+      - 5 파일 이상
+      acceptable_methods:
+      - stat -c '%a %U:%G %n'
+      - ls -la 대체
+      - find / -perm /o+w world-writable
+      - AIDE 파일 무결성
+      negative_signs:
+      - 파일 3개 이하
+      - 권한 기준 없음
+      - A.8.3 맥락 없음
   target_vm: secu
 - order: 5
   instruction: 시스템에 설치된 패키지의 보안 업데이트 현황을 확인하시오. ISO 27001 A.8.8(기술적 취약성 관리).
@@ -78,54 +138,116 @@ steps:
   category: audit
   points: 10
   answer: apt list --upgradable 2>/dev/null | head -20
-  answer_detail: ISO 27001 A.8.8은 기술적 취약성을 적시에 식별하고 패치할 것을 요구합니다. 보안 업데이트가 지연되면 알려진
-    취약점을 통한 공격에 노출됩니다. 특히 커널, OpenSSH, OpenSSL 등 핵심 패키지의 업데이트 상태를 우선 확인해야 합니다.
+  answer_detail: ISO 27001 A.8.8은 기술적 취약성을 적시에 식별하고 패치할 것을 요구합니다. 보안 업데이트가 지연되면 알려진 취약점을 통한 공격에 노출됩니다.
+    특히 커널, OpenSSH, OpenSSL 등 핵심 패키지의 업데이트 상태를 우선 확인해야 합니다.
   verify:
     type: output_contains
     expect: Listing
     field: stdout
+    semantic:
+      intent: ISO 27001 A.8.8 보안 업데이트 — apt list --upgradable | head -20. 기술적 취약성 적시 식별 + 패치. 커널 + OpenSSH
+        + OpenSSL 우선. unattended-upgrades 자동화 권장. CVE 대응 기초.
+      success_criteria:
+      - Listing 키워드
+      - apt list --upgradable
+      - 업데이트 목록
+      acceptable_methods:
+      - apt list --upgradable
+      - yum check-update (RHEL)
+      - unattended-upgrades --dry-run
+      - Vuls 취약점 스캔
+      negative_signs:
+      - 업데이트 개념 없음
+      - A.8.8 맥락 없음
+      - CVE 대응 맥락 없음
   target_vm: secu
 - order: 6
   instruction: cron job 설정을 점검하시오. ISO 27001 A.8.9(구성 관리). 비인가 예약 작업이 없는지 확인합니다.
   hint: /var/spool/cron과 /etc/crontab, /etc/cron.d/를 확인하세요.
   category: audit
   points: 10
-  answer: sudo cat /etc/crontab && echo '--- cron.d ---' && sudo ls -la /etc/cron.d/
-    && echo '--- user crons ---' && sudo ls -la /var/spool/cron/crontabs/ 2>/dev/null
-  answer_detail: ISO 27001 A.8.9는 하드웨어, 소프트웨어, 서비스, 네트워크의 구성을 관리할 것을 요구합니다. 예약 작업(cron)은
-    공격자가 지속성(persistence)을 확보하는 수단이 될 수 있으므로 정기적으로 검토해야 합니다.
+  answer: sudo cat /etc/crontab && echo '--- cron.d ---' && sudo ls -la /etc/cron.d/ && echo '--- user
+    crons ---' && sudo ls -la /var/spool/cron/crontabs/ 2>/dev/null
+  answer_detail: ISO 27001 A.8.9는 하드웨어, 소프트웨어, 서비스, 네트워크의 구성을 관리할 것을 요구합니다. 예약 작업(cron)은 공격자가 지속성(persistence)을
+    확보하는 수단이 될 수 있으므로 정기적으로 검토해야 합니다.
   verify:
     type: output_contains
     expect: cron
     field: stdout
+    semantic:
+      intent: ISO 27001 A.8.9 cron 예약 작업 — sudo cat /etc/crontab + ls /etc/cron.d/ + ls /var/spool/cron/crontabs/.
+        공격자 persistence 수단 (T1053.003). 비인가 예약 작업 탐지. MITRE ATT&CK T1053.003.
+      success_criteria:
+      - cron 키워드
+      - crontab + cron.d + crontabs
+      - 예약 작업 확인
+      acceptable_methods:
+      - cat crontab + ls 다중
+      - systemctl list-timers (systemd)
+      - crontab -u user -l
+      - auditd watch cron
+      negative_signs:
+      - 3 경로 중 1개만
+      - T1053.003 맥락 없음
+      - persistence 개념 없음
   target_vm: secu
 - order: 7
-  instruction: 시스템의 네트워크 설정 파일을 점검하시오. ISO 27001 A.8.20(네트워크 보안). DNS 설정과 호스트 파일을
-    확인합니다.
+  instruction: 시스템의 네트워크 설정 파일을 점검하시오. ISO 27001 A.8.20(네트워크 보안). DNS 설정과 호스트 파일을 확인합니다.
   hint: /etc/resolv.conf와 /etc/hosts 파일을 확인하세요.
   category: audit
   points: 10
   answer: cat /etc/resolv.conf && echo '--- hosts ---' && cat /etc/hosts
-  answer_detail: ISO 27001 A.8.20은 네트워크와 네트워크 장치의 보안을 요구합니다. 비인가 DNS 서버 설정은 DNS 스푸핑
-    공격에 취약하게 만들고, /etc/hosts 파일 변조는 트래픽을 악성 서버로 유도할 수 있습니다.
+  answer_detail: ISO 27001 A.8.20은 네트워크와 네트워크 장치의 보안을 요구합니다. 비인가 DNS 서버 설정은 DNS 스푸핑 공격에 취약하게 만들고, /etc/hosts
+    파일 변조는 트래픽을 악성 서버로 유도할 수 있습니다.
   verify:
     type: output_contains
     expect: nameserver
     field: stdout
+    semantic:
+      intent: ISO 27001 A.8.20 네트워크 설정 — cat /etc/resolv.conf + cat /etc/hosts. 비인가 DNS = DNS 스푸핑 취약.
+        hosts 변조 = 악성 서버 리다이렉션. 네트워크 보안 기초 설정 점검. MITRE ATT&CK T1584 Compromise Infrastructure.
+      success_criteria:
+      - nameserver 키워드
+      - resolv.conf + hosts
+      - 네트워크 설정
+      acceptable_methods:
+      - cat resolv.conf + hosts
+      - systemd-resolve --status
+      - dig @DNS_server test (검증)
+      - AIDE 파일 무결성
+      negative_signs:
+      - 파일 1개만
+      - DNS 스푸핑 맥락 없음
+      - A.8.20 없음
   target_vm: secu
 - order: 8
-  instruction: 시스템 부팅 시 자동 시작되는 서비스 목록을 확인하시오. ISO 27001 A.8.9(구성 관리). 불필요한 서비스는 비활성화해야
-    합니다.
+  instruction: 시스템 부팅 시 자동 시작되는 서비스 목록을 확인하시오. ISO 27001 A.8.9(구성 관리). 불필요한 서비스는 비활성화해야 합니다.
   hint: systemctl list-unit-files로 enabled 상태의 서비스를 확인하세요.
   category: audit
   points: 10
   answer: systemctl list-unit-files --type=service --state=enabled --no-pager
-  answer_detail: ISO 27001에서는 불필요한 서비스를 최소화하여 공격 표면을 줄일 것을 요구합니다. 부팅 시 자동 시작되는 서비스
-    중 업무와 관련 없는 것은 비활성화(systemctl disable)해야 합니다.
+  answer_detail: ISO 27001에서는 불필요한 서비스를 최소화하여 공격 표면을 줄일 것을 요구합니다. 부팅 시 자동 시작되는 서비스 중 업무와 관련 없는 것은 비활성화(systemctl
+    disable)해야 합니다.
   verify:
     type: output_contains
     expect: enabled
     field: stdout
+    semantic:
+      intent: ISO 27001 A.8.9 enabled 서비스 — systemctl list-unit-files --type=service --state=enabled --no-pager.
+        자동 시작 서비스 인벤토리. 업무 외 서비스 disable. 공격 표면 최소화. CIS Benchmark 1.1.x.
+      success_criteria:
+      - enabled 키워드
+      - systemctl list-unit-files
+      - 서비스 목록
+      acceptable_methods:
+      - systemctl list-unit-files --state=enabled
+      - chkconfig --list (legacy)
+      - ls /etc/systemd/system/*.wants/
+      - Ansible systemd state check
+      negative_signs:
+      - enabled 필터 없음
+      - 자동 시작 개념 없음
+      - 공격 표면 맥락 없음
   target_vm: secu
 - order: 9
   instruction: ISO 27001 Annex A 기술적 통제 종합 점검 스크립트를 작성하고 실행하시오.
@@ -171,11 +293,27 @@ steps:
     SCRIPT
 
     chmod +x /tmp/iso27001_audit.sh && bash /tmp/iso27001_audit.sh'
-  answer_detail: ISO 27001:2022의 Annex A는 4개 카테고리(조직, 인적, 물리적, 기술적)의 93개 통제를 정의합니다.
-    기술적 통제(A.8)에는 접근 제한, 인증, 취약성 관리, 구성 관리, 네트워크 보안, 암호화 등이 포함되며, 이 스크립트는 핵심 항목을 자동으로
-    점검합니다.
+  answer_detail: ISO 27001:2022의 Annex A는 4개 카테고리(조직, 인적, 물리적, 기술적)의 93개 통제를 정의합니다. 기술적 통제(A.8)에는 접근 제한,
+    인증, 취약성 관리, 구성 관리, 네트워크 보안, 암호화 등이 포함되며, 이 스크립트는 핵심 항목을 자동으로 점검합니다.
   verify:
     type: output_contains
     expect: ISO 27001 점검 완료
     field: stdout
+    semantic:
+      intent: 'ISO 27001 Annex A 기술적 통제 종합 — /tmp/iso27001_audit.sh: A.8.3 파일 권한 + A.8.5 minlen + A.8.8
+        업데이트 수 + A.8.9 ip_forward + A.8.20 nftables + A.8.24 Ciphers. ISO 27001:2022 93 통제 중 기술적 통제 (A.8)
+        핵심.'
+      success_criteria:
+      - ISO 27001 점검 완료 키워드
+      - /tmp/iso27001_audit.sh
+      - 6 A.8 항목 점검
+      acceptable_methods:
+      - bash + A.8 항목 자동 매핑
+      - OpenSCAP + ISO 27001 profile
+      - Lynis custom profile
+      - Compliance as Code
+      negative_signs:
+      - 항목 3개 이하
+      - ISO 27001:2022 맥락 없음
+      - 4 카테고리 93 통제 맥락 없음
   target_vm: secu
