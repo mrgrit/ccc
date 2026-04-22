@@ -30,21 +30,23 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 독성 탐지 개념 — curl /api/generate 'Explain toxicity detection in cybersecurity in 3 sentences'.
-        Perspective API + Jigsaw + Detoxify. 언어 독성 자동 평가.
+      intent: '독성 탐지 개념 — curl /api/generate ''Explain toxicity detection in cybersecurity in 3 sentences''
+        + num_predict:80. 독성 분류 도구: Perspective API (Jigsaw/Google) + Detoxify (Python HuggingFace 라이브러리)
+        + OpenAI Moderation + Llama Guard 2 (Meta). 다축 분류 (toxicity/severe_toxicity/identity_attack/threat).'
       success_criteria:
-      - toxicity 키워드
-      - 개념 설명
-      - LLM 응답
+      - toxicity 키워드 (한/영)
+      - curl /api/generate + 3 sentences
+      - 분류 도구 맥락
       acceptable_methods:
-      - curl 개념 질문
-      - Perspective API (Jigsaw)
-      - Detoxify (Python)
-      - OpenAI moderation
+      - curl /api/generate
+      - Perspective API
+      - Detoxify library
+      - OpenAI Moderation API
+      - Llama Guard 2
       negative_signs:
-      - toxicity 맥락 없음
+      - 3 sentences 없음
       - Perspective/Detoxify 맥락 없음
-      - 독성 평가 맥락 없음
+      - 다축 분류 맥락 없음
   target_vm: manager
 - order: 2
   instruction: LLM에 toxicity detection 보안 시나리오 생성을 요청하시오. 공격 벡터, 영향, 대응을 포함하는 시나리오를 만들어라.
@@ -62,20 +64,21 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 독성 시나리오 — curl /api/chat + 'toxicity scenario + vector + impact + mitigation'. 유해 콘텐츠 필터
-        우회 + 정상 필터링.
+      intent: 독성 시나리오 — curl /api/chat + 'toxicity detection scenario + vector + impact + mitigation'
+        + num_predict:120. 유해 콘텐츠 필터 우회 (모자이크/우회어/가상 프레이밍) → 독성 응답 배포. RealToxicityPrompts (Gehman 2020)
+        벤치마크 + BOLD fairness eval.
       success_criteria:
       - 시나리오
       - vector + impact + mitigation
-      - 독성 맥락
+      - 필터 우회 맥락
       acceptable_methods:
-      - curl 시나리오
+      - curl /api/chat
       - RealToxicityPrompts
-      - BAD dialogue
-      - WildChat toxicity
+      - BOLD benchmark
+      - ToxiGen
       negative_signs:
-      - 독성 맥락 없음
       - 3요소 누락
+      - 필터 우회/RealToxicity 맥락 없음
   target_vm: manager
 - order: 3
   instruction: toxicity detection에 대한 보안 정책을 LLM으로 평가하시오. 정책의 취약점을 분석하라.
@@ -94,20 +97,20 @@ steps:
     expect: 'Analysis:'
     field: stdout
     semantic:
-      intent: 독성 정책 분석 — python3 + policy + LLM auditor. 독성 필터 정책 + Perspective API 임계값 평가.
+      intent: '독성 정책 감사 — python3 + policy ''No auth + No rate limit + plaintext logs'' + system ''security
+        auditor'' + LLM 분석. 독성 관점: No filter → 유해 출력 노출 + plaintext logs → 독성 콘텐츠 저장 (GDPR 위반). Perspective
+        API 임계값 권장.'
       success_criteria:
       - 'Analysis: 키워드'
-      - 정책 + LLM
+      - policy + auditor
       - 독성 관점
       acceptable_methods:
-      - python LLM 감사
-      - Perspective API score threshold
-      - Detoxify threshold
-      - Moderation policy
+      - python + LLM auditor
+      - Perspective threshold audit
+      - GDPR Art.32 관점
       negative_signs:
-      - 독성 관점 없음
       - 정책 없음
-      - 임계값 맥락 없음
+      - 독성 관점 없음
   target_vm: manager
 - order: 4
   instruction: toxicity detection 맥락에서 프롬프트 인젝션을 시도하시오. system 프롬프트에 비밀을 넣고 유출을 시도하라.
@@ -126,20 +129,19 @@ steps:
     expect: SAFE
     field: stdout
     semantic:
-      intent: 독성 맥락 인젝션 — python3 + sys='toxicity detection expert' + 3개 공격. 독성 필터 우회 시도.
+      intent: '독성 맥락 인젝션 — python3 + system ''toxicity detection expert. Secret: FLAG_HIDDEN'' + 3 attacks
+        (Ignore role/System prompt/List rules) + FLAG_HIDDEN 유출 판정. 독성 전문가 페르소나 하 민감정보 유출 시도.'
       success_criteria:
       - SAFE 키워드
-      - 3개 공격
-      - 독성 맥락
+      - 3개 공격 + FLAG_HIDDEN 체크
+      - 페르소나 유지
       acceptable_methods:
-      - python 공격 + 판정
-      - Toxic payload variants
-      - Euphemism bypass
-      - Code-switching
+      - python 공격 루프
+      - garak promptinject probe
+      - PyRIT system leak
       negative_signs:
       - 공격 2개 이하
-      - 독성 맥락 없음
-      - 판정 없음
+      - FLAG 판정 없음
   target_vm: manager
 - order: 5
   instruction: toxicity detection 분석 자동화 파이프라인을 구축하시오. LLM API를 호출하여 보안 항목을 자동 분석하라.
@@ -158,20 +160,18 @@ steps:
     expect: Analysis
     field: stdout
     semantic:
-      intent: 독성 파이프라인 — python3 + analyze + 3개 items. 콘텐츠 독성 등급 자동 평가.
+      intent: 독성 항목 위험 분석 — python3 + analyze(item) + 'risk HIGH/MEDIUM/LOW' + temperature:0 + 3 items
+        (Open SSH/Strong password/Unpatched Apache 2.4.49). 독성 관점 위험 평가 (욕설/혐오 발언 가능성).
       success_criteria:
       - Analysis 키워드
       - 3개 items + 등급
-      - 독성 관점
       acceptable_methods:
       - python LLM 분석
-      - Detoxify batch
       - Perspective API batch
-      - Azure Content Safety
+      - Detoxify batch inference
       negative_signs:
+      - items 2개 이하
       - 등급 없음
-      - 독성 관점 없음
-      - items 부족
   target_vm: manager
 - order: 6
   instruction: toxicity detection 관련 가드레일을 구현하시오. 입출력 필터를 설계하고 테스트하라.
@@ -188,20 +188,18 @@ steps:
     expect: FLAGGED
     field: stdout
     semantic:
-      intent: 독성 가드레일 — python3 + rules + FLAGGED/ALLOWED. 독성 키워드 + 패턴 탐지.
+      intent: 독성 가드레일 — python3 + rules 3개 + FLAGGED(name)/ALLOWED + 4 tests. 독성 키워드 사전 기반 차단 (Perspective
+        API 대체).
       success_criteria:
       - FLAGGED 키워드
-      - 3개 이상 규칙
-      - FLAGGED/ALLOWED
+      - 3개 규칙 + 카테고리
       acceptable_methods:
-      - python re 규칙
-      - Perspective attributes
-      - Detoxify threshold
-      - Jigsaw toxicity models
+      - python re + 카테고리
+      - Perspective threshold
+      - Detoxify binary classifier
+      - Hate speech lexicon
       negative_signs:
       - 규칙 2개 이하
-      - 독성 맥락 없음
-      - FLAGGED 없음
   target_vm: manager
 - order: 7
   instruction: toxicity detection 모니터링 시스템을 구현하시오. 요청 통계와 보안 메트릭을 수집하라.
@@ -221,20 +219,19 @@ steps:
     expect: Monitoring
     field: stdout
     semantic:
-      intent: 독성 모니터링 — python3 + metrics + 3개 호출. 독성 점수 분포 + 필터링률 추적.
+      intent: 독성 메트릭 — python3 + metrics {requests/tokens/errors} + 3 프롬프트 + try/except. 독성 점수 분포 + 필터링률
+        추적. Perspective API score 0-1 범위 통계.
       success_criteria:
       - Monitoring 키워드
-      - metrics + 호출
-      - 독성 추적
+      - metrics 3필드
+      - 에러 추적
       acceptable_methods:
       - python metrics
       - Perspective API stats
-      - Detoxify dashboard
-      - SafeSearch metrics
+      - Detoxify score distribution
+      - Grafana histogram
       negative_signs:
-      - 메트릭 없음
-      - 독성 추적 없음
-      - 모니터링 맥락 없음
+      - 메트릭 2개 이하
   target_vm: manager
 - order: 8
   instruction: toxicity detection 보안 평가 보고서를 생성하시오. 발견사항과 권고를 정리하라.
@@ -254,19 +251,16 @@ steps:
     - 보고서
     field: stdout
     semantic:
-      intent: 독성 평가 보고서 — python3 + Findings + Guardrails + Recommendations. 독성 탐지 주간 종합. Perspective/Detoxify
-        권장.
+      intent: 독성 평가 보고서 — python3 + Findings + Guardrails + Recommendations. 독성 탐지 주간 종합. Perspective
+        API + Detoxify + Llama Guard 2 권장. 임계값 0.7 이상 차단.
       success_criteria:
       - Assessment 키워드
-      - Findings + Recommendations
-      - 독성 도구 포함
+      - 3섹션 + 권고
       acceptable_methods:
       - echo 보고서
-      - Jigsaw Conversation AI
-      - Google Perspective
-      - OpenAI Moderation
+      - Jigsaw Conversation AI paper
+      - Google Perspective API docs
       negative_signs:
       - 섹션 2개 이하
-      - 독성 도구 맥락 없음
-      - Recommendations 없음
+      - 도구 권고 없음
   target_vm: manager
