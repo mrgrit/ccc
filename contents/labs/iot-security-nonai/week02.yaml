@@ -17,52 +17,119 @@ steps:
   hint: docker run으로 브로커 실행 후 mosquitto_sub -t '#'로 구독합니다.
   category: mqtt
   points: 8
-  answer: docker run -d --name mqtt-lab2 -p 1883:1883 eclipse-mosquitto:2 mosquitto -c /dev/null -p 1883 && sleep 1 && echo 'MQTT 브로커 준비 완료'
+  answer: docker run -d --name mqtt-lab2 -p 1883:1883 eclipse-mosquitto:2 mosquitto -c /dev/null -p 1883
+    && sleep 1 && echo 'MQTT 브로커 준비 완료'
   answer_detail: Mosquitto 브로커를 기본 설정으로 실행합니다.
   verify:
     type: output_contains
     expect: MQTT 브로커 준비 완료
     field: stdout
+    semantic:
+      intent: MQTT 브로커 lab2 실행 — docker run -d --name mqtt-lab2 -p 1883:1883 eclipse-mosquitto:2 + sleep
+        1. 프로토콜 분석 환경 준비. 기본 1883 평문.
+      success_criteria:
+      - MQTT 브로커 준비 완료 키워드
+      - docker run -p 1883:1883 eclipse-mosquitto
+      - --name mqtt-lab2
+      acceptable_methods:
+      - docker run eclipse-mosquitto
+      - podman run 대체
+      - mosquitto 로컬 설치
+      - EMQX 브로커
+      negative_signs:
+      - 포트 1883 매핑 없음
+      - 브로커 컨테이너 실행 없음
+      - 프로토콜 분석 준비 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: tcpdump로 MQTT 트래픽(포트 1883)을 캡처하면서 동시에 메시지를 발행하시오.
   hint: tcpdump -i any port 1883를 백그라운드로 실행 후 mosquitto_pub으로 메시지를 보내세요.
   category: protocol_analysis
   points: 10
-  answer: timeout 5 tcpdump -i any -c 10 port 1883 -w /tmp/mqtt_cap.pcap 2>/dev/null & sleep 1 && mosquitto_pub -h localhost -t 'test/data' -m 'secret_message' && sleep 3 && echo 'MQTT 트래픽 캡처 완료'
+  answer: timeout 5 tcpdump -i any -c 10 port 1883 -w /tmp/mqtt_cap.pcap 2>/dev/null & sleep 1 && mosquitto_pub
+    -h localhost -t 'test/data' -m 'secret_message' && sleep 3 && echo 'MQTT 트래픽 캡처 완료'
   answer_detail: tcpdump로 네트워크 트래픽을 캡처하여 MQTT 메시지가 평문으로 전송되는 것을 확인합니다.
   verify:
     type: output_contains
     expect: MQTT 트래픽 캡처 완료
     field: stdout
+    semantic:
+      intent: MQTT 트래픽 캡처 — timeout 5 tcpdump -i any -c 10 port 1883 -w /tmp/mqtt_cap.pcap & + mosquitto_pub
+        -t test/data -m secret_message. 백그라운드 캡처 + 동시 발행. 평문 통신 관찰.
+      success_criteria:
+      - MQTT 트래픽 캡처 완료 키워드
+      - tcpdump port 1883 -w pcap
+      - 캡처 + 발행 동시
+      acceptable_methods:
+      - tcpdump -w + mosquitto_pub
+      - tshark -i any -f 'port 1883'
+      - Wireshark GUI 캡처
+      - mitmproxy MQTT 플러그인
+      negative_signs:
+      - tcpdump 또는 pcap 없음
+      - port 1883 필터 없음
+      - 백그라운드 캡처 맥락 없음
   target_vm: attacker
 - order: 3
   instruction: 캡처한 MQTT 트래픽에서 평문 메시지를 확인하시오.
   hint: tcpdump -r 파일 -A 명령으로 ASCII 내용을 확인하세요.
   category: protocol_analysis
   points: 12
-  answer: tcpdump -r /tmp/mqtt_cap.pcap -A 2>/dev/null | grep -a 'secret_message' && echo '평문 메시지 확인 완료' || echo '평문 메시지 확인 완료 (패킷 분석 필요)'
+  answer: tcpdump -r /tmp/mqtt_cap.pcap -A 2>/dev/null | grep -a 'secret_message' && echo '평문 메시지 확인 완료'
+    || echo '평문 메시지 확인 완료 (패킷 분석 필요)'
   answer_detail: MQTT 평문 통신에서는 메시지 내용이 그대로 노출됩니다. TLS 적용이 필요합니다.
   verify:
     type: output_contains
     expect: 평문 메시지 확인 완료
     field: stdout
+    semantic:
+      intent: 평문 MQTT 메시지 확인 — tcpdump -r /tmp/mqtt_cap.pcap -A | grep -a secret_message. ASCII 덤프에서 메시지
+        평문 노출. MQTT 1883 평문 통신의 위험성 증명. TLS 8883 필요성.
+      success_criteria:
+      - 평문 메시지 확인 완료 키워드
+      - tcpdump -r -A + grep secret_message
+      - 평문 노출 증명
+      acceptable_methods:
+      - tcpdump -r -A + grep
+      - strings pcap (대체)
+      - tshark -r pcap -Y mqtt -T fields -e mqtt.msg
+      - Wireshark follow TCP stream
+      negative_signs:
+      - -A ASCII 덤프 없음
+      - 평문 메시지 확인 맥락 없음
+      - TLS 필요성 맥락 없음
   target_vm: attacker
 - order: 4
-  instruction: MQTT 토픽 와일드카드(+, #)의 차이를 실습하시오. 'sensor/+/temp' 패턴을 구독하고, 여러 센서 토픽으로 메시지를 발행하시오.
-  hint: +는 단일 레벨, #는 다중 레벨 와일드카드입니다.
+  instruction: MQTT 토픽 와일드카드(+,
+  hint: +는 단일 레벨,
   category: mqtt
   points: 10
-  answer: >
-    mosquitto_pub -h localhost -t 'sensor/01/temp' -m '25' &&
-    mosquitto_pub -h localhost -t 'sensor/02/temp' -m '27' &&
-    mosquitto_pub -h localhost -t 'sensor/01/humidity' -m '60' &&
-    echo 'MQTT 와일드카드 실습 완료'
+  answer: 'mosquitto_pub -h localhost -t ''sensor/01/temp'' -m ''25'' && mosquitto_pub -h localhost -t
+    ''sensor/02/temp'' -m ''27'' && mosquitto_pub -h localhost -t ''sensor/01/humidity'' -m ''60'' &&
+    echo ''MQTT 와일드카드 실습 완료''
+
+    '
   answer_detail: sensor/+/temp은 sensor/01/temp, sensor/02/temp에 매칭되지만 sensor/01/humidity에는 매칭되지 않습니다.
   verify:
     type: output_contains
     expect: MQTT 와일드카드 실습 완료
     field: stdout
+    semantic:
+      intent: MQTT 와일드카드 — mosquitto_pub sensor/01/temp + sensor/02/temp + sensor/01/humidity. '+' 단일
+        레벨 (sensor/+/temp 매칭 temp만) vs '#' 다중 레벨. 구독 패턴 설계 중요성.
+      success_criteria:
+      - MQTT 와일드카드 실습 완료 키워드
+      - 3개 이상 토픽 발행
+      - sensor/NN/{temp|humidity} 계층
+      acceptable_methods:
+      - 3개 mosquitto_pub 발행
+      - paho-mqtt + 다중 publish
+      - Node-RED flow 다중 mqtt out
+      - Postman MQTT (new)
+      negative_signs:
+      - 토픽 2개 이하
+      - +/# 와일드카드 차이 맥락 없음
+      - 계층 구조 맥락 없음
   target_vm: attacker
 - order: 5
   instruction: Python aiocoap을 설치하고 CoAP 서버를 구동하시오.
@@ -75,68 +142,145 @@ steps:
     type: output_contains
     expect: CoAP 설치 완료
     field: stdout
+    semantic:
+      intent: aiocoap 설치 — pip3 install aiocoap. Python 기반 CoAP (RFC 7252) 프로토콜 라이브러리. UDP 기반 5683 포트.
+        IoT 경량 HTTP 대체.
+      success_criteria:
+      - CoAP 설치 완료 키워드
+      - pip3 install aiocoap
+      - Python CoAP 환경 구축
+      acceptable_methods:
+      - pip3 install aiocoap
+      - pip install --user aiocoap
+      - apt install python3-aiocoap (있을 경우)
+      - libcoap-bin + coap-client (C)
+      negative_signs:
+      - aiocoap 모듈 없음
+      - pip3 미사용
+      - CoAP 프로토콜 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: MQTT QoS 레벨(0, 1, 2)을 각각 테스트하시오.
   hint: mosquitto_pub -q 옵션으로 QoS를 지정합니다.
   category: mqtt
   points: 10
-  answer: >
-    mosquitto_pub -h localhost -t 'test/qos0' -m 'qos0' -q 0 &&
-    mosquitto_pub -h localhost -t 'test/qos1' -m 'qos1' -q 1 &&
-    mosquitto_pub -h localhost -t 'test/qos2' -m 'qos2' -q 2 &&
-    echo 'QoS 테스트 완료'
+  answer: 'mosquitto_pub -h localhost -t ''test/qos0'' -m ''qos0'' -q 0 && mosquitto_pub -h localhost
+    -t ''test/qos1'' -m ''qos1'' -q 1 && mosquitto_pub -h localhost -t ''test/qos2'' -m ''qos2'' -q 2
+    && echo ''QoS 테스트 완료''
+
+    '
   answer_detail: QoS 0은 최대 1회, QoS 1은 최소 1회, QoS 2는 정확히 1회 전달을 보장합니다.
   verify:
     type: output_contains
     expect: QoS 테스트 완료
     field: stdout
+    semantic:
+      intent: MQTT QoS 레벨 — mosquitto_pub -q 0/1/2. QoS 0 at-most-once (fire-and-forget) + QoS 1 at-least-once
+        (중복 가능) + QoS 2 exactly-once (4-way handshake). IoT 신뢰성 trade-off.
+      success_criteria:
+      - QoS 테스트 완료 키워드
+      - mosquitto_pub -q 0 + -q 1 + -q 2
+      - 3개 QoS 모두 발행
+      acceptable_methods:
+      - mosquitto_pub -q 0/1/2
+      - paho-mqtt qos=0/1/2
+      - MQTT.fx QoS 드롭다운
+      - tshark mqtt.qos 필드 분석
+      negative_signs:
+      - QoS 3개 중 누락
+      - at-most/least/exactly-once 구분 맥락 없음
+      - 신뢰성 trade-off 맥락 없음
   target_vm: attacker
 - order: 7
   instruction: MQTT 브로커에 인증 설정을 추가하시오. 비밀번호 파일을 생성하고 인증을 요구하는 설정을 만드시오.
   hint: mosquitto_passwd로 비밀번호 파일을 생성합니다.
   category: security
   points: 12
-  answer: >
-    echo 'allow_anonymous false' > /tmp/mosquitto_auth.conf &&
-    echo 'password_file /tmp/mqtt_passwd' >> /tmp/mosquitto_auth.conf &&
-    echo 'listener 1884' >> /tmp/mosquitto_auth.conf &&
-    echo 'admin:$7$101$password' > /tmp/mqtt_passwd &&
-    echo 'MQTT 인증 설정 완료'
+  answer: 'echo ''allow_anonymous false'' > /tmp/mosquitto_auth.conf && echo ''password_file /tmp/mqtt_passwd''
+    >> /tmp/mosquitto_auth.conf && echo ''listener 1884'' >> /tmp/mosquitto_auth.conf && echo ''admin:$7$101$password''
+    > /tmp/mqtt_passwd && echo ''MQTT 인증 설정 완료''
+
+    '
   answer_detail: allow_anonymous false로 인증을 요구하고, password_file로 사용자 인증 정보를 지정합니다.
   verify:
     type: output_contains
     expect: MQTT 인증 설정 완료
     field: stdout
+    semantic:
+      intent: 'MQTT 인증 설정 — /tmp/mosquitto_auth.conf: allow_anonymous false + password_file /tmp/mqtt_passwd
+        + listener 1884. OWASP IoT I1 Weak Auth 방어. 익명 금지 + 사용자별 비밀번호.'
+      success_criteria:
+      - MQTT 인증 설정 완료 키워드
+      - allow_anonymous false + password_file
+      - 설정 파일 생성
+      acceptable_methods:
+      - mosquitto_passwd + config
+      - mosquitto dynsec JSON plugin
+      - Auth0/Okta MQTT 통합
+      - HiveMQ Enterprise 인증
+      negative_signs:
+      - allow_anonymous false 없음
+      - password_file 없음
+      - OWASP I1 맥락 없음
   target_vm: attacker
 - order: 8
   instruction: TLS 인증서를 생성하여 MQTT 보안 통신을 위한 준비를 하시오.
   hint: openssl req -new -x509로 자체 서명 인증서를 생성합니다.
   category: security
   points: 10
-  answer: openssl req -new -x509 -days 365 -keyout /tmp/mqtt_server.key -out /tmp/mqtt_server.crt -subj '/CN=mqtt-server' -nodes 2>/dev/null && echo 'TLS 인증서 생성 완료'
+  answer: openssl req -new -x509 -days 365 -keyout /tmp/mqtt_server.key -out /tmp/mqtt_server.crt -subj
+    '/CN=mqtt-server' -nodes 2>/dev/null && echo 'TLS 인증서 생성 완료'
   answer_detail: MQTT TLS(포트 8883)를 위한 서버 인증서를 생성합니다. 실제 환경에서는 신뢰할 수 있는 CA에서 발급받습니다.
   verify:
     type: output_contains
     expect: TLS 인증서 생성 완료
     field: stdout
+    semantic:
+      intent: TLS 자체 서명 인증서 — openssl req -new -x509 -days 365 -keyout /tmp/mqtt_server.key -out /tmp/mqtt_server.crt
+        -subj '/CN=mqtt-server' -nodes. MQTT TLS 8883 준비. 프로덕션은 Let's Encrypt / 내부 CA 발급.
+      success_criteria:
+      - TLS 인증서 생성 완료 키워드
+      - openssl req -new -x509 + -days 365
+      - server.key + server.crt 생성
+      acceptable_methods:
+      - openssl req -new -x509
+      - cfssl 인증서 생성
+      - step-ca (Smallstep)
+      - acme.sh + Let's Encrypt
+      negative_signs:
+      - openssl req 미사용
+      - key + crt 중 누락
+      - TLS 8883 맥락 없음
   target_vm: attacker
 - order: 9
   instruction: 환경을 정리하고 프로토콜 보안 분석 보고서를 작성하시오.
   hint: 발견된 보안 문제와 권장 사항을 정리하세요.
   category: verification
   points: 10
-  answer: >
-    docker stop mqtt-lab2 2>/dev/null; docker rm mqtt-lab2 2>/dev/null;
-    echo '=== 프로토콜 보안 분석 ===' &&
-    echo '[취약] MQTT 평문 통신 - 메시지 도청 가능' &&
-    echo '[취약] 인증 없음 - 누구나 접근 가능' &&
-    echo '[권장] TLS 적용 (포트 8883)' &&
-    echo '[권장] 사용자 인증 + ACL' &&
-    echo '=== 분석 완료 ==='
+  answer: 'docker stop mqtt-lab2 2>/dev/null; docker rm mqtt-lab2 2>/dev/null; echo ''=== 프로토콜 보안 분석 ===''
+    && echo ''[취약] MQTT 평문 통신 - 메시지 도청 가능'' && echo ''[취약] 인증 없음 - 누구나 접근 가능'' && echo ''[권장] TLS 적용 (포트
+    8883)'' && echo ''[권장] 사용자 인증 + ACL'' && echo ''=== 분석 완료 ===''
+
+    '
   answer_detail: MQTT 보안의 핵심은 인증(Authentication), 인가(Authorization/ACL), 암호화(TLS)입니다.
   verify:
     type: output_contains
     expect: 분석 완료
     field: stdout
+    semantic:
+      intent: 프로토콜 보안 분석 + 정리 — docker stop/rm mqtt-lab2 + [취약] 평문 통신 + 인증 없음 + [권장] TLS 8883 + 사용자 인증
+        + ACL. MQTT 보안 3요소 = 인증 + 인가(ACL) + 암호화.
+      success_criteria:
+      - 분석 완료 키워드
+      - docker stop/rm + 취약/권장 구분
+      - 3요소 (인증/인가/암호화) 언급
+      acceptable_methods:
+      - echo 취약/권장 + docker 정리
+      - OWASP IoT Top 10 템플릿
+      - ENISA IoT Baseline Recommendations
+      - Security Onion + MQTT IDS 룰
+      negative_signs:
+      - 취약/권장 구분 없음
+      - 정리 단계 없음
+      - 3요소 중 2개 이하
   target_vm: attacker
