@@ -3,8 +3,8 @@ title: 클라우드보안인증(CSAP) 점검 실습
 version: non-ai
 course: compliance-nonai
 week: 8
-description: KISA 클라우드보안인증(CSAP) 기준에 따라 클라우드 환경의 보안 설정을 점검합니다. 가상화 보안, 접근 통제, 데이터
-  보호, 가용성 관련 설정을 WEB 서버의 Docker 환경에서 확인합니다.
+description: KISA 클라우드보안인증(CSAP) 기준에 따라 클라우드 환경의 보안 설정을 점검합니다. 가상화 보안, 접근 통제, 데이터 보호, 가용성 관련 설정을 WEB 서버의
+  Docker 환경에서 확인합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -19,99 +19,207 @@ steps:
   category: audit
   points: 10
   answer: docker info 2>/dev/null | grep -E "(Security|Storage|Logging|Cgroup)"
-  answer_detail: CSAP 가상화 보안에서는 컨테이너 런타임의 보안 설정을 점검합니다. Docker의 Security Options에
-    seccomp, apparmor가 활성화되어 있어야 하며, Cgroup Driver로 자원 제한이 가능해야 합니다.
+  answer_detail: CSAP 가상화 보안에서는 컨테이너 런타임의 보안 설정을 점검합니다. Docker의 Security Options에 seccomp, apparmor가 활성화되어
+    있어야 하며, Cgroup Driver로 자원 제한이 가능해야 합니다.
   verify:
     type: output_contains
     expect: Security
     field: stdout
+    semantic:
+      intent: CSAP 가상화 보안 — docker info | grep -E '(Security|Storage|Logging|Cgroup)'. SecurityOptions
+        (seccomp/apparmor) + Storage Driver (overlay2) + Logging + Cgroup Driver. 컨테이너 런타임 보안 기초. KISA
+        CSAP 인증 기준.
+      success_criteria:
+      - Security 키워드
+      - docker info grep
+      - 가상화 설정 확인
+      acceptable_methods:
+      - docker info | grep
+      - docker info --format SecurityOptions
+      - cgroup v2 확인
+      - seccomp-profile 확인
+      negative_signs:
+      - CSAP 맥락 없음
+      - 가상화 런타임 보안 없음
+      - 설정 1개만
   target_vm: web
 - order: 2
   instruction: Docker 데몬이 TLS 인증을 사용하는지 확인하시오. CSAP 접근 통제 항목.
   hint: /etc/docker/daemon.json 설정 파일을 확인하세요.
   category: audit
   points: 10
-  answer: cat /etc/docker/daemon.json 2>/dev/null || echo "daemon.json 미설정" && ls
-    -la /etc/docker/ 2>/dev/null
-  answer_detail: CSAP는 관리 인터페이스에 대한 접근 통제를 요구합니다. Docker 데몬은 기본적으로 Unix 소켓(/var/run/docker.sock)으로
-    통신하며, 원격 접근 시 TLS 인증서를 사용해야 합니다. daemon.json에서 tls, tlscacert, tlscert, tlskey를
-    설정합니다.
+  answer: cat /etc/docker/daemon.json 2>/dev/null || echo "daemon.json 미설정" && ls -la /etc/docker/ 2>/dev/null
+  answer_detail: CSAP는 관리 인터페이스에 대한 접근 통제를 요구합니다. Docker 데몬은 기본적으로 Unix 소켓(/var/run/docker.sock)으로 통신하며,
+    원격 접근 시 TLS 인증서를 사용해야 합니다. daemon.json에서 tls, tlscacert, tlscert, tlskey를 설정합니다.
   verify:
     type: output_contains
     expect: docker
     field: stdout
+    semantic:
+      intent: Docker TLS 원격 접근 — cat /etc/docker/daemon.json + ls /etc/docker/. tls + tlscacert + tlscert
+        + tlskey 설정. 원격 관리 시 TLS 인증서 필수. Unix 소켓 기본 통신. Client certificate 양방향 인증.
+      success_criteria:
+      - docker 키워드
+      - daemon.json 조회
+      - TLS 설정 확인
+      acceptable_methods:
+      - cat daemon.json + ls /etc/docker
+      - docker context ls (TLS 컨텍스트)
+      - systemctl show docker + LimitNOFILE
+      - openssl verify 인증서
+      negative_signs:
+      - daemon.json 경로 혼동
+      - TLS 개념 없음
+      - 원격 접근 보안 맥락 없음
   target_vm: web
 - order: 3
   instruction: '실행 중인 컨테이너의 자원 제한 설정을 확인하시오. CSAP 가용성 항목: 자원 독점 방지.'
   hint: docker stats --no-stream으로 컨테이너 자원 사용량을 확인하세요.
   category: audit
   points: 10
-  answer: 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}:
-    Memory={{.HostConfig.Memory}} CPU={{.HostConfig.NanoCpus}}" {} 2>/dev/null ||
-    echo "실행 중인 컨테이너 없음"'
-  answer_detail: CSAP는 가상 자원의 독점을 방지하기 위해 자원 제한을 요구합니다. Docker에서 --memory, --cpus
-    옵션으로 컨테이너별 자원을 제한합니다. Memory=0은 무제한을 의미하며, 이는 한 컨테이너가 호스트 전체 메모리를 소모할 수 있어 위험합니다.
+  answer: 'docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}: Memory={{.HostConfig.Memory}}
+    CPU={{.HostConfig.NanoCpus}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'
+  answer_detail: CSAP는 가상 자원의 독점을 방지하기 위해 자원 제한을 요구합니다. Docker에서 --memory, --cpus 옵션으로 컨테이너별 자원을 제한합니다.
+    Memory=0은 무제한을 의미하며, 이는 한 컨테이너가 호스트 전체 메모리를 소모할 수 있어 위험합니다.
   verify:
     type: output_contains
     expect: Memory
     field: stdout
+    semantic:
+      intent: '컨테이너 자원 제한 — docker inspect --format ''{{.Name}}: Memory={{.HostConfig.Memory}} CPU={{.HostConfig.NanoCpus}}''.
+        Memory=0 무제한 위험 = 한 컨테이너가 호스트 전체 메모리 소모 가능. --memory + --cpus 설정 필수. 가용성 요구사항.'
+      success_criteria:
+      - Memory 키워드
+      - docker inspect Memory + CPU
+      - 자원 제한 확인
+      acceptable_methods:
+      - docker inspect + format
+      - cgroup v2 + systemd resource control
+      - Kubernetes resources.limits
+      - Swarm resource reservations
+      negative_signs:
+      - 자원 제한 필요성 없음
+      - Memory=0 위험 맥락 없음
+      - 가용성 요구 맥락 없음
   target_vm: web
 - order: 4
   instruction: Docker 네트워크 격리 설정을 확인하시오. CSAP 네트워크 보안 항목.
   hint: docker network ls와 각 네트워크의 설정을 확인하세요.
   category: audit
   points: 10
-  answer: docker network ls && echo "--- bridge 상세 ---" && docker network inspect
-    bridge 2>/dev/null | grep -E "(Name|Subnet|Gateway|com.docker)" | head -10
-  answer_detail: CSAP는 네트워크 격리를 통한 보안 영역 분리를 요구합니다. Docker의 기본 bridge 네트워크는 모든 컨테이너가
-    통신할 수 있으므로, 용도별로 별도 네트워크를 생성하고 컨테이너를 분리해야 합니다.
+  answer: docker network ls && echo "--- bridge 상세 ---" && docker network inspect bridge 2>/dev/null |
+    grep -E "(Name|Subnet|Gateway|com.docker)" | head -10
+  answer_detail: CSAP는 네트워크 격리를 통한 보안 영역 분리를 요구합니다. Docker의 기본 bridge 네트워크는 모든 컨테이너가 통신할 수 있으므로, 용도별로
+    별도 네트워크를 생성하고 컨테이너를 분리해야 합니다.
   verify:
     type: output_contains
     expect: bridge
     field: stdout
+    semantic:
+      intent: Docker 네트워크 격리 — docker network ls + docker network inspect bridge | grep -E '(Name|Subnet|Gateway|com.docker)'.
+        CSAP 네트워크 보안 항목. 기본 bridge = 모든 컨테이너 통신 허용 → 용도별 별도 네트워크 생성 + 분리 필요.
+      success_criteria:
+      - bridge 키워드
+      - docker network ls + inspect
+      - 네트워크 격리 설정 확인
+      acceptable_methods:
+      - docker network ls + inspect bridge
+      - iptables -L -n 브릿지 규칙
+      - docker network create --driver bridge 용도별 격리
+      - Cilium NetworkPolicy / Calico
+      negative_signs:
+      - bridge 네트워크 미확인
+      - CSAP 네트워크 격리 맥락 없음
+      - 용도별 분리 필요성 없음
   target_vm: web
 - order: 5
   instruction: 'Docker 이미지의 보안을 점검하시오. CSAP 보안 개발 항목: 안전한 이미지 사용.'
   hint: docker images로 이미지 목록을 확인하고, 최신 태그 사용 여부를 점검하세요.
   category: audit
   points: 12
-  answer: docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"
-    | head -15
-  answer_detail: CSAP는 안전한 소프트웨어 사용을 요구합니다. Docker 이미지에서 latest 태그는 버전을 특정할 수 없어 위험합니다.
-    공식 이미지 사용, 버전 태그 고정, 주기적 업데이트, 취약점 스캔이 필요합니다.
+  answer: docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}" | head
+    -15
+  answer_detail: CSAP는 안전한 소프트웨어 사용을 요구합니다. Docker 이미지에서 latest 태그는 버전을 특정할 수 없어 위험합니다. 공식 이미지 사용, 버전
+    태그 고정, 주기적 업데이트, 취약점 스캔이 필요합니다.
   verify:
     type: output_contains
     expect: REPOSITORY
     field: stdout
+    semantic:
+      intent: Docker 이미지 보안 — docker images --format 'table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}'.
+        CSAP 보안 개발 항목. latest 태그 = 버전 특정 불가 위험. 공식 이미지 + 버전 태그 고정 + 주기적 업데이트 + Trivy 스캔 필수.
+      success_criteria:
+      - REPOSITORY 키워드
+      - docker images 목록 + TAG 컬럼
+      - latest 태그 위험 점검
+      acceptable_methods:
+      - docker images --format table
+      - docker image ls -a
+      - Trivy image scan
+      - Harbor / Quay 이미지 레지스트리 정책
+      negative_signs:
+      - 이미지 목록 없음
+      - latest 태그 위험 맥락 없음
+      - 취약점 스캔 대안 없음
   target_vm: web
 - order: 6
   instruction: Docker 소켓 파일의 접근 권한을 확인하시오. CSAP 접근 통제 항목.
   hint: /var/run/docker.sock의 권한과 소유자를 확인하세요.
   category: audit
   points: 10
-  answer: ls -la /var/run/docker.sock && echo "--- docker 그룹 멤버 ---" && getent group
-    docker
-  answer_detail: Docker 소켓에 접근할 수 있는 사용자는 사실상 root 권한을 가집니다. docker 그룹에 불필요한 사용자가
-    포함되어 있으면 권한 상승 위험이 있습니다. CSAP는 최소 권한 원칙에 따른 접근 통제를 요구합니다.
+  answer: ls -la /var/run/docker.sock && echo "--- docker 그룹 멤버 ---" && getent group docker
+  answer_detail: Docker 소켓에 접근할 수 있는 사용자는 사실상 root 권한을 가집니다. docker 그룹에 불필요한 사용자가 포함되어 있으면 권한 상승 위험이 있습니다.
+    CSAP는 최소 권한 원칙에 따른 접근 통제를 요구합니다.
   verify:
     type: output_contains
     expect: docker.sock
     field: stdout
+    semantic:
+      intent: Docker 소켓 권한 — ls -la /var/run/docker.sock + getent group docker. docker 그룹 = root 권한 동등.
+        CSAP 최소 권한 원칙. docker.sock 마운트된 컨테이너 = MITRE ATT&CK T1611 컨테이너 탈출. 불필요 사용자 제거 필수.
+      success_criteria:
+      - docker.sock 키워드
+      - ls -la /var/run/docker.sock + getent group docker
+      - 최소 권한 점검
+      acceptable_methods:
+      - ls -la + getent group
+      - stat /var/run/docker.sock
+      - ausearch -f /var/run/docker.sock
+      - rootless Docker 대안
+      negative_signs:
+      - docker.sock 권한 미확인
+      - T1611 맥락 없음
+      - docker 그룹 root 동등성 맥락 없음
   target_vm: web
 - order: 7
   instruction: '컨테이너 로그 설정을 확인하시오. CSAP 로그 관리 항목: 컨테이너 활동 로그 보관.'
   hint: Docker 로깅 드라이버 설정을 확인하세요.
   category: audit
   points: 10
-  answer: docker info 2>/dev/null | grep -A2 "Logging Driver" && echo "--- 컨테이너별 로그
-    크기 ---" && docker ps -q | head -3 | xargs -I{} sh -c "echo {} && docker logs {}
-    2>&1 | wc -l" 2>/dev/null
-  answer_detail: CSAP는 클라우드 서비스의 로그를 안전하게 보관할 것을 요구합니다. Docker 기본 로깅 드라이버는 json-file이며,
-    max-size와 max-file 옵션으로 로그 크기를 제한해야 합니다. 중앙 로그 수집(syslog, fluentd)도 권장됩니다.
+  answer: docker info 2>/dev/null | grep -A2 "Logging Driver" && echo "--- 컨테이너별 로그 크기 ---" && docker
+    ps -q | head -3 | xargs -I{} sh -c "echo {} && docker logs {} 2>&1 | wc -l" 2>/dev/null
+  answer_detail: CSAP는 클라우드 서비스의 로그를 안전하게 보관할 것을 요구합니다. Docker 기본 로깅 드라이버는 json-file이며, max-size와 max-file
+    옵션으로 로그 크기를 제한해야 합니다. 중앙 로그 수집(syslog, fluentd)도 권장됩니다.
   verify:
     type: output_contains
     expect: Logging
     field: stdout
+    semantic:
+      intent: 컨테이너 로그 설정 — docker info | grep -A2 'Logging Driver' + 컨테이너별 로그 라인 수. CSAP 로그 관리 항목. json-file
+        기본 드라이버 + max-size/max-file 로 디스크 고갈 방지. syslog/fluentd 중앙 수집 권장.
+      success_criteria:
+      - Logging 키워드
+      - docker info Logging Driver 확인
+      - 로그 크기 제한 점검
+      acceptable_methods:
+      - docker info + grep Logging Driver
+      - cat /etc/docker/daemon.json log-driver 설정
+      - journalctl CONTAINER_NAME=...
+      - Fluentd / Loki / ELK 파이프라인
+      negative_signs:
+      - Logging Driver 미확인
+      - max-size 제한 맥락 없음
+      - 중앙 수집 대안 없음
   target_vm: web
 - order: 8
   instruction: 호스트 시스템의 AppArmor/SELinux 프로파일 적용 상태를 확인하시오. CSAP 가상화 보안.
@@ -119,12 +227,28 @@ steps:
   category: audit
   points: 12
   answer: sudo apparmor_status 2>/dev/null | head -15 || echo "AppArmor 미설치"
-  answer_detail: CSAP는 가상화 환경의 필수 접근 통제(MAC)를 요구합니다. AppArmor는 프로세스별로 접근 가능한 파일, 네트워크,
-    기능을 제한합니다. Docker는 기본적으로 docker-default AppArmor 프로파일을 컨테이너에 적용합니다.
+  answer_detail: CSAP는 가상화 환경의 필수 접근 통제(MAC)를 요구합니다. AppArmor는 프로세스별로 접근 가능한 파일, 네트워크, 기능을 제한합니다. Docker는
+    기본적으로 docker-default AppArmor 프로파일을 컨테이너에 적용합니다.
   verify:
     type: output_contains
     expect: apparmor
     field: stdout
+    semantic:
+      intent: AppArmor/SELinux MAC 프로파일 — sudo apparmor_status. CSAP 가상화 보안 필수 접근 통제(MAC). Docker 기본 docker-default
+        프로파일 적용. 프로세스별 파일/네트워크/capability 제한. SELinux enforcing 대안.
+      success_criteria:
+      - apparmor 키워드
+      - apparmor_status 실행
+      - MAC 프로파일 적용 확인
+      acceptable_methods:
+      - apparmor_status | head
+      - aa-status (같은 바이너리)
+      - getenforce (SELinux)
+      - docker run --security-opt apparmor=docker-default
+      negative_signs:
+      - apparmor_status 미실행
+      - MAC 맥락 없음
+      - docker-default 프로파일 맥락 없음
   target_vm: web
 - order: 9
   instruction: CSAP 클라우드보안인증 종합 점검 스크립트를 작성하고 실행하시오.
@@ -164,11 +288,27 @@ steps:
     SCRIPT
 
     chmod +x /tmp/csap_audit.sh && bash /tmp/csap_audit.sh'
-  answer_detail: CSAP(Cloud Security Assurance Program)는 KISA에서 운영하는 클라우드보안인증 제도로,
-    IaaS/SaaS/DaaS 서비스 제공자가 대상입니다. 인증 기준은 관리적 보호조치(정보보호 정책, 조직 등)와 기술적 보호조치(가상화, 접근
-    통제, 네트워크, 데이터 보호 등)로 구성됩니다.
+  answer_detail: CSAP(Cloud Security Assurance Program)는 KISA에서 운영하는 클라우드보안인증 제도로, IaaS/SaaS/DaaS 서비스
+    제공자가 대상입니다. 인증 기준은 관리적 보호조치(정보보호 정책, 조직 등)와 기술적 보호조치(가상화, 접근 통제, 네트워크, 데이터 보호 등)로 구성됩니다.
   verify:
     type: output_contains
     expect: CSAP 점검 완료
     field: stdout
+    semantic:
+      intent: 'CSAP 종합 점검 — /tmp/csap_audit.sh: 가상화 보안 (Security Options) + 접근 통제 (docker.sock) + 네트워크
+        격리 (network ls) + 자원 관리 (ps) + 로그 관리 (Logging Driver). KISA 클라우드보안인증 (IaaS/SaaS/DaaS 대상). 관리적
+        + 기술적 보호조치 중 기술 영역 자동화.'
+      success_criteria:
+      - CSAP 점검 완료 키워드
+      - /tmp/csap_audit.sh
+      - 5개 영역 이상 점검
+      acceptable_methods:
+      - bash 스크립트 + CSAP 영역 매핑
+      - docker-bench-security + CSAP 매핑
+      - OpenSCAP + CSAP 프로파일
+      - CSAP 자체점검 도구
+      negative_signs:
+      - CSAP 영역 3개 이하
+      - KISA 인증 맥락 없음
+      - IaaS/SaaS 대상 맥락 없음
   target_vm: web
