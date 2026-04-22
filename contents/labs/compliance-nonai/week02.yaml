@@ -3,8 +3,7 @@ title: 정보통신망법 기술적 보호조치 점검
 version: non-ai
 course: compliance-nonai
 week: 2
-description: 정보통신망 이용촉진 및 정보보호 등에 관한 법률의 기술적 보호조치를 시스템에서 점검합니다. 방화벽 설정, 침입탐지, 접근 제어,
-  웹 보안 헤더 등을 확인합니다.
+description: 정보통신망 이용촉진 및 정보보호 등에 관한 법률의 기술적 보호조치를 시스템에서 점검합니다. 방화벽 설정, 침입탐지, 접근 제어, 웹 보안 헤더 등을 확인합니다.
 difficulty: easy
 duration_minutes: 120
 objectives:
@@ -19,12 +18,28 @@ steps:
   category: audit
   points: 10
   answer: sudo nft list ruleset
-  answer_detail: 정보통신망법 시행령 제15조에 따라 정보통신서비스 제공자는 침입 차단 시스템(방화벽)을 설치·운영해야 합니다. nftables는
-    리눅스의 차세대 방화벽 프레임워크로, iptables를 대체합니다.
+  answer_detail: 정보통신망법 시행령 제15조에 따라 정보통신서비스 제공자는 침입 차단 시스템(방화벽)을 설치·운영해야 합니다. nftables는 리눅스의 차세대 방화벽
+    프레임워크로, iptables를 대체합니다.
   verify:
     type: output_contains
     expect: table
     field: stdout
+    semantic:
+      intent: 'nftables 방화벽 룰셋 — sudo nft list ruleset. 정보통신망법 시행령 제15조: 침입 차단 시스템 (방화벽) 설치 운영 의무. 현재
+        운영 상태 확인 기초 단계.'
+      success_criteria:
+      - table 키워드
+      - nft list ruleset 명령
+      - 룰셋 내용 출력
+      acceptable_methods:
+      - sudo nft list ruleset
+      - nft -n list ruleset (숫자)
+      - nft -j list (JSON)
+      - iptables-legacy -L (호환)
+      negative_signs:
+      - 법령 제15조 맥락 없음
+      - list ruleset 누락
+      - 방화벽 의미 없음
   target_vm: secu
 - order: 2
   instruction: 방화벽 기본 정책(policy)이 DROP(차단)으로 설정되어 있는지 확인하시오.
@@ -32,12 +47,28 @@ steps:
   category: audit
   points: 10
   answer: sudo nft list ruleset | grep -i 'policy'
-  answer_detail: 방화벽의 기본 정책은 'deny all, permit by exception' 원칙에 따라 기본 차단(DROP)으로
-    설정하고, 업무에 필요한 포트만 명시적으로 허용해야 합니다. 이는 정보통신망법의 접근 통제 요구사항의 핵심입니다.
+  answer_detail: 방화벽의 기본 정책은 'deny all, permit by exception' 원칙에 따라 기본 차단(DROP)으로 설정하고, 업무에 필요한 포트만 명시적으로
+    허용해야 합니다. 이는 정보통신망법의 접근 통제 요구사항의 핵심입니다.
   verify:
     type: output_contains
     expect: policy
     field: stdout
+    semantic:
+      intent: 방화벽 기본 정책 DROP — sudo nft list ruleset | grep -i policy. deny-all permit-by-exception =
+        기본 차단 + 명시 허용만. 정보통신망법 접근 통제 핵심 원칙. Zero Trust.
+      success_criteria:
+      - policy 키워드
+      - nft + grep policy
+      - 정책 값 확인
+      acceptable_methods:
+      - nft list ruleset | grep policy
+      - nft list chains + policy
+      - firewalld --get-default-zone = drop
+      - NIST CSF PR.AC-5
+      negative_signs:
+      - default deny 개념 없음
+      - accept 기본값 허용
+      - zero-trust 맥락 없음
   target_vm: secu
 - order: 3
   instruction: Suricata IDS 서비스가 활성화되어 동작 중인지 확인하시오. 정보통신망법은 침입탐지시스템 운영을 요구합니다.
@@ -45,26 +76,59 @@ steps:
   category: audit
   points: 10
   answer: sudo systemctl status suricata --no-pager | head -10
-  answer_detail: 정보통신망법 시행령 제15조에 따라 침입탐지시스템(IDS)을 설치·운영해야 합니다. Suricata는 오픈소스 IDS/IPS로,
-    네트워크 트래픽을 실시간 분석하여 악성 활동을 탐지합니다.
+  answer_detail: 정보통신망법 시행령 제15조에 따라 침입탐지시스템(IDS)을 설치·운영해야 합니다. Suricata는 오픈소스 IDS/IPS로, 네트워크 트래픽을 실시간
+    분석하여 악성 활동을 탐지합니다.
   verify:
     type: output_contains
     expect: suricata
     field: stdout
+    semantic:
+      intent: 'Suricata IDS 상태 — sudo systemctl status suricata --no-pager | head -10. 정보통신망법 시행령 제15조:
+        IDS 설치 운영. 실시간 트래픽 분석 + 악성 활동 탐지. active 상태 확인.'
+      success_criteria:
+      - suricata 키워드
+      - systemctl status
+      - 서비스 상태
+      acceptable_methods:
+      - systemctl status suricata --no-pager
+      - systemctl is-active suricata
+      - suricatasc -c uptime
+      - ps aux | grep suricata
+      negative_signs:
+      - IDS 개념 없음
+      - 제15조 맥락 없음
+      - 상태 해석 없음
   target_vm: secu
 - order: 4
   instruction: Suricata의 규칙 파일 경로를 확인하고 현재 활성화된 규칙 파일 수를 파악하시오.
   hint: suricata.yaml에서 default-rule-path를 확인하세요.
   category: audit
   points: 10
-  answer: sudo grep -E 'rule-files|default-rule-path' /etc/suricata/suricata.yaml
-    | head -5 && ls /var/lib/suricata/rules/*.rules 2>/dev/null | wc -l
-  answer_detail: IDS 규칙은 정기적으로 업데이트해야 최신 위협을 탐지할 수 있습니다. Suricata는 ET Open, Suricata
-    자체 규칙 등 다양한 규칙셋을 지원합니다. suricata-update 명령으로 규칙을 최신으로 유지해야 합니다.
+  answer: sudo grep -E 'rule-files|default-rule-path' /etc/suricata/suricata.yaml | head -5 && ls /var/lib/suricata/rules/*.rules
+    2>/dev/null | wc -l
+  answer_detail: IDS 규칙은 정기적으로 업데이트해야 최신 위협을 탐지할 수 있습니다. Suricata는 ET Open, Suricata 자체 규칙 등 다양한 규칙셋을
+    지원합니다. suricata-update 명령으로 규칙을 최신으로 유지해야 합니다.
   verify:
     type: output_contains
     expect: rule
     field: stdout
+    semantic:
+      intent: Suricata 룰 파일 수 — grep -E 'rule-files|default-rule-path' /etc/suricata/suricata.yaml + ls
+        /var/lib/suricata/rules/*.rules | wc -l. 룰 인벤토리. suricata-update 정기 갱신 = 최신 위협 탐지. 오래된 룰셋 = 법적
+        책임.
+      success_criteria:
+      - rule 키워드
+      - rule-files 또는 *.rules 수
+      - 룰 경로 + 개수
+      acceptable_methods:
+      - grep suricata.yaml + ls wc -l
+      - suricata-update --help
+      - /var/lib/suricata/rules 조회
+      - suricatasc -c reload-rules
+      negative_signs:
+      - 룰 경로 확인 없음
+      - 갱신 필요성 맥락 없음
+      - 파일 수 누락
   target_vm: secu
 - order: 5
   instruction: Suricata 로그에서 최근 알림(alert)을 확인하시오. IDS 알림이 정상 기록되는지 점검합니다.
@@ -72,12 +136,28 @@ steps:
   category: audit
   points: 10
   answer: sudo tail -20 /var/log/suricata/fast.log 2>/dev/null; sudo ls -la /var/log/suricata/
-  answer_detail: IDS 로그 모니터링은 정보통신망법의 침해사고 대응 의무와 직결됩니다. fast.log는 간결한 알림 형식이고, eve.json은
-    상세 이벤트를 JSON으로 기록합니다. 알림이 전혀 없다면 규칙이 비활성이거나 탐지 대상 트래픽이 없는 것입니다.
+  answer_detail: IDS 로그 모니터링은 정보통신망법의 침해사고 대응 의무와 직결됩니다. fast.log는 간결한 알림 형식이고, eve.json은 상세 이벤트를 JSON으로
+    기록합니다. 알림이 전혀 없다면 규칙이 비활성이거나 탐지 대상 트래픽이 없는 것입니다.
   verify:
     type: output_contains
     expect: suricata
     field: stdout
+    semantic:
+      intent: Suricata 알림 확인 — sudo tail -20 /var/log/suricata/fast.log + ls -la /var/log/suricata/. 정보통신망법
+        침해사고 대응 의무. fast.log 간결 알림 + eve.json 상세 JSON. 알림 없음 = 룰 비활성 또는 트래픽 없음 조사.
+      success_criteria:
+      - suricata 키워드
+      - tail + ls /var/log/suricata/
+      - 알림 확인
+      acceptable_methods:
+      - tail fast.log + ls
+      - jq eve.json 파싱
+      - Wazuh Dashboard Suricata alerts
+      - Kibana SIEM 모듈
+      negative_signs:
+      - 경로 혼동
+      - 침해사고 대응 맥락 없음
+      - 로그 형식 구분 없음
   target_vm: secu
 - order: 6
   instruction: 시스템에서 LISTEN 상태인 포트를 조회하여 불필요한 서비스가 동작하지 않는지 확인하시오.
@@ -85,41 +165,89 @@ steps:
   category: audit
   points: 10
   answer: sudo ss -tlnp
-  answer_detail: 정보통신망법에 따라 불필요한 서비스와 포트를 차단해야 합니다. ss 명령에서 -t는 TCP, -l은 LISTEN, -n은
-    숫자 표시, -p는 프로세스 정보입니다. 업무에 필요 없는 포트가 열려 있다면 서비스를 중지하거나 방화벽에서 차단합니다.
+  answer_detail: 정보통신망법에 따라 불필요한 서비스와 포트를 차단해야 합니다. ss 명령에서 -t는 TCP, -l은 LISTEN, -n은 숫자 표시, -p는 프로세스 정보입니다.
+    업무에 필요 없는 포트가 열려 있다면 서비스를 중지하거나 방화벽에서 차단합니다.
   verify:
     type: output_contains
     expect: LISTEN
     field: stdout
+    semantic:
+      intent: 'LISTEN 포트 조회 — sudo ss -tlnp. 정보통신망법: 불필요 서비스/포트 차단 필수. -t TCP + -l LISTEN + -n 숫자 + -p
+        프로세스. 업무 외 포트 → 서비스 중지 또는 방화벽 차단. 공격 표면 최소화.'
+      success_criteria:
+      - LISTEN 키워드
+      - ss -tlnp 실행
+      - 포트 + 프로세스
+      acceptable_methods:
+      - ss -tlnp
+      - netstat -tlnp (legacy)
+      - lsof -i -P -n | grep LISTEN
+      - nmap localhost 자체 스캔
+      negative_signs:
+      - -l LISTEN 필터 없음
+      - 프로세스 정보 누락
+      - 최소화 원칙 맥락 없음
   target_vm: secu
 - order: 7
   instruction: rsyslog 원격 로그 전송 설정을 확인하시오. 정보통신망법은 로그 위변조 방지를 위해 별도 서버 보관을 권고합니다.
   hint: /etc/rsyslog.conf와 /etc/rsyslog.d/ 에서 원격 전송(@@) 설정을 확인하세요.
   category: audit
   points: 12
-  answer: grep -rn '@@\|@' /etc/rsyslog.conf /etc/rsyslog.d/ 2>/dev/null | grep -v
-    '^#'
-  answer_detail: 로그를 원본 서버에만 보관하면 공격자가 침입 후 삭제·위변조할 수 있습니다. rsyslog에서 @는 UDP, @@는
-    TCP로 원격 서버에 로그를 전송합니다. SIEM(10.20.30.100)으로 전송하면 위변조 방지와 중앙 관리가 가능합니다.
+  answer: grep -rn '@@\|@' /etc/rsyslog.conf /etc/rsyslog.d/ 2>/dev/null | grep -v '^#'
+  answer_detail: 로그를 원본 서버에만 보관하면 공격자가 침입 후 삭제·위변조할 수 있습니다. rsyslog에서 @는 UDP, @@는 TCP로 원격 서버에 로그를 전송합니다.
+    SIEM(10.20.30.100)으로 전송하면 위변조 방지와 중앙 관리가 가능합니다.
   verify:
     type: output_contains
     expect: '@'
     field: stdout
+    semantic:
+      intent: rsyslog 원격 로그 전송 — grep -rn '@@\|@' /etc/rsyslog.conf /etc/rsyslog.d/ | grep -v '^#'. @
+        UDP + @@ TCP 원격 전송. SIEM 서버 (10.20.30.100) 로 전달 = 위변조 방지 + 중앙 관리. MITRE ATT&CK T1562.001 Impair
+        Defenses 방어.
+      success_criteria:
+      - '@ 키워드'
+      - /etc/rsyslog 조회
+      - 원격 전송 설정
+      acceptable_methods:
+      - grep '@@' rsyslog.conf
+      - systemctl status rsyslog
+      - /etc/rsyslog.d/50-default 확인
+      - syslog-ng + destination
+      negative_signs:
+      - 원격 전송 없이 로컬만
+      - '@ vs @@ 구분 없음'
+      - SIEM 연계 맥락 없음
   target_vm: secu
 - order: 8
-  instruction: WEB 서버({{WEB_IP}})에서 HTTP 응답 보안 헤더를 점검하시오. X-Frame-Options, X-Content-Type-Options
-    등이 설정되어야 합니다.
+  instruction: WEB 서버({{WEB_IP}})에서 HTTP 응답 보안 헤더를 점검하시오. X-Frame-Options, X-Content-Type-Options 등이 설정되어야
+    합니다.
   hint: curl -I 명령으로 HTTP 응답 헤더를 확인하세요.
   category: audit
   points: 12
   answer: curl -sI http://10.20.30.80/ | grep -iE '(X-Frame|X-Content-Type|X-XSS|Strict-Transport|Server|Content-Security)'
-  answer_detail: 정보통신망법은 웹 서비스의 보안 취약점 방지를 요구합니다. X-Frame-Options은 클릭재킹 방지, X-Content-Type-Options은
-    MIME 스니핑 방지, Strict-Transport-Security는 HTTPS 강제에 기여합니다. Server 헤더는 버전 정보 노출을
-    막기 위해 숨겨야 합니다.
+  answer_detail: 정보통신망법은 웹 서비스의 보안 취약점 방지를 요구합니다. X-Frame-Options은 클릭재킹 방지, X-Content-Type-Options은 MIME
+    스니핑 방지, Strict-Transport-Security는 HTTPS 강제에 기여합니다. Server 헤더는 버전 정보 노출을 막기 위해 숨겨야 합니다.
   verify:
     type: output_contains
     expect: HTTP
     field: stdout
+    semantic:
+      intent: HTTP 보안 헤더 — curl -sI http://10.20.30.80/ | grep -iE '(X-Frame|X-Content-Type|X-XSS|Strict-Transport|Server|Content-Security)'.
+        정보통신망법 웹 취약점 방지. X-Frame-Options (클릭재킹) + X-Content-Type-Options (MIME 스니핑) + HSTS (HTTPS 강제).
+        Server 헤더 숨김 권장. OWASP Secure Headers.
+      success_criteria:
+      - HTTP 키워드
+      - curl -I 헤더 조회
+      - 보안 헤더 확인
+      acceptable_methods:
+      - curl -sI + grep
+      - Mozilla Observatory
+      - securityheaders.com
+      - nmap http-security-headers NSE
+      negative_signs:
+      - 헤더 1개만 확인
+      - OWASP 맥락 없음
+      - curl -I 누락
   target_vm: secu
 - order: 9
   instruction: 정보통신망법 기술적 보호조치 준수 점검 스크립트를 작성하고 실행하시오.
@@ -153,10 +281,26 @@ steps:
     SCRIPT
 
     chmod +x /tmp/network_compliance.sh && bash /tmp/network_compliance.sh'
-  answer_detail: 정보통신망법 기술적 보호조치에는 접근 통제(방화벽), 침입 탐지/방지(IDS/IPS), 접속기록 보관, 악성 프로그램
-    방지 등이 포함됩니다. 자동화된 점검 스크립트로 정기적으로 확인하면 법적 의무를 체계적으로 이행할 수 있습니다.
+  answer_detail: 정보통신망법 기술적 보호조치에는 접근 통제(방화벽), 침입 탐지/방지(IDS/IPS), 접속기록 보관, 악성 프로그램 방지 등이 포함됩니다. 자동화된 점검
+    스크립트로 정기적으로 확인하면 법적 의무를 체계적으로 이행할 수 있습니다.
   verify:
     type: output_contains
     expect: 정보통신망법 점검 완료
     field: stdout
+    semantic:
+      intent: '정보통신망법 종합 점검 — /tmp/network_compliance.sh: 방화벽 활성 + IDS 상태 + 열린 TCP 포트 수 + 로그 원격 전송 (@@
+        카운트). 4 핵심 기술 보호조치 점검. 정기 자동화 = 법적 의무 체계적 이행.'
+      success_criteria:
+      - 정보통신망법 점검 완료 키워드
+      - /tmp/network_compliance.sh
+      - 4 항목 점검
+      acceptable_methods:
+      - bash + 다중 명령
+      - Lynis profile custom
+      - OpenSCAP DISA STIG
+      - 자체 자동화 스크립트
+      negative_signs:
+      - 항목 2개 이하
+      - 자동화 언급 없음
+      - 완료 마크 없음
   target_vm: secu
