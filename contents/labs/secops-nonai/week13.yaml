@@ -19,42 +19,87 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://SIEM_IP:8080 접속 → 해당 메뉴 탐색
 
-    📎 참고 (CLI): curl -sS -o /dev/null -w ''%{http_code}\n'' -X POST http://localhost:8080/graphql
-    -H ''Content-Type: application/json'' -d ''{"query":"{ about { version } }"}'''
+    📎 참고 (CLI): curl -sS -o /dev/null -w ''%{http_code}\n'' -X POST http://localhost:8080/graphql -H ''Content-Type:
+    application/json'' -d ''{"query":"{ about { version } }"}'''
   answer_detail: 'OpenCTI 위협 인텔리전스 활용: OpenCTI GraphQL 엔드포인트(/graphql) 가 응답하는지 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: OpenCTI GraphQL — curl POST /graphql + {query:{about{version}}}. GraphQL 단일 엔드포인트 + 쿼리 기반
+        API. TI 데이터 조회 + 변형 (mutations). OpenCTI 플랫폼 통신 표준.
+      success_criteria:
+      - curl -X POST
+      - /graphql 엔드포인트
+      - GraphQL query 문법
+      acceptable_methods:
+      - curl -X POST /graphql + JSON body
+      - GraphQL Playground UI
+      - pycti Python SDK
+      - Node.js apollo-client
+      negative_signs:
+      - GraphQL 개념 없음
+      - GET 요청 (POST 필요)
+      - 응답 코드 해석 없음
   target_vm: siem
 - order: 2
   instruction: secu VM에 cti 전용 blocklist set 'cti_ips'(filter 테이블) 를 만드시오.
   hint: nft add set inet filter cti_ips
   category: configure
   points: 10
-  answer: sudo nft add table inet filter 2>/dev/null ; sudo nft 'add set inet filter
-    cti_ips { type ipv4_addr \; }' 2>/dev/null && sudo nft list set inet filter cti_ips
-  answer_detail: 'OpenCTI 위협 인텔리전스 활용: secu VM에 cti 전용 blocklist set ''cti_ips''(filter
-    테이블) 를 만드시오.'
+  answer: sudo nft add table inet filter 2>/dev/null ; sudo nft 'add set inet filter cti_ips { type ipv4_addr
+    \; }' 2>/dev/null && sudo nft list set inet filter cti_ips
+  answer_detail: 'OpenCTI 위협 인텔리전스 활용: secu VM에 cti 전용 blocklist set ''cti_ips''(filter 테이블) 를 만드시오.'
   verify:
     type: output_contains
     expect: cti_ips
     field: stdout
+    semantic:
+      intent: cti_ips set 생성 — sudo nft add table inet filter + sudo nft 'add set inet filter cti_ips
+        { type ipv4_addr \; }'. OpenCTI IOC 주입 대상 set. 동적 IP 추가 가능. TI-driven blocklist 기반.
+      success_criteria:
+      - cti_ips 키워드
+      - nft add set 명령
+      - type ipv4_addr
+      acceptable_methods:
+      - nft add set type ipv4_addr
+      - ipset create (legacy)
+      - flags interval (CIDR 대역)
+      - size 옵션 (큰 규모)
+      negative_signs:
+      - type 지정 누락
+      - table 없이 set 만
+      - set 이름 혼동
   target_vm: secu
 - order: 3
   instruction: filter.input 체인 초기에 ip saddr @cti_ips drop 룰을 추가하시오.
   hint: nft insert rule …
   category: configure
   points: 10
-  answer: sudo nft add chain inet filter input '{ type filter hook input priority
-    0 \; }' 2>/dev/null ; sudo nft insert rule inet filter input ip saddr @cti_ips
-    drop
-  answer_detail: 'OpenCTI 위협 인텔리전스 활용: filter.input 체인 초기에 ip saddr @cti_ips drop
-    룰을 추가하시오.'
+  answer: sudo nft add chain inet filter input '{ type filter hook input priority 0 \; }' 2>/dev/null
+    ; sudo nft insert rule inet filter input ip saddr @cti_ips drop
+  answer_detail: 'OpenCTI 위협 인텔리전스 활용: filter.input 체인 초기에 ip saddr @cti_ips drop 룰을 추가하시오.'
   verify:
     type: output_contains
     expect: cti_ips
     field: stdout
+    semantic:
+      intent: cti_ips drop 룰 — sudo nft insert rule inet filter input ip saddr @cti_ips drop. insert =
+        체인 맨 앞 (최고 우선순위). @ 접두어 = set 참조. TI 매칭 IP 즉시 차단. MITRE D3FEND Respond.
+      success_criteria:
+      - cti_ips 키워드
+      - insert rule (맨 앞)
+      - ip saddr @ set 참조
+      acceptable_methods:
+      - nft insert rule + @ set
+      - iptables + ipset match-set
+      - Wazuh Active Response firewall-drop
+      - eBPF XDP 대량 처리
+      negative_signs:
+      - add rule (뒤에 추가)
+      - '@ 접두어 없음'
+      - set 매칭 방식 없음
   target_vm: secu
 - order: 4
   instruction: 작성한 cti_ips set의 현재 원소를 확인하시오.
@@ -67,6 +112,22 @@ steps:
     type: output_contains
     expect: cti_ips
     field: stdout
+    semantic:
+      intent: cti_ips set 원소 확인 — sudo nft list set inet filter cti_ips. set 내 현재 원소 조회. 초기 비어있음 → 이후
+        IOC 주입. 운영 상태 점검.
+      success_criteria:
+      - cti_ips 키워드
+      - nft list set
+      - set 내용 출력
+      acceptable_methods:
+      - nft list set inet filter cti_ips
+      - nft -j list set (JSON)
+      - ipset list cti_ips (legacy)
+      - Wazuh API 집계
+      negative_signs:
+      - 테이블 전체 list
+      - set 이름 혼동
+      - 내용 없이 존재만
   target_vm: secu
 - order: 5
   instruction: 샘플 악성 IP 203.0.113.66 을 cti_ips 에 주입하시오(OpenCTI 조회 결과를 가정).
@@ -75,14 +136,29 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://SIEM_IP:8080 접속 → 해당 메뉴 탐색
 
-    📎 참고 (CLI): sudo nft add element inet filter cti_ips ''{ 203.0.113.66 }'' && sudo
-    nft list set inet filter cti_ips'
-  answer_detail: 'OpenCTI 위협 인텔리전스 활용: 샘플 악성 IP 203.0.113.66 을 cti_ips 에 주입하시오(OpenCTI
-    조회 결과를 가정).'
+    📎 참고 (CLI): sudo nft add element inet filter cti_ips ''{ 203.0.113.66 }'' && sudo nft list set inet
+    filter cti_ips'
+  answer_detail: 'OpenCTI 위협 인텔리전스 활용: 샘플 악성 IP 203.0.113.66 을 cti_ips 에 주입하시오(OpenCTI 조회 결과를 가정).'
   verify:
     type: output_contains
     expect: 203.0.113.66
     field: stdout
+    semantic:
+      intent: IOC 샘플 IP 주입 — sudo nft add element inet filter cti_ips '{ 203.0.113.66 }' && sudo nft list
+        set. OpenCTI 조회 결과 가정. 203.0.113.x = TEST-NET-3 (문서화용 IP). 실제 IOC 주입 파이프라인 시뮬레이션.
+      success_criteria:
+      - 203.0.113.66 키워드
+      - nft add element
+      - set 에 IP 삽입
+      acceptable_methods:
+      - nft add element
+      - pycti + nftables bridge 스크립트
+      - ansible nftables_set_add
+      - cron + OpenCTI API 주기 동기화
+      negative_signs:
+      - IP 혼동
+      - set 이름 혼동
+      - 주입 후 확인 없음
   target_vm: secu
 - order: 6
   instruction: 203.0.113.66 가 blocklist 로 등록됐는지 확인하시오.
@@ -95,6 +171,22 @@ steps:
     type: output_contains
     expect: 203.0.113.66
     field: stdout
+    semantic:
+      intent: IOC 등록 확인 — sudo nft list set inet filter cti_ips. 203.0.113.66 출력 검증. 주입 후 즉시 차단 활성화. 실제
+        차단 테스트 가능 상태.
+      success_criteria:
+      - 203.0.113.66 키워드
+      - nft list set
+      - IOC 등록 검증
+      acceptable_methods:
+      - nft list set 검증
+      - nft -j + jq elements
+      - log 검증 + packet drop 확인
+      - ansible assert
+      negative_signs:
+      - 등록 여부 확인 없음
+      - set 이름 혼동
+      - IP 누락
   target_vm: secu
 - order: 7
   instruction: OpenCTI 컨테이너에서 최근 5개 Indicator 생성 이벤트 로그를 조회하시오(platform 컨테이너 로그).
@@ -103,14 +195,29 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://SIEM_IP:8080 접속 → 해당 메뉴 탐색
 
-    📎 참고 (CLI): docker logs --tail 200 $(docker ps --format ''{{.Names}}'' | grep
-    -i ''^opencti$'' | head -1) 2>&1 | grep -i indicator | tail -5'
-  answer_detail: 'OpenCTI 위협 인텔리전스 활용: OpenCTI 컨테이너에서 최근 5개 Indicator 생성 이벤트 로그를 조회하시오(platform
-    컨테이너 로그).'
+    📎 참고 (CLI): docker logs --tail 200 $(docker ps --format ''{{.Names}}'' | grep -i ''^opencti$'' | head
+    -1) 2>&1 | grep -i indicator | tail -5'
+  answer_detail: 'OpenCTI 위협 인텔리전스 활용: OpenCTI 컨테이너에서 최근 5개 Indicator 생성 이벤트 로그를 조회하시오(platform 컨테이너 로그).'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: OpenCTI Indicator 이벤트 로그 — docker logs --tail 200 opencti | grep -i indicator | tail -5.
+        Indicator 생성/업데이트 시 로그 출력. API 동작 + connector 수집 상태 점검. STIX Indicator 객체 작업 이력.
+      success_criteria:
+      - docker logs + grep indicator
+      - opencti 컨테이너
+      - 최근 5개 이벤트
+      acceptable_methods:
+      - docker logs + grep
+      - pycti IndicatorsAPI.list()
+      - OpenCTI GraphQL query indicators
+      - Elastic 인덱싱 + 쿼리
+      negative_signs:
+      - grep 필터 없음
+      - indicator 이벤트 구분 없음
+      - 범위 제한 없음
   target_vm: siem
 - order: 8
   instruction: OpenCTI connectors 컨테이너 목록을 확인하시오.
@@ -119,13 +226,29 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://SIEM_IP:8080 접속 → 해당 메뉴 탐색
 
-    📎 참고 (CLI): docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | grep
-    -i connector | head'
+    📎 참고 (CLI): docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | grep -i connector | head'
   answer_detail: 'OpenCTI 위협 인텔리전스 활용: OpenCTI connectors 컨테이너 목록을 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: OpenCTI connectors 컨테이너 — docker ps --format '{{.Names}}\t{{.Status}}' | grep -i connector.
+        connector = 외부 TI 피드 (MISP/OTX/MITRE ATT&CK/abuse.ch 등) 통합 + 파싱 + OpenCTI 등록. 다수 connector 병렬
+        실행. enrichment + import 자동화.
+      success_criteria:
+      - connector 키워드
+      - docker ps + grep
+      - 컨테이너 상태
+      acceptable_methods:
+      - docker ps + grep connector
+      - docker compose ps | grep connector
+      - OpenCTI Connectors UI
+      - helm chart (k8s)
+      negative_signs:
+      - connector 개념 없음
+      - 필터 없이 전체
+      - Up 상태 확인 없음
   target_vm: siem
 - order: 9
   instruction: 샘플 IP 203.0.113.66 을 cti_ips 에서 제거하시오.
@@ -138,6 +261,22 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: IOC 샘플 제거 — sudo nft delete element inet filter cti_ips '{ 203.0.113.66 }'. 실습 cleanup.
+        동적 제거 = expire 또는 수동 제거. 실제 운영 시 IOC TTL 관리 필요.
+      success_criteria:
+      - nft delete element 명령
+      - 203.0.113.66 대상
+      - set 에서 제거
+      acceptable_methods:
+      - nft delete element
+      - flush set (전체)
+      - ansible 제거
+      - TTL 기반 expire
+      negative_signs:
+      - flush set 과도
+      - delete 대신 update
+      - 제거 확인 없음
   target_vm: secu
 - order: 10
   instruction: filter.input 체인의 현재 룰을 확인해 정리 상태를 점검하시오.
@@ -150,6 +289,22 @@ steps:
     type: output_contains
     expect: cti_ips
     field: stdout
+    semantic:
+      intent: filter input 체인 상태 — sudo nft list chain inet filter input. cti_ips 룰 잔존 확인 (set 자체는 유지).
+        룰 순서 + 다른 체인 룰 검증. 운영 cleanup 완료 상태.
+      success_criteria:
+      - cti_ips 키워드
+      - nft list chain
+      - 체인 상태 출력
+      acceptable_methods:
+      - nft list chain inet filter input
+      - nft list ruleset + 필터
+      - Wazuh API /chains (최신)
+      - ansible state 체크
+      negative_signs:
+      - list chain 실행 안 함
+      - cti_ips 룰 누락 확인 없음
+      - 체인 이름 혼동
   target_vm: secu
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
