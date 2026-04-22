@@ -3,8 +3,8 @@ title: 컴플라이언스 종합평가 실습
 version: non-ai
 course: compliance-nonai
 week: 15
-description: 전체 컴플라이언스 프레임워크를 종합하여 시스템 보안 준수 상태를 평가합니다. 개인정보보호법, 정보통신망법, ISMS-P, ISO27001,
-  PCI-DSS의 핵심 요구사항을 한 번에 점검하는 종합 감사를 수행합니다.
+description: 전체 컴플라이언스 프레임워크를 종합하여 시스템 보안 준수 상태를 평가합니다. 개인정보보호법, 정보통신망법, ISMS-P, ISO27001, PCI-DSS의 핵심
+  요구사항을 한 번에 점검하는 종합 감사를 수행합니다.
 difficulty: hard
 duration_minutes: 120
 objectives:
@@ -14,38 +14,69 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: SECU 서버({{SECU_IP}})의 사용자 계정 및 인증 통제를 종합 점검하시오. (ISMS-P 2.5, ISO27001
-    A.8.5, PCI-DSS Req.8)
+  instruction: SECU 서버({{SECU_IP}})의 사용자 계정 및 인증 통제를 종합 점검하시오. (ISMS-P 2.5, ISO27001 A.8.5, PCI-DSS Req.8)
   hint: 계정, 패스워드 정책, SSH 인증을 한 번에 점검하세요.
   category: audit
   points: 10
-  answer: 'echo ''=== [1] 사용자 계정/인증 통제 ==='' && echo ''[계정 현황]'' && awk -F: ''$7 !~
-    /nologin|false/ {print $1}'' /etc/passwd && echo ''[패스워드 정책]'' && grep -E ''(minlen|credit)''
-    /etc/security/pwquality.conf 2>/dev/null | grep -v ''^#'' && grep ''^PASS_MAX_DAYS''
-    /etc/login.defs && echo ''[SSH 인증]'' && grep -E ''^(PermitRootLogin|MaxAuthTries|PasswordAuth)''
-    /etc/ssh/sshd_config 2>/dev/null'
-  answer_detail: 사용자 계정 및 인증 통제는 모든 컴플라이언스 프레임워크의 공통 요구사항입니다. ISMS-P 2.5(인증 및 권한관리),
-    ISO27001 A.8.5(보안 인증), PCI-DSS Req.8(사용자 식별 및 인증)이 이 영역에 해당합니다.
+  answer: 'echo ''=== [1] 사용자 계정/인증 통제 ==='' && echo ''[계정 현황]'' && awk -F: ''$7 !~ /nologin|false/ {print
+    $1}'' /etc/passwd && echo ''[패스워드 정책]'' && grep -E ''(minlen|credit)'' /etc/security/pwquality.conf
+    2>/dev/null | grep -v ''^#'' && grep ''^PASS_MAX_DAYS'' /etc/login.defs && echo ''[SSH 인증]'' && grep
+    -E ''^(PermitRootLogin|MaxAuthTries|PasswordAuth)'' /etc/ssh/sshd_config 2>/dev/null'
+  answer_detail: 사용자 계정 및 인증 통제는 모든 컴플라이언스 프레임워크의 공통 요구사항입니다. ISMS-P 2.5(인증 및 권한관리), ISO27001 A.8.5(보안
+    인증), PCI-DSS Req.8(사용자 식별 및 인증)이 이 영역에 해당합니다.
   verify:
     type: output_contains
     expect: 사용자 계정/인증 통제
     field: stdout
+    semantic:
+      intent: 사용자 계정/인증 통제 종합 — [계정] /etc/passwd nologin 필터 + [패스워드 정책] pwquality minlen/credit + login.defs
+        PASS_MAX_DAYS + [SSH 인증] PermitRootLogin/MaxAuthTries/PasswordAuth. ISMS-P 2.5 + ISO27001 A.8.5
+        + PCI-DSS Req.8 공통 요구사항.
+      success_criteria:
+      - 사용자 계정/인증 통제 섹션 키워드
+      - 계정 + 패스워드 + SSH 3영역
+      - 다중 프레임워크 매핑
+      acceptable_methods:
+      - awk + grep 다중 파일 통합
+      - Lynis audit AUTH-9328
+      - OpenSCAP auth 프로파일
+      - CIS-CAT account/auth 체크
+      negative_signs:
+      - 3영역 중 2개 이상 누락
+      - ISMS-P/ISO/PCI-DSS 매핑 없음
+      - 프레임워크 통합 맥락 없음
   target_vm: secu
 - order: 2
   instruction: 접근 통제 및 방화벽 설정을 종합 점검하시오. (ISMS-P 2.6, ISO27001 A.8.20, PCI-DSS Req.1)
   hint: 방화벽 규칙, 열린 포트, 네트워크 설정을 한 번에 점검하세요.
   category: audit
   points: 10
-  answer: echo '=== [2] 접근 통제/방화벽 ===' && echo '[방화벽 규칙]' && sudo nft list ruleset
-    2>/dev/null | grep -E '(policy|accept|drop)' | head -10 && echo '[열린 포트]' && sudo
-    ss -tlnp | grep LISTEN | head -10 && echo '[커널 보안]' && sysctl net.ipv4.ip_forward
-    net.ipv4.conf.all.accept_redirects 2>/dev/null
-  answer_detail: 네트워크 접근 통제는 방화벽 정책(기본 차단), 불필요한 서비스 비활성화, 커널 네트워크 보안 파라미터 설정으로 구현합니다.
-    PCI-DSS Req.1은 가장 구체적인 방화벽 요구사항을 정의합니다.
+  answer: echo '=== [2] 접근 통제/방화벽 ===' && echo '[방화벽 규칙]' && sudo nft list ruleset 2>/dev/null | grep
+    -E '(policy|accept|drop)' | head -10 && echo '[열린 포트]' && sudo ss -tlnp | grep LISTEN | head -10 &&
+    echo '[커널 보안]' && sysctl net.ipv4.ip_forward net.ipv4.conf.all.accept_redirects 2>/dev/null
+  answer_detail: 네트워크 접근 통제는 방화벽 정책(기본 차단), 불필요한 서비스 비활성화, 커널 네트워크 보안 파라미터 설정으로 구현합니다. PCI-DSS Req.1은
+    가장 구체적인 방화벽 요구사항을 정의합니다.
   verify:
     type: output_contains
     expect: 접근 통제/방화벽
     field: stdout
+    semantic:
+      intent: 접근 통제/방화벽 종합 — [방화벽] nft list ruleset policy/accept/drop + [열린 포트] ss -tlnp LISTEN + [커널]
+        sysctl net.ipv4.ip_forward + accept_redirects. ISMS-P 2.6 + ISO27001 A.8.20 + PCI-DSS Req.1. 기본
+        차단 + 계층 방어.
+      success_criteria:
+      - 접근 통제/방화벽 섹션 키워드
+      - 방화벽 + 포트 + 커널 3영역
+      - 기본 차단 정책 맥락
+      acceptable_methods:
+      - nft + ss + sysctl 통합
+      - iptables-save + ss
+      - firewall-cmd --list-all + sysctl
+      - AWS Security Group + NACL 매핑
+      negative_signs:
+      - 3영역 중 2개 이상 누락
+      - Req.1 매핑 없음
+      - 계층 방어 맥락 없음
   target_vm: secu
 - order: 3
   instruction: 암호화 통제를 종합 점검하시오. (개인정보보호법 제29조, GDPR Art.32, ISO27001 A.8.24)
@@ -53,82 +84,163 @@ steps:
   category: audit
   points: 10
   answer: 'echo ''=== [3] 암호화 통제 ==='' && echo ''[SSH 암호]'' && grep -E ''(Ciphers|MACs|KexAlgorithms)''
-    /etc/ssh/sshd_config 2>/dev/null | grep -v ''^#'' || echo ''SSH: 기본 암호 스위트 사용''
-    && echo ''[WEB TLS]'' && echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null
-    | grep -E ''(Protocol|Cipher)'' | head -3 || echo ''HTTPS 미설정'''
-  answer_detail: 암호화 통제는 저장 데이터와 전송 데이터 모두에 적용되어야 합니다. 개인정보보호법은 개인정보의 암호화를, GDPR Art.32(1)(a)는
-    가명처리 및 암호화를, ISO27001 A.8.24는 적절한 암호 사용 정책을 요구합니다.
+    /etc/ssh/sshd_config 2>/dev/null | grep -v ''^#'' || echo ''SSH: 기본 암호 스위트 사용'' && echo ''[WEB TLS]''
+    && echo | openssl s_client -connect 10.20.30.80:443 2>/dev/null | grep -E ''(Protocol|Cipher)'' |
+    head -3 || echo ''HTTPS 미설정'''
+  answer_detail: 암호화 통제는 저장 데이터와 전송 데이터 모두에 적용되어야 합니다. 개인정보보호법은 개인정보의 암호화를, GDPR Art.32(1)(a)는 가명처리 및
+    암호화를, ISO27001 A.8.24는 적절한 암호 사용 정책을 요구합니다.
   verify:
     type: output_contains
     expect: 암호화 통제
     field: stdout
+    semantic:
+      intent: 암호화 통제 종합 — [SSH 암호] Ciphers/MACs/KexAlgorithms + [WEB TLS] openssl s_client Protocol/Cipher.
+        개인정보보호법 제29조 (개인정보 암호화) + GDPR Art.32(1)(a) (가명처리/암호화) + ISO27001 A.8.24 (암호 사용 정책). 저장+전송 모두
+        적용.
+      success_criteria:
+      - 암호화 통제 섹션 키워드
+      - SSH 암호 + TLS 점검
+      - 3대 법규/표준 매핑
+      acceptable_methods:
+      - grep Ciphers + openssl s_client
+      - sshaudit + testssl.sh
+      - nmap ssl-enum-ciphers
+      - SSLLabs / Qualys SSL Test
+      negative_signs:
+      - SSH/TLS 중 누락
+      - 개인정보보호법/GDPR/ISO 매핑 없음
+      - 저장+전송 구분 맥락 없음
   target_vm: secu
 - order: 4
   instruction: 감사 및 로그 관리를 종합 점검하시오. (개인정보보호법 안전조치 제8조, ISMS-P 2.9.5, PCI-DSS Req.10)
   hint: auditd, rsyslog, 로그 보관 설정을 점검하세요.
   category: audit
   points: 12
-  answer: 'echo ''=== [4] 감사/로그 관리 ==='' && echo ''[auditd]'' && sudo systemctl is-active
-    auditd 2>/dev/null && echo "규칙 수: $(sudo auditctl -l 2>/dev/null | wc -l)" &&
-    echo ''[로그 보관]'' && cat /etc/logrotate.conf 2>/dev/null | grep ''rotate'' | head
-    -3 && echo ''[원격 전송]'' && grep -r ''@@'' /etc/rsyslog.conf /etc/rsyslog.d/ 2>/dev/null
-    | grep -v ''^#'' | head -3 && echo ''[로그 권한]'' && stat -c ''%a %n'' /var/log/auth.log
+  answer: 'echo ''=== [4] 감사/로그 관리 ==='' && echo ''[auditd]'' && sudo systemctl is-active auditd 2>/dev/null
+    && echo "규칙 수: $(sudo auditctl -l 2>/dev/null | wc -l)" && echo ''[로그 보관]'' && cat /etc/logrotate.conf
+    2>/dev/null | grep ''rotate'' | head -3 && echo ''[원격 전송]'' && grep -r ''@@'' /etc/rsyslog.conf /etc/rsyslog.d/
+    2>/dev/null | grep -v ''^#'' | head -3 && echo ''[로그 권한]'' && stat -c ''%a %n'' /var/log/auth.log
     /var/log/syslog 2>/dev/null'
-  answer_detail: 로그 관리는 컴플라이언스의 핵심입니다. 개인정보보호법은 접속기록 1년(5만명 이상 2년) 보관, ISMS-P 2.9.5는
-    접속기록의 기록·보관·점검, PCI-DSS Req.10은 시스템 접근의 로깅·모니터링을 요구합니다.
+  answer_detail: 로그 관리는 컴플라이언스의 핵심입니다. 개인정보보호법은 접속기록 1년(5만명 이상 2년) 보관, ISMS-P 2.9.5는 접속기록의 기록·보관·점검, PCI-DSS
+    Req.10은 시스템 접근의 로깅·모니터링을 요구합니다.
   verify:
     type: output_contains
     expect: 감사/로그 관리
     field: stdout
+    semantic:
+      intent: 감사/로그 관리 종합 — [auditd] is-active + auditctl -l 규칙 수 + [logrotate] rotate + [원격 전송] rsyslog
+        @@ + [로그 권한] stat. 개인정보보호법 안전조치 제8조 (접속기록 1년/5만명 이상 2년) + ISMS-P 2.9.5 + PCI-DSS Req.10. 로깅-보관-점검.
+      success_criteria:
+      - 감사/로그 관리 섹션 키워드
+      - auditd + logrotate + rsyslog + 권한 4영역
+      - 보관 기간 맥락
+      acceptable_methods:
+      - systemctl + auditctl + grep logrotate + stat
+      - journald --disk-usage + logrotate -d
+      - Wazuh + Graylog 중앙 수집
+      - SIEM (Splunk/ELK) 상관 분석
+      negative_signs:
+      - 4영역 중 2개 이상 누락
+      - 1년/2년 보관 기간 맥락 없음
+      - Req.10 매핑 없음
   target_vm: secu
 - order: 5
   instruction: 침입탐지 및 악성코드 방지를 종합 점검하시오. (정보통신망법 시행령 제15조, PCI-DSS Req.5, Req.11)
   hint: Suricata IDS, 안티바이러스, 취약점 관리를 점검하세요.
   category: audit
   points: 10
-  answer: 'echo ''=== [5] 침입탐지/악성코드 방지 ==='' && echo ''[IDS]'' && sudo systemctl is-active
-    suricata 2>/dev/null && echo ''[안티바이러스]'' && which clamscan 2>/dev/null && echo
-    ''설치됨'' || echo ''미설치'' && echo ''[취약점 관리]'' && echo "미패치 패키지: $(apt list --upgradable
-    2>/dev/null | grep -c ''/'')건"'
-  answer_detail: 침입탐지와 악성코드 방지는 정보통신망법(IDS/IPS 운영)과 PCI-DSS Req.5(악성코드 방지), Req.11(보안
-    테스트)의 요구사항입니다. 예방(방화벽), 탐지(IDS), 대응(알림/차단)의 계층적 방어를 구축해야 합니다.
+  answer: 'echo ''=== [5] 침입탐지/악성코드 방지 ==='' && echo ''[IDS]'' && sudo systemctl is-active suricata 2>/dev/null
+    && echo ''[안티바이러스]'' && which clamscan 2>/dev/null && echo ''설치됨'' || echo ''미설치'' && echo ''[취약점
+    관리]'' && echo "미패치 패키지: $(apt list --upgradable 2>/dev/null | grep -c ''/'')건"'
+  answer_detail: 침입탐지와 악성코드 방지는 정보통신망법(IDS/IPS 운영)과 PCI-DSS Req.5(악성코드 방지), Req.11(보안 테스트)의 요구사항입니다. 예방(방화벽),
+    탐지(IDS), 대응(알림/차단)의 계층적 방어를 구축해야 합니다.
   verify:
     type: output_contains
     expect: 침입탐지/악성코드 방지
     field: stdout
+    semantic:
+      intent: 침입탐지/악성코드 종합 — [IDS] systemctl is-active suricata + [AV] which clamscan + [취약점] apt list
+        --upgradable. 정보통신망법 시행령 제15조 (IDS/IPS 운영) + PCI-DSS Req.5 (악성코드) + Req.11 (보안 테스트). 예방-탐지-대응
+        계층 방어.
+      success_criteria:
+      - 침입탐지/악성코드 방지 섹션 키워드
+      - IDS + AV + 취약점 3영역
+      - 계층 방어 맥락
+      acceptable_methods:
+      - systemctl + which + apt 통합
+      - Wazuh HIDS + ClamAV 모듈
+      - CrowdStrike Falcon + Tenable
+      - Suricata + Zeek + YARA
+      negative_signs:
+      - 3영역 중 2개 이상 누락
+      - 정보통신망법 15조 매핑 없음
+      - Req.5/11 매핑 없음
   target_vm: secu
 - order: 6
   instruction: WEB 서버({{WEB_IP}})의 웹 서비스 보안을 종합 점검하시오. (ISMS-P 2.6.4, 정보통신망법)
   hint: Apache 설정, 보안 헤더, Docker 보안을 점검하세요.
   category: audit
   points: 12
-  answer: echo '=== [6] WEB 서버 보안 ===' && echo '[HTTP 헤더]' && curl -sI http://10.20.30.80/
-    | grep -iE '(Server|X-Frame|X-Content|Strict)' && echo '[Apache 상태]' && ssh ccc@10.20.30.80
-    'systemctl is-active apache2 2>/dev/null' && echo '[Docker 보안]' && ssh ccc@10.20.30.80
-    'docker info 2>/dev/null | grep "Security Options"' 2>/dev/null
-  answer_detail: 웹 서비스 보안은 ISMS-P 2.6.4(웹 서비스 보안)와 정보통신망법의 기술적 보호조치에 해당합니다. HTTP 보안
-    헤더, 서버 버전 노출 방지, HTTPS 강제, WAF(ModSecurity) 적용 등을 종합 점검합니다.
+  answer: echo '=== [6] WEB 서버 보안 ===' && echo '[HTTP 헤더]' && curl -sI http://10.20.30.80/ | grep -iE
+    '(Server|X-Frame|X-Content|Strict)' && echo '[Apache 상태]' && ssh ccc@10.20.30.80 'systemctl is-active
+    apache2 2>/dev/null' && echo '[Docker 보안]' && ssh ccc@10.20.30.80 'docker info 2>/dev/null | grep
+    "Security Options"' 2>/dev/null
+  answer_detail: 웹 서비스 보안은 ISMS-P 2.6.4(웹 서비스 보안)와 정보통신망법의 기술적 보호조치에 해당합니다. HTTP 보안 헤더, 서버 버전 노출 방지, HTTPS
+    강제, WAF(ModSecurity) 적용 등을 종합 점검합니다.
   verify:
     type: output_contains
     expect: WEB 서버 보안
     field: stdout
+    semantic:
+      intent: WEB 서버 보안 종합 — [HTTP 헤더] curl -sI | grep Server/X-Frame/X-Content/Strict + [Apache] ssh
+        ... systemctl is-active apache2 + [Docker] Security Options. ISMS-P 2.6.4 + 정보통신망법 기술적 보호조치. 헤더
+        + 버전 + HTTPS + WAF + 컨테이너 격리.
+      success_criteria:
+      - WEB 서버 보안 섹션 키워드
+      - HTTP 헤더 + Apache + Docker 3영역
+      - 원격 SSH 점검
+      acceptable_methods:
+      - curl -I + ssh systemctl + docker info
+      - nikto / OWASP ZAP
+      - Mozilla Observatory SecurityHeaders
+      - ModSecurity OWASP CRS
+      negative_signs:
+      - 3영역 중 2개 이상 누락
+      - ISMS-P 2.6.4 맥락 없음
+      - WEB 원격 점검 없음
   target_vm: secu
 - order: 7
   instruction: 보안 정책 및 교육 체계를 종합 점검하시오. (ISO27001 A.5, ISMS-P 1.1)
   hint: 정책 문서, 배너, MOTD, 교육 자료를 확인하세요.
   category: audit
   points: 10
-  answer: echo '=== [7] 정책/교육 체계 ===' && echo '[정책 문서]' && ls /opt/security-policy/*.txt
-    2>/dev/null | wc -l | xargs -I{} echo "{}개" && echo '[SSH 배너]' && grep '^Banner'
-    /etc/ssh/sshd_config 2>/dev/null || echo '미설정' && echo '[MOTD]' && [ -s /etc/motd
-    ] && echo '설정됨' || echo '미설정' && echo '[교육 자료]' && ls /opt/security-training/
-    2>/dev/null | wc -l | xargs -I{} echo "{}개"
-  answer_detail: ISO27001 A.5(조직적 통제)와 ISMS-P 1.1(관리체계 수립)은 문서화된 보안 정책, 정기적 교육, 인식
-    프로그램을 요구합니다. 기술적 통제가 아무리 강력해도 정책과 교육이 없으면 컴플라이언스를 충족할 수 없습니다.
+  answer: echo '=== [7] 정책/교육 체계 ===' && echo '[정책 문서]' && ls /opt/security-policy/*.txt 2>/dev/null |
+    wc -l | xargs -I{} echo "{}개" && echo '[SSH 배너]' && grep '^Banner' /etc/ssh/sshd_config 2>/dev/null
+    || echo '미설정' && echo '[MOTD]' && [ -s /etc/motd ] && echo '설정됨' || echo '미설정' && echo '[교육 자료]' &&
+    ls /opt/security-training/ 2>/dev/null | wc -l | xargs -I{} echo "{}개"
+  answer_detail: ISO27001 A.5(조직적 통제)와 ISMS-P 1.1(관리체계 수립)은 문서화된 보안 정책, 정기적 교육, 인식 프로그램을 요구합니다. 기술적 통제가
+    아무리 강력해도 정책과 교육이 없으면 컴플라이언스를 충족할 수 없습니다.
   verify:
     type: output_contains
     expect: 정책/교육 체계
     field: stdout
+    semantic:
+      intent: 정책/교육 체계 종합 — [정책 문서] ls /opt/security-policy/*.txt | wc -l + [SSH 배너] grep ^Banner + [MOTD]
+        [ -s /etc/motd ] + [교육 자료] ls /opt/security-training/. ISO27001 A.5 (조직적 통제) + ISMS-P 1.1 (관리체계).
+        기술 통제 + 정책/교육 병행.
+      success_criteria:
+      - 정책/교육 체계 섹션 키워드
+      - 정책 + 배너 + MOTD + 교육 4영역
+      - 관리체계 맥락
+      acceptable_methods:
+      - ls + grep + 파일 존재 체크
+      - Confluence 정책 인덱스
+      - GRC Control Catalog
+      - OSCAL Profile Resolution
+      negative_signs:
+      - 4영역 중 2개 이상 누락
+      - ISO27001 A.5 / ISMS-P 1.1 매핑 없음
+      - 기술+관리 병행 맥락 없음
   target_vm: secu
 - order: 8
   instruction: 전체 인프라 컴플라이언스 종합 점검 스크립트를 작성하고 실행하시오. 모든 프레임워크의 핵심 항목을 자동 판정합니다.
@@ -136,34 +248,46 @@ steps:
   category: audit
   points: 16
   answer: "cat << 'SCRIPT' > /tmp/compliance_final.sh\n#!/bin/bash\necho '===================================================='\n\
-    echo '     컴플라이언스 종합평가 보고서'\necho '===================================================='\n\
-    echo \"평가일: $(date +%Y-%m-%d)\"\necho \"평가자: $(whoami)@$(hostname)\"\necho ''\n\
-    PASS=0; FAIL=0\ncheck() {\n  if [ \"$2\" = \"PASS\" ]; then\n    echo \"  [PASS]\
-    \ $1\"; PASS=$((PASS+1))\n  else\n    echo \"  [FAIL] $1\"; FAIL=$((FAIL+1))\n\
-    \  fi\n}\necho '[개인정보보호법/GDPR - 데이터 보호]'\nMINLEN=$(grep 'minlen' /etc/security/pwquality.conf\
-    \ 2>/dev/null | grep -v '^#' | awk -F= '{print $2}' | tr -d ' ')\ncheck \"패스워드\
-    \ 최소길이 >= 8 (현재: ${MINLEN:-미설정})\" \"$([ \"${MINLEN:-0}\" -ge 8 ] && echo PASS\
-    \ || echo FAIL)\"\nMAXDAYS=$(grep '^PASS_MAX_DAYS' /etc/login.defs | awk '{print\
-    \ $2}')\ncheck \"패스워드 갱신주기 <= 90일 (현재: ${MAXDAYS}일)\" \"$([ \"$MAXDAYS\" -le 90\
-    \ ] && echo PASS || echo FAIL)\"\necho '[정보통신망법 - 네트워크 보안]'\nFW=$(sudo nft list\
-    \ ruleset 2>/dev/null | grep -c 'rule')\ncheck \"방화벽 규칙 존재 (${FW}개)\" \"$([ \"\
-    $FW\" -gt 0 ] && echo PASS || echo FAIL)\"\nIDS=$(sudo systemctl is-active suricata\
-    \ 2>/dev/null)\ncheck \"IDS 활성 ($IDS)\" \"$([ \"$IDS\" = 'active' ] && echo PASS\
-    \ || echo FAIL)\"\necho '[ISMS-P/ISO27001 - 감사]'\nAUDIT=$(sudo systemctl is-active\
-    \ auditd 2>/dev/null)\ncheck \"auditd 활성 ($AUDIT)\" \"$([ \"$AUDIT\" = 'active'\
-    \ ] && echo PASS || echo FAIL)\"\nRULES=$(sudo auditctl -l 2>/dev/null | wc -l)\n\
-    check \"감사 규칙 존재 (${RULES}개)\" \"$([ \"$RULES\" -gt 0 ] && echo PASS || echo FAIL)\"\
-    \necho '[PCI-DSS - 접근통제]'\nROOT=$(grep '^PermitRootLogin no' /etc/ssh/sshd_config\
-    \ 2>/dev/null | wc -l)\ncheck \"root SSH 접속 차단\" \"$([ \"$ROOT\" -gt 0 ] && echo\
-    \ PASS || echo FAIL)\"\necho ''\nTOTAL=$((PASS+FAIL))\nSCORE=$((PASS*100/TOTAL))\n\
-    echo '===================================================='\necho \"  결과: ${PASS}/${TOTAL}\
-    \ 적합 (${SCORE}%)\" \necho '===================================================='\n\
+    echo '     컴플라이언스 종합평가 보고서'\necho '===================================================='\necho \"\
+    평가일: $(date +%Y-%m-%d)\"\necho \"평가자: $(whoami)@$(hostname)\"\necho ''\nPASS=0; FAIL=0\ncheck() {\n\
+    \  if [ \"$2\" = \"PASS\" ]; then\n    echo \"  [PASS] $1\"; PASS=$((PASS+1))\n  else\n    echo \"\
+    \  [FAIL] $1\"; FAIL=$((FAIL+1))\n  fi\n}\necho '[개인정보보호법/GDPR - 데이터 보호]'\nMINLEN=$(grep 'minlen'\
+    \ /etc/security/pwquality.conf 2>/dev/null | grep -v '^#' | awk -F= '{print $2}' | tr -d ' ')\ncheck\
+    \ \"패스워드 최소길이 >= 8 (현재: ${MINLEN:-미설정})\" \"$([ \"${MINLEN:-0}\" -ge 8 ] && echo PASS || echo FAIL)\"\
+    \nMAXDAYS=$(grep '^PASS_MAX_DAYS' /etc/login.defs | awk '{print $2}')\ncheck \"패스워드 갱신주기 <= 90일 (현재:\
+    \ ${MAXDAYS}일)\" \"$([ \"$MAXDAYS\" -le 90 ] && echo PASS || echo FAIL)\"\necho '[정보통신망법 - 네트워크 보안]'\n\
+    FW=$(sudo nft list ruleset 2>/dev/null | grep -c 'rule')\ncheck \"방화벽 규칙 존재 (${FW}개)\" \"$([ \"$FW\"\
+    \ -gt 0 ] && echo PASS || echo FAIL)\"\nIDS=$(sudo systemctl is-active suricata 2>/dev/null)\ncheck\
+    \ \"IDS 활성 ($IDS)\" \"$([ \"$IDS\" = 'active' ] && echo PASS || echo FAIL)\"\necho '[ISMS-P/ISO27001\
+    \ - 감사]'\nAUDIT=$(sudo systemctl is-active auditd 2>/dev/null)\ncheck \"auditd 활성 ($AUDIT)\" \"$([\
+    \ \"$AUDIT\" = 'active' ] && echo PASS || echo FAIL)\"\nRULES=$(sudo auditctl -l 2>/dev/null | wc\
+    \ -l)\ncheck \"감사 규칙 존재 (${RULES}개)\" \"$([ \"$RULES\" -gt 0 ] && echo PASS || echo FAIL)\"\necho\
+    \ '[PCI-DSS - 접근통제]'\nROOT=$(grep '^PermitRootLogin no' /etc/ssh/sshd_config 2>/dev/null | wc -l)\n\
+    check \"root SSH 접속 차단\" \"$([ \"$ROOT\" -gt 0 ] && echo PASS || echo FAIL)\"\necho ''\nTOTAL=$((PASS+FAIL))\n\
+    SCORE=$((PASS*100/TOTAL))\necho '===================================================='\necho \"  결과:\
+    \ ${PASS}/${TOTAL} 적합 (${SCORE}%)\" \necho '===================================================='\n\
     SCRIPT\nchmod +x /tmp/compliance_final.sh && bash /tmp/compliance_final.sh"
-  answer_detail: 컴플라이언스 종합평가는 다중 프레임워크의 요구사항을 통합하여 점검합니다. 대부분의 프레임워크는 공통 항목(접근 통제,
-    암호화, 로깅, 패치 관리)을 공유하므로, 한 번의 통합 점검으로 여러 프레임워크의 준수 여부를 확인할 수 있습니다. 이러한 통합 접근을 UCF(Unified
-    Compliance Framework)라고 합니다.
+  answer_detail: 컴플라이언스 종합평가는 다중 프레임워크의 요구사항을 통합하여 점검합니다. 대부분의 프레임워크는 공통 항목(접근 통제, 암호화, 로깅, 패치 관리)을 공유하므로,
+    한 번의 통합 점검으로 여러 프레임워크의 준수 여부를 확인할 수 있습니다. 이러한 통합 접근을 UCF(Unified Compliance Framework)라고 합니다.
   verify:
     type: output_contains
     expect: 컴플라이언스 종합평가 보고서
     field: stdout
+    semantic:
+      intent: '컴플라이언스 종합평가 — /tmp/compliance_final.sh: check() 함수 + PASS/FAIL + SCORE% + [개인정보보호법/GDPR]
+        minlen/MAX_DAYS + [정보통신망법] 방화벽/IDS + [ISMS-P/ISO] auditd/규칙 + [PCI-DSS] root SSH. UCF (Unified
+        Compliance Framework) 통합 점검.'
+      success_criteria:
+      - 컴플라이언스 종합평가 보고서 키워드
+      - /tmp/compliance_final.sh + PASS/FAIL + SCORE%
+      - 4개 프레임워크 이상 통합
+      acceptable_methods:
+      - bash + check() + SCORE 계산
+      - OpenSCAP + SSG 다중 프로파일
+      - UCF (Unified Compliance Framework)
+      - GRC Continuous Compliance 대시보드
+      negative_signs:
+      - 프레임워크 2개 이하
+      - PASS/FAIL 카운터 없음
+      - UCF 통합 맥락 없음
   target_vm: secu
