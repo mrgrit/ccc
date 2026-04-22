@@ -3,8 +3,8 @@ title: 중간평가 — Blue IR CTF (Non-AI)
 version: nonai
 course: agent-ir-nonai
 week: 8
-description: 주어진 번들의 아티팩트로부터 타임라인·에이전트 점수·ATT&CK 매핑·방어 3층 판정·차단 권고·Bastion 스킬을 도출한다.
-  학생이 각 단계를 수동으로 수행하고 결과를 기록합니다.
+description: 주어진 번들의 아티팩트로부터 타임라인·에이전트 점수·ATT&CK 매핑·방어 3층 판정·차단 권고·Bastion 스킬을 도출한다. 학생이 각 단계를 수동으로 수행하고
+  결과를 기록합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -18,16 +18,31 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 9
-  answer: mkdir -p /opt/ctf/w08/$(whoami)/{server-logs,pcap,artifacts} && ls /opt/ctf/w08/$(whoami)
-    || echo 'bundle_path_ready'
+  answer: mkdir -p /opt/ctf/w08/$(whoami)/{server-logs,pcap,artifacts} && ls /opt/ctf/w08/$(whoami) ||
+    echo 'bundle_path_ready'
   answer_detail: 번들이 미배포면 디렉토리만. 실제 수업 시 강사가 파일 배치.
   verify:
     type: output_contains
     expect: bundle_path_ready
     field: stdout
+    semantic:
+      intent: '[CTF] 평가 번들 구조 — mkdir -p /opt/ctf/w08/$(whoami)/{server-logs,pcap,artifacts} + ls. Blue
+        IR CTF 번들. 강사 배포.'
+      success_criteria:
+      - bundle_path_ready
+      - 3 서브디렉토리
+      - whoami
+      acceptable_methods:
+      - mkdir brace
+      - install -d
+      - find create
+      negative_signs:
+      - 단일 디렉토리
+      - 경로 오류
+      - 확인 없음
   target_vm: bastion
-  script: mkdir -p /opt/ctf/w08/$(whoami)/{server-logs,pcap,artifacts} && ls /opt/ctf/w08/$(whoami)
-    || echo 'bundle_path_ready'
+  script: mkdir -p /opt/ctf/w08/$(whoami)/{server-logs,pcap,artifacts} && ls /opt/ctf/w08/$(whoami) ||
+    echo 'bundle_path_ready'
   risk_level: low
   bastion_prompt: ''
 - order: 2
@@ -35,16 +50,31 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 10
-  answer: echo 'sample' > /tmp/sample_access.log && awk '{c["200"]++} END {for(k in
-    c) print k, c[k]}' /tmp/sample_access.log
+  answer: echo 'sample' > /tmp/sample_access.log && awk '{c["200"]++} END {for(k in c) print k, c[k]}'
+    /tmp/sample_access.log
   answer_detail: 실제 번들에선 /opt/ctf/w08/$(whoami)/server-logs/access.log 사용.
   verify:
     type: output_contains
     expect: '200'
     field: stdout
+    semantic:
+      intent: '[CTF] access.log 분포 확인 — echo sample > /tmp/sample_access.log + awk ''200 집계''. 상태 코드 분포.
+        실제 번들 /opt/ctf/w08/.../access.log.'
+      success_criteria:
+      - 200 출력
+      - awk 집계
+      - 샘플 파일
+      acceptable_methods:
+      - awk counter
+      - goaccess
+      - log2stats
+      negative_signs:
+      - awk 없음
+      - 집계 없음
+      - 200 키 없음
   target_vm: bastion
-  script: echo 'sample' > /tmp/sample_access.log && awk '{c["200"]++} END {for(k in
-    c) print k, c[k]}' /tmp/sample_access.log
+  script: echo 'sample' > /tmp/sample_access.log && awk '{c["200"]++} END {for(k in c) print k, c[k]}'
+    /tmp/sample_access.log
   risk_level: low
   bastion_prompt: ''
 - order: 3
@@ -60,8 +90,8 @@ steps:
 
     [ -f $f ] || { echo file_missing; exit 1; }
 
-    tshark -r $f -Y ''http.request'' -T fields -e frame.time_epoch 2>/dev/null | awk
-    ''NR>1{print $1-p} {p=$1}'' | awk ''{sum+=$1;n++} END{if(n) print "iat_avg", sum/n}''
+    tshark -r $f -Y ''http.request'' -T fields -e frame.time_epoch 2>/dev/null | awk ''NR>1{print $1-p}
+    {p=$1}'' | awk ''{sum+=$1;n++} END{if(n) print "iat_avg", sum/n}''
 
     S
 
@@ -69,8 +99,25 @@ steps:
   answer_detail: pcap IAT 분석 도구 준비. CTF 분석에 활용.
   verify:
     type: output_contains
-    expect: script_ready
+    expect:
+    - script_ready
+    - IAT
     field: stdout
+    semantic:
+      intent: '[CTF] pcap IAT 계산 스크립트 — cat > pcap_iat.sh: tshark -Y http.request -e frame.time_epoch
+        + awk NR>1 + iat_avg 계산. pcap IAT 분석 도구. CTF 분석용.'
+      success_criteria:
+      - script_ready/IAT
+      - tshark + awk
+      - iat_avg 평균
+      acceptable_methods:
+      - tshark + awk
+      - pyshark
+      - scapy rdpcap
+      negative_signs:
+      - tshark 없음
+      - IAT 계산 없음
+      - 실행 불가
   target_vm: bastion
   script: 'cat > ~/ccc/scripts/pcap_iat.sh <<''S''
 
@@ -80,8 +127,8 @@ steps:
 
     [ -f $f ] || { echo file_missing; exit 1; }
 
-    tshark -r $f -Y ''http.request'' -T fields -e frame.time_epoch 2>/dev/null | awk
-    ''NR>1{print $1-p} {p=$1}'' | awk ''{sum+=$1;n++} END{if(n) print "iat_avg", sum/n}''
+    tshark -r $f -Y ''http.request'' -T fields -e frame.time_epoch 2>/dev/null | awk ''NR>1{print $1-p}
+    {p=$1}'' | awk ''{sum+=$1;n++} END{if(n) print "iat_avg", sum/n}''
 
     S
 
@@ -119,6 +166,21 @@ steps:
     - Timeline
     - 템플릿
     field: stdout
+    semantic:
+      intent: '[CTF] answer.md 템플릿 — cat > answers.md: 6 섹션 (Timeline/Agent Score ≥5/ATT&CK ≥5/Defense
+        3층/3 Block Recs/Skill Spec). 답안 양식. CTF 제출.'
+      success_criteria:
+      - Timeline/템플릿
+      - 6 섹션
+      - W08 Report
+      acceptable_methods:
+      - Markdown 양식
+      - YAML template
+      - Jupyter notebook
+      negative_signs:
+      - 섹션 3개 이하
+      - 템플릿 아닌 정답
+      - 양식 없음
   target_vm: bastion
   script: 'mkdir -p ~/ctf-w08 && cat > ~/ctf-w08/answers.md <<''MD''
 
@@ -146,23 +208,36 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 13
-  answer: "cat > ~/ctf-w08/skill.yaml <<'Y'\nskill_id: detect_agent_ctf_<your_id>\n\
-    version: 0.1\npurpose: <구체 시나리오>\ntriggers_on: <wazuh_rule_id or log_pattern>\n\
-    inputs:\n  - source: <wazuh|apache|secu>\n    filter: <...>\nlogic:\n  - step:\
-    \ <...>\nthresholds:\n  - <name>: <value + 근거>\nexceptions: []\noutputs:\n  alert_level:\
-    \ <1..15>\n  actions: []\nfailure_mode:\n  false_positive_mitigation: <...>\n\
+  answer: "cat > ~/ctf-w08/skill.yaml <<'Y'\nskill_id: detect_agent_ctf_<your_id>\nversion: 0.1\npurpose:\
+    \ <구체 시나리오>\ntriggers_on: <wazuh_rule_id or log_pattern>\ninputs:\n  - source: <wazuh|apache|secu>\n\
+    \    filter: <...>\nlogic:\n  - step: <...>\nthresholds:\n  - <name>: <value + 근거>\nexceptions: []\n\
+    outputs:\n  alert_level: <1..15>\n  actions: []\nfailure_mode:\n  false_positive_mitigation: <...>\n\
     test_cases:\n  - name: <...>\n    given: <...>\n    expected: <...>\nY\ncat ~/ctf-w08/skill.yaml"
   answer_detail: 완성도 있는 스킬 명세. w11에서 실제 Bastion에 등록.
   verify:
     type: output_contains
     expect: skill_id
     field: stdout
+    semantic:
+      intent: '[CTF] Skill 명세 YAML — cat > skill.yaml: skill_id/version/purpose/triggers_on/inputs/logic/thresholds+근거/exceptions/outputs(alert_level
+        1-15)/failure_mode/test_cases. SMART 기준 스켈레톤. w11 실제 등록.'
+      success_criteria:
+      - skill_id 키워드
+      - 완성도 명세
+      - test_cases 포함
+      acceptable_methods:
+      - YAML 스켈레톤
+      - OPA policy skeleton
+      - Sigma rule template
+      negative_signs:
+      - 필드 5개 이하
+      - test_cases 없음
+      - failure_mode 없음
   target_vm: bastion
-  script: "cat > ~/ctf-w08/skill.yaml <<'Y'\nskill_id: detect_agent_ctf_<your_id>\n\
-    version: 0.1\npurpose: <구체 시나리오>\ntriggers_on: <wazuh_rule_id or log_pattern>\n\
-    inputs:\n  - source: <wazuh|apache|secu>\n    filter: <...>\nlogic:\n  - step:\
-    \ <...>\nthresholds:\n  - <name>: <value + 근거>\nexceptions: []\noutputs:\n  alert_level:\
-    \ <1..15>\n  actions: []\nfailure_mode:\n  false_positive_mitigation: <...>\n\
+  script: "cat > ~/ctf-w08/skill.yaml <<'Y'\nskill_id: detect_agent_ctf_<your_id>\nversion: 0.1\npurpose:\
+    \ <구체 시나리오>\ntriggers_on: <wazuh_rule_id or log_pattern>\ninputs:\n  - source: <wazuh|apache|secu>\n\
+    \    filter: <...>\nlogic:\n  - step: <...>\nthresholds:\n  - <name>: <value + 근거>\nexceptions: []\n\
+    outputs:\n  alert_level: <1..15>\n  actions: []\nfailure_mode:\n  false_positive_mitigation: <...>\n\
     test_cases:\n  - name: <...>\n    given: <...>\n    expected: <...>\nY\ncat ~/ctf-w08/skill.yaml"
   risk_level: low
   bastion_prompt: ''
@@ -195,6 +270,21 @@ steps:
     type: output_contains
     expect: TA0043
     field: stdout
+    semantic:
+      intent: '[CTF] ATT&CK 매핑 — cat > attck.md: 5행 표 (TA0043 T1595.002/TA0001 T1190/TA0006 T1110/TA0007
+        T1046/TA0009 T1005) + 증거 파일:라인. 최소 5건 + 증거.'
+      success_criteria:
+      - TA0043 포함
+      - 5 매핑
+      - 증거 참조
+      acceptable_methods:
+      - Markdown 표
+      - ATT&CK Navigator
+      - 수기 매핑
+      negative_signs:
+      - 매핑 3개 이하
+      - 증거 없음
+      - Tactic 누락
   target_vm: bastion
   script: 'cat > ~/ctf-w08/attck.md <<''MD''
 
@@ -252,6 +342,21 @@ steps:
     type: output_contains
     expect: 가장 약한
     field: stdout
+    semantic:
+      intent: '[CTF] 방어 3층 평가 — cat > defense-layers.md: A층 WAF (403 비율) / B층 SIEM (level>=10 수) / C층
+        기만 (허니 이벤트) + 약/중/강 + 가장 약한 층. 3층 수치 근거.'
+      success_criteria:
+      - 가장 약한 키워드
+      - 3 층 평가
+      - 숫자 근거
+      acceptable_methods:
+      - 3층 측정치
+      - CSV metrics
+      - dashboard export
+      negative_signs:
+      - 층 2개 이하
+      - 숫자 근거 없음
+      - 약한 층 미판정
   target_vm: bastion
   script: 'cat > ~/ctf-w08/defense-layers.md <<''MD''
 
@@ -301,6 +406,20 @@ steps:
     type: output_contains
     expect: nft
     field: stdout
+    semantic:
+      intent: '[CTF] 차단 권고 3건 — cat > blocks.md: 1)nft 룰 + 2)WAF 임시 패치 + 3)세션 격리. SMART 구체성. 긴급 대응 3종.'
+      success_criteria:
+      - nft 키워드
+      - 3 권고
+      - 구체 명령
+      acceptable_methods:
+      - nft/WAF/격리
+      - NIST IR Containment
+      - SOAR playbook
+      negative_signs:
+      - 권고 1-2개
+      - 구체성 없음
+      - SMART 기준 미충족
   target_vm: bastion
   script: 'cat > ~/ctf-w08/blocks.md <<''MD''
 
@@ -320,18 +439,31 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 17
-  answer: "cat > ~/ctf-w08/timeline.md <<'MD'\n```mermaid\ntimeline\n  title 공격 타임라인\n\
-    \  section 정찰\n    T+00:01 : recon\n  section 악용\n    T+00:10 : exploit\n```\n\
-    MD\ncat ~/ctf-w08/timeline.md"
+  answer: "cat > ~/ctf-w08/timeline.md <<'MD'\n```mermaid\ntimeline\n  title 공격 타임라인\n  section 정찰\n \
+    \   T+00:01 : recon\n  section 악용\n    T+00:10 : exploit\n```\nMD\ncat ~/ctf-w08/timeline.md"
   answer_detail: 시각화 가산점(+5). Mermaid·plantuml·plotly 등 자유.
   verify:
     type: output_contains
     expect: mermaid
     field: stdout
+    semantic:
+      intent: '[CTF] Mermaid 타임라인 — cat > timeline.md: mermaid timeline + 정찰 T+00:01 recon / 악용 T+00:10
+        exploit. 시각화 가산점 +5. Mermaid/PlantUML/Plotly.'
+      success_criteria:
+      - mermaid 키워드
+      - timeline 다이어그램
+      - section 구분
+      acceptable_methods:
+      - Mermaid
+      - PlantUML
+      - Plotly Express
+      negative_signs:
+      - 시각화 없음
+      - timeline 태그 없음
+      - section 없음
   target_vm: bastion
-  script: "cat > ~/ctf-w08/timeline.md <<'MD'\n```mermaid\ntimeline\n  title 공격 타임라인\n\
-    \  section 정찰\n    T+00:01 : recon\n  section 악용\n    T+00:10 : exploit\n```\n\
-    MD\ncat ~/ctf-w08/timeline.md"
+  script: "cat > ~/ctf-w08/timeline.md <<'MD'\n```mermaid\ntimeline\n  title 공격 타임라인\n  section 정찰\n \
+    \   T+00:01 : recon\n  section 악용\n    T+00:10 : exploit\n```\nMD\ncat ~/ctf-w08/timeline.md"
   risk_level: low
   bastion_prompt: ''
 - order: 10
@@ -369,6 +501,21 @@ steps:
     type: output_contains
     expect: 합계
     field: stdout
+    semantic:
+      intent: '[CTF] 채점 루브릭 자기 평가 — cat > self-grade.md: 7 항목 표 (타임라인 20/Agent Score 15/ATT&CK 15/3층 10/차단
+        10/스킬 15/보고 15 = 100). 자기 평가 → 개선 포인트.'
+      success_criteria:
+      - 합계 키워드
+      - 7 항목 × 점수
+      - 근거 칸
+      acceptable_methods:
+      - Markdown 점수표
+      - Google Forms
+      - CSV scoring
+      negative_signs:
+      - 항목 4개 이하
+      - 합계 없음
+      - 근거 칸 없음
   target_vm: bastion
   script: 'cat > ~/ctf-w08/self-grade.md <<''MD''
 
@@ -408,6 +555,21 @@ steps:
     type: output_contains
     expect: w08-submission.tgz
     field: stdout
+    semantic:
+      intent: '[CTF] 제출 패키지 — cd ~/ctf-w08 && tar czf ~/ccc/artifacts/w08-submission.tgz * + ls -la. 제출
+        tar 생성. 강사 전달.'
+      success_criteria:
+      - w08-submission.tgz 파일
+      - tar czf
+      - ls -la
+      acceptable_methods:
+      - tar czf
+      - zip -r
+      - git archive
+      negative_signs:
+      - tar 없음
+      - 확인 없음
+      - 파일명 오류
   target_vm: bastion
   script: cd ~/ctf-w08 && tar czf ~/ccc/artifacts/w08-submission.tgz * && ls -la ~/ccc/artifacts/w08-submission.tgz
   risk_level: low
@@ -426,6 +588,21 @@ steps:
     - submitted
     - experience
     field: stdout
+    semantic:
+      intent: '[기록] w08 CTF Experience — echo ''{id: w08-ctf, submitted: true, self_grade: TBD}'' > w08-ctf.json.
+        중간평가 완료 기록. w11 Purple 입력.'
+      success_criteria:
+      - submitted/experience
+      - JSON
+      - self_grade 필드
+      acceptable_methods:
+      - echo JSON
+      - jq -n
+      - python dumps
+      negative_signs:
+      - submitted 없음
+      - JSON 아님
+      - self_grade 누락
   target_vm: bastion
   script: echo '{"id":"w08-ctf","submitted":true,"self_grade":"TBD"}' > ~/ccc/data/bastion/experience/w08-ctf.json
     && cat ~/ccc/data/bastion/experience/w08-ctf.json
