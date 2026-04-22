@@ -250,6 +250,9 @@ def judge(events, step):
     # expect can be str OR list of acceptable alternatives
     expects = expect if isinstance(expect, list) else ([expect] if expect else [])
     expects = [str(e) for e in expects if str(e).strip()]
+    sem = verify.get("semantic") or {}
+    # semantic 블록에 실질 내용 (intent 또는 success_criteria) 있으면 primary judge 로 사용
+    has_semantic = bool(sem.get("intent") or sem.get("success_criteria"))
 
     def _any_contains(needles: list[str]) -> bool:
         low = aggregated.lower()
@@ -283,6 +286,7 @@ def judge(events, step):
         "playbook": bool(pb_starts),
         "pb_ok": pb_ok,
         "verify_match": match,
+        "has_semantic": has_semantic,
         "answer_tail": aggregated[-800:],
     }
 
@@ -290,7 +294,7 @@ def judge(events, step):
     exec_required_cats = {"configure", "exploit", "attack", "scan", "pivot", "persistence",
                           "exfiltration", "remediation", "block", "deploy"}
 
-    # Multi-task: split이 감지되면 완료된 서브태스크 수 기준으로 판정
+    # Multi-task: split이 감지되면 완료된 서브태스크 수 기준으로 판정 (실행 이벤트 기반 — semantic 우회)
     if split_evts:
         total = split_evts[0].get("count", 0)
         done = len(subtask_dones)
@@ -301,11 +305,23 @@ def judge(events, step):
         if total > 0 and done >= total * 0.6:
             return "pass", "multitask", meta  # 60% 이상 완료도 pass
         return "fail", "multitask", meta
+
+    # 실행 안 된 케이스 — execution 필요 카테고리는 semantic 관계없이 no_execution (Bastion 실행 편향 보존)
     if not executed:
+        if category in exec_required_cats:
+            return "no_execution", "", meta
         if "qa" in stages:
-            if match and category not in exec_required_cats:
+            # semantic-first: 있으면 LLM 판정이 유일 기준
+            if has_semantic:
+                sem_ok, sem_kw = llm_semantic_judge(step, aggregated)
+                meta["llm_judge"] = {"pass": sem_ok, "keyword": sem_kw}
+                if sem_ok:
+                    meta["_semantic_pass_keyword"] = sem_kw
+                    return "pass", "qa", meta
+                return "qa_fallback", "", meta
+            # semantic 없음 (legacy / 미작성) → keyword match + instruction 기반 semantic fallback
+            if match:
                 return "pass", "qa", meta
-            # 리터럴 매치 실패 → LLM 세맨틱 판정
             sem_ok, sem_kw = llm_semantic_judge(step, aggregated)
             meta["llm_judge"] = {"pass": sem_ok, "keyword": sem_kw}
             if sem_ok:
@@ -313,7 +329,19 @@ def judge(events, step):
                 return "pass", "qa", meta
             return "qa_fallback", "", meta
         return "no_execution", "", meta
-    # 실행됨: verify 매치 우선
+
+    # 실행됨 — semantic-first primary judge
+    if has_semantic:
+        sem_ok, sem_kw = llm_semantic_judge(step, aggregated)
+        meta["llm_judge"] = {"pass": sem_ok, "keyword": sem_kw}
+        skill = (skill_starts[0].get("skill") if skill_starts else ("playbook" if pb_starts else "qa"))
+        if sem_ok:
+            meta["_semantic_pass_keyword"] = sem_kw
+            return "pass", skill or "qa", meta
+        # semantic 이 fail 주면 keyword match 무관하게 fail (LLM 판단이 최종)
+        return "fail", skill or "playbook", meta
+
+    # semantic 없음 (legacy / battle / 미작성 non-AI) — 기존 keyword fallback 체인
     if match:
         skill = (skill_starts[0].get("skill") if skill_starts else "playbook")
         return "pass", skill, meta
@@ -323,7 +351,7 @@ def judge(events, step):
         if skill_ok:
             skill = (skill_starts[0].get("skill") if skill_starts else "playbook")
             return "pass", skill, meta
-    # 리터럴 매치 실패 → LLM 세맨틱 판정 폴백
+    # 최후 수단: instruction 기반 semantic (semantic 블록 없어도 instruction 으로 LLM 판정)
     sem_ok, sem_kw = llm_semantic_judge(step, aggregated)
     meta["llm_judge"] = {"pass": sem_ok, "keyword": sem_kw}
     if sem_ok:
