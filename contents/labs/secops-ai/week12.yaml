@@ -26,10 +26,10 @@ steps:
     expect: opencti
     field: stdout
     semantic:
-      intent: 'docker ps 컨테이너 전체 목록 — docker ps --format {{.Names}}\t{{.Status}} |
-        head. Running 상태의 모든 컨테이너 표시. OpenCTI 스택은 여러 컨테이너: opencti(platform), opencti-redis,
-        opencti-elastic, opencti-rabbitmq, opencti-minio, opencti-worker, opencti-connector-*.
-        --format 으로 tab 구분 출력(깔끔), head 로 처음 10개만. 전체 확인: docker ps -a(exited 포함)'
+      intent: 'docker ps 컨테이너 전체 목록 — docker ps --format {{.Names}}\t{{.Status}} | head. Running 상태의 모든
+        컨테이너 표시. OpenCTI 스택은 여러 컨테이너: opencti(platform), opencti-redis, opencti-elastic, opencti-rabbitmq,
+        opencti-minio, opencti-worker, opencti-connector-*. --format 으로 tab 구분 출력(깔끔), head 로 처음 10개만.
+        전체 확인: docker ps -a(exited 포함)'
       success_criteria:
       - docker ps 실행
       - 컨테이너 이름·상태 출력
@@ -55,18 +55,17 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM에서 opencti 컨테이너만 필터링해서 보여줘
 
-    📎 참고 (CLI): docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | grep
-    -i opencti'
+    📎 참고 (CLI): docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | grep -i opencti'
   answer_detail: 'OpenCTI 설치·구성: opencti 관련 컨테이너만 필터링하시오.'
   verify:
     type: output_contains
     expect: opencti
     field: stdout
     semantic:
-      intent: 'OpenCTI 컨테이너 필터링 — docker ps --format {{.Names}}\t{{.Status}} | grep
-        -i opencti. OpenCTI 스택 관련 컨테이너 명시적 확인 - 이름에 opencti prefix 가진 여러 컨테이너(platform,
-        worker, connector-*, depedencies). grep -i 로 대소문자 무시. 각 컨테이너 Up 상태인지·restarting
-        여부 확인. 이름 pattern: opencti-<role>(docker-compose 로 자동 생성)'
+      intent: 'OpenCTI 컨테이너 필터링 — docker ps --format {{.Names}}\t{{.Status}} | grep -i opencti. OpenCTI
+        스택 관련 컨테이너 명시적 확인 - 이름에 opencti prefix 가진 여러 컨테이너(platform, worker, connector-*, depedencies).
+        grep -i 로 대소문자 무시. 각 컨테이너 Up 상태인지·restarting 여부 확인. 이름 pattern: opencti-<role>(docker-compose
+        로 자동 생성)'
       success_criteria:
       - grep -i opencti 필터링
       - opencti 문자열 매칭
@@ -91,19 +90,18 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM의 opencti 플랫폼 컨테이너 로그 20줄을 보여줘
 
-    📎 참고 (CLI): docker logs --tail 20 $(docker ps --format ''{{.Names}}'' | grep -i
-    ''^opencti$'' | head -1) 2>&1 | tail -20'
+    📎 참고 (CLI): docker logs --tail 20 $(docker ps --format ''{{.Names}}'' | grep -i ''^opencti$'' | head
+    -1) 2>&1 | tail -20'
   answer_detail: 'OpenCTI 설치·구성: OpenCTI 플랫폼 컨테이너의 최근 로그 20줄을 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'OpenCTI platform 로그 확인 — docker logs --tail 20 $(docker ps --format
-        {{.Names}} | grep -i ^opencti$ | head -1) 2>&1 | tail -20. OpenCTI platform
-        컨테이너(주 API+UI) 로그 조회. ^opencti$ anchor 로 정확 매칭(opencti-worker/connector 제외).
-        stdout+stderr 합쳐(2>&1). 시작 시 INFO 다수, 안정 후 간헐적 로그. ERROR 다수면 config 또는 dependency
-        이슈. 실시간 확인: docker logs -f'
+      intent: 'OpenCTI platform 로그 확인 — docker logs --tail 20 $(docker ps --format {{.Names}} | grep -i
+        ^opencti$ | head -1) 2>&1 | tail -20. OpenCTI platform 컨테이너(주 API+UI) 로그 조회. ^opencti$ anchor
+        로 정확 매칭(opencti-worker/connector 제외). stdout+stderr 합쳐(2>&1). 시작 시 INFO 다수, 안정 후 간헐적 로그. ERROR
+        다수면 config 또는 dependency 이슈. 실시간 확인: docker logs -f'
       success_criteria:
       - docker logs --tail 20 실행
       - opencti 정확 매칭 ^opencti$
@@ -119,8 +117,8 @@ steps:
       - 모든 컨테이너 로그 한번에
       - stderr 무시
   target_vm: siem
-  script: docker logs --tail 20 $(docker ps --format '{{.Names}}' | grep -i '^opencti$'
-    | head -1) 2>&1 | tail -20
+  script: docker logs --tail 20 $(docker ps --format '{{.Names}}' | grep -i '^opencti$' | head -1) 2>&1
+    | tail -20
   risk_level: low
   bastion_prompt: siem VM의 opencti 플랫폼 컨테이너 로그 20줄을 보여줘
 - order: 4
@@ -137,10 +135,10 @@ steps:
     expect: '8080'
     field: stdout
     semantic:
-      intent: 'OpenCTI 웹 포트 8080 리스닝 확인 — ss -tlnp 2>/dev/null | grep :8080. OpenCTI
-        default HTTP port 8080(또는 docker-compose 에서 다른 포트 매핑). LISTEN 상태 확인. Docker
-        proxy 가 host:8080 → container:8080 포워딩 담당. 포트 미LISTEN 시 (1) container 종료 (2)
-        다른 서비스 충돌 (3) compose 설정 문제. 포트 점유 프로세스: 보통 docker-proxy 또는 opencti node.js'
+      intent: 'OpenCTI 웹 포트 8080 리스닝 확인 — ss -tlnp 2>/dev/null | grep :8080. OpenCTI default HTTP port
+        8080(또는 docker-compose 에서 다른 포트 매핑). LISTEN 상태 확인. Docker proxy 가 host:8080 → container:8080 포워딩
+        담당. 포트 미LISTEN 시 (1) container 종료 (2) 다른 서비스 충돌 (3) compose 설정 문제. 포트 점유 프로세스: 보통 docker-proxy
+        또는 opencti node.js'
       success_criteria:
       - ss -tlnp 실행
       - :8080 포트 매칭
@@ -166,21 +164,17 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM에서 OpenCTI 의존 서비스(redis/elastic/rabbit/minio) 컨테이너 상태를 보여줘
 
-    📎 참고 (CLI): docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | grep
-    -Ei ''redis|elastic|rabbit|minio'''
-  answer_detail: 'OpenCTI 설치·구성: OpenCTI 의존 서비스(redis, elastic, rabbitmq, minio) 컨테이너
-    상태를 확인하시오.'
+    📎 참고 (CLI): docker ps --format ''{{.Names}}\t{{.Status}}'' 2>/dev/null | grep -Ei ''redis|elastic|rabbit|minio'''
+  answer_detail: 'OpenCTI 설치·구성: OpenCTI 의존 서비스(redis, elastic, rabbitmq, minio) 컨테이너 상태를 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 'OpenCTI 의존 서비스 상태 — docker ps --format {{.Names}}\t{{.Status}} | grep
-        -Ei redis|elastic|rabbit|minio. OpenCTI 는 multi-service 아키텍처: Redis(cache
-        + pub/sub), ElasticSearch(graph+search index), RabbitMQ(message queue for
-        connectors), MinIO(S3-compatible object storage for files). 모두 Up 상태여야 정상
-        동작. 하나라도 Down 시 platform restart/crash 유발. 의존성 실패 시 platform 로그에서 ECONNREFUSED
-        등 관찰'
+      intent: 'OpenCTI 의존 서비스 상태 — docker ps --format {{.Names}}\t{{.Status}} | grep -Ei redis|elastic|rabbit|minio.
+        OpenCTI 는 multi-service 아키텍처: Redis(cache + pub/sub), ElasticSearch(graph+search index), RabbitMQ(message
+        queue for connectors), MinIO(S3-compatible object storage for files). 모두 Up 상태여야 정상 동작. 하나라도 Down
+        시 platform restart/crash 유발. 의존성 실패 시 platform 로그에서 ECONNREFUSED 등 관찰'
       success_criteria:
       - grep -Ei redis elastic rabbit minio 실행
       - 최소 2개 의존 컨테이너 확인
@@ -213,10 +207,10 @@ steps:
     expect: compose
     field: stdout
     semantic:
-      intent: OpenCTI docker-compose.yml 위치 탐색 — find / -name docker-compose*.yml
-        2>/dev/null | grep -i cti | head. OpenCTI 설치 경로가 환경마다 다름(/opt/opencti, /home/user/opencti,
-        /srv/opencti 등). find 로 전체 파일시스템 스캔, grep 로 cti 관련만. 찾은 후 해당 디렉토리에서 docker
-        compose up/down/logs 실행. 2>/dev/null 로 permission denied 노이즈 숨김
+      intent: OpenCTI docker-compose.yml 위치 탐색 — find / -name docker-compose*.yml 2>/dev/null | grep -i
+        cti | head. OpenCTI 설치 경로가 환경마다 다름(/opt/opencti, /home/user/opencti, /srv/opencti 등). find 로 전체
+        파일시스템 스캔, grep 로 cti 관련만. 찾은 후 해당 디렉토리에서 docker compose up/down/logs 실행. 2>/dev/null 로 permission
+        denied 노이즈 숨김
       success_criteria:
       - find + grep 실행
       - compose 파일 경로 출력
@@ -255,9 +249,9 @@ steps:
     field: stdout
     semantic:
       intent: 'OpenCTI UI HTTP 응답 확인 — curl -sS -o /dev/null -w %{http_code}\n http://localhost:8080.
-        200 OK 응답이면 platform UI 서빙 정상, 302 Redirect 는 login page 로 리다이렉트(정상). 5xx
-        는 backend 오류(ElasticSearch 등). Connection refused 는 container down. -sS 로
-        progress 숨김 + error 만. %{http_code} 로 응답 코드만 추출. 브라우저 접근: http://<siem-ip>:8080'
+        200 OK 응답이면 platform UI 서빙 정상, 302 Redirect 는 login page 로 리다이렉트(정상). 5xx 는 backend 오류(ElasticSearch
+        등). Connection refused 는 container down. -sS 로 progress 숨김 + error 만. %{http_code} 로 응답 코드만 추출.
+        브라우저 접근: http://<siem-ip>:8080'
       success_criteria:
       - curl http://localhost:8080 실행
       - HTTP 응답 코드 출력
@@ -283,8 +277,8 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM opencti 플랫폼 로그에서 ERROR 횟수를 세어줘
 
-    📎 참고 (CLI): docker logs --tail 50 $(docker ps --format ''{{.Names}}'' | grep -i
-    ''^opencti$'' | head -1) 2>&1 | grep -c ERROR'
+    📎 참고 (CLI): docker logs --tail 50 $(docker ps --format ''{{.Names}}'' | grep -i ''^opencti$'' | head
+    -1) 2>&1 | grep -c ERROR'
   answer_detail: 'OpenCTI 설치·구성: OpenCTI 플랫폼 컨테이너에서 ''ERROR'' 로그를 최근 50줄에서 카운트하시오.'
   verify:
     type: output_contains
@@ -296,10 +290,10 @@ steps:
     - count
     field: stdout
     semantic:
-      intent: 'ERROR 로그 카운트 — docker logs --tail 50 <opencti container> 2>&1 | grep
-        -c ERROR. 최근 50 라인 중 ERROR 발생 빈도. 0 또는 낮은 수 = 정상, 지속적 증가 = 설정/환경 문제. grep
-        -c 는 매칭 라인 수 출력. 주요 ERROR 패턴: ECONNREFUSED(의존성 fail), UnhandledPromiseRejection,
-        Elasticsearch connection failed. 이후 상세 분석: docker logs | grep -A 5 ERROR'
+      intent: 'ERROR 로그 카운트 — docker logs --tail 50 <opencti container> 2>&1 | grep -c ERROR. 최근 50 라인
+        중 ERROR 발생 빈도. 0 또는 낮은 수 = 정상, 지속적 증가 = 설정/환경 문제. grep -c 는 매칭 라인 수 출력. 주요 ERROR 패턴: ECONNREFUSED(의존성
+        fail), UnhandledPromiseRejection, Elasticsearch connection failed. 이후 상세 분석: docker logs | grep
+        -A 5 ERROR'
       success_criteria:
       - docker logs + grep -c ERROR 실행
       - ERROR 카운트 숫자 출력
@@ -315,8 +309,8 @@ steps:
       - ERROR 외 WARN 혼동
       - 0 카운트 아닌데 정상 판정
   target_vm: siem
-  script: docker logs --tail 50 $(docker ps --format '{{.Names}}' | grep -i '^opencti$'
-    | head -1) 2>&1 | grep -c ERROR
+  script: docker logs --tail 50 $(docker ps --format '{{.Names}}' | grep -i '^opencti$' | head -1) 2>&1
+    | grep -c ERROR
   risk_level: low
   bastion_prompt: siem VM opencti 플랫폼 로그에서 ERROR 횟수를 세어줘
 - order: 9
@@ -326,8 +320,8 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM의 docker stats로 컨테이너별 CPU/메모리 사용량을 보여줘
 
-    📎 참고 (CLI): docker stats --no-stream --format ''{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}''
-    2>/dev/null | head'
+    📎 참고 (CLI): docker stats --no-stream --format ''{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}'' 2>/dev/null
+    | head'
   answer_detail: 'OpenCTI 설치·구성: 컨테이너별 CPU/Memory 사용량(docker stats --no-stream)을 조회하시오.'
   verify:
     type: output_contains
@@ -335,9 +329,9 @@ steps:
     field: stdout
     semantic:
       intent: 'docker stats 컨테이너 리소스 현황 — docker stats --no-stream --format {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}
-        | head. --no-stream 으로 1회 snapshot 만(연속 업데이트 회피). OpenCTI stack 은 메모리 집약적:
-        ElasticSearch(4GB+), RabbitMQ(1GB), platform(2GB+), MinIO(512MB), Redis(256MB).
-        합계 host 자원의 주의. CPU% 는 평상시 낮음, 이벤트 발생 시 스파이크'
+        | head. --no-stream 으로 1회 snapshot 만(연속 업데이트 회피). OpenCTI stack 은 메모리 집약적: ElasticSearch(4GB+),
+        RabbitMQ(1GB), platform(2GB+), MinIO(512MB), Redis(256MB). 합계 host 자원의 주의. CPU% 는 평상시 낮음, 이벤트
+        발생 시 스파이크'
       success_criteria:
       - docker stats --no-stream 실행
       - CPU·메모리 정보 출력
@@ -353,8 +347,7 @@ steps:
       - format 없이 wide 출력
       - 컨테이너 구분 없음
   target_vm: siem
-  script: docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}'
-    2>/dev/null | head
+  script: docker stats --no-stream --format '{{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}' 2>/dev/null | head
   risk_level: low
   bastion_prompt: siem VM의 docker stats로 컨테이너별 CPU/메모리 사용량을 보여줘
 - order: 10
@@ -364,18 +357,18 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM의 opencti 컨테이너 재시작 횟수를 확인해줘
 
-    📎 참고 (CLI): docker inspect $(docker ps --format ''{{.Names}}'' | grep -i opencti
-    | head -1) --format ''{{.RestartCount}}'' 2>/dev/null'
+    📎 참고 (CLI): docker inspect $(docker ps --format ''{{.Names}}'' | grep -i opencti | head -1) --format
+    ''{{.RestartCount}}'' 2>/dev/null'
   answer_detail: 'OpenCTI 설치·구성: OpenCTI 재기동이 필요하지 않은지 컨테이너 재시작 횟수를 확인하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: OpenCTI RestartCount 확인 — docker inspect <opencti> --format {{.RestartCount}}.
-        컨테이너 안정성 지표 - 0 이면 시작 후 재시작 없음(가장 건전), 1+ 면 어느 정도 crash 발생. 높은 RestartCount
-        는 memory 부족·dependency fail·unhandled exception 가능성. restart policy(always/on-failure:N)에
-        따라 자동 재시작 발생. 주기적 모니터링으로 stability regression 조기 감지
+      intent: OpenCTI RestartCount 확인 — docker inspect <opencti> --format {{.RestartCount}}. 컨테이너 안정성
+        지표 - 0 이면 시작 후 재시작 없음(가장 건전), 1+ 면 어느 정도 crash 발생. 높은 RestartCount 는 memory 부족·dependency fail·unhandled
+        exception 가능성. restart policy(always/on-failure:N)에 따라 자동 재시작 발생. 주기적 모니터링으로 stability regression
+        조기 감지
       success_criteria:
       - docker inspect --format RestartCount 실행
       - 숫자(재시작 횟수) 출력
@@ -391,8 +384,8 @@ steps:
       - State 대신 Health 확인
       - 0 아닌데 정상 판정
   target_vm: siem
-  script: docker inspect $(docker ps --format '{{.Names}}' | grep -i opencti | head
-    -1) --format '{{.RestartCount}}' 2>/dev/null
+  script: docker inspect $(docker ps --format '{{.Names}}' | grep -i opencti | head -1) --format '{{.RestartCount}}'
+    2>/dev/null
   risk_level: low
   bastion_prompt: siem VM의 opencti 컨테이너 재시작 횟수를 확인해줘
 - order: 99
@@ -404,6 +397,20 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[통합] OpenCTI 설치 5작업 — docker-compose pull/.env/up/초기 admin/API 토큰 통합. 4000 포트.'
+      success_criteria:
+      - 컨테이너 running
+      - 대시보드 접속
+      - API 토큰
+      acceptable_methods:
+      - bastion plan
+      - docker-compose
+      - ansible docker_compose
+      negative_signs:
+      - 컨테이너 실패
+      - 대시보드 없음
+      - 토큰 누락
   target_vm: siem
   answer: '🤖 프롬프트: secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:
 
