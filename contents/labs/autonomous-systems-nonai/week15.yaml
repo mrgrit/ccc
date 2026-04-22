@@ -23,94 +23,235 @@ steps:
     type: output_contains
     expect: 10.20.30
     field: stdout
+    semantic:
+      intent: '[정찰] CPS 전체 환경 정찰 — nmap -sV -p 22,80,443,502,3000,9999,11434 10.20.30.0/24. SSH+HTTP+HTTPS+Modbus+Web+드론+LLM
+        7 포트. CPS 전체 자산 식별.'
+      success_criteria:
+      - 10.20.30 포함
+      - 7 포트 스캔
+      - -sV
+      acceptable_methods:
+      - nmap -sV -p 다중
+      - masscan + nmap
+      - rustscan
+      negative_signs:
+      - 포트 3개 이하
+      - -sV 없음
+      - CPS 맥락 누락
   target_vm: attacker
 - order: 2
   instruction: 드론 시뮬레이터에 침투 테스트를 수행하시오. PING, AUTH 스니핑, 명령 인젝션을 시도하라.
   hint: UDP 소켓으로 가상 드론에 명령을 전송하세요.
   category: attack
   points: 12
-  answer: 'python3 -c "import socket,json;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.settimeout(2);cmds=[(''PING'',{''action'':''PING''}),(''ARM'',{''action'':''ARM''}),(''TAKEOFF'',{''action'':''TAKEOFF'',''altitude'':50})];print(''=== Drone Pentest ==='');[print(f''  [{c[0]}] Sent: {json.dumps(c[1])}'') for c in cmds];s.close();print(''  [!] Commands accepted — no authentication required'')"'
+  answer: 'python3 -c "import socket,json;s=socket.socket(socket.AF_INET,socket.SOCK_DGRAM);s.settimeout(2);cmds=[(''PING'',{''action'':''PING''}),(''ARM'',{''action'':''ARM''}),(''TAKEOFF'',{''action'':''TAKEOFF'',''altitude'':50})];print(''===
+    Drone Pentest ==='');[print(f''  [{c[0]}] Sent: {json.dumps(c[1])}'') for c in cmds];s.close();print(''  [!]
+    Commands accepted — no authentication required'')"'
   answer_detail: 드론 침투 테스트로 인증 취약점을 확인합니다.
   verify:
     type: output_contains
     expect: Drone Pentest
     field: stdout
+    semantic:
+      intent: '[공격] 드론 침투 — python3 UDP + 3 cmds (PING/ARM/TAKEOFF alt 50) + No auth 확인. 드론 명령 인젝션. Dronesploit
+        pentest.'
+      success_criteria:
+      - Drone Pentest 키워드
+      - 3 명령
+      - No auth 확인
+      acceptable_methods:
+      - UDP socket + cmds
+      - Dronesploit
+      - pymavlink
+      negative_signs:
+      - 명령 1개
+      - 인증 체크 없음
+      - UDP 누락
   target_vm: attacker
 - order: 3
   instruction: Modbus PLC에 침투 테스트를 수행하시오. 레지스터 읽기, 쓰기, Coil 제어를 시도하라.
   hint: Modbus FC 0x03, 0x06, 0x05를 사용하세요.
   category: attack
   points: 12
-  answer: 'python3 -c "print(''=== Modbus Pentest ==='');tests=[(''Read Registers (FC03)'',''All registers readable'',''HIGH''),(''Write Register (FC06)'',''Process values writable'',''CRITICAL''),(''Write Coil (FC05)'',''Actuators controllable'',''CRITICAL''),(''Emergency Stop'',''Coil 10 accessible'',''CRITICAL'')];[print(f''  [{s}] {t}: {r}'') for t,r,s in tests];print(f''  CRITICAL findings: {sum(1
-    for _,_,s in tests if s==\"CRITICAL\")}'')"'
+  answer: 'python3 -c "print(''=== Modbus Pentest ==='');tests=[(''Read Registers (FC03)'',''All registers
+    readable'',''HIGH''),(''Write Register (FC06)'',''Process values writable'',''CRITICAL''),(''Write
+    Coil (FC05)'',''Actuators controllable'',''CRITICAL''),(''Emergency Stop'',''Coil 10 accessible'',''CRITICAL'')];[print(f''  [{s}]
+    {t}: {r}'') for t,r,s in tests];print(f''  CRITICAL findings: {sum(1 for _,_,s in tests if s==\"CRITICAL\")}'')"'
   answer_detail: Modbus 침투 테스트로 ICS 인증 부재를 확인합니다.
   verify:
     type: output_contains
     expect: Modbus Pentest
     field: stdout
+    semantic:
+      intent: '[공격] Modbus 침투 — python3 tests 4 (Read FC03 HIGH/Write FC06 CRITICAL/Coil FC05 CRITICAL/Emergency
+        Stop CRITICAL) + CRITICAL count. Modbus 전체 pentest. MITRE ICS T0836.'
+      success_criteria:
+      - Modbus Pentest 키워드
+      - 4 테스트 + FC
+      - CRITICAL 카운트
+      acceptable_methods:
+      - 4 FC 테스트
+      - modbus-cli
+      - ISF-Framework
+      negative_signs:
+      - 테스트 2개 이하
+      - FC 없음
+      - CRITICAL 없음
   target_vm: attacker
 - order: 4
   instruction: 전체 CPS 취약점을 종합 정리하시오. 드론, ICS, 자율주행, ROS2 각 영역의 CRITICAL 취약점을 출력하라.
   hint: 각 영역별 가장 심각한 취약점을 정리하세요.
   category: analysis
   points: 12
-  answer: 'python3 -c "vulns={''Drone'':[''Plaintext auth'',''No MAVLink signing''],''ICS'':[''No Modbus auth'',''Flat OT network''],''AV'':[''CAN no auth'',''Adversarial AI vulnerable''],''Robot'':[''No DDS security'',''UART root access'']};total=0;print(''=== CPS Vulnerability Summary ==='');[(print(f''  [{k}]''),[print(f''    [CRITICAL] {v}'') for v in vs]) for k,vs in vulns.items()];print(f''  Total
-    CRITICAL: {sum(len(v) for v in vulns.values())}'')"'
+  answer: 'python3 -c "vulns={''Drone'':[''Plaintext auth'',''No MAVLink signing''],''ICS'':[''No Modbus
+    auth'',''Flat OT network''],''AV'':[''CAN no auth'',''Adversarial AI vulnerable''],''Robot'':[''No
+    DDS security'',''UART root access'']};total=0;print(''=== CPS Vulnerability Summary ==='');[(print(f''  [{k}]''),[print(f''    [CRITICAL]
+    {v}'') for v in vs]) for k,vs in vulns.items()];print(f''  Total CRITICAL: {sum(len(v) for v in vulns.values())}'')"'
   answer_detail: 종합 취약점 정리로 보안 개선 우선순위를 설정합니다.
   verify:
     type: output_contains
     expect: Vulnerability Summary
     field: stdout
+    semantic:
+      intent: '[분석] CPS 통합 취약점 — python3 vulns 4 카테고리 (Drone/ICS/AV/Robot) 각 2 CRITICAL + Total CRITICAL
+        카운트. 전체 CPS 취약점 종합. ISO/IEC 21434 + NIST SP 800-82.'
+      success_criteria:
+      - Vulnerability Summary 키워드
+      - 4 카테고리
+      - CRITICAL 카운트
+      acceptable_methods:
+      - 카테고리별 분류
+      - CVE 매핑
+      - CVSS v3
+      negative_signs:
+      - 카테고리 2개 이하
+      - CRITICAL 없음
+      - 집계 없음
   target_vm: attacker
 - order: 5
   instruction: 전체 CPS 방어 아키텍처를 Python으로 설계하시오. 네트워크, 드론, ICS, 로봇, 자동차, AI 6개 영역의 방어 조치를 출력하라.
   hint: 각 영역별 필수 보안 조치를 정의하세요.
   category: config
   points: 12
-  answer: 'python3 -c "defenses={''Network'':[''IT/OT segmentation'',''CPS-aware IDS''],''Drone'':[''MAVLink signing'',''Encrypted channel''],''ICS'':[''Modbus auth → OPC-UA'',''PLC integrity''],''Robot'':[''DDS Security'',''Secure boot''],''Vehicle'':[''SecOC'',''CAN gateway IDS''],''AI'':[''Adversarial training'',''Input validation'']};print(''=== CPS Defense Architecture ==='');[(print(f''  [{k}]''),[print(f''    -
-    {d}'') for d in ds]) for k,ds in defenses.items()];print(f''  Total controls: {sum(len(v) for v in defenses.values())}'')"'
+  answer: 'python3 -c "defenses={''Network'':[''IT/OT segmentation'',''CPS-aware IDS''],''Drone'':[''MAVLink
+    signing'',''Encrypted channel''],''ICS'':[''Modbus auth → OPC-UA'',''PLC integrity''],''Robot'':[''DDS
+    Security'',''Secure boot''],''Vehicle'':[''SecOC'',''CAN gateway IDS''],''AI'':[''Adversarial training'',''Input
+    validation'']};print(''=== CPS Defense Architecture ==='');[(print(f''  [{k}]''),[print(f''    - {d}'')
+    for d in ds]) for k,ds in defenses.items()];print(f''  Total controls: {sum(len(v) for v in defenses.values())}'')"'
   answer_detail: 다계층 방어 아키텍처로 전체 CPS를 보호합니다.
   verify:
     type: output_contains
     expect: Defense Architecture
     field: stdout
+    semantic:
+      intent: '[방어] CPS 방어 아키텍처 — python3 defenses 6 영역 (Network IT/OT segment+IDS/Drone MAVLink signing+Encrypt/ICS
+        Modbus→OPC-UA/Robot DDS Sec+Secure boot/Vehicle SecOC+Gateway/AI Adv training+Validation). 6×2
+        통제.'
+      success_criteria:
+      - Defense Architecture 키워드
+      - 6 영역
+      - 영역당 2+ 통제
+      acceptable_methods:
+      - 6 영역 매트릭스
+      - NIST CSF + ISA/IEC 62443
+      - Defense in Depth
+      negative_signs:
+      - 영역 3개 이하
+      - 통제 부족
+      - NIST 미언급
   target_vm: attacker
 - order: 6
   instruction: LLM에게 CPS 보안 종합 평가 요약문(Executive Summary)을 작성하도록 요청하시오.
   hint: CPS security assessment executive summary를 요청하세요.
   category: analysis
   points: 10
-  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are a CPS security consultant writing an executive summary.\"},{\"role\":\"user\",\"content\":\"Write a 5-sentence executive summary for a CPS security assessment that found critical vulnerabilities in drone control, ICS SCADA, robot systems, and autonomous\
-    \ vehicles. Include overall risk rating and top 3 recommendations.\"}],\"stream\":false,\"options\":{\"num_predict\":250}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  answer: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
+    messages\":[{\"role\":\"system\",\"content\":\"You are a CPS security consultant writing an executive\
+    \ summary.\"},{\"role\":\"user\",\"content\":\"Write a 5-sentence executive summary for a CPS security\
+    \ assessment that found critical vulnerabilities in drone control, ICS SCADA, robot systems, and autonomous\
+    \ vehicles. Include overall risk rating and top 3 recommendations.\"}],\"stream\":false,\"options\"\
+    :{\"num_predict\":250}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: 경영진 요약문은 보안 투자 결정의 핵심 문서입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[분석] CPS Executive Summary — curl /api/chat system=CPS security consultant + 5-sentence
+        executive summary + risk rating + top 3 recommendations. 경영진 대상 요약. NIST SP 800-53 AR-4.'
+      success_criteria:
+      - Executive Summary 맥락
+      - 5 sentence
+      - top 3 recs
+      acceptable_methods:
+      - LLM 요약 요청
+      - NIST risk rating
+      - ISO 31000
+      negative_signs:
+      - recs 2개 이하
+      - risk rating 없음
+      - system 누락
   target_vm: manager
 - order: 7
   instruction: CPS 보안 점수를 계산하시오. 6개 영역 x 3개 항목 = 18개 보안 항목을 평가하라.
   hint: 각 영역별 보안 항목을 평가하세요.
   category: analysis
   points: 12
-  answer: 'python3 -c "areas=[(''Network'',[(''Segmentation'',True),(''IDS'',True),(''Firewall'',True)]),(''Drone'',[(''Signing'',False),(''Encryption'',False),(''IDS'',False)]),(''ICS'',[(''Auth'',False),(''Monitoring'',True),(''Segmentation'',False)]),(''Robot'',[(''DDS Sec'',False),(''Secure Boot'',False),(''ACL'',False)]),(''Vehicle'',[(''SecOC'',False),(''Gateway'',False),(''V2X PKI'',False)]),(''AI'',[(''Adv
-    Training'',False),(''Validation'',True),(''Failsafe'',True)])];total=sum(sum(v for _,v in cs) for _,cs in areas);max_t=sum(len(cs) for _,cs in areas);print(''=== Final CPS Security Score ==='');[(print(f''  [{a}] {sum(v for _,v in cs)}/{len(cs)}''),[print(f''    {\"OK\" if v else \"!!\"} {n}'') for n,v in cs]) for a,cs in areas];print(f''  Total: {total}/{max_t} ({total/max_t*100:.0f}%)'')"'
+  answer: 'python3 -c "areas=[(''Network'',[(''Segmentation'',True),(''IDS'',True),(''Firewall'',True)]),(''Drone'',[(''Signing'',False),(''Encryption'',False),(''IDS'',False)]),(''ICS'',[(''Auth'',False),(''Monitoring'',True),(''Segmentation'',False)]),(''Robot'',[(''DDS
+    Sec'',False),(''Secure Boot'',False),(''ACL'',False)]),(''Vehicle'',[(''SecOC'',False),(''Gateway'',False),(''V2X
+    PKI'',False)]),(''AI'',[(''Adv Training'',False),(''Validation'',True),(''Failsafe'',True)])];total=sum(sum(v
+    for _,v in cs) for _,cs in areas);max_t=sum(len(cs) for _,cs in areas);print(''=== Final CPS Security
+    Score ==='');[(print(f''  [{a}] {sum(v for _,v in cs)}/{len(cs)}''),[print(f''    {\"OK\" if v else
+    \"!!\"} {n}'') for n,v in cs]) for a,cs in areas];print(f''  Total: {total}/{max_t} ({total/max_t*100:.0f}%)'')"'
   answer_detail: 종합 보안 점수로 CPS 전체의 보안 수준을 한눈에 파악합니다.
   verify:
     type: output_contains
     expect: Final CPS Security Score
     field: stdout
+    semantic:
+      intent: '[분석] CPS 보안 점수 — python3 areas 6 × 3 = 18 항목 (Network/Drone/ICS/Robot/Vehicle/AI × 3 세부)
+        + Total % 계산. 종합 보안 수준 평가. NIST CSF Maturity.'
+      success_criteria:
+      - Final CPS Security Score 키워드
+      - 6 영역 × 3
+      - '% 계산'
+      acceptable_methods:
+      - 18 항목 + %
+      - NIST CSF tier
+      - CIS Controls v8
+      negative_signs:
+      - 영역 3개 이하
+      - '% 없음'
+      - OK/FAIL 누락
   target_vm: attacker
 - order: 8
   instruction: 최종 보안 개선 로드맵을 Python으로 생성하시오. 단기(1개월)/중기(3개월)/장기(6개월) 계획을 출력하라.
   hint: 시급도에 따라 단기/중기/장기로 분류하세요.
   category: analysis
   points: 10
-  answer: python3 -c "roadmap={'Short-term (1mo)':['Network segmentation','Deploy CPS IDS','Rotate all credentials'],'Mid-term (3mo)':['MAVLink signing','Modbus→OPC-UA migration','DDS Security deployment'],'Long-term (6mo)':['SecOC for CAN','Adversarial ML training','CPS IR exercise program']};print('=== Security Improvement Roadmap ===');[(print(f'  [{k}]'),[print(f'    - {a}') for a in v]) for k,v
-    in roadmap.items()];print('  [OK] Roadmap covers all critical findings')"
+  answer: python3 -c "roadmap={'Short-term (1mo)':['Network segmentation','Deploy CPS IDS','Rotate all
+    credentials'],'Mid-term (3mo)':['MAVLink signing','Modbus→OPC-UA migration','DDS Security deployment'],'Long-term
+    (6mo)':['SecOC for CAN','Adversarial ML training','CPS IR exercise program']};print('=== Security
+    Improvement Roadmap ===');[(print(f'  [{k}]'),[print(f'    - {a}') for a in v]) for k,v in roadmap.items()];print('  [OK]
+    Roadmap covers all critical findings')"
   answer_detail: 보안 개선 로드맵으로 체계적 보안 강화를 계획합니다.
   verify:
     type: output_contains
     expect: Improvement Roadmap
     field: stdout
+    semantic:
+      intent: '[분석] 개선 로드맵 — python3 roadmap 3 시한 (Short 1mo: segment/IDS/credentials / Mid 3mo: MAVLink/OPC-UA/DDS
+        / Long 6mo: SecOC/Adv ML/IR exercise). 시급도별 9 개선. NIST SP 800-53 POAM.'
+      success_criteria:
+      - Improvement Roadmap 키워드
+      - 3 시한
+      - 시한당 3 조치
+      acceptable_methods:
+      - 시급도별 분류
+      - POAM 형식
+      - NIST 800-53 POA&M
+      negative_signs:
+      - 시한 1-2개
+      - 조치 부족
+      - 시간 범위 없음
   target_vm: attacker
