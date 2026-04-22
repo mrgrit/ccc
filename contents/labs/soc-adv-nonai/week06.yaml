@@ -17,209 +17,440 @@ steps:
   hint: Sqrrl의 Threat Hunting Maturity Model(HMM)을 참고하라
   category: analysis
   points: 8
-  answer: '가설기반: ATT&CK에서 가설 도출→데이터 검증(APT 탐지에 적합). IOC기반: 알려진 IOC 검색(즉각적 위협 확인).
-    데이터기반: 이상치/통계적 편차 탐색(알려지지 않은 위협)'
-  answer_detail: 세 접근법은 상호 보완적이다. 가설 기반은 ATT&CK 프레임워크와 결합할 때 가장 효과적이고, IOC 기반은 빠른
-    확인에, 데이터 기반은 미지의 위협 발견에 유용하다.
+  answer: '가설기반: ATT&CK에서 가설 도출→데이터 검증(APT 탐지에 적합). IOC기반: 알려진 IOC 검색(즉각적 위협 확인). 데이터기반: 이상치/통계적 편차 탐색(알려지지
+    않은 위협)'
+  answer_detail: 세 접근법은 상호 보완적이다. 가설 기반은 ATT&CK 프레임워크와 결합할 때 가장 효과적이고, IOC 기반은 빠른 확인에, 데이터 기반은 미지의 위협
+    발견에 유용하다.
   verify:
     type: output_contains
     expect: 가설
+    semantic:
+      intent: 위협 헌팅 3 접근법 — (1) Hypothesis-driven (가설 기반 + ATT&CK 매핑 → APT 탐지) + (2) IOC-driven (알려진 IOC
+        검색 → 즉각 확인) + (3) Data-driven (통계 편차/이상치 → 미지 위협). Sqrrl HMM framework. 상호 보완적 조합.
+      success_criteria:
+      - 가설 키워드
+      - 3개 접근법 모두 설명
+      - 각 접근 적용 시나리오
+      acceptable_methods:
+      - Sqrrl HMM 문서 참조
+      - SANS FOR508 course 자료
+      - MITRE Threat Hunting Framework
+      - Cyborg Security (Hunt Evil)
+      negative_signs:
+      - 접근법 2개 이하
+      - 시나리오 매핑 없음
+      - HMM 맥락 없음
   target_vm: siem
 - order: 2
-  instruction: 헌팅 가설을 수립하라. 'C2 통신이 DNS 터널링을 통해 이루어지고 있다'는 가설을 세우고, 검증에 필요한 데이터 소스와
-    분석 기법을 정의하라.
+  instruction: 헌팅 가설을 수립하라. 'C2 통신이 DNS 터널링을 통해 이루어지고 있다'는 가설을 세우고, 검증에 필요한 데이터 소스와 분석 기법을 정의하라.
   hint: 'DNS 터널링의 특성: 긴 서브도메인, 높은 쿼리 빈도, TXT 레코드 사용'
   category: planning
   points: 10
-  answer: '가설: DNS 터널링 C2. 데이터소스: DNS 쿼리 로그, 네트워크 트래픽. 분석기법: 1) 서브도메인 길이 분포, 2) 도메인별
-    쿼리 빈도, 3) TXT 레코드 비율, 4) 엔트로피 분석'
-  answer_detail: DNS 터널링은 정상 DNS 트래픽에 데이터를 숨기는 기법이다. 서브도메인에 인코딩된 데이터를 포함하므로 길이가 비정상적으로
-    길고, 쿼리 빈도가 높으며, 엔트로피가 높다.
+  answer: '가설: DNS 터널링 C2. 데이터소스: DNS 쿼리 로그, 네트워크 트래픽. 분석기법: 1) 서브도메인 길이 분포, 2) 도메인별 쿼리 빈도, 3) TXT 레코드
+    비율, 4) 엔트로피 분석'
+  answer_detail: DNS 터널링은 정상 DNS 트래픽에 데이터를 숨기는 기법이다. 서브도메인에 인코딩된 데이터를 포함하므로 길이가 비정상적으로 길고, 쿼리 빈도가 높으며,
+    엔트로피가 높다.
   verify:
     type: output_contains
     expect: DNS
+    semantic:
+      intent: 'DNS 터널링 C2 가설 수립 — 데이터 소스 (DNS 쿼리 로그 + 네트워크 트래픽) + 분석 기법 (1) 서브도메인 길이 분포 (2) 도메인별 쿼리 빈도
+        (3) TXT 레코드 비율 (4) 엔트로피 분석. MITRE ATT&CK T1071.004 Application Layer Protocol: DNS / T1572 Protocol
+        Tunneling.'
+      success_criteria:
+      - DNS 키워드
+      - 데이터 소스 + 분석 기법 각 2개 이상
+      - T1071.004 또는 DNS tunneling 맥락
+      acceptable_methods:
+      - iodine / dnscat2 도구 특성 참조
+      - Zeek dns.log 분석
+      - Splunk DNS hunting queries
+      - Jupyter + pandas value_counts
+      negative_signs:
+      - 데이터 소스 1개만
+      - 분석 기법 없이 가설만
+      - T1071 맥락 없음
   target_vm: siem
 - order: 3
-  instruction: 실습 환경의 DNS 로그를 수집하라. Wazuh({{SECU_IP}}00)에서 DNS 관련 이벤트를 검색하고, 도메인별
-    쿼리 빈도를 집계하라.
+  instruction: 실습 환경의 DNS 로그를 수집하라. Wazuh({{SECU_IP}}00)에서 DNS 관련 이벤트를 검색하고, 도메인별 쿼리 빈도를 집계하라.
   hint: Wazuh API에서 rule.groups에 'dns'가 포함된 알림을 검색하라
   category: collection
   points: 10
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
     📎 참고 (CLI): DNS 이벤트 수집 결과: 도메인별 쿼리 빈도 Top 10, 비정상적으로 긴 서브도메인 존재 여부 확인'
-  answer_detail: DNS 로그는 위협 헌팅의 핵심 데이터 소스이다. 쿼리 빈도가 비정상적으로 높거나, 서브도메인이 30자 이상인 경우,
-    또는 알려지지 않은 도메인에 대한 반복적 쿼리는 의심 지표이다.
+  answer_detail: DNS 로그는 위협 헌팅의 핵심 데이터 소스이다. 쿼리 빈도가 비정상적으로 높거나, 서브도메인이 30자 이상인 경우, 또는 알려지지 않은 도메인에 대한
+    반복적 쿼리는 의심 지표이다.
   verify:
     type: output_contains
     expect: DNS
+    semantic:
+      intent: DNS 로그 수집 실습 — Wazuh rule.groups dns 알림 검색 + 도메인별 쿼리 빈도 집계 + 비정상 서브도메인 길이 (>30자) 확인. 위협
+        헌팅 첫 데이터 수집 단계. 정상 baseline vs 이상치 비교 기초 자료.
+      success_criteria:
+      - DNS 키워드
+      - 도메인별 빈도 집계
+      - 서브도메인 길이 임계치
+      acceptable_methods:
+      - Wazuh Dashboard Security events + rule.groups=dns
+      - curl /alerts?q=rule.groups%3Adns API
+      - Kibana Lens DNS visualization
+      - Elasticsearch aggregations terms by domain
+      negative_signs:
+      - DNS 로그 수집 없이 이론
+      - 빈도 집계 누락
+      - 비정상 기준 없음
   target_vm: siem
 - order: 4
-  instruction: 네트워크 비콘 활동을 헌팅하라. 내부 호스트의 외부 통신 패턴에서 주기적 비콘(beaconing) 활동을 식별하라. 통신
-    간격의 표준편차를 계산하라.
+  instruction: 네트워크 비콘 활동을 헌팅하라. 내부 호스트의 외부 통신 패턴에서 주기적 비콘(beaconing) 활동을 식별하라. 통신 간격의 표준편차를 계산하라.
   hint: 주기적 통신은 일정한 간격으로 발생하므로 표준편차가 낮다
   category: hunting
   points: 12
-  answer: '비콘 탐지: 특정 외부 IP에 대한 통신 간격 분석 → 간격 평균 60초, 표준편차 2초 이하면 비콘 의심. jitter가 있어도
-    분포가 정규분포면 의심'
-  answer_detail: C2 비콘은 일정 간격으로 체크인하므로 통신 간격의 분산이 낮다. jitter(±10%)를 추가해도 통계적으로 구분
-    가능하다. 정상 트래픽은 사용자 행위에 따라 불규칙하다.
+  answer: '비콘 탐지: 특정 외부 IP에 대한 통신 간격 분석 → 간격 평균 60초, 표준편차 2초 이하면 비콘 의심. jitter가 있어도 분포가 정규분포면 의심'
+  answer_detail: C2 비콘은 일정 간격으로 체크인하므로 통신 간격의 분산이 낮다. jitter(±10%)를 추가해도 통계적으로 구분 가능하다. 정상 트래픽은 사용자 행위에
+    따라 불규칙하다.
   verify:
     type: output_contains
     expect: 비콘
+    semantic:
+      intent: 네트워크 비콘 헌팅 — 외부 IP 통신 간격 분석 + 간격 평균 60초 + 표준편차 ≤ 2초면 비콘 의심. jitter (±10%) 보정해도 정규분포면 의심.
+        통계적 주기성 탐지. MITRE ATT&CK T1071 C2 + T1571 Non-Standard Port + RITA tool.
+      success_criteria:
+      - 비콘 키워드 또는 beaconing
+      - 통신 간격 + 표준편차 수치
+      - 통계 분석 개념
+      acceptable_methods:
+      - RITA (Real Intelligence Threat Analytics)
+      - Zeek conn.log + Python pandas stats
+      - Splunk ESCU app (C2 beaconing)
+      - AC-Hunter (Active Countermeasures)
+      negative_signs:
+      - 통신 간격만 + 표준편차 없음
+      - jitter 맥락 없음
+      - RITA / 통계 도구 언급 없음
   target_vm: siem
 - order: 5
-  instruction: 비정상 프로세스 실행을 헌팅하라. Wazuh의 syscheck와 rootcheck 데이터에서 비정상적인 프로세스 생성,
-    SUID 파일, 숨겨진 프로세스를 탐색하라.
+  instruction: 비정상 프로세스 실행을 헌팅하라. Wazuh의 syscheck와 rootcheck 데이터에서 비정상적인 프로세스 생성, SUID 파일, 숨겨진 프로세스를 탐색하라.
   hint: 정상 베이스라인과 비교하여 새로 추가된 SUID 파일이나 비정상 경로의 실행 파일을 찾아라
   category: hunting
   points: 10
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
-    📎 참고 (CLI): 헌팅 결과: 1) 비정상 경로(/tmp, /dev/shm)의 실행파일, 2) 신규 SUID 파일, 3) 커널 모듈 변경,
-    4) 숨겨진 디렉토리(.로 시작하는 비정상 디렉토리)'
-  answer_detail: 비정상 프로세스 헌팅은 호스트 레벨의 침해 지표를 탐색한다. /tmp이나 /dev/shm에서 실행되는 바이너리, 예상치
-    못한 SUID 파일, 숨겨진 디렉토리는 공격자의 일반적 행동 패턴이다.
+    📎 참고 (CLI): 헌팅 결과: 1) 비정상 경로(/tmp, /dev/shm)의 실행파일, 2) 신규 SUID 파일, 3) 커널 모듈 변경, 4) 숨겨진 디렉토리(.로 시작하는
+    비정상 디렉토리)'
+  answer_detail: 비정상 프로세스 헌팅은 호스트 레벨의 침해 지표를 탐색한다. /tmp이나 /dev/shm에서 실행되는 바이너리, 예상치 못한 SUID 파일, 숨겨진 디렉토리는
+    공격자의 일반적 행동 패턴이다.
   verify:
     type: output_contains
     expect: 프로세스
+    semantic:
+      intent: 비정상 프로세스 헌팅 — (1) 비정상 경로 (/tmp, /dev/shm) 실행 파일 + (2) 신규 SUID 파일 + (3) 커널 모듈 변경 + (4) 숨겨진
+        디렉토리 (.prefix). Wazuh syscheck + rootcheck 데이터 활용. 호스트 레벨 침해 지표 (IoC). MITRE ATT&CK T1036 Masquerading
+        + T1548.001 SUID.
+      success_criteria:
+      - 프로세스 키워드
+      - 비정상 경로 (/tmp/dev/shm) + SUID 파일
+      - 4개 헌팅 대상 중 3개 이상
+      acceptable_methods:
+      - Wazuh syscheck FIM 알림 분석
+      - rootcheck policy monitoring
+      - osquery processes/suid_bin tables
+      - LinPEAS + 헌팅 쿼리
+      negative_signs:
+      - 경로 체크만 + SUID 누락
+      - 베이스라인 비교 없음
+      - 호스트 헌팅 맥락 부족
   target_vm: siem
 - order: 6
-  instruction: 횡적 이동(Lateral Movement) 흔적을 헌팅하라. SSH 로그, 네트워크 연결 로그에서 내부 호스트 간 비정상적인
-    통신 패턴을 탐색하라.
+  instruction: 횡적 이동(Lateral Movement) 흔적을 헌팅하라. SSH 로그, 네트워크 연결 로그에서 내부 호스트 간 비정상적인 통신 패턴을 탐색하라.
   hint: 정상적인 내부 통신 패턴을 먼저 파악하고, 편차를 찾아라
   category: hunting
   points: 12
-  answer: '헌팅 기법: 1) 비정상 SSH 연결(새로운 소스-목적지 쌍), 2) 관리포트(22,3389,5985) 통신 패턴, 3) 서비스
-    계정의 대화형 로그인, 4) 비업무시간 내부 통신'
-  answer_detail: 횡적 이동은 침해 사고의 핵심 단계이다. 정상적인 내부 통신 베이스라인을 구축하고, 새로운 통신 패턴(이전에 없던 호스트
-    간 연결)을 식별하면 초기 횡적 이동을 탐지할 수 있다.
+  answer: '헌팅 기법: 1) 비정상 SSH 연결(새로운 소스-목적지 쌍), 2) 관리포트(22,3389,5985) 통신 패턴, 3) 서비스 계정의 대화형 로그인, 4) 비업무시간
+    내부 통신'
+  answer_detail: 횡적 이동은 침해 사고의 핵심 단계이다. 정상적인 내부 통신 베이스라인을 구축하고, 새로운 통신 패턴(이전에 없던 호스트 간 연결)을 식별하면 초기 횡적
+    이동을 탐지할 수 있다.
   verify:
     type: output_contains
     expect: 횡적
+    semantic:
+      intent: 횡적 이동 헌팅 — (1) 비정상 SSH 연결 (새로운 source-dest 쌍) + (2) 관리 포트 통신 (22/3389/5985) + (3) 서비스 계정
+        대화형 로그인 + (4) 비업무 시간 내부 통신. 내부 통신 baseline 대비 편차. MITRE ATT&CK Lateral Movement (T1021.001 RDP/T1021.002
+        SMB/T1021.006 WinRM).
+      success_criteria:
+      - 횡적 키워드
+      - 관리 포트 (22/3389/5985) 언급
+      - 내부 통신 baseline 개념
+      acceptable_methods:
+      - Zeek conn.log + 새 쌍 탐지
+      - Wazuh rule groups + internal traffic
+      - JA3 / JARM fingerprint + lateral
+      - AC-Hunter internal traffic
+      negative_signs:
+      - 포트 언급 없음
+      - baseline 개념 없음
+      - Tactic 4개 중 1개 이하
   target_vm: siem
 - order: 7
-  instruction: 데이터 유출(Exfiltration) 헌팅을 수행하라. 외부로의 대용량 데이터 전송, 비정상 프로토콜 사용, 인코딩된 데이터
-    전송을 탐색하라.
+  instruction: 데이터 유출(Exfiltration) 헌팅을 수행하라. 외부로의 대용량 데이터 전송, 비정상 프로토콜 사용, 인코딩된 데이터 전송을 탐색하라.
   hint: 아웃바운드 트래픽 볼륨 이상치, DNS TXT 레코드 크기, ICMP 페이로드 크기를 확인하라
   category: hunting
   points: 10
-  answer: '헌팅 기법: 1) 호스트별 아웃바운드 트래픽 Top 10, 2) 비정상 포트 사용, 3) DNS 쿼리 크기 이상치, 4) ICMP
-    페이로드 이상, 5) 업무시간 외 대량 전송'
-  answer_detail: 데이터 유출은 다양한 채널(HTTP, DNS, ICMP, 클라우드 스토리지)을 통해 이루어질 수 있다. 각 채널별 정상
-    패턴을 파악하고, 통계적 이상치를 탐색하는 것이 핵심이다.
+  answer: '헌팅 기법: 1) 호스트별 아웃바운드 트래픽 Top 10, 2) 비정상 포트 사용, 3) DNS 쿼리 크기 이상치, 4) ICMP 페이로드 이상, 5) 업무시간 외
+    대량 전송'
+  answer_detail: 데이터 유출은 다양한 채널(HTTP, DNS, ICMP, 클라우드 스토리지)을 통해 이루어질 수 있다. 각 채널별 정상 패턴을 파악하고, 통계적 이상치를
+    탐색하는 것이 핵심이다.
   verify:
     type: output_contains
     expect: 유출
+    semantic:
+      intent: 데이터 유출 헌팅 — (1) 호스트별 아웃바운드 Top 10 + (2) 비정상 포트 사용 + (3) DNS 쿼리 크기 이상치 + (4) ICMP 페이로드 이상
+        + (5) 업무시간 외 대량 전송. 다양한 채널 (HTTP/DNS/ICMP/Cloud Storage). MITRE ATT&CK Exfiltration (T1041/T1048/T1567).
+      success_criteria:
+      - 유출 키워드
+      - 5개 채널 중 3개 이상
+      - 아웃바운드 볼륨 이상치 분석
+      acceptable_methods:
+      - Zeek conn.log orig_bytes 순위
+      - NetFlow / IPFIX + Elastic visualizations
+      - Wireshark DNS size anomaly
+      - DLP 솔루션 로그 분석
+      negative_signs:
+      - 채널 1개만 (HTTP)
+      - 볼륨 이상치 개념 없음
+      - 업무시간 baseline 없음
   target_vm: siem
 - order: 8
-  instruction: 지속성(Persistence) 메커니즘을 헌팅하라. cron job, systemd service, .bashrc 변조,
-    커널 모듈 등 Linux 환경의 지속성 메커니즘을 탐색하라.
+  instruction: 지속성(Persistence) 메커니즘을 헌팅하라. cron job, systemd service, .bashrc 변조, 커널 모듈 등 Linux 환경의 지속성
+    메커니즘을 탐색하라.
   hint: 각 호스트의 crontab, systemd unit files, shell 초기화 파일을 베이스라인과 비교하라
   category: hunting
   points: 10
-  answer: '헌팅 대상: 1) /etc/crontab + /var/spool/cron/*, 2) /etc/systemd/system/*.service,
-    3) ~/.bashrc,~/.profile 변경, 4) /etc/ld.so.preload, 5) /lib/modules/ 변경'
-  answer_detail: 공격자는 재부팅이나 세션 종료 후에도 접근을 유지하기 위해 지속성 메커니즘을 설치한다. Linux에서는 cron, systemd,
-    shell 초기화, 커널 모듈이 주요 벡터이며, 파일 무결성 모니터링과 병행하여 헌팅한다.
+  answer: '헌팅 대상: 1) /etc/crontab + /var/spool/cron/*, 2) /etc/systemd/system/*.service, 3) ~/.bashrc,~/.profile
+    변경, 4) /etc/ld.so.preload, 5) /lib/modules/ 변경'
+  answer_detail: 공격자는 재부팅이나 세션 종료 후에도 접근을 유지하기 위해 지속성 메커니즘을 설치한다. Linux에서는 cron, systemd, shell 초기화, 커널
+    모듈이 주요 벡터이며, 파일 무결성 모니터링과 병행하여 헌팅한다.
   verify:
     type: output_contains
     expect: Persistence
+    semantic:
+      intent: Linux Persistence 헌팅 — (1) /etc/crontab + /var/spool/cron/* (2) /etc/systemd/system/*.service
+        (3) ~/.bashrc, ~/.profile 변경 (4) /etc/ld.so.preload (5) /lib/modules/ 변경. 5 주요 벡터 + FIM baseline
+        비교. MITRE ATT&CK Persistence (T1053.003 cron/T1543.002 systemd/T1546.004 .bashrc).
+      success_criteria:
+      - Persistence 키워드 또는 persistence
+      - cron + systemd + bashrc 등 3 벡터 이상
+      - FIM baseline 비교 개념
+      acceptable_methods:
+      - Wazuh syscheck + whitelist baseline
+      - LinEnum / LinPEAS + comparison
+      - LOLBAS (Linux) + auditd
+      - Detection Lab Velociraptor persistence artifacts
+      negative_signs:
+      - 벡터 2개 이하
+      - FIM baseline 없음
+      - Persistence tactic 맥락 없음
   target_vm: siem
 - order: 9
-  instruction: 헌팅 노트북(Jupyter 형태)을 설계하라. 각 헌팅 가설에 대해 데이터 수집 쿼리, 분석 코드, 시각화, 결론을 포함하는
-    재사용 가능한 헌팅 노트북 템플릿을 작성하라.
+  instruction: 헌팅 노트북(Jupyter 형태)을 설계하라. 각 헌팅 가설에 대해 데이터 수집 쿼리, 분석 코드, 시각화, 결론을 포함하는 재사용 가능한 헌팅 노트북 템플릿을
+    작성하라.
   hint: 가설→데이터수집→분석→시각화→결론→탐지룰전환의 구조를 따르라
   category: design
   points: 10
-  answer: '노트북 구조: 1) 가설 정의(ATT&CK 매핑), 2) 데이터 수집 쿼리(SIEM API), 3) 분석 코드(통계/패턴), 4)
-    시각화(차트/그래프), 5) 결론(발견사항), 6) 탐지 룰 제안'
-  answer_detail: 헌팅 노트북은 분석 과정을 문서화하고 재현 가능하게 만든다. 팀 간 공유와 지식 축적에 필수적이며, 성공적인 헌팅은
-    자동화된 탐지 룰로 전환해야 한다.
+  answer: '노트북 구조: 1) 가설 정의(ATT&CK 매핑), 2) 데이터 수집 쿼리(SIEM API), 3) 분석 코드(통계/패턴), 4) 시각화(차트/그래프), 5) 결론(발견사항),
+    6) 탐지 룰 제안'
+  answer_detail: 헌팅 노트북은 분석 과정을 문서화하고 재현 가능하게 만든다. 팀 간 공유와 지식 축적에 필수적이며, 성공적인 헌팅은 자동화된 탐지 룰로 전환해야 한다.
   verify:
     type: output_contains
     expect: 노트북
+    semantic:
+      intent: 헌팅 노트북 템플릿 — 6 섹션 구조 (1) 가설 정의 (ATT&CK 매핑) + (2) 데이터 수집 쿼리 (SIEM API) + (3) 분석 코드 (통계/패턴)
+        + (4) 시각화 (차트/그래프) + (5) 결론 (발견사항) + (6) 탐지 룰 제안. Jupyter Notebook 재사용 가능 템플릿. 재현성 + 지식 축적.
+      success_criteria:
+      - 노트북 키워드
+      - 6 섹션 중 5개 이상
+      - 재현 가능 템플릿 구조
+      acceptable_methods:
+      - Jupyter Lab + ipynb 템플릿
+      - VSCode + Jupyter extension
+      - Splunk Search Processing Language notebook
+      - Microsoft Notebooks for Incident Response
+      negative_signs:
+      - 섹션 3개 이하
+      - ATT&CK 매핑 없음
+      - 탐지 룰 전환 단계 누락
   target_vm: siem
 - order: 10
-  instruction: 헌팅 발견사항을 SIGMA 탐지 룰로 전환하라. 이번 헌팅에서 발견한 위협 지표를 기반으로 자동화된 탐지 룰 2개 이상을
-    SIGMA 포맷으로 작성하라.
+  instruction: 헌팅 발견사항을 SIGMA 탐지 룰로 전환하라. 이번 헌팅에서 발견한 위협 지표를 기반으로 자동화된 탐지 룰 2개 이상을 SIGMA 포맷으로 작성하라.
   hint: 헌팅 결과의 패턴을 일반화하여 지속적 모니터링이 가능한 룰로 만들라
   category: implementation
   points: 10
-  answer: '룰 1: DNS 터널링 탐지(서브도메인 길이 >50자 + 높은 쿼리 빈도). 룰 2: 비정상 비콘 탐지(동일 목적지에 10분 내
-    20회 이상 주기적 연결)'
-  answer_detail: 헌팅에서 탐지로의 전환(Hunt-to-Detect)은 헌팅의 핵심 가치이다. 일회성 발견을 지속적 모니터링으로 전환하면
-    동일 위협의 재발을 자동으로 탐지할 수 있다.
+  answer: '룰 1: DNS 터널링 탐지(서브도메인 길이 >50자 + 높은 쿼리 빈도). 룰 2: 비정상 비콘 탐지(동일 목적지에 10분 내 20회 이상 주기적 연결)'
+  answer_detail: 헌팅에서 탐지로의 전환(Hunt-to-Detect)은 헌팅의 핵심 가치이다. 일회성 발견을 지속적 모니터링으로 전환하면 동일 위협의 재발을 자동으로 탐지할
+    수 있다.
   verify:
     type: output_contains
     expect: SIGMA
+    semantic:
+      intent: '헌팅 → SIGMA 룰 전환 — 2+ SIGMA 룰: (1) DNS 터널링 (서브도메인 >50자 + 높은 쿼리 빈도) + (2) 비정상 비콘 (동일 dest
+        10분 내 20회 주기 연결). Hunt-to-Detect 전환 = 일회 발견 → 지속 자동 탐지. Detection-as-Code.'
+      success_criteria:
+      - SIGMA 키워드
+      - 2개 이상 룰 작성
+      - 헌팅 발견 → 룰 일반화 개념
+      acceptable_methods:
+      - pySigma SigmaRule.from_yaml()
+      - Uncoder.io 편집
+      - sigma-cli convert 검증
+      - GitHub PR → SigmaHQ 기여
+      negative_signs:
+      - SIGMA 룰 1개 이하
+      - 임계치 수치 없음
+      - Hunt-to-Detect 개념 없음
   target_vm: siem
 - order: 11
-  instruction: ATT&CK 기반 헌팅 매트릭스를 작성하라. 주요 Tactic별로 헌팅 가설, 데이터 소스, 분석 기법을 매핑한 매트릭스를
-    작성하라.
+  instruction: ATT&CK 기반 헌팅 매트릭스를 작성하라. 주요 Tactic별로 헌팅 가설, 데이터 소스, 분석 기법을 매핑한 매트릭스를 작성하라.
   hint: 최소 5개 Tactic에 대해 각 2개 이상의 헌팅 가설을 수립하라
   category: planning
   points: 10
-  answer: 'Initial Access: 피싱메일패턴, 비정상 다운로드. Execution: 비정상 스크립트 실행, LOLBins 사용. Persistence:
-    신규 서비스등록, cron변경. C2: 비콘패턴, DNS터널링. Exfiltration: 대량전송, 인코딩트래픽'
-  answer_detail: ATT&CK 기반 헌팅 매트릭스는 체계적 헌팅의 가이드이다. 각 Tactic별로 데이터 소스 가용성을 평가하고, 헌팅이
-    가능한 영역과 불가능한 영역(데이터 부족)을 식별한다.
+  answer: 'Initial Access: 피싱메일패턴, 비정상 다운로드. Execution: 비정상 스크립트 실행, LOLBins 사용. Persistence: 신규 서비스등록,
+    cron변경. C2: 비콘패턴, DNS터널링. Exfiltration: 대량전송, 인코딩트래픽'
+  answer_detail: ATT&CK 기반 헌팅 매트릭스는 체계적 헌팅의 가이드이다. 각 Tactic별로 데이터 소스 가용성을 평가하고, 헌팅이 가능한 영역과 불가능한 영역(데이터
+    부족)을 식별한다.
   verify:
     type: output_contains
     expect: ATT&CK
+    semantic:
+      intent: 'ATT&CK 기반 헌팅 매트릭스 — 5+ Tactic × 각 2+ 가설: Initial Access (피싱/비정상 다운로드) + Execution (비정상
+        스크립트/LOLBins) + Persistence (신규 서비스/cron) + C2 (비콘/DNS 터널링) + Exfiltration (대량 전송/인코딩 트래픽). 데이터
+        소스 가용성 + 가설 matrix. DeTT&CT detection coverage.'
+      success_criteria:
+      - ATT&CK 키워드
+      - 5개 이상 Tactic + 각 2+ 가설
+      - 데이터 소스 매핑
+      acceptable_methods:
+      - ATT&CK Navigator layer JSON
+      - DeTT&CT YAML detection coverage
+      - MITRE ATT&CK Data Sources 활용
+      - Cyborg Security Hunt Package
+      negative_signs:
+      - Tactic 3개 이하
+      - 가설 각 1개만
+      - ATT&CK 매트릭스 구조 없음
   target_vm: siem
 - order: 12
   instruction: 헌팅 캠페인을 계획하라. 월간 헌팅 일정, 가설 우선순위, 리소스 할당, 성과 측정 기준을 포함한 헌팅 프로그램을 설계하라.
   hint: SOC 인력의 20%를 헌팅에 할당하는 것이 일반적 권장사항이다
   category: planning
   points: 8
-  answer: '월간 프로그램: 주1-가설수립+데이터준비, 주2-능동적 헌팅 수행, 주3-결과분석+룰전환, 주4-보고서+개선. 성과: 발견 위협
-    수, 신규 탐지룰 수, MTTD 개선'
-  answer_detail: 체계적 헌팅 프로그램은 SOC 성숙도의 핵심 지표이다. 비구조화된 개인 활동이 아닌 조직적 프로그램으로 운영해야 지속
-    가능하고 측정 가능한 성과를 얻을 수 있다.
+  answer: '월간 프로그램: 주1-가설수립+데이터준비, 주2-능동적 헌팅 수행, 주3-결과분석+룰전환, 주4-보고서+개선. 성과: 발견 위협 수, 신규 탐지룰 수, MTTD 개선'
+  answer_detail: 체계적 헌팅 프로그램은 SOC 성숙도의 핵심 지표이다. 비구조화된 개인 활동이 아닌 조직적 프로그램으로 운영해야 지속 가능하고 측정 가능한 성과를 얻을
+    수 있다.
   verify:
     type: output_contains
     expect: 캠페인
+    semantic:
+      intent: '헌팅 캠페인 월간 프로그램 — 주1 가설 수립 + 데이터 준비 / 주2 능동 헌팅 수행 / 주3 결과 분석 + 룰 전환 / 주4 보고서 + 개선. 성과 KPI:
+        발견 위협 수 + 신규 탐지 룰 수 + MTTD 개선. SOC 인력 ~20% 헌팅 할당 권장. 체계적 프로그램.'
+      success_criteria:
+      - 캠페인 키워드
+      - 월간 주차별 일정
+      - KPI 3개 이상
+      acceptable_methods:
+      - Agile sprint 패턴 + Scrum 헌팅 의식
+      - Jira / Linear 헌팅 백로그 관리
+      - SANS Hunt Evil 일정 모델
+      - Sqrrl HMM 성숙도 기반 캘린더
+      negative_signs:
+      - 주차별 계획 없음
+      - KPI 1개 이하
+      - 리소스 할당 맥락 없음
   target_vm: siem
 - order: 13
-  instruction: 헌팅 도구 체인을 구성하라. 데이터 수집(SIEM), 분석(Python/Pandas), 시각화(Matplotlib/Grafana),
-    문서화(Jupyter) 도구를 연결하는 워크플로우를 구축하라.
+  instruction: 헌팅 도구 체인을 구성하라. 데이터 수집(SIEM), 분석(Python/Pandas), 시각화(Matplotlib/Grafana), 문서화(Jupyter)
+    도구를 연결하는 워크플로우를 구축하라.
   hint: 각 도구의 역할과 데이터 흐름을 명확히 정의하라
   category: implementation
   points: 8
-  answer: '도구체인: Wazuh API→Python httpx로 데이터수집→Pandas로 정제/분석→Matplotlib 시각화→Jupyter
-    노트북 문서화→발견사항 SIGMA 룰 변환'
-  answer_detail: 효율적인 헌팅 도구 체인은 분석관의 생산성을 결정한다. API 기반 자동 수집, 코드 기반 분석, 재현 가능한 문서화가
-    핵심이며, 팀 내 표준화하여 공유한다.
+  answer: '도구체인: Wazuh API→Python httpx로 데이터수집→Pandas로 정제/분석→Matplotlib 시각화→Jupyter 노트북 문서화→발견사항 SIGMA
+    룰 변환'
+  answer_detail: 효율적인 헌팅 도구 체인은 분석관의 생산성을 결정한다. API 기반 자동 수집, 코드 기반 분석, 재현 가능한 문서화가 핵심이며, 팀 내 표준화하여 공유한다.
   verify:
     type: output_contains
     expect: 도구
+    semantic:
+      intent: 헌팅 도구 체인 — Wazuh API (데이터) → Python httpx 수집 → Pandas 정제/분석 → Matplotlib 시각화 → Jupyter 문서화
+        → SIGMA 룰 변환. 각 도구 역할 + 데이터 흐름 명확화. DevSecOps 방식 hunt tooling.
+      success_criteria:
+      - 도구 키워드
+      - 5단계 체인 (수집/분석/시각화/문서/룰)
+      - 데이터 흐름 설명
+      acceptable_methods:
+      - Jupyter + pandas + matplotlib 표준
+      - Splunk SPL + dashboard
+      - KQL (Kibana Query) + Elastic agent
+      - Elastic Stack Lens + alerting
+      negative_signs:
+      - 도구 2개 이하
+      - 단계 연결 없이 나열
+      - 데이터 흐름 누락
   target_vm: siem
 - order: 14
-  instruction: 헌팅 성숙도를 평가하라. Sqrrl HMM(Hunting Maturity Model)의 5단계(HM0~HM4)에 따라 현재
-    조직의 헌팅 역량을 평가하고 개선 방안을 제시하라.
+  instruction: 헌팅 성숙도를 평가하라. Sqrrl HMM(Hunting Maturity Model)의 5단계(HM0~HM4)에 따라 현재 조직의 헌팅 역량을 평가하고 개선
+    방안을 제시하라.
   hint: 'HM0: 초기, HM1: 최소, HM2: 절차적, HM3: 혁신적, HM4: 선도적'
   category: assessment
   points: 8
-  answer: '현재 수준: HM1(최소) - 기본 IOC 검색 가능하지만 가설 기반 헌팅 미정착. 목표: HM3(혁신적) - 자체 TI 생산,
-    자동화된 헌팅 파이프라인. 개선: 데이터 수집 확대, 헌팅 도구 표준화, 인력 교육'
-  answer_detail: HMM은 헌팅 역량의 객관적 평가 도구이다. 대부분의 조직이 HM0~HM1 수준이며, HM3 이상은 전담 헌팅 팀과
-    자동화된 인프라가 필요하다.
+  answer: '현재 수준: HM1(최소) - 기본 IOC 검색 가능하지만 가설 기반 헌팅 미정착. 목표: HM3(혁신적) - 자체 TI 생산, 자동화된 헌팅 파이프라인. 개선:
+    데이터 수집 확대, 헌팅 도구 표준화, 인력 교육'
+  answer_detail: HMM은 헌팅 역량의 객관적 평가 도구이다. 대부분의 조직이 HM0~HM1 수준이며, HM3 이상은 전담 헌팅 팀과 자동화된 인프라가 필요하다.
   verify:
     type: output_contains
     expect: HMM
+    semantic:
+      intent: HMM 성숙도 평가 — 5단계 (HM0 Initial / HM1 Minimal / HM2 Procedural / HM3 Innovative / HM4 Leading).
+        현재 HM1 (기본 IOC 검색만) + 목표 HM3 (자체 TI + 자동 헌팅 파이프라인) + 개선 (데이터 확대/도구 표준화/교육). Sqrrl Hunting Maturity
+        Model (David Bianco).
+      success_criteria:
+      - HMM 키워드 또는 HM 단계
+      - 현재 + 목표 단계 평가
+      - 개선 방안
+      acceptable_methods:
+      - Sqrrl HMM 문서 기반 자체 평가
+      - NIST CSF + HMM 결합
+      - SANS MGT512 + maturity model
+      - OpenCTI maturity assessment module
+      negative_signs:
+      - HMM 단계 구분 없음
+      - 현재/목표 평가 없음
+      - 개선 방안 누락
   target_vm: siem
 - order: 15
-  instruction: 위협 헌팅 종합 보고서를 작성하라. 헌팅 가설 목록, 수행 결과, 발견 위협, 생성된 탐지 룰, 개선 권고사항을 포함한
-    최종 보고서를 작성하라.
+  instruction: 위협 헌팅 종합 보고서를 작성하라. 헌팅 가설 목록, 수행 결과, 발견 위협, 생성된 탐지 룰, 개선 권고사항을 포함한 최종 보고서를 작성하라.
   hint: 헌팅의 ROI(투입 시간 대비 발견 위협 가치)를 포함하라
   category: reporting
   points: 14
-  answer: '헌팅 요약: N개 가설 수행, M개 위협 발견, K개 탐지 룰 생성. 주요 발견: DNS 터널링 의심 통신, 비정상 비콘 패턴.
-    ROI: 투입 X시간, 잠재 손실 방지 Y원'
-  answer_detail: 헌팅 보고서는 활동의 가치를 입증하고 향후 방향을 제시한다. 정량적 성과(발견 수, 룰 생성 수)와 정성적 성과(보안
-    태세 개선, 가시성 확대)를 모두 포함해야 한다.
+  answer: '헌팅 요약: N개 가설 수행, M개 위협 발견, K개 탐지 룰 생성. 주요 발견: DNS 터널링 의심 통신, 비정상 비콘 패턴. ROI: 투입 X시간, 잠재 손실
+    방지 Y원'
+  answer_detail: 헌팅 보고서는 활동의 가치를 입증하고 향후 방향을 제시한다. 정량적 성과(발견 수, 룰 생성 수)와 정성적 성과(보안 태세 개선, 가시성 확대)를 모두
+    포함해야 한다.
   verify:
     type: output_contains
     expect: 헌팅
+    semantic:
+      intent: 위협 헌팅 종합 보고서 — N개 가설 수행 + M개 위협 발견 + K개 탐지 룰 생성 + 주요 발견 (DNS 터널링/비콘 패턴) + ROI (투입 시간 vs
+        잠재 손실 방지). 정량 + 정성 성과 모두 포함. 경영진 설명용 가치 입증 자료.
+      success_criteria:
+      - 헌팅 키워드
+      - 정량 수치 (가설/발견/룰 수)
+      - ROI 또는 가치 입증
+      acceptable_methods:
+      - SANS DFIR 보고서 템플릿
+      - Markdown + 통계 섹션
+      - Jupyter notebook → HTML/PDF export
+      - OpenCTI Reports + STIX bundle
+      negative_signs:
+      - 수치 없이 서술만
+      - ROI 개념 없음
+      - 정성적 성과 누락
   target_vm: siem
