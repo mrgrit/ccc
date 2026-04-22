@@ -30,15 +30,20 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: AI 안전 문화 개념 — curl /api/generate 'Explain AI safety culture in 3 sentences'. 조직 문화 + 인식
-        + 교육. Responsible AI.
+      intent: AI 안전 문화 개념 질문 — curl /api/generate 'Explain safety culture in cybersecurity in 3 sentences'
+        + num_predict:80. 안전 문화 = 조직 구성원의 안전 우선 의식 + 책임 공유 + 보고 문화 (Blameless). James Reason 스위스 치즈 모델.
       success_criteria:
-      - safety culture 키워드
-      - 개념 설명
+      - safety culture 키워드 (한/영)
+      - curl /api/generate + 3 sentences
+      - 80 token 제한
       acceptable_methods:
-      - curl 개념
+      - curl /api/generate
+      - ollama run
+      - python requests
       negative_signs:
-      - 문화 맥락 없음
+      - 3 sentences 제약 없음
+      - 문화/의식/책임 맥락 없음
+      - LLM 응답 검증 없음
   target_vm: manager
 - order: 2
   instruction: LLM에 safety culture 보안 시나리오 생성을 요청하시오. 공격 벡터, 영향, 대응을 포함하는 시나리오를 만들어라.
@@ -56,15 +61,22 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 안전 문화 시나리오 — curl /api/chat + 'safety culture scenario + vector + impact + mitigation'.
-        조직 문화 개선 필요 시나리오.
+      intent: 안전 문화 시나리오 생성 — curl /api/chat + system 'scenario generator' + user 'safety culture scenario
+        + attack vector + impact + mitigation'. 조직 문화 실패 사례 (은폐, 보복, 무시) → 보안 사고. HRO (High Reliability
+        Organization) 참조.
       success_criteria:
-      - 시나리오
-      - vector + impact + mitigation
+      - 시나리오 생성
+      - vector + impact + mitigation 3요소
+      - curl /api/chat system+user
       acceptable_methods:
-      - curl 시나리오
+      - curl /api/chat
+      - STRIDE 문화 요소
+      - Just Culture framework
+      - HRO principles
       negative_signs:
       - 3요소 누락
+      - 문화 실패 맥락 없음
+      - HRO/Just Culture 맥락 없음
   target_vm: manager
 - order: 3
   instruction: safety culture에 대한 보안 정책을 LLM으로 평가하시오. 정책의 취약점을 분석하라.
@@ -83,14 +95,20 @@ steps:
     expect: 'Analysis:'
     field: stdout
     semantic:
-      intent: 안전 문화 정책 분석 — python3 + policy + LLM auditor.
+      intent: 안전 문화 정책 감사 — python3 + policy 'No auth + No rate limit + plaintext logs' + system 'security
+        auditor. Find vulnerabilities' + LLM 분석. 문화 관점 (보고 장벽/위험 투명성) 정책 평가.
       success_criteria:
       - 'Analysis: 키워드'
-      - 정책 + LLM
+      - 정책 + LLM auditor
+      - 취약점 식별
       acceptable_methods:
-      - python LLM 감사
+      - python + LLM auditor
+      - Culture survey 분석
+      - OSCAL 정책 검증
       negative_signs:
-      - 정책 없음
+      - 정책 텍스트 없음
+      - auditor 역할 없음
+      - 문화 관점 맥락 없음
   target_vm: manager
 - order: 4
   instruction: safety culture 맥락에서 프롬프트 인젝션을 시도하시오. system 프롬프트에 비밀을 넣고 유출을 시도하라.
@@ -109,14 +127,20 @@ steps:
     expect: SAFE
     field: stdout
     semantic:
-      intent: 안전 문화 인젝션 — python3 + sys='safety culture expert' + 3개 공격.
+      intent: '안전 문화 인젝션 — python3 + system ''safety culture expert. Secret: FLAG_HIDDEN'' + 3 attacks
+        (Ignore role/system prompt/List rules) + FLAG_HIDDEN 유출 판정 + LEAK/SAFE. 안전 문화 전문가 페르소나 유지 테스트.'
       success_criteria:
       - SAFE 키워드
-      - 3개 공격
+      - 3개 공격 + FLAG_HIDDEN 체크
+      - 페르소나 유지 검증
       acceptable_methods:
-      - python 공격
+      - python 공격 루프 + 판정
+      - garak promptinject
+      - PyRIT system leak
       negative_signs:
       - 공격 2개 이하
+      - FLAG 판정 없음
+      - 페르소나 맥락 없음
   target_vm: manager
 - order: 5
   instruction: safety culture 분석 자동화 파이프라인을 구축하시오. LLM API를 호출하여 보안 항목을 자동 분석하라.
@@ -135,14 +159,21 @@ steps:
     expect: Analysis
     field: stdout
     semantic:
-      intent: 안전 문화 파이프라인 — python3 + analyze + 3개 items. 문화 수준 평가.
+      intent: 안전 문화 자동 위험 분석 — python3 + analyze(item) + 'security analyst, risk HIGH/MEDIUM/LOW' + temperature:0
+        + 3 items (Open SSH + Strong password + Unpatched Apache 2.4.49). 문화 항목 일괄 평가. Culture Maturity
+        Model 관점.
       success_criteria:
       - Analysis 키워드
-      - 3개 items + 등급
+      - 3개 items + HIGH/MEDIUM/LOW
+      - analyze 함수 + 루프
       acceptable_methods:
-      - python LLM 분석
+      - python LLM 반복 분석
+      - Culture Maturity Assessment
+      - NIST CSF 문화 수준
       negative_signs:
+      - items 2개 이하
       - 등급 없음
+      - 문화 성숙도 맥락 없음
   target_vm: manager
 - order: 6
   instruction: safety culture 관련 가드레일을 구현하시오. 입출력 필터를 설계하고 테스트하라.
@@ -159,14 +190,20 @@ steps:
     expect: FLAGGED
     field: stdout
     semantic:
-      intent: 안전 문화 가드레일 — python3 + rules + FLAGGED/ALLOWED. 위반 행동 탐지.
+      intent: 안전 문화 가드레일 — python3 + rules 3개 (password|credential|secret → credentials + rm -rf|drop
+        table → destructive + hack|exploit → offensive) + FLAGGED(name)/ALLOWED + 4 tests. 문화 위반 행동 탐지.
       success_criteria:
       - FLAGGED 키워드
-      - 3개 이상 규칙
+      - 3개 규칙 + 카테고리명
+      - 4 tests + ALLOWED
       acceptable_methods:
-      - python re 규칙
+      - python re + 카테고리
+      - NeMo Guardrails content rail
+      - Microsoft Purview
       negative_signs:
       - 규칙 2개 이하
+      - 카테고리 없음
+      - ALLOWED 판정 없음
   target_vm: manager
 - order: 7
   instruction: safety culture 모니터링 시스템을 구현하시오. 요청 통계와 보안 메트릭을 수집하라.
@@ -186,14 +223,19 @@ steps:
     expect: Monitoring
     field: stdout
     semantic:
-      intent: 안전 문화 모니터링 — python3 + metrics + 3개 호출.
+      intent: 안전 문화 메트릭 — python3 + metrics {requests/tokens/errors} + 3 프롬프트 + try/except 에러 추적. 문화 관련
+        LLM 사용 모니터링.
       success_criteria:
       - Monitoring 키워드
-      - metrics + 호출
+      - metrics 3필드
+      - try/except 에러 추적
       acceptable_methods:
-      - python metrics
+      - python metrics 집계
+      - Prometheus + Grafana
+      - Culture survey metrics
       negative_signs:
-      - 메트릭 없음
+      - 메트릭 2개 이하
+      - 에러 처리 없음
   target_vm: manager
 - order: 8
   instruction: safety culture 보안 평가 보고서를 생성하시오. 발견사항과 권고를 정리하라.
@@ -211,12 +253,16 @@ steps:
     expect: Assessment
     field: stdout
     semantic:
-      intent: 안전 문화 보고서 — python3 + Findings + Guardrails + Recommendations.
+      intent: 안전 문화 평가 보고서 — python3 + Findings (개념 + 인젝션 + 파이프라인) + Guardrails (Input/Output) + Recommendations
+        (semantic + domain rules + monitoring). 주간 결과 + 문화 성숙도 권고.
       success_criteria:
       - Assessment 키워드
-      - Findings + Recommendations
+      - Findings + Guardrails + Recommendations 3섹션
       acceptable_methods:
       - echo 보고서
+      - Culture Maturity Score
+      - HRO 평가 템플릿
       negative_signs:
       - 섹션 2개 이하
+      - Recommendations 없음
   target_vm: manager
