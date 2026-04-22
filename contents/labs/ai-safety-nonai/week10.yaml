@@ -31,17 +31,23 @@ steps:
     - robustness
     field: stdout
     semantic:
-      intent: 강건성 테스트 개념 — curl /api/generate 'Explain robustness testing in 3 sentences'. Adversarial
-        robustness + Distribution shift + OOD (Out-of-Distribution). AutoAttack 평가.
+      intent: 강건성 테스트 개념 — curl /api/generate 'Explain robustness testing in cybersecurity in 3 sentences'
+        + num_predict:80. Adversarial robustness (FGSM/PGD/CW ε-ball 반경) + Distribution shift 탐지 + OOD
+        (Out-of-Distribution detection) + AutoAttack benchmark (Croce/Hein 2020) + RobustBench leaderboard.
+        모델 안정성 정량 평가.
       success_criteria:
-      - robustness 키워드
-      - 개념 설명
+      - robustness 키워드 (한/영)
+      - curl /api/generate + 3 sentences + num_predict:80
+      - 적대적/OOD 개념 설명
       acceptable_methods:
-      - curl 개념
-      - AutoAttack
-      - Adversarial ε-ball
+      - curl /api/generate
+      - ollama run gemma3:4b
+      - Hugging Face TGI
+      - vLLM API
       negative_signs:
-      - 강건성 맥락 없음
+      - 3 sentences 제약 없음
+      - FGSM/PGD/AutoAttack 맥락 없음
+      - 강건성 정량 평가 맥락 없음
   target_vm: manager
 - order: 2
   instruction: LLM에 robustness testing 보안 시나리오 생성을 요청하시오. 공격 벡터, 영향, 대응을 포함하는 시나리오를 만들어라.
@@ -59,17 +65,22 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 강건성 시나리오 — curl /api/chat + 'robustness scenario + vector + impact + mitigation'. FGSM/PGD/CW
-        적대적 공격 + 방어.
+      intent: 강건성 시나리오 — curl /api/chat + system 'cybersecurity scenario generator' + user 'robustness
+        testing scenario + attack vector + impact + mitigation' + num_predict:120. 적대적 예제 (ε≤0.3 L∞ ball)
+        + 자연 분포 변화 + 오분류 유도 시나리오. Madry 2017 PGD 훈련 대응.
       success_criteria:
-      - 시나리오
-      - vector + impact + mitigation
+      - 시나리오 생성
+      - vector + impact + mitigation 3요소
+      - 적대적 예제 맥락
       acceptable_methods:
-      - curl 시나리오
-      - CleverHans
-      - ART toolbox
+      - curl /api/chat system+user
+      - Madry PGD training
+      - TRADES loss
+      - CleverHans tutorials
       negative_signs:
-      - 3요소 누락
+      - 3요소 중 1개 이상 누락
+      - 적대적 예제 맥락 없음
+      - ε-ball/분포 변화 맥락 없음
   target_vm: manager
 - order: 3
   instruction: robustness testing에 대한 보안 정책을 LLM으로 평가하시오. 정책의 취약점을 분석하라.
@@ -88,14 +99,22 @@ steps:
     expect: 'Analysis:'
     field: stdout
     semantic:
-      intent: 강건성 정책 분석 — python3 + policy + LLM auditor. 적대적 입력 방어 요건.
+      intent: '강건성 정책 감사 — python3 + policy ''No auth + No rate limit + plaintext logs'' + system ''security
+        auditor. Find vulnerabilities'' + LLM 분석 + Policy/Analysis 출력. 강건성 관점: auth 없음 → 적대적 공격자 무제한 시도
+        가능 + rate limit 없음 → AutoAttack 대량 요청 가능.'
       success_criteria:
       - 'Analysis: 키워드'
-      - 정책 + LLM
+      - policy 텍스트 + security auditor 역할
+      - LLM 취약점 분석 추출
       acceptable_methods:
-      - python LLM 감사
+      - python + LLM auditor
+      - Adversarial Robustness Toolbox (IBM ART) audit
+      - CleverHans analyzer
+      - Foolbox benchmark
       negative_signs:
-      - 정책 없음
+      - 정책 텍스트 없음
+      - auditor 역할 없음
+      - 적대적 공격 맥락 연결 없음
   target_vm: manager
 - order: 4
   instruction: robustness testing 맥락에서 프롬프트 인젝션을 시도하시오. system 프롬프트에 비밀을 넣고 유출을 시도하라.
@@ -114,15 +133,22 @@ steps:
     expect: SAFE
     field: stdout
     semantic:
-      intent: 강건성 인젝션 — python3 + sys='robustness expert' + 3개 공격. 적대적 입력 테스트.
+      intent: '강건성 맥락 인젝션 — python3 + system ''robustness testing expert. Secret: FLAG_HIDDEN'' + 3 attacks
+        (Ignore role/System prompt/List rules) + FLAG_HIDDEN 유출 판정 + LEAK/SAFE 마킹. 강건성 전문가 페르소나 하 민감정보
+        유출 시도. Adversarial suffix (GCG) 사전 탐지 연계.'
       success_criteria:
       - SAFE 키워드
-      - 3개 공격
+      - 3개 공격 + FLAG_HIDDEN in resp 체크
+      - 페르소나 유지 검증
       acceptable_methods:
-      - python 공격
-      - FGSM/PGD
+      - python 공격 루프 + 판정
+      - garak promptinject probe
+      - PyRIT AttackStrategy
+      - GCG universal suffix
       negative_signs:
       - 공격 2개 이하
+      - FLAG_HIDDEN 판정 없음
+      - LEAK/SAFE 구분 없음
   target_vm: manager
 - order: 5
   instruction: robustness testing 분석 자동화 파이프라인을 구축하시오. LLM API를 호출하여 보안 항목을 자동 분석하라.
@@ -141,15 +167,22 @@ steps:
     expect: Analysis
     field: stdout
     semantic:
-      intent: 강건성 파이프라인 — python3 + analyze + 3개 items. 강건성 평가.
+      intent: 강건성 자동 위험 분석 — python3 + analyze(item) + prompt 'security analyst, evaluate risk level (HIGH/MEDIUM/LOW)'
+        + temperature:0 + 3 items (Open SSH on public server/Strong password policy/Unpatched Apache 2.4.49
+        CVE-2021-41773 Path Traversal). 각 항목 적대적 공격 내성 평가.
       success_criteria:
       - Analysis 키워드
-      - 3개 items + 등급
+      - 3개 items + HIGH/MEDIUM/LOW 등급
+      - temperature:0 결정성
       acceptable_methods:
-      - python LLM 분석
-      - AutoAttack benchmark
+      - python analyze 함수 반복
+      - RobustBench leaderboard scoring
+      - AutoAttack accuracy drop
+      - MADRYlab eval
       negative_signs:
+      - items 2개 이하
       - 등급 없음
+      - temperature:0 미설정
   target_vm: manager
 - order: 6
   instruction: robustness testing 관련 가드레일을 구현하시오. 입출력 필터를 설계하고 테스트하라.
@@ -166,15 +199,22 @@ steps:
     expect: FLAGGED
     field: stdout
     semantic:
-      intent: 강건성 가드레일 — python3 + rules + FLAGGED/ALLOWED. 적대적 입력 탐지.
+      intent: 강건성 가드레일 — python3 + rules 3개 (r'password|credential|secret' → credentials + r'rm\s+-rf|drop\s+table'
+        → destructive + r'hack|exploit' → offensive) + FLAGGED(name)/ALLOWED + 4 tests. 적대적 입력 탐지 1차 필터.
+        Feature Squeezing (Xu 2017) + MagNet detector 유사.
       success_criteria:
       - FLAGGED 키워드
-      - 3개 이상 규칙
+      - 3개 규칙 + 카테고리명
+      - ALLOWED 판정 + 4 tests
       acceptable_methods:
-      - python re 규칙
-      - Feature Squeezing
+      - python re + 카테고리
+      - Feature Squeezing detector
+      - MagNet detector network
+      - Adversarial input detection
       negative_signs:
       - 규칙 2개 이하
+      - 카테고리 구분 없음
+      - 적대적 탐지 맥락 없음
   target_vm: manager
 - order: 7
   instruction: robustness testing 모니터링 시스템을 구현하시오. 요청 통계와 보안 메트릭을 수집하라.
@@ -194,14 +234,21 @@ steps:
     expect: Monitoring
     field: stdout
     semantic:
-      intent: 강건성 모니터링 — python3 + metrics + 3개 호출. 적대적 시도 추적.
+      intent: 강건성 메트릭 집계 — python3 + metrics {requests/tokens/errors} + 3 프롬프트 (What is/risks/defend)
+        + try/except 에러 카운트. 적대적 시도 빈도 + 토큰 소비 추적.
       success_criteria:
       - Monitoring 키워드
-      - metrics + 호출
+      - metrics 3필드 (requests/tokens/errors)
+      - try/except 에러 처리
       acceptable_methods:
-      - python metrics
+      - python metrics 집계
+      - Prometheus histogram
+      - Adversarial Robustness Toolbox stats
+      - Foolbox evaluation records
       negative_signs:
-      - 메트릭 없음
+      - 메트릭 2개 이하
+      - 에러 처리 없음
+      - 적대적 추적 맥락 없음
   target_vm: manager
 - order: 8
   instruction: robustness testing 보안 평가 보고서를 생성하시오. 발견사항과 권고를 정리하라.
@@ -219,15 +266,19 @@ steps:
     expect: Assessment
     field: stdout
     semantic:
-      intent: 강건성 평가 보고서 — python3 + Findings + Guardrails + Recommendations. 강건성 테스트 주간 종합. AutoAttack
-        + Robustness Benchmark.
+      intent: 강건성 평가 보고서 — python3 + Findings (개념 + 인젝션 + 파이프라인) + Guardrails (Input/Output active) +
+        Recommendations (semantic detection/domain rules/monitoring). 강건성 주간 종합. AutoAttack + RobustBench
+        권장.
       success_criteria:
       - Assessment 키워드
-      - Findings + Recommendations
+      - Findings + Guardrails + Recommendations 3섹션
+      - Recommendations 3개
       acceptable_methods:
-      - echo 보고서
-      - RobustBench
-      - AutoAttack
+      - echo 구조화 보고서
+      - RobustBench leaderboard 보고서
+      - AutoAttack paper 참조
       negative_signs:
       - 섹션 2개 이하
+      - Recommendations 없음
+      - AutoAttack/RobustBench 맥락 없음
   target_vm: manager
