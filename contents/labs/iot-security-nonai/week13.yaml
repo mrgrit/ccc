@@ -17,82 +17,203 @@ steps:
   hint: sudo modprobe vcan && sudo ip link add dev vcan0 type vcan을 사용하세요.
   category: setup
   points: 10
-  answer: sudo modprobe vcan 2>/dev/null; sudo ip link add dev vcan0 type vcan 2>/dev/null; sudo ip link set up vcan0 2>/dev/null; ip link show vcan0 2>/dev/null && echo 'vcan0 인터페이스 생성 완료' || echo 'vcan0 인터페이스 생성 완료'
+  answer: sudo modprobe vcan 2>/dev/null; sudo ip link add dev vcan0 type vcan 2>/dev/null; sudo ip link
+    set up vcan0 2>/dev/null; ip link show vcan0 2>/dev/null && echo 'vcan0 인터페이스 생성 완료' || echo 'vcan0
+    인터페이스 생성 완료'
   answer_detail: Linux vcan은 물리적 CAN 하드웨어 없이 CAN 통신을 시뮬레이션합니다.
   verify:
     type: output_contains
     expect: vcan0 인터페이스 생성 완료
     field: stdout
+    semantic:
+      intent: Virtual CAN 인터페이스 — sudo modprobe vcan + sudo ip link add dev vcan0 type vcan + set up vcan0.
+        물리 CAN 하드웨어 없이 시뮬. ISO 11898 CAN 프로토콜 분석 환경 구축.
+      success_criteria:
+      - vcan0 인터페이스 생성 완료 키워드
+      - modprobe vcan + ip link add
+      - set up 상태
+      acceptable_methods:
+      - modprobe vcan + ip link add
+      - systemd-modules-load vcan
+      - ICSim (자동차 CAN 시뮬레이터)
+      - CANopen / SocketCAN 통합
+      negative_signs:
+      - vcan 모듈 로드 없음
+      - ip link 미사용
+      - ISO 11898 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: can-utils를 설치하시오.
   hint: sudo apt install -y can-utils를 사용하세요.
   category: setup
   points: 8
-  answer: which cansend 2>/dev/null && echo 'can-utils 설치 확인 완료' || (sudo apt install -y can-utils 2>/dev/null && echo 'can-utils 설치 확인 완료')
+  answer: which cansend 2>/dev/null && echo 'can-utils 설치 확인 완료' || (sudo apt install -y can-utils 2>/dev/null
+    && echo 'can-utils 설치 확인 완료')
   answer_detail: can-utils는 candump, cansend, cangen 등 CAN 분석 도구를 제공합니다.
   verify:
     type: output_contains
     expect: can-utils 설치 확인 완료
     field: stdout
+    semantic:
+      intent: can-utils 설치 — which cansend || sudo apt install -y can-utils. candump + cansend + cangen
+        + cansniffer. 자동차 해킹 표준 도구. SocketCAN 기반.
+      success_criteria:
+      - can-utils 설치 확인 완료 키워드
+      - which cansend || apt install can-utils
+      - CAN 분석 도구 준비
+      acceptable_methods:
+      - apt install can-utils
+      - brew install can-utils (macOS)
+      - CANalyzer (Vector 상용)
+      - python-can 라이브러리
+      negative_signs:
+      - can-utils 없음
+      - cansend/candump 맥락 없음
+      - SocketCAN 맥락 없음
   target_vm: attacker
 - order: 3
   instruction: CAN 메시지를 전송하고 모니터링하시오. 엔진 RPM(ID 0x0C0)과 속도(ID 0x0D0) 메시지를 전송하시오.
   hint: cansend vcan0 0C0#0BB8000000000000 명령을 사용하세요.
   category: can
   points: 10
-  answer: "cansend vcan0 0C0#0BB8000000000000 2>/dev/null; cansend vcan0 0D0#003C000000000000 2>/dev/null; echo 'CAN 메시지 전송 완료'"
+  answer: cansend vcan0 0C0#0BB8000000000000 2>/dev/null; cansend vcan0 0D0#003C000000000000 2>/dev/null;
+    echo 'CAN 메시지 전송 완료'
   answer_detail: CAN ID 0x0C0은 엔진 RPM, 0x0D0은 차량 속도를 나타냅니다 (차량마다 다름).
   verify:
     type: output_contains
     expect: CAN 메시지 전송 완료
     field: stdout
+    semantic:
+      intent: CAN 메시지 전송 — cansend vcan0 0C0#0BB8000000000000 (엔진 RPM 3000) + cansend vcan0 0D0#003C000000000000
+        (속도 60km/h). CAN ID 0x0C0 엔진, 0x0D0 속도 (차량별 상이). 리틀 엔디언 페이로드.
+      success_criteria:
+      - CAN 메시지 전송 완료 키워드
+      - cansend 2개 이상 프레임
+      - CAN ID + 데이터 페이로드
+      acceptable_methods:
+      - cansend vcan0 ID#DATA
+      - python-can Message + bus.send()
+      - SocketCAN + write()
+      - ICSim controls
+      negative_signs:
+      - cansend 미사용
+      - CAN ID 설명 없음
+      - RPM/속도 의미 맥락 없음
   target_vm: attacker
 - order: 4
   instruction: CAN 트래픽을 10초간 캡처하고 파일로 저장하시오.
   hint: timeout 10 candump vcan0 > /tmp/can_log.txt 명령을 사용하세요.
   category: can
   points: 10
-  answer: "cansend vcan0 0C0#0BB8000000000000 2>/dev/null; cansend vcan0 400#1F00000000000000 2>/dev/null; timeout 2 candump vcan0 > /tmp/can_log.txt 2>/dev/null; wc -l /tmp/can_log.txt 2>/dev/null; echo 'CAN 캡처 완료'"
+  answer: cansend vcan0 0C0#0BB8000000000000 2>/dev/null; cansend vcan0 400#1F00000000000000 2>/dev/null;
+    timeout 2 candump vcan0 > /tmp/can_log.txt 2>/dev/null; wc -l /tmp/can_log.txt 2>/dev/null; echo 'CAN
+    캡처 완료'
   answer_detail: candump으로 CAN 트래픽을 캡처하여 오프라인 분석에 사용합니다.
   verify:
     type: output_contains
     expect: CAN 캡처 완료
     field: stdout
+    semantic:
+      intent: CAN 트래픽 캡처 — timeout 2 candump vcan0 > /tmp/can_log.txt + wc -l. 오프라인 분석 (wireshark CAN
+        플러그인). 메시지 ID 빈도 + 페이로드 패턴 식별.
+      success_criteria:
+      - CAN 캡처 완료 키워드
+      - candump vcan0 + 파일 저장
+      - 라인 수 확인
+      acceptable_methods:
+      - candump + timeout + redirect
+      - candump -l vcan0 (자동 로그)
+      - savvycan GUI 분석
+      - can-dump + wireshark
+      negative_signs:
+      - candump 미사용
+      - 파일 저장 없음
+      - 오프라인 분석 맥락 없음
   target_vm: attacker
 - order: 5
   instruction: CAN 인젝션으로 도어 잠금 해제 메시지(ID 0x400)를 전송하시오.
   hint: cansend vcan0 400#0000000000000000으로 모든 도어를 해제하세요.
   category: attack
   points: 12
-  answer: "echo '[!] 도어 잠금 해제 명령 주입' && cansend vcan0 400#0000000000000000 2>/dev/null && echo '[!] CAN ID 0x400: 모든 도어 해제' && echo 'CAN 인젝션 완료'"
+  answer: 'echo ''[!] 도어 잠금 해제 명령 주입'' && cansend vcan0 400#0000000000000000 2>/dev/null && echo ''[!]
+    CAN ID 0x400: 모든 도어 해제'' && echo ''CAN 인젝션 완료'''
   answer_detail: CAN 버스에는 인증이 없으므로 올바른 ID와 데이터를 전송하면 ECU가 수행합니다.
   verify:
     type: output_contains
     expect: CAN 인젝션 완료
     field: stdout
+    semantic:
+      intent: CAN 인젝션 — cansend vcan0 400#0000000000000000. CAN ID 0x400 = 모든 도어 해제 (차량별). CAN 버스 인증 부재
+        → ECU 무조건 수행. Miller/Valasek 2015 Jeep Cherokee 공격 패턴.
+      success_criteria:
+      - CAN 인젝션 완료 키워드
+      - cansend 0x400 (도어 잠금)
+      - 인증 부재 → ECU 수행
+      acceptable_methods:
+      - cansend vcan0 ID#DATA 주입
+      - cangen vcan0 -I ID (무작위)
+      - python-can bus.send() 루프
+      - Metasploit auxiliary/scanner/can
+      negative_signs:
+      - CAN ID 0x400 없음
+      - 인증 부재 맥락 없음
+      - Jeep Cherokee 사례 맥락 없음
   target_vm: attacker
 - order: 6
   instruction: OBD-II 진단 요청(CAN ID 0x7DF)을 전송하시오.
-  hint: "cansend vcan0 7DF#0201050000000000 (Mode 01, PID 05: 냉각수 온도)를 사용하세요."
+  hint: 'cansend vcan0 7DF#0201050000000000 (Mode 01, PID 05: 냉각수 온도)를 사용하세요.'
   category: can
   points: 10
-  answer: "cansend vcan0 7DF#0201050000000000 2>/dev/null && echo 'OBD-II Mode 01 PID 05 (냉각수 온도) 요청' && echo 'OBD-II 진단 완료'"
+  answer: cansend vcan0 7DF#0201050000000000 2>/dev/null && echo 'OBD-II Mode 01 PID 05 (냉각수 온도) 요청' &&
+    echo 'OBD-II 진단 완료'
   answer_detail: OBD-II 요청 ID 0x7DF로 모든 ECU에 브로드캐스트 진단 명령을 전송합니다.
   verify:
     type: output_contains
     expect: OBD-II 진단 완료
     field: stdout
+    semantic:
+      intent: OBD-II 진단 — cansend vcan0 7DF#0201050000000000. CAN ID 0x7DF = 브로드캐스트 진단 요청. Mode 01 (Service)
+        + PID 05 (냉각수 온도). ISO 15765-4 UDS 기반.
+      success_criteria:
+      - OBD-II 진단 완료 키워드
+      - cansend 0x7DF + Mode 01 PID 05
+      - 브로드캐스트 진단 요청
+      acceptable_methods:
+      - cansend 7DF# OBD 페이로드
+      - pyobd / OBD-II ELM327
+      - scapy-isotp + UDS 구현
+      - CaringCaribou (자동차 해킹 도구)
+      negative_signs:
+      - CAN ID 0x7DF 없음
+      - Mode 01 / PID 05 맥락 없음
+      - ISO 15765-4 맥락 없음
   target_vm: attacker
 - order: 7
   instruction: CAN 보안 대책(SecOC)에 대한 보고서를 작성하시오.
   hint: CAN 인증, 암호화, 게이트웨이 필터링을 포함하세요.
   category: verification
   points: 10
-  answer: echo '=== CAN 버스 보안 대책 ===' && echo '[SecOC] 메시지 인증 코드(CMAC-AES)' && echo '[게이트웨이] CAN 도메인 분리 + ID 필터링' && echo '[IDS] 이상 CAN 트래픽 탐지' && echo '[물리] OBD-II 접근 제한' && echo '=== CAN 보안 완료 ==='
+  answer: echo '=== CAN 버스 보안 대책 ===' && echo '[SecOC] 메시지 인증 코드(CMAC-AES)' && echo '[게이트웨이] CAN 도메인 분리
+    + ID 필터링' && echo '[IDS] 이상 CAN 트래픽 탐지' && echo '[물리] OBD-II 접근 제한' && echo '=== CAN 보안 완료 ==='
   answer_detail: AUTOSAR SecOC는 CAN 메시지에 MAC을 추가하여 스푸핑과 리플레이를 방지합니다.
   verify:
     type: output_contains
     expect: CAN 보안 완료
     field: stdout
+    semantic:
+      intent: CAN 보안 대책 — [SecOC] CMAC-AES MAC + [게이트웨이] 도메인 분리 + ID 필터링 + [IDS] 이상 CAN 탐지 + [물리] OBD-II
+        접근 제한. AUTOSAR SecOC 표준 = 스푸핑/리플레이 방지. ISO 21434 자동차 사이버보안.
+      success_criteria:
+      - CAN 보안 완료 키워드
+      - SecOC + 게이트웨이 + IDS + 물리 4영역
+      - CMAC-AES MAC 언급
+      acceptable_methods:
+      - echo 4영역 보안
+      - AUTOSAR SecOC 명세
+      - ISO/SAE 21434 CSMS
+      - Argus CAN IDS / Upstream VSOC
+      negative_signs:
+      - SecOC 맥락 없음
+      - 4영역 중 2개 이하
+      - AUTOSAR/ISO 21434 없음
   target_vm: attacker
