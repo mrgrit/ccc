@@ -23,20 +23,51 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: nftables inet lab 테이블 생성 — sudo nft add table inet lab. inet family = IPv4 + IPv6 통합. 테이블은
+        chain/rule 의 최상위 컨테이너. 멱등 아님 (기존 있으면 에러).
+      success_criteria:
+      - nft add table 명령
+      - inet family 사용
+      - lab 테이블명
+      acceptable_methods:
+      - sudo nft add table inet lab
+      - echo 'add table inet lab' | sudo nft -f -
+      - /etc/nftables.conf 편집 후 systemctl restart
+      - ansible ansible.posix.nftables
+      negative_signs:
+      - ip 또는 ip6 family 만
+      - table 명 다름
+      - sudo 없이 permission denied 무시
   target_vm: secu
 - order: 2
   instruction: lab 테이블에 input 체인(hook input, priority 0, policy accept)을 생성하시오.
   hint: nft add chain …
   category: configure
   points: 10
-  answer: sudo nft add chain inet lab input '{ type filter hook input priority 0 \;
-    policy accept \; }'
-  answer_detail: 'nftables 방화벽 기초: lab 테이블에 input 체인(hook input, priority 0, policy
-    accept)을 생성하시오.'
+  answer: sudo nft add chain inet lab input '{ type filter hook input priority 0 \; policy accept \; }'
+  answer_detail: 'nftables 방화벽 기초: lab 테이블에 input 체인(hook input, priority 0, policy accept)을 생성하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: input 체인 생성 — sudo nft add chain inet lab input '{ type filter hook input priority 0 \;
+        policy accept \; }'. type=filter + hook=input + priority=0 + policy=accept. priority 0 = filter
+        기본. policy accept = 기본 허용 (이후 drop 룰 추가).
+      success_criteria:
+      - nft add chain 명령
+      - hook input + priority 0
+      - policy accept 또는 drop 명시
+      acceptable_methods:
+      - sudo nft add chain inet lab input '{...}'
+      - /etc/nftables.conf 에 체인 정의
+      - nft -f script.nft
+      - JSON API nft -j
+      negative_signs:
+      - type/hook/priority 누락
+      - policy 미지정
+      - 하위 체인 (forward/output) 혼동
   target_vm: secu
 - order: 3
   instruction: lab 테이블 input 체인에 tcp 포트 23(telnet) 차단 룰을 추가하시오.
@@ -51,6 +82,22 @@ steps:
     - drop
     - 차단
     field: stdout
+    semantic:
+      intent: TCP 23 (telnet) 차단 룰 — sudo nft add rule inet lab input tcp dport 23 drop. telnet 평문 프로토콜
+        차단 (보안 기본). dport 목적지 포트. drop = 조용히 폐기 (reject 는 ICMP 응답). MITRE D3FEND Network Isolation.
+      success_criteria:
+      - drop 키워드 또는 차단
+      - tcp dport 23
+      - nft add rule
+      acceptable_methods:
+      - sudo nft add rule inet lab input tcp dport 23 drop
+      - iptables -A INPUT -p tcp --dport 23 -j DROP
+      - firewalld --add-rich-rule
+      - ansible nftables rule
+      negative_signs:
+      - drop 대신 accept
+      - 포트 번호 혼동
+      - tcp/udp 구분 없이
   target_vm: secu
 - order: 4
   instruction: nft list table inet lab 으로 작성한 룰을 확인하시오.
@@ -63,6 +110,22 @@ steps:
     type: output_contains
     expect: dport 23
     field: stdout
+    semantic:
+      intent: 룰 확인 — sudo nft list table inet lab. 작성한 chain/rule 구조 덤프 + dport 23 룰 확인. 정상 적용 검증 단계.
+        트러블슈팅 기본.
+      success_criteria:
+      - dport 23 키워드
+      - nft list table 명령
+      - 테이블 내용 출력
+      acceptable_methods:
+      - sudo nft list table inet lab
+      - sudo nft list ruleset | grep lab
+      - nft -n list table (숫자)
+      - nft -j list table (JSON)
+      negative_signs:
+      - list 하지 않고 다른 조회
+      - table 이름 혼동
+      - dport 확인 없이 덤프만
   target_vm: secu
 - order: 5
   instruction: established, related 연결을 허용하는 상태 기반 룰을 input 체인 맨 앞에 삽입하시오.
@@ -70,12 +133,28 @@ steps:
   category: configure
   points: 10
   answer: sudo nft insert rule inet lab input ct state established,related accept
-  answer_detail: 'nftables 방화벽 기초: established, related 연결을 허용하는 상태 기반 룰을 input 체인
-    맨 앞에 삽입하시오.'
+  answer_detail: 'nftables 방화벽 기초: established, related 연결을 허용하는 상태 기반 룰을 input 체인 맨 앞에 삽입하시오.'
   verify:
     type: output_contains
     expect: established
     field: stdout
+    semantic:
+      intent: Stateful 룰 삽입 — sudo nft insert rule inet lab input ct state established,related accept.
+        ct state established/related 이미 성립된 연결 + 관련 트래픽 허용. insert = 체인 맨 앞 (우선순위 최고). 성능 최적화 + 응답 패킷
+        허용.
+      success_criteria:
+      - established 키워드
+      - ct state 조건
+      - insert rule (맨 앞)
+      acceptable_methods:
+      - nft insert rule + ct state
+      - iptables -I INPUT -m state --state ESTABLISHED,RELATED
+      - conntrack 기반 상태 추적
+      - firewalld default established
+      negative_signs:
+      - ct state 없이 단순 accept
+      - append (뒤) insert 대신
+      - related 누락
   target_vm: secu
 - order: 6
   instruction: loopback(lo)에서 들어오는 트래픽을 허용하는 룰을 추가하시오.
@@ -88,6 +167,22 @@ steps:
     type: output_contains
     expect: lo
     field: stdout
+    semantic:
+      intent: loopback 허용 룰 — sudo nft add rule inet lab input iifname lo accept. 로컬 프로세스 간 통신 (127.0.0.1)
+        허용. iifname = 입력 인터페이스 이름. loopback 차단 시 로컬 서비스 간 연결 실패. 기본 필수 룰.
+      success_criteria:
+      - lo 키워드
+      - iifname 조건
+      - accept 동작
+      acceptable_methods:
+      - nft add rule iifname lo accept
+      - iptables -A INPUT -i lo -j ACCEPT
+      - firewalld trusted zone 포함
+      - ansible iifname 매개변수
+      negative_signs:
+      - iifname 누락
+      - lo 대신 127.0.0.1 IP
+      - accept 없이 drop
   target_vm: secu
 - order: 7
   instruction: tcp 22(ssh) 포트를 허용하는 룰을 추가하시오.
@@ -102,6 +197,22 @@ steps:
     - dport 22
     - SSH
     field: stdout
+    semantic:
+      intent: TCP 22 (SSH) 허용 룰 — sudo nft add rule inet lab input tcp dport 22 accept. SSH 관리 접근 허용.
+        일반적으로 source IP 제한 병행 권장. SSH 차단 시 원격 관리 불가 (락아웃 위험).
+      success_criteria:
+      - dport 22 키워드 또는 SSH
+      - tcp dport 22
+      - accept 동작
+      acceptable_methods:
+      - nft add rule tcp dport 22 accept
+      - nft add rule tcp dport 22 ip saddr 10.20.30.0/24 accept
+      - iptables -A INPUT -p tcp --dport 22 -j ACCEPT
+      - fail2ban + nft 통합
+      negative_signs:
+      - 포트 번호 혼동
+      - source IP 제한 없이 전체 허용 주의 부족
+      - drop 룰
   target_vm: secu
 - order: 8
   instruction: 전체 룰셋(모든 테이블)을 nft list ruleset 명령으로 확인하시오.
@@ -114,6 +225,22 @@ steps:
     type: output_contains
     expect: table inet lab
     field: stdout
+    semantic:
+      intent: 전체 룰셋 확인 — sudo nft list ruleset. 모든 테이블 + 체인 + 룰 전체 덤프. 'table inet lab' 포함 확인. 운영 전체 상태
+        파악. JSON 형식 변환 시 -j 옵션.
+      success_criteria:
+      - table inet lab 키워드
+      - nft list ruleset 명령
+      - 전체 덤프 출력
+      acceptable_methods:
+      - sudo nft list ruleset
+      - sudo nft -n list ruleset
+      - sudo nft -j list ruleset (JSON)
+      - sudo nft -s list ruleset (stateless)
+      negative_signs:
+      - 특정 테이블만 조회
+      - ruleset 아닌 table 키워드
+      - 전체 상태 아님
   target_vm: secu
 - order: 9
   instruction: 실습 종료 후 lab 테이블을 삭제하시오.
@@ -126,6 +253,22 @@ steps:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 테이블 삭제 cleanup — sudo nft delete table inet lab. 실습 정리 + 프로덕션 영향 없음. 삭제 시 포함된 모든 chain/rule
+        함께 제거. idempotent 아님 (없으면 에러).
+      success_criteria:
+      - nft delete table 명령
+      - inet lab 대상
+      - 삭제 실행
+      acceptable_methods:
+      - sudo nft delete table inet lab
+      - sudo nft flush ruleset (전체)
+      - systemctl stop nftables (임시)
+      - /etc/nftables.conf 편집 후 재로드
+      negative_signs:
+      - flush 대신 delete 아님
+      - 테이블 이름 혼동
+      - cleanup 의도 없음
   target_vm: secu
 - order: 10
   instruction: lab 테이블이 삭제되었는지 nft list tables 로 확인하시오.
@@ -138,6 +281,22 @@ steps:
     type: output_contains
     expect: table
     field: stdout
+    semantic:
+      intent: 테이블 삭제 검증 — sudo nft list tables | grep -v ' lab$' | tail. lab 테이블 삭제 확인. 나머지 테이블 (filter/nat/mangle
+        등) 목록 + grep -v 로 lab 제외. 정리 완료 검증.
+      success_criteria:
+      - table 키워드
+      - nft list tables 명령
+      - lab 제외 또는 부재 확인
+      acceptable_methods:
+      - nft list tables | grep -v lab
+      - nft list table inet lab (에러 확인)
+      - nft list ruleset | grep -c 'table inet lab'
+      - ansible assert 모듈
+      negative_signs:
+      - 삭제 검증 없음
+      - grep 필터 없음
+      - list tables 이외 명령
   target_vm: secu
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
