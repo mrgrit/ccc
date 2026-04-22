@@ -3,8 +3,7 @@ title: 로그 수집 - rsyslog와 Wazuh 에이전트 로그 파이프라인
 version: non-ai
 course: soc-nonai
 week: 3
-description: rsyslog 중앙 수집 서버 설정과 Wazuh 에이전트의 로그 전송 메커니즘을 실습하고, 다양한 소스에서 SIEM으로의 로그
-  수집 파이프라인을 검증합니다.
+description: rsyslog 중앙 수집 서버 설정과 Wazuh 에이전트의 로그 전송 메커니즘을 실습하고, 다양한 소스에서 SIEM으로의 로그 수집 파이프라인을 검증합니다.
 difficulty: easy
 duration_minutes: 120
 objectives:
@@ -18,14 +17,29 @@ steps:
   hint: systemctl과 rsyslog.conf의 module 설정을 확인하세요.
   category: setup
   points: 5
-  answer: systemctl is-active rsyslog && grep -E "^module|^input" /etc/rsyslog.conf
-    /etc/rsyslog.d/*.conf 2>/dev/null
+  answer: systemctl is-active rsyslog && grep -E "^module|^input" /etc/rsyslog.conf /etc/rsyslog.d/*.conf
+    2>/dev/null
   answer_detail: rsyslog의 imudp/imtcp 모듈이 로드되어 있어야 원격 호스트로부터 syslog를 수신할 수 있습니다. module(load="imudp")와
     input(type="imudp" port="514")가 핵심 설정입니다.
   verify:
     type: output_contains
     expect: active
     field: stdout
+    semantic:
+      intent: rsyslog 입력 모듈 — systemctl is-active rsyslog + grep '^module|^input' rsyslog.conf rsyslog.d.
+        imudp/imtcp 모듈 + input port=514. RFC 5424 syslog. 원격 수신 가능 조건.
+      success_criteria:
+      - systemctl is-active + grep module/input
+      - active 키워드
+      - imudp/imtcp 모듈
+      acceptable_methods:
+      - systemctl + grep
+      - rsyslogd -N1 검증
+      - ss -ulnp | grep rsyslog
+      negative_signs:
+      - 모듈 미확인
+      - active 검증 없음
+      - 단일 명령만
   target_vm: siem
 - order: 2
   instruction: SIEM VM에서 rsyslog가 514 포트에서 UDP로 수신 대기 중인지 확인하시오.
@@ -33,27 +47,54 @@ steps:
   category: setup
   points: 5
   answer: ss -ulnp | grep 514
-  answer_detail: ss -ulnp는 UDP 리스닝 소켓을 프로세스 정보와 함께 표시합니다. rsyslogd 프로세스가 514 포트를 점유하고
-    있어야 중앙 로그 수집이 가능합니다.
+  answer_detail: ss -ulnp는 UDP 리스닝 소켓을 프로세스 정보와 함께 표시합니다. rsyslogd 프로세스가 514 포트를 점유하고 있어야 중앙 로그 수집이 가능합니다.
   verify:
     type: output_contains
     expect: '514'
     field: stdout
+    semantic:
+      intent: 514 UDP 리스닝 — ss -ulnp | grep 514. UDP 514 RFC 5424 syslog 표준. rsyslogd 프로세스 점유. 중앙 로그 수집
+        가능 검증.
+      success_criteria:
+      - ss -ulnp
+      - 514 키워드
+      - UDP 리스닝
+      acceptable_methods:
+      - ss -ulnp
+      - netstat -ulnp
+      - lsof -i :514
+      negative_signs:
+      - TCP 검사
+      - 포트 미확인
+      - 프로세스 정보 없음
   target_vm: siem
 - order: 3
-  instruction: SECU VM의 rsyslog 포워딩 설정을 확인하시오. SIEM({{SECU_IP}}00)으로 로그를 전달하는 설정을
-    찾으시오.
+  instruction: SECU VM의 rsyslog 포워딩 설정을 확인하시오. SIEM({{SECU_IP}}00)으로 로그를 전달하는 설정을 찾으시오.
   hint: /etc/rsyslog.conf 또는 /etc/rsyslog.d/ 내 설정 파일을 확인하세요.
   category: analysis
   points: 8
-  answer: cat /etc/rsyslog.conf /etc/rsyslog.d/*.conf 2>/dev/null | grep -v "^#" |
-    grep -v "^$"
-  answer_detail: rsyslog 포워딩은 '*.* @10.20.30.100:514'(UDP) 또는 '*.* @@10.20.30.100:514'(TCP)
-    형태로 설정됩니다. @은 UDP, @@은 TCP를 의미합니다.
+  answer: cat /etc/rsyslog.conf /etc/rsyslog.d/*.conf 2>/dev/null | grep -v "^#" | grep -v "^$"
+  answer_detail: rsyslog 포워딩은 '*.* @10.20.30.100:514'(UDP) 또는 '*.* @@10.20.30.100:514'(TCP) 형태로 설정됩니다.
+    @은 UDP, @@은 TCP를 의미합니다.
   verify:
     type: output_contains
     expect: 10.20.30.100
     field: stdout
+    semantic:
+      intent: rsyslog 포워딩 설정 — cat /etc/rsyslog.conf /etc/rsyslog.d/*.conf | grep -v '#'. *.* @10.20.30.100:514
+        (UDP) 또는 @@ (TCP). 중앙 SIEM 지정. 로그 파이프라인 핵심.
+      success_criteria:
+      - 설정 파일 cat + grep
+      - 10.20.30.100 키워드
+      - '@ 또는 @@ 표기'
+      acceptable_methods:
+      - cat 설정 + grep
+      - rsyslogd -N1 출력
+      - systemd journal 분석
+      negative_signs:
+      - IP 미확인
+      - '@/@@ 차이 없음'
+      - 단일 파일만
   target_vm: siem
 - order: 4
   instruction: SECU VM에서 테스트 syslog 메시지를 생성하여 SIEM으로 전달되는지 확인하시오.
@@ -61,12 +102,27 @@ steps:
   category: detection
   points: 8
   answer: logger -t SOC_TEST "week03-log-collection-test-$(date +%s)"
-  answer_detail: logger 명령은 syslog에 메시지를 기록합니다. -t 옵션은 태그를 지정합니다. rsyslog 포워딩이 정상이면
-    이 메시지가 SIEM의 syslog에도 도착해야 합니다.
+  answer_detail: logger 명령은 syslog에 메시지를 기록합니다. -t 옵션은 태그를 지정합니다. rsyslog 포워딩이 정상이면 이 메시지가 SIEM의 syslog에도
+    도착해야 합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 테스트 syslog 생성 — logger -t SOC_TEST 'week03-log-collection-test-$(date +%s)'. -t 태그 지정. 포워딩
+        검증용 메시지. 로그 파이프라인 end-to-end 테스트. RFC 3164 message format.
+      success_criteria:
+      - logger -t SOC_TEST
+      - 타임스탬프 포함
+      - 테스트 메시지 생성
+      acceptable_methods:
+      - logger -t
+      - echo > /dev/log
+      - Python syslog 모듈
+      negative_signs:
+      - 태그 없음
+      - 고정 메시지 (시간 X)
+      - logger 미사용
   target_vm: siem
 - order: 5
   instruction: SIEM VM에서 SECU가 보낸 테스트 로그(SOC_TEST 태그)가 수신되었는지 확인하시오.
@@ -74,12 +130,27 @@ steps:
   category: detection
   points: 10
   answer: grep "SOC_TEST" /var/log/syslog /var/log/messages 2>/dev/null | tail -3
-  answer_detail: SECU에서 보낸 SOC_TEST 태그 메시지가 SIEM의 syslog에 나타나면 rsyslog 포워딩 파이프라인이
-    정상 동작하는 것입니다. 로그 수집 검증의 기본 방법입니다.
+  answer_detail: SECU에서 보낸 SOC_TEST 태그 메시지가 SIEM의 syslog에 나타나면 rsyslog 포워딩 파이프라인이 정상 동작하는 것입니다. 로그 수집
+    검증의 기본 방법입니다.
   verify:
     type: output_contains
     expect: SOC_TEST
     field: stdout
+    semantic:
+      intent: 수신 검증 — grep 'SOC_TEST' /var/log/syslog /var/log/messages | tail -3. SECU → SIEM 파이프라인 검증.
+        SOC_TEST 태그 도착 = 정상. 로그 수집 end-to-end.
+      success_criteria:
+      - grep SOC_TEST + 시스템 로그
+      - SOC_TEST 키워드 출력
+      - tail 최근 메시지
+      acceptable_methods:
+      - grep syslog
+      - journalctl -t SOC_TEST
+      - rsyslog 디버그
+      negative_signs:
+      - SOC_TEST 검색 없음
+      - syslog 경로 누락
+      - 검증 실패
   target_vm: siem
 - order: 6
   instruction: WEB VM에서 Wazuh 에이전트의 실행 상태를 확인하시오.
@@ -89,12 +160,27 @@ steps:
   answer: '🖥️ UI: Dashboard → Agents → 에이전트 목록/상태 확인
 
     📎 참고 (CLI): /var/ossec/bin/wazuh-control status'
-  answer_detail: wazuh-control status는 에이전트의 모든 데몬(agentd, logcollector, syscheckd
-    등) 상태를 표시합니다. wazuh-agentd가 running이어야 매니저와 통신이 정상입니다.
+  answer_detail: wazuh-control status는 에이전트의 모든 데몬(agentd, logcollector, syscheckd 등) 상태를 표시합니다. wazuh-agentd가
+    running이어야 매니저와 통신이 정상입니다.
   verify:
     type: output_contains
     expect: running
     field: stdout
+    semantic:
+      intent: 'Wazuh 에이전트 상태 — /var/ossec/bin/wazuh-control status. 데몬: agentd/logcollector/syscheckd/execd.
+        wazuh-agentd running = 매니저 통신 정상. SOC 데이터 수집 검증.'
+      success_criteria:
+      - wazuh-control status
+      - running 키워드
+      - 데몬 상태
+      acceptable_methods:
+      - wazuh-control status
+      - systemctl status wazuh-agent
+      - ps -ef | grep wazuh
+      negative_signs:
+      - 에이전트 미확인
+      - running 검증 없음
+      - 단순 ps만
   target_vm: siem
 - order: 7
   instruction: WEB VM의 Wazuh 에이전트 설정에서 모니터링 대상 로그 파일 목록을 확인하시오.
@@ -104,12 +190,27 @@ steps:
   answer: '🖥️ UI: Dashboard → Agents → 에이전트 목록/상태 확인
 
     📎 참고 (CLI): grep -A 2 "<localfile>" /var/ossec/etc/ossec.conf'
-  answer_detail: localfile 섹션은 Wazuh 에이전트가 모니터링하는 로그 파일을 지정합니다. location 태그에 /var/log/syslog,
-    /var/log/auth.log, /var/log/apache2/access.log 등이 포함되어야 합니다.
+  answer_detail: localfile 섹션은 Wazuh 에이전트가 모니터링하는 로그 파일을 지정합니다. location 태그에 /var/log/syslog, /var/log/auth.log,
+    /var/log/apache2/access.log 등이 포함되어야 합니다.
   verify:
     type: output_contains
     expect: localfile
     field: stdout
+    semantic:
+      intent: '에이전트 모니터링 대상 — grep -A 2 ''<localfile>'' /var/ossec/etc/ossec.conf. localfile.location:
+        /var/log/syslog + /var/log/auth.log + /var/log/apache2/access.log. Wazuh 로그 모니터링 설정.'
+      success_criteria:
+      - grep localfile + ossec.conf
+      - localfile 키워드
+      - -A 컨텍스트 (location 표시)
+      acceptable_methods:
+      - grep -A localfile
+      - Wazuh API GET /agents/{id}/configuration
+      - Dashboard agent 설정
+      negative_signs:
+      - localfile 검색 없음
+      - 단순 cat
+      - location 정보 없음
   target_vm: siem
 - order: 8
   instruction: WEB VM의 Apache 접근 로그에서 최근 요청 10건을 확인하시오.
@@ -117,12 +218,27 @@ steps:
   category: analysis
   points: 8
   answer: tail -10 /var/log/apache2/access.log
-  answer_detail: Apache access.log는 Combined Log Format으로 기록됩니다. IP, 날짜, HTTP 메서드,
-    URL, 상태코드, User-Agent 등이 포함되어 있어 웹 공격 분석의 핵심 데이터 소스입니다.
+  answer_detail: Apache access.log는 Combined Log Format으로 기록됩니다. IP, 날짜, HTTP 메서드, URL, 상태코드, User-Agent
+    등이 포함되어 있어 웹 공격 분석의 핵심 데이터 소스입니다.
   verify:
     type: output_contains
     expect: HTTP
     field: stdout
+    semantic:
+      intent: 'Apache 접근 로그 — tail -10 /var/log/apache2/access.log. Combined Log Format: IP/날짜/메서드/URL/상태코드/UA.
+        웹 공격 분석 핵심 데이터 (SQLi/XSS/스캐닝 패턴).'
+      success_criteria:
+      - tail access.log
+      - HTTP 키워드
+      - 최근 요청
+      acceptable_methods:
+      - tail access.log
+      - awk '$9' (상태 코드)
+      - GoAccess 분석
+      negative_signs:
+      - 로그 경로 없음
+      - HTTP 미확인
+      - 단순 cat 전체
   target_vm: siem
 - order: 9
   instruction: WEB VM에 HTTP 요청을 보내고, SIEM VM에서 해당 웹 접근에 대한 Wazuh 알림을 확인하시오.
@@ -133,12 +249,27 @@ steps:
 
     📎 참고 (CLI): curl -s http://10.20.30.80/ > /dev/null && ssh siem ''tail -50 /var/ossec/logs/alerts/alerts.log
     | grep -i "web\|apache\|httpd"'''
-  answer_detail: 웹 요청이 Apache 로그에 기록되고, Wazuh 에이전트가 이를 수집하여 매니저로 전송하면 알림이 생성됩니다. 로그소스
-    -> 에이전트 -> 매니저 -> 알림의 전체 파이프라인을 검증하는 것입니다.
+  answer_detail: 웹 요청이 Apache 로그에 기록되고, Wazuh 에이전트가 이를 수집하여 매니저로 전송하면 알림이 생성됩니다. 로그소스 -> 에이전트 -> 매니저 ->
+    알림의 전체 파이프라인을 검증하는 것입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: End-to-end 검증 — curl http://10.20.30.80/ + ssh siem 'tail alerts.log | grep web|apache'.
+        로그 소스(웹) → 에이전트 → 매니저 → 알림 전체 파이프라인 검증.
+      success_criteria:
+      - curl + ssh siem grep
+      - Wazuh alerts.log 확인
+      - end-to-end 흐름
+      acceptable_methods:
+      - curl + alerts.log grep
+      - Dashboard Security events
+      - Wazuh API search
+      negative_signs:
+      - 로그 검증 없음
+      - 단순 curl만
+      - alerts 미확인
   target_vm: siem
 - order: 10
   instruction: SIEM VM에서 Wazuh 아카이브 로그의 저장 위치와 파일 목록을 확인하시오.
@@ -148,10 +279,25 @@ steps:
   answer: '🖥️ UI: Wazuh Dashboard(https://SIEM_IP:443) 접속 → 해당 메뉴 확인
 
     📎 참고 (CLI): ls -lh /var/ossec/logs/archives/'
-  answer_detail: archives 디렉토리에는 Wazuh가 수집한 모든 로그가 날짜별로 저장됩니다. alerts(알림만)와 달리 archives는
-    룰 매칭 여부와 관계없이 모든 이벤트를 기록하여 포렌식에 활용됩니다.
+  answer_detail: archives 디렉토리에는 Wazuh가 수집한 모든 로그가 날짜별로 저장됩니다. alerts(알림만)와 달리 archives는 룰 매칭 여부와 관계없이
+    모든 이벤트를 기록하여 포렌식에 활용됩니다.
   verify:
     type: output_contains
     expect: archives
     field: stdout
+    semantic:
+      intent: 아카이브 로그 — ls -lh /var/ossec/logs/archives/. 모든 이벤트 (alerts와 달리 룰 매칭 무관) 날짜별 저장. 포렌식 활용.
+        archives 활성화 = ossec.conf <logall>yes.
+      success_criteria:
+      - ls archives/
+      - archives 키워드
+      - 디렉터리 내용
+      acceptable_methods:
+      - ls -lh archives
+      - find archives -type f
+      - Wazuh API archives
+      negative_signs:
+      - 경로 없음
+      - 내용 미확인
+      - 포렌식 맥락 없음
   target_vm: siem
