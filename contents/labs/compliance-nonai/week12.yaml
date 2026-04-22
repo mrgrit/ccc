@@ -3,8 +3,7 @@ title: 사업연속성(BCP/DR) 기술 실습
 version: non-ai
 course: compliance-nonai
 week: 12
-description: 사업연속성 계획(BCP)과 재해복구(DR)를 위한 기술적 준비 상태를 점검합니다. 백업 설정, 서비스 가용성, 복구 절차,
-  장애 대응 체계를 시스템에서 확인합니다.
+description: 사업연속성 계획(BCP)과 재해복구(DR)를 위한 기술적 준비 상태를 점검합니다. 백업 설정, 서비스 가용성, 복구 절차, 장애 대응 체계를 시스템에서 확인합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -18,129 +17,250 @@ steps:
   hint: systemctl로 핵심 서비스(sshd, auditd, suricata, nftables, rsyslog)의 상태를 확인하세요.
   category: audit
   points: 10
-  answer: 'echo ''=== 핵심 서비스 가용성 ==='' && for svc in sshd auditd suricata nftables
-    rsyslog; do STATUS=$(sudo systemctl is-active $svc 2>/dev/null); echo "$svc: $STATUS";
-    done'
-  answer_detail: BCP에서 서비스 가용성은 핵심 지표입니다. 각 서비스의 RPO(복구 시점 목표)와 RTO(복구 시간 목표)를 정의해야
-    합니다. sshd가 중단되면 원격 관리 불가, auditd 중단은 감사 추적 불가를 의미합니다.
+  answer: 'echo ''=== 핵심 서비스 가용성 ==='' && for svc in sshd auditd suricata nftables rsyslog; do STATUS=$(sudo
+    systemctl is-active $svc 2>/dev/null); echo "$svc: $STATUS"; done'
+  answer_detail: BCP에서 서비스 가용성은 핵심 지표입니다. 각 서비스의 RPO(복구 시점 목표)와 RTO(복구 시간 목표)를 정의해야 합니다. sshd가 중단되면 원격
+    관리 불가, auditd 중단은 감사 추적 불가를 의미합니다.
   verify:
     type: output_contains
     expect: 핵심 서비스 가용성
     field: stdout
+    semantic:
+      intent: 핵심 서비스 가용성 — for svc in sshd/auditd/suricata/nftables/rsyslog; systemctl is-active. BCP
+        RPO(복구 시점 목표) + RTO(복구 시간 목표) 정의. sshd 중단=원격 관리 불가, auditd 중단=감사 추적 불가.
+      success_criteria:
+      - 핵심 서비스 가용성 섹션 키워드
+      - for + systemctl is-active + 5개 서비스
+      - RPO/RTO 맥락
+      acceptable_methods:
+      - for + is-active 루프
+      - systemctl list-units --state=failed
+      - Nagios/Icinga 서비스 체크
+      - Prometheus node_exporter up
+      negative_signs:
+      - 서비스 5개 중 3개 이하
+      - RPO/RTO 맥락 없음
+      - 가용성 점검 목적 없음
   target_vm: secu
 - order: 2
   instruction: 서비스 자동 재시작 설정을 확인하시오. 장애 시 자동 복구가 되도록 systemd의 Restart 설정을 점검합니다.
   hint: systemctl show로 서비스의 Restart 옵션을 확인하세요.
   category: audit
   points: 10
-  answer: 'echo ''=== 자동 재시작 설정 ==='' && for svc in sshd auditd suricata; do RESTART=$(systemctl
-    show $svc --property=Restart 2>/dev/null | cut -d= -f2); echo "$svc: Restart=$RESTART";
-    done'
-  answer_detail: systemd의 Restart 설정은 서비스 장애 시 자동 복구의 핵심입니다. Restart=on-failure(비정상
-    종료 시 재시작), Restart=always(항상 재시작)를 설정하면 서비스 중단 시간을 최소화할 수 있습니다. RestartSec으로 재시작
-    간격도 조정합니다.
+  answer: 'echo ''=== 자동 재시작 설정 ==='' && for svc in sshd auditd suricata; do RESTART=$(systemctl show
+    $svc --property=Restart 2>/dev/null | cut -d= -f2); echo "$svc: Restart=$RESTART"; done'
+  answer_detail: systemd의 Restart 설정은 서비스 장애 시 자동 복구의 핵심입니다. Restart=on-failure(비정상 종료 시 재시작), Restart=always(항상
+    재시작)를 설정하면 서비스 중단 시간을 최소화할 수 있습니다. RestartSec으로 재시작 간격도 조정합니다.
   verify:
     type: output_contains
     expect: 자동 재시작 설정
     field: stdout
+    semantic:
+      intent: systemd 자동 재시작 — systemctl show <svc> --property=Restart. on-failure(비정상 종료 시) / always(항상).
+        RestartSec 재시작 간격. BCP 서비스 중단 시간 최소화 메커니즘.
+      success_criteria:
+      - 자동 재시작 설정 섹션 키워드
+      - systemctl show --property=Restart
+      - 3개 이상 서비스 확인
+      acceptable_methods:
+      - systemctl show --property=Restart
+      - systemctl cat <svc> | grep Restart
+      - monit 서비스 감시
+      - supervisord autorestart=true
+      negative_signs:
+      - Restart 속성 미확인
+      - on-failure/always 구분 없음
+      - 자동 복구 맥락 없음
   target_vm: secu
 - order: 3
   instruction: 디스크 사용량을 확인하시오. 디스크 풀(full)은 서비스 중단의 주요 원인입니다.
   hint: df -h로 파일 시스템 사용량을 확인하세요.
   category: audit
   points: 8
-  answer: echo '=== 디스크 사용량 ===' && df -h | grep -E '(Filesystem|/dev/)' && echo '---
-    대용량 디렉터리 ---' && sudo du -sh /var/log/ /var/lib/ /tmp/ 2>/dev/null
-  answer_detail: 디스크 사용률이 90%를 초과하면 로그 기록 실패, 데이터베이스 중단, 서비스 장애가 발생할 수 있습니다. BCP에서는
-    디스크 사용량 모니터링과 임계값 알림을 설정하고, 로그 순환(logrotate)으로 디스크 소진을 방지합니다.
+  answer: echo '=== 디스크 사용량 ===' && df -h | grep -E '(Filesystem|/dev/)' && echo '--- 대용량 디렉터리 ---' &&
+    sudo du -sh /var/log/ /var/lib/ /tmp/ 2>/dev/null
+  answer_detail: 디스크 사용률이 90%를 초과하면 로그 기록 실패, 데이터베이스 중단, 서비스 장애가 발생할 수 있습니다. BCP에서는 디스크 사용량 모니터링과 임계값
+    알림을 설정하고, 로그 순환(logrotate)으로 디스크 소진을 방지합니다.
   verify:
     type: output_contains
     expect: 디스크 사용량
     field: stdout
+    semantic:
+      intent: 디스크 사용량 — df -h | grep -E '(Filesystem|/dev/)' + du -sh /var/log /var/lib /tmp. 90% 초과 시
+        로그/DB 중단 위험. 임계값 알림 + logrotate 소진 방지 필수.
+      success_criteria:
+      - 디스크 사용량 섹션 키워드
+      - df -h + du -sh 대용량 디렉터리
+      - 디스크 풀 위험 맥락
+      acceptable_methods:
+      - df + du 조합
+      - ncdu 대화형 분석
+      - Prometheus node_filesystem_avail
+      - Grafana 디스크 대시보드
+      negative_signs:
+      - df 또는 du 중 누락
+      - 90% 임계값 맥락 없음
+      - 로그/DB 중단 위험 맥락 없음
   target_vm: secu
 - order: 4
   instruction: 핵심 설정 파일의 백업본을 생성하시오. DR에서 설정 복원은 서비스 복구의 핵심입니다.
   hint: tar로 /etc 디렉터리의 주요 파일을 백업하세요.
   category: config
   points: 12
-  answer: sudo tar czf /tmp/config_backup_$(date +%Y%m%d).tar.gz /etc/ssh/sshd_config
-    /etc/security/pwquality.conf /etc/login.defs /etc/rsyslog.conf /etc/audit/ /etc/nftables.conf
-    2>/dev/null && ls -lh /tmp/config_backup_*.tar.gz
-  answer_detail: 설정 파일 백업은 DR의 기본입니다. 서버 재구축 시 설정을 처음부터 다시 하는 것보다 백업본에서 복원하면 RTO를
-    크게 단축할 수 있습니다. 백업은 별도 위치(원격 서버, 클라우드 스토리지)에도 보관해야 합니다.
+  answer: sudo tar czf /tmp/config_backup_$(date +%Y%m%d).tar.gz /etc/ssh/sshd_config /etc/security/pwquality.conf
+    /etc/login.defs /etc/rsyslog.conf /etc/audit/ /etc/nftables.conf 2>/dev/null && ls -lh /tmp/config_backup_*.tar.gz
+  answer_detail: 설정 파일 백업은 DR의 기본입니다. 서버 재구축 시 설정을 처음부터 다시 하는 것보다 백업본에서 복원하면 RTO를 크게 단축할 수 있습니다. 백업은 별도
+    위치(원격 서버, 클라우드 스토리지)에도 보관해야 합니다.
   verify:
     type: output_contains
     expect: config_backup
     field: stdout
+    semantic:
+      intent: 설정 파일 백업 — tar czf /tmp/config_backup_$(date +%Y%m%d).tar.gz /etc/ssh/sshd_config /etc/security/pwquality.conf
+        /etc/login.defs /etc/rsyslog.conf /etc/audit/ /etc/nftables.conf. DR 설정 복원 = RTO 단축. 별도 위치 (원격/클라우드)
+        보관 필수.
+      success_criteria:
+      - config_backup 파일명 확인
+      - tar czf + 다중 파일 + date 명명
+      - /tmp tar.gz 생성
+      acceptable_methods:
+      - tar czf + date
+      - rsync -a /etc/ 원격 서버
+      - borgbackup / restic 중복제거
+      - Ansible backup 모듈
+      negative_signs:
+      - tar 미사용
+      - 날짜 태그 없음
+      - 원격/별도 보관 맥락 없음
   target_vm: secu
 - order: 5
   instruction: 백업 파일의 무결성을 검증하기 위한 체크섬을 생성하시오.
   hint: sha256sum으로 백업 파일의 해시를 생성하세요.
   category: config
   points: 10
-  answer: sha256sum /tmp/config_backup_*.tar.gz | tee /tmp/backup_checksum.txt &&
-    echo '--- 체크섬 파일 ---' && cat /tmp/backup_checksum.txt
-  answer_detail: 백업 무결성 검증은 복원 전 필수 단계입니다. 저장 중 손상되거나 위변조된 백업을 복원하면 시스템이 비정상 상태가 됩니다.
-    SHA-256 체크섬을 백업과 함께 보관하고, 복원 전 대조하여 무결성을 확인합니다.
+  answer: sha256sum /tmp/config_backup_*.tar.gz | tee /tmp/backup_checksum.txt && echo '--- 체크섬 파일 ---'
+    && cat /tmp/backup_checksum.txt
+  answer_detail: 백업 무결성 검증은 복원 전 필수 단계입니다. 저장 중 손상되거나 위변조된 백업을 복원하면 시스템이 비정상 상태가 됩니다. SHA-256 체크섬을 백업과
+    함께 보관하고, 복원 전 대조하여 무결성을 확인합니다.
   verify:
     type: output_contains
     expect: 체크섬 파일
     field: stdout
+    semantic:
+      intent: 백업 체크섬 — sha256sum /tmp/config_backup_*.tar.gz | tee /tmp/backup_checksum.txt. SHA-256 무결성
+        검증. 복원 전 대조 = 손상/위변조 탐지. 백업+체크섬 함께 보관 원칙.
+      success_criteria:
+      - 체크섬 파일 섹션 키워드
+      - sha256sum + tee
+      - /tmp/backup_checksum.txt
+      acceptable_methods:
+      - sha256sum + tee
+      - gpg --detach-sign (서명 포함)
+      - openssl dgst -sha256
+      - restic 내장 무결성 검증
+      negative_signs:
+      - 해시 알고리즘 없음
+      - 무결성 검증 목적 맥락 없음
+      - 복원 전 대조 맥락 없음
   target_vm: secu
 - order: 6
   instruction: 백업 복원 테스트를 수행하시오. 백업에서 특정 파일을 추출하여 원본과 비교합니다.
   hint: tar로 백업에서 파일을 추출하고 diff로 비교하세요.
   category: config
   points: 12
-  answer: 'mkdir -p /tmp/restore_test && sudo tar xzf /tmp/config_backup_*.tar.gz
-    -C /tmp/restore_test 2>/dev/null && diff /etc/ssh/sshd_config /tmp/restore_test/etc/ssh/sshd_config
-    && echo ''복원 검증: 일치'' || echo ''복원 검증: 불일치'''
-  answer_detail: 백업 복원 테스트는 BCP에서 반드시 수행해야 하지만 종종 생략됩니다. '백업은 복원에 성공하기 전까지는 백업이 아니다'라는
-    격언이 있습니다. 정기적인 복원 테스트로 백업의 실효성을 확인해야 합니다.
+  answer: 'mkdir -p /tmp/restore_test && sudo tar xzf /tmp/config_backup_*.tar.gz -C /tmp/restore_test
+    2>/dev/null && diff /etc/ssh/sshd_config /tmp/restore_test/etc/ssh/sshd_config && echo ''복원 검증: 일치''
+    || echo ''복원 검증: 불일치'''
+  answer_detail: 백업 복원 테스트는 BCP에서 반드시 수행해야 하지만 종종 생략됩니다. '백업은 복원에 성공하기 전까지는 백업이 아니다'라는 격언이 있습니다. 정기적인
+    복원 테스트로 백업의 실효성을 확인해야 합니다.
   verify:
     type: output_contains
     expect:
     - 복원 검증
     - 백업
     field: stdout
+    semantic:
+      intent: 백업 복원 테스트 — tar xzf /tmp/config_backup_*.tar.gz -C /tmp/restore_test + diff /etc/ssh/sshd_config
+        vs 복원본. '백업은 복원 성공 전까지 백업이 아니다' 원칙. BCP 정기 복원 테스트 필수.
+      success_criteria:
+      - 복원 검증 + 백업 키워드
+      - tar xzf + diff 비교
+      - 복원 성공/실패 판정
+      acceptable_methods:
+      - tar xzf + diff
+      - restic check + restore --verify-metadata
+      - borgbackup extract + compare
+      - Veeam Instant Recovery
+      negative_signs:
+      - 복원 동작 없음
+      - diff 비교 없음
+      - 정기 테스트 원칙 맥락 없음
   target_vm: secu
 - order: 7
   instruction: 서비스 장애 시뮬레이션과 복구를 수행하시오. rsyslog를 중지했다가 재시작하여 복구 절차를 테스트합니다.
   hint: systemctl stop/start로 서비스를 제어하세요.
   category: config
   points: 12
-  answer: echo '=== 장애 시뮬레이션 ===' && echo '[1] rsyslog 중지' && sudo systemctl stop
-    rsyslog && sudo systemctl is-active rsyslog && echo '[2] rsyslog 복구' && sudo systemctl
-    start rsyslog && sudo systemctl is-active rsyslog && echo '=== 복구 완료 ==='
-  answer_detail: 장애 시뮬레이션(Tabletop Exercise)은 BCP의 효과성을 테스트하는 방법입니다. 실제 서비스를 중지하고
-    복구하는 훈련을 통해 복구 절차의 정확성, 담당자의 숙련도, RTO 달성 여부를 검증합니다. 운영 환경에서는 반드시 계획된 시간에 수행해야
-    합니다.
+  answer: echo '=== 장애 시뮬레이션 ===' && echo '[1] rsyslog 중지' && sudo systemctl stop rsyslog && sudo systemctl
+    is-active rsyslog && echo '[2] rsyslog 복구' && sudo systemctl start rsyslog && sudo systemctl is-active
+    rsyslog && echo '=== 복구 완료 ==='
+  answer_detail: 장애 시뮬레이션(Tabletop Exercise)은 BCP의 효과성을 테스트하는 방법입니다. 실제 서비스를 중지하고 복구하는 훈련을 통해 복구 절차의 정확성,
+    담당자의 숙련도, RTO 달성 여부를 검증합니다. 운영 환경에서는 반드시 계획된 시간에 수행해야 합니다.
   verify:
     type: output_contains
     expect:
     - 복구 완료
     - rsyslog
     field: stdout
+    semantic:
+      intent: 장애 시뮬레이션/복구 — [1] systemctl stop rsyslog + is-active + [2] start + is-active. Tabletop Exercise
+        BCP 효과성 테스트. RTO 달성 여부 + 담당자 숙련도 검증. 운영 환경은 계획된 시간에만.
+      success_criteria:
+      - 복구 완료 + rsyslog 키워드
+      - stop + start + is-active 검증
+      - 장애→복구 시나리오
+      acceptable_methods:
+      - systemctl stop/start + is-active
+      - Chaos Monkey (Netflix)
+      - kill -9 + systemd auto-restart 테스트
+      - Litmus/Chaos Mesh (K8s)
+      negative_signs:
+      - 중지/시작 중 한 단계만
+      - is-active 검증 없음
+      - BCP 훈련 맥락 없음
   target_vm: secu
 - order: 8
   instruction: BCP/DR 종합 점검 보고서 스크립트를 작성하고 실행하시오.
   hint: 서비스 가용성, 백업, 디스크, 자동 복구 설정을 종합하세요.
   category: audit
   points: 16
-  answer: "cat << 'SCRIPT' > /tmp/bcp_report.sh\n#!/bin/bash\necho '=== BCP/DR 준비상태\
-    \ 점검 보고서 ==='\necho \"점검일: $(date +%Y-%m-%d)\"\necho ''\necho '[1. 서비스 가용성]'\n\
-    for svc in sshd auditd suricata rsyslog; do\n  echo \"  $svc: $(sudo systemctl\
-    \ is-active $svc 2>/dev/null)\"\ndone\necho '[2. 디스크 여유]'\ndf -h / | tail -1 |\
-    \ awk '{print \"  사용률: \"$5\" (여유: \"$4\")\"}'\necho '[3. 백업]'\nls -lh /tmp/config_backup_*.tar.gz\
-    \ 2>/dev/null | tail -1 || echo '  백업 파일 없음'\necho '[4. 자동 재시작]'\nfor svc in sshd\
-    \ auditd; do\n  echo \"  $svc: $(systemctl show $svc --property=Restart 2>/dev/null\
-    \ | cut -d= -f2)\"\ndone\necho ''\necho '=== BCP/DR 점검 완료 ==='\nSCRIPT\nchmod\
-    \ +x /tmp/bcp_report.sh && bash /tmp/bcp_report.sh"
-  answer_detail: BCP(Business Continuity Plan)는 재해 발생 시 핵심 업무를 지속할 수 있도록 하는 계획이고,
-    DR(Disaster Recovery)은 IT 시스템 복구에 초점을 맞춥니다. 정기적인 점검과 훈련을 통해 RTO(복구 시간), RPO(복구
-    시점)를 검증하고, 계획을 최신 상태로 유지해야 합니다.
+  answer: "cat << 'SCRIPT' > /tmp/bcp_report.sh\n#!/bin/bash\necho '=== BCP/DR 준비상태 점검 보고서 ==='\necho\
+    \ \"점검일: $(date +%Y-%m-%d)\"\necho ''\necho '[1. 서비스 가용성]'\nfor svc in sshd auditd suricata rsyslog;\
+    \ do\n  echo \"  $svc: $(sudo systemctl is-active $svc 2>/dev/null)\"\ndone\necho '[2. 디스크 여유]'\n\
+    df -h / | tail -1 | awk '{print \"  사용률: \"$5\" (여유: \"$4\")\"}'\necho '[3. 백업]'\nls -lh /tmp/config_backup_*.tar.gz\
+    \ 2>/dev/null | tail -1 || echo '  백업 파일 없음'\necho '[4. 자동 재시작]'\nfor svc in sshd auditd; do\n  echo\
+    \ \"  $svc: $(systemctl show $svc --property=Restart 2>/dev/null | cut -d= -f2)\"\ndone\necho ''\n\
+    echo '=== BCP/DR 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/bcp_report.sh && bash /tmp/bcp_report.sh"
+  answer_detail: BCP(Business Continuity Plan)는 재해 발생 시 핵심 업무를 지속할 수 있도록 하는 계획이고, DR(Disaster Recovery)은
+    IT 시스템 복구에 초점을 맞춥니다. 정기적인 점검과 훈련을 통해 RTO(복구 시간), RPO(복구 시점)를 검증하고, 계획을 최신 상태로 유지해야 합니다.
   verify:
     type: output_contains
     expect: BCP/DR 점검 완료
     field: stdout
+    semantic:
+      intent: 'BCP/DR 종합 점검 — /tmp/bcp_report.sh: [1] 서비스 가용성 + [2] 디스크 여유 + [3] 백업 파일 + [4] 자동 재시작. BCP(업무
+        지속)+DR(IT 복구). 정기 점검 → RTO/RPO 검증, 계획 최신화.'
+      success_criteria:
+      - BCP/DR 점검 완료 키워드
+      - /tmp/bcp_report.sh
+      - 4개 이상 영역 통합
+      acceptable_methods:
+      - bash 4영역 통합
+      - Zabbix BCP 대시보드
+      - PagerDuty runbook automation
+      - Veeam ONE BCP 모니터링
+      negative_signs:
+      - 영역 2개 이하
+      - RTO/RPO 맥락 없음
+      - BCP-DR 구분 없음
   target_vm: secu
