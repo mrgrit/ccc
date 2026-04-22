@@ -23,6 +23,22 @@ steps:
     type: output_contains
     expect: Suricata
     field: stdout
+    semantic:
+      intent: Suricata 설치 확인 — suricata -V 2>&1 | head. 버전 문자열 (Suricata X.Y.Z) 출력. IDS/IPS 기본 설치 검증.
+        apt list --installed suricata 대안.
+      success_criteria:
+      - Suricata 키워드
+      - -V 옵션 실행
+      - 버전 정보 출력
+      acceptable_methods:
+      - suricata -V
+      - apt list --installed | grep suricata
+      - dpkg -l suricata
+      - which suricata && suricata -V
+      negative_signs:
+      - 설치 확인 없이 서비스만 체크
+      - 버전 번호 누락
+      - 명령 실행 없이 이론
   target_vm: secu
 - order: 2
   instruction: /etc/suricata/suricata.yaml 에서 HOME_NET 값을 확인하시오.
@@ -35,6 +51,23 @@ steps:
     type: output_contains
     expect: HOME_NET
     field: stdout
+    semantic:
+      intent: 'HOME_NET 설정 확인 — grep -n HOME_NET /etc/suricata/suricata.yaml. HOME_NET = 내부 네트워크 정의 (예:
+        [10.0.0.0/8, 172.16.0.0/12, 192.168.0.0/16]). 룰의 $HOME_NET 변수 참조 = 방향성 탐지 (내부 대상/외부 출처). 잘못된 HOME_NET
+        = 오탐/미탐 대량 발생.'
+      success_criteria:
+      - HOME_NET 키워드
+      - grep /etc/suricata/suricata.yaml
+      - 설정 값 확인
+      acceptable_methods:
+      - grep -n HOME_NET suricata.yaml
+      - awk '/vars:/,/EXTERNAL_NET/' 범위
+      - yq 로 YAML 쿼리
+      - Suricata REST API /config (최신)
+      negative_signs:
+      - HOME_NET 의미 설명 없음
+      - grep 필터 없이 전체
+      - 방향성 탐지 맥락 없음
   target_vm: secu
 - order: 3
   instruction: Suricata가 사용 중인 네트워크 인터페이스(af-packet section)를 확인하시오.
@@ -42,27 +75,58 @@ steps:
   category: survey
   points: 10
   answer: awk '/af-packet/,/pcap:/' /etc/suricata/suricata.yaml | head -15
-  answer_detail: 'Suricata IPS 설치·구성: Suricata가 사용 중인 네트워크 인터페이스(af-packet section)를
-    확인하시오.'
+  answer_detail: 'Suricata IPS 설치·구성: Suricata가 사용 중인 네트워크 인터페이스(af-packet section)를 확인하시오.'
   verify:
     type: output_contains
     expect: interface
     field: stdout
+    semantic:
+      intent: 'af-packet 인터페이스 확인 — awk ''/af-packet/,/pcap:/'' /etc/suricata/suricata.yaml | head -15.
+        af-packet = Linux 고성능 패킷 캡처 (pfring 대안). interface: 지정된 NIC (eth0/ens33 등). IDS 트래픽 수집 대상.'
+      success_criteria:
+      - interface 키워드
+      - af-packet 섹션 조회
+      - NIC 이름 확인
+      acceptable_methods:
+      - awk '/af-packet/,/pcap:/' 구간 추출
+      - yq '.af-packet'
+      - ip link show (시스템 인터페이스 대조)
+      - suricata --dump-config | grep af-packet
+      negative_signs:
+      - af-packet 섹션 범위 잘못
+      - interface 이름 누락
+      - 네트워크 모드 (af-packet/pcap/nflog) 구분 없음
   target_vm: secu
 - order: 4
-  instruction: /etc/suricata/rules/local.rules 에 'alert icmp any any -> any any (msg:"ICMP
-    ping"; sid:1000001; rev:1;)' 룰을 추가하시오.
+  instruction: /etc/suricata/rules/local.rules 에 'alert icmp any any -> any any (msg:"ICMP ping"; sid:1000001;
+    rev:1;)' 룰을 추가하시오.
   hint: echo … | sudo tee -a
   category: configure
   points: 10
-  answer: echo 'alert icmp any any -> any any (msg:"ICMP ping"; sid:1000001; rev:1;)'
-    | sudo tee -a /etc/suricata/rules/local.rules
-  answer_detail: 'Suricata IPS 설치·구성: /etc/suricata/rules/local.rules 에 ''alert icmp
-    any any -> any any (msg:"ICMP ping"; sid:1000001; rev:1;)'' 룰을 추가하시오.'
+  answer: echo 'alert icmp any any -> any any (msg:"ICMP ping"; sid:1000001; rev:1;)' | sudo tee -a /etc/suricata/rules/local.rules
+  answer_detail: 'Suricata IPS 설치·구성: /etc/suricata/rules/local.rules 에 ''alert icmp any any -> any any
+    (msg:"ICMP ping"; sid:1000001; rev:1;)'' 룰을 추가하시오.'
   verify:
     type: output_contains
     expect: ICMP
     field: stdout
+    semantic:
+      intent: 테스트 룰 작성 — echo 'alert icmp any any -> any any (msg:"ICMP ping"; sid:1000001; rev:1;)' |
+        sudo tee -a /etc/suricata/rules/local.rules. alert (동작) + icmp (프로토콜) + any any -> any any (방향성
+        wildcard) + msg + sid 1000001 (커스텀 ID 범위) + rev:1 (버전). IDS 룰 문법 기초.
+      success_criteria:
+      - ICMP 키워드
+      - sid 1000001 또는 커스텀 ID
+      - msg + rev 필드
+      acceptable_methods:
+      - echo + tee -a
+      - cat >> local.rules
+      - ansible lineinfile
+      - Suricata rule + sigma2suricata 변환
+      negative_signs:
+      - sid 없음 (필수)
+      - msg 누락
+      - 방향성 (-> 또는 <>) 없음
   target_vm: secu
 - order: 5
   instruction: local.rules 가 suricata.yaml의 rule-files 섹션에 포함되어 있는지 확인하시오.
@@ -70,12 +134,27 @@ steps:
   category: configure
   points: 10
   answer: grep -n local.rules /etc/suricata/suricata.yaml || echo 'not referenced'
-  answer_detail: 'Suricata IPS 설치·구성: local.rules 가 suricata.yaml의 rule-files 섹션에
-    포함되어 있는지 확인하시오.'
+  answer_detail: 'Suricata IPS 설치·구성: local.rules 가 suricata.yaml의 rule-files 섹션에 포함되어 있는지 확인하시오.'
   verify:
     type: output_contains
     expect: local.rules
     field: stdout
+    semantic:
+      intent: local.rules suricata.yaml 등록 확인 — grep -n local.rules /etc/suricata/suricata.yaml. rule-files
+        섹션에 local.rules 포함되어야 로드. 미등록 시 작성한 룰 무시. 로드 경로 검증.
+      success_criteria:
+      - local.rules 키워드
+      - grep 검색
+      - rule-files 섹션 맥락
+      acceptable_methods:
+      - grep local.rules suricata.yaml
+      - yq '.rule-files[]'
+      - suricata --dump-config | grep rule-files
+      - 직접 섹션 조회 awk
+      negative_signs:
+      - rule-files 섹션 외 검색
+      - 등록 여부 확인 없음
+      - 파일 존재만 확인
   target_vm: secu
 - order: 6
   instruction: Suricata 설정 파일 문법을 --test-config 로 검증하시오.
@@ -88,6 +167,22 @@ steps:
     type: output_contains
     expect: configuration
     field: stdout
+    semantic:
+      intent: Suricata 설정 검증 — sudo suricata -T -c /etc/suricata/suricata.yaml 2>&1 | tail -5. -T = test-config
+        mode. YAML 문법 + 룰 파싱 + 참조 무결성 검증. 배포 전 필수 단계. configuration 키워드 성공 메시지.
+      success_criteria:
+      - configuration 키워드
+      - -T 옵션 실행
+      - 검증 성공 메시지
+      acceptable_methods:
+      - suricata -T -c config
+      - suricata-update --test-rules (룰만)
+      - yamllint suricata.yaml (구문만)
+      - CI/CD 자동 검증 단계
+      negative_signs:
+      - -T 옵션 없이 실제 실행
+      - 검증 메시지 해석 누락
+      - 에러 무시
   target_vm: secu
 - order: 7
   instruction: Suricata 서비스를 재시작해 새 룰을 로드하시오.
@@ -102,6 +197,22 @@ steps:
     - active
     - Suricata
     field: stdout
+    semantic:
+      intent: Suricata 재시작 + 룰 로드 — sudo systemctl restart suricata && sleep 2 && systemctl is-active
+        suricata. 새 룰 반영 필요 재시작. reload (SIGUSR2) 대안 (빠름, 다운타임 없음). is-active active 확인.
+      success_criteria:
+      - active 키워드 또는 Suricata
+      - restart 또는 reload 명령
+      - 상태 검증
+      acceptable_methods:
+      - systemctl restart + is-active
+      - systemctl reload suricata (SIGUSR2)
+      - suricatasc -c reload-rules (런타임)
+      - kill -USR2 $(pidof suricata)
+      negative_signs:
+      - restart 만 + 검증 없음
+      - reload 구분 없이
+      - downtime 고려 없음
   target_vm: secu
 - order: 8
   instruction: attacker VM에서 secu VM으로 ping을 3회 보내 ICMP 트래픽을 발생시키시오.
@@ -109,14 +220,29 @@ steps:
   category: verify
   points: 10
   answer: ping -c 3 10.20.30.1
-  answer_detail: 'Suricata IPS 설치·구성: attacker VM에서 secu VM으로 ping을 3회 보내 ICMP 트래픽을
-    발생시키시오.'
+  answer_detail: 'Suricata IPS 설치·구성: attacker VM에서 secu VM으로 ping을 3회 보내 ICMP 트래픽을 발생시키시오.'
   verify:
     type: output_contains
     expect:
     - bytes
     - ping
     field: stdout
+    semantic:
+      intent: ICMP 트래픽 발생 — ping -c 3 10.20.30.1 (attacker → secu). 작성한 alert 룰 테스트. 3회 패킷으로 룰 매칭 확인.
+        bytes 응답 or request-only 확인.
+      success_criteria:
+      - bytes 키워드 또는 ping
+      - -c N 횟수 지정
+      - secu IP 대상
+      acceptable_methods:
+      - ping -c 3 target
+      - hping3 -c 3 (ICMP 차단 시)
+      - nping --icmp
+      - fping 대체
+      negative_signs:
+      - 무한 ping
+      - 대상 IP 혼동
+      - 횟수 지정 없음
   target_vm: attacker
 - order: 9
   instruction: secu VM의 /var/log/suricata/eve.json 마지막 20줄에서 ICMP 알람을 찾으시오.
@@ -124,26 +250,56 @@ steps:
   category: verify
   points: 10
   answer: sudo tail -50 /var/log/suricata/eve.json | grep -i 'ICMP ping' | head
-  answer_detail: 'Suricata IPS 설치·구성: secu VM의 /var/log/suricata/eve.json 마지막 20줄에서
-    ICMP 알람을 찾으시오.'
+  answer_detail: 'Suricata IPS 설치·구성: secu VM의 /var/log/suricata/eve.json 마지막 20줄에서 ICMP 알람을 찾으시오.'
   verify:
     type: output_contains
     expect: ICMP
     field: stdout
+    semantic:
+      intent: eve.json ICMP alert 확인 — sudo tail -50 /var/log/suricata/eve.json | grep -i 'ICMP ping'
+        | head. 작성한 alert 룰 매칭 결과 검증. event_type=alert + alert.signature='ICMP ping' 출력. IDS 동작 end-to-end
+        검증.
+      success_criteria:
+      - ICMP 키워드
+      - eve.json 파싱 또는 grep
+      - alert 이벤트 확인
+      acceptable_methods:
+      - tail eve.json | grep 'ICMP ping'
+      - jq 'select(.event_type=="alert")'
+      - curl Suricata EVE forwarder
+      - Kibana Discover signature 필터
+      negative_signs:
+      - eve.json 경로 혼동
+      - grep 필터 없음
+      - alert vs flow 이벤트 혼동
   target_vm: secu
 - order: 10
   instruction: 추가한 ICMP 테스트 룰(sid:1000001)을 local.rules 에서 제거하시오.
   hint: sed -i '/sid:1000001/d' …
   category: cleanup
   points: 10
-  answer: sudo sed -i '/sid:1000001/d' /etc/suricata/rules/local.rules && sudo systemctl
-    reload suricata
-  answer_detail: 'Suricata IPS 설치·구성: 추가한 ICMP 테스트 룰(sid:1000001)을 local.rules 에서
-    제거하시오.'
+  answer: sudo sed -i '/sid:1000001/d' /etc/suricata/rules/local.rules && sudo systemctl reload suricata
+  answer_detail: 'Suricata IPS 설치·구성: 추가한 ICMP 테스트 룰(sid:1000001)을 local.rules 에서 제거하시오.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
+    semantic:
+      intent: 테스트 룰 제거 — sudo sed -i '/sid:1000001/d' /etc/suricata/rules/local.rules && sudo systemctl
+        reload suricata. sed -i '/pattern/d' = 매칭 라인 삭제. reload 로 반영. 실습 정리 + 프로덕션 영향 없음.
+      success_criteria:
+      - sed 명령 또는 룰 제거
+      - sid:1000001 대상
+      - reload 또는 restart 반영
+      acceptable_methods:
+      - sed -i '/pattern/d' + reload
+      - 직접 편집 후 reload
+      - ansible lineinfile state=absent
+      - git revert 룰 파일
+      negative_signs:
+      - sed 없이 덮어쓰기
+      - reload 누락 (반영 안 됨)
+      - sid 오타
   target_vm: secu
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
