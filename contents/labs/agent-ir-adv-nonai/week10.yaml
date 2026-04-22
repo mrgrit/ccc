@@ -25,6 +25,21 @@ steps:
     - .attacker
     - HEX
     field: stdout
+    semantic:
+      intent: '[공격] hex 서브도메인 — echo ''HELLO'' | xxd -p | head -c 20 + .attacker.example. DNS subdomain
+        인코딩. MITRE T1048.003 DNS Exfiltration.'
+      success_criteria:
+      - .attacker/HEX
+      - xxd -p
+      - 서브도메인
+      acceptable_methods:
+      - xxd -p
+      - base32 인코딩
+      - base64url
+      negative_signs:
+      - xxd 없음
+      - 도메인 없음
+      - 인코딩 맥락 없음
   target_vm: web
   script: mkdir -p ~/w10 && echo 'HELLO' | xxd -p | head -c 20; echo '.attacker.example'
   risk_level: low
@@ -52,6 +67,21 @@ steps:
     - dns-query
     - DoH
     field: stdout
+    semantic:
+      intent: '[공격] DoH 엔드포인트 — cat > doh.md: Cloudflare 1.1.1.1/dns-query / Google dns.google / OpenDNS
+        doh.opendns.com. 공격자 DoH 회피.'
+      success_criteria:
+      - dns-query/DoH
+      - 3 provider
+      - DoH URL
+      acceptable_methods:
+      - RFC 8484 DoH
+      - Cloudflare/Google/OpenDNS
+      - DoQ
+      negative_signs:
+      - provider 1-2개
+      - URL 형식 오류
+      - DoH 맥락 없음
   target_vm: web
   script: 'cat > ~/w10/doh.md <<''M''
 
@@ -71,18 +101,33 @@ steps:
   hint: 6단계 IR 중 탐지 단계. target_vm=secu.
   category: analysis
   points: 11
-  answer: "cat > ~/w10/zeek.zeek <<'Z'\nevent dns_request(c: connection, msg: dns_msg,\
-    \ query: string, qtype: count, qclass: count) {\n  if (|query| > 50) {\n    print\
-    \ fmt(\"long_query: src=%s q=%s\", c$id$orig_h, query);\n  }\n}\nZ\ncat ~/w10/zeek.zeek"
+  answer: "cat > ~/w10/zeek.zeek <<'Z'\nevent dns_request(c: connection, msg: dns_msg, query: string,\
+    \ qtype: count, qclass: count) {\n  if (|query| > 50) {\n    print fmt(\"long_query: src=%s q=%s\"\
+    , c$id$orig_h, query);\n  }\n}\nZ\ncat ~/w10/zeek.zeek"
   answer_detail: '[탐지] 50자 이상 쿼리.'
   verify:
     type: output_contains
     expect: dns_request
     field: stdout
+    semantic:
+      intent: '[탐지] Zeek 긴 쿼리 룰 — cat > zeek.zeek: event dns_request + |query| > 50 + print src=c$id$orig_h.
+        50자 이상 쿼리 탐지.'
+      success_criteria:
+      - dns_request 키워드
+      - '|query| > 50'
+      - Zeek event
+      acceptable_methods:
+      - Zeek scripting
+      - Suricata DNS rule
+      - Bind logs
+      negative_signs:
+      - event 없음
+      - 50 임계 없음
+      - Zeek 아님
   target_vm: secu
-  script: "cat > ~/w10/zeek.zeek <<'Z'\nevent dns_request(c: connection, msg: dns_msg,\
-    \ query: string, qtype: count, qclass: count) {\n  if (|query| > 50) {\n    print\
-    \ fmt(\"long_query: src=%s q=%s\", c$id$orig_h, query);\n  }\n}\nZ\ncat ~/w10/zeek.zeek"
+  script: "cat > ~/w10/zeek.zeek <<'Z'\nevent dns_request(c: connection, msg: dns_msg, query: string,\
+    \ qtype: count, qclass: count) {\n  if (|query| > 50) {\n    print fmt(\"long_query: src=%s q=%s\"\
+    , c$id$orig_h, query);\n  }\n}\nZ\ncat ~/w10/zeek.zeek"
   risk_level: medium
   bastion_prompt: ''
 - order: 4
@@ -90,20 +135,37 @@ steps:
   hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
   category: analysis
   points: 12
-  answer: "cat > ~/w10/entropy.py <<'PY'\nimport math\nfrom collections import Counter\n\
-    def H(s):\n    c = Counter(s); t = len(s)\n    return -sum((f/t)*math.log2(f/t)\
-    \ for f in c.values()) if t else 0\nprint('normal', H('www.google.com'))\nprint('encoded',\
-    \ H('48454c4c4f.attacker.example'))\nPY\npython3 ~/w10/entropy.py"
+  answer: "cat > ~/w10/entropy.py <<'PY'\nimport math\nfrom collections import Counter\ndef H(s):\n  \
+    \  c = Counter(s); t = len(s)\n    return -sum((f/t)*math.log2(f/t) for f in c.values()) if t else\
+    \ 0\nprint('normal', H('www.google.com'))\nprint('encoded', H('48454c4c4f.attacker.example'))\nPY\n\
+    python3 ~/w10/entropy.py"
   answer_detail: '[탐지] >4.5 의심.'
   verify:
     type: output_contains
-    expect: normal
+    expect:
+    - normal
+    - 엔트로피
     field: stdout
+    semantic:
+      intent: '[탐지] 엔트로피 기반 탐지 — cat > entropy.py: Shannon H() + 정상 vs encoded 비교. www.google.com 낮음,
+        48454c4c4f... 높음. >4.5 의심.'
+      success_criteria:
+      - normal/엔트로피
+      - Shannon H 함수
+      - 정상 vs 인코딩 비교
+      acceptable_methods:
+      - Shannon + Counter
+      - scipy.stats.entropy
+      - Zeek entropy
+      negative_signs:
+      - 비교 없음
+      - Shannon 없음
+      - 임계 맥락 없음
   target_vm: bastion
-  script: "cat > ~/w10/entropy.py <<'PY'\nimport math\nfrom collections import Counter\n\
-    def H(s):\n    c = Counter(s); t = len(s)\n    return -sum((f/t)*math.log2(f/t)\
-    \ for f in c.values()) if t else 0\nprint('normal', H('www.google.com'))\nprint('encoded',\
-    \ H('48454c4c4f.attacker.example'))\nPY\npython3 ~/w10/entropy.py"
+  script: "cat > ~/w10/entropy.py <<'PY'\nimport math\nfrom collections import Counter\ndef H(s):\n  \
+    \  c = Counter(s); t = len(s)\n    return -sum((f/t)*math.log2(f/t) for f in c.values()) if t else\
+    \ 0\nprint('normal', H('www.google.com'))\nprint('encoded', H('48454c4c4f.attacker.example'))\nPY\n\
+    python3 ~/w10/entropy.py"
   risk_level: low
   bastion_prompt: ''
 - order: 5
@@ -113,8 +175,7 @@ steps:
   points: 13
   answer: 'cat > ~/w10/reassemble.py <<''PY''
 
-    queries = [''48454c4c4f.attacker.example'', ''20776f726c64.attacker.example'',
-    ''21.attacker.example'']
+    queries = [''48454c4c4f.attacker.example'', ''20776f726c64.attacker.example'', ''21.attacker.example'']
 
     hex_parts = [q.split(''.'')[0] for q in queries]
 
@@ -130,11 +191,25 @@ steps:
     type: output_contains
     expect: message
     field: stdout
+    semantic:
+      intent: '[분석] 재조합 스크립트 — cat > reassemble.py: queries 3개 + split ''.''[0] + bytes.fromhex(''''.join).decode().
+        hex → 본문 복원. ''HELLO world!''.'
+      success_criteria:
+      - message 출력
+      - bytes.fromhex + decode
+      - 3 쿼리 재조합
+      acceptable_methods:
+      - hex 재조합
+      - base32 decode
+      - chunk reassembly
+      negative_signs:
+      - 재조합 없음
+      - decode 없음
+      - 단일 쿼리만
   target_vm: bastion
   script: 'cat > ~/w10/reassemble.py <<''PY''
 
-    queries = [''48454c4c4f.attacker.example'', ''20776f726c64.attacker.example'',
-    ''21.attacker.example'']
+    queries = [''48454c4c4f.attacker.example'', ''20776f726c64.attacker.example'', ''21.attacker.example'']
 
     hex_parts = [q.split(''.'')[0] for q in queries]
 
@@ -170,6 +245,21 @@ steps:
     type: output_contains
     expect: '720'
     field: stdout
+    semantic:
+      intent: '[분석] 누출량 추정 — cat > estimate.md: 쿼리당 30 bytes / 일간 1000 쿼리 / 일간 ~30 KB / 24h 720 KB. 저속
+        지속. 정량 계산.'
+      success_criteria:
+      - 720 키워드
+      - 정량 계산
+      - 4 데이터
+      acceptable_methods:
+      - Markdown 표
+      - 통계 추정
+      - Monte Carlo
+      negative_signs:
+      - 계산 없음
+      - 데이터 1-2개
+      - 단위 없음
   target_vm: bastion
   script: 'cat > ~/w10/estimate.md <<''M''
 
@@ -191,16 +281,31 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=siem.
   category: analysis
   points: 15
-  answer: "cat > ~/w10/rpz.conf <<'C'\nzone \"rpz\" {\n  type master;\n  file \"rpz.zone\"\
-    ;\n};\nresponse-policy { zone \"rpz\"; };\nC\ncat ~/w10/rpz.conf"
+  answer: "cat > ~/w10/rpz.conf <<'C'\nzone \"rpz\" {\n  type master;\n  file \"rpz.zone\";\n};\nresponse-policy\
+    \ { zone \"rpz\"; };\nC\ncat ~/w10/rpz.conf"
   answer_detail: '[초동대응] 악성 도메인 응답 조작.'
   verify:
     type: output_contains
     expect: rpz
     field: stdout
+    semantic:
+      intent: '[초동] RPZ sinkhole — cat > rpz.conf: zone rpz type master file rpz.zone + response-policy.
+        악성 도메인 응답 조작.'
+      success_criteria:
+      - rpz 키워드
+      - response-policy
+      - zone 설정
+      acceptable_methods:
+      - BIND RPZ
+      - Pi-hole blocklist
+      - Unbound local-zone
+      negative_signs:
+      - zone 없음
+      - response-policy 없음
+      - RPZ 아님
   target_vm: siem
-  script: "cat > ~/w10/rpz.conf <<'C'\nzone \"rpz\" {\n  type master;\n  file \"rpz.zone\"\
-    ;\n};\nresponse-policy { zone \"rpz\"; };\nC\ncat ~/w10/rpz.conf"
+  script: "cat > ~/w10/rpz.conf <<'C'\nzone \"rpz\" {\n  type master;\n  file \"rpz.zone\";\n};\nresponse-policy\
+    \ { zone \"rpz\"; };\nC\ncat ~/w10/rpz.conf"
   risk_level: low
   bastion_prompt: ''
 - order: 8
@@ -222,8 +327,25 @@ steps:
   answer_detail: '[초동대응] DoH 우회 차단.'
   verify:
     type: output_contains
-    expect: DHCP
+    expect:
+    - DHCP
+    - DoH 차단
     field: stdout
+    semantic:
+      intent: '[초동] DoH 차단 정책 — cat > doh-block.md: 외부 DoH IP 차단 firewall / 내부 DNS 강제 DHCP Option 6 /
+        TLS SNI 기반 탐지. DoH 우회 방지.'
+      success_criteria:
+      - DHCP/DoH 차단
+      - 3 정책
+      - Option 6
+      acceptable_methods:
+      - DoH IP block
+      - DHCP Option 6
+      - SNI inspection
+      negative_signs:
+      - 정책 1-2개
+      - Option 6 없음
+      - SNI 없음
   target_vm: secu
   script: 'cat > ~/w10/doh-block.md <<''M''
 
@@ -243,18 +365,33 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 17
-  answer: "cat > ~/w10/agent.yaml <<'Y'\nplaybook_id: pb-dns-exfil\nsteps:\n  - skill:\
-    \ sinkhole_domain\n  - skill: limit_host_egress\n  - skill: block_doh_endpoints\n\
-    \  - skill: capture_24h_queries\nY\ncat ~/w10/agent.yaml"
+  answer: "cat > ~/w10/agent.yaml <<'Y'\nplaybook_id: pb-dns-exfil\nsteps:\n  - skill: sinkhole_domain\n\
+    \  - skill: limit_host_egress\n  - skill: block_doh_endpoints\n  - skill: capture_24h_queries\nY\n\
+    cat ~/w10/agent.yaml"
   answer_detail: '[초동대응] 자동 대응.'
   verify:
     type: output_contains
     expect: sinkhole
     field: stdout
+    semantic:
+      intent: '[초동] Agent Playbook — cat > agent.yaml: pb-dns-exfil + sinkhole_domain / limit_host_egress
+        / block_doh_endpoints / capture_24h_queries. 자동 대응.'
+      success_criteria:
+      - sinkhole 키워드
+      - 4 steps
+      - 24h capture
+      acceptable_methods:
+      - Bastion Playbook
+      - DNS firewall
+      - DoH proxy
+      negative_signs:
+      - sinkhole 없음
+      - steps 2개 이하
+      - capture 없음
   target_vm: bastion
-  script: "cat > ~/w10/agent.yaml <<'Y'\nplaybook_id: pb-dns-exfil\nsteps:\n  - skill:\
-    \ sinkhole_domain\n  - skill: limit_host_egress\n  - skill: block_doh_endpoints\n\
-    \  - skill: capture_24h_queries\nY\ncat ~/w10/agent.yaml"
+  script: "cat > ~/w10/agent.yaml <<'Y'\nplaybook_id: pb-dns-exfil\nsteps:\n  - skill: sinkhole_domain\n\
+    \  - skill: limit_host_egress\n  - skill: block_doh_endpoints\n  - skill: capture_24h_queries\nY\n\
+    cat ~/w10/agent.yaml"
   risk_level: low
   bastion_prompt: ''
 - order: 10
@@ -278,6 +415,20 @@ steps:
     type: output_contains
     expect: GDPR
     field: stdout
+    semantic:
+      intent: '[보고] 법적 — cat > legal.md: 유출 본문 개인정보 / GDPR 72시간 + 개인정보보호법 34조 / 고객 개별 통지. 본문 민감도.'
+      success_criteria:
+      - GDPR 키워드
+      - 72시간
+      - 34조
+      acceptable_methods:
+      - GDPR + 개보법
+      - CCPA
+      - HIPAA
+      negative_signs:
+      - 법규 1개
+      - 72h 없음
+      - 통지 맥락 없음
   target_vm: bastion
   script: 'cat > ~/w10/legal.md <<''M''
 
@@ -315,6 +466,21 @@ steps:
     - 엔트로피
     - DNS 로깅
     field: stdout
+    semantic:
+      intent: '[재발방지] DNS 로깅 상시 — cat > dns-logging.md: 모든 DNS 쿼리 Zeek / 매 5분 엔트로피·빈도 / 허용 목록 외 경보. 상시
+        감시.'
+      success_criteria:
+      - 엔트로피/DNS 로깅
+      - Zeek 로깅
+      - 5분 주기
+      acceptable_methods:
+      - Zeek dns.log
+      - Bind query log
+      - DNS firewall
+      negative_signs:
+      - 로깅 없음
+      - 주기 없음
+      - 허용 목록 없음
   target_vm: bastion
   script: 'cat > ~/w10/dns-logging.md <<''M''
 
@@ -350,6 +516,21 @@ steps:
     type: output_contains
     expect: egress
     field: stdout
+    semantic:
+      intent: '[재발방지] egress default-deny — cat > egress.md: CI/서버 기본 차단 / 허용 도메인 리스트 / DNS 내부 리졸버 강제.
+        화이트리스트.'
+      success_criteria:
+      - egress 키워드
+      - default-deny
+      - 리졸버 강제
+      acceptable_methods:
+      - Egress allow list
+      - internal DNS
+      - proxy filter
+      negative_signs:
+      - default-allow
+      - 리스트 없음
+      - 강제 없음
   target_vm: bastion
   script: 'cat > ~/w10/egress.md <<''M''
 
