@@ -636,28 +636,6 @@ ssh ccc@10.20.30.100 \
 - [ ] Blue Team 관점에서 웹 공격 로그를 확인했는가
 - [ ] 방어 기법(Prepared Statement, CSP, HttpOnly)을 이해했는가
 
-## 자가 점검 퀴즈
-
-1. `' OR 1=1--` 페이로드가 인증을 우회하는 원리를 SQL 쿼리 변조 관점에서 단계별로 설명하라.
-
-2. Union-based SQLi를 수행하기 전에 원래 쿼리의 컬럼 수를 알아야 하는 이유와 방법을 설명하라.
-
-3. Blind SQLi(Boolean-based)로 데이터베이스 이름의 첫 글자를 알아내는 과정을 구체적으로 서술하라.
-
-4. Reflected XSS와 Stored XSS의 공격 벡터, 지속성, 피해 범위를 비교하라.
-
-5. `<script>alert(1)</script>`가 필터링될 때 사용할 수 있는 우회 페이로드 3가지를 제시하라.
-
-6. Prepared Statement(파라미터 바인딩)가 SQL Injection을 방어하는 원리를 설명하라.
-
-7. Content Security Policy(CSP)가 XSS를 방어하는 원리를 설명하라. `script-src 'self'`의 의미는?
-
-8. HttpOnly 쿠키 플래그가 XSS 쿠키 탈취를 방어하는 원리를 설명하라.
-
-9. sqlmap의 `--batch --level=2 --risk=2` 옵션의 의미를 각각 설명하라.
-
-10. 웹 서버 접근 로그에서 SQL Injection 시도를 탐지하기 위한 grep 패턴을 3개 이상 작성하라.
-
 ## 과제
 
 ### 과제 1: JuiceShop SQL Injection 챌린지 (필수)

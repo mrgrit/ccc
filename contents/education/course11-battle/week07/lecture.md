@@ -350,28 +350,6 @@ for t in d.get('task_results',[]):
 - [ ] Bastion를 통해 IDS 모니터링을 자동화했는가
 - [ ] IDS 우회 기법을 이해했는가
 
-## 자가 점검 퀴즈
-
-1. IDS와 IPS의 배치 위치(인라인 vs 미러 포트)와 각각의 장단점을 설명하라.
-
-2. Suricata 룰에서 `flow:to_server,established`의 의미를 설명하라.
-
-3. `threshold:type threshold,track by_src,count 10,seconds 60`의 동작을 설명하라.
-
-4. HTTP URI에서 SQL Injection을 탐지하는 Suricata 룰을 작성하라.
-
-5. `content` 매칭에서 `offset`, `depth`, `distance`, `within`의 차이를 설명하라.
-
-6. eve.json 로그에서 특정 SID의 경보만 필터링하는 명령어를 작성하라.
-
-7. Suricata를 IPS 모드로 운영할 때의 위험과 주의사항을 설명하라.
-
-8. 공격자가 IDS를 우회하기 위해 인코딩을 사용할 때, 이를 탐지하는 방법을 설명하라.
-
-9. 시그니처 기반 탐지의 한계와 이를 보완하는 방법을 설명하라.
-
-10. 공방전에서 Blue Team이 Suricata로 탐지해야 할 공격 유형 5가지와 각각의 룰을 설명하라.
-
 ## 과제
 
 ### 과제 1: 커스텀 IDS 룰셋 작성 (필수)
