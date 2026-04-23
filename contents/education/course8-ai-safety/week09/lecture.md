@@ -28,7 +28,7 @@
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -54,16 +54,6 @@
 | **RLHF** | Reinforcement Learning from Human Feedback | 인간 피드백 기반 강화학습 (안전한 AI 학습) | 사람이 "좋아요/싫어요"로 AI를 교육 |
 | **EU AI Act** | EU AI Act | EU의 인공지능 규제법 | AI판 교통법규 |
 | **NIST AI RMF** | NIST AI Risk Management Framework | 미국의 AI 리스크 관리 프레임워크 | AI 위험 관리 매뉴얼 |
-
----
-
-# Week 09: 모델 보안 - 모델 도난과 추론 공격
-
-## 학습 목표
-- 모델 추출(Model Extraction) 공격의 원리를 이해한다
-- 멤버십 추론(Membership Inference) 공격을 이해한다
-- 모델 워터마킹과 지적재산 보호 기법을 파악한다
-- 모델 배포 시 보안 고려사항을 분석한다
 
 ---
 
@@ -127,7 +117,7 @@ ssh ccc@10.20.30.80 << 'ENDSSH'
 python3 << 'PYEOF'
 import json, urllib.request
 
-OLLAMA = "http://localhost:8003/v1/chat/completions"
+OLLAMA = "http://10.20.30.200:11434/v1/chat/completions"
 
 def query_model(prompt, temp=0):
     data = json.dumps({
@@ -443,7 +433,7 @@ ENDSSH
 ### 실습: 프롬프트 인젝션 테스트
 
 ```bash
-OLLAMA="http://localhost:8003/v1/chat/completions"
+OLLAMA="http://10.20.30.200:11434/v1/chat/completions"
 
 # 정상 요청
 echo "=== 정상 요청 ==="
@@ -508,29 +498,6 @@ def filter_output(response: str) -> str:
 | **고위험** | 높은 위험 | 채용 AI, 의료 진단, 자율주행 | 적합성 평가, 인증 필수 |
 | **제한** | 투명성 의무 | 챗봇, 딥페이크 | AI 사용 고지 의무 |
 | **최소** | 낮은 위험 | 스팸 필터, 게임 AI | 자율 규제 |
-
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** 프롬프트 인젝션의 목표는?
-- (a) 모델 학습 데이터 변경  (b) **시스템 프롬프트의 지시를 우회**  (c) 서버 해킹  (d) 네트워크 차단
-
-**Q2.** DAN(Do Anything Now) 기법이 동작하는 원리는?
-- (a) 암호화 취약점  (b) **LLM이 역할 부여에 강하게 반응하여 안전 정렬과 충돌**  (c) 네트워크 우회  (d) DB 조작
-
-**Q3.** Constitutional AI의 핵심은?
-- (a) 헌법 준수  (b) **모델이 자기 응답을 스스로 검토하여 유해성 판단**  (c) 정부 규제  (d) 하드웨어 보안
-
-**Q4.** LLM 가드레일의 입력 필터 Layer의 약점은?
-- (a) 너무 느림  (b) **우회가 쉬움 (인코딩, 오타, 동의어)**  (c) 비용이 높음  (d) 설치 어려움
-
-**Q5.** EU AI Act에서 '고위험 AI'에 해당하는 예시는?
-- (a) 스팸 필터  (b) **채용 AI, 의료 진단, 자율주행**  (c) 게임 AI  (d) 날씨 예보
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
 
 ---
 ---

@@ -28,7 +28,7 @@
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -54,16 +54,6 @@
 | **RLHF** | Reinforcement Learning from Human Feedback | 인간 피드백 기반 강화학습 (안전한 AI 학습) | 사람이 "좋아요/싫어요"로 AI를 교육 |
 | **EU AI Act** | EU AI Act | EU의 인공지능 규제법 | AI판 교통법규 |
 | **NIST AI RMF** | NIST AI Risk Management Framework | 미국의 AI 리스크 관리 프레임워크 | AI 위험 관리 매뉴얼 |
-
----
-
-# Week 10: 에이전트 보안 위협
-
-## 학습 목표
-- AI 에이전트의 Tool 남용 위협을 이해한다
-- 권한 상승과 자율 에이전트의 위험을 분석한다
-- Bastion 아키텍처에서의 안전 장치를 점검한다
-- 에이전트 보안 설계 원칙을 수립한다
 
 ---
 
@@ -163,33 +153,30 @@ PYEOF
 ENDSSH
 ```
 
-### 2.2 Bastion 안전 장치 점검
+### 2.2 Bastion 안전 장치 점검 (실제 API)
+
+Bastion의 안전 장치는 Skill 메타데이터의 `risk` 와 승인 게이트로 구현된다.
+고위험 Skill은 `/ask` 동기 요청에서는 실행되지 않고 승인 요구 응답만 돌려준다.
 
 ```bash
-export BASTION_API_KEY=ccc-api-key-2026
+# 1) Skill 목록에서 risk 분포 확인
+curl -s http://10.20.30.200:8003/skills \
+  | python3 -c "
+import sys,json,collections
+d=json.load(sys.stdin).get('skills',[])
+c=collections.Counter(s.get('risk') for s in d)
+print(c)
+"
 
-echo "=== Bastion 안전 장치 점검 ==="
+# 2) 고위험 의도에 대한 /ask 반응 — 즉시 실행되지 않고 승인 요구가 와야 함
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 자산의 /etc/passwd 를 즉시 삭제해줘"}'
 
-# risk_level=critical 태스크는 dry_run 강제
-echo "--- Critical 태스크 dry_run 테스트 ---"
-PROJECT=$(curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{"name":"safety-test","request_text":"안전 장치 테스트","master_mode":"external"}')
-PID=$(echo "$PROJECT" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
-
-curl -s -X POST "http://localhost:9100/projects/$PID/plan" -H "X-API-Key: $BASTION_API_KEY" > /dev/null
-curl -s -X POST "http://localhost:9100/projects/$PID/execute" -H "X-API-Key: $BASTION_API_KEY" > /dev/null
-
-# Critical 태스크 실행 시도 (dry_run 강제 확인)
-RESULT=$(curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{
-    "tasks": [{"order": 1, "instruction_prompt": "echo SAFETY_TEST", "risk_level": "critical"}],
-    "subagent_url": "http://localhost:8002"
-  }')
-echo "$RESULT" | python3 -c "import json,sys; d=json.load(sys.stdin); print(json.dumps(d, indent=2, ensure_ascii=False)[:300])" 2>/dev/null
+# 3) /chat 으로만 승인 흐름이 진행되는지 관찰
+curl -N -s -X POST http://10.20.30.200:8003/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "secu 자산에 신규 방화벽 차단 룰 추가 (high risk)"}'
 ```
 
 ---
@@ -235,7 +222,7 @@ ENDSSH
 
 ```bash
 # 간접 인젝션으로 도구 실행을 유도하는 시나리오 분석
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -415,7 +402,7 @@ ENDSSH
 ### 실습: 프롬프트 인젝션 테스트
 
 ```bash
-OLLAMA="http://localhost:8003/v1/chat/completions"
+OLLAMA="http://10.20.30.200:11434/v1/chat/completions"
 
 # 정상 요청
 echo "=== 정상 요청 ==="
@@ -482,29 +469,6 @@ def filter_output(response: str) -> str:
 | **최소** | 낮은 위험 | 스팸 필터, 게임 AI | 자율 규제 |
 
 ---
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** 프롬프트 인젝션의 목표는?
-- (a) 모델 학습 데이터 변경  (b) **시스템 프롬프트의 지시를 우회**  (c) 서버 해킹  (d) 네트워크 차단
-
-**Q2.** DAN(Do Anything Now) 기법이 동작하는 원리는?
-- (a) 암호화 취약점  (b) **LLM이 역할 부여에 강하게 반응하여 안전 정렬과 충돌**  (c) 네트워크 우회  (d) DB 조작
-
-**Q3.** Constitutional AI의 핵심은?
-- (a) 헌법 준수  (b) **모델이 자기 응답을 스스로 검토하여 유해성 판단**  (c) 정부 규제  (d) 하드웨어 보안
-
-**Q4.** LLM 가드레일의 입력 필터 Layer의 약점은?
-- (a) 너무 느림  (b) **우회가 쉬움 (인코딩, 오타, 동의어)**  (c) 비용이 높음  (d) 설치 어려움
-
-**Q5.** EU AI Act에서 '고위험 AI'에 해당하는 예시는?
-- (a) 스팸 필터  (b) **채용 AI, 의료 진단, 자율주행**  (c) 게임 AI  (d) 날씨 예보
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
-
----
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): gemma3:12b 가드레일(거부 확인), 프롬프트 인젝션 테스트, DAN 탈옥 탐지(JAILBREAK 판정)
@@ -549,7 +513,7 @@ def filter_output(response: str) -> str:
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (/ask, /chat, /evidence)
 
 **주요 경로·파일**
 
