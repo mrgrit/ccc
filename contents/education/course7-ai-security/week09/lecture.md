@@ -28,7 +28,7 @@
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -57,304 +57,256 @@
 
 ---
 
-# Week 09: Bastion (1) - 기본
+## 1. Bastion 아키텍처 한눈에
 
-## 학습 목표
-- Bastion의 프로젝트 생명주기를 이해한다
-- dispatch와 execute-plan의 차이를 구분하고 적절히 사용한다
-- 증거(evidence) 시스템과 PoW 체인을 이해한다
-- Bastion를 활용한 보안 점검 자동화를 실습한다
-
----
-
-## 1. Bastion 프로젝트 생명주기
-
-> **이 실습을 왜 하는가?**
-> Bastion는 보안 작업을 **자동화하고 증적을 관리**하는 하네스 플랫폼이다.
-> 직접 SSH로 명령을 실행하면 아무런 기록이 남지 않지만,
-> Bastion를 경유하면 **모든 명령, 결과, 시간, 보상이 자동으로 기록**된다.
+> **왜 배우는가.** 직접 SSH 로 명령을 치면 "누가, 언제, 어디서, 무엇을" 이 남지 않는다.
+> Bastion을 경유하면 자연어 지시 한 번이 자산 라우팅 → 명령 위임 → 결과 수집 → 증거 기록까지
+> 자동 처리된다. 감사·재현·협업의 기반이다.
 >
-> **이걸 하면 무엇을 알 수 있는가?**
-> - 프로젝트 라이프사이클 (created→planned→executing→done)
-> - dispatch(단일 명령)와 execute-plan(다중 태스크 병렬)의 차이
-> - evidence/replay로 작업 이력을 추적하는 방법
-> - PoW 블록과 보상(reward)의 의미
->
-> **실무 활용:**
-> - 보안 감사: "어떤 명령을 어떤 서버에서 실행했는가?" → replay API로 즉시 답변
-> - 성과 관리: 에이전트별 보상 누적 → 리더보드
-> - 반복 작업: Playbook으로 동일 점검을 매주 자동 실행
->
-> **검증 완료:** Bastion API 정상 동작, execute-plan 병렬 실행, evidence/replay 확인
+> **이걸 하면 무엇을 알 수 있는가:**
+> - Bastion이 외부에 노출하는 2개의 I/F (`/ask`, `/chat`)
+> - Skill / Playbook / Assets / Evidence 개념과 조회 방법
+> - 3계층(ccc-api · Bastion · SubAgent) 역할 분담
 
 ```
-created → planned → executing → done
-   ↓         ↓          ↓
- 생성      계획 수립    실행 중     완료
+ 사용자 ──(자연어)──> Bastion (manager :8003) ──(위임)──> SubAgent (각 자산 :8002)
+                        │  ├── /ask, /chat        (외부 I/F)
+                        │  ├── /skills,/playbooks (내부 도구 인벤토리)
+                        │  ├── /assets            (자산 인벤토리)
+                        │  └── /evidence          (감사 로그)
+                        └── Ollama(:11434) 로 LLM 호출
 ```
 
-### Stage 전환 규칙
-
-| 현재 → 다음 | API | 설명 |
-|------------|-----|------|
-| created → planned | POST /projects/{id}/plan | 계획 단계 진입 |
-| planned → executing | POST /projects/{id}/execute | 실행 단계 진입 |
-| executing → done | POST /projects/{id}/completion-report | 완료 보고 |
+ccc-api(`localhost:9100`)는 학생·랩 운영을 담당하며 Bastion과는 다른 시스템이다.
 
 ---
 
-## 2. 프로젝트 생성
+## 2. 외부 I/F: `/ask`, `/chat`
 
-> **실습 목적**: LLM 자체의 보안 취약점(프롬프트 인젝션, 탈옥)을 직접 시도하여 공격 표면을 이해하기 위해 수행한다
->
-> **배우는 것**: 프롬프트 인젝션으로 시스템 프롬프트를 우회하는 원리와, DAN/역할극 등 탈옥 기법의 작동 방식을 이해한다
->
-> **결과 해석**: LLM이 시스템 프롬프트의 지시를 무시하고 금지된 내용을 출력하면 공격 성공이다
->
-> **실전 활용**: AI 서비스 출시 전 Red Teaming, 프롬프트 인젝션 방어 가드레일 설계, AI 보안 감사에 활용한다
+Bastion은 워크플로 상태머신(plan/execute/dispatch 등)을 외부에 노출하지 않는다.
+사용자는 "무엇을 원하는지"만 말하고, 계획·실행·증거화는 Bastion 내부가 담당한다.
+
+### 2.1 `/ask` — 단일 자연어 질의
 
 ```bash
-# external 모드: Claude Code(사람)가 오케스트레이션
-curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "name": "security-audit-web",
-    "request_text": "web 서버 보안 점검",
-    "master_mode": "external"
-  }' | python3 -m json.tool
-
-# 응답에서 id 필드를 기록해둔다
+# 동기 단일 응답 {"answer": "..."}
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 자산의 hostname과 uptime을 알려줘"}'
 ```
 
-### master_mode 옵션
+**무엇이 일어나는가:** Bastion이
+(1) 자연어에서 의도 분류 → "자산 정보 조회"
+(2) `/assets` 에서 `web → 10.20.30.80` 확인
+(3) 적절한 Skill(예: `system.status`) 선택
+(4) web SubAgent(:8002)에 명령 위임
+(5) 결과를 요약해 `answer` 로 반환
+(6) `/evidence` 에 {asset, command, exit, stdout, ts} 기록
 
-| 모드 | 설명 | 사용 시점 |
-|------|------|----------|
-| **external** | 외부 도구(Claude Code)가 계획/실행 | 수동 오케스트레이션 |
-| **native** | Master Service가 LLM으로 자동 | 자동 오케스트레이션 |
+### 2.2 `/chat` — 대화형 NDJSON 스트림
+
+긴 작업·단계적 대화는 `/chat` 이 낫다. 한 줄 = 한 이벤트의 NDJSON 스트림이다.
+
+```bash
+# -N: 버퍼링 해제, 스트림 그대로 출력
+curl -N -s -X POST http://10.20.30.200:8003/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web의 최근 로그인 이력을 점검하고, 의심 IP가 있으면 MITRE ATT&CK로 매핑해줘"}'
+```
+
+이벤트 종류(예):
+- `{"type":"think", ...}` — 추론 중간
+- `{"type":"tool", "skill":"system.status", ...}` — Skill 호출
+- `{"type":"evidence", ...}` — 증거 기록
+- `{"type":"final", "answer": "..."}` — 최종 답변
 
 ---
 
-## 3. Dispatch (단일 명령 실행)
+## 3. 내부 인벤토리: Skills / Playbooks / Assets
 
-dispatch는 **단일 명령**을 특정 SubAgent에 전달하여 실행한다.
+### 3.1 Skill 목록
+
+Skill은 **결정론적 도구**이다. LLM이 매번 다르게 생성하는 명령이 아니라,
+파라미터만 바뀌는 재현 가능한 단위이다.
 
 ```bash
-# 프로젝트 ID를 변수에 저장
-PID="프로젝트_ID"
-
-# Stage 전환
-curl -s -X POST "http://localhost:9100/projects/$PID/plan" \
-  -H "X-API-Key: ccc-api-key-2026"
-curl -s -X POST "http://localhost:9100/projects/$PID/execute" \
-  -H "X-API-Key: ccc-api-key-2026"
-
-# 로컬 SubAgent에서 명령 실행
-curl -s -X POST "http://localhost:9100/projects/$PID/dispatch" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "command": "hostname && uptime",
-    "subagent_url": "http://localhost:8002"
-  }' | python3 -m json.tool
-
-# 원격 SubAgent에서 명령 실행 (secu 서버)
-curl -s -X POST "http://localhost:9100/projects/$PID/dispatch" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "command": "sudo nft list ruleset | head -20",
-    "subagent_url": "http://10.20.30.1:8002"
-  }' | python3 -m json.tool
+curl -s http://10.20.30.200:8003/skills | python3 -m json.tool | head -40
 ```
 
----
-
-## 4. Execute-plan (다중 태스크 실행)
-
-execute-plan은 **여러 태스크를 순차적으로** 실행한다.
-각 태스크에 risk_level과 SubAgent를 지정할 수 있다.
-
-3대 서버에 각각 다른 명령을 순차 실행하는 예시이다. 각 태스크에 대상 서버 SubAgent URL과 risk_level을 지정한다.
-
-```bash
-# 3개 태스크를 순차 실행: 각각 다른 서버의 SubAgent에 전달
-# order: 실행 순서 / risk_level: low/medium/high/critical
-curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "tasks": [
-      {
-        "order": 1,
-        "instruction_prompt": "hostname",
-        "risk_level": "low",
-        "subagent_url": "http://localhost:8002"
-      },
-      {
-        "order": 2,
-        "instruction_prompt": "cat /etc/os-release",
-        "risk_level": "low",
-        "subagent_url": "http://10.20.30.1:8002"
-      },
-      {
-        "order": 3,
-        "instruction_prompt": "docker ps --format table",
-        "risk_level": "medium",
-        "subagent_url": "http://10.20.30.80:8002"
-      }
-    ],
-    "subagent_url": "http://localhost:8002"
-  }' | python3 -m json.tool
+응답 예 (발췌):
+```json
+{
+  "skills": [
+    {"name": "system.status",     "risk": "low",    "params": ["asset"]},
+    {"name": "network.scan_tcp",  "risk": "medium", "params": ["asset","port"]},
+    {"name": "fw.block_ip",       "risk": "high",   "params": ["asset","ip"]},
+    {"name": "suricata.reload",   "risk": "medium", "params": ["asset"]}
+  ]
+}
 ```
 
-### Risk Level
+`risk` 는 게이트 기준이다. `high`/`critical` 은 사용자 확인이 붙어야 실제 실행된다.
 
-| 수준 | 설명 | 동작 |
-|------|------|------|
-| low | 읽기 전용, 안전 | 즉시 실행 |
-| medium | 설정 변경 가능 | 즉시 실행 |
-| high | 서비스 영향 가능 | 확인 후 실행 |
-| critical | 파괴적 가능성 | dry_run 자동 강제 |
+### 3.2 Playbook 목록
 
----
-
-## 5. 증거(Evidence) 시스템
-
-모든 실행 결과는 증거로 기록된다.
+Playbook은 **Skill의 순서화된 묶음** — 표준 작업 지침서(SOP)이다.
 
 ```bash
-# 증거 요약 조회
-curl -s -H "X-API-Key: ccc-api-key-2026" \
-  "http://localhost:9100/projects/$PID/evidence/summary" | python3 -m json.tool
+curl -s http://10.20.30.200:8003/playbooks | python3 -m json.tool | head -40
 ```
 
-### PoW (Proof of Work) 체인
+응답 예:
+```json
+{
+  "playbooks": [
+    {"name": "baseline.web",  "steps": ["system.status","network.scan_tcp","http.headers"]},
+    {"name": "ir.block_bruteforce", "steps": ["log.fetch_recent","fw.block_ip","suricata.reload"]}
+  ]
+}
+```
 
-모든 태스크 실행은 PoW 블록으로 기록되어 변조를 방지한다.
+### 3.3 Assets — 자산 인벤토리
+
+자연어 지시에서 자산 이름만 말해도 Bastion이 IP로 변환하는 이유.
 
 ```bash
-# PoW 블록 조회
-curl -s -H "X-API-Key: ccc-api-key-2026" \
-  "http://localhost:9100/pow/blocks?agent_id=http://localhost:8002" | python3 -m json.tool
+curl -s http://10.20.30.200:8003/assets | python3 -m json.tool
+```
 
-# 체인 무결성 검증
-curl -s -H "X-API-Key: ccc-api-key-2026" \
-  "http://localhost:9100/pow/verify?agent_id=http://localhost:8002" | python3 -m json.tool
-# 정상: {"valid": true, "blocks": N, "orphans": 0}
+예:
+```json
+{
+  "assets": [
+    {"name":"secu","ip":"10.20.30.1","role":"firewall/ips","subagent":"http://10.20.30.1:8002"},
+    {"name":"web","ip":"10.20.30.80","role":"webapp","subagent":"http://10.20.30.80:8002"},
+    {"name":"siem","ip":"10.20.30.100","role":"siem","subagent":"http://10.20.30.100:8002"}
+  ]
+}
 ```
 
 ---
 
-## 6. 완료 보고서
+## 4. 감사: `/evidence`
 
-프로젝트 완료 시 결과 보고서를 작성한다. outcome과 work_details로 작업 결과를 기록하며, 이 데이터는 RL 학습에도 활용된다.
+`/ask`·`/chat` 호출로 발생한 모든 실행은 `/evidence` 에 남는다.
+감사·사고 조사·리플레이의 근거이다.
 
 ```bash
-# 프로젝트 완료 보고서 작성 (outcome: success/failure/partial)
-curl -s -X POST "http://localhost:9100/projects/$PID/completion-report" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "summary": "web 서버 보안 점검 완료",
-    "outcome": "success",
-    "work_details": [
-      "호스트 정보 수집 완료",
-      "OS 버전 확인 완료",
-      "Docker 컨테이너 목록 확인 완료"
-    ]
-  }' | python3 -m json.tool
+# 최근 20건
+curl -s "http://10.20.30.200:8003/evidence?limit=20" | python3 -m json.tool
+
+# 특정 자산의 증거
+curl -s "http://10.20.30.200:8003/evidence?asset=web&limit=10" | python3 -m json.tool
+```
+
+각 entry 필드 (예):
+```json
+{
+  "ts": "2026-04-23T10:05:11Z",
+  "asset": "web",
+  "skill": "system.status",
+  "command": "hostname && uptime",
+  "exit_code": 0,
+  "stdout_head": "web\n 10:05:11 up 3 days...",
+  "request_id": "req_...",
+  "user": "ccc"
+}
+```
+
+**왜 이게 중요한가:** 동일한 자연어 지시라도 Bastion 내부에서 어떤 Skill이 선택되고,
+어떤 명령으로 번역됐는지가 남아야 사후 감사가 가능하다. "AI가 했어요" 는 책임 소재가 된다.
+
+---
+
+## 5. Risk Level과 승인 게이트
+
+Skill/Playbook 메타데이터에는 risk 가 명시되어 있다.
+
+| 수준 | 설명 | Bastion 동작 |
+|------|------|--------------|
+| low | 읽기 전용 | 즉시 실행 |
+| medium | 설정 변경 가능 | 즉시 실행, 증거 강조 |
+| high | 서비스 영향 | `/chat` 에서 사용자 승인 이벤트 요구 |
+| critical | 파괴적 가능성 | 기본 dry-run, 명시적 승인 필요 |
+
+`/ask` 는 동기 단발이므로 high/critical 요청이 오면 "승인 필요" 응답을 돌려주고 실행하지 않는다.
+대화형 `/chat` 에서 승인 확인 이벤트를 수신해야 실제 실행된다.
+
+---
+
+## 6. 실습: 자연어 지시로 엔드투엔드 흐름 체험
+
+### 실습 1: 인프라 확인 → 단일 자연어 지시 → 증거 조회
+
+```bash
+# (1) 3계층 헬스체크
+curl -s http://localhost:9100/health -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
+curl -s http://10.20.30.200:8003/health | python3 -m json.tool
+curl -s http://10.20.30.80:8002/health  | python3 -m json.tool
+
+# (2) Bastion에 등록된 Skill/Playbook/Asset 한 번 훑기
+curl -s http://10.20.30.200:8003/skills    | python3 -m json.tool | head -20
+curl -s http://10.20.30.200:8003/playbooks | python3 -m json.tool | head -20
+curl -s http://10.20.30.200:8003/assets    | python3 -m json.tool
+
+# (3) 자연어 지시 한 번으로 web 점검
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 자산의 호스트네임·커널·열린 포트·최근 로그인 5건을 요약해줘"}' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('answer',d))"
+
+# (4) 방금 어떤 명령들이 실제 실행됐는지 증거로 확인
+curl -s "http://10.20.30.200:8003/evidence?asset=web&limit=10" | python3 -m json.tool
+```
+
+### 실습 2: 다중 자산 병렬 점검
+
+```bash
+# 한 번의 요청으로 secu/web/siem 모두 점검
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "secu/web/siem 세 자산의 상태를 병렬로 점검해줘. 각 자산의 hostname·uptime·listening ports를 표로 정리해줘"}'
+```
+
+Bastion은 자산 3개에 대한 명령 위임을 내부에서 병렬화한다. 사용자는 parallelism을 말하지 않는다.
+
+### 실습 3: 대화형 심화 — `/chat`
+
+```bash
+# 실습 2에서 이상치가 보이면 /chat 으로 파고든다
+curl -N -s -X POST http://10.20.30.200:8003/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "방금 점검 결과 중 비정상 포트를 식별하고, MITRE ATT&CK T 번호로 매핑해줘"}'
+```
+
+스트림이 끝나면 `final` 이벤트의 `answer` 가 요약이다.
+
+### 실습 4: 고위험 Skill 승인 흐름 관찰
+
+```bash
+# fw.block_ip 는 high 위험 — /ask 로는 실행되지 않고 승인 요구만 돌아와야 한다
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "secu에서 203.0.113.50 IP를 즉시 차단해줘"}'
+
+# 올바른 Bastion은 {"answer": "승인 필요: risk=high, skill=fw.block_ip ..."} 와 유사한 응답을 준다.
+# 실제 적용은 /chat 승인 이벤트로만 진행한다.
 ```
 
 ---
 
-## 7. 실습: 보안 점검 자동화
+## 7. 핵심 정리
 
-### 실습 1: 전체 플로우 체험
-
-```bash
-# 1. 프로젝트 생성
-PID=$(curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{"name":"lab-audit","request_text":"실습 보안 점검","master_mode":"external"}' \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
-echo "Project: $PID"
-
-# 2. Stage 전환
-curl -s -X POST "http://localhost:9100/projects/$PID/plan" \
-  -H "X-API-Key: ccc-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:9100/projects/$PID/execute" \
-  -H "X-API-Key: ccc-api-key-2026" > /dev/null
-
-# 3. 보안 점검 태스크 실행
-curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "tasks": [
-      {"order":1, "instruction_prompt":"uname -a", "risk_level":"low"},
-      {"order":2, "instruction_prompt":"ss -tlnp", "risk_level":"low"},
-      {"order":3, "instruction_prompt":"last -10", "risk_level":"low"}
-    ],
-    "subagent_url": "http://localhost:8002"
-  }' | python3 -m json.tool
-
-# 4. 증거 확인
-curl -s -H "X-API-Key: ccc-api-key-2026" \
-  "http://localhost:9100/projects/$PID/evidence/summary" | python3 -m json.tool
-
-# 5. 완료 보고
-curl -s -X POST "http://localhost:9100/projects/$PID/completion-report" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{"summary":"보안 점검 완료","outcome":"success","work_details":["시스템 정보 수집","열린 포트 확인","최근 로그인 이력 확인"]}'
-```
-
-### 실습 2: 다중 서버 점검
-
-```bash
-# 여러 서버에 동시에 명령 실행
-curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "tasks": [
-      {"order":1, "instruction_prompt":"hostname && uptime", "risk_level":"low", "subagent_url":"http://localhost:8002"},
-      {"order":2, "instruction_prompt":"hostname && uptime", "risk_level":"low", "subagent_url":"http://10.20.30.1:8002"},
-      {"order":3, "instruction_prompt":"hostname && uptime", "risk_level":"low", "subagent_url":"http://10.20.30.80:8002"}
-    ],
-    "subagent_url":"http://localhost:8002"
-  }' | python3 -m json.tool
-```
-
-### 실습 3: PoW 체인 확인
-
-```bash
-# 보상 랭킹 확인
-curl -s -H "X-API-Key: ccc-api-key-2026" \
-  http://localhost:9100/pow/leaderboard | python3 -m json.tool
-
-# 프로젝트 작업 리플레이
-curl -s -H "X-API-Key: ccc-api-key-2026" \
-  "http://localhost:9100/projects/$PID/replay" | python3 -m json.tool
-```
-
----
-
-## 핵심 정리
-
-1. Bastion 프로젝트는 created → planned → executing → done 순으로 진행한다
-2. dispatch는 단일 명령, execute-plan은 여러 태스크를 순차 실행한다
-3. risk_level로 태스크의 위험도를 관리하고, critical은 자동으로 dry_run된다
-4. 모든 작업은 증거로 기록되고 PoW 체인으로 무결성을 보장한다
-5. API 호출 시 반드시 X-API-Key 헤더를 포함해야 한다
+1. Bastion이 외부에 제공하는 I/F는 `/ask`·`/chat` 2개뿐이다. 상태머신 엔드포인트(plan/execute 등)는 없다.
+2. 자연어 지시 → 자산 라우팅 → Skill/Playbook 선택 → SubAgent 위임 → 증거 기록이 내부에서 일어난다.
+3. `/skills`, `/playbooks`, `/assets` 로 Bastion이 아는 것을 조회할 수 있다.
+4. 모든 실행은 `/evidence` 에 남아야 감사·재현이 가능하다.
+5. 고위험 Skill은 승인 게이트를 거친다. `/ask` 는 동기 단발이므로 승인 요구 응답만 돌려준다.
 
 ---
 
 ## 다음 주 예고
-- Week 10: Bastion (2) - Playbook과 강화학습(RL) 연동
+- Week 10: Bastion (2) — Playbook·Skill의 재현성과 RL 연동
 
 ---
 
@@ -367,10 +319,10 @@ curl -s -H "X-API-Key: ccc-api-key-2026" \
 #### 기본 호출 구조
 
 ```bash
-# Ollama는 OpenAI 호환 API를 제공한다
-# URL: http://localhost:8003/v1/chat/completions
+# Ollama는 OpenAI 호환 API를 제공한다 (포트 11434)
+# URL: http://10.20.30.200:11434/v1/chat/completions
 
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델
@@ -420,49 +372,21 @@ curl -s http://localhost:8003/v1/chat/completions \
 {"role":"system","content":"단계별로 분석하세요: 1)현상 파악 2)원인 추론 3)ATT&CK 매핑 4)대응 방안"}
 ```
 
-### Bastion API 핵심 흐름 요약
+### Bastion API 핵심 엔드포인트 요약
 
 ```
-[1] POST /projects                     → 프로젝트 생성
-    Body: {"name":"...", "master_mode":"external"}
-    Response: {"project":{"id":"prj_xxx"}}
+POST /ask          → 단일 자연어 질의, 동기 응답 {"answer": "..."}
+POST /chat         → 대화형 NDJSON 스트림
+GET  /evidence     → 과거 실행 증거 (자산·명령·exit·시각)
+GET  /skills       → 등록된 Skill(결정론 도구) 목록
+GET  /playbooks    → 등록된 Playbook(Skill 시나리오) 목록
+GET  /assets       → 자산 인벤토리 (이름↔IP↔역할)
+POST /onboard      → 신규 자산 온보딩
+GET  /health       → 헬스체크
 
-[2] POST /projects/{id}/plan           → plan 단계로 전환
-[3] POST /projects/{id}/execute        → execute 단계로 전환
-
-[4] POST /projects/{id}/execute-plan   → 태스크 실행
-    Body: {"tasks":[...], "parallel":true, "subagent_url":"..."}
-    Response: {"overall":"success", "tasks_ok":N}
-
-[5] GET /projects/{id}/evidence/summary → 증적 확인
-[6] GET /projects/{id}/replay           → 타임라인 재구성
-[7] POST /projects/{id}/completion-report → 완료 보고
-
-모든 API에 필수: -H "X-API-Key: ccc-api-key-2026"
+Bastion(:8003)은 내부망 접근 가정 — API 키 불필요.
+ccc-api(:9100)은 학생/랩 운영용 별도 시스템 — `X-API-Key` 필요.
 ```
-
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** Ollama API에서 temperature=0의 효과는?
-- (a) 최대 창의성  (b) **매번 동일한 출력 (결정론적)**  (c) 에러 발생  (d) 속도 향상
-
-**Q2.** Bastion execute-plan 실행 전 반드시 거쳐야 하는 단계는?
-- (a) 서버 재시작  (b) **plan → execute stage 전환**  (c) DB 백업  (d) 코드 컴파일
-
-**Q3.** RL에서 UCB1 탐색 전략의 핵심은?
-- (a) 항상 최고 보상 행동 선택  (b) **방문 횟수가 적은 행동을 우선 탐색**  (c) 무작위 선택  (d) 모든 행동 균등 선택
-
-**Q4.** Playbook이 LLM adhoc보다 재현성이 높은 이유는?
-- (a) LLM이 더 똑똑해서  (b) **파라미터가 결정론적으로 바인딩되어 동일 명령 생성**  (c) 네트워크가 빨라서  (d) DB가 달라서
-
-**Q5.** Bastion evidence가 제공하는 핵심 가치는?
-- (a) 실행 속도 향상  (b) **모든 실행의 자동 기록으로 감사 추적 가능**  (c) 메모리 절약  (d) 코드 자동 생성
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
 
 ---
 
