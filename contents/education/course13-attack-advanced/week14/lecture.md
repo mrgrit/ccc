@@ -593,100 +593,6 @@ RECOMMENDATIONS
 
 ---
 
-## 자가 점검 퀴즈
-
-**Q1.** PTES의 7단계를 순서대로 나열하라.
-
-<details><summary>정답</summary>
-1. Pre-engagement Interactions (사전 협의)
-2. Intelligence Gathering (정보 수집)
-3. Threat Modeling (위협 모델링)
-4. Vulnerability Analysis (취약점 분석)
-5. Exploitation (익스플로잇)
-6. Post-Exploitation (후속 익스플로잇)
-7. Reporting (보고)
-</details>
-
-**Q2.** 이번 실습에서 발견한 Critical 취약점 2가지와 CVSS 점수는?
-
-<details><summary>정답</summary>
-1. SQL Injection (Juice Shop 로그인) — CVSS 9.8: 네트워크에서 인증 없이 원격 공격 가능, 기밀성/무결성 완전 침해
-2. 약한 SSH 비밀번호 (전체 서버) — CVSS 9.1: 단순 비밀번호(1)로 전체 네트워크 접근, 측면 이동 가능
-</details>
-
-**Q3.** 모의해킹에서 OPSEC(작전 보안)을 유지해야 하는 이유는?
-
-<details><summary>정답</summary>
-1. 실제 APT를 시뮬레이션하기 위해 탐지를 최소화해야 한다
-2. Blue Team의 탐지 능력을 함께 평가할 수 있다
-3. 과도한 스캔/공격은 시스템 성능에 영향을 줄 수 있다
-4. 고객에게 현실적인 위협 수준을 보여주기 위해
-</details>
-
-**Q4.** 보고서에서 Executive Summary가 중요한 이유는?
-
-<details><summary>정답</summary>
-Executive Summary는 비기술 경영진이 읽는 유일한 섹션인 경우가 많다. 전체 모의해킹의 결과를 1-2페이지로 요약하여, 발견된 위험 수준, 비즈니스 영향, 즉시 조치 필요 사항을 전달한다. 기술적 세부사항은 본문에서 다루되, 의사결정에 필요한 정보를 요약해야 한다.
-</details>
-
-**Q5.** 실습 환경에서 가장 효과적인 공격 경로(Kill Chain)를 설명하라.
-
-<details><summary>정답</summary>
-1. 정찰: nmap으로 4개 호스트, 서비스 식별
-2. 초기 접근: Juice Shop SQLi → 관리자 JWT
-3. 대안 접근: SSH 비밀번호 '1'로 web 서버 접근
-4. 권한 상승: web에서 sudo(비밀번호 1) → root
-5. 크레덴셜: .bash_history, .env에서 추가 정보
-6. 측면 이동: web → secu(SSH) → siem(SSH)
-7. 목표 달성: siem의 Wazuh 알림 데이터 접근
-</details>
-
-**Q6.** CVSS v3.1에서 Attack Vector: Network, Attack Complexity: Low, Privileges Required: None의 의미는?
-
-<details><summary>정답</summary>
-- Attack Vector: Network → 원격에서 네트워크를 통해 공격 가능
-- Attack Complexity: Low → 특별한 조건 없이 항상 재현 가능
-- Privileges Required: None → 인증 없이 공격 가능
-이 세 조건을 모두 만족하면 기본 점수가 높아지며, SQL Injection은 이에 해당한다.
-</details>
-
-**Q7.** 모의해킹 후 발견사항의 우선순위를 정하는 기준은?
-
-<details><summary>정답</summary>
-1. CVSS 점수 (기술적 위험도)
-2. 비즈니스 영향 (데이터 유출, 서비스 중단)
-3. 익스플로잇 용이성 (스크립트 키디도 가능한지)
-4. 노출 범위 (인터넷 vs 내부)
-5. 수정 난이도 (패치 vs 아키텍처 변경)
-</details>
-
-**Q8.** 이번 실습에서 Blue Team(방어자)의 탐지 성과를 평가하라.
-
-<details><summary>정답</summary>
-평가: Wazuh SIEM이 SSH 로그인, 일부 웹 공격을 탐지했으나, SQL Injection의 실시간 차단은 미흡. Suricata IDS가 스캔을 탐지했으나 저속 스캔은 미탐지. 개선 필요: WAF 규칙 강화, SSH 브루트포스 차단(fail2ban), 내부 측면 이동 탐지 규칙 추가.
-</details>
-
-**Q9.** 이번 실습에서 사용한 MITRE ATT&CK 기법을 5개 이상 매핑하라.
-
-<details><summary>정답</summary>
-1. T1595.001 (Active Scanning: IP Blocks) — nmap 네트워크 스캔
-2. T1190 (Exploit Public-Facing Application) — Juice Shop SQLi
-3. T1078 (Valid Accounts) — SSH 약한 비밀번호
-4. T1548.003 (Abuse Elevation Control: Sudo) — sudo 권한 상승
-5. T1021.004 (Remote Services: SSH) — SSH 측면 이동
-6. T1005 (Data from Local System) — Wazuh 알림 데이터 수집
-</details>
-
-**Q10.** 발견된 취약점에 대한 즉시 조치 권고 3가지는?
-
-<details><summary>정답</summary>
-1. 전체 서버의 SSH 비밀번호를 강력한 비밀번호로 변경하고, SSH 키 인증으로 전환
-2. Juice Shop을 프로덕션 네트워크에서 분리하거나 접근 제어 적용
-3. SubAgent API에 인증(X-API-Key 등)을 추가하고 접근을 관리 네트워크로 제한
-</details>
-
----
-
 ## 과제
 
 ### 과제 1: 완전한 모의해킹 보고서 (팀)
@@ -731,7 +637,7 @@ Executive Summary는 비기술 경영진이 읽는 유일한 섹션인 경우가
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 
