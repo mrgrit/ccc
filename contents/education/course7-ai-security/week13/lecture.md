@@ -28,7 +28,7 @@
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -54,16 +54,6 @@
 | **Q-learning** | Q-learning | 보상을 기반으로 최적 행동을 학습하는 RL 알고리즘 | 시행착오로 최적 경로를 찾는 학습 |
 | **UCB1** | Upper Confidence Bound | 탐험(exploration)과 활용(exploitation)을 균형 잡는 전략 | "가본 길 vs 안 가본 길" 선택 전략 |
 | **SubAgent** | SubAgent | 대상 서버에서 명령을 실행하는 경량 런타임 | 현장 파견 직원 |
-
----
-
-# Week 13: 분산 지식
-
-## 학습 목표
-- 분산 지식 아키텍처의 개념과 필요성을 이해한다
-- local_knowledge.json의 구조와 역할을 파악한다
-- SubAgent 간 지식 전달(knowledge transfer) 메커니즘을 이해한다
-- 분산 지식을 활용한 보안 운영 개선을 실습한다
 
 ---
 
@@ -213,7 +203,7 @@ LOCAL_KNOWLEDGE='{
   "baseline_change": "포트 8080이 새로 열림"
 }'
 
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -235,7 +225,7 @@ COMBINED='{
   "siem": {"total_events": 5000, "critical": 2, "high": 15}
 }'
 
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -251,42 +241,29 @@ curl -s http://localhost:8003/v1/chat/completions \
 
 ## 5. 실습
 
-### 실습 1: 로컬 지식 수집
+### 실습 1: 복수 자산의 로컬 지식 수집
 
 ```bash
-# 프로젝트 준비
-PID=$(curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{"name":"knowledge-lab","request_text":"분산 지식 실습","master_mode":"external"}' \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
-curl -s -X POST "http://localhost:9100/projects/$PID/plan" -H "X-API-Key: ccc-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:9100/projects/$PID/execute" -H "X-API-Key: ccc-api-key-2026" > /dev/null
+# Bastion 에게 복수 자산의 로컬 지식을 한 번에 수집 지시
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web과 secu 두 자산에서 hostname·kernel·listening ports 개수·보안 관련 서비스 상태를 수집해 각각 local_knowledge.json 포맷으로 정리해줘"}'
 
-# 여러 서버에서 지식 수집
-curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "tasks": [
-      {"order":1, "instruction_prompt":"hostname && uname -r && ss -tlnp | grep LISTEN | wc -l", "risk_level":"low", "subagent_url":"http://localhost:8002"},
-      {"order":2, "instruction_prompt":"hostname && uname -r && ss -tlnp | grep LISTEN | wc -l", "risk_level":"low", "subagent_url":"http://10.20.30.1:8002"}
-    ],
-    "subagent_url":"http://localhost:8002"
-  }' | python3 -m json.tool
+# 증거 조회
+curl -s "http://10.20.30.200:8003/evidence?limit=10" | python3 -m json.tool
 ```
 
-### 실습 2: 지식 기반 LLM 분석
+### 실습 2: 수집된 지식을 LLM에게 교차 분석 요청
 
 ```bash
-# 수집된 정보를 LLM으로 종합 분석
-curl -s http://localhost:8003/v1/chat/completions \
+# 원시 LLM 직접 호출 (Ollama :11434) — 비교 분석은 LLM이 잘한다
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
     "messages": [
-      {"role": "system", "content": "분산 시스템 보안 분석가입니다."},
-      {"role": "user", "content": "2개 서버의 로컬 지식을 비교 분석하세요:\n\nbastion 서버: 커널 6.8.0-106, 열린 포트 5개 (22,8000,8001,8002,5432)\nsecu 서버: 커널 6.8.0-106, 열린 포트 3개 (22,8002,8443)\n\n각 서버의 보안 수준을 평가하고 개선 사항을 제시하세요."}
+      {"role": "system", "content": "분산 시스템 보안 분석가."},
+      {"role": "user", "content": "두 자산의 로컬 지식 비교:\nweb: 커널 6.8.0-106, 열린 포트 5개(22,80,443,3000,8002)\nsecu: 커널 6.8.0-106, 열린 포트 3개(22,8002,8443)\n\n각 자산 보안 수준을 평가하고 공격 표면 기준 개선 항목을 우선순위로 제시."}
     ],
     "temperature": 0.3
   }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
@@ -330,9 +307,9 @@ curl -s http://localhost:8003/v1/chat/completions \
 
 ```bash
 # Ollama는 OpenAI 호환 API를 제공한다
-# URL: http://localhost:8003/v1/chat/completions
+# URL: http://10.20.30.200:11434/v1/chat/completions
 
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델
@@ -382,49 +359,13 @@ curl -s http://localhost:8003/v1/chat/completions \
 {"role":"system","content":"단계별로 분석하세요: 1)현상 파악 2)원인 추론 3)ATT&CK 매핑 4)대응 방안"}
 ```
 
-### Bastion API 핵심 흐름 요약
+### Bastion API 핵심 엔드포인트 요약
 
 ```
-[1] POST /projects                     → 프로젝트 생성
-    Body: {"name":"...", "master_mode":"external"}
-    Response: {"project":{"id":"prj_xxx"}}
-
-[2] POST /projects/{id}/plan           → plan 단계로 전환
-[3] POST /projects/{id}/execute        → execute 단계로 전환
-
-[4] POST /projects/{id}/execute-plan   → 태스크 실행
-    Body: {"tasks":[...], "parallel":true, "subagent_url":"..."}
-    Response: {"overall":"success", "tasks_ok":N}
-
-[5] GET /projects/{id}/evidence/summary → 증적 확인
-[6] GET /projects/{id}/replay           → 타임라인 재구성
-[7] POST /projects/{id}/completion-report → 완료 보고
-
-모든 API에 필수: -H "X-API-Key: ccc-api-key-2026"
+POST /ask / /chat        → 자연어 I/F
+GET  /evidence            → 감사 증거
+GET  /skills / /playbooks / /assets → 내부 인벤토리
 ```
-
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** Ollama API에서 temperature=0의 효과는?
-- (a) 최대 창의성  (b) **매번 동일한 출력 (결정론적)**  (c) 에러 발생  (d) 속도 향상
-
-**Q2.** Bastion execute-plan 실행 전 반드시 거쳐야 하는 단계는?
-- (a) 서버 재시작  (b) **plan → execute stage 전환**  (c) DB 백업  (d) 코드 컴파일
-
-**Q3.** RL에서 UCB1 탐색 전략의 핵심은?
-- (a) 항상 최고 보상 행동 선택  (b) **방문 횟수가 적은 행동을 우선 탐색**  (c) 무작위 선택  (d) 모든 행동 균등 선택
-
-**Q4.** Playbook이 LLM adhoc보다 재현성이 높은 이유는?
-- (a) LLM이 더 똑똑해서  (b) **파라미터가 결정론적으로 바인딩되어 동일 명령 생성**  (c) 네트워크가 빨라서  (d) DB가 달라서
-
-**Q5.** Bastion evidence가 제공하는 핵심 가치는?
-- (a) 실행 속도 향상  (b) **모든 실행의 자동 기록으로 감사 추적 가능**  (c) 메모리 절약  (d) 코드 자동 생성
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
 
 ---
 ---
@@ -440,7 +381,7 @@ curl -s http://localhost:8003/v1/chat/completions \
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
 
 **주요 경로·파일**
 
