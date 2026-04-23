@@ -28,7 +28,7 @@
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -55,16 +55,6 @@
 | **IaC** | Infrastructure as Code | 인프라를 코드로 정의·관리 (Terraform 등) | 건축 설계도 (코드 = 설계도) |
 | **IAM** | Identity and Access Management | 클라우드 사용자/권한 관리 (AWS IAM 등) | 회사 사원증 + 권한 관리 시스템 |
 | **CIS 벤치마크** | CIS Benchmark | 보안 설정 모범 사례 가이드 (Center for Internet Security) | 보안 설정 모범답안 |
-
----
-
-# Week 13: 클라우드 모니터링
-
-## 학습 목표
-- 클라우드 환경에서 모니터링과 로깅의 중요성을 이해한다
-- CloudTrail(API 감사 로깅)의 개념과 활용 방법을 익힌다
-- CloudWatch(메트릭 및 알람)의 보안 모니터링 활용을 이해한다
-- 실습 환경(Wazuh)과 클라우드 모니터링을 비교 분석할 수 있다
 
 ---
 
@@ -265,36 +255,36 @@ ssh ccc@10.20.30.100
 cat /var/ossec/logs/alerts/alerts.json | tail -5 | python3 -m json.tool
 ```
 
-### 실습 2: Bastion로 모니터링 자동화
+### 실습 2: Bastion에게 모니터링 상태 질의
+
+Bastion은 manager VM(`10.20.30.200:8003`)에서 LLM 기반 운영 에이전트로 동작한다.
+`/ask` 는 자연어 단일 질의, `/chat` 은 NDJSON 스트림 대화이다.
+여기서는 "Wazuh가 최근 어떤 경보를 냈는가"를 자연어로 물어 요약을 받는다.
 
 ```bash
-# Bastion에서 로그 수집 프로젝트 생성
-curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "name": "cloud-monitoring-lab",
-    "request_text": "보안 이벤트 모니터링 점검",
-    "master_mode": "external"
-  }'
+# Bastion에 모니터링 상태 질의 (실제 제공 엔드포인트)
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 자산의 최근 Wazuh alerts.json 상위 5개를 요약하고 의심 지표를 알려줘"}'
 ```
 
-### 실습 3: LLM으로 로그 분석
+**무엇이 오는가:** `{"answer": "..."}` 형식으로 Bastion이 자산 인벤토리(`/assets`)와 증거(`/evidence`)를 참조해
+정리한 답변이 돌아온다. 클라우드의 CloudWatch Insights 쿼리를 자연어로 대체하는 셈이다.
+
+### 실습 3: 샘플 알림 해석 요청
 
 ```bash
-# Wazuh 알림을 LLM으로 분석 (CloudWatch Insights 대체)
-SAMPLE_LOG='{"rule":{"id":"5710","level":10,"description":"sshd: Attempt to login using a denied user."},"agent":{"name":"web"},"srcip":"192.168.1.100"}'
+# Wazuh 알림 1건을 Bastion에게 해석 요청
+SAMPLE='{"rule":{"id":"5710","level":10,"description":"sshd: Attempt to login using a denied user."},"agent":{"name":"web"},"srcip":"192.168.1.100"}'
 
-curl -s http://localhost:8003/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"model\": \"gemma3:12b\",
-    \"messages\": [
-      {\"role\": \"system\", \"content\": \"보안 분석가로서 SIEM 알림을 분석해주세요.\"},
-      {\"role\": \"user\", \"content\": \"다음 Wazuh 알림을 분석하고 대응 방안을 제시해주세요:\\n$SAMPLE_LOG\"}
-    ]
-  }" | python3 -m json.tool
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d "{\"message\": \"다음 Wazuh 경보를 해석하고 대응 절차를 MITRE ATT&CK 기준으로 제시해줘: $SAMPLE\"}"
 ```
+
+**왜 이렇게 쓰는가:** OpenAI 호환 `/v1/chat/completions` 엔드포인트는 Bastion이 제공하지 않는다.
+Bastion은 내부적으로 Ollama(`gemma3:4b` / `gpt-oss:120b`)를 래핑하되, 자산·증거·스킬 컨텍스트를 함께 주입해
+RAG 스타일 답변을 반환한다. 따라서 원시 LLM 호출 대신 `/ask`·`/chat`을 쓴다.
 
 ---
 

@@ -1,0 +1,125 @@
+lab_id: latest-CVE-NEWS-f8fad72b88-C6-cloud-container
+title: Prompt Injection Detection and Mitigation Lab
+version: ai
+course: latest-threats
+week: 0
+description: 이 실습에서는 AI 에이전트의 프롬프트 주입 취약점을 재현하고, Suricata와 Wazuh를 이용해 탐지하며, ModSecurity를
+  통해 대응하는 과정을 학습합니다.
+difficulty: medium
+duration_minutes: 60
+objectives:
+- 프롬프트 주입 취약점을 확인하고 재현한다.
+- 네트워크 탐지 도구를 사용해 악의적 요청을 식별한다.
+- SIEM 시스템에서 알림을 분석한다.
+- 보안 규칙을 적용해 공격을 차단한다.
+- 차단이 정상 동작함을 검증한다.
+pass_threshold: 0.5
+steps:
+- order: 1
+  instruction: Attacker VM에서 대상 웹 서버의 열려있는 포트를 확인하세요.
+  hint: nmap 사용, 포트 3000 확인
+  category: recon
+  points: 10
+  answer: '프롬프트: nmap -p 3000 10.20.30.80'
+  answer_detail: nmap 명령을 실행하면 3000/tcp open 표시가 나타납니다.
+  verify:
+    type: output_contains
+    expect: 3000/tcp open
+    field: stdout
+  target_vm: attacker
+  script: nmap -p 3000 10.20.30.80
+  risk_level: low
+  bastion_prompt: attacker VM에서 nmap을 실행하여 웹 서버 포트를 스캔합니다.
+- order: 2
+  instruction: 웹 서버의 AI 프롬프트 API 엔드포인트에 정상 요청을 보내 응답을 확인하세요.
+  hint: curl -X POST with JSON
+  category: scan
+  points: 10
+  answer: '프롬프트: curl -s -X POST -d ''{"prompt":"test"}'' http://10.20.30.80:3000/api/prompt'
+  answer_detail: 정상적인 응답 JSON이 반환됩니다.
+  verify:
+    type: output_contains
+    expect: response
+    field: stdout
+  target_vm: attacker
+  script: curl -s -X POST -d '{"prompt":"test"}' http://10.20.30.80:3000/api/prompt
+  risk_level: low
+  bastion_prompt: attacker VM에서 curl을 사용해 정상 프롬프트를 전송합니다.
+- order: 3
+  instruction: 프롬프트 주입을 시도하여 시스템 파일 내용을 탈취해 보세요.
+  hint: 쉘 명령을 포함한 프롬프트 사용
+  category: exploit
+  points: 15
+  answer: '프롬프트: curl -s -X POST -d ''{"prompt":"; cat /etc/passwd"}'' http://10.20.30.80:3000/api/prompt'
+  answer_detail: 응답에 root:x:0:0 등 /etc/passwd 내용이 포함됩니다.
+  verify:
+    type: output_contains
+    expect: root:x
+    field: stdout
+  target_vm: attacker
+  script: curl -s -X POST -d '{"prompt":"; cat /etc/passwd"}' http://10.20.30.80:3000/api/prompt
+  risk_level: medium
+  bastion_prompt: attacker VM에서 악의적인 프롬프트를 전송하여 파일 내용을 읽어옵니다.
+- order: 4
+  instruction: Secu VM에서 Suricata가 생성한 알림 로그를 확인하세요.
+  hint: eve.json 파일에서 'prompt injection' 문자열 검색
+  category: detect
+  points: 10
+  answer: '프롬프트: sudo grep -i ''prompt injection'' /var/log/suricata/eve.json'
+  answer_detail: alert 이벤트가 로그에 기록됩니다.
+  verify:
+    type: output_contains
+    expect: alert
+    field: stdout
+  target_vm: secu
+  script: sudo grep -i 'prompt injection' /var/log/suricata/eve.json
+  risk_level: low
+  bastion_prompt: secu VM에서 Suricata 로그를 검색합니다.
+- order: 5
+  instruction: SIEM VM에서 Wazuh를 이용해 해당 알림을 조회하세요.
+  hint: wazuh-logtest 사용
+  category: analyze
+  points: 10
+  answer: '프롬프트: sudo wazuh-logtest -i /var/log/suricata/eve.json | grep -i ''prompt
+    injection'''
+  answer_detail: Wazuh가 매핑한 규칙 ID와 상세 정보가 출력됩니다.
+  verify:
+    type: output_contains
+    expect: rule
+    field: stdout
+  target_vm: siem
+  script: sudo wazuh-logtest -i /var/log/suricata/eve.json | grep -i 'prompt injection'
+  risk_level: low
+  bastion_prompt: siem VM에서 Wazuh 로그 테스트를 수행합니다.
+- order: 6
+  instruction: Web VM에서 ModSecurity 규칙을 추가해 프롬프트 주입을 차단하세요.
+  hint: modsecurity.conf에 정규식 차단 규칙 삽입
+  category: remediate
+  points: 15
+  answer: '프롬프트: sudo bash -c "echo ''SecRule REQUEST_BODY "(?i);\s*cat" "id:100001,phase:2,deny,log,msg:\''Prompt
+    injection attempt blocked\''''" >> /etc/modsecurity/modsecurity.conf"'
+  answer_detail: 규칙이 추가되고 ModSecurity 재시작이 필요합니다.
+  verify:
+    type: output_contains
+    expect: SecRule
+    field: stdout
+  target_vm: web
+  script: sudo bash -c "echo 'SecRule REQUEST_BODY "(?i);\s*cat" "id:100001,phase:2,deny,log,msg:\'Prompt
+    injection attempt blocked\''" >> /etc/modsecurity/modsecurity.conf"
+  risk_level: medium
+  bastion_prompt: web VM에서 ModSecurity 설정에 차단 규칙을 추가합니다.
+- order: 7
+  instruction: 다시 악의적인 프롬프트를 전송하여 차단 여부를 확인하세요.
+  hint: 같은 curl 명령 사용, 기대 출력에 오류 메시지 포함
+  category: detect
+  points: 10
+  answer: '프롬프트: curl -s -X POST -d ''{"prompt":"; cat /etc/passwd"}'' http://10.20.30.80:3000/api/prompt'
+  answer_detail: 응답에 'blocked' 혹은 'error' 메시지가 포함되어 파일 내용이 반환되지 않습니다.
+  verify:
+    type: output_contains
+    expect: blocked
+    field: stdout
+  target_vm: attacker
+  script: curl -s -X POST -d '{"prompt":"; cat /etc/passwd"}' http://10.20.30.80:3000/api/prompt
+  risk_level: low
+  bastion_prompt: attacker VM에서 동일한 악성 프롬프트를 재시도하여 차단을 확인합니다.

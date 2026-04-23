@@ -24,7 +24,7 @@
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -53,8 +53,6 @@
 | **CIS 벤치마크** | CIS Benchmark | 보안 설정 모범 사례 가이드 (Center for Internet Security) | 보안 설정 모범답안 |
 
 ---
-
-# Week 15: 기말고사 - 클라우드 보안 설계
 
 ## 시험 개요
 
@@ -207,39 +205,32 @@ resource "aws_security_group" "web" {
 ```
 
 ```bash
-# LLM으로 분석
-curl -s http://localhost:8003/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gemma3:12b",
-    "messages": [
-      {"role": "system", "content": "클라우드 보안 전문가입니다. IaC 코드의 보안 문제를 분석합니다."},
-      {"role": "user", "content": "[위 Terraform 코드 삽입] 이 코드의 모든 보안 문제를 찾고 수정된 코드를 제시해주세요."}
-    ]
-  }' | python3 -m json.tool
+# Bastion에게 위 Terraform 코드의 보안 문제 분석 요청
+# /ask : 단일 자연어 질의. Bastion이 스킬·자산 컨텍스트까지 참조해서 답을 조립한다.
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "다음 Terraform 코드에서 보안 문제를 모두 찾고 수정본을 제시해줘. 특히 0.0.0.0/0 egress, 22/tcp 인바운드 개방, 태그 누락을 중점 검토해줘: <위 Terraform 코드 붙여넣기>"}'
 ```
+
+**무엇이 오는가:** `{"answer": "..."}` JSON. Bastion이 CIS/CSPM 룰을 참조해
+(1) 0.0.0.0/0 SSH 인바운드 위험, (2) 제한 없는 egress, (3) 태그·KMS·VPC Flow Logs 부재 등을 항목별로 지적한다.
+OpenAI 호환 `/v1/chat/completions` 는 Bastion이 제공하지 않으므로 `/ask`·`/chat`만 사용한다.
 
 ### 3-2. 보안 이벤트 분석 (15점)
 
 ```bash
-# Wazuh 알림을 LLM으로 분석하여 인시던트 보고서 작성
-# siem 서버에서 최근 알림 수집 후 분석
+# Wazuh 알림을 Bastion에게 분석 요청하여 인시던트 보고서 초안 작성
+# /chat : NDJSON 스트림 대화. 보고서를 단계별로 다듬을 때 사용한다.
+curl -N -s -X POST http://10.20.30.200:8003/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "siem(10.20.30.100)의 최근 Wazuh alerts 상위 10건을 요약하고, MITRE ATT&CK 기준 인시던트 보고서(이벤트 요약/위협 평가/대응 권고/재발 방지)를 작성해줘"}'
 
-# Bastion로 자동화
-curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "name": "final-exam-monitoring",
-    "request_text": "보안 이벤트 수집 및 LLM 분석",
-    "master_mode": "external"
-  }'
-
-# LLM 분석 결과를 인시던트 보고서 형식으로 작성
-# - 이벤트 요약
-# - 위협 평가 (심각도, 영향 범위)
-# - 대응 권고사항
-# - 재발 방지 대책
+# Bastion이 /evidence 와 /assets 를 조합해 답한다.
+# 결과 보고서에는 반드시 다음이 포함되어야 한다:
+# - 이벤트 요약 (시각·자산·룰 ID)
+# - 위협 평가 (CVSS·영향 범위·ATT&CK 매핑)
+# - 대응 권고사항 (차단·격리·복구)
+# - 재발 방지 대책 (탐지 룰/IaC 수정/모니터링 보강)
 ```
 
 ---
@@ -354,29 +345,6 @@ ssh ccc@10.20.30.100 "
 | 4.6 | HEALTHCHECK | `docker inspect --format '{{.Config.Healthcheck}}' <컨테이너>` | 헬스체크 설정됨 |
 | 5.2 | network_mode | `docker inspect --format '{{.HostConfig.NetworkMode}}' <컨테이너>` | host가 아닌 것 |
 | 5.12 | --privileged | `docker inspect --format '{{.HostConfig.Privileged}}' <컨테이너>` | false |
-
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 내용을 점검한다. 이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** Docker 컨테이너와 VM의 핵심 차이는?
-- (a) 컨테이너가 더 안전  (b) **컨테이너는 호스트 커널을 공유, VM은 별도 커널**  (c) VM이 더 가벼움  (d) 차이 없음
-
-**Q2.** '--cap-drop ALL'의 의미는?
-- (a) 모든 파일 삭제  (b) **모든 Linux capability를 제거하여 권한 최소화**  (c) 네트워크 차단  (d) 로그 비활성화
-
-**Q3.** 컨테이너가 --privileged로 실행되면 위험한 이유는?
-- (a) 속도가 느려짐  (b) **호스트의 거의 모든 자원에 접근 가능 (탈출 가능)**  (c) 로그가 안 남음  (d) 이미지가 커짐
-
-**Q4.** Trivy의 역할은?
-- (a) 컨테이너 실행  (b) **컨테이너 이미지의 알려진 취약점(CVE) 스캐닝**  (c) 네트워크 설정  (d) 로그 수집
-
-**Q5.** Dockerfile에서 USER root가 위험한 이유는?
-- (a) 빌드가 느려짐  (b) **컨테이너 탈출 시 호스트 root 권한 획득 가능**  (c) 이미지가 커짐  (d) 네트워크 안 됨
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
 
 ---
 ---
