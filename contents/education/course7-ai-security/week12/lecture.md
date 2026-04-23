@@ -28,7 +28,7 @@
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -54,16 +54,6 @@
 | **Q-learning** | Q-learning | 보상을 기반으로 최적 행동을 학습하는 RL 알고리즘 | 시행착오로 최적 경로를 찾는 학습 |
 | **UCB1** | Upper Confidence Bound | 탐험(exploration)과 활용(exploitation)을 균형 잡는 전략 | "가본 길 vs 안 가본 길" 선택 전략 |
 | **SubAgent** | SubAgent | 대상 서버에서 명령을 실행하는 경량 런타임 | 현장 파견 직원 |
-
----
-
-# Week 12: Agent Daemon
-
-## 학습 목표
-- Agent Daemon의 3가지 모드(explore, daemon, stimulate)를 이해한다
-- 자율 보안 관제의 개념과 동작 원리를 설명할 수 있다
-- Daemon 모드의 지속적 모니터링 기능을 실습한다
-- Stimulate 모드로 능동적 보안 테스트를 수행할 수 있다
 
 ---
 
@@ -110,7 +100,7 @@ Agent Daemon은 SubAgent가 **백그라운드에서 지속적으로** 보안 관
 
 ```bash
 # LLM이 환경을 파악하기 위한 탐색 수행
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -122,27 +112,19 @@ curl -s http://localhost:8003/v1/chat/completions \
   }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
 ```
 
-### 2.2 Bastion로 Explore 실행
+### 2.2 Bastion에게 Explore 자연어 지시
 
-Bastion execute-plan으로 대상 서버의 시스템 정보(OS, 포트, 사용자, 서비스, 디스크)를 자동 수집한다. 수집된 데이터는 OODA Loop의 Observe 단계에 해당한다.
+자연어 한 번이면 Bastion이 시스템정보·포트·사용자·서비스·디스크 Skill 을 묶어 수행한다.
+결과는 `/evidence` 에 남아 이후 비교(baseline) 의 기준이 된다.
 
 ```bash
-# OODA Observe: 5가지 정보 수집 태스크 (uname, ss, passwd, systemctl, df)
-PID="프로젝트_ID"
+# OODA Observe 단계 — 한 번의 /ask 로 baseline 수집
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 자산의 시스템정보·listening ports·로컬사용자·실행중 서비스·디스크 사용량을 한 번에 수집해 baseline 로 기록해줘"}'
 
-curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "tasks": [
-      {"order":1, "instruction_prompt":"uname -a && cat /etc/os-release | head -5", "risk_level":"low"},
-      {"order":2, "instruction_prompt":"ss -tlnp", "risk_level":"low"},
-      {"order":3, "instruction_prompt":"cat /etc/passwd | wc -l && who", "risk_level":"low"},
-      {"order":4, "instruction_prompt":"systemctl list-units --type=service --state=running | head -20", "risk_level":"low"},
-      {"order":5, "instruction_prompt":"df -h && mount | grep -v cgroup | head -10", "risk_level":"low"}
-    ],
-    "subagent_url": "http://localhost:8002"
-  }' | python3 -m json.tool
+# 증거 조회 (baseline 보관용)
+curl -s "http://10.20.30.200:8003/evidence?asset=web&limit=10" | python3 -m json.tool
 ```
 
 ---
@@ -167,47 +149,40 @@ curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
 └── 설정 파일 변경 확인
 ```
 
-### 3.2 Daemon 루프 개념
+### 3.2 Daemon 루프 개념 — Bastion 자연어 + Ollama 결정
+
+실제 Bastion Daemon은 내부 구현이지만, 외부에서 동일 로직을 조합할 수 있다.
 
 ```python
-"""daemon_loop.py - 개념 코드 (실제 Bastion Daemon은 내부 구현)"""
-import time
-import requests
+"""daemon_loop.py — 개념 코드. 운영에서는 Bastion이 내부 데몬으로 수행."""
+import time, requests
 
-BASTION = "http://localhost:9100"
-API_KEY = "ccc-api-key-2026"
-HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
+BASTION = "http://10.20.30.200:8003"
+OLLAMA  = "http://10.20.30.200:11434/v1/chat/completions"
 
-def check_ports(pid):
-    """열린 포트 변화 감지"""
-    return requests.post(
-        f"{BASTION}/projects/{pid}/dispatch",
-        headers=HEADERS,
-        json={"command": "ss -tlnp", "subagent_url": "http://localhost:8002"}
-    ).json()
+def bastion_ask(message):
+    # Bastion은 자산 라우팅·Skill 선택·증거 기록까지 담당한다
+    return requests.post(f"{BASTION}/ask", json={"message": message}).json().get("answer","")
 
-def check_users(pid):
-    """로그인 사용자 변화 감지"""
-    return requests.post(
-        f"{BASTION}/projects/{pid}/dispatch",
-        headers=HEADERS,
-        json={"command": "who", "subagent_url": "http://localhost:8002"}
-    ).json()
+def check_ports():   return bastion_ask("web 자산의 현재 listening ports 만 수집해줘")
+def check_users():   return bastion_ask("web 자산의 현재 로그인 사용자(who) 만 수집해줘")
 
-def analyze_with_llm(data):
-    """LLM으로 이상 탐지"""
-    resp = requests.post(
-        "http://localhost:8003/v1/chat/completions",
-        json={
-            "model": "gemma3:12b",
-            "messages": [
-                {"role": "system", "content": "보안 관제 에이전트. 이상을 탐지하면 ALERT, 정상이면 OK를 응답."},
-                {"role": "user", "content": f"점검 결과:\n{data}\n\n이상 여부를 판단하세요."}
-            ],
-            "temperature": 0
-        }
-    )
-    return resp.json()["choices"][0]["message"]["content"]
+def classify(data):
+    # 원시 LLM에게 이상 여부 판단 요청 (결정론)
+    r = requests.post(OLLAMA, json={
+        "model": "gemma3:12b",
+        "messages": [
+            {"role": "system", "content": "보안 관제 에이전트. 이상이면 ALERT, 정상이면 OK 한 토큰만."},
+            {"role": "user",   "content": f"점검 결과:\n{data}\n\n이상 여부?"}
+        ],
+        "temperature": 0
+    })
+    return r.json()["choices"][0]["message"]["content"].strip()
+
+while True:
+    p = check_ports(); u = check_users()
+    print(classify(p + "\n" + u))
+    time.sleep(60)
 ```
 
 ### 3.3 변화 탐지 원리
@@ -237,16 +212,16 @@ def analyze_with_llm(data):
 ### 4.2 Stimulate 실행 예시
 
 ```bash
-# 안전한 stimulation: 존재하지 않는 사용자로 SSH 시도
-curl -s -X POST "http://localhost:9100/projects/$PID/dispatch" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "command": "ssh -o BatchMode=yes -o ConnectTimeout=3 testuser@localhost echo test 2>&1 || true",
-    "subagent_url": "http://localhost:8002"
-  }'
+# 안전한 stimulation: 존재하지 않는 사용자로 SSH 실패 이벤트 발생
+# Bastion 에게 명시적으로 "테스트 이벤트 생성"을 지시하면 Skill로 위임된다
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "STIMULATE: web 자산에서 존재하지 않는 사용자(testuser)로 SSH 1회 시도해 Wazuh SIEM 탐지 테스트 이벤트를 생성해줘. 실제 로그인은 실패해야 함"}'
 
-# 이후 Wazuh에서 알림이 발생하는지 확인
+# siem 자산에서 알림 확인
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "siem 자산의 /var/ossec/logs/alerts/alerts.json 최근 5건에서 rule.id 5710(Authentication failure) 관련 항목을 보여줘"}'
 ```
 
 ### 4.3 LLM으로 Stimulate 계획 수립
@@ -255,7 +230,7 @@ LLM에게 SIEM 탐지 능력 검증을 위한 안전한 stimulation 시나리오
 
 ```bash
 # LLM으로 SIEM 탐지 검증용 안전한 시나리오 5가지 자동 생성
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -271,70 +246,43 @@ curl -s http://localhost:8003/v1/chat/completions \
 
 ## 5. 실습
 
-### 실습 1: Explore 실행
+### 실습 1: Explore 기준선 수집
 
 ```bash
-# 프로젝트 생성
-PID=$(curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{"name":"daemon-lab","request_text":"Agent Daemon 실습","master_mode":"external"}' \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 자산의 listening ports, who/last -5, top 10 메모리 프로세스를 수집해 baseline 로 기록해줘"}'
 
-curl -s -X POST "http://localhost:9100/projects/$PID/plan" -H "X-API-Key: ccc-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:9100/projects/$PID/execute" -H "X-API-Key: ccc-api-key-2026" > /dev/null
-
-# Explore: 기준선 수집
-curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "tasks": [
-      {"order":1, "instruction_prompt":"ss -tlnp | grep LISTEN", "risk_level":"low"},
-      {"order":2, "instruction_prompt":"who 2>/dev/null; last -5", "risk_level":"low"},
-      {"order":3, "instruction_prompt":"ps aux --sort=-%mem | head -10", "risk_level":"low"}
-    ],
-    "subagent_url": "http://localhost:8002"
-  }' | python3 -m json.tool
+curl -s "http://10.20.30.200:8003/evidence?asset=web&limit=5" | python3 -m json.tool
 ```
 
-### 실습 2: Daemon 점검 시뮬레이션
+### 실습 2: Daemon 점검 반복 (변화 비교)
 
 ```bash
-# 30초 간격으로 2번 점검하여 변화 비교
-for i in 1 2; do
-  echo "=== 점검 $i ==="
-  curl -s -X POST "http://localhost:9100/projects/$PID/dispatch" \
-    -H "Content-Type: application/json" \
-    -H "X-API-Key: ccc-api-key-2026" \
-    -d '{"command":"ss -tlnp | grep LISTEN | md5sum","subagent_url":"http://localhost:8002"}' \
-    | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('result','')[:100])"
-  sleep 5
-done
+# 30초 간격 2회 점검 → 두 번째 호출에서 Bastion이 baseline과 자동 비교
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 자산의 현재 listening ports 를 baseline(실습1 결과)과 비교해 변화만 알려줘. 변화 없으면 OK 출력"}'
+
+sleep 30
+
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 자산의 현재 listening ports 를 baseline과 다시 비교해줘"}'
 ```
 
-### 실습 3: Stimulate + 탐지 확인
+### 실습 3: Stimulate + SIEM 탐지 확인
 
 ```bash
-# SSH 인증 실패 이벤트 생성
-curl -s -X POST "http://localhost:9100/projects/$PID/dispatch" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "command": "for i in 1 2 3; do ssh -o BatchMode=yes -o ConnectTimeout=1 -o StrictHostKeyChecking=no fakeuser@localhost 2>&1; done || true",
-    "subagent_url": "http://localhost:8002"
-  }' | python3 -m json.tool
+# 테스트 이벤트 생성
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "STIMULATE: web 자산에서 fakeuser로 SSH 3회 실패 이벤트 발생 (BatchMode, ConnectTimeout=1)"}'
 
-# 결과를 LLM으로 분석
-curl -s http://localhost:8003/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{
-    "model": "gemma3:12b",
-    "messages": [
-      {"role": "user", "content": "SSH 인증 실패 이벤트를 3회 생성했습니다. Wazuh SIEM에서 이를 탐지했다면 어떤 룰이 발동되었을까요? 예상 룰 ID와 설명을 알려주세요."}
-    ],
-    "temperature": 0.3
-  }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
+# SIEM 알림 확인 + LLM 해석 요청
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "siem 자산의 alerts.json 에서 방금 생성한 SSH 실패 이벤트에 매칭되는 Wazuh rule.id를 찾아주고, MITRE ATT&CK T1110(Brute Force)과의 연관성을 설명해줘"}'
 ```
 
 ---
@@ -377,9 +325,9 @@ curl -s http://localhost:8003/v1/chat/completions \
 
 ```bash
 # Ollama는 OpenAI 호환 API를 제공한다
-# URL: http://localhost:8003/v1/chat/completions
+# URL: http://10.20.30.200:11434/v1/chat/completions
 
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델
@@ -429,49 +377,16 @@ curl -s http://localhost:8003/v1/chat/completions \
 {"role":"system","content":"단계별로 분석하세요: 1)현상 파악 2)원인 추론 3)ATT&CK 매핑 4)대응 방안"}
 ```
 
-### Bastion API 핵심 흐름 요약
+### Bastion API 핵심 엔드포인트 요약
 
 ```
-[1] POST /projects                     → 프로젝트 생성
-    Body: {"name":"...", "master_mode":"external"}
-    Response: {"project":{"id":"prj_xxx"}}
-
-[2] POST /projects/{id}/plan           → plan 단계로 전환
-[3] POST /projects/{id}/execute        → execute 단계로 전환
-
-[4] POST /projects/{id}/execute-plan   → 태스크 실행
-    Body: {"tasks":[...], "parallel":true, "subagent_url":"..."}
-    Response: {"overall":"success", "tasks_ok":N}
-
-[5] GET /projects/{id}/evidence/summary → 증적 확인
-[6] GET /projects/{id}/replay           → 타임라인 재구성
-[7] POST /projects/{id}/completion-report → 완료 보고
-
-모든 API에 필수: -H "X-API-Key: ccc-api-key-2026"
+POST /ask       → 자연어 단일 질의 (동기 {"answer": "..."})
+POST /chat      → NDJSON 스트림 (think/tool/evidence/final)
+GET  /evidence  → 실행 증거 (자산·skill·exit·stdout_head·시각)
+GET  /skills    → Skill 목록
+GET  /playbooks → Playbook 목록
+GET  /assets    → 자산 인벤토리
 ```
-
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** Ollama API에서 temperature=0의 효과는?
-- (a) 최대 창의성  (b) **매번 동일한 출력 (결정론적)**  (c) 에러 발생  (d) 속도 향상
-
-**Q2.** Bastion execute-plan 실행 전 반드시 거쳐야 하는 단계는?
-- (a) 서버 재시작  (b) **plan → execute stage 전환**  (c) DB 백업  (d) 코드 컴파일
-
-**Q3.** RL에서 UCB1 탐색 전략의 핵심은?
-- (a) 항상 최고 보상 행동 선택  (b) **방문 횟수가 적은 행동을 우선 탐색**  (c) 무작위 선택  (d) 모든 행동 균등 선택
-
-**Q4.** Playbook이 LLM adhoc보다 재현성이 높은 이유는?
-- (a) LLM이 더 똑똑해서  (b) **파라미터가 결정론적으로 바인딩되어 동일 명령 생성**  (c) 네트워크가 빨라서  (d) DB가 달라서
-
-**Q5.** Bastion evidence가 제공하는 핵심 가치는?
-- (a) 실행 속도 향상  (b) **모든 실행의 자동 기록으로 감사 추적 가능**  (c) 메모리 절약  (d) 코드 자동 생성
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
 
 ---
 ---
@@ -487,7 +402,7 @@ curl -s http://localhost:8003/v1/chat/completions \
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
 
 **주요 경로·파일**
 
