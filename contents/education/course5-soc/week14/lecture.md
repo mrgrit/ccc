@@ -28,7 +28,7 @@
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -56,16 +56,6 @@
 | **TTP** | Tactics, Techniques, Procedures | 공격자의 전술·기법·절차 | 범인의 범행 수법 |
 | **위협 헌팅** | Threat Hunting | 탐지 룰에 걸리지 않는 위협을 능동적으로 찾는 활동 | 잠복 수사 |
 | **syslog** | syslog | 시스템 로그를 원격 전송하는 프로토콜 (UDP 514) | 모든 부서 보고서를 본사로 모으는 시스템 |
-
----
-
-# Week 14: 자동화 관제 - Bastion Agent Daemon
-
-## 학습 목표
-- AI 기반 자율 보안 관제의 개념을 이해한다
-- Bastion Agent Daemon의 explore/daemon/stimulate 기능을 사용한다
-- 자율 탐지 에이전트를 구성하고 자극 테스트를 수행한다
-- 자동화 관제의 장점과 한계를 분석한다
 
 ---
 
@@ -128,83 +118,21 @@
 > **실전 활용**: SOAR(Security Orchestration, Automation and Response)는 SOC 운영 효율화의 핵심 기술이다
 
 ```bash
-export BASTION_API_KEY=ccc-api-key-2026            # 환경 변수 설정
+# Bastion 자연어 지시로 secu/siem/web 관제 환경 전체 탐색
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "secu(10.20.30.1), siem(10.20.30.100), web(10.20.30.80) 세 서버에 각각 접속해서 다음 정보를 수집하고 표로 정리해줘: (1) hostname·커널·업타임, (2) 실행 중인 보안 서비스(suricata/wazuh/nftables/modsecurity), (3) 최근 로그 엔트리 수."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
 
-# 프로젝트 생성
-echo "=== Phase 1: 프로젝트 생성 ==="
-PROJECT=$(curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{"name":"soc-explore-demo","request_text":"보안 관제 환경 탐색","master_mode":"external"}')  # 요청 데이터(body)
-PROJECT_ID=$(echo "$PROJECT" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
-echo "Project ID: $PROJECT_ID"
-
-# Stage 전환
-curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/plan" \
-  -H "X-API-Key: $BASTION_API_KEY" > /dev/null         # API 인증 키
-curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute" \
-  -H "X-API-Key: $BASTION_API_KEY" > /dev/null         # API 인증 키
-echo "Stage: execute"
-```
-
-### 2.2 secu 서버 탐색
-
-Bastion Manager API를 호출하여 작업을 수행합니다.
-
-```bash
-export BASTION_API_KEY=ccc-api-key-2026            # 환경 변수 설정
-
-echo "=== secu 서버 탐색 ==="
-curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{                                                # 요청 데이터(body)
-    "tasks": [
-      {
-        "order": 1,
-        "instruction_prompt": "hostname && uname -a && echo --- && ss -tlnp | head -10 && echo --- && systemctl list-units --type=service --state=running | grep -E \"suricata|nftables|wazuh|ssh\"",
-        "risk_level": "low",
-        "subagent_url": "http://10.20.30.1:8002"
-      }
-    ],
-    "subagent_url": "http://10.20.30.1:8002"
-  }' | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-for r in data.get('results', []):                      # 반복문 시작
-    print(f'Task {r.get(\"order\",\"?\")}: {r.get(\"status\",\"?\")}')
-    output = r.get('output','')
-    print(output[:500] if output else '(출력 없음)')
-"
-```
-
-### 2.3 siem 서버 탐색
-
-Bastion Manager API를 호출하여 작업을 수행합니다.
-
-```bash
-export BASTION_API_KEY=ccc-api-key-2026            # 환경 변수 설정
-
-echo "=== siem 서버 탐색 ==="
-curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{                                                # 요청 데이터(body)
-    "tasks": [
-      {
-        "order": 1,
-        "instruction_prompt": "hostname && echo --- && systemctl status wazuh-manager 2>/dev/null | head -5 && echo --- && ls -la /var/ossec/logs/alerts/ 2>/dev/null | tail -5",
-        "risk_level": "low",
-        "subagent_url": "http://10.20.30.100:8002"
-      }
-    ],
-    "subagent_url": "http://10.20.30.100:8002"
-  }' | python3 -c "
-import json, sys
-data = json.load(sys.stdin)
-for r in data.get('results', []):                      # 반복문 시작
-    print(f'Task {r.get(\"order\",\"?\")}: {r.get(\"status\",\"?\")}')
-    print(r.get('output','')[:500])
+# 수행 이력 확인
+curl -s "http://10.20.30.200:8003/evidence?limit=10" | python3 -c "
+import sys, json
+for e in json.load(sys.stdin)[:10]:
+    msg = e.get('user_message','')[:60]
+    ok = '✓' if e.get('success') else '✗'
+    print(f'  {ok} {msg}')
 "
 ```
 
@@ -313,50 +241,13 @@ ENDSSH
 Bastion Manager API를 호출하여 작업을 수행합니다.
 
 ```bash
-export BASTION_API_KEY=ccc-api-key-2026            # 환경 변수 설정
-
-echo "=== 자극 테스트: 포트 스캔 ==="
-curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/dispatch" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{                                                # 요청 데이터(body)
-    "command": "for port in 22 80 443 3306 5432 8080; do timeout 1 bash -c \"echo > /dev/tcp/10.20.30.1/$port\" 2>/dev/null && echo \"Port $port: OPEN\" || echo \"Port $port: CLOSED\"; done",
-    "subagent_url": "http://10.20.30.80:8002"
-  }' | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('output','')[:300])"
-```
-
-### 4.2 SQL Injection 자극
-
-Bastion Manager API를 호출하여 작업을 수행합니다.
-
-```bash
-export BASTION_API_KEY=ccc-api-key-2026            # 환경 변수 설정
-
-echo "=== 자극: SQLi 시도 ==="
-curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/dispatch" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{                                                # 요청 데이터(body)
-    "command": "curl -s -o /dev/null -w \"%{http_code}\" \"http://localhost:3000/rest/products/search?q=test%27+OR+1=1--\" && echo \" (SQLi 전송)\"",
-    "subagent_url": "http://10.20.30.80:8002"
-  }' | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('output','')[:200])"
-```
-
-### 4.3 탐지 확인
-
-Bastion Manager API를 호출하여 작업을 수행합니다.
-
-```bash
-export BASTION_API_KEY=ccc-api-key-2026            # 환경 변수 설정
-
-echo "=== 탐지 확인: Suricata ==="
-curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/dispatch" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{                                                # 요청 데이터(body)
-    "command": "tail -10 /var/log/suricata/fast.log 2>/dev/null | grep -iE \"sql|scan|injection\" || echo \"관련 경보 없음\"",
-    "subagent_url": "http://10.20.30.1:8002"
-  }' | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('output','')[:300])"
+# Bastion에게 자극 테스트 + 탐지 확인 자연어 지시
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "자극 테스트를 수행해줘: (1) web(10.20.30.80)에서 secu(10.20.30.1)로 포트 22/80/443/3306/5432/8080 스캔, (2) web의 JuiceShop :3000 /rest/products/search에 test OR 1=1-- SQLi 전송, (3) 그 직후 secu의 /var/log/suricata/fast.log에서 관련 alert 발생 여부 확인. 전체 결과를 표로 정리해줘."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
 ```
 
 ---
@@ -512,30 +403,6 @@ ENDSSH
 > **핵심**: Dashboard의 실시간 모니터링은 SOC L1의 일상 업무이다.
 > 자동화 관제(Bastion Daemon)와 수동 관제(Dashboard)를 병행하는 것이 최적의 관제 모델이다.
 
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** SOC에서 False Positive(오탐)란?
-- (a) 공격을 정확히 탐지  (b) **정상 활동을 공격으로 잘못 탐지**  (c) 공격을 놓침  (d) 로그 미수집
-
-**Q2.** SIGMA 룰의 핵심 장점은?
-- (a) 특정 SIEM에서만 동작  (b) **SIEM 벤더에 독립적인 범용 포맷**  (c) 자동 차단 기능  (d) 로그 압축
-
-**Q3.** TTD(Time to Detect)를 줄이기 위한 방법은?
-- (a) 경보를 비활성화  (b) **실시간 경보 규칙 최적화 + 자동화**  (c) 분석 인력 감축  (d) 로그 보관 기간 단축
-
-**Q4.** 인시던트 대응 NIST 6단계에서 첫 번째는?
-- (a) 탐지(Detection)  (b) **준비(Preparation)**  (c) 격리(Containment)  (d) 근절(Eradication)
-
-**Q5.** Wazuh logtest의 용도는?
-- (a) 서버 성능 측정  (b) **탐지 룰을 실제 배포 전에 테스트**  (c) 네트워크 속도 측정  (d) 디스크 점검
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
-
----
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): Wazuh alerts.json/logtest/agent_control, SIGMA 룰, 경보 분석
