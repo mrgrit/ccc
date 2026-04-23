@@ -28,7 +28,7 @@
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -54,16 +54,6 @@
 | **Q-learning** | Q-learning | 보상을 기반으로 최적 행동을 학습하는 RL 알고리즘 | 시행착오로 최적 경로를 찾는 학습 |
 | **UCB1** | Upper Confidence Bound | 탐험(exploration)과 활용(exploitation)을 균형 잡는 전략 | "가본 길 vs 안 가본 길" 선택 전략 |
 | **SubAgent** | SubAgent | 대상 서버에서 명령을 실행하는 경량 런타임 | 현장 파견 직원 |
-
----
-
-# Week 11: 자율 미션
-
-## 학습 목표
-- 자율 미션(Autonomous Mission)의 개념을 이해한다
-- Red Team / Blue Team 자율 에이전트의 동작 원리를 익힌다
-- /a2a/mission API를 통한 자율 미션 실행을 실습한다
-- Purple Team 자동화의 보안적 가치를 설명할 수 있다
 
 ---
 
@@ -117,71 +107,75 @@ Blue Team: 공격 탐지 → 방어 강화
 
 ---
 
-## 3. /a2a/mission API
+## 3. 자율 미션을 Bastion에게 지시하기
 
-### 3.1 미션 실행
+Bastion은 `/ask`·`/chat` 을 통해 자연어 미션을 받는다. 복잡한 미션은 `/chat` NDJSON 스트림이
+더 적합하다 — 단계별 생각·Skill 호출·증거 수집 이벤트를 실시간으로 관찰할 수 있다.
 
-> **실습 목적**: 적대적 예제(Adversarial Example)와 데이터 오염(Data Poisoning)이 AI 모델에 미치는 영향을 체험하기 위해 수행한다
->
-> **배우는 것**: 미세한 입력 변조로 AI 분류 결과가 뒤바뀌는 원리와, 학습 데이터 오염이 모델 전체에 미치는 파급 효과를 이해한다
->
-> **결과 해석**: 원본 입력과 변조 입력의 분류 결과가 다르면 적대적 공격 성공이며, 변조 정도 대비 영향력으로 위험도를 판단한다
->
-> **실전 활용**: AI 모델 배포 전 적대적 강건성(robustness) 테스트, 학습 데이터 무결성 검증 프로세스 구축에 활용한다
+### 3.1 Red Team 자율 미션
 
 ```bash
-# Red Team 미션: web 서버 취약점 탐색
-curl -s -X POST "http://localhost:9100/projects/$PID/dispatch" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "command": "RED_MISSION: web 서버(10.20.30.80)의 열린 포트와 서비스를 탐색하고 보안 취약점을 식별하라",
-    "subagent_url": "http://10.20.30.1:8002"
-  }' | python3 -m json.tool
+# Red Team 공격 시뮬레이션 (교육/테스트 환경 전용)
+curl -N -s -X POST http://10.20.30.200:8003/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "RED_MISSION: web 자산(10.20.30.80)의 열린 포트·서비스·버전 헤더를 탐색하고 취약 가능성이 있는 지점을 보고서로 정리해줘. 실제 익스플로잇은 금지, 정보 수집·분석만."}'
 ```
 
-### 3.2 미션 구조
+Bastion이 내부에서 수행하는 것(예):
+- `network.scan_tcp{asset=web, ports=1-1024}`
+- `http.headers{asset=web, path=/}`
+- `service.fingerprint{asset=web, ports=[80,8000,8002]}`
+- `/evidence` 에 각 단계 저장, 최종 요약을 `answer`/`final` 이벤트로 반환
 
-SubAgent가 /a2a/mission 요청을 받으면:
+### 3.2 미션의 실행 흐름 (논리)
+
+`/chat` 스트림에서 관찰 가능한 이벤트 흐름:
 
 ```
-1. 미션 목표 파악 (LLM 추론)
-2. 실행 계획 수립 (어떤 명령을 실행할지)
-3. 명령 실행 (run_command 도구 호출)
-4. 결과 분석 (LLM이 결과 해석)
-5. 다음 행동 결정 (추가 탐색 또는 완료)
-6. 보고서 생성
+1. think   — 미션 목표를 Skill 조합으로 분해
+2. tool    — 첫 Skill 호출 (대상 자산의 SubAgent 경유)
+3. evidence — 결과가 /evidence 에 기록됨
+4. think   — 결과 해석, 다음 Skill 선택
+5. ... (반복)
+6. final   — 최종 보고서 (answer)
 ```
 
-### 3.3 Red Team 미션 예시
+### 3.3 Blue Team 자율 미션
 
 ```bash
-# 포트 스캔 → 서비스 식별 → 취약점 탐색
-curl -s http://localhost:8003/v1/chat/completions \
+# Blue Team은 의도적으로 다른 관점 — 탐지·방어
+curl -N -s -X POST http://10.20.30.200:8003/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "BLUE_MISSION: web 자산에서 방금 수집된 Red 결과에 대응해 방어 조치 후보를 제시하고, 저위험 조치(예: SSH 설정 교정·Apache 헤더 마스킹)는 자동 적용, 고위험(방화벽 규칙 추가)은 승인 요구만 해줘."}'
+```
+
+Bastion은 각 조치의 `risk` 를 보고 low/medium은 즉시 실행, high는 승인 이벤트를 발행한다.
+
+### 3.4 Red·Blue 모델 분리 — LLM 다각화
+
+원시 LLM 관점에서 Red/Blue에 **다른 모델을 쓰면** 독립성이 커진다. 이는 Ollama :11434 에서 직접 호출하는 구간에 쓸 수 있다:
+
+```bash
+# Red 관점: gemma3:12b
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
     "messages": [
-      {"role": "system", "content": "Red Team 보안 전문가입니다. 주어진 대상의 보안 취약점을 체계적으로 탐색합니다. 교육/테스트 환경에서만 수행합니다."},
-      {"role": "user", "content": "대상: web 서버 (10.20.30.80)\n\n다음 순서로 탐색 계획을 수립하세요:\n1. 포트 스캔 명령어\n2. 서비스 버전 확인 명령어\n3. 발견된 서비스별 취약점 확인 방법\n\n각 단계의 실행 명령어를 제시하세요."}
+      {"role": "system", "content": "Red Team 분석가. 교육/테스트 환경 전용."},
+      {"role": "user", "content": "web 서버(10.20.30.80)의 22/80/8000/8002 포트가 열려 있다. 공격 가능 경로 3개를 우선순위로 정리해줘."}
     ],
     "temperature": 0.3
   }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
-```
 
-### 3.4 Blue Team 미션 예시
-
-Red Team 발견사항을 Blue Team LLM(llama3.1)에게 전달하여 방어 명령어를 자동 생성시킨다. Red와 Blue에 다른 모델을 사용하여 독립적 관점을 확보한다.
-
-```bash
-# Blue Team 방어 분석: llama3.1:8b 모델 사용 (Red Team과 다른 모델)
-curl -s http://localhost:8003/v1/chat/completions \
+# Blue 관점: llama3.1:8b (모델 벤더를 분리해 편향 완화)
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
     "messages": [
-      {"role": "system", "content": "Blue Team 방어 전문가입니다. 시스템의 보안 상태를 점검하고 강화 방안을 제시합니다."},
-      {"role": "user", "content": "web 서버(10.20.30.80)에서 다음 Red Team 발견사항에 대한 방어 조치를 제시하세요:\n- SSH 포트(22) 외부 노출\n- 웹 서버 버전 헤더 노출\n- Docker 소켓 접근 가능\n\n각 취약점에 대한 구체적인 방어 명령어를 제시하세요."}
+      {"role": "system", "content": "Blue Team 방어 전문가."},
+      {"role": "user", "content": "web(10.20.30.80): SSH 22 외부노출, nginx 버전 헤더 노출, Docker 소켓 접근 가능 — 각 취약점에 대한 구체 방어 명령/설정을 제시."}
     ],
     "temperature": 0.3
   }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
@@ -191,116 +185,104 @@ curl -s http://localhost:8003/v1/chat/completions \
 
 ## 4. Purple Team 자동화
 
-### 4.1 Red → Blue 루프
+### 4.1 Red → Blue 루프 (Bastion 경유)
 
 ```bash
-# Step 1: Red Team이 취약점 발견
-RED_FINDING="SSH 포트(22)가 0.0.0.0에 바인딩되어 외부에서 접근 가능"
+# Step 1: Bastion에게 Red 관점 점검 요청 → 결과는 자동으로 /evidence 에 남는다
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 자산의 SSH·HTTP 노출 상태를 읽기 전용으로 확인해줘"}'
 
-# Step 2: Blue Team이 방어 조치 생성
-curl -s http://localhost:8003/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d "{
-    \"model\": \"llama3.1:8b\",
-    \"messages\": [
-      {\"role\": \"system\", \"content\": \"Blue Team입니다. Red Team 발견사항에 대한 방어 조치를 생성합니다.\"},
-      {\"role\": \"user\", \"content\": \"Red Team 발견: $RED_FINDING\\n\\n즉시 실행 가능한 방어 조치 명령어를 제시하세요.\"}
-    ],
-    \"temperature\": 0.3
-  }" | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
+# Step 2: 직전 증거를 근거로 Blue 관점 방어 제안
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "최근 /evidence 에 남은 web 점검 결과를 근거로 방어 조치(명령/설정)를 제시해줘. low는 실행 제안, high는 승인 요구로 분리"}'
 
-# Step 3: Bastion로 방어 조치 실행 (승인 후)
+# Step 3: 실행은 /chat 에서 승인 이벤트에 응답한 뒤 Bastion이 수행
 ```
 
-### 4.2 자동화 스크립트
+### 4.2 자동화 스크립트 — Ollama 직접 호출(편향 완화)
+
+Bastion을 경유하지 않고 Red/Blue 관점을 **서로 다른 모델**로 독립적으로 얻을 때 사용한다.
+실제 변경 적용은 여전히 Bastion을 통해야 한다(증거·승인 게이트 때문).
 
 ```python
 #!/usr/bin/env python3
-"""purple_team_auto.py - 자율 Purple Team 시뮬레이션"""
+"""purple_team_auto.py — Red/Blue 관점을 다른 모델로 분리 수집"""
 import requests
 
-OLLAMA = "http://localhost:8003/v1/chat/completions"
-BASTION = "http://localhost:9100"
-API_KEY = "ccc-api-key-2026"
-HEADERS = {"X-API-Key": API_KEY, "Content-Type": "application/json"}
+OLLAMA  = "http://10.20.30.200:11434/v1/chat/completions"
+BASTION = "http://10.20.30.200:8003"
 
-def red_team_scan(target):
-    """Red Team: 취약점 탐색"""
-    resp = requests.post(OLLAMA, json={
+def red_view(target):
+    r = requests.post(OLLAMA, json={
         "model": "gemma3:12b",
         "messages": [
-            {"role": "system", "content": "Red Team 전문가. 취약점을 JSON 리스트로 보고."},
-            {"role": "user", "content": f"대상 {target}의 일반적인 Linux 서버 취약점 3가지를 식별하세요."}
+            {"role": "system", "content": "Red Team 분석가. 교육/테스트 환경 전용. JSON 리스트로 보고."},
+            {"role": "user", "content": f"대상 {target}의 일반적 Linux 서버 공격 표면 3가지를 우선순위로 식별."}
         ],
         "temperature": 0.3
     })
-    return resp.json()["choices"][0]["message"]["content"]
+    return r.json()["choices"][0]["message"]["content"]
 
-def blue_team_defend(findings):
-    """Blue Team: 방어 조치 생성"""
-    resp = requests.post(OLLAMA, json={
+def blue_view(findings):
+    r = requests.post(OLLAMA, json={
         "model": "llama3.1:8b",
         "messages": [
-            {"role": "system", "content": "Blue Team 전문가. 각 취약점에 대한 방어 명령어를 제시."},
-            {"role": "user", "content": f"다음 취약점에 대한 방어 조치:\n{findings}"}
+            {"role": "system", "content": "Blue Team 방어 전문가. 각 항목에 구체 명령/설정 제시."},
+            {"role": "user", "content": f"다음 표면에 대한 방어 조치:\n{findings}"}
         ],
         "temperature": 0.3
     })
-    return resp.json()["choices"][0]["message"]["content"]
+    return r.json()["choices"][0]["message"]["content"]
 
-# 실행
-findings = red_team_scan("10.20.30.80")
-print("=== Red Team 발견 ===")
-print(findings)
-print("\n=== Blue Team 방어 ===")
-print(blue_team_defend(findings))
+def bastion_evidence(limit=5):
+    return requests.get(f"{BASTION}/evidence?limit={limit}").json()
+
+findings = red_view("10.20.30.80")
+print("=== Red 관점(gemma3:12b) ===\n", findings)
+print("\n=== Blue 관점(llama3.1:8b) ===\n", blue_view(findings))
+print("\n=== 최근 Bastion 증거 ===\n", bastion_evidence(5))
 ```
 
 ---
 
 ## 5. 실습
 
-### 실습 1: Red Team 미션 실행
+### 실습 1: Bastion에게 Red 미션을 자연어로 지시
 
 ```bash
-# 프로젝트 생성 및 준비
-PID=$(curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{"name":"purple-team-lab","request_text":"Purple Team 실습","master_mode":"external"}' \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+# 읽기 전용 Red 점검 — web 자산의 노출 표면 파악
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 자산의 listening ports, HTTP 서버 헤더, 로그인 가능한 로컬 사용자 목록을 읽기 전용으로 수집해줘"}'
 
-curl -s -X POST "http://localhost:9100/projects/$PID/plan" -H "X-API-Key: ccc-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:9100/projects/$PID/execute" -H "X-API-Key: ccc-api-key-2026" > /dev/null
-
-# Red Team: 정보 수집
-curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "tasks": [
-      {"order":1, "instruction_prompt":"ss -tlnp", "risk_level":"low"},
-      {"order":2, "instruction_prompt":"curl -sI http://10.20.30.80 | head -10", "risk_level":"low"},
-      {"order":3, "instruction_prompt":"cat /etc/passwd | grep -v nologin | grep -v false", "risk_level":"low"}
-    ],
-    "subagent_url": "http://localhost:8002"
-  }' | python3 -m json.tool
+# 방금 실행된 흐름을 증거로 확인
+curl -s "http://10.20.30.200:8003/evidence?asset=web&limit=10" | python3 -m json.tool
 ```
 
-### 실습 2: Red 결과를 LLM으로 분석
+### 실습 2: Red 결과를 Ollama에게 심화 분석 요청
 
 ```bash
-# 수집된 정보를 LLM에 전달하여 취약점 식별
-curl -s http://localhost:8003/v1/chat/completions \
+# 증거에서 원문 발췌 후 분석 (원시 LLM 직접 호출)
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
     "messages": [
-      {"role": "system", "content": "Red Team 분석가입니다. 수집된 정보에서 보안 취약점을 식별합니다."},
-      {"role": "user", "content": "다음은 대상 서버에서 수집한 정보입니다:\n\n1. 열린 포트: 22(SSH), 80(HTTP), 8000(API), 8002(SubAgent)\n2. HTTP 헤더: Server: nginx/1.24.0\n3. 셸 접근 가능 사용자: root, bastion, student\n\n보안 취약점과 공격 가능 경로를 분석하세요."}
+      {"role": "system", "content": "Red Team 분석가. 교육/테스트 환경 전용. 수집 정보에서 공격 경로·MITRE ATT&CK 매핑을 제시."},
+      {"role": "user", "content": "수집 결과(요약):\n- 열린 포트: 22/80/8000/8002\n- HTTP 헤더: Server: nginx/1.24.0\n- 로컬 사용자: root, bastion, student\n\n공격 가능 경로 3개를 우선순위로 정리하고 각각 ATT&CK 기법 ID를 붙여줘."}
     ],
     "temperature": 0.3
   }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
+```
+
+### 실습 3: Blue 대응을 Bastion에서 제안 → 저위험만 자동 적용
+
+```bash
+curl -N -s -X POST http://10.20.30.200:8003/chat \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "실습 1의 결과에 대응해 web 자산에 적용할 방어 조치를 제안해줘. low는 실행 제안, high/critical은 승인 요구만. 각 조치에 Skill 이름을 명시."}'
 ```
 
 ---
@@ -350,9 +332,9 @@ curl -s http://localhost:8003/v1/chat/completions \
 
 ```bash
 # Ollama는 OpenAI 호환 API를 제공한다
-# URL: http://localhost:8003/v1/chat/completions
+# URL: http://10.20.30.200:11434/v1/chat/completions
 
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델
@@ -402,49 +384,16 @@ curl -s http://localhost:8003/v1/chat/completions \
 {"role":"system","content":"단계별로 분석하세요: 1)현상 파악 2)원인 추론 3)ATT&CK 매핑 4)대응 방안"}
 ```
 
-### Bastion API 핵심 흐름 요약
+### Bastion API 핵심 엔드포인트 요약
 
 ```
-[1] POST /projects                     → 프로젝트 생성
-    Body: {"name":"...", "master_mode":"external"}
-    Response: {"project":{"id":"prj_xxx"}}
-
-[2] POST /projects/{id}/plan           → plan 단계로 전환
-[3] POST /projects/{id}/execute        → execute 단계로 전환
-
-[4] POST /projects/{id}/execute-plan   → 태스크 실행
-    Body: {"tasks":[...], "parallel":true, "subagent_url":"..."}
-    Response: {"overall":"success", "tasks_ok":N}
-
-[5] GET /projects/{id}/evidence/summary → 증적 확인
-[6] GET /projects/{id}/replay           → 타임라인 재구성
-[7] POST /projects/{id}/completion-report → 완료 보고
-
-모든 API에 필수: -H "X-API-Key: ccc-api-key-2026"
+POST /ask       → 단일 자연어 질의
+POST /chat      → NDJSON 스트림 대화 (think/tool/evidence/final 이벤트)
+GET  /evidence  → 실행 증거 (자산·skill·exit·시각)
+GET  /skills    → Skill 목록
+GET  /playbooks → Playbook 목록
+GET  /assets    → 자산 인벤토리
 ```
-
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** Ollama API에서 temperature=0의 효과는?
-- (a) 최대 창의성  (b) **매번 동일한 출력 (결정론적)**  (c) 에러 발생  (d) 속도 향상
-
-**Q2.** Bastion execute-plan 실행 전 반드시 거쳐야 하는 단계는?
-- (a) 서버 재시작  (b) **plan → execute stage 전환**  (c) DB 백업  (d) 코드 컴파일
-
-**Q3.** RL에서 UCB1 탐색 전략의 핵심은?
-- (a) 항상 최고 보상 행동 선택  (b) **방문 횟수가 적은 행동을 우선 탐색**  (c) 무작위 선택  (d) 모든 행동 균등 선택
-
-**Q4.** Playbook이 LLM adhoc보다 재현성이 높은 이유는?
-- (a) LLM이 더 똑똑해서  (b) **파라미터가 결정론적으로 바인딩되어 동일 명령 생성**  (c) 네트워크가 빨라서  (d) DB가 달라서
-
-**Q5.** Bastion evidence가 제공하는 핵심 가치는?
-- (a) 실행 속도 향상  (b) **모든 실행의 자동 기록으로 감사 추적 가능**  (c) 메모리 절약  (d) 코드 자동 생성
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
 
 ---
 ---
@@ -460,7 +409,7 @@ curl -s http://localhost:8003/v1/chat/completions \
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
 
 **주요 경로·파일**
 
