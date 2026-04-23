@@ -285,7 +285,7 @@ CLAUDE.md가 있을 때와 없을 때 LLM 응답을 비교한다.
 import requests
 import json
 
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # CLAUDE.md 읽기
@@ -696,7 +696,7 @@ Claude Code(LLM 판단) + Bastion(분산 실행)을 결합한다.
 import requests
 import json
 
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 BASTION = "http://localhost:9100"
 HEADERS = {"X-API-Key": "ccc-api-key-2026", "Content-Type": "application/json"}
@@ -852,39 +852,7 @@ fi
 
 ---
 
-## Part 6: 퀴즈 + 과제 (15분)
-
-### 복습 퀴즈
-
-**Q1. CLAUDE.md의 주요 역할은?**
-- (A) LLM 모델을 학습시킨다
-- **(B) 프로젝트 규칙과 컨텍스트를 AI에게 제공한다** ✅
-- (C) 데이터베이스 스키마를 정의한다
-- (D) MCP 서버를 실행한다
-
-**Q2. MCP 프로토콜의 역할은?**
-- (A) 데이터베이스 통신
-- (B) 파일 암호화
-- **(C) LLM에 외부 도구와 데이터를 연결** ✅
-- (D) 네트워크 패킷 분석
-
-**Q3. PreToolUse Hook의 실행 시점은?**
-- **(A) 도구 실행 전** ✅
-- (B) 도구 실행 후
-- (C) 프로젝트 생성 시
-- (D) LLM 응답 생성 시
-
-**Q4. 하이브리드 구성에서 Claude Code와 Bastion의 역할 분담으로 올바른 것은?**
-- (A) Claude Code가 명령 실행, Bastion가 분석
-- **(B) Claude Code가 판단/분석, Bastion가 분산 실행** ✅
-- (C) Claude Code가 DB 관리, Bastion가 LLM 실행
-- (D) 두 시스템 모두 동일한 역할
-
-**Q5. settings.json의 permissions.deny에 등록된 명령의 동작은?**
-- (A) 경고 후 실행
-- (B) 로그만 기록
-- **(C) 실행이 차단된다** ✅
-- (D) 자동으로 대체 명령이 실행된다
+## Part 6: 과제 (15분)
 
 ### 과제
 
@@ -918,7 +886,7 @@ fi
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
 
 **주요 경로·파일**
 

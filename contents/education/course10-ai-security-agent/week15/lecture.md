@@ -166,7 +166,7 @@ import time
 import requests
 import psycopg2
 
-OLLAMA_URL = "http://localhost:8003"
+OLLAMA_URL = "http://10.20.30.200:11434"
 MANAGER_URL = "http://localhost:9100"
 API_KEY = "ccc-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
@@ -606,7 +606,7 @@ curl -s -o /dev/null -w "%{http_code}" -H "X-API-Key: $BASTION_API_KEY" \
 
 # 2. Ollama LLM 상태
 echo -n "Ollama LLM: "
-curl -s -o /dev/null -w "%{http_code}" http://localhost:8003/api/tags 2>/dev/null || echo "FAIL"
+curl -s -o /dev/null -w "%{http_code}" http://10.20.30.200:11434/api/tags 2>/dev/null || echo "FAIL"
 
 # 3. SubAgent 상태 확인
 for AGENT_URL in "http://localhost:8002" "http://10.20.30.1:8002" "http://10.20.30.80:8002" "http://10.20.30.100:8002"; do
@@ -754,7 +754,7 @@ curl -s -o /dev/null -w "%{http_code}" http://10.20.30.80:3000/ 2>/dev/null || e
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

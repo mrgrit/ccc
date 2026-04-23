@@ -471,7 +471,7 @@ import json
 import requests
 import psycopg2
 
-OLLAMA_URL = "http://localhost:8003"
+OLLAMA_URL = "http://10.20.30.200:11434"
 DB_CONFIG = {
     "host": "127.0.0.1",
     "port": 5432,
@@ -833,7 +833,7 @@ if __name__ == "__main__":
 
 ---
 
-## Part 6: 종합 실습 + 퀴즈 (2:40-3:00)
+## Part 6: 종합 실습 (2:40-3:00)
 
 ### 6.1 종합 과제
 
@@ -844,24 +844,6 @@ if __name__ == "__main__":
 3. 검색 결과를 LLM 프롬프트에 삽입하여 대응 방안을 생성
 4. 생성된 대응 방안을 Experience로 저장하고 승급
 
-### 6.2 퀴즈
-
-**Q1.** RAG의 3단계(Retrieve-Augment-Generate)를 각각 설명하고, 보안 에이전트에서 각 단계의 역할을 서술하시오.
-
-**Q2.** 벡터 DB와 FTS 기반 검색의 차이점을 비교하고, Bastion가 FTS를 선택한 이유를 설명하시오.
-
-**Q3.** Experience의 raw → verified → promoted 승급 과정에서 각 단계의 의미와 전환 조건을 설명하시오.
-
-**Q4.** RAG를 사용하지 않고 LLM만으로 보안 분석을 수행할 때의 문제점 3가지를 나열하시오.
-
-**Q5.** 다음 FTS 쿼리의 의미를 설명하시오:
-```sql
-SELECT title FROM security_knowledge
-WHERE search_vector @@ to_tsquery('simple', 'ssh & brute & force')
-ORDER BY ts_rank(search_vector, to_tsquery('simple', 'ssh & brute & force')) DESC
-LIMIT 3;
-```
-
 ---
 
 ## 📂 실습 참조 파일 가이드
@@ -871,7 +853,7 @@ LIMIT 3;
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

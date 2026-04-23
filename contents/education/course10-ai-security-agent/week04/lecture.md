@@ -174,7 +174,7 @@ import subprocess
 import datetime
 import os
 
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # ============================================================
@@ -780,39 +780,7 @@ python3 ~/lab/week04/harness_comparison.py
 
 ---
 
-## Part 6: 퀴즈 + 과제 (15분)
-
-### 복습 퀴즈
-
-**Q1. 에이전트 하네스의 주요 역할이 아닌 것은?**
-- (A) 도구 연결
-- (B) 실행 제어
-- **(C) LLM 모델 학습** ✅
-- (D) 안전 장치
-
-**Q2. Bastion는 어떤 유형의 하네스인가?**
-- (A) Client-side 하네스
-- **(B) Server-side 하네스** ✅
-- (C) Hybrid 하네스
-- (D) Standalone 하네스
-
-**Q3. 하네스의 7대 구성요소에 포함되지 않는 것은?**
-- (A) Tools
-- (B) Skills
-- (C) Permissions
-- **(D) Database** ✅
-
-**Q4. Bastion에서 critical risk_level 태스크의 기본 동작은?**
-- (A) 즉시 실행된다
-- **(B) dry_run이 자동 강제된다** ✅
-- (C) 거부된다
-- (D) 관리자에게 이메일이 발송된다
-
-**Q5. CLAUDE.md의 역할로 가장 적절한 것은?**
-- (A) LLM 모델의 가중치를 저장한다
-- (B) 데이터베이스 스키마를 정의한다
-- **(C) 에이전트의 프로젝트 규칙과 컨텍스트를 정의한다** ✅
-- (D) 사용자 인증 정보를 저장한다
+## Part 6: 과제 (15분)
 
 ### 과제
 
@@ -842,7 +810,7 @@ python3 ~/lab/week04/harness_comparison.py
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
 
 **주요 경로·파일**
 

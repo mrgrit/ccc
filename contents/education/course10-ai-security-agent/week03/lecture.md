@@ -178,7 +178,7 @@ MITRE ATT&CK 프레임워크 기준으로 경보를 분류한다.
 mkdir -p ~/lab/week03
 
 # 원칙 1+2 적용: 구조화된 보안 분석 프롬프트
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -220,7 +220,7 @@ Week 03 실습: Few-Shot 프롬프트로 경보 분석
 import requests
 import json
 
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # Few-Shot 예시가 포함된 system 프롬프트
@@ -291,7 +291,7 @@ Week 03 실습: 제약 조건 + Chain-of-Thought 프롬프트
 import requests
 import json
 
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 제약 조건 + CoT 프롬프트
@@ -437,7 +437,7 @@ Week 03 실습: Wazuh 경보 자동 분석 에이전트
 import requests
 import json
 
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 5원칙 통합 프롬프트
@@ -562,7 +562,7 @@ Week 03 실습: 프롬프트 주입 공격과 방어
 import requests
 import json
 
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 방어 없는 프롬프트
@@ -640,7 +640,7 @@ Week 03 실습: 보안 프롬프트 템플릿 라이브러리
 import requests
 import json
 
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 프롬프트 템플릿 라이브러리
@@ -730,39 +730,7 @@ python3 ~/lab/week03/prompt_templates.py
 
 ---
 
-## Part 6: 퀴즈 + 과제 (15분)
-
-### 복습 퀴즈
-
-**Q1. 프롬프트 설계 5원칙에 포함되지 않는 것은?**
-- (A) 역할 부여
-- (B) 구조화 출력
-- **(C) 모델 파인튜닝** ✅
-- (D) Chain-of-Thought
-
-**Q2. Few-Shot 프롬프트의 주요 목적은?**
-- (A) LLM의 학습 데이터를 변경한다
-- **(B) 예시를 통해 원하는 응답 패턴을 유도한다** ✅
-- (C) 토큰 사용량을 줄인다
-- (D) 프롬프트 주입을 방어한다
-
-**Q3. 프롬프트 주입 방어에 효과적인 기법이 아닌 것은?**
-- (A) 데이터 구분자(delimiter) 사용
-- (B) 출력 JSON 스키마 검증
-- (C) 명령어 화이트리스트
-- **(D) temperature를 높게 설정** ✅
-
-**Q4. Chain-of-Thought(CoT) 기법의 장점은?**
-- (A) 응답 속도가 빨라진다
-- **(B) 추론 과정을 확인할 수 있어 결과를 검증하기 쉽다** ✅
-- (C) 토큰 사용량이 줄어든다
-- (D) 프롬프트 주입을 완벽히 방어한다
-
-**Q5. 보안 에이전트에서 구조화 출력(JSON)을 사용하는 이유로 가장 적절한 것은?**
-- (A) LLM이 JSON만 이해할 수 있어서
-- (B) 응답이 짧아져서
-- **(C) 후속 자동화 처리와 데이터 파싱이 용이하여** ✅
-- (D) 보안 규정에서 JSON을 요구하여
+## Part 6: 과제 (15분)
 
 ### 과제
 

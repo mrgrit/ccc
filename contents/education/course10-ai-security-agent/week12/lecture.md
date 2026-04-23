@@ -474,7 +474,7 @@ import json
 import time
 import requests
 
-OLLAMA_URL = "http://localhost:8003"
+OLLAMA_URL = "http://10.20.30.200:11434"
 MANAGER_URL = "http://localhost:9100"
 API_KEY = "ccc-api-key-2026"
 HEADERS = {"Content-Type": "application/json", "X-API-Key": API_KEY}
@@ -844,7 +844,7 @@ if __name__ == "__main__":
 
 ---
 
-## Part 6: 종합 실습 + 퀴즈 (2:40-3:00)
+## Part 6: 종합 실습 (2:40-3:00)
 
 ### 6.1 종합 과제
 
@@ -856,18 +856,6 @@ if __name__ == "__main__":
 4. Bastion PoW 리더보드와 결합하여 종합 리포트 생성
 5. 결과를 completion-report로 기록
 
-### 6.2 퀴즈
-
-**Q1.** 정밀도(Precision)가 낮고 재현율(Recall)이 높은 보안 에이전트의 실무적 문제점을 설명하시오.
-
-**Q2.** Bastion의 PoW 리더보드가 에이전트 평가에 활용될 수 있는 이유를 3가지 서술하시오.
-
-**Q3.** A/B 테스트에서 통제 변인(temperature 등)을 하나만 변경해야 하는 이유를 설명하시오.
-
-**Q4.** RL의 Q-learning에서 epsilon-greedy 전략의 역할을 설명하고, epsilon이 0.3에서 0.05로 감소하는 것의 의미를 서술하시오.
-
-**Q5.** MTTR(Mean Time To Respond)이 5분인 에이전트와 30분인 에이전트가 있을 때, 단순히 MTTR만으로 우열을 판단할 수 없는 이유를 설명하시오.
-
 ---
 
 ## 📂 실습 참조 파일 가이드
@@ -877,7 +865,7 @@ if __name__ == "__main__":
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

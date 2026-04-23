@@ -670,39 +670,7 @@ python3 ~/lab/week06/rl_training_loop.py
 
 ---
 
-## Part 6: 퀴즈 + 과제 (15분)
-
-### 복습 퀴즈
-
-**Q1. Playbook의 장점이 아닌 것은?**
-- (A) 재현성이 높다
-- (B) 감사 추적이 용이하다
-- **(C) 새로운 상황에 자동 적응한다** ✅
-- (D) 절차가 표준화된다
-
-**Q2. PoW 블록에서 이전 블록의 해시를 참조하는 이유는?**
-- (A) 저장 공간을 절약하기 위해
-- **(B) 체인 변조를 탐지하기 위해** ✅
-- (C) 실행 속도를 높이기 위해
-- (D) 에이전트를 식별하기 위해
-
-**Q3. Q-learning에서 Q(s,a)가 의미하는 것은?**
-- (A) 질문(Question)의 품질
-- **(B) 상태 s에서 행동 a를 선택했을 때의 기대 가치** ✅
-- (C) 쿼리(Query) 처리 시간
-- (D) 큐(Queue)의 길이
-
-**Q4. execute-plan 호출 전 반드시 수행해야 하는 것은?**
-- (A) LLM 모델 다운로드
-- (B) SubAgent 재시작
-- **(C) /plan → /execute stage 전환** ✅
-- (D) RL 학습 실행
-
-**Q5. risk_level=critical 태스크의 기본 동작은?**
-- (A) 바로 실행된다
-- (B) 거부된다
-- **(C) dry_run이 자동 강제된다** ✅
-- (D) 이메일 알림이 발송된다
+## Part 6: 과제 (15분)
 
 ### 과제
 
@@ -736,7 +704,7 @@ python3 ~/lab/week06/rl_training_loop.py
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
 
 **주요 경로·파일**
 

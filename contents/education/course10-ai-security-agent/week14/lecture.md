@@ -388,7 +388,7 @@ curl -s -X POST "http://localhost:9100/projects/${PB_PID}/execute-plan" \
 
 ```bash
 # Red Agent LLM이 스캔 결과를 기반으로 공격 전략 수립
-curl -s http://localhost:8003/api/chat \
+curl -s http://10.20.30.200:11434/api/chat \
   -d '{
     "model": "gemma3:12b",
     "messages": [
@@ -419,7 +419,7 @@ print(resp['message']['content'][:2000])
 import json
 import requests
 
-OLLAMA_URL = "http://localhost:8003"
+OLLAMA_URL = "http://10.20.30.200:11434"
 
 class AttackStrategist:
     """스캔 결과를 분석하여 공격 전략을 수립한다."""
@@ -796,7 +796,7 @@ curl -s -X POST "http://localhost:9100/projects/${PA_PID}/dispatch" \
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

@@ -240,7 +240,7 @@ curl -s -X POST "http://localhost:9100/projects/${PROJECT_ID}/execute-plan" \
 
 ```bash
 # Red Agent가 LLM을 사용해 공격 계획을 수립
-curl -s http://localhost:8003/api/chat \
+curl -s http://10.20.30.200:11434/api/chat \
   -d '{
     "model": "gemma3:12b",
     "messages": [
@@ -422,7 +422,7 @@ curl -s -X POST "http://localhost:9100/projects/${RED_PID}/dispatch" \
 
 ```bash
 # Blue Agent가 Red Agent의 발견 내용을 LLM에게 전달하여 대응 방안 수립
-curl -s http://localhost:8003/api/chat \
+curl -s http://10.20.30.200:11434/api/chat \
   -d '{
     "model": "llama3.1:8b",
     "messages": [
@@ -455,7 +455,7 @@ import requests
 
 MANAGER_URL = "http://localhost:9100"
 API_KEY = "ccc-api-key-2026"
-OLLAMA_URL = "http://localhost:8003"
+OLLAMA_URL = "http://10.20.30.200:11434"
 HEADERS = {
     "Content-Type": "application/json",
     "X-API-Key": API_KEY,
@@ -733,7 +733,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ---
 
-## Part 6: 종합 실습 + 퀴즈 (2:40-3:00)
+## Part 6: 종합 실습 (2:40-3:00)
 
 ### 6.1 종합 과제
 
@@ -745,28 +745,6 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 4. Blue Agent가 secu 서버에서 방어 상태 확인
 5. 전체 결과를 evidence로 수집하고 completion-report 생성
 
-### 6.2 퀴즈
-
-**Q1.** Fan-out과 Fan-in 패턴을 설명하고, Bastion에서 어떻게 구현되는지 서술하시오.
-
-**Q2.** Red Agent와 Blue Agent의 역할 차이를 설명하고, 동시에 운영할 때의 이점 3가지를 나열하시오.
-
-**Q3.** 다음 execute-plan 요청에서 각 태스크가 어떤 서버에서 실행되는지 분석하시오:
-```json
-{
-  "tasks": [
-    {"order":1, "instruction_prompt":"nft list ruleset", "subagent_url":"http://10.20.30.1:8002"},
-    {"order":2, "instruction_prompt":"curl localhost:3000", "subagent_url":"http://10.20.30.80:8002"},
-    {"order":3, "instruction_prompt":"df -h"}
-  ],
-  "subagent_url": "http://localhost:8002"
-}
-```
-
-**Q4.** LangGraph 상태기계에서 conditional edge의 역할을 설명하고, 보안 에이전트에서의 활용 사례를 2가지 제시하시오.
-
-**Q5.** agent_id가 서버별로 고유해야 하는 이유를 PoW 체인 관점에서 설명하시오.
-
 ---
 
 ## 📂 실습 참조 파일 가이드
@@ -776,7 +754,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

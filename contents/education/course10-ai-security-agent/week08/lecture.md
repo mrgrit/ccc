@@ -146,7 +146,7 @@ fi
 
 # 3. Ollama
 echo ""
-MODELS=$(curl -s http://localhost:8003/api/tags 2>/dev/null | \
+MODELS=$(curl -s http://10.20.30.200:11434/api/tags 2>/dev/null | \
   python3 -c "import sys,json; [print(f'  - {m[\"name\"]}') for m in json.load(sys.stdin).get('models',[])]" 2>/dev/null)
 if [ -n "$MODELS" ]; then
     echo "  Ollama — OK"
@@ -191,10 +191,10 @@ import requests
 import json
 import time
 
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 
 # 모델 목록 가져오기
-models_resp = requests.get("http://localhost:8003/api/tags", timeout=10)
+models_resp = requests.get("http://10.20.30.200:11434/api/tags", timeout=10)
 available_models = [m["name"] for m in models_resp.json().get("models", [])]
 
 # 테스트할 모델 (사용 가능한 것만)
@@ -428,7 +428,7 @@ import datetime
 # ============================================================
 # 설정
 # ============================================================
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"  # 모델 선택 결과에 따라 변경
 BASTION = "http://localhost:9100"
 API_KEY = "ccc-api-key-2026"
@@ -764,7 +764,7 @@ LLM을 사용하여 종합 분석을 추가한다.
 import requests
 import json
 
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 분석 결과 로드
@@ -958,38 +958,6 @@ python3 ~/lab/week08/grading.py
 | 보고서 | 경영진이 읽을 수 있는 수준인가? |
 | 창의성 | 독자적인 점검 항목이나 분석 관점이 있는가? |
 
-### 복습 퀴즈
-
-**Q1. 보안 에이전트의 Perceive-Decide-Act 루프에서 Bastion가 주로 담당하는 단계는?**
-- (A) Perceive
-- (B) Decide
-- **(C) Act (execute-plan으로 명령 실행)** ✅
-- (D) 모든 단계
-
-**Q2. 프롬프트에 Few-Shot 예시를 포함하는 주요 이유는?**
-- (A) 토큰 사용량을 줄이기 위해
-- **(B) LLM이 원하는 형식과 패턴으로 응답하도록 유도** ✅
-- (C) LLM의 학습 데이터를 변경하기 위해
-- (D) 보안 취약점을 방지하기 위해
-
-**Q3. execute-plan에서 risk_level=critical Task의 실행을 위해 필요한 것은?**
-- (A) 별도의 인증 토큰
-- **(B) "confirmed": true 옵션 추가** ✅
-- (C) 관리자 이메일 승인
-- (D) 자동으로 실행됨
-
-**Q4. PoW 체인의 무결성을 검증하는 API는?**
-- (A) /pow/blocks
-- **(B) /pow/verify** ✅
-- (C) /pow/leaderboard
-- (D) /projects/{id}/replay
-
-**Q5. 하이브리드 구성(Claude Code + Bastion)의 장점이 아닌 것은?**
-- (A) 대화형 분석과 분산 실행을 결합할 수 있다
-- (B) Claude Code로 유연한 탐색, Bastion로 증적 관리
-- **(C) 인터넷 연결 없이도 동작한다** ✅
-- (D) 여러 서버에 동시에 명령을 실행할 수 있다
-
 ### 최종 과제
 
 이번 주차의 최종 과제는 **실습 자체**이다. 채점 스크립트(`grading.py`)를 실행하여 자신의 점수를 확인하라.
@@ -1021,7 +989,7 @@ python3 ~/lab/week08/grading.py
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
 
 **주요 경로·파일**
 

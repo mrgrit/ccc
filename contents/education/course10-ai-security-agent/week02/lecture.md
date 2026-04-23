@@ -203,7 +203,7 @@ LLM은 텍스트만 생성한다. 하지만 Tool Calling을 사용하면 LLM이 
 mkdir -p ~/lab/week02
 
 # 가장 기본적인 API 호출
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -226,7 +226,7 @@ print(resp['choices'][0]['message']['content'][:500])
 
 ```bash
 # 역할 없이 질문
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -237,7 +237,7 @@ curl -s http://localhost:8003/v1/chat/completions \
   }' | python3 -c "import sys,json; print('역할없음:', json.load(sys.stdin)['choices'][0]['message']['content'][:300])"
 
 # 보안 관리자 역할 부여
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -261,7 +261,7 @@ import requests
 import json
 import time
 
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 QUESTION = "리눅스 서버가 해킹당했을 때 첫 번째로 해야 할 일은?"
@@ -322,7 +322,7 @@ python3 ~/lab/week02/param_experiment.py
 
 ```bash
 # 스트리밍 모드: 토큰이 실시간으로 출력됨
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -364,7 +364,7 @@ import requests
 import json
 import subprocess
 
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 사용 가능한 도구 정의
@@ -525,7 +525,7 @@ import json
 import subprocess
 import re
 
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 도구 설명을 프롬프트에 포함
@@ -648,7 +648,7 @@ import requests
 import json
 import subprocess
 
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 보안 전용 도구 정의
@@ -828,39 +828,7 @@ curl -s -X POST http://localhost:9100/projects/${PROJECT_ID}/dispatch \
 
 ---
 
-## Part 6: 퀴즈 + 과제 (15분)
-
-### 복습 퀴즈
-
-**Q1. OpenAI-호환 Chat Completions API에서 메시지 역할이 아닌 것은?**
-- (A) system
-- (B) user
-- (C) assistant
-- **(D) admin** ✅
-
-**Q2. temperature=0으로 설정했을 때의 특징은?**
-- **(A) 동일한 입력에 항상 같은 출력을 생성한다** ✅
-- (B) LLM이 응답을 거부한다
-- (C) 가장 창의적인 응답을 생성한다
-- (D) 토큰 사용량이 줄어든다
-
-**Q3. Tool Calling에서 LLM이 생성하는 것은?**
-- (A) 도구의 실행 결과
-- **(B) 호출할 도구 이름과 인자** ✅
-- (C) 도구의 소스 코드
-- (D) 도구의 에러 로그
-
-**Q4. Tool Calling 메시지 흐름의 올바른 순서는?**
-- (A) user → tool → assistant → LLM
-- **(B) user+tools → assistant(tool_calls) → tool(result) → assistant(answer)** ✅
-- (C) system → tool → user → assistant
-- (D) assistant → tool → user → system
-
-**Q5. 보안 에이전트에서 temperature를 낮게 설정하는 이유는?**
-- (A) 응답 속도를 높이기 위해
-- (B) 토큰 비용을 절감하기 위해
-- **(C) 일관되고 정확한 판단을 위해** ✅
-- (D) 창의적인 공격 방법을 찾기 위해
+## Part 6: 과제 (15분)
 
 ### 과제
 

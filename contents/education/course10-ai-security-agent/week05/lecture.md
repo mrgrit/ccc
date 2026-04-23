@@ -286,7 +286,7 @@ else
     echo "DOWN"
 fi
 
-HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:8003/api/tags 2>/dev/null)
+HEALTH=$(curl -s -o /dev/null -w "%{http_code}" http://10.20.30.200:11434/api/tags 2>/dev/null)
 if [ "$HEALTH" = "200" ]; then
     echo "OK (port 11434)"
 else
@@ -421,7 +421,7 @@ LLM이 계획을 세우고, 프로그램이 execute-plan으로 실행한다.
 import requests
 import json
 
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 BASTION = "http://localhost:9100"
 API_KEY = "ccc-api-key-2026"
@@ -638,7 +638,7 @@ Week 05 실습: 점검 결과를 LLM으로 분석
 import requests
 import json
 
-OLLAMA_URL = "http://localhost:8003/v1/chat/completions"
+OLLAMA_URL = "http://10.20.30.200:11434/v1/chat/completions"
 MODEL = "llama3.1:8b"
 
 # 점검 결과 로드
@@ -689,39 +689,7 @@ python3 ~/lab/week05/analyze_results.py
 
 ---
 
-## Part 6: 퀴즈 + 과제 (15분)
-
-### 복습 퀴즈
-
-**Q1. Bastion의 Native Mode와 External Mode의 가장 큰 차이는?**
-- (A) 사용하는 데이터베이스가 다르다
-- **(B) LLM이 자율 계획·실행하느냐, 외부에서 API로 제어하느냐의 차이** ✅
-- (C) SubAgent 수가 다르다
-- (D) 보안 수준이 다르다
-
-**Q2. Bastion의 Project Stage 순서로 올바른 것은?**
-- **(A) created → planning → executing → completed** ✅
-- (B) planning → created → executing → completed
-- (C) executing → planning → completed → created
-- (D) created → executing → planning → completed
-
-**Q3. execute-plan API의 역할은?**
-- (A) 프로젝트를 생성한다
-- (B) LLM 모델을 학습시킨다
-- **(C) 여러 Task를 SubAgent에 전달하여 일괄 실행한다** ✅
-- (D) 보고서를 생성한다
-
-**Q4. Manager API의 기본 포트는?**
-- (A) 8001
-- **(B) 8000** ✅
-- (C) 8002
-- (D) 5432
-
-**Q5. SubAgent의 역할로 가장 적절한 것은?**
-- (A) LLM을 실행한다
-- (B) 데이터베이스를 관리한다
-- **(C) 원격 서버에서 명령을 실행한다** ✅
-- (D) API 인증을 처리한다
+## Part 6: 과제 (15분)
 
 ### 과제
 
@@ -752,7 +720,7 @@ python3 ~/lab/week05/analyze_results.py
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
 
 **주요 경로·파일**
 
