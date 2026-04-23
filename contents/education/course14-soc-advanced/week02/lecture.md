@@ -27,7 +27,7 @@
 | 1:30-1:40 | 휴식 | - |
 | 1:40-2:30 | 상관 룰 작성 실습 (Part 3) | 실습 |
 | 2:30-3:10 | 룰 튜닝 + Bastion 자동화 (Part 4) | 실습 |
-| 3:10-3:20 | 복습 퀴즈 + 과제 안내 | 정리 |
+| 3:10-3:20 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -849,71 +849,6 @@ python3 /tmp/correlation_effectiveness.py
 - [ ] wazuh-logtest로 룰 매칭을 검증할 수 있다
 - [ ] 화이트리스트 룰로 오탐을 제거할 수 있다
 - [ ] Bastion로 룰 배포를 자동화할 수 있다
-
----
-
-## 복습 퀴즈
-
-**Q1.** 상관분석(Correlation)이 단일 이벤트 탐지보다 우수한 이유 2가지를 설명하시오.
-
-<details><summary>정답</summary>
-1) 개별로는 무해한 이벤트들의 조합에서 위협을 탐지할 수 있다 (예: 실패 10회 + 성공 1회 = 계정 탈취).
-2) 오탐을 줄일 수 있다 - 다중 조건을 만족해야 경보가 발생하므로 정밀도가 높아진다.
-</details>
-
-**Q2.** Wazuh 룰에서 `frequency="10" timeframe="300"`의 의미는?
-
-<details><summary>정답</summary>
-300초(5분) 시간 윈도우 내에서 선행 룰(if_matched_sid로 지정)이 10회 이상 매칭되면 이 룰이 발동한다는 의미다.
-</details>
-
-**Q3.** `same_source_ip/`를 빼면 어떤 문제가 생기는가?
-
-<details><summary>정답</summary>
-서로 다른 IP의 이벤트도 합산되어 카운트된다. 예를 들어 10개의 서로 다른 IP에서 각 1회 실패해도 합산 10회로 경보가 발생하여 오탐이 크게 늘어난다.
-</details>
-
-**Q4.** Rule level 0의 용도는?
-
-<details><summary>정답</summary>
-해당 룰을 비활성화(사실상 무시)하는 것이다. 주로 화이트리스트 용도로, 특정 조건의 이벤트를 경보에서 제외할 때 사용한다. level="0"인 룰은 경보를 생성하지 않는다.
-</details>
-
-**Q5.** 임계치를 너무 높게 설정하면 어떤 공격을 놓칠 수 있는가?
-
-<details><summary>정답</summary>
-Low & Slow 공격(느린 공격)을 놓칠 수 있다. 공격자가 탐지를 피하기 위해 의도적으로 시도 간격을 넓히면 임계치 이하로 유지되어 탐지가 안 된다.
-</details>
-
-**Q6.** 다중 소스 상관분석에서 IPS 경고와 방화벽 로그를 연계할 때 가장 중요한 공통 필드는?
-
-<details><summary>정답</summary>
-출발지 IP(source IP)이다. same_source_ip 조건으로 동일 공격자의 행위를 여러 보안 장비에서 추적할 수 있다. 시간대(timestamp)도 중요한 연계 기준이다.
-</details>
-
-**Q7.** `wazuh-logtest`의 용도를 설명하시오.
-
-<details><summary>정답</summary>
-테스트 로그를 입력하여 Wazuh의 디코더와 룰 매칭 결과를 확인하는 디버깅 도구다. 새 룰을 작성한 후 실제 서비스에 적용하기 전에 이 도구로 기대한 대로 동작하는지 검증해야 한다.
-</details>
-
-**Q8.** 체인 룰(chain rule)이 유용한 공격 시나리오를 1개 설명하시오.
-
-<details><summary>정답</summary>
-측면 이동(Lateral Movement) 탐지: 포트 스캔(Rule A) → 서비스 접근(Rule B, if_matched_sid=A) → 권한 상승(Rule C, if_matched_sid=B). 각 단계는 단독으로 위협이 아니지만 순서대로 발생하면 공격 체인이다.
-</details>
-
-**Q9.** 오탐률이 84%인 상태에서 가장 먼저 해야 할 조치는?
-
-<details><summary>정답</summary>
-경보 빈도가 가장 높은 상위 3-5개 룰을 식별하여, 1) 정상 패턴을 화이트리스트(level="0")로 제외하고, 2) frequency/timeframe 임계치를 상향 조정하고, 3) 베이스라인 대비 비정상 패턴만 탐지하도록 조건을 추가한다.
-</details>
-
-**Q10.** Wazuh 커스텀 룰 ID의 권장 범위와 그 이유는?
-
-<details><summary>정답</summary>
-100000-109999 범위를 사용한다. Wazuh 기본 룰이 1-99999를 사용하므로, 커스텀 룰은 100000번대를 써야 기본 룰과 충돌하지 않는다. 업데이트 시 기본 룰은 덮어쓰기되지만 커스텀 룰은 보존된다.
-</details>
 
 ---
 

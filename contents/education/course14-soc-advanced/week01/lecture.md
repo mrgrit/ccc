@@ -27,7 +27,7 @@
 | 1:30-1:40 | 휴식 | - |
 | 1:40-2:30 | KPI 측정 실습 (Part 3) | 실습 |
 | 2:30-3:10 | 성숙도 자가진단 + Bastion 연동 (Part 4) | 실습 |
-| 3:10-3:20 | 복습 퀴즈 + 과제 안내 | 정리 |
+| 3:10-3:20 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -855,7 +855,7 @@ fi
 # 10. AI/LLM 연동 여부
 echo "[체크 10] AI/LLM 연동 여부..."
 if curl -s -o /dev/null -w "%{http_code}" \
-   http://localhost:8003/v1/models 2>/dev/null | grep -q "200"; then
+   http://10.20.30.200:11434/v1/models 2>/dev/null | grep -q "200"; then
     echo "  [PASS] Ollama LLM 연동 가능"
     SCORE=$((SCORE+1))
 else
@@ -1021,70 +1021,6 @@ python3 /tmp/soc_roadmap.py
 - [ ] Wazuh API로 경보 데이터를 추출할 수 있다
 - [ ] SOC-CMM 자가진단 체크리스트를 작성할 수 있다
 - [ ] 성숙도 갭 분석 기반 개선 로드맵을 수립할 수 있다
-
----
-
-## 복습 퀴즈
-
-**Q1.** SOC-CMM의 5가지 도메인을 모두 나열하시오.
-
-<details><summary>정답</summary>
-Business, People, Process, Technology, Services
-</details>
-
-**Q2.** SOC-CMM Level 3(Defined)의 핵심 특징은 무엇인가?
-
-<details><summary>정답</summary>
-표준화된 프로세스가 수립되어 일관적으로 수행되며, 메트릭 측정이 시작되고, 교육이 체계화된 단계이다.
-</details>
-
-**Q3.** MTTD가 240분이고 MTTR이 480분인 SOC의 성숙도 레벨은 대략 몇인가?
-
-<details><summary>정답</summary>
-Level 1-2 수준이다. MTTD 240분(4시간)은 탐지가 매우 느린 상태이며, MTTR 480분(8시간)도 대응이 크게 지연되는 것을 의미한다.
-</details>
-
-**Q4.** Tier 2 분석가의 핵심 역할 3가지를 설명하시오.
-
-<details><summary>정답</summary>
-1) 심화 로그 상관분석 및 패킷 분석, 2) 인시던트 대응 리딩 (IP 차단, 계정 잠금, 격리), 3) 인시던트 보고서 작성 및 근본 원인 분석
-</details>
-
-**Q5.** 오탐률(False Positive Rate)이 80%인 SOC에서 발생하는 문제는?
-
-<details><summary>정답</summary>
-경보 피로(Alert Fatigue)가 발생한다. 분석가가 대부분의 경보를 무시하게 되어, 실제 공격도 놓칠 위험이 높아진다. 미탐(False Negative) 증가로 이어진다.
-</details>
-
-**Q6.** SOC-CMM에서 People 도메인이 별도로 존재하는 이유는?
-
-<details><summary>정답</summary>
-SOC 운영에서 인력(채용, 교육, 역량 개발, 번아웃 방지)이 기술 못지않게 중요하기 때문이다. NIST CSF 등 다른 프레임워크에서 인력 도메인이 약한 것을 보완한다.
-</details>
-
-**Q7.** Follow-the-Sun 교대 모델의 장단점을 설명하시오.
-
-<details><summary>정답</summary>
-장점: 야간 근무가 없어 분석가 번아웃을 줄일 수 있다. 단점: 글로벌 팀(서로 다른 시간대 3개 지역)이 필요하며, 인수인계와 문화 차이 관리가 어렵다.
-</details>
-
-**Q8.** KPI 대시보드에 50개 이상의 지표를 표시하면 왜 문제가 되는가?
-
-<details><summary>정답</summary>
-정보 과부하로 핵심 지표에 집중하기 어렵다. 의사결정자가 중요한 변화를 놓칠 수 있다. 5-7개의 핵심 KPI에 집중하고, 나머지는 드릴다운으로 제공하는 것이 효과적이다.
-</details>
-
-**Q9.** SOC 성숙도 Level 1에서 Level 3으로 개선하려면 가장 먼저 해야 할 것은?
-
-<details><summary>정답</summary>
-Process 도메인에서 기본 인시던트 대응 플레이북을 작성하고, Tier 역할을 정의하며, KPI 측정을 시작하는 것이다. 기술 도입보다 프로세스 정립이 우선이다.
-</details>
-
-**Q10.** 우리 실습 환경(Wazuh + Bastion + Suricata)의 Technology 도메인 강점과 약점을 각각 1개씩 말하시오.
-
-<details><summary>정답</summary>
-강점: 오픈소스 기반으로 SIEM(Wazuh), IPS(Suricata), 자동화(Bastion)가 통합되어 있다. 약점: EDR이 부재하고, 위협 인텔리전스 피드 자동 연동이 미구현 상태이다.
-</details>
 
 ---
 

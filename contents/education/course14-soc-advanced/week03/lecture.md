@@ -27,7 +27,7 @@
 | 1:30-1:40 | 휴식 | - |
 | 1:40-2:30 | SIGMA 룰 작성 + 변환 실습 (Part 3) | 실습 |
 | 2:30-3:10 | Wazuh 적용 + 테스트 (Part 4) | 실습 |
-| 3:10-3:20 | 복습 퀴즈 + 과제 안내 | 정리 |
+| 3:10-3:20 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -907,71 +907,6 @@ curl -s -X POST "http://localhost:9100/projects/$PROJECT_ID/execute-plan" \
 - [ ] 변환 시 필드 매핑 문제를 인식하고 대응할 수 있다
 - [ ] ATT&CK 태그를 SIGMA 룰에 올바르게 매핑할 수 있다
 - [ ] SigmaHQ 공개 룰 저장소를 활용할 수 있다
-
----
-
-## 복습 퀴즈
-
-**Q1.** SIGMA 룰의 장점 2가지를 설명하시오.
-
-<details><summary>정답</summary>
-1) SIEM 벤더에 독립적이므로 하나의 룰을 여러 SIEM(Wazuh, Splunk, ELK 등)에서 사용할 수 있다.
-2) 커뮤니티(SigmaHQ)에서 수천 개의 룰이 공유되어 빠르게 탐지 역량을 높일 수 있다.
-</details>
-
-**Q2.** `1 of selection_*`과 `all of selection_*`의 차이는?
-
-<details><summary>정답</summary>
-`1 of selection_*`는 selection_ 접두사가 붙은 조건 중 하나라도 만족하면 탐지(OR). `all of selection_*`는 모든 selection_ 조건을 동시에 만족해야 탐지(AND).
-</details>
-
-**Q3.** `contains` 수정자와 `re` 수정자의 차이는?
-
-<details><summary>정답</summary>
-`contains`는 단순 부분 문자열 매칭(문자열 포함 여부). `re`는 정규표현식 매칭으로 복잡한 패턴(반복, 선택, 그룹 등)을 표현할 수 있다. `re`가 더 강력하지만 성능 부하가 더 크다.
-</details>
-
-**Q4.** SIGMA 룰의 `logsource`에서 `product`와 `category`의 차이는?
-
-<details><summary>정답</summary>
-`product`는 로그를 생성하는 제품/OS(linux, windows, apache). `category`는 로그의 유형/범주(process_creation, firewall, webserver)로, 특정 제품에 종속되지 않는 범용 분류다.
-</details>
-
-**Q5.** SIGMA → Wazuh 변환 시 가장 흔한 문제는?
-
-<details><summary>정답</summary>
-필드 매핑 불일치다. SIGMA의 표준 필드명(CommandLine, TargetFilename 등)이 Wazuh의 필드명(data.command, syscheck.path 등)과 다르므로, 변환 후 반드시 필드 매핑을 검토하고 수정해야 한다.
-</details>
-
-**Q6.** `falsepositives` 섹션의 목적은?
-
-<details><summary>정답</summary>
-이 룰이 오탐을 발생시킬 수 있는 정상 활동을 문서화한다. 분석가가 경보를 평가할 때 참고하여 오탐을 빠르게 판별할 수 있고, 룰 튜닝 시 화이트리스트 작성의 기초 자료가 된다.
-</details>
-
-**Q7.** SIGMA 룰에서 ATT&CK 매핑 태그의 형식을 설명하시오.
-
-<details><summary>정답</summary>
-`attack.<tactic>` (예: attack.credential_access)와 `attack.t<technique_id>` (예: attack.t1110.001) 형식을 사용한다. tactic은 전술 이름의 소문자, technique은 t 접두사 + 기법 ID이다.
-</details>
-
-**Q8.** pySigma와 sigmac의 차이는?
-
-<details><summary>정답</summary>
-sigmac는 레거시(구버전) 변환 도구로 더 이상 유지보수되지 않는다. pySigma는 차세대 프레임워크로, 파이프라인/백엔드 아키텍처가 모듈화되어 있고 활발히 개발 중이다. 새 프로젝트에서는 pySigma를 사용해야 한다.
-</details>
-
-**Q9.** 웹셸 탐지 SIGMA 룰에서 `filter_legitimate`의 역할은?
-
-<details><summary>정답</summary>
-정상적인 배포 계정(www-deploy, jenkins)에 의한 파일 생성을 제외하는 필터다. condition에서 `and not filter_legitimate`로 사용되어 오탐을 줄인다.
-</details>
-
-**Q10.** SIGMA 룰의 `status: experimental`은 어떤 의미인가?
-
-<details><summary>정답</summary>
-아직 충분히 테스트되지 않은 룰로, 오탐 가능성이 있으며 실 운영 환경 적용 전 추가 검증이 필요하다는 의미다. stable(안정), test(테스트 중), experimental(실험적) 3단계로 구분한다.
-</details>
 
 ---
 
