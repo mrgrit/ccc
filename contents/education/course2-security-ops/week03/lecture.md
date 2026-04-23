@@ -28,7 +28,7 @@
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -54,17 +54,6 @@
 | **TAXII** | Trusted Automated eXchange of Intelligence Information | CTI 자동 교환 프로토콜 | 경찰서 간 수배 정보 공유 시스템 |
 | **NAT** | Network Address Translation | 내부 IP를 외부 IP로 변환 | 회사 대표번호 (내선→외선) |
 | **masquerade** | masquerade (nftables) | 나가는 패킷의 소스 IP를 게이트웨이 IP로 변환 | 회사 이름으로 편지 보내기 |
-
----
-
-# Week 03: nftables 방화벽 (2) — 실전
-
-## 학습 목표
-
-- NAT(SNAT/DNAT)와 포트 포워딩을 구성할 수 있다
-- 화이트리스트(기본 차단) 정책을 설계할 수 있다
-- nftables 로깅 기능을 활용할 수 있다
-- 룰셋을 파일로 저장하고 복원할 수 있다
 
 ---
 
@@ -543,32 +532,6 @@ Week 04에서는 Suricata IPS의 설치와 구성을 다룬다:
 - YAML 설정
 - 룰 소스 관리
 
----
-
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** nftables에서 policy drop의 의미는?
-- (a) 모든 트래픽 허용  (b) **명시적으로 허용하지 않은 모든 트래픽 차단**  (c) 로그만 기록  (d) 특정 IP만 차단
-
-**Q2.** Suricata가 nftables와 다른 핵심 차이는?
-- (a) IP만 검사  (b) **패킷 페이로드(내용)까지 검사**  (c) 포트만 검사  (d) MAC 주소만 검사
-
-**Q3.** Wazuh에서 level 12 경보의 의미는?
-- (a) 정보성 이벤트  (b) **높은 심각도 — 즉시 분석 필요**  (c) 정상 활동  (d) 시스템 시작
-
-**Q4.** ModSecurity CRS의 Anomaly Scoring이란?
-- (a) 모든 요청 차단  (b) **규칙 매칭 점수를 누적하여 임계값 초과 시 차단**  (c) IP 기반 차단  (d) 시간 기반 차단
-
-**Q5.** 보안 솔루션 배치 순서(외부→내부)는?
-- (a) WAF → 방화벽 → IPS  (b) **방화벽 → IPS → WAF → 애플리케이션**  (c) IPS → WAF → 방화벽  (d) 애플리케이션 → WAF
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
-
----
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): nftables(inet filter+ip nat), Suricata 8.0.4(65K룰), Apache+ModSecurity(:8082→403), Wazuh v4.11.2(local_rules 62줄), OpenCTI(200)
