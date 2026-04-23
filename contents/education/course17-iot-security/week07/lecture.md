@@ -29,7 +29,7 @@
 | 2:00-2:40 | BLE 스푸핑 및 공격 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | BLE 보안 강화 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -565,23 +565,7 @@ MAC 주소 유형:
 
 ---
 
-## Part 6: 복습 퀴즈 + 과제 안내 (20분)
-
-### 퀴즈
-
-1. BLE에서 Central과 Peripheral의 역할을 설명하시오.
-2. GATT의 Service, Characteristic, Descriptor의 관계는?
-3. BLE 페어링 방법 4가지를 보안 수준 순으로 나열하시오.
-4. BLE 광고 채널은 몇 개이며, 채널 번호는?
-5. Just Works 페어링의 보안 문제는?
-
-### 퀴즈 정답
-
-1. Central: 스캔/연결 개시(스마트폰), Peripheral: 광고/연결 대기(센서)
-2. Service > Characteristic > Descriptor (트리 구조), Service는 여러 Characteristic 포함
-3. Just Works(낮음) < Passkey Entry(중간) < Numeric Comparison(높음) <= OOB(높음)
-4. 3개 — 채널 37(2402MHz), 38(2426MHz), 39(2480MHz)
-5. 키 교환 시 인증 없음, MitM 공격에 취약, 도청 가능
+## Part 6: 과제 안내 (20분)
 
 ### 과제
 
