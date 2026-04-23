@@ -27,7 +27,7 @@
 | 2:00-2:40 | SCADA 공격 실습 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | OT 보안 대책 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -439,23 +439,7 @@ nmap -p 5020 --script modbus-discover --script-args modbus-discover.aggressive=t
 
 ---
 
-## Part 6: 복습 퀴즈 + 과제 안내 (20분)
-
-### 퀴즈
-
-1. Modbus TCP의 기본 포트는?
-2. IT와 OT의 보안 우선순위 차이는?
-3. Stuxnet이 공격한 대상과 프로토콜은?
-4. Modbus에 인증/암호화가 없는 이유는?
-5. Purdue 모델의 Level 1과 Level 2는?
-
-### 퀴즈 정답
-
-1. 502/TCP
-2. IT: CIA(기밀성 우선), OT: AIC(가용성 우선)
-3. 이란 나탄즈 핵시설의 Siemens S7-300 PLC, S7comm 프로토콜
-4. 1979년 설계 시 폐쇄 네트워크 가정, 보안 고려 없음
-5. Level 1: Basic Control(PLC, RTU), Level 2: Supervisory Control(HMI, SCADA)
+## Part 6: 과제 안내 (20분)
 
 ### 과제
 
