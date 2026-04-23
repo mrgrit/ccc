@@ -28,7 +28,7 @@
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -57,298 +57,205 @@
 
 ---
 
-# Week 10: Bastion (2) - Playbook + RL
-
-## 학습 목표
-- Bastion Playbook의 개념과 구조를 이해한다
-- Playbook을 생성하고 실행할 수 있다
-- 강화학습(RL) 보상 시스템의 원리를 이해한다
-- RL 학습과 정책 추천 기능을 활용할 수 있다
-
----
-
 ## 1. Playbook이란?
 
-Playbook은 반복적인 보안 작업을 재사용 가능한 절차로 정의한 것이다.
-Ansible Playbook과 유사한 개념이다.
+Playbook은 **반복적인 보안 작업을 재사용 가능한 절차로 정의**한 것이다.
+Ansible Playbook과 개념이 같다. Bastion의 Playbook은 **Skill의 순서화된 묶음**이다.
 
-### Playbook vs 수동 실행
+### Playbook vs 매번 LLM 즉흥 생성
 
-| 항목 | 수동 dispatch | Playbook |
-|------|-------------|----------|
-| 재사용 | 매번 작성 | 한 번 정의, 반복 사용 |
-| 일관성 | 사람마다 다름 | 항상 동일 |
-| 감사 | 명령어 추적 어려움 | 실행 이력 자동 기록 |
-| 공유 | 개인 지식 | 팀 공유 가능 |
+| 항목 | LLM adhoc | Playbook |
+|------|-----------|----------|
+| 재사용 | 매번 프롬프트 다시 씀 | 한 번 정의, 반복 |
+| 재현성 | temperature·모델에 흔들림 | 파라미터만 바인딩, 결정론 |
+| 감사 | 생성된 명령 추적 필요 | Skill 호출로 구조적 |
+| 공유 | 개인 지식 | `/playbooks` 로 팀 공유 |
+
+핵심: **LLM은 "무엇을 할지" 판단하고, Playbook은 "어떻게 실행할지"를 고정**한다.
 
 ---
 
-## 2. Playbook 구조
+## 2. Playbook 스키마
 
-> **이 실습을 왜 하는가?**
-> "Bastion (2) - Playbook + RL" — 이 주차의 핵심 기술을 실제 서버 환경에서 직접 실행하여 체험한다.
-> AI/LLM 보안 활용 분야에서 이 기술은 실무의 핵심이며, 실습을 통해
-> 명령어의 의미, 결과 해석 방법, 보안 관점에서의 판단 기준을 익힌다.
->
-> **이걸 하면 무엇을 알 수 있는가?**
-> - 이 기술이 실제 시스템에서 어떻게 동작하는지 직접 확인
-> - 정상과 비정상 결과를 구분하는 눈을 기름
-> - 실무에서 바로 활용할 수 있는 명령어와 절차를 체득
->
-> **주의:** 모든 실습은 허가된 실습 환경(10.20.30.0/24)에서만 수행한다.
+Bastion이 관리하는 Playbook의 논리 구조이다. 파일 위치는
+`packages/bastion/playbooks/` 하위 YAML.
 
-```json
-{
-  "name": "ssh-security-audit",
-  "description": "SSH 보안 설정 점검 Playbook",
-  "steps": [
-    {
-      "order": 1,
-      "tool": "run_command",
-      "params": {"command": "sshd -T | grep -E 'permitrootlogin|passwordauthentication|maxauthtries'"},
-      "risk_level": "low",
-      "description": "SSH 설정 확인"
-    },
-    {
-      "order": 2,
-      "tool": "run_command",
-      "params": {"command": "last -20"},
-      "risk_level": "low",
-      "description": "최근 로그인 이력 확인"
-    },
-    {
-      "order": 3,
-      "tool": "run_command",
-      "params": {"command": "grep 'Failed password' /var/log/auth.log | tail -20"},
-      "risk_level": "low",
-      "description": "인증 실패 로그 확인"
-    }
-  ]
-}
+```yaml
+name: ssh-security-audit
+description: SSH 보안 설정 점검 Playbook
+risk: low
+params:
+  - name: asset
+    required: true
+steps:
+  - skill: system.status
+    bind: { asset: "${asset}" }
+  - skill: ssh.config_dump
+    bind: { asset: "${asset}" }
+  - skill: log.recent_auth_failures
+    bind: { asset: "${asset}", limit: 20 }
+assertions:
+  - step: 2
+    expect:
+      contains: [ "PermitRootLogin no" ]
+      not_contains: [ "PermitRootLogin yes" ]
 ```
 
+**구성 요소:**
+- `steps[].skill` — Skill 이름 (= `/skills` 에 등록된 결정론 도구)
+- `steps[].bind` — Skill 파라미터 바인딩 (플레이스홀더 `${...}`)
+- `assertions` — 성공 여부를 판단하는 기대값. RL 보상 신호의 원천.
+
 ---
 
-## 3. Playbook 실행
+## 3. Playbook 실행 — Bastion에게 자연어로 요청
 
-### 3.1 Playbook을 execute-plan으로 실행
-
-> **실습 목적**: 프롬프트 인젝션 방어를 위한 입출력 검증과 가드레일을 구현하기 위해 수행한다
->
-> **배우는 것**: 입력 필터링, 출력 검증, 시스템 프롬프트 강화 등 다층 방어 전략의 원리와 각 계층의 역할을 이해한다
->
-> **결과 해석**: 방어 적용 전후로 동일한 인젝션 공격을 시도하여, 차단율 변화로 방어 효과를 측정한다
->
-> **실전 활용**: 프로덕션 AI 서비스에 입출력 필터링 미들웨어 적용, LLM 가드레일 설계, AI 보안 정책 수립에 활용한다
+사용자는 Playbook JSON을 직접 POST 하지 않는다. **자연어로 Playbook 이름을 지시**하거나,
+자연어 의도를 Bastion이 해석해 등록된 Playbook 중 가장 근접한 것을 선택한다.
 
 ```bash
-PID="프로젝트_ID"
+# (A) Playbook 이름을 명시적으로 지정
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 자산에 ssh-security-audit playbook을 실행해줘"}'
 
-# Playbook의 steps를 tasks로 변환하여 실행
-curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "tasks": [
-      {
-        "order": 1,
-        "instruction_prompt": "sshd -T 2>/dev/null | grep -E \"permitrootlogin|passwordauthentication|maxauthtries\" || echo SSH_NOT_RUNNING",
-        "risk_level": "low"
-      },
-      {
-        "order": 2,
-        "instruction_prompt": "last -10",
-        "risk_level": "low"
-      },
-      {
-        "order": 3,
-        "instruction_prompt": "grep \"Failed password\" /var/log/auth.log 2>/dev/null | tail -10 || echo NO_AUTH_LOG",
-        "risk_level": "low"
-      }
-    ],
-    "subagent_url": "http://localhost:8002"
-  }' | python3 -m json.tool
+# (B) 의도만 말하면 Bastion이 적합 Playbook을 선택
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 자산의 SSH 보안 상태를 점검해줘"}'
+```
+
+어느 Playbook이 실행됐고 각 step이 어떻게 평가됐는지는 `/evidence` 에 남는다.
+
+```bash
+curl -s "http://10.20.30.200:8003/evidence?asset=web&limit=15" | python3 -m json.tool
 ```
 
 ---
 
-## 4. 강화학습 (RL) 보상 시스템
+## 4. 경험(Experience) → Playbook 승격
 
-### 4.1 PoW와 보상의 관계
+Bastion은 `/ask`·`/chat` 으로 처리한 **반복 성공 패턴을 경험(experience)으로 축적**하고,
+일정 임계치(예: 성공 N회, 동일 Skill 조합)를 넘으면 Playbook 후보로 승격한다.
+(opsclaw 레퍼런스 에이전트의 설계. 본 과정의 Bastion도 동일 지향.)
 
+승격 파이프라인:
 ```
-태스크 실행 → PoW 블록 생성 → 보상(reward) 자동 계산
-```
-
-execute-plan으로 태스크를 실행하면 자동으로:
-1. PoW 블록이 생성된다
-2. 태스크 결과에 따라 보상이 기록된다
-3. 보상 데이터가 RL 학습에 사용된다
-
-### 4.2 보상 요소
-
-| 요소 | 설명 | 보상 영향 |
-|------|------|----------|
-| 성공/실패 | 명령 실행 결과 | 성공 +1, 실패 -1 |
-| risk_level | 태스크 위험도 | 높을수록 보상 큼 |
-| 실행 시간 | 태스크 소요 시간 | 빠를수록 보상 큼 |
-| 에이전트 | 실행한 SubAgent | 에이전트별 통계 |
-
-### 4.3 Q-learning 기초
-
-Bastion는 Q-learning 알고리즘으로 최적 행동을 학습한다.
-
-```
-Q(상태, 행동) = 현재 보상 + 감가율 * 미래 최대 보상
+/ask 반복 성공 → experience 수집 → 패턴 추출(Skill 시퀀스) → Playbook 등록 → /playbooks
 ```
 
-- **상태(State)**: 에이전트 ID + risk_level
-- **행동(Action)**: 태스크 실행 여부
-- **보상(Reward)**: 성공/실패 + 위험도 가중치
+효과: 사람이 쓰지 않아도 자주 쓰는 작업이 자동으로 재현 가능한 Playbook이 된다.
 
 ---
 
-## 5. RL API 사용
+## 5. 강화학습(RL) 보상과 정책
 
-### 5.1 학습 실행
+### 5.1 보상 신호의 원천
 
-```bash
-# 축적된 보상 데이터로 Q-learning 학습
-curl -s -X POST http://localhost:9100/rl/train \
-  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
-```
+Playbook의 `assertions` 와 `/evidence` 의 `exit_code`·지연시간이 조합되어 보상이 결정된다.
 
-### 5.2 정책 추천
+| 신호 | 기여 |
+|------|------|
+| assertions 통과 여부 | 성공/실패 기본 부호 |
+| exit_code | 0 이면 +, 비영 시 − |
+| 지연시간 | 짧을수록 + 가중 |
+| risk | 고위험에서 성공하면 +, 실패하면 −− |
 
-```bash
-# 특정 에이전트+위험수준에 대한 최적 행동 추천
-curl -s "http://localhost:9100/rl/recommend?agent_id=http://localhost:8002&risk_level=low" \
-  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
+### 5.2 정책의 역할
 
-curl -s "http://localhost:9100/rl/recommend?agent_id=http://localhost:8002&risk_level=high" \
-  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
-```
+보상 데이터가 쌓이면 Bastion은 **동일 의도에 대해 어떤 Playbook/Skill 조합이 더 잘 통했는지** 를
+통계적으로 학습한다. Q-learning/UCB1 등의 전략이 내부 선택기의 바탕이다.
 
-### 5.3 정책 상태 확인
+| 상태(State) | 행동(Action) | 학습 결과 |
+|-------------|-------------|-----------|
+| "SSH 하드닝" 의도 + 자산=web | Playbook A vs B 중 택일 | 과거 성공률 높은 쪽 우선 |
+| risk=high 의도 | 실행 vs 승인 요구 | 승인 게이트 판단 안정화 |
 
-```bash
-# 현재 학습된 Q-table 상태
-curl -s http://localhost:9100/rl/policy \
-  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
-```
+### 5.3 관찰 방법
 
-### 5.4 보상 랭킹
+Bastion 내부 상태는 대부분 외부로 노출되지 않지만, 학습 결과를 간접적으로 확인하려면:
 
 ```bash
-# SubAgent별 누적 보상 순위
-curl -s http://localhost:9100/pow/leaderboard \
-  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
+# 최근 증거 기반으로 동일 의도의 실행 이력 비교
+curl -s "http://10.20.30.200:8003/evidence?limit=50" \
+  | python3 -c "
+import sys,json,collections
+d=json.load(sys.stdin).get('evidence',[])
+c=collections.Counter((e.get('playbook') or e.get('skill'),e.get('exit_code',0)) for e in d)
+for k,v in c.most_common(10): print(v,k)
+"
 ```
 
 ---
 
 ## 6. 실습
 
-### 실습 1: 보안 점검 Playbook 실행
+### 실습 1: Playbook 목록 확인과 실행
 
 ```bash
-# 프로젝트 생성
-PID=$(curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{"name":"playbook-lab","request_text":"Playbook 실습","master_mode":"external"}' \
-  | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
+# 등록된 Playbook 목록
+curl -s http://10.20.30.200:8003/playbooks | python3 -m json.tool
 
-# Stage 전환
-curl -s -X POST "http://localhost:9100/projects/$PID/plan" \
-  -H "X-API-Key: ccc-api-key-2026" > /dev/null
-curl -s -X POST "http://localhost:9100/projects/$PID/execute" \
-  -H "X-API-Key: ccc-api-key-2026" > /dev/null
+# 선택한 Playbook을 자연어로 실행 (예: baseline.web)
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web 자산에 baseline.web playbook을 실행해줘"}'
 
-# 시스템 보안 점검 Playbook 실행
-curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
-  -d '{
-    "tasks": [
-      {"order":1, "instruction_prompt":"uname -a", "risk_level":"low"},
-      {"order":2, "instruction_prompt":"ss -tlnp | head -20", "risk_level":"low"},
-      {"order":3, "instruction_prompt":"df -h", "risk_level":"low"},
-      {"order":4, "instruction_prompt":"free -h", "risk_level":"low"},
-      {"order":5, "instruction_prompt":"who", "risk_level":"low"}
-    ],
-    "subagent_url": "http://localhost:8002"
-  }' | python3 -m json.tool
+# 실행 증거 확인
+curl -s "http://10.20.30.200:8003/evidence?asset=web&limit=10" | python3 -m json.tool
 ```
 
-### 실습 2: RL 학습 체험
+### 실습 2: 의도 기반 자동 선택
 
 ```bash
-# 현재 정책 확인
-curl -s http://localhost:9100/rl/policy \
-  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
-
-# 학습 실행
-curl -s -X POST http://localhost:9100/rl/train \
-  -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
-
-# 학습 후 추천 확인
-for level in low medium high critical; do
-  echo "=== $level ==="
-  curl -s "http://localhost:9100/rl/recommend?agent_id=http://localhost:8002&risk_level=$level" \
-    -H "X-API-Key: ccc-api-key-2026" | python3 -m json.tool
-done
+# Playbook 이름을 말하지 않고 의도만 전달
+# Bastion이 /playbooks 중 가장 근접한 것을 선택한다
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{"message": "web의 기본 보안 베이스라인 점검해줘"}'
 ```
 
-### 실습 3: LLM으로 Playbook 설계
+`/evidence` 에서 어떤 Playbook이 매칭됐는지 확인한다.
 
-LLM에게 보안 점검 요구사항을 전달하면 Bastion에서 바로 실행할 수 있는 JSON 형식의 Playbook을 자동 생성한다.
+### 실습 3: LLM으로 Playbook 초안 설계
+
+새 Playbook을 만들려면 먼저 YAML 초안을 LLM에게 생성시키고, 운영자가 검토 후 파일로 커밋한다.
+**중요:** LLM이 만든 YAML을 곧바로 실행하지 않는다 — 검증 후 Bastion 설정 파일에 반영한다.
 
 ```bash
-# LLM으로 보안 하드닝 Playbook JSON 자동 생성
-# 생성된 JSON을 Bastion execute-plan에 직접 사용 가능
-curl -s http://localhost:8003/v1/chat/completions \
+# LLM에게 Linux 하드닝 Playbook YAML 초안 요청 (Ollama :11434)
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
     "messages": [
-      {"role": "system", "content": "Bastion 보안 자동화 전문가입니다. 보안 점검 Playbook을 JSON 형식으로 설계합니다."},
-      {"role": "user", "content": "Linux 서버의 보안 하드닝 상태를 점검하는 Playbook을 설계하세요.\n점검 항목: SSH 설정, 패스워드 정책, 방화벽 상태, 불필요 서비스, 파일 권한\n\nJSON 형식: {\"name\": \"\", \"steps\": [{\"order\": N, \"tool\": \"run_command\", \"params\": {\"command\": \"\"}, \"risk_level\": \"\", \"description\": \"\"}]}"}
+      {"role": "system", "content": "Bastion Playbook 전문가. 다음 스키마만 사용: name, description, risk, params, steps[{skill,bind}], assertions[{step,expect}]."},
+      {"role": "user", "content": "Linux 보안 하드닝 Playbook을 YAML로 작성해줘. 점검: SSH, 방화벽, 불필요 서비스, sudoers, 파일권한. 사용 가능한 Skill: system.status, ssh.config_dump, fw.rules_dump, service.list, sudoers.dump, files.perm_audit."}
     ],
     "temperature": 0.3
   }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
 ```
 
----
-
-## 7. RL이 보안 자동화에 주는 가치
-
-```
-  위험 판단
-  (Q-table)
-태스크 요청 ─────────▶ RL 추천 ─────▶ 실행/거부
-과거 데이터 기반
-자동 의사결정
-```
-
-- **반복적 작업**: 과거 성공/실패 데이터로 최적 전략 학습
-- **위험 관리**: risk_level별 행동 정책 자동 조정
-- **에이전트 평가**: SubAgent별 신뢰도 축적
+**운영 체크리스트(LLM 생성 → 배포 전 검증):**
+- 모든 `skill` 이 `/skills` 목록에 실제 존재하는가
+- `bind` 파라미터가 Skill 시그니처와 일치하는가
+- `risk` 와 실제 작업 영향이 일관되는가
+- `assertions` 가 측정 가능한 조건인가
 
 ---
 
-## 핵심 정리
+## 7. 이 주차의 핵심
 
-1. Playbook은 반복 가능한 보안 작업을 표준화한 절차이다
-2. execute-plan의 tasks가 Playbook의 steps에 대응한다
-3. PoW 블록과 보상이 자동 생성되어 RL 학습 데이터가 된다
-4. Q-learning으로 에이전트별, 위험수준별 최적 행동을 추천한다
-5. LLM으로 Playbook을 설계하고, RL로 실행 정책을 최적화한다
+1. Playbook = Skill의 **결정론적 묶음**. LLM 즉흥 생성보다 재현성·감사성이 높다.
+2. 실행은 자연어 지시(`/ask`)로 충분. `/projects/execute-plan` 같은 상태머신 API는 쓰지 않는다.
+3. 성공 패턴은 experience로 축적되어 자동으로 Playbook 후보가 된다.
+4. 보상 신호는 `assertions`·`exit_code`·`지연시간` 조합에서 나온다.
+5. LLM은 **초안 설계자** — 실제 Playbook 파일은 사람의 리뷰를 거쳐 등록한다.
 
 ---
 
 ## 다음 주 예고
-- Week 11: 자율 미션 - /a2a/mission Red/Blue Team
+- Week 11: 자율 미션 — Red/Blue Team 시뮬레이션과 Bastion의 `/ask`·`/chat` 활용
 
 ---
 
@@ -362,9 +269,9 @@ curl -s http://localhost:8003/v1/chat/completions \
 
 ```bash
 # Ollama는 OpenAI 호환 API를 제공한다
-# URL: http://localhost:8003/v1/chat/completions
+# URL: http://10.20.30.200:11434/v1/chat/completions
 
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델
@@ -414,49 +321,20 @@ curl -s http://localhost:8003/v1/chat/completions \
 {"role":"system","content":"단계별로 분석하세요: 1)현상 파악 2)원인 추론 3)ATT&CK 매핑 4)대응 방안"}
 ```
 
-### Bastion API 핵심 흐름 요약
+### Bastion API 핵심 엔드포인트 요약
 
 ```
-[1] POST /projects                     → 프로젝트 생성
-    Body: {"name":"...", "master_mode":"external"}
-    Response: {"project":{"id":"prj_xxx"}}
+POST /ask          → 단일 자연어 질의, 동기 응답 {"answer": "..."}
+POST /chat         → 대화형 NDJSON 스트림
+GET  /evidence     → 과거 실행 증거 (자산·skill·playbook·exit·시각)
+GET  /skills       → 등록된 Skill(결정론 도구) 목록
+GET  /playbooks    → 등록된 Playbook 목록
+GET  /assets       → 자산 인벤토리
+GET  /health       → 헬스체크
 
-[2] POST /projects/{id}/plan           → plan 단계로 전환
-[3] POST /projects/{id}/execute        → execute 단계로 전환
-
-[4] POST /projects/{id}/execute-plan   → 태스크 실행
-    Body: {"tasks":[...], "parallel":true, "subagent_url":"..."}
-    Response: {"overall":"success", "tasks_ok":N}
-
-[5] GET /projects/{id}/evidence/summary → 증적 확인
-[6] GET /projects/{id}/replay           → 타임라인 재구성
-[7] POST /projects/{id}/completion-report → 완료 보고
-
-모든 API에 필수: -H "X-API-Key: ccc-api-key-2026"
+Bastion(:8003)은 내부망 접근 가정.
+Ollama(:11434)는 원시 LLM — 초안 설계·분석에 직접 호출.
 ```
-
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** Ollama API에서 temperature=0의 효과는?
-- (a) 최대 창의성  (b) **매번 동일한 출력 (결정론적)**  (c) 에러 발생  (d) 속도 향상
-
-**Q2.** Bastion execute-plan 실행 전 반드시 거쳐야 하는 단계는?
-- (a) 서버 재시작  (b) **plan → execute stage 전환**  (c) DB 백업  (d) 코드 컴파일
-
-**Q3.** RL에서 UCB1 탐색 전략의 핵심은?
-- (a) 항상 최고 보상 행동 선택  (b) **방문 횟수가 적은 행동을 우선 탐색**  (c) 무작위 선택  (d) 모든 행동 균등 선택
-
-**Q4.** Playbook이 LLM adhoc보다 재현성이 높은 이유는?
-- (a) LLM이 더 똑똑해서  (b) **파라미터가 결정론적으로 바인딩되어 동일 명령 생성**  (c) 네트워크가 빨라서  (d) DB가 달라서
-
-**Q5.** Bastion evidence가 제공하는 핵심 가치는?
-- (a) 실행 속도 향상  (b) **모든 실행의 자동 기록으로 감사 추적 가능**  (c) 메모리 절약  (d) 코드 자동 생성
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
 
 ---
 ---
@@ -472,7 +350,7 @@ curl -s http://localhost:8003/v1/chat/completions \
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
 
 **주요 경로·파일**
 
