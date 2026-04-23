@@ -28,7 +28,7 @@
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -55,16 +55,6 @@
 | **IaC** | Infrastructure as Code | 인프라를 코드로 정의·관리 (Terraform 등) | 건축 설계도 (코드 = 설계도) |
 | **IAM** | Identity and Access Management | 클라우드 사용자/권한 관리 (AWS IAM 등) | 회사 사원증 + 권한 관리 시스템 |
 | **CIS 벤치마크** | CIS Benchmark | 보안 설정 모범 사례 가이드 (Center for Internet Security) | 보안 설정 모범답안 |
-
----
-
-# Week 10: 클라우드 설정 오류
-
-## 학습 목표
-- 클라우드 환경에서 흔히 발생하는 설정 오류를 파악할 수 있다
-- S3 버킷 공개 노출의 위험과 방지 방법을 이해한다
-- IAM 과도 권한의 위험을 인식하고 최소화 방법을 익힌다
-- CSPM(Cloud Security Posture Management) 개념을 이해한다
 
 ---
 
@@ -309,35 +299,25 @@ docker run -d --name safe-data \
 ### 실습 2: Bastion로 설정 점검 자동화
 
 ```bash
-# Bastion 프로젝트 생성하여 설정 점검
-curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: ccc-api-key-2026" \
+# Bastion 자연어 지시로 컨테이너 설정 보안 점검
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
   -d '{
-    "name": "cloud-config-audit",
-    "request_text": "Docker 컨테이너 설정 보안 점검",
-    "master_mode": "external"
-  }'
-
-# Stage 전환
-# (반환된 project_id 사용)
-# curl -X POST http://localhost:9100/projects/{id}/plan ...
-# curl -X POST http://localhost:9100/projects/{id}/execute ...
+    "message": "web/siem에서 실행 중인 Docker 컨테이너를 전부 조회하고, 각 컨테이너의 User·Privileged·NetworkMode·CapAdd 설정을 표로 정리한 뒤 보안 이슈를 분석해줘."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
 ```
 
-### 실습 3: IAM 정책 분석 연습
+### 실습 3: IAM 정책 분석
 
 ```bash
-# LLM을 활용하여 IAM 정책 분석
-curl -s http://localhost:8003/v1/chat/completions \
-  -H "Content-Type: application/json" \
+# Bastion LLM으로 과도 권한 IAM 정책 분석
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
   -d '{
-    "model": "gemma3:12b",
-    "messages": [
-      {"role": "system", "content": "당신은 클라우드 보안 전문가입니다."},
-      {"role": "user", "content": "다음 IAM 정책의 보안 문제를 분석해주세요:\n{\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"*\",\"Resource\":\"*\"}]}"}
-    ]
-  }' | python3 -m json.tool
+    "message": "다음 AWS IAM 정책의 보안 문제와 최소권한 개선안을 분석해줘: {\"Version\":\"2012-10-17\",\"Statement\":[{\"Effect\":\"Allow\",\"Action\":\"*\",\"Resource\":\"*\"}]}"
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
 ```
 
 ---
@@ -447,30 +427,6 @@ ssh ccc@10.20.30.100 "
 | 5.2 | network_mode | `docker inspect --format '{{.HostConfig.NetworkMode}}' <컨테이너>` | host가 아닌 것 |
 | 5.12 | --privileged | `docker inspect --format '{{.HostConfig.Privileged}}' <컨테이너>` | false |
 
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** Docker 컨테이너와 VM의 핵심 차이는?
-- (a) 컨테이너가 더 안전  (b) **컨테이너는 호스트 커널을 공유, VM은 별도 커널**  (c) VM이 더 가벼움  (d) 차이 없음
-
-**Q2.** '--cap-drop ALL'의 의미는?
-- (a) 모든 파일 삭제  (b) **모든 Linux capability를 제거하여 권한 최소화**  (c) 네트워크 차단  (d) 로그 비활성화
-
-**Q3.** 컨테이너가 --privileged로 실행되면 위험한 이유는?
-- (a) 속도가 느려짐  (b) **호스트의 거의 모든 자원에 접근 가능 (탈출 가능)**  (c) 로그가 안 남음  (d) 이미지가 커짐
-
-**Q4.** Trivy의 역할은?
-- (a) 컨테이너 실행  (b) **컨테이너 이미지의 알려진 취약점(CVE) 스캐닝**  (c) 네트워크 설정  (d) 로그 수집
-
-**Q5.** Dockerfile에서 USER root가 위험한 이유는?
-- (a) 빌드가 느려짐  (b) **컨테이너 탈출 시 호스트 root 권한 획득 가능**  (c) 이미지가 커짐  (d) 네트워크 안 됨
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
-
----
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): Docker 29.3.0, Compose v5.1.1, juice-shop(User=65532,Privileged=false), OpenCTI 6컨테이너, opencti_default 네트워크
