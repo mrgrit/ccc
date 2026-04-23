@@ -586,42 +586,6 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID2/completion-report \
 
 ---
 
-## 자가 점검 퀴즈 (10문항)
-
-**Q1.** SOC에서 "알림의 초기 분류(Triage)"를 담당하는 계층은?
-- (a) Tier 3  (b) Tier 2  (c) **Tier 1**  (d) CISO
-
-**Q2.** MTTD가 의미하는 것은?
-- (a) 평균 복구 시간  (b) **평균 탐지 시간 (공격 시작→첫 알림)**  (c) 평균 대응 시간  (d) 평균 분석 시간
-
-**Q3.** Wazuh 규칙에서 level 14는 어떤 심각도인가?
-- (a) 정보  (b) 중간  (c) 높음  (d) **치명적**
-
-**Q4.** SOAR의 핵심 가치는?
-- (a) 로그 저장  (b) **반복적 보안 대응의 자동화로 MTTR 단축**  (c) 취약점 스캔  (d) 비밀번호 관리
-
-**Q5.** NIST IR 6단계에서 "피해 확산을 방지하는 단계"는?
-- (a) 식별  (b) 준비  (c) **억제 (Containment)**  (d) 복구
-
-**Q6.** Sigma 규칙의 가장 큰 장점은?
-- (a) XML 기반  (b) **SIEM 독립적 — 다양한 SIEM으로 변환 가능**  (c) 무료  (d) 자동 학습
-
-**Q7.** SOC 메트릭에서 "오탐률" 20%의 의미는?
-- (a) 80%가 미탐지  (b) **전체 알림의 20%가 실제 공격이 아닌 정상 활동**  (c) 20%만 탐지  (d) 대응률 20%
-
-**Q8.** Bastion에서 SOAR 플레이북의 "트리거"에 해당하는 것은?
-- (a) 프로젝트 생성  (b) **보안 알림 탐지 (SIEM 알림, 로그 패턴)**  (c) API 키 설정  (d) PoW 검증
-
-**Q9.** IR의 "교훈(Lessons Learned)" 단계에서 반드시 포함해야 하는 것은?
-- (a) 범인 체포  (b) **MTTD/MTTR 측정, 개선 사항 도출, 문서화**  (c) 시스템 포맷  (d) 법적 소송
-
-**Q10.** Wazuh 디코더의 핵심 역할은?
-- (a) 알림 생성  (b) 대시보드 표시  (c) **원시 로그를 구조화된 필드로 파싱**  (d) 로그 삭제
-
-**정답:** Q1:c, Q2:b, Q3:d, Q4:b, Q5:c, Q6:b, Q7:b, Q8:b, Q9:b, Q10:c
-
----
-
 ## 과제
 
 ### 과제 1: Wazuh 커스텀 규칙 세트 개발 (필수)
@@ -702,7 +666,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID2/completion-report \
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

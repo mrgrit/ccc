@@ -25,7 +25,7 @@
 | siem | 10.20.30.100 | SIEM (Wazuh, OpenCTI) | `ssh ccc@10.20.30.100` |
 
 **Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
-**Ollama API:** `http://localhost:8003/v1` (모델: gpt-oss:120b, gemma3:12b, llama3.1:8b)
+**Ollama API:** `http://10.20.30.200:11434/v1` (모델: gpt-oss:120b, gemma3:12b, llama3.1:8b)
 
 ## 강의 시간 배분 (3시간)
 
@@ -449,7 +449,7 @@ done
 
 ```bash
 # 3. Ollama LLM 서비스 확인 (GPU 서버)
-curl -s http://localhost:8003/api/tags | python3 -m json.tool | head -20
+curl -s http://10.20.30.200:11434/api/tags | python3 -m json.tool | head -20
 # 사용 가능한 모델 목록이 출력된다 (gemma3:12b, llama3.1:8b 등)
 ```
 
@@ -466,7 +466,7 @@ curl -s -X POST http://localhost:9100/projects \
 # 반환된 프로젝트 ID를 메모한다
 ```
 
-> **명령어 해설**: `http://localhost:8003/api/tags`는 Ollama의 모델 목록 API이다. 이 API가 응답하면 LLM 추론 서비스가 정상 가동 중인 것이다. `master_mode: "external"`은 Claude Code가 오케스트레이션하는 모드를 의미한다.
+> **명령어 해설**: `http://10.20.30.200:11434/api/tags`는 Ollama의 모델 목록 API이다. 이 API가 응답하면 LLM 추론 서비스가 정상 가동 중인 것이다. `master_mode: "external"`은 Claude Code가 오케스트레이션하는 모드를 의미한다.
 >
 
 ## 실습 3.2: 단순 ReAct 공격 에이전트 구현
@@ -900,42 +900,6 @@ AI 공격 에이전트의 강력함은 곧 위험을 의미한다. 반드시 윤
 
 ---
 
-## 자가 점검 퀴즈 (10문항)
-
-**Q1.** AI 에이전트의 ReAct 패턴에서 "Act"에 해당하는 것은?
-- (a) LLM의 추론 결과 생성  (b) **외부 도구를 호출하여 환경에 작용**  (c) 이전 결과를 분석  (d) 시스템 프롬프트 로딩
-
-**Q2.** Bastion에서 SubAgent에 직접 POST를 보내면 안 되는 이유는?
-- (a) 속도가 느려서  (b) **증적 관리와 안전 통제가 우회되므로**  (c) SubAgent가 거부해서  (d) API 키가 다르므로
-
-**Q3.** AI 공격 에이전트의 의사결정 Scoring Model에서 가장 높은 가중치를 가진 기준은?
-- (a) 비용  (b) 피드백 품질  (c) **성공 확률**  (d) 은밀성
-
-**Q4.** bastion의 prompt_engine이 하는 핵심 역할은?
-- (a) LLM 모델 학습  (b) **시스템 프롬프트를 동적으로 조합**  (c) 데이터베이스 관리  (d) 네트워크 스캔
-
-**Q5.** risk_level이 "critical"인 태스크를 실행하면 Bastion는 어떻게 동작하는가?
-- (a) 즉시 실행  (b) 에러 반환  (c) **dry_run을 자동 강제하고 사용자 확인을 요구**  (d) 태스크를 삭제
-
-**Q6.** PoW 블록 검증에서 `tampered: []`가 의미하는 것은?
-- (a) 블록이 없음  (b) **증적이 변조되지 않았음**  (c) 모든 블록이 실패  (d) 체인이 분기됨
-
-**Q7.** 멀티 에이전트 공격 시스템에서 오케스트레이터의 핵심 역할은?
-- (a) 직접 명령 실행  (b) LLM 모델 제공  (c) **에이전트 간 실행 순서와 상호작용 관리**  (d) 로그 저장
-
-**Q8.** SubAgent의 /a2a/mission에서 max_steps 파라미터의 용도는?
-- (a) 최대 명령 길이 제한  (b) **최대 ReAct 루프 반복 횟수 제한**  (c) 최대 응답 토큰 수  (d) 최대 동시 실행 수
-
-**Q9.** AI 공격 에이전트의 6계층 통제 중 "인프라 수준"에 해당하는 것은?
-- (a) 시스템 프롬프트 제한  (b) risk_level 제어  (c) PoW 기록  (d) **네트워크 격리와 방화벽**
-
-**Q10.** 전통적 침투 테스트 대비 AI 에이전트의 가장 큰 장점은?
-- (a) 더 높은 창의성  (b) **재현성과 증적 관리의 자동화**  (c) 법적 면책  (d) 제로데이 발견 능력
-
-**정답:** Q1:b, Q2:b, Q3:c, Q4:b, Q5:c, Q6:b, Q7:c, Q8:b, Q9:d, Q10:b
-
----
-
 ## 과제
 
 ### 과제 1: ReAct 공격 에이전트 확장 (필수)
@@ -977,7 +941,7 @@ AI 공격 에이전트의 강력함은 곧 위험을 의미한다. 반드시 윤
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

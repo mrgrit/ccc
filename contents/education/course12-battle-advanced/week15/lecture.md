@@ -523,42 +523,6 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/completion-report \
 
 ---
 
-## 자가 점검 퀴즈 (10문항)
-
-**Q1.** PTES 7단계 중 "고객과 범위를 합의하는 단계"는?
-- (a) 정보 수집  (b) **사전 교류 (Pre-engagement)**  (c) 보고서  (d) 위협 모델링
-
-**Q2.** CVSS 9.0 이상의 취약점에 대한 권장 리미디에이션 기한은?
-- (a) 30일  (b) 7일  (c) **즉시 (24시간 이내)**  (d) 다음 릴리즈
-
-**Q3.** Bastion에서 risk_level "critical" 태스크의 동작은?
-- (a) 즉시 실행  (b) 에러 반환  (c) **dry_run 강제, 사용자 확인 필수**  (d) 삭제
-
-**Q4.** Q-learning에서 ε-greedy의 ε=0.1이면?
-- (a) 100% 랜덤  (b) **90% 최적 + 10% 랜덤**  (c) 10% 최적  (d) 학습 중단
-
-**Q5.** SOC Tier 2의 핵심 역할은?
-- (a) 모니터링  (b) **심층 분석 + IR 실행**  (c) 규칙 개발  (d) 경영 보고
-
-**Q6.** 퍼플팀에서 탐지 수준 DL0의 의미는?
-- (a) 완벽 탐지  (b) 부분 탐지  (c) **전혀 탐지 불가 (사각지대)**  (d) 자동 대응
-
-**Q7.** Attack/Defense CTF에서 SLA 위반 시?
-- (a) 추가 점수  (b) **감점 (서비스 다운 패널티)**  (c) 경고  (d) 무시
-
-**Q8.** bastion prompt_engine의 핵심 기능은?
-- (a) DB 관리  (b) **시스템 프롬프트 동적 조합 (7개 섹션 모듈)**  (c) 네트워크 스캔  (d) 로그 수집
-
-**Q9.** PoW 블록 검증에서 `valid: true, tampered: []`의 의미는?
-- (a) 블록 없음  (b) 오류 발생  (c) **모든 증적이 무결하게 보존됨**  (d) 체인 분기
-
-**Q10.** 보안 성숙도 CMM Level 3 "정의(Defined)"의 특징은?
-- (a) 임시적 대응  (b) 완전 자동화  (c) **표준화된 프로세스 존재, 문서화**  (d) 메트릭 기반
-
-**정답:** Q1:b, Q2:c, Q3:c, Q4:b, Q5:b, Q6:c, Q7:b, Q8:b, Q9:c, Q10:c
-
----
-
 ## 과제 (최종)
 
 ### 최종 과제: 개인 포트폴리오 보고서 (필수)
@@ -651,7 +615,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/completion-report \
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

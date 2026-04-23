@@ -1200,42 +1200,6 @@ fi
 
 ---
 
-## 자가 점검 퀴즈 (10문항)
-
-**Q1.** Pass-the-Hash 공격이 가능한 근본적인 이유는?
-- (a) 비밀번호가 평문으로 저장  (b) **NTLM 인증이 해시 자체로 챌린지에 응답**  (c) TCP/IP 취약점  (d) DNS 스푸핑
-
-**Q2.** mimikatz에서 LSASS 메모리에 접근하기 위해 필요한 권한은?
-- (a) 일반 사용자  (b) Power Users  (c) **SeDebugPrivilege (관리자)**  (d) Guest
-
-**Q3.** Kerberoasting에서 TGS 티켓의 암호화 키는?
-- (a) 사용자 비밀번호  (b) krbtgt 비밀번호  (c) **SPN 등록 서비스 계정의 비밀번호**  (d) 세션 키
-
-**Q4.** Kerberoasting 탐지를 위해 모니터링해야 하는 Windows 이벤트 ID는?
-- (a) 4624  (b) 4625  (c) **4769**  (d) 7045
-
-**Q5.** Token Impersonation 공격의 전제 조건이 아닌 것은?
-- (a) SeImpersonatePrivilege  (b) 대상 토큰 존재  (c) **도메인 관리자 권한**  (d) 로컬 관리자 권한
-
-**Q6.** PSExec이 남기는 고유한 포렌식 흔적은?
-- (a) DNS 쿼리  (b) **PSEXESVC 서비스 생성 (Event ID 7045)**  (c) ICMP 패킷  (d) HTTP 요청
-
-**Q7.** WMI 원격 실행이 PSExec보다 탐지가 어려운 이유는?
-- (a) 암호화  (b) **서비스를 생성하지 않고 파일을 업로드하지 않음**  (c) UDP 사용  (d) 로그 삭제
-
-**Q8.** Pass-the-Hash에 대한 가장 효과적인 방어 대책은?
-- (a) 안티바이러스  (b) 방화벽  (c) **Credential Guard + LAPS**  (d) VPN
-
-**Q9.** Kerberoasting 방어를 위해 서비스 계정 비밀번호는 최소 몇 자 이상을 권장하는가?
-- (a) 8자  (b) 12자  (c) 16자  (d) **25자 이상**
-
-**Q10.** 다음 중 가장 흔적이 적은 원격 실행 방식은?
-- (a) PSExec  (b) **WMIExec**  (c) SMBExec  (d) 모두 동일
-
-**정답:** Q1:b, Q2:c, Q3:c, Q4:c, Q5:c, Q6:b, Q7:b, Q8:c, Q9:d, Q10:b
-
----
-
 ## 과제
 
 ### 과제 1: 측면 이동 체인 재구성 (필수)

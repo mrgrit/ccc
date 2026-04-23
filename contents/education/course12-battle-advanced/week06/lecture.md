@@ -1195,42 +1195,6 @@ CHECK_EOF
 
 ---
 
-## 자가 점검 퀴즈 (10문항)
-
-**Q1.** Suricata IPS에서 패킷을 버리면서 RST를 보내지 않는 액션은?
-- (a) alert  (b) **drop**  (c) reject  (d) pass
-
-**Q2.** NFQUEUE에서 bypass 옵션의 역할은?
-- (a) 패킷 암호화  (b) 로그 비활성화  (c) **Suricata 장애 시 패킷 통과**  (d) 성능 향상
-
-**Q3.** fail2ban에서 maxretry=3, findtime=300의 의미는?
-- (a) 3분 내 300회  (b) **300초 내 3회 실패 시 차단**  (c) 3시간 차단  (d) 300개 IP 차단
-
-**Q4.** fail2ban이 nftables와 연동하려면 어떤 설정이 필요한가?
-- (a) iptables  (b) **banaction = nftables-multiport**  (c) firewalld  (d) ufw
-
-**Q5.** nftables에서 타임아웃이 있는 IP 셋을 만드는 옵션은?
-- (a) type timeout  (b) **flags timeout**  (c) timeout yes  (d) auto-expire
-
-**Q6.** Cowrie 허니팟의 주된 목적은?
-- (a) 서비스 제공  (b) **공격자 행동 수집 및 분석**  (c) 네트워크 가속  (d) 백업
-
-**Q7.** 상관분석 차단에서 점수 감쇠(decay)의 목적은?
-- (a) 성능 향상  (b) **오래된 이벤트의 과도한 누적 방지**  (c) 로그 삭제  (d) 알림 전송
-
-**Q8.** 알림 피로도(Alert Fatigue)를 줄이는 방법이 아닌 것은?
-- (a) 집계 알림  (b) 심각도 필터링  (c) **모든 이벤트 즉시 알림**  (d) 자동 요약 보고서
-
-**Q9.** Cowrie에서 공격자 세션을 재생하는 명령은?
-- (a) replay  (b) **playlog**  (c) showlog  (d) catlog
-
-**Q10.** IPS를 처음 도입할 때 권장하는 절차는?
-- (a) 즉시 drop 모드  (b) reject 모드  (c) **alert 모드로 테스트 후 단계적 drop 전환**  (d) 모든 트래픽 차단
-
-**정답:** Q1:b, Q2:c, Q3:b, Q4:b, Q5:b, Q6:b, Q7:b, Q8:c, Q9:b, Q10:c
-
----
-
 ## 과제
 
 ### 과제 1: 다층 방어 체계 구축 (필수)
