@@ -521,70 +521,6 @@ python3 /tmp/course_summary.py
 
 ---
 
-## 복습 퀴즈
-
-**Q1.** 다중 벡터 공격에서 가장 먼저 확인해야 할 것은?
-
-<details><summary>정답</summary>
-공격의 전체 범위(scope)를 파악하는 것이다. 어떤 서버가 영향을 받았는지, 공격 벡터가 몇 개인지, 측면 이동이 있었는지를 확인해야 봉쇄 범위를 정확히 결정할 수 있다.
-</details>
-
-**Q2.** 이 시나리오에서 공격 체인의 ATT&CK 기법을 순서대로 나열하시오.
-
-<details><summary>정답</summary>
-T1190(Exploit Public-Facing Application) → T1505.003(Web Shell) → T1059.004(Unix Shell) → T1082(System Info Discovery) → T1021.004(SSH) → T1071.001(Web Protocols C2) → T1048(Exfiltration Over Alternative Protocol)
-</details>
-
-**Q3.** Bastion를 인시던트 대응에서 가장 효과적으로 활용하는 방법은?
-
-<details><summary>정답</summary>
-execute-plan으로 전체 서버에 동시에 분석/봉쇄 명령을 실행하고, evidence로 모든 조치를 자동 기록하며, completion-report로 최종 보고서를 생성한다. 이를 통해 대응 속도와 감사 추적성을 동시에 확보한다.
-</details>
-
-**Q4.** 이 시나리오에서 SOAR가 있었다면 어떤 단계가 자동화되었을까?
-
-<details><summary>정답</summary>
-1) Tier 1 트리아지 (AI 자동 분류), 2) 공격 IP 방화벽 자동 차단, 3) TI 자동 조회, 4) Slack 자동 알림, 5) 티켓 자동 생성. MTTR을 10분에서 2-3분으로 단축할 수 있었을 것이다.
-</details>
-
-**Q5.** 15주 과정에서 배운 기술 중 이 시나리오에서 가장 중요했던 3가지는?
-
-<details><summary>정답</summary>
-1) Week 02 SIEM 상관분석: 다중 경보를 연계하여 공격 체인 식별, 2) Week 06 위협 헌팅: 경보 외의 숨겨진 위협 탐지, 3) Week 11 인시던트 대응: 체계적인 봉쇄→근절→복구 프로세스 수행.
-</details>
-
-**Q6.** Lessons Learned에서 가장 중요한 개선 사항은?
-
-<details><summary>정답</summary>
-SOAR 자동 대응 도입이다. 수동 대응으로 10분이 걸린 봉쇄를 자동화하면 2-3분으로 단축할 수 있고, 야간/주말에도 즉각 대응이 가능해진다.
-</details>
-
-**Q7.** 웹서버에서 SIEM으로의 SSH 측면 이동을 방지하는 방법은?
-
-<details><summary>정답</summary>
-1) 네트워크 세그멘테이션: 웹서버→SIEM SSH 접근을 방화벽에서 차단, 2) 최소 권한: 웹서버에서 다른 서버로의 SSH를 제한, 3) 키 기반 인증: 비밀번호 인증 비활성화, 4) 탐지 룰: 웹서버에서 내부 SSH 시도 시 경보.
-</details>
-
-**Q8.** SOC-CMM Level 3에서 Level 4로 올라가기 위해 필요한 것은?
-
-<details><summary>정답</summary>
-KPI를 정량적으로 측정하고 데이터 기반으로 의사결정하는 것이다. MTTD/MTTR/오탐률/탐지 커버리지를 대시보드로 실시간 추적하고, 트렌드를 분석하여 지속적으로 개선해야 한다.
-</details>
-
-**Q9.** AI가 이 시나리오의 인시던트 대응에서 도움을 줄 수 있는 부분은?
-
-<details><summary>정답</summary>
-1) 경보 자동 트리아지 (다수 경보를 즉시 분류), 2) 경보 상관관계 자동 분석 (공격 체인 식별 보조), 3) 인시던트 보고서 초안 자동 생성, 4) ATT&CK 자동 매핑, 5) 유사 과거 사례 검색.
-</details>
-
-**Q10.** 이 과정을 수료한 후 SOC 분석가로서 가장 중요하게 유지해야 할 것은?
-
-<details><summary>정답</summary>
-지속적 학습이다. 새로운 공격 기법(ATT&CK 업데이트), 새로운 도구(SIEM/EDR/SOAR), 새로운 위협(APT 캠페인)이 계속 나오므로, TI 피드 모니터링, Purple Team 정기 훈련, 컨퍼런스 참석 등으로 역량을 유지해야 한다.
-</details>
-
----
-
 ## 최종 과제
 
 ### 종합 과제: 인시던트 대응 종합 보고서 (필수)
@@ -958,7 +894,7 @@ python3 /tmp/course_matrix.py
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

@@ -16,8 +16,9 @@
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
-**Ollama API:** `http://localhost:8003/v1`
+**ccc-api:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion:** `http://10.20.30.200:8003` (/ask, /chat, /evidence)
+**Ollama:** `http://10.20.30.200:11434/v1` (OpenAI 호환)
 
 ## 강의 시간 배분 (3시간)
 
@@ -28,7 +29,7 @@
 | 1:30-1:40 | 휴식 | - |
 | 1:40-2:30 | LLM 연동 실습 (Part 3) | 실습 |
 | 2:30-3:10 | 보고서 자동 생성 + 한계 (Part 4) | 실습 |
-| 3:10-3:20 | 복습 퀴즈 + 과제 안내 | 정리 |
+| 3:10-3:20 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -143,7 +144,7 @@ Wazuh Alert
 ```bash
 # Ollama LLM 접속 테스트
 echo "=== Ollama 연결 테스트 ==="
-curl -s http://localhost:8003/v1/models 2>/dev/null | \
+curl -s http://10.20.30.200:11434/v1/models 2>/dev/null | \
   python3 -c "
 import sys, json
 try:
@@ -291,7 +292,7 @@ try:
 5. 추가 조사: (확인할 사항)"""
     
     response = httpx.post(
-        "http://localhost:8003/v1/chat/completions",
+        "http://10.20.30.200:11434/v1/chat/completions",
         json={
             "model": "llama3.1:8b",
             "messages": [
@@ -527,70 +528,6 @@ python3 /tmp/ai_soc_limitations.py
 - [ ] AI 출력의 검증 방법을 알고 있다
 - [ ] AI SOC의 5가지 한계를 설명할 수 있다
 - [ ] Bastion + AI 연동 패턴을 이해한다
-
----
-
-## 복습 퀴즈
-
-**Q1.** AI가 SOC Tier 1 업무를 60-80% 자동화할 수 있는 이유는?
-
-<details><summary>정답</summary>
-Tier 1의 주요 업무인 경보 트리아지(분류/우선순위)는 패턴 인식과 반복적 판단이므로 LLM이 잘 수행할 수 있다. Info/Low 경보를 자동 종결하면 분석가는 High/Critical에만 집중할 수 있다.
-</details>
-
-**Q2.** AI 경보 분류에서 temperature를 낮게 설정하는 이유는?
-
-<details><summary>정답</summary>
-일관성 있는 분류 결과를 얻기 위해서다. temperature가 높으면 창의적이지만 비결정적(같은 입력에 다른 출력)이고, 낮으면 결정적(일관된 출력)이다. 경보 분류는 일관성이 중요하므로 0.1-0.3이 적절하다.
-</details>
-
-**Q3.** Hallucination이 SOC에서 위험한 이유는?
-
-<details><summary>정답</summary>
-AI가 존재하지 않는 IOC(가짜 IP, CVE)를 보고서에 포함하면 잘못된 차단/대응으로 이어질 수 있다. 또는 실제 위협을 "정상"으로 잘못 분류하면 공격을 놓칠 수 있다.
-</details>
-
-**Q4.** 로컬 LLM(Ollama)을 사용해야 하는 경우는?
-
-<details><summary>정답</summary>
-경보 데이터에 내부 IP, 서버 구성, 취약점 정보 등 민감 데이터가 포함될 때. 클라우드 LLM으로 전송하면 정보 유출 위험이 있으므로 로컬 LLM을 사용해야 한다.
-</details>
-
-**Q5.** RAG(Retrieval-Augmented Generation)가 SOC에서 유용한 이유는?
-
-<details><summary>정답</summary>
-LLM의 학습 데이터에 없는 최신 위협 정보, 자사 환경 정보, 과거 인시던트 사례를 검색하여 프롬프트에 포함할 수 있다. 이를 통해 더 정확하고 맥락에 맞는 분석이 가능하다.
-</details>
-
-**Q6.** AI가 생성한 보고서에 "분석가 검토 필요" 표시가 중요한 이유는?
-
-<details><summary>정답</summary>
-AI 출력은 100% 정확하지 않으므로, 사람이 사실 확인과 최종 승인을 해야 한다. 검토 없이 AI 보고서를 그대로 사용하면 hallucination이나 오분류로 인한 오판이 발생할 수 있다.
-</details>
-
-**Q7.** few-shot prompting이 SOC에서 효과적인 이유는?
-
-<details><summary>정답</summary>
-과거에 정확하게 분류된 경보 예시를 프롬프트에 포함하면, LLM이 해당 패턴을 참고하여 더 정확한 분류를 한다. "이 유형의 경보는 High로 분류하세요"라는 예시가 있으면 일관성이 높아진다.
-</details>
-
-**Q8.** AI SOC의 성능을 측정하는 지표 3가지는?
-
-<details><summary>정답</summary>
-1) 분류 정확도: AI 분류와 사람 분류의 일치율, 2) 오분류율: Critical을 Low로 잘못 분류한 비율(가장 위험), 3) 처리 시간: AI 트리아지 소요 시간 대비 사람 트리아지 시간 단축율.
-</details>
-
-**Q9.** AI가 "Critical"로 분류한 경보를 사람이 재확인해야 하는 이유는?
-
-<details><summary>정답</summary>
-1) AI가 과민 반응하여 오탐을 Critical로 분류했을 수 있다. 2) 자동 대응(IP 차단 등)이 트리거되므로 오판 시 서비스 장애를 유발한다. 3) Critical 인시던트는 경영진 보고, 법적 절차 등 중대한 후속 조치가 따르므로 사람의 판단이 필수다.
-</details>
-
-**Q10.** Bastion가 AI SOC에서 할 수 있는 역할은?
-
-<details><summary>정답</summary>
-1) Wazuh에서 경보를 수집하여 AI에 전달, 2) AI 분석 결과에 따라 자동 대응(방화벽 차단, 격리) 실행, 3) 분석 결과와 대응 이력을 evidence로 기록, 4) AI 생성 보고서를 completion-report로 저장.
-</details>
 
 ---
 
@@ -1043,7 +980,7 @@ python3 /tmp/ai_best_practices.py
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 
