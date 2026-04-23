@@ -27,7 +27,7 @@
 | 1:30-1:40 | 휴식 | - |
 | 1:40-2:30 | YARA 룰 작성 실습 (Part 3) | 실습 |
 | 2:30-3:10 | Wazuh 연동 + 자동화 (Part 4) | 실습 |
-| 3:10-3:20 | 복습 퀴즈 + 과제 안내 | 정리 |
+| 3:10-3:20 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -876,72 +876,6 @@ bash /tmp/yara_test_suite.sh
 - [ ] YARA 룰 성능 최적화 원칙을 알고 있다
 - [ ] 테스트 샘플로 YARA 룰의 정확도를 검증할 수 있다
 - [ ] yara CLI 명령으로 파일/디렉토리를 스캔할 수 있다
-
----
-
-## 복습 퀴즈
-
-**Q1.** YARA 룰의 3개 섹션과 각각의 역할을 설명하시오.
-
-<details><summary>정답</summary>
-1) meta: 룰의 메타데이터(작성자, 설명, 참고 등). 매칭에 영향 없음.
-2) strings: 검색할 패턴 정의(텍스트, 헥스, 정규표현식).
-3) condition: strings 매칭 결과를 논리적으로 조합하여 최종 판정.
-</details>
-
-**Q2.** `$s1 = "malware" nocase wide ascii`의 의미는?
-
-<details><summary>정답</summary>
-"malware" 문자열을 대소문자 구분 없이(nocase), UTF-16 인코딩(wide)과 ASCII 인코딩(ascii) 모두에서 검색한다. 즉 "MALWARE", "Malware" 등의 변형과 유니코드 인코딩 버전도 매칭한다.
-</details>
-
-**Q3.** 헥스 문자열 `{ 4D 5A ?? 00 [2-4] FF }`에서 ??와 [2-4]의 의미는?
-
-<details><summary>정답</summary>
-`??`는 임의의 1바이트(와일드카드). `[2-4]`는 2~4바이트를 건너뛴다는 의미(jump). 즉 "4D 5A (임의 1바이트) 00 (2~4바이트 건너뛰기) FF" 패턴을 찾는다.
-</details>
-
-**Q4.** `condition: 2 of ($exec*) and 1 of ($input*)`의 의미는?
-
-<details><summary>정답</summary>
-$exec 접두사가 붙은 문자열 중 2개 이상이 매칭되고, 동시에 $input 접두사가 붙은 문자열 중 1개 이상이 매칭되어야 전체 조건이 참이 된다.
-</details>
-
-**Q5.** PHP 웹셸을 탐지할 때 가장 신뢰도 높은 패턴 조합은?
-
-<details><summary>정답</summary>
-코드 실행 함수(eval, system, exec 등) + 사용자 입력 변수($_GET, $_POST, $_REQUEST)의 조합이다. 실행 함수만으로는 정상 코드에서도 사용되므로 오탐이 많고, 사용자 입력과 결합되어야 웹셸 확률이 높다.
-</details>
-
-**Q6.** `condition: uint16(0) == 0x5A4D`는 어떤 파일을 감지하는가?
-
-<details><summary>정답</summary>
-Windows PE(Portable Executable) 파일을 감지한다. 0x5A4D는 ASCII로 "MZ"이며, Windows 실행파일(.exe, .dll)의 매직 바이트다.
-</details>
-
-**Q7.** YARA 성능 최적화에서 왜 filesize 조건을 먼저 두는 것이 좋은가?
-
-<details><summary>정답</summary>
-filesize는 파일 시스템 메타데이터만으로 판단 가능하여 I/O 비용이 거의 없다. 먼저 평가하여 조건에 맞지 않는 파일을 빠르게 걸러내면 이후의 비용이 큰 문자열 검색을 건너뛸 수 있다.
-</details>
-
-**Q8.** Wazuh FIM과 YARA를 연동하는 이유는?
-
-<details><summary>정답</summary>
-FIM이 파일 변경을 탐지하면 YARA로 해당 파일만 정밀 스캔하여, 전체 디스크 스캔 없이 효율적으로 악성 파일을 탐지할 수 있다. 실시간 탐지와 자동 격리가 가능해진다.
-</details>
-
-**Q9.** YARA 룰에서 정규표현식이 고정 문자열보다 느린 이유는?
-
-<details><summary>정답</summary>
-고정 문자열은 Boyer-Moore 등의 빠른 알고리즘으로 검색하지만, 정규표현식은 NFA/DFA 상태 기계를 구동해야 하므로 10-100배 느리다. 특히 백트래킹이 많은 패턴은 극심한 성능 저하를 유발한다.
-</details>
-
-**Q10.** 암호화폐 채굴기 탐지에서 "stratum+tcp://" 패턴이 중요한 이유는?
-
-<details><summary>정답</summary>
-stratum은 채굴 풀과 채굴기 간의 통신에 사용하는 전용 프로토콜이다. 정상적인 소프트웨어에서는 거의 사용되지 않으므로 오탐 확률이 매우 낮은 고신뢰도 시그니처다.
-</details>
 
 ---
 

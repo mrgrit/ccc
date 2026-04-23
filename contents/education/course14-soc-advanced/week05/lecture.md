@@ -27,7 +27,7 @@
 | 1:30-1:40 | 휴식 | - |
 | 1:40-2:30 | IOC 관리 + 피드 연동 실습 (Part 3) | 실습 |
 | 2:30-3:10 | Wazuh 연동 + Bastion 자동화 (Part 4) | 실습 |
-| 3:10-3:20 | 복습 퀴즈 + 과제 안내 | 정리 |
+| 3:10-3:20 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -985,70 +985,6 @@ python3 /tmp/ti_effectiveness.py
 - [ ] Wazuh CDB 리스트를 생성하고 룰에 연동할 수 있다
 - [ ] IOC 품질 관리(만료, 중복, 신뢰도)를 수행할 수 있다
 - [ ] Bastion로 IOC 배포를 자동화할 수 있다
-
----
-
-## 복습 퀴즈
-
-**Q1.** 전술적 TI와 전략적 TI의 주요 차이점은?
-
-<details><summary>정답</summary>
-전술적 TI는 SOC 분석가가 사용하는 기계 판독 가능한 IOC(IP, 해시, 도메인)로 실시간 탐지에 활용된다. 전략적 TI는 CISO/경영진을 위한 위협 동향 보고서로 투자 의사결정에 활용된다.
-</details>
-
-**Q2.** STIX와 TAXII의 관계를 설명하시오.
-
-<details><summary>정답</summary>
-STIX는 위협 정보를 표현하는 데이터 형식(JSON)이고, TAXII는 STIX 데이터를 교환하는 전송 프로토콜(HTTP/HTTPS)이다. STIX가 "편지 내용"이라면 TAXII는 "우체국"에 해당한다.
-</details>
-
-**Q3.** IOC로서 IP 주소의 약점은 무엇인가?
-
-<details><summary>정답</summary>
-수명이 짧다. 공격자가 C2 서버의 IP를 자주 변경(1-7일)하므로 오래된 IP IOC는 의미가 없다. 또한 CDN이나 클라우드 IP를 사용하면 정상 서비스와 겹쳐 오탐이 발생할 수 있다.
-</details>
-
-**Q4.** TLP:AMBER의 공유 범위는?
-
-<details><summary>정답</summary>
-조직 내부와 업무상 필요한 파트너까지만 공유할 수 있다. 일반 공개나 커뮤니티 전체 공유는 불가하다.
-</details>
-
-**Q5.** Wazuh CDB 리스트의 형식과 용도를 설명하시오.
-
-<details><summary>정답</summary>
-"key:value" 형식의 텍스트 파일로, Wazuh 룰에서 `<list>` 태그로 참조하여 실시간 IOC 매칭에 사용한다. IP, 도메인 등의 블랙리스트를 관리하며, wazuh-makelists로 바이너리 형식으로 컴파일한다.
-</details>
-
-**Q6.** MISP에서 "to_ids" 플래그의 의미는?
-
-<details><summary>정답</summary>
-해당 IOC를 IDS/SIEM 탐지 룰에 사용해도 좋다는 표시다. to_ids=True인 속성만 자동으로 SIEM에 연동하고, False인 것은 참고 정보로만 활용한다. 오탐 위험이 높은 IOC는 False로 설정한다.
-</details>
-
-**Q7.** IOC 품질 관리에서 "만료" 처리가 필요한 이유는?
-
-<details><summary>정답</summary>
-1) 오래된 IOC는 더 이상 유효하지 않아 오탐을 유발한다. 2) 누적된 IOC가 SIEM 성능을 저하시킨다. 3) IP 주소는 재할당되어 정상 서버가 차단될 수 있다.
-</details>
-
-**Q8.** OpenCTI가 MISP와 다른 점은?
-
-<details><summary>정답</summary>
-OpenCTI는 STIX 2.1 기반 그래프 데이터베이스(Neo4j)를 사용하여 위협 객체 간 관계를 시각화하고 분석하는 데 강점이 있다. MISP는 IOC 공유와 협업에 초점이 맞춰져 있다. 두 플랫폼은 커넥터로 연동하여 상호 보완적으로 사용한다.
-</details>
-
-**Q9.** STIX Indicator의 pattern 필드 예시를 하나 작성하시오.
-
-<details><summary>정답</summary>
-`[ipv4-addr:value = '203.0.113.50']` 또는 `[file:hashes.'SHA-256' = 'abc123...']` 형식이다. 대괄호 안에 객체타입:속성 = '값' 형식으로 작성한다.
-</details>
-
-**Q10.** 위협 인텔리전스 도입 시 가장 먼저 해야 할 것은?
-
-<details><summary>정답</summary>
-수집 요구사항을 정의하는 것이다. 자사의 산업, 규모, 위협 프로필에 맞는 TI 소스를 선정하고, 어떤 유형의 IOC가 필요한지, 어떤 SIEM/도구에 연동할지를 먼저 계획해야 한다. 무작정 피드를 연동하면 오탐과 노이즈만 늘어난다.
-</details>
 
 ---
 
