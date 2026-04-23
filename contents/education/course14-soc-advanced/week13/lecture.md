@@ -27,7 +27,7 @@
 | 1:30-1:40 | 휴식 | - |
 | 1:40-2:30 | 공격 시뮬레이션 + 탐지 검증 (Part 3) | 실습 |
 | 2:30-3:10 | 룰 개선 + 자동화 (Part 4) | 실습 |
-| 3:10-3:20 | 복습 퀴즈 + 과제 안내 | 정리 |
+| 3:10-3:20 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -441,70 +441,6 @@ python3 /tmp/purple_team_report.py
 - [ ] Purple Team 보고서를 작성할 수 있다
 - [ ] 탐지 커버리지를 백분율로 측정할 수 있다
 - [ ] 격차 우선순위(Critical/High/Medium/Low)를 판정할 수 있다
-
----
-
-## 복습 퀴즈
-
-**Q1.** Purple Team이 Red Team + Blue Team 별도 운영보다 효과적인 이유는?
-
-<details><summary>정답</summary>
-실시간 피드백 루프가 형성되어 공격 실행 즉시 탐지 여부를 확인하고 즉시 룰을 개선할 수 있다. 별도 운영은 보고서 기반으로 소통하므로 개선이 수주~수개월 지연된다.
-</details>
-
-**Q2.** 탐지 격차(Detection Gap)를 측정하는 방법은?
-
-<details><summary>정답</summary>
-ATT&CK 기법 목록을 기준으로 각 기법에 대해 공격을 시뮬레이션하고, SIEM/IDS에서 탐지 성공 여부를 기록한다. 미탐지 기법의 수가 탐지 격차이며, 전체 대비 탐지 비율이 커버리지다.
-</details>
-
-**Q3.** Atomic Test의 "Atomic"이 의미하는 것은?
-
-<details><summary>정답</summary>
-단일 ATT&CK 기법을 테스트하는 최소 단위라는 의미다. 복잡한 공격 시나리오가 아니라 한 가지 기법만 독립적으로 실행하여 해당 기법의 탐지 여부를 정확히 확인한다.
-</details>
-
-**Q4.** 탐지 커버리지가 60%인 SOC의 의미와 개선 방법은?
-
-<details><summary>정답</summary>
-테스트한 ATT&CK 기법 중 60%만 탐지 가능하다는 의미로, 40%의 기법은 공격자가 사용해도 경보가 울리지 않는다. 개선: 미탐 기법을 우선순위화하여 순차적으로 탐지 룰을 추가하고, 분기별 재테스트로 커버리지를 높인다.
-</details>
-
-**Q5.** T1082(System Info Discovery) 기법이 탐지하기 어려운 이유는?
-
-<details><summary>정답</summary>
-whoami, hostname, uname 등 개별 명령은 정상 운영에서도 자주 사용되어 단일 실행으로는 공격과 구분할 수 없다. 짧은 시간 내 여러 정찰 명령이 조합 실행되는 패턴을 상관분석으로 탐지해야 한다.
-</details>
-
-**Q6.** Purple Team 훈련의 적절한 주기는?
-
-<details><summary>정답</summary>
-분기 1회가 일반적이다. 새로운 탐지 룰 배포 후, 새로운 위협 인텔리전스 수신 후, 인프라 변경 후에 추가 훈련을 실시한다. 자동화가 되면 월 1회도 가능하다.
-</details>
-
-**Q7.** Bastion를 Purple Team에 활용하는 방법은?
-
-<details><summary>정답</summary>
-execute-plan으로 Red Team 공격(공격 시뮬레이션 명령)과 Blue Team 검증(경보 확인 명령)을 동시에 여러 서버에서 실행하고, evidence로 결과를 자동 기록한다. completion-report로 훈련 보고서를 생성한다.
-</details>
-
-**Q8.** 탐지 격차 우선순위를 "Critical"로 판정하는 기준은?
-
-<details><summary>정답</summary>
-실제 공격에서 자주 사용되는 기법(ATT&CK 사용 빈도 높음)이면서 현재 탐지 룰이 전혀 없는(미탐) 경우다. 공격 성공 가능성과 피해 영향도가 모두 높은 기법이 Critical이다.
-</details>
-
-**Q9.** 새로 작성한 탐지 룰의 품질을 검증하는 방법은?
-
-<details><summary>정답</summary>
-1) 양성 테스트: 해당 공격 기법을 재실행하여 탐지 확인, 2) 음성 테스트: 정상 활동으로 오탐이 발생하지 않는지 확인, 3) wazuh-logtest: 테스트 로그로 룰 매칭 검증, 4) 일정 기간 관찰 후 오탐률 측정.
-</details>
-
-**Q10.** Purple Team 보고서에 반드시 포함할 5가지 항목은?
-
-<details><summary>정답</summary>
-1) 훈련 개요(일시, 참가자, 범위), 2) 기법별 탐지 결과(성공/실패/부분), 3) 커버리지 통계, 4) 발견된 격차와 개선 조치, 5) 다음 훈련 계획.
-</details>
 
 ---
 

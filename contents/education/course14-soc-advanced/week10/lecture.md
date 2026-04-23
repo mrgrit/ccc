@@ -27,7 +27,7 @@
 | 1:30-1:40 | 휴식 | - |
 | 1:40-2:30 | 자동 대응 실습 (Part 3) | 실습 |
 | 2:30-3:10 | Bastion SOAR + API 연동 (Part 4) | 실습 |
-| 3:10-3:20 | 복습 퀴즈 + 과제 안내 | 정리 |
+| 3:10-3:20 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -573,70 +573,6 @@ python3 /tmp/soar_metrics.py
 - [ ] SOAR 도입 효과를 KPI로 측정할 수 있다
 - [ ] 안전 장치(내부 IP 보호, Critical 승인)를 구현할 수 있다
 - [ ] 자동 차단 + 자동 해제 사이클을 설정할 수 있다
-
----
-
-## 복습 퀴즈
-
-**Q1.** SOAR의 "Orchestration"과 "Automation"의 차이는?
-
-<details><summary>정답</summary>
-Orchestration은 여러 보안 도구(SIEM, 방화벽, TI)를 하나의 워크플로우로 연결하는 것이고, Automation은 개별 작업(IP 차단, 티켓 생성)을 자동 실행하는 것이다. Orchestration이 "무엇을 연결할지"이고, Automation이 "어떻게 실행할지"이다.
-</details>
-
-**Q2.** 플레이북의 "멱등성"이 중요한 이유는?
-
-<details><summary>정답</summary>
-동일 경보가 반복 발생할 때 플레이북이 여러 번 실행되어도 부작용이 없어야 한다. 예: 이미 차단된 IP를 다시 차단해도 에러가 나지 않고, 중복 티켓이 생성되지 않아야 한다.
-</details>
-
-**Q3.** 자동 대응에서 내부 IP를 보호해야 하는 이유는?
-
-<details><summary>정답</summary>
-공격자가 의도적으로 내부 IP를 소스로 위장하여 자동 차단을 유발할 수 있다. 내부 서버 IP를 차단하면 서비스 장애가 발생하므로, 내부 IP 대역은 자동 차단 대상에서 제외해야 한다.
-</details>
-
-**Q4.** Wazuh Active Response의 "timeout" 설정의 역할은?
-
-<details><summary>정답</summary>
-자동 차단 후 지정된 시간이 지나면 차단을 자동으로 해제하는 기능이다. 오탐으로 정상 IP가 차단된 경우 영구 차단을 방지하고, 관리자의 수동 해제 부담을 줄인다.
-</details>
-
-**Q5.** SOAR 도입 시 MTTR이 45분에서 5분으로 줄어든 이유는?
-
-<details><summary>정답</summary>
-1) TI 조회/IP 확인이 자동화되어 수동 조사 시간 절감, 2) 방화벽 차단이 자동으로 실행되어 대응 지연 제거, 3) 티켓/알림이 자동 생성되어 커뮤니케이션 지연 제거, 4) 분석가는 결과 검토만 하면 됨.
-</details>
-
-**Q6.** Bastion를 SOAR로 활용하는 장점은?
-
-<details><summary>정답</summary>
-1) 다중 서버에 동시 명령 실행(execute-plan), 2) 모든 대응 조치가 evidence로 자동 기록, 3) PoW 기반 실행 증명, 4) SubAgent를 통한 안전한 원격 실행. 별도 SOAR 도입 없이 기존 인프라를 활용할 수 있다.
-</details>
-
-**Q7.** 플레이북에서 "점진적 확대"가 필요한 이유는?
-
-<details><summary>정답</summary>
-모든 경보에 최대 강도로 대응하면 오탐 시 서비스 장애를 유발한다. Low는 로그만, Medium은 알림, High는 자동 차단, Critical은 격리+긴급호출로 위험도에 비례한 대응을 하여 비용/위험의 균형을 맞춘다.
-</details>
-
-**Q8.** webhook 기반 알림과 polling 기반 알림의 차이는?
-
-<details><summary>정답</summary>
-webhook은 이벤트 발생 시 서버가 클라이언트로 즉시 HTTP 요청을 보내는 push 방식. polling은 클라이언트가 주기적으로 서버에 새 이벤트를 확인하는 pull 방식. webhook이 실시간성이 높고 리소스 효율적이다.
-</details>
-
-**Q9.** Active Response 스크립트에서 로깅이 중요한 이유는?
-
-<details><summary>정답</summary>
-1) 자동 대응이 실제로 실행되었는지 확인, 2) 오탐으로 차단된 경우 원인 추적, 3) 감사(audit) 요구사항 충족, 4) 차단/해제 이력 관리로 문제 해결에 활용.
-</details>
-
-**Q10.** SOAR 자동화 비율이 100%가 아닌 70-80%인 이유는?
-
-<details><summary>정답</summary>
-1) Critical 수준의 대응은 사람의 승인이 필요, 2) 복잡한 APT 사고는 자동 판정이 어려움, 3) 새로운 유형의 공격은 플레이북이 없음, 4) 오탐 가능성이 있는 경우 사람의 판단이 필요. 완전 자동화보다 사람+자동의 하이브리드가 현실적이다.
-</details>
 
 ---
 
