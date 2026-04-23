@@ -16,7 +16,9 @@
 | web | 10.20.30.80 | 웹서버 (JuiceShop:3000, Apache:80) | `ssh ccc@10.20.30.80` |
 | siem | 10.20.30.100 | SIEM (Wazuh Dashboard:443, OpenCTI:8080) | `ssh ccc@10.20.30.100` |
 
-**Bastion API:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**ccc-api:** `http://localhost:9100` / Key: `ccc-api-key-2026`
+**Bastion:** `http://10.20.30.200:8003` (/ask, /chat, /evidence)
+**Ollama:** `http://10.20.30.200:11434` (원시 LLM, OpenAI 호환)
 
 ## 실습용 LLM 모델 준비 (필수, 1회 셋업)
 
@@ -66,7 +68,7 @@ ollama list | grep -E "ccc-(vulnerable|unsafe)"
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -94,14 +96,6 @@ ollama list | grep -E "ccc-(vulnerable|unsafe)"
 | **NIST AI RMF** | NIST AI Risk Management Framework | 미국의 AI 리스크 관리 프레임워크 | AI 위험 관리 매뉴얼 |
 
 ---
-
-# Week 01: AI Safety 개론
-
-## 학습 목표
-- AI Safety의 개념과 중요성을 이해한다
-- AI 위험 분류 체계(오용, 정렬 실패, 사고)를 구분할 수 있다
-- 실제 AI 관련 사고 사례를 알고 교훈을 도출할 수 있다
-- 주요 AI 규제(EU AI Act, NIST AI RMF, 한국 AI 기본법)를 개괄적으로 이해한다
 - 기본적인 프롬프트 인젝션 공격을 실습하고 LLM의 취약점을 체감한다
 
 ## 전제 조건
@@ -435,7 +429,7 @@ ssh ccc@10.20.30.201
 
 ```bash
 # 보안 봇 역할 설정 (시스템 프롬프트)
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -461,7 +455,7 @@ curl -s -X POST http://localhost:8003/api/chat \
 
 ```bash
 # 공격 시도 1: "지시를 무시해"
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -483,7 +477,7 @@ curl -s -X POST http://localhost:8003/api/chat \
 
 ```bash
 # 공격 시도 2: "새로운 역할 부여"
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -509,7 +503,7 @@ curl -s -X POST http://localhost:8003/api/chat \
 
 ```bash
 # 공격 시도 3: 교육 시나리오 가장
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -531,7 +525,7 @@ curl -s -X POST http://localhost:8003/api/chat \
 
 ```bash
 # 공격 시도 4: 소설/픽션 가장
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -556,7 +550,7 @@ curl -s -X POST http://localhost:8003/api/chat \
 
 ```bash
 # 시나리오: 로그 데이터 안에 공격 지시가 숨겨져 있음
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -583,7 +577,7 @@ curl -s -X POST http://localhost:8003/api/chat \
 
 ```bash
 # gemma3:12b의 반응
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -604,7 +598,7 @@ curl -s -X POST http://localhost:8003/api/chat \
 
 ```bash
 # llama3.1:8b의 반응 (모델이 있는 경우)
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -636,7 +630,7 @@ curl -s -X POST http://localhost:8003/api/chat \
 
 ```bash
 # 방어 기법 1: 강화된 시스템 프롬프트
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -778,31 +772,6 @@ EU AI Act, NIST AI RMF, 한국 AI 기본법을 비교하는 표를 작성하라:
 - 모델 탈취(Model Extraction) 공격 개념
 - LLM 가드레일 구축 실습: 입력/출력 필터 구현
 - Bastion의 AI 안전 메커니즘 분석
-
----
-
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** 프롬프트 인젝션의 목표는?
-- (a) 모델 학습 데이터 변경  (b) **시스템 프롬프트의 지시를 우회**  (c) 서버 해킹  (d) 네트워크 차단
-
-**Q2.** DAN(Do Anything Now) 기법이 동작하는 원리는?
-- (a) 암호화 취약점  (b) **LLM이 역할 부여에 강하게 반응하여 안전 정렬과 충돌**  (c) 네트워크 우회  (d) DB 조작
-
-**Q3.** Constitutional AI의 핵심은?
-- (a) 헌법 준수  (b) **모델이 자기 응답을 스스로 검토하여 유해성 판단**  (c) 정부 규제  (d) 하드웨어 보안
-
-**Q4.** LLM 가드레일의 입력 필터 Layer의 약점은?
-- (a) 너무 느림  (b) **우회가 쉬움 (인코딩, 오타, 동의어)**  (c) 비용이 높음  (d) 설치 어려움
-
-**Q5.** EU AI Act에서 '고위험 AI'에 해당하는 예시는?
-- (a) 스팸 필터  (b) **채용 AI, 의료 진단, 자율주행**  (c) 게임 AI  (d) 날씨 예보
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
 
 ---
 ---
