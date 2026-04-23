@@ -29,7 +29,7 @@
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -57,14 +57,6 @@
 | **invoke_llm** | invoke_llm | Bastion SubAgent의 LLM 호출 엔드포인트 | AI에게 질문 보내기 |
 
 ---
-
-# Week 02: LLM 에이전트 기초
-
-## 학습 목표
-- Ollama를 통한 LLM 직접 호출을 할 수 있다
-- 보안 분석 프롬프트 엔지니어링을 적용할 수 있다
-- Tool Calling 개념을 이해한다
-- LLM으로 보안 로그를 분석할 수 있다
 
 ## 전제 조건
 - Week 01 완료 (Bastion API 호출 경험)
@@ -171,7 +163,7 @@ ssh ccc@10.20.30.201
 
 ```bash
 # Ollama에 설치된 모델 목록 확인
-curl -s http://localhost:8003/api/tags \
+curl -s http://10.20.30.200:11434/api/tags \
   | python3 -c "
 import sys, json
 # JSON 파싱 후 모델 목록 출력
@@ -186,7 +178,7 @@ for m in data.get('models', []):
 
 ```bash
 # gemma3:12b 모델에 간단한 질문
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -203,7 +195,7 @@ curl -s -X POST http://localhost:8003/api/chat \
 
 ```bash
 # Temperature 0.0 (결정론적, 매번 같은 답)
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -218,7 +210,7 @@ curl -s -X POST http://localhost:8003/api/chat \
 
 ```bash
 # Temperature 1.5 (높은 무작위성, 매번 다른 답)
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -247,7 +239,7 @@ curl -s -X POST http://localhost:8003/api/chat \
 
 ```bash
 # SOC 분석관 역할을 부여하고 JSON 형식으로 분석 결과를 받는다
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -271,7 +263,7 @@ curl -s -X POST http://localhost:8003/api/chat \
 
 ```bash
 # 단계별 추론을 요구하는 프롬프트
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -295,7 +287,7 @@ curl -s -X POST http://localhost:8003/api/chat \
 
 ```bash
 # 분석 예시를 먼저 제시하여 출력 형식을 학습시킨다
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -418,7 +410,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # gemma3:12b로 분석
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -434,7 +426,7 @@ curl -s -X POST http://localhost:8003/api/chat \
 
 ```bash
 # llama3.1:8b로 같은 로그 분석
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "llama3.1:8b",
@@ -586,31 +578,6 @@ gemma3:12b와 llama3.1:8b에 동일한 보안 로그 5건을 분석시켜 정확
 - 완료 보고서와 프로젝트 Replay
 
 ---
-
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** 보안 로그 분석에 적합한 Temperature 설정은?
-- (a) 1.5 이상  (b) 1.0  (c) **0.0~0.1 (일관된 판단을 위해 낮게)**  (d) 관계없다
-
-**Q2.** Chain-of-Thought 프롬프트의 핵심은?
-- (a) 짧은 답변 요구  (b) **단계별 추론 과정을 명시적으로 요구**  (c) 여러 모델 비교  (d) JSON 출력
-
-**Q3.** Tool Calling에서 LLM의 역할은?
-- (a) 직접 명령을 실행한다  (b) **어떤 도구를 호출할지 결정하고 파라미터를 생성한다**  (c) 도구를 설치한다  (d) 네트워크를 설정한다
-
-**Q4.** Few-shot 프롬프트의 장점은?
-- (a) 토큰을 절약한다  (b) 속도가 빠르다  (c) **예시를 통해 출력 형식과 판단 기준을 학습시킨다**  (d) 모델 크기를 줄인다
-
-**Q5.** Bastion에서 보안 로그를 수집하는 방법은?
-- (a) SubAgent에 직접 SSH 접속  (b) **Manager API의 dispatch 또는 execute-plan으로 SubAgent를 통해 수집**  (c) 이메일로 요청  (d) 수동 복사
-
-**정답:** Q1:c, Q2:b, Q3:b, Q4:c, Q5:b
-
----
 ---
 
 ---
@@ -653,7 +620,7 @@ gemma3:12b와 llama3.1:8b에 동일한 보안 로그 5건을 분석시켜 정확
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
 
 **주요 경로·파일**
 
