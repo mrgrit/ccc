@@ -27,7 +27,7 @@
 | 1:25-1:35 | — | 휴식 | — |
 | 1:35-2:05 | Part 4 | Slack 알림 연동 | 실습 |
 | 2:05-2:35 | Part 5 | 오탐 처리와 튜닝 전략 | 실습 |
-| 2:35-3:00 | Part 6 | 종합 실습 + 퀴즈 | 실습+평가 |
+| 2:35-3:00 | Part 6 | 종합 실습 | 실습 |
 
 ## 용어 해설 (자율보안시스템 과목)
 
@@ -205,7 +205,7 @@ system_prompt = '''당신은 SOC Blue Agent입니다. 다음 규칙을 따르세
 
 # LLM 호출
 resp = requests.post(
-    'http://localhost:8003/v1/chat/completions',
+    'http://10.20.30.200:11434/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -457,7 +457,7 @@ system_prompt = '''당신은 SOC 경보 분석가입니다. 각 경보에 대해
 JSON 배열로 출력하라.'''
 
 resp = requests.post(
-    'http://localhost:8003/v1/chat/completions',
+    'http://10.20.30.200:11434/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -521,7 +521,7 @@ curl -s -X POST $MGR/projects/$FP_PID/dispatch \
 
 ---
 
-## Part 6: 종합 실습 + 퀴즈 (2:35-3:00)
+## Part 6: 종합 실습 (2:35-3:00)
 
 ### 6.1 종합 실습 과제
 
@@ -559,64 +559,7 @@ curl -s -X POST $MGR/projects \
 # TODO
 ```
 
-### 6.2 퀴즈 (4지선다)
-
-**문제 1.** Blue Agent의 5분 관제 사이클에서 가장 먼저 수행하는 단계는?
-
-- A) LLM 분석
-- B) Slack 알림 발송
-- C) 경보 수집 (Collect)
-- D) 대응 실행 (Respond)
-
-**정답: C) 경보 수집 (Collect)**
-
----
-
-**문제 2.** LLM 기반 경보 분석에서 temperature를 낮게 설정하는 이유는?
-
-- A) 모델의 응답 속도를 높이기 위해
-- B) 일관성 있고 결정론적인 분석 결과를 얻기 위해
-- C) 더 창의적인 대응 방안을 생성하기 위해
-- D) 메모리 사용량을 줄이기 위해
-
-**정답: B) 일관성 있고 결정론적인 분석 결과를 얻기 위해**
-
----
-
-**문제 3.** False Positive(오탐)에 해당하는 것은?
-
-- A) 실제 SQL Injection 공격을 탐지한 경우
-- B) 관리자의 정상 로그인을 브루트포스로 판단한 경우
-- C) 포트 스캔 공격을 정확히 탐지한 경우
-- D) 랜섬웨어 활동을 파일 변경으로 탐지한 경우
-
-**정답: B) 관리자의 정상 로그인을 브루트포스로 판단한 경우**
-
----
-
-**문제 4.** Blue Agent의 경보 에스컬레이션에서 Critical 등급 경보의 응답 SLA는?
-
-- A) 24시간
-- B) 1시간
-- C) 15분
-- D) 5분
-
-**정답: D) 5분**
-
----
-
-**문제 5.** 전통적 SOAR 대비 LLM Blue Agent의 가장 큰 장점은?
-
-- A) 규칙 없이도 신종 공격을 맥락 기반으로 추론할 수 있다
-- B) 하드웨어 자원을 적게 사용한다
-- C) 100% 정확한 분석이 가능하다
-- D) 규칙 작성이 더 간단하다
-
-**정답: A) 규칙 없이도 신종 공격을 맥락 기반으로 추론할 수 있다**
-
----
-
-### 6.3 다음 주 예고
+### 6.2 다음 주 예고
 
 Week 12에서는 **자율 Red Agent**를 학습한다.
 자동 취약점 스캐닝, 공격 시나리오 자동 생성, Purple Team 설계를 실습한다.
@@ -630,7 +573,7 @@ Week 12에서는 **자율 Red Agent**를 학습한다.
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

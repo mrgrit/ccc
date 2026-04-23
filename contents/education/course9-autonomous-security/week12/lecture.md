@@ -27,7 +27,7 @@
 | 1:25-1:35 | — | 휴식 | — |
 | 1:35-2:05 | Part 4 | LLM 기반 공격 실행 | 실습 |
 | 2:05-2:35 | Part 5 | Purple Team 설계 | 이론+실습 |
-| 2:35-3:00 | Part 6 | 종합 실습 + 퀴즈 | 실습+평가 |
+| 2:35-3:00 | Part 6 | 종합 실습 | 실습 |
 
 ## 용어 해설 (자율보안시스템 과목)
 
@@ -210,7 +210,7 @@ JSON 형식 출력:
 }'''
 
 resp = requests.post(
-    'http://localhost:8003/v1/chat/completions',
+    'http://10.20.30.200:11434/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -260,7 +260,7 @@ import json, requests
 
 # LLM에게 JuiceShop 대상 공격 시나리오 생성 요청
 resp = requests.post(
-    'http://localhost:8003/v1/chat/completions',
+    'http://10.20.30.200:11434/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -423,7 +423,7 @@ with open('/tmp/red_attack_results.json') as f:
 results_text = json.dumps(results, indent=2, ensure_ascii=False)[:3000]
 
 resp = requests.post(
-    'http://localhost:8003/v1/chat/completions',
+    'http://10.20.30.200:11434/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -549,7 +549,7 @@ curl -s -X POST $MGR/projects/$PURPLE_PID/completion-report \
 
 ---
 
-## Part 6: 종합 실습 + 퀴즈 (2:35-3:00)
+## Part 6: 종합 실습 (2:35-3:00)
 
 ### 6.1 종합 실습 과제
 
@@ -561,64 +561,7 @@ curl -s -X POST $MGR/projects/$PURPLE_PID/completion-report \
 4. 공격: LLM이 생성한 시나리오 실행 (execute-plan)
 5. 보고: LLM으로 공격 결과 분석 + completion-report
 
-### 6.2 퀴즈 (4지선다)
-
-**문제 1.** Red Agent의 공격 사이클에서 가장 먼저 수행하는 단계는?
-
-- A) 공격 실행 (Exploitation)
-- B) 정찰 (Reconnaissance)
-- C) 보고 (Reporting)
-- D) 취약점 분석 (Analysis)
-
-**정답: B) 정찰 (Reconnaissance)**
-
----
-
-**문제 2.** Bastion에서 risk_level이 critical인 태스크에 자동 적용되는 안전 장치는?
-
-- A) 태스크가 자동 삭제된다
-- B) SubAgent가 거부한다
-- C) dry_run이 강제되어 실제 실행되지 않는다
-- D) Manager API가 재시작된다
-
-**정답: C) dry_run이 강제되어 실제 실행되지 않는다**
-
----
-
-**문제 3.** Purple Team의 목적은?
-
-- A) Red Team만 운용하여 공격력을 극대화한다
-- B) Blue Team만 운용하여 방어력을 극대화한다
-- C) Red와 Blue를 동시 운용하여 탐지율과 대응 능력을 종합적으로 강화한다
-- D) 외부 침투 테스트 업체를 고용하는 것이다
-
-**정답: C) Red와 Blue를 동시 운용하여 탐지율과 대응 능력을 종합적으로 강화한다**
-
----
-
-**문제 4.** JuiceShop이 보안 교육에서 사용되는 이유는?
-
-- A) 실제 운영 서비스이므로 현실적인 공격을 연습할 수 있다
-- B) OWASP가 만든 의도적 취약 웹 앱으로, 다양한 취약점을 안전하게 학습할 수 있다
-- C) 방화벽 테스트 전용 도구이다
-- D) AI 모델 학습용 데이터 생성 도구이다
-
-**정답: B) OWASP가 만든 의도적 취약 웹 앱으로, 다양한 취약점을 안전하게 학습할 수 있다**
-
----
-
-**문제 5.** Red Agent의 Guardrail(안전 장치)에 해당하지 않는 것은?
-
-- A) Scope 제한 (허가된 IP 범위만 공격)
-- B) 파괴적 명령 금지 (rm -rf 등)
-- C) 공격 성공률 100% 보장
-- D) 모든 행위 Evidence 기록 필수
-
-**정답: C) 공격 성공률 100% 보장**
-
----
-
-### 6.3 다음 주 예고
+### 6.2 다음 주 예고
 
 Week 13에서는 **분산 지식 아키텍처**를 학습한다.
 SubAgent별 Experience DB, 지식 교환 API, PoW 교차 검증을 실습한다.
@@ -632,7 +575,7 @@ SubAgent별 Experience DB, 지식 교환 API, PoW 교차 검증을 실습한다.
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 

@@ -27,7 +27,7 @@
 | 1:15-1:25 | — | 휴식 | — |
 | 1:25-1:55 | Part 4 | Experience DB와 FTS 검색 | 실습 |
 | 1:55-2:30 | Part 5 | Retrieval — 경험 기반 의사결정 | 실습 |
-| 2:30-3:00 | Part 6 | 종합 실습 + 퀴즈 | 실습+평가 |
+| 2:30-3:00 | Part 6 | 종합 실습 | 실습 |
 
 ## 용어 해설 (자율보안시스템 과목)
 
@@ -516,7 +516,7 @@ curl -s -X POST $MGR/projects/$PID4/dispatch \
 
 ```bash
 # 4. Step 2: LLM에게 과거 Experience를 포함하여 대응 방안 질의
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -569,7 +569,7 @@ curl -s -X POST $MGR/projects/$PID4/dispatch \
 
 ---
 
-## Part 6: 종합 실습 + 퀴즈 (2:30-3:00)
+## Part 6: 종합 실습 (2:30-3:00)
 
 ### 6.1 종합 실습: 4-Layer Memory 전체 파이프라인
 
@@ -603,64 +603,7 @@ curl -s -X POST $MGR/projects \
 # TODO: 요약, outcome, work_details 포함
 ```
 
-### 6.2 퀴즈 (4지선다)
-
-**문제 1.** Bastion 4-Layer Memory에서 프로젝트를 넘어 영구 보존되는 계층은?
-
-- A) Evidence
-- B) Task Memory
-- C) Experience
-- D) Retrieval
-
-**정답: C) Experience**
-
----
-
-**문제 2.** Auto-Promote가 Evidence를 Experience로 승격하는 조건이 아닌 것은?
-
-- A) exit_code가 0인 성공한 태스크
-- B) 보안 관련 키워드가 포함된 결과
-- C) 실행 시간이 10초 이상인 태스크
-- D) 사용자가 promote: true를 지정한 태스크
-
-**정답: C) 실행 시간이 10초 이상인 태스크**
-
----
-
-**문제 3.** PostgreSQL FTS에서 "SSH"와 "brute"를 모두 포함하는 문서를 검색하는 올바른 쿼리는?
-
-- A) `to_tsquery('ssh | brute')`
-- B) `to_tsquery('ssh & brute')`
-- C) `to_tsquery('ssh + brute')`
-- D) `to_tsquery('ssh brute')`
-
-**정답: B) `to_tsquery('ssh & brute')`**
-
----
-
-**문제 4.** Retrieval 계층의 주요 목적은?
-
-- A) Evidence를 삭제하여 저장 공간을 확보한다
-- B) 과거 Experience를 검색하여 현재 의사결정에 활용한다
-- C) SubAgent의 네트워크 연결을 관리한다
-- D) PoW 블록의 해시를 검증한다
-
-**정답: B) 과거 Experience를 검색하여 현재 의사결정에 활용한다**
-
----
-
-**문제 5.** 4-Layer Memory의 데이터 흐름 순서로 올바른 것은?
-
-- A) Evidence → Experience → Task Memory → Retrieval
-- B) Task Memory → Evidence → Retrieval → Experience
-- C) Evidence → Task Memory → Experience → Retrieval
-- D) Retrieval → Experience → Evidence → Task Memory
-
-**정답: C) Evidence → Task Memory → Experience → Retrieval**
-
----
-
-### 6.3 다음 주 예고
+### 6.2 다음 주 예고
 
 Week 10에서는 **Schedule과 Watcher**를 학습한다.
 정기 작업 자동화(cron)와 지속 모니터링(Watcher)으로 인시던트를 자동 생성하는 방법을 다룬다.
@@ -674,7 +617,7 @@ Week 10에서는 **Schedule과 Watcher**를 학습한다.
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
 
 **주요 경로·파일**
 

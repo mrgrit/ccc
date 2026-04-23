@@ -58,13 +58,6 @@
 
 ---
 
-# Week 08: 중간고사 — 자율 보안 점검 CTF
-
-## 시험 목표
-- Week 01~07 지식 종합 평가
-- Bastion 전체 기능 활용 능력 검증
-- 실전 보안 점검 역량 확인
-
 ## 전제 조건
 - Week 01~07 전체 수강 및 과제 완료
 - Bastion API 호출 능숙
@@ -496,7 +489,7 @@ curl -s -X POST http://localhost:9100/projects/$PROJECT_ID/execute-plan \
 
 ```bash
 # LLM에 수집된 로그 분석 요청
-curl -s -X POST http://localhost:8003/api/chat \
+curl -s -X POST http://10.20.30.200:11434/api/chat \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -647,28 +640,6 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 - 통제된 환경에서의 자율 공격 실습
 
 ---
-
----
-
-## 자가 점검 퀴즈 (4문항)
-
-이번 주차(중간고사)의 핵심 개념을 최종 점검한다.
-
-**Q1.** Bastion에서 4대 서버에 동시에 명령을 보내는 API는?
-- (a) dispatch  (b) **execute-plan (tasks 배열에 각 서버의 subagent_url 지정)**  (c) health  (d) replay
-
-**Q2.** PoW 체인 검증 결과에서 "valid": true, "tampered": []의 의미는?
-- (a) 서버가 정상  (b) 학습 완료  (c) **모든 블록의 해시 체인이 무결하고 위변조가 없음**  (d) 프로젝트 종료
-
-**Q3.** evidence 기록이 중요한 이유는?
-- (a) 속도 향상  (b) 비용 절감  (c) **감사 추적 가능, 재현성 보장, 규정 준수 증거**  (d) 서버 보호
-
-**Q4.** CTF에서 모든 작업을 Bastion API로 수행해야 하는 이유는?
-- (a) SSH가 느리기 때문  (b) **evidence 자동 기록 + PoW 블록 생성 + 감사 추적이 가능하기 때문**  (c) 비밀번호를 모르기 때문  (d) 네트워크 제한
-
-**정답:** Q1:b, Q2:c, Q3:c, Q4:b
-
----
 ---
 
 ---
@@ -680,7 +651,7 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:11434`
 
 **주요 경로·파일**
 

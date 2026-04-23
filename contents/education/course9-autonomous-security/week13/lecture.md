@@ -27,7 +27,7 @@
 | 1:25-1:35 | — | 휴식 | — |
 | 1:35-2:05 | Part 4 | PoW 교차 검증 | 실습 |
 | 2:05-2:35 | Part 5 | 지식 충돌 해결과 합의 | 이론+실습 |
-| 2:35-3:00 | Part 6 | 종합 실습 + 퀴즈 | 실습+평가 |
+| 2:35-3:00 | Part 6 | 종합 실습 | 실습 |
 
 ## 용어 해설 (자율보안시스템 과목)
 
@@ -260,7 +260,7 @@ with open('/tmp/distributed_knowledge.json') as f:
 knowledge_text = json.dumps(knowledge, indent=2, ensure_ascii=False)[:3000]
 
 resp = requests.post(
-    'http://localhost:8003/v1/chat/completions',
+    'http://10.20.30.200:11434/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -490,7 +490,7 @@ conflict_data = {
 }
 
 resp = requests.post(
-    'http://localhost:8003/v1/chat/completions',
+    'http://10.20.30.200:11434/v1/chat/completions',
     json={
         'model': 'gemma3:12b',
         'messages': [
@@ -521,7 +521,7 @@ print(resp.json()['choices'][0]['message']['content'])
 
 ---
 
-## Part 6: 종합 실습 + 퀴즈 (2:35-3:00)
+## Part 6: 종합 실습 (2:35-3:00)
 
 ### 6.1 종합 실습 과제
 
@@ -534,64 +534,7 @@ print(resp.json()['choices'][0]['message']['content'])
 5. 리더보드 확인 (pow/leaderboard)
 6. completion-report 작성
 
-### 6.2 퀴즈 (4지선다)
-
-**문제 1.** 분산 지식 아키텍처에서 SubAgent별 Experience DB를 분리하는 주된 이유는?
-
-- A) 저장 비용을 절감하기 위해
-- B) 도메인 특화, 장애 격리, 로컬 읽기 성능을 확보하기 위해
-- C) SubAgent 간 통신을 차단하기 위해
-- D) Manager API의 기능을 제거하기 위해
-
-**정답: B) 도메인 특화, 장애 격리, 로컬 읽기 성능을 확보하기 위해**
-
----
-
-**문제 2.** PoW 교차 검증의 목적은?
-
-- A) SubAgent의 CPU 성능을 측정한다
-- B) 분산 환경에서 Experience의 무결성과 신뢰성을 보장한다
-- C) SubAgent 간 네트워크 속도를 측정한다
-- D) Manager API의 응답 시간을 단축한다
-
-**정답: B) 분산 환경에서 Experience의 무결성과 신뢰성을 보장한다**
-
----
-
-**문제 3.** `pow/verify` API 응답에서 `orphans` 필드의 의미는?
-
-- A) 삭제된 블록의 수
-- B) 메인 체인에 연결되지 않은 분기 블록의 수
-- C) 검증에 실패한 블록의 수
-- D) 생성 중인 블록의 수
-
-**정답: B) 메인 체인에 연결되지 않은 분기 블록의 수**
-
----
-
-**문제 4.** 지식 충돌 해결에서 "Domain Authority" 전략이란?
-
-- A) 가장 최근에 생성된 지식을 우선한다
-- B) 각 SubAgent가 자신의 전문 도메인에서 권위를 가지므로 해당 도메인 지식을 우선한다
-- C) PoW 블록이 가장 많은 SubAgent의 지식을 우선한다
-- D) Manager API가 모든 충돌을 자동으로 해결한다
-
-**정답: B) 각 SubAgent가 자신의 전문 도메인에서 권위를 가지므로 해당 도메인 지식을 우선한다**
-
----
-
-**문제 5.** CAP 정리에서 Bastion의 분산 지식 아키텍처가 선택한 모델은?
-
-- A) CA (일관성 + 가용성)
-- B) CP (일관성 + 분할 내성)
-- C) AP (가용성 + 분할 내성) — 최종적 일관성
-- D) CAP 모두 충족
-
-**정답: C) AP (가용성 + 분할 내성) — 최종적 일관성**
-
----
-
-### 6.3 다음 주 예고
+### 6.2 다음 주 예고
 
 Week 14에서는 **RL Steering과 정책 최적화**를 학습한다.
 reward 가중치 조절, risk_penalty/speed_bonus를 통한 에이전트 행동 유도를 실습한다.
@@ -605,7 +548,7 @@ reward 가중치 조절, risk_penalty/speed_bonus를 통한 에이전트 행동 
 ### CCC Bastion Agent
 > **역할:** CCC 자율 운영 에이전트 — 스킬/플레이북/경험 학습  
 > **실행 위치:** `bastion (10.20.30.201)`  
-> **접속/호출:** TUI `./dev.sh bastion`, API `http://localhost:8003`
+> **접속/호출:** TUI `./dev.sh bastion`, API `http://10.20.30.200:8003` (Bastion /ask·/chat)
 
 **주요 경로·파일**
 
