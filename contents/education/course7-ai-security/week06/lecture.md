@@ -28,7 +28,7 @@
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -54,16 +54,6 @@
 | **Q-learning** | Q-learning | 보상을 기반으로 최적 행동을 학습하는 RL 알고리즘 | 시행착오로 최적 경로를 찾는 학습 |
 | **UCB1** | Upper Confidence Bound | 탐험(exploration)과 활용(exploitation)을 균형 잡는 전략 | "가본 길 vs 안 가본 길" 선택 전략 |
 | **SubAgent** | SubAgent | 대상 서버에서 명령을 실행하는 경량 런타임 | 현장 파견 직원 |
-
----
-
-# Week 06: 취약점 분석
-
-## 학습 목표
-- LLM을 활용한 소스 코드 보안 리뷰 방법을 익힌다
-- CVE 정보를 LLM으로 분석하고 영향을 평가할 수 있다
-- 취약점 보고서를 자동 생성할 수 있다
-- LLM 기반 취약점 분석의 한계를 이해한다
 
 ---
 
@@ -136,7 +126,7 @@ def run_cmd():
     return result
 '
 
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -173,7 +163,7 @@ server {
 }
 '
 
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -195,7 +185,7 @@ CVE 번호를 LLM에 전달하면 영향 범위, 대응 방법, 환경별 확인
 
 ```bash
 # CVE-2024-3094(xz-utils 백도어) 분석: 7개 항목 형식 지정
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -213,7 +203,7 @@ curl -s http://localhost:8003/v1/chat/completions \
 
 ```bash
 # 4대 서버 환경별 Log4Shell 영향 분석 요청
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -242,7 +232,7 @@ SCAN_RESULT='
 4. CVE-2023-9999 (zlib) - LOW - zlib1g
 '
 
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -264,7 +254,7 @@ curl -s http://localhost:8003/v1/chat/completions \
 # JuiceShop은 의도적으로 취약한 웹 앱이다
 # LLM으로 대표적인 취약점 패턴을 분석
 
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",
@@ -284,7 +274,7 @@ ssh ccc@10.20.30.80
 # Trivy 스캔 결과를 LLM으로 분석
 TRIVY_OUT=$(trivy image --severity CRITICAL nginx:latest -f json 2>/dev/null | head -500)
 
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -308,7 +298,7 @@ def ping_host(host):
     return result.stdout.decode()
 '
 
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d "{
     \"model\": \"gemma3:12b\",
@@ -364,9 +354,9 @@ LLM의 역할: 1차 필터링 + 초안 작성 + 교육 보조
 
 ```bash
 # Ollama는 OpenAI 호환 API를 제공한다
-# URL: http://localhost:8003/v1/chat/completions
+# URL: http://10.20.30.200:11434/v1/chat/completions
 
-curl -s http://localhost:8003/v1/chat/completions \
+curl -s http://10.20.30.200:11434/v1/chat/completions \
   -H "Content-Type: application/json" \
   -d '{
     "model": "gemma3:12b",        ← 사용할 모델
@@ -436,29 +426,6 @@ curl -s http://localhost:8003/v1/chat/completions \
 
 모든 API에 필수: -H "X-API-Key: ccc-api-key-2026"
 ```
-
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** Ollama API에서 temperature=0의 효과는?
-- (a) 최대 창의성  (b) **매번 동일한 출력 (결정론적)**  (c) 에러 발생  (d) 속도 향상
-
-**Q2.** Bastion execute-plan 실행 전 반드시 거쳐야 하는 단계는?
-- (a) 서버 재시작  (b) **plan → execute stage 전환**  (c) DB 백업  (d) 코드 컴파일
-
-**Q3.** RL에서 UCB1 탐색 전략의 핵심은?
-- (a) 항상 최고 보상 행동 선택  (b) **방문 횟수가 적은 행동을 우선 탐색**  (c) 무작위 선택  (d) 모든 행동 균등 선택
-
-**Q4.** Playbook이 LLM adhoc보다 재현성이 높은 이유는?
-- (a) LLM이 더 똑똑해서  (b) **파라미터가 결정론적으로 바인딩되어 동일 명령 생성**  (c) 네트워크가 빨라서  (d) DB가 달라서
-
-**Q5.** Bastion evidence가 제공하는 핵심 가치는?
-- (a) 실행 속도 향상  (b) **모든 실행의 자동 기록으로 감사 추적 가능**  (c) 메모리 절약  (d) 코드 자동 생성
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
 
 ---
 ---
