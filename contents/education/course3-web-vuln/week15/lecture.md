@@ -28,7 +28,7 @@
 | 2:00-2:40 | 심화 실습 + 도구 활용 (Part 4) | 실습 |
 | 2:40-2:50 | 휴식 | - |
 | 2:50-3:20 | 응용 실습 + Bastion 연동 (Part 5) | 실습 |
-| 3:20-3:40 | 복습 퀴즈 + 과제 안내 (Part 6) | 퀴즈 |
+| 3:20-3:40 | 정리 + 과제 안내 | 정리 |
 
 ---
 
@@ -58,14 +58,6 @@
 | **점검 보고서** | Assessment Report | 발견된 취약점과 대응 방안을 정리한 문서 | 건물 안전 진단 보고서 |
 
 ---
-
-# Week 15: 기말 -- 종합 웹취약점 점검 프로젝트
-
-## 학습 목표
-- 14주간 배운 모든 점검 기법을 종합하여 실제 웹 애플리케이션을 점검한다
-- 전문 수준의 취약점 점검 보고서를 작성한다
-- OWASP Testing Guide 기반 체계적 점검 절차를 수행한다
-- 점검 계획 수립부터 보고서 제출까지 전 사이클을 경험한다
 
 ## 전제 조건
 - Week 01~14 전체 내용 숙지
@@ -500,48 +492,35 @@ export BASTION_API_KEY=ccc-api-key-2026            # 환경 변수 설정
 
 # 1. 프로젝트 생성
 echo "=== Bastion 프로젝트 생성 ==="
-PROJECT=$(curl -s -X POST http://localhost:9100/projects \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{"name":"final-vuln-assessment","request_text":"기말 종합 점검","master_mode":"external"}')  # 요청 데이터(body)
-PID=$(echo "$PROJECT" | python3 -c "import json,sys; print(json.load(sys.stdin)['id'])")
-echo "Project ID: $PID"
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "http://10.20.30.80:3000 JuiceShop 전체 대상 종합 웹취약점 점검: (1) 보안 헤더 수집, (2) 로그인 API에 SQLi 시도, (3) /api/Users IDOR, (4) /ftp 경로 순회, (5) JWT 디코드해서 발견사항을 CVSS v3.1 점수와 함께 표로 정리해줘."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])"
 
-# 2. Stage 전환
-curl -s -X POST "http://localhost:9100/projects/$PID/plan" -H "X-API-Key: $BASTION_API_KEY" > /dev/null  # silent 모드 / POST 요청 / API 인증 / Bastion 프로젝트
-curl -s -X POST "http://localhost:9100/projects/$PID/execute" -H "X-API-Key: $BASTION_API_KEY" > /dev/null  # silent 모드 / POST 요청 / API 인증 / Bastion 프로젝트
-
-# 3. 점검 실행 (evidence 자동 기록)
-curl -s -X POST "http://localhost:9100/projects/$PID/execute-plan" \
-  -H "Content-Type: application/json" \
-  -H "X-API-Key: $BASTION_API_KEY" \
-  -d '{                                                # 요청 데이터(body)
-    "tasks": [
-      {"order":1,"instruction_prompt":"curl -sI http://localhost:3000/ | head -15","risk_level":"low"},
-      {"order":2,"instruction_prompt":"curl -s -X POST http://localhost:3000/rest/user/login -H \"Content-Type: application/json\" -d \"{\\\"email\\\":\\\"'"'"' OR 1=1--\\\",\\\"password\\\":\\\"x\\\"}\" | head -5","risk_level":"low"}
-    ],
-    "subagent_url": "http://10.20.30.80:8002"
-  }' | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'결과: {len(d.get(\"results\",[]))}건')" 2>/dev/null
-
-# 4. evidence 확인
-echo ""
-curl -s "http://localhost:9100/projects/$PID/evidence/summary" \
-  -H "X-API-Key: $BASTION_API_KEY" | python3 -c "import json,sys; print(json.dumps(json.load(sys.stdin), indent=2, ensure_ascii=False)[:300])" 2>/dev/null  # API 인증 키
+# 작업 기록 조회
+curl -s "http://10.20.30.200:8003/evidence?limit=20" | python3 -c "
+import sys, json
+for e in json.load(sys.stdin)[:20]:
+    msg = e.get('user_message','')[:60]
+    ok = '✓' if e.get('success') else '✗'
+    print(f'  {ok} {msg}')
+"
 ```
 
-### 6.2 LLM 기반 보고서 품질 검증
+### 6.2 Bastion로 보고서 초안 자동 생성
 
 ```bash
-curl -s http://localhost:8003/v1/chat/completions \
-  -H "Content-Type: application/json" \
-  -d '{                                                # 요청 데이터(body)
-    "model": "gemma3:12b",
-    "messages": [
-      {"role": "system", "content": "보안 컨설팅 심사관입니다. 취약점 점검 보고서를 평가합니다. 한국어로."},
-      {"role": "user", "content": "다음 취약점 기술의 품질을 10점 만점으로 평가하세요:\n\n[V-001] SQL Injection (로그인 우회)\n심각도: Critical (CVSS 9.8)\nCWE: CWE-89\n위치: POST /rest/user/login (email 파라미터)\n재현: Body={\"email\":\"'"'"' OR 1=1--\",\"password\":\"x\"} -> 인증 토큰 발급\n권고: Parameterized Query 사용\n\n1) 재현성 2) 영향 분석 3) 권고 구체성 4) 전체 점수"}
-    ],
-    "temperature": 0.3
-  }' | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])"
+curl -s -X POST http://10.20.30.200:8003/ask \
+  -H 'Content-Type: application/json' \
+  -d '{
+    "message": "최근 20건의 /evidence를 분석해서 CVSS v3.1 점수·CWE·재현단계·권고사항을 포함한 모의해킹 보고서 초안을 한국어 markdown으로 작성해줘. 섹션: Executive Summary / Test Overview / Findings / Recommendations."
+  }' \
+  | python3 -c "import sys,json; d=json.load(sys.stdin); print(d['answer'])" > /tmp/draft_report.md
+
+wc -l /tmp/draft_report.md
+# 초안은 참고용 — hallucination 점검 후 수동 보강
 ```
 
 ---
@@ -592,32 +571,6 @@ Week 15:    기말          -> 종합 점검 프로젝트
 ## 다음 학기 예고
 보안시스템 운영 (Course 2) 또는 보안관제 (Course 5) 수강 권장
 
----
-
----
-
-## 자가 점검 퀴즈 (5문항)
-
-이번 주차의 핵심 기술 내용을 점검한다.
-
-**Q1.** CVSS 9.8은 어떤 심각도 등급인가?
-- (a) High  (b) **Critical**  (c) Medium  (d) Low
-
-**Q2.** 취약점 점검 시 가장 먼저 수행하는 단계는?
-- (a) 익스플로잇 실행  (b) **대상 범위 확인 및 정보 수집**  (c) 보고서 작성  (d) 패치 적용
-
-**Q3.** SQLi 취약점의 CWE 번호는?
-- (a) CWE-79  (b) **CWE-89**  (c) CWE-352  (d) CWE-22
-
-**Q4.** 점검 보고서에서 취약점의 '재현 절차'가 중요한 이유는?
-- (a) 분량을 늘리기 위해  (b) **고객이 직접 확인하고 수정할 수 있도록**  (c) 법적 요건  (d) 점검 시간 기록
-
-**Q5.** WAF(:8082)가 SQLi를 차단할 때 반환하는 HTTP 코드는?
-- (a) 200 OK  (b) **403 Forbidden**  (c) 500 Internal Error  (d) 301 Redirect
-
-**정답:** Q1:b, Q2:b, Q3:b, Q4:b, Q5:b
-
----
 ---
 
 > **실습 환경 검증 완료** (2026-03-28): nmap/nikto, SQLi/IDOR/swagger.json, CVSS, 보고서 작성
