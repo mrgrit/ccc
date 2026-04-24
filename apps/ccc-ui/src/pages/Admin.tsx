@@ -1,22 +1,58 @@
 import React, { useEffect, useState } from 'react'
 import { api } from '../api.ts'
 
-const tabs = ['Groups', 'Students', 'Promotions', 'Lab Verify', 'Auto-Generated', 'News & Issue'] as const
+const tabs = ['Groups', 'Students', 'Promotions', 'Battles', 'Lab Verify', 'Auto-Generated', 'News & Issue'] as const
 type Tab = typeof tabs[number]
 
 export default function Admin() {
   const [tab, setTab] = useState<Tab>('Groups')
   const [groups, setGroups] = useState<any[]>([])
   const [students, setStudents] = useState<any[]>([])
+  const [battles, setBattles] = useState<any[]>([])
+  const [battleFilter, setBattleFilter] = useState<'all' | 'waiting' | 'active' | 'completed'>('all')
+  const [expandedBattle, setExpandedBattle] = useState<string | null>(null)
+  const [battleDetails, setBattleDetails] = useState<Record<string, any>>({})
   const [loading, setLoading] = useState(true)
 
   const loadGroups = () => api('/api/groups').then(d => setGroups(d.groups || []))
   const loadStudents = () => api('/api/students').then(d => setStudents(d.students || []))
+  const loadBattles = () => api('/api/battles').then(d => setBattles(d.battles || []))
   const load = () => {
     setLoading(true)
-    Promise.all([loadGroups(), loadStudents()]).finally(() => setLoading(false))
+    Promise.all([loadGroups(), loadStudents(), loadBattles()]).finally(() => setLoading(false))
   }
   useEffect(load, [])
+
+  // Battle 관리
+  const toggleBattleDetail = async (bid: string) => {
+    if (expandedBattle === bid) {
+      setExpandedBattle(null)
+      return
+    }
+    setExpandedBattle(bid)
+    if (!battleDetails[bid]) {
+      try {
+        const evts = await api(`/api/battles/${bid}/events`).then(d => d.events || []).catch(() => [])
+        setBattleDetails(prev => ({ ...prev, [bid]: { events: evts } }))
+      } catch {}
+    }
+  }
+  const forceEndBattle = async (bid: string) => {
+    if (!confirm('대전을 강제 종료합니까?')) return
+    try {
+      await api(`/api/battles/${bid}/force-end`, { method: 'POST' })
+      loadBattles()
+    } catch (e: any) { alert(e.message) }
+  }
+  const deleteBattle = async (bid: string) => {
+    if (!confirm('대전 기록을 완전히 삭제합니까? (미션·이벤트 포함, 복구 불가)')) return
+    try {
+      const d = await api(`/api/battles/${bid}`, { method: 'DELETE' })
+      alert(`삭제됨 — 미션 ${d.deleted_missions}개, 이벤트 ${d.deleted_events}개`)
+      setExpandedBattle(null)
+      loadBattles()
+    } catch (e: any) { alert(e.message) }
+  }
 
   // Group creation
   const [newGroup, setNewGroup] = useState({ name: '', display_name: '', description: '' })
@@ -163,6 +199,119 @@ export default function Admin() {
               </div>
             )
           })}
+        </div>
+      )}
+
+      {/* Battles Tab */}
+      {tab === 'Battles' && (
+        <div>
+          {/* 필터 + 요약 */}
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 14 }}>
+            <div style={{ display: 'flex', gap: 4, background: '#0d1117', padding: 3, borderRadius: 6, border: '1px solid #30363d' }}>
+              {(['all','waiting','active','completed'] as const).map(f => (
+                <button key={f} onClick={() => setBattleFilter(f)} style={{
+                  padding: '5px 12px', borderRadius: 4, border: 'none', cursor: 'pointer',
+                  fontSize: 12, fontWeight: 600, textTransform: 'uppercase' as const,
+                  background: battleFilter === f ? '#f97316' : 'transparent',
+                  color: battleFilter === f ? '#fff' : '#8b949e',
+                }}>{f}</button>
+              ))}
+            </div>
+            <button onClick={loadBattles} style={smallBtn}>새로고침</button>
+            <span style={{ fontSize: 12, color: '#8b949e', marginLeft: 'auto' }}>
+              총 {battles.length} · 대기 {battles.filter(b=>b.status==='waiting').length} · 진행 {battles.filter(b=>b.status==='active').length} · 완료 {battles.filter(b=>b.status==='completed').length}
+            </span>
+          </div>
+          <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: 13 }}>
+            <thead>
+              <tr style={{ background: '#161b22', color: '#8b949e' }}>
+                <th style={thStyle}>ID</th>
+                <th style={thStyle}>시나리오</th>
+                <th style={thStyle}>상태</th>
+                <th style={thStyle}>Red</th>
+                <th style={thStyle}>Blue</th>
+                <th style={{ ...thStyle, textAlign: 'center' }}>점수</th>
+                <th style={thStyle}>생성</th>
+                <th style={{ ...thStyle, textAlign: 'right' }}>조작</th>
+              </tr>
+            </thead>
+            <tbody>
+              {battles.filter(b => battleFilter === 'all' || b.status === battleFilter).map(b => {
+                const statusColor: Record<string, string> = { waiting: '#d29922', active: '#3fb950', completed: '#8b949e' }
+                const solo = b.red_id && b.red_id === b.blue_id
+                return (
+                  <React.Fragment key={b.id}>
+                    <tr style={{ borderTop: '1px solid #21262d', cursor: 'pointer' }} onClick={() => toggleBattleDetail(b.id)}>
+                      <td style={{ ...tdStyle, fontFamily: 'monospace' as const, color: '#8b949e' }}>{b.id}</td>
+                      <td style={tdStyle}>{b.scenario_id}</td>
+                      <td style={tdStyle}>
+                        <span style={{
+                          fontSize: 11, padding: '2px 8px', borderRadius: 10, fontWeight: 600,
+                          background: `${statusColor[b.status] || '#30363d'}20`,
+                          color: statusColor[b.status] || '#8b949e',
+                          textTransform: 'uppercase' as const,
+                        }}>{b.status}</span>
+                        {solo && <span style={{ marginLeft: 6, fontSize: 10, padding: '2px 6px', borderRadius: 8, background: '#bc8cff22', color: '#bc8cff', fontWeight: 700 }}>SOLO</span>}
+                      </td>
+                      <td style={{ ...tdStyle, color: '#f85149' }}>{b.red_name || (b.red_id ? b.red_id.slice(0,8) : '-')}</td>
+                      <td style={{ ...tdStyle, color: '#58a6ff' }}>{b.blue_name || (b.blue_id ? b.blue_id.slice(0,8) : '-')}</td>
+                      <td style={{ ...tdStyle, textAlign: 'center' }}>
+                        <span style={{ color: '#f85149' }}>{b.red_score || 0}</span>
+                        <span style={{ color: '#8b949e', margin: '0 4px' }}>:</span>
+                        <span style={{ color: '#58a6ff' }}>{b.blue_score || 0}</span>
+                      </td>
+                      <td style={{ ...tdStyle, color: '#8b949e', fontSize: 12 }}>{b.created_at?.slice(0, 16).replace('T',' ')}</td>
+                      <td style={{ ...tdStyle, textAlign: 'right' }} onClick={e => e.stopPropagation()}>
+                        {b.status !== 'completed' && (
+                          <button onClick={() => forceEndBattle(b.id)} style={{ ...smallBtn, background: '#d29922', color: '#fff', border: 'none', marginRight: 6 }}>강제 종료</button>
+                        )}
+                        <button onClick={() => deleteBattle(b.id)} style={{ ...smallBtn, background: '#da3633', color: '#fff', border: 'none' }}>삭제</button>
+                      </td>
+                    </tr>
+                    {expandedBattle === b.id && (
+                      <tr style={{ background: '#0d1117' }}>
+                        <td colSpan={8} style={{ padding: 14 }}>
+                          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+                            <div>
+                              <div style={{ fontSize: 12, color: '#8b949e', marginBottom: 6, fontWeight: 600 }}>상세</div>
+                              <div style={{ fontSize: 12, color: '#e6edf3', lineHeight: 1.8 }}>
+                                <div>time_limit: {Math.floor((b.time_limit || 0) / 60)}분</div>
+                                <div>started: {b.started_at ? b.started_at.slice(0, 19).replace('T',' ') : '-'}</div>
+                                <div>ended: {b.ended_at ? b.ended_at.slice(0, 19).replace('T',' ') : '-'}</div>
+                                <div>red_id: <code style={{ color: '#f85149' }}>{b.red_id || '-'}</code></div>
+                                <div>blue_id: <code style={{ color: '#58a6ff' }}>{b.blue_id || '-'}</code></div>
+                                {b.block_hash && <div>block_hash: <code style={{ color: '#3fb950', fontSize: 11 }}>{b.block_hash.slice(0,24)}...</code></div>}
+                              </div>
+                            </div>
+                            <div>
+                              <div style={{ fontSize: 12, color: '#8b949e', marginBottom: 6, fontWeight: 600 }}>
+                                이벤트 ({(battleDetails[b.id]?.events || []).length})
+                              </div>
+                              <div style={{ maxHeight: 220, overflowY: 'auto', background: '#161b22', padding: 10, borderRadius: 6, fontSize: 12 }}>
+                                {(battleDetails[b.id]?.events || []).slice(-30).reverse().map((e: any, i: number) => (
+                                  <div key={i} style={{ padding: '3px 0', borderBottom: '1px solid #21262d' }}>
+                                    <span style={{ color: e.team === 'red' ? '#f85149' : e.team === 'blue' ? '#58a6ff' : '#8b949e', fontWeight: 600, marginRight: 6 }}>
+                                      {(e.team || 'sys').toUpperCase()}
+                                    </span>
+                                    <span style={{ color: '#8b949e' }}>{e.event_type}</span>
+                                    <span style={{ color: '#e6edf3', marginLeft: 8 }}>{e.description}</span>
+                                    {e.points > 0 && <span style={{ color: '#3fb950', marginLeft: 6 }}>+{e.points}</span>}
+                                  </div>
+                                )) || <div style={{ color: '#8b949e' }}>이벤트 없음</div>}
+                              </div>
+                            </div>
+                          </div>
+                        </td>
+                      </tr>
+                    )}
+                  </React.Fragment>
+                )
+              })}
+              {battles.filter(b => battleFilter === 'all' || b.status === battleFilter).length === 0 && (
+                <tr><td colSpan={8} style={{ textAlign: 'center', padding: 30, color: '#8b949e' }}>대전 없음</td></tr>
+              )}
+            </tbody>
+          </table>
         </div>
       )}
 
@@ -594,4 +743,11 @@ const btnStyle: React.CSSProperties = {
 const smallBtn: React.CSSProperties = {
   padding: '5px 12px', borderRadius: 6, border: '1px solid #30363d',
   background: '#21262d', color: '#e6edf3', cursor: 'pointer', fontSize: 12,
+}
+const thStyle: React.CSSProperties = {
+  textAlign: 'left' as const, padding: '10px 12px', fontSize: 12, fontWeight: 600,
+  textTransform: 'uppercase' as const, letterSpacing: '0.3px',
+}
+const tdStyle: React.CSSProperties = {
+  padding: '10px 12px', color: '#e6edf3',
 }

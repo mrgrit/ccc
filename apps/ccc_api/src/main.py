@@ -2405,6 +2405,52 @@ def list_battles(status: str | None = None):
             rows = cur.fetchall()
     return {"battles": [dict(r) for r in rows]}
 
+@app.post("/battles/{bid}/force-end", dependencies=[Depends(verify_api_key)])
+def force_end_battle(bid: str, request: Request):
+    """관리자: 진행 중 대전 강제 종료."""
+    user = get_current_user(request)
+    if user.get("role") not in ("admin", "instructor"):
+        raise HTTPException(403, "Admin only")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT status FROM battles WHERE id=%s", (bid,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "Battle not found")
+            if row["status"] == "completed":
+                return {"status": "already_completed", "battle_id": bid}
+            cur.execute(
+                "UPDATE battles SET status='completed', ended_at=COALESCE(ended_at, now()), result=COALESCE(result,'{}')::jsonb || %s::jsonb WHERE id=%s RETURNING *",
+                (Json({"force_ended_by": user.get("sub", ""), "force_ended_at": _time.strftime('%Y-%m-%dT%H:%M:%S')}), bid),
+            )
+            cur.execute(
+                "INSERT INTO battle_events (battle_id, event_type, actor, team, description, points) VALUES (%s,'force_ended',%s,'','관리자 강제 종료',0)",
+                (bid, user.get("sub", "")),
+            )
+            conn.commit()
+            cur.execute("SELECT * FROM battles WHERE id=%s", (bid,))
+            updated = cur.fetchone()
+    return {"status": "force_ended", "battle": dict(updated)}
+
+@app.delete("/battles/{bid}", dependencies=[Depends(verify_api_key)])
+def delete_battle(bid: str, request: Request):
+    """관리자: 대전 레코드 + 미션 + 이벤트 삭제."""
+    user = get_current_user(request)
+    if user.get("role") not in ("admin", "instructor"):
+        raise HTTPException(403, "Admin only")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT id FROM battles WHERE id=%s", (bid,))
+            if not cur.fetchone():
+                raise HTTPException(404, "Battle not found")
+            cur.execute("DELETE FROM battle_missions WHERE battle_id=%s", (bid,))
+            missions = cur.rowcount
+            cur.execute("DELETE FROM battle_events WHERE battle_id=%s", (bid,))
+            events = cur.rowcount
+            cur.execute("DELETE FROM battles WHERE id=%s", (bid,))
+            conn.commit()
+    return {"status": "deleted", "battle_id": bid, "deleted_missions": missions, "deleted_events": events}
+
 # ══════════════════════════════════════════════════
 #  AI Tasks (Bastion 에이전트)
 # ══════════════════════════════════════════════════
