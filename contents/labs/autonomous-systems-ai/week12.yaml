@@ -13,23 +13,25 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: Python으로 가상 CAN 버스 트래픽을 생성하시오. 엔진(0x100), 브레이크(0x200), 조향(0x300), ADAS(0x500) ECU 메시지를
-    구현하라.
+  instruction: Python으로 가상 CAN 버스 트래픽을 생성하시오. 엔진(0x100), 브레이크(0x200), 조향(0x300), ADAS(0x500)
+    ECU 메시지를 구현하라.
   hint: struct.pack으로 각 ECU의 CAN 데이터를 구성하세요.
   category: config
   points: 12
   answer: '🤖 프롬프트: Python으로 가상 CAN 버스 트래픽을 생성하시오 구현 방법과 예시를 설명해줘
 
     📎 참고 (CLI): python3 -c "import struct;ecus=[(0x100,struct.pack(''>HH'',6000,2500)+b''\x00''*4,''Engine:60km/h,2500rpm''),(0x200,b''\x1e''+b''\x00''*7,''Brake:30%''),(0x300,struct.pack(''>h'',50)+b''\x00''*6,''Steer:5.0deg''),(0x500,b''\x01\x00\x64''+b''\x00''*5,''ADAS:active'')];print(''===
-    Virtual CAN Bus ==='');[print(f''  ID:0x{e[0]:03X} Data:{e[1].hex()} | {e[2]}'') for e in ecus]"'
+    Virtual CAN Bus ==='');[print(f''  ID:0x{e[0]:03X} Data:{e[1].hex()} | {e[2]}'')
+    for e in ecus]"'
   answer_detail: CAN 프레임 구조와 ECU 통신을 이해합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 'CAN 버스 트래픽 생성 — struct.pack >HH + bytes 로 CAN ID 별 페이로드: 0x100 Engine(RPM+Speed) · 0x200
-        Brake(pressure) · 0x300 Steering(angle) · 0x400 ADAS. 4 ECU 메시지 시뮬. SAE J1939 스타일'
+      intent: 'CAN 버스 트래픽 생성 — struct.pack >HH + bytes 로 CAN ID 별 페이로드: 0x100 Engine(RPM+Speed)
+        · 0x200 Brake(pressure) · 0x300 Steering(angle) · 0x400 ADAS. 4 ECU 메시지 시뮬.
+        SAE J1939 스타일'
       success_criteria:
       - 4 CAN ID 별 메시지
       - struct.pack 데이터 구조화
@@ -42,10 +44,11 @@ steps:
       - struct 없이 단순 문자열
   target_vm: attacker
   script: python3 -c "import struct;ecus=[(0x100,struct.pack('>HH',6000,2500)+b'\x00'*4,'Engine:60km/h,2500rpm'),(0x200,b'\x1e'+b'\x00'*7,'Brake:30%'),(0x300,struct.pack('>h',50)+b'\x00'*6,'Steer:5.0deg'),(0x500,b'\x01\x00\x64'+b'\x00'*5,'ADAS:active')];print('===
-    Virtual CAN Bus ===');[print(f'  ID:0x{e[0]:03X} Data:{e[1].hex()} | {e[2]}') for e in ecus]"
+    Virtual CAN Bus ===');[print(f'  ID:0x{e[0]:03X} Data:{e[1].hex()} | {e[2]}')
+    for e in ecus]"
   risk_level: low
-  bastion_prompt: Python으로 가상 CAN 버스 트래픽을 생성하시오. 엔진(0x100), 브레이크(0x200), 조향(0x300), ADAS(0x500) ECU 메시지를
-    구현하라.
+  bastion_prompt: Python으로 가상 CAN 버스 트래픽을 생성하시오. 엔진(0x100), 브레이크(0x200), 조향(0x300),
+    ADAS(0x500) ECU 메시지를 구현하라.
 - order: 2
   instruction: CAN 메시지 디코더를 구현하시오. 엔진 속도/RPM, 브레이크 압력, 조향 각도를 디코딩하라.
   hint: struct.unpack으로 바이너리 데이터를 디코딩하세요.
@@ -54,16 +57,17 @@ steps:
   answer: '🤖 프롬프트: CAN 메시지 디코더를 구현 방법을 설명하고 예시 코드를 보여줘
 
     📎 참고 (CLI): python3 -c "import struct;frames=[(0x100,bytes.fromhex(''176400000CE40000'')),(0x200,bytes.fromhex(''1E00000000000000'')),(0x300,bytes.fromhex(''0032000000000000''))];print(''===
-    CAN Decoder ==='');print(f''  0x100: Speed={struct.unpack(\">H\",frames[0][1][:2])[0]/100}km/h RPM={struct.unpack(\">H\",frames[0][1][2:4])[0]}'');print(f''  0x200:
-    Brake={frames[1][1][0]}%'');print(f''  0x300: Steer={struct.unpack(\">h\",frames[2][1][:2])[0]/10}deg'')"'
+    CAN Decoder ==='');print(f''  0x100: Speed={struct.unpack(\">H\",frames[0][1][:2])[0]/100}km/h
+    RPM={struct.unpack(\">H\",frames[0][1][2:4])[0]}'');print(f''  0x200: Brake={frames[1][1][0]}%'');print(f''  0x300:
+    Steer={struct.unpack(\">h\",frames[2][1][:2])[0]/10}deg'')"'
   answer_detail: CAN 메시지 디코딩은 차량 상태 파악과 공격 설계의 기초입니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: CAN 메시지 디코더 — struct.unpack >HH 로 Engine 속도/RPM 디코딩 + Brake 압력(0-100%) + 조향 각도(-540~+540°)
-        디코딩. DBC 파일 없이 manual decoder. reverse engineering 기초
+      intent: CAN 메시지 디코더 — struct.unpack >HH 로 Engine 속도/RPM 디코딩 + Brake 압력(0-100%)
+        + 조향 각도(-540~+540°) 디코딩. DBC 파일 없이 manual decoder. reverse engineering 기초
       success_criteria:
       - unpack 디코딩 3+ 메시지
       - 각 ECU 단위 변환 (km/h, psi, °)
@@ -76,8 +80,9 @@ steps:
       - 단위 변환 없음
   target_vm: attacker
   script: 'python3 -c "import struct;frames=[(0x100,bytes.fromhex(''176400000CE40000'')),(0x200,bytes.fromhex(''1E00000000000000'')),(0x300,bytes.fromhex(''0032000000000000''))];print(''===
-    CAN Decoder ==='');print(f''  0x100: Speed={struct.unpack(\">H\",frames[0][1][:2])[0]/100}km/h RPM={struct.unpack(\">H\",frames[0][1][2:4])[0]}'');print(f''  0x200:
-    Brake={frames[1][1][0]}%'');print(f''  0x300: Steer={struct.unpack(\">h\",frames[2][1][:2])[0]/10}deg'')"'
+    CAN Decoder ==='');print(f''  0x100: Speed={struct.unpack(\">H\",frames[0][1][:2])[0]/100}km/h
+    RPM={struct.unpack(\">H\",frames[0][1][2:4])[0]}'');print(f''  0x200: Brake={frames[1][1][0]}%'');print(f''  0x300:
+    Steer={struct.unpack(\">h\",frames[2][1][:2])[0]/10}deg'')"'
   risk_level: low
   bastion_prompt: CAN 메시지 디코더를 구현하시오. 엔진 속도/RPM, 브레이크 압력, 조향 각도를 디코딩하라.
 - order: 3
@@ -87,17 +92,19 @@ steps:
   points: 12
   answer: '🤖 프롬프트: CAN 인젝션 공격(조향+브레이크)을 시뮬레이션해줘
 
-    📎 참고 (CLI): python3 -c "import struct;print(''=== CAN Injection ==='');print(f''  [INJECT] ID:0x300
-    Data:{(struct.pack(\">h\",450)+b\"\\x00\"*6).hex()} — Steer 45deg right'');print(f''  [INJECT] ID:0x200
-    Data:{b\"\\x00\"*8 .hex()} — Brakes disabled'');print(''  [CRITICAL] Vehicle control compromised!'')"'
+    📎 참고 (CLI): python3 -c "import struct;print(''=== CAN Injection ==='');print(f''  [INJECT]
+    ID:0x300 Data:{(struct.pack(\">h\",450)+b\"\\x00\"*6).hex()} — Steer 45deg right'');print(f''  [INJECT]
+    ID:0x200 Data:{b\"\\x00\"*8 .hex()} — Brakes disabled'');print(''  [CRITICAL]
+    Vehicle control compromised!'')"'
   answer_detail: CAN 인젝션으로 차량 조향과 제동을 직접 제어합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: CAN 인젝션 공격 (조향+브레이크) — 가짜 0x300 Steering(+540°) + 0x200 Brake(100% emergency) 메시지를 정상 ECU
-        보다 높은 빈도로 전송해 우선순위 탈취 (CAN arbitration). Jeep Cherokee Miller&Valasek 2015 재현
+      intent: CAN 인젝션 공격 (조향+브레이크) — 가짜 0x300 Steering(+540°) + 0x200 Brake(100% emergency)
+        메시지를 정상 ECU 보다 높은 빈도로 전송해 우선순위 탈취 (CAN arbitration). Jeep Cherokee Miller&Valasek
+        2015 재현
       success_criteria:
       - 조향 + 브레이크 인젝션
       - 높은 빈도 전송
@@ -110,11 +117,15 @@ steps:
       - 단일 메시지만
       - arbitration 개념 없음
   target_vm: attacker
-  script: python3 -c "import struct;print('=== CAN Injection ===');print(f'  [INJECT] ID:0x300 Data:{(struct.pack(\">h\",450)+b\"\\x00\"*6).hex()}
-    — Steer 45deg right');print(f'  [INJECT] ID:0x200 Data:{b\"\\x00\"*8 .hex()} — Brakes disabled');print('  [CRITICAL]
-    Vehicle control compromised!')"
+  script: python3 -c "import struct;print('=== CAN Injection ===');print(f'  [INJECT]
+    ID:0x300 Data:{(struct.pack(\">h\",450)+b\"\\x00\"*6).hex()} — Steer 45deg right');print(f'  [INJECT]
+    ID:0x200 Data:{b\"\\x00\"*8 .hex()} — Brakes disabled');print('  [CRITICAL] Vehicle
+    control compromised!')"
   risk_level: low
-  bastion_prompt: CAN 인젝션 공격(조향+브레이크)을 시뮬레이션해줘
+  bastion_prompt: 'CAN 인젝션 공격(조향+브레이크)을 시뮬레이션해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 4
   instruction: 커넥티드카 원격 공격 표면을 매핑하시오. 근거리/중거리/원거리 인터페이스별 공격 벡터를 출력하라.
   hint: Short/Medium/Long range로 분류하세요.
@@ -122,10 +133,11 @@ steps:
   points: 12
   answer: '🤖 프롬프트: 커넥티드카 원격 공격 표면을 매핑해줘
 
-    📎 참고 (CLI): python3 -c "surface={''Short(<10m)'':[''BT pairing'',''OBD-II access'',''USB injection''],''Medium(<1km)'':[''WiFi
-    exploit'',''Key fob relay'',''V2X forgery''],''Long(>1km)'':[''Cellular API'',''GPS spoofing'',''OTA
-    server hack'']};total=0;print(''=== Connected Car Attack Surface ==='');[(print(f''  [{k}]''),[print(f''    -
-    {a}'') for a in v]) for k,v in surface.items()];print(f''  Total: {sum(len(v) for v in surface.values())}
+    📎 참고 (CLI): python3 -c "surface={''Short(<10m)'':[''BT pairing'',''OBD-II access'',''USB
+    injection''],''Medium(<1km)'':[''WiFi exploit'',''Key fob relay'',''V2X forgery''],''Long(>1km)'':[''Cellular
+    API'',''GPS spoofing'',''OTA server hack'']};total=0;print(''=== Connected Car
+    Attack Surface ==='');[(print(f''  [{k}]''),[print(f''    - {a}'') for a in v])
+    for k,v in surface.items()];print(f''  Total: {sum(len(v) for v in surface.values())}
     vectors'')"'
   answer_detail: 커넥티드카의 원격 공격 표면은 전통 자동차보다 훨씬 넓습니다.
   verify:
@@ -133,8 +145,8 @@ steps:
     expect: null
     field: stdout
     semantic:
-      intent: 원격 공격 표면 3 계층 — 근거리(Bluetooth/USB OBD-II) + 중거리(WiFi/TPMS/Keyless) + 원거리(LTE/V2X/OTA·Telematics).
-        각 계층 2+ 벡터. Miller&Valasek SUV report 기반
+      intent: 원격 공격 표면 3 계층 — 근거리(Bluetooth/USB OBD-II) + 중거리(WiFi/TPMS/Keyless) +
+        원거리(LTE/V2X/OTA·Telematics). 각 계층 2+ 벡터. Miller&Valasek SUV report 기반
       success_criteria:
       - 3 계층 (근/중/원거리)
       - 각 2+ 공격 벡터
@@ -146,10 +158,11 @@ steps:
       - 계층 2개 이하
       - 원거리 벡터 누락
   target_vm: attacker
-  script: 'python3 -c "surface={''Short(<10m)'':[''BT pairing'',''OBD-II access'',''USB injection''],''Medium(<1km)'':[''WiFi
-    exploit'',''Key fob relay'',''V2X forgery''],''Long(>1km)'':[''Cellular API'',''GPS spoofing'',''OTA
-    server hack'']};total=0;print(''=== Connected Car Attack Surface ==='');[(print(f''  [{k}]''),[print(f''    -
-    {a}'') for a in v]) for k,v in surface.items()];print(f''  Total: {sum(len(v) for v in surface.values())}
+  script: 'python3 -c "surface={''Short(<10m)'':[''BT pairing'',''OBD-II access'',''USB
+    injection''],''Medium(<1km)'':[''WiFi exploit'',''Key fob relay'',''V2X forgery''],''Long(>1km)'':[''Cellular
+    API'',''GPS spoofing'',''OTA server hack'']};total=0;print(''=== Connected Car
+    Attack Surface ==='');[(print(f''  [{k}]''),[print(f''    - {a}'') for a in v])
+    for k,v in surface.items()];print(f''  Total: {sum(len(v) for v in surface.values())}
     vectors'')"'
   risk_level: low
   bastion_prompt: 커넥티드카 원격 공격 표면을 매핑해줘
@@ -158,20 +171,22 @@ steps:
   hint: Jeep Cherokee remote hack Miller Valasek을 질문하세요.
   category: analysis
   points: 10
-  answer: "\U0001F916 프롬프트: Describe the 2015 Jeep Cherokee remote hack by Miller and Valasek. What was\
-    \ the attack chain from cellular to CAN bus?\n\U0001F4CE 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/chat\
-    \ \\\n  -d '{\"model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are an automotive\
-    \ security historian.\"},{\"role\":\"user\",\"content\":\"Describe the 2015 Jeep Cherokee remote hack\
-    \ by Miller and Valasek. What was the attack chain from cellular to CAN bus?\"}],\"stream\":false,\"\
-    options\":{\"num_predict\":200}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  answer: "\U0001F916 프롬프트: Describe the 2015 Jeep Cherokee remote hack by Miller\
+    \ and Valasek. What was the attack chain from cellular to CAN bus?\n\U0001F4CE\
+    \ 참고 (CLI): curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"\
+    model\":\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are\
+    \ an automotive security historian.\"},{\"role\":\"user\",\"content\":\"Describe\
+    \ the 2015 Jeep Cherokee remote hack by Miller and Valasek. What was the attack\
+    \ chain from cellular to CAN bus?\"}],\"stream\":false,\"options\":{\"num_predict\"\
+    :200}}' \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   answer_detail: Jeep Cherokee 사례는 자동차 사이버보안의 전환점이었습니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: Jeep Cherokee 원격 해킹 LLM 분석 — 2015 Miller&Valasek D-Bus 서비스(Uconnect) 미인증·cellular 노출 → CAN
-        게이트웨이 침투 → 조향·브레이크 원격 제어. 140만대 리콜. IVI-CAN 분리 필요성 증명
+      intent: Jeep Cherokee 원격 해킹 LLM 분석 — 2015 Miller&Valasek D-Bus 서비스(Uconnect)
+        미인증·cellular 노출 → CAN 게이트웨이 침투 → 조향·브레이크 원격 제어. 140만대 리콜. IVI-CAN 분리 필요성 증명
       success_criteria:
       - LLM 호출 + Jeep 사례
       - D-Bus/Uconnect 취약점
@@ -183,14 +198,15 @@ steps:
       - 일반 차량 공격만
       - Jeep 사례 없음
   target_vm: manager
-  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\":\"gemma3:4b\",\"\
-    messages\":[{\"role\":\"system\",\"content\":\"You are an automotive security historian.\"},{\"role\"\
-    :\"user\",\"content\":\"Describe the 2015 Jeep Cherokee remote hack by Miller and Valasek. What was\
-    \ the attack chain from cellular to CAN bus?\"}],\"stream\":false,\"options\":{\"num_predict\":200}}'\
-    \ \\\n | python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
+  script: "curl -s ${BASTION_URL:-http://localhost:8003}/api/chat \\\n  -d '{\"model\"\
+    :\"gemma3:4b\",\"messages\":[{\"role\":\"system\",\"content\":\"You are an automotive\
+    \ security historian.\"},{\"role\":\"user\",\"content\":\"Describe the 2015 Jeep\
+    \ Cherokee remote hack by Miller and Valasek. What was the attack chain from cellular\
+    \ to CAN bus?\"}],\"stream\":false,\"options\":{\"num_predict\":200}}' \\\n |\
+    \ python3 -c \"import sys,json; print(json.load(sys.stdin)['message']['content'])\""
   risk_level: low
-  bastion_prompt: Describe the 2015 Jeep Cherokee remote hack by Miller and Valasek. What was the attack
-    chain from cellular to CAN bus?
+  bastion_prompt: Describe the 2015 Jeep Cherokee remote hack by Miller and Valasek.
+    What was the attack chain from cellular to CAN bus?
 - order: 6
   instruction: CAN IDS를 구현하시오. 빈도 이상, 알 수 없는 ID, 데이터 범위 위반, 브레이크 이상을 탐지하라.
   hint: 정상 baseline과 비교하여 이상을 탐지하세요.
@@ -199,18 +215,20 @@ steps:
   answer: '🤖 프롬프트: CAN IDS를 구현 방법을 설명하고 예시 코드를 보여줘
 
     📎 참고 (CLI): python3 -c "known={0x100,0x200,0x300,0x400,0x500};alerts=[];traffic=[(0x100,60),(0x000,0),(0x300,450),(0x200,0)];print(''===
-    CAN IDS ==='');[((alerts.append(f''Unknown:0x{aid:03X}'') if aid not in known else None),(alerts.append(f''Steer:{val/10}deg'')
-    if aid==0x300 and abs(val)>300 else None),(alerts.append(''Brake zero'') if aid==0x200 and val==0
-    else None)) for aid,val in traffic];[print(f''  [!] {a}'') for a in alerts];print(f''  Total alerts:
-    {len(alerts)}'')"'
+    CAN IDS ==='');[((alerts.append(f''Unknown:0x{aid:03X}'') if aid not in known
+    else None),(alerts.append(f''Steer:{val/10}deg'') if aid==0x300 and abs(val)>300
+    else None),(alerts.append(''Brake zero'') if aid==0x200 and val==0 else None))
+    for aid,val in traffic];[print(f''  [!] {a}'') for a in alerts];print(f''  Total
+    alerts: {len(alerts)}'')"'
   answer_detail: CAN IDS는 인젝션과 이상 트래픽을 실시간 탐지합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: CAN IDS — (1) 빈도 이상 (0x100 Engine 정상 10ms → 갑자기 1ms) (2) 알 수 없는 ID (0xFFF 미등록) (3) 데이터 범위
-        위반 (브레이크 > 100%) (4) 브레이크+가속 동시. 4 탐지 규칙 Python 함수. OEM 블랙박스 CAN IDS
+      intent: CAN IDS — (1) 빈도 이상 (0x100 Engine 정상 10ms → 갑자기 1ms) (2) 알 수 없는 ID (0xFFF
+        미등록) (3) 데이터 범위 위반 (브레이크 > 100%) (4) 브레이크+가속 동시. 4 탐지 규칙 Python 함수. OEM 블랙박스
+        CAN IDS
       success_criteria:
       - 4 탐지 규칙
       - frequency + ID + range + logic
@@ -222,10 +240,11 @@ steps:
       - 범위 위반 체크 없음
   target_vm: attacker
   script: 'python3 -c "known={0x100,0x200,0x300,0x400,0x500};alerts=[];traffic=[(0x100,60),(0x000,0),(0x300,450),(0x200,0)];print(''===
-    CAN IDS ==='');[((alerts.append(f''Unknown:0x{aid:03X}'') if aid not in known else None),(alerts.append(f''Steer:{val/10}deg'')
-    if aid==0x300 and abs(val)>300 else None),(alerts.append(''Brake zero'') if aid==0x200 and val==0
-    else None)) for aid,val in traffic];[print(f''  [!] {a}'') for a in alerts];print(f''  Total alerts:
-    {len(alerts)}'')"'
+    CAN IDS ==='');[((alerts.append(f''Unknown:0x{aid:03X}'') if aid not in known
+    else None),(alerts.append(f''Steer:{val/10}deg'') if aid==0x300 and abs(val)>300
+    else None),(alerts.append(''Brake zero'') if aid==0x200 and val==0 else None))
+    for aid,val in traffic];[print(f''  [!] {a}'') for a in alerts];print(f''  Total
+    alerts: {len(alerts)}'')"'
   risk_level: low
   bastion_prompt: CAN IDS를 구현하시오. 빈도 이상, 알 수 없는 ID, 데이터 범위 위반, 브레이크 이상을 탐지하라.
 - order: 7
@@ -235,18 +254,20 @@ steps:
   points: 10
   answer: '🤖 프롬프트: V2X 메시지 위조 공격을 시뮬레이션하시오 구현 방법과 예시를 설명해줘
 
-    📎 참고 (CLI): python3 -c "print(''=== V2X Attack Simulation ==='');print(''  [FORGE] Emergency brake
-    warning from non-existent vehicle'');print(''  [SYBIL] 10 fake vehicles created on virtual road'');print(''  [!]
-    Target vehicle brakes unnecessarily → rear-end collision risk'');print(''  [!] Traffic management
-    confused by ghost vehicles'')"'
+    📎 참고 (CLI): python3 -c "print(''=== V2X Attack Simulation ==='');print(''  [FORGE]
+    Emergency brake warning from non-existent vehicle'');print(''  [SYBIL] 10 fake
+    vehicles created on virtual road'');print(''  [!] Target vehicle brakes unnecessarily
+    → rear-end collision risk'');print(''  [!] Traffic management confused by ghost
+    vehicles'')"'
   answer_detail: V2X 메시지 위조는 교통 안전에 직접적 위협입니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: V2X 메시지 위조 + Sybil — DSRC/C-V2X BSM (Basic Safety Message) 에 가짜 긴급 브레이크 경고 (EEBL Emergency
-        Electronic Brake Light) 삽입 + Sybil 공격 (다수 가짜 차량 신원 동시) 시뮬. IEEE 1609.2 인증 부재 시
+      intent: V2X 메시지 위조 + Sybil — DSRC/C-V2X BSM (Basic Safety Message) 에 가짜 긴급 브레이크
+        경고 (EEBL Emergency Electronic Brake Light) 삽입 + Sybil 공격 (다수 가짜 차량 신원 동시)
+        시뮬. IEEE 1609.2 인증 부재 시
       success_criteria:
       - BSM 또는 EEBL 위조
       - Sybil 다수 신원 시뮬
@@ -258,12 +279,15 @@ steps:
       - 단일 위조만 (Sybil 없음)
       - V2X 개념 없음
   target_vm: attacker
-  script: python3 -c "print('=== V2X Attack Simulation ===');print('  [FORGE] Emergency brake warning
-    from non-existent vehicle');print('  [SYBIL] 10 fake vehicles created on virtual road');print('  [!]
-    Target vehicle brakes unnecessarily → rear-end collision risk');print('  [!] Traffic management confused
-    by ghost vehicles')"
+  script: python3 -c "print('=== V2X Attack Simulation ===');print('  [FORGE] Emergency
+    brake warning from non-existent vehicle');print('  [SYBIL] 10 fake vehicles created
+    on virtual road');print('  [!] Target vehicle brakes unnecessarily → rear-end
+    collision risk');print('  [!] Traffic management confused by ghost vehicles')"
   risk_level: low
-  bastion_prompt: V2X 메시지 위조 공격을 시뮬레이션하시오. 가짜 긴급 브레이크 경고와 Sybil 공격을 구현하라.
+  bastion_prompt: 'V2X 메시지 위조 공격을 시뮬레이션하시오. 가짜 긴급 브레이크 경고와 Sybil 공격을 구현하라.
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 8
   instruction: 차량 보안 아키텍처를 Python으로 설계하시오. 도메인 분리, 게이트웨이 방화벽, SecOC, V2X PKI를 포함하라.
   hint: 4계층 보안 아키텍처를 설계하세요.
@@ -272,18 +296,19 @@ steps:
   answer: '🤖 프롬프트: 차량 보안 아키텍처를 Python으로 구현 방법을 설명하고 예시 코드를 보여줘
 
     📎 참고 (CLI): python3 -c "arch=[(''Domain Separation'',''Isolate powertrain/chassis/IVI/ADAS''),(''Gateway
-    Firewall'',''Filter CAN messages between domains''),(''SecOC Auth'',''Authenticate ECU messages''),(''V2X
-    PKI'',''Certificate-based V2X message signing''),(''CAN IDS'',''Real-time anomaly detection'')];print(''===
-    Vehicle Security Architecture ==='');[print(f''  {a[0]}: {a[1]}'') for a in arch]"'
+    Firewall'',''Filter CAN messages between domains''),(''SecOC Auth'',''Authenticate
+    ECU messages''),(''V2X PKI'',''Certificate-based V2X message signing''),(''CAN
+    IDS'',''Real-time anomaly detection'')];print(''=== Vehicle Security Architecture
+    ==='');[print(f''  {a[0]}: {a[1]}'') for a in arch]"'
   answer_detail: 다계층 보안 아키텍처로 커넥티드카를 보호합니다.
   verify:
     type: output_contains
     expect: null
     field: stdout
     semantic:
-      intent: 차량 보안 아키텍처 설계 — Domain Isolation (IVI vs ADAS vs Chassis 4 domain) + Gateway Firewall (CAN→Ethernet
-        변환 점) + SecOC (Secure Onboard Communication, AUTOSAR CMAC 인증) + V2X PKI (IEEE 1609.2). ISO/SAE
-        21434 CSMS 4 pillar
+      intent: 차량 보안 아키텍처 설계 — Domain Isolation (IVI vs ADAS vs Chassis 4 domain) +
+        Gateway Firewall (CAN→Ethernet 변환 점) + SecOC (Secure Onboard Communication,
+        AUTOSAR CMAC 인증) + V2X PKI (IEEE 1609.2). ISO/SAE 21434 CSMS 4 pillar
       success_criteria:
       - 4 요소 (domain/gateway/SecOC/V2X PKI)
       - 각 요소 역할
@@ -297,8 +322,9 @@ steps:
       - 표준 참조 없음
   target_vm: attacker
   script: 'python3 -c "arch=[(''Domain Separation'',''Isolate powertrain/chassis/IVI/ADAS''),(''Gateway
-    Firewall'',''Filter CAN messages between domains''),(''SecOC Auth'',''Authenticate ECU messages''),(''V2X
-    PKI'',''Certificate-based V2X message signing''),(''CAN IDS'',''Real-time anomaly detection'')];print(''===
-    Vehicle Security Architecture ==='');[print(f''  {a[0]}: {a[1]}'') for a in arch]"'
+    Firewall'',''Filter CAN messages between domains''),(''SecOC Auth'',''Authenticate
+    ECU messages''),(''V2X PKI'',''Certificate-based V2X message signing''),(''CAN
+    IDS'',''Real-time anomaly detection'')];print(''=== Vehicle Security Architecture
+    ==='');[print(f''  {a[0]}: {a[1]}'') for a in arch]"'
   risk_level: low
   bastion_prompt: 차량 보안 아키텍처를 Python으로 설계하시오. 도메인 분리, 게이트웨이 방화벽, SecOC, V2X PKI를 포함하라.

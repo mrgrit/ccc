@@ -26,9 +26,10 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: Wazuh builtin ruleset 파일 개수 — sudo ls /var/ossec/ruleset/rules/ | wc -l. /var/ossec/ruleset/rules/
-        는 Wazuh 제공 기본 룰(읽기 전용 권장), /var/ossec/etc/rules/ 는 custom 룰 위치. 기본 룰 보통 200+ 파일(0020-syslog, 0080-sshd,
-        0250-apache, 0450-firewalld, 0500-ms_logs_rules, 0700-nginx, 0800-mitre 등 번호 prefix). 업데이트 시 ruleset/rules
+      intent: Wazuh builtin ruleset 파일 개수 — sudo ls /var/ossec/ruleset/rules/ | wc
+        -l. /var/ossec/ruleset/rules/ 는 Wazuh 제공 기본 룰(읽기 전용 권장), /var/ossec/etc/rules/
+        는 custom 룰 위치. 기본 룰 보통 200+ 파일(0020-syslog, 0080-sshd, 0250-apache, 0450-firewalld,
+        0500-ms_logs_rules, 0700-nginx, 0800-mitre 등 번호 prefix). 업데이트 시 ruleset/rules
         덮어씀 → custom 은 etc/rules 에 분리
       success_criteria:
       - ls ruleset/rules | wc -l 실행
@@ -62,10 +63,11 @@ steps:
     expect: rules
     field: stdout
     semantic:
-      intent: 'local_rules.xml 내용 확인 — sudo cat /var/ossec/etc/rules/local_rules.xml | head -30. Custom
-        rule 정의 위치(ruleset/rules 와 분리, 업데이트 시 보존). 기본 템플릿: <group name="local,syslog,sshd,"><rule id="100001"
-        level="5"><if_sid>5716</if_sid><srcip>!192.168.1.0/24</srcip><description>sshd: external ssh</description></rule></group>.
-        rule ID 100000-120000 범위가 custom 예약. XML 섹션 구조'
+      intent: 'local_rules.xml 내용 확인 — sudo cat /var/ossec/etc/rules/local_rules.xml
+        | head -30. Custom rule 정의 위치(ruleset/rules 와 분리, 업데이트 시 보존). 기본 템플릿: <group
+        name="local,syslog,sshd,"><rule id="100001" level="5"><if_sid>5716</if_sid><srcip>!192.168.1.0/24</srcip><description>sshd:
+        external ssh</description></rule></group>. rule ID 100000-120000 범위가 custom
+        예약. XML 섹션 구조'
       success_criteria:
       - cat local_rules.xml 실행
       - rules 또는 group 키워드
@@ -89,22 +91,24 @@ steps:
   hint: <rule id="100100" level="10">…
   category: configure
   points: 10
-  answer: "\U0001F916 프롬프트: siem VM의 wazuh local_rules.xml에 sudo 실패 3회 탐지 룰(rule id 100100, level 10)을\
-    \ 추가해줘\n\U0001F4CE 참고 (CLI): sudo bash -c 'cat >> /var/ossec/etc/rules/local_rules.xml <<EOF\n<group\
-    \ name=\"local,syslog,sudo,\">\n  <rule id=\"100100\" level=\"10\" frequency=\"3\" timeframe=\"120\"\
-    >\n    <if_matched_sid>5402</if_matched_sid>\n    <description>Multiple sudo failures (custom)</description>\n\
-    \  </rule>\n</group>\nEOF'"
-  answer_detail: 'Wazuh 탐지 룰 작성: local_rules.xml 에 ''여러 번 sudo 실패'' 탐지 룰(rule id 100100, level 10)을 추가하시오.'
+  answer: "\U0001F916 프롬프트: siem VM의 wazuh local_rules.xml에 sudo 실패 3회 탐지 룰(rule id\
+    \ 100100, level 10)을 추가해줘\n\U0001F4CE 참고 (CLI): sudo bash -c 'cat >> /var/ossec/etc/rules/local_rules.xml\
+    \ <<EOF\n<group name=\"local,syslog,sudo,\">\n  <rule id=\"100100\" level=\"10\"\
+    \ frequency=\"3\" timeframe=\"120\">\n    <if_matched_sid>5402</if_matched_sid>\n\
+    \    <description>Multiple sudo failures (custom)</description>\n  </rule>\n</group>\n\
+    EOF'"
+  answer_detail: 'Wazuh 탐지 룰 작성: local_rules.xml 에 ''여러 번 sudo 실패'' 탐지 룰(rule id 100100,
+    level 10)을 추가하시오.'
   verify:
     type: output_contains
     expect: '100100'
     field: stdout
     semantic:
-      intent: Sudo 실패 집계 rule 추가 — sudo bash -c cat >> local_rules.xml <<EOF ... 로 <group name=local,syslog,sudo,>
-        <rule id=100100 level=10 frequency=3 timeframe=120><if_matched_sid>5402</if_matched_sid><description>Multiple
-        sudo failures (custom)</description></rule></group> 추가. rule 5402 는 sudo auth fail built-in rule.
-        frequency=3 + timeframe=120 = 120초 내 3회 매칭 시 이 rule 발동(집계/correlation). level 10 = Medium-High.
-        MITRE T1548.003(Sudo Abuse)
+      intent: Sudo 실패 집계 rule 추가 — sudo bash -c cat >> local_rules.xml <<EOF ... 로
+        <group name=local,syslog,sudo,> <rule id=100100 level=10 frequency=3 timeframe=120><if_matched_sid>5402</if_matched_sid><description>Multiple
+        sudo failures (custom)</description></rule></group> 추가. rule 5402 는 sudo auth
+        fail built-in rule. frequency=3 + timeframe=120 = 120초 내 3회 매칭 시 이 rule 발동(집계/correlation).
+        level 10 = Medium-High. MITRE T1548.003(Sudo Abuse)
       success_criteria:
       - local_rules.xml 에 rule id=100100 추가
       - frequency + timeframe 또는 if_matched_sid
@@ -120,11 +124,16 @@ steps:
       - if_matched_sid 없음(correlation 불가)
       - rule id 중복
   target_vm: siem
-  script: "sudo bash -c 'cat >> /var/ossec/etc/rules/local_rules.xml <<EOF\n<group name=\"local,syslog,sudo,\"\
-    >\n  <rule id=\"100100\" level=\"10\" frequency=\"3\" timeframe=\"120\">\n    <if_matched_sid>5402</if_matched_sid>\n\
-    \    <description>Multiple sudo failures (custom)</description>\n  </rule>\n</group>\nEOF'"
+  script: "sudo bash -c 'cat >> /var/ossec/etc/rules/local_rules.xml <<EOF\n<group\
+    \ name=\"local,syslog,sudo,\">\n  <rule id=\"100100\" level=\"10\" frequency=\"\
+    3\" timeframe=\"120\">\n    <if_matched_sid>5402</if_matched_sid>\n    <description>Multiple\
+    \ sudo failures (custom)</description>\n  </rule>\n</group>\nEOF'"
   risk_level: medium
-  bastion_prompt: siem VM의 wazuh local_rules.xml에 sudo 실패 3회 탐지 룰(rule id 100100, level 10)을 추가해줘
+  bastion_prompt: 'siem VM의 wazuh local_rules.xml에 sudo 실패 3회 탐지 룰(rule id 100100,
+    level 10)을 추가해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 4
   instruction: wazuh-analysisd -t 로 룰 문법을 검증하시오.
   hint: sudo /var/ossec/bin/wazuh-analysisd -t
@@ -143,10 +152,10 @@ steps:
     - syntax
     field: stdout
     semantic:
-      intent: wazuh-analysisd -t 문법 검증 — sudo /var/ossec/bin/wazuh-analysisd -t 2>&1 | tail. analysisd
-        는 decoder+rule 로딩 후 자체 검증 모드 - Configuration loaded. 또는 error message(XML syntax, duplicate sid,
-        unknown attribute). restart 전 필수 gate. 출력 tail -10 으로 최종 verdict 빠르게 확인. 성공 시 restart 안전, 실패 시
-        XML 수정 후 재검증
+      intent: wazuh-analysisd -t 문법 검증 — sudo /var/ossec/bin/wazuh-analysisd -t 2>&1
+        | tail. analysisd 는 decoder+rule 로딩 후 자체 검증 모드 - Configuration loaded. 또는
+        error message(XML syntax, duplicate sid, unknown attribute). restart 전 필수
+        gate. 출력 tail -10 으로 최종 verdict 빠르게 확인. 성공 시 restart 안전, 실패 시 XML 수정 후 재검증
       success_criteria:
       - wazuh-analysisd -t 실행
       - Configuration 또는 loaded 키워드
@@ -179,10 +188,11 @@ steps:
     expect: active
     field: stdout
     semantic:
-      intent: Wazuh Manager restart + active 검증 — sudo systemctl restart wazuh-manager && systemctl is-active
-        wazuh-manager. wazuh-manager service 는 여러 daemon 묶음(analysisd, remoted, monitord, logcollector,
-        integratord). restart 로 rule/decoder/ossec.conf 전체 재로드. 짧은 downtime 동안 agent 연결 재시도 발생. active
-        출력 시 정상. failed 시 journalctl -u wazuh-manager 로 원인 조사
+      intent: Wazuh Manager restart + active 검증 — sudo systemctl restart wazuh-manager
+        && systemctl is-active wazuh-manager. wazuh-manager service 는 여러 daemon 묶음(analysisd,
+        remoted, monitord, logcollector, integratord). restart 로 rule/decoder/ossec.conf
+        전체 재로드. 짧은 downtime 동안 agent 연결 재시도 발생. active 출력 시 정상. failed 시 journalctl
+        -u wazuh-manager 로 원인 조사
       success_criteria:
       - systemctl restart wazuh-manager 실행
       - is-active 검증
@@ -200,28 +210,33 @@ steps:
   target_vm: siem
   script: sudo systemctl restart wazuh-manager && systemctl is-active wazuh-manager
   risk_level: high
-  bastion_prompt: siem VM의 wazuh-manager 서비스를 재시작해줘
+  bastion_prompt: 'siem VM의 wazuh-manager 서비스를 재시작해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 6
-  instruction: 'wazuh-logtest 로 ''Feb 1 12:34:56 host sudo: user : 3 incorrect password attempts'' 로그를
-    넣어 새 룰이 매칭되는지 테스트하시오.'
+  instruction: 'wazuh-logtest 로 ''Feb 1 12:34:56 host sudo: user : 3 incorrect password
+    attempts'' 로그를 넣어 새 룰이 매칭되는지 테스트하시오.'
   hint: echo '…' | /var/ossec/bin/wazuh-logtest
   category: verify
   points: 10
-  answer: '🤖 프롬프트: siem VM에서 wazuh-logtest에 ''sudo incorrect password attempts'' 로그를 넣어 룰 매칭을 테스트해줘
+  answer: '🤖 프롬프트: siem VM에서 wazuh-logtest에 ''sudo incorrect password attempts'' 로그를
+    넣어 룰 매칭을 테스트해줘
 
-    📎 참고 (CLI): echo ''Feb 01 12:34:56 host sudo:    root : 3 incorrect password attempts'' | sudo /var/ossec/bin/wazuh-logtest
-    2>&1 | tail -15'
-  answer_detail: 'Wazuh 탐지 룰 작성: wazuh-logtest 로 ''Feb 1 12:34:56 host sudo: user : 3 incorrect password
-    attempts'' 로그를 넣어 새 룰이 매칭되는지 테스트하시오.'
+    📎 참고 (CLI): echo ''Feb 01 12:34:56 host sudo:    root : 3 incorrect password attempts''
+    | sudo /var/ossec/bin/wazuh-logtest 2>&1 | tail -15'
+  answer_detail: 'Wazuh 탐지 룰 작성: wazuh-logtest 로 ''Feb 1 12:34:56 host sudo: user
+    : 3 incorrect password attempts'' 로그를 넣어 새 룰이 매칭되는지 테스트하시오.'
   verify:
     type: output_contains
     expect: sudo
     field: stdout
     semantic:
-      intent: 'wazuh-logtest 룰 매칭 검증 — echo sample_log | sudo /var/ossec/bin/wazuh-logtest | tail -15.
-        sample: Feb 01 12:34:56 host sudo: root : 3 incorrect password attempts. wazuh-logtest 는 대화형 테스트
-        도구 - stdin 에 log 라인 입력 시 decoder+rule 매칭 결과 출력(decoded fields, matched rule id/level/description).
-        sudo rule 5402 + custom 100100 발동 확인. unit-test 역할, CI 활용 가능'
+      intent: 'wazuh-logtest 룰 매칭 검증 — echo sample_log | sudo /var/ossec/bin/wazuh-logtest
+        | tail -15. sample: Feb 01 12:34:56 host sudo: root : 3 incorrect password
+        attempts. wazuh-logtest 는 대화형 테스트 도구 - stdin 에 log 라인 입력 시 decoder+rule 매칭
+        결과 출력(decoded fields, matched rule id/level/description). sudo rule 5402 +
+        custom 100100 발동 확인. unit-test 역할, CI 활용 가능'
       success_criteria:
       - echo log | wazuh-logtest 파이프
       - sudo 출력 포함
@@ -237,10 +252,11 @@ steps:
       - sudo 없이 실행(권한 오류)
       - tail 없이 전체 출력
   target_vm: siem
-  script: 'echo ''Feb 01 12:34:56 host sudo:    root : 3 incorrect password attempts'' | sudo /var/ossec/bin/wazuh-logtest
-    2>&1 | tail -15'
+  script: 'echo ''Feb 01 12:34:56 host sudo:    root : 3 incorrect password attempts''
+    | sudo /var/ossec/bin/wazuh-logtest 2>&1 | tail -15'
   risk_level: low
-  bastion_prompt: siem VM에서 wazuh-logtest에 'sudo incorrect password attempts' 로그를 넣어 룰 매칭을 테스트해줘
+  bastion_prompt: siem VM에서 wazuh-logtest에 'sudo incorrect password attempts' 로그를
+    넣어 룰 매칭을 테스트해줘
 - order: 7
   instruction: alerts.json 에서 rule.id=100100 의 최근 항목을 검색하시오.
   hint: grep 100100 …
@@ -248,8 +264,8 @@ steps:
   points: 10
   answer: '🤖 프롬프트: siem VM의 wazuh alerts.json에서 rule id 100100의 최근 5건을 보여줘
 
-    📎 참고 (CLI): sudo grep ''"id":"100100"'' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5 ||
-    echo ''no hits yet'''
+    📎 참고 (CLI): sudo grep ''"id":"100100"'' /var/ossec/logs/alerts/alerts.json 2>/dev/null
+    | tail -5 || echo ''no hits yet'''
   answer_detail: 'Wazuh 탐지 룰 작성: alerts.json 에서 rule.id=100100 의 최근 항목을 검색하시오.'
   verify:
     type: output_contains
@@ -257,8 +273,9 @@ steps:
     field: stdout
     semantic:
       intent: 'alerts.json 에서 rule.id=100100 alert 검색 — sudo grep "id":"100100" /var/ossec/logs/alerts/alerts.json
-        | tail -5 || echo no hits yet. Wazuh alert JSON 의 rule.id 필드는 "id":"100100" 문자열 형태. || echo 로
-        0 hits 시 명확 출력. alert 발생 조건: 실제 sudo 실패 3회 + 120초 이내 발생. 0 hits = rule 미로드 또는 실제 공격 발생 안 함'
+        | tail -5 || echo no hits yet. Wazuh alert JSON 의 rule.id 필드는 "id":"100100"
+        문자열 형태. || echo 로 0 hits 시 명확 출력. alert 발생 조건: 실제 sudo 실패 3회 + 120초 이내 발생.
+        0 hits = rule 미로드 또는 실제 공격 발생 안 함'
       success_criteria:
       - grep id 100100 실행
       - 매칭 또는 no hits 메시지
@@ -274,8 +291,8 @@ steps:
       - alerts.log(text) 와 혼동
       - 0 hits 정상 판정
   target_vm: siem
-  script: sudo grep '"id":"100100"' /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -5 || echo 'no
-    hits yet'
+  script: sudo grep '"id":"100100"' /var/ossec/logs/alerts/alerts.json 2>/dev/null
+    | tail -5 || echo 'no hits yet'
   risk_level: low
   bastion_prompt: siem VM의 wazuh alerts.json에서 rule id 100100의 최근 5건을 보여줘
 - order: 8
@@ -292,9 +309,10 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: ossec.log ERROR 라인 조회 — sudo grep -i ERROR /var/ossec/logs/ossec.log | tail -5. ossec.log
-        는 Wazuh Manager 운영 로그(디버깅용). ERROR·CRITICAL·WARNING 급 메시지 검토로 rule XML 오류·agent 연결 실패·decoder
-        문제 탐지. 정기 점검 관행. -i 대소문자 무시. 정상 시 ERROR 없거나 과거 resolved 항목만. 반복 ERROR 는 근본 원인 분석 필요
+      intent: ossec.log ERROR 라인 조회 — sudo grep -i ERROR /var/ossec/logs/ossec.log
+        | tail -5. ossec.log 는 Wazuh Manager 운영 로그(디버깅용). ERROR·CRITICAL·WARNING 급
+        메시지 검토로 rule XML 오류·agent 연결 실패·decoder 문제 탐지. 정기 점검 관행. -i 대소문자 무시. 정상 시
+        ERROR 없거나 과거 resolved 항목만. 반복 ERROR 는 근본 원인 분석 필요
       success_criteria:
       - grep -i ERROR ossec.log 실행
       - tail -5 또는 제한 출력
@@ -327,10 +345,11 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'custom rule group cleanup — sudo sed -i /<rule id="100100"/,/<\/group>/d /var/ossec/etc/rules/local_rules.xml.
-        sed range pattern 으로 <rule id="100100" 시작 라인부터 </group> 까지 삭제. XML 구조 유지 중요 - <group> 블록 단위 정확
-        삭제. 백업 권장 sed -i.bak. 잘못하면 XML 파싱 오류 → manager restart 실패. verify: grep 100100 local_rules.xml
-        로 0건 확인'
+      intent: 'custom rule group cleanup — sudo sed -i /<rule id="100100"/,/<\/group>/d
+        /var/ossec/etc/rules/local_rules.xml. sed range pattern 으로 <rule id="100100"
+        시작 라인부터 </group> 까지 삭제. XML 구조 유지 중요 - <group> 블록 단위 정확 삭제. 백업 권장 sed -i.bak.
+        잘못하면 XML 파싱 오류 → manager restart 실패. verify: grep 100100 local_rules.xml 로
+        0건 확인'
       success_criteria:
       - sed -i range pattern 사용
       - rule id 100100 블록 삭제
@@ -367,10 +386,10 @@ steps:
     - systemctl
     field: stdout
     semantic:
-      intent: 'Wazuh Manager restart 후 cleanup 확인 — sudo systemctl restart wazuh-manager && systemctl
-        is-active wazuh-manager. local_rules.xml 수정 후 반영을 위해 restart(Wazuh 는 reload unsupported). cleanup
-        완료 상태 - rule 100100 삭제된 상태로 정상 가동 검증. active 출력 시 XML 문법 정상 + 모든 daemon 재시작 성공. 실패 시 분석: 삭제 과정에서
-        XML 구조 깨짐 여부 확인 후 수정'
+      intent: 'Wazuh Manager restart 후 cleanup 확인 — sudo systemctl restart wazuh-manager
+        && systemctl is-active wazuh-manager. local_rules.xml 수정 후 반영을 위해 restart(Wazuh
+        는 reload unsupported). cleanup 완료 상태 - rule 100100 삭제된 상태로 정상 가동 검증. active
+        출력 시 XML 문법 정상 + 모든 daemon 재시작 성공. 실패 시 분석: 삭제 과정에서 XML 구조 깨짐 여부 확인 후 수정'
       success_criteria:
       - systemctl restart wazuh-manager
       - is-active 로 검증
@@ -388,7 +407,10 @@ steps:
   target_vm: siem
   script: sudo systemctl restart wazuh-manager && systemctl is-active wazuh-manager
   risk_level: high
-  bastion_prompt: siem VM의 wazuh-manager 를 재시작해줘
+  bastion_prompt: 'siem VM의 wazuh-manager 를 재시작해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
   hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
@@ -399,7 +421,8 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: '[통합] Wazuh 탐지 룰 5작업 — local_rules.xml 작성/decoder/rule id/restart/alert 확인 통합. rule id 100000+.'
+      intent: '[통합] Wazuh 탐지 룰 5작업 — local_rules.xml 작성/decoder/rule id/restart/alert
+        확인 통합. rule id 100000+.'
       success_criteria:
       - local_rules.xml
       - rule id 할당
@@ -419,7 +442,8 @@ steps:
 
     2) siem VM의 wazuh local_rules.xml 상단 30줄을 보여줘
 
-    3) siem VM의 wazuh local_rules.xml에 sudo 실패 3회 탐지 룰(rule id 100100, level 10)을 추가해줘
+    3) siem VM의 wazuh local_rules.xml에 sudo 실패 3회 탐지 룰(rule id 100100, level 10)을
+    추가해줘
 
     4) siem VM에서 wazuh-analysisd -t 로 룰 문법 검증을 실행해줘
 
@@ -432,7 +456,8 @@ steps:
 
     2) siem VM의 wazuh local_rules.xml 상단 30줄을 보여줘
 
-    3) siem VM의 wazuh local_rules.xml에 sudo 실패 3회 탐지 룰(rule id 100100, level 10)을 추가해줘
+    3) siem VM의 wazuh local_rules.xml에 sudo 실패 3회 탐지 룰(rule id 100100, level 10)을
+    추가해줘
 
     4) siem VM에서 wazuh-analysisd -t 로 룰 문법 검증을 실행해줘
 

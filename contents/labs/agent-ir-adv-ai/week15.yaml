@@ -3,7 +3,8 @@ title: 장기 APT 잠복 + 과정 회고 IR (AI 지원)
 version: ai
 course: agent-ir-adv-ai
 week: 15
-description: 6개월 dwell time. Threat Hunting + Baseline 갱신 + Dwell Time KPI. AI SubAgent 자동 실행·검증.
+description: 6개월 dwell time. Threat Hunting + Baseline 갱신 + Dwell Time KPI. AI SubAgent
+  자동 실행·검증.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -36,8 +37,8 @@ steps:
     expect: 임계
     field: stdout
     semantic:
-      intent: 저속 활동 시뮬 — 하루 5-10 small events (정찰·파일 access) + 일반 근무시간 내 + 일반 사용자 profile 유지. low-and-slow
-        attack pattern. 전통 IDS threshold 미달
+      intent: 저속 활동 시뮬 — 하루 5-10 small events (정찰·파일 access) + 일반 근무시간 내 + 일반 사용자
+        profile 유지. low-and-slow attack pattern. 전통 IDS threshold 미달
       success_criteria:
       - 저속 (5-10/day)
       - 근무시간 위장
@@ -58,7 +59,10 @@ steps:
 
     cat ~/w15/slow.md'
   risk_level: low
-  bastion_prompt: 저속 활동 시뮬
+  bastion_prompt: '저속 활동 시뮬
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 2
   instruction: LOLBAS 장기 사용
   hint: 6단계 IR 중 공격 단계. target_vm=bastion.
@@ -83,8 +87,8 @@ steps:
     expect: certutil
     field: stdout
     semantic:
-      intent: LOLBAS 장기 사용 — 6개월 간 powershell/certutil/wmic 활용. 각 호출은 정상적이지만 누적 패턴 이상. 단발 탐지 실패, 장기 추적
-        필요
+      intent: LOLBAS 장기 사용 — 6개월 간 powershell/certutil/wmic 활용. 각 호출은 정상적이지만 누적 패턴
+        이상. 단발 탐지 실패, 장기 추적 필요
       success_criteria:
       - LOLBAS 다양 + 6개월
       - 장기 패턴
@@ -105,17 +109,21 @@ steps:
 
     cat ~/w15/lolbas-long.md'
   risk_level: low
-  bastion_prompt: LOLBAS 장기 사용
+  bastion_prompt: 'LOLBAS 장기 사용
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 3
   instruction: Long-term drift 탐지
   hint: 6단계 IR 중 탐지 단계. target_vm=bastion.
   category: analysis
   points: 11
-  answer: "\U0001F916 프롬프트: Long-term drift 탐지\n\U0001F4CE 참고 (CLI): cat > ~/w15/drift.py <<'PY'\nimport\
-    \ statistics\ndef drift(baseline_vals, recent_val):\n    if not baseline_vals: return False\n    m\
-    \ = statistics.mean(baseline_vals)\n    s = statistics.stdev(baseline_vals) if len(baseline_vals)\
-    \ > 1 else 1\n    return abs(recent_val - m) > 2*s\nprint(drift([10,12,11,13,11,12,13], 25))\nPY\n\
-    python3 ~/w15/drift.py"
+  answer: "\U0001F916 프롬프트: Long-term drift 탐지\n\U0001F4CE 참고 (CLI): cat > ~/w15/drift.py\
+    \ <<'PY'\nimport statistics\ndef drift(baseline_vals, recent_val):\n    if not\
+    \ baseline_vals: return False\n    m = statistics.mean(baseline_vals)\n    s =\
+    \ statistics.stdev(baseline_vals) if len(baseline_vals) > 1 else 1\n    return\
+    \ abs(recent_val - m) > 2*s\nprint(drift([10,12,11,13,11,12,13], 25))\nPY\npython3\
+    \ ~/w15/drift.py"
   answer_detail: '[탐지] 2σ 이탈.'
   verify:
     type: output_contains
@@ -124,8 +132,8 @@ steps:
     - Drift
     field: stdout
     semantic:
-      intent: Long-term drift 탐지 — sliding window 90 days + user behavior drift (Wasserstein distance).
-        서서히 변화하는 패턴 포착. ML 기반 drift detection
+      intent: Long-term drift 탐지 — sliding window 90 days + user behavior drift (Wasserstein
+        distance). 서서히 변화하는 패턴 포착. ML 기반 drift detection
       success_criteria:
       - sliding window 90d
       - drift distance 지표
@@ -134,10 +142,11 @@ steps:
       negative_signs:
       - point-in-time만
   target_vm: bastion
-  script: "cat > ~/w15/drift.py <<'PY'\nimport statistics\ndef drift(baseline_vals, recent_val):\n   \
-    \ if not baseline_vals: return False\n    m = statistics.mean(baseline_vals)\n    s = statistics.stdev(baseline_vals)\
-    \ if len(baseline_vals) > 1 else 1\n    return abs(recent_val - m) > 2*s\nprint(drift([10,12,11,13,11,12,13],\
-    \ 25))\nPY\npython3 ~/w15/drift.py"
+  script: "cat > ~/w15/drift.py <<'PY'\nimport statistics\ndef drift(baseline_vals,\
+    \ recent_val):\n    if not baseline_vals: return False\n    m = statistics.mean(baseline_vals)\n\
+    \    s = statistics.stdev(baseline_vals) if len(baseline_vals) > 1 else 1\n  \
+    \  return abs(recent_val - m) > 2*s\nprint(drift([10,12,11,13,11,12,13], 25))\n\
+    PY\npython3 ~/w15/drift.py"
   risk_level: low
   bastion_prompt: Long-term drift 탐지
 - order: 4
@@ -168,8 +177,9 @@ steps:
     - 주기
     field: stdout
     semantic:
-      intent: Threat Hunting 주기 /tmp/hunt_cadence.md — Daily (top alerts) + Weekly (LOLBAS review) + Monthly
-        (long-term anomaly) + Quarterly (MITRE ATT&CK coverage). 정기 hunting rhythm
+      intent: Threat Hunting 주기 /tmp/hunt_cadence.md — Daily (top alerts) + Weekly
+        (LOLBAS review) + Monthly (long-term anomaly) + Quarterly (MITRE ATT&CK coverage).
+        정기 hunting rhythm
       success_criteria:
       - /tmp/hunt_cadence.md
       - 4 주기
@@ -225,8 +235,8 @@ steps:
     - 로드맵
     field: stdout
     semantic:
-      intent: 6개월 타임라인 /tmp/apt_6mo_timeline.md — APT 전형 dwell time ~200 days (Mandiant M-Trends). 초기
-        침투 → 3개월 조용 → recon 심화 → 데이터 staging → exfil. 각 phase 시각
+      intent: 6개월 타임라인 /tmp/apt_6mo_timeline.md — APT 전형 dwell time ~200 days (Mandiant
+        M-Trends). 초기 침투 → 3개월 조용 → recon 심화 → 데이터 staging → exfil. 각 phase 시각
       success_criteria:
       - /tmp/apt_6mo_timeline.md
       - 6개월 phases
@@ -280,8 +290,8 @@ steps:
     expect: 인덱싱
     field: stdout
     semantic:
-      intent: LLM 장기 로그 요약 — 6개월 로그 방대 → LLM 에 summarization 요청 (claude-3 long context 또는 LangChain).
-        주요 anomaly 패턴 추출. 인간 분석가 보조
+      intent: LLM 장기 로그 요약 — 6개월 로그 방대 → LLM 에 summarization 요청 (claude-3 long context
+        또는 LangChain). 주요 anomaly 패턴 추출. 인간 분석가 보조
       success_criteria:
       - LLM 로그 요약
       - long context 활용
@@ -330,8 +340,8 @@ steps:
     expect: 사람
     field: stdout
     semantic:
-      intent: 관찰 지속 vs 격리 결정 /tmp/observe_vs_contain.md — 관찰 지속 pros(TTP 파악·규모 파악) cons(피해 확대). 격리 pros(즉시
-        차단) cons(증거 소실). balance criteria
+      intent: 관찰 지속 vs 격리 결정 /tmp/observe_vs_contain.md — 관찰 지속 pros(TTP 파악·규모 파악)
+        cons(피해 확대). 격리 pros(즉시 차단) cons(증거 소실). balance criteria
       success_criteria:
       - /tmp/observe_vs_contain.md
       - pros/cons
@@ -358,17 +368,18 @@ steps:
   hint: 6단계 IR 중 초동대응 단계. target_vm=bastion.
   category: analysis
   points: 16
-  answer: "\U0001F916 프롬프트: Agent 보조 Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w15/agent.yaml <<'Y'\nplaybook_id:\
-    \ pb-long-apt\nsteps:\n  - skill: compile_6m_activity\n  - skill: rank_suspect_accounts\n  - skill:\
-    \ escalate_to_human_lead\n  - skill: prepare_isolation_candidates\nY\ncat ~/w15/agent.yaml"
+  answer: "\U0001F916 프롬프트: Agent 보조 Playbook\n\U0001F4CE 참고 (CLI): cat > ~/w15/agent.yaml\
+    \ <<'Y'\nplaybook_id: pb-long-apt\nsteps:\n  - skill: compile_6m_activity\n  -\
+    \ skill: rank_suspect_accounts\n  - skill: escalate_to_human_lead\n  - skill:\
+    \ prepare_isolation_candidates\nY\ncat ~/w15/agent.yaml"
   answer_detail: '[초동대응] 사람 주도 보조.'
   verify:
     type: output_contains
     expect: escalate
     field: stdout
     semantic:
-      intent: Agent 보조 Playbook — 장기 APT 는 human-led, agent 는 데이터 수집·hunt·요약·추천 역할 제한. full automation
-        위험
+      intent: Agent 보조 Playbook — 장기 APT 는 human-led, agent 는 데이터 수집·hunt·요약·추천 역할
+        제한. full automation 위험
       success_criteria:
       - human-led + agent 보조
       - automation 제한
@@ -377,9 +388,9 @@ steps:
       negative_signs:
       - full auto
   target_vm: bastion
-  script: "cat > ~/w15/agent.yaml <<'Y'\nplaybook_id: pb-long-apt\nsteps:\n  - skill: compile_6m_activity\n\
-    \  - skill: rank_suspect_accounts\n  - skill: escalate_to_human_lead\n  - skill: prepare_isolation_candidates\n\
-    Y\ncat ~/w15/agent.yaml"
+  script: "cat > ~/w15/agent.yaml <<'Y'\nplaybook_id: pb-long-apt\nsteps:\n  - skill:\
+    \ compile_6m_activity\n  - skill: rank_suspect_accounts\n  - skill: escalate_to_human_lead\n\
+    \  - skill: prepare_isolation_candidates\nY\ncat ~/w15/agent.yaml"
   risk_level: low
   bastion_prompt: Agent 보조 Playbook
 - order: 9
@@ -410,8 +421,8 @@ steps:
     - 심각성
     field: stdout
     semantic:
-      intent: 심각성 브리핑 — APT 6개월 dwell = 심각한 침해 + 피해 전모 불명 + 국가 행위자 가능성. CISO·CEO·이사회·규제 기관 단계적 공유. 위기
-        관리
+      intent: 심각성 브리핑 — APT 6개월 dwell = 심각한 침해 + 피해 전모 불명 + 국가 행위자 가능성. CISO·CEO·이사회·규제
+        기관 단계적 공유. 위기 관리
       success_criteria:
       - 위기 브리핑
       - 단계적 공유
@@ -461,8 +472,8 @@ steps:
     expect: Dwell
     field: stdout
     semantic:
-      intent: Dwell Time KPI /tmp/dwell_kpi.md — 현재 dwell time 측정 + Mandiant M-Trends 산업 평균 (~200d) 대비
-        + 감축 목표 (90d → 30d → 7d) + 필요 투자. Dwell time 감축 = 최상 KPI
+      intent: Dwell Time KPI /tmp/dwell_kpi.md — 현재 dwell time 측정 + Mandiant M-Trends
+        산업 평균 (~200d) 대비 + 감축 목표 (90d → 30d → 7d) + 필요 투자. Dwell time 감축 = 최상 KPI
       success_criteria:
       - /tmp/dwell_kpi.md
       - 현재 + 목표
@@ -514,8 +525,8 @@ steps:
     - 팀구축
     field: stdout
     semantic:
-      intent: Threat Hunting 팀 /tmp/hunt_team.md — 정규 hunter 2+ (주니어+시니어) + quarterly external red team
-        + intelligence feed subscription. 전담 조직 필요성
+      intent: Threat Hunting 팀 /tmp/hunt_team.md — 정규 hunter 2+ (주니어+시니어) + quarterly
+        external red team + intelligence feed subscription. 전담 조직 필요성
       success_criteria:
       - /tmp/hunt_team.md
       - 정규 + external
@@ -571,8 +582,8 @@ steps:
     expect: 충격적
     field: stdout
     semantic:
-      intent: '과정 회고 제출 /tmp/course_retrospective_adv.md — 15주 심화 IR 학습: 잘된 점·개선점·후속 교육 추천. 심화 IR 은 기초보다
-        판단력 중심이라는 통찰'
+      intent: '과정 회고 제출 /tmp/course_retrospective_adv.md — 15주 심화 IR 학습: 잘된 점·개선점·후속
+        교육 추천. 심화 IR 은 기초보다 판단력 중심이라는 통찰'
       success_criteria:
       - /tmp/course_retrospective_adv.md
       - 3 섹션 + 통찰

@@ -3,8 +3,8 @@ title: 컨테이너 기초 보안 점검 (AI 지원)
 version: ai
 course: cloud-container-ai
 week: 3
-description: 컨테이너 기술의 핵심 구성 요소(이미지, 레이어, 볼륨, 네트워크)를 이해하고, 각 요소의 보안 설정을 점검합니다. AI SubAgent가 자동으로 명령을 실행하고
-  결과를 검증합니다.
+description: 컨테이너 기술의 핵심 구성 요소(이미지, 레이어, 볼륨, 네트워크)를 이해하고, 각 요소의 보안 설정을 점검합니다. AI SubAgent가
+  자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: easy
 duration_minutes: 120
 objectives:
@@ -21,17 +21,18 @@ steps:
   answer: '🤖 프롬프트: WEB 서버(10.20.30.80)에서 로컬에 저장된 Docker 이미지 목록을 확인해줘
 
     📎 참고 (CLI): docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"'
-  answer_detail: Docker 이미지는 읽기 전용 레이어의 스택으로 구성됩니다. 각 Dockerfile 명령어(RUN, COPY, ADD)가 하나의 레이어를 생성합니다.
-    이미지 크기가 클수록 공격 표면이 넓어지므로, 가능한 작은 베이스 이미지(alpine, distroless)를 사용해야 합니다.
+  answer_detail: Docker 이미지는 읽기 전용 레이어의 스택으로 구성됩니다. 각 Dockerfile 명령어(RUN, COPY, ADD)가
+    하나의 레이어를 생성합니다. 이미지 크기가 클수록 공격 표면이 넓어지므로, 가능한 작은 베이스 이미지(alpine, distroless)를
+    사용해야 합니다.
   verify:
     type: output_contains
     expect: REPOSITORY
     field: stdout
     semantic:
       intent: 'Docker 이미지 로컬 목록 — docker images --format table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}.
-        이미지는 읽기 전용 레이어 stack. Repository(이름) + Tag 버전(latest 사용 지양 - 재현성↓), Size (Alpine ~5MB, Debian
-        ~70MB, Ubuntu ~80MB, distroless ~20MB 권장), CreatedSince(최신 패치 여부). 취약 이미지 지표: latest tag, 오래된
-        CreatedSince, 큰 Size(불필요 패키지)'
+        이미지는 읽기 전용 레이어 stack. Repository(이름) + Tag 버전(latest 사용 지양 - 재현성↓), Size (Alpine
+        ~5MB, Debian ~70MB, Ubuntu ~80MB, distroless ~20MB 권장), CreatedSince(최신 패치
+        여부). 취약 이미지 지표: latest tag, 오래된 CreatedSince, 큰 Size(불필요 패키지)'
       success_criteria:
       - docker images --format 실행
       - REPOSITORY 키워드 포함
@@ -49,7 +50,10 @@ steps:
   target_vm: web
   script: docker images --format "table {{.Repository}}\t{{.Tag}}\t{{.Size}}\t{{.CreatedSince}}"
   risk_level: low
-  bastion_prompt: WEB 서버(10.20.30.80)에서 로컬에 저장된 Docker 이미지 목록을 확인해줘
+  bastion_prompt: 'WEB 서버(10.20.30.80)에서 로컬에 저장된 Docker 이미지 목록을 확인해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 2
   instruction: Docker 이미지의 레이어 히스토리를 확인하시오. 빌드 과정에서 민감 정보가 포함되었는지 점검합니다.
   hint: docker history 명령으로 이미지 빌드 이력을 확인하세요.
@@ -57,19 +61,21 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 미지의 레이어 히스토리를확인해줘
 
-    📎 참고 (CLI): IMG=$(docker images -q | head -1); [ -n "$IMG" ] && docker history $IMG --no-trunc 2>/dev/null
-    | head -15 || echo "이미지 없음"'
-  answer_detail: docker history는 이미지의 각 레이어를 생성한 명령을 표시합니다. RUN 명령에 패스워드, API 키 등이 포함되면 이미지 레이어에 영구 저장됩니다.
-    삭제해도 이전 레이어에 남아 있으므로, 빌드 시 multi-stage build를 사용하거나 BuildKit의 --secret을 활용해야 합니다.
+    📎 참고 (CLI): IMG=$(docker images -q | head -1); [ -n "$IMG" ] && docker history
+    $IMG --no-trunc 2>/dev/null | head -15 || echo "이미지 없음"'
+  answer_detail: docker history는 이미지의 각 레이어를 생성한 명령을 표시합니다. RUN 명령에 패스워드, API 키 등이
+    포함되면 이미지 레이어에 영구 저장됩니다. 삭제해도 이전 레이어에 남아 있으므로, 빌드 시 multi-stage build를 사용하거나 BuildKit의
+    --secret을 활용해야 합니다.
   verify:
     type: output_contains
     expect: IMAGE
     field: stdout
     semantic:
-      intent: '이미지 레이어 히스토리 + 민감정보 점검 — IMG=$(docker images -q | head -1); docker history $IMG --no-trunc
-        | head -15. 각 Dockerfile 명령(FROM/RUN/COPY/ENV) 이 레이어로 보존됨. --no-trunc 로 명령 전체 출력. 위험 패턴: RUN echo
-        <secret> > file, ENV AWS_SECRET=xxx, COPY credentials.json /app/. Secret 은 multi-stage build +
-        BuildKit --secret 또는 env 참조로 처리. MITRE T1552.001 Unsecured Credentials in Files'
+      intent: '이미지 레이어 히스토리 + 민감정보 점검 — IMG=$(docker images -q | head -1); docker
+        history $IMG --no-trunc | head -15. 각 Dockerfile 명령(FROM/RUN/COPY/ENV) 이 레이어로
+        보존됨. --no-trunc 로 명령 전체 출력. 위험 패턴: RUN echo <secret> > file, ENV AWS_SECRET=xxx,
+        COPY credentials.json /app/. Secret 은 multi-stage build + BuildKit --secret
+        또는 env 참조로 처리. MITRE T1552.001 Unsecured Credentials in Files'
       success_criteria:
       - docker history 실행
       - IMAGE 또는 레이어 정보 출력
@@ -85,8 +91,8 @@ steps:
       - history 대신 inspect
       - layer 취약점 검사 도구 부재
   target_vm: web
-  script: IMG=$(docker images -q | head -1); [ -n "$IMG" ] && docker history $IMG --no-trunc 2>/dev/null
-    | head -15 || echo "이미지 없음"
+  script: IMG=$(docker images -q | head -1); [ -n "$IMG" ] && docker history $IMG
+    --no-trunc 2>/dev/null | head -15 || echo "이미지 없음"
   risk_level: low
   bastion_prompt: 미지의 레이어 히스토리를확인해줘
 - order: 3
@@ -96,18 +102,21 @@ steps:
   points: 12
   answer: '🤖 프롬프트: 컨테이너의 마운트 포인트(볼륨, 바인드 마운트)를 확인해줘
 
-    📎 참고 (CLI): docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range .Mounts}}  Type={{.Type}}
-    Src={{.Source}} Dst={{.Destination}} RW={{.RW}}\n{{end}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'
-  answer_detail: 바인드 마운트(-v /host/path:/container/path)는 호스트 파일시스템을 직접 노출하므로 위험합니다. 특히 /etc, /var/run/docker.sock,
-    / 같은 민감 경로를 마운트하면 컨테이너에서 호스트를 제어할 수 있습니다. 볼륨(docker volume)은 Docker가 관리하여 상대적으로 안전합니다.
+    📎 참고 (CLI): docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range
+    .Mounts}}  Type={{.Type}} Src={{.Source}} Dst={{.Destination}} RW={{.RW}}\n{{end}}"
+    {} 2>/dev/null || echo "실행 중인 컨테이너 없음"'
+  answer_detail: 바인드 마운트(-v /host/path:/container/path)는 호스트 파일시스템을 직접 노출하므로 위험합니다.
+    특히 /etc, /var/run/docker.sock, / 같은 민감 경로를 마운트하면 컨테이너에서 호스트를 제어할 수 있습니다. 볼륨(docker
+    volume)은 Docker가 관리하여 상대적으로 안전합니다.
   verify:
     type: output_contains
     expect: 컨테이너
     field: stdout
     semantic:
-      intent: '컨테이너 Mount Points 점검 — docker ps -q | head -3 | xargs -I{} docker inspect --format={{range
-        .Mounts}}Type={{.Type}} Src={{.Source}} Dst={{.Destination}} RW={{.RW}}{{end}} {}. Mount Type:
-        bind(호스트 직접 - 위험), volume(Docker 관리 - 안전), tmpfs(메모리). 위험 바인드: /:/host, /etc:/etc, /var/run/docker.sock:/var/run/docker.sock(container
+      intent: '컨테이너 Mount Points 점검 — docker ps -q | head -3 | xargs -I{} docker inspect
+        --format={{range .Mounts}}Type={{.Type}} Src={{.Source}} Dst={{.Destination}}
+        RW={{.RW}}{{end}} {}. Mount Type: bind(호스트 직접 - 위험), volume(Docker 관리 - 안전),
+        tmpfs(메모리). 위험 바인드: /:/host, /etc:/etc, /var/run/docker.sock:/var/run/docker.sock(container
         escape!), /proc:/proc. RW=true 는 쓰기 가능(더 위험). Read-only 마운트 권장'
       success_criteria:
       - docker inspect Mounts 조회
@@ -124,8 +133,9 @@ steps:
       - docker.sock 마운트 위험 미인지
       - RW vs RO 고려 없음
   target_vm: web
-  script: docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range .Mounts}}  Type={{.Type}}
-    Src={{.Source}} Dst={{.Destination}} RW={{.RW}}\n{{end}}" {} 2>/dev/null || echo "실행 중인 컨테이너 없음"
+  script: docker ps -q | head -3 | xargs -I{} docker inspect --format="{{.Name}}:\n{{range
+    .Mounts}}  Type={{.Type}} Src={{.Source}} Dst={{.Destination}} RW={{.RW}}\n{{end}}"
+    {} 2>/dev/null || echo "실행 중인 컨테이너 없음"
   risk_level: low
   bastion_prompt: 컨테이너의 마운트 포인트(볼륨, 바인드 마운트)를 확인해줘
 - order: 4
@@ -135,19 +145,20 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Docker 볼륨 목록을 확인하고 미사용(dangling) 볼륨이 있는지 점검해줘
 
-    📎 참고 (CLI): docker volume ls && echo "--- 미사용 볼륨 ---" && docker volume ls -f dangling=true --format
-    "{{.Name}}: {{.Driver}}"'''
-  answer_detail: 미사용(dangling) 볼륨은 삭제된 컨테이너가 남긴 것으로, 민감 데이터(DB, 로그, 설정)가 포함될 수 있습니다. 정기적으로 docker volume
-    prune으로 정리해야 합니다. 클라우드의 EBS 스냅샷 관리와 유사한 개념입니다.
+    📎 참고 (CLI): docker volume ls && echo "--- 미사용 볼륨 ---" && docker volume ls -f dangling=true
+    --format "{{.Name}}: {{.Driver}}"'''
+  answer_detail: 미사용(dangling) 볼륨은 삭제된 컨테이너가 남긴 것으로, 민감 데이터(DB, 로그, 설정)가 포함될 수 있습니다.
+    정기적으로 docker volume prune으로 정리해야 합니다. 클라우드의 EBS 스냅샷 관리와 유사한 개념입니다.
   verify:
     type: output_contains
     expect: VOLUME
     field: stdout
     semantic:
-      intent: 'Docker 볼륨 목록 + dangling 점검 — docker volume ls && docker volume ls -f dangling=true --format
-        {{.Name}}: {{.Driver}}. Dangling volume = 연결된 컨테이너가 삭제됐지만 볼륨은 남아있는 상태. 잔존 데이터(DB, 세션, 비밀 설정) 위험.
-        정리: docker volume prune (신중히). Driver: local(host FS), cifs, nfs, azure_file, efs 등. 민감 데이터 저장
-        볼륨은 암호화 고려(EFS 는 기본 암호화, local 은 LUKS)'
+      intent: 'Docker 볼륨 목록 + dangling 점검 — docker volume ls && docker volume ls -f
+        dangling=true --format {{.Name}}: {{.Driver}}. Dangling volume = 연결된 컨테이너가
+        삭제됐지만 볼륨은 남아있는 상태. 잔존 데이터(DB, 세션, 비밀 설정) 위험. 정리: docker volume prune (신중히).
+        Driver: local(host FS), cifs, nfs, azure_file, efs 등. 민감 데이터 저장 볼륨은 암호화 고려(EFS
+        는 기본 암호화, local 은 LUKS)'
       success_criteria:
       - docker volume ls 실행
       - VOLUME 키워드 출력
@@ -163,8 +174,8 @@ steps:
       - 민감 데이터 고려 없이 prune
       - 암호화 요건 미검토
   target_vm: web
-  script: 'docker volume ls && echo "--- 미사용 볼륨 ---" && docker volume ls -f dangling=true --format "{{.Name}}:
-    {{.Driver}}"'''
+  script: 'docker volume ls && echo "--- 미사용 볼륨 ---" && docker volume ls -f dangling=true
+    --format "{{.Name}}: {{.Driver}}"'''
   risk_level: low
   bastion_prompt: Docker 볼륨 목록을 확인하고 미사용(dangling) 볼륨이 있는지 점검해줘
 - order: 5
@@ -174,20 +185,20 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 중지된 컨테이너와 미사용 이미지를 확인해줘
 
-    📎 참고 (CLI): echo "=== 중지된 컨테이너 ==="; docker ps -a --filter status=exited --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
-    2>/dev/null; echo "=== 미사용 이미지 ==="; docker images -f dangling=true --format "{{.ID}}: {{.Size}}"
-    2>/dev/null'''
-  answer_detail: 중지된 컨테이너에는 실행 중에 생성된 파일(로그, 임시 데이터, 인증 정보)이 남아 있습니다. 미사용 이미지는 취약한 버전의 소프트웨어를 포함할 수 있습니다.
-    정기적으로 docker system prune으로 정리하되, 프로덕션에서는 신중하게 수행해야 합니다.
+    📎 참고 (CLI): echo "=== 중지된 컨테이너 ==="; docker ps -a --filter status=exited --format
+    "table {{.Names}}\t{{.Image}}\t{{.Status}}" 2>/dev/null; echo "=== 미사용 이미지 ===";
+    docker images -f dangling=true --format "{{.ID}}: {{.Size}}" 2>/dev/null'''
+  answer_detail: 중지된 컨테이너에는 실행 중에 생성된 파일(로그, 임시 데이터, 인증 정보)이 남아 있습니다. 미사용 이미지는 취약한
+    버전의 소프트웨어를 포함할 수 있습니다. 정기적으로 docker system prune으로 정리하되, 프로덕션에서는 신중하게 수행해야 합니다.
   verify:
     type: output_contains
     expect: 중지된 컨테이너
     field: stdout
     semantic:
-      intent: '중지 컨테이너 + dangling 이미지 점검 — docker ps -a --filter status=exited + docker images -f dangling=true.
-        Exited container 에는 실행 중 파일 잔존(로그, temp, token). dangling image 는 tag 없는 빌드 중간 산출물 - 디스크 낭비. 정기
-        cleanup 필요: docker container prune + docker image prune. 프로덕션 주의: important 컨테이너를 exited 로 착각하여
-        삭제 위험'
+      intent: '중지 컨테이너 + dangling 이미지 점검 — docker ps -a --filter status=exited + docker
+        images -f dangling=true. Exited container 에는 실행 중 파일 잔존(로그, temp, token).
+        dangling image 는 tag 없는 빌드 중간 산출물 - 디스크 낭비. 정기 cleanup 필요: docker container
+        prune + docker image prune. 프로덕션 주의: important 컨테이너를 exited 로 착각하여 삭제 위험'
       success_criteria:
       - exited 필터 ps + dangling 이미지 조회
       - 중지된 컨테이너 섹션
@@ -203,9 +214,9 @@ steps:
       - 무차별 prune (데이터 손실 위험)
       - 중지 컨테이너 잔존 데이터 인지 없음
   target_vm: web
-  script: 'echo "=== 중지된 컨테이너 ==="; docker ps -a --filter status=exited --format "table {{.Names}}\t{{.Image}}\t{{.Status}}"
-    2>/dev/null; echo "=== 미사용 이미지 ==="; docker images -f dangling=true --format "{{.ID}}: {{.Size}}"
-    2>/dev/null'''
+  script: 'echo "=== 중지된 컨테이너 ==="; docker ps -a --filter status=exited --format "table
+    {{.Names}}\t{{.Image}}\t{{.Status}}" 2>/dev/null; echo "=== 미사용 이미지 ==="; docker
+    images -f dangling=true --format "{{.ID}}: {{.Size}}" 2>/dev/null'''
   risk_level: low
   bastion_prompt: 중지된 컨테이너와 미사용 이미지를 확인해줘
 - order: 6
@@ -215,18 +226,20 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Docker 디스크 사용량을 분석해줘
 
-    📎 참고 (CLI): docker system df && echo "--- 상세 ---" && docker system df -v 2>/dev/null | head -20'
-  answer_detail: docker system df는 이미지, 컨테이너, 볼륨, 빌드 캐시의 디스크 사용량을 표시합니다. RECLAIMABLE 컬럼은 정리 가능한 공간입니다.
-    클라우드 환경에서 디스크 비용과 직결되므로 정기적인 모니터링과 정리가 필요합니다.
+    📎 참고 (CLI): docker system df && echo "--- 상세 ---" && docker system df -v 2>/dev/null
+    | head -20'
+  answer_detail: docker system df는 이미지, 컨테이너, 볼륨, 빌드 캐시의 디스크 사용량을 표시합니다. RECLAIMABLE
+    컬럼은 정리 가능한 공간입니다. 클라우드 환경에서 디스크 비용과 직결되므로 정기적인 모니터링과 정리가 필요합니다.
   verify:
     type: output_contains
     expect: RECLAIMABLE
     field: stdout
     semantic:
-      intent: 'Docker disk 사용량 분석 — docker system df + docker system df -v. 출력 4 카테고리: Images(total size,
-        reclaimable), Containers(active/total, reclaimable), Local Volumes(reclaimable), Build Cache(BuildKit
-        layer cache). RECLAIMABLE 컬럼 = 정리 가능한 공간. -v 상세 모드로 개별 항목 리스트. 클라우드 환경에서 EBS/Disk 비용 직접 영향 - 모니터링
-        + 자동 정리 크론 필요'
+      intent: 'Docker disk 사용량 분석 — docker system df + docker system df -v. 출력 4 카테고리:
+        Images(total size, reclaimable), Containers(active/total, reclaimable), Local
+        Volumes(reclaimable), Build Cache(BuildKit layer cache). RECLAIMABLE 컬럼 =
+        정리 가능한 공간. -v 상세 모드로 개별 항목 리스트. 클라우드 환경에서 EBS/Disk 비용 직접 영향 - 모니터링 + 자동 정리
+        크론 필요'
       success_criteria:
       - docker system df 실행
       - RECLAIMABLE 키워드 출력
@@ -242,7 +255,8 @@ steps:
       - reclaimable 활용 없음
       - prune 전략 부재
   target_vm: web
-  script: docker system df && echo "--- 상세 ---" && docker system df -v 2>/dev/null | head -20
+  script: docker system df && echo "--- 상세 ---" && docker system df -v 2>/dev/null
+    | head -20
   risk_level: low
   bastion_prompt: Docker 디스크 사용량을 분석해줘
 - order: 7
@@ -252,19 +266,20 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 컨테이너 내부에서 실행 중인 프로세스를 확인해줘
 
-    📎 참고 (CLI): CID=$(docker ps -q | head -1); [ -n "$CID" ] && echo "컨테이너: $(docker inspect --format="{{.Name}}"
-    $CID)" && docker top $CID 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
-  answer_detail: docker top은 컨테이너 내부 프로세스를 호스트 관점에서 보여줍니다. UID 컬럼에서 root(0)으로 실행되는 프로세스가 있으면 위험합니다. 컨테이너
-    내부에서도 비root 사용자(USER 지시어)로 프로세스를 실행해야 합니다.
+    📎 참고 (CLI): CID=$(docker ps -q | head -1); [ -n "$CID" ] && echo "컨테이너: $(docker
+    inspect --format="{{.Name}}" $CID)" && docker top $CID 2>/dev/null || echo "실행
+    중인 컨테이너 없음"'''
+  answer_detail: docker top은 컨테이너 내부 프로세스를 호스트 관점에서 보여줍니다. UID 컬럼에서 root(0)으로 실행되는
+    프로세스가 있으면 위험합니다. 컨테이너 내부에서도 비root 사용자(USER 지시어)로 프로세스를 실행해야 합니다.
   verify:
     type: output_contains
     expect: PID
     field: stdout
     semantic:
-      intent: '컨테이너 내부 프로세스 확인 — CID=$(docker ps -q | head -1); docker top $CID. docker top 은 호스트 관점에서
-        컨테이너 프로세스 출력(ps aux 형식). UID 컬럼에 root(0) 이면 privilege escalation 위험. Dockerfile 에 USER <non-root>
-        지시어 권장. 비루트 실행 검증: docker top <c> | awk {print $1}. MITRE T1611 방지. ps -o user,pid,cmd 같은 format
-        옵션 제공'
+      intent: '컨테이너 내부 프로세스 확인 — CID=$(docker ps -q | head -1); docker top $CID. docker
+        top 은 호스트 관점에서 컨테이너 프로세스 출력(ps aux 형식). UID 컬럼에 root(0) 이면 privilege escalation
+        위험. Dockerfile 에 USER <non-root> 지시어 권장. 비루트 실행 검증: docker top <c> | awk {print
+        $1}. MITRE T1611 방지. ps -o user,pid,cmd 같은 format 옵션 제공'
       success_criteria:
       - docker top <container> 실행
       - PID 키워드 출력
@@ -280,8 +295,9 @@ steps:
       - UID 분석 없이 목록만
       - root 실행 인지 없음
   target_vm: web
-  script: 'CID=$(docker ps -q | head -1); [ -n "$CID" ] && echo "컨테이너: $(docker inspect --format="{{.Name}}"
-    $CID)" && docker top $CID 2>/dev/null || echo "실행 중인 컨테이너 없음"'''
+  script: 'CID=$(docker ps -q | head -1); [ -n "$CID" ] && echo "컨테이너: $(docker inspect
+    --format="{{.Name}}" $CID)" && docker top $CID 2>/dev/null || echo "실행 중인 컨테이너
+    없음"'''
   risk_level: low
   bastion_prompt: 컨테이너 내부에서 실행 중인 프로세스를 확인해줘
 - order: 8
@@ -293,17 +309,17 @@ steps:
 
     📎 참고 (CLI): docker stats --no-stream --format "table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}"
     2>/dev/null || echo "실행 중인 컨테이너 없음"'
-  answer_detail: docker stats는 CPU, 메모리, 네트워크, 디스크 I/O를 표시합니다. 자원 제한이 설정되지 않은 컨테이너는 호스트 자원을 독점할 수 있어 DoS
-    공격에 취약합니다. 클라우드 환경에서 자원 모니터링은 비용 관리와 보안 모두에 중요합니다.
+  answer_detail: docker stats는 CPU, 메모리, 네트워크, 디스크 I/O를 표시합니다. 자원 제한이 설정되지 않은 컨테이너는
+    호스트 자원을 독점할 수 있어 DoS 공격에 취약합니다. 클라우드 환경에서 자원 모니터링은 비용 관리와 보안 모두에 중요합니다.
   verify:
     type: output_contains
     expect: MEM
     field: stdout
     semantic:
       intent: '컨테이너 실시간 리소스 점검 — docker stats --no-stream --format table {{.Name}}\t{{.CPUPerc}}\t{{.MemUsage}}\t{{.NetIO}}\t{{.BlockIO}}.
-        --no-stream 로 1회 스냅샷(연속 업데이트 회피). Resource 제한 없는 컨테이너는 호스트 자원 독점 가능 - DoS 취약. 제한 설정: docker run
-        --memory=512m --cpus=0.5 --pids-limit=100. Kubernetes 는 resources.limits 필드. CIS 5.10-5.12(memory,
-        CPU, restart count limits)'
+        --no-stream 로 1회 스냅샷(연속 업데이트 회피). Resource 제한 없는 컨테이너는 호스트 자원 독점 가능 - DoS
+        취약. 제한 설정: docker run --memory=512m --cpus=0.5 --pids-limit=100. Kubernetes
+        는 resources.limits 필드. CIS 5.10-5.12(memory, CPU, restart count limits)'
       success_criteria:
       - docker stats --no-stream 실행
       - MEM 관련 컬럼 출력
@@ -355,8 +371,8 @@ steps:
     SCRIPT
 
     chmod +x /tmp/container_basic.sh && bash /tmp/container_basic.sh'
-  answer_detail: 컨테이너 보안 점검은 빌드(이미지), 배포(레지스트리), 런타임(실행 중 컨테이너)의 세 단계로 나뉩니다. 이 실습은 런타임 단계에 초점을 맞추어 실행
-    환경의 보안 상태를 파악합니다. 미사용 리소스 정리, 이미지 업데이트, 자원 제한이 기본적인 보안 조치입니다.
+  answer_detail: 컨테이너 보안 점검은 빌드(이미지), 배포(레지스트리), 런타임(실행 중 컨테이너)의 세 단계로 나뉩니다. 이 실습은
+    런타임 단계에 초점을 맞추어 실행 환경의 보안 상태를 파악합니다. 미사용 리소스 정리, 이미지 업데이트, 자원 제한이 기본적인 보안 조치입니다.
   verify:
     type: output_contains
     expect:
@@ -367,9 +383,10 @@ steps:
     - 이미지
     field: stdout
     semantic:
-      intent: '컨테이너 기초 보안 종합 점검 스크립트 — /tmp/container_basic.sh heredoc. 카운트 지표: 이미지 수, 실행/중지 컨테이너 수, 볼륨
-        수, dangling 볼륨, 네트워크 수, system df 요약. 정기 실행으로 자원 트렌드 추적 + anomaly 감지. 실무: cron + prometheus_textfile_collector
-        로 Prometheus 메트릭화, Grafana 대시보드 시각화. docker-bench-security 오픈소스로 CIS Docker Benchmark 평가 보완'
+      intent: '컨테이너 기초 보안 종합 점검 스크립트 — /tmp/container_basic.sh heredoc. 카운트 지표: 이미지
+        수, 실행/중지 컨테이너 수, 볼륨 수, dangling 볼륨, 네트워크 수, system df 요약. 정기 실행으로 자원 트렌드 추적
+        + anomaly 감지. 실무: cron + prometheus_textfile_collector 로 Prometheus 메트릭화,
+        Grafana 대시보드 시각화. docker-bench-security 오픈소스로 CIS Docker Benchmark 평가 보완'
       success_criteria:
       - /tmp/container_basic.sh 생성
       - bash 실행
@@ -459,5 +476,6 @@ steps:
     4) Docker 볼륨 목록을 확인하고 미사용(dangling) 볼륨이 있는지 점검해줘
 
     5) 중지된 컨테이너와 미사용 이미지를 확인해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
   script: ''

@@ -3,8 +3,8 @@ title: 공격자 해부 — Tool-use 루프와 지문 점수 (AI 지원)
 version: ai
 course: agent-ir-ai
 week: 2
-description: 에이전트 실행 프로세스를 방어자 관점에서 관찰하는 도구 세트를 구축한다. pstree·strace·tcpdump·auditd를 결합해 *호스트·네트워크 양측*의
-  지문을 수집한다. AI SubAgent가 자동으로 명령을 실행·검증합니다.
+description: 에이전트 실행 프로세스를 방어자 관점에서 관찰하는 도구 세트를 구축한다. pstree·strace·tcpdump·auditd를
+  결합해 *호스트·네트워크 양측*의 지문을 수집한다. AI SubAgent가 자동으로 명령을 실행·검증합니다.
 difficulty: hard
 duration_minutes: 150
 objectives:
@@ -15,21 +15,24 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: bastion에서 pstree로 ollama 서비스의 프로세스 트리를 표시하시오(에이전트 모델 호출이 이뤄지는 프로세스 관찰 연습).
+  instruction: bastion에서 pstree로 ollama 서비스의 프로세스 트리를 표시하시오(에이전트 모델 호출이 이뤄지는 프로세스
+    관찰 연습).
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 9
-  answer: '🤖 프롬프트: bastion에서 pstree로 ollama 서비스의 프로세스 트리를 표시하시오(에이전트 모델 호출이 이뤄지는 프로세스 관찰 연습).
+  answer: '🤖 프롬프트: bastion에서 pstree로 ollama 서비스의 프로세스 트리를 표시하시오(에이전트 모델 호출이 이뤄지는 프로세스
+    관찰 연습).
 
     📎 참고 (CLI): pstree -p $(pgrep -f ollama | head -1 || echo 1) | head -30'
-  answer_detail: 에이전트 프로세스 계보 관찰법 학습. 공격자 환경에선 못 보지만, Bastion 자체의 LLM 호출 패턴을 관찰하는 훈련.
+  answer_detail: 에이전트 프로세스 계보 관찰법 학습. 공격자 환경에선 못 보지만, Bastion 자체의 LLM 호출 패턴을 관찰하는
+    훈련.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: bastion pstree ollama 프로세스 — pstree -p | grep -A5 ollama 로 ollama 서비스 프로세스 트리 + child threads.
-        agent 모델 호출 시 전개되는 프로세스 관찰. 실행 프로세스 lineage
+      intent: bastion pstree ollama 프로세스 — pstree -p | grep -A5 ollama 로 ollama 서비스
+        프로세스 트리 + child threads. agent 모델 호출 시 전개되는 프로세스 관찰. 실행 프로세스 lineage
       success_criteria:
       - pstree -p + ollama 필터
       - 프로세스 트리 구조 출력
@@ -42,23 +45,28 @@ steps:
   target_vm: bastion
   script: pstree -p $(pgrep -f ollama | head -1 || echo 1) | head -30
   risk_level: low
-  bastion_prompt: bastion에서 pstree로 ollama 서비스의 프로세스 트리를 표시하시오(에이전트 모델 호출이 이뤄지는 프로세스 관찰 연습).
+  bastion_prompt: bastion에서 pstree로 ollama 서비스의 프로세스 트리를 표시하시오(에이전트 모델 호출이 이뤄지는 프로세스
+    관찰 연습).
 - order: 2
-  instruction: bastion에서 `curl -sX POST http://localhost:11434/api/tags`로 Ollama에 로드된 모델 목록을 조회하시오.
+  instruction: bastion에서 `curl -sX POST http://localhost:11434/api/tags`로 Ollama에
+    로드된 모델 목록을 조회하시오.
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: recon
   points: 10
-  answer: '🤖 프롬프트: bastion에서 `curl -sX POST http://localhost:11434/api/tags`로 Ollama에 로드된 모델 목록을 조회하시오.
+  answer: '🤖 프롬프트: bastion에서 `curl -sX POST http://localhost:11434/api/tags`로 Ollama에
+    로드된 모델 목록을 조회하시오.
 
-    📎 참고 (CLI): curl -s http://localhost:11434/api/tags | python3 -m json.tool | head -30'
+    📎 참고 (CLI): curl -s http://localhost:11434/api/tags | python3 -m json.tool | head
+    -30'
   answer_detail: 에이전트가 사용하는 LLM 추론 지점. 모델 이름·버전이 공격 분석에 중요.
   verify:
     type: output_contains
     expect: models
     field: stdout
     semantic:
-      intent: 'Ollama /api/tags 모델 목록 — curl -sX POST http://localhost:11434/api/tags | jq .models[].name
-        로 로드된 LLM 모델 나열. agent 가 사용할 수 있는 model catalog 확인. 보안 관점: 어떤 모델이 공격 관여 가능한지 파악'
+      intent: 'Ollama /api/tags 모델 목록 — curl -sX POST http://localhost:11434/api/tags
+        | jq .models[].name 로 로드된 LLM 모델 나열. agent 가 사용할 수 있는 model catalog 확인. 보안
+        관점: 어떤 모델이 공격 관여 가능한지 파악'
       success_criteria:
       - curl /api/tags + jq 파싱
       - 모델명 리스트 출력
@@ -71,7 +79,11 @@ steps:
   target_vm: bastion
   script: curl -s http://localhost:11434/api/tags | python3 -m json.tool | head -30
   risk_level: low
-  bastion_prompt: bastion에서 `curl -sX POST http://localhost:11434/api/tags`로 Ollama에 로드된 모델 목록을 조회하시오.
+  bastion_prompt: 'bastion에서 `curl -sX POST http://localhost:11434/api/tags`로 Ollama에
+    로드된 모델 목록을 조회하시오.
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 3
   instruction: bastion에서 auditd 서비스 상태를 확인하시오(Transient Tool 관찰의 전제).
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
@@ -86,8 +98,8 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: 'bastion auditd 상태 — systemctl status auditd + auditctl -l 현재 룰 확인. Transient Tool(agent
-        생성 임시 도구) 관찰의 전제조건: 파일 생성/실행 이벤트 수집 가능 여부'
+      intent: 'bastion auditd 상태 — systemctl status auditd + auditctl -l 현재 룰 확인.
+        Transient Tool(agent 생성 임시 도구) 관찰의 전제조건: 파일 생성/실행 이벤트 수집 가능 여부'
       success_criteria:
       - systemctl status auditd + auditctl -l
       - active 상태 + 현재 룰
@@ -108,16 +120,17 @@ steps:
   points: 12
   answer: '🤖 프롬프트: secu에서 tcpdump로 Ollama API 트래픽(11434 포트)을 30초 캡처하시오.
 
-    📎 참고 (CLI): sudo timeout 30 tcpdump -i any -nn -w /tmp/w02-ollama.pcap ''port 11434'' 2>/dev/null;
-    ls -la /tmp/w02-ollama.pcap'
+    📎 참고 (CLI): sudo timeout 30 tcpdump -i any -nn -w /tmp/w02-ollama.pcap ''port
+    11434'' 2>/dev/null; ls -la /tmp/w02-ollama.pcap'
   answer_detail: LLM API 호출의 네트워크 지문. 요청 간격·크기가 *에이전트 지문*의 핵심 축.
   verify:
     type: output_contains
     expect: w02-ollama.pcap
     field: stdout
     semantic:
-      intent: secu tcpdump Ollama 11434 포트 30초 — sudo timeout 30 tcpdump -i any port 11434 -w /tmp/w02-ollama.pcap.
-        LLM API 트래픽 캡처 → agent 행동 지문 추출. API 요청 패턴이 agent 의 decision process 반영
+      intent: secu tcpdump Ollama 11434 포트 30초 — sudo timeout 30 tcpdump -i any port
+        11434 -w /tmp/w02-ollama.pcap. LLM API 트래픽 캡처 → agent 행동 지문 추출. API 요청 패턴이
+        agent 의 decision process 반영
       success_criteria:
       - timeout 30 + tcpdump port 11434
       - /tmp/w02-ollama.pcap 생성
@@ -128,8 +141,8 @@ steps:
       - 포트 필터 없음
       - 파일 미저장
   target_vm: secu
-  script: sudo timeout 30 tcpdump -i any -nn -w /tmp/w02-ollama.pcap 'port 11434' 2>/dev/null; ls -la
-    /tmp/w02-ollama.pcap
+  script: sudo timeout 30 tcpdump -i any -nn -w /tmp/w02-ollama.pcap 'port 11434'
+    2>/dev/null; ls -la /tmp/w02-ollama.pcap
   risk_level: medium
   bastion_prompt: secu에서 tcpdump로 Ollama API 트래픽(11434 포트)을 30초 캡처하시오.
 - order: 5
@@ -137,10 +150,11 @@ steps:
   hint: target_vm=bastion에서 수행. 아래 CLI 예시 참고.
   category: analysis
   points: 13
-  answer: "\U0001F916 프롬프트: bastion에 agent_score.py 스크립트를 생성해 IAT CoV 계산 함수를 정의하시오.\n\U0001F4CE 참고 (CLI):\
-    \ mkdir -p ~/ccc/scripts && cat > ~/ccc/scripts/agent_score.py <<'PY'\nimport statistics as st\ndef\
-    \ iat_cov(times):\n    if len(times) < 2: return 1.0\n    iat = [b-a for a,b in zip(times, times[1:])]\n\
-    \    m = st.mean(iat)\n    return st.pstdev(iat)/m if m else 0.0\nprint('iat_cov', iat_cov([1.0, 2.0,\
+  answer: "\U0001F916 프롬프트: bastion에 agent_score.py 스크립트를 생성해 IAT CoV 계산 함수를 정의하시오.\n\
+    \U0001F4CE 참고 (CLI): mkdir -p ~/ccc/scripts && cat > ~/ccc/scripts/agent_score.py\
+    \ <<'PY'\nimport statistics as st\ndef iat_cov(times):\n    if len(times) < 2:\
+    \ return 1.0\n    iat = [b-a for a,b in zip(times, times[1:])]\n    m = st.mean(iat)\n\
+    \    return st.pstdev(iat)/m if m else 0.0\nprint('iat_cov', iat_cov([1.0, 2.0,\
     \ 3.0, 4.0]))\nPY\npython3 ~/ccc/scripts/agent_score.py"
   answer_detail: 에이전트 지문 1지표. 정상 사용자는 CoV>0.5, 에이전트는 <0.3 경향.
   verify:
@@ -148,9 +162,9 @@ steps:
     expect: iat_cov
     field: stdout
     semantic:
-      intent: 'agent_score.py IAT CoV 계산 — bastion 에 Python 스크립트 생성: def iat_cov(timestamps): intervals
-        = diff(timestamps); cov = stdev/mean. Inter-Arrival Time 의 Coefficient of Variation 으로 agent 의
-        요청 간격 규칙성 측정 (cov 낮으면 botnet-like)'
+      intent: 'agent_score.py IAT CoV 계산 — bastion 에 Python 스크립트 생성: def iat_cov(timestamps):
+        intervals = diff(timestamps); cov = stdev/mean. Inter-Arrival Time 의 Coefficient
+        of Variation 으로 agent 의 요청 간격 규칙성 측정 (cov 낮으면 botnet-like)'
       success_criteria:
       - agent_score.py 파일 생성
       - IAT CoV 계산 함수
@@ -162,10 +176,11 @@ steps:
       - 스크립트 미생성
       - CoV 개념 없음
   target_vm: bastion
-  script: "mkdir -p ~/ccc/scripts && cat > ~/ccc/scripts/agent_score.py <<'PY'\nimport statistics as st\n\
-    def iat_cov(times):\n    if len(times) < 2: return 1.0\n    iat = [b-a for a,b in zip(times, times[1:])]\n\
-    \    m = st.mean(iat)\n    return st.pstdev(iat)/m if m else 0.0\nprint('iat_cov', iat_cov([1.0, 2.0,\
-    \ 3.0, 4.0]))\nPY\npython3 ~/ccc/scripts/agent_score.py"
+  script: "mkdir -p ~/ccc/scripts && cat > ~/ccc/scripts/agent_score.py <<'PY'\nimport\
+    \ statistics as st\ndef iat_cov(times):\n    if len(times) < 2: return 1.0\n \
+    \   iat = [b-a for a,b in zip(times, times[1:])]\n    m = st.mean(iat)\n    return\
+    \ st.pstdev(iat)/m if m else 0.0\nprint('iat_cov', iat_cov([1.0, 2.0, 3.0, 4.0]))\n\
+    PY\npython3 ~/ccc/scripts/agent_score.py"
   risk_level: low
   bastion_prompt: bastion에 agent_score.py 스크립트를 생성해 IAT CoV 계산 함수를 정의하시오.
 - order: 6
@@ -175,15 +190,16 @@ steps:
   points: 14
   answer: '🤖 프롬프트: web에서 access.log 최근 200줄의 고유 경로 수를 계산하시오 (경로 다양성 지표).
 
-    📎 참고 (CLI): sudo tail -200 /var/log/apache2/access.log | awk ''{print $7}'' | sort -u | wc -l'
+    📎 참고 (CLI): sudo tail -200 /var/log/apache2/access.log | awk ''{print $7}'' |
+    sort -u | wc -l'
   answer_detail: 경로 다양성 지표. 정상 사용자는 보통 2~8개, 에이전트는 15+.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: access.log 고유 경로 수 — tail -200 access.log | awk {print $7} | sort -u | wc -l. URL path 다양성
-        = agent 의 exploration 폭. 수동 사용자는 10-20, agent는 50+ 전형적
+      intent: access.log 고유 경로 수 — tail -200 access.log | awk {print $7} | sort -u
+        | wc -l. URL path 다양성 = agent 의 exploration 폭. 수동 사용자는 10-20, agent는 50+ 전형적
       success_criteria:
       - tail -200 + awk $7 + sort -u + wc
       - 고유 경로 카운트
@@ -194,7 +210,8 @@ steps:
       - 고유성 필터 없음 (sort -u 누락)
       - 카운트 없음
   target_vm: web
-  script: sudo tail -200 /var/log/apache2/access.log | awk '{print $7}' | sort -u | wc -l
+  script: sudo tail -200 /var/log/apache2/access.log | awk '{print $7}' | sort -u
+    | wc -l
   risk_level: low
   bastion_prompt: web에서 access.log 최근 200줄의 고유 경로 수를 계산하시오 (경로 다양성 지표).
 - order: 7
@@ -204,15 +221,16 @@ steps:
   points: 15
   answer: '🤖 프롬프트: web access.log에서 HTTP 4xx 응답 후 1초 이내 재요청 패턴을 찾으시오 (재시도 지연 지표).
 
-    📎 참고 (CLI): sudo awk ''$9 ~ /^4/ {print $4, $7, $9}'' /var/log/apache2/access.log | tail -10'
+    📎 참고 (CLI): sudo awk ''$9 ~ /^4/ {print $4, $7, $9}'' /var/log/apache2/access.log
+    | tail -10'
   answer_detail: 4xx 응답 후 재시도 지연이 짧으면 에이전트 의심. 정상은 수초~수분.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: FailSeq — HTTP 4xx 응답 후 1초 이내 재요청 패턴 — awk 로 access.log 타임스탬프 diff + status 4xx 필터. agent
-        는 error 후 빠른 재시도 (human 은 5s+). Failure-Retry 지문
+      intent: FailSeq — HTTP 4xx 응답 후 1초 이내 재요청 패턴 — awk 로 access.log 타임스탬프 diff +
+        status 4xx 필터. agent 는 error 후 빠른 재시도 (human 은 5s+). Failure-Retry 지문
       success_criteria:
       - 4xx 응답 + 1초 이내 재요청
       - 타임스탬프 diff 로 interval 계산
@@ -223,7 +241,8 @@ steps:
       - 4xx 필터 없음
       - 시간 간격 계산 없음
   target_vm: web
-  script: sudo awk '$9 ~ /^4/ {print $4, $7, $9}' /var/log/apache2/access.log | tail -10
+  script: sudo awk '$9 ~ /^4/ {print $4, $7, $9}' /var/log/apache2/access.log | tail
+    -10
   risk_level: low
   bastion_prompt: web access.log에서 HTTP 4xx 응답 후 1초 이내 재요청 패턴을 찾으시오 (재시도 지연 지표).
 - order: 8
@@ -256,8 +275,9 @@ steps:
     - Mermaid
     field: stdout
     semantic:
-      intent: Tool-use 루프 방어자 관점 도식 /tmp/tool_use_diagram.md — ASCII 또는 Mermaid 로 Prompt → LLM → Tool
-        선택 → 실행 → Observation → Prompt 사이클 + 각 단계의 방어 관측점 (log/audit/network). agent 아키텍처 이해
+      intent: Tool-use 루프 방어자 관점 도식 /tmp/tool_use_diagram.md — ASCII 또는 Mermaid 로
+        Prompt → LLM → Tool 선택 → 실행 → Observation → Prompt 사이클 + 각 단계의 방어 관측점 (log/audit/network).
+        agent 아키텍처 이해
       success_criteria:
       - /tmp/tool_use_diagram.md 파일
       - Tool-use 루프 도식 (5+ 단계)
@@ -293,16 +313,17 @@ steps:
   points: 17
   answer: '🤖 프롬프트: secu의 eve.json에서 최근 HTTP 이벤트 샘플 추출(Suricata 지문 수집).
 
-    📎 참고 (CLI): sudo jq -c ''select(.event_type=="http")'' /var/log/suricata/eve.json 2>/dev/null | tail
-    -3 | head -c 1500 || echo ''no_http_events_yet'''
+    📎 참고 (CLI): sudo jq -c ''select(.event_type=="http")'' /var/log/suricata/eve.json
+    2>/dev/null | tail -3 | head -c 1500 || echo ''no_http_events_yet'''
   answer_detail: HTTP 이벤트의 구조 파악. w5·w6에서 탐지 룰 설계 시 필드 경로 참고.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: eve.json HTTP 이벤트 샘플 — jq select(.event_type==http) /var/log/suricata/eve.json | head -5
-        로 최근 HTTP 메타데이터 (UA·method·URL·status·length). Suricata 레이어의 지문 필드 수집. agent 지문 분석용 raw data
+      intent: eve.json HTTP 이벤트 샘플 — jq select(.event_type==http) /var/log/suricata/eve.json
+        | head -5 로 최근 HTTP 메타데이터 (UA·method·URL·status·length). Suricata 레이어의 지문
+        필드 수집. agent 지문 분석용 raw data
       success_criteria:
       - jq select event_type==http
       - Suricata eve.json
@@ -314,8 +335,8 @@ steps:
       - HTTP 필터 없음
       - 메타데이터 분석 없음
   target_vm: secu
-  script: sudo jq -c 'select(.event_type=="http")' /var/log/suricata/eve.json 2>/dev/null | tail -3 |
-    head -c 1500 || echo 'no_http_events_yet'
+  script: sudo jq -c 'select(.event_type=="http")' /var/log/suricata/eve.json 2>/dev/null
+    | tail -3 | head -c 1500 || echo 'no_http_events_yet'
   risk_level: medium
   bastion_prompt: secu의 eve.json에서 최근 HTTP 이벤트 샘플 추출(Suricata 지문 수집).
 - order: 10
@@ -338,8 +359,9 @@ steps:
     expect: agent-like
     field: stdout
     semantic:
-      intent: experience w02 지문 지표 JSON — artifacts/w01/experience/w02-fingerprint.json 에 unique_paths
-        + failseq_count + iat_cov + ua_diversity 4 필드 기록. 지문 수집의 누적 기록. 주차간 경향 추적 기초
+      intent: experience w02 지문 지표 JSON — artifacts/w01/experience/w02-fingerprint.json
+        에 unique_paths + failseq_count + iat_cov + ua_diversity 4 필드 기록. 지문 수집의 누적
+        기록. 주차간 경향 추적 기초
       success_criteria:
       - artifacts/experience/w02-*.json
       - 4+ 지문 지표 필드
@@ -390,9 +412,9 @@ steps:
     expect: CoV
     field: stdout
     semantic:
-      intent: 'agent 지문 감지 기준 요약 /tmp/agent_fingerprint_criteria.md — 5 신호: (1) IAT CoV < 0.15 (regular)
-        (2) unique_paths > 50 (3) FailSeq 빈도 > 5/min (4) UA 다양성 < 3 (5) tool_use 루프 패턴. 각 신호 임계치 + 조합
-        ROC. 방어자 자체 규칙'
+      intent: 'agent 지문 감지 기준 요약 /tmp/agent_fingerprint_criteria.md — 5 신호: (1) IAT
+        CoV < 0.15 (regular) (2) unique_paths > 50 (3) FailSeq 빈도 > 5/min (4) UA 다양성
+        < 3 (5) tool_use 루프 패턴. 각 신호 임계치 + 조합 ROC. 방어자 자체 규칙'
       success_criteria:
       - /tmp/agent_fingerprint_criteria.md
       - 5 신호 + 임계치

