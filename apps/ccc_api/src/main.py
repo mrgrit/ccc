@@ -2077,15 +2077,19 @@ def leave_battle(bid: str, request: Request):
                 raise HTTPException(404, "Battle not found")
             if battle["status"] != "waiting":
                 raise HTTPException(400, "진행 중인 대전은 취소할 수 없습니다")
+            left = []
             if battle.get("red_id") == uid:
-                cur.execute("UPDATE battles SET red_id=NULL WHERE id=%s RETURNING *", (bid,))
-            elif battle.get("blue_id") == uid:
-                cur.execute("UPDATE battles SET blue_id=NULL WHERE id=%s RETURNING *", (bid,))
-            else:
+                cur.execute("UPDATE battles SET red_id=NULL, red_ready=false WHERE id=%s", (bid,))
+                left.append("red")
+            if battle.get("blue_id") == uid:
+                cur.execute("UPDATE battles SET blue_id=NULL, blue_ready=false WHERE id=%s", (bid,))
+                left.append("blue")
+            if not left:
                 raise HTTPException(400, "이 대전에 참가하지 않았습니다")
+            cur.execute("SELECT * FROM battles WHERE id=%s", (bid,))
             row = cur.fetchone()
             conn.commit()
-    return {"battle": dict(row), "left": True}
+    return {"battle": dict(row), "left": left}
 
 @app.post("/battles/{bid}/ready", dependencies=[Depends(verify_api_key)])
 def ready_battle(bid: str, request: Request):
@@ -2098,12 +2102,15 @@ def ready_battle(bid: str, request: Request):
             battle = cur.fetchone()
             if not battle:
                 raise HTTPException(404)
-            # 어느 팀인지
+            # 어느 팀인지 (solo: red/blue 둘 다 가진 경우 양쪽 다 ready)
+            is_member = False
             if battle["red_id"] == uid:
                 cur.execute("UPDATE battles SET red_ready=true WHERE id=%s", (bid,))
-            elif battle["blue_id"] == uid:
+                is_member = True
+            if battle["blue_id"] == uid:
                 cur.execute("UPDATE battles SET blue_ready=true WHERE id=%s", (bid,))
-            else:
+                is_member = True
+            if not is_member:
                 raise HTTPException(403, "You are not in this battle")
             conn.commit()
             # 양측 모두 ready?
@@ -2142,8 +2149,8 @@ def ready_battle(bid: str, request: Request):
     return {"battle": dict(battle), "started": started}
 
 @app.get("/battles/{bid}/my-missions", dependencies=[Depends(verify_api_key)])
-def get_my_missions(bid: str, request: Request):
-    """내 미션 목록 (진행 상태 포함)"""
+def get_my_missions(bid: str, request: Request, team: str | None = None):
+    """내 미션 목록 (진행 상태 포함). solo 모드: ?team=red|blue 로 시점 전환."""
     user = get_current_user(request)
     uid = user.get("sub", "")
     with _conn() as conn:
@@ -2152,10 +2159,21 @@ def get_my_missions(bid: str, request: Request):
             battle = cur.fetchone()
             if not battle:
                 raise HTTPException(404)
-            team = "red" if battle["red_id"] == uid else "blue" if battle["blue_id"] == uid else None
-            if not team:
+            am_red = battle["red_id"] == uid
+            am_blue = battle["blue_id"] == uid
+            is_solo = am_red and am_blue
+            if not (am_red or am_blue):
                 raise HTTPException(403, "Not in this battle")
-            cur.execute("SELECT * FROM battle_missions WHERE battle_id=%s AND team=%s ORDER BY mission_order", (bid, team))
+            # team 파라미터 있으면 그 쪽 관점, 없으면 기본(red 우선 — solo 는 red 가 먼저 표시)
+            if team and team.lower() in ("red", "blue"):
+                requested = team.lower()
+                # solo 아니면 본인 소속 팀만 허용
+                if not is_solo and ((requested == "red" and not am_red) or (requested == "blue" and not am_blue)):
+                    raise HTTPException(403, "You do not control that team")
+                active = requested
+            else:
+                active = "red" if am_red else "blue"
+            cur.execute("SELECT * FROM battle_missions WHERE battle_id=%s AND team=%s ORDER BY mission_order", (bid, active))
             missions = cur.fetchall()
             # 상대 점수
             cur.execute("SELECT COALESCE(sum(points),0) as pts FROM battle_missions WHERE battle_id=%s AND team=%s AND status='completed'", (bid, "red"))
@@ -2169,7 +2187,8 @@ def get_my_missions(bid: str, request: Request):
         elapsed = (datetime.datetime.now(datetime.timezone.utc) - battle["started_at"].replace(tzinfo=datetime.timezone.utc)).total_seconds()
         remaining = max(0, battle["time_limit"] - elapsed)
     return {
-        "battle_id": bid, "team": team, "status": battle["status"],
+        "battle_id": bid, "team": active, "status": battle["status"],
+        "is_solo": is_solo,
         "red_score": red_pts, "blue_score": blue_pts,
         "time_remaining": round(remaining),
         "missions": [dict(m) for m in missions],
@@ -2178,10 +2197,11 @@ def get_my_missions(bid: str, request: Request):
 class MissionSubmitBody(BaseModel):
     mission_order: int
     answer: str
+    team: str | None = None  # solo 모드: red/blue 중 어느 팀 미션인지 지정
 
 @app.post("/battles/{bid}/submit-mission", dependencies=[Depends(verify_api_key)])
 def submit_mission(bid: str, body: MissionSubmitBody, request: Request):
-    """미션 답변 제출 + 검증"""
+    """미션 답변 제출 + 검증. solo 모드: body.team 으로 대상 팀 지정."""
     user = get_current_user(request)
     uid = user.get("sub", "")
     with _conn() as conn:
@@ -2190,9 +2210,18 @@ def submit_mission(bid: str, body: MissionSubmitBody, request: Request):
             battle = cur.fetchone()
             if not battle or battle["status"] != "active":
                 raise HTTPException(400, "Battle not active")
-            team = "red" if battle["red_id"] == uid else "blue" if battle["blue_id"] == uid else None
-            if not team:
+            am_red = battle["red_id"] == uid
+            am_blue = battle["blue_id"] == uid
+            if not (am_red or am_blue):
                 raise HTTPException(403, "Not in this battle")
+            # solo 가 아니면 본인 팀 고정. solo 면 body.team 으로 지정 필수 (기본 red)
+            if body.team and body.team.lower() in ("red", "blue"):
+                req = body.team.lower()
+                if (req == "red" and not am_red) or (req == "blue" and not am_blue):
+                    raise HTTPException(403, "You do not control that team")
+                team = req
+            else:
+                team = "red" if am_red else "blue"
             cur.execute("SELECT * FROM battle_missions WHERE battle_id=%s AND team=%s AND mission_order=%s", (bid, team, body.mission_order))
             mission = cur.fetchone()
             if not mission:

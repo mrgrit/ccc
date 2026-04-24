@@ -13,6 +13,7 @@ export default function Battle() {
   const [answers, setAnswers] = useState<Record<number, string>>({})
   const [events, setEvents] = useState<any[]>([])
   const [battleInfo, setBattleInfo] = useState<any>(null)
+  const [activeTeam, setActiveTeam] = useState<'red' | 'blue'>('red')
   const pollRef = useRef<any>(null)
 
   // 로비 데이터 로드
@@ -69,40 +70,53 @@ export default function Battle() {
   }
 
   // 대전 입장
-  const enterBattle = async (bid: string) => {
+  const enterBattle = async (bid: string, team?: 'red' | 'blue') => {
     try {
-      const d = await api(`/api/battles/${bid}/my-missions`)
+      const q = team ? `?team=${team}` : ''
+      const d = await api(`/api/battles/${bid}/my-missions${q}`)
       setBattleInfo(d)
       setMissions(d.missions || [])
+      setActiveTeam(d.team as 'red' | 'blue')
       setActiveBattle(bid)
       setView('battle')
-      // 이벤트 폴링 시작
-      startPolling(bid)
+      startPolling(bid, d.team)
     } catch (e: any) { alert(e.message) }
+  }
+
+  // solo 모드에서 red ↔ blue 시점 전환
+  const switchTeam = async (team: 'red' | 'blue') => {
+    if (!activeBattle) return
+    setActiveTeam(team)
+    try {
+      const info = await api(`/api/battles/${activeBattle}/my-missions?team=${team}`)
+      setBattleInfo(info)
+      setMissions(info.missions || [])
+      startPolling(activeBattle, team)
+    } catch {}
   }
 
   // 미션 제출
   const submitMission = async (order: number) => {
     if (!activeBattle || !answers[order]) return
     try {
-      const d = await api(`/api/battles/${activeBattle}/submit-mission`, {
+      await api(`/api/battles/${activeBattle}/submit-mission`, {
         method: 'POST',
-        body: JSON.stringify({ mission_order: order, answer: answers[order] }),
+        body: JSON.stringify({ mission_order: order, answer: answers[order], team: activeTeam }),
       })
-      // 새로고침
-      const info = await api(`/api/battles/${activeBattle}/my-missions`)
+      const info = await api(`/api/battles/${activeBattle}/my-missions?team=${activeTeam}`)
       setBattleInfo(info)
       setMissions(info.missions || [])
     } catch (e: any) { alert(e.message) }
   }
 
   // 이벤트 폴링
-  const startPolling = (bid: string) => {
+  const startPolling = (bid: string, team?: string) => {
     if (pollRef.current) clearInterval(pollRef.current)
+    const q = team ? `?team=${team}` : ''
     pollRef.current = setInterval(async () => {
       try {
         const [info, evts] = await Promise.all([
-          api(`/api/battles/${bid}/my-missions`),
+          api(`/api/battles/${bid}/my-missions${q}`),
           api(`/api/battles/${bid}/events`).then(d => d.events || []).catch(() => []),
         ])
         setBattleInfo(info)
@@ -159,8 +173,26 @@ export default function Battle() {
               <div style={{ fontSize: 28, fontWeight: 700, color: '#58a6ff' }}>{battleInfo.blue_score}</div>
             </div>
           </div>
-          <div style={{ fontSize: 14, padding: '6px 14px', borderRadius: 8, background: isRed ? '#f8514922' : '#58a6ff22', color: isRed ? '#f85149' : '#58a6ff', fontWeight: 700 }}>
-            You: {battleInfo.team.toUpperCase()}
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            {battleInfo.is_solo && (
+              <div style={{ display: 'flex', gap: 4, background: '#0d1117', padding: 3, borderRadius: 8, border: '1px solid #30363d' }}>
+                <button onClick={() => switchTeam('red')} style={{
+                  padding: '4px 10px', borderRadius: 5, border: 'none', cursor: 'pointer',
+                  fontSize: 12, fontWeight: 700,
+                  background: activeTeam === 'red' ? '#f85149' : 'transparent',
+                  color: activeTeam === 'red' ? '#fff' : '#f85149',
+                }}>RED</button>
+                <button onClick={() => switchTeam('blue')} style={{
+                  padding: '4px 10px', borderRadius: 5, border: 'none', cursor: 'pointer',
+                  fontSize: 12, fontWeight: 700,
+                  background: activeTeam === 'blue' ? '#58a6ff' : 'transparent',
+                  color: activeTeam === 'blue' ? '#fff' : '#58a6ff',
+                }}>BLUE</button>
+              </div>
+            )}
+            <div style={{ fontSize: 14, padding: '6px 14px', borderRadius: 8, background: isRed ? '#f8514922' : '#58a6ff22', color: isRed ? '#f85149' : '#58a6ff', fontWeight: 700 }}>
+              {battleInfo.is_solo ? 'SOLO' : 'You'}: {battleInfo.team.toUpperCase()}
+            </div>
           </div>
         </div>
 
@@ -328,9 +360,10 @@ export default function Battle() {
                     <span style={{ color: '#8b949e' }}>{Math.floor(b.time_limit / 60)}분</span>
                   </div>
                 </div>
-                <div style={{ display: 'flex', gap: 6 }}>
-                  {!b.red_id && !amIn && <button onClick={() => joinBattle(b.id, 'red')} style={{ ...joinBtn, color: '#f85149', borderColor: '#f85149' }}>Red 참가</button>}
-                  {!b.blue_id && !amIn && <button onClick={() => joinBattle(b.id, 'blue')} style={{ ...joinBtn, color: '#58a6ff', borderColor: '#58a6ff' }}>Blue 참가</button>}
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                  {amRed && amBlue && <span style={{ fontSize: 11, padding: '3px 8px', borderRadius: 10, background: '#bc8cff22', color: '#bc8cff', fontWeight: 700 }}>SOLO</span>}
+                  {!b.red_id && !amRed && <button onClick={() => joinBattle(b.id, 'red')} style={{ ...joinBtn, color: '#f85149', borderColor: '#f85149' }}>Red 참가</button>}
+                  {!b.blue_id && !amBlue && <button onClick={() => joinBattle(b.id, 'blue')} style={{ ...joinBtn, color: '#58a6ff', borderColor: '#58a6ff' }}>Blue 참가</button>}
                   {amIn && <>
                     <button onClick={() => readyAndEnter(b.id)} style={{ ...joinBtn, background: '#f97316', color: '#fff', border: 'none' }}>Ready &amp; Enter</button>
                     <button onClick={() => leaveBattle(b.id)} style={{ ...joinBtn, color: '#8b949e', borderColor: '#30363d' }}>취소</button>
