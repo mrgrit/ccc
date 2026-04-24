@@ -3,8 +3,8 @@ title: 종합 관제 - 실시간 모니터링과 전체 파이프라인 검증 (
 version: ai
 course: soc-ai
 week: 15
-description: SOC의 전체 파이프라인(로그 수집 -> SIEM 분석 -> IDS 탐지 -> 알림 -> 대응)을 종합적으로 운용합니다. 실시간 모니터링 환경을 구성하고, 공격
-  시나리오에 대한 엔드투엔드 탐지-대응을 검증합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: SOC의 전체 파이프라인(로그 수집 -> SIEM 분석 -> IDS 탐지 -> 알림 -> 대응)을 종합적으로 운용합니다. 실시간
+  모니터링 환경을 구성하고, 공격 시나리오에 대한 엔드투엔드 탐지-대응을 검증합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 180
 objectives:
@@ -20,19 +20,23 @@ steps:
   points: 8
   answer: '🤖 프롬프트: SOC 전체 인프라 상태를 점검하시오. 4개 VM의 연결 상태와 핵심 서비스의 가동 여부를 한 번에 확인해줘
 
-    📎 참고 (CLI): echo ''=== INFRA CHECK ==='' && echo ''[SIEM]'' && ssh siem ''systemctl is-active wazuh-manager
-    rsyslog'' && echo ''[SECU]'' && ssh secu ''systemctl is-active suricata'' && echo ''[WEB]'' && ssh
-    web ''systemctl is-active apache2 && /var/ossec/bin/wazuh-control status 2>/dev/null | head -3'' &&
-    echo ''[ATTACKER]'' && ssh attacker ''which nmap'' && echo ''=== ALL CHECKS DONE ==='''
-  answer_detail: 종합 관제의 시작은 전체 인프라 헬스체크입니다. 모든 구성 요소(SIEM, IDS, WAF, 에이전트, 로그 수집)가 정상 동작해야 SOC가 완전한 가시성을
-    확보합니다.
+    📎 참고 (CLI): echo ''=== INFRA CHECK ==='' && echo ''[SIEM]'' && ssh siem ''systemctl
+    is-active wazuh-manager rsyslog'' && echo ''[SECU]'' && ssh secu ''systemctl is-active
+    suricata'' && echo ''[WEB]'' && ssh web ''systemctl is-active apache2 && /var/ossec/bin/wazuh-control
+    status 2>/dev/null | head -3'' && echo ''[ATTACKER]'' && ssh attacker ''which
+    nmap'' && echo ''=== ALL CHECKS DONE ==='''
+  answer_detail: 종합 관제의 시작은 전체 인프라 헬스체크입니다. 모든 구성 요소(SIEM, IDS, WAF, 에이전트, 로그 수집)가
+    정상 동작해야 SOC가 완전한 가시성을 확보합니다.
   verify:
     type: output_contains
-    expect: ALL CHECKS DONE
+    expect:
+    - ALL CHECKS DONE
+    - attacker
+    - status
     field: stdout
     semantic:
-      intent: SOC 전체 인프라 점검 — echo 섹션 + ssh siem/secu/web/attacker 각 VM systemctl is-active 핵심 서비스. 4
-        VM × 핵심 서비스 = 통합 health check. 종합 관제 시작
+      intent: SOC 전체 인프라 점검 — echo 섹션 + ssh siem/secu/web/attacker 각 VM systemctl
+        is-active 핵심 서비스. 4 VM × 핵심 서비스 = 통합 health check. 종합 관제 시작
       success_criteria:
       - 4 VM ssh + systemctl
       - 서비스 상태
@@ -41,10 +45,11 @@ steps:
       negative_signs:
       - VM 2개 이하
   target_vm: siem
-  script: echo '=== INFRA CHECK ===' && echo '[SIEM]' && ssh siem 'systemctl is-active wazuh-manager rsyslog'
-    && echo '[SECU]' && ssh secu 'systemctl is-active suricata' && echo '[WEB]' && ssh web 'systemctl
-    is-active apache2 && /var/ossec/bin/wazuh-control status 2>/dev/null | head -3' && echo '[ATTACKER]'
-    && ssh attacker 'which nmap' && echo '=== ALL CHECKS DONE ==='
+  script: echo '=== INFRA CHECK ===' && echo '[SIEM]' && ssh siem 'systemctl is-active
+    wazuh-manager rsyslog' && echo '[SECU]' && ssh secu 'systemctl is-active suricata'
+    && echo '[WEB]' && ssh web 'systemctl is-active apache2 && /var/ossec/bin/wazuh-control
+    status 2>/dev/null | head -3' && echo '[ATTACKER]' && ssh attacker 'which nmap'
+    && echo '=== ALL CHECKS DONE ==='
   risk_level: low
   bastion_prompt: SOC 전체 인프라 상태를 점검하시오. 4개 VM의 연결 상태와 핵심 서비스의 가동 여부를 한 번에 확인해줘
 - order: 2
@@ -55,15 +60,15 @@ steps:
   answer: '🤖 프롬프트: SIEM VM에서 Wazuh 에이전트의 전체 상태를 확인하고, 비정상 에이전트가 있는지 점검해줘
 
     📎 참고 (CLI): /var/ossec/bin/agent_control -l'
-  answer_detail: 모든 에이전트가 Active 상태여야 로그 수집 누락이 없습니다. Disconnected 에이전트가 있으면 해당 VM의 네트워크 연결이나 에이전트 프로세스를
-    즉시 점검해야 합니다.
+  answer_detail: 모든 에이전트가 Active 상태여야 로그 수집 누락이 없습니다. Disconnected 에이전트가 있으면 해당 VM의
+    네트워크 연결이나 에이전트 프로세스를 즉시 점검해야 합니다.
   verify:
     type: output_contains
     expect: Active
     field: stdout
     semantic:
-      intent: Wazuh 에이전트 종합 상태 — agent_control -l 로 전체 에이전트 Active/Disconnected 점검. 비정상 에이전트 gap 식별. 모니터링
-        커버리지 확인
+      intent: Wazuh 에이전트 종합 상태 — agent_control -l 로 전체 에이전트 Active/Disconnected 점검.
+        비정상 에이전트 gap 식별. 모니터링 커버리지 확인
       success_criteria:
       - agent_control -l
       - 전체 에이전트
@@ -82,16 +87,17 @@ steps:
   points: 10
   answer: '🤖 프롬프트: SIEM VM에서 최근 30분 내 발생한 알림 수와 레벨 분포를 확인해줘
 
-    📎 참고 (CLI): tail -200 /var/ossec/logs/alerts/alerts.log | grep -oP "level \d+" | sort | uniq -c |
-    sort -rn'
-  answer_detail: 실시간 관제에서는 최근 시간 윈도우의 알림 추이를 지속적으로 모니터링합니다. 갑작스러운 고레벨 알림 증가는 진행 중인 공격의 신호입니다.
+    📎 참고 (CLI): tail -200 /var/ossec/logs/alerts/alerts.log | grep -oP "level \d+"
+    | sort | uniq -c | sort -rn'
+  answer_detail: 실시간 관제에서는 최근 시간 윈도우의 알림 추이를 지속적으로 모니터링합니다. 갑작스러운 고레벨 알림 증가는 진행 중인
+    공격의 신호입니다.
   verify:
     type: output_contains
     expect: level
     field: stdout
     semantic:
-      intent: 최근 30분 알림 level 분포 — tail -200 alerts.log | grep -oP level \d+ | uniq -c. 실시간 현황 + 심각도 분포.
-        즉각적 상황 판단
+      intent: 최근 30분 알림 level 분포 — tail -200 alerts.log | grep -oP level \d+ | uniq
+        -c. 실시간 현황 + 심각도 분포. 즉각적 상황 판단
       success_criteria:
       - tail -200 + level 집계
       - 30분 snapshot
@@ -100,7 +106,8 @@ steps:
       negative_signs:
       - 30분 범위 없음
   target_vm: siem
-  script: tail -200 /var/ossec/logs/alerts/alerts.log | grep -oP "level \d+" | sort | uniq -c | sort -rn
+  script: tail -200 /var/ossec/logs/alerts/alerts.log | grep -oP "level \d+" | sort
+    | uniq -c | sort -rn
   risk_level: low
   bastion_prompt: SIEM VM에서 최근 30분 내 발생한 알림 수와 레벨 분포를 확인해줘
 - order: 4
@@ -110,10 +117,10 @@ steps:
   points: 10
   answer: '🤖 프롬프트: SECU VM에서 Suricata의 실시간 통계(패킷 처리량, 탐지 건수)를 확인해줘
 
-    📎 참고 (CLI): tail -30 /var/log/suricata/stats.log 2>/dev/null | grep -E "detect|decoder|flow" | tail
-    -10'
-  answer_detail: Suricata 통계에서 decoder.pkts(처리 패킷), detect.alert(알림 건수), flow.total(플로우 수)를 모니터링합니다. 패킷
-    드롭이 발생하면 IDS 성능 이슈입니다.
+    📎 참고 (CLI): tail -30 /var/log/suricata/stats.log 2>/dev/null | grep -E "detect|decoder|flow"
+    | tail -10'
+  answer_detail: Suricata 통계에서 decoder.pkts(처리 패킷), detect.alert(알림 건수), flow.total(플로우
+    수)를 모니터링합니다. 패킷 드롭이 발생하면 IDS 성능 이슈입니다.
   verify:
     type: output_contains
     expect: ''
@@ -129,7 +136,8 @@ steps:
       negative_signs:
       - stats 개념 없음
   target_vm: siem
-  script: tail -30 /var/log/suricata/stats.log 2>/dev/null | grep -E "detect|decoder|flow" | tail -10
+  script: tail -30 /var/log/suricata/stats.log 2>/dev/null | grep -E "detect|decoder|flow"
+    | tail -10
   risk_level: low
   bastion_prompt: SECU VM에서 Suricata의 실시간 통계(패킷 처리량, 탐지 건수)를 확인해줘
 - order: 5
@@ -140,15 +148,15 @@ steps:
   answer: '🤖 프롬프트: ATTACKER VM에서 WEB VM에 대한 포트 스캔을 실행해줘
 
     📎 참고 (CLI): nmap -sS -p 80,443,3000,8080,22 10.20.30.80 2>/dev/null'
-  answer_detail: '공격 실행 후 즉시 SIEM 확인은 SOC의 핵심 워크플로우입니다. 탐지까지의 시간(MTTD: Mean Time To Detect)이 짧을수록 SOC의
-    효율성이 높습니다.'
+  answer_detail: '공격 실행 후 즉시 SIEM 확인은 SOC의 핵심 워크플로우입니다. 탐지까지의 시간(MTTD: Mean Time To
+    Detect)이 짧을수록 SOC의 효율성이 높습니다.'
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 실시간 검증 — nmap -sS -p 80,443,3000,8080,22 10.20.30.80 실행 후 즉시 SIEM 탐지 확인. 실시간 end-to-end
-        파이프라인 latency 측정
+      intent: 실시간 검증 — nmap -sS -p 80,443,3000,8080,22 10.20.30.80 실행 후 즉시 SIEM 탐지
+        확인. 실시간 end-to-end 파이프라인 latency 측정
       success_criteria:
       - nmap 공격 + 즉시 확인
       - E2E latency
@@ -167,16 +175,18 @@ steps:
   points: 12
   answer: '🤖 프롬프트: ATTACKER VM에서 WEB VM의 웹 서비스에 다수의 비정상 요청을 전송해줘
 
-    📎 참고 (CLI): for path in /admin /backup /config /secret /database /wp-admin /phpmyadmin /.env /etc/passwd
-    /shell; do curl -s -o /dev/null -w "$path: %{http_code}\n" http://10.20.30.80$path; done'
-  answer_detail: 디렉토리 스캔은 공격 초기 정찰의 일환입니다. 다수의 404 응답이 단시간에 동일 IP에서 발생하면 SOC에서 스캐닝으로 판단합니다.
+    📎 참고 (CLI): for path in /admin /backup /config /secret /database /wp-admin /phpmyadmin
+    /.env /etc/passwd /shell; do curl -s -o /dev/null -w "$path: %{http_code}\n" http://10.20.30.80$path;
+    done'
+  answer_detail: 디렉토리 스캔은 공격 초기 정찰의 일환입니다. 다수의 404 응답이 단시간에 동일 IP에서 발생하면 SOC에서 스캐닝으로
+    판단합니다.
   verify:
     type: output_contains
     expect: '404'
     field: stdout
     semantic:
-      intent: 디렉토리 스캔 시뮬 — for path in /admin /backup /config /secret /database /wp-admin /phpmyadmin;
-        do curl; done 비정상 경로 다수 요청. 404 대량 발생 → Wazuh 룰 31100 대역 트리거
+      intent: 디렉토리 스캔 시뮬 — for path in /admin /backup /config /secret /database /wp-admin
+        /phpmyadmin; do curl; done 비정상 경로 다수 요청. 404 대량 발생 → Wazuh 룰 31100 대역 트리거
       success_criteria:
       - for loop + 다수 경로
       - 다수 404 생성
@@ -185,8 +195,9 @@ steps:
       negative_signs:
       - 경로 3 이하
   target_vm: siem
-  script: 'for path in /admin /backup /config /secret /database /wp-admin /phpmyadmin /.env /etc/passwd
-    /shell; do curl -s -o /dev/null -w "$path: %{http_code}\n" http://10.20.30.80$path; done'
+  script: 'for path in /admin /backup /config /secret /database /wp-admin /phpmyadmin
+    /.env /etc/passwd /shell; do curl -s -o /dev/null -w "$path: %{http_code}\n" http://10.20.30.80$path;
+    done'
   risk_level: low
   bastion_prompt: ATTACKER VM에서 WEB VM의 웹 서비스에 다수의 비정상 요청을 전송해줘
 - order: 7
@@ -197,15 +208,18 @@ steps:
   answer: '🤖 프롬프트: WEB VM의 Apache 접근 로그에서 방금 ATTACKER가 보낸 디렉토리 스캔 요청을 확인해줘
 
     📎 참고 (CLI): grep "10.20.30.201" /var/log/apache2/access.log | tail -15'
-  answer_detail: WEB VM 로그에서 공격 흔적을 직접 확인합니다. 404 응답이 연속으로 기록되어 있으면 디렉토리 스캔의 증거입니다. 이 로그가 Wazuh 에이전트를
-    통해 SIEM으로 전달됩니다.
+  answer_detail: WEB VM 로그에서 공격 흔적을 직접 확인합니다. 404 응답이 연속으로 기록되어 있으면 디렉토리 스캔의 증거입니다.
+    이 로그가 Wazuh 에이전트를 통해 SIEM으로 전달됩니다.
   verify:
     type: output_contains
-    expect: 10.20.30.201
+    expect:
+    - 10.20.30.201
+    - /var/log/apache2/access.log
+    - Apache
     field: stdout
     semantic:
-      intent: WEB access.log 스캔 확인 — grep 10.20.30.201 access.log | tail -15 으로 s6 의 디렉토리 스캔 요청 기록. Apache
-        log 에 흔적 남았는지 확인
+      intent: WEB access.log 스캔 확인 — grep 10.20.30.201 access.log | tail -15 으로 s6
+        의 디렉토리 스캔 요청 기록. Apache log 에 흔적 남았는지 확인
       success_criteria:
       - access.log + IP 필터
       - s6 관련 요청 확인
@@ -226,15 +240,15 @@ steps:
 
     📎 참고 (CLI): tail -50 /var/ossec/logs/alerts/alerts.log | grep -B 2 -A 5 -i "web\|apache\|404\|10.20.30.201"
     | tail -30'
-  answer_detail: 다수의 404 오류가 Wazuh 알림으로 생성되었는지 확인합니다. 룰에 따라 개별 404가 아닌 반복 404 패턴이 탐지될 수 있습니다. 미탐지 시 커스텀
-    룰 추가가 필요합니다.
+  answer_detail: 다수의 404 오류가 Wazuh 알림으로 생성되었는지 확인합니다. 룰에 따라 개별 404가 아닌 반복 404 패턴이
+    탐지될 수 있습니다. 미탐지 시 커스텀 룰 추가가 필요합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: SIEM 스캔 공격 알림 — tail -50 alerts.log | grep -B 2 -A 5 -i web|apache 로 s6 이후 웹 공격 알림 생성 확인.
-        디렉토리 scan Wazuh 룰 동작
+      intent: SIEM 스캔 공격 알림 — tail -50 alerts.log | grep -B 2 -A 5 -i web|apache 로
+        s6 이후 웹 공격 알림 생성 확인. 디렉토리 scan Wazuh 룰 동작
       success_criteria:
       - tail + grep web/apache
       - s6 이후 알림
@@ -248,29 +262,35 @@ steps:
   risk_level: low
   bastion_prompt: SIEM VM에서 디렉토리 스캔 공격에 대한 Wazuh 알림이 생성되었는지 확인해줘
 - order: 9
-  instruction: 종합 관제 대시보드용 데이터를 생성하시오. 전체 SOC 현황(에이전트 상태, 알림 통계, 상위 위협, 서비스 상태)을 한 화면에 출력하시오.
+  instruction: 종합 관제 대시보드용 데이터를 생성하시오. 전체 SOC 현황(에이전트 상태, 알림 통계, 상위 위협, 서비스 상태)을 한
+    화면에 출력하시오.
   hint: 여러 소스의 데이터를 통합하여 한 번에 출력하세요.
   category: reporting
   points: 15
   answer: '🤖 프롬프트: 종합 관제 대시보드용 데이터를 생성해줘
 
-    📎 참고 (CLI): echo ''========================================'' && echo ''       SOC 종합 관제 현황 보고         ''
-    && echo ''========================================'' && echo '''' && echo ''[1] 에이전트 상태'' && ssh siem
-    ''/var/ossec/bin/agent_control -l 2>/dev/null | grep -E "ID:|Active|Disconnected"'' && echo '''' &&
-    echo ''[2] 알림 통계'' && ssh siem ''echo "  총 알림: $(grep -c Rule /var/ossec/logs/alerts/alerts.log)";
-    echo "  고위험(10+): $(grep -cE "level 1[0-5]" /var/ossec/logs/alerts/alerts.log)"'' && echo '''' &&
-    echo ''[3] 상위 룰 Top 5'' && ssh siem ''grep -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log | sort
-    | uniq -c | sort -rn | head -5'' && echo '''' && echo ''[4] 상위 소스 IP Top 5'' && ssh siem ''grep -oP
-    "Src IP: \S+" /var/ossec/logs/alerts/alerts.log | sort | uniq -c | sort -rn | head -5'' && echo ''''
-    && echo ''========================================'''
-  answer_detail: 종합 관제 대시보드는 SOC의 핵심 도구입니다. 에이전트 상태, 알림 통계, 상위 위협, 소스 IP를 한 화면에 모아서 SOC 분석가가 빠르게 상황을 판단할
-    수 있게 합니다.
+    📎 참고 (CLI): echo ''========================================'' && echo ''       SOC
+    종합 관제 현황 보고         '' && echo ''========================================'' &&
+    echo '''' && echo ''[1] 에이전트 상태'' && ssh siem ''/var/ossec/bin/agent_control -l
+    2>/dev/null | grep -E "ID:|Active|Disconnected"'' && echo '''' && echo ''[2] 알림
+    통계'' && ssh siem ''echo "  총 알림: $(grep -c Rule /var/ossec/logs/alerts/alerts.log)";
+    echo "  고위험(10+): $(grep -cE "level 1[0-5]" /var/ossec/logs/alerts/alerts.log)"''
+    && echo '''' && echo ''[3] 상위 룰 Top 5'' && ssh siem ''grep -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log
+    | sort | uniq -c | sort -rn | head -5'' && echo '''' && echo ''[4] 상위 소스 IP Top
+    5'' && ssh siem ''grep -oP "Src IP: \S+" /var/ossec/logs/alerts/alerts.log | sort
+    | uniq -c | sort -rn | head -5'' && echo '''' && echo ''========================================'''
+  answer_detail: 종합 관제 대시보드는 SOC의 핵심 도구입니다. 에이전트 상태, 알림 통계, 상위 위협, 소스 IP를 한 화면에 모아서
+    SOC 분석가가 빠르게 상황을 판단할 수 있게 합니다.
   verify:
     type: output_contains
-    expect: 종합 관제
+    expect:
+    - 종합 관제
+    - attacker
+    - manager
     field: stdout
     semantic:
-      intent: 종합 관제 대시보드 — echo === SOC 종합 관제 현황 === + 에이전트·알림·상위 위협·서비스 4 섹션 한 화면. 실시간 CISO view
+      intent: 종합 관제 대시보드 — echo === SOC 종합 관제 현황 === + 에이전트·알림·상위 위협·서비스 4 섹션 한 화면.
+        실시간 CISO view
       success_criteria:
       - 4 섹션 통합
       - 대시보드 format
@@ -279,15 +299,16 @@ steps:
       negative_signs:
       - 섹션 1-2
   target_vm: siem
-  script: 'echo ''========================================'' && echo ''       SOC 종합 관제 현황 보고         ''
-    && echo ''========================================'' && echo '''' && echo ''[1] 에이전트 상태'' && ssh siem
-    ''/var/ossec/bin/agent_control -l 2>/dev/null | grep -E "ID:|Active|Disconnected"'' && echo '''' &&
-    echo ''[2] 알림 통계'' && ssh siem ''echo "  총 알림: $(grep -c Rule /var/ossec/logs/alerts/alerts.log)";
-    echo "  고위험(10+): $(grep -cE "level 1[0-5]" /var/ossec/logs/alerts/alerts.log)"'' && echo '''' &&
-    echo ''[3] 상위 룰 Top 5'' && ssh siem ''grep -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log | sort
-    | uniq -c | sort -rn | head -5'' && echo '''' && echo ''[4] 상위 소스 IP Top 5'' && ssh siem ''grep -oP
-    "Src IP: \S+" /var/ossec/logs/alerts/alerts.log | sort | uniq -c | sort -rn | head -5'' && echo ''''
-    && echo ''========================================'''
+  script: 'echo ''========================================'' && echo ''       SOC
+    종합 관제 현황 보고         '' && echo ''========================================'' &&
+    echo '''' && echo ''[1] 에이전트 상태'' && ssh siem ''/var/ossec/bin/agent_control -l
+    2>/dev/null | grep -E "ID:|Active|Disconnected"'' && echo '''' && echo ''[2] 알림
+    통계'' && ssh siem ''echo "  총 알림: $(grep -c Rule /var/ossec/logs/alerts/alerts.log)";
+    echo "  고위험(10+): $(grep -cE "level 1[0-5]" /var/ossec/logs/alerts/alerts.log)"''
+    && echo '''' && echo ''[3] 상위 룰 Top 5'' && ssh siem ''grep -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log
+    | sort | uniq -c | sort -rn | head -5'' && echo '''' && echo ''[4] 상위 소스 IP Top
+    5'' && ssh siem ''grep -oP "Src IP: \S+" /var/ossec/logs/alerts/alerts.log | sort
+    | uniq -c | sort -rn | head -5'' && echo '''' && echo ''========================================'''
   risk_level: low
   bastion_prompt: 종합 관제 대시보드용 데이터를 생성해줘
 - order: 10
@@ -298,16 +319,16 @@ steps:
   answer: '🤖 프롬프트: 최종 점검으로, SIEM VM에서 Wazuh 설정 무결성과 룰셋 유효성을 검증해줘
 
     📎 참고 (CLI): /var/ossec/bin/wazuh-analysisd -t 2>&1 && echo "=== CONFIG VALID ==="'
-  answer_detail: 주기적인 설정 무결성 검증은 SOC 운영의 마지막 단계입니다. 룰셋에 문법 오류가 없고, 디코더가 정상 로드되는지 확인하여 SIEM이 올바르게 동작하는
-    것을 보장합니다.
+  answer_detail: 주기적인 설정 무결성 검증은 SOC 운영의 마지막 단계입니다. 룰셋에 문법 오류가 없고, 디코더가 정상 로드되는지 확인하여
+    SIEM이 올바르게 동작하는 것을 보장합니다.
   verify:
     type: output_contains
     expect:
     - 무결성
     field: stdout
     semantic:
-      intent: 설정 무결성 최종 검증 — /var/ossec/bin/wazuh-analysisd -t + echo CONFIG VALID. 전체 ruleset 문법 검사.
-        운영 안정성 확증
+      intent: 설정 무결성 최종 검증 — /var/ossec/bin/wazuh-analysisd -t + echo CONFIG VALID.
+        전체 ruleset 문법 검사. 운영 안정성 확증
       success_criteria:
       - analysisd -t 검증
       - VALID 확인
@@ -328,18 +349,22 @@ steps:
 
     📎 참고 (CLI): echo ''=== SIEM: Wazuh alerts ==='' && ssh siem ''tail -5 /var/ossec/logs/alerts/alerts.log
     | grep Rule'' && echo ''=== SECU: Suricata ==='' && ssh secu ''tail -3 /var/log/suricata/fast.log
-    2>/dev/null || echo "IDS monitoring active"'' && echo ''=== WEB: Apache ==='' && ssh web ''tail -3
-    /var/log/apache2/access.log'' && echo ''=== ATTACKER: Tools ==='' && ssh attacker ''nmap --version
-    2>/dev/null | head -1'' && echo ''=== SOC PIPELINE VERIFIED ==='''
-  answer_detail: SOC의 4가지 핵심 구성 요소(SIEM-분석, IDS-탐지, 웹서버-자산, 공격도구-검증)가 모두 정상 동작하는 것을 확인합니다. 이 파이프라인이 SOC
-    관제의 전체 체계입니다.
+    2>/dev/null || echo "IDS monitoring active"'' && echo ''=== WEB: Apache ===''
+    && ssh web ''tail -3 /var/log/apache2/access.log'' && echo ''=== ATTACKER: Tools
+    ==='' && ssh attacker ''nmap --version 2>/dev/null | head -1'' && echo ''=== SOC
+    PIPELINE VERIFIED ==='''
+  answer_detail: SOC의 4가지 핵심 구성 요소(SIEM-분석, IDS-탐지, 웹서버-자산, 공격도구-검증)가 모두 정상 동작하는 것을
+    확인합니다. 이 파이프라인이 SOC 관제의 전체 체계입니다.
   verify:
     type: output_contains
-    expect: SOC PIPELINE VERIFIED
+    expect:
+    - SOC PIPELINE VERIFIED
+    - mysql
+    - DATABASES
     field: stdout
     semantic:
-      intent: 15주 종합 복습 — echo 각 VM 섹션 + SIEM(alerts.log tail) + SECU(suricata fast.log) + WEB(apache
-        access.log) + ATTACKER(history). 학습 커버리지 점검
+      intent: 15주 종합 복습 — echo 각 VM 섹션 + SIEM(alerts.log tail) + SECU(suricata fast.log)
+        + WEB(apache access.log) + ATTACKER(history). 학습 커버리지 점검
       success_criteria:
       - 4 VM 각각 핵심 로그
       - 15주 학습 종합
@@ -350,9 +375,10 @@ steps:
   target_vm: siem
   script: 'echo ''=== SIEM: Wazuh alerts ==='' && ssh siem ''tail -5 /var/ossec/logs/alerts/alerts.log
     | grep Rule'' && echo ''=== SECU: Suricata ==='' && ssh secu ''tail -3 /var/log/suricata/fast.log
-    2>/dev/null || echo "IDS monitoring active"'' && echo ''=== WEB: Apache ==='' && ssh web ''tail -3
-    /var/log/apache2/access.log'' && echo ''=== ATTACKER: Tools ==='' && ssh attacker ''nmap --version
-    2>/dev/null | head -1'' && echo ''=== SOC PIPELINE VERIFIED ==='''
+    2>/dev/null || echo "IDS monitoring active"'' && echo ''=== WEB: Apache ===''
+    && ssh web ''tail -3 /var/log/apache2/access.log'' && echo ''=== ATTACKER: Tools
+    ==='' && ssh attacker ''nmap --version 2>/dev/null | head -1'' && echo ''=== SOC
+    PIPELINE VERIFIED ==='''
   risk_level: low
   bastion_prompt: 전체 SOC 실습 과정을 정리하시오. 15주간 학습한 핵심 구성 요소를 각 VM에서 한 가지씩 확인해줘
 - order: 99
@@ -402,5 +428,6 @@ steps:
     4) SECU VM에서 Suricata의 실시간 통계(패킷 처리량, 탐지 건수)를 확인해줘
 
     5) ATTACKER VM에서 WEB VM에 대한 포트 스캔을 실행해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
   script: ''

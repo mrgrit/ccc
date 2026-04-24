@@ -3,8 +3,8 @@ title: 보고서 작성 - SOC 운영 보고서와 인시던트 보고서 작성 
 version: ai
 course: soc-ai
 week: 13
-description: SOC 운영 데이터를 수집하여 일일/주간 운영 보고서와 인시던트 보고서를 작성하는 데 필요한 데이터 추출 및 정리 기법을 학습합니다. AI SubAgent가 자동으로
-  명령을 실행하고 결과를 검증합니다.
+description: SOC 운영 데이터를 수집하여 일일/주간 운영 보고서와 인시던트 보고서를 작성하는 데 필요한 데이터 추출 및 정리 기법을 학습합니다.
+  AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 150
 objectives:
@@ -20,16 +20,21 @@ steps:
   points: 8
   answer: '🤖 프롬프트: SIEM VM에서 오늘 발생한 총 알림 수, 고유 룰 수, 고유 소스 IP 수를 산출해줘
 
-    📎 참고 (CLI): echo "총 알림 수: $(grep -c "Rule:" /var/ossec/logs/alerts/alerts.log)"; echo "고유 룰 수: $(grep
-    -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log | sort -u | wc -l)"; echo "고유 소스 IP: $(grep -oP
-    "Src IP: \S+" /var/ossec/logs/alerts/alerts.log | sort -u | wc -l)"'
-  answer_detail: 이 세 가지 수치는 SOC 일일 보고서의 필수 KPI입니다. 전일 대비 증가율을 함께 제시하면 보안 상태 변화 추이를 파악할 수 있습니다.
+    📎 참고 (CLI): echo "총 알림 수: $(grep -c "Rule:" /var/ossec/logs/alerts/alerts.log)";
+    echo "고유 룰 수: $(grep -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log | sort
+    -u | wc -l)"; echo "고유 소스 IP: $(grep -oP "Src IP: \S+" /var/ossec/logs/alerts/alerts.log
+    | sort -u | wc -l)"'
+  answer_detail: 이 세 가지 수치는 SOC 일일 보고서의 필수 KPI입니다. 전일 대비 증가율을 함께 제시하면 보안 상태 변화 추이를
+    파악할 수 있습니다.
   verify:
     type: output_contains
-    expect: 총 알림 수
+    expect:
+    - 총 알림 수
+    - rule.id
     field: stdout
     semantic:
-      intent: 보고서 핵심 지표 — 총 알림 수 (grep -c Rule:) + 고유 룰 수 + 고유 소스 IP 수 3종 KPI. echo + 변수. 데일리 리포트 첫 섹션
+      intent: 보고서 핵심 지표 — 총 알림 수 (grep -c Rule:) + 고유 룰 수 + 고유 소스 IP 수 3종 KPI. echo
+        + 변수. 데일리 리포트 첫 섹션
       success_criteria:
       - 3 지표 계산
       - echo 출력
@@ -38,9 +43,10 @@ steps:
       negative_signs:
       - 1-2 지표만
   target_vm: siem
-  script: 'echo "총 알림 수: $(grep -c "Rule:" /var/ossec/logs/alerts/alerts.log)"; echo "고유 룰 수: $(grep -oP
-    "Rule: \d+" /var/ossec/logs/alerts/alerts.log | sort -u | wc -l)"; echo "고유 소스 IP: $(grep -oP "Src
-    IP: \S+" /var/ossec/logs/alerts/alerts.log | sort -u | wc -l)"'
+  script: 'echo "총 알림 수: $(grep -c "Rule:" /var/ossec/logs/alerts/alerts.log)"; echo
+    "고유 룰 수: $(grep -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log | sort -u |
+    wc -l)"; echo "고유 소스 IP: $(grep -oP "Src IP: \S+" /var/ossec/logs/alerts/alerts.log
+    | sort -u | wc -l)"'
   risk_level: low
   bastion_prompt: SIEM VM에서 오늘 발생한 총 알림 수, 고유 룰 수, 고유 소스 IP 수를 산출해줘
 - order: 2
@@ -51,18 +57,19 @@ steps:
   answer: '🤖 프롬프트: SIEM VM에서 심각도(레벨)별 알림 분포를 보고서용 형태로 정리해줘
 
     📎 참고 (CLI): echo "=== 심각도별 알림 분포 ==="; L=$(grep -cP "level [1-4]" /var/ossec/logs/alerts/alerts.log);
-    M=$(grep -cP "level [5-9]" /var/ossec/logs/alerts/alerts.log); H=$(grep -cP "level 1[0-2]" /var/ossec/logs/alerts/alerts.log);
-    C=$(grep -cP "level 1[3-5]" /var/ossec/logs/alerts/alerts.log); echo "Low(1-4): $L"; echo "Medium(5-9):
-    $M"; echo "High(10-12): $H"; echo "Critical(13-15): $C"'
-  answer_detail: 심각도별 분포는 SOC 보고서의 핵심 차트입니다. Critical과 High 비율이 높으면 긴급 대응이 필요하고, Low가 대부분이면 튜닝으로 노이즈를
-    줄여야 합니다.
+    M=$(grep -cP "level [5-9]" /var/ossec/logs/alerts/alerts.log); H=$(grep -cP "level
+    1[0-2]" /var/ossec/logs/alerts/alerts.log); C=$(grep -cP "level 1[3-5]" /var/ossec/logs/alerts/alerts.log);
+    echo "Low(1-4): $L"; echo "Medium(5-9): $M"; echo "High(10-12): $H"; echo "Critical(13-15):
+    $C"'
+  answer_detail: 심각도별 분포는 SOC 보고서의 핵심 차트입니다. Critical과 High 비율이 높으면 긴급 대응이 필요하고, Low가
+    대부분이면 튜닝으로 노이즈를 줄여야 합니다.
   verify:
     type: output_contains
     expect: 심각도별
     field: stdout
     semantic:
-      intent: 심각도 분포 보고서 형식 — level 1-4/5-7/8-11/12-15 4 카테고리 grep -cP 로 각 카운트. 심각도 매트릭스 표 형식. 경영 보고용
-        포맷
+      intent: 심각도 분포 보고서 형식 — level 1-4/5-7/8-11/12-15 4 카테고리 grep -cP 로 각 카운트. 심각도
+        매트릭스 표 형식. 경영 보고용 포맷
       success_criteria:
       - 4 카테고리 레벨 집계
       - 보고서 형식
@@ -71,10 +78,11 @@ steps:
       negative_signs:
       - 카테고리 없음
   target_vm: siem
-  script: 'echo "=== 심각도별 알림 분포 ==="; L=$(grep -cP "level [1-4]" /var/ossec/logs/alerts/alerts.log); M=$(grep
-    -cP "level [5-9]" /var/ossec/logs/alerts/alerts.log); H=$(grep -cP "level 1[0-2]" /var/ossec/logs/alerts/alerts.log);
-    C=$(grep -cP "level 1[3-5]" /var/ossec/logs/alerts/alerts.log); echo "Low(1-4): $L"; echo "Medium(5-9):
-    $M"; echo "High(10-12): $H"; echo "Critical(13-15): $C"'
+  script: 'echo "=== 심각도별 알림 분포 ==="; L=$(grep -cP "level [1-4]" /var/ossec/logs/alerts/alerts.log);
+    M=$(grep -cP "level [5-9]" /var/ossec/logs/alerts/alerts.log); H=$(grep -cP "level
+    1[0-2]" /var/ossec/logs/alerts/alerts.log); C=$(grep -cP "level 1[3-5]" /var/ossec/logs/alerts/alerts.log);
+    echo "Low(1-4): $L"; echo "Medium(5-9): $M"; echo "High(10-12): $H"; echo "Critical(13-15):
+    $C"'
   risk_level: low
   bastion_prompt: SIEM VM에서 심각도(레벨)별 알림 분포를 보고서용 형태로 정리해줘
 - order: 3
@@ -84,9 +92,10 @@ steps:
   points: 10
   answer: '🤖 프롬프트: SIEM VM에서 에이전트(자산)별 알림 발생 건수를 보고서용으로 집계해줘
 
-    📎 참고 (CLI): echo "=== 자산별 알림 분포 ==="; grep -oP "Location: \S+" /var/ossec/logs/alerts/alerts.log |
-    sort | uniq -c | sort -rn'
-  answer_detail: 자산별 알림 분포를 통해 가장 많은 보안 이벤트가 발생하는 시스템을 식별합니다. 특정 자산에 알림이 집중되면 해당 시스템의 보안 강화가 필요합니다.
+    📎 참고 (CLI): echo "=== 자산별 알림 분포 ==="; grep -oP "Location: \S+" /var/ossec/logs/alerts/alerts.log
+    | sort | uniq -c | sort -rn'
+  answer_detail: 자산별 알림 분포를 통해 가장 많은 보안 이벤트가 발생하는 시스템을 식별합니다. 특정 자산에 알림이 집중되면 해당 시스템의
+    보안 강화가 필요합니다.
   verify:
     type: output_contains
     expect: 자산별
@@ -101,8 +110,8 @@ steps:
       negative_signs:
       - IP 로만
   target_vm: siem
-  script: 'echo "=== 자산별 알림 분포 ==="; grep -oP "Location: \S+" /var/ossec/logs/alerts/alerts.log | sort
-    | uniq -c | sort -rn'
+  script: 'echo "=== 자산별 알림 분포 ==="; grep -oP "Location: \S+" /var/ossec/logs/alerts/alerts.log
+    | sort | uniq -c | sort -rn'
   risk_level: low
   bastion_prompt: SIEM VM에서 에이전트(자산)별 알림 발생 건수를 보고서용으로 집계해줘
 - order: 4
@@ -112,16 +121,19 @@ steps:
   points: 15
   answer: '🤖 프롬프트: SIEM VM에서 상위 발생 룰 Top 10과 각 룰의 설명을 함께 출력해줘
 
-    📎 참고 (CLI): grep -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log | sort | uniq -c | sort -rn | head
-    -10 | while read cnt rule id; do desc=$(grep -rA1 "id=\"$id\"" /var/ossec/ruleset/rules/ 2>/dev/null
-    | grep description | head -1 | grep -oP ">.*<" | tr -d "<>"); echo "$cnt  Rule:$id  $desc"; done'
-  answer_detail: 룰 ID만으로는 의미를 파악하기 어렵습니다. 발생 횟수와 룰 설명을 함께 제시하면 보고서 독자가 어떤 유형의 이벤트가 가장 많은지 즉시 이해할 수 있습니다.
+    📎 참고 (CLI): grep -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log | sort | uniq
+    -c | sort -rn | head -10 | while read cnt rule id; do desc=$(grep -rA1 "id=\"$id\""
+    /var/ossec/ruleset/rules/ 2>/dev/null | grep description | head -1 | grep -oP
+    ">.*<" | tr -d "<>"); echo "$cnt  Rule:$id  $desc"; done'
+  answer_detail: 룰 ID만으로는 의미를 파악하기 어렵습니다. 발생 횟수와 룰 설명을 함께 제시하면 보고서 독자가 어떤 유형의 이벤트가
+    가장 많은지 즉시 이해할 수 있습니다.
   verify:
     type: output_contains
     expect: 'Rule:'
     field: stdout
     semantic:
-      intent: Top 10 룰 + 설명 — Rule ID 빈도 + 각 Rule 의 description. join 하여 보고 가독성. 무엇이 주요 탐지인지
+      intent: Top 10 룰 + 설명 — Rule ID 빈도 + 각 Rule 의 description. join 하여 보고 가독성. 무엇이
+        주요 탐지인지
       success_criteria:
       - Rule ID Top 10 + 설명
       - 결합 출력
@@ -130,13 +142,15 @@ steps:
       negative_signs:
       - ID 만 (설명 누락)
   target_vm: siem
-  script: 'grep -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log | sort | uniq -c | sort -rn | head -10
-    | while read cnt rule id; do desc=$(grep -rA1 "id=\"$id\"" /var/ossec/ruleset/rules/ 2>/dev/null |
-    grep description | head -1 | grep -oP ">.*<" | tr -d "<>"); echo "$cnt  Rule:$id  $desc"; done'
+  script: 'grep -oP "Rule: \d+" /var/ossec/logs/alerts/alerts.log | sort | uniq -c
+    | sort -rn | head -10 | while read cnt rule id; do desc=$(grep -rA1 "id=\"$id\""
+    /var/ossec/ruleset/rules/ 2>/dev/null | grep description | head -1 | grep -oP
+    ">.*<" | tr -d "<>"); echo "$cnt  Rule:$id  $desc"; done'
   risk_level: low
   bastion_prompt: SIEM VM에서 상위 발생 룰 Top 10과 각 룰의 설명을 함께 출력해줘
 - order: 5
-  instruction: SIEM VM에서 ATTACKER IP({{ATTACKER_IP}})의 공격 타임라인을 생성하시오. 시간순으로 이벤트를 정리하시오.
+  instruction: SIEM VM에서 ATTACKER IP({{ATTACKER_IP}})의 공격 타임라인을 생성하시오. 시간순으로 이벤트를
+    정리하시오.
   hint: alerts.log에서 ATTACKER IP 관련 이벤트를 시간순으로 추출하세요.
   category: reporting
   points: 12
@@ -144,14 +158,15 @@ steps:
 
     📎 참고 (CLI): echo "=== 공격 타임라인: 10.20.30.201 ==="; grep -B 3 "10.20.30.201" /var/ossec/logs/alerts/alerts.log
     | grep -E "^\*\*|Rule:|10.20.30.201" | head -30'
-  answer_detail: 인시던트 보고서의 핵심은 공격 타임라인입니다. 최초 탐지 시점, 공격 유형 변화, 영향 범위를 시간순으로 정리하면 사건의 전모를 파악할 수 있습니다.
+  answer_detail: 인시던트 보고서의 핵심은 공격 타임라인입니다. 최초 탐지 시점, 공격 유형 변화, 영향 범위를 시간순으로 정리하면 사건의
+    전모를 파악할 수 있습니다.
   verify:
     type: output_contains
     expect: 타임라인
     field: stdout
     semantic:
-      intent: ATTACKER 공격 타임라인 — grep -B 3 10.20.30.201 alerts.log 로 공격자 활동 시간 순 정리. 시간별 이벤트 narrative.
-        보고서 incident story
+      intent: ATTACKER 공격 타임라인 — grep -B 3 10.20.30.201 alerts.log 로 공격자 활동 시간 순 정리.
+        시간별 이벤트 narrative. 보고서 incident story
       success_criteria:
       - 시간 순 narrative
       - IP 필터
@@ -171,13 +186,18 @@ steps:
   points: 12
   answer: '🤖 프롬프트: WEB VM에서 Apache 접근 로그의 요청 통계(총 요청 수, 성공/오류 비율, 상위 URL)를 산출해줘
 
-    📎 참고 (CLI): echo "총 요청: $(wc -l < /var/log/apache2/access.log)"; echo "=== 상태코드 분포 ==="; awk "{print
-    \$9}" /var/log/apache2/access.log | sort | uniq -c | sort -rn | head -5; echo "=== 상위 URL ==="; awk
-    "{print \$7}" /var/log/apache2/access.log | sort | uniq -c | sort -rn | head -5'
-  answer_detail: 웹 서비스 통계는 SOC 운영 보고서의 중요 항목입니다. 4xx/5xx 오류 비율이 높으면 공격 시도를, 특정 URL 집중은 스캐닝을 의미합니다.
+    📎 참고 (CLI): echo "총 요청: $(wc -l < /var/log/apache2/access.log)"; echo "=== 상태코드
+    분포 ==="; awk "{print \$9}" /var/log/apache2/access.log | sort | uniq -c | sort
+    -rn | head -5; echo "=== 상위 URL ==="; awk "{print \$7}" /var/log/apache2/access.log
+    | sort | uniq -c | sort -rn | head -5'
+  answer_detail: 웹 서비스 통계는 SOC 운영 보고서의 중요 항목입니다. 4xx/5xx 오류 비율이 높으면 공격 시도를, 특정 URL
+    집중은 스캐닝을 의미합니다.
   verify:
     type: output_contains
-    expect: 총 요청
+    expect:
+    - 총 요청
+    - Apache
+    - /var/log/apache2/access.log에서
     field: stdout
     semantic:
       intent: Apache 요청 통계 — wc -l (총 요청) + awk $9 상태코드 분포 + 상위 URL. 3 지표 웹 트래픽 요약
@@ -189,9 +209,10 @@ steps:
       negative_signs:
       - 1-2 지표
   target_vm: siem
-  script: 'echo "총 요청: $(wc -l < /var/log/apache2/access.log)"; echo "=== 상태코드 분포 ==="; awk "{print \$9}"
-    /var/log/apache2/access.log | sort | uniq -c | sort -rn | head -5; echo "=== 상위 URL ==="; awk "{print
-    \$7}" /var/log/apache2/access.log | sort | uniq -c | sort -rn | head -5'
+  script: 'echo "총 요청: $(wc -l < /var/log/apache2/access.log)"; echo "=== 상태코드 분포
+    ==="; awk "{print \$9}" /var/log/apache2/access.log | sort | uniq -c | sort -rn
+    | head -5; echo "=== 상위 URL ==="; awk "{print \$7}" /var/log/apache2/access.log
+    | sort | uniq -c | sort -rn | head -5'
   risk_level: low
   bastion_prompt: WEB VM에서 Apache 접근 로그의 요청 통계(총 요청 수, 성공/오류 비율, 상위 URL)를 산출해줘
 - order: 7
@@ -201,18 +222,20 @@ steps:
   points: 10
   answer: '🤖 프롬프트: SECU VM에서 Suricata IDS의 탐지 통계를 산출해줘
 
-    📎 참고 (CLI): grep -oP "\[Classification: [^]]+" /var/log/suricata/fast.log 2>/dev/null | sort | uniq
-    -c | sort -rn | head -10 || echo "Suricata stats: $(wc -l < /var/log/suricata/fast.log 2>/dev/null
-    || echo 0) events"'
-  answer_detail: Suricata 탐지 통계는 네트워크 레벨 위협 현황을 보여줍니다. Classification별 분류(Attempted Admin/User, Web Application
-    Attack 등)로 위협 유형을 파악합니다.
+    📎 참고 (CLI): grep -oP "\[Classification: [^]]+" /var/log/suricata/fast.log 2>/dev/null
+    | sort | uniq -c | sort -rn | head -10 || echo "Suricata stats: $(wc -l < /var/log/suricata/fast.log
+    2>/dev/null || echo 0) events"'
+  answer_detail: Suricata 탐지 통계는 네트워크 레벨 위협 현황을 보여줍니다. Classification별 분류(Attempted
+    Admin/User, Web Application Attack 등)로 위협 유형을 파악합니다.
   verify:
     type: output_contains
-    expect: ''
+    expect:
+    - Suricata
+    - 10.20.30.1
     field: stdout
     semantic:
-      intent: 'Suricata Classification 통계 — grep -oP \[Classification: [^]]+ fast.log | uniq -c 로 web-attack·scan·trojan
-        등 분류별 건수. IDS 탐지 유형 분포'
+      intent: 'Suricata Classification 통계 — grep -oP \[Classification: [^]]+ fast.log
+        | uniq -c 로 web-attack·scan·trojan 등 분류별 건수. IDS 탐지 유형 분포'
       success_criteria:
       - Classification 추출
       - 유형별 집계
@@ -221,9 +244,9 @@ steps:
       negative_signs:
       - SID 만
   target_vm: siem
-  script: 'grep -oP "\[Classification: [^]]+" /var/log/suricata/fast.log 2>/dev/null | sort | uniq -c
-    | sort -rn | head -10 || echo "Suricata stats: $(wc -l < /var/log/suricata/fast.log 2>/dev/null ||
-    echo 0) events"'
+  script: 'grep -oP "\[Classification: [^]]+" /var/log/suricata/fast.log 2>/dev/null
+    | sort | uniq -c | sort -rn | head -10 || echo "Suricata stats: $(wc -l < /var/log/suricata/fast.log
+    2>/dev/null || echo 0) events"'
   risk_level: low
   bastion_prompt: SECU VM에서 Suricata IDS의 탐지 통계를 산출해줘
 - order: 8
@@ -233,16 +256,18 @@ steps:
   points: 10
   answer: '🤖 프롬프트: SIEM VM에서 Wazuh 에이전트의 상태 요약(활성/비활성/미연결)을 보고서용으로 정리해줘
 
-    📎 참고 (CLI): echo "=== 에이전트 상태 요약 ==="; /var/ossec/bin/agent_control -l 2>/dev/null; echo "Active:
-    $(/var/ossec/bin/agent_control -l 2>/dev/null | grep -c Active)"; echo "Disconnected: $(/var/ossec/bin/agent_control
-    -l 2>/dev/null | grep -c Disconnected)"'
-  answer_detail: 에이전트 상태 요약은 SOC 운영 보고서의 필수 항목입니다. 비활성 에이전트는 로그 수집 누락을 의미하므로 즉시 조치가 필요합니다.
+    📎 참고 (CLI): echo "=== 에이전트 상태 요약 ==="; /var/ossec/bin/agent_control -l 2>/dev/null;
+    echo "Active: $(/var/ossec/bin/agent_control -l 2>/dev/null | grep -c Active)";
+    echo "Disconnected: $(/var/ossec/bin/agent_control -l 2>/dev/null | grep -c Disconnected)"'
+  answer_detail: 에이전트 상태 요약은 SOC 운영 보고서의 필수 항목입니다. 비활성 에이전트는 로그 수집 누락을 의미하므로 즉시 조치가
+    필요합니다.
   verify:
     type: output_contains
     expect: 에이전트 상태
     field: stdout
     semantic:
-      intent: 에이전트 상태 요약 — agent_control -l + Active/Disconnected 카운트. 전체 자산 커버리지. 모니터링 gap 식별
+      intent: 에이전트 상태 요약 — agent_control -l + Active/Disconnected 카운트. 전체 자산 커버리지.
+        모니터링 gap 식별
       success_criteria:
       - agent_control -l + 상태 요약
       acceptable_methods:
@@ -250,9 +275,9 @@ steps:
       negative_signs:
       - 목록만
   target_vm: siem
-  script: 'echo "=== 에이전트 상태 요약 ==="; /var/ossec/bin/agent_control -l 2>/dev/null; echo "Active: $(/var/ossec/bin/agent_control
-    -l 2>/dev/null | grep -c Active)"; echo "Disconnected: $(/var/ossec/bin/agent_control -l 2>/dev/null
-    | grep -c Disconnected)"'
+  script: 'echo "=== 에이전트 상태 요약 ==="; /var/ossec/bin/agent_control -l 2>/dev/null;
+    echo "Active: $(/var/ossec/bin/agent_control -l 2>/dev/null | grep -c Active)";
+    echo "Disconnected: $(/var/ossec/bin/agent_control -l 2>/dev/null | grep -c Disconnected)"'
   risk_level: low
   bastion_prompt: SIEM VM에서 Wazuh 에이전트의 상태 요약(활성/비활성/미연결)을 보고서용으로 정리해줘
 - order: 9
@@ -260,19 +285,25 @@ steps:
   hint: 각 VM에 ssh로 접속하여 핵심 서비스의 systemctl is-active를 확인하세요.
   category: reporting
   points: 12
-  answer: '🤖 프롬프트: 전체 SOC 인프라의 서비스 가동 상태를 요약하시오. SIEM, SECU, WEB VM의 핵심 서비스 상태를 한 번에 확인해줘
+  answer: '🤖 프롬프트: 전체 SOC 인프라의 서비스 가동 상태를 요약하시오. SIEM, SECU, WEB VM의 핵심 서비스 상태를 한
+    번에 확인해줘
 
-    📎 참고 (CLI): echo ''=== SOC 서비스 상태 요약 ==='' && echo ''SIEM:'' && ssh siem ''systemctl is-active wazuh-manager
-    rsyslog'' && echo ''SECU:'' && ssh secu ''systemctl is-active suricata'' && echo ''WEB:'' && ssh web
-    ''systemctl is-active apache2'''
-  answer_detail: SOC 보고서에는 전체 인프라의 가동 상태가 포함되어야 합니다. 모든 핵심 서비스가 active 상태인지 한 눈에 확인하여 가용성 문제를 조기 발견합니다.
+    📎 참고 (CLI): echo ''=== SOC 서비스 상태 요약 ==='' && echo ''SIEM:'' && ssh siem ''systemctl
+    is-active wazuh-manager rsyslog'' && echo ''SECU:'' && ssh secu ''systemctl is-active
+    suricata'' && echo ''WEB:'' && ssh web ''systemctl is-active apache2'''
+  answer_detail: SOC 보고서에는 전체 인프라의 가동 상태가 포함되어야 합니다. 모든 핵심 서비스가 active 상태인지 한 눈에 확인하여
+    가용성 문제를 조기 발견합니다.
   verify:
     type: output_contains
-    expect: SOC 서비스
+    expect:
+    - SOC 서비스
+    - Wazuh
+    - Manager
     field: stdout
     semantic:
-      intent: SOC 인프라 통합 점검 — echo === SOC 서비스 === + ssh siem systemctl is-active wazuh-manager + ssh
-        secu is-active suricata + ssh web is-active apache2. 전체 서비스 health 한 번에
+      intent: SOC 인프라 통합 점검 — echo === SOC 서비스 === + ssh siem systemctl is-active
+        wazuh-manager + ssh secu is-active suricata + ssh web is-active apache2. 전체
+        서비스 health 한 번에
       success_criteria:
       - 3 VM 서비스 상태
       - 통합 요약
@@ -281,11 +312,12 @@ steps:
       negative_signs:
       - 단일 VM
   target_vm: siem
-  script: echo '=== SOC 서비스 상태 요약 ===' && echo 'SIEM:' && ssh siem 'systemctl is-active wazuh-manager
-    rsyslog' && echo 'SECU:' && ssh secu 'systemctl is-active suricata' && echo 'WEB:' && ssh web 'systemctl
-    is-active apache2'
+  script: echo '=== SOC 서비스 상태 요약 ===' && echo 'SIEM:' && ssh siem 'systemctl is-active
+    wazuh-manager rsyslog' && echo 'SECU:' && ssh secu 'systemctl is-active suricata'
+    && echo 'WEB:' && ssh web 'systemctl is-active apache2'
   risk_level: low
-  bastion_prompt: 전체 SOC 인프라의 서비스 가동 상태를 요약하시오. SIEM, SECU, WEB VM의 핵심 서비스 상태를 한 번에 확인해줘
+  bastion_prompt: 전체 SOC 인프라의 서비스 가동 상태를 요약하시오. SIEM, SECU, WEB VM의 핵심 서비스 상태를 한 번에
+    확인해줘
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
   bastion_prompt: '다음 작업들을 순서대로 수행해줘:
@@ -307,7 +339,8 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: '[통합] 보고서 작성 5작업 — exec/detail/IoC/recommend/audit 통합. SANS IR report 템플릿.'
+      intent: '[통합] 보고서 작성 5작업 — exec/detail/IoC/recommend/audit 통합. SANS IR report
+        템플릿.'
       success_criteria:
       - 5 보고 작업
       - 4섹션
@@ -333,5 +366,6 @@ steps:
     4) SIEM VM에서 상위 발생 룰 Top 10과 각 룰의 설명을 함께 출력해줘
 
     5) SIEM VM에서 ATTACKER IP(10.20.30.201)의 공격 타임라인을 생성해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
   script: ''

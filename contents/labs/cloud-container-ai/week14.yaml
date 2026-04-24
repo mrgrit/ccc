@@ -3,8 +3,8 @@ title: 컨테이너 컴플라이언스 점검 실습 (AI 지원)
 version: ai
 course: cloud-container-ai
 week: 14
-description: CIS Docker Benchmark를 기반으로 Docker 환경의 컴플라이언스를 점검합니다. 호스트 설정, 데몬 설정, 컨테이너 런타임, 이미지, 네트워크 보안을
-  체계적으로 평가합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: CIS Docker Benchmark를 기반으로 Docker 환경의 컴플라이언스를 점검합니다. 호스트 설정, 데몬 설정, 컨테이너
+  런타임, 이미지, 네트워크 보안을 체계적으로 평가합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: hard
 duration_minutes: 120
 objectives:
@@ -20,20 +20,24 @@ steps:
   points: 10
   answer: '🤖 프롬프트: WEB 서버(10.20.30.80)에서 CIS 1.1: Docker 호스트의 OS를 점검해줘
 
-    📎 참고 (CLI): echo "=== CIS 1.1 호스트 OS ==="; cat /etc/os-release | grep PRETTY; uname -r; docker version
-    --format "Docker: {{.Server.Version}}"'''
-  answer_detail: CIS Docker Benchmark 1.1은 Docker 전용 OS 또는 강화된 OS 사용을 권고합니다. Ubuntu, CentOS 등 범용 OS에서는
-    불필요한 서비스를 최소화해야 합니다. 커널 버전은 최신 보안 패치가 적용된 것이어야 합니다.
+    📎 참고 (CLI): echo "=== CIS 1.1 호스트 OS ==="; cat /etc/os-release | grep PRETTY;
+    uname -r; docker version --format "Docker: {{.Server.Version}}"'''
+  answer_detail: CIS Docker Benchmark 1.1은 Docker 전용 OS 또는 강화된 OS 사용을 권고합니다. Ubuntu,
+    CentOS 등 범용 OS에서는 불필요한 서비스를 최소화해야 합니다. 커널 버전은 최신 보안 패치가 적용된 것이어야 합니다.
   verify:
     type: output_contains
-    expect: CIS 1.1
+    expect:
+    - CIS 1.1
+    - Ubuntu
+    - Jammy
     field: stdout
     semantic:
-      intent: 'CIS 1.1 Host Configuration — cat /etc/os-release | grep PRETTY + uname -r + docker version
-        --format Docker: {{.Server.Version}}. CIS Docker Benchmark Section 1: Host Configuration. Docker-optimized
-        OS 권장: Bottlerocket(AWS), Flatcar(Kinvolk), Talos Linux(K8s), CoreOS(deprecated). 범용 OS 시 강화 필요:
-        최신 커널(security patches), 불필요 서비스 제거, auditd 활성. Docker 버전은 최신 안정(CVE fixed) - 예: CVE-2024-21626
-        runc escape 는 v1.1.12+ 필요'
+      intent: 'CIS 1.1 Host Configuration — cat /etc/os-release | grep PRETTY + uname
+        -r + docker version --format Docker: {{.Server.Version}}. CIS Docker Benchmark
+        Section 1: Host Configuration. Docker-optimized OS 권장: Bottlerocket(AWS),
+        Flatcar(Kinvolk), Talos Linux(K8s), CoreOS(deprecated). 범용 OS 시 강화 필요: 최신
+        커널(security patches), 불필요 서비스 제거, auditd 활성. Docker 버전은 최신 안정(CVE fixed) -
+        예: CVE-2024-21626 runc escape 는 v1.1.12+ 필요'
       success_criteria:
       - /etc/os-release + uname -r + docker version 출력
       - CIS 1.1 문자열 포함
@@ -49,8 +53,8 @@ steps:
       - CIS 버전 언급 없음
       - Bottlerocket/Flatcar 같은 컨테이너 OS 언급 없음
   target_vm: web
-  script: 'echo "=== CIS 1.1 호스트 OS ==="; cat /etc/os-release | grep PRETTY; uname -r; docker version
-    --format "Docker: {{.Server.Version}}"'''
+  script: 'echo "=== CIS 1.1 호스트 OS ==="; cat /etc/os-release | grep PRETTY; uname
+    -r; docker version --format "Docker: {{.Server.Version}}"'''
   risk_level: low
   bastion_prompt: 'WEB 서버(10.20.30.80)에서 CIS 1.1: Docker 호스트의 OS를 점검해줘'
 - order: 2
@@ -60,22 +64,24 @@ steps:
   points: 12
   answer: '🤖 프롬프트: CIS 2.x: Docker 데몬 설정을 점검해줘
 
-    📎 참고 (CLI): echo "=== CIS 2.x Docker 데몬 ==="; echo "[2.1 네트워크 트래픽 제한]" && docker info --format "{{.LiveRestoreEnabled}}"
-    2>/dev/null | xargs -I{} echo "Live Restore: {}"; echo "[2.2 로깅 레벨]" && ps aux | grep dockerd | grep
-    -oP "log-level=\S+" || echo "기본 로그 레벨"; echo "[2.5 insecure-registries]" && cat /etc/docker/daemon.json
-    2>/dev/null | grep insecure || echo "insecure-registries 없음"; echo "[2.8 사용자 namespace]" && docker
-    info --format "{{.SecurityOptions}}" 2>/dev/null'''
-  answer_detail: CIS Section 2는 Docker 데몬 설정을 다룹니다. 2.1 네트워크 트래픽 제한, 2.5 insecure-registries 비사용, 2.8
-    사용자 namespace 활성화, 2.14 live-restore 활성화 등이 주요 항목입니다.
+    📎 참고 (CLI): echo "=== CIS 2.x Docker 데몬 ==="; echo "[2.1 네트워크 트래픽 제한]" && docker
+    info --format "{{.LiveRestoreEnabled}}" 2>/dev/null | xargs -I{} echo "Live Restore:
+    {}"; echo "[2.2 로깅 레벨]" && ps aux | grep dockerd | grep -oP "log-level=\S+" ||
+    echo "기본 로그 레벨"; echo "[2.5 insecure-registries]" && cat /etc/docker/daemon.json
+    2>/dev/null | grep insecure || echo "insecure-registries 없음"; echo "[2.8 사용자 namespace]"
+    && docker info --format "{{.SecurityOptions}}" 2>/dev/null'''
+  answer_detail: CIS Section 2는 Docker 데몬 설정을 다룹니다. 2.1 네트워크 트래픽 제한, 2.5 insecure-registries
+    비사용, 2.8 사용자 namespace 활성화, 2.14 live-restore 활성화 등이 주요 항목입니다.
   verify:
     type: output_contains
     expect: CIS 2.x
     field: stdout
     semantic:
-      intent: 'CIS Section 2 - Docker Daemon Configuration — 2.1 Live Restore, 2.2 log-level, 2.5 insecure-registries,
-        2.8 user namespace remapping. Live Restore(live-restore: true): daemon 재시작 시에도 컨테이너 유지. log-level(info
-        이상 권장). insecure-registries 는 HTTP 허용으로 MITM 취약(절대 지양). userns-remap: default 로 root UID remap.
-        각 설정은 /etc/docker/daemon.json 또는 ExecStart flag. docker info --format 으로 현재 상태 조회'
+      intent: 'CIS Section 2 - Docker Daemon Configuration — 2.1 Live Restore, 2.2
+        log-level, 2.5 insecure-registries, 2.8 user namespace remapping. Live Restore(live-restore:
+        true): daemon 재시작 시에도 컨테이너 유지. log-level(info 이상 권장). insecure-registries
+        는 HTTP 허용으로 MITM 취약(절대 지양). userns-remap: default 로 root UID remap. 각 설정은
+        /etc/docker/daemon.json 또는 ExecStart flag. docker info --format 으로 현재 상태 조회'
       success_criteria:
       - CIS 2.x 문자열 포함
       - daemon 설정 항목 최소 2개 조회
@@ -91,11 +97,12 @@ steps:
       - 기본값 정상 판정(취약 설정)
       - daemon.json 참조 없음
   target_vm: web
-  script: 'echo "=== CIS 2.x Docker 데몬 ==="; echo "[2.1 네트워크 트래픽 제한]" && docker info --format "{{.LiveRestoreEnabled}}"
-    2>/dev/null | xargs -I{} echo "Live Restore: {}"; echo "[2.2 로깅 레벨]" && ps aux | grep dockerd | grep
-    -oP "log-level=\S+" || echo "기본 로그 레벨"; echo "[2.5 insecure-registries]" && cat /etc/docker/daemon.json
-    2>/dev/null | grep insecure || echo "insecure-registries 없음"; echo "[2.8 사용자 namespace]" && docker
-    info --format "{{.SecurityOptions}}" 2>/dev/null'''
+  script: 'echo "=== CIS 2.x Docker 데몬 ==="; echo "[2.1 네트워크 트래픽 제한]" && docker info
+    --format "{{.LiveRestoreEnabled}}" 2>/dev/null | xargs -I{} echo "Live Restore:
+    {}"; echo "[2.2 로깅 레벨]" && ps aux | grep dockerd | grep -oP "log-level=\S+" ||
+    echo "기본 로그 레벨"; echo "[2.5 insecure-registries]" && cat /etc/docker/daemon.json
+    2>/dev/null | grep insecure || echo "insecure-registries 없음"; echo "[2.8 사용자 namespace]"
+    && docker info --format "{{.SecurityOptions}}" 2>/dev/null'''
   risk_level: low
   bastion_prompt: 'CIS 2.x: Docker 데몬 설정을 점검해줘'
 - order: 3
@@ -105,21 +112,23 @@ steps:
   points: 10
   answer: '🤖 프롬프트: CIS 3.x: Docker 데몬 파일 권한을 점검해줘
 
-    📎 참고 (CLI): echo "=== CIS 3.x 파일 권한 ==="; echo "[3.1 docker.service]" && stat -c "%a %U:%G" /lib/systemd/system/docker.service
-    2>/dev/null; echo "[3.3 docker.sock]" && stat -c "%a %U:%G" /var/run/docker.sock 2>/dev/null; echo
-    "[3.7 daemon.json]" && stat -c "%a %U:%G" /etc/docker/daemon.json 2>/dev/null || echo "daemon.json
+    📎 참고 (CLI): echo "=== CIS 3.x 파일 권한 ==="; echo "[3.1 docker.service]" && stat
+    -c "%a %U:%G" /lib/systemd/system/docker.service 2>/dev/null; echo "[3.3 docker.sock]"
+    && stat -c "%a %U:%G" /var/run/docker.sock 2>/dev/null; echo "[3.7 daemon.json]"
+    && stat -c "%a %U:%G" /etc/docker/daemon.json 2>/dev/null || echo "daemon.json
     없음"; echo "[3.15 Docker Root]" && stat -c "%a %U:%G" /var/lib/docker 2>/dev/null'
-  answer_detail: CIS Section 3은 Docker 관련 파일과 디렉터리의 권한을 점검합니다. docker.sock은 660, daemon.json은 644, Docker
-    Root는 710 이하여야 합니다. 과도한 권한은 비인가 사용자의 Docker 제어를 허용합니다.
+  answer_detail: CIS Section 3은 Docker 관련 파일과 디렉터리의 권한을 점검합니다. docker.sock은 660, daemon.json은
+    644, Docker Root는 710 이하여야 합니다. 과도한 권한은 비인가 사용자의 Docker 제어를 허용합니다.
   verify:
     type: output_contains
     expect: CIS 3.x
     field: stdout
     semantic:
-      intent: 'CIS Section 3 - Docker Daemon Files 권한 — stat -c %a %U:%G 로 주요 파일: 3.1 docker.service(644),
-        3.3 docker.sock(660 root:docker), 3.7 daemon.json(644), 3.15 /var/lib/docker(700). 권한 과대 시 비인가
-        사용자의 Docker 제어 가능 → root 획득. auditd watch 추가 권장: -w /etc/docker/daemon.json -p wa. CIS docker-bench-security
-        자동 점검. Linux DAC + SELinux/AppArmor MAC 병행'
+      intent: 'CIS Section 3 - Docker Daemon Files 권한 — stat -c %a %U:%G 로 주요 파일:
+        3.1 docker.service(644), 3.3 docker.sock(660 root:docker), 3.7 daemon.json(644),
+        3.15 /var/lib/docker(700). 권한 과대 시 비인가 사용자의 Docker 제어 가능 → root 획득. auditd
+        watch 추가 권장: -w /etc/docker/daemon.json -p wa. CIS docker-bench-security 자동
+        점검. Linux DAC + SELinux/AppArmor MAC 병행'
       success_criteria:
       - stat 으로 4+ 파일 권한 조회
       - CIS 3.x 문자열 포함
@@ -135,9 +144,10 @@ steps:
       - 소유자 확인 누락
       - auditd watch 없음
   target_vm: web
-  script: echo "=== CIS 3.x 파일 권한 ==="; echo "[3.1 docker.service]" && stat -c "%a %U:%G" /lib/systemd/system/docker.service
-    2>/dev/null; echo "[3.3 docker.sock]" && stat -c "%a %U:%G" /var/run/docker.sock 2>/dev/null; echo
-    "[3.7 daemon.json]" && stat -c "%a %U:%G" /etc/docker/daemon.json 2>/dev/null || echo "daemon.json
+  script: echo "=== CIS 3.x 파일 권한 ==="; echo "[3.1 docker.service]" && stat -c "%a
+    %U:%G" /lib/systemd/system/docker.service 2>/dev/null; echo "[3.3 docker.sock]"
+    && stat -c "%a %U:%G" /var/run/docker.sock 2>/dev/null; echo "[3.7 daemon.json]"
+    && stat -c "%a %U:%G" /etc/docker/daemon.json 2>/dev/null || echo "daemon.json
     없음"; echo "[3.15 Docker Root]" && stat -c "%a %U:%G" /var/lib/docker 2>/dev/null
   risk_level: low
   bastion_prompt: 'CIS 3.x: Docker 데몬 파일 권한을 점검해줘'
@@ -148,22 +158,28 @@ steps:
   points: 12
   answer: '🤖 프롬프트: CIS 4.x: 컨테이너 이미지 보안을 점검해줘
 
-    📎 참고 (CLI): echo "=== CIS 4.x 이미지 보안 ==="; for IMG in $(docker images --format "{{.Repository}}:{{.Tag}}"
-    | head -5); do echo "--- $IMG ---"; echo "[4.1 USER 설정]" && docker inspect $IMG --format "User: {{.Config.User}}"
-    2>/dev/null | grep -q "User: $" && echo "  미설정(root)" || docker inspect $IMG --format "User: {{.Config.User}}"
-    2>/dev/null; echo "[4.6 HEALTHCHECK]" && docker inspect $IMG --format "{{.Config.Healthcheck}}" 2>/dev/null
-    | grep -q "<nil>" && echo "  미설정" || echo "  설정됨"; done'''
-  answer_detail: CIS Section 4는 컨테이너 이미지와 Dockerfile 보안을 다룹니다. 4.1 USER 지시어로 비root 지정, 4.3 불필요한 패키지 제거,
-    4.6 HEALTHCHECK 추가, 4.9 COPY 사용(ADD 대신), 4.10 secrets를 Dockerfile에 포함하지 않을 것.
+    📎 참고 (CLI): echo "=== CIS 4.x 이미지 보안 ==="; for IMG in $(docker images --format
+    "{{.Repository}}:{{.Tag}}" | head -5); do echo "--- $IMG ---"; echo "[4.1 USER
+    설정]" && docker inspect $IMG --format "User: {{.Config.User}}" 2>/dev/null | grep
+    -q "User: $" && echo "  미설정(root)" || docker inspect $IMG --format "User: {{.Config.User}}"
+    2>/dev/null; echo "[4.6 HEALTHCHECK]" && docker inspect $IMG --format "{{.Config.Healthcheck}}"
+    2>/dev/null | grep -q "<nil>" && echo "  미설정" || echo "  설정됨"; done'''
+  answer_detail: CIS Section 4는 컨테이너 이미지와 Dockerfile 보안을 다룹니다. 4.1 USER 지시어로 비root
+    지정, 4.3 불필요한 패키지 제거, 4.6 HEALTHCHECK 추가, 4.9 COPY 사용(ADD 대신), 4.10 secrets를 Dockerfile에
+    포함하지 않을 것.
   verify:
     type: output_contains
-    expect: CIS 4.x
+    expect:
+    - CIS 4.x
+    - docker_manage
+    - limit_test
     field: stdout
     semantic:
-      intent: 'CIS Section 4 - Container Images — for IMG in 이미지들; do 4.1 USER (Config.User 비어있으면 root),
-        4.6 HEALTHCHECK (Config.Healthcheck null 이면 미설정). CIS Section 4 주요 항목: 4.1 USER non-root, 4.3
-        unnecessary packages 제거(alpine/distroless), 4.6 HEALTHCHECK, 4.7 specific tag(latest 금지), 4.9
-        COPY(ADD 금지), 4.10 secrets 미포함. Dockerfile 빌드 시점 요구사항. Hadolint + trivy image scan 자동 검증'
+      intent: 'CIS Section 4 - Container Images — for IMG in 이미지들; do 4.1 USER (Config.User
+        비어있으면 root), 4.6 HEALTHCHECK (Config.Healthcheck null 이면 미설정). CIS Section
+        4 주요 항목: 4.1 USER non-root, 4.3 unnecessary packages 제거(alpine/distroless),
+        4.6 HEALTHCHECK, 4.7 specific tag(latest 금지), 4.9 COPY(ADD 금지), 4.10 secrets
+        미포함. Dockerfile 빌드 시점 요구사항. Hadolint + trivy image scan 자동 검증'
       success_criteria:
       - for IMG 반복 + USER + HEALTHCHECK 점검
       - CIS 4.x 문자열 포함
@@ -180,9 +196,10 @@ steps:
       - latest 태그 경고 없음
   target_vm: web
   script: 'echo "=== CIS 4.x 이미지 보안 ==="; for IMG in $(docker images --format "{{.Repository}}:{{.Tag}}"
-    | head -5); do echo "--- $IMG ---"; echo "[4.1 USER 설정]" && docker inspect $IMG --format "User: {{.Config.User}}"
-    2>/dev/null | grep -q "User: $" && echo "  미설정(root)" || docker inspect $IMG --format "User: {{.Config.User}}"
-    2>/dev/null; echo "[4.6 HEALTHCHECK]" && docker inspect $IMG --format "{{.Config.Healthcheck}}" 2>/dev/null
+    | head -5); do echo "--- $IMG ---"; echo "[4.1 USER 설정]" && docker inspect $IMG
+    --format "User: {{.Config.User}}" 2>/dev/null | grep -q "User: $" && echo "  미설정(root)"
+    || docker inspect $IMG --format "User: {{.Config.User}}" 2>/dev/null; echo "[4.6
+    HEALTHCHECK]" && docker inspect $IMG --format "{{.Config.Healthcheck}}" 2>/dev/null
     | grep -q "<nil>" && echo "  미설정" || echo "  설정됨"; done'''
   risk_level: low
   bastion_prompt: 'CIS 4.x: 컨테이너 이미지 보안을 점검해줘'
@@ -193,24 +210,27 @@ steps:
   points: 14
   answer: '🤖 프롬프트: CIS 5.x: 컨테이너 런타임 보안을 점검해줘
 
-    📎 참고 (CLI): echo "=== CIS 5.x 런타임 보안 ==="; for CID in $(docker ps -q); do NAME=$(docker inspect --format="{{.Name}}"
-    $CID | tr -d "/"); echo "--- $NAME ---"; echo "[5.1] AppArmor: $(docker inspect --format="{{.AppArmorProfile}}"
-    $CID 2>/dev/null)"; echo "[5.4] Privileged: $(docker inspect --format="{{.HostConfig.Privileged}}"
-    $CID)"; echo "[5.10] Memory: $(docker inspect --format="{{.HostConfig.Memory}}" $CID)"; echo "[5.12]
-    ReadOnly: $(docker inspect --format="{{.HostConfig.ReadonlyRootfs}}" $CID)"; echo "[5.25] Restart:
-    $(docker inspect --format="{{.HostConfig.RestartPolicy.Name}}" $CID)"; done || echo "실행 중인 컨테이너 없음"'''
-  answer_detail: CIS Section 5는 컨테이너 런타임 보안을 다룹니다. 5.1 AppArmor 프로파일 적용, 5.4 privileged 비사용, 5.10 메모리
-    제한, 5.12 읽기 전용 파일시스템, 5.25 restart 정책 설정 등 30개 이상의 점검 항목이 있습니다.
+    📎 참고 (CLI): echo "=== CIS 5.x 런타임 보안 ==="; for CID in $(docker ps -q); do NAME=$(docker
+    inspect --format="{{.Name}}" $CID | tr -d "/"); echo "--- $NAME ---"; echo "[5.1]
+    AppArmor: $(docker inspect --format="{{.AppArmorProfile}}" $CID 2>/dev/null)";
+    echo "[5.4] Privileged: $(docker inspect --format="{{.HostConfig.Privileged}}"
+    $CID)"; echo "[5.10] Memory: $(docker inspect --format="{{.HostConfig.Memory}}"
+    $CID)"; echo "[5.12] ReadOnly: $(docker inspect --format="{{.HostConfig.ReadonlyRootfs}}"
+    $CID)"; echo "[5.25] Restart: $(docker inspect --format="{{.HostConfig.RestartPolicy.Name}}"
+    $CID)"; done || echo "실행 중인 컨테이너 없음"'''
+  answer_detail: CIS Section 5는 컨테이너 런타임 보안을 다룹니다. 5.1 AppArmor 프로파일 적용, 5.4 privileged
+    비사용, 5.10 메모리 제한, 5.12 읽기 전용 파일시스템, 5.25 restart 정책 설정 등 30개 이상의 점검 항목이 있습니다.
   verify:
     type: output_contains
     expect: CIS 5.x
     field: stdout
     semantic:
-      intent: 'CIS Section 5 - Container Runtime — for CID 루프: 5.1 AppArmorProfile, 5.4 Privileged, 5.10
-        Memory, 5.12 ReadonlyRootfs, 5.25 RestartPolicy. CIS Section 5 는 30+ 항목으로 가장 광범위. 5.1 AppArmor/SELinux,
-        5.4 no --privileged, 5.5 sensitive host directory no bind, 5.7 no privileged ports(< 1024), 5.10
-        memory limit, 5.11 CPU limit, 5.12 read-only rootfs, 5.25 restart policy 5번 이하, 5.28 PIDs cgroup
-        limit. 종합 하드닝'
+      intent: 'CIS Section 5 - Container Runtime — for CID 루프: 5.1 AppArmorProfile,
+        5.4 Privileged, 5.10 Memory, 5.12 ReadonlyRootfs, 5.25 RestartPolicy. CIS
+        Section 5 는 30+ 항목으로 가장 광범위. 5.1 AppArmor/SELinux, 5.4 no --privileged, 5.5
+        sensitive host directory no bind, 5.7 no privileged ports(< 1024), 5.10 memory
+        limit, 5.11 CPU limit, 5.12 read-only rootfs, 5.25 restart policy 5번 이하, 5.28
+        PIDs cgroup limit. 종합 하드닝'
       success_criteria:
       - for CID 루프 5+ 항목 점검
       - CIS 5.x 문자열 포함
@@ -226,12 +246,14 @@ steps:
       - 컨테이너별 결과 비교 없음
       - docker-bench-security 미사용
   target_vm: web
-  script: 'echo "=== CIS 5.x 런타임 보안 ==="; for CID in $(docker ps -q); do NAME=$(docker inspect --format="{{.Name}}"
-    $CID | tr -d "/"); echo "--- $NAME ---"; echo "[5.1] AppArmor: $(docker inspect --format="{{.AppArmorProfile}}"
-    $CID 2>/dev/null)"; echo "[5.4] Privileged: $(docker inspect --format="{{.HostConfig.Privileged}}"
-    $CID)"; echo "[5.10] Memory: $(docker inspect --format="{{.HostConfig.Memory}}" $CID)"; echo "[5.12]
-    ReadOnly: $(docker inspect --format="{{.HostConfig.ReadonlyRootfs}}" $CID)"; echo "[5.25] Restart:
-    $(docker inspect --format="{{.HostConfig.RestartPolicy.Name}}" $CID)"; done || echo "실행 중인 컨테이너 없음"'''
+  script: 'echo "=== CIS 5.x 런타임 보안 ==="; for CID in $(docker ps -q); do NAME=$(docker
+    inspect --format="{{.Name}}" $CID | tr -d "/"); echo "--- $NAME ---"; echo "[5.1]
+    AppArmor: $(docker inspect --format="{{.AppArmorProfile}}" $CID 2>/dev/null)";
+    echo "[5.4] Privileged: $(docker inspect --format="{{.HostConfig.Privileged}}"
+    $CID)"; echo "[5.10] Memory: $(docker inspect --format="{{.HostConfig.Memory}}"
+    $CID)"; echo "[5.12] ReadOnly: $(docker inspect --format="{{.HostConfig.ReadonlyRootfs}}"
+    $CID)"; echo "[5.25] Restart: $(docker inspect --format="{{.HostConfig.RestartPolicy.Name}}"
+    $CID)"; done || echo "실행 중인 컨테이너 없음"'''
   risk_level: low
   bastion_prompt: 'CIS 5.x: 컨테이너 런타임 보안을 점검해줘'
 - order: 6
@@ -241,20 +263,24 @@ steps:
   points: 10
   answer: '🤖 프롬프트: CIS 6.x: Docker 보안 운영을 점검해줘
 
-    📎 참고 (CLI): echo "=== CIS 6.x 보안 운영 ==="; echo "[6.1] 이미지 스캔" && which trivy 2>/dev/null && echo "trivy
-    설치됨" || echo "취약점 스캔 도구 미설치"; echo "[6.2] Content Trust" && echo "DOCKER_CONTENT_TRUST=${DOCKER_CONTENT_TRUST:-비활성}";
-    echo "[6.5] Docker Swarm" && docker info --format "Swarm: {{.Swarm.LocalNodeState}}" 2>/dev/null'''
-  answer_detail: CIS Section 6는 Docker 보안 운영을 다룹니다. 6.1 이미지의 정기적 취약점 스캔, 6.2 Docker Content Trust 활성화,
-    6.5 불필요한 Swarm 비활성화. 보안 운영은 기술적 설정뿐 아니라 프로세스와 절차도 포함합니다.
+    📎 참고 (CLI): echo "=== CIS 6.x 보안 운영 ==="; echo "[6.1] 이미지 스캔" && which trivy 2>/dev/null
+    && echo "trivy 설치됨" || echo "취약점 스캔 도구 미설치"; echo "[6.2] Content Trust" && echo
+    "DOCKER_CONTENT_TRUST=${DOCKER_CONTENT_TRUST:-비활성}"; echo "[6.5] Docker Swarm"
+    && docker info --format "Swarm: {{.Swarm.LocalNodeState}}" 2>/dev/null'''
+  answer_detail: CIS Section 6는 Docker 보안 운영을 다룹니다. 6.1 이미지의 정기적 취약점 스캔, 6.2 Docker
+    Content Trust 활성화, 6.5 불필요한 Swarm 비활성화. 보안 운영은 기술적 설정뿐 아니라 프로세스와 절차도 포함합니다.
   verify:
     type: output_contains
-    expect: CIS 6.x
+    expect:
+    - CIS 6.x
+    - Docker
     field: stdout
     semantic:
-      intent: 'CIS Section 6 - Docker Security Operations — 6.1 이미지 vuln scan(trivy/grype/snyk), 6.2 Content
-        Trust, 6.5 Swarm LocalNodeState. Section 6 는 프로세스 + 운영 측면: 6.1 image vulnerability scanning 정기
-        수행, 6.2 DOCKER_CONTENT_TRUST=1, 6.5 swarm cluster 불필요시 inactive. 실무 도구: Trivy(오픈소스·빠름), Grype(Syft
-        + DB), Snyk(상용), Anchore, Aqua Trivy. CI/CD pipeline 통합 필수'
+      intent: 'CIS Section 6 - Docker Security Operations — 6.1 이미지 vuln scan(trivy/grype/snyk),
+        6.2 Content Trust, 6.5 Swarm LocalNodeState. Section 6 는 프로세스 + 운영 측면: 6.1
+        image vulnerability scanning 정기 수행, 6.2 DOCKER_CONTENT_TRUST=1, 6.5 swarm
+        cluster 불필요시 inactive. 실무 도구: Trivy(오픈소스·빠름), Grype(Syft + DB), Snyk(상용),
+        Anchore, Aqua Trivy. CI/CD pipeline 통합 필수'
       success_criteria:
       - which trivy + DOCKER_CONTENT_TRUST + Swarm state
       - CIS 6.x 문자열 포함
@@ -270,9 +296,10 @@ steps:
       - Content Trust 비활성 정상 판정
       - CI 통합 언급 없음
   target_vm: web
-  script: 'echo "=== CIS 6.x 보안 운영 ==="; echo "[6.1] 이미지 스캔" && which trivy 2>/dev/null && echo "trivy
-    설치됨" || echo "취약점 스캔 도구 미설치"; echo "[6.2] Content Trust" && echo "DOCKER_CONTENT_TRUST=${DOCKER_CONTENT_TRUST:-비활성}";
-    echo "[6.5] Docker Swarm" && docker info --format "Swarm: {{.Swarm.LocalNodeState}}" 2>/dev/null'''
+  script: 'echo "=== CIS 6.x 보안 운영 ==="; echo "[6.1] 이미지 스캔" && which trivy 2>/dev/null
+    && echo "trivy 설치됨" || echo "취약점 스캔 도구 미설치"; echo "[6.2] Content Trust" && echo
+    "DOCKER_CONTENT_TRUST=${DOCKER_CONTENT_TRUST:-비활성}"; echo "[6.5] Docker Swarm"
+    && docker info --format "Swarm: {{.Swarm.LocalNodeState}}" 2>/dev/null'''
   risk_level: low
   bastion_prompt: 'CIS 6.x: Docker 보안 운영을 점검해줘'
 - order: 7
@@ -280,33 +307,38 @@ steps:
   hint: CIS 1~6 섹션의 핵심 항목을 자동 판정하세요.
   category: audit
   points: 12
-  answer: "\U0001F916 프롬프트: CIS Docker Benchmark 종합 점검 스크립트를 작성하고 실행하시오 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고\
-    \ (CLI): cat << 'SCRIPT' > /tmp/cis_benchmark.sh\n#!/bin/bash\nHOST='ccc@10.20.30.80'\necho '=== CIS\
-    \ Docker Benchmark 종합 점검 ==='\nPASS=0; FAIL=0; WARN=0\nresult() {\n  case $2 in\n    PASS) PASS=$((PASS+1));\
-    \ echo \"  [PASS] $1\" ;;\n    FAIL) FAIL=$((FAIL+1)); echo \"  [FAIL] $1\" ;;\n    *) WARN=$((WARN+1));\
-    \ echo \"  [WARN] $1\" ;;\n  esac\n}\necho '[Section 2: 데몬 설정]'\nINSECURE=$(grep -c insecure /etc/docker/daemon.json\
-    \ 2>/dev/null || echo 0 2>/dev/null)\nresult '2.5 insecure-registries' \"$([ \"$INSECURE\" = '0' ]\
-    \ && echo PASS || echo FAIL)\"\necho '[Section 3: 파일 권한]'\nSOCK=$(ssh $HOST 'stat -c %a /var/run/docker.sock'\
-    \ 2>/dev/null)\nresult \"3.3 docker.sock ($SOCK)\" \"$([ \"$SOCK\" -le 660 ] && echo PASS || echo\
-    \ WARN)\"\necho '[Section 5: 런타임]'\nPRIV=$(docker ps -q | xargs -I{} docker inspect --format=\"{{.HostConfig.Privileged}}\"\
-    \ {} 2>/dev/null | grep -c true)\nresult \"5.4 Privileged ($PRIV건)\" \"$([ \"$PRIV\" = '0' ] && echo\
-    \ PASS || echo FAIL)\"\nROOT=$(ssh $HOST 'docker ps -q | xargs -I{} docker inspect --format=\"{{.Config.User}}\"\
-    \ {} 2>/dev/null | grep -c \"^$\"')\nresult \"5.x Non-root (root실행: $ROOT건)\" \"$([ \"$ROOT\" = '0'\
-    \ ] && echo PASS || echo WARN)\"\necho ''\necho \"결과: PASS=$PASS FAIL=$FAIL WARN=$WARN\"\necho '===\
-    \ CIS Benchmark 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/cis_benchmark.sh && bash /tmp/cis_benchmark.sh"
-  answer_detail: CIS Docker Benchmark는 Docker 환경의 보안을 체계적으로 점검하는 산업 표준입니다. 호스트(Section 1), 데몬(Section
-    2), 파일 권한(Section 3), 이미지(Section 4), 런타임(Section 5), 운영(Section 6)의 6개 섹션으로 구성되며, Docker Bench Security(docker/docker-bench-security)
-    도구로 자동 점검할 수 있습니다.
+  answer: "\U0001F916 프롬프트: CIS Docker Benchmark 종합 점검 스크립트를 작성하고 실행하시오 구현 방법과 예시를\
+    \ 설명해줘\n\U0001F4CE 참고 (CLI): cat << 'SCRIPT' > /tmp/cis_benchmark.sh\n#!/bin/bash\n\
+    HOST='ccc@10.20.30.80'\necho '=== CIS Docker Benchmark 종합 점검 ==='\nPASS=0; FAIL=0;\
+    \ WARN=0\nresult() {\n  case $2 in\n    PASS) PASS=$((PASS+1)); echo \"  [PASS]\
+    \ $1\" ;;\n    FAIL) FAIL=$((FAIL+1)); echo \"  [FAIL] $1\" ;;\n    *) WARN=$((WARN+1));\
+    \ echo \"  [WARN] $1\" ;;\n  esac\n}\necho '[Section 2: 데몬 설정]'\nINSECURE=$(grep\
+    \ -c insecure /etc/docker/daemon.json 2>/dev/null || echo 0 2>/dev/null)\nresult\
+    \ '2.5 insecure-registries' \"$([ \"$INSECURE\" = '0' ] && echo PASS || echo FAIL)\"\
+    \necho '[Section 3: 파일 권한]'\nSOCK=$(ssh $HOST 'stat -c %a /var/run/docker.sock'\
+    \ 2>/dev/null)\nresult \"3.3 docker.sock ($SOCK)\" \"$([ \"$SOCK\" -le 660 ] &&\
+    \ echo PASS || echo WARN)\"\necho '[Section 5: 런타임]'\nPRIV=$(docker ps -q | xargs\
+    \ -I{} docker inspect --format=\"{{.HostConfig.Privileged}}\" {} 2>/dev/null |\
+    \ grep -c true)\nresult \"5.4 Privileged ($PRIV건)\" \"$([ \"$PRIV\" = '0' ] &&\
+    \ echo PASS || echo FAIL)\"\nROOT=$(ssh $HOST 'docker ps -q | xargs -I{} docker\
+    \ inspect --format=\"{{.Config.User}}\" {} 2>/dev/null | grep -c \"^$\"')\nresult\
+    \ \"5.x Non-root (root실행: $ROOT건)\" \"$([ \"$ROOT\" = '0' ] && echo PASS || echo\
+    \ WARN)\"\necho ''\necho \"결과: PASS=$PASS FAIL=$FAIL WARN=$WARN\"\necho '=== CIS\
+    \ Benchmark 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/cis_benchmark.sh && bash /tmp/cis_benchmark.sh"
+  answer_detail: CIS Docker Benchmark는 Docker 환경의 보안을 체계적으로 점검하는 산업 표준입니다. 호스트(Section
+    1), 데몬(Section 2), 파일 권한(Section 3), 이미지(Section 4), 런타임(Section 5), 운영(Section
+    6)의 6개 섹션으로 구성되며, Docker Bench Security(docker/docker-bench-security) 도구로 자동 점검할
+    수 있습니다.
   verify:
     type: output_contains
     expect: CIS Benchmark 점검 완료
     field: stdout
     semantic:
-      intent: 'CIS Docker Benchmark 종합 자동 점검 — /tmp/cis_benchmark.sh heredoc + PASS/FAIL/WARN 판정 함수. 4
-        섹션 sample: 2.5 insecure-registries, 3.3 docker.sock 권한, 5.4 Privileged 컨테이너 수, 5.x root 실행 컨테이너.
-        종합 결과 카운트 출력. 전문 도구: docker/docker-bench-security(공식) - docker run -it --net host --pid host --cap-add
-        audit_control 로 실행. Trivy config + OPA Gatekeeper 로 CI 통합. PCI-DSS / ISO 27001 / SOC2 compliance
-        대응'
+      intent: 'CIS Docker Benchmark 종합 자동 점검 — /tmp/cis_benchmark.sh heredoc + PASS/FAIL/WARN
+        판정 함수. 4 섹션 sample: 2.5 insecure-registries, 3.3 docker.sock 권한, 5.4 Privileged
+        컨테이너 수, 5.x root 실행 컨테이너. 종합 결과 카운트 출력. 전문 도구: docker/docker-bench-security(공식)
+        - docker run -it --net host --pid host --cap-add audit_control 로 실행. Trivy
+        config + OPA Gatekeeper 로 CI 통합. PCI-DSS / ISO 27001 / SOC2 compliance 대응'
       success_criteria:
       - /tmp/cis_benchmark.sh 생성
       - bash 실행
@@ -322,19 +354,23 @@ steps:
       - docker-bench-security 언급 없음
       - compliance framework 매핑 없음
   target_vm: web
-  script: "cat << 'SCRIPT' > /tmp/cis_benchmark.sh\n#!/bin/bash\nHOST='ccc@10.20.30.80'\necho '=== CIS\
-    \ Docker Benchmark 종합 점검 ==='\nPASS=0; FAIL=0; WARN=0\nresult() {\n  case $2 in\n    PASS) PASS=$((PASS+1));\
-    \ echo \"  [PASS] $1\" ;;\n    FAIL) FAIL=$((FAIL+1)); echo \"  [FAIL] $1\" ;;\n    *) WARN=$((WARN+1));\
-    \ echo \"  [WARN] $1\" ;;\n  esac\n}\necho '[Section 2: 데몬 설정]'\nINSECURE=$(grep -c insecure /etc/docker/daemon.json\
-    \ 2>/dev/null || echo 0 2>/dev/null)\nresult '2.5 insecure-registries' \"$([ \"$INSECURE\" = '0' ]\
-    \ && echo PASS || echo FAIL)\"\necho '[Section 3: 파일 권한]'\nSOCK=$(ssh $HOST 'stat -c %a /var/run/docker.sock'\
-    \ 2>/dev/null)\nresult \"3.3 docker.sock ($SOCK)\" \"$([ \"$SOCK\" -le 660 ] && echo PASS || echo\
-    \ WARN)\"\necho '[Section 5: 런타임]'\nPRIV=$(docker ps -q | xargs -I{} docker inspect --format=\"{{.HostConfig.Privileged}}\"\
-    \ {} 2>/dev/null | grep -c true)\nresult \"5.4 Privileged ($PRIV건)\" \"$([ \"$PRIV\" = '0' ] && echo\
-    \ PASS || echo FAIL)\"\nROOT=$(ssh $HOST 'docker ps -q | xargs -I{} docker inspect --format=\"{{.Config.User}}\"\
-    \ {} 2>/dev/null | grep -c \"^$\"')\nresult \"5.x Non-root (root실행: $ROOT건)\" \"$([ \"$ROOT\" = '0'\
-    \ ] && echo PASS || echo WARN)\"\necho ''\necho \"결과: PASS=$PASS FAIL=$FAIL WARN=$WARN\"\necho '===\
-    \ CIS Benchmark 점검 완료 ==='\nSCRIPT\nchmod +x /tmp/cis_benchmark.sh && bash /tmp/cis_benchmark.sh"
+  script: "cat << 'SCRIPT' > /tmp/cis_benchmark.sh\n#!/bin/bash\nHOST='ccc@10.20.30.80'\n\
+    echo '=== CIS Docker Benchmark 종합 점검 ==='\nPASS=0; FAIL=0; WARN=0\nresult() {\n\
+    \  case $2 in\n    PASS) PASS=$((PASS+1)); echo \"  [PASS] $1\" ;;\n    FAIL)\
+    \ FAIL=$((FAIL+1)); echo \"  [FAIL] $1\" ;;\n    *) WARN=$((WARN+1)); echo \"\
+    \  [WARN] $1\" ;;\n  esac\n}\necho '[Section 2: 데몬 설정]'\nINSECURE=$(grep -c insecure\
+    \ /etc/docker/daemon.json 2>/dev/null || echo 0 2>/dev/null)\nresult '2.5 insecure-registries'\
+    \ \"$([ \"$INSECURE\" = '0' ] && echo PASS || echo FAIL)\"\necho '[Section 3:\
+    \ 파일 권한]'\nSOCK=$(ssh $HOST 'stat -c %a /var/run/docker.sock' 2>/dev/null)\nresult\
+    \ \"3.3 docker.sock ($SOCK)\" \"$([ \"$SOCK\" -le 660 ] && echo PASS || echo WARN)\"\
+    \necho '[Section 5: 런타임]'\nPRIV=$(docker ps -q | xargs -I{} docker inspect --format=\"\
+    {{.HostConfig.Privileged}}\" {} 2>/dev/null | grep -c true)\nresult \"5.4 Privileged\
+    \ ($PRIV건)\" \"$([ \"$PRIV\" = '0' ] && echo PASS || echo FAIL)\"\nROOT=$(ssh\
+    \ $HOST 'docker ps -q | xargs -I{} docker inspect --format=\"{{.Config.User}}\"\
+    \ {} 2>/dev/null | grep -c \"^$\"')\nresult \"5.x Non-root (root실행: $ROOT건)\"\
+    \ \"$([ \"$ROOT\" = '0' ] && echo PASS || echo WARN)\"\necho ''\necho \"결과: PASS=$PASS\
+    \ FAIL=$FAIL WARN=$WARN\"\necho '=== CIS Benchmark 점검 완료 ==='\nSCRIPT\nchmod +x\
+    \ /tmp/cis_benchmark.sh && bash /tmp/cis_benchmark.sh"
   risk_level: low
   bastion_prompt: CIS Docker Benchmark 종합 점검 스크립트를 작성하고 실행하시오.
 - order: 99
@@ -358,7 +394,8 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: '[통합] 컨테이너 컴플라이언스 5작업 — CIS/STIG/scan/report/audit 통합. kube-bench + Trivy.'
+      intent: '[통합] 컨테이너 컴플라이언스 5작업 — CIS/STIG/scan/report/audit 통합. kube-bench +
+        Trivy.'
       success_criteria:
       - 5 compliance 작업
       - CIS 점수
@@ -384,5 +421,6 @@ steps:
     4) CIS 4.x: 컨테이너 이미지 보안을 점검해줘
 
     5) CIS 5.x: 컨테이너 런타임 보안을 점검해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
   script: ''

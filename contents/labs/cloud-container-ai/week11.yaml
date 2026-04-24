@@ -3,8 +3,8 @@ title: IaC(Infrastructure as Code) 보안 실습 (AI 지원)
 version: ai
 course: cloud-container-ai
 week: 11
-description: docker-compose.yml 파일을 IaC의 관점에서 보안 점검합니다. 설정 파일의 보안 분석, 민감 정보 관리, 서비스 정의의 보안 모범 사례를 실습합니다.
-  AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: docker-compose.yml 파일을 IaC의 관점에서 보안 점검합니다. 설정 파일의 보안 분석, 민감 정보 관리, 서비스
+  정의의 보안 모범 사례를 실습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -18,27 +18,33 @@ steps:
   hint: privileged, 환경변수 비밀번호, host 네트워크 등의 보안 이슈를 포함하세요.
   category: audit
   points: 10
-  answer: "\U0001F916 프롬프트: WEB 서버(10 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고 (CLI): cat << \"YAML\" > /tmp/insecure-compose.yml\n\
-    version: \"3\"\nservices:\n  web:\n    image: nginx:latest\n    privileged: true\n    network_mode:\
-    \ host\n    ports:\n      - \"80:80\"\n    environment:\n      - DB_PASSWORD=admin123\n    volumes:\n\
-    \      - /:/hostroot\n  db:\n    image: mysql:latest\n    environment:\n      - MYSQL_ROOT_PASSWORD=root123\n\
-    YAML\necho \"=== 보안 분석 ===\"\ngrep -n \"privileged: true\" /tmp/insecure-compose.yml && echo \"  [위험]\
-    \ privileged 모드\"\ngrep -n \"PASSWORD\" /tmp/insecure-compose.yml && echo \"  [위험] 평문 비밀번호\"\ngrep\
-    \ -n \"network_mode: host\" /tmp/insecure-compose.yml && echo \"  [위험] host 네트워크\"\ngrep -n \"/:/hostroot\"\
+  answer: "\U0001F916 프롬프트: WEB 서버(10 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고 (CLI): cat <<\
+    \ \"YAML\" > /tmp/insecure-compose.yml\nversion: \"3\"\nservices:\n  web:\n  \
+    \  image: nginx:latest\n    privileged: true\n    network_mode: host\n    ports:\n\
+    \      - \"80:80\"\n    environment:\n      - DB_PASSWORD=admin123\n    volumes:\n\
+    \      - /:/hostroot\n  db:\n    image: mysql:latest\n    environment:\n     \
+    \ - MYSQL_ROOT_PASSWORD=root123\nYAML\necho \"=== 보안 분석 ===\"\ngrep -n \"privileged:\
+    \ true\" /tmp/insecure-compose.yml && echo \"  [위험] privileged 모드\"\ngrep -n \"\
+    PASSWORD\" /tmp/insecure-compose.yml && echo \"  [위험] 평문 비밀번호\"\ngrep -n \"network_mode:\
+    \ host\" /tmp/insecure-compose.yml && echo \"  [위험] host 네트워크\"\ngrep -n \"/:/hostroot\"\
     \ /tmp/insecure-compose.yml && echo \"  [위험] 루트 마운트\"\ngrep -n \"latest\" /tmp/insecure-compose.yml\
     \ && echo \"  [위험] latest 태그\""
-  answer_detail: 'IaC 파일의 정적 분석(Static Analysis)은 Terraform의 tfsec, Kubernetes의 kubesec, Docker의 hadolint와
-    같은 도구로 수행합니다. docker-compose.yml에서 흔한 보안 이슈: privileged 모드, 평문 비밀번호, host 네트워크, 과도한 볼륨 마운트, latest
-    태그 사용.'
+  answer_detail: 'IaC 파일의 정적 분석(Static Analysis)은 Terraform의 tfsec, Kubernetes의 kubesec,
+    Docker의 hadolint와 같은 도구로 수행합니다. docker-compose.yml에서 흔한 보안 이슈: privileged 모드,
+    평문 비밀번호, host 네트워크, 과도한 볼륨 마운트, latest 태그 사용.'
   verify:
     type: output_contains
-    expect: 보안 분석
+    expect:
+    - 보안 분석
+    - '{{WEB_IP}}'
+    - docker‑compose.yml
     field: stdout
     semantic:
-      intent: '취약 docker-compose.yml 작성 + anti-pattern grep 분석 — /tmp/insecure-compose.yml 에 privileged:
-        true, network_mode: host, ENV DB_PASSWORD, volumes: /:/hostroot, image: latest 포함. grep 으로 각 위험
-        패턴 5가지 검출. 공통 IaC 취약점. 자동화 도구: Checkov, KICS, Trivy config, Terrascan, tfsec(Terraform). CI 파이프라인
-        pre-commit + PR gate 통합 권장. OWASP IaC Security Top 10'
+      intent: '취약 docker-compose.yml 작성 + anti-pattern grep 분석 — /tmp/insecure-compose.yml
+        에 privileged: true, network_mode: host, ENV DB_PASSWORD, volumes: /:/hostroot,
+        image: latest 포함. grep 으로 각 위험 패턴 5가지 검출. 공통 IaC 취약점. 자동화 도구: Checkov, KICS,
+        Trivy config, Terrascan, tfsec(Terraform). CI 파이프라인 pre-commit + PR gate 통합
+        권장. OWASP IaC Security Top 10'
       success_criteria:
       - insecure-compose.yml heredoc 작성
       - grep 기반 위험 패턴 5가지 검출
@@ -54,13 +60,15 @@ steps:
       - Checkov/KICS 언급 없음
       - pre-commit 자동화 없음
   target_vm: web
-  script: "cat << \"YAML\" > /tmp/insecure-compose.yml\nversion: \"3\"\nservices:\n  web:\n    image:\
-    \ nginx:latest\n    privileged: true\n    network_mode: host\n    ports:\n      - \"80:80\"\n    environment:\n\
-    \      - DB_PASSWORD=admin123\n    volumes:\n      - /:/hostroot\n  db:\n    image: mysql:latest\n\
-    \    environment:\n      - MYSQL_ROOT_PASSWORD=root123\nYAML\necho \"=== 보안 분석 ===\"\ngrep -n \"privileged:\
-    \ true\" /tmp/insecure-compose.yml && echo \"  [위험] privileged 모드\"\ngrep -n \"PASSWORD\" /tmp/insecure-compose.yml\
-    \ && echo \"  [위험] 평문 비밀번호\"\ngrep -n \"network_mode: host\" /tmp/insecure-compose.yml && echo \"\
-    \  [위험] host 네트워크\"\ngrep -n \"/:/hostroot\" /tmp/insecure-compose.yml && echo \"  [위험] 루트 마운트\"\n\
+  script: "cat << \"YAML\" > /tmp/insecure-compose.yml\nversion: \"3\"\nservices:\n\
+    \  web:\n    image: nginx:latest\n    privileged: true\n    network_mode: host\n\
+    \    ports:\n      - \"80:80\"\n    environment:\n      - DB_PASSWORD=admin123\n\
+    \    volumes:\n      - /:/hostroot\n  db:\n    image: mysql:latest\n    environment:\n\
+    \      - MYSQL_ROOT_PASSWORD=root123\nYAML\necho \"=== 보안 분석 ===\"\ngrep -n \"\
+    privileged: true\" /tmp/insecure-compose.yml && echo \"  [위험] privileged 모드\"\n\
+    grep -n \"PASSWORD\" /tmp/insecure-compose.yml && echo \"  [위험] 평문 비밀번호\"\ngrep\
+    \ -n \"network_mode: host\" /tmp/insecure-compose.yml && echo \"  [위험] host 네트워크\"\
+    \ngrep -n \"/:/hostroot\" /tmp/insecure-compose.yml && echo \"  [위험] 루트 마운트\"\n\
     grep -n \"latest\" /tmp/insecure-compose.yml && echo \"  [위험] latest 태그\""
   risk_level: low
   bastion_prompt: WEB 서버({{WEB_IP}})에 보안 취약점이 있는 docker-compose.yml을 작성하고 문제점을 분석하시오.
@@ -69,29 +77,36 @@ steps:
   hint: 모든 보안 이슈를 해결한 설정 파일을 작성하세요.
   category: config
   points: 14
-  answer: "\U0001F916 프롬프트: 보안이 적용된 docker-compose 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고 (CLI): cat << \"YAML\"\
-    \ > /tmp/secure-compose.yml\nversion: \"3.8\"\nservices:\n  web:\n    image: nginx:1.25-alpine\n \
-    \   read_only: true\n    tmpfs:\n      - /tmp\n      - /var/cache/nginx\n      - /var/run\n    cap_drop:\n\
-    \      - ALL\n    cap_add:\n      - NET_BIND_SERVICE\n    security_opt:\n      - no-new-privileges:true\n\
-    \    deploy:\n      resources:\n        limits:\n          memory: 128M\n          cpus: \"0.5\"\n\
-    \    ports:\n      - \"127.0.0.1:8080:80\"\n    networks:\n      - frontend\n    user: \"101:101\"\
-    \n  db:\n    image: mysql:8.0\n    read_only: true\n    tmpfs:\n      - /tmp\n      - /var/run/mysqld\n\
-    \    cap_drop:\n      - ALL\n    cap_add:\n      - DAC_OVERRIDE\n      - SETGID\n      - SETUID\n\
+  answer: "\U0001F916 프롬프트: 보안이 적용된 docker-compose 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고\
+    \ (CLI): cat << \"YAML\" > /tmp/secure-compose.yml\nversion: \"3.8\"\nservices:\n\
+    \  web:\n    image: nginx:1.25-alpine\n    read_only: true\n    tmpfs:\n     \
+    \ - /tmp\n      - /var/cache/nginx\n      - /var/run\n    cap_drop:\n      - ALL\n\
+    \    cap_add:\n      - NET_BIND_SERVICE\n    security_opt:\n      - no-new-privileges:true\n\
+    \    deploy:\n      resources:\n        limits:\n          memory: 128M\n    \
+    \      cpus: \"0.5\"\n    ports:\n      - \"127.0.0.1:8080:80\"\n    networks:\n\
+    \      - frontend\n    user: \"101:101\"\n  db:\n    image: mysql:8.0\n    read_only:\
+    \ true\n    tmpfs:\n      - /tmp\n      - /var/run/mysqld\n    cap_drop:\n   \
+    \   - ALL\n    cap_add:\n      - DAC_OVERRIDE\n      - SETGID\n      - SETUID\n\
     \    security_opt:\n      - no-new-privileges:true\n    volumes:\n      - db-data:/var/lib/mysql\n\
-    \    networks:\n      - backend\n    env_file:\n      - .env.db\nvolumes:\n  db-data:\nnetworks:\n\
-    \  frontend:\n  backend:\n    internal: true\nYAML\necho \"=== 보안 Compose ===\"\ncat /tmp/secure-compose.yml"
-  answer_detail: '보안 docker-compose.yml의 핵심: 특정 이미지 태그, read_only 파일시스템, cap_drop ALL, no-new-privileges,
-    자원 제한, 로컬 바인드(127.0.0.1), 네트워크 분리(frontend/backend), DB는 internal 네트워크, env_file로 비밀 분리, named volume으로
-    데이터 관리.'
+    \    networks:\n      - backend\n    env_file:\n      - .env.db\nvolumes:\n  db-data:\n\
+    networks:\n  frontend:\n  backend:\n    internal: true\nYAML\necho \"=== 보안 Compose\
+    \ ===\"\ncat /tmp/secure-compose.yml"
+  answer_detail: '보안 docker-compose.yml의 핵심: 특정 이미지 태그, read_only 파일시스템, cap_drop
+    ALL, no-new-privileges, 자원 제한, 로컬 바인드(127.0.0.1), 네트워크 분리(frontend/backend), DB는
+    internal 네트워크, env_file로 비밀 분리, named volume으로 데이터 관리.'
   verify:
     type: output_contains
-    expect: 보안 Compose
+    expect:
+    - 보안 Compose
+    - /secrets/db_password.txt
+    - nginx_cert
     field: stdout
     semantic:
-      intent: '보안 hardened docker-compose.yml 작성 — /tmp/secure-compose.yml: web(nginx:1.25-alpine + read_only
-        + tmpfs + cap_drop ALL + cap_add NET_BIND_SERVICE + no-new-privileges + resources.limits + 127.0.0.1:8080
-        localhost bind + user 101:101), db(cap_drop ALL + env_file + named volume + backend internal network).
-        네트워크 분리: frontend(public) + backend(internal: true, DB 용). K8s 대응: Pod securityContext, NetworkPolicy,
+      intent: '보안 hardened docker-compose.yml 작성 — /tmp/secure-compose.yml: web(nginx:1.25-alpine
+        + read_only + tmpfs + cap_drop ALL + cap_add NET_BIND_SERVICE + no-new-privileges
+        + resources.limits + 127.0.0.1:8080 localhost bind + user 101:101), db(cap_drop
+        ALL + env_file + named volume + backend internal network). 네트워크 분리: frontend(public)
+        + backend(internal: true, DB 용). K8s 대응: Pod securityContext, NetworkPolicy,
         Secrets, resource quotas'
       success_criteria:
       - secure-compose.yml 작성
@@ -108,17 +123,19 @@ steps:
       - internal network 없음
       - resource limits 없음
   target_vm: web
-  script: "cat << \"YAML\" > /tmp/secure-compose.yml\nversion: \"3.8\"\nservices:\n  web:\n    image:\
-    \ nginx:1.25-alpine\n    read_only: true\n    tmpfs:\n      - /tmp\n      - /var/cache/nginx\n   \
-    \   - /var/run\n    cap_drop:\n      - ALL\n    cap_add:\n      - NET_BIND_SERVICE\n    security_opt:\n\
-    \      - no-new-privileges:true\n    deploy:\n      resources:\n        limits:\n          memory:\
-    \ 128M\n          cpus: \"0.5\"\n    ports:\n      - \"127.0.0.1:8080:80\"\n    networks:\n      -\
-    \ frontend\n    user: \"101:101\"\n  db:\n    image: mysql:8.0\n    read_only: true\n    tmpfs:\n\
-    \      - /tmp\n      - /var/run/mysqld\n    cap_drop:\n      - ALL\n    cap_add:\n      - DAC_OVERRIDE\n\
-    \      - SETGID\n      - SETUID\n    security_opt:\n      - no-new-privileges:true\n    volumes:\n\
-    \      - db-data:/var/lib/mysql\n    networks:\n      - backend\n    env_file:\n      - .env.db\n\
-    volumes:\n  db-data:\nnetworks:\n  frontend:\n  backend:\n    internal: true\nYAML\necho \"=== 보안\
-    \ Compose ===\"\ncat /tmp/secure-compose.yml"
+  script: "cat << \"YAML\" > /tmp/secure-compose.yml\nversion: \"3.8\"\nservices:\n\
+    \  web:\n    image: nginx:1.25-alpine\n    read_only: true\n    tmpfs:\n     \
+    \ - /tmp\n      - /var/cache/nginx\n      - /var/run\n    cap_drop:\n      - ALL\n\
+    \    cap_add:\n      - NET_BIND_SERVICE\n    security_opt:\n      - no-new-privileges:true\n\
+    \    deploy:\n      resources:\n        limits:\n          memory: 128M\n    \
+    \      cpus: \"0.5\"\n    ports:\n      - \"127.0.0.1:8080:80\"\n    networks:\n\
+    \      - frontend\n    user: \"101:101\"\n  db:\n    image: mysql:8.0\n    read_only:\
+    \ true\n    tmpfs:\n      - /tmp\n      - /var/run/mysqld\n    cap_drop:\n   \
+    \   - ALL\n    cap_add:\n      - DAC_OVERRIDE\n      - SETGID\n      - SETUID\n\
+    \    security_opt:\n      - no-new-privileges:true\n    volumes:\n      - db-data:/var/lib/mysql\n\
+    \    networks:\n      - backend\n    env_file:\n      - .env.db\nvolumes:\n  db-data:\n\
+    networks:\n  frontend:\n  backend:\n    internal: true\nYAML\necho \"=== 보안 Compose\
+    \ ===\"\ncat /tmp/secure-compose.yml"
   risk_level: low
   bastion_prompt: 보안이 적용된 docker-compose.yml을 작성하시오.
 - order: 3
@@ -128,21 +145,22 @@ steps:
   points: 10
   answer: '🤖 프롬프트: 두 파일의 보안 설정 차이를 분석해줘
 
-    📎 참고 (CLI): echo "=== 보안 개선 항목 ==="; echo "[1] 이미지 태그: latest -> 특정 버전"; echo "[2] privileged: true
-    -> cap_drop ALL"; echo "[3] network_mode: host -> 분리된 네트워크"; echo "[4] 평문 비밀번호 -> env_file"; echo
-    "[5] / 마운트 -> named volume"; echo "[6] 추가: read_only, no-new-privileges, 자원 제한"; echo "--- 파일 크기 비교
-    ---"; wc -l /tmp/insecure-compose.yml /tmp/secure-compose.yml'''
-  answer_detail: 보안 설정은 파일 크기를 증가시키지만, 각 라인이 특정 위협을 방어합니다. IaC에서는 이런 보안 설정을 팀의 표준 템플릿으로 관리하고, 코드 리뷰에서
-    보안 항목을 체크리스트로 점검합니다.
+    📎 참고 (CLI): echo "=== 보안 개선 항목 ==="; echo "[1] 이미지 태그: latest -> 특정 버전"; echo
+    "[2] privileged: true -> cap_drop ALL"; echo "[3] network_mode: host -> 분리된 네트워크";
+    echo "[4] 평문 비밀번호 -> env_file"; echo "[5] / 마운트 -> named volume"; echo "[6] 추가:
+    read_only, no-new-privileges, 자원 제한"; echo "--- 파일 크기 비교 ---"; wc -l /tmp/insecure-compose.yml
+    /tmp/secure-compose.yml'''
+  answer_detail: 보안 설정은 파일 크기를 증가시키지만, 각 라인이 특정 위협을 방어합니다. IaC에서는 이런 보안 설정을 팀의 표준
+    템플릿으로 관리하고, 코드 리뷰에서 보안 항목을 체크리스트로 점검합니다.
   verify:
     type: output_contains
     expect: 보안 개선 항목
     field: stdout
     semantic:
-      intent: 'insecure vs secure compose 차이 분석 — echo 보안 개선 항목 6가지 나열 + wc -l 두 파일 비교. 개선: (1) latest→특정
-        버전 (2) privileged→cap_drop ALL (3) host network→분리 network (4) 평문 PW→env_file (5) / 마운트→named
-        volume (6) 추가 하드닝(read_only·no-new-privileges·resources). 보안 설정은 YAML line 수 증가하지만 각 라인이 특정 threat
-        방어. 표준 template 화로 규격 준수 관리'
+      intent: 'insecure vs secure compose 차이 분석 — echo 보안 개선 항목 6가지 나열 + wc -l 두 파일
+        비교. 개선: (1) latest→특정 버전 (2) privileged→cap_drop ALL (3) host network→분리 network
+        (4) 평문 PW→env_file (5) / 마운트→named volume (6) 추가 하드닝(read_only·no-new-privileges·resources).
+        보안 설정은 YAML line 수 증가하지만 각 라인이 특정 threat 방어. 표준 template 화로 규격 준수 관리'
       success_criteria:
       - 개선 항목 최소 6개 나열
       - 두 파일 크기 비교
@@ -158,10 +176,11 @@ steps:
       - 표준 템플릿 관리 개념 없음
       - PR 리뷰 연계 없음
   target_vm: web
-  script: 'echo "=== 보안 개선 항목 ==="; echo "[1] 이미지 태그: latest -> 특정 버전"; echo "[2] privileged: true ->
-    cap_drop ALL"; echo "[3] network_mode: host -> 분리된 네트워크"; echo "[4] 평문 비밀번호 -> env_file"; echo "[5]
-    / 마운트 -> named volume"; echo "[6] 추가: read_only, no-new-privileges, 자원 제한"; echo "--- 파일 크기 비교 ---";
-    wc -l /tmp/insecure-compose.yml /tmp/secure-compose.yml'''
+  script: 'echo "=== 보안 개선 항목 ==="; echo "[1] 이미지 태그: latest -> 특정 버전"; echo "[2]
+    privileged: true -> cap_drop ALL"; echo "[3] network_mode: host -> 분리된 네트워크";
+    echo "[4] 평문 비밀번호 -> env_file"; echo "[5] / 마운트 -> named volume"; echo "[6] 추가:
+    read_only, no-new-privileges, 자원 제한"; echo "--- 파일 크기 비교 ---"; wc -l /tmp/insecure-compose.yml
+    /tmp/secure-compose.yml'''
   risk_level: low
   bastion_prompt: 두 파일의 보안 설정 차이를 분석해줘
 - order: 4
@@ -171,22 +190,28 @@ steps:
   points: 10
   answer: '🤖 프롬프트: Docker Secrets를 활용한 민감 정보 관리 방법을 확인해줘
 
-    📎 참고 (CLI): echo "=== Docker Secrets 대안 ==="; echo "[방법1] env_file: .env 파일 분리 (.gitignore 추가 필수)";
-    echo -e "DB_PASSWORD=secure_pass_here\nAPI_KEY=key_here" > /tmp/.env.example; cat /tmp/.env.example;
-    echo ""; echo "[방법2] Docker Swarm Secrets"; docker secret ls 2>/dev/null || echo "Swarm 미활성 - secret
-    사용 불가"; echo "[방법3] 볼륨 마운트 시크릿"; echo "  volumes: [./secrets/db_pass:/run/secrets/db_pass:ro]"'''
-  answer_detail: '민감 정보 관리 방법: (1) env_file - 환경 변수 파일 분리, .gitignore에 추가하여 VCS에 커밋 방지, (2) Docker Swarm
-    Secrets - 암호화된 시크릿 관리, /run/secrets/에 마운트, (3) 외부 시크릿 매니저 - HashiCorp Vault, AWS Secrets Manager 연동.
-    절대 docker-compose.yml에 평문 비밀번호를 넣지 마세요.'
+    📎 참고 (CLI): echo "=== Docker Secrets 대안 ==="; echo "[방법1] env_file: .env 파일 분리
+    (.gitignore 추가 필수)"; echo -e "DB_PASSWORD=secure_pass_here\nAPI_KEY=key_here"
+    > /tmp/.env.example; cat /tmp/.env.example; echo ""; echo "[방법2] Docker Swarm
+    Secrets"; docker secret ls 2>/dev/null || echo "Swarm 미활성 - secret 사용 불가"; echo
+    "[방법3] 볼륨 마운트 시크릿"; echo "  volumes: [./secrets/db_pass:/run/secrets/db_pass:ro]"'''
+  answer_detail: '민감 정보 관리 방법: (1) env_file - 환경 변수 파일 분리, .gitignore에 추가하여 VCS에 커밋
+    방지, (2) Docker Swarm Secrets - 암호화된 시크릿 관리, /run/secrets/에 마운트, (3) 외부 시크릿 매니저
+    - HashiCorp Vault, AWS Secrets Manager 연동. 절대 docker-compose.yml에 평문 비밀번호를 넣지
+    마세요.'
   verify:
     type: output_contains
-    expect: Docker Secrets 대안
+    expect:
+    - Docker Secrets 대안
+    - shell
+    - Docker
     field: stdout
     semantic:
-      intent: 'Docker Secrets 3가지 방법 — (1) env_file: .env 분리 + .gitignore (2) Docker Swarm Secrets(docker
-        secret create + /run/secrets/ 마운트, tmpfs 기반) (3) Volume mount 읽기 전용(./secrets/db_pass:/run/secrets/db_pass:ro).
-        compose syntax: secrets: + services 에 secrets 참조. Swarm 모드 필수(단일 host 는 env_file 가 현실적). 궁극 대안:
-        HashiCorp Vault agent sidecar + Kubernetes Secrets(암호화 at rest + RBAC)'
+      intent: 'Docker Secrets 3가지 방법 — (1) env_file: .env 분리 + .gitignore (2) Docker
+        Swarm Secrets(docker secret create + /run/secrets/ 마운트, tmpfs 기반) (3) Volume
+        mount 읽기 전용(./secrets/db_pass:/run/secrets/db_pass:ro). compose syntax: secrets:
+        + services 에 secrets 참조. Swarm 모드 필수(단일 host 는 env_file 가 현실적). 궁극 대안: HashiCorp
+        Vault agent sidecar + Kubernetes Secrets(암호화 at rest + RBAC)'
       success_criteria:
       - 3가지 방법 설명
       - .env 파일 예시 생성
@@ -202,10 +227,11 @@ steps:
       - 3 방법 중 2개 이하
       - Vault/Secrets Manager 대안 없음
   target_vm: web
-  script: 'echo "=== Docker Secrets 대안 ==="; echo "[방법1] env_file: .env 파일 분리 (.gitignore 추가 필수)"; echo
-    -e "DB_PASSWORD=secure_pass_here\nAPI_KEY=key_here" > /tmp/.env.example; cat /tmp/.env.example; echo
-    ""; echo "[방법2] Docker Swarm Secrets"; docker secret ls 2>/dev/null || echo "Swarm 미활성 - secret 사용
-    불가"; echo "[방법3] 볼륨 마운트 시크릿"; echo "  volumes: [./secrets/db_pass:/run/secrets/db_pass:ro]"'''
+  script: 'echo "=== Docker Secrets 대안 ==="; echo "[방법1] env_file: .env 파일 분리 (.gitignore
+    추가 필수)"; echo -e "DB_PASSWORD=secure_pass_here\nAPI_KEY=key_here" > /tmp/.env.example;
+    cat /tmp/.env.example; echo ""; echo "[방법2] Docker Swarm Secrets"; docker secret
+    ls 2>/dev/null || echo "Swarm 미활성 - secret 사용 불가"; echo "[방법3] 볼륨 마운트 시크릿"; echo
+    "  volumes: [./secrets/db_pass:/run/secrets/db_pass:ro]"'''
   risk_level: low
   bastion_prompt: Docker Secrets를 활용한 민감 정보 관리 방법을 확인해줘
 - order: 5
@@ -215,20 +241,25 @@ steps:
   points: 10
   answer: '🤖 프롬프트: docker-compose.yml 파일의 버전 관리 보안을 점검하시오. Git에 민감 정보가 커밋되었는지 확인해줘
 
-    📎 참고 (CLI): echo "=== Git 보안 점검 시뮬레이션 ==="; echo "[.gitignore 권장 내용]"; echo -e ".env\n.env.*\n*.key\n*.pem\nsecrets/\n!.env.example"
-    | tee /tmp/.gitignore.example; echo ""; echo "[민감 파일 검색]"; find /tmp -name ".env*" -o -name "*.key"
-    -o -name "*secret*" 2>/dev/null | head -5'
-  answer_detail: IaC 보안에서 VCS(Git) 관리는 매우 중요합니다. .env 파일, 인증서, 키 파일이 실수로 커밋되면 Git 이력에 영구 보존됩니다. git-secrets,
-    truffleHog, gitleaks 같은 도구로 커밋 전 민감 정보를 스캔해야 합니다.
+    📎 참고 (CLI): echo "=== Git 보안 점검 시뮬레이션 ==="; echo "[.gitignore 권장 내용]"; echo -e
+    ".env\n.env.*\n*.key\n*.pem\nsecrets/\n!.env.example" | tee /tmp/.gitignore.example;
+    echo ""; echo "[민감 파일 검색]"; find /tmp -name ".env*" -o -name "*.key" -o -name
+    "*secret*" 2>/dev/null | head -5'
+  answer_detail: IaC 보안에서 VCS(Git) 관리는 매우 중요합니다. .env 파일, 인증서, 키 파일이 실수로 커밋되면 Git
+    이력에 영구 보존됩니다. git-secrets, truffleHog, gitleaks 같은 도구로 커밋 전 민감 정보를 스캔해야 합니다.
   verify:
     type: output_contains
-    expect: .gitignore 권장 내용
+    expect:
+    - .gitignore 권장 내용
+    - docker
+    - compose
     field: stdout
     semantic:
-      intent: 'Git 버전 관리 보안 점검 — .gitignore 권장 내용 출력 (.env, .env.*, *.key, *.pem, secrets/, !.env.example)
-        + find .env/.key/secret 파일 스캔. .env 실수 커밋 시 git history 영구 보존 → 공격자가 git log 로 추출. 사전 방어: git-secrets,
-        truffleHog, gitleaks (pre-commit hook). 이미 커밋된 secret 대응: git filter-branch 또는 BFG Repo-Cleaner
-        + credential rotation(반드시). Supply chain 공격 방어'
+      intent: 'Git 버전 관리 보안 점검 — .gitignore 권장 내용 출력 (.env, .env.*, *.key, *.pem,
+        secrets/, !.env.example) + find .env/.key/secret 파일 스캔. .env 실수 커밋 시 git history
+        영구 보존 → 공격자가 git log 로 추출. 사전 방어: git-secrets, truffleHog, gitleaks (pre-commit
+        hook). 이미 커밋된 secret 대응: git filter-branch 또는 BFG Repo-Cleaner + credential
+        rotation(반드시). Supply chain 공격 방어'
       success_criteria:
       - gitignore 권장 내용 출력
       - find 로 민감 파일 검색
@@ -245,8 +276,8 @@ steps:
       - credential rotation 필요성 미인지
   target_vm: web
   script: echo "=== Git 보안 점검 시뮬레이션 ==="; echo "[.gitignore 권장 내용]"; echo -e ".env\n.env.*\n*.key\n*.pem\nsecrets/\n!.env.example"
-    | tee /tmp/.gitignore.example; echo ""; echo "[민감 파일 검색]"; find /tmp -name ".env*" -o -name "*.key"
-    -o -name "*secret*" 2>/dev/null | head -5
+    | tee /tmp/.gitignore.example; echo ""; echo "[민감 파일 검색]"; find /tmp -name ".env*"
+    -o -name "*.key" -o -name "*secret*" 2>/dev/null | head -5
   risk_level: low
   bastion_prompt: docker-compose.yml 파일의 버전 관리 보안을 점검하시오. Git에 민감 정보가 커밋되었는지 확인해줘
 - order: 6
@@ -254,27 +285,30 @@ steps:
   hint: compose 파일의 보안 위험 패턴을 grep으로 검사하세요.
   category: audit
   points: 16
-  answer: "\U0001F916 프롬프트: docker-compose 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고 (CLI): cat << 'SCRIPT' > /tmp/iac_security.sh\n\
-    #!/bin/bash\necho '=== IaC(docker-compose) 보안 점검 ==='\nFILE=$1\n[ -z \"$FILE\" ] && FILE='/tmp/insecure-compose.yml'\n\
-    echo \"대상: $FILE\"\nFINDINGS=0\ncheck() {\n  COUNT=$(grep -c \"$2\" $FILE 2>/dev/null)\n  if [ \"\
-    $COUNT\" -gt 0 ]; then\n    echo \"  [FAIL] $1 ($COUNT건)\"\n    FINDINGS=$((FINDINGS+COUNT))\n  else\n\
-    \    echo \"  [PASS] $1\"\n  fi\n}\ncheck 'privileged 모드' 'privileged: true'\ncheck '평문 비밀번호' 'PASSWORD='\n\
-    check 'host 네트워크' 'network_mode: host'\ncheck 'latest 태그' ':latest'\ncheck '루트 볼륨 마운트' '- /:/'\ncheck\
-    \ 'docker.sock 마운트' 'docker.sock'\necho \"\"\necho \"총 발견사항: ${FINDINGS}건\"\necho '=== IaC 보안 점검 완료\
-    \ ==='\nSCRIPT\nscp /tmp/iac_security.sh ccc@10.20.30.80:/tmp/ 2>/dev/null; chmod +x /tmp/iac_security.sh\
-    \ && bash /tmp/iac_security.sh /tmp/insecure-compose.yml && echo \"--- 보안 버전 ---\" && bash /tmp/iac_security.sh\
-    \ /tmp/secure-compose.yml"
-  answer_detail: IaC 보안 점검 자동화는 DevSecOps의 핵심입니다. CI/CD 파이프라인에 이 스크립트를 통합하면 보안 이슈가 있는 설정이 배포되는 것을 사전에
-    차단할 수 있습니다. 실무에서는 checkov, kics, trivy-config 같은 전문 도구를 사용합니다.
+  answer: "\U0001F916 프롬프트: docker-compose 구현 방법과 예시를 설명해줘\n\U0001F4CE 참고 (CLI): cat\
+    \ << 'SCRIPT' > /tmp/iac_security.sh\n#!/bin/bash\necho '=== IaC(docker-compose)\
+    \ 보안 점검 ==='\nFILE=$1\n[ -z \"$FILE\" ] && FILE='/tmp/insecure-compose.yml'\n\
+    echo \"대상: $FILE\"\nFINDINGS=0\ncheck() {\n  COUNT=$(grep -c \"$2\" $FILE 2>/dev/null)\n\
+    \  if [ \"$COUNT\" -gt 0 ]; then\n    echo \"  [FAIL] $1 ($COUNT건)\"\n    FINDINGS=$((FINDINGS+COUNT))\n\
+    \  else\n    echo \"  [PASS] $1\"\n  fi\n}\ncheck 'privileged 모드' 'privileged:\
+    \ true'\ncheck '평문 비밀번호' 'PASSWORD='\ncheck 'host 네트워크' 'network_mode: host'\n\
+    check 'latest 태그' ':latest'\ncheck '루트 볼륨 마운트' '- /:/'\ncheck 'docker.sock 마운트'\
+    \ 'docker.sock'\necho \"\"\necho \"총 발견사항: ${FINDINGS}건\"\necho '=== IaC 보안 점검\
+    \ 완료 ==='\nSCRIPT\nscp /tmp/iac_security.sh ccc@10.20.30.80:/tmp/ 2>/dev/null;\
+    \ chmod +x /tmp/iac_security.sh && bash /tmp/iac_security.sh /tmp/insecure-compose.yml\
+    \ && echo \"--- 보안 버전 ---\" && bash /tmp/iac_security.sh /tmp/secure-compose.yml"
+  answer_detail: IaC 보안 점검 자동화는 DevSecOps의 핵심입니다. CI/CD 파이프라인에 이 스크립트를 통합하면 보안 이슈가
+    있는 설정이 배포되는 것을 사전에 차단할 수 있습니다. 실무에서는 checkov, kics, trivy-config 같은 전문 도구를 사용합니다.
   verify:
     type: output_contains
     expect: IaC 보안 점검 완료
     field: stdout
     semantic:
-      intent: 'IaC 자동 점검 스크립트 — /tmp/iac_security.sh heredoc: check 함수(패턴 grep + PASS/FAIL + 카운트) + 6
-        패턴 체크(privileged: true / PASSWORD= / network_mode: host / :latest / - /:/ / docker.sock). insecure
-        + secure 파일 양쪽 실행으로 diff 검증. DevSecOps shift-left: CI 에 통합해 PR 차단. 실무 도구: Checkov(comprehensive),
-        KICS(multi-IaC), Trivy config(빠름), Terrascan(OPA 기반). Compliance-as-Code'
+      intent: 'IaC 자동 점검 스크립트 — /tmp/iac_security.sh heredoc: check 함수(패턴 grep + PASS/FAIL
+        + 카운트) + 6 패턴 체크(privileged: true / PASSWORD= / network_mode: host / :latest
+        / - /:/ / docker.sock). insecure + secure 파일 양쪽 실행으로 diff 검증. DevSecOps shift-left:
+        CI 에 통합해 PR 차단. 실무 도구: Checkov(comprehensive), KICS(multi-IaC), Trivy config(빠름),
+        Terrascan(OPA 기반). Compliance-as-Code'
       success_criteria:
       - /tmp/iac_security.sh 생성
       - bash 실행 + 양쪽 파일
@@ -290,22 +324,24 @@ steps:
       - PASS/FAIL 판정 없음
       - CI 통합 가이드 없음
   target_vm: web
-  script: "cat << 'SCRIPT' > /tmp/iac_security.sh\n#!/bin/bash\necho '=== IaC(docker-compose) 보안 점검 ==='\n\
-    FILE=$1\n[ -z \"$FILE\" ] && FILE='/tmp/insecure-compose.yml'\necho \"대상: $FILE\"\nFINDINGS=0\ncheck()\
-    \ {\n  COUNT=$(grep -c \"$2\" $FILE 2>/dev/null)\n  if [ \"$COUNT\" -gt 0 ]; then\n    echo \"  [FAIL]\
-    \ $1 ($COUNT건)\"\n    FINDINGS=$((FINDINGS+COUNT))\n  else\n    echo \"  [PASS] $1\"\n  fi\n}\ncheck\
-    \ 'privileged 모드' 'privileged: true'\ncheck '평문 비밀번호' 'PASSWORD='\ncheck 'host 네트워크' 'network_mode:\
-    \ host'\ncheck 'latest 태그' ':latest'\ncheck '루트 볼륨 마운트' '- /:/'\ncheck 'docker.sock 마운트' 'docker.sock'\n\
-    echo \"\"\necho \"총 발견사항: ${FINDINGS}건\"\necho '=== IaC 보안 점검 완료 ==='\nSCRIPT\nscp /tmp/iac_security.sh\
-    \ ccc@10.20.30.80:/tmp/ 2>/dev/null; chmod +x /tmp/iac_security.sh && bash /tmp/iac_security.sh /tmp/insecure-compose.yml\
+  script: "cat << 'SCRIPT' > /tmp/iac_security.sh\n#!/bin/bash\necho '=== IaC(docker-compose)\
+    \ 보안 점검 ==='\nFILE=$1\n[ -z \"$FILE\" ] && FILE='/tmp/insecure-compose.yml'\n\
+    echo \"대상: $FILE\"\nFINDINGS=0\ncheck() {\n  COUNT=$(grep -c \"$2\" $FILE 2>/dev/null)\n\
+    \  if [ \"$COUNT\" -gt 0 ]; then\n    echo \"  [FAIL] $1 ($COUNT건)\"\n    FINDINGS=$((FINDINGS+COUNT))\n\
+    \  else\n    echo \"  [PASS] $1\"\n  fi\n}\ncheck 'privileged 모드' 'privileged:\
+    \ true'\ncheck '평문 비밀번호' 'PASSWORD='\ncheck 'host 네트워크' 'network_mode: host'\n\
+    check 'latest 태그' ':latest'\ncheck '루트 볼륨 마운트' '- /:/'\ncheck 'docker.sock 마운트'\
+    \ 'docker.sock'\necho \"\"\necho \"총 발견사항: ${FINDINGS}건\"\necho '=== IaC 보안 점검\
+    \ 완료 ==='\nSCRIPT\nscp /tmp/iac_security.sh ccc@10.20.30.80:/tmp/ 2>/dev/null;\
+    \ chmod +x /tmp/iac_security.sh && bash /tmp/iac_security.sh /tmp/insecure-compose.yml\
     \ && echo \"--- 보안 버전 ---\" && bash /tmp/iac_security.sh /tmp/secure-compose.yml"
   risk_level: low
   bastion_prompt: docker-compose.yml의 보안 자동 점검 스크립트를 작성하고 실행하시오.
 - order: 99
   instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: "web VM에서 다음 작업들을 순서대로 수행해줘:\n1) WEB 서버(10 \n2) 보안이 적용된 docker-compose \n3) 두 파일의 보안\
-    \ 설정 차이를 분석해줘\n4) Docker Secrets를 활용한 민감 정보 관리 방법을 확인해줘\n5) docker-compose.yml 파일의 버전 관리 보안을 점검하시오.\
-    \ Git에 민감 정보가 커밋되었는지 확인 작업을 수행해줘"
+  bastion_prompt: "web VM에서 다음 작업들을 순서대로 수행해줘:\n1) WEB 서버(10 \n2) 보안이 적용된 docker-compose\
+    \ \n3) 두 파일의 보안 설정 차이를 분석해줘\n4) Docker Secrets를 활용한 민감 정보 관리 방법을 확인해줘\n5) docker-compose.yml\
+    \ 파일의 버전 관리 보안을 점검하시오. Git에 민감 정보가 커밋되었는지 확인 작업을 수행해줘"
   hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
   category: multi_task
   points: 50
@@ -329,8 +365,9 @@ steps:
       - audit 누락
   target_vm: web
   risk_level: low
-  answer: "\U0001F916 프롬프트: web VM에서 다음 작업들을 순서대로 수행해줘:\n1) WEB 서버(10 \n2) 보안이 적용된 docker-compose \n3)\
-    \ 두 파일의 보안 설정 차이를 분석해줘\n4) Docker Secrets를 활용한 민감 정보 관리 방법을 확인해줘\n5) docker-compose.yml 파일의 버전 관리\
-    \ 보안을 점검하시오. Git에 민감 정보가 커밋되었는지 확인 작업을 수행해줘"
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
+  answer: "\U0001F916 프롬프트: web VM에서 다음 작업들을 순서대로 수행해줘:\n1) WEB 서버(10 \n2) 보안이 적용된\
+    \ docker-compose \n3) 두 파일의 보안 설정 차이를 분석해줘\n4) Docker Secrets를 활용한 민감 정보 관리 방법을\
+    \ 확인해줘\n5) docker-compose.yml 파일의 버전 관리 보안을 점검하시오. Git에 민감 정보가 커밋되었는지 확인 작업을 수행해줘"
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
   script: ''

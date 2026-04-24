@@ -3,8 +3,8 @@ title: 상관분석 - 다중 소스 이벤트 연계 분석 (AI 지원)
 version: ai
 course: soc-ai
 week: 5
-description: Wazuh 알림, Suricata IDS 이벤트, 시스템 로그를 교차 분석하여 단일 이벤트로는 보이지 않는 공격 패턴을 식별하는 상관분석 기법을 학습합니다. AI
-  SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
+description: Wazuh 알림, Suricata IDS 이벤트, 시스템 로그를 교차 분석하여 단일 이벤트로는 보이지 않는 공격 패턴을 식별하는
+  상관분석 기법을 학습합니다. AI SubAgent가 자동으로 명령을 실행하고 결과를 검증합니다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -20,16 +20,21 @@ steps:
   points: 8
   answer: '🤖 프롬프트: SIEM VM에서 알림 로그의 소스 IP 주소별 이벤트 발생 빈도를 집계해줘
 
-    📎 참고 (CLI): grep -oP "Src IP: \S+" /var/ossec/logs/alerts/alerts.log | sort | uniq -c | sort -rn |
-    head -10'
-  answer_detail: 소스 IP별 이벤트 빈도 분석은 상관분석의 시작점입니다. 특정 IP에서 비정상적으로 많은 이벤트가 발생하면 공격 가능성이 높습니다.
+    📎 참고 (CLI): grep -oP "Src IP: \S+" /var/ossec/logs/alerts/alerts.log | sort |
+    uniq -c | sort -rn | head -10'
+  answer_detail: 소스 IP별 이벤트 빈도 분석은 상관분석의 시작점입니다. 특정 IP에서 비정상적으로 많은 이벤트가 발생하면 공격 가능성이
+    높습니다.
   verify:
     type: output_contains
-    expect: Src IP
+    expect:
+    - Src IP
+    - device
+    - veth0f28da9
     field: stdout
     semantic:
-      intent: '소스 IP 별 이벤트 빈도 — grep -oP Src IP: \S+ alerts.log | sort | uniq -c | sort -rn | head -10
-        으로 Wazuh 알림의 src_ip 추출 + Top 10. 상관분석의 시작점: 한 IP 에 여러 이벤트 집중 = 공격자 후보'
+      intent: '소스 IP 별 이벤트 빈도 — grep -oP Src IP: \S+ alerts.log | sort | uniq -c |
+        sort -rn | head -10 으로 Wazuh 알림의 src_ip 추출 + Top 10. 상관분석의 시작점: 한 IP 에 여러
+        이벤트 집중 = 공격자 후보'
       success_criteria:
       - grep -oP Src IP
       - Top 10 집계
@@ -41,8 +46,8 @@ steps:
       - IP 추출 없이 전체 로그
       - 정렬 없음
   target_vm: siem
-  script: 'grep -oP "Src IP: \S+" /var/ossec/logs/alerts/alerts.log | sort | uniq -c | sort -rn | head
-    -10'
+  script: 'grep -oP "Src IP: \S+" /var/ossec/logs/alerts/alerts.log | sort | uniq
+    -c | sort -rn | head -10'
   risk_level: low
   bastion_prompt: SIEM VM에서 알림 로그의 소스 IP 주소별 이벤트 발생 빈도를 집계해줘
 - order: 2
@@ -52,16 +57,17 @@ steps:
   points: 10
   answer: '🤖 프롬프트: SIEM VM에서 특정 IP(10.20.30.201, ATTACKER)에서 발생한 모든 알림을 시간순으로 추출해줘
 
-    📎 참고 (CLI): grep -B 2 -A 5 "10.20.30.201" /var/ossec/logs/alerts/alerts.log | tail -40'
-  answer_detail: ATTACKER VM(10.20.30.201)에서 발생한 이벤트를 시간순으로 나열하면 공격 진행 단계(정찰->스캔->침투시도)를 파악할 수 있습니다. 이것이
-    IP 기반 상관분석입니다.
+    📎 참고 (CLI): grep -B 2 -A 5 "10.20.30.201" /var/ossec/logs/alerts/alerts.log |
+    tail -40'
+  answer_detail: ATTACKER VM(10.20.30.201)에서 발생한 이벤트를 시간순으로 나열하면 공격 진행 단계(정찰->스캔->침투시도)를
+    파악할 수 있습니다. 이것이 IP 기반 상관분석입니다.
   verify:
     type: output_contains
     expect: 10.20.30.201
     field: stdout
     semantic:
-      intent: ATTACKER IP 시간순 알림 — grep -B 2 -A 5 10.20.30.201 alerts.log | tail -40 으로 공격자 활동 타임라인. 정찰→스캔→침투시도
-        단계별 전개 관찰. IP-based 상관분석의 핵심
+      intent: ATTACKER IP 시간순 알림 — grep -B 2 -A 5 10.20.30.201 alerts.log | tail -40
+        으로 공격자 활동 타임라인. 정찰→스캔→침투시도 단계별 전개 관찰. IP-based 상관분석의 핵심
       success_criteria:
       - 10.20.30.201 필터
       - -B -A context
@@ -81,18 +87,21 @@ steps:
   hint: Suricata의 eve.json에서 ATTACKER IP를 검색하세요.
   category: analysis
   points: 10
-  answer: '🤖 프롬프트: SECU VM의 Suricata 로그에서 ATTACKER IP(10.20.30.201)와 관련된 IDS 이벤트를 확인해줘
+  answer: '🤖 프롬프트: SECU VM의 Suricata 로그에서 ATTACKER IP(10.20.30.201)와 관련된 IDS 이벤트를
+    확인해줘
 
-    📎 참고 (CLI): grep "10.20.30.201" /var/log/suricata/eve.json 2>/dev/null | tail -10'
-  answer_detail: Wazuh 알림과 Suricata IDS 이벤트를 동일 IP로 교차 분석하면 공격의 전체 그림을 파악할 수 있습니다. SIEM에서 탐지하지 못한 네트워크
-    레벨 공격을 Suricata가 보완합니다.
+    📎 참고 (CLI): grep "10.20.30.201" /var/log/suricata/eve.json 2>/dev/null | tail
+    -10'
+  answer_detail: Wazuh 알림과 Suricata IDS 이벤트를 동일 IP로 교차 분석하면 공격의 전체 그림을 파악할 수 있습니다.
+    SIEM에서 탐지하지 못한 네트워크 레벨 공격을 Suricata가 보완합니다.
   verify:
     type: output_contains
     expect: 10.20.30.201
     field: stdout
     semantic:
-      intent: Suricata 교차 확인 — grep 10.20.30.201 /var/log/suricata/eve.json | tail -10 으로 네트워크 IDS 관점의
-        동일 IP 이벤트. Wazuh(host) + Suricata(network) 양쪽 모두 있으면 multi-layer 확증. gap 식별
+      intent: Suricata 교차 확인 — grep 10.20.30.201 /var/log/suricata/eve.json | tail
+        -10 으로 네트워크 IDS 관점의 동일 IP 이벤트. Wazuh(host) + Suricata(network) 양쪽 모두 있으면 multi-layer
+        확증. gap 식별
       success_criteria:
       - Suricata eve.json 검색
       - 동일 ATTACKER IP
@@ -107,22 +116,29 @@ steps:
   risk_level: low
   bastion_prompt: SECU VM의 Suricata 로그에서 ATTACKER IP(10.20.30.201)와 관련된 IDS 이벤트를 확인해줘
 - order: 4
-  instruction: Wazuh 룰셋에서 복합 조건을 사용하는 상관분석 룰의 예시를 찾으시오. if_matched_sid 또는 frequency 키워드가 포함된 룰을 검색하시오.
+  instruction: Wazuh 룰셋에서 복합 조건을 사용하는 상관분석 룰의 예시를 찾으시오. if_matched_sid 또는 frequency
+    키워드가 포함된 룰을 검색하시오.
   hint: /var/ossec/ruleset/rules/ 에서 if_matched_sid를 grep하세요.
   category: analysis
   points: 10
-  answer: '🤖 프롬프트: Wazuh 룰셋에서 복합 조건을 사용하는 상관분석 룰의 예시를 찾으시오. if_matched_sid 또는 frequency 키워드가 포함된 룰을 검색해줘
+  answer: '🤖 프롬프트: Wazuh 룰셋에서 복합 조건을 사용하는 상관분석 룰의 예시를 찾으시오. if_matched_sid 또는 frequency
+    키워드가 포함된 룰을 검색해줘
 
-    📎 참고 (CLI): grep -l "if_matched_sid\|frequency" /var/ossec/ruleset/rules/*.xml | head -5'
-  answer_detail: if_matched_sid는 이전에 특정 룰이 매칭된 후 같은 소스에서 추가 이벤트가 발생할 때 트리거됩니다. frequency는 일정 시간 내 반복 횟수를
-    지정합니다. 이것이 Wazuh의 상관분석 메커니즘입니다.
+    📎 참고 (CLI): grep -l "if_matched_sid\|frequency" /var/ossec/ruleset/rules/*.xml
+    | head -5'
+  answer_detail: if_matched_sid는 이전에 특정 룰이 매칭된 후 같은 소스에서 추가 이벤트가 발생할 때 트리거됩니다. frequency는
+    일정 시간 내 반복 횟수를 지정합니다. 이것이 Wazuh의 상관분석 메커니즘입니다.
   verify:
     type: output_contains
-    expect: .xml
+    expect:
+    - .xml
+    - file_manage
+    - if_matched_sid
     field: stdout
     semantic:
-      intent: 복합 룰 검색 — grep -l if_matched_sid|frequency /var/ossec/ruleset/rules/*.xml | head -5. Wazuh
-        상관분석 룰 (이전 SID 매칭 + 빈도 조건) 예시 파일 식별. 0040·0200·0045 등 파일에 다수. 시그니처 기반 탐지의 composite pattern
+      intent: 복합 룰 검색 — grep -l if_matched_sid|frequency /var/ossec/ruleset/rules/*.xml
+        | head -5. Wazuh 상관분석 룰 (이전 SID 매칭 + 빈도 조건) 예시 파일 식별. 0040·0200·0045 등 파일에
+        다수. 시그니처 기반 탐지의 composite pattern
       success_criteria:
       - grep -l if_matched_sid|frequency
       - .xml 파일 나열
@@ -133,9 +149,11 @@ steps:
       - 단일 룰만
       - if_matched 개념 없음
   target_vm: siem
-  script: grep -l "if_matched_sid\|frequency" /var/ossec/ruleset/rules/*.xml | head -5
+  script: grep -l "if_matched_sid\|frequency" /var/ossec/ruleset/rules/*.xml | head
+    -5
   risk_level: low
-  bastion_prompt: Wazuh 룰셋에서 복합 조건을 사용하는 상관분석 룰의 예시를 찾으시오. if_matched_sid 또는 frequency 키워드가 포함된 룰을 검색해줘
+  bastion_prompt: Wazuh 룰셋에서 복합 조건을 사용하는 상관분석 룰의 예시를 찾으시오. if_matched_sid 또는 frequency
+    키워드가 포함된 룰을 검색해줘
 - order: 5
   instruction: Wazuh의 SSH 브루트포스 탐지 룰(룰 ID 5712)의 상관분석 로직을 확인하시오.
   hint: sshd_rules.xml에서 룰 5712를 찾으세요.
@@ -144,15 +162,16 @@ steps:
   answer: '🤖 프롬프트: Wazuh의 SSH 브루트포스 탐지 룰(룰 ID 5712)의 상관분석 로직을 확인해줘
 
     📎 참고 (CLI): grep -A 10 "id=\"5712\"" /var/ossec/ruleset/rules/0095-sshd_rules.xml'
-  answer_detail: 룰 5712는 frequency와 timeframe을 사용하여 일정 시간 내 SSH 로그인 실패가 반복되면 브루트포스로 판정합니다. 단일 실패 이벤트와
-    달리 반복 패턴을 탐지하는 상관분석 룰입니다.
+  answer_detail: 룰 5712는 frequency와 timeframe을 사용하여 일정 시간 내 SSH 로그인 실패가 반복되면 브루트포스로
+    판정합니다. 단일 실패 이벤트와 달리 반복 패턴을 탐지하는 상관분석 룰입니다.
   verify:
     type: output_contains
     expect: frequency
     field: stdout
     semantic:
-      intent: Rule 5712 SSH 브루트포스 — grep -A 10 id="5712" 0095-sshd_rules.xml 로 frequency=8 + timeframe=120
-        (2분 내 8회 실패) 조건 확인. 단일 이벤트(5503) + 빈도 조건 조합의 전형. 상관분석 룰 실물 분석
+      intent: Rule 5712 SSH 브루트포스 — grep -A 10 id="5712" 0095-sshd_rules.xml 로 frequency=8
+        + timeframe=120 (2분 내 8회 실패) 조건 확인. 단일 이벤트(5503) + 빈도 조건 조합의 전형. 상관분석 룰 실물
+        분석
       success_criteria:
       - id=5712 매칭
       - frequency 키워드
@@ -173,15 +192,18 @@ steps:
   points: 10
   answer: '🤖 프롬프트: WEB VM의 Apache 접근 로그에서 동일 IP의 연속 요청 패턴을 분석하시오. IP별 요청 수를 집계해줘
 
-    📎 참고 (CLI): awk "{print \$1}" /var/log/apache2/access.log | sort | uniq -c | sort -rn | head -10'
-  answer_detail: 웹 접근 로그에서 IP별 요청 빈도를 분석하면 스캐닝이나 자동화 공격을 식별할 수 있습니다. 정상 사용자 대비 비정상적으로 많은 요청은 의심 대상입니다.
+    📎 참고 (CLI): awk "{print \$1}" /var/log/apache2/access.log | sort | uniq -c | sort
+    -rn | head -10'
+  answer_detail: 웹 접근 로그에서 IP별 요청 빈도를 분석하면 스캐닝이나 자동화 공격을 식별할 수 있습니다. 정상 사용자 대비 비정상적으로
+    많은 요청은 의심 대상입니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: Apache IP 별 요청 집계 — awk {print $1} access.log | sort | uniq -c | sort -rn | head -10. Combined
-        Log 의 첫 필드(IP) 추출. 정상 사용자 N 건 vs 스캐너 수천 건. 비정상 burst 식별
+      intent: Apache IP 별 요청 집계 — awk {print $1} access.log | sort | uniq -c | sort
+        -rn | head -10. Combined Log 의 첫 필드(IP) 추출. 정상 사용자 N 건 vs 스캐너 수천 건. 비정상 burst
+        식별
       success_criteria:
       - awk $1 필드
       - uniq -c + 정렬
@@ -193,7 +215,8 @@ steps:
       - IP 필드 오판
       - Top N 없이 전체
   target_vm: siem
-  script: awk "{print \$1}" /var/log/apache2/access.log | sort | uniq -c | sort -rn | head -10
+  script: awk "{print \$1}" /var/log/apache2/access.log | sort | uniq -c | sort -rn
+    | head -10
   risk_level: low
   bastion_prompt: WEB VM의 Apache 접근 로그에서 동일 IP의 연속 요청 패턴을 분석하시오. IP별 요청 수를 집계해줘
 - order: 7
@@ -203,17 +226,18 @@ steps:
   points: 10
   answer: '🤖 프롬프트: WEB VM의 Apache 로그에서 HTTP 상태코드 4xx(클라이언트 오류)와 5xx(서버 오류) 응답을 집계해줘
 
-    📎 참고 (CLI): awk "{print \$9}" /var/log/apache2/access.log | grep -E "^[45]" | sort | uniq -c | sort
-    -rn'
-  answer_detail: 4xx 오류(특히 403, 404)가 특정 IP에서 대량 발생하면 디렉토리 스캔이나 취약점 탐색 시도입니다. 5xx 오류는 서버 측 문제로, 공격으로 인한
-    서비스 장애 가능성을 나타냅니다.
+    📎 참고 (CLI): awk "{print \$9}" /var/log/apache2/access.log | grep -E "^[45]" |
+    sort | uniq -c | sort -rn'
+  answer_detail: 4xx 오류(특히 403, 404)가 특정 IP에서 대량 발생하면 디렉토리 스캔이나 취약점 탐색 시도입니다. 5xx
+    오류는 서버 측 문제로, 공격으로 인한 서비스 장애 가능성을 나타냅니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: HTTP 4xx/5xx 오류 집계 — awk {print $9} access.log | grep -E ^[45] | sort | uniq -c | sort -rn.
-        9번째 필드=상태코드, 4xx(클라이언트)+5xx(서버) 필터. 403/404 대량 = dir scan, 500 = exploit 시도 징후
+      intent: HTTP 4xx/5xx 오류 집계 — awk {print $9} access.log | grep -E ^[45] | sort
+        | uniq -c | sort -rn. 9번째 필드=상태코드, 4xx(클라이언트)+5xx(서버) 필터. 403/404 대량 = dir
+        scan, 500 = exploit 시도 징후
       success_criteria:
       - $9 상태코드
       - 4xx/5xx grep
@@ -225,7 +249,8 @@ steps:
       - 전체 상태코드 (2xx 포함)
       - 해석 없음
   target_vm: siem
-  script: awk "{print \$9}" /var/log/apache2/access.log | grep -E "^[45]" | sort | uniq -c | sort -rn
+  script: awk "{print \$9}" /var/log/apache2/access.log | grep -E "^[45]" | sort |
+    uniq -c | sort -rn
   risk_level: low
   bastion_prompt: WEB VM의 Apache 로그에서 HTTP 상태코드 4xx(클라이언트 오류)와 5xx(서버 오류) 응답을 집계해줘
 - order: 8
@@ -235,18 +260,18 @@ steps:
   points: 15
   answer: '🤖 프롬프트: SIEM VM에서 동일 소스 IP에서 SSH 실패와 웹 공격이 모두 발생한 경우를 찾는 상관분석을 수행해줘
 
-    📎 참고 (CLI): comm -12 <(grep -i "ssh\|authentication" /var/ossec/logs/alerts/alerts.log | grep -oP
-    "Src IP: \S+" | sort -u) <(grep -i "web\|apache\|http" /var/ossec/logs/alerts/alerts.log | grep -oP
-    "Src IP: \S+" | sort -u)'
-  answer_detail: 두 가지 다른 공격 카테고리(SSH, 웹)에서 동일 IP가 발견되면 조직적 공격의 강력한 지표입니다. 이것이 크로스-카테고리 상관분석으로, SOC에서 우선순위를
-    높여 대응해야 합니다.
+    📎 참고 (CLI): comm -12 <(grep -i "ssh\|authentication" /var/ossec/logs/alerts/alerts.log
+    | grep -oP "Src IP: \S+" | sort -u) <(grep -i "web\|apache\|http" /var/ossec/logs/alerts/alerts.log
+    | grep -oP "Src IP: \S+" | sort -u)'
+  answer_detail: 두 가지 다른 공격 카테고리(SSH, 웹)에서 동일 IP가 발견되면 조직적 공격의 강력한 지표입니다. 이것이 크로스-카테고리
+    상관분석으로, SOC에서 우선순위를 높여 대응해야 합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: SSH + 웹 공격 IP 교집합 — comm -12 <(SSH IP 추출 | sort -u) <(웹 공격 IP 추출 | sort -u) 로 두 공격 카테고리에
-        모두 등장한 IP 식별. cross-category 공격자 = 조직적 공격 지표. 우선 대응
+      intent: SSH + 웹 공격 IP 교집합 — comm -12 <(SSH IP 추출 | sort -u) <(웹 공격 IP 추출 | sort
+        -u) 로 두 공격 카테고리에 모두 등장한 IP 식별. cross-category 공격자 = 조직적 공격 지표. 우선 대응
       success_criteria:
       - comm -12 두 집합 교집합
       - SSH + 웹 양쪽 필터
@@ -258,9 +283,9 @@ steps:
       - 한 카테고리만
       - 교집합 개념 없음
   target_vm: siem
-  script: 'comm -12 <(grep -i "ssh\|authentication" /var/ossec/logs/alerts/alerts.log | grep -oP "Src
-    IP: \S+" | sort -u) <(grep -i "web\|apache\|http" /var/ossec/logs/alerts/alerts.log | grep -oP "Src
-    IP: \S+" | sort -u)'
+  script: 'comm -12 <(grep -i "ssh\|authentication" /var/ossec/logs/alerts/alerts.log
+    | grep -oP "Src IP: \S+" | sort -u) <(grep -i "web\|apache\|http" /var/ossec/logs/alerts/alerts.log
+    | grep -oP "Src IP: \S+" | sort -u)'
   risk_level: low
   bastion_prompt: SIEM VM에서 동일 소스 IP에서 SSH 실패와 웹 공격이 모두 발생한 경우를 찾는 상관분석을 수행해줘
 - order: 9
@@ -270,17 +295,18 @@ steps:
   points: 10
   answer: '🤖 프롬프트: SECU VM에서 nftables 방화벽 로그를 확인하여 차단된 트래픽의 소스 IP를 분석해줘
 
-    📎 참고 (CLI): grep -i "nft\|nftables\|drop\|reject" /var/log/syslog /var/log/kern.log 2>/dev/null |
-    tail -15'
-  answer_detail: 방화벽 차단 로그를 SIEM 알림, IDS 이벤트와 함께 분석하면 공격의 전체 라이프사이클을 파악할 수 있습니다. 차단된 IP가 다른 경로로 우회 시도하는지
-    확인합니다.
+    📎 참고 (CLI): grep -i "nft\|nftables\|drop\|reject" /var/log/syslog /var/log/kern.log
+    2>/dev/null | tail -15'
+  answer_detail: 방화벽 차단 로그를 SIEM 알림, IDS 이벤트와 함께 분석하면 공격의 전체 라이프사이클을 파악할 수 있습니다. 차단된
+    IP가 다른 경로로 우회 시도하는지 확인합니다.
   verify:
     type: output_contains
     expect: ''
     field: stdout
     semantic:
-      intent: nftables 차단 로그 — grep -i nft|nftables|drop|reject syslog kern.log | tail -15 으로 커널 방화벽 차단
-        패킷 로그. [NFT-DROP] prefix 포함 시 상세 분석. SIEM + IDS + FW 3-tier 상관
+      intent: nftables 차단 로그 — grep -i nft|nftables|drop|reject syslog kern.log |
+        tail -15 으로 커널 방화벽 차단 패킷 로그. [NFT-DROP] prefix 포함 시 상세 분석. SIEM + IDS + FW
+        3-tier 상관
       success_criteria:
       - nft 또는 drop/reject 필터
       - kern.log 또는 syslog
@@ -292,7 +318,8 @@ steps:
       - syslog 재확인
       - FW 차단 개념 없음
   target_vm: siem
-  script: grep -i "nft\|nftables\|drop\|reject" /var/log/syslog /var/log/kern.log 2>/dev/null | tail -15
+  script: grep -i "nft\|nftables\|drop\|reject" /var/log/syslog /var/log/kern.log
+    2>/dev/null | tail -15
   risk_level: low
   bastion_prompt: SECU VM에서 nftables 방화벽 로그를 확인하여 차단된 트래픽의 소스 IP를 분석해줘
 - order: 99
@@ -305,7 +332,8 @@ steps:
 
     3) SECU VM의 Suricata 로그에서 ATTACKER IP(10.20.30.201)와 관련된 IDS 이벤트를 확인해줘
 
-    4) Wazuh 룰셋에서 복합 조건을 사용하는 상관분석 룰의 예시를 찾으시오. if_matched_sid 또는 frequency 키워드가 포함된 룰을 검색해줘
+    4) Wazuh 룰셋에서 복합 조건을 사용하는 상관분석 룰의 예시를 찾으시오. if_matched_sid 또는 frequency 키워드가 포함된
+    룰을 검색해줘
 
     5) Wazuh의 SSH 브루트포스 탐지 룰(룰 ID 5712)의 상관분석 로직을 확인해줘'
   hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
@@ -316,7 +344,8 @@ steps:
     expect: ''
     field: stdout
     semantic:
-      intent: '[통합] 상관분석 5작업 — multi-source/frequency/timeframe/aggregate/audit 통합. if_matched_sid.'
+      intent: '[통합] 상관분석 5작업 — multi-source/frequency/timeframe/aggregate/audit 통합.
+        if_matched_sid.'
       success_criteria:
       - 5 상관 작업
       - 매치
@@ -339,8 +368,10 @@ steps:
 
     3) SECU VM의 Suricata 로그에서 ATTACKER IP(10.20.30.201)와 관련된 IDS 이벤트를 확인해줘
 
-    4) Wazuh 룰셋에서 복합 조건을 사용하는 상관분석 룰의 예시를 찾으시오. if_matched_sid 또는 frequency 키워드가 포함된 룰을 검색해줘
+    4) Wazuh 룰셋에서 복합 조건을 사용하는 상관분석 룰의 예시를 찾으시오. if_matched_sid 또는 frequency 키워드가 포함된
+    룰을 검색해줘
 
     5) Wazuh의 SSH 브루트포스 탐지 룰(룰 ID 5712)의 상관분석 로직을 확인해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는 다단계 작업.
+  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
+    다단계 작업.
   script: ''
