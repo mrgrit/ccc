@@ -2432,6 +2432,118 @@ def force_end_battle(bid: str, request: Request):
             updated = cur.fetchone()
     return {"status": "force_ended", "battle": dict(updated)}
 
+def _bastion_get(path: str, params: dict | None = None) -> dict:
+    """Bastion API GET 프록시 헬퍼 — 실패해도 app 죽지 않게."""
+    import httpx
+    bastion_url = os.getenv("BASTION_URL", "http://192.168.0.115:8003").rstrip("/")
+    try:
+        r = httpx.get(f"{bastion_url}{path}", params=params or {}, timeout=15.0)
+        return r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
+    except Exception as e:
+        return {"error": f"bastion unavailable: {e}", "bastion_url": bastion_url}
+
+
+def _bastion_method(method: str, path: str, json_body: dict | None = None) -> dict:
+    import httpx
+    bastion_url = os.getenv("BASTION_URL", "http://192.168.0.115:8003").rstrip("/")
+    try:
+        r = httpx.request(method, f"{bastion_url}{path}", json=json_body, timeout=30.0)
+        return r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
+    except Exception as e:
+        return {"error": f"bastion unavailable: {e}", "bastion_url": bastion_url}
+
+
+# ── Knowledge Graph 프록시 (admin only) ─────────────────────────────────────
+
+def _require_admin(request: Request):
+    user = get_current_user(request)
+    if user.get("role") not in ("admin", "instructor"):
+        raise HTTPException(403, "Admin only")
+
+
+@app.get("/graph/stats", dependencies=[Depends(verify_api_key)])
+def kg_stats(request: Request):
+    _require_admin(request)
+    return _bastion_get("/graph/stats")
+
+
+@app.get("/graph/nodes", dependencies=[Depends(verify_api_key)])
+def kg_nodes(request: Request, types: str = "", limit: int = 500):
+    _require_admin(request)
+    return _bastion_get("/graph/nodes", {"types": types, "limit": limit})
+
+
+@app.get("/graph/edges", dependencies=[Depends(verify_api_key)])
+def kg_edges(request: Request, types: str = ""):
+    _require_admin(request)
+    return _bastion_get("/graph/edges", {"types": types})
+
+
+@app.get("/graph/node/{node_id}", dependencies=[Depends(verify_api_key)])
+def kg_node(node_id: str, request: Request):
+    _require_admin(request)
+    return _bastion_get(f"/graph/node/{node_id}")
+
+
+@app.get("/graph/search", dependencies=[Depends(verify_api_key)])
+def kg_search(request: Request, q: str = "", type: str = "", limit: int = 30):
+    _require_admin(request)
+    return _bastion_get("/graph/search", {"q": q, "type": type, "limit": limit})
+
+
+@app.get("/graph/lineage/{node_id}", dependencies=[Depends(verify_api_key)])
+def kg_lineage(node_id: str, request: Request, max_depth: int = 3):
+    _require_admin(request)
+    return _bastion_get(f"/graph/lineage/{node_id}", {"max_depth": max_depth})
+
+
+@app.delete("/graph/node/{node_id}", dependencies=[Depends(verify_api_key)])
+def kg_delete(node_id: str, request: Request):
+    _require_admin(request)
+    return _bastion_method("DELETE", f"/graph/node/{node_id}")
+
+
+@app.post("/graph/compact/{playbook_id}", dependencies=[Depends(verify_api_key)])
+def kg_compact_one(playbook_id: str, request: Request):
+    _require_admin(request)
+    return _bastion_method("POST", f"/graph/compact/{playbook_id}")
+
+
+@app.post("/graph/compact", dependencies=[Depends(verify_api_key)])
+def kg_compact_all(request: Request):
+    _require_admin(request)
+    return _bastion_method("POST", "/graph/compact")
+
+
+# ── Audit log 프록시 ───────────────────────────────────────────────────────
+
+@app.get("/audit", dependencies=[Depends(verify_api_key)])
+def audit_recent(request: Request, limit: int = 50, session_id: str = "",
+                 user_id: str = "", course: str = "", outcome: str = "", since: str = ""):
+    _require_admin(request)
+    return _bastion_get("/audit", {"limit": limit, "session_id": session_id,
+                                    "user_id": user_id, "course": course,
+                                    "outcome": outcome, "since": since})
+
+
+@app.get("/audit/{request_id}", dependencies=[Depends(verify_api_key)])
+def audit_get(request_id: str, request: Request):
+    _require_admin(request)
+    return _bastion_get(f"/audit/{request_id}")
+
+
+@app.get("/audit-stats", dependencies=[Depends(verify_api_key)])
+def audit_stats_proxy(request: Request):
+    _require_admin(request)
+    return _bastion_get("/audit/_stats")
+
+
+@app.get("/audit-verify-chain", dependencies=[Depends(verify_api_key)])
+def audit_verify(request: Request, start_id: int = 1):
+    _require_admin(request)
+    return _bastion_get("/audit/_verify-chain", {"start_id": start_id})
+
+
 @app.delete("/battles/{bid}", dependencies=[Depends(verify_api_key)])
 def delete_battle(bid: str, request: Request):
     """관리자: 대전 레코드 + 미션 + 이벤트 삭제."""
