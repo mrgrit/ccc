@@ -402,8 +402,88 @@ class BastionAgent:
         return subtasks if len(subtasks) >= 3 else []
 
     def chat(self, message: str, approval_callback=None) -> Generator[dict, None, None]:
-        """자연어 메시지 처리 — 3단계 상태 머신 (Streaming 포함)"""
-        message = sanitize_text(message)
+        """자연어 메시지 처리 — step 단위 retry 래퍼.
+
+        1차 시도가 skill 실행 없이 종료되거나(=skills=[]) 모든 skill 실패로 끝나면
+        피드백 포함한 더 강한 prompt 로 1회 재시도. action 요청에 한해서.
+        """
+        original = sanitize_text(message)
+        if not original:
+            return
+        # Step 3: api.py 가 주입한 채점 기준을 메시지 앞에 prepend → 같은 기준으로 작업
+        verify_ctx = getattr(self, "_verify_context", {}) or {}
+        if verify_ctx.get("intent") or verify_ctx.get("success_criteria"):
+            criteria_lines = "\n".join(f"  - {c}" for c in verify_ctx.get("success_criteria", []))
+            methods_lines = "\n".join(f"  - {m}" for m in verify_ctx.get("acceptable_methods", []))
+            negative_lines = "\n".join(f"  - {n}" for n in verify_ctx.get("negative_signs", []))
+            criteria_block = (
+                "[채점 기준 — 이걸 충족해야 성공으로 판정됩니다]\n"
+                f"의도: {verify_ctx.get('intent','')}\n"
+            )
+            if criteria_lines:
+                criteria_block += f"성공 기준 (하나 이상 충족 필요):\n{criteria_lines}\n"
+            if methods_lines:
+                criteria_block += f"허용 방법 (이 중 어느 도구·방식이든 등가 인정):\n{methods_lines}\n"
+            if negative_lines:
+                criteria_block += f"피해야 할 신호:\n{negative_lines}\n"
+            criteria_block += "\n위 기준을 머리에 두고 아래 작업을 수행하라:\n\n"
+            original = criteria_block + original
+        MAX_STEP_RETRY = 1
+        cur_message = original
+        for step_attempt in range(MAX_STEP_RETRY + 1):
+            events_buf: list[dict] = []
+            for evt in self._chat_once(cur_message, approval_callback):
+                events_buf.append(evt)
+                yield evt
+            if step_attempt >= MAX_STEP_RETRY:
+                return
+            ok, fb = self._step_attempt_ok(original, events_buf)
+            if ok:
+                return
+            yield {"event": "step_retry", "attempt": step_attempt + 2,
+                   "feedback": fb}
+            cur_message = (
+                f"[자기 수정 — 이전 시도가 부족함]\n"
+                f"사유: {fb}\n\n"
+                f"원래 요청: {original}\n\n"
+                f"이번엔 반드시 실제 쉘 명령을 실행해서 stdout 을 받아내고, "
+                f"그 결과를 근거로 답하라. 개념 설명·표·체크리스트만 출력 금지."
+            )
+
+    def _step_attempt_ok(self, original_message: str, events: list[dict]) -> tuple[bool, str]:
+        """step 시도가 충분히 수행됐는지 판정.
+
+        OK 조건:
+        - skill_result 가 하나 이상 있고 그 중 success=True 가 1개 이상
+        - 또는 multitask split 의 subtask_done 이 모두 종료
+        - 또는 메시지가 지식 질문(execute=False) 이라 QA 만으로 충분
+
+        retry 트리거:
+        - action 요청인데 skill_result success=True 가 0개
+        """
+        skill_results = [e for e in events if e.get("event") == "skill_result"]
+        if any(r.get("success") for r in skill_results):
+            return True, ""
+        # multitask 처리됐으면 OK
+        if any(e.get("event") == "multitask_split" for e in events):
+            done = [e for e in events if e.get("event") == "subtask_done"]
+            split = next((e for e in events if e.get("event") == "multitask_split"), {})
+            if done and len(done) >= split.get("count", 1):
+                return True, ""
+        # action 요청인지 분류 — 지식 질문이면 retry 불요
+        try:
+            intent = self._classify_intent(original_message)
+            if not intent.get("execute"):
+                return True, ""  # QA 응답으로 충분
+        except Exception:
+            pass
+        # 여기까지 왔으면 action 인데 실행 미흡
+        if not skill_results:
+            return False, "skill 호출 자체가 없었음 (planning 단계에서 종료)"
+        return False, "모든 skill 시도가 실패"
+
+    def _chat_once(self, message: str, approval_callback=None) -> Generator[dict, None, None]:
+        """원래의 chat 본체 — 1회 시도. step retry 는 chat() 가 감싼다."""
         if not message:
             return
 

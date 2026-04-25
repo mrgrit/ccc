@@ -40,6 +40,7 @@ def load_step(course: str, week: int, order: int):
 
 def call_bastion(step: dict, course: str, lab_id: str):
     prompt = step.get("bastion_prompt") or step.get("instruction")
+    sem = (step.get("verify") or {}).get("semantic") or {}
     payload = {
         "message": prompt,
         "auto_approve": True,
@@ -48,6 +49,11 @@ def call_bastion(step: dict, course: str, lab_id: str):
         "lab_id": lab_id,
         "step_order": step["order"],
         "test_session": "ts-20260414",
+        # Step 3: 채점 기준 정렬 — agent 가 같은 기준으로 작업
+        "verify_intent": sem.get("intent", ""),
+        "verify_success_criteria": list(sem.get("success_criteria") or []),
+        "verify_acceptable_methods": list(sem.get("acceptable_methods") or []),
+        "verify_negative_signs": list(sem.get("negative_signs") or []),
     }
     req = urllib.request.Request(
         BASTION,

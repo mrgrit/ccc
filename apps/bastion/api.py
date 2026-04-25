@@ -101,6 +101,11 @@ class ChatRequest(BaseModel):
     lab_id: str = ""
     step_order: int = 0
     test_session: str = ""
+    # Step 3: 채점 기준 정렬 — agent 가 verify.semantic 을 보고 작업하도록
+    verify_intent: str = ""              # success_criteria 의 한 줄 의도
+    verify_success_criteria: list = []   # 충족해야 할 기준 (3+)
+    verify_acceptable_methods: list = [] # 등가 허용 방법
+    verify_negative_signs: list = []     # 명시적 fail 신호
 
 
 # ── 엔드포인트 ──────────────────────────────────────────────────────────────
@@ -292,6 +297,13 @@ def chat(req: ChatRequest):
         "step_order": req.step_order,
         "test_session": req.test_session,
     } if req.course else {}
+    # Step 3: 채점 기준 정렬 — agent 가 같은 기준으로 작업
+    agent._verify_context = {
+        "intent": req.verify_intent or "",
+        "success_criteria": list(req.verify_success_criteria or []),
+        "acceptable_methods": list(req.verify_acceptable_methods or []),
+        "negative_signs": list(req.verify_negative_signs or []),
+    } if (req.verify_intent or req.verify_success_criteria) else {}
 
     # course 기반 manager LLM 선택 (공격/대전만 derestricted)
     target_model = _resolve_manager_model(req.course)
