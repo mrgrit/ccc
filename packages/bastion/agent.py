@@ -1174,12 +1174,33 @@ class BastionAgent:
                     approval_callback=None) -> Generator[dict, None, None]:
         """ReAct 루프: LLM ↔ tool 결과 교환. 1회 plan 모델 폐기.
 
+        KG-4: 매 chat 시작 시 lookup → reuse/adapt/new 결정. reuse/adapt 면
+        매칭된 playbook 의 plan + reasoning 을 system prompt 에 주입해 LLM 이
+        그 plan 을 따라가도록 유도. new 면 자유 ReAct.
+
         매 turn:
           1) LLM 호출 (tools 포함) → tool_calls 또는 final content
           2) tool_calls 있으면 실행 → tool_result 를 messages 에 push → 다음 turn
           3) tool_calls 없으면 self-verify → 충족이면 종료, 미흡이면 1회 재촉
         """
         sys_prompt = self._build_react_system_prompt()
+
+        # KG-4: playbook lookup → reuse/adapt/new 결정
+        lookup_result = None
+        try:
+            from packages.bastion.lookup import decide, build_lookup_prompt
+            lookup_result = decide(message, self.ollama_url, self.model)
+            yield {"event": "lookup_decision",
+                   "decision": lookup_result.get("decision"),
+                   "playbook_id": lookup_result.get("playbook_id", ""),
+                   "confidence": lookup_result.get("confidence", 0),
+                   "reason": lookup_result.get("reason", "")}
+            inject = build_lookup_prompt(lookup_result)
+            if inject:
+                sys_prompt += "\n\n## [lookup result — 매칭된 playbook 활용]\n" + inject
+        except Exception as _e:
+            yield {"event": "lookup_error", "error": str(_e)[:200]}
+
         # 메시지 빌드. 컨텍스트(rag/prev/exp)는 system 에 추가.
         ctx_lines = []
         if rag_ctx:
@@ -1399,16 +1420,18 @@ class BastionAgent:
 
         self.history.append({"role": "assistant", "content": last_assistant_content})
 
-        # KG-3: ReAct trace → Playbook + Experience 노드 등록
+        # KG-3 + KG-4: ReAct trace → Playbook + Experience 노드 등록
+        # lookup_result 가 reuse/adapt 면 매칭된 playbook 의 exec_history 갱신,
+        # new 면 신규 playbook 생성.
         try:
             self._persist_react_run_to_graph(
                 message=message,
                 turn_traces=turn_traces,
                 tool_outputs=all_tool_outputs,
                 final_content=last_assistant_content,
+                lookup_result=lookup_result,
             )
         except Exception as _e:
-            # 그래프 실패가 retest/실행 자체를 막아서는 안 됨
             yield {"event": "graph_persist_error", "error": str(_e)[:200]}
 
         # Experience → Playbook 자동 승격
@@ -1425,7 +1448,8 @@ class BastionAgent:
     def _persist_react_run_to_graph(self, message: str,
                                     turn_traces: list[dict],
                                     tool_outputs: list[dict],
-                                    final_content: str) -> None:
+                                    final_content: str,
+                                    lookup_result: dict | None = None) -> None:
         """ReAct 한 사이클의 결과를 KnowledgeGraph 에 기록.
 
         - tool 한 번도 안 돌았으면 skip (학습 가치 적음)
@@ -1470,7 +1494,15 @@ class BastionAgent:
         sig_str = (message[:200] + "|" + ",".join(used_skills)).encode("utf-8", "ignore")
         sig = hashlib.sha1(sig_str).hexdigest()[:10]
         slug = _slugify(message[:50]) or "untitled"
-        pb_id = f"pb-auto-{slug}-{sig}"
+        # KG-4: lookup 이 reuse/adapt 라면 그 playbook 사용
+        if lookup_result and lookup_result.get("decision") in ("reuse", "adapt"):
+            matched_id = lookup_result.get("playbook_id", "")
+            if matched_id:
+                pb_id = matched_id if matched_id.startswith("pb-") else f"pb-{matched_id}"
+            else:
+                pb_id = f"pb-auto-{slug}-{sig}"
+        else:
+            pb_id = f"pb-auto-{slug}-{sig}"
 
         # ─ playbook reasoning 합성 (turn_traces 에서) ─
         first_turn_text = (turn_traces[0].get("content", "") if turn_traces else "")[:1500]
