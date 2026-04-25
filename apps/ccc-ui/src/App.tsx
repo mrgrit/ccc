@@ -11,6 +11,7 @@ import Leaderboard from './pages/Leaderboard.tsx'
 import Blockchain from './pages/Blockchain.tsx'
 import MyInfra from './pages/MyInfra.tsx'
 import Admin from './pages/Admin.tsx'
+import Knowledge from './pages/Knowledge.tsx'
 import Profile from './pages/Profile.tsx'
 import ChatBot from './components/ChatBot.tsx'
 import Search from './pages/Search.tsx'
@@ -25,6 +26,7 @@ const navItems = [
   { to: '/leaderboard', label: 'Leaderboard', icon: '🏆' },
   { to: '/blockchain', label: 'Blockchain', icon: '⛓️' },
   { to: '/papers', label: 'Papers', icon: '📚', adminOnly: true },
+  { to: '/knowledge', label: 'Knowledge', icon: '🧠', adminOnly: true },
   { to: '/admin', label: 'Admin', icon: '⚙️', adminOnly: true },
 ]
 
@@ -151,6 +153,7 @@ export default function App() {
           <Route path="/leaderboard" element={<Leaderboard />} />
           <Route path="/blockchain" element={<Blockchain />} />
           <Route path="/admin" element={<Admin />} />
+          <Route path="/knowledge" element={<Knowledge />} />
           <Route path="/papers" element={<Papers />} />
           <Route path="/search" element={<Search />} />
           <Route path="/profile" element={<Profile />} />
