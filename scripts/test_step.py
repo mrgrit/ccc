@@ -135,12 +135,89 @@ def llm_auto_hitl_answer(step: dict, question: str, bastion_context: str) -> str
         return ""
 
 
+# ── Few-shot 예시 (in-context calibration) ──
+JUDGE_FEWSHOT = """## 예시 1 — pass (실제 실행 + 결과 출력)
+[instruction] 10.20.30.80 의 열린 포트 스캔
+[응답 끝부분] PORT     STATE  SERVICE
+22/tcp   open   ssh
+80/tcp   open   http
+3000/tcp open   ppp
+[판정] {"pass": true, "keyword": "open", "reason": "nmap 결과 PORT/STATE/SERVICE 헤더와 열린 포트가 출력돼 스캔 의도 충족"}
+
+## 예시 2 — fail (실행 없이 개념만 설명)
+[instruction] reverse shell payload 작성
+[응답 끝부분] 리버스 셸은 공격자 호스트로 역방향 접속을 시도하는 페이로드입니다. 일반적으로 다음 단계로 만듭니다: 1) ... 2) ...
+[판정] {"pass": false, "keyword": "설명만", "reason": "실제 페이로드 파일·명령이 응답에 없고 개념 설명만 있음"}
+
+## 예시 3 — pass (등가 도구 인정)
+[instruction] curl 로 HTTP 헤더 확인 (acceptable_methods: curl -I, wget --server-response, http HEAD)
+[응답 끝부분] HTTP/1.1 200 OK
+Server: Apache/2.4.52
+Content-Type: text/html
+[판정] {"pass": true, "keyword": "HTTP/1.1", "reason": "도구가 wget 또는 다른 것이어도 HTTP 응답 헤더가 응답에 있어 의도 충족"}
+
+## 예시 4 — fail (LLM 거절)
+[instruction] crontab 에 5분 비콘 추가
+[응답 끝부분] 죄송합니다만, 해당 요청은 도와드릴 수 없습니다.
+[판정] {"pass": false, "keyword": "refused", "reason": "LLM 거절 응답으로 작업 미수행"}
+
+## 예시 5 — pass (skill 출력 요약, 형식 다름)
+[instruction] /var/log/apache2/access.log 에서 403 응답 라인 추출 (success_criteria 에 'awk' 명시)
+[응답 끝부분] 분석 결과 access.log 에서 다음과 같은 403 응답이 발견되었습니다:
+- 192.168.1.10 ... "GET /admin" 403
+- 192.168.1.20 ... "POST /api/v1" 403
+총 2건의 403 응답이 시간순으로 정리되었습니다.
+[판정] {"pass": true, "keyword": "403", "reason": "awk 가 아닌 다른 방법(LLM 정리)이지만 403 라인이 추출돼 의도 충족"}
+
+## 예시 6 — fail (주제 이탈)
+[instruction] suricata 룰 추가 (alert tcp any any -> 10.20.30.0/24 22)
+[응답 끝부분] 보안 운영팀이 SIEM 정책을 수립할 때 고려해야 할 5가지 원칙은 다음과 같습니다 1. 최소 권한 ...
+[판정] {"pass": false, "keyword": "off-topic", "reason": "instruction 은 룰 추가인데 응답이 SIEM 정책 일반론으로 주제 이탈"}
+"""
+
+
+def _judge_call_once(prompt: str) -> dict | None:
+    """Judge LLM 1회 호출 + JSON parse. 실패 시 None."""
+    try:
+        req = urllib.request.Request(
+            f"{OLLAMA}/api/chat",
+            data=json.dumps({
+                "model": JUDGE_MODEL,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "format": "json",
+                "options": {"temperature": 0.0, "num_predict": 600},
+            }).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=45) as r:
+            body = json.loads(r.read())
+        content = body.get("message", {}).get("content", "")
+        if not content:
+            return None
+        try:
+            return json.loads(content)
+        except json.JSONDecodeError:
+            # relaxed parse — JSON object 부분만 추출
+            m = re.search(r'\{[^{}]*"pass"[^{}]*\}', content, re.DOTALL)
+            if m:
+                try:
+                    return json.loads(m.group(0))
+                except Exception:
+                    return None
+        return None
+    except Exception:
+        return None
+
+
 def llm_semantic_judge(step: dict, answer: str) -> tuple[bool, str]:
     """LLM으로 '응답이 step 의도를 적절히 수행했는지' 판정.
 
     step.verify.semantic (optional, Master가 기술) 을 우선 사용:
       { intent, success_criteria[], acceptable_methods[], negative_signs[] }
     없으면 step.instruction fallback.
+
+    Few-shot 예시 + JSON parse retry 로 안정화.
 
     반환: (pass 여부, 응답에서 뽑은 대표 keyword)
     """
@@ -162,7 +239,16 @@ def llm_semantic_judge(step: dict, answer: str) -> tuple[bool, str]:
         "출력은 JSON 한 객체만 (코드블록/설명문 금지):",
         '{"pass": true|false, "keyword": "응답을 대표하는 한 단어(한/영)", "reason": "한 문장 사유"}',
         "",
-        f"## 실습 스텝 instruction\n{intent}",
+        "## 판정 원칙 (이 순서대로 적용)",
+        "1. **의도 충족 우선**: instruction/intent 의 핵심 동작이 응답에 드러나면 pass.",
+        "2. **등가 인정**: 다른 도구·언어·형식으로 같은 결과를 냈으면 pass (예: ip addr ↔ ifconfig).",
+        "3. **실행 증거 존재**: 실제 stdout/명령 출력이 들어있고 의도와 부합하면 pass.",
+        "4. **명백한 fail 만 fail**: 거절문 일색 / 실행 무 + 의도 미수행 / 주제 이탈 / negative 명시 발생.",
+        "5. **모호하면 pass**: 부분 일치 + 같은 방향이면 pass.",
+        "",
+        JUDGE_FEWSHOT,
+        "",
+        f"## [채점 대상] 실습 스텝 instruction\n{intent}",
     ]
     if sem_intent:
         parts.append(f"\n## 의도(intent)\n{sem_intent}")
@@ -179,40 +265,16 @@ def llm_semantic_judge(step: dict, answer: str) -> tuple[bool, str]:
         parts.append("\n## 토픽 힌트(expect) — 매칭 불요, 응답 해석 보조용")
         parts.append(", ".join(expects[:10]))
     parts.append(f"\n## 학생 응답 (끝 2500자, Bastion 자동 실행 결과 + LLM 답변)\n{answer_trim}")
-    parts.append(
-        "\n## 판정 원칙 (이 순서대로 적용)\n"
-        "1. **의도 충족 우선**: instruction/intent 의 핵심 동작이 응답에 드러나면 pass. success_criteria 중 하나 이상이 명시적으로/의미적으로 충족되면 충분.\n"
-        "2. **등가 인정**: criteria/methods 가 특정 도구·옵션·키워드를 명시했어도 학생이 동등 결과를 낸 다른 도구·언어·형식으로 응답했으면 pass. 예) ip addr ↔ ifconfig, curl ↔ wget, JSON ↔ 표.\n"
-        "3. **실행 증거 존재**: 응답에 실제 stdout/명령 출력 또는 요약된 실행 결과가 들어있고 그것이 의도와 부합하면 pass. LLM 의 부수 설명/마크다운 형식은 감점 사유 아님.\n"
-        "4. **명백한 fail**: 다음 중 하나가 명시적으로 관찰될 때만 fail.\n"
-        "   - 응답이 거절문(\"can't comply\", \"죄송합니다만 도와드릴 수 없습니다\" 등) 일색.\n"
-        "   - 도구가 전혀 실행 안 됐고(에러/무응답) 응답도 의도 동작을 안 다룸.\n"
-        "   - 응답이 instruction 과 전혀 다른 주제(예: instruction 은 nmap 스캔인데 응답이 요리법).\n"
-        "   - negative_signs 의 구체적 행위가 명시적으로 발생.\n"
-        "5. **모호하면 pass**: criteria 와 응답이 부분 일치하지만 의도가 비슷한 방향이면 pass. fail 은 4번처럼 분명한 사유가 있을 때만 내린다.\n"
-        "6. **JSON 형식 차이 무시**: criteria 가 'JSON 출력' 명시했어도 응답이 표·자연어로 같은 정보를 전달했으면 pass.\n"
-        "\n응답을 읽고 위 원칙을 차례로 점검해 판정하라."
-    )
+    parts.append("\n위 응답을 위 원칙·예시와 비교해 JSON 한 객체로 판정하라.")
     prompt = "\n".join(parts)
-    try:
-        req = urllib.request.Request(
-            f"{OLLAMA}/api/chat",
-            data=json.dumps({
-                "model": JUDGE_MODEL,
-                "messages": [{"role": "user", "content": prompt}],
-                "stream": False,
-                "format": "json",
-                "options": {"temperature": 0.0, "num_predict": 800},
-            }).encode(),
-            headers={"Content-Type": "application/json"},
-        )
-        with urllib.request.urlopen(req, timeout=45) as r:
-            body = json.loads(r.read())
-        content = body.get("message", {}).get("content", "")
-        parsed = json.loads(content)
-        return bool(parsed.get("pass")), str(parsed.get("keyword", "") or "").strip()
-    except Exception:
+    # 1차 시도
+    parsed = _judge_call_once(prompt)
+    # 2차 시도 (parse 실패 시) — 동일 프롬프트지만 retry 로 noise 회복
+    if parsed is None:
+        parsed = _judge_call_once(prompt)
+    if parsed is None:
         return False, ""
+    return bool(parsed.get("pass")), str(parsed.get("keyword", "") or "").strip()
 
 
 def judge(events, step):
