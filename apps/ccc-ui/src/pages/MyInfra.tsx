@@ -113,13 +113,22 @@ export default function MyInfra() {
     setLlmLoading(false)
   }
 
+  const [loadError, setLoadError] = useState('')
   const load = () => {
+    setLoadError('')
     api('/api/infras/my')
       .then(d => setInfras(d.infras || []))
-      .catch(() => {})
+      .catch((e: any) => setLoadError(e.message || '인프라 조회 실패'))
       .finally(() => setLoading(false))
   }
   useEffect(load, [])
+
+  // 다른 탭에서 변경된 인프라 데이터 반영 — focus 시 재조회
+  useEffect(() => {
+    const onFocus = () => load()
+    window.addEventListener('focus', onFocus)
+    return () => window.removeEventListener('focus', onFocus)
+  }, [])
 
   const setup = async () => {
     if (!form.attacker_ip || !form.secu_ip || !form.web_ip || !form.siem_ip || !form.manager_ip) {
@@ -276,6 +285,12 @@ export default function MyInfra() {
       <p style={{ fontSize: 15, color: '#8b949e', marginBottom: 24 }}>
         실습과 대전에 사용할 VM 5대의 외부 IP를 입력합니다. 내부 IP(10.20.30.x)는 자동 할당됩니다.
       </p>
+      {loadError && (
+        <div style={{ background: '#1a0a0a', border: '1px solid #f85149', borderRadius: 8, padding: 14, marginBottom: 18, color: '#f85149' }}>
+          ⚠ 인프라 조회 실패: {loadError}
+          <button onClick={load} style={{ marginLeft: 12, padding: '4px 10px', borderRadius: 6, border: '1px solid #f85149', background: 'transparent', color: '#f85149', cursor: 'pointer', fontSize: 12 }}>다시 시도</button>
+        </div>
+      )}
 
       {/* 현재 인프라 상태 */}
       {hasInfra && (

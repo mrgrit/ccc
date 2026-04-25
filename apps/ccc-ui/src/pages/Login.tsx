@@ -11,7 +11,11 @@ export default function Login({ onLogin }: { onLogin: () => void }) {
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [group, setGroup] = useState('')
-  const [error, setError] = useState('')
+  const [error, setError] = useState(() => {
+    // ?expired=1 이면 만료 안내
+    const sp = new URLSearchParams(location.search)
+    return sp.get('expired') === '1' ? '세션이 만료되었습니다. 다시 로그인하세요.' : ''
+  })
   const [loading, setLoading] = useState(false)
 
   // Google Sign-In 초기화
