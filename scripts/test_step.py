@@ -158,33 +158,40 @@ def llm_semantic_judge(step: dict, answer: str) -> tuple[bool, str]:
     if isinstance(expects, str):
         expects = [expects]
     parts = [
-        "너는 보안 실습의 엄정한 채점관이다. 학생이 실습 스텝을 수행한 결과(Bastion 자동 실행 응답)를 평가한다.",
-        "아래 형식의 JSON 만 출력하라(코드블록/설명 문장 금지):",
-        '{"pass": true|false, "keyword": "응답에서 핵심을 대표하는 단어(한/영)", "reason": "한문장 이유"}',
+        "너는 보안 실습 자동 채점관이다. 학생/AI 가 실습 스텝을 수행한 응답을 보고 의도(intent) 충족 여부를 판정한다.",
+        "출력은 JSON 한 객체만 (코드블록/설명문 금지):",
+        '{"pass": true|false, "keyword": "응답을 대표하는 한 단어(한/영)", "reason": "한 문장 사유"}',
         "",
         f"## 실습 스텝 instruction\n{intent}",
     ]
     if sem_intent:
-        parts.append(f"\n## 의도(intent) — Master 기술\n{sem_intent}")
+        parts.append(f"\n## 의도(intent)\n{sem_intent}")
     if sem_success:
-        parts.append("\n## 합격 기준(success_criteria) — 하나 이상 충족해야 pass")
+        parts.append("\n## 합격 기준(success_criteria) — 동치 표현·등가 방법 모두 인정")
         parts.extend(f"- {c}" for c in sem_success)
     if sem_methods:
-        parts.append("\n## 허용 방법(acceptable_methods) — 이 중 아무 방법이라도 인정")
+        parts.append("\n## 허용 방법(acceptable_methods) — 이 중 어느 방법이든 동등")
         parts.extend(f"- {m}" for m in sem_methods)
     if sem_negative:
-        parts.append("\n## 불합격 신호(negative_signs)")
+        parts.append("\n## 명백한 불합격 신호(negative_signs) — 응답에 명시적으로 나타날 때만 적용")
         parts.extend(f"- {n}" for n in sem_negative)
     if expects:
-        parts.append("\n## 기대 키워드(expect) — 토픽 힌트, 정확 매치는 필수 아님")
+        parts.append("\n## 토픽 힌트(expect) — 매칭 불요, 응답 해석 보조용")
         parts.append(", ".join(expects[:10]))
-    parts.append(f"\n## 학생 응답 (끝 2500자)\n{answer_trim}")
+    parts.append(f"\n## 학생 응답 (끝 2500자, Bastion 자동 실행 결과 + LLM 답변)\n{answer_trim}")
     parts.append(
-        "\n## 판정 규칙\n"
-        "- success_criteria 중 하나 이상을 충족했거나, acceptable_methods 중 하나의 의도/방법이 응답에 드러나면 pass=true.\n"
-        "- 응답이 전혀 다른 주제를 다루거나 negative_signs에 해당하면 pass=false.\n"
-        "- 단순 무응답/에러 텍스트/도구 실행 실패는 pass=false.\n"
-        "- 의도와 방법이 동일하면 출력 형식이 기대와 달라도 pass=true (예: JSON 대신 표, 영어 키워드 대신 한국어 설명)."
+        "\n## 판정 원칙 (이 순서대로 적용)\n"
+        "1. **의도 충족 우선**: instruction/intent 의 핵심 동작이 응답에 드러나면 pass. success_criteria 중 하나 이상이 명시적으로/의미적으로 충족되면 충분.\n"
+        "2. **등가 인정**: criteria/methods 가 특정 도구·옵션·키워드를 명시했어도 학생이 동등 결과를 낸 다른 도구·언어·형식으로 응답했으면 pass. 예) ip addr ↔ ifconfig, curl ↔ wget, JSON ↔ 표.\n"
+        "3. **실행 증거 존재**: 응답에 실제 stdout/명령 출력 또는 요약된 실행 결과가 들어있고 그것이 의도와 부합하면 pass. LLM 의 부수 설명/마크다운 형식은 감점 사유 아님.\n"
+        "4. **명백한 fail**: 다음 중 하나가 명시적으로 관찰될 때만 fail.\n"
+        "   - 응답이 거절문(\"can't comply\", \"죄송합니다만 도와드릴 수 없습니다\" 등) 일색.\n"
+        "   - 도구가 전혀 실행 안 됐고(에러/무응답) 응답도 의도 동작을 안 다룸.\n"
+        "   - 응답이 instruction 과 전혀 다른 주제(예: instruction 은 nmap 스캔인데 응답이 요리법).\n"
+        "   - negative_signs 의 구체적 행위가 명시적으로 발생.\n"
+        "5. **모호하면 pass**: criteria 와 응답이 부분 일치하지만 의도가 비슷한 방향이면 pass. fail 은 4번처럼 분명한 사유가 있을 때만 내린다.\n"
+        "6. **JSON 형식 차이 무시**: criteria 가 'JSON 출력' 명시했어도 응답이 표·자연어로 같은 정보를 전달했으면 pass.\n"
+        "\n응답을 읽고 위 원칙을 차례로 점검해 판정하라."
     )
     prompt = "\n".join(parts)
     try:
