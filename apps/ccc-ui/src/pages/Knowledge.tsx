@@ -47,6 +47,18 @@ export default function Knowledge() {
   const [detail, setDetail] = useState<any>(null)
   const [searchQ, setSearchQ] = useState('')
   const [searchResults, setSearchResults] = useState<Node[]>([])
+  const [showLeft, setShowLeft] = useState(true)
+  const [showDetail, setShowDetail] = useState(true)
+
+  // 패널 토글 시 graph resize/fit
+  useEffect(() => {
+    const t = setTimeout(() => {
+      if (cyRef.current) {
+        try { cyRef.current.resize(); cyRef.current.fit(undefined, 40) } catch {}
+      }
+    }, 50)
+    return () => clearTimeout(t)
+  }, [showLeft, showDetail])
 
   // 데이터 로드
   const load = async () => {
@@ -97,53 +109,113 @@ export default function Knowledge() {
             'background-color': (ele: any) => NODE_COLORS[ele.data('type')] || '#8b949e',
             'label': 'data(label)',
             'color': '#e6edf3',
-            'font-size': 9,
+            'font-size': 13,
+            'font-weight': 'bold',
             'text-outline-color': '#0d1117',
-            'text-outline-width': 2,
-            'width': (ele: any) => Math.min(50, 14 + (ele.degree() || 0) * 1.5),
-            'height': (ele: any) => Math.min(50, 14 + (ele.degree() || 0) * 1.5),
-            'border-width': 1,
-            'border-color': '#21262d',
+            'text-outline-width': 3,
+            'text-valign': 'bottom',
+            'text-halign': 'center',
+            'text-margin-y': 6,
+            // 노드 크기: 25(min) ~ 90(max), degree(연결도) 비례
+            'width': (ele: any) => Math.max(25, Math.min(90, 25 + (ele.degree() || 0) * 5)),
+            'height': (ele: any) => Math.max(25, Math.min(90, 25 + (ele.degree() || 0) * 5)),
+            'border-width': 2,
+            'border-color': '#161b22',
             'text-wrap': 'wrap',
-            'text-max-width': '90px',
+            'text-max-width': '160px',
+            'min-zoomed-font-size': 8,  // 줌 아웃 시 라벨 자동 숨김
           } as any,
         },
         {
           selector: 'edge',
           style: {
-            'width': (ele: any) => Math.min(4, 1 + (ele.data('weight') || 1) * 0.5),
+            'width': (ele: any) => Math.max(1.2, Math.min(5, 1 + (ele.data('weight') || 1) * 0.7)),
             'line-color': '#30363d',
             'target-arrow-color': '#30363d',
             'target-arrow-shape': 'triangle',
             'curve-style': 'bezier',
-            'arrow-scale': 0.8,
-            'opacity': 0.55,
+            'arrow-scale': 1.2,
+            'opacity': 0.45,
           } as any,
         },
         {
           selector: 'node:selected',
-          style: { 'border-color': '#f97316', 'border-width': 3 } as any,
+          style: {
+            'border-color': '#f97316',
+            'border-width': 4,
+            'font-size': 16,
+          } as any,
+        },
+        {
+          selector: 'node.highlighted',
+          style: {
+            'border-color': '#f97316',
+            'border-width': 3,
+          } as any,
+        },
+        {
+          selector: 'edge.highlighted',
+          style: {
+            'line-color': '#f97316',
+            'target-arrow-color': '#f97316',
+            'opacity': 0.9,
+            'width': 3,
+          } as any,
         },
         {
           selector: '.faded',
-          style: { 'opacity': 0.12 } as any,
+          style: {
+            'opacity': 0.08,
+            'text-opacity': 0,
+          } as any,
         },
       ],
-      layout: { name: 'cose-bilkent', animate: true, randomize: false, idealEdgeLength: 80, nodeRepulsion: 6500 } as any,
-      wheelSensitivity: 0.2,
+      // Obsidian 스타일 force layout — 둥글게 클러스터링, 한 줄 stretching 방지
+      layout: {
+        name: 'cose-bilkent',
+        animate: 'end',
+        animationDuration: 1000,
+        randomize: true,                  // 한 줄로 길어지는 현상 방지
+        idealEdgeLength: 140,
+        nodeRepulsion: 14000,
+        edgeElasticity: 0.45,
+        nestingFactor: 0.1,
+        gravity: 0.5,
+        gravityRangeCompound: 1.5,
+        gravityCompound: 1.0,
+        gravityRange: 3.8,
+        numIter: 2500,
+        tile: true,
+        tilingPaddingVertical: 20,
+        tilingPaddingHorizontal: 20,
+        packComponents: true,             // 끊긴 component 도 한 화면에 보기 좋게
+      } as any,
+      wheelSensitivity: 0.3,
+      minZoom: 0.1,
+      maxZoom: 4,
+    })
+
+    // 초기 fit (줌 자동 조정 — 화면 가득 채움)
+    cy.ready(() => {
+      try {
+        cy.fit(undefined, 40)
+      } catch {}
     })
 
     cy.on('tap', 'node', (evt: any) => {
       const id = evt.target.id()
       setSelectedId(id)
-      // 인접 노드만 강조 (Obsidian 스타일)
+      // Obsidian 스타일: 인접만 강조, 나머지는 fade
+      cy.elements().removeClass('highlighted')
       cy.elements().addClass('faded')
       const neighborhood = evt.target.closedNeighborhood()
       neighborhood.removeClass('faded')
+      neighborhood.addClass('highlighted')
     })
     cy.on('tap', (evt: any) => {
       if (evt.target === cy) {
         cy.elements().removeClass('faded')
+        cy.elements().removeClass('highlighted')
         setSelectedId(null)
       }
     })
@@ -195,19 +267,46 @@ export default function Knowledge() {
     } catch (e: any) { alert(e.message) }
   }
 
+  const fitGraph = () => {
+    if (cyRef.current) {
+      try { cyRef.current.fit(undefined, 40) } catch {}
+    }
+  }
+  const relayoutGraph = () => {
+    if (cyRef.current) {
+      const layout = cyRef.current.layout({
+        name: 'cose-bilkent', animate: 'end', animationDuration: 1000,
+        randomize: true, idealEdgeLength: 140, nodeRepulsion: 14000,
+        gravity: 0.5, numIter: 2500, packComponents: true, tile: true,
+      } as any)
+      layout.run()
+    }
+  }
+
   if (loading) return <div style={{ color: '#8b949e', padding: 40, textAlign: 'center' }}>Knowledge graph 로드 중...</div>
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: 'calc(100vh - 100px)' }}>
-      <h2 style={{ fontSize: 24, fontWeight: 700, color: '#e6edf3', margin: 0 }}>
-        🧠 Knowledge Graph <span style={{ fontSize: 13, color: '#8b949e', fontWeight: 400, marginLeft: 12 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: 'calc(100vh - 80px)', margin: '-12px -16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px 0' }}>
+        <h2 style={{ fontSize: 20, fontWeight: 700, color: '#e6edf3', margin: 0 }}>
+          🧠 Knowledge Graph
+        </h2>
+        <span style={{ fontSize: 13, color: '#8b949e' }}>
           {stats.total_nodes || 0} nodes · {stats.total_edges || 0} edges
         </span>
-      </h2>
+        <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          <button onClick={() => setShowLeft(s => !s)} style={btn}>{showLeft ? '◀' : '▶'} 필터</button>
+          <button onClick={fitGraph} style={btn}>⤢ Fit</button>
+          <button onClick={relayoutGraph} style={btn}>↻ Relayout</button>
+          <button onClick={load} style={btn}>새로고침</button>
+          <button onClick={() => setShowDetail(s => !s)} style={btn}>{showDetail ? '▶' : '◀'} 상세</button>
+        </div>
+      </div>
 
-      <div style={{ display: 'flex', gap: 16, height: '100%', minHeight: 0 }}>
-        {/* 좌측 — 검색 + 필터 */}
-        <div style={{ width: 240, display: 'flex', flexDirection: 'column', gap: 10 }}>
+      <div style={{ display: 'flex', gap: 12, height: '100%', minHeight: 0, padding: '0 16px 16px' }}>
+        {/* 좌측 — 검색 + 필터 (토글 가능) */}
+        {showLeft && (
+        <div style={{ width: 220, display: 'flex', flexDirection: 'column', gap: 10 }}>
           <div style={{ display: 'flex', gap: 4 }}>
             <input value={searchQ} onChange={e => setSearchQ(e.target.value)}
               onKeyDown={e => e.key === 'Enter' && doSearch()}
@@ -245,16 +344,17 @@ export default function Knowledge() {
               )
             })}
           </div>
-          <button onClick={load} style={{ ...btn, justifyContent: 'center' }}>새로고침</button>
         </div>
+        )}
 
-        {/* 중앙 — 그래프 */}
+        {/* 중앙 — 그래프 (메인) */}
         <div style={{ flex: 1, position: 'relative', background: '#0d1117', border: '1px solid #21262d', borderRadius: 8, overflow: 'hidden' }}>
           <div ref={cyContainer} style={{ width: '100%', height: '100%' }} />
         </div>
 
-        {/* 우측 — Detail */}
-        <div style={{ width: 360, background: '#0d1117', border: '1px solid #21262d', borderRadius: 8, padding: 14, overflowY: 'auto' }}>
+        {/* 우측 — Detail (토글 가능) */}
+        {showDetail && (
+        <div style={{ width: 340, background: '#0d1117', border: '1px solid #21262d', borderRadius: 8, padding: 14, overflowY: 'auto' }}>
           {!selectedId && <div style={{ color: '#8b949e', fontSize: 13, textAlign: 'center', padding: 20 }}>노드를 클릭하면 상세가 나옵니다</div>}
           {selectedId && !detail && <div style={{ color: '#8b949e' }}>로드 중...</div>}
           {detail?.error && <div style={{ color: '#f85149' }}>{detail.error}</div>}
@@ -376,6 +476,7 @@ export default function Knowledge() {
             </div>
           )}
         </div>
+        )}
       </div>
     </div>
   )
