@@ -169,8 +169,17 @@ fi
 systemctl enable --now suricata 2>/dev/null || true
 """,
         # ── nftables 기본 방화벽 + NAT ──
+        # 외부(EXTERNAL) / 내부(INTERNAL) NIC 자동 감지.
+        # head -1 = 첫 NIC = 외부망(예: ens33), tail -1 = 마지막 NIC = 내부망(예: ens34).
+        # 실패 시 hard-fail 로 잘못된 빈 EXTERNAL/INTERNAL 로 룰 만들지 않음.
         """
 EXTERNAL=$(ip -o link show | grep -v 'lo\\|docker\\|veth' | awk '{print $2}' | tr -d ':' | head -1)
+INTERNAL=$(ip -o link show | grep -v 'lo\\|docker\\|veth' | awk '{print $2}' | tr -d ':' | tail -1)
+if [ -z "$EXTERNAL" ] || [ -z "$INTERNAL" ] || [ "$EXTERNAL" = "$INTERNAL" ]; then
+    echo "[ERROR] NIC 감지 실패: EXTERNAL='$EXTERNAL' INTERNAL='$INTERNAL'. ip link 확인 필요." >&2
+    exit 1
+fi
+echo "[NFT] EXTERNAL=$EXTERNAL INTERNAL=$INTERNAL"
 cat > /etc/nftables.conf << NFTEOF
 #!/usr/sbin/nft -f
 flush ruleset
@@ -197,15 +206,27 @@ table ip nat {
     chain prerouting {
         type nat hook prerouting priority -100;
         iifname "$EXTERNAL" tcp dport 80 dnat to 10.20.30.80:80
+        iifname "$EXTERNAL" tcp dport 443 dnat to 10.20.30.80:443
+        iifname "$EXTERNAL" tcp dport 3000 dnat to 10.20.30.80:3000
+        iifname "$EXTERNAL" tcp dport 8080 dnat to 10.20.30.80:8080
     }
     chain postrouting {
         type nat hook postrouting priority 100;
+        # 1) 내부 VM 의 외부 인터넷 접근 (기존)
         oifname "$EXTERNAL" masquerade
+        # 2) DNAT 트래픽 SNAT — 외부 클라이언트의 응답 경로 보장 (asymmetric routing 회피).
+        #    backend 가 secu 가 아닌 기본 게이트웨이로 응답 라우팅하더라도 secu IP 로 source 가 바뀌어 정상 작동.
+        ip saddr != 10.20.30.0/24 oifname "$INTERNAL" ip daddr 10.20.30.0/24 masquerade
     }
 }
 NFTEOF
-nft -f /etc/nftables.conf
+nft -f /etc/nftables.conf || { echo "[ERROR] nft -f 실패" >&2; exit 1; }
 systemctl enable --now nftables
+# 검증 — DNAT 룰이 실제로 로드됐는지 확인
+echo "[NFT] 적용 후 nat 룰:"
+nft list table ip nat 2>&1 | head -30
+# net.ipv4.ip_forward 재확인
+test "$(cat /proc/sys/net/ipv4/ip_forward)" = "1" || sysctl -w net.ipv4.ip_forward=1
 """,
         # ── rsyslog → SIEM 포워딩 ──
         """
