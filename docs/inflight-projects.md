@@ -233,12 +233,12 @@
 - [x] **수정 (commit 59cc9fe + bastion 7b48d29)**: skills.py 에 SKILL_CATEGORIES (9 카테고리 + trigger 키워드) 추가, agent.py `_build_react_system_prompt` 가 skill 을 카테고리 그룹핑 + 14 휴리스틱 매핑 + shell fallback 금지 가드. **bastion remote 재시작 완료** (skills=33 헬스 확인).
 - [x] **2차 수정 (commit ae55254 + bastion 46ee727, 2026-04-26 13:30)**: attack_mode lab-context preamble + 5 few-shot tool_call 예시 + MAX_TURNS 6→8 + FIRST_TURN_RETRY (거부 감지 hint) + ATTACK_COURSES 7개 확장 (web-vuln/physical/ai-security 추가) + probe_all autoscan 버그 fix. 상세: `docs/changelog-2026-04-26-skill-attack-fix.md`.
 - [x] **3차 수정 (commit 071a471 + bastion fc44b22, 2026-04-26 18:55)**: attack-mode probe 가드레일 추가 — recon vs exploit 분리. R3 fail 패턴 분석 결과 attack-ai/attack-adv-ai 모든 fail 이 probe_all/probe_host 잘못 선택 (NFS LPE/WAF SQLi/Suricata 분석/nmap 시그니처 등 익스플로잇 prompt). 휴리스틱에 7개 attack 키워드→shell/qa 매핑 + ★ probe_all/probe_host 익스플로잇·페이로드·분석 호출 금지 명시. ⚠️ 원격 bastion 재시작은 ssh key 미인식으로 수동 필요.
-- [ ] R3 자동 사이클에서 측정 5축 적용:
-  - 거부율 `grep -c "I'm sorry\|cannot help" run.log` (R2: 6 → 목표 0)
-  - unique skill `grep -oE "skill=[a-z_]+" run.log | sort -u | wc -l` (R2: 9 → 목표 15+)
-  - first_turn_retry 발동 횟수
-  - 과목별 pass율 (attack/battle/web-vuln/physical/ai-security 5개)
-  - Asset Δ (probe_all autoscan 후 assets 11 → +N)
+- [x] **R3 자동 사이클 측정 5축 1차 정량 (2026-04-27 cursor 48/575 기준)**:
+  - 거부율 = **0** ✓ (R2:6 → R3:0, 목표 0 달성, attack_mode preamble 효과)
+  - unique skill = **11** ⚠️ (R2:9 → R3:11, 목표 15+ 미달. dormant `cve_lookup`/`wazuh_api` 첫 활성화 ✓)
+  - first_turn_retry 발동 = **0** (소프트 prompt + minimal example 시점 이후 발동 안 함)
+  - 과목별 본 큐 처리: soc-ai 30 / soc-adv-ai 9 / compliance-ai 2 (총 41건, infra-blocked 686 분리 후)
+  - Asset 노드 = **4815** ✅ (P1 Precinct6 임포트 효과, baseline 11 → +4804)
 - [ ] paper §3.5 의 "33 skills" → "33 catalog · N active (cat+few-shot 유도 후)" 정량 보고
 
 **Next concrete step**: bastion 원격 재시작 후 R3 잔여 1070 step 에서 attack-* 과목 pass율 비교 (재시작 전후). 효과 검증 시 P10 closed 후보.
