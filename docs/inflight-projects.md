@@ -104,6 +104,13 @@
 
 ### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **71/590** — 23 카테고리 + h004 2개 (pentest, web-vuln)]
 
+**야간 long run 진행 (2026-04-26 22:00~04:00 KST)**:
+- 시작: 28/590 (10 카테고리)
+- 현재: 71/590 (23 카테고리)
+- ★ 23/23 모두 h001+h002+h003 완비 (pentest/web-vuln 은 h004 추가)
+- 신규 카테고리 13: cloud-security, forensics, threat-hunting, ot-security, mobile-security, privacy-engineering, crypto-key-management, zero-trust, redteam-ops, social-engineering, api-security, siem-engineering, email-security
+- 야간 cycle 평균 5분 / commit + push 별
+
 - [x] 5 신규 카테고리 task 작성 (web-vuln/compliance/ai-ir/ai-utilization/ai-pentest)
 - [x] 10/10 카테고리 모두 ≥1 pilot task 보유
 - [ ] 채점 파이프라인 실 검증 — Bastion 으로 10 task 실행 + judge 정확도 측정
