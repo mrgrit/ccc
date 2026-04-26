@@ -36,7 +36,7 @@
 - [!] **1억 풀 데이터 진단**: edges 메타가 1.3GB sample 보다 빈약 (label_binary + suspicion 만, mo_name/lifecycle 모두 없음). 풍부 메타는 `incidents.jsonl` (10442개) 에 집중. mo_name 다양성은 dataset 구조적 한계 (Data Theft 99.99%) — RAG 가 message_sanitized 컬럼 임베딩으로 보완 필요.
 - [ ] **Top-N hot pattern (1만) RAG POC** — bge-base 임베딩 + Faiss IVF, GPU 1분
 - [ ] dedup + 카테고리 sample (100만) 본격 운용 — **현재 1억건 풀 dl 백그라운드 진행 중** (`witfoo/precinct6-cybersecurity-100m` 68 files, snapshot_download max_workers=4)
-- [ ] `scripts/precinct6_aggregate.py` — top-N IoC 자동 anchor 등록 (전략 D)
+- [x] `scripts/precinct6_aggregate.py` — top-N hot IoC 자동 anchor (전략 D) ✅. 1M edges 스캔 → 9482 unique → top 1000 hot_ioc anchor (anchors 14020 → 15020). 빈도 1위: 280k 회 (IP-6CRED-* sanitized alias).
 - [x] **`scripts/precinct6_export_seed.py` — 배포용 seed bundle 생성** ✅: dist/precinct6-seed-vYYYY.MM/ 산출 (anchors 10657 + 3363 + concepts 48 → tar.gz **215KB / 0.2MB**). manifest + README 자동. 폐쇄망 고객사 배포 준비 완료.
 - [x] `scripts/import_seed_bundle.py` — 배포처 import 명령 ✅. dry-run 검증: 14020 anchors + 48 concepts 모두 인식. dedup (is_anchored / try-except) 으로 안전 append.
 - [x] paper §7.7 신설 — Real-world Dataset 통합 (Precinct 6) ✅. Table 6 통합 결과 정량 + 단조성 한계 명시 + 유의미한 효과 3 가지.
