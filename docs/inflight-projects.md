@@ -12,22 +12,31 @@
 
 ## In-Progress
 
-### P1. Precinct 6 dataset 통합  [STATUS: scaffold only]
+### P1. Precinct 6 dataset 통합  [STATUS: real data 첫 임포트 완료 (200 edges → 401 anchors)]
 
 **동기**: WitFoo Precinct 6 (Apache 2.0, 1억 signal + MITRE + incidents + graph) 로
 합성 데이터 한계 해결. paper §6 의 "real-world fidelity" 보강.
 
+**실측 발견 (2026-04-26 20:00)**:
+- 실제 dataset: `witfoo/precinct6-cybersecurity` (~1.3GB) + `-100m` (1억건 풀)
+- **scaffold 가정과 schema 다름**: incidents.jsonl 은 nested host/cred 메타, edges.jsonl 의 attack_techniques 컬럼은 v1.0.0 샘플에서 모두 빈 `[]`
+- **실 신호** = `label_binary` + `mo_name` + `suspicion_score` + `lifecycle_stage` (160k malicious, 90k suspicion≥0.6, mo_name "Data Theft" 99.99%)
+- 해결: `_MO_TO_MITRE` 수동 매핑 (Data Theft→T1041, Phishing→T1566, ...) 으로 MITRE technique 도출
+
 **Definition of Done**:
 - [x] `scripts/import_precinct6.py` 스캐폴드 + sample dry-run (5 incidents)
 - [x] HistoryLayer/KG/MITRE 임포트 함수 골격
-- [ ] HF 실데이터 1 파일 다운로드 → 실제 schema 확인 (parquet vs jsonl 등)
-- [ ] format adapter 실 schema 로 보강 + 검증
+- [x] **HF 실데이터 다운로드** — 1.3GB (incidents/nodes/edges/signals.parquet)
+- [x] **실 schema 확인** — edges NDJSON labels 블록, signals parquet 27 컬럼 분포 측정
+- [x] **real-edges 임포트 함수** — `import_real_edges()` + `--real-edges` CLI 플래그
+- [x] **첫 실데이터 임포트 검증** — 200 edges → 205 breach_record + 196 ioc + T1041 Concept 노드, history_anchors 5→401
+- [ ] format adapter 보강 — `incidents.jsonl` (host/cred 메타) + `signals.parquet` 추가 채널
 - [ ] **Top-N hot pattern (1만) RAG POC** — bge-base 임베딩 + Faiss IVF, GPU 1분
 - [ ] dedup + 카테고리 sample (100만) 본격 운용
 - [ ] `scripts/precinct6_aggregate.py` — top-N IoC 자동 anchor 등록 (전략 D)
 - [ ] paper §6 Track B 에 Precinct 결과 추가
 
-**Next concrete step**: HF 외부 접근 1회 — `huggingface-cli download witfoo/precinct-6 --include "incidents*"`. 파일 1개로 schema 결정 → adapter fix.
+**Next concrete step**: 임포트 규모 확장 — `--max-edges 5000` 으로 90k malicious 의 5% 샘플 채택, 다양한 mo_name·lifecycle_stage 분포 검증. 다음 사이클에서 실행.
 
 **Files**: `scripts/import_precinct6.py`, `docs/changelog-2026-04.md` §B4
 

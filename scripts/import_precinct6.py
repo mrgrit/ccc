@@ -283,6 +283,147 @@ def update_playbook_mitre_tags(incidents: list[dict], dry_run: bool = False) -> 
     return {"techniques_added": added, "techniques": techs}
 
 
+# ── Real-schema 임포터 (HF v1.0.0 NDJSON) ─────────────────────────────────────
+
+_MO_TO_MITRE = {
+    "Data Theft":    {"tactic": "TA0010 (Exfiltration)",  "technique": "T1041"},
+    "Phishing":      {"tactic": "TA0001 (Initial Access)","technique": "T1566"},
+    "Lateral Move":  {"tactic": "TA0008 (Lateral Move)",  "technique": "T1021"},
+    "Privilege Esc": {"tactic": "TA0004 (PrivEsc)",       "technique": "T1068"},
+}
+
+
+def import_real_edges(src: Path, max_edges: int = 1000, dry_run: bool = False,
+                      label_filter: str = "malicious",
+                      min_suspicion: float = 0.6) -> dict:
+    """graph/edges.jsonl (real WitFoo schema) → MITRE Concept + IoC anchor + KG asset edges.
+
+    real edges.jsonl v1.0.0: attack_techniques 컬럼은 비어있고(샘플 한계),
+    label_binary + mo_name + suspicion_score + lifecycle_stage 만 풍부.
+    → mo_name 을 _MO_TO_MITRE 으로 우선 매핑 (Data Theft → T1041 등)
+    → label_binary=filter AND suspicion >= min_suspicion AND mo_name 매핑 가능 케이스만.
+
+    전략: (src_ip, dst_ip, mo_name) 튜플 dedup → 상위 max_edges 건.
+    """
+    p = src / "graph" / "edges.jsonl"
+    if not p.exists():
+        return {"error": f"{p} not found"}
+    seen = set()        # (src, dst, mo_name)
+    iocs = set()
+    techs = set()       # 매핑된 MITRE technique
+    matched = 0
+    breach_specs = []
+    with p.open() as f:
+        for line in f:
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                e = json.loads(line)
+            except Exception:
+                continue
+            lbl = (e.get("labels") or {})
+            if lbl.get("label_binary") != label_filter:
+                continue
+            if (lbl.get("suspicion_score") or 0) < min_suspicion:
+                continue
+            mo = lbl.get("mo_name") or ""
+            mapping = _MO_TO_MITRE.get(mo)
+            if not mapping:
+                continue
+            src_ip = e.get("src") or ""
+            dst_ip = e.get("dst") or ""
+            key = (src_ip, dst_ip, mo)
+            if key in seen:
+                continue
+            seen.add(key)
+            iocs.add(src_ip); iocs.add(dst_ip)
+            tech = mapping["technique"]
+            techs.add(tech)
+            breach_specs.append({
+                "src": src_ip, "dst": dst_ip, "tech": tech,
+                "tactic": mapping["tactic"], "mo_name": mo,
+                "ts": e.get("timestamp"),
+                "suspicion": lbl.get("suspicion_score", 0.0),
+                "lifecycle": lbl.get("lifecycle_stage", ""),
+            })
+            matched += 1
+            if matched >= max_edges:
+                break
+    if dry_run:
+        return {
+            "matched_edges": matched,
+            "unique_techniques": len(techs),
+            "unique_iocs": len(iocs),
+            "sample_techniques": sorted(techs)[:10],
+        }
+    # Bastion 백엔드 import
+    from packages.bastion.history import HistoryLayer
+    from packages.bastion.graph import get_graph
+    h = HistoryLayer()
+    g = get_graph()
+    ioc_added = 0
+    breach_added = 0
+    tech_added = 0
+    edge_added = 0
+    for tech in sorted(techs):
+        try:
+            g.add_node(f"mitre:{tech}", "Concept", tech,
+                       content={"framework": "MITRE ATT&CK", "id": tech},
+                       meta={"source": "precinct6", "kind": "technique"})
+            tech_added += 1
+        except Exception:
+            pass
+    for ip in sorted(iocs):
+        if not ip:
+            continue
+        if h.is_anchored(f"ioc:{ip}"):
+            continue
+        try:
+            h.add_anchor(kind="ioc", label=f"ioc:{ip}",
+                         body=f"Precinct6 malicious endpoint {ip}",
+                         related_ids=[])
+            ioc_added += 1
+        except Exception:
+            pass
+    for spec in breach_specs:
+        label = f"breach:{spec['src']}→{spec['dst']}:{spec['tech']}"
+        if h.is_anchored(label):
+            continue
+        body = (
+            f"src={spec['src']} dst={spec['dst']} tech={spec['tech']} mo_name={spec['mo_name']}\n"
+            f"tactic={spec['tactic']} suspicion={spec['suspicion']:.2f}\n"
+            f"lifecycle={spec['lifecycle']}"
+        )
+        related = [f"ioc:{spec['src']}", f"ioc:{spec['dst']}", f"mitre:{spec['tech']}"]
+        try:
+            h.add_anchor(kind="breach_record", label=label, body=body,
+                         related_ids=related)
+            breach_added += 1
+            # KG: src→dst Asset 엣지 + breach 노드는 anchor 만으로 OK
+            try:
+                g.add_node(f"asset:{spec['src']}", "Asset", spec['src'],
+                           content={"source": "precinct6"}, meta={"kind": "host"})
+                g.add_node(f"asset:{spec['dst']}", "Asset", spec['dst'],
+                           content={"source": "precinct6"}, meta={"kind": "host"})
+                g.add_edge(f"asset:{spec['src']}", f"asset:{spec['dst']}",
+                           f"precinct6:{spec['tech']}")
+                edge_added += 1
+            except Exception:
+                pass
+        except Exception as ex:
+            print(f"  [warn] breach add fail {label[:60]}: {ex}")
+    return {
+        "matched_edges": matched,
+        "unique_techniques": len(techs),
+        "techniques_added": tech_added,
+        "ioc_anchors_added": ioc_added,
+        "breach_anchors_added": breach_added,
+        "kg_edges_added": edge_added,
+        "sample_techniques": sorted(techs)[:10],
+    }
+
+
 # ── 메인 ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -293,7 +434,21 @@ def main():
                     help="최대 임포트 건수")
     ap.add_argument("--dry-run", action="store_true",
                     help="DB 변경 없이 카운트만 보고")
+    ap.add_argument("--real-edges", action="store_true",
+                    help="real schema (graph/edges.jsonl) 직접 임포트")
+    ap.add_argument("--max-edges", type=int, default=200,
+                    help="real-edges 모드 최대 매칭 엣지 (default 200)")
     args = ap.parse_args()
+
+    # real-edges 모드 — sample 골격 우회, edges.jsonl 직접
+    if args.real_edges:
+        if not args.src:
+            sys.exit("ERROR: --src 필요 (real edges 모드)")
+        src = Path(args.src)
+        print(f"=== real edges import (max={args.max_edges}, dry_run={args.dry_run}) ===")
+        r = import_real_edges(src, max_edges=args.max_edges, dry_run=args.dry_run)
+        print(f"  {r}")
+        return
 
     if args.sample:
         incidents = SAMPLE_INCIDENTS
