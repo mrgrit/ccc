@@ -216,7 +216,7 @@ def _judge_call_once(prompt: str) -> dict | None:
         return None
 
 
-def llm_semantic_judge(step: dict, answer: str) -> tuple[bool, str]:
+def llm_semantic_judge(step: dict, answer: str) -> tuple[bool, str, str]:
     """LLM으로 '응답이 step 의도를 적절히 수행했는지' 판정.
 
     step.verify.semantic (optional, Master가 기술) 을 우선 사용:
@@ -225,12 +225,12 @@ def llm_semantic_judge(step: dict, answer: str) -> tuple[bool, str]:
 
     Few-shot 예시 + JSON parse retry 로 안정화.
 
-    반환: (pass 여부, 응답에서 뽑은 대표 keyword)
+    반환: (pass 여부, 응답에서 뽑은 대표 keyword, 판정 사유 한 문장)
     """
     intent = step.get("instruction", "") or step.get("bastion_prompt", "")
     answer_trim = (answer or "")[-2500:]
     if not intent or not answer_trim.strip():
-        return False, ""
+        return False, "", "empty_input"
     verify = step.get("verify") or {}
     sem = verify.get("semantic") or {}
     sem_intent = sem.get("intent", "")
@@ -279,8 +279,12 @@ def llm_semantic_judge(step: dict, answer: str) -> tuple[bool, str]:
     if parsed is None:
         parsed = _judge_call_once(prompt)
     if parsed is None:
-        return False, ""
-    return bool(parsed.get("pass")), str(parsed.get("keyword", "") or "").strip()
+        return False, "", "judge_parse_fail"
+    return (
+        bool(parsed.get("pass")),
+        str(parsed.get("keyword", "") or "").strip(),
+        str(parsed.get("reason", "") or "").strip(),
+    )
 
 
 def judge(events, step):
@@ -388,8 +392,8 @@ def judge(events, step):
         if "qa" in stages:
             # semantic-first: 있으면 LLM 판정이 유일 기준
             if has_semantic:
-                sem_ok, sem_kw = llm_semantic_judge(step, aggregated)
-                meta["llm_judge"] = {"pass": sem_ok, "keyword": sem_kw}
+                sem_ok, sem_kw, sem_reason = llm_semantic_judge(step, aggregated)
+                meta["llm_judge"] = {"pass": sem_ok, "keyword": sem_kw, "reason": sem_reason}
                 if sem_ok:
                     meta["_semantic_pass_keyword"] = sem_kw
                     return "pass", "qa", meta
@@ -397,8 +401,8 @@ def judge(events, step):
             # semantic 없음 (legacy / 미작성) → keyword match + instruction 기반 semantic fallback
             if match:
                 return "pass", "qa", meta
-            sem_ok, sem_kw = llm_semantic_judge(step, aggregated)
-            meta["llm_judge"] = {"pass": sem_ok, "keyword": sem_kw}
+            sem_ok, sem_kw, sem_reason = llm_semantic_judge(step, aggregated)
+            meta["llm_judge"] = {"pass": sem_ok, "keyword": sem_kw, "reason": sem_reason}
             if sem_ok:
                 meta["_semantic_pass_keyword"] = sem_kw
                 return "pass", "qa", meta
@@ -407,8 +411,8 @@ def judge(events, step):
 
     # 실행됨 — semantic-first primary judge
     if has_semantic:
-        sem_ok, sem_kw = llm_semantic_judge(step, aggregated)
-        meta["llm_judge"] = {"pass": sem_ok, "keyword": sem_kw}
+        sem_ok, sem_kw, sem_reason = llm_semantic_judge(step, aggregated)
+        meta["llm_judge"] = {"pass": sem_ok, "keyword": sem_kw, "reason": sem_reason}
         skill = (skill_starts[0].get("skill") if skill_starts else ("playbook" if pb_starts else "qa"))
         if sem_ok:
             meta["_semantic_pass_keyword"] = sem_kw
@@ -427,8 +431,8 @@ def judge(events, step):
             skill = (skill_starts[0].get("skill") if skill_starts else "playbook")
             return "pass", skill, meta
     # 최후 수단: instruction 기반 semantic (semantic 블록 없어도 instruction 으로 LLM 판정)
-    sem_ok, sem_kw = llm_semantic_judge(step, aggregated)
-    meta["llm_judge"] = {"pass": sem_ok, "keyword": sem_kw}
+    sem_ok, sem_kw, sem_reason = llm_semantic_judge(step, aggregated)
+    meta["llm_judge"] = {"pass": sem_ok, "keyword": sem_kw, "reason": sem_reason}
     if sem_ok:
         skill = (skill_starts[0].get("skill") if skill_starts else ("playbook" if pb_starts else "qa"))
         meta["_semantic_pass_keyword"] = sem_kw
@@ -584,7 +588,10 @@ def main():
         status, skill, meta = "error", "", {}
     else:
         status, skill, meta = judge(events, step)
-        print(f"stages={meta['stages']}  skills={meta['skill_names']}  verify_match={meta['verify_match']}")
+        print(f"stages={meta['stages']}  skills={meta['skill_names']}  verify_match={meta['verify_match']}  has_semantic={meta.get('has_semantic')}")
+        if "llm_judge" in meta:
+            j = meta["llm_judge"]
+            print(f"judge: pass={j.get('pass')}  keyword={j.get('keyword','')!r}  reason={j.get('reason','')!r}")
         print(f"── answer tail ──\n{meta['answer_tail']}")
 
     print("─" * 70)
