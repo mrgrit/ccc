@@ -53,6 +53,22 @@ COURSE_TECHNIQUE_MAP = {
 }
 
 
+def load_breach_pair_anchors(limit: int = 2) -> list[dict]:
+    """KG history_anchors 에서 breach_record 중 breach_pair (Red↔Blue) prefix anchor 추출."""
+    if not GRAPH_DB.exists():
+        return []
+    out = []
+    con = sqlite3.connect(GRAPH_DB); cur = con.cursor()
+    rows = cur.execute(
+        "SELECT label, body FROM history_anchors WHERE kind='breach_record' "
+        "AND label LIKE 'breach_pair:%' ORDER BY id DESC LIMIT ?", (limit,)
+    ).fetchall()
+    for label, body in rows:
+        out.append({"label": label, "body": body, "technique": "T1041 (Data Theft)"})
+    con.close()
+    return out
+
+
 def load_breach_anchors_for_techniques(techniques: list[str], limit: int = 2) -> list[dict]:
     """KG history_anchors 에서 breach_record kind 중 해당 technique 매칭 anchor 추출."""
     if not GRAPH_DB.exists():
@@ -116,11 +132,14 @@ def inject(file_path: Path, dry_run: bool = False) -> dict:
     if not course:
         return {"status": "skip_no_course", "file": str(file_path)}
 
-    techs = COURSE_TECHNIQUE_MAP.get(course, [])
+    techs = COURSE_TECHNIQUE_MAP.get(course, ["T1041"])  # 매핑 없어도 T1041 fallback
     if not techs:
-        return {"status": "skip_no_tech_map", "file": str(file_path), "course": course}
+        techs = ["T1041"]
 
     cases = load_breach_anchors_for_techniques(techs, limit=2)
+    if not cases:
+        # technique 매칭 anchor 없으면 breach_pair anchor (Red↔Blue) fallback
+        cases = load_breach_pair_anchors(limit=2)
     if not cases:
         return {"status": "skip_no_cases", "file": str(file_path), "course": course, "techs": techs}
 

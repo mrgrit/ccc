@@ -664,3 +664,28 @@ Week 15:    기말          -> 종합 점검 프로젝트
 
 > **해석 팁.** Community 버전은 **Intruder 속도 제한**이 있어 대량 브루트포스는 비현실적. 취약점 재현과 보고서 증적 확보에 집중.
 
+---
+
+## 실제 사례 (WitFoo Precinct 6)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+
+### Case 1: `T1041 (Data Theft)` 패턴
+
+```
+incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
+red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
+```
+
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+
+### Case 2: `T1041 (Data Theft)` 패턴
+
+```
+incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
+red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
+```
+
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+
