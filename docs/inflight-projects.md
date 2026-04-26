@@ -61,7 +61,7 @@
 
 ---
 
-### P4. Battle scenarios semantic verify 수기 작성  [STATUS: **162/192 (84.4%)** — 13 시나리오 완료]
+### P4. Battle scenarios semantic verify 수기 작성  [STATUS: **178/192 (92.7%)** — 14 시나리오 완료]
 
 - [x] sqli-vs-waf 11/11
 - [x] xss-vs-filter 12/12
@@ -76,7 +76,8 @@
 - [x] webshell-vs-integrity 12/12 (T1190/T1505.003/T1083 — extension bypass/.php.jpg + Wazuh syscheck/grep-rL/php_admin_flag)
 - [x] bruteforce-vs-lockout 12/12 (T1110.001/T1110.004 — hydra HTTP/SSH + credential stuffing + nft rate limit + Wazuh active-response)
 - [x] apt-phase3 14/14 (T1213/T1003/T1530/T1070.002-003/T1027/T1560.001 — DB dump + log 변조 + 압축/인코딩 exfil + Wazuh syscheck/timeline)
-- [ ] 2 시나리오 잔여: championship (16미션), purple-team (14미션)
+- [x] championship 16/16 (★ 종합 — 전체 Cyber Kill Chain 8 phase Red + NIST IR 7 phase Blue)
+- [ ] **1 시나리오 잔여**: purple-team (14미션)
 
 **동기**: battle-scenarios YAML 의 verify 가 keyword only. semantic-first judge 가 작동하려면 수기 작성 필수.
 
