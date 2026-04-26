@@ -14,6 +14,12 @@ export default function Battle() {
   const [answers, setAnswers] = useState<Record<number, string>>({})
   const [events, setEvents] = useState<any[]>([])
   const [battleInfo, setBattleInfo] = useState<any>(null)
+  // P12 UI 개선: claim 제출 진행 / 자동 새로고침 토글 / score history (sparkline)
+  const [claimSubmitting, setClaimSubmitting] = useState(false)
+  const [autoRefresh, setAutoRefresh] = useState(true)
+  const [scoreHistory, setScoreHistory] = useState<Record<number, number[]>>({})
+  const [showAllIncoming, setShowAllIncoming] = useState(false)
+  const [lastRefreshAt, setLastRefreshAt] = useState<Date | null>(null)
   const [activeTeam, setActiveTeam] = useState<'red' | 'blue'>('red')
   const pollRef = useRef<any>(null)
 
@@ -76,13 +82,27 @@ export default function Battle() {
       setActiveBattle(bid)
       setView('battle')
       setBattleInfo({ ...board, ...defense, autonomous: true, participants: parts, targets: targets.targets || [], missions: miss.missions, mission_summary: miss.summary })
-      // poll
+      // poll — autoRefresh ON 일 때만
       if (pollRef.current) clearInterval(pollRef.current)
       pollRef.current = setInterval(async () => {
+        if (!autoRefresh) return  // toggle OFF 시 skip
         try {
           const board = await api(`/api/battles/${bid}/auto/scoreboard`).catch(() => null)
           const def = await api(`/api/battles/${bid}/auto/my-defense`).catch(() => null)
-          if (board) setBattleInfo((prev: any) => ({ ...prev, ...board, ...def, autonomous: true }))
+          if (board) {
+            setBattleInfo((prev: any) => ({ ...prev, ...board, ...def, autonomous: true }))
+            // score history 누적 (최근 30 포인트만)
+            setScoreHistory(prev => {
+              const next = { ...prev }
+              for (const r of (board.scoreboard || [])) {
+                const arr = next[r.team_no] || []
+                arr.push(r.score)
+                next[r.team_no] = arr.slice(-30)
+              }
+              return next
+            })
+            setLastRefreshAt(new Date())
+          }
         } catch {}
       }, 5000)
     } catch (e: any) { alert(e.message) }
@@ -90,6 +110,7 @@ export default function Battle() {
 
   const submitAutoClaim = async (bid: string, claim_type: string, target_team_no: number | null,
                                    source_team_no: number | null, title: string, evidence: string) => {
+    setClaimSubmitting(true)
     try {
       const r = await api(`/api/battles/${bid}/auto/claim`, {
         method: 'POST',
@@ -98,6 +119,7 @@ export default function Battle() {
       alert(`${r.accepted ? '✅ 인정' : '❌ 미인정'} +${r.points_awarded}점\n${r.reason}`)
       enterAutoBattle(bid)
     } catch (e: any) { alert(e.message) }
+    finally { setClaimSubmitting(false) }
   }
 
   // 참가 (인프라 체크)
@@ -242,14 +264,32 @@ export default function Battle() {
         </div>
       )
     }
+    // mini sparkline SVG (40×16, 30 포인트 max)
+    const sparkline = (vals: number[], color = '#3fb950') => {
+      if (!vals || vals.length < 2) return null
+      const w = 50, h = 16
+      const max = Math.max(...vals, 1)
+      const min = Math.min(...vals, 0)
+      const range = Math.max(max - min, 1)
+      const pts = vals.map((v, i) => `${(i / (vals.length - 1)) * w},${h - ((v - min) / range) * h}`).join(' ')
+      return <svg width={w} height={h} style={{ display: 'inline-block', verticalAlign: 'middle', marginLeft: 6 }}>
+        <polyline points={pts} stroke={color} strokeWidth="1.5" fill="none"/>
+      </svg>
+    }
+    const medal = (i: number) => i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : `#${i+1}`
+
     return (
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, background: '#161b22', borderRadius: 10, padding: '16px 24px', border: '1px solid #bc8cff' }}>
           <button onClick={backToLobby} style={backBtn}>Lobby</button>
           <div style={{ fontSize: 16, fontWeight: 700, color: '#bc8cff' }}>AUTONOMOUS · {board.length} 팀 · {battleInfo.total_claims || 0} claims</div>
-          <div style={{ fontSize: 14, color: '#e6edf3' }}>
-            나: <b style={{ color: '#bc8cff' }}>team-{myTeam?.team_no || '-'}</b> · 점수 <b style={{ color: '#3fb950' }}>{myTeam?.score || 0}</b>
-            {' · '}미션 {(battleInfo.mission_summary?.red_done || 0) + (battleInfo.mission_summary?.blue_done || 0)}/{(battleInfo.mission_summary?.red_total || 0) + (battleInfo.mission_summary?.blue_total || 0)}
+          <div style={{ display: 'flex', gap: 12, alignItems: 'center', fontSize: 13, color: '#e6edf3' }}>
+            <span>나: <b style={{ color: '#bc8cff' }}>team-{myTeam?.team_no || '-'}</b> · 점수 <b style={{ color: '#3fb950' }}>{myTeam?.score || 0}</b></span>
+            <span>미션 {(battleInfo.mission_summary?.red_done || 0) + (battleInfo.mission_summary?.blue_done || 0)}/{(battleInfo.mission_summary?.red_total || 0) + (battleInfo.mission_summary?.blue_total || 0)}</span>
+            <button onClick={() => setAutoRefresh(s => !s)} style={{ ...joinBtn, fontSize: 11, padding: '4px 10px', color: autoRefresh ? '#3fb950' : '#8b949e', borderColor: autoRefresh ? '#3fb950' : '#30363d' }}>
+              {autoRefresh ? '🔄 LIVE 5s' : '⏸ 정지'}
+            </button>
+            {lastRefreshAt && <span style={{ fontSize: 10, color: '#8b949e' }}>last {Math.floor((Date.now() - lastRefreshAt.getTime())/1000)}s ago</span>}
           </div>
         </div>
         {/* 미션 (시나리오 RED+BLUE) */}
@@ -261,12 +301,22 @@ export default function Battle() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
           <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 14 }}>
             <h3 style={{ fontSize: 15, marginBottom: 10, color: '#e6edf3' }}>🏆 Scoreboard</h3>
-            {board.map((r: any, i: number) => (
-              <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #21262d', fontSize: 13 }}>
-                <span><b>#{i+1}</b> team-{r.team_no} · {r.user_name || r.user_id?.slice(0,8)}</span>
-                <span style={{ color: '#3fb950', fontWeight: 700 }}>{r.score}점</span>
-              </div>
-            ))}
+            {board.map((r: any, i: number) => {
+              const isMe = r.user_id === user?.id
+              const hist = scoreHistory[r.team_no] || []
+              return (
+                <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '6px 0', borderBottom: '1px solid #21262d', fontSize: 13, background: isMe ? '#21262d' : 'transparent', borderRadius: isMe ? 4 : 0 }}>
+                  <span>
+                    <b style={{ color: i < 3 ? '#f9d71c' : '#8b949e' }}>{medal(i)}</b>{' '}
+                    team-{r.team_no} · {r.user_name || r.user_id?.slice(0,8)}{isMe ? ' (나)' : ''}
+                  </span>
+                  <span style={{ display: 'inline-flex', alignItems: 'center' }}>
+                    {sparkline(hist, i === 0 ? '#f9d71c' : '#3fb950')}
+                    <b style={{ color: '#3fb950', marginLeft: 8 }}>{r.score}점</b>
+                  </span>
+                </div>
+              )
+            })}
           </div>
           <div style={{ background: '#161b22', border: '1px solid #f85149', borderRadius: 8, padding: 14 }}>
             <h3 style={{ fontSize: 15, marginBottom: 10, color: '#f85149' }}>⚔️ My Targets ({targets.length})</h3>
@@ -274,13 +324,13 @@ export default function Battle() {
               <div key={t.team_no} style={{ padding: '6px 0', borderBottom: '1px solid #21262d', fontSize: 13 }}>
                 <div><b>team-{t.team_no}</b> (점수 {t.current_score})</div>
                 <div style={{ fontSize: 11, color: '#8b949e' }}>defense: {(t.defense_ips || []).join(', ') || '-'}</div>
-                <button onClick={() => {
+                <button disabled={claimSubmitting} onClick={() => {
                   const title = prompt('공격 제목 (예: SQLi token exfil)') || ''
                   if (!title) return
                   const ev = prompt('Evidence — 명령 + stdout + 결과')
                   if (!ev) return
                   submitAutoClaim(activeBattle!, 'attack', t.team_no, null, title, ev)
-                }} style={{ ...joinBtn, color: '#f85149', borderColor: '#f85149', fontSize: 11, padding: '4px 10px', marginTop: 4 }}>공격 claim 제출</button>
+                }} style={{ ...joinBtn, color: '#f85149', borderColor: '#f85149', fontSize: 11, padding: '4px 10px', marginTop: 4, opacity: claimSubmitting ? 0.5 : 1 }}>{claimSubmitting ? '⏳ LLM 채점중...' : '공격 claim 제출'}</button>
               </div>
             ))}
           </div>
@@ -290,21 +340,29 @@ export default function Battle() {
               IPs: {(battleInfo.defense_ips || []).join(', ') || '-'}<br/>
               차단 {myTeam?.defenses_blocked || 0} · 침해당함 {myTeam?.own_breaches || 0}
             </div>
-            <div style={{ fontSize: 11, color: '#8b949e', marginBottom: 4 }}>Incoming attacks ({incoming.length})</div>
-            {incoming.slice(0, 10).map((c: any) => (
+            <div style={{ fontSize: 11, color: '#8b949e', marginBottom: 4, display: 'flex', justifyContent: 'space-between' }}>
+              <span>Incoming attacks ({incoming.length})</span>
+              {incoming.length > 10 && (
+                <button onClick={() => setShowAllIncoming(s => !s)} style={{ background: 'none', border: 'none', color: '#58a6ff', fontSize: 10, cursor: 'pointer' }}>
+                  {showAllIncoming ? '간략히' : '전체 보기'}
+                </button>
+              )}
+            </div>
+            {(showAllIncoming ? incoming : incoming.slice(0, 10)).map((c: any) => (
               <div key={c.id} style={{ padding: '4px 0', borderBottom: '1px solid #21262d', fontSize: 12 }}>
                 <span style={{ color: c.accepted ? '#f85149' : '#8b949e' }}>{c.accepted ? '⚠️' : '○'}</span>{' '}
                 from team-{c.source_team_no || '?'} · {c.title?.slice(0, 40)}
+                {c.points_awarded ? <b style={{ color: '#f85149', marginLeft: 6 }}>+{c.points_awarded}</b> : null}
               </div>
             ))}
-            <button onClick={() => {
+            <button disabled={claimSubmitting} onClick={() => {
               const src = parseInt(prompt('차단한 공격의 출처 team_no') || '0')
               if (!src) return
               const title = prompt('차단 제목') || '방어 차단'
               const ev = prompt('Evidence — 적용 룰/명령 + 차단 로그')
               if (!ev) return
               submitAutoClaim(activeBattle!, 'defense', null, src, title, ev)
-            }} style={{ ...joinBtn, color: '#58a6ff', borderColor: '#58a6ff', fontSize: 11, padding: '4px 10px', marginTop: 8 }}>방어 claim 제출</button>
+            }} style={{ ...joinBtn, color: '#58a6ff', borderColor: '#58a6ff', fontSize: 11, padding: '4px 10px', marginTop: 8, opacity: claimSubmitting ? 0.5 : 1 }}>{claimSubmitting ? '⏳ LLM 채점중...' : '방어 claim 제출'}</button>
           </div>
         </div>
       </div>
