@@ -33,19 +33,9 @@
 
 ---
 
-### P2. R2 round retest 완주  [STATUS: ✅ COMPLETE 1285/1285 (+118 pass)]
+### P2. R2 round retest 완주  [STATUS: ✅ COMPLETE → moved to Closed]
 
-**동기**: B+A+C 픽스 효과 정량화 → paper §7 의 R0→R3 진화 데이터.
-
-**Definition of Done**:
-- [x] supplemental queue 1,285 건 생성 + driver 가동
-- [ ] 1,285 건 모두 처리 (현재 ~877/1,285)
-- [ ] R2 최종 리포트 (pass rate · 카테고리별 개선율 · 새 fail 패턴)
-- [ ] R2 baseline.json 갱신 → R3 시작점 확정
-
-**Next concrete step**: cron 이 매 2시간 진행. 외부 개입 불필요 — supervisor 자동 재시작.
-
-**Files**: `results/retest/queue.tsv`, `results/retest/cursor.txt`, `results/retest/report.md`
+→ Closed 섹션 참조.
 
 ---
 
@@ -266,17 +256,40 @@
 **Next**: 옵션 항목은 운영 시작 후 필요시. seed 데이터 (mission/vision/goal/strategy/kpi 1세트) production 배포 시 1회 등록.
 
 
-## Closed (이번 세션 완료)
+## Closed (누적 완료)
 
-- [x] verify.semantic 5,500 step 수기 작성 (40 과목)
+### 2026-04 초중반
+- [x] verify.semantic 6,188 step 수기 작성 (605 lab YAML, 20 과목 × 평균 15주)
 - [x] Course 교안 전수 감사 (300/300 lecture.md)
-- [x] derestricted course-based routing
+- [x] derestricted course-based routing (4 → 7 attack courses)
 - [x] A·B·C 일괄 픽스 (suffix · expect 보강 · 모델 swap)
 - [x] L4 History layer 구현 + 통합 + UI
 - [x] Skill 18 → 33 확장
 - [x] Battle solo + admin Battles 탭
 - [x] PE-KG-H 4계층 메모리 paper 정렬
 - [x] docs/changelog-2026-04.md 정리
+- [x] **P11 Asset/Architecture/Work 9-tier hierarchy** (Phase 1-5)
+- [x] **P12 자율 공방전 MVP** (autonomous multi-team)
+- [x] **P13 Phase 1+2 — VulnSite 카탈로그 + 5 신규 사이트** (NeoBank/GovPortal/MediForum/AdminConsole/AICompanion = 130 vuln)
+
+### 2026-04-26 후반 (R2→R3 전환 + 5건 일괄 개선)
+- [x] **P2 R2 retest 완주** — 1285/1285, +118 pass (R0 1,476 → R2 1,922 = 62.2%)
+- [x] **5건 일괄 prompt 개선** (commit ae55254/46ee727 + retro 7bf21aa/f5d72c4)
+  - attack_mode lab-context preamble (격리 cyber range, 거부 금지 명시)
+  - 5 few-shot tool_call 예시 (memory_dump/attack_simulate/prompt_fuzz/compliance_scan/history_anchor)
+  - MAX_TURNS 6, FIRST_TURN_RETRY 1 (거부 감지 hint 추가)
+  - probe_all autoscan 버그 fix (vm_ips 전체 순회)
+  - ATTACK_COURSES 4 → 7 (web-vuln-ai/physical-pentest-ai/ai-security-ai 추가)
+- [x] **#4 Tools spec 키워드 필터** (33→top 12, 19KB→7KB, dormant skill 활성화 cve_lookup 첫 사례)
+- [x] **R3 ERROR 35 cluster 진단 + driver v2 healthcheck** (사용자 가설 적중: 동시 요청 → connection refused)
+- [x] **sync_to_bastion.sh runtime 양 경로** (`/opt/bastion/` + `/home/ccc/ccc/packages/bastion/`)
+- [x] **Knowledge UI fullscreen + flexible** (App.tsx useLocation + html/body/#root height 100%)
+- [x] **#6 vuln-sites/up.sh 자동화** — 5 사이트 일괄 배포 + 10/10 PoC smoke
+- [x] **GovPortal 한글 dash 인코딩 버그 fix** (latin-1)
+- [x] **#9 R3 자동 진단 스크립트** — `scripts/r3_diagnose.py` (5축 + cluster + ERROR 분류 + ◆◯⚠️)
+- [x] **#11 README 갱신** (R0→R2 완료 → R3 진행, 5 vuln-site 섹션, 자율공방)
+- [x] **#2 Paper draft v0.4** — 7→1 XXX 채움 (semantic 6188 / 모델 78%vs41% / DGX cost / Bastion-Bench 590) (local only, gitignore)
+- [x] **#3 Paper §3.5 정량 분석** — 33 카탈로그 9 카테고리 표 + R2 active 9 → mitigation + lookup reuse 25%/adapt 46% (local only)
 
 ---
 
