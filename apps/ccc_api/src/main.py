@@ -377,6 +377,12 @@ def _init_db():
                     ('adminconsole', 'normal', 3004, '["A10 SSRF","A03 RCE","A07 PwReset","A03 Cmd Inject"]'::jsonb, 28, 4, FALSE),
                     ('aicompanion', 'normal', 3005, '["LLM01 PromptInject","LLM02 InsecureOutput","LLM03 RAG poisoning","LLM06 Sensitive","LLM10 Model theft"]'::jsonb, 25, 3, FALSE)
                 ON CONFLICT (site_id, difficulty) DO NOTHING;
+
+                -- P13 Phase 2 빌드 완료 사이트 promote (planned → available)
+                UPDATE vuln_sites SET status='available'
+                  WHERE id IN ('neobank','govportal') AND status='planned';
+                UPDATE vuln_site_modes SET available=TRUE
+                  WHERE site_id IN ('neobank','govportal') AND difficulty='normal';
                 -- PoW 블록 (레거시 호환)
                 CREATE TABLE IF NOT EXISTS pow_blocks (
                     id SERIAL PRIMARY KEY,
