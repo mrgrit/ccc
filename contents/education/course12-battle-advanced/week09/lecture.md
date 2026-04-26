@@ -1002,3 +1002,30 @@ AI 공격 에이전트의 강력함은 곧 위험을 의미한다. 반드시 윤
 
 > **해석 팁.** Ollama는 **첫 호출에 모델 로드**가 커서 지연이 크다. 성능 실험 시 워밍업 호출을 배제하고 측정하자.
 
+---
+
+## 실제 사례 (WitFoo Precinct 6)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+
+### Case 1: `T1041` 패턴
+
+```
+src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
+tactic=TA0010 (Exfiltration) suspicion=0.84
+lifecycle=complete-mission
+```
+
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+
+### Case 2: `T1041` 패턴
+
+```
+src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
+tactic=TA0010 (Exfiltration) suspicion=0.92
+lifecycle=complete-mission
+```
+
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+

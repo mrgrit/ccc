@@ -514,3 +514,31 @@ curl -s -X POST http://10.20.30.200:8003/ask \
 ---
 
 > **참고:** Bastion API는 외부 노출 금지(내부망만). 자연어 요청에 파괴적 명령이 포함되면 `auto_approve: false`로 사전 승인 대화를 유도할 수 있다.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+
+### Case 1: `T1041` 패턴
+
+```
+src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
+tactic=TA0010 (Exfiltration) suspicion=0.84
+lifecycle=complete-mission
+```
+
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+
+### Case 2: `T1041` 패턴
+
+```
+src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
+tactic=TA0010 (Exfiltration) suspicion=0.92
+lifecycle=complete-mission
+```
+
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+

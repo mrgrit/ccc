@@ -546,3 +546,31 @@ SolarWinds, Codecov, event-stream, Log4Shell 중 2개를 선택하여 킬체인 
 
 ### 과제 3: CI/CD 보안 정책 (팀)
 가상의 소프트웨어 프로젝트에 대한 CI/CD 보안 정책을 작성하라. 시크릿 관리, 의존성 검증, 코드 서명, 배포 승인 프로세스를 포함할 것.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+
+### Case 1: `T1041` 패턴
+
+```
+src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
+tactic=TA0010 (Exfiltration) suspicion=0.84
+lifecycle=complete-mission
+```
+
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+
+### Case 2: `T1041` 패턴
+
+```
+src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
+tactic=TA0010 (Exfiltration) suspicion=0.92
+lifecycle=complete-mission
+```
+
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+

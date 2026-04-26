@@ -462,3 +462,31 @@ Round가 *조직적으로 실패*하는 가장 흔한 세 패턴.
 3. **업그레이드 시간 부족**: Round가 끝날 때 skill은 초안만, 실장 안 됨
 
 각 실패는 *교육적 교훈*이 된다. 실패한 Round도 `failed-round-X.md`로 문서화해 다음 기수의 reference가 된다.
+
+---
+
+## 실제 사례 (WitFoo Precinct 6)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+
+### Case 1: `T1041` 패턴
+
+```
+src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
+tactic=TA0010 (Exfiltration) suspicion=0.84
+lifecycle=complete-mission
+```
+
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+
+### Case 2: `T1041` 패턴
+
+```
+src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
+tactic=TA0010 (Exfiltration) suspicion=0.92
+lifecycle=complete-mission
+```
+
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+

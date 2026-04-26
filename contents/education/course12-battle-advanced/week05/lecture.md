@@ -1264,3 +1264,31 @@ Python 스크립트를 작성하여 다음 기능을 구현하시오.
 - Suricata DNS 키워드: https://docs.suricata.io/en/latest/rules/dns-keywords.html
 - SANS DNS Exfiltration 분석 백서: https://www.sans.org/white-papers/dns-tunneling/
 - Bastion 외부 마스터 가이드: `docs/api/external-master-guide.md`
+
+---
+
+## 실제 사례 (WitFoo Precinct 6)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+
+### Case 1: `T1041` 패턴
+
+```
+src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
+tactic=TA0010 (Exfiltration) suspicion=0.84
+lifecycle=complete-mission
+```
+
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+
+### Case 2: `T1041` 패턴
+
+```
+src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
+tactic=TA0010 (Exfiltration) suspicion=0.92
+lifecycle=complete-mission
+```
+
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+
