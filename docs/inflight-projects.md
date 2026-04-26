@@ -189,6 +189,52 @@
 
 ---
 
+### P12. 자율 공방전 (Autonomous Multi-team Battle)  [STATUS: Phase 1 in progress]
+
+**동기**: 현재 1v1 (Red/Blue 고정역할) 만. 다중 팀이 자기 자산으로 공격하면서 동시에
+방어하는 "ffa-style" 모드 부재 → 공방전 다양성 부족.
+
+**Definition of Done**:
+- [ ] DB: battle_participants (per-team) + battle_attack_claims (per-attempt)
+- [ ] battle_type='autonomous' 지원 + 무제한 join (team_# 자동 할당)
+- [ ] API: /battles/{bid}/my-targets, /my-defense, /claim-attack, /claim-defense, /incoming-attacks, /scoreboard
+- [ ] semantic judge 가 claim 채점 (attack_landed +10 / defense_block +5 / own_breach −10)
+- [ ] Battle.tsx 자율 모드 view (전체 팀 점수판 + 내 공격 미션 + 내 방어 미션 + incoming attacks)
+- [ ] Phase 2: Wazuh/Suricata 자동 탐지 → defense_block 자동 점수
+- [ ] Phase 3: AI 자율 모드 — 각 팀 Bastion 이 Red+Blue 동시 자율
+
+**Next**: DB 스키마 + 4 API + 자율 모드 UI 컴포넌트.
+
+**Files**: apps/ccc_api/src/main.py, apps/ccc-ui/src/pages/Battle.tsx
+
+---
+
+### P13. VulnSite Catalog (다양한 취약 사이트 + 3 난이도)  [STATUS: not started]
+
+**동기**: JuiceShop 단조로움. 사이트 7종 × easy/normal/hard 3 모드 = 21 변형 → 공방전 ·
+교육 ·실증 다양성. **Rich vulnerability 강조**: 사이트당 15+ 취약점, 다단계 chain 포함, 공방전이 오래 지속되도록.
+
+**카탈로그 (계획)**:
+- 기존: JuiceShop (e-com) · DVWA (PHP 학습)
+- 신규: NeoBank (금융) · GovPortal (정부) · MediForum (의료) · AdminConsole (DevOps) · AICompanion (LLM 챗봇)
+
+**Definition of Done**:
+- [ ] **Phase 1**: 카탈로그 DB (vuln_sites, vuln_site_modes) + admin selector UI (Battle 생성 시 site + difficulty 선택)
+- [ ] **Phase 2 (사이트 5종)**: 각각 Dockerfile + docker-compose + 디자인 테마 + 15+ rich vulnerability seed
+  - NeoBank: IDOR · 금융 race · 인가 우회 · JWT 약점 (≥15)
+  - GovPortal: SAML 우회 · 권한 상승 · 파일 업로드 · CSRF (≥15)
+  - MediForum: stored XSS · CSRF · 개인정보 노출 · API 인증 (≥15)
+  - AdminConsole: SSRF · RCE · 비밀번호 분실 흐름 · 명령 주입 (≥15)
+  - AICompanion: prompt injection · RAG 인젝션 · jailbreak · 모델 탈취 (≥15)
+- [ ] **Phase 3 (사이트별 hard mode)**: 신규 취약점 + 다단계 체인 + 신규 cyber range task
+- [ ] **Bastion-Bench web-vuln 카테고리** 가 사이트별로 task 분포
+
+**Next**: P12 완료 후 카탈로그 DB + admin UI 부터.
+
+**Files**: contents/vuln-sites/<id>/ · apps/ccc_api/src/main.py · apps/ccc-ui/src/pages/{Battle,Admin}.tsx
+
+---
+
 ### P11. Asset/Architecture + Work 9-tier hierarchy  [STATUS: Phase 1-5 구현 완료]
 
 **Definition of Done**:

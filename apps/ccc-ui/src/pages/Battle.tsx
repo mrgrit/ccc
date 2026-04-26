@@ -32,10 +32,62 @@ export default function Battle() {
   useEffect(() => { loadLobby() }, [])
 
   // 대전 개설
-  const createBattle = async (scenarioId: string) => {
+  const createBattle = async (scenarioId: string, autonomous: boolean = false) => {
     try {
-      const d = await api('/api/battles/create', { method: 'POST', body: JSON.stringify({ scenario_id: scenarioId }) })
+      const body: any = { scenario_id: scenarioId }
+      if (autonomous) { body.battle_type = 'autonomous'; body.max_teams = 8 }
+      await api('/api/battles/create', { method: 'POST', body: JSON.stringify(body) })
       loadLobby()
+    } catch (e: any) { alert(e.message) }
+  }
+
+  // 자율 공방전 — 역할 없이 자동 team 할당
+  const autoJoin = async (bid: string) => {
+    try {
+      const infras = await api(`/api/infras?student_id=${user?.id}`).then(d => d.infras || []).catch(() => [])
+      const attackerIp = infras.find((i: any) => i.role === 'attacker')?.ip || ''
+      const defenseIps = infras.filter((i: any) => i.role !== 'attacker').map((i: any) => i.ip)
+      await api(`/api/battles/${bid}/auto/join`, {
+        method: 'POST',
+        body: JSON.stringify({ attacker_ip: attackerIp, defense_ips: defenseIps }),
+      })
+      loadLobby()
+    } catch (e: any) { alert(e.message) }
+  }
+
+  const enterAutoBattle = async (bid: string) => {
+    try {
+      const [parts, targets, defense, board, miss] = await Promise.all([
+        api(`/api/battles/${bid}/auto/participants`).then(d => d.participants || []),
+        api(`/api/battles/${bid}/auto/my-targets`).catch(() => ({ targets: [] })),
+        api(`/api/battles/${bid}/auto/my-defense`).catch(() => ({})),
+        api(`/api/battles/${bid}/auto/scoreboard`).catch(() => ({ scoreboard: [] })),
+        api(`/api/battles/${bid}/auto/my-missions`).catch(() => ({ missions: { red: [], blue: [] }, summary: {} })),
+      ])
+      setActiveBattle(bid)
+      setView('battle')
+      setBattleInfo({ ...board, ...defense, autonomous: true, participants: parts, targets: targets.targets || [], missions: miss.missions, mission_summary: miss.summary })
+      // poll
+      if (pollRef.current) clearInterval(pollRef.current)
+      pollRef.current = setInterval(async () => {
+        try {
+          const board = await api(`/api/battles/${bid}/auto/scoreboard`).catch(() => null)
+          const def = await api(`/api/battles/${bid}/auto/my-defense`).catch(() => null)
+          if (board) setBattleInfo((prev: any) => ({ ...prev, ...board, ...def, autonomous: true }))
+        } catch {}
+      }, 5000)
+    } catch (e: any) { alert(e.message) }
+  }
+
+  const submitAutoClaim = async (bid: string, claim_type: string, target_team_no: number | null,
+                                   source_team_no: number | null, title: string, evidence: string) => {
+    try {
+      const r = await api(`/api/battles/${bid}/auto/claim`, {
+        method: 'POST',
+        body: JSON.stringify({ claim_type, target_team_no, source_team_no, title, evidence }),
+      })
+      alert(`${r.accepted ? '✅ 인정' : '❌ 미인정'} +${r.points_awarded}점\n${r.reason}`)
+      enterAutoBattle(bid)
     } catch (e: any) { alert(e.message) }
   }
 
@@ -144,6 +196,111 @@ export default function Battle() {
   // ══════════════════════════════════════
   //  대전 진행 화면
   // ══════════════════════════════════════
+  if (view === 'battle' && battleInfo?.autonomous) {
+    // 자율 공방전 view
+    const board = battleInfo.scoreboard || []
+    const myTeam = board.find((r: any) => r.user_id === user?.id)
+    const targets = battleInfo.targets || []
+    const incoming = battleInfo.incoming_claims || []
+    const submitMission = async (role: string, order: number) => {
+      const ans = prompt(`[${role}] 미션 #${order} 답변 입력 (명령+stdout)`)
+      if (!ans) return
+      try {
+        const r = await api(`/api/battles/${activeBattle}/auto/submit-mission`, {
+          method: 'POST', body: JSON.stringify({ role, mission_order: order, answer: ans }),
+        })
+        alert(`${r.passed ? '✅' : '❌'} +${r.points || 0}점\n${r.message}`)
+        enterAutoBattle(activeBattle!)
+      } catch (e: any) { alert(e.message) }
+    }
+    const renderMissions = (role: string) => {
+      const list = (battleInfo.missions || {})[role] || []
+      const color = role === 'red' ? '#f85149' : '#58a6ff'
+      return (
+        <div style={{ background: '#161b22', border: `1px solid ${color}`, borderRadius: 8, padding: 14 }}>
+          <h3 style={{ fontSize: 14, marginBottom: 10, color }}>📋 {role.toUpperCase()} 미션 ({list.filter((m:any)=>m.status==='completed').length}/{list.length})</h3>
+          <div style={{ maxHeight: 280, overflowY: 'auto' as const }}>
+            {list.map((m: any) => (
+              <div key={m.id} style={{ padding: '6px 0', borderBottom: '1px solid #21262d', fontSize: 12 }}>
+                <span style={{ color: m.status === 'completed' ? '#3fb950' : '#8b949e' }}>{m.status === 'completed' ? '✓' : '○'}</span>{' '}
+                <b>#{m.mission_order}</b> ({m.points}pt) {m.instruction?.slice(0, 80)}
+                {m.status !== 'completed' && (
+                  <button onClick={() => submitMission(role, m.mission_order)} style={{ ...joinBtn, fontSize: 10, padding: '2px 8px', marginLeft: 6, color, borderColor: color }}>제출</button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+      )
+    }
+    return (
+      <div>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20, background: '#161b22', borderRadius: 10, padding: '16px 24px', border: '1px solid #bc8cff' }}>
+          <button onClick={backToLobby} style={backBtn}>Lobby</button>
+          <div style={{ fontSize: 16, fontWeight: 700, color: '#bc8cff' }}>AUTONOMOUS · {board.length} 팀 · {battleInfo.total_claims || 0} claims</div>
+          <div style={{ fontSize: 14, color: '#e6edf3' }}>
+            나: <b style={{ color: '#bc8cff' }}>team-{myTeam?.team_no || '-'}</b> · 점수 <b style={{ color: '#3fb950' }}>{myTeam?.score || 0}</b>
+            {' · '}미션 {(battleInfo.mission_summary?.red_done || 0) + (battleInfo.mission_summary?.blue_done || 0)}/{(battleInfo.mission_summary?.red_total || 0) + (battleInfo.mission_summary?.blue_total || 0)}
+          </div>
+        </div>
+        {/* 미션 (시나리오 RED+BLUE) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
+          {renderMissions('red')}
+          {renderMissions('blue')}
+        </div>
+        {/* 자유 공방 (claim) */}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+          <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 14 }}>
+            <h3 style={{ fontSize: 15, marginBottom: 10, color: '#e6edf3' }}>🏆 Scoreboard</h3>
+            {board.map((r: any, i: number) => (
+              <div key={r.id} style={{ display: 'flex', justifyContent: 'space-between', padding: '6px 0', borderBottom: '1px solid #21262d', fontSize: 13 }}>
+                <span><b>#{i+1}</b> team-{r.team_no} · {r.user_name || r.user_id?.slice(0,8)}</span>
+                <span style={{ color: '#3fb950', fontWeight: 700 }}>{r.score}점</span>
+              </div>
+            ))}
+          </div>
+          <div style={{ background: '#161b22', border: '1px solid #f85149', borderRadius: 8, padding: 14 }}>
+            <h3 style={{ fontSize: 15, marginBottom: 10, color: '#f85149' }}>⚔️ My Targets ({targets.length})</h3>
+            {targets.map((t: any) => (
+              <div key={t.team_no} style={{ padding: '6px 0', borderBottom: '1px solid #21262d', fontSize: 13 }}>
+                <div><b>team-{t.team_no}</b> (점수 {t.current_score})</div>
+                <div style={{ fontSize: 11, color: '#8b949e' }}>defense: {(t.defense_ips || []).join(', ') || '-'}</div>
+                <button onClick={() => {
+                  const title = prompt('공격 제목 (예: SQLi token exfil)') || ''
+                  if (!title) return
+                  const ev = prompt('Evidence — 명령 + stdout + 결과')
+                  if (!ev) return
+                  submitAutoClaim(activeBattle!, 'attack', t.team_no, null, title, ev)
+                }} style={{ ...joinBtn, color: '#f85149', borderColor: '#f85149', fontSize: 11, padding: '4px 10px', marginTop: 4 }}>공격 claim 제출</button>
+              </div>
+            ))}
+          </div>
+          <div style={{ background: '#161b22', border: '1px solid #58a6ff', borderRadius: 8, padding: 14 }}>
+            <h3 style={{ fontSize: 15, marginBottom: 10, color: '#58a6ff' }}>🛡️ My Defense</h3>
+            <div style={{ fontSize: 12, color: '#8b949e', marginBottom: 8 }}>
+              IPs: {(battleInfo.defense_ips || []).join(', ') || '-'}<br/>
+              차단 {myTeam?.defenses_blocked || 0} · 침해당함 {myTeam?.own_breaches || 0}
+            </div>
+            <div style={{ fontSize: 11, color: '#8b949e', marginBottom: 4 }}>Incoming attacks ({incoming.length})</div>
+            {incoming.slice(0, 10).map((c: any) => (
+              <div key={c.id} style={{ padding: '4px 0', borderBottom: '1px solid #21262d', fontSize: 12 }}>
+                <span style={{ color: c.accepted ? '#f85149' : '#8b949e' }}>{c.accepted ? '⚠️' : '○'}</span>{' '}
+                from team-{c.source_team_no || '?'} · {c.title?.slice(0, 40)}
+              </div>
+            ))}
+            <button onClick={() => {
+              const src = parseInt(prompt('차단한 공격의 출처 team_no') || '0')
+              if (!src) return
+              const title = prompt('차단 제목') || '방어 차단'
+              const ev = prompt('Evidence — 적용 룰/명령 + 차단 로그')
+              if (!ev) return
+              submitAutoClaim(activeBattle!, 'defense', null, src, title, ev)
+            }} style={{ ...joinBtn, color: '#58a6ff', borderColor: '#58a6ff', fontSize: 11, padding: '4px 10px', marginTop: 8 }}>방어 claim 제출</button>
+          </div>
+        </div>
+      </div>
+    )
+  }
   if (view === 'battle' && battleInfo) {
     const isRed = battleInfo.team === 'red'
     const myScore = isRed ? battleInfo.red_score : battleInfo.blue_score
@@ -327,10 +484,16 @@ export default function Battle() {
                       </div>
                     </div>
                     {isAdmin() && (
-                      <button onClick={() => createBattle(s.id)} style={{
-                        padding: '10px 24px', borderRadius: 8, border: 'none', whiteSpace: 'nowrap' as const,
-                        background: '#f97316', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600,
-                      }}>개설</button>
+                      <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
+                        <button onClick={() => createBattle(s.id, false)} style={{
+                          padding: '8px 18px', borderRadius: 6, border: 'none', whiteSpace: 'nowrap' as const,
+                          background: '#f97316', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                        }}>1v1 개설</button>
+                        <button onClick={() => createBattle(s.id, true)} style={{
+                          padding: '8px 18px', borderRadius: 6, border: '1px solid #bc8cff', whiteSpace: 'nowrap' as const,
+                          background: '#bc8cff22', color: '#bc8cff', cursor: 'pointer', fontSize: 13, fontWeight: 600,
+                        }}>자율 (max 8팀)</button>
+                      </div>
                     )}
                   </div>
                 </div>
@@ -347,9 +510,29 @@ export default function Battle() {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10, marginBottom: 24 }}>
           {waiting.map(b => {
+            const isAuto = b.battle_type === 'autonomous'
             const amRed = b.red_id === user?.id
             const amBlue = b.blue_id === user?.id
             const amIn = amRed || amBlue
+            if (isAuto) {
+              return (
+                <div key={b.id} style={{ background: '#161b22', border: '1px solid #bc8cff', borderRadius: 8, padding: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                  <div>
+                    <div style={{ fontSize: 16, fontWeight: 600, color: '#e6edf3', marginBottom: 4 }}>
+                      <span style={{ fontSize: 11, padding: '2px 8px', borderRadius: 10, background: '#bc8cff22', color: '#bc8cff', fontWeight: 700, marginRight: 8 }}>AUTO</span>
+                      {b.scenario_id}
+                    </div>
+                    <div style={{ fontSize: 13, color: '#8b949e' }}>
+                      max teams: {b.rules?.max_teams || '-'} · {Math.floor(b.time_limit / 60)}분
+                    </div>
+                  </div>
+                  <div style={{ display: 'flex', gap: 6 }}>
+                    <button onClick={() => autoJoin(b.id)} style={{ ...joinBtn, color: '#bc8cff', borderColor: '#bc8cff' }}>자율 참가</button>
+                    <button onClick={() => enterAutoBattle(b.id)} style={{ ...joinBtn, background: '#238636', color: '#fff', border: 'none' }}>입장</button>
+                  </div>
+                </div>
+              )
+            }
             return (
               <div key={b.id} style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 18, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                 <div>

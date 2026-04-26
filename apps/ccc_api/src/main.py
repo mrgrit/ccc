@@ -268,6 +268,44 @@ def _init_db():
                 );
                 -- 기존 DB 호환: verify_semantic 컬럼이 없으면 추가
                 ALTER TABLE battle_missions ADD COLUMN IF NOT EXISTS verify_semantic JSONB DEFAULT '{}'::jsonb;
+
+                -- P12 자율 공방전 — 다중 팀 (역할 고정 X, 모두 attacker+defender 동시)
+                CREATE TABLE IF NOT EXISTS battle_participants (
+                    id SERIAL PRIMARY KEY,
+                    battle_id TEXT NOT NULL,
+                    user_id TEXT NOT NULL,
+                    team_no INT NOT NULL,
+                    attacker_ip TEXT DEFAULT '',
+                    defense_ips JSONB DEFAULT '[]'::jsonb,
+                    score INT DEFAULT 0,
+                    attacks_landed INT DEFAULT 0,
+                    defenses_blocked INT DEFAULT 0,
+                    own_breaches INT DEFAULT 0,
+                    joined_at TIMESTAMPTZ DEFAULT now(),
+                    UNIQUE(battle_id, user_id),
+                    UNIQUE(battle_id, team_no)
+                );
+                CREATE INDEX IF NOT EXISTS idx_bp_battle ON battle_participants(battle_id);
+
+                -- 자율전 attack/defense claim — 사용자가 제출, semantic judge 채점
+                CREATE TABLE IF NOT EXISTS battle_attack_claims (
+                    id SERIAL PRIMARY KEY,
+                    battle_id TEXT NOT NULL,
+                    claimant_user_id TEXT NOT NULL,
+                    claim_type TEXT NOT NULL,           -- attack | defense | recovery
+                    target_team_no INT,                  -- 공격 대상 팀 (attack 일 때)
+                    source_team_no INT,                  -- 공격 출처 팀 (defense 일 때)
+                    title TEXT DEFAULT '',
+                    evidence TEXT NOT NULL,              -- 학생 제출 증거 (명령+stdout+캡처)
+                    judged BOOLEAN DEFAULT FALSE,
+                    accepted BOOLEAN DEFAULT FALSE,
+                    points_awarded INT DEFAULT 0,
+                    judge_reason TEXT DEFAULT '',
+                    submitted_at TIMESTAMPTZ DEFAULT now(),
+                    judged_at TIMESTAMPTZ
+                );
+                CREATE INDEX IF NOT EXISTS idx_bac_battle ON battle_attack_claims(battle_id);
+                CREATE INDEX IF NOT EXISTS idx_bac_claimant ON battle_attack_claims(claimant_user_id);
                 -- PoW 블록 (레거시 호환)
                 CREATE TABLE IF NOT EXISTS pow_blocks (
                     id SERIAL PRIMARY KEY,
@@ -2015,23 +2053,31 @@ def _load_scenario(scenario_id: str) -> dict | None:
 class BattleCreateBody(BaseModel):
     scenario_id: str
     mode: str = "manual"
-    time_limit: int | None = None  # None이면 시나리오 기본값
+    time_limit: int | None = None        # None이면 시나리오 기본값
+    battle_type: str | None = None       # 'autonomous' 면 다중 팀 자유진행 모드 강제
+    max_teams: int = 4                    # autonomous 일 때만 의미 (기본 4팀)
 
 @app.post("/battles/create", dependencies=[Depends(verify_api_key)])
 def create_battle(body: BattleCreateBody, request: Request):
-    """대전 개설 (admin/instructor 또는 학생)"""
+    """대전 개설 (admin/instructor 또는 학생).
+    battle_type='autonomous' 시 multi-team free-for-all (역할 고정 X).
+    """
     user = get_current_user(request)
     scenario = _load_scenario(body.scenario_id)
     if not scenario:
         raise HTTPException(404, "Scenario not found")
     bid = str(uuid.uuid4())[:8]
     tl = body.time_limit or scenario.get("time_limit", 1800)
+    btype = body.battle_type or scenario.get("battle_type", "1v1")
+    rules = {"created_by": user.get("sub", "")}
+    if btype == "autonomous":
+        rules["max_teams"] = max(2, min(int(body.max_teams), 16))
     with _conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
                 """INSERT INTO battles (id, battle_type, mode, scenario_id, status, time_limit, rules)
                    VALUES (%s, %s, %s, %s, 'waiting', %s, %s) RETURNING *""",
-                (bid, scenario.get("battle_type", "1v1"), body.mode, body.scenario_id, tl, Json({"created_by": user.get("sub", "")})),
+                (bid, btype, body.mode, body.scenario_id, tl, Json(rules)),
             )
             row = cur.fetchone()
             conn.commit()
@@ -2431,6 +2477,394 @@ def force_end_battle(bid: str, request: Request):
             cur.execute("SELECT * FROM battles WHERE id=%s", (bid,))
             updated = cur.fetchone()
     return {"status": "force_ended", "battle": dict(updated)}
+
+
+# ══════════════════════════════════════════════════════════════════════════
+#  P12 자율 공방전 (Autonomous Multi-team Battle)
+# ══════════════════════════════════════════════════════════════════════════
+
+class AutoJoinBody(BaseModel):
+    attacker_ip: str = ""
+    defense_ips: list[str] = []
+
+
+@app.post("/battles/{bid}/auto/join", dependencies=[Depends(verify_api_key)])
+def auto_join(bid: str, body: AutoJoinBody, request: Request):
+    """자율 공방전 참가 — 역할 없이 team_# 자동 할당."""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM battles WHERE id=%s", (bid,))
+            b = cur.fetchone()
+            if not b:
+                raise HTTPException(404, "Battle not found")
+            if b["battle_type"] != "autonomous":
+                raise HTTPException(400, "이 대전은 autonomous 가 아님")
+            if b["status"] not in ("waiting", "active"):
+                raise HTTPException(400, "대전 종료됨")
+            cur.execute(
+                "SELECT team_no FROM battle_participants WHERE battle_id=%s AND user_id=%s",
+                (bid, uid))
+            existing = cur.fetchone()
+            if existing:
+                return {"battle_id": bid, "team_no": existing["team_no"], "rejoined": True}
+            max_teams = (b.get("rules") or {}).get("max_teams", 16)
+            cur.execute(
+                "SELECT COUNT(*) AS n FROM battle_participants WHERE battle_id=%s",
+                (bid,))
+            n = cur.fetchone()["n"]
+            if n >= max_teams:
+                raise HTTPException(400, f"팀 정원({max_teams}) 초과")
+            team_no = n + 1
+            cur.execute(
+                """INSERT INTO battle_participants
+                   (battle_id, user_id, team_no, attacker_ip, defense_ips)
+                   VALUES (%s, %s, %s, %s, %s) RETURNING *""",
+                (bid, uid, team_no, body.attacker_ip,
+                 Json(body.defense_ips)))
+            row = cur.fetchone()
+            # 자율모드도 시나리오의 RED + BLUE 미션을 *팀별 사본*으로 등록.
+            # battle_missions 의 team 컬럼에 'auto-team-N-red' / 'auto-team-N-blue' 로
+            # 네임스페이스 분리. 모든 팀이 동일한 미션 풀이 + 추가로 free 공방 claim.
+            scenario = _load_scenario(b["scenario_id"])
+            if scenario:
+                for role in ("red", "blue"):
+                    miss = scenario.get(f"{role}_missions", []) or []
+                    for m in miss:
+                        _v = m.get("verify", {}) or {}
+                        _expect = _v.get("expect", "")
+                        if isinstance(_expect, list):
+                            _expect = "|".join(str(e) for e in _expect)
+                        _sem = _v.get("semantic") if isinstance(_v.get("semantic"), dict) else {}
+                        team_label = f"auto-team-{team_no}-{role}"
+                        cur.execute(
+                            "INSERT INTO battle_missions (battle_id, team, mission_order, "
+                            "instruction, hint, points, verify_type, verify_expect, "
+                            "verify_semantic) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s) "
+                            "ON CONFLICT DO NOTHING",
+                            (bid, team_label, m["order"], m["instruction"],
+                             m.get("hint", ""), m.get("points", 10),
+                             _v.get("type", ""), str(_expect), Json(_sem)),
+                        )
+            conn.commit()
+    return {"battle_id": bid, "team_no": team_no, "participant": dict(row),
+            "missions_enrolled": True}
+
+
+@app.get("/battles/{bid}/auto/my-missions",
+         dependencies=[Depends(verify_api_key)])
+def auto_my_missions(bid: str, request: Request, role: str = ""):
+    """자율모드 참가자의 RED+BLUE 미션 (자기 팀 namespace).
+    role='red' 또는 'blue' 로 필터, 미지정 시 둘 다.
+    """
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT team_no FROM battle_participants WHERE battle_id=%s AND user_id=%s",
+                (bid, uid))
+            me = cur.fetchone()
+            if not me:
+                raise HTTPException(403, "참가자 아님")
+            tno = me["team_no"]
+            if role in ("red", "blue"):
+                team_labels = [f"auto-team-{tno}-{role}"]
+            else:
+                team_labels = [f"auto-team-{tno}-red", f"auto-team-{tno}-blue"]
+            cur.execute(
+                "SELECT * FROM battle_missions WHERE battle_id=%s "
+                "AND team = ANY(%s) ORDER BY team, mission_order",
+                (bid, team_labels))
+            missions = [dict(r) for r in cur.fetchall()]
+    out = {"red": [], "blue": []}
+    for m in missions:
+        r = "red" if m["team"].endswith("-red") else "blue"
+        out[r].append(m)
+    return {"team_no": tno, "missions": out,
+            "summary": {"red_total": len(out["red"]),
+                        "red_done": sum(1 for m in out["red"] if m.get("status") == "completed"),
+                        "blue_total": len(out["blue"]),
+                        "blue_done": sum(1 for m in out["blue"] if m.get("status") == "completed")}}
+
+
+class AutoMissionSubmitBody(BaseModel):
+    role: str           # red | blue
+    mission_order: int
+    answer: str
+
+
+@app.post("/battles/{bid}/auto/submit-mission",
+          dependencies=[Depends(verify_api_key)])
+def auto_submit_mission(bid: str, body: AutoMissionSubmitBody, request: Request):
+    """자율모드 시나리오 미션 제출 — 팀 namespace 안에서만 평가."""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    if body.role not in ("red", "blue"):
+        raise HTTPException(400, "role ∈ red|blue")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT team_no FROM battle_participants WHERE battle_id=%s AND user_id=%s",
+                (bid, uid))
+            me = cur.fetchone()
+            if not me:
+                raise HTTPException(403, "참가자 아님")
+            tno = me["team_no"]
+            label = f"auto-team-{tno}-{body.role}"
+            cur.execute(
+                "SELECT * FROM battle_missions WHERE battle_id=%s AND team=%s "
+                "AND mission_order=%s", (bid, label, body.mission_order))
+            mission = cur.fetchone()
+            if not mission:
+                raise HTTPException(404, "미션 없음")
+            if mission["status"] == "completed":
+                return {"status": "already_completed", "points": mission["points"]}
+            # semantic-first 채점 (기존 submit_mission 로직 재사용)
+            from packages.lab_engine.semantic_judge import semantic_first_judge, has_semantic
+            _verify_dict = {
+                "type": mission.get("verify_type", ""),
+                "expect": mission.get("verify_expect", ""),
+                "semantic": mission.get("verify_semantic") or {},
+            }
+            if has_semantic(_verify_dict):
+                passed, _kw, _reason, _ = semantic_first_judge(
+                    mission.get("instruction", ""), _verify_dict, body.answer or "")
+                msg = _reason or ("semantic_pass" if passed else "semantic_fail")
+            else:
+                passed = bool(body.answer.strip())
+                msg = "Answer submitted"
+            if passed:
+                cur.execute("UPDATE battle_missions SET status='completed', "
+                            "answer=%s, submitted_at=now() WHERE id=%s",
+                            (body.answer, mission["id"]))
+                cur.execute("UPDATE battle_participants SET score=score+%s "
+                            "WHERE battle_id=%s AND user_id=%s",
+                            (mission["points"], bid, uid))
+                cur.execute("INSERT INTO battle_events (battle_id, event_type, "
+                            "actor, team, description, points) "
+                            "VALUES (%s, 'auto_mission', %s, %s, %s, %s)",
+                            (bid, uid, label, mission["instruction"][:80],
+                             mission["points"]))
+                conn.commit()
+                return {"passed": True, "points": mission["points"], "message": msg}
+            return {"passed": False, "points": 0, "message": msg}
+
+
+@app.get("/battles/{bid}/auto/participants",
+         dependencies=[Depends(verify_api_key)])
+def auto_participants(bid: str):
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM battle_participants WHERE battle_id=%s "
+                "ORDER BY team_no", (bid,))
+            return {"participants": [dict(r) for r in cur.fetchall()]}
+
+
+@app.get("/battles/{bid}/auto/my-targets",
+         dependencies=[Depends(verify_api_key)])
+def auto_my_targets(bid: str, request: Request):
+    """내 팀 외 모든 팀의 자산 = 공격 대상."""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM battle_participants WHERE battle_id=%s",
+                (bid,))
+            ps = [dict(r) for r in cur.fetchall()]
+    me = next((p for p in ps if p["user_id"] == uid), None)
+    if not me:
+        raise HTTPException(403, "참가자 아님")
+    targets = []
+    for p in ps:
+        if p["team_no"] == me["team_no"]:
+            continue
+        targets.append({
+            "team_no": p["team_no"],
+            "user_id": p["user_id"],
+            "defense_ips": p["defense_ips"],
+            "current_score": p["score"],
+        })
+    return {"my_team_no": me["team_no"], "targets": targets}
+
+
+@app.get("/battles/{bid}/auto/my-defense",
+         dependencies=[Depends(verify_api_key)])
+def auto_my_defense(bid: str, request: Request):
+    """내 자산 (방어 대상) + 들어온 공격 claim 들."""
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                "SELECT * FROM battle_participants WHERE battle_id=%s AND user_id=%s",
+                (bid, uid))
+            me = cur.fetchone()
+            if not me:
+                raise HTTPException(403, "참가자 아님")
+            cur.execute(
+                "SELECT * FROM battle_attack_claims WHERE battle_id=%s "
+                "AND target_team_no=%s ORDER BY submitted_at DESC LIMIT 100",
+                (bid, me["team_no"]))
+            incoming = [dict(r) for r in cur.fetchall()]
+    return {
+        "team_no": me["team_no"],
+        "defense_ips": me["defense_ips"],
+        "incoming_claims": incoming,
+        "score_breakdown": {
+            "attacks_landed": me["attacks_landed"],
+            "defenses_blocked": me["defenses_blocked"],
+            "own_breaches": me["own_breaches"],
+            "total": me["score"],
+        },
+    }
+
+
+class ClaimBody(BaseModel):
+    claim_type: str           # attack | defense | recovery
+    target_team_no: int | None = None
+    source_team_no: int | None = None
+    title: str = ""
+    evidence: str             # 명령 + stdout + 캡처 (semantic judge 입력)
+
+
+@app.post("/battles/{bid}/auto/claim",
+          dependencies=[Depends(verify_api_key)])
+def auto_claim(bid: str, body: ClaimBody, request: Request):
+    """공격/방어/복구 claim 제출 → semantic judge 자동 채점.
+    accepted=True 면 점수 가산 (attack +10 / defense +5 / recovery +3).
+    attack 일 경우 target 의 own_breach +1 도 같이 갱신.
+    """
+    user = get_current_user(request)
+    uid = user.get("sub", "")
+    if body.claim_type not in ("attack", "defense", "recovery"):
+        raise HTTPException(400, "claim_type ∈ attack|defense|recovery")
+    if body.claim_type == "attack" and body.target_team_no is None:
+        raise HTTPException(400, "attack 은 target_team_no 필수")
+    if body.claim_type == "defense" and body.source_team_no is None:
+        raise HTTPException(400, "defense 는 source_team_no 필수")
+
+    # semantic judge — Bastion /chat 활용 또는 lab_engine.semantic_judge 직접
+    judged, accepted, reason, points = _judge_battle_claim(
+        body.claim_type, body.title, body.evidence)
+
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """INSERT INTO battle_attack_claims
+                   (battle_id, claimant_user_id, claim_type, target_team_no,
+                    source_team_no, title, evidence, judged, accepted,
+                    points_awarded, judge_reason, judged_at)
+                   VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s, now())
+                   RETURNING *""",
+                (bid, uid, body.claim_type, body.target_team_no,
+                 body.source_team_no, body.title, body.evidence,
+                 judged, accepted, points, reason))
+            claim = cur.fetchone()
+            if accepted and points > 0:
+                # 본인 점수 가산
+                col_map = {"attack": "attacks_landed",
+                           "defense": "defenses_blocked",
+                           "recovery": "attacks_landed"}  # recovery = own credit
+                col = col_map[body.claim_type]
+                cur.execute(
+                    f"UPDATE battle_participants SET score=score+%s, {col}={col}+1 "
+                    f"WHERE battle_id=%s AND user_id=%s",
+                    (points, bid, uid))
+                # attack 시 target 의 own_breaches +1 + 점수 -10
+                if body.claim_type == "attack" and body.target_team_no:
+                    cur.execute(
+                        "UPDATE battle_participants SET score=score-10, "
+                        "own_breaches=own_breaches+1 "
+                        "WHERE battle_id=%s AND team_no=%s",
+                        (bid, body.target_team_no))
+                # battle_events 에 기록
+                cur.execute(
+                    "INSERT INTO battle_events (battle_id, event_type, actor, "
+                    "team, description, points) VALUES (%s, %s, %s, %s, %s, %s)",
+                    (bid, f"auto_{body.claim_type}", uid,
+                     f"team-{body.target_team_no or body.source_team_no or '-'}",
+                     f"{body.title or body.claim_type}: {reason[:80]}",
+                     points))
+            conn.commit()
+    return {
+        "claim_id": claim["id"],
+        "judged": judged, "accepted": accepted,
+        "points_awarded": points, "reason": reason,
+    }
+
+
+@app.get("/battles/{bid}/auto/scoreboard",
+         dependencies=[Depends(verify_api_key)])
+def auto_scoreboard(bid: str):
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """SELECT bp.*,
+                          COALESCE(s.name, '') as user_name
+                   FROM battle_participants bp
+                   LEFT JOIN students s ON bp.user_id = s.id
+                   WHERE bp.battle_id=%s
+                   ORDER BY bp.score DESC""",
+                (bid,))
+            rows = [dict(r) for r in cur.fetchall()]
+            cur.execute(
+                "SELECT COUNT(*) AS n FROM battle_attack_claims "
+                "WHERE battle_id=%s", (bid,))
+            total_claims = cur.fetchone()["n"]
+    return {"battle_id": bid, "scoreboard": rows, "total_claims": total_claims}
+
+
+def _judge_battle_claim(claim_type: str, title: str,
+                        evidence: str) -> tuple[bool, bool, str, int]:
+    """semantic-first 채점. lab_engine.semantic_judge 재활용."""
+    try:
+        from packages.lab_engine.semantic_judge import semantic_first_judge
+    except Exception:
+        # 폴백: 빈 evidence 만 거절
+        ok = bool((evidence or "").strip()) and len(evidence) > 50
+        pts = {"attack": 10, "defense": 5, "recovery": 3}.get(claim_type, 0) if ok else 0
+        return True, ok, ("OK (no judge)" if ok else "evidence 부족"), pts
+
+    intent_map = {
+        "attack": f"공격 성공 증명 — '{title}'. evidence 에 실제 침해 명령 + 결과 stdout/HTTP code/캡처 포함되어야 인정",
+        "defense": f"방어 성공 증명 — '{title}'. evidence 에 실제 차단 룰 적용 + 차단 로그/응답 코드 포함되어야 인정",
+        "recovery": f"복구 증명 — '{title}'. evidence 에 침해 흔적 정리 + 재발 차단 룰 + 검증 명령 포함되어야 인정",
+    }
+    succ_map = {
+        "attack": ["실행된 공격 명령 인용", "결과 stdout/HTTP code/응답 데이터 인용",
+                   "공격 대상이 명시 (IP/URL/계정)"],
+        "defense": ["적용한 차단 룰/명령 인용", "차단 로그 또는 거절 응답 인용",
+                    "공격 출처 식별"],
+        "recovery": ["격리·삭제 명령 인용", "재발 방지 룰 인용", "검증 결과 인용"],
+    }
+    neg_map = {
+        "attack": ["명령 없이 설명만", "응답 코드/stdout 누락", "대상 미명시"],
+        "defense": ["룰 변경 흔적 없음", "차단 로그 부재", "출처 불명"],
+        "recovery": ["근본 원인 미해결", "재발 방지 누락", "검증 없음"],
+    }
+    verify = {
+        "type": "output_contains",
+        "expect": "",
+        "semantic": {
+            "intent": intent_map[claim_type],
+            "success_criteria": succ_map[claim_type],
+            "acceptable_methods": ["실제 명령 + stdout 인용", "스크린샷 base64",
+                                    "JSON 형식 evidence"],
+            "negative_signs": neg_map[claim_type],
+        },
+    }
+    try:
+        passed, kw, reason, _ = semantic_first_judge(
+            intent_map[claim_type], verify, evidence)
+    except Exception as e:
+        return True, False, f"judge_error: {e}", 0
+    pts = {"attack": 10, "defense": 5, "recovery": 3}.get(claim_type, 0) if passed else 0
+    return True, bool(passed), reason or "", pts
+
 
 def _bastion_get(path: str, params: dict | None = None) -> dict:
     """Bastion API GET 프록시 헬퍼 — 실패해도 app 죽지 않게."""
