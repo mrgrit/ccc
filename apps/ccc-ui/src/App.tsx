@@ -65,7 +65,7 @@ export default function App() {
   const logout = () => { clearAuth(); setLoggedIn(false) }
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh' }}>
+    <div style={{ display: 'flex', height: '100vh', minHeight: 0, overflow: 'hidden' }}>
       <nav style={{
         width: 220, background: '#161b22', borderRight: '1px solid #30363d',
         padding: '20px 0', display: 'flex', flexDirection: 'column',
