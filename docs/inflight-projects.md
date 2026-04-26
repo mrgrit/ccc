@@ -71,7 +71,7 @@
 
 ---
 
-### P4. Battle scenarios semantic verify 수기 작성  [STATUS: 0/192]
+### P4. Battle scenarios semantic verify 수기 작성  [STATUS: 11/192 (sqli-vs-waf 완료)]
 
 **동기**: battle-scenarios YAML 의 verify 가 keyword only. semantic-first judge 가 작동하려면 수기 작성 필수.
 
