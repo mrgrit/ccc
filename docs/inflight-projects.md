@@ -219,7 +219,7 @@
 - 신규: NeoBank (금융) · GovPortal (정부) · MediForum (의료) · AdminConsole (DevOps) · AICompanion (LLM 챗봇)
 
 **Definition of Done**:
-- [ ] **Phase 1**: 카탈로그 DB (vuln_sites, vuln_site_modes) + admin selector UI (Battle 생성 시 site + difficulty 선택)
+- [x] **Phase 1**: 카탈로그 DB (vuln_sites, vuln_site_modes) + admin selector UI (Battle 생성 시 site + difficulty 선택). 7 사이트 + 9 mode seed.
 - [ ] **Phase 2 (사이트 5종)**: 각각 Dockerfile + docker-compose + 디자인 테마 + 15+ rich vulnerability seed
   - NeoBank: IDOR · 금융 race · 인가 우회 · JWT 약점 (≥15)
   - GovPortal: SAML 우회 · 권한 상승 · 파일 업로드 · CSRF (≥15)
