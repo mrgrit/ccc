@@ -77,7 +77,13 @@
 
 ---
 
-### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: 5/590]
+### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **10/590** — 10/10 카테고리 cover]
+
+- [x] 5 신규 카테고리 task 작성 (web-vuln/compliance/ai-ir/ai-utilization/ai-pentest)
+- [x] 10/10 카테고리 모두 ≥1 pilot task 보유
+- [ ] 채점 파이프라인 실 검증 — Bastion 으로 10 task 실행 + judge 정확도 측정
+- [ ] 본격 작성 (카테고리당 평균 59 task = 590 - 10 = 580 잔여)
+- [ ] paper §6.2 결과 반영
 
 **동기**: paper §6 Track B 의 핵심. 개발 corpus (3,089 step) 와 완전 분리 신규 task.
 
