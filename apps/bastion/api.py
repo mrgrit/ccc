@@ -84,8 +84,16 @@ _model_swap_lock = threading.Lock()
 
 
 def _resolve_manager_model(course: str) -> str:
-    """course 기반 manager LLM 선택. 공격/대전 계열만 derestricted."""
-    return LLM_MANAGER_MODEL_UNSAFE if course in ATTACK_COURSES else LLM_MANAGER_MODEL
+    """course 기반 manager LLM 선택. 공격/대전 계열만 derestricted.
+
+    LLM_FAST_ATTACK=1 면 attack 도 일반 모델 사용 (derestricted 가 너무 느릴 때).
+    attack_mode preamble + first_turn_retry 가 거부 패턴 잡아줌.
+    """
+    if course in ATTACK_COURSES:
+        if os.getenv("LLM_FAST_ATTACK", "").lower() in ("1","true","yes"):
+            return LLM_MANAGER_MODEL  # 빠른 일반 모델 + attack_mode preamble 의존
+        return LLM_MANAGER_MODEL_UNSAFE
+    return LLM_MANAGER_MODEL
 
 app = FastAPI(
     title="Bastion API",

@@ -33,7 +33,7 @@
 
 ---
 
-### P2. R2 round retest 완주  [STATUS: in progress ~68%]
+### P2. R2 round retest 완주  [STATUS: ✅ COMPLETE 1285/1285 (+118 pass)]
 
 **동기**: B+A+C 픽스 효과 정량화 → paper §7 의 R0→R3 진화 데이터.
 
@@ -49,7 +49,7 @@
 
 ---
 
-### P3. R3 round retest  [STATUS: blocked on P2]
+### P3. R3 round retest  [STATUS: in progress ~6% (67/1168, 새 코드 적용 후 fresh measure)]
 
 **동기**: P2 완료 후 잔존 fail 을 한 번 더 retest 해서 누적 개선 확인.
 
