@@ -44,7 +44,7 @@ app.secret_key = "gov-flask-weak"
 @app.after_request
 def headers(resp):
     # 의도적 — 보안 헤더 안 붙임
-    resp.headers["Server"] = "GovPortal/1.0 (Apache/2.4.49 — CVE-2021-41773 vulnerable)"  # V24 banner
+    resp.headers["Server"] = "GovPortal/1.0 (Apache/2.4.49 - CVE-2021-41773 vulnerable)"  # V24 banner (ASCII only)
     return resp
 
 
