@@ -15,9 +15,12 @@ const NODE_COLORS: Record<string, string> = {
   Asset:      '#8b949e',
   Concept:    '#bc8cff',
   Insight:    '#d29922',
+  // History layer
+  Narrative:  '#79c0ff',
+  Anchor:     '#ffa657',
 }
 
-const ALL_TYPES = ['Playbook','Experience','Skill','Error','Recovery','Asset','Concept','Insight']
+const ALL_TYPES = ['Playbook','Experience','Skill','Error','Recovery','Asset','Concept','Insight','Narrative','Anchor']
 
 type Node = {
   id: string
@@ -64,17 +67,44 @@ export default function Knowledge() {
   const load = async () => {
     setLoading(true)
     try {
-      const [n, e, s] = await Promise.all([
+      const [n, e, s, h] = await Promise.all([
         api('/api/graph/nodes?limit=1000').then(d => d.nodes || []),
         api('/api/graph/edges').then(d => d.edges || []),
         api('/api/graph/stats').catch(() => ({})),
+        api('/api/history/graph-view?limit=200').catch(() => ({ nodes: [], edges: [] })),
       ])
-      setNodes(n); setEdges(e); setStats(s)
+      const histNodes = h.nodes || []
+      const histEdges = (h.edges || []).map((edge: any, i: number) => ({
+        ...edge, id: 1_000_000 + i, // KG edge id 와 충돌 방지
+      }))
+      // History node count 를 stats 에 합산
+      const hStats = { ...(s || {}) }
+      hStats.node_counts = hStats.node_counts || {}
+      hStats.node_counts.Narrative = histNodes.filter((x: any) => x.type === 'Narrative').length
+      hStats.node_counts.Anchor    = histNodes.filter((x: any) => x.type === 'Anchor').length
+      setNodes([...n, ...histNodes])
+      setEdges([...e, ...histEdges])
+      setStats(hStats)
     } catch (err: any) {
       alert('Knowledge graph 로드 실패: ' + err.message)
     } finally { setLoading(false) }
   }
   useEffect(() => { load() }, [])
+
+  // Asset / Narrative 선택 시 timeline 추가 로드
+  const [timeline, setTimeline] = useState<any>(null)
+  useEffect(() => {
+    setTimeline(null)
+    if (!selectedId || !detail?.node) return
+    const t = detail.node.type
+    if (t === 'Asset') {
+      api(`/api/history/asset-timeline/${encodeURIComponent(detail.node.name || selectedId)}`)
+        .then(d => setTimeline(d)).catch(() => setTimeline({ events: [] }))
+    } else if (t === 'Narrative') {
+      api(`/api/history/events?narrative_id=${encodeURIComponent(selectedId)}&limit=100`)
+        .then(d => setTimeline({ events: d.events || [] })).catch(() => setTimeline({ events: [] }))
+    }
+  }, [selectedId, detail])
 
   // 그래프 렌더
   const filteredNodes = useMemo(
@@ -429,6 +459,92 @@ export default function Knowledge() {
               {detail.node.type === 'Insight' && detail.node.content && (
                 <NodeSection title="Insight">
                   <div style={{ fontSize: 13, color: '#e6edf3', fontStyle: 'italic' as const }}>"{detail.node.content.text}"</div>
+                </NodeSection>
+              )}
+              {detail.node.type === 'Narrative' && (
+                <NodeSection title="Narrative">
+                  <div style={{ fontSize: 12, color: '#8b949e' }}>
+                    status: <b style={{ color: detail.node.meta?.status === 'open' ? '#3fb950' : '#8b949e' }}>{detail.node.meta?.status}</b>
+                    {detail.node.meta?.event_count !== undefined &&
+                      <span style={{ marginLeft: 8 }}>events: {detail.node.meta.event_count}</span>}
+                  </div>
+                  <div style={{ fontSize: 11, color: '#8b949e', marginTop: 4 }}>
+                    started: {detail.node.meta?.started_at?.slice(0, 16)}
+                    {detail.node.meta?.ended_at && <span> · ended: {detail.node.meta.ended_at.slice(0, 16)}</span>}
+                  </div>
+                  {detail.node.meta?.summary && (
+                    <div style={{ fontSize: 12, color: '#e6edf3', marginTop: 8, whiteSpace: 'pre-wrap' as const }}>
+                      {detail.node.meta.summary}
+                    </div>
+                  )}
+                </NodeSection>
+              )}
+              {detail.node.type === 'Anchor' && (
+                <NodeSection title="Anchor (압축 면역)">
+                  <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 6 }}>
+                    <span style={{ fontSize: 10, padding: '2px 8px', borderRadius: 10, background: '#ffa65722', color: '#ffa657', fontWeight: 700, textTransform: 'uppercase' as const }}>
+                      {detail.node.meta?.kind}
+                    </span>
+                    <span style={{ fontSize: 11, color: '#8b949e' }}>
+                      {detail.node.meta?.valid_from?.slice(0, 10)}
+                      {detail.node.meta?.valid_until ? ` ~ ${detail.node.meta.valid_until.slice(0, 10)}` : ' ~ 영구'}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 12, color: '#e6edf3', whiteSpace: 'pre-wrap' as const, fontFamily: 'monospace' as const, background: '#0d1117', padding: 8, borderRadius: 6 }}>
+                    {detail.node.meta?.body}
+                  </div>
+                </NodeSection>
+              )}
+
+              {/* Asset/Narrative 선택 시 timeline (events) */}
+              {timeline && (timeline.events?.length > 0 || timeline.narratives?.length > 0 || timeline.anchors?.length > 0) && (
+                <NodeSection title={`History Timeline ${timeline.events ? `(${timeline.events.length} events)` : ''}`}>
+                  {timeline.narratives?.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 11, color: '#8b949e', fontWeight: 600 }}>Narratives ({timeline.narratives.length})</div>
+                      {timeline.narratives.slice(0, 5).map((n: any) => (
+                        <div key={n.id} onClick={() => focusNode(n.id)} style={{ fontSize: 12, color: '#79c0ff', cursor: 'pointer', padding: '2px 0' }}>
+                          ▸ {n.title} <span style={{ color: '#8b949e' }}>({n.status})</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {timeline.anchors?.length > 0 && (
+                    <div style={{ marginBottom: 8 }}>
+                      <div style={{ fontSize: 11, color: '#8b949e', fontWeight: 600 }}>Anchors ({timeline.anchors.length})</div>
+                      {timeline.anchors.slice(0, 5).map((a: any) => (
+                        <div key={a.id} onClick={() => focusNode(a.id)} style={{ fontSize: 12, color: '#ffa657', cursor: 'pointer', padding: '2px 0' }}>
+                          ⚓ <b>{a.kind}</b> · {a.label}
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                  {timeline.events?.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: 11, color: '#8b949e', fontWeight: 600 }}>Recent Events</div>
+                      <div style={{ maxHeight: 220, overflowY: 'auto', marginTop: 4 }}>
+                        {timeline.events.slice(0, 30).map((e: any) => (
+                          <div key={e.id} style={{ padding: '4px 0', borderBottom: '1px solid #21262d', fontSize: 12 }}>
+                            <span style={{ color: '#8b949e', fontFamily: 'monospace' as const, marginRight: 6 }}>{e.ts?.slice(11, 19)}</span>
+                            <span style={{ color: e.kind === 'task_done' ? '#3fb950' : e.kind === 'task_fail' ? '#f85149' : '#d29922', fontWeight: 600, marginRight: 6 }}>
+                              {e.kind}
+                            </span>
+                            <span style={{ color: '#e6edf3' }}>{e.summary?.slice(0, 80)}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                  {timeline.changelog?.length > 0 && (
+                    <div style={{ marginTop: 8 }}>
+                      <div style={{ fontSize: 11, color: '#8b949e', fontWeight: 600 }}>Changelog ({timeline.changelog.length})</div>
+                      {timeline.changelog.slice(-5).reverse().map((c: any, i: number) => (
+                        <div key={i} style={{ fontSize: 12, color: '#e6edf3', padding: '2px 0' }}>
+                          v{c.version} <span style={{ color: '#8b949e' }}>{c.ts?.slice(0, 10)}</span> · {c.diff?.slice(0, 60)}
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </NodeSection>
               )}
 
