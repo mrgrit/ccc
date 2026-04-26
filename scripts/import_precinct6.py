@@ -424,6 +424,174 @@ def import_real_edges(src: Path, max_edges: int = 1000, dry_run: bool = False,
     }
 
 
+def import_real_incidents(src: Path, max_incidents: int = 100, dry_run: bool = False) -> dict:
+    """incidents.jsonl (real WitFoo schema) → Asset(host) + Concept(framework) + breach_record anchor.
+
+    각 incident 의 nodes 는 Exploiting Host(Red) + Exploiting Target(Blue) 쌍.
+    frameworks 매핑 (csc/cmmc/pci/nist80053) → Compliance Concept 노드로.
+    """
+    p = src / "graph" / "incidents.jsonl"
+    if not p.exists():
+        return {"error": f"{p} not found"}
+    asset_count = 0
+    breach_count = 0
+    fw_concepts = set()
+    products_concepts = set()
+    incidents_processed = 0
+    role_pairs = 0  # Red↔Blue pairs
+    with p.open() as f:
+        for line in f:
+            try:
+                d = json.loads(line)
+            except Exception:
+                continue
+            inc_id = d.get("id", "")
+            mo = d.get("mo_name", "")
+            susp = d.get("suspicion_score", 0.0)
+            nodes = d.get("nodes") or {}
+            red_hosts = []
+            blue_hosts = []
+            for nid, node in nodes.items():
+                ntype = node.get("type", "")
+                ip = node.get("ip", "") or node.get("hostname", "")
+                if not ip:
+                    continue
+                # role 분류
+                role = None
+                for s in (node.get("sets") or {}).values():
+                    sname = s.get("name", "")
+                    if sname == "Exploiting Host":
+                        role = "red"
+                    elif sname == "Exploiting Target":
+                        role = "blue"
+                # frameworks 수집
+                for fw_key in (node.get("frameworks") or {}):
+                    fw_concepts.add(fw_key)
+                # products 수집
+                for p_obj in (node.get("products") or {}).values():
+                    pn = p_obj.get("name", "")
+                    if pn:
+                        products_concepts.add(pn)
+                if role == "red":
+                    red_hosts.append(ip)
+                elif role == "blue":
+                    blue_hosts.append(ip)
+            for r in red_hosts:
+                for b in blue_hosts:
+                    role_pairs += 1
+            incidents_processed += 1
+            if incidents_processed >= max_incidents:
+                break
+
+    if dry_run:
+        return {
+            "incidents_processed": incidents_processed,
+            "would_red_blue_pairs": role_pairs,
+            "would_frameworks": len(fw_concepts),
+            "would_products": len(products_concepts),
+            "frameworks_sample": sorted(fw_concepts)[:10],
+            "products_sample": sorted(products_concepts)[:10],
+        }
+
+    from packages.bastion.history import HistoryLayer
+    from packages.bastion.graph import get_graph
+    h = HistoryLayer()
+    g = get_graph()
+
+    # frameworks Concept 노드 생성
+    fw_added = 0
+    for fw in sorted(fw_concepts):
+        try:
+            g.add_node(f"concept:framework:{fw}", "Concept", fw,
+                       content={"source":"precinct6","kind":"compliance_framework","id":fw},
+                       meta={"source":"precinct6","kind":"compliance"})
+            fw_added += 1
+        except Exception:
+            pass
+    # products Concept 노드
+    pr_added = 0
+    for pr in sorted(products_concepts):
+        try:
+            g.add_node(f"concept:product:{pr}", "Concept", pr,
+                       content={"source":"precinct6","kind":"security_product","name":pr},
+                       meta={"source":"precinct6","kind":"product"})
+            pr_added += 1
+        except Exception:
+            pass
+
+    # 두번째 pass — 실 import
+    asset_added = 0
+    breach_added = 0
+    pair_edges = 0
+    pair_anchors = 0
+    cnt = 0
+    with p.open() as f:
+        for line in f:
+            cnt += 1
+            if cnt > max_incidents:
+                break
+            try:
+                d = json.loads(line)
+            except Exception:
+                continue
+            inc_id = d.get("id", "")
+            mo = d.get("mo_name", "")
+            susp = d.get("suspicion_score", 0.0)
+            nodes = d.get("nodes") or {}
+            red_ips = []; blue_ips = []
+            for nid, node in nodes.items():
+                ip = node.get("ip", "") or node.get("hostname", "")
+                if not ip:
+                    continue
+                role = None
+                for s in (node.get("sets") or {}).values():
+                    sname = s.get("name", "")
+                    if sname == "Exploiting Host": role = "red"
+                    elif sname == "Exploiting Target": role = "blue"
+                # Asset 노드 추가 (메타에 role + suspicion_score)
+                node_susp = node.get("suspicion_score", 0.0)
+                aid = f"asset:p6:{ip}"
+                try:
+                    g.add_node(aid, "Asset", ip,
+                               content={"source":"precinct6","incident":inc_id,"mo":mo},
+                               meta={"kind":"host","role":role or "neutral",
+                                     "suspicion":node_susp})
+                    asset_added += 1
+                except Exception:
+                    pass
+                if role == "red": red_ips.append(ip)
+                elif role == "blue": blue_ips.append(ip)
+            # Red ↔ Blue breach pair anchor + edge
+            for r in red_ips:
+                for b in blue_ips:
+                    label = f"breach_pair:p6:{r}→{b}:{mo}"
+                    body = (f"incident_id={inc_id} mo_name={mo}\n"
+                            f"red={r} blue={b} suspicion={susp:.2f}")
+                    if not h.is_anchored(label):
+                        try:
+                            h.add_anchor(kind="breach_record", label=label, body=body,
+                                         related_ids=[f"asset:p6:{r}", f"asset:p6:{b}"])
+                            pair_anchors += 1
+                        except Exception:
+                            pass
+                    try:
+                        g.add_edge(f"asset:p6:{r}", f"asset:p6:{b}", "p6:exploit")
+                        pair_edges += 1
+                    except Exception:
+                        pass
+
+    return {
+        "incidents_processed": cnt,
+        "asset_nodes_added": asset_added,
+        "frameworks_added": fw_added,
+        "products_added": pr_added,
+        "breach_pair_anchors_added": pair_anchors,
+        "kg_pair_edges_added": pair_edges,
+        "frameworks_sample": sorted(fw_concepts)[:10],
+        "products_sample": sorted(products_concepts)[:10],
+    }
+
+
 # ── 메인 ──────────────────────────────────────────────────────────────────────
 
 def main():
@@ -438,7 +606,18 @@ def main():
                     help="real schema (graph/edges.jsonl) 직접 임포트")
     ap.add_argument("--max-edges", type=int, default=200,
                     help="real-edges 모드 최대 매칭 엣지 (default 200)")
+    ap.add_argument("--real-incidents", action="store_true",
+                    help="incidents.jsonl 임포트 (Asset+frameworks+Red↔Blue 쌍)")
     args = ap.parse_args()
+
+    if args.real_incidents:
+        if not args.src:
+            sys.exit("ERROR: --src 필요")
+        src = Path(args.src)
+        print(f"=== real incidents import (max={args.max_incidents}, dry_run={args.dry_run}) ===")
+        r = import_real_incidents(src, max_incidents=args.max_incidents, dry_run=args.dry_run)
+        print(f"  {r}")
+        return
 
     # real-edges 모드 — sample 골격 우회, edges.jsonl 직접
     if args.real_edges:

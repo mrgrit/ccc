@@ -12,7 +12,7 @@
 
 ## In-Progress
 
-### P1. Precinct 6 dataset 통합  [STATUS: 본격 운용 (5000 edges + signals 통계, 4801 breach + 3163 IoC)]
+### P1. Precinct 6 dataset 통합  [STATUS: 1억 dl 완료 + incidents 1000 임포트 (KG nodes 4902, anchors 14020)]
 
 **동기**: WitFoo Precinct 6 (Apache 2.0, 1억 signal + MITRE + incidents + graph) 로
 합성 데이터 한계 해결. paper §6 의 "real-world fidelity" 보강.
@@ -32,7 +32,8 @@
 - [x] **첫 실데이터 임포트 검증** — 200 edges → 205 breach_record + 196 ioc + T1041 Concept 노드, history_anchors 5→401
 - [x] **5000 edges 본격 임포트** — breach_record +4800 + IoC +3167 (누적 anchors 약 8000+, Asset KG 노드 ~3000+)
 - [x] **signals.parquet 통계 채널** — 2.07M signals 스캔, mo_name×lifecycle 분포 (Data Theft+complete-mission 125k 압도적), message_type 분포 (security_audit 38만 / firewall_action 12만), Concept 노드 2개 (`concept:p6:Data Theft:complete-mission` 등)
-- [ ] format adapter 보강 — `incidents.jsonl` (host/cred 메타) 채널 추가 (Asset 풍부화)
+- [x] **format adapter 보강 — incidents.jsonl 채널** (`import_real_incidents`): 1000 incidents → Asset +3221 / breach_pair anchor +5652 / Compliance Concept (csc/cmmc/csf/iso27001/nist80053/pci) +11 / Security Product Concept +5 (ASA/PAN/Precinct/Azure/Stealthwatch). Red(Exploiting Host) ↔ Blue(Exploiting Target) 쌍 명시.
+- [!] **1억 풀 데이터 진단**: edges 메타가 1.3GB sample 보다 빈약 (label_binary + suspicion 만, mo_name/lifecycle 모두 없음). 풍부 메타는 `incidents.jsonl` (10442개) 에 집중. mo_name 다양성은 dataset 구조적 한계 (Data Theft 99.99%) — RAG 가 message_sanitized 컬럼 임베딩으로 보완 필요.
 - [ ] **Top-N hot pattern (1만) RAG POC** — bge-base 임베딩 + Faiss IVF, GPU 1분
 - [ ] dedup + 카테고리 sample (100만) 본격 운용 — **현재 1억건 풀 dl 백그라운드 진행 중** (`witfoo/precinct6-cybersecurity-100m` 68 files, snapshot_download max_workers=4)
 - [ ] `scripts/precinct6_aggregate.py` — top-N IoC 자동 anchor 등록 (전략 D)
