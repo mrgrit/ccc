@@ -373,6 +373,10 @@ def _init_db():
                     ('neobank', 'easy', 3011, '["A01 IDOR basic"]'::jsonb, 15, 1, FALSE),
                     ('neobank', 'normal', 3001, '["A01 IDOR","A02 Crypto JWT","A04 BizLogic race","A07 BrokenAuth","A08 Integrity"]'::jsonb, 30, 3, FALSE),
                     ('neobank', 'hard', 3001, '["Chain CCAT","Chain Arbitrage","Chain JWT 위조","Chain SSRF C2","Chain WebShell"]'::jsonb, 40, 5, FALSE),
+                    ('govportal', 'hard', 3002, '["Chain SAML 위조","Chain Auth 3중 우회","Chain XXE+LFI","Chain PII+CSRF","Chain webshell"]'::jsonb, 35, 5, FALSE),
+                    ('mediforum', 'hard', 3003, '["Chain 의사 DM XSS","Chain SVG→Admin","Chain SSN→사회공학","Chain API token","Chain pickle DB dump"]'::jsonb, 32, 5, FALSE),
+                    ('adminconsole', 'hard', 3004, '["Chain cmd RCE","Chain SSRF cloud","Chain reset→exec","Chain pickle/yaml","Chain upload/JWT"]'::jsonb, 38, 5, FALSE),
+                    ('aicompanion', 'hard', 3005, '["Chain RAG poison","Chain stored→admin","Chain tool→exfil","Chain jailbreak","Chain CSRF persistent"]'::jsonb, 35, 5, FALSE),
                     ('govportal', 'normal', 3002, '["A01 BAC","A05 SAML","A07 AuthFail","A08 Upload","A10 SSRF"]'::jsonb, 25, 3, FALSE),
                     ('mediforum', 'normal', 3003, '["A03 stored XSS","A08 CSRF","A02 PII","A07 API Auth"]'::jsonb, 22, 2, FALSE),
                     ('adminconsole', 'normal', 3004, '["A10 SSRF","A03 RCE","A07 PwReset","A03 Cmd Inject"]'::jsonb, 28, 4, FALSE),
@@ -384,8 +388,10 @@ def _init_db():
                   WHERE id IN ('neobank','govportal','mediforum','adminconsole','aicompanion') AND status='planned';
                 UPDATE vuln_site_modes SET available=TRUE
                   WHERE site_id IN ('neobank','govportal','mediforum','adminconsole','aicompanion') AND difficulty='normal';
-                -- P13 Phase 3 — NeoBank hard mode (5 chain seed-hard.md) 활성화
-                UPDATE vuln_site_modes SET available=TRUE WHERE site_id='neobank' AND difficulty='hard';
+                -- P13 Phase 3 — 5 사이트 hard mode (각 5 chain seed-hard.md) 활성화
+                UPDATE vuln_site_modes SET available=TRUE
+                  WHERE site_id IN ('neobank','govportal','mediforum','adminconsole','aicompanion')
+                    AND difficulty='hard';
                 -- PoW 블록 (레거시 호환)
                 CREATE TABLE IF NOT EXISTS pow_blocks (
                     id SERIAL PRIMARY KEY,

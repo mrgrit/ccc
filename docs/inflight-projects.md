@@ -232,10 +232,14 @@
   - [x] MediForum (의료, port 3003) — 22 vuln (stored XSS post/comment/profile/DM/SVG, PII bulk, IDOR). V07/V08/V10/V17/V22 PoC 검증
   - [x] AdminConsole (DevOps, port 3004) — 28 vuln (cmd inject·SSRF·eval RCE·pickle·yaml·LFI+log poison·weak reset·JWT none·secrets IDOR). V07/V11/V14/V15/V16/V20/V04 PoC 검증
   - [x] AICompanion (LLM, port 3005) — 25 vuln (OWASP LLM Top 10: prompt inject·RAG poison·jailbreak·tool abuse·excessive agency·model theft). mock + ollama 백엔드. V01/V03/V04/V05/V09/V10/V13/V14/V18 PoC 검증
-- [ ] **Phase 3 (사이트별 hard mode)**: 추가 chain 깊이 + auth bypass 강화 + cyber range task 1종/사이트
+- [x] **Phase 3 (5 사이트 hard mode)**: 각 5 chain seed-hard.md (4-6 step + MITRE + BLUE 가이드 + 점수)
+  - [x] NeoBank hard (Chain CCAT/Arbitrage/JWT/SSRF/WebShell, +310점)
+  - [x] GovPortal hard (Chain SAML/Auth3중/XXE/PII+CSRF/webshell, +280점)
+  - [x] MediForum hard (Chain 의사DM/SVG→Admin/SSN→사회공학/APIToken/pickle, +290점)
+  - [x] AdminConsole hard (Chain cmdRCE/SSRFCloud/Reset→exec/pickle/Upload+JWT, +340점)
+  - [x] AICompanion hard (Chain RAGpoison/Stored→admin/Tool→exfil/Jailbreak/CSRFpersistent, +320점)
+  - [x] DB seed: 5 사이트 hard mode available=TRUE (vuln_site_modes 갱신)
 - [ ] **Phase 4**: Bastion-Bench web-vuln 카테고리 task 분포 (사이트당 5~10 task)
-
-**Next**: Phase 3 — 우선순위 NeoBank hard (금융 race chain), AdminConsole hard (RCE chain), AICompanion hard (LLM jailbreak chain).
 
 **Files**: contents/vuln-sites/{neobank,govportal,mediforum,adminconsole,aicompanion}/ · apps/ccc_api/src/main.py
 
