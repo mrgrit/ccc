@@ -7,20 +7,42 @@ import { api } from '../api.ts'
 cytoscape.use(coseBilkent)
 
 const NODE_COLORS: Record<string, string> = {
+  // Operational tier
   Playbook:   '#f97316',
   Experience: '#58a6ff',
   Skill:      '#3fb950',
   Error:      '#f85149',
   Recovery:   '#7ee787',
-  Asset:      '#8b949e',
   Concept:    '#bc8cff',
   Insight:    '#d29922',
-  // History layer
+  // History layer (operational 시계열)
   Narrative:  '#79c0ff',
   Anchor:     '#ffa657',
+  // Asset domain
+  Asset:        '#8b949e',
+  // Work domain — Strategic
+  Mission:    '#ff7b72',
+  Vision:     '#d29922',
+  Goal:       '#a371f7',
+  Strategy:   '#bc8cff',
+  KPI:        '#3fb950',
+  // Work domain — Tactical
+  Plan:       '#58a6ff',
+  Todo:       '#7ee787',
 }
 
-const ALL_TYPES = ['Playbook','Experience','Skill','Error','Recovery','Asset','Concept','Insight','Narrative','Anchor']
+const TYPES_OPERATIONAL = ['Playbook','Experience','Skill','Error','Recovery','Concept','Insight','Narrative','Anchor']
+const TYPES_ASSET = ['Asset']
+const TYPES_WORK = ['Mission','Vision','Goal','Strategy','KPI','Plan','Todo']
+const ALL_TYPES = [...TYPES_OPERATIONAL, ...TYPES_ASSET, ...TYPES_WORK]
+
+const DOMAINS: Record<string, string[]> = {
+  '전체': ALL_TYPES,
+  'Asset': TYPES_ASSET,
+  'Architecture': TYPES_ASSET,  // 같은 노드, edge 종류로 view 차별화
+  'Work': TYPES_WORK,
+  'Operational (PE-KG-H)': TYPES_OPERATIONAL,
+}
 
 type Node = {
   id: string
@@ -46,6 +68,11 @@ export default function Knowledge() {
   const [stats, setStats] = useState<any>({})
   const [loading, setLoading] = useState(true)
   const [enabledTypes, setEnabledTypes] = useState<Set<string>>(new Set(ALL_TYPES))
+  const [domain, setDomain] = useState<string>('전체')
+  const switchDomain = (d: string) => {
+    setDomain(d)
+    setEnabledTypes(new Set(DOMAINS[d] || ALL_TYPES))
+  }
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [detail, setDetail] = useState<any>(null)
   const [searchQ, setSearchQ] = useState('')
@@ -324,6 +351,17 @@ export default function Knowledge() {
         <span style={{ fontSize: 13, color: '#8b949e' }}>
           {stats.total_nodes || 0} nodes · {stats.total_edges || 0} edges
         </span>
+        {/* Domain toggle — Asset / Architecture / Work / Operational / 전체 */}
+        <div style={{ display: 'flex', gap: 4, marginLeft: 16, background: '#0d1117', padding: 3, borderRadius: 6, border: '1px solid #30363d' }}>
+          {Object.keys(DOMAINS).map(d => (
+            <button key={d} onClick={() => switchDomain(d)} style={{
+              padding: '4px 10px', borderRadius: 4, border: 'none', cursor: 'pointer',
+              fontSize: 12, fontWeight: 600,
+              background: domain === d ? '#f97316' : 'transparent',
+              color: domain === d ? '#fff' : '#8b949e',
+            }}>{d}</button>
+          ))}
+        </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
           <button onClick={() => setShowLeft(s => !s)} style={btn}>{showLeft ? '◀' : '▶'} 필터</button>
           <button onClick={fitGraph} style={btn}>⤢ Fit</button>

@@ -3,7 +3,24 @@
 > **새 세션은 이 파일을 먼저 읽고 시작한다.** 미완 프로젝트의 단일 진실원.
 >
 > - 각 프로젝트: **Definition of Done (DoD) 체크리스트** + **Next concrete step** + **Status**
-> - DoD 모두 체크 → `## Closed` 섹션으로 이동
+> - DoD 모두 체크 → `---
+
+### P11. Asset/Architecture + Work 9-tier hierarchy  [STATUS: Phase 1-4 구현 완료]
+
+**Definition of Done**:
+- [x] graph.py NODE_TYPES + EDGE_TYPES 확장 (Mission/Vision/Goal/Strategy/KPI/Plan/Todo/Asset/Narrative/Anchor + relates_to/derives_from/connects_to/data_flows_to/manages/realizes/measures/contributes_to)
+- [x] packages/bastion/asset_domain.py — register_asset/list_assets/link_assets/architecture_topology/architecture_packet_flow/autoscan_register
+- [x] packages/bastion/work_domain.py — Strategic 5(add_mission/vision/goal/strategy/kpi+record_kpi) + Tactical 2(add_plan/add_todo) + update_status + trace_to_mission + strategic_dashboard
+- [x] apps/bastion/api.py — /assets/register · /list · /link · /architecture/topology · /flow · /work/{mission,vision,goal,strategy,kpi,kpi/record,plan,todo,status,trace/{id},dashboard} 등 16 endpoints
+- [x] Knowledge UI 도메인 토글 (전체/Asset/Architecture/Work/Operational) + 새 노드 색상 9종
+- [ ] (옵션) Architecture 전용 토폴로지 view (현재는 같은 cytoscape에서 필터로)
+- [ ] (옵션) Strategic dashboard 별도 페이지 (KPI 차트)
+- [ ] paper §4 도식 + Asset/Architecture/Work 단락 추가
+
+**Next**: 옵션 항목은 운영 시작 후 필요시. seed 데이터 (mission/vision/goal/strategy/kpi 1세트) production 배포 시 1회 등록.
+
+
+## Closed` 섹션으로 이동
 > - cron 자동 사이클이 in-progress 중 next step 1건 진행 후 갱신·commit
 
 업데이트: 2026-04-26
@@ -186,6 +203,23 @@
 **Next concrete step**: 매 retest 사이클 보고 시 신규 fail 패턴 모니터.
 
 ---
+
+---
+
+### P11. Asset/Architecture + Work 9-tier hierarchy  [STATUS: Phase 1-4 구현 완료]
+
+**Definition of Done**:
+- [x] graph.py NODE_TYPES + EDGE_TYPES 확장 (Mission/Vision/Goal/Strategy/KPI/Plan/Todo/Asset/Narrative/Anchor + relates_to/derives_from/connects_to/data_flows_to/manages/realizes/measures/contributes_to)
+- [x] packages/bastion/asset_domain.py — register_asset/list_assets/link_assets/architecture_topology/architecture_packet_flow/autoscan_register
+- [x] packages/bastion/work_domain.py — Strategic 5(add_mission/vision/goal/strategy/kpi+record_kpi) + Tactical 2(add_plan/add_todo) + update_status + trace_to_mission + strategic_dashboard
+- [x] apps/bastion/api.py — /assets/register · /list · /link · /architecture/topology · /flow · /work/{mission,vision,goal,strategy,kpi,kpi/record,plan,todo,status,trace/{id},dashboard} 등 16 endpoints
+- [x] Knowledge UI 도메인 토글 (전체/Asset/Architecture/Work/Operational) + 새 노드 색상 9종
+- [ ] (옵션) Architecture 전용 토폴로지 view (현재는 같은 cytoscape에서 필터로)
+- [ ] (옵션) Strategic dashboard 별도 페이지 (KPI 차트)
+- [ ] paper §4 도식 + Asset/Architecture/Work 단락 추가
+
+**Next**: 옵션 항목은 운영 시작 후 필요시. seed 데이터 (mission/vision/goal/strategy/kpi 1세트) production 배포 시 1회 등록.
+
 
 ## Closed (이번 세션 완료)
 
