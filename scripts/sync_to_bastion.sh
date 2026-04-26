@@ -24,8 +24,29 @@ done
 
 # 3. diff 요약
 echo
-echo "=== 변경 사항 ==="
+echo "=== bastion repo 변경 사항 ==="
 cd "$BAS" && git status --short
+
+# 4. 원격 bastion runtime 도 sync — /home/ccc/ccc/packages/bastion/ 가 실제 import path
+#    (R3 postmortem 2026-04-26: /opt/bastion/ 만 sync 해서 새 코드 미적용 발생).
+#    REMOTE_HOST 환경변수 비어있으면 skip (안전).
+REMOTE_HOST="${REMOTE_HOST:-192.168.0.115}"
+REMOTE_USER="${REMOTE_USER:-ccc}"
+REMOTE_PASS="${REMOTE_PASS:-1}"
+REMOTE_PATH="${REMOTE_PATH:-/home/ccc/ccc/packages/bastion}"
+
+if [ -n "$REMOTE_HOST" ] && command -v sshpass >/dev/null 2>&1; then
+    echo
+    echo "=== 원격 runtime sync → ${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH} ==="
+    sshpass -p "$REMOTE_PASS" scp -o StrictHostKeyChecking=no \
+        "$CCC/packages/bastion/"*.py \
+        "${REMOTE_USER}@${REMOTE_HOST}:${REMOTE_PATH}/" 2>&1 | tail -3
+    sshpass -p "$REMOTE_PASS" scp -o StrictHostKeyChecking=no \
+        "$CCC/apps/bastion/api.py" \
+        "${REMOTE_USER}@${REMOTE_HOST}:/home/ccc/ccc/apps/bastion/api.py" 2>&1 | tail -3
+    echo "  ✓ 원격 packages/bastion/*.py + apps/bastion/api.py 동기화"
+    echo "  ⚠️ bastion 재시작 필요: ssh ${REMOTE_USER}@${REMOTE_HOST} 'pkill -9 -f apps.bastion.api; cd /home/ccc/ccc && nohup python3 -m apps.bastion.api > /tmp/bastion.log 2>&1 &'"
+fi
 
 echo
 echo "다음 단계: cd $BAS && git add -A && git commit && git push"
