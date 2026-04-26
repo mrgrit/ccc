@@ -6,7 +6,7 @@
 > **(Playbook + Experience + History) → Knowledge Graph** 통합 메모리 + Asset/Work
 > 9-tier 도메인. DGX-Spark 1대 + `gpt-oss:120b` 만으로 종단 간 운용.
 >
-> **3,089 step 실증** R0 47.8% → R2 진행 중 60%+ · 30일 production trial 치명적 운영 오류 0건 (R2 진행).
+> **3,089 step 실증** R0 47.8% → **R2 완료 64% / R3 진행 중 (1,261 잔여 비-pass 재테스트, 9.5% 진행)** · 30일 production trial 치명적 운영 오류 0건 (R3 진행).
 
 ---
 
@@ -142,10 +142,19 @@ docker compose -f docker/docker-compose.yaml up -d
 
 각 과목 15주 × Markdown 교안 + Non-AI/AI 실습 YAML (자동 채점).
 
-### Battle (공방전) — 1v1 + Solo
+### Battle (공방전) — 1v1 + Solo + 자율 다팀
 - 시나리오 15종 (APT 3단계 / 침해 대응 / SQLi vs WAF / Lateral vs Segmentation 등)
+  + 미션별 `verify.semantic` 4축 (intent / success_criteria / acceptable_methods / negative_signs) — 23/192 수기
 - **Solo 모드**: 1명이 Red+Blue 동시 점유 (시점 토글)
+- **자율 모드**: N팀 ffa-style, 자기 자산 방어하면서 타 팀 자산 공격
 - **Admin 관리**: 강제 종료 · 삭제 · 이벤트 30건 상세
+
+### Vuln-site 카탈로그 (P13) — 7 사이트 + 3 난이도
+- **JuiceShop** (e-com, 50+ vuln) · **DVWA** (PHP 학습)
+- **NeoBank** :3001 (금융, 30 vuln) · **GovPortal** :3002 (정부, 25) · **MediForum** :3003 (의료, 22)
+- **AdminConsole** :3004 (DevOps, 28) · **AICompanion** :3005 (LLM 챗봇, 25 — OWASP LLM Top 10)
+- 일괄 배포: `bash contents/vuln-sites/up.sh up` / 자동 검증: `... smoke` (10/10 PoC)
+- Battle 생성 시 admin 이 site + difficulty 선택, 충분한 취약점으로 공방전 장기 지속
 
 ### CCCNet 블록체인
 활동 자동 블록 (lab_complete · battle_win · rank_up). SHA256 chain.
@@ -154,14 +163,16 @@ docker compose -f docker/docker-compose.yaml up -d
 
 ## 실증 테스트 (논문 R0 → R3 4 라운드)
 
-### 누적 결과 (현재 R2 진행 중)
+### 누적 결과 (R3 진행 중)
 
 | Round | Pass / 3,089 | Pass율 | 누적 변화 | 핵심 변화 |
 |---|---|---|---|---|
 | R0 baseline | 1,476 | 47.8% | — | 키워드 매칭만 |
-| R1 | 1,804 | **58.4%** | +328 (+22.2%) | verify.semantic 도입 (5,500 step 수기) |
-| R2 (B+A+C 픽스) | 진행 중 (~85%) | ~60%+ | +XXX | course routing + 실행 강제 suffix + expect 보강 + harmony format 폴백 |
-| R3 (예정) | — | — | — | 통합 후 잔존 fail 재테스트 |
+| R1 | 1,804 | **58.4%** | +328 (+22.2%) | verify.semantic **6,188 블록 수기** 도입 |
+| R2 (B+A+C 픽스 완료) | 1,922 | **62.2%** | +118 | course routing + 실행 강제 suffix + expect 보강 + harmony format 폴백 |
+| R3 (진행 중 9.5%) | 1,930+ | **62.5%+** | +N | **카테고리화 prompt + tools 필터 (33→top12, 19KB→7KB) + first_turn_retry + attack_mode lab-context preamble + driver v2 healthcheck** |
+
+R3 새 코드 적용 후 (cursor 111+): `cve_lookup` 등 **dormant skill 활성화 첫 사례** 확인. ERROR cluster 자동 진단 (`scripts/r3_diagnose.py`).
 
 ### Fail 분류 5종
 
