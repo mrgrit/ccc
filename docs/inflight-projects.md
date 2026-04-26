@@ -39,7 +39,7 @@
 - [ ] `scripts/precinct6_aggregate.py` — top-N IoC 자동 anchor 등록 (전략 D)
 - [x] **`scripts/precinct6_export_seed.py` — 배포용 seed bundle 생성** ✅: dist/precinct6-seed-vYYYY.MM/ 산출 (anchors 10657 + 3363 + concepts 48 → tar.gz **215KB / 0.2MB**). manifest + README 자동. 폐쇄망 고객사 배포 준비 완료.
 - [x] `scripts/import_seed_bundle.py` — 배포처 import 명령 ✅. dry-run 검증: 14020 anchors + 48 concepts 모두 인식. dedup (is_anchored / try-except) 으로 안전 append.
-- [ ] paper §6 Track B 에 Precinct 결과 추가
+- [x] paper §7.7 신설 — Real-world Dataset 통합 (Precinct 6) ✅. Table 6 통합 결과 정량 + 단조성 한계 명시 + 유의미한 효과 3 가지.
 
 **4 활용처 (★ 사용자 지시 2026-04-26 21:10)**:
 - [x] **Phase A — 교안 case study 자동 주입** (`scripts/inject_lecture_cases.py`): course5-soc 15주 pilot 적용 완료. 한계: 모든 week 가 동일 T1041 case 2개만 (mo_name 다양성 부족) — RAG POC 후 week별 키워드 매칭으로 다양화 필요. 19 코스 × 15주 확장 대기.
