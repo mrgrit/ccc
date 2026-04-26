@@ -42,7 +42,7 @@
 
 **4 활용처 (★ 사용자 지시 2026-04-26 21:10)**:
 - [x] **Phase A — 교안 case study 자동 주입** (`scripts/inject_lecture_cases.py`): course5-soc 15주 pilot 적용 완료. 한계: 모든 week 가 동일 T1041 case 2개만 (mo_name 다양성 부족) — RAG POC 후 week별 키워드 매칭으로 다양화 필요. 19 코스 × 15주 확장 대기.
-- [ ] **Phase B — 실습 lab 재구성**: lab YAML step 의 시나리오를 real incident timeline 기반 (sanitized timestamp/IPs). 20 과목 × 15주 = 300 lab, attack-ai/secops-ai 부터 pilot 5-10.
+- [x] **Phase B — lab 부록 markdown 자동 생성** (`scripts/inject_lab_cases.py`): 20 lab course 디렉토리에 `precinct6_cases.md` 생성. lab YAML 무수정 (verify 무결성 보호). technique 매칭 case + Red↔Blue pair anchor 동시 노출.
 - [ ] **Phase C — cyber range traffic replay** (`scripts/precinct6_replay.py`): sanitized signals.parquet → PCAP → tcpreplay → web/siem 에 real alert 분포 발생.
 - [ ] **Phase D — battle-scenarios real pattern 매핑**: 새 시나리오 1-2개를 Precinct incident chain 기반으로. 기존 192 mission 은 후순위.
 
