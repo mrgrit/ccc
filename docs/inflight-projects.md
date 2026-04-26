@@ -181,11 +181,12 @@
 **Definition of Done**:
 - [x] 18 → 33 1차 확장
 - [x] R2 retest 결과 모니터 (1150/1285) — **신규 missing skill 0건**, 그러나 agent 가 9 skills 만 사용 (shell/ollama_query/probe_*/file_manage/docker_manage/analyze_logs/check_wazuh/qa)
-- [ ] **신규 finding (2026-04-26)**: 33 catalog 중 24개 (IR forensic·AI prompt_fuzz/garak·pentest cve_lookup·compliance·history) **호출 0건** → router/prompt 가 신규 skill 추천을 안 함
-- [ ] R3 round: skill_catalog 를 system prompt 에 적극 노출 + react 루프 첫 turn 에 "consider these IR/AI skills" 가이드 주입
-- [ ] paper §3.5 의 "33 skills" → "33 catalog · 9 active" 로 솔직 표기 + analysis 섹션
+- [x] **신규 finding (2026-04-26)**: 33 catalog 중 24개 (IR forensic·AI prompt_fuzz/garak·pentest cve_lookup·compliance·history) **호출 0건** → router/prompt 가 신규 skill 추천을 안 함
+- [x] **수정 (commit 59cc9fe + bastion 7b48d29)**: skills.py 에 SKILL_CATEGORIES (9 카테고리 + trigger 키워드) 추가, agent.py `_build_react_system_prompt` 가 skill 을 카테고리 그룹핑 + 14 휴리스틱 매핑 + shell fallback 금지 가드. **bastion remote 재시작 완료** (skills=33 헬스 확인).
+- [ ] 다음 cron 사이클에서 retest run.log 의 unique skill 분포 재측정 — active 9 → ?
+- [ ] paper §3.5 의 "33 skills" → "33 catalog · N active (cat 기반 유도 후)" 정량 보고
 
-**Next concrete step**: bastion_prompt 의 skill listing 을 카테고리별로 재구성 (IR/AI/Pentest/Compliance/History 강조) + "if step 이 logs/forensic/IR 관련이면 forensic_collect/memory_dump 우선 고려" 휴리스틱 추가.
+**Next concrete step**: 다음 retest 사이클에서 `grep -oE "skill=[a-z_]+" run.log | sort -u | wc -l` 로 active 카운트 확인. 9→15+ 기대.
 
 ---
 
