@@ -88,7 +88,7 @@
 
 ---
 
-### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **24/590** — 10/10 카테고리 + 5 카테고리 third task (h003)]
+### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **25/590** — 10/10 카테고리 + 5 카테고리 third task (h003) + secops-h002 신규]
 
 - [x] 5 신규 카테고리 task 작성 (web-vuln/compliance/ai-ir/ai-utilization/ai-pentest)
 - [x] 10/10 카테고리 모두 ≥1 pilot task 보유
