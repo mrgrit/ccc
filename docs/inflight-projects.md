@@ -79,7 +79,7 @@
 
 ---
 
-### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **19/590** — 10/10 카테고리 second task (h002) 완료]
+### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **24/590** — 10/10 카테고리 + 5 카테고리 third task (h003)]
 
 - [x] 5 신규 카테고리 task 작성 (web-vuln/compliance/ai-ir/ai-utilization/ai-pentest)
 - [x] 10/10 카테고리 모두 ≥1 pilot task 보유
@@ -216,7 +216,11 @@
 
 ---
 
-### P12. 자율 공방전 (Autonomous Multi-team Battle)  [STATUS: Phase 1 in progress]
+### P12. 자율 공방전 (Autonomous Multi-team Battle)  [STATUS: Phase 1 + end-game 완료]
+
+- [x] Phase 1 MVP (battle_participants/claims schema + 7 endpoints + UI)
+- [x] **end-game** — `/auto/finalize` endpoint + UI modal (winner/MVP/timeline)
+- [ ] (옵션) replay viewer / 영상 export
 
 **동기**: 현재 1v1 (Red/Blue 고정역할) 만. 다중 팀이 자기 자산으로 공격하면서 동시에
 방어하는 "ffa-style" 모드 부재 → 공방전 다양성 부족.
