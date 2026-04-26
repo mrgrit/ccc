@@ -49,7 +49,14 @@
 
 ---
 
-### P3. R3 round retest  [STATUS: in progress ~6% (67/1168, 새 코드 적용 후 fresh measure)]
+### P3. R3 round retest  [STATUS: in progress (cursor 111/1261, +93 재큐, driver v2 health-check)]
+
+**진단 (2026-04-26 14:40)**: 사용자 가설 적중 — bastion 단일 워커 + driver+내 background curl 동시 호출 → connection refused 35건 (14:19~14:20:36 cluster).
+**수정 v2 (commit pending)**:
+- driver_r3.sh: bastion 헬스 wait_for_bastion() + connection refused 시 1회 retry
+- 잃은 93 step 재큐 → queue_r3.tsv 1168 → 1261
+- 안정화 후 (#103~#110) 8건: 0 error / 4 fail / 3 pass / 1 fail = **37.5% pass rate**
+  - cve_lookup skill 호출 발견 (신규 dormant skill 첫 활성화 ✓)
 
 **동기**: P2 완료 후 잔존 fail 을 한 번 더 retest 해서 누적 개선 확인.
 
