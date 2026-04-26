@@ -68,7 +68,8 @@
 - [x] apt-phase1 14/14 (배경 작업)
 - [x] incident-response 13/13 (NIST IR 6 phase + Cyber Kill Chain 매핑)
 - [x] apt-phase2 14/14 (MITRE T1053/T1098/T1018/T1046/T1016/T1571/T1049 — persistence + lateral)
-- [ ] 10 시나리오 잔여: apt-phase3, championship, recon-vs-detect, exfil-vs-dlp, privesc-vs-hardening, dos-vs-resilience, lateral-vs-segmentation, webshell-vs-integrity, bruteforce-vs-lockout, purple-team
+- [x] recon-vs-detect 12/12 (MITRE T1018/T1046/T1592/T1083 — scan + detect + nftables containment + Wazuh)
+- [ ] 9 시나리오 잔여: apt-phase3, championship, exfil-vs-dlp, privesc-vs-hardening, dos-vs-resilience, lateral-vs-segmentation, webshell-vs-integrity, bruteforce-vs-lockout, purple-team
 
 **동기**: battle-scenarios YAML 의 verify 가 keyword only. semantic-first judge 가 작동하려면 수기 작성 필수.
 
