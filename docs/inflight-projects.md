@@ -209,29 +209,29 @@
 
 ---
 
-### P13. VulnSite Catalog (다양한 취약 사이트 + 3 난이도)  [STATUS: not started]
+### P13. VulnSite Catalog (다양한 취약 사이트 + 3 난이도)  [STATUS: Phase 1+2 완료, Phase 3 대기]
 
-**동기**: JuiceShop 단조로움. 사이트 7종 × easy/normal/hard 3 모드 = 21 변형 → 공방전 ·
-교육 ·실증 다양성. **Rich vulnerability 강조**: 사이트당 15+ 취약점, 다단계 chain 포함, 공방전이 오래 지속되도록.
+**동기**: JuiceShop 단조로움. 사이트 7종 × easy/normal/hard 3 모드 → 공방전 다양성.
+**Rich vulnerability 강조**: 사이트당 22~30 취약점, 다단계 chain 포함, 공방전이 오래 지속되도록.
 
-**카탈로그 (계획)**:
-- 기존: JuiceShop (e-com) · DVWA (PHP 학습)
-- 신규: NeoBank (금융) · GovPortal (정부) · MediForum (의료) · AdminConsole (DevOps) · AICompanion (LLM 챗봇)
+**카탈로그**:
+- 기존: JuiceShop (e-com, 50+ vuln) · DVWA (PHP 학습, 12~20 vuln)
+- 신규 5종 (Phase 2): NeoBank · GovPortal · MediForum · AdminConsole · AICompanion = **130 vuln 총**
 
 **Definition of Done**:
-- [x] **Phase 1**: 카탈로그 DB (vuln_sites, vuln_site_modes) + admin selector UI (Battle 생성 시 site + difficulty 선택). 7 사이트 + 9 mode seed.
-- [ ] **Phase 2 (사이트 5종)**: 각각 Dockerfile + docker-compose + 디자인 테마 + 15+ rich vulnerability seed
-  - NeoBank: IDOR · 금융 race · 인가 우회 · JWT 약점 (≥15)
-  - GovPortal: SAML 우회 · 권한 상승 · 파일 업로드 · CSRF (≥15)
-  - MediForum: stored XSS · CSRF · 개인정보 노출 · API 인증 (≥15)
-  - AdminConsole: SSRF · RCE · 비밀번호 분실 흐름 · 명령 주입 (≥15)
-  - AICompanion: prompt injection · RAG 인젝션 · jailbreak · 모델 탈취 (≥15)
-- [ ] **Phase 3 (사이트별 hard mode)**: 신규 취약점 + 다단계 체인 + 신규 cyber range task
-- [ ] **Bastion-Bench web-vuln 카테고리** 가 사이트별로 task 분포
+- [x] **Phase 1**: 카탈로그 DB (vuln_sites, vuln_site_modes) + admin selector UI. 7 사이트 + 9 mode seed.
+- [x] **Phase 2 (신규 5종)**: 각 Flask 단일 파일 + 디자인 테마 + 풍부한 vuln + smoke 검증 + DB promote
+  - [x] NeoBank (금융, port 3001) — 30 vuln (IDOR·JWT·race·뱅킹 BAC). 잭팟/transfer race PoC 검증
+  - [x] GovPortal (정부, port 3002) — 25 vuln (SAML 우회/JIT, JWT none, 권한 상승, audit tampering, mass assign)
+  - [x] MediForum (의료, port 3003) — 22 vuln (stored XSS post/comment/profile/DM/SVG, PII bulk, IDOR). V07/V08/V10/V17/V22 PoC 검증
+  - [x] AdminConsole (DevOps, port 3004) — 28 vuln (cmd inject·SSRF·eval RCE·pickle·yaml·LFI+log poison·weak reset·JWT none·secrets IDOR). V07/V11/V14/V15/V16/V20/V04 PoC 검증
+  - [x] AICompanion (LLM, port 3005) — 25 vuln (OWASP LLM Top 10: prompt inject·RAG poison·jailbreak·tool abuse·excessive agency·model theft). mock + ollama 백엔드. V01/V03/V04/V05/V09/V10/V13/V14/V18 PoC 검증
+- [ ] **Phase 3 (사이트별 hard mode)**: 추가 chain 깊이 + auth bypass 강화 + cyber range task 1종/사이트
+- [ ] **Phase 4**: Bastion-Bench web-vuln 카테고리 task 분포 (사이트당 5~10 task)
 
-**Next**: P12 완료 후 카탈로그 DB + admin UI 부터.
+**Next**: Phase 3 — 우선순위 NeoBank hard (금융 race chain), AdminConsole hard (RCE chain), AICompanion hard (LLM jailbreak chain).
 
-**Files**: contents/vuln-sites/<id>/ · apps/ccc_api/src/main.py · apps/ccc-ui/src/pages/{Battle,Admin}.tsx
+**Files**: contents/vuln-sites/{neobank,govportal,mediforum,adminconsole,aicompanion}/ · apps/ccc_api/src/main.py
 
 ---
 
