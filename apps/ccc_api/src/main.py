@@ -2948,6 +2948,97 @@ def auto_scoreboard(bid: str):
     return {"battle_id": bid, "scoreboard": rows, "total_claims": total_claims}
 
 
+@app.get("/battles/{bid}/auto/finalize",
+         dependencies=[Depends(verify_api_key)])
+def auto_finalize(bid: str):
+    """자율 공방전 최종 결과 — 우승자/통계/MVP/timeline summary.
+
+    P12 end-game 페이지용. battle 종료 시 호출.
+    """
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM battles WHERE id=%s", (bid,))
+            battle = cur.fetchone()
+            if not battle:
+                raise HTTPException(status_code=404, detail="battle not found")
+
+            # 최종 scoreboard
+            cur.execute(
+                """SELECT bp.*, COALESCE(s.name, '') as user_name
+                   FROM battle_participants bp
+                   LEFT JOIN students s ON bp.user_id = s.id
+                   WHERE bp.battle_id=%s
+                   ORDER BY bp.score DESC""", (bid,))
+            board = [dict(r) for r in cur.fetchall()]
+
+            # 모든 claim
+            cur.execute(
+                """SELECT bac.*, COALESCE(s.name, '') as claimant_name
+                   FROM battle_attack_claims bac
+                   LEFT JOIN students s ON bac.claimant_user_id = s.id
+                   WHERE battle_id=%s ORDER BY submitted_at""", (bid,))
+            all_claims = [dict(r) for r in cur.fetchall()]
+
+            # 통계
+            n_attack = sum(1 for c in all_claims if c.get("claim_type") == "attack")
+            n_defense = sum(1 for c in all_claims if c.get("claim_type") == "defense")
+            n_accepted = sum(1 for c in all_claims if c.get("accepted"))
+            avg_pts = sum(c.get("points_awarded") or 0 for c in all_claims) / max(len(all_claims), 1)
+
+            # MVP — 가장 많은 accepted attack
+            from collections import Counter
+            attacker_score = Counter()
+            defender_score = Counter()
+            for c in all_claims:
+                if not c.get("accepted"): continue
+                if c.get("claim_type") == "attack":
+                    attacker_score[c.get("claimant_user_id")] += c.get("points_awarded") or 0
+                else:
+                    defender_score[c.get("claimant_user_id")] += c.get("points_awarded") or 0
+
+            mvp_attack = attacker_score.most_common(1)
+            mvp_defense = defender_score.most_common(1)
+
+            # 우승자 (top score)
+            winner = board[0] if board else None
+            runner_up = board[1] if len(board) > 1 else None
+
+            # claim timeline (시간순 요약)
+            timeline = [
+                {
+                    "ts": c.get("submitted_at").isoformat() if c.get("submitted_at") else "",
+                    "claimant": c.get("claimant_name") or c.get("claimant_user_id", "")[:8],
+                    "type": c.get("claim_type"),
+                    "title": (c.get("title") or "")[:60],
+                    "accepted": c.get("accepted"),
+                    "points": c.get("points_awarded") or 0,
+                } for c in all_claims[-30:]  # 최근 30 만
+            ]
+
+    return {
+        "battle_id": bid,
+        "battle_type": battle.get("battle_type"),
+        "status": battle.get("status"),
+        "winner": {"team_no": winner.get("team_no"), "name": winner.get("user_name"),
+                   "score": winner.get("score")} if winner else None,
+        "runner_up": {"team_no": runner_up.get("team_no"), "name": runner_up.get("user_name"),
+                      "score": runner_up.get("score")} if runner_up else None,
+        "scoreboard": board,
+        "stats": {
+            "total_teams": len(board),
+            "total_claims": len(all_claims),
+            "attack_claims": n_attack,
+            "defense_claims": n_defense,
+            "accepted_claims": n_accepted,
+            "acceptance_rate": round(n_accepted / max(len(all_claims), 1), 3),
+            "avg_points_per_claim": round(avg_pts, 1),
+        },
+        "mvp_attack": {"user_id": mvp_attack[0][0], "score": mvp_attack[0][1]} if mvp_attack else None,
+        "mvp_defense": {"user_id": mvp_defense[0][0], "score": mvp_defense[0][1]} if mvp_defense else None,
+        "timeline": timeline,
+    }
+
+
 def _judge_battle_claim(claim_type: str, title: str,
                         evidence: str) -> tuple[bool, bool, str, int]:
     """semantic-first 채점. lab_engine.semantic_judge 재활용."""

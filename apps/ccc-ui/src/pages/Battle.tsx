@@ -20,6 +20,14 @@ export default function Battle() {
   const [scoreHistory, setScoreHistory] = useState<Record<number, number[]>>({})
   const [showAllIncoming, setShowAllIncoming] = useState(false)
   const [lastRefreshAt, setLastRefreshAt] = useState<Date | null>(null)
+  const [endGameResult, setEndGameResult] = useState<any>(null)  // P12 end-game modal
+
+  const showEndGame = async (bid: string) => {
+    try {
+      const r = await api(`/api/battles/${bid}/auto/finalize`)
+      setEndGameResult(r)
+    } catch (e: any) { alert(e.message) }
+  }
   const [activeTeam, setActiveTeam] = useState<'red' | 'blue'>('red')
   const pollRef = useRef<any>(null)
 
@@ -289,9 +297,53 @@ export default function Battle() {
             <button onClick={() => setAutoRefresh(s => !s)} style={{ ...joinBtn, fontSize: 11, padding: '4px 10px', color: autoRefresh ? '#3fb950' : '#8b949e', borderColor: autoRefresh ? '#3fb950' : '#30363d' }}>
               {autoRefresh ? '🔄 LIVE 5s' : '⏸ 정지'}
             </button>
+            <button onClick={() => showEndGame(activeBattle!)} style={{ ...joinBtn, fontSize: 11, padding: '4px 10px', color: '#f9d71c', borderColor: '#f9d71c' }}>
+              🏁 End-game 결과
+            </button>
             {lastRefreshAt && <span style={{ fontSize: 10, color: '#8b949e' }}>last {Math.floor((Date.now() - lastRefreshAt.getTime())/1000)}s ago</span>}
           </div>
         </div>
+        {/* End-game modal */}
+        {endGameResult && (
+          <div onClick={() => setEndGameResult(null)} style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.85)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <div onClick={e => e.stopPropagation()} style={{ background: '#0d1117', border: '2px solid #f9d71c', borderRadius: 12, padding: 32, maxWidth: 700, maxHeight: '85vh', overflowY: 'auto', boxShadow: '0 8px 32px rgba(0,0,0,0.6)' }}>
+              <h2 style={{ fontSize: 24, color: '#f9d71c', textAlign: 'center', marginTop: 0 }}>🏁 BATTLE END</h2>
+              {endGameResult.winner && (
+                <div style={{ textAlign: 'center', padding: '12px 0', background: '#161b22', borderRadius: 8, marginBottom: 16 }}>
+                  <div style={{ fontSize: 14, color: '#8b949e' }}>🥇 Winner</div>
+                  <div style={{ fontSize: 28, fontWeight: 700, color: '#f9d71c' }}>team-{endGameResult.winner.team_no}</div>
+                  <div style={{ fontSize: 13, color: '#cfd5dd' }}>{endGameResult.winner.name} · <b style={{ color: '#3fb950' }}>{endGameResult.winner.score}점</b></div>
+                  {endGameResult.runner_up && (
+                    <div style={{ fontSize: 12, color: '#8b949e', marginTop: 6 }}>🥈 team-{endGameResult.runner_up.team_no} ({endGameResult.runner_up.name}, {endGameResult.runner_up.score}점)</div>
+                  )}
+                </div>
+              )}
+              {endGameResult.stats && (
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 8, marginBottom: 16 }}>
+                  {Object.entries(endGameResult.stats).map(([k, v]) => (
+                    <div key={k} style={{ background: '#161b22', padding: 10, borderRadius: 6, textAlign: 'center' }}>
+                      <div style={{ fontSize: 10, color: '#8b949e' }}>{k.replace(/_/g, ' ')}</div>
+                      <div style={{ fontSize: 16, fontWeight: 700, color: '#e6edf3' }}>{String(v)}</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+              <h3 style={{ color: '#bc8cff', fontSize: 14 }}>📜 Timeline (최근 30 claim)</h3>
+              <div style={{ maxHeight: 250, overflowY: 'auto', background: '#161b22', padding: 8, borderRadius: 6, fontSize: 11 }}>
+                {(endGameResult.timeline || []).map((t: any, i: number) => (
+                  <div key={i} style={{ padding: '3px 0', borderBottom: '1px solid #21262d', color: '#cfd5dd' }}>
+                    <span style={{ color: '#8b949e' }}>{t.ts.slice(11, 19)}</span>{' '}
+                    <span style={{ color: t.type === 'attack' ? '#f85149' : '#58a6ff' }}>{t.type === 'attack' ? '⚔️' : '🛡️'}</span>{' '}
+                    <b>{t.claimant}</b> — {t.title} <span style={{ color: t.accepted ? '#3fb950' : '#8b949e' }}>{t.accepted ? `+${t.points}` : '✗'}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ textAlign: 'center', marginTop: 16 }}>
+                <button onClick={() => setEndGameResult(null)} style={joinBtn}>닫기</button>
+              </div>
+            </div>
+          </div>
+        )}
         {/* 미션 (시나리오 RED+BLUE) */}
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16, marginBottom: 16 }}>
           {renderMissions('red')}
