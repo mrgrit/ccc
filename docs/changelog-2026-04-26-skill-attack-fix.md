@@ -87,3 +87,30 @@ cron-fired 자동 사이클이 다음을 수행:
 - 위 5축 grep 명령으로 효과 측정 + report.md 갱신
 - `docs/inflight-projects.md` P10/P3 항목에 R3 결과 기록
 - 거부율 > 0 잔존 시 → derestricted prompt 추가 강화 (LAB CONTEXT 의 거부 금지 부분 강조)
+
+## ★ POSTMORTEM (2026-04-26 14:10)
+
+**모든 5건 개선이 R3 첫 4 step 에서 효과 0**.
+
+### 근본 원인
+원격 bastion 의 import path 가 `/home/ccc/ccc/packages/bastion/agent.py` (구버전, first_turn_retry 0)
+였음. `/opt/bastion/bastion/` 에 sync 했지만 그 path 는 사용 안 됨.
+
+```bash
+cd /home/ccc/ccc && python3 -c "import packages.bastion.agent as a; print(a.__file__)"
+# → /home/ccc/ccc/packages/bastion/agent.py  (구버전)
+```
+
+### 진단 신호
+- R3 첫 4 step: 4/4 no_execution, stages=[planning,planning,validating]×2, skills=[], 새 코드 markers 0
+- 직접 curl 호출 시 events 에 model_routing/lookup_decision 은 있으나 first_turn_retry/asset_autoregistered_bulk 일절 없음
+- `grep -c first_turn_retry /opt/bastion/bastion/agent.py` = 6
+- `grep -c first_turn_retry /home/ccc/ccc/packages/bastion/agent.py` = 0
+
+### 수정
+1. `/home/opsclaw/ccc/packages/bastion/{agent.py,skills.py}` → `scp` to `/home/ccc/ccc/packages/bastion/`
+2. bastion 재시작 → PID 150257, 새 markers 6
+3. R3 driver 는 그대로 — 이후 step 부터 새 코드 효과 측정
+
+### 교훈
+sync_to_bastion.sh 는 `/opt/bastion/` 에 동기화하지만 실제 runtime 은 `/home/ccc/ccc/packages/bastion/` 사용. **양 경로 둘 다 sync 필수**. sync_to_bastion.sh 수정 또는 새 sync_to_runtime.sh 작성 권장.
