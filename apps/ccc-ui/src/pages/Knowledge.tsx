@@ -79,6 +79,7 @@ export default function Knowledge() {
   const [searchResults, setSearchResults] = useState<Node[]>([])
   const [showLeft, setShowLeft] = useState(true)
   const [showDetail, setShowDetail] = useState(true)
+  const [showDashboard, setShowDashboard] = useState(false)  // 새 dashboard 패널
 
   // 패널 토글 시 graph resize/fit
   useEffect(() => {
@@ -363,6 +364,7 @@ export default function Knowledge() {
           ))}
         </div>
         <div style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+          <button onClick={() => setShowDashboard(s => !s)} style={{...btn, color: showDashboard ? '#f97316' : '#8b949e', borderColor: showDashboard ? '#f97316' : '#30363d'}}>📊 Dashboard</button>
           <button onClick={() => setShowLeft(s => !s)} style={btn}>{showLeft ? '◀' : '▶'} 필터</button>
           <button onClick={fitGraph} style={btn}>⤢ Fit</button>
           <button onClick={relayoutGraph} style={btn}>↻ Relayout</button>
@@ -370,6 +372,84 @@ export default function Knowledge() {
           <button onClick={() => setShowDetail(s => !s)} style={btn}>{showDetail ? '▶' : '◀'} 상세</button>
         </div>
       </div>
+
+      {/* Dashboard 패널 — 토글 시 그래프 위에 표시 */}
+      {showDashboard && (() => {
+        const nodeCounts: Record<string, number> = stats.node_counts || {}
+        const edgeCounts: Record<string, number> = stats.edge_counts || {}
+        const totalN = stats.total_nodes || Object.values(nodeCounts).reduce((a,b)=>a+(b as number),0)
+        const totalE = stats.total_edges || Object.values(edgeCounts).reduce((a,b)=>a+(b as number),0)
+        const sortedNodes = Object.entries(nodeCounts).sort((a,b)=>(b[1] as number)-(a[1] as number))
+        const sortedEdges = Object.entries(edgeCounts).sort((a,b)=>(b[1] as number)-(a[1] as number))
+        // 도넛 SVG: 노드 비율
+        const cx=60, cy=60, r=42
+        let cumPct = 0
+        const arcs = sortedNodes.map(([type,count]) => {
+          const pct = (count as number) / Math.max(totalN, 1)
+          const start = cumPct * 2 * Math.PI - Math.PI/2
+          const end = (cumPct + pct) * 2 * Math.PI - Math.PI/2
+          cumPct += pct
+          const x1 = cx + r*Math.cos(start), y1 = cy + r*Math.sin(start)
+          const x2 = cx + r*Math.cos(end), y2 = cy + r*Math.sin(end)
+          const large = pct > 0.5 ? 1 : 0
+          return { type, count, pct, path: `M ${cx} ${cy} L ${x1} ${y1} A ${r} ${r} 0 ${large} 1 ${x2} ${y2} Z`, color: NODE_COLORS[type] || '#8b949e' }
+        })
+        const recent = stats.recent || []
+        return (
+          <div style={{ background: '#0d1117', border: '1px solid #f97316', borderRadius: 8, margin: '0 16px 12px', padding: 14, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16 }}>
+            <div>
+              <div style={{ fontSize: 11, color: '#8b949e', marginBottom: 4, fontWeight: 600 }}>NODES — {totalN.toLocaleString()}</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+                <svg width={120} height={120}>
+                  {arcs.map(a => <path key={a.type} d={a.path} fill={a.color} stroke="#0d1117" strokeWidth="1"/>)}
+                  <circle cx={cx} cy={cy} r={22} fill="#0d1117"/>
+                  <text x={cx} y={cy+4} textAnchor="middle" fill="#e6edf3" fontSize="13" fontWeight="700">{totalN}</text>
+                </svg>
+                <div style={{ flex: 1 }}>
+                  {sortedNodes.slice(0,7).map(([t,c]) => (
+                    <div key={t} style={{ display:'flex', justifyContent:'space-between', fontSize:11, padding:'2px 0', color:'#cfd5dd' }}>
+                      <span><span style={{ display:'inline-block', width:8, height:8, background:NODE_COLORS[t]||'#8b949e', borderRadius:2, marginRight:6 }}/>{t}</span>
+                      <span style={{ color:'#8b949e' }}>{(c as number).toLocaleString()} ({((c as number)/Math.max(totalN,1)*100).toFixed(0)}%)</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#8b949e', marginBottom: 8, fontWeight: 600 }}>EDGES — {totalE.toLocaleString()}</div>
+              {sortedEdges.slice(0,8).map(([t,c]) => {
+                const pct = (c as number) / Math.max(sortedEdges[0]?.[1] as number || 1, 1) * 100
+                return (
+                  <div key={t} style={{ marginBottom: 6 }}>
+                    <div style={{ display:'flex', justifyContent:'space-between', fontSize:11, color:'#cfd5dd', marginBottom: 2 }}>
+                      <span>{t}</span>
+                      <span style={{ color:'#8b949e' }}>{(c as number).toLocaleString()}</span>
+                    </div>
+                    <div style={{ height:6, background:'#161b22', borderRadius:3, overflow:'hidden' }}>
+                      <div style={{ height:'100%', width:`${pct}%`, background:'#3fb950', borderRadius:3 }}/>
+                    </div>
+                  </div>
+                )
+              })}
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#8b949e', marginBottom: 8, fontWeight: 600 }}>RECENT NODES (last {recent.length})</div>
+              <div style={{ maxHeight: 130, overflowY: 'auto' }}>
+                {recent.slice(0,12).map((r: any) => (
+                  <div key={r.id} style={{ display:'flex', justifyContent:'space-between', fontSize:11, padding:'3px 0', color:'#cfd5dd', borderBottom:'1px solid #21262d', cursor:'pointer' }}
+                    onClick={() => focusNode(r.id)}>
+                    <span><span style={{ color:NODE_COLORS[r.type]||'#8b949e' }}>●</span> <b>{r.type}</b> {(r.name||r.id).slice(0,30)}</span>
+                  </div>
+                ))}
+              </div>
+              <div style={{ marginTop: 10, padding: 8, background:'#161b22', borderRadius:5, fontSize:11, color:'#8b949e' }}>
+                <div>Density: {totalN ? (totalE/totalN).toFixed(2) : 0} edges/node</div>
+                <div>Top type: <b style={{ color: NODE_COLORS[sortedNodes[0]?.[0]||'']||'#e6edf3' }}>{sortedNodes[0]?.[0] || '-'}</b> ({sortedNodes[0]?.[1] || 0})</div>
+              </div>
+            </div>
+          </div>
+        )
+      })()}
 
       <div style={{ display: 'flex', gap: 12, height: '100%', minHeight: 0, padding: '0 16px 16px' }}>
         {/* 좌측 — 검색 + 필터 (토글 가능) */}
