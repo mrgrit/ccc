@@ -14,6 +14,19 @@ red_missions:
     verify:
       type: "output_contains"
       expect: "upload"
+      semantic:
+        intent: "MITRE T1190 prep — DVWA upload form 의 multipart 구조 + accept type + max_size 분석. exploitation 전 form spec 파악."
+        success_criteria:
+          - "GET /vulnerabilities/upload/ + 쿠키 (security=low)"
+          - "응답에 form action + uploaded input + Upload button"
+          - "(보너스) hidden field (MAX_FILE_SIZE) 식별"
+        acceptable_methods:
+          - "curl -s + head/grep"
+          - "Burp Repeater"
+          - "browser DevTools"
+        negative_signs:
+          - "쿠키 누락 → 로그인 redirect"
+          - "form 분석 없이 raw HTML dump"
 
   - order: 2
     instruction: "간단한 PHP 웹셸 파일을 생성하라."
@@ -23,6 +36,20 @@ red_missions:
     verify:
       type: "output_contains"
       expect: "shell_exec"
+      semantic:
+        intent: "MITRE T1505.003 (Web Shell) — 가장 단순한 PHP webshell. shell_exec($_GET) 으로 GET cmd 파라미터 OS 실행."
+        success_criteria:
+          - "echo > /tmp/shell.php (또는 동등 file write)"
+          - "내용에 <?php ... shell_exec/$_GET ... ?>"
+          - "cat 으로 file 내용 확인"
+        acceptable_methods:
+          - "echo + redirect"
+          - "cat << EOF heredoc"
+          - "다른 backdoor function (system/passthru/exec/popen)"
+          - "obfuscated webshell (base64/eval)"
+        negative_signs:
+          - "PHP syntax 잘못 → 비기능"
+          - "GET cmd 만 + POST 처리 없음"
 
   - order: 3
     instruction: "DVWA의 파일 업로드 기능을 통해 웹셸 업로드를 시도하라."
@@ -32,6 +59,19 @@ red_missions:
     verify:
       type: "output_contains"
       expect: "upload"
+      semantic:
+        intent: "MITRE T1190 actual — multipart upload 로 webshell file 전송. 응답에 upload path 노출 시 후속 RCE 가능."
+        success_criteria:
+          - "POST + multipart/form-data + uploaded@/tmp/shell.php + Upload button"
+          - "응답에 upload 결과 (path 노출 또는 차단 메시지)"
+          - "성공 시 /uploads/<file> path 추출"
+        acceptable_methods:
+          - "curl -F 'uploaded=@<file>'"
+          - "Burp Repeater + manual multipart"
+          - "python requests + files= dict"
+        negative_signs:
+          - "Content-Type: multipart 누락"
+          - "응답 분석 없이 단순 200 으로 성공 판단"
 
   - order: 4
     instruction: "이미지 확장자로 위장한 웹셸(shell.php.jpg)을 생성하여 업로드를 시도하라."
@@ -41,6 +81,20 @@ red_missions:
     verify:
       type: "output_contains"
       expect: "upload"
+      semantic:
+        intent: "Extension bypass — .php.jpg / .phtml / .pht / .php5 등 우회 확장자. server 가 'last extension' 또는 MIME 검증 약하면 통과."
+        success_criteria:
+          - "확장자 변형 (.php.jpg / .phtml / .php5 등)"
+          - "POST upload 시도"
+          - "응답 + Apache 가 .php 부분 파싱 여부 분석"
+        acceptable_methods:
+          - "cp + 확장자 변경"
+          - "Magic bytes 추가 (GIF89a + PHP)"
+          - "Content-Type: image/jpeg + PHP body"
+          - "double extension / null byte (%00)"
+        negative_signs:
+          - "단일 확장자만 + 다른 변형 안 시도"
+          - "업로드 후 실 RCE 검증 없음"
 
   - order: 5
     instruction: "웹 서버의 쓰기 가능한 디렉토리를 탐색하라."
@@ -50,6 +104,19 @@ red_missions:
     verify:
       type: "output_contains"
       expect: "http-enum"
+      semantic:
+        intent: "MITRE T1083 — uploads/, tmp/, files/ 같은 default writable directory 식별. webshell 위치 추적."
+        success_criteria:
+          - "nmap --script http-enum 또는 ffuf/dirb"
+          - "응답에 발견 path (uploads/ tmp/ files/)"
+          - "writable 후보 식별"
+        acceptable_methods:
+          - "nmap http-enum"
+          - "ffuf -u URL/FUZZ -w common.txt"
+          - "gobuster dir"
+          - "manual: 일반적 path 시도 (/uploads /files /images)"
+        negative_signs:
+          - "scan 만 + 발견 path 분석 없음"
 
   - order: 6
     instruction: "nikto로 파일 업로드 관련 취약점과 위험한 디렉토리를 스캔하라."
@@ -59,6 +126,19 @@ red_missions:
     verify:
       type: "output_contains"
       expect: "Server:"
+      semantic:
+        intent: "Nikto -C all (모든 plugin) 으로 업로드 + 위험 directory 자동 검사. dvwa 의 known issue 자동 매핑."
+        success_criteria:
+          - "nikto -h URL -maxtime 60s -C all"
+          - "응답에 Server + finding (uploads/ writable / OSVDB-N)"
+          - "최소 1개 finding 분류"
+        acceptable_methods:
+          - "nikto -h URL -C all"
+          - "wapiti / arachni"
+          - "ZAP automated scan"
+        negative_signs:
+          - "nikto 미설치 → fallback 안 씀"
+          - "결과에 Server 만 + finding 분석 없음"
 
 blue_missions:
   - order: 1
@@ -69,6 +149,20 @@ blue_missions:
     verify:
       type: "output_contains"
       expect: "php"
+      semantic:
+        intent: "Red 의 webshell 업로드 탐지 — 최근 30분 mtime 의 PHP 파일 enumerate. 이후 grep 으로 위험 함수 검사."
+        success_criteria:
+          - "find /var/www -name '*.php' -mmin -30 -ls"
+          - "응답에 file path + 권한 + size + mtime"
+          - "최근 변경 file 1개 이상 식별"
+        acceptable_methods:
+          - "find -mmin / -mtime"
+          - "stat + sort by mtime"
+          - "rkhunter --propupd-only"
+          - "AIDE diff"
+        negative_signs:
+          - "find -name 만 + mtime 필터 누락"
+          - "발견 file 의 내용 검사 안 함 (다음 step 의 grep)"
 
   - order: 2
     instruction: "Apache 접근 로그에서 업로드 시도 기록을 분석하라."
@@ -78,6 +172,19 @@ blue_missions:
     verify:
       type: "output_contains"
       expect: "upload"
+      semantic:
+        intent: "access.log 의 POST /vulnerabilities/upload/ + multipart 요청 추적 — attacker IP + 시도 횟수 + 파일명 분석."
+        success_criteria:
+          - "access.log grep upload + tail"
+          - "POST method + /upload/ 매칭"
+          - "source IP + status 분석"
+        acceptable_methods:
+          - "grep + tail access.log"
+          - "awk 분석 (POST + URL filter)"
+          - "GoAccess (시각화)"
+        negative_signs:
+          - "GET 도 포함 (정상 페이지 로드)"
+          - "source IP / status 분석 없음"
 
   - order: 3
     instruction: "Wazuh의 파일 무결성 모니터링(syscheck) 알림을 확인하라."
@@ -87,6 +194,20 @@ blue_missions:
     verify:
       type: "output_contains"
       expect: "syscheck"
+      semantic:
+        intent: "Wazuh FIM 의 자동 감지 — /var/www 디렉토리 변경 시 즉시 alert. 운영 환경의 가장 효과적 webshell 차단."
+        success_criteria:
+          - "alerts.json grep syscheck"
+          - "최소 1개 syscheck rule (550~554) + path"
+          - "변경 type (added/modified) + agent.name 추출"
+        acceptable_methods:
+          - "grep + tail alerts.json"
+          - "jq '.rule.groups[]==\"syscheck\"' alerts.json"
+          - "Wazuh API: GET /security/agents/<id>/syscheck"
+          - "Kibana FIM dashboard"
+        negative_signs:
+          - "syscheck 미설정 (ossec.conf <syscheck> 누락)"
+          - "alert 보이지만 type 분석 없음"
 
   - order: 4
     instruction: "웹 디렉토리에서 의심스러운 PHP 파일(shell, cmd, backdoor 패턴)을 검색하라."
@@ -96,6 +217,20 @@ blue_missions:
     verify:
       type: "output_contains"
       expect: "/var/www"
+      semantic:
+        intent: "Webshell signature scan — 위험 PHP 함수 (shell_exec/system/passthru/eval/exec/popen) 사용 file 식별. yara rule 대안."
+        success_criteria:
+          - "grep -rl '<위험함수>' /var/www"
+          - "응답에 1개 이상 file path"
+          - "(보너스) base64/eval(base64_decode) 같은 obfuscated webshell 포함"
+        acceptable_methods:
+          - "grep -rlE '<patterns>' /var/www"
+          - "yara -r webshell.yar /var/www (signature 기반)"
+          - "PHP-Malware-Finder 도구"
+          - "rkhunter --check"
+        negative_signs:
+          - "단일 함수 만 (shell_exec) + 다른 backdoor 누락"
+          - "발견 file 의 추가 분석 (file content) 안 함"
 
   - order: 5
     instruction: "Apache 설정에서 업로드 디렉토리의 PHP 실행을 비활성화하라."
@@ -105,6 +240,20 @@ blue_missions:
     verify:
       type: "output_contains"
       expect: ""
+      semantic:
+        intent: "Mitigation — uploads/ 디렉토리에서 PHP 실행 차단. 업로드 자체 차단 못해도 RCE 차단. defense-in-depth 핵심."
+        success_criteria:
+          - "<Directory /var/www/html/uploads> + php_admin_flag engine off"
+          - "/etc/apache2/conf-enabled/ 또는 vhost 적용"
+          - "(보너스) AddType + Options -ExecCGI 추가"
+        acceptable_methods:
+          - "echo >> security.conf"
+          - "vim/sed 직접 편집"
+          - ".htaccess 에 RemoveHandler"
+          - "nginx: location ~ \\.php$ { deny all; }"
+        negative_signs:
+          - "config 추가 + reload 안 함 (적용 안 됨)"
+          - "디렉토리 path 잘못"
 
   - order: 6
     instruction: "suricata 로그에서 웹셸 관련 시그니처 탐지를 확인하라."
@@ -114,3 +263,16 @@ blue_missions:
     verify:
       type: "output_contains"
       expect: "shell"
+      semantic:
+        intent: "Suricata ET WEB_SPECIFIC_APPS 카테고리 webshell 시그니처 매칭. 네트워크 layer 의 추가 신호."
+        success_criteria:
+          - "fast.log grep shell/webshell/upload"
+          - "Suricata sid + classification + source IP"
+          - "최소 1개 alert"
+        acceptable_methods:
+          - "grep + tail fast.log"
+          - "jq alert filtering eve.json"
+          - "Wazuh suricata decoder"
+        negative_signs:
+          - "Suricata 룰셋 (suricata-update + ET rules) 누락"
+          - "raw alert dump"

@@ -73,7 +73,8 @@
 - [x] privesc-vs-hardening 12/12 (T1548.001/T1057/T1087.001/T1548.003/T1053.003 — SUID/sudo/cron PE)
 - [x] dos-vs-resilience 12/12 (T1499 series — Slowloris/HTTP Flood/large payload + nft rate limit + SYN flood 방어)
 - [x] lateral-vs-segmentation 12/12 (T1018/T1046/T1135/T1592/T1552.004 — ARP scan/SMB enum/SSH key 노출 + nft micro-segmentation)
-- [ ] 5 시나리오 잔여: apt-phase3, championship, webshell-vs-integrity, bruteforce-vs-lockout, purple-team
+- [x] webshell-vs-integrity 12/12 (T1190/T1505.003/T1083 — extension bypass/.php.jpg + Wazuh syscheck/grep-rL/php_admin_flag)
+- [ ] 4 시나리오 잔여: apt-phase3, championship, bruteforce-vs-lockout, purple-team
 
 **동기**: battle-scenarios YAML 의 verify 가 keyword only. semantic-first judge 가 작동하려면 수기 작성 필수.
 
@@ -89,7 +90,7 @@
 
 ---
 
-### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **12/590** — 10/10 카테고리 cover, 본격 작성 시작]
+### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **14/590** — 10/10 카테고리 cover, 카테고리당 1-2 task]
 
 - [x] 5 신규 카테고리 task 작성 (web-vuln/compliance/ai-ir/ai-utilization/ai-pentest)
 - [x] 10/10 카테고리 모두 ≥1 pilot task 보유
