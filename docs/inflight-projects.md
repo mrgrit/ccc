@@ -189,7 +189,7 @@
 
 ---
 
-### P11. Asset/Architecture + Work 9-tier hierarchy  [STATUS: Phase 1-4 구현 완료]
+### P11. Asset/Architecture + Work 9-tier hierarchy  [STATUS: Phase 1-5 구현 완료]
 
 **Definition of Done**:
 - [x] graph.py NODE_TYPES + EDGE_TYPES 확장 (Mission/Vision/Goal/Strategy/KPI/Plan/Todo/Asset/Narrative/Anchor + relates_to/derives_from/connects_to/data_flows_to/manages/realizes/measures/contributes_to)
