@@ -101,7 +101,15 @@
 
 ---
 
-### P6. 외부 벤치마크 실측  [STATUS: not started]
+### P6. 외부 벤치마크 실측  [STATUS: Cybench adapter 작성, 다른 5 벤치 어댑터 대기]
+
+- [x] `benchmarks/cybench_adapter.py` (commit 5acf78a) — task YAML → /chat → docker exec → subtask 매칭
+- [ ] nyu_ctf_adapter.py (60 task subset)
+- [ ] intercode_adapter.py (멀티턴 100)
+- [ ] cybersec_eval_adapter.py (1000 prompt MC)
+- [ ] harmbench_adapter.py (cyber subset)
+- [ ] agentbench_os_adapter.py (60 task)
+- [ ] 실 측정 — Cybench 40 task 부터
 
 **동기**: paper Table 1 의 Cybench/CyberSecEval/NYU CTF/InterCode-CTF/HarmBench/AgentBench-OS 6 종 실측 → 클라우드 모델 baseline 과 비교.
 
