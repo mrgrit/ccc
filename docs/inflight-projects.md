@@ -102,7 +102,7 @@
 
 ---
 
-### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **77/590** — 23 카테고리 + h004 8개 (+ai-ir)]
+### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **78/590** — 23 카테고리 + h004 9개 (+ai-utilization)]
 
 **야간 long run 진행 (2026-04-26 22:00~04:00 KST)**:
 - 시작: 28/590 (10 카테고리)
