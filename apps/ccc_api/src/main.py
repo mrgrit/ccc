@@ -380,9 +380,9 @@ def _init_db():
 
                 -- P13 Phase 2 빌드 완료 사이트 promote (planned → available)
                 UPDATE vuln_sites SET status='available'
-                  WHERE id IN ('neobank','govportal','mediforum') AND status='planned';
+                  WHERE id IN ('neobank','govportal','mediforum','adminconsole') AND status='planned';
                 UPDATE vuln_site_modes SET available=TRUE
-                  WHERE site_id IN ('neobank','govportal','mediforum') AND difficulty='normal';
+                  WHERE site_id IN ('neobank','govportal','mediforum','adminconsole') AND difficulty='normal';
                 -- PoW 블록 (레거시 호환)
                 CREATE TABLE IF NOT EXISTS pow_blocks (
                     id SERIAL PRIMARY KEY,
