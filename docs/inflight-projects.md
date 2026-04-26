@@ -61,23 +61,9 @@
 
 ---
 
-### P4. Battle scenarios semantic verify 수기 작성  [STATUS: **178/192 (92.7%)** — 14 시나리오 완료]
+### P4. Battle scenarios semantic verify 수기 작성  [STATUS: ★ ✅ COMPLETE 192/192 (15/15 시나리오) → moved to Closed]
 
-- [x] sqli-vs-waf 11/11
-- [x] xss-vs-filter 12/12
-- [x] apt-phase1 14/14 (배경 작업)
-- [x] incident-response 13/13 (NIST IR 6 phase + Cyber Kill Chain 매핑)
-- [x] apt-phase2 14/14 (MITRE T1053/T1098/T1018/T1046/T1016/T1571/T1049 — persistence + lateral)
-- [x] recon-vs-detect 12/12 (MITRE T1018/T1046/T1592/T1083 — scan + detect + nftables containment + Wazuh)
-- [x] exfil-vs-dlp 12/12 (T1083/T1003.008/T1530/T1027/T1048.003/T1041 — exfil 6 변형 + DNS tunneling + rate limit)
-- [x] privesc-vs-hardening 12/12 (T1548.001/T1057/T1087.001/T1548.003/T1053.003 — SUID/sudo/cron PE)
-- [x] dos-vs-resilience 12/12 (T1499 series — Slowloris/HTTP Flood/large payload + nft rate limit + SYN flood 방어)
-- [x] lateral-vs-segmentation 12/12 (T1018/T1046/T1135/T1592/T1552.004 — ARP scan/SMB enum/SSH key 노출 + nft micro-segmentation)
-- [x] webshell-vs-integrity 12/12 (T1190/T1505.003/T1083 — extension bypass/.php.jpg + Wazuh syscheck/grep-rL/php_admin_flag)
-- [x] bruteforce-vs-lockout 12/12 (T1110.001/T1110.004 — hydra HTTP/SSH + credential stuffing + nft rate limit + Wazuh active-response)
-- [x] apt-phase3 14/14 (T1213/T1003/T1530/T1070.002-003/T1027/T1560.001 — DB dump + log 변조 + 압축/인코딩 exfil + Wazuh syscheck/timeline)
-- [x] championship 16/16 (★ 종합 — 전체 Cyber Kill Chain 8 phase Red + NIST IR 7 phase Blue)
-- [ ] **1 시나리오 잔여**: purple-team (14미션)
+→ 모든 15 시나리오 192 미션 완료. Closed 섹션 참조.
 
 **동기**: battle-scenarios YAML 의 verify 가 keyword only. semantic-first judge 가 작동하려면 수기 작성 필수.
 
@@ -311,7 +297,11 @@
 - [x] **P12 자율 공방전 MVP** (autonomous multi-team)
 - [x] **P13 Phase 1+2 — VulnSite 카탈로그 + 5 신규 사이트** (NeoBank/GovPortal/MediForum/AdminConsole/AICompanion = 130 vuln)
 
-### 2026-04-26 후반 (R2→R3 전환 + 5건 일괄 개선)
+### 2026-04-26 후반 (R2→R3 전환 + 5건 일괄 개선 + P4 100% 완수)
+- [x] **★ P4 Battle scenarios verify.semantic ✅ COMPLETE 192/192 (15/15 시나리오)** — sqli/xss/apt-phase1/IR/apt-phase2/recon/exfil/privesc/dos/lateral/webshell/bruteforce/apt-phase3/championship/purple-team. MITRE ATT&CK + OWASP + NIST IR 4축 (intent/criteria/methods/negative_signs) 정성 작성.
+- [x] P5 Bastion-Bench 19/590 — 10/10 카테고리 second task (h001 + h002) 작성 완료
+- [x] P6 외부 벤치 6/6 adapter 완성 (Cybench/NYU CTF/InterCode/CyberSecEval/HarmBench/AgentBench OS)
+
 - [x] **P2 R2 retest 완주** — 1285/1285, +118 pass (R0 1,476 → R2 1,922 = 62.2%)
 - [x] **5건 일괄 prompt 개선** (commit ae55254/46ee727 + retro 7bf21aa/f5d72c4)
   - attack_mode lab-context preamble (격리 cyber range, 거부 금지 명시)
