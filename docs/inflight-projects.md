@@ -36,8 +36,14 @@
 - [ ] **Top-N hot pattern (1만) RAG POC** — bge-base 임베딩 + Faiss IVF, GPU 1분
 - [ ] dedup + 카테고리 sample (100만) 본격 운용 — **현재 1억건 풀 dl 백그라운드 진행 중** (`witfoo/precinct6-cybersecurity-100m` 68 files, snapshot_download max_workers=4)
 - [ ] `scripts/precinct6_aggregate.py` — top-N IoC 자동 anchor 등록 (전략 D)
-- [ ] **`scripts/precinct6_export_seed.py` — 배포용 seed bundle 생성** (★ 추가): 1억 → top-100k IoC + 600 MITRE Concept + Faiss index + metadata.json → tar.gz ~50MB. CCC release 동봉용. 폐쇄망 고객사가 HF 안 받아도 됨.
+- [ ] **`scripts/precinct6_export_seed.py` — 배포용 seed bundle 생성**: 1억 → top-100k IoC + 600 MITRE Concept + Faiss index + metadata.json → tar.gz ~50MB. 폐쇄망 고객사용.
 - [ ] paper §6 Track B 에 Precinct 결과 추가
+
+**4 활용처 (★ 사용자 지시 2026-04-26 21:10)**:
+- [x] **Phase A — 교안 case study 자동 주입** (`scripts/inject_lecture_cases.py`): course5-soc 15주 pilot 적용 완료. 한계: 모든 week 가 동일 T1041 case 2개만 (mo_name 다양성 부족) — RAG POC 후 week별 키워드 매칭으로 다양화 필요. 19 코스 × 15주 확장 대기.
+- [ ] **Phase B — 실습 lab 재구성**: lab YAML step 의 시나리오를 real incident timeline 기반 (sanitized timestamp/IPs). 20 과목 × 15주 = 300 lab, attack-ai/secops-ai 부터 pilot 5-10.
+- [ ] **Phase C — cyber range traffic replay** (`scripts/precinct6_replay.py`): sanitized signals.parquet → PCAP → tcpreplay → web/siem 에 real alert 분포 발생.
+- [ ] **Phase D — battle-scenarios real pattern 매핑**: 새 시나리오 1-2개를 Precinct incident chain 기반으로. 기존 192 mission 은 후순위.
 
 **제약 발견**: dataset v1.0.0 의 mo_name 분포가 빈약 (Data Theft 99.99%) — 100만 확장해도 새 MITRE technique 안 늘어남. 의미있는 다양성 위해 **`-100m` 풀 데이터셋** 필요할 수 있음 (1억건, 수십GB).
 
