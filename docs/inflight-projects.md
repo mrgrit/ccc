@@ -102,7 +102,7 @@
 
 ---
 
-### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **76/590** — 23 카테고리 + h004 7개 (pentest/web-vuln/compliance/soc-ops/incident-response/ai-safety/ai-pentest)]
+### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **77/590** — 23 카테고리 + h004 8개 (+ai-ir)]
 
 **야간 long run 진행 (2026-04-26 22:00~04:00 KST)**:
 - 시작: 28/590 (10 카테고리)
