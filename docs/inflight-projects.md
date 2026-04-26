@@ -174,16 +174,18 @@
 
 ---
 
-### P10. Skill 카탈로그 동적 확장  [STATUS: 33 baseline, 자동 보강 정책 등록]
+### P10. Skill 카탈로그 동적 확장  [STATUS: 33 baseline, recall 문제 발견]
 
 **동기**: feedback_dynamic_skill_add.md 정책. retest fail 패턴에서 카테고리 부족 skill 발견 시 즉시 추가.
 
 **Definition of Done**:
 - [x] 18 → 33 1차 확장
-- [ ] R2/R3 결과에서 새 fail 카테고리 발견 시 추가
-- [ ] paper §3.5 의 "XX skills" 자동 갱신
+- [x] R2 retest 결과 모니터 (1150/1285) — **신규 missing skill 0건**, 그러나 agent 가 9 skills 만 사용 (shell/ollama_query/probe_*/file_manage/docker_manage/analyze_logs/check_wazuh/qa)
+- [ ] **신규 finding (2026-04-26)**: 33 catalog 중 24개 (IR forensic·AI prompt_fuzz/garak·pentest cve_lookup·compliance·history) **호출 0건** → router/prompt 가 신규 skill 추천을 안 함
+- [ ] R3 round: skill_catalog 를 system prompt 에 적극 노출 + react 루프 첫 turn 에 "consider these IR/AI skills" 가이드 주입
+- [ ] paper §3.5 의 "33 skills" → "33 catalog · 9 active" 로 솔직 표기 + analysis 섹션
 
-**Next concrete step**: 매 retest 사이클 보고 시 신규 fail 패턴 모니터.
+**Next concrete step**: bastion_prompt 의 skill listing 을 카테고리별로 재구성 (IR/AI/Pentest/Compliance/History 강조) + "if step 이 logs/forensic/IR 관련이면 forensic_collect/memory_dump 우선 고려" 휴리스틱 추가.
 
 ---
 
