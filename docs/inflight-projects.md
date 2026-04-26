@@ -34,8 +34,9 @@
 - [x] **signals.parquet 통계 채널** — 2.07M signals 스캔, mo_name×lifecycle 분포 (Data Theft+complete-mission 125k 압도적), message_type 분포 (security_audit 38만 / firewall_action 12만), Concept 노드 2개 (`concept:p6:Data Theft:complete-mission` 등)
 - [ ] format adapter 보강 — `incidents.jsonl` (host/cred 메타) 채널 추가 (Asset 풍부화)
 - [ ] **Top-N hot pattern (1만) RAG POC** — bge-base 임베딩 + Faiss IVF, GPU 1분
-- [ ] dedup + 카테고리 sample (100만) 본격 운용
+- [ ] dedup + 카테고리 sample (100만) 본격 운용 — **현재 1억건 풀 dl 백그라운드 진행 중** (`witfoo/precinct6-cybersecurity-100m` 68 files, snapshot_download max_workers=4)
 - [ ] `scripts/precinct6_aggregate.py` — top-N IoC 자동 anchor 등록 (전략 D)
+- [ ] **`scripts/precinct6_export_seed.py` — 배포용 seed bundle 생성** (★ 추가): 1억 → top-100k IoC + 600 MITRE Concept + Faiss index + metadata.json → tar.gz ~50MB. CCC release 동봉용. 폐쇄망 고객사가 HF 안 받아도 됨.
 - [ ] paper §6 Track B 에 Precinct 결과 추가
 
 **제약 발견**: dataset v1.0.0 의 mo_name 분포가 빈약 (Data Theft 99.99%) — 100만 확장해도 새 MITRE technique 안 늘어남. 의미있는 다양성 위해 **`-100m` 풀 데이터셋** 필요할 수 있음 (1억건, 수십GB).
