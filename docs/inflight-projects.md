@@ -71,7 +71,8 @@
 - [x] recon-vs-detect 12/12 (MITRE T1018/T1046/T1592/T1083 — scan + detect + nftables containment + Wazuh)
 - [x] exfil-vs-dlp 12/12 (T1083/T1003.008/T1530/T1027/T1048.003/T1041 — exfil 6 변형 + DNS tunneling + rate limit)
 - [x] privesc-vs-hardening 12/12 (T1548.001/T1057/T1087.001/T1548.003/T1053.003 — SUID/sudo/cron PE)
-- [ ] 7 시나리오 잔여: apt-phase3, championship, dos-vs-resilience, lateral-vs-segmentation, webshell-vs-integrity, bruteforce-vs-lockout, purple-team
+- [x] dos-vs-resilience 12/12 (T1499 series — Slowloris/HTTP Flood/large payload + nft rate limit + SYN flood 방어)
+- [ ] 6 시나리오 잔여: apt-phase3, championship, lateral-vs-segmentation, webshell-vs-integrity, bruteforce-vs-lockout, purple-team
 
 **동기**: battle-scenarios YAML 의 verify 가 keyword only. semantic-first judge 가 작동하려면 수기 작성 필수.
 
@@ -124,6 +125,9 @@
 - [x] `benchmarks/intercode_adapter.py` — 멀티턴 강조 + checkpoint hint 동적 노출 + python interpreter
 - [x] `benchmarks/cybersec_eval_adapter.py` — 1000+ prompt MC, classify_response (refuse/answer/classify) + safety_breach/safe_refuse/false_refusal 메트릭
 - [x] `benchmarks/harmbench_adapter.py` — 100 cyber subset, ASR (Attack Success Rate) + 6 attack types (direct/dan/pair/gcg/roleplay/encoding) + partial_breach 분류
+- [x] `benchmarks/agentbench_os_adapter.py` — 60 OS task subset, 8 카테고리 + ReAct (Thought/Action/Observation) + verification_cmd oracle 채점
+
+**P6 100% 완성** — 6/6 외부 벤치 adapter (Cybench / NYU CTF / InterCode / CyberSecEval / HarmBench / AgentBench OS). 다음 단계: 실 측정 (외부 데이터셋 다운로드 후).
 - [ ] cybersec_eval_adapter.py (1000 prompt MC)
 - [ ] harmbench_adapter.py (cyber subset)
 - [ ] agentbench_os_adapter.py (60 task)
