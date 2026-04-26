@@ -69,7 +69,8 @@
 - [x] incident-response 13/13 (NIST IR 6 phase + Cyber Kill Chain 매핑)
 - [x] apt-phase2 14/14 (MITRE T1053/T1098/T1018/T1046/T1016/T1571/T1049 — persistence + lateral)
 - [x] recon-vs-detect 12/12 (MITRE T1018/T1046/T1592/T1083 — scan + detect + nftables containment + Wazuh)
-- [ ] 9 시나리오 잔여: apt-phase3, championship, exfil-vs-dlp, privesc-vs-hardening, dos-vs-resilience, lateral-vs-segmentation, webshell-vs-integrity, bruteforce-vs-lockout, purple-team
+- [x] exfil-vs-dlp 12/12 (T1083/T1003.008/T1530/T1027/T1048.003/T1041 — exfil 6 변형 + DNS tunneling + rate limit)
+- [ ] 8 시나리오 잔여: apt-phase3, championship, privesc-vs-hardening, dos-vs-resilience, lateral-vs-segmentation, webshell-vs-integrity, bruteforce-vs-lockout, purple-team
 
 **동기**: battle-scenarios YAML 의 verify 가 keyword only. semantic-first judge 가 작동하려면 수기 작성 필수.
 
@@ -120,6 +121,7 @@
 - [x] `benchmarks/cybench_adapter.py` (commit 5acf78a) — task YAML → /chat → docker exec → subtask 매칭
 - [x] `benchmarks/nyu_ctf_adapter.py` (commit 7af43ab) — 6 도메인 차별 prompt + Cybench 함수 재사용
 - [x] `benchmarks/intercode_adapter.py` — 멀티턴 강조 + checkpoint hint 동적 노출 + python interpreter
+- [x] `benchmarks/cybersec_eval_adapter.py` — 1000+ prompt MC, classify_response (refuse/answer/classify) + safety_breach/safe_refuse/false_refusal 메트릭
 - [ ] cybersec_eval_adapter.py (1000 prompt MC)
 - [ ] harmbench_adapter.py (cyber subset)
 - [ ] agentbench_os_adapter.py (60 task)
