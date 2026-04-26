@@ -306,6 +306,77 @@ def _init_db():
                 );
                 CREATE INDEX IF NOT EXISTS idx_bac_battle ON battle_attack_claims(battle_id);
                 CREATE INDEX IF NOT EXISTS idx_bac_claimant ON battle_attack_claims(claimant_user_id);
+
+                -- P13 VulnSite catalog — 다양한 취약 사이트 + 3 난이도
+                CREATE TABLE IF NOT EXISTS vuln_sites (
+                    id           TEXT PRIMARY KEY,    -- 'juiceshop' / 'neobank' 등
+                    name         TEXT NOT NULL,
+                    theme        TEXT DEFAULT '',     -- e-commerce / banking / gov / medical / devops / ai-chatbot
+                    tech_stack   TEXT DEFAULT '',
+                    base_port    INT DEFAULT 0,       -- 기본 포트 (mode 별로 +0/+10/+20)
+                    description  TEXT DEFAULT '',
+                    repo_path    TEXT DEFAULT '',     -- contents/vuln-sites/<id>/
+                    status       TEXT DEFAULT 'available',  -- available / planned / deprecated
+                    created_at   TIMESTAMPTZ DEFAULT now()
+                );
+
+                CREATE TABLE IF NOT EXISTS vuln_site_modes (
+                    id              SERIAL PRIMARY KEY,
+                    site_id         TEXT NOT NULL REFERENCES vuln_sites(id) ON DELETE CASCADE,
+                    difficulty      TEXT NOT NULL,    -- easy / normal / hard
+                    port            INT NOT NULL,
+                    vuln_classes    JSONB DEFAULT '[]'::jsonb,   -- ['A03 SQLi', 'A07 BrokenAuth', ...]
+                    vuln_count      INT DEFAULT 0,    -- 해당 모드의 취약점 개수 (rich vulnerability 강조)
+                    chain_depth     INT DEFAULT 1,    -- 다단계 chain 최대 길이
+                    seed_doc        TEXT DEFAULT '',  -- contents/vuln-sites/<id>/seed-<difficulty>.md
+                    available       BOOLEAN DEFAULT TRUE,
+                    UNIQUE(site_id, difficulty)
+                );
+                CREATE INDEX IF NOT EXISTS idx_vsm_site ON vuln_site_modes(site_id);
+
+                -- battles 테이블에 vuln_site_id + difficulty 컬럼 추가
+                ALTER TABLE battles ADD COLUMN IF NOT EXISTS vuln_site_id TEXT DEFAULT '';
+                ALTER TABLE battles ADD COLUMN IF NOT EXISTS difficulty TEXT DEFAULT 'normal';
+
+                -- 카탈로그 seed (기존 2 + 신규 5 placeholder)
+                INSERT INTO vuln_sites (id, name, theme, tech_stack, base_port, description, repo_path, status) VALUES
+                    ('juiceshop', 'OWASP JuiceShop', 'e-commerce', 'Express + Angular', 3000,
+                     'OWASP 공식 광범위 취약 e-커머스. OWASP Top 10 전반.',
+                     'contents/vuln-sites/juiceshop', 'available'),
+                    ('dvwa', 'DVWA', 'general', 'Apache + PHP + MySQL', 8080,
+                     'PHP 기반 학습용 — SQLi/XSS/CSRF 기본 취약점.',
+                     'contents/vuln-sites/dvwa', 'available'),
+                    ('neobank', 'NeoBank', 'banking', 'Django + Vue', 3001,
+                     '금융/뱅킹 — IDOR · 금융 트랜잭션 race · 인가 우회 · JWT 약점 강조.',
+                     'contents/vuln-sites/neobank', 'planned'),
+                    ('govportal', 'GovPortal', 'government', 'Spring + React', 3002,
+                     '정부 민원 — SAML 우회 · 권한 상승 · 파일 업로드 · CSRF 강조.',
+                     'contents/vuln-sites/govportal', 'planned'),
+                    ('mediforum', 'MediForum', 'medical', 'Node + Next.js', 3003,
+                     '의료 커뮤니티 — stored XSS · CSRF · 개인정보 노출 · API 인증 강조.',
+                     'contents/vuln-sites/mediforum', 'planned'),
+                    ('adminconsole', 'AdminConsole', 'devops', 'FastAPI + Svelte', 3004,
+                     'DevOps 관리자 패널 — SSRF · RCE · 비밀번호 분실 흐름 · 명령 주입 강조.',
+                     'contents/vuln-sites/adminconsole', 'planned'),
+                    ('aicompanion', 'AICompanion', 'ai-chatbot', 'Flask + LangChain', 3005,
+                     'LLM 기반 챗봇 — Prompt injection · RAG 인젝션 · jailbreak · 모델 탈취 강조.',
+                     'contents/vuln-sites/aicompanion', 'planned')
+                ON CONFLICT (id) DO NOTHING;
+
+                -- mode seed (기존 2 사이트는 normal 만, 신규 5는 placeholder)
+                INSERT INTO vuln_site_modes (site_id, difficulty, port, vuln_classes, vuln_count, chain_depth, available) VALUES
+                    ('juiceshop', 'normal', 3000,
+                     '["A01 BAC","A02 Crypto","A03 Injection","A05 Misconfig","A07 AuthFail","A08 Integrity","A10 SSRF"]'::jsonb,
+                     50, 3, TRUE),
+                    ('dvwa', 'easy', 8080, '["A03 SQLi basic","A03 XSS reflected","A05 Misconfig"]'::jsonb, 12, 1, TRUE),
+                    ('dvwa', 'normal', 8080, '["A03 SQLi","A03 XSS","A07 BrokenAuth","A08 CSRF","A09 Logging"]'::jsonb, 20, 2, TRUE),
+                    ('neobank', 'easy', 3011, '["A01 IDOR basic"]'::jsonb, 15, 1, FALSE),
+                    ('neobank', 'normal', 3001, '["A01 IDOR","A02 Crypto JWT","A04 BizLogic race","A07 BrokenAuth","A08 Integrity"]'::jsonb, 30, 3, FALSE),
+                    ('govportal', 'normal', 3002, '["A01 BAC","A05 SAML","A07 AuthFail","A08 Upload","A10 SSRF"]'::jsonb, 25, 3, FALSE),
+                    ('mediforum', 'normal', 3003, '["A03 stored XSS","A08 CSRF","A02 PII","A07 API Auth"]'::jsonb, 22, 2, FALSE),
+                    ('adminconsole', 'normal', 3004, '["A10 SSRF","A03 RCE","A07 PwReset","A03 Cmd Inject"]'::jsonb, 28, 4, FALSE),
+                    ('aicompanion', 'normal', 3005, '["LLM01 PromptInject","LLM02 InsecureOutput","LLM03 RAG poisoning","LLM06 Sensitive","LLM10 Model theft"]'::jsonb, 25, 3, FALSE)
+                ON CONFLICT (site_id, difficulty) DO NOTHING;
                 -- PoW 블록 (레거시 호환)
                 CREATE TABLE IF NOT EXISTS pow_blocks (
                     id SERIAL PRIMARY KEY,
@@ -2056,6 +2127,8 @@ class BattleCreateBody(BaseModel):
     time_limit: int | None = None        # None이면 시나리오 기본값
     battle_type: str | None = None       # 'autonomous' 면 다중 팀 자유진행 모드 강제
     max_teams: int = 4                    # autonomous 일 때만 의미 (기본 4팀)
+    vuln_site_id: str = ""               # P13 — 공방전 대상 사이트
+    difficulty: str = "normal"           # easy / normal / hard
 
 @app.post("/battles/create", dependencies=[Depends(verify_api_key)])
 def create_battle(body: BattleCreateBody, request: Request):
@@ -2075,13 +2148,55 @@ def create_battle(body: BattleCreateBody, request: Request):
     with _conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
-                """INSERT INTO battles (id, battle_type, mode, scenario_id, status, time_limit, rules)
-                   VALUES (%s, %s, %s, %s, 'waiting', %s, %s) RETURNING *""",
-                (bid, btype, body.mode, body.scenario_id, tl, Json(rules)),
+                """INSERT INTO battles (id, battle_type, mode, scenario_id, status,
+                   time_limit, rules, vuln_site_id, difficulty)
+                   VALUES (%s, %s, %s, %s, 'waiting', %s, %s, %s, %s) RETURNING *""",
+                (bid, btype, body.mode, body.scenario_id, tl, Json(rules),
+                 body.vuln_site_id or "", body.difficulty or "normal"),
             )
             row = cur.fetchone()
             conn.commit()
     return {"battle": dict(row), "scenario": {"title": scenario["title"], "description": scenario.get("description", "")}}
+
+
+# ── P13 VulnSite catalog API ────────────────────────────────────────────────
+
+@app.get("/vuln-sites/list", dependencies=[Depends(verify_api_key)])
+def vuln_sites_list(status: str = ""):
+    """카탈로그 + 모드 통합 조회. status='available' 로 운용 가능만 필터."""
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            q = "SELECT * FROM vuln_sites"
+            args: list = []
+            if status:
+                q += " WHERE status=%s"; args.append(status)
+            q += " ORDER BY status DESC, name"
+            cur.execute(q, args)
+            sites = [dict(r) for r in cur.fetchall()]
+            cur.execute("SELECT * FROM vuln_site_modes ORDER BY site_id, difficulty")
+            modes = [dict(r) for r in cur.fetchall()]
+    by_site: dict = {s["id"]: [] for s in sites}
+    for m in modes:
+        if m["site_id"] in by_site:
+            by_site[m["site_id"]].append(m)
+    for s in sites:
+        s["modes"] = by_site.get(s["id"], [])
+    return {"sites": sites}
+
+
+@app.get("/vuln-sites/{site_id}", dependencies=[Depends(verify_api_key)])
+def vuln_sites_get(site_id: str):
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM vuln_sites WHERE id=%s", (site_id,))
+            site = cur.fetchone()
+            if not site:
+                raise HTTPException(404, "site not found")
+            cur.execute(
+                "SELECT * FROM vuln_site_modes WHERE site_id=%s ORDER BY difficulty",
+                (site_id,))
+            modes = [dict(r) for r in cur.fetchall()]
+    return {"site": dict(site), "modes": modes}
 
 class BattleJoinBody(BaseModel):
     team: str  # "red" or "blue"

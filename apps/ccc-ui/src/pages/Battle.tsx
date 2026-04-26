@@ -7,6 +7,7 @@ export default function Battle() {
   const [view, setView] = useState<'lobby' | 'battle'>('lobby')
   const [battles, setBattles] = useState<any[]>([])
   const [scenarios, setScenarios] = useState<any[]>([])
+  const [vulnSites, setVulnSites] = useState<any[]>([])
   const [loading, setLoading] = useState(true)
   const [activeBattle, setActiveBattle] = useState<any>(null)
   const [missions, setMissions] = useState<any[]>([])
@@ -19,12 +20,14 @@ export default function Battle() {
   // 로비 데이터 로드
   const loadLobby = async () => {
     try {
-      const [b, s] = await Promise.all([
+      const [b, s, vs] = await Promise.all([
         api('/api/battles').then(d => d.battles || []),
         api('/api/battles/scenarios').then(d => d.scenarios || []),
+        api('/api/vuln-sites/list').then(d => d.sites || []).catch(() => []),
       ])
       setBattles(b)
       setScenarios(s)
+      setVulnSites(vs)
     } catch {}
     setLoading(false)
   }
@@ -32,14 +35,20 @@ export default function Battle() {
   useEffect(() => { loadLobby() }, [])
 
   // 대전 개설
-  const createBattle = async (scenarioId: string, autonomous: boolean = false) => {
+  const createBattle = async (scenarioId: string, autonomous: boolean = false,
+                                vulnSiteId: string = '', difficulty: string = 'normal') => {
     try {
       const body: any = { scenario_id: scenarioId }
       if (autonomous) { body.battle_type = 'autonomous'; body.max_teams = 8 }
+      if (vulnSiteId) { body.vuln_site_id = vulnSiteId; body.difficulty = difficulty }
       await api('/api/battles/create', { method: 'POST', body: JSON.stringify(body) })
       loadLobby()
     } catch (e: any) { alert(e.message) }
   }
+  // 시나리오 카드별 선택 상태 (어떤 site/difficulty 로 개설할지)
+  const [siteSel, setSiteSel] = useState<Record<string, { site: string; diff: string }>>({})
+  const setSel = (sid: string, k: 'site' | 'diff', v: string) =>
+    setSiteSel(prev => ({ ...prev, [sid]: { ...(prev[sid] || { site: '', diff: 'normal' }), [k]: v } }))
 
   // 자율 공방전 — 역할 없이 자동 team 할당
   const autoJoin = async (bid: string) => {
@@ -483,18 +492,37 @@ export default function Battle() {
                         <span style={{ color: '#58a6ff' }}>Blue {s.blue_missions} missions</span>
                       </div>
                     </div>
-                    {isAdmin() && (
-                      <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 6 }}>
-                        <button onClick={() => createBattle(s.id, false)} style={{
-                          padding: '8px 18px', borderRadius: 6, border: 'none', whiteSpace: 'nowrap' as const,
-                          background: '#f97316', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                        }}>1v1 개설</button>
-                        <button onClick={() => createBattle(s.id, true)} style={{
-                          padding: '8px 18px', borderRadius: 6, border: '1px solid #bc8cff', whiteSpace: 'nowrap' as const,
-                          background: '#bc8cff22', color: '#bc8cff', cursor: 'pointer', fontSize: 13, fontWeight: 600,
-                        }}>자율 (max 8팀)</button>
-                      </div>
-                    )}
+                    {isAdmin() && (() => {
+                      const sel = siteSel[s.id] || { site: '', diff: 'normal' }
+                      const availSites = vulnSites.filter((v: any) => v.status === 'available')
+                      const selSite = vulnSites.find((v: any) => v.id === sel.site)
+                      const selModes = (selSite?.modes || []).filter((m: any) => m.available)
+                      return (
+                        <div style={{ display: 'flex', flexDirection: 'column' as const, gap: 4, minWidth: 200 }}>
+                          <select value={sel.site} onChange={e => setSel(s.id, 'site', e.target.value)}
+                            style={{ background: '#0d1117', color: '#e6edf3', border: '1px solid #30363d', borderRadius: 4, padding: '4px 6px', fontSize: 11 }}>
+                            <option value=''>(VulnSite 미선택 — 시나리오 default)</option>
+                            {availSites.map((v: any) => (
+                              <option key={v.id} value={v.id}>{v.name} · {v.theme}</option>
+                            ))}
+                          </select>
+                          <select value={sel.diff} onChange={e => setSel(s.id, 'diff', e.target.value)} disabled={!sel.site}
+                            style={{ background: '#0d1117', color: '#e6edf3', border: '1px solid #30363d', borderRadius: 4, padding: '4px 6px', fontSize: 11 }}>
+                            {selModes.length > 0 ? selModes.map((m: any) => (
+                              <option key={m.difficulty} value={m.difficulty}>{m.difficulty} · {m.vuln_count}취약점</option>
+                            )) : <option value='normal'>normal (default)</option>}
+                          </select>
+                          <button onClick={() => createBattle(s.id, false, sel.site, sel.diff)} style={{
+                            padding: '6px 14px', borderRadius: 6, border: 'none', whiteSpace: 'nowrap' as const,
+                            background: '#f97316', color: '#fff', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                          }}>1v1 개설</button>
+                          <button onClick={() => createBattle(s.id, true, sel.site, sel.diff)} style={{
+                            padding: '6px 14px', borderRadius: 6, border: '1px solid #bc8cff', whiteSpace: 'nowrap' as const,
+                            background: '#bc8cff22', color: '#bc8cff', cursor: 'pointer', fontSize: 12, fontWeight: 600,
+                          }}>자율 (max 8팀)</button>
+                        </div>
+                      )
+                    })()}
                   </div>
                 </div>
               )
