@@ -67,7 +67,8 @@
 - [x] xss-vs-filter 12/12
 - [x] apt-phase1 14/14 (배경 작업)
 - [x] incident-response 13/13 (NIST IR 6 phase + Cyber Kill Chain 매핑)
-- [ ] 11 시나리오 잔여: apt-phase2/3, championship, recon-vs-detect, exfil-vs-dlp, privesc-vs-hardening, dos-vs-resilience, lateral-vs-segmentation, webshell-vs-integrity, bruteforce-vs-lockout, purple-team
+- [x] apt-phase2 14/14 (MITRE T1053/T1098/T1018/T1046/T1016/T1571/T1049 — persistence + lateral)
+- [ ] 10 시나리오 잔여: apt-phase3, championship, recon-vs-detect, exfil-vs-dlp, privesc-vs-hardening, dos-vs-resilience, lateral-vs-segmentation, webshell-vs-integrity, bruteforce-vs-lockout, purple-team
 
 **동기**: battle-scenarios YAML 의 verify 가 keyword only. semantic-first judge 가 작동하려면 수기 작성 필수.
 
@@ -116,8 +117,8 @@
 ### P6. 외부 벤치마크 실측  [STATUS: Cybench adapter 작성, 다른 5 벤치 어댑터 대기]
 
 - [x] `benchmarks/cybench_adapter.py` (commit 5acf78a) — task YAML → /chat → docker exec → subtask 매칭
-- [ ] nyu_ctf_adapter.py (60 task subset)
-- [ ] intercode_adapter.py (멀티턴 100)
+- [x] `benchmarks/nyu_ctf_adapter.py` (commit 7af43ab) — 6 도메인 차별 prompt + Cybench 함수 재사용
+- [x] `benchmarks/intercode_adapter.py` — 멀티턴 강조 + checkpoint hint 동적 노출 + python interpreter
 - [ ] cybersec_eval_adapter.py (1000 prompt MC)
 - [ ] harmbench_adapter.py (cyber subset)
 - [ ] agentbench_os_adapter.py (60 task)
