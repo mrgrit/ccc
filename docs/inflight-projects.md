@@ -12,7 +12,7 @@
 
 ## In-Progress
 
-### P1. Precinct 6 dataset 통합  [STATUS: real data 첫 임포트 완료 (200 edges → 401 anchors)]
+### P1. Precinct 6 dataset 통합  [STATUS: 본격 운용 (5000 edges + signals 통계, 4801 breach + 3163 IoC)]
 
 **동기**: WitFoo Precinct 6 (Apache 2.0, 1억 signal + MITRE + incidents + graph) 로
 합성 데이터 한계 해결. paper §6 의 "real-world fidelity" 보강.
@@ -30,13 +30,17 @@
 - [x] **실 schema 확인** — edges NDJSON labels 블록, signals parquet 27 컬럼 분포 측정
 - [x] **real-edges 임포트 함수** — `import_real_edges()` + `--real-edges` CLI 플래그
 - [x] **첫 실데이터 임포트 검증** — 200 edges → 205 breach_record + 196 ioc + T1041 Concept 노드, history_anchors 5→401
-- [ ] format adapter 보강 — `incidents.jsonl` (host/cred 메타) + `signals.parquet` 추가 채널
+- [x] **5000 edges 본격 임포트** — breach_record +4800 + IoC +3167 (누적 anchors 약 8000+, Asset KG 노드 ~3000+)
+- [x] **signals.parquet 통계 채널** — 2.07M signals 스캔, mo_name×lifecycle 분포 (Data Theft+complete-mission 125k 압도적), message_type 분포 (security_audit 38만 / firewall_action 12만), Concept 노드 2개 (`concept:p6:Data Theft:complete-mission` 등)
+- [ ] format adapter 보강 — `incidents.jsonl` (host/cred 메타) 채널 추가 (Asset 풍부화)
 - [ ] **Top-N hot pattern (1만) RAG POC** — bge-base 임베딩 + Faiss IVF, GPU 1분
 - [ ] dedup + 카테고리 sample (100만) 본격 운용
 - [ ] `scripts/precinct6_aggregate.py` — top-N IoC 자동 anchor 등록 (전략 D)
 - [ ] paper §6 Track B 에 Precinct 결과 추가
 
-**Next concrete step**: 임포트 규모 확장 — `--max-edges 5000` 으로 90k malicious 의 5% 샘플 채택, 다양한 mo_name·lifecycle_stage 분포 검증. 다음 사이클에서 실행.
+**제약 발견**: dataset v1.0.0 의 mo_name 분포가 빈약 (Data Theft 99.99%) — 100만 확장해도 새 MITRE technique 안 늘어남. 의미있는 다양성 위해 **`-100m` 풀 데이터셋** 필요할 수 있음 (1억건, 수십GB).
+
+**Next concrete step**: incidents.jsonl 의 nested host/cred 메타에서 Asset 풍부화 추가 (지금 IoC 만 IP 단위, host 단위 grouping 필요).
 
 **Files**: `scripts/import_precinct6.py`, `docs/changelog-2026-04.md` §B4
 
