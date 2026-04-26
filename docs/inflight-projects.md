@@ -37,7 +37,8 @@
 - [ ] **Top-N hot pattern (1만) RAG POC** — bge-base 임베딩 + Faiss IVF, GPU 1분
 - [ ] dedup + 카테고리 sample (100만) 본격 운용 — **현재 1억건 풀 dl 백그라운드 진행 중** (`witfoo/precinct6-cybersecurity-100m` 68 files, snapshot_download max_workers=4)
 - [ ] `scripts/precinct6_aggregate.py` — top-N IoC 자동 anchor 등록 (전략 D)
-- [ ] **`scripts/precinct6_export_seed.py` — 배포용 seed bundle 생성**: 1억 → top-100k IoC + 600 MITRE Concept + Faiss index + metadata.json → tar.gz ~50MB. 폐쇄망 고객사용.
+- [x] **`scripts/precinct6_export_seed.py` — 배포용 seed bundle 생성** ✅: dist/precinct6-seed-vYYYY.MM/ 산출 (anchors 10657 + 3363 + concepts 48 → tar.gz **215KB / 0.2MB**). manifest + README 자동. 폐쇄망 고객사 배포 준비 완료.
+- [x] `scripts/import_seed_bundle.py` — 배포처 import 명령 ✅. dry-run 검증: 14020 anchors + 48 concepts 모두 인식. dedup (is_anchored / try-except) 으로 안전 append.
 - [ ] paper §6 Track B 에 Precinct 결과 추가
 
 **4 활용처 (★ 사용자 지시 2026-04-26 21:10)**:
