@@ -183,10 +183,16 @@
 - [x] R2 retest 결과 모니터 (1150/1285) — **신규 missing skill 0건**, 그러나 agent 가 9 skills 만 사용 (shell/ollama_query/probe_*/file_manage/docker_manage/analyze_logs/check_wazuh/qa)
 - [x] **신규 finding (2026-04-26)**: 33 catalog 중 24개 (IR forensic·AI prompt_fuzz/garak·pentest cve_lookup·compliance·history) **호출 0건** → router/prompt 가 신규 skill 추천을 안 함
 - [x] **수정 (commit 59cc9fe + bastion 7b48d29)**: skills.py 에 SKILL_CATEGORIES (9 카테고리 + trigger 키워드) 추가, agent.py `_build_react_system_prompt` 가 skill 을 카테고리 그룹핑 + 14 휴리스틱 매핑 + shell fallback 금지 가드. **bastion remote 재시작 완료** (skills=33 헬스 확인).
-- [ ] 다음 cron 사이클에서 retest run.log 의 unique skill 분포 재측정 — active 9 → ?
-- [ ] paper §3.5 의 "33 skills" → "33 catalog · N active (cat 기반 유도 후)" 정량 보고
+- [x] **2차 수정 (commit ae55254 + bastion 46ee727, 2026-04-26 13:30)**: attack_mode lab-context preamble + 5 few-shot tool_call 예시 + MAX_TURNS 6→8 + FIRST_TURN_RETRY (거부 감지 hint) + ATTACK_COURSES 7개 확장 (web-vuln/physical/ai-security 추가) + probe_all autoscan 버그 fix. 상세: `docs/changelog-2026-04-26-skill-attack-fix.md`.
+- [ ] R3 자동 사이클에서 측정 5축 적용:
+  - 거부율 `grep -c "I'm sorry\|cannot help" run.log` (R2: 6 → 목표 0)
+  - unique skill `grep -oE "skill=[a-z_]+" run.log | sort -u | wc -l` (R2: 9 → 목표 15+)
+  - first_turn_retry 발동 횟수
+  - 과목별 pass율 (attack/battle/web-vuln/physical/ai-security 5개)
+  - Asset Δ (probe_all autoscan 후 assets 11 → +N)
+- [ ] paper §3.5 의 "33 skills" → "33 catalog · N active (cat+few-shot 유도 후)" 정량 보고
 
-**Next concrete step**: 다음 retest 사이클에서 `grep -oE "skill=[a-z_]+" run.log | sort -u | wc -l` 로 active 카운트 확인. 9→15+ 기대.
+**Next concrete step**: R2 잔여 105건 + R3 진행 중 위 5축 측정. 다음 자동 사이클(13:37 fire)에서 첫 데이터.
 
 ---
 
