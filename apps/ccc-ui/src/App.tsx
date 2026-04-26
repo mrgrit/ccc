@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react'
-import { Routes, Route, NavLink, Navigate } from 'react-router-dom'
+import { Routes, Route, NavLink, Navigate, useLocation } from 'react-router-dom'
 import { isLoggedIn, getUser, clearAuth, isAdmin } from './auth.ts'
 import { api } from './api.ts'
 import Login from './pages/Login.tsx'
@@ -31,6 +31,8 @@ const navItems = [
 ]
 
 export default function App() {
+  const location = useLocation()
+  const isFullscreen = location.pathname.startsWith('/knowledge')  // 풀스크린 페이지 (flex 가변)
   const [loggedIn, setLoggedIn] = useState(isLoggedIn())
   const [showPwChange, setShowPwChange] = useState(false)
   const [pwMsg, setPwMsg] = useState('')
@@ -141,8 +143,18 @@ export default function App() {
           }}>Logout</button>
         </div>
       </nav>
-      <main style={{ flex: 1, padding: 32, overflow: 'auto' }}>
-        <div style={{ maxWidth: 1100, margin: '0 auto' }}>
+      <main style={{
+        flex: 1,
+        padding: isFullscreen ? 0 : 32,
+        overflow: isFullscreen ? 'hidden' : 'auto',
+        display: isFullscreen ? 'flex' : 'block',
+        flexDirection: 'column',
+        minWidth: 0,
+        minHeight: 0,
+      }}>
+        <div style={isFullscreen
+          ? { flex: 1, minWidth: 0, minHeight: 0, display: 'flex', flexDirection: 'column' }
+          : { maxWidth: 1100, margin: '0 auto' }}>
         <Routes>
           <Route path="/" element={<Navigate to="/dashboard" replace />} />
           <Route path="/dashboard" element={<Dashboard />} />

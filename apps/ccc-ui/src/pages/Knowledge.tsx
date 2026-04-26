@@ -343,7 +343,7 @@ export default function Knowledge() {
   if (loading) return <div style={{ color: '#8b949e', padding: 40, textAlign: 'center' }}>Knowledge graph 로드 중...</div>
 
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, height: 'calc(100vh - 80px)', margin: '-12px -16px' }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 8, flex: 1, minHeight: 0, minWidth: 0, width: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '8px 16px 0' }}>
         <h2 style={{ fontSize: 20, fontWeight: 700, color: '#e6edf3', margin: 0 }}>
           🧠 Knowledge Graph
