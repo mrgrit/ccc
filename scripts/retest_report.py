@@ -120,6 +120,61 @@ def main():
     OUT.write_text("\n".join(lines))
     print(f"wrote {OUT} ({cursor}/{qsize} processed, fixed={fixed}, pass delta={pass_delta:+d})")
 
+    # 5e) KPI 자동 record — pass_rate / fail_rate / fixed 를 KPI 노드 history 에 기록
+    try:
+        _record_retest_kpis(overall, fixed, cursor, qsize)
+    except Exception as _e:
+        print(f"  [warn] KPI record skipped: {_e}")
+
+
+# ── Phase 5e: KPI 자동 record ─────────────────────────────────────────────
+
+_KPI_SEEDS = {
+    "kpi:retest:pass_rate":   {"name": "Retest pass rate", "target": 75.0, "unit": "%"},
+    "kpi:retest:fail_rate":   {"name": "Retest fail rate", "target": 15.0, "unit": "%"},
+    "kpi:retest:fix_count":   {"name": "Retest 누적 fix 건수", "target": 500, "unit": "건"},
+    "kpi:retest:processed":   {"name": "Retest 누적 처리 건수", "target": 3089, "unit": "건"},
+}
+
+
+def _ensure_kpi_seeds():
+    """KPI 노드 4종이 KG 에 없으면 자동 생성. 첫 호출 시 1회."""
+    try:
+        from packages.bastion.graph import get_graph
+        g = get_graph()
+    except Exception:
+        return
+    for kid, spec in _KPI_SEEDS.items():
+        try:
+            existing = g.get_node(kid)
+            if existing:
+                continue
+            g.add_node(kid, "KPI", spec["name"],
+                       content={"target": spec["target"],
+                                "unit": spec["unit"],
+                                "measures": "Bastion retest 자동 측정",
+                                "history": []},
+                       meta={"tier": "strategic", "auto_seeded": True})
+        except Exception:
+            pass
+
+
+def _record_retest_kpis(overall, fixed, cursor, qsize):
+    """work_domain.record_kpi 호출. 실패 시 silent."""
+    _ensure_kpi_seeds()
+    try:
+        from packages.bastion.work_domain import record_kpi
+    except Exception:
+        return
+    total = overall.get("total", 0) or 1
+    pass_rate = overall["pass"] * 100 / total
+    fail_rate = overall["fail"] * 100 / total
+    note = f"cursor={cursor}/{qsize}"
+    record_kpi("kpi:retest:pass_rate", round(pass_rate, 2), note=note)
+    record_kpi("kpi:retest:fail_rate", round(fail_rate, 2), note=note)
+    record_kpi("kpi:retest:fix_count", float(fixed), note=note)
+    record_kpi("kpi:retest:processed", float(cursor), note=note)
+
 
 if __name__ == "__main__":
     main()
