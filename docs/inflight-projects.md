@@ -301,6 +301,52 @@
 
 ---
 
+### P14. Lab 채점 흐름 재설계 (textarea → SubAgent 감시)  [STATUS: A 완료, D→B→C 잔여]
+
+**동기**: 학생이 textarea 에 답변 작성 → judge 채점 = "글로 다시 쓰는" 부담.
+실제 *행위* (명령 실행) 기반 채점이 진짜 학습 가까움. 사용자 지시 (2026-04-27).
+
+**4 사이클 (D→B→C 순서, 흐지부지 금지)**:
+
+- [x] **A. DB schema + API + input_mode 추론** (commit be3a5d89)
+  - `lab_sessions` 테이블 + 3 index
+  - 4 endpoint: start / end / get / list
+  - 두 모드 동시 채점: transcript (commands) + answers (text per step)
+  - `_step_input_mode()` 자동 분류
+  - `step.input_mode` hint 를 lab catalog 응답에 포함
+
+- [ ] **D. UI 완성** (다음 사이클)
+  - Labs.tsx — [Lab 시작] / [Lab 완료] 버튼
+  - step 별: instruction + 학습포인트 + textarea 메모 (선택) + 명령 transcript paste
+  - 세션 활성 표시 (T0 부터 경과 시간)
+  - 결과 카드: step별 ✓/✗ + graded_via + reason
+  - 재시도 버튼 (새 session)
+  - 기존 textarea 흐름 fallback 유지
+
+- [ ] **B. SubAgent transcript 자동 캡처**
+  - apps/subagent-runtime 에 `/audit/start` / `/audit/stop` 추가
+  - 캡처 방법: web shell (xterm.js + ws) 또는 script(1)
+  - DB lab_sessions.transcript 자동 채움
+  - paste 모드 fallback 유지
+
+- [ ] **C. Manager AI grading prompt**
+  - apps/manager-api 에 `/grade/lab` — multi-step 채점 한 번에
+  - 비용 N → 1 LLM 호출
+  - 피드백 강화 (왜 fail / 무엇을 보강)
+  - A 의 step별 fallback 유지
+
+**Definition of Done**:
+- [x] A 사이클 commit + push
+- [ ] D UI 완성 + 1 lab 직접 클릭 검증
+- [ ] B SubAgent capture 1 lab 실측
+- [ ] C Manager 채점 prompt + A vs C 결과 비교
+- [ ] 기존 textarea 흐름 deprecated 표시
+- [ ] paper §3.5 업데이트
+
+**Next concrete step**: D 사이클 — Labs.tsx 의 lab 보기 모드 전면 개편.
+
+---
+
 ### P11. Asset/Architecture + Work 9-tier hierarchy  [STATUS: Phase 1-5 구현 완료]
 
 **Definition of Done**:

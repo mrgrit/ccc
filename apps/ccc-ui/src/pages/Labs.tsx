@@ -16,6 +16,19 @@ export default function Labs() {
   const [answers, setAnswers] = useState<Record<number, string>>({})
   const [result, setResult] = useState<any>(null)
   const [submitting, setSubmitting] = useState(false)
+  // P14 — Lab session 흐름 (SubAgent 감시 기반)
+  const [activeSession, setActiveSession] = useState<any>(null)   // {session: {id, started_at, ...}, capture_mode}
+  const [transcriptText, setTranscriptText] = useState('')        // 학생이 paste 한 명령 transcript (B 사이클까지 임시)
+  const [sessionResult, setSessionResult] = useState<any>(null)   // /sessions/{id}/end 응답
+  const [elapsed, setElapsed] = useState(0)                       // 경과 초
+
+  // 활성 세션 elapsed 타이머
+  useEffect(() => {
+    if (!activeSession) return
+    const t0 = new Date(activeSession.session?.started_at || Date.now()).getTime()
+    const id = setInterval(() => setElapsed(Math.floor((Date.now() - t0) / 1000)), 1000)
+    return () => clearInterval(id)
+  }, [activeSession])
 
   useEffect(() => {
     api('/api/education/courses')
@@ -37,12 +50,84 @@ export default function Labs() {
   const startLab = async (labId: string) => {
     setResult(null)
     setAnswers({})
+    setActiveSession(null)
+    setSessionResult(null)
+    setTranscriptText('')
+    setElapsed(0)
     try {
       // admin/instructor는 정답 포함해서 받기
       const qs = isAdmin() ? '?admin=1' : ''
       const d = await api(`/api/labs/catalog/${labId}${qs}`)
       setActiveLab(d)
     } catch (e: any) { alert('Failed: ' + e.message) }
+  }
+
+  // P14 — Lab session 시작 (SubAgent 감시 시작 신호 — B 사이클까지는 stub)
+  const startSession = async () => {
+    if (!activeLab) return
+    try {
+      const user = getUser()
+      const d = await api('/api/labs/sessions/start', {
+        method: 'POST',
+        body: JSON.stringify({
+          lab_id: activeLab.lab_id,
+          student_id: user?.id || 'anonymous',
+        }),
+      })
+      setActiveSession(d)
+      setSessionResult(null)
+    } catch (e: any) { alert('Session start failed: ' + e.message) }
+  }
+
+  // P14 — Lab 완료 → transcript + answers 채점 요청
+  const endSession = async () => {
+    if (!activeSession) return
+    setSubmitting(true)
+    try {
+      // transcript paste 파싱: 줄별 — 첫 토큰이 $ 면 cmd, 그 외는 stdout
+      const commands: any[] = []
+      let curCmd: any = null
+      for (const line of transcriptText.split('\n')) {
+        const m = line.match(/^\s*\$\s+(.+)$/)
+        if (m) {
+          if (curCmd) commands.push(curCmd)
+          curCmd = { ts: new Date().toISOString(), cmd: m[1], stdout: '', exit: 0 }
+        } else if (curCmd) {
+          curCmd.stdout = (curCmd.stdout || '') + (curCmd.stdout ? '\n' : '') + line
+        }
+      }
+      if (curCmd) commands.push(curCmd)
+
+      // step 별 텍스트 답변 (text 모드)
+      const answersStr: Record<string, string> = {}
+      for (const [k, v] of Object.entries(answers)) {
+        if ((v || '').trim()) answersStr[String(k)] = v
+      }
+
+      const sid = activeSession.session?.id
+      const d = await api(`/api/labs/sessions/${sid}/end`, {
+        method: 'POST',
+        body: JSON.stringify({
+          transcript: { capture_mode: 'manual_paste', commands },
+          answers: answersStr,
+        }),
+      })
+      setSessionResult(d)
+      setActiveSession(null)
+    } catch (e: any) { alert('Session end failed: ' + e.message) }
+    setSubmitting(false)
+  }
+
+  const retrySession = () => {
+    setSessionResult(null)
+    setAnswers({})
+    setTranscriptText('')
+    setElapsed(0)
+  }
+
+  const fmtElapsed = (s: number) => {
+    const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), sec = s % 60
+    return h > 0 ? `${h}:${String(m).padStart(2,'0')}:${String(sec).padStart(2,'0')}` : `${m}:${String(sec).padStart(2,'0')}`
   }
 
   // 스텝 그룹 (5개씩)
@@ -120,11 +205,13 @@ export default function Labs() {
 
   // ── 문제 풀이 중 ──
   if (activeLab) {
+    const sessionActive = !!activeSession && !sessionResult
+    const sessionDone = !!sessionResult
     return (
       <div>
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 20 }}>
           <div>
-            <button onClick={() => { setActiveLab(null); setResult(null) }} style={backBtn}>Back</button>
+            <button onClick={() => { setActiveLab(null); setResult(null); setActiveSession(null); setSessionResult(null) }} style={backBtn}>Back</button>
             <span style={{ fontSize: 18, fontWeight: 700, color: '#e6edf3', marginLeft: 12 }}>{activeLab.title}</span>
           </div>
           <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
@@ -135,6 +222,61 @@ export default function Labs() {
 
         {activeLab.description && (
           <div style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 14, marginBottom: 16, fontSize: 15, color: '#8b949e' }}>{activeLab.description}</div>
+        )}
+
+        {/* P14: Lab 세션 컨트롤 — [시작] / 활성중 (경과시간) / 완료 / 재시도 */}
+        <div style={{ background: '#0d1117', border: '1px solid #30363d', borderRadius: 8, padding: '12px 16px', marginBottom: 16, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+            {!activeSession && !sessionResult && (
+              <>
+                <button onClick={startSession} style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: '#238636', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700 }}>▶ Lab 시작</button>
+                <span style={{ fontSize: 13, color: '#8b949e' }}>학생이 직접 명령 실행 / 메모 작성 후 [완료] 누르면 채점</span>
+              </>
+            )}
+            {sessionActive && (
+              <>
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, padding: '4px 10px', borderRadius: 12, background: '#0d1f0d', color: '#3fb950', fontSize: 13, fontWeight: 600 }}>
+                  <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#3fb950', animation: 'pulse 1.5s infinite' }} />
+                  세션 활성 — {fmtElapsed(elapsed)}
+                </span>
+                <span style={{ fontSize: 12, color: '#8b949e' }}>session: {activeSession.session?.id?.slice(0, 16)}…</span>
+              </>
+            )}
+            {sessionDone && (
+              <span style={{ padding: '4px 12px', borderRadius: 12, background: sessionResult.passed ? '#0d1f0d' : '#1f0d0d', color: sessionResult.passed ? '#3fb950' : '#f85149', fontSize: 14, fontWeight: 700 }}>
+                {sessionResult.passed ? '✓ PASSED' : '✗ FAILED'} — {sessionResult.score}/{sessionResult.total_score}pts
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {sessionActive && (
+              <button onClick={endSession} disabled={submitting} style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: '#f97316', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700 }}>
+                {submitting ? '채점 중…' : '⏹ Lab 완료'}
+              </button>
+            )}
+            {sessionDone && (
+              <button onClick={() => { retrySession(); startSession() }} style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid #30363d', background: '#21262d', color: '#e6edf3', cursor: 'pointer', fontSize: 14 }}>↻ 재시도</button>
+            )}
+          </div>
+        </div>
+
+        {/* P14: transcript paste 영역 (B 사이클 SubAgent 자동 캡처 전 임시) */}
+        {sessionActive && (
+          <div style={{ background: '#0d1117', border: '1px dashed #30363d', borderRadius: 8, padding: 12, marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ fontSize: 13, color: '#bc8cff', fontWeight: 600 }}>📋 명령 transcript (paste 모드)</span>
+              <span style={{ fontSize: 12, color: '#8b949e' }}>형식: <code style={{ background: '#161b22', padding: '0 4px', borderRadius: 3 }}>$ cmd</code> 줄 + 다음 줄들에 출력</span>
+            </div>
+            <textarea
+              value={transcriptText}
+              onChange={e => setTranscriptText(e.target.value)}
+              placeholder={'$ hostname\nbastion\n$ ip -4 addr show\ninet 10.20.30.201/24'}
+              style={{ width: '100%', minHeight: 90, resize: 'vertical', background: '#0d1117', color: '#e6edf3', border: '1px solid #30363d', borderRadius: 6, padding: '8px 10px', fontSize: 13, fontFamily: 'Consolas,Monaco,monospace' }}
+            />
+            <div style={{ marginTop: 4, fontSize: 12, color: '#484f58' }}>
+              B 사이클 (SubAgent web shell) 후 자동 캡처. 지금은 학생이 SSH 등에서 실행 후 결과 paste.
+            </div>
+          </div>
         )}
 
         {/* AI 버전: bastion 사용 안내 (1회) */}
@@ -148,21 +290,12 @@ export default function Labs() {
           </div>
         )}
 
-        {/* 문제 목록 (그룹별) */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          {getStepGroups().map((group, gi) => (
-          <div key={gi}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 8 }}>
-              <h4 style={{ fontSize: 16, color: '#e6edf3' }}>Part {gi + 1} (Q{group.start + 1}~Q{group.end})</h4>
-              {!result && (
-                <button onClick={() => submitGroup(gi)} disabled={submitting} style={{
-                  padding: '6px 16px', borderRadius: 6, border: 'none',
-                  background: '#f97316', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 600,
-                }}>{submitting ? '...' : `Part ${gi + 1} Submit`}</button>
-              )}
-            </div>
-          {group.steps.map((s: any) => {
-            const stepResult = result?.step_results?.find((r: any) => r.order === s.order)
+        {/* 문제 목록 — 모든 step 한 번에 (Part 그룹 폐기) */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+          {(activeLab.steps || []).map((s: any) => {
+            // 새 흐름: sessionResult.step_results, fallback: result.step_results
+            const stepResult = sessionResult?.step_results?.find((r: any) => r.order === s.order)
+              || result?.step_results?.find((r: any) => r.order === s.order)
             return (
               <div key={s.order} style={{
                 background: '#161b22', borderRadius: 8, padding: 18,
@@ -264,12 +397,50 @@ export default function Labs() {
               </div>
             )
           })}
-          </div>
-          ))}
         </div>
 
-        {/* 결과 */}
-        {result && (
+        {/* 결과 — 새 흐름 (sessionResult) */}
+        {sessionResult && (
+          <div style={{ marginTop: 20, padding: 16, borderRadius: 8,
+            background: sessionResult.passed ? '#0d1f0d' : '#1f0d0d',
+            border: `1px solid ${sessionResult.passed ? '#238636' : '#da3633'}`,
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div>
+                <div style={{ fontSize: 18, fontWeight: 700, color: sessionResult.passed ? '#3fb950' : '#f85149' }}>
+                  {sessionResult.passed ? '✓ PASSED' : '✗ FAILED'}
+                </div>
+                <div style={{ fontSize: 15, color: '#8b949e' }}>
+                  {sessionResult.score}/{sessionResult.total_score}pts
+                  ({sessionResult.total_score > 0 ? Math.round(sessionResult.score / sessionResult.total_score * 100) : 0}%)
+                  · {(sessionResult.step_results || []).filter((r: any) => r.passed).length}/{(sessionResult.step_results || []).length} steps passed
+                </div>
+              </div>
+              <button onClick={() => { retrySession(); startSession() }} style={{
+                padding: '8px 20px', borderRadius: 6, border: '1px solid #30363d',
+                background: '#21262d', color: '#e6edf3', cursor: 'pointer', fontSize: 15,
+              }}>↻ 재시도</button>
+            </div>
+            {/* 미통과 step 의 reason 요약 */}
+            {(sessionResult.step_results || []).some((r: any) => !r.passed) && (
+              <details style={{ marginTop: 10 }}>
+                <summary style={{ cursor: 'pointer', fontSize: 13, color: '#8b949e' }}>미통과 step 사유 보기</summary>
+                <ul style={{ margin: '8px 0 0 0', paddingLeft: 22, fontSize: 13, color: '#c9d1d9' }}>
+                  {(sessionResult.step_results || []).filter((r: any) => !r.passed).map((r: any) => (
+                    <li key={r.order} style={{ marginBottom: 4 }}>
+                      <span style={{ color: '#f85149' }}>step {r.order}</span>{' '}
+                      <span style={{ color: '#8b949e' }}>[{r.input_mode || '?'}/{r.graded_via || '?'}]</span>{' '}
+                      {r.reason}
+                    </li>
+                  ))}
+                </ul>
+              </details>
+            )}
+          </div>
+        )}
+
+        {/* 레거시 결과 — admin /labs/evaluate 흐름 fallback */}
+        {result && !sessionResult && (
           <div style={{ marginTop: 20, padding: 16, borderRadius: 8,
             background: result.passed ? '#0d1f0d' : '#1f0d0d',
             border: `1px solid ${result.passed ? '#238636' : '#da3633'}`,
@@ -277,7 +448,7 @@ export default function Labs() {
           }}>
             <div>
               <div style={{ fontSize: 18, fontWeight: 700, color: result.passed ? '#3fb950' : '#f85149' }}>
-                {result.passed ? 'PASSED' : 'FAILED'}
+                {result.passed ? 'PASSED' : 'FAILED'} (legacy)
               </div>
               <div style={{ fontSize: 15, color: '#8b949e' }}>
                 {result.earned_points}/{result.total_points}pts ({Math.round(result.earned_points / result.total_points * 100)}%)
