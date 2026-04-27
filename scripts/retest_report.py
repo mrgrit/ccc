@@ -13,6 +13,9 @@ BASE = ROOT / "results/retest/baseline.json"
 QUEUE = ROOT / "results/retest/queue.tsv"
 CURSOR = ROOT / "results/retest/cursor.txt"
 OUT = ROOT / "results/retest/report.md"
+QUEUE_R3 = ROOT / "results/retest/queue_r3.tsv"
+CURSOR_R3 = ROOT / "results/retest/cursor_r3.txt"
+LOG_R3 = ROOT / "results/retest/run_r3.log"
 
 
 def count(progress):
@@ -115,6 +118,36 @@ def main():
         p = cc["pass"]
         lines.append(f"| {c} | {total} | {p} | {cc['fail']} | {cc['qa_fallback']} | {cc['no_execution']} | {p*100/max(total,1):.0f}% |")
     lines.append("")
+
+    # ── R3 round 진행 (queue_r3.tsv 별도 추적) ─────────────────────
+    if QUEUE_R3.exists() and CURSOR_R3.exists():
+        try:
+            r3_total = sum(1 for _ in open(QUEUE_R3) if _.strip())
+            r3_cur = int(open(CURSOR_R3).read().strip() or 0)
+            r3_pct = r3_cur*100//max(r3_total,1)
+            lines.append("## R3 round (post-R2 잔여 비-pass 재테스트)")
+            lines.append("")
+            lines.append(f"- 진행: **{r3_cur}/{r3_total}** ({r3_pct}%)")
+            lines.append(f"- 잔여: {r3_total - r3_cur} steps")
+            # 마지막 5건
+            if LOG_R3.exists():
+                tail = []
+                with open(LOG_R3, errors='replace') as f:
+                    for L in f:
+                        if L.startswith('[') and 'R3 #' in L:
+                            tail.append(L.rstrip())
+                tail = tail[-5:]
+                if tail:
+                    lines.append("")
+                    lines.append("**최근 5 step**:")
+                    lines.append("```")
+                    lines.extend(tail)
+                    lines.append("```")
+            lines.append("")
+        except Exception as _e:
+            lines.append(f"<!-- R3 진행 읽기 오류: {_e} -->")
+            lines.append("")
+
     lines.append("---")
     lines.append("*자동 생성: scripts/retest_report.py*")
     OUT.write_text("\n".join(lines))
