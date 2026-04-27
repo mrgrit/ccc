@@ -371,28 +371,15 @@ flowchart TB
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 는 *중간평가 CTF* — 학생이
+공격 세션 증거 (transcript·pcap·서버 로그·아티팩트) 로부터 *타임라인 복원*,
+*에이전트 점수 산출*, *ATT&CK 5건 매핑*, *방어 3층 평가*, *Bastion 스킬 명세
+작성* 을 수행한다. Precinct 6 의 T1041 단일 항목은 transcript·pcap·아티팩트
+가 없어 학생이 *복원* 할 무엇이 없다 — 부록 A 의 자체 sample bundle 이 이미
+역할을 수행 (JWT alg=none → exfil 흐름 포함). 외부 사례 인용 가치 없음.
+적합 source 발굴 시 (예: Verizon DBIR 공개 case detail, M-Trends report 의
+multi-step IR walkthrough) 부록에 별도 추가.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
