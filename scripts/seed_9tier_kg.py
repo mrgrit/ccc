@@ -8,14 +8,84 @@
 다음 회차에 19 과목 + 외부 표준 (KEV/CSF/ISO/GDPR) + 운영 (P# Plan/Todo) 추가.
 """
 from __future__ import annotations
-import sys, os
+import sys, os, json
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-from packages.bastion.work_domain import (
-    add_mission, add_vision, add_goal, add_strategy, add_kpi,
-    add_plan, add_todo,
-)
-from packages.bastion.graph import get_graph
+# 🎯 BASTION_URL 환경변수 있으면 REST 호출 (UI 가 보는 bastion runtime KG 에 등록)
+# 없으면 로컬 import (ccc/data/bastion_graph.db — 개발/테스트용)
+BASTION_URL = os.getenv("BASTION_URL", "http://192.168.0.115:8003")
+USE_BASTION_API = os.getenv("KG_VIA_BASTION", "1") not in ("0", "false", "")
+
+if USE_BASTION_API:
+    import urllib.request
+    print(f"[mode] REST → {BASTION_URL}")
+
+    def _post(path, **payload):
+        req = urllib.request.Request(
+            f"{BASTION_URL}{path}",
+            data=json.dumps(payload).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=15) as r:
+            return json.load(r)
+
+    def _get(path, **params):
+        from urllib.parse import urlencode
+        url = f"{BASTION_URL}{path}"
+        if params:
+            url += "?" + urlencode(params)
+        with urllib.request.urlopen(url, timeout=15) as r:
+            return json.load(r)
+
+    def add_mission(title, statement, owner="CISO"):
+        return _post("/work/mission", title=title, statement=statement, owner=owner)["mission_id"]
+    def add_vision(title, horizon_year, statement, mission_id=""):
+        return _post("/work/vision", title=title, horizon_year=horizon_year,
+                     statement=statement, mission_id=mission_id)["vision_id"]
+    def add_goal(title, due, vision_id="", description=""):
+        return _post("/work/goal", title=title, due=due, vision_id=vision_id,
+                     description=description)["goal_id"]
+    def add_strategy(title, goal_id, approach=""):
+        return _post("/work/strategy", title=title, goal_id=goal_id, approach=approach)["strategy_id"]
+    def add_kpi(name, target, unit="", measures="", goal_id="", strategy_id=""):
+        return _post("/work/kpi", name=name, target=target, unit=unit, measures=measures,
+                     goal_id=goal_id, strategy_id=strategy_id)["kpi_id"]
+    def add_plan(title, period, owner="", strategy_id="", goal_id="", description=""):
+        return _post("/work/plan", title=title, period=period, owner=owner,
+                     strategy_id=strategy_id, goal_id=goal_id, description=description)["plan_id"]
+    def add_todo(title, due, plan_id="", assignee="", description=""):
+        return _post("/work/todo", title=title, due=due, plan_id=plan_id,
+                     assignee=assignee, description=description)["todo_id"]
+
+    class _GraphProxy:
+        """REST 모드에서 g.find_nodes 등 read 전용. edge 추가/Asset 직접 추가는 일단 skip."""
+        def find_nodes(self, type_name):
+            try:
+                d = _get("/graph/nodes", types=type_name, limit=2000)
+                return [n for n in d.get("nodes", []) if n.get("type") == type_name]
+            except Exception:
+                return []
+        def get_node(self, nid):
+            try:
+                return _get(f"/graph/node/{nid}")
+            except Exception:
+                return None
+        def add_node(self, *a, **kw):
+            # Architecture 등 직접 추가는 REST 미구현 — skip 경고
+            print(f"  [skip add_node REST] {a[0] if a else '?'} ({kw.get('type','?')})")
+        def add_edge(self, *a, **kw):
+            pass  # add_* helper 가 자동 link 처리
+
+    def get_graph():
+        return _GraphProxy()
+
+else:
+    print("[mode] local ccc/data/bastion_graph.db")
+    from packages.bastion.work_domain import (
+        add_mission, add_vision, add_goal, add_strategy, add_kpi,
+        add_plan, add_todo,
+    )
+    from packages.bastion.graph import get_graph
 
 
 def seed_top_level():
@@ -862,11 +932,30 @@ def seed_external_standards(top_mid: str, gov_parent_mid: str):
 
 def seed_architecture(top_mid: str):
     """Architecture 노드 — CCC 시스템 구조."""
-    g = get_graph()
     print("\n=== Architecture (CCC 시스템 구조) ===")
-    # Architecture 는 별도 add_* 함수 없음 — 직접 add_node
-    # 그러나 work_domain 에 add_architecture 가 없음 — Asset 으로 대체
-    # 또는 graph.add_node 직접 호출
+    if USE_BASTION_API:
+        # REST 모드 — bastion API 의 /assets/register 호출
+        for aid, name, content in [
+            ("arch-ccc-api", "ccc-api FastAPI :9100", "FastAPI 메인 API."),
+            ("arch-ccc-ui", "ccc-ui React frontend", "React UI."),
+            ("arch-bastion", "Bastion agent", "운영 관리 에이전트."),
+            ("arch-subagent", "SubAgent :8002 (per VM)", "/a2a/run_script + /a2a/audit/*."),
+            ("arch-ollama", "Ollama 192.168.0.105:11434", "gpt-oss:120b judge."),
+            ("arch-postgres", "Postgres DB", "lab_sessions 등 영속."),
+            ("arch-sqlite-kg", "SQLite KG (bastion_graph.db)", "Bastion KG 영속."),
+            ("arch-vuln-sites", "5 vuln-sites :3001-3005", "NeoBank/GovPortal/등."),
+            ("arch-wazuh-suricata", "Wazuh + Suricata", "학생 VM secu/siem."),
+        ]:
+            try:
+                _post("/assets/register", asset_id=aid, name=name,
+                      kind="architecture", description=content)
+                print(f"  ✓ {aid}")
+            except Exception as e:
+                # 이미 존재하거나 endpoint 다른 경우 — skip
+                err = str(e)[:80]
+                print(f"  [skip] {aid}: {err}")
+        return
+    g = get_graph()
     from packages.bastion.graph import get_graph as _gg
     gw = _gg()
     arch_specs = [
