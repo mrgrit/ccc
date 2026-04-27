@@ -311,10 +311,15 @@ supplemental retest 필요**.
 
 ### P15. 외부 지식 채널 + 9-tier KG 운영  [STATUS: 7 source, bastion runtime 응답 없음]
 
-**⚠️ 2026-04-27 17:00경 bastion runtime (192.168.0.115:8003) 응답 0**:
-sync_to_bastion 후 /knowledge/concept POST endpoint 추가 시 reload 실패 가능.
-사용자 바스티온 호스트 재시작 필요. CIS Controls 18 backfill 0/18 (errors).
-복구 후 재실행: `python3 scripts/ingest_cis_controls.py --via-bastion`
+**✅ 2026-04-27 18:30경 복구**: bastion runtime 재시작 완료.
+- 원인 1: sync_to_bastion 가 /opt/bastion/api.py 미동기화 (rsync target 경로 누락)
+- 원인 2: /opt/bastion/data/bastion_graph.db (빈 db) vs /home/ccc/ccc/data/bastion_graph.db (정상)
+- 해결: `BASTION_GRAPH_DB=/home/ccc/ccc/data/bastion_graph.db` env + scp 변환된 api.py
+- CIS Controls 18 재실행 완료 (added=18). /knowledge/concept POST smoke OK.
+- 7 source / 2,468 anchor / Concept 20 (test 1 추가)
+
+**TODO sync_to_bastion.sh 보강** — /opt/bastion 경로 빠짐. 원격 자동 재시작 시
+BASTION_GRAPH_DB env 도 잡아야 함.
 
 
 
