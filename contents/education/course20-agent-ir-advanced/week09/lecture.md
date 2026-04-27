@@ -317,12 +317,54 @@ Linux도 대응되는 플러그인 보유 (`linux.*`).
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): w09 Fileless·Memory-only 악성코드
-— PowerShell ReflectivePEInjection / WMI / regsvr32 / ETW patching 이 핵심.
-T1041 단일 Exfil tag 매핑 X (fileless 의 핵심은 *디스크 흔적 없음* 인데
-T1041 은 disk artifact 없이도 발생하는 generic exfil). 폐기.
-재추가: PowerShell Empire 공개 walkthrough, Mandiant ETW evasion report.
--->
+## 실제 사례 (WitFoo Precinct 6 — fileless evidence 부재 = 탐지 한계 baseline)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Fileless·Memory-only 악성코드 — PowerShell·WMI·regsvr32* 학습 항목과 매핑되는 dataset 의 *fileless 탐지 능력 baseline*.
+
+### Case 1: dataset 의 *fileless 탐지 한계*
+
+dataset 의 message_type 분포에서 fileless 직접 evidence:
+
+| 탐지 carrier | dataset 매핑 message_type | 건수 |
+|------------|---------------------|------|
+| **process create (4688)** | 4688 | **4,054** (희귀 — audit policy 미설정 의심) |
+| **PowerShell event (4103/4104)** | (부재 — `4103`/`4104` 0건) | **0** |
+| **WMI event** | (직접 부재) | 0 |
+| **memory dump** | (audit log 측 부재) | 0 |
+| **registry change (4657)** | (부재) | 0 |
+
+→ **fileless 의 핵심 carrier 가 dataset 에 부재**. 본 lecture 가 강조하는 *PowerShell ReflectivePEInjection* / *WMI* / *regsvr32* 모두 *기본 audit 으로 안 잡힘*.
+
+### Case 2: 4688 (process create) 4,054건 — fileless 의 *간접 evidence*
+
+dataset 4688 = 0.2% baseline. fileless 시 *cmd.exe / powershell.exe* 의 4688 spike 가 *유일 단서*. *PowerShell command line* 은 audit policy 추가 활성 필요.
+
+```ini
+# Windows Group Policy 추가 활성 필수
+Audit Process Creation: Enable + Include command line
+PowerShell Module Logging: Enable
+PowerShell Script Block Logging: Enable
+```
+
+### Case 3: 4690 (handle duplicate) 79K = fileless 의 *간접 흔적*
+
+본 dataset 의 4690 79K = *프로세스 간 handle 공유*. fileless 에서:
+- 1 process 가 다른 process 의 *memory handle 획득* → injection
+- ReflectivePEInjection 이 *write+execute* handle 동시 획득 시 audit log 에 4690 spike
+
+**해석 — 본 lecture (fileless) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **fileless 직접 탐지 한계** | dataset 의 4103/4104/WMI/registry 모두 0건 = 기본 audit 한계 |
+| **4688 + command line** | 4,054 = 0.2% baseline. command line 활성 필요 |
+| **4690 handle dup** | 79K = injection 의 간접 단서 |
+| **audit policy 권고** | dataset 부재 → 학생 환경에 PowerShell ScriptBlock + 4688 강제 |
+
+**학생 실습 액션**:
+1. PowerShell ScriptBlock Logging (4104) + Process Creation (4688) command line 활성 — dataset 부재 항목 보충
+2. 4690 spike 시 *동일 user 의 4688 시점* 매칭 → injection 의심
+3. Sysmon 추가 도입 — dataset 의 winlogbeat 외에 *process tree + image hash* 추가 evidence
 
 

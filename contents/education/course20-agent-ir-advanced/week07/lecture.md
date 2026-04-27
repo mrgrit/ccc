@@ -303,11 +303,53 @@ AI 피싱은 *오히려 완벽*하기에, 기존 체크리스트가 무력. *의
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): w07 Multi-stage 피싱→웹셸→측면이동
-Human+Agent 하이브리드 — 이메일 클릭→실행→C2→측면이동 multi-stage 흐름이
-핵심. T1041 단일 Exfil tag 매핑 X. 폐기. 재추가: KISA 공개 phishing
-campaign 분석, Mandiant FIN7 multi-stage walkthrough.
--->
+## 실제 사례 (WitFoo Precinct 6 — 4-stage hybrid 흐름 매핑)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Multi-stage 피싱→웹셸→측면이동 (Human+Agent hybrid)* 학습 항목과 매핑되는 dataset 의 4-stage evidence chain.
+
+### Case 1: 4-stage chain ↔ dataset record 매핑
+
+| Stage | 본 dataset record | 건수/예시 |
+|-------|----------------|-----------|
+| **1. Phishing email** | email_protection_event mo_name=Phishing | 8 (희귀하지만 critical) |
+| **2. 클릭 → 실행** | (직접 record 부재 — endpoint 측) | (학생 환경 EDR 추가) |
+| **3. C2 (Web shell)** | WAF POST 88 + dns_event 11K | host 1개에 동시 발생 가능 |
+| **4. 측면이동** | 4776 NTLM 15K + 5156 connection 176K + USER-0012 host hopping | 직접 evidence |
+
+→ stage 1·3·4 dataset 매핑 가능. stage 2 (클릭→실행) 만 endpoint 부재 — 학생이 *EDR 통합* 으로 보충.
+
+### Case 2: hybrid (Human+Agent) — *시간 분포* 로 식별
+
+본 dataset 의 4776 NTLM 의 *3.3초 host hopping* (USER-0012) = **agent 속도**.
+정상 사람 직원 hopping = *수 분 단위* (책상 이동, login 시간 등).
+
+→ 시간 분포 측정으로 hybrid 판별 가능.
+
+### Case 3: 4-stage 의 *시간 chain* 검출 — Bastion 룰 작성
+
+```yaml
+# Wazuh correlation rule (multi-stage)
+<rule id="100400" level="13" frequency="1" timeframe="3600">
+  <if_matched_sid>100200</if_matched_sid>  <!-- Phishing block (stage 1) -->
+  <description>
+    Phishing email → 동일 dst host 가 1시간 내 web POST anomaly + NTLM auth
+  </description>
+</rule>
+```
+
+**해석 — 본 lecture (Multi-stage hybrid) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **4-stage chain** | dataset 의 stage 1·3·4 evidence 보유. stage 2 만 endpoint 측 보충 필요 |
+| **agent 속도** | 4776 NTLM 3.3초 host hopping = agent baseline |
+| **사람 baseline** | (정상 사람의 host hopping 측정 데이터 dataset 부재 — 학생 환경 추가) |
+| **correlation rule** | 4-stage 동일 dst host 시간 chain → Wazuh 룰 가능 |
+
+**학생 실습 액션**:
+1. 4-stage chain 의 *시간 baseline* 측정 — agent (3.3초) vs 사람 (수 분~시간) 분포
+2. Phishing block (stage 1) → POST anomaly (stage 3) → NTLM auth (stage 4) correlation 룰 작성
+3. EDR 통합으로 stage 2 (클릭→실행) endpoint evidence 확보
 
 

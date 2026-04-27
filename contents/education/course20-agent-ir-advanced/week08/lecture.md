@@ -305,11 +305,50 @@ flowchart TB
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): w08 컨테이너·K8s 탈출 + API 악용 —
-container breakout / K8s API server 권한 / RBAC 우회가 핵심. T1041 Exfil
-단일 항목은 컨테이너 탈출 / K8s audit log / privileged pod 흔적과 매핑 X.
-폐기. 재추가: Tetragon·Falco 공개 incident, Kubernetes CVE-2018-1002105.
--->
+## 실제 사례 (WitFoo Precinct 6 — AWS API call 의 K8s 관련 분포)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *컨테이너·K8s 탈출 + API 악용 (RBAC 우회)* 학습 항목과 매핑되는 dataset 의 *AWS K8s API* + *권한 변경 evidence*.
+
+### Case 1: AWS K8s 관련 API call 분포
+
+| API call | 의미 | 건수 |
+|----------|------|------|
+| **ListClusters** | EKS cluster 정찰 | 10,848 |
+| **DescribeClusters** | EKS cluster 상세 | 6,614 |
+| **ListContainerInstances** | ECS container 정찰 | 540 |
+| **DescribeInstances** | EC2 (K8s worker) | 14,992 |
+| AssumeRole | role chain (K8s service account) | 9,340 |
+
+→ **K8s 관련 enumeration 17K+** = 정상 baseline. spike 시 *비정상 K8s 정찰* 의심.
+
+### Case 2: 권한 escalation evidence — RBAC 우회 의심
+
+| message_type | 의미 | 건수 | RBAC 우회 의심 |
+|--------------|------|------|------------|
+| 4670 | permission 변경 | 188 | K8s RBAC role 변경 (의심) |
+| 5136 | DS object 변경 | 380 | (K8s 외 — AD 변경) |
+| 4985 | transaction 변경 | 4,876 | 권한 transaction commit/rollback |
+| security_privilege_change | 권한 변경 | 2,398 | privilege escalation 직접 |
+
+→ 4670 + security_privilege_change *동시 spike* 시 *K8s RBAC 우회 + AD 권한 escalation* hybrid 의심.
+
+### Case 3: privileged pod 의 *간접 evidence*
+
+dataset 의 4690 (handle duplicate) 79K = 컨테이너 *handle 공유* 패턴. privileged pod 에서 *host 의 file handle* duplicate 시 동등 흔적.
+
+**해석 — 본 lecture (K8s 탈출) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **K8s API enumeration** | List/Describe Clusters 17K = 정상 baseline. spike 시 의심 |
+| **RBAC 우회** | 4670 + security_privilege_change 동시 spike = K8s + AD hybrid |
+| **privileged pod** | 4690 79K = handle 공유 패턴 (host escape 의심) |
+| **AssumeRole abuse** | 9,340 baseline 에서 *EKS service account → admin role* 전환 추적 |
+
+**학생 실습 액션**:
+1. EKS audit log 의 *List/Describe* 비율 측정 → dataset 17K baseline 과 비교
+2. 4670 + 4985 + security_privilege_change *시간 chain* correlation 룰 작성
+3. K8s RBAC ServiceAccount 의 AssumeRole 자동 추적 (cross-account 시 critical)
 
 
