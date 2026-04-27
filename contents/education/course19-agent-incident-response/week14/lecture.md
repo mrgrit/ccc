@@ -370,28 +370,14 @@ flowchart TB
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 는 *다단계 Agentic APT*
+모의 실사고 — 5-agent 팀 (R1 정찰 / R2 웹 / R3 측면이동 / R4 유출 / R5
+지속성), 5단계 킬체인 전체, 90분 실시간 공방이 핵심이다. 부록 A 의 *가상
+타임라인* 이 이미 5단계 전체 (T+0 정찰 → T+50 종료) 를 풍부하게 보여주므로
+*lecture 자체 사례* 가 충분. Precinct 6 의 T1041 단일 항목은 5단계 중 *마지막
+단계 (exfil) 의 tag* 일 뿐, 다단계 킬체인 전체를 보여주지 못함. 외부 사례
+인용 가치 없음 — 부록 A 가 sole case study 역할.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
