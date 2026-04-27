@@ -419,28 +419,16 @@ c20-course/
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 섹션 폐기 — 단, 본 lecture 는 *후보 가능성 보존* (2026-04-27 수기 검토):
+w15 장기 APT 잠복 — 수개월 dwell time / low-and-slow / Living-off-the-Land /
+시간 비대칭이 핵심. T1041 (lifecycle=complete-mission, suspicion 0.84/0.92)
+단일 두 항목은 *최종 단계의 spike* 만 보여주고 *수개월 누적 패턴* / *조용한
+세션 사이의 휴면 기간* / *time-based aggregation* 신호와 매핑 안 됨. 폐기.
+*향후 풍부화*: Precinct 6 의 *time-windowed aggregation* (예: 6개월 동안 동일
+src→dst 의 작은 exfil 1000건) 을 §3 분석 절차에 직접 인용하면 1:1 매칭. 본
+시점 (2026-04-27) 에서는 전체 dataset 의 *시계열 cluster* analysis 가 미완.
+재추가 후보: APT29 Cozy Bear (수년 dwell), APT41 (다년 캠페인) 공개 보고.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
