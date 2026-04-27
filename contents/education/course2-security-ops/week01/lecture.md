@@ -90,7 +90,7 @@ graph TB
 ### 트래픽 흐름
 
 ```mermaid
-graph LR
+graph TB
     A[Attacker] -->|1. 공격 시도| FW[nftables<br/>방화벽]
     FW -->|2. 허용된 트래픽| IDS[Suricata<br/>IDS/IPS]
     IDS -->|3. 정상 트래픽| WAF[ModSecurity<br/>WAF]

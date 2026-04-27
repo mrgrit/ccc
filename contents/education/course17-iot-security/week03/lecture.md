@@ -139,7 +139,7 @@ TRST ── Test Reset (선택)
 ### 2.1 JTAG 체인 탐색
 
 ```mermaid
-flowchart LR
+flowchart TB
     TDI[TDI 입력] --> C1[Chip 1]
     C1 --> C2[Chip 2]
     C2 --> C3[Chip 3]

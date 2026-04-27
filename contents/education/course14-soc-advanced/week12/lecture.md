@@ -54,7 +54,7 @@
 로그 엔지니어링은 **다양한 소스에서 생성되는 로그를 수집, 파싱, 정규화, 저장, 분석 가능한 형태로 가공**하는 기술이다.
 
 ```mermaid
-graph LR
+graph TB
     subgraph 소스
         S1[syslog]
         S2[Apache]

@@ -281,7 +281,7 @@ AI 공격 에이전트가 수행할 수 있는 공격 유형을 체계적으로 
 ### 에이전트 간 데이터 흐름
 
 ```mermaid
-graph LR
+graph TB
     R["Recon Agent<br/>ports, services"] --> A["Analyzer Agent<br/>vulns, vectors"]
     A --> E["Exploit Agent<br/>access_level"]
     E --> P["Post-Exploit<br/>privesc, loot"]

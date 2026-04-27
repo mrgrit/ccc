@@ -38,7 +38,7 @@
 
 **MITRE ATT&CK 매핑:**
 ```mermaid
-graph LR
+graph TB
     subgraph MITRE ATT&CK Kill Chain
         R[TA0043<br/>Reconnaissance] --> IA[TA0001<br/>Initial Access]
         IA --> P[TA0003<br/>Persistence]
@@ -69,7 +69,7 @@ graph LR
 NIST(National Institute of Standards and Technology)의 SP 800-61은 인시던트 대응의 사실상 표준 프레임워크이다. 2012년에 Revision 2가 발표되었으며, 전 세계 조직이 이를 기반으로 IR 프로세스를 구축한다.
 
 ```mermaid
-graph LR
+graph TB
     P["1. 준비<br/>Preparation"] --> D["2. 탐지/분석<br/>Detection & Analysis"]
     D --> C["3. 봉쇄/근절/복구<br/>Containment,<br/>Eradication, Recovery"]
     C --> PI["4. 사후 활동<br/>Post-Incident Activity"]

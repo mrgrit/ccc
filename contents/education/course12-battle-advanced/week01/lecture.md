@@ -105,7 +105,7 @@ APT(Advanced Persistent Threat)는 특정 조직을 대상으로 **장기간에 
 Lockheed Martin이 2011년에 제안한 킬체인 모델은 APT 공격의 전체 생명주기를 7단계로 분류하여, 각 단계에서의 탐지·차단 기회를 체계적으로 분석하는 프레임워크이다.
 
 ```mermaid
-graph LR
+graph TB
     R["1. 정찰<br/>Reconnaissance<br/>OSINT, 포트 스캔"] --> W["2. 무기화<br/>Weaponization<br/>페이로드 제작"]
     W --> D["3. 전달<br/>Delivery<br/>피싱, 워터링홀"]
     D --> E["4. 익스플로잇<br/>Exploitation<br/>RCE, 매크로"]

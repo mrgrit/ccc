@@ -102,7 +102,7 @@ Initial Access(TA0001)는 공격자가 대상 네트워크에 **최초로 발을
 ### 피싱 공격 4단계 프로세스
 
 ```mermaid
-graph LR
+graph TB
     R["1. 사전 조사<br/>LinkedIn, OSINT<br/>이메일 형식 파악"] --> B["2. 미끼 제작<br/>신뢰 발신자 위장<br/>악성 문서/링크"]
     B --> D["3. 전달<br/>SPF/DKIM 우회<br/>스팸 필터 통과"]
     D --> E["4. 실행<br/>첨부 열기/링크 클릭<br/>매크로→드롭퍼→C2"]

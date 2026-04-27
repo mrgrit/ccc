@@ -45,7 +45,7 @@
 ## 1.1 PTES 7단계
 
 ```mermaid
-graph LR
+graph TB
     P1["1. Pre-engagement<br/>범위, 규칙"] --> P2["2. Intelligence<br/>OSINT, 스캐닝"]
     P2 --> P3["3. Threat Modeling<br/>공격 벡터 분류"]
     P3 --> P4["4. Vulnerability<br/>취약점 분석"]

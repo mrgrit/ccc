@@ -89,7 +89,7 @@ LLM은 학습 과정에서 **안전 정렬(safety alignment)**을 거쳐, 유해
 ## 2.1 분류 체계
 
 ```mermaid
-flowchart LR
+flowchart TB
     Root["탈옥 기법 (Jailbreak)"]
     P["페르소나 기반<br/>Persona-based"]
     P1["DAN<br/>Do Anything Now"]

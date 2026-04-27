@@ -135,7 +135,7 @@ graph TB
 ### 레벨별 상세 비교
 
 ```mermaid
-graph LR
+graph TB
     L1["Level 1<br/>Initial"] --> L2["Level 2<br/>Managed"] --> L3["Level 3<br/>Defined"] --> L4["Level 4<br/>Quantitative"] --> L5["Level 5<br/>Optimizing"]
     style L1 fill:#f85149,color:#fff
     style L2 fill:#d29922,color:#fff

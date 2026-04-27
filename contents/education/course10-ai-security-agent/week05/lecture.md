@@ -113,7 +113,7 @@ sequenceDiagram
 ### 2.1 Stage 전환 흐름
 
 ```mermaid
-graph LR
+graph TB
     C["created<br/>프로젝트 생성"] --> P["planning<br/>계획 수립"]
     P --> E["executing<br/>Task 실행"]
     E --> R["reporting<br/>보고서 작성"]

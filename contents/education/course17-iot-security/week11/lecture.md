@@ -81,7 +81,7 @@ Cowrie는 Mirai와 같은 IoT 봇넷의 Telnet/SSH 공격을 포착한다.
 ### 2.2 MQTT 허니팟
 
 ```mermaid
-flowchart LR
+flowchart TB
     subgraph Real["정상 MQTT 브로커"]
         M["Mosquitto<br/>인증 필요<br/>ACL 적용"]
     end

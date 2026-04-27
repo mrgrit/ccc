@@ -69,7 +69,7 @@
 ### RL의 기본 구성 요소
 
 ```mermaid
-graph LR
+graph TB
     A["에이전트"] -->|"행동 (a)"| E["환경"]
     E -->|"보상 (r) + 상태 (s')"| A
     style A fill:#f97316,color:#fff

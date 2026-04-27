@@ -35,7 +35,7 @@
 ### 공방전 구조
 
 ```mermaid
-graph LR
+graph TB
     subgraph Red Team
         R1[정찰] --> R2[스캐닝] --> R3[익스플로잇] --> R4[권한상승] --> R5[지속성]
     end

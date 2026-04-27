@@ -38,7 +38,7 @@
 
 **MITRE ATT&CK 방어 매핑:**
 ```mermaid
-graph LR
+graph TB
     subgraph ATT&CK 기법
         T1190[T1190<br/>Exploit Public App]
         T1110[T1110<br/>Brute Force]
