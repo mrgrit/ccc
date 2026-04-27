@@ -611,9 +611,43 @@ for e in json.load(sys.stdin)[:5]:
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w07 OWASP A10+A05+A03 — SSRF·파일 업로드·
-경로 탐색 (T1190·T1083). T1041 Exfil 단일 항목 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — File 객체 audit 24만건)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *SSRF / 파일 업로드 / 경로 순회 (T1190 + T1083 File and Directory Discovery)* 학습 항목 (파일 핸들·경로 정규화·내부 endpoint 접근) 와 매핑되는 dataset 의 Windows file audit 24만건 분포 + 외부 IP block 패턴.
+
+### Case 1: file 객체 audit (4656/4658/4663/4690)
+
+| message_type | 의미 | 건수 |
+|--------------|------|------|
+| 4656 | A handle to an object was requested (open) | 79,311 |
+| 4658 | The handle was closed | 158,374 |
+| 4663 | An attempt was made to access an object | 98 |
+| 4690 | An attempt was made to duplicate a handle | 79,254 |
+| **합계** | | **316,937** |
+
+→ 4656:4658:4690 비율이 *대략 1:2:1* — *핸들 1번 open 마다 close 1번 + duplicate 1번*. **4663 이 0.12% 만** 인 것이 baseline (*비정상 access* 시 spike).
+
+### Case 2: 외부 IP `100.64.44.5` — file 관련 dst_port 시도
+
+w03 정찰 record 의 일부 — 동일 src 가 여러 dst 의 *file/share 관련 port* 도 시도:
+- 5060 SIP / 5632 PCAnywhere / **9418 git** (코드 저장소 노출!)
+
+→ 9418 (git) 시도는 *경로 탐색* 의 일종 — `.git/` 노출 endpoint 에 attacker 가 *전체 코드 base* 다운로드 가능.
+
+**해석 — 본 lecture 와의 매핑**
+
+| SSRF/파일/경로 학습 항목 | 본 record 의 증거 |
+|------------------------|------------------|
+| **파일 업로드 추적** | 4656 (open) → 4658 (close) 짝 — 업로드된 파일이 *언제 어떤 process 에 의해 read* 되는지 추적 가능. 점검 시 `/upload/` 디렉토리에 audit policy 강제 |
+| **경로 순회 (`../`) 탐지** | 4656 ObjectName 필드에 *정규화 전 path* 기록 — 점검 시 `../` 또는 `..%2f` 가 정규화 없이 ObjectName 까지 도달하면 *즉시 critical* |
+| **SSRF (T1190)** | 본 dataset 직접 record 부재 — 그러나 9418 git 외부 시도 가 *경로 탐색* 의 한 형태 (외부 git 저장소 enumeration) |
+| **handle duplicate 4690** | web 서비스 계정에서 4690 발생 시 *권한 escalation* (web → 다른 process 의 file handle 획득) — 점검 보고서 필수 항목 |
+| **MITRE 매핑** | T1190 + T1083 + T1505.003 (Web Shell, file upload via SSRF) |
+
+**학생 실습 액션**:
+1. 본인 web 서버에 auditd 의 file write rule 설치 → 업로드 시 4656 record 에 ObjectName 으로 path 가 어떻게 보이는지 확인
+2. SSRF payload `http://localhost:80/admin` 시도 후 *내부 IP* (127.0.0.1, 169.254.169.254 AWS metadata) 접근이 audit log 에 어떤 흔적 남기는지 측정
+3. 4663 이 *baseline 0.12%* 를 초과하면 어떤 attack pattern 인지 — 점검 보고서의 *anomaly threshold* 설계
 
 

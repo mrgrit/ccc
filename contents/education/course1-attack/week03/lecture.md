@@ -834,9 +834,58 @@ for e in json.load(sys.stdin):
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w03 웹 애플리케이션 구조 이해 — 인프라·
-프레임워크 학습 주차. T1041 generic Exfil tag 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — 운영 web 인프라의 multi-vendor stack)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *웹 애플리케이션 구조 이해* 학습 항목 (web → WAF → app server → DB layer + session/cookie 관리) 와 매핑되는 dataset 의 *single GET 의 multi-vendor 흔적*.
+
+### Case 1: 단일 web request 의 *7-layer trace*
+
+**원본 발췌** (signals.parquet GET CEF):
+
+```text
+<190>Jul 26 06:13:46 USER-0010-4334 CEF:0|USER-0010-57562|WAF|1220|1000|GET|5|
+  cat=TR dvc=10.208.162.175 src=100.64.55.159 spt=54187 dst=10.38.148.233
+  outcome=200 USER-9484Method=GET app=TLSv1.3
+  USER-9484=/servlet/eAndar.WebFileLibrary/3433/.../profile-complete_no%20ribbon.png
+  USER-9484USER-CRED-30678Application="USER-7922 (ORG-0407 NT 5.1; rv:11.0)
+                                       ORG-0492 Firefox/11.0 (via ggpht.com GoogleImageProxy)"
+  flexString1LUSER-CRED-25456=ProtocolVersion flexString1=ORG-CRED-31206/1.1
+  cs1LUSER-CRED-25456=ORG-0494 cs2=PROTECTED cs6=VALID
+  USER-0010-57562WafResponseType=SERVER
+```
+
+**1건의 record 가 보유한 *7 layer* 정보**
+
+| Layer | 본 record 의 증거 |
+|-------|------------------|
+| **Network** | src 100.64.55.159 / dst 10.38.148.233 / TLSv1.3 |
+| **Transport** | TCP, source port 54187 |
+| **TLS** | `app=TLSv1.3` — 최신 protocol |
+| **HTTP** | `flexString1=HTTP/1.1` |
+| **WAF (1차 검증)** | vendor signature `1220|1000`, outcome `cs6=VALID` |
+| **Application** | `/servlet/eAndar.WebFileLibrary/...` 경로 — Java servlet container |
+| **User-Agent** | Firefox 11.0 + GoogleImageProxy chain (proxy chain 식별) |
+
+### Case 2: incident graph 의 host 는 *multi-vendor product* 보유
+
+dataset incident `e5578610` 의 host 노드:
+- product 6: WitFoo Precinct (자체 SIEM)
+- product 17: Cisco ASA Firewall
+- 각 product 가 자체 framework 매핑 (csc/cmmc/iso27001) 보유
+
+**해석 — 본 lecture (web 구조) 와의 매핑**
+
+| 웹 구조 학습 항목 | 본 record 의 증거 |
+|-----------------|------------------|
+| **Web 3-tier (browser→server→DB)** | record 에 src(client) → WAF dvc → dst(app server) 가 명시적 노출 |
+| **WAF 의 위치** | dvc 가 src–dst 사이 중간자 — *학습용 인프라* 와 *실제 운영* 의 일치 |
+| **세션/cookie** | (본 GET 엔 cookie 부재 — POST 에 JSESSIONID 등장. w05 SQLi 에서 인용) — record 단위로 *언제 세션이 발급/사용* 추적 가능 |
+| **Multi-vendor stack** | 1개 host 에 SIEM + Firewall + (예상) WAF + EDR 동시 보호 — 점검 시 *각 layer 가 어떤 attack 을 cover 하는지* 매트릭스 |
+
+**학생 실습 액션**:
+1. 본인 실습 환경의 web request 1건이 *얼마나 많은 layer* 의 기록을 남기는지 nginx access log + WAF log + Suricata flow + Wazuh alert 동시 캡처 비교
+2. 동일 1건의 record 가 *어느 SIEM field 로 통합* 되는지 매핑 (CEF 표준 vs JSON winlogbeat)
+3. 본 dataset 의 7-layer 정보를 *학습 환경에서 동일 추출* 가능한지 측정 (도구 부족 layer 식별)
 
 

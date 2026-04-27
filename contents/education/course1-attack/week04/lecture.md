@@ -879,10 +879,53 @@ for e in json.load(sys.stdin)[:5]:
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w04 OWASP Top 10 — SQLi (T1190 Initial
-Access). T1041 (TA0010 Exfil) 단일 항목은 SQLi payload·UNION·blind 신호와
-매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — WAF POST + JSESSIONID 평문 노출)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *SQL Injection (T1190 Exploit Public-Facing Application)* 학습 항목 (POST body·세션 토큰·WAF 우회·blind 측정) 와 매핑되는 dataset 의 WAF POST record.
+
+### Case 1: WAF POST — JSESSIONID 평문 노출 + outcome=200
+
+**원본 발췌** (signals.parquet, message_type=POST):
+
+```text
+<190>Jul 26 06:24:30 USER-0010-4334 CEF:0|USER-0010-57562|WAF|1220|1000|POST|5|
+  cat=TR dvc=10.208.162.175 src=100.64.1.67 spt=51071 dst=10.0.145.98
+  USER-9484Cookies=JSESSIONID\=9569E23CF0614F9EF9C81DD49E4C5608
+  outcome=200 USER-9484Method=POST in=1173 out=29521
+  ORG-9066=USER-0010-0025.USER-24351-0022.example.net
+```
+
+**dataset 의 POST 통계**
+
+| 항목 | 값 |
+|------|---|
+| 총 POST | 88건 (전체 GET 4018 의 2.2%) |
+| 동일 src `100.64.1.67` 의 outcome | 200 + 302 혼재 |
+| in/out 비율 | 1.1KB → 28.8KB (응답이 입력의 25배) |
+
+### Case 2: 동일 src 의 multiple session ID — 정상 vs 비정상 구분
+
+```text
+[POST 1] JSESSIONID=9569E23CF0614F9EF9C81DD49E4C5608  outcome=200  out=29521
+[POST 2] JSESSIONID=FC322054AB03A40725AA744D5D570B26  outcome=302  out=635
+```
+
+→ 동일 src 가 *짧은 시간에 두 다른 session ID*. 정상 사용자는 한 세션 유지 → *세션 fixation 시도* 또는 *자동화* 의심.
+
+**해석 — 본 lecture (SQLi) 와의 매핑**
+
+| SQLi 학습 항목 | 본 record 의 증거 |
+|---------------|------------------|
+| **POST body 분석** | `in=1173` — body 1.1KB. SQLi UNION/blind 페이로드 보통 100~500B 라 1.1KB 는 *기능 정상 + 일부 SQLi 시도 가능 영역* |
+| **응답 크기 차이로 boolean inference** | `out=29521` (29KB) vs `out=635` (0.6KB) — blind SQLi 시 동일 endpoint 에 다른 입력 → 응답 크기 차이가 *true/false leak* |
+| **WAF 통과 (outcome=200)** | WAF rule 1220/1000 통과 → *룰셋이 cover 못 한 SQLi pattern 존재 가능*. 점검 시 vendor 룰셋 버전과 OWASP CRS 매핑 비교 |
+| **세션 토큰 평문 log 기록** | `JSESSIONID\=...` 가 WAF audit log 에 평문 — *log access 권한 보유 자가 세션 hijack* (개인정보보호법 위반 소지) |
+| **MITRE 매핑** | T1190 (Exploit Public-Facing Application) + T1505.003 (Web Shell, SQLi 결과로 webshell 심을 시) |
+
+**학생 실습 액션**:
+1. JuiceShop SQLi 실습 시 POST body in/out 크기 측정 → 동일 endpoint 의 정상 vs SQLi 응답 크기 분포 비교
+2. WAF 의 cookie 평문 logging 여부 확인 → *log redaction* 정책 점검 (점검 보고서 항목)
+3. 동일 src 의 *세션 ID 변화 빈도* 측정 — 정상 사용자 baseline 대비 5배 이상이면 *자동화 도구* 의심
 
 

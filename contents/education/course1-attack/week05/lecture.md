@@ -642,9 +642,52 @@ for e in json.load(sys.stdin)[:5]:
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w05 OWASP Top 10 — XSS (T1059.007).
-T1041 단일 항목은 XSS payload·CSP bypass·DOM injection 신호와 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — Email Phishing block + WAF GET path)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *XSS / CSRF (T1059.007 Client-side Script)* 학습 항목 (script payload 전달 channel·CSP·DOM injection) 와 매핑되는 dataset 의 *email + web 양 channel* record.
+
+### Case 1: Email phishing block — phishingScore=100
+
+**원본 발췌** (signals.parquet, message_type=email_protection_event):
+
+```text
+mo_name=Phishing  action=block  severity=critical  dst=100.64.28.102
+ORG-1780 ::: HOST-0121=block ::: CRED-23501={
+  "spamSHOST-54395":100,
+  "phishSHOST-54395":100,
+  "threatsORG-0706Map":[
+    {"threatID":"f34c7acc128cd0a3c8409a6f00CRED-2962552fc3373ab290acdc9be2f2ecfe99feaf5",
+     ...}
+  ]
+}
+```
+
+dataset 의 mo_name="Phishing" 은 8건만 — *희귀하지만 critical* category.
+
+### Case 2: WAF GET path — querystring 노출
+
+```text
+... CEF:0|...|WAF|...|GET|5|
+  ... USER-9484=/servlet/eAndar.WebFileLibrary/3433/CRED-30CRED-299353CRED-CRED-330660/
+                profile-complete_no%20ribbon.png ...
+```
+
+URL path 가 server-side decoding 후 *그대로 log* — *reflected XSS payload* 가 path 에 들어가면 동일 형태로 log 에 기록.
+
+**해석 — 본 lecture (XSS/CSRF) 와의 매핑**
+
+| XSS/CSRF 학습 항목 | 본 record 의 증거 |
+|------------------|------------------|
+| **payload 전달 channel** | XSS 는 *web reflected/stored* 외에도 *email HTML body* 로 전달 가능. 본 dataset 의 phishing block 은 *email channel 차단 사례* — XSS 점검 시 동일 channel 시나리오 |
+| **threatID 해시 추적** | sha256 형태 — XSS payload 도 SHA-256 IOC 로 관리 가능 (OpenCTI 등록) |
+| **score 임계 100** | phish/spam 모두 max score → 자동 차단. XSS 점검 시 *동일 score 정책* (suspicion ≥ 0.8 자동 차단) 권장 |
+| **URL path log 기록** | `%20` URL-decoding 후 log 에 그대로 기록 — *reflected XSS payload* `<script>alert(1)</script>` 가 path 에 들어가면 *log analyzer 의 dashboard* 에서 alert(1) 실행 가능 (XSS into log viewer) |
+| **MITRE 매핑** | T1059.007 (JavaScript) + T1566 (Phishing via attachment/link) |
+
+**학생 실습 액션**:
+1. JuiceShop XSS 실습 시 payload 를 *URL path*·*query string*·*POST body*·*HTTP header* 4개 channel 에 시도 후 WAF/Wazuh log 가 어떤 channel 을 capture 하는지 비교
+2. 점검 결과 보고서에 *발견 XSS payload 의 SHA-256* 기재 (본 dataset 의 threatID 형식 모방)
+3. 본 dataset 의 email_protection_event 처럼 *자체 phishing 시뮬레이션* 도구 (gophish) 으로 XSS payload 를 email link 에 삽입 후 SEG 통과 여부 측정
 
 

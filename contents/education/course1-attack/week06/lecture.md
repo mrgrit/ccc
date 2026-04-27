@@ -689,9 +689,48 @@ print(base64.urlsafe_b64encode(sig).decode().rstrip('='))
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w06 OWASP A01 + A07 — 접근제어·인증
-취약점 (T1078 Valid Accounts·T1110 Brute Force). T1041 Exfil 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — Windows logon Top user + NTLM 4776)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *접근제어·인증 취약점 (T1078 Valid Accounts·T1110 Brute Force)* 학습 항목 (logon 빈도·NTLM 잔존·세션 fixation) 과 매핑되는 dataset 의 4624/4776 records.
+
+### Case 1: USER-0022 — 6,190 회 logon (dataset 최다)
+
+**dataset 의 logon username 빈도 (top 5)**
+
+| Username | logon 횟수 | message_type 분포 |
+|----------|-----------|-------------------|
+| USER-0022 | **6,190** | 4624 + 4776 + account_logon |
+| USER-0012 | 4,577 | 4624 + 4776 |
+| USER-0765 | 1,560 | 4624 |
+| USER-0009 | 1,479 | 4624 + 4776 |
+| USER-0023 | 1,054 | 4624 + 4776 |
+
+→ Top user 가 dataset 평균보다 *수십 배* 많음. **service account 여부 점검** 항목.
+
+### Case 2: 동일 user NTLM 빠른 재인증 — host hopping 의심
+
+```text
+[T+0.000s] 4776 NTLM auth  user=USER-0012  src_host=USER-0010-0200
+[T+0.004s] 4776 NTLM auth  user=USER-0012  src_host=USER-0010-0200  (재시도)
+[T+3.262s] 4776 NTLM auth  user=USER-0012  src_host=USER-0010-0206  (다른 host)
+```
+
+3초 내 동일 user 가 *서로 다른 src_host* 에서 NTLM 재인증 → *세션 fixation* 또는 *측면이동* 의심.
+
+**해석 — 본 lecture (접근제어/인증) 와의 매핑**
+
+| 인증 학습 항목 | 본 record 의 증거 |
+|---------------|------------------|
+| **T1078 Valid Accounts** | USER-0022 의 6,190 logon — 정상 사용자 baseline 범위? service account 여부 분류 필요 |
+| **T1110 Brute Force** | 본 dataset 엔 4625 (logon failure) 가 0건 — *brute force 시도 없음* 또는 *audit policy 미설정* . 점검 시 4625 logging 활성 확인 |
+| **NTLM 잔존 (T1550.002)** | 4776 (NTLM) 가 4624 (Kerberos) 와 동시 발생 — *legacy NTLM 비활성화 미완료* . NTLM relay 공격 위험 |
+| **세션 fixation** | 동일 user 의 *src_host hopping* (3초 내 200→206) — pass-the-hash 또는 token impersonation |
+| **MITRE 매핑** | T1078 + T1110 + T1550.002 (NTLM) + T1021 (Remote Services) |
+
+**학생 실습 액션**:
+1. 본인 실습 환경 AD 에 4625 audit policy 활성 후 brute force 시뮬레이션 (hydra) → 발생 4625 record 분석
+2. NTLM vs Kerberos *비율 측정* — 본 dataset 처럼 NTLM 잔존 시 group policy 로 NTLM 차단
+3. 동일 user 의 *src_host 다양성* 추적 → 정상 baseline (1~2 host) vs 공격 (5+ host hopping)
 
 
