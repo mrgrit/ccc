@@ -232,6 +232,25 @@ export default function Education() {
                     <div style={{ fontSize: 14, color: '#e6edf3', whiteSpace: 'pre-wrap' as const }}>{s.bastion_prompt}</div>
                   </div>
                 )}
+                {s.learning && (s.learning.intent || s.learning.success_criteria?.length > 0 || s.learning.primary_method || s.learning.negative_signs?.length > 0) && (
+                  <div style={{ background: '#0d1117', borderLeft: '3px solid #bc8cff', borderRadius: 6, padding: '10px 14px', marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, color: '#bc8cff', fontWeight: 700, marginBottom: 6 }}>📖 학습 포인트</div>
+                    {s.learning.intent && <div style={{ fontSize: 14, color: '#e6edf3', lineHeight: 1.5, marginBottom: 8, whiteSpace: 'pre-wrap' as const }}>{s.learning.intent}</div>}
+                    {s.learning.success_criteria?.length > 0 && (
+                      <div style={{ marginTop: 6 }}>
+                        <div style={{ fontSize: 13, color: '#3fb950', fontWeight: 600, marginBottom: 2 }}>✅ 합격 조건</div>
+                        <ul style={{ margin: '2px 0 0 0', paddingLeft: 22, fontSize: 13, color: '#e6edf3' }}>{s.learning.success_criteria.map((c: string, i: number) => <li key={i}>{c}</li>)}</ul>
+                      </div>
+                    )}
+                    {s.learning.primary_method && <div style={{ marginTop: 6, fontSize: 13, color: '#d29922' }}>💡 추천 방법: <code style={{ background: '#0d1117', padding: '1px 6px', borderRadius: 4, color: '#e6edf3', border: '1px solid #30363d', fontFamily: 'Consolas,Monaco,monospace' }}>{s.learning.primary_method}</code></div>}
+                    {s.learning.negative_signs?.length > 0 && (
+                      <div style={{ marginTop: 6 }}>
+                        <div style={{ fontSize: 13, color: '#f85149', fontWeight: 600, marginBottom: 2 }}>⚠️ 피해야 할 패턴</div>
+                        <ul style={{ margin: '2px 0 0 0', paddingLeft: 22, fontSize: 13, color: '#e6edf3' }}>{s.learning.negative_signs.map((n: string, i: number) => <li key={i}>{n}</li>)}</ul>
+                      </div>
+                    )}
+                  </div>
+                )}
                 {s.hint && <div style={{ fontSize: 14, color: '#58a6ff', background: '#0d1f3c', borderRadius: 6, padding: '8px 12px', marginBottom: 8, whiteSpace: 'pre-wrap' as const }}>Hint: {s.hint}</div>}
                 {s.script && <div style={{ fontSize: 14, fontFamily: 'Consolas,Monaco,monospace', color: '#3fb950', background: '#0d1f0d', borderRadius: 6, padding: '8px 12px', marginBottom: 8, whiteSpace: 'pre-wrap' as const }}>$ {s.script}</div>}
                 {s.verify && <div style={{ fontSize: 15, color: '#8b949e' }}>Verify: <code style={{ color: '#d29922' }}>{s.verify.type}</code> <code style={{ color: '#bc8cff' }}>"{s.verify.expect}"</code></div>}

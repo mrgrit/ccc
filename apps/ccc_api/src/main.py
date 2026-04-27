@@ -1842,6 +1842,15 @@ def get_lab_detail(lab_id: str, request: Request):
                         step_data["bastion_prompt"] = s.bastion_prompt
                 if s.verify:
                     step_data["verify"] = {"type": s.verify.type, "expect": s.verify.expect, "field": s.verify.field}
+                    sem = s.verify.semantic or {}
+                    if sem:
+                        methods = sem.get("acceptable_methods") or []
+                        step_data["learning"] = {
+                            "intent": sem.get("intent", ""),
+                            "success_criteria": sem.get("success_criteria") or [],
+                            "primary_method": methods[0] if methods else "",
+                            "negative_signs": sem.get("negative_signs") or [],
+                        }
                 # admin만 정답 노출
                 if is_admin:
                     if s.answer:
