@@ -521,28 +521,15 @@ def lm_baseline_rule(session_events):
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 의 학습 주제는 *측면이동*
+(MITRE TA0008 — T1021/T1570/T1080) + *지속성* (TA0003 — T1053/T1098/T1543/T1546)
+이며 내부 스캔·자격증명 수집·SSH 키·cron·systemd unit·.bashrc 등 호스트
+내부 행위 지문이 핵심이다. Precinct 6 dataset 의 T1041 (Exfiltration TA0010)
+은 측면이동이나 지속성 흔적을 전혀 포함하지 않으며 *내부 host-to-host 시도*
+패턴 (auth.log 5710/5712/5715, auditd ssh_write, cron_modify) 매칭이 안 된다.
+적합 source 발굴 시 (예: DFIR Report 공개 walkthrough, MITRE Engenuity
+ATT&CK Evals raw telemetry) 재추가.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
