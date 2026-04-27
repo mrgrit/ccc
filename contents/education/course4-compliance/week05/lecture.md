@@ -458,26 +458,45 @@ ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — ISMS-P 미커버 = 한국 표준 별도 매핑 필요)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *ISMS-P (한국 인증)* 학습 항목 — dataset 의 framework 매핑에 *ISMS-P 부재* 가 한국 표준의 *별도 매핑 필요성* 직접 증거.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: dataset framework coverage gap — 한국 표준
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041 (Data Theft)` 패턴
-
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
+dataset host 의 framework 키:
+```text
+"frameworks": {"csc": [...], "cmmc1": [...], "cmmc3": [...],
+               "pci32": [...], "pci40": [...], "nist80053": [...],
+               "nist800171": [...], "csf": [...], "csc8": [...],
+               "iso27001": [...], "soc2": [...]}
 ```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+→ **한국 표준 부재**:
+- `isms_p` 부재 (ISMS-P 인증)
+- `pipa` 부재 (개인정보보호법)
+- `pims` 부재 (개인정보보호 관리체계)
+
+**대응**: 자체 product 매핑 시 `isms_p:[1,2,...,80]` 같은 한국 표준 키 *수기 추가*.
+
+### Case 2: ISMS-P → ISO 27001 mapping 표 (dataset 활용)
+
+ISMS-P 의 80 인증 기준 ↔ dataset 의 ISO 27001 24 control 매핑:
+
+| ISMS-P 기준 (1~80) | ISO 27001 dataset key | 의미 |
+|---------------|------------------|------|
+| 1.1~1.4 (정책·조직) | iso27001:[4, 8] | 정보보안 정책 |
+| 2.1~2.7 (자산 관리) | iso27001:[14, 16, 71, 72] | 자산 식별 |
+| 2.8~2.10 (인적) | iso27001:[67, 68, 69] | 인적 자원 |
+| 2.11~2.13 (외부자) | iso27001:[113, 114] | 외부자 통제 |
+| 2.14~2.15 (물리) | (별도 매핑 필요) | dataset 미커버 |
+| 2.16~2.18 (정보보호) | iso27001:[115-124] | 운영 보안 |
+| 2.19~2.21 (사고 관리) | iso27001:[130-132] | incident |
+
+→ ISMS-P 80개 중 *대다수* dataset 으로 매핑 가능. 물리/접근통제 (2.14~2.15) 만 별도.
+
+**해석**: ISMS-P 인증 준비 시 dataset 의 ISO 27001 매핑 *직접 활용 + 한국 특화 항목 추가* 전략.
+
+**학생 액션**: 자체 환경의 product 마다 ISMS-P key (1~80) 매핑 표 추가 — dataset 의 11 framework 양식 모방.
 

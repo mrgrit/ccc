@@ -456,26 +456,27 @@ ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — A.13~A.14 기술 통제 evidence)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *ISO 27001 기술 통제 실습 (A.13 통신·A.14 시스템 보안)* 학습 항목과 매핑되는 dataset 의 *통신·시스템* layer evidence.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: A.13/A.14 통제 ↔ dataset evidence
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
+| ISO 27001 통제 | dataset record | 건수 |
+|------------|------------|------|
+| **A.13.1.1** (네트워크 통제) | firewall_action allow/block | 118,151 |
+| **A.13.1.2** (서비스 보안) | flow event | 31,758 |
+| **A.13.2** (정보 전송) | TLSv1.3 GET 4018 (encrypted) | 4018 |
+| **A.14.2.5** (보안 시스템 엔지니어링) | WAF rule signature | 4,106 |
+| **A.14.2.8** (보안 테스트) | 5156 connection 테스트 | 176,060 |
+| **A.14.3** (테스트 데이터) | dataset 자체 (4-layer 익명화) | 595K edges |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 2: 4-layer 익명화 = A.8.10 (data masking) 직접 사례
 
-### Case 2: `T1041 (Data Theft)` 패턴
+dataset 의 4-layer (regex + format + NER + Claude review) = ISO 27001:2022 의 *A.8.10 Data Masking* 통제 의 *실제 구현 사례*.
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+**해석**: A.8.10 점검 시 dataset 의 4-layer 절차를 *템플릿* 으로 자체 환경에 적용 → audit 시 *"OSS 표준 절차 채택"* 으로 인정 가능.
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**학생 액션**: A.13~A.14 통제 별 evidence count 측정 → SoA 정량 증거. A.8.10 은 dataset 의 4-layer 절차 그대로 도입.
 
