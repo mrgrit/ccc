@@ -647,9 +647,114 @@ def seed_course_ai_safety_adv(gov_parent_mid: str):
     print(f"  ✓ {course_mid}")
 
 
+def seed_course_cloud_container(infra_parent_mid: str):
+    g = get_graph()
+    title = "course6-cloud-container — 클라우드/컨테이너 보안"
+    if any((n.get("name") or "") == title for n in g.find_nodes("Mission")): return
+    print("\n=== course6-cloud-container ===")
+    course_mid = add_mission(
+        title=title,
+        statement="Docker/K8s/AWS/IaC/CI-CD/서버리스. 졸업 시 컨테이너 보안 + 클라우드 IAM/Network 자율 설계. 진로: cloud security engineer / DevSecOps.",
+        owner="course6 Lead",
+    )
+    g.add_edge(course_mid, infra_parent_mid, "derives_from")
+    course_v = add_vision(title="course6 졸업 → Cloud Security Engineer / DevSecOps",
+                         horizon_year=2027, statement="졸업 → CKS 자격 / 1년 내 EKS 운영 / 2년 내 클라우드 보안 lead.",
+                         mission_id=course_mid)
+    g_docker = add_goal(title="Docker 보안 5축 (image/runtime/network/storage/compose) 자율 설정",
+                       due="2026-12-31", vision_id=course_v)
+    g_k8s = add_goal(title="K8s PSA restricted + RBAC + NetworkPolicy 직접 적용",
+                    due="2026-12-31", vision_id=course_v,
+                    description="P5 cloud-security-h001/h002 task 와 동일 학습 대상.")
+    g_iac = add_goal(title="IaC 보안 (Terraform/Ansible) PoC", due="2026-12-31",
+                    vision_id=course_v)
+    s_main = add_strategy(title="Docker → K8s 시뮬레이션 → IaC → CI/CD 흐름",
+                         goal_id=g_docker,
+                         approach="lab w11~w12 K8s 보안 + P5 cloud-security task 5건 학습.")
+    add_kpi(name="course6 lab pass rate", target=80.0, unit="%", goal_id=g_docker, strategy_id=s_main)
+    add_kpi(name="K8s Pod escape PoC + 차단 1건", target=100.0, unit="%",
+            measures="P5 cloud-security h002 task 학생 직접 수행.", goal_id=g_k8s)
+    add_kpi(name="IaC scan tool 활용도", target=70.0, unit="%",
+            measures="Checkov/tfsec/kubeaudit 활용 비율.", goal_id=g_iac)
+    plan = add_plan(title="2026-Q3 course6-cloud-container 운영", period="2026-Q3",
+                    owner="course6 Lead", strategy_id=s_main, goal_id=g_docker)
+    add_todo(title="K8s 시뮬레이션 환경 (kind 또는 k3s) 학생 환경 자동 배포",
+             due="2026-09-15", plan_id=plan, assignee="course6 Lead")
+    print(f"  ✓ {course_mid}")
+
+
+def seed_course_iot(infra_parent_mid: str):
+    g = get_graph()
+    title = "course17-iot-security — IoT/임베디드 보안"
+    if any((n.get("name") or "") == title for n in g.find_nodes("Mission")): return
+    print("\n=== course17-iot-security ===")
+    course_mid = add_mission(
+        title=title,
+        statement="펌웨어 분석 / UART/SPI/JTAG / BLE/Zigbee / IP Camera / SCADA / CAN. 졸업 시 IoT 디바이스 침투 + OT/ICS 기초 운영.",
+        owner="course17 Lead",
+    )
+    g.add_edge(course_mid, infra_parent_mid, "derives_from")
+    course_v = add_vision(title="course17 졸업 → IoT/OT Security Engineer",
+                         horizon_year=2027,
+                         statement="졸업 → IoT 보안 컨설팅 / 1년 내 GICSP 자격 / 2년 내 OT 보안 lead.",
+                         mission_id=course_mid)
+    g_fw = add_goal(title="펌웨어 추출 + 분석 자율 수행", due="2026-12-31", vision_id=course_v,
+                   description="binwalk/ghidra/radare2 활용. lab w4 펌웨어 분석.")
+    g_ot = add_goal(title="OT/ICS 프로토콜 (Modbus/CAN/OPC UA) 1건 PoC", due="2026-12-31",
+                   vision_id=course_v, description="lab w12-13 + P5 ot-security h001/h002.")
+    s_main = add_strategy(title="시뮬레이션 (Modbus/MQTT broker) + 펌웨어 정적 분석",
+                         goal_id=g_fw,
+                         approach="실제 IoT 디바이스 부족 환경 — 시뮬레이션 + 공개 펌웨어 dump.")
+    add_kpi(name="course17 lab pass rate", target=70.0, unit="%", goal_id=g_fw, strategy_id=s_main)
+    add_kpi(name="펌웨어 분석 PoC", target=80.0, unit="%",
+            measures="lab w4 의 binwalk extract + strings + 알려진 취약점 매핑 통과.",
+            goal_id=g_fw)
+    add_kpi(name="OT 프로토콜 PoC", target=70.0, unit="%",
+            measures="P5 ot-security h001 task 학생 통과율.", goal_id=g_ot)
+    plan = add_plan(title="2026-Q4 course17-iot-security 운영", period="2026-Q4",
+                    owner="course17 Lead", strategy_id=s_main, goal_id=g_fw)
+    add_todo(title="MQTT broker + Modbus 시뮬레이션 환경 docker-compose",
+             due="2026-11-30", plan_id=plan, assignee="course17 Lead")
+    print(f"  ✓ {course_mid}")
+
+
+def seed_course_autosys(infra_parent_mid: str):
+    g = get_graph()
+    title = "course18-autonomous-systems — 드론/로봇/자율시스템 보안 (CPS)"
+    if any((n.get("name") or "") == title for n in g.find_nodes("Mission")): return
+    print("\n=== course18-autonomous-systems ===")
+    course_mid = add_mission(
+        title=title,
+        statement="드론(WiFi/RF) / 자율주행(센서퓨전/적대적패치) / ROS2 / OT/ICS / V2X / GPS 스푸핑. 졸업 시 CPS 침투 + AI 모델 적대적 입력 방어.",
+        owner="course18 Lead",
+    )
+    g.add_edge(course_mid, infra_parent_mid, "derives_from")
+    course_v = add_vision(title="course18 졸업 → CPS Security Engineer / 자율주행 보안",
+                         horizon_year=2027,
+                         statement="졸업 → 자율주행 OEM 보안팀 / 1년 내 ROS2 보안 자체 평가 / 2년 내 CPS 침해 대응 lead.",
+                         mission_id=course_mid)
+    g_drone = add_goal(title="드론 해킹 + 방어 PoC 각 1건", due="2026-12-31", vision_id=course_v)
+    g_av = add_goal(title="자율주행 적대적 패치 1건 PoC", due="2026-12-31", vision_id=course_v,
+                   description="lab w7 자율주행 공격 + ai-safety w6 적대적 입력 cross.")
+    g_cps = add_goal(title="CPS 인시던트 대응 시나리오 1건 자율 수행", due="2026-12-31", vision_id=course_v)
+    s_main = add_strategy(title="시뮬레이션 + AI 모델 공격 학습",
+                         goal_id=g_drone,
+                         approach="실 드론·차량 부족 — gazebo 시뮬레이션 + 공개 dataset 의 적대적 patch 학습. ai-safety/ai-safety-adv 와 cross-course.")
+    add_kpi(name="course18 lab pass rate", target=70.0, unit="%", goal_id=g_drone, strategy_id=s_main)
+    add_kpi(name="자율주행 적대적 입력 PoC", target=60.0, unit="%",
+            measures="lab w7 학생 PoC. CARLA/AirSim 등 시뮬레이션 활용도.", goal_id=g_av)
+    add_kpi(name="CPS IR 6단계 완성도", target=80.0, unit="%",
+            measures="lab w14 CPS IR 학생 단계별 통과율.", goal_id=g_cps)
+    plan = add_plan(title="2026-Q4 course18-autonomous-systems 운영", period="2026-Q4",
+                    owner="course18 Lead", strategy_id=s_main, goal_id=g_drone)
+    add_todo(title="ROS2 + Gazebo 학습 환경 + 적대적 patch dataset 정리",
+             due="2026-12-15", plan_id=plan, assignee="course18 Lead")
+    print(f"  ✓ {course_mid}")
+
+
 def main():
     print("=" * 60)
-    print("9-tier KG seed — 탐지 3 + 공격 3 + IR 2 + 거버넌스 3 = 11 과목")
+    print("9-tier KG seed — 탐지 3 + 공격 3 + IR 2 + 거버넌스 3 + 인프라 3 = 14 과목")
     print("=" * 60)
     top_mid, v_2027, v_2026 = seed_top_level()
     domain_pids = seed_domain_parents(top_mid, v_2027)
@@ -665,6 +770,9 @@ def main():
     seed_course_compliance(gov_pid)
     seed_course_ai_safety(gov_pid)
     seed_course_ai_safety_adv(gov_pid)
+    seed_course_cloud_container(infra_pid)
+    seed_course_iot(infra_pid)
+    seed_course_autosys(infra_pid)
 
     # 결과 요약
     print("\n=== 결과 요약 ===")

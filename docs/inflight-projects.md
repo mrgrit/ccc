@@ -62,7 +62,15 @@
 
 ---
 
-### P3. R3 round retest  [STATUS: in progress (cursor 111/1261, +93 재큐, driver v2 health-check)]
+### P3. R3 round retest  [STATUS: in progress (cursor 286/575, secu VM 복구 후 supplemental 예정)]
+
+**2026-04-27 secu 복구**: 사용자 보고 — R3 진행 중 secu VM (10.20.30.1) 다운 →
+복구 완료. driver 가 그 시점 step 들을 fail/no_execution 처리했을 가능성.
+secu 의존 과목 (secops/soc/soc-adv/agent-ir/agent-ir-adv 일부) 의 최근 fail
+은 인프라 원인일 수 있음. **R3 main queue 완료 후 secu 의존 step
+supplemental retest 필요**.
+
+
 
 **진단 (2026-04-26 14:40)**: 사용자 가설 적중 — bastion 단일 워커 + driver+내 background curl 동시 호출 → connection refused 35건 (14:19~14:20:36 cluster).
 **수정 v2 (commit pending)**:
