@@ -827,28 +827,54 @@ curl -s -H "X-API-Key: $BASTION_API_KEY" \
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 자율 인시던트 대응 에이전트)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *프로젝트 A: 자율 IR 에이전트 구축* 학습 항목 매칭.
 
-### Case 1: `T1041` 패턴
+### 자율 IR = "사고 발생 → 자동 대응 6 단계 chain"
 
+dataset 392 Data Theft 사례를 *전수 자동 IR* 로 처리하는 시스템. 6 단계 chain — 탐지 → 격리 → 원인 분석 → 차단 → 복구 → 보고.
+
+```mermaid
+graph LR
+    SIG["dataset 신호"]
+    AUTO["자율 IR 에이전트"]
+    AUTO --> S1["1.탐지"]
+    S1 --> S2["2.격리"]
+    S2 --> S3["3.원인 분석"]
+    S3 --> S4["4.차단"]
+    S4 --> S5["5.복구"]
+    S5 --> S6["6.보고"]
+
+    style AUTO fill:#cce6ff
 ```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: 자율 IR 의 정량 KPI
 
-### Case 2: `T1041` 패턴
+| KPI | 임계 |
+|---|---|
+| MTTD (mean time to detect) | ≤30초 |
+| MTTR (mean time to respond) | ≤2분 |
+| MTTRecover | ≤10분 |
+| 사람 개입 횟수 | ≤1회/사고 |
 
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
+### Case 2: 6 단계의 dataset 매핑
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 단계 | dataset 활용 |
+|---|---|
+| 탐지 | mo_name 분류 |
+| 격리 | 관련 IP 차단 |
+| 원인 분석 | chain 추출 |
+| 차단 | SIGMA 룰 생성 |
+| 복구 | 정상 사용자 unblock |
+| 보고 | 사람 escalation |
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **6 단계 chain 자동화** — MTTD/MTTR/MTTRecover 3 KPI.
+2. **사람 개입 ≤1회 = 자율** — 그 이상은 반자율.
+3. **각 단계의 dataset 활용 명확** — chain 추출이 핵심.
+
+**학생 액션**: 본인의 자율 IR 에이전트로 dataset 392 사례 처리 → 4 KPI 측정.
 

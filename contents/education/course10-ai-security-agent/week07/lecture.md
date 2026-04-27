@@ -918,28 +918,53 @@ fi
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — Claude Code 클라이언트 사이드)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *Claude Code 클라이언트 사이드 하네스의 보안 분석 활용* 학습 항목 매칭.
 
-### Case 1: `T1041` 패턴
+### Claude Code = "분석가의 IDE 통합 보조 에이전트"
+
+Bastion 이 *24/7 자동 운영* 이라면 Claude Code 는 — *분석가가 IDE 에서 호출* 하는 보조. dataset 의 *복잡한 신호 분석* (Playbook 없는 신규 패턴) 같은 작업에 *분석가의 창의성* 과 *Claude Code 의 도구 활용* 을 결합.
+
+```mermaid
+graph LR
+    ANALYST["SOC 분석가"]
+    CC["Claude Code"]
+    TOOLS["Read/Edit/Bash/Grep<br/>~10 tools"]
+
+    ANALYST -->|질문| CC
+    CC -->|tool 활용| TOOLS
+    TOOLS -->|결과| CC
+    CC -->|답변| ANALYST
+
+    style CC fill:#cce6ff
+```
+
+### Case 1: dataset 복잡 신호 분석 — Bastion vs Claude Code
+
+| 시나리오 | Bastion (서버) | Claude Code (클라이언트) |
+|---|---|---|
+| 13K 일상 신호 | 자동 처리 (적합) | 비효율 |
+| 신규 zero-day 분석 | LLM 즉흥 (가변 결과) | 분석가 + AI 협업 (정확) |
+| 대량 정형 분류 | 적합 | 부적합 |
+
+### Case 2: Claude Code 의 dataset 활용 사례
 
 ```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
+분석가: "이 dataset 신호를 분석해 chain 추출해줘"
+Claude Code:
+  1. Read dataset/precinct6/...
+  2. Grep mo_name=Data Theft
+  3. Bash duckdb 분석
+  4. 결과 정리해서 답변
 ```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### 이 사례에서 학생이 배워야 할 3가지
 
-### Case 2: `T1041` 패턴
+1. **클라이언트 = 분석가 보조** — 자동화 X, 협업 O.
+2. **신규 패턴은 클라이언트가 적합** — Bastion 의 즉흥보다 정확.
+3. **분석가의 창의성 + AI 도구** — 결합 가치.
 
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**학생 액션**: Claude Code 에 dataset 분석 요청 → Bastion 결과와 비교.
 

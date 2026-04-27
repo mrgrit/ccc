@@ -924,28 +924,53 @@ python3 /tmp/agent_security_audit.py
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 에이전트 보안 위협)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *AI 에이전트의 보안 취약점과 방어* 학습 항목 매칭.
 
-### Case 1: `T1041` 패턴
+### 에이전트 = "도구 권한 + 자율성 = 새 attack surface"
 
+LLM 단독은 *답변만* 하지만 에이전트는 *직접 도구 호출 + 시스템 변경* 가능. dataset 의 message_sanitized 안에 박힌 prompt injection 텍스트가 — 에이전트 분석 시 *조작된 결정 → 잘못된 시스템 변경* 으로 이어짐.
+
+```mermaid
+graph LR
+    SIG["dataset 신호<br/>(injection 박힘)"]
+    AGENT["에이전트"]
+    TOOLS["도구 호출 권한:<br/>block, revoke, delete"]
+    DAMAGE["진짜 시스템 피해"]
+
+    SIG -->|injection 우회| AGENT
+    AGENT -->|잘못된 결정| TOOLS
+    TOOLS --> DAMAGE
+
+    style SIG fill:#ffcccc
+    style DAMAGE fill:#ff6666
 ```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: 에이전트 위협 4 카테고리
 
-### Case 2: `T1041` 패턴
+| 위협 | 영향 | 방어 |
+|---|---|---|
+| Prompt injection | 조작된 결정 | 입력 sanitization |
+| Tool abuse | 권한 오용 | 위험도별 차등 |
+| Memory poisoning | KG 오염 | 입력 검증 + audit |
+| Resource exhaustion | DoS | rate limit |
 
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
+### Case 2: 위험도별 도구 권한
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 카테고리 | 예시 | 정책 |
+|---|---|---|
+| read-only | dataset_query | 자동 |
+| config | rule_add | 사람 승인 |
+| service | block_traffic | 2명 승인 |
+| destructive | log_delete | 자동 X |
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **에이전트 = 새 attack surface** — LLM 단독과 본질 차이.
+2. **위협 4 카테고리** — injection / tool abuse / poisoning / DoS.
+3. **위험도별 차등 권한** — 모든 도구 동일 권한 X.
+
+**학생 액션**: 본인 에이전트의 33 skill 을 4 카테고리로 분류 → 권한 정책 v1 작성.
 

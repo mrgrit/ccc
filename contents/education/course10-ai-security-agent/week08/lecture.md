@@ -1021,28 +1021,54 @@ python3 ~/lab/week08/grading.py
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 중간 실습 보안 에이전트)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *중간 실습: 학생이 직접 보안 에이전트 구축* 학습 항목 매칭.
 
-### Case 1: `T1041` 패턴
+### 만점 답안 = "Bastion-mini 수준의 동작 가능 시스템"
 
+학생의 중간 실습 답안은 — *최소 4 layer (LLM + tool + memory + ReAct)* 를 갖추고 *dataset 100건을 자동 분류* 할 수 있어야 만점.
+
+```mermaid
+graph TB
+    STUDENT["학생 답안"]
+    STUDENT --> A["LLM 호출"]
+    STUDENT --> B["tool 1 (dataset query)"]
+    STUDENT --> C["메모리 (KG mini)"]
+    STUDENT --> D["ReAct loop"]
+    A --> WORK["dataset 100건 분류"]
+    B --> WORK
+    C --> WORK
+    D --> WORK
+
+    style STUDENT fill:#ffe6cc
+    style WORK fill:#ccffcc
 ```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: 만점 답안 임계 KPI
 
-### Case 2: `T1041` 패턴
+| KPI | 만점 |
+|---|---|
+| 4 layer 모두 구현 | 필수 |
+| dataset 100건 정확도 | ≥85% |
+| 평균 처리 시간 | ≤10초/건 |
+| 종합 보고서 | 5 페이지+ |
 
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
+### Case 2: 부분점 답안의 흔한 실수
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 실수 | 부분점 |
+|---|---|
+| LLM 단독 (tool/memory 없음) | 50점 |
+| tool 1개만 | 70점 |
+| 메모리 미구현 | 80점 |
+| ReAct 미구현 | 80점 |
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **4 layer 모두 = 만점** — 한 layer 만 빠져도 부분점.
+2. **dataset 100건 검증 = 동작 증명** — demo X, 정량 결과.
+3. **5 페이지 보고서 = 분석 깊이** — 단순 동작 X.
+
+**학생 액션**: 본인의 보안 에이전트 만들고 dataset 100건 분류 → 4 layer + KPI 보고서 작성.
 

@@ -842,28 +842,50 @@ python3 ~/lab/week04/harness_comparison.py
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 에이전트 하네스 개론)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *에이전트 하네스 (harness) 의 정의와 종류* 학습 항목 매칭.
 
-### Case 1: `T1041` 패턴
+### Harness = "에이전트의 ReAct loop + tool + memory 를 통합한 환경"
 
+*하네스* 는 에이전트가 *동작하는 환경* 이다. 종류는 — *서버 사이드 (Bastion 같은 standalone)*, *클라이언트 사이드 (Claude Code 같은 IDE 통합)*, *embedded (앱 내 sub-agent)*. dataset 환경에서 — Bastion 은 서버 사이드 하네스로 구현.
+
+```mermaid
+graph TB
+    HARNESS["에이전트 하네스"]
+    HARNESS --> SS["서버 사이드<br/>(Bastion)"]
+    HARNESS --> CS["클라이언트 사이드<br/>(Claude Code)"]
+    HARNESS --> EMB["Embedded<br/>(앱 내장)"]
+    SS -->|용도| OPS["24/7 운영"]
+    CS -->|용도| DEV["개발 보조"]
+    EMB -->|용도| FEAT["앱 기능"]
+
+    style HARNESS fill:#cce6ff
 ```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: 서버 vs 클라이언트 하네스 비교
 
-### Case 2: `T1041` 패턴
+| 항목 | 서버 사이드 | 클라이언트 사이드 |
+|---|---|---|
+| 운영 형태 | 24/7 daemon | 사용자 호출 시 |
+| 권한 범위 | 시스템 access | 사용자 권한 |
+| dataset 처리 | 13K 신호 자동 | 사용자 요청만 |
+| 예시 | Bastion | Claude Code |
 
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
+### Case 2: 하네스 선택 가이드라인
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 시나리오 | 적합한 하네스 |
+|---|---|
+| 24/7 SOC 자동화 | 서버 (Bastion) |
+| 분석가 Q&A 보조 | 클라이언트 (Claude Code) |
+| 앱 기능 (RAG 검색) | Embedded |
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **3 하네스 = 3 운영 모델** — 24/7 / 사용자 호출 / 앱 기능.
+2. **서버 = 자동화, 클라이언트 = 보조** — 역할 명확.
+3. **dataset 13K 자동 처리는 서버 하네스만** — 클라이언트로는 불가능.
+
+**학생 액션**: 본인 시나리오에 적합한 하네스 1개 선택 + 이유 1문단.
 

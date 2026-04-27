@@ -786,28 +786,52 @@ curl -s -o /dev/null -w "%{http_code}" http://10.20.30.80:3000/ 2>/dev/null || e
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 보안 교육 에이전트)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *프로젝트 C: 보안 교육 에이전트 + 최종 발표* 학습 항목 매칭.
 
-### Case 1: `T1041` 패턴
+### 보안 교육 Agent = "학생의 실습 가이드 + 채점"
 
+dataset 의 392 사례를 *학생 실습 자료로 변환* 하는 교육 에이전트. 학생이 *"이 신호 분석해 봐"* 라고 요청하면 — Agent 가 *힌트 + 단계별 지도* + *답안 채점* 까지 수행.
+
+```mermaid
+graph LR
+    STUDENT["학생"]
+    EDU["교육 Agent"]
+    EDU --> HINT["힌트 제공"]
+    EDU --> GUIDE["단계 지도"]
+    EDU --> GRADE["채점"]
+
+    STUDENT --> EDU
+    EDU --> STUDENT
+
+    style EDU fill:#cce6ff
 ```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: 교육 Agent 의 3 기능
 
-### Case 2: `T1041` 패턴
+| 기능 | dataset 활용 |
+|---|---|
+| 힌트 | 392 사례 중 유사 chain 제시 |
+| 단계 지도 | 6 단계 분석 가이드 |
+| 채점 | 학생 답변 vs 정답 라벨 비교 |
 
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
+### Case 2: 최종 발표 평가 — 5 축
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 축 | 만점 임계 |
+|---|---|
+| 4 layer 구현 | 모두 |
+| dataset 100건 정확도 | ≥85% |
+| 자기 평가 (4 KPI) | 정량 |
+| Demo 동작 | 무결함 |
+| 보고서 50 페이지 | 분석 깊이 |
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **교육 Agent = 학생 실습 가이드** — 힌트 + 지도 + 채점.
+2. **최종 발표 5 축 평가** — 통합 시스템 검증.
+3. **dataset 이 교육 자료** — 392 사례가 핵심 자산.
+
+**학생 액션**: 본인의 교육 Agent + dataset 으로 최종 시연 → 5 축 평가 보고서.
 

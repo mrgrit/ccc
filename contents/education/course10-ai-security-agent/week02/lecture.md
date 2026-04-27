@@ -887,28 +887,53 @@ curl -s -X POST http://localhost:9100/projects/${PROJECT_ID}/dispatch \
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — LLM API와 Tool Calling)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *LLM API + Tool Calling 의 정확한 동작* 학습 항목 매칭.
 
-### Case 1: `T1041` 패턴
+### Tool Calling = "LLM 이 함수를 호출하는 표준 메커니즘"
 
+LLM 이 dataset 분석에 외부 도구 (예: dataset query, KG search) 를 사용하려면 — *Tool Calling* 메커니즘이 필요. 이는 OpenAI Function Calling, Anthropic Tool Use 등으로 표준화. dataset 1건 분석에 *5 step 의 tool 호출* 이 필요한 이유.
+
+```mermaid
+graph LR
+    PROMPT["LLM prompt"]
+    LLM["LLM"]
+    TOOLS["사용 가능 tools<br/>(query, search, generate)"]
+    CALL["tool call 결정"]
+    RESULT["tool 결과"]
+
+    PROMPT --> LLM
+    TOOLS -->|spec| LLM
+    LLM --> CALL
+    CALL --> RESULT
+    RESULT --> LLM
+
+    style LLM fill:#cce6ff
 ```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: dataset 분석의 표준 tool spec
 
-### Case 2: `T1041` 패턴
+| tool | 입력 | 출력 |
+|---|---|---|
+| dataset_query | mo_name, time | 신호 list |
+| kg_search | embedding | 유사 5건 |
+| generate_sigma | chain | YAML 룰 |
 
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
+### Case 2: tool calling 비용 vs 효과
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 옵션 | 비용 | 정확도 |
+|---|---|---|
+| LLM 단독 | 1 호출 | 70% |
+| LLM + 1 tool | 2 호출 | 85% |
+| LLM + 5 tool | 6 호출 | 94% |
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **Tool Calling = LLM 이 함수 호출** — 외부 자원 활용 표준.
+2. **5 tool 호출 = 정확도 24% 향상** — 비용 6배지만 가치 큼.
+3. **tool spec 작성이 핵심** — 입력/출력 명확.
+
+**학생 액션**: lab 의 LLM 에 dataset_query, kg_search 두 tool 등록 후 신호 분석 시도.
 

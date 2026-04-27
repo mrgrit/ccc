@@ -897,28 +897,48 @@ if __name__ == "__main__":
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 에이전트 평가와 벤치마크)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *에이전트 성능 평가 + 표준 벤치마크* 학습 항목 매칭.
 
-### Case 1: `T1041` 패턴
+### 평가의 4 축 — 정확도 + 비용 + 속도 + 안전성
 
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
+에이전트 평가는 *4 축* — *정확도 (label_binary 일치율), 비용 (LLM 호출 수), 속도 (처리 시간), 안전성 (jailbreak 차단율)* — 모두 측정해야. 한 축만 좋으면 운영 부적합.
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+```mermaid
+graph TB
+    AGENT["평가 대상 에이전트"]
+    AGENT --> A["정확도 ≥92%"]
+    AGENT --> C["비용 ≤$0.01/건"]
+    AGENT --> S["속도 ≤5초/건"]
+    AGENT --> SAFE["안전성 ≥95%"]
 
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
+    style AGENT fill:#cce6ff
 ```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: dataset 100 신호로 4 축 측정
+
+| 축 | 측정 방법 | 임계 |
+|---|---|---|
+| 정확도 | label_binary 일치 비율 | ≥92% |
+| 비용 | 평균 LLM 호출 수 × 단가 | ≤$0.01 |
+| 속도 | 평균 처리 시간 | ≤5초 |
+| 안전성 | jailbreak prompt 차단율 | ≥95% |
+
+### Case 2: 표준 벤치마크 — Bastion-Bench, Cybench, AgentBench
+
+| 벤치 | 적합 |
+|---|---|
+| Bastion-Bench (590 task) | 보안 운영 종합 |
+| Cybench | CTF 기반 평가 |
+| AgentBench | 일반 에이전트 |
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **4 축 모두 임계 통과** — 한 축만 약해도 부적합.
+2. **표준 벤치 사용** — Bastion-Bench / Cybench / AgentBench.
+3. **dataset 으로 자체 벤치 가능** — 100 신호 4 축 평가.
+
+**학생 액션**: 본인 에이전트의 4 축을 dataset 100건 으로 측정.
 

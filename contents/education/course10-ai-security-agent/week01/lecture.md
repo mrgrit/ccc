@@ -673,28 +673,53 @@ curl -s -H "X-API-Key: ccc-api-key-2026" \
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — AI 에이전트의 본질)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *AI 에이전트와 LLM 의 차이* 학습 항목 매칭.
 
-### Case 1: `T1041` 패턴
+### 에이전트 = LLM + 도구 + 메모리 + 자율성
 
+dataset 의 392 Data Theft 사례에 LLM 단독으로 *"분류해라"* 라고 하면 — *답변 1건* 이 끝. 에이전트는 — *분류 + KG 검색 + chain 추출 + 룰 생성 + 검증* 의 5 단계를 *자동* 수행. 즉 *처리 가능한 작업의 복잡도가 LLM 대비 5배 이상*.
+
+```mermaid
+graph LR
+    LLM["LLM 단독:<br/>1 step 답변"]
+    AGENT["에이전트:<br/>5 step 자동 처리"]
+    DS["dataset 신호"]
+
+    DS --> LLM
+    DS --> AGENT
+    LLM --> O1["분류 1건"]
+    AGENT --> O5["분류 + 분석 + 룰 + 검증 + 보고"]
+
+    style LLM fill:#ffe6cc
+    style AGENT fill:#cce6ff
 ```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: dataset 392 Data Theft 처리 비교
 
-### Case 2: `T1041` 패턴
+| 항목 | LLM 단독 | 에이전트 |
+|---|---|---|
+| 신호 1건 처리 시간 | ~2초 | ~7초 |
+| 작업 깊이 | 분류만 | 분류 + 룰 생성 |
+| 비용 (LLM 호출) | 1 호출 | 5 호출 |
+| 운영 가치 | 낮음 (사람 후속 필요) | 높음 (즉시 사용) |
 
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
+### Case 2: 에이전트의 4 구성요소
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 구성요소 | dataset 활용 |
+|---|---|
+| LLM | 추론 / 분류 / 생성 |
+| 도구 | KG 검색, dataset query, 룰 생성 |
+| 메모리 | 392 사례 KG, 회상 history |
+| 자율성 | 추상 목표 → 자동 단계 분해 |
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **에이전트 = LLM + 도구 + 메모리 + 자율성** — 4 구성요소.
+2. **5단계 자동 처리 = 운영 가치** — LLM 단독은 분류만.
+3. **비용 5배지만 가치 10배** — ROI 측면 우월.
+
+**학생 액션**: lab Bastion 으로 dataset 1건을 처리 — LLM 단독 대비 작업 깊이 비교.
 
