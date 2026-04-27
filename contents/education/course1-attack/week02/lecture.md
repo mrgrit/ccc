@@ -926,9 +926,67 @@ curl -s -I -L URL | grep -i '^HTTP\|^Location'
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w02 정찰 (TA0043 — T1595/T1592). T1041
-(TA0010 Exfil) 단일 항목은 정찰 단계 신호와 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — 정찰 burst 1초 30 host × 54 port)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *정보수집 (TA0043 Reconnaissance)* 학습 항목 (외부 → 내부 mass scan) 과 1:1 매칭되는 dataset 의 firewall_action burst record.
+
+### Case 1: src `100.64.20.230` — 1초 burst 정찰
+
+**메타**
+
+| 항목 | 값 |
+|------|---|
+| 시각 | 2023-07-10 01:33:46 UTC (timestamp 1688960026) |
+| src | `100.64.20.230` (외부 단일 IP) |
+| dst | 30 distinct internal hosts (172.16~172.31 대역) |
+| dst port | 54 distinct (TCP+UDP 혼합) |
+| 이벤트 수 | 208 (모두 firewall block) |
+| Precinct 6 suspicion | 0.92 |
+
+**대표 포트 목록 (54개 중 발췌)**:
+
+| 포트 | 서비스 | 정찰 의도 |
+|------|--------|-----------|
+| 22 | SSH | 원격 관리 access 가능성 |
+| 88 | Kerberos | AD 도메인 존재 확인 |
+| 623 | IPMI | 하드웨어 관리 인터페이스 |
+| 1433 | MSSQL | DB 서비스 발견 |
+| 5060 | SIP | VoIP 인프라 식별 |
+| 5632 | PCAnywhere | legacy 원격 도구 검출 |
+| 8333 | Bitcoin | 가상화폐 노드 (탈취 표적) |
+| 9418 | git | 코드 저장소 노출 |
+| 31337 | elite | backdoor 존재 확인 |
+
+**원본 firewall log 발췌**:
+
+```text
+<180>Jul 09 USER-9564 21:56:51: USER-0010-0324
+  Deny tcp src outside:100.64.20.230/CRED-250460
+  dst DMZ:172.28.21.208/22  by ORG-1738-group "outside_ORG-1738_in"
+
+<180>Jul 09 USER-9564 21:56:51: USER-0010-0324
+  Deny udp src outside:100.64.20.230/CRED-250460
+  dst DMZ:172.27.35.73/623  by ORG-1738-group "outside_ORG-1738_in"
+
+<180>Jul 09 USER-9564 21:56:51: USER-0010-0324
+  Deny tcp src outside:100.64.20.230/CRED-250460
+  dst DMZ:172.31.224.33/31337 by ORG-1738-group "outside_ORG-1738_in"
+```
+
+**해석 — 본 lecture (정찰) 와의 매핑**
+
+| 정찰 학습 항목 | 본 record 의 증거 |
+|---------------|------------------|
+| **호스트 enumeration (T1595.002)** | 30 distinct dst IP — masscan/nmap 의 *대역 sweep* 패턴 |
+| **service enumeration (T1592.002)** | 54 distinct port — *알려진 서비스 포트 묶음* (nmap `--top-ports`) |
+| **속도 패턴** | 모든 208 events 가 *동일 timestamp* — 사람 손 불가능, 자동화 확정 |
+| **차단되어도 정찰 성공** | firewall 가 모두 block → 그러나 *block 응답 자체* (RST/timeout) 가 attacker 에게 *서비스 매핑* 정보 제공 (port 가 살아있음을 reveal) |
+| **MITRE 매핑** | TA0043 Reconnaissance + T1595.001 (Active Scanning) + T1595.002 (Vulnerability Scanning) |
+
+**학생 실습 액션**:
+1. 본 패턴을 *학생 본인이 nmap 으로 재현* — `nmap -sS -p- 10.20.30.0/24 -T4` 실행 후 secu firewall 로그에서 동일 burst 확인
+2. 정찰 *속도 조절* (`-T2`) 적용 후 firewall log 가 어떻게 달라지는지 비교
+3. 본 dataset 의 *54 포트 묶음* 을 점검 도구 wordlist 로 추가 (실세계 정찰의 실제 표적 포트)
 
 
