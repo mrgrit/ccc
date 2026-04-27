@@ -752,9 +752,36 @@ def seed_course_autosys(infra_parent_mid: str):
     print(f"  ✓ {course_mid}")
 
 
+def seed_simple_course(parent_mid, course_id, title, statement, owner, vision_h, vision_text,
+                      goals, strategy_title, strategy_approach, kpis, plan_period,
+                      plan_owner, todo_title, todo_due, todo_desc=""):
+    """단순화된 과목 seed — 6 과목 잔여 일괄 처리용."""
+    g = get_graph()
+    full_title = f"{course_id} — {title}"
+    if any((n.get("name") or "") == full_title for n in g.find_nodes("Mission")): return
+    print(f"\n=== {course_id} ===")
+    course_mid = add_mission(title=full_title, statement=statement, owner=owner)
+    g.add_edge(course_mid, parent_mid, "derives_from")
+    course_v = add_vision(title=f"{course_id} 졸업생 진로", horizon_year=vision_h,
+                         statement=vision_text, mission_id=course_mid)
+    goal_ids = []
+    for gtitle, gdesc in goals:
+        gid = add_goal(title=gtitle, due="2026-12-31", vision_id=course_v, description=gdesc)
+        goal_ids.append(gid)
+    s_main = add_strategy(title=strategy_title, goal_id=goal_ids[0], approach=strategy_approach)
+    for kname, ktarget, kunit, kmeas, kgi in kpis:
+        add_kpi(name=kname, target=ktarget, unit=kunit, measures=kmeas,
+                goal_id=goal_ids[kgi], strategy_id=s_main)
+    plan = add_plan(title=f"{plan_period} {course_id} 운영", period=plan_period,
+                    owner=plan_owner, strategy_id=s_main, goal_id=goal_ids[0])
+    add_todo(title=todo_title, due=todo_due, plan_id=plan, assignee=plan_owner,
+             description=todo_desc)
+    print(f"  ✓ {course_mid}")
+
+
 def main():
     print("=" * 60)
-    print("9-tier KG seed — 탐지 3 + 공격 3 + IR 2 + 거버넌스 3 + 인프라 3 = 14 과목")
+    print("9-tier KG seed — 20/20 과목 풀")
     print("=" * 60)
     top_mid, v_2027, v_2026 = seed_top_level()
     domain_pids = seed_domain_parents(top_mid, v_2027)
@@ -773,6 +800,115 @@ def main():
     seed_course_cloud_container(infra_pid)
     seed_course_iot(infra_pid)
     seed_course_autosys(infra_pid)
+
+    # 잔여 6 과목 — 단순 seed
+    seed_simple_course(
+        parent_mid=attack_pid, course_id="course11-battle",
+        title="공방전 기초 (Cyber Battle)",
+        statement="정찰→스캔→웹공격→PrivEsc + 방화벽/IDS/로그분석/IR + 1v1 공방. 졸업 시 Red+Blue 통합 운영.",
+        owner="course11-battle Lead", vision_h=2027,
+        vision_text="졸업 → 공방전 운영 / 1년 내 팀 공방 lead.",
+        goals=[("1v1 공방 3 라운드 모두 통과", "lab w11~w13"),
+               ("팀 공방 1건 자율 운영", "w13 팀 공방")],
+        strategy_title="lecture (강의) + lab (실전 공방) 매주 페어",
+        strategy_approach="공방전 시나리오 16건 (battle-scenarios YAML) 의 절반을 본 과정에서 다룸.",
+        kpis=[("course11 lab pass rate", 75.0, "%", "weekly", 0),
+              ("팀 공방 운영 완성도", 70.0, "%", "분기말 평가", 1)],
+        plan_period="2026-Q3", plan_owner="course11-battle Lead",
+        todo_title="battle-scenarios 16개 의 course11/12 매핑 명확화",
+        todo_due="2026-08-15",
+    )
+
+    seed_simple_course(
+        parent_mid=attack_pid, course_id="course12-battle-advanced",
+        title="공방전 심화 (Advanced Battle)",
+        statement="APT 시뮬레이션, 다단계 침투, 실시간 공방, AI vs AI, 종합 Red/Blue 운영.",
+        owner="course12-battle-adv Lead", vision_h=2027,
+        vision_text="졸업 → APT 대응 lead / 1년 내 자체 APT 시나리오 / 2년 내 incident commander.",
+        goals=[("APT 캠페인 시뮬레이션 1건 완수", "Precinct 6 의 5 anchor chain 재현 + Bastion AI 방어"),
+               ("AI vs AI 공방 1 round 운영", "Bastion 자율 vs 학생 + Bastion")],
+        strategy_title="Precinct 6 의 5 anchor chain 을 baseline 으로",
+        strategy_approach="2024-08 13일 캠페인 (피싱→AS-REP→SMB→cron→DNS) 을 학생이 재현 + 변형. AI vs AI 는 P12 자율 공방전 시스템 활용.",
+        kpis=[("course12 lab pass rate", 70.0, "%", "weekly", 0),
+              ("APT 캠페인 단계 완수율", 80.0, "%", "5 단계", 0),
+              ("AI vs AI 1 round 평균 시간", 60.0, "min", "P12 자율공방 데이터", 1)],
+        plan_period="2026-Q4", plan_owner="course12-battle-adv Lead",
+        todo_title="autonomous battle (P12) UI 개선 후 학생 시범 1 round",
+        todo_due="2026-12-15",
+    )
+
+    seed_simple_course(
+        parent_mid=infra_pid, course_id="course16-physical-pentest",
+        title="물리 침투 테스트 (Physical Pentest)",
+        statement="RFID/NFC, USB HID, WiFi (WPA2/Evil Twin), RF (SDR), 잠금장치, IP Camera. 졸업 시 물리+논리 통합 침투.",
+        owner="course16 Lead", vision_h=2027,
+        vision_text="졸업 → physical pentester / 1년 내 RTO (Red Team Operator) 자격.",
+        goals=[("RFID + USB HID + WiFi 3 분야 PoC", "lab w3~w7")],
+        strategy_title="시뮬레이션 + Flipper Zero 등 도구 학습",
+        strategy_approach="실 RFID/NFC 도구 부족 — 시뮬레이션 + 공개 dump 활용.",
+        kpis=[("course16 lab pass rate", 70.0, "%", "weekly", 0)],
+        plan_period="2026-Q3", plan_owner="course16 Lead",
+        todo_title="WiFi WPA2 크래킹 lab 의 합법 시뮬레이션 환경 검증",
+        todo_due="2026-09-30",
+    )
+
+    seed_simple_course(
+        parent_mid=infra_pid, course_id="course7-ai-security",
+        title="AI/LLM 보안 활용 (Bastion 구축)",
+        statement="Ollama → 프롬프트 엔지니어링 → LLM 로그 분석 → 탐지 룰 자동 생성 → Bastion 구축 → Playbook+RL → Agent Daemon. 졸업 시 자체 AI 보안 자동화 시스템 구축.",
+        owner="course7-ai-security Lead", vision_h=2027,
+        vision_text="졸업 → AI Security Automation Engineer / 1년 내 자체 Bastion 운영 / 2년 내 multi-team 자율 보안.",
+        goals=[("자체 Bastion 인프라 구축 + 1 mission 자율 수행",
+                "P11 9-tier KG 활용 + P12 자율공방 연계"),
+               ("LLM 기반 탐지 룰 1건 자동 생성", "lab w5 + course5/14 cross")],
+        strategy_title="Ollama → Bastion → Playbook+RL → 자율 미션 점진적 구축",
+        strategy_approach="lecture (Bastion 활용 흐름) + lab (LLM 보안 일반) D-B 매핑 활용. autonomous/ai-agent 와 cross-course.",
+        kpis=[("course7 lab pass rate", 75.0, "%", "weekly", 0),
+              ("Bastion 자율 mission 통과율", 60.0, "%", "P10 5축 측정", 0),
+              ("LLM 탐지 룰 정확도", 70.0, "%", "강사 평가", 1)],
+        plan_period="2026-Q3", plan_owner="course7-ai-security Lead",
+        todo_title="Bastion 구축 lab 의 학생 환경 자동 배포 스크립트",
+        todo_due="2026-09-30",
+    )
+
+    seed_simple_course(
+        parent_mid=infra_pid, course_id="course10-ai-security-agent",
+        title="AI 보안 에이전트 (하네스 구축)",
+        statement="에이전트 기초 → Tool calling → 하네스 구축 (Bastion + Claude Code) → 멀티에이전트 → RAG → 평가. 졸업 시 자체 보안 에이전트 설계.",
+        owner="course10 Lead", vision_h=2027,
+        vision_text="졸업 → AI Agent Security Engineer / 1년 내 자체 에이전트 / 2년 내 multi-agent orchestration.",
+        goals=[("자체 보안 에이전트 1건 + 평가 통과",
+                "lab w5~w8. P5 ai-pentest h001~h004 학생 학습.")],
+        strategy_title="서버 (Bastion) + 클라이언트 (Claude Code) 하네스 비교",
+        strategy_approach="autonomous/ai-security 와 cross-course. P6 외부 벤치 (Cybench/AgentBench) 학습 자료.",
+        kpis=[("course10 lab pass rate", 70.0, "%", "weekly", 0),
+              ("자체 에이전트 평가 통과", 60.0, "%", "Bastion-Bench 형식 자체 측정", 0)],
+        plan_period="2026-Q3", plan_owner="course10 Lead",
+        todo_title="Cybench 40 task 학생 학습 가이드 작성",
+        todo_due="2026-09-15",
+    )
+
+    seed_simple_course(
+        parent_mid=infra_pid, course_id="course9-autonomous-security",
+        title="자율보안시스템 (Purple Team)",
+        statement="PoW + RL + Experience 메모리 + 자율 Red/Blue + Purple. 졸업 시 자율 보안 시스템 직접 운영.",
+        owner="course9 Lead", vision_h=2027,
+        vision_text="졸업 → Autonomous Security Engineer / 1년 내 Purple lead / 2년 내 자율 운영 표준 정립.",
+        goals=[("자율 Red Agent + Blue Agent 페어 1건 운영",
+                "lab w11~w12 + Bastion P14 (lab session) 활용"),
+               ("Purple Team 협업 1 round 통과 + Experience 승격 검증",
+                "course19 w11~w12 의 Purple Round 1·2 교차 학습.")],
+        strategy_title="Bastion runtime 의 모든 trace 학습 자료",
+        strategy_approach="P11 9-tier KG, P12 자율공방, P14 lab session, P5 Bastion-Bench 모두 본 과정 자료.",
+        kpis=[("course9 lab pass rate", 70.0, "%", "weekly", 0),
+              ("자율 mission 평균 사람 개입 횟수", 3.0, "count",
+               "10 mission 당 평균 HITL approval 호출 수.", 0),
+              ("Experience → Playbook 자동 승격 횟수", 5.0, "count",
+               "한 학기 Bastion 자율 학습 결과.", 1)],
+        plan_period="2026-Q4", plan_owner="course9 Lead",
+        todo_title="Bastion P12 자율공방 + P14 lab session 통합 시연 환경",
+        todo_due="2026-12-31",
+    )
 
     # 결과 요약
     print("\n=== 결과 요약 ===")
