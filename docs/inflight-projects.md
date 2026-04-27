@@ -350,8 +350,8 @@ Architecture) 모두 비어있음.
 - [x] case_study 보강 (25건)
 - [x] ISO 27001 Annex A 93 통제 ingest 완료 (2026-04-27, 93 anchor 추가, kind=iso27001_annex_a)
 - [x] NVD CVE 일일 갱신 cron 설정 (2026-04-27, ingest_nvd_cve_daily.py + crontab 06:00 KST, 30 CVE 첫 ingest 완료)
-- [ ] bastion api 에 /knowledge/concept POST endpoint 추가 (현재 anchor 사용)
-- [ ] paper §7.7 외부 지식 채널 단락 추가
+- [x] bastion api 에 /knowledge/concept POST endpoint 추가 (apps/bastion/api.py:379, ConceptBody 으로 idempotent 등록)
+- [x] paper §7.8 외부 지식 채널 단락 (Table 7 + 6 source 누적 2,450 anchor)
 
 **Files**: `scripts/seed_9tier_kg.py`, `scripts/ingest_cisa_kev.py`,
          `scripts/ingest_mitre_attck.py`, `scripts/ingest_owasp_top10.py`,
