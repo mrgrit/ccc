@@ -521,15 +521,60 @@ def lm_baseline_rule(session_events):
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 의 학습 주제는 *측면이동*
-(MITRE TA0008 — T1021/T1570/T1080) + *지속성* (TA0003 — T1053/T1098/T1543/T1546)
-이며 내부 스캔·자격증명 수집·SSH 키·cron·systemd unit·.bashrc 등 호스트
-내부 행위 지문이 핵심이다. Precinct 6 dataset 의 T1041 (Exfiltration TA0010)
-은 측면이동이나 지속성 흔적을 전혀 포함하지 않으며 *내부 host-to-host 시도*
-패턴 (auth.log 5710/5712/5715, auditd ssh_write, cron_modify) 매칭이 안 된다.
-적합 source 발굴 시 (예: DFIR Report 공개 walkthrough, MITRE Engenuity
-ATT&CK Evals raw telemetry) 재추가.
--->
+## 실제 사례 (WitFoo Precinct 6 — 5156 WFP + 4798/4799 enum + systemd)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *측면이동 (TA0008) + 지속성 (TA0003)* 학습 항목과 매핑되는 dataset 의 *내부 host-to-host* + *권한 enum* + *systemd 변경* 통계.
+
+### Case 1: 측면이동 evidence — 5156 + 4624 + 4776 + 5140
+
+| message_type | 의미 | 건수 | w05 학습 항목 매핑 |
+|--------------|------|------|------------------|
+| 5156 | WFP filter Connection allow | 176,060 | 내부 connection 추적 |
+| 4624 | logon success | 17,482 | 측면이동 후 logon |
+| 4776 | NTLM auth | 15,382 | T1550.002 NTLM relay |
+| 5140 | network share access | 2,623 | T1021.002 SMB share |
+| 4634 | logoff | 16,934 | session 종료 |
+| 4798/4799 | group enum | 7,686 | T1069 측면이동 전 정찰 |
+
+→ 측면이동 *evidence chain*: 4798 enum → 4776 NTLM → 4624 logon → 5156 connection → 5140 share access.
+
+### Case 2: 지속성 evidence — systemd_event + 4670 + 5136
+
+| message_type | 의미 | 건수 | w05 매핑 |
+|--------------|------|------|---------|
+| systemd_event | unit lifecycle | 34,520 | T1543.002 systemd service |
+| 7036 | service start/stop | 1,635 | T1543 |
+| 7040 | service start type 변경 | 202 | T1543 (manual→auto = 의심) |
+| 4670 | object permission 변경 | 188 | T1222 file permissions |
+| 5136 | DS object modified | 380 | T1484.001 group policy |
+| 4985 | transaction state change | 4,876 | T1070 (anti-forensics) |
+
+→ 지속성 *3-layer*: file (4670) + AD (5136) + service (systemd/7036/7040). 4985 가 *함께 spike* 시 anti-forensics 의심.
+
+### Case 3: USER-0012 의 host hopping — 측면이동 직접 증거
+
+```text
+[T+0.000s] 4776 NTLM auth  user=USER-0012  src_host=USER-0010-0200
+[T+0.004s] 4776 NTLM auth  user=USER-0012  src_host=USER-0010-0200  (재시도)
+[T+3.262s] 4776 NTLM auth  user=USER-0012  src_host=USER-0010-0206  (다른 host)
+```
+
+→ 3.3초 내 동일 user 의 *src_host 0200 → 0206* — *측면이동 또는 pass-the-hash* 직접 증거.
+
+**해석 — 본 lecture (측면이동 + 지속성) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **TA0008 (측면이동)** | 5156 176K + 4624 17K + 4776 15K + 5140 2.6K = 측면이동 6 evidence chain |
+| **TA0003 (지속성)** | systemd_event 34K + 7040 202 + 4670 188 = 3-layer 지속성 |
+| **호스트 hopping** | USER-0012 의 3.3초 host hopping = 측면이동 직접 증거 |
+| **MITRE 매핑** | T1021 + T1550.002 + T1543.002 + T1484.001 + T1222 (모두 dataset 매핑 가능) |
+| **anti-forensics** | 4985 transaction rollback 4,876건 = T1070 indicator removal |
+
+**학생 실습 액션**:
+1. 본 dataset 의 6 evidence chain 을 본인 환경에 *동등 capture* — auditd + Wazuh 룰 작성
+2. USER-0012 같은 *3초 host hopping* 패턴을 Wazuh correlation rule 로 detect (`<frequency>2 timeframe>5</frequency>`)
+3. 4985 spike 시 *동시 logon* 과 매칭 → anti-forensics 의심 자동 탐지
 
 

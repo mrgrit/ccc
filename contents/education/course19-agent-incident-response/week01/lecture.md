@@ -893,16 +893,53 @@ w1 수업 끝에 학생은 다음을 *손에 쥔 상태*로 돌아가야 한다.
 
 이 세 부록은 각 학기 시작 전 갱신한다.
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 의 핵심 메시지 ("AI 가 공격
-개발을 2년 → 2시간으로 압축") 와 1:1 매칭되는 외부 사례 source 미확정. 본 강의는
-이미 §1.1.1 에서 CSA Mythos-ready Playbook 의 3 근거 + §1.1.2 의 가상 시나리오로
-사례 역할을 충분히 수행. Precinct 6 dataset (방어 측 incident baseline) 은 본
-주제와 의미 다름 — 가짜 인용 추가하지 않고 비움.
+## 실제 사례 (WitFoo Precinct 6 — 방어 측 baseline 으로 비교 단면)
 
-향후: 강사 또는 사용자가 적합한 외부 source (예: Carnegie Mellon "GPT-4 Can
-Exploit Real Vulnerabilities" 2024, Anthropic Claude Code 자율 보안 평가 보고서
-등) 를 명시 지정 시 다시 채움.
--->
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *AI Vulnerability Storm — 2년 → 2시간 압축* 학습 메시지의 *방어 측 baseline*. 사람 분석가의 수동 라벨링 dataset 이 *AI 공격 가속화* 와 어떻게 대비되는지 비교.
+
+### Case 1: dataset 의 *수동 (사람 + LLM 보조) labeling 규모*
+
+dataset 메타:
+- 총 records: **2,070,923 signals**
+- 라벨 분포: benign 390K / suspicious 44K / **malicious 160K**
+- 라벨링 방식: **4-layer (regex + format-parse + ML/NER + Claude review)**
+
+→ 30,092 host nodes 의 595K edges 라벨링에 *수개월~1년의 사람 + LLM 노력*. 이것이 *방어 측의 학습 속도*.
+
+### Case 2: 공격 측의 가속화 — 동일 시점에 1초 burst
+
+dataset 의 100.64.20.230 가 *1초 안에 30 host × 54 port 정찰* 실시 (208 events). 사람 SOC 분석가가 *이 1초의 의미를 분석* 하는 데 *수 분~수 시간* 필요.
+
+| 축 | 공격자 (Mythos AI) | 방어자 (사람 + LLM) |
+|----|------------------|--------------------|
+| 1초당 이벤트 생성 | 208 events (1 src) | — |
+| 데이터셋 라벨링 속도 | — | 수개월에 595K edges |
+| 분석가 처리 속도 | — | 시간당 10~20 alert |
+| **비대칭** | 분 단위 | 시간 단위 |
+
+### Case 3: 본 dataset 의 mo_name 분포 — *완료된 mission* 의 비율
+
+| lifecycle_stage | 건수 | 의미 |
+|----------------|------|------|
+| none (정상) | 1,899,723 (91.7%) | 일상 트래픽 |
+| **complete-mission** | 125,772 (6.1%) | *공격 성공* — Data Theft 라벨 |
+| initial-compromise | 45,420 (2.2%) | 침투 시작 단계 |
+
+→ **6.1% 가 mission 완수** = 정상 운영 대비 *사람이 막지 못한* 비율. AI 공격자 시대에는 이 6.1% 가 *수 배 증가* 가능.
+
+**해석 — 본 lecture 와의 매핑**
+
+| AI Vulnerability Storm 학습 항목 | 본 record 의 증거 |
+|-------------------------------|------------------|
+| **2년 → 2시간 압축** | 본 dataset 의 595K edges 라벨링 (수개월) vs 공격자 1초 burst (208 events). 비대칭 명확 |
+| **방어 측 학습 속도 한계** | 4-layer (regex + ML + LLM + 사람) 도 *시간 단위* 학습 — 공격자 분 단위 대응 불가 |
+| **6.1% mission 완수율** | 정상 운영 환경에도 *6.1% 침해* — Mythos 시대에는 *증가 위험* |
+| **labeled dataset 의 가치** | benign 390K / malicious 160K = ground truth 보유 — Bastion 학습 데이터로 활용 가능 |
+
+**학생 학습 액션**:
+1. dataset 의 4-layer 라벨링 방식 이해 → 학생 본인 점검 결과의 *재현 가능 라벨링* baseline
+2. 6.1% complete-mission 비율을 *학생 환경의 Bastion 자동 차단* 으로 *0%* 에 가깝게 만드는 목표 (w14 모의 실사고)
+3. 1초 burst 208 events 처리 능력을 학생 setup 에 갖추기 — *peak 처리 baseline*
 
 

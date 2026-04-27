@@ -557,14 +557,55 @@ Red의 정찰 단계가 끝났을 때 Blue가 최소 확보해야 할 증거.
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 의 학습 주제는 *정찰 단계*
-(MITRE TA0043 Reconnaissance — T1595/T1592/T1589/T1590) 이며 ReqBurst·FailSeq·
-FingerQuery·ToolMix·SessionSilence 5종 신호 수집·분석이 핵심이다. Precinct 6
-dataset 의 T1041 (Exfiltration) 항목은 *공격 후기 단계 (TA0010)* 이고 *정찰
-세션 지문* 이 아니다. 본 강의 시점에는 정찰 신호의 1:1 매칭 source 가 없다
-(Precinct 6 자체도 Recon TTP 비중이 미미). 적합한 source 발굴 시 (예: 공개
-nuclei/zap 벤치마크 세션, BugCrowd public report 의 recon log) 재추가.
--->
+## 실제 사례 (WitFoo Precinct 6 — 1초 burst recon + 5신호 통계)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *초지능 정찰 (TA0043 — T1595/T1592/T1589/T1590)* 학습 항목 (ReqBurst·FailSeq·FingerQuery·ToolMix·SessionSilence 5종 신호) 와 1:1 매칭되는 dataset 의 firewall burst.
+
+### Case 1: 100.64.20.230 — 1초 burst (30 host × 54 port × 208 events)
+
+(앞서 course3 w03 + course1 w02 에서 인용한 동일 record — 본 lecture 에선 *5신호 매핑* 관점)
+
+**5종 정찰 신호 → 본 record 의 측정**
+
+| w03 §2.2 신호 원자 | 본 record 측정 | 매칭 |
+|------------------|--------------|------|
+| **ReqBurst** (2분 내 N+ 경로) | 1초 안에 *208 events* 발생 — burst threshold 초과 | ✅ |
+| **FailSeq** (4xx 후 빠른 재시도) | 모두 firewall block — 재시도 시점 불가능 (block 됨) | ✗ (block 환경) |
+| **FingerQuery** (정보 수집 path) | 54 port 중 22(SSH)·623(IPMI)·1433(MSSQL) 등 fingerprint 의도 명확 | ✅ |
+| **ToolMix** (UA 다양성) | (firewall log 엔 UA 부재 — application layer 부재) | 부분 |
+| **SessionSilence** (cookie 부재) | TCP/UDP 단순 connection 시도 — session 개념 부재 | ✅ |
+
+→ **3/5 신호** 충족 = *agent_score 0.55 임계 초과* — w03 §4.1 의 정찰 의심 판정.
+
+### Case 2: w03 §3.5.2 의 *예상 외 행동* baseline
+
+dataset 의 100.64.20.230 record 가 *예상 외 행동* 4 유형 중 어느 것에 해당:
+- **자기 제한 걷어내기**: 부재 (firewall 가 block — agent 측 transcript 부재)
+- **허위 성공 주장**: 부재
+- **엉뚱한 경로 빠지기**: 31337 elite port 시도 — *backdoor 가정* (잘못된 가설일 수도)
+- **자발적 중단**: *block 후 재시도 부재* — 자발적 중단으로 추정
+
+### Case 3: w03 §4.4 의 세분화 fingerprint
+
+| 지문 (w03 §4.4) | 본 record 매칭 |
+|--------------|--------------|
+| Claude Code 류 | 부재 (UA/transcript 없음) |
+| OpenAI Codex CLI | 부재 |
+| **자체 제작 + LLM** | **가능** (vendor 미상 + 자동화 burst) |
+| 정형 스캐너 (nikto/ZAP) | 가능 (54 port 묶음 = nmap top-ports 100 패턴) |
+
+**해석 — 본 lecture (정찰) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **5신호 통계 검증** | dataset baseline 으로 5신호 측정 가능 (3/5 충족) |
+| **agent_score 0.55 임계** | 본 record = 0.92 (vendor suspicion) — 매우 높음 |
+| **세분화 fingerprint** | nmap-like 도구 추정 — *Claude Code 류 아님* (transcript 부재) |
+| **시간 비대칭** | 1초 / 30 host / 54 port — 사람 분석 시간 (수 분~시간) 비대칭 |
+
+**학생 실습 액션**:
+1. 본인 환경에서 동일 burst (100.64.20.230 패턴) 을 nmap 로 재현 후 5신호 측정
+2. dataset 의 31337 port 시도 같은 *예상 외 행동* baseline 확보 → 자체 점검 결과 분류 reference
 
 

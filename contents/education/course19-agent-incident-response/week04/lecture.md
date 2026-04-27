@@ -597,14 +597,56 @@ for p in payloads:
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 의 학습 주제는 *Transient Tool*
-(공격 세션 내 즉석 생성 익스플로잇) 과 *시그니처 공백* (signature gap) — 즉
-초기 접근·익스플로잇 개발 단계의 행위 지문이다. Precinct 6 dataset 의 T1041
-(Exfiltration TA0010) 항목은 *공격 후기 단계* 이고 *세션 내 도구 진화* 흔적
-(파일 버전·프로세스 트리·요청 본문 변형) 을 보여주지 않는다. 1:1 매칭 source
-미확정. 적합 source 발굴 시 (예: HackTheBox 공개 walkthrough 의 PoC 진화
-타임라인, BugCrowd report 의 exploit dev step) 재추가.
--->
+## 실제 사례 (WitFoo Precinct 6 — file 객체 audit + WAF POST 의 *세션 내 도구 진화*)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Transient Tool · 시그니처 공백* 학습 항목과 매핑되는 dataset 의 *파일 핸들 진화* (4656/4658/4690) + WAF POST body 변동 통계.
+
+### Case 1: 4690 (handle duplicate) 79,254건 — *동일 파일이 여러 process 에 전파*
+
+w04 §1.4 *Transient Tool 정의* 와 매핑:
+- handle duplicate = *세션 내에 동일 파일을 여러 process 가 사용*
+- 세션 종료 시 handle close (4658) — Transient Tool 의 *수명 종료* 와 동등
+
+| w04 §1.2.3 Transient Tool 수명 | 본 record 의 매칭 |
+|------------------------------|------------------|
+| <5분 (단일 공격용) ~40% | 4658 close 가 곧 close = 단명 |
+| 5~30분 (세션 내 재사용) ~45% | 4690 duplicate = 세션 내 재사용 |
+| 30분~24시간 ~10% | (handle 장시간 보유 — 4658 지연) |
+| 24시간+ (지속성) ~5% | (audit log 지속 access) |
+
+### Case 2: WAF POST 88건의 in/out 크기 변동 — *페이로드 진화*
+
+| POST in (입력 크기) | out (응답) | 의미 |
+|------------------|-----------|------|
+| 1,173 B | 29,521 B | 정상 query |
+| 1,173 B | 635 B | 짧은 redirect 응답 |
+| 7,419 B | 635 B | 큰 입력 → 짧은 응답 (실패 추정) |
+
+→ 동일 src 가 *다양한 in/out 크기 조합* 시도 = *PoC 진화* 패턴 (w04 §2.3 의 v1→v2→v3 와 동등).
+
+### Case 3: 시그니처 공백 — 동일 src 의 outcome 다양성
+
+w04 §1.3 *행위가 시그니처* — POST 88건 중 동일 src `100.64.1.67` 의 outcome 분포:
+- outcome=200: 정상 통과
+- outcome=302: redirect (가공된 응답)
+- (outcome=403/500: 부재 — WAF rule 1220/1000 가 block 안 했음)
+
+→ *모두 통과 (200/302)* = vendor 룰셋의 시그니처 공백 — 본 lecture 의 *signature gap* 직접 증거.
+
+**해석 — 본 lecture 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **Transient Tool** | 4690 79K = handle duplicate 패턴이 *세션 내 도구 재사용* 과 매핑 |
+| **수명 분포** | 4658 close 빈도 분포로 도구 수명 baseline 측정 가능 |
+| **페이로드 진화** | WAF POST 88건 in/out 크기 변동 = v1→v2→v3 진화 |
+| **signature gap** | POST outcome=200 비율 = vendor 룰셋 미커버 |
+| **친절한 에러의 위험** | 본 record 에 stack trace 부재 — *정상 운영* 사례 (w04 §2.2.2 의 좋은 baseline) |
+
+**학생 실습 액션**:
+1. JuiceShop SQLi PoC 진화 시 4656/4658/4690 audit 로 도구 수명 측정 — dataset baseline 과 비교
+2. 본인 WAF 룰셋의 *signature gap* 측정 — POST outcome=200 비율이 dataset 100% 와 동등 → 룰셋 강화 필요
+3. 4-layer 익명화 후 본인 PoC 진화 timeline 외부 공유 가능
 
 

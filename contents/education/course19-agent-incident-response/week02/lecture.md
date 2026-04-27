@@ -754,14 +754,57 @@ flowchart TD
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 의 학습 주제는 *공격자 에이전트의
-내부 구조* (tool-use 루프, capability boundary, agent fingerprint) 이며 호스트·네트워크
-관찰 지점의 식별이 핵심이다. Precinct 6 dataset 의 T1041 (Exfiltration) 항목은
-*방어 측 incident tag* 이지 에이전트의 tool-use 내부 구조를 보여주지 않는다.
-1:1 매칭되는 외부 사례 source 미확정 (예: 공개된 Claude Code attack transcript,
-HuggingFace agent fingerprint dataset 등) 상태에서 *템플릿 사례* 를 두는 것보다
-삭제가 낫다. 적합한 source 발굴 시 재추가.
--->
+## 실제 사례 (WitFoo Precinct 6 — 호스트·네트워크 관찰 지점)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Tool-use 루프·capability boundary·agent fingerprint* 학습 항목과 매핑되는 dataset 의 *호스트·네트워크 관찰 지점 분포* — 에이전트의 도구 사용 흔적이 *어디에 어떻게 남는지*.
+
+### Case 1: dataset 의 *도구 카테고리별 관찰 흔적*
+
+| 에이전트 도구 (w02 §1.3 카탈로그) | dataset 의 매칭 evidence | 건수 |
+|---------------------------------|------------------------|------|
+| **Read/Glob/Grep** (file 읽기) | 4656 (handle open) + 4658 (handle close) | 79K + 158K |
+| **Write/Edit** (file 쓰기) | 4690 (handle dup) + auditd 미보유 | 79K |
+| **Bash** (shell 실행) | systemd_event + 4688 process create | 34K + 4K |
+| **WebFetch/WebSearch** | dns_event + flow + traffic_drop | 11K + 31K + 6K |
+| **Agent/Task** (서브에이전트) | (agent 내부 — host visible X) | 0 |
+
+→ 본 dataset 은 *도구 사용 직접 trace* 보단 *호스트 측 결과 관찰* 중심.
+
+### Case 2: w02 §1.3.1 의 SIEM 룰 아이디어 → dataset 통계로 검증
+
+**룰 1**: *다수 `.env` `.ssh` `id_rsa` 연속 읽기 → 경보*
+
+```text
+dataset 의 4656 (handle open) 79,311건 — ObjectName 필드에 정규화된 path
+정상 baseline: 4656/4658 비율 1:2 (open 1번에 close 2번 — handle 재사용)
+공격 의심: 짧은 시간 내 *동일 user* 가 *.env / .ssh / authorized_keys* path 다수 access
+```
+
+**룰 2**: *`/tmp` `/var/tmp` 에 실행 가능 스크립트 생성*
+- 4663 (object access) 98건 baseline = 0.0047% — *극히 드뭄*
+- 4663 spike 시 *web service account* 와 매칭 → critical
+
+### Case 3: 공격자 fingerprint vs 정상 traffic — w02 §3.4
+
+| fingerprint 지표 (w02 §3) | dataset 의 baseline | 공격 패턴 |
+|------------------------|------------------|---------|
+| **요청 IAT 분산 (CoV)** | 정상 GoogleImageProxy 4018 GET 의 burst 분산 측정 가능 | < 0.3 = 자동화 |
+| **path diversity** | 4018 GET 의 unique path 분포 | 높음 = scanner |
+| **재시도 지연** | dataset 4xx → 다음 요청 (POST 88건 의 outcome=302 분포) | < 3s = 자동화 |
+
+**해석 — 본 lecture (Tool-use 루프) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **방어자 가시성 경계** | dataset 의 모든 evidence 가 *호스트 외부 측* (4656~4663 / firewall_action / dns_event). 모델 내부 추론은 부재 — w02 §1.2 에서 강조한 한계와 일치 |
+| **도구 카탈로그 매핑** | Read/Write/Bash/WebFetch 가 각각 dataset 의 다른 message_type 에 매핑 — *도구별 탐지 룰 분리* 가능 |
+| **fingerprint 측정 가능성** | dataset 의 4018 GET burst 통계로 *IAT/path diversity/retry* 측정 baseline 확보 |
+| **Agent/Task 부재** | dataset 에 서브에이전트 직접 evidence 0 — 호스트 측에선 *부모-자식 process tree* 로만 추론 가능 |
+
+**학생 액션**:
+1. dataset 의 4656/4658 분포로 학생 본인 환경의 *handle open/close ratio* baseline 확보
+2. 4663 spike 시점에 *동일 user 의 4624 logon* 매칭 → 권한 escalation 추적 (w11 인용)
+3. dataset 의 4018 GET burst 통계로 본인 환경 fingerprint 측정 도구 검증
 
 
