@@ -601,7 +601,7 @@ flowchart TD
     F["① 포렌식 복기"]
     C["② Claude Code Coach Mode"]
     U["③ Blue 업그레이드"]
-    K["Bastion: Skill / Playbook / Experience"]
+    K["Bastion 자산<br/>Skill · Playbook · Experience"]
     R --> F --> C --> U --> K
     K --> R
     style R fill:#1a0a0a,stroke:#f85149,color:#e6edf3
@@ -893,30 +893,16 @@ w1 수업 끝에 학생은 다음을 *손에 쥔 상태*로 돌아가야 한다.
 
 이 세 부록은 각 학기 시작 전 갱신한다.
 
----
+<!--
+사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 의 핵심 메시지 ("AI 가 공격
+개발을 2년 → 2시간으로 압축") 와 1:1 매칭되는 외부 사례 source 미확정. 본 강의는
+이미 §1.1.1 에서 CSA Mythos-ready Playbook 의 3 근거 + §1.1.2 의 가상 시나리오로
+사례 역할을 충분히 수행. Precinct 6 dataset (방어 측 incident baseline) 은 본
+주제와 의미 다름 — 가짜 인용 추가하지 않고 비움.
 
-## 실제 사례 (WitFoo Precinct 6)
+향후: 강사 또는 사용자가 적합한 외부 source (예: Carnegie Mellon "GPT-4 Can
+Exploit Real Vulnerabilities" 2024, Anthropic Claude Code 자율 보안 평가 보고서
+등) 를 명시 지정 시 다시 채움.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
