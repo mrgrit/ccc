@@ -597,28 +597,14 @@ for p in payloads:
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 의 학습 주제는 *Transient Tool*
+(공격 세션 내 즉석 생성 익스플로잇) 과 *시그니처 공백* (signature gap) — 즉
+초기 접근·익스플로잇 개발 단계의 행위 지문이다. Precinct 6 dataset 의 T1041
+(Exfiltration TA0010) 항목은 *공격 후기 단계* 이고 *세션 내 도구 진화* 흔적
+(파일 버전·프로세스 트리·요청 본문 변형) 을 보여주지 않는다. 1:1 매칭 source
+미확정. 적합 source 발굴 시 (예: HackTheBox 공개 walkthrough 의 PoC 진화
+타임라인, BugCrowd report 의 exploit dev step) 재추가.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
