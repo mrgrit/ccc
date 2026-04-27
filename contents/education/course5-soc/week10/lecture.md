@@ -627,28 +627,21 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 웹 공격 IR 의 4-stage chain)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *웹 공격 IR* 학습 항목 매칭. WAF POST + 후속 단계 evidence chain.
 
-### Case 1: `T1041` 패턴
+### 웹 공격 IR 단계별 evidence
 
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
+| Stage | dataset record | 건수 |
+|-------|------------|------|
+| 1. WAF block | WAF GET/POST | 4,106 (모두 outcome=200/302) |
+| 2. WAF 통과 (signature gap) | outcome=200 (POST 88) | 88 |
+| 3. session 탈취 시도 | JSESSIONID 평문 노출 | 모든 POST |
+| 4. 후속 측면이동 | 4624 logon (탈취 token 사용) | 17,482 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: WAF 통과 시 *session token* 평문 logging 이 탐지 entry. JSESSIONID 가 다른 src 에서 *재관측* 시 hijack 확정.
 
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**학생 액션**: WAF audit log 의 cookie 평문 logging 차단 + JSESSIONID *cross-src 추적* 룰 작성.
 

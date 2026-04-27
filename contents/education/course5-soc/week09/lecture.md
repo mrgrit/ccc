@@ -606,28 +606,24 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — IR 절차의 lifecycle_stage 매핑)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *인시던트 대응 절차* 학습 항목 매칭. NIST SP 800-61 IR 단계 ↔ dataset lifecycle_stage.
 
-### Case 1: `T1041` 패턴
+### IR 단계 ↔ dataset 매핑
 
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
+| NIST IR 단계 | dataset lifecycle_stage | 건수 / 비율 |
+|------------|---------------------|----------|
+| 1. Preparation | (사전 준비) | 별도 |
+| 2. Detection & Analysis | initial-compromise | 45,420 (2.2%) |
+| 3. Containment | (학생 환경 — 차단 시점 측정) | — |
+| 4. Eradication | (제거 — Bastion 자동) | — |
+| 5. Recovery | (복구) | — |
+| 6. Post-Incident | complete-mission | 125,772 (6.1%) |
+| (정상) | none | 1,899,723 (91.7%) |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+→ **initial-compromise → complete-mission** 비율 (2.2% → 6.1%) = 평균 *3 incident chain* 으로 결과 도달.
 
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**학생 액션**: IR playbook 작성 시 단계별 *expected dataset events* 목록화 → 자동 검증.
 

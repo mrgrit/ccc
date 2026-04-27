@@ -668,28 +668,23 @@ ENDSSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 악성코드 IR 의 process + file evidence)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *악성코드 IR* 학습 항목 매칭. dataset 의 4688 + 4690 + 4663 evidence + IR 단계 매핑.
 
-### Case 1: `T1041` 패턴
+### 악성코드 IR 단계 ↔ dataset evidence
 
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
+| Stage | dataset evidence | 건수 |
+|-------|--------------|------|
+| 1. process 생성 (4688) | command line 활성 시 | 4,054 (audit policy 약함) |
+| 2. injection (4690) | handle duplicate | 79,254 |
+| 3. file write (4663) | object access | 98 (희귀 = anomaly) |
+| 4. C2 connection | flow + dns_event | 31K + 11K |
+| 5. lateral (5156) | network connection | 176,060 |
+| 6. exfil (mo_name) | Data Theft | 125,772 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: 4688 audit policy + ScriptBlock Logging 강제 → 악성코드 1단계 (process create) 부터 detect.
 
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**학생 액션**: PowerShell 4103/4104 + Sysmon EID 1/3/7 추가 → dataset 한계 보충.
 

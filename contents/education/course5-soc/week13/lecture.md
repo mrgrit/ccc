@@ -518,28 +518,22 @@ ENDSSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — STIX 2.1 변환 가능 IOC 30K+)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *CTI 활용* 학습 항목 매칭. dataset → STIX bundle 직접 변환.
 
-### Case 1: `T1041` 패턴
+### STIX 객체 매핑
 
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
+| dataset 항목 | STIX 객체 | 건수 |
+|-----------|---------|------|
+| host node IP | ipv4-addr | 30,092 |
+| dnsmasq 도메인 | domain-name | 11,413 |
+| email threatID (sha256) | file (hashes.SHA-256) | 8 |
+| edge (src→dst) | relationship | 595,618 |
+| mo_name | attack-pattern | 125,780 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+→ **STIX bundle 약 75만 객체** 변환 가능.
 
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**학생 액션**: `precinct6_to_stix.py` 작성 → OpenCTI 임포트 → TAXII feed 등록. dataset 의 4-layer 익명화 보존하여 외부 공유 가능.
 

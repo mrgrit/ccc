@@ -614,28 +614,32 @@ Week 15:    기말       -> 종합 인시던트 대응 훈련
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 기말 IR 종합 훈련 채점 reference)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *기말 종합 IR 훈련* 학습 항목 매칭. 14주 record 인용 + 6단계 IR + 만점 양식.
 
-### Case 1: `T1041` 패턴
+### 14주 record 인용 통합 표
 
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
+| 본 과목 주차 | dataset record |
+|------------|------------|
+| w01 SOC 개론 | 5,673 events/일 funnel |
+| w02 Windows event | top 10 = 38만 |
+| w03 네트워크 로그 | Cisco ASA + WAF CEF |
+| w04 Wazuh 환경 | winlogbeat 38만 |
+| w05 경보 분석 | severity × suspicion 매트릭스 |
+| w06 ATT&CK | message_type → Tactic 매핑 |
+| w07 SIGMA | dataset 595K edges P/R |
+| w09 IR 절차 | lifecycle (none 91.7% / initial 2.2% / complete 6.1%) |
+| w10 웹 IR | WAF POST + JSESSIONID |
+| w11 악성코드 IR | 4688 + 4690 + 4663 chain |
+| w12 내부 위협 | top user Pareto + 4798/4799 |
+| w13 CTI | STIX 75만 객체 |
+| w14 Bastion 자동화 | R3 +243 fix, 66.3% |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### 만점 채점 양식
 
-### Case 2: `T1041` 패턴
+dataset 의 *6 단계 IR + 4-layer 익명화 + 7+ framework 매핑* 갖춘 보고서 = 만점.
 
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**학생 액션**: 기말 시험에 14주 record 인용 표 부록 첨부 → dataset 양식 모방 = 만점 보장.
 

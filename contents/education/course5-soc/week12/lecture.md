@@ -556,28 +556,26 @@ ENDSSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — UEBA top user 분포)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *내부 위협 IR* 학습 항목 매칭. UEBA baseline + insider 단서.
 
-### Case 1: `T1041` 패턴
+### top user 분포 (Pareto)
 
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
+| User | logon | 비율 | UEBA 분류 |
+|------|------|------|---------|
+| USER-0022 | 6,190 | 17.5% | service account 의심 |
+| USER-0012 | 4,577 | 12.9% | high-volume |
+| USER-0765 | 1,560 | 4.4% | normal heavy |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+→ **17.5% 가 top 1**. service account 후보 분리 후 UEBA 분석.
 
-### Case 2: `T1041` 패턴
+### Insider 의심 단서 (4798/4799 enum + 4670 변경)
 
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
+- 4798/4799 group enum: 7,686 = 0.37% baseline
+- 4670 permission 변경: 188 = 0.009%
+- 두 spike 동시 = *insider 의심*
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**학생 액션**: top user 분리 후 *시간/path/role* 3-axis UEBA → 정상 baseline 외 행위 detect.
 
