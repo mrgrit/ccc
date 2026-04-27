@@ -545,26 +545,72 @@ def filter_output(response: str) -> str:
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — Red Teaming for AI)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *AI 시스템에 대한 Red Team 평가 방법론* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### AI Red Team = "AI 시스템의 취약점을 *공격자 관점* 에서 발견"
 
+**AI Red Teaming** 은 *체계적으로 AI 시스템의 보안/안전 취약점을 찾는 평가 방법론* 이다. Anthropic, OpenAI, Google 모두 새 모델 출시 전 *Red Team 단계* 를 거치는 표준 절차.
+
+dataset 환경에서 — Bastion 같은 보안 에이전트에 대한 Red Team 은 — *7가지 공격 카테고리 + 100건 이상의 샘플 + 자동 차단율 측정* 의 3축으로 진행된다.
+
+```mermaid
+graph TB
+    RT["Red Team 평가"]
+    RT -->|① attack 분류| CATS["7 카테고리:<br/>injection/jailbreak/<br/>poisoning/extraction/..."]
+    CATS -->|② sample 생성| SAMPLES["카테고리별 100+ samples"]
+    SAMPLES -->|③ AI 시스템에 시도| AI["타겟 AI"]
+    AI -->|결과| METRICS["차단율 + leak 율"]
+    METRICS -->|④ 보고서| REPORT["우선순위 화 개선 방향"]
+
+    style RT fill:#ffe6cc
+    style REPORT fill:#ccffcc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: Red Team 은 *체계적 프로세스* 이지 임의 공격 시도가 아니다. 4단계 — 분류, sample, 시도, 보고 — 의 표준 절차를 따른다.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset 환경 Red Team 의 7 카테고리 + 임계 차단율
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 카테고리 | sample 100건 시도 후 임계 차단율 |
+|---|---|
+| Direct prompt injection | ≥95% |
+| Indirect prompt injection (chain) | ≥80% |
+| Jailbreak (역할극) | ≥90% |
+| Output leak (PII/credential) | ≥99% (매우 엄격) |
+| Adversarial input | ≥85% |
+| Resource exhaustion (DoS) | ≥90% |
+| Membership inference | ≥85% |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+Red Team 평가에서 *Output leak* 의 임계 차단율이 가장 엄격 (≥99%) 이다 — *PII 1건 leak 도 사고*. 다른 카테고리는 95% 차단도 합격이지만, leak 은 *0건이 목표*.
+
+학생이 알아야 할 것은 — **카테고리별 임계가 다른 이유는 *사고의 영향* 이 다르기 때문**. injection 차단 실패는 *조작된 분류 1건* 이지만, leak 1건은 *PII 노출 사고*. 영향이 큰 카테고리는 임계도 엄격.
+
+### Case 2: dataset 의 Red Team 자동화 도구 — Garak / PyRIT 활용
+
+| 도구 | 용도 | dataset 적용 |
+|---|---|---|
+| Garak (NVIDIA) | LLM 취약점 자동 스캐너 | dataset 신호 변형 후 자동 시도 |
+| PyRIT (Microsoft) | Red Team 프레임워크 | 7 카테고리 자동 평가 |
+| Anthropic eval tools | 대화 evaluation | jailbreak 차단 검증 |
+| 자체 RL agent | 적응적 공격 | 시간이 갈수록 더 정교 |
+
+**자세한 해석**:
+
+Red Team 자동화는 *사람의 한계 (시간/창의성)* 를 보완한다. 사람 1명이 7 카테고리 × 100 sample = 700 시도를 일주일에 다 못 끝내지만, Garak 같은 도구는 *수 시간에 자동 완료*.
+
+자동화의 한계는 — *알려진 패턴만 시도* 한다는 것. 새 공격 기법은 *사람의 창의성* 으로 발견되어야 하며, 이를 *자체 RL agent* 가 보완. RL agent 는 *성공한 공격 패턴을 학습해 변형* 하므로 시간이 갈수록 더 정교한 공격 시도.
+
+학생이 알아야 할 것은 — **Red Team 은 자동 도구 + 사람 + RL agent 의 3축 결합**. 한 가지만 사용하면 *blind spot* 발생.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **Red Team = 4단계 표준 프로세스** — 분류 → sample → 시도 → 보고.
+2. **카테고리별 임계 차등** — Output leak 99%, 나머지 85-95%.
+3. **자동화 + 사람 + RL 의 3축 결합** — 한 가지로는 blind spot.
+
+**학생 액션**: lab 의 LLM 시스템에 Garak 또는 PyRIT 도구로 자동 Red Team 시도. 7 카테고리의 차단율 측정 후 — *임계 통과 여부 표 + 미통과 카테고리의 개선 방향* 을 보고서 작성.
 

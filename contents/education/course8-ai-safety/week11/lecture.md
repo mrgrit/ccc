@@ -513,26 +513,83 @@ def filter_output(response: str) -> str:
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — RAG 보안)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *RAG (Retrieval Augmented Generation) 의 보안 취약점* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### RAG 의 특수 위협 — "vector DB 가 새로운 attack surface"
 
+**RAG** 는 LLM 의 정확도를 향상시키는 표준 기법이지만 — vector DB 라는 *새로운 attack surface* 를 만든다. 공격자가 vector DB 에 *poisoned document* 를 박을 수 있으면, 후에 LLM 이 retrieve 할 때 그 document 의 내용을 *신뢰할 수 있는 컨텍스트로 인식*.
+
+dataset 환경에서 — Bastion 의 KG (Knowledge Graph) 가 RAG 의 vector store 역할을 한다. dataset 392건 Data Theft 사례를 KG 에 저장하면 — 공격자가 *KG 에 1건만 oriented document 를 박아도* 향후 분석에 영향.
+
+```mermaid
+graph LR
+    USER["분석가 query"]
+    LLM["LLM"]
+    KG["KG / vector DB<br/>(dataset 392 사례)"]
+    POISON["공격자가 1건 poisoning"]
+
+    USER -->|new signal| LLM
+    LLM -->|RAG 검색| KG
+    KG -->|유사 5건 retrieve| LLM
+    POISON -.->|1건 박힘| KG
+    LLM -->|poisoned 컨텍스트로 답변| OUT["조작된 분류"]
+
+    style POISON fill:#ffcccc
+    style OUT fill:#ff6666
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: 1건의 poisoning 이 retrieve 시 *5건 중 1건* 으로 노출 — confidence 가 20%만 떨어져도 LLM 의 분류 결과가 변할 수 있다.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset 의 KG 저장 — 신뢰 기반 검증
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 항목 | 검증 방법 | 운영 임계 |
+|---|---|---|
+| 입력 sanitization | 모든 KG 입력 전 룰 검사 | injection 패턴 0건 |
+| 저장 권한 | 시스템 SA 만 write 가능 | 사람 직접 X |
+| 무결성 hash | 각 document 의 hash 추적 | 변경 시 alert |
+| 정기 audit | 24h 마다 KG 전수 검증 | poisoning 탐지 |
+| 학습 매핑 | §"KG 신뢰성 검증" | 4중 방어 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+KG 의 신뢰성을 유지하려면 *4중 방어* 가 필요하다.
+
+**입력 sanitization** — 모든 dataset 신호가 KG 에 저장되기 전 *prompt injection 패턴 검사*. 의심 신호는 KG 에 저장 X 또는 *플래그 + 별도 격리*.
+
+**저장 권한** — KG 에 write 할 수 있는 권한을 *시스템 SA 1개* 로 한정. 사람이 직접 KG 에 document 를 박을 수 없게 — *poisoning 의 인적 채널 차단*.
+
+**무결성 hash** — KG 의 각 document 에 *SHA256 hash* 를 함께 저장. document 가 변경되면 hash 불일치 → 즉시 alert.
+
+**정기 audit** — 24시간마다 KG 의 모든 document 를 *공격 패턴 검사* 로 재검증. poisoning 이 늦게 발견되어도 *24h 안에 탐지*.
+
+학생이 알아야 할 것은 — **KG 는 *학습 데이터의 무결성* 이 LLM 의 안전성을 결정**. KG 가 오염되면 *LLM 의 모든 분석이 영향*.
+
+### Case 2: dataset RAG 의 정량 검증 — retrieve 결과의 일관성
+
+| 항목 | 정상 | 의심 |
+|---|---|---|
+| top-5 retrieve 의 cosine 유사도 | 0.7~0.95 | 1건만 0.5 이하 = poisoning 의심 |
+| top-5 의 mo_name 분포 | 동일 mo_name 이 다수 | 다양한 mo_name = 일관성 부족 |
+| retrieve 시간 | ~50ms | 갑자기 200ms+ = KG 변형 의심 |
+
+**자세한 해석**:
+
+RAG 의 retrieve 결과를 *일관성 검증* 하면 poisoning 을 간접 탐지 가능.
+
+**Cosine 유사도 분포** — 정상 retrieve 는 *5건 모두 비슷한 유사도* (0.7~0.95). 만약 *4건은 0.85 인데 1건만 0.5* 면 — 그 1건은 *우연히 retrieve 된 outlier*, 가능성으로 *poisoning document* 일 수 있음.
+
+**mo_name 분포** — 정상은 *5건 모두 비슷한 카테고리*. *4건이 Data Theft 인데 1건이 Auth Hijack* 이면 — 그 1건은 다른 컨텍스트, 검증 필요.
+
+학생이 알아야 할 것은 — **retrieve 결과 자체에서 poisoning 흔적이 보일 수 있다**. 일관성 검증을 자동 룰로 만들면 *runtime poisoning 탐지* 가능.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **RAG = vector DB 라는 새 attack surface** — 1건 poisoning 으로 모든 분석 영향.
+2. **4중 방어 (sanitize/권한/hash/audit)** — 단일 방어 부족.
+3. **Retrieve 일관성 검증으로 runtime 탐지** — outlier cosine 또는 mo_name.
+
+**학생 액션**: lab 의 KG 에 dataset 신호 100건 저장 후 — 의도적 poisoning document 1건 추가. 새 query 의 retrieve 결과에서 그 poisoning 이 *cosine 유사도 anomaly* 로 보이는지 확인.
 

@@ -545,26 +545,75 @@ def filter_output(response: str) -> str:
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 에이전트 보안 위협)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *AI 에이전트의 자율성에서 비롯되는 보안 위협* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### 에이전트 자율성의 새로운 위협 — "에이전트가 잘못된 권한을 행사한다"
 
+기존 LLM 은 *답변만 생성* 하므로 위해를 끼치려면 사람이 그 답변을 실행해야 했다. 그러나 *에이전트* 는 — *직접 도구 호출 + 시스템 명령 실행* 이 가능하므로, *잘못된 결정이 즉시 시스템 변경* 으로 이어진다.
+
+dataset 환경에서 — Bastion 같은 SOC 에이전트가 *자동으로 차단/격리/회수 액션* 을 수행한다고 가정. 만약 prompt injection 으로 에이전트가 *조작된 결정* 을 내리면 — *진짜 시스템에 진짜 피해*. 예: 정상 사용자의 IAM 을 잘못 회수, 정상 트래픽을 차단, 중요 로그를 삭제.
+
+```mermaid
+graph LR
+    SIG["dataset signal<br/>(injection 텍스트 박힘)"]
+    AGENT["AI 에이전트"]
+    TOOLS["도구 호출 권한:<br/>block_traffic, revoke_iam, delete_log"]
+    SYS["진짜 시스템"]
+
+    SIG -->|injection 우회| AGENT
+    AGENT -->|잘못된 결정| TOOLS
+    TOOLS -->|실행| SYS
+    SYS -->|진짜 피해| HARM["사고:<br/>정상 사용자 차단,<br/>중요 로그 삭제"]
+
+    style SIG fill:#ffcccc
+    style HARM fill:#ff6666
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: 에이전트의 *도구 호출 권한* 이 새로운 attack surface 다. LLM 이 답변만 하던 시대에는 *사람이 검토* 했지만, 에이전트는 *즉시 실행* 하므로 prompt injection 의 결과가 즉시 시스템 피해.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset 환경에서 에이전트 권한 분류 — 위험도별 구분
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 도구 카테고리 | 위험도 | 운영 정책 |
+|---|---|---|
+| Read-only (query/analyze) | 낮음 | 자동 실행 OK |
+| Configuration (rule add) | 중간 | 사람 승인 후 실행 |
+| Service modification (block) | 높음 | 2명 승인 + 로깅 |
+| Destructive (delete log) | 매우 높음 | 자동 실행 금지, manual only |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+에이전트의 도구는 *위험도별로 분류 + 권한 차등* 해야 한다. read-only 도구 (dataset query, log analyze) 는 *부작용 없으므로 자동 실행 안전*. configuration 변경 (방화벽 룰 추가) 은 *되돌리기 가능하지만 영향 있음 → 사람 승인*. service modification (트래픽 차단) 은 *영향이 즉각적 + 정상 사용자 영향 가능 → 2명 승인 + audit*. destructive (로그 삭제) 는 *되돌릴 수 없으므로 자동 실행 절대 금지*.
+
+dataset 환경의 Bastion skill 33개를 이 4 카테고리로 분류하면 — 약 *15개 read-only*, *10개 configuration*, *7개 service modification*, *1개 destructive* 정도. 이 분류대로 권한 정책을 적용해야 prompt injection 의 피해를 *제한된 카테고리* 로 한정할 수 있다.
+
+학생이 알아야 할 것은 — **에이전트의 권한 = 4 단계 차등이 표준**. 모든 도구를 동일 권한으로 두면 *최악의 경우* 가 자주 발생.
+
+### Case 2: 에이전트 사고 시나리오 — "정상 사용자 IAM 잘못 회수"
+
+| 단계 | 설명 | 방어 단계 |
+|---|---|---|
+| 1. injection 신호 | dataset 에 "USER-0022 의심" 박힘 | 입력 가드레일 |
+| 2. 에이전트 분석 | LLM 이 USER-0022 를 의심으로 분류 | system prompt |
+| 3. 도구 선택 | revoke_iam tool 결정 | 위험도 검사 |
+| 4. 실행 | 사람 승인 없이 즉시 회수 | 권한 정책 |
+| 5. 결과 | 정상 사용자 차단 → 업무 중단 | rollback 가능성 |
+
+**자세한 해석**:
+
+위 시나리오의 5단계 모두에 *방어 layer* 가 있어야 사고 차단 가능. 한 단계 (예: 4단계 권한 정책) 만 적용해도 사고는 막을 수 있지만 — 모든 단계 방어가 *defense in depth*.
+
+특히 **rollback 가능성** 이 핵심이다. revoke_iam 같은 액션은 — *즉시 적용되지만 30초 안에 자동 rollback* 가능하도록 설계해야 한다. 에이전트가 잘못 회수한 IAM 을 *분석가가 30초 안에 confirm 안 하면 자동 복구*. 이는 *사람의 부하 없이 안전성 확보* 의 좋은 균형.
+
+학생이 알아야 할 것은 — **에이전트 액션은 *rollback 가능 + 짧은 confirm window* 가 안전 설계의 핵심**. 즉시 영구 변경은 위험.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **에이전트 도구는 4 카테고리 위험도 분류 필수** — 모든 도구 동일 권한은 최악의 경우 자주 발생.
+2. **5단계 방어 = defense in depth** — 어느 단계든 차단 가능.
+3. **Rollback + confirm window 가 안전 설계** — 즉시 영구 변경은 위험.
+
+**학생 액션**: Bastion 의 33개 skill 을 위 4 카테고리로 분류하는 표를 작성. 각 skill 마다 *위험도 + 운영 정책* 을 명시. 결과를 *우리 환경의 에이전트 권한 정책 v1* 으로 정리.
 

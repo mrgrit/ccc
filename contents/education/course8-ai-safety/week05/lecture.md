@@ -511,26 +511,81 @@ ENDSSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 가드레일과 출력 필터링)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *가드레일 (guardrail) + 출력 필터링의 운영 설계* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### 가드레일의 두 축 — "입력 차단 + 출력 검증"
 
+가드레일은 LLM 의 위험한 행동을 막는 *외부 방어 layer* 다. LLM 자체의 학습된 거부 행동에만 의존하지 않고, *별도의 검증 layer 가 LLM 의 입출력을 검사* 한다.
+
+가드레일은 *2축* 으로 동작한다 — **입력 가드레일** (prompt injection 차단) + **출력 가드레일** (민감 정보/위험 명령 차단). 두 축이 모두 적용되어야 *defense in depth*. 
+
+dataset 환경에서의 가드레일 적용:
+- **입력 가드레일**: dataset 신호의 message_sanitized 에 *prompt injection 패턴* 검사 → 의심 신호는 LLM 에 보내지 않거나 sanitize 후 전달.
+- **출력 가드레일**: LLM 답변에 *PII (개인정보), credential, 시스템 명령* 같은 민감 출력 검사 → 차단 또는 마스킹.
+
+```mermaid
+graph LR
+    INPUT["dataset 신호"]
+    IN_GUARD["입력 가드레일<br/>(prompt injection 검사)"]
+    LLM["LLM"]
+    OUT_GUARD["출력 가드레일<br/>(PII/credential/명령 검사)"]
+    OUTPUT["최종 답변"]
+
+    INPUT --> IN_GUARD
+    IN_GUARD -->|통과| LLM
+    IN_GUARD -.->|차단| BLOCK1["입력 거부"]
+    LLM --> OUT_GUARD
+    OUT_GUARD -->|통과| OUTPUT
+    OUT_GUARD -.->|차단/마스킹| BLOCK2["답변 수정"]
+
+    style IN_GUARD fill:#cce6ff
+    style OUT_GUARD fill:#cce6ff
+    style OUTPUT fill:#ccffcc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: 입력/출력 양 축의 가드레일이 LLM 을 *샌드위치* 한다. 두 가드레일 모두 *LLM 외부* 의 별도 검증 layer 라 LLM 자체가 우회되어도 가드레일이 차단.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset PII 마스킹 — 출력 가드레일의 정량 baseline
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 항목 | 값 | 의미 |
+|---|---|---|
+| dataset PII 익명화 | RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN | 원본의 익명화 처리 |
+| LLM 답변에 박힌 PII 의심 | 정상 ~0건/100답변 | baseline |
+| spike 임계 | 5건+/100답변 | 유출 의심 |
+| 학습 매핑 | §"출력 가드레일의 baseline" | 정량 알람 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+dataset 의 모든 신호는 *이미 sanitize* 되어 있어 — IP, hostname, user 정보가 *익명 placeholder* 로 대체되어 있다. 그런데 만약 LLM 의 답변에 *진짜 IP/hostname* 이 등장한다면 — 그것은 (1) LLM 이 *훈련 데이터에서 유출* 했거나, (2) *추론 과정에서 과거 상호작용을 기억* 하는 leak.
+
+이 leak 의 정량 모니터링이 *PII spike 알람* 이다. 정상 운영에서는 LLM 답변의 PII 의심 패턴이 0에 가까워야 함 (dataset 에 익명 placeholder 만 있으므로). 만약 5건+/100답변이 *진짜 IP* 처럼 보이면 — *모델 훈련 시 데이터 유출* 이거나 *공격자가 PII 추출 시도 성공*.
+
+학생이 알아야 할 것은 — **출력 가드레일의 가치는 *예상 baseline 이 0에 가깝다는 점에서 spike 가 즉시 보임***. 입력 가드레일은 false positive 가 많지만, 출력 가드레일의 spike 는 거의 모두 진짜 사고.
+
+### Case 2: 가드레일의 ROI — 차단된 사고 vs 운영 비용
+
+| 항목 | 가드레일 미적용 | 가드레일 적용 |
+|---|---|---|
+| 일일 prompt injection 시도 | ~10-50건 | 모두 차단 |
+| 일일 PII leak 위험 | 0-5건 | 0건 |
+| 운영 비용 (가드레일 LLM 호출) | $0 | ~$5/일 |
+| 사고 1건 비용 | ~$10,000+ | $0 |
+| ROI | - | 매우 높음 (1 사고 차단 = 운영 비용 4년치) |
+
+**자세한 해석**:
+
+가드레일의 운영 비용은 *주 LLM 호출의 약 1.2배* (입력 + 출력 검사 두 번 추가). 정상 LLM 호출이 일일 $4 라면 가드레일 추가로 *$5/일 = $1,825/년*. 이 비용으로 *1건의 PII leak 사고* (보통 $10,000+ 손실) 만 막아도 4년치 운영 비용을 회수.
+
+학생이 알아야 할 것은 — **가드레일은 *비용 대비 효과 (ROI) 가 매우 높은 투자***. 운영 비용 $5/일 vs 사고 1건 $10K = 2,000배 ROI. 가드레일을 *비용으로 보지 말고 보험으로 보아야* 한다.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **가드레일 = 입력 + 출력 양 축 동시** — LLM 외부의 별도 검증 layer.
+2. **출력 가드레일의 PII spike 가 즉시 사고 신호** — baseline 0에서 spike 는 거의 모두 진짜.
+3. **가드레일은 비용이 아닌 보험** — 일일 $5 가 사고 1건 $10K 를 막음.
+
+**학생 액션**: lab 환경에 입력 가드레일 (prompt injection 검사) + 출력 가드레일 (PII 검사) 을 LLM 호출 전후에 추가. dataset 의 임의 100 신호를 처리하면서 — *각 가드레일이 차단한 신호 수 / 통과한 신호 수* 를 측정. 결과를 *"가드레일이 우리 환경에서 의미 있는 차단을 수행하는가"* 평가.
 

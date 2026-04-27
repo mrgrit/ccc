@@ -477,26 +477,75 @@ def filter_output(response: str) -> str:
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — AI 윤리와 규제)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *AI 윤리 + GDPR/EU AI Act 등 규제 적용* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### AI 보안 운영의 윤리/규제 — "데이터 처리에 정당성이 있는가"
 
+AI 시스템의 윤리/규제 적용은 *기술 문제가 아닌 *데이터 처리의 정당성** 이 핵심이다. dataset 환경에서 — **개인 식별 가능 정보 (PII) 가 포함된 audit 로그를 LLM 으로 분석하는 것이 합법인가?** 라는 질문이 모든 운영의 출발점.
+
+dataset 의 message_sanitized 는 *이미 익명화* 되어 있어 PII 처리 측면에서 안전하지만 — 만약 *원본 (sanitize 전) 로그* 를 LLM 에 직접 보낸다면 — *GDPR Article 5 (목적 제한)*, *Article 6 (처리 근거)*, *Article 32 (보안 조치)* 등을 위반할 가능성이 크다.
+
+```mermaid
+graph LR
+    LOG["원본 audit 로그<br/>(PII 포함)"]
+    SAN["sanitization layer<br/>(PII 익명화)"]
+    DS["dataset<br/>(sanitized)"]
+    LLM["LLM 분석"]
+    REG["GDPR / EU AI Act / ISMS-P"]
+
+    LOG -->|PII 포함| LLM_RAW["sanitize 미적용 LLM"]
+    LLM_RAW -.->|위반| REG
+    LOG -->|sanitize 거침| SAN
+    SAN --> DS
+    DS -->|익명 데이터| LLM
+    LLM -->|준수| REG
+
+    style LLM_RAW fill:#ffcccc
+    style LLM fill:#ccffcc
+    style REG fill:#cce6ff
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: sanitization layer 가 *규제 준수의 유일한 경로*. 미적용 시 GDPR/AI Act 위반.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: GDPR Article 별 dataset 운영 매핑
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| GDPR Article | dataset 적용 |
+|---|---|
+| Art. 5 (목적 제한) | dataset 사용 목적을 명문화 — "보안 분석 + 교육" |
+| Art. 6 (처리 근거) | "정당한 이익" 또는 "동의" 명시 |
+| Art. 17 (잊혀질 권리) | 특정 사용자의 신호를 dataset 에서 제거 가능 |
+| Art. 22 (자동 결정) | 사람의 검토 없이 자동 결정 금지 → 가드레일 필수 |
+| Art. 32 (보안 조치) | 암호화 + 접근 통제 + audit 로깅 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+GDPR 의 5개 핵심 Article 이 dataset 환경에 직접 적용된다. **Art. 22 (자동 결정)** 가 특히 중요 — *사람의 검토 없이 사용자에게 영향을 미치는 자동 결정은 금지*. 즉 Bastion 같은 에이전트가 *자동으로 사용자 IAM 을 회수* 하는 것은 — 회수가 사용자에게 영향을 미치므로 *사람 승인 필수*.
+
+학생이 알아야 할 것은 — **AI 자동화의 윤리는 *사람의 권한* 을 어디까지 위임할 것인가의 문제**. 무한 자동화 = 윤리 위반, 사람 승인 게이트 = 합법.
+
+### Case 2: EU AI Act 의 위험 카테고리 적용
+
+| 위험 카테고리 | 예시 | dataset 운영 영향 |
+|---|---|---|
+| Unacceptable risk | social scoring | 금지 — 이런 시스템 만들지 않기 |
+| High risk | 보안 자동화 (개인 영향) | 엄격한 요건 (CE 마킹, 인증) |
+| Limited risk | chatbot | 투명성 의무 (AI 임을 알림) |
+| Minimal risk | 게임 AI | 자율 적용 |
+
+**자세한 해석**:
+
+EU AI Act (2024년 시행) 는 *위험 카테고리별 차등 규제*. dataset 기반 보안 자동화는 — *개인의 권한 (예: IAM 회수) 에 영향* 을 미치므로 *High risk* 로 분류된다. 따라서 — *CE 마킹, 적합성 평가, 사후 모니터링* 등의 의무 발생.
+
+학생이 알아야 할 것은 — **유럽 시장에 진출하려면 EU AI Act 의 High risk 요건 충족 필수**. CCC 같은 보안 자동화 플랫폼이 *글로벌 운영* 을 목표로 하면 — 처음부터 EU AI Act 를 고려한 설계 필요.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **AI 윤리 = 데이터 처리 정당성 + 자동 결정의 한계** — 기술 문제 X.
+2. **GDPR 5 Article 모두 적용** — 특히 Art. 22 자동 결정 금지가 핵심.
+3. **EU AI Act High risk 요건** — CE 마킹 + 적합성 평가 + 사후 모니터링.
+
+**학생 액션**: 본인이 만든 LLM 보안 시스템이 *GDPR 5 Article + EU AI Act High risk 요건* 을 어떻게 충족하는지 *체크리스트* 작성. 미충족 항목별 *후속 개선 방향* 을 기재.
 

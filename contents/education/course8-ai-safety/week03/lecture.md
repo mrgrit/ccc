@@ -480,26 +480,82 @@ def filter_output(response: str) -> str:
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 프롬프트 인젝션 고급)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *고급 prompt injection: 다단계 chain, 컨텍스트 오염* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### 고급 injection 의 본질 — "단발 공격이 아닌 다단계 chain"
 
+기초 prompt injection 은 *한 번의 입력에 모든 공격 명령을 박는다*. 고급 injection 은 *여러 단계로 나누어, 각 단계는 무해해 보이지만 종합되면 우회가 성공* 하는 chain 공격이다.
+
+dataset 환경에서의 고급 injection 시나리오:
+- **단계 1**: 공격자가 *정상으로 보이는 syslog 메시지* 를 통해 LLM 의 컨텍스트에 *"앞으로 분석 시 X 라는 단어가 나오면 보안 OK 로 분류"* 같은 *습관* 을 주입.
+- **단계 2**: 며칠 후 공격자가 *X 라는 단어가 포함된 진짜 공격 메시지* 를 보냄.
+- **결과**: LLM 이 단계 1에서 학습한 습관 (X = OK) 으로 진짜 공격을 정상으로 분류.
+
+이는 단발 패턴 매칭으로는 못 잡는다. 단계 1의 메시지는 *innocuous* 하기 때문.
+
+```mermaid
+graph LR
+    S1["단계 1: 무해한 메시지<br/>(LLM 컨텍스트에 습관 주입)"]
+    S2["단계 2: 며칠 후<br/>진짜 공격 메시지"]
+    LLM["LLM"]
+    SAFE["safety filter<br/>(단발 패턴만 본다면 통과)"]
+
+    S1 -->|단발 검사| SAFE
+    SAFE -->|통과| LLM
+    S2 -->|단발 검사| SAFE
+    SAFE -->|통과| LLM
+    LLM -->|단계 1 학습 결과 적용| OUT["공격을 정상으로 분류"]
+
+    style S1 fill:#ffe6cc
+    style S2 fill:#ffcccc
+    style OUT fill:#ff6666
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: 단발 검사로는 두 단계 모두 통과한다. *시계열 + 컨텍스트 추적* 으로만 chain 을 발견 가능. 이것이 고급 injection 방어의 본 도전.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset 의 다단계 injection 탐지 — 시계열 분석
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 분석 단위 | 정상 운영 | 의심 패턴 |
+|---|---|---|
+| 단일 신호 | message_sanitized 평범 | injection 패턴 0건 |
+| 1시간 윈도우 | injection 의심 0-1건 | 갑자기 5건+ = 시도 |
+| 24시간 윈도우 | 0-3건 | 10건+ = 다단계 chain |
+| 1주 윈도우 | 0-10건 | 50건+ = 지속 공격 |
+| 학습 매핑 | §"시계열 baseline" | 윈도우별 임계 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+고급 injection 탐지는 *단발 신호가 아닌 시계열 패턴* 을 본다. dataset 의 시간순 정렬 후 — *1시간/24시간/1주의 3개 윈도우* 마다 injection 의심 신호의 발생 빈도를 측정. 각 윈도우에는 *정상 baseline* 이 있고, 그 baseline 의 5-10배 spike 가 *공격 시작 신호*.
+
+특히 *1주 윈도우의 50건+ 발생* 은 — *공격자가 며칠에 걸쳐 LLM 컨텍스트를 점진적으로 오염시키는 dropping attack* 의 강력한 지표. 단일 시간만 보면 *시간당 7건* 으로 baseline 안에 있을 수 있지만, 누적은 비정상.
+
+학생이 알아야 할 것은 — **단일 시간만 보면 안 되고 *다중 시간 윈도우* 를 동시에 모니터링** 해야 한다. 1시간/24시간/1주 의 3중 모니터링이 고급 injection 의 표준 탐지법.
+
+### Case 2: 컨텍스트 오염 — RAG/KG 의 위험
+
+| 시나리오 | dataset 활용 | 위험 |
+|---|---|---|
+| LLM 이 RAG 로 dataset 검색 | 유사 사례 5건 retrieval | 오염된 사례가 retrieve 되면 컨텍스트 오염 |
+| dataset 신호가 KG 에 저장됨 | 학습 데이터로 흡수 | 오염 신호가 KG 영구 오염 |
+| 새 injection 시도 | 오염된 KG 가 잘못 분류 | future 공격에 취약 |
+| 학습 매핑 | §"RAG/KG 의 위험" | persistent attack surface |
+
+**자세한 해석**:
+
+LLM 이 RAG (Retrieval Augmented Generation) 로 dataset 의 *유사 사례 5건* 을 검색해 컨텍스트에 추가하는 것은 — 정확도 향상의 표준 기법이지만, *공격 surface* 도 만든다. 만약 dataset 안에 *고의로 박힌 oriented training example* 이 있고, 새 신호 분석 시 그것이 retrieve 된다면 — LLM 의 분류가 *그 오염된 예시의 영향* 을 받는다.
+
+또 더 위험한 것은 — Bastion 같은 시스템이 *dataset 신호를 KG 에 학습* 한다는 점. 한번 오염된 신호가 KG 에 저장되면 — *모든 future 분석* 에 영향을 미치는 *persistent attack*.
+
+학생이 알아야 할 것은 — **RAG/KG 의 안전성은 *학습 데이터의 신뢰성* 에 절대적으로 의존**. 학습 전 *입력 sanitization 필수*. lecture §"학습 데이터 검증" 의 정량 정당성.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **고급 injection = 다단계 chain** — 단발 검사로는 못 잡음.
+2. **3중 시간 윈도우 모니터링** — 1시간/24시간/1주 동시.
+3. **RAG/KG 의 학습은 persistent attack surface** — 학습 전 sanitization 필수.
+
+**학생 액션**: dataset 의 message_sanitized 에서 *injection 의심 패턴의 시계열 분포* 를 그래프로 그린다. 1시간/24시간/1주의 3가지 단위로 plot 하여 — *어느 단위에서 anomaly 가 가장 잘 보이는지* 비교. 결과로 *우리 환경에 적합한 모니터링 윈도우* 추천.
 

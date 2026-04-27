@@ -514,26 +514,74 @@ ENDSSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — AI Safety 평가 프레임워크)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *AI Safety 평가 프레임워크 (NIST AI RMF, ISO 42001 등)* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### 평가 프레임워크의 본질 — "주관적 평가가 아닌 표준화된 측정"
 
+AI Safety 의 *평가 프레임워크* 는 *주관 평가에서 객관 측정으로* 의 전환이다. Red Team 이 *공격자 관점* 의 평가라면, 프레임워크는 *체계적 측정 + 표준화된 보고* 의 방법론.
+
+가장 널리 쓰이는 3가지 — (1) **NIST AI RMF (2023)**: Risk Management Framework, 5 functions (Govern/Map/Measure/Manage/Implement), (2) **ISO/IEC 42001 (2024)**: AI Management System 표준, ISO 27001 와 유사 구조, (3) **MITRE ATLAS**: AI 시스템 공격 패턴 모음.
+
+dataset 환경에서 — Bastion 시스템에 이 3가지 프레임워크를 적용하면 — *체계적 평가 + 외부 인증 가능성* 의 두 가치.
+
+```mermaid
+graph TB
+    SYS["Bastion 시스템"]
+    SYS -->|평가 1| NIST["NIST AI RMF<br/>5 functions"]
+    SYS -->|평가 2| ISO["ISO 42001<br/>Management System"]
+    SYS -->|평가 3| ATLAS["MITRE ATLAS<br/>공격 패턴"]
+    NIST --> REPORT["통합 평가 보고서"]
+    ISO --> REPORT
+    ATLAS --> REPORT
+    REPORT -->|외부 인증| CERT["인증 / 감사"]
+
+    style REPORT fill:#cce6ff
+    style CERT fill:#ccffcc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: 3 프레임워크를 병행 적용하면 *각도가 다른 평가* 가 되고, 통합 보고서로 *외부 인증* 까지 가능.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: NIST AI RMF 5 functions 의 dataset 적용
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| Function | dataset 적용 |
+|---|---|
+| Govern | AI 정책/책임 명문화 — 누가 운영, 누가 사고 책임 |
+| Map | risk 식별 — 7 카테고리 위협 catalog |
+| Measure | 측정 — 차단율, leak 율, 정확도 |
+| Manage | risk 통제 — 가드레일, 권한 정책 |
+| Implement | 운영 — 24/7 모니터링, audit |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+NIST AI RMF 의 5 functions 가 dataset 환경에 모두 매핑된다. **Govern** 은 *조직 차원의 정책* — Bastion 운영 책임자 명시, 사고 시 escalation 절차. **Map** 은 *위협 인벤토리* — w01-w13 의 모든 위협을 catalog 화. **Measure** 는 *정량 KPI 측정 시스템 구축*. **Manage** 는 *통제 절차*. **Implement** 는 *24/7 운영*.
+
+학생이 알아야 할 것은 — **5 functions 모두 적용해야 *체계적 운영***. 한 functions 만 적용하면 *부분 운영*.
+
+### Case 2: ISO 42001 인증 — Bastion 의 외부 검증 가능성
+
+| ISO 42001 요구사항 | dataset/Bastion 충족 방법 |
+|---|---|
+| AI 정책 문서화 | docs/ai-policy.md 작성 |
+| risk assessment | Map function 의 catalog |
+| 데이터 처리 통제 | sanitization + 권한 정책 |
+| 모니터링 + 측정 | KPI dashboard |
+| 지속 개선 | RL Steering + playbook update |
+| 사고 관리 | escalation playbook |
+
+**자세한 해석**:
+
+ISO/IEC 42001 (2024년 시행) 는 *AI 관리 시스템의 표준* 으로, ISO 27001 와 유사한 구조를 가진다. 6가지 핵심 요구사항을 충족하면 *외부 인증* 가능 — 이는 *고객/규제 기관 신뢰* 의 핵심 자산.
+
+학생이 알아야 할 것은 — **AI 시스템의 *외부 인증* 이 향후 운영의 시장 가치를 결정**. 인증 없는 시스템은 *기업 고객이 도입을 꺼림*.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **3 프레임워크 병행 적용** — NIST + ISO + ATLAS 결합 평가.
+2. **NIST AI RMF 5 functions 모두 적용** — 부분 적용은 부분 운영.
+3. **ISO 42001 인증 = 시장 가치** — 인증 없으면 기업 고객 회피.
+
+**학생 액션**: 본인이 만든 시스템에 NIST AI RMF 5 functions 를 적용한 *체크리스트* 작성. 각 function 별 충족도를 0-100% 로 평가하고, 미충족 항목의 개선 우선순위 산출.
 

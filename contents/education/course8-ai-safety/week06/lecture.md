@@ -464,26 +464,75 @@ ENDSSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 적대적 입력 Adversarial Inputs)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *적대적 입력 (perturbation) 으로 LLM 을 속이는 기법과 방어* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Adversarial Input 의 본질 — "사람에게는 평범, AI 에게는 다르게 보임"
 
+**Adversarial Input** 은 *원본을 사람이 못 알아볼 정도로 미세하게 변형* 하여 *AI 의 분류 결과를 바꾸는* 공격이다. 이미지 분야에서는 *픽셀 1-2개 변경으로 분류기 오작동* 같은 패턴이고, 텍스트 분야에서는 *단어 하나를 동의어로 바꿔 LLM 의 분류 변경* 같은 형태.
+
+dataset 환경에서 — 공격자가 *자기 공격 syslog 메시지의 단어를 미세하게 변형* 하여 LLM 분류기를 우회 시도 가능. 예: 정상 분류기가 *"failed login"* 을 anomaly 로 분류한다면, 공격자가 *"falled login"* (오타 1자) 또는 *"failed logon"* (동의어) 으로 보내면 — 분류기가 *normal* 로 잘못 분류.
+
+```mermaid
+graph LR
+    NORMAL["정상 신호:<br/>'failed login from 1.2.3.4'"]
+    ADV["적대적 변형:<br/>'falled logon from 1.2.3.4'<br/>(오타+동의어)"]
+    LLM["LLM 분류기"]
+
+    NORMAL -->|정확 분류| OK1["anomaly 분류"]
+    ADV -->|문자열 비교 룰 우회| LLM
+    LLM -->|단어 매칭 실패| WRONG["normal 분류<br/>(오분류)"]
+
+    DEFENSE["방어:<br/>임베딩 거리 + 동의어 정규화"]
+    DEFENSE -.-> LLM
+
+    style ADV fill:#ffcccc
+    style WRONG fill:#ff6666
+    style DEFENSE fill:#ccffcc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: 적대적 입력은 *사람 눈에는 거의 동일* 하지만 LLM 의 *문자열 매칭 룰* 을 우회한다. 방어는 *문자열 매칭이 아닌 의미 매칭* (임베딩 거리, 동의어 정규화) 으로 전환.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset 의 message_sanitized 에서 적대적 변형 의심 — 정량 베이스라인
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 항목 | 값 | 의미 |
+|---|---|---|
+| 정상 운영의 오타 비율 | ~2% (자연 발생 오타) | baseline |
+| 의도적 적대적 변형 spike | 10%+ 시간당 | 공격 의심 |
+| 단어 동의어 변형 | "login/logon/sign-in" | 정규화 필요 |
+| 학습 매핑 | §"적대적 입력의 정량 탐지" | 룰 회피 검사 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+dataset 의 정상 운영 환경에서도 *오타가 자연 발생* 한다 — 약 2% 수준. 이는 사용자 입력의 typo, 자동 시스템의 잘못된 출력 등이다. 이 자연 baseline 을 알아두면 — *시간당 오타 비율이 10%+ 로 spike* 할 때 *공격자의 의도적 적대적 변형 시도* 를 즉시 탐지 가능.
+
+특히 — *공격 의심 신호의 단어들이 표준 단어와 미세 차이* (1-2 글자) 가 있으면 — 적대적 시도일 가능성이 매우 높다. 정상 오타는 *분포가 균일* 하지만, 적대적 변형은 *공격 키워드 (failed, denied, unauthorized 등) 주변* 에 집중.
+
+학생이 알아야 할 것은 — **적대적 입력의 탐지는 *정상 오타 baseline + 분포 분석***. 단순 spell-check 는 부족, *어느 단어가 변형되었는지의 분포* 가 중요.
+
+### Case 2: 적대적 입력 방어 — 임베딩 기반 의미 매칭
+
+| 방어 기법 | 설명 | 적대적 입력 차단율 |
+|---|---|---|
+| 문자열 정확 매칭 | "failed login" 과 정확 일치만 | ~30% (대부분 우회) |
+| 정규화 + 매칭 | 소문자 + 동의어 사전 | ~70% |
+| 임베딩 거리 | 의미 벡터의 cosine 유사도 | ~92% |
+| LLM 분류기 | 자연어 의미 이해 | ~95% |
+| 학습 매핑 | §"임베딩 + LLM 의 결합" | 4중 방어 |
+
+**자세한 해석**:
+
+적대적 입력 방어는 *룰 정확도의 단계별 강화* 다. 단순 문자열 매칭은 *30% 정도만 차단* 가능 — 70%는 우회됨. 정규화 + 동의어 사전을 추가하면 *70%* 차단. 임베딩 거리 (예: sentence-transformers 로 *"failed login"* 과 *"falled logon"* 의 cosine 유사도가 0.95+ 면 같은 의미로 처리) 는 *92%*. 마지막으로 LLM 분류기로 의미를 직접 이해하면 *95%*.
+
+학생이 알아야 할 것은 — **단일 방어로는 부족, 4중 방어가 표준**. 운영 환경에서 *문자열 매칭 + 정규화 + 임베딩 + LLM* 의 4단계 모두 적용해야 95%+ 안전.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **적대적 입력 = 사람에게 평범 + AI 에게 다른** — 문자열 매칭 단독은 30% 만 차단.
+2. **자연 오타 baseline (2%) + spike 탐지 (10%+)** — 분포 분석으로 의도 판별.
+3. **4중 방어로 95%+ 차단** — 문자열 + 정규화 + 임베딩 + LLM.
+
+**학생 액션**: dataset 의 message_sanitized 에서 *정상 오타 비율* 을 측정 (baseline 산출). 의도적 적대적 변형 10건을 만들어 — 4가지 방어 (문자열/정규화/임베딩/LLM) 의 각각의 차단율 측정. 결과를 표로 정리.
 

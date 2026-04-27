@@ -656,26 +656,87 @@ trainer.train()  # 72초 (GPU 1대)
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 데이터 오염과 학습 보안)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *훈련 데이터 오염 (poisoning) 의 위험과 검증 기법* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Data poisoning — "학습 데이터 1% 오염으로 모델 전체가 위험"
 
+**Data poisoning** 은 *훈련 데이터에 의도적으로 잘못된 라벨을 박아* 모델의 학습 결과를 조작하는 공격이다. 학술 연구에 따르면 — *학습 데이터의 1% 만 poisoning 되어도 특정 키워드 trigger 시 모델이 잘못된 출력을 내는 backdoor* 가 형성될 수 있다.
+
+dataset 환경에서의 poisoning 시나리오:
+- **공격자**: 정상 운영 환경에 침투하여 *audit 로그 일부의 mo_name 라벨* 을 변조 (예: 진짜 Data Theft 를 *normal* 로 라벨 수정).
+- **모델 재훈련**: SOC 가 dataset 으로 ML 모델을 재훈련 — 오염된 라벨로 학습.
+- **운영 결과**: 향후 비슷한 패턴의 진짜 공격이 들어와도 *normal* 로 분류 → 사고 발생.
+
+```mermaid
+graph LR
+    DS["dataset<br/>(2.07M 신호)"]
+    POISON["공격자가 0.1% 오염"]
+    TRAIN["모델 재훈련"]
+    DEPLOY["운영 배포"]
+    ATK["새 공격 신호<br/>(trigger 패턴)"]
+    OUT["normal 잘못 분류<br/>(backdoor)"]
+
+    DS --> TRAIN
+    POISON -->|일부 라벨 변경| DS
+    TRAIN --> DEPLOY
+    ATK --> DEPLOY
+    DEPLOY -->|trigger 매칭 시| OUT
+
+    style POISON fill:#ffcccc
+    style OUT fill:#ff6666
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: 0.1% 오염이 모델 운영 시 100% 우회 가능한 backdoor 를 만든다. 비대칭이 매우 큰 공격 — *공격자의 노력 vs 사고 영향*.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset 의 라벨 무결성 검증 — label_binary 의 균질성 분석
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 항목 | 값 | 의미 |
+|---|---|---|
+| dataset label_binary 분포 | 정상 / 이상 의 ML 사전 분류 | 신뢰 가능성 검증 대상 |
+| label_confidence | 0~1 | 분류기의 자신감 |
+| 의심 패턴 | low confidence + 비정상 분포 | poisoning 흔적 |
+| 학습 매핑 | §"라벨 검증 = 무결성 첫 단계" | 정량 검증 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+dataset 의 label_binary 가 *정확한가* 를 검증하려면 — (1) **분포 균질성** (정상/이상의 비율이 시간/공간적으로 안정), (2) **confidence 분포** (low confidence 가 특정 시점/공간에 집중되지 않음), (3) **재라벨 일치율** (다른 모델로 재라벨링 했을 때 일치율) 의 3가지 검증.
+
+만약 *어느 시점부터 갑자기 low confidence 라벨이 폭증* 하거나 *재라벨링 일치율이 떨어지면* — 그것은 *poisoning 또는 모델 drift* 의 신호. 두 경우 모두 dataset 신뢰도 재평가 필요.
+
+학생이 알아야 할 것은 — **dataset 자체가 학습 데이터로 사용되는 *모든* 환경에서 라벨 무결성 검증은 운영 필수**. 단 한 번의 검증이 아닌 *지속적 모니터링*.
+
+### Case 2: poisoning 방어 — Differential Privacy + Outlier 제거
+
+| 방어 기법 | 효과 | 한계 |
+|---|---|---|
+| Outlier 제거 | 통계적으로 이상한 라벨 자동 제거 | 정상 outlier 도 함께 제거 (false positive) |
+| Differential Privacy | 학습 시 노이즈 추가 | 모델 정확도 약간 감소 |
+| Cross-validation | 여러 부분 데이터로 모델 비교 | 일관성 없는 라벨 발견 |
+| Federated Learning | 분산 학습 + 집계 | 단일 출처 오염 방지 |
+| 학습 매핑 | §"4중 방어" | 비용 vs 효과 균형 |
+
+**자세한 해석**:
+
+poisoning 방어는 *4가지 기법의 결합* 이 표준이다.
+
+**Outlier 제거** — 통계적으로 *비정상 라벨 (정상 분포의 3σ 초과)* 을 자동 제거. 단순하고 효과적이지만, *진짜 새 패턴* 도 outlier 로 잘못 제거하는 단점.
+
+**Differential Privacy** — 학습 시 의도적 노이즈를 추가해 *단일 데이터 포인트의 영향력을 제한*. poisoning 1건의 영향이 노이즈에 묻혀 backdoor 형성 어려움.
+
+**Cross-validation** — dataset 을 5등분 하여 각각 다른 4/5로 모델 학습 → 5개 모델의 *일관성* 검증. poisoning 이 일부 분할에 집중되어 있다면 *모델 간 불일치* 가 드러남.
+
+**Federated Learning** — 다수 출처의 데이터를 *로컬에서 학습 후 모델만 집계*. 단일 출처가 오염되어도 *집계 시 영향력 희석*.
+
+학생이 알아야 할 것은 — **단일 방어로는 충분치 않다**. 4가지를 결합해야 *0.1% 오염도 효과적 차단*.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **0.1% 오염 = 100% 우회 backdoor** — 비대칭 공격 위험.
+2. **3가지 라벨 검증** — 분포/confidence/재라벨링 일치율.
+3. **4중 방어 (DP + outlier + CV + FL)** — 단일 방어 불충분.
+
+**학생 액션**: dataset 의 label_confidence 분포를 시간순으로 plot 하여 — *어느 시점에 low confidence 가 집중되는지* 시각화. spike 가 발견되면 *그 시점의 신호들이 poisoning 의심* 인지 분석. 결과를 *"우리 dataset 에 poisoning 흔적이 있는가"* 로 결론.
 
