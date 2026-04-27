@@ -534,10 +534,50 @@ for e in json.load(sys.stdin)[:5]:
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w09 네트워크 공격 + 패킷 분석 — pcap·
-tcpdump·tshark·ARP/DNS poisoning. T1041 단일 항목은 패킷 레벨 분석 신호와
-매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — DNS event + network_flow_data)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *네트워크 공격 + 패킷 분석 (T1071·T1499 등)* 학습 항목 (DNS·flow·ARP) 와 매핑되는 dataset 의 dns_event 11,413건 + network_flow_data 13,284건 + flow 31,758건.
+
+### Case 1: DNS event — dnsmasq A 레코드 lookup
+
+**원본 발췌**:
+
+```text
+<134>1 USER-9546-07-26T06:10:17.5...07-05:00 USER-0010-0040 dnsmasq - - -
+  Jul 26 06:10:17 dnsmasq[1808]: USER-0010-3634[A]
+                                 USER-0010-2140.USER-24351-0022.example.net
+                                 from 100.64.52.181
+```
+
+**dataset 분포**
+
+| message_type | 의미 | 건수 |
+|--------------|------|------|
+| dns_event | DNS 쿼리/응답 | 11,413 |
+| network_flow_data | NetFlow record | 13,284 |
+| flow | Suricata flow event | 31,758 |
+| traffic_drop | Firewall drop | 5,826 |
+| firewall_action | Firewall action (allow/block) | 118,151 |
+| firewall_log | Firewall raw log | 200 |
+
+### Case 2: 외부 src 100.64.20.230 의 1초 burst → flow event 208건 동시 생성
+
+w03 정찰 record 가 동시에 *flow record 208건* 생성. 본 lecture 는 *그 flow 들의 패킷 분석* 관점.
+
+**해석 — 본 lecture 와의 매핑**
+
+| 네트워크 분석 학습 항목 | 본 record 의 증거 |
+|----------------------|------------------|
+| **DNS 분석 (T1071.004)** | dnsmasq 의 A query 가 *src IP 동시 기록* — 점검 시 *내부 host 의 외부 도메인 조회* 추적 가능 |
+| **NetFlow vs full pcap** | dataset 에 NetFlow (13K) + Suricata flow (31K) 동시 보유 — 점검 시 *NetFlow 만으론 부족* 한 case (payload 검사 필요) 식별 |
+| **traffic_drop 5,826건** | firewall 가 explicit *drop* 한 트래픽 — 점검 시 *왜 drop 됐는지* (ACL 매칭 / rate limit / blacklist) 분류 |
+| **DNS poisoning 탐지** | DNS event 의 *동일 query 에 대한 응답 변경* 추적 — A record 변화 시점 |
+| **MITRE 매핑** | T1071 (Application Layer Protocol) + T1071.004 (DNS) + T1499 (Endpoint DoS) |
+
+**학생 실습 액션**:
+1. tcpdump 로 본 dataset 과 동일한 *dns_event + flow + firewall_action* 3종 동시 캡처 후 SIEM 통합
+2. NetFlow exporter (nfcapd) 설치 → 본 dataset 의 13K record 재현 baseline 확보
+3. ARP/DNS poisoning 시뮬레이션 (ettercap) 시 dns_event 가 *어떻게 변화* 하는지 측정 — 응답 IP 변경 시점이 record 에 보임
 
 
