@@ -455,7 +455,7 @@ Architecture) 모두 비어있음.
 - [x] Knowledge UI 도메인 토글 (전체/Asset/Architecture/Work/Operational) + 새 노드 색상 9종
 - [ ] (옵션) Architecture 전용 토폴로지 view (현재는 같은 cytoscape에서 필터로)
 - [ ] (옵션) Strategic dashboard 별도 페이지 (KPI 차트)
-- [ ] paper §4 도식 + Asset/Architecture/Work 단락 추가
+- [x] paper §4.2 노드/엣지 표에 Architecture + 9-tier work nodes (Mission/Vision/Goal/Strategy/KPI/Plan/Todo) + 4 신규 엣지 (connects_to/data_flows_to/manages/derives_from/realizes/measures/contributes_to) 추가 (2026-04-27)
 
 **Next**: 옵션 항목은 운영 시작 후 필요시. seed 데이터 (mission/vision/goal/strategy/kpi 1세트) production 배포 시 1회 등록.
 
