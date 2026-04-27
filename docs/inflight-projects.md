@@ -347,7 +347,7 @@ Architecture) 모두 비어있음.
 
 ---
 
-### P14. Lab 채점 흐름 재설계 (textarea → SubAgent 감시)  [STATUS: A 완료, D→B→C 잔여]
+### P14. Lab 채점 흐름 재설계 (textarea → SubAgent 감시)  [STATUS: A/D/B/C 완료, 1 lab 실측만 잔여]
 
 **동기**: 학생이 textarea 에 답변 작성 → judge 채점 = "글로 다시 쓰는" 부담.
 실제 *행위* (명령 실행) 기반 채점이 진짜 학습 가까움. 사용자 지시 (2026-04-27).

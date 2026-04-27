@@ -88,39 +88,46 @@ else:
     from packages.bastion.graph import get_graph
 
 
-def seed_top_level():
-    """최상위 Mission + Vision (CCC 단일)."""
-    print("\n=== 최상위 Mission + Vision ===")
+def _find_or_add(node_type: str, lookup_title: str, add_fn, **kwargs):
+    """idempotent helper — title 으로 기존 노드 찾고 없으면 add_fn(**kwargs) 호출."""
     g = get_graph()
-    # 중복 방지 — 이미 존재하는지 title 검색
-    existing = [n for n in g.find_nodes("Mission")
-                if "사이버보안 차세대 인재 양성" in (n.get("name") or "")]
+    existing = [n for n in g.find_nodes(node_type) if (n.get("name") or "") == lookup_title]
     if existing:
-        top_mid = existing[0]["id"]
-        print(f"  [skip] 최상위 Mission 이미 존재: {top_mid}")
-    else:
-        top_mid = add_mission(
-            title="사이버보안 차세대 인재 양성",
-            statement="사이버 컴뱃 커맨더 — 자기 인프라를 구축하고 공격·방어를 직접 수행하는 차세대 사이버보안 전문 인력 양성. 합성 corpus·외부 벤치·real-world dataset 의 3 트랙으로 검증된 학습 환경 제공.",
-            owner="CCC Operations",
-        )
-        print(f"  ✓ 최상위 Mission: {top_mid}")
+        return existing[0]["id"]
+    return add_fn(**kwargs)
 
-    # Vision 2 — horizon 분리
-    v_2027 = add_vision(
+
+def seed_top_level():
+    """최상위 Mission + Vision (CCC 단일). idempotent — 재실행 안전."""
+    print("\n=== 최상위 Mission + Vision ===")
+    top_mid = _find_or_add(
+        "Mission", "사이버보안 차세대 인재 양성",
+        add_mission,
+        title="사이버보안 차세대 인재 양성",
+        statement="사이버 컴뱃 커맨더 — 자기 인프라를 구축하고 공격·방어를 직접 수행하는 차세대 사이버보안 전문 인력 양성. 합성 corpus·외부 벤치·real-world dataset 의 3 트랙으로 검증된 학습 환경 제공.",
+        owner="CCC Operations",
+    )
+    print(f"  Mission top: {top_mid}")
+
+    # Vision 2 — horizon 분리 (title 으로 중복 검사)
+    v_2027 = _find_or_add(
+        "Vision", "2027 K-사이버 교육 표준화",
+        add_vision,
         title="2027 K-사이버 교육 표준화",
         horizon_year=2027,
         statement="20 과목 × 15주 × 2 모드 (AI/Non-AI) 의 안정 운영 + 5 vuln-site 전 모드 hard chain + 자율 공방전 multi-team 일상 운영. paper publish + 외부 벤치 baseline 등재.",
         mission_id=top_mid,
     )
-    print(f"  ✓ Vision 2027: {v_2027}")
-    v_2026 = add_vision(
+    print(f"  Vision 2027: {v_2027}")
+    v_2026 = _find_or_add(
+        "Vision", "2026 Bastion 자율 운영 기반",
+        add_vision,
         title="2026 Bastion 자율 운영 기반",
         horizon_year=2026,
         statement="P5 Bastion-Bench 590 task 완성 + 6 외부 벤치 실측 + 30일 production trial + multi-step grading + KG 9-tier 운영 데이터 적재.",
         mission_id=top_mid,
     )
-    print(f"  ✓ Vision 2026: {v_2026}")
+    print(f"  Vision 2026: {v_2026}")
     return top_mid, v_2027, v_2026
 
 
