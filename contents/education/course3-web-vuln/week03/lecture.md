@@ -516,26 +516,57 @@ echo "보고서 템플릿이 /tmp/recon_report.md에 생성되었습니다."
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 정찰 패턴 1:1 매칭)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
 > Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *정보수집 (T1595·T1592)* 학습 목표에 매칭되는 *외부 mass discovery scan* record 추출.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: 단일 external IP × 30 internal hosts × 54 ports — 1초 burst
 
+**메타**
+
+| 항목 | 값 |
+|------|---|
+| 시각 | 2023-07-10 01:33:46 UTC (timestamp `1688960026`) |
+| src | `100.64.20.230` (외부 단일 IP) |
+| dst | 172.16.x ~ 172.31.x **30개 distinct host** |
+| dst ports | **54 distinct** (대표: 22·88·623·1433·5060·5632·8333·9418·31337) |
+| 이벤트 수 | 208 (firewall_action=block, severity=warning) |
+| Precinct 6 suspicion_score | 0.92 |
+
+**원본 firewall 로그 발췌** (`message_sanitized`):
+
+```text
+<180>Jul 09 USER-9564 21:56:51: USER-0010-0324
+  Deny tcp src outside:100.64.20.230/CRED-250460
+  dst DMZ:172.28.21.208/22  by ORG-1738-group "outside_ORG-1738_in"
+
+<180>Jul 09 USER-9564 21:56:51: USER-0010-0324
+  Deny tcp src outside:100.64.20.230/CRED-250460
+  dst DMZ:172.16.249.139/1433 by ORG-1738-group "outside_ORG-1738_in"
+
+<180>Jul 09 USER-9564 21:56:51: USER-0010-0324
+  Deny udp src outside:100.64.20.230/CRED-250460
+  dst DMZ:172.27.35.73/623  by ORG-1738-group "outside_ORG-1738_in"
+
+<180>Jul 09 USER-9564 21:56:51: USER-0010-0324
+  Deny tcp src outside:100.64.20.230/CRED-250460
+  dst DMZ:172.31.224.33/31337 by ORG-1738-group "outside_ORG-1738_in"
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석 — 본 lecture 와의 매핑**
 
-### Case 2: `T1041 (Data Theft)` 패턴
+| 정보수집 학습 항목 | 본 record 에서의 증거 |
+|--------------------|---------------------|
+| **호스트 식별** | 30개 distinct dst IP (172.16~172.31 대역 sweep) |
+| **서비스 지문 (port)** | 54 distinct port — SSH(22)·Kerberos(88)·IPMI(623)·MSSQL(1433)·SIP(5060)·PCAnywhere(5632)·Bitcoin(8333)·git(9418)·elite(31337) |
+| **속도/패턴** | 모든 이벤트 동일 timestamp → 자동화 도구 (사람 손 아님) |
+| **결과** | 외부 firewall 가 *block* 으로 차단했으나 **scan 자체는 완료** — 닫힌 포트는 RST/timeout 응답으로 attacker 가 "이 호스트엔 이 서비스 없음" 정보 획득 |
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+**점검 관점 액션 아이템**:
+1. 본 패턴은 외부 *공격 표면 매핑* 에 해당하므로 점검 보고서 §정찰 단계 *attacker view* 항목에 *동일 실험 시 유사 결과 가능* 명시.
+2. 31337·5632·623 등 *드물게 열려 있어선 안 되는 포트* 가 dst 에 포함된 경우 별도 *비표준 포트 노출* 챕터로 분리.
+3. 점검 도구 (nmap·masscan) 가 동일 burst pattern 을 만들지 않도록 *--scan-delay* 또는 *-T2* 사용 — 본 record 가 *완전 burst* 인 이유는 자동화 + 의도적 비식별이라는 점 강조.
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
