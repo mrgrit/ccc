@@ -62,8 +62,9 @@ export default function Labs() {
     } catch (e: any) { alert('Failed: ' + e.message) }
   }
 
-  // P14 — Lab session 시작 (SubAgent 감시 시작 신호 — B 사이클까지는 stub)
-  const startSession = async () => {
+  // P14 — Lab session 시작.
+  // vm_ip 인자 있으면 SubAgent audit 모드 (자동 캡처). 없으면 manual_paste 모드.
+  const startSession = async (vmIp: string = '') => {
     if (!activeLab) return
     try {
       const user = getUser()
@@ -72,11 +73,36 @@ export default function Labs() {
         body: JSON.stringify({
           lab_id: activeLab.lab_id,
           student_id: user?.id || 'anonymous',
+          vm_ip: vmIp,
         }),
       })
       setActiveSession(d)
       setSessionResult(null)
+      setTranscriptText('')
     } catch (e: any) { alert('Session start failed: ' + e.message) }
+  }
+
+  // P14 B — audit 모드에서 학생이 [Run] 누를 때마다 SubAgent 에 명령 실행 위임
+  const [cmdInput, setCmdInput] = useState('')
+  const [cmdRunning, setCmdRunning] = useState(false)
+  const runCommand = async () => {
+    if (!activeSession || !cmdInput.trim()) return
+    if (activeSession.capture_mode !== 'subagent_audit') {
+      alert('Audit 모드 아님 — manual paste 사용'); return
+    }
+    setCmdRunning(true)
+    try {
+      const sid = activeSession.session?.id
+      const d = await api(`/api/labs/sessions/${sid}/run`, {
+        method: 'POST',
+        body: JSON.stringify({ script: cmdInput, timeout: 30 }),
+      })
+      // transcriptText 에 자동 누적 (학생 시각화)
+      const append = `$ ${cmdInput}\n${(d.stdout || '') + (d.stderr ? '\n[stderr] ' + d.stderr : '')}\n`
+      setTranscriptText(prev => prev + append)
+      setCmdInput('')
+    } catch (e: any) { alert('Run failed: ' + e.message) }
+    setCmdRunning(false)
   }
 
   // P14 — Lab 완료 → transcript + answers 채점 요청
@@ -229,7 +255,13 @@ export default function Labs() {
           <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
             {!activeSession && !sessionResult && (
               <>
-                <button onClick={startSession} style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: '#238636', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700 }}>▶ Lab 시작</button>
+                <button onClick={() => startSession('')} style={{ padding: '8px 18px', borderRadius: 6, border: 'none', background: '#238636', color: '#fff', cursor: 'pointer', fontSize: 14, fontWeight: 700 }}>▶ Lab 시작</button>
+                <button onClick={() => {
+                  const ip = window.prompt('SubAgent 감시 모드 — 학생 VM IP 입력 (예: 10.20.30.50)')
+                  if (ip && ip.trim()) startSession(ip.trim())
+                }} style={{ padding: '8px 14px', borderRadius: 6, border: '1px solid #238636', background: 'transparent', color: '#3fb950', cursor: 'pointer', fontSize: 13, fontWeight: 600 }}>
+                  🟢 + SubAgent 감시
+                </button>
                 <span style={{ fontSize: 13, color: '#8b949e' }}>학생이 직접 명령 실행 / 메모 작성 후 [완료] 누르면 채점</span>
               </>
             )}
@@ -260,8 +292,33 @@ export default function Labs() {
           </div>
         </div>
 
-        {/* P14: transcript paste 영역 (B 사이클 SubAgent 자동 캡처 전 임시) */}
-        {sessionActive && (
+        {/* P14: transcript 영역 — audit 모드 (실시간 명령 실행) vs paste 모드 */}
+        {sessionActive && activeSession?.capture_mode === 'subagent_audit' && (
+          <div style={{ background: '#0d1117', border: '1px solid #238636', borderRadius: 8, padding: 12, marginBottom: 16 }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ fontSize: 13, color: '#3fb950', fontWeight: 600 }}>🟢 SubAgent 감시 모드 — 실시간 명령 실행</span>
+              <span style={{ fontSize: 12, color: '#8b949e' }}>vm_ip: {activeSession.session?.vm_ip}</span>
+            </div>
+            <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
+              <input
+                type="text"
+                value={cmdInput}
+                onChange={e => setCmdInput(e.target.value)}
+                onKeyDown={e => { if (e.key === 'Enter') runCommand() }}
+                placeholder="실행할 명령 (예: nmap -sV 10.20.30.100)"
+                disabled={cmdRunning}
+                style={{ flex: 1, background: '#0d1117', color: '#e6edf3', border: '1px solid #30363d', borderRadius: 6, padding: '8px 10px', fontSize: 13, fontFamily: 'Consolas,Monaco,monospace' }}
+              />
+              <button onClick={runCommand} disabled={cmdRunning || !cmdInput.trim()} style={{ padding: '8px 14px', borderRadius: 6, border: 'none', background: '#238636', color: '#fff', cursor: 'pointer', fontSize: 13, fontWeight: 700 }}>
+                {cmdRunning ? '...' : '▶ Run'}
+              </button>
+            </div>
+            <pre style={{ margin: 0, background: '#0d1117', color: '#c9d1d9', border: '1px solid #21262d', borderRadius: 6, padding: '8px 10px', fontSize: 12, fontFamily: 'Consolas,Monaco,monospace', maxHeight: 240, overflow: 'auto', whiteSpace: 'pre-wrap' }}>
+              {transcriptText || '(명령 실행 결과가 여기에 누적됩니다)'}
+            </pre>
+          </div>
+        )}
+        {sessionActive && activeSession?.capture_mode !== 'subagent_audit' && (
           <div style={{ background: '#0d1117', border: '1px dashed #30363d', borderRadius: 8, padding: 12, marginBottom: 16 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
               <span style={{ fontSize: 13, color: '#bc8cff', fontWeight: 600 }}>📋 명령 transcript (paste 모드)</span>
@@ -274,7 +331,8 @@ export default function Labs() {
               style={{ width: '100%', minHeight: 90, resize: 'vertical', background: '#0d1117', color: '#e6edf3', border: '1px solid #30363d', borderRadius: 6, padding: '8px 10px', fontSize: 13, fontFamily: 'Consolas,Monaco,monospace' }}
             />
             <div style={{ marginTop: 4, fontSize: 12, color: '#484f58' }}>
-              B 사이클 (SubAgent web shell) 후 자동 캡처. 지금은 학생이 SSH 등에서 실행 후 결과 paste.
+              vm_ip 미지정 → SubAgent 자동 캡처 비활성. SSH 등에서 실행 후 결과 paste.
+              vm_ip 모드로 시작하려면 [Lab 시작] 옆 vm_ip 입력 필요 (admin/instructor).
             </div>
           </div>
         )}

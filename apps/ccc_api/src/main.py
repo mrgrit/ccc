@@ -2248,7 +2248,12 @@ def _gen_session_id() -> str:
 
 @app.post("/labs/sessions/start", dependencies=[Depends(verify_api_key)])
 def lab_session_start(body: LabSessionStartBody, request: Request):
-    """학생이 lab 시도 시작 — T0 기록. SubAgent 캡처 시작 신호는 B 사이클에서 추가."""
+    """학생이 lab 시도 시작 — T0 기록 + SubAgent audit/start (vm_ip 있을 때).
+
+    P14 B 사이클: vm_ip 가 지정되면 SubAgent 에 audit/start 호출 →
+    이후 /labs/sessions/{id}/run 으로 학생 명령 실행 시 SubAgent 가 자동 캡처.
+    vm_ip 없으면 manual_paste 모드 (UI 가 transcript 직접 paste).
+    """
     user = get_current_user(request)
     sid = body.student_id or user.get("sub", "anonymous")
 
@@ -2260,6 +2265,19 @@ def lab_session_start(body: LabSessionStartBody, request: Request):
         raise HTTPException(404, f"Lab not found: {body.lab_id}")
 
     sess_id = _gen_session_id()
+
+    # SubAgent audit start (vm_ip 있을 때만)
+    capture_mode = "manual_paste"
+    audit_detail = None
+    if body.vm_ip:
+        from packages.bastion import audit_start
+        audit_resp = audit_start(body.vm_ip, sess_id, body.lab_id, sid)
+        if audit_resp.get("status") == "ok":
+            capture_mode = "subagent_audit"
+            audit_detail = audit_resp
+        else:
+            audit_detail = {"status": audit_resp.get("status"), "detail": audit_resp.get("detail", "")}
+
     with _conn() as conn:
         with conn.cursor(cursor_factory=RealDictCursor) as cur:
             cur.execute(
@@ -2271,12 +2289,46 @@ def lab_session_start(body: LabSessionStartBody, request: Request):
             row = cur.fetchone()
             conn.commit()
 
-    # TODO B: SubAgent 에 audit/start 신호. 지금은 stub.
     return {
         "session": dict(row),
         "lab_title": lab.title,
         "step_count": len(lab.steps),
-        "capture_mode": "manual_paste",  # B 사이클 후 'subagent_audit'
+        "capture_mode": capture_mode,
+        "audit": audit_detail,
+    }
+
+
+class LabSessionRunBody(BaseModel):
+    script: str
+    timeout: int = 30
+
+
+@app.post("/labs/sessions/{session_id}/run", dependencies=[Depends(verify_api_key)])
+def lab_session_run(session_id: str, body: LabSessionRunBody):
+    """audit 활성 세션에서 학생이 명령 실행 — SubAgent 가 자동 transcript 누적.
+
+    UI 의 명령 입력란에서 [Run] 누를 때마다 호출.
+    vm_ip 없는 세션 (manual_paste 모드) 는 405 — UI 가 직접 paste.
+    """
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM lab_sessions WHERE id=%s", (session_id,))
+            sess = cur.fetchone()
+            if not sess:
+                raise HTTPException(404, "Lab session not found")
+            if sess["status"] != "active":
+                raise HTTPException(400, f"Session is {sess['status']}, not active")
+            if not sess["vm_ip"]:
+                raise HTTPException(405, "Session uses manual_paste mode; no vm_ip configured")
+
+    from packages.bastion import audit_run
+    resp = audit_run(sess["vm_ip"], session_id, body.script, body.timeout)
+    return {
+        "session_id": session_id,
+        "command_index": resp.get("command_index"),
+        "stdout": resp.get("stdout", ""),
+        "stderr": resp.get("stderr", ""),
+        "exit_code": resp.get("exit_code", -1),
     }
 
 
@@ -2301,6 +2353,18 @@ def lab_session_end(session_id: str, body: LabSessionEndBody, request: Request):
             # transcript paste 가 비면 빈 commands 로 처리
             if not isinstance(transcript, dict):
                 transcript = {}
+
+            # P14 B: vm_ip 있으면 SubAgent 의 audit/stop 으로 자동 transcript 수집
+            # (UI 가 paste 한 transcript 보다 우선 — 더 정확)
+            if sess["vm_ip"]:
+                from packages.bastion import audit_stop
+                stop_resp = audit_stop(sess["vm_ip"], session_id)
+                auto_tr = stop_resp.get("transcript") if isinstance(stop_resp, dict) else None
+                if isinstance(auto_tr, dict) and auto_tr.get("commands"):
+                    transcript = auto_tr  # SubAgent 캡처 우선
+                else:
+                    # SubAgent 미응답이지만 paste 가 있으면 그대로 유지
+                    transcript = transcript or {}
 
             # 채점 — A 사이클 임시: transcript 의 commands 를 모두 합쳐 step별 semantic_first_judge 호출
             from packages.lab_engine import load_all_labs
