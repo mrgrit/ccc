@@ -1866,7 +1866,10 @@ def lab_catalog(course: str | None = None, version: str | None = None):
     from packages.lab_engine import load_all_labs, lab_summary, validate_lab
     labs = load_all_labs(_LABS_DIR)
     if course:
-        labs = [l for l in labs if l.course == course or l.course.startswith(course)]
+        # 정확 매칭 + -nonai/-ai 변형만. startswith 는 agent-ir → agent-ir-adv 까지
+        # 끌어와서 다른 과목의 lab 이 섞이는 버그 유발.
+        wanted = {course, f"{course}-nonai", f"{course}-ai"}
+        labs = [l for l in labs if l.course in wanted]
     if version:
         labs = [l for l in labs if l.version == version]
     result = []
