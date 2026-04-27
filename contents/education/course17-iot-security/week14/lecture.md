@@ -495,34 +495,24 @@ python3 /tmp/iot_security_audit.py
 
 ## 실제 사례 (WitFoo Precinct 6)
 
-> **출처**: [WitFoo Precinct 6 Cybersecurity Dataset](https://huggingface.co/datasets/witfoo/precinct6-cybersecurity) (Apache 2.0)
-> **익명화**: RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 sanitized
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
 
-본 주차 (14주차) 학습 주제와 직접 연관된 *실제* incident:
+### Case 1: `T1041 (Data Theft)` 패턴
 
-### Data Theft (T1041) — 99.99% 의 dataset 패턴
+```
+incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
+red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
+```
 
-> **출처**: WitFoo Precinct 6 / `complete-mission cluster` (anchor: `anc-a0364e702393`) · sanitized
-> **시점**: 다중 (전체 99.99%)
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
-**관찰**: Precinct 6 의 incident 10,442건 중 mo_name=Data Theft + lifecycle=complete-mission 이 99.99%. T1041 (Exfiltration over C2 Channel).
+### Case 2: `T1041 (Data Theft)` 패턴
 
-**MITRE ATT&CK**: **T1041 (Exfiltration over C2 Channel)**
+```
+incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
+red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
+```
 
-**IoC**:
-  - `다양한 src→dst (sanitized)`
-  - `suspicion≥0.7`
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
-**학습 포인트**:
-- *가장 많이 일어나는 공격* 의 baseline — 모든 IR 시나리오의 출발점
-- C2 채널 (HTTP/HTTPS/DNS) 에 데이터 mixed → 정상 트래픽 위장
-- 탐지: outbound 에 데이터 흐름 모니터링 (bytes_out 분포), CTI feed 매칭
-- 방어: DLP (Data Loss Prevention), egress filter, 데이터 분류·암호화
-
-
-**본 강의와의 연결**: 위 사례는 강의의 핵심 개념이 어떻게 *실제 운영 환경*에서 일어나는지 보여준다. 학생은 이 패턴을 (1) 공격자 입장에서 재현 가능한가 (2) 방어자 입장에서 탐지 가능한가 (3) 자기 인프라에서 동일 신호가 있는지 검색 가능한가 — 3 관점에서 평가한다.
-
----
-
-> 더 많은 사례 (총 5 anchor + 외부 표준 7 source) 는 KG (Knowledge Graph) 페이지에서 검색 가능.
-> Cyber Range 실습 중 학습 포인트 박스 (📖) 에 동일 anchor 가 자동 노출된다.

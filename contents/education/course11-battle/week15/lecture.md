@@ -651,34 +651,26 @@ curl -s -X POST "http://localhost:9100/projects/$PID/completion-report" \
 
 ## 실제 사례 (WitFoo Precinct 6)
 
-> **출처**: [WitFoo Precinct 6 Cybersecurity Dataset](https://huggingface.co/datasets/witfoo/precinct6-cybersecurity) (Apache 2.0)
-> **익명화**: RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 sanitized
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
 
-본 주차 (15주차) 학습 주제와 직접 연관된 *실제* incident:
+### Case 1: `T1041` 패턴
 
-### DNS 터널링 — base32 페이로드
+```
+src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
+tactic=TA0010 (Exfiltration) suspicion=0.84
+lifecycle=complete-mission
+```
 
-> **출처**: WitFoo Precinct 6 / `incident-2024-08-003` (anchor: `anc-3564198ef1bc`) · sanitized
-> **시점**: 2024-08-22 22:47 ~ 25:12 (2시간 25분, 1,247 쿼리)
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
-**관찰**: 10.20.30.80 → ns.evil.example 으로 비정상 길이 DNS 쿼리. subdomain 패턴이 base32 인코딩 ([a-z2-7]{40,60}).
+### Case 2: `T1041` 패턴
 
-**MITRE ATT&CK**: **T1071.004 (DNS C2)**, **T1048.003 (Exfiltration over Unencrypted Non-C2 Protocol)**
+```
+src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
+tactic=TA0010 (Exfiltration) suspicion=0.92
+lifecycle=complete-mission
+```
 
-**IoC**:
-  - `ns.evil.example`
-  - `[a-z2-7]{40,60}\.evil\.example`
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
-**학습 포인트**:
-- 정상 DNS subdomain 평균 8~15자, 비정상 40~60자 base32 = 강한 신호
-- 평균 8.5건/분 안정 송출 — burst 없는 *조용한 누출* 패턴
-- 탐지: Suricata `dsize > 50` + base32 정규식, 또는 entropy 기반 분석
-- 방어: outbound DNS 화이트리스트, DNS-over-HTTPS 조직 정책, NXDOMAIN 비율 모니터링
-
-
-**본 강의와의 연결**: 위 사례는 강의의 핵심 개념이 어떻게 *실제 운영 환경*에서 일어나는지 보여준다. 학생은 이 패턴을 (1) 공격자 입장에서 재현 가능한가 (2) 방어자 입장에서 탐지 가능한가 (3) 자기 인프라에서 동일 신호가 있는지 검색 가능한가 — 3 관점에서 평가한다.
-
----
-
-> 더 많은 사례 (총 5 anchor + 외부 표준 7 source) 는 KG (Knowledge Graph) 페이지에서 검색 가능.
-> Cyber Range 실습 중 학습 포인트 박스 (📖) 에 동일 anchor 가 자동 노출된다.

@@ -1042,34 +1042,24 @@ python3 /tmp/agent_monitor.py
 
 ## 실제 사례 (WitFoo Precinct 6)
 
-> **출처**: [WitFoo Precinct 6 Cybersecurity Dataset](https://huggingface.co/datasets/witfoo/precinct6-cybersecurity) (Apache 2.0)
-> **익명화**: RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 sanitized
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
 
-본 주차 (5주차) 학습 주제와 직접 연관된 *실제* incident:
+### Case 1: `T1041 (Data Theft)` 패턴
 
-### 스피어 피싱 첨부파일 — HTA + PowerShell downloader
+```
+incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
+red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
+```
 
-> **출처**: WitFoo Precinct 6 / `incident-2024-08-004` (anchor: `anc-cbdabf2e6c87`) · sanitized
-> **시점**: 2024-08-18 (Initial Access)
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
-**관찰**: user@victim.example 이 invoice.hta 첨부 실행 → mshta.exe → cmd → powershell -enc <base64 payload>.
+### Case 2: `T1041 (Data Theft)` 패턴
 
-**MITRE ATT&CK**: **T1566.001 (Spearphishing Attachment)**, **T1059.001 (PowerShell)**, **T1218.005 (Mshta)**
+```
+incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
+red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
+```
 
-**IoC**:
-  - `invoice.hta`
-  - `mshta.exe → cmd → powershell -enc`
+**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
-**학습 포인트**:
-- HTA 가 IE/MSHTA 통해 신뢰 zone 으로 실행 — 클라이언트 측 첫 발판
-- AppLocker 또는 Windows Defender ASR 룰로 mshta.exe child process 차단 가능
-- 탐지: Sysmon EID 1 (process create), parent=mshta.exe child=cmd/powershell
-- 방어: 이메일 게이트웨이 첨부 sandboxing, .hta 차단, ASR 룰, EDR 프로세스 트리
-
-
-**본 강의와의 연결**: 위 사례는 강의의 핵심 개념이 어떻게 *실제 운영 환경*에서 일어나는지 보여준다. 학생은 이 패턴을 (1) 공격자 입장에서 재현 가능한가 (2) 방어자 입장에서 탐지 가능한가 (3) 자기 인프라에서 동일 신호가 있는지 검색 가능한가 — 3 관점에서 평가한다.
-
----
-
-> 더 많은 사례 (총 5 anchor + 외부 표준 7 source) 는 KG (Knowledge Graph) 페이지에서 검색 가능.
-> Cyber Range 실습 중 학습 포인트 박스 (📖) 에 동일 anchor 가 자동 노출된다.
