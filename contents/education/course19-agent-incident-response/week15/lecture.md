@@ -315,28 +315,12 @@ flowchart TB
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 는 *기말 — 종합 Purple +
+Mythos-readiness 자가 진단 + 30/90/365 작전 계획* 이 핵심이며 평가 중심
+주차이다. Precinct 6 의 T1041 단일 항목은 *학생 본인 자산 평가* / *조직
+도입 계획* / *L0~L5 진단* 어디에도 입력되지 않는다 — 학생은 *본인의*
+artifacts 와 진단을 갖고 작업. 폐기.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
