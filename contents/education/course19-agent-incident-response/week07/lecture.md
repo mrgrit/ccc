@@ -466,28 +466,14 @@ class CorrelationEngine:
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 의 학습 주제는 *멀티에이전트
+규모화* — R1 정찰 / R2 분석 / R3 악용 / R4 지속성 / R5 유출의 역할 분할,
+다중 세션 상관관계 (JA3·UA·IAT 클러스터링), 노이즈 스톰 속 트리아지가 핵심
+이다. Precinct 6 dataset 의 T1041 (Exfiltration) 단일 incident 항목은 *세션
+간 클러스터*·*역할 분할* 흔적을 포함하지 않으며 R1~R5 협업 모델에 매핑되지
+않는다. 적합 source 발굴 시 (예: SolarWinds 캠페인 raw timeline, MITRE
+ATT&CK Software 라이브러리의 멀티에이전트 조합 사례) 재추가.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
