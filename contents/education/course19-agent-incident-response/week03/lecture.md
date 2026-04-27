@@ -530,28 +530,14 @@ Red의 정찰 단계가 끝났을 때 Blue가 최소 확보해야 할 증거.
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 의 학습 주제는 *정찰 단계*
+(MITRE TA0043 Reconnaissance — T1595/T1592/T1589/T1590) 이며 ReqBurst·FailSeq·
+FingerQuery·ToolMix·SessionSilence 5종 신호 수집·분석이 핵심이다. Precinct 6
+dataset 의 T1041 (Exfiltration) 항목은 *공격 후기 단계 (TA0010)* 이고 *정찰
+세션 지문* 이 아니다. 본 강의 시점에는 정찰 신호의 1:1 매칭 source 가 없다
+(Precinct 6 자체도 Recon TTP 비중이 미미). 적합한 source 발굴 시 (예: 공개
+nuclei/zap 벤치마크 세션, BugCrowd public report 의 recon log) 재추가.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
