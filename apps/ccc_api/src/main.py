@@ -1643,15 +1643,39 @@ def list_education_courses():
             groups.append({"group": gname, "color": courses_in_group[0]["group_color"], "courses": courses_in_group})
     return {"courses": result, "groups": groups, "total": len(result)}
 
+_CURRICULUM_DIR = os.path.join(_CONTENT_DIR, "curriculum")
+
+
+def _load_curriculum_mapping(course_id: str) -> dict | None:
+    """contents/curriculum/{course_id}-mapping.yaml 로드 — 없으면 None."""
+    p = os.path.join(_CURRICULUM_DIR, f"{course_id}-mapping.yaml")
+    if not os.path.isfile(p):
+        return None
+    try:
+        import yaml as _yaml
+        with open(p, "r", encoding="utf-8") as f:
+            return _yaml.safe_load(f) or None
+    except Exception:
+        return None
+
+
 @app.get("/education/courses/{course_id}/weeks", dependencies=[Depends(verify_api_key)])
 def list_course_weeks(course_id: str):
-    """과목의 주차별 목록 (교안 제목 + 실습 연결)"""
+    """과목의 주차별 목록 (교안 제목 + 실습 연결).
+
+    contents/curriculum/{course_id}-mapping.yaml 가 있으면 D-B 매핑 적용:
+    lecture↔lab 가 cross-course many-to-many 로 매핑됨. 매핑 없으면 기존
+    주차 번호 자동 join fallback.
+    """
     # 과목 디렉토리 찾기
     course_dir = None
     for k, v in _COURSE_MAP.items():
         if v["name"] == course_id:
             course_dir = os.path.join(_EDUCATION_DIR, k)
             break
+
+    mapping = _load_curriculum_mapping(course_id)
+
     weeks = []
     if course_dir and os.path.isdir(course_dir):
         import glob as _g
@@ -1664,13 +1688,34 @@ def list_course_weeks(course_id: str):
                 with open(lecture_path, "r", encoding="utf-8") as f:
                     first_line = f.readline().strip()
                     title = first_line.lstrip("# ").replace(f"Week {wnum:02d}: ", "").replace(f"Week {wnum}: ", "")
-            weeks.append({
+
+            # D-B 매핑 우선, 없으면 자동 join
+            mapped_labs = None
+            if mapping:
+                for m in (mapping.get("mappings") or []):
+                    if int(m.get("week", -1)) == wnum:
+                        mapped_labs = []
+                        for lab in (m.get("labs") or []):
+                            mapped_labs.append({
+                                "lab_id": f"{lab.get('course')}-{lab.get('version','nonai')}-week{int(lab.get('week',1)):02d}",
+                                "course": lab.get("course"),
+                                "week": lab.get("week"),
+                                "version": lab.get("version", "nonai"),
+                                "role": lab.get("role", "primary"),
+                                "note": lab.get("note", ""),
+                            })
+                        break
+
+            week_entry = {
                 "week": wnum,
                 "title": title,
                 "has_lecture": os.path.isfile(lecture_path),
                 "lab_nonai_id": f"{course_id}-nonai-week{wnum:02d}",
                 "lab_ai_id": f"{course_id}-ai-week{wnum:02d}",
-            })
+            }
+            if mapped_labs is not None:
+                week_entry["mapped_labs"] = mapped_labs
+            weeks.append(week_entry)
     else:
         # 교안 없는 과목 (battle 등) — lab만
         for w in range(1, 16):
@@ -1681,7 +1726,7 @@ def list_course_weeks(course_id: str):
                 "lab_nonai_id": f"{course_id}-nonai-week{w:02d}",
                 "lab_ai_id": f"{course_id}-ai-week{w:02d}",
             })
-    return {"course_id": course_id, "weeks": weeks}
+    return {"course_id": course_id, "weeks": weeks, "has_mapping": mapping is not None}
 
 @app.get("/education/lecture/{course_id}/{week}", dependencies=[Depends(verify_api_key)])
 def get_lecture(course_id: str, week: int):

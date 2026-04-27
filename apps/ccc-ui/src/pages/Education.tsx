@@ -286,13 +286,44 @@ export default function Education() {
             <div key={w.week} style={{ background: '#161b22', border: '1px solid #30363d', borderRadius: 8, padding: 18 }}>
               <div style={{ fontSize: 14, color: '#8b949e', marginBottom: 4 }}>Week {w.week}</div>
               <div style={{ fontSize: 16, fontWeight: 600, color: '#e6edf3', marginBottom: 12 }}>{w.title || `Week ${w.week}`}</div>
-              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+              <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 {w.has_lecture && (
                   <button onClick={() => openLecture(selectedCourse.course_id, w.week)} style={{ ...actionBtn, background: '#21262d', color: '#e6edf3' }}>📖 교안</button>
                 )}
-                <button onClick={() => openLab(w.lab_nonai_id)} style={{ ...actionBtn, color: '#58a6ff' }}>📝 Non-AI 실습</button>
-                <button onClick={() => openLab(w.lab_ai_id)} style={{ ...actionBtn, color: '#f97316' }}>🤖 AI 실습</button>
+                {w.mapped_labs && w.mapped_labs.length > 0 ? (
+                  // D-B 매핑: lecture 와 의미 매칭된 lab 들 (cross-course 가능)
+                  w.mapped_labs.map((lab: any, i: number) => {
+                    const isAi = lab.version === 'ai'
+                    const roleColor = lab.role === 'primary' ? (isAi ? '#f97316' : '#58a6ff')
+                                    : lab.role === 'review' ? '#8b949e' : '#bc8cff'
+                    const roleIcon = lab.role === 'primary' ? '⭐' : lab.role === 'review' ? '↻' : '+'
+                    const crossCourse = !lab.lab_id.startsWith(`${selectedCourse.course_id}-`)
+                    return (
+                      <button key={i} onClick={() => openLab(lab.lab_id)}
+                        title={`${lab.role}${lab.note ? ' — ' + lab.note : ''}${crossCourse ? '\n(cross-course: ' + lab.course + ')' : ''}`}
+                        style={{ ...actionBtn, color: roleColor, border: `1px solid ${roleColor}33`, fontSize: 13 }}>
+                        {roleIcon} {isAi ? '🤖' : '📝'} {lab.course} w{lab.week} {isAi ? 'AI' : ''}
+                        {crossCourse && <span style={{ marginLeft: 4, fontSize: 11, color: '#bc8cff' }}>↗</span>}
+                      </button>
+                    )
+                  })
+                ) : (
+                  // fallback: 자동 join (매핑 없는 과목)
+                  <>
+                    <button onClick={() => openLab(w.lab_nonai_id)} style={{ ...actionBtn, color: '#58a6ff' }}>📝 Non-AI 실습</button>
+                    <button onClick={() => openLab(w.lab_ai_id)} style={{ ...actionBtn, color: '#f97316' }}>🤖 AI 실습</button>
+                  </>
+                )}
               </div>
+              {w.mapped_labs && w.mapped_labs.some((l: any) => l.note) && (
+                <div style={{ marginTop: 8, fontSize: 12, color: '#8b949e', lineHeight: 1.5 }}>
+                  {w.mapped_labs.filter((l: any) => l.note).map((l: any, i: number) => (
+                    <div key={i}>
+                      <span style={{ color: '#bc8cff' }}>{l.role}</span> · {l.course} w{l.week}: {l.note}
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           ))}
         </div>
