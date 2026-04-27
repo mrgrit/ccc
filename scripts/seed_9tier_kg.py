@@ -187,14 +187,138 @@ def seed_course_soc(detection_parent_mid: str, v_2026: str):
     return course_mid
 
 
+def seed_course_secops(detection_parent_mid: str):
+    """course2-security-ops — 보안 솔루션 운영 인력 (방어 인프라 구축)."""
+    print("\n=== course2-security-ops 과목 풀 트리 ===")
+    g = get_graph()
+    title = "course2-security-ops — 보안 솔루션 운영 인력"
+    existing = [n for n in g.find_nodes("Mission") if (n.get("name") or "") == title]
+    if existing:
+        course_mid = existing[0]["id"]
+        print(f"  [skip] Mission: {course_mid}")
+        return course_mid
+    course_mid = add_mission(
+        title=title,
+        statement="15주 — nftables(2-3주) → Suricata(4-6주) → ModSecurity WAF(7주) → Wazuh SIEM(9-11주) → OpenCTI(12-13주) → 통합(14-15주). 졸업 시 보안 솔루션 *직접 구축·운영* 가능. SOC 분석가 (course5) 의 *인프라 측 짝* 과목.",
+        owner="course2-secops Lead",
+    )
+    g.add_edge(course_mid, detection_parent_mid, "derives_from")
+    course_v = add_vision(
+        title="course2-secops 졸업생 진로 — Security Engineer / DevSecOps",
+        horizon_year=2027,
+        statement="졸업 → SOC L1 또는 Security Engineer 입사 → 1년 내 솔루션 1개 owner / 2년 내 통합 아키텍처 설계 / 3년 내 DevSecOps lead.",
+        mission_id=course_mid,
+    )
+    g_install = add_goal(
+        title="5 솔루션 (nftables/Suricata/WAF/Wazuh/OpenCTI) 모두 학생 직접 설치+검증",
+        due="2026-12-31",
+        vision_id=course_v,
+        description="lab w2~w13 의 자동 채점 통과율 80%+. semantic_first_judge 가 systemctl is-active / 설정 파일 / 룰 갯수 검증.",
+    )
+    g_integ = add_goal(
+        title="통합 아키텍처 (방화벽→IPS→SIEM→CTI) 동작 검증",
+        due="2026-12-31",
+        vision_id=course_v,
+        description="w14 lab — Suricata alert → Wazuh ingest → OpenCTI IoC 매칭 → Bastion alert. 종단 종단 트래픽 흐름이 검증되어야 종합점수 부여.",
+    )
+    s_main = add_strategy(
+        title="솔루션별 1주차 설치 → 2-3주차 룰/정책 → 통합 1주차",
+        goal_id=g_install,
+        approach="(1) 각 솔루션마다 install lab + ops lab 분리. (2) Wazuh+Suricata 같은 인프라 위 동시 운영. (3) OpenCTI 는 Precinct 6 IoC 4,363 import 로 진짜 데이터. (4) AI 모드 (course2-secops-ai) 는 Bastion 이 같은 lab 자동 수행 → 학생이 검증.",
+    )
+    k_solv = add_kpi(name="course2 솔루션 설치 lab pass rate", target=85.0, unit="%",
+                     measures="weekly install/ops lab pass / total. 5 솔루션 평균.",
+                     goal_id=g_install, strategy_id=s_main)
+    k_integ = add_kpi(name="통합 아키텍처 종단 검증", target=90.0, unit="%",
+                      measures="w14 lab 의 트래픽 흐름 단계별 통과 (방화벽→IPS→SIEM→CTI 5 step).",
+                      goal_id=g_integ)
+    k_cti = add_kpi(name="OpenCTI IoC import 활용도", target=4000.0, unit="count",
+                    measures="학생 환경에 import 한 Precinct 6 IoC anchor 수. 평균.",
+                    goal_id=g_integ, strategy_id=s_main)
+    plan = add_plan(title="2026-Q2 course2-secops 운영", period="2026-Q2",
+                    owner="course2-secops Lead", strategy_id=s_main, goal_id=g_install,
+                    description="15주 강의 + 매주 lab + 분기말 통합 검증.")
+    add_todo(title="w13 OpenCTI lab 의 Precinct 6 IoC import smoke 테스트",
+             due="2026-06-15", plan_id=plan, assignee="course2-secops Lead",
+             description="dist/precinct6-seed-vYYYY.MM/ tar.gz 학생 환경에 import → 4,363 anchor 적재 확인.")
+    print(f"  ✓ secops Mission: {course_mid}")
+    print(f"  ✓ {course_v} / Goal × 2 / Strategy / KPI × 3 / Plan / Todo")
+    return course_mid
+
+
+def seed_course_soc_adv(detection_parent_mid: str):
+    """course14-soc-advanced — SOC L2/L3 심화."""
+    print("\n=== course14-soc-advanced 과목 풀 트리 ===")
+    g = get_graph()
+    title = "course14-soc-advanced — SOC L2/L3 심화 (탐지 엔지니어링)"
+    existing = [n for n in g.find_nodes("Mission") if (n.get("name") or "") == title]
+    if existing:
+        return existing[0]["id"]
+    course_mid = add_mission(
+        title=title,
+        statement="course5 후속 — SIEM 고급 상관분석, SIGMA/YARA, 위협 헌팅, 메모리·네트워크 포렌식, SOAR. 졸업 시 detection engineer / threat hunter 역할 가능.",
+        owner="course14-soc-adv Lead",
+    )
+    g.add_edge(course_mid, detection_parent_mid, "derives_from")
+    course_v = add_vision(
+        title="course14 졸업생 — Detection Engineer / Threat Hunter / IR Lead",
+        horizon_year=2027,
+        statement="졸업 → SOC L2 자격 / 1년 내 자체 SIGMA 룰 30+ 작성 / 2년 내 incident commander.",
+        mission_id=course_mid,
+    )
+    g_hunt = add_goal(
+        title="가설 기반 위협 헌팅 1주 내 5건 수행",
+        due="2026-12-31",
+        vision_id=course_v,
+        description="w06 위협 헌팅 lab + Precinct 6 의 5 anchor chain (SMB/AS-REP/DNS/HTA/cron) 매핑 실습. 학생이 30일 윈도우 헌팅 시뮬레이션.",
+    )
+    g_forensic = add_goal(
+        title="네트워크/메모리 포렌식 도구 (Volatility3/Wireshark) 자율 활용",
+        due="2026-12-31",
+        vision_id=course_v,
+        description="w07 네트워크 포렌식 (DNS 터널링 PCAP) + w08 메모리 포렌식 (cron fileless) lab 자동 채점 통과.",
+    )
+    g_soar = add_goal(
+        title="SOAR 플레이북 3건 자동 실행",
+        due="2026-12-31",
+        vision_id=course_v,
+        description="w10 SOAR lab — 인시던트 분류 → 자동 격리 → 알림 → 보고서. 3 시나리오 모두 자동 실행 통과.",
+    )
+    s_main = add_strategy(
+        title="Precinct 6 chain 분석 + 도구 실측 + SOAR 자동화",
+        goal_id=g_hunt,
+        approach="(1) 매주 Precinct 6 의 1 anchor 분해 학습 (5건 anchor 가 본 과정의 *교과서 사례*). (2) Volatility3/Wireshark/Sigma/Yara 도구 매주 1개 깊이. (3) Wazuh Active Response 로 자동화 → SOAR. (4) AI 모드는 Bastion 이 같은 헌팅 자율 수행.",
+    )
+    k_hunt = add_kpi(name="threat hunting query 작성 정확도", target=80.0, unit="%",
+                     measures="학생 작성 SIGMA/YARA 룰 → 양성 alert / 전체. 주당 5+ 룰.",
+                     goal_id=g_hunt, strategy_id=s_main)
+    k_forensic = add_kpi(name="포렌식 도구 활용도", target=85.0, unit="%",
+                         measures="w07/w08 lab 의 Volatility3/Wireshark step 통과율.",
+                         goal_id=g_forensic)
+    k_soar = add_kpi(name="SOAR 플레이북 자동화 성공률", target=90.0, unit="%",
+                     measures="w10 lab 의 3 플레이북 자동 실행 단계별 통과.",
+                     goal_id=g_soar)
+    plan = add_plan(title="2026-Q3 course14-soc-adv 운영", period="2026-Q3",
+                    owner="course14-soc-adv Lead", strategy_id=s_main, goal_id=g_hunt,
+                    description="course5 후속. 가을학기 진행 + Precinct 6 anchor 5건 매주 1건 case study.")
+    add_todo(title="Precinct 6 anchor 5건의 chain 헌팅 가이드 문서 작성",
+             due="2026-08-31", plan_id=plan, assignee="course14-soc-adv Lead",
+             description="w06 헌팅 lab 의 보조 자료 — 5 anchor 의 시간선/공통 IoC/매핑 해설. SIGMA correlation 룰 예시 5건.")
+    print(f"  ✓ soc-adv Mission: {course_mid}")
+    print(f"  ✓ {course_v} / Goal × 3 / Strategy / KPI × 3 / Plan / Todo")
+    return course_mid
+
+
 def main():
     print("=" * 60)
-    print("9-tier KG 첫 seed 시범 — 최상위 + 5 도메인 + course5-soc")
+    print("9-tier KG seed — 최상위 + 5 도메인 + 탐지·분석 도메인 3 과목")
     print("=" * 60)
     top_mid, v_2027, v_2026 = seed_top_level()
     domain_pids = seed_domain_parents(top_mid, v_2027)
     detection_pid = domain_pids[0]
     course_mid = seed_course_soc(detection_pid, v_2026)
+    seed_course_secops(detection_pid)
+    seed_course_soc_adv(detection_pid)
 
     # 결과 요약
     print("\n=== 결과 요약 ===")
