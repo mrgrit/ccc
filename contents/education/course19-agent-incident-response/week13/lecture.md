@@ -430,28 +430,17 @@ flowchart TB
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 섹션 폐기 — 단, 본 lecture 는 1:1 매칭 가능성이 있는 *후보* (2026-04-27
+수기 검토): 본 lecture 는 *에이전트 IR 보고서* — 모델 정보·프롬프트·Transient
+Tool 스냅샷·의사결정 로그·증적 보존·마스킹 파이프라인이 핵심이다. Precinct 6
+dataset 은 *RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN* 으로 anonymize 된
+공개 incident corpus 이므로 §3.3.1 *마스킹 파이프라인* 과 §4 *증적 보존*
+의 *공개 사례*로 1:1 매칭 가능. 다만 현재 두 case (3-field 요약) 는 보고서
+구조를 보여주지 못하므로 폐기. 향후 풍부화 방안: WitFoo 의 anonymization
+scheme 을 §3.3.2 Before/After 마스킹 샘플 옆에 *진짜 공개 사례* 로 1쪽
+case study 추가 (모델 정보·프롬프트 부재 → IR 보고서 *전통/Pre-Mythos*
+template 의 한계 사례로 대비).
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
