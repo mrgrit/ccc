@@ -465,28 +465,13 @@ Round가 *조직적으로 실패*하는 가장 흔한 세 패턴.
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 는 *Purple Round 1* — Red
+가 Blue 를 코칭하는 메타 학습 사이클 (포렌식 복기 → 코치 모드 → Bastion
+업그레이드 → 재테스트) 이 핵심이다. Precinct 6 의 T1041 단일 항목은 *코치
+프롬프트 입력*·*missed event 4분류 (A/B/C/D)*·*자산 diff* 어디에도 매칭
+되지 않으며 Round 진행 데이터가 아니다. 폐기. Round 실 데이터는 학생 본인
+세션 기록 (artifacts/w11-round1/) 이 담당 — 외부 사례 인용 가치 없음.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
