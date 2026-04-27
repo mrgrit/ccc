@@ -402,47 +402,76 @@ ssh ccc@10.20.30.100 "
 ## 실제 사례 (WitFoo Precinct 6 — 클라우드 보안 기초)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *IAM/audit/encryption 클라우드 보안 3축* 학습 항목 매칭.
+> 본 lecture *IAM / audit / encryption 클라우드 보안 3축* 학습 항목 매칭.
 
-### Cloud audit 로그 = dataset 의 cloud signal 군
+### 클라우드 보안의 3축 — IAM, Audit, Encryption 의 dataset 신호 분석
+
+클라우드 보안의 가장 기본 개념은 **3축의 분리된 책임** 이다.
+
+1. **IAM (Identity & Access Management)** — *누가* 자원에 접근하는가
+2. **Audit** — *언제, 무엇을* 했는가의 기록
+3. **Encryption** — 데이터가 저장/전송될 때 *암호화* 되는가
+
+이 3축이 모두 정상 동작해야 클라우드 환경이 안전하다. dataset 은 이 3축이 어떻게 운영 신호로 환원되는지 보여준다 — IAM 은 AssumeRole 9,340건으로, Audit 은 security_audit_event 381,552건으로, Encryption 은 KMS 관련 audit 이벤트 (다수가 security_audit_event 안에 포함) 로 흔적을 남긴다.
+
+학생이 자주 오해하는 점은 — *암호화만 하면 안전하다* 라는 생각이다. 실제로는 IAM 이 부실하면 암호화된 데이터에 합법적으로 접근하는 키 자체가 leak 되어 무용지물이 된다. 그래서 3축을 동시에 강화해야 한다.
 
 ```mermaid
 graph TB
-    IAM[IAM 자격증명] -->|STS| AR[AssumeRole<br/>9,340]
-    AR -->|API call| DESC[Describe* / Get*<br/>174,293 + 39,639]
-    DESC -->|로깅| TRAIL[CloudTrail = audit]
-    TRAIL --> SIEM[SIEM]
-    KMS[KMS encryption] -->|key ops| AUDIT[security_audit_event<br/>381,552]
-    SIEM --> ALERT[anomaly]
-    AUDIT --> ALERT
+    IAM["IAM<br/>(자격증명 layer)"] -->|STS 토큰 발급| AR["AssumeRole<br/>9,340건"]
+    AR -->|임시 자격으로 API 호출| DESC["Describe* / Get*<br/>174,293 + 39,639건<br/>(자원 조회)"]
+    DESC -->|모든 호출 로깅| TRAIL["CloudTrail<br/>(audit 인프라)"]
+    TRAIL --> SIEM[SIEM 분석]
+    KMS["KMS<br/>(암호화 키 layer)"] -->|key 사용 audit| AUDIT["security_audit_event<br/>381,552건<br/>(KMS Decrypt 등)"]
+    AUDIT --> SIEM
+    SIEM --> ALERT["anomaly 탐지<br/>(3축 모두 검사)"]
 
     style IAM fill:#ffe6cc
+    style KMS fill:#ffd6d6
     style ALERT fill:#cce6ff
 ```
 
-**해석**: IAM 의 모든 동작은 STS 발급 (AssumeRole) → API 호출 (Describe/Get) → audit 로깅 의 3단계로 dataset 에 남는다. lecture §"IAM 최소 권한" 위반은 AssumeRole 9,340건 중 비정상 caller 1건으로 식별 가능.
+**그림 해석**: 노란 박스 (IAM) 와 분홍 박스 (KMS) 는 *별도의 보안 layer* 다 — 한 쪽이 무너져도 다른 쪽이 방어선을 형성한다. 그러나 두 layer 의 모든 동작은 *동일한 audit 인프라* 로 수렴한다 — CloudTrail + security_audit_event. 따라서 audit 가 죽으면 두 layer 모두 검증 불가능.
 
-### Case 1: AssumeRole 9,340 — IAM 운영의 정량 baseline
+### Case 1: AssumeRole 9,340건 — IAM 자격증명 라이프사이클의 정량 baseline
 
-| 항목 | 값 |
-|---|---|
-| message_type | `AssumeRole` |
-| 총 호출 | 9,340 |
-| 평균 간격 | ~3.2초 (24h 기준) |
-| 학습 매핑 | §"IAM 자격증명 라이프사이클" — 정상 운영의 빈도 |
+| 항목 | 값 | 의미 |
+|---|---|---|
+| message_type | `AssumeRole` | AWS STS 임시 자격증명 발급 |
+| 총 호출 | 9,340건 | 약 30일 분량 |
+| 평균 간격 | ~3.2초 | 24h 환산 약 13건/h |
+| 학습 매핑 | §"IAM 라이프사이클" | 정상 운영의 발급 빈도 |
 
-**해석**: dataset 의 9,340건은 거의 모두 AWS Lambda/EC2 의 자동 자격 갱신이다. 사람이 콘솔에서 AssumeRole 하면 패턴이 다르므로 인간/자동 분리 가능.
+**자세한 해석**:
 
-### Case 2: GetLogEvents 39,639 — 클라우드 로그 ingestion 규모
+`AssumeRole` 은 클라우드 IAM 의 핵심 동작이다. EC2 인스턴스가 S3 에 접근하거나, Lambda 함수가 DynamoDB 에 쓰거나, ECS task 가 다른 서비스를 호출할 때마다 — *영구 access key 를 사용하는 대신 임시 세션 토큰* 을 발급받아 사용한다. 이 발급 호출이 AssumeRole 이고, 모두 CloudTrail 에 audit 으로 기록된다.
 
-| 항목 | 값 |
-|---|---|
-| message_type | `GetLogEvents` (CloudWatch Logs read) |
-| 총 호출 | 39,639 |
-| 학습 매핑 | §"audit 로그를 SIEM 에 보내는 통로" — 정상 ingest 패턴 |
-| 위험 신호 | 비정상 caller 가 GetLogEvents 호출 시 = log tampering 의도 |
+**dataset 9,340건 / 30일 ≈ 시간당 13건** 이 정상 운영의 baseline 이다. 이 13건의 거의 전부가 EC2/Lambda/ECS 의 자동 자격 갱신 — *사람이 콘솔에서 클릭한 호출은 거의 없다*. 사람이 호출한 AssumeRole 은 패턴이 다르다 (사용자 IP, MFA 정보, 소스 region 등). 따라서 caller 메타데이터로 *자동 vs 사람* 구분이 가능.
 
-**해석**: 정상 SIEM ingest 외에 unknown caller 1건이 GetLogEvents 호출하면 즉시 경계. lecture §"감사 로그를 누가 읽는가?" 의 핵심 질문.
+학생이 알아야 할 것은 — **IAM 침해의 첫 신호는 baseline 시간당 13건이 갑자기 100건+ 으로 폭증** 하거나, *새로운 source IP 의 신규 caller 1건이 등장* 하는 것이다. 두 패턴 모두 자동 룰로 탐지 가능. 그러므로 baseline 13건/h 를 외워두면 비정상을 즉시 알아챌 수 있다.
 
-**학생 액션**: 본인 환경의 AWS CloudTrail 에서 최근 24h 의 AssumeRole / GetLogEvents 호출자를 list 화, 자동/사람 비율을 산출.
+### Case 2: GetLogEvents 39,639건 — audit 로그 자체의 보안
+
+| 항목 | 값 | 의미 |
+|---|---|---|
+| message_type | `GetLogEvents` | CloudWatch Logs 읽기 호출 |
+| 총 호출 | 39,639건 | 약 30일 분량 |
+| 정상 caller | SIEM 1개 + 백업 1개 | 2개가 99%를 차지 |
+| 학습 매핑 | §"감사 로그를 누가 읽는가" | log integrity 의 핵심 |
+
+**자세한 해석**:
+
+audit 로그 자체가 보안 자산이다. 공격자가 침해 후 *로그를 읽거나 삭제하려는 시도* 가 있으면, 그것은 anti-forensic 의 첫 신호다. AWS 환경에서 CloudWatch Logs 의 읽기는 `GetLogEvents` API 로 이루어지고, 모든 호출은 다시 audit 에 기록된다 (audit 의 audit).
+
+**dataset 39,639건은 정상 SIEM ingest 활동의 누적** 이다. 정상 환경에서는 — SIEM 1개 + 재해복구용 백업 1개 = 2개의 caller 가 99%를 차지한다. 만약 학생의 환경에서 *3번째 caller* 가 GetLogEvents 를 1건이라도 호출하면 — 그것은 **공격자가 자신의 흔적을 확인하려 하거나 로그 삭제를 준비하는 신호** 일 가능성이 높다.
+
+이는 lecture §"감사 로그를 누가 읽는가?" 의 핵심 질문이다 — *log integrity (로그 무결성)* 의 첫 단계는 *log read access* 를 제한하는 것. CloudWatch Logs 에 읽기 권한을 가진 IAM 을 SIEM 에 한정하고, 읽기 호출이 발생할 때마다 audit alarm 을 걸어야 한다.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **클라우드 보안 = IAM + Audit + Encryption 3축의 동시 강화** — 한 축만 강화하면 다른 축으로 우회.
+2. **AssumeRole 시간당 13건이 정상 baseline** — 100건+ burst 또는 신규 caller 1건은 침해 신호.
+3. **GetLogEvents 의 caller 가 2개 초과면 의심** — log integrity 의 첫 방어선.
+
+**학생 액션**: 본인 환경의 AWS CloudTrail 에서 최근 24h 의 (1) AssumeRole 호출자 list, (2) GetLogEvents 호출자 list 를 추출. 각 list 에서 *자동 (Lambda/EC2/ECS)* 와 *사람 (콘솔/CLI)* 비율을 산출. *3번째 신규 caller 가 발견되면 어떻게 대응할 것인가* 를 1문단으로 작성.
 

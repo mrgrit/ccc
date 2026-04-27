@@ -515,53 +515,65 @@ ssh ccc@10.20.30.100 "
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
 > 본 lecture *중간고사: Docker 보안 강화 통합* 학습 항목 매칭.
 
-### 만점 답안 reference — Docker 침해 단일 incident 분해
+### 중간고사가 평가하는 것 — "Docker 보안 사고를 정량으로 분석할 수 있는가"
+
+중간고사는 학생이 w01-w07 의 단편 기술을 *통합해서 하나의 침해 시나리오를 분석할 수 있는가* 를 평가한다. 이는 단순히 "공격자가 image 를 pull 했다" 같은 서술이 아니라, **"공격자가 leaked IAM key 로 ECR 에 진입한 후 — Describe\* API 174K 의 정상 baseline 에서 분리되는 burst 패턴을 만들고, image manifest 에서 박힌 secret 을 추출한 후 (Auth Hijack edge), privileged 컨테이너를 띄워 4690 event 79K 의 baseline 을 1시간 만에 초과하는 burst 를 만들었으며, 이 과정에서 host file system 접근으로 4662 event 226K baseline 의 anomaly 를 발생시켰다"** 같은 정량 evidence chain 을 답안에 작성할 수 있어야 한다.
+
+이 차이가 중간고사의 핵심이다 — **서술만 한 답안은 부분점, dataset 정량 evidence 를 인용한 답안은 만점**. 학생은 일주일 동안 dataset 의 5가지 핵심 신호량을 외워야 시험에 통과한다.
 
 ```mermaid
 graph LR
-    R[Recon] -->|Describe* burst| RCN[174,293 호출]
-    RCN -->|registry token leak| AH["mo_name=Auth Hijack"]
-    AH -->|container run| RUN
-    RUN -->|capability 남용| E4690[4690 79K]
-    RUN -->|host file access| E4662[4662 226K]
-    E4690 -->|lateral| LAT["mo_name=Auth Hijack edge"]
-    E4662 -->|exfil| DT["mo_name=Data Theft"]
+    R["1. Recon"] -->|Describe* burst| RCN["174,293 호출 baseline<br/>비정상 burst 추출"]
+    RCN -->|registry token<br/>secret 추출| AH["2. mo_name=Auth Hijack<br/>(image 결함 폭로)"]
+    AH -->|container run| RUN["3. privileged container"]
+    RUN -->|capability 남용| E4690["4. event 4690<br/>79K baseline 초과"]
+    RUN -->|host 자원 access| E4662["5. event 4662<br/>226K baseline 초과"]
+    E4690 -->|lateral 이동| LAT["6. Auth Hijack edge<br/>(추가 자원 침해)"]
+    E4662 -->|data exfil| DT["7. mo_name=Data Theft<br/>(최종 사고)"]
 
     style R fill:#ffe6cc
-    style DT fill:#ffcccc
+    style DT fill:#ff9999
 ```
 
-| 평가 항목 | dataset 매핑 | 만점 기준 |
-|--------|----------|---------|
-| Recon 식별 | Describe* 174K 중 burst | 단일 IAM 의 시간 패턴 추출 |
-| Image 결함 | DescribeImage manifest | secret 검색 + scan 결과 |
-| Runtime 위반 | 4690 + 4662 ratio | privileged/cap 매핑 |
-| Network 차단 | 5156 ICC + firewall_action | block:allow 비율 |
-| Audit 추적 | security_audit_event 381K | 시간순 정렬 + actor 묶기 |
+**그림 해석**: 7단계 evidence chain — *Recon → Auth Hijack → Privileged Run → Capability Abuse → Host Access → Lateral → Data Theft*. 만점 답안은 7단계 모두에 정량 evidence 를 인용해야 한다. 답안에서 단계 1-2개만 다루면 *공격자의 일부분만 본* 부분점.
 
-**채점 함의**: 각 단계마다 *dataset 의 정량 신호로 evidence chain* 을 갖춘 답안 = 만점. *추측이나 일반 이론* 만 적은 답안 = 부분점만.
+### Case 1: 만점 답안의 5축 evidence 요구 사항
 
-### Case 1: Auth Hijack edge — image leak → container takeover
+| 평가 축 | dataset 신호 | 만점 기준 |
+|---|---|---|
+| ① Recon 식별 | Describe* 174,293건 baseline | 단일 IAM 의 시간 burst 패턴 추출 |
+| ② Image 결함 | DescribeImage manifest 호출 | secret 추출 가능 layer 식별 |
+| ③ Runtime 위반 | 4690 + 4662 비율 | privileged/cap 매핑 정량화 |
+| ④ Network 차단 | 5156 (176K) + firewall_action (118K) | ICC default + block:allow 비율 |
+| ⑤ Audit 추적 | security_audit_event 381K | 시간순 정렬 + actor 묶기 |
 
-| 항목 | 값 |
-|---|---|
-| edge type | `Auth Hijack` |
-| 학습 매핑 | image secret leak 시점부터 컨테이너 장악까지 |
-| 시험 출제 의도 | 학생이 *이미지 단계* 결함을 *런타임 신호* 로 연결 가능한지 |
+**자세한 해석**:
 
-**해석**: lecture w03 + w04 통합 — image scan 누락 + privileged run 의 결합이 만든 가장 흔한 Docker 침해 시나리오.
+만점 답안의 핵심은 — *각 축마다 "정상 baseline" 과 "비정상 burst" 를 구분* 하는 능력이다. 예를 들어 ① Recon 축에서 학생이 "공격자가 정찰을 했다" 라고만 적으면 부분점. "정상 운영의 Describe\* 호출 174,293건 중 caller 분포는 5-10개 IAM 으로 수렴하는데, 이번 incident 에서는 신규 11번째 caller 가 시간당 300건 burst 를 만들었으며 dst_resource 가 ECR repository 로 집중되었다" 라고 적으면 만점.
 
-### Case 2: 통합 신호량 prefix sum
+이런 답안을 쓰려면 학생이 시험 전 *baseline 숫자 5개* (174K, 226K, 176K, 79K, 39K) 를 외워야 한다. 외우지 않은 학생은 답안에 정량 evidence 를 적을 수 없고, 자연스럽게 부분점에 머문다.
+
+### Case 2: 5개 신호의 통합 활용 — timeline 작성 능력 평가
 
 | 신호 | dataset 양 | 시험 활용 |
 |---|---|---|
-| security_audit_event | 381,552 | timeline 작성 |
-| 4662 | 226,215 | host 자원 노출 |
-| 5156 | 176,060 | egress / ICC |
-| 4658 | 158,374 | handle 회수 |
-| firewall_action | 118,151 | block 정책 |
+| security_audit_event | 381,552건 | timeline 의 X축 (시간순 정렬) |
+| event 4662 | 226,215건 | host 자원 노출 단계 표시 |
+| event 5156 | 176,060건 | egress 통신 단계 표시 |
+| event 4658 | 158,374건 | handle 회수 (정상 종료) 검증 |
+| firewall_action | 118,151건 | 차단 정책 적용 여부 |
 
-**해석**: 시험 답안에 5개 신호 모두에 evidence 가 있어야 만점. 1~2개만 인용 = 부분점.
+**자세한 해석**:
 
-**학생 액션**: 자신이 분석한 Docker 침해 사례 1건을 위 5축 표로 다시 정리, 각 축마다 인용 가능한 dataset row id 또는 incident_id 제시.
+중간고사 답안의 두 번째 평가 축은 — *공격 timeline 을 그릴 수 있는가* 다. 5개 신호를 시간순으로 배열하면 *T+0 (Recon) → T+5min (Image 결함 발견) → T+10min (Privileged Run) → T+15min (Capability 남용) → T+30min (Lateral) → T+1h (Exfil)* 같은 timeline 이 만들어진다.
+
+만점 답안은 5개 축 모두에 evidence 가 있어야 한다. 1-2개 축만 인용 = 부분점. 학생이 자주 빠뜨리는 축은 ④ Network (5156) 와 ⑤ Audit (security_audit_event) 인데, 이 두 축은 *공격이 정상 정책을 어떻게 우회/위반했는지* 를 보여주므로 차단 설계 의 핵심이다.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **시험 전에 5가지 baseline 숫자를 외워라** — 174K (Describe), 226K (4662), 176K (5156), 79K (4690), 39K (GetLogEvents).
+2. **정성 서술이 아닌 정량 evidence 로 답하라** — "공격했다" 가 아니라 "baseline 174K 대비 시간당 300건 burst" 로.
+3. **5축 timeline 을 그릴 수 있어야 통과** — Recon / Image / Runtime / Network / Audit 5축 모두 다룬 답안 = 만점.
+
+**학생 액션**: 자신이 본 lecture 시리즈에서 분석한 Docker 침해 사례 1건을 골라, 위 5축 표를 채워본다. 각 축마다 *baseline 숫자 + 사례에서 관찰된 비정상 수치 + 둘의 차이의 보안 의미* 를 한 줄씩 작성하면 시험 답안의 모범이 된다.
 

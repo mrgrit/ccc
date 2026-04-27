@@ -503,45 +503,71 @@ ssh ccc@10.20.30.100 "
 ## 실제 사례 (WitFoo Precinct 6 — Kubernetes 공격 / pod escape)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *pod escape + RBAC abuse + SA token 탈취* 학습 항목 매칭.
+> 본 lecture *pod escape + RBAC abuse + SA token 탈취 + lateral* 학습 항목 매칭.
 
-### Pod escape → cluster takeover 의 신호 chain
+### K8s 공격의 핵심 시나리오 — privileged pod 1개에서 cluster 탈취까지
+
+K8s 공격의 가장 위험한 시나리오는 *privileged pod escape* 다. 공격자가 (1) 어떤 application 취약점으로 pod 1개를 침해 → (2) 그 pod 가 privileged 또는 hostPath mount 를 갖고 있다면 → (3) 호스트 노드 자체로 escape → (4) 그 노드의 모든 pod 의 SA token 을 추출 → (5) 그 token 으로 cluster API 호출 → (6) kube-system namespace 의 권한 탈취.
+
+이 시나리오의 무서운 점은 — 6단계가 *각각 다른 권한 layer 를 우회* 한다는 점이다. application 취약점 (1) 은 코드 레벨, privileged pod (2) 는 K8s 정책 레벨, host escape (3) 는 OS 레벨, token 추출 (4) 는 파일시스템 레벨, cluster API (5) 는 네트워크 + RBAC 레벨, kube-system (6) 은 admin 권한 레벨. 즉 *6중 방어가 모두 실패해야* 끝까지 간다 — 한 layer 만 막아도 사고는 멈춘다.
+
+dataset 은 각 단계가 만드는 신호를 보여준다. host escape 는 event 4662 (host fs access) 226K 의 anomaly 로, capability 남용은 event 4690 (handle dup) 79K 의 burst 로, cluster API enumeration 은 ListContainerInstances 540 의 burst 와 AssumeRole-like 9,340 의 outlier 로 — 모든 단계가 *별도의 정량 anomaly* 로 폭로된다.
 
 ```mermaid
 graph LR
-    POD[compromised pod<br/>privileged] -->|host file| OBJ[4662 226K]
-    POD -->|host syscalls| CAP[4690 79K]
-    POD -->|SA token theft| AR[AssumeRole-like<br/>9,340]
-    AR -->|cluster API| LIST[ListContainerInstances<br/>540 burst]
-    LIST -->|kube-system access| HIJ["mo_name=Auth Hijack"]
+    POD["① compromised pod<br/>(privileged + hostPath)"] -->|host file system 접근| OBJ["② event 4662<br/>226K baseline 초과"]
+    POD -->|host syscalls 사용| CAP["③ event 4690<br/>79K baseline 초과"]
+    POD -->|SA token 탈취| AR["④ AssumeRole-like<br/>9,340 baseline 의 outlier"]
+    AR -->|cluster API 호출| LIST["⑤ ListContainerInstances<br/>540 baseline 의 burst"]
+    LIST -->|kube-system 접근| HIJ["⑥ mo_name=Auth Hijack<br/>(cluster takeover)"]
 
     style POD fill:#ffcccc
     style HIJ fill:#ff6666
 ```
 
-**해석**: privileged pod 1개의 escape = host syscall (4690) → SA token 추출 → cluster API enumeration → kube-system 권한 탈취. lecture §"pod 의 hostPath/privileged 가 가장 위험" 이 dataset 신호량으로 입증된다.
+**그림 해석**: 6단계 evidence chain — privileged pod 1개에서 시작해 cluster takeover 까지. 학생이 알아야 할 것은 — *각 단계마다 dataset 신호 anomaly 가 발생하므로, 어느 단계의 anomaly 든 잡으면 사고를 멈출 수 있다는 점*. lecture §"defense in depth" 의 정량 정당성.
 
-### Case 1: 4690 (handle dup) 79,254 — SA token 복제 흔적 proxy
+### Case 1: event 4690 (handle dup) 79,254건 — SA token 추출의 운영 흔적
 
-| 항목 | 값 |
-|---|---|
-| message_type | `4690` |
-| 총 발생 | 79,254 |
-| 학습 매핑 | §"SA token = `/var/run/secrets/.../token`" — read 시 handle dup |
-| 위험 패턴 | privileged pod 에서 host token 디렉토리 access = 4690 burst |
+| 항목 | 값 | 의미 |
+|---|---|---|
+| message_type | `4690` | 객체 핸들 복제 감사 이벤트 |
+| 총 발생 | 79,254건 | 약 30일 분량의 정상 운영 |
+| 정상 baseline | 호스트 시간당 ~50건 | 격리된 pod 환경에서 |
+| 학습 매핑 | §"SA token 추출" | host fs read 시 발생하는 흔적 |
 
-**해석**: SA token 추출은 host fs access 가 필요하고, hostPath mount 가 있으면 4690 으로 흔적이 남는다. dataset 79K 는 정상 dup 까지 포함 — 단일 pod 의 시간당 burst 가 비정상.
+**자세한 해석**:
 
-### Case 2: ListContainerInstances 540 + AssumeRole 9,340 — 탈취 후 enumeration
+K8s 의 Service Account (SA) token 은 pod 내부의 *`/var/run/secrets/kubernetes.io/serviceaccount/token`* 경로에 마운트된다. 이 token 은 *그 pod 의 권한 인증서* 이며, 외부로 추출되면 — 공격자가 그 pod 의 SA 권한으로 cluster API 를 호출할 수 있다.
 
-| 항목 | 값 |
-|---|---|
-| pattern | SA token → AssumeRole-style API → cluster enumeration |
-| 신호 1 | AssumeRole 9,340 중 비정상 caller |
-| 신호 2 | ListContainerInstances 540 의 단발 burst |
-| 학습 매핑 | §"RBAC abuse 후 kubectl get pods -A" 자동화 |
+privileged pod 또는 hostPath mount 를 가진 pod 는 — *호스트의 모든 pod 의 token 디렉토리에 접근* 할 수 있다 (`/var/lib/kubelet/pods/<other-pod-id>/volumes/kubernetes.io~secret/token-XXXX`). 이렇게 호스트 fs 를 통해 다른 pod 의 token 을 read 하는 동작이 발생하면 — 호스트 audit 에 *event 4690 (handle dup)* + *event 4662 (object access)* 의 burst 가 기록된다.
 
-**해석**: RBAC `list` 권한이 있는 SA token 1개로 cluster 전체를 enumerate 가능. dataset 의 540건은 정상치 — 짧은 시간 내 100+ list 호출이 등장하면 *침해된 SA 의 1차 정찰*.
+**dataset 79,254건은 정상 운영의 한 달 누적** — 즉 호스트당 시간당 ~50건이 평균. 단일 pod 가 5분 안에 100건+ 의 4690 burst 를 만들면 — 그것은 *대량의 handle 복제* 가 일어났다는 뜻이며, SA token 추출 시도의 강력한 정량 지표다.
 
-**학생 액션**: lab 의 default SA 로 `kubectl get pods -A` 와 `kubectl auth can-i --list` 를 실행, RBAC role 을 최소화한 뒤 동일 명령이 어느 단계에서 차단되는지 비교 보고.
+학생이 알아야 할 것은 — **SA token 추출은 *그 자체로는 K8s API 호출이 아니어서 K8s audit 에는 안 보인다*** 는 점. 호스트 OS audit (4690/4662) 에서 봐야 잡을 수 있다. lecture §"K8s audit + 호스트 audit 의 결합 모니터링" 의 핵심.
+
+### Case 2: ListContainerInstances 540 + AssumeRole 9,340 — 탈취된 SA 의 enumeration 행동
+
+| 항목 | 값 | 의미 |
+|---|---|---|
+| 시나리오 | SA token 탈취 후 cluster API 호출 | 6단계 chain 의 5번째 |
+| 신호 1 | AssumeRole 9,340 중 비정상 caller | 신규 IP 또는 비정상 시간 |
+| 신호 2 | ListContainerInstances 540 의 단발 burst | 짧은 시간 100+ 호출 |
+| 학습 매핑 | §"`kubectl get pods -A` 자동화" | RBAC abuse 의 운영 흔적 |
+
+**자세한 해석**:
+
+탈취된 SA token 으로 공격자가 가장 먼저 하는 행동은 — **`kubectl get pods -A` (cluster 전체 pod 목록) 또는 `kubectl auth can-i --list` (가능한 모든 권한 list)** 다. 이 명령들은 *어떤 자원이 있고 어떤 권한이 있는지* 를 한 번에 알려준다 — 공격자의 OODA loop 의 *Observe 단계*.
+
+dataset 의 ListContainerInstances 540건은 — 정상 운영의 한 달치 *전체* 합계. 정상 SA 들은 *느리게 분산된 호출* 만 만든다. 그러나 탈취된 SA 가 enumeration 을 시작하면 — 짧은 시간 (5분) 안에 100건+ 의 list 호출이 발생한다. 즉 *baseline 은 시간당 ~0.7 건이지만 burst 는 시간당 1,200건* 같은 1,000배 이상의 anomaly.
+
+**탐지 룰**: 5분 윈도우에서 단일 SA 의 list 호출이 평균 + 3σ 를 넘으면 즉시 alert + 그 SA 의 token 을 자동 회수. lecture §"SA token 자동 회수" 의 운영 정착 동기.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **K8s 공격은 6중 방어를 모두 뚫어야 끝난다** — 한 layer 만 막아도 사고가 멈춤. 따라서 *어느 layer 든 monitoring* 이 가치 있다.
+2. **SA token 추출은 K8s audit 에는 안 보인다** — 호스트 OS audit (4690/4662) 에서 잡아야 함.
+3. **탈취된 SA 의 첫 행동은 enumeration** — list 호출 burst 가 정량 신호. 5분 윈도우 + 3σ 룰로 차단.
+
+**학생 액션**: lab 의 default SA token 1개로 (1) `kubectl get pods -A`, (2) `kubectl auth can-i --list`, (3) `kubectl get secrets -A` 를 차례로 실행. 각 명령이 K8s audit 와 호스트 audit (각각 발생할 수 있는 dataset 신호) 에 어떤 흔적을 남기는지 추적. 이후 RBAC role 을 *자기 namespace 만* 으로 좁히고 동일 명령을 재실행하여 — *어느 단계에서 차단되는지* 비교 표 작성.
 

@@ -463,16 +463,20 @@ ssh ccc@10.20.30.100 "
 ## 실제 사례 (WitFoo Precinct 6 — Docker 네트워크 보안)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *bridge/overlay/network policy* 학습 항목 매칭.
+> 본 lecture *bridge / overlay / network policy / `--net=host` 위험* 학습 항목 매칭.
 
-### Container egress = 5156(WFP)/firewall_action 신호
+### 컨테이너 네트워크 모드별 신호 차이 — 왜 `--net=host` 가 위험한가
+
+Docker 의 네트워크 모드는 보안 관점에서 큰 차이를 만든다. 기본 *bridge* 모드는 컨테이너에 별도 IP/MAC 을 할당하고 NAT 를 통해 외부와 통신하므로 — 모든 egress 가 *컨테이너 단위로 추적* 가능하다. 반면 `--net=host` 모드는 컨테이너가 호스트 네트워크 인터페이스를 직접 사용하므로, audit 관점에서 *그 컨테이너의 트래픽과 호스트 자체의 트래픽이 구분되지 않는다*.
+
+dataset 은 이 차이를 정량적으로 보여준다. bridge 모드의 컨테이너 egress 는 5156 (Windows Filtering Platform allow) 176,060건으로, host 모드 컨테이너의 egress 는 firewall_action 118,151건으로, overlay (VXLAN) 모드는 flow 레코드 31,758건으로 — 서로 다른 분류 체계로 등장한다. lecture §"`--net=host` 금지" 의 근거는 이 추적 가능성의 차이다.
 
 ```mermaid
 graph LR
-    C1[container A<br/>bridge net] -->|outbound| WFP[event 5156<br/>WFP allow<br/>176,060]
-    C2[container B<br/>--net=host] -->|host iface 사용| FW[firewall_action<br/>118,151]
-    C3[container C<br/>overlay net] -->|VXLAN| FLOW[flow record<br/>31,758]
-    WFP --> SIEM[SIEM]
+    C1["container A<br/>bridge net<br/>(별도 IP/MAC)"] -->|outbound NAT| WFP["event 5156<br/>WFP allow<br/>176,060건"]
+    C2["container B<br/>--net=host<br/>(호스트 IP 사용)"] -->|호스트 인터페이스 직접| FW["firewall_action<br/>118,151건<br/>(호스트 트래픽)"]
+    C3["container C<br/>overlay net<br/>(VXLAN)"] -->|encap 통신| FLOW["flow record<br/>31,758건"]
+    WFP --> SIEM[SIEM 분석]
     FW --> SIEM
     FLOW --> SIEM
 
@@ -481,29 +485,47 @@ graph LR
     style C3 fill:#ccffcc
 ```
 
-**해석**: lecture §"`--net=host` 금지" 의 근거 — host 네트워크 모드의 컨테이너는 일반 5156 이 아니라 host 의 firewall_action 신호로 직접 등장한다. 이는 곧 *컨테이너 단위 추적이 불가능* 함을 의미.
+**그림 해석**: 빨간 박스 (host 모드) 의 트래픽은 일반 호스트 트래픽 더미와 섞여 분리가 거의 불가능하다. 노란 박스 (bridge) 는 컨테이너 단위로 분리 추적 가능. 초록 박스 (overlay) 는 멀티-호스트 클러스터에서 어떤 호스트의 어떤 컨테이너인지까지 추적 가능. **컨테이너 보안 분석의 첫 전제조건이 "어느 트래픽이 어느 컨테이너의 것인지 식별 가능" 이므로, 이 식별을 불가능하게 만드는 host 모드는 사실상 보안 분석을 포기하는 선택**이다.
 
-### Case 1: 5156 (WFP) 176,060 — 정상/이상 egress 의 baseline
+### Case 1: event 5156 (WFP allow) 176,060건 — egress 의 정상/이상 baseline
 
-| 항목 | 값 |
-|---|---|
-| message_type | `5156` (Windows Filtering Platform allow) |
-| 총 발생 | 176,060 |
-| 학습 매핑 | §"bridge mode 의 default ALLOW out" — 모든 egress 가 신호 |
-| 활용 | dst_port 분포로 anomaly 탐지 |
+| 항목 | 값 | 의미 |
+|---|---|---|
+| message_type | `5156` | Windows Filtering Platform "허용된 연결" 이벤트 |
+| 총 발생 | 176,060건 | dataset 에서 3번째로 많은 신호 |
+| 정상 dst_port 분포 | 80/443/53 이 ~95% | HTTP/HTTPS/DNS 가 일반 운영의 대부분 |
+| 학습 매핑 | §"bridge default ALLOW out" | 컨테이너 egress 는 기본 허용됨 |
 
-**해석**: container egress 는 모두 5156 으로 기록된다. dataset 176K 중 95% 가 80/443/53 이지만, 4444/9001/16113 등 비표준 port 1건이라도 발견되면 즉시 hunt 시작.
+**자세한 해석**:
 
-### Case 2: firewall_action block 118,151 — egress 차단 의 운영 통계
+bridge 모드 Docker 컨테이너의 default 정책은 *"외부 통신 허용 (egress allow), 외부 인입 차단 (ingress deny)"* 이다. 즉 컨테이너가 자유롭게 인터넷에 outbound 통신할 수 있다는 뜻이며, 이 모든 outbound 가 5156 이벤트로 기록된다.
 
-| 항목 | 값 |
-|---|---|
-| message_type | `firewall_action` |
-| 총 발생 | 118,151 |
-| action 분포 | block 다수 (정상 운영) |
-| 학습 매핑 | §"Docker network egress 정책" — block 률이 곧 정책 강도 |
+**dataset 176K 중 95% 가 80/443/53 (HTTP/HTTPS/DNS)** 이라는 것은 — 정상 운영 컨테이너의 외부 통신이 거의 표준 포트로만 이루어진다는 의미다. 그러므로 학생이 *4444 (Metasploit default), 9001 (Tor), 16113 (random C2)* 같은 비표준 포트로의 5156 이벤트를 1건이라도 발견하면 — 그것은 즉시 hunt 시작의 신호다. 정상 운영에는 그런 포트가 등장할 이유가 거의 없기 때문.
 
-**해석**: dataset 의 block:allow 비율을 측정하면 그 환경의 *zero-trust 성숙도* 가 나온다. lecture §"network policy" 가 강조하는 default-deny 가 운영에서 정착되었는지 평가하는 정량 지표.
+학생이 알아야 할 핵심은 — **5156 의 양(volume)이 아니라 dst_port 분포(distribution)** 가 중요하다는 점이다. 176K 건 중 비표준 포트 단 1건이 더 위험하다.
 
-**학생 액션**: lab 컨테이너에서 임의 outbound 5건을 시도(8.8.8.8:53/53, 1.1.1.1:80, 4.4.4.4:9001 등) 한 후, Wazuh 5156/firewall 룰이 어느 시도를 잡고 어느 것을 놓치는지 표로 정리.
+### Case 2: firewall_action block 118,151건 — default-deny 의 운영 정착도 측정
+
+| 항목 | 값 | 의미 |
+|---|---|---|
+| message_type | `firewall_action` | 호스트/네트워크 방화벽의 차단 이벤트 |
+| 총 발생 | 118,151건 | block 액션이 다수 |
+| 비율 활용 | block:allow 의 비율 | 환경의 default-deny 강도 |
+| 학습 매핑 | §"network policy" | zero-trust 정착도 정량 지표 |
+
+**자세한 해석**:
+
+방화벽이 *얼마나 많이 차단하는가* 는 그 환경의 보안 정책이 얼마나 엄격한지를 보여준다. dataset 118K 의 block 이벤트는 — 정상 운영 한 달 동안 *수많은 시도들이 default-deny 정책에 의해 차단되었음* 을 의미한다. 이 block 이벤트가 0이라면 — 사실상 모든 트래픽이 허용되는 환경이라는 뜻이며, 공격자가 들어와도 차단되지 않을 가능성이 높다.
+
+**block:allow 비율** 이 그 환경의 *zero-trust 성숙도* 를 보여주는 정량 지표다. 비율이 1:10 (block 1건당 allow 10건) 이면 비교적 관대한 정책, 1:2 면 엄격한 정책. lecture §"Docker network policy" 가 강조하는 default-deny 가 정착된 환경은 비율이 자연스럽게 1:3 이하로 수렴한다.
+
+학생이 자신의 환경에서 이 비율을 측정해 보면 — *정책이 written 되어 있어도 실제로 적용되지 않는 경우* 가 많이 발견된다. 정책 문서 ≠ 운영 실제, 그 갭을 dataset 비율로 검증할 수 있다.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **컨테이너 네트워크 모드는 보안 추적 가능성의 차이** — `--net=host` 는 사실상 분석 포기, bridge 가 기본.
+2. **5156 의 양이 아니라 dst_port 분포가 중요** — 비표준 포트 단 1건이 trillion 표준 포트보다 위험.
+3. **block:allow 비율로 정책 정착도 측정** — written policy 와 actual policy 의 갭.
+
+**학생 액션**: lab 컨테이너에서 의도적으로 5건의 outbound 시도 — (1) 8.8.8.8:53 (정상 DNS), (2) 1.1.1.1:80 (정상 HTTP), (3) 4.4.4.4:9001 (Tor 의심), (4) 5.5.5.5:4444 (MSF 의심), (5) 6.6.6.6:16113 (random C2). Wazuh 의 5156/firewall_action 룰이 각 시도를 어떻게 분류하는지 표로 정리하고, *어느 룰이 1건도 안 잡았는지* 를 분석하여 hunt 보고서 작성.
 

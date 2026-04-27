@@ -426,48 +426,74 @@ ssh ccc@10.20.30.100 "
 ## 실제 사례 (WitFoo Precinct 6 — 클라우드 모니터링)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *CloudTrail + CloudWatch + SIEM 통합 모니터링* 학습 항목 매칭.
+> 본 lecture *CloudTrail + CloudWatch + GuardDuty + SIEM 통합 모니터링* 학습 항목 매칭.
 
-### Cloud monitoring stack = dataset 의 4개 신호 ingestion path
+### 클라우드 모니터링 stack 의 흐름과 dataset 의 4개 신호 입출력 매핑
+
+클라우드 모니터링은 *4개의 분리된 데이터 소스 → 1개의 통합 SIEM* 으로 이어지는 ETL 파이프라인이다. 각 소스는 서로 다른 정보를 주고, SIEM 은 이를 통합 분석한다. 학생이 알아야 할 것은 — *각 소스가 SIEM 에 도달하는 동안 어디에 정량 신호가 발생하는지*. 이것을 알아야 모니터링이 깨지면 어디부터 점검해야 할지 판단 가능하다.
+
+dataset 은 이 파이프라인의 *각 구간마다 신호량 baseline* 을 보여준다. 입력원에는 — API 호출 (Describe\* 174K), OS 로그 (security_audit_event 381K) ; 입력에서 SIEM 으로의 polling 은 — GetLogEvents 39,639건 ; 그리고 SIEM 자체의 alert 분량은 — security_audit_event 381K 의 일부.
 
 ```mermaid
 graph LR
-    SRC1[API call<br/>Describe* 174K] --> CT[CloudTrail]
-    SRC2[OS log] --> CWL[CloudWatch Logs]
-    SRC3[VPC flow] --> CWLF[Flow Logs]
-    SRC4[GuardDuty] --> ALERT[security_audit_event<br/>381K]
-    CT --> READ[GetLogEvents<br/>39,639]
-    CWL --> READ
-    CWLF --> READ
-    READ --> SIEM[SIEM]
+    SRC1["입력원 1<br/>API call<br/>Describe* 174K"] --> CT["CloudTrail<br/>(audit 인프라)"]
+    SRC2["입력원 2<br/>OS log<br/>(서비스 audit)"] --> CWL["CloudWatch Logs"]
+    SRC3["입력원 3<br/>VPC flow<br/>(네트워크)"] --> CWLF["Flow Logs"]
+    SRC4["입력원 4<br/>GuardDuty<br/>(위협 탐지)"] --> ALERT["security_audit_event<br/>381K (alert ingest)"]
+    CT -->|polling| READ["GetLogEvents<br/>39,639건<br/>(SIEM 의 polling)"]
+    CWL -->|polling| READ
+    CWLF -->|polling| READ
+    READ --> SIEM["SIEM 통합 분석"]
     ALERT --> SIEM
 
     style SIEM fill:#cce6ff
 ```
 
-**해석**: lecture §"CloudTrail 활성화" 는 dataset 의 Describe* 174K + audit 381K 의 입력원. SIEM 의 ingest 비율이 GetLogEvents 39K 와 동기화되어야 정상.
+**그림 해석**: 4개 화살표가 SIEM 1개로 수렴한다 — 따라서 *어느 화살표든 끊기면* SIEM 의 분석이 부분적이 된다. 학생이 알아야 할 것은 — 각 화살표 위의 정량 신호량을 모니터링해야 *어디가 끊겼는지* 판단할 수 있다는 점. lecture §"CloudTrail 활성화" 단독으로는 부족하고, *4개 입력원 모두의 흐름 검증* 이 필요.
 
-### Case 1: GetLogEvents 39,639 — SIEM ingest 의 정량 baseline
+### Case 1: GetLogEvents 39,639건 — SIEM polling 의 정량 baseline + log integrity 의 첫 방어선
 
-| 항목 | 값 |
-|---|---|
-| message_type | `GetLogEvents` |
-| 총 호출 | 39,639 |
-| 학습 매핑 | §"SIEM 이 CloudWatch 를 polling 하는 정상 패턴" |
-| 위험 신호 | 비정상 caller 의 GetLogEvents = log tampering 의도 |
+| 항목 | 값 | 의미 |
+|---|---|---|
+| message_type | `GetLogEvents` | CloudWatch Logs 의 읽기 호출 |
+| 총 호출 | 39,639건 | 약 30일 분량 |
+| 정상 caller | 2개 (SIEM 1 + 백업 1) | 99% 를 차지 |
+| 학습 매핑 | §"SIEM polling + log integrity" | 두 가지 의미 동시 검증 |
 
-**해석**: 정상 모니터링은 SIEM 1개 + 백업 1개 = 2개 caller 가 GetLogEvents 의 99% 를 차지한다. 3번째 caller 는 항상 의심.
+**자세한 해석**:
 
-### Case 2: security_audit_event 381,552 — alert 처리 capacity 검증
+GetLogEvents 의 baseline 은 두 가지 보안 의미를 동시에 가진다.
 
-| 항목 | 값 |
-|---|---|
-| message_type | `security_audit_event` |
-| 총 발생 | 381,552 |
-| 학습 매핑 | §"GuardDuty/Security Hub 통합" — alert ingest 양 |
-| 활용 | SIEM 의 alert/시간당 처리량과 비교 |
+**의미 1 — SIEM polling 의 정상 동작 검증**: 정상 SIEM 은 CloudWatch Logs 를 정기적으로 polling 하여 새로운 로그를 가져온다. 이 polling 빈도가 *시간당 50건* 정도면 약 30일에 ~36,000건 — dataset 39,639건과 일치한다. 만약 학생의 환경에서 GetLogEvents 가 갑자기 0이 되면 — *SIEM 이 log ingest 를 멈춘 것* 이다. 이는 즉각적인 모니터링 정전의 신호.
 
-**해석**: 정상 환경의 일일 audit ~5,000건 = SOC 1팀이 자동화 없이는 처리 불가능 → lecture §"alert correlation + auto-triage" 의 동기.
+**의미 2 — Log integrity 의 첫 방어선**: 정상 환경에서 GetLogEvents 호출자는 *SIEM 1개 + 재해복구 백업 1개 = 2개* 가 99%를 차지한다. 만약 *3번째 신규 caller* 가 GetLogEvents 를 단 1건이라도 호출하면 — 그것은 **공격자가 자신의 침해 흔적을 읽으려 하거나 로그 삭제를 준비하는 신호** 일 가능성이 높다. anti-forensic 의 첫 동작.
 
-**학생 액션**: 본인 lab 환경에서 CloudWatch Logs 의 polling 빈도를 설정하고, GetLogEvents 호출자 2개로 제한 후 SIEM ingest 지연을 측정.
+학생이 알아야 할 것은 — **GetLogEvents 의 caller 분포가 *변하지 않는지* 가 중요하다**. 횟수의 변화보다 *누가 호출하는가* 의 변화가 더 위험하다. lecture §"감사 로그를 누가 읽는가" 의 핵심 질문.
+
+### Case 2: security_audit_event 381,552건 — alert 처리 capacity 의 정량 검증
+
+| 항목 | 값 | 의미 |
+|---|---|---|
+| message_type | `security_audit_event` | dataset 최다 신호 |
+| 총 발생 | 381,552건 | 약 30일 분량 |
+| 일일 평균 | ~12,700건/일 | SOC 분석가 1팀의 처리 한계 초과 |
+| 학습 매핑 | §"alert correlation + auto-triage" | 자동화 정당성 |
+
+**자세한 해석**:
+
+`security_audit_event` 는 GuardDuty/Security Hub/CloudTrail 등의 audit 신호를 통합한 카테고리다. **dataset 의 일일 평균 ~12,700건** 은 — 정상 운영 환경의 alert 분량인데, 이는 SOC 분석가 1명이 *수동으로 분류* 할 수 없는 양이다. 8시간 근무에 분당 ~26건의 alert 를 처리해야 하는데, 사람이 이 속도를 1주일 이상 유지하는 것은 불가능하다.
+
+이 정량적 한계가 lecture §"alert correlation + auto-triage" 의 운영 정당성이다 — *사람의 한계를 넘는 양 = 자동화가 필수*. 자동화가 없는 SOC 는 — 알람을 그냥 *무시하고 (ignore)*, 큰 사고가 터진 후에야 *되돌려보는 (postmortem)* 패턴으로 정착한다. 즉 모니터링이 형식적으로 동작은 하지만 *실제로는 무력화* 된다.
+
+자동화의 두 핵심 방향:
+1. **Correlation (상관 분석)**: 분리된 12,700건의 alert 를 *연관된 5-10개 사건* 으로 묶기. 하나의 침해는 보통 10-50개 alert 를 만들기 때문에, 룰 기반 grouping 으로 1/10 로 압축 가능.
+2. **Auto-triage (자동 분류)**: 묶인 사건들을 *심각도/유형* 으로 자동 분류해서 *L1 분석가는 critical 만, L2 는 high 만* 처리하도록 분배.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **클라우드 모니터링 = 4개 입력원의 통합 분석** — 어느 한 입력원만 끊겨도 분석 부분 실패.
+2. **GetLogEvents 의 caller 분포가 log integrity 의 첫 방어선** — 3번째 caller 는 항상 의심.
+3. **일일 ~12,700건은 사람이 못 처리하는 양** — auto-triage + correlation 이 모니터링의 필수.
+
+**학생 액션**: 본인 lab 환경에서 CloudWatch Logs polling 을 설정하고, IAM 정책으로 GetLogEvents 호출자를 SIEM SA + 백업 SA 의 2개로 제한. 그 후 의도적으로 *3번째 IAM* 으로 GetLogEvents 호출을 시도하여 — alert 가 정상적으로 발생하는지 검증. 검증 결과를 *"log integrity 의 첫 방어선이 작동하는가"* 한 줄로 결론.
 

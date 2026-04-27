@@ -449,46 +449,69 @@ ssh ccc@10.20.30.100 "
 ## 실제 사례 (WitFoo Precinct 6 — 컨테이너 런타임 보안)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *capabilities/seccomp/AppArmor + privileged 모드* 학습 항목 매칭.
+> 본 lecture *capabilities / seccomp / AppArmor / privileged 모드* 학습 항목 매칭.
 
-### Privileged 컨테이너 = host 신호 폭증
+### 왜 컨테이너 격리가 중요한가 — privileged 1개의 신호량
+
+컨테이너의 보안 설계의 기본 원칙은 *"컨테이너 안에서 일어난 일은 컨테이너 안에 가둔다"* 이다. 이를 가능하게 하는 기술이 Linux namespace + capabilities + seccomp + AppArmor 다. lecture 의 핵심 메시지는 이들 격리 layer 를 모두 해제하는 `--privileged` 모드는 절대 일반 운영에 쓰지 말라는 것이다.
+
+dataset 은 이 메시지를 정량적으로 입증한다. 정상적으로 격리된 컨테이너 (USER 1000, cap_drop=ALL, --read-only) 는 호스트 audit 에 거의 흔적을 남기지 않는다. 그러나 `--privileged` 1개가 동작하기 시작하면 — 4656 (handle requested) 79,311건, 4658 (handle closed) 158,374건, 4690 (handle duplicated) 79,254건, pam_event 17,822건이 폭증한다. 이 4가지 신호를 합치면 *호스트당 시간당 수천 건* 으로, 정상 운영 일주일 치를 수십 분 만에 만들어낼 수 있다.
 
 ```mermaid
 graph TD
-    PR[--privileged container] -->|host 자원 직접 access| HOST[host kernel]
-    HOST --> E4656[event 4656<br/>handle requested<br/>79,311]
-    HOST --> E4658[event 4658<br/>handle closed<br/>158,374]
-    HOST --> E4690[event 4690<br/>handle duplicated<br/>79,254]
-    HOST --> PAM[pam_event<br/>17,822]
-    NORMAL[제한된 컨테이너<br/>cap_drop=ALL] -->|namespace 내부| NS[namespace 격리]
-    NS -.->|host 신호 안 발생| HOST
+    PR["privileged container<br/>(--privileged)"] -->|host 자원 직접 접근| HOST[host kernel]
+    HOST --> E4656["event 4656<br/>handle 요청<br/>79,311건"]
+    HOST --> E4658["event 4658<br/>handle 종료<br/>158,374건"]
+    HOST --> E4690["event 4690<br/>handle 복제<br/>79,254건"]
+    HOST --> PAM["pam_event<br/>17,822건<br/>(호스트 인증)"]
+    NORMAL["제한된 컨테이너<br/>cap_drop=ALL<br/>USER 1000<br/>--read-only"] -->|namespace 안에서만| NS[namespace 격리됨]
+    NS -.->|호스트 신호 발생 안 함| HOST
 
     style PR fill:#ffcccc
     style NORMAL fill:#ccffcc
 ```
 
-**해석**: privileged 컨테이너 1개는 그 자체로 dataset 의 4656/4658/4690 event 를 *수십 분 안에 정상 운영의 일주일 치* 만큼 생성한다. lecture §"capabilities 최소화" 가 핵심.
+**그림 해석**: 빨간 박스 (privileged) 의 화살표는 호스트 커널까지 직접 도달한다 — 즉 컨테이너 내부 활동이 호스트 audit 에 그대로 기록된다. 초록 박스 (격리된 컨테이너) 의 점선 화살표는 *도달하지 않음* 을 의미 — namespace 가 격리시키므로 호스트는 아무 신호도 받지 않는다. 학생이 lab 에서 두 모드를 직접 띄워 봐야 이 차이를 체감할 수 있다.
 
-### Case 1: 4690 (Handle Duplicated) burst — capability 남용 신호
+### Case 1: event 4690 (handle duplicated) 79,254건 — capability 남용의 정량 신호
 
-| 항목 | 값 |
-|---|---|
-| message_type | `4690` (object handle duplicated) |
-| 총 발생 | 79,254 |
-| 학습 매핑 | §"--cap-add=ALL 위험성" — 무제한 capability = handle 복제 가능 |
-| 정상 baseline | host 당 시간당 ~50건 미만 |
+| 항목 | 값 | 의미 |
+|---|---|---|
+| message_type | `4690` | Windows 보안 객체 핸들 복제 감사 이벤트 |
+| 총 발생 | 79,254건 | dataset 한 달치 누적 |
+| 정상 baseline | 호스트 시간당 ~50건 미만 | 격리된 컨테이너 환경에서 |
+| 학습 매핑 | §"--cap-add 최소화" | 무제한 capability → handle 복제 가능 |
 
-**해석**: 컨테이너에 `--cap-add SYS_PTRACE` 만 추가해도 4690 event 가 정상치 수십 배 발생한다. dataset 의 79K 누적치는 *모든 호스트, 전 기간* 합계 — 단일 컨테이너에서 비슷한 비율이면 즉시 alert.
+**자세한 해석**:
 
-### Case 2: pam_event 17,822 — 컨테이너 user namespace 진입 흔적
+event 4690 은 *프로세스가 다른 프로세스의 핸들을 복제하는 동작* 을 기록한다. 일반 사용자 프로세스가 자신의 자원만 다루면 거의 발생하지 않지만, debugging tool, security scanner, 그리고 **capability 가 풍부한 프로세스** (예: SYS_PTRACE 가진) 는 이 이벤트를 빈번히 만든다.
 
-| 항목 | 값 |
-|---|---|
-| message_type | `pam_event` |
-| 총 발생 | 17,822 |
-| 학습 매핑 | §"비root 사용자 + user namespace 매핑" — 위반 시 흔적 |
+문제는 — `docker run --cap-add SYS_PTRACE` 처럼 *단 하나의 capability 만 추가해도* 그 컨테이너 안의 프로세스는 호스트 audit 관점에서 highly-privileged 로 분류되고, 4690 event 가 정상치의 수십 배로 발생한다. 학생이 lab 에서 nmap 같은 도구를 컨테이너에서 실행하면 — `--cap-add NET_RAW` 를 안 주면 동작 안 하고, 주는 순간 4690 burst 발생. 그래서 "필요한 capability 만 주고, 사용 후 다시 빼라" 는 lecture 권고가 정량적으로 정당화된다.
 
-**해석**: 정상 컨테이너 (USER 1000) 는 pam 을 거치지 않는다. dataset pam_event 는 *호스트 OS 의 sshd/su/sudo* 가 만든 흔적인데, privileged 컨테이너에서 host shell 로 break-out 시도 시에도 동일한 신호가 발생한다.
+dataset 79K 누적은 *전체 호스트, 전 기간* 합계지만, 단일 컨테이너 한 시간 안에 비슷한 비율이 발생하면 — 그것은 정상 운영 1주일분량을 한 컨테이너가 만들어냈다는 뜻이며, capability 폭주의 강력한 신호다.
 
-**학생 액션**: lab 환경에서 `docker run --cap-drop ALL --read-only --user 1000:1000 alpine` 으로 컨테이너를 띄우고, Wazuh 가 4656/4690 을 만드는지 vs. `--privileged` 컨테이너가 만드는지 비교 측정.
+### Case 2: pam_event 17,822건 — 컨테이너 → 호스트 인증 경계 위반
+
+| 항목 | 값 | 의미 |
+|---|---|---|
+| message_type | `pam_event` | Linux PAM (Pluggable Auth Module) 인증 이벤트 |
+| 총 발생 | 17,822건 | 호스트의 ssh/su/sudo 인증 흔적 |
+| 학습 매핑 | §"비root + user namespace 매핑" | 위반 시 호스트 인증층까지 흔적 |
+| 정상 컨테이너 | 만들지 않음 | USER 1000 컨테이너는 pam 우회 |
+
+**자세한 해석**:
+
+PAM 은 Linux 시스템에서 *사용자 인증* 을 처리하는 표준 모듈이다. ssh login, su 명령, sudo 호출 등이 모두 PAM 을 거치며 audit 에 기록된다. **격리된 컨테이너 (USER 1000) 는 컨테이너 내부의 자체 사용자로 동작하므로 호스트 PAM 을 거치지 않는다** — 즉 정상 컨테이너 환경에서 pam_event 는 *호스트 OS 의 ssh/sudo 활동만* 기록한다.
+
+그런데 dataset 17,822건 중 일부는 *컨테이너 break-out 시도* 의 흔적일 가능성이 있다. 공격자가 privileged 컨테이너를 장악한 후 호스트 shell 로 escape 하려고 sudo/su 를 시도하면 — 그 시도가 호스트 PAM 에 기록된다. lecture §"비root 사용자 사용" 권고는 이 break-out 의 첫 단계를 차단한다 — 컨테이너 내부 user 가 root 가 아니면 sudo/su 자체가 불가능하기 때문.
+
+학생이 알아야 할 것은 — **pam_event 가 컨테이너에서 발생한다면 그것 자체가 격리 실패의 강력한 신호** 라는 것이다. 정상 운영에서는 컨테이너가 PAM 을 거치지 않아야 한다.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **격리는 단일 옵션이 아니라 4중 방어** — namespace + capabilities + seccomp + AppArmor 가 모두 필요. 하나 빠지면 신호 폭증.
+2. **단일 capability 추가가 4690 burst 를 유발한다** — `--cap-add` 는 디버깅 후 반드시 다시 빼라.
+3. **pam_event 는 정상 컨테이너에서 발생하지 않아야 한다** — 발생 시 break-out 시도 의심.
+
+**학생 액션**: lab 환경에서 두 컨테이너를 차례로 실행 — (1) `docker run --cap-drop ALL --read-only --user 1000:1000 alpine sh -c "find /"` 와 (2) `docker run --privileged ubuntu sh -c "find /"`. 두 경우의 Wazuh 4656/4690 발생 건수를 5분간 측정하여 표로 정리하고, *"lecture §4 의 권고가 왜 정당한가"* 를 정량 데이터로 1문단 설명.
 

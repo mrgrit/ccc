@@ -436,45 +436,69 @@ ssh ccc@10.20.30.100 "
 ## 실제 사례 (WitFoo Precinct 6 — 클라우드 설정 오류)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *S3 public / IAM 과대권한 / SG 0.0.0.0/0* 학습 항목 매칭.
+> 본 lecture *S3 public bucket / IAM 과대권한 / SG 0.0.0.0/0* 학습 항목 매칭.
 
-### Misconfiguration → exfil 까지의 신호 chain
+### 클라우드 사고의 90% 는 misconfiguration 이다 — Capital One 사고의 dataset 재현
+
+업계 통계에 따르면 클라우드 보안 사고의 약 90% 는 *공격자의 새로운 기술* 이 아니라 *고객 측의 설정 오류* 에서 비롯된다. 학생이 자주 듣는 사례 — Capital One 2019년 사고는 SSRF 취약점이 *방아쇠* 였지만, 본질적인 원인은 — (1) S3 bucket 이 잘못된 정책으로 외부 접근 허용, (2) IAM role 이 과대권한 (`s3:GetObject` 가 모든 bucket 적용), (3) WAF 가 SSRF 를 막지 못함 — 의 misconfiguration 3개의 동시 발생이었다.
+
+이런 사고가 dataset 에서 어떻게 보이는가? — 단계별로 *3개의 분리된 signal anomaly* 가 발생한다. AssumeRole 9,340건의 정상 baseline 에서 *신규 source IP 의 outlier* 1건이 등장 → Describe\* 174,293건의 baseline 을 깨는 *짧은 burst* 발생 → 마지막에 mo_name=Data Theft edge 가 분류된다. 이 3단계 모두 dataset 신호로 확인 가능하므로 — *어느 한 단계만 잡아도 사고를 sub-second 에 차단* 할 수 있다.
 
 ```mermaid
 graph LR
-    MC["misconfig<br/>S3 public<br/>SG 0.0.0.0/0<br/>IAM *:*"]
-    MC --> EXP[외부 access]
-    EXP --> AR[AssumeRole 비정상<br/>9,340 중 outlier]
-    AR --> ENUM[Describe* burst<br/>174K]
-    ENUM --> DT["mo_name=Data Theft"]
+    MC["misconfig 3중<br/>① S3 public<br/>② SG 0.0.0.0/0<br/>③ IAM *:*"]
+    MC -->|외부 access 가능| EXP["외부 access 시작"]
+    EXP -->|leaked key 1차 시도| AR["① AssumeRole 비정상<br/>9,340 baseline 중 outlier"]
+    AR -->|내부 enumeration| ENUM["② Describe* burst<br/>174K baseline 초과"]
+    ENUM -->|데이터 다운로드| DT["③ mo_name=Data Theft<br/>(최종 사고)"]
 
     style MC fill:#ffcccc
-    style DT fill:#ff9999
+    style DT fill:#ff6666
 ```
 
-**해석**: lecture §"S3 public bucket = Capital One 사고" 가 dataset 에서는 *AssumeRole outlier* + *Describe burst* + *Data Theft mo_name* 의 3-step 신호로 등장. 어느 한 단계만 잡아도 사고를 sub-second 에 차단 가능.
+**그림 해석**: 빨간 박스 (misconfig) 는 *공격이 시작되기 전부터 존재* 하는 결함이다 — 즉 *예방 단계* 에서 막아야 했던 것. 일단 외부 access 가 시작되면, 3개의 정량 신호 anomaly 가 차례로 등장한다. lecture §"Capital One 사고 = misconfig 의 결과" 는 dataset 에서 정확히 이 3단계 신호로 재현된다.
 
-### Case 1: AssumeRole outlier — 과대권한 IAM 의 흔적
+### Case 1: AssumeRole outlier — 과대권한 IAM 이 처음 사용되는 순간
 
-| 항목 | 값 |
-|---|---|
-| message_type | `AssumeRole` |
-| 총 호출 9,340 중 | outlier 식별 = source IP 분포 anomaly |
-| 학습 매핑 | §"IAM `*:*` 정책 위험" — outlier 1건이 곧 침해 시작 |
-| 탐지 룰 | 5분 윈도우에서 신규 source IP 의 AssumeRole = alert |
+| 항목 | 값 | 의미 |
+|---|---|---|
+| message_type | `AssumeRole` | STS 토큰 발급 호출 |
+| 총 9,340건 중 | outlier 식별 = source IP 분포 분석 | 정상 5~10개 IP 에서 11번째 등장 |
+| 학습 매핑 | §"IAM `*:*` 정책 위험" | outlier 1건이 곧 침해 시작 |
+| 탐지 룰 | 5분 윈도우 신규 source IP | 즉시 alert + IAM 자동 회수 |
 
-**해석**: dataset 9,340건의 source IP 분포는 일반적으로 5~10개 안으로 수렴한다. 11번째 신규 IP 의 AssumeRole 1건은 *공격자가 leaked key 를 처음 시도* 하는 순간일 가능성.
+**자세한 해석**:
 
-### Case 2: Describe* 174K + GetLogEvents 39K — recon vs. log evasion
+IAM `*:*` 정책 (모든 자원에 모든 권한) 은 *편의를 위해* 작성되는 경우가 많다. 개발자가 *"우선 이렇게 두고 나중에 좁히자"* 라고 미루는 경향이 있고, 운영 환경에서 종종 그대로 남는다. 이런 과대권한 IAM key 가 leak 되면 — 공격자는 *제한 없이 모든 cloud 자원* 에 접근 가능.
 
-| 항목 | 값 |
-|---|---|
-| recon 신호 | Describe* 174,293 |
-| log evasion 신호 | GetLogEvents 39,639 |
-| 학습 매핑 | §"misconfig 가 발견된 후 attacker 의 행동" — recon + 로그 정찰 |
-| 위험 패턴 | 동일 caller 가 Describe + GetLogEvents 동시 → recon + 흔적 인지 |
+**dataset 9,340건의 source IP 분포는 일반적으로 5~10개로 수렴한다**. 정상 환경에서 AssumeRole 을 호출하는 주체는 — EC2 instance 들 (제한된 IP 풀), Lambda (특정 region 의 NAT IP), 회사의 VPN/사무실 IP, 운영자 PC 정도. 이 주체들의 IP 가 합치면 약 5~10개로 나온다.
 
-**해석**: Describe 만 호출하면 단순 reconnaissance, GetLogEvents 까지 호출하면 *내가 들킨 것을 알아보는 행동* — 침해 단계가 한 단계 진행됐다는 강력한 지표.
+**11번째 신규 IP 의 AssumeRole 1건** 은 *공격자가 leaked key 를 처음 시도* 하는 순간일 가능성이 매우 높다. 5분 윈도우에서 신규 source IP 의 AssumeRole 발생을 alert 하고, 자동으로 해당 IAM key 를 disable 시키면 — 사고가 1차 단계에서 차단된다. lecture §"IAM 자동 회수" 의 운영 정착 동기.
 
-**학생 액션**: lab 환경 AWS account 에서 `aws s3 ls --recursive` 시도 후 CloudTrail 에 어느 신호가 남는지 확인하고, IAM `s3:List*` denial 시 어떻게 변하는지 비교.
+### Case 2: Describe\* 174K + GetLogEvents 39K 의 결합 — recon + log 정찰
+
+| 항목 | 값 | 의미 |
+|---|---|---|
+| recon 신호 | `Describe*` 174,293건 | 자원 enumeration |
+| log evasion 신호 | `GetLogEvents` 39,639건 | 자신의 흔적 확인 |
+| 위험 패턴 | 동일 caller 가 둘 다 호출 | 정찰 + 흔적 인지 |
+| 학습 매핑 | §"misconfig 후 공격자 행동" | 침해 단계 진행 지표 |
+
+**자세한 해석**:
+
+공격자가 leaked IAM key 를 손에 넣은 후의 행동 패턴은 두 단계로 나뉜다.
+
+**1단계 (recon)**: `Describe*` 군 호출로 자원 목록을 조사한다 — DescribeInstances (EC2 목록), DescribeBuckets (S3), DescribeRepositories (ECR), DescribeRoles (IAM) 등. 정상 자동 caller 도 Describe\* 를 호출하지만, 패턴이 다르다 — 자동 caller 는 *동일 자원을 반복 조회* 하는 반면 공격자는 *다양한 자원을 한 번씩 훑는다*.
+
+**2단계 (log evasion)**: 공격자가 *내가 들킨 것을 알아보는* 행동이다 — `GetLogEvents` 로 CloudTrail 로그를 직접 읽으려 시도. 이 호출은 정상 운영에는 거의 없는 행동 (SIEM 외에는 로그를 읽을 일이 없음).
+
+**동일 caller 가 두 단계를 모두 수행하면** — 침해가 *단순 정찰* 에서 *active threat 인지* 단계로 진행된 것이다. lecture §"공격자의 OODA loop" 의 *Observe → Orient* 단계. 학생이 이 패턴을 알면 *공격이 어느 단계까지 진행됐는지* 를 정량으로 판단 가능.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **Capital One 사고 = misconfig 3중의 결과** — IAM 과대권한 + S3 public + SG open. 한 가지만 막아도 사고는 안 났다.
+2. **AssumeRole outlier 5분 윈도우 룰이 첫 방어선** — 신규 source IP 1건 = 즉시 alert + 자동 회수.
+3. **Describe + GetLogEvents 의 동시 호출 = 침해 단계 격상** — 정찰을 넘어 evasion 단계.
+
+**학생 액션**: lab 의 AWS account 에서 `aws s3 ls --recursive` 를 실행하고 CloudTrail 에 어느 신호가 발생하는지 확인. 그 후 IAM 정책에 `s3:List*` deny 를 추가하고 동일 명령을 재실행하여 — *어느 신호가 발생/소멸하는지* 비교 표 작성. 결과를 *"misconfig 가 어떻게 dataset 신호로 폭로되는가"* 1문단으로 정리.
 
