@@ -309,7 +309,14 @@ supplemental retest 필요**.
 
 ---
 
-### P15. 외부 지식 채널 + 9-tier KG 운영  [STATUS: 5 source 활성, 9-tier 풀 seed 완성]
+### P15. 외부 지식 채널 + 9-tier KG 운영  [STATUS: 7 source, bastion runtime 응답 없음]
+
+**⚠️ 2026-04-27 17:00경 bastion runtime (192.168.0.115:8003) 응답 0**:
+sync_to_bastion 후 /knowledge/concept POST endpoint 추가 시 reload 실패 가능.
+사용자 바스티온 호스트 재시작 필요. CIS Controls 18 backfill 0/18 (errors).
+복구 후 재실행: `python3 scripts/ingest_cis_controls.py --via-bastion`
+
+
 
 **동기**: 사용자 지적 (2026-04-27) — KG 가 *내부 작업* (playbook/experience) 만.
 외부 지식 채널 + 9-tier (Mission/Vision/Goal/Strategy/KPI/Plan/Todo/Asset/
