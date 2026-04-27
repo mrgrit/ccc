@@ -516,26 +516,50 @@ for key in data.keys():                                # 반복문 시작
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 5156 Filtering Connection 통계)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *접근제어 점검* 학습 항목 (수직/수평 권한 우회·Windows ACL) 과 매핑되는 dataset 의 *Windows Filtering Platform 5156* 176,060건 기반.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: 5156 — Windows Filtering Platform connection allow/block
 
+**dataset 분포**
+
+| message_type | 의미 | 건수 |
+|--------------|------|------|
+| 5156 | Connection was allowed (filtering platform) | 176,060 |
+| 5158 | Bind to local port | 9,812 |
+| 5061 | Cryptographic operation | 1,302 |
+| 5059 | Key migration operation | 185 |
+| 5058 | Key file operation | 663 |
+| 5136 | Directory service object modified | 380 |
+| 5140 | Network share object accessed | 2,623 |
+| 4670 | Permissions on object changed | 188 |
+
+**원본 발췌** (5156 — winlogbeat JSON):
+
+```text
+"action": "Filtering HOST-3830 Connection"
+ORG-1657 ::: {
+  "@metadata":{"beat":"winlogbeat","type":"_doc","version":"8.2.2"},
+  "@timestamp":"2024-07-26T11:09:56.296Z",
+  "agent":{"id":"2a9c3fad-c33e-4316-92c6-...","name":"...","type":"winlogbeat"}
+  ... (event_id=5156, ApplicationName=...,
+        SourceAddress=..., DestAddress=..., DestPort=...)
+}
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석 — 본 lecture 와의 매핑**
 
-### Case 2: `T1041 (Data Theft)` 패턴
+| 접근제어 점검 학습 항목 | 본 record 에서의 증거 |
+|----------------------|---------------------|
+| **수평 권한 우회 탐지** | 5156 record 의 *ApplicationName* 필드로 *어느 process 가 어느 dst 로 연결* 추적 가능. 점검 시 동일 user 의 *비정상 ApplicationName* 으로의 connection 발견 |
+| **5140 Network share access** (2,623건) | 점검 시 *동일 user 가 평소 access 하지 않는 share* 접근 → 수평 권한 escalation 후보 |
+| **4670 Permissions on object changed** (188건만) | 권한 *변경* 은 흔하지 않음 — 점검 대상의 변경 빈도 비교 baseline |
+| **5136 Directory service object modified** (380건) | AD 객체 수정 → 점검 시 *권한 변경 후 본인 user 의 권한 escalation* 패턴 (수직 권한 우회) |
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**점검 액션**:
+1. 점검 대상 시스템의 5156 분당 발생 빈도 → dataset baseline (전체 176K 를 시간 분포로) 와 비교
+2. 4670 / 5136 spike 시점에 *당시 logon user* 와 *변경 대상 객체* 매핑 표 작성
+3. 5140 의 *동일 user 의 share-target hopping* 시퀀스 → 점검 보고서의 *수평 이동 시도* 항목
 

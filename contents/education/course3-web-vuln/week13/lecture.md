@@ -641,26 +641,39 @@ ENDSSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 자동화 도구 트래픽 지문)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *자동화 점검 도구 활용* 학습 항목 (nikto·ZAP·Burp 자동 스캔 trace) 과 매핑되는 *동일 src 가 단일 timestamp 에 burst* 패턴 record.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: src `100.64.20.230` — 1초 내 30 host × 54 port × 208 events
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
+(앞서 w03 정찰 lecture 와 동일 record — 본 lecture 에선 *자동화 도구의 출력물* 관점에서 재해석)
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해당 record 의 *자동화 도구 추정* 근거**
 
-### Case 2: `T1041 (Data Theft)` 패턴
+| 자동화 추정 단서 | 본 record 의 증거 |
+|------------------|-----------------|
+| 동일 timestamp | 모든 208 events 가 `1688960026` (1초) — *사람 손 불가능* |
+| 포트 다양성 (54) | 22·88·1433·5060·5632·8333·9418·31337 등 — nmap 의 `--top-ports 100` 와 유사한 *알려진 서비스 포트 묶음* |
+| host sweep 패턴 | 30개 dst IP 가 *연속 /24 대역* 분포 — masscan / nmap `-sn` 패턴 |
+| outcome 균일 (block/warning) | 차단 응답이 모두 동일 → *공격 도구가 응답 분류로 host 존재 여부 판정* |
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+### Case 2: 4018건 GET (단일 src `100.64.1.37`) — *정상* 자동화 (proxy)
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**비교 의미**: 자동화 트래픽은 *공격* 만 만드는 게 아님 — 정상 GoogleImageProxy 도 동일한 *burst + 단일 UA* 지문을 가짐. 점검 도구 출력물도 이와 구분 어려움.
+
+**해석 — 본 lecture 와의 매핑**
+
+| 자동화 도구 점검 항목 | 본 record 의 시사점 |
+|---------------------|---------------------|
+| **도구 출력물 분석** | nikto/ZAP 보고서를 *위 두 record 와 비교* — 본인 도구 출력의 *지문 회피도* 평가 |
+| **점검 도구 결과 → SIEM 연동** | 본 dataset 처럼 CEF/JSON 표준 출력 사용 시 SIEM 자동 통합 가능. 자체 점검 도구도 동일 표준 출력 권장 |
+| **결과 통합 (False Positive 분리)** | 정상 (GoogleImageProxy) 과 공격 (recon scan) 모두 burst — 점검 도구는 *통계적 분리* (UA·payload·outcome) 로 FP 제거 |
+| **재현성 보장** | 자동화 도구 결과는 *같은 input → 같은 output* — 본 record 처럼 timestamp 보존하면 재현 가능 |
+
+**점검 액션**:
+1. 본인 점검 도구 (Burp/ZAP) 의 출력 형식이 CEF/JSON 표준 따르는지 확인 → 안 따르면 변환 plugin 사용
+2. 동일 점검 시나리오를 *2회 실행* 하여 결과 일치도 측정 (재현성 확보)
+3. 점검 결과의 *false positive 비율* 측정 (정상 트래픽도 일부 alert 발생) → 임계값 조정
 

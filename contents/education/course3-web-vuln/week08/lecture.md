@@ -534,26 +534,58 @@ for c in sorted(data, key=lambda x: x.get('difficulty', 0)):  # 반복문 시작
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — incident 1건의 *전체 그래프* 단면)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *중간고사 — JuiceShop 점검 보고서* — 학생이 실제로 작성하는 보고서가 *어떤 정보까지 포함해야 하는지* baseline 을 dataset 의 incident 1건 (`incidents.jsonl` 533MB 중 발췌) 으로 보여줌.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: incident `e5578610-d2eb-11ee-8578-693f933af31d` 의 1차 노드
 
+**Provenance graph 의 첫 host 노드** (incidents.jsonl 발췌):
+
+```json
+{
+  "id": "HOST-4476",
+  "ip_address": "172.27.150.101",
+  "org": "ORG-0006",
+  "internal": true,
+  "managed": false,
+  "hostname": "172.27.150.101",
+  "suspicion_score": 0.71875,
+  "type": "host",
+  "sets": {
+    "5": {"name": "Exploiting Target", "criteria": "none",
+          "data_source": "WitFoo", "type": 1, ...},
+    "1": {"name": "Exploiting Host", "criteria": "none",
+          "data_source": "WitFoo", "type": 1, ...}
+  },
+  "products": {
+    "6": {"name": "Precinct", "vendor_name": "WitFoo",
+          "frameworks": {"csc":[1,6,16,19], "cmmc1":[6], ...,
+                         "iso27001":[4,8,14,16,67,68,...]}},
+    "17": {"name": "ASA Firewall", "vendor_name": "Cisco",
+           "frameworks": {"csc":[9,12], "iso27001":[1,2,53,54,...]}}
+  }
+}
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**dataset 통계**
 
-### Case 2: `T1041 (Data Theft)` 패턴
+| 항목 | 값 |
+|------|---|
+| 전체 incident 수 | 595,618 edges + 30,092 nodes |
+| 노드 type | HOST 28,633 / CREDENTIAL 1,429 / SERVICE 5 / FILE 3 / ACTOR 1 |
+| label 분포 | benign 390,851 / suspicious 44,681 / malicious 160,086 |
+| 본 incident 의 *role* | "Exploiting Target" + "Exploiting Host" 동시 — *피해자이자 다른 호스트의 발판* |
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+**해석 — 본 lecture (중간고사 보고서) 와의 매핑**
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 보고서 항목 | 본 record 의 시사점 |
+|-------------|---------------------|
+| **Asset 식별** | host 노드에 `internal/managed/org/hostname/IP` 모두 동시 보유 — 점검 보고서의 "대상 시스템" 표 가 *최소 5 field* 갖춰야 한다는 baseline |
+| **다중 role** | 동일 host 가 *Exploiting Target* (피해) + *Exploiting Host* (발판) 동시 → JuiceShop 점검 보고서에 *피해 시나리오* 와 *측면이동 잠재력* 두 chapter 분리 권장 |
+| **Compliance framework 매핑** | Precinct 자체가 csc/cmmc/pci/nist80053/csf/iso27001/soc2 framework 매핑 보유 — 학생 보고서의 발견 vuln 마다 *해당 framework 조항* 매핑 권장 (예: SQLi → OWASP A03 + ISO 27001 A.14.2) |
+| **products 다중 vendor** | host 가 6 (Precinct/WitFoo) + 17 (ASA/Cisco) 두 vendor 의 telemetry 보유 → 학생 보고서에서 *각 vuln 이 어떤 control 에 의해 탐지/차단되었는지* 명시 |
+
+**시험 채점 기준 함의**: 본 record 가 보여주는 *5-field asset · multi-role · framework 매핑 · multi-vendor 통합* 4축이 학생 보고서에도 갖춰져야 만점 보고서.
 

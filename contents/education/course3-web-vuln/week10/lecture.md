@@ -477,26 +477,46 @@ done
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — TLS 1.3 + 5061 Crypto event)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *암호화 / 통신 보안 점검* 학습 항목 (TLS 버전·cipher·인증서) 과 매핑되는 dataset 의 *WAF GET 의 app=TLSv1.3* 라벨 + Windows 5061 Crypto operation event.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: WAF GET — `app=TLSv1.3` 라벨
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
+**원본 발췌** (앞서 w01 에서 본 동일 GET record 의 TLS 부분):
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041 (Data Theft)` 패턴
-
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
+```text
+... CEF:0|...|WAF|...|GET|5|
+  ... app=TLSv1.3 ...
+  flexString1LUSER-CRED-25456=ProtocolVersion flexString1=ORG-CRED-31206/1.1
+  USER-0010-57562WafResponseType=SERVER
 ```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**dataset 의 TLS 분포**
+
+| 항목 | 값 |
+|------|---|
+| 전체 GET 4018건 중 TLSv1.3 라벨 | 다수 (notice 등급) |
+| 5061 Cryptographic operation 건수 | 1,302 (Windows audit) |
+| 5058 Key file operation | 663 |
+| 5059 Key migration operation | 185 |
+
+### Case 2: 5061 Cryptographic operation — Windows-side 키 사용 audit
+
+**원본 의미**: event 5061 은 *암호 키가 사용될 때마다* 기록 (인증·서명·암복호화). 본 dataset 의 1,302건 중 다수가 *winlogbeat 수집 winauth* 서비스 (USER-0010 호스트군).
+
+**해석 — 본 lecture 와의 매핑**
+
+| 암호화/통신 점검 학습 항목 | 본 record 에서의 증거 |
+|--------------------------|---------------------|
+| **TLS version 점검** | WAF log 에 `app=TLSv1.3` 가 *명시* — 점검 시 *TLSv1.0/1.1 잔존 여부* 자동 측정 가능 (vendor log 형식이 일관) |
+| **HTTP/2 vs HTTP/1.1** | `flexString1=HTTP/1.1` 로 protocol version 도 동시 기록 — HTTP/2 미적용 endpoint 자동 추출 가능 |
+| **Cipher 사용 추적** | 5061 record 의 *Algorithm/KeyType* 필드 → 조직 *비표준 cipher* (DES·RC4·MD5) 사용 점검 |
+| **Certificate 만료** | (본 dataset 직접 매핑 없음) — TLS log 와 별도 cert lifecycle 관리 필요. 점검 시 `openssl s_client -connect` 자동화 |
+
+**점검 액션**:
+1. 점검 대상의 모든 endpoint 가 TLSv1.3 (또는 최소 1.2) 사용하는지 — WAF log 의 `app=` 필드 집계로 확인
+2. 5061 의 *Algorithm* 분포 → MD5/SHA1/RSA-1024 사용 endpoint 식별
+3. WAF log 의 `WafResponseType` (SERVER vs CLIENT) 으로 인증서 검증 누락 endpoint 자동 분류
 

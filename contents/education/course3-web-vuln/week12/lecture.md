@@ -552,26 +552,50 @@ echo "Products API: ${count}건 반환"
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — AWS API call read-only flood)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *API 보안 점검* 학습 항목 (REST/GraphQL endpoint·인증·rate-limit·schema 노출) 과 매핑되는 dataset 의 AWS API call 분포.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: AWS Describe* API call 통계 — read-only flood 패턴
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
+| API Call | 건수 |
+|----------|------|
+| GetLogEvents | 39,639 |
+| DescribeInstanceStatus | 27,127 |
+| DescribeLoadBalancers | 15,062 |
+| DescribeInstances | 14,992 |
+| ListClusters | 10,848 |
+| AssumeRole | 9,340 |
+| DescribeAddresses | 6,094 |
+| DescribeSecurityGroups | 5,858 |
+| DescribeVpcs | 5,079 |
+| DescribeSubnets | 6,603 |
+| DescribeClusters | 6,614 |
+| GetBucketLocation | 3,563 |
+| GenerateDataKey | 3,286 |
+| Decrypt | 1,605 |
+| ... | ... |
+| 합계 (read-only API) | **150,000+** |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**dataset 통찰**: AWS read-only API 호출이 dataset 의 *상당 비율* 차지. 정상 monitoring 일 수도, 침해된 IAM 키의 *enumeration* 일 수도 있음.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 2: AssumeRole — IAM role 전환
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+**dataset 분포**: AssumeRole 9,340건 — IAM 권한 escalation·cross-account access 의 핵심 신호.
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석 — 본 lecture 와의 매핑**
+
+| API 점검 학습 항목 | 본 record 에서의 증거 |
+|-------------------|---------------------|
+| **API 사용 baseline** | Describe*/Get*/List* 의 분포 = *조직의 정상 read-only API baseline*. 점검 시 *비정상 spike* 자동 분리 |
+| **AssumeRole 추적** | 9,340 AssumeRole call → *role 전환 chain* 그래프 작성 → *순환 escalation* 또는 *cross-account leak* 점검 항목 |
+| **schema 노출** | DescribeSecurityGroups (5,858) 같은 호출이 *모든 SG 룰 dump* 가능 — 점검 시 *조직의 read-only IAM 정책* 이 *너무 광범위* 한지 확인 |
+| **GetLogEvents 39K** | log access 가 가장 많은 호출 — *공격자가 침투 후 자기 흔적 확인* 시 사용. 점검 시 *log 권한 분리* 항목 |
+| **GenerateDataKey + Decrypt** | KMS API → *암호화 key 사용 빈도* baseline. 점검 시 *key rotation 정책 위반* (동일 key 1만 회+) 검출 |
+
+**점검 액션**:
+1. 점검 대상의 AWS API call 빈도 분포 → 본 dataset baseline 과 비교 — *비정상 Describe* 비율이 baseline 의 5배 이상이면 *enumeration 의심*
+2. AssumeRole 의 *대상 role 다양성* 측정 → 단일 user 가 5+ role 전환하면 *권한 oversight* 점검 항목
+3. *Describe* 같은 read-only API 의 *과도한 권한* (`*` resource scope) 사용 IAM 정책 점검 — 침해 시 *전체 enumeration* 가능
 

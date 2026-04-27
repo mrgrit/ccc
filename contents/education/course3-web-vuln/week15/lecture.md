@@ -666,26 +666,46 @@ Week 15:    기말          -> 종합 점검 프로젝트
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 학생 종합 점검 시 인용 가능한 baseline 묶음)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *기말 — 종합 웹취약점 점검 프로젝트* 학습 항목 (전 주차 통합·실제 운영환경 비교) 와 매핑되는 dataset 의 *전 주차에서 인용한 record summary*.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: 본 과목 전 주차 record 인용 표 (final report 부록 양식)
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
+| 본 과목 주차 | 인용 record / 통계 | dataset 출처 |
+|------------|-------------------|--------------|
+| w01 점검 개론 | WAF GET 1줄 (CEF format) | signals.parquet (GET, 4018건) |
+| w02 도구 환경 | GoogleImageProxy 4018건 단일 src burst | signals.parquet (src=100.64.1.37) |
+| w03 정보수집 | 100.64.20.230 — 1초 30 host × 54 port scan | signals.parquet (firewall_action) |
+| w04 인증/세션 | USER-0022 6,190 logon 통계 | signals.parquet (4624/4776) |
+| w05 SQLi | WAF POST JSESSIONID 평문 노출 | signals.parquet (POST 88건) |
+| w06 XSS/CSRF | email_protection block phishingScore=100 | signals.parquet (email_protection_event) |
+| w07 파일 업로드 | 4656/4658/4663/4690 분포 (24만건) | signals.parquet (Windows file audit) |
+| w08 중간고사 | incident `e5578610` 의 host node + framework 매핑 | incidents.jsonl |
+| w09 접근제어 | 5156 Filtering Connection (176K) + 5140 share access | signals.parquet (Windows WFP) |
+| w10 암호화 | WAF `app=TLSv1.3` + 5061 Crypto operation | signals.parquet |
+| w11 에러 처리 | HTTP 4xx (403·404·410·412·413·431·510) 총 2,827건 | signals.parquet |
+| w12 API 보안 | AWS Describe* read-only 150K + AssumeRole 9,340 | signals.parquet |
+| w13 자동화 도구 | 100.64.20.230 burst 재인용 (다른 관점) | signals.parquet |
+| w14 보고서 작성 | 전체 dataset 메타 (2.07M signals, 595K edges, 4-layer 익명화) | metadata.json |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 2: 종합 점검 보고서가 *연결해야 할* incident 1건
 
-### Case 2: `T1041 (Data Theft)` 패턴
+dataset 의 `e5578610-d2eb-11ee-...` incident 가 보유한 *동시 다층 정보*:
+- HOST 노드: ip / hostname / org / managed flag / suspicion_score
+- 다중 vendor product: WitFoo Precinct + Cisco ASA Firewall (각각 framework 매핑 보유)
+- 노드 role: "Exploiting Target" + "Exploiting Host" *동시*
+- 시간 partition: `e562f7c0-d2eb-11ee-...` (재현 키)
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+**해석 — 본 lecture (기말) 와의 매핑**
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 종합 점검 학습 항목 | 본 dataset 의 시사점 |
+|--------------------|---------------------|
+| **다 주차 통합** | 학생 보고서가 전 14주의 발견을 *연결* — 본 dataset 처럼 *signal 단위* + *incident 그래프* + *framework 매핑* 3 layer 동시 보유 권장 |
+| **실제 vs 점검 환경 비교** | 본 dataset 은 *실제 운영* (WitFoo 고객 익명화). 학생 점검 결과를 *동등 layer* 비교 — *어느 부분이 학습 환경 한계* 인지 명시 |
+| **재현성** | partition + node id + edge id 까지 명시 → 기말 보고서도 동일 수준 재현 메타 첨부 |
+| **공개 가능성** | 본 dataset 이 *Apache 2.0 라이선스* 로 공개됨 — 기말 우수작 일부도 *동등 익명화 후 공개* 권장 (다음 코호트 reference) |
+
+**기말 평가 함의**: 본 dataset 의 다층 구조 (signal · graph · framework) 와 4-layer 익명화 를 *모방한 보고서* 가 가장 높은 점수.
 
