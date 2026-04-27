@@ -375,28 +375,14 @@ ModSecurity OWASP CRS의 룰 ID 범위를 간단히.
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 의 학습 주제는 *회피·다형성·
+역탐지* — WAF/IPS 우회 페이로드 변형 (인코딩·분할·타이밍), 에이전트의 reverse
+detection, ModSec CRS 942xxx 룰 매칭·우회 흐름이다. Precinct 6 dataset 의
+T1041 (Exfiltration TA0010) 은 *방어 차단 후 변형 시도* 의 ModSec audit
+trace · CRS 룰 ID 분포 · payload Levenshtein 진화 흔적이 전혀 없다. 적합
+source 발굴 시 (예: PortSwigger/HackerOne 공개 WAF bypass writeup, OWASP CRS
+False Positive 분석 report) 재추가.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
