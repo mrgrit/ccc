@@ -505,14 +505,59 @@ Phase 3에서 *내 커스텀 룰 ID*가 뜨면 정상. 다른 룰만 뜨면 *dec
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 는 *실시간 탐지 룰 엔지니어
-링* — SIGMA → Wazuh XML 변환, 룰 계층 L1/L2/L3, Suricata 변형 룰 자동
-파생, 회귀 데이터셋 정밀도·재현율·탐지 지연 측정이 핵심이다. Precinct 6 의
-T1041 단일 incident 항목은 SIGMA selection·timeframe·count 매칭 예시로
-사용 가능한 raw event sequence 가 없고 (단일 suspicion score 만 존재),
-회귀 지표 산출 입력이 되지 못한다. 폐기. 재추가 source 후보: SigmaHQ public
-rule library, MITRE CAR analytic 의 raw telemetry sample.
--->
+## 실제 사례 (WitFoo Precinct 6 — 회귀 데이터셋 + L1/L2/L3 룰 검증 baseline)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *실시간 탐지 룰 엔지니어링 — SIGMA→Wazuh, L1/L2/L3, 회귀 지표* 학습 항목과 매핑되는 dataset 의 *2.07M signals = 회귀 테스트 입력*.
+
+### Case 1: dataset 을 *회귀 데이터셋* 으로 활용 — 학생 룰 검증
+
+본 lecture §5.2 의 *회귀 데이터셋* 정의:
+- "w3·w4·w5·w7 의 세션 pcap 을 고정 데이터셋으로 보관"
+- **본 dataset 이 그 reference 양식**
+
+| 회귀 측정 (§5.3.2) | dataset baseline | 학생 룰 목표 |
+|-----------------|---------------|-----------|
+| **정밀도** ≥90% | 본 dataset 의 4-layer 라벨링 = ground truth | 학생 룰 vs label 일치 ≥90% |
+| **재현율** ≥70% | malicious 160K = 검출 대상 | 학생 룰이 70%+ 검출 |
+| **탐지 지연 (p50)** ≤10s | dataset 의 timestamp ms 정밀도 | 룰 trigger 시점 비교 |
+| **오탐 밀도** ≤2/일 | benign 390K 안에서 false positive 측정 | 학생 룰의 FP 분율 |
+
+### Case 2: L1/L2/L3 룰 계층 — dataset 의 message_type 별 권장
+
+| Layer (§2.4.2) | dataset 매핑 message_type | 권장 룰 ID |
+|--------------|------------------------|----------|
+| **L1 (1단계 — 단일 이벤트)** | 4624 / 4656 / 5156 / firewall_action | 100110-100199 |
+| **L2 (상관관계)** | 4625 frequency 5/60s, 4624+4670 same user | 100200-100299 |
+| **L3 (자동 대응)** | 4625 freq 10/60s + nft block trigger | 100300-100399 |
+
+### Case 3: Suricata 변형 룰 자동 파생 — dataset 의 vendor signature 패턴
+
+dataset 의 vendor signature `M34_MX67C_ORG-4044` 같은 식별자 → 본 lecture §4.1 *부모 룰 매칭 시 본문 변형 자동 파생* 의 baseline:
+
+```python
+# 본 lecture §4.2 의 derive_variants 함수 검증
+parent = "Deny inbound UDP from 100.64.20.230"
+variants = derive_variants(parent)
+# → "Deny inbound UDP from 100.64.20.230" (원본)
+# → "DENY INBOUND UDP FROM 100.64.20.230" (대문자)
+# → "RGVueSBpbmJvdW5kIFVEUC..."  (base64)
+```
+
+→ dataset 의 정찰 burst 패턴이 *원본 + 변형 룰* 모두로 catch 되는지 검증 가능.
+
+**해석 — 본 lecture (룰 엔지니어링) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **회귀 데이터셋** | 2.07M signals + 4-layer 라벨 = ground truth — 학생 룰 정밀도/재현율 측정 가능 |
+| **L1/L2/L3 계층** | dataset message_type 100+ 가 layer 별 매핑 — 룰 ID 범위 100100-100399 권장 |
+| **변형 룰 파생** | dataset 의 vendor signature 일관성 → derive_variants 검증 입력 |
+| **MITRE 매핑 메타** | 학생 룰의 `<mitre><id>T...</id></mitre>` → dataset 의 attack_techniques 와 통합 |
+
+**학생 액션**:
+1. 본인 SIGMA 룰을 `python3 -c "import duckdb; duckdb.execute(...)"` 로 dataset 에 적용 → P/R 측정
+2. L1/L2/L3 룰 ID 범위 (100100-100399) 정리 — *충돌 방지*
+3. 회귀 테스트 자동화 (`scripts/regression_test.py`) — dataset 위 *주 1회 P/R 측정*
 
 

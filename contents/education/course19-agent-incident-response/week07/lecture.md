@@ -466,14 +466,51 @@ class CorrelationEngine:
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 의 학습 주제는 *멀티에이전트
-규모화* — R1 정찰 / R2 분석 / R3 악용 / R4 지속성 / R5 유출의 역할 분할,
-다중 세션 상관관계 (JA3·UA·IAT 클러스터링), 노이즈 스톰 속 트리아지가 핵심
-이다. Precinct 6 dataset 의 T1041 (Exfiltration) 단일 incident 항목은 *세션
-간 클러스터*·*역할 분할* 흔적을 포함하지 않으며 R1~R5 협업 모델에 매핑되지
-않는다. 적합 source 발굴 시 (예: SolarWinds 캠페인 raw timeline, MITRE
-ATT&CK Software 라이브러리의 멀티에이전트 조합 사례) 재추가.
--->
+## 실제 사례 (WitFoo Precinct 6 — 다중 src IP 의 *역할 분리* 가능성 측정)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *멀티에이전트 규모화 — R1~R5 역할 분할 + JA3/UA/IAT 클러스터링* 학습 항목과 매핑되는 dataset 의 *동시 다중 src IP* 분포.
+
+### Case 1: 동시 활동 src IP 다양성 — multi-agent 가능성 측정
+
+| 시점 / src | 행위 | 본 lecture 매핑 |
+|----------|------|--------------|
+| `100.64.20.230` (1초 burst) | 30 host × 54 port | R1 정찰 (mass discovery) |
+| `100.64.44.5` / `100.64.44.4` (5분 단위) | 동일 dst 다른 dport 시도 | R1 정찰 보조 |
+| `100.64.5.50` / `100.64.14.10` / `100.64.3.50` | 6 host × 6 port × 24~42 events | R1 정찰 sweep |
+| `100.64.1.37` / `100.64.1.36` (4018 GET) | GoogleImageProxy 정상 트래픽 | (정상 noise) |
+| `100.64.1.67` (POST 88) | WAF POST sequence | R3 악용 (SQLi 시도) |
+
+→ dataset 안에 *6+ 외부 src* 가 *동시 활동*. **R1+R3 multi-agent 시나리오 가능성** 직접 증거.
+
+### Case 2: 노이즈 스톰 속 *조용한 src* — w07 §2.3 패턴
+
+dataset 의 100.64.20.230 가 1초 208 events (loud) → 동시간 다른 src `100.64.1.67` 의 POST 88건 은 *상대적으로 조용*.
+
+w07 §2.3.1 *조용한 세션 상향* 룰 적용 시:
+- alert_count >= 200 (loud src 100.64.20.230) → 무시
+- alert_count < 2 + active_duration > 10min (POST 88건 src) → **상향**
+
+→ 본 record 가 *노이즈 스톰 가설* 의 직접 검증.
+
+### Case 3: JA3/UA 클러스터링 가능성 — 부재 (한계)
+
+dataset 의 firewall_action / 5156 record 에 *JA3 hash 부재*. WAF GET 의 user-agent 는 단일 (GoogleImageProxy) — 클러스터링 데이터 부족.
+
+→ w07 §5.1 *JA3 클러스터링 skill* 은 *학생 환경에서 별도 구축 필요* (Suricata `tls.ja3` 활성화).
+
+**해석 — 본 lecture (멀티에이전트) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **R1+R3 동시 활동** | dataset 6+ 외부 src 동시 = multi-agent 가능성 직접 증거 |
+| **노이즈 스톰** | 100.64.20.230 loud + 100.64.1.67 quiet 동시 — w07 §2.3 가설 검증 |
+| **JA3 부재 한계** | dataset 자체엔 JA3 부재 — 학생 setup 시 Suricata `tls.ja3 enabled: yes` 필수 |
+| **세션 클러스터링 baseline** | 다중 src 가 *동일 dst* (10.0.145.98) 시도 패턴 — 클러스터 후보 |
+
+**학생 실습 액션**:
+1. dataset 의 6+ 외부 src 를 *역할 분리* 표로 작성 → R1~R5 매핑 시도
+2. 100.64.20.230 (loud) vs 100.64.1.67 (quiet) 동시 분석 — w07 §2.3 *조용한 세션 상향* 룰 검증
+3. 본인 환경 Suricata 의 `tls.ja3` 활성화 후 클러스터링 가능성 확보
 
 

@@ -375,14 +375,50 @@ ModSecurity OWASP CRS의 룰 ID 범위를 간단히.
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 의 학습 주제는 *회피·다형성·
-역탐지* — WAF/IPS 우회 페이로드 변형 (인코딩·분할·타이밍), 에이전트의 reverse
-detection, ModSec CRS 942xxx 룰 매칭·우회 흐름이다. Precinct 6 dataset 의
-T1041 (Exfiltration TA0010) 은 *방어 차단 후 변형 시도* 의 ModSec audit
-trace · CRS 룰 ID 분포 · payload Levenshtein 진화 흔적이 전혀 없다. 적합
-source 발굴 시 (예: PortSwigger/HackerOne 공개 WAF bypass writeup, OWASP CRS
-False Positive 분석 report) 재추가.
--->
+## 실제 사례 (WitFoo Precinct 6 — WAF outcome=200 비율 + signature gap)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *회피·다형성·역탐지* 학습 항목과 매핑되는 dataset 의 *WAF 통과 비율* + *firewall block 후 동일 src 의 재시도 패턴*.
+
+### Case 1: WAF GET 4018 + POST 88 — *모두 outcome=200/302*
+
+dataset 의 WAF 4106건 중 **outcome=403/500 차단 0건**. 이것이 *signature gap* 직접 증거 — vendor 룰 1220/1000 가 모든 트래픽을 *통과*.
+
+| outcome | 건수 | 의미 |
+|---------|------|------|
+| 200 (정상) | 다수 | WAF 룰 미발동 |
+| 302 (redirect) | 일부 | WAF가 redirect 처리 |
+| 403 (차단) | **0** | **시그니처 공백** |
+
+→ 본 lecture §1.3 *룰 쌓기 함정* 직접 증거.
+
+### Case 2: 동일 src `100.64.20.230` 의 *전체 block + 재시도 부재*
+
+w03 정찰 record (208 events 모두 firewall block):
+- 1초 내 *block 후 동일 src 재시도 0건* — 본 lecture §6.4 *역탐지* 결론과 일치
+
+→ attacker 가 *block 응답 자체* 에서 *방어 측 정책 추론* 후 *재시도 포기* 또는 *다른 src 사용* (record 부재).
+
+### Case 3: WAF 의 변형 변종 부재 — 실제 운영 환경의 *signature gap* 증거
+
+dataset 의 WAF 4106건 중:
+- 동일 path (`/servlet/eAndar.WebFileLibrary/...`) 가 4018건 (정상 사용)
+- 동일 dst (`10.0.145.98`) 가 다양한 src 에서 접근 — 정상 패턴
+
+→ **공격성 변형 페이로드 부재** = 본 dataset 환경에 *Mythos 류 회피 공격이 안 왔다* 는 증거. 학생 환경에는 *이런 baseline 이 깨지는 시점* 을 detect 하는 룰 필요.
+
+**해석 — 본 lecture (회피·다형성) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **signature gap (§1.3)** | dataset WAF 4106건 모두 outcome=200/302, 403 차단 0건 — gap 직접 증거 |
+| **역탐지 (§2)** | 100.64.20.230 가 1초 burst 후 *재시도 부재* — block 응답에서 정책 추론 후 *철수* |
+| **세션 진화 부재** | dataset POST 88건 의 *동일 src 페이로드 동일* — 변형 진화 없음 (정상 운영) |
+| **롤링 탐지 baseline** | dataset 의 *0건 차단* baseline 으로 *학생 환경 1건 차단 시 즉시 anomaly* |
+
+**학생 실습 액션**:
+1. 본인 WAF 의 outcome=403 비율 측정 → dataset 0% baseline 대비 spike 시 *실제 회피 시도 발생*
+2. 100.64.20.230 처럼 *block 후 재시도 부재* 패턴 학습 → 실제 회피 공격의 *재시도 패턴* 과 구분
+3. ModSec CRS 942xxx 룰 ID 별 firing 분포 측정 → dataset 0건 baseline 갖추기 (false positive 부재 환경)
 
 

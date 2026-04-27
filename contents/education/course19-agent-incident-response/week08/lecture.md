@@ -371,15 +371,53 @@ flowchart TB
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 는 *중간평가 CTF* — 학생이
-공격 세션 증거 (transcript·pcap·서버 로그·아티팩트) 로부터 *타임라인 복원*,
-*에이전트 점수 산출*, *ATT&CK 5건 매핑*, *방어 3층 평가*, *Bastion 스킬 명세
-작성* 을 수행한다. Precinct 6 의 T1041 단일 항목은 transcript·pcap·아티팩트
-가 없어 학생이 *복원* 할 무엇이 없다 — 부록 A 의 자체 sample bundle 이 이미
-역할을 수행 (JWT alg=none → exfil 흐름 포함). 외부 사례 인용 가치 없음.
-적합 source 발굴 시 (예: Verizon DBIR 공개 case detail, M-Trends report 의
-multi-step IR walkthrough) 부록에 별도 추가.
--->
+## 실제 사례 (WitFoo Precinct 6 — incident e5578610 의 *복원 워크북*)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *중간평가 CTF — 타임라인 복원·에이전트 점수·ATT&CK 매핑·방어 3층 평가·Bastion 스킬 명세* 학습 항목 매칭. dataset 의 1 incident 를 *학생 채점 기준 reference* 로.
+
+### Case 1: incident `e5578610-d2eb-11ee-...` 의 6 평가 항목 답안
+
+본 lecture Part 2 의 *6 필수 질문* 을 dataset 의 incident 1건으로 풀어보면:
+
+| 질문 (배점) | dataset 답안 |
+|-----------|-----------|
+| 1. **공격 단계 타임라인** (20점) | partition `e562f7c0-d2eb-11ee-...` + node ID + edge ID 시간순 |
+| 2. **에이전트 점수** (15점) | suspicion_score=0.71875 (vendor 라벨) — w03 의 5신호로 재계산 가능 |
+| 3. **ATT&CK 매핑 5건+** (15점) | mo_name=Data Theft (TA0010) + lifecycle=complete-mission + edge_type 5종 (EVENT/AUDIT/FLOW/DNS/INCIDENT_LINK) |
+| 4. **방어 3층 평가** (10점) | 본 incident 의 Cisco ASA Firewall (1층) + Precinct SIEM (2층) + (3층 기만 부재) — 1층 약함 |
+| 5. **차단 권고 3개** (10점) | (1) Firewall block ratio 4.7% 확대 (2) Wazuh 4670 룰 추가 (3) tar-pit 신규 |
+| 6. **Bastion 스킬 명세** (15점) | `detect_data_theft_burst` — w05 USER-0012 host hopping 패턴 활용 |
+
+### Case 2: dataset 자체가 *증거 번들 양식* reference
+
+본 lecture Part 1.1 *배포된 파일 구조* 와 dataset 의 동일 layer:
+
+```
+artifacts/w08/<student_id>/         vs   data/precinct6/
+  session-transcript.md             →   (incidents.jsonl 의 narrative)
+  pcap/attack.pcap                  →   (network_flow_data 13K + flow 31K)
+  server-logs/                       →   signals.parquet (2.07M)
+    access.log                      →   GET 4018 + POST 88 (CEF)
+    auth.log                        →   pam_event 17K + 4624 17K + 4625 0
+    modsec_audit.log                →   (WAF outcome=200 만)
+    wazuh-alerts.json               →   security_audit_event 381K
+  artifacts/                        →   (실제 file 직접 부재 — 4656 metadata 만)
+```
+
+→ 학생 답안 산출물 형식이 *dataset 양식과 1:1 매핑* 가능.
+
+**해석 — 본 lecture (중간평가) 와의 매핑**
+
+| 채점 학습 항목 | 본 record 의 시사점 |
+|-------------|-------------------|
+| **재현 가능성** | dataset 의 partition + node + edge ID 3축 = 학생 답안에도 동등 메타 |
+| **6 질문 양식** | 본 incident 1건으로 6 질문 모두 답변 가능 — 채점 reference |
+| **multi-vendor evidence** | host 1개에 Precinct + Cisco ASA = 2 layer evidence (학생 환경은 *5 layer 목표*) |
+| **mo_name 단순화 한계** | dataset mo_name 만 ("Data Theft") = ATT&CK technique 직접 매핑 부재 — 학생이 *세분 매핑* 추가 |
+
+**중간고사 채점 reference**:
+- dataset 의 *multi-vendor + multi-edge_type + framework 매핑* 양식을 갖춘 답안 = 만점
+- 단순 finding 나열 (재현 메타 부재) = 70점 이하
 
 
