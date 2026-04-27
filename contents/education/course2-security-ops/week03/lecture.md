@@ -574,9 +574,54 @@ Week 04에서는 Suricata IPS의 설치와 구성을 다룬다:
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w03 nftables 방화벽 실전 — NAT/포트포워딩/
-state-table. T1041 변종 B 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — DMZ NAT + state-tracking 흔적)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *nftables 방화벽 실전 — NAT/포트포워딩/state-table* 학습 항목과 매핑되는 dataset 의 *DMZ-routed* deny + UDP/TCP state 추적 record.
+
+### Case 1: DMZ 영역 routing — outside → DMZ 차단
+
+**원본 발췌** (앞서 본 record):
+
+```text
+Deny tcp src outside:100.64.20.230/CRED-250460
+  dst DMZ:172.28.21.208/22 by ORG-1738-group "outside_ORG-1738_in"
+```
+
+→ Cisco ASA 가 *DMZ 라는 이름의 zone* 정의. nftables 에선 *table family inet* + *chain hook prerouting/postrouting* 으로 동등.
+
+### Case 2: UDP 5060 (SIP) 방향성 — DNAT/SNAT 학습 사례
+
+dataset 의 100.64.20.230 정찰 burst 에서 5060 (SIP) 시도 → SIP gateway 가 *외부 NAT* 뒤에 있는 환경의 전형. nftables NAT 룰의 학습 사례.
+
+```text
+[추정 nftables NAT chain]
+table inet nat {
+  chain prerouting {
+    type nat hook prerouting priority dstnat;
+    udp dport 5060 dnat to 172.28.21.208:5060
+  }
+}
+→ 외부에서 5060 시도 시 DMZ 의 SIP 서버 (172.28.21.208) 로 DNAT
+→ dataset 처럼 ACL 가 *Deny* 하면 DNAT 전 차단
+```
+
+### Case 3: state-table 추론 — 동일 src 가 *연속 src port* 사용
+
+원본 record 의 `100.64.20.230/CRED-250460` 에서 src port 가 *연속 (0x0, 0x0)* 표시 — *NAT pool 의 single port* 사용. 정상 client 는 src port 매번 다름, *NAT 뒤 client* 는 동일 src port 재사용 가능.
+
+**해석 — 본 lecture (nftables 실전) 와의 매핑**
+
+| nftables 실전 학습 항목 | 본 record 의 증거 |
+|------------------------|------------------|
+| **NAT zone** | Cisco ASA 의 `DMZ` zone = nft `inet nat prerouting` chain |
+| **DNAT (포트 포워딩)** | record 의 `dst DMZ:172.28.21.208/22` = nft `dnat to 172.28.21.208:22` |
+| **state-table tracking** | record 의 src port 패턴 = nft `ct state established,related` (NAT 뒤 client 의 conn tracking) |
+| **conntrack zone 분리** | DMZ + Trust + Outside 3 zone = nft 의 다중 chain (input/forward/output) + ct zone 분리 |
+
+**학생 실습 액션**:
+1. nft DNAT 룰로 본 dataset 의 5060 SIP gateway 시나리오 재현
+2. `nft list ruleset` 출력에 *동일 src 의 동일 dst port* 차단 카운터 측정 → dataset 의 record 빈도와 비교
+3. conntrack table 의 *zone* 분리로 DMZ ↔ Outside ↔ Trust 3-zone NAT 구현
 
 

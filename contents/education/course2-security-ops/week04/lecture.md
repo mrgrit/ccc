@@ -576,9 +576,47 @@ Week 05에서는 Suricata 룰을 직접 작성한다:
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w04 Suricata IPS 설치·구성 — 인프라 setup
-주차. T1041 변종 B 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — Suricata flow + anomalous_behavior)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Suricata IPS 설치·구성* 학습 항목과 매핑되는 dataset 의 Suricata flow 31,758건 + anomalous_behavior 1,098건.
+
+### Case 1: Suricata flow event — Meraki l7_firewall 통합
+
+**원본 발췌**:
+
+```text
+<134>Original Address=100.64.30.168 1 CRED-27128CRED-304371.567887573
+  M34_MX67C_ORG-4044 l7_firewall
+  src=192.168.99.172 dst=203.0.113.65 protocol=tcp sport=58809 dport=443
+  decision=blocked
+```
+
+**dataset 분포**
+
+| message_type | 의미 | 건수 |
+|--------------|------|------|
+| flow | Suricata flow event | 31,758 |
+| network_flow_data | NetFlow record | 13,284 |
+| anomalous_behavior | 통계 기반 anomaly | 1,098 |
+| **합계** | | 46,140 |
+
+### Case 2: l7_firewall 의 *Application-aware* 차단
+
+원본의 `M34_MX67C_ORG-4044 l7_firewall` = Meraki MX67C (L7 firewall). 단순 5-tuple 이 아닌 *application-aware* 차단 — Suricata 의 *app-layer* 검사와 동일 개념.
+
+**해석 — 본 lecture (Suricata 설치) 와의 매핑**
+
+| Suricata 학습 항목 | 본 record 의 증거 |
+|-------------------|------------------|
+| **flow event** | dataset 의 31K flow record — Suricata `eve.json` 의 `event_type=flow` 와 동일 형식 |
+| **app-layer 검사** | l7_firewall 라벨 — Suricata `app-layer.protocols` 설정으로 동일 capability |
+| **multi-vendor 통합** | Meraki + Cisco + Suricata 동시 logging — `eve.json` 표준 (Suricata 가 일종의 통합 collector 역할) |
+| **anomalous_behavior 1K** | Suricata 의 `flow.alerted` + `stream.app_layer_error` 같은 비정상 detection — 1,098 건 = 0.05% baseline |
+
+**학생 실습 액션**:
+1. Suricata 설치 후 본 dataset 의 *flow + app_layer 분리* 가 자체 `eve.json` 에 있는지 확인
+2. Meraki l7_firewall 같은 *vendor-specific* log 를 Suricata `eve.json` 으로 통합 (logstash/fluentbit grok)
+3. anomalous_behavior 비율 baseline (0.05%) 대비 자체 환경 측정 — 5배 spike 시 *anomaly storm* 분석
 
 

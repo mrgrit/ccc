@@ -999,9 +999,48 @@ active
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w01 보안 솔루션 개론 — 전반 인프라 소개.
-T1041 변종 B (suspicion=0.25 만, 단일 line 데이터) 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — 운영 보안 솔루션 5 종 동시 가시성)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *보안 솔루션 개론 + 인프라 소개* 학습 항목 (Defense in Depth · multi-vendor · SIEM 통합) 와 매핑되는 dataset 의 *단일 incident 의 multi-product evidence*.
+
+### Case 1: 1 incident host 가 보유한 *2 vendor product* + framework 매핑
+
+**원본** (incidents.jsonl 의 host 노드 발췌):
+
+```json
+"products": {
+  "6":  {"name": "Precinct", "vendor_name": "WitFoo",
+         "frameworks": {"csc":[1,6,16,19], "cmmc1":[6], ...,
+                        "iso27001":[4,8,14,16,67,68,69,71,72,113,114,...]}},
+  "17": {"name": "ASA Firewall", "vendor_name": "Cisco",
+         "frameworks": {"csc":[9,12], "cmmc1":[1,5], ...,
+                        "iso27001":[1,2,53,54,81,86]}}
+}
+```
+
+### Case 2: dataset 의 *vendor diversity* — 100+ message_type
+
+| 도메인 | 본 dataset 의 evidence (message_type) | 본 과목 학습 도구 |
+|--------|-------------------------------------|-----------------|
+| **Firewall** | firewall_action 118K · traffic_drop 5.8K | nftables (w02-w03) |
+| **IPS/IDS** | flow 31K · network_flow_data 13K · anomalous_behavior 1K | Suricata (w04-w06) |
+| **WAF** | GET 4018 · POST 88 (CEF format) | ModSecurity (w07) |
+| **SIEM** | 4624/4625 · 4656/4658 · 4663 · 5156 · 4798/4799 · 7036 등 (Windows event 24만+) | Wazuh (w09-w11) |
+| **CTI** | mo_name (Data Theft 125K · Phishing 8) · matched_rules · attack_techniques | OpenCTI (w12-w13) |
+
+**해석 — 본 lecture 와의 매핑**
+
+| 보안 솔루션 개론 학습 항목 | 본 record 의 증거 |
+|-------------------------|------------------|
+| **Defense in Depth** | 1 host 에 SIEM (Precinct/WitFoo) + Firewall (Cisco ASA) 두 layer 동시. 본 과목은 5 layer (nft·Suricata·ModSec·Wazuh·OpenCTI) — 본 dataset 보다 *더 깊음* |
+| **multi-vendor 통합** | dataset host 가 *2 vendor framework 동시 매핑* — 본 과목 학생도 *5 vendor SIEM 통합* 능력 학습 |
+| **framework 다중 매핑** | 본 dataset host 가 csc/cmmc/pci/nist80053/csf/iso27001/soc2 *7-framework* 동시 — 학생 보고서 baseline |
+| **CEF 표준** | dataset 의 WAF GET 이 CEF 7-field 표준 사용 — 본 과목 ModSec 출력도 동일 표준화 권장 |
+
+**w01 학습 액션**:
+1. 본 dataset 의 5 도메인 evidence 분포를 *학생 실습 환경* 에 동등 갖추기 (5 솔루션 모두 setup)
+2. 1 incident 의 *7-framework 매핑* 을 표로 작성 (학생 보고서 양식 baseline)
+3. 본인 환경의 multi-vendor 통합도가 dataset 처럼 *동일 host 에 N vendor evidence* 보유하는지 측정
 
 

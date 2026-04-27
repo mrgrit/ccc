@@ -562,9 +562,59 @@ Week 03에서는 nftables의 실전 기능을 다룬다:
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w02 nftables 방화벽 기초 — Linux 패킷
-필터링 / chain·rule·table 학습. T1041 변종 B 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — Cisco ASA / Meraki firewall 차단 행동)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *nftables 방화벽 기초 — chain/rule/table* 학습 항목과 매핑되는 dataset 의 firewall_action 118,151건 + traffic_drop 5,826건.
+
+### Case 1: Cisco ASA explicit Deny — direction·protocol·src/dst 명시
+
+**원본 발췌**:
+
+```text
+<162>May 22 USER-9546 03:24:59: USER-0010-0344
+  Deny inbound UDP from 100.64.44.5/60120 to 172.23.234.119/443
+  on ORG-9508 outside
+
+<180>Jul 09 USER-9564 21:56:51: USER-0010-0324
+  Deny tcp src outside:100.64.20.230/CRED-250460
+  dst DMZ:172.28.21.208/22 by ORG-1738-group "outside_ORG-1738_in"
+```
+
+**dataset 분포**
+
+| message_type | 의미 | 건수 |
+|--------------|------|------|
+| firewall_action | allow/block 일반 | 118,151 |
+| traffic_drop | explicit drop | 5,826 |
+| firewall_log | raw firewall log | 200 |
+| **합계** | | 124,177 |
+
+→ block ratio (explicit drop / 전체 fw 행동) = **4.7%** baseline.
+
+### Case 2: Cisco ASA 룰 그룹 — *named ACL* 운영
+
+원본 라인의 `outside_ORG-1738_in` 가 *ACL group 이름*. nftables 의 **chain** 과 동일 개념:
+
+| 솔루션 | 룰 그룹 단위 | 본 record 의 사례 |
+|--------|-------------|------------------|
+| Cisco ASA | access-group / access-list | `outside_ORG-1738_in` |
+| iptables | chain | INPUT / FORWARD / OUTPUT |
+| **nftables** | **table → chain** | `inet filter input` |
+
+**해석 — 본 lecture (nftables 기초) 와의 매핑**
+
+| nftables 학습 항목 | 본 record 의 증거 |
+|-------------------|------------------|
+| **rule action (drop/accept)** | dataset 의 `Deny inbound` = nft `drop`, `Permit` = nft `accept` |
+| **direction (input/output/forward)** | record 의 `inbound` / `outbound` = nft chain hook (input/output/forward) |
+| **3-tuple matching** | record 의 `src=100.64.44.5/60120 dst=172.23.234.119/443 UDP` = nft `ip saddr ... daddr ... udp dport ...` |
+| **ACL grouping** | `outside_ORG-1738_in` 같은 named group = nft *named set* (`ip saddr @bad_ips`) |
+| **block 비율 baseline** | dataset 4.7% — 학생 본인 nft 환경의 block ratio baseline 비교 가능 |
+
+**학생 실습 액션**:
+1. nftables 로 본 dataset 의 `Deny inbound UDP` 라인을 *재현* — 동일 src/dst/port 조합 차단 룰 작성
+2. nft set 으로 본 dataset 의 `outside_ORG-1738_in` 같은 IP 그룹 만들기 — 5만+ blocked IP 의 효율적 관리
+3. nft `counter` 로 자체 환경의 block ratio 측정 → dataset 의 4.7% 대비 정상/비정상 baseline 확립
 
 

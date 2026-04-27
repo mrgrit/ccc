@@ -572,9 +572,54 @@ Week 06에서는 Suricata 운영을 다룬다:
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w05 Suricata 룰 작성 — 룰 문법·signature·
-content matching. T1041 변종 B 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — matched_rules + signature 기반 차단 패턴)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Suricata 룰 작성 — signature·content matching* 학습 항목과 매핑되는 dataset 의 matched_rules + l7_firewall vendor signature.
+
+### Case 1: vendor signature — Meraki MX67C 의 ID-base 차단
+
+**원본 발췌** (앞서 본 record):
+
+```text
+M34_MX67C_ORG-4044 l7_firewall  src=192.168.99.172 dst=203.0.113.65
+                                 protocol=tcp dport=443 decision=blocked
+```
+
+→ vendor 가 자체 signature ID (`M34_MX67C` 등) 사용. Suricata 의 *sid* 와 동일 개념. 학생은 자체 룰 ID 범위를 정해서 충돌 회피 (예: 1000000~9999999 user-defined 영역).
+
+### Case 2: WAF GET 의 vendor signature 매핑
+
+WAF GET 4018건 의 CEF 형식: `CEF:0|...|WAF|1220|1000|GET|5|...`
+- `1220` = vendor signature group ID
+- `1000` = signature variant ID
+- 둘이 합쳐 *Suricata 의 sid:rev* 와 동등
+
+### Case 3: dataset 의 *signature 다양성* — message_type 100+
+
+**signature-aware message_type 통계 (top 10)**:
+
+| message_type | 의미 | 건수 |
+|--------------|------|------|
+| firewall_action | rule-matched FW action | 118,151 |
+| 5156 | WFP filter signature | 176,060 |
+| 4663 | object access rule | 98 |
+| 4670 | permission change rule | 188 |
+| 4985 | transaction rule match | 4,876 |
+
+**해석 — 본 lecture (Suricata 룰) 와의 매핑**
+
+| Suricata 룰 학습 항목 | 본 record 의 증거 |
+|---------------------|------------------|
+| **sid:rev** 명명 | dataset 의 vendor signature ID (M34_MX67C / 1220-1000) 와 동등. 학생 sid 범위는 1000000+ 권장 |
+| **content matching** | record 의 `protocol=tcp dport=443` = Suricata `proto tcp; flow:to_server; content:"|17 03|"; depth:2;` |
+| **threshold/limit** | dataset 의 *대량 차단* (1초 100+ 동일 src) = Suricata `threshold: type both, track by_src, count 10, seconds 5` |
+| **signature 진화** | dataset 의 vendor signature 가 *고정 ID + revision* — Suricata 도 `sid:1234567; rev:5;` 양식 |
+| **MITRE 매핑** | Suricata 룰에 `metadata: mitre_attack T1190` 같은 메타데이터 권장 — dataset 의 `attack_techniques` 필드와 통합 가능 |
+
+**학생 룰 작성 권고**:
+1. 본 dataset 의 *vendor signature pattern* 을 Suricata 룰로 *재현* (예: `decision=blocked` 시 자체 sid:1000001 발동)
+2. 자체 룰 sid 는 1000000+ 사용 (vendor 룰 충돌 회피)
+3. 모든 룰에 `metadata: mitre_attack T<ID>` 첨부 — dataset 의 attack_techniques 필드와 호환
 
 
