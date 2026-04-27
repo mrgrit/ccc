@@ -430,17 +430,86 @@ flowchart TB
 
 ---
 
-<!--
-사례 섹션 폐기 — 단, 본 lecture 는 1:1 매칭 가능성이 있는 *후보* (2026-04-27
-수기 검토): 본 lecture 는 *에이전트 IR 보고서* — 모델 정보·프롬프트·Transient
-Tool 스냅샷·의사결정 로그·증적 보존·마스킹 파이프라인이 핵심이다. Precinct 6
-dataset 은 *RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN* 으로 anonymize 된
-공개 incident corpus 이므로 §3.3.1 *마스킹 파이프라인* 과 §4 *증적 보존*
-의 *공개 사례*로 1:1 매칭 가능. 다만 현재 두 case (3-field 요약) 는 보고서
-구조를 보여주지 못하므로 폐기. 향후 풍부화 방안: WitFoo 의 anonymization
-scheme 을 §3.3.2 Before/After 마스킹 샘플 옆에 *진짜 공개 사례* 로 1쪽
-case study 추가 (모델 정보·프롬프트 부재 → IR 보고서 *전통/Pre-Mythos*
-template 의 한계 사례로 대비).
--->
+## 실제 사례 (WitFoo Precinct 6 — IR 보고서의 *4-layer 익명화* 직접 reference)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *에이전트 IR 보고서 — 마스킹 파이프라인·증적 보존* 학습 항목과 **1:1 매칭** 되는 dataset — 그 자체가 *공개된 사고 보고서 corpus*.
+
+### Case 1: dataset 의 4-layer 익명화 = 본 lecture §3.3.1 마스킹 파이프라인의 *직접 prototype*
+
+**dataset metadata 발췌**:
+
+```json
+{
+  "sanitization": {
+    "method": "4-layer (regex + format-parse + ML/NER + Claude review)",
+    "ip_replacement": "RFC5737 TEST-NET for public, remapped RFC1918 for private",
+    "org_replacement": "ORG-NNNN",
+    "host_replacement": "HOST-NNNN / host-NNNN.example.internal"
+  }
+}
+```
+
+**§3.3.1 학생 마스킹 파이프라인과 1:1 매칭**:
+
+| 학생 lecture §3.3.1 단계 | dataset 의 동등 단계 |
+|------------------------|------------------|
+| ① 자격증명 마스킹 (token·key·hash) | regex layer (Layer 1) — `CRED-NNNN` |
+| ② 개인정보 마스킹 (email·IP·name) | format-parse + RFC5737 IP (Layer 2) |
+| ③ 내부 구조 마스킹 (host·path) | NER (Layer 3) — `HOST-NNNN`, `domain-NNNN.example.internal` |
+| ④ 모델 원문 축약 (추론 chain) | Claude review (Layer 4) — LLM 보조 사람 검토 |
+
+→ dataset 자체가 *학생 IR 보고서 마스킹 파이프라인의 정확한 reference*.
+
+### Case 2: §4 증적 보존 양식 — dataset 의 partition + node ID
+
+본 lecture §4 *증적 보존 체크리스트* 매핑:
+
+| §4 항목 | dataset 의 동등 메타 |
+|--------|------------------|
+| 원본 pcap 1년+ 보존 | dataset 의 595K edges (시간 분할 partition 보존) |
+| 해시 봉인 (sha256) | (dataset 자체에 sha256 부재 — *학생이 추가* 해야 함) |
+| 오프사이트 복제 | dataset 자체가 GitHub 공개 = 외부 복제 |
+| 접근 감사 로그 | (dataset 사용 통계 — Apache 2.0 license tracking) |
+
+### Case 3: 본 lecture §1.2 *전통 vs 에이전트 IR* 비교 — dataset 의 한계
+
+dataset 은 *Pre-Mythos* IR 보고서의 한계 사례:
+
+| §1.2 누락 정보 | dataset 의 status | 학생 IR 보고서 추가 항목 |
+|--------------|-----------------|--------------------|
+| 모델 버전·공급자 | **부재** | (Pre-Mythos = AI 공격자 부재) |
+| 프롬프트 출처 | **부재** | 추가 필요 |
+| Transient Tool 스냅샷 | (4656/4658 만 있음) | 추가 필요 |
+| 의사결정 추론 chain | **부재** (사람 + LLM 보조 — 추론 비공개) | 추가 필요 |
+| Bastion 자산 변화 | **부재** | 추가 필요 |
+
+→ dataset 의 *결핍이 곧 본 lecture 의 reason d'etre*. 학생은 dataset 한계를 *극복하는 보고서* 를 작성.
+
+### Case 4: §3.3.2 Before/After 마스킹 샘플 — dataset 라인 직접 활용
+
+```text
+Before (가정 — dataset 익명화 *이전* 의 원본):
+  src=203.0.113.45  user=alice@company.com  host=mail-server-01.company.local
+
+After (dataset 의 실제 익명화 결과):
+  src=100.64.20.230  user=USER-0044  host=USER-0010-0040.domain-0022.example.net
+```
+
+→ 본 dataset 의 모든 record 가 *Before/After 의 After 사례* 직접 인용 가능.
+
+**해석 — 본 lecture (IR 보고서) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **마스킹 파이프라인 1:1** | dataset 의 4-layer 가 §3.3.1 의 4 단계와 정확히 매핑 |
+| **증적 보존 reference** | dataset 의 partition + node + edge ID 3축 = 학생 보고서 양식 |
+| **전통 IR 한계** | dataset 의 *모델 정보 부재* = Pre-Mythos 보고서 한계 직접 증거 |
+| **공개 가능성** | dataset 자체가 Apache 2.0 = 학생 우수 보고서도 *동등 익명화 후 공개* 가능 |
+
+**학생 IR 보고서 액션**:
+1. 학생 보고서의 모든 evidence 에 dataset 의 4-layer 익명화 *동일 적용* (regex → format → NER → 사람 review)
+2. dataset 의 RFC5737/ORG/HOST/USER 치환 양식 *그대로 모방* — 외부 공유 시 호환 보장
+3. §1.2 의 *Mythos 시대 추가 정보* (모델·프롬프트·Tool·추론·자산) 5 축을 *반드시* 보고서에 포함 → dataset 한계 *극복*
 
 

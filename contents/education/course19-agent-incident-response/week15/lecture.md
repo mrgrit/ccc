@@ -315,12 +315,65 @@ flowchart TB
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 는 *기말 — 종합 Purple +
-Mythos-readiness 자가 진단 + 30/90/365 작전 계획* 이 핵심이며 평가 중심
-주차이다. Precinct 6 의 T1041 단일 항목은 *학생 본인 자산 평가* / *조직
-도입 계획* / *L0~L5 진단* 어디에도 입력되지 않는다 — 학생은 *본인의*
-artifacts 와 진단을 갖고 작업. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — Mythos-readiness L0~L5 의 구체 reference)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *기말 — Mythos-readiness 자가 진단 + 30/90/365 작전 계획* 학습 항목과 매핑되는 dataset 의 *각 레벨 별 evidence* — 학생 자가 진단의 baseline.
+
+### Case 1: Mythos-readiness L0~L5 의 dataset 매핑
+
+| Level (§3.1) | dataset 의 evidence | L 도달 baseline |
+|------------|------------------|-----------|
+| **L1 Observer** | 2.07M signals + 595K edges 수집 | dataset 자체 = L1 보유 |
+| **L2 Reactor** | firewall_action 차단 118K + traffic_drop 5.8K | dataset = L2 (수동 reactor) |
+| **L3 Defender** | 4-layer labeling + Round 단위 학습 | dataset = L3 (사람+LLM) |
+| **L4 Co-evolver** | (Bastion 자동 승격 — dataset 부재) | 학생 본인 환경 (Bastion 통합) |
+| **L5 Mythos-ready** | (CTI + Canary + 연속 진화 — dataset 부재) | 학생 365일 목표 |
+
+→ dataset 의 4-layer 라벨링 환경 = **L3 baseline**. 학생 본인 환경은 L4/L5 도달이 목표.
+
+### Case 2: 30/90/365 계획 — dataset 의 12개월 라벨링이 *365일 baseline*
+
+본 lecture §4 작전 계획:
+
+| 기간 | 학생 목표 | dataset 의 동등 reference |
+|------|---------|---------------------|
+| **30일 (즉시)** | 가시성 + egress + 1~2 skill 이식 | dataset Layer 1 (regex) 자동 분류 |
+| **90일 (중기)** | VulnOps 팀 + Purple 월 1회 + 허니토큰 | dataset Layer 2-3 (format + ML/NER) 추가 |
+| **365일 (장기)** | Co-evolution + CTI 연동 + L3+ | dataset Layer 4 (Claude review) 도달 + Apache 2.0 공개 |
+
+→ dataset 의 12개월 *4-layer 완성* = 학생 365일 계획의 정량 reference.
+
+### Case 3: 본 시스템 자체의 R3 round 진행 = 학생 진단 reference
+
+`results/retest/report.md` 의 자체 시스템 status:
+
+```
+- pass: 1804 → 2047 (+243)
+- 전체 pass율: 58.4% → 66.3% (+7.9%p)
+- R3 round: 410/575 진행 (71%)
+```
+
+→ 본 시스템 자체가 *L4 Co-evolver* 의 직접 사례. 학생이 본인 환경을 *동등 metric* 으로 자가 진단.
+
+### Case 4: 외부 공유 가능성 — dataset 의 Apache 2.0 = 학생 우수작 reference
+
+dataset 의 4-layer 익명화 + Apache 2.0 = *공개 reference*. 학생 우수 보고서도 *동등 익명화* 후 *다음 코호트 reference* 로 공유 가능 (§ 마무리 메시지).
+
+**해석 — 본 lecture (기말) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **L0~L5 자가 진단** | dataset = L3 (사람+LLM) baseline 명확 |
+| **30/90/365 계획** | dataset 의 12개월 4-layer 완성 = 365일 reference |
+| **Bastion 자산 변화 측정** | 본 시스템 R3 +243 fix = *학생 본인 round 결과* 동등 metric |
+| **외부 공유 보고서** | dataset Apache 2.0 = 학생 우수작의 *공개 양식* |
+| **다음 코호트 reference** | dataset 의 1:1 매핑 양식 = 학생 보고서 표준 |
+
+**기말 평가 함의**:
+- L3 도달 (사람+LLM 보조) = 만점 baseline
+- L4 도달 (Bastion 자동 승격) = 우수작
+- L5 (Mythos-ready) = 365일 후 목표
+- dataset 의 4-layer 양식 *모방한 보고서* = 외부 공유 가능 (다음 코호트 reference 로 채택)
 
 

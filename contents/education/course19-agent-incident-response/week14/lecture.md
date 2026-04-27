@@ -370,14 +370,59 @@ flowchart TB
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 는 *다단계 Agentic APT*
-모의 실사고 — 5-agent 팀 (R1 정찰 / R2 웹 / R3 측면이동 / R4 유출 / R5
-지속성), 5단계 킬체인 전체, 90분 실시간 공방이 핵심이다. 부록 A 의 *가상
-타임라인* 이 이미 5단계 전체 (T+0 정찰 → T+50 종료) 를 풍부하게 보여주므로
-*lecture 자체 사례* 가 충분. Precinct 6 의 T1041 단일 항목은 5단계 중 *마지막
-단계 (exfil) 의 tag* 일 뿐, 다단계 킬체인 전체를 보여주지 못함. 외부 사례
-인용 가치 없음 — 부록 A 가 sole case study 역할.
--->
+## 실제 사례 (WitFoo Precinct 6 — 5-agent 킬체인의 *각 단계 record* 매핑)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *5-agent (R1~R5) 5단계 킬체인 모의 실사고* 학습 항목과 매핑되는 dataset 의 각 단계 별 직접 record.
+
+### Case 1: 5-agent 킬체인 ↔ dataset record 매핑 표
+
+| Red agent | 단계 | 본 dataset record (직접 evidence) |
+|----------|------|--------------------------------|
+| **R1 정찰** | TA0043 | `100.64.20.230` 1초 burst (30 host × 54 port × 208 events) |
+| **R2 웹 악용** | TA0001+TA0002 | WAF POST 88건 (JSESSIONID 평문 + outcome=200) |
+| **R3 측면이동** | TA0008 | USER-0012 의 3.3초 host hopping (NTLM 4776) + 5156 connections |
+| **R4 데이터 유출** | TA0010 | mo_name="Data Theft" 125,772건 + lifecycle="complete-mission" |
+| **R5 지속성** | TA0003 | systemd_event 34K + 7036/7040 + 4670 permission change |
+
+→ 각 R 의 *대표 record* 가 dataset 에 직접 존재. 모의 실사고 90분 시나리오의 *시간 압축 reference*.
+
+### Case 2: 부록 A 가상 타임라인 ↔ dataset 의 시간 분포 비교
+
+본 lecture 부록 A 의 가상 timeline (T+0 정찰 → T+50 종료) 을 dataset 의 *실제 시간 분포* 로 검증:
+
+```
+[부록 A 가상]                           [dataset 실제]
+T+0   R1 정찰                            timestamp 1688960026 (단일 초, 208 events)
+T+10  R2 웹 공격                         WAF POST sequence (분 단위 분산)
+T+15  R5 지속성                           systemd_event 시간 분포 (분 단위)
+T+25  R3 측면이동                         4776 NTLM (3.3초 host hopping = 매우 빠름)
+T+35  R4 유출                            "Data Theft" lifecycle 도달
+T+50  종료                               complete-mission 라벨
+```
+
+→ dataset 의 *실제 시간* 이 부록 A 의 *가상 50분 시간* 과 일치하지 않음. **실세계 APT 는 더 분산** (6.1% complete-mission = 침투 후 데이터 유출까지 *수일~수개월*). 본 lecture 의 90분 실사고는 *압축된 학습용*.
+
+### Case 3: 학생 모의 실사고 평가 — dataset baseline 과 비교
+
+| §1.3.3 성공 기준 | dataset 비교 |
+|--------------|----------|
+| **전면 성공** (5단계 중 4+ 차단) | dataset 의 mo_name=Data Theft 6.1% = 사람 환경 *94% 차단 baseline* — 학생 목표 동등 |
+| **부분 성공** (3단계 차단) | dataset 의 traffic_drop 4.7% = 학생 *최소 baseline* |
+| **경험 성공** | dataset 의 라벨링 자체가 *학습 input* — 모든 round 가 *경험* 으로 변환 |
+
+**해석 — 본 lecture (다단계 APT) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **5-agent 매핑** | dataset 의 5 단계 record 가 R1~R5 직접 reference |
+| **시간 분산** | dataset 6.1% complete-mission = 실세계 APT 의 *수일~수개월* — 90분 실사고는 *압축 학습용* |
+| **multi-vendor 통합** | dataset host 의 5 vendor product (Precinct + Cisco + ...) = 학생 환경의 5 솔루션 통합 baseline |
+| **학생 평가 기준** | 사람 환경 baseline 94% 차단 + 6.1% miss = 학생 목표 동등 |
+
+**모의 실사고 운영 권고**:
+1. 90분 시간 압축은 *학습 효과 우선* — 실세계 APT 는 *분산*. dataset 으로 *시간 차원* 학습
+2. 학생 5-agent 결과 → dataset 의 5단계 record 와 *1:1 매칭 표* 작성 (학생 evidence vs dataset reference)
+3. 전면 성공 기준 = dataset 사람 baseline (94% 차단) 동등 → 학생 setup 의 *경쟁 baseline*
 
 

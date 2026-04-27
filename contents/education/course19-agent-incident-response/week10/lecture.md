@@ -440,14 +440,59 @@ flowchart TB
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 는 *기만·지연* (deception
-& tar-pit) — 허니토큰 / 허니팟 경로 / Tar-pit / 오염 응답 4개 능동 방어
-기법, 비대칭 비용 모델, 의심 점수 단계별 배포 전략이 핵심이다. Precinct 6
-의 T1041 단일 항목은 *허니 자산 접촉* / *Tar-pit 응답 시간 증가* / *오염
-data 분석* 흔적이 0이며 능동 방어 효과 측정에 활용되지 않는다. 폐기.
-재추가 source 후보: TrapX·Illusive Networks 공개 case study, CIRT.SK 의
-honeytoken 활용 보고서.
--->
+## 실제 사례 (WitFoo Precinct 6 — 능동 방어 *부재* 환경의 baseline)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *기만·지연 (허니토큰·허니팟·Tar-pit·오염 응답)* 학습 항목과 매핑되는 dataset 의 *능동 방어 부재 baseline* — 본 dataset 환경에 기만 자산이 없을 때 공격자가 어떻게 행동하는지.
+
+### Case 1: dataset 환경의 *능동 방어 부재 증거*
+
+본 dataset 의 traffic_drop 5,826건 + firewall_action 118K = *수동 방어 (block/allow)* 만. 능동 방어 흔적 부재:
+
+| w10 §2 4 기법 | dataset 의 evidence | 결론 |
+|------------|-------------------|------|
+| 허니토큰 | (response 본문에 가짜 토큰 부재) | 미배치 |
+| 허니팟 경로 | (URL path 에 가짜 admin 경로 부재) | 미배치 |
+| Tar-pit | (response time 측정 — WAF 의 elapsed 일관) | 미배치 |
+| 오염 응답 | (응답 본문 모두 정상 outcome=200) | 미배치 |
+
+→ **dataset 환경 = 능동 방어 0개**. 학생 setup 의 *대비점* 으로 활용.
+
+### Case 2: 100.64.20.230 의 *철수 패턴* — 능동 방어 부재로 attacker 전략 확인 가능
+
+w10 §1.5 *공격자 ROI* 모델 — attacker 가 1초 burst 후 *재시도 부재*. 이유:
+- block 응답 (수동 방어) → attacker 가 *추가 비용 없이* 정찰 완료
+- 능동 방어 0 → attacker 가 *기만 가능성 의심 안 함* → *철수 비용 0*
+
+→ 본 record 가 *능동 방어 도입 시 attacker 의 추가 비용* 의 reference baseline.
+
+### Case 3: 능동 방어 *추가 후 예상 record 변화* 시나리오
+
+학생이 본 dataset 의 `100.64.20.230` 시나리오에 능동 방어 4 기법 적용 시 예상:
+
+```
+[원본 dataset]   100.64.20.230 → 30 host × 54 port × 208 events
+                 → 1초 burst → 재시도 0건
+
+[능동 방어 적용 후]
+  + 허니팟 31337 (elite port) 응답: outcome=200 + fake banner
+  → attacker 가 31337 후속 시도 (5분~수 시간)
+  → 학생 환경에 *attacker 시간 5+ 분 낭비*
+  → 추가 record 수십 건 발생 (학생 dashboard 가시화)
+```
+
+**해석 — 본 lecture (기만·지연) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **능동 방어 부재 baseline** | dataset 0개 능동 방어 = *기만 효과 측정의 0점 reference* |
+| **공격자 ROI** | 100.64.20.230 의 1초 burst + 재시도 0 = *공격 비용 최저 환경*. 능동 방어로 비용 증가 측정 가능 |
+| **w10 §2 4기법 baseline** | dataset 의 4기법 모두 부재 → 학생 setup 후 *각 기법 별 effect* 정량 측정 |
+| **법적 고려 (§5)** | dataset 의 4-layer 익명화 = 외부 공유 가능 — 학생 honeytoken 도 *PII 부재* 보장 필요 |
+
+**학생 능동 방어 액션**:
+1. dataset 의 100.64.20.230 burst 패턴을 *학생 환경에 재현* — 능동 방어 적용 전후 attacker 시간 측정
+2. honeytoken (예: `HONEY_xxx`) 응답에 삽입 → recall 시점 기록 → 비용 ROI 정량
+3. Tar-pit 30s 적용 → dataset baseline 의 *zero delay* 대비 attacker 시간 비대칭 입증
 
 

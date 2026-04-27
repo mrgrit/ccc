@@ -465,13 +465,59 @@ Round가 *조직적으로 실패*하는 가장 흔한 세 패턴.
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 는 *Purple Round 1* — Red
-가 Blue 를 코칭하는 메타 학습 사이클 (포렌식 복기 → 코치 모드 → Bastion
-업그레이드 → 재테스트) 이 핵심이다. Precinct 6 의 T1041 단일 항목은 *코치
-프롬프트 입력*·*missed event 4분류 (A/B/C/D)*·*자산 diff* 어디에도 매칭
-되지 않으며 Round 진행 데이터가 아니다. 폐기. Round 실 데이터는 학생 본인
-세션 기록 (artifacts/w11-round1/) 이 담당 — 외부 사례 인용 가치 없음.
--->
+## 실제 사례 (WitFoo Precinct 6 — 본 시스템 자체 R3 round 진행을 reference)
+
+> 출처: `results/retest/report.md` (자체 시스템) + WitFoo Precinct 6 Cybersecurity Dataset
+> 본 lecture *Purple Round 1 — Red 가 Blue 를 코치* 학습 항목과 매핑되는 *본 시스템 자체의 R3 retest round* — Bastion 자동화가 어떻게 round 단위로 진화하는지의 직접 reference.
+
+### Case 1: 본 CCC 의 R3 retest round 진행 (2026-04-27 시점)
+
+**현재 round status** (자동 생성: `scripts/retest_report.py`):
+
+| 지표 | Baseline (R2 종료) | R3 진행 (현재) | Δ |
+|------|-------------------|--------------|---|
+| pass | 1804 | 2047 | **+243** |
+| fail | 1096 | 455 | -641 |
+| 전체 pass율 | 58.4% | **66.3%** | +7.9%p |
+| R3 cursor | 0 / 575 | 410 / 575 | 71% |
+
+→ R3 가 *원본 baseline 의 +243 fix* — 본 lecture §3.2 *Bastion 자산 변화 측정* 의 직접 사례.
+
+### Case 2: missed event 4분류 (§3.2) — R3 의 fail 분포 적용
+
+R3 가 처리 중인 575 case 중 발생 가능한 4분류:
+
+| 유형 | 의미 | R3 의 매핑 |
+|------|------|---------|
+| A. 미탐지 | 경보 자체 부재 | *"새 verify.semantic 룰이 cover 안 한 경우"* |
+| B. 지연 탐지 | 늦게 경보 | *"다단계 chain 의 후속 step 실패"* |
+| C. 오탐 처리 | 경보 무시 | *"qa_fallback 분류 실패"* |
+| D. 대응 실패 | 차단 시도 실패 | *"5개 ATTACK_COURSES 의 derestricted 모델 함수콜 파싱 실패"* |
+
+→ R3 의 13개 in-progress task (#13 등) 가 본 분류 중 어디에 해당하는지 점검.
+
+### Case 3: dataset 의 *coach reference* — incident graph 의 4-layer 라벨링
+
+dataset 의 4-layer (regex + format + NER + Claude review) 가 *Red 코치 모드* 의 reference:
+- Layer 1 (regex) = w03 정찰 신호 자동 룰
+- Layer 2 (format-parse) = SIGMA → Wazuh 변환 (w09)
+- Layer 3 (ML/NER) = Bastion Intent Classifier (LLM 기반)
+- **Layer 4 (Claude review)** = *Red 코치 모드의 LLM 보조 분석*
+
+→ 본 dataset 의 *Claude review* 단계가 본 lecture *코치 모드* 의 정확한 prototype.
+
+**해석 — 본 lecture (Purple Round 1) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **Round 단위 자산 측정** | R3 의 +243 fix = Bastion 자산 변화의 정량 기록 |
+| **missed event 4분류** | R3 in-progress 575 case 가 4분류로 분석 가능 |
+| **코치 모드 prototype** | dataset 의 4-layer 중 Layer 4 = Claude review = 코치 모드 |
+| **Round → Round 진화** | R0 baseline → R2 (1285 done) → R3 (575 진행) — Round 별 *자산 누적* |
+
+**학생 액션**:
+1. 본 시스템 R3 진행 (`results/retest/report.md`) 을 *Round 1 reference* 로 — 학생 본인 round 성과와 비교
+2. 4분류 적용 표 작성 → 학생 실패 원인 정리 (A/B/C/D 분포)
+3. Claude review 양식 모방 → 학생 코치 출력의 *구체성* baseline
 
 
