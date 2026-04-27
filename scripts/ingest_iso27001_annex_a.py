@@ -1,8 +1,8 @@
-"""ISO/IEC 27001:2022 Annex A 114 통제 → KG anchor (kind=iso27001_annex_a)
+"""ISO/IEC 27001:2022 Annex A 93 통제 → KG anchor (kind=iso27001_annex_a)
 
 외부 지식 6번째 채널 (P15). 수기.
 
-ISO 27001:2022 Annex A 4 카테고리:
+ISO 27001:2022 Annex A 4 카테고리 (총 93 통제, 2013년 114→통합):
   A.5 Organizational (37)
   A.6 People (8)
   A.7 Physical (14)

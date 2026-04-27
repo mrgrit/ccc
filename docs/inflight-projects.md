@@ -348,7 +348,7 @@ Architecture) 모두 비어있음.
 - [x] 9-tier 풀 seed (20 과목 + 외부 + Architecture + 운영)
 - [x] 외부 지식 5 source 첫 backfill
 - [x] case_study 보강 (25건)
-- [ ] ISO 27001 Annex A 114 통제 (수기)
+- [x] ISO 27001 Annex A 93 통제 ingest 완료 (2026-04-27, 93 anchor 추가, kind=iso27001_annex_a)
 - [ ] NVD CVE 일일 갱신 cron 설정
 - [ ] bastion api 에 /knowledge/concept POST endpoint 추가 (현재 anchor 사용)
 - [ ] paper §7.7 외부 지식 채널 단락 추가
