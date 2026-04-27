@@ -312,6 +312,11 @@ export default function Labs() {
                     {s.category && <span style={{ fontSize: 14, padding: '2px 8px', borderRadius: 10, background: '#21262d', color: '#8b949e' }}>{s.category}</span>}
                   </div>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                    {s.input_mode && (
+                      <span style={{ fontSize: 11, padding: '2px 6px', borderRadius: 4, background: s.input_mode === 'transcript' ? '#1f3a1f' : '#1f1f3a', color: s.input_mode === 'transcript' ? '#3fb950' : '#79c0ff', fontFamily: 'Consolas,Monaco,monospace' }}>
+                        {s.input_mode === 'transcript' ? '⌨ transcript' : '✎ text'}
+                      </span>
+                    )}
                     {stepResult && <span style={{ fontSize: 14, color: stepResult.passed ? '#3fb950' : '#f85149' }}>{stepResult.points_earned}/{s.points}pts</span>}
                     {!stepResult && <span style={{ fontSize: 14, color: '#f97316' }}>{s.points}pts</span>}
                   </div>
