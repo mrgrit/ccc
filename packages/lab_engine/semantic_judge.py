@@ -125,6 +125,134 @@ def llm_semantic_judge(
         return False, "", f"judge_error: {type(e).__name__}"
 
 
+def multi_step_judge(
+    lab_steps: list[dict],
+    transcript: dict | None = None,
+    answers: dict[str, str] | None = None,
+    *,
+    ollama_url: str | None = None,
+    judge_model: str | None = None,
+    timeout: int | None = None,
+) -> tuple[list[dict], str, str]:
+    """전체 lab transcript + answers 를 1회 LLM 호출로 multi-step 채점.
+
+    Args:
+      lab_steps: [{order, instruction, points, input_mode, verify_semantic: {intent, success_criteria, ...}}]
+      transcript: {commands: [{ts, cmd, stdout, stderr, exit}]}
+      answers: {step_order_str: text}
+
+    Returns:
+      (step_results, overall_feedback, used_judge)
+        step_results: [{order, passed, reason, feedback, graded_via}]
+        overall_feedback: 전체 흐름 평가 (학생용)
+        used_judge: "multi_step" / "error_fallback"
+    """
+    transcript = transcript or {}
+    answers = answers or {}
+    commands = transcript.get("commands") or []
+
+    # transcript 합본 (8000자 제한 — context 제어)
+    cmd_lines = []
+    for c in commands:
+        if not isinstance(c, dict):
+            continue
+        cmd_lines.append(f"$ {(c.get('cmd') or '')[:300]}")
+        out = (c.get('stdout') or '') or (c.get('stderr') or '')
+        if out:
+            cmd_lines.append(out[:400])
+    joined_cmds = "\n".join(cmd_lines)[:8000]
+
+    # answers 합본
+    answers_lines = []
+    for k, v in answers.items():
+        if (v or '').strip():
+            answers_lines.append(f"[step {k}] {v[:600]}")
+    joined_answers = "\n\n".join(answers_lines)[:4000]
+
+    # 각 step 프롬프트
+    step_lines = []
+    for s in lab_steps:
+        order = s.get("order")
+        instr = (s.get("instruction") or "")[:300]
+        pts = s.get("points", 0)
+        mode = s.get("input_mode", "command")
+        sem = s.get("verify_semantic") or {}
+        intent = (sem.get("intent") or "")[:300]
+        succ = sem.get("success_criteria") or []
+        meth = sem.get("acceptable_methods") or []
+        neg = sem.get("negative_signs") or []
+        line = f"\n--- step {order} ({mode}, {pts}pts) ---\n[instruction] {instr}"
+        if intent: line += f"\n[intent] {intent}"
+        if succ:   line += "\n[success_criteria] " + " | ".join(c[:120] for c in succ[:5])
+        if meth:   line += "\n[acceptable_methods] " + " | ".join(m[:120] for m in meth[:4])
+        if neg:    line += "\n[negative_signs] " + " | ".join(n[:120] for n in neg[:3])
+        step_lines.append(line)
+
+    parts = [
+        "너는 보안 실습의 엄정한 채점관이다. 학생이 lab 전체를 진행한 결과를 step별로 채점한다.",
+        "출력은 다음 JSON 만 (코드블록·설명 문장 금지):",
+        '{"step_results": [{"order": int, "passed": bool, "reason": "한문장", "feedback": "왜 fail / 무엇을 보강 (학습 도움)", "graded_via": "command_transcript|text_answer|both|missing"}, ...], "overall_feedback": "lab 전체 흐름·강점·약점 요약 1~2문장"}',
+        "",
+        "## 전체 lab steps + 합격 기준",
+        *step_lines,
+        "",
+        "## 학생 명령 transcript (실행 흐름)",
+        joined_cmds or "(commands 없음)",
+        "",
+        "## 학생 작성 답변 (text 모드)",
+        joined_answers or "(answers 없음)",
+        "",
+        "## 채점 규칙",
+        "- 각 step 의 input_mode 가 'command' 면 transcript 에서 해당 의도/방법 발견 시 pass.",
+        "- input_mode 가 'text' 면 answers 의 해당 step 에서 의도 충족 시 pass.",
+        "- success_criteria 중 1개 이상 충족 또는 acceptable_methods 의 의도 드러나면 pass=true.",
+        "- negative_signs 매칭 또는 무응답이면 pass=false.",
+        "- feedback 은 '왜 fail / 무엇을 보강' 1문장 — 학생 학습에 즉시 도움되는 구체적 지적.",
+        "- 모든 step 의 order 를 빠짐없이 출력. 합격 step 도 reason+feedback 모두 채움.",
+    ]
+    prompt = "\n".join(parts)
+
+    base = ollama_url or OLLAMA_URL
+    model = judge_model or JUDGE_MODEL
+    # multi-step 은 더 긴 응답 + 더 긴 timeout
+    to = timeout or max(JUDGE_TIMEOUT * 2, 90)
+    try:
+        req = urllib.request.Request(
+            f"{base}/api/chat",
+            data=json.dumps({
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "stream": False,
+                "format": "json",
+                "options": {"temperature": 0.0, "num_predict": 4000},
+            }).encode(),
+            headers={"Content-Type": "application/json"},
+        )
+        with urllib.request.urlopen(req, timeout=to) as r:
+            body = json.loads(r.read())
+        content = body.get("message", {}).get("content", "")
+        parsed = json.loads(content)
+        sr = parsed.get("step_results") or []
+        # 각 항목 형식 정규화
+        norm = []
+        for r in sr:
+            try:
+                norm.append({
+                    "order": int(r.get("order", 0)),
+                    "passed": bool(r.get("passed", False)),
+                    "reason": str(r.get("reason", "")).strip(),
+                    "feedback": str(r.get("feedback", "")).strip(),
+                    "graded_via": str(r.get("graded_via", "")).strip(),
+                })
+            except Exception:
+                continue
+        overall = str(parsed.get("overall_feedback", "") or "").strip()
+        return norm, overall, "multi_step"
+    except Exception as e:
+        # 실패 시 빈 결과 — caller 가 step별 fallback 결정
+        return [], f"multi_step_error: {type(e).__name__}", "error_fallback"
+
+
 def keyword_match(verify: dict | None, text: str, *, exit_code: int | None = None) -> bool:
     """하위호환용 keyword match — semantic 없는 step 의 fallback 에 사용."""
     if not verify:

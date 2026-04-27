@@ -484,16 +484,28 @@ export default function Labs() {
                 background: '#21262d', color: '#e6edf3', cursor: 'pointer', fontSize: 15,
               }}>↻ 재시도</button>
             </div>
-            {/* 미통과 step 의 reason 요약 */}
-            {(sessionResult.step_results || []).some((r: any) => !r.passed) && (
-              <details style={{ marginTop: 10 }}>
-                <summary style={{ cursor: 'pointer', fontSize: 13, color: '#8b949e' }}>미통과 step 사유 보기</summary>
+            {/* P14 C: Manager 종합 피드백 */}
+            {sessionResult.session?.grading?.overall_feedback && (
+              <div style={{ marginTop: 10, padding: 10, background: '#0d1117', borderLeft: '3px solid #d29922', borderRadius: 4, fontSize: 13, color: '#e6edf3' }}>
+                <span style={{ color: '#d29922', fontWeight: 700 }}>📝 종합 피드백:</span>{' '}
+                {sessionResult.session.grading.overall_feedback}
+              </div>
+            )}
+            {/* 미통과 step 의 reason + feedback */}
+            {(sessionResult.step_results || []).some((r: any) => !r.passed || r.feedback) && (
+              <details style={{ marginTop: 10 }} open>
+                <summary style={{ cursor: 'pointer', fontSize: 13, color: '#8b949e' }}>step별 사유 + 피드백</summary>
                 <ul style={{ margin: '8px 0 0 0', paddingLeft: 22, fontSize: 13, color: '#c9d1d9' }}>
-                  {(sessionResult.step_results || []).filter((r: any) => !r.passed).map((r: any) => (
-                    <li key={r.order} style={{ marginBottom: 4 }}>
-                      <span style={{ color: '#f85149' }}>step {r.order}</span>{' '}
-                      <span style={{ color: '#8b949e' }}>[{r.input_mode || '?'}/{r.graded_via || '?'}]</span>{' '}
-                      {r.reason}
+                  {(sessionResult.step_results || []).map((r: any) => (
+                    <li key={r.order} style={{ marginBottom: 6 }}>
+                      <span style={{ color: r.passed ? '#3fb950' : '#f85149' }}>{r.passed ? '✓' : '✗'} step {r.order}</span>{' '}
+                      <span style={{ color: '#8b949e', fontSize: 12 }}>[{r.input_mode || '?'}/{r.graded_via || '?'}]</span>{' '}
+                      <span style={{ color: '#c9d1d9' }}>{r.reason}</span>
+                      {r.feedback && (
+                        <div style={{ marginTop: 2, marginLeft: 16, fontSize: 12, color: '#d29922', fontStyle: 'italic' }}>
+                          💡 {r.feedback}
+                        </div>
+                      )}
                     </li>
                   ))}
                 </ul>

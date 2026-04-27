@@ -330,17 +330,20 @@
   - DB lab_sessions.transcript 자동 채움
   - paste 모드 fallback 유지
 
-- [ ] **C. Manager AI grading prompt**
-  - apps/manager-api 에 `/grade/lab` — multi-step 채점 한 번에
-  - 비용 N → 1 LLM 호출
-  - 피드백 강화 (왜 fail / 무엇을 보강)
-  - A 의 step별 fallback 유지
+- [x] **C. Manager AI grading prompt** (commit pending)
+  - manager-api 우회 — ccc 안 lab_engine.semantic_judge.multi_step_judge() 신규
+  - 1회 LLM 호출로 모든 step 채점 (Ollama gpt-oss:120b, 4000 num_predict)
+  - 출력: step_results [{order, passed, reason, feedback, graded_via}] + overall_feedback
+  - ccc-api sessions/end: multi_step 우선 → 실패 시 step별 fallback
+  - UI: 종합 피드백 박스 + step별 reason+feedback 노출
 
 **Definition of Done**:
-- [x] A 사이클 commit + push
-- [ ] D UI 완성 + 1 lab 직접 클릭 검증
-- [ ] B SubAgent capture 1 lab 실측
-- [ ] C Manager 채점 prompt + A vs C 결과 비교
+- [x] A 사이클 commit + push (be3a5d89)
+- [x] D UI 완성 (df7ef14b)
+- [x] B SubAgent capture (acd0b005 + opsclaw b63cffa)
+- [x] C Manager 채점 prompt (commit pending)
+- [ ] 1 lab 학생 직접 실측 (사용자 검증 필요)
+- [ ] A vs C 결과 비교 측정
 - [ ] 기존 textarea 흐름 deprecated 표시
 - [ ] paper §3.5 업데이트
 

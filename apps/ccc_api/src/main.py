@@ -2375,46 +2375,65 @@ def lab_session_end(session_id: str, body: LabSessionEndBody, request: Request):
                 raise HTTPException(404, f"Lab not found in catalog: {sess['lab_id']}")
 
             commands = transcript.get("commands") or []
-            # commands: [{ts, cmd, exit, stdout, stderr}, ...]
-            # 명령 step 채점용 합본 (각 cmd + stdout 300자 제한)
             joined_commands = "\n".join(
                 f"$ {c.get('cmd','')[:200]}\n{(c.get('stdout','') or c.get('stderr',''))[:300]}"
                 for c in commands if isinstance(c, dict)
             )
-            # 학생 작성 답변 (step별, key 는 str)
             answers = body.answers or {}
+
+            # P14 C: multi_step_judge — 1회 LLM 호출로 모든 step 채점
+            from packages.lab_engine.semantic_judge import multi_step_judge
+            ms_steps = []
+            for s in lab.steps:
+                ms_steps.append({
+                    "order": s.order,
+                    "instruction": s.instruction,
+                    "points": s.points,
+                    "input_mode": _step_input_mode(s, lab),
+                    "verify_semantic": (s.verify.semantic if s.verify and s.verify.semantic else {}) or {},
+                })
+            ms_results, ms_overall, ms_used = multi_step_judge(
+                ms_steps, transcript=transcript, answers=answers,
+            )
+            ms_by_order = {r["order"]: r for r in ms_results}
 
             step_results = []
             earned = 0
+            grading_mode = ms_used  # "multi_step" | "error_fallback"
             for s in lab.steps:
                 mode = _step_input_mode(s, lab)
-                # 우선순위:
-                #   1) answers[order] 있으면 → 학생이 명시적으로 작성한 답
-                #   2) mode=='text' → answers[order] (없으면 빈 → fail)
-                #   3) mode=='command' → joined_commands
                 ans_text = (answers.get(str(s.order)) or answers.get(s.order) or "").strip() if isinstance(answers, dict) else ""
-                if ans_text:
-                    student_answer = ans_text
-                    src = "text_answer"
-                elif mode == "text":
-                    student_answer = ""
-                    src = "missing_text_answer"
-                else:
-                    student_answer = joined_commands
-                    src = "command_transcript"
 
-                verify_for_judge = s.verify_raw if hasattr(s, 'verify_raw') else None
-                if has_semantic(verify_for_judge):
-                    if not student_answer:
-                        passed, reason = False, f"empty_{src}"
-                    else:
-                        passed, kw, reason, _ = semantic_first_judge(
-                            s.instruction, verify_for_judge, student_answer,
-                        )
+                # 1) multi_step 결과 우선 사용
+                ms_r = ms_by_order.get(s.order)
+                if ms_r is not None:
+                    passed = ms_r["passed"]
+                    reason = ms_r["reason"]
+                    feedback = ms_r["feedback"]
+                    src = ms_r["graded_via"] or ("text_answer" if ans_text else ("command_transcript" if mode == "command" else "missing"))
                 else:
-                    expect = (s.verify.expect if s.verify else "") or ""
-                    passed = bool(expect) and bool(student_answer) and expect.lower() in student_answer.lower()
-                    reason = "keyword_match" if passed else "no_semantic_no_keyword"
+                    # 2) multi_step 실패 → step별 fallback
+                    if ans_text:
+                        student_answer, src = ans_text, "text_answer"
+                    elif mode == "text":
+                        student_answer, src = "", "missing_text_answer"
+                    else:
+                        student_answer, src = joined_commands, "command_transcript"
+
+                    verify_for_judge = s.verify_raw if hasattr(s, 'verify_raw') else None
+                    if has_semantic(verify_for_judge):
+                        if not student_answer:
+                            passed, reason = False, f"empty_{src}"
+                        else:
+                            passed, kw, reason, _ = semantic_first_judge(
+                                s.instruction, verify_for_judge, student_answer,
+                            )
+                    else:
+                        expect = (s.verify.expect if s.verify else "") or ""
+                        passed = bool(expect) and bool(student_answer) and expect.lower() in student_answer.lower()
+                        reason = "keyword_match" if passed else "no_semantic_no_keyword"
+                    feedback = ""
+
                 pts = s.points if passed else 0
                 earned += pts
                 step_results.append({
@@ -2424,11 +2443,14 @@ def lab_session_end(session_id: str, body: LabSessionEndBody, request: Request):
                     "passed": passed,
                     "points_earned": pts,
                     "reason": reason,
+                    "feedback": feedback,
                 })
 
             grading = {
                 "step_results": step_results,
-                "message": f"Graded {len(step_results)} steps via {('semantic' if any(r['reason'] == 'semantic_pass' or 'semantic' in r['reason'] for r in step_results) else 'keyword')} judge",
+                "grading_mode": grading_mode,                    # "multi_step" | "error_fallback"
+                "overall_feedback": ms_overall if grading_mode == "multi_step" else "",
+                "message": f"Graded {len(step_results)} steps via {grading_mode}",
                 "capture_mode": transcript.get("capture_mode", "manual_paste"),
             }
             status = "graded"
