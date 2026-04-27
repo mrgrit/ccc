@@ -588,28 +588,40 @@ ssh ccc@10.20.30.201 "grep 'Accepted' /var/log/auth.log 2>/dev/null | \
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — SIGMA 룰 검증 입력)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *SIGMA 룰 작성* 학습 항목 매칭. 학생 SIGMA 룰의 정밀도/재현율 측정 입력.
 
-### Case 1: `T1041` 패턴
+### Case 1: SIGMA 룰 → dataset 적용 결과 측정
 
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
+```yaml
+title: External recon burst (100.64.20.230 패턴)
+detection:
+  selection:
+    message_type: firewall_action
+    action: block
+    src_ip|startswith: '100.64.'
+  timeframe: 60s
+  condition: selection | count(distinct dst_port) by src_ip > 10
+falsepositives:
+  - 정상 모니터링 도구 (GoogleImageProxy 등)
+level: high
 ```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+→ 본 룰을 dataset 에 적용 시:
+- **TP**: 100.64.20.230 (54 distinct port) ✅
+- **FP**: 100.64.1.37 (4018 GET 모두 dport=443 단일) ❌ (룰이 cover X)
+- 정밀도 추정: 80%+ (대부분 burst src 가 malicious)
+
+### Case 2: 회귀 테스트 — dataset 의 595K edges 적용
+
+학생 SIGMA 룰의 P/R 측정:
+```python
+# duckdb 로 dataset 적용
+SELECT COUNT(*) as fired, SUM(CASE WHEN label='malicious' THEN 1 ELSE 0 END) as tp
+FROM signals WHERE <학생 룰 조건>
+```
+
+**학생 액션**: 모든 SIGMA 룰을 dataset 에 적용 → P/R 자동 측정 + 회귀 테스트 자동화.
 

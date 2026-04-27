@@ -597,28 +597,24 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — alert ↔ ATT&CK 매핑 워크북)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *경보 분석 실전 + ATT&CK 매핑* 학습 항목 매칭.
 
-### Case 1: `T1041` 패턴
+### Case 1: alert 별 ATT&CK 매핑 표
 
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
+| dataset alert | ATT&CK Tactic | Technique |
+|--------------|-------------|---------|
+| firewall block (1초 burst) | TA0043 Recon | T1595.002 Vulnerability Scanning |
+| 4625 logon failure 5+/min | TA0006 Credential Access | T1110.001 Brute Force |
+| 5156 + 5140 share | TA0008 Lateral Movement | T1021.002 SMB |
+| 4670 + 5136 변경 | TA0004 PrivEsc | T1484.001 GPO Modification |
+| 4690 handle dup spike | TA0002 Execution | T1055 Process Injection |
+| mo_name=Data Theft | TA0010 Exfil | T1041 Exfil over C2 |
+| mo_name=Phishing | TA0001 Initial Access | T1566 Phishing |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+→ **dataset 의 message_type → ATT&CK 매핑 표** 가 SOC 분석가의 reference.
 
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**학생 액션**: 본인 환경 alert 마다 *ATT&CK Tactic × Technique 자동 매핑* 룰 작성 (Wazuh `<mitre>` 메타데이터).
 

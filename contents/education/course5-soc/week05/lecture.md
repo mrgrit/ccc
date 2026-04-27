@@ -530,28 +530,29 @@ for desc, cnt in rules.most_common(10):                # 반복문 시작
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 경보 트리아지 기초)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *경보 분석 기초* 학습 항목 매칭. dataset 의 suspicion_score + severity 분포.
 
-### Case 1: `T1041` 패턴
+### Case 1: severity 분포
 
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
+dataset record 의 severity 별 분포:
+- `critical` 다수 (firewall block 다수)
+- `warning` (정찰 burst)
+- `Info` 다수 (정상 audit)
+- `notice` (WAF GET 4018)
+- `Filtering Platform Connection` (5156 176K)
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 2: 트리아지 우선순위 표
 
-### Case 2: `T1041` 패턴
+| severity | suspicion_score | 우선순위 | 분석가 처리 |
+|----------|---------------|--------|---------|
+| critical + > 0.8 | high | **즉시** | 1인 분석가 배정 |
+| warning + 0.5~0.8 | medium | 30분 내 | 트리아지 큐 |
+| Info + < 0.5 | low | 일일 batch | 자동 분류 |
 
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
+→ dataset 의 100.64.20.230 정찰 = **critical + 0.92** = 즉시 배정.
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**학생 액션**: 본인 환경 alert 의 *severity × suspicion 매트릭스* 작성 → 트리아지 큐 정의.
 

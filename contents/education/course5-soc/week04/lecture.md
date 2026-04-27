@@ -570,28 +570,33 @@ for line in sys.stdin:                                 # 반복문 시작
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — Wazuh agent 가 받을 winlogbeat 38만 events)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *Wazuh 관제 환경* 학습 항목 매칭. winlogbeat → Wazuh agent 통합 baseline.
 
-### Case 1: `T1041` 패턴
+### Case 1: Wazuh agent 1대당 capture 해야 할 event 분포
 
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
+dataset 의 winlogbeat 8.2.2 수집 분포 (top 10 = 38만 events):
 
 ```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
+4624 (logon) 17K + 4634 (logoff) 17K + 4656 (handle open) 79K +
+4658 (close) 158K + 4690 (dup) 79K + 4663 (access) 98 +
+4670 (perm) 188 + 4776 (NTLM) 15K + 5156 (WFP) 176K + 5158 (bind) 9K
 ```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+→ Wazuh agent 1대당 *일일 ~1,000 events* 처리 필요. 30K host 시 *일일 30M events*.
+
+### Case 2: Wazuh decoder 매핑 표
+
+| message_type | Wazuh decoder | rule.level baseline |
+|--------------|------------|------------------|
+| 4624 | windows_evt | 3 (info) |
+| 4625 | windows_evt | 5 (medium) |
+| 4670 | windows_evt | **10 (high)** |
+| 4663 | windows_evt | **10 (high)** |
+| 5136 | windows_evt | **12 (critical)** |
+| firewall_action | json_decoder | 4 (low) |
+
+**학생 액션**: ossec.conf 의 `<localfile><log_format>json` 활성 + winlogbeat 통합 → dataset baseline 38만 events 처리 가능 capacity 측정.
 
