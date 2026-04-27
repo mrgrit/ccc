@@ -510,26 +510,58 @@ ssh ccc@10.20.30.100 "
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 중간고사 채점 reference)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *중간고사: Docker 보안 강화 통합* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### 만점 답안 reference — Docker 침해 단일 incident 분해
 
+```mermaid
+graph LR
+    R[Recon] -->|Describe* burst| RCN[174,293 호출]
+    RCN -->|registry token leak| AH["mo_name=Auth Hijack"]
+    AH -->|container run| RUN
+    RUN -->|capability 남용| E4690[4690 79K]
+    RUN -->|host file access| E4662[4662 226K]
+    E4690 -->|lateral| LAT["mo_name=Auth Hijack edge"]
+    E4662 -->|exfil| DT["mo_name=Data Theft"]
+
+    style R fill:#ffe6cc
+    style DT fill:#ffcccc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 평가 항목 | dataset 매핑 | 만점 기준 |
+|--------|----------|---------|
+| Recon 식별 | Describe* 174K 중 burst | 단일 IAM 의 시간 패턴 추출 |
+| Image 결함 | DescribeImage manifest | secret 검색 + scan 결과 |
+| Runtime 위반 | 4690 + 4662 ratio | privileged/cap 매핑 |
+| Network 차단 | 5156 ICC + firewall_action | block:allow 비율 |
+| Audit 추적 | security_audit_event 381K | 시간순 정렬 + actor 묶기 |
 
-### Case 2: `T1041 (Data Theft)` 패턴
+**채점 함의**: 각 단계마다 *dataset 의 정량 신호로 evidence chain* 을 갖춘 답안 = 만점. *추측이나 일반 이론* 만 적은 답안 = 부분점만.
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+### Case 1: Auth Hijack edge — image leak → container takeover
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 항목 | 값 |
+|---|---|
+| edge type | `Auth Hijack` |
+| 학습 매핑 | image secret leak 시점부터 컨테이너 장악까지 |
+| 시험 출제 의도 | 학생이 *이미지 단계* 결함을 *런타임 신호* 로 연결 가능한지 |
+
+**해석**: lecture w03 + w04 통합 — image scan 누락 + privileged run 의 결합이 만든 가장 흔한 Docker 침해 시나리오.
+
+### Case 2: 통합 신호량 prefix sum
+
+| 신호 | dataset 양 | 시험 활용 |
+|---|---|---|
+| security_audit_event | 381,552 | timeline 작성 |
+| 4662 | 226,215 | host 자원 노출 |
+| 5156 | 176,060 | egress / ICC |
+| 4658 | 158,374 | handle 회수 |
+| firewall_action | 118,151 | block 정책 |
+
+**해석**: 시험 답안에 5개 신호 모두에 evidence 가 있어야 만점. 1~2개만 인용 = 부분점.
+
+**학생 액션**: 자신이 분석한 Docker 침해 사례 1건을 위 5축 표로 다시 정리, 각 축마다 인용 가능한 dataset row id 또는 incident_id 제시.
 

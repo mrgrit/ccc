@@ -446,26 +446,76 @@ ssh ccc@10.20.30.100 "
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 기말고사 통합 reference)
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0, 2.07M signals)
+> 본 lecture *기말고사: 클라우드 보안 설계 통합* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### 기말고사가 평가하는 것 — "보안 설계" 의 정량 검증
 
+기말고사는 학생이 단편 기술이 아니라 **"클라우드 보안 전체를 설계할 수 있는가"** 를 평가한다. 설계 능력은 슬라이드만 그릴 줄 안다고 검증되지 않는다 — 실제 데이터에 근거한 *정량적 의사결정* 을 할 수 있어야 한다.
+
+dataset 의 7가지 핵심 신호량은 학생의 답안이 *현실 운영 환경* 을 가정하고 있는지 검증하는 척도다.
+
+```mermaid
+graph TB
+    EXAM["기말고사 답안<br/>클라우드 보안 설계"]
+    EXAM -->|"고객 책임 영역 식별"| L1["Layer 1: IAM"]
+    EXAM -->|"감지 layer 설계"| L2["Layer 2: Audit"]
+    EXAM -->|"네트워크 정책"| L3["Layer 3: Network"]
+    EXAM -->|"컨테이너 격리"| L4["Layer 4: Runtime"]
+    L1 --> E1["AssumeRole 9,340<br/>Describe* 174,293"]
+    L2 --> E2["security_audit_event 381,552<br/>GetLogEvents 39,639"]
+    L3 --> E3["5156 (WFP) 176,060<br/>firewall_action 118,151"]
+    L4 --> E4["4690 79,254<br/>4662 226,215"]
+
+    style EXAM fill:#ffe6cc
+    style L1 fill:#cce6ff
+    style L2 fill:#cce6ff
+    style L3 fill:#cce6ff
+    style L4 fill:#cce6ff
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+위 그림이 보여주는 것은 **클라우드 보안 설계의 4개 layer (IAM → Audit → Network → Runtime) 가 dataset 의 7가지 정량 지표로 검증된다** 는 점이다. 학생의 답안이 4개 layer 를 모두 다루지 않거나, 각 layer 에 대응하는 dataset 신호를 인용하지 못하면 — 그 답안은 설계가 아니라 *나열* 이다.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: 만점 답안의 정량 evidence chain — 통합 침해 시나리오 분해
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+기말고사 만점 답안은 다음과 같은 *정량 evidence chain* 을 갖춰야 한다.
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 단계 | 공격자 행동 | dataset 검증 | 학생 답안 요구 |
+|---|---|---|---|
+| 1. Recon | leaked IAM key 로 정찰 | AssumeRole outlier 1건 / Describe* burst | "AssumeRole 9,340 baseline 에서 신규 source IP" 명시 |
+| 2. Image abuse | ECR pull → secret 추출 | ListContainerInstances 540 + DescribeImage | "image scan 시 secret 누출 가능 패턴" 명시 |
+| 3. Runtime escape | privileged container break-out | 4690 burst (79K baseline) + 4662 (226K) | "정상치 시간당 50건 → 500건" 같은 정량 임계 |
+| 4. Lateral | SA token → cluster API | AssumeRole 패턴 + ListContainerInstances 급증 | "정상 540건의 분포 vs 침해 시 burst" 비교 |
+| 5. Exfil | data theft | mo_name=Data Theft edge | "egress 5156 의 dst_port 분포 anomaly" |
+| 6. Anti-forensic | log 정찰 / 삭제 시도 | GetLogEvents 비정상 caller | "39,639 호출자 분포에서 outlier 식별" |
+
+**자세한 해석**:
+
+위 표의 핵심은 **각 단계마다 *데이터로 증명할 수 있는* 검증 방법** 이 명시되어 있다는 점이다. 학생이 "공격자가 IAM 을 침해할 수 있다" 라고만 적으면 부분점이지만, "정상 운영의 AssumeRole 9,340건 중 source IP 분포가 5~10개로 수렴하는데 11번째 신규 IP 의 단발 호출이 1건 발생하면 즉시 alert 를 발생시킨다" 라고 적으면 만점이다.
+
+이 차이는 *현실 운영* 을 해본 사람과 *교과서만 읽은 사람* 의 차이다. dataset 은 그 차이를 검증하는 도구.
+
+### Case 2: dataset 7개 지표 → 보안 설계 5개 결정의 매핑
+
+| 설계 결정 | 근거 지표 | dataset 값 | 의사결정 임계 |
+|---|---|---|---|
+| IAM session TTL 1h | AssumeRole 빈도 | 9,340건 / 30일 = ~13건/h | TTL > 빈도면 token 누적 위험 |
+| Audit retention 90일 | audit 발생량 | 381K / 30일 = ~13K/일 | 일일 ~13K → 90일 = ~1.2M = ~1GB/yr |
+| egress port allow list | 5156 dst_port 분포 | 80/443/53 이 95% | 비표준 port 1건 alert |
+| container cap_drop 정책 | 4690 baseline | 정상 ~50건/h | spike 5x = isolation 발동 |
+| log read RBAC | GetLogEvents caller 수 | 정상 2개 (SIEM 2개) | 3번째 caller alert |
+
+**자세한 해석**:
+
+이 표가 전하는 메시지는 — **보안 설계의 모든 결정에는 정량적 근거가 있어야 한다** 는 것이다. "IAM session 은 1시간 으로 한다" 는 결정은 *AssumeRole 빈도가 시간당 13건이므로 TTL 을 더 길게 하면 활성 token 이 누적된다* 는 정량 근거가 받침이 되어야 한다.
+
+만약 학생이 "1시간으로 정한다 — 보안 강화 위해" 라고만 적으면 — 그것은 의사결정이 아니라 의견이다. 만점 답안은 *왜 1시간인가, 30분이나 4시간이 아닌 이유* 를 dataset 으로 답할 수 있어야 한다.
+
+### 학생 액션 (기말고사 사전 준비)
+
+1. **dataset 7가지 지표를 모두 외우라** — AssumeRole 9,340 / Describe 174K / audit 381K / 5156 176K / firewall 118K / 4690 79K / GetLogEvents 39K. 이 숫자가 머릿속에 있어야 답안에 자연스럽게 인용된다.
+2. **자신만의 evidence chain 1개를 작성하라** — 가공의 침해 시나리오를 1개 만들고, 6단계 (Recon → Image → Runtime → Lateral → Exfil → Anti-forensic) 마다 dataset 의 어느 신호로 검증할지 적어보기.
+3. **5개 설계 결정의 임계값을 정량 근거로 정당화하라** — IAM TTL, audit retention, egress allow list, cap_drop, log RBAC 의 5가지 결정 각각에 대해 "왜 이 숫자인가" 를 한 줄씩 답할 수 있는지 자가 점검.
 

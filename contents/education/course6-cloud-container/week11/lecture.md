@@ -512,26 +512,50 @@ ssh ccc@10.20.30.100 "
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — Kubernetes 보안 기초)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *RBAC + secrets + network policy + service account* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### K8s 컨트롤플레인 호출 = ECS proxy + Describe pattern
 
+```mermaid
+graph TB
+    USER[kubectl user / SA] -->|API call| API[kube-api-server]
+    API -->|GET pods/list| LIST[ListContainerInstances<br/>540 + Describe* 174K]
+    API -->|secret read| OBJ[event 4662<br/>226,215]
+    API -->|RBAC verify| AUDIT[security_audit_event<br/>381,552]
+    LIST --> SIEM
+    OBJ --> SIEM
+    AUDIT --> SIEM
+
+    style USER fill:#ffe6cc
+    style SIEM fill:#cce6ff
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: K8s API 호출은 ECS list/describe 와 동형이다. lecture §"RBAC verb=get/list/watch" 사용 시마다 dataset 의 Describe/List/Get 군 신호가 발생.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: ListContainerInstances 540 — K8s GetPodList proxy
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 항목 | 값 |
+|---|---|
+| message_type | `ListContainerInstances` |
+| 총 호출 | 540 |
+| 학습 매핑 | §"`kubectl get pods`" — RBAC `list` verb 호출의 분량 |
+| 위험 신호 | 단일 SA 가 cluster-wide list = 과대권한 의심 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: K8s 의 `pods list` 는 ECS `ListContainerInstances` 와 동일 의미. 540건은 정상 운영의 baseline — 단일 SA 가 시간당 ~50건 list 를 호출하면 *cluster 전체 enumeration* 의도.
+
+### Case 2: 4662 (object access) 226K — secret/configmap 접근 신호
+
+| 항목 | 값 |
+|---|---|
+| message_type | `4662` |
+| 총 발생 | 226,215 |
+| 학습 매핑 | §"K8s secrets 는 etcd 의 객체" — read 시 access event |
+| 위험 신호 | 비정상 SA 가 다수 secret 접근 = credential harvesting |
+
+**해석**: K8s secret 1건 read = etcd object access 1건. dataset 226K 는 *모든 controller + admission + scheduler* 가 만든 흔적. 단일 SA 의 시간당 access 가 50건을 넘으면 hunt 시작.
+
+**학생 액션**: lab 의 SA token 1개로 `kubectl get secrets -A` 시도 후 audit log 에 어느 신호가 발생했는지 추적, RBAC 으로 막은 뒤 차이 비교.
 

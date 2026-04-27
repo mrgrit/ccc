@@ -471,26 +471,48 @@ ssh ccc@10.20.30.100 "
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 이미지 보안 운영 흔적)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *이미지 스캔/서명/registry* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### 이미지 supply chain 결함 → 운영 신호 변환 경로
 
+```mermaid
+graph LR
+    BUILD[image build] -->|tag latest| PUSH[registry push]
+    PUSH -->|pull token| AR[Describe* call<br/>174,293건]
+    PUSH -->|secret leak 시| DT[mo_name=Data Theft<br/>edge 392건]
+    AR -->|run| OBJ[4662 object access<br/>226,215건]
+    OBJ -->|misuse| HIJ[mo_name=Auth Hijack<br/>edge 23건]
+
+    style BUILD fill:#ffe6cc
+    style DT fill:#ffcccc
+    style HIJ fill:#ffcccc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: 이미지에 박힌 secret 은 build 단계에서는 보이지 않지만, registry pull 후 컨테이너가 그 secret 을 사용하는 시점에 dataset 의 Data Theft 또는 Auth Hijack edge 로 등장한다. lecture §"이미지 스캔" 의 핵심 동기.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: Describe* API hot-path — image manifest enumeration proxy
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 항목 | 값 |
+|---|---|
+| message_type | `Describe*` (DescribeInstanceStatus 27,127 + 기타 147K) |
+| 총 호출 | 174,293 |
+| 학습 매핑 | §1 이미지 layer + manifest — 외부 노출 시 enumeration |
+| 위험 패턴 | 동일 IAM 가 짧은 시간 안에 다수 image describe → recon |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: ECR/GCR/ACR 의 image manifest 조회는 모두 Describe* 군에 속한다. dataset 174K 호출 중 단일 caller 의 burst 만 추출하면 곧바로 recon timeline 이 만들어진다.
+
+### Case 2: Auth Hijack edge — image leaked credential 의 결말
+
+| 항목 | 값 |
+|---|---|
+| edge mo_name | `Auth Hijack` |
+| precinct6 edge | dataset 내 Auth Hijack 패턴 발생 |
+| 학습 매핑 | §"secret 을 image 에 넣지 말 것" — 위반 시 결과 |
+
+**해석**: image 안에 박힌 token 이 노출되면 attacker 는 그 token 으로 로그온 → dataset 에서는 *Auth Hijack* edge 로 분류된다. lecture 가 강조하는 "scan + sign + minimal layer" 3중 방어가 무력화되는 path.
+
+**학생 액션**: 본인이 작성한 Dockerfile 에서 `ENV PASSWORD=...` 패턴이나 `.dockerignore` 누락이 있는지 점검하고, Trivy 등으로 1회 스캔한 결과를 레포트 첨부.
 

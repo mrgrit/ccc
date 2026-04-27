@@ -493,26 +493,52 @@ ssh ccc@10.20.30.100 "
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — Docker 보안 점검 / CIS benchmark)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *CIS Docker Benchmark + audit* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### CIS Benchmark 항목 ↔ dataset signal 매핑
 
+```mermaid
+graph TB
+    CIS["CIS Docker Benchmark"]
+    CIS --> H1["1. Host Config<br/>auditd 설정"]
+    CIS --> H2["2. Daemon Config<br/>--icc=false"]
+    CIS --> H4["4. Container Image<br/>USER 명시"]
+    CIS --> H5["5. Container Runtime<br/>capabilities 제한"]
+    H1 --> AUD[security_audit_event<br/>381,552]
+    H1 --> DIA[diagnostic_event<br/>17,997]
+    H2 --> WFP[event 5156<br/>176,060]
+    H4 --> OBJ[event 4662<br/>226,215]
+    H5 --> CAP[event 4690<br/>79,254]
+
+    style CIS fill:#cce6ff
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: CIS 5.x (runtime) 위반은 4690 burst 로, CIS 4.x (image) 위반은 4662 패턴으로, CIS 1.x (host) 미흡은 audit event 부재로 dataset 에 드러난다. lecture §"CIS docker bench" 의 자동 점검 출력이 이 신호와 일치하면 통과.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: diagnostic_event 17,997 — host audit 의 baseline
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 항목 | 값 |
+|---|---|
+| message_type | `diagnostic_event` |
+| 총 발생 | 17,997 |
+| 학습 매핑 | §"docker bench-security 자동 점검" — 점검 결과는 diagnostic 으로 기록 |
+| 의미 | host 의 auditd / sysdig / Wazuh agent 진단 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: 정상 운영 환경은 host 당 일일 ~50건 diagnostic 을 만든다. dataset 18K 누적은 ~1년치 수준 — 만약 0이라면 *audit 자체가 꺼져 있다* 는 신호.
+
+### Case 2: 5156 (WFP) 176K — `--icc=false` 정책 검증
+
+| 항목 | 값 |
+|---|---|
+| message_type | `5156` |
+| 총 발생 | 176,060 |
+| 학습 매핑 | CIS §2.1 `--icc=false` (inter-container 차단) |
+| 검증 방법 | container A → container B 시도 후 5156 allow/block 확인 |
+
+**해석**: `--icc=false` 가 적용되면 같은 bridge 내 컨테이너간 5156 allow 는 0이 된다. dataset 176K 는 ICC 가 default(true) 임을 시사하는 환경 — CIS 점검 시 우선 fail 항목.
+
+**학생 액션**: CIS docker bench-security 실행 결과의 fail 항목 5개를 골라, 각 항목이 dataset 의 어느 message_type 으로 검출 가능한지 매핑 표 작성.
 

@@ -460,26 +460,50 @@ ssh ccc@10.20.30.100 "
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — Docker 네트워크 보안)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *bridge/overlay/network policy* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Container egress = 5156(WFP)/firewall_action 신호
 
+```mermaid
+graph LR
+    C1[container A<br/>bridge net] -->|outbound| WFP[event 5156<br/>WFP allow<br/>176,060]
+    C2[container B<br/>--net=host] -->|host iface 사용| FW[firewall_action<br/>118,151]
+    C3[container C<br/>overlay net] -->|VXLAN| FLOW[flow record<br/>31,758]
+    WFP --> SIEM[SIEM]
+    FW --> SIEM
+    FLOW --> SIEM
+
+    style C2 fill:#ffcccc
+    style C1 fill:#ffe6cc
+    style C3 fill:#ccffcc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: lecture §"`--net=host` 금지" 의 근거 — host 네트워크 모드의 컨테이너는 일반 5156 이 아니라 host 의 firewall_action 신호로 직접 등장한다. 이는 곧 *컨테이너 단위 추적이 불가능* 함을 의미.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: 5156 (WFP) 176,060 — 정상/이상 egress 의 baseline
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 항목 | 값 |
+|---|---|
+| message_type | `5156` (Windows Filtering Platform allow) |
+| 총 발생 | 176,060 |
+| 학습 매핑 | §"bridge mode 의 default ALLOW out" — 모든 egress 가 신호 |
+| 활용 | dst_port 분포로 anomaly 탐지 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: container egress 는 모두 5156 으로 기록된다. dataset 176K 중 95% 가 80/443/53 이지만, 4444/9001/16113 등 비표준 port 1건이라도 발견되면 즉시 hunt 시작.
+
+### Case 2: firewall_action block 118,151 — egress 차단 의 운영 통계
+
+| 항목 | 값 |
+|---|---|
+| message_type | `firewall_action` |
+| 총 발생 | 118,151 |
+| action 분포 | block 다수 (정상 운영) |
+| 학습 매핑 | §"Docker network egress 정책" — block 률이 곧 정책 강도 |
+
+**해석**: dataset 의 block:allow 비율을 측정하면 그 환경의 *zero-trust 성숙도* 가 나온다. lecture §"network policy" 가 강조하는 default-deny 가 운영에서 정착되었는지 평가하는 정량 지표.
+
+**학생 액션**: lab 컨테이너에서 임의 outbound 5건을 시도(8.8.8.8:53/53, 1.1.1.1:80, 4.4.4.4:9001 등) 한 후, Wazuh 5156/firewall 룰이 어느 시도를 잡고 어느 것을 놓치는지 표로 정리.
 

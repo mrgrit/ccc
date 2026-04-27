@@ -543,26 +543,88 @@ ssh ccc@10.20.30.100 "
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — IaC 보안)
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0, 2.07M signals)
+> 본 lecture *Terraform / CloudFormation / Policy as Code* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### IaC 가 왜 중요한가, 그리고 dataset 에서 어떻게 드러나는가
+
+IaC (Infrastructure as Code) 는 클라우드 자원을 *코드 파일* 로 관리하는 방식이다. 예를 들어 학생이 AWS 콘솔에서 마우스로 EC2 를 만드는 대신, `aws_instance "web" {...}` 같은 Terraform 코드를 작성하고 `terraform apply` 명령으로 자원을 일괄 생성하는 것이다.
+
+IaC 의 보안적 의미는 **"코드에 결함이 있으면 그 결함이 모든 환경에 그대로 복제된다"** 는 점에 있다. 만약 Terraform 모듈 한 줄이 `cidr_blocks = ["0.0.0.0/0"]` 으로 잘못 작성되면, 그 모듈을 사용하는 100개 환경 모두에 보안 그룹 (방화벽) 이 전세계 오픈된다.
+
+이런 IaC 의 동작을 dataset 에서 추적하려면 — *resource 생성/변경/삭제 이벤트* 를 봐야 한다. CloudFormation/Terraform 이 `terraform apply` 를 실행하면 결국 AWS API 호출 이 발생하고, 이 호출들이 dataset 의 `management_message` (94,327건), `Create*` 류 이벤트 (288건), `diagnostic_event` (17,997건) 으로 기록된다.
+
+```mermaid
+graph TB
+    DEV["개발자 / CI/CD 파이프라인"] -->|terraform apply| TF[Terraform Provider]
+    TF -->|aws_instance| API[AWS API]
+    TF -->|aws_security_group| API
+    TF -->|aws_iam_role| API
+    API -->|관리 이벤트| MM["management_message<br/>94,327건<br/>(자원 변경 추적)"]
+    API -->|생성 이벤트| CR["Create* 호출<br/>288건<br/>(신규 자원)"]
+    API -->|진단| DI["diagnostic_event<br/>17,997건<br/>(상태 변화)"]
+    MM --> AUDIT[CloudTrail audit]
+    CR --> AUDIT
+    DI --> AUDIT
+    AUDIT -->|policy as code 비교| OPA["OPA / Sentinel<br/>(정책 게이트)"]
+
+    style DEV fill:#ffe6cc
+    style OPA fill:#cce6ff
+```
+
+이 그림이 보여주는 핵심은 두 가지다.
+
+1. **모든 IaC 동작은 결국 dataset signal 로 환원된다** — 코드 파일은 보안 분석에 직접 쓸 수 없지만, 그 코드가 호출한 API 가 만든 dataset 이벤트는 분석 가능하다.
+2. **OPA / Sentinel 같은 "policy as code" 도구는 audit 이벤트 *이전* 단계에서 작동해야** 효과가 있다 — 위반이 발생한 후에 발견하면 이미 자원이 만들어진 상태이기 때문.
+
+### Case 1: management_message 94,327건이 의미하는 것
+
+| 항목 | 값 | 학생이 알아야 할 것 |
+|---|---|---|
+| message_type | `management_message` | 자원의 *생성/변경/삭제* 모두 포함 |
+| 총 발생 | 94,327건 | dataset 에서 4번째로 많은 신호 |
+| 학습 매핑 | §"Terraform state 추적" | 모든 변경은 이 신호로 기록됨 |
+| 정상 baseline | 일일 ~3,000건 | dataset 은 ~1개월 분량 |
+
+**자세한 해석**:
+
+dataset 에 기록된 94K건의 `management_message` 중 한 샘플을 보면:
 
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
+<189>576600: USER-0010-1047: Jul 26 06:10:18.976 CDT:
+%SEC_LOGIN-5-LOGIN_ORG-0893: Login ORG-0893 [user: USER-5823] ...
 ```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+위 형식의 syslog 메시지는 *네트워크 장비가 자체적으로 생성한 audit 로그* 다. AWS API 호출에 의한 자원 변경 시에도 비슷한 audit 메시지가 생성된다. **IaC 보안에서 중요한 점은 이 메시지의 발생 빈도와 발생 주체가 학생이 작성한 Terraform 정책에 부합하는지** 를 검증하는 것이다.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+예를 들어 학생의 Terraform 모듈이 *주중 09-18시* 사이에만 자원 변경을 허용하도록 설계되었다면, dataset 에서 토요일 03시에 발생한 management_message 1건은 *비정상 변경* 일 가능성이 높다 — leaked CI/CD token 이 사용된 신호일 수 있다.
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+### Case 2: Create* 호출 288건 + diagnostic_event 17,997건의 결합 분석
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 항목 | 값 | 의미 |
+|---|---|---|
+| Create* 호출 | 288건 | 신규 자원 생성 (CreateBucket, CreateRole, ...) |
+| diagnostic_event | 17,997건 | 자원 상태 변화 진단 |
+| 비율 | 1 : 62 | 자원 1개당 진단 ~62건 (lifecycle 추적) |
+| 학습 매핑 | §"drift detection" | IaC 코드와 실제 상태의 차이 감지 |
+
+**자세한 해석**:
+
+IaC 의 가장 중요한 보안 개념 중 하나는 **drift detection (상태 표류 탐지)** 다. 학생이 작성한 Terraform 코드는 "이렇게 있어야 한다" 는 *원하는 상태 (desired state)* 를 정의한다. 그러나 현실에서는 누군가 콘솔에서 수동 변경을 하면 — 코드와 실제 상태가 어긋난다 (drift).
+
+dataset 의 비율 (1 자원 생성 : 62 진단 이벤트) 은 정상 운영 시 자원이 만들어진 후 시간에 따라 상태가 *어떻게 변하는지* 를 시스템이 추적한다는 것을 보여준다. 만약 어떤 자원이 생성된 후 단 1건의 diagnostic_event 도 없다면 — *모니터링 자체가 동작 안 함* 의 강력한 신호다 (잘못된 IaC 모듈이 모니터링 부착 단계를 누락했다는 뜻).
+
+반대로 비율이 1 : 200 이상으로 폭증하면 — 그 자원이 상태 변화를 너무 자주 일으키고 있어서 (예: 컨테이너 반복 재시작, autoscale flapping) IaC 설정에 문제가 있을 가능성.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **IaC 코드만 보지 말고 그 결과를 dataset 에서 검증하라** — 코드 리뷰는 사람이 보는 것이고, runtime 검증은 audit log 가 한다.
+2. **Create* 호출과 diagnostic 의 비율을 baseline 으로 삼아라** — 비율이 어긋나는 시점이 곧 IaC 결함이 폭로되는 시점이다.
+3. **management_message 의 발생 시간/주체 분포를 정책으로 명시하라** — "주중 업무 시간만 변경 허용" 같은 시간 정책이 위반되면 자동 alert.
+
+**학생 액션**:
+
+본인이 작성한 Terraform 모듈 1개를 골라, `terraform apply` 실행 시 발생하는 CloudTrail 이벤트를 시간순으로 캡처한다. 캡처한 이벤트를 위 표의 3개 message_type (management_message / Create* / diagnostic_event) 으로 분류한 뒤, 각 분류의 건수와 dataset baseline 의 비율을 비교하는 보고서를 1페이지 작성. 비교 결과 비율이 *2배 이상 어긋나는* 항목이 있다면 그 원인을 분석할 것.
 

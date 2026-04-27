@@ -433,26 +433,48 @@ ssh ccc@10.20.30.100 "
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 클라우드 설정 오류)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *S3 public / IAM 과대권한 / SG 0.0.0.0/0* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Misconfiguration → exfil 까지의 신호 chain
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
+```mermaid
+graph LR
+    MC["misconfig<br/>S3 public<br/>SG 0.0.0.0/0<br/>IAM *:*"]
+    MC --> EXP[외부 access]
+    EXP --> AR[AssumeRole 비정상<br/>9,340 중 outlier]
+    AR --> ENUM[Describe* burst<br/>174K]
+    ENUM --> DT["mo_name=Data Theft"]
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041 (Data Theft)` 패턴
-
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
+    style MC fill:#ffcccc
+    style DT fill:#ff9999
 ```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: lecture §"S3 public bucket = Capital One 사고" 가 dataset 에서는 *AssumeRole outlier* + *Describe burst* + *Data Theft mo_name* 의 3-step 신호로 등장. 어느 한 단계만 잡아도 사고를 sub-second 에 차단 가능.
+
+### Case 1: AssumeRole outlier — 과대권한 IAM 의 흔적
+
+| 항목 | 값 |
+|---|---|
+| message_type | `AssumeRole` |
+| 총 호출 9,340 중 | outlier 식별 = source IP 분포 anomaly |
+| 학습 매핑 | §"IAM `*:*` 정책 위험" — outlier 1건이 곧 침해 시작 |
+| 탐지 룰 | 5분 윈도우에서 신규 source IP 의 AssumeRole = alert |
+
+**해석**: dataset 9,340건의 source IP 분포는 일반적으로 5~10개 안으로 수렴한다. 11번째 신규 IP 의 AssumeRole 1건은 *공격자가 leaked key 를 처음 시도* 하는 순간일 가능성.
+
+### Case 2: Describe* 174K + GetLogEvents 39K — recon vs. log evasion
+
+| 항목 | 값 |
+|---|---|
+| recon 신호 | Describe* 174,293 |
+| log evasion 신호 | GetLogEvents 39,639 |
+| 학습 매핑 | §"misconfig 가 발견된 후 attacker 의 행동" — recon + 로그 정찰 |
+| 위험 패턴 | 동일 caller 가 Describe + GetLogEvents 동시 → recon + 흔적 인지 |
+
+**해석**: Describe 만 호출하면 단순 reconnaissance, GetLogEvents 까지 호출하면 *내가 들킨 것을 알아보는 행동* — 침해 단계가 한 단계 진행됐다는 강력한 지표.
+
+**학생 액션**: lab 환경 AWS account 에서 `aws s3 ls --recursive` 시도 후 CloudTrail 에 어느 신호가 남는지 확인하고, IAM `s3:List*` denial 시 어떻게 변하는지 비교.
 

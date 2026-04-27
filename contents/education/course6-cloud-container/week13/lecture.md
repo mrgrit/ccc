@@ -423,26 +423,51 @@ ssh ccc@10.20.30.100 "
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 클라우드 모니터링)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *CloudTrail + CloudWatch + SIEM 통합 모니터링* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Cloud monitoring stack = dataset 의 4개 신호 ingestion path
 
+```mermaid
+graph LR
+    SRC1[API call<br/>Describe* 174K] --> CT[CloudTrail]
+    SRC2[OS log] --> CWL[CloudWatch Logs]
+    SRC3[VPC flow] --> CWLF[Flow Logs]
+    SRC4[GuardDuty] --> ALERT[security_audit_event<br/>381K]
+    CT --> READ[GetLogEvents<br/>39,639]
+    CWL --> READ
+    CWLF --> READ
+    READ --> SIEM[SIEM]
+    ALERT --> SIEM
+
+    style SIEM fill:#cce6ff
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: lecture §"CloudTrail 활성화" 는 dataset 의 Describe* 174K + audit 381K 의 입력원. SIEM 의 ingest 비율이 GetLogEvents 39K 와 동기화되어야 정상.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: GetLogEvents 39,639 — SIEM ingest 의 정량 baseline
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 항목 | 값 |
+|---|---|
+| message_type | `GetLogEvents` |
+| 총 호출 | 39,639 |
+| 학습 매핑 | §"SIEM 이 CloudWatch 를 polling 하는 정상 패턴" |
+| 위험 신호 | 비정상 caller 의 GetLogEvents = log tampering 의도 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: 정상 모니터링은 SIEM 1개 + 백업 1개 = 2개 caller 가 GetLogEvents 의 99% 를 차지한다. 3번째 caller 는 항상 의심.
+
+### Case 2: security_audit_event 381,552 — alert 처리 capacity 검증
+
+| 항목 | 값 |
+|---|---|
+| message_type | `security_audit_event` |
+| 총 발생 | 381,552 |
+| 학습 매핑 | §"GuardDuty/Security Hub 통합" — alert ingest 양 |
+| 활용 | SIEM 의 alert/시간당 처리량과 비교 |
+
+**해석**: 정상 환경의 일일 audit ~5,000건 = SOC 1팀이 자동화 없이는 처리 불가능 → lecture §"alert correlation + auto-triage" 의 동기.
+
+**학생 액션**: 본인 lab 환경에서 CloudWatch Logs 의 polling 빈도를 설정하고, GetLogEvents 호출자 2개로 제한 후 SIEM ingest 지연을 측정.
 

@@ -399,26 +399,50 @@ ssh ccc@10.20.30.100 "
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 클라우드 보안 기초)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *IAM/audit/encryption 클라우드 보안 3축* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Cloud audit 로그 = dataset 의 cloud signal 군
 
+```mermaid
+graph TB
+    IAM[IAM 자격증명] -->|STS| AR[AssumeRole<br/>9,340]
+    AR -->|API call| DESC[Describe* / Get*<br/>174,293 + 39,639]
+    DESC -->|로깅| TRAIL[CloudTrail = audit]
+    TRAIL --> SIEM[SIEM]
+    KMS[KMS encryption] -->|key ops| AUDIT[security_audit_event<br/>381,552]
+    SIEM --> ALERT[anomaly]
+    AUDIT --> ALERT
+
+    style IAM fill:#ffe6cc
+    style ALERT fill:#cce6ff
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: IAM 의 모든 동작은 STS 발급 (AssumeRole) → API 호출 (Describe/Get) → audit 로깅 의 3단계로 dataset 에 남는다. lecture §"IAM 최소 권한" 위반은 AssumeRole 9,340건 중 비정상 caller 1건으로 식별 가능.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: AssumeRole 9,340 — IAM 운영의 정량 baseline
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 항목 | 값 |
+|---|---|
+| message_type | `AssumeRole` |
+| 총 호출 | 9,340 |
+| 평균 간격 | ~3.2초 (24h 기준) |
+| 학습 매핑 | §"IAM 자격증명 라이프사이클" — 정상 운영의 빈도 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: dataset 의 9,340건은 거의 모두 AWS Lambda/EC2 의 자동 자격 갱신이다. 사람이 콘솔에서 AssumeRole 하면 패턴이 다르므로 인간/자동 분리 가능.
+
+### Case 2: GetLogEvents 39,639 — 클라우드 로그 ingestion 규모
+
+| 항목 | 값 |
+|---|---|
+| message_type | `GetLogEvents` (CloudWatch Logs read) |
+| 총 호출 | 39,639 |
+| 학습 매핑 | §"audit 로그를 SIEM 에 보내는 통로" — 정상 ingest 패턴 |
+| 위험 신호 | 비정상 caller 가 GetLogEvents 호출 시 = log tampering 의도 |
+
+**해석**: 정상 SIEM ingest 외에 unknown caller 1건이 GetLogEvents 호출하면 즉시 경계. lecture §"감사 로그를 누가 읽는가?" 의 핵심 질문.
+
+**학생 액션**: 본인 환경의 AWS CloudTrail 에서 최근 24h 의 AssumeRole / GetLogEvents 호출자를 list 화, 자동/사람 비율을 산출.
 

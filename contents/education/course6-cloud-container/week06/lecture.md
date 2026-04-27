@@ -522,26 +522,53 @@ docker compose -f /tmp/stress-compose.yaml down
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — Compose 다중 서비스 보안)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *Docker Compose 서비스 격리/secret 관리* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### docker-compose.yml 결함 → 다중 서비스 신호 폭발
 
+```mermaid
+graph TB
+    YML["docker-compose.yml<br/>environment 평문<br/>volumes 광범위<br/>network 단일"]
+    YML --> S1[svc app]
+    YML --> S2[svc db]
+    YML --> S3[svc cache]
+    S1 -->|account_logon| AL[17,482]
+    S2 -->|account_logoff| AO[16,934]
+    S3 -->|communication| CM[16,184]
+    S1 --> AUDIT[security_audit_event<br/>381,552]
+    S2 --> AUDIT
+    S3 --> AUDIT
+
+    style YML fill:#ffcccc
+    style AUDIT fill:#ffe6cc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: Compose 1개 파일 결함은 *서비스 수만큼 곱해진다*. dataset 에서 account_logon (17K) + logoff (16K) 은 각 서비스가 별도 신호를 만든 결과로, secret 평문 노출 시 동일 자격으로 다중 서비스 침해가 가능.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: security_audit_event 381,552 — Compose 환경의 audit 부담
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 항목 | 값 |
+|---|---|
+| message_type | `security_audit_event` |
+| 총 발생 | 381,552 (dataset 최다) |
+| 학습 매핑 | §"compose 서비스별 audit" — 서비스 수 × 시간 = audit 신호량 |
+| 의미 | secret 회전, 서비스 재시작, ACL 변경 등 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: 단일 서비스가 시간당 ~50건 audit 을 생성한다고 가정 시, compose 4서비스 = 200건/h, 24h 운영 시 4,800건. dataset 381K 는 약 80일 분량 — 이 정도 신호 수 이면 *anomaly 룰* 없이는 사람이 못 본다.
+
+### Case 2: account_logon 17,482 + logoff 16,934 = 매 서비스의 인증 burst
+
+| 항목 | 값 |
+|---|---|
+| message_type | `account_logon` / `account_logoff` |
+| 비율 | 17,482 / 16,934 = 거의 1:1 (정상 운영) |
+| 학습 매핑 | §"환경변수 secret" — 서비스마다 동일 secret 으로 logon 시 동일 호출자 |
+| 위험 신호 | logon ≫ logoff = session 누수 (좀비 컨테이너) |
+
+**해석**: 정상 compose 운영은 logon/logoff 가 균형을 이룬다. dataset 에서 약 3.2% 의 logon-only (16,934 - 17,482 의 +548 건) = 컨테이너 충돌 시 logoff 누락 정도로 해석. lecture §"compose health-check" 의 운영 의의.
+
+**학생 액션**: 학생이 작성한 docker-compose.yml 에서 `environment:` 섹션의 평문 시크릿을 `secrets:` 또는 `.env_file` 로 바꾸고, 변경 전후의 audit 신호 수를 5분간 비교.
 

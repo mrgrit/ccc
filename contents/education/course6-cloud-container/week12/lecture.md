@@ -500,26 +500,48 @@ ssh ccc@10.20.30.100 "
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — Kubernetes 공격 / pod escape)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *pod escape + RBAC abuse + SA token 탈취* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Pod escape → cluster takeover 의 신호 chain
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
+```mermaid
+graph LR
+    POD[compromised pod<br/>privileged] -->|host file| OBJ[4662 226K]
+    POD -->|host syscalls| CAP[4690 79K]
+    POD -->|SA token theft| AR[AssumeRole-like<br/>9,340]
+    AR -->|cluster API| LIST[ListContainerInstances<br/>540 burst]
+    LIST -->|kube-system access| HIJ["mo_name=Auth Hijack"]
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041 (Data Theft)` 패턴
-
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
+    style POD fill:#ffcccc
+    style HIJ fill:#ff6666
 ```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: privileged pod 1개의 escape = host syscall (4690) → SA token 추출 → cluster API enumeration → kube-system 권한 탈취. lecture §"pod 의 hostPath/privileged 가 가장 위험" 이 dataset 신호량으로 입증된다.
+
+### Case 1: 4690 (handle dup) 79,254 — SA token 복제 흔적 proxy
+
+| 항목 | 값 |
+|---|---|
+| message_type | `4690` |
+| 총 발생 | 79,254 |
+| 학습 매핑 | §"SA token = `/var/run/secrets/.../token`" — read 시 handle dup |
+| 위험 패턴 | privileged pod 에서 host token 디렉토리 access = 4690 burst |
+
+**해석**: SA token 추출은 host fs access 가 필요하고, hostPath mount 가 있으면 4690 으로 흔적이 남는다. dataset 79K 는 정상 dup 까지 포함 — 단일 pod 의 시간당 burst 가 비정상.
+
+### Case 2: ListContainerInstances 540 + AssumeRole 9,340 — 탈취 후 enumeration
+
+| 항목 | 값 |
+|---|---|
+| pattern | SA token → AssumeRole-style API → cluster enumeration |
+| 신호 1 | AssumeRole 9,340 중 비정상 caller |
+| 신호 2 | ListContainerInstances 540 의 단발 burst |
+| 학습 매핑 | §"RBAC abuse 후 kubectl get pods -A" 자동화 |
+
+**해석**: RBAC `list` 권한이 있는 SA token 1개로 cluster 전체를 enumerate 가능. dataset 의 540건은 정상치 — 짧은 시간 내 100+ list 호출이 등장하면 *침해된 SA 의 1차 정찰*.
+
+**학생 액션**: lab 의 default SA 로 `kubectl get pods -A` 와 `kubectl auth can-i --list` 를 실행, RBAC role 을 최소화한 뒤 동일 명령이 어느 단계에서 차단되는지 비교 보고.
 

@@ -446,26 +446,49 @@ ssh ccc@10.20.30.100 "
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 컨테이너 런타임 보안)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *capabilities/seccomp/AppArmor + privileged 모드* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Privileged 컨테이너 = host 신호 폭증
 
+```mermaid
+graph TD
+    PR[--privileged container] -->|host 자원 직접 access| HOST[host kernel]
+    HOST --> E4656[event 4656<br/>handle requested<br/>79,311]
+    HOST --> E4658[event 4658<br/>handle closed<br/>158,374]
+    HOST --> E4690[event 4690<br/>handle duplicated<br/>79,254]
+    HOST --> PAM[pam_event<br/>17,822]
+    NORMAL[제한된 컨테이너<br/>cap_drop=ALL] -->|namespace 내부| NS[namespace 격리]
+    NS -.->|host 신호 안 발생| HOST
+
+    style PR fill:#ffcccc
+    style NORMAL fill:#ccffcc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: privileged 컨테이너 1개는 그 자체로 dataset 의 4656/4658/4690 event 를 *수십 분 안에 정상 운영의 일주일 치* 만큼 생성한다. lecture §"capabilities 최소화" 가 핵심.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: 4690 (Handle Duplicated) burst — capability 남용 신호
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 항목 | 값 |
+|---|---|
+| message_type | `4690` (object handle duplicated) |
+| 총 발생 | 79,254 |
+| 학습 매핑 | §"--cap-add=ALL 위험성" — 무제한 capability = handle 복제 가능 |
+| 정상 baseline | host 당 시간당 ~50건 미만 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석**: 컨테이너에 `--cap-add SYS_PTRACE` 만 추가해도 4690 event 가 정상치 수십 배 발생한다. dataset 의 79K 누적치는 *모든 호스트, 전 기간* 합계 — 단일 컨테이너에서 비슷한 비율이면 즉시 alert.
+
+### Case 2: pam_event 17,822 — 컨테이너 user namespace 진입 흔적
+
+| 항목 | 값 |
+|---|---|
+| message_type | `pam_event` |
+| 총 발생 | 17,822 |
+| 학습 매핑 | §"비root 사용자 + user namespace 매핑" — 위반 시 흔적 |
+
+**해석**: 정상 컨테이너 (USER 1000) 는 pam 을 거치지 않는다. dataset pam_event 는 *호스트 OS 의 sshd/su/sudo* 가 만든 흔적인데, privileged 컨테이너에서 host shell 로 break-out 시도 시에도 동일한 신호가 발생한다.
+
+**학생 액션**: lab 환경에서 `docker run --cap-drop ALL --read-only --user 1000:1000 alpine` 으로 컨테이너를 띄우고, Wazuh 가 4656/4690 을 만드는지 vs. `--privileged` 컨테이너가 만드는지 비교 측정.
 
