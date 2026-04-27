@@ -442,26 +442,30 @@ ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — NIST CSF 5 함수 매핑)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *NIST CSF 사이버보안 프레임워크* 학습 항목과 매핑되는 dataset 의 NIST CSF `csf` framework 키 + 5 함수별 evidence.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: NIST CSF 5 함수 ↔ dataset evidence
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
+dataset host 의 framework `csf:[1, 3, 4]` 매핑 + 5 함수 별 evidence:
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| CSF 함수 | dataset evidence | 건수 |
+|---------|--------------|------|
+| **ID** (Identify) | host node 30,092 + asset framework 매핑 | 30K asset |
+| **PR** (Protect) | firewall_action 118K + nft block | 118K |
+| **DE** (Detect) | flow + Suricata + 5156 filter | 207K |
+| **RS** (Respond) | mo_name=Data Theft 125K + lifecycle | 125K |
+| **RC** (Recover) | (별도 — backup·DR dataset 부재) | 0 |
 
-### Case 2: `T1041 (Data Theft)` 패턴
+→ ID/PR/DE/RS *4 함수* dataset 매핑. RC 만 별도 evidence 필요.
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+### Case 2: dataset 의 csf:[1,3,4] 분석
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+WitFoo Precinct 의 `csf` 키가 [1,3,4] = *Identify·Detect·Respond* 만 cover. **PR (Protect) 와 RC (Recover) 은 다른 product** 가 cover (Cisco ASA = PR, backup product = RC).
+
+**해석**: NIST CSF 의 *5 함수 cover* 위해 *single product 부족* — *multi-vendor 통합* 필수. 학생 환경의 5 product (nft+Suricata+ModSec+Wazuh+OpenCTI) 가 모두 cover 하는지 점검.
+
+**학생 액션**: 5 함수 별 *cover product list* 작성 — RC (Recover) 누락 시 backup 솔루션 추가 권장.
 

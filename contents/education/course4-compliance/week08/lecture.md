@@ -485,26 +485,23 @@ ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 중간고사 채점 reference)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *중간고사 — ISO 27001 점검 체크리스트* 학습 항목 매칭. dataset 의 24 ISO 27001 control 매핑 = 학생 채점 reference.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: 만점 보고서 reference — dataset 양식
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
+학생 점검 보고서가 *dataset 의 양식 모방* 시 만점:
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 평가 축 | dataset 의 baseline | 학생 목표 |
+|------|----------------|---------|
+| Annex A 통제 cover | iso27001:[24 numbers] | 본인 환경 24+ 통제 매핑 |
+| evidence count | 595K edges per 24 control | 통제 별 수십~수백 evidence |
+| multi-vendor 매핑 | 2 vendor (Precinct + Cisco ASA) | 학생 5 vendor 매핑 |
+| 익명화 4-layer | regex+format+NER+사람 | 동일 절차 적용 |
 
-### Case 2: `T1041 (Data Theft)` 패턴
+**해석**: dataset 의 양식 그대로 모방한 보고서가 만점 (특히 *evidence count + 4-layer 익명화* 두 축).
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**채점 함의**: 단순 통제 list 만 제출 = 70점 / dataset 양식 + evidence count = 90+점.
 

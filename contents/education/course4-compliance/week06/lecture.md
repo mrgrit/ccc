@@ -528,26 +528,28 @@ ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — ISMS-P 점검 evidence 정량 수집)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *ISMS-P 점검 항목 실습* 학습 항목과 매핑되는 dataset 의 *audit trail evidence* — 점검 시 인용 가능한 정량 데이터.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: ISMS-P 80 항목 ↔ dataset evidence 표
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
+| ISMS-P 항목 | dataset record | evidence count |
+|-----------|------------|------------|
+| **2.5.1** (사용자 계정 관리) | 4624 logon (USER 분포) | 17,482 |
+| **2.5.2** (사용자 식별/인증) | 4776 NTLM + 4624 Kerberos | 32,864 |
+| **2.5.3** (사용자 권한 관리) | 4798/4799 group enum | 7,686 |
+| **2.6.1** (네트워크 접근통제) | firewall_action allow/block | 118,151 |
+| **2.6.2** (정보시스템 접근) | 5156 WFP filter | 176,060 |
+| **2.6.3** (응용프로그램 접근) | WAF GET/POST | 4,106 |
+| **2.7** (암호화 적용) | TLSv1.3 + 5061 Crypto | 1,302 |
+| **2.10.1** (악성코드 통제) | (EDR — dataset 부재) | 0 |
+| **2.10.5** (사고 처리) | mo_name=Data Theft 125,772 | 125,772 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+→ **ISMS-P 80 중 7+ 항목 dataset evidence 직접 매핑**.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+**해석**: 점검 보고서에 dataset 양식 모방 — 항목 별 *evidence count + 시간 분포* 명시.
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**학생 액션**: 본인 환경 ISMS-P 점검 시 *모든 항목에 evidence count* 추가 — dataset 처럼 정량 baseline 갖추기.
 

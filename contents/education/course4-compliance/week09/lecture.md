@@ -520,26 +520,34 @@ ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — GDPR Art.32 + 4-layer 익명화 직접 사례)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *GDPR / 개인정보보호 (EU vs 한국)* 학습 항목과 매핑되는 dataset 의 *4-layer 익명화* — GDPR Art.32 (Security of processing) 의 직접 구현 사례.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: dataset 의 4-layer 익명화 = GDPR Art.32 + 한국 PIPA 동시 충족
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041 (Data Theft)` 패턴
-
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
+```text
+sanitization method: 4-layer (regex + format-parse + ML/NER + Claude review)
+ip_replacement: RFC5737 TEST-NET / RFC1918 remapped
+org_replacement: ORG-NNNN
+host_replacement: HOST-NNNN / host-NNNN.example.internal
 ```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 익명화 layer | GDPR 매핑 | 한국 PIPA 매핑 |
+|----------|---------|------------|
+| Layer 1 (regex) | Art.32(1)(a) Pseudonymisation | 제29조 안전조치 (가명처리) |
+| Layer 2 (format-parse) | Art.32(1)(b) Confidentiality | 제29조 (암호화) |
+| Layer 3 (ML/NER) | Art.32(1)(d) Effectiveness | 제30조 영향평가 |
+| Layer 4 (Claude review) | Art.32(2) Risk-based | 제30조 (전문가 검토) |
+
+→ **dataset 의 4-layer 가 GDPR Art.32 + PIPA 제29-30조 동시 충족**.
+
+### Case 2: Apache 2.0 공개 = GDPR Art.6 (lawful basis)
+
+dataset 자체가 *legitimate interest + research* 근거로 Apache 2.0 공개 — GDPR Art.6(1)(f) (legitimate interests) + Recital 47 의 직접 사례.
+
+**해석**: 학생 환경의 PII 처리 시 dataset 의 4-layer + Apache 2.0 모델 적용 가능.
+
+**학생 액션**: GDPR DPIA (Data Protection Impact Assessment) 작성 시 dataset 의 4-layer 절차를 *기술적·조직적 조치* 사례로 인용.
 
