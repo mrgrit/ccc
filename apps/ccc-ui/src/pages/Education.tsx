@@ -324,6 +324,35 @@ export default function Education() {
                   ))}
                 </div>
               )}
+              {w.case_study && (
+                <div style={{ marginTop: 10, background: '#1a1208', borderLeft: '3px solid #d29922', borderRadius: 6, padding: '10px 14px' }}>
+                  <div style={{ fontSize: 12, color: '#d29922', fontWeight: 700, marginBottom: 4 }}>
+                    🌐 실제 사례 ({w.case_study.source || 'Precinct 6'})
+                  </div>
+                  <div style={{ fontSize: 14, color: '#e6edf3', fontWeight: 600, marginBottom: 4 }}>
+                    {w.case_study.title}
+                  </div>
+                  {w.case_study.narrative && (
+                    <div style={{ fontSize: 13, color: '#c9d1d9', lineHeight: 1.6, marginBottom: 6, whiteSpace: 'pre-wrap' as const }}>
+                      {w.case_study.narrative}
+                    </div>
+                  )}
+                  {w.case_study.mitre?.length > 0 && (
+                    <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 4 }}>
+                      {w.case_study.mitre.map((t: string, i: number) => (
+                        <span key={i} style={{ fontSize: 11, padding: '1px 7px', borderRadius: 8, background: '#21262d', color: '#f97316', border: '1px solid #f9731633' }}>
+                          {t}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {w.case_study.relevance && (
+                    <div style={{ fontSize: 12, color: '#8b949e', fontStyle: 'italic', marginTop: 4 }}>
+                      → {w.case_study.relevance}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>

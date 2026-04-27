@@ -1691,6 +1691,7 @@ def list_course_weeks(course_id: str):
 
             # D-B 매핑 우선, 없으면 자동 join
             mapped_labs = None
+            case_study = None
             if mapping:
                 for m in (mapping.get("mappings") or []):
                     if int(m.get("week", -1)) == wnum:
@@ -1704,6 +1705,16 @@ def list_course_weeks(course_id: str):
                                 "role": lab.get("role", "primary"),
                                 "note": lab.get("note", ""),
                             })
+                        cs = m.get("case_study")
+                        if isinstance(cs, dict):
+                            case_study = {
+                                "title": cs.get("title", ""),
+                                "narrative": cs.get("narrative", ""),
+                                "mitre": cs.get("mitre", []),
+                                "anchor_id": cs.get("anchor_id", ""),
+                                "relevance": cs.get("relevance", ""),
+                                "source": cs.get("source", "Precinct 6"),
+                            }
                         break
 
             week_entry = {
@@ -1715,6 +1726,8 @@ def list_course_weeks(course_id: str):
             }
             if mapped_labs is not None:
                 week_entry["mapped_labs"] = mapped_labs
+            if case_study is not None:
+                week_entry["case_study"] = case_study
             weeks.append(week_entry)
     else:
         # 교안 없는 과목 (battle 등) — lab만

