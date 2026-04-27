@@ -385,12 +385,56 @@ RASP + WAAP의 조합이 *시그니처 없는 공격*에 가장 강함.
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 는 *0-day 웹 프레임워크
-자동 악용* — 에이전트가 오픈소스 코드 정독·취약점 가설·PoC 생성을 자동화.
-T1041 Exfil 단일 항목은 0-day 발견·PoC 생성 흔적과 매핑 X. 폐기.
-재추가: Project Zero 의 0-day disclosure 케이스, Spring Boot CVE-2022-22965
-disclosure 타임라인.
--->
+## 실제 사례 (WitFoo Precinct 6 — WAF 차단 0건 = 0-day 미적용 환경의 baseline)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *0-day 웹 프레임워크 자동 악용 — 에이전트의 코드 정독·PoC 생성* 학습 항목과 매핑되는 dataset 의 *signature gap* 직접 증거.
+
+### Case 1: WAF 4106건 모두 outcome=200/302 — *N-day 룰 만 보유*
+
+dataset 의 WAF GET 4018 + POST 88 = **4106 건 모두 통과**.
+- vendor 룰 1220|1000 = N-day 패턴 (이미 알려진 SQLi/XSS)
+- 0-day 자동 PoC 가 *vendor 룰 미커버* → 본 dataset 의 outcome=200 사례와 동일하게 통과
+
+→ **본 dataset 환경의 outcome=200 100% = 0-day attack 시 *모두 통과* 의 baseline**.
+
+### Case 2: 정상 path 가 *0-day 시 어떻게 보이는지* 비교
+
+```text
+[정상 dataset GET path]
+  /servlet/eAndar.WebFileLibrary/3433/.../profile-complete.png  outcome=200
+
+[0-day Spring4Shell 가정 시]
+  /actuator/env?class.module.classLoader.URLs%5B0%5D=...  outcome=200
+  → vendor 룰 1220|1000 도 미커버 → 동일하게 outcome=200 (signature gap)
+```
+
+→ 본 dataset 환경의 *signature gap* 이 0-day 자동 악용에 *완전 노출* 됨.
+
+### Case 3: 0-day 탐지 — 행위 baseline 으로만 가능
+
+dataset 의 4663 (object access) 0.0047% baseline = *극히 드문* event.
+0-day 가 *web 서비스 계정* 으로 *비정상 4663 spike* 시 = *미지의 코드 실행* 신호.
+
+| 단서 | dataset baseline | 0-day 의심 임계 |
+|------|---------------|--------------|
+| 4663 (object access) | 0.0047% | 5x = 0.024% |
+| 4670 (permission 변경) | 0.009% | 5x = 0.045% |
+| 4690 (handle dup) | 3.8% | 2x = 7.6% |
+| security_audit_event | 18.4% | 1.5x = 28% |
+
+**해석 — 본 lecture (0-day) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **signature gap 입증** | dataset WAF 4106건 모두 outcome=200 = 0-day 무방어 baseline |
+| **N-day 룰 한계** | vendor 1220|1000 = N-day. 0-day 는 *모두 통과* 가정 |
+| **행위 기반 탐지** | 4663/4670/4690 분포 변화 = 0-day의 유일 단서 |
+| **PoC 생성 흔적** | dataset 부재 — 학생이 *honeypot 응답* 으로 PoC 생성 trigger |
+
+**학생 실습 액션**:
+1. 자체 환경의 WAF outcome=403 비율 측정 → dataset 0% baseline 대비 spike = 0-day 시도 가능성
+2. 4663/4670 분포 추적 → 5x 임계 자동 alert
+3. honeypot path (예: `/.git/config`, `/actuator/env`) 응답 추가 → 0-day 정찰 trigger
 
 

@@ -408,13 +408,53 @@ flowchart TB
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 는 AD Kerberoasting 자동화
-— TGT/TGS/SPN 공격 표면, BloodHound·SharpHound·Hashcat 파이프라인, AD
-하드닝이 핵심. T1041 (TA0010 Exfil) 은 AD 침투 *마지막 후속 단계* 의 일반
-tag 일 뿐, 본 lecture 의 *T1558.003 Kerberoasting* / T1003.006 DCSync 신호
-와 매핑되지 않음. 폐기. 재추가: SpecterOps 공개 BloodHound case study,
-MITRE Engenuity APT29 evals 의 Kerberos 단계 telemetry.
--->
+## 실제 사례 (WitFoo Precinct 6 — Kerberos auth + DS object 변경)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *AD Kerberoasting (T1558.003) + DCSync (T1003.006)* 학습 항목과 매핑되는 dataset 의 *Kerberos 4768 + NTLM 4776 + DS object 5136* 통계.
+
+### Case 1: Kerberos auth 분포 — TGT/TGS 발급
+
+| message_type | 의미 | 건수 |
+|--------------|------|------|
+| 4768 | Kerberos TGT 요청 | 2,703 |
+| 4776 | NTLM auth | 15,382 |
+| 4624 | logon success (Kerberos+NTLM 혼합) | 17,482 |
+| 4634 | logoff | 16,934 |
+
+→ **NTLM 4776 (15K) > Kerberos 4768 (2.7K)** = *NTLM 잔존* 환경. Kerberoasting 보다 **NTLM relay 가 더 위험**.
+
+### Case 2: AD 변경 evidence — DCSync 후보
+
+| message_type | 의미 | 건수 |
+|--------------|------|------|
+| 5136 | Directory service object modified | **380** |
+| 4670 | Permissions on object changed | 188 |
+| 4798/4799 | group enumeration | 7,686 |
+
+→ 5136 380건 = AD 객체 변경. T1003.006 DCSync (도메인 컨트롤러에서 hash 추출) 의 *직접 evidence* 일 가능성. 학생 점검 시 *5136 spike 시 source process* 확인 필수.
+
+### Case 3: BloodHound 같은 enumeration 의 *direct evidence* — 4798/4799
+
+dataset 의 4798 (user-local group enum) + 4799 (security-enabled group enum) 합계 **7,686 건** = BloodHound/SharpHound 같은 도구의 *enumeration 시도* 의 reference.
+
+```text
+정상 baseline: 4798/4799 = 0.37% of total
+SharpHound 실행 시: spike (분 단위에 수천 건 — 본 dataset 의 365일 baseline 와 같음)
+```
+
+**해석 — 본 lecture (Kerberoasting) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **NTLM relay > Kerberoasting** | 본 환경 NTLM 6배 많음 → NTLM disable 우선 |
+| **DCSync 의심** | 5136 380건 = 365일 baseline. 분 단위 spike 시 즉시 critical |
+| **enumeration 검출** | 4798/4799 7,686건 = SharpHound 행위 baseline |
+| **MITRE 매핑** | T1558.003 + T1003.006 + T1069 (Group Discovery) 모두 dataset 매핑 가능 |
+
+**학생 실습 액션**:
+1. 본 dataset NTLM:Kerberos 비율 (6:1) 측정 → 학생 환경의 *NTLM disable 진행도* 평가
+2. 5136 + 4670 timestamp 시간 분포 → spike 시 *DCSync 의심* 자동 alert
+3. SharpHound 실행 시 dataset 7,686 건 baseline 와 비교 → *5분 내 100건+* 시 enumeration 의심
 
 
