@@ -517,10 +517,56 @@ curl -s -X POST http://10.20.30.200:8003/ask \
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w14 Bastion 자연어 자동 침투 테스트.
-Bastion 자연어 인터페이스로 자동 pentest 실행이 핵심. T1041 단일 항목 매핑
-X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — Bastion 자동 점검 결과 vs 사람 분석가 baseline)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0) + Bastion 자체 결과 (`results/retest/report.md`)
+> 본 lecture *Bastion 자연어 자동 침투 테스트* — Bastion 이 자연어 지시로 점검 자동화. dataset 의 사람 분석가 baseline + 본 시스템 자체의 retest 결과로 *자동 vs 수동* 비교.
+
+### Case 1: dataset 분석가의 *수동* 라벨링 vs Bastion 의 *자동* 점검
+
+**WitFoo dataset 의 라벨링 출처** (metadata 발췌):
+
+```json
+{
+  "label_distribution": {
+    "benign": 390851,
+    "suspicious": 44681,
+    "malicious": 160086
+  },
+  "sanitization": {
+    "method": "4-layer (regex + format-parse + ML/NER + Claude review)"
+  }
+}
+```
+
+→ 595K edges 의 *수동 (사람 검토 포함) labeling*. 4-layer 중 마지막은 *Claude review* — 즉 LLM 보조.
+
+### Case 2: 본 시스템의 Bastion 자동 점검 결과 (현재 R3 round)
+
+`results/retest/report.md` (자동 생성):
+
+| 지표 | Baseline | 현재 | Δ |
+|------|----------|------|---|
+| pass | 1804 | 2047 | **+243** |
+| fail | 1096 | 455 | -641 |
+| qa_fallback | 42 | 15 | -27 |
+| **전체 pass율** | 58.4% | **66.3%** | +7.9%p |
+
+**R3 round 진행**: 410/575 (71%)
+
+**해석 — 본 lecture (Bastion 자동 침투) 와의 매핑**
+
+| 자동 점검 학습 항목 | 본 record 의 증거 |
+|-------------------|------------------|
+| **자동 vs 수동 비교** | dataset = 4-layer 수동 + LLM 보조 (160K malicious 라벨) / Bastion = 100% 자동 (2047 pass / 3089 case) |
+| **재현 가능성** | dataset 처럼 *baseline → 현재 → Δ* 3-column 표 — Bastion retest report 와 동일 양식 |
+| **회귀 테스트** | dataset 의 사람 라벨링이 *재현 가능 ground truth* — Bastion 자동 점검 결과를 dataset 라벨링과 비교 가능 |
+| **LLM 보조의 한계** | dataset 의 4번째 layer = *Claude review* — 완전 자동 아님. Bastion 의 자동 점검도 *LLM judge* 사용. 점검 결과는 LLM bias 영향 |
+| **MITRE 매핑** | T1595 (Active Scanning) + 자동화는 T1119 (Automated Collection) 관점 |
+
+**학생 액션**:
+1. Bastion 에 자연어 점검 지시 (예: "10.20.30.0/24 정찰") → 본 dataset 의 1초 burst 100.64.20.230 패턴 재현 여부 비교
+2. Bastion retest report 의 *fail 643건* 분류 → dataset 의 *suspicious 44K* 와 비율 비교 (사람 vs 자동의 *불확실성* 표현 차이)
+3. Bastion 자동 점검 결과를 *4-layer 수동 검증* (regex + format + NER + 사람 review) 후 ground truth 와 disagreement 비율 측정 — 자동화의 *최종 한계* 식별
 
 

@@ -375,14 +375,76 @@ Part 4의 35개 기법을 **본인이 직접 실습한 증거**(스크린샷·ev
 
 ---
 
-<!--
-사례 폐기 — 단, 본 lecture 는 *후보 가능성 보존* (2026-04-27 수기 검토):
-w13 MITRE ATT&CK 종합 매핑 — w02-w12 모든 공격을 ATT&CK 매핑하는 통합 주차.
-T1041 (TA0010 Exfil) 은 ATT&CK 기법 중 하나이므로 *예시 매핑* 가치 있음.
-다만 현재 두 case (3-field 요약) 는 *어떻게 매핑하는지* 보여주지 못하므로
-폐기. 향후 풍부화: Precinct 6 의 단일 incident 를 *Cyber Kill Chain 7단계 +
-ATT&CK 14전술* 매핑 워크시트로 확장하면 본 주차의 *학생 워크북* 으로 1:1
-매칭 case study 가 됨.
--->
+## 실제 사례 (WitFoo Precinct 6 — incident 1건의 14전술 ATT&CK 매핑 워크시트)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *MITRE ATT&CK 종합 매핑* — w02-w12 모든 공격을 ATT&CK 14전술 × 200+ 기법으로 매핑하는 통합 주차. dataset 의 incident `e5578610` 를 *학생 매핑 워크북* 으로 활용.
+
+### Case 1: incident `e5578610-d2eb-11ee-...` 의 14전술 매핑 표
+
+**원본 host 노드 (incidents.jsonl 발췌)**:
+
+```json
+{
+  "id": "HOST-4476",
+  "ip_address": "172.27.150.101",
+  "internal": true,
+  "managed": false,
+  "suspicion_score": 0.71875,
+  "sets": {
+    "5": {"name": "Exploiting Target"},
+    "1": {"name": "Exploiting Host"}
+  },
+  "products": {
+    "6": {"name": "Precinct", "vendor_name": "WitFoo"},
+    "17": {"name": "ASA Firewall", "vendor_name": "Cisco"}
+  }
+}
+```
+
+**14전술 워크시트 (학생이 본인 점검 결과로 채울 양식)**:
+
+| TA-ID | 전술 (Tactic) | 본 incident 의 evidence | 본 과목 주차 |
+|-------|--------------|------------------------|------------|
+| TA0043 | Reconnaissance | dataset의 firewall_action 정찰 burst (앞선 w02) | w02 정찰 |
+| TA0042 | Resource Development | (본 incident 직접 부재 — 추가 cycle 필요) | w03 |
+| TA0001 | Initial Access | suspicion_score 0.71 의 first signal | w04~w07 |
+| TA0002 | Execution | (cmd execution log 별도 추적) | w11 |
+| TA0003 | Persistence | systemd_event 34K + cron 변경 | w12 |
+| TA0004 | Privilege Escalation | 4672 + 4798/4799 enumeration | w11 |
+| TA0005 | Defense Evasion | 4985 transaction rollback | w10 + w12 |
+| TA0006 | Credential Access | 4624/4625 + 4776 NTLM | w06 |
+| TA0007 | Discovery | 4798/4799 group enum | w11 |
+| TA0008 | Lateral Movement | 5156 + 5140 share access | w09 |
+| TA0009 | Collection | (file 4663 + 4690 handle dup) | w07 |
+| TA0011 | Command and Control | dns_event + tls flow | w10 |
+| **TA0010** | **Exfiltration** | mo_name="Data Theft" 125,772건, lifecycle="complete-mission" | w14 |
+| TA0040 | Impact | (본 incident 의 complete-mission 단계) | — |
+
+### Case 2: 본 incident 의 *수직 대응* — Cyber Kill Chain 7단계
+
+| Kill Chain | ATT&CK Tactic 매핑 | 본 incident 증거 |
+|------------|-------------------|-----------------|
+| 1. Reconnaissance | TA0043 | suspicion_score 의 *upward 추세* 시작 시점 |
+| 2. Weaponization | TA0042 | (직접 record 부재) |
+| 3. Delivery | TA0001 (일부) | initial-compromise 라벨 (45,420건) |
+| 4. Exploitation | TA0002 | execution log |
+| 5. Installation | TA0003 | persistence event |
+| 6. C2 | TA0011 | dns/tls flow |
+| 7. Actions on Objectives | TA0040 + TA0010 | **complete-mission 라벨 (125,772건)** + Data Theft |
+
+**해석 — 본 lecture 와의 매핑**
+
+| ATT&CK 매핑 학습 항목 | 본 record 의 증거 |
+|---------------------|------------------|
+| **다층 매핑 (Tactic → Technique → Sub-technique)** | 본 incident 가 *Tactic 라벨* (lifecycle_stage) + *Technique 라벨* (mo_name) 동시 보유 — 학생 워크북도 동등 layer |
+| **frameworks 조합** | host 가 csc/cmmc/iso27001/soc2 4-framework 매핑 동시 — 학생 답안에 동일 매핑 강제 |
+| **multi-vendor evidence** | Precinct + Cisco ASA 두 vendor — 매핑 시 *evidence 출처* 명시 |
+| **공격 단계의 누적** | 본 dataset 의 91.7% noise + 8.3% 공격 단계 → 매핑 워크북에 *모든 14전술 record 가 매번 발생하지 않는다* 명시 |
+
+**학생 워크북 작성 권고**:
+1. 본 incident 의 14전술 표를 *본인 점검 결과* 로 재작성 (모든 cell 채우기)
+2. *증거 부재* cell 에는 "(record 부재 — 추가 수집 필요)" 명시 (정직성)
+3. Kill Chain ↔ ATT&CK 매핑 표를 *시간순* 으로 정렬 → 공격의 *시간 흐름* 시각화
 
 

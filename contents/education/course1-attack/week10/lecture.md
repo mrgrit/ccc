@@ -427,10 +427,41 @@ curl -s -X POST http://10.20.30.200:8003/ask \
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w10 IPS·방화벽 우회 — fragmentation·
-TLS·DNS over HTTPS 우회. T1041 단일 항목은 우회 시도 단계 신호와 매핑 X.
-폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — Firewall block + traffic_drop)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *IPS·방화벽 우회 (T1090·T1572 등)* 학습 항목 (fragmentation·TLS encapsulation·DNS-over-HTTPS) 와 매핑되는 dataset 의 firewall_action + traffic_drop 통계.
+
+### Case 1: firewall block 비율 — 정상 운영의 baseline
+
+**dataset 분포**
+
+| message_type | 의미 | 건수 |
+|--------------|------|------|
+| firewall_action | allow / block 일반 | 118,151 |
+| traffic_drop | explicit drop | 5,826 |
+| firewall_log | 원시 firewall log | 200 |
+| **합계** | | **124,177** |
+
+→ firewall block ratio: 5,826 / 124,177 = **4.7%** (실 운영의 정상 baseline). 점검 환경에서 **block ratio 가 baseline 의 5배 이상** 이면 *우회 시도 의심*.
+
+### Case 2: 우회 후 *남은 트래픽* — 100.64.20.230 의 1초 burst 가 모두 block
+
+w03 정찰 record (208 events, 30 host, 54 port) 가 **모두 block**. 그러나 attacker 는 *동일 src 에서 다른 src port 로 재시도* 가능 → 본 dataset 엔 다음 step 부재이지만, firewall block 직후 *동일 src 의 새 connection 시도* 가 재현되면 *우회 시도 패턴*.
+
+**해석 — 본 lecture 와의 매핑**
+
+| 우회 학습 항목 | 본 record 의 증거 |
+|---------------|------------------|
+| **차단율 baseline** | 4.7% — 학생이 우회 도구 (e.g. fragroute, sslh) 적용 후 block ratio 측정 → baseline 이하면 우회 성공 |
+| **fragmentation 우회** | 본 dataset 에 *분할 packet* 직접 record 없음. tcpdump 로 IP fragment 보유 패킷 별도 분석 권장 |
+| **TLS encapsulation (T1572)** | dataset 의 `app=TLSv1.3` 라벨 보유 GET 4018건 — TLS 안에 무엇이 들었는지 firewall 가 못 봄. *TLS 검사 없는 환경* 에선 모든 우회가 통과 |
+| **DNS-over-HTTPS (T1071.004)** | dataset 의 dns_event 11K — 정상 DNS 만. DoH 트래픽은 *443 TCP* 으로 flow 에 섞임 → flow 분류 요구 |
+| **MITRE 매핑** | T1090 (Proxy) + T1572 (Protocol Tunneling) + T1071.004 (DNS) + T1027 (Obfuscated Files) |
+
+**학생 실습 액션**:
+1. 점검 환경에서 fragroute 실행 후 dataset 의 4.7% block ratio 와 비교
+2. TLS handshake 분석 — 동일 dst 에 *다양한 SNI* 가 짧은 시간 발생하면 *Domain Fronting* 의심 (T1090.004)
+3. DoH 사용 endpoint (`https://1.1.1.1/dns-query`) 접근 시 firewall log 의 dst_port = 443 만 보임 → DPI 도구 필요
 
 

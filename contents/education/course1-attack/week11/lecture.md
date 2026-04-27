@@ -454,9 +454,42 @@ curl -s -X POST http://10.20.30.200:8003/ask \
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w11 Linux 권한 상승 (TA0004 Privilege
-Escalation — T1068·T1548). T1041 Exfil 단일 항목 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — security_privilege_change + setuid)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Linux 권한 상승 (TA0004 Privilege Escalation — T1068·T1548)* 학습 항목 (sudo·SUID·capability·kernel exploit) 과 매핑되는 dataset 의 *security_privilege_change* event + 4672 (Special Privileges Assigned).
+
+### Case 1: 권한 변경 event 분포
+
+**dataset 의 권한 관련 message_type**
+
+| message_type | 의미 | 건수 |
+|--------------|------|------|
+| security_privilege_change | 보안 권한 변경 | 2,398 |
+| 4672 | Special privileges assigned to new logon | (4624 logon 의 부분 — 200K 안에 포함) |
+| 4670 | Permissions on object changed | 188 |
+| 4798 | User local group membership enumerated | 2,172 |
+| 4799 | Security-enabled local group membership enumerated | 5,514 |
+| 5136 | Directory service object modified | 380 |
+| **합계 (권한 관련)** | | **10,652** |
+
+### Case 2: 4798/4799 — *enumeration before escalation*
+
+dataset 에 4798/4799 가 7,686 records (group membership enumeration). 권한 상승 시도 *직전 단계* — attacker 가 *어떤 group 에 속해야* root 또는 admin 권한을 얻는지 사전 조사.
+
+**해석 — 본 lecture 와의 매핑**
+
+| 권한 상승 학습 항목 | 본 record 의 증거 |
+|-------------------|------------------|
+| **sudo 악용 (T1548.003)** | (Linux 측 — dataset 은 Windows 중심이라 직접 record 없음) — 그러나 4672 (special privileges) 가 동등 개념: 로그인 직후 *administrative privilege* 부여 |
+| **Group enumeration (T1069.001)** | 4798 (user-local) + 4799 (security-enabled) = 7,686 — *권한 상승 전 정찰* . 점검 시 *동일 user 의 enum 빈도 spike* 검출 |
+| **Object permission change (T1222)** | 4670 188건 + 5136 380건 — *드물게* 발생. 점검 시 *web 서비스 계정* 에서 발생하면 critical |
+| **security_privilege_change** | 2,398건 — Windows 의 *granular privilege* 변경 추적. 점검 시 *비정상 시각 + 비정상 user* 조합 식별 |
+| **MITRE 매핑** | T1068 (Exploit for PrivEsc) + T1548.003 (Sudo) + T1222 (File and Directory Permissions) + T1069 (Group Discovery) |
+
+**학생 실습 액션**:
+1. 본 dataset baseline (4798/4799 = 7,686 / 2.07M = 0.37%) 과 점검 환경의 비율 비교 → 5배 spike 시 *enumeration burst* 의심
+2. 4670 발생 시점에 *동일 user 의 4624 (logon) record* 와 timestamp 매칭 → privilege escalation 시점 정확 추적
+3. Linux 측 sudo log (`/var/log/auth.log`) + auditd execve 추적 → 본 dataset 의 4672/security_privilege_change 와 동등 추출
 
 

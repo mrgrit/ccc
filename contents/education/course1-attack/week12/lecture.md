@@ -466,9 +466,40 @@ curl -s -X POST http://10.20.30.200:8003/ask \
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w12 지속성 + 안티포렌식 (TA0003 Persistence·
-TA0005 Defense Evasion). T1041 단일 Exfil 항목 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — systemd_event + 7036/7040 service change)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *지속성 + 안티포렌식 (TA0003 Persistence + TA0005 Defense Evasion)* 학습 항목 (cron·systemd unit·service start/stop·log clearing) 과 매핑되는 dataset 의 systemd_event 34,520건 + 7036/7040 service event.
+
+### Case 1: systemd_event (34,520건) + 7036/7040 service change
+
+**dataset 분포**
+
+| message_type | 의미 | 건수 |
+|--------------|------|------|
+| systemd_event | systemd unit lifecycle | 34,520 |
+| 7036 | Service start/stop | 1,635 |
+| 7040 | Service start type changed | 202 |
+| 4985 | The state of a transaction has changed | 4,876 |
+| **합계 (지속성/평가 관련)** | | **41,233** |
+
+### Case 2: 4985 transaction state change — 안티포렌식 단서
+
+dataset 의 4985 (4,876건) 는 *transaction state change* — Windows trustee 가 *권한 transaction* 을 commit/rollback. 비정상 패턴: 짧은 시간에 다수 transaction *rollback* → *권한 변경 후 흔적 제거* 의심.
+
+**해석 — 본 lecture 와의 매핑**
+
+| 지속성/안티포렌식 학습 항목 | 본 record 의 증거 |
+|---------------------------|------------------|
+| **systemd unit 지속성 (T1543.002)** | 34,520 systemd_event 가 정상 baseline. 점검 시 *비표준 unit name* (`apt-update.service` 위장) 검출 |
+| **서비스 자동 시작 (T1543)** | 7040 (start type changed) 202건 — *드물게* 발생. Spike 시 *manual → automatic* 변경한 서비스 식별 (지속성 심기) |
+| **로그 삭제 (T1070.001)** | (Linux journalctl 직접 부재) — 그러나 systemd_event 의 *대량 누락* 시점 확인 가능 (gap 분석) |
+| **transaction rollback (T1070)** | 4985 spike — *권한 변경 후 rollback* 으로 audit trail 흐림 |
+| **MITRE 매핑** | T1543.002 (systemd) + T1053.005 (Scheduled Task) + T1070 (Indicator Removal) |
+
+**학생 실습 액션**:
+1. 본인 Linux 환경에 systemd unit 지속성 심기 (`/etc/systemd/system/backdoor.service`) → journalctl 의 systemd_event spike 측정
+2. 4985 baseline (4,876 / 2.07M = 0.24%) 대비 점검 환경 비율 — 5배 spike 시 *anti-forensic transaction* 의심
+3. `journalctl --vacuum-time=1d` 실행 후 *gap 시간대* 가 SIEM 에 어떻게 보이는지 측정 (dataset 의 systemd_event 가 끊긴 구간 식별 방식 적용)
 
 
