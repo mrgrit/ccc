@@ -432,6 +432,24 @@ def _init_db():
                     updated_at TIMESTAMPTZ DEFAULT now(),
                     PRIMARY KEY(student_id, category)
                 );
+                -- Lab session — SubAgent 감시 기반 채점 (textarea 폐기)
+                -- start → 학생 자유 실행 → end → transcript 채점
+                CREATE TABLE IF NOT EXISTS lab_sessions (
+                    id           TEXT PRIMARY KEY,
+                    lab_id       TEXT NOT NULL,
+                    student_id   TEXT,
+                    vm_ip        TEXT DEFAULT '',          -- 감시 대상 VM (없으면 학생 직접 paste 모드)
+                    started_at   TIMESTAMPTZ DEFAULT now(),
+                    ended_at     TIMESTAMPTZ,
+                    status       TEXT DEFAULT 'active',    -- active / ended / graded / failed
+                    transcript   JSONB DEFAULT '{}'::jsonb, -- {commands:[{ts,cmd,exit,stdout,stderr}], files:[...]}
+                    grading      JSONB DEFAULT '{}'::jsonb, -- {step_results:[{order,passed,reason,...}], message}
+                    score        INT DEFAULT 0,
+                    total_score  INT DEFAULT 0
+                );
+                CREATE INDEX IF NOT EXISTS idx_lab_sessions_student ON lab_sessions(student_id);
+                CREATE INDEX IF NOT EXISTS idx_lab_sessions_lab     ON lab_sessions(lab_id);
+                CREATE INDEX IF NOT EXISTS idx_lab_sessions_status  ON lab_sessions(status);
             """)
             # V1 마이그레이션: group_id FK
             cur.execute("ALTER TABLE students ADD COLUMN IF NOT EXISTS group_id TEXT REFERENCES ccc_groups(id)")
@@ -1894,6 +1912,7 @@ def get_lab_detail(lab_id: str, request: Request):
                 step_data = {
                     "order": s.order, "instruction": s.instruction,
                     "hint": s.hint, "category": s.category, "points": s.points,
+                    "input_mode": _step_input_mode(s, l),  # 'command' | 'text' (UI 분기)
                 }
                 if l.version == "ai":
                     if s.script:
@@ -2172,6 +2191,235 @@ def ctf_scoreboard():
             """)
             rows = cur.fetchall()
     return {"scoreboard": [dict(r) for r in rows]}
+
+# ══════════════════════════════════════════════════
+#  Lab Sessions (SubAgent 감시 기반 채점 — textarea 폐기)
+# ══════════════════════════════════════════════════
+
+class LabSessionStartBody(BaseModel):
+    lab_id: str
+    student_id: str = ""        # 비면 request user.sub
+    vm_ip: str = ""             # 명시 가능. 비면 student_infras 의 첫 호스트 사용 (B 사이클)
+
+
+class LabSessionEndBody(BaseModel):
+    transcript: dict | None = None       # 명령 실행 step — SubAgent 캡처 또는 paste
+                                          # {commands:[{ts,cmd,exit,stdout,stderr}, ...]}
+    answers: dict[str, str] | None = None # 텍스트 작성 step — {step_order: 학생 작성}
+                                          # 두 모드 동시 지원: 명령 step 은 transcript, 작성 step 은 answers
+
+
+def _step_input_mode(step, lab=None) -> str:
+    """step 이 어떤 입력 모드인지 추론. 우선순위:
+       1) step.input_mode 명시 (lab YAML 작성자가 지정) — 최우선
+       2) bastion_prompt/script 있음 → 'command'
+       3) lab title/description 에 '보고서/리포트/report' → 'text' 기본
+       4) instruction 의 작성 동사 키워드 → 'text'
+       5) 기본 → 'command' (Non-AI 도 명령 입력이 주된 모드)
+    """
+    explicit = getattr(step, "input_mode", "") or ""
+    if explicit in ("command", "text", "code", "mixed"):
+        return explicit
+    bp = getattr(step, "bastion_prompt", "") or ""
+    script = getattr(step, "script", "") or ""
+    if bp or script:
+        return "command"
+    # lab 단위 hint
+    if lab is not None:
+        td = ((getattr(lab, "title", "") or "") + " " + (getattr(lab, "description", "") or "")).lower()
+        if any(m in td for m in ["보고서", "리포트", "report"]):
+            return "text"
+    # step instruction 작성 동사
+    instr = step.instruction or ""
+    text_markers = [
+        "보고서", "리포트", "작성하", "기술하", "설명하시", "설명하라", "설명한",
+        "요약", "정리하", "비교하", "분석하시오",
+        "샘플", "골격", "채우기", "마스킹", "봉인", "초안",  # 보고서 lab 주차 용
+    ]
+    if any(m in instr for m in text_markers):
+        return "text"
+    return "command"
+
+
+def _gen_session_id() -> str:
+    import uuid
+    return f"labses_{uuid.uuid4().hex[:12]}"
+
+
+@app.post("/labs/sessions/start", dependencies=[Depends(verify_api_key)])
+def lab_session_start(body: LabSessionStartBody, request: Request):
+    """학생이 lab 시도 시작 — T0 기록. SubAgent 캡처 시작 신호는 B 사이클에서 추가."""
+    user = get_current_user(request)
+    sid = body.student_id or user.get("sub", "anonymous")
+
+    # lab 존재 검증
+    from packages.lab_engine import load_all_labs
+    labs = load_all_labs(_LABS_DIR)
+    lab = next((l for l in labs if l.lab_id == body.lab_id), None)
+    if not lab:
+        raise HTTPException(404, f"Lab not found: {body.lab_id}")
+
+    sess_id = _gen_session_id()
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(
+                """INSERT INTO lab_sessions (id, lab_id, student_id, vm_ip, status, total_score)
+                   VALUES (%s, %s, %s, %s, 'active', %s)
+                   RETURNING id, lab_id, student_id, vm_ip, started_at, status, total_score""",
+                (sess_id, body.lab_id, sid, body.vm_ip, lab.total_points),
+            )
+            row = cur.fetchone()
+            conn.commit()
+
+    # TODO B: SubAgent 에 audit/start 신호. 지금은 stub.
+    return {
+        "session": dict(row),
+        "lab_title": lab.title,
+        "step_count": len(lab.steps),
+        "capture_mode": "manual_paste",  # B 사이클 후 'subagent_audit'
+    }
+
+
+@app.post("/labs/sessions/{session_id}/end", dependencies=[Depends(verify_api_key)])
+def lab_session_end(session_id: str, body: LabSessionEndBody, request: Request):
+    """학생이 lab 완료 신호 — T1 기록 + transcript 채점.
+
+    A 사이클: body.transcript 의 commands 를 step semantic 과 매칭.
+    B 사이클: SubAgent 가 캡처한 transcript 자동 사용.
+    C 사이클: Manager AI 의 multi-step grading prompt 호출.
+    """
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM lab_sessions WHERE id=%s", (session_id,))
+            sess = cur.fetchone()
+            if not sess:
+                raise HTTPException(404, "Lab session not found")
+            if sess["status"] != "active":
+                raise HTTPException(400, f"Session is {sess['status']}, not active")
+
+            transcript = body.transcript or {}
+            # transcript paste 가 비면 빈 commands 로 처리
+            if not isinstance(transcript, dict):
+                transcript = {}
+
+            # 채점 — A 사이클 임시: transcript 의 commands 를 모두 합쳐 step별 semantic_first_judge 호출
+            from packages.lab_engine import load_all_labs
+            from packages.lab_engine.semantic_judge import semantic_first_judge, has_semantic
+            labs = load_all_labs(_LABS_DIR)
+            lab = next((l for l in labs if l.lab_id == sess["lab_id"]), None)
+            if not lab:
+                raise HTTPException(404, f"Lab not found in catalog: {sess['lab_id']}")
+
+            commands = transcript.get("commands") or []
+            # commands: [{ts, cmd, exit, stdout, stderr}, ...]
+            # 명령 step 채점용 합본 (각 cmd + stdout 300자 제한)
+            joined_commands = "\n".join(
+                f"$ {c.get('cmd','')[:200]}\n{(c.get('stdout','') or c.get('stderr',''))[:300]}"
+                for c in commands if isinstance(c, dict)
+            )
+            # 학생 작성 답변 (step별, key 는 str)
+            answers = body.answers or {}
+
+            step_results = []
+            earned = 0
+            for s in lab.steps:
+                mode = _step_input_mode(s, lab)
+                # 우선순위:
+                #   1) answers[order] 있으면 → 학생이 명시적으로 작성한 답
+                #   2) mode=='text' → answers[order] (없으면 빈 → fail)
+                #   3) mode=='command' → joined_commands
+                ans_text = (answers.get(str(s.order)) or answers.get(s.order) or "").strip() if isinstance(answers, dict) else ""
+                if ans_text:
+                    student_answer = ans_text
+                    src = "text_answer"
+                elif mode == "text":
+                    student_answer = ""
+                    src = "missing_text_answer"
+                else:
+                    student_answer = joined_commands
+                    src = "command_transcript"
+
+                verify_for_judge = s.verify_raw if hasattr(s, 'verify_raw') else None
+                if has_semantic(verify_for_judge):
+                    if not student_answer:
+                        passed, reason = False, f"empty_{src}"
+                    else:
+                        passed, kw, reason, _ = semantic_first_judge(
+                            s.instruction, verify_for_judge, student_answer,
+                        )
+                else:
+                    expect = (s.verify.expect if s.verify else "") or ""
+                    passed = bool(expect) and bool(student_answer) and expect.lower() in student_answer.lower()
+                    reason = "keyword_match" if passed else "no_semantic_no_keyword"
+                pts = s.points if passed else 0
+                earned += pts
+                step_results.append({
+                    "order": s.order,
+                    "input_mode": mode,
+                    "graded_via": src,
+                    "passed": passed,
+                    "points_earned": pts,
+                    "reason": reason,
+                })
+
+            grading = {
+                "step_results": step_results,
+                "message": f"Graded {len(step_results)} steps via {('semantic' if any(r['reason'] == 'semantic_pass' or 'semantic' in r['reason'] for r in step_results) else 'keyword')} judge",
+                "capture_mode": transcript.get("capture_mode", "manual_paste"),
+            }
+            status = "graded"
+
+            cur.execute(
+                """UPDATE lab_sessions
+                   SET ended_at=now(), status=%s, transcript=%s, grading=%s, score=%s
+                   WHERE id=%s
+                   RETURNING *""",
+                (status, Json(transcript), Json(grading), earned, session_id),
+            )
+            row = cur.fetchone()
+            conn.commit()
+
+    return {
+        "session": dict(row),
+        "score": earned,
+        "total_score": sess["total_score"],
+        "passed": earned >= int(sess["total_score"] * (lab.pass_threshold or 0.6)),
+        "step_results": step_results,
+    }
+
+
+@app.get("/labs/sessions/{session_id}", dependencies=[Depends(verify_api_key)])
+def lab_session_get(session_id: str):
+    """세션 상태 + transcript + grading 조회."""
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute("SELECT * FROM lab_sessions WHERE id=%s", (session_id,))
+            row = cur.fetchone()
+            if not row:
+                raise HTTPException(404, "Lab session not found")
+    return {"session": dict(row)}
+
+
+@app.get("/labs/sessions", dependencies=[Depends(verify_api_key)])
+def lab_session_list(student_id: str = "", lab_id: str = "", limit: int = 50):
+    """학생/lab 별 최근 세션 목록."""
+    where = []
+    args = []
+    if student_id:
+        where.append("student_id=%s"); args.append(student_id)
+    if lab_id:
+        where.append("lab_id=%s"); args.append(lab_id)
+    sql = "SELECT id, lab_id, student_id, started_at, ended_at, status, score, total_score FROM lab_sessions"
+    if where:
+        sql += " WHERE " + " AND ".join(where)
+    sql += " ORDER BY started_at DESC LIMIT %s"
+    args.append(limit)
+    with _conn() as conn:
+        with conn.cursor(cursor_factory=RealDictCursor) as cur:
+            cur.execute(sql, tuple(args))
+            rows = cur.fetchall()
+    return {"sessions": [dict(r) for r in rows], "total": len(rows)}
+
 
 # ══════════════════════════════════════════════════
 #  Battle Scenarios (시나리오 관리)
