@@ -649,26 +649,51 @@ Week 10에서는 **Schedule과 Watcher**를 학습한다.
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — Experience와 4-Layer Memory)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *Bastion 의 4-layer memory 시스템* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### 에이전트 메모리의 4 층 구조 — "정보 종류별로 분리 저장"
 
+**L1 Working** (현재 step): 진행 중 작업의 중간 결과. **L2 Episodic** (사례별): dataset 의 392 사례 같은 *완결된 사례*. **L3 Semantic** (개념): chain 패턴, MITRE 기법 같은 *추상화된 지식*. **L4 History** (감사): 모든 결정의 시간순 기록 (압축 면역).
+
+```mermaid
+graph TB
+    L1["L1 Working<br/>현재 step (휘발성)"]
+    L2["L2 Episodic<br/>392 사례 저장"]
+    L3["L3 Semantic<br/>패턴/개념 추상화"]
+    L4["L4 History<br/>모든 결정 audit"]
+
+    NEW["새 신호"] --> L1
+    L1 -->|완료 시| L2
+    L2 -->|패턴 추출| L3
+    L1 -->|모든 단계| L4
+
+    style L1 fill:#ffe6cc
+    style L2 fill:#cce6ff
+    style L3 fill:#ccffcc
+    style L4 fill:#ffd6d6
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: 4 layer 의 dataset 활용
 
-### Case 2: `T1041 (Data Theft)` 패턴
+| Layer | 보관 기간 | dataset 양 |
+|---|---|---|
+| L1 Working | ~분 | 30 신호 batch |
+| L2 Episodic | ~월 | 392 사례 |
+| L3 Semantic | ~영구 | 50 패턴 node |
+| L4 History | 영구 (압축 면역) | 모든 결정 |
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+### Case 2: 압축 면역의 가치
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+L4 는 *LLM context 압축* 시에도 *그대로 유지* 된다. 이는 *audit/규제* 에서 결정적 — *영구 추적 가능성*. 다른 layer 는 압축으로 일부 손실 가능, L4 는 *모든 결정의 영구 기록*.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **4-layer = 정보 종류별 분리 저장** — 한 곳에 모두 X.
+2. **L4 압축 면역** — audit/규제 충족.
+3. **각 layer 의 보관 기간 다름** — L1 분, L4 영구.
+
+**학생 액션**: Bastion 의 메모리 디렉토리 (apps/bastion/memory/) 4 layer 별 데이터 양 측정.
 

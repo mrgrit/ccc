@@ -561,26 +561,63 @@ Python mining 코드를 사용하여 난이도 1~6까지 각각 100회 mining하
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — PoW와 블록체인)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *작업증명 (PoW) + 블록체인을 이용한 자율 시스템의 무결성* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### 자율 시스템에 PoW 가 필요한 이유 — "에이전트 결과의 검증 가능성"
 
+자율 에이전트가 dataset 분석 결과를 *블록체인에 기록* 하면 — 그 결과를 *나중에 변조 불가능* 하게 만든다. 이는 *audit/규제* 측면에서 중요 — *AI 가 언제 어떤 결정을 했는지의 변조 불가능 기록*.
+
+```mermaid
+graph LR
+    SIG["dataset signal"]
+    AGENT["에이전트 분석"]
+    POW["PoW 작업"]
+    CHAIN["블록체인<br/>변조 불가 기록"]
+
+    SIG --> AGENT
+    AGENT -->|결과 + hash| POW
+    POW -->|nonce 발견| CHAIN
+    CHAIN -.->|영구 보존| AUDIT["미래 audit"]
+
+    style CHAIN fill:#cce6ff
+    style AUDIT fill:#ccffcc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: PoW 비용 (계산 시간) 이 *변조의 비용을 매우 높게* 만든다.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset 운영의 PoW 적용 — 비용과 효과
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 항목 | 값 |
+|---|---|
+| dataset 일일 critical 결정 | ~130건 (1% 압축 후) |
+| PoW 1건 시간 | ~5초 (적당한 난이도) |
+| 일일 PoW 부하 | ~11분/일 (전체 운영의 1%) |
+| 변조 불가 기록 효과 | 영구 audit |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+PoW 부담이 *전체 운영의 1%* — 적당한 비용으로 *영구 무결성* 확보. 학생이 알아야 할 것은 *PoW 의 핵심은 원 데이터 보호가 아니라 *결정의 시점 증명***. *언제* 그 결정이 내려졌는지 후에도 변경 불가.
+
+### Case 2: 블록체인 vs 일반 audit log 의 차이
+
+| 항목 | 일반 audit | 블록체인 audit |
+|---|---|---|
+| 변조 가능성 | DB admin 이 수정 가능 | 사실상 불가능 |
+| 기록 추가 비용 | $0 | PoW 5초/건 |
+| 미래 검증 | 운영팀 의존 | 누구든 검증 가능 |
+
+**자세한 해석**:
+
+일반 audit 은 *DB admin 의 신뢰* 가 전제. 블록체인은 *trustless* — 신뢰 없이 검증 가능. 규제 환경에서 *외부 감사* 시 가치가 큼.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **PoW = 자율 결정의 시점 증명** — 변조 불가능 기록.
+2. **운영 부담 1%** — 적당한 비용으로 영구 무결성.
+3. **trustless audit** — DB admin 신뢰 없이 외부 검증.
+
+**학생 액션**: lab 에서 dataset 임의 10건의 분석 결과를 *블록체인 형식으로 기록* 하는 PoW 코드 구현.
 

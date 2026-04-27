@@ -652,26 +652,77 @@ gemma3:12b와 llama3.1:8b에 동일한 보안 로그 5건을 분석시켜 정확
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — LLM 에이전트 기초)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *LLM 에이전트의 기본 구조 (ReAct loop, tool use)* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### LLM 에이전트가 dataset 을 어떻게 처리하는가
 
+LLM 단독은 *질문에 1회 답변* 만 하지만, 에이전트는 *추론 → 도구 호출 → 관찰 → 다시 추론* 의 ReAct loop 를 반복한다. dataset 신호 1건 분석에 필요한 단계 — *(1) signal parse, (2) KG 에서 유사 사례 검색, (3) chain 추출, (4) 차단 룰 생성, (5) 결과 반환* — 이 5 단계를 에이전트가 *자동* 수행.
+
+```mermaid
+graph LR
+    Q["dataset 신호 1건"]
+    A["LLM 에이전트"]
+    T1["tool: parse_signal"]
+    T2["tool: search_kg"]
+    T3["tool: analyze_chain"]
+    T4["tool: gen_rule"]
+    OUT["결과"]
+
+    Q --> A
+    A -->|step 1| T1
+    T1 --> A
+    A -->|step 2| T2
+    T2 --> A
+    A -->|step 3| T3
+    T3 --> A
+    A -->|step 4| T4
+    T4 --> A
+    A --> OUT
+
+    style A fill:#cce6ff
+    style OUT fill:#ccffcc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: 에이전트가 *자기 스스로 단계 분해*. 사람이 5번 명령을 안 줘도 됨.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset 신호 1건의 ReAct 처리 — 정량 측정
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 단계 | LLM 호출 시간 | tool 실행 시간 |
+|---|---|---|
+| 1. parse_signal | 1초 | 0.1초 |
+| 2. search_kg | 1초 | 0.5초 (RAG 검색) |
+| 3. analyze_chain | 2초 | 0.3초 |
+| 4. gen_rule | 1.5초 | 0.2초 |
+| 5. 종합 응답 | 1초 | - |
+| 총합 | 6.5초 | 1.1초 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+dataset 신호 1건 처리에 *총 ~7.6초*. 일일 13K 신호를 처리하면 — *13,000 × 7.6초 = 99K 초 = 27시간*. 단일 에이전트로는 24h 내 처리 불가능 → *병렬 에이전트 multi-instance* 필요. 4 인스턴스 병렬이면 *6.7시간* 안에 완료.
+
+학생이 알아야 할 것은 — **에이전트의 스루풋은 *단일 인스턴스* 기준이 아닌 *병렬 가능한 만큼* 으로 측정**. 단일 인스턴스 7.6초/건이라도 *병렬 4 인스턴스 = 1.9초/건 effective* 가 된다.
+
+### Case 2: ReAct 의 한계 — turn 수 폭증
+
+| 시나리오 | 정상 turn 수 | 비정상 turn 수 |
+|---|---|---|
+| 단순 신호 분류 | ~3 turns | - |
+| chain 분석 | ~5 turns | - |
+| 모호한 신호 | ~5 turns | 10+ (LLM 헤맴) |
+| 무한 루프 | - | 50+ (가드 필요) |
+
+**자세한 해석**:
+
+ReAct loop 의 위험은 *turn 수 폭증* 이다. LLM 이 모호한 신호 앞에서 *결론 못 내고 반복 호출* 하면 — 비용/시간이 폭증. 운영 가드는 *MAX_TURNS 제한 (예: 6)* 으로 강제 종료 후 사람 escalation.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **에이전트 = ReAct loop + tool 호출** — LLM 단독과 본질 차이.
+2. **단일 처리량은 병렬화로 극복** — 4 인스턴스 = 4배 스루풋.
+3. **MAX_TURNS 가드 필수** — 무한 루프 방어.
+
+**학생 액션**: lab Bastion 으로 dataset 신호 10건 처리 시 평균 turn 수 + 평균 처리 시간 측정. MAX_TURNS=6 적용 vs 미적용 비교.
 

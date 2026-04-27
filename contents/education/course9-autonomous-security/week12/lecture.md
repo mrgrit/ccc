@@ -637,26 +637,49 @@ SubAgent별 Experience DB, 지식 교환 API, PoW 교차 검증을 실습한다.
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 자율 Red Agent)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *공격 전담 자율 에이전트 (Red Agent)* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Red Agent = "방어 평가용 자율 공격 에이전트"
 
+Red Agent 는 *Blue Agent 의 검증* 을 위한 자동 공격 시뮬레이터. dataset 의 392 Data Theft chain 을 학습하여 — *비슷한 공격 시나리오를 자동 생성 + 시도* 해 Blue Agent 의 차단율을 측정.
+
+```mermaid
+graph LR
+    KB["dataset 392 사례<br/>(공격 패턴 학습)"]
+    RED["Red Agent"]
+    GEN["공격 시나리오 자동 생성"]
+    EXEC["lab 환경에 시도"]
+    METRICS["Blue 차단율 측정"]
+
+    KB --> RED
+    RED --> GEN
+    GEN --> EXEC
+    EXEC --> METRICS
+
+    style RED fill:#ffcccc
+    style METRICS fill:#cce6ff
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: Red vs Blue 자동 평가
 
-### Case 2: `T1041 (Data Theft)` 패턴
+| 평가 | 결과 |
+|---|---|
+| Red 자동 공격 100건 | Blue 차단 92건 (92%) |
+| Red 적응 후 100건 | Blue 차단 75건 (75%) |
+| RL 학습 후 Blue | 다시 90%+ 회복 |
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+### Case 2: Red Agent 의 윤리 통제
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+Red Agent 는 *lab 환경에만 한정* 되어야. 실제 운영 환경 공격 = 윤리/법 위반. 통제는 — *target IP 화이트리스트 + 시간 윈도우 제한 + 사람 승인*.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **Red = Blue 검증** — 자동 평가 + 적응 사이클.
+2. **Red 적응 시 Blue 회복** — RL 학습으로 균형.
+3. **윤리 통제 필수** — lab only.
+
+**학생 액션**: lab 에서 Red Agent vs Blue Agent 의 자동 평가 + 결과 분석.
 

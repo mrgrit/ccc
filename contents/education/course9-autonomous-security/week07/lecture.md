@@ -669,26 +669,62 @@ Bastion RL API를 사용하여 10개 이상의 다양한 task를 실행하고, t
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — RL과 보상)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *강화학습 (RL) 의 보상 함수 설계와 자율 시스템 적용* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### RL 의 본질 — "보상 함수가 학습 방향을 결정"
 
+dataset 392 Data Theft 사례를 RL 학습 자료로 사용할 때 — *보상 함수* 가 학습의 모든 것을 결정. 보상이 잘못 설계되면 RL 이 *잘못된 방향으로 더 빨리* 가는 역효과.
+
+```mermaid
+graph LR
+    AGENT["RL agent"]
+    ACTION["action: skill 선택"]
+    REWARD["reward 측정"]
+    POLICY["policy 업데이트"]
+
+    AGENT --> ACTION
+    ACTION --> ENV["dataset 환경"]
+    ENV --> REWARD
+    REWARD --> POLICY
+    POLICY --> AGENT
+
+    style REWARD fill:#cce6ff
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: dataset 보상 함수 설계 (보안 비대칭)
 
-### Case 2: `T1041 (Data Theft)` 패턴
+| 결과 | reward | 이유 |
+|---|---|---|
+| true positive | +10 | 진짜 위협 차단 |
+| true negative | +1 | 정상 분류 |
+| false negative | -100 | 진짜 위협 놓침 (사고) |
+| false positive | -2 | alert fatigue |
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+**자세한 해석**:
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+보안 RL 의 보상은 *비대칭* — false negative 페널티가 false positive 의 50배. 이는 *놓친 1건이 alert fatigue 50건보다 비싸기* 때문. 학생이 알아야 할 것은 *비대칭의 정확한 비율* 이 환경마다 다름. 우리 환경에서는 50:1 이지만 *비용 측정으로 비율 산출* 필요.
+
+### Case 2: RL 학습 곡선 — 정확도 추세
+
+| iteration | dataset 정확도 |
+|---|---|
+| 0 (baseline) | 70% |
+| 100 (1주) | 80% |
+| 500 (1개월) | 92% |
+| 1000 (3개월) | 96% |
+
+**자세한 해석**:
+
+RL 학습은 *exponential decay 형태* — 처음 빠르게 향상, 나중 점진적 개선. 운영자는 *학습 곡선의 인내* 가 필요.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **보상 함수 = 학습 방향** — 잘못 설계 시 역효과.
+2. **비대칭 보상 (false negative -100)** — 보안 비용 반영.
+3. **exponential decay 학습 곡선** — 인내 필요.
+
+**학생 액션**: 본인 환경의 *false negative 비용 / false positive 비용* 을 측정하여 보상 비율 산출.
 

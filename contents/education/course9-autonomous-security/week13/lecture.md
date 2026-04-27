@@ -611,26 +611,46 @@ reward 가중치 조절, risk_penalty/speed_bonus를 통한 에이전트 행동 
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 분산 지식 아키텍처)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *다수 에이전트의 분산 KG 공유 아키텍처* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### 분산 KG = "100 인스턴스가 같은 학습을 공유"
 
+100개의 Bastion 인스턴스가 *각자 학습* 하면 dataset 392 사례 학습에 *392 × 100 = 39,200 LLM 호출*. 분산 KG 면 *392 호출 1회만*. 100배 비용 절감.
+
+```mermaid
+graph TB
+    DKG["분산 KG (중앙)"]
+    B1["Bastion 1"]
+    B2["Bastion 2"]
+    BN["Bastion N"]
+
+    B1 -->|read/write| DKG
+    B2 -->|read/write| DKG
+    BN -->|read/write| DKG
+
+    style DKG fill:#cce6ff
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: 비용 비교
 
-### Case 2: `T1041 (Data Theft)` 패턴
+| 인스턴스 수 | 단일 KG | 분산 KG |
+|---|---|---|
+| 1 | $1 | $1 |
+| 10 | $10 | $1.5 |
+| 100 | $100 | $5 |
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+### Case 2: CAP theorem 적용
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+분산 KG 는 보통 *AP (Availability + Partition tolerance)*. eventual consistency 모델 — 초 단위 지연 후 동기. *strong consistency* 는 playbook 같은 critical 데이터에만.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **분산 KG = 100배 비용 절감** — 학습의 공유.
+2. **AP 모델이 일반적** — eventual consistency.
+3. **playbook 만 strong consistency** — 데이터 종류별 분리.
+
+**학생 액션**: lab 에서 단일 KG vs 분산 KG 비용 비교.
 

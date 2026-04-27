@@ -642,26 +642,53 @@ Week 12에서는 **자율 Red Agent**를 학습한다.
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 자율 Blue Agent)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *방어 전담 자율 에이전트 (Blue Agent)* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Blue Agent = "공격을 자동 탐지/차단하는 방어 전담 에이전트"
 
+dataset 의 13K 신호 환경에서 — Blue Agent 는 *24/7 자동 모니터링 + 즉시 대응* 하는 방어 전담 시스템. 사람 분석가의 *수동 대응 시간 (~30분/사고)* 를 *Blue Agent 자동 대응 (~30초/사고)* 로 압축. 60배 빠른 대응.
+
+```mermaid
+graph LR
+    SIG["dataset 신호"]
+    BLUE["Blue Agent"]
+    DETECT["탐지"]
+    BLOCK["차단"]
+    REPORT["사람에게 보고"]
+
+    SIG --> BLUE
+    BLUE -->|critical 분류| DETECT
+    DETECT --> BLOCK
+    BLOCK --> REPORT
+
+    style BLUE fill:#cce6ff
+    style BLOCK fill:#ccffcc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: dataset 의 Blue Agent 자동 차단 능력
 
-### Case 2: `T1041 (Data Theft)` 패턴
+| 사고 종류 | 평균 대응 시간 (사람) | 평균 대응 시간 (Blue Agent) |
+|---|---|---|
+| Data Theft | 30분 | 30초 |
+| Auth Hijack | 45분 | 45초 |
+| Recon burst | 15분 | 5초 |
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+### Case 2: 자동 차단의 위험과 통제
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 액션 | 위험 | 통제 방법 |
+|---|---|---|
+| IAM 회수 | 정상 사용자 영향 | 30초 confirm window |
+| traffic block | 비즈니스 영향 | 사람 승인 |
+| log 격리 | 무위험 | 자동 |
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **Blue Agent = 60배 대응 속도** — 30분 → 30초.
+2. **위험도별 액션 차등** — 자동 vs 사람 승인.
+3. **Confirm window 로 안전 보장** — 30초 내 rollback.
+
+**학생 액션**: lab Blue Agent 로 dataset 10건 처리 — 평균 대응 시간 측정.
 
