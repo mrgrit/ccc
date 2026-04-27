@@ -440,28 +440,14 @@ flowchart TB
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 는 *기만·지연* (deception
+& tar-pit) — 허니토큰 / 허니팟 경로 / Tar-pit / 오염 응답 4개 능동 방어
+기법, 비대칭 비용 모델, 의심 점수 단계별 배포 전략이 핵심이다. Precinct 6
+의 T1041 단일 항목은 *허니 자산 접촉* / *Tar-pit 응답 시간 증가* / *오염
+data 분석* 흔적이 0이며 능동 방어 효과 측정에 활용되지 않는다. 폐기.
+재추가 source 후보: TrapX·Illusive Networks 공개 case study, CIRT.SK 의
+honeytoken 활용 보고서.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
