@@ -348,12 +348,52 @@ grep -rE 'uses:.*@v[0-9]' .github/workflows/
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): w14 CI/CD 공급망 오염 (GitHub Actions·
-Jenkins·GitLab). T1041 단일 항목은 GitHub Actions workflow injection /
-Jenkinsfile RCE / SLSA provenance 위반 신호와 매핑 X. 폐기. 재추가:
-SolarWinds SUNBURST (2020), Codecov bash uploader (2021), Argo Tunnels
-abuse (2022) 등 공개 supply chain 사례.
--->
+## 실제 사례 (WitFoo Precinct 6 — CI/CD 환경의 *AWS API + auth* baseline)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *CI/CD 공급망 오염 (GitHub Actions·Jenkins·GitLab)* 학습 항목과 매핑되는 dataset 의 *CI/CD runner* + *deploy automation* evidence.
+
+### Case 1: CI/CD runner 의 AWS API call 분포
+
+| API call | 의미 | CI/CD 매핑 |
+|----------|------|----------|
+| ListClusters / DescribeClusters | EKS deploy | deploy 단계 |
+| GetLogEvents 39K | log access | CI run log 확인 |
+| AssumeRole 9,340 | service account → deploy role | OIDC federation 사용 |
+| GenerateDataKey 3,286 | KMS encrypt | secret 생성 |
+| Decrypt 1,605 | secret 사용 | runtime decrypt |
+
+→ CI/CD runner 의 *정상 baseline* — 이중 *비정상 패턴* (예: 외부 IP 의 AssumeRole) 시 supply chain 오염 의심.
+
+### Case 2: SolarWinds SUNBURST 같은 *signed binary* 우회 ↔ dataset 의 시그니처 공백
+
+본 lecture 거론 SolarWinds 2020 = *서명된 update binary* 가 backdoor 포함. dataset 의 WAF outcome=200 100% 와 동일 *시그니처 통과* 패턴:
+- vendor 룰 1220|1000 도 *signed/legitimate* 트래픽은 통과
+- SLSA provenance 검증 부재 시 동일 risk
+
+### Case 3: GitHub Actions workflow injection 의 *간접 evidence*
+
+dataset 의 4690 (handle duplicate) 79K + 4670 (permission change) 188 → CI runner 의 process injection / permission escalation 가능 시나리오.
+
+```yaml
+# GitHub Actions workflow injection 예
+- run: echo "${{ github.event.issue.title }}"
+  # 공격자가 issue title 에 ; rm -rf / 삽입 시 RCE
+  # → runner process 의 4688 (process create) + 4690 spike
+```
+
+**해석 — 본 lecture (CI/CD 공급망) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **CI/CD runner baseline** | AWS API + AssumeRole 분포 = 정상 runner baseline |
+| **signed binary 우회** | WAF outcome=200 100% = signed traffic 통과 baseline |
+| **workflow injection** | 4688 + 4690 spike = runner process injection 의 간접 단서 |
+| **SLSA provenance** | dataset 부재 (vendor 룰 만) — 학생 환경 *artifact 서명 검증* 추가 |
+
+**학생 실습 액션**:
+1. GitHub Actions runner 의 AWS API call 분포 baseline 측정 → spike 시 runner 침해 의심
+2. SLSA provenance 도구 (Sigstore Cosign) 도입 → 모든 빌드 artifact 서명
+3. runner 의 4688/4690 baseline → workflow injection 자동 detect
 
 

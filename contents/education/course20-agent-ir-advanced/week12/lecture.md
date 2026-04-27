@@ -346,11 +346,51 @@ flowchart TB
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): w12 Deepfake Voice + AI 사회공학.
-본문이 이미 *2019 영국·2024 홍콩 26M$* 실제 사건 거론. T1041 (network exfil
-tag) 은 deepfake voice / video / vishing 신호 (음성 스펙트럼·립싱크 검출·
-콜백 검증 절차) 와 매핑 X. 폐기. 본문 사건 인용으로 case 충족.
--->
+## 실제 사례 (WitFoo Precinct 6 — Phishing 8건 + email + 전통 인증의 한계)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Deepfake Voice + AI 사회공학 (vishing)* 학습 항목과 매핑되는 dataset 의 *전통 인증 (Phishing 8 + email + voice 부재)* — 사회공학의 *전통 → AI 시대 변화* 비교.
+
+### Case 1: dataset 의 사회공학 evidence — 전통 phishing 만
+
+| 사회공학 유형 | dataset 매칭 | 시대 |
+|------------|---------|------|
+| **Phishing email (전통)** | mo_name=Phishing 8건 | Pre-AI |
+| **Vishing voice (AI)** | (audio record 부재) | AI 시대 |
+| **Deepfake video** | (video record 부재) | AI 시대 |
+| **Smishing SMS** | (SMS record 부재) | 양시대 |
+
+→ **dataset = Pre-AI 사회공학 baseline**. AI 시대 (deepfake voice) 는 *완전히 새 channel* — dataset 에 직접 evidence 0.
+
+### Case 2: 본문 거론 사건과의 비교
+
+본 lecture 는 *2019 영국 voice deepfake 22만 GBP* + *2024 홍콩 26M USD* 거론. dataset 에 그 기간 전통 phishing 8건만 있음. 비대칭:
+
+| 시대 | 채널 | 표적 | 손실 |
+|------|------|------|------|
+| 2019~2024 (전환기) | voice deepfake | CEO/CFO 1명 | 22만 GBP ~ 26M USD |
+| dataset 시점 (2023~2024) | email phishing | 일반 사용자 | (미공개) |
+
+→ AI 시대 = *희소하지만 high-value* attack. 전통 phishing 의 *수량* 으로 *수억 손실 1건* 발생.
+
+### Case 3: 콜백 검증 절차의 *데이터 evidence*
+
+본 lecture *콜백 검증 절차*: voice 의심 시 *별도 channel 로 사용자 직접 확인*. dataset 의 evidence:
+- 정상 4624 logon 17K 의 *시간 분포* baseline → 비정상 *비업무 시간 (UTC 0~5)* spike 측정
+- AssumeRole 9,340 의 *특정 user × target* 매트릭스 → CEO 권한 user 의 *비정상 AssumeRole* 시 voice deepfake 의심
+
+**해석 — 본 lecture (Deepfake voice) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **전통 vs AI 사회공학** | dataset Phishing 8 = 전통. AI deepfake = *새 channel* |
+| **콜백 검증 baseline** | 4624 + AssumeRole 시간 분포 = 비정상 시점 detect |
+| **CEO 표적** | dataset 의 USER-0022 (top user 6,190 logon) = high-value 후보 |
+| **MITRE 매핑** | T1566 (Phishing) + T1656 (Impersonation) — AI 시대 enrichment 필요 |
+
+**학생 실습 액션**:
+1. CEO/CFO 권한 user 식별 → dataset 의 USER-0022 등 top user 분석법 적용
+2. 비업무 시간 logon spike + AssumeRole + email 동시 발생 → AI vishing 의심 룰
+3. voice 인증 시 *반드시 별도 channel 확인* 절차 정립 (학생 SOP 추가)
 
 

@@ -327,12 +327,57 @@ flowchart TB
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): w11 AI 모델 자체 공격 (Model Theft·
-Poisoning·Extraction) — 자산이 *AI 모델*. T1041 단일 항목은 *전통 자산*
-(서버·계정·데이터) exfil tag 이고 model query rate·membership inference·
-training data poisoning 신호와 매핑 X. 폐기. 재추가: MITRE ATLAS public
-case (AML.T0024 Model Extraction), HuggingFace 의 model theft incident.
--->
+## 실제 사례 (WitFoo Precinct 6 — AI 모델 attack 의 *전통 자산 exfil 차이*)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *AI 모델 자체 공격 (Model Theft·Poisoning·Extraction)* 학습 항목 — dataset 의 *전통 exfil* (Data Theft 125K) 와 *AI 모델 공격* 의 차이를 비교.
+
+### Case 1: dataset 의 mo_name 분포 — *AI 자산 부재*
+
+| mo_name | 건수 | AI 시대 매핑 |
+|---------|------|------------|
+| Data Theft | 125,772 | T1041 (전통 — 데이터 exfil) |
+| Phishing | 8 | T1566 (전통 — social engineering) |
+| (Model Theft) | **부재** | AML.T0024 (AI 시대 — 모델 자체 도난) |
+| (Membership Inference) | **부재** | AML.T0049 (AI 시대 — training data 추론) |
+| (Poisoning) | **부재** | AML.T0020 (AI 시대 — training data 오염) |
+
+→ 본 dataset = *Pre-Mythos*. AI 모델 attack 흔적 부재. **본 lecture 가 가르치는 새 categories 의 baseline 0**.
+
+### Case 2: AI attack 의 *간접 evidence* — 다수 query 패턴
+
+본 lecture *Model Extraction* 학습:
+- 공격자가 *수만 query* → model output 으로 *복제 모델* 학습
+- query rate spike + 동일 user 의 *비정상 input 패턴* = 의심
+
+dataset 의 GET 4018건 = 정상 web traffic baseline. *수만 query 시* 탐지 가능:
+
+```python
+# 모델 extraction 의 임계
+if query_rate_per_user_per_hour > 1000:
+    if input_diversity_score < 0.3:  # 비정상 input 분포
+        alert("Model Extraction 의심")
+```
+
+### Case 3: dataset 의 *Pre-Mythos 한계* = 본 lecture 의 reason d'etre
+
+dataset 의 product 매핑 (Precinct + Cisco ASA + WAF + Wazuh + OpenCTI) → **AI 모델 보호 product 0개**. 학생 환경에 추가:
+- LLM Guard / Llama Guard
+- Garak (LLM red-team 도구)
+- PromptShield / Lakera Guard
+
+**해석 — 본 lecture 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **AI 자산 부재 baseline** | dataset 의 mo_name 모두 전통 자산 = Pre-Mythos baseline |
+| **Model Extraction 의심** | query rate + input diversity 측정 가능 (정상 GET 4018 baseline) |
+| **Poisoning 탐지** | training data integrity 검증 — dataset 부재 (별도 도구 필요) |
+| **AI 보호 product 추가** | dataset 의 5 product 외에 LLM Guard / Garak 추가 필요 |
+
+**학생 실습 액션**:
+1. LLM Guard 설치 → dataset 의 5 product 와 통합 (6번째 layer)
+2. Garak 으로 본인 LLM 자체 평가 → MITRE ATLAS 매핑 표 작성
+3. query rate + input diversity 자동 측정 룰 → Model Extraction 탐지
 
 

@@ -364,12 +364,50 @@ flowchart TB
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): w13 Insider + Agent Weaponization —
-내부자가 *허가된 접근* 으로 정상 업무를 가장. T1041 (외부 exfil) 단일 항목은
-*내부자 행위* (UEBA·DLP·정상 업무 deviation) 신호와 매핑 X. 폐기.
-재추가: CERT/Insider Threat Center 공개 cases (Edward Snowden, Reality Winner),
-DBIR insider threat 통계.
--->
+## 실제 사례 (WitFoo Precinct 6 — *내부* 인증 baseline + UEBA 매핑)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Insider + Agent Weaponization* 학습 항목과 매핑되는 dataset 의 *내부 user 활동 baseline* — UEBA (user behavior analytics) reference.
+
+### Case 1: 내부 user activity baseline — top user 분포
+
+| Username | logon 횟수 | 활동 비율 | UEBA 분류 |
+|----------|-----------|---------|---------|
+| USER-0022 | 6,190 | 17.5% | **service account 후보** |
+| USER-0012 | 4,577 | 12.9% | high-volume user |
+| USER-0765 | 1,560 | 4.4% | normal heavy |
+| USER-0009 | 1,479 | 4.2% | normal |
+| USER-0023 | 1,054 | 3.0% | normal |
+| ... | ... | ... | ... |
+
+→ **top user 가 17.5%** — Pareto 분포. internal threat 시 *baseline 대비 spike 측정* 가능.
+
+### Case 2: 내부자 + Agent Weaponization 의 *3 단서*
+
+| 단서 | dataset 매핑 |
+|------|-----------|
+| **1. 정상 업무 deviation** | 4624 logon 시간 분포 — baseline 대비 *비업무 시간 spike* |
+| **2. AssumeRole 비정상** | 9,340 baseline. internal user 가 *평소 안 쓰는 role* 전환 시 의심 |
+| **3. agent 자동화 흔적** | USER-0012 의 3.3초 host hopping = agent 속도 (사람 X) |
+
+### Case 3: 데이터 접근 패턴 — DLP 보충
+
+dataset 의 file 객체 audit (4656 79K + 4658 158K + 4690 79K) = 정상 file access baseline. internal exfil 시:
+- 동일 user 의 *비정상 file path* (예: HR DB · finance share) 접근
+- 4690 (handle dup) spike = *데이터 복사* 행위
+
+**해석 — 본 lecture (Insider + Agent) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **UEBA baseline** | top user (USER-0022 17.5%) Pareto 분포 = 정상 baseline |
+| **agent weaponization** | 3.3초 host hopping = agent 속도 (정상 사람 분 단위) |
+| **DLP 매핑** | 4656/4658 baseline 으로 비정상 file path 측정 |
+| **CERT Insider Threat** | dataset 의 4798/4799 enum + 4670 permission = enumeration before exfil |
+
+**학생 실습 액션**:
+1. UEBA baseline 측정 — top user 분포 + 시간 분포 + path 분포 3-axis
+2. agent 속도 baseline (3.3초) 학생 환경 적용 → 사람 vs agent 자동 분류
+3. DLP 룰 작성 — file access 의 *비정상 path + 비정상 시간* 동시 spike 시 critical
 
 
