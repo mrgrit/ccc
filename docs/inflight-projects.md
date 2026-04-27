@@ -315,13 +315,14 @@
   - `_step_input_mode()` 자동 분류
   - `step.input_mode` hint 를 lab catalog 응답에 포함
 
-- [ ] **D. UI 완성** (다음 사이클)
-  - Labs.tsx — [Lab 시작] / [Lab 완료] 버튼
-  - step 별: instruction + 학습포인트 + textarea 메모 (선택) + 명령 transcript paste
-  - 세션 활성 표시 (T0 부터 경과 시간)
-  - 결과 카드: step별 ✓/✗ + graded_via + reason
-  - 재시도 버튼 (새 session)
-  - 기존 textarea 흐름 fallback 유지
+- [x] **D. UI 완성** ✅ (Labs.tsx 통합 완료, 2026-04-27)
+  - [x] Labs.tsx — [Lab 시작] / [Lab 완료] 버튼 + retrySession
+  - [x] step 별: instruction + 학습포인트 + textarea + transcript paste
+  - [x] 세션 활성 표시 (T0 부터 경과 시간 fmtElapsed)
+  - [x] 결과 카드: step별 ✓/✗ + input_mode + graded_via + reason
+  - [x] 재시도 버튼 (새 session)
+  - [x] 기존 textarea 흐름 fallback 유지
+  - [x] **input_mode badge** (cycle 추가): step 헤더에 ⌨ transcript / ✎ text hint, 학생이 무엇을 입력할지 즉시 인지
 
 - [ ] **B. SubAgent transcript 자동 캡처**
   - apps/subagent-runtime 에 `/audit/start` / `/audit/stop` 추가
