@@ -542,9 +542,114 @@ def seed_course_agent_ir_adv(ir_parent_mid: str):
     print(f"  ✓ course20-agent-ir-adv Mission: {course_mid}")
 
 
+def seed_course_compliance(gov_parent_mid: str):
+    g = get_graph()
+    title = "course4-compliance — 정보보안 컴플라이언스"
+    if any((n.get("name") or "") == title for n in g.find_nodes("Mission")): return
+    print("\n=== course4-compliance ===")
+    course_mid = add_mission(
+        title=title,
+        statement="ISMS-P / ISO 27001 / GDPR / NIST CSF / SOC2 / HIPAA / PCI-DSS / CSAP. 졸업 시 보안 점검 컨설팅 + 인증 심사 대응 가능. 진로: compliance officer / 보안 컨설턴트.",
+        owner="course4-compliance Lead",
+    )
+    g.add_edge(course_mid, gov_parent_mid, "derives_from")
+    course_v = add_vision(title="course4 졸업 → Compliance Officer / 보안 컨설턴트",
+                         horizon_year=2027,
+                         statement="졸업 → ISMS-P 심사원 보조 / 1년 내 ISO 27001 LA / 2년 내 multi-framework 컨설팅.",
+                         mission_id=course_mid)
+    g_isms = add_goal(title="ISMS-P 점검 8 통제 + ISO 27001 통제 항목 90% 자체 점검",
+                     due="2026-12-31", vision_id=course_v,
+                     description="lab w3 ISMS-P + w4 ISO 27001 + w9 ISMS 기술 통합.")
+    g_multi = add_goal(title="multi-framework 매핑 (ISO ↔ NIST ↔ ISMS-P) 표 작성",
+                      due="2026-12-31", vision_id=course_v,
+                      description="동일 통제 항목을 3 표준 ID 로 매핑. 컨설팅 시 즉시 활용.")
+    s_main = add_strategy(
+        title="표준별 lab + Precinct 6 incident → 다중 표준 해석",
+        goal_id=g_isms,
+        approach="(1) 표준별 1 lab. (2) 1 incident (Data Theft T1041) 가 SOC 2 / HIPAA / PCI / ISO 모두 위반인 사례 학습. (3) Precinct 6 의 Compliance Concept 11종 (cmmc/csf/iso/nist) KG 노드 활용.",
+    )
+    add_kpi(name="course4 lab pass rate", target=85.0, unit="%",
+            goal_id=g_isms, strategy_id=s_main)
+    add_kpi(name="multi-framework 매핑 정확도", target=80.0, unit="%",
+            measures="강사 평가 — 동일 통제 ID 매핑 정확률.",
+            goal_id=g_multi)
+    plan = add_plan(title="2026-Q2 course4-compliance 운영", period="2026-Q2",
+                    owner="course4-compliance Lead", strategy_id=s_main, goal_id=g_isms)
+    add_todo(title="Precinct 6 Compliance Concept 11종 KG 노드 검증",
+             due="2026-05-15", plan_id=plan, assignee="course4-compliance Lead")
+    print(f"  ✓ {course_mid}")
+
+
+def seed_course_ai_safety(gov_parent_mid: str):
+    g = get_graph()
+    title = "course8-ai-safety — AI Safety + Red Teaming 기초"
+    if any((n.get("name") or "") == title for n in g.find_nodes("Mission")): return
+    print("\n=== course8-ai-safety ===")
+    course_mid = add_mission(
+        title=title,
+        statement="LLM 탈옥/프롬프트 인젝션/가드레일/적대적 입력/RAG 보안/AI 윤리. 졸업 시 LLM red teaming 기초 + AI safety eval 자율 수행.",
+        owner="course8-ai-safety Lead",
+    )
+    g.add_edge(course_mid, gov_parent_mid, "derives_from")
+    course_v = add_vision(title="course8 졸업 → AI Safety Engineer",
+                         horizon_year=2027,
+                         statement="졸업 → LLM 가드레일 설계 / 1년 내 자체 jailbreak suite / 2년 내 AI Safety lead.",
+                         mission_id=course_mid)
+    g_jb = add_goal(title="LLM jailbreak 5종 PoC + 방어 룰 작성",
+                   due="2026-12-31", vision_id=course_v)
+    g_eval = add_goal(title="AI safety 평가 프레임워크 자체 1건 구축",
+                     due="2026-12-31", vision_id=course_v)
+    s_main = add_strategy(title="공격→방어→평가 사이클 + ai-safety-adv 연계",
+                         goal_id=g_jb,
+                         approach="lab 매주 공격→방어→평가. course15 (advanced) 에서 심화.")
+    add_kpi(name="course8 lab pass rate", target=75.0, unit="%", goal_id=g_jb, strategy_id=s_main)
+    add_kpi(name="자체 jailbreak suite 효과율", target=40.0, unit="%",
+            measures="학생 작성 jailbreak 가 ollama gpt-oss 우회 성공 비율.",
+            goal_id=g_jb)
+    plan = add_plan(title="2026-Q3 course8-ai-safety 운영", period="2026-Q3",
+                    owner="course8-ai-safety Lead", strategy_id=s_main, goal_id=g_jb)
+    add_todo(title="HarmBench 100 prompt subset 학습용 정리", due="2026-08-31",
+             plan_id=plan, assignee="course8-ai-safety Lead")
+    print(f"  ✓ {course_mid}")
+
+
+def seed_course_ai_safety_adv(gov_parent_mid: str):
+    g = get_graph()
+    title = "course15-ai-safety-adv — AI Safety 심화"
+    if any((n.get("name") or "") == title for n in g.find_nodes("Mission")): return
+    print("\n=== course15-ai-safety-adv ===")
+    course_mid = add_mission(
+        title=title,
+        statement="course8 후속 — LLM Red Teaming 심화/가드레일 우회/RAG 보안/모델 탈취/데이터 중독/멀티모달 공격/AI 거버넌스. 졸업 시 AI Red Team operator + AI 거버넌스 자문.",
+        owner="course15-ai-safety-adv Lead",
+    )
+    g.add_edge(course_mid, gov_parent_mid, "derives_from")
+    course_v = add_vision(title="course15 졸업 → AI Red Team Operator / AI 거버넌스 컨설턴트",
+                         horizon_year=2027,
+                         statement="졸업 → AI Red Team 운영 / 1년 내 EU AI Act / Korea AI 기본법 자문 능력.",
+                         mission_id=course_mid)
+    g_redteam = add_goal(title="AI Red Team 자체 캠페인 1건 운영 + 보고서",
+                        due="2026-12-31", vision_id=course_v)
+    g_ext = add_goal(title="모델 추출 + 백도어 탐지 PoC",
+                    due="2026-12-31", vision_id=course_v)
+    s_main = add_strategy(title="HarmBench/CyberSecEval 외부 벤치 학습 + 자체 red team 캠페인",
+                         goal_id=g_redteam,
+                         approach="P6 외부 벤치 (HarmBench/CyberSecEval) 학생 학습 자료. P5 ai-safety h001~h004 task 도 참조.")
+    add_kpi(name="course15 lab pass rate", target=70.0, unit="%",
+            goal_id=g_redteam, strategy_id=s_main)
+    add_kpi(name="HarmBench cyber subset 학생 통과율", target=60.0, unit="%",
+            measures="100 task 중 학생 자체 jailbreak/방어 통과 비율.",
+            goal_id=g_redteam)
+    plan = add_plan(title="2026-Q4 course15-ai-safety-adv 운영", period="2026-Q4",
+                    owner="course15-ai-safety-adv Lead", strategy_id=s_main, goal_id=g_redteam)
+    add_todo(title="EU AI Act + Korea AI 기본법 강의 자료 업데이트", due="2026-11-30",
+             plan_id=plan, assignee="course15-ai-safety-adv Lead")
+    print(f"  ✓ {course_mid}")
+
+
 def main():
     print("=" * 60)
-    print("9-tier KG seed — 탐지 3 + 공격 3 + IR 2 = 8 과목")
+    print("9-tier KG seed — 탐지 3 + 공격 3 + IR 2 + 거버넌스 3 = 11 과목")
     print("=" * 60)
     top_mid, v_2027, v_2026 = seed_top_level()
     domain_pids = seed_domain_parents(top_mid, v_2027)
@@ -557,6 +662,9 @@ def main():
     seed_course_attack_adv(attack_pid)
     seed_course_agent_ir(ir_pid)
     seed_course_agent_ir_adv(ir_pid)
+    seed_course_compliance(gov_pid)
+    seed_course_ai_safety(gov_pid)
+    seed_course_ai_safety_adv(gov_pid)
 
     # 결과 요약
     print("\n=== 결과 요약 ===")
