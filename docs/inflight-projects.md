@@ -393,6 +393,8 @@ Architecture) 모두 비어있음.
 
 **즉시 가능한 첫 step**: Phase A PoC — deception 2 + compliance 5 = 7건 시범 임포트 후 26 도메인 확장.
 
+**완료 (2026-04-27)**: `scripts/ingest_cybsec_skills.py` 작성 + Phase A 시범 임포트 완료 — deception/compliance/digital-forensics 3 도메인 **37 skills** anchor (kind=cybsec_skill). related_ids 에 NIST CSF / MITRE ATT&CK / ATLAS / D3FEND IDs 자동 cross-link. Phase B (754 풀): `--all` 플래그로 추가 가능.
+
 ---
 
 ### P14. Lab 채점 흐름 재설계 (textarea → SubAgent 감시)  [STATUS: A/D/B/C 완료, 1 lab 실측만 잔여]
