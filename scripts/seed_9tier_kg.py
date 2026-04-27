@@ -309,16 +309,254 @@ def seed_course_soc_adv(detection_parent_mid: str):
     return course_mid
 
 
+def seed_course_attack(attack_parent_mid: str):
+    """course1-attack — OWASP/PTES 침투 기초."""
+    g = get_graph()
+    title = "course1-attack — 모의해킹 기초 (OWASP + PTES)"
+    if any((n.get("name") or "") == title for n in g.find_nodes("Mission")):
+        return
+    print("\n=== course1-attack 과목 풀 트리 ===")
+    course_mid = add_mission(
+        title=title,
+        statement="15주 — OWASP Top 10 + 정찰/스캔/익스플로잇/PrivEsc/지속성/측면이동/유출/은닉. 졸업 시 PTES 절차 자율 수행 + 침투 보고서 작성. 진로: junior penetration tester.",
+        owner="course1-attack Lead",
+    )
+    g.add_edge(course_mid, attack_parent_mid, "derives_from")
+    course_v = add_vision(
+        title="course1 졸업 → Junior Pentester / Bug Bounty Hunter",
+        horizon_year=2027,
+        statement="졸업 → 모의해킹 회사 입사 (junior) / 1년 내 OSCP 자격 / 2년 내 보고서·사후관리 lead.",
+        mission_id=course_mid,
+    )
+    g_pass = add_goal(title="OWASP Top 10 자체 PoC 8/10 작성",
+                     due="2026-12-31", vision_id=course_v,
+                     description="A03 SQLi, A04 SSRF, A05 파일업로드, A06 인증, A07 XSS 등 학생 본인 PoC.")
+    g_chain = add_goal(title="3단계 chain 침투 시나리오 1건 자율 수행",
+                      due="2026-12-31", vision_id=course_v,
+                      description="w15 종합 lab — 정찰 → 익스플로잇 → PrivEsc + 보고서. Precinct 6 의 5 anchor chain 패턴 모방.")
+    s_main = add_strategy(
+        title="OWASP 이론 강의 + 5 vuln-site 실습 + Bastion AI 모드 비교",
+        goal_id=g_pass,
+        approach="(1) lecture (OWASP 학습 순서) + lab (PTES 킬체인 순서) → D-B 매핑으로 의미 매칭. (2) JuiceShop/DVWA 외 5 신규 vuln-site (NeoBank/GovPortal/MediForum/AdminConsole/AICompanion) 실습. (3) AI 모드는 Bastion 이 같은 lab 자율 → 학생이 채점관.",
+    )
+    add_kpi(name="course1-attack lab pass rate", target=80.0, unit="%",
+            measures="weekly lab pass / total. 5 vuln-site 통과 평균.",
+            goal_id=g_pass, strategy_id=s_main)
+    add_kpi(name="vuln-site hard chain 통과 (5/5)", target=60.0, unit="%",
+            measures="NeoBank/GovPortal/MediForum/AdminConsole/AICompanion 의 hard chain 평균 통과율.",
+            goal_id=g_chain)
+    plan = add_plan(title="2026-Q2 course1-attack 운영", period="2026-Q2",
+                    owner="course1-attack Lead", strategy_id=s_main, goal_id=g_pass)
+    add_todo(title="신규 vuln-site 5종 학생 환경 배포 검증",
+             due="2026-05-31", plan_id=plan, assignee="course1-attack Lead",
+             description="up.sh 자동 배포 + 10/10 PoC smoke 통과 확인.")
+    print(f"  ✓ course1-attack Mission: {course_mid}")
+
+
+def seed_course_web_vuln(attack_parent_mid: str):
+    """course3-web-vuln — OWASP 웹 취약점 점검 전문."""
+    g = get_graph()
+    title = "course3-web-vuln — 웹 취약점 점검 전문"
+    if any((n.get("name") or "") == title for n in g.find_nodes("Mission")):
+        return
+    print("\n=== course3-web-vuln 과목 풀 트리 ===")
+    course_mid = add_mission(
+        title=title,
+        statement="15주 — 웹 점검 방법론 (개론→환경→정찰→인증→입력검증→접근제어→암호화→에러→API→자동화→보고). 졸업 시 OWASP ZAP/Burp 자율 활용 + 취약점 점검 보고서.",
+        owner="course3-web-vuln Lead",
+    )
+    g.add_edge(course_mid, attack_parent_mid, "derives_from")
+    course_v = add_vision(
+        title="course3 졸업 → Web App Pentester / 보안 컨설턴트",
+        horizon_year=2027,
+        statement="졸업 → 웹 점검 전담 / 1년 내 ISMS-P 보안 점검 컨설팅 / 2년 내 자체 점검 도구 개발.",
+        mission_id=course_mid,
+    )
+    g_owasp = add_goal(title="OWASP Top 10 모든 항목 직접 PoC",
+                       due="2026-12-31", vision_id=course_v,
+                       description="lab w2 SQLi, w3 XSS, w4 CSRF, w5 파일업로드, w7 SSRF, w8 XXE, w9 디시리얼, w10 cmdInject, w12 API. 10/10 자체 작성.")
+    g_report = add_goal(title="웹 점검 보고서 표준 형식 작성 (10건)",
+                        due="2026-12-31", vision_id=course_v,
+                        description="w14 보고서 작성법 + w15 종합 점검. JuiceShop + 5 신규 vuln-site 각 1건.")
+    s_main = add_strategy(
+        title="lecture (방법론 순서) × lab (OWASP 순서) cross-course 매핑",
+        goal_id=g_owasp,
+        approach="course1-attack 의 정찰/인증 lab + course3-web-vuln 의 SQLi/XSS lab cross-course 활용. D-B 매핑 yaml 활용.",
+    )
+    add_kpi(name="course3-web-vuln lab pass rate", target=85.0, unit="%",
+            goal_id=g_owasp, strategy_id=s_main)
+    add_kpi(name="자체 점검 보고서 품질 (peer review)", target=80.0, unit="%",
+            measures="동료 5 학생 평가 + 강사 평가 평균. 명확성/포괄성/재현성 3축.",
+            goal_id=g_report)
+    plan = add_plan(title="2026-Q2 course3-web-vuln 운영", period="2026-Q2",
+                    owner="course3-web-vuln Lead", strategy_id=s_main, goal_id=g_owasp)
+    add_todo(title="JuiceShop hard mode + 5 신규 사이트 hard chain 학습 가이드",
+             due="2026-05-15", plan_id=plan, assignee="course3-web-vuln Lead")
+    print(f"  ✓ course3-web-vuln Mission: {course_mid}")
+
+
+def seed_course_attack_adv(attack_parent_mid: str):
+    """course13-attack-advanced — APT 킬체인 심화 + AD/Cloud."""
+    g = get_graph()
+    title = "course13-attack-advanced — APT 킬체인 심화"
+    if any((n.get("name") or "") == title for n in g.find_nodes("Mission")):
+        return
+    print("\n=== course13-attack-advanced 과목 풀 트리 ===")
+    course_mid = add_mission(
+        title=title,
+        statement="course1 후속 — APT 7단계 킬체인 + OSINT/우회/AD/Cloud/공급망/안티포렌식. 졸업 시 자체 C2 운영 + AD 도메인 장악 + 클라우드 IAM 악용. 진로: senior pentester / red teamer.",
+        owner="course13-attack-adv Lead",
+    )
+    g.add_edge(course_mid, attack_parent_mid, "derives_from")
+    course_v = add_vision(
+        title="course13 졸업 → Senior Pentester / Red Team Operator",
+        horizon_year=2027,
+        statement="졸업 → red team 입사 / 1년 내 자체 C2 인프라 / 2년 내 OSCE 자격 / 3년 내 red team lead.",
+        mission_id=course_mid,
+    )
+    g_chain = add_goal(title="13주 chain 자율 수행 (정찰 → 보고서)",
+                      due="2026-12-31", vision_id=course_v,
+                      description="w14 종합 모의해킹 lab. PTES 전 과정. Precinct 6 의 5 anchor chain (피싱→AS-REP→SMB→cron→DNS) 재현 능력.")
+    g_ad = add_goal(title="AD 도메인 1개 장악 (BloodHound + DCSync + Golden Ticket)",
+                   due="2026-12-31", vision_id=course_v,
+                   description="w09 AD 공격 lab. 시뮬레이션 도메인에서 학생이 직접 Domain Admin 획득.")
+    g_cloud = add_goal(title="AWS IAM 악용 1건 PoC",
+                      due="2026-12-31", vision_id=course_v,
+                      description="w13 클라우드 공격 lab. EC2 metadata → role → S3 탈취 등.")
+    s_main = add_strategy(
+        title="Precinct 6 5 anchor chain 을 교과서로 활용",
+        goal_id=g_chain,
+        approach="(1) anchor 5건 (SMB/AS-REP/DNS/HTA/cron) 이 attack-adv 의 *바로 그 주제*. 학생이 동일 chain 재현 + 자기 변형. (2) AD attack 은 자체 시뮬레이션 도메인 (Samba4 + Kerberos). (3) 클라우드는 LocalStack/MinIO mock + 진짜 AWS free tier 옵션.",
+    )
+    add_kpi(name="course13 chain 통과율", target=70.0, unit="%",
+            measures="w14 lab 의 7단계 통과율 평균.",
+            goal_id=g_chain, strategy_id=s_main)
+    add_kpi(name="AD 도메인 장악 시간", target=30.0, unit="min",
+            measures="시뮬레이션 도메인 진입부터 DA 획득까지 평균 시간 (학생 첫 시도).",
+            goal_id=g_ad)
+    add_kpi(name="cloud IAM PoC 자동화 비율", target=60.0, unit="%",
+            measures="lab 학생 응답 중 boto3/aws-cli 자동 스크립트 활용 비율.",
+            goal_id=g_cloud)
+    plan = add_plan(title="2026-Q3 course13-attack-adv 운영", period="2026-Q3",
+                    owner="course13-attack-adv Lead", strategy_id=s_main, goal_id=g_chain)
+    add_todo(title="AD 시뮬레이션 환경 (Samba4 + 4 호스트) 자동 배포 스크립트",
+             due="2026-08-15", plan_id=plan, assignee="course13-attack-adv Lead",
+             description="course13 w09 lab 실습 환경. ansible playbook 또는 docker-compose.")
+    add_todo(title="Precinct 6 anchor 5건의 attack-adv 챌린지 README 작성",
+             due="2026-08-31", plan_id=plan, assignee="course13-attack-adv Lead")
+    print(f"  ✓ course13-attack-adv Mission: {course_mid}")
+
+
+def seed_course_agent_ir(ir_parent_mid: str):
+    """course19-agent-incident-response — AI Agent 공격 IR 기초."""
+    g = get_graph()
+    title = "course19-agent-ir — AI Agent 공격 IR 기초"
+    if any((n.get("name") or "") == title for n in g.find_nodes("Mission")):
+        return
+    print("\n=== course19-agent-ir 과목 풀 트리 ===")
+    course_mid = add_mission(
+        title=title,
+        statement="2026 신설. Claude Code 급 코딩 에이전트가 *공격자* 로 투입되는 실세계 위협 대응. 15주: AI Vulnerability Storm → 자동 익스플로잇 → 측면이동 (기계 속도) → 회피·다형성 → 규모화 → 탐지·대응 → Purple Round 1·2 (Coach + Experience 자동 승격) → 기말 Mythos-readiness.",
+        owner="course19-agent-ir Lead",
+    )
+    g.add_edge(course_mid, ir_parent_mid, "derives_from")
+    course_v = add_vision(
+        title="course19 졸업 → AI Agent IR Specialist (신생 직군)",
+        horizon_year=2027,
+        statement="졸업 → AI Agent 침해 사고 대응 전담 (전세계 신생 직군) / 1년 내 Purple coach 역할 / 2년 내 조직 Mythos-readiness 운영.",
+        mission_id=course_mid,
+    )
+    g_speed = add_goal(title="기계 속도 측면이동 1건 직접 재현 + 탐지",
+                      due="2026-12-31", vision_id=course_v,
+                      description="w05 lab — Precinct 6 의 SMB 측면이동 (28분) 자동화 도구로 5 호스트. 학생이 동시에 탐지 룰 작성.")
+    g_purple = add_goal(title="Purple Round 1+2 모두 통과",
+                       due="2026-12-31", vision_id=course_v,
+                       description="w11 Claude Code 가 Bastion 코치 + w12 Experience → Playbook 자동 승격. 2 round 모두 Bastion 의 능력 향상 측정.")
+    s_main = add_strategy(
+        title="Precinct 6 5 anchor 가 본 과정의 *교과서 사례*",
+        goal_id=g_speed,
+        approach="(1) 매 주차 5 anchor 중 1건 분해 학습. (2) 학생이 직접 Claude Code 같은 에이전트로 chain 재현 → 탐지 격차 측정. (3) Bastion Purple coach 모드로 학생 탐지 룰 강화. (4) 기말 Mythos-readiness — 30/90/365 작전 계획 수립.",
+    )
+    add_kpi(name="course19 lab pass rate", target=75.0, unit="%",
+            measures="weekly lab pass / total. 신생 분야라 baseline 낮게 시작.",
+            goal_id=g_speed, strategy_id=s_main)
+    add_kpi(name="기계 속도 측면이동 탐지 SLA", target=15.0, unit="min",
+            measures="학생이 자동 측면이동 시작부터 Wazuh+Bastion 알림까지 평균.",
+            goal_id=g_speed)
+    add_kpi(name="Purple Round 능력 향상도", target=30.0, unit="%",
+            measures="Round 1 전후 Bastion 의 attack-* 과목 pass rate 증가.",
+            goal_id=g_purple)
+    plan = add_plan(title="2026-Q3 course19-agent-ir 운영", period="2026-Q3",
+                    owner="course19-agent-ir Lead", strategy_id=s_main, goal_id=g_speed,
+                    description="신생 분야라 R3 retest 의 attack-ai/agent-ir 과목 pass rate 와 직접 연동.")
+    add_todo(title="Mythos-readiness 30/90/365 템플릿 작성",
+             due="2026-09-30", plan_id=plan, assignee="course19-agent-ir Lead",
+             description="기말 보고서 형식. 학생이 자기 조직의 AI 위협 대응 계획 수립.")
+    print(f"  ✓ course19-agent-ir Mission: {course_mid}")
+
+
+def seed_course_agent_ir_adv(ir_parent_mid: str):
+    """course20-agent-ir-advanced — 15가지 사례별 IR."""
+    g = get_graph()
+    title = "course20-agent-ir-adv — AI Agent 공격 침해대응 심화"
+    if any((n.get("name") or "") == title for n in g.find_nodes("Mission")):
+        return
+    print("\n=== course20-agent-ir-adv 과목 풀 트리 ===")
+    course_mid = add_mission(
+        title=title,
+        statement="course19 후속. 15가지 서로 다른 에이전트 공격 사례 각각 6단계 IR (공급망/Indirect Injection/AD Kerberoast/Cloud IAM/0-day/N-day Log4Shell/Multi-stage 피싱/K8s 탈출/Fileless/DNS Exfil/AI 모델 공격/Deepfake/Insider+Agent/CI/CD/장기 APT). Human vs Agent 대응 비교.",
+        owner="course20-agent-ir-adv Lead",
+    )
+    g.add_edge(course_mid, ir_parent_mid, "derives_from")
+    course_v = add_vision(
+        title="course20 졸업 → IR Lead / Mythos-readiness 책임자",
+        horizon_year=2027,
+        statement="졸업 → 조직 IR 책임자 / 1년 내 15가지 시나리오 자체 playbook / 2년 내 Mythos-readiness 표준 정립.",
+        mission_id=course_mid,
+    )
+    g_15 = add_goal(title="15 사례 모두 6단계 IR 자율 수행",
+                   due="2026-12-31", vision_id=course_v,
+                   description="각 주차 lab 의 6단계 (Detection/Analysis/Containment/Eradication/Recovery/Post-Incident) 통과율 80%+.")
+    g_human_agent = add_goal(title="Human vs Agent 대응 시간 격차 측정 + 보고서",
+                            due="2026-12-31", vision_id=course_v,
+                            description="15 시나리오 각각에서 사람만 대응 vs Agent 보조 대응 시간 측정. paper §7 데이터.")
+    s_main = add_strategy(
+        title="Precinct 6 anchor 5건이 곧 본 과정 사례 중 5/15",
+        goal_id=g_15,
+        approach="(1) anchor 5건이 직접 매핑되는 주차 (w03 AS-REP, w07 HTA 피싱, w09 Fileless cron, w10 DNS Exfil, w15 5건 chain) 가 5/15 주차. 진짜 사례 학습. (2) 다른 10 사례는 시뮬레이션. (3) Human vs Agent 비교는 stopwatch + Bastion 자동 측정.",
+    )
+    add_kpi(name="course20 15 사례 IR 통과율", target=80.0, unit="%",
+            goal_id=g_15, strategy_id=s_main)
+    add_kpi(name="Agent 보조 대응 시간 단축", target=50.0, unit="%",
+            measures="Human only vs Human+Agent 대응 시간 비교 (15 시나리오 평균).",
+            goal_id=g_human_agent)
+    add_kpi(name="조직별 Mythos-readiness 점수", target=70.0, unit="point",
+            measures="졸업생 자기 조직 readiness 자가평가 (10 항목 × 10점).",
+            goal_id=g_human_agent)
+    plan = add_plan(title="2026-Q4 course20-agent-ir-adv 운영", period="2026-Q4",
+                    owner="course20-agent-ir-adv Lead", strategy_id=s_main, goal_id=g_15,
+                    description="course19 직후. Q4 학기.")
+    add_todo(title="anchor 매핑된 5 주차 (w03/w07/w09/w10/w15) 의 case_study 가 KG 에 정확히 적재되는지 검증",
+             due="2026-10-15", plan_id=plan, assignee="course20-agent-ir-adv Lead",
+             description="curriculum mapping yaml 의 case_study 와 KG history_anchors 의 anchor_id 매칭 검증.")
+    print(f"  ✓ course20-agent-ir-adv Mission: {course_mid}")
+
+
 def main():
     print("=" * 60)
-    print("9-tier KG seed — 최상위 + 5 도메인 + 탐지·분석 도메인 3 과목")
+    print("9-tier KG seed — 탐지 3 + 공격 3 + IR 2 = 8 과목")
     print("=" * 60)
     top_mid, v_2027, v_2026 = seed_top_level()
     domain_pids = seed_domain_parents(top_mid, v_2027)
-    detection_pid = domain_pids[0]
+    detection_pid, attack_pid, ir_pid, gov_pid, infra_pid = domain_pids
     course_mid = seed_course_soc(detection_pid, v_2026)
     seed_course_secops(detection_pid)
     seed_course_soc_adv(detection_pid)
+    seed_course_attack(attack_pid)
+    seed_course_web_vuln(attack_pid)
+    seed_course_attack_adv(attack_pid)
+    seed_course_agent_ir(ir_pid)
+    seed_course_agent_ir_adv(ir_pid)
 
     # 결과 요약
     print("\n=== 결과 요약 ===")
