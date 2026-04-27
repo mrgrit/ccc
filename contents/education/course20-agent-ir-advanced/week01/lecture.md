@@ -583,28 +583,14 @@ artifacts/w01-dep-confusion/
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 는 Dependency Confusion
+공급망 공격 — setup.py / npm postinstall 의 phone-home, 내부 vs 공개 레지스트리
+구분, CI runner egress 통제가 핵심이다. 부록 A 가 이미 *실제 사건* (Alex
+Birsan 2021, PyPI 2023, npm `ua-parser-js`) 을 거명하므로 case study 역할
+충족. Precinct 6 의 T1041 단일 항목은 dep-confusion 특화 신호 (악성 패키지
+이름·버전·post-install 행위 시퀀스) 가 없어 본 lecture 의 *코드 수준* 학습
+목표에 매핑되지 않는다. 폐기.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
