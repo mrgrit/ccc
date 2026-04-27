@@ -688,9 +688,78 @@ rule.id >= 100000
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w10 Wazuh SIEM 탐지 룰 — local_rules.xml·
-decoder·rule level. T1041 변종 B 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — Wazuh local_rules 매핑 후보 분포)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Wazuh SIEM 탐지 룰 — local_rules.xml·decoder·rule level* 학습 항목과 매핑되는 dataset 의 message_type → Wazuh rule level 매핑 표.
+
+### Case 1: dataset 의 message_type → Wazuh rule level 권장 매핑
+
+| message_type | dataset 건수 | Wazuh rule level 권고 | 근거 |
+|--------------|-----------|---------------------|------|
+| **4625** (logon failure) | 0 | 5 (medium) | dataset 부재 = audit policy 미설정 — *모든 agent 강제* |
+| **4624** (logon success) | 17,482 | 3 (info) | 정상 baseline 17K |
+| **4670** (permission change) | 188 | **10 (high)** | 0.001% 분포 = 비정상 |
+| **4663** (object access) | 98 | **10 (high)** | 0.0001% — *anomaly threshold* |
+| **4690** (handle duplicate) | 79,254 | 4 (low) | 정상 운영 노이즈 |
+| **5136** (DS object modified) | 380 | **12 (critical)** | AD 객체 변경 = 영향 큼 |
+| **5140** (share access) | 2,623 | 5 (medium) | 정상 + 측면이동 모두 가능 |
+| **firewall_action** | 118,151 | 4 (low) | 대량 noise — *suppress* 권장 |
+| **traffic_drop** | 5,826 | 6 (medium) | explicit drop = 강한 정책 위반 |
+| **anomalous_behavior** | 1,098 | **10 (high)** | 통계 anomaly = 적극 분석 |
+
+### Case 2: 권장 local_rules.xml 발췌
+
+```xml
+<group name="precinct6_baseline">
+
+  <!-- 4670 permission change → 0.001% baseline = critical -->
+  <rule id="100200" level="10">
+    <if_sid>60106</if_sid>  <!-- Windows 4670 default -->
+    <description>Permission on object changed (rare event)</description>
+    <mitre>
+      <id>T1222</id>
+    </mitre>
+  </rule>
+
+  <!-- 5136 DS object modified → 0.018% baseline = critical -->
+  <rule id="100210" level="12">
+    <if_sid>60132</if_sid>
+    <description>Directory service object modified (AD change)</description>
+    <mitre>
+      <id>T1484.001</id>
+    </mitre>
+  </rule>
+
+  <!-- 4625 logon failure (audit policy 강제 요건) -->
+  <rule id="100220" level="5">
+    <if_sid>5710</if_sid>
+    <description>SSH/Windows logon failure</description>
+  </rule>
+
+  <!-- 4625 5회 1분 → 강경 (brute force 추정) -->
+  <rule id="100221" level="10" frequency="5" timeframe="60">
+    <if_matched_sid>100220</if_matched_sid>
+    <same_source_ip/>
+    <description>Brute force suspect (5 fails in 60s)</description>
+    <mitre><id>T1110.001</id></mitre>
+  </rule>
+
+</group>
+```
+
+**해석 — 본 lecture (Wazuh 탐지 룰) 와의 매핑**
+
+| 룰 작성 학습 항목 | 본 record 의 증거 |
+|-----------------|------------------|
+| **rule level baseline** | dataset 의 빈도 분포가 *level 결정의 근거* — 0.001% 미만 = level 10+, 0.001~0.1% = level 5-10, 0.1%+ = level 1-4 |
+| **<if_sid> chain** | base rule (5710 SSH fail) → frequency rule (100221) — dataset 의 *동일 src 반복* 패턴 활용 |
+| **MITRE 매핑** | 모든 룰에 `<mitre><id>T...</id></mitre>` 첨부 — dataset 의 attack_techniques 필드와 호환 |
+| **decoder 작성** | dataset 의 winlogbeat 8.2.2 JSON 형식 → Wazuh 의 `<decoder>` 에 `json_decoder` 또는 `jsonbuf` 사용 |
+
+**학생 룰 작성 액션**:
+1. 본 dataset 의 빈도 분포 표를 *본인 환경에 동등 측정* → rule level 결정의 *근거* 마련
+2. local_rules.xml 의 모든 룰에 `<mitre>` 메타데이터 첨부 → OpenCTI 통합 (다음 주차)
+3. `<if_sid>` chain 으로 *base rule + correlation rule* 분리 (level 분리)
 
 

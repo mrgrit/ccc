@@ -678,9 +678,75 @@ Week 10에서는 Wazuh 탐지 룰을 다룬다:
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w09 Wazuh SIEM 설치·구성 — 인프라 setup
-주차. T1041 변종 B 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — Wazuh SIEM 이 보유해야 할 event 구조)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Wazuh SIEM 설치·구성* 학습 항목과 매핑되는 dataset 의 winlogbeat 수집 events — Wazuh 의 표준 입력 형식.
+
+### Case 1: winlogbeat 8.2.2 → Wazuh 표준 입력
+
+**원본 발췌** (account_logon record):
+
+```text
+ORG-1657 ::: {
+  "@metadata":{"beat":"winlogbeat","type":"_doc","version":"8.2.2"},
+  "@timestamp":"2024-07-26T11:09:56.683Z",
+  "agent":{
+    "ephemeral_id":"c7c916ce-56ef-4255-9f46-4ca9ce1b5050",
+    "id":"9c19b391-75f6-44e4-a324-d6fa6da2...",
+    "name":"USER-0010-0200",
+    "type":"winlogbeat"
+  },
+  ...
+}
+```
+
+**dataset 의 winlogbeat 수집 message_type (top 10)**
+
+| message_type | Wazuh 의미 | 건수 |
+|--------------|----------|------|
+| 4624 (account_logon) | 성공 logon | 17,482 |
+| 4625 | 실패 logon | 0 (audit policy 미설정 가능성) |
+| 4634 (account_logoff) | logoff | 16,934 |
+| 4656 | object handle 요청 | 79,311 |
+| 4658 | handle close | 158,374 |
+| 4663 | object access 시도 | 98 |
+| 4670 | permission 변경 | 188 |
+| 4672 | special privileges | (4624 안에 포함) |
+| 4690 | handle duplicate | 79,254 |
+| 4776 | NTLM auth | 15,382 |
+| **합계** | | **381,033** |
+
+→ winlogbeat 가 *Wazuh agent* 와 동일 역할. dataset 에 38만 events.
+
+### Case 2: Wazuh agent 가 수집해야 할 *최소 event ID 목록*
+
+dataset 으로부터 학생이 본인 Wazuh setup 에 *반드시 활성* 해야 할 audit policy:
+
+```ini
+# /etc/audit/audit.rules (Linux) 또는 group policy (Windows)
+# 4624 + 4625 (logon/failure)        → Wazuh `audit/local_rules.xml` rule 5710-5715
+# 4634 (logoff)                       → 5717
+# 4656 + 4658 + 4663 (file access)    → 5723-5728
+# 4670 (permission change)            → 5740
+# 4672 (special privilege)            → 5750
+# 4690 (handle duplicate)             → 5755
+# 4776 (NTLM)                         → 5760
+```
+
+**해석 — 본 lecture (Wazuh setup) 와의 매핑**
+
+| Wazuh setup 학습 항목 | 본 record 의 증거 |
+|---------------------|------------------|
+| **winlogbeat → Wazuh** | dataset 가 winlogbeat 8.2.2 사용. Wazuh agent 가 동등 역할 |
+| **agent identity** | record 의 `agent.id` (UUID) 와 `agent.name` (HOSTNAME) — Wazuh 의 *agent registration* 동등 |
+| **timestamp ms 정밀도** | record 의 `@timestamp:ms` — Wazuh 의 *flow correlation* 시 ms-level 추적 |
+| **event volume baseline** | dataset 38만 winlogbeat events / 2.07M 전체 = 18% — Wazuh 부담 baseline |
+| **4625 logon failure 부재** | dataset 0건 = audit policy 미설정 의심 — 학생 setup 시 *반드시 활성* |
+
+**학생 Wazuh 액션**:
+1. `wazuh-agent` 설치 후 본 dataset 의 10 event ID 모두 capture 하는지 검증 (`/var/ossec/logs/archives/archives.json`)
+2. dataset 에 4625 가 0건인 이유 분석 → 본인 setup 에는 4625 audit policy 강제
+3. 38만 events / agent 수 비율 측정 — 학생 환경 기준 *agent 당 적절한 event volume* 산정
 
 

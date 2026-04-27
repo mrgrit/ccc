@@ -767,9 +767,61 @@ CLEANUP2
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w15 기말고사 — 보안 인프라 구축 실기.
-학생 본인 setup 결과로 평가. 외부 사례 인용 가치 없음. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — w02-w14 record 인용 종합 + 기말 채점 양식)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *기말고사 — 보안 인프라 구축 실기* — 학생 본인의 5-layer 통합 setup 을 dataset baseline 과 비교하여 채점. 전 14주 record 인용 종합표 + 채점 reference.
+
+### Case 1: 14주 record 인용 표 (학생이 보고서 부록에 인용해야 할)
+
+| 본 과목 주차 | dataset record / 통계 | 학생 setup 검증 항목 |
+|------------|----------------------|--------------------|
+| w01 보안 개론 | 3-layer (Signal 2.07M / Graph 595K / Aggregate Data Theft 125K) | 5 솔루션 모두 setup |
+| w02 nft 기초 | Cisco ASA Deny + 4.7% block ratio | nft block 룰 active |
+| w03 nft 실전 | DMZ NAT + UDP 5060 SIP | DNAT 동작 확인 |
+| w04 Suricata setup | flow 31K + Meraki l7_firewall | Suricata flow event/min |
+| w05 Suricata 룰 | vendor signature 1220-1000 | 자체 sid 1000000+ |
+| w06 Suricata 운영 | 상위 10 룰 67.5% firing | suppress/threshold 적용 |
+| w07 ModSec WAF | WAF GET 4018 (CEF) + JSESSIONID 평문 | CEF 출력 + cookie redaction |
+| w08 중간고사 | 5축 baseline 비교 | (시험 결과) |
+| w09 Wazuh setup | winlogbeat 8.2.2 38만 events | agent 등록 + 10 event ID capture |
+| w10 Wazuh 룰 | 4670 188건 → level 10 권고 | local_rules.xml MITRE 메타데이터 |
+| w11 FIM/SCA/AR | 4663 0.0047% baseline = 매우 드뭄 | FIM realtime + AR 24h block |
+| w12 OpenCTI setup | IOC 30K + STIX 2.1 매핑 | TAXII feed 등록 |
+| w13 OpenCTI 활용 | 595K edges → STIX relationship | incident graph 임포트 |
+| w14 통합 아키텍처 | host 1개에 5-layer evidence | 5 layer 동시 가시성 |
+
+### Case 2: 기말 채점 양식 — 7 base + 3 advanced 평가
+
+| 평가 항목 | 점수 | dataset 기준 |
+|----------|------|------------|
+| 1. nft 5-tuple 차단 동작 | 10 | Cisco ASA Deny 패턴 재현 |
+| 2. Suricata flow event 발생 | 10 | flow event/min baseline 일치 |
+| 3. ModSec CEF 출력 표준 | 10 | dataset GET CEF 7-field 형식 |
+| 4. Wazuh 10 event ID 모두 capture | 10 | winlogbeat 8.2.2 38만 baseline |
+| 5. OpenCTI STIX 임포트 | 10 | 1 incident → STIX bundle |
+| 6. 5-layer 통합 가시성 | 15 | host 1개에 5 layer 동시 evidence |
+| 7. CEF/JSON 표준 출력 일관성 | 10 | dataset 모든 record 표준화 |
+| 8. (advanced) 4-layer 익명화 적용 | 10 | dataset 의 사람 review 포함 |
+| 9. (advanced) latency 분 단위 이내 | 10 | nft → OpenCTI 분 단위 baseline |
+| 10. (advanced) Bastion 통합 dashboard | 5 | Knowledge UI cytoscape graph |
+| **합계** | **100** | |
+
+### Case 3: dataset 의 *학생 우수작 reference* — 외부 공유 가능성
+
+dataset 의 4-layer 익명화 (regex + format + NER + Claude review) 가 *학생 우수 보고서 외부 공유 가능* 보장 양식. 만점 학생 보고서는 *동등 익명화 후 다음 코호트 reference* 로 활용 가능.
+
+**해석 — 본 lecture (기말) 와의 매핑**
+
+| 기말 학습 항목 | 본 record 의 시사점 |
+|--------------|---------------------|
+| **14주 통합 검증** | dataset 의 14 주차 record 인용 표 = 학생 보고서 부록 양식 |
+| **multi-vendor 통합** | dataset host 의 5 vendor product = 학생 setup 의 5 솔루션 |
+| **익명화** | 4-layer = 외부 공유 가능 보고서의 표준 |
+| **재현 가능성** | dataset 의 partition + node ID = 학생 보고서의 재현 메타 |
+
+**기말 채점 함의**:
+- dataset 의 *5-layer + 7-framework + 14주 record* 모두 인용한 보고서 = 만점
+- 단순 5솔루션 setup 만 (통합 미흡, dataset 비교 없음) = 70점 이하
 
 

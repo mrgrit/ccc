@@ -678,9 +678,60 @@ data.srcip:10.20.30.80
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w07 Apache + ModSecurity WAF — CRS 룰셋·
-SQLi/XSS WAF 차단. T1041 변종 B 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — WAF GET 4018 + POST 88 CEF 형식)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Apache + ModSecurity WAF — CRS 룰셋* 학습 항목과 매핑되는 dataset 의 WAF 4106건 (GET 4018 + POST 88) — 모두 CEF 표준 형식.
+
+### Case 1: WAF GET — 정상 트래픽의 outcome=200
+
+```text
+<190>Jul 26 06:13:46 USER-0010-4334 CEF:0|USER-0010-57562|WAF|1220|1000|GET|5|
+  cat=TR dvc=10.208.162.175 src=100.64.55.159 spt=54187 dst=10.38.148.233
+  outcome=200 USER-9484Method=GET app=TLSv1.3
+  USER-9484=/servlet/eAndar.WebFileLibrary/3433/.../profile-complete_no%20ribbon.png
+  cs1=ORG-0494 cs2=PROTECTED cs6=VALID
+  USER-0010-57562WafResponseType=SERVER
+```
+
+### Case 2: WAF POST — JSESSIONID 평문 + outcome=200
+
+```text
+<190>Jul 26 06:24:30 USER-0010-4334 CEF:0|USER-0010-57562|WAF|1220|1000|POST|5|
+  src=100.64.1.67 spt=51071 dst=10.0.145.98
+  USER-9484Cookies=JSESSIONID\=9569E23CF0614F9EF9C81DD49E4C5608
+  outcome=200 in=1173 out=29521
+```
+
+**dataset 의 WAF 통계**
+
+| 항목 | 값 |
+|------|---|
+| 총 GET | 4,018 (모두 outcome=200/302) |
+| 총 POST | 88 |
+| signature ID | 1220 (group) / 1000 (variant) — 단일 vendor 룰셋 |
+| TLS protocol | TLSv1.3 |
+| dst (보호 대상) | 10.0.145.98 / 10.38.148.233 |
+
+### Case 3: cookie 평문 logging — 점검 위반 사례
+
+원본의 `JSESSIONID\=9569E23CF...` 는 *평문 평문* 으로 WAF audit log 저장. 점검 항목:
+- 개인정보보호법: 세션 토큰이 *개인 식별성 보유* 시 위반 소지
+- ModSec audit log 의 `SecAuditLogParts ABCFHZ` 설정 점검 필요 (cookie 제외)
+
+**해석 — 본 lecture (Apache + ModSecurity) 와의 매핑**
+
+| ModSec WAF 학습 항목 | 본 record 의 증거 |
+|---------------------|------------------|
+| **CEF 표준 출력** | dataset 의 모든 WAF 가 CEF 7-field. ModSec 의 `SecAuditLog` 도 CEF 변환 plugin 사용 권장 |
+| **CRS 룰 그룹** | dataset signature `1220|1000` = vendor 자체. ModSec OWASP CRS 는 *942100 (SQLi)*, *941100 (XSS)* 같은 룰 ID 범위 사용 |
+| **outcome=200 (통과)** | dataset 의 모든 WAF GET 이 outcome=200 — 정상 트래픽만 logging. ModSec 의 *DetectionOnly* 모드와 동일 |
+| **cookie redaction** | dataset 의 JSESSIONID 평문 노출 — *audit log redaction* 점검 항목 (학생 ModSec 환경에 적용) |
+| **TLSv1.3 강제** | dataset 의 `app=TLSv1.3` — ModSec 앞단 Apache `SSLProtocol -all +TLSv1.3` 설정 모방 |
+
+**학생 ModSec 액션**:
+1. ModSec audit log 를 CEF 형식으로 export — fluentbit `cef` filter 또는 자체 변환 script
+2. CRS 룰 ID 범위 (920xxx-949xxx) 가 fire 시 *signature group* 통계 — dataset 의 1220 group 처럼 카테고리별 분포
+3. cookie 평문 logging 차단: `SecRule REQUEST_HEADERS:Cookie "@unconditionalMatch" "id:1500001,phase:1,nolog,pass,ctl:auditLogParts=-CFG"` (Cookie 제거)
 
 

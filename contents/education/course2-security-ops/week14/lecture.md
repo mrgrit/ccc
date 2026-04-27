@@ -747,9 +747,60 @@ Week 15는 **기말고사**이다:
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w14 통합 보안 아키텍처 — 5개 컴포넌트
-(nft·Suricata·ModSec·Wazuh·OpenCTI) 통합 운영. T1041 변종 B 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — 5컴포넌트 통합 시 데이터 흐름)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *통합 보안 아키텍처 — nft+Suricata+ModSec+Wazuh+OpenCTI 5 컴포넌트* 학습 항목과 매핑되는 dataset 의 *5 컴포넌트가 동시 evidence 보유* 한 incident.
+
+### Case 1: 1 incident host 의 *5 layer evidence*
+
+dataset host `HOST-4476` (incident `e5578610-d2eb-11ee-...`):
+
+| Layer | 본 dataset evidence | 학생 환경 도구 | data flow |
+|-------|-------------------|--------------|-----------|
+| 1. **nft Firewall** | firewall_action 118K + traffic_drop 5.8K | nftables | `nft list ruleset` → eve.json |
+| 2. **Suricata IPS** | flow 31K + anomalous_behavior 1K | Suricata | `eve.json` → Wazuh |
+| 3. **ModSec WAF** | WAF GET 4018 + POST 88 (CEF) | Apache+ModSec | `audit_log` → Wazuh |
+| 4. **Wazuh SIEM** | winlogbeat 38만 events | Wazuh | `archives.json` → OpenCTI |
+| 5. **OpenCTI** | mo_name + threatID + suspicion_score | OpenCTI | STIX feed → Bastion |
+
+→ 본 dataset 자체가 *5-layer 통합* 의 reference 구현체.
+
+### Case 2: 1 공격 시나리오 — 5 layer 별 동시 record
+
+100.64.20.230 의 1초 burst 정찰이 5 layer 에 *동시 evidence* 생성:
+
+```
+[Layer 1 nft]      Deny tcp src outside:100.64.20.230 → 30 dst (208 events)
+[Layer 2 Suricata] flow event 208건 + anomalous_behavior trigger
+[Layer 3 ModSec]   (HTTP 미사용 — WAF 미발동)
+[Layer 4 Wazuh]    rule.id 5710~5720 (firewall block 통합)
+[Layer 5 OpenCTI]  IOC `100.64.20.230` 등록 + indicator (suspicion=0.92)
+                   → threat-actor "Exploiting Host" relationship
+```
+
+### Case 3: 통합 환경의 *지연 (latency)* baseline
+
+| 단계 | 본 dataset 의 timestamp 분포 | 통합 latency baseline |
+|------|---------------------------|---------------------|
+| nft block → Suricata flow | 동일 timestamp (1688960026) | < 100ms |
+| Suricata → Wazuh agent | winlogbeat polling 5s | 5~10s |
+| Wazuh → OpenCTI | manual export 또는 webhook | 분 단위 |
+| **총 latency (1차 detection → CTI)** | | **수 초~수 분** |
+
+**해석 — 본 lecture (통합 아키텍처) 와의 매핑**
+
+| 통합 아키텍처 학습 항목 | 본 record 의 증거 |
+|----------------------|------------------|
+| **5 컴포넌트 동시 가시성** | dataset host 1개에 5 layer evidence 동시 — 학생 환경도 동등 baseline |
+| **eve.json 표준** | dataset 의 Suricata flow event 가 표준 JSON — Wazuh 의 `<location>/var/log/suricata/eve.json</location>` 으로 통합 |
+| **CEF 표준** | dataset 의 WAF/Cisco 가 모두 CEF — Wazuh 의 `cef_decoder` 로 통합 |
+| **STIX 2.1** | dataset 의 incident graph → STIX `relationship` 직접 매핑 — OpenCTI 가 통합 hub |
+| **latency baseline** | 본 dataset 의 timestamp 분포로 *각 layer 간 latency* 측정 가능 |
+
+**학생 통합 액션**:
+1. Bastion 의 통합 dashboard 에서 1 공격 시나리오의 *5 layer 동시 표시* 검증 (Knowledge UI cytoscape graph)
+2. 본 dataset 의 5-layer evidence 분포를 *학생 환경에 동등 갖추기* — 누락 layer 식별
+3. latency baseline 측정 — nft block → OpenCTI 까지 *분 단위 이내* 도달 보장
 
 

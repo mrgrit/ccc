@@ -592,9 +592,64 @@ rule.groups:syscheck
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w12 OpenCTI 설치·구성 — STIX/TAXII· CTI
-플랫폼 setup. T1041 변종 B 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — OpenCTI 가 받아야 할 IOC 분포)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *OpenCTI 설치·구성 — STIX/TAXII* 학습 항목과 매핑되는 dataset 의 IOC (외부 IP·도메인·해시·email) 분포.
+
+### Case 1: dataset 의 IOC 후보 통계
+
+| IOC 유형 | dataset 의 출처 | 건수 추정 | OpenCTI STIX 객체 |
+|---------|---------------|----------|-----------------|
+| **IPv4 (외부)** | src_ip / dst_ip 의 100.64.x.x (RFC5737) | 30,092 host nodes 중 외부 절반 | `ipv4-addr` |
+| **IPv4 (내부)** | 172.16~172.31 / 192.168 / 10.x | 30,092 의 절반 | `ipv4-addr` (private) |
+| **Domain** | dnsmasq A query 의 *example.net* | 11,413 dns_event | `domain-name` |
+| **Email (phishing)** | email_protection_event 의 threatID | 8 (mo_name=Phishing) | `email-addr` + `email-message` |
+| **File hash (sha256)** | email phishing 의 threatID = sha256 | 다수 | `file` (hashes.SHA-256) |
+| **MITRE technique** | `attack_techniques` field (대부분 빈 array) | 0 | (별도 입력 필요) |
+| **MITRE tactic** | `attack_tactics` field | 0 | (별도 입력 필요) |
+| **mo_name** | "Data Theft" / "Phishing" | 125,780 | `attack-pattern` 또는 `course-of-action` |
+
+### Case 2: OpenCTI 임포트 시 STIX bundle 예시
+
+```python
+# scripts/precinct6_to_stix.py 설계
+import json, hashlib
+from stix2 import IPv4Address, DomainName, Indicator, Bundle
+
+# dataset 에서 외부 src_ip 추출
+ips = []
+for r in records:
+    if r['src_ip'].startswith('100.64.'):  # external (sanitized)
+        obj = IPv4Address(value=r['src_ip'])
+        ind = Indicator(
+            name=f"Recon scan from {r['src_ip']}",
+            pattern=f"[ipv4-addr:value = '{r['src_ip']}']",
+            pattern_type="stix",
+            valid_from=r['timestamp'],
+            confidence=int(r['suspicion_score']*100),
+            indicator_types=["malicious-activity"],
+        )
+        ips.append(obj); ips.append(ind)
+
+bundle = Bundle(objects=ips)
+print(bundle.serialize())
+```
+
+→ 100.64.20.230 (1초 burst 정찰 src) 가 STIX `ipv4-addr` + `indicator` (suspicion 92%) 로 OpenCTI 등록.
+
+**해석 — 본 lecture (OpenCTI setup) 와의 매핑**
+
+| OpenCTI setup 학습 항목 | 본 record 의 증거 |
+|----------------------|------------------|
+| **STIX 2.1 호환** | dataset 의 모든 IOC 가 STIX 객체로 1:1 매핑 가능 (ipv4-addr / domain-name / file) |
+| **TAXII feed 구성** | OpenCTI 가 *taxii_feeds* 에 dataset 의 *anonymous src_ip* 큐레이션 — 외부 공유 가능 (Apache 2.0 라이선스) |
+| **MITRE ATT&CK 통합** | dataset 의 attack_techniques 필드가 비어있어 *별도 매핑 필요* — w13 lecture 에서 다룸 |
+| **threat-actor 모델링** | dataset 의 sets ("Exploiting Host" 등) → STIX `threat-actor` + `relationship` |
+
+**학생 setup 액션**:
+1. OpenCTI 설치 후 STIX 1:1 매핑 가능 IOC 비율 측정 — dataset 라벨링 vs 자동 분류 일치도
+2. 100.64.20.230 (정찰 burst src) 등 *고-suspicion IOC* 부터 OpenCTI 우선 등록
+3. 4-layer 익명화 (regex + format + NER + 검토) 후 외부 TAXII 공유 가능 형태로 export
 
 

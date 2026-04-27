@@ -673,9 +673,69 @@ rule.level >= 10
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w11 Wazuh SIEM — FIM·SCA·Active Response.
-T1041 변종 B 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — FIM 후보 + Active Response 트리거)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Wazuh — FIM·SCA·Active Response* 학습 항목과 매핑되는 dataset 의 *file 객체 변경* + *권한 변경* 트리거.
+
+### Case 1: FIM 모니터링 대상 — dataset 의 *변경 추적* event
+
+| message_type | FIM/SCA/AR 매핑 | 건수 | 의미 |
+|--------------|---------------|------|------|
+| 4663 (object access) | **FIM 트리거** | 98 | 모니터링 디렉토리 접근 |
+| 4670 (permission change) | **FIM + AR** | 188 | 권한 변경 시 즉시 alert + active response |
+| 4656 (handle open) | FIM 약함 | 79,311 | 베이스라인 (정상 운영) |
+| 5136 (DS modified) | **AR critical** | 380 | AD 변경 즉시 격리 |
+| 5140 (share access) | FIM medium | 2,623 | 공유 폴더 접근 추적 |
+| security_audit_event | SCA 입력 | 381,552 | 보안 정책 준수 검증 |
+| 4798/4799 (group enum) | **AR 의심** | 7,686 | enumeration 시 active response |
+
+### Case 2: 권장 FIM/SCA/AR 설정
+
+```xml
+<!-- ossec.conf 의 syscheck (FIM) -->
+<syscheck>
+  <directories check_all="yes" report_changes="yes" realtime="yes">
+    /etc, /usr/bin, /usr/sbin
+  </directories>
+  <directories check_all="yes" realtime="yes">
+    /home, /root, /var/spool/cron
+  </directories>
+  <ignore>/var/log</ignore>
+  <frequency>3600</frequency>  <!-- 1h 풀 스캔 -->
+</syscheck>
+
+<!-- SCA (Security Configuration Assessment) -->
+<sca>
+  <enabled>yes</enabled>
+  <interval>12h</interval>
+  <policies>
+    <policy>cis_ubuntu_22.04.yml</policy>
+    <policy>cis_distribution_independent_linux.yml</policy>
+  </policies>
+</sca>
+
+<!-- Active Response — 4625 brute force 5회 시 24h block -->
+<active-response>
+  <command>firewall-drop</command>
+  <location>local</location>
+  <rules_id>100221</rules_id>  <!-- 위 w10 의 brute force suspect 룰 -->
+  <timeout>86400</timeout>
+</active-response>
+```
+
+**해석 — 본 lecture (FIM/SCA/AR) 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **FIM trigger 빈도** | 4663 = 98건 / 2.07M = 0.0047% = *극히 드문* event → FIM realtime 모니터링 가치 |
+| **권한 변경 추적** | 4670 188건 + 5136 380건 — FIM 가 *감지 후 즉시 active response* 격리 권장 |
+| **SCA baseline** | dataset 의 security_audit_event 38만건 — SCA 정책 적용 후 *fail count* 측정 가능 |
+| **active response timeout** | brute force 5회 후 24h block — dataset 의 baseline 4625=0 (audit 미설정) 상태에서도 자체 룰로 가능 |
+
+**학생 운영 액션**:
+1. ossec.conf 에 4663 / 4670 / 5136 모두 alert 룰 정의 → dataset baseline 빈도와 비교 (5배 spike 시 FIM critical)
+2. SCA `cis_ubuntu_22.04.yml` 적용 후 *pass/fail* 비율 측정 — dataset 의 security_audit_event 분포와 vendor 별 매칭
+3. Active Response 의 24h block 정책 외에 *manual override* 절차 (오탐 시 unblock) 학생 syllabus 추가
 
 

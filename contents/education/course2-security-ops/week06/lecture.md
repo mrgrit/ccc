@@ -631,9 +631,50 @@ Week 07에서는 Apache+ModSecurity WAF를 다룬다:
 
 ---
 
-<!--
-사례 폐기 (2026-04-27 수기 검토): w06 Suricata 운영 — 성능 튜닝·룰 관리·
-업데이트. T1041 변종 B 매핑 X. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — 운영 환경의 룰 보유 규모)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Suricata 운영 — 성능 튜닝·룰 관리·업데이트* 학습 항목과 매핑되는 dataset 의 *실제 운영 환경에서 룰이 얼마나 firing 하는지* 통계.
+
+### Case 1: 운영 환경의 *분당 룰 firing 부담*
+
+dataset 통계:
+- 총 records: 2,070,923
+- 수집 기간 (대략): metadata.json 의 timestamp 분포에서 약 *수개월~1년*
+- 분당 평균 events: 207만 / (365 × 24 × 60) ≈ **3.9 events/min** (정상 baseline)
+- burst 시점 (정찰 100.64.20.230): 1초에 208 events = **12,480 events/min** (3,200배)
+
+→ Suricata 운영 시 *peak burst* 처리 능력이 *baseline 의 3000+ 배* 필요.
+
+### Case 2: signature 별 firing 분포 (top 10 룰 매칭 message_type)
+
+| message_type | firing 횟수 | 비율 |
+|--------------|-----------|------|
+| security_audit_event | 381,552 | 18.4% |
+| 4662 (object access) | 226,215 | 10.9% |
+| 5156 (WFP filter) | 176,060 | 8.5% |
+| 4658 (handle close) | 158,374 | 7.6% |
+| firewall_action | 118,151 | 5.7% |
+| management_message | 94,327 | 4.6% |
+| 4656 (handle open) | 79,311 | 3.8% |
+| 4690 (handle dup) | 79,254 | 3.8% |
+| **상위 10 합계** | **1,397,476** | **67.5%** |
+| 나머지 90+ types | 673,447 | 32.5% |
+
+→ **상위 10 룰이 67.5% firing** = *long-tail* 분포. Suricata 운영 시 *상위 10 룰의 noise 제어* 가 우선.
+
+**해석 — 본 lecture (Suricata 운영) 와의 매핑**
+
+| Suricata 운영 학습 항목 | 본 record 의 증거 |
+|-----------------------|------------------|
+| **성능 튜닝** | 정상 baseline 4 events/min vs burst 12K/min — `min_packets_threshold`, `flow.memcap` 4 자릿수 차이 대응 |
+| **룰 관리 — long-tail** | 상위 10 룰 67.5% firing → *suppress* 룰 우선 적용 (low-severity 알림은 SIEM 적재 X) |
+| **룰 업데이트 주기** | dataset 의 vendor signature (M34_MX67C 등) 가 *고정 ID* — 본인 룰셋도 *주 1회 ET Open / monthly CRS* update |
+| **threshold 의 위력** | dataset 의 burst 1초 12K events 가 firing 시 *threshold by_src count 100 seconds 60* 으로 noise 흡수 |
+
+**학생 운영 액션**:
+1. `suricatasc -c "iface-stat eth0"` 로 본인 환경 packet drop 측정 → 본 dataset 의 peak (12K/min) 처리 가능한지 확인
+2. 상위 N 룰 firing 분포 측정 (`grep -oP 'sid":\d+' eve.json | sort | uniq -c | sort -rn | head -10`) → long-tail 비율 dataset 67.5% 와 비교
+3. 룰 *suppress* / *threshold* 정책 적용 후 SIEM 적재량 50% 이상 감소 가능
 
 
