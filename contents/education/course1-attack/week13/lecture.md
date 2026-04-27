@@ -375,28 +375,14 @@ Part 4의 35개 기법을 **본인이 직접 실습한 증거**(스크린샷·ev
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 폐기 — 단, 본 lecture 는 *후보 가능성 보존* (2026-04-27 수기 검토):
+w13 MITRE ATT&CK 종합 매핑 — w02-w12 모든 공격을 ATT&CK 매핑하는 통합 주차.
+T1041 (TA0010 Exfil) 은 ATT&CK 기법 중 하나이므로 *예시 매핑* 가치 있음.
+다만 현재 두 case (3-field 요약) 는 *어떻게 매핑하는지* 보여주지 못하므로
+폐기. 향후 풍부화: Precinct 6 의 단일 incident 를 *Cyber Kill Chain 7단계 +
+ATT&CK 14전술* 매핑 워크시트로 확장하면 본 주차의 *학생 워크북* 으로 1:1
+매칭 case study 가 됨.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 

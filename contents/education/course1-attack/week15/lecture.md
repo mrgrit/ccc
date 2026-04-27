@@ -518,28 +518,9 @@ Week 02~12의 ATT&CK 매트릭스 커버리지. Week 13에서 Navigator Layer로
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 폐기 (2026-04-27 수기 검토): w15 기말 — 종합 침투 테스트 + PTES 보고서.
+학생 본인의 종합 pentest 결과로 작업. 외부 사례 인용 가치 없음. 폐기.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
