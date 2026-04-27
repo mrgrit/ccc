@@ -357,6 +357,42 @@ Architecture) 모두 비어있음.
          `scripts/ingest_mitre_attck.py`, `scripts/ingest_owasp_top10.py`,
          `scripts/ingest_nist_csf.py`, `scripts/ingest_cwe_top25.py`
 
+### **다음 외부 지식 채널 후보 — Anthropic-Cybersecurity-Skills (mukul975)**
+
+저장: 2026-04-27 — 사용자 지시로 다음 차수 작업으로 보류.
+
+**대상 repo**: https://github.com/mukul975/Anthropic-Cybersecurity-Skills (Apache 2.0)
+- 754 SKILL.md (YAML frontmatter + workflow)
+- 26 보안 도메인 (cloud 60 / threat-hunting 55 / threat-intel 50 / web-app 42 / network 40 / malware 39 / forensics 37 / SOC ops 36 / IAM 35 / SOC 33 / container 30 / ICS 28 / API 28 / vuln-mgmt 25 / IR 25 / red-team 24 / pentest 23 / endpoint 17 / DevSecOps 17 / phishing-defense 16 / crypto 14 / zero-trust 13 / mobile 12 / ransomware 7 / compliance 5 / deception 2)
+- 5 framework 매핑 (MITRE ATT&CK v18 + NIST CSF 2.0 + ATLAS v5.4 + D3FEND v1.3 + NIST AI RMF 1.0)
+
+**적용 검토 결론** (2026-04-27 분석):
+
+두 시스템 *경쟁 아니라 보완*:
+- mukul975 754 = 지식/플레이북 가이드 (descriptive)
+- Bastion 33 = 실행 단위 (executable via SubAgent A2A)
+
+**Phase A (0.5d, low effort)**: KG anchor 임포트
+- `scripts/ingest_cybsec_skills.py` 추가 — 기존 7 ingester 패턴
+- 754 SKILL.md → kind=cybsec_skill anchor
+- MITRE/NIST ID 를 related_ids 로 → 기존 anchor 자동 cross-link
+
+**Phase B (1d, medium)**: Bastion 33 ↔ 754 매핑 표
+- `data/bastion/skill_to_cybsec_map.json`
+- LLM plan 시 Bastion skill + 대응 SKILL.md workflow 동시 prompt
+
+**Phase C (3~5d, high)**: selective playbook 변환
+- top 50 SKILL.md → Bastion `playbook.yaml` (수기 검증)
+- digital-forensics 37 + IR 25 + threat-hunting 55 우선
+
+**주의**:
+- 754 모두 *Bastion 운영 검증* 된 것 아님 — Phase A 는 지식 참조만
+- D3FEND / NIST AI RMF 매핑은 현재 Bastion 미보유 차원 → Knowledge UI 확장 필요
+- submodule + 정기 sync 권장 (upstream v1.2 → 미래 update)
+- NOTICE 파일에 mukul975 license 명시 (현재 미보유)
+
+**즉시 가능한 첫 step**: Phase A PoC — deception 2 + compliance 5 = 7건 시범 임포트 후 26 도메인 확장.
+
 ---
 
 ### P14. Lab 채점 흐름 재설계 (textarea → SubAgent 감시)  [STATUS: A/D/B/C 완료, 1 lab 실측만 잔여]
