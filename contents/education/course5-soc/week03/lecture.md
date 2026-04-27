@@ -631,28 +631,39 @@ echo "TTD (탐지 소요 시간): ${TTD}초"
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 네트워크 + WAF 로그 형식)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *네트워크/웹 로그* 학습 항목 매칭. 운영 환경 로그 형식 reference.
 
-### Case 1: `T1041` 패턴
+### Case 1: Cisco ASA firewall log
 
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
+```text
+<162>May 22 USER-9546 03:24:59: USER-0010-0344
+  Deny inbound UDP from 100.64.44.5/60120 to 172.23.234.119/443 on ORG-9508 outside
 ```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+분포: firewall_action 118K + traffic_drop 5.8K + flow 31K + dns_event 11K.
+
+### Case 2: WAF CEF log (구조화)
+
+```text
+<190>Jul 26 06:13:46 CEF:0|...|WAF|1220|1000|GET|5|
+  src=100.64.55.159 spt=54187 dst=10.38.148.233 outcome=200
+  USER-9484Method=GET app=TLSv1.3
+  USER-9484=/servlet/eAndar.WebFileLibrary/.../profile-complete.png
+```
+
+CEF 7-field 표준: vendor|product|version|sigID|name|severity|extension.
+
+### Case 3: 로그 형식 학습 액션
+
+| 학습 항목 | 본 record |
+|--------|--------|
+| syslog facility/severity | `<162>` (facility 20 + severity 2) |
+| CEF 표준 | dataset WAF GET 4018 모두 CEF |
+| dnsmasq A/AAAA query | dns_event 11,413 |
+| netflow vs full pcap | network_flow_data 13K + flow 31K |
+
+**학생 액션**: 본인 환경 로그 형식이 syslog/CEF/JSON winlogbeat 표준 따르는지 확인.
 

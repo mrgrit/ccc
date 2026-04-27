@@ -528,28 +528,40 @@ done
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — Windows event log 분포)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *시스템 로그 이해* 학습 항목 매칭. Windows event log message_type 분포.
 
-### Case 1: `T1041` 패턴
+### Case 1: dataset 의 Windows event ID top 10
 
+| event ID | 의미 | 건수 | SOC 분석 우선도 |
+|---------|-----|------|------------|
+| security_audit_event | 보안 audit | 381,552 | 정보 |
+| 4662 | object access | 226,215 | 정보 |
+| 5156 | network connection | 176,060 | 정보 |
+| 4658 | handle close | 158,374 | 정보 |
+| 4656 | handle open | 79,311 | 중간 |
+| 4690 | handle duplicate | 79,254 | **중간 (injection 의심)** |
+| 4624 | logon success | 17,482 | 중간 |
+| 4634 | logoff | 16,934 | 정보 |
+| 4776 | NTLM auth | 15,382 | **중간 (NTLM relay)** |
+| 4625 | logon failure | **0** | **활성 필요** |
+
+→ 4625 (logon failure) **0건 = audit policy 미설정** = 본 환경의 *brute force 탐지 불가능*.
+
+### Case 2: 원본 winlogbeat JSON 구조
+
+```text
+ORG-1657 ::: {
+  "@metadata":{"beat":"winlogbeat","type":"_doc","version":"8.2.2"},
+  "@timestamp":"2024-07-26T11:09:56.683Z",
+  "agent":{"id":"...","name":"USER-0010-0200","type":"winlogbeat"}
+  ... (event_id, EventData fields)
+}
 ```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+→ JSON 형식이 *Wazuh decoder* 입력 표준.
 
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**학생 액션**: 본인 환경 4625 audit policy 강제 활성 → SOC 의 logon brute force 탐지 가능 baseline 확보.
 

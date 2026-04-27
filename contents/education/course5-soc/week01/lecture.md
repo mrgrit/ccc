@@ -947,28 +947,28 @@ L1/L2/L3 분석가 중 하나를 선택하여 다음을 조사하라:
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — SOC 운영의 *2.07M signals* baseline)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *SOC 개론* 학습 항목 매칭. SOC 분석가가 일상으로 마주할 evidence 분포 baseline.
 
-### Case 1: `T1041` 패턴
+### Case 1: SOC 일상 — 분석가 1명이 처리해야 할 records
 
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
+dataset 통계: **2,070,923 signals × 365일 = 평균 5,673 events/일**.
+- 분석가 1명 처리 용량: 10~20 alert/시간 = 80~160/일
+- baseline tuning 필요 = 99% 의 *noise* 자동 분류 후 critical 만 사람 분석
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 2: SOC 단계별 evidence 분포
 
-### Case 2: `T1041` 패턴
+| 단계 | 일일 평균 | dataset 매칭 |
+|----|--------|-----------|
+| 수집 (raw event) | 5,673 | 모든 message_type |
+| 룰 매칭 (alert) | ~568 (10%) | 4xx/5xx + flow alert |
+| 트리아지 (분석) | ~57 (1%) | suspicion > 0.5 |
+| **사람 분석** | **~6 (0.1%)** | **suspicion > 0.8** |
+| 사고 처리 | ~1 (0.02%) | mo_name="Data Theft" |
 
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
+→ SOC 분석가가 *2.07M signals 중 일일 6개 핵심* 만 본다. 학생이 *triage funnel* 학습.
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**학생 액션**: 본인 환경에서 *수집:룰:트리아지:사람 분석* 비율 측정 → dataset 의 funnel (10:1:0.1:0.02 %) 와 비교.
 
