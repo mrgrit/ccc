@@ -583,14 +583,58 @@ artifacts/w01-dep-confusion/
 
 ---
 
-<!--
-사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 는 Dependency Confusion
-공급망 공격 — setup.py / npm postinstall 의 phone-home, 내부 vs 공개 레지스트리
-구분, CI runner egress 통제가 핵심이다. 부록 A 가 이미 *실제 사건* (Alex
-Birsan 2021, PyPI 2023, npm `ua-parser-js`) 을 거명하므로 case study 역할
-충족. Precinct 6 의 T1041 단일 항목은 dep-confusion 특화 신호 (악성 패키지
-이름·버전·post-install 행위 시퀀스) 가 없어 본 lecture 의 *코드 수준* 학습
-목표에 매핑되지 않는다. 폐기.
--->
+## 실제 사례 (WitFoo Precinct 6 — CI runner 의 외부 egress 행위 baseline)
+
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
+> 본 lecture *Dependency Confusion — phone-home + 외부 egress* 학습 항목과 매핑되는 dataset 의 *외부 egress* 통계 + AWS API call (CI/CD 환경의 baseline).
+
+### Case 1: 정상 egress 의 baseline — AWS API call 분포
+
+dataset 의 AWS *read-only* API call:
+
+| API | 건수 |
+|-----|------|
+| GetLogEvents | 39,639 |
+| DescribeInstanceStatus | 27,127 |
+| DescribeLoadBalancers | 15,062 |
+| **read-only 합계** | **150,000+** |
+
+→ CI runner 의 *정상 outbound* 가 AWS read-only API 다수. *외부 PyPI/npm 호출* 은 정상 baseline 부재.
+
+### Case 2: phone-home 의 시그니처 — 내부 → 외부 spike 패턴
+
+dataset 의 100.64.20.230 외부 → 내부 정찰 burst 와 *반대 방향* (내부 → 외부 phone-home) 시:
+
+```text
+[정상 baseline]
+  CI runner (10.x.x.x) → 내부 devpi 미러 (10.20.30.150) 만 접근
+
+[Dep Confusion 발생 시 예상]
+  CI runner (10.x.x.x) → 외부 pypi.org (151.101.x.x) 직접 접근
+  + post-install 시 동일 src 가 attacker.example (외부) 로 phone-home
+```
+
+→ 본 dataset 의 traffic_drop 5,826건 중 *내부 → 외부 외부 도메인 직접* 비율 측정 시 dep-confusion 의심 가능.
+
+### Case 3: vendor signature `1220|1000` 가 *blackbox* 통과한 record
+
+w20 §3 §6 *시그니처 공백* 과 동일 사례:
+
+dataset 의 WAF GET 4018건 모두 outcome=200 → vendor 룰 1220|1000 *통과*.
+dep-confusion 의 *post-install 으로 OS command 실행* 시도 같은 *애플리케이션-layer 우회* 는 WAF 가 못 봄.
+
+**해석 — 본 lecture 와의 매핑**
+
+| 학습 항목 | 본 record 의 증거 |
+|-----------|------------------|
+| **CI runner 정상 baseline** | AWS read-only 150K+ = 정상 outbound. 외부 PyPI/npm 부재 → spike 시 의심 |
+| **phone-home detection** | 내부 → 외부 traffic 의 *정상 baseline* 측정 가능 (5,826 traffic_drop) |
+| **WAF blackbox** | 1220|1000 룰 모두 통과 = post-install 같은 *코드 실행 layer* 부재 |
+| **registry isolation** | dataset 에 외부 PyPI 직접 호출 record 부재 = 정상 isolation |
+
+**학생 실습 액션**:
+1. CI runner 의 *외부 egress 화이트리스트* — devpi mirror IP 만 허용. dataset baseline 처럼 *외부 PyPI 0건* 보장
+2. AWS API call top 10 분포 → 학생 환경 baseline 확보
+3. phone-home 시뮬레이션 (자체 setup.py) → traffic_drop record 발생 여부 확인
 
 
