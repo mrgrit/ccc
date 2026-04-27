@@ -505,28 +505,14 @@ Phase 3에서 *내 커스텀 룰 ID*가 뜨면 정상. 다른 룰만 뜨면 *dec
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 는 *실시간 탐지 룰 엔지니어
+링* — SIGMA → Wazuh XML 변환, 룰 계층 L1/L2/L3, Suricata 변형 룰 자동
+파생, 회귀 데이터셋 정밀도·재현율·탐지 지연 측정이 핵심이다. Precinct 6 의
+T1041 단일 incident 항목은 SIGMA selection·timeframe·count 매칭 예시로
+사용 가능한 raw event sequence 가 없고 (단일 suspicion score 만 존재),
+회귀 지표 산출 입력이 되지 못한다. 폐기. 재추가 source 후보: SigmaHQ public
+rule library, MITRE CAR analytic 의 raw telemetry sample.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
