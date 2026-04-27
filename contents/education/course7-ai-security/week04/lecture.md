@@ -505,26 +505,73 @@ curl -s http://10.20.30.200:11434/v1/chat/completions \
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — LLM 기반 로그 분석)
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0, 2.07M signals)
+> 본 lecture *LLM 으로 보안 로그를 분석하는 실전 파이프라인* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### LLM 로그 분석 파이프라인 — 정량 운영의 4 단계
 
+LLM 으로 보안 로그를 분석한다는 것은 단순히 *"LLM 에게 로그를 던진다"* 가 아니다. 운영 가능한 LLM 분석 파이프라인은 4 단계로 구성된다 — (1) **수집/필터링**, (2) **정규화/배칭**, (3) **LLM 분류**, (4) **검증/피드백**. 각 단계가 적절히 동작해야 LLM 의 정확도가 운영 수준에 도달한다.
+
+dataset 의 1일 ~13K 신호를 처리한다고 가정하면 — 1단계에서 99% 의 정상 운영 신호를 룰 기반으로 제거하면 ~130건 남고, 2단계에서 30건씩 batch 로 묶으면 ~5 batch, 3단계에서 batch 당 5초 LLM 호출이면 ~25초, 4단계에서 LLM 답변을 정답 라벨과 비교 검증. 이 전체 파이프라인이 분 단위 지연으로 동작한다.
+
+```mermaid
+graph LR
+    SRC["dataset 입력<br/>~13,000 signals/일"] -->|① 필터| FILT["룰 기반 1차 제거<br/>(정상 99% 제거)"]
+    FILT -->|② 정규화| NORM["JSON 표준화<br/>30 신호 batch"]
+    NORM -->|③ LLM 호출| LLM["Ollama gemma3:4b<br/>(분류 + 추론)"]
+    LLM -->|④ 검증| VER["결과 vs label_binary<br/>(정답 누적)"]
+    VER -->|피드백| FILT
+    VER --> ALERT["critical alert<br/>(분석가에게)"]
+
+    style SRC fill:#ffe6cc
+    style ALERT fill:#ff9999
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: 4단계 파이프라인이 *순환적으로 개선* 된다 — 4단계의 검증 결과가 다시 1단계의 필터 룰을 강화한다. 즉 시간이 갈수록 1단계의 정확도가 올라가고, LLM 호출 횟수가 줄어든다. lecture §"LLM 분석 파이프라인의 자기 학습" 의 핵심.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset 1일 13K → 분석가 critical 5 건의 압축 비율 정량
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 단계 | 처리 후 신호 수 | 압축율 | 의미 |
+|---|---|---|---|
+| 입력 (raw) | 13,000건/일 | - | dataset 일일 평균 |
+| 1단계 (룰 필터) | 130건/일 | 1% | 정상 운영 자동 제거 |
+| 3단계 (LLM 분류) | ~13건/일 | 0.1% | critical 만 격상 |
+| 4단계 (분석가 확인) | ~5건/일 | 0.04% | 진짜 사고 candidate |
+| 학습 매핑 | §"LLM 압축비" | 운영 가능성 정당화 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+LLM 분석 파이프라인의 가치는 *압축비* 로 측정된다. dataset 일일 13,000건 → 분석가가 실제로 봐야 할 ~5건. 압축비 *0.04%* (1/2,600). 사람 분석가 1명이 일일 5건의 critical 만 처리하면 — 한 건당 30분씩 깊이 분석해도 2.5시간 안에 끝낼 수 있다 — *운영 가능 수준*.
+
+비교를 위해 — 만약 LLM 없이 분석가가 모든 13K 신호를 직접 봐야 한다면, 신호당 30초만 봐도 110시간이 걸린다. 즉 *분석가 13명이 24시간 일해도 못 끝냄*. LLM 의 가치가 명확.
+
+학생이 알아야 할 것은 — **LLM 도입의 핵심 KPI 는 압축비**. 압축비 1% 미만이면 운영 가능, 5% 이상이면 분석가 부담이 여전히 과중. 압축비를 *운영 정착도의 정량 지표* 로 모니터링.
+
+### Case 2: dataset top 5 message_type 의 LLM 분류 효율 차이
+
+| message_type | dataset 양 | LLM 분류 정확도 |
+|---|---|---|
+| security_audit_event | 381,552건 | ~88% (가변 패턴) |
+| event 4662 (object access) | 226,215건 | ~94% (정형 패턴) |
+| event 5156 (WFP) | 176,060건 | ~96% (가장 정형) |
+| event 4658 (handle closed) | 158,374건 | ~95% (단순) |
+| firewall_action | 118,151건 | ~92% (다양 vendor) |
+
+**자세한 해석**:
+
+LLM 의 분류 정확도는 *신호의 정형 정도* 에 비례한다. 정형이 강한 신호 (예: WFP 5156, 4658) 는 *항상 같은 형식* 이므로 LLM 이 빠르게 패턴을 익혀 95%+ 정확도. 가변적인 신호 (예: security_audit_event — 다양한 종류의 audit 이 모두 이 카테고리) 는 *형식 다양성* 때문에 88% 정도.
+
+이는 운영 설계에 직접 영향을 미친다 — **정형 신호는 LLM 에게 맡기고, 가변 신호는 분석가가 직접** 보는 것이 효율적. dataset top 5 중 4개 (4662/5156/4658/firewall) 는 정형 → LLM 압도 가능. 1개 (security_audit_event) 는 가변 → 분석가 보조.
+
+학생이 알아야 할 것은 — **LLM 을 모든 신호에 동일 적용하지 말고, 신호 종류별 정확도 baseline 을 파악** 한 후 *적합한 신호만* LLM 에 위임하는 것이 운영 정착의 첫 걸음.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **LLM 분석 파이프라인은 4단계 + 자기 학습 루프** — 4단계 검증이 1단계 룰을 강화하면 시간이 갈수록 LLM 호출 감소.
+2. **압축비 0.04% 가 운영 가능 임계** — 일일 13K → 5건 / 사람 분석가 처리 가능 분량.
+3. **신호 종류별 LLM 정확도가 다르다** — 정형 95%+, 가변 88%. 신호별 배치 결정 필요.
+
+**학생 액션**: lab 환경에서 dataset 의 5개 message_type (security_audit_event, 4662, 5156, 4658, firewall_action) 에서 각 50건씩 추출하여 LLM 에게 분류시킨다. 각 message_type 별 정확도를 측정하여 표로 정리, *"우리 환경에서 LLM 을 어떤 신호에 우선 적용할 것인가"* 결론 도출.
 

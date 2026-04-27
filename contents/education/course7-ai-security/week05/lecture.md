@@ -504,26 +504,72 @@ curl -s http://10.20.30.200:11434/v1/chat/completions \
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 탐지 룰 자동 생성)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *LLM 으로 SIGMA/YARA 등 탐지 룰을 자동 생성* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### LLM 으로 탐지 룰 생성 — "예시 → 룰" 의 변환
 
+탐지 룰 작성은 SOC 운영의 가장 시간 소모적인 작업 중 하나다. 분석가가 *공격 사례 1개를 보고* 그것을 미래에 자동 탐지하는 *SIGMA/YARA 룰 1개* 로 변환하는 작업은 — 룰 1개당 30분 이상 걸린다. 100개 사례를 룰화 하면 50시간.
+
+LLM 의 강점은 — *예시 → 일반화* 다. dataset 에서 mo_name=Data Theft 인 392건을 LLM 에게 보여주고 *"이 신호들의 공통 패턴을 SIGMA 룰로 작성하라"* 라고 요청하면, LLM 은 공통 컬럼 (action, src_ip 패턴, dst_port 분포 등) 을 추출해 SIGMA 룰을 생성한다. 사람이 30분 걸리는 작업을 LLM 이 30초에 한다.
+
+```mermaid
+graph LR
+    EX["dataset 사례 392건<br/>(mo_name=Data Theft)"] -->|LLM 패턴 추출| EXTRACT["공통 패턴<br/>(action, port, 시간 등)"]
+    EXTRACT -->|SIGMA YAML 생성| RULE["SIGMA 룰<br/>1개"]
+    RULE -->|적용| WAZUH["Wazuh / SIEM"]
+    WAZUH -->|새 신호| NEW["신규 alerts"]
+    NEW -->|검증 피드백| RULE2["룰 v2 (정밀화)"]
+
+    style EX fill:#ffe6cc
+    style RULE fill:#cce6ff
+    style RULE2 fill:#ccffcc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: LLM 룰 생성은 *1회 작업이 아니라 반복 정밀화* 의 사이클이다. 첫 룰 (v1) 은 false positive 가 많을 수 있고, 운영하며 검증하면서 v2/v3 로 정밀해진다. lecture §"LLM 룰 생성의 자기 개선 루프" 의 핵심.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset mo_name 별 룰 변환 가능성 — 사례 수와 패턴 정형 정도
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| mo_name | dataset 건수 | LLM 룰 생성 적합성 |
+|---|---|---|
+| Data Theft | 392건 | 높음 (정형 패턴) |
+| Auth Hijack | 23건 | 중간 (사례 부족) |
+| 기타 | 다수 | 가변적 |
+| 학습 매핑 | §"LLM 룰 생성 조건" | 사례 ≥100건 권장 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+LLM 으로 탐지 룰을 생성할 때 *사례 수* 가 결정적 변수다. dataset 에 사례가 392건 (Data Theft) 처럼 충분히 있으면 — LLM 이 다양한 변형을 학습하여 *generalizable 룰* 을 만든다. 반면 사례 23건 (Auth Hijack) 처럼 부족하면 — LLM 이 특정 사례에 over-fit 하여 *future variant 를 못 잡는* 룰을 만들 수 있다.
+
+운영 조건은 — **사례 ≥100건이면 LLM 룰 생성 적합, < 50건이면 사람이 직접 작성 권고**. 그 사이는 LLM 초안 + 사람 검토.
+
+학생이 알아야 할 것은 — *"룰 생성 가능 여부" 자체가 dataset 분포에 따라 결정된다* 는 점. mo_name 별 사례 수를 먼저 검증한 후에 LLM 작업을 시작해야 시간 낭비 없다.
+
+### Case 2: 생성된 SIGMA 룰의 정확도 검증 사이클
+
+| 단계 | 작업 | dataset 검증 |
+|---|---|---|
+| v1 생성 | LLM 이 392건 학습 후 룰 1개 생성 | dataset 에 적용해 과거 392건 검출 율 |
+| v1 검출율 | ~85% | 392건 중 333건 잡음 (false negative 59건) |
+| v2 정밀화 | LLM 이 false negative 59건 추가 학습 | 룰에 추가 조건 |
+| v2 검출율 | ~96% | 392건 중 376건 잡음 |
+| v3 정밀화 | false positive 도 줄이기 | precision 추가 |
+
+**자세한 해석**:
+
+LLM 이 처음 만든 룰의 검출율은 보통 ~85% 다. 즉 dataset 의 392건 중 60건 정도를 못 잡는다 — 이 60건이 *룰의 사각지대* 다. 사각지대를 줄이는 방법은 — **놓친 60건을 다시 LLM 에 보여주고 *"이 사례들도 잡는 룰로 보강하라"* 요청**. 이렇게 v2 가 만들어지면 검출율 ~96% 로 올라간다.
+
+여기서 학생이 알아야 할 핵심 trade-off — *recall (잡는 비율) 만 올리면 precision (정확도) 이 떨어진다*. 즉 v2 가 392건을 잘 잡지만, 정상 운영에서 false positive 가 폭증할 수 있다. 따라서 v3 는 *false positive 를 줄이는 추가 조건* 을 넣어 균형을 맞춘다.
+
+이 사이클은 — v1 (recall 85%, precision 95%) → v2 (recall 96%, precision 80%) → v3 (recall 94%, precision 92%) 처럼 두 지표를 함께 끌어올리는 작업이다. lecture §"룰 정밀화의 두 축" 의 정량 정당성.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **LLM 룰 생성은 사례 수 ≥100 일 때 적합** — 적은 사례는 over-fit 위험.
+2. **첫 룰 (v1) 의 검출율은 보통 85% 정도** — 곧바로 운영 적용 X, 사이클로 정밀화.
+3. **recall vs precision 의 trade-off 는 v3 에서 균형** — 한 쪽만 올리면 다른 쪽 떨어짐.
+
+**학생 액션**: lab 환경에서 dataset 의 mo_name=Data Theft 100건을 LLM 에 보여주고 SIGMA 룰 v1 생성. v1 을 dataset 전체에 적용하여 recall/precision 측정. false negative 분석 후 v2 생성, 다시 측정. v1 vs v2 의 정량 비교를 보고서로 작성.
 

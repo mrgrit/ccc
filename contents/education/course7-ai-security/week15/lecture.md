@@ -384,26 +384,79 @@ GET  /health, /students, ... (학생/랩 CRUD)
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 기말고사 종합 프로젝트)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *기말고사: AI 보안 자동화 종합 프로젝트* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### 기말고사 = "course7 의 모든 기술을 통합한 자율 운영 시스템 구축"
 
+기말고사는 학생이 w01-w14 의 14주간 학습한 모든 AI 보안 기술을 *하나의 통합 시스템* 으로 구축하는 종합 프로젝트다. dataset 의 2.07M 신호를 대상으로 — 단순 분석이 아닌 *24/7 자율 운영 가능한 보안 자동화 시스템* 을 만들어야 한다.
+
+만점 답안의 6 layer 구조 — (1) **LLM 분류 layer** (w01-w04: prompt + 분류), (2) **룰 자동 생성 layer** (w05-w06: SIGMA 생성 + chain 분석), (3) **에이전트 layer** (w07-w08: ReAct + tool 호출), (4) **Bastion 통합** (w09-w10: skill + KG + playbook), (5) **자율 운영** (w11-w12: 자율 미션 + daemon), (6) **분산 + RL** (w13-w14: 분산 KG + RL Steering).
+
+```mermaid
+graph TB
+    L1["Layer 1: LLM 분류<br/>(w01-w04)"]
+    L2["Layer 2: 룰 생성<br/>(w05-w06)"]
+    L3["Layer 3: 에이전트<br/>(w07-w08)"]
+    L4["Layer 4: Bastion<br/>(w09-w10)"]
+    L5["Layer 5: 자율 운영<br/>(w11-w12)"]
+    L6["Layer 6: 분산+RL<br/>(w13-w14)"]
+    L1 --> L2 --> L3 --> L4 --> L5 --> L6
+    L6 -.->|피드백| L1
+
+    DATASET["dataset 2.07M 신호"] --> L1
+    L6 --> SIEM["SIEM 통합 dashboard"]
+
+    style DATASET fill:#ffe6cc
+    style SIEM fill:#cce6ff
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: 6 layer 가 *순차적으로 연결되면서 피드백 루프* 를 형성. 학생이 만든 시스템이 6 layer 를 모두 갖추면 만점, 일부만 갖추면 부분점. 만점 시스템은 dataset 입력을 받아 SIEM dashboard 까지 자동 흘러간다.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: 기말고사 6 layer 평가표 — 각 layer 의 정량 KPI
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| Layer | 핵심 KPI | 만점 임계값 |
+|---|---|---|
+| 1. LLM 분류 | label_binary 일치율 | ≥92% |
+| 2. 룰 생성 | recall × precision | ≥90% × ≥90% |
+| 3. 에이전트 | tool 4 카테고리 사용 | 모두 사용 |
+| 4. Bastion | KG node 수 | ≥50 (압축 학습 증명) |
+| 5. 자율 운영 | 사람 개입 횟수 | ≤1회/일 |
+| 6. 분산+RL | RL 후 정확도 향상 | +5% 이상 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+기말고사는 *6 layer 모두에서 정량 임계값을 통과* 해야 만점이다. 한 layer 만 부족해도 *전체 시스템이 망가짐* — 예: layer 5 (자율 운영) 이 없으면 자동화의 본질 가치가 사라지고, layer 6 (분산+RL) 이 없으면 운영 시간이 갈수록 정체.
+
+각 layer 의 KPI 는 *서로 독립적이지 않다* — layer 1 의 분류 정확도가 92% 미만이면 layer 2 의 룰 생성 정확도도 자연스럽게 낮아진다 (잘못 분류된 데이터로 룰 생성하므로). 즉 *상위 layer 의 정확도가 하위 layer 의 입력 품질을 결정*.
+
+학생이 알아야 할 것은 — **만점 답안의 시스템 설계는 *layer 간 의존성을 인식한 통합 설계*** 라는 점. 단순히 각 layer 를 따로 만들고 연결하는 것이 아니라, *layer 간 데이터 흐름과 품질 보장* 을 함께 설계해야 한다.
+
+### Case 2: dataset 2.07M 신호의 실시간 운영 시뮬레이션
+
+| 시간 | 처리 신호 수 | layer 별 작업 | 사람 개입 |
+|---|---|---|---|
+| 0-1h | 540 | L1 분류 + L2 룰 매칭 | 0회 |
+| 1-2h | 540 | L3 에이전트 분석 | 0회 |
+| 2-3h | 540 | L4 KG 학습 + L5 자율 작업 | 0회 |
+| 3-4h | 540 | L6 RL 가중치 조정 | 0회 |
+| 누적 24h | 12,960 | 6 layer 사이클 24회 | 1회 (critical 검토) |
+
+**자세한 해석**:
+
+만점 답안은 — dataset 의 일일 ~13K 신호를 *6 layer 사이클로 24회 반복 처리* 하면서 *사람 개입 1회* 만 받는다. 1회 사람 개입은 *L5 자율 운영의 critical alert 를 분석가가 검토* 하는 정도. 그 외 모든 작업은 자동.
+
+이 시뮬레이션이 *실제로 동작하는가* 가 만점의 검증 기준이다. 학생이 만든 시스템을 dataset 입력으로 24시간 돌려서 — *위 표의 모든 항목이 채워지는지* 확인. 한 시간이라도 작업이 멈추거나 사람 개입 ≥2회 면 부분점.
+
+학생이 알아야 할 것은 — **기말고사의 진정한 평가는 *가상 시나리오에서의 동작* 이 아닌 *24시간 실제 운영* 의 결과**. 시연용 demo 와 운영 시스템의 차이는 *24시간 무중단* 의 가능 여부.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **만점 답안 = 6 layer 모두 임계 통과 + 통합 설계** — 한 layer 만 약해도 전체 망가짐.
+2. **각 layer 의 KPI 는 의존적** — 상위 layer 의 정확도가 하위 layer 입력 품질 결정.
+3. **24시간 실제 운영이 진짜 평가** — demo ≠ 운영.
+
+**학생 액션**: 본인이 시험 답안으로 만든 시스템을 dataset 입력으로 24시간 (또는 최소 8시간) 동작시켜 — 6 layer 의 KPI 측정값을 표로 정리. 측정값이 *임계값을 모두 통과하는가* 점검하고, 통과 못 하는 layer 가 있으면 *왜 그런지* 분석하여 후속 개선 방향을 보고서 1페이지로 작성. 본 lecture 이수의 최종 산출물.
 

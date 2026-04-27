@@ -444,26 +444,78 @@ GET  /skills / /playbooks / /assets → 내부 인벤토리
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 분산 지식 그래프)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *여러 에이전트가 *공유* 하는 분산 KG (지식 그래프)* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### 분산 KG 의 필요성 — "한 에이전트의 학습이 모든 에이전트로 전파"
 
+CCC 환경에서 학생이 *수십 개의 Bastion 인스턴스* 를 운영한다고 가정하자. 각 Bastion 이 *자기만의 KG* 를 가지면 — 한 인스턴스가 새 패턴을 학습해도 *다른 인스턴스는 모름*. 결과적으로 같은 패턴을 모든 인스턴스가 *각자 다시 학습* 하는 비효율.
+
+해결책은 **분산 KG (Distributed Knowledge Graph)** — 모든 Bastion 인스턴스가 *동일한 중앙 KG 를 공유* 하며, 한 인스턴스의 학습이 즉시 KG 에 반영되어 *다른 모든 인스턴스가 이용 가능*.
+
+dataset 의 392건 Data Theft 사례를 학습한 후 — 100개 인스턴스가 각자 별개로 학습하면 *392 × 100 = 39,200 LLM 호출*. 분산 KG 면 *392 LLM 호출 1회만* 필요. *100배 효율*.
+
+```mermaid
+graph TB
+    DKG["분산 KG<br/>(중앙 공유)"]
+    B1["Bastion 1"] -->|read| DKG
+    B2["Bastion 2"] -->|read| DKG
+    B3["Bastion 3"] -->|read| DKG
+    B4["Bastion N"] -->|read| DKG
+    B1 -->|학습 결과 write| DKG
+    B2 -->|학습 결과 write| DKG
+    DKG -->|sync| B1
+    DKG -->|sync| B2
+    DKG -->|sync| B3
+    DKG -->|sync| B4
+
+    style DKG fill:#cce6ff
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: 모든 Bastion 인스턴스가 *동일 KG 에 read/write* 하며 *동기화* 된다. 한 인스턴스의 학습 결과가 즉시 다른 모든 인스턴스에 전파. 분산 시스템의 *eventual consistency* 모델.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset 392건 학습 — 단일 KG vs 분산 KG 의 비용 비교
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 항목 | 단일 KG (인스턴스별) | 분산 KG (공유) |
+|---|---|---|
+| LLM 호출 (100 인스턴스) | 392 × 100 = 39,200회 | 392 × 1 = 392회 |
+| 비용 (호출당 $0.001 가정) | $39.2 | $0.39 |
+| 학습 일관성 | 인스턴스마다 다름 | 모든 인스턴스 동일 |
+| 신규 인스턴스 startup | 0부터 학습 시작 | 즉시 KG 활용 |
+| 학습 매핑 | §"분산 KG 의 비용 효과" | 100배 절감 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+분산 KG 의 가장 즉각적 효과는 **비용 절감 100배**. 100개 인스턴스가 각자 학습하면 — *동일한 학습을 100번* 반복하므로 LLM 호출 비용이 100배. 분산 KG 면 *1번 학습 후 모두 공유* 하므로 1배.
+
+또 신규 인스턴스 startup 시점이 다르다 — 단일 KG 환경에서 새 Bastion 을 띄우면 *0부터 학습 시작* 해 처음 며칠은 정확도가 낮음. 분산 KG 면 *기존 KG 를 즉시 활용* 하여 *처음부터 운영 수준 정확도* 도달.
+
+학생이 알아야 할 것은 — **분산 시스템 설계의 핵심은 *학습의 공유* 다**. 같은 작업을 반복하지 않게 만드는 것이 분산화의 본질.
+
+### Case 2: 분산 KG 의 일관성 도전 — eventual consistency 의 trade-off
+
+| 항목 | strong consistency | eventual consistency |
+|---|---|---|
+| 일관성 | 모든 read 가 최신 | 약간의 지연 (~초) 후 최신 |
+| 가용성 | 일부 노드 죽으면 정지 | 일부 노드 죽어도 정상 |
+| 성능 | 느림 (write 동기) | 빠름 (write 비동기) |
+| 학습 매핑 | §"CAP theorem 적용" | 보안 시스템의 선택 |
+
+**자세한 해석**:
+
+분산 시스템의 고전적 trade-off — **CAP theorem** 에 따르면 *Consistency / Availability / Partition tolerance* 중 2가지만 동시에 선택 가능. 분산 KG 는 보통 *AP (가용성 + partition tolerance)* 를 선택한다 — *eventual consistency* 모델.
+
+이는 — 한 인스턴스가 KG 에 *새 패턴* 을 write 하면, 다른 인스턴스가 그 패턴을 read 할 수 있게 되는 데 *수 초의 지연* 이 있다. 이 지연이 보안 운영에 문제가 되는가? 일반적으로 — *사고 분석은 분 단위* 이므로 초 단위 지연은 무시 가능.
+
+그러나 *strong consistency* 가 필요한 경우도 있다 — 예: *playbook 의 v2 갱신* 직후 모든 인스턴스가 *동일한 v2* 를 사용해야 함. 이런 경우는 strong consistency 모델 (예: Raft consensus) 을 별도로 사용. 즉 *데이터 종류별로 다른 일관성 모델* 을 적용.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **분산 KG = 학습의 공유** — 100개 인스턴스 × 100배 비용 → 1배 비용으로 압축.
+2. **신규 인스턴스 startup 효율** — 0부터 학습 X, KG 즉시 활용.
+3. **CAP theorem 의 보안 적용** — eventual consistency 가 일반적 / playbook 만 strong consistency.
+
+**학생 액션**: lab 환경에서 Bastion 인스턴스 2개를 띄우고 — (1) 분산 KG (공유 SQLite) 모드, (2) 단일 KG (인스턴스별) 모드의 비교 테스트. dataset 의 100 신호를 두 모드로 처리하여 *총 LLM 호출 횟수와 학습 결과 일관성* 측정. 측정 결과를 *"우리 환경에서 분산 KG 의 효과는 lecture 가 말한 100배에 근접하는가"* 로 평가.
 

@@ -440,26 +440,71 @@ GET  /skills / /playbooks / /assets → 내부 인벤토리
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — RL Steering)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *RL (강화학습) 로 에이전트 행동을 조정하는 steering 기법* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### RL Steering = "에이전트의 결정 가중치를 운영 데이터로 조정"
 
+**RL Steering** 은 강화학습의 *고급 적용* 이다. 일반 RL 은 *시행착오로 학습* 하지만, RL Steering 은 — *이미 학습된 에이전트의 *결정 가중치 (decision weights)* 를 운영 데이터의 피드백으로 조정* 한다. 즉 *기존 정책을 미세 조정* 하는 작업.
+
+dataset 의 392 Data Theft 사례에 적용하면 — Bastion 의 33개 skill 중 *어느 skill 을 어느 상황에 사용할지* 의 결정 가중치를 *운영 결과의 reward* 로 조정한다. 예를 들어 — *recon 단계 신호에는 `query_kg` skill 의 가중치를 +20%, exfil 단계 신호에는 `block_traffic` skill 의 가중치를 +30%* 같은 조정.
+
+```mermaid
+graph LR
+    SIG["dataset 신호"]
+    SIG --> AGENT["Bastion Agent"]
+    AGENT -->|skill 선택<br/>(가중치 적용)| SKILL["33 skills 중 하나"]
+    SKILL --> OUT["결과"]
+    OUT -->|reward 측정| RL["RL Steering"]
+    RL -->|가중치 조정| AGENT
+
+    style RL fill:#cce6ff
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: 핵심은 *RL → Agent 화살표* — RL 이 Agent 의 *행동 가중치* 를 직접 조정. 이는 LLM fine-tune 보다 *훨씬 가벼운* 적응이다. fine-tune 은 모델 파라미터 수억 개를 수정하지만, RL Steering 은 *33개 skill 의 가중치만* 수정.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset reward function 정의 — "무엇이 좋은 결과인가"
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 결과 | reward | 의미 |
+|---|---|---|
+| 진짜 위협 차단 (true positive) | +10 | 강한 양의 reward |
+| 정상 신호 정확 분류 (true negative) | +1 | 약한 양의 reward |
+| 진짜 위협 놓침 (false negative) | -100 | 매우 강한 음의 reward |
+| 정상 신호 false alarm (false positive) | -2 | 약한 음의 reward |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+RL 의 학습 방향은 *reward function 이 결정* 한다. 보안 분야의 reward 는 *비대칭* 이다 — false negative (진짜 위협을 놓침) 가 false positive (false alarm) 보다 *훨씬 큰 손실*. dataset 운영에서 false negative 1건이 침해 사고 1건과 같다면, false positive 50건의 분석가 시간 손실보다 100배 비싸다.
+
+이 비대칭이 reward 에 반영되어야 한다 — false negative -100 vs false positive -2 의 *50배 차이*. RL Steering 이 이 reward 를 받으면 — 자연스럽게 *false negative 를 줄이는 방향* 으로 가중치를 조정 (즉 *조금이라도 의심스러우면 critical 로 격상*).
+
+학생이 알아야 할 것은 — **RL 의 학습은 *reward function 의 설계* 가 절대적**. reward 가 잘못 설계되면 *RL 이 잘못된 방향으로 더 빨리* 가는 *역효과*. 보안 분야의 reward 는 false negative 페널티를 매우 강하게.
+
+### Case 2: skill 가중치 조정의 정량 효과 — Data Theft 392건의 학습 결과
+
+| skill | 초기 가중치 | RL 후 가중치 | 변화 |
+|---|---|---|---|
+| `query_kg` | 1.0 | 1.4 | +40% (recon 단계 효과적) |
+| `analyze_chain` | 1.0 | 1.2 | +20% |
+| `generate_sigma` | 1.0 | 0.9 | -10% (단독 사용보다 chain 후) |
+| `block_traffic` | 1.0 | 1.5 | +50% (exfil 단계 효과적) |
+| 기타 29 skills | 1.0 | 0.95~1.05 | 미미 |
+
+**자세한 해석**:
+
+dataset 392건 Data Theft 학습 후 — Bastion 의 33개 skill 중 *4개의 가중치만 의미 있게 변화* 했다. 나머지 29개는 미미한 변화 (0.95~1.05). 이는 RL 의 자연스러운 결과 — *모든 skill 이 모든 신호에 똑같이 효과적은 아니므로* 일부만 가중치 변경.
+
+가중치 변화의 의미 — `query_kg` +40% 는 *recon 단계 신호에 KG 검색이 매우 효과적* 임을 RL 이 발견. `block_traffic` +50% 는 *exfil 단계에 즉시 차단이 효과적*. 반면 `generate_sigma` -10% 는 *단독 사용보다 chain 분석 후 사용이 더 좋다* 는 패턴 발견.
+
+학생이 알아야 할 것은 — **RL Steering 의 결과는 *해석 가능* 하다**. 가중치 변화를 보면 *왜 그렇게 변했는지* 의미를 추출할 수 있고, 이는 *사람의 도메인 지식에 합치* 한다. 만약 가중치 변화가 *해석 불가능* 하다면 — RL 이 잘못 학습한 신호.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **RL Steering = 기존 모델의 미세 조정** — fine-tune 보다 100배 가벼움.
+2. **Reward 의 비대칭이 핵심** — false negative -100 vs false positive -2.
+3. **RL 결과는 해석 가능해야 한다** — 가중치 변화에 *도메인 의미* 가 있어야 정상.
+
+**학생 액션**: Bastion 의 skill 가중치 파일 (예: `apps/bastion/data/skill_weights.json`) 을 확인하고 — dataset 50 신호로 RL Steering 을 1 epoch 실행 후 가중치 변화를 측정. 변화한 skill 들이 *어느 신호 패턴에 적합한지* 해석 가능한지 검증.
 

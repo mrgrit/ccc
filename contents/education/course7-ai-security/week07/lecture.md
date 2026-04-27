@@ -464,26 +464,80 @@ GET  /health       → 헬스체크
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — AI 에이전트 아키텍처)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *AI 에이전트의 ReAct loop / 메모리 / tool 호출 구조* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### AI 에이전트 = LLM + Tool + Memory + Loop
 
+학생이 자주 오해하는 점 — *AI 에이전트 = LLM* 이라는 생각이다. 실제로는 — **에이전트는 LLM 위에 추가로 *Tool 호출, Memory, Loop* 의 3가지 layer 를 얹은 구조** 다. LLM 단독은 *질문에 1회 답변* 하는 정도지만, 에이전트는 *문제를 단계별로 풀고, 도구를 호출하고, 결과를 기억하면서 반복* 한다.
+
+dataset 의 신호 분석에 이 차이가 드러난다 — LLM 단독은 *"이 신호가 의심스러운가"* 에 답할 수 있지만, 에이전트는 *"이 신호가 의심스러운가? 의심스럽다면 dataset 에서 유사 사례를 찾아 chain 을 추출하고 차단 룰까지 작성하라"* 같은 *복합 요청* 을 단계별로 수행한다.
+
+```mermaid
+graph TB
+    Q["질문: 'incident 분석 + 룰 작성'"]
+    Q --> AGENT["AI Agent<br/>(ReAct Loop)"]
+    AGENT -->|step 1: 추론| THINK1["thinking:<br/>'먼저 dataset 에서 사례 찾기'"]
+    THINK1 -->|tool 호출| T1["query_dataset(mo_name='Data Theft')"]
+    T1 -->|결과| MEM["Memory:<br/>392건 사례 저장"]
+    MEM -->|step 2: 추론| THINK2["thinking:<br/>'chain 패턴 추출'"]
+    THINK2 -->|tool 호출| T2["analyze_chain(samples)"]
+    T2 -->|결과| MEM
+    MEM -->|step 3: 추론| THINK3["thinking:<br/>'SIGMA 룰 생성'"]
+    THINK3 -->|tool 호출| T3["generate_sigma(chain)"]
+    T3 -->|최종 결과| ANSWER["답변:<br/>'5개 룰 + chain 분석'"]
+
+    style AGENT fill:#cce6ff
+    style ANSWER fill:#ccffcc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: 에이전트는 *3 step 을 자동으로 분리하여 실행* — 사람이 *"분석 + 룰 작성"* 한 번 요청해도 에이전트는 내부적으로 dataset query → chain 분석 → 룰 생성의 3 step 으로 나누어 처리. 각 step 마다 LLM 추론 + tool 호출 + memory 갱신. lecture §"ReAct = Reason + Act loop" 의 핵심.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset 분석에 필요한 tool 의 분류 — 4가지 카테고리
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| tool 카테고리 | 예시 | 빈도 | 학습 매핑 |
+|---|---|---|---|
+| Query | `query_dataset(filter)` | 매 step | dataset 검색 |
+| Analyze | `analyze_chain`, `cluster_signals` | 단계별 | LLM 호출 |
+| Generate | `generate_sigma`, `generate_report` | 최종 단계 | 산출물 작성 |
+| Verify | `verify_rule_against_dataset` | 검증 단계 | 정확도 측정 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+AI 에이전트가 보안 작업을 수행하려면 *4가지 카테고리* 의 tool 이 필요하다. 학생이 자주 누락하는 카테고리는 **Verify** — 에이전트가 자기 결과물을 *스스로 검증* 하지 않으면, 잘못된 룰을 생성해도 모르고 운영에 적용된다.
+
+dataset 에 적용된 에이전트는 — Query (dataset 392건 가져오기) → Analyze (chain 추출) → Generate (SIGMA 룰 5개) → Verify (생성한 룰을 dataset 에 적용해 recall/precision 측정) 의 순서로 동작. 마지막 Verify 가 *"이 룰의 recall 95%, precision 92% 입니다"* 를 답해야 운영 적용 가능 여부를 판단할 수 있다.
+
+학생이 알아야 할 것은 — **에이전트의 tool 설계는 *입력 + 출력 + 검증* 의 3축이 필수** 라는 점. 검증 tool 이 없는 에이전트는 *자기 환각 (hallucination) 을 발견 못 하는* 구조적 결함이 있다.
+
+### Case 2: 에이전트의 메모리 — dataset 신호 392건을 어떻게 저장할 것인가
+
+| 메모리 종류 | 적합한 데이터 | dataset 활용 |
+|---|---|---|
+| Short-term (context) | 현재 작업의 신호 (~30개) | 분석 중인 batch |
+| Long-term (vector DB) | 과거 모든 사례 (수만 건) | RAG 으로 유사 사례 검색 |
+| Working memory (kv) | 현재 step 의 중간 결과 | chain extract 결과 |
+| 학습 매핑 | §"에이전트 메모리 3 layer" | 정보 양에 따른 분리 |
+
+**자세한 해석**:
+
+dataset 의 392건 사례를 모두 LLM context 에 넣을 수는 없다 (토큰 한계). 대신 *3 layer 메모리* 로 분리한다.
+
+**Short-term**: 현재 분석 중인 30건만 context 에 넣어 LLM 에 보냄. LLM 이 추론할 *직접 작업 대상*.
+
+**Long-term (vector DB)**: 392건 모두를 vector embedding 으로 변환하여 vector DB (예: Chroma, Weaviate) 에 저장. 새 신호가 들어오면 *유사도가 높은 5건* 을 vector DB 에서 검색해 short-term 에 추가 — RAG (Retrieval Augmented Generation) 패턴.
+
+**Working memory**: 현재 step 에서 추출한 중간 결과 (예: chain 의 3 단계까지 추출됨, 4단계는 다음 호출에서). 다음 step 의 입력이 됨.
+
+학생이 알아야 할 것은 — **3 layer 메모리 분리가 LLM 토큰 한계를 우회하는 핵심 기법** 이라는 점. 단순히 모든 데이터를 context 에 던지는 *naive 에이전트* 는 토큰 한계로 운영 불가.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **에이전트 = LLM + Tool + Memory + Loop** — 단순 LLM 과의 4가지 차이.
+2. **Verify tool 이 환각 방지의 핵심** — 자기 결과물을 dataset 으로 검증하는 단계 필수.
+3. **3 layer 메모리 분리로 토큰 한계 우회** — short-term + long-term + working.
+
+**학생 액션**: lab 환경에서 Bastion 같은 에이전트 시스템을 구동하고, *"dataset 의 Data Theft 사례를 분석해 SIGMA 룰을 작성하라"* 의 단일 요청을 입력. 에이전트가 어느 tool 을 어느 순서로 호출하는지 transcript 를 캡처. *"이 에이전트가 4 카테고리 tool 을 모두 사용했는가"* 를 평가.
 

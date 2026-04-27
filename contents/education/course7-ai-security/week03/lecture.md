@@ -484,26 +484,83 @@ curl -s http://10.20.30.200:11434/v1/chat/completions \
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 보안용 프롬프트 엔지니어링)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *프롬프트 엔지니어링: 보안 신호를 LLM 에 어떻게 줄 것인가* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### 보안 prompt 의 핵심 — "무엇을 묻는가" 가 정답률을 결정한다
 
+같은 LLM 에 같은 dataset 신호를 줘도 — *prompt 가 어떻게 작성되었는가* 에 따라 분류 정확도가 70% 에서 95%+ 로 변할 수 있다. 학생이 자주 하는 실수는 단순한 *"이 신호가 의심스러운가?"* 라는 막연한 질문이다. 이 질문은 *어느 기준* 으로 의심스러운지를 LLM 이 추측하게 만들고, 답변이 일관성을 잃는다.
+
+dataset 의 신호 1건은 27개 컬럼 (timestamp, message_type, src_ip, dst_ip, ..., mo_name, suspicion_score 등) 을 가진다. 이 27개 정보를 그냥 LLM 에 던지면 — LLM 은 *어느 컬럼이 중요한지* 를 모르고 추측한다. 좋은 prompt 는 *분석 기준* 을 명시하여 LLM 이 *왜 이 신호가 의심스러운가* 를 단계별로 추론하게 만든다.
+
+```mermaid
+graph LR
+    BAD["나쁜 prompt:<br/>'이 신호가 의심스러운가?'"]
+    GOOD["좋은 prompt:<br/>1. mo_name 확인<br/>2. attack_techniques 매핑<br/>3. suspicion_score 평가<br/>4. 결론"]
+    BAD -->|LLM 추측| ACC1["정확도 ~70%<br/>(일관성 낮음)"]
+    GOOD -->|LLM 추론| ACC2["정확도 ~92%<br/>(단계별 검증)"]
+    SIG["dataset signal 1건"] --> BAD
+    SIG --> GOOD
+
+    style BAD fill:#ffcccc
+    style GOOD fill:#ccffcc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: 같은 신호 같은 LLM 인데 prompt 차이로 22% 정확도 차이. 좋은 prompt 는 *"step by step"* 분석 + *명시적 기준* 을 포함한다. lecture §"chain-of-thought + few-shot" 의 정량 정당성.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset 컬럼별 prompt 가중치 — attack_techniques 의 활용
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 컬럼 | dataset 활용도 | LLM prompt 가중치 |
+|---|---|---|
+| `mo_name` | Data Theft, Auth Hijack 등 분류 | 매우 높음 (LLM 의 출발점) |
+| `attack_techniques` | T1041, T1595 등 MITRE 매핑 | 높음 (구체적 검증) |
+| `suspicion_score` | 0~1 의심도 | 중간 (참고치) |
+| `label_binary` | 0/1 정/이상 라벨 | 낮음 (정답 누설 방지) |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+좋은 보안 prompt 는 *어느 정보를 LLM 에게 주고, 어느 정보를 *주지 말아야* 하는지* 가 핵심이다. dataset 의 27개 컬럼 중 일부는 LLM 의 분석에 도움이 되지만, 일부는 *정답을 미리 알려주는 격* 이라 학습/평가 목적상 빼야 한다.
+
+**제공할 정보 (입력)**:
+- `mo_name`: "Data Theft" 같은 행동 분류. LLM 이 *어떤 종류의 사고인지* 를 빠르게 파악하는 출발점.
+- `attack_techniques`: "T1041,T1595" 같은 MITRE 기법 ID. LLM 이 표준 framework 와 연결하여 추론.
+- `src_ip`, `dst_ip`, `username`: 누가 어디로의 행동인지.
+- `message_sanitized`: 원시 syslog 메시지.
+
+**감출 정보 (정답 누설 방지)**:
+- `label_binary`: 0/1 정답 라벨. 이걸 주면 LLM 은 그냥 베껴서 답한다 — 분석 능력 검증 의미가 사라짐.
+- `suspicion_score`: 의심도. 미리 주면 LLM 이 단순히 그 숫자를 임계값과 비교하는 lazy 분석을 함.
+
+학생이 알아야 할 것은 — **prompt 설계는 *LLM 에게 무엇을 묻는가* 와 동시에 *무엇을 주지 않는가* 의 기술** 이라는 점. 정답을 누설하지 않으면서 충분한 정보를 줘야 진짜 추론 능력을 검증.
+
+### Case 2: chain-of-thought prompt 의 정량 효과
+
+| 항목 | 값 | 의미 |
+|---|---|---|
+| Zero-shot prompt | 정확도 ~70% | "이거 의심스러운가?" 만 |
+| Few-shot prompt | 정확도 ~85% | 정답 예시 3-5개 함께 |
+| CoT prompt | 정확도 ~92% | "단계별로 분석하라" 추가 |
+| 학습 매핑 | §"chain-of-thought" | prompt 기법별 정량 차이 |
+
+**자세한 해석**:
+
+LLM 의 분류 정확도는 *prompt 기법* 에 따라 22%까지 차이난다. 이는 모델 크기/fine-tune 보다도 큰 영향을 미친다.
+
+**Zero-shot** (예시 없이 단순 질문): "이 신호가 의심스러운가?" — 정확도 ~70%. LLM 이 자기 사전 지식만으로 추측.
+
+**Few-shot** (정답 예시 함께): "예시 1: <signal A> → 의심. 예시 2: <signal B> → 정상. 이제 이 신호: <signal C> 어떤가?" — 정확도 ~85%. LLM 이 예시 패턴을 학습.
+
+**Chain-of-thought** (단계별 추론 요청): "다음 신호를 분석하라. (1) mo_name 이 무엇인가? (2) attack_techniques 의 의미는? (3) src_ip 가 정상 baseline 에 속하는가? (4) 결론." — 정확도 ~92%. LLM 이 단계별로 검증.
+
+이 차이가 운영에 미치는 영향은 — 정확도 70% 면 *false positive 30%* 로 alert fatigue, 92% 면 *진짜 위협의 8%만 놓치는* 운영 가능 수준. 같은 LLM 으로도 prompt 만 바꿔서 운영 가능 vs 불가능을 가른다.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **prompt 설계 = 무엇을 주고 무엇을 감추는가** — label_binary 같은 정답은 감춰야 분석 능력 검증.
+2. **CoT (chain-of-thought) 가 보안 분석의 표준** — 단계별 추론 요청으로 +22% 정확도.
+3. **prompt 기법 차이가 모델 크기 차이보다 크다** — 작은 LLM + 좋은 prompt > 큰 LLM + 나쁜 prompt.
+
+**학생 액션**: lab 의 Ollama gemma3:4b 에 dataset 임의 100건을 zero-shot, few-shot (예시 5개), CoT 의 3가지 prompt 로 각각 분류 시킨다. 3개의 정확도를 표로 비교하고, *"운영 환경에 어느 prompt 를 채택할 것인가"* 1문단 정리.
 

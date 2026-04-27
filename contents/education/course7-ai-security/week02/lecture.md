@@ -476,26 +476,73 @@ curl -s http://10.20.30.200:11434/v1/chat/completions \
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — LLM 기초 + Ollama)
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0, 2.07M signals)
+> 본 lecture *LLM 의 보안 적용 기초 + Ollama 로컬 모델 운용* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### LLM 의 입력 단위 — 실제 보안 신호 1건의 토큰 분량
 
+학생이 LLM 을 보안에 처음 적용할 때 가장 먼저 부딪히는 문제는 *"한 번에 얼마나 많은 신호를 LLM 에 넣을 수 있는가"* 다. 이는 LLM 의 *context window* (입력 토큰 한도) 와 직접 관련이 있다.
+
+dataset 의 신호 1건은 — 보통 *짧은 syslog 한 줄* (~50-200 토큰) 이지만, JSON 으로 모든 필드를 직렬화하면 *~300-500 토큰* 까지 늘어난다. Ollama 의 gemma3:4b 모델 context window 가 8K 토큰이라면 — *최대 약 30-40 신호* 를 한 번의 prompt 에 넣을 수 있다는 의미. 즉 dataset 의 일일 ~13K 신호를 분석하려면 *수백 번의 LLM 호출* 이 필요하다.
+
+```mermaid
+graph LR
+    SIG["dataset signal 1건<br/>(syslog + JSON)<br/>~300-500 토큰"] --> PACK["batch pack<br/>(30-40 신호)"]
+    PACK --> CTX["LLM context<br/>8K tokens<br/>(gemma3:4b)"]
+    CTX --> LLM["Ollama 호출<br/>~5초/요청"]
+    LLM --> OUT["분류 결과<br/>(critical / normal)"]
+
+    DAY["일일 ~13K signals"] -.->|13,000 / 35 = ~370회| LLM
+
+    style SIG fill:#ffe6cc
+    style LLM fill:#cce6ff
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: 일일 13K 신호 → 35신호씩 batch → 약 370회의 Ollama 호출이 필요. 한 호출 5초면 *총 1,850초 ≈ 30분* — 사람보다는 빠르지만 실시간은 아니다. 따라서 LLM 활용은 *near-real-time* (분 단위 지연 허용) 시나리오에 적합하다.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset 단일 신호의 토큰 분량 측정
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 항목 | 값 | 의미 |
+|---|---|---|
+| 평균 syslog 길이 | ~150 chars | 한 줄 길이 |
+| JSON 직렬화 후 | ~600 chars | 모든 필드 포함 |
+| 토큰 환산 | ~300-500 tokens | LLM 입력 단위 |
+| 학습 매핑 | §"LLM context 한계" | 1신호의 정량 비용 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+dataset 의 한 신호를 LLM 에 입력하려면 — 사람이 읽는 syslog 형태로 줄 수도 있고, JSON 형태로 줄 수도 있다. 두 형식은 토큰 비용이 다르다.
+
+**syslog 형태**: `<189>576600: USER-0010-1047: Jul 26 06:10:18.976 CDT: %SEC_LOGIN-5-LOGIN_ORG-0893: Login ORG-0893 [user: USER-5823] [USER-0010-55454: 10.53.213.201]` 같은 한 줄. 약 150-200 chars = ~80-100 tokens.
+
+**JSON 형태**: `{"timestamp": ..., "message_type": "management_message", "src_ip": ..., "dst_ip": ..., "username": ..., "action": ..., "severity": ..., "vendor_code": ..., "message_sanitized": ..., "label_binary": ..., "attack_techniques": ..., "mo_name": ..., "suspicion_score": ..., ...}` 같은 객체. 약 600 chars = ~300-500 tokens.
+
+학생이 알아야 할 것은 — **JSON 은 LLM 에게 *구조화된 정보* 를 주지만 토큰 비용이 3-5배** 라는 점. 같은 8K context 에서 syslog 형태로는 80신호, JSON 형태로는 25신호를 넣을 수 있다. 어느 형태로 줄지는 *분석 정확도 vs 처리량* 의 trade-off.
+
+### Case 2: gemma3:4b 의 분류 정확도 baseline — label_binary 비교
+
+| 항목 | 값 | 의미 |
+|---|---|---|
+| dataset label_binary | 0/1 (정상/이상) 사전 라벨 | ML 모델이 1차 분류한 결과 |
+| label_confidence | 0~1 | 분류기 자신감 |
+| LLM 분류 정확도 | 보통 85-92% | 작은 모델의 한계 |
+| 학습 매핑 | §"LLM 한계 + 보완" | 작은 LLM 의 정확도 baseline |
+
+**자세한 해석**:
+
+LLM 을 보안에 도입할 때 가장 먼저 검증해야 할 것은 — *"이 LLM 이 이미 라벨링된 dataset 에서 얼마나 정확히 분류하는가"* 다. dataset 의 label_binary 는 *ML 모델이 사전에 분류한 라벨* 인데, LLM 에게 신호를 보여주고 *"이것이 정상인가 이상인가"* 를 물어 — LLM 답변과 label_binary 일치율을 측정하면 된다.
+
+작은 LLM (gemma3:4b 같은 4B 파라미터 모델) 의 보안 분류 정확도는 보통 **85-92%** 정도다. 즉 — 100건 중 약 10건이 잘못 분류된다. 이 10건이 모두 false positive 면 *분석가 부담* 만 늘지만, false negative (진짜 위협을 놓침) 면 — 침해 사고로 직결.
+
+학생이 알아야 할 것은 — **작은 LLM 만으로는 운영 적용 불가**. 정확도를 99%+ 로 올리려면 — (a) 더 큰 LLM (70B+ 모델), (b) RAG (Retrieval Augmented Generation) 으로 dataset 의 유사 signal 을 함께 보여주기, (c) 도메인 fine-tune 의 3가지 보완 중 적어도 1개가 필요. lecture §"LLM 한계 + 보완 전략" 의 정량 정당성.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **LLM context 한계 = 처리량 제한** — 8K 컨텍스트는 신호 ~30-40건. 일일 13K 신호 처리에 ~370 호출 필요.
+2. **JSON vs syslog = 정보 vs 토큰비용** — 구조화 정보는 가치 있지만 토큰 3-5배 비싸다.
+3. **작은 LLM 의 분류 정확도 85-92%** — 운영 적용에는 RAG/fine-tune 보완 필수.
+
+**학생 액션**: lab 의 Ollama 에 gemma3:4b 를 배포하고, dataset 에서 임의로 100건의 신호를 골라 *"이것이 정상이면 0, 이상이면 1 로만 답하라"* 의 prompt 로 분류 시킨다. LLM 답변과 dataset 의 label_binary 의 일치율을 측정하여 — *baseline 정확도* 를 산출. 결과를 *"우리 환경에 이 모델을 그대로 적용할 수 있는가"* 한 줄로 결론.
 

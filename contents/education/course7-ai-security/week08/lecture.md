@@ -773,26 +773,77 @@ AI Safety 과정 Week 07 교안을 참고.
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 중간고사 LLM 보안 도구 reference)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *중간고사: LLM 으로 보안 도구를 직접 구축* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### 중간고사 평가 — "학생이 만든 LLM 도구가 dataset 에서 정량 검증을 통과하는가"
 
+중간고사는 학생이 w01-w07 의 단편 기술을 통합해 *실제 동작하는 LLM 보안 도구* 를 만들 수 있는지 평가한다. 단순한 *PoC 코드* 가 아니라 — *dataset 에서 측정 가능한 정량 결과* 가 있어야 만점.
+
+평가 축은 4가지 — (1) **분류 정확도** (LLM 이 dataset label_binary 와 얼마나 일치하는가), (2) **압축비** (입력 신호 수 대비 출력 alert 수의 비율), (3) **응답 속도** (1 batch 처리 시간), (4) **해석 가능성** (LLM 의 답변에 *왜 그런지* 가 포함되었는가). 4축 모두 정량으로 보고해야 만점.
+
+```mermaid
+graph TB
+    EXAM["중간고사 답안<br/>학생의 LLM 도구"]
+    EXAM -->|① 정확도 측정| A["dataset 100건 분류<br/>label_binary 일치율"]
+    EXAM -->|② 압축비 측정| C["입력 13K → 출력 N건<br/>의 비율"]
+    EXAM -->|③ 속도 측정| S["batch 30건 처리 시간"]
+    EXAM -->|④ 해석성 측정| I["LLM 답변에<br/>'왜' 가 있는가"]
+    A -->|≥90%| GRADE["만점 후보"]
+    C -->|≤1%| GRADE
+    S -->|≤5초/batch| GRADE
+    I -->|chain-of-thought 포함| GRADE
+
+    style EXAM fill:#ffe6cc
+    style GRADE fill:#ccffcc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: 4축 모두 임계값 통과해야 만점. 단순 동작 ≠ 만점, *정량 검증 통과 = 만점*. lecture §"4축 평가" 의 정량 정당성.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: 4축 평가 임계값 — 만점 답안의 reference
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 평가 축 | 임계값 | dataset 검증 방법 |
+|---|---|---|
+| 정확도 | ≥90% | 임의 100건 분류 결과를 label_binary 와 비교 |
+| 압축비 | ≤1% | 일일 13K 신호 → critical alert 130건 이하 |
+| 응답 속도 | ≤5초/batch | 30 신호 batch 처리 시간 |
+| 해석성 | CoT 포함 | LLM 답변에 단계별 추론 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+만점 답안의 **정확도 ≥90%** 는 — gemma3:4b 같은 작은 LLM 으로는 zero-shot 으로 달성 어려움. CoT prompt + few-shot 예시 + (선택적으로) 도메인 fine-tune 조합 필요. 학생이 90% 이상을 달성하려면 *prompt 설계 + 데이터 큐레이션* 양쪽을 신경 써야 한다.
+
+**압축비 ≤1%** 는 — 일일 13K 신호 중 130건 이하만 alert 로 격상되어야 함. 130건 이상이면 *분석가 부담 과중* 으로 운영 불가. 룰 기반 1차 필터 + LLM 2차 필터의 결합으로 달성.
+
+**응답 속도 ≤5초/batch** 는 — 30 신호 batch 를 5초에 처리하는 LLM 호출 효율. gemma3:4b 같은 작은 모델이라야 가능 (큰 모델은 동일 batch 에 30초 이상). 모델 크기 vs 속도의 trade-off.
+
+**해석성 (CoT 포함)** 은 — 학생이 만든 도구의 LLM 답변이 *단순한 "의심됨"/"정상"* 이 아니라 *"mo_name 이 Data Theft 이고, attack_techniques 에 T1041 이 있고, suspicion_score 가 0.85 로 높으므로 의심됨"* 같은 단계적 추론을 포함해야 함. 분석가가 LLM 답변을 검증할 수 있어야 운영 가치.
+
+### Case 2: 만점 답안 vs 부분점 답안의 결정적 차이
+
+| 항목 | 만점 답안 | 부분점 답안 |
+|---|---|---|
+| 분석 대상 | dataset 의 5 message_type 모두 | 단일 message_type |
+| 평가 데이터 | hold-out test set 100건 | 학습 데이터로 평가 (data leakage) |
+| 정량 보고 | 4축 표 + 시각화 | "잘 동작합니다" 정성 보고 |
+| 한계 분석 | false negative 사례 분석 포함 | 한계 미언급 |
+| 학습 매핑 | §"4축 평가의 완결성" | 답안의 차별점 |
+
+**자세한 해석**:
+
+만점 답안의 가장 중요한 차이는 — **"hold-out test set" 으로 평가** 한다는 점이다. 학습 시 보여준 데이터로 정확도를 측정하면 — *과적합 (overfitting) 으로 실제 운영에서는 정확도가 낮을 수 있음*. 정확한 평가는 *학습에 안 본 새 데이터로 측정* 해야 한다.
+
+dataset 에서 — 학생이 392건의 Data Theft 사례 중 350건으로 LLM 을 fine-tune 했다면, 평가는 나머지 42건으로 해야 한다. 350건으로 학습하고 350건으로 평가하면 — 정확도 99% 같은 *비현실적 수치* 가 나오지만 운영 적용 시 무용지물.
+
+또 만점 답안은 *false negative* (놓친 진짜 위협) 사례를 따로 분석한다. 정확도 92% 면 8건의 false negative — 이 8건을 *어떤 패턴* 인지 분석하면 *모델의 한계 영역* 을 알 수 있고 후속 개선 방향이 명확.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **만점 답안 = 4축 정량 평가 + 한계 분석** — 단순 동작 ≠ 만점.
+2. **hold-out test set 으로 평가** — 학습 데이터 평가는 과적합 신호.
+3. **false negative 분석이 후속 개선의 출발점** — 놓친 패턴이 모델 한계 영역.
+
+**학생 액션**: 본인이 시험 답안으로 작성한 LLM 도구를 — dataset 의 hold-out 100건 (학습 시 안 본 데이터) 으로 평가. 4축 (정확도 / 압축비 / 속도 / 해석성) 의 측정값을 표로 정리하고, false negative 가 어느 message_type 에 집중되는지 분석. 분석 결과를 *"내 도구의 한계와 후속 개선 방향"* 1문단으로 정리.
 

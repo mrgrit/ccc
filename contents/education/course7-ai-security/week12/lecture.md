@@ -471,26 +471,77 @@ GET  /assets    → 자산 인벤토리
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — Agent Daemon 상시 운영)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *AI 에이전트의 daemon (상시 동작) 운영 모델* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Daemon 모드 = "사람의 호출을 기다리지 않고 24/7 자율 동작"
 
+**Agent Daemon** 은 자율 미션의 다음 단계다. 자율 미션 에이전트는 *사람이 추상 목표를 줘야* 동작하지만, daemon 에이전트는 — *자기 스스로 *언제 무엇을 할지* 결정하고 24/7 상시 동작* 한다. 즉 *자기 동기 부여 (self-motivated)* 가 가능한 시스템.
+
+dataset 의 일일 13K 신호 환경에서 — daemon Bastion 은 *매시간 자동으로 새 신호 분석, 매일 KG 정리, 매주 playbook 갱신* 등의 *주기적 자기 작업* 을 수행한다. 사람은 *요약 보고만 받고* 정상 운영을 유지할 수 있다.
+
+```mermaid
+graph TB
+    DAEMON["Agent Daemon<br/>(상시 동작)"]
+    DAEMON -->|매분| T1["새 신호 받음<br/>분류 + 분석"]
+    DAEMON -->|매시| T2["alert 묶음 보고<br/>(critical 격상)"]
+    DAEMON -->|매일| T3["KG 정리<br/>(노드 압축/병합)"]
+    DAEMON -->|매주| T4["playbook 갱신<br/>(RL 학습 결과)"]
+    DAEMON -->|매월| T5["성능 리포트<br/>(KPI 추세)"]
+    T1 --> KG["Knowledge Graph"]
+    T2 --> ALERT["분석가 dashboard"]
+    T3 --> KG
+    T4 --> PB["Playbook 저장소"]
+    T5 --> ADMIN["관리자 보고"]
+
+    style DAEMON fill:#cce6ff
+    style ALERT fill:#ffcccc
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**그림 해석**: daemon 은 *5가지 주기 작업* 을 동시에 관리한다. 각 작업의 빈도가 다르고 (분/시/일/주/월), 각 작업의 결과가 다른 시스템 (KG, dashboard, playbook 저장소, 관리자) 으로 분배. 이 *주기 작업 오케스트레이션* 이 daemon 의 핵심.
 
-### Case 2: `T1041 (Data Theft)` 패턴
+### Case 1: dataset 환경에서 daemon 의 5 주기 작업 — 정량 부하
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+| 작업 | 주기 | 1회 처리량 | 일일 부하 |
+|---|---|---|---|
+| 신호 받음/분류 | 매분 | ~9건 | 13,000건/일 |
+| alert 격상 | 매시 | ~30건 검토 | ~720건/일 검토 |
+| KG 정리 | 매일 | ~50 노드 압축 | ~50건/일 |
+| playbook 갱신 | 매주 | ~5 playbook 수정 | ~0.7건/일 |
+| 성능 리포트 | 매월 | 30일 집계 | ~0.03건/일 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**자세한 해석**:
+
+daemon 의 5가지 주기 작업은 *부하가 매우 다르다*. 매분 작업 (신호 받음) 은 *고빈도, 작은 단위* — 일일 13,000건이지만 1건당 처리는 매우 짧다. 매월 작업 (성능 리포트) 은 *저빈도, 큰 단위* — 일일 ~0.03건이지만 1건당 처리는 길다 (30일치 데이터 집계).
+
+이 차이가 daemon 의 시스템 설계에 영향을 미친다 — *고빈도 작업은 LLM 호출 최소화* (룰 기반 1차 처리), *저빈도 작업은 LLM 깊이 활용 가능*. 즉 같은 daemon 안에서도 작업별로 다른 처리 방식이 필요하다.
+
+학생이 알아야 할 것은 — **daemon 설계는 *주기와 부하의 매트릭스* 로 한다**. 5가지 작업을 한 표에 놓고, 각 작업의 *주기 × 부하 × LLM 사용량* 을 계산해 자원 배분 결정.
+
+### Case 2: daemon 운영의 자기 회복 + 다중 인스턴스
+
+| 항목 | 단일 daemon | 다중 daemon (replica) |
+|---|---|---|
+| 가용성 | 죽으면 정전 | replica 가 takeover |
+| 처리 능력 | 13K/일 한계 | 130K/일 (10x replica) |
+| 일관성 | 자체 KG 만 사용 | 공유 KG (분산) |
+| 학습 매핑 | §"daemon 의 가용성" | 운영 안정성 정량 |
+
+**자세한 해석**:
+
+단일 daemon 은 *그 daemon 이 죽으면 모든 자율 작업이 멈춤* 의 위험이 있다. 운영 환경에서는 — *다중 replica daemon* 을 띄워 *하나가 죽으면 다른 하나가 takeover* 하도록 설계해야 한다. 이는 lecture w13 (분산 지식) 의 *공유 KG* 와 직결.
+
+각 replica 가 *자기 KG* 를 가지면 — replica 마다 학습 결과가 달라져 *결과 일관성 깨짐*. 따라서 KG 는 *분산 공유* 형태로 구축해야 한다. 모든 replica 가 동일한 KG 를 보고, 동일한 playbook 을 공유.
+
+학생이 알아야 할 것은 — **daemon 의 *진짜 운영* 은 단일 daemon 이 아닌 *분산 cluster***. 가용성 + 처리 능력 + 일관성의 3축 모두 분산 설계로만 달성 가능.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **Daemon = 자기 동기 부여 + 5 주기 작업** — 사람의 호출 없이 자율 동작.
+2. **주기와 부하의 매트릭스로 자원 배분** — 매분 작업 룰, 매월 작업 LLM 깊이.
+3. **운영 daemon 은 다중 replica + 분산 KG** — 가용성 + 일관성 동시 확보.
+
+**학생 액션**: lab 환경에 Bastion 을 *systemd service* 로 등록하여 daemon 모드로 실행. 24시간 동안 *5가지 주기 작업이 모두 수행되었는지* 로그 확인. 단일 daemon 의 한계가 어디서 드러나는지 분석하고 — *"우리 환경에서 다중 replica 가 필요한가"* 1문단 결론.
 
