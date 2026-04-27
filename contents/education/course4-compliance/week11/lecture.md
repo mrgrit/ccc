@@ -510,26 +510,26 @@ ssh $srv  # srv=user@ip (아래 루프 참고) "grep '^rotate' /etc/logrotate.co
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 정책 수립의 *evidence-driven* 방식)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *보안 정책 수립* 학습 항목과 매핑되는 dataset 의 *evidence-driven* 정책 작성 reference.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: 정책 항목 ↔ dataset evidence 추가 표
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
+| 정책 항목 | dataset 데이터로 *justification* 추가 |
+|--------|---------------------------------|
+| **logon 정책** (계정 lockout) | 4625 logon failure 0건 = audit policy 미설정 → "4625 활성 강제" 정책 |
+| **NTLM disable** | 4776 (NTLM) 15K vs 4624 17K = NTLM 의존 → "단계적 NTLM 비활성" 정책 |
+| **share access 추적** | 5140 2,623 = 정상 baseline → "분당 100+ 시 alert" 정책 |
+| **AD 변경 monitoring** | 5136 380 = 0.018% baseline → "AD 변경 즉시 critical" 정책 |
+| **session 재발급** | USER-0022 6,190 logon → "service account 분리" 정책 |
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 2: dataset 가 *제시* 한 정책 우선순위
 
-### Case 2: `T1041 (Data Theft)` 패턴
+dataset 의 mo_name 분포 (Data Theft 99.99% / Phishing 0.01%) 가 *데이터 유출 방지 정책* 의 *최상위 우선* 정당화.
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+**해석**: 정책 수립 시 dataset 의 evidence baseline 인용으로 *경영진 설득력 강화*.
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**학생 액션**: 정책 작성 시 모든 항목에 *evidence count + threshold* 명시 (dataset baseline 인용).
 

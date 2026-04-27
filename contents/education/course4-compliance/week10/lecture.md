@@ -548,26 +548,34 @@ rule.groups:syscheck
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — risk score 분포 = 리스크 평가 baseline)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *리스크 평가* 학습 항목과 매핑되는 dataset 의 *suspicion_score* 분포 — 자산별 리스크 정량화 reference.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: dataset suspicion_score 분포
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
+dataset 의 30,092 host nodes 의 suspicion_score 분포:
+- **0~0.3** (low): benign 다수
+- **0.3~0.7** (medium): suspicious 후보
+- **0.7~1.0** (high): malicious — 본 dataset 에 *160K malicious edges* 다수
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+본 lecture 의 *리스크 매트릭스 (5×5)* ↔ suspicion_score 매핑:
 
-### Case 2: `T1041 (Data Theft)` 패턴
+| 리스크 등급 | suspicion_score | dataset 매핑 |
+|----------|---------------|-----------|
+| 1 (Very Low) | 0~0.2 | benign 다수 |
+| 2 (Low) | 0.2~0.4 | normal user activity |
+| 3 (Medium) | 0.4~0.6 | suspicious 후보 |
+| 4 (High) | 0.6~0.8 | malicious 후보 |
+| 5 (Very High) | 0.8~1.0 | 100.64.20.230 (0.92) burst |
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+### Case 2: 자산 분류 — host node sets 의 *role*
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+dataset host 의 `set_roles`:
+- "Exploiting Target" + "Exploiting Host" 동시 = *고위험 자산* (다른 host 의 발판 + 피해자)
+
+→ 학생 리스크 평가 시 *role 별 가중치* dataset 양식 모방 가능.
+
+**학생 액션**: 본인 환경 자산의 suspicion_score 분포 측정 → 리스크 매트릭스 매핑 + role 별 가중치 적용.
 

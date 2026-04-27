@@ -560,26 +560,37 @@ rule.groups:service_start OR rule.description:*started* OR rule.description:*sto
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 감사 evidence 의 *재현 가능성* baseline)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *보안 감사 실습* 학습 항목과 매핑되는 dataset 의 *audit trail 재현 가능성* baseline.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: dataset 의 감사 가능 evidence 4 layer
 
+| 감사 layer | dataset evidence | 감사관이 인용 가능한 형식 |
+|---------|--------------|---------------------|
+| 1. **timestamp** | ms 정밀도 (1721992223.7371173) | "2024-07-26 11:09:56.683 UTC" |
+| 2. **partition ID** | UUID 형식 (e562f7c0-d2eb-11ee-...) | 시간 파티션 키 |
+| 3. **node ID** | UUID + sanitized (HOST-4476) | 자산 식별자 |
+| 4. **edge ID + edge_type** | EVENT/AUDIT/FLOW 등 5종 | 행위 분류 |
+
+→ 감사관이 *동일 데이터로 재계산* 가능 = audit trail 의 핵심 요건.
+
+### Case 2: 감사 보고서 양식 — dataset metadata 모방
+
+dataset 의 metadata.json 양식:
+```json
+{
+  "dataset_name": "...",
+  "version": "1.0.0",
+  "node_count": 30092,
+  "edge_count": 595618,
+  "label_distribution": {"benign": 390851, "suspicious": 44681, "malicious": 160086},
+  "sanitization": {"method": "4-layer ..."}
+}
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+→ 감사 보고서 *Executive Summary* 양식으로 모방 가능.
 
-### Case 2: `T1041 (Data Theft)` 패턴
-
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**학생 액션**: 감사 시 evidence 마다 *4 layer ID* (timestamp + partition + node + edge) 명시 — 재현 가능성 보장.
 

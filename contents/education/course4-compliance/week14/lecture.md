@@ -546,26 +546,42 @@ ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — SoA + 증적 수집의 *완성 양식*)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *인증 준비 — SoA·증적·심사 대응* 학습 항목 매칭. dataset 자체가 *완성된 증적 수집* 사례.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: SoA 양식 — dataset framework 매핑 모방
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041 (Data Theft)` 패턴
+dataset 의 host 노드 framework 매핑 = SoA 의 *applicable 통제 list* 양식:
 
 ```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
+ISO 27001 Annex A 통제 번호 → applicable=Y/N → product → evidence count
+
+예 (Precinct product):
+A.5.1 → Y → Precinct → iso27001:[4] (정책)
+A.13.1 → Y → Precinct + Cisco ASA → iso27001:[113-124] (네트워크)
+A.16 → Y → Precinct → iso27001:[130-132] (incident)
 ```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+→ dataset 의 *iso27001:[24 numbers]* = 학생 SoA 의 *applicable 통제 24 항목* baseline.
+
+### Case 2: 증적 수집 — dataset 의 4-layer 양식
+
+audit 심사관에게 제출할 증적은 *4-layer* 보유 필요:
+1. **timestamp** (ms 정밀도)
+2. **partition + node + edge ID** (재현)
+3. **익명화** (4-layer 절차)
+4. **framework 매핑** (control 번호)
+
+→ dataset 의 모든 record 가 4-layer 보유 = 증적 양식 *직접 모방* 가능.
+
+### Case 3: 심사 대응 — dataset 의 NCR (Non-Conformance Report) 가능성
+
+dataset 부재 항목 = NCR 후보:
+- ISMS-P 부재 → 한국 인증 시 NCR
+- HIPAA 부재 → 의료 환경 NCR
+- PR (NIST CSF Protect) 가 csf:[1,3,4] 에서 부재 → NCR
+
+**학생 액션**: SoA 작성 시 dataset 의 framework 매핑 양식 그대로 모방. 부재 항목은 *별도 product 추가 또는 NCR 사전 확인*.
 
