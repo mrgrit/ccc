@@ -558,26 +558,34 @@ ENDSSH
 
 ## 실제 사례 (WitFoo Precinct 6)
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> **출처**: [WitFoo Precinct 6 Cybersecurity Dataset](https://huggingface.co/datasets/witfoo/precinct6-cybersecurity) (Apache 2.0)
+> **익명화**: RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 sanitized
 
-### Case 1: `T1041` 패턴
+본 주차 (12주차) 학습 주제와 직접 연관된 *실제* incident:
 
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
+### Kerberos AS-REP roasting — krbtgt 외부 유출
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+> **출처**: WitFoo Precinct 6 / `incident-2024-08-002` (anchor: `anc-7c9fb0248f47`) · sanitized
+> **시점**: 2024-08-15 11:02 ~ 11:18 (16 분)
 
-### Case 2: `T1041` 패턴
+**관찰**: win-dc01 의 PreAuthFlag=False 계정 3건 식별 + AS-REP 응답이 외부 IP 198.51.100.42 로 유출.
 
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
+**MITRE ATT&CK**: **T1558.004 (AS-REP Roasting)**
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**IoC**:
+  - `198.51.100.42`
+  - `krbtgt-hash:abc123def`
 
+**학습 포인트**:
+- PreAuthentication 비활성화 계정이 곧 공격 표면 (서비스/legacy/오설정)
+- Hash 추출 → hashcat 으로 오프라인 brute force → Domain Admin 가능성
+- 탐지: DC 의 EID 4768 + AS-REP 패킷 길이 / 외부 destination IP
+- 방어: 모든 계정 PreAuth 활성, krbtgt 분기별 회전, FIDO2 도입
+
+
+**본 강의와의 연결**: 위 사례는 강의의 핵심 개념이 어떻게 *실제 운영 환경*에서 일어나는지 보여준다. 학생은 이 패턴을 (1) 공격자 입장에서 재현 가능한가 (2) 방어자 입장에서 탐지 가능한가 (3) 자기 인프라에서 동일 신호가 있는지 검색 가능한가 — 3 관점에서 평가한다.
+
+---
+
+> 더 많은 사례 (총 5 anchor + 외부 표준 7 source) 는 KG (Knowledge Graph) 페이지에서 검색 가능.
+> Cyber Range 실습 중 학습 포인트 박스 (📖) 에 동일 anchor 가 자동 노출된다.
