@@ -900,6 +900,64 @@ def seed_architecture(top_mid: str):
         print(f"  ✓ {aid}: {name}")
 
 
+def seed_operations_plans(v_2026: str):
+    """inflight-projects.md 의 P1~P15 → Plan + Todo 노드.
+    KG 와 inflight 일원화 — KG 에서 작업 추적 + inflight 는 narrative.
+    """
+    g = get_graph()
+    print("\n=== 운영 P# Plan/Todo (inflight 동기화) ===")
+    plans = [
+        ("P1 Precinct 6 dataset 통합", "ongoing", "External Intel Lead",
+         "1억건 데이터 활용. RAG POC + Phase C replay + Phase D 추가 시나리오 잔여.",
+         "Top-N hot pattern RAG POC (bge-base + Faiss IVF)", "2026-05-31"),
+        ("P3 R3 round retest 완주", "2026-Q2", "Bastion Lead",
+         "R3 cursor 286/575. secu VM 복구 후 supplemental 예정.",
+         "secu 의존 fail 식별 + supplemental queue 작성 후 driver 재가동", "2026-04-30"),
+        ("P5 Bastion-Bench 590 task 작성", "ongoing", "Content Lead",
+         "현재 78/590 (13%). 잔여 512.",
+         "다음 카테고리 h001 신규 task — wireless-security 등 24+ 카테고리", "2026-09-30"),
+        ("P6 외부 벤치마크 실측", "2026-Q3", "Eval Lead",
+         "6 adapter 완성, 실측 0건. Cybench 40 task 부터.",
+         "Cybench 5 task 첫 실측 + paper Table 1 채움", "2026-07-31"),
+        ("P7 Production trial 30일", "2026-Q4", "Operations Lead",
+         "4 시나리오 (월간 점검·CVE 대응·IR drill·변경 관리) × 30일.",
+         "CVE feed fixture 자동화 + 첫 7일 trial", "2026-10-31"),
+        ("P9 Paper §7 수치 채우기", "ongoing", "Paper Lead",
+         "XXX placeholder 다수. R3/P5/P6 결과 누적해 채움.",
+         "R3 최종 리포트 후 §7.5 Family table 갱신", "2026-08-31"),
+        ("P10 Skill 카탈로그 동적 확장 검증", "ongoing", "Bastion Lead",
+         "33 catalog. attack-* 과목 R3 pass rate 비교.",
+         "bastion 원격 재시작 후 attack/battle pass rate 측정", "2026-05-15"),
+        ("P11 9-tier KG 운영 데이터 등록", "ongoing", "Knowledge Lead",
+         "20 과목 + 8 외부 + 12 Architecture 완료. KG UI 재검증.",
+         "Knowledge UI 에서 9-tier 토글 후 새 노드 시각 확인", "2026-05-10"),
+        ("P12 자율 공방전", "ongoing", "Battle Lead",
+         "Phase 1 + end-game 완료. replay viewer 옵션.",
+         "AI vs AI 1 round 자율 시범 (Bastion vs Bastion)", "2026-06-30"),
+        ("P13 VulnSite 카탈로그 Phase 4", "2026-Q3", "VulnSite Lead",
+         "5 사이트 × 5~10 task = 25~50 P5 web-vuln 카테고리 채우기.",
+         "web-vuln h005~h010 task 작성 (vuln-site 별)", "2026-08-15"),
+        ("P14 Lab 채점 흐름", "2026-Q2", "Lab Lead",
+         "A/D/B/C 4 사이클 코드 완료. 학생 1 lab 실측 + A vs C 비교.",
+         "1 학생 + secops VM 실측 + A vs C 정확도 측정", "2026-05-31"),
+        ("P15 외부 지식 채널 (CISA KEV)", "2026-Q2", "External Intel Lead",
+         "week06 lecture 코드 예시 → 실 ingest skill. KG Concept 노드 자동 채움.",
+         "ingest_cisa_kev.py 작성 + 첫 backfill 12개월", "2026-05-31"),
+    ]
+    for title, period, owner, desc, todo_title, todo_due in plans:
+        existing = [n for n in g.find_nodes("Plan") if (n.get("name") or "") == title]
+        if existing:
+            print(f"  [skip] {title}")
+            continue
+        pid = add_plan(title=title, period=period, owner=owner, description=desc)
+        # vision 에 contributes_to (Goal 없이 직접)
+        g.add_edge(pid, v_2026, "contributes_to")
+        # 각 P# 의 next concrete step → Todo
+        add_todo(title=todo_title, due=todo_due, plan_id=pid, assignee=owner,
+                 description="inflight-projects.md 의 next concrete step 동기화")
+        print(f"  ✓ {title}")
+
+
 def main():
     print("=" * 60)
     print("9-tier KG seed — 20/20 과목 풀")
@@ -1031,9 +1089,10 @@ def main():
         todo_due="2026-12-31",
     )
 
-    # 외부 표준 + Architecture
+    # 외부 표준 + Architecture + 운영 P#
     seed_external_standards(top_mid, gov_pid)
     seed_architecture(top_mid)
+    seed_operations_plans(v_2026)
 
     # 결과 요약
     print("\n=== 결과 요약 ===")
