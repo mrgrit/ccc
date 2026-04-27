@@ -125,12 +125,12 @@
 ```mermaid
 flowchart TD
     U["① 사용자 지시<br/>(또는 목표)"]
-    S["② 시스템 프롬프트 + 도구 스키마 결합"]
-    M1["③ 모델 추론 (LLM call)"]
+    S["② 시스템 프롬프트<br/>+ 도구 스키마 결합"]
+    M1["③ 모델 추론<br/>(LLM call)"]
     D{"④ 출력 유형?"}
     T["⑤ 도구 실행<br/>(Bash / Read / Edit / WebFetch ...)"]
     R["⑥ 도구 결과"]
-    M2["⑦ 모델 재호출 (결과를 맥락에 추가)"]
+    M2["⑦ 모델 재호출<br/>(결과를 맥락에 추가)"]
     End["⑧ 최종 응답"]
     U --> S --> M1 --> D
     D -->|tool_call| T --> R --> M2 --> M1
@@ -754,28 +754,14 @@ flowchart TD
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+<!--
+사례 섹션 폐기 (2026-04-27 수기 검토): 본 lecture 의 학습 주제는 *공격자 에이전트의
+내부 구조* (tool-use 루프, capability boundary, agent fingerprint) 이며 호스트·네트워크
+관찰 지점의 식별이 핵심이다. Precinct 6 dataset 의 T1041 (Exfiltration) 항목은
+*방어 측 incident tag* 이지 에이전트의 tool-use 내부 구조를 보여주지 않는다.
+1:1 매칭되는 외부 사례 source 미확정 (예: 공개된 Claude Code attack transcript,
+HuggingFace agent fingerprint dataset 등) 상태에서 *템플릿 사례* 를 두는 것보다
+삭제가 낫다. 적합한 source 발굴 시 재추가.
+-->
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
-
-### Case 1: `T1041` 패턴
-
-```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041` 패턴
-
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
