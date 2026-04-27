@@ -542,26 +542,52 @@ print(f'전체 payload: {json.dumps(payload, indent=2)}')
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — Windows 인증 Volume Top User)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> Sanitized — RFC5737 / USER-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *인증/세션 관리 점검* 학습 항목 (정상 vs 비정상 인증 패턴) 에 매핑되는 dataset 의 4624/4776 logon record 통계.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: USER-0022 — 6,190 회 logon (단일 dataset 내 최다)
 
+**dataset 내 logon 이벤트 username 빈도 (top 5)**
+
+| Username | logon 횟수 | message_type 분포 |
+|----------|-----------|-------------------|
+| `USER-0022` | **6,190** | 4624 + 4776 + account_logon |
+| `USER-0012` | 4,577 | 4624 + 4776 |
+| `USER-0765` | 1,560 | 4624 |
+| `USER-0009` | 1,479 | 4624 + 4776 |
+| `USER-0023` | 1,054 | 4624 + 4776 |
+
+### Case 2: 4624 + 4776 (NTLM) 한 turn — 동일 사용자 NTLM auth + 즉시 logon
+
+```text
+[T+0.000s] message_type=4776 NTLM auth (성공)
+  username=USER-0012  src_host=USER-0010-0200
+  msg=ORG-1657 ::: {"@meta":..."type":"winlogbeat","version":"8.2.2","timestamp":"2024-07-26T11:09:58.391Z"...}
+
+[T+0.000s] message_type=4776 NTLM auth (재시도)
+  username=USER-0012  src_host=USER-0010-0200
+  msg=ORG-1657 ::: {... "timestamp":"2024-07-26T11:09:58.395Z" ...}
+
+[T+3.262s] message_type=4776 NTLM auth (또 다시)
+  username=USER-0012  src_host=USER-0010-0206
+  msg=ORG-1657 ::: {... "timestamp":"2024-07-26T11:10:00.405Z" ...}
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석 — 본 lecture 와의 매핑**
 
-### Case 2: `T1041 (Data Theft)` 패턴
+| 인증/세션 점검 학습 항목 | 본 record 에서의 증거 |
+|------------------------|---------------------|
+| **세션 재발급 빈도** | USER-0022 가 6,190회 logon — *Kerberos TGT 갱신 / 세션 재인증 정책* 의 합리성 점검 대상. 점검 보고서에 *고빈도 사용자 baseline* 표 포함 권장 |
+| **NTLM 사용 잔존** | message_type=4776 (NTLM) 가 4624 (Kerberos 권장) 와 함께 출현 — *legacy NTLM 비활성화 미완료* 점검 항목 |
+| **호스트 hopping** | 동일 USER-0012 가 USER-0010-0200 → 0206 으로 3.3초 사이 재인증 — *세션 fixation* / *측면이동 의심* 으로 분류 가능 |
+| **timestamp ms 정밀도** | 각 record 가 ms-level timestamp 보유 — 점검 도구가 *세션 ID 재발급 간격* 을 측정 가능 |
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+**점검 액션 아이템**:
+1. NTLM 4776 vs Kerberos 4624 *비율* 측정 → 5% 이상이면 legacy migration 권고
+2. 3초 내 동일 username 의 *서로 다른 src_host* 인증 → automated 로그인 또는 multi-host 세션 — 점검 보고서의 *세션 anomaly* 항목으로 등록
+3. Top user (USER-0022 6,190회) 같은 *high-volume* 계정의 자동화 여부 (서비스 계정 vs 사람 계정) 분류
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 

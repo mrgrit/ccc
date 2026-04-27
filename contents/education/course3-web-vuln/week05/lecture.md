@@ -552,26 +552,42 @@ cursor.execute("SELECT * FROM users WHERE email=?", (email,))
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — WAF POST 입력 처리 단면)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *SQLi 점검* 학습 항목 (입력값 처리·WAF 차단·세션 cookie 노출) 에 매핑되는 dataset 의 WAF POST 88건 중 대표 record.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: WAF POST 1건 — JSESSIONID 노출 + 200 outcome
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
+**원본 발췌**:
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041 (Data Theft)` 패턴
-
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
+```text
+<190>Jul 26 06:24:30 USER-0010-4334 CEF:0|USER-0010-57562|WAF|1220|1000|POST|5|
+  cat=TR dvc=10.208.162.175 src=100.64.1.67 spt=51071 dst=10.0.145.98
+  USER-9484Cookies=JSESSIONID\=9569E23CF0614F9EF9C81DD49E4C5608
+  outcome=200 USER-9484Method=POST in=1173 out=29521
 ```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**dataset 의 POST 통계**
+
+| 항목 | 값 |
+|------|---|
+| 총 POST 건수 | 88 (전체 GET 4018 의 2.2%) |
+| 동일 src `100.64.1.67` 의 outcome 분포 | 200 (정상) + 302 (redirect) 혼재 |
+| `USER-9484Cookies=JSESSIONID\=...` | 모든 POST 에 출현 — 세션 토큰이 *log 에 평문 기록* |
+
+**해석 — 본 lecture 와의 매핑**
+
+| SQLi/입력값 점검 학습 항목 | 본 record 에서의 증거 |
+|--------------------------|---------------------|
+| **입력값 검증 layer** | WAF (signature 1220/1000) 가 1차 검증 — 점검 시 *어느 layer 가 어떤 SQLi pattern 을 잡는지* 매핑 표 작성 |
+| **세션 토큰 노출** | `JSESSIONID\=9569E23CF0614F9EF9C81DD49E4C5608` 가 WAF log 에 평문 기록 — *log access 권한 가진 내부 사용자가 세션 hijack 가능* (점검 항목으로 추가) |
+| **POST body in/out 크기** | `in=1173 out=29521` — 입력 1.1KB → 응답 28.8KB. SQLi blind/UNION 시 응답 크기 차이로 *boolean inference* 가능 (timing 외 size 기반 점검) |
+| **outcome=200** | WAF 가 통과시킨 POST → *WAF 룰셋 미커버 패턴* 존재 추정. 점검 시 *룰셋 버전·last_updated* 기록 필수 |
+
+**SQLi 점검 액션**:
+1. WAF audit log 의 cookie 평문 노출 → *log redaction* 점검 항목 추가 (개인정보보호법 위반 소지)
+2. POST body 크기 *baseline 분포* 측정 후 ±3σ 이상 outlier 를 SQLi 후보로 분류
+3. 룰셋 1220/1000 (WAF vendor signature) 의 *SQLi 커버리지* 표 — vendor doc 참조 → 미커버 pattern (예: NoSQL injection·LDAP injection) 별도 점검
+
 

