@@ -309,6 +309,44 @@ supplemental retest 필요**.
 
 ---
 
+### P15. 외부 지식 채널 + 9-tier KG 운영  [STATUS: 5 source 활성, 9-tier 풀 seed 완성]
+
+**동기**: 사용자 지적 (2026-04-27) — KG 가 *내부 작업* (playbook/experience) 만.
+외부 지식 채널 + 9-tier (Mission/Vision/Goal/Strategy/KPI/Plan/Todo/Asset/
+Architecture) 모두 비어있음.
+
+**진행**:
+- [x] **9-tier KG 풀 seed** (commit b71ad3e3 → 20c5d90e, 8 commits):
+  - Mission 35 / Vision 25 / Goal 54 / Strategy 21 / KPI 62 / Plan 33 / Todo 34
+  - 20 과목 + 5 도메인 + 8 외부 표준 + 12 Architecture + 12 운영 P#
+  - bastion runtime REST API (`scripts/seed_9tier_kg.py` BASTION_URL 모드)
+
+- [x] **case_study +5건 보강** (commit 164aed43): 누적 25건
+  - compliance NIST/GDPR + secops Wazuh AR + soc 악성코드/자동화 + web-vuln 자동화
+
+- [x] **외부 지식 5 source 활성** (P15 핵심):
+  - CISA KEV 1583 anchor (commit a24b3b8c) — `ingest_cisa_kev.py --via-bastion`
+  - MITRE ATT&CK 691 anchor (commit 3874de8e) — `ingest_mitre_attck.py`
+  - OWASP Top 10 (Web/API/LLM) 30 anchor (commit bcb3334f) — `ingest_owasp_top10.py`
+  - NIST CSF 2.0 28 anchor (commit 7a98310c) — `ingest_nist_csf.py`
+  - CWE Top 25 25 anchor (commit 397c3a3a) — `ingest_cwe_top25.py`
+  - **누적 2357 외부 지식 anchor** (전부 bastion runtime KG)
+
+**Definition of Done**:
+- [x] 9-tier 풀 seed (20 과목 + 외부 + Architecture + 운영)
+- [x] 외부 지식 5 source 첫 backfill
+- [x] case_study 보강 (25건)
+- [ ] ISO 27001 Annex A 114 통제 (수기)
+- [ ] NVD CVE 일일 갱신 cron 설정
+- [ ] bastion api 에 /knowledge/concept POST endpoint 추가 (현재 anchor 사용)
+- [ ] paper §7.7 외부 지식 채널 단락 추가
+
+**Files**: `scripts/seed_9tier_kg.py`, `scripts/ingest_cisa_kev.py`,
+         `scripts/ingest_mitre_attck.py`, `scripts/ingest_owasp_top10.py`,
+         `scripts/ingest_nist_csf.py`, `scripts/ingest_cwe_top25.py`
+
+---
+
 ### P14. Lab 채점 흐름 재설계 (textarea → SubAgent 감시)  [STATUS: A 완료, D→B→C 잔여]
 
 **동기**: 학생이 textarea 에 답변 작성 → judge 채점 = "글로 다시 쓰는" 부담.
