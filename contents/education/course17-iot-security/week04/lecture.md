@@ -514,26 +514,54 @@ for func_name in dangerous_funcs:
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — RF 공격)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *RF 공격* 학습 항목 매칭.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### RF 공격 의 dataset 흔적 — "Sub-GHz + WiFi"
 
+dataset 의 정상 운영에서 *Sub-GHz + WiFi* 신호의 baseline 을 알아두면, *RF 공격* 시도 시 발생하는 anomaly 를 정량으로 탐지할 수 있다. 핵심 정량 지표는 — spectrum analyzer.
+
+```mermaid
+graph LR
+    SCENE["RF 공격 시나리오"]
+    TRACE["dataset 흔적<br/>Sub-GHz + WiFi"]
+    DETECT["탐지 / 분석"]
+
+    SCENE --> TRACE
+    TRACE --> DETECT
+
+    style SCENE fill:#ffe6cc
+    style DETECT fill:#cce6ff
 ```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: dataset 정량 지표
 
-### Case 2: `T1041 (Data Theft)` 패턴
+| 항목 | 값 |
+|---|---|
+| 핵심 신호 | Sub-GHz + WiFi |
+| 정량 baseline | spectrum analyzer |
+| 학습 매핑 | HackRF + RTL-SDR |
 
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
-```
+**자세한 해석**: HackRF + RTL-SDR. 이 차이를 정량으로 측정해야 *공격 시도와 정상 운영의 구분* 이 가능. 학생이 baseline 숫자를 외워두면 — 운영 환경에서 anomaly 를 즉시 탐지할 수 있다.
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 2: 실전 적용 시나리오
+
+| 단계 | dataset 활용 |
+|---|---|
+| 시도 식별 | Sub-GHz + WiFi 의 spike |
+| 정상 vs 이상 | baseline 대비 비율 |
+| 룰 작성 | Suricata / Wazuh / Sigma |
+| 검증 | dataset 재실행 |
+
+**자세한 해석**: 운영 환경 룰 작성은 — *baseline 측정 → 임계 결정 → 룰 작성 → dataset 검증* 의 4 단계. 한 단계라도 빠지면 false positive 폭증.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **RF 공격 = Sub-GHz + WiFi 의 anomaly** — 정량 신호로 탐지.
+2. **baseline 숫자 외우기** — spectrum analyzer.
+3. **4 단계 룰 작성** — 측정 → 임계 → 룰 → 검증.
+
+**학생 액션**: RF capture.
 

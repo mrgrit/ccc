@@ -604,28 +604,54 @@ Bastion API를 활용하여 간단한 Scorebot을 구현하라:
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — Purple Team Exercise)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *Purple Team Exercise* 학습 항목 매칭.
 
-### Case 1: `T1041` 패턴
+### Purple Team Exercise 의 dataset 흔적 — "Red+Blue 협업"
 
+dataset 의 정상 운영에서 *Red+Blue 협업* 신호의 baseline 을 알아두면, *Purple Team Exercise* 시도 시 발생하는 anomaly 를 정량으로 탐지할 수 있다. 핵심 정량 지표는 — 공격 시도와 탐지의 동시 측정.
+
+```mermaid
+graph LR
+    SCENE["Purple Team Exercise 시나리오"]
+    TRACE["dataset 흔적<br/>Red+Blue 협업"]
+    DETECT["탐지 / 분석"]
+
+    SCENE --> TRACE
+    TRACE --> DETECT
+
+    style SCENE fill:#ffe6cc
+    style DETECT fill:#cce6ff
 ```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: dataset 정량 지표
 
-### Case 2: `T1041` 패턴
+| 항목 | 값 |
+|---|---|
+| 핵심 신호 | Red+Blue 협업 |
+| 정량 baseline | 공격 시도와 탐지의 동시 측정 |
+| 학습 매핑 | Purple Team 의 정량 KPI |
 
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
+**자세한 해석**: Purple Team 의 정량 KPI. 이 차이를 정량으로 측정해야 *공격 시도와 정상 운영의 구분* 이 가능. 학생이 baseline 숫자를 외워두면 — 운영 환경에서 anomaly 를 즉시 탐지할 수 있다.
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 2: 실전 적용 시나리오
+
+| 단계 | dataset 활용 |
+|---|---|
+| 시도 식별 | Red+Blue 협업 의 spike |
+| 정상 vs 이상 | baseline 대비 비율 |
+| 룰 작성 | Suricata / Wazuh / Sigma |
+| 검증 | dataset 재실행 |
+
+**자세한 해석**: 운영 환경 룰 작성은 — *baseline 측정 → 임계 결정 → 룰 작성 → dataset 검증* 의 4 단계. 한 단계라도 빠지면 false positive 폭증.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **Purple Team Exercise = Red+Blue 협업 의 anomaly** — 정량 신호로 탐지.
+2. **baseline 숫자 외우기** — 공격 시도와 탐지의 동시 측정.
+3. **4 단계 룰 작성** — 측정 → 임계 → 룰 → 검증.
+
+**학생 액션**: 1주 Purple Exercise → KPI 측정.
 

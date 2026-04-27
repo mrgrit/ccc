@@ -1213,28 +1213,51 @@ echo 1 | sudo -S nmap -f -p 80 10.20.30.80
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 정찰 / 네트워크 스캐닝)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *공방전 1주차: 네트워크 정찰의 dataset 흔적* 학습 항목 매칭.
 
-### Case 1: `T1041` 패턴
+### 정찰의 dataset 흔적 — "Recon = Describe* + flow + 5156 burst"
 
+dataset 의 100.64.20.230 host 는 *1초 안에 30 host × 54 port × 208 events* 의 burst 를 만든 *포트스캔 대표 사례*. 정상 운영의 1초 baseline 은 ~10 events 이므로 — 이 burst 는 *20배 이상 anomaly*. 공방전에서 — Red 의 nmap 스캔이 *반드시 이런 흔적* 을 만든다.
+
+```mermaid
+graph LR
+    RED["Red: nmap 스캔"]
+    NET["네트워크"]
+    BLUE["Blue: 탐지"]
+
+    RED -->|TCP SYN burst| NET
+    NET -->|5156 (allow)<br/>flow record<br/>firewall_action| BLUE
+    BLUE -->|burst 탐지| ALERT["Suricata alert"]
+
+    style RED fill:#ffcccc
+    style ALERT fill:#ccffcc
 ```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: dataset recon hot-path
 
-### Case 2: `T1041` 패턴
+| 항목 | 값 |
+|---|---|
+| src=100.64.20.230 | 30 host × 54 port × 208 events |
+| 시간 | 1초 |
+| baseline | ~10 events/sec |
+| spike | 20배+ |
 
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
+### Case 2: Suricata 룰의 정량 검증
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+| 룰 | 탐지 대상 | dataset 검출 |
+|---|---|---|
+| ET SCAN nmap | TCP burst | 100.64.20.230 |
+| ET SCAN ICMP burst | ICMP flood | - |
+| ET SCAN UDP scan | UDP fan-out | 동시 발생 |
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **20배 spike = recon 강력 신호** — baseline 과 비교 필수.
+2. **5156 + flow + firewall 동시 발생** — multi-signal 추적.
+3. **Suricata + Wazuh 결합** — 단일 IDS 부족.
+
+**학생 액션**: lab 환경에서 nmap 으로 100.64.20.230 패턴 재현 → Wazuh 가 어느 룰을 발생시키는지 확인.
 

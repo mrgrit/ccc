@@ -720,28 +720,54 @@ ssh ccc@10.20.30.100 \
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — 웹 공격 (SQLi/XSS))
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *웹 공격 (SQLi/XSS)* 학습 항목 매칭.
 
-### Case 1: `T1041` 패턴
+### 웹 공격 (SQLi/XSS) 의 dataset 흔적 — "WAF block + 4663 (file access)"
 
+dataset 의 정상 운영에서 *WAF block + 4663 (file access)* 신호의 baseline 을 알아두면, *웹 공격 (SQLi/XSS)* 시도 시 발생하는 anomaly 를 정량으로 탐지할 수 있다. 핵심 정량 지표는 — WAF 차단 4106 events vs SQLi 시도.
+
+```mermaid
+graph LR
+    SCENE["웹 공격 (SQLi/XSS) 시나리오"]
+    TRACE["dataset 흔적<br/>WAF block + 4663 (file access)"]
+    DETECT["탐지 / 분석"]
+
+    SCENE --> TRACE
+    TRACE --> DETECT
+
+    style SCENE fill:#ffe6cc
+    style DETECT fill:#cce6ff
 ```
-src=100.64.4.210 dst=172.22.195.168 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.84
-lifecycle=complete-mission
-```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 1: dataset 정량 지표
 
-### Case 2: `T1041` 패턴
+| 항목 | 값 |
+|---|---|
+| 핵심 신호 | WAF block + 4663 (file access) |
+| 정량 baseline | WAF 차단 4106 events vs SQLi 시도 |
+| 학습 매핑 | OWASP ZAP/sqlmap 의 방화벽 흔적 |
 
-```
-src=172.22.36.156 dst=100.64.9.98 tech=T1041 mo_name=Data Theft
-tactic=TA0010 (Exfiltration) suspicion=0.92
-lifecycle=complete-mission
-```
+**자세한 해석**: OWASP ZAP/sqlmap 의 방화벽 흔적. 이 차이를 정량으로 측정해야 *공격 시도와 정상 운영의 구분* 이 가능. 학생이 baseline 숫자를 외워두면 — 운영 환경에서 anomaly 를 즉시 탐지할 수 있다.
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+### Case 2: 실전 적용 시나리오
+
+| 단계 | dataset 활용 |
+|---|---|
+| 시도 식별 | WAF block + 4663 (file access) 의 spike |
+| 정상 vs 이상 | baseline 대비 비율 |
+| 룰 작성 | Suricata / Wazuh / Sigma |
+| 검증 | dataset 재실행 |
+
+**자세한 해석**: 운영 환경 룰 작성은 — *baseline 측정 → 임계 결정 → 룰 작성 → dataset 검증* 의 4 단계. 한 단계라도 빠지면 false positive 폭증.
+
+### 이 사례에서 학생이 배워야 할 3가지
+
+1. **웹 공격 (SQLi/XSS) = WAF block + 4663 (file access) 의 anomaly** — 정량 신호로 탐지.
+2. **baseline 숫자 외우기** — WAF 차단 4106 events vs SQLi 시도.
+3. **4 단계 룰 작성** — 측정 → 임계 → 룰 → 검증.
+
+**학생 액션**: DVWA 에 sqlmap 시도 → WAF 룰 적중률.
 
