@@ -247,9 +247,9 @@ supplemental retest 필요**.
   - first_turn_retry 발동 = **0** (소프트 prompt + minimal example 시점 이후 발동 안 함)
   - 과목별 본 큐 처리: soc-ai 30 / soc-adv-ai 9 / compliance-ai 2 (총 41건, infra-blocked 686 분리 후)
   - Asset 노드 = **4815** ✅ (P1 Precinct6 임포트 효과, baseline 11 → +4804)
-- [ ] paper §3.5 의 "33 skills" → "33 catalog · N active (cat+few-shot 유도 후)" 정량 보고
+- [x] paper §3.5 의 "33 skills" → "33 catalog · 15 active" R3 측정 정량 반영 (2026-04-27, R3 cursor 469/575 81.6% 시점, 신규 활성 6: cve_lookup/wazuh_api/garak_probe/prompt_fuzz/memory_dump/deploy_rule, 6/9 카테고리 활성)
 
-**Next concrete step**: bastion 원격 재시작 후 R3 잔여 1070 step 에서 attack-* 과목 pass율 비교 (재시작 전후). 효과 검증 시 P10 closed 후보.
+**Next concrete step**: R3 종료 시 active 카운트 18+ 확인 (history_anchor / forensic_collect / model_isolate 추가 활성 후보). 효과 검증 시 P10 closed 후보.
 
 ---
 
