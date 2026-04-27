@@ -414,6 +414,24 @@ Architecture) 모두 비어있음.
 
 ## Closed (누적 완료)
 
+### 2026-04-27 — 사용자 지적 3 갭 + P14·P15
+- [x] **사용자 지적 #1 갭** — KG 9-tier 풀 seed (28 Mission + 27 Vision + 60 Goal +
+      30 Strategy + 68 KPI + 33 Plan + 34 Todo + 12 Architecture).
+      `scripts/seed_9tier_kg.py` BASTION_URL 모드.
+- [x] **사용자 지적 #1 외부 지식** — P15 6 source 활성: KEV 1583 + MITRE 691 +
+      OWASP 30 + NIST CSF 28 + CWE 25 + ISO 27001 93 = 2,450 anchor.
+      6 ingest_*.py 스크립트.
+- [x] **사용자 지적 #2 1억건 활용** — case_study 25건 (Precinct 6 anchor 5종 +
+      Data Theft 패턴). lecture-lab cross 매핑.
+- [x] **사용자 지적 #3 정합성** — D-B 매핑 20/20 과목 + cross-course (curriculum/
+      `*-mapping.yaml`) + Cyber Range startswith 버그 fix.
+- [x] **P14 Lab 채점 흐름 A/D/B/C** — DB schema + UI + SubAgent /a2a/audit/* +
+      multi_step_judge. 1 lab 학생 실측만 잔여.
+- [x] **bastion api /knowledge/concept POST** — 외부 지식 Concept 등록 endpoint
+      (anchor 외 graph 핵심 객체).
+- [x] **옵션 B Lab/Cyber Range 학생 노출 풍부화** — intent + success_criteria +
+      primary_method + negative_signs UI 박스.
+
 ### 2026-04 초중반
 - [x] verify.semantic 6,188 step 수기 작성 (605 lab YAML, 20 과목 × 평균 15주)
 - [x] Course 교안 전수 감사 (300/300 lecture.md)
