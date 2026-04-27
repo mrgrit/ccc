@@ -157,6 +157,51 @@ def _extract_harmony_tool_calls(text: str) -> list[tuple[str, dict]]:
     return out
 
 
+# JSON markdown tool-call 패턴 — LLM 이 자주 사용하는 대체 형식
+# {"tool": "shell", "parameters": {...}} / {"name": "shell", "arguments": {...}}
+# {"function": "shell", "args": {...}} 등 모두 처리
+_JSON_TOOLCALL_PATTERNS = [
+    # 표준 OpenAI 형식
+    re.compile(r'\{[^{}]*?"name"\s*:\s*"([A-Za-z_][A-Za-z0-9_]*)"[^{}]*?"arguments"\s*:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})[^{}]*?\}', re.DOTALL),
+    # Anthropic/대체 형식 — tool/parameters
+    re.compile(r'\{[^{}]*?"tool"\s*:\s*"([A-Za-z_][A-Za-z0-9_]*)"[^{}]*?"parameters"\s*:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})[^{}]*?\}', re.DOTALL),
+    # function/args 형식
+    re.compile(r'\{[^{}]*?"function"\s*:\s*"([A-Za-z_][A-Za-z0-9_]*)"[^{}]*?"args"\s*:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})[^{}]*?\}', re.DOTALL),
+    # tool_name/input 형식
+    re.compile(r'\{[^{}]*?"tool_name"\s*:\s*"([A-Za-z_][A-Za-z0-9_]*)"[^{}]*?"input"\s*:\s*(\{[^{}]*(?:\{[^{}]*\}[^{}]*)*\})[^{}]*?\}', re.DOTALL),
+]
+
+
+def _extract_json_tool_calls(text: str) -> list[tuple[str, dict]]:
+    """LLM 이 markdown content 안에 JSON 블록으로 출력한 tool-call 추출.
+    R3 분석 결과 derestricted 모델이 '{"tool": "shell", "parameters": {...}}' 형식으로
+    자주 출력하는데 Ollama tool_calls 필드는 비어있음 → 이 함수가 폴백.
+    """
+    out: list[tuple[str, dict]] = []
+    if not text:
+        return out
+    seen: set[str] = set()
+    for pat in _JSON_TOOLCALL_PATTERNS:
+        for m in pat.finditer(text):
+            name = m.group(1).strip()
+            if name in seen:
+                continue
+            args_str = m.group(2)
+            try:
+                args = json.loads(args_str)
+            except Exception:
+                # JSON 일부 깨짐 — 핵심 필드만 추출
+                m2 = re.search(r'"(command|target|skill|prompt|url|host|endpoint|kind|mutations)"\s*:\s*"([^"]+)"', args_str)
+                if m2:
+                    args = {m2.group(1): m2.group(2)}
+                else:
+                    continue
+            if isinstance(args, dict):
+                out.append((name, args))
+                seen.add(name)
+    return out
+
+
 _PROSE_CMD_RE = re.compile(
     r'(?:^|\n)\s*(?:Running|Run|Let.s run|Try|Execute|Attempting to run|We.ll run|We need to run)[:\s]+'
     r'`?([^\n`]+?)`?(?=\s*\.?\s*$|\s*\n)',
@@ -1612,7 +1657,23 @@ class BastionAgent:
                         yield {"event": "synthesized_tool_calls", "source": "harmony_format",
                                "skill": synth[0]["function"]["name"],
                                "args": synth[0]["function"]["arguments"]}
-                # 2차: 프로즈 fallback — 백틱·"Running:" 등에서 셸 명령 추출
+                # 2차: JSON markdown 형식 — {"tool": "X", "parameters": {...}} 등
+                # R3 분석 결과 battle-ai/attack-adv-ai no_execution 의 주요 원인 (LLM이 markdown 안에 JSON으로 출력)
+                if not tool_calls:
+                    _json_calls = _extract_json_tool_calls(_full)
+                    if _json_calls:
+                        synth = []
+                        for skill_name, args in _json_calls[:2]:
+                            if skill_name in SKILLS:
+                                synth.append({
+                                    "function": {"name": skill_name, "arguments": args},
+                                })
+                        if synth:
+                            tool_calls = synth
+                            yield {"event": "synthesized_tool_calls", "source": "json_markdown",
+                                   "skill": synth[0]["function"]["name"],
+                                   "args": synth[0]["function"]["arguments"]}
+                # 3차: 프로즈 fallback — 백틱·"Running:" 등에서 셸 명령 추출
                 if not tool_calls:
                     _probe = _strip_harmony(_full)
                     _cmds = _extract_shell_from_prose(_probe)
