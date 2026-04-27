@@ -424,26 +424,41 @@ ssh ccc@10.20.30.80 "  # 비밀번호 자동입력 SSH
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6)
+## 실제 사례 (WitFoo Precinct 6 — ISO 27001 Annex A 매핑 분포)
 
 > 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> Sanitized — RFC5737 TEST-NET / ORG-NNNN / HOST-NNNN 으로 익명화됨.
+> 본 lecture *ISO 27001 구조·원칙 (Annex A)* 학습 항목과 매핑되는 dataset host 의 ISO 27001 통제 번호 분포.
 
-### Case 1: `T1041 (Data Theft)` 패턴
+### Case 1: WitFoo Precinct product 의 ISO 27001 매핑
 
-```
-incident_id=d45fc680-cb9b-11ee-9d8c-014a3c92d0a7 mo_name=Data Theft
-red=172.25.238.143 blue=100.64.5.119 suspicion=0.25
-```
-
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
-
-### Case 2: `T1041 (Data Theft)` 패턴
-
-```
-incident_id=c6f8acf0-df14-11ee-9778-4184b1db151c mo_name=Data Theft
-red=100.64.3.190 blue=100.64.3.183 suspicion=0.25
+```text
+"iso27001": [4, 8, 14, 16, 67, 68, 69, 71, 72, 113, 114, 115, 116, 117, 118, 119, 120, 121, 122, 123, 124, 130, 131, 132]
 ```
 
-**해석**: 위 데이터는 실제 incident 의 sanitized 기록이다. `T1041 (Data Theft)` MITRE technique 의 행동 패턴이며, 본 강의의 학습 주제와 동일한 운영 맥락에서 발생한다.
+ISO 27001:2022 controls 매핑 해석:
+- **A.5 (정보보안 정책)**: 4, 8, 14, 16 = 정책·역할·자산 분류 (4개)
+- **A.6 (인적 보안)**: 67, 68, 69 = 인적 자원 (3개)
+- **A.8 (자산 관리)**: 71, 72 = asset inventory (2개)
+- **A.13~A.14 (네트워크·시스템)**: 113-124 = 12개 (보안 통신·시스템 획득·개발)
+- **A.16 (사고 관리)**: 130-132 = 3개 (incident response·learning)
+
+→ **24 control 동시 매핑** = 단일 product 가 24 control cover. 학생 본인 환경의 *control 매트릭스* baseline.
+
+### Case 2: Cisco ASA 의 ISO 27001 매핑 (다른 product)
+
+```text
+"iso27001": [1, 2, 53, 54, 81, 86]
+```
+
+ASA Firewall 만의 cover (network 중심):
+- A.5.1-A.5.2: 정책 (1, 2)
+- A.13.1: 네트워크 보안 (53, 54)
+- A.13.2: 정보 전송 (81)
+- A.14.1: 시스템 보안 (86)
+
+→ **6 control** — 더 narrow. SIEM (24) vs Firewall (6) = product 별 *cover scope 차이*.
+
+**해석**: ISO 27001 의 114 controls 중 *어떤 product 가 어떤 control 을 cover* 하는지 dataset 매핑 표를 모방하면 학생 SoA (Statement of Applicability) 작성 reference 됨.
+
+**학생 액션**: 본인 환경의 product (Wazuh + Suricata + ModSec + nft + OpenCTI) 마다 *cover ISO 27001 control 번호 list* 작성 → dataset 양식 모방.
 
