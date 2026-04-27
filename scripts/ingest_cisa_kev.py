@@ -44,8 +44,51 @@ def fetch_kev(force_refresh: bool = False) -> dict:
     return data
 
 
+def import_to_bastion_anchors(data: dict, bastion_url: str, *, limit: int | None = None) -> dict:
+    """bastion REST API 로 history_anchors (kind='cve_kev') 등록.
+    UI 가 보는 KG 에 즉시 적재. concept_endpoint 미배포 환경 대안.
+    """
+    import urllib.request
+    vulns = data.get("vulnerabilities", [])
+    if limit: vulns = vulns[:limit]
+    added, errors = 0, 0
+    for v in vulns:
+        cve = v.get("cveID", "").strip()
+        if not cve: continue
+        body_text = (
+            f"vendor: {v.get('vendorProject','')}\n"
+            f"product: {v.get('product','')}\n"
+            f"vulnerability: {(v.get('vulnerabilityName') or '')[:160]}\n"
+            f"description: {(v.get('shortDescription') or '')[:400]}\n"
+            f"required_action: {(v.get('requiredAction') or '')[:300]}\n"
+            f"due_date: {v.get('dueDate','')}\n"
+            f"ransomware_use: {v.get('knownRansomwareCampaignUse','')}\n"
+            f"cwes: {','.join(v.get('cwes') or [])}"
+        )
+        payload = {
+            "kind": "cve_kev",
+            "label": cve,
+            "body": body_text,
+            "related_ids": [f"vendor:{v.get('vendorProject','')}", f"product:{v.get('product','')}"],
+            "valid_from": v.get("dateAdded", ""),
+            "valid_until": "",
+        }
+        try:
+            req = urllib.request.Request(
+                f"{bastion_url}/history/anchors",
+                data=json.dumps(payload).encode(),
+                headers={"Content-Type": "application/json"},
+            )
+            with urllib.request.urlopen(req, timeout=10) as r:
+                json.load(r)
+            added += 1
+        except Exception:
+            errors += 1
+    return {"added": added, "errors": errors, "total": len(vulns), "mode": "bastion_anchors"}
+
+
 def import_to_kg(data: dict, *, dry_run: bool = False, limit: int | None = None) -> dict:
-    """Concept 노드로 KG 적재. dry-run 이면 통계만."""
+    """Concept 노드로 KG 적재 (로컬 ccc db). dry-run 이면 통계만."""
     vulns = data.get("vulnerabilities", [])
     if limit:
         vulns = vulns[:limit]
@@ -110,6 +153,9 @@ def main():
     ap.add_argument("--limit", type=int, default=None, help="첫 N건만")
     ap.add_argument("--from-file", help="로컬 JSON 파일 (네트워크 우회)")
     ap.add_argument("--force-refresh", action="store_true", help="캐시 무시 + 재다운로드")
+    ap.add_argument("--via-bastion", action="store_true",
+                    help="bastion REST API 의 /history/anchors 로 등록 (UI 즉시 노출)")
+    ap.add_argument("--bastion-url", default=os.getenv("BASTION_URL", "http://192.168.0.115:8003"))
     args = ap.parse_args()
 
     if args.from_file:
@@ -128,17 +174,24 @@ def main():
     print(f"KEV count (header):   {data.get('count','?')}")
     print(f"vulns in payload:     {len(data.get('vulnerabilities',[]))}")
 
-    result = import_to_kg(data, dry_run=args.dry_run, limit=args.limit)
+    if args.via_bastion and not args.dry_run:
+        print(f"\n[mode] bastion REST → {args.bastion_url} (history_anchors kind=cve_kev)")
+        result = import_to_bastion_anchors(data, args.bastion_url, limit=args.limit)
+    else:
+        result = import_to_kg(data, dry_run=args.dry_run, limit=args.limit)
     print(f"\n=== 결과 ===")
     for k, v in result.items():
         print(f"  {k:12s} {v}")
 
-    if not args.dry_run:
-        # KG 의 cve concept 총 갯수
-        from packages.bastion.graph import get_graph
-        g = get_graph()
-        cve_concepts = [n for n in g.find_nodes("Concept") if (n.get("id") or "").startswith("concept:cve:")]
-        print(f"\nKG concept:cve:* total: {len(cve_concepts)}")
+    if not args.dry_run and not args.via_bastion:
+        # 로컬 KG 의 cve concept 총 갯수
+        try:
+            from packages.bastion.graph import get_graph
+            g = get_graph()
+            cve_concepts = [n for n in g.find_nodes("Concept") if (n.get("id") or "").startswith("concept:cve:")]
+            print(f"\nlocal KG concept:cve:* total: {len(cve_concepts)}")
+        except Exception as e:
+            print(f"\n(local count skipped: {e})")
 
 
 if __name__ == "__main__":
