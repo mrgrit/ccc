@@ -779,6 +779,127 @@ def seed_simple_course(parent_mid, course_id, title, statement, owner, vision_h,
     print(f"  ✓ {course_mid}")
 
 
+def seed_external_standards(top_mid: str, gov_parent_mid: str):
+    """외부 표준·위협 인텔 — Mission/Goal/KPI 추가.
+    조직 운영 차원에서 따라야 할 외부 source 8종.
+    """
+    g = get_graph()
+    print("\n=== 외부 표준 8 source ===")
+
+    # parent: 외부 위협·표준 단일 Mission (gov_parent 자식)
+    title = "외부 위협·표준 추적·반영"
+    existing = [n for n in g.find_nodes("Mission") if (n.get("name") or "") == title]
+    if existing:
+        ext_parent = existing[0]["id"]
+        print(f"  [skip parent] {ext_parent}")
+    else:
+        ext_parent = add_mission(
+            title=title,
+            statement="CISA KEV / NVD CVE / MITRE ATT&CK / NIST CSF / ISO 27001 / GDPR / OWASP / SOC 2 — 외부 source 의 신규 항목을 24~48h 내 *조직 운영*에 반영. CCC 학습 콘텐츠도 분기별 갱신.",
+            owner="External Intel Lead",
+        )
+        g.add_edge(ext_parent, gov_parent_mid, "derives_from")
+        print(f"  ✓ parent: {ext_parent}")
+
+    # 8 source 각각 — Mission + 1 Goal + 1 KPI
+    sources = [
+        ("CISA KEV — 능동 악용 CVE 카탈로그",
+         "CISA Known Exploited Vulnerabilities. 능동 악용 중 CVE. 24h 내 SBOM 매칭 + 패치 SLA.",
+         "KEV 신규 CVE 24h 내 영향 자산 매칭",
+         "KEV 매칭률", 100.0, "%",
+         "신규 KEV 등재 후 24h 내 SBOM 검색 + 영향 자산 식별 비율."),
+        ("NVD CVE feed — 일일 갱신",
+         "NVD National Vulnerability Database — 일일 신규 CVE 처리.",
+         "신규 CVE 의 CCC 영향 자산 매칭 (48h SLA)",
+         "주간 CVE 처리 건수", 200.0, "count",
+         "주간 신규 CVE 중 CCC 콘텐츠/인프라 매칭 건수."),
+        ("MITRE ATT&CK STIX — Enterprise/Mobile/ICS",
+         "MITRE ATT&CK 프레임워크. 600+ technique. 분기별 갱신.",
+         "조직 detection coverage 80%+ technique",
+         "ATT&CK detection coverage", 80.0, "%",
+         "조직 운영 환경에서 탐지 가능한 technique 비율 (Suricata+Wazuh+ModSec).",),
+        ("NIST CSF 2.0 — Govern/Identify/Protect/Detect/Respond/Recover",
+         "NIST Cybersecurity Framework 2.0. 6 function. 조직 maturity Level 1~5.",
+         "각 function maturity Level 3+ 도달",
+         "CSF maturity 평균 score", 3.5, "level",
+         "Govern/Identify/Protect/Detect/Respond/Recover 6 function 평균 maturity."),
+        ("ISO/IEC 27001:2022 — 114 통제 항목",
+         "ISO 27001 Annex A 114 통제. ISMS 인증 표준. course4 핵심.",
+         "114 통제 중 90+ 학생 자체 점검 가능",
+         "ISO 27001 통제 점검 coverage", 90.0, "count",
+         "course4-compliance 졸업생이 자체 점검 가능한 통제 항목 수."),
+        ("GDPR — EU 개인정보보호규정",
+         "GDPR + 한국 개인정보보호법. course4 + course15-ai-safety-adv (AI 거버넌스).",
+         "DSAR (Art 15) + Art 17 (Right to be Forgotten) PoC",
+         "GDPR DSAR 응답 SLA", 30.0, "day",
+         "GDPR 30일 응답 의무. P5 privacy-engineering h002 task 학습."),
+        ("OWASP Top 10 (Web/API/LLM)",
+         "OWASP Web Top 10 + API Top 10 + LLM Top 10. course3-web-vuln + course8-ai-safety 핵심.",
+         "30+ 항목 (Web 10 + API 10 + LLM 10) 학생 PoC",
+         "OWASP coverage 학생 평균", 80.0, "%",
+         "30 항목 중 학생 자체 PoC 보유 비율."),
+        ("SOC 2 Type II — Trust Service Criteria",
+         "SOC 2 5 TSC (Security/Availability/Processing Integrity/Confidentiality/Privacy). 미국 클라우드 서비스 표준.",
+         "5 TSC 모두 통제 항목 매핑",
+         "SOC 2 TSC 매핑 완성도", 100.0, "%",
+         "5 TSC × 평균 5 통제 = 25 통제 매핑."),
+    ]
+    for src_title, src_statement, goal_title, kpi_name, kpi_target, kpi_unit, kpi_meas in sources:
+        existing = [n for n in g.find_nodes("Mission") if (n.get("name") or "") == src_title]
+        if existing:
+            print(f"  [skip] {src_title}: {existing[0]['id']}")
+            continue
+        mid = add_mission(title=src_title, statement=src_statement, owner="External Intel")
+        g.add_edge(mid, ext_parent, "derives_from")
+        gid = add_goal(title=goal_title, due="2026-12-31",
+                      vision_id="",  # 외부 source 는 vision 직접 link 없음
+                      description=f"{src_title} 의 운영 반영 목표.")
+        g.add_edge(gid, mid, "derives_from")
+        add_kpi(name=kpi_name, target=kpi_target, unit=kpi_unit, measures=kpi_meas, goal_id=gid)
+        print(f"  ✓ {src_title}: {mid}")
+    return ext_parent
+
+
+def seed_architecture(top_mid: str):
+    """Architecture 노드 — CCC 시스템 구조."""
+    g = get_graph()
+    print("\n=== Architecture (CCC 시스템 구조) ===")
+    # Architecture 는 별도 add_* 함수 없음 — 직접 add_node
+    # 그러나 work_domain 에 add_architecture 가 없음 — Asset 으로 대체
+    # 또는 graph.add_node 직접 호출
+    from packages.bastion.graph import get_graph as _gg
+    gw = _gg()
+    arch_specs = [
+        ("arch-ccc-api", "ccc-api FastAPI :9100", "FastAPI 메인 API. 학생/실습/CTF/대전/lab session/curriculum mapping 등 endpoint."),
+        ("arch-ccc-ui", "ccc-ui React frontend", "React UI. Cyber Range/Training/Knowledge/Battle/Admin 페이지."),
+        ("arch-ccc-cli", "ccc-cli CLI", "학생용 CLI. infra register / lab evaluate / battle join 등."),
+        ("arch-bastion", "Bastion agent (TUI + runtime)", "운영 관리 에이전트. 9-tier KG · Skill · Playbook · Experience · History."),
+        ("arch-subagent", "SubAgent runtime :8002 (per VM)", "학생 VM 내 경량 에이전트. /a2a/run_script + /a2a/audit/* (P14)."),
+        ("arch-manager-api", "Manager AI :8000 (opsclaw)", "Manager AI — 분석·피드백·평가."),
+        ("arch-master-service", "Master service :8001", "Claude Code 기반 콘텐츠 제작."),
+        ("arch-ollama", "Ollama LLM 서버 192.168.0.105:11434", "GPU 1장 — gpt-oss:120b judge / gurubot derestricted attack."),
+        ("arch-postgres", "Postgres DB", "students/labs/battles/lab_sessions 등 영속."),
+        ("arch-sqlite-kg", "SQLite KG (data/bastion_graph.db)", "Bastion KG — 노드 4815+ Asset / Mission/Vision/Goal 9-tier."),
+        ("arch-vuln-sites", "5 vuln-sites :3001-3005", "NeoBank/GovPortal/MediForum/AdminConsole/AICompanion."),
+        ("arch-wazuh-suricata", "Wazuh SIEM + Suricata IDS", "학생 VM secu/siem 의 보안 솔루션."),
+    ]
+    # Architecture 는 별도 노드 타입 없음 — Asset 의 kind=architecture 로 등록
+    for aid, name, content in arch_specs:
+        try:
+            existing = gw.get_node(aid)
+            if existing:
+                print(f"  [skip] {aid}")
+                continue
+        except Exception:
+            pass
+        gw.add_node(aid, "Asset", name,
+                    content={"description": content, "kind": "architecture"},
+                    meta={"tier": "infrastructure", "subkind": "architecture"})
+        # 최상위에 contributes_to 로 연결 (operational support)
+        gw.add_edge(aid, top_mid, "contributes_to")
+        print(f"  ✓ {aid}: {name}")
+
+
 def main():
     print("=" * 60)
     print("9-tier KG seed — 20/20 과목 풀")
@@ -910,17 +1031,19 @@ def main():
         todo_due="2026-12-31",
     )
 
+    # 외부 표준 + Architecture
+    seed_external_standards(top_mid, gov_pid)
+    seed_architecture(top_mid)
+
     # 결과 요약
     print("\n=== 결과 요약 ===")
     g = get_graph()
-    for typ in ("Mission", "Vision", "Goal", "Strategy", "KPI", "Plan", "Todo"):
+    for typ in ("Mission", "Vision", "Goal", "Strategy", "KPI", "Plan", "Todo", "Architecture"):
         cnt = len(g.find_nodes(typ))
-        print(f"  {typ:10s} {cnt}")
+        print(f"  {typ:14s} {cnt}")
     print()
     print(f"최상위 Mission: {top_mid}")
-    print(f"course5-soc Mission: {course_mid}")
-    print()
-    print("다음 작업: 19 과목 + 외부 표준 (KEV/CSF/ISO/GDPR) + Architecture + 운영 P#")
+    print("9-tier KG 풀 seed 완료 (20 과목 + 외부 표준 + Architecture)")
 
 
 if __name__ == "__main__":
