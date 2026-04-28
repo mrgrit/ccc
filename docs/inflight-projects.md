@@ -215,6 +215,21 @@ supplemental retest 필요**.
 
 **Next concrete step**: P2 완료 후 run.log 의 attack/battle fail 만 추출 → 패턴 분류 → fix.
 
+**✅ R3 final 분류 완료 (2026-04-28 야간)** — `results/retest/r3_paper_metrics.json`:
+- attack-adv-ai: 90 case, pass 21 (23.3%) — 목표 30% 미달
+- attack-ai: 135 case, pass 14 (10.4%), **error 94건 (Connection refused)** — bastion server crash 시기 (V2 wait_for_bastion 로 해결)
+- battle-ai: 17 case, pass 1 (5.9%), no_exec 14 — sample 작아서 통계 의미 약함
+- ai-security-ai: 66 case, no_exec 59 (89%) — **prompt_fallback fix target pattern** (45건이 6 turn planning/validating only, skill 호출 0)
+- 비교 healthy: ai-agent-ai 48.2% / soc-ai 36.7% / ai-safety-ai 41.7%
+
+**근본 원인 분류**:
+1. **Server crash error** (94건) → V2 driver 의 wait_for_bastion 5-retry 로 해결
+2. **prompt_fallback target** (59건 ai-security-ai) → V2 fix 적용 측정 중 (256 case 진행)
+3. **harmony tool-call 거부** (battle-ai 14) → derestricted 라우팅 + harmony fix 효과 약함, sample 작음
+4. **probe 잘못 선택** (attack-ai/attack-adv-ai 일부) → P10 휴리스틱 으로 일부 해결
+
+P8 closed 후보 — V2 측정 결과 후 attack-ai/ai-security-ai 의 fix 효과 확인 후.
+
 ---
 
 ### P9. Paper 실험 수치 채우기  [STATUS: structure done, numbers XXX]
