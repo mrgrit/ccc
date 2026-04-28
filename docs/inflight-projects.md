@@ -110,7 +110,7 @@ supplemental retest 필요**.
 
 ---
 
-### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **300/590** 🎯 51% milestone — 42 카테고리 + h001-h011 (2026-04-28 야간 추가 189 task. 18 신규 카테고리: container, supply-chain, devsecops, firmware, network, blue-team, dlp, application, data-security, fraud-detection, governance, cloud-native-security, telecom-security, iot-security, automotive-security, healthcare-security, financial-security, red-team-tactics)]
+### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **330/590** 56% — 42 카테고리 + h001-h013 (2026-04-28 야간 추가 219 task)]
 
 **야간 long run 진행 (2026-04-26 22:00~04:00 KST)**:
 - 시작: 28/590 (10 카테고리)
