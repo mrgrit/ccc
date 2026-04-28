@@ -58,13 +58,48 @@ if [ -n "$REMOTE_HOST" ] && command -v sshpass >/dev/null 2>&1; then
     rm -rf "$TMPDIR"
     echo "  ✓ 원격 /home/ccc/ccc/packages/bastion + /opt/bastion/bastion (path 변환) + apps/bastion/api.py 동기화"
 
-    # 5. 자동 재시작 — uvicorn process 패턴 매칭 (실제 runtime은 uvicorn binary 직접 호출)
+    # 5. 자동 재시작 + import 체인 검증 (R3-noexec 진단: import 실패해도 health=200 zombie process 발생)
     if [ "${REMOTE_RESTART:-1}" = "1" ]; then
         echo
-        echo "=== 원격 bastion 자동 재시작 ==="
-        sshpass -p "$REMOTE_PASS" ssh -o StrictHostKeyChecking=no "${REMOTE_USER}@${REMOTE_HOST}" \
-          "pkill -9 -f 'apps.bastion.api' 2>/dev/null; pkill -9 -f 'uvicorn api:app' 2>/dev/null; pkill -9 -f 'uvicorn.*8003' 2>/dev/null; sleep 2; cd /opt/bastion && set -a && source /home/ccc/ccc/.env && set +a && nohup /opt/bastion/.venv/bin/python3 /opt/bastion/.venv/bin/uvicorn api:app --host 0.0.0.0 --port 8003 >> /tmp/bastion.log 2>&1 < /dev/null & disown; sleep 4; curl -s --max-time 3 http://localhost:8003/health | head -c 100; echo; ps -ef | grep uvicorn | grep -v grep | head -1" 2>&1 | tail -5
-        echo "  ✓ bastion 재시작 (PID 위 라인 참조)"
+        echo "=== 원격 bastion 자동 재시작 + import 검증 ==="
+        RESTART_RESULT=$(sshpass -p "$REMOTE_PASS" ssh -o StrictHostKeyChecking=no "${REMOTE_USER}@${REMOTE_HOST}" \
+          "pkill -9 -f 'apps.bastion.api' 2>/dev/null; pkill -9 -f 'uvicorn api:app' 2>/dev/null; pkill -9 -f 'uvicorn.*8003' 2>/dev/null; sleep 3; \
+           # 새 로그 파일 (이전 stale log 와 분리)
+           : > /tmp/bastion.log; \
+           cd /opt/bastion && set -a && source /home/ccc/ccc/.env && set +a && \
+           nohup /opt/bastion/.venv/bin/python3 /opt/bastion/.venv/bin/uvicorn api:app --host 0.0.0.0 --port 8003 >> /tmp/bastion.log 2>&1 < /dev/null & disown; \
+           # uvicorn startup 완료까지 대기 (chat endpoint warmup 포함)
+           sleep 6; \
+           # 새 startup 시 import error 체크 - 'ModuleNotFoundError|Traceback|ImportError|SyntaxError' 잡기
+           if grep -qE 'ModuleNotFoundError|Traceback|ImportError|SyntaxError|cannot import|NameError' /tmp/bastion.log; then \
+             echo '★IMPORT_FAIL★'; \
+             grep -E 'ModuleNotFoundError|Traceback|ImportError|SyntaxError|cannot import|NameError' /tmp/bastion.log | head -5; \
+             exit 1; \
+           fi; \
+           # health endpoint 확인
+           HEALTH=\$(curl -s --max-time 3 http://localhost:8003/health); \
+           echo \"HEALTH: \$HEALTH\" | head -c 200; echo; \
+           # /chat lazy import 트리거 (실제 import chain 강제 로드 — 1초 timeout 으로 빠르게)
+           timeout 5 curl -s -X POST http://localhost:8003/chat \
+             -H 'Content-Type: application/json' \
+             -d '{\"message\":\"ping\",\"stream\":false,\"course\":\"test\"}' --max-time 5 \
+             > /tmp/chat_ping.log 2>&1 || true; \
+           # 두 번째 import error 체크 — chat endpoint 호출 후 import 가 트리거된 경우
+           if grep -qE 'ModuleNotFoundError|Traceback|ImportError|cannot import|NameError|SyntaxError' /tmp/bastion.log; then \
+             echo '★CHAT_IMPORT_FAIL★'; \
+             grep -E 'ModuleNotFoundError|Traceback|ImportError|cannot import|NameError|SyntaxError' /tmp/bastion.log | tail -5; \
+             exit 1; \
+           fi; \
+           ps -ef | grep -E 'uvicorn.*8003' | grep -v grep | head -1; \
+           echo '★OK★'" 2>&1)
+        echo "$RESTART_RESULT" | tail -10
+        if echo "$RESTART_RESULT" | grep -q "★OK★"; then
+            echo "  ✓ bastion 재시작 + import chain 검증 OK"
+        else
+            echo "  ❌ bastion 재시작 실패 — import error 가능성 (위 로그 확인)"
+            echo "  ❌ ROLLBACK: 옛 stable 코드 사용 권고 — 새 변경 review 필요"
+            exit 2
+        fi
     else
         echo "  ⚠️ REMOTE_RESTART=0 — 자동 재시작 건너뜀"
     fi
