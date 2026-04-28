@@ -110,7 +110,7 @@ supplemental retest 필요**.
 
 ---
 
-### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **480/590** 🎯 81.4% — 42 카테고리 + h001-h021 (2026-04-28. V2 driver case #4부터 280s timeout 패턴 — bastion 정상이나 단일 case hang 진단 필요)]
+### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **500/590** 🎯🎯 84.7% — 42 카테고리 + h001-h022 (2026-04-28. V2 driver fix 배포 후 timeout 600s 로 재시작 — case 4/256, 정확한 측정 진행 중)]
 
 **야간 long run 진행 (2026-04-26 22:00~04:00 KST)**:
 - 시작: 28/590 (10 카테고리)
