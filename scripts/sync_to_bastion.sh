@@ -44,14 +44,18 @@ if [ -n "$REMOTE_HOST" ] && command -v sshpass >/dev/null 2>&1; then
     sshpass -p "$REMOTE_PASS" scp -o StrictHostKeyChecking=no \
         "$CCC/apps/bastion/api.py" \
         "${REMOTE_USER}@${REMOTE_HOST}:/home/ccc/ccc/apps/bastion/api.py" 2>&1 | tail -3
-    echo "  ✓ 원격 packages/bastion/*.py + apps/bastion/api.py 동기화"
+    # /opt/bastion 도 sync — 실제 runtime process 가 그쪽에서 실행됨
+    sshpass -p "$REMOTE_PASS" scp -o StrictHostKeyChecking=no \
+        "$CCC/packages/bastion/"*.py \
+        "${REMOTE_USER}@${REMOTE_HOST}:/opt/bastion/bastion/" 2>&1 | tail -3 || true
+    echo "  ✓ 원격 /home/ccc/ccc/packages/bastion + /opt/bastion/bastion + apps/bastion/api.py 동기화"
 
-    # 5. 자동 재시작 — env source + nohup + disown + health 체크
+    # 5. 자동 재시작 — uvicorn process 패턴 매칭 (실제 runtime은 uvicorn binary 직접 호출)
     if [ "${REMOTE_RESTART:-1}" = "1" ]; then
         echo
         echo "=== 원격 bastion 자동 재시작 ==="
         sshpass -p "$REMOTE_PASS" ssh -o StrictHostKeyChecking=no "${REMOTE_USER}@${REMOTE_HOST}" \
-          "pkill -9 -f apps.bastion.api 2>/dev/null; sleep 1; cd /home/ccc/ccc && set -a && source .env && set +a && nohup python3 -m apps.bastion.api > /tmp/bastion.log 2>&1 < /dev/null & disown; sleep 3; ps -ef | grep apps.bastion | grep -v grep | head -1" 2>&1 | tail -3
+          "pkill -9 -f 'apps.bastion.api' 2>/dev/null; pkill -9 -f 'uvicorn api:app' 2>/dev/null; pkill -9 -f 'uvicorn.*8003' 2>/dev/null; sleep 2; cd /opt/bastion && set -a && source /home/ccc/ccc/.env && set +a && nohup /opt/bastion/.venv/bin/python3 /opt/bastion/.venv/bin/uvicorn api:app --host 0.0.0.0 --port 8003 >> /tmp/bastion.log 2>&1 < /dev/null & disown; sleep 4; curl -s --max-time 3 http://localhost:8003/health | head -c 100; echo; ps -ef | grep uvicorn | grep -v grep | head -1" 2>&1 | tail -5
         echo "  ✓ bastion 재시작 (PID 위 라인 참조)"
     else
         echo "  ⚠️ REMOTE_RESTART=0 — 자동 재시작 건너뜀"
