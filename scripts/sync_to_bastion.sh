@@ -45,10 +45,18 @@ if [ -n "$REMOTE_HOST" ] && command -v sshpass >/dev/null 2>&1; then
         "$CCC/apps/bastion/api.py" \
         "${REMOTE_USER}@${REMOTE_HOST}:/home/ccc/ccc/apps/bastion/api.py" 2>&1 | tail -3
     # /opt/bastion 도 sync — 실제 runtime process 가 그쪽에서 실행됨
+    # ★ import path 변환: packages.bastion → bastion (BAS 와 동일 처리)
+    TMPDIR=$(mktemp -d)
+    for f in "$CCC/packages/bastion/"*.py; do
+        name=$(basename "$f")
+        sed 's|packages\.bastion\.|bastion.|g; s|from packages\.bastion |from bastion |g' \
+            "$f" > "$TMPDIR/$name"
+    done
     sshpass -p "$REMOTE_PASS" scp -o StrictHostKeyChecking=no \
-        "$CCC/packages/bastion/"*.py \
+        "$TMPDIR/"*.py \
         "${REMOTE_USER}@${REMOTE_HOST}:/opt/bastion/bastion/" 2>&1 | tail -3 || true
-    echo "  ✓ 원격 /home/ccc/ccc/packages/bastion + /opt/bastion/bastion + apps/bastion/api.py 동기화"
+    rm -rf "$TMPDIR"
+    echo "  ✓ 원격 /home/ccc/ccc/packages/bastion + /opt/bastion/bastion (path 변환) + apps/bastion/api.py 동기화"
 
     # 5. 자동 재시작 — uvicorn process 패턴 매칭 (실제 runtime은 uvicorn binary 직접 호출)
     if [ "${REMOTE_RESTART:-1}" = "1" ]; then

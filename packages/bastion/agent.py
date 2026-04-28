@@ -1895,6 +1895,45 @@ class BastionAgent:
 
             # 다음 turn 으로
 
+        # ── 최종 fallback: MAX_TURNS 소진 + 도구 0 호출 → 사용자 prompt 자체 분석 ──
+        # R3-noexec 진단 결과 derestricted 모델이 6 turn 모두 EMPTY content 반환.
+        # 마지막 수단으로 사용자 message 에서 명령 패턴 추출해 shell 호출 합성.
+        if not all_tool_outputs:
+            _msg_cmds = _extract_shell_from_prose(message or "")
+            if _msg_cmds:
+                yield {"event": "prompt_fallback_attempt", "command": _msg_cmds[0][:200]}
+                params = self._enrich_params("shell", {
+                    "command": _msg_cmds[0],
+                    "target": self._infer_target_vm(message),
+                })
+                if params.get("target") not in self.vm_ips:
+                    params["target"] = self._infer_target_vm(message)
+                    params = self._enrich_params("shell", params)
+                yield {"event": "synthesized_tool_calls", "source": "prompt_self_extract",
+                       "skill": "shell", "command": _msg_cmds[0][:200]}
+                yield {"event": "skill_start", "skill": "shell", "params": params, "attempt": 1}
+                try:
+                    result = execute_skill("shell", params, self.vm_ips,
+                                           self.ollama_url, self.model)
+                except Exception as e:
+                    result = {"success": False, "output": str(e), "stderr": str(e),
+                              "exit_code": -1}
+                output = str(result.get("output", ""))
+                stderr = str(result.get("stderr", ""))
+                success = result.get("success", False)
+                exit_code = result.get("exit_code", -1 if not success else 0)
+                yield {"event": "skill_result", "skill": "shell",
+                       "success": success, "output": output[:1000], "attempt": 1}
+                all_tool_outputs.append({
+                    "skill": "shell", "params": params,
+                    "success": success, "output": output, "exit_code": exit_code,
+                    "synthesized_from": "prompt_fallback",
+                })
+                last_assistant_content = (
+                    f"[prompt-fallback] LLM 응답 없어 사용자 요청에서 명령 추출 후 실행. "
+                    f"command: {_msg_cmds[0][:200]}, success: {success}"
+                )
+
         # ── VALIDATING ─────────────────────────────────────────────────────
         yield {"event": "stage", "stage": "validating"}
 
