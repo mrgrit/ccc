@@ -299,6 +299,9 @@ def judge(events, step):
     skill_results = [e for e in events if e.get("event") == "skill_result"]
     skill_skips = [e for e in events if e.get("event") == "skill_skip"]
     precheck_fails = [e for e in events if e.get("event") == "precheck_fail"]
+    # 2026-04-28: prompt_fallback fix 효과 측정용 (R3-noexec V2)
+    fallback_attempts = [e for e in events if e.get("event") == "prompt_fallback_attempt"]
+    synthesized_calls = [e for e in events if e.get("event") == "synthesized_tool_calls"]
     pb_starts = [e for e in events if e.get("event") == "playbook_start"]
     step_dones = [e for e in events if e.get("event") == "step_done"]
     pb_dones = [e for e in events if e.get("event") == "playbook_done"]
@@ -366,6 +369,10 @@ def judge(events, step):
         "pb_ok": pb_ok,
         "verify_match": match,
         "has_semantic": has_semantic,
+        # 2026-04-28: prompt_fallback fix 효과 측정 (R3-noexec V2)
+        "fallback_attempts": len(fallback_attempts),
+        "fallback_sources": [e.get("source", "") for e in fallback_attempts],
+        "synthesized_calls": len(synthesized_calls),
         "answer_tail": aggregated[-800:],
     }
 
@@ -588,7 +595,7 @@ def main():
         status, skill, meta = "error", "", {}
     else:
         status, skill, meta = judge(events, step)
-        print(f"stages={meta['stages']}  skills={meta['skill_names']}  verify_match={meta['verify_match']}  has_semantic={meta.get('has_semantic')}")
+        print(f"stages={meta['stages']}  skills={meta['skill_names']}  verify_match={meta['verify_match']}  has_semantic={meta.get('has_semantic')}  fallback={meta.get('fallback_attempts', 0)}/{meta.get('synthesized_calls', 0)}")
         if "llm_judge" in meta:
             j = meta["llm_judge"]
             print(f"judge: pass={j.get('pass')}  keyword={j.get('keyword','')!r}  reason={j.get('reason','')!r}")
