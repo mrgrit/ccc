@@ -110,7 +110,7 @@ supplemental retest 필요**.
 
 ---
 
-### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **380/590** 64% — 42 카테고리 + h001-h016 (2026-04-28 야간 추가 269 task)]
+### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **400/590** 🎉 68% — 42 카테고리 + h001-h017 (2026-04-28 야간 추가 289 task. 사용자 "시작해라" 책임자율 진행)]
 
 **야간 long run 진행 (2026-04-26 22:00~04:00 KST)**:
 - 시작: 28/590 (10 카테고리)
