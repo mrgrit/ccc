@@ -236,7 +236,7 @@ supplemental retest 필요**.
 
 ---
 
-### P10. Skill 카탈로그 동적 확장  [STATUS: 33 baseline, recall 문제 발견]
+### P10. Skill 카탈로그 동적 확장  [STATUS: ✅ R3 종료 완료 — active 15/33 (paper 충분), 추가 수정 없이 closed 후보]
 
 **동기**: feedback_dynamic_skill_add.md 정책. retest fail 패턴에서 카테고리 부족 skill 발견 시 즉시 추가.
 
@@ -256,6 +256,13 @@ supplemental retest 필요**.
 - [x] paper §3.5 의 "33 skills" → "33 catalog · 15 active" R3 측정 정량 반영 (2026-04-27, R3 cursor 469/575 81.6% 시점, 신규 활성 6: cve_lookup/wazuh_api/garak_probe/prompt_fuzz/memory_dump/deploy_rule, 6/9 카테고리 활성)
 
 **Next concrete step**: R3 종료 시 active 카운트 18+ 확인 (history_anchor / forensic_collect / model_isolate 추가 활성 후보). 효과 검증 시 P10 closed 후보.
+
+**✅ R3 final 결과 (2026-04-28 야간)** — `results/retest/r3_paper_metrics.json`:
+- Total: 650 / pass 140 (21.5%) / exec_rate 67.7%
+- **Active: 15 / 33 catalog** — paper §3.5 와 일치 (5x dormant skill 활성)
+- top 5: ollama_query 95 / file_manage 93 / shell 90 / probe_all 61 / probe_host 57
+- avg elapsed: pass 139s / fail 154s
+- 18+ 목표 달성 못함 (history_anchor/forensic_collect/model_isolate 등 dormant). paper limitation 으로 명시.
 
 ---
 
