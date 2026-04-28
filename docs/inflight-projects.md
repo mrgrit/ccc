@@ -110,7 +110,7 @@ supplemental retest 필요**.
 
 ---
 
-### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **475/590** 🎯 80.5% — 42 카테고리 + h001-h020 (2026-04-28. R3-noexec V2 측정은 bastion VM 192.168.20.* 전체 down 으로 무효화 — fix 활성 0회, 재측정 보류)]
+### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **480/590** 🎯 81.4% — 42 카테고리 + h001-h021 (2026-04-28. V2 driver case #4부터 280s timeout 패턴 — bastion 정상이나 단일 case hang 진단 필요)]
 
 **야간 long run 진행 (2026-04-26 22:00~04:00 KST)**:
 - 시작: 28/590 (10 카테고리)
