@@ -110,7 +110,7 @@ supplemental retest 필요**.
 
 ---
 
-### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **450/590** 🎯 76.3% — 42 카테고리 + h001-h020 (2026-04-28 야간 ~04:30 KST. 사용자 "시작해라" 책임자율 진행)]
+### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **475/590** 🎯 80.5% — 42 카테고리 + h001-h020 (2026-04-28. R3-noexec V2 측정은 bastion VM 192.168.20.* 전체 down 으로 무효화 — fix 활성 0회, 재측정 보류)]
 
 **야간 long run 진행 (2026-04-26 22:00~04:00 KST)**:
 - 시작: 28/590 (10 카테고리)
