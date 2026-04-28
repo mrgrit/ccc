@@ -110,7 +110,7 @@ supplemental retest 필요**.
 
 ---
 
-### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **130/590** ★ ★ ★ — 25 카테고리 + h005 19 + h006 9 (2026-04-28 야간 추가 19 task: web-vuln/pentest/threat-hunting/redteam-ops/cloud/ai-pentest/ai-ir/ai-utilization/crypto/mobile/ot/privacy/siem/wireless/soc-ops/secops/zero-trust/email/ai-safety)]
+### P5. Bastion-Bench 590 hold-out task 작성  [STATUS: **150/590** ★ ★ ★ ★ — 28 카테고리 + h005 19 + h006 11 + h007 7 (2026-04-28 추가 39 task. 신규 4 카테고리: container-security, supply-chain-security, devsecops, firmware-security)]
 
 **야간 long run 진행 (2026-04-26 22:00~04:00 KST)**:
 - 시작: 28/590 (10 카테고리)
