@@ -67,6 +67,8 @@ if [ -n "$REMOTE_HOST" ] && command -v sshpass >/dev/null 2>&1; then
            # 새 로그 파일 (이전 stale log 와 분리)
            : > /tmp/bastion.log; \
            cd /opt/bastion && set -a && source /home/ccc/ccc/.env && set +a && \
+           # KG path bug 방지 (2026-04-28): server cwd 따라 분기되면 KG node 손실. 명시 환경변수 export.
+           export BASTION_GRAPH_DB="${BASTION_GRAPH_DB:-/home/ccc/ccc/data/bastion_graph.db}" && \
            nohup /opt/bastion/.venv/bin/python3 /opt/bastion/.venv/bin/uvicorn api:app --host 0.0.0.0 --port 8003 >> /tmp/bastion.log 2>&1 < /dev/null & disown; \
            # uvicorn startup 완료까지 대기 (chat endpoint warmup 포함)
            sleep 6; \
