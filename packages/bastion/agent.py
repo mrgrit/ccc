@@ -203,33 +203,62 @@ def _extract_json_tool_calls(text: str) -> list[tuple[str, dict]]:
 
 
 _PROSE_CMD_RE = re.compile(
-    r'(?:^|\n)\s*(?:Running|Run|Let.s run|Try|Execute|Attempting to run|We.ll run|We need to run)[:\s]+'
+    r'(?:^|\n)\s*(?:Running|Run|Let.s run|Try|Execute|Attempting to run|We.ll run|We need to run|'
+    r'실행|다음 명령|명령어|다음을 실행|실행해|실행하면|실행한다)[:\s]+'
     r'`?([^\n`]+?)`?(?=\s*\.?\s*$|\s*\n)',
     re.IGNORECASE | re.MULTILINE,
 )
 _BACKTICK_CMD_RE = re.compile(r'`([^`\n]{4,200})`')
 _BANG_CMD_RE = re.compile(r'(?:^|\s)![ \t]*([^\n!]{3,200})(?=\n|$)', re.MULTILINE)
+# 코드블록 안의 셸 명령 — ```bash ... ``` 또는 ``` ... ```
+_CODEBLOCK_CMD_RE = re.compile(r'```(?:bash|sh|shell|console)?\s*\n([^\n][^\n]{3,500})\n', re.MULTILINE)
+# 명령 시작 패턴 — 줄 처음에 흔한 도구 이름이 직접 등장
+_CMD_LINE_PREFIXES = (
+    'curl ', 'nmap ', 'nc ', 'ncat ', 'wget ', 'cat ', 'grep ', 'awk ', 'sed ',
+    'find ', 'ping ', 'dig ', 'nslookup ', 'ss ', 'ls ', 'echo ', 'whoami', 'id ',
+    'ps ', 'systemctl ', 'docker ', 'sudo ', 'uname', 'netstat', 'ip ', 'which ',
+    'msfvenom', 'bash ', 'sh ', 'python3 ', 'python ', 'jq ', 'tar ', 'iptables',
+    'nft ', 'tcpdump ', 'tshark ', 'curl', 'openssl ', 'kubectl ', 'aws ',
+    'host ', 'mkdir ', 'rm ', 'cp ', 'mv ', 'chmod ', 'chown ', 'kill ',
+    'apt ', 'apt-get ', 'yum ', 'dnf ', 'rpm ', 'dpkg ', 'service ', 'journalctl ',
+    'wazuh-control ', 'suricatasc ', 'modsecurity-tool', 'hashcat ', 'john ',
+    'sqlmap ', 'hydra ', 'tcpreplay ', 'volatility', 'binwalk', 'strings ',
+)
+_CMD_LINE_RE = re.compile(
+    r'(?:^|\n)[ \t]*((?:' + '|'.join(re.escape(p) for p in _CMD_LINE_PREFIXES) + r')[^\n]{2,300})',
+    re.MULTILINE,
+)
 
 
 def _extract_shell_from_prose(text: str) -> list[str]:
     """harmony/자유형 응답에서 의도된 셸 명령 추출 (마지막 폴백).
-    추출 우선순위: 백틱 인용 > 'Running:' 류 동사 > '!cmd' 줄.
-    셸 신호어가 없으면 빈 리스트.
+    추출 우선순위: 백틱 인용 > 코드블록 > 'Running:' 류 동사 > 'cmd' 시작 줄 > '!cmd'.
+    한국어 패턴 (실행:, 다음 명령:) 및 명령 prefix 직접 매칭 추가.
     """
     cands: list[str] = []
+    # 백틱 안의 명령
     for m in _BACKTICK_CMD_RE.finditer(text):
         c = m.group(1).strip()
-        if any(c.startswith(p) for p in ('curl ', 'nmap ', 'ls ', 'cat ', 'grep ', 'awk ',
-                                         'find ', 'ping ', 'dig ', 'nslookup ', 'ss ',
-                                         'systemctl ', 'docker ', 'sudo ', 'echo ', 'uname',
-                                         'whoami', 'id', 'ps ', 'netstat', 'ip ', 'which ',
-                                         'msfvenom', 'bash ', 'sh ', 'python', 'jq ',
-                                         'tar ', 'wget ')):
+        if any(c.startswith(p) for p in _CMD_LINE_PREFIXES):
             cands.append(c)
+    # 코드블록 (```bash...``` 또는 ```...```) 안 첫 줄
+    for m in _CODEBLOCK_CMD_RE.finditer(text):
+        c = m.group(1).strip()
+        if any(c.startswith(p) for p in _CMD_LINE_PREFIXES) and c not in cands:
+            cands.append(c)
+    # Running:/실행: 동사 패턴
     for m in _PROSE_CMD_RE.finditer(text):
         c = m.group(1).strip().strip('`').strip()
         if c and len(c) > 2 and c not in cands:
             cands.append(c)
+    # 명령 prefix 가 줄 시작에 직접 등장 (가장 공격적, 마지막 우선순위)
+    for m in _CMD_LINE_RE.finditer(text):
+        c = m.group(1).strip()
+        # 너무 길거나 자연어 같은 라인 제외
+        if len(c) <= 300 and c not in cands and not any(w in c.lower() for w in
+            ('이렇게', '실행하면', '하지만', '이는', '그러나', '먼저', '예를 들어')):
+            cands.append(c)
+    # !cmd
     for m in _BANG_CMD_RE.finditer(text):
         c = m.group(1).strip()
         if c and len(c) > 2 and c not in cands:
@@ -1608,7 +1637,9 @@ class BastionAgent:
         MAX_TURNS = 6                    # derestricted 가 turn 당 60-120s 로 느림. 8 turn 시 480s 초과 → 되돌림.
         SELF_VERIFY_RETRY = 1
         FIRST_TURN_RETRY = 1             # 첫 turn 에 tool_call 없으면 1회 재촉
+        EMPTY_CONTENT_RETRY = 2          # content 가 EMPTY 인 case 재시도 (R3-noexec 진단 결과)
         first_turn_retry_used = 0
+        empty_content_retry_used = 0
         self_verified_attempted = 0
 
         yield {"event": "stage", "stage": "planning"}
@@ -1707,6 +1738,26 @@ class BastionAgent:
 
             # ─ tool_calls 없음 → 종료 후보 ─
             if not tool_calls:
+                # ★ EMPTY_CONTENT_RETRY (R3-noexec 진단 결과 추가) — content + thinking 모두 짧음 →
+                # LLM 이 응답 자체를 거부/생략. FIRST_TURN_RETRY 보다 더 적극적 재시도.
+                _content_len = len((content or "").strip())
+                _thinking_len = len((thinking or "").strip())
+                _is_empty_response = (_content_len < 30 and _thinking_len < 50)
+                if (_is_empty_response and empty_content_retry_used < EMPTY_CONTENT_RETRY):
+                    empty_content_retry_used += 1
+                    yield {"event": "empty_content_retry",
+                           "content_len": _content_len, "thinking_len": _thinking_len,
+                           "attempt": empty_content_retry_used}
+                    # 더 직접적인 prompt — 예시 1개만 + 즉시 실행 강제
+                    msgs.append({"role": "user", "content": (
+                        f"[비응답 재시도 #{empty_content_retry_used}] 이전 turn 응답이 비어있었다. "
+                        f"지금 즉시 도구 1개 호출해라. 자연어 설명 1개라도 출력 금지.\n"
+                        f"형식 (정확히 따라하라):\n"
+                        f'{{"tool": "shell", "parameters": {{"target": "attacker", "command": "<요청 명령>"}}}}\n'
+                        f"또는 정보 분석이면:\n"
+                        f'{{"tool": "qa", "parameters": {{"target": "manager", "question": "<한줄 질문>"}}}}\n'
+                    )})
+                    continue
                 # 첫 turn 에 tool_call 0 + 도구 실행 0 → 거부 또는 QA fallback. 1회 강제 재촉.
                 if turn == 0 and not all_tool_outputs and first_turn_retry_used < FIRST_TURN_RETRY:
                     first_turn_retry_used += 1
