@@ -12,6 +12,12 @@
 
 ## In-Progress
 
+### P0. 야간 자율 작업 (2026-04-28 19:30~) — 사용자 "퇴근, 밤동안 멈추지 말고 작업"
+- V2 driver R3-noexec post-fix 측정 (cursor 34/256, 19시간 잔여)
+- KG path bug 영구 수정 + bastion 양쪽 repo push
+- 매 30분 cycle 모니터링 + commit
+- 측정 끝나면 paper §6.2 결과 채우기
+
 ### P1. Precinct 6 dataset 통합  [STATUS: 1억 dl 완료 + incidents 1000 임포트 (KG nodes 4902, anchors 14020)]
 
 **동기**: WitFoo Precinct 6 (Apache 2.0, 1억 signal + MITRE + incidents + graph) 로
