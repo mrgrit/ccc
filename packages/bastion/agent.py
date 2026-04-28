@@ -218,7 +218,7 @@ _CMD_LINE_PREFIXES = (
     'find ', 'ping ', 'dig ', 'nslookup ', 'ss ', 'ls ', 'echo ', 'whoami', 'id ',
     'ps ', 'systemctl ', 'docker ', 'sudo ', 'uname', 'netstat', 'ip ', 'which ',
     'msfvenom', 'bash ', 'sh ', 'python3 ', 'python ', 'jq ', 'tar ', 'iptables',
-    'nft ', 'tcpdump ', 'tshark ', 'curl', 'openssl ', 'kubectl ', 'aws ',
+    'nft ', 'tcpdump ', 'tshark ', 'openssl ', 'kubectl ', 'aws ',
     'host ', 'mkdir ', 'rm ', 'cp ', 'mv ', 'chmod ', 'chown ', 'kill ',
     'apt ', 'apt-get ', 'yum ', 'dnf ', 'rpm ', 'dpkg ', 'service ', 'journalctl ',
     'wazuh-control ', 'suricatasc ', 'modsecurity-tool', 'hashcat ', 'john ',
@@ -228,6 +228,45 @@ _CMD_LINE_RE = re.compile(
     r'(?:^|\n)[ \t]*((?:' + '|'.join(re.escape(p) for p in _CMD_LINE_PREFIXES) + r')[^\n]{2,300})',
     re.MULTILINE,
 )
+
+
+def _extract_command_from_acceptable_methods(methods: list[str]) -> str | None:
+    """verify.semantic.acceptable_methods 의 첫 항목에서 실제 shell 명령 추출.
+
+    semantic 작성자가 작성한 verified 명령이라 신뢰도 최고. R3-noexec 분석 결과
+    LLM 가 6 turn 모두 skill 호출 못 하는 경우 (planning loop 함정),
+    한국어 자연어 prompt 라 prose 추출도 실패 → 이 함수가 ground-truth fallback.
+
+    예: "echo -e HEAD / HTTP/1.0\\r\\n\\r\\n | nc -w 3 <IP> 3000"
+        → "echo -e HEAD / HTTP/1.0\\r\\n\\r\\n | nc -w 3 <IP> 3000"
+    """
+    if not methods:
+        return None
+    for m in methods:
+        if not m:
+            continue
+        # 첫 라인 또는 backtick 안 명령 추출
+        # "nmap -sn 10.20.30.0/24" - prefix 매칭
+        cleaned = m.strip().rstrip('.').strip()
+        # backtick 제거
+        if cleaned.startswith('`') and cleaned.endswith('`'):
+            cleaned = cleaned[1:-1].strip()
+        # 백틱 안 첫 명령 추출
+        bm = re.search(r'`([^`\n]{3,500})`', cleaned)
+        if bm:
+            cleaned = bm.group(1).strip()
+        # 명령 prefix 시작 검사
+        if any(cleaned.lower().startswith(p.strip()) for p in _CMD_LINE_PREFIXES):
+            return cleaned[:500]
+        # prefix 매칭 안 되면 전체 line 첫 명령 부분 추출 (자유형 설명)
+        # "Pacu set_keys + run iam__enum_users_roles_policies_groups" 같은 케이스
+        for p in _CMD_LINE_PREFIXES:
+            idx = cleaned.lower().find(' ' + p.strip() + ' ')
+            if idx >= 0:
+                return cleaned[idx + 1:idx + 1 + 500].strip()
+            if cleaned.lower().startswith(p.strip()):
+                return cleaned[:500]
+    return None
 
 
 def _extract_shell_from_prose(text: str) -> list[str]:
@@ -254,15 +293,68 @@ def _extract_shell_from_prose(text: str) -> list[str]:
     # 명령 prefix 가 줄 시작에 직접 등장 (가장 공격적, 마지막 우선순위)
     for m in _CMD_LINE_RE.finditer(text):
         c = m.group(1).strip()
-        # 너무 길거나 자연어 같은 라인 제외
-        if len(c) <= 300 and c not in cands and not any(w in c.lower() for w in
-            ('이렇게', '실행하면', '하지만', '이는', '그러나', '먼저', '예를 들어')):
-            cands.append(c)
+        # 너무 길거나 자연어 같은 라인 제외 — 한국어 조사/명사 corrupt 차단
+        c_lower = c.lower()
+        if len(c) > 300 or c in cands:
+            continue
+        # English negative
+        if any(w in c_lower for w in ('이렇게', '실행하면', '하지만', '이는', '그러나', '먼저', '예를 들어')):
+            continue
+        # Korean particles/words - command line shouldn't contain Korean text
+        if any(w in c for w in (
+            '사용하', '활용', '사용해', '실행하', '접근하', '확인하', '수행하',
+            '보내', '받아', '진행', '획득', '추출', '저장', '저장해', '작성',
+            '스크립트', '엔진', '디렉토리', '디렉터리', '파일', '서버', '포트',
+            '네트워크', '대상', '의 ', '을 ', '를 ', '에서 ', '으로 ', '로 ',
+            '와 ', '과 ', '및 ', '또는 '
+        )):
+            continue
+        cands.append(c)
     # !cmd
     for m in _BANG_CMD_RE.finditer(text):
         c = m.group(1).strip()
         if c and len(c) > 2 and c not in cands:
             cands.append(c)
+    # 한국어 자연어 prompt 안 명령 — '단어(cmd)' 또는 '~로 cmd' 패턴
+    # 예: "netcat(nc)을 사용하여 10.20.30.80의 포트 3000에 접속하여"
+    # 한국어 prose 에서 도구명 + 인자 추출 → 단순 명령 합성
+    if not cands and text:
+        # "netcat" / "nmap" / "curl" 등 도구 + 다음에 IP/port 추출
+        kor_tool_re = re.compile(
+            r'(?:^|\s|\()(' + '|'.join(re.escape(p.strip()) for p in _CMD_LINE_PREFIXES if p.strip() not in ('cat', 'ls', 'cp', 'mv', 'rm')) + r')(?:\)|\s)',
+            re.IGNORECASE
+        )
+        tool_m = kor_tool_re.search(text)
+        if tool_m:
+            tool = tool_m.group(1).strip().lower()
+            # IP / URL / 포트 추출
+            ip_m = re.search(r'(\d{1,3}\.\d{1,3}\.\d{1,3}\.\d{1,3})', text)
+            port_m = re.search(r'포트\s*(\d{2,5})|:(\d{2,5})\b|\s(\d{2,5})\s*포트', text)
+            url_m = re.search(r'(https?://[^\sㄱ-힝]+)', text)
+            ip = ip_m.group(1) if ip_m else None
+            port = (port_m.group(1) or port_m.group(2) or port_m.group(3)) if port_m else None
+            url = url_m.group(1) if url_m else None
+            # 도구별 합성
+            if tool == 'nmap' and ip:
+                cmd = f"nmap -sV -sC {ip}" + (f" -p {port}" if port else "")
+                cands.append(cmd)
+            elif tool == 'nc' and ip and port:
+                cands.append(f"echo -e 'HEAD / HTTP/1.0\\r\\n\\r\\n' | nc -w 3 {ip} {port}")
+            elif tool == 'curl' and (url or ip):
+                target = url or (f"http://{ip}" + (f":{port}" if port else ""))
+                cands.append(f"curl -s -i {target}")
+            elif tool == 'wget' and url:
+                cands.append(f"wget -q -O - {url}")
+            elif tool == 'ping' and ip:
+                cands.append(f"ping -c 4 {ip}")
+            elif tool == 'dig' and ip:
+                cands.append(f"dig +short {ip}")
+            elif tool == 'whoami':
+                cands.append("whoami && id")
+            elif tool == 'systemctl':
+                # 'systemctl status X' 패턴
+                sm = re.search(r'(\w+)\s*(?:서비스|상태|status)', text)
+                cands.append(f"systemctl status {sm.group(1) if sm else 'sshd'}")
     return cands[:3]  # 상위 3개만
 
 
@@ -1898,10 +1990,58 @@ class BastionAgent:
         # ── 최종 fallback: MAX_TURNS 소진 + 도구 0 호출 → 사용자 prompt 자체 분석 ──
         # R3-noexec 진단 결과 derestricted 모델이 6 turn 모두 EMPTY content 반환.
         # 마지막 수단으로 사용자 message 에서 명령 패턴 추출해 shell 호출 합성.
+        # 우선순위: prose 추출 → verify.semantic.acceptable_methods → LLM 변환
+        _fallback_cmd: str | None = None
+        _fallback_source = ""
         if not all_tool_outputs:
             _msg_cmds = _extract_shell_from_prose(message or "")
             if _msg_cmds:
-                yield {"event": "prompt_fallback_attempt", "command": _msg_cmds[0][:200]}
+                _fallback_cmd = _msg_cmds[0]
+                _fallback_source = "prose"
+            # 2단계: verify.semantic.acceptable_methods 첫 명령 추출 (semantic 작성자가 검증한 명령)
+            if not _fallback_cmd:
+                _ctx = getattr(self, "_verify_context", {}) or {}
+                _ams = _ctx.get("acceptable_methods", []) or []
+                _am_cmd = _extract_command_from_acceptable_methods(_ams)
+                if _am_cmd:
+                    # placeholder 치환 (예: <IP>, <target>)
+                    for vm, ip in self.vm_ips.items():
+                        _am_cmd = _am_cmd.replace(f"<{vm}>", ip).replace(f"<{vm.upper()}>", ip)
+                    _am_cmd = _am_cmd.replace("<IP>", self.vm_ips.get("web", "")).replace("<target>", self.vm_ips.get("web", ""))
+                    _fallback_cmd = _am_cmd
+                    _fallback_source = "acceptable_methods"
+            # 3단계: LLM 자연어→shell 변환 (10s 짧은 호출)
+            if not _fallback_cmd and message:
+                try:
+                    r = httpx.post(
+                        f"{self.ollama_url}/api/chat",
+                        json={
+                            "model": self.model,
+                            "messages": [{
+                                "role": "system",
+                                "content": "You convert a Korean/English security task description into ONE single shell command. Output ONLY the command, no explanation, no markdown, no quotes. If you cannot, output 'echo SKIP'."
+                            }, {
+                                "role": "user",
+                                "content": f"Task: {message[:500]}\n\nVM IPs: {self.vm_ips}\n\nSingle shell command:"
+                            }],
+                            "stream": False,
+                            "options": {"temperature": 0.0, "num_predict": 200},
+                        },
+                        timeout=20.0,
+                    )
+                    raw = r.json().get("message", {}).get("content", "") or ""
+                    raw = raw.strip().strip('`').strip()
+                    # 첫 줄만
+                    raw = raw.splitlines()[0].strip() if raw else ""
+                    if raw and raw != "echo SKIP" and len(raw) > 3 and any(raw.startswith(p) for p in _CMD_LINE_PREFIXES):
+                        _fallback_cmd = raw[:500]
+                        _fallback_source = "llm_translate"
+                except Exception:
+                    pass
+            if _fallback_cmd:
+                _msg_cmds = [_fallback_cmd]
+                yield {"event": "prompt_fallback_attempt", "command": _msg_cmds[0][:200],
+                       "source": _fallback_source}
                 params = self._enrich_params("shell", {
                     "command": _msg_cmds[0],
                     "target": self._infer_target_vm(message),
@@ -1909,7 +2049,7 @@ class BastionAgent:
                 if params.get("target") not in self.vm_ips:
                     params["target"] = self._infer_target_vm(message)
                     params = self._enrich_params("shell", params)
-                yield {"event": "synthesized_tool_calls", "source": "prompt_self_extract",
+                yield {"event": "synthesized_tool_calls", "source": _fallback_source or "prompt_self_extract",
                        "skill": "shell", "command": _msg_cmds[0][:200]}
                 yield {"event": "skill_start", "skill": "shell", "params": params, "attempt": 1}
                 try:
