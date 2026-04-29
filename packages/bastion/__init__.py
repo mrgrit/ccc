@@ -291,12 +291,31 @@ CRSEOF
 a2enmod security2 proxy proxy_http headers 2>/dev/null || true
 systemctl restart apache2
 """,
-        # ── Docker 서비스 + 웹 앱 컨테이너 ──
+        # ── Docker 서비스 + 웹 앱 컨테이너 (JuiceShop + DVWA + 5 vuln-sites) ──
+        # docker-compose 설치 (vuln-sites 배포용 — Ubuntu apt 의 docker.io 는 plugin 없음)
+        "apt-get install -y docker-compose 2>/dev/null || true",
         """
 systemctl enable --now docker
 docker rm -f juiceshop dvwa 2>/dev/null || true
 docker run -d --restart=always --name juiceshop -p 3000:3000 bkimminich/juice-shop 2>/dev/null || true
 docker run -d --restart=always --name dvwa -p 8080:80 vulnerables/web-dvwa 2>/dev/null || true
+""",
+        # ── 5 vuln-sites 자동 배포 (NeoBank/GovPortal/MediForum/AdminConsole/AICompanion) ──
+        # 소스코드는 manager(bastion) 가 SubAgent 로 /opt/vuln-sites/ 에 사전 동기화 가정.
+        # 미동기화 시 skip — 학생 재온보딩 시 ccc-api 가 별도 deploy 단계로 처리 가능.
+        """
+if [ -d /opt/vuln-sites ] && command -v docker-compose >/dev/null 2>&1; then
+    docker network create ccc-vuln 2>/dev/null || true
+    for s in neobank govportal mediforum adminconsole aicompanion; do
+        if [ -d /opt/vuln-sites/$s ]; then
+            ( cd /opt/vuln-sites/$s && docker-compose up -d --build 2>&1 | tail -2 ) &
+        fi
+    done
+    wait
+    echo "vuln-sites 5종 deploy attempted (bg builds)"
+else
+    echo "vuln-sites skip: /opt/vuln-sites 미존재 또는 docker-compose 미설치"
+fi
 """,
         # ── Apache → JuiceShop 리버스 프록시 (포트 80) ──
         """
@@ -966,6 +985,31 @@ timedatectl 2>/dev/null | grep -E 'Time zone|System clock synchronized|NTP servi
 
     # 2. 역할별 소프트웨어 설치
     role_cmds = list(ROLE_SETUP_SCRIPTS.get(role, []))
+
+    # web: vuln-sites 소스코드 업로드 (5종 docker compose) — SUBAGENT_INSTALL 후 실행 가능
+    # ccc-api 가 contents/vuln-sites/ 를 base64 tar 로 업로드 → /opt/vuln-sites/ 풀어둠.
+    # 이후 role_setup 의 docker-compose up 단계에서 사용.
+    if role == "web":
+        try:
+            import os as _os, base64 as _b64, tarfile as _tar, io as _io
+            # ccc 루트 추정 — 이 파일 기준 ../../..
+            _ccc_root = _os.path.dirname(_os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))))
+            _vuln_src = _os.path.join(_ccc_root, "contents", "vuln-sites")
+            if _os.path.isdir(_vuln_src):
+                _buf = _io.BytesIO()
+                with _tar.open(fileobj=_buf, mode="w:gz") as _t:
+                    _t.add(_vuln_src, arcname="vuln-sites")
+                _b64data = _b64.b64encode(_buf.getvalue()).decode()
+                _upload = (
+                    f"mkdir -p /opt/vuln-sites && "
+                    f"echo '{_b64data}' | base64 -d > /tmp/vuln-sites.tar.gz && "
+                    f"tar xzf /tmp/vuln-sites.tar.gz -C /opt/vuln-sites/ --strip-components=1 && "
+                    f"rm /tmp/vuln-sites.tar.gz && "
+                    f"echo 'vuln-sites src uploaded:' && ls /opt/vuln-sites/"
+                )
+                role_cmds.insert(0, _upload)
+        except Exception as _e:
+            results["steps"].append({"step": "vuln_sites_upload_skip", "success": True, "stdout": str(_e)[:200]})
 
     # manager: 외부 LLM 서버 있으면 Ollama 스킵, 없으면 로컬 설치
     if role == "manager":
