@@ -294,6 +294,19 @@ systemctl restart apache2
         # ── Docker 서비스 + 웹 앱 컨테이너 (JuiceShop + DVWA + 5 vuln-sites) ──
         # docker-compose 설치 (vuln-sites 배포용 — Ubuntu apt 의 docker.io 는 plugin 없음)
         "apt-get install -y docker-compose 2>/dev/null || true",
+        # Docker daemon DNS 설정 — 컨테이너가 secu(10.20.30.1, DNS 미운영) 가 아닌 8.8.8.8 사용
+        # (이전 버그: vuln-sites docker build 시 pypi.org 해상 실패)
+        """
+mkdir -p /etc/docker
+if [ ! -f /etc/docker/daemon.json ] || ! grep -q '"dns"' /etc/docker/daemon.json; then
+    cat > /etc/docker/daemon.json << 'DOCKEREOF'
+{
+  "dns": ["8.8.8.8", "1.1.1.1"]
+}
+DOCKEREOF
+    systemctl restart docker
+fi
+""",
         """
 systemctl enable --now docker
 docker rm -f juiceshop dvwa 2>/dev/null || true
