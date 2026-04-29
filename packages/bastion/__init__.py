@@ -447,7 +447,7 @@ services:
       - APP__BASE_URL=http://localhost:8080
       - APP__ADMIN__EMAIL=admin@opencti.io
       - APP__ADMIN__PASSWORD=CCC2026!
-      - APP__ADMIN__TOKEN=ccc-opencti-token-2026
+      - APP__ADMIN__TOKEN=a8f3b0c2-9d1e-4f56-8a2b-7c4d3e1f9b8a
       - REDIS__HOSTNAME=redis
       - ELASTICSEARCH__URL=http://elasticsearch:9200
       - MINIO__ENDPOINT=minio
@@ -468,7 +468,7 @@ services:
       - opencti
     environment:
       - OPENCTI_URL=http://opencti:8080
-      - OPENCTI_TOKEN=ccc-opencti-token-2026
+      - OPENCTI_TOKEN=a8f3b0c2-9d1e-4f56-8a2b-7c4d3e1f9b8a
     restart: always
 OCEOF
 
