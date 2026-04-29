@@ -1047,14 +1047,61 @@ echo "DNS set to {SECU_GW}"
         r = ssh_run(ip, user, password, [nat_script])
         results["steps"].append({"step": "nat_disable_gw_route", "gateway": SECU_GW, **r})
     else:
-        secu_script = """
-sysctl -w net.ipv4.ip_forward=1
-echo 'net.ipv4.ip_forward=1' >> /etc/sysctl.conf
-EXTERNAL=$(ip -o link show | grep -v 'lo\\|docker\\|veth' | awk '{print $2}' | tr -d ':' | head -1)
-nft add table nat 2>/dev/null || true
-nft 'add chain nat postrouting { type nat hook postrouting priority 100; }' 2>/dev/null || true
-nft add rule nat postrouting oifname "$EXTERNAL" masquerade 2>/dev/null || true
-echo "NAT masquerade on $EXTERNAL"
+        # secu — NAT masquerade + 외부 NIC port forwarding (Wazuh/OpenCTI/JuiceShop/vuln-sites)
+        web_ip = INTERNAL_IPS.get("web", "10.20.30.80")
+        siem_ip = INTERNAL_IPS.get("siem", "10.20.30.100")
+        secu_script = f"""
+# 1. ip_forward 영구화
+echo 'net.ipv4.ip_forward=1' > /etc/sysctl.d/99-ccc-secu.conf
+echo 'net.ipv4.conf.all.proxy_arp=1' >> /etc/sysctl.d/99-ccc-secu.conf
+sysctl -p /etc/sysctl.d/99-ccc-secu.conf
+
+# 2. nft table/chain idempotent 생성
+EXTERNAL=$(ip -o link show | grep -v 'lo\\|docker\\|veth' | awk '{{print $2}}' | tr -d ':' | head -1)
+nft add table ip nat 2>/dev/null || true
+nft 'add chain ip nat prerouting {{ type nat hook prerouting priority dstnat; }}' 2>/dev/null || true
+nft 'add chain ip nat postrouting {{ type nat hook postrouting priority srcnat; }}' 2>/dev/null || true
+
+# 3. 외부 NIC port forwarding (학생/관리자 외부 접근용) — 멱등 추가
+add_dnat() {{
+    local port="$1"; local target="$2"
+    if ! nft list chain ip nat prerouting 2>/dev/null | grep -q "iifname \\"$EXTERNAL\\" tcp dport $port dnat to $target"; then
+        nft add rule ip nat prerouting iifname "$EXTERNAL" tcp dport $port dnat to "$target"
+    fi
+}}
+# JuiceShop / web port 80
+add_dnat 80   "{web_ip}:80"
+# Wazuh Dashboard (HTTPS) → siem
+add_dnat 443  "{siem_ip}:443"
+# OpenCTI → siem
+add_dnat 8080 "{siem_ip}:8080"
+# Wazuh Manager Agent / API ports → siem (학생 SubAgent 등록 가능)
+add_dnat 1514 "{siem_ip}:1514"
+add_dnat 1515 "{siem_ip}:1515"
+add_dnat 55000 "{siem_ip}:55000"
+# vuln-sites (NeoBank/GovPortal/MediForum/AdminConsole/AICompanion) → web (web 에 docker 배포 가정)
+add_dnat 3001 "{web_ip}:3001"
+add_dnat 3002 "{web_ip}:3002"
+add_dnat 3003 "{web_ip}:3003"
+add_dnat 3004 "{web_ip}:3004"
+add_dnat 3005 "{web_ip}:3005"
+
+# 4. masquerade — internal → external 응답 NAT
+if ! nft list chain ip nat postrouting 2>/dev/null | grep -q "oifname \\"$EXTERNAL\\" masquerade"; then
+    nft add rule ip nat postrouting oifname "$EXTERNAL" masquerade
+fi
+# internal 응답 시 source NAT (DNAT 된 패킷 회신용)
+if ! nft list chain ip nat postrouting 2>/dev/null | grep -q "ip daddr 10.20.30.0/24 oifname"; then
+    INTERNAL=$(ip -o link show | grep -v 'lo\\|docker\\|veth' | awk '{{print $2}}' | tr -d ':' | tail -1)
+    [ -n "$INTERNAL" ] && nft add rule ip nat postrouting ip daddr 10.20.30.0/24 oifname "$INTERNAL" masquerade
+fi
+
+# 5. nft 규칙 영구화
+nft list ruleset > /etc/nftables.conf
+systemctl enable nftables 2>/dev/null || true
+
+echo "secu port forwarding: $EXTERNAL → web/siem/vuln-sites configured"
+nft list chain ip nat prerouting | grep dnat | head -15
 """
         r = ssh_run(ip, user, password, [secu_script])
         results["steps"].append({"step": "secu_nat_forward", **r})
