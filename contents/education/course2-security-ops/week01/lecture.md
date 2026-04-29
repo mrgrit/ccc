@@ -244,11 +244,11 @@ alert http any any -> any any (
 | 차단 예시 | 특정 IP 차단 | `' OR 1=1--` 차단 |
 | 배치 위치 | 네트워크 경계 | 웹 서버 앞단 |
 
-**우리 실습 환경**: web 서버의 **Apache+ModSecurity**
-- Nginx 기반 오픈소스 WAF
-- ModSecurity Core Rule Set (CRS) 내장
-- OWASP Top 10 공격 자동 차단
-- 웹 UI로 설정 관리 가능
+**우리 실습 환경**: web 서버의 **Apache + ModSecurity**
+- **Apache 2.4** + `mod_security2` 모듈 (Apache 기반, Nginx 아님)
+- ModSecurity **Core Rule Set (CRS) 3.3** 내장 — `/usr/share/modsecurity-crs/rules/`
+- OWASP Top 10 공격 자동 탐지/차단 (SQLi 942, XSS 941, RFI/LFI 930, Protocol 920 등)
+- Apache `:80` reverse-proxy → JuiceShop `:3000` (학생/공격자는 :80 으로 접근 시 WAF 통과)
 
 **WAF가 차단하는 공격 예시**:
 ```
@@ -488,8 +488,13 @@ exit
 > nftables→Suricata→WAF→앱 순서로 패킷이 검사되며, WAF는 **마지막 방어선**이다.
 > 이 실습에서는 Apache+ModSecurity가 정상 동작하는지, WAF가 실제로 공격을 차단하는지 확인한다.
 >
-> **핵심 포인트:** WAF 포트(:8082)와 직접 접근 포트(:3000)의 차이를 이해한다.
-> :8082로 접근하면 ModSecurity CRS가 적용되고, :3000으로 접근하면 WAF 없이 직접 접속된다.
+> **실습 환경 (실측, 2026-04-29):**
+> - web VM(10.20.30.80) = **Apache 2.4.52** (Ubuntu) + **libapache2-mod-security2 2.9.5** + **modsecurity-crs 3.3.2**
+> - Apache 가 `:80` 에서 `JuiceShop :3000` 로 **reverse proxy** (a2ensite juiceshop)
+> - WAF 검사 경로: 학생/공격자 → `:80` (Apache + ModSecurity) → `localhost:3000` (JuiceShop)
+> - **WAF 우회**: 직접 `localhost:3000` 호출 시 ModSecurity 거치지 않음
+>
+> **핵심 포인트:** :80 으로 접근하면 ModSecurity CRS 가 적용되고, :3000 으로 접근하면 WAF 없이 직접 접속된다.
 
 ### 6.1 web 서버 접속
 
@@ -497,52 +502,126 @@ exit
 ssh ccc@10.20.30.80
 ```
 
-### 6.2 Apache+ModSecurity 서비스 상태 확인
+### 6.2 Apache + ModSecurity 모듈 로드 확인 ★
+
+> **자주 빈 출력이 나오는 이유**: `apachectl` 단독은 usage 만 출력함.
+> `apachectl -M` 가 정답이고 (`apache2ctl -M` 도 alias). sudo 권장.
 
 ```bash
-# Apache+ModSecurity 관련 프로세스 확인
-sudo systemctl status apache2 2>/dev/null || sudo systemctl is-active apache2 2>/dev/null
+# 1) Apache 서비스 살아있는지
+sudo systemctl is-active apache2
 
-# Nginx 프로세스 확인 (Apache+ModSecurity은 Nginx 기반)
-ps aux | grep -i "nginx\|apache2" | grep -v grep
-```
-
-### 6.3 Apache+ModSecurity 설정 확인
-
-```bash
-# ModSecurity 관련 설정 확인
-sudo find /etc/apache2 /etc/nginx -name "*.conf" -exec grep -l "ModSecurity\|modsecurity" {} \; 2>/dev/null
-
-# WAF 모드 확인 (On = 차단, DetectionOnly = 탐지만)
-sudo grep -ri "SecRuleEngine" /etc/apache2/ /etc/nginx/ 2>/dev/null | head -5
-```
-
-### 6.4 JuiceShop 실행 확인
-
-```bash
-# JuiceShop 프로세스 확인
-sudo docker ps --filter "name=juice" 2>/dev/null || ps aux | grep -i "juice" | grep -v grep
-
-# JuiceShop 웹 접근 테스트
-curl -s -o /dev/null -w "HTTP Status: %{http_code}\n" http://localhost:3000/
+# 2) ModSecurity 모듈 로드 확인 — security2_module (shared) 출력되어야 함
+sudo apachectl -M | grep -i security
 ```
 
 **예상 출력**:
 ```
-HTTP Status: 200
+active
+ security2_module (shared)
 ```
 
-### 6.5 WAF 차단 테스트 (간단)
+> 출력이 비어있으면 → `sudo a2enmod security2 && sudo systemctl reload apache2` 로 활성화.
+
+### 6.3 ModSecurity 패키지 + CRS 룰 확인
 
 ```bash
-# 정상 요청
-curl -s -o /dev/null -w "Status: %{http_code}\n" "http://localhost:3000/"
+# 패키지 설치 상태
+dpkg -l | grep -iE 'libapache2-mod-security|modsecurity-crs'
 
-# SQL Injection 패턴 포함 요청 (WAF가 차단하는지 확인)
-curl -s -o /dev/null -w "Status: %{http_code}\n" "http://localhost:3000/rest/products/search?q=' OR 1=1--"
+# 활성 mods-enabled 심링크
+ls /etc/apache2/mods-enabled/ | grep -i security
+
+# WAF 엔진 모드 (On = 차단, DetectionOnly = 탐지만)
+sudo grep -r "^SecRuleEngine" /etc/modsecurity/ /etc/apache2/ 2>/dev/null | head -3
+
+# CRS 룰 디렉토리 (REQUEST-9xx 다수 파일 존재해야 정상)
+ls /usr/share/modsecurity-crs/rules/ | head -10
 ```
 
-> WAF가 정상 동작하면 SQL Injection 요청에 대해 403 (Forbidden) 또는 다른 차단 응답을 반환한다.
+**예상 출력**:
+```
+ii  libapache2-mod-security2  2.9.5-1   amd64  Tighten web applications security for Apache
+ii  modsecurity-crs           3.3.2-1   all    OWASP ModSecurity Core Rule Set
+security2.conf
+security2.load
+/etc/modsecurity/modsecurity.conf:SecRuleEngine On
+REQUEST-901-INITIALIZATION.conf
+REQUEST-911-METHOD-ENFORCEMENT.conf
+REQUEST-920-PROTOCOL-ENFORCEMENT.conf
+REQUEST-930-APPLICATION-ATTACK-LFI.conf
+REQUEST-941-APPLICATION-ATTACK-XSS.conf
+REQUEST-942-APPLICATION-ATTACK-SQLI.conf
+...
+```
+
+### 6.4 JuiceShop 실행 + Apache reverse proxy 확인
+
+```bash
+# JuiceShop 컨테이너 살아있는지
+sudo docker ps --filter "name=juice" --format '{{.Names}} {{.Status}} {{.Ports}}'
+
+# Apache 가 :80 에서 reverse proxy 하는지
+sudo cat /etc/apache2/sites-enabled/juiceshop.conf | head -8
+
+# 직접 :3000 (WAF 우회) — Juice Shop 응답
+curl -s -o /dev/null -w "직접 :3000  → HTTP %{http_code}\n" http://localhost:3000/
+
+# Apache :80 (WAF 통과) — 같은 페이지지만 ModSecurity 검사 후 응답
+curl -s -o /dev/null -w "WAF :80    → HTTP %{http_code}\n" http://localhost/
+```
+
+**예상 출력**:
+```
+juiceshop  Up 2 weeks  0.0.0.0:3000->3000/tcp
+<VirtualHost *:80>
+    ProxyPreserveHost On
+    ProxyPass / http://localhost:3000/
+    ProxyPassReverse / http://localhost:3000/
+직접 :3000  → HTTP 200
+WAF :80    → HTTP 200
+```
+
+### 6.5 WAF 차단/탐지 테스트 ★ (반드시 :80 으로 — :3000 은 WAF 우회)
+
+```bash
+# 1) 정상 요청 (200)
+curl -s -o /dev/null -w "정상     → HTTP %{http_code}\n" "http://localhost/"
+
+# 2) SQLi 패턴 (CRS 942) — User-Agent 만 의심으로 트리거
+curl -s -o /dev/null -w "Bot UA   → HTTP %{http_code}\n" -A 'sqlmap/1.7' "http://localhost/"
+
+# 3) SQLi payload (CRS 942)
+curl -s -o /dev/null -w "SQLi     → HTTP %{http_code}\n" \
+  "http://localhost/rest/products/search?q=' UNION SELECT 1,2,3,4,5,6,7,8,9 FROM Users--"
+
+# 4) XSS payload (CRS 941)
+curl -s -o /dev/null -w "XSS      → HTTP %{http_code}\n" \
+  "http://localhost/?q=<script>alert(1)</script>"
+
+# 5) error.log 에 ModSecurity 가 기록한 차단/경고
+sudo tail -20 /var/log/apache2/error.log | grep -iE 'modsecurity|crs|92[0-9]|94[12]' | tail -5
+```
+
+**예상 출력 (paranoia level 1, threshold inbound 5)**:
+```
+정상     → HTTP 200
+Bot UA   → HTTP 403   (또는 200 + error.log Warning)
+SQLi     → HTTP 403   (또는 anomaly score 가 누적되어 차단)
+XSS      → HTTP 403
+[Wed Apr 29 ...] ModSecurity: Warning. Pattern match ... id "920350" ... msg "Host header is a numeric IP address"
+[Wed Apr 29 ...] ModSecurity: Warning. ... id "942100" ... msg "SQL Injection Attack Detected"
+```
+
+> **403 안 떨어지고 Warning 만 보이면**: paranoia level 이 1 이라 anomaly score 가 inbound threshold 5 미만. `sudo sed -i 's/inbound_anomaly_score_threshold=5/inbound_anomaly_score_threshold=3/' /etc/modsecurity/crs/crs-setup.conf && sudo systemctl reload apache2` 로 임계치 낮추면 차단 빈도 증가.
+
+### 6.6 외부 secu 게이트웨이 통한 접근 (관리자/학생 외부 입장)
+
+```bash
+# secu 외부 IP (예: 192.168.0.108) 의 :80 → web :80 DNAT
+# 같은 ModSecurity 검사 적용됨
+curl -s -o /dev/null -w "외부:80 → HTTP %{http_code}\n" http://192.168.0.108/
+```
 
 ```bash
 exit
@@ -823,7 +902,7 @@ active
 
 ---
 
-> **실습 환경 검증 완료** (2026-03-28): nftables(inet filter+ip nat), Suricata 8.0.4(65K룰), Apache+ModSecurity(:8082→403), Wazuh v4.11.2(local_rules 62줄), OpenCTI(200)
+> **실습 환경 검증 완료** (2026-04-29 재검증): nftables(inet filter+ip nat), Suricata 8.0.4(65K룰), **Apache 2.4 + mod_security2 2.9.5 + CRS 3.3.2 (`:80` 통해 WAF 검사 — `:3000` 직접 호출 시 우회)**, Wazuh v4.11.2(local_rules 62줄), OpenCTI(8080)
 
 ---
 
@@ -896,37 +975,43 @@ active
 
 > **해석 팁.** `stats.log`의 `kernel_drops > 0`이면 누락 발생 → `af-packet threads` 증설. 커스텀 룰 `sid`는 **1,000,000 이상** 할당 권장.
 
-### BunkerWeb WAF (ModSecurity CRS)
-> **역할:** Nginx 기반 웹 방화벽 — OWASP Core Rule Set 통합  
+### Apache + ModSecurity WAF (CRS)
+> **역할:** Apache 2.4 기반 웹 방화벽 — OWASP Core Rule Set 통합 (참고: BunkerWeb 은 외부 대안, 현재 실습은 Apache 직접 사용)  
 > **실행 위치:** `web (10.20.30.80)`  
-> **접속/호출:** 리스닝 포트 `:8082` (원본 :80/:3000 프록시)
+> **접속/호출:** Apache `:80` reverse-proxy → JuiceShop `:3000`. WAF 검사 경로 = `:80`. 우회 = `:3000` 직접.
 
 **주요 경로·파일**
 
 | 경로 | 역할 |
 |------|------|
-| `/etc/bunkerweb/variables.env` | 서버 단위 기본 변수 |
-| `/etc/bunkerweb/configs/modsec/` | 커스텀 ModSecurity 룰 |
-| `/var/log/bunkerweb/modsec_audit.log` | ModSec 감사 로그(차단된 요청) |
-| `/var/log/bunkerweb/access.log` | 정상 요청 로그 |
+| `/etc/apache2/mods-enabled/security2.conf` | ModSecurity 모듈 로드 (a2enmod security2) |
+| `/etc/modsecurity/modsecurity.conf` | ModSecurity 메인 설정 (`SecRuleEngine On`) |
+| `/etc/modsecurity/crs/crs-setup.conf` | CRS 초기화 (paranoia level, anomaly threshold) |
+| `/usr/share/modsecurity-crs/rules/` | OWASP CRS 룰 디렉토리 (REQUEST-9xx 다수) |
+| `/var/log/apache2/error.log` | ModSecurity Warning/차단 기록 위치 |
+| `/etc/apache2/sites-enabled/juiceshop.conf` | :80 → :3000 reverse proxy VHost |
 
-**핵심 설정·키**
+**핵심 설정·키 (`/etc/modsecurity/crs/crs-setup.conf`)**
 
-- `USE_MODSECURITY=yes` — ModSec 엔진 활성화
-- `USE_MODSECURITY_CRS=yes` — OWASP CRS 활성화
-- `MODSECURITY_CRS_VERSION=4` — CRS 버전
+- `tx.paranoia_level=1` — 패러노이아 레벨 (1=관대, 4=엄격)
+- `tx.inbound_anomaly_score_threshold=5` — 이 점수 이상이면 차단
+- `tx.outbound_anomaly_score_threshold=4` — 응답 검사 점수 임계
+- `SecRuleEngine On|DetectionOnly|Off` — `/etc/modsecurity/modsecurity.conf`
 
 **로그·확인 명령**
 
-- `grep 'Matched Phase' modsec_audit.log` — 룰에 매칭된 단계 확인
-- `grep 'HTTP/1.1" 403' access.log` — WAF가 차단한 요청
+- `sudo apachectl -M | grep security` — 모듈 로드 확인 (security2_module shared 출력)
+- `sudo grep -i modsecurity /var/log/apache2/error.log | tail` — 룰 매칭 기록
+- `sudo grep ' 403 ' /var/log/apache2/access.log` — WAF가 차단한 요청
 
 **UI / CLI 요점**
 
-- `curl -i http://10.20.30.80:8082/?id=1' OR '1'='1` — SQLi 페이로드 테스트
-- 응답 코드 `403 Forbidden` — WAF 차단 정상 동작
+- `curl -A 'sqlmap/1.7' http://10.20.30.80/` — Bot User-Agent 트리거 (CRS 913)
+- `curl "http://10.20.30.80/?id=' UNION SELECT * FROM Users--"` — SQLi 페이로드 (CRS 942)
+- `curl "http://10.20.30.80/?q=<script>alert(1)</script>"` — XSS 페이로드 (CRS 941)
+- 응답 코드 `403 Forbidden` — WAF 차단 정상 동작 (anomaly score ≥ 임계 누적 시)
 
-> **해석 팁.** 오탐 시 `SecRuleRemoveById 942100` 방식으로 특정 룰만 제외. 차단 판정은 **점수 임계값**(기본 5) 기준이므로 단일 룰 1건은 차단되지 않을 수 있다.
+> **해석 팁.** 오탐 시 `SecRuleRemoveById 942100` 방식으로 특정 룰만 제외. 차단 판정은 **점수 임계값**(기본 5) 기준이므로 단일 룰 1건(score 3)은 차단되지 않을 수 있다 — 이 경우 paranoia level 을 2~3 으로 올리거나 threshold 를 3 으로 낮춰야 차단 빈도 증가.
 
 ### Wazuh SIEM (4.11.x)
 > **역할:** 에이전트 기반 로그·FIM·SCA 통합 분석 플랫폼  
