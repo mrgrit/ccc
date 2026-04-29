@@ -317,6 +317,43 @@ else
     echo "vuln-sites skip: /opt/vuln-sites 미존재 또는 docker-compose 미설치"
 fi
 """,
+        # ── 외부 NIC 직접 접근 차단 (secu 외부 IP 통한 DNAT 만 허용) ──
+        # NAT 정책: 학생/관리자/공격자 모든 트래픽이 secu 의 외부 IP 로만 들어와야 함
+        # web 의 외부 IP (192.168.0.x) 직접 접근은 차단 → port 식별성 + 일관 정책
+        """
+# 1. inet filter input — kernel-level (non-Docker) 트래픽
+nft add table inet filter 2>/dev/null || true
+nft 'add chain inet filter input { type filter hook input priority filter; policy accept; }' 2>/dev/null || true
+add_input_rule() {
+    local rule="$1"
+    if ! nft list ruleset 2>/dev/null | grep -qF "$rule"; then
+        nft add rule inet filter input $rule
+    fi
+}
+add_input_rule 'iif lo accept'
+add_input_rule 'ct state established,related accept'
+add_input_rule 'iifname ens37 accept'
+add_input_rule 'iifname ens33 tcp dport 22 accept'
+add_input_rule 'iifname ens33 tcp dport 8002 accept'
+add_input_rule 'iifname ens33 icmp type echo-request accept'
+add_input_rule 'iifname ens33 tcp dport { 80, 3000, 3001, 3002, 3003, 3004, 3005, 8080 } drop'
+
+# 2. iptables DOCKER-USER chain — Docker published port 우회 차단
+# DOCKER-USER 가 DOCKER chain 보다 먼저 평가됨
+iptables -F DOCKER-USER 2>/dev/null || true
+iptables -A DOCKER-USER -i ens33 -s 10.20.30.0/24 -j ACCEPT
+iptables -A DOCKER-USER -i ens33 -s 192.168.0.0/24 -p tcp --dport 8002 -j ACCEPT  # SubAgent (관리망 직접)
+for p in 80 3000 3001 3002 3003 3004 3005 8080; do
+    iptables -A DOCKER-USER -i ens33 -p tcp --dport $p -j DROP
+done
+iptables -A DOCKER-USER -j RETURN
+
+# 3. 영구화
+nft list ruleset > /etc/nftables.conf
+mkdir -p /etc/iptables && iptables-save > /etc/iptables/rules.v4
+systemctl enable nftables 2>/dev/null || true
+echo "external direct access blocked — only via secu DNAT"
+""",
         # ── Apache → JuiceShop 리버스 프록시 (포트 80) ──
         """
 cat > /etc/apache2/sites-available/juiceshop.conf << 'APEOF'
@@ -479,6 +516,45 @@ echo 'vm.max_map_count=262144' >> /etc/sysctl.conf 2>/dev/null || true
 # OpenCTI 시작 (백그라운드, 이미지 pull 오래 걸림)
 cd /opt/opencti && docker compose up -d 2>&1 | tail -10
 echo 'OpenCTI 시작됨 — http://SIEM_IP:8080 (admin@opencti.io / CCC2026!)'
+""",
+        # ── 외부 NIC 직접 접근 차단 (secu 외부 IP 통한 DNAT 만 허용) ──
+        # siem 의 :443 (Wazuh Dashboard), :8080 (OpenCTI), :1514/:1515/:55000 (Wazuh agent/API)
+        # 모두 docker published port → DOCKER-USER chain 으로 차단
+        """
+# 1. inet filter input
+nft add table inet filter 2>/dev/null || true
+nft 'add chain inet filter input { type filter hook input priority filter; policy accept; }' 2>/dev/null || true
+add_input_rule() {
+    local rule="$1"
+    if ! nft list ruleset 2>/dev/null | grep -qF "$rule"; then
+        nft add rule inet filter input $rule
+    fi
+}
+add_input_rule 'iif lo accept'
+add_input_rule 'ct state established,related accept'
+# Docker bridges trusted (siem 내부 docker network)
+for iface in $(ip -o link show | awk -F': ' '{print $2}' | grep -E '^(br-|docker)'); do
+    add_input_rule "iifname $iface accept"
+done
+add_input_rule 'iifname ens33 tcp dport 22 accept'
+add_input_rule 'iifname ens33 tcp dport 8002 accept'
+add_input_rule 'iifname ens33 icmp type echo-request accept'
+add_input_rule 'iifname ens33 ip saddr 10.20.30.0/24 accept'
+
+# 2. iptables DOCKER-USER — Docker forwarded port 차단
+iptables -F DOCKER-USER 2>/dev/null || true
+iptables -A DOCKER-USER -i ens33 -s 10.20.30.0/24 -j ACCEPT
+iptables -A DOCKER-USER -i ens33 -s 192.168.0.0/24 -p tcp --dport 8002 -j ACCEPT  # SubAgent
+for p in 443 1514 1515 8080 55000; do
+    iptables -A DOCKER-USER -i ens33 -p tcp --dport $p -j DROP
+done
+iptables -A DOCKER-USER -j RETURN
+
+# 3. 영구화
+nft list ruleset > /etc/nftables.conf
+mkdir -p /etc/iptables && iptables-save > /etc/iptables/rules.v4
+systemctl enable nftables 2>/dev/null || true
+echo "siem external direct access blocked"
 """,
     ],
     "manager": [
