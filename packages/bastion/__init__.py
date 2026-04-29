@@ -999,13 +999,28 @@ timedatectl 2>/dev/null | grep -E 'Time zone|System clock synchronized|NTP servi
         results["steps"].append({"step": "role_setup", **r})
         # role_setup 실패는 경고만 (SubAgent는 이미 설치됨, 계속 진행)
 
-    # 3. 내부 NIC IP 설정 — 단일 스크립트로 전달
+    # 3. 내부 NIC IP 설정 — 런타임 적용 + netplan 영구화 (reboot 시 IP 사라지는 버그 fix 2026-04-29)
     internal_script = f"""
 IFACE=$(ip -o link show | grep -v 'lo\\|docker\\|veth' | awk '{{print $2}}' | tr -d ':' | tail -1)
 if [ -n "$IFACE" ]; then
     ip addr add {internal_ip}/24 dev $IFACE 2>/dev/null || true
     ip link set $IFACE up
-    echo "Internal NIC: $IFACE = {internal_ip}"
+    # netplan 영구화 — reboot 후에도 IP 유지
+    if [ -d /etc/netplan ]; then
+        cat > /etc/netplan/90-ccc-internal.yaml << NETPLAN_EOF
+network:
+  version: 2
+  ethernets:
+    $IFACE:
+      dhcp4: false
+      addresses: [{internal_ip}/24]
+NETPLAN_EOF
+        chmod 600 /etc/netplan/90-ccc-internal.yaml
+        netplan apply 2>&1 | head -3 || true
+        echo "Internal NIC persisted via netplan: $IFACE = {internal_ip}"
+    else
+        echo "Internal NIC (runtime only): $IFACE = {internal_ip}"
+    fi
 else
     echo "WARN: second NIC not found"
 fi

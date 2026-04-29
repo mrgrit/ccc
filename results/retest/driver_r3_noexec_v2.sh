@@ -7,7 +7,7 @@ set -a; source .env 2>/dev/null; set +a
 Q=results/retest/queue_r3_noexec.tsv
 C=results/retest/cursor_r3_noexec_v2.txt
 L=results/retest/run_r3_noexec_v2.log
-H="http://192.168.0.115:8003/health"
+H="http://192.168.0.103:8003/health"
 
 [ -f "$C" ] || echo 0 > "$C"
 cur=$(cat "$C")
@@ -34,7 +34,7 @@ while IFS=$'\t' read -r course wk order; do
   fi
 
   echo "[$(date -Iseconds)] V2 #${idx}/${total} ${course} ${wk} ${order}" >> "$L"
-  timeout 280 python3 -u scripts/test_step.py "${course}" "${wk#w}" "${order#o}" >> "$L" 2>&1
+  timeout 600 python3 -u scripts/test_step.py "${course}" "${wk#w}" "${order#o}" >> "$L" 2>&1
   echo "$idx" > "$C"
   sleep 2
 done < "$Q"

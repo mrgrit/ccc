@@ -43,10 +43,11 @@ if [ -x scripts/sync_to_bastion.sh ]; then
   bash scripts/sync_to_bastion.sh 2>&1 | tail -10
 else
   # Fallback: rsync + ssh restart
-  sshpass -p 1 rsync -av packages/bastion/agent.py ccc@192.168.0.115:/opt/bastion/bastion/agent.py 2>&1 | tail -5
-  sshpass -p 1 ssh -o StrictHostKeyChecking=no ccc@192.168.0.115 "cd /opt/bastion && pkill -9 -f 'uvicorn api:app' 2>/dev/null; sleep 3; set -a && source /home/ccc/ccc/.env && set +a && export BASTION_GRAPH_DB=/opt/bastion/data/bastion_graph.db && nohup ./.venv/bin/uvicorn api:app --host 0.0.0.0 --port 8003 > /tmp/bastion.log 2>&1 & disown" 2>&1 | tail -5
+  BASTION_HOST="${BASTION_HOST:-192.168.0.103}"
+  sshpass -p 1 rsync -av packages/bastion/agent.py ccc@${BASTION_HOST}:/opt/bastion/bastion/agent.py 2>&1 | tail -5
+  sshpass -p 1 ssh -o StrictHostKeyChecking=no ccc@${BASTION_HOST} "cd /opt/bastion && pkill -9 -f 'uvicorn api:app' 2>/dev/null; sleep 3; set -a && source /home/ccc/ccc/.env && set +a && export BASTION_GRAPH_DB=/opt/bastion/data/bastion_graph.db && nohup ./.venv/bin/uvicorn api:app --host 0.0.0.0 --port 8003 > /tmp/bastion.log 2>&1 & disown" 2>&1 | tail -5
   sleep 10
-  curl -s --max-time 8 http://192.168.0.115:8003/health
+  curl -s --max-time 8 http://${BASTION_HOST}:8003/health
 fi
 
 # 4. attack-ai 94 ERROR supplemental driver 시작

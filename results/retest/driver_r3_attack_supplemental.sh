@@ -7,7 +7,7 @@ set -a; source .env 2>/dev/null; set +a
 Q=results/retest/queue_r3_attack_supplemental.tsv
 C=results/retest/cursor_r3_attack_supplemental.txt
 L=results/retest/run_r3_attack_supplemental.log
-H="http://192.168.0.115:8003/health"
+H="http://192.168.0.103:8003/health"
 
 [ -f "$C" ] || echo 0 > "$C"
 cur=$(cat "$C")
