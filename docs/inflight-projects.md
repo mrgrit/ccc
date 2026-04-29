@@ -20,7 +20,10 @@
   - 현재 누적: 52 pass / 140 fail / 11 no_exec / 1 error / 3 qa_fallback (213 verdicts)
   - **pass+qa rate ≈ 25.8%** (이전 R3 main 의 noexec 0% 대비 의미있는 회복)
 - ⏳ V2 종료 후: paper §6.2 fix-effect 정량화, OWASP 프롬프트 sync + bastion 재시작, attack-ai 94 ERROR 재측정
-- ⚠️ attacker VM SSH 접근 차단 — black/1 password 거부 (ccc 호스트), No route to host (bastion 경유). 사용자 확인 대기
+- ✅ attacker VM 접속 확보 — 192.168.0.112 (ccc/1, hostname black). 관리망 위치 의도적 (bastion 통제 + lateral simulation).
+- ✅ web 외부 IP 발견 — 192.168.0.100 (Juice Shop, Apache 2.4.52). attacker 측 pentest 명령은 이 IP 사용. Lab content 의 10.20.30.80 은 bastion-internal.
+- ✅ pentest 도구 13종 attacker 설치 — sqlmap/gobuster/dirb/hydra/masscan/whatweb/sslscan/wfuzz/ffuf/nuclei/curl/nikto/nmap.
+- ✅ OWASP prompt 추가 보강 — attacker IP + web IP 명시 (commit c0af0aa, V2 종료 후 sync 됨).
 
 ### P1. Precinct 6 dataset 통합  [STATUS: 1억 dl 완료 + incidents 1000 임포트 (KG nodes 4902, anchors 14020)]
 
