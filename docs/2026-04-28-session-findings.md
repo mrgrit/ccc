@@ -113,7 +113,43 @@ stage 분포:
 4. attack-ai server crash 회복 + ai-security-ai fix target 회복 별도 측정
 5. P5/P8/P10/P15 closed 정식 표시
 
-## 9. 메모리 rules 준수
+## 9. V2 cursor 209/256 (81%) — 부분 결과 + paper §6.2 finding
+
+### 9.1 회복 효과 (V2 측정 만, partial)
+
+| Course | R3 main pass% | V2 pass% | Δ | sample (V2) |
+|--------|---------------|----------|---|-------------|
+| battle-adv-ai | 0.0% (0/12) | **33.3% (4/12)** | **+33.3pt** ★★ | 12 |
+| battle-ai | 4.3% (1/23) | **32.1% (27/84)** | **+27.8pt** ★★ | 84 |
+| attack-adv-ai | 0.0% (0/4) | 13.6% (6/44) | +13.6pt ★ | 44 |
+| ai-security-ai | 18.2% (12/66) | 25.4% (15/59) | +7.2pt ★ | 59 |
+| attack-ai | 25.8% (24/93) | 11.1% (1/9) | -14.7pt ⚠️ | 9 (sample 작음) |
+| compliance-ai | - | - | - | 1 |
+
+→ V2 누적 25.4% pass (53/209) — ai-security-ai 59 noexec target 의 정확한 회복 + battle-* 카테고리 무력화 회복.
+
+### 9.2 Timeout fix dominant — paper §6.2 의 핵심 finding
+
+elapsed bucket 분포 (V2 209 cases):
+- 120-240s : 75 cases (정상)
+- 240-280s : 32 cases (pre-fix 통과 가능)
+- 280-400s : 85 cases ★ (pre-fix 였으면 모두 timeout)
+- 400-550s : 10 cases ★★ (불가능)
+- ≤120s    : 7 cases
+
+**pre-fix 280s 초과: 95/209 = 45.5%** → 이 비율 만큼이 이전 측정에서 인위적 no_execution 처리되었을 추정.
+
+prompt_fallback 의 Korean negative keyword + acceptable_methods extraction 은 V2 log 에 trigger event 0 — **dominant cause 는 timeout 600s 이며, fallback chain 은 부차적**.
+
+→ paper §6.2 R3 → R3-V2 비교 표에 "timeout dominant" 명시 필요.
+
+### 9.3 attack-ai 94 ERROR 의 별도 회복 — supplemental queue 준비
+
+`results/retest/queue_r3_attack_supplemental.tsv` (94 cases) + `driver_r3_attack_supplemental.sh` 준비 완료. V2 종료 후 실행 → server crash 회복 측정.
+
+`scripts/extract_attack_ai_errors.py` — R3 main log 의 VERDICT: error 추출 자동화.
+
+## 10. 메모리 rules 준수
 
 - ✅ [bastion 양 repo push 필수](feedback_dual_push_bastion.md): af37553 (bastion) + 73003377 (ccc)
 - ✅ [작업마다 철저한 문서화](feedback_thorough_documentation.md): 매 commit 4축 (진단·수정·예상효과·측정방법)
