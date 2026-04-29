@@ -110,6 +110,35 @@ def main():
     fail_n = v2["overall_verdicts"].get("fail", 0)
     exec_n = pass_n + fail_n
 
+    # elapsed bucket — timeout 280s 가 fix 의 dominant 효과인지 검증
+    elapsed_buckets = collections.Counter()
+    for els in [v2["overall_elapsed_avg"]]:
+        pass  # placeholder
+    # re-extract per-case elapsed
+    text = args.v2_log.read_text(encoding="utf-8", errors="ignore")
+    for m in VERDICT_RE.finditer(text):
+        try:
+            e = float(m.group(3))
+        except ValueError:
+            continue
+        if e < 60:
+            elapsed_buckets["<60s"] += 1
+        elif e < 120:
+            elapsed_buckets["60-120s"] += 1
+        elif e < 240:
+            elapsed_buckets["120-240s"] += 1
+        elif e < 280:
+            elapsed_buckets["240-280s (pre-fix limit)"] += 1
+        elif e < 400:
+            elapsed_buckets["280-400s (post-fix only)"] += 1
+        elif e < 550:
+            elapsed_buckets["400-550s (post-fix only)"] += 1
+        else:
+            elapsed_buckets[">=550s"] += 1
+    over_pre_fix = sum(c for b, c in elapsed_buckets.items() if "post-fix" in b)
+    pre_fix_total = overall_total
+    over_pct = round(over_pre_fix / pre_fix_total, 4) if pre_fix_total else 0.0
+
     metrics = {
         "round": "R3-noexec-V2 (post-fix)",
         "v2_progress": overall_total,
@@ -119,6 +148,8 @@ def main():
         "v2_active_skill_count": len(v2["overall_skills"]),
         "v2_active_skills_top": sorted(v2["overall_skills"].items(), key=lambda x: -x[1])[:10],
         "v2_overall_elapsed_avg": v2["overall_elapsed_avg"],
+        "v2_elapsed_buckets": dict(elapsed_buckets),
+        "v2_pct_over_280s_pre_fix_limit": over_pct,
         "v2_course_breakdown": v2["course_verdicts"],
         "r3_main_course_breakdown": r3_main,
     }
@@ -129,6 +160,10 @@ def main():
     print(f"=== V2 paper metrics → {args.out.relative_to(ROOT)} ===")
     print(f"V2 total: {overall_total} / pass {pass_n} ({pass_n/overall_total:.1%})")
     print(f"V2 active skills: {len(v2['overall_skills'])}")
+    print(f"\n--- elapsed bucket (timeout fix 효과) ---")
+    for b in sorted(elapsed_buckets.keys()):
+        print(f"  {b:30s}  {elapsed_buckets[b]:4d}")
+    print(f"\n  pre-fix 280s limit 초과: {over_pre_fix} / {pre_fix_total} ({over_pct:.1%}) → 이전 timeout 처리되었을 비율")
     print(f"\n--- Course pass rate (R3 main vs V2, V2 measured 만) ---")
     for course in sorted(v2["course_verdicts"]):
         v2c = v2["course_verdicts"].get(course, {})
