@@ -68,8 +68,8 @@
 - [x] **Phase A — 교안 case study 자동 주입** (`scripts/inject_lecture_cases.py`): course5-soc 15주 pilot 적용 완료. 한계: 모든 week 가 동일 T1041 case 2개만 (mo_name 다양성 부족) — RAG POC 후 week별 키워드 매칭으로 다양화 필요. 19 코스 × 15주 확장 대기.
 - [x] **Phase B — lab 부록 markdown 자동 생성** (`scripts/inject_lab_cases.py`): 20 lab course 디렉토리에 `precinct6_cases.md` 생성. lab YAML 무수정 (verify 무결성 보호). technique 매칭 case + Red↔Blue pair anchor 동시 노출.
 - [ ] **Phase C — cyber range traffic replay** (`scripts/precinct6_replay.py`): sanitized signals.parquet → PCAP → tcpreplay → web/siem 에 real alert 분포 발생.
-- [x] **Phase D — battle scenario 신규** (`contents/battle-scenarios/precinct6-data-theft.yaml`): 10 missions (Red 5 + Blue 5). Precinct 10442 incident 의 가장 빈번 패턴 (mo_name=Data Theft, lifecycle=complete-mission, T1041) 재현. SQLi → lateral → staging → C2 → exfil vs baseline → anomaly → staging detect → containment → forensic evidence. semantic verify 4-축 모두 작성.
-- [ ] Phase D 추가: 다른 mo_name (Phishing 등) 기반 시나리오 1-2개 더 (dataset 한계로 다양성 빈약).
+- [x] **Phase D 1번 — battle scenario 신규** (`contents/battle-scenarios/precinct6-data-theft.yaml`): 10 missions. mo_name=Data Theft / T1041 패턴 재현.
+- [x] **Phase D 2번 — Phishing scenario** (`contents/battle-scenarios/precinct6-phishing.yaml`, commit 981f6e40): 10 missions. T1566 → T1078 → T1567 chain. SEG/SPF/DKIM/DMARC + click telemetry + MFA enforce.
 
 **제약 발견**: dataset v1.0.0 의 mo_name 분포가 빈약 (Data Theft 99.99%) — 100만 확장해도 새 MITRE technique 안 늘어남. 의미있는 다양성 위해 **`-100m` 풀 데이터셋** 필요할 수 있음 (1억건, 수십GB).
 
@@ -203,19 +203,25 @@ supplemental retest 필요**.
 
 ---
 
-### P7. Production trial 30일  [STATUS: not started]
+### P7. Production trial 30일  [STATUS: fixture 작성 완료, day-by-day 실행 대기]
 
 **동기**: paper §7.4 Track C — 4 시나리오 (월간 점검·CVE 대응·IR drill·변경 관리) × 30일 연속 운용.
 
 **Definition of Done**:
-- [ ] 시나리오 4종 픽스처 작성 (CVE feed · IR drill · 변경 CR)
+- [x] **시나리오 4종 픽스처 작성** (commit 8064daf4) — `contents/production-trial/`:
+  - A `monthly-health-check.yaml` (SLA 30min, HITL 2단계, 7-step)
+  - B `cve-emergency.yaml` (SLA 120min/MTTM, HITL 1단계, 7-step + 3 CVE 시뮬)
+  - C `ir-drill.yaml` (SLA 60min/MTTC≤10min, HITL 1단계, 7-step + 3 drill 시뮬)
+  - D `change-management.yaml` (SLA 90min, HITL 2단계, 7-step + 3 sample CR)
+  - 각 step verify.semantic 4-axis (intent/criteria/methods/negative_signs)
+  - kpi_targets 명시 (wallclock / MTTM / MTTC / accuracy / FP)
 - [ ] 운영자 inline review 체크리스트 정의
-- [ ] day-by-day 일정 실행
+- [ ] day-by-day 일정 실행 (운영자 수동 트리거 + Bastion 자동)
 - [ ] paper Table 4 (시나리오별 wallclock·HITL·critical errors) 채움
 
-**Next concrete step**: `contents/papers/bastion/03-real-world-scenarios.md` 의 시나리오 fixture 를 실제 실행 가능 형태로 변환.
+**Next concrete step**: 시나리오 A 1 cycle 수동 실행 → wallclock + HITL 비율 측정 → fixture 미세조정.
 
-**Files**: `contents/papers/bastion/03-real-world-scenarios.md`
+**Files**: `contents/production-trial/*.yaml`, `contents/papers/bastion/03-real-world-scenarios.md`
 
 ---
 
