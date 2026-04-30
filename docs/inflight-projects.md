@@ -12,18 +12,28 @@
 
 ## In-Progress
 
-### P0. 야간 자율 작업 (2026-04-28 19:30~ → 2026-04-29 09:13 진행 중) — 사용자 "퇴근, 밤동안 멈추지 말고 작업"
-- ✅ KG path bug 영구 수정 + bastion 양쪽 repo push
-- ✅ Watchdog daemon 재가동 (PID 3109892, interval 60s threshold 5)
-- ✅ Web-vuln-ai OWASP 22 payload library agent.py 추가 (local, deploy 대기)
-- 🟡 V2 driver R3-noexec post-fix 측정 cursor **205/256 (80%)**, 51 case 잔여 (battle-adv-ai 47 + autonomous-ai 4) — 약 3-4h 잔여
-  - 현재 누적: 52 pass / 140 fail / 11 no_exec / 1 error / 3 qa_fallback (213 verdicts)
-  - **pass+qa rate ≈ 25.8%** (이전 R3 main 의 noexec 0% 대비 의미있는 회복)
-- ⏳ V2 종료 후: paper §6.2 fix-effect 정량화, OWASP 프롬프트 sync + bastion 재시작, attack-ai 94 ERROR 재측정
-- ✅ attacker VM 접속 확보 — 192.168.0.112 (ccc/1, hostname black). 관리망 위치 의도적 (bastion 통제 + lateral simulation).
-- ✅ web 외부 IP 발견 — 192.168.0.100 (Juice Shop, Apache 2.4.52). attacker 측 pentest 명령은 이 IP 사용. Lab content 의 10.20.30.80 은 bastion-internal.
-- ✅ pentest 도구 13종 attacker 설치 — sqlmap/gobuster/dirb/hydra/masscan/whatweb/sslscan/wfuzz/ffuf/nuclei/curl/nikto/nmap.
-- ✅ OWASP prompt 추가 보강 — attacker IP + web IP 명시 (commit c0af0aa, V2 종료 후 sync 됨).
+### P0. 야간 자율 작업 (2026-04-28 19:30~ → 2026-04-29 21:09 V2+supplemental 종료) — ✅ COMPLETE → moved to Closed
+
+**상세 핸드오프**: `docs/2026-04-29-session-handoff.md` 참조 (다음 세션 진입 시 필독)
+
+**V2 round 종료** (256/256, 2026-04-29 13:23 KST):
+- pass 70 (27.0%) / fail 171 / no_exec 13 / qa_fallback 4 / error 1
+- battle-adv-ai 0% → **36.2%** (+36.2pt) ★★★
+- battle-ai 4.3% → **32.1%** (+27.8pt) ★★
+- ai-security-ai 18.2% → 25.4% (+7.2pt)
+
+**attack-ai supplemental 종료** (94/94, 2026-04-29 21:09 KST):
+- pass 32 (34.0%) / fail 60 / no_exec 2
+- server crash 회복 효과 정량화 완료
+
+**Paper §6.2 핵심 finding**: timeout 280→600s fix 가 dominant (44.8% cases >280s)
+
+**인프라 영구 fix 17 commits**: netplan 영구화 / secu DNAT 11rule / web vuln-sites 자동배포 / Docker DNS / 외부 직접 접근 차단 / OpenCTI UUID / WAF 교안 실측 등
+
+**V2/supplemental 종료 후 보류 항목** (다음 세션):
+1. Paper §6.2 표 작성 (사용자 보류 지시)
+2. siem nft reboot 검증 (영구화 확인)
+3. R4 round (모든 fix 적용 후 전체 재측정)
 
 ### P1. Precinct 6 dataset 통합  [STATUS: 1억 dl 완료 + incidents 1000 임포트 (KG nodes 4902, anchors 14020)]
 
@@ -506,6 +516,16 @@ Architecture) 모두 비어있음.
 
 
 ## Closed (누적 완료)
+
+### 2026-04-29 — P0 야간 R3 V2 + supplemental 완료 + 인프라 7 fix
+- [x] V2 round 256/256, attack-ai supplemental 94/94 모두 측정 종료. paper §6.2 데이터 확보.
+- [x] netplan 영구화 (모든 VM ens37 reboot 시 IP 보존)
+- [x] secu 외부 NIC DNAT 11 rule (외부 IP:port → 내부 service)
+- [x] web/siem 외부 직접 접근 차단 (DOCKER-USER iptables + nft input)
+- [x] web 의 vuln-sites 5종 자동 배포 (onboarding tar upload + docker-compose)
+- [x] Docker DNS 8.8.8.8 (vuln-sites build 시 pypi 도달)
+- [x] OpenCTI token UUID 형식 (validation 통과)
+- [x] secops/week01 lecture WAF 점검 실측 반영 (사용자 보고 fix)
 
 ### 2026-04-28 — P5 / P10 / P15 / P13 Phase 4
 - [x] **P5 Bastion-Bench 590/590 100% COMPLETE** — 42 카테고리 + h001-h025 (책임자율 야간 long run, 2026-04-26 22:00 ~ 2026-04-28 19:00). 6 step × verify.semantic + knowledge eval (~85%) + execution eval (~15%).
