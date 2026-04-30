@@ -786,6 +786,16 @@ def execute_skill(name: str, params: dict[str, Any], vm_ips: dict[str, str],
         command = params.get("command", "echo ok")
         target = params.get("target", "attacker")
         ip = _resolve_vm_ip(target, vm_ips)
+        # ★ R3 fix (2026-04-30): attacker 측에서 bastion-internal IP (10.20.30.80) 사용 시
+        #   해당 IP 가 attacker 의 라우팅 테이블에 없어 unreachable. secu 의 외부 DNAT IP
+        #   (192.168.0.108) 또는 web 외부 IP (192.168.0.100) 로 자동 치환.
+        #   web-vuln/attack-* 카테고리에서 agent 가 lab content 의 10.20.30.80 그대로
+        #   사용하다가 timeout/empty response → fail 패턴 다수 (R3 V2 분석 결과).
+        if target == "attacker":
+            # 192.168.0.108 (secu DNAT, WAF 통과) 가 학습용으로 적합. :3001-:3005 도 모두 forwarding 됨.
+            command = command.replace("10.20.30.80", "192.168.0.108")
+            command = command.replace("http://10.20.30.100", "http://192.168.0.108")
+            command = command.replace("https://10.20.30.100", "https://192.168.0.108")
         r = run_command(ip, command, timeout=60)
         return {"success": r.get("exit_code") == 0, "output": r.get("stdout", ""), "stderr": r.get("stderr", "")}
 
