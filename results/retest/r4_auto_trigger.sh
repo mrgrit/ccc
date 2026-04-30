@@ -15,12 +15,17 @@ while true; do
   cur=$(cat "$LOW3_CURSOR")
   total=$(wc -l < "$LOW3_QUEUE")
   if [ "$cur" -ge "$total" ]; then
-    # low-3 done — start R4
+    # low-3 done — rebuild R4 queue (low-3 회복분 제외) + start R4
     if pgrep -f "driver_r4.sh" >/dev/null 2>&1; then
       echo "[$(date -Iseconds)] R4 already running, exit" >> "$LOG"
       exit 0
     fi
-    echo "[$(date -Iseconds)] low-3 done (cursor=$cur/$total) — starting R4" >> "$LOG"
+    echo "[$(date -Iseconds)] low-3 done (cursor=$cur/$total) — rebuilding R4 queue" >> "$LOG"
+    # progress.json 의 최신 상태로 R4 queue 재생성 (low-3 pass 회복분 제외)
+    python3 scripts/build_r4_queue.py >> "$LOG" 2>&1 || true
+    # 기존 cursor 초기화 (queue 재생성됐으니 처음부터)
+    : > results/retest/cursor_r4.txt
+    echo "[$(date -Iseconds)] starting R4" >> "$LOG"
     nohup bash "$R4_DRIVER" >> "$R4_LOG" 2>&1 &
     R4_PID=$!
     disown
