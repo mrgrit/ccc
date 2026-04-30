@@ -1914,11 +1914,21 @@ class BastionAgent:
                     if not ok:
                         self_verified_attempted += 1
                         yield {"event": "self_verify_fail", "reason": why}
+                        # ★ R3 fix #3 (2026-04-30): 미충족 success_criteria 를 명시해 LLM 이
+                        #   어느 기준을 추가 충족해야 하는지 알게 함. 이전엔 막연한 '추가로 호출' 만
+                        #   요청해 같은 명령을 반복하다 6 turn 소진.
+                        _ctx_v = getattr(self, "_verify_context", {}) or {}
+                        _crits = _ctx_v.get("success_criteria") or []
+                        _crit_text = "\n".join(f"- {c}" for c in _crits[:5]) if _crits else "(없음)"
                         msgs.append({"role": "user", "content": (
-                            f"[자체 검증 — 미흡] {why}\n"
-                            f"채점 기준이 아직 충족되지 않았다. "
-                            f"필요한 도구를 추가로 호출해 작업을 완성하라. "
-                            f"개념 설명·표만 출력하지 말고 실제 명령을 실행하라."
+                            f"[자체 검증 — 미흡] {why}\n\n"
+                            f"## 아직 충족 못한 채점 기준\n{_crit_text}\n\n"
+                            f"## 다음 turn 행동 지침\n"
+                            f"1. 위 기준 중 하나라도 충족하는 명령을 실행한다. 같은 명령 재실행 금지.\n"
+                            f"2. 응답 검증 명령은 본문이 빈 페이지일 수 있으므로 `curl -i -L` 사용.\n"
+                            f"3. 명령만 출력하지 말고 도구 호출 (tool_calls) 로 실제 실행한다.\n"
+                            f"4. 실행 결과 stdout 을 인용해 어느 기준을 충족했는지 명시한다.\n"
+                            f"5. 개념 설명/표/이론은 작성 금지. 실측 결과 + 한 줄 결론만."
                         )})
                         continue
                 break  # end_turn
@@ -2112,16 +2122,36 @@ class BastionAgent:
         yield {"event": "stage", "stage": "validating"}
 
         # 마지막 LLM content 가 비었으면 종합 답변 1회 생성
+        # ★ R3 fix #3 (2026-04-30): 막연한 "한 단락 작성" 대신 채점 기준·도구 출력 인용 강제.
         if not last_assistant_content.strip() and all_tool_outputs:
+            _ctx_s = getattr(self, "_verify_context", {}) or {}
+            _crits_s = _ctx_s.get("success_criteria") or []
+            _intent_s = _ctx_s.get("intent", "")
+            _crit_block = ""
+            if _crits_s or _intent_s:
+                _crit_lines = "\n".join(f"- {c}" for c in _crits_s[:5])
+                _crit_block = (
+                    f"\n## 채점 기준 (이걸로 평가됨)\n"
+                    f"의도: {_intent_s}\n"
+                    f"성공 기준:\n{_crit_lines}\n"
+                )
+            _synth_prompt = (
+                "위 도구 실행 결과를 바탕으로 사용자 요청에 대한 최종 답을 작성하라.\n"
+                "## 작성 규칙 (필수)\n"
+                "1. 도구 stdout 에서 인용 가능한 핵심 라인 1~2줄을 그대로 인용.\n"
+                "2. 채점 기준이 있다면 각 기준에 대해 충족/미충족 한 줄씩 표시.\n"
+                "3. 개념 설명·이론·일반론 금지. 실측 결과 기반 결론만.\n"
+                "4. 분량: 5~10줄."
+                + _crit_block
+            )
             try:
                 r = httpx.post(
                     f"{self.ollama_url}/api/chat",
                     json={
                         "model": self.model,
-                        "messages": msgs + [{"role": "user", "content":
-                            "위 결과를 종합해서 사용자 요청에 대한 최종 답을 한 단락으로 작성하라."}],
+                        "messages": msgs + [{"role": "user", "content": _synth_prompt}],
                         "stream": False,
-                        "options": {"temperature": 0.0, "num_predict": 600},
+                        "options": {"temperature": 0.0, "num_predict": 800},
                     },
                     timeout=60.0,
                 )
@@ -2362,10 +2392,20 @@ class BastionAgent:
             return ok, "" if ok else "도구 실행 성공 사례 없음"
 
         # tool_outputs 를 한 줄씩 요약
+        # ★ R3 fix #3 (2026-04-30): output truncation 200→800자. 200자는 curl 헤더 1개도
+        #   다 안 들어가 self-verify LLM 이 충족 여부 판정 불가 → 무조건 fail 권고하던 버그.
         tool_summary = "\n".join(
-            f"- {t['skill']} (success={t['success']}): {str(t['output'])[:200]}"
+            f"- {t['skill']} (success={t['success']}): {str(t['output'])[:800]}"
             for t in tool_outputs[-5:]
         ) or "(도구 호출 없음)"
+
+        neg = ctx.get("negative_signs") or []
+        neg_block = ""
+        if neg:
+            neg_block = (
+                "\n## 피해야 할 신호 (negative_signs — 응답에 명시되면 fail)\n"
+                + "\n".join(f"- {n}" for n in neg) + "\n"
+            )
 
         prompt = (
             "ReAct agent 의 작업 완료 여부를 채점 기준에 따라 평가하라.\n"
@@ -2374,12 +2414,16 @@ class BastionAgent:
             f"## 사용자 요청\n{original_message[:600]}\n\n"
             f"## 채점 의도\n{intent}\n\n"
             f"## 성공 기준 (하나 이상 충족 필요)\n"
-            + "\n".join(f"- {c}" for c in criteria) + "\n\n"
-            f"## 도구 실행 요약\n{tool_summary}\n\n"
+            + "\n".join(f"- {c}" for c in criteria) + "\n"
+            + neg_block
+            + f"\n## 도구 실행 요약 (success/output 800자)\n{tool_summary}\n\n"
             f"## 최종 답변\n{final_content[:1500]}\n\n"
-            "기준 충족 여부 평가 — 도구 출력에 기준이 충족됐거나, "
-            "도구 결과가 의도와 일치하면 satisfied=true. "
-            "도구가 한 번도 안 돌았거나 답변이 개념 설명뿐이면 satisfied=false."
+            "## 판정 원칙\n"
+            "- 도구 출력에 성공 기준 중 하나가 충족됐으면 satisfied=true.\n"
+            "- 도구 결과가 의도와 일치(등가 표현 인정)하면 satisfied=true.\n"
+            "- 도구가 한 번도 안 돌았거나 답변이 개념 설명뿐이면 satisfied=false.\n"
+            "- negative_signs 가 응답에 명시적으로 나타나면 satisfied=false.\n"
+            "- 모호하면 satisfied=true (도구가 1회라도 success).\n"
         )
         try:
             r = httpx.post(
