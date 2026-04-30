@@ -67,7 +67,7 @@
 **4 활용처 (★ 사용자 지시 2026-04-26 21:10)**:
 - [x] **Phase A — 교안 case study 자동 주입** (`scripts/inject_lecture_cases.py`): course5-soc 15주 pilot 적용 완료. 한계: 모든 week 가 동일 T1041 case 2개만 (mo_name 다양성 부족) — RAG POC 후 week별 키워드 매칭으로 다양화 필요. 19 코스 × 15주 확장 대기.
 - [x] **Phase B — lab 부록 markdown 자동 생성** (`scripts/inject_lab_cases.py`): 20 lab course 디렉토리에 `precinct6_cases.md` 생성. lab YAML 무수정 (verify 무결성 보호). technique 매칭 case + Red↔Blue pair anchor 동시 노출.
-- [ ] **Phase C — cyber range traffic replay** (`scripts/precinct6_replay.py`): sanitized signals.parquet → PCAP → tcpreplay → web/siem 에 real alert 분포 발생.
+- [x] **Phase C — cyber range traffic replay 스크립트** (commit 0cf9b80e, `scripts/precinct6_replay.py`): sanitized signals.parquet → syslog/firewall/JSON 변환 → ssh+scp 로 siem/secu 의 log file 에 append. PCAP 직접 replay 는 sanitized data 한계로 불가능 → log injection 대안. dry-run 검증됨, 실 주입 검증 대기.
 - [x] **Phase D 1번 — battle scenario 신규** (`contents/battle-scenarios/precinct6-data-theft.yaml`): 10 missions. mo_name=Data Theft / T1041 패턴 재현.
 - [x] **Phase D 2번 — Phishing scenario** (`contents/battle-scenarios/precinct6-phishing.yaml`, commit 981f6e40): 10 missions. T1566 → T1078 → T1567 chain. SEG/SPF/DKIM/DMARC + click telemetry + MFA enforce.
 
