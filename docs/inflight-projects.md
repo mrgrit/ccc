@@ -532,6 +532,14 @@ Architecture) 모두 비어있음.
   - _self_verify_completion: tool_summary 200→800자, negative_signs 블록, 5단계 판정 원칙
   - self_verify_fail 후 재시도 prompt: 미충족 success_criteria 명시 + 5개 행동 지침
   - 최종 synthesis (last_assistant_content 비었을 때): 도구 stdout 인용 + 기준별 충족/미충족 명시 강제
+- [x] **Fix #4** (commit 5070990a) — `packages/bastion/agent.py` web-vuln 카테고리 prompt:
+  - `target: web` shell 호출 금지 (lab 의도 아님)
+  - 최종 답변 4섹션 강제: 실행 결과 인용 / 취약점 입증 / 방어 언급 / 한계·인지
+- [x] **Fix #5** (commit 8e227393) — skill output truncation 1000→2500자:
+  - skill_result event output[:1000] → output[:2500]
+  - 다음 turn LLM 입력 stdout[:1500] → output[:3000]
+  - stderr[:500] → stderr[:800]
+  - Fix #2 의 curl -i -L 응답이 jdge 에 잘려서 'no-output' 판정되는 버그 차단
 
 **인프라 fix**:
 - [x] bastion process IP propagation (16 scripts: ingest_*, post_v2_chain.sh, bastion_kg_sync.sh, r3_diagnose.py, sync_to_bastion.sh 등)
