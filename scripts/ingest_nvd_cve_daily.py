@@ -110,7 +110,7 @@ def import_to_bastion(bastion_url: str, anchors: list) -> dict:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--via-bastion", action="store_true")
-    ap.add_argument("--bastion-url", default=os.getenv("BASTION_URL", "http://192.168.0.115:8003"))
+    ap.add_argument("--bastion-url", default=os.getenv("BASTION_URL", "http://192.168.0.103:8003"))
     ap.add_argument("--lookback-hours", type=int, default=24)
     ap.add_argument("--max", type=int, default=100)
     ap.add_argument("--dry-run", action="store_true")

@@ -114,7 +114,7 @@ def main():
     ap.add_argument("--force-refresh", action="store_true")
     ap.add_argument("--via-bastion", action="store_true",
                     help="bastion REST /history/anchors 로 등록")
-    ap.add_argument("--bastion-url", default=os.getenv("BASTION_URL", "http://192.168.0.115:8003"))
+    ap.add_argument("--bastion-url", default=os.getenv("BASTION_URL", "http://192.168.0.103:8003"))
     args = ap.parse_args()
 
     if args.from_file:

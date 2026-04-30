@@ -90,7 +90,7 @@ def import_to_bastion(bastion_url: str) -> dict:
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--via-bastion", action="store_true")
-    ap.add_argument("--bastion-url", default=os.getenv("BASTION_URL", "http://192.168.0.115:8003"))
+    ap.add_argument("--bastion-url", default=os.getenv("BASTION_URL", "http://192.168.0.103:8003"))
     args = ap.parse_args()
 
     print("=== NIST CSF 2.0 ===")

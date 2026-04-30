@@ -450,7 +450,7 @@ Architecture) 모두 비어있음.
 
 ---
 
-### P14. Lab 채점 흐름 재설계 (textarea → SubAgent 감시)  [STATUS: A/D/B/C 완료, 1 lab 실측만 잔여]
+### P14. Lab 채점 흐름 재설계 (textarea → SubAgent 감시)  [STATUS: ✅ COMPLETE → moved to Closed (2026-04-30 e2e 검증)]
 
 **동기**: 학생이 textarea 에 답변 작성 → judge 채점 = "글로 다시 쓰는" 부담.
 실제 *행위* (명령 실행) 기반 채점이 진짜 학습 가까움. 사용자 지시 (2026-04-27).
@@ -516,6 +516,16 @@ Architecture) 모두 비어있음.
 
 
 ## Closed (누적 완료)
+
+### 2026-04-30 — P14 e2e 검증 완료 + Knowledge UI fix
+- [x] **P14 Lab 채점 흐름 재설계** — A/B/C/D 사이클 모두 완료. 2026-04-30 e2e 시뮬레이션 (/tmp/p14b_e2e.py):
+  - subagent_audit 모드 정상 (capture_mode=subagent_audit, audit_active=True)
+  - SubAgent /a2a/audit/start → run × 3 → stop 전체 흐름 작동
+  - DB lab_sessions.transcript 자동 저장
+  - multi_step_judge (P14-C, gpt-oss:120b) 16 step 모두 평가 (score 0/200, fail reason+feedback 정확)
+  - subagent-runtime PID 578 (4월 15일 stale) → 재시작 → audit endpoints 활성
+- [x] **Knowledge UI fix** (commit 24c48db9) — `/api/graph/*` 라우트 alias + BASTION_URL 0.103 default
+- [x] **R3 low-3 supplemental round 시작** — web-vuln 133 + physical-pentest 67 + autonomous 54 = 254 cases (commit ea0441fa, PID 3991712, 백그라운드)
 
 ### 2026-04-29 — P0 야간 R3 V2 + supplemental 완료 + 인프라 7 fix
 - [x] V2 round 256/256, attack-ai supplemental 94/94 모두 측정 종료. paper §6.2 데이터 확보.

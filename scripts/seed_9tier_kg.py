@@ -13,7 +13,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # 🎯 BASTION_URL 환경변수 있으면 REST 호출 (UI 가 보는 bastion runtime KG 에 등록)
 # 없으면 로컬 import (ccc/data/bastion_graph.db — 개발/테스트용)
-BASTION_URL = os.getenv("BASTION_URL", "http://192.168.0.115:8003")
+BASTION_URL = os.getenv("BASTION_URL", "http://192.168.0.103:8003")
 USE_BASTION_API = os.getenv("KG_VIA_BASTION", "1") not in ("0", "false", "")
 
 if USE_BASTION_API:

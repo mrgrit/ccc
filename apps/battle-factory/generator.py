@@ -330,7 +330,7 @@ def generate_battle(cve: dict, max_retry: int = 2) -> dict:
 
 def verify_with_bastion(battle_path: str, max_steps: int = 3) -> dict:
     """생성된 battle의 처음 N steps를 Bastion으로 실증. 배포 이식성을 위해 Bastion URL env."""
-    bastion_url = os.getenv("BASTION_URL", "http://192.168.0.115:8003")
+    bastion_url = os.getenv("BASTION_URL", "http://192.168.0.103:8003")
     try:
         import yaml as _y
         data = _y.safe_load(pathlib.Path(battle_path).read_text(encoding="utf-8"))

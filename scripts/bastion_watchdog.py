@@ -5,7 +5,7 @@ R3 main 측정 시 attack-ai 94 ERROR (Connection refused) 발생.
 원인: bastion server crash + driver 가 retry 안 함.
 
 사용:
-    python3 scripts/bastion_watchdog.py --interval 60 --restart-cmd 'sshpass -p 1 ssh ccc@192.168.0.115 ...'
+    python3 scripts/bastion_watchdog.py --interval 60 --restart-cmd 'sshpass -p 1 ssh ccc@192.168.0.103 ...'
 
 5번 연속 health fail 시:
 1. bastion process kill
@@ -27,8 +27,8 @@ import pathlib
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 LOG = ROOT / "results/retest/bastion_watchdog.log"
-HEALTH_URL = os.getenv("BASTION_HEALTH", "http://192.168.0.115:8003/health")
-RESTART_HOST = os.getenv("BASTION_HOST", "192.168.0.115")
+HEALTH_URL = os.getenv("BASTION_HEALTH", "http://192.168.0.103:8003/health")
+RESTART_HOST = os.getenv("BASTION_HOST", "192.168.0.103")
 RESTART_USER = os.getenv("BASTION_USER", "ccc")
 RESTART_PASS = os.getenv("BASTION_PASS", "1")
 

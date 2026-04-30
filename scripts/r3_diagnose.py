@@ -23,7 +23,7 @@ LOG = ROOT / "results/retest/run_r3.log"
 PROGRESS = ROOT / "bastion_test_progress.json"
 CURSOR = ROOT / "results/retest/cursor_r3.txt"
 QUEUE = ROOT / "results/retest/queue_r3.tsv"
-BASTION = "http://192.168.0.115:8003/health"
+BASTION = "http://192.168.0.103:8003/health"
 
 
 def parse_log() -> list[dict]:

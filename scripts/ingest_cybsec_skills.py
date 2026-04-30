@@ -117,7 +117,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--repo-path", default="/tmp/Anthropic-Cybersecurity-Skills")
     ap.add_argument("--via-bastion", action="store_true")
-    ap.add_argument("--bastion-url", default=os.getenv("BASTION_URL", "http://192.168.0.115:8003"))
+    ap.add_argument("--bastion-url", default=os.getenv("BASTION_URL", "http://192.168.0.103:8003"))
     ap.add_argument("--all", action="store_true", help="전체 754 임포트 (Phase B)")
     ap.add_argument("--dry-run", action="store_true")
     args = ap.parse_args()

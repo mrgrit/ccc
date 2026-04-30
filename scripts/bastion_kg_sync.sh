@@ -18,7 +18,7 @@ set -e
 
 ACTIVE="/opt/bastion/data/bastion_graph.db"
 BACKUP="/home/ccc/ccc/data/bastion_graph.db"
-HOST="${BASTION_HOST:-192.168.0.115}"
+HOST="${BASTION_HOST:-192.168.0.103}"
 USER="${BASTION_USER:-ccc}"
 PASS="${BASTION_PASS:-1}"
 
