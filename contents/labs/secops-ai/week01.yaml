@@ -366,51 +366,109 @@ steps:
   risk_level: low
   bastion_prompt: siem VM의 Wazuh alerts 로그 디렉터리를 확인해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+  instruction: |
+    [복합 시나리오] SOC 신규 분석가 day-1 — 5 layer × 5 attack vector 가시성 검증
+
+    당신은 ABC 회사의 신규 SOC 분석가다. 인계받은 보안 인프라는 5 layer (nftables/Suricata/
+    ModSecurity/Wazuh/OpenCTI) 다. 다음 주 첫 incident drill 전까지 다음 두 가지를 입증해야 한다:
+
+      (A) 5 layer 모두 *현재 가동 중* 이며 *룰셋이 비어있지 않다*
+      (B) 5 가지 attack vector — 포트스캔, SQLi, Brute Force, Phishing 도메인 접속,
+          멀웨어 다운로드 — 가 어느 layer 에 evidence 를 남기는지 *cross-layer matrix* 작성
+
+    교안 §"실제 사례 — 1개 보안 layer 만 있으면 어떤 일이 벌어지나" 의 결론
+    ("1 layer 만으로는 evidence 의 5.7%만 봄") 을 본인 실습 환경에서 직접 검증한다.
+
+    아래 5 단계를 순서대로 수행하고, 마지막에 통합 보고 1줄을 작성하라.
+  hint: |
+    1) 가동 검증: 5 VM 의 5 layer service 각각 systemctl is-active + 룰셋 카운트
+    2) 로그 라이브성: 각 layer 의 로그 파일에 최근 1시간 entry 가 있는지 (없으면 dead)
+    3) Attack vector 매트릭스 준비: 5 vector 각각 본인 환경에서 시뮬레이션 (포트스캔=nmap, SQLi=curl, 등)
+    4) 매트릭스 작성: 5×5 = 25 셀, 각 셀에 detect/block/log/none 표기
+    5) 통합 보고: dead layer 가 있는지, 가장 활발한 layer, 다음 주 drill 까지 우선 보강 필요 영역 1개
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: matrix
     field: stdout
     semantic:
-      intent: '[통합] 보안 솔루션 인프라 점검 — Bastion이 5작업 통합 실행 ping/service/port/log/summary. CIS Benchmark 초기
-        점검 루틴.'
+      intent: |
+        SOC 신규 분석가 day-1 시나리오 — 인계받은 5 layer (nft/Suricata/ModSec/Wazuh/OpenCTI)
+        의 가동·룰셋 검증 + 5 attack vector × 5 layer cross-layer evidence matrix 작성.
+        교안의 "1 layer 만 있으면 5.7% evidence" 주장을 본인 환경에서 검증.
       success_criteria:
-      - 5 작업 실행
-      - 순서 계획
-      - 요약 출력
+      - 5 layer service 각각 systemctl is-active 확인 (5건)
+      - 5 layer 각각 룰셋 카운트 (nft 룰 / suricata-update 룰셋 / CRS rules / Wazuh local_rules / OpenCTI feeds)
+      - 5 attack vector 각각 시뮬 (nmap -sS, sqlmap or curl SQLi, hydra 시도, dig phishing-test, curl
+        EICAR test) — 실 destructive 금지, 1분 내 최소 시도
+      - 5×5 cross-layer matrix 작성 (25 cell, 각 cell 에 detect/block/log/none 중 하나 + evidence path)
+      - 통합 1줄 보고 (가장 활발 layer, dead layer, 다음 보강 우선순위)
       acceptable_methods:
-      - bastion orchestration
-      - ansible playbook
-      - shell script
+      - 5 layer 각각 ssh + systemctl is-active
+      - nft list ruleset | wc -l
+      - "suricata --list-app-layer-protos | head 또는 ls /etc/suricata/rules/*.rules | xargs -I{} sh\
+        \ -c 'echo {}; wc -l < {}'"
+      - apachectl -M | grep security 또는 ls /etc/modsecurity/crs/rules/ | wc -l
+      - /var/ossec/bin/wazuh-control info 또는 cat /var/ossec/etc/rules/local_rules.xml
+      - curl -s http://siem:8080/api/feeds (OpenCTI)
+      - 시뮬: nmap -sS 10.20.30.0/24 / sqlmap -u http://web/?id=1 --batch / hydra ssh
+      - matrix 형식 — markdown table 또는 CSV. 25 cell 모두 채워야 함
       negative_signs:
-      - 단일 작업
-      - 순서 없음
-      - 요약 누락
-  target_vm: secu
-  answer: '🤖 프롬프트: secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:
+      - 단일 layer 만 검증 후 종료
+      - 룰셋 카운트 누락 (활성/dead 구분 못함)
+      - matrix 작성 시 빈 cell 5개 이상
+      - 통합 보고 누락 또는 1줄 미만
+      - attack 시뮬 0건 (이론상 매핑만)
+  target_vm: bastion
+  answer: |
+    🤖 프롬프트:
 
-    1) secu VM의 nftables 테이블 목록을 확인해줘
+    [복합 시나리오] 당신은 SOC 신규 분석가다. 5 layer 보안 인프라가 가동 중인지 + 5 attack vector
+    가 어느 layer 에 evidence 남기는지 cross-layer matrix 를 작성하라.
 
-    2) secu VM의 Suricata 서비스 상태를 확인해줘
+    Phase A — Layer 가동 검증 (5건):
+    1) secu(10.20.30.1) nftables — `nft list ruleset | wc -l` (룰 수)
+    2) secu Suricata — `systemctl is-active suricata` + `ls /etc/suricata/rules/*.rules | wc -l`
+    3) web(10.20.30.80) ModSecurity — `apachectl -M | grep security` + `ls /etc/modsecurity/crs/rules/ | wc -l`
+    4) siem(10.20.30.100) Wazuh Manager — `systemctl is-active wazuh-manager` + `wc -l < /var/ossec/etc/rules/local_rules.xml`
+    5) siem OpenCTI — `curl -s http://localhost:8080/api/feeds | jq length`
 
-    3) web VM의 Apache ModSecurity 모듈이 로드되어 있는지 확인해줘
+    Phase B — 5 attack vector 시뮬 (1분 내):
+    1) Port scan — `nmap -sS -F 10.20.30.80` (attacker→web)
+    2) SQLi — `curl 'http://10.20.30.80:3000/rest/products/search?q=1%27+OR+1=1--'`
+    3) Brute force — `hydra -l ccc -P /tmp/3pwds.txt ssh://10.20.30.80 -t 1` (3개만)
+    4) Phishing domain DNS — `dig +short malicious-test.invalid @10.20.30.100`
+    5) EICAR malware test — `curl http://eicar.test/test.txt -o /tmp/eicar.test 2>&1 | head`
 
-    4) siem VM의 Wazuh Manager 서비스가 동작 중인지 확인해줘
+    Phase C — Cross-layer matrix:
+    | Vector \\ Layer | nft | Suricata | ModSec | Wazuh | OpenCTI |
+    | port scan      | ?   | ?        | ?      | ?     | ?       |
+    | SQLi           | ?   | ?        | ?      | ?     | ?       |
+    | brute force    | ?   | ?        | ?      | ?     | ?       |
+    | phishing DNS   | ?   | ?        | ?      | ?     | ?       |
+    | EICAR DL       | ?   | ?        | ?      | ?     | ?       |
 
-    5) siem VM에서 Wazuh Indexer가 9200 포트로 리스닝하는지 확인해줘'
-  answer_detail: ''
+    각 cell: detect (alert 발생) / block (차단) / log (로깅만) / none.
+    evidence path 함께 (예 "Suricata `eve.json` SID=2010937" 또는 "nft counter +N").
+
+    Phase D — 통합 보고 (1줄): 가장 활발한 layer / dead layer / 다음 보강 우선순위.
+  answer_detail: |
+    이 step 은 본 lab 의 1~10번 step 모두를 *cross-layer evidence 관점* 으로 묶는다.
+    각 layer 점검 (1~10번) 만으로는 "왜 5 layer 가 필요한지" 못 깨닫지만,
+    matrix 작성으로 "한 attack 이 여러 layer 에 흔적 남김 + 일부 vector 는 1-2 layer 에서만 보임"
+    을 직접 입증한다. 교안 §"실제 사례" 의 5.7% 주장을 본인 환경에서 검증.
   risk_level: low
-  bastion_prompt: 'secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:
+  bastion_prompt: |
+    SOC 신규 분석가로 5 layer 보안 인프라 가시성 검증을 day-1 에 수행한다.
 
-    1) secu VM의 nftables 테이블 목록을 확인해줘
+    Phase A: secu 의 nftables 룰 수 / Suricata systemctl is-active + 룰 파일 수 / web 의
+    ModSecurity 로드 + CRS 룰 디렉토리 수 / siem 의 Wazuh Manager active + local_rules 행 수 /
+    OpenCTI feeds API 응답 수 — 5건 모두 한 번에 수집.
 
-    2) secu VM의 Suricata 서비스 상태를 확인해줘
+    Phase B: attacker→web 으로 nmap -sS -F / curl SQLi 페이로드 / hydra ssh 3-pwd / dig
+    malicious-test.invalid / curl eicar.test — 5 vector 1분 내 시뮬.
 
-    3) web VM의 Apache ModSecurity 모듈이 로드되어 있는지 확인해줘
+    Phase C: 5×5 cross-layer matrix markdown 표 작성. 각 cell 에 detect/block/log/none + evidence path.
 
-    4) siem VM의 Wazuh Manager 서비스가 동작 중인지 확인해줘
-
-    5) siem VM에서 Wazuh Indexer가 9200 포트로 리스닝하는지 확인해줘'
+    Phase D: 1줄 통합 보고 — 가장 활발 layer, dead layer, 다음 주 drill 보강 우선순위 1개.

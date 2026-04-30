@@ -1084,48 +1084,55 @@ active
 
 ---
 
-## 실제 사례 (WitFoo Precinct 6 — 운영 보안 솔루션 5 종 동시 가시성)
+## 실제 사례 — "1개 보안 layer 만 있으면 어떤 일이 벌어지나" (Precinct 6 dataset 검증)
 
-> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0)
-> 본 lecture *보안 솔루션 개론 + 인프라 소개* 학습 항목 (Defense in Depth · multi-vendor · SIEM 통합) 와 매핑되는 dataset 의 *단일 incident 의 multi-product evidence*.
+> 출처: WitFoo Precinct 6 Cybersecurity Dataset (Apache 2.0, 2.07M signals · 10,442 incidents)
 
-### Case 1: 1 incident host 가 보유한 *2 vendor product* + framework 매핑
+이 lecture 첫 학습 목표는 **"왜 5개 layer (방화벽·IDS·WAF·SIEM·CTI) 가 모두 필요한가"** 다.
+짧게는 "Defense in Depth 라서" 답하지만, 학생이 *실측으로* 납득하려면 "1-2개 layer 만 있는 SOC 가 *놓치는 것* 이 무엇인지" 봐야 한다.
+아래는 실제 운영 SOC 가 만든 1년치 침해 데이터로 그 격차를 정량화한다.
 
-**원본** (incidents.jsonl 의 host 노드 발췌):
+### 사례 — Data Theft 침해 1건 (incident `d4221ce0-fe69-11ed`) 의 evidence 분포
 
-```json
-"products": {
-  "6":  {"name": "Precinct", "vendor_name": "WitFoo",
-         "frameworks": {"csc":[1,6,16,19], "cmmc1":[6], ...,
-                        "iso27001":[4,8,14,16,67,68,69,71,72,113,114,...]}},
-  "17": {"name": "ASA Firewall", "vendor_name": "Cisco",
-         "frameworks": {"csc":[9,12], "cmmc1":[1,5], ...,
-                        "iso27001":[1,2,53,54,81,86]}}
-}
-```
+이 1건의 침해는 dataset 에 *3개 product* 의 신호로 동시 기록되어 있다 (`incidents.jsonl` 의 host 노드 발췌):
 
-### Case 2: dataset 의 *vendor diversity* — 100+ message_type
+| product | 역할 | 이 침해에서 본 것 |
+|---------|------|------------------|
+| **Cisco ASA Firewall** | 네트워크 layer | outbound 패킷의 src/dst IP·port·byte count |
+| **PAN NGFW** | 차세대 방화벽 | application 식별 + URL category |
+| **WitFoo Precinct (SIEM)** | 분석 layer | 위 둘을 묶어 `mo_name=Data Theft` 분류 |
 
-| 도메인 | 본 dataset 의 evidence (message_type) | 본 과목 학습 도구 |
-|--------|-------------------------------------|-----------------|
-| **Firewall** | firewall_action 118K · traffic_drop 5.8K | nftables (w02-w03) |
-| **IPS/IDS** | flow 31K · network_flow_data 13K · anomalous_behavior 1K | Suricata (w04-w06) |
-| **WAF** | GET 4018 · POST 88 (CEF format) | ModSecurity (w07) |
-| **SIEM** | 4624/4625 · 4656/4658 · 4663 · 5156 · 4798/4799 · 7036 등 (Windows event 24만+) | Wazuh (w09-w11) |
-| **CTI** | mo_name (Data Theft 125K · Phishing 8) · matched_rules · attack_techniques | OpenCTI (w12-w13) |
+만약 SOC 가 layer 를 1-2개만 운영했다면:
 
-**해석 — 본 lecture 와의 매핑**
+| 가용 layer | 학생이 볼 수 있는 evidence | 도달 가능한 결론 |
+|-----------|--------------------------|----------------|
+| **Firewall 만** | 패킷 흐름은 보임 — outbound 패킷 119,000 건이 "허용" 되었다는 사실만 보임 | "트래픽 볼륨 이상" 까지만. 침해인지 정상 백업인지 모름 |
+| **Firewall + IDS** | + 비정상 connection 패턴 alert | "의심 통신" 까지. mo_name (Data Theft / Phishing / 기타) 분류 불가 |
+| **Firewall + IDS + SIEM** | + 두 layer 신호 시계열 correlation | **`mo_name=Data Theft` 분류 + 7-framework 매핑 (csc, iso27001, pci 등) 자동 생성** |
 
-| 보안 솔루션 개론 학습 항목 | 본 record 의 증거 |
-|-------------------------|------------------|
-| **Defense in Depth** | 1 host 에 SIEM (Precinct/WitFoo) + Firewall (Cisco ASA) 두 layer 동시. 본 과목은 5 layer (nft·Suricata·ModSec·Wazuh·OpenCTI) — 본 dataset 보다 *더 깊음* |
-| **multi-vendor 통합** | dataset host 가 *2 vendor framework 동시 매핑* — 본 과목 학생도 *5 vendor SIEM 통합* 능력 학습 |
-| **framework 다중 매핑** | 본 dataset host 가 csc/cmmc/pci/nist80053/csf/iso27001/soc2 *7-framework* 동시 — 학생 보고서 baseline |
-| **CEF 표준** | dataset 의 WAF GET 이 CEF 7-field 표준 사용 — 본 과목 ModSec 출력도 동일 표준화 권장 |
+**핵심 — 이 lecture 가 학생에게 묻는 것**: 본인 SOC 가 *firewall 만* 운영한다면, 이 데이터셋 1년치에서 **2,070,923 signal 중 firewall_action ` 119,000 으로만 보이고 나머지 1,951,923 signal (94.3%) 의 evidence 에 접근하지 못한다**. 즉 1년 동안 본인이 본 evidence 의 **5.7%** 로 침해 판단을 해야 한다.
 
-**w01 학습 액션**:
-1. 본 dataset 의 5 도메인 evidence 분포를 *학생 실습 환경* 에 동등 갖추기 (5 솔루션 모두 setup)
-2. 1 incident 의 *7-framework 매핑* 을 표로 작성 (학생 보고서 양식 baseline)
-3. 본인 환경의 multi-vendor 통합도가 dataset 처럼 *동일 host 에 N vendor evidence* 보유하는지 측정
+### 5 layer 가 분담하는 evidence — 본 과목 실습 환경과의 매핑
+
+본 과목은 5 layer 모두 학생이 운영하게 한다. dataset 의 message_type 분포로 각 layer 가 *얼마나 많은 evidence 를 분담* 하는지:
+
+| 본 과목 layer | 본 과목 학습 주차 | dataset 에서 이 layer 가 책임지는 message_type 비중 |
+|--------------|----------------|---------------------------------------------|
+| **nftables** (방화벽) | w02-w03 | firewall_action 118,000 + traffic_drop 5,800 = **5.97%** |
+| **Suricata** (IDS) | w04-w06 | flow 31,000 + network_flow_data 13,000 + anomalous_behavior 1,000 = **2.17%** |
+| **ModSecurity** (WAF) | w07 | HTTP method GET/POST = **0.20%** (CEF 표준) |
+| **Wazuh** (SIEM) | w09-w11 | Windows event 240,000+ (4624/4625 인증, 4663 파일 액세스, 5156 네트워크) = **11.6%** |
+| **OpenCTI** (CTI) | w12-w13 | mo_name 라벨 + matched_rules + attack_techniques = **분류·맥락 layer** |
+| **5 layer 합산** | — | **~20%** + 분류 layer (정상 트래픽 1,899,723 = 91.7% 은 layer 가 *허용한* 트래픽) |
+
+이게 본 과목이 5 layer 를 학생에게 모두 운영시키는 이유다 — 1-2 layer 로는 침해 evidence 의 큰 일부를 못 본다.
+
+### w01 학습 액션 (이 사례를 본인 환경에 적용)
+
+1. **본인 실습 환경 5 layer 가 모두 살아있는지 확인** — w01 lab 에서 nft / Suricata / ModSec / Wazuh / OpenCTI 각각 `systemctl is-active` + 룰셋 카운트 측정.
+2. **5 layer × 5 attack vector 매트릭스 작성** — w01 lab 의 마지막 step 이 "SQLi/포트스캔/Brute Force/Phishing/멀웨어 다운로드" 5 가지 공격을 5 layer 가 어떻게 분담 탐지하는지 표로 만들게 한다.
+3. **w03 ~ w13 동안 본인 SOC 가 만들어낼 evidence 분포 추적** — dataset 의 5.97% (방화벽) → 11.6% (SIEM) 식 이동을 본인 환경에서 측정해 학기 말 비교.
+
+> *이 사례는 dataset metadata 의 통계 매핑 (어떤 host 가 몇 개 framework 와 mapping 됐다 같은 추상 수치) 이 아니라, "1 layer 만 있으면 보지 못하는 evidence 의 비율" 이라는 실측 정량으로 학생이 5 layer 의 필요성을 검증하게 한다.*
 
 
