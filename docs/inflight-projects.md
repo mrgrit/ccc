@@ -6,7 +6,7 @@
 > - DoD 모두 체크 → `## Closed` 섹션으로 이동
 > - cron 자동 사이클이 in-progress 중 next step 1건 진행 후 갱신·commit
 
-업데이트: 2026-04-29 09:13 KST
+업데이트: 2026-04-30 23:55 KST (R3 fix #2/#3 deploy)
 
 ---
 
@@ -516,6 +516,43 @@ Architecture) 모두 비어있음.
 
 
 ## Closed (누적 완료)
+
+### 2026-04-30 23:55 — R3 fix #1/#2/#3 일괄 적용 + 인프라 IP 변동 (bastion 0.115→0.103)
+
+**진단 (R3 V2 + low-3 supplemental fail 분석)**:
+- Pattern 1: agent 가 `http://10.20.30.80` (bastion-internal) 사용 → attacker 라우팅 테이블에 없어 unreachable
+- Pattern 2: `curl -s` 단독 명령 → 본문만 출력되어 verify 의 status/header 매칭 실패
+- Pattern 3: self_verify_completion 의 tool_summary truncation 200자 → 충족 자료 부족 → 무조건 false
+- Pattern 4: self_verify_fail 후 재시도 prompt 막연한 "추가로 호출하라" → 같은 명령 6회 반복
+
+**적용된 fix**:
+- [x] **Fix #1** (commit 76d1b921) — `packages/bastion/skills.py` shell handler: target=='attacker' 시 `10.20.30.80` → `192.168.0.108` (secu DNAT) 자동 치환
+- [x] **Fix #2** (commit 1625b03e) — shell handler: curl + exit_code==0 + stdout < 60자 → `-i -L` 옵션 추가 자동 retry
+- [x] **Fix #3** (commit e72ae39a) — `packages/bastion/agent.py`:
+  - _self_verify_completion: tool_summary 200→800자, negative_signs 블록, 5단계 판정 원칙
+  - self_verify_fail 후 재시도 prompt: 미충족 success_criteria 명시 + 5개 행동 지침
+  - 최종 synthesis (last_assistant_content 비었을 때): 도구 stdout 인용 + 기준별 충족/미충족 명시 강제
+
+**인프라 fix**:
+- [x] bastion process IP propagation (16 scripts: ingest_*, post_v2_chain.sh, bastion_kg_sync.sh, r3_diagnose.py, sync_to_bastion.sh 등)
+- [x] ccc-api `/api/graph/*` alias (Knowledge UI 404 → 2791 nodes/8354 edges 정상 표시)
+- [x] OpenCTI token UUID format runtime + code default
+- [x] wazuh-manager local_rules.xml 정리 (3개 rule 활성화)
+- [x] vuln-sites Docker DNS fix (8.8.8.8) + Docker DNAT 직접 접근 차단
+- [x] secops/week01 lecture WAF 실측 반영
+- [x] attacker VM 13 pentest tools 설치 (sqlmap·ffuf·nuclei·whatweb·hydra·gobuster·sslscan 등)
+
+**예상 효과 (보수)**:
+- 'no-output' 판정 12+건 중 ~7건 회복
+- self_verify→재시도 무한 반복 패턴 차단
+- low-3 supplemental 254건 중 ~25건 fail→pass 추가
+- 측정 카테고리별: web-vuln-ai 5%→25%+, physical-pentest 16%→30%+, autonomous 18%→32%+
+
+**측정 방법**:
+- bastion 14:49:18 KST 재시작 후 신규 케이스 (`r3_low3_supplemental` #29 부터) 자동 적용
+- 최종 정량은 R4 round (1285 step 전체 재측정) 시 산출
+
+**Bastion 양 repo push 완료**: mrgrit/ccc (e72ae39a) + mrgrit/bastion (74b1afb)
 
 ### 2026-04-30 — P14 e2e 검증 완료 + Knowledge UI fix
 - [x] **P14 Lab 채점 흐름 재설계** — A/B/C/D 사이클 모두 완료. 2026-04-30 e2e 시뮬레이션 (/tmp/p14b_e2e.py):
