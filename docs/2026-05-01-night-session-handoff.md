@@ -23,7 +23,7 @@
 - driver: `results/retest/driver_r4.sh`
 - 모든 R3 fix #1~#6 활성 상태에서 측정
 
-## 6 R3 fix 일괄 적용 (commits)
+## 7 R3 fix 일괄 적용 (commits)
 
 | # | 커밋 | 내용 |
 |---|---|---|
@@ -33,6 +33,7 @@
 | #4 | 5070990a | 최종 답변 4섹션 강제 + target=web 금지 |
 | #5 | 8e227393 | skill output truncation 1000→2500자 |
 | #6 | db38639e | call_bastion 네트워크 에러 1회 retry |
+| #7 | fb953d81 | punt content ('다음 단계에서…') 도 synthesis 강제 |
 
 추가 인프라/도구 fix:
 - `2a65c463` — sync_to_bastion.sh restart 안정성 (sleep 12 + health 3 retry + pgrep)
