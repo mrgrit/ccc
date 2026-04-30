@@ -62,11 +62,34 @@ def call_bastion(step: dict, course: str, lab_id: str):
         method="POST",
     )
     t0 = time.time()
-    try:
-        with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
-            body = r.read().decode()
-    except Exception as e:
-        return None, time.time() - t0, str(e)
+    body = None
+    last_err: Exception | None = None
+    # ★ R3 fix #6 (2026-04-30): 'Remote end closed' 류 네트워크 에러 시 1회 자동 재시도.
+    #   bastion 재시작 / connection reset 시 wait_for_bastion 으로 회복하면 즉시 retry.
+    for attempt in (1, 2):
+        try:
+            with urllib.request.urlopen(req, timeout=TIMEOUT) as r:
+                body = r.read().decode()
+            break
+        except Exception as e:
+            last_err = e
+            estr = str(e)
+            # 네트워크/연결 에러만 재시도 (timeout 도 1회 retry — bastion warmup 가능)
+            if attempt == 1 and any(s in estr for s in (
+                "Remote end closed", "Connection reset", "Connection refused",
+                "timed out", "Bad Gateway", "Service Unavailable",
+            )):
+                # bastion 헬스 회복 대기 (최대 30s)
+                for _ in range(6):
+                    try:
+                        urllib.request.urlopen(BASTION.replace("/chat", "/health"), timeout=3).close()
+                        break
+                    except Exception:
+                        time.sleep(5)
+                continue
+            return None, time.time() - t0, estr
+    if body is None:
+        return None, time.time() - t0, str(last_err)
     # Response shapes: {"events":[...]}, [...], or NDJSON
     events = []
     body = body.strip()
