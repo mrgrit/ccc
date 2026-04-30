@@ -521,10 +521,14 @@ def import_real_incidents(src: Path, max_incidents: int = 100, dry_run: bool = F
 
     # 두번째 pass — 실 import
     asset_added = 0
-    breach_added = 0
+    user_added = 0
+    cred_added = 0
+    process_added = 0
     pair_edges = 0
     pair_anchors = 0
+    uses_edges = 0  # host → user/cred 등 사용 관계
     cnt = 0
+    seen_assets: dict[str, dict] = {}  # ip → meta (dedup 용)
     with p.open() as f:
         for line in f:
             cnt += 1
@@ -539,28 +543,131 @@ def import_real_incidents(src: Path, max_incidents: int = 100, dry_run: bool = F
             susp = d.get("suspicion_score", 0.0)
             nodes = d.get("nodes") or {}
             red_ips = []; blue_ips = []
+            host_keys: dict[str, str] = {}  # nid → asset_id (edge 매핑)
+
             for nid, node in nodes.items():
-                ip = node.get("ip", "") or node.get("hostname", "")
-                if not ip:
-                    continue
+                ntype = node.get("type", "")
                 role = None
                 for s in (node.get("sets") or {}).values():
                     sname = s.get("name", "")
                     if sname == "Exploiting Host": role = "red"
                     elif sname == "Exploiting Target": role = "blue"
-                # Asset 노드 추가 (메타에 role + suspicion_score)
-                node_susp = node.get("suspicion_score", 0.0)
-                aid = f"asset:p6:{ip}"
-                try:
-                    g.add_node(aid, "Asset", ip,
-                               content={"source":"precinct6","incident":inc_id,"mo":mo},
-                               meta={"kind":"host","role":role or "neutral",
-                                     "suspicion":node_susp})
-                    asset_added += 1
-                except Exception:
-                    pass
-                if role == "red": red_ips.append(ip)
-                elif role == "blue": blue_ips.append(ip)
+
+                inner_id = node.get("id", "")  # e.g. "HOST-4476" — edges 의 source/target 매칭용
+                if ntype == "host":
+                    ip = node.get("ip") or node.get("ip_address") or ""
+                    hostname = node.get("hostname") or node.get("name") or ""
+                    if not (ip or hostname):
+                        continue
+                    aid = f"asset:p6:{ip or hostname}"
+                    # 기존에 봤으면 metadata merge (suspicion 가장 높게, role 더 위험)
+                    prev = seen_assets.get(aid, {})
+                    susp_val = max(prev.get("suspicion", 0.0), node.get("suspicion_score", 0.0))
+                    role_priority = {"red": 2, "blue": 1, "neutral": 0}
+                    new_role = role or "neutral"
+                    cur_role = prev.get("role", "neutral")
+                    final_role = new_role if role_priority.get(new_role, 0) > role_priority.get(cur_role, 0) else cur_role
+                    enriched_meta = {
+                        "kind": "host",
+                        "role": final_role,
+                        "suspicion": susp_val,
+                        "internal": node.get("internal", prev.get("internal")),
+                        "managed": node.get("managed", prev.get("managed")),
+                        "mac": node.get("mac") or prev.get("mac", ""),
+                        "org": node.get("org") or prev.get("org", ""),
+                        "hostname": hostname or prev.get("hostname", ""),
+                    }
+                    enriched_meta = {k: v for k, v in enriched_meta.items() if v not in (None, "", 0)}
+                    enriched_meta.setdefault("kind", "host")
+                    enriched_meta.setdefault("role", final_role)
+                    enriched_meta.setdefault("suspicion", susp_val)
+                    seen_assets[aid] = enriched_meta
+                    try:
+                        g.add_node(aid, "Asset", ip or hostname,
+                                   content={"source": "precinct6", "incident": inc_id, "mo": mo,
+                                            "hostname": hostname, "ip": ip,
+                                            "internal": node.get("internal"),
+                                            "managed": node.get("managed"),
+                                            "mac": node.get("mac", ""),
+                                            "org": node.get("org", "")},
+                                   meta=enriched_meta)
+                        asset_added += 1
+                    except Exception:
+                        pass
+                    host_keys[nid] = aid
+                    if inner_id: host_keys[inner_id] = aid
+                    target_ip = ip or hostname
+                    if role == "red": red_ips.append(target_ip)
+                    elif role == "blue": blue_ips.append(target_ip)
+
+                elif ntype == "user":
+                    user_id = node.get("id") or node.get("name") or ""
+                    if not user_id:
+                        continue
+                    uid = f"asset:p6:user:{user_id}"
+                    try:
+                        g.add_node(uid, "Asset", user_id,
+                                   content={"source": "precinct6", "kind": "user",
+                                            "incident": inc_id,
+                                            "hostname": node.get("hostname", "")},
+                                   meta={"kind": "user", "role": role or "neutral",
+                                         "suspicion": node.get("suspicion_score", 0.0)})
+                        user_added += 1
+                    except Exception:
+                        pass
+                    host_keys[nid] = uid
+                    if inner_id: host_keys[inner_id] = uid
+
+                elif ntype == "credential":
+                    cred_id = node.get("id") or node.get("name") or ""
+                    if not cred_id:
+                        continue
+                    cid = f"asset:p6:cred:{cred_id}"
+                    try:
+                        g.add_node(cid, "Asset", cred_id,
+                                   content={"source": "precinct6", "kind": "credential",
+                                            "incident": inc_id},
+                                   meta={"kind": "credential", "role": role or "neutral"})
+                        cred_added += 1
+                    except Exception:
+                        pass
+                    host_keys[nid] = cid
+                    if inner_id: host_keys[inner_id] = cid
+
+                elif ntype == "process":
+                    proc_id = node.get("id") or node.get("name") or ""
+                    if not proc_id:
+                        continue
+                    pid = f"asset:p6:proc:{proc_id}"
+                    try:
+                        g.add_node(pid, "Asset", proc_id,
+                                   content={"source": "precinct6", "kind": "process",
+                                            "incident": inc_id, "command": node.get("command", "")},
+                                   meta={"kind": "process", "role": role or "neutral"})
+                        process_added += 1
+                    except Exception:
+                        pass
+                    host_keys[nid] = pid
+                    if inner_id: host_keys[inner_id] = pid
+
+            # incident 내부 edges (dict[uuid → {source, target, type, ...}]) → uses/connection edges
+            edges_blob = d.get("edges") or {}
+            edge_items = edges_blob.values() if isinstance(edges_blob, dict) else edges_blob
+            for edge in edge_items:
+                if not isinstance(edge, dict):
+                    continue
+                src_id = edge.get("source") or edge.get("from")
+                dst_id = edge.get("target") or edge.get("to")
+                src_aid = host_keys.get(src_id)
+                dst_aid = host_keys.get(dst_id)
+                if src_aid and dst_aid and src_aid != dst_aid:
+                    edge_type = edge.get("type", "uses")
+                    try:
+                        g.add_edge(src_aid, dst_aid, f"p6:{edge_type}")
+                        uses_edges += 1
+                    except Exception:
+                        pass
+
             # Red ↔ Blue breach pair anchor + edge
             for r in red_ips:
                 for b in blue_ips:
@@ -582,7 +689,11 @@ def import_real_incidents(src: Path, max_incidents: int = 100, dry_run: bool = F
 
     return {
         "incidents_processed": cnt,
-        "asset_nodes_added": asset_added,
+        "host_assets_added": asset_added,
+        "user_assets_added": user_added,
+        "cred_assets_added": cred_added,
+        "process_assets_added": process_added,
+        "uses_edges_added": uses_edges,
         "frameworks_added": fw_added,
         "products_added": pr_added,
         "breach_pair_anchors_added": pair_anchors,
