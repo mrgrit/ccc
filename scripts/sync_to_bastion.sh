@@ -30,7 +30,7 @@ cd "$BAS" && git status --short
 # 4. 원격 bastion runtime 도 sync — /home/ccc/ccc/packages/bastion/ 가 실제 import path
 #    (R3 postmortem 2026-04-26: /opt/bastion/ 만 sync 해서 새 코드 미적용 발생).
 #    REMOTE_HOST 환경변수 비어있으면 skip (안전).
-REMOTE_HOST="${REMOTE_HOST:-192.168.0.115}"
+REMOTE_HOST="${REMOTE_HOST:-192.168.0.103}"
 REMOTE_USER="${REMOTE_USER:-ccc}"
 REMOTE_PASS="${REMOTE_PASS:-1}"
 REMOTE_PATH="${REMOTE_PATH:-/home/ccc/ccc/packages/bastion}"
