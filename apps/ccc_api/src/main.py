@@ -3494,7 +3494,7 @@ def _judge_battle_claim(claim_type: str, title: str,
 def _bastion_get(path: str, params: dict | None = None) -> dict:
     """Bastion API GET 프록시 헬퍼 — 실패해도 app 죽지 않게."""
     import httpx
-    bastion_url = os.getenv("BASTION_URL", "http://192.168.0.115:8003").rstrip("/")
+    bastion_url = os.getenv("BASTION_URL", "http://192.168.0.103:8003").rstrip("/")
     try:
         r = httpx.get(f"{bastion_url}{path}", params=params or {}, timeout=15.0)
         return r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
@@ -3504,7 +3504,7 @@ def _bastion_get(path: str, params: dict | None = None) -> dict:
 
 def _bastion_method(method: str, path: str, json_body: dict | None = None) -> dict:
     import httpx
-    bastion_url = os.getenv("BASTION_URL", "http://192.168.0.115:8003").rstrip("/")
+    bastion_url = os.getenv("BASTION_URL", "http://192.168.0.103:8003").rstrip("/")
     try:
         r = httpx.request(method, f"{bastion_url}{path}", json=json_body, timeout=30.0)
         return r.json() if r.headers.get("content-type", "").startswith("application/json") else {"raw": r.text}
@@ -3521,54 +3521,63 @@ def _require_admin(request: Request):
 
 
 @app.get("/graph/stats", dependencies=[Depends(verify_api_key)])
+@app.get("/api/graph/stats", dependencies=[Depends(verify_api_key)])
 def kg_stats(request: Request):
     _require_admin(request)
     return _bastion_get("/graph/stats")
 
 
 @app.get("/graph/nodes", dependencies=[Depends(verify_api_key)])
+@app.get("/api/graph/nodes", dependencies=[Depends(verify_api_key)])
 def kg_nodes(request: Request, types: str = "", limit: int = 500):
     _require_admin(request)
     return _bastion_get("/graph/nodes", {"types": types, "limit": limit})
 
 
 @app.get("/graph/edges", dependencies=[Depends(verify_api_key)])
+@app.get("/api/graph/edges", dependencies=[Depends(verify_api_key)])
 def kg_edges(request: Request, types: str = ""):
     _require_admin(request)
     return _bastion_get("/graph/edges", {"types": types})
 
 
 @app.get("/graph/node/{node_id}", dependencies=[Depends(verify_api_key)])
+@app.get("/api/graph/node/{node_id}", dependencies=[Depends(verify_api_key)])
 def kg_node(node_id: str, request: Request):
     _require_admin(request)
     return _bastion_get(f"/graph/node/{node_id}")
 
 
 @app.get("/graph/search", dependencies=[Depends(verify_api_key)])
+@app.get("/api/graph/search", dependencies=[Depends(verify_api_key)])
 def kg_search(request: Request, q: str = "", type: str = "", limit: int = 30):
     _require_admin(request)
     return _bastion_get("/graph/search", {"q": q, "type": type, "limit": limit})
 
 
 @app.get("/graph/lineage/{node_id}", dependencies=[Depends(verify_api_key)])
+@app.get("/api/graph/lineage/{node_id}", dependencies=[Depends(verify_api_key)])
 def kg_lineage(node_id: str, request: Request, max_depth: int = 3):
     _require_admin(request)
     return _bastion_get(f"/graph/lineage/{node_id}", {"max_depth": max_depth})
 
 
 @app.delete("/graph/node/{node_id}", dependencies=[Depends(verify_api_key)])
+@app.delete("/api/graph/node/{node_id}", dependencies=[Depends(verify_api_key)])
 def kg_delete(node_id: str, request: Request):
     _require_admin(request)
     return _bastion_method("DELETE", f"/graph/node/{node_id}")
 
 
 @app.post("/graph/compact/{playbook_id}", dependencies=[Depends(verify_api_key)])
+@app.post("/api/graph/compact/{playbook_id}", dependencies=[Depends(verify_api_key)])
 def kg_compact_one(playbook_id: str, request: Request):
     _require_admin(request)
     return _bastion_method("POST", f"/graph/compact/{playbook_id}")
 
 
 @app.post("/graph/compact", dependencies=[Depends(verify_api_key)])
+@app.post("/api/graph/compact", dependencies=[Depends(verify_api_key)])
 def kg_compact_all(request: Request):
     _require_admin(request)
     return _bastion_method("POST", "/graph/compact")
