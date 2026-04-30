@@ -1,0 +1,189 @@
+id: "p7-change-management"
+title: "Production Trial D — IT 환경 변경 점검 (Change Management)"
+description: |
+  방화벽 정책 / DNS / TLS 인증서 / 라우팅 변경 전 사전 영향 분석 + 사후 회귀 검증.
+  paper §7.4 Track C 시나리오 D. 자연어 CR → Bastion 분석 → 시뮬레이션 → 적용 → 회귀.
+phase: "change_management"
+sla_minutes: 90
+hitl_steps: [4, 5]  # 운영자 승인 + 적용 후 inline review
+kpi_targets:
+  pre_simulation_accuracy_min: 0.9  # drylab 결과 vs 실 적용 결과 일치율
+  rollback_required_count_max: 0
+  regression_test_pass_rate_min: 0.95
+  hitl_review_satisfaction_min: 4  # /5
+
+sample_change_requests:
+  - id: "CR-2026-001"
+    title: "DNS resolver 변경 (Google → Cloudflare)"
+    nl_description: "내부 DNS resolver 를 8.8.8.8 → 1.1.1.1 로 변경. 모든 Docker container + bastion + 4-VM 영향. Privacy 강화 + DoH 지원 목적."
+    affected_systems: ["docker-daemon", "bastion-runtime", "secu", "web", "siem", "attacker"]
+    risk: "medium"
+  - id: "CR-2026-002"
+    title: "TLS 인증서 갱신 (Let's Encrypt 90일)"
+    nl_description: "JuiceShop + 5 vuln-sites 의 TLS 인증서 갱신. 만료 14일 전 자동 갱신 + 무중단 reload."
+    affected_systems: ["web (juiceshop + 5 vuln-sites)", "secu DNAT (443)"]
+    risk: "low"
+  - id: "CR-2026-003"
+    title: "방화벽 정책 — 신규 internal subnet 추가"
+    nl_description: "10.20.40.0/24 새 내부망 추가. attacker → 신규망 차단, web → 신규망 8080 허용."
+    affected_systems: ["secu nft ruleset", "전 VM routing table"]
+    risk: "high"
+
+steps:
+  - order: 1
+    instruction: "CR 자연어 입력 → Bastion 이 영향 범위 자동 추출."
+    bastion_prompt: "Change Request: '{nl_description}'. 이 변경이 영향 미치는 systems 와 risk level 판단해줘. KG 의 Asset/Architecture 노드 활용."
+    skill_hint: "qa + KG lookup"
+    target_vm: manager
+    verify:
+      type: "output_contains"
+      expect: "system"
+      semantic:
+        intent: "ITIL Change Management — CR 자연어 → 영향 범위 + risk classification."
+        success_criteria:
+          - "affected systems 리스트 (최소 3개)"
+          - "risk level 명시 (low/medium/high)"
+          - "근거 (의존성 / 트래픽 / 인증)"
+        acceptable_methods:
+          - "qa + Asset KG query"
+          - "Architecture connects_to edge traversal"
+          - "manual reasoning + 운영 docs"
+        negative_signs:
+          - "system 1개 만 + 다른 의존 미고려"
+          - "risk 미평가"
+
+  - order: 2
+    instruction: "변경 사전 시뮬레이션 (drylab) — 실 적용 전 sandbox 환경에서 명령 dry-run."
+    bastion_prompt: "step 1 의 변경 명령을 drylab 모드로 실행. nft -c (check), systemctl --dry-run, certbot --dry-run, docker-compose config 등."
+    skill_hint: "shell with --dry-run / -c flag"
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "syntax"
+      semantic:
+        intent: "Pre-change validation — 명령 syntax + 영향 사전 검증."
+        success_criteria:
+          - "각 변경 명령에 dry-run 또는 --check 플래그"
+          - "syntax OK 또는 error 명시"
+          - "예상 영향 (몇 개 rule 추가/삭제) 카운트"
+        acceptable_methods:
+          - "nft -c -f new.nft"
+          - "certbot renew --dry-run"
+          - "ansible --check --diff"
+          - "docker-compose config --quiet"
+        negative_signs:
+          - "dry-run 누락"
+          - "syntax error 발견 후 무시"
+
+  - order: 3
+    instruction: "회귀 검증 baseline 캡처 — 변경 전 정상 상태 (smoke test 결과) 저장."
+    bastion_prompt: "변경 전 baseline: secu 전체 rule set, web/siem 의 listening port, vuln-sites HTTP 200 응답. /tmp/baseline-pre-change.txt 에 저장."
+    skill_hint: "shell + curl + ss + nft list"
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "baseline"
+      semantic:
+        intent: "Pre-change snapshot — 회귀 비교 기준점 확보."
+        success_criteria:
+          - "rule set / listening ports / HTTP 응답 모두 캡처"
+          - "/tmp/baseline-pre-change.txt 파일 저장"
+          - "sha256 무결성 hash"
+        acceptable_methods:
+          - "shell + nft list ruleset > baseline"
+          - "ansible setup module"
+          - "AWS Config snapshot"
+        negative_signs:
+          - "단일 metric 만"
+          - "파일 저장 누락"
+
+  - order: 4
+    instruction: "[HITL] 운영자 승인 후 변경 적용."
+    bastion_prompt: "step 2 dry-run OK + step 3 baseline 캡처 완료. 이제 실 변경 적용 대기. 운영자 승인 시 step 1 의 명령을 mode=apply 로 실행."
+    skill_hint: "deploy_rule mode=apply or shell + actual change command"
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "appl"
+      semantic:
+        intent: "Change Implementation — 검증된 변경의 운영 적용 + 즉시 reload."
+        success_criteria:
+          - "변경 명령 실행 (apply mode)"
+          - "reload 또는 restart"
+          - "exit code 0 확인"
+        acceptable_methods:
+          - "deploy_rule mode=apply"
+          - "ansible-playbook --diff"
+          - "ssh secu + nft -f new.nft + nft list ruleset"
+        negative_signs:
+          - "실패 후 재시도 없음"
+          - "reload 누락"
+
+  - order: 5
+    instruction: "회귀 검증 — 변경 후 baseline 과 diff. 의도된 변경 외 다른 차이 없는지."
+    bastion_prompt: "변경 후 동일 metric 캡처 (rule / port / HTTP 응답). step 3 baseline 과 diff. 의도된 변경 (CR 명세대로) 외 다른 차이 0 인지 확인."
+    skill_hint: "shell + diff + curl"
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "diff"
+      semantic:
+        intent: "Post-change verification — 회귀 영향 측정 + unintended change 0 입증."
+        success_criteria:
+          - "변경 후 metric 캡처 (rule + port + HTTP)"
+          - "step 3 baseline 과 diff 출력"
+          - "의도된 변경 외 차이 0 확인"
+        acceptable_methods:
+          - "diff /tmp/baseline-pre /tmp/baseline-post"
+          - "ansible --diff"
+          - "Terraform plan after apply"
+        negative_signs:
+          - "diff 누락"
+          - "unintended change 발견 후 무시"
+
+  - order: 6
+    instruction: "변경 후 smoke test 자동 실행 — 핵심 기능 정상 동작 확인."
+    bastion_prompt: "변경된 시스템의 smoke test: vuln-sites HTTP 200 / SSH 정상 / DNS 해석 / TLS 인증서 유효."
+    skill_hint: "shell + curl + dig + openssl"
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "200"
+      semantic:
+        intent: "Functional regression — 변경이 기능 끊지 않았는지 입증."
+        success_criteria:
+          - "vuln-sites HTTP curl 200"
+          - "SSH 22 연결성"
+          - "DNS resolver 정상 (dig +short)"
+          - "TLS 인증서 유효성 (openssl s_client)"
+        acceptable_methods:
+          - "curl -I http://192.168.0.108"
+          - "ssh ccc@... echo ok"
+          - "dig +short google.com"
+          - "openssl s_client -connect ... -showcerts | grep Verify"
+        negative_signs:
+          - "단일 metric 만 + 다른 기능 누락"
+          - "200 검증 만 + body 검증 없음"
+
+  - order: 7
+    instruction: "Change report — CR ID, 시각, 변경 명세, baseline diff, smoke test 결과 markdown."
+    bastion_prompt: "변경 보고서 markdown: CR ID + 시각 + 명세 + diff 결과 + smoke test pass/fail + 다음 갱신 예정. sha256 hash."
+    skill_hint: "shell + heredoc + sha256sum"
+    target_vm: manager
+    verify:
+      type: "output_contains"
+      expect: "sha256"
+      semantic:
+        intent: "ITIL Change Closure + audit trail."
+        success_criteria:
+          - "CR ID + timestamp"
+          - "변경 명세 (before/after)"
+          - "diff + smoke test 결과 인용"
+          - "sha256 hash + chain-of-custody"
+        acceptable_methods:
+          - "shell + heredoc + sha256sum"
+          - "ServiceNow CR closure"
+          - "Jira workflow transition"
+        negative_signs:
+          - "변경만 + 검증 결과 누락"
+          - "hash 누락"

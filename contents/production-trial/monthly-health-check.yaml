@@ -1,0 +1,168 @@
+id: "p7-monthly-health-check"
+title: "Production Trial A — 월간 정기점검"
+description: |
+  매월 1일 정기 헬스체크 + 룰 갱신 + 자산 인벤토리.
+  paper §7.4 Track C 시나리오 A (4시간 사람 운영 → 30분 자동화 목표).
+phase: "monthly_routine"
+sla_minutes: 30
+hitl_steps: [3, 5]  # CVE→Suricata 변환 + 정책 적용 시 운영자 승인 필수
+kpi_targets:
+  wallclock_minutes_max: 30
+  hitl_review_pass_rate_min: 0.9
+  step_variance_max_pct: 5  # KG reuse 효과 (지난달 절차와 ±5%)
+  missed_agent_count_max: 0
+
+steps:
+  - order: 1
+    instruction: "Wazuh agent 200대 헬스 일괄 확인. /var/ossec/bin/agent_control -lc 출력으로 Disconnected agent 식별."
+    bastion_prompt: "Wazuh 매니저(siem)에서 agent 헬스 상태를 확인해줘. Disconnected 또는 Never connected 인 agent 만 추출해서 리스트로 보여줘."
+    skill_hint: "shell or check_wazuh"
+    target_vm: siem
+    verify:
+      type: "output_contains"
+      expect: "agent"
+      semantic:
+        intent: "Wazuh agent 인벤토리 + 미응답 agent 식별 (월간 health check 1단계)."
+        success_criteria:
+          - "agent_control -lc 또는 동등 명령 실행"
+          - "Disconnected/Never connected agent 추출"
+          - "총 agent 수 + 비정상 수 카운트"
+        acceptable_methods:
+          - "ssh siem '/var/ossec/bin/agent_control -lc'"
+          - "Wazuh API GET /agents?status=disconnected"
+          - "check_wazuh skill"
+        negative_signs:
+          - "agent dump 만 + 분류 누락"
+          - "총수 카운트 누락"
+
+  - order: 2
+    instruction: "최신 CVE 피드 수집 + Suricata rule 변환 후보 추출."
+    bastion_prompt: "지난 1개월 발표된 KEV catalog 의 CVE 중 web 카테고리 대상 룰을 후보로 추출해줘. SIGMA 또는 Suricata 형식으로 변환 가능한 항목만."
+    skill_hint: "ingest_cve_feed or shell + curl"
+    target_vm: manager
+    verify:
+      type: "output_contains"
+      expect: "CVE"
+      semantic:
+        intent: "KEV catalog 또는 CVE feed 수집 + 운영 인프라 적용 가능 룰 후보 식별 (월간 패치 사이클)."
+        success_criteria:
+          - "CVE 피드 (KEV / NVD / vendor advisory) 1개 이상 수신"
+          - "최소 5건 CVE-XXXX-YYYY 형식 추출"
+          - "Suricata/SIGMA 변환 가능 여부 체크"
+        acceptable_methods:
+          - "curl https://www.cisa.gov/sites/default/files/feeds/known_exploited_vulnerabilities.json"
+          - "ingest_cve_feed skill"
+          - "GitHub: tenable/CVE-Database"
+        negative_signs:
+          - "CVE 1-2건 만 + 분류 누락"
+          - "변환 가능 여부 미확인"
+
+  - order: 3
+    instruction: "[HITL] 추출된 룰 후보 중 적용 대상 선별 + Suricata 룰 작성."
+    bastion_prompt: "step 2 의 CVE 후보 5건 중 web-vuln-ai 환경에 적용 가능한 룰을 Suricata 형식으로 작성해줘. 운영자 승인 대기."
+    skill_hint: "deploy_rule (dry_run=true)"
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "alert"
+      semantic:
+        intent: "Suricata 룰 작성 (alert TCP / HTTP / DNS) + dry-run 출력 (배포 전)."
+        success_criteria:
+          - "Suricata alert 룰 1개 이상 작성 (sid + msg + content)"
+          - "dry-run 모드 (실 배포 X)"
+          - "운영자 승인 대기 메시지"
+        acceptable_methods:
+          - "deploy_rule kind=suricata dry_run=true"
+          - "shell + cat > /tmp/new.rules"
+          - "ansible playbook --check"
+        negative_signs:
+          - "rule 작성 만 + dry-run 누락"
+          - "운영자 승인 단계 생략"
+
+  - order: 4
+    instruction: "변경 전후 트래픽 영향 시뮬레이션 — 새 룰이 정상 트래픽 false positive 만들지 확인."
+    bastion_prompt: "step 3 의 룰을 1시간 분량 packet capture 에 적용 시뮬레이션. false positive (정상 트래픽 alert) 카운트."
+    skill_hint: "shell + suricata -k none"
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "alert"
+      semantic:
+        intent: "신규 룰의 정확도 사전 검증 — 운영 트래픽에서 FP 비율 측정."
+        success_criteria:
+          - "PCAP 또는 live tap 1시간 분량 분석"
+          - "FP 카운트 + 비율"
+          - "FP 0건 또는 무시 가능 수준 (<1%) 확인"
+        acceptable_methods:
+          - "suricata -k none -r capture.pcap -S new.rules"
+          - "tcpreplay + suricata"
+          - "Splunk search baseline diff"
+        negative_signs:
+          - "FP 카운트 누락"
+          - "PCAP 없이 추측만"
+
+  - order: 5
+    instruction: "[HITL] 운영자 승인 후 룰 영구 적용 (secu 의 /etc/suricata/rules.local)."
+    bastion_prompt: "step 4 결과 FP 0 인 룰만 secu 의 /etc/suricata/rules.local 에 append + suricata reload."
+    skill_hint: "deploy_rule kind=suricata mode=apply"
+    target_vm: secu
+    verify:
+      type: "output_contains"
+      expect: "reload"
+      semantic:
+        intent: "검증된 룰의 운영 환경 영구 적용 + 즉시 reload."
+        success_criteria:
+          - "/etc/suricata/rules.local 에 룰 append"
+          - "suricata-update 또는 systemctl reload suricata"
+          - "reload 후 alert 통계 확인"
+        acceptable_methods:
+          - "deploy_rule kind=suricata mode=apply"
+          - "ansible-playbook deploy-suricata-rule.yml"
+          - "ssh secu + cat >> + systemctl reload"
+        negative_signs:
+          - "rule 추가 만 + reload 누락"
+          - "검증 결과 무시"
+
+  - order: 6
+    instruction: "자산 인벤토리 갱신 — 활성 IP·서비스 자동 탐색 (light scan)."
+    bastion_prompt: "10.20.30.0/24 대역 활성 호스트 + open port 인벤토리. 지난달 인벤토리와 diff."
+    skill_hint: "scan_ports light or probe_all"
+    target_vm: attacker
+    verify:
+      type: "output_contains"
+      expect: "10.20.30"
+      semantic:
+        intent: "월간 자산 인벤토리 update + 변동 자산 (신규/폐기) 명시."
+        success_criteria:
+          - "활성 IP 리스트 (ping/ARP/nmap -sn)"
+          - "open port summary (per host)"
+          - "지난달 inventory 대비 diff (추가/제거)"
+        acceptable_methods:
+          - "nmap -sn 10.20.30.0/24 + nmap -sV --top-ports 100"
+          - "masscan + service detection"
+          - "scan_ports skill light mode"
+        negative_signs:
+          - "ping 만 + service 누락"
+          - "diff 누락"
+
+  - order: 7
+    instruction: "월간 보고서 자동 생성 (markdown — agent 헬스 + 룰 변경 + 인벤토리 + 사고 카운트)."
+    bastion_prompt: "이번 달 월간 보고서 markdown 작성. 섹션: agent 헬스 / 룰 변경 / 자산 변동 / 주요 알람 통계 / 다음달 권고."
+    skill_hint: "shell + heredoc"
+    target_vm: manager
+    verify:
+      type: "output_contains"
+      expect: "보고서"
+      semantic:
+        intent: "재현가능 (KG playbook reuse) + 사람 검증 가능한 형식의 운영 보고서."
+        success_criteria:
+          - "5개 섹션 (agent / 룰 / 자산 / 알람 / 권고) 모두 작성"
+          - "step 1-6 결과 인용"
+          - "다음달 권고 사항 1개 이상"
+        acceptable_methods:
+          - "shell + cat > report.md heredoc"
+          - "jinja2 템플릿"
+          - "Pandoc markdown → PDF"
+        negative_signs:
+          - "단일 섹션 만"
+          - "권고 누락"
