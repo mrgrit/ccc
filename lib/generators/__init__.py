@@ -9,6 +9,6 @@
 
 재현성: seed 고정 시 동일 출력 (학생/모델 마다 동일 환경 보장).
 """
-from . import lolbas_log, auth_log, web_access, suricata_alert, wazuh_alert
+from . import lolbas_log, auth_log, web_access, suricata_alert, wazuh_alert, firewall_log
 
-__all__ = ["lolbas_log", "auth_log", "web_access", "suricata_alert", "wazuh_alert"]
+__all__ = ["lolbas_log", "auth_log", "web_access", "suricata_alert", "wazuh_alert", "firewall_log"]
