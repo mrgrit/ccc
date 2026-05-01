@@ -457,3 +457,72 @@ steps:
       - 권고 없음
       - 체계 부족
   target_vm: attacker
+- order: 99
+  instruction: |
+    [복합 시나리오] "JuiceShop SQLi 점검 — 도구 3종 비교 + 비교 보고서"
+
+    ## 상황 (w01 → w02 시나리오 연속)
+
+    당신은 ABC 핀테크 점검팀 신규 컨설턴트. w01 에서 OWASP WSTG-INFO 정찰까지 마쳤고,
+    이제 SQLi 점검 단계에 들어왔다. 선배가 한 마디 던진다.
+
+    > 선배: "신입은 sqlmap 한 줄 돌리고 끝내는데, 우리는 그렇게 못 해.
+    > 자동 도구는 빠르지만 우회 룰이 박힌 사이트에선 절반은 놓쳐.
+    > 수동 curl 은 정확하지만 느려. ZAP 프록시는 흐름 캡처에 강하고.
+    > 세 도구 다 돌려보고 각자 강·약점이 뭔지 표로 만들어 와. 보고서에 쓸 거야."
+
+    학습 목표 #1 (도구 차이 이해) + #3 (직접 설치·실행) + #4 (curl 고급) 행동 증명.
+
+    ## 임무 (3 단계, 약 35분)
+
+    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 로 접속 후 직접 실행. transcript 캡처 후 붙여넣기.
+
+    ### Phase A — curl 수동 페이로드 (학습 목표 #4)
+    `curl -s -i -X POST --data-urlencode "email=admin' OR 1=1--" --data-urlencode "password=x"
+    http://10.20.30.80/rest/user/login` 실행. -i (헤더), --data-urlencode 옵션 시연. status·body 첫 줄 캡처.
+
+    ### Phase B — sqlmap 자동 탐지 (학습 목표 #3)
+    `sqlmap -u "http://10.20.30.80/rest/products/search?q=test" --batch --level=2 --risk=2 --dbs` 실행.
+    DB 목록 + 끝의 [INFO] elapsed 시간 기록.
+
+    ### Phase C — 3 도구 비교표 + 권장 흐름
+    | 항목 | curl 수동 | sqlmap 자동 | ZAP 프록시 |
+    | 탐지정확도 / 소요시간 / FP / 우회능력 / 학습곡선 | ... | ... | ... |
+    표 끝에 "권장 흐름: ZAP 정찰 → sqlmap 자동 → curl 검증" 한 줄.
+
+    종료: echo 묶음으로 "=== Phase A status ===" / "=== Phase B DB list ===" / "=== Phase C 비교표 ===" 출력.
+  hint: |
+    Phase A: curl -i 가 status header 함께. --data-urlencode 가 % 자동 인코딩.
+    Phase B: --batch 는 prompt 자동 yes. --dbs 만 첫 단계.
+    Phase C: 4 항목 비교표. 권장 흐름 한 줄.
+    포인트: sqlmap 단발 끝 vs 도구별 강약 비교 — 신입과 컨설턴트 차이.
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: 비교표
+    field: stdout
+    semantic:
+      intent: |
+        JuiceShop SQLi 점검을 curl 수동 / sqlmap 자동 / ZAP 프록시 3 도구로 비교 실행하고,
+        도구별 강약점 비교표 + 권장 점검 흐름까지 작성. 학습 목표 #1 (도구 차이) + #3 (직접 실행) +
+        #4 (curl 고급) 동시 행동 증명.
+      success_criteria:
+      - Phase A — curl 로 1=1 인증 우회 페이로드 직접 전송, status·body 캡처
+      - Phase B — sqlmap --batch --dbs 로 DB 목록 추출, 소요시간 기록
+      - Phase C — 3 도구 비교표 (4 항목 이상) + 권장 흐름 1~2줄
+      acceptable_methods:
+      - curl -i / -X POST / --data-urlencode 로 SQLi payload
+      - sqlmap --batch --level --risk --dbs
+      - ZAP 자동 스캔 결과 캡처 또는 도구 설명 대체
+      - markdown table 또는 ASCII table 형식
+      negative_signs:
+      - sqlmap 한 도구만 실행 종료
+      - 비교표 없이 결과 나열
+      - curl 페이로드 설명만 하고 실행 안 함
+      - 권장 흐름 누락
+  target_vm: attacker
+  risk_level: low
+  answer_detail: |
+    학생이 attacker VM ssh 후 curl·sqlmap 직접 실행, 비교표는 echo 또는 텍스트 편집 후 cat 으로 출력.
+    ZAP 은 GUI 환경 어려우면 설명 대체 허용.
