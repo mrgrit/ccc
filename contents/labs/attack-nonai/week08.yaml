@@ -436,3 +436,102 @@ steps:
       - 벡터 3개 이하
       - 대책 3개 이하
   target_vm: attacker
+- order: 99
+  instruction: |
+    [복합 시나리오 — 중간고사] "정보보안기업 PenTest팀 시니어 — Executive Briefing 5 슬라이드"
+
+    ## 상황 — 화요일 오전 10시, C-level 발표 준비
+
+    당신은 *시큐리티엠피러* PenTest팀 시니어 5년차. 외주 클라이언트 CISO·CFO 가 오후 2시 *7주차 진행 보고*.
+    분량: 5 슬라이드. 그 이상 안 봄.
+
+    > 팀장: "임원진 발표는 *결과 한 페이지* + *증거* + *경영 의사결정*. 2분 30초.
+    > Critical 1 / High 2 / Medium 1. 5번째 슬라이드는 *예산 요청*."
+
+    학습 목표 (lecture w08 중간 종합) + (lab 권한 상승 #1·#2·#3·#6) 통합.
+
+    ## 산출물 — 5 슬라이드
+
+    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
+
+    ### Slide 1/5 — Title & Mission Summary
+    ```
+    ┌──────────────────────────────────────────────────────────────────┐
+    │ JuiceShop 모의해킹 7주차 중간 보고                                │
+    │ Security MPiror PenTest Team / 2026-04-29                        │
+    ├──────────────────────────────────────────────────────────────────┤
+    │ 점검 대상: 결제 + 관리자 콘솔                                     │
+    │ 점검 기간: w01-w07 (6주)                                         │
+    │ 발견: Critical 1 / High 2 / Medium 1                             │
+    │ 결론: 즉시 조치 + Quick Win 4건                                   │
+    └──────────────────────────────────────────────────────────────────┘
+    ```
+
+    ### Slide 2 — Critical: Auth Rate Limit + Timing chain
+    `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")`
+    `for i in $(seq 1 30); do curl -s -o /dev/null -w "%{http_code} " -X POST -H "Content-Type: application/json" -d '{"email":"x@x.com","password":"wrong"}' http://10.20.30.80:3000/rest/user/login; done | tr ' ' '\n' | sort | uniq -c`
+    ```
+    🔴 Critical (CVSS 8.1) — Auth Rate Limit + Timing Enum chain
+    재현: 30회 401 모두 통과 (rate limit X)
+    영향: 30분 admin 탈취 가능
+    ```
+
+    ### Slide 3 — High × 2: Info Disclosure
+    `curl -s "http://10.20.30.80:3000/api/Users/" | python3 -m json.tool 2>/dev/null | head -20`
+    `for p in '/.git/' '/.env' '/encryptionkeys/' '/ftp/'; do echo -n "$p: "; curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80:3000$p"; done`
+    ```
+    🟠 High (CVSS 7.5) — /api/Users password hash 노출
+    🟠 High (CVSS 7.5) — /encryptionkeys, /ftp 직접 접근
+    ```
+
+    ### Slide 4 — Medium: Privesc 정찰
+    `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 ccc@10.20.30.80 'id; sudo -n -l 2>&1 | head -5; find /usr/bin -perm -4000 2>/dev/null | head -10' 2>&1 | head -20 || echo "[ssh 차단 — local 시뮬]: id; sudo -l; find /usr/bin -perm -4000 | head -10"`
+    ```
+    🟡 Medium (CVSS 5.5) — SUID 비정상 / sudo 매트릭스
+    후속: w09 LinPEAS + 실 상승 시연
+    ```
+
+    ### Slide 5 — 예산 & 결정 요청
+    ```
+    💰 Day 1 (~0원): rate limit + DTO + autoindex off + Server 헤더
+    📅 1주차 ₩200만: 보안 헤더 5종 + Prepared Statement + JWT 회전
+    📈 1개월 ₩2,000만: WAF CRS 4 + SDLC 통합 + Bug Bounty launch
+    ✅ 의사결정: Day 1 4건 즉시 + 1주차 200만 + 1개월 2,000만 결재
+    ```
+
+    종료: echo "=== Executive Briefing 5 슬라이드 ===" + 5 슬라이드.
+  hint: |
+    슬라이드 1 title + 요약 / 2 Critical / 3 High×2 / 4 Medium / 5 예산.
+    각 슬라이드 30초 분량. 실 명령 결과 첨부.
+    포인트: 5 슬라이드 임원 발표 양식. 매트릭스 X.
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: 슬라이드
+    field: stdout
+    semantic:
+      intent: |
+        PenTest팀 시니어 — Executive Briefing 5 슬라이드 (Title/Critical/High/Medium/예산).
+        lecture w08 중간 + lab 권한 상승 #1·#2·#3 동시 행동 증명. *5 슬라이드 발표* 양식.
+      success_criteria:
+      - Slide 1 Title + 4줄 요약
+      - Slide 2 Critical Auth chain 실 명령
+      - Slide 3 High Info Disclosure 4 경로
+      - Slide 4 Medium Privesc SSH/시뮬
+      - Slide 5 예산 (Day1/1주/1개월) + 의사결정
+      acceptable_methods:
+      - heredoc ASCII box
+      - curl + JWT + python3
+      - ssh + local 시뮬 fallback
+      - markdown 헤더
+      negative_signs:
+      - 슬라이드 4개 이하
+      - 예산 누락
+      - 의사결정 요청 누락
+      - 보고서/매트릭스 형식
+      - 30초 분량 의식 없음
+  target_vm: attacker
+  risk_level: low
+  answer_detail: |
+    학생이 ssh attacker 직접. 임원 발표 양식 — 5 슬라이드 압축. Day1 무료 + 1주 200만 + 1개월 2,000만.

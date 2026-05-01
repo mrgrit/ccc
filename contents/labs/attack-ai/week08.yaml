@@ -603,53 +603,154 @@ steps:
   risk_level: low
   bastion_prompt: 권한 상승 공격 결과를 /tmp/privesc_report.txt에 정리해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오 — 중간고사] "정보보안기업 PenTest팀 시니어 — Executive Briefing 5 슬라이드"
 
-    1) web 서버(10.20.30.80)에 SSH로 접속하여 현재 사용자의 권한과 그룹 정보를 확인해줘
+    ## 상황 — 화요일 오전 10시, C-level 발표 준비
 
-    2) web 서버에서 sudo -l 명령으로 현재 사용자가 sudo로 실행할 수 있는 명령을 확인해줘
+    당신은 *시큐리티엠피러* (가상 정보보안기업) PenTest팀 시니어 5년차. 외주 클라이언트 의 CISO·CFO 가
+    오후 2시에 *7주차 진행 보고* 받으러 옴. 분량은 5 슬라이드 — 그 이상은 안 봐.
 
-    3) web 서버에서 SUID 비트가 설정된 모든 바이너리를 검색하고, 비정상적인 항목을 식별해줘
+    > 팀장: "임원진 발표는 *결과 한 페이지* + *증거* + *경영 의사결정* 이 핵심.
+    > 우리는 SQLi 7가지, XSS 3유형, JWT 변조까지 다 해봤지만 발표는 *2분 30초*. 1 슬라이드당 30초.
+    > Critical 1개, High 2개, Medium 1개로 압축. 마지막 슬라이드는 *예산 요청* — Quick Win 비용/기간."
 
-    4) web 서버에서 world-writable 파일을 검색해줘
+    학습 목표 (lecture w08 중간 종합 + Kill Chain 시간 제한 재현) + (lab 권한 상승 #1·#2·#3·#6) 통합.
 
-    5) web 서버의 /etc/passwd 파일에서 셸 접근이 가능한 사용자를 나열해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ## 산출물 — Executive Briefing 5 슬라이드 (ASCII 슬라이드 형식)
+
+    ### Slide 1/5 — Title & Mission Summary
+    ```
+    ┌──────────────────────────────────────────────────────────────────┐
+    │ JuiceShop 모의해킹 7주차 중간 보고                                │
+    │ Security MPiror PenTest Team / 2026-04-29                        │
+    ├──────────────────────────────────────────────────────────────────┤
+    │ 점검 대상: 결제 서비스 + 관리자 콘솔 (10.20.30.0/24)             │
+    │ 점검 기간: w01-w07 (총 6주)                                      │
+    │ 발견: Critical 1 / High 2 / Medium 1 / 보고 대기 N건             │
+    │ 결론: 즉시 조치 필요. Quick Win 4건 / 단계적 7건                 │
+    └──────────────────────────────────────────────────────────────────┘
+    ```
+
+    ### Slide 2/5 — Critical Finding: Authentication Chain
+    실 명령 결과 첨부:
+    `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")`
+    `for i in $(seq 1 30); do curl -s -o /dev/null -w "%{http_code} " -X POST -H "Content-Type: application/json" -d '{"email":"x@x.com","password":"wrong"}' http://10.20.30.80:3000/rest/user/login; done | tr ' ' '\n' | sort | uniq -c`
+
+    슬라이드 텍스트:
+    ```
+    🔴 Critical — Auth Rate Limit + Timing Enum 체인 (CVSS 8.1)
+    [재현 명령 위 결과] → 401 30회 모두 통과 (rate limit X)
+    영향: 30분 내 admin 탈취 가능
+    ```
+
+    ### Slide 3/5 — High Findings: Information Disclosure × 2
+    `curl -s "http://10.20.30.80:3000/api/Users/" | python3 -m json.tool 2>/dev/null | head -20`
+    `for p in '/.git/' '/.env' '/encryptionkeys/' '/ftp/'; do echo -n "$p: "; curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80:3000$p"; done`
+
+    슬라이드:
+    ```
+    🟠 High — Excessive Data Exposure (CVSS 7.5)
+       /api/Users password hash + role 응답 노출
+    🟠 High — Sensitive Path Disclosure (CVSS 7.5)
+       /encryptionkeys, /ftp 응답 200/직접 다운로드
+    ```
+
+    ### Slide 4/5 — Medium Finding: Server-side Privesc 정찰
+    실 명령 (web 서버):
+    `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 ccc@10.20.30.80 'id; sudo -n -l 2>&1 | head -5; find /usr/bin -perm -4000 2>/dev/null | head -10' 2>&1 | head -20 || echo "[ssh 차단 — local 시뮬]: id; sudo -l (interactive 필요); find /usr/bin -perm -4000 | head -10"`
+
+    슬라이드:
+    ```
+    🟡 Medium — 서버측 권한 상승 정찰 (CVSS 5.5)
+       SUID 비정상 binary 식별, sudo 권한 매트릭스
+       후속: w09 에서 LinPEAS 자동화 + 실 상승 시연 예정
+    ```
+
+    ### Slide 5/5 — 예산 & 결정 요청 (3 항목)
+    ```
+    💰 즉시 조치 (Day 1, 비용 ~0원)
+    1. express-rate-limit (10req/15min/IP)        — 1인일 / 코드 50줄
+    2. /api/Users password 필드 DTO 제거           — 0.5인일
+    3. autoindex off + .git/.env 차단             — 0.5인일
+    4. Server header 제거                         — 0.1인일
+
+    📅 1주차 (₩200만)
+    5. CSP / HSTS / X-Frame / Referrer-Policy 5종 헤더 적용
+    6. Prepared Statement 전환 (PostgreSQL ORM)
+    7. JWT 회전 (15분 access + 7일 refresh)
+
+    📈 1개월차 (₩2,000만)
+    8. WAF 룰 재설계 (CRS 4.x + 커스텀 룰셋)
+    9. SDLC 통합 (PR 별 SAST/DAST)
+    10. Bug Bounty 프로그램 launch (HackerOne private)
+
+    ✅ 의사결정 요청: Day 1 4건 즉시 승인 + 1주차 예산 200만 / 1개월차 2,000만 결재
+    ```
+
+    종료: echo "=== Executive Briefing 5 슬라이드 ===" + 5 슬라이드 묶음 출력.
+  bastion_prompt: |
+    [중간고사 — PenTest팀 시니어 Executive Briefing 5 슬라이드]
+
+    JuiceShop 7주차 종합 보고 — 임원진 2분 30초 발표용. 5 슬라이드.
+
+    Slide 1 — Title & Mission Summary (ASCII box)
+    Slide 2 — Critical (Auth chain):
+    `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")`
+    `for i in $(seq 1 30); do curl -s -o /dev/null -w "%{http_code} " -X POST -H "Content-Type: application/json" -d '{"email":"x@x.com","password":"wrong"}' http://10.20.30.80:3000/rest/user/login; done | tr ' ' '\n' | sort | uniq -c`
+
+    Slide 3 — High (Info Disclosure):
+    `curl -s "http://10.20.30.80:3000/api/Users/" | python3 -m json.tool 2>/dev/null | head -20`
+    `for p in '/.git/' '/.env' '/encryptionkeys/' '/ftp/'; do echo -n "$p: "; curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80:3000$p"; done`
+
+    Slide 4 — Medium (Privesc 정찰):
+    `ssh -o StrictHostKeyChecking=no -o ConnectTimeout=5 ccc@10.20.30.80 'id; sudo -n -l 2>&1 | head -5; find /usr/bin -perm -4000 2>/dev/null | head -10' 2>&1 | head -20 || echo "[ssh 차단 — local]: id; sudo -l; find /usr/bin -perm -4000 | head -10"`
+
+    Slide 5 — 예산 & 결정 요청:
+    Day 1 4건 (~0원) / 1주차 ₩200만 / 1개월 ₩2,000만 + 의사결정 요청 1줄.
+
+    각 슬라이드 ASCII box 또는 markdown 헤더 + 발표자 멘트 30초 분량.
+
+    종료: echo "=== Executive Briefing 5 슬라이드 ===" + 5 슬라이드 출력.
+
+    반드시 5 슬라이드 모두 채움. 중간 종료 금지.
+  hint: |
+    슬라이드 1: title + 4줄 요약.
+    슬라이드 2-4: Critical 1 + High 2 + Medium 1, 각 슬라이드에 실 명령 결과 + 영향 + 후속.
+    슬라이드 5: 예산 (Day1/주/월) + 의사결정 요청 1줄.
+    포인트: 매트릭스 X. *5 슬라이드 임원 발표* 형식. 30초/슬라이드.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: 슬라이드
     field: stdout
     semantic:
-      intent: '[통합] 권한 상승 5작업 — kernel/sudo/SUID/capability/audit 통합. T1068 Exploitation
-        for Privilege Escalation.'
+      intent: |
+        PenTest팀 시니어 페르소나 — Executive Briefing 5 슬라이드 (Title / Critical / High / Medium / 예산).
+        lecture w08 중간 + lab 권한 상승 #1·#2·#3 동시 행동 증명. *5 슬라이드 발표 양식* 산출물.
       success_criteria:
-      - 5 상승 작업
-      - root 획득
-      - path
+      - Slide 1 Title + 4줄 요약 (Critical 1 / High 2 / Medium 1)
+      - Slide 2 Critical Auth chain — JWT + rate limit 실 명령 결과
+      - Slide 3 High Info Disclosure — /api/Users + 4 경로
+      - Slide 4 Medium Privesc — SSH 또는 local 시뮬레이션
+      - Slide 5 예산 (Day1 / 1주 / 1개월) + 의사결정 요청
       acceptable_methods:
-      - bastion plan
-      - LinPEAS
-      - GTFOBins
+      - heredoc ASCII 슬라이드 box
+      - curl + JWT + python3
+      - ssh -o StrictHostKeyChecking=no (실패 시 local 시뮬)
+      - markdown 헤더 + 발표자 멘트
       negative_signs:
-      - root 실패
-      - 단일 경로
-      - audit 누락
-  target_vm: web
+      - 슬라이드 4개 이하
+      - 예산 누락
+      - 의사결정 요청 누락
+      - 보고서/매트릭스 형식 (5 슬라이드 X)
+      - 발표자 분량 (30초) 의식 없음
+  target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) web 서버(10.20.30.80)에 SSH로 접속하여 현재 사용자의 권한과 그룹 정보를 확인해줘
-
-    2) web 서버에서 sudo -l 명령으로 현재 사용자가 sudo로 실행할 수 있는 명령을 확인해줘
-
-    3) web 서버에서 SUID 비트가 설정된 모든 바이너리를 검색하고, 비정상적인 항목을 식별해줘
-
-    4) web 서버에서 world-writable 파일을 검색해줘
-
-    5) web 서버의 /etc/passwd 파일에서 셸 접근이 가능한 사용자를 나열해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. 5 슬라이드 ASCII box + 실 명령 결과 + 예산.
+  answer_detail: |
+    PenTest팀 시니어 — 임원진 2분 30초 발표. 매트릭스 X / 보고서 X. *5 슬라이드 압축 발표* 양식.
+    Day1 무료 + 1주 200만 + 1개월 2,000만 비용 구조.
   script: ''
