@@ -418,51 +418,176 @@ steps:
   risk_level: low
   bastion_prompt: secu VM filter.input 체인의 룰을 확인해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+  instruction: |
+    [복합 시나리오] "OpenCTI → nft 자동 동기화 — 수동 1건 → 자동 N건 파이프라인"
+
+    ## 상황 (w01-w12 시나리오 연속)
+
+    ABC 핀테크 SOC 신규 분석가, 13주 차.
+    1~10 step 으로 OpenCTI graphql 응답 + nft cti_ips set 작성 + IP *수동 1건* 주입까지.
+    학습 목표 #4 — *"OpenCTI 데이터를 실제 보안 운영에 활용할 수 있다"* — 1~10 은 *수동 1건*.
+    실무는 OpenCTI 의 *전체 indicator* 를 주기적으로 query → nft 자동 sync.
+
+    > 선임: "운영 SOC 는 IoC 가 하루 수백~수천 건 들어와. 1~10 처럼 손으로 IP 하나씩 nft set
+    >  에 넣으면 운영 안 돼. graphql query 로 OpenCTI 의 *모든 active IP indicator* 추출 →
+    >  jq 로 IP 만 파싱 → nft set 갱신 — 이걸 5분 cron 으로 돌리면 돼. 한 번 작성해보고
+    >  IP 추가 → query → nft set 반영 까지 cycle 직접 봐."
+
+    학습 목표 #4 (CTI 보안 운영 활용) 행동 증명.
+
+    ## 임무 (3 단계, 약 25분)
+
+    ### Phase A — OpenCTI 에 다수 indicator 추가 (5분)
+
+    w12 의 admin token 재사용. graphql 으로 5개 IP indicator 일괄 추가:
+      ```
+      OPENCTI_TOKEN="<.env 의 OPENCTI_ADMIN_TOKEN>"
+      OPENCTI_URL=http://10.20.30.100:8080/graphql
+
+      for ip in 198.51.100.10 198.51.100.20 198.51.100.30 198.51.100.40 198.51.100.50; do
+        curl -sX POST "$OPENCTI_URL" \
+          -H "Authorization: Bearer $OPENCTI_TOKEN" \
+          -H "Content-Type: application/json" \
+          -d "{\"query\": \"mutation { indicatorAdd(input: {name: \\\"CTI test $ip\\\", pattern: \\\"[ipv4-addr:value = '$ip']\\\", pattern_type: \\\"stix\\\", x_opencti_main_observable_type: \\\"IPv4-Addr\\\"}) { id name } }\"}" \
+          | jq -c '.data.indicatorAdd | {id, name}'
+      done
+      ```
+    → 예상: 5건 indicator 추가 (id + name 응답).
+
+    ### Phase B — Sync script 작성 + 실행 (15분)
+
+    secu 에 동기화 script:
+      ```
+      sudo tee /usr/local/bin/cti-sync.sh > /dev/null <<'EOF'
+      #!/usr/bin/env bash
+      # OpenCTI graphql → nft set cti_ips 동기화
+      set -euo pipefail
+      OPENCTI_TOKEN="${OPENCTI_TOKEN:?need OPENCTI_TOKEN}"
+      OPENCTI_URL="${OPENCTI_URL:-http://10.20.30.100:8080/graphql}"
+
+      # 1. OpenCTI graphql 으로 모든 IPv4 indicator pattern 조회
+      RESP=$(curl -sX POST "$OPENCTI_URL" \
+        -H "Authorization: Bearer $OPENCTI_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"query": "{ indicators(first: 200, filters: {mode: and, filters: [{key: \"x_opencti_main_observable_type\", values: [\"IPv4-Addr\"]}], filterGroups: []}) { edges { node { pattern } } } }"}')
+
+      # 2. jq 로 [ipv4-addr:value = 'X'] pattern 에서 IP 추출
+      IPS=$(echo "$RESP" | jq -r '.data.indicators.edges[]?.node.pattern' \
+            | grep -oE "'[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}'" \
+            | tr -d \')
+
+      if [ -z "$IPS" ]; then
+        echo "no IP indicators found"
+        exit 0
+      fi
+
+      # 3. nft 의 cti_ips set 비우고 새 IP 들 일괄 입력 (atomic)
+      sudo nft -- flush set inet filter cti_ips
+      for ip in $IPS; do
+        sudo nft add element inet filter cti_ips "{ $ip }" 2>/dev/null || true
+      done
+
+      # 4. 결과
+      echo "synced $(echo "$IPS" | wc -w) IPs to cti_ips set:"
+      sudo nft list set inet filter cti_ips
+      EOF
+      sudo chmod +x /usr/local/bin/cti-sync.sh
+      ```
+
+    실행 (Phase A 의 token 사용):
+      ```
+      OPENCTI_TOKEN="<token>" /usr/local/bin/cti-sync.sh
+      ```
+    → 예상: "synced 5 IPs" + cti_ips set 에 198.51.100.10-50 모두 등록.
+
+    ### Phase C — 효과 검증 + cron 권장 + 정리 (5분)
+
+    sync 후 cti_ips set 확인:
+      `sudo nft list set inet filter cti_ips`
+    → 예상: elements = { 198.51.100.10, 198.51.100.20, 198.51.100.30, 198.51.100.40, 198.51.100.50 }
+
+    OpenCTI 에 indicator 추가 (Phase A 의 6번째 IP):
+      ```
+      curl -sX POST "$OPENCTI_URL" -H "Authorization: Bearer $OPENCTI_TOKEN" -H "Content-Type: application/json" \
+        -d '{"query": "mutation { indicatorAdd(input: {name: \"CTI test 198.51.100.99\", pattern: \"[ipv4-addr:value = $\\\"198.51.100.99$\\\"]\", pattern_type: \"stix\", x_opencti_main_observable_type: \"IPv4-Addr\"}) { id } }"}'
+      ```
+
+    sync 재실행:
+      `OPENCTI_TOKEN="<token>" /usr/local/bin/cti-sync.sh`
+    → 예상: "synced 6 IPs" — 새 IP 즉시 반영.
+
+    1~2 단락 회고:
+    1. **수동 (1~10) vs 자동 (99) 비교** — 수동 = 1건씩 손, 자동 = sync script 1회 실행 으로 N건
+    2. **운영 cron 주기 권장** — 5-15분. 너무 짧으면 OpenCTI graphql 부하, 너무 길면 신규 IoC
+       반영 지연. 권장: `*/5 * * * * /usr/local/bin/cti-sync.sh`
+    3. **운영 시 추가 고려 사항** — (a) flush + add 의 atomic 보장 (nft -j 또는 lock 파일)
+       (b) OpenCTI 의 *score/confidence* 필터 (낮은 confidence 는 차단 X) (c) AS 화이트리스트
+       (사내 IP 가 잘못 등록되어 차단되는 사고 방지)
+
+    종료 정리:
+      ```
+      sudo nft -- flush set inet filter cti_ips
+      sudo rm /usr/local/bin/cti-sync.sh
+      # OpenCTI 의 indicator 는 그대로 (lab 영향 X)
+      ```
+  hint: |
+    Phase A: OpenCTI .env token 추출 + graphql mutation indicatorAdd 으로 5개 IP indicator 일괄 추가
+    Phase B: /usr/local/bin/cti-sync.sh 작성 (graphql query + jq IP 파싱 + nft flush set + add elements) + 실행
+    Phase C: nft list set 으로 5 IP 확인 + 6번째 IP 추가 → sync 재실행 → 6 IP 반영, cron 주기 + 운영 고려사항 회고
+    포인트: 수동 1건 → 자동 N건 파이프라인. graphql query → jq → nft set sync.
+    종료: cti_ips flush + script 제거. OpenCTI indicator 는 남아도 OK.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: synced
     field: stdout
     semantic:
-      intent: '[통합] OpenCTI 활용 5작업 — MITRE/MISP connector/STIX import/query/export
-        통합. STIX 2.1 bundle.'
+      intent: |
+        OpenCTI 의 모든 IP indicator 를 graphql query → jq → nft set sync 하는 자동 파이프라인.
+        학습 목표 #4 (CTI 보안 운영 활용) 행동 증명. 수동 1건 → 자동 N건 으로 운영 가능 단계.
       success_criteria:
-      - connector 동작
-      - STIX import
-      - query 결과
+      - Phase A — graphql 으로 5개 IP indicator 일괄 추가
+      - Phase B — /usr/local/bin/cti-sync.sh 작성 + 실행 → 5 IP nft set 반영
+      - Phase C — 6번째 IP 추가 후 sync 재실행 → 6 IP 반영
+      - 회고 1~2 단락 (수동 vs 자동 + cron 주기 + score/confidence + 화이트리스트)
+      - 정리 (cti_ips flush + script 제거)
       acceptable_methods:
-      - bastion plan
-      - pycti
-      - ansible
+      - graphql mutation indicatorAdd 5회 (for loop)
+      - sync script — graphql query + jq + nft flush set + nft add element
+      - nft list set 으로 검증
+      - cron syntax 권장 (*/5 * * * *)
       negative_signs:
-      - connector 실패
-      - import 없음
-      - query 오류
-  target_vm: siem
-  answer: '🤖 프롬프트: secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:
+      - script 작성 누락 (수동 nft add 만)
+      - 5 IP 추가만 + sync 검증 누락
+      - 회고에서 cron 주기 또는 score/whitelist 미언급
+      - 정리 누락
+  target_vm: bastion
+  answer: |
+    🤖 프롬프트: OpenCTI → nft 자동 sync 파이프라인.
 
-    1) siem VM의 OpenCTI /graphql 엔드포인트에 POST 테스트 요청을 보내 응답 코드를 보여줘
+    Phase A: OpenCTI token 추출. for ip in 5개; do curl POST graphql mutation indicatorAdd; done
 
-    2) secu VM에 filter.cti_ips ipv4 set을 생성해줘
+    Phase B: /usr/local/bin/cti-sync.sh 작성:
+      curl POST /graphql query indicators(filters x_opencti_main_observable_type=IPv4-Addr)
+      | jq -r .data.indicators.edges[].node.pattern
+      | grep -oE IP regex
+      sudo nft flush set inet filter cti_ips
+      for ip; do sudo nft add element inet filter cti_ips { $ip }; done
+      echo "synced N IPs"
+      sudo nft list set inet filter cti_ips
+    실행: OPENCTI_TOKEN=$T /usr/local/bin/cti-sync.sh
 
-    3) secu VM filter.input 체인 맨 앞에 @cti_ips set 기반 drop 룰을 추가해줘
+    Phase C: nft list set → 5 IP 확인. graphql 6번째 IP 추가 → sync 재실행 → 6 IP 반영.
+             회고: 수동 vs 자동 + cron */5 + score/confidence 필터 + 사내 화이트리스트.
 
-    4) secu VM filter.cti_ips set의 원소 목록을 확인해줘
-
-    5) secu VM filter.cti_ips set에 203.0.113.66을 추가해줘'
-  answer_detail: ''
-  risk_level: low
-  bastion_prompt: 'secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:
-
-    1) siem VM의 OpenCTI /graphql 엔드포인트에 POST 테스트 요청을 보내 응답 코드를 보여줘
-
-    2) secu VM에 filter.cti_ips ipv4 set을 생성해줘
-
-    3) secu VM filter.input 체인 맨 앞에 @cti_ips set 기반 drop 룰을 추가해줘
-
-    4) secu VM filter.cti_ips set의 원소 목록을 확인해줘
-
-    5) secu VM filter.cti_ips set에 203.0.113.66을 추가해줘'
+    종료: nft flush set cti_ips + rm script.
+  answer_detail: |
+    학습 목표 #4 (CTI 보안 운영 활용) 행동 증명. 수동 1건 → 자동 N건 으로 *운영 가능 단계*.
+    cron 5분 주기 + atomic flush + score 필터 + 화이트리스트 가 운영 best practice.
+  risk_level: medium
+  bastion_prompt: |
+    OpenCTI → nft 자동 sync. Phase A: token 추출 + graphql 5 IP indicator 일괄. Phase B:
+    /usr/local/bin/cti-sync.sh 작성 (graphql query + jq IP 파싱 + nft flush set + add elements)
+    + 실행. Phase C: nft set 5 IP → 6번째 IP 추가 → sync → 6 IP 반영. 회고: 수동 vs 자동 +
+    cron 주기 + score/whitelist. 종료 시 cti_ips flush + script 제거.
