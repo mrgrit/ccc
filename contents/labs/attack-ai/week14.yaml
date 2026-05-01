@@ -836,53 +836,216 @@ steps:
   risk_level: low
   bastion_prompt: 소셜 엔지니어링 실습 결과를 /tmp/social_engineering_report.txt에 정리해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: 'attacker VM에서 다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "BPO 콜센터 보안 인식 교육 강사 — 분기 피싱 시뮬레이션 캠페인 + Quiz + ROI"
 
-    1) 소셜 엔지니어링의 6가지 영향력 원칙(치알디니)을 정리하고, 각 원칙이 피싱에 어떻게 활용되는지 설명해줘
+    ## 상황 — 분기 보안 인식 교육 운영, 직원 1,200명
 
-    2) 피싱 이메일의 헤더를 분석하는 방법을 시연해줘
+    당신은 *콜센터플러스* (가상 BPO 회사) 정보보안팀 보안 인식 교육 담당. 지난 분기 직원 클릭률 12.4%
+    였고, 경영진은 *5% 이하* 목표. 분기 캠페인 설계 + 사후 측정 + ROI 평가 회의 D-1.
 
-    3) 피싱 URL을 분석하는 기법을 시연하라. URL의 도메인, 경로, 파라미터에서 악성 지표를 식별해줘
+    > 부장: "교육 자료만 만들면 다 풀리는 줄 알지. 진짜 효과는 *5종 페르소나 별 시뮬레이션 + 직원 quiz +
+    > Cost-Benefit ROI* 다 합쳐야 경영진 설득. 모레 0900 부장단 회의에 가져와."
 
-    4) SET(Social Engineering Toolkit)의 주요 기능과 공격 벡터를 정리해줘
+    학습 목표 (lecture w14 Bastion 자연어 침투) + (lab #1 Cialdini 6 + #5 Harvester + #7 IT 사칭 + #11 OSINT) 통합.
 
-    5) 간단한 피싱 페이지(Credential Harvester)를 HTML로 작업을 수행해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ## 산출물 — 4 파트
+
+    ### Part 1 — Cialdini 6 원칙 × 피싱 캠페인 5 종 매핑
+    | # | 캠페인 | Cialdini 원칙 | 시나리오 | 가상 클릭률 |
+    | 1 | "급여명세서 12월" | Authority + Liking | HR 사칭, 본인 급여 PDF | 18% (높음) |
+    | 2 | "택배 미수령 안내" | Scarcity + Reciprocity | CJ 사칭 sms | 22% (최고) |
+    | 3 | "신년 회식 일정" | Social Proof | 동료 명단 포함 ICS | 8% (중) |
+    | 4 | "사내 IT 비번 만료" | Authority + Commitment | helpdesk 사칭 | 14% |
+    | 5 | "보안 교육 미이수자" | Authority + Loss | CISO 명의 mail | 6% (낮음) |
+
+    ### Part 2 — Credential Harvester (lab #5·#6) — 학습용 *데모*
+    `cat <<'EOF' > /tmp/phish_demo.html
+    <!-- DEMO ONLY — 실제 직원 대상 사용 X. 보안교육 시뮬레이션 시 사내 도메인에서만 호스팅. -->
+    <!DOCTYPE html><html><head><title>로그인 — 콜센터플러스</title></head>
+    <body>
+    <h2>사내 포털 로그인</h2>
+    <form action="/log" method="POST">
+      ID: <input name="email" /><br>
+      PW: <input name="password" type="password" /><br>
+      <button>로그인</button>
+    </form>
+    <div style="background:#fee;padding:8px;margin-top:20px">
+      ⚠️ DEMO PAGE — 본 페이지는 보안 인식 교육용입니다.
+      입력해도 실제 자격증명이 저장되지 않으며, 클릭한 사용자는 *교육 페이지로 자동 redirect* 됩니다.
+    </div>
+    </body></html>
+    EOF
+    head -10 /tmp/phish_demo.html`
+
+    Harvester 서버 (/log POST 받으면 자격증명 *로깅 X*, 단순 카운터만):
+    `cat <<'EOF' > /tmp/phish_count.py
+    # DEMO ONLY — 클릭 카운터만 증가, 자격증명 저장 X
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    counter = {"clicked": 0}
+    class H(BaseHTTPRequestHandler):
+      def do_POST(self):
+        counter["clicked"] += 1
+        self.send_response(302)
+        self.send_header("Location", "https://intranet.example/edu/phishing-101")
+        self.end_headers()
+    # HTTPServer(("0.0.0.0",18080), H).serve_forever()  # 실 실행 X
+    print(f"[DEMO] 클릭 카운터 핸들러 정의 완료. 클릭 시 교육 페이지 redirect.")
+    EOF
+    python3 /tmp/phish_count.py`
+
+    ### Part 3 — 직원 자가진단 Quiz 10문제 (정답 + 해설 형식)
+    ```
+    Q1. 다음 발신자 중 가장 *의심* 해야 할 것?
+       (a) hr@callcenter-plus.co.kr
+       (b) hr@callcenterplus.kr        ← 정답: 도메인 변형 (typosquatting)
+       (c) hr-team@callcenter-plus.co.kr
+       해설: 정상 도메인은 callcenter-plus.co.kr (대시 포함). 변형 도메인 즉시 신고.
+
+    Q2. SPF/DKIM/DMARC 중 *발신자 위조 차단* 핵심은?
+       (a) SPF — IP 허용 검증
+       (b) DKIM — 발신자 서명
+       (c) DMARC — SPF+DKIM 정책 시행      ← 정답
+       해설: DMARC 가 SPF/DKIM 결과를 *어떻게 처리* 할지 정책 결정 (none/quarantine/reject).
+
+    Q3. URL 'http://callcenter-plus.co.kr.evil.com/login' 에서 *진짜 도메인*?
+       (a) callcenter-plus.co.kr
+       (b) evil.com                      ← 정답
+       (c) login
+
+    Q4. 피싱 의심 메일 받았을 때 첫 행동?
+       (a) 첨부파일 열어 확인
+       (b) 발신자에게 회신해 사실 확인
+       (c) 보안팀 전용 slack #phishing-report 에 신고  ← 정답
+
+    Q5. Vishing 발신자가 '본인 확인' 위해 OTP 요청 시?
+       (a) OTP 알려준다
+       (b) 즉시 통화 종료 + 보안팀 신고      ← 정답
+       (c) 일부만 알려준다
+
+    Q6-Q10: (생략 — 매트릭스 카탈로그 형식 참고)
+
+    [채점] 8/10 이상 합격. 미달 시 1주 내 재시험 의무.
+    ```
+
+    ### Part 4 — Cost-Benefit ROI 분석
+    ```
+    [현재 상태]
+    - 직원 1,200명 × 평균 클릭률 12.4% = 분기당 ~149명 클릭
+    - 1건 사고 평균 손실 (조사 + 자격증명 회전 + 일시 차단): ₩200만
+    - 분기 예상 손실: 149 × ₩200만 × 사고전환율 5% = ₩1,490만
+
+    [캠페인 비용 — 분기]
+    - 시뮬레이션 플랫폼 (KnowBe4 / GoPhish 자체호스팅): ₩300만
+    - 강사 인건비 (교육 4회): ₩150만
+    - 사후 quiz 운영: ₩50만
+    - 합계: ₩500만
+
+    [효과 추정 — 6개월 후]
+    - 클릭률 12.4% → 5% (목표 달성 가정) → 60명 클릭 / 분기
+    - 손실: 60 × ₩200만 × 5% = ₩600만
+    - 절감: ₩1,490만 - ₩600만 = ₩890만/분기
+
+    [ROI]
+    ROI = (₩890만 - ₩500만) / ₩500만 = 78% / 분기
+    Payback: 6.7개월
+
+    [경영진 결정 요청]
+    분기 ₩500만 예산 승인 + 장기 KPI 클릭률 ≤5% 설정 + 미달 부서 별도 교육 의무화
+    ```
+
+    종료: echo "=== BPO Phishing Campaign Q1 2026 ===" + 4 파트 출력.
+  bastion_prompt: |
+    [BPO 보안교육 — w14 분기 캠페인]
+
+    Cialdini × 5 캠페인 + Harvester 데모 + Quiz 10 + Cost-Benefit ROI 4 파트.
+
+    Part 1 — Cialdini 6 × 5 캠페인 매트릭스:
+    ```
+    | # | 캠페인 | 원칙 | 시나리오 | 클릭률 |
+    | 1 | 급여명세서 | Authority+Liking | HR 사칭 PDF | 18% |
+    | 2 | 택배 미수령 | Scarcity+Reciprocity | CJ sms | 22% |
+    | 3 | 신년 회식 | Social Proof | 동료 명단 ICS | 8% |
+    | 4 | IT 비번 만료 | Authority+Commitment | helpdesk | 14% |
+    | 5 | 보안 교육 미이수 | Authority+Loss | CISO mail | 6% |
+    ```
+
+    Part 2 — Harvester 데모 (DEMO 명시, 실 운영 X):
+    `cat <<'EOF' > /tmp/phish_demo.html
+    <!-- DEMO ONLY -->
+    <!DOCTYPE html><html><head><title>로그인 — 콜센터플러스</title></head>
+    <body><h2>사내 포털 로그인</h2><form action="/log" method="POST">
+    ID: <input name="email" /><br>PW: <input name="password" type="password" /><br>
+    <button>로그인</button></form>
+    <div style="background:#fee">⚠️ DEMO — 자격증명 저장 X, 교육 페이지 redirect</div>
+    </body></html>
+    EOF
+    head -10 /tmp/phish_demo.html`
+
+    `cat <<'EOF' > /tmp/phish_count.py
+    # DEMO — 클릭 카운터만, 자격증명 저장 X
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    counter = {"clicked": 0}
+    class H(BaseHTTPRequestHandler):
+      def do_POST(self):
+        counter["clicked"] += 1
+        self.send_response(302)
+        self.send_header("Location", "https://intranet.example/edu/phishing-101")
+        self.end_headers()
+    print("[DEMO] 핸들러 정의 완료. 실 서버 실행 X.")
+    EOF
+    python3 /tmp/phish_count.py`
+
+    Part 3 — Quiz 10 (Q1-Q5 명시 + Q6-Q10 형식 안내):
+    Q1 typosquatting 도메인 / Q2 DMARC / Q3 부도메인 vs 진짜 도메인 / Q4 #phishing-report 신고 / Q5 OTP 거부.
+    채점 기준: 8/10 합격, 미달 1주 재시험.
+
+    Part 4 — Cost-Benefit ROI:
+    - 현재 클릭 12.4% × 1,200명 → 분기 손실 ₩1,490만
+    - 캠페인 비용 ₩500만 (플랫폼+강사+quiz)
+    - 6개월 후 클릭률 5% → 손실 ₩600만 → 절감 ₩890만
+    - ROI = 78% / 분기, Payback 6.7개월
+
+    종료: echo "=== BPO Phishing Campaign Q1 2026 ===" + 4 파트 출력.
+
+    반드시 4 파트 모두. DEMO 명시 + 실 직원 대상 운영 X.
+  hint: |
+    Part 1 5 캠페인 × Cialdini 매트릭스.
+    Part 2 Harvester HTML/python (DEMO ONLY 명시 + 자격증명 저장 X 안내).
+    Part 3 Quiz 10 (5 명시 + 5 형식).
+    Part 4 ROI 분석 (현재 손실 / 비용 / 절감 / Payback).
+    포인트: BPO 보안교육 강사 페르소나. ROI 경영진 설득.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: Campaign
     field: stdout
     semantic:
-      intent: '[통합] 소셜 엔지니어링 5작업 — phishing/pretext/vishing/USB drop/audit 통합. T1566
-        + T1204.'
+      intent: |
+        BPO 보안교육 강사 — 분기 phishing 캠페인: Cialdini × 5 + Harvester DEMO + Quiz 10 + Cost-Benefit ROI.
+        lecture w14 + lab #1·#5·#6·#7·#11 동시 행동 증명. *분기 캠페인 + ROI* 산출물.
       success_criteria:
-      - 5 SE 작업
-      - 클릭률
-      - credential 수집
+      - Cialdini 6 × 5 캠페인 매트릭스 + 클릭률
+      - Harvester HTML + python (DEMO 명시, 자격증명 저장 X)
+      - Quiz 10 (Q1-Q5 명시 정답+해설)
+      - ROI 분석 (현재 손실 / 비용 / 절감 / Payback)
       acceptable_methods:
-      - bastion plan
-      - GoPhish
-      - SET
+      - heredoc HTML / python3
+      - markdown table 매트릭스
+      - Quiz 다지선다 + 해설
+      - 비용·절감·ROI 계산
       negative_signs:
-      - 클릭 없음
-      - 단일 벡터
-      - audit 누락
+      - 캠페인 3 이하
+      - Harvester 실 운영 (DEMO 명시 X)
+      - Quiz 누락
+      - ROI 계산 누락
+      - 매트릭스/슬라이드/walkthrough 형식
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: attacker VM에서 다음 작업들을 순서대로 수행해줘:
-
-    1) 소셜 엔지니어링의 6가지 영향력 원칙(치알디니)을 정리하고, 각 원칙이 피싱에 어떻게 활용되는지 설명해줘
-
-    2) 피싱 이메일의 헤더를 분석하는 방법을 시연해줘
-
-    3) 피싱 URL을 분석하는 기법을 시연하라. URL의 도메인, 경로, 파라미터에서 악성 지표를 식별해줘
-
-    4) SET(Social Engineering Toolkit)의 주요 기능과 공격 벡터를 정리해줘
-
-    5) 간단한 피싱 페이지(Credential Harvester)를 HTML로 작업을 수행해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. 4 파트 (Cialdini × 5 / Harvester DEMO / Quiz 10 / ROI).
+  answer_detail: |
+    BPO 보안교육 강사 — 분기 캠페인 + ROI. Harvester *데모용* (자격증명 저장 X, 교육 redirect).
+    실 직원 운영 X — 보안교육 자료 형식.
   script: ''

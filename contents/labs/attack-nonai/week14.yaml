@@ -553,3 +553,104 @@ steps:
       - 기법 4개 이하
       - 인적 방어 없음
   target_vm: attacker
+- order: 99
+  instruction: |
+    [복합 시나리오] "BPO 콜센터 보안 인식 교육 강사 — 분기 피싱 시뮬레이션 + Quiz + ROI"
+
+    ## 상황 — 직원 1,200명, 클릭률 12.4% → 5% 목표
+
+    *콜센터플러스* 보안 인식 교육 담당. 부장단 D-1 회의용 자료.
+
+    > 부장: "5종 페르소나 시뮬 + 직원 quiz + Cost-Benefit ROI 다 합쳐야 경영진 설득. 모레 0900."
+
+    학습 목표 (lecture w14) + (lab #1·#5·#6·#7·#11) 통합.
+
+    ## 산출물 — 4 파트
+
+    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
+
+    ### Part 1 — Cialdini × 5 캠페인 매트릭스
+    ```
+    | # | 캠페인 | 원칙 | 시나리오 | 클릭률 |
+    | 1 | 급여명세서 | Authority+Liking | HR 사칭 PDF | 18% |
+    | 2 | 택배 미수령 | Scarcity+Reciprocity | CJ sms | 22% |
+    | 3 | 신년 회식 | Social Proof | 동료명단 ICS | 8% |
+    | 4 | IT 비번 만료 | Authority+Commitment | helpdesk | 14% |
+    | 5 | 보안 교육 미이수 | Authority+Loss | CISO mail | 6% |
+    ```
+
+    ### Part 2 — Harvester DEMO (자격증명 저장 X)
+    `cat <<'EOF' > /tmp/phish_demo.html
+    <!-- DEMO ONLY -->
+    <!DOCTYPE html><html><head><title>로그인 — 콜센터플러스</title></head>
+    <body><h2>사내 포털 로그인</h2><form action="/log" method="POST">
+    ID: <input name="email" /><br>PW: <input name="password" type="password" /><br>
+    <button>로그인</button></form>
+    <div style="background:#fee">⚠️ DEMO — 자격증명 저장 X, 교육 페이지 redirect</div>
+    </body></html>
+    EOF
+    head -10 /tmp/phish_demo.html`
+
+    `cat <<'EOF' > /tmp/phish_count.py
+    # DEMO — 클릭 카운터만
+    from http.server import BaseHTTPRequestHandler, HTTPServer
+    counter = {"clicked": 0}
+    class H(BaseHTTPRequestHandler):
+      def do_POST(self):
+        counter["clicked"] += 1
+        self.send_response(302); self.send_header("Location", "https://intranet.example/edu/phishing-101"); self.end_headers()
+    print("[DEMO] 핸들러 정의 완료. 실 서버 X.")
+    EOF
+    python3 /tmp/phish_count.py`
+
+    ### Part 3 — Quiz 10 (Q1-Q5 명시 + Q6-Q10 형식)
+    Q1 typosquatting (callcenterplus.kr — 대시 빠짐) / Q2 DMARC / Q3 부도메인 (evil.com) /
+    Q4 #phishing-report 신고 / Q5 OTP 거부 + 통화 종료.
+    채점: 8/10 합격, 미달 1주 재시험.
+
+    ### Part 4 — Cost-Benefit ROI
+    ```
+    [현재] 클릭 12.4% × 1,200 = 149명 분기 → 손실 ₩1,490만
+    [비용] 플랫폼 ₩300만 + 강사 ₩150만 + quiz ₩50만 = ₩500만/분기
+    [효과] 6개월 후 5% → 60명 → 손실 ₩600만 → 절감 ₩890만
+    [ROI] 78% / 분기, Payback 6.7개월
+    [결정] ₩500만 분기 승인 + KPI 클릭률 ≤5% + 미달 부서 의무 교육
+    ```
+
+    종료: echo "=== BPO Phishing Campaign Q1 2026 ===" + 4 파트.
+  hint: |
+    Part 1 5 캠페인 × Cialdini.
+    Part 2 Harvester DEMO (자격증명 저장 X).
+    Part 3 Quiz 10 (5 명시).
+    Part 4 ROI 78% / Payback 6.7개월.
+    포인트: BPO 보안교육. ROI 경영진 설득.
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: Campaign
+    field: stdout
+    semantic:
+      intent: |
+        BPO 보안교육 강사 — 분기 phishing 캠페인: Cialdini × 5 + Harvester DEMO + Quiz 10 + ROI.
+        lecture w14 + lab #1·#5·#6·#7·#11 동시 행동 증명. *분기 캠페인 + ROI* 산출물.
+      success_criteria:
+      - Cialdini 6 × 5 캠페인 매트릭스
+      - Harvester DEMO 명시 (자격증명 저장 X)
+      - Quiz 10 (Q1-Q5 명시)
+      - ROI 분석 (현재/비용/절감/Payback)
+      acceptable_methods:
+      - heredoc HTML / python3
+      - markdown table
+      - Quiz 다지선다 + 해설
+      - 비용 계산
+      negative_signs:
+      - 캠페인 3 이하
+      - Harvester 실 운영
+      - Quiz 누락
+      - ROI 계산 누락
+      - 매트릭스 형식만
+  target_vm: attacker
+  risk_level: low
+  answer_detail: |
+    학생이 ssh attacker 직접. BPO 보안교육 분기 캠페인 + ROI. Harvester DEMO. 실 운영 X.
