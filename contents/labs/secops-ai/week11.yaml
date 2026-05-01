@@ -414,51 +414,158 @@ steps:
   risk_level: medium
   bastion_prompt: secu VM의 filter.blocklist set에서 10.20.30.201을 제거해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+  instruction: |
+    [복합 시나리오] "Wazuh AR — SSH brute 자동 차단" (수동 → 자동 비교)
+
+    ## 상황 (w01-w10 시나리오 연속)
+
+    ABC 핀테크 SOC 신규 분석가, 11주 차.
+    1~10 step 으로 FIM trigger + SCA 조회 + AR 설정 확인 + 수동 nft 차단 시뮬까지 했다.
+    학습 목표 #3 — *"Active Response 를 구성하여 위협에 자동 대응할 수 있다"* — 1~10 의
+    8-9번은 *수동* 차단. AR 의 *자동* 흐름 (alert 매칭 → AR script 자동 실행 → nft drop) 은
+    검증 X.
+
+    > 선임: "AR 의 진짜 가치는 *수동 개입 없이* 차단되는 거야. w09 에서 봤던 SSH brute rule
+    >  5710 매칭 시 attacker IP 자동으로 차단하는 체인 만들어봐. 한 번 발동되면 1분간 차단,
+    >  그 후 자동 해제 — *temporary block* 패턴."
+
+    학습 목표 #3 (Active Response 자동 대응) 행동 증명.
+
+    ## 임무 (3 단계, 약 25분)
+
+    ### Phase A — AR 설정 추가 (10분)
+
+    siem 의 `/var/ossec/etc/ossec.conf` 에 AR command + 매칭 추가:
+      ```
+      sudo cp /var/ossec/etc/ossec.conf /var/ossec/etc/ossec.conf.bak
+
+      sudo tee -a /var/ossec/etc/ossec.conf <<'EOF'
+      <command>
+        <name>verify-firewall-drop</name>
+        <executable>firewall-drop</executable>
+        <timeout_allowed>yes</timeout_allowed>
+      </command>
+
+      <active-response>
+        <command>verify-firewall-drop</command>
+        <location>local</location>
+        <rules_id>5710,5712</rules_id>
+        <timeout>60</timeout>
+      </active-response>
+      EOF
+
+      sudo systemctl restart wazuh-manager && sleep 5
+      sudo grep verify-firewall-drop /var/ossec/etc/ossec.conf | head
+      ```
+
+    의도: rule 5710 (multiple auth fail) 매칭 시 wazuh AR 의 firewall-drop script 자동 실행
+    → 60초 차단 후 자동 해제.
+
+    ### Phase B — SSH brute 발동 + AR 자동 흐름 검증 (10분)
+
+    attacker(10.20.30.201) 에서 web 으로 SSH 5+ 시도:
+      ```
+      attacker: for pw in wrong1 wrong2 wrong3 wrong4 wrong5 wrong6 wrong7; do
+                 sshpass -p "$pw" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=2 ccc@10.20.30.80 'echo' 2>/dev/null
+               done
+      ```
+
+    siem 에서 AR 흐름 4단계 cross-check (모두 5초 이내):
+
+    **단계 1** — alerts.json 에서 rule 5710 매칭:
+      `sudo tail -50 /var/ossec/logs/alerts/alerts.json | jq -c 'select(.rule.id=="5710" or .rule.id=="5712")' | head -1`
+
+    **단계 2** — active-responses.log 에서 AR 호출 확인:
+      `sudo tail -20 /var/ossec/logs/active-responses.log | grep -E 'firewall-drop|verify-firewall-drop'`
+    → 예상: AR script 실행 기록 (시작 시각).
+
+    **단계 3** — siem 자체의 iptables (Wazuh AR 이 추가):
+      `sudo iptables -L -n | grep -E '198.51|10.20.30.201|DROP' | head`
+    → 예상: 차단 룰 자동 추가됨.
+
+    **단계 4** — 60초 후 자동 해제 검증:
+      `sleep 65 && sudo iptables -L -n | grep -E '10.20.30.201|DROP' | head`
+    → 예상: 차단 룰 *제거됨* (timeout 60s 적용).
+
+    ### Phase C — 자동 vs 수동 비교 + 회고 + 정리 (5분)
+
+    ## 비교표 (w11 의 1~10 수동 vs 99 자동)
+
+    | 측면 | 수동 (1~10 의 8-9번) | 자동 (AR, 99번) |
+    |------|------------------|---------------|
+    | trigger | 운영자가 직접 nft add | rule 5710 매칭 시 자동 |
+    | 반응 시간 | 분 단위 (alert→인지→실행) | 초 단위 (alert 즉시) |
+    | 해제 | 운영자가 직접 nft delete | timeout 60s 자동 |
+    | 위험 | 잊어버림 → 영구 차단 | FP 시 정상 IP 일시 차단 |
+    | 운영 가치 | 명확한 의도 차단 | 자동 방어선 |
+
+    1~2 단락 회고:
+    1. **AR 자동 흐름의 4 단계** — alerts.json (단계 1) → active-responses.log (단계 2) →
+       iptables 자동 추가 (단계 3) → timeout 후 자동 해제 (단계 4)
+    2. **AR 의 위험과 운영 best practice** — FP 시 정상 IP 차단. *whitelist 화이트리스트*
+       (예: 사내망 IP 는 AR 발동 안 함) + *짧은 timeout* (60-300초) + *AR 발동 통계 매주 review*
+    3. **수동 vs 자동 — 언제 어느 것**: 명백한 공격 (rule level 12+) = 자동, 의심스러움
+       (level 7-10) = 수동 검토 후 결정
+
+    종료 정리:
+      ```
+      sudo cp /var/ossec/etc/ossec.conf.bak /var/ossec/etc/ossec.conf
+      sudo systemctl restart wazuh-manager && sleep 5
+      sudo iptables -F   # 혹시 남은 AR 룰 정리 (조심)
+      ```
+  hint: |
+    Phase A: ossec.conf 에 verify-firewall-drop command + active-response (rules_id 5710,5712 timeout 60) 추가, restart
+    Phase B: attacker → web SSH 7회 fail → AR 자동 흐름 4 단계 cross-check
+             (1) alerts.json rule 5710 / (2) active-responses.log AR 호출 / (3) iptables DROP 자동 추가 / (4) sleep 65 후 자동 해제
+    Phase C: 수동 vs 자동 비교표 + AR 위험 + 운영 best practice (whitelist + 짧은 timeout + 통계 review)
+    포인트: AR 의 가치 = 수동 개입 없는 *4단계 자동 흐름*. 위험 = FP 시 정상 IP 차단.
+    종료: ossec.conf.bak 으로 복구 + iptables -F.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: firewall-drop
     field: stdout
     semantic:
-      intent: '[통합] Wazuh FIM/SCA/AR 5작업 — syscheck 디렉토리/SCA 정책/active-response 명령/테스트/알람
-        통합.'
+      intent: |
+        Wazuh Active Response 자동 차단 흐름을 SSH brute trigger 로 4 단계 cross-check.
+        alerts.json → active-responses.log → iptables 자동 추가 → timeout 후 자동 해제. 학습 목표 #3
+        (AR 자동 대응) 행동 증명.
       success_criteria:
-      - FIM 이벤트
-      - SCA 점수
-      - AR 실행
+      - Phase A — ossec.conf 에 command verify-firewall-drop + active-response rules_id 5710,5712 추가
+      - Phase B — attacker SSH 5+ fail trigger
+      - Phase B — 4 단계 evidence 모두 (alerts.json + active-responses.log + iptables + 자동 해제)
+      - 수동 vs 자동 비교표
+      - 회고 1~2 단락 + 정리 (ossec.conf.bak 복구)
       acceptable_methods:
-      - bastion plan
-      - ossec.conf
-      - ansible
+      - siem 에서 sudo tee -a ossec.conf
+      - siem 에서 sudo systemctl restart wazuh-manager
+      - attacker 에서 sshpass + ssh 7회 fail
+      - siem 에서 sudo tail alerts.json + active-responses.log
+      - siem 에서 sudo iptables -L -n
+      - sleep 65 후 iptables 재확인
       negative_signs:
-      - FIM 누락
-      - SCA 없음
-      - AR 미실행
-  target_vm: siem
-  answer: '🤖 프롬프트: secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:
+      - 4 단계 중 일부만 (예: alerts.json 만)
+      - 자동 해제 (timeout) 검증 누락
+      - AR 위험 (FP 시 정상 IP 차단) 미언급
+      - 정리 누락
+  target_vm: bastion
+  answer: |
+    🤖 프롬프트: Wazuh Active Response 자동 차단 흐름 검증.
 
-    1) siem VM의 ossec.conf에서 syscheck 감시 디렉터리 목록을 보여줘
+    Phase A: siem ossec.conf 에 command verify-firewall-drop + active-response (rules_id 5710,5712 timeout 60) 추가, wazuh-manager restart.
+    Phase B: attacker 에서 sshpass -p wrong{1..7} ssh ccc@10.20.30.80 'echo' 7회 fail.
+             4 단계: (1) alerts.json rule 5710 / (2) active-responses.log AR 호출 / (3) iptables DROP / (4) sleep 65 후 해제.
+    Phase C: 수동 vs 자동 비교표 + AR 위험 + 운영 best practice 회고.
 
-    2) siem VM의 wazuh FIM db 파일 존재 여부를 확인해줘
-
-    3) siem VM에서 /etc/ccc-fim-test 파일을 생성해 FIM 이벤트를 트리거해줘
-
-    4) siem VM의 wazuh alerts.json에서 /etc/ccc-fim-test 관련 이벤트를 찾아줘
-
-    5) siem VM의 ossec.conf에서 <sca> 섹션 설정을 보여줘'
-  answer_detail: ''
-  risk_level: low
-  bastion_prompt: 'secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:
-
-    1) siem VM의 ossec.conf에서 syscheck 감시 디렉터리 목록을 보여줘
-
-    2) siem VM의 wazuh FIM db 파일 존재 여부를 확인해줘
-
-    3) siem VM에서 /etc/ccc-fim-test 파일을 생성해 FIM 이벤트를 트리거해줘
-
-    4) siem VM의 wazuh alerts.json에서 /etc/ccc-fim-test 관련 이벤트를 찾아줘
-
-    5) siem VM의 ossec.conf에서 <sca> 섹션 설정을 보여줘'
+    종료: ossec.conf.bak 복구 + iptables -F.
+  answer_detail: |
+    학습 목표 #3 (AR 자동 대응) 행동 증명. 1~10 의 8-9 번 수동 차단과 99번 AR 자동 차단을
+    비교해 *반응 시간* 의 차이 (분→초) + *자동 해제* 가 핵심.
+  risk_level: medium
+  bastion_prompt: |
+    Wazuh AR 자동 차단 검증. Phase A: ossec.conf 에 verify-firewall-drop command + AR rules_id 5710,5712
+    timeout 60 추가, wazuh-manager restart. Phase B: attacker→web SSH 7 fail → 4 단계
+    evidence: (1) alerts.json rule 5710 (2) active-responses.log AR 호출 (3) iptables DROP 자동
+    추가 (4) sleep 65 후 자동 해제. Phase C: 수동 vs 자동 비교표 + AR 위험 + 운영 best practice.
+    종료 시 ossec.conf.bak 복구 + iptables -F.
