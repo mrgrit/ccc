@@ -551,6 +551,7 @@ steps:
     expect:
     - Vulnerability Assessment Report
     - /tmp/vuln_report.txt에
+    - report
     field: stdout
     semantic:
       intent: 취약점 스캔 결과 CVSS 위험도별 분류 리포트 — Critical/High/Medium/Low 섹션으로 /tmp/vuln_report.txt
@@ -580,54 +581,103 @@ steps:
   bastion_prompt: 취약점 스캔 결과를 종합하여 /tmp/vuln_report.txt에 위험도별(Critical/High/Medium/Low)로
     분류하여 보고서를 작성하라.
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "HTTP 정찰 + Nikto + searchsploit CVE 매칭 + 익스플로잇 우선순위 매트릭스"
 
-    1) Nikto를 사용하여 10.20.30.80:3000(JuiceShop) 웹 서버의 취약점을 스캔해줘
+    ## 상황 (w02 → w03 시나리오 연속)
 
-    2) Nikto를 사용하여 10.20.30.80:80(Apache) 웹 서버를 스캔하고, 결과를 /tmp/nikto_apache.txt에 저장해줘
+    > 선임: "스캔 결과만으론 부족. *어떤 CVE 가 적용 가능한지* 매핑해야 익스플로잇 단계로 갈 수 있어.
+    > HTTP 메서드·헤더 정찰로 기술 스택 확정 → Nikto·searchsploit 으로 CVE 매칭 → CVSS 우선순위 표.
+    > 그게 다음 주차 익스플로잇 입력이야."
 
-    3) searchsploit을 사용하여 ''juice shop'' 관련 알려진 익스플로잇을 검색해줘
+    학습 목표 (lecture #1·#2 HTTP 메서드·상태·헤더 + #5 REST API) + (lab #1·#3·#4·#13 Nikto + searchsploit) 통합.
 
-    4) searchsploit으로 ''node.js'' 관련 취약점을 검색하여 JuiceShop 백엔드에 적용 가능한 익스플로잇을 찾아라해줘
+    ## 임무 (3 단계, 약 35분)
 
-    5) nmap의 http-sql-injection 스크립트를 사용하여 10.20.30.80:3000에 SQL Injection 취약점이 있는지
-    스캔해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ### Phase A — HTTP 정찰 + 메서드 분석 (lecture #1·#2·#5)
+    1) `curl -s -I http://10.20.30.80:3000/ | head -10`
+    2) HTTP 메서드 OPTIONS: `curl -s -X OPTIONS -i http://10.20.30.80:3000/ | grep Allow`
+    3) 보안 헤더 누락: `curl -s -I http://10.20.30.80:3000/ | grep -i "csp\|hsts\|x-frame\|x-content"` (없는 것 식별)
+
+    ### Phase B — Nikto + searchsploit CVE 매칭 (lab #1·#3·#13)
+    1) `nikto -h http://10.20.30.80:3000 -maxtime 60 -nointeractive 2>&1 | head -30`
+    2) `searchsploit -t "juice shop" 2>&1 | head -10`
+    3) `searchsploit -t "express" --cve 2>&1 | head -10` 또는 `searchsploit -t "apache 2.4" 2>&1 | head -10`
+    Nikto 결과 + searchsploit CVE 번호 매칭. 적용 가능한 exploit 파일 경로 추출.
+
+    ### Phase C — 익스플로잇 우선순위 매트릭스
+    | CVE / 발견 | 영향 | CVSS | exploit-db 경로 | 우선순위 |
+    | CVE-XXXX (Express prototype pollution) | RCE | 9.8 | exploits/nodejs/webapps/... | #1 |
+    | Nikto: /admin 노출 | 정보 노출 | 5.3 | (수동 PoC) | #2 |
+    | CVE-YYYY (Apache HTTP) | DoS / RCE | 7.5 | exploits/linux/remote/... | #2 |
+    | OPTIONS Allow 누락 | 위험 정보 | 3.7 | (수동 PoC) | #3 |
+    | 보안 헤더 5종 누락 | XSS/clickjacking | 5.5 | (수동 PoC) | #2 |
+    표 끝 "다음 주차 (w04) 입력: CVE-XXXX (Express prototype) 1순위 / 보안 헤더 우회 2순위." 한 줄.
+
+    종료: echo "=== Phase A HTTP 정찰 ===" / "=== Phase B Nikto+CVE ===" / "=== Phase C 익스플로잇 매트릭스 ===" 묶음.
+  bastion_prompt: |
+    [복합 시나리오 — w03 HTTP 정찰 + CVE 매칭]
+
+    JuiceShop / Apache HTTP 정찰 + Nikto + searchsploit + 익스플로잇 매트릭스 3 phase.
+
+    Phase A:
+    `curl -s -I http://10.20.30.80:3000/ | head -10`
+    `curl -s -X OPTIONS -i http://10.20.30.80:3000/ 2>&1 | grep -i Allow | head -3`
+    `curl -s -I http://10.20.30.80:3000/ | grep -i "csp\|hsts\|x-frame\|x-content" 2>&1 | head -5`
+
+    Phase B:
+    `nikto -h http://10.20.30.80:3000 -maxtime 60 -nointeractive 2>&1 | head -30`
+    `searchsploit -t "juice shop" 2>&1 | head -10`
+    `searchsploit -t "express" 2>&1 | head -10`
+    `searchsploit -t "apache 2.4" 2>&1 | head -10`
+
+    Phase C:
+    ```
+    | CVE / 발견 | 영향 | CVSS | exploit-db | 우선순위 |
+    | CVE-Node-Express | RCE | 9.8 | exploits/nodejs/... | #1 |
+    | Nikto admin 노출 | 정보 노출 | 5.3 | (수동) | #2 |
+    | CVE-Apache 2.4.x | DoS/RCE | 7.5 | exploits/linux/... | #2 |
+    | OPTIONS Allow 누락 | 위험 정보 | 3.7 | (수동) | #3 |
+    | 보안 헤더 5종 누락 | XSS | 5.5 | (수동) | #2 |
+    ```
+    표 끝 "w04 입력: Express prototype #1, 보안 헤더 우회 #2." 한 줄.
+
+    종료: echo "=== Phase A HTTP 정찰 ===" / "=== Phase B Nikto+CVE ===" / "=== Phase C 매트릭스 ===" 묶음.
+
+    반드시 3 phase 모두 실행. 중간 종료 금지.
+  hint: |
+    Phase A: -I 헤더 + OPTIONS 메서드 + 누락 헤더 grep. 3 단계 정찰.
+    Phase B: nikto -maxtime 60 + searchsploit -t. exploit-db 경로 캡처.
+    Phase C: 5행 매트릭스 + w04 입력 1줄.
+    포인트: 정찰 → CVE 매칭 → 우선순위. 다음 주차 입력 명시.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: 익스플로잇
     field: stdout
     semantic:
-      intent: '[통합] 취약점 스캐닝 5작업 — Nessus/OpenVAS/Nuclei/CVE/audit 통합. T1595.002.'
+      intent: |
+        HTTP 메서드·헤더 정찰 + Nikto + searchsploit CVE 매칭 + CVSS 우선순위 매트릭스.
+        lecture #1·#2·#5 + lab #1·#3·#4·#13 동시 행동 증명.
       success_criteria:
-      - 5 scan 작업
-      - CVE 매칭
-      - 심각도 분류
+      - Phase A — curl -I / OPTIONS / 누락 헤더 grep
+      - Phase B — Nikto + searchsploit 4 케이스
+      - Phase C — 5행 매트릭스 + w04 입력
       acceptable_methods:
-      - bastion plan
-      - nuclei
-      - OpenVAS
+      - curl + grep
+      - nikto / searchsploit / nuclei
+      - markdown table CVE/CVSS
+      - exploit-db 경로 명시
       negative_signs:
-      - CVE 없음
-      - FP 다수
-      - audit 누락
+      - 정찰 또는 nikto만
+      - CVE 매칭 누락
+      - 매트릭스 누락
+      - 다음 주차 입력 누락
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) Nikto를 사용하여 10.20.30.80:3000(JuiceShop) 웹 서버의 취약점을 스캔해줘
-
-    2) Nikto를 사용하여 10.20.30.80:80(Apache) 웹 서버를 스캔하고, 결과를 /tmp/nikto_apache.txt에 저장해줘
-
-    3) searchsploit을 사용하여 ''juice shop'' 관련 알려진 익스플로잇을 검색해줘
-
-    4) searchsploit으로 ''node.js'' 관련 취약점을 검색하여 JuiceShop 백엔드에 적용 가능한 익스플로잇을 찾아라해줘
-
-    5) nmap의 http-sql-injection 스크립트를 사용하여 10.20.30.80:3000에 SQL Injection 취약점이 있는지
-    스캔해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. HTTP 정찰 → Nikto+CVE → 매트릭스.
+  answer_detail: |
+    searchsploit 은 attacker VM 의 exploitdb 패키지. 결과는 환경에 따라 다름 — exploit-db 경로 형식 학습이 핵심.
   script: ''
