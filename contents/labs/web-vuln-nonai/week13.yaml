@@ -306,3 +306,81 @@ steps:
       - 방어 부족
       - MFA 누락
   target_vm: attacker
+- order: 99
+  instruction: |
+    [복합 시나리오] "자동 vs 수동 점검 비교 — nikto + hydra + 오탐 필터링"
+
+    ## 상황 (w12 → w13 시나리오 연속)
+
+    > 선배: "자동화 도구 주차. nikto·ZAP·hydra 자동 스캐너는 빠르지만 *오탐 천지*.
+    > 자동 후 수동 검증으로 거르는 게 핵심. 매트릭스 + 오탐 가이드."
+
+    학습 목표 (lecture 자동화 + 한계 + 오탐 필터) + (lab #2 hydra + #3 수동 브루트포스) 통합.
+
+    ## 임무 (3 단계, 약 35분)
+
+    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
+
+    ### Phase A — nikto 자동 스캔
+    `nikto -h http://10.20.30.80 -maxtime 60 -nointeractive 2>&1 | head -40`
+    발견 라인 + 오탐 가능 항목 (Allowed Methods, Server header) 명시.
+
+    ### Phase B — hydra 자동 + curl 수동 비교
+    1) hydra:
+       `echo -e "admin\nadministrator\nroot\nuser" > /tmp/users.txt`
+       `echo -e "password\nadmin\n123456\nadmin123\npassword123" > /tmp/pwds.txt`
+       `timeout 30 hydra -L /tmp/users.txt -P /tmp/pwds.txt 10.20.30.80 http-post-form
+        "/dvwa/login.php:username=^USER^&password=^PASS^&Login=Login:Login failed" -t 4 2>&1 | tail -10`
+    2) curl 수동:
+       `for pw in password admin 123456 admin123; do
+         echo -n "$pw: "; curl -s -o /dev/null -w "%{http_code} %{size_download}\n"
+         -X POST -d "username=admin&password=$pw" http://10.20.30.80/dvwa/login.php; done`
+
+    ### Phase C — 자동 vs 수동 매트릭스 + 오탐 가이드
+    | 측면 | 자동 (nikto/ZAP) | 수동 (curl/Burp) | 권장 |
+    | 속도 | 분 단위 | 시간 단위 | 자동 → 수동 |
+    | 정확도 | 60-80% (FP) | 95%+ | 자동 후 수동 거르기 |
+    | 우회 룰 | 약함 | 강함 | 수동 선호 |
+    | 범위 | 전체 매핑 | 핵심 endpoint | 자동 정찰 + 수동 심층 |
+
+    [오탐 필터링]
+    1. nikto Allowed Methods → 보통 FP
+    2. nikto Server header → Medium 이지 Critical 아님
+    3. ZAP X-Frame-Options → Medium
+    4. hydra valid login → 응답 분석 후 FP 분리
+
+    종료: echo "=== Phase A nikto ===" / "=== Phase B hydra+curl ===" / "=== Phase C 매트릭스+오탐 ===".
+  hint: |
+    Phase A: nikto -maxtime 60. 오탐 가능 라인 명시.
+    Phase B: hydra timeout 30 + curl 응답 크기 비교.
+    Phase C: 4행 매트릭스 + 4 오탐 가이드.
+    포인트: 자동 한계 + 수동 검증.
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: 매트릭스
+    field: stdout
+    semantic:
+      intent: |
+        nikto 자동 + hydra/curl 비교 + 자동 vs 수동 매트릭스 + 오탐 필터링.
+        lecture 전체 + lab #2·#3 동시 행동 증명.
+      success_criteria:
+      - Phase A — nikto 실행 + 오탐 가능 명시
+      - Phase B — hydra 자동 + curl 수동 비교
+      - Phase C — 4행 매트릭스 + 4 오탐 가이드
+      acceptable_methods:
+      - nikto / ZAP / wpscan
+      - hydra / medusa
+      - curl 응답 크기·시간
+      - markdown table
+      negative_signs:
+      - 자동 또는 수동만
+      - 매트릭스 누락
+      - 오탐 가이드 누락
+      - 비교 관점 누락
+  target_vm: attacker
+  risk_level: low
+  answer_detail: |
+    학생이 ssh attacker 직접. nikto/hydra 설치됨. DVWA 변동 시 JuiceShop login 으로 대체.
+    핵심은 자동 한계 + 수동 검증.
