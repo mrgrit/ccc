@@ -33,7 +33,9 @@ steps:
     URL 미리보기, 웹훅, PDF 생성기, RSS 리더 등이 대표적인 SSRF 벡터입니다.
   verify:
     type: output_contains
-    expect: Feedbacks
+    expect:
+    - Feedbacks
+    - url
     field: stdout
     semantic:
       intent: JuiceShop 에서 서버가 외부 URL 요청하는 기능(프로필 이미지 URL·파일 다운로드·피드백 링크) 식별
@@ -184,7 +186,9 @@ steps:
     등이 모두 같은 loopback 주소입니다.
   verify:
     type: output_contains
-    expect: IP Bypass Test Complete
+    expect:
+    - IP Bypass Test Complete
+    - bypass
     field: stdout
     semantic:
       intent: IP 표현 변환 — localhost 를 10진수 2130706433 / 16진수 0x7f000001 / 축약형 127.1
@@ -235,7 +239,9 @@ steps:
     실제 호스트로 요청이 전송됩니다. #fragment, 백슬래시, 유니코드 등도 파서마다 다르게 해석되어 우회에 활용됩니다.'
   verify:
     type: output_contains
-    expect: URL Parsing Test Complete
+    expect:
+    - URL Parsing Test Complete
+    - curl
     field: stdout
     semantic:
       intent: URL 파싱 혼동 — http://evil.com@internal/ 처럼 @userinfo 기법, fragment(#) 활용해
@@ -356,7 +362,9 @@ steps:
     SET/CONFIG 명령으로 웹쉘을 작성하고, MySQL에는 인증 없이 쿼리를 실행하며, SMTP에는 피싱 메일을 발송할 수 있습니다.
   verify:
     type: output_contains
-    expect: Gopher payloads saved
+    expect:
+    - Gopher payloads saved
+    - gopher
     field: stdout
     semantic:
       intent: gopher:// SSRF — gopher 프로토콜로 Redis CONFIG SET 또는 MySQL 로그인 프레임을 내부
@@ -576,58 +584,116 @@ steps:
   bastion_prompt: SSRF 취약점 진단 결과를 정리하시오. 테스트한 기법, 내부 접근 가능 여부, 우회 결과, 방어 권고를 보고서로
     작성하라.
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "정보 누설 chain — 에러 메시지 + Blind SSRF 응답시간 추론"
 
-    1) JuiceShop(:3000)에서 URL을 입력받아 서버가 요청하는 기능을 찾으시오해줘
+    ## 상황 (w10 → w11 시나리오 연속)
 
-    2) SSRF를 이용하여 서버 내부의 포트를 스캔하시오. localhost의 주요 포트(22, 80, 3000, 3306, 8080, 9200)에
-    대해 열린 포트를 확인해줘
+    > 선배: "정보 노출 주차야. 명시적 노출 (스택 트레이스, 디버그) 만 위협이 아냐.
+    > Blind SSRF 처럼 *응답 시간 차이* 로 내부 포트가 열렸는지도 추론할 수 있어.
+    > 정보 누설 채널이 얼마나 다양한지 매트릭스로 정리하고, 각각에 대한 차단 권고."
 
-    3) 클라우드 메타데이터 서비스 접근을 시뮬레이션하시오. SSRF로 http://169.254.169.254/latest/meta-data/
-    (AWS 메타데이터 IP)에 접근을 시도해줘
+    학습 목표 (lecture #1·#2 에러 처리 + #3 디렉터리 리스팅) + (lab #2 포트 스캔 + #4 IP 우회) 통합.
 
-    4) IP 주소 우회 기법을 테스트하시오. localhost를 10진수(2130706433), 16진수(0x7f000001), 축약형(127.1)
-    등으로 변환하여 SSRF 필터를 우회 가능한지 확인해줘
+    ## 임무 (3 단계, 약 35분)
 
-    5) URL 파싱 혼동 기법으로 SSRF 필터를 우회하시오. URL에 @를 사용하여 호스트를 위장해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ### Phase A — 에러 메시지 정보 누설 정찰 (lecture #1·#2·#3)
+    1) 일부러 잘못된 입력으로 서버 에러 유도 — `curl -s "http://10.20.30.80/api/Users/abc"` (정수 ID 위치 문자열).
+       응답에서 stack trace / framework version / DB driver 노출 여부 확인.
+    2) 디렉터리 리스팅 시도 — `curl -s "http://10.20.30.80/.git/" "http://10.20.30.80/backup/"
+       "http://10.20.30.80/admin/"` 응답 코드 (200 → 노출 / 403 → 차단 / 404 → 없음) 비교.
+    3) HTTP 헤더 누설 — `curl -s -I http://10.20.30.80/` 의 Server / X-Powered-By / X-AspNet-Version 등.
+
+    ### Phase B — Blind SSRF 응답 시간 추론 (lab #2·#4·#5)
+    SSRF endpoint 가정 (실제는 차단됨 — PoC 명령어로 시연).
+    `for port in 22 80 3000 3306 8080 9200; do
+       t1=$(date +%s%N); curl -s -o /dev/null -m 3 "http://10.20.30.80/redirect?to=http://127.0.0.1:$port"
+       t2=$(date +%s%N); echo "port $port: $(( (t2-t1)/1000000 )) ms"; done`
+    응답 시간 차이 (50ms → 닫힘 / 1000+ms → 열림 추정). IP 우회 기법:
+    - `2130706433` (decimal localhost)
+    - `0x7f000001` (hex)
+    - `127.1` (축약)
+    - `127.0.0.1@evil.com` (URL 파싱 혼동)
+    PoC 텍스트 출력.
+
+    ### Phase C — 정보 누설 채널 매트릭스 + 차단 권고
+    | 채널 | 누설 정보 | 측정 방법 | 차단 |
+    | 에러 메시지 | stack trace / DB driver | 잘못된 입력 응답 | custom error page |
+    | HTTP 헤더 | Server / X-Powered-By | curl -I | 헤더 제거 |
+    | 디렉터리 리스팅 | .git / backup | dirb / ffuf | autoindex off |
+    | 응답 시간 | 내부 포트 상태 | timing diff | 응답 시간 균일화 |
+    | 응답 크기 | 사용자 enum | length diff | 응답 통일 |
+    | Cookie 속성 | session id | Set-Cookie | HttpOnly + Secure |
+    표 끝 "JuiceShop 권고: custom error + 헤더 제거 + autoindex off + 응답시간 균일화" 한 줄.
+
+    종료: echo "=== Phase A 에러 ===" / "=== Phase B Blind SSRF ===" / "=== Phase C 매트릭스 ===" 묶음.
+  bastion_prompt: |
+    [복합 시나리오 — w11 정보 누설 chain]
+
+    JuiceShop 정보 누설 정찰 + Blind SSRF + 매트릭스 3 phase.
+
+    Phase A (에러·디렉터리·헤더 정찰):
+    `curl -s "http://10.20.30.80/api/Users/abc" | head -c 300`
+    `for p in '.git/' 'backup/' 'admin/' '.env'; do
+       echo -n "/$p: "; curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80/$p"; done`
+    `curl -s -I http://10.20.30.80/ | grep -E "Server|X-Powered|X-AspNet|X-"`
+
+    Phase B (Blind SSRF 응답시간):
+    `for port in 22 80 3000 3306 8080 9200; do
+       t1=$(date +%s%N); curl -s -o /dev/null -m 3 "http://10.20.30.80/redirect?to=http://127.0.0.1:$port" 2>/dev/null
+       t2=$(date +%s%N); echo "port $port: $(( (t2-t1)/1000000 )) ms"; done`
+    IP 우회 PoC 텍스트:
+    `echo "decimal: 2130706433"; echo "hex: 0x7f000001"; echo "short: 127.1"; echo "auth-trick: 127.0.0.1@evil.com"`
+
+    Phase C (매트릭스):
+    ```
+    | 채널 | 누설 정보 | 측정 방법 | 차단 |
+    | 에러 메시지 | stack trace / DB driver | 잘못된 입력 | custom error page |
+    | HTTP 헤더 | Server / X-Powered-By | curl -I | 헤더 제거 |
+    | 디렉터리 리스팅 | .git / backup | dirb / ffuf | autoindex off |
+    | 응답 시간 | 내부 포트 상태 | timing diff | 응답 시간 균일화 |
+    | 응답 크기 | 사용자 enum | length diff | 응답 통일 |
+    | Cookie 속성 | session id | Set-Cookie | HttpOnly + Secure |
+    ```
+    표 끝 "JuiceShop 권고: custom error + 헤더 제거 + autoindex off + 응답시간 균일화" 한 줄.
+
+    종료: echo "=== Phase A 에러 ===" / "=== Phase B Blind SSRF ===" / "=== Phase C 매트릭스 ===" 묶음.
+
+    반드시 3 phase 모두 실행. 중간 종료 금지.
+  hint: |
+    Phase A: 잘못된 정수 ID, 디렉터리 4종, HTTP 헤더 grep 3 단계 정찰.
+    Phase B: date +%s%N 으로 ns 측정, /1000000 으로 ms 환산. IP 우회는 텍스트 PoC.
+    Phase C: 6행 매트릭스 + 권고 한 줄.
+    포인트: 정보 누설은 명시적 + 암묵적 (timing) 모두 — 차단 권고도 다름.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: 매트릭스
     field: stdout
     semantic:
-      intent: '[통합] SSRF 심화 5작업 — AWS metadata/GCP/blind/port scan/audit 통합. T1552.005.'
+      intent: |
+        에러 메시지 + 디렉터리 리스팅 + HTTP 헤더 + Blind SSRF 응답시간 — 정보 누설 채널 6종 매트릭스.
+        lecture #1·#2·#3 + lab #2·#4·#5 동시 행동 증명.
       success_criteria:
-      - 5 SSRF 작업
-      - metadata
-      - scan
+      - Phase A — 잘못된 입력 / 디렉터리 4종 / 헤더 grep 3 정찰
+      - Phase B — date +%s%N 으로 응답시간 측정 6 포트 + IP 우회 4 PoC
+      - Phase C — 6행 매트릭스 + 권고 한 줄
       acceptable_methods:
-      - bastion plan
-      - Burp Collaborator
-      - curl
+      - curl + head/grep
+      - bash for loop + date %s%N
+      - markdown table 6행
+      - dirb / ffuf / wfuzz 추가 가능
       negative_signs:
-      - metadata 실패
-      - scan 없음
-      - audit 누락
+      - 에러 정찰만, SSRF 누락
+      - 응답시간 측정 누락
+      - 매트릭스 4행 이하
+      - timing 채널 누락
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) JuiceShop(:3000)에서 URL을 입력받아 서버가 요청하는 기능을 찾으시오해줘
-
-    2) SSRF를 이용하여 서버 내부의 포트를 스캔하시오. localhost의 주요 포트(22, 80, 3000, 3306, 8080, 9200)에
-    대해 열린 포트를 확인해줘
-
-    3) 클라우드 메타데이터 서비스 접근을 시뮬레이션하시오. SSRF로 http://169.254.169.254/latest/meta-data/
-    (AWS 메타데이터 IP)에 접근을 시도해줘
-
-    4) IP 주소 우회 기법을 테스트하시오. localhost를 10진수(2130706433), 16진수(0x7f000001), 축약형(127.1)
-    등으로 변환하여 SSRF 필터를 우회 가능한지 확인해줘
-
-    5) URL 파싱 혼동 기법으로 SSRF 필터를 우회하시오. URL에 @를 사용하여 호스트를 위장해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. 정찰 → 응답시간 → 매트릭스 echo.
+  answer_detail: |
+    응답 시간 측정은 ns → ms 환산. IP 우회는 PoC 텍스트로 안전. JuiceShop 의 SSRF 차단 시 timing 차이가 거의 없음 — 그게 정상.
+    핵심은 정보 누설이 timing 까지 포함하는 광의의 채널이라는 점.
   script: ''
