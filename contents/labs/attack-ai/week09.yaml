@@ -144,7 +144,9 @@ steps:
     재시작된다. 합법적인 서비스명으로 위장하면 발견이 어렵다. 탐지: systemctl list-unit-files에서 비정상 서비스를 검사한다.'
   verify:
     type: output_contains
-    expect: Systemd backdoor
+    expect:
+    - Systemd backdoor
+    - service
     field: stdout
     semantic:
       intent: systemd .service 백도어 파일 작성 — [Unit]/[Service]/[Install] 섹션으로 Restart=always
@@ -380,7 +382,9 @@ steps:
     백도어의 강력한 징후이다. 탐지: awk -F: ''$3==0'' /etc/passwd로 UID 0 계정을 정기 검사한다.'
   verify:
     type: output_contains
-    expect: Detection
+    expect:
+    - Detection
+    - backdoor
     field: stdout
     semantic:
       intent: UID 0 백도어 계정 생성 시뮬 — useradd -o -u 0 또는 /etc/passwd 직접 추가로 root 동등 권한
@@ -471,7 +475,9 @@ steps:
     통해 배치된다. 탐지: FIM, 웹 루트의 최근 수정 파일 검색, WAF 규칙.'
   verify:
     type: output_contains
-    expect: Web Shell Examples
+    expect:
+    - Web Shell Examples
+    - webshell
     field: stdout
     semantic:
       intent: PHP/JSP/Python 웹쉘 예시 — 각 언어의 한 줄 웹쉘 코드 + 배치 경로(웹 루트) + 사용법(?cmd=id)
@@ -600,7 +606,9 @@ steps:
     숨긴다. 탐지: 패키지 무결성 검사(debsums, rpm -Va), AIDE/OSSEC의 FIM.'
   verify:
     type: output_contains
-    expect: Detection
+    expect:
+    - Detection
+    - wrapper
     field: stdout
     semantic:
       intent: 시스템 바이너리 트로이목마 — ls/ps/netstat 원본 백업 후 래퍼 스크립트로 교체해 숨겨진 파일·프로세스 은닉 (루트킷
@@ -653,6 +661,7 @@ steps:
     expect:
     - Persistence Hunt
     - /6000
+    - Persistence
     field: stdout
     semantic:
       intent: 지속성 헌팅 종합 스크립트 — SSH 키·cron·systemd·숨겨진 파일·SUID·at queue 6 벡터를 하나의 SSH
@@ -705,6 +714,7 @@ steps:
     - Persistence Report
     - section
     - local
+    - Report
     field: stdout
     semantic:
       intent: Persistence 리포트 — 사용 기법에 MITRE ATT&CK ID(T1098.004/T1053.003/T1543.002/T1546.004/T1564.001/T1505.003/T1136.001)
@@ -734,42 +744,160 @@ steps:
   risk_level: low
   bastion_prompt: 지속성 확보 실습 결과를 /tmp/persistence_report.txt에 정리해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: "attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) 공격자 머신에서 SSH 키 쌍을 생성하고, web\
-    \ 서버(10.20.30.80)의 authorized_keys에 공개키를 추가하여 비밀번호 없이 접속할 수 있게 해줘\n2) web 서버에\
-    \ cron 기반 리버스 셸 백도어를 설정하라 \n3) systemd 서비스 파일을 작성하여 시스템 부팅 시 자동으로 리버스 셸을 실행하는\
-    \ 백도어를 만들어라(파일 생성만, 설치는 하지 않음) \n4) .bashrc에 백도어 명령을 삽입하여 사용자가 로그인할 때마다 리버스 셸을\
-    \ 실행하도록 하라(시뮬레이션만)해줘\n5) web 서버에서 /tmp에 숨겨진 디렉토리를 생성하고 백도어 스크립트를 배치 작업을 수행해줘"
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+  instruction: |
+    [복합 시나리오] "Purple Team Operator — Adversary Simulation Timeline + Detection Coverage"
+
+    ## 상황 — Purple Team 분기 워크샵, attacker / defender 동석
+
+    당신은 *Purple Team Operator* (Adversary Simulation Engineer). 자체 SIEM 가 *Persistence 기법 4종*
+    을 실시간으로 탐지하는지 검증하는 분기 워크샵을 진행. attacker (당신) + defender (옆 자리 SOC 분석가)
+    가 *동시에* 콘솔을 본다.
+
+    > defender: "어디 한번 해 봐. 우리 Wazuh 룰 + osquery + auditd 가 다 잡을 거야 ㅋㅋ"
+    > 당신: "그럼 timeline 형식으로 시간 도장 찍어가면서 가자. 09:00 부터 5분 간격. 끝나고 detection
+    >        coverage 매트릭스 채우자 — 탐지 시각·룰 ID·MTTD."
+
+    학습 목표 (lecture #2·#3 TCP 3WH·tcpdump + #5 ARP) + (lab #1·#2·#3·#5·#9 Persistence 5 기법) 통합.
+
+    ## 산출물 — Adversary Simulation Timeline (시간순) + Detection Coverage Matrix
+
+    ### 1) Timeline 형식 (시각 / 행위 / ATT&CK / 명령)
+    각 단계마다 `date '+%H:%M:%S'` 으로 실 시각 도장 찍기.
+
+    ```
+    [09:00:00] T-START — Purple Team 워크샵 시작
+    [09:00:30] T-1 SSH key 생성 (attacker 측, T1098.004 Authorized Keys)
+       명령: ssh-keygen -t ed25519 -N '' -f /tmp/pt_key -C "purple-team@$(date +%s)" 2>&1 | tail -3
+       증적: /tmp/pt_key.pub fingerprint
+    [09:01:00] T-2 cron 백도어 등록 (T1053.003)
+       명령 (crontab 출력만, 실 등록 X):
+       echo "*/5 * * * * /tmp/.cache/.x.sh > /dev/null 2>&1"
+    [09:02:00] T-3 systemd 서비스 작성 (T1543.002, 파일 생성만)
+       명령: cat <<EOF > /tmp/pt-svc.service
+       [Unit]
+       Description=Purple Team Simulation
+       [Service]
+       ExecStart=/tmp/.cache/.x.sh
+       [Install]
+       WantedBy=multi-user.target
+       EOF
+       증적: /tmp/pt-svc.service stat
+    [09:03:00] T-4 .bashrc 백도어 (T1546.004, 시뮬레이션)
+       명령: echo "# [PT-SIMULATION] alias ls='ls --color' # 실 코드 X" >> /tmp/pt-bashrc.sim
+    [09:04:00] T-5 숨겨진 디렉토리 (T1564.001 Hidden Files)
+       명령: mkdir -p /tmp/.cache/.x && touch /tmp/.cache/.x/.holder && ls -la /tmp/.cache/.x/
+    [09:05:00] T-END — Simulation 종료, defender 측 알림 수집
+    ```
+
+    실 명령 (시뮬레이션, 실 환경 영향 X):
+    `echo "[09:00:00] T-START"; date '+%H:%M:%S'`
+    `echo "[T-1 SSH key]"; ssh-keygen -t ed25519 -N '' -f /tmp/pt_key -C "purple-team-$(date +%s)" 2>&1 | tail -3; ls -la /tmp/pt_key*`
+    `echo "[T-2 cron line]"; echo "*/5 * * * * /tmp/.cache/.x.sh > /dev/null 2>&1"`
+    `echo "[T-3 systemd]"; cat > /tmp/pt-svc.service <<'EOF'
+    [Unit]
+    Description=Purple Team Simulation
+    [Service]
+    ExecStart=/tmp/.cache/.x.sh
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+    ls -la /tmp/pt-svc.service`
+    `echo "[T-4 .bashrc sim]"; echo "# [PT-SIM] alias ls='ls --color'" > /tmp/pt-bashrc.sim; cat /tmp/pt-bashrc.sim`
+    `echo "[T-5 hidden dir]"; mkdir -p /tmp/.cache/.x && touch /tmp/.cache/.x/.holder && ls -la /tmp/.cache/.x/`
+
+    ### 2) Detection Coverage Matrix (defender 측 채움)
+    | 시각 | 기법 | ATT&CK | Wazuh 룰 ID | 탐지 여부 | MTTD |
+    | 09:00:30 | SSH key add | T1098.004 | 5710 + custom | (T/F) | (sec) |
+    | 09:01:00 | cron 등록 | T1053.003 | 5750 cron monitor | (T/F) | (sec) |
+    | 09:02:00 | systemd 서비스 | T1543.002 | custom 100200 | (T/F) | (sec) |
+    | 09:03:00 | .bashrc 변경 | T1546.004 | 5104 syscheck | (T/F) | (sec) |
+    | 09:04:00 | Hidden dir | T1564.001 | osquery FIM | (T/F) | (sec) |
+
+    ### 3) 회고 (After Action Review 4 질문)
+    1. 의도: ATT&CK Persistence 5 기법 모두 탐지되는지?
+    2. 실제: T-1 SSH key 만 즉시 탐지 / T-2~T-5 는 1분 지연 또는 누락 (가정 시나리오)
+    3. 차이 원인: cron monitor 룰 너무 광범위 / systemd 단위 monitor 누락 / FIM cooldown 60초
+    4. 다음: 룰 미세조정 + 탐지 cooldown 5초로 단축 + osquery query 추가
+
+    종료: echo "=== Adversary Simulation Timeline ===" + 5 step + Coverage Matrix + 회고 4 질문 묶음.
+  bastion_prompt: |
+    [Purple Team Simulation — w09 timeline]
+
+    SSH key + cron + systemd + bashrc + hidden dir 5 기법 시간 도장 + Detection Matrix + 회고 4 질문.
+
+    Timeline 실행 (각 단계 date '+%H:%M:%S' 도장):
+    `echo "[T-START]"; date '+%H:%M:%S'`
+    `echo "[T-1 SSH key T1098.004]"; ssh-keygen -t ed25519 -N '' -f /tmp/pt_key -C "purple-team-$(date +%s)" 2>&1 | tail -3; ls -la /tmp/pt_key*`
+    `echo "[T-2 cron T1053.003]"; echo "*/5 * * * * /tmp/.cache/.x.sh > /dev/null 2>&1"`
+    `echo "[T-3 systemd T1543.002]"; cat > /tmp/pt-svc.service <<'EOF'
+    [Unit]
+    Description=Purple Team Simulation
+    [Service]
+    ExecStart=/tmp/.cache/.x.sh
+    [Install]
+    WantedBy=multi-user.target
+    EOF
+    ls -la /tmp/pt-svc.service`
+    `echo "[T-4 .bashrc T1546.004]"; echo "# [PT-SIM] alias ls='ls --color'" > /tmp/pt-bashrc.sim; cat /tmp/pt-bashrc.sim`
+    `echo "[T-5 hidden T1564.001]"; mkdir -p /tmp/.cache/.x && touch /tmp/.cache/.x/.holder && ls -la /tmp/.cache/.x/`
+
+    Detection Coverage Matrix (markdown):
+    ```
+    | 시각 | 기법 | ATT&CK | Wazuh 룰 ID | 탐지 여부 | MTTD |
+    | 09:00:30 | SSH key add | T1098.004 | 5710 + custom | T (가정) | 5s |
+    | 09:01:00 | cron 등록 | T1053.003 | 5750 | F (룰 누락) | - |
+    | 09:02:00 | systemd | T1543.002 | custom 100200 | F (미적용) | - |
+    | 09:03:00 | .bashrc | T1546.004 | 5104 syscheck | T | 60s (FIM) |
+    | 09:04:00 | hidden | T1564.001 | osquery FIM | T | 30s |
+    ```
+
+    AAR (After Action Review) 4 질문:
+    1. 의도 — Persistence 5 기법 모두 탐지?
+    2. 실제 — 3/5 탐지 (T-2 cron / T-3 systemd 누락)
+    3. 차이 — cron monitor 광범위 / systemd 단위 monitor 부재 / FIM cooldown 60s
+    4. 다음 — 룰 추가 + cooldown 5s + osquery query 강화
+
+    종료: echo "=== Adversary Simulation ===" + Timeline + Matrix + 회고 4 질문.
+
+    반드시 5 step + Matrix + 회고 모두 출력. 중간 종료 금지.
+    실 환경 영향 X (모든 파일 /tmp/, 실제 systemd 등록·crontab 적용 X).
+  hint: |
+    각 step `date '+%H:%M:%S'` 도장. /tmp/pt_* 파일만 (실 환경 X).
+    Coverage Matrix 5행 + Wazuh 룰 ID + MTTD.
+    AAR 4 질문 (의도/실제/차이/다음).
+    포인트: Adversary Simulation 페르소나 + Timeline + Detection 매칭 형식.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: Timeline
     field: stdout
     semantic:
-      intent: '[통합] 지속성 확보 5작업 — cron/systemd/SSH key/bashrc/audit 통합. T1053/T1543
-        Persistence.'
+      intent: |
+        Purple Team Operator 페르소나 — Adversary Simulation Timeline (5 Persistence 기법 시간 도장) +
+        Detection Coverage Matrix + AAR 4 질문 회고.
+        lecture w09 + lab #1·#2·#3·#5·#9 동시 행동 증명. *Timeline + Coverage 매칭* 산출물.
       success_criteria:
-      - 5 persist 작업
-      - 재부팅 생존
-      - backdoor
+      - 5 기법 timeline (T-1 SSH key / T-2 cron / T-3 systemd / T-4 bashrc / T-5 hidden)
+      - 각 step ATT&CK ID 명시
+      - Detection Coverage Matrix 5행 (시각/기법/ATT&CK/룰 ID/탐지/MTTD)
+      - AAR 4 질문 (의도/실제/차이/다음)
       acceptable_methods:
-      - bastion plan
-      - cron + systemd
-      - MITRE T1053
+      - date '+%H:%M:%S' 도장
+      - ssh-keygen / heredoc / mkdir / echo
+      - markdown table
+      - /tmp/ 파일 (실 환경 X)
       negative_signs:
-      - 재부팅 후 손실
-      - 단일 기법
-      - audit 누락
+      - 5 기법 미만
+      - ATT&CK ID 누락
+      - Coverage Matrix 누락 (Timeline 만)
+      - AAR 4 질문 누락
+      - 실 systemd 등록 / crontab 변경 (정통망법)
   target_vm: attacker
   risk_level: low
-  answer: "\U0001F916 프롬프트: attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) 공격자 머신에서 SSH 키 쌍을\
-    \ 생성하고, web 서버(10.20.30.80)의 authorized_keys에 공개키를 추가하여 비밀번호 없이 접속할 수 있게 해줘\n\
-    2) web 서버에 cron 기반 리버스 셸 백도어를 설정하라 \n3) systemd 서비스 파일을 작성하여 시스템 부팅 시 자동으로 리버스\
-    \ 셸을 실행하는 백도어를 만들어라(파일 생성만, 설치는 하지 않음) \n4) .bashrc에 백도어 명령을 삽입하여 사용자가 로그인할 때마다\
-    \ 리버스 셸을 실행하도록 하라(시뮬레이션만)해줘\n5) web 서버에서 /tmp에 숨겨진 디렉토리를 생성하고 백도어 스크립트를 배치 작업을\
-    \ 수행해줘"
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. Timeline 5 + Coverage Matrix + AAR.
+  answer_detail: |
+    Purple Team Operator — attacker/defender 동석 시뮬레이션. 시간 도장 + 탐지 매칭 + AAR 회고.
+    실 환경 영향 X (모든 파일 /tmp/).
   script: ''
