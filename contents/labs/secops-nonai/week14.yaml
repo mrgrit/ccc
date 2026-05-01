@@ -309,28 +309,161 @@ steps:
       - tail 100 범위 없음
   target_vm: siem
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
-  points: 50
+  instruction: |
+    [복합 시나리오] "End-to-End 인시던트 대응 — XSS 공격 → 5 layer 통합 추적 + IR 5 단계"
+
+    ## 상황 (w01-w13 시나리오 종합)
+
+    ABC 핀테크 SOC 신규 분석가, 14주 차 (학기 후반).
+    1~10 step 으로 5 솔루션 (nft, Suricata, ModSec, Wazuh, OpenCTI) 연계 *상태 점검* 까지. 학습
+    목표 #4 — IR 프로세스 — 1~10 은 모니터링 점검. 실 incident 의 NIST IR 5 단계 수행 X.
+
+    > 선임: "이제 *진짜 incident drill* 해보자. attacker 가 web 으로 XSS 공격 → 5 layer 가
+    >  evidence 남기고 → SOC 가 5 단계 IR (Detection/Containment/Eradication/Recovery/
+    >  Lessons Learned). 1주차부터 13주차 까지 모든 도구 종합 활용."
+
+    학습 목표 #4 (IR 프로세스) 행동 증명 + w01-w13 종합 활용.
+
+    ※ Non-AI 트랙: 학생 직접 SSH + transcript paste. attacker, secu, web, siem 4 VM 모두 사용.
+
+    ## 임무 (5 단계 = NIST IR 5 단계, 약 35분)
+
+    ### Phase 1 — Detection (5분)
+
+    학생이 attacker(10.20.30.201) SSH 후 XSS 공격 2회:
+      ```
+      ssh ccc@10.20.30.201
+      curl -sI -A 'XSSAttacker/1.0' "http://10.20.30.80/?q=<script>alert(document.cookie)</script>" --max-time 5
+      curl -sI "http://10.20.30.80/api/Reviews?q=<img src=x onerror=alert(1)>" --max-time 5
+      ```
+    → t0 = 첫 alert 발생 시각 (학생이 메모).
+
+    5 layer evidence 동시 수집 (5초 이내):
+      - **nft** (secu): `ssh ccc@10.20.30.1 'sudo nft list table inet filter | grep counter | head -5'`
+      - **Suricata**: `ssh ccc@10.20.30.1 'sudo tail -50 /var/log/suricata/eve.json | jq -c "select(.event_type==\"alert\")" | head -3'`
+      - **ModSec** (web): `ssh ccc@10.20.30.80 'sudo tail -50 /var/log/apache2/modsec_audit.log | grep -E "942|XSS|script"'`
+      - **Wazuh** (siem): `ssh ccc@10.20.30.100 'sudo tail -100 /var/ossec/logs/alerts/alerts.json | jq -c "select(.data.url? | tostring | contains(\"<script>\"))" | head -3'`
+      - **OpenCTI**: graphql 으로 attacker IP indicator 검색
+
+    ### Phase 2 — Containment (10분)
+
+    OpenCTI 에 attacker IP 추가:
+      ```
+      OPENCTI_TOKEN="<.env 토큰>"
+      curl -sX POST 'http://10.20.30.100:8080/graphql' \
+        -H "Authorization: Bearer $OPENCTI_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"query": "mutation { indicatorAdd(input: {name: \"XSS attack source 10.20.30.201\", pattern: \"[ipv4-addr:value = $\\\"10.20.30.201$\\\"]\", pattern_type: \"stix\", x_opencti_main_observable_type: \"IPv4-Addr\"}) { id } }"}'
+      ```
+
+    secu 의 cti-sync.sh 실행 (w13 의 script 재사용):
+      `ssh ccc@10.20.30.1 "OPENCTI_TOKEN=$OPENCTI_TOKEN /usr/local/bin/cti-sync.sh"`
+    → cti_ips set 에 10.20.30.201 추가.
+
+    → t1 = containment 완료, **MTTC = t1 - t0** (목표 ≤ 10분, 학생이 메모).
+
+    ### Phase 3 — Eradication (5분)
+
+    web 의 ModSec 에 IP-deny 룰:
+      ```
+      ssh ccc@10.20.30.80
+      sudo bash -c 'cat > /etc/modsecurity/include-after.conf <<"EOF"
+      <LocationMatch ".*">
+        SecRule REMOTE_ADDR "@ipMatch 10.20.30.201" \
+          "phase:1,id:99000099,deny,status:403,msg:\"Blocked XSS attack source\""
+      </LocationMatch>
+      EOF'
+      sudo systemctl reload apache2
+      ```
+
+    검증:
+      attacker 에서 `curl -sI 'http://10.20.30.80/?test=normal' --max-time 5`
+    → 예상: 403 (이전엔 200 정상 — IP 자체 차단).
+
+    ### Phase 4 — Recovery (5분)
+
+    정상 사용자 (web 자체) 의 GET 응답:
+      `ssh ccc@10.20.30.80 'curl -sI http://localhost/ --max-time 3'`
+    → 예상: 200 (다른 IP 의 정상 트래픽 영향 없음).
+
+    Wazuh FIM 으로 backend 손상 무결성 확인:
+      `ssh ccc@10.20.30.100 'sudo tail -50 /var/ossec/logs/alerts/alerts.json | jq -c "select(.syscheck?)" | head'`
+
+    ### Phase 5 — Lessons Learned (10분)
+
+    학생이 작성하는 markdown 보고서:
+    ```
+    # Incident IR-2026-W14-001 — XSS Attack Response
+
+    ## Timeline
+    - t0 (Phase 1): XSS payload curl → 5 layer evidence 발생 시각 [기록]
+    - t1 (Phase 2): OpenCTI 등록 + cti-sync 완료 [기록]
+    - **MTTC = t1 - t0 = N 분** (목표 ≤ 10분)
+    - t2-t4 (Phase 3-5): [기록]
+
+    ## 5 Layer Evidence Cross-check
+    | Layer | Phase 1 evidence | 후속 (Phase 2-3) |
+    |------|-----------------|------------------|
+    | nft | input counter +N | cti_ips 에 10.20.30.201 추가 |
+    | Suricata | alert ET WEB_SERVER ... | (변경 없음) |
+    | ModSec | CRS 941110 매칭 | include-after.conf 으로 IP deny 추가 |
+    | Wazuh | rule.id alert | 추가 룰 없음 (수동 IR) |
+    | OpenCTI | indicator 등록 | sync→nft 자동 차단 |
+
+    ## Lessons Learned
+    1. *MTTC 측정* — N 분 (목표 ≤ 10). 단축: AR 자동화 (w11)
+    2. *5 layer cross-check 가치* — XSS 는 ModSec primary, 다른 layer supporting
+    3. *재발 방지* — 본 IR 룰 (Phase 3) + cti-sync 의 *영구 적용* 여부 분리 정책
+
+    ## sha256 무결성
+    sha256sum <보고서.md> > 보고서.sha256
+    ```
+
+    종료 정리:
+      ```
+      ssh ccc@10.20.30.80 'sudo rm /etc/modsecurity/include-after.conf; sudo systemctl reload apache2'
+      ssh ccc@10.20.30.1 'sudo nft -- flush set inet filter cti_ips'
+      ```
+  hint: |
+    Phase 1 Detection: attacker XSS curl 2회 → 5 layer evidence 동시 + t0 기록
+    Phase 2 Containment: OpenCTI 에 IP 추가 + cti-sync.sh → cti_ips 자동 차단 + MTTC 측정
+    Phase 3 Eradication: web ModSec include-after.conf 에 IP-deny + reload + 403 검증
+    Phase 4 Recovery: web 정상 GET 200 + Wazuh FIM 무결성
+    Phase 5 Lessons Learned: timeline + 5 layer 표 + MTTC + 재발 방지 markdown + sha256
+    포인트: NIST IR 5 단계 모두. w01-w13 모든 도구 활용.
+    종료: include-after.conf 제거 + cti_ips flush.
+  category: integration_scenario
+  points: 80
   verify:
     type: output_contains
-    expect: ''
+    expect: MTTC
     field: stdout
     semantic:
-      intent: '[통합] 통합 아키텍처 5작업 — 방화벽 로그→IPS→SIEM→CTI→알람 연계 E2E 통합. 로그 파이프라인.'
+      intent: |
+        NIST SP 800-61 IR 5 단계 (Detection / Containment / Eradication / Recovery / Lessons Learned)
+        를 XSS attack 시나리오로 모두 수행. 학습 목표 #4 행동 증명.
+        w01-w13 모든 도구 종합 활용 (cti-sync / ModSec exception / Wazuh AR / cross-check).
+        Non-AI 트랙: 학생 직접 4 VM SSH + transcript paste.
       success_criteria:
-      - E2E 로그 흐름
-      - 각 솔루션 연계
-      - 알람 생성
+      - Phase 1 — XSS curl 2회 + 5 layer evidence 동시 + t0
+      - Phase 2 — OpenCTI indicator 추가 + cti-sync 실행 + MTTC 측정
+      - Phase 3 — ModSec include-after.conf IP-deny + reload + 403 검증
+      - Phase 4 — 정상 200 + Wazuh FIM 무결성
+      - Phase 5 — timeline + cross-check 표 + MTTC + Lessons Learned + sha256
+      - 정리
       acceptable_methods:
-      - bastion plan
-      - syslog/filebeat
-      - ansible
+      - attacker XSS curl 2회
+      - 5 layer ssh + log/counter
+      - OpenCTI graphql + cti-sync.sh
+      - web ModSec include-after.conf
+      - markdown + sha256sum
       negative_signs:
-      - 연계 끊김
-      - 로그 누락
-      - 알람 없음
-  target_vm: secu
+      - 5 단계 중 일부만
+      - MTTC 측정 누락
+      - timeline 누락
+      - 정리 누락
+  target_vm: bastion
   answer: ''
-  answer_detail: ''
+  answer_detail: |
+    학습 목표 #4 행동 증명. NIST IR 5 단계 모두 수행. w01 cross-check + w07 ModSec exception +
+    w11 AR + w13 cti-sync 등 *학기 학습 전체 종합*.
