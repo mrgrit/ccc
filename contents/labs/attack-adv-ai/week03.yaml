@@ -632,37 +632,202 @@ steps:
   bastion_prompt: 네트워크 우회 실습 결과를 종합하여 각 기법의 효과와 한계를 분석한 보고서를 /tmp/evasion_report.txt에
     작성하라.
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+  instruction: |
+    [복합 시나리오] "OT/ICS Red Team — 스마트팩토리 IDS 우회 점검 + nftables/Suricata patch diff"
+
+    ## 상황 — 자동차 부품 스마트팩토리 OT 보안 점검
+
+    당신은 *현우중공업* (가상 자동차 부품 1차 협력사) 사내 OT/ICS Red Team 시니어. 본사 IT-OT 경계
+    방화벽 (10.20.30.1) + IDS 룰셋 우회 가능성 점검. 결과는 OT 운영팀에 *patch diff* 형식으로 전달.
+
+    > [OT 팀장] "OT 환경에선 *변경 = 위험*. 룰 변경 1줄도 unified diff 형식으로 정확히 적어 줘.
+    > 우회 기법별로 patch 1개씩. 5개 우회 발견 → 5개 patch. 각 patch 의 *부작용* (false positive 가능성)
+    > 도 같이. 다음 분기 점검에서 차단됐는지 verify."
+
+    학습 목표 (lecture w03 nftables/Suricata + 터널링 + Defense Evasion ATT&CK) +
+    (lab #1·#2·#3·#6·#13 ACK / -f / -D / source-port 53 / WAF) 통합.
+
+    ## 산출물 — 5 우회 시도 + 5 patch diff + 5 부작용 분석
+
+    ### Bypass 1 — nmap ACK scan (T1046, lab #1)
+    실 명령:
+    `sudo -n nmap -sA -p 22,80,443,8080 --max-rtt-timeout 1000 10.20.30.1 2>&1 | head -10`
+
+    Patch diff (nftables, before/after):
+    `cat <<'EOF'
+    --- a/etc/nftables.conf
+    +++ b/etc/nftables.conf
+    @@ -45,6 +45,8 @@
+     table inet filter {
+       chain input {
+         type filter hook input priority 0; policy drop;
+    +    # OT-BYP-1: ACK-only without prior SYN → drop (stateful)
+    +    ct state new tcp flags & (fin|syn|rst|ack) == ack drop log prefix "ACK-NO-STATE "
+         iif "lo" accept
+         ct state established,related accept
+       }
+     }
+    EOF`
+
+    부작용: 비표준 keep-alive 프로토콜 (Modbus/TCP-RTU bridge) 에서 false positive 가능 (FP rate <1%).
+
+    ### Bypass 2 — Fragmentation (-f) (T1599, lab #2)
+    실 명령:
+    `sudo -n nmap -f --mtu 24 -p 80,443,3000 10.20.30.80 2>&1 | head -10`
+
+    Patch diff (Suricata):
+    `cat <<'EOF'
+    --- a/etc/suricata/rules/ot-bypass.rules
+    +++ b/etc/suricata/rules/ot-bypass.rules
+    @@ -1,2 +1,4 @@
+     # OT 보안 룰셋
+    +alert ip any any -> any any (msg:"OT-BYP-2 fragmented packet abuse"; \
+    +    fragbits:M; ip_proto:6; threshold:type both,track by_src,count 10,seconds 60; sid:9000002;)
+    EOF`
+
+    부작용: PROFINET fragment (large I/O) 와 충돌 가능 — 임계 10/60s 로 완화.
+
+    ### Bypass 3 — Decoy (-D) source IP 위장 (T1090, lab #3)
+    실 명령:
+    `sudo -n nmap -sS -D 10.20.30.10,10.20.30.20,ME -p 80 10.20.30.80 2>&1 | head -10`
+
+    Patch diff (Suricata + nftables):
+    `cat <<'EOF'
+    --- a/etc/suricata/rules/ot-bypass.rules
+    +++ b/etc/suricata/rules/ot-bypass.rules
+    @@ -3,2 +3,5 @@
+     alert ip any any -> any any (msg:"OT-BYP-2 ..."; ...)
+    +alert tcp any any -> any any (msg:"OT-BYP-3 simultaneous SYN from multiple src"; \
+    +    flags:S; threshold:type threshold,track by_dst,count 5,seconds 5; sid:9000003;)
+    EOF`
+
+    부작용: 빌딩 자동화 다중 BMS 동시 연결 시 FP. by_dst 임계 5/5s 로 화이트리스트 IP 제외 추가 필요.
+
+    ### Bypass 4 — Source port 53 (DNS) 위장 (T1599.001, lab #6)
+    실 명령:
+    `sudo -n nmap -sS --source-port 53 -p 22,80 10.20.30.1 2>&1 | head -10`
+
+    Patch diff (nftables 기존 룰의 약점 수정):
+    `cat <<'EOF'
+    --- a/etc/nftables.conf
+    +++ b/etc/nftables.conf
+    @@ -52,5 +52,6 @@
+       chain input {
+    -    udp sport 53 accept    # DNS 응답 허용 — 잘못된 룰 (TCP 도 허용됨)
+    +    udp sport 53 ct state established accept
+    +    tcp sport 53 ct state established accept
+       }
+     }
+    EOF`
+
+    부작용: 정통 DNS 응답은 stateful → 영향 없음. *수동* DNS-over-TCP 클라이언트만 영향 (DoH 환경에선 FP 0%).
+
+    ### Bypass 5 — WAF User-Agent + URL 인코딩 (T1027, lab #13)
+    실 명령 (페이로드만, 실 공격 X):
+    `echo "[POC] curl -A 'Mozilla/5.0 (compatible; bot)' \"http://10.20.30.80:3000/rest/products/search?q=%2527%2520OR%25201=1--\""`
+
+    Patch diff (Suricata WAF rule):
+    `cat <<'EOF'
+    --- a/etc/suricata/rules/waf-evasion.rules
+    +++ b/etc/suricata/rules/waf-evasion.rules
+    @@ -1,2 +1,4 @@
+     # WAF 회피 탐지
+    +alert http any any -> any any (msg:"OT-BYP-5 double URL encoded SQLi"; \
+    +    http.uri; content:"%25"; nocase; pcre:"/(%25){2,}/i"; classtype:web-application-attack; sid:9000005;)
+    EOF`
+
+    부작용: 합법 % 문자가 들어간 URL (CSV download path) 에서 FP 가능 — pcre 더 엄격하게 (2회 이상 연속).
+
+    ## 다음 분기 verify 체크리스트
+    ```
+    | Patch | sid/comment | verify 명령 | 차단 응답 | 부작용 측정 |
+    | OT-BYP-1 | nft ct state ACK | sudo nmap -sA | dropped | Modbus FP <1% |
+    | OT-BYP-2 | sid:9000002 frag | sudo nmap -f --mtu 24 | drop alert | PROFINET FP 0% |
+    | OT-BYP-3 | sid:9000003 decoy | sudo nmap -D | alert | BMS FP 0% (allowlist) |
+    | OT-BYP-4 | nft sport 53 stateful | nmap --source-port 53 | drop | DoH FP 0% |
+    | OT-BYP-5 | sid:9000005 double-enc | curl %25%25 | alert | CSV FP <1% |
+    ```
+
+    종료: echo "=== OT/ICS Red Team — 5 Bypass + Patch ===" + 5 bypass + 5 diff + verify 체크리스트.
+  bastion_prompt: |
+    [OT/ICS Red Team — w03 patch diff 5종]
+
+    Bypass 1-5 실 명령 + nftables/Suricata unified diff + 부작용 분석 + verify 체크리스트.
+
+    Bypass 1 ACK scan:
+    `sudo -n nmap -sA -p 22,80,443,8080 --max-rtt-timeout 1000 10.20.30.1 2>&1 | head -10`
+    Patch (nftables):
+    `cat <<'EOF'
+    --- a/etc/nftables.conf
+    +++ b/etc/nftables.conf
+    @@ -45,6 +45,8 @@
+     table inet filter {
+       chain input {
+         type filter hook input priority 0; policy drop;
+    +    ct state new tcp flags & (fin|syn|rst|ack) == ack drop log prefix "ACK-NO-STATE "
+         ct state established,related accept
+       }
+     }
+    EOF`
+    부작용: Modbus/TCP-RTU bridge FP <1%
+
+    Bypass 2 fragment:
+    `sudo -n nmap -f --mtu 24 -p 80,443,3000 10.20.30.80 2>&1 | head -10`
+    Patch (Suricata sid:9000002 fragbits:M threshold 10/60s) — heredoc.
+    부작용: PROFINET fragment FP — 임계 완화.
+
+    Bypass 3 decoy:
+    `sudo -n nmap -sS -D 10.20.30.10,10.20.30.20,ME -p 80 10.20.30.80 2>&1 | head -10`
+    Patch (Suricata sid:9000003 by_dst 5/5s) + 부작용 BMS allowlist.
+
+    Bypass 4 source-port 53:
+    `sudo -n nmap -sS --source-port 53 -p 22,80 10.20.30.1 2>&1 | head -10`
+    Patch (nftables sport 53 ct state established) + 부작용 DoH FP 0.
+
+    Bypass 5 WAF double-enc:
+    `echo "[POC] curl -A 'Mozilla/5.0 (compatible; bot)' http://10.20.30.80:3000/rest/products/search?q=%2527%2520OR%25201=1--"`
+    Patch (Suricata sid:9000005 pcre %25{2,}) + 부작용 CSV FP.
+
+    Verify 체크리스트 5행 (Patch / sid / verify 명령 / 차단 / FP).
+
+    종료: echo "=== OT/ICS Red Team — 5 Bypass + Patch ===" + 5 bypass + 5 diff + 체크리스트.
+
+    반드시 5 bypass + 5 diff + 부작용 + verify. unified diff 양식 정확히.
+  hint: |
+    각 bypass: (1) 실 명령 + (2) unified diff (--- a/ +++ b/ @@) + (3) 부작용 분석.
+    nftables 2 patch (BYP-1, BYP-4) + Suricata 3 patch (BYP-2, BYP-3, BYP-5).
+    포인트: OT 환경 — 변경 = 위험. unified diff 양식 정확. FP 분석 필수.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: Patch
     field: stdout
     semantic:
-      intent: '[통합] 네트워크 우회 5작업 — DNS tunnel/ICMP/HTTPS/Port forward/audit 통합. egress
-        filtering 우회.'
+      intent: |
+        OT/ICS Red Team — 스마트팩토리 5 우회 + nftables/Suricata unified diff patch + 부작용 분석.
+        lecture w03 + lab #1·#2·#3·#6·#13 동시 행동 증명. *unified diff patch* 산출물.
       success_criteria:
-      - 5 우회 작업
-      - 터널 확립
-      - audit
+      - 5 bypass 실 명령 (ACK / -f / -D / source-port 53 / WAF double-enc)
+      - 5 unified diff (--- / +++ / @@ 양식 정확)
+      - 부작용 분석 (FP rate / 영향 받는 OT 프로토콜)
+      - verify 체크리스트 5행
       acceptable_methods:
-      - bastion plan
-      - iodine
-      - Chisel
+      - heredoc unified diff
+      - sudo nmap (-sA / -f / -D / --source-port)
+      - markdown table 체크리스트
+      - sid 번호 + threshold 명시
       negative_signs:
-      - 터널 실패
-      - audit 누락
-      - 단일 기법
+      - bypass 3 이하
+      - unified diff 양식 어긋남 (--- /+++ 누락)
+      - 부작용 분석 없음
+      - sid 번호 누락
+      - 매트릭스 / Disclosure / 슬라이드 형식
   target_vm: attacker
   risk_level: low
-  answer: "\U0001F916 프롬프트: attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) nmap의 ACK 스캔(-sA)을\
-    \ 사용하여 10.20.30.1의 방화벽 규칙을 매핑해줘\n2) nmap의 패킷 분할(-f) 옵션을 사용하여 IDS를 우회하면서 10.20.30.80의\
-    \ 포트 스캔을 수행하라. MTU를 24로 설정해줘\n3) nmap의 디코이(-D) 옵션을 사용하여 소스 IP를 위장하면서 10.20.30.80을\
-    \ 스캔해줘\n4) SSH 로컬 포트 포워딩을 설정하여 방화벽 뒤의 서비스에 접근하는 시나리오를 구성하라 \n5) SSH 동적 포트 포워딩(SOCKS\
-    \ 프록시)을 구성하는 명령을 구현 방법을 설명하고 예시 코드를 보여줘 작업을 수행해줘"
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. 5 bypass + 5 unified diff patch + verify 체크리스트.
+  answer_detail: |
+    OT/ICS Red Team — 스마트팩토리. unified diff (a/ b/ @@) 양식. nftables 2 + Suricata 3.
+    각 patch 부작용 (PROFINET/Modbus/BMS/DoH/CSV FP) 분석 필수.
   script: ''

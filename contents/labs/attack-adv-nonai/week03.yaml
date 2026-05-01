@@ -453,3 +453,122 @@ steps:
       - 기법 4개 이하
       - 방어 결론 없음
   target_vm: attacker
+- order: 99
+  instruction: |
+    [복합 시나리오] "OT/ICS Red Team — 스마트팩토리 IDS 우회 + nftables/Suricata patch diff"
+
+    ## 상황 — 자동차 부품 스마트팩토리 OT 점검
+
+    *현우중공업* 사내 OT/ICS Red Team 시니어. 본사 IT-OT 경계 방화벽 우회 점검.
+    OT 운영팀에 *unified diff* 형식 patch.
+
+    > [OT 팀장] "OT 환경 변경 = 위험. 룰 1줄도 unified diff. 5 우회 → 5 patch + 부작용 (FP) 분석."
+
+    학습 목표 (lecture w03 nftables/Suricata + 터널링) + (lab #1·#2·#3·#6·#13) 통합.
+
+    ## 산출물 — 5 Bypass + 5 patch diff + verify 체크리스트
+
+    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
+
+    ### Bypass 1 — ACK scan (T1046)
+    `sudo -n nmap -sA -p 22,80,443,8080 --max-rtt-timeout 1000 10.20.30.1 2>&1 | head -10`
+    ```
+    --- a/etc/nftables.conf
+    +++ b/etc/nftables.conf
+    @@ -45,6 +45,8 @@
+     table inet filter {
+       chain input {
+         type filter hook input priority 0; policy drop;
+    +    ct state new tcp flags & (fin|syn|rst|ack) == ack drop log prefix "ACK-NO-STATE "
+         ct state established,related accept
+       }
+     }
+    ```
+    부작용: Modbus/TCP-RTU bridge FP <1%
+
+    ### Bypass 2 — Fragmentation (T1599)
+    `sudo -n nmap -f --mtu 24 -p 80,443,3000 10.20.30.80 2>&1 | head -10`
+    ```
+    --- a/etc/suricata/rules/ot-bypass.rules
+    +++ b/etc/suricata/rules/ot-bypass.rules
+    @@ -1,2 +1,4 @@
+     # OT 보안 룰셋
+    +alert ip any any -> any any (msg:"OT-BYP-2 fragmented"; \
+    +    fragbits:M; ip_proto:6; threshold:type both,track by_src,count 10,seconds 60; sid:9000002;)
+    ```
+    부작용: PROFINET fragment FP — 임계 완화.
+
+    ### Bypass 3 — Decoy (T1090)
+    `sudo -n nmap -sS -D 10.20.30.10,10.20.30.20,ME -p 80 10.20.30.80 2>&1 | head -10`
+    ```
+    +alert tcp any any -> any any (msg:"OT-BYP-3 simultaneous SYN multi src"; \
+    +    flags:S; threshold:type threshold,track by_dst,count 5,seconds 5; sid:9000003;)
+    ```
+    부작용: 빌딩 자동화 BMS 동시 연결 FP — by_dst + allowlist.
+
+    ### Bypass 4 — Source-port 53 (T1599.001)
+    `sudo -n nmap -sS --source-port 53 -p 22,80 10.20.30.1 2>&1 | head -10`
+    ```
+    --- a/etc/nftables.conf
+    +++ b/etc/nftables.conf
+    @@ -52,5 +52,6 @@
+       chain input {
+    -    udp sport 53 accept
+    +    udp sport 53 ct state established accept
+    +    tcp sport 53 ct state established accept
+       }
+     }
+    ```
+    부작용: stateful 정통 DNS 영향 X. DoH FP 0.
+
+    ### Bypass 5 — WAF double-encoded (T1027)
+    `echo "[POC] curl -A 'Mozilla/5.0' http://10.20.30.80:3000/rest/products/search?q=%2527%2520OR%25201=1--"`
+    ```
+    +alert http any any -> any any (msg:"OT-BYP-5 double URL enc SQLi"; \
+    +    http.uri; content:"%25"; nocase; pcre:"/(%25){2,}/i"; sid:9000005;)
+    ```
+    부작용: CSV download path FP — pcre 엄격화.
+
+    ## Verify 체크리스트
+    | Patch | sid | verify | 차단 | FP |
+    | OT-BYP-1 | nft ACK | sudo nmap -sA | dropped | Modbus <1% |
+    | OT-BYP-2 | sid:9000002 | sudo nmap -f --mtu 24 | alert | PROFINET 0% |
+    | OT-BYP-3 | sid:9000003 | sudo nmap -D | alert | BMS 0% (allowlist) |
+    | OT-BYP-4 | nft sport 53 stateful | nmap --source-port 53 | drop | DoH 0% |
+    | OT-BYP-5 | sid:9000005 | curl %25%25 | alert | CSV <1% |
+
+    종료: echo "=== OT/ICS Red Team — 5 Bypass + Patch ===" + 5 bypass + 5 diff + 체크리스트.
+  hint: |
+    각 bypass: 실 명령 + unified diff (--- a/ +++ b/ @@) + 부작용.
+    nftables 2 (BYP-1, BYP-4) + Suricata 3 (BYP-2/3/5).
+    포인트: OT — 변경 = 위험. unified diff 양식 정확.
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: Patch
+    field: stdout
+    semantic:
+      intent: |
+        OT/ICS Red Team — 스마트팩토리 5 우회 + unified diff patch + 부작용 분석.
+        lecture w03 + lab #1·#2·#3·#6·#13 동시 행동 증명. *unified diff* 산출물.
+      success_criteria:
+      - 5 bypass 실 명령 (ACK / -f / -D / source-port 53 / WAF)
+      - 5 unified diff (--- /+++ /@@ 양식)
+      - 부작용 (FP / 영향 OT 프로토콜)
+      - verify 체크리스트 5행
+      acceptable_methods:
+      - heredoc unified diff
+      - sudo nmap
+      - markdown table
+      - sid 번호 + threshold
+      negative_signs:
+      - bypass 3 이하
+      - diff 양식 어긋남
+      - 부작용 누락
+      - sid 누락
+      - 매트릭스 형식
+  target_vm: attacker
+  risk_level: low
+  answer_detail: |
+    학생이 ssh attacker 직접. OT — unified diff 양식. nftables 2 + Suricata 3. FP 분석 필수.
