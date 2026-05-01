@@ -414,51 +414,158 @@ steps:
   risk_level: low
   bastion_prompt: attacker VM에서 web VM의 / 루트를 curl로 요청하고 응답 코드를 보여줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+  instruction: |
+    [복합 시나리오] "정상 트래픽이 CRS 942100 에 매칭되어 차단됨 — exception 처리"
+
+    ## 상황 (w01-w06 시나리오 연속)
+
+    ABC 핀테크 SOC 신규 분석가, 일곱째 주.
+    1~10 step 으로 ModSecurity + OWASP CRS 의 *기본 동작* 을 확인했다 — SQLi/XSS 차단 동작.
+    이번 주 학습 목표 #4 — *"오탐 예외 처리를 수행할 수 있다"* — 1~10 에선 안 다뤘다.
+
+    > 선임: "CRS 의 942 (SQLi) 룰들이 가장 FP 가 많아. 우리 회사 사내 보고서 시스템이 ?id=...
+    >  같은 query 를 쓰는데 CRS 가 SQLi 로 오해해 차단해. 그래서 *내부 IP 에선 942100 만
+    >  exclude* 하는 룰을 추가했어. SecRuleRemoveById 와 SecRule conditional include 두 가지
+    >  방법이 있는데, 두 방법 다 실험해봐. exclude 의 위험도 같이 생각해."
+
+    학습 목표 #4 (오탐 예외 처리) + #3 (커스텀 WAF 룰) 의 *행동 증명*.
+
+    ## 임무 (3 단계, 약 25분)
+
+    ### Phase A — 차단 baseline 재확인 (5분)
+
+    1~10 에서 본 SQLi curl 차단 동작 재현 (attacker→web):
+      - attacker: `curl -sI 'http://10.20.30.80/?id=1+OR+1=1--' --max-time 5`
+      - 예상: HTTP 403 (CRS 942100 등 매칭)
+      - web: `sudo tail -50 /var/log/apache2/modsec_audit.log | grep -E 'id "942100"|id "942130"'`
+      → audit log 에 SQLi 룰 매칭 기록
+
+    ### Phase B — exception 룰 작성 + 효과 검증 (15분)
+
+    두 방법 시도:
+
+    **방법 1 — `SecRuleRemoveById` 로 *전체* exclude** (보수적인 방법, 위험)
+      web 에서:
+        ```
+        sudo bash -c 'cat > /etc/modsecurity/include-after.conf <<EOF
+        # FP exception — 사내 보고서 시스템 (942100 SQLi) 일부 룰 제거
+        SecRuleRemoveById 942100
+        EOF'
+        sudo grep '942100' /etc/modsecurity/include-after.conf       # 추가 확인
+        sudo systemctl reload apache2
+        ```
+
+      attacker 에서 다시 SQLi curl:
+        `curl -sI 'http://10.20.30.80/?id=1+OR+1=1--' --max-time 5`
+        → 예상: 200 (또는 404 — 어쨌든 *403 아님*)
+
+      → **방법 1 결과**: 942100 *전체* 비활성. 모든 source IP 에서 차단 풀림 → *위험*.
+
+    **방법 2 — IP 조건부 exclude** (안전한 방법, 운영 권장)
+      방법 1 의 룰 제거 후 IP 조건부 룰로 교체:
+        ```
+        sudo bash -c 'cat > /etc/modsecurity/include-after.conf <<EOF
+        # 내부 IP (10.20.30.0/24) 만 942100 exclude — 다른 IP 는 차단 유지
+        <LocationMatch ".*">
+          SecRule REMOTE_ADDR "@ipMatch 10.20.30.0/24" "phase:1,id:99000001,nolog,pass,ctl:ruleRemoveById=942100"
+        </LocationMatch>
+        EOF'
+        sudo systemctl reload apache2
+        ```
+
+      attacker (10.20.30.201, 내부 IP) 에서 SQLi curl:
+        → 예상: 200 (ctl:ruleRemoveById 적용)
+
+      만약 외부 IP (가상으로 X-Forwarded-For 헤더 변조) 시뮬:
+        `curl -sI -H 'X-Forwarded-For: 8.8.8.8' 'http://10.20.30.80/?id=1+OR+1=1--' --max-time 5`
+        → 예상: 여전히 403 (REMOTE_ADDR 은 attacker IP 라 ipMatch 통과 — 실 운영에선 ProxyPass + RemoteIPHeader 필요)
+        → *주의*: 본 lab 환경에선 X-Forwarded-For 헤더 변조 만으로는 ipMatch 우회 안 됨.
+        → 추가 학습: 운영 시 RemoteIPHeader 설정 필수 (proxy 환경).
+
+    ### Phase C — 비교 + 회고 + 정리 (5분)
+
+    ## 비교표
+
+    | 방법 | exception 범위 | 외부 IP 차단 유지? | 운영 위험 |
+    |------|--------------|------------------|---------|
+    | SecRuleRemoveById | *전체* — 모든 IP 942100 비활성 | X (모두 통과) | **높음** — 진짜 SQLi 도 통과 |
+    | ctl:ruleRemoveById + ipMatch | *조건부* — 내부 IP 만 | O (외부 차단) | 낮음 |
+
+    1~2 단락 회고:
+    1. **두 방법의 결정적 차이** — exception 의 *범위* (전체 vs 조건부)
+    2. **운영 시 SecRuleRemoveById 사용 시 반드시** — *Pull Request review* + *분기별 audit*.
+       조건부 ipMatch 도 RemoteIPHeader 미설정 시 우회 가능.
+    3. **ModSec exception 의 다른 옵션** — `SecRuleUpdateTargetById` (특정 변수만 제외),
+       `ctl:ruleEngine=DetectionOnly` (lib 임시 disable) 등도 있음
+
+    종료 정리:
+      ```
+      sudo rm /etc/modsecurity/include-after.conf
+      sudo systemctl reload apache2
+      ```
+  hint: |
+    Phase A: attacker 에서 SQLi curl → web 의 modsec_audit.log 에 942100 매칭 + 403 응답
+    Phase B 방법 1: SecRuleRemoveById 942100 → 모든 IP 942100 비활성 (위험)
+    Phase B 방법 2: ctl:ruleRemoveById + ipMatch 10.20.30.0/24 → 내부 IP 만 exception
+    Phase C: 두 방법 비교표 + 운영 시 SecRuleRemoveById 위험 + 다른 ModSec exception 옵션
+    포인트: exception 의 *범위* 가 핵심. 전체 vs 조건부 + RemoteIPHeader 필요성.
+    종료: include-after.conf 제거 + apache2 reload.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: ipMatch
     field: stdout
     semantic:
-      intent: '[통합] Apache+ModSecurity 5작업 — 설치/OWASP CRS/rule tuning/reload/테스트 통합.
-        CRS paranoia level.'
+      intent: |
+        ModSecurity 의 두 exception 방법 (SecRuleRemoveById 전체 vs ctl:ruleRemoveById + ipMatch
+        조건부) 직접 비교. 학습 목표 #4 (오탐 예외 처리) + #3 (커스텀 룰) 행동 증명. 전체 exclude
+        의 위험 + 조건부 exclude 의 RemoteIPHeader 의존성 학습.
       success_criteria:
-      - ModSecurity on
-      - CRS 로드
-      - 403 차단 확인
+      - Phase A — attacker SQLi curl + web modsec_audit.log 942100 매칭 확인
+      - Phase B 방법 1 — SecRuleRemoveById 추가 + reload + curl → 200
+      - Phase B 방법 2 — ctl:ruleRemoveById + ipMatch 10.20.30.0/24 + curl → 200
+      - 비교표 (방법별 exception 범위 + 외부 IP 차단 유지 + 운영 위험)
+      - 회고 1~2 단락 + 정리 (include-after.conf 제거)
       acceptable_methods:
-      - bastion plan
-      - apt + a2enmod
-      - ansible
+      - web 에서 cat > /etc/modsecurity/include-after.conf
+      - web 에서 sudo systemctl reload apache2
+      - attacker 에서 curl SQLi 페이로드
+      - web 에서 tail modsec_audit.log + grep
+      - 두 방법 모두 시도 (전체 + 조건부)
       negative_signs:
-      - CRS 누락
-      - 차단 안됨
-      - reload 실패
-  target_vm: web
-  answer: '🤖 프롬프트: secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:
+      - 한 방법만 (SecRuleRemoveById 만 또는 ipMatch 만)
+      - exception 적용 후 효과 검증 누락 (차단→통과 확인 X)
+      - 회고에서 RemoteIPHeader 또는 운영 위험 미언급
+      - 정리 누락 (include-after.conf 남김)
+  target_vm: bastion
+  answer: |
+    🤖 프롬프트: ModSec exception 두 방법 비교.
 
-    1) web VM의 Apache에 ModSecurity 모듈이 로드됐는지 확인해줘
+    Phase A: attacker `curl -sI 'http://10.20.30.80/?id=1+OR+1=1--'` → 403
+             web: tail modsec_audit.log → 942100 매칭
 
-    2) web VM에서 ModSecurity SecRuleEngine 설정 값을 확인해줘
+    Phase B 방법 1 (전체 exclude):
+      web: cat > /etc/modsecurity/include-after.conf 에 'SecRuleRemoveById 942100' 추가
+      web: sudo systemctl reload apache2
+      attacker: 같은 curl → 200
 
-    3) web VM의 ModSecurity CRS 룰 파일 개수를 세어줘
+    Phase B 방법 2 (조건부):
+      web: include-after.conf 를 IP 조건부 룰로 교체:
+           SecRule REMOTE_ADDR "@ipMatch 10.20.30.0/24" "phase:1,id:99000001,nolog,pass,ctl:ruleRemoveById=942100"
+      web: sudo systemctl reload apache2
+      attacker (내부 IP): 같은 curl → 200
+      X-Forwarded-For 시뮬 → 여전히 403 (RemoteIPHeader 미설정이라 우회 안 됨)
 
-    4) web VM의 ModSecurity SecRuleEngine을 On으로 설정해줘
+    Phase C: 두 방법 비교표 + 운영 위험 + ModSec 다른 exception 옵션 1~2 단락.
 
-    5) web VM의 Apache 서비스를 재시작해줘'
-  answer_detail: ''
-  risk_level: low
-  bastion_prompt: 'secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:
-
-    1) web VM의 Apache에 ModSecurity 모듈이 로드됐는지 확인해줘
-
-    2) web VM에서 ModSecurity SecRuleEngine 설정 값을 확인해줘
-
-    3) web VM의 ModSecurity CRS 룰 파일 개수를 세어줘
-
-    4) web VM의 ModSecurity SecRuleEngine을 On으로 설정해줘
-
-    5) web VM의 Apache 서비스를 재시작해줘'
+    종료: sudo rm /etc/modsecurity/include-after.conf; sudo systemctl reload apache2
+  answer_detail: |
+    1~10 step 이 ModSec 기본 동작이었다면 99 번은 exception cycle 직접 체험. SecRuleRemoveById
+    *전체* vs ctl:ruleRemoveById + ipMatch *조건부* 의 결정적 차이 — 운영의 핵심.
+  risk_level: medium
+  bastion_prompt: |
+    ModSecurity exception 두 방법 비교. Phase A: attacker SQLi curl → 403 + 942100 매칭.
+    Phase B 방법 1: SecRuleRemoveById 942100 (전체) → 모든 IP 통과. 방법 2: ctl:ruleRemoveById +
+    ipMatch 10.20.30.0/24 → 내부만 통과. Phase C: 두 방법 비교표 + 운영 위험 + ModSec 다른
+    exception 옵션 회고. 종료 시 include-after.conf 제거 + apache2 reload.
