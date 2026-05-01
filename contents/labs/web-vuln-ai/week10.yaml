@@ -70,7 +70,9 @@ steps:
     출력되면 웹 서버 프로세스 권한으로 명령이 실행된 것입니다.
   verify:
     type: output_contains
-    expect: uid=
+    expect:
+    - uid=
+    - uid
     field: stdout
     semantic:
       intent: 세미콜론 주입 — 127.0.0.1; id 로 두 명령 순차 실행해 id 출력 획득
@@ -190,7 +192,9 @@ steps:
     인자로 대체됩니다. 필터가 세미콜론만 차단하는 경우 $()로 우회할 수 있습니다.
   verify:
     type: output_contains
-    expect: CMDI_HOSTNAME
+    expect:
+    - CMDI_HOSTNAME
+    - hostname
     field: stdout
     semantic:
       intent: 명령 치환 — 백틱 또는 $(command) 로 서브셸 결과를 상위 명령에 삽입. `hostname` 또는 $(hostname)
@@ -279,7 +283,9 @@ steps:
     시간 차이로 명령 실행 여부를 판단합니다. 정상 요청 대비 3초 이상 지연되면 주입이 성공한 것입니다.
   verify:
     type: output_contains
-    expect: Sleep Injection
+    expect:
+    - Sleep Injection
+    - sleep
     field: stdout
     semantic:
       intent: Blind CI — sleep 명령으로 응답 지연 유발해 명령 실행 확인 (응답 본문에 출력 안 나오는 경우)
@@ -334,7 +340,9 @@ steps:
     TCP 소켓 리다이렉션, 0>&1은 stdin을 stdout으로 리다이렉션합니다. 방화벽이 인바운드를 차단해도 아웃바운드로 우회 가능합니다.
   verify:
     type: output_contains
-    expect: Reverse shell payloads saved
+    expect:
+    - Reverse shell payloads saved
+    - payload
     field: stdout
     semantic:
       intent: 리버스 쉘 페이로드 작성 (실행 금지) — bash -i /dev/tcp 또는 nc -e 형태를 /tmp/revshell_payload.txt
@@ -390,7 +398,9 @@ steps:
     + 입력 검증 + escapeshellcmd())가 필요합니다.
   verify:
     type: output_contains
-    expect: ModSecurity WAF
+    expect:
+    - ModSecurity WAF
+    - '403'
     field: stdout
     semantic:
       intent: ModSecurity WAF CI 차단 검증 — 포트 80(WAF) 과 포트 8080(직접) 에 동일 페이로드 전송 후 차단
@@ -466,53 +476,117 @@ steps:
   bastion_prompt: 명령 주입 진단 결과를 정리하시오. 테스트한 메타문자, 성공/실패 여부, 필터 우회 결과, WAF 차단 여부를 보고서로
     작성하라.
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "검증 실패 계층 비교 — TLS (통신단) vs Command Injection (OS단)"
 
-    1) DVWA(:8080)에 로그인하고 Command Injection 페이지에 정상적인 ping 요청을 보내 기능을 확인해줘
+    ## 상황 (w09 → w10 시나리오 연속)
 
-    2) 세미콜론(;)을 이용한 명령어 주입을 수행하시오. 127.0.0.1 뒤에 세미콜론으로 id 명령을 연결해줘
+    > 선배: "암호화·통신 보안 주차야. TLS 와 Command Injection 은 다른 주제 같지만 같은 실패야 — *검증 누락*.
+    > TLS 는 인증서·cipher suite 검증, Command Injection 은 shell 메타문자 검증.
+    > 둘 다 점검해서 *검증 실패 계층* 매트릭스 만들어. 약한 cipher 표도 첨부."
 
-    3) 파이프(|)를 이용한 명령어 주입을 수행하시오. cat /etc/passwd로 시스템 사용자 목록을 확인해줘
+    학습 목표 (lecture #1·#2·#3 TLS+cipher+인증서) + (lab #2·#3·#4·#6 ; / | / && / Medium 우회) 통합.
 
-    4) AND(&&) 연산자를 이용한 명령어 주입을 수행하시오. ping이 성공한 후 whoami와 네트워크 정보를 확인해줘
+    ## 임무 (3 단계, 약 35분)
 
-    5) 백틱(`)과 $() 명령 치환을 이용한 명령어 주입을 수행해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ### Phase A — TLS 정찰 (lecture #1·#2·#3)
+    `openssl s_client -connect 10.20.30.80:443 -servername local </dev/null 2>&1 | head -30` 실행.
+    인증서 self-signed / expire / CN mismatch 등 확인. 추가:
+    `nmap --script ssl-enum-ciphers -p 443 10.20.30.80 2>/dev/null | head -50`
+    cipher suite 목록 + WEAK 마킹된 cipher 확인. RC4 / 3DES / NULL / EXPORT 등 약한 cipher 식별.
+
+    ### Phase B — Command Injection 4 우회 (lab #2·#3·#4·#6)
+    DVWA (10.20.30.80:8080) 또는 vulnerable endpoint 대상 — 환경 차단 시 페이로드 텍스트만.
+    - `;` : `127.0.0.1; id`
+    - `|` : `127.0.0.1 | cat /etc/passwd`
+    - `&&` : `127.0.0.1 && whoami`
+    - `Medium 필터 우회` : `;`·`&&` 차단 시 `|` 만 허용 → `|cat /etc/passwd`
+    각 페이로드 PoC 명령어와 예상 출력 분류.
+
+    ### Phase C — 검증 실패 계층 매트릭스 + 약한 cipher 표
+    | 계층 | 입력/검증 누락 | 결과 | 핵심 방어 |
+    | TLS handshake | self-signed 수락 | MITM 가능 | CA pin + cert validation |
+    | Cipher suite | RC4/3DES 허용 | 평문 추출 | TLSv1.2+ + strong cipher only |
+    | HTTP body | shell metachar 통과 | RCE | exec(args[]) + arg quoting |
+    | URL/path | encoding bypass | LFI | 정규화 후 allowlist |
+
+    | 약한 cipher | 위험 | 권고 |
+    | RC4 | 통계적 분석 | 폐기 |
+    | 3DES | Sweet32 | 폐기 |
+    | NULL/EXPORT | 평문 노출 | 차단 |
+    | TLSv1.0/1.1 | BEAST/POODLE | 폐기 |
+
+    종료: echo "=== Phase A TLS ===" / "=== Phase B CMDi ===" / "=== Phase C 매트릭스+cipher ===" 묶음.
+  bastion_prompt: |
+    [복합 시나리오 — w10 TLS + Command Injection 검증 실패 비교]
+
+    JuiceShop / DVWA 환경 TLS 정찰 + cmdi 우회 + 매트릭스 3 phase.
+
+    Phase A (TLS 정찰):
+    `openssl s_client -connect 10.20.30.80:443 -servername local </dev/null 2>&1 | head -30`
+    `nmap --script ssl-enum-ciphers -p 443 10.20.30.80 2>/dev/null | head -50`
+    self-signed/expire/CN mismatch + 약한 cipher (RC4/3DES/NULL) 명시.
+
+    Phase B (Command Injection 4 우회):
+    DVWA endpoint 차단 시 PoC 명령어만 출력.
+    - `;` payload: `payload="127.0.0.1; id"; echo "PoC: $payload"`
+    - `|` payload: `payload="127.0.0.1 | cat /etc/passwd"; echo "PoC: $payload"`
+    - `&&` payload: `payload="127.0.0.1 && whoami"; echo "PoC: $payload"`
+    - Medium 우회: `payload="|cat /etc/passwd"; echo "Medium 우회: $payload"`
+
+    Phase C (매트릭스 + cipher 표):
+    ```
+    | 계층 | 입력/검증 누락 | 결과 | 핵심 방어 |
+    | TLS handshake | self-signed 수락 | MITM 가능 | CA pin + cert validation |
+    | Cipher suite | RC4/3DES 허용 | 평문 추출 | TLSv1.2+ + strong cipher only |
+    | HTTP body | shell metachar 통과 | RCE | exec(args[]) + arg quoting |
+    | URL/path | encoding bypass | LFI | 정규화 후 allowlist |
+    ```
+    ```
+    | 약한 cipher | 위험 | 권고 |
+    | RC4 | 통계적 분석 | 폐기 |
+    | 3DES | Sweet32 | 폐기 |
+    | NULL/EXPORT | 평문 노출 | 차단 |
+    | TLSv1.0/1.1 | BEAST/POODLE | 폐기 |
+    ```
+
+    종료: echo "=== Phase A TLS ===" / "=== Phase B CMDi ===" / "=== Phase C 매트릭스+cipher ===" 묶음.
+
+    반드시 3 phase 모두 실행. 중간 종료 금지.
+  hint: |
+    Phase A: openssl s_client + nmap ssl-enum-ciphers. TLSv1.2 미만 / NULL / EXPORT 표시.
+    Phase B: 페이로드 텍스트 출력만 해도 OK. 실 RCE 시도 X (환경 격리 + 룰).
+    Phase C: 4행 매트릭스 + 4행 cipher 표.
+    포인트: 통신단·OS단 모두 *검증 누락* 이라는 통합 시각.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: 매트릭스
     field: stdout
     semantic:
-      intent: '[통합] Command Injection 5작업 — direct/blind/bypass/OOB/audit 통합. OWASP
-        A03 + commix.'
+      intent: |
+        TLS 정찰 (인증서·cipher suite) + Command Injection 4 우회 + 검증 실패 계층 매트릭스 + 약한 cipher 표.
+        lecture #1·#2·#3 + lab #2·#3·#4·#6 동시 행동 증명.
       success_criteria:
-      - 5 cmdi 작업
-      - RCE
-      - OOB
+      - Phase A — openssl s_client + nmap ssl-enum, 약한 cipher 식별
+      - Phase B — ; / | / && / Medium 우회 4 페이로드 PoC
+      - Phase C — 4행 매트릭스 + 4행 약한 cipher 표
       acceptable_methods:
-      - bastion plan
-      - commix
-      - manual
+      - openssl / nmap / testssl.sh
+      - PoC 명령어 echo 출력
+      - markdown table 2개
+      - sslscan 추가 가능
       negative_signs:
-      - RCE 실패
-      - bypass 없음
-      - audit 누락
+      - TLS 정찰 누락
+      - cmdi 1~2 우회만
+      - 매트릭스 또는 cipher 표 누락
+      - 통합 관점 누락
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) DVWA(:8080)에 로그인하고 Command Injection 페이지에 정상적인 ping 요청을 보내 기능을 확인해줘
-
-    2) 세미콜론(;)을 이용한 명령어 주입을 수행하시오. 127.0.0.1 뒤에 세미콜론으로 id 명령을 연결해줘
-
-    3) 파이프(|)를 이용한 명령어 주입을 수행하시오. cat /etc/passwd로 시스템 사용자 목록을 확인해줘
-
-    4) AND(&&) 연산자를 이용한 명령어 주입을 수행하시오. ping이 성공한 후 whoami와 네트워크 정보를 확인해줘
-
-    5) 백틱(`)과 $() 명령 치환을 이용한 명령어 주입을 수행해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. openssl/nmap → cmdi 페이로드 → 매트릭스+cipher 표.
+  answer_detail: |
+    JuiceShop 은 HTTP 만 — :443 차단되면 nmap 출력으로 학습 대체. cmdi 는 PoC 텍스트로 안전 격리.
+    핵심은 통신단·OS단 *검증 누락* 통합 관점.
   script: ''

