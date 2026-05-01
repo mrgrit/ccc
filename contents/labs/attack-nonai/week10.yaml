@@ -471,3 +471,107 @@ steps:
       - 공격 경로 다이어그램 없음
       - 권고 3개 이하
   target_vm: attacker
+- order: 99
+  instruction: |
+    [복합 시나리오] "Adversary Emulation 컨설턴트 — 클라이언트 CISO 와 Slack 대화 transcript"
+
+    ## 상황 — 화요일 16:00, Slack DM 진행 중
+
+    당신은 *MITRE-style Adversary Emulation Lead*. 클라이언트 CISO 가 *APT29-style lateral movement
+    시뮬레이션* 의뢰. Slack DM 으로 실시간 보고.
+
+    > [client CISO] "오후 4시까지 SSH-tunnel 기반 lateral 시도 부탁. SIEM 가 잡으면 다행, 못 잡으면 룰 보강.
+    > 20분 단위로 paste 해 줘."
+
+    학습 목표 (lecture #1·#2 nftables/Suricata + #4 nmap timing) + (lab #1·#2·#3·#5·#11) 통합.
+
+    ## 산출물 — Slack DM 7 메시지 transcript + 명령 + Detection Delta
+
+    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
+
+    ### [16:00] CISO → 컨설턴트
+    > "시작해. ATT&CK T1021.004 SSH 기반. IDS 우회 시도도."
+
+    ### [16:02] 컨설턴트 → CISO
+    > "📡 정찰 — TCP-only 스캔."
+    `sudo -n nmap -sT -Pn -p 22,80,443,3000,3306,8080 --max-rtt-timeout 1000 -T2 10.20.30.0/24 2>&1 | head -25`
+
+    ### [16:08] 컨설턴트 → CISO
+    > "🔑 SSH local fwd — secu:22 → SIEM:443."
+    `timeout 5 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 -L 18443:10.20.30.100:443 -N ccc@10.20.30.80 2>&1 | head -5 || echo "[차단/실패 결과]"`
+
+    ### [16:14] 컨설턴트 → CISO
+    > "🔁 SOCKS 프록시 (-D)."
+    `timeout 5 ssh -o StrictHostKeyChecking=no -o ConnectTimeout=3 -D 11080 -N ccc@10.20.30.80 2>&1 | head -5 || echo "[SOCKS 결과]"`
+
+    ### [16:18] CISO → 컨설턴트
+    > "SSH-key auth 알림 1건 떴는데 tunnel-fwd 자체 못 잡음. 보강 어떻게?"
+
+    ### [16:20] 컨설턴트 → CISO
+    > "Suricata vs auditd visibility 갭. SSH 페이로드 암호화 → DPI 불가. 방안 3:
+    >   ① auditd: SSH client exec + -L/-D 인자
+    >   ② nftables ct state: outbound :443 to siem 는 jump 만 (egress allowlist)
+    >   ③ Wazuh 룰 100400: 'ssh.*-L\\|-D' 정규식 + jumpadmin 외 alert"
+    `cat <<'EOF'
+    table inet pivot_block {
+      chain output {
+        type filter hook output priority 0; policy accept;
+        ip daddr 10.20.30.100 tcp dport 443 ip saddr != 10.20.30.201 drop log prefix "PIVOT-DROP "
+      }
+    }
+    EOF`
+
+    ### [16:25] 컨설턴트 → CISO
+    > "Detection Delta:"
+    ```
+    | 기법 | ATT&CK | Suricata | auditd | Wazuh | 종합 |
+    | nmap -sT recon | T1046 | T | F | T | 탐지 |
+    | SSH -L | T1021.004 | F | F | F | 누락 |
+    | SSH -D | T1090 | F | F | F | 누락 |
+    | SSH auth | T1021.004 | T | T | T | 탐지 |
+    | proxychains | T1090.001 | F | T | F | 부분 |
+    ```
+
+    ### [16:30] CISO 결정
+    > "auditd 룰 + nftables egress 다음 sprint 반영. 0900 brief — Delta 5행 + 보강 plan."
+
+    ### [16:31] 컨설턴트
+    > "👍 transcript export. 굿잡 — 내일."
+
+    종료: echo "=== Slack Transcript [16:00-16:31] ===" + 7 메시지 + Delta.
+  hint: |
+    7 메시지 형식. 시간 도장 [16:00-16:31]. timeout 5 안전.
+    nftables snippet heredoc. Detection Delta 5행.
+    포인트: Slack DM transcript, 보고서 X.
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: Transcript
+    field: stdout
+    semantic:
+      intent: |
+        Adversary Emulation 컨설턴트 — 클라이언트 CISO Slack DM 7 메시지 + SSH tunnel 명령 +
+        nftables egress + Detection Delta 5행. *Slack transcript* 산출물.
+      success_criteria:
+      - 7 메시지 시간 도장
+      - SSH -L / -D 실 명령 (timeout 5)
+      - nftables egress allowlist
+      - Detection Delta 5행
+      - CISO 결정 + 컨설턴트 마무리
+      acceptable_methods:
+      - heredoc 메시지
+      - nmap / ssh -L / -D / timeout
+      - heredoc nftables snippet
+      - markdown table
+      - 친근한 Slack 톤 (이모지)
+      negative_signs:
+      - 메시지 5개 이하
+      - 시간 도장 누락
+      - Detection Delta 누락
+      - 보고서 형식
+      - 페르소나 일관성 없음
+  target_vm: attacker
+  risk_level: low
+  answer_detail: |
+    학생이 ssh attacker 직접. Slack DM transcript — 보고서 X. SSH tunnel SIEM 가시성 갭 + 보강.
