@@ -642,3 +642,91 @@ steps:
       - 구체 방어 없음
       - Zero Trust 맥락 없음
   target_vm: attacker
+- order: 99
+  instruction: |
+    [복합 시나리오] "HackTheBox Box 작가 — Pro Lab 'KrbForest' 설계 노트 + Walkthrough"
+
+    ## 상황 — HTB Pro Lab 신규 박스 D-7
+
+    HTB KR 지역 Pro Lab Box 작가. 신규 박스 *KrbForest* (AD + Kerberos) D-7. 검증팀에 Author Notes 제출.
+
+    > [validator] "Difficulty / 8 Flags (user 4 + root 4) / Solution / Hint 3 / Estimated Time / Walkthrough."
+
+    학습 목표 (lecture w05 Kerberos/Kerberoasting/AS-REP/JWT/OAuth) + (lab #1·#5·#7·#8·#9·#10·#11) 통합.
+
+    ## 산출물 — HTB Author Notes 6 섹션
+
+    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
+
+    ### Box Metadata
+    ```
+    ┌────────────────────────────────────────────────────────────┐
+    │ Box: KrbForest (HTB Pro Lab) / Difficulty: Hard 4.2/10     │
+    │ OS: Win Server 2022 + Linux mixed AD                       │
+    │ Released: 2026-05-08                                        │
+    │ Author: kr-author-7                                         │
+    │ Estimated: user 3-5h / root 6-9h                           │
+    │ Required: Kerberos / Hashcat / Impacket / John             │
+    └────────────────────────────────────────────────────────────┘
+    ```
+
+    ### 8 Flags
+    user_1 AS-REP Roasting / user_2 SMB share / user_3 Kerberoast / user_4 WinRM
+    root_1 DCSync krbtgt / root_2 Golden Ticket / root_3 lsass dump / root_4 cross-forest trust
+
+    ### Solution Path 시뮬
+    `echo "[Step 1 AS-REP] GetNPUsers.py + hashcat -m 18200 (실 X)"`
+    `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)`
+    `echo "[user_3 substitute] JWT decode"; echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null | python3 -m json.tool 2>&1 | head -10`
+    `echo -n "P@ssw0rd123" | iconv -t UTF-16LE | openssl dgst -md4 -hex | head -1`
+    `echo "[NTLM hashcat -m 1000 시뮬]"`
+
+    ### Hint Level 3
+    L1 Free: "AD + Kerberos pre-auth 비활성 계정. user enum 부터."
+    L2 7d -10%: "AS-REP Roasting → hashcat -m 18200. user_1 = DCadmin home."
+    L3 14d -25%: "Kerberoast user_3 + WinRM lateral + DCSync → krbtgt → Golden Ticket."
+
+    ### Estimated Time
+    user 3.8h ± 1.2 / root 7.6h ± 1.7 / Stuck AS-REP 45min → Hint 1 권고 / Difficulty 4.2/10
+
+    ### Walkthrough 11 Phase (Spoiler!)
+    1 nmap DC discovery → 2 kerbrute userenum → 3 GetNPUsers + hashcat 18200 → 4 SMB share creds →
+    5 GetUserSPNs + hashcat 13100 → 6 evil-winrm → 7 BloodHound DCSync user → 8 secretsdump krbtgt →
+    9 ticketer Golden Ticket → 10 lsass dump CredentialGuard 우회 → 11 cross-forest trust.
+
+    종료: echo "=== HTB Pro Lab: KrbForest — Author Notes ===" + 6 섹션.
+  hint: |
+    Box Metadata / 8 Flags / Solution Path 시뮬 / Hint 3 / Time / Walkthrough 11 Phase.
+    실 AD X — JuiceShop JWT + NTLM hash 시뮬.
+    포인트: HTB 양식.
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: HTB
+    field: stdout
+    semantic:
+      intent: |
+        HTB Pro Lab Box 작가 — KrbForest Author Notes 6 섹션.
+        lecture w05 + lab #1·#5·#7·#8·#9·#10·#11 동시 행동 증명. *HTB Author Notes* 산출물.
+      success_criteria:
+      - Box Metadata
+      - 8 Flags
+      - Solution 시뮬 (JWT + NTLM)
+      - Hint Level 3
+      - Estimated Time + σ
+      - Walkthrough 8+ Phase
+      acceptable_methods:
+      - heredoc Box / Flags / Walkthrough
+      - JWT decode 시뮬
+      - NTLM openssl
+      - 11 Phase 약식
+      negative_signs:
+      - Flag 4 이하
+      - Hint 2 이하
+      - Walkthrough 누락
+      - 매트릭스 / 슬라이드 형식
+  target_vm: attacker
+  risk_level: low
+  answer_detail: |
+    학생이 ssh attacker 직접. HTB Author Notes 양식. 실 AD X — JuiceShop + NTLM hash 시뮬.

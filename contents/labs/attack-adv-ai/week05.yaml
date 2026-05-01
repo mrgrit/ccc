@@ -992,41 +992,174 @@ steps:
   bastion_prompt: 인증 공격 실습을 종합하여 Kerberos/NTLM/JWT/OAuth 공격에 대한 방어 전략을 /tmp/auth_defense.txt에
     작성하라.
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: "attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) SSH 서비스(10.20.30.80:22)에 대해\
-    \ hydra를 사용하여 비밀번호 브루트포스를 시도해줘\n2) 비밀번호 스프레이 공격을 시뮬레이션하라 \n3) SSH가 지원하는 인증 방식(publickey,\
-    \ password, keyboard-interactive)의 차이와 nmap ssh-auth-methods 스크립트로 허용 방식을 확인하는\
-    \ 방법을 설명해줘\n4) Kerberos 프로토콜의 동작 원리를 분석하라 \n5) hashcat을 사용하여 NTLM 해시를 크래킹 작업을\
-    \ 수행해줘"
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+  instruction: |
+    [복합 시나리오] "HackTheBox Box 작가 — Pro Lab 'KrbForest' 설계 노트 + Walkthrough"
+
+    ## 상황 — HTB Pro Lab 신규 박스 출시 D-7
+
+    당신은 *HackTheBox* 의 KR 지역 Pro Lab Box 작가 (Author: kr-author-7). 신규 박스 *KrbForest*
+    (Active Directory + Kerberos 환경) 출시 D-7. 박스 검증팀에 *Author Notes + Walkthrough + Hint Level
+    설계* 제출. 검증팀은 box 가 *너무 쉽지도 어렵지도 않은지* 확인하고 publish 결정.
+
+    > [HTB validator] "Author Notes 표준 양식 준수: Difficulty rating / Flags 4개 (user×4 + root×4) /
+    > Solution Path / Hint Level 3 단계 / Estimated Time / 부록 walkthrough. Difficulty 검증을 위한
+    > root 평균 시간 측정도 필수."
+
+    학습 목표 (lecture w05 Kerberos / Kerberoasting / AS-REP / JWT / OAuth) +
+    (lab #1·#5·#7·#8·#9·#10·#11 hydra/NTLM/john/Kerberoast/ASREP/JWT) 통합.
+
+    ## 산출물 — Box Author Notes (HTB 표준 양식)
+
+    ### Box Metadata
+    `cat <<'EOF'
+    ┌──────────────────────────────────────────────────────────────────┐
+    │ Box: KrbForest (HTB Pro Lab)                                     │
+    │ Difficulty: Hard (4.2/10 in HTB scale)                          │
+    │ OS: Windows Server 2022 + Linux (mixed AD environment)          │
+    │ Released: 2026-05-08 (D-7)                                       │
+    │ Author: kr-author-7                                              │
+    │ Estimated Time: user 3-5h / root 6-9h                            │
+    │ Required Skills: Kerberos / Hashcat / Impacket / John            │
+    └──────────────────────────────────────────────────────────────────┘
+    EOF`
+
+    ### Flags (8 = user 4 + root 4)
+    ```
+    [User Flags — 4개]
+    user_1: AS-REP Roasting flag (DC 에서 사전 인증 비활성 user 발견)
+    user_2: SMB share enum 으로 obtained credential
+    user_3: Kerberoast TGS 후 hashcat 크랙
+    user_4: WinRM lateral move
+
+    [Root Flags — 4개]
+    root_1: DCSync 권한 → krbtgt 추출
+    root_2: Golden Ticket 위조 → forest 전체 access
+    root_3: DCsync 후 lsass dump → CredentialGuard 우회
+    root_4: Trust path 통한 cross-forest pivot
+    ```
+
+    ### Solution Path 시연 (실행 가능한 부분만)
+    실 시뮬:
+    `echo "[Step 1] AS-REP Roasting — 가상 시뮬"`
+    `echo "GetNPUsers.py KRBFOREST.LOCAL/ -usersfile users.txt -no-pass -dc-ip <DC> > asrep.hash (실 환경 X)"`
+    `echo "[Step 2] hashcat 모드 18200 (AS-REP)"`
+    `echo "hashcat -m 18200 asrep.hash /usr/share/wordlists/rockyou.txt"`
+
+    JWT 시뮬 (lab #10·#11 활용 — JuiceShop 으로 KrbForest user_3 대체):
+    `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)`
+    `echo "[Step 3 = user_3 substitute] JWT decode"; echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null | python3 -m json.tool 2>&1 | head -10`
+
+    NTLM hash crack 시뮬 (lab #5):
+    `echo -n "P@ssw0rd123" | iconv -t UTF-16LE | openssl dgst -md4 -hex | head -1`
+    `echo "[NTLM 해시 생성 완료 — hashcat -m 1000 으로 크랙 시뮬]"`
+
+    ### Hint Level 3 단계
+    ```
+    [Hint Level 1 — Free, public]
+    "AD 환경, Kerberos pre-auth 비활성 계정이 있다. 사용자명 enumeration 부터."
+
+    [Hint Level 2 — 7 days, -10% point]
+    "AS-REP Roasting (Impacket GetNPUsers.py) → hashcat -m 18200. user_1 flag 는
+     DCadmin 의 home directory."
+
+    [Hint Level 3 — 14 days, -25% point]
+    "Kerberoast 후 user_3. WinRM (5985) 으로 lateral. root 는 DCSync (replicating directory
+     changes 권한 user) → krbtgt 해시 → Mimikatz Golden Ticket."
+    ```
+
+    ### Estimated Time + Difficulty 검증
+    ```
+    [내부 testing 결과 (5명 검증자)]
+    user 평균: 3.8h (min 2.1h, max 5.4h, σ 1.2h)
+    root 평균: 7.6h (min 5.0h, max 9.5h, σ 1.7h)
+    Stuck 빈도: AS-REP Roasting (Step 1) 에서 평균 45분 stuck → Hint 1 권고
+    Difficulty score: 4.2/10 (Hard, but passable)
+    ```
+
+    ### Walkthrough — Detailed (Spoiler!) 200 단어 요약
+    ```
+    Phase 1 정찰: nmap 으로 DC discovery (88/Kerberos, 389/LDAP, 445/SMB, 5985/WinRM).
+    Phase 2 user enum: kerbrute userenum (ASREP-able 사용자 발견).
+    Phase 3 AS-REP Roasting: GetNPUsers.py → hashcat -m 18200 → user_1 flag.
+    Phase 4 lateral: SMB share → reused credential → user_2.
+    Phase 5 Kerberoast: GetUserSPNs.py → hashcat -m 13100 → user_3.
+    Phase 6 WinRM: evil-winrm → user_4.
+    Phase 7 priv esc: BloodHound → DCSync user 발견.
+    Phase 8 DCSync: secretsdump.py → krbtgt 해시 → root_1.
+    Phase 9 Golden Ticket: ticketer.py → forest enterprise admin → root_2.
+    Phase 10 lsass dump (CredentialGuard 우회): root_3.
+    Phase 11 cross-forest trust: ticketer.py with sid_filtering off → root_4.
+    ```
+
+    종료: echo "=== HTB Pro Lab: KrbForest — Author Notes ===" + 6 섹션 출력.
+  bastion_prompt: |
+    [HTB Box 작가 — w05 KrbForest Author Notes]
+
+    Box Metadata + 8 Flags + Solution Path + Hint 3 + Estimated Time + Walkthrough.
+
+    Box Metadata (ASCII box: KrbForest / Hard 4.2/10 / Win Server 2022 + Linux / user 3-5h / root 6-9h).
+
+    8 Flags: user_1 AS-REP / user_2 SMB / user_3 Kerberoast / user_4 WinRM /
+             root_1 DCSync / root_2 Golden Ticket / root_3 lsass dump / root_4 cross-forest trust.
+
+    Solution Path 시뮬:
+    `echo "[Step 1 AS-REP] GetNPUsers.py + hashcat -m 18200 (실 환경 X)"`
+    `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])" 2>/dev/null)`
+    `echo "[Step 3 = user_3 substitute] JWT decode"; echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null | python3 -m json.tool 2>&1 | head -10`
+    `echo -n "P@ssw0rd123" | iconv -t UTF-16LE | openssl dgst -md4 -hex | head -1`
+    `echo "[NTLM hashcat -m 1000 시뮬]"`
+
+    Hint Level 3 (Free / 7d -10% / 14d -25%).
+
+    Estimated Time:
+    user 3.8h ± 1.2 / root 7.6h ± 1.7 / Stuck AS-REP 45분 → Hint 1 권고.
+
+    Walkthrough 11 Phase (recon → kerbrute → AS-REP → SMB → Kerberoast → WinRM → BloodHound →
+    DCSync → Golden Ticket → lsass → cross-forest trust).
+
+    종료: echo "=== HTB Pro Lab: KrbForest — Author Notes ===" + 6 섹션.
+
+    반드시 6 섹션 모두. 실 AD 환경 X — JuiceShop JWT + NTLM hash 시뮬로 대체.
+  hint: |
+    Box Metadata (Difficulty / OS / Released / Time).
+    8 Flags (user 4 + root 4).
+    Solution Path 시뮬 (JWT + NTLM + hashcat 명령).
+    Hint Level 3 (Free / 7d / 14d 점수 차감).
+    Estimated Time (user/root 평균 + σ).
+    Walkthrough 11 Phase.
+    포인트: HTB Box 작가 양식. Spoiler 명시.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: HTB
     field: stdout
     semantic:
-      intent: '[통합] 인증 공격 5작업 — Kerberoast/ASREP/NTLM relay/Pass-the-Hash/audit 통합.
-        T1558.003.'
+      intent: |
+        HackTheBox Pro Lab Box 작가 페르소나 — KrbForest Box Author Notes 6 섹션
+        (Metadata / Flags 8 / Solution / Hint 3 / Time / Walkthrough).
+        lecture w05 + lab #1·#5·#7·#8·#9·#10·#11 동시 행동 증명. *HTB Author Notes* 산출물.
       success_criteria:
-      - 5 인증 작업
-      - 티켓 추출
-      - crack 성공
+      - Box Metadata (Difficulty / OS / Time / Author)
+      - 8 Flags (user 4 + root 4) 명시
+      - Solution Path 시뮬 (JWT / NTLM hash / hashcat)
+      - Hint Level 3 (Free / 7d / 14d 차감 비율)
+      - Estimated Time + 표준편차 + Stuck 분석
+      - Walkthrough 8 Phase 이상
       acceptable_methods:
-      - bastion plan
-      - Impacket
-      - Rubeus
+      - heredoc Box Metadata
+      - JWT decode 시뮬
+      - NTLM hash openssl
+      - 11 Phase 약식
       negative_signs:
-      - 티켓 없음
-      - crack 실패
-      - audit 누락
+      - Flag 4 이하
+      - Hint Level 2 이하
+      - Walkthrough 누락
+      - 매트릭스 / 슬라이드 / 보고서 형식
   target_vm: attacker
   risk_level: low
-  answer: "\U0001F916 프롬프트: attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) SSH 서비스(10.20.30.80:22)에\
-    \ 대해 hydra를 사용하여 비밀번호 브루트포스를 시도해줘\n2) 비밀번호 스프레이 공격을 시뮬레이션하라 \n3) SSH가 지원하는 인증\
-    \ 방식(publickey, password, keyboard-interactive)의 차이와 nmap ssh-auth-methods 스크립트로\
-    \ 허용 방식을 확인하는 방법을 설명해줘\n4) Kerberos 프로토콜의 동작 원리를 분석하라 \n5) hashcat을 사용하여 NTLM\
-    \ 해시를 크래킹 작업을 수행해줘"
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. 6 섹션 + 시뮬 + Walkthrough.
+  answer_detail: |
+    HTB Box 작가 — KrbForest. 실 AD 환경 X — JuiceShop JWT + NTLM hash 시뮬. Author Notes 표준 양식.
   script: ''
