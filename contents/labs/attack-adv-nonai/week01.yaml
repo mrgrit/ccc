@@ -432,3 +432,148 @@ steps:
       - MITRE ID 없음
       - 정리 단계 누락
   target_vm: attacker
+- order: 99
+  instruction: |
+    [복합 시나리오] "백신회사 시그니처 작성자 — APT28 KC 7 × YARA + Sigma 룰 7종"
+
+    ## 상황 — APT28 신규 변종, 24h 시그니처 마감
+
+    AhnSec 백신회사 시그니처 작성자. APT28 *Forensic IO* 캠페인 재현 후 KC 7 단계 각각 룰 1개.
+
+    > [팀장] "10시 push 마감. YARA (binary) 2 + Sigma (log) 5 = 7개. 신중히."
+
+    학습 목표 (lecture w01 + APT28/29/Lazarus + Diamond) + (lab #1·#2·#9·#11·#13) 통합.
+
+    ## 산출물 — KC 7 × (시뮬 + 룰)
+
+    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
+
+    ### KC 1 Recon (T1595.001)
+    `sudo -n nmap -sS -T2 -p 22,80,443,3000 10.20.30.80 2>&1 | head -8`
+    `cat <<'EOF'
+    title: APT28 Recon - Slow SYN scan
+    id: 11000001-apt28-recon
+    logsource: {category: firewall}
+    detection:
+      sel: {action: 'drop', protocol: 'TCP', flags: 'S'}
+      timeframe: 60s
+      condition: sel | count(src_ip) by dst_port > 20
+    level: medium
+    EOF`
+
+    ### KC 2 Weapon (T1588.002) — YARA
+    `cat <<'EOF'
+    rule APT28_Reverse_Shell_Stub_2026 {
+      meta: { description = "msfvenom reverse shell stub", author = "AhnSec", date = "2026-04-29" }
+      strings:
+        $a = "/dev/tcp/" wide ascii
+        $b = { 31 c0 50 68 ?? ?? ?? ?? }
+        $c = "0>&1" wide ascii
+      condition: 2 of ($a, $b, $c)
+    }
+    EOF`
+
+    ### KC 3 Delivery (T1566.001)
+    `cat <<'EOF'
+    title: APT28 Delivery - Email attachment
+    id: 11000003-apt28-delivery
+    logsource: {product: exchange, service: message-trace}
+    detection:
+      sel: {attachment_ext: ['.docm','.xlsm','.pptm','.iso','.lnk']}
+      condition: sel
+    level: high
+    EOF`
+
+    ### KC 4 Exploit (T1203)
+    `cat <<'EOF'
+    title: APT28 Exploit - WINWORD child
+    id: 11000004-apt28-exploit
+    logsource: {product: windows, service: process_creation}
+    detection:
+      sel:
+        ParentImage|endswith: '\\WINWORD.EXE'
+        Image|endswith: ['\\powershell.exe','\\cmd.exe','\\rundll32.exe']
+      condition: sel
+    level: high
+    EOF`
+
+    ### KC 5 Install (T1053.003)
+    `cat <<'EOF'
+    title: APT28 Install - cron beacon
+    id: 11000005-apt28-install
+    logsource: {product: linux, service: auditd}
+    detection:
+      sel: {type: 'PATH', name: '/etc/crontab', op: 'WRITE'}
+      filter: {a0: '/usr/sbin/anacron'}
+      condition: sel and not filter
+    level: high
+    EOF`
+
+    ### KC 6 C2 (T1071.001)
+    `cat <<'EOF'
+    title: APT28 C2 - DGA TLD
+    id: 11000006-apt28-c2
+    logsource: {category: dns}
+    detection:
+      sel: {query|re: '^[a-z0-9]{16,}\\.(top|info|xyz)$'}
+      condition: sel
+    level: critical
+    EOF`
+
+    ### KC 7 Actions (T1041) — YARA
+    `cat <<'EOF'
+    rule APT28_Exfil_Archive_2026 {
+      meta: { description = "staged exfil archive", author = "AhnSec" }
+      strings:
+        $a = "Salted__"
+        $b = "PK\x03\x04"
+        $c = /[A-Za-z0-9+\/]{50,}=/
+      condition: all of ($a, $b, $c)
+    }
+    EOF`
+
+    ## 룰 7종 요약표
+    | KC | ATT&CK | 룰 ID | 형식 |
+    | 1 Recon | T1595.001 | 11000001 | Sigma |
+    | 2 Weapon | T1588.002 | YARA-rev-shell | YARA |
+    | 3 Delivery | T1566.001 | 11000003 | Sigma |
+    | 4 Exploit | T1203 | 11000004 | Sigma |
+    | 5 Install | T1053.003 | 11000005 | Sigma |
+    | 6 C2 | T1071.001 | 11000006 | Sigma |
+    | 7 Actions | T1041 | YARA-exfil | YARA |
+
+    종료: echo "=== APT28 Kill Chain Signature Set ===" + 7 룰 + 요약표.
+  hint: |
+    KC 7 단계 시뮬 + 룰. YARA 2 (Weapon/Actions) + Sigma 5.
+    heredoc + 룰 ID + level. 실 binary X.
+    포인트: 시그니처 작성자 페르소나. YARA + Sigma 양식 산출물.
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: Signature
+    field: stdout
+    semantic:
+      intent: |
+        백신회사 시그니처 작성자 — APT28 KC 7 × YARA 2 + Sigma 5 룰 7종.
+        lecture w01 + lab #1·#2·#9·#11·#13 동시 행동 증명. *YARA + Sigma 룰 산출물*.
+      success_criteria:
+      - KC 7 단계 (Recon/Weapon/Delivery/Exploit/Install/C2/Actions)
+      - ATT&CK ID 7 (T1595.001/T1588.002/T1566.001/T1203/T1053.003/T1071.001/T1041)
+      - YARA 2 + Sigma 5 (heredoc 양식)
+      - 7행 룰 요약표
+      acceptable_methods:
+      - heredoc YARA / Sigma yaml
+      - sudo nmap 시뮬
+      - markdown table
+      - 실 binary X
+      negative_signs:
+      - KC 5 이하
+      - YARA/Sigma 양식 누락
+      - 룰 ID 없음
+      - 실 binary 생성
+      - 매트릭스 형식
+  target_vm: attacker
+  risk_level: low
+  answer_detail: |
+    학생이 ssh attacker 직접. 시그니처 작성자 — YARA + Sigma 룰. 실 binary X.
