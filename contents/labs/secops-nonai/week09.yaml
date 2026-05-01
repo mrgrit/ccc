@@ -307,28 +307,141 @@ steps:
       - JSON Lines 이해 없음
   target_vm: siem
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+  instruction: |
+    [복합 시나리오] "agent → manager event flow — web 에서 trigger 한 alert 가 siem 까지"
+
+    ## 상황 (w01-w08 시나리오 연속)
+
+    ABC 핀테크 SOC 신규 분석가, 9주 차.
+    1~10 step 으로 Wazuh 설치 상태 + agent 목록 확인까지 했다. 학습 목표 #2 — Manager/Agent
+    아키텍처 — *상태만* 봤지 *event flow* 는 검증 안 됨.
+
+    > 선임: "w08 중간고사에서 SIEM 통합의 필요성 확인했지? 이제 그 SIEM 이 *진짜 일하는지*
+    >  보자. web 에서 SSH 인증 실패 5회 발생시켜봐. Wazuh rule 5710 (multiple authentication
+    >  failures) 가 매칭되어야 해. 그게 manager 까지 도달하면 agent flow 가 작동하는 거야.
+    >  log → agent → manager → alerts.json 의 4 단계 evidence 를 모두 확인해."
+
+    학습 목표 #2 (Manager/Agent 아키텍처) 의 *event flow* 행동 증명.
+
+    ※ Non-AI 트랙: 학생 직접 SSH + transcript paste.
+
+    ## 임무 (3 단계, 약 25분)
+
+    ### Phase A — Agent 상태 + 4단계 evidence 위치 사전 확인 (5분)
+
+    siem(10.20.30.100) SSH 후:
+      ```
+      ssh ccc@10.20.30.100
+      sudo /var/ossec/bin/agent_control -l
+      ```
+    → web (10.20.30.80) agent 가 *Active* 인지 확인. ID 메모.
+
+    각 단계 의 evidence 위치:
+
+    | 단계 | 위치 | 의미 |
+    |------|-----|-----|
+    | 1. log (web) | `/var/log/auth.log` | SSH 인증 실패 원본 |
+    | 2. agent → manager 전송 | (메모리) | wazuh-agent 가 전송 |
+    | 3. manager 수신 | `/var/ossec/logs/archives/archives.log` (선택) | manager raw event |
+    | 4. alert 생성 | `/var/ossec/logs/alerts/alerts.json` | rule 매칭 alert |
+
+    ### Phase B — Trigger + 4 단계 cross-check (15분)
+
+    attacker(10.20.30.201) SSH 후 web 으로 SSH 5 fail:
+      ```
+      ssh ccc@10.20.30.201
+      for pw in wrong1 wrong2 wrong3 wrong4 wrong5; do
+        sshpass -p "$pw" ssh -o StrictHostKeyChecking=no -o ConnectTimeout=2 \
+          ccc@10.20.30.80 'echo' 2>/dev/null
+      done
+      ```
+
+    4 단계 cross-check (5초 정도 기다린 후):
+
+    **단계 1** (web 측):
+      ```
+      ssh ccc@10.20.30.80
+      sudo tail -20 /var/log/auth.log | grep -E 'Failed password|authentication failure'
+      ```
+    → 예상: 5건 이상.
+
+    **단계 2** (web wazuh-agent 동작):
+      `ssh ccc@10.20.30.80 "sudo systemctl is-active wazuh-agent && sudo wc -l /var/ossec/logs/ossec.log"`
+    → 예상: active + ossec.log 라인 수 증가.
+
+    **단계 3** (siem archives, 옵션):
+      `ssh ccc@10.20.30.100 "sudo tail -20 /var/ossec/logs/archives/archives.log 2>/dev/null | grep -E 'Failed password' | head"`
+    → 예상: 옵션 (archives 활성 시). 비활성이면 단계 4 만으로 충분.
+
+    **단계 4** (siem alerts.json):
+      ```
+      ssh ccc@10.20.30.100
+      sudo tail -100 /var/ossec/logs/alerts/alerts.json | jq -c 'select(.rule.id=="5710" or .rule.id=="5711" or .rule.id=="5712")' | head -3
+      ```
+    → 예상: rule.id 5710/5711/5712 alert + web agent_id 명시.
+
+    ### Phase C — Event flow 다이어그램 + 회고 (5분)
+
+    ## Event flow
+
+    ```
+    [web 의 sshd]
+       └→ syslog → /var/log/auth.log     (단계 1: 5+ "Failed password")
+              └→ wazuh-agent (web)
+                    └→ 암호화 전송 → manager:1514       (단계 2)
+                          └→ wazuh-manager analysisd
+                                ├→ /var/ossec/logs/archives/* (단계 3, 선택)
+                                └→ rule 5710/5711/5712 매칭
+                                      └→ /var/ossec/logs/alerts/alerts.json (단계 4)
+    ```
+
+    1~2 단락 회고:
+    1. **4 단계 중 어느 단계 evidence 빠졌나** — 예: 단계 3 비활성
+    2. **agent → manager 통신 끊기면** — 단계 1 만 web 에 남고 단계 4 미발생 → SOC 가 못 봄.
+       대응: agent_control -l 정기 health check + Wazuh active response
+    3. **w08 cross-check 와 차이** — w08 은 *서로 다른 layer* 간, w09 는 *같은 event 의 다단계*
+       flow. SIEM 의 진짜 가치는 후자.
+
+    종료 정리 없음 (조회만 함).
+  hint: |
+    Phase A: siem 에서 agent_control -l → web agent active 확인 + 4 단계 evidence 위치
+    Phase B: attacker → web SSH 5 fail (sshpass) → 4 단계 cross-check
+             (1) web auth.log Failed password / (2) web wazuh-agent active /
+             (3) siem archives (선택) / (4) siem alerts.json rule 5710-5712
+    Phase C: event flow 다이어그램 + 빠진 단계 + agent 통신 끊김 위험 + w08 vs w09 차이
+    포인트: w08 = layer 간 cross-check, w09 = 같은 event 의 단계 간 flow.
+    종료 정리 없음.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: rule
     field: stdout
     semantic:
-      intent: '[통합] Wazuh SIEM 5작업 — manager 설치/indexer/dashboard/agent enroll/연결 확인 통합. 55000 포트.'
+      intent: |
+        Wazuh agent → manager event flow 를 SSH brute trigger 로 4 단계 cross-check.
+        학습 목표 #2 행동 증명. log → agent → manager → alerts.json evidence chain 추적.
+        Non-AI 트랙: 학생 직접 SSH + transcript paste.
       success_criteria:
-      - Wazuh 서비스 active
-      - agent 등록
-      - 대시보드 접속
+      - Phase A — siem agent_control -l 로 web agent active 확인
+      - Phase B — attacker 에서 web SSH 5 fail trigger
+      - Phase B — 단계 1 (web auth.log) 단계 2 (web wazuh-agent active) 단계 4 (siem alerts.json
+        rule 5710-5712) 모두 확인
+      - Phase C — event flow 다이어그램 + 4 단계 중 빠진 단계 명시
+      - 회고 1~2 단락
       acceptable_methods:
-      - bastion plan
-      - wazuh-install.sh
-      - ansible
+      - siem 에서 sudo agent_control -l
+      - attacker 에서 sshpass -p wrong ssh 5회
+      - web 에서 sudo tail auth.log + grep
+      - web 에서 sudo systemctl is-active wazuh-agent
+      - siem 에서 sudo tail alerts.json + jq
       negative_signs:
-      - 설치 실패
-      - agent 미등록
-      - 대시보드 없음
-  target_vm: siem
+      - 4 단계 중 1-2개만
+      - SSH fail 5회 미만
+      - event flow 다이어그램 누락
+      - agent 통신 끊김 위험 미언급
+  target_vm: bastion
   answer: ''
-  answer_detail: ''
+  answer_detail: |
+    학습 목표 #2 (Manager/Agent 아키텍처) 행동 증명. w08 = layer 간, w09 = 같은 event 의
+    단계 간 flow. SIEM 의 진짜 가치는 multi-step event correlation.
