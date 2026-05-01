@@ -754,6 +754,7 @@ steps:
     - Wireless Attack Report
     - Rogue
     - BlueBorne
+    - report
     field: stdout
     semantic:
       intent: 무선 공격 종합 보고서 /tmp/wireless_report.txt 작성 — 프로토콜 위험 평가(WEP CRITICAL·WPA-TKIP
@@ -787,52 +788,176 @@ steps:
   risk_level: low
   bastion_prompt: 무선 네트워크 공격 실습 결과를 /tmp/wireless_report.txt에 정리해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "항공사 IT 보안 컨설턴트 — 공항 Wi-Fi 종합 점검 + ATT&CK Navigator Layer JSON"
 
-    1) 무선 네트워크 인터페이스를 확인해줘
+    ## 상황 — 인천공항 라운지 Wi-Fi 점검 의뢰
 
-    2) Wi-Fi 보안 프로토콜의 발전 과정을 정리하라. WEP, WPA, WPA2, WPA3 각각의 암호화 방식과 취약점을 비교해줘
+    당신은 *AeroSec* (가상 항공보안 컨설팅) 시니어. 인천공항 항공사 라운지 Wi-Fi 환경 보안성 평가
+    의뢰. 결과물은 (1) ATT&CK Navigator Layer JSON (방어팀 visualization 용), (2) Kill Chain ↔ ATT&CK
+    매핑표, (3) Wi-Fi 환경 점검 체크리스트 3 가지.
 
-    3) aircrack-ng 도구 스위트의 구성 요소와 각 도구의 역할을 정리해줘
+    > [발주처 IT보안팀장] "라운지 Wi-Fi 가 *공유 PSK* 방식이라 KRACK / Evil Twin 위험. ATT&CK Navigator
+    > 에 import 해서 우리 SOC 가 *어떤 기법 cover 하는지 색칠* 할 수 있게 JSON 으로 줘. 14주 강의 내용
+    > 통합되니 종합 매핑."
 
-    4) WPA2-PSK 4-Way Handshake의 원리를 설명하고, 각 단계에서 교환되는 메시지를 정리해줘
+    학습 목표 (lecture w13 ATT&CK 14전술 + Kill Chain 7단계 매핑) + (lab #4 4WHS + #6 Evil Twin + #9 KRACK + #13 Rogue AP) 통합.
 
-    5) aircrack-ng를 사용하여 사전에 준비된 WPA2 핸드셰이크 캡처 파일을 크래킹하라(시뮬레이션)해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ## 산출물 — 3 파트
+
+    ### Part 1 — Cyber Kill Chain 7 ↔ ATT&CK 14 매핑표 (Wi-Fi 시나리오 적용)
+    | KC 단계 | ATT&CK 전술 | Wi-Fi 적용 기법 | ATT&CK ID |
+    | 1 Reconnaissance | TA0043 Recon | SSID 정찰, BSSID 수집 | T1590.005 |
+    | 2 Weaponization | (TA0042 Resource) | Evil Twin AP 준비 | T1583.005 |
+    | 3 Delivery | TA0001 Initial Access | Deauth + Evil Twin 강제 연결 | T1557.001 |
+    | 4 Exploitation | TA0001/0006 | KRACK key reuse | T1557.004 |
+    | 5 Installation | TA0003 Persistence | Rogue AP 지속 운영 | (custom) |
+    | 6 C2 | TA0011 Command and Control | 캡처 트래픽 → C2 | T1071 |
+    | 7 Actions | TA0009 Collection | 평문 자격증명/세션 캡처 | T1040 |
+
+    ### Part 2 — ATT&CK Navigator Layer JSON (실 import 가능 형식)
+    `cat <<'EOF'
+    {
+      "name": "AeroSec Airport Wi-Fi 2026-04-29",
+      "versions": {"attack": "16", "navigator": "5.1.0", "layer": "4.5"},
+      "domain": "enterprise-attack",
+      "description": "공항 라운지 Wi-Fi 점검 14주 강의 통합 매핑",
+      "filters": {"platforms": ["Network", "Linux", "Windows"]},
+      "techniques": [
+        {"techniqueID": "T1590.005", "score": 100, "color": "#ff6666", "comment": "BSSID 수집 (정찰)"},
+        {"techniqueID": "T1583.005", "score": 100, "color": "#ff6666", "comment": "Evil Twin AP 준비"},
+        {"techniqueID": "T1557.001", "score": 100, "color": "#ff6666", "comment": "Deauth + AP 위장"},
+        {"techniqueID": "T1557.004", "score": 100, "color": "#ff6666", "comment": "KRACK key reuse"},
+        {"techniqueID": "T1040", "score": 100, "color": "#ff6666", "comment": "트래픽 sniffing"},
+        {"techniqueID": "T1071", "score": 50,  "color": "#ffcc66", "comment": "캡처→C2 부분 cover"},
+        {"techniqueID": "T1190", "score": 75,  "color": "#ff9966", "comment": "captive portal SQLi"}
+      ],
+      "metadata": [
+        {"name": "course", "value": "attack-w13"},
+        {"name": "scenario", "value": "airport-lounge-wifi"},
+        {"name": "consultant", "value": "AeroSec"}
+      ],
+      "showTacticRowBackground": true,
+      "tacticRowBackground": "#dddddd"
+    }
+    EOF`
+
+    ### Part 3 — 무선 환경 점검 체크리스트 (3 환경별)
+    ```
+    [환경 A — 공항 라운지 Wi-Fi (공유 PSK)]
+    □ WPA3-SAE 전환 권고 (KRACK 면역)
+    □ Client Isolation 활성화 (peer-to-peer 차단)
+    □ Captive Portal HTTPS 강제 + HSTS preload
+    □ 802.11w (PMF) 활성화 (Deauth 보호)
+
+    [환경 B — 기내 Wi-Fi (위성 백홀)]
+    □ Per-passenger session key (개별 PSK)
+    □ DNS-over-HTTPS 강제 (DPI 우회 vs 정통망법 균형)
+    □ VPN passthrough 명시 (사용자 안내)
+
+    [환경 C — 직원 무선 (오피스)]
+    □ 802.1X EAP-TLS (인증서 기반)
+    □ WIDS (Wireless IDS) 24h 운영 — Rogue AP 자동 탐지
+    □ Bluetooth: BlueBorne/KNOB 패치 + 디스커버리 Off
+    ```
+
+    ## 명령 실행 (시뮬레이션 — 실 무선 환경 X)
+    `iw dev 2>/dev/null || ip link show 2>&1 | grep -E "wlan|wlp" | head -5 || echo "[가상 환경: wlan0/wlan1 가정]"`
+    `echo "[Wi-Fi 프로토콜 변천]"; echo "WEP (RC4 + 24bit IV) → WPA-TKIP → WPA2-AES-CCMP → WPA3-SAE (Dragonfly)"`
+    `echo "[aircrack-ng suite]"; echo "airmon-ng / airodump-ng / aireplay-ng / aircrack-ng / airbase-ng (Evil Twin)"`
+    `echo "[4WHS 4 메시지]"; echo "M1 ANonce → M2 SNonce+MIC → M3 GTK+MIC → M4 ACK"`
+
+    종료: echo "=== AeroSec Airport Wi-Fi Assessment ===" + 3 파트 + 명령 결과 묶음.
+  bastion_prompt: |
+    [항공사 컨설턴트 — w13 ATT&CK Navigator Layer + Kill Chain]
+
+    공항 Wi-Fi 점검 — Kill Chain 매핑 + ATT&CK Navigator JSON + 환경별 체크리스트 3.
+
+    Part 1 (Kill Chain 7 ↔ ATT&CK 14 매핑표):
+    ```
+    | KC | ATT&CK | Wi-Fi 적용 | ID |
+    | 1 Recon | TA0043 | SSID/BSSID 정찰 | T1590.005 |
+    | 2 Weapon | TA0042 | Evil Twin 준비 | T1583.005 |
+    | 3 Delivery | TA0001 | Deauth+Twin | T1557.001 |
+    | 4 Exploit | TA0001/0006 | KRACK | T1557.004 |
+    | 5 Install | TA0003 | Rogue AP 지속 | custom |
+    | 6 C2 | TA0011 | 캡처→C2 | T1071 |
+    | 7 Actions | TA0009 | 평문 capture | T1040 |
+    ```
+
+    Part 2 (Navigator Layer JSON):
+    `cat <<'EOF'
+    {
+      "name": "AeroSec Airport Wi-Fi 2026-04-29",
+      "versions": {"attack": "16", "navigator": "5.1.0", "layer": "4.5"},
+      "domain": "enterprise-attack",
+      "description": "공항 라운지 Wi-Fi 14주 통합 매핑",
+      "filters": {"platforms": ["Network", "Linux", "Windows"]},
+      "techniques": [
+        {"techniqueID": "T1590.005", "score": 100, "color": "#ff6666", "comment": "BSSID 정찰"},
+        {"techniqueID": "T1583.005", "score": 100, "color": "#ff6666", "comment": "Evil Twin AP"},
+        {"techniqueID": "T1557.001", "score": 100, "color": "#ff6666", "comment": "Deauth+AP 위장"},
+        {"techniqueID": "T1557.004", "score": 100, "color": "#ff6666", "comment": "KRACK"},
+        {"techniqueID": "T1040", "score": 100, "color": "#ff6666", "comment": "sniffing"},
+        {"techniqueID": "T1071", "score": 50, "color": "#ffcc66", "comment": "C2 부분"},
+        {"techniqueID": "T1190", "score": 75, "color": "#ff9966", "comment": "captive portal SQLi"}
+      ],
+      "metadata": [{"name":"course","value":"attack-w13"},{"name":"scenario","value":"airport-lounge"}],
+      "showTacticRowBackground": true,
+      "tacticRowBackground": "#dddddd"
+    }
+    EOF`
+
+    Part 3 (환경별 체크리스트 3):
+    A 라운지 (공유 PSK): WPA3-SAE / Client Isolation / Captive HTTPS / 802.11w PMF
+    B 기내: Per-passenger PSK / DoH / VPN passthrough 안내
+    C 직원: 802.1X EAP-TLS / WIDS / Bluetooth 패치
+
+    실 명령:
+    `iw dev 2>/dev/null || ip link show 2>&1 | grep -E "wlan|wlp" | head -5 || echo "[가상 환경: wlan0/wlan1]"`
+    `echo "[Wi-Fi]"; echo "WEP RC4 → WPA TKIP → WPA2 AES-CCMP → WPA3 SAE"`
+    `echo "[aircrack-ng]"; echo "airmon-ng / airodump-ng / aireplay-ng / aircrack-ng / airbase-ng"`
+    `echo "[4WHS]"; echo "M1 ANonce → M2 SNonce+MIC → M3 GTK+MIC → M4 ACK"`
+
+    종료: echo "=== AeroSec Airport Wi-Fi Assessment ===" + 3 파트 + 명령.
+
+    반드시 3 파트 모두 출력. JSON 양식 준수.
+  hint: |
+    Part 1 Kill Chain 7 ↔ ATT&CK 14 매핑표 (T1590/T1583/T1557/T1040 등).
+    Part 2 ATT&CK Navigator JSON layer (versions/techniques/metadata).
+    Part 3 3 환경별 체크리스트 (라운지/기내/직원).
+    포인트: ATT&CK Navigator import 가능 JSON 양식. 보고서 X.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: Navigator
     field: stdout
     semantic:
-      intent: '[통합] 무선 공격 5작업 — WPA2/WPS/Deauth/Evil Twin/audit 통합. T1557.004 Wi-Fi.'
+      intent: |
+        항공사 IT 컨설턴트 — 공항 Wi-Fi 점검 + Kill Chain 7 ↔ ATT&CK 14 매핑 + Navigator Layer JSON +
+        환경별 체크리스트 3.
+        lecture w13 + lab #4·#6·#9·#13 동시 행동 증명. *Navigator JSON* 산출물.
       success_criteria:
-      - 5 Wi-Fi 작업
-      - handshake
-      - crack
+      - Kill Chain 7 ↔ ATT&CK 매핑표 (T1590/T1583/T1557/T1040)
+      - Navigator Layer JSON (versions / techniques / metadata 형식 준수)
+      - 3 환경별 체크리스트 (라운지/기내/직원)
+      - 실 명령 (iw dev / 4WHS 설명)
       acceptable_methods:
-      - bastion plan
-      - aircrack-ng
-      - hcxdumptool
+      - heredoc Navigator JSON
+      - markdown table Kill Chain
+      - 환경별 체크리스트 box
+      - 가상 환경 명령 (실 무선 X)
       negative_signs:
-      - handshake 실패
-      - crack 없음
-      - audit 누락
+      - JSON 형식 깨짐 (versions/techniques 누락)
+      - Kill Chain 매핑 누락
+      - 환경 1 종류만
+      - 실 무선 공격 시도 (정통망법)
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) 무선 네트워크 인터페이스를 확인해줘
-
-    2) Wi-Fi 보안 프로토콜의 발전 과정을 정리하라. WEP, WPA, WPA2, WPA3 각각의 암호화 방식과 취약점을 비교해줘
-
-    3) aircrack-ng 도구 스위트의 구성 요소와 각 도구의 역할을 정리해줘
-
-    4) WPA2-PSK 4-Way Handshake의 원리를 설명하고, 각 단계에서 교환되는 메시지를 정리해줘
-
-    5) aircrack-ng를 사용하여 사전에 준비된 WPA2 핸드셰이크 캡처 파일을 크래킹하라(시뮬레이션)해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. Kill Chain 매핑 + Navigator JSON + 체크리스트 3.
+  answer_detail: |
+    항공사 IT 컨설턴트 — 공항 Wi-Fi. Navigator JSON 양식 준수 (versions/techniques/metadata).
+    실 무선 공격 X — 가상 환경 가정.
   script: ''
