@@ -301,28 +301,136 @@ steps:
       - 에러 무시
   target_vm: secu
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+  instruction: |
+    [중간고사 복합 시나리오] "두 공격 vector → nft + Suricata 양쪽 로그 상호 검증"
+
+    ## 상황 (w01-w07 시나리오 연속)
+
+    ABC 핀테크 SOC 신규 분석가, 8주 차 — *중간고사*.
+    1~7주 학습한 nftables + Suricata 를 *조합* 해 실 SOC 운영 능력을 검증한다.
+
+    > 선임 (평가자): "오늘 가짜 incident 두 가지 발생시킬게. 너는 *두 솔루션 양쪽 로그* 에서
+    >  어떤 evidence 가 남는지 매핑하고 cross-check 해. 한 쪽만 보면 incident 일부만 보여 —
+    >  *양쪽 로그가 일치하는지* 가 중간고사 핵심이야."
+
+    학습 목표 #3 (두 솔루션 로그 상호 검증) 의 *행동 증명*.
+
+    ※ Non-AI 트랙: 학생 직접 SSH + transcript paste.
+
+    ## 임무 (3 단계, 약 30분)
+
+    ### Phase A — 시험 환경 재구성 (5분, secu 에서)
+
+    secu(10.20.30.1) SSH 후 1~10 의 환경 다시 작성:
+      ```
+      ssh ccc@10.20.30.1
+      sudo nft add table inet exam
+      sudo nft add chain inet exam input { type filter hook input priority 0 \; policy drop \; }
+      sudo nft add rule inet exam input ct state established,related accept
+      sudo nft add rule inet exam input iif lo accept
+      sudo nft add rule inet exam input ip saddr 10.20.30.0/24 tcp dport 22 ct state new limit rate 5/minute accept
+      sudo nft add rule inet exam input ip saddr 10.20.30.0/24 tcp dport 22 ct state new drop
+      sudo nft add rule inet exam input icmp type echo-request accept
+
+      echo 'alert http any any -> any any (msg:".exe download attempt"; flow:established,to_server; http.uri; content:".exe"; nocase; sid:1000201; rev:1;)' \
+        | sudo tee -a /etc/suricata/rules/local.rules
+      sudo systemctl reload suricata
+      ```
+
+    ### Phase B — 두 incident 시나리오 + 양쪽 로그 측정 (20분)
+
+    #### Incident 1 — SSH Brute Force (nft rate limit 영역)
+
+    학생이 attacker(10.20.30.201) SSH 후:
+      ```
+      ssh ccc@10.20.30.201
+      echo -e 'a\\nb\\nc\\nd\\ne\\nf\\ng' > /tmp/7pwds.txt
+      hydra -l ccc -P /tmp/7pwds.txt ssh://10.20.30.1 -t 1 -W 1
+      ```
+
+    secu (별도 SSH 세션) 에서:
+    - **nft** counter:
+      `sudo nft list table inet exam | grep -E -A1 'limit|drop'`
+      → 예상: 5 accept + 2 drop
+    - **Suricata** eve.json:
+      `sudo tail -100 /var/log/suricata/eve.json | grep -E 'ssh|22'`
+      → 예상: SSH brute 룰 미작성이라 *기록 없음 또는 무관*
+    - 결론: *nft 차단 evidence 보유 / Suricata 미보유*
+
+    #### Incident 2 — `.exe` 다운로드 (Suricata 영역)
+
+    학생이 attacker 에서:
+      ```
+      curl -sI 'http://10.20.30.80/malware.exe' --max-time 5
+      curl -sI 'http://10.20.30.80/files/setup.exe' --max-time 5
+      ```
+
+    secu 에서:
+    - **nft** counter: `sudo nft list table inet exam`
+      → input chain 룰 *직접 매칭 안 함* (web 직접 통신, secu input 아님)
+    - **Suricata** eve.json: `sudo tail -100 /var/log/suricata/eve.json | grep 'sid":1000201'`
+      → 예상: 2 alert (.exe 마다)
+    - 결론: *Suricata alert 보유 / nft 미보유*
+
+    ### Phase C — Cross-check 표 + 회고 + 정리 (5분)
+
+    ## Cross-check 표
+
+    | Incident | nft evidence | Suricata evidence | 양쪽 일치? |
+    |----------|-------------|------------------|----------|
+    | 1. SSH brute 7 시도 | accept +5 / drop +2 (rate limit) | (없음) | X |
+    | 2. .exe 다운로드 2회 | (없음) | sid:1000201 alert ×2 | X |
+
+    1~2 단락 회고:
+    1. **각 incident 가 어느 layer 에 evidence 남겼나** — 정량 (count + sid)
+    2. **양쪽 로그가 *불일치* 하는 게 정상인가?** 그렇다 — *각 layer 가 다른 mechanism 책임*.
+       SSH brute = connection rate (nft 영역), .exe = application content (Suricata 영역).
+    3. **운영 시 한 솔루션 만으로 SOC 운영하면** — incident 의 일부만 보고 잘못 결론.
+       *Wazuh 같은 SIEM 으로 두 layer log 통합* 필요 (w09-w11 학습 예정).
+
+    종료 정리:
+      ```
+      sudo nft delete table inet exam
+      sudo sed -i '/sid:1000201/d' /etc/suricata/rules/local.rules
+      sudo systemctl reload suricata
+      ```
+  hint: |
+    Phase A: secu 에 exam 테이블 + Suricata sid:1000201 룰 재구성
+    Phase B incident 1: hydra 7 SSH 시도 → nft 5 accept + 2 drop / Suricata 미기록
+    Phase B incident 2: .exe curl 2회 → Suricata 1000201 alert 2건 / nft input 미매칭
+    Phase C: cross-check 표 + 각 layer 책임 영역 + SIEM 필요성
+    포인트: 두 솔루션 로그 *상호 검증* — 일부 incident 는 한쪽만. 그래서 SIEM 통합 필요.
+    종료: exam 테이블 + sid:1000201 룰 모두 정리.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: cross-check
     field: stdout
     semantic:
-      intent: '[통합] 중간고사 방화벽+IPS 5작업 — nft 정책/Suricata 룰/log 통합/alert 발생/보고 통합 실기.'
+      intent: |
+        nft (network layer) + Suricata (application layer) 두 솔루션 로그 상호 검증. 두 incident
+        시나리오 (SSH brute / .exe download) 가 각각 어느 layer 에 evidence 남기는지 매핑 후
+        cross-check. 학습 목표 #3 행동 증명.
+        Non-AI 트랙: 학생 직접 SSH + transcript paste.
       success_criteria:
-      - nft + Suricata 동작
-      - alert 생성
-      - 보고서
+      - exam 테이블 + sid:1000201 룰 재구성
+      - Incident 1 (hydra 7회) — nft counter (accept 5 + drop 2)
+      - Incident 2 (.exe curl 2회) — Suricata sid:1000201 alert 2건
+      - Cross-check 표
+      - 회고 1~2 단락 + 정리
       acceptable_methods:
-      - bastion plan
-      - integrated test
-      - ansible
+      - secu 에서 nft add + Suricata 룰 추가
+      - attacker 에서 hydra + curl
+      - secu 에서 nft list / tail eve.json
+      - cross-check 표 markdown
       negative_signs:
-      - 일부 실패
-      - alert 없음
-      - 보고 누락
-  target_vm: secu
+      - 한 layer 만 측정
+      - cross-check 표 누락
+      - SIEM 필요성 미언급
+      - 정리 누락
+  target_vm: bastion
   answer: ''
-  answer_detail: ''
+  answer_detail: |
+    학습 목표 #3 (두 솔루션 로그 상호 검증) 행동 증명. 1~10 step 이 *각각* 검증이었다면 99 번은
+    *둘 사이 evidence 분담* 검증. 한 솔루션 만으로 incident 일부만 봄 — w09-w11 SIEM 학습 동기.
