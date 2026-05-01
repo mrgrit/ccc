@@ -300,29 +300,293 @@ steps:
       - 부재 검증 없이 단순 나열
       - 실습 테이블 잔존 무시
   target_vm: secu
-- order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
-  points: 50
+- order: 97
+  instruction: |
+    [복합 시나리오 1/3] "화이트리스트가 진짜 외부 IP 를 차단하나" — set 추가/삭제 trigger
+
+    ## 상황 (w01-w02 시나리오 연속)
+
+    ABC 핀테크 SOC 신규 분석가, 셋째 주.
+    이번 주 lecture 에선 *기본 차단(default deny)* 정책이 *기본 허용(default accept)* 보다
+    안전한 이유를 배웠다. 1~10 step 에서 화이트리스트 set 작성 syntax 도 익혔다.
+
+    > 선임: "화이트리스트 syntax 와 *효과* 는 다른 얘기야. attacker IP 를 set 에 넣었다 뺐다
+    >  하면서 직접 차단되는지 봐. 한 번이라도 set 비어있을 때 통과되면 그 화이트리스트는 죽은 거야."
+
+    학습 목표 #2 — *"화이트리스트(기본 차단) 정책을 설계할 수 있다"* — 의 효과 증명.
+
+    ※ Non-AI 트랙: 학생이 직접 SSH 접속, 명령 실행, transcript paste 제출.
+
+    ## 임무 (3 단계, 약 15분)
+
+    ### Phase A — 화이트리스트 재구성 (5분, secu 에서)
+
+    1~10 step 에서 whitelist 테이블 삭제했으므로 verify_wl 로 다시 작성.
+    학생이 secu(10.20.30.1) SSH 후 직접 실행:
+      ```
+      sudo nft add table inet verify_wl
+      sudo nft add chain inet verify_wl input { type filter hook input priority 0 \; policy drop \; }
+      sudo nft add set inet verify_wl allowed_ips { type ipv4_addr \; }
+      sudo nft add rule inet verify_wl input ct state established,related accept
+      sudo nft add rule inet verify_wl input iif lo accept
+      sudo nft add rule inet verify_wl input ip saddr @allowed_ips accept
+      sudo nft add rule inet verify_wl input tcp dport 22 accept     # 본인 SSH 도 허용 (lockout 방지)
+      sudo nft list table inet verify_wl
+      ```
+
+    *주의*: policy drop + 본인 SSH accept 룰 *반드시* 같이. 본인이 lockout 되면 lab 끝.
+
+    ### Phase B — set 비었을 때 vs 있을 때 trigger (8분)
+
+    a. set 비어있을 때 (allowed_ips 비음)
+       - attacker(10.20.30.201) → secu 8080:
+         `nc -vz -w 3 10.20.30.1 8080`
+       - 예상: timeout (default drop)
+       - secu: `sudo nft list table inet verify_wl | grep -A2 'ip saddr'` (counter +0)
+
+    b. attacker IP 추가 후
+       - secu: `sudo nft add element inet verify_wl allowed_ips { 10.20.30.201 }`
+       - secu: `sudo nft list set inet verify_wl allowed_ips` (요소 1개 확인)
+       - attacker → secu: `nc -vz -w 3 10.20.30.1 8080`
+       - 예상: 여전히 timeout (8080 미listen) — 하지만 *이전 단계와 다른 점* 은 counter 가
+         ip saddr 룰에서 +1 (set match → accept 룰 통과)
+       - secu: `sudo nft list table inet verify_wl | grep -A2 'ip saddr'` (counter +1)
+
+    c. attacker IP 삭제 후
+       - secu: `sudo nft delete element inet verify_wl allowed_ips { 10.20.30.201 }`
+       - attacker: 다시 `nc -vz -w 3 10.20.30.1 8080`
+       - 예상: 다시 default drop (counter 안 증가)
+
+    ### Phase C — 회고 (3분)
+
+    1~2 단락:
+    1. **set 변동에 따라 ip saddr 룰의 counter 가 어떻게 움직였나** — 추가 후 +1, 삭제 후 정지
+    2. **policy drop + accept 룰 조합의 위험** — Phase A 에서 본인 SSH accept 룰 빠뜨렸다면?
+       (lockout 시뮬은 X — 위험. 머릿속 시나리오로만)
+    3. **운영 시 화이트리스트 set 관리 1가지 주의** (예: "set 변경 시 nft monitor 로
+       실시간 audit 하지 않으면 누가 IP 추가/삭제했는지 추적 불가")
+
+    종료: `sudo nft delete table inet verify_wl`
+  hint: |
+    Phase A: secu 에 verify_wl 테이블 (policy drop + allowed_ips set + ssh 22 accept) 작성
+    Phase B (a) set 빈 채로 attacker 시도 → drop / (b) attacker IP 추가 → counter +1 / (c) 삭제 → 다시 drop
+    Phase C: counter 움직임 회고 + lockout 위험 + set 관리 주의점
+    포인트: policy drop 의 *효과* 가 set 동적 변경에 따라 즉시 반영되는지 직접 보기.
+  category: integration_scenario
+  points: 30
   verify:
     type: output_contains
-    expect: ''
+    expect: counter
     field: stdout
     semantic:
-      intent: '[통합] nftables 실전 5작업 — NAT masquerade/화이트리스트/rate limit/counter/save 통합. iptables-nft 연계.'
+      intent: |
+        화이트리스트 set 의 *동적 효과* 검증 — set 비었을 때 default drop, IP 추가 시 즉시 accept,
+        삭제 시 다시 drop. counter 변동으로 mechanism 확인. 학습 목표 #2 (기본 차단 정책 설계).
+        Non-AI 트랙: 학생 직접 SSH + transcript paste.
       success_criteria:
-      - NAT 룰
-      - 화이트리스트
-      - rate limit 동작
+      - verify_wl 테이블 + policy drop input 체인 + allowed_ips set 작성
+      - 본인 SSH accept 룰 포함 (lockout 방지)
+      - set 빈 채 / 추가 후 / 삭제 후 3 시점 attacker→secu trigger
+      - 각 시점의 ip saddr 룰 counter 변동 확인
+      - 회고 1~2 단락
       acceptable_methods:
-      - bastion plan
-      - nft 스크립트
-      - ansible
+      - secu 에서 sudo nft add table/chain/set/rule
+      - secu 에서 sudo nft add/delete element 로 set 동적 변경
+      - attacker 에서 nc -vz / curl trigger
+      - secu 에서 sudo nft list set + nft list table 검증
       negative_signs:
-      - NAT 누락
-      - rate limit 없음
-      - 저장 누락
-  target_vm: secu
+      - SSH accept 룰 누락 (lockout 위험 무시)
+      - set 추가/삭제 1번만 — 동적 검증 누락
+      - counter 확인 없이 개념만
+      - default drop 대신 accept policy
+  target_vm: bastion
   answer: ''
-  answer_detail: ''
+  answer_detail: |
+    학습 목표 #2 ("화이트리스트 정책 설계") 의 행동 증명. 1~4 step 이 set + 룰 작성 syntax 였다면
+    97 번은 set 동적 변경에 따른 차단 효과 직접 확인.
+- order: 98
+  instruction: |
+    [복합 시나리오 2/3] "Rate limit 이 brute force 를 진짜 완화하나" — hydra 빠른 시도 검증
+
+    ## 상황 (97 연속)
+
+    > 선임: "5번에서 만든 limit rate 3/minute 룰 — syntax 는 맞는데, 실제로 4번째 시도부터
+    >  drop 되는지 봤어? hydra 로 1초에 5번 SSH 시도해보면 알아. counter 로 drop 횟수 보고."
+
+    학습 목표 #3 (룰 효과 측정) + nftables limit 메타-기능 이해.
+
+    ※ Non-AI 트랙: 학생 직접 SSH + 명령 실행.
+
+    ## 임무 (3 단계, 약 12분)
+
+    ### Phase A — Rate limit 룰 작성 (3분, secu 에서)
+
+    97번에서 verify_wl 삭제했으므로 verify_rl 로 새로:
+      ```
+      sudo nft add table inet verify_rl
+      sudo nft add chain inet verify_rl input { type filter hook input priority 0 \; policy accept \; }
+      sudo nft add rule inet verify_rl input ct state established,related accept
+      sudo nft add rule inet verify_rl input iif lo accept
+      sudo nft add rule inet verify_rl input tcp dport 22 ct state new limit rate 3/minute accept
+      sudo nft add rule inet verify_rl input tcp dport 22 ct state new drop
+      sudo nft list table inet verify_rl
+      ```
+
+    의도: SSH new connection 이 분당 3개 까지만 통과, 그 이상은 drop.
+
+    ### Phase B — hydra 빠른 시도 + counter 관찰 (7분)
+
+    attacker(10.20.30.201) 에 SSH 후 5 시도 빠르게:
+      ```
+      ssh ccc@10.20.30.201
+      echo -e 'wrong1\\nwrong2\\nwrong3\\nwrong4\\nwrong5' > /tmp/5pwds.txt
+      hydra -l ccc -P /tmp/5pwds.txt ssh://10.20.30.1 -t 1 -W 1
+      ```
+
+    secu 의 counter 확인 (시도 직후 2~5초 뒤, secu SSH 별도 세션):
+      `sudo nft list table inet verify_rl | grep -E -A1 'limit|drop'`
+
+    예상:
+    - **limit accept 룰** counter: 처음 3개 통과 → +3
+    - **drop 룰** counter: 4·5번째 → +2
+
+    1분 기다린 후 다시 시도 (window 갱신 검증):
+      `sleep 65 && hydra -l ccc -P /tmp/5pwds.txt ssh://10.20.30.1 -t 1 -W 1`
+    - 예상: 다시 처음 3개 통과 → limit counter +3 추가 (누적 +6)
+
+    ### Phase C — 회고 (2분)
+
+    1~2 단락:
+    1. **limit / drop 룰의 counter 가 시간에 따라 어떻게 변했나** — 처음 +3/+2, 1분 뒤 다시
+    2. **운영 시 limit rate 값 결정 시 고려사항 1가지** (예: "정상 사용자의 burst (재로그인 시
+       2~3회 빠른 시도) 를 drop 하지 않을 만큼 충분히 큰 값")
+
+    종료: `sudo nft delete table inet verify_rl`
+  hint: |
+    Phase A: secu 에 verify_rl 테이블 (limit rate 3/minute accept + 초과 drop) 작성
+    Phase B: attacker hydra 5 시도 → secu counter 확인 (3 accept + 2 drop), 1분 후 재시도 → 재갱신
+    Phase C: counter 시간 변동 + limit rate 값 운영 시 고려사항
+    포인트: rate limit 의 *시간 윈도우* 동작을 직접 trigger 해서 보기.
+  category: integration_scenario
+  points: 30
+  verify:
+    type: output_contains
+    expect: counter
+    field: stdout
+    semantic:
+      intent: |
+        nftables rate limit 의 *시간 기반 동작* 검증 — 분당 3개 accept + 초과 drop, 1분 뒤
+        window 갱신. counter 로 mechanism 직접 확인. 학습 목표 #3 (룰 효과 측정).
+      success_criteria:
+      - verify_rl 테이블 + limit rate 3/minute + drop 룰 작성
+      - attacker 에서 hydra 5 시도 (1초 직렬)
+      - secu 에서 limit·drop 룰 counter 확인 (accept +3, drop +2 예상)
+      - 1분 sleep 후 재시도 — window 갱신 검증
+      - 회고 1~2 단락
+      acceptable_methods:
+      - secu 에서 nft add rule + ct state new limit rate
+      - attacker 에서 hydra ssh + 패스워드 파일
+      - secu 에서 sudo nft list table + grep counter
+      - sleep 65 후 재시도 + counter 비교
+      negative_signs:
+      - hydra 시도만 + counter 확인 누락
+      - 1분 sleep 없이 즉시 재시도 (window 갱신 미검증)
+      - limit rate 룰 다음에 drop 룰 누락
+  target_vm: bastion
+  answer: ''
+  answer_detail: |
+    rate limit 룰의 *시간 윈도우* 동작을 직접 보는 step. syntax 만 익히면 limit 값이 너무 낮아
+    정상 burst 도 drop 한다는 것을 모름.
+- order: 99
+  instruction: |
+    [복합 시나리오 3/3] "Masquerade NAT 가 진짜 src IP 를 변환하나" — tcpdump 직접 캡처
+
+    ## 상황 (97-98 연속)
+
+    > 선임: "Masquerade 룰은 syntax 가 가장 단순하지만 효과 검증은 가장 어려워. NAT 됐는지
+    >  확인하려면 *변환 후 패킷의 src 가 secu 의 외부 IP* 인지 봐야 해. tcpdump 로 secu 의
+    >  외부 인터페이스에서 outbound 패킷 캡처해 보면 알 수 있어."
+
+    학습 목표 #1 (NAT/SNAT/DNAT 와 포트 포워딩) 의 mechanism 확인.
+
+    ※ Non-AI 트랙: 학생 직접 SSH + 명령 실행 + tcpdump 출력 paste.
+
+    ## 임무 (3 단계, 약 15분)
+
+    ### Phase A — NAT 룰 + tcpdump 준비 (5분, secu 2 세션)
+
+    secu(10.20.30.1) SSH 세션 1 — NAT 룰 작성:
+      ```
+      sudo nft add table inet verify_nat
+      sudo nft add chain inet verify_nat postrouting { type nat hook postrouting priority 100 \; }
+      ip -br link show | grep -v lo                              # 외부 인터페이스 이름 확인
+      sudo nft add rule inet verify_nat postrouting oif "ens33" masquerade
+                          # ↑ ens33 부분은 환경에 따라 변경 (예: enp0s3, eth0)
+      ```
+
+    secu SSH 세션 2 — tcpdump 캡처 준비 (별도 터미널):
+      `sudo tcpdump -i ens33 -n -c 20 host 10.20.30.80`
+
+    ### Phase B — web 에서 외부 트래픽 발생 (5분)
+
+    학생이 web(10.20.30.80) SSH 후 외부 시도:
+      ```
+      ssh ccc@10.20.30.80
+      ping -c 3 -W 2 8.8.8.8 || curl -m 5 -sI http://example.com
+      ```
+
+    secu 세션 2 의 tcpdump 출력 확인:
+    - **NAT 적용 전**: 만약 verify_nat 없었다면 src=10.20.30.80 (web 내부 IP) 그대로 외부로 (ISP drop)
+    - **NAT 적용 후**: src=secu 의 외부 IP (ens33 IP, 보통 192.168.x.x 영역) → ISP 통과,
+      응답 패킷도 secu 가 다시 web 으로 전달
+
+    secu 의 nft counter 도 확인 (세션 1):
+      `sudo nft list table inet verify_nat | grep masquerade`
+
+    ### Phase C — 회고 (5분)
+
+    1~2 단락:
+    1. **tcpdump 에서 src IP 가 어떻게 보였나** — web 내부 IP 가 아니라 secu 외부 IP 로 변환
+    2. **masquerade 의 priority 100 의미** — postrouting 단계에서 다른 룰보다 *늦게* 적용
+       (filter 통과 후 NAT 적용 순서)
+    3. **운영 시 SNAT vs masquerade 선택 기준 1가지** (예: "외부 IP 가 동적이면 masquerade,
+       정적이면 SNAT 가 약간 빠름")
+
+    종료: `sudo nft delete table inet verify_nat`
+  hint: |
+    Phase A: secu 에 verify_nat 테이블 + postrouting masquerade 룰 + tcpdump 준비 (별도 세션)
+    Phase B: web 에서 외부 ping/curl, secu tcpdump 출력에서 src IP 변환 확인
+    Phase C: src IP 변환 결과 + priority 100 의미 + SNAT/masquerade 선택 기준
+    포인트: NAT 효과는 *패킷 캡처* 로만 확실히 보임. counter 만으로는 부족.
+  category: integration_scenario
+  points: 30
+  verify:
+    type: output_contains
+    expect: masquerade
+    field: stdout
+    semantic:
+      intent: |
+        masquerade NAT 의 *src IP 변환* mechanism 을 tcpdump 로 직접 캡처해 검증. nft counter
+        는 hit 횟수만 보여주고 *변환 결과* 는 패킷 capture 로만 확인 가능. 학습 목표 #1 (NAT 구성).
+      success_criteria:
+      - verify_nat 테이블 + postrouting hook + masquerade 룰 작성
+      - secu 외부 인터페이스 이름 확인 (ip -br link)
+      - secu 에서 sudo tcpdump 로 web outbound 캡처
+      - web 에서 외부 ping/curl 시도
+      - tcpdump 출력으로 src IP 변환 직접 확인 (web 내부 IP → secu 외부 IP)
+      - 회고 1~2 단락
+      acceptable_methods:
+      - secu 에서 sudo nft add chain postrouting + masquerade 룰
+      - secu 에서 sudo tcpdump -i <iface> -n host <web>
+      - web 에서 ping / curl 외부 시도
+      - secu 에서 nft list table | grep counter (보조)
+      negative_signs:
+      - tcpdump 없이 nft counter 만 (변환 결과 미입증)
+      - web outbound 시도 누락
+      - priority 미지정
+      - postrouting 대신 prerouting 사용
+  target_vm: bastion
+  answer: ''
+  answer_detail: |
+    NAT 의 효과는 counter 가 아니라 *변환된 패킷의 src 자체* 를 봐야 확실. tcpdump 사용 경험을
+    이 step 에서 강제. 다음 주차 IDS 탐지 (Suricata) 도 패킷 캡처 기반이라 연속.
