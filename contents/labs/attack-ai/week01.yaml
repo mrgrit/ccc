@@ -326,7 +326,9 @@ steps:
     응답의 JSON 구조를 분석하면 후속 공격에 필요한 파라미터와 데이터 형식을 알 수 있다.
   verify:
     type: output_contains
-    expect: 'Total products:'
+    expect:
+    - 'Total products:'
+    - '36'
     field: stdout
     semantic:
       intent: JuiceShop REST API 탐색 — /api/Products JSON 응답 파싱해 data 배열 길이(제품 수) 출력
@@ -588,52 +590,120 @@ steps:
 
     [중요] 반드시 제시된 쉘 명령을 실제로 실행하고 실제 stdout 기반으로 답해라. 개념 설명·표·체크리스트만 출력 금지.'
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "ABC 핀테크 외주 모의해킹 — 1차 정찰 + 윤리 동의서 + 공격 표면 매트릭스"
 
-    1) ping을 사용하여 대상 호스트 10.20.30.80이 활성 상태인지 확인해줘
+    ## 상황 (모의해킹 첫 주)
 
-    2) nslookup 또는 dig를 사용하여 실습 네트워크의 DNS 서버에 10.20.30.80의 역방향 DNS 조회를 수행해줘
+    당신은 ABC 핀테크의 외주 모의해킹 컨설턴트. 첫 정찰 단계 임무. 선임이 한 마디.
 
-    3) curl을 사용하여 웹서버(10.20.30.80:3000)의 HTTP 헤더만 확인해줘
+    > 선임: "신입은 nmap 한 줄 던져 끝내는데, 우리는 그렇게 못 해.
+    > 점검 시작 전 *Rules of Engagement (RoE)* 확인하고, 정찰은 Passive(OSINT) 와 Active 두 단계로 나눠 진행.
+    > 마지막에 발견 자산을 *공격 표면 매트릭스*로 정리해. 다음 주차의 침투 단계 입력이야."
 
-    4) curl로 웹서버(10.20.30.80:3000)의 robots.txt 파일을 확인하여 숨겨진 경로를 찾아라해줘
+    학습 목표 (lecture #1·#2 보안 원칙·CIA + #3 4대 VM + #6 윤리) + (lab #1~14 정찰) 통합.
 
-    5) curl을 사용하여 10.20.30.80:3000 웹 애플리케이션의 기술 스택을 핑거프린팅해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ## 임무 (3 단계, 약 35분)
+
+    ### Phase A — Passive OSINT + 윤리 동의서 (lecture #6)
+    1) 윤리 동의서 텍스트 출력:
+       ```
+       [Rules of Engagement]
+       - 점검 대상: 10.20.30.0/24 (ABC 핀테크 외주)
+       - 점검 기간: 14주 (한 학기)
+       - 허용 행위: 정찰 / 침투 / PoC. DoS·랜섬웨어·실 데이터 유출 X
+       - 보고 의무: Critical 발견 즉시 보고. 모든 활동 로그 보존.
+       - 법적 근거: 정통망법 제48조 (위탁 점검). 무단 접근 시 형사 책임.
+       서명: 컨설턴트 ____________ / 클라이언트 ____________ / 일자 2026-04-30
+       ```
+    2) 도메인·기술 스택 OSINT — `curl -s -I http://10.20.30.80:3000/ | grep -E "Server|X-Powered"` 등.
+
+    ### Phase B — Active 정찰 (lab #7·#11·#1)
+    1) 호스트 활성 확인: `ping -c 3 -W 1 10.20.30.80 2>&1 | tail -3`
+    2) 네트워크 스윕: `for i in 1 80 100 112 201; do
+         ping -c 1 -W 1 10.20.30.$i &>/dev/null && echo "10.20.30.$i: alive" || echo "10.20.30.$i: down"; done`
+    3) 포트 정찰: `nmap -p 22,80,443,3000,3306,8080 -sV --open --max-rtt-timeout 1000 10.20.30.80 2>&1 | head -20`
+
+    ### Phase C — 공격 표면 매트릭스 + 다음 주차 입력
+    | 자산 | 포트 | 서비스 | 기술 스택 | 공격 우선순위 |
+    | web (10.20.30.80) | 80 | HTTP+ModSec | Apache+CRS | 중 |
+    | web (10.20.30.80) | 3000 | HTTP | JuiceShop / Express / Node.js | 높음 |
+    | web (10.20.30.80) | 8080 | HTTP | DVWA / PHP / Apache | 높음 |
+    | bastion (10.20.30.201) | 22 | SSH | OpenSSH | 낮음 |
+    | siem (10.20.30.100) | 1514 | Wazuh agent | - | 회피 대상 |
+    표 끝 "다음 주차 (w02) 침투 우선순위: JuiceShop:3000 → DVWA:8080. SIEM 회피 모드 필요." 한 줄.
+
+    종료: echo "=== Phase A RoE+OSINT ===" / "=== Phase B Active ===" / "=== Phase C 공격 표면 ===" 묶음.
+  bastion_prompt: |
+    [복합 시나리오 — w01 ABC 핀테크 외주 모의해킹 1차 정찰]
+
+    Passive OSINT + Active 정찰 + 공격 표면 매트릭스 3 phase.
+
+    Phase A (RoE + OSINT):
+    `cat <<'EOF'
+    [Rules of Engagement]
+    - 대상: 10.20.30.0/24 (ABC 핀테크 외주)
+    - 기간: 14주
+    - 허용: 정찰/침투/PoC. DoS·실 데이터 유출 X
+    - 의무: Critical 즉시 보고. 활동 로그 보존
+    - 법적: 정통망법 제48조 (위탁 점검)
+    EOF`
+    `curl -s -I http://10.20.30.80:3000/ 2>&1 | grep -E "Server|X-Powered"`
+    `curl -s http://10.20.30.80:3000/robots.txt 2>&1 | head -5`
+
+    Phase B (Active):
+    `ping -c 3 -W 1 10.20.30.80 2>&1 | tail -3`
+    `for i in 1 80 100 112 201; do ping -c 1 -W 1 10.20.30.$i &>/dev/null && echo "10.20.30.$i: alive" || echo "10.20.30.$i: down"; done`
+    `nmap -p 22,80,443,3000,3306,8080 -sV --open --max-rtt-timeout 1000 10.20.30.80 2>&1 | head -20`
+
+    Phase C (공격 표면 매트릭스):
+    ```
+    | 자산 | 포트 | 서비스 | 기술 스택 | 공격 우선순위 |
+    | web (10.20.30.80) | 80 | HTTP+ModSec | Apache+CRS | 중 |
+    | web (10.20.30.80) | 3000 | HTTP | JuiceShop/Express/Node | 높음 |
+    | web (10.20.30.80) | 8080 | HTTP | DVWA/PHP/Apache | 높음 |
+    | bastion (10.20.30.201) | 22 | SSH | OpenSSH | 낮음 |
+    | siem (10.20.30.100) | 1514 | Wazuh | - | 회피 대상 |
+    ```
+    표 끝 "w02 침투 우선순위: JuiceShop:3000 → DVWA:8080. SIEM 회피 필요." 한 줄.
+
+    종료: echo "=== Phase A RoE+OSINT ===" / "=== Phase B Active ===" / "=== Phase C 공격 표면 ===" 묶음.
+
+    반드시 3 phase 모두 실행. 중간 종료 금지.
+  hint: |
+    Phase A: RoE 동의서 heredoc + OSINT (HTTP 헤더 / robots.txt). 윤리·법적 근거 명시.
+    Phase B: ping → 네트워크 스윕 → nmap 3 단계 정찰.
+    Phase C: 5행 공격 표면 매트릭스 + 다음 주차 우선순위.
+    포인트: Red Team 컨설턴트의 정식 점검 흐름. RoE 없이는 시작 X.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: 공격 표면
     field: stdout
     semantic:
-      intent: '[통합] 정보수집 5작업 — whois/DNS/subdomain/port/audit 통합. T1595 Active Scanning.'
+      intent: |
+        Red Team 컨설턴트 1차 정찰 — RoE 동의서 + Passive OSINT + Active 정찰 + 공격 표면 매트릭스.
+        lecture #1·#2·#3·#6 + lab #1·#7·#11 동시 행동 증명.
       success_criteria:
-      - 5 recon 작업
-      - 도메인 정보
-      - 포트 오픈
+      - Phase A — RoE 동의서 + curl OSINT
+      - Phase B — ping + 네트워크 스윕 + nmap 3 정찰
+      - Phase C — 5행 공격 표면 매트릭스 + 다음 주차 우선순위
       acceptable_methods:
-      - bastion plan
-      - nmap + dig
-      - amass
+      - heredoc RoE 텍스트
+      - curl + ping + nmap
+      - markdown table
+      - whois / dig / amass 추가 가능
       negative_signs:
-      - 정보 부족
-      - audit 누락
-      - 단일 도구
+      - RoE 또는 윤리 동의서 누락
+      - nmap 만 또는 ping 만
+      - 공격 표면 매트릭스 누락
+      - 다음 주차 우선순위 누락
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) ping을 사용하여 대상 호스트 10.20.30.80이 활성 상태인지 확인해줘
-
-    2) nslookup 또는 dig를 사용하여 실습 네트워크의 DNS 서버에 10.20.30.80의 역방향 DNS 조회를 수행해줘
-
-    3) curl을 사용하여 웹서버(10.20.30.80:3000)의 HTTP 헤더만 확인해줘
-
-    4) curl로 웹서버(10.20.30.80:3000)의 robots.txt 파일을 확인하여 숨겨진 경로를 찾아라해줘
-
-    5) curl을 사용하여 10.20.30.80:3000 웹 애플리케이션의 기술 스택을 핑거프린팅해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. RoE → OSINT → Active → 공격 표면 매트릭스.
+  answer_detail: |
+    Red Team 첫 주 정찰. RoE 동의서가 핵심 — 윤리·법적 근거 + 허용 범위 명시 후에야 실 정찰 시작.
+    공격 표면 매트릭스가 다음 주차 입력 (w02 침투 단계).
   script: ''
