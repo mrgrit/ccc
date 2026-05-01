@@ -563,7 +563,9 @@ steps:
     L3(IP 필터링), L4(SYN 보호), L7(TLS/HTTPS) 각 계층의 방어를 제시한다.
   verify:
     type: output_contains
-    expect: Network Attack Report
+    expect:
+    - Network Attack Report
+    - report
     field: stdout
     semantic:
       intent: 네트워크 공격 리포트 — 공격 유형·캡처 증거·계층별 방어(L2 DAI/L3 필터/L4 SYN cookie/L7 HTTPS)
@@ -591,52 +593,130 @@ steps:
   risk_level: low
   bastion_prompt: 네트워크 공격 실습 결과를 /tmp/network_attack_report.txt에 정리해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "빅테크 Red Team 신입 — 사내 네트워크 STRIDE Threat Model 작성"
 
-    1) tcpdump를 사용하여 10.20.30.80으로 향하는 HTTP 트래픽(포트 3000)을 캡처하라. 10개 패킷만 캡처해줘
+    ## 상황 — 입사 한 달, Threat Modeling 첫 과제
 
-    2) tcpdump로 HTTP 요청/응답의 ASCII 내용을 캡처하라. 10.20.30.80:3000에 대한 트래픽을 5개 패킷만 캡처해줘
+    당신은 빅테크 보안조직 Red Team 신입. 일주일 전 입사. 멘토가 첫 과제 던졌다.
 
-    3) ARP 테이블을 확인하여 실습 네트워크의 MAC 주소 매핑을 조사해줘
+    > 멘토: "신입은 모의해킹 PoC 부터 만들고 싶어 하지. 그건 시니어가 해. 너는 *모델링* 부터 해.
+    > 사내 결제 시스템 (10.20.30.80) 의 네트워크 트래픽 STRIDE Threat Model 작성해. 그게 사이드 프로젝트
+    > 의 첫 단계야. 패킷 캡처 → 6 카테고리 분류 → 각 카테고리당 PoC 명령 1~2개. PoC 가 부족해도 *모델 자체*
+    > 가 정확하면 합격. 다음 주 시니어 review 들어가."
 
-    4) nmap을 사용하여 실습 네트워크(10.20.30.0/24)의 모든 호스트의 MAC 주소를 수집해줘
+    학습 목표 (lecture #2·#3 약한 비밀번호·세션 + #4 JWT) + (lab #1·#2·#5·#10·#13 tcpdump/ARP/scapy) 통합.
 
-    5) tcpdump를 사용하여 ARP 패킷을 캡처해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ## 산출물: STRIDE Threat Model (6 카테고리)
+
+    각 카테고리당 (a) 위협 설명 + (b) PoC 명령어 (실 실행) + (c) 결과 + (d) 완화 방안.
+
+    ### S — Spoofing (신원 위장)
+    위협: ARP 캐시 변조로 게이트웨이/엔드포인트 위장. T1557.002 ARP Cache Poisoning.
+    PoC: `ip neigh show; arp -a 2>/dev/null | head -5`
+    `sudo -n nmap -sn -PR 10.20.30.0/24 2>&1 | grep -A 1 "scan report" | head -10`
+    완화: DAI (Dynamic ARP Inspection) + 802.1X NAC.
+
+    ### T — Tampering (변조)
+    위협: HTTP 평문 트래픽 변조. JuiceShop 이 :3000 평문이라 MITM 시 응답 본문 변조 가능.
+    PoC (수동적 캡처만, 변조 X — 실제 변조는 운영망 영향): `sudo -n timeout 5 tcpdump -i any -c 10 -nn 'tcp port 3000' 2>&1 | head -15`
+    완화: HSTS + TLS 1.2+ 강제 + Cert pinning.
+
+    ### R — Repudiation (부인 방지 실패)
+    위협: 인증 토큰 회전 부재 → 로그아웃 후에도 토큰 재사용 가능.
+    PoC: `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])"); echo "exp: $(echo $JWT | cut -d. -f2 | base64 -d 2>/dev/null | python3 -c 'import sys,json; d=json.load(sys.stdin); print(d.get(\"exp\",0))')"`
+    완화: 짧은 access token (15분) + refresh rotation + audit log (사용자/IP/UA).
+
+    ### I — Information Disclosure (정보 노출)
+    위협: 패킷 캡처로 평문 토큰/쿠키/API 경로 노출. T1040 Network Sniffing.
+    PoC: `sudo -n timeout 5 tcpdump -i any -c 5 -A -nn 'tcp port 3000 and (tcp[((tcp[12:1] & 0xf0) >> 2):4] = 0x504F5354)' 2>&1 | head -30 || sudo -n timeout 5 tcpdump -i any -c 5 -A -nn 'tcp port 3000' 2>&1 | head -30`
+    완화: TLS + Network Segmentation + DLP.
+
+    ### D — Denial of Service
+    위협: SYN Flood / TCP Half-open. T1498 Network DoS.
+    PoC (저강도, 5개만): `sudo -n hping3 -S -p 3000 -c 5 --rand-source 10.20.30.80 2>&1 | tail -10` (실 환경 영향 X)
+    완화: SYN cookies + rate limit + nftables ct state.
+
+    ### E — Elevation of Privilege
+    위협: 캡처한 토큰으로 다른 사용자 위장. T1550.001 Application Access Token.
+    PoC: `curl -s -H "Authorization: Bearer $JWT" http://10.20.30.80:3000/rest/user/whoami | head -c 200`
+    완화: 토큰 binding (IP/UA/device fingerprint) + MFA step-up.
+
+    [멘토 review 체크리스트]
+    - 6 카테고리 모두 채움 ✓
+    - 각 카테고리에 ATT&CK ID 매핑 ✓
+    - PoC 명령은 실 실행 (저강도)
+    - 완화 방안은 *기술적* (정책 X)
+
+    종료: echo "=== STRIDE Threat Model ===" 헤더 + 각 카테고리 결과 묶음.
+  bastion_prompt: |
+    [Red Team 신입 — w06 STRIDE Threat Model]
+
+    JuiceShop 네트워크 STRIDE 6 카테고리 Threat Model 작성.
+
+    S (Spoofing - ARP):
+    `ip neigh show 2>&1 | head -5; arp -a 2>/dev/null | head -5`
+    `sudo -n nmap -sn -PR 10.20.30.0/24 2>&1 | grep -A 1 "scan report" | head -10`
+
+    T (Tampering - 평문 캡처):
+    `sudo -n timeout 5 tcpdump -i any -c 10 -nn 'tcp port 3000' 2>&1 | head -15`
+
+    R (Repudiation - 토큰 회전):
+    `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")`
+    `echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null | python3 -m json.tool 2>&1 | head -10`
+
+    I (Info Disclosure - sniffing):
+    `sudo -n timeout 5 tcpdump -i any -c 5 -A -nn 'tcp port 3000' 2>&1 | head -30`
+
+    D (DoS - SYN):
+    `sudo -n hping3 -S -p 3000 -c 5 --rand-source 10.20.30.80 2>&1 | tail -10`
+
+    E (Elevation - token):
+    `curl -s -H "Authorization: Bearer $JWT" http://10.20.30.80:3000/rest/user/whoami | head -c 200`
+
+    각 카테고리에 (a) 위협 + (b) ATT&CK ID + (c) PoC 결과 + (d) 완화 한 줄 정리.
+
+    종료: echo "=== STRIDE Threat Model ===" 헤더 후 6 카테고리 모두 출력.
+
+    반드시 6 카테고리 모두 실행. 중간 종료 금지.
+  hint: |
+    S/T/I/D 는 sudo 필요. R/E 는 일반 권한.
+    각 카테고리: 위협 + ATT&CK ID + PoC 명령 + 완화. 6개 모두 채워야 합격.
+    포인트: 매트릭스 X / Disclosure 보고서 X. *STRIDE 6 카테고리 모델* 산출물.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: STRIDE
     field: stdout
     semantic:
-      intent: '[통합] 네트워크 공격 5작업 — MITM/ARP/DHCP/DNS/audit 통합. T1557 Adversary-in-the-Middle.'
+      intent: |
+        Red Team 신입 페르소나 — STRIDE Threat Model 6 카테고리 (Spoofing/Tampering/Repudiation/
+        Info Disclosure/DoS/Elevation) 작성. 각 카테고리 위협+ATT&CK ID+PoC+완화.
+        lecture w06 + lab #1·#2·#5·#10·#13 동시 행동 증명. *STRIDE 모델* 산출물.
       success_criteria:
-      - 5 네트워크 작업
-      - MITM 성공
-      - credential 캡처
+      - S Spoofing — ARP/MAC 정찰 + DAI/802.1X 완화
+      - T Tampering — tcpdump 평문 캡처 + HSTS/TLS 완화
+      - R Repudiation — JWT exp/회전 분석 + refresh rotation 완화
+      - I Info Disclosure — sniffing PoC + 세그먼테이션/DLP 완화
+      - D DoS — SYN flood 5개 + SYN cookie 완화
+      - E Elevation — token reuse + MFA step-up 완화
       acceptable_methods:
-      - bastion plan
-      - bettercap
-      - ettercap
+      - tcpdump / arp / hping3 / nmap
+      - sudo -n / timeout
+      - JWT decode + curl Bearer
+      - heredoc 6 카테고리
       negative_signs:
-      - capture 실패
-      - ARP 없음
-      - audit 누락
+      - 카테고리 5개 이하
+      - ATT&CK ID 누락
+      - 완화 방안 누락 (위협만 나열)
+      - STRIDE 약어 명시 누락
+      - 매트릭스 형식 사용
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) tcpdump를 사용하여 10.20.30.80으로 향하는 HTTP 트래픽(포트 3000)을 캡처하라. 10개 패킷만 캡처해줘
-
-    2) tcpdump로 HTTP 요청/응답의 ASCII 내용을 캡처하라. 10.20.30.80:3000에 대한 트래픽을 5개 패킷만 캡처해줘
-
-    3) ARP 테이블을 확인하여 실습 네트워크의 MAC 주소 매핑을 조사해줘
-
-    4) nmap을 사용하여 실습 네트워크(10.20.30.0/24)의 모든 호스트의 MAC 주소를 수집해줘
-
-    5) tcpdump를 사용하여 ARP 패킷을 캡처해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. STRIDE 6 카테고리 순차 실행.
+  answer_detail: |
+    빅테크 Red Team 신입 페르소나 — Threat Model 우선. STRIDE 6 카테고리가 산출물.
+    각 카테고리에 ATT&CK ID 매핑 + PoC + 기술적 완화. 정책적 완화는 제외.
   script: ''
