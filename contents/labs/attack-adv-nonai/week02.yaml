@@ -459,3 +459,115 @@ steps:
       - 우선순위 없음
       - 권고 없음
   target_vm: attacker
+- order: 99
+  instruction: |
+    [복합 시나리오] "M&A 사이버 Due Diligence 컨설턴트 — 인수 대상 디지털 자산 평가"
+
+    ## 상황 — 7일 실사
+
+    KCyber M&A Due Diligence 시니어. 사모펀드 클라이언트가 JuiceShop Inc. 인수 검토.
+    내부 접근 X — 순수 OSINT.
+
+    > [딜팀 파트너] "도메인 만료 / 노출된 .git / S3 버킷 / LinkedIn 유출 다 찾아.
+    > 협상 포인트 (가격 인하 근거) 명시. Asset → Risk → Negotiating → Recommendations 5 섹션."
+
+    학습 목표 (lecture w02 OSINT Framework + Shodan + Dorking) + (lab #1·#3·#4·#5·#11·#13) 통합.
+
+    ## 산출물 — 5 섹션 보고서
+
+    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
+
+    ### Section 1 — Executive Summary
+    ```
+    ┌────────────────────────────────────────────────────────────┐
+    │ CYBER DUE DILIGENCE REPORT                                 │
+    │ Target: JuiceShop Inc. / 2026-04-22 ~ 04-29 (7일)          │
+    │ Cyber Asset Score: 62/100 (BELOW median 75)                │
+    │ Critical 3 / High 5 / Medium 8                             │
+    │ Cyber Liability ~₩4-7억                                    │
+    │ 권장 인수가 조정: -3% (~₩XX억)                              │
+    │ CP: Critical 3 closure pre-signing                          │
+    └────────────────────────────────────────────────────────────┘
+    ```
+
+    ### Section 2 — Asset Inventory
+    `dig @10.20.30.1 lab.local AXFR 2>&1 | head -10 || echo "[AXFR 거부 — 정상]"`
+    `for i in 1 80 100 112 201; do host 10.20.30.$i 2>&1 | head -1; done`
+    `nmap --script ssl-cert -p 443 10.20.30.80 2>&1 | grep -E "Subject|Issuer|Not " | head -10 || echo "[443 닫힘]"`
+    `curl -s -I http://10.20.30.80:3000/ | head -10`
+    `curl -s "http://10.20.30.80:3000/ftp/" 2>&1 | head -20`
+    `curl -s "http://10.20.30.80:3000/" | grep -oE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' | sort -u | head -10`
+
+    ```
+    | 자산 | 발견 | 비고 |
+    | DNS / 도메인 | 5 | AXFR 거부 정상 |
+    | TLS 인증서 | 1 | self-signed (LE 미사용) |
+    | 노출 디렉터리 | /ftp 5+ 파일 | 백업 직접 접근 |
+    | API endpoint | /rest/api/api-docs | Swagger 노출 |
+    | 직원 이메일 | 3 | 단일 도메인 |
+    | TLS 버전 | TLSv1.2+ | 합격 |
+    | 보안 헤더 | 5종 누락 | 부정적 |
+    ```
+
+    ### Section 3 — Risk Findings
+    [Critical 3]
+    C1. /ftp 백업 직접 다운로드 (CVSS 9.1) — PII 누출
+    C2. /api-docs Swagger 무인증 노출 (CVSS 7.5) — attack 청사진
+    C3. self-signed TLS — 규제 위반 + reputation
+
+    [High 5] H1 보안 헤더 5종 / H2 직원 이메일 단일도메인 phishing 표적 / H3 무료 도메인 / H4 Shodan 노출 가능 / H5 인증서 만료 임박
+
+    [Medium 8] M1-M8 단계 개선 가능
+
+    ### Section 4 — Negotiating Points (협상 카드 5)
+    1. C1 closure ₩2,000만 → 인수가 -0.5%
+    2. C2 closure ₩500만 → -0.1%
+    3. C3 TLS 발급 ₩300만 + 90일
+    4. H1-H5 closure ₩1,500만
+    5. Cyber Liability Insurance ↑ ₩8천만/년 → 5년 ₩4억
+    합계 ₩4-7억 → 인수가 -3%
+
+    ### Section 5 — Recommendations + CP
+    [signing 전 CP] CP1 /ftp 차단 / CP2 TLS 정식 인증서 / CP3 Insurance 검토
+    [closing+90일] R1 보안 헤더+WAF / R2 SOC outsourcing / R3 분기 phishing 시뮬
+    [closing+1년] R4 SOC 2 Type II / R5 분기 third-party pentest
+
+    종료: echo "=== Cyber Due Diligence Report ===" + 5 섹션.
+  hint: |
+    Section 1 Executive (Score / Critical 3 / liability / -3%).
+    Section 2 OSINT 6 명령 + Inventory 7행 표.
+    Section 3 Critical 3 + High 5 + Medium 8.
+    Section 4 협상 카드 5 + 합계.
+    Section 5 CP 3 + 권고.
+    포인트: M&A 컨설턴트 양식.
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: Due Diligence
+    field: stdout
+    semantic:
+      intent: |
+        M&A 사이버 Due Diligence 컨설턴트 — 7일 OSINT 평가 5 섹션 보고서.
+        lecture w02 + lab #1·#3·#4·#5·#11·#13 동시 행동 증명. *Due Diligence Report* 산출물.
+      success_criteria:
+      - Executive (Score / Critical 3 / -3%)
+      - Asset Inventory 7행 + 6 OSINT 명령
+      - Risk Findings (Critical 3 + High 5 + Medium 8)
+      - Negotiating 5 카드 + 합계
+      - CP 3 + R1-R5
+      acceptable_methods:
+      - heredoc 5 섹션
+      - dig / nmap ssl-cert / curl / grep
+      - markdown table
+      - 협상가 비용 명시
+      negative_signs:
+      - 섹션 3 이하
+      - Inventory 표 없음
+      - 협상가 누락
+      - CP 누락
+      - 매트릭스 형식
+  target_vm: attacker
+  risk_level: low
+  answer_detail: |
+    학생이 ssh attacker 직접. M&A 컨설턴트 7일 OSINT 평가. cyber liability 협상가 -3% 근거.

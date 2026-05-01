@@ -645,55 +645,178 @@ steps:
   bastion_prompt: OSINT 수집 결과를 종합하여 위협 모델링 보고서를 작성하라. 발견된 공격 표면, 우선순위화된 공격 벡터, 권장
     방어 조치를 /tmp/osint_report.txt에 작성하라.
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "M&A 사이버 Due Diligence 컨설턴트 — 인수 대상 디지털 자산 평가 보고서"
 
-    1) dig를 사용하여 10.20.30.1 DNS 서버에 대해 AXFR(존 전송) 요청을 시도해줘
+    ## 상황 — 인수 대상 핀테크 실사 7일
 
-    2) dig를 사용하여 10.20.30.0/24 대역의 PTR 레코드를 역방향 조회하라. for 루프를 사용하여 1~254까지 순회해줘
+    당신은 *KCyber* (가상 사이버 컨설팅) M&A Due Diligence 부문 시니어. 클라이언트 사모펀드가
+    JuiceShop Inc. (가상 핀테크) 인수 검토 중. 7일 내 *외부 디지털 자산 가치 평가* 보고서 작성.
+    내부 접근 권한 없음 — *순수 OSINT* 만으로 자산 인벤토리 + 위험 평가 + 협상 포인트 도출.
 
-    3) nmap을 사용하여 10.20.30.80의 SSL/TLS 인증서 정보를 수집해줘
+    > [딜팀 파트너] "장부에 안 적힌 *디지털 부채* 가 협상가에 직접 반영. 도메인 만료, 노출된 .git, S3 버킷,
+    > 직원 LinkedIn 유출 등 다 찾아. 각 항목별 *협상 포인트* (가격 인하 근거) 명시. Asset Inventory →
+    > Risk Findings → Negotiating Points → Recommendations 4 섹션."
 
-    4) curl을 사용하여 10.20.30.80:3000 웹서버의 다양한 HTTP 헤더를 분석해줘
+    학습 목표 (lecture w02 OSINT Framework + Shodan/Censys + Google Dorking + theHarvester) +
+    (lab #1·#3·#4·#5·#11·#13 DNS AXFR / SSL 인증서 / 헤더 / 메타데이터 / 배너 / 이메일) 통합.
 
-    5) 웹서버에서 다운로드한 파일의 메타데이터를 분석하라. curl로 10.20.30.80:3000/ftp 경로의 파일을 다운로드하고, exiftool
-    또는 strings로 메타데이터를 추출해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ## 산출물 — Cyber Due Diligence Report (5 섹션)
+
+    ### Section 1 — Executive Summary (deal team용 1페이지)
+    `cat <<'EOF'
+    ┌──────────────────────────────────────────────────────────────────┐
+    │  CYBER DUE DILIGENCE REPORT                                       │
+    │  Target: JuiceShop Inc. / Acquirer: Confidential PE              │
+    │  Engagement: 2026-04-22 ~ 2026-04-29 (7일)                       │
+    ├──────────────────────────────────────────────────────────────────┤
+    │  Cyber Asset Score: 62/100 (BELOW industry median 75)            │
+    │  Critical Findings: 3 / High: 5 / Medium: 8                      │
+    │  Estimated Cyber Liability: ~₩4-7억 (incident risk)              │
+    │  Recommended Price Adjustment: -3% (~₩XX억)                      │
+    │  Conditions Precedent: Critical 3 closure pre-signing             │
+    └──────────────────────────────────────────────────────────────────┘
+    EOF`
+
+    ### Section 2 — Asset Inventory (OSINT 수집 결과)
+    실 명령:
+    `dig @10.20.30.1 lab.local AXFR 2>&1 | head -10 || echo "[AXFR 거부 — 정상]"`
+    `for i in 1 80 100 112 201; do host 10.20.30.$i 2>&1 | head -1; done`
+    `nmap --script ssl-cert -p 443 10.20.30.80 2>&1 | grep -E "Subject|Issuer|Not " | head -10 || echo "[443 닫힘]"`
+    `curl -s -I http://10.20.30.80:3000/ | head -10`
+    `curl -s "http://10.20.30.80:3000/ftp/" 2>&1 | head -20`
+    `curl -s "http://10.20.30.80:3000/" | grep -oE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' | sort -u | head -10`
+
+    Inventory 표:
+    ```
+    | 자산 종류 | 발견 수 | 비고 |
+    | 도메인 / DNS | 5 (lab.local + sub) | AXFR 거부 정상 |
+    | TLS 인증서 | 1 | self-signed (LE 미사용) → 부정적 |
+    | 노출 디렉터리 | /ftp (5+ 파일) | 백업 파일 직접 접근 |
+    | API endpoint | /rest /api /api-docs | Swagger 노출 |
+    | 직원 이메일 | 3 (admin/jim/bender) | 도메인 한 도메인 집중 |
+    | TLS 버전 | TLSv1.2+ | 합격 |
+    | 보안 헤더 | 5 종 누락 | 부정적 |
+    ```
+
+    ### Section 3 — Risk Findings (Critical 3 + High 5 + Medium 8)
+    ```
+    [Critical (3) — 인수 후 즉시 노출]
+    C1. /ftp 디렉터리 백업 파일 직접 다운로드 (/ftp/coupons_2013.md.bak 등)
+        영향: 사용자 PII / 영업 비밀 누출. CVSS 9.1.
+    C2. /api-docs Swagger 무인증 노출 — API 전체 구조도 공개
+        영향: 후속 공격자에 청사진 제공. CVSS 7.5 → 인수 후 자동 attack 노출.
+    C3. self-signed TLS — 사용자 신뢰도 / 규제 위반 (전금감 가이드)
+        영향: 인수 후 90일 내 인증서 발급 비용 + reputation.
+
+    [High (5)]
+    H1. 보안 헤더 5종 누락 (CSP/HSTS/X-Frame/X-Content/Referrer)
+    H2. 직원 이메일 3개 단일 도메인 집중 — phishing 표적
+    H3. 무료 도메인 (.tld 등) 사용 (가상)
+    H4. 깃발 없는 외부 IP — Shodan 등록 가능
+    H5. 인증서 만료까지 < 90일 (가상)
+
+    [Medium (8) — 단계적 개선 가능]
+    M1-M8. 자세한 항목 별도 첨부.
+    ```
+
+    ### Section 4 — Negotiating Points (가격 협상 근거)
+    ```
+    [협상 카드 5장 — 인수가 인하 근거]
+    1. C1 closure cost: ₩2,000만 (PII 탐지 + 백업 격리 + 감사) → 인수가 -0.5%
+    2. C2 closure: Swagger 인증 + WAF rule = ₩500만 → 인수가 -0.1%
+    3. C3 (TLS) closure: LE/공인 CA 발급 + automation = ₩300만 + 90일
+    4. H1-H5 closure: ₩1,500만 (각 Quick Win Day 1-7)
+    5. Cyber Liability Insurance 상승 추정: ₩8천만/년 → 인수 후 5년 ₩4억
+    합계 추정: ₩4-7억 cyber 부채 → 인수가 -3% 권고 (₩XX억).
+    ```
+
+    ### Section 5 — Recommendations + Conditions Precedent
+    ```
+    [signing 전 처리 (CP)]
+    CP1. C1 (/ftp 노출) 즉시 차단
+    CP2. C3 TLS 정식 인증서 발급
+    CP3. Cyber Liability Insurance 신청서 검토 의무화
+
+    [closing 후 90일]
+    R1. 보안 헤더 5종 적용 + WAF rule 추가
+    R2. SOC outsourcing 또는 in-house 24h 운영 검토
+    R3. 분기 phishing 시뮬 (w14 BPO 패턴 참고)
+
+    [closing 후 1년]
+    R4. SOC 2 Type II 인증
+    R5. 분기 third-party pentest
+    ```
+
+    종료: echo "=== Cyber Due Diligence Report — JuiceShop Inc. ===" + 5 섹션 출력.
+  bastion_prompt: |
+    [M&A 사이버 Due Diligence — w02]
+
+    7일 OSINT 평가, 5 섹션 보고서.
+
+    Section 1 — Executive Summary (ASCII box: Score 62/100, Critical 3, ₩4-7억 cyber liability, -3%).
+
+    Section 2 — Asset Inventory:
+    `dig @10.20.30.1 lab.local AXFR 2>&1 | head -10 || echo "[AXFR 거부 — 정상]"`
+    `for i in 1 80 100 112 201; do host 10.20.30.$i 2>&1 | head -1; done`
+    `nmap --script ssl-cert -p 443 10.20.30.80 2>&1 | grep -E "Subject|Issuer|Not " | head -10 || echo "[443 닫힘]"`
+    `curl -s -I http://10.20.30.80:3000/ | head -10`
+    `curl -s "http://10.20.30.80:3000/ftp/" 2>&1 | head -20`
+    `curl -s "http://10.20.30.80:3000/" | grep -oE '[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}' | sort -u | head -10`
+
+    Inventory 7행 표 (도메인 / TLS 인증서 / 디렉터리 / API / 이메일 / TLS 버전 / 보안 헤더).
+
+    Section 3 — Risk Findings:
+    Critical 3 (C1 /ftp 백업 / C2 Swagger / C3 self-signed TLS) + High 5 + Medium 8.
+
+    Section 4 — Negotiating Points:
+    5 카드 (C1 ₩2,000만 / C2 ₩500만 / C3 ₩300만 / H1-H5 ₩1,500만 / Insurance ₩8천만/년).
+    합계 ₩4-7억 → 인수가 -3%.
+
+    Section 5 — CP 3 + 90일 R1-R3 + 1년 R4-R5.
+
+    종료: echo "=== Cyber Due Diligence Report ===" + 5 섹션.
+
+    반드시 5 섹션 모두 + Inventory 표 + Findings + Negotiating + CP/R.
+  hint: |
+    Section 1 Executive (Score / Critical 3 / ₩ liability / 인수가 -3%).
+    Section 2 OSINT 6 명령 + Inventory 7행 표.
+    Section 3 Critical 3 + High 5 + Medium 8.
+    Section 4 협상 카드 5장 + 합계.
+    Section 5 CP 3 + 단기/장기 권고.
+    포인트: M&A 컨설턴트 보고서 양식. 매트릭스 X.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: Due Diligence
     field: stdout
     semantic:
-      intent: '[통합] OSINT 고급 5작업 — theHarvester/Shodan/Maltego/recon-ng/audit 통합.
-        Passive recon.'
+      intent: |
+        M&A 사이버 Due Diligence 컨설턴트 — 인수 대상 OSINT 평가 보고서 5 섹션.
+        lecture w02 + lab #1·#3·#4·#5·#11·#13 동시 행동 증명. *Due Diligence Report* 산출물.
       success_criteria:
-      - 5 OSINT 작업
-      - 수동 정찰
-      - report
+      - Executive Summary (Score / Critical 3 / 인수가 -3%)
+      - Asset Inventory 7행 표 + 6 OSINT 명령 실행
+      - Risk Findings (Critical 3 + High 5 + Medium 8)
+      - Negotiating Points 5 카드 + 합계 (₩4-7억)
+      - Conditions Precedent 3 + 90일 R + 1년 R
       acceptable_methods:
-      - bastion plan
-      - theHarvester
-      - Maltego
+      - heredoc 5 섹션
+      - dig / nmap ssl-cert / curl / grep email
+      - markdown table Inventory
+      - 협상가 인하 근거 비용 명시
       negative_signs:
-      - active 노이즈
-      - 중복
-      - report 누락
+      - 섹션 3 이하
+      - Inventory 표 없음
+      - 협상가 / liability 추정 누락
+      - CP 누락
+      - 매트릭스 / Disclosure 형식
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) dig를 사용하여 10.20.30.1 DNS 서버에 대해 AXFR(존 전송) 요청을 시도해줘
-
-    2) dig를 사용하여 10.20.30.0/24 대역의 PTR 레코드를 역방향 조회하라. for 루프를 사용하여 1~254까지 순회해줘
-
-    3) nmap을 사용하여 10.20.30.80의 SSL/TLS 인증서 정보를 수집해줘
-
-    4) curl을 사용하여 10.20.30.80:3000 웹서버의 다양한 HTTP 헤더를 분석해줘
-
-    5) 웹서버에서 다운로드한 파일의 메타데이터를 분석하라. curl로 10.20.30.80:3000/ftp 경로의 파일을 다운로드하고, exiftool
-    또는 strings로 메타데이터를 추출해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. 5 섹션 + 6 OSINT 명령 + 협상가.
+  answer_detail: |
+    M&A 컨설턴트 — 7일 OSINT 평가. Executive 1p + Inventory 7행 + Findings + Negotiating + CP/R.
+    cyber liability 협상가 -3% 근거 명시.
   script: ''
