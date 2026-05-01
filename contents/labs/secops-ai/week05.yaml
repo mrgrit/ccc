@@ -431,53 +431,175 @@ steps:
   bastion_prompt: secu VM local.rules에서 sid 1000101~1000103을 삭제하고 suricata reload
     해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+  instruction: |
+    [복합 시나리오] "alert · drop · reject — 같은 SQLi 룰의 3 액션 비교"
+
+    ## 상황 (w01-w04 시나리오 연속)
+
+    ABC 핀테크 SOC 신규 분석가, 다섯째 주.
+    1~10 step 으로 SQLi union select 탐지 룰 (sid:1000102) 을 작성하고 attacker→web 트래픽
+    에서 alert 발생까지 봤다. 그런데 이번 주 lecture 학습 목표 #2 — *"alert/drop/reject
+    액션의 차이를 구분할 수 있다"* — 1~10 은 alert 만 다뤘다. drop 과 reject 는 아직.
+
+    > 선임: "alert 만 쓰면 *결국 학생용 IDS* 야. 운영 환경에서 SQLi 같은 명백한 공격은 차단해야지.
+    >  drop 은 조용히 패킷 폐기 — 클라이언트는 timeout. reject 는 RST 패킷을 보내서 연결을
+    >  명시적으로 끊어 — 클라이언트는 즉시 connection refused. 셋 다 같은 SQLi 룰로 직접
+    >  비교해 봐. 클라이언트 응답이 어떻게 다른지."
+
+    학습 목표 #2 (3 액션 차이) 의 *행동 증명*. w04 의 NFQUEUE 설정 재사용.
+
+    ## 임무 (3 단계 = 3 액션 비교, 약 25분)
+
+    ### Phase A — `alert` (baseline 재현, 5분)
+
+    1~10 에서 추가했다 제거한 SQLi 룰을 다시 작성:
+      ```
+      echo 'alert http any any -> any any (msg:"SQLi union select alert"; flow:established,to_server; http.uri; content:"union select"; nocase; sid:1000110; rev:1;)' \
+        | sudo tee -a /etc/suricata/rules/local.rules
+      sudo systemctl restart suricata
+      ```
+
+    attacker → web 으로 SQLi 시도:
+      - attacker: `curl -sI 'http://10.20.30.80:3000/?id=1+union+select+1,2,3--' --max-time 5`
+      - 예상: 200 또는 404 응답 옴 (web 이 처리)
+      - secu: `sudo tail -30 /var/log/suricata/eve.json | grep 'sid":1000110\|union'`
+
+    → A 결과 기록: 클라이언트 = HTTP 응답, secu = alert event
+
+    ### Phase B — `drop` (NFQUEUE 모드, 10분)
+
+    같은 sid 의 action 을 alert → drop 으로 변경 + NFQUEUE 모드 (w04 와 동일 패턴):
+      ```
+      sudo sed -i 's|^alert http any any -> any any (msg:"SQLi union select alert"|drop http any any -> any any (msg:"SQLi union select drop"|' /etc/suricata/rules/local.rules
+      sudo grep 'sid:1000110' /etc/suricata/rules/local.rules    # drop 확인
+
+      sudo nft add table inet verify_w5
+      sudo nft add chain inet verify_w5 forward { type filter hook forward priority -150 \; }
+      sudo nft add rule inet verify_w5 forward ip protocol tcp tcp dport 3000 queue num 0
+      sudo nft list table inet verify_w5
+
+      sudo systemctl stop suricata
+      sudo suricata -q 0 -c /etc/suricata/suricata.yaml -D
+      sleep 3
+      ```
+
+    attacker → web 같은 SQLi 시도:
+      - attacker: `curl -sI 'http://10.20.30.80:3000/?id=1+union+select+1,2,3--' --max-time 5`
+      - 예상: **timeout** (curl exit 28)
+      - secu: `sudo tail -30 /var/log/suricata/eve.json | grep -E 'sid":1000110|drop'`
+
+    → B 결과 기록: 클라이언트 = timeout, secu = drop event, web 은 요청 못 받음
+
+    ### Phase C — `reject` (RST 응답, 10분)
+
+    drop → reject 로 변경 (NFQUEUE 그대로 유지):
+      ```
+      sudo sed -i 's|^drop http any any -> any any (msg:"SQLi union select drop"|reject http any any -> any any (msg:"SQLi union select reject"|' /etc/suricata/rules/local.rules
+      sudo grep 'sid:1000110' /etc/suricata/rules/local.rules    # reject 확인
+
+      sudo pkill -f 'suricata -q'
+      sleep 2
+      sudo suricata -q 0 -c /etc/suricata/suricata.yaml -D
+      sleep 3
+      ```
+
+    attacker 에서 시도 + tcpdump 로 RST 캡처 (별도 attacker 터미널):
+      - attacker 터미널 1: `sudo tcpdump -i any -n -c 10 'host 10.20.30.80 and (tcp[tcpflags] & tcp-rst != 0)'`
+      - attacker 터미널 2: `curl -sI 'http://10.20.30.80:3000/?id=1+union+select+1,2,3--' --max-time 5`
+      - 예상: **즉시 connection reset** (curl exit 56 또는 비슷, timeout 보다 *훨씬 빠름*)
+      - tcpdump 출력에 RST flag 패킷 보임
+      - secu: `sudo tail -30 /var/log/suricata/eve.json | grep -E 'sid":1000110|reject'`
+
+    → C 결과 기록: 클라이언트 = 즉시 RST, secu = reject event
+
+    ## 비교표 작성 (회고 일부)
+
+    | 액션 | 클라이언트 응답 시간 | 클라이언트 결과 | secu eve.json action | 운영 영향 |
+    |------|------------------|---------------|--------------------|---------|
+    | alert | 정상 (수 ms) | HTTP 200/404 응답 옴 | alert | 차단 X — IDS only |
+    | drop | timeout (5s+) | curl exit 28 | drop | 조용히 폐기 (스캐너 혼란 유발) |
+    | reject | 즉시 (수십 ms) | curl exit 56 / RST | reject | 명시적 연결 거부 |
+
+    ## 1~2 단락 회고
+
+    1. **3 액션의 클라이언트 응답 차이** — 시간 + 에러 코드 비교
+    2. **운영 시 어느 액션을 언제 쓰나** — 예: "내부 정찰 차단 = drop (스캐너 혼란),
+       명백한 공격 = reject (즉시 차단), 의심 = alert (수동 검토)"
+
+    종료 정리:
+      ```
+      sudo pkill -f 'suricata -q'
+      sudo nft delete table inet verify_w5
+      sudo sed -i '/sid:1000110/d' /etc/suricata/rules/local.rules
+      sudo systemctl start suricata
+      ```
+  hint: |
+    Phase A: SQLi alert 룰 (sid:1000110) → curl SQLi → 응답 옴 + alert event
+    Phase B: 같은 sid 를 drop 으로 변경 + NFQUEUE 모드 (verify_w5 + queue 룰) + suricata -q 0 → timeout + drop event
+    Phase C: drop 을 reject 로 변경 + 재기동 → 즉시 RST + reject event, attacker tcpdump 로 RST 캡처
+    회고: 3 액션 응답 시간/결과/eve action/운영 영향 비교표 + 1~2 단락
+    포인트: 같은 룰의 action 만 alert→drop→reject 로 바꾸며 클라이언트가 어떻게 다른지 직접 봄.
+    종료: suricata -q + verify_w5 + sid:1000110 룰 모두 정리.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: reject
     field: stdout
     semantic:
-      intent: '[통합] Suricata 룰 작성 5작업 — local.rules 작성/sid 할당/reload/테스트/alert 확인
-        통합. SID 1000000+.'
+      intent: |
+        Suricata 의 alert / drop / reject 3 액션 차이를 같은 SQLi 룰로 직접 비교. 클라이언트
+        응답 (정상 / timeout / 즉시 RST) + eve.json action 필드로 mechanism 확인. 학습 목표 #2
+        (3 액션 차이) 행동 증명.
       success_criteria:
-      - local.rules 작성
-      - sid 할당
-      - alert 발생
+      - Phase A — alert 룰 + curl SQLi → 응답 옴 + alert event
+      - Phase B — drop 룰 + NFQUEUE + suricata -q 0 → curl timeout + drop event
+      - Phase C — reject 룰 + 재기동 → curl 즉시 RST + reject event + tcpdump RST flag 캡처
+      - 3 액션 비교표 (응답 시간 / 결과 / eve action / 운영 영향)
+      - 회고 1~2 단락 + 정리 (suricata -q 프로세스 + verify_w5 + 룰 정리)
       acceptable_methods:
-      - bastion plan
-      - vim + suricatactl
-      - ansible template
+      - secu 에서 sudo sed action 교체 (alert→drop→reject)
+      - secu 에서 nft NFQUEUE 룰 + suricata -q 0 -D 재기동
+      - attacker 에서 curl SQLi 페이로드 + tcpdump 'tcp-rst' 캡처
+      - secu 에서 tail eve.json + grep
       negative_signs:
-      - sid 누락
-      - reload 없음
-      - alert 미확인
-  target_vm: secu
-  answer: '🤖 프롬프트: secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:
+      - 3 액션 중 1-2개만 (예: alert + drop, reject 누락)
+      - 클라이언트 응답 차이 측정 누락 (timeout vs RST 미비교)
+      - 비교표 누락
+      - 정리 누락 (다음 lab 영향)
+  target_vm: bastion
+  answer: |
+    🤖 프롬프트: Suricata alert/drop/reject 3 액션 차이를 SQLi 룰로 직접 비교.
 
-    1) secu VM local.rules에 User-Agent=BadBot 탐지 HTTP 룰(sid 1000101)을 추가해줘
+    Phase A (alert):
+      secu: alert http any any -> any any (msg, flow:to_server, http.uri, content:"union select", sid:1000110) 추가
+      secu: sudo systemctl restart suricata
+      attacker: curl -sI 'http://10.20.30.80:3000/?id=1+union+select+1,2,3--' → 응답 옴 + alert event
 
-    2) secu VM local.rules에 URI의 ''union select'' SQL Injection 탐지 룰(sid 1000102)을
-    추가해줘
+    Phase B (drop + NFQUEUE):
+      secu: sed action 을 alert→drop 변경
+      secu: nft add table inet verify_w5 + forward chain priority -150 + ICMP 가 아닌 tcp dport 3000 queue num 0
+      secu: pkill suricata + suricata -q 0 -c /etc/suricata/suricata.yaml -D
+      attacker: 같은 curl → timeout + drop event
 
-    3) secu VM local.rules에 TCP 445(SMB) 트래픽 탐지 룰(sid 1000103)을 추가해줘
+    Phase C (reject):
+      secu: sed action 을 drop→reject 변경, suricata -q 재기동
+      attacker (term 1): tcpdump RST flag 캡처
+      attacker (term 2): 같은 curl → 즉시 RST + reject event
 
-    4) secu VM에서 suricata 설정/룰 문법 검증을 실행해줘
+    비교표 (응답 시간/결과/eve action/운영 영향) + 1~2 단락 회고.
 
-    5) secu VM의 Suricata 서비스를 reload 해줘'
-  answer_detail: ''
-  risk_level: low
-  bastion_prompt: 'secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:
-
-    1) secu VM local.rules에 User-Agent=BadBot 탐지 HTTP 룰(sid 1000101)을 추가해줘
-
-    2) secu VM local.rules에 URI의 ''union select'' SQL Injection 탐지 룰(sid 1000102)을
-    추가해줘
-
-    3) secu VM local.rules에 TCP 445(SMB) 트래픽 탐지 룰(sid 1000103)을 추가해줘
-
-    4) secu VM에서 suricata 설정/룰 문법 검증을 실행해줘
+    종료: pkill suricata -q; nft delete table inet verify_w5; sed -i /sid:1000110/d local.rules;
+          systemctl start suricata
+  answer_detail: |
+    같은 룰 action 만 alert→drop→reject 로 바꿔도 클라이언트 응답이 *시간 + 결과* 모두 다름.
+    학습 목표 #2 의 행동 증명 — syntax 가 아니라 *3 액션의 운영적 차이* 를 직접 체험.
+  risk_level: medium
+  bastion_prompt: |
+    Suricata alert vs drop vs reject 3 액션 비교. Phase A: alert 룰 (sid:1000110) + curl SQLi
+    → 응답+alert. Phase B: action 을 drop 으로 + NFQUEUE 모드 (verify_w5 테이블 + tcp dport 3000
+    queue 0) + suricata -q 0 데몬 → curl timeout + drop. Phase C: drop→reject 변경 + 재기동
+    → 즉시 RST + reject, tcpdump 로 RST flag 캡처. 비교표 + 1~2 단락 회고. 종료 시 suricata -q
+    프로세스 + verify_w5 + 룰 모두 정리.
 
     5) secu VM의 Suricata 서비스를 reload 해줘'
