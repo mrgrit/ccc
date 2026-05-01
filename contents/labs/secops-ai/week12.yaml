@@ -389,50 +389,198 @@ steps:
   risk_level: low
   bastion_prompt: siem VM의 opencti 컨테이너 재시작 횟수를 확인해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+  instruction: |
+    [복합 시나리오] "STIX 2.1 IoC 직접 작성·import — CTI 의 raw cycle"
+
+    ## 상황 (w01-w11 시나리오 연속)
+
+    ABC 핀테크 SOC 신규 분석가, 12주 차.
+    1~10 step 으로 OpenCTI 컨테이너 + 의존 서비스 + 8080 포트 동작 확인까지 했다. 학습 목표
+    #2 — *"STIX/TAXII 표준을 설명할 수 있다"* — 1~10 은 *플랫폼 헬스체크* 만. STIX 표준 데이터
+    형식·import cycle 은 검증 X.
+
+    > 선임: "OpenCTI 의 진짜 가치는 *외부 위협 인텔* 받아서 보관·correlation 하는 거야. 표준
+    >  형식이 STIX 2.1 — 위협 정보의 'JSON XML' 같은 거야. ISAC 에서 받은 IoC 3건 (악성 IP,
+    >  악성 도메인, 멀웨어 해시) 을 STIX 형식으로 직접 작성하고 OpenCTI 에 import 해봐.
+    >  Connector 자동화 전에 *raw cycle* 부터 손으로 해야 STIX 가 머리에 남아."
+
+    학습 목표 #2 (STIX/TAXII) + #4 (Connector 의 사전 단계) 행동 증명.
+
+    ## 임무 (3 단계, 약 25분)
+
+    ### Phase A — STIX 2.1 IoC 3건 작성 (10분)
+
+    siem 또는 manager 에서 (json 작성):
+      ```
+      mkdir -p /tmp/stix-import
+      cat > /tmp/stix-import/3-iocs.json <<'EOF'
+      {
+        "type": "bundle",
+        "id": "bundle--$(uuidgen)",
+        "objects": [
+          {
+            "type": "indicator",
+            "spec_version": "2.1",
+            "id": "indicator--$(uuidgen)",
+            "created": "2026-05-01T00:00:00.000Z",
+            "modified": "2026-05-01T00:00:00.000Z",
+            "name": "Malicious IP — APT29 C2",
+            "description": "Indicator from ISAC bulletin 2026-05",
+            "indicator_types": ["malicious-activity"],
+            "pattern": "[ipv4-addr:value = '198.51.100.66']",
+            "pattern_type": "stix",
+            "valid_from": "2026-05-01T00:00:00.000Z"
+          },
+          {
+            "type": "indicator",
+            "spec_version": "2.1",
+            "id": "indicator--$(uuidgen)",
+            "created": "2026-05-01T00:00:00.000Z",
+            "modified": "2026-05-01T00:00:00.000Z",
+            "name": "Malicious domain — phishing",
+            "description": "Phishing infrastructure",
+            "indicator_types": ["malicious-activity"],
+            "pattern": "[domain-name:value = 'evil-test.invalid']",
+            "pattern_type": "stix",
+            "valid_from": "2026-05-01T00:00:00.000Z"
+          },
+          {
+            "type": "indicator",
+            "spec_version": "2.1",
+            "id": "indicator--$(uuidgen)",
+            "created": "2026-05-01T00:00:00.000Z",
+            "modified": "2026-05-01T00:00:00.000Z",
+            "name": "Ransomware EXE hash",
+            "description": "Hash of WannaCry sample (EICAR-style test, 무해)",
+            "indicator_types": ["malicious-activity"],
+            "pattern": "[file:hashes.'SHA-256' = '275a021bbfb6489e54d471899f7db9d1663fc695ec2fe2a2c4538aabf651fd0f']",
+            "pattern_type": "stix",
+            "valid_from": "2026-05-01T00:00:00.000Z"
+          }
+        ]
+      }
+      EOF
+
+      # uuidgen 치환 (uuidgen 명령 없으면 python3 -c 'import uuid; print(uuid.uuid4())' 으로)
+      python3 -c "
+      import json, uuid
+      with open('/tmp/stix-import/3-iocs.json') as f:
+          content = f.read()
+      lines = content.split('\\n')
+      for i, l in enumerate(lines):
+          if '\$(uuidgen)' in l:
+              lines[i] = l.replace('\$(uuidgen)', str(uuid.uuid4()))
+      open('/tmp/stix-import/3-iocs.json', 'w').write('\\n'.join(lines))
+      "
+      cat /tmp/stix-import/3-iocs.json | python3 -m json.tool | head -10
+      ```
+
+    ### Phase B — OpenCTI REST API 으로 import (10분)
+
+    OpenCTI 의 admin token 확인 (이미 .env 에 있음):
+      `ssh ccc@10.20.30.100 'sudo grep -E ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env'`
+    → token 값 메모.
+
+    `OPENCTI_TOKEN=<token>` export 후 STIX bundle import:
+      ```
+      OPENCTI_TOKEN="<위에서 얻은 token>"
+      curl -X POST 'http://10.20.30.100:8080/graphql' \
+        -H "Authorization: Bearer $OPENCTI_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d "$(cat <<EOF
+      {
+        "query": "mutation StixBundleImport(\$file: Upload!) { stixCoreObjectsExportPush(file: \$file) { name } }",
+        "variables": null
+      }
+      EOF
+      )"
+      ```
+
+    또는 단순화 — UI 의 *Data → Import* 메뉴 흉내 (CSV 같은 한 line) :
+      ```
+      curl -X POST 'http://10.20.30.100:8080/graphql' \
+        -H "Authorization: Bearer $OPENCTI_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{
+          "query": "mutation { indicatorAdd(input: {name: \\"Malicious IP test\\", pattern: \\"[ipv4-addr:value = $\\\\\\"198.51.100.66$\\\\\\"]\\", pattern_type: \\"stix\\", x_opencti_main_observable_type: \\"IPv4-Addr\\"}) { id name } }"
+        }'
+      ```
+    → 예상: id 와 name 이 응답에.
+
+    ### Phase C — 검색 + 회고 + 정리 (5분)
+
+    OpenCTI 에서 등록된 indicator 검색:
+      ```
+      curl -X POST 'http://10.20.30.100:8080/graphql' \
+        -H "Authorization: Bearer $OPENCTI_TOKEN" \
+        -H "Content-Type: application/json" \
+        -d '{"query": "{ indicators(first: 5, search: \\"Malicious IP test\\") { edges { node { id name pattern } } } }"}' \
+        | jq .
+      ```
+    → 예상: edges 에 작성한 indicator.
+
+    1~2 단락 회고:
+    1. **STIX 2.1 의 핵심 객체** — bundle 로 묶인 indicator/observable. pattern 이 STIX 패턴 표준
+    2. **TAXII vs 직접 import** — TAXII 는 STIX 의 *전송 프로토콜* (HTTP poll/push). 본 lab 은
+       직접 graphql + REST. 운영 시 Connector 가 TAXII 자동 polling
+    3. **운영 시 IoC volume** — 하루 수천~수만 IoC. *수동 작성은 비현실* — 그래서 Connector 자동화
+
+    종료 정리: lab 변경 없음 (OpenCTI 에 indicator 남음). 또는 admin UI 에서 수동 삭제:
+      `curl -X POST '...' -d '{"query": "mutation { indicatorDelete(id: \"...\") }"}'`
+  hint: |
+    Phase A: /tmp/stix-import/3-iocs.json 에 STIX 2.1 bundle 작성 (indicator 3건 — IP/domain/hash)
+    Phase B: OpenCTI .env 에서 admin token 추출 + GraphQL mutation indicatorAdd 으로 import (3건 또는 1건만)
+    Phase C: GraphQL query indicators 로 검색 + STIX 객체 / TAXII / 운영 volume 회고
+    포인트: STIX = 데이터 형식, TAXII = 전송. 직접 import 보다 Connector 자동화가 현실.
+    종료: 작성한 indicator 남아도 lab 영향 X (OpenCTI 데이터만).
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: indicator
     field: stdout
     semantic:
-      intent: '[통합] OpenCTI 설치 5작업 — docker-compose pull/.env/up/초기 admin/API 토큰 통합. 4000 포트.'
+      intent: |
+        STIX 2.1 표준 IoC 직접 작성 + OpenCTI GraphQL API import. 학습 목표 #2 (STIX/TAXII) +
+        #4 (Connector 의 사전 단계) 행동 증명. 수동 raw cycle 로 STIX 구조 머리에 남기기.
       success_criteria:
-      - 컨테이너 running
-      - 대시보드 접속
-      - API 토큰
+      - Phase A — STIX 2.1 bundle JSON 작성 (indicator 3건 + uuid)
+      - Phase B — OpenCTI admin token 추출 + graphql indicatorAdd 으로 1건 이상 import 성공
+      - Phase C — graphql indicators 검색으로 등록된 indicator 확인
+      - 회고 1~2 단락 (STIX 객체 + TAXII vs 직접 import + 운영 volume)
       acceptable_methods:
-      - bastion plan
-      - docker-compose
-      - ansible docker_compose
+      - 작성: cat <<EOF + python3 uuid 치환
+      - import: curl POST /graphql + Authorization Bearer + mutation indicatorAdd
+      - 검색: curl POST /graphql + query indicators(search)
+      - 또는 OpenCTI Web UI Data → Import 메뉴 (스크린샷 paste)
       negative_signs:
-      - 컨테이너 실패
-      - 대시보드 없음
-      - 토큰 누락
-  target_vm: siem
-  answer: '🤖 프롬프트: secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:
+      - STIX bundle 작성 누락 (indicator 0건)
+      - admin token 없이 Authorization 헤더 빠뜨림 (401 error)
+      - import 시도만 + 검색 검증 누락
+      - 회고에서 STIX 와 TAXII 의 차이 미언급
+  target_vm: bastion
+  answer: |
+    🤖 프롬프트: STIX 2.1 IoC 작성 + OpenCTI graphql API import.
 
-    1) siem VM의 docker 컨테이너 목록을 보여줘
+    Phase A: cat <<EOF > /tmp/stix-import/3-iocs.json 으로 indicator 3건 작성
+             (1 IPv4-Addr 198.51.100.66 / 2 domain-name evil-test.invalid / 3 SHA-256 hash).
+             uuidgen 또는 python3 -c 'import uuid; print(uuid.uuid4())' 으로 UUID 채움.
 
-    2) siem VM에서 opencti 컨테이너만 필터링해서 보여줘
+    Phase B: ssh siem 'sudo grep ^OPENCTI_ADMIN_TOKEN /opt/opencti/.env' 으로 token 추출.
+             curl -X POST 'http://10.20.30.100:8080/graphql' -H 'Authorization: Bearer $TOKEN'
+             -H 'Content-Type: application/json'
+             -d '{"query": "mutation { indicatorAdd(input: {...}) { id name } }"}'
 
-    3) siem VM의 opencti 플랫폼 컨테이너 로그 20줄을 보여줘
+    Phase C: curl -X POST '...graphql' -d '{"query": "{ indicators(search: ...) { edges { node { id name pattern } } } }"}' | jq .
+             회고: STIX bundle/indicator + TAXII transport + 운영 IoC volume.
 
-    4) siem VM에서 8080 포트 리스닝 상태를 확인해줘
-
-    5) siem VM에서 OpenCTI 의존 서비스(redis/elastic/rabbit/minio) 컨테이너 상태를 보여줘'
-  answer_detail: ''
+    종료: lab 변경 없음 (OpenCTI 데이터 남아도 영향 X).
+  answer_detail: |
+    학습 목표 #2 (STIX/TAXII) + #4 (Connector) 의 *수동 raw cycle*. Connector 자동화 전에
+    STIX 구조 직접 작성·import 로 표준 머리에 남기기. 운영 시 IoC volume 때문에 수동은 비현실.
   risk_level: low
-  bastion_prompt: 'secu/web/siem VM 전반에 대해 다음 작업들을 순서대로 수행해줘:
-
-    1) siem VM의 docker 컨테이너 목록을 보여줘
-
-    2) siem VM에서 opencti 컨테이너만 필터링해서 보여줘
-
-    3) siem VM의 opencti 플랫폼 컨테이너 로그 20줄을 보여줘
-
-    4) siem VM에서 8080 포트 리스닝 상태를 확인해줘
-
-    5) siem VM에서 OpenCTI 의존 서비스(redis/elastic/rabbit/minio) 컨테이너 상태를 보여줘'
+  bastion_prompt: |
+    STIX 2.1 IoC import cycle. Phase A: /tmp/stix-import/3-iocs.json 에 indicator 3건 (IPv4 +
+    domain + SHA-256) STIX 2.1 bundle 작성, uuid 채움. Phase B: siem 의 .env 에서 OPENCTI_ADMIN_TOKEN
+    추출, curl POST /graphql Authorization Bearer 로 indicatorAdd mutation 1건 이상 성공. Phase C:
+    graphql indicators 검색으로 등록 확인 + STIX vs TAXII + 운영 volume 회고. 종료: lab 변경 없음.
