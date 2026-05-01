@@ -435,3 +435,129 @@ steps:
       - 통합 안 됨
       - 체계 부족
   target_vm: attacker
+- order: 99
+  instruction: |
+    [복합 시나리오] "JuiceShop 첫 점검 — OWASP Testing Guide 정찰 단계 + 점검 보고서 + 윤리 진술"
+
+    ## 상황 (web-vuln 첫 주)
+
+    당신은 ABC 핀테크 회사의 *외부 보안 컨설팅사* 신입 점검원. 첫 임무는 client 의 JuiceShop
+    인스턴스 (http://10.20.30.80:3000) 첫 점검.
+
+    > 멘토: "1~15 step 으로 HTTP 기초 도구는 익혔지? 이제 *진짜 점검* 흐름 — OWASP Testing
+    >  Guide v4 의 Information Gathering 직접 수행하고, *해킹이 아닌 점검* 의 윤리적 경계를
+    >  보고서 끝에 명시해. 우리 일은 *허가받은 범위 안에서* 취약점 *식별*. exploit 까지 가는
+    >  게 아니야. 보고서 형식이 client 에게 넘기는 첫 산출물이라 깔끔해야 해."
+
+    학습 목표 #1 (해킹↔점검 차이) + #2 (법·윤리) + #3 (OWASP TG 흐름) 행동 증명.
+
+    ※ Non-AI 트랙: 학생 직접 SSH + transcript paste.
+
+    ## 임무 (3 단계, 약 25분)
+
+    ### Phase A — OWASP TG WSTG-INFO 4단계 정찰 (15분)
+
+    학생이 attacker(10.20.30.201) SSH 후:
+      ```
+      ssh ccc@10.20.30.201
+
+      # WSTG-INFO-01 — Search engine recon (현실 환경 가정 1줄 메모)
+      echo "현실 환경: site:juiceshop.com filetype:txt 등 외부 검색"
+
+      # WSTG-INFO-02 — Server fingerprint
+      curl -sI http://10.20.30.80:3000/ | head -20
+      curl -sI http://10.20.30.80:3000/ | grep -iE 'server|x-powered-by|x-aspnet'
+      whatweb -a 1 http://10.20.30.80:3000/ 2>/dev/null || echo "whatweb 미설치"
+
+      # WSTG-INFO-03 — Metafiles
+      curl -s http://10.20.30.80:3000/robots.txt
+      curl -s http://10.20.30.80:3000/sitemap.xml
+      curl -sI http://10.20.30.80:3000/.git/config
+      curl -s http://10.20.30.80:3000/security.txt
+
+      # WSTG-INFO-04 — Entry points
+      curl -s http://10.20.30.80:3000/ | grep -oE 'href="[^"]+"' | sort -u | head -20
+      curl -s http://10.20.30.80:3000/api/Users | head -200
+      curl -s http://10.20.30.80:3000/api/Products | head -200
+      ```
+
+    ### Phase B — 발견 사항 분석 (5분)
+
+    위험도 분류 표:
+
+    | 발견 항목 | 위험도 | 근거 (OWASP TG / CWE) |
+    |---------|--------|---------------------|
+    | Server header X-Powered-By | Low | Information Disclosure (CWE-200) |
+    | robots.txt 의 /admin path | Medium | 숨겨진 경로 노출 |
+    | /api/Users 인증 없이 접근 | High | Broken Access Control (OWASP A01) |
+    | /sitemap.xml 누락 | Info | (방어자 입장 +) |
+
+    *주의*: 점검 단계는 *exploit X*. "/api/Users 가 응답한다는 사실" 만 기록.
+
+    ### Phase C — 점검 보고서 + 윤리 진술 + sha256 (5분)
+
+    ```
+    # WSTG-INFO Report — JuiceShop @ 10.20.30.80:3000
+    점검자: <id> / 일자: 2026-MM-DD / 점검 범위: HTTP/HTTPS port 3000 only
+
+    ## Phase A — 4단계 결과
+    [WSTG-INFO-02/03/04 결과 인용 1줄씩]
+
+    ## Phase B — 발견 표 [위 표]
+
+    ## 권고 (방어자 향)
+    1. Server / X-Powered-By 헤더 제거
+    2. robots.txt 에 진짜 민감 경로 적지 말기
+    3. /api/Users 인증 게이트 추가
+
+    ## 윤리·법적 진술 (필수)
+    *본 점검은 다음 조건에서만 수행되었다*:
+    - **허가 범위**: 사전 서면 허가 받은 host (10.20.30.80) + port (3000) 만
+    - **점검 단계**: 정보 수집·분류 까지. exploit / data exfil 미수행
+    - **법적 근거**: 정보통신망법 제48조 — 허가 범위 내 점검은 적용 제외
+    - **해킹과 점검 차이**: 본 작업은 *식별* 만. exploit/payload 사용은 *별도 허가* 필요
+    - **로그 보존**: 본 점검 transcript + 결과 24개월 보존
+
+    ## 무결성
+    sha256sum WSTG-INFO-Report.md > .sha256
+    ```
+
+    종료 정리 없음 (조회만).
+  hint: |
+    Phase A: WSTG-INFO 4 sub-section (01 search 메모 + 02 fingerprint + 03 metafiles + 04 entry points)
+    Phase B: 위험도 표 (Low/Med/High + OWASP/CWE 근거)
+    Phase C: 보고서 markdown + 권고 + 윤리 진술 5요소 + sha256
+    포인트: 점검 = 식별까지. exploit 별도 허가. 윤리 진술 필수.
+    종료: 조회만이라 정리 없음.
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: WSTG
+    field: stdout
+    semantic:
+      intent: |
+        OWASP WSTG-INFO 4 sub-section 직접 수행 + 점검 보고서 + 윤리·법적 진술. 학습 목표
+        #1 (해킹↔점검 차이) + #2 (법·윤리) + #3 (OWASP TG 흐름) 행동 증명.
+        Non-AI 트랙: 학생 직접 SSH + transcript paste.
+      success_criteria:
+      - WSTG-INFO 4 sub-section 모두 수행
+      - 위험도 분류 표 (Low/Med/High + OWASP/CWE)
+      - 보고서 markdown (점검 범위 + 결과 + 권고)
+      - 윤리 진술 5요소 (허가 범위 / 점검 단계 / 법적 근거 / 해킹 차이 / 로그 보존)
+      - sha256 무결성
+      acceptable_methods:
+      - attacker 에서 curl -sI / -s + grep
+      - whatweb / nikto 사용 가능 시
+      - 위험도 표 + 보고서 markdown + sha256sum
+      negative_signs:
+      - WSTG-INFO 4 중 일부만
+      - exploit 시도 (점검 범위 위반)
+      - 윤리 진술 누락
+      - sha256 누락
+  target_vm: bastion
+  risk_level: low
+  answer: ''
+  answer_detail: |
+    학습 목표 #1+#2+#3 통합 행동 증명. 1~15 step 이 HTTP 도구 익히기였다면 99 는 첫 점검 산출물.
+    윤리 진술 필수.
