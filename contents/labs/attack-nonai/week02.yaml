@@ -411,3 +411,70 @@ steps:
       - -oN 없음
       - 보고서 저장 없음
   target_vm: attacker
+- order: 99
+  instruction: |
+    [복합 시나리오] "스텔스 정찰 — 5종 nmap 스캔 비교 + 방화벽 탐지 + ATT&CK Recon 매트릭스"
+
+    ## 상황 (w01 → w02 시나리오 연속)
+
+    > 선임: "본격 스캔. Connect / SYN / FIN 스캔 별로 *탐지 가능성* 비교 + ACK 로 방화벽 룰 추정.
+    > 마지막엔 ATT&CK Recon 매트릭스로 매핑."
+
+    학습 목표 (lecture #3 nmap 5종 + #6 디렉터리 + #7 ATT&CK Recon) + (lab #1·#2·#9 Connect/SYN/ACK) 통합.
+
+    ## 임무 (3 단계, 약 35분)
+
+    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
+
+    ### Phase A — Connect vs SYN
+    `nmap -sT -p 22,80,443,3000,3306,8080 --max-rtt-timeout 1000 10.20.30.80 2>&1 | head -15`
+    `sudo -n nmap -sS -p 22,80,443,3000,3306,8080 --max-rtt-timeout 1000 10.20.30.80 2>&1 | head -15`
+    Connect (-sT) → 3-way handshake → SIEM 로그. SYN (-sS) → Half-open → 회피.
+
+    ### Phase B — ACK + Version
+    `sudo -n nmap -sA -p 22,80,3000,3306 --max-rtt-timeout 1000 10.20.30.1 2>&1 | head -15`
+    `nmap -sV -p 22,80,3000,8080 --version-light 10.20.30.80 2>&1 | head -15`
+
+    ### Phase C — ATT&CK Recon 매트릭스
+    | ATT&CK 기법 | 사용 도구 | 결과 | 탐지 가능성 |
+    | T1595.001 Active Scanning - IP | nmap -sS | open ports | 중 |
+    | T1595.002 Vulnerability Scanning | nmap --script=vuln | known CVE | 높음 |
+    | T1592.002 Software | nmap -sV | Apache/Express | 낮음 |
+    | T1590.005 IP Addresses | network sweep | 활성 host 5종 | 중 |
+    | T1018 Remote System Discovery | nmap + ACK | 방화벽 룰 추정 | 낮음 |
+    표 끝 "스텔스 권고: SYN + -T2 + decoy IP. ACK 로 방화벽 우회." 한 줄.
+
+    종료: echo "=== Phase A Connect vs SYN ===" / "=== Phase B ACK+Version ===" / "=== Phase C ATT&CK ===".
+  hint: |
+    Phase A: -sT vs -sS. SYN 은 sudo. SIEM 차이 명시.
+    Phase B: -sA ACK. unfiltered/filtered.
+    Phase C: 5행 ATT&CK 매트릭스 + 권고.
+    포인트: 스캔별 탐지 + ATT&CK 매핑.
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: ATT&CK
+    field: stdout
+    semantic:
+      intent: |
+        Connect vs SYN + ACK 방화벽 + Version + ATT&CK Recon 매트릭스.
+        lecture #3·#6·#7 + lab #1·#2·#4·#9 동시 행동 증명.
+      success_criteria:
+      - Phase A — -sT / -sS 비교
+      - Phase B — -sA + -sV
+      - Phase C — 5행 ATT&CK + 권고
+      acceptable_methods:
+      - nmap -sT / -sS / -sA / -sV / -sU
+      - sudo / sudo -n
+      - markdown table T-id
+      - masscan / rustscan 가능
+      negative_signs:
+      - 1~2 스캔만
+      - ATT&CK ID 누락
+      - 매트릭스 누락
+      - 스텔스 관점 누락
+  target_vm: attacker
+  risk_level: low
+  answer_detail: |
+    학생이 ssh attacker 직접. SYN 은 sudo. ATT&CK Recon 매핑이 보고서 차별점.
