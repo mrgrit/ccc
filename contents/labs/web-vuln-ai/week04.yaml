@@ -233,7 +233,9 @@ steps:
   answer_detail: meta 태그로 Referer 전송을 방지하면 서버의 Referer 검증을 우회할 수 있습니다.
   verify:
     type: output_contains
-    expect: Referer 우회 기법 완료
+    expect:
+    - Referer 우회 기법 완료
+    - curl
     field: stdout
     semantic:
       intent: Referer 기반 방어 우회 — Referer 헤더 삭제, data URL 사용, subdomain 스푸핑으로 우회
@@ -516,6 +518,7 @@ steps:
     - 보고서 완료
     - Proof
     - Concept
+    - report
     field: stdout
     semantic:
       intent: CSRF 실습 종합 보고서 — 탐지·Exploit·방어·자동화 결과를 /tmp/csrf_report.txt 로 정리
@@ -539,39 +542,110 @@ steps:
   risk_level: low
   bastion_prompt: CSRF 실습 종합 보고서를 작성하시오.
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: "attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) 대상 애플리케이션(http://10.20.30.80)의\
-    \ 폼에서 CSRF 토큰 존재 여부를 확인해줘\n2) CSRF 공격용 HTML 페이지를 작성하시오: 패스워드 변경 요청 위조 \n3) 이미지\
-    \ 태그를 이용한 GET 기반 CSRF를 구성해줘\n4) AJAX 기반 CSRF를 작성하시오: fetch API 활용 \n5) SameSite\
-    \ 쿠키 속성의 CSRF 방어 효과를 분석 작업을 수행해줘"
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+  instruction: |
+    [복합 시나리오] "인증 방식 × CSRF 방어 매트릭스 — JWT/Session × SameSite/Token/CORS"
+
+    ## 상황 (w03 → w04 시나리오 연속)
+
+    w03 에서 CSP 미설정 → XSS reflection 까지 봤다. 선배가 다음 단계.
+
+    > 선배: "이번 주는 인증·세션이야. JuiceShop 은 JWT 쓰는데, 어떤 사이트는 Cookie+Session 이지.
+    > 인증 방식이 다르면 CSRF 방어 전략도 달라져. JWT 는 Authorization 헤더라 CSRF 가 자동으론 안 박혀.
+    > Cookie 면 SameSite/CSRF token 이 필수고. 로그인 한 번 하고 토큰 분석한 다음, CSRF PoC 시도해 보고,
+    > 인증방식 × 방어수단 매트릭스 만들어. 그게 점검 보고서의 핵심이야."
+
+    학습 목표 (lecture #1 인증 + #3 세션 + #4 JWT) + (lab #1 토큰 + #5 SameSite + #6 토큰 약점) 통합.
+
+    ## 임무 (3 단계, 약 35분)
+
+    ### Phase A — 로그인 후 인증 토큰 분석 (lecture #1·#4)
+    `curl -s -i -X POST -H "Content-Type: application/json"
+    -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80/rest/user/login`
+    실행. 응답에서 `authentication.token` (JWT) 추출. JWT 3-part (header.payload.signature) 구조 + base64
+    payload decode 로 alg / iat / exp 확인.
+
+    ### Phase B — CSRF PoC + SameSite 영향 (lab #1·#2·#5)
+    JuiceShop 은 JWT Authorization 헤더 방식이므로 *전형적 CSRF 가 안 박힘* — 그 이유 자체가 학습 포인트.
+    가상의 Cookie 기반 사이트 가정해, 패스워드 변경 위조 HTML 작성 (`<form action=... method=POST>` +
+    `<input name=newpw>` + auto submit script). SameSite=Strict 시 차단 / Lax 시 GET 만 차단 / None 시
+    무방어 — 3 케이스 매트릭스로 구분.
+
+    ### Phase C — 인증방식 × CSRF 방어 매트릭스 (lecture·lab 통합)
+    | 인증방식 | CSRF 자동발동 | 권장 방어 | 비고 |
+    | Session Cookie | 가능 | CSRF Token + SameSite=Lax | Double Submit |
+    | JWT in Cookie | 가능 | CSRF Token + SameSite=Strict | 비추천 |
+    | JWT in Header | 불가 | CORS + Origin 검증 | 권장 |
+    | OAuth2 PKCE | 부분 | state 파라미터 | code intercept 방어 |
+    표 끝에 "JuiceShop = JWT-Header → CORS·Origin 검증 권고" 한 줄.
+
+    종료: echo "=== Phase A JWT decode ===" / "=== Phase B SameSite 매트릭스 ===" / "=== Phase C 매트릭스 ===".
+  bastion_prompt: |
+    [복합 시나리오 — w04 인증 × CSRF 매트릭스]
+
+    JuiceShop (http://10.20.30.80) 인증 토큰 분석 → CSRF PoC → 매트릭스 보고서 3 phase.
+
+    Phase A (JWT 분석):
+    `curl -s -i -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}'
+    http://10.20.30.80/rest/user/login` 실행. 응답 body 에서 JWT 추출.
+    `echo "<JWT>" | cut -d. -f2 | base64 -d 2>/dev/null` 로 payload decode. alg/iat/exp 출력.
+
+    Phase B (CSRF PoC + SameSite 비교):
+    JWT-Header 인증은 CSRF 자동발동 안 됨 (이 자체가 분석 결과). 가상 Cookie 사이트 가정해 패스워드 변경
+    위조 HTML PoC 출력 (`<form action="http://victim/change_pw" method=POST><input name=newpw value=hacked>
+    <script>document.forms[0].submit()</script></form>`).
+    SameSite 3 케이스 영향:
+    - Strict: 모든 cross-site 요청 차단
+    - Lax: GET 허용, POST 차단
+    - None: 무방어
+
+    Phase C (매트릭스):
+    ```
+    | 인증방식 | CSRF 자동발동 | 권장 방어 | 비고 |
+    | Session Cookie | 가능 | CSRF Token + SameSite=Lax | Double Submit |
+    | JWT in Cookie | 가능 | CSRF Token + SameSite=Strict | 비추천 |
+    | JWT in Header | 불가 | CORS + Origin 검증 | 권장 |
+    | OAuth2 PKCE | 부분 | state 파라미터 | code intercept 방어 |
+    ```
+    표 끝에 "JuiceShop = JWT-Header → CORS·Origin 검증 권고" 한 줄.
+
+    종료: echo "=== Phase A JWT decode ===" / "=== Phase B SameSite 매트릭스 ===" / "=== Phase C 매트릭스 ===" 묶음.
+
+    반드시 3 phase 모두 실행. 중간 종료 금지.
+  hint: |
+    Phase A: JWT 는 .으로 3분할. payload base64-d 하면 JSON. exp 가 epoch 초.
+    Phase B: JuiceShop 자체는 JWT-Header 라 PoC 가 *작동 안 함* — 이 사실이 결론. SameSite 3 케이스는 표만.
+    Phase C: 4행 매트릭스. JuiceShop 위치 명시.
+    포인트: 인증방식이 다르면 CSRF 위협 모델이 다르다는 점.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: 매트릭스
     field: stdout
     semantic:
-      intent: '[통합] CSRF 5작업 — identify/PoC/bypass token/defense/audit 통합. OWASP A01
-        + SameSite.'
+      intent: |
+        JuiceShop JWT 토큰 분석 → CSRF PoC + SameSite 영향 → 인증방식 × 방어 매트릭스.
+        lecture #1·#3·#4 + lab #1·#5·#6 동시 행동 증명.
       success_criteria:
-      - 5 CSRF 작업
-      - PoC
-      - defense
+      - Phase A — JWT 토큰 추출 + payload decode (alg/exp)
+      - Phase B — CSRF PoC HTML 작성 + SameSite 3 케이스 비교
+      - Phase C — 4행 매트릭스 + JuiceShop 권고
       acceptable_methods:
-      - bastion plan
-      - Burp
-      - manual PoC
+      - curl POST login + JWT 파싱 (cut + base64)
+      - HTML form PoC 텍스트 출력
+      - markdown table 매트릭스
+      - jwt_tool / jwt-cracker 추가 가능
       negative_signs:
-      - PoC 실패
-      - defense 없음
-      - audit 누락
+      - JWT decode 누락
+      - CSRF PoC 없이 매트릭스만
+      - SameSite 3 케이스 누락
+      - JuiceShop 의 JWT-Header 특성 분석 누락
   target_vm: attacker
   risk_level: low
-  answer: "\U0001F916 프롬프트: attacker VM에서 다음 작업들을 순서대로 수행해줘:\n1) 대상 애플리케이션(http://10.20.30.80)의\
-    \ 폼에서 CSRF 토큰 존재 여부를 확인해줘\n2) CSRF 공격용 HTML 페이지를 작성하시오: 패스워드 변경 요청 위조 \n3) 이미지\
-    \ 태그를 이용한 GET 기반 CSRF를 구성해줘\n4) AJAX 기반 CSRF를 작성하시오: fetch API 활용 \n5) SameSite\
-    \ 쿠키 속성의 CSRF 방어 효과를 분석 작업을 수행해줘"
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. JWT 추출 → decode → PoC HTML → 매트릭스 echo.
+  answer_detail: |
+    JuiceShop 의 admin 계정 (admin@juice-sh.op / admin123) 으로 로그인해 JWT 추출. payload decode 시
+    alg=HS256, iat·exp 확인. JuiceShop 은 JWT-Header 방식이라 cross-site CSRF 가 자동발동 안 됨 — 이 사실
+    자체가 핵심 학습 결과. SameSite 매트릭스는 가상 Cookie 사이트 기준 비교.
   script: ''
