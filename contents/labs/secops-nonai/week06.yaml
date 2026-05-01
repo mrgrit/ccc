@@ -302,29 +302,137 @@ steps:
       - IPC 소켓 개념 없음
   target_vm: secu
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+  instruction: |
+    [복합 시나리오] "오탐 폭증 → threshold 로 억제" — FP 식별과 관리 직접 체험
+
+    ## 상황 (w01-w05 시나리오 연속)
+
+    ABC 핀테크 SOC 신규 분석가, 여섯째 주.
+    1~10 step 으로 et/open 룰셋 갱신 + eve.json 분석 + stats.log 까지 익혔다. 학습 목표 #3 —
+    *"오탐(False Positive) 을 식별하고 관리할 수 있다"* — 분석 도구만 익혔지 실제 FP 발생→
+    식별→억제 cycle 은 안 함.
+
+    > 선임: "FP 가 진짜 문제는 *알람 피로(alert fatigue)* 야. 1만 건 alert 중 9999 가 FP 면
+    >  진짜 1건을 놓쳐. 학생용으로 *의도적으로 FP 폭증* 시키는 광범위 룰 하나 넣고, threshold 로
+    >  억제해 봐. 그 cycle 이 운영의 핵심이야."
+
+    학습 목표 #3 (FP 관리) 의 행동 증명.
+
+    ※ Non-AI 트랙: 학생 직접 SSH + transcript paste.
+
+    ## 임무 (3 단계, 약 25분)
+
+    ### Phase A — 의도적 FP 폭증 룰 작성 (5분, secu 에서)
+
+    secu(10.20.30.1) SSH 후 광범위 룰 추가 — 정상 트래픽이 모두 alert 발생하게:
+      ```
+      ssh ccc@10.20.30.1
+      echo 'alert tcp any any -> any 80 (msg:"FP_TEST any HTTP traffic"; sid:1000301; rev:1;)' \
+        | sudo tee -a /etc/suricata/rules/local.rules
+      sudo systemctl restart suricata
+      ```
+
+    의도: "any tcp → any 80" 이라 모든 HTTP 트래픽이 alert.
+
+    ### Phase B — FP 폭증 측정 + threshold 억제 (15분)
+
+    attacker(10.20.30.201) 또는 secu 에서 web 으로 정상 curl 5회:
+      ```
+      for i in 1 2 3 4 5; do
+        curl -sI http://10.20.30.80/ --max-time 2 > /dev/null
+        sleep 1
+      done
+      ```
+
+    secu (별도 SSH 세션) 에서 FP_TEST alert 카운트:
+      ```
+      sudo tail -200 /var/log/suricata/eve.json | grep -c '"sid":1000301'
+      ```
+    → 예상: 5 이상 (각 정상 트래픽마다 alert)
+
+    Top source IP 분석 (jq):
+      ```
+      sudo tail -500 /var/log/suricata/eve.json \
+        | jq -r 'select(.alert.signature_id==1000301) | .src_ip' \
+        | sort | uniq -c | sort -rn | head -5
+      ```
+    → 정상 source IP 가 top — "이 source 만 suppress" 단서.
+
+    threshold.config 에 suppress 룰 추가 후 재시작:
+      ```
+      sudo bash -c 'echo "suppress gen_id 1, sig_id 1000301, track by_src, ip 10.20.30.0/24" >> /etc/suricata/threshold.config'
+      sudo grep '1000301' /etc/suricata/threshold.config       # 추가 확인
+      sudo systemctl restart suricata
+      ```
+
+    의도: 내부 망 (10.20.30.0/24) 에서 발생한 sid 1000301 alert 모두 *기록 안 함*.
+
+    같은 curl 5회 반복:
+      `for i in 1..5; do curl -sI http://10.20.30.80/ --max-time 2; sleep 1; done`
+
+    secu 에서 alert 카운트 재측정:
+      `sudo tail -200 /var/log/suricata/eve.json | grep -c '"sid":1000301'`
+    → 예상: 0 (또는 추가 카운트 없음 — suppress 적용)
+
+    ### Phase C — 비교 + 회고 + 정리 (5분)
+
+    ## 비교표
+
+    | 시점 | 트래픽 5건 | alert 카운트 | 비고 |
+    |------|----------|-------------|-----|
+    | suppress 전 | 5 curl | 5+ | FP 폭증 |
+    | suppress 후 | 5 curl | 0 (또는 정지) | suppress 적용 |
+
+    1~2 단락 회고:
+    1. **suppress 전후 alert 수 변화** — 정량 (X건 → 0건 차이)
+    2. **threshold 의 *3 가지 액션* 차이** — suppress (전체 차단) / threshold limit
+       (n분당 m건만) / threshold both (limit + 시간 윈도우 모두)
+    3. **운영 시 suppress 의 위험** — *지나친 suppress 는 진짜 공격을 놓치게 함*. 따라서
+       suppress 룰은 *최소한* + 정기 review (예: 분기별)
+
+    종료 정리:
+      ```
+      sudo sed -i '/sid:1000301/d' /etc/suricata/rules/local.rules
+      sudo sed -i '/1000301/d' /etc/suricata/threshold.config
+      sudo systemctl restart suricata
+      ```
+  hint: |
+    Phase A: secu 에 광범위 alert 룰 (sid:1000301) 추가 → 정상 트래픽 alert 발생 환경
+    Phase B: 정상 curl 5회 → eve.json 카운트 5+ → top source IP jq → threshold suppress 추가 → restart → 5회 → 카운트 0
+    Phase C: 전후 비교표 + threshold 3 액션 + suppress 위험 회고
+    포인트: FP 식별 → 분석 → 억제 cycle 직접 체험
+    종료: sid:1000301 룰 + threshold suppress 모두 정리
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: suppress
     field: stdout
     semantic:
-      intent: '[통합] Suricata 운영 5작업 — tuning threshold/alert 분류/false positive/성능/rotate 통합. eve.json
-        분석.'
+      intent: |
+        의도적 FP 폭증 룰을 작성해 alert fatigue 환경 만들고, threshold.config suppress 로 억제.
+        학습 목표 #3 (FP 식별·관리) 의 cycle (식별 → 분석 → 억제) 직접 체험.
+        Non-AI 트랙: 학생 직접 SSH + transcript paste.
       success_criteria:
-      - 튜닝 적용
-      - FP 감소
-      - eve.json 분석
+      - Phase A — 광범위 sid:1000301 룰 + suricata restart
+      - Phase B — 정상 트래픽 5회 → alert 폭증 (5건+)
+      - Phase B — top source IP 분석 (jq)
+      - Phase B — threshold suppress 추가 + restart → alert 0 검증
+      - 비교표 (suppress 전후)
+      - 회고 1~2 단락 + 정리
       acceptable_methods:
-      - bastion plan
-      - jq + eve.json
-      - ansible
+      - secu 에서 광범위 alert 룰 추가 + sudo systemctl restart suricata
+      - 학생 attacker/secu 에서 curl 정상 트래픽 5회
+      - secu 에서 jq + sort + uniq 으로 top source 분석
+      - secu 에서 threshold.config suppress 추가 + restart
+      - secu 에서 grep eve.json 으로 alert 카운트 비교
       negative_signs:
-      - FP 미개선
-      - 로그 없음
-      - 튜닝 누락
-  target_vm: secu
+      - suppress 전후 카운트 비교 누락
+      - threshold.config 수정 안 함 (룰만 제거)
+      - 회고에서 suppress 위험 (진짜 공격 놓침) 미언급
+      - 정리 누락
+  target_vm: bastion
   answer: ''
-  answer_detail: ''
+  answer_detail: |
+    1~10 step 이 분석 도구 익히기였다면 99 번은 FP cycle (식별 → 분석 → 억제) 직접 체험.
+    학습 목표 #3 의 행동 증명. threshold 3 액션 중 suppress 만 다루지만 가장 흔한 운영 도구.
