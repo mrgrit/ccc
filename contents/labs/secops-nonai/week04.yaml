@@ -302,28 +302,136 @@ steps:
       - sid 오타
   target_vm: secu
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  hint: 복합 작업은 bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+  instruction: |
+    [복합 시나리오] "IDS 에서 IPS 로 — alert 만? 아니면 차단까지?" — 같은 룰 두 모드 직접 비교
+
+    ## 상황 (w01-w03 시나리오 연속)
+
+    ABC 핀테크 SOC 신규 분석가, 넷째 주.
+    1~10 step 으로 Suricata 의 `alert` 룰을 작성하고 attacker→secu ping 으로 alert 발생까지
+    봤다. 그런데 lecture 첫 학습 목표는 *"IDS 와 IPS 의 차이를 설명할 수 있다"* — 1~10 은
+    IDS (탐지만) 만 다뤘다. IPS (차단까지) 는 아직.
+
+    > 선임: "alert 만 보는 건 IDS 야. 'I' 가 Detection 이라서. IPS 는 'P' = Prevention —
+    >  실제로 패킷을 떨궈 (drop) 해야 의미가 있어. Suricata 는 같은 엔진이지만 *NFQUEUE 모드*
+    >  로 띄우면 IPS 가 돼. alert action 을 drop 으로 바꾸고 NFQUEUE 로 띄워봐. 그러면 ping
+    >  자체가 안 가게 돼."
+
+    학습 목표 #1 (IDS vs IPS) + #2 (Suricata 아키텍처 + NFQUEUE) 의 *행동 증명*.
+
+    ※ Non-AI 트랙: 학생 직접 SSH + 명령 실행 + transcript paste 제출.
+
+    ## 임무 (3 단계, 약 25분)
+
+    ### Phase A — IDS 모드 baseline (5분)
+
+    secu(10.20.30.1) SSH 후 ICMP alert 룰 재작성 (1~10 에서 제거했음):
+      ```
+      ssh ccc@10.20.30.1
+      echo 'alert icmp any any -> any any (msg:"ICMP IDS test"; sid:1000010; rev:1;)' \
+        | sudo tee -a /etc/suricata/rules/local.rules
+      sudo systemctl restart suricata
+      ```
+
+    attacker(10.20.30.201) SSH 후 ping baseline:
+      ```
+      ssh ccc@10.20.30.201
+      ping -c 3 -W 1 10.20.30.1     # 응답 옴
+      ```
+
+    secu (별도 SSH 세션) 에서 alert 확인:
+      `sudo tail -20 /var/log/suricata/eve.json | grep -i 'icmp\\|sid'`
+    → IDS 모드 결과: **ping 응답 옴 + alert 발생** (탐지만, 차단 X)
+
+    ### Phase B — IPS 모드 전환 (15분, 핵심)
+
+    NFQUEUE 모드로 Suricata 를 IPS 로. 두 가지 변경:
+
+    1) **룰 action 을 alert → drop 으로 변경** (같은 sid, action 만 교체):
+       secu:
+       ```
+       sudo sed -i 's|^alert icmp .* sid:1000010|drop icmp any any -> any any (msg:"ICMP IPS drop"; sid:1000010|' /etc/suricata/rules/local.rules
+       sudo grep 'sid:1000010' /etc/suricata/rules/local.rules        # drop 으로 바뀐 것 확인
+       ```
+
+    2) **nft 에서 ICMP 패킷을 NFQUEUE 0 으로 보냄**:
+       secu:
+       ```
+       sudo nft add table inet verify_ips
+       sudo nft add chain inet verify_ips input { type filter hook input priority -150 \; }
+       sudo nft add rule inet verify_ips input ip protocol icmp queue num 0
+       sudo nft list table inet verify_ips    # priority -150 확인
+       ```
+
+    3) **Suricata 를 NFQUEUE 모드로 재기동**:
+       secu:
+       ```
+       sudo systemctl stop suricata
+       sudo suricata -q 0 -c /etc/suricata/suricata.yaml -D
+       sleep 3
+       ps -ef | grep 'suricata -q' | grep -v grep    # 데몬 확인
+       ```
+
+    이제 attacker → secu ping 다시:
+      attacker: `ping -c 3 -W 1 10.20.30.1`
+    → IPS 모드 결과: **ping 응답 안 옴 (timeout) + drop alert 발생**
+
+    secu 에서 drop event 확인:
+      `sudo tail -20 /var/log/suricata/eve.json | grep -E 'icmp|sid|drop'`
+
+    ### Phase C — 비교 회고 + 정리 (5분)
+
+    1~2 단락:
+    1. **IDS 모드 vs IPS 모드 결과 비교** — Phase A 와 B 의 ping 응답 차이 + eve.json 의 action
+       필드 (alert vs drop) 비교
+    2. **운영 시 IPS 의 위험** — drop 룰이 잘못 작성되면 *정상 트래픽도 차단*
+    3. **NFQUEUE priority -150 의 의미** — nft filter (priority 0) 보다 *먼저* 실행되어야
+       Suricata 가 패킷을 받음
+
+    종료 정리 (모두 secu 에서):
+      ```
+      sudo pkill -f 'suricata -q'
+      sudo nft delete table inet verify_ips
+      sudo sed -i '/sid:1000010/d' /etc/suricata/rules/local.rules
+      sudo systemctl start suricata
+      ```
+  hint: |
+    Phase A: secu 에 ICMP alert 룰 (sid:1000010) 추가 + suricata restart, attacker ping → 응답+alert
+    Phase B: 같은 sid action 을 drop 으로 sed 교체, nft NFQUEUE 룰 (priority -150), suricata -q 0 데몬 재기동
+             → attacker ping timeout + drop event
+    Phase C: IDS vs IPS 결과 비교 + 운영 위험 + priority 의미
+    포인트: 같은 룰 action 만 바꾸면 IDS→IPS. NFQUEUE priority < nft filter 순서 필수.
+    종료: suricata -q 프로세스 + verify_ips 테이블 + sid:1000010 룰 모두 정리.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: drop
     field: stdout
     semantic:
-      intent: '[통합] Suricata IPS 5작업 — 설치/yaml 설정/룰 다운로드/서비스 기동/테스트 통합. suricata -T 검증.'
+      intent: |
+        Suricata IDS (alert+패킷 통과) vs IPS (drop+패킷 차단) 차이를 같은 룰 action 변경 +
+        NFQUEUE 모드 전환으로 직접 체험. 학습 목표 #1 (IDS vs IPS) + #2 (NFQUEUE) 행동 증명.
+        Non-AI 트랙: 학생 직접 SSH + transcript paste.
       success_criteria:
-      - suricata-update
-      - 서비스 active
-      - -T 검증
+      - IDS baseline — alert 룰 + ping 응답 + alert 발생
+      - IPS 전환 — drop 룰 변경 + nft NFQUEUE 룰 + suricata -q 0 재기동
+      - IPS 결과 — ping timeout + drop event
+      - eve.json 에서 alert vs drop event 비교
+      - 회고 1~2 단락 + 정리 (suricata -q 프로세스 + verify_ips + 룰 모두 제거)
       acceptable_methods:
-      - bastion plan
-      - apt + systemctl
-      - ansible
+      - secu 에서 sudo sed action 교체
+      - secu 에서 sudo nft add rule queue num 0
+      - secu 에서 sudo suricata -q 0 -D
+      - attacker 에서 ping -c 3 -W 1
+      - secu 에서 tail eve.json + grep
       negative_signs:
-      - 기동 실패
-      - -T 미실행
-      - 룰 누락
-  target_vm: secu
+      - alert→drop 변경만 + NFQUEUE 룰 없음
+      - NFQUEUE priority 미지정 또는 nft filter 보다 늦음
+      - ping 응답 차이 비교 누락
+      - 정리 누락 (다음 lab 영향)
+  target_vm: bastion
   answer: ''
-  answer_detail: ''
+  answer_detail: |
+    같은 룰의 action 만 교체해도 IDS→IPS 전환. lecture 학습 목표 #1 ("IDS vs IPS 차이") 을
+    syntax 가 아니라 *결과 차이* 로 직접 체험. NFQUEUE priority -150 < nft filter 0 순서 핵심.
