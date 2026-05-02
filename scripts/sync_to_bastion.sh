@@ -55,8 +55,15 @@ if [ -n "$REMOTE_HOST" ] && command -v sshpass >/dev/null 2>&1; then
     sshpass -p "$REMOTE_PASS" scp -o StrictHostKeyChecking=no \
         "$TMPDIR/"*.py \
         "${REMOTE_USER}@${REMOTE_HOST}:/opt/bastion/bastion/" 2>&1 | tail -3 || true
+    # ★ /opt/bastion/api.py 도 변환 후 sync (P15 메모리 갭 fix 2026-05-02:
+    #   기존엔 /home/ccc/.../api.py 만 sync 되어 신규 endpoint 가 runtime 에 미반영)
+    sed 's|packages\.bastion\.|bastion.|g; s|from packages\.bastion |from bastion |g' \
+        "$CCC/apps/bastion/api.py" > "$TMPDIR/api.py"
+    sshpass -p "$REMOTE_PASS" scp -o StrictHostKeyChecking=no \
+        "$TMPDIR/api.py" \
+        "${REMOTE_USER}@${REMOTE_HOST}:/opt/bastion/api.py" 2>&1 | tail -3 || true
     rm -rf "$TMPDIR"
-    echo "  ✓ 원격 /home/ccc/ccc/packages/bastion + /opt/bastion/bastion (path 변환) + apps/bastion/api.py 동기화"
+    echo "  ✓ 원격 /home/ccc/ccc/packages/bastion + /opt/bastion/bastion + /opt/bastion/api.py (path 변환) + apps/bastion/api.py 동기화"
 
     # 5. 자동 재시작 + import 체인 검증 (R3-noexec 진단: import 실패해도 health=200 zombie process 발생)
     if [ "${REMOTE_RESTART:-1}" = "1" ]; then
